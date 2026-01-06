@@ -1,0 +1,44 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "oratta",
+  "version": "1.0.0",
+  "description": "Claude Code用スキル・プラグインのマーケットプレイス",
+  "owner": {
+    "name": "Oratta",
+    "url": "https://github.com/oratta"
+  },
+  "plugins": [
+    {
+      "name": "skill-aware-workflow",
+      "description": "タスク実行前にスキルを探索し、実行中の摩擦を記録、完了後に新スキル作成を提案するワークフローシステム。6つのスキルと3つのコマンド（/plan, /reflect, /find-skill）を含む。",
+      "source": "./plugins/skill-aware-workflow",
+      "category": "workflow",
+      "version": "1.0.0",
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": ["skill-discovery", "workflow", "learning", "automation"]
+    },
+    {
+      "name": "obsidian-llm-session-rules",
+      "description": "Obsidian LLM Session用のルールセット - 自動セッションログ保存、コンテキスト管理、Context7優先調査",
+      "source": "./plugins/obsidian-llm-session-rules",
+      "category": "productivity",
+      "version": "1.1.1",
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": ["obsidian", "llm", "session", "context", "auto-save"],
+      "homepage": "https://github.com/oratta/obsidian-llm-session-plugin"
+    }
+  ],
+  "skills": [],
+  "bundles": [
+    {
+      "name": "all",
+      "description": "全プラグインをインストール",
+      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules"],
+      "skills": []
+    }
+  ]
+}
