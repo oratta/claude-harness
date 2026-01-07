@@ -1,7 +1,7 @@
 {
   "name": "obsidian-llm-session-rules",
   "version": "1.1.1",
-  "description": "Obsidian LLM Session用のルールセット - 自動セッションログ保存（ユーザー入力表示対応）、コンテキスト管理、Context7優先調査",
+  "description": "Obsidian LLM Session用のルールセット - 自動セッションログ保存、コンテキスト管理、Context7優先調査",
   "author": {
     "name": "Oratta"
   },
@@ -9,5 +9,14 @@
   "repository": "https://github.com/oratta/obsidian-llm-session-plugin",
   "license": "MIT",
   "keywords": ["obsidian", "llm", "session", "context", "rules", "auto-save"],
+  "skills": [
+    "./skills/session-logger",
+    "./skills/context-reader",
+    "./skills/research-workflow"
+  ],
+  "commands": [
+    "./commands/save-session.md",
+    "./commands/update-context.md"
+  ],
   "hooks": "./hooks/hooks.json"
 }

@@ -2,21 +2,21 @@
   "name": "skill-aware-workflow",
   "version": "2.0.0",
   "description": "タスク実行前にスキルを探索し、実行後に新スキルを提案するワークフローシステム",
-  "author": "Oratta",
+  "author": {
+    "name": "Oratta"
+  },
   "skills": [
-    "skills/task-analyzer",
-    "skills/skill-inventory", 
-    "skills/skill-finder",
-    "skills/execution-tracker",
-    "skills/skill-proposer",
-    "skills/pre-task-orchestrator"
+    "./skills/task-analyzer",
+    "./skills/skill-inventory",
+    "./skills/skill-finder",
+    "./skills/execution-tracker",
+    "./skills/skill-proposer",
+    "./skills/pre-task-orchestrator"
   ],
   "commands": [
-    "commands/plan.md",
-    "commands/reflect.md",
-    "commands/find-skill.md"
+    "./commands/plan.md",
+    "./commands/reflect.md",
+    "./commands/find-skill.md"
   ],
-  "hooks": [
-    "hooks/hooks.json"
-  ]
+  "hooks": "./hooks/hooks.json"
 }
