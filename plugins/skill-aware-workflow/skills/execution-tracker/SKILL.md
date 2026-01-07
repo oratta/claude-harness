@@ -193,6 +193,56 @@ PreToolUse / PostToolUse / Stop フックと連携して自動記録：
 }
 ```
 
+## claude-mem 連携（オプション）
+
+`claude-mem` プラグインがインストールされている場合、摩擦ログを永続化して複数セッションで活用可能。
+
+### 保存するデータ
+
+タスク完了時に以下を claude-mem に保存：
+
+```yaml
+claude_mem_observation:
+  type: "skill-friction"
+  task_summary: "PDFに署名欄を追加"
+  friction_score: 7
+  pivots:
+    - from: "pypdf"
+      to: "pikepdf"
+  key_learnings:
+    - "pikepdf は PDF フォーム操作に適している"
+  successful_approach: "pikepdf でフォームフィールド作成"
+  skill_proposed: true
+  skill_created: false  # ユーザーが延期した場合
+```
+
+### 保存タイミング
+
+1. **タスク完了時**: 摩擦スコアが0より大きい場合
+2. **スキル提案時**: 提案の内容と結果
+3. **スキル作成時**: 作成されたスキルの情報
+
+### skill-proposer との連携
+
+```
+タスク完了
+    │
+    ▼
+execution-tracker: 摩擦ログ作成
+    │
+    ├── claude-memあり → ログを保存 + 過去のログを検索
+    │
+    └── claude-memなし → セッション内のみで処理
+    │
+    ▼
+skill-proposer: 分析・提案
+```
+
+### claude-memがない場合
+
+現在のセッション内のみで記録。
+セッション終了時にログは失われるが、基本機能は動作する。
+
 ## 参照
 
 - `references/friction-patterns.md` - 摩擦パターンの詳細定義

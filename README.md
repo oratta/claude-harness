@@ -45,6 +45,21 @@ Claude Code用スキル・プラグインのマーケットプレイス
 - `skill-proposer` - スキル作成提案
 - `pre-task-orchestrator` - ワークフロー統合
 
+**オプション連携: claude-mem**
+
+`claude-mem` プラグインがインストールされている場合、以下の機能が強化されます：
+
+- 複数セッションにわたる摩擦パターンの学習
+- 以前延期したスキル提案の追跡
+- 累積パターンからの優先度判定
+
+```bash
+# claude-mem をインストール（オプション）
+/plugin install claude-mem@thedotmack
+```
+
+claude-mem がなくても基本機能は動作します。
+
 ---
 
 ### obsidian-llm-session-rules

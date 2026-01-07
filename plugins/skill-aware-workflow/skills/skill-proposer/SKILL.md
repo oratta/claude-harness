@@ -197,6 +197,64 @@ detected_workflow:
 3. 今回のタスクを具体例として活用
 4. 必要に応じて追加要件をヒアリング
 
+## claude-mem 連携（オプション）
+
+`claude-mem` プラグインがインストールされている場合、複数セッションにわたる学習が可能になる。
+
+### 連携時の追加機能
+
+#### 1. 過去の摩擦パターン参照
+
+```
+現在のタスク: 「PDFに署名欄追加」
+
+claude-mem検索 → 過去に同様のタスクで摩擦あり
+  - 2週間前: pypdf → pikepdf に変更
+  - 1ヶ月前: 座標系で混乱
+
+→ 「以前も同じ摩擦がありました。スキル化の優先度: 高」
+```
+
+#### 2. 延期した提案の追跡
+
+```
+Session 1: 「pdf-creatorスキル作りますか？」→「後で」
+Session 5: 同じPDFタスク完了
+
+→ 「以前も提案しましたが延期されました。今回作成しますか？」
+```
+
+#### 3. 累積パターンの検出
+
+```yaml
+claude_mem_search:
+  query: "friction pdf library"
+  results:
+    - session: abc123, friction: "pypdf limitation"
+    - session: def456, friction: "pikepdf learning curve"
+    - session: ghi789, friction: "coordinate system"
+
+aggregated_insight:
+  category: "pdf-operations"
+  total_friction_count: 3
+  recommendation: "スキル作成を強く推奨"
+```
+
+### 分析プロセス（claude-mem連携時）
+
+```
+1. execution-tracker のログを分析
+2. claude-mem から過去の類似タスクを検索（あれば）
+3. パターンを統合
+4. 提案の優先度を決定
+5. スキル提案を生成
+```
+
+### claude-memがない場合
+
+従来通り、現在のセッション内の情報のみで分析・提案を行う。
+機能は制限されるが、基本的なスキル提案は動作する。
+
 ## 参照
 
 - `references/workflow-patterns.md` - よくあるワークフローパターン
