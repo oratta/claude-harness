@@ -9,8 +9,8 @@ Claude Code用スキル・プラグインのマーケットプレイス
 /plugin marketplace add oratta/claude-harness
 
 # プラグインをインストール
-/plugin install skill-aware-workflow@oratta
-/plugin install obsidian-llm-session-rules@oratta
+/plugin install skill-aware-workflow@oratta-claude-harness
+/plugin install obsidian-llm-session-rules@oratta-claude-harness
 ```
 
 ## プラグイン一覧
@@ -20,7 +20,7 @@ Claude Code用スキル・プラグインのマーケットプレイス
 タスク実行前にスキルを探索し、実行後に新スキル作成を提案するワークフローシステム。
 
 ```bash
-/plugin install skill-aware-workflow@oratta
+/plugin install skill-aware-workflow@oratta-claude-harness
 ```
 
 **機能:**
@@ -52,7 +52,7 @@ Claude Code用スキル・プラグインのマーケットプレイス
 Obsidian Vault内でのLLMセッション管理を効率化するプラグイン。
 
 ```bash
-/plugin install obsidian-llm-session-rules@oratta
+/plugin install obsidian-llm-session-rules@oratta-claude-harness
 ```
 
 **機能:**
@@ -82,7 +82,7 @@ Obsidian Vault内でのLLMセッション管理を効率化するプラグイン
 
 ```bash
 # 全プラグインをインストール
-/plugin install bundle:all@oratta
+/plugin install bundle:all@oratta-claude-harness
 ```
 
 ---
