@@ -17,6 +17,5 @@
     "./commands/plan.md",
     "./commands/reflect.md",
     "./commands/find-skill.md"
-  ],
-  "hooks": "./hooks/hooks.json"
+  ]
 }
