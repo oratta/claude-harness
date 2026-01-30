@@ -17,6 +17,5 @@
   "commands": [
     "./commands/save-session.md",
     "./commands/update-context.md"
-  ],
-  "hooks": "./hooks/hooks.json"
+  ]
 }
