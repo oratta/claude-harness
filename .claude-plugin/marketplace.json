@@ -30,6 +30,17 @@
       },
       "keywords": ["obsidian", "llm", "session", "context", "auto-save"],
       "homepage": "https://github.com/oratta/obsidian-llm-session-plugin"
+    },
+    {
+      "name": "longrun",
+      "description": "Claude Code ロングラン自律実行システム。instruction.mdを対話的に作成し、専門サブエージェント（意思決定・検証・テスト・仕様管理）の協調により、人間の介入なしに長時間の自律的実装を完遂する。4つのコマンド（/instruction, /exec, /status, /decisions）を含む。",
+      "source": "./plugins/longrun",
+      "category": "workflow",
+      "version": "1.0.0",
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": ["longrun", "autonomous", "execution", "sub-agents", "instruction", "decision-making"]
     }
   ],
   "skills": [],
@@ -37,7 +48,7 @@
     {
       "name": "all",
       "description": "全プラグインをインストール",
-      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules"],
+      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun"],
       "skills": []
     }
   ]
