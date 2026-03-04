@@ -14,6 +14,7 @@ memory: project
 
 1. **コンテキスト把握**
    - 指示ファイル (`_longrun/instruction.md`) の受け入れ条件を確認
+   - OpenSpec specs/ の Requirements/Scenarios を受け入れ基準として確認
    - 実装計画 (`_longrun/plan.md`) の対象タスクを確認
    - 意思決定記録 (`_longrun/decisions.md`) を確認
 
@@ -39,12 +40,18 @@ memory: project
    - エラー表示が適切か
    - レスポンシブ対応
 
-4. **ビジネス視点の確認**
+4. **UI検証（Pencil MCP）**
+   UI変更がある場合、Pencil MCPのget_screenshotで検証:
+   - デザインファイル（.pen）が存在すれば、実装結果とモックアップを比較
+   - レイアウト・色・タイポグラフィの整合性を確認
+
+5. **ビジネス視点の確認**
    - 受け入れ条件が満たされているか
+   - OpenSpec specs/ の Scenarios（WHEN/THEN）が全て実現されているか
    - ユーザーにとって直感的な操作か
    - エッジケースの処理は適切か
 
-5. **結果報告**
+6. **結果報告**
    検証結果を以下のフォーマットで返す:
 
    ```markdown
@@ -58,7 +65,7 @@ memory: project
    - **スクリーンショット**: [保存先パス]
    ```
 
-6. **FAILの場合**
+7. **FAILの場合**
    - 問題の原因を特定
    - 修正方法を具体的に提案
    - Orchestratorに修正を依頼

@@ -1,11 +1,17 @@
-# Longrun - Claude Code ロングラン自律実行プラグイン
+# Longrun v2 - Claude Code ロングラン自律実行プラグイン
 
 人間の介入なしに Claude Code が長時間自律的に実装を完遂するためのプラグイン。
+**OpenSpec仕様駆動開発 + TDD（テスト駆動開発）+ Pencil MCP** により品質を担保。
 
 ## 概要
 
 instruction.md（指示ファイル）を対話的に作成し、それに基づいて自律的にコードを実装します。
-実装中は専門サブエージェント（意思決定・検証・テスト・仕様管理）が協調して品質を担保します。
+v2 では以下の品質保証メカニズムが組み込まれています:
+
+1. **仕様駆動開発**: OpenSpec公式CLI（v1.2.0）で仕様を管理。後から変更内容を確認可能
+2. **自動仕様レビュー**: Spec Review Agent が人間の代わりに仕様を検証
+3. **テスト駆動開発**: Red-Green-Refactorサイクルで実装。仕様を壊さない
+4. **UIデザイン統合**: Pencil MCP でモックアップ作成・検証
 
 ## インストール
 
@@ -32,12 +38,6 @@ Brain Dump → Gap Analysis → Interview → Synthesis の4フェーズで inst
 /instruction これこれの機能を実装したい。ユーザーがログインして...
 ```
 
-または事前にファイルに書いた内容を渡すこともできます:
-
-```
-/instruction ./my-brain-dump.md
-```
-
 ### 2. ロングラン実行（/exec）
 
 instruction.md に基づいて自律的に実装を進めます:
@@ -47,9 +47,29 @@ instruction.md に基づいて自律的に実装を進めます:
 ```
 
 実行中のフロー:
-1. **セットアップ**: コードベース調査、実装計画策定
-2. **増分実装ループ**: タスクごとに 実装 → テスト → 検証 → コミット
-3. **仕上げ**: 全体テスト、動作確認ガイド作成
+
+```
+Phase 0: Setup
+  ├── コードベース調査
+  ├── OpenSpec初期化（openspec init）
+  └── テストベースライン確認
+  ↓
+Phase 1: Specification（OpenSpec駆動）
+  ├── 1a: 仕様作成（spec-agent → 4アーティファクト）
+  ├── 1b: 仕様レビュー（spec-review-agent → APPROVE/REQUEST_CHANGES）
+  └── 1c: UIデザイン（Pencil MCP、UI変更時のみ）
+  ↓
+Phase 2: Test Design（TDD Red Phase）
+  └── specs/のScenarios → 失敗テスト作成 → 全件FAIL確認
+  ↓
+Phase 3: Implementation Loop（TDD Green + Refactor）
+  └── タスクごとに: 実装(Green) → リファクタ → 検証 → コミット
+  ↓
+Phase 4: Finalization
+  ├── 全体テスト・ビルド確認
+  ├── OpenSpecアーカイブ
+  └── 動作確認ガイド・サマリー作成
+```
 
 ### 3. 進捗確認（/status）
 
@@ -57,12 +77,6 @@ instruction.md に基づいて自律的に実装を進めます:
 
 ```
 /status
-```
-
-またはターミナルから直接:
-
-```bash
-cat _longrun/progress.md
 ```
 
 ### 4. 意思決定の確認（/decisions）
@@ -80,37 +94,48 @@ cat _longrun/progress.md
 
 | エージェント | モデル | 役割 |
 |-------------|--------|------|
+| Spec Agent | Sonnet | OpenSpec公式CLIと連携した仕様作成（proposal/specs/design/tasks） |
+| Spec Review Agent | Opus | 仕様の品質・完全性・整合性レビュー（人間レビュアー代替） |
 | Decision Agent | Opus | 設計上の分岐点での意思決定 |
-| Verification Agent | Opus | ブラウザ動作確認、ビジネス視点の品質チェック |
-| Test Agent | Sonnet | テストの作成・実行・カバレッジ確認 |
-| Spec Agent | Sonnet | 仕様書のメンテナンス、整合性チェック |
+| Test Agent | Sonnet | TDD Red/Green/Refactor でのテスト管理 |
+| Verification Agent | Opus | ブラウザ動作確認、Pencil MCP UI検証 |
 
-### 成果物ディレクトリ（_longrun/）
-
-実行中・実行後に以下のファイルが生成されます:
+### 成果物ディレクトリ
 
 ```
-_longrun/
-├── instruction.md          # 入力: 指示ファイル
-├── plan.md                 # 実装計画
-├── progress.md             # 進捗ログ（随時更新）
-├── decisions.md            # 意思決定の記録
-├── verification-guide.md   # 動作確認ガイド（完了後）
-├── summary.md              # 完了サマリー（完了後）
-└── specs/                  # 仕様書（Spec Agentが管理）
+_longrun/                           # 実行管理
+├── instruction.md                  # 入力: 指示ファイル
+├── progress.md                     # 進捗ログ（随時更新）
+├── decisions.md                    # 意思決定の記録
+├── verification-guide.md           # 動作確認ガイド（完了後）
+└── summary.md                      # 完了サマリー（完了後）
+
+openspec/                           # 仕様管理（OpenSpec公式構造）
+├── AGENTS.md                       # プロジェクトコンテキスト
+├── specs/                          # メイン仕様（永続的）
+│   └── <capability>/spec.md
+└── changes/                        # 変更提案
+    ├── <change-name>/
+    │   ├── proposal.md             # Why / What / Capabilities / Impact
+    │   ├── specs/<cap>/spec.md     # Delta specs（ADDED/MODIFIED/REMOVED）
+    │   ├── design.md               # Goals / Decisions / Risks
+    │   └── tasks.md                # タスクチェックリスト
+    └── archive/                    # アーカイブ済み
 ```
 
 ### Git コミット戦略
 
-- 意思決定前に必ずコミット（ロールバックポイント）
-- 各タスク完了ごとにコミット
-- `git log --oneline` で意思決定の流れが追える
-- 任意の分岐点に `git checkout` で戻り、別の選択を試せる
+- Phase 0: `chore: longrun v2 execution start`
+- Phase 1: `docs: openspec change created`
+- Phase 2: `test: TDD red phase - failing tests`
+- Phase 3: `checkpoint:` → `feat/fix/refactor:` （タスクごと）
+- Phase 4: `docs: longrun v2 complete`
 
-## 設計ドキュメント
+## 前提条件
 
-詳細な設計は以下を参照:
-- [Claude Code ロングラン自律実行システム設計レポート](../../docs/longrun-design-report.md)
+- OpenSpec CLI v1.2.0+（`npm install -g @fission-ai/openspec`）
+- テストフレームワーク（Vitest, Jest, Playwright 等）がプロジェクトに設定済み
+- UI変更がある場合: Pencil MCP が利用可能であること
 
 ## ライセンス
 
