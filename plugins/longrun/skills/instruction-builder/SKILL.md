@@ -98,7 +98,12 @@ AskUserQuestion を使い、**1問ずつ**質問する。
 ### Step 4: Synthesis（instruction.md生成）
 
 質問の回答を統合し、構造化された instruction.md を生成する。
-保存先: `_longrun/instruction.md`
+
+**保存先の決定:**
+1. brain dumpから英語の短いslugを生成（例: `habit-skip`, `daily-impact`, `auth-refactor`）
+2. 今日の日付を取得（YYYY-MM-DD形式）
+3. ランディレクトリを作成: `_longrun/YYYY-MM-DD_slug/`
+4. instruction.md を `_longrun/YYYY-MM-DD_slug/instruction.md` に保存
 
 **生成するinstruction.mdの構造:**
 
@@ -138,9 +143,16 @@ AskUserQuestion を使い、**1問ずつ**質問する。
 [主要なエンティティと関係]
 
 ## 受け入れ条件
-1. [ ] [具体的・検証可能な条件]
-2. [ ] [具体的・検証可能な条件]
-3. [ ] [具体的・検証可能な条件]
+
+**必須条件（常に含める）:**
+1. [ ] OpenSpec 仕様（proposal.md, spec.md, design.md, tasks.md）が作成・レビュー済み
+2. [ ] テストが作成され全てPASSしている
+3. [ ] ビルドエラーなし（型チェック + ビルド）
+
+**機能固有の条件:**
+4. [ ] [具体的・検証可能な条件]
+5. [ ] [具体的・検証可能な条件]
+6. [ ] [具体的・検証可能な条件]
 
 ## 意思決定ガイドライン
 - 優先順位: [例: シンプルさ > 拡張性 > パフォーマンス]

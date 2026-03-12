@@ -1,7 +1,7 @@
 ---
 name: longrun-orchestrator
 description: 指示ファイルに基づいてロングラン自律実行を行うオーケストレーター。OpenSpec仕様駆動開発 + TDDを組み込み、ユーザー介入なしで品質を担保する。「ロングラン実行」「自律実装」「exec」で起動。
-version: 2.0.0
+version: 2.1.0
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Task
 ---
@@ -28,22 +28,26 @@ Phase 3: Implementation Loop（TDD Green + Refactor）
   タスクごとに: 実装 → テスト → 検証 → コミット
   ↓
 Phase 4: Finalization
-  全体テスト → アーカイブ → サマリー
+  全体テスト → tasks.md最終同期 → サマリー
 ```
 
 ## Phase 0: セットアップ
 
-1. 指示ファイル `$ARGUMENTS` を読み込む（デフォルト: `_longrun/instruction.md`）
-2. プロジェクトのコードベースを調査（Exploreサブエージェントで実施）
+1. ランディレクトリを特定する:
+   - `$ARGUMENTS` がディレクトリパスの場合: そのディレクトリを使用（例: `_longrun/2026-03-11_habit-skip`）
+   - `$ARGUMENTS` がファイルパスの場合: そのファイルの親ディレクトリを使用
+   - 引数なしの場合: `_longrun/` 内の最新サブディレクトリ（`ls -1d _longrun/20*/ | sort | tail -1`）を使用
+   - 以降、このディレクトリを `{run-dir}` として参照する
+2. `{run-dir}/instruction.md` を読み込む
+3. プロジェクトのコードベースを調査（Exploreサブエージェントで実施）
    - ディレクトリ構造の把握
    - 技術スタックの確認
    - 既存のコーディングパターン・命名規則の把握
    - テストフレームワーク・設定の確認
-3. `_longrun/` ディレクトリを作成（存在しない場合）
 4. **OpenSpec初期化**: `openspec/` が存在しなければ `openspec init --tools claude` を実行
 5. テストフレームワークの確認と既存テストの実行（ベースライン記録）
-6. 進捗ファイル `_longrun/progress.md` を初期化
-7. 意思決定ログ `_longrun/decisions.md` を初期化
+6. 進捗ファイル `{run-dir}/progress.md` を初期化
+7. 意思決定ログ `{run-dir}/decisions.md` を初期化
 8. 初期コミット: `chore: longrun v2 execution start - [タスク概要]`
 
 ## Phase 1: Specification（OpenSpec駆動）
@@ -89,7 +93,7 @@ Test Agent（Task tool で `test-agent` サブエージェント、red モード
 4. 既存テストが全PASS（リグレッションなし）を確認
 5. コミット: `test: TDD red phase - failing tests for <change-name>`
 
-`_longrun/progress.md` を更新（Phase 2 完了を記録）
+`{run-dir}/progress.md` を更新（Phase 2 完了を記録）
 
 ## Phase 3: Implementation Loop（TDD Green + Refactor）
 
@@ -97,7 +101,7 @@ tasks.md の各タスクに対して以下を繰り返す:
 
 ### 3a. 実装前チェック
 - 現在のテストの状態を確認（何件PASS/FAIL）
-- `_longrun/progress.md` を更新（現在のタスクを記録）
+- `{run-dir}/progress.md` を更新（現在のタスクを記録）
 
 ### 3b. 意思決定が必要な場合
 設計上の分岐点に遭遇したら:
@@ -105,7 +109,7 @@ tasks.md の各タスクに対して以下を繰り返す:
    - メッセージ: `checkpoint: before decision #N - [概要]`
 2. Decision Agent（Task tool で `decision-agent` サブエージェント）に委譲
    - 指示ファイル、design.md、過去の決定、コード状況を渡す
-3. 決定内容を `_longrun/decisions.md` と design.md の Decisions セクションに記録
+3. 決定内容を `{run-dir}/decisions.md` と design.md の Decisions セクションに記録
 4. 決定に基づいて実装を継続
 
 ### 3c. 実装（TDD Green Phase）
@@ -129,12 +133,16 @@ UI変更を含むタスクの場合:
   - UI変更がある場合はPencil MCPのget_screenshotで比較
 - NGの場合は修正して再検証（最大3回）
 
-### 3g. コミット
+### 3g. コミット & OpenSpec tasks.md 更新
 - タスク完了ごとにコミット
   - メッセージ: `feat/fix/refactor(scope): [説明]`
   - 意思決定があった場合: `feat(scope): [説明] (decision #N: approach X)`
-- tasks.md の該当タスクにチェックを入れる
-- `_longrun/progress.md` を更新
+- **OpenSpec tasks.md のチェックボックス更新**:
+  1. `openspec/changes/<change-name>/tasks.md` を読み込む
+  2. 完了したタスクに対応する行の `- [ ]` を `- [x]` に変更する（Edit toolを使用）
+  3. タスクの特定は、タスク番号・タスク説明文のどちらかで照合する
+  4. 該当タスクが見つからない場合はスキップしてログに記録
+- `{run-dir}/progress.md` を更新
 
 ## Phase 4: Finalization
 
@@ -147,12 +155,16 @@ UI変更を含むタスクの場合:
    - Verification Agent で最終動作確認
    - UI変更がある場合はPencil MCPで最終確認
 
-3. **OpenSpecアーカイブ**
-   - `openspec archive <change-name>` を実行
-   - delta specs がメインspecs (`openspec/specs/`) に統合される
+3. **OpenSpec tasks.md 最終同期**
+   `openspec/changes/<change-name>/tasks.md` を読み込み、全タスクの完了状態を最終確認する:
+   - 実装済みタスク: `- [ ]` → `- [x]` に更新（Phase 3gで漏れがあった場合のキャッチアップ）
+   - スキップしたタスク: `- [ ]` のまま残し、理由をコメントで追記（例: `- [ ] タスク名 <!-- skipped: [理由] -->`）
+   - 部分完了のタスク: チェックは入れず、状態をコメントで追記
+   - **目的**: ユーザーがOpenSpecドキュメントを見て、何が完了し何が未完了かを正確に把握できるようにする
+   - コミット: `docs: update OpenSpec tasks.md completion status`
 
 4. **成果物作成**
-   `_longrun/verification-guide.md`（動作確認ガイド）を作成:
+   `{run-dir}/verification-guide.md`（動作確認ガイド）を作成:
    ```markdown
    # 動作確認ガイド
 
@@ -169,7 +181,7 @@ UI変更を含むタスクの場合:
    - [ ] [条件2]: [確認方法]
    ```
 
-   `_longrun/summary.md`（完了サマリー）を作成:
+   `{run-dir}/summary.md`（完了サマリー）を作成:
    ```markdown
    # Longrun v2 Execution Summary
 
@@ -182,8 +194,8 @@ UI変更を含むタスクの場合:
 
    ## OpenSpec Change
    - Change名: <change-name>
-   - アーカイブ: 済
-   - メインspecs更新: [更新されたcapability一覧]
+   - tasks.md更新: 済（N/M タスクにチェック）
+   - アーカイブ: 未実施（ユーザーが `/opsx:archive` で実施）
 
    ## テスト結果
    - テストケース: N件（全PASS）
@@ -195,8 +207,13 @@ UI変更を含むタスクの場合:
    [完了しなかった項目があれば]
    ```
 
-5. `_longrun/progress.md` を最終更新
+5. `{run-dir}/progress.md` を最終更新
 6. 最終コミット: `docs: longrun v2 complete - <change-name>`
+7. **ランディレクトリのアーカイブ**
+   - `_longrun/_archive/` ディレクトリがなければ作成: `mkdir -p _longrun/_archive`
+   - `{run-dir}` を `_longrun/_archive/` に移動: `mv {run-dir} _longrun/_archive/`
+   - 例: `_longrun/2026-03-11_habit-skip` → `_longrun/_archive/2026-03-11_habit-skip`
+   - コミット: `chore: archive longrun - <change-name>`
 
 ## Git コミット戦略
 
@@ -205,7 +222,7 @@ Phase 0: chore: longrun v2 execution start
 Phase 1: docs: openspec change created / UI mockup created
 Phase 2: test: TDD red phase - failing tests
 Phase 3: checkpoint → feat/fix/refactor（タスクごと）
-Phase 4: docs: longrun v2 complete
+Phase 4: docs: longrun v2 complete → chore: archive longrun
 ```
 
 コミットプレフィクスの使い分け:
@@ -223,5 +240,5 @@ Phase 4: docs: longrun v2 complete
 - **ビルドエラー**: 原因を調査して修正。型エラーやimportの問題は自分で対処
 - **意思決定の膠着**: シンプルな方を選択し、その旨を記録
 - **spec-review-agentがAPPROVEしない**: 3ラウンドで打ち切り、残課題を明記して進行
-- **コンテキスト枯渇の防止**: 各タスクの実装では、前のタスクの詳細ではなく `_longrun/progress.md` を参照して現在位置を把握する
+- **コンテキスト枯渇の防止**: 各タスクの実装では、前のタスクの詳細ではなく `{run-dir}/progress.md` を参照して現在位置を把握する
 - **OpenSpec CLIエラー**: `openspec validate` がFAILした場合は手動でディレクトリ構造を修正

@@ -1,4 +1,4 @@
-# Longrun v2 - Claude Code ロングラン自律実行プラグイン
+# Longrun v2.1 - Claude Code ロングラン自律実行プラグイン
 
 人間の介入なしに Claude Code が長時間自律的に実装を完遂するためのプラグイン。
 **OpenSpec仕様駆動開発 + TDD（テスト駆動開発）+ Pencil MCP** により品質を担保。
@@ -68,7 +68,8 @@ Phase 3: Implementation Loop（TDD Green + Refactor）
 Phase 4: Finalization
   ├── 全体テスト・ビルド確認
   ├── OpenSpecアーカイブ
-  └── 動作確認ガイド・サマリー作成
+  ├── 動作確認ガイド・サマリー作成
+  └── ランディレクトリを _archive/ へ移動
 ```
 
 ### 3. 進捗確認（/status）
@@ -104,11 +105,14 @@ Phase 4: Finalization
 
 ```
 _longrun/                           # 実行管理
-├── instruction.md                  # 入力: 指示ファイル
-├── progress.md                     # 進捗ログ（随時更新）
-├── decisions.md                    # 意思決定の記録
-├── verification-guide.md           # 動作確認ガイド（完了後）
-└── summary.md                      # 完了サマリー（完了後）
+├── YYYY-MM-DD_slug/                # アクティブなラン
+│   ├── instruction.md              # 入力: 指示ファイル
+│   ├── progress.md                 # 進捗ログ（随時更新）
+│   ├── decisions.md                # 意思決定の記録
+│   ├── verification-guide.md       # 動作確認ガイド（完了後）
+│   └── summary.md                  # 完了サマリー（完了後）
+└── _archive/                       # 完了済みラン（自動アーカイブ）
+    └── YYYY-MM-DD_slug/            # Phase 4完了後に移動される
 
 openspec/                           # 仕様管理（OpenSpec公式構造）
 ├── AGENTS.md                       # プロジェクトコンテキスト

@@ -12,8 +12,8 @@ memory: project
 ## 意思決定プロセス
 
 1. **コンテキスト把握**
-   - 指示ファイル (`_longrun/instruction.md`) を読み、ビジネスコンテキストを理解
-   - 過去の意思決定 (`_longrun/decisions.md`) を確認し、一貫性を保つ
+   - ランディレクトリ内の指示ファイル (`{run-dir}/instruction.md`) を読み、ビジネスコンテキストを理解
+   - 過去の意思決定 (`{run-dir}/decisions.md`) を確認し、一貫性を保つ
    - OpenSpec design.md (`openspec/changes/<change-name>/design.md`) の Goals/Non-Goals/Decisions を確認
    - OpenSpec specs/ の Requirements を確認し、仕様との整合性を保つ
    - 関連するコードを調査
@@ -34,8 +34,8 @@ memory: project
    - 迷った場合はシンプルな方を選ぶ
 
 4. **記録**
-   `_longrun/decisions.md` と `openspec/changes/<change-name>/design.md` の Decisions セクションの両方に追記。
-   `_longrun/decisions.md` には以下のフォーマットで追記:
+   `{run-dir}/decisions.md` と `openspec/changes/<change-name>/design.md` の Decisions セクションの両方に追記。
+   `{run-dir}/decisions.md` には以下のフォーマットで追記:
 
    ```markdown
    ## Decision #[番号]: [タイトル]

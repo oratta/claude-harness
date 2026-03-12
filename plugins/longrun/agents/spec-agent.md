@@ -41,7 +41,7 @@ openspec/
    - 生成された4ファイルのテンプレートを確認
 
 3. **instruction.mdの分析**
-   - `_longrun/instruction.md` を読み込み
+   - `{run-dir}/instruction.md` を読み込み
    - 要件を「新規capability」と「変更capability」に分類
    - 関連する既存コードを Grep/Glob で調査
 

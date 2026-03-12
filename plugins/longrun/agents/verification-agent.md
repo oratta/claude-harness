@@ -13,10 +13,10 @@ memory: project
 ## 検証プロセス
 
 1. **コンテキスト把握**
-   - 指示ファイル (`_longrun/instruction.md`) の受け入れ条件を確認
+   - ランディレクトリ内の指示ファイル (`{run-dir}/instruction.md`) の受け入れ条件を確認
    - OpenSpec specs/ の Requirements/Scenarios を受け入れ基準として確認
-   - 実装計画 (`_longrun/plan.md`) の対象タスクを確認
-   - 意思決定記録 (`_longrun/decisions.md`) を確認
+   - 実装計画 (`{run-dir}/plan.md`) の対象タスクを確認
+   - 意思決定記録 (`{run-dir}/decisions.md`) を確認
 
 2. **技術的検証**
    - テストスイート全体の実行

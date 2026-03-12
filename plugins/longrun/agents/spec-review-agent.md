@@ -23,7 +23,7 @@ openspec/changes/<change-name>/
 ## レビュープロセス
 
 ### 1. コンテキスト把握
-- 指示ファイル (`_longrun/instruction.md`) を読み、元の要件を理解
+- ランディレクトリ内の指示ファイル (`{run-dir}/instruction.md`) を読み、元の要件を理解
 - 既存メインspecs (`openspec/specs/`) があれば確認
 - プロジェクトのコードベースを調査（Grep, Glob で関連コード検索）
 

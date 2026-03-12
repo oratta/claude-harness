@@ -1,7 +1,7 @@
 {
   "name": "longrun",
-  "version": "2.0.0",
-  "description": "Claude Code ロングラン自律実行システム v2。OpenSpec仕様駆動開発 + TDD + Pencil MCP統合により、人間の介入なしに品質を担保した自律的実装を完遂する。",
+  "version": "2.1.0",
+  "description": "Claude Code ロングラン自律実行システム v2.1。OpenSpec仕様駆動開発 + TDD + Pencil MCP統合 + 自動アーカイブにより、人間の介入なしに品質を担保した自律的実装を完遂する。",
   "author": {
     "name": "Oratta"
   },

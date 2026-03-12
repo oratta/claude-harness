@@ -1,9 +1,16 @@
 #!/bin/bash
 # update-progress.sh
-# ロングラン実行中に _longrun/progress.md のタイムスタンプを更新するスクリプト
+# ロングラン実行中に {run-dir}/progress.md のタイムスタンプを更新するスクリプト
 # Hook (Stop イベント) から呼び出される
 
-PROGRESS_FILE="_longrun/progress.md"
+# 最新のランディレクトリを特定
+RUN_DIR=$(ls -1d _longrun/20*/ 2>/dev/null | sort | tail -1)
+
+if [ -z "$RUN_DIR" ]; then
+  exit 0
+fi
+
+PROGRESS_FILE="${RUN_DIR}progress.md"
 
 if [ ! -f "$PROGRESS_FILE" ]; then
   exit 0
@@ -21,4 +28,4 @@ fi
 # 最新のgitコミットハッシュを取得
 LATEST_COMMIT=$(git log --oneline -1 2>/dev/null || echo "no commits")
 
-echo "Progress updated at $TIMESTAMP (latest commit: $LATEST_COMMIT)"
+echo "Progress updated at $TIMESTAMP in $RUN_DIR (latest commit: $LATEST_COMMIT)"
