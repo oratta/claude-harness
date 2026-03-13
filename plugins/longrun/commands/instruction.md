@@ -6,6 +6,17 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash
 
 instruction-builder スキルを使用して、ロングラン実行用の instruction.md を対話的に作成してください。
 
+## ⚠️ 必須: ディレクトリ構造ルール
+
+**instruction.md は必ずサブディレクトリに保存すること。`_longrun/` 直下に置いてはならない。**
+
+```
+✅ 正しい: _longrun/2026-03-13_feature-name/instruction.md
+❌ 間違い: _longrun/instruction.md
+```
+
+サブディレクトリ名: `YYYY-MM-DD_slug`（slug はbrain dumpから英語の短い要約）
+
 ## 実行手順
 
 1. ユーザーの入力（$ARGUMENTS）をbrain dumpとして受け取る
