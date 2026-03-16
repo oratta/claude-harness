@@ -1,4 +1,4 @@
-# Longrun v2.1 - Claude Code ロングラン自律実行プラグイン
+# Longrun v2.2 - Claude Code ロングラン自律実行プラグイン
 
 人間の介入なしに Claude Code が長時間自律的に実装を完遂するためのプラグイン。
 **OpenSpec仕様駆動開発 + TDD（テスト駆動開発）+ Pencil MCP** により品質を担保。

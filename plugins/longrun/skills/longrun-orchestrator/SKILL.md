@@ -1,7 +1,7 @@
 ---
 name: longrun-orchestrator
 description: 指示ファイルに基づいてロングラン自律実行を行うオーケストレーター。OpenSpec仕様駆動開発 + TDDを組み込み、ユーザー介入なしで品質を担保する。「ロングラン実行」「自律実装」「exec」で起動。
-version: 2.1.0
+version: 2.2.0
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Task
 ---
@@ -28,7 +28,7 @@ Phase 3: Implementation Loop（TDD Green + Refactor）
   タスクごとに: 実装 → テスト → 検証 → コミット
   ↓
 Phase 4: Finalization
-  全体テスト → tasks.md最終同期 → サマリー
+  全体テスト → tasks.md最終同期 → サマリー → ユーザー確認 → アーカイブ
 ```
 
 ## Phase 0: セットアップ
@@ -195,7 +195,6 @@ UI変更を含むタスクの場合:
    ## OpenSpec Change
    - Change名: <change-name>
    - tasks.md更新: 済（N/M タスクにチェック）
-   - アーカイブ: 未実施（ユーザーが `/opsx:archive` で実施）
 
    ## テスト結果
    - テストケース: N件（全PASS）
@@ -209,11 +208,29 @@ UI変更を含むタスクの場合:
 
 5. `{run-dir}/progress.md` を最終更新
 6. 最終コミット: `docs: longrun v2 complete - <change-name>`
-7. **ランディレクトリのアーカイブ**
+
+7. **ユーザー確認（承認ゲート）**
+   - ユーザーに完了サマリーと動作確認ガイドを提示する
+   - ユーザーの明示的な承認を待つ（AskUserQuestion で確認）
+   - 承認されたら step 8 へ進む
+   - 追加修正の要望があれば対応してから再度確認
+
+8. **アーカイブ（ユーザー承認後に一括実行）**
+
+   **8a. OpenSpec change のアーカイブ:**
+   - Delta spec がある場合: `openspec/changes/<change-name>/specs/` 内のファイルを `openspec/specs/<capability>/spec.md` にコピー
+   - `openspec/changes/archive/` ディレクトリがなければ作成: `mkdir -p openspec/changes/archive`
+   - `openspec/changes/<change-name>` を `openspec/changes/archive/YYYY-MM-DD-<change-name>` に移動
+   - 日付は実行日を使用
+
+   **8b. ランディレクトリのアーカイブ:**
    - `_longrun/_archive/` ディレクトリがなければ作成: `mkdir -p _longrun/_archive`
    - `{run-dir}` を `_longrun/_archive/` に移動: `mv {run-dir} _longrun/_archive/`
    - 例: `_longrun/2026-03-11_habit-skip` → `_longrun/_archive/2026-03-11_habit-skip`
-   - コミット: `chore: archive longrun - <change-name>`
+
+   **8c. アーカイブコミット:**
+   - コミット: `chore: archive longrun and openspec - <change-name>`
+   - `{run-dir}/progress.md` の最終状態を `COMPLETE` にする（アーカイブ先で更新）
 
 ## Git コミット戦略
 
@@ -222,7 +239,7 @@ Phase 0: chore: longrun v2 execution start
 Phase 1: docs: openspec change created / UI mockup created
 Phase 2: test: TDD red phase - failing tests
 Phase 3: checkpoint → feat/fix/refactor（タスクごと）
-Phase 4: docs: longrun v2 complete → chore: archive longrun
+Phase 4: docs: longrun v2 complete → [ユーザー承認] → chore: archive longrun and openspec
 ```
 
 コミットプレフィクスの使い分け:
