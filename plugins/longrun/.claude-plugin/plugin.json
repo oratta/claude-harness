@@ -1,7 +1,7 @@
 {
   "name": "longrun",
-  "version": "2.2.0",
-  "description": "Claude Code ロングラン自律実行システム v2.2。OpenSpec仕様駆動開発 + TDD + Pencil MCP統合 + ユーザー承認ゲート付き自動アーカイブにより、人間の介入なしに品質を担保した自律的実装を完遂する。",
+  "version": "3.0.0",
+  "description": "Claude Code ロングラン自律実行システム v3.0。OpenSpec applyへの実装委任 + カスタムスキーマによるTDD/スキル注入 + マルチchange分解 + サブエージェント隔離 + Git Worktreeにより、人間の介入なしに品質を担保した自律的実装を完遂する。",
   "author": {
     "name": "Oratta"
   },
@@ -16,10 +16,7 @@
     "./commands/decisions.md"
   ],
   "agents": [
-    "./agents/decision-agent.md",
     "./agents/verification-agent.md",
-    "./agents/test-agent.md",
-    "./agents/spec-agent.md",
     "./agents/spec-review-agent.md"
   ]
 }

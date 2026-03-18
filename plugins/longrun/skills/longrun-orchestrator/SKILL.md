@@ -1,261 +1,395 @@
 ---
 name: longrun-orchestrator
-description: 指示ファイルに基づいてロングラン自律実行を行うオーケストレーター。OpenSpec仕様駆動開発 + TDDを組み込み、ユーザー介入なしで品質を担保する。「ロングラン実行」「自律実装」「exec」で起動。
-version: 2.2.0
+description: 指示ファイルに基づいてロングラン自律実行を行うオーケストレーター v3.0。マルチchange分解 + OpenSpec applyへの実装委任 + カスタムスキーマによるTDD/スキル注入 + サブエージェント隔離で品質を担保する。「ロングラン実行」「自律実装」「exec」で起動。
+version: 3.0.0
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Task
 ---
 
-# Longrun v2 Execution Protocol
+# Longrun v3 Execution Protocol
 
 指示ファイルに基づいて、人間の介入なしに自律的に実装を完遂するプロトコル。
-**仕様駆動開発（OpenSpec）+ テスト駆動開発（TDD）**により、仕様を壊さず品質を担保する。
+**OpenSpec applyへの実装委任 + カスタムスキーマによるTDD/スキル注入**により、仕様を壊さず品質を担保する。
 
 ## アーキテクチャ概要
 
 ```
 Phase 0: Setup
   ↓
-Phase 1: Specification（OpenSpec駆動）
-  1a: 仕様作成 → spec-agent
-  1b: 仕様レビュー → spec-review-agent（最大3ラウンド）
-  1c: UIデザイン → Pencil MCP（UI変更時のみ）
+Phase 1: ドキュメント作成（changeごとにサブエージェント）
+  → OpenSpec ff + spec-review-agent（最大3ラウンド）
   ↓
-Phase 2: Test Design（TDD Red Phase）
-  → test-agent (red mode)
+Phase 2: 実装（changeごとにworktree + openspec apply）
+  → カスタムスキーマがTDD + スキル + decision-agentパターンを注入
   ↓
-Phase 3: Implementation Loop（TDD Green + Refactor）
-  タスクごとに: 実装 → テスト → 検証 → コミット
+Phase 3: 統合
+  → worktreeマージ + 統合テスト + verification-agent
   ↓
-Phase 4: Finalization
-  全体テスト → tasks.md最終同期 → サマリー → ユーザー確認 → アーカイブ
+Phase 4: ハンドオフ
+  → openspec list集約 + verification-guide + ユーザー承認 + archive
 ```
+
+## 設計原則
+
+1. **longrunはオーケストレーター**: 実装はOpenSpec applyに完全委任する
+2. **タスク管理はOpenSpec一元管理**: tasks.mdのチェックボックスが唯一の進捗ソース
+3. **changeごとにサブエージェント隔離**: コンテキスト汚染を防止
+4. **カスタムスキーマでTDD/スキル注入**: OpenSpecの動的指示生成を活用
+5. **AskUserQuestionは使わない**: Phase 4のハンドオフ時のみ使用
+
+---
 
 ## Phase 0: セットアップ
 
 1. ランディレクトリを特定する:
-   - `$ARGUMENTS` がディレクトリパスの場合: そのディレクトリを使用（例: `_longrun/2026-03-11_habit-skip`）
+   - `$ARGUMENTS` がディレクトリパスの場合: そのディレクトリを使用
    - `$ARGUMENTS` がファイルパスの場合: そのファイルの親ディレクトリを使用
    - 引数なしの場合: `_longrun/` 内の最新サブディレクトリ（`ls -1d _longrun/20*/ | sort | tail -1`）を使用
    - 以降、このディレクトリを `{run-dir}` として参照する
 2. `{run-dir}/instruction.md` を読み込む
-3. プロジェクトのコードベースを調査（Exploreサブエージェントで実施）
+3. **Changes分解セクション**を解析し、change一覧・スキルマッピング・依存関係を抽出
+4. プロジェクトのコードベースを調査（Exploreサブエージェントで実施）
    - ディレクトリ構造の把握
    - 技術スタックの確認
    - 既存のコーディングパターン・命名規則の把握
    - テストフレームワーク・設定の確認
-4. **OpenSpec初期化**: `openspec/` が存在しなければ `openspec init --tools claude` を実行
-5. テストフレームワークの確認と既存テストの実行（ベースライン記録）
-6. 進捗ファイル `{run-dir}/progress.md` を初期化
-7. 意思決定ログ `{run-dir}/decisions.md` を初期化
-8. 初期コミット: `chore: longrun v2 execution start - [タスク概要]`
+5. **OpenSpec初期化**:
+   - `openspec/` が存在しなければ `openspec init --tools claude` を実行
+   - カスタムスキーマ `longrun-tdd` が存在しなければセットアップ（後述）
+6. テストフレームワークの確認と既存テストの実行（ベースライン記録）
+7. 進捗ファイル `{run-dir}/progress.md` を初期化（Phase進捗のみ記録）
+8. 意思決定ログ `{run-dir}/decisions.md` を初期化
+9. 初期コミット: `chore: longrun v3 execution start - [タスク概要]`
 
-## Phase 1: Specification（OpenSpec駆動）
+### カスタムスキーマのセットアップ
 
-### Phase 1a: 仕様作成
+`openspec/schemas/longrun-tdd/` が存在しない場合:
 
-Spec Agent（Task tool で `spec-agent` サブエージェント、create モード）に委譲:
+1. `openspec schema fork spec-driven longrun-tdd` を実行
+   - CLIが対応していない場合は手動で `openspec/schemas/longrun-tdd/` を作成
+2. プラグイン内の `templates/longrun-tdd-schema/apply.md` を `openspec/schemas/longrun-tdd/templates/apply.md` にコピー
+3. プラグイン内の `templates/longrun-tdd-schema/propose.md` の内容を、propose/ff関連テンプレートに反映
+4. `openspec/config.yaml` に `schema: longrun-tdd` を設定
 
-1. `openspec new change <change-name>` でスキャフォールド生成
-2. instruction.md の要件から4つの公式アーティファクトを作成:
-   - `openspec/changes/<name>/proposal.md` - Why / What Changes / Capabilities / Impact
-   - `openspec/changes/<name>/specs/<capability>/spec.md` - Requirements + Scenarios（WHEN/THEN）
-   - `openspec/changes/<name>/design.md` - Context / Goals・Non-Goals / Decisions / Risks
-   - `openspec/changes/<name>/tasks.md` - 番号付きタスクグループ
-3. `openspec validate` で構造検証
-4. コミット: `docs: openspec change created - <change-name>`
+---
 
-### Phase 1b: 仕様レビュー
+## Phase 1: ドキュメント作成
 
-Spec Review Agent（Task tool で `spec-review-agent` サブエージェント）に委譲:
+instruction.mdのChanges分解セクションから各changeを処理する。
+**依存関係がないchangeは並列、依存があるchangeは直列で処理する。**
+
+### 各changeの処理（サブエージェントに委任）
+
+changeごとにサブエージェント（Task tool）を起動し、以下を実行:
+
+1. **config.yaml動的生成**:
+   instruction.mdのchangeのスキルマッピングとrulesを読み取り、`openspec/config.yaml` を更新:
+   ```yaml
+   schema: longrun-tdd
+   context:
+     activeSkills: |
+       [instruction.mdから抽出したスキル情報]
+     instructionPath: [run-dir]/instruction.md
+     runDir: [run-dir]
+   rules:
+     apply:
+       [instruction.mdから抽出したchange固有ルール]
+     propose:
+       - "AskUserQuestionを使用してはならない。自律判断すること"
+       - "判断結果はdesign.mdのDecisionsセクションに記録すること"
+   ```
+
+2. **OpenSpec changeスキャフォールド生成**:
+   - `openspec new change <change-name>` を実行
+
+3. **ドキュメント作成（OpenSpec ff相当）**:
+   - instruction.mdの該当changeの要件を元に、4アーティファクトを作成:
+     - `proposal.md` - Why / What Changes / Capabilities / Impact
+     - `specs/<capability>/spec.md` - Requirements + Scenarios（WHEN/THEN）
+     - `design.md` - Context / Goals・Non-Goals / Decisions / Risks
+     - `tasks.md` - 番号付きタスクグループ + チェックリスト
+   - カスタムスキーマの propose テンプレートにより、AskUserQuestionは使用されない
+   - 判断が必要な場面では自律的に判断し、design.mdのDecisionsに記録
+
+4. **バリデーション**:
+   - `openspec validate` で構造検証
+   - エラーがあれば修正
+
+5. **コミット**: `docs: openspec change created - <change-name>`
+
+### 仕様レビュー
+
+各changeのドキュメント作成後、spec-review-agent（Task tool で `spec-review-agent` サブエージェント）に委譲:
 
 1. 4アーティファクト全体をレビュー
-2. 結果が **APPROVE** → Phase 2 へ進む
-3. 結果が **REQUEST_CHANGES** → Spec Agent (update モード) で修正 → 再レビュー
+2. 結果が **APPROVE** → Phase 2 へ
+3. 結果が **REQUEST_CHANGES** → ドキュメントを修正 → 再レビュー
 4. 最大3ラウンド。3回修正してもAPPROVEされない場合は、残課題を明記してAPPROVEとする
 
-### Phase 1c: UIデザイン（UI変更がある場合のみ）
+### UIデザイン（UI変更がある場合のみ）
 
 instruction.md または proposal.md にUI変更が含まれる場合:
 
 1. Pencil MCP で `.pen` ファイルにモックアップ作成
-   - `get_guidelines` → `get_style_guide` → `batch_design` → `get_screenshot` の流れ
 2. design.md にモックアップの参照先を記載
 3. コミット: `docs: UI mockup created for <change-name>`
 
-## Phase 2: Test Design（TDD Red Phase）
+### Phase 1 完了条件
 
-Test Agent（Task tool で `test-agent` サブエージェント、red モード）に委譲:
+- 全changeのドキュメントが作成済み
+- 全changeがspec-review-agentにAPPROVEされている
+- `{run-dir}/progress.md` を更新: `Phase 1: Complete`
 
-1. specs/ の Requirements/Scenarios からテストケースを生成
-2. 各 Scenario の WHEN/THEN をテストコードに変換
-3. テスト実行 → **全件FAIL** を確認（Red状態の証明）
-4. 既存テストが全PASS（リグレッションなし）を確認
-5. コミット: `test: TDD red phase - failing tests for <change-name>`
+<HARD-GATE>
+全changeのドキュメントがspec-review-agentにAPPROVEされるまで、Phase 2に進んではならない。
+コードを1行も書いてはならない。テストも書いてはならない。
+</HARD-GATE>
 
-`{run-dir}/progress.md` を更新（Phase 2 完了を記録）
+---
 
-## Phase 3: Implementation Loop（TDD Green + Refactor）
+## Phase 2: 実装（OpenSpec apply委任）
 
-tasks.md の各タスクに対して以下を繰り返す:
+各changeをOpenSpec applyで実装する。
+**依存関係がないchangeは並列（worktree）、依存があるchangeは直列で処理する。**
 
-### 3a. 実装前チェック
-- 現在のテストの状態を確認（何件PASS/FAIL）
-- `{run-dir}/progress.md` を更新（現在のタスクを記録）
+### 並列実行（独立change）
 
-### 3b. 意思決定が必要な場合
-設計上の分岐点に遭遇したら:
-1. 直前の状態でGitコミット（ロールバックポイント）
-   - メッセージ: `checkpoint: before decision #N - [概要]`
-2. Decision Agent（Task tool で `decision-agent` サブエージェント）に委譲
-   - 指示ファイル、design.md、過去の決定、コード状況を渡す
-3. 決定内容を `{run-dir}/decisions.md` と design.md の Decisions セクションに記録
-4. 決定に基づいて実装を継続
+依存関係がないchangeを並列で実装する場合:
 
-### 3c. 実装（TDD Green Phase）
-- Test Agent（green モード）で1タスクずつ実装
-- テストをPASSさせる**最小限のコード**を書く
-- テスト実行 → 対象テストPASS + 既存テスト全PASSを確認
-- 問題があれば自分で修正（3回まで。超えたらスキップしてログに記録）
-
-### 3d. リファクタリング（TDD Refactor Phase）
-- Test Agent（refactor モード）でコード品質を改善
-- テスト全件PASSを維持しながらリファクタリング
-
-### 3e. UI変更の反映
-UI変更を含むタスクの場合:
-- Pencil MCP でデザインファイル（.pen）を更新
-- 実装がモックアップと一致することを確認
-
-### 3f. 検証
-- Verification Agent（Task tool で `verification-agent` サブエージェント）に動作確認を委譲
-  - ブラウザテスト（Playwright CLI）
-  - UI変更がある場合はPencil MCPのget_screenshotで比較
-- NGの場合は修正して再検証（最大3回）
-
-### 3g. コミット & OpenSpec tasks.md 更新
-- タスク完了ごとにコミット
-  - メッセージ: `feat/fix/refactor(scope): [説明]`
-  - 意思決定があった場合: `feat(scope): [説明] (decision #N: approach X)`
-- **OpenSpec tasks.md のチェックボックス更新**:
-  1. `openspec/changes/<change-name>/tasks.md` を読み込む
-  2. 完了したタスクに対応する行の `- [ ]` を `- [x]` に変更する（Edit toolを使用）
-  3. タスクの特定は、タスク番号・タスク説明文のどちらかで照合する
-  4. 該当タスクが見つからない場合はスキップしてログに記録
-- `{run-dir}/progress.md` を更新
-
-## Phase 4: Finalization
-
-1. **全体テスト実行**
-   - テストスイート全体を実行、全PASSを確認
-   - lint / 型チェック
-   - ビルドが成功すること
-
-2. **最終検証**
-   - Verification Agent で最終動作確認
-   - UI変更がある場合はPencil MCPで最終確認
-
-3. **OpenSpec tasks.md 最終同期**
-   `openspec/changes/<change-name>/tasks.md` を読み込み、全タスクの完了状態を最終確認する:
-   - 実装済みタスク: `- [ ]` → `- [x]` に更新（Phase 3gで漏れがあった場合のキャッチアップ）
-   - スキップしたタスク: `- [ ]` のまま残し、理由をコメントで追記（例: `- [ ] タスク名 <!-- skipped: [理由] -->`）
-   - 部分完了のタスク: チェックは入れず、状態をコメントで追記
-   - **目的**: ユーザーがOpenSpecドキュメントを見て、何が完了し何が未完了かを正確に把握できるようにする
-   - コミット: `docs: update OpenSpec tasks.md completion status`
-
-4. **成果物作成**
-   `{run-dir}/verification-guide.md`（動作確認ガイド）を作成:
-   ```markdown
-   # 動作確認ガイド
-
-   ## 環境
-   - URL: [開発サーバーURL]
-   - 起動コマンド: [コマンド]
-
-   ## 確認手順
-   1. [手順1] → [期待結果]
-   2. [手順2] → [期待結果]
-
-   ## 受け入れ条件チェックリスト
-   - [ ] [条件1]: [確認方法]
-   - [ ] [条件2]: [確認方法]
+1. changeごとにGit Worktreeを作成:
+   ```bash
+   git worktree add _worktrees/<change-name> -b feature/<change-name>
    ```
 
-   `{run-dir}/summary.md`（完了サマリー）を作成:
-   ```markdown
-   # Longrun v2 Execution Summary
+2. 各worktreeでサブエージェント（Task tool）を起動し、OpenSpec applyを実行:
+   - worktreeのディレクトリに移動
+   - `openspec apply <change-name>` を実行（カスタムスキーマがTDDを強制）
+   - apply内で:
+     - 各タスクに対してテストを先に書く（RED）
+     - 最小コードで実装（GREEN）
+     - リファクタリング（REFACTOR）
+     - テスト全PASS後にtasks.mdの `[ ]` → `[x]` 更新
+     - 設計判断はdesign.mdのDecisionsセクションに記録
 
-   ## 概要
-   - 開始: [timestamp]
-   - 完了: [timestamp]
-   - タスク数: N完了 / M合計
-   - コミット数: X
-   - 意思決定数: Y
+3. サブエージェントの戻り値を確認:
+   - 全タスク完了 → 次のPhaseへ
+   - BLOCKED → 原因を調査、必要に応じて修正して再実行
 
-   ## OpenSpec Change
-   - Change名: <change-name>
-   - tasks.md更新: 済（N/M タスクにチェック）
+### 直列実行（依存change）
 
-   ## テスト結果
-   - テストケース: N件（全PASS）
+依存関係があるchangeは、依存先が完了してからメインブランチにマージし、その上で実装:
 
-   ## 実装内容
-   [主要な実装内容の要約]
+1. 依存先changeのworktreeをマージ
+2. 依存changeのworktreeを作成（マージ後のメインブランチから分岐）
+3. 以降は並列実行と同じフロー
 
-   ## 残課題
-   [完了しなかった項目があれば]
+### 進捗監視
+
+- 各changeの進捗は `openspec list` で確認（tasks.mdのチェックボックスが唯一のソース）
+- `{run-dir}/progress.md` にはPhaseレベルの進捗のみ記録
+- 設計判断は `{run-dir}/decisions.md` に集約
+
+### Phase 2 完了条件
+
+- 全changeの全タスクが `[x]` になっている（`openspec list` で確認）
+- 全changeのテストがPASS
+- `{run-dir}/progress.md` を更新: `Phase 2: Complete`
+
+---
+
+## Phase 3: 統合
+
+### 3a. Worktreeマージ
+
+1. 各changeのworktreeをメインブランチにマージ:
+   ```bash
+   git checkout main  # or master
+   git merge feature/<change-name-A>
+   git merge feature/<change-name-B>
+   ```
+2. コンフリクトがあれば解決
+3. worktreeを削除:
+   ```bash
+   git worktree remove _worktrees/<change-name>
    ```
 
-5. `{run-dir}/progress.md` を最終更新
-6. 最終コミット: `docs: longrun v2 complete - <change-name>`
+### 3b. 統合テスト
 
-7. **ユーザー確認（承認ゲート）**
-   - ユーザーに完了サマリーと動作確認ガイドを提示する
-   - ユーザーの明示的な承認を待つ（AskUserQuestion で確認）
-   - 承認されたら step 8 へ進む
-   - 追加修正の要望があれば対応してから再度確認
+1. 全テストスイート実行
+2. lint / 型チェック
+3. ビルドが成功すること
+4. 問題があれば修正してコミット
 
-8. **アーカイブ（ユーザー承認後に一括実行）**
+### 3c. 統合検証
 
-   **8a. OpenSpec change のアーカイブ:**
-   - Delta spec がある場合: `openspec/changes/<change-name>/specs/` 内のファイルを `openspec/specs/<capability>/spec.md` にコピー
-   - `openspec/changes/archive/` ディレクトリがなければ作成: `mkdir -p openspec/changes/archive`
-   - `openspec/changes/<change-name>` を `openspec/changes/archive/YYYY-MM-DD-<change-name>` に移動
-   - 日付は実行日を使用
+Verification Agent（Task tool で `verification-agent` サブエージェント）に委譲:
 
-   **8b. ランディレクトリのアーカイブ:**
-   - `_longrun/_archive/` ディレクトリがなければ作成: `mkdir -p _longrun/_archive`
-   - `{run-dir}` を `_longrun/_archive/` に移動: `mv {run-dir} _longrun/_archive/`
-   - 例: `_longrun/2026-03-11_habit-skip` → `_longrun/_archive/2026-03-11_habit-skip`
+- instruction.mdの受け入れ条件が全て満たされているか
+- 全changeの統合後にE2Eで動作するか
+- ブラウザテスト（Playwright）
+- UI検証（Pencil MCP、UI変更がある場合）
 
-   **8c. アーカイブコミット:**
-   - コミット: `chore: archive longrun and openspec - <change-name>`
-   - `{run-dir}/progress.md` の最終状態を `COMPLETE` にする（アーカイブ先で更新）
+結果が FAIL の場合:
+- 問題の原因を特定（特定changeか統合時の問題か）
+- 修正して再検証（最大3回）
+
+### Phase 3 完了条件
+
+- 全worktreeがマージ済み
+- 全テストPASS + ビルド成功
+- verification-agentがPASS
+- `{run-dir}/progress.md` を更新: `Phase 3: Complete`
+
+---
+
+## Phase 4: ハンドオフ
+
+### 4a. 最終状態確認
+
+1. `openspec list` で全changeの完了状態を確認
+2. 各changeの `tasks.md` を確認:
+   - 全タスク `[x]` → OK
+   - スキップしたタスクがあれば `<!-- skipped: [理由] -->` コメントを確認
+
+### 4b. 成果物作成
+
+**`{run-dir}/verification-guide.md`**（動作確認ガイド）:
+```markdown
+# 動作確認ガイド
+
+## 環境
+- URL: [開発サーバーURL]
+- 起動コマンド: [コマンド]
+
+## 確認手順
+1. [手順1] → [期待結果]
+2. [手順2] → [期待結果]
+
+## 受け入れ条件チェックリスト
+- [ ] [条件1]: [確認方法]
+- [ ] [条件2]: [確認方法]
+```
+
+**`{run-dir}/summary.md`**（完了サマリー）:
+```markdown
+# Longrun v3 Execution Summary
+
+## 概要
+- 開始: [timestamp]
+- 完了: [timestamp]
+- Changes: [N]個
+- 意思決定: [Y]件
+
+## Changes
+| Change | タスク | テスト | ステータス |
+|--------|--------|--------|-----------|
+| change-A | 5/5 | 12 PASS | Complete |
+| change-B | 7/7 | 8 PASS | Complete |
+
+## テスト結果
+- 全テストケース: N件（全PASS）
+- 統合テスト: PASS
+
+## 意思決定サマリー
+[主要な判断の一覧]
+
+## 残課題
+[完了しなかった項目があれば]
+```
+
+### 4c. ユーザー確認（承認ゲート）
+
+AskUserQuestion でユーザーに確認:
+
+```
+ロングラン実行が完了しました。
+
+## 完了状態
+[openspec listの結果]
+
+## 確認をお願いする項目
+[verification-guide.mdの受け入れ条件チェックリスト]
+
+確認が完了したら、以下のいずれかを指示してください:
+- 「OK」→ アーカイブして完了
+- 「修正: [内容]」→ 修正を実施
+```
+
+### 4d. アーカイブ（ユーザー承認後）
+
+**OpenSpec change のアーカイブ:**
+各changeに対して:
+- delta spec がある場合: `openspec/changes/<name>/specs/` → `openspec/specs/<capability>/spec.md` にコピー
+- `openspec/changes/<name>` → `openspec/changes/archive/YYYY-MM-DD-<name>` に移動
+
+**ランディレクトリのアーカイブ:**
+- `{run-dir}` → `_longrun/_archive/` に移動
+
+**アーカイブコミット:**
+- `chore: archive longrun and openspec - [全change名]`
+
+---
 
 ## Git コミット戦略
 
 ```
-Phase 0: chore: longrun v2 execution start
-Phase 1: docs: openspec change created / UI mockup created
-Phase 2: test: TDD red phase - failing tests
-Phase 3: checkpoint → feat/fix/refactor（タスクごと）
-Phase 4: docs: longrun v2 complete → [ユーザー承認] → chore: archive longrun and openspec
+Phase 0: chore: longrun v3 execution start - [概要]
+Phase 1: docs: openspec change created - <change-name>（changeごと）
+         docs: UI mockup created for <change-name>（UI変更時）
+Phase 2: [openspec applyが自動でコミット]（タスクごと）
+Phase 3: merge: integrate <change-name> into main
+         fix: resolve merge conflicts
+         chore: remove worktree <change-name>
+Phase 4: docs: longrun v3 complete
+         [ユーザー承認]
+         chore: archive longrun and openspec
 ```
 
-コミットプレフィクスの使い分け:
-- `chore:` longrun start / 設定変更
-- `docs:` OpenSpec仕様書 / サマリー / 確認ガイド
-- `test:` TDD Red Phase / テスト追加
-- `checkpoint:` 意思決定前のセーブポイント
-- `feat:` 新機能の実装
-- `fix:` バグ修正
-- `refactor:` リファクタリング
+---
 
 ## エラーハンドリング
 
-- **テスト失敗**: 自分で修正を試みる（最大3回）。修正不能な場合はスキップしてログに記録
-- **ビルドエラー**: 原因を調査して修正。型エラーやimportの問題は自分で対処
-- **意思決定の膠着**: シンプルな方を選択し、その旨を記録
-- **spec-review-agentがAPPROVEしない**: 3ラウンドで打ち切り、残課題を明記して進行
-- **コンテキスト枯渇の防止**: 各タスクの実装では、前のタスクの詳細ではなく `{run-dir}/progress.md` を参照して現在位置を把握する
-- **OpenSpec CLIエラー**: `openspec validate` がFAILした場合は手動でディレクトリ構造を修正
+| シナリオ | 対処 |
+|----------|------|
+| OpenSpec applyがタスクを完了できない | 3回リトライ。それでも失敗ならスキップしてログ記録 |
+| ビルドエラー | 原因を調査して修正。型エラーやimportの問題は自分で対処 |
+| spec-review-agentがAPPROVEしない | 3ラウンドで打ち切り、残課題を明記して進行 |
+| Worktreeマージでコンフリクト | コンフリクトを解決してコミット |
+| verification-agentがFAIL | 問題を修正して再検証（最大3回） |
+| サブエージェントがクラッシュ | progress.mdからPhase/change状態を確認して再開 |
+| OpenSpec CLIエラー | 手動でディレクトリ構造を修正 |
+
+---
+
+## ディレクトリ構造
+
+```
+_longrun/
+├── YYYY-MM-DD_slug/              # アクティブなランディレクトリ
+│   ├── instruction.md            # 入力: ユーザー指示（Changes分解 + スキルマッピング含む）
+│   ├── progress.md               # Phase進捗のみ記録
+│   ├── decisions.md              # 全changeの設計判断を集約
+│   ├── verification-guide.md     # Phase 4で作成
+│   └── summary.md                # Phase 4で作成
+└── _archive/                     # 完了済みラン
+
+_worktrees/                       # Phase 2で作成、Phase 3で削除
+├── <change-name-A>/
+└── <change-name-B>/
+
+openspec/
+├── config.yaml                   # schema: longrun-tdd + 動的ルール
+├── schemas/longrun-tdd/          # カスタムスキーマ
+│   └── templates/
+│       ├── apply.md              # TDD強制 + 自律判断 + スキル注入
+│       └── propose.md            # 自律判断（AskUserQuestion禁止）
+├── specs/                        # メイン仕様（永続）
+└── changes/                      # 変更提案（一時的）
+    ├── <change-name-A>/
+    │   ├── proposal.md
+    │   ├── specs/
+    │   ├── design.md
+    │   └── tasks.md              # チェックボックスが唯一の進捗ソース
+    ├── <change-name-B>/
+    └── archive/
+```

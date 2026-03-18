@@ -18,9 +18,16 @@ longrun-orchestrator スキルを使用して、ロングラン自律実行を�
 ## 実行
 
 ランディレクトリのパスを引数として longrun-orchestrator スキルに渡す。
-Phase 0 → Phase 1 → Phase 2（ループ）→ Phase 3 の順で自律的に実装を進める。
+Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 の順で自律的に実装を進める。
+
+## v3.0 の実行モデル
+
+- **Phase 1**: changeごとにサブエージェントでOpenSpecドキュメント作成 + レビュー
+- **Phase 2**: changeごとにGit Worktree + OpenSpec applyで実装（TDDはカスタムスキーマで注入）
+- **Phase 3**: worktreeマージ + 統合テスト + verification-agent
+- **Phase 4**: ユーザーハンドオフ（openspec list集約 + verification-guide）
 
 ## 実行中の進捗確認
 
-実行中は `_longrun/{run-dir}/progress.md` が随時更新されます。
-別ターミナルから `/longrun:status` コマンドで現在の状態を確認できます。
+`/longrun:status` コマンドで現在の状態を確認できます。
+各changeの進捗は `openspec list` で確認できます。

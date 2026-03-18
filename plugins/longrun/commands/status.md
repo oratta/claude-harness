@@ -16,42 +16,44 @@ allowed-tools: Read, Glob, Bash
 2. `{run-dir}/progress.md` を読み込む
    - 存在しない場合: 「ロングラン実行は開始されていません。`/longrun:exec` で開始してください」と表示
 
-3. 以下の情報を簡潔に表示:
-   - ランディレクトリ名（日付とスラグ）
-   - 現在のステータス（実行中 / 完了 / 中断）
-   - 進捗: 完了タスク数 / 全タスク数
-   - 現在実行中のタスク
-   - 最終更新時刻
-   - 意思決定の件数
+3. **OpenSpec進捗を集約表示**:
+   - `openspec list` を実行し、各changeの進捗を取得
+   - change名、タスク完了数/全数、ステータスを表示
 
-4. 追加情報（存在する場合）:
-   - `{run-dir}/decisions.md` から最新の意思決定を1件表示
-   - `{run-dir}/plan.md` から次のタスクを表示
-   - スキップされた問題があれば表示
+4. 以下の情報を簡潔に表示:
+   - ランディレクトリ名（日付とスラグ）
+   - 現在のPhase（0/1/2/3/4）
+   - 各changeの進捗（openspec listから）
+   - 意思決定の件数
+   - 最終更新時刻
 
 5. Git の状態:
    - 最新のコミットメッセージ
-   - uncommitted changes の有無
+   - アクティブなworktreeの一覧（`git worktree list`）
 
 6. アーカイブ済みラン:
    - `_longrun/_archive/` 内のディレクトリを一覧表示（存在する場合）
-   - 各ディレクトリ名のみ簡潔に表示
 
 ## 表示フォーマット
 
 ```
-📊 Longrun Status
+Longrun v3 Status
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-ステータス: 実行中
-進捗: 3/7 タスク完了 (43%)
-現在: Task 4 - [タスク名]
-最終更新: [timestamp]
-意思決定: 2件
-━━━━━━━━━━━━━━━━━━━━━━━━━
-最新コミット: feat(auth): implement login flow
-次のタスク: Task 5 - [タスク名]
+Phase: 2 / 4 (Implementation)
+意思決定: 3件
 
-📦 アーカイブ済み: 2件
+Changes:
+  change-A (auth):      5/5 tasks  Complete
+  change-B (api):       3/7 tasks  Task 4: API認証実装中
+  change-C (ui):        0/4 tasks  待機中
+
+Worktrees:
+  worktree-B: feature/change-B (active)
+
+最新コミット: feat(auth): implement login flow
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Archive: 2件
   - 2026-03-04_calculation-logic-feedback
   - 2026-03-11_habit-skip
 ```
