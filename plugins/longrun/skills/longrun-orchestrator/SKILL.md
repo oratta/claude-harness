@@ -56,6 +56,11 @@ Phase 4: ハンドオフ
 5. **OpenSpec初期化**:
    - `openspec/` が存在しなければ `openspec init --tools claude` を実行
    - カスタムスキーマ `longrun-tdd` が存在しなければセットアップ（後述）
+   - **config.yamlをgit管理外にする**: `openspec/config.yaml` が `.gitignore` に含まれていなければ追加する
+     ```bash
+     echo 'openspec/config.yaml' >> .gitignore
+     ```
+     config.yamlは各change実行前に動的生成される使い捨てファイルであり、gitにコミットしない。
 6. テストフレームワークの確認と既存テストの実行（ベースライン記録）
 7. 進捗ファイル `{run-dir}/progress.md` を初期化（Phase進捗のみ記録）
 8. 意思決定ログ `{run-dir}/decisions.md` を初期化
