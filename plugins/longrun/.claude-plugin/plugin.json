@@ -1,6 +1,6 @@
 {
   "name": "longrun",
-  "version": "3.0.0",
+  "version": "3.0.2",
   "description": "Claude Code ロングラン自律実行システム v3.0。OpenSpec applyへの実装委任 + カスタムスキーマによるTDD/スキル注入 + マルチchange分解 + サブエージェント隔離 + Git Worktreeにより、人間の介入なしに品質を担保した自律的実装を完遂する。",
   "author": {
     "name": "Oratta"
