@@ -66,10 +66,11 @@ Phase 4: ハンドオフ
 `openspec/schemas/longrun-tdd/` が存在しない場合:
 
 1. `openspec schema fork spec-driven longrun-tdd` を実行
-   - CLIが対応していない場合は手動で `openspec/schemas/longrun-tdd/` を作成
+   - CLIが対応していない場合は手動で `mkdir -p openspec/schemas/longrun-tdd/templates/` を作成
 2. プラグイン内の `templates/longrun-tdd-schema/apply.md` を `openspec/schemas/longrun-tdd/templates/apply.md` にコピー
 3. プラグイン内の `templates/longrun-tdd-schema/propose.md` の内容を、propose/ff関連テンプレートに反映
-4. `openspec/config.yaml` に `schema: longrun-tdd` を設定
+
+**注意**: config.yaml はPhase 0では作成しない。Phase 1/2で各changeの実行直前に動的生成する（後述）。
 
 ---
 
@@ -82,22 +83,24 @@ instruction.mdのChanges分解セクションから各changeを処理する。
 
 changeごとにサブエージェント（Task tool）を起動し、以下を実行:
 
-1. **config.yaml動的生成**:
-   instruction.mdのchangeのスキルマッピングとrulesを読み取り、`openspec/config.yaml` を更新:
+1. **config.yaml動的生成（このchange専用）**:
+   **重要**: config.yamlはプロジェクトに1つだが、changeごとに必要なスキルが異なる。
+   そのため**各changeの処理開始前に毎回config.yamlを上書き**する。
+   instruction.mdのChanges分解セクションから、**このchangeに必要なスキルとルールだけ**を抽出:
    ```yaml
    schema: longrun-tdd
    context:
      activeSkills: |
-       [instruction.mdから抽出したスキル情報]
+       [このchangeに必要なスキルのみ]
      instructionPath: [run-dir]/instruction.md
      runDir: [run-dir]
    rules:
-     apply:
-       [instruction.mdから抽出したchange固有ルール]
      propose:
        - "AskUserQuestionを使用してはならない。自律判断すること"
        - "判断結果はdesign.mdのDecisionsセクションに記録すること"
+       [このchangeに固有のルールのみ]
    ```
+   他のchangeのスキルやルールは含めない（コンテキスト効率化）。
 
 2. **OpenSpec changeスキャフォールド生成**:
    - `openspec new change <change-name>` を実行
@@ -163,6 +166,18 @@ instruction.md または proposal.md にUI変更が含まれる場合:
 
 2. 各worktreeでサブエージェント（Task tool）を起動し、OpenSpec applyを実行:
    - worktreeのディレクトリに移動
+   - **config.yaml動的生成（このchange専用）**: instruction.mdから**このchangeに必要なスキルとルールだけ**を抽出してconfig.yamlを上書き:
+     ```yaml
+     schema: longrun-tdd
+     context:
+       activeSkills: |
+         [このchangeに必要なスキルのみ]
+       instructionPath: [run-dir]/instruction.md
+       runDir: [run-dir]
+     rules:
+       apply:
+         [このchangeに固有のルールのみ]
+     ```
    - `openspec apply <change-name>` を実行（カスタムスキーマがTDDを強制）
    - apply内で:
      - 各タスクに対してテストを先に書く（RED）

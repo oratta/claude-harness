@@ -13,7 +13,8 @@
     "./commands/instruction.md",
     "./commands/exec.md",
     "./commands/status.md",
-    "./commands/decisions.md"
+    "./commands/decisions.md",
+    "./commands/archive.md"
   ],
   "agents": [
     "./agents/verification-agent.md",
