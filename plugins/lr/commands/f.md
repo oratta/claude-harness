@@ -4,5 +4,5 @@ description: "ロングラン完了後のフィードバックを受け付ける
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Task
 ---
 
-feedback-handler スキルを使用して、フィードバック処理を実行してください。
-引数: $ARGUMENTS
+Skill toolを使って `longrun:feedback` を引数 `$ARGUMENTS` で呼び出してください。
+自分で処理せず、必ずSkill toolで委譲すること。
