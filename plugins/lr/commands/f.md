@@ -4,4 +4,5 @@ description: "ロングラン完了後のフィードバックを受け付ける
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Task
 ---
 
-`/longrun:feedback` を $ARGUMENTS 付きで実行してください。
+feedback-handler スキルを使用して、フィードバック処理を実行してください。
+引数: $ARGUMENTS

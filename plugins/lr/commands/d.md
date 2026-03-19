@@ -4,4 +4,7 @@ description: "ロングラン実行中の意思決定一覧を確認する（/lo
 allowed-tools: Read, Glob
 ---
 
-`/longrun:decisions` を $ARGUMENTS 付きで実行してください。
+/longrun:decisions コマンドと同じ動作をしてください。
+引数: $ARGUMENTS
+
+ランディレクトリを特定し（引数 or `_longrun/` 内の最新）、decisions.md を読み込んで意思決定一覧を表示してください。

@@ -4,4 +4,5 @@ description: "instruction.mdを対話的に作成する（/longrun:instruction �
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash
 ---
 
-`/longrun:instruction` を $ARGUMENTS 付きで実行してください。
+instruction-builder スキルを使用して、ロングラン実行用の instruction.md を対話的に作成してください。
+引数: $ARGUMENTS
