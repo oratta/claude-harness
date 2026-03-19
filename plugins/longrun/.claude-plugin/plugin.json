@@ -16,13 +16,7 @@
     "./commands/status.md",
     "./commands/decisions.md",
     "./commands/archive.md",
-    "./commands/feedback.md",
-    "./commands/i.md",
-    "./commands/e.md",
-    "./commands/s.md",
-    "./commands/d.md",
-    "./commands/a.md",
-    "./commands/f.md"
+    "./commands/feedback.md"
   ],
   "agents": [
     "./agents/verification-agent.md",

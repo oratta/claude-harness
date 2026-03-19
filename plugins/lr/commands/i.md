@@ -1,12 +1,10 @@
 ---
 name: i
-description: "[alias: instruction] ロングラン実行用のinstruction.mdを対話的に作成する"
+description: "instruction.mdを対話的に作成する（/longrun:instruction の短縮）"
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash
 ---
 
 instruction-builder スキルを使用して、ロングラン実行用の instruction.md を対話的に作成してください。
-
-**このコマンドは `/longrun:instruction` のエイリアスです。** 全く同じ動作をします。
 
 ## ⚠️ 必須: ディレクトリ構造ルール
 
@@ -36,4 +34,4 @@ instruction-builder スキルを使用して、ロングラン実行用の instr
 - テキスト: それ自体をbrain dumpとして扱う
 - 引数なし: ユーザーに「何を作りたいか教えてください」と聞く
 
-完了後、`/longrun:exec` コマンドでロングラン実行を開始できることを案内してください。
+完了後、`/lr:e` コマンドでロングラン実行を開始できることを案内してください。

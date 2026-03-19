@@ -1,10 +1,8 @@
 ---
 name: a
-description: "[alias: archive] 完了したロングラン実行をアーカイブする"
+description: "完了したロングラン実行をアーカイブする（/longrun:archive の短縮）"
 allowed-tools: Read, Write, Edit, Bash, Glob
 ---
-
-**このコマンドは `/longrun:archive` のエイリアスです。** 全く同じ動作をします。
 
 ユーザーの承認を受けて、完了したロングラン実行をアーカイブしてください。
 

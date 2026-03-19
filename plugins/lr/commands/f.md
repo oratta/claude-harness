@@ -1,10 +1,8 @@
 ---
 name: f
-description: "[alias: feedback] ロングラン完了後のフィードバックを受け付ける"
+description: "ロングラン完了後のフィードバックを受け付ける（/longrun:feedback の短縮）"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Task
 ---
-
-**このコマンドは `/longrun:feedback` のエイリアスです。** 全く同じ動作をします。
 
 feedback-handler スキルを使用して、フィードバック処理を実行してください。
 
