@@ -32,16 +32,19 @@ verification-agentは**統合検証**に専念する:
 - lint / 型チェック
 - ビルドが成功すること
 
-### 3. ブラウザ動作確認
+### 3. ブラウザ動作確認（spec Scenarioベース）
+
+**spec.mdのScenariosがそのままチェックリストになる。**
+Scenarioはユーザーアクションレベルで記述されているため、各Scenarioを順に実行・確認する。
+
 Playwright CLI を使用:
 ```bash
 npx playwright test --headed
 ```
 
 確認項目:
-- ページが正しく表示されるか
-- ユーザー操作（クリック、入力、送信）が機能するか
-- エラー表示が適切か
+- 各changeの `specs/<capability>/spec.md` のScenarioを全件確認
+- WHEN（ユーザー操作）を実行し、THEN（画面上の結果）が成立するか
 - 複数changeにまたがる機能の連携
 
 ### 4. UI検証（Pencil MCP）

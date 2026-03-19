@@ -274,6 +274,9 @@ Verification Agent（Task tool で `verification-agent` サブエージェント
 ### 4b. 成果物作成
 
 **`{run-dir}/verification-guide.md`**（動作確認ガイド）:
+
+**spec.mdのScenariosから自動生成する。** 各changeの `specs/<capability>/spec.md` のWHEN/THENをユーザー向けチェックリストに変換する。Scenarioはユーザーアクションレベルで記述されているため、そのまま手動確認の手順になる。
+
 ```markdown
 # 動作確認ガイド
 
@@ -281,13 +284,18 @@ Verification Agent（Task tool で `verification-agent` サブエージェント
 - URL: [開発サーバーURL]
 - 起動コマンド: [コマンド]
 
-## 確認手順
-1. [手順1] → [期待結果]
-2. [手順2] → [期待結果]
+## 確認項目（spec Scenariosより）
 
-## 受け入れ条件チェックリスト
-- [ ] [条件1]: [確認方法]
-- [ ] [条件2]: [確認方法]
+### change-A: [change名]
+- [ ] [Scenario名]: [WHEN操作] → [THEN結果]
+- [ ] [Scenario名]: [WHEN操作] → [THEN結果]
+
+### change-B: [change名]
+- [ ] [Scenario名]: [WHEN操作] → [THEN結果]
+
+## 受け入れ条件（instruction.mdより）
+- [ ] [条件1]
+- [ ] [条件2]
 ```
 
 **`{run-dir}/summary.md`**（完了サマリー）:
