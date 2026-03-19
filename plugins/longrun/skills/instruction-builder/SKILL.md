@@ -1,7 +1,7 @@
 ---
 name: instruction-builder
-description: ロングラン実行用のinstruction.mdを対話的に作成する。ユーザーのbrain dumpを分析し、発散リスクの高い論点を特定して質問で埋めた上で、構造化された指示ファイルを生成する。「instructionを作りたい」「指示ファイルを作成」「ロングラン準備」で起動。
-version: 2.2.0
+description: ロングラン実行用のinstruction.mdを対話的に作成する。ユーザーのbrain dumpを分析し、発散リスクの高い論点を特定して質問で埋めた上で、構造化された指示ファイルを生成する。OpenSpecのbacklog・既存changesも自動参照し、巻き込めるタスクを提案する。「instructionを作りたい」「指示ファイルを作成」「ロングラン準備」で起動。
+version: 3.0.0
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash
 ---
 
@@ -45,11 +45,17 @@ Phase 4: 全テストPASS + ビルド成功 + 完了
 
 **要するに: instruction.md の各セクションを書くとき、常に「これが OpenSpec で仕様化され、TDD でテストされる」ことを意識して書く。**
 
-## 引数の解釈
+## 引数の解釈と起動パターン
 
+起動パターンは引数の有無で分岐する:
+
+### パターンA: ユーザーが明示的なリクエストあり
 - ファイルパスが渡された場合: そのファイルをbrain dumpとして読み込む
 - テキストが渡された場合: それ自体をbrain dumpとして扱う
-- 引数なしの場合: ユーザーに「何を作りたいか教えてください」と聞く
+- **フロー**: ユーザーのリクエストからChanges分解を設計 → 設計完了後にbacklog/既存changesと照合して巻き込み提案
+
+### パターンB: 引数なし（ユーザーからの指示なし）
+- **フロー**: まずbacklog/既存changesを確認 → 対応待ちアイテムを提示 → ユーザーと対話して何をやるか決定 → Changes分解を設計
 
 ## 実行フロー
 
@@ -65,9 +71,49 @@ Phase 4: 全テストPASS + ビルド成功 + 完了
 
 これにより「instruction.md → OpenSpec 仕様 → テスト → 実装」の流れを頭に入れた状態で以降のステップを進める。
 
-### Step 2: Brain Dump収集
+### Step 2: OpenSpec状態の確認（backlog + 既存changes）
 
-引数からbrain dumpを取得する。
+**全パターン共通で実行する。** OpenSpecの現在の状態を把握する:
+
+1. **backlogの確認**: `openspec/backlog.md` が存在すれば読み込む
+2. **未完了changesの確認**: `openspec/changes/` 配下で `archive/` 以外のディレクトリを確認
+   - 各changeの `proposal.md` を読み、何のchangeか把握する
+   - 各changeの `tasks.md` を読み、完了状態を確認する
+3. **既存specsの確認**: `openspec/specs/` でどんなcapabilityが実装済みか把握する
+
+結果を内部的に保持する（ユーザーへの表示はパターンで異なる）。
+
+#### パターンBの場合（引数なし）: 対応待ちアイテムの提示
+
+backlogや未完了changesがある場合、ユーザーに提示する:
+
+```
+対応待ちのアイテムがあります:
+
+📋 Backlog（前回のフィードバックから）:
+- [ ] 通知機能の追加（2026-03-19 purchase-flow longrunから）
+- [ ] ページネーション（2026-03-19 purchase-flow longrunから）
+
+🔧 未完了のOpenSpec changes:
+- cart-ux-fix: proposal済み、未apply（tasks 0/5）
+
+どれに取り組みますか？または新しく作りたいものがあれば教えてください。
+```
+
+ユーザーの選択に応じて:
+- 既存アイテムを選んだ場合 → それをbrain dumpとしてStep 3へ
+- 新しいリクエストをした場合 → パターンAと同じフローへ（Step 2bでbacklog照合）
+
+backlogも未完了changesもない場合:
+- ユーザーに「何を作りたいか教えてください」と聞く
+
+#### パターンAの場合（ユーザーリクエストあり）: Step 5b で照合
+
+パターンAではこの時点ではbacklog情報を表示しない。ユーザーのリクエストを優先し、Changes分解が完了したStep 5b で照合する。
+
+### Step 2b: Brain Dump収集
+
+引数からbrain dumpを取得する（パターンBで対話から得た情報も含む）。
 
 既存のプロジェクトコンテキストがあれば読み込む:
 - `context/core/project.md`
@@ -178,6 +224,37 @@ AskUserQuestion を使い、**1問ずつ**質問する。
 - 技術要件の **テストフレームワーク指定**
 - **動作確認方法**（テスト実行コマンド含む）
 
+### Step 5b: Backlog/既存changes照合（パターンAのみ）
+
+**パターンAの場合のみ実行。** Changes分解が完了した後、Step 2で取得したbacklog/既存changesと照合する。
+
+ユーザーのリクエストから作成したChangesと、backlog/未完了changesの間で:
+1. **同じcapabilityスコープに含まれるもの**: 一緒にやれる可能性が高い
+2. **関連するUI/データを触るもの**: ついでに対応すると効率が良い
+3. **依存関係があるもの**: 先にやっておくべきかもしれない
+
+該当するアイテムがあれば提案する:
+
+```
+Changes分解が完了しました。
+ここで、一緒に対応できそうなアイテムが見つかりました:
+
+📋 Backlogから:
+- 「ページネーション」→ 一覧画面を触るchange-Bに組み込める
+- 「通知機能」→ スコープが大きいため今回は見送り推奨
+
+🔧 既存changesから:
+- cart-ux-fix → 購入フローに関連。change-Aと統合可能
+
+組み込むものを選んでください（なしでもOK）。
+```
+
+ユーザーが選択したアイテム:
+- **backlogから採用**: instruction.mdの該当changeに要件を追記。**まだbacklog.mdは編集しない**（Step 7で確定時に消込み）
+- **既存changeから採用**: instruction.mdのChanges分解に統合
+
+該当アイテムがない場合はこのステップをスキップ。
+
 ### Step 6: Validation（生成後チェック）
 
 instruction.md を保存する前に、以下を確認する:
@@ -192,4 +269,16 @@ instruction.md を保存する前に、以下を確認する:
 1つでも欠けていたら、instruction.md を修正してから保存する。
 
 生成後、ユーザーにレビューを依頼する。修正があれば反映する。
-確定したら「ロングラン実行の準備完了」を報告し、`/exec` コマンドでの実行を案内する。
+
+### Step 7: Backlog消込み + 確定
+
+instruction.md が確定したら（ユーザーがOKを出した後）:
+
+1. **backlogから採用したアイテムの消込み**:
+   - `openspec/backlog.md` の該当行を削除する
+   - 部分採用の場合（例: 「通知機能」のうち「購入完了通知」だけ採用）は、残りの部分を行に残す
+   - backlog.md が空になった場合はファイルを削除する
+   - commit: `docs: update openspec backlog (adopted items removed)`
+
+2. **確定報告**:
+   「ロングラン実行の準備完了」を報告し、`/longrun:exec` コマンドでの実行を案内する。
