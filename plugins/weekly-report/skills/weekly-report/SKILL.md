@@ -85,11 +85,20 @@ cd {source_path} && git -c core.quotePath=false log \
 
 - コミットメッセージをconventional commit type別に分類（feat/fix/docs/refactor/chore/test等）
 - conventional commitでないものは「other」
-- ファイル変更数:
+- コード変更量（追加行数＋削除行数の合計）:
   ```bash
-  git -c core.quotePath=false diff --stat --shortstat {monday_commit}..{latest_commit}
+  cd {source_path} && git log --since={monday} --until={next_monday} --no-merges --shortstat --format="" | awk '
+    /files? changed/ {
+      for (i=1; i<=NF; i++) {
+        if ($i ~ /insertion/) ins += $(i-1)
+        if ($i ~ /deletion/) del += $(i-1)
+      }
+    }
+    END { print ins + del }
+  '
   ```
-  またはコミットがない場合はスキップ
+  - 変更量 = insertions + deletions（追加も削除も「対応した量」として合算）
+  - コミットがない場合はスキップ
 
 #### 4b. Obsidianファイル変更
 
@@ -122,14 +131,14 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 ### サマリ
 {2-4文の自然言語要約。主要な活動と進捗を簡潔に記述}
 
-**アクティブプロジェクト数**: N/total | **ソースコミット数**: N | **LLMセッション数**: N（Vault: N + ソースリポジトリ: N）
+**アクティブプロジェクト数**: N/total | **ソースコミット数**: N | **コード変更量**: N行 | **LLMセッション数**: N（Vault: N + ソースリポジトリ: N）
 
 ---
 
 ### [[プロジェクト名]]
 **フェーズ**: [[フェーズ名]] — 成果物名 (進捗: N%)
 
-**ソースコード活動** (Nコミット, Nファイル変更):
+**ソースコード活動** (Nコミット, N行変更):
 - feat: コミットメッセージ要約
 - fix: コミットメッセージ要約
 
