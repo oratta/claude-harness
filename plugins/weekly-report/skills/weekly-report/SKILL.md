@@ -45,6 +45,8 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 
 ### Step 3: LLMセッションログ収集
 
+#### 3a. VaultレベルLLMログ（`90 - LLM/`）
+
 `90 - LLM/YYYYMMDD-*.md` を対象週の各日付（月〜日）でGlob検索する。
 
 各ログファイルについて:
@@ -53,6 +55,21 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 - ファイル名やタイトルからもプロジェクト名を推定（例: `Buffon購入商品選定` → Buffon）
 
 プロジェクトごとにグルーピングする。プロジェクトに紐付かないログは「その他」として集約。
+
+#### 3b. ソースリポジトリLLMセッション（`{source_path}/LLM/`）
+
+レジストリの各プロジェクトについて、`{source_path}/LLM/` ディレクトリが存在する場合、対象週の日付範囲でファイルを収集する。
+
+```bash
+ls {source_path}/LLM/ | grep "^{YYYY-MM-DD}" # 対象週の各日付でフィルタ
+```
+
+ソースリポジトリのLLMログは自動保存形式（`YYYY-MM-DD_sessionID.md`）:
+- **セッションIDでグルーピング**: 同一sessionIDのファイルは1つのセッションとしてカウント（例: `2026-03-17_80d89249.md` と `2026-03-18_80d89249.md` は同一セッション）
+- **セッション要約の抽出**: 各セッション（最も古い日付のファイル）から最初の `## **User**` セクションの内容を読み、ユーザーの最初のリクエストを1行に要約する
+  - コマンド呼び出し（`<command-name>` タグ）がある場合はコマンド名を記載
+  - 通常のテキストの場合は最初の1文を要約
+- **セッション数をカウント**: ユニークなsessionID数 = セッション数
 
 ### Step 4: プロジェクト別データ収集
 
@@ -105,7 +122,7 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 ### サマリ
 {2-4文の自然言語要約。主要な活動と進捗を簡潔に記述}
 
-**アクティブプロジェクト数**: N/total | **ソースコミット数**: N | **LLMセッション数**: N
+**アクティブプロジェクト数**: N/total | **ソースコミット数**: N | **LLMセッション数**: N（Vault: N + ソースリポジトリ: N）
 
 ---
 
@@ -120,8 +137,9 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 - context/: 変更ファイル名
 - phases/: 変更ファイル名
 
-**LLMセッション**:
-- [[ログファイル名|表示名]]
+**LLMセッション** (Nセッション):
+- [[ログファイル名|表示名]]（Vaultログ）
+- セッション要約テキスト（ソースリポジトリ、sessionID: XXXXXXXX）
 
 ---
 （プロジェクトごとに繰り返し。活動がないプロジェクトはスキップ）
