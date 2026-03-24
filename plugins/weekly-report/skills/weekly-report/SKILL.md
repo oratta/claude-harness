@@ -1,7 +1,7 @@
 ---
 name: weekly-report
-description: 週次プロジェクト実績レポートを自動生成する。各プロジェクトのGitコミット履歴・LLMセッションログ・Obsidianファイル変更・フェーズ状態を集約し、週次ノートに挿入する。
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep
+description: 週次プロジェクト実績レポートを自動生成する。各プロジェクトのGitコミット履歴・Sunsamaタスク・LLMセッションログ・フェーズ状態を集約し、週次ノートに挿入する。
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__sunsama__read_resource
 ---
 
 # 週次プロジェクト実績レポートスキル
@@ -40,10 +40,25 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 `__META/project-registry.md` のMarkdownテーブルをパースする:
 - `project`: プロジェクト名
 - `source_path`: ソースコードディレクトリの絶対パス（空なら省略）
+- `sunsama_channel`: Sunsamaのチャンネル名（プロジェクトとのマッピング用）
 
 加えて `12 - PROJECT/` のディレクトリ一覧を取得し、レジストリ未登録プロジェクトも含めた全プロジェクトリストを作る。
 
-### Step 3: LLMセッションログ収集
+### Step 3: Sunsamaタスク収集
+
+対象週の月〜日（7日間）について `sunsama://tasks/{YYYY-MM-DD}` リソースを読み取る。
+
+各タスクについて:
+- `completed: true` かつ `completedOnDate` が対象週内のもののみ抽出
+- **ルーチン除外**: `recurrenceRule` に `FREQ=DAILY` を含むタスクは除外（デイリールーチン、Daily Long Run等）
+- **Daily planning除外**: channel が `Sintrepreneur` でタイトルが `Daily planning` のものは除外
+- `channel` でプロジェクトにマッピング（レジストリの `sunsama_channel` 列を参照）
+- マッピングできないタスクで `isPersonal: true` のものは「個人タスク」セクションに集約
+- `timeEstimate` を分に変換して集計（計画時間）
+
+プロジェクト別・個人別にグルーピングし、計画時間の合計を算出する。
+
+### Step 4: LLMセッションログ収集
 
 #### 3a. VaultレベルLLMログ（`90 - LLM/`）
 
@@ -71,7 +86,7 @@ ls {source_path}/LLM/ | grep "^{YYYY-MM-DD}" # 対象週の各日付でフィル
   - 通常のテキストの場合は最初の1文を要約
 - **セッション数をカウント**: ユニークなsessionID数 = セッション数
 
-### Step 4: プロジェクト別データ収集
+### Step 5: プロジェクト別データ収集
 
 各プロジェクトについて以下を収集する。
 
@@ -119,7 +134,7 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 - `progress`: 進捗率（%）
 - フェーズ名（ファイル名またはH1見出し）
 
-### Step 5: レポート生成
+### Step 6: レポート生成
 
 以下の構造でMarkdownを生成する:
 
@@ -135,6 +150,7 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 - **アクティブプロジェクト数**: N/total
 - **ソースコミット数**: N
 - **コード変更量**: N行
+- **Sunsamaタスク完了**: N件（計画 Nh — 仕事 Nh + 個人 Nh）
 - **LLMセッション数**: N（Vault: N + ソースリポジトリ: N）
 
 ---
@@ -144,7 +160,9 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 
 {1-2文のプロジェクト別サマリ。今週このプロジェクトで何が起きたかを簡潔に}
 
-**ソースコード活動** — Nコミット / N行変更
+**完了作業** — 計画 Nh / Nコミット / N行変更
+- task(N):
+	- Sunsamaタスク名 (計画時間)
 - feat(N):
 	- 機能A
 	- 機能B
@@ -163,19 +181,28 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 ---
 （プロジェクトごとに繰り返し。活動がないプロジェクトはスキップ）
 
+### 個人タスク（プロジェクト外）
+計画 Nh / Nタスク完了
+- タスク名 (計画時間)
+- ...
+（Sunsamaでプロジェクトに紐付かない個人タスク。ルーチン除外済み）
+
 ### 活動なしのプロジェクト
 プロジェクトA, プロジェクトB, ...
 ```
 
 **レポート生成ルール:**
 - 活動があったプロジェクトのみ詳細セクションを出力
-- ソースコード活動がない場合はそのサブセクションを省略
+- 「完了作業」ヘッダー: Sunsamaタスクがあれば `計画 Nh /` を先頭に、なければコミット数から始める
+- `task(N)` はSunsamaタスク。feat/fix等のGitコミットと同列に並べる
+- Sunsamaタスクもコミットもない場合は「完了作業」サブセクションを省略
 - Obsidian更新がない場合はそのサブセクションを省略
 - LLMセッションがない場合はそのサブセクションを省略
 - 全サブセクションが空のプロジェクトは「活動なしのプロジェクト」に列挙
 - プロジェクト名・フェーズ名は `[[]]` でwikilink化
+- 個人タスクはルーチン除外後に「個人タスク（プロジェクト外）」セクションに集約
 
-### Step 6: 週次ノートへの挿入
+### Step 7: 週次ノートへの挿入
 
 週次ノートファイル `02 - PERIODIC/Weekly/{week}.md` を更新する:
 
