@@ -56,6 +56,12 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__sunsama__read_resource
 - マッピングできないタスクで `isPersonal: true` のものは「個人タスク」セクションに集約
 - `timeEstimate` を分に変換して集計（計画時間）
 
+**サブタスク展開ルール:**
+- タスクに `subtasks` がある場合、完了済みサブタスク（`completed: true`）を個別の行として展開する
+- 表記: `親タスク名: サブタスク名 (計画時間)` — 親タスク名は短縮してよい
+- サブタスクがないタスクはそのまま `タスク名 (計画時間)` で表示
+- task(N) の N は展開後のサブタスク数を含めた完了項目数
+
 プロジェクト別・個人別にグルーピングし、計画時間の合計を算出する。
 
 ### Step 4: LLMセッションログ収集
@@ -162,7 +168,8 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 
 **完了作業** — 計画 Nh / Nコミット / N行変更
 - task(N):
-	- Sunsamaタスク名 (計画時間)
+	- 親タスク名: サブタスク名 (計画時間)
+	- サブタスクなしタスク名 (計画時間)
 - feat(N):
 	- 機能A
 	- 機能B
