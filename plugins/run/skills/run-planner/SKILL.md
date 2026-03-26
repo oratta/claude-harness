@@ -295,9 +295,47 @@ Changes分解が完了しました。
 ❌ [欠落項目があればここに表示]
 ```
 
-全て ✅ になったら、ユーザーにレビューを依頼する。修正があれば反映する。
+全て ✅ になったら、plan.md をファイルに保存し、Step 7 の外部レビューに進む。
 
-### Step 7: Backlog消込み + 確定
+### Step 7: Plan Review（外部レビュー — 自己評価バイアス排除）
+
+<GATE>
+plan.md を自分でレビューしてはならない。
+必ず run-reviewer Agent に委譲すること。
+自分の成果物を自分で評価する（= 常に褒める）のは信頼性が低い。
+</GATE>
+
+plan.md を保存した後、**run-reviewer Agent を起動**して Build Contract レビューを実行する。
+
+**Agent 起動方法**: Agent ツールで `run-reviewer` を呼び出す。引数として plan.md のパスを渡す。
+
+run-reviewer は以下を評価する:
+1. 各changeの実装計画が現実的か
+2. 技術的リスクが特定されているか
+3. 依存関係の順序が正しいか
+4. スコープが適切か（大きすぎるchangeの分割提案）
+5. 受け入れ条件がテスト可能な具体性を持っているか
+
+**結果に応じた処理:**
+- **APPROVE** → Step 8（ユーザー確認）へ
+- **REQUEST_CHANGES** → 指摘事項に基づいてplan.mdを修正 → 再度run-reviewerに委譲
+- 最大2ラウンド。2回でAPPROVEされない場合は残課題を明記してStep 8へ
+
+**レビュー結果をユーザーに表示する:**
+```
+📋 Plan Review結果:
+Status: APPROVE
+
+✅ 実装可能性: 各changeが1セッションで完了可能なサイズ
+✅ 技術的リスク: DB migration不要、副作用なし
+✅ 依存関係: change-A → change-B の順序が正しい
+✅ スコープ: 適切なサイズ
+⚠️ 受け入れ条件: Scenario 3 のTHENが曖昧（修正済み）
+```
+
+### Step 8: ユーザー確認 + Backlog消込み + 確定
+
+レビュー通過後、ユーザーにplan.mdの最終確認を依頼する。修正があれば反映する。
 
 plan.md が確定したら（ユーザーがOKを出した後）:
 
