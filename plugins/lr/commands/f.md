@@ -1,8 +1,0 @@
----
-name: f
-description: "ロングラン完了後のフィードバックを受け付ける（/longrun:feedback の短縮）"
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Task
----
-
-Skill toolを使って `longrun:feedback` を引数 `$ARGUMENTS` で呼び出してください。
-自分で処理せず、必ずSkill toolで委譲すること。
