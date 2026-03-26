@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -10,48 +10,48 @@
   "plugins": [
     {
       "name": "skill-aware-workflow",
-      "description": "タスク実行前にスキルを探索し、実行中の摩擦を記録、完了後に新スキル作成を提案するワークフローシステム。6つのスキルと3つのコマンド（/plan, /reflect, /find-skill）を含む。",
+      "description": "タスク実行前にスキルを探索し、実行中の摩擦を記録、完了後に新スキル作成を提案するワークフローシステム。",
       "source": "./plugins/skill-aware-workflow",
       "category": "workflow",
       "version": "1.0.0",
-      "author": {
-        "name": "Oratta"
-      },
+      "author": { "name": "Oratta" },
       "keywords": ["skill-discovery", "workflow", "learning", "automation"]
     },
     {
       "name": "obsidian-llm-session-rules",
-      "description": "Obsidian LLM Session用のルールセット - 自動セッションログ保存、コンテキスト管理、Context7優先調査",
+      "description": "Obsidian LLM Session用のルールセット",
       "source": "./plugins/obsidian-llm-session-rules",
       "category": "productivity",
       "version": "1.1.1",
-      "author": {
-        "name": "Oratta"
-      },
-      "keywords": ["obsidian", "llm", "session", "context", "auto-save"],
-      "homepage": "https://github.com/oratta/obsidian-llm-session-plugin"
+      "author": { "name": "Oratta" },
+      "keywords": ["obsidian", "llm", "session", "context", "auto-save"]
     },
     {
-      "name": "longrun",
-      "description": "Claude Code ロングラン自律実行システム v3.1。OpenSpec applyへの実装委任 + カスタムスキーマによるTDD/スキル注入 + マルチchange分解 + サブエージェント隔離 + Git Worktree + フィードバックループ（3-Tier分類 + backlog管理）により、人間の介入なしに品質を担保した自律的実装を完遂する。",
-      "source": "./plugins/longrun",
+      "name": "run",
+      "description": "Claude Code 自律実行システム v4.0。5フェーズ（Plan→Build→Verify→Feedback→Archive）で品質を担保した自律的実装を完遂する。",
+      "source": "./plugins/run",
       "category": "workflow",
-      "version": "3.1.1",
-      "author": {
-        "name": "Oratta"
-      },
-      "keywords": ["longrun", "autonomous", "execution", "sub-agents", "openspec", "tdd", "feedback"]
+      "version": "4.0.0",
+      "author": { "name": "Oratta" },
+      "keywords": ["run", "autonomous", "execution", "agents", "openspec", "tdd", "feedback", "harness"]
     },
     {
-      "name": "lr",
-      "description": "longrunプラグインの短縮コマンド。/lr:i, /lr:e, /lr:s, /lr:d, /lr:a, /lr:f で各longrunコマンドを呼び出せる。",
-      "source": "./plugins/lr",
+      "name": "r",
+      "description": "runプラグインの短縮コマンド。/r:p, /r:e, /r:s, /r:d, /r:a, /r:f",
+      "source": "./plugins/r",
       "category": "workflow",
+      "version": "4.0.0",
+      "author": { "name": "Oratta" },
+      "keywords": ["run", "alias", "shortcut"]
+    },
+    {
+      "name": "weekly-report",
+      "description": "週次プロジェクト実績レポートを自動生成する。",
+      "source": "./plugins/weekly-report",
+      "category": "productivity",
       "version": "1.0.0",
-      "author": {
-        "name": "Oratta"
-      },
-      "keywords": ["longrun", "alias", "shortcut"]
+      "author": { "name": "Oratta" },
+      "keywords": ["weekly", "report", "obsidian"]
     }
   ],
   "skills": [],
@@ -59,7 +59,7 @@
     {
       "name": "all",
       "description": "全プラグインをインストール",
-      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun", "lr"],
+      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "run", "r", "weekly-report"],
       "skills": []
     }
   ]
