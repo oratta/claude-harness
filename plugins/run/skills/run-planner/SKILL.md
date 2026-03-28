@@ -300,37 +300,45 @@ Changes分解が完了しました。
 ### Step 7: Plan Review（外部レビュー — 自己評価バイアス排除）
 
 <GATE>
-plan.md を自分でレビューしてはならない。
-必ず run-reviewer Agent に委譲すること。
-自分の成果物を自分で評価する（= 常に褒める）のは信頼性が低い。
+このステップを飛ばしてはならない。省略してはならない。
+plan.md を自分でレビューして「問題ありません」と言ってはならない。
+必ず以下の手順で Agent ツールを呼び出すこと。
 </GATE>
 
-plan.md を保存した後、**run-reviewer Agent を起動**して Build Contract レビューを実行する。
+plan.md を保存した後、**必ず Agent ツールを使って run-reviewer にレビューさせる。**
 
-**Agent 起動方法**: Agent ツールで `run-reviewer` を呼び出す。引数として plan.md のパスを渡す。
+**必須アクション — 以下のツール呼び出しを必ず実行すること:**
 
-run-reviewer は以下を評価する:
+```
+Agent ツールを呼び出す:
+  subagent_type: "run-reviewer"
+  prompt: "以下のplan.mdをBuild Contractレビューしてください: [plan.mdのフルパス]"
+```
+
+このツール呼び出しを行わずにStep 8に進むことは禁止。
+
+**run-reviewer が評価する項目:**
 1. 各changeの実装計画が現実的か
 2. 技術的リスクが特定されているか
 3. 依存関係の順序が正しいか
 4. スコープが適切か（大きすぎるchangeの分割提案）
 5. 受け入れ条件がテスト可能な具体性を持っているか
 
-**結果に応じた処理:**
+**run-reviewer の結果に応じた処理:**
 - **APPROVE** → Step 8（ユーザー確認）へ
-- **REQUEST_CHANGES** → 指摘事項に基づいてplan.mdを修正 → 再度run-reviewerに委譲
+- **REQUEST_CHANGES** → 指摘事項に基づいてplan.mdを修正 → 再度Agentツールでrun-reviewerを呼び出す
 - 最大2ラウンド。2回でAPPROVEされない場合は残課題を明記してStep 8へ
 
 **レビュー結果をユーザーに表示する:**
 ```
-📋 Plan Review結果:
-Status: APPROVE
+📋 Plan Review結果（by run-reviewer）:
+Status: APPROVE / REQUEST_CHANGES
 
-✅ 実装可能性: 各changeが1セッションで完了可能なサイズ
-✅ 技術的リスク: DB migration不要、副作用なし
-✅ 依存関係: change-A → change-B の順序が正しい
-✅ スコープ: 適切なサイズ
-⚠️ 受け入れ条件: Scenario 3 のTHENが曖昧（修正済み）
+✅ 実装可能性: [評価]
+✅ 技術的リスク: [評価]
+✅ 依存関係: [評価]
+✅ スコープ: [評価]
+✅ 受け入れ条件: [評価]
 ```
 
 ### Step 8: ユーザー確認 + Backlog消込み + 確定
