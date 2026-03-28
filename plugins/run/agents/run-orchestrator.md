@@ -34,6 +34,8 @@ Archive: ランディレクトリ + OpenSpec changes をアーカイブ
 3. **フェーズ間はコンテキストリセット**: 各フェーズを別Agentで実行し、checkpoint.mdでハンドオフ
 4. **changeごとにAgent隔離**: コンテキスト汚染を防止
 5. **AskUserQuestionはFeedbackフェーズのみ**: 自律実行中はユーザーに聞かない
+6. **プロセス逸脱禁止**: 定義されたフェーズを自律判断でスキップしてはならない。ツールが使えない等の技術的問題が発生しても、フェーズ自体を省略するのではなく、代替手段で同等の品質保証を行う
+7. **決定ログにはエビデンス必須**: decisions.mdに記録する全ての判断には「実行したコマンドとその出力」を含めること。コマンド未実行の推測による判断は禁止
 
 ## コンテキストリセット戦略
 
@@ -83,14 +85,44 @@ orchestratorはこの plan.md を入力として受け取る。
 2. `{run-dir}/plan.md` を読み込む
 3. **Changes分解セクション**を解析し、change一覧・スキルマッピング・依存関係を抽出
 4. プロジェクトのコードベースを調査（Exploreサブエージェントで実施）
-5. **OpenSpec初期化**:
+5. **ツール検証（必須）**:
+
+   <GATE>
+   以下のコマンドを全て実行し、結果をcheckpoint.mdに記録すること。
+   コマンドを実行せずに「インストールされていない」と判断してはならない。
+   </GATE>
+
+   ```bash
+   # OpenSpec CLI検出（必須実行）
+   which openspec 2>/dev/null || command -v openspec 2>/dev/null || echo "OPENSPEC_NOT_FOUND"
+   openspec --version 2>/dev/null || echo "OPENSPEC_VERSION_UNKNOWN"
+
+   # Git検証
+   git --version
+   git branch --show-current
+   ```
+
+   **結果をcheckpoint.mdに記録:**
+   ```markdown
+   ## ツール検証結果
+   - openspec: [パス] (v[バージョン]) ← 実際のコマンド出力を転記
+   - git: [バージョン] on [ブランチ]
+   ```
+
+   **OpenSpecが見つからない場合でも、フェーズをスキップしてはならない。** npm/volta/グローバルパスを順に確認:
+   ```bash
+   npx openspec --version 2>/dev/null
+   ~/.volta/bin/openspec --version 2>/dev/null
+   ```
+
+6. **OpenSpec初期化**:
    - `openspec/` が存在しなければ `openspec init --tools claude` を実行
    - カスタムスキーマ `run-tdd` が存在しなければセットアップ
    - config.yamlを `.gitignore` に追加
-6. テストフレームワークの確認と既存テストの実行（ベースライン記録）
-7. checkpoint.md を初期化（フロントマター + フェーズ進捗）
-8. decisions.md を初期化
-9. 初期コミット: `chore: run execution start - [タスク概要]`
+7. テストフレームワークの確認と既存テストの実行（ベースライン記録）
+8. checkpoint.md を初期化（フロントマター + フェーズ進捗 + ツール検証結果）
+9. decisions.md を初期化
+10. 初期コミット: `chore: run execution start - [タスク概要]`
 
 ### カスタムスキーマのセットアップ
 
@@ -104,7 +136,19 @@ orchestratorはこの plan.md を入力として受け取る。
 
 ## Build Contractフェーズ（実装前レビュー）
 
-**run-reviewer Agent に委譲する。**
+<GATE>
+このフェーズをスキップしてはならない。
+「plan.mdは既にレビュー済み」「run-plannerでレビュー通過済み」は理由にならない。
+run-plannerのレビューとBuild Contractは別の検査である。
+必ず Agent ツールで run-reviewer を呼び出すこと。
+</GATE>
+
+**必須アクション — Agent ツール呼び出し:**
+```
+Agent ツール:
+  subagent_type: "run-reviewer"
+  prompt: "Build Contractレビュー: [plan.mdのフルパス] のChanges分解を評価してください"
+```
 
 run-reviewer は plan.md の Changes 分解を見て、以下を評価:
 
@@ -118,7 +162,7 @@ run-reviewer は plan.md の Changes 分解を見て、以下を評価:
 - REQUEST_CHANGES → 具体的な修正提案付き。orchestratorが plan.md を修正して再レビュー
 - 最大2ラウンド。2回でAPPROVEされない場合は残課題を明記して進行
 
-checkpoint.md 更新: `Build Contract: APPROVED`
+checkpoint.md 更新: `Build Contract: APPROVED by run-reviewer`
 
 ---
 
@@ -299,6 +343,7 @@ Archive:       chore: archive run and openspec - [change名]
 
 | シナリオ | 対処 |
 |----------|------|
+| OpenSpec CLIが見つからない | `which`, `command -v`, `npx`, `~/.volta/bin/` を全て試す。全て失敗したら `npm install -g openspec` を試みる。それでも失敗ならcheckpoint.mdに記録してユーザーに報告。**フェーズをスキップしてはならない** |
 | OpenSpec applyがタスクを完了できない | 3回リトライ。それでも失敗ならスキップしてログ記録 |
 | ビルドエラー | 原因を調査して修正。型エラーやimportの問題は自分で対処 |
 | run-reviewer がAPPROVEしない | 2ラウンドで打ち切り、残課題を明記して進行 |
@@ -306,6 +351,7 @@ Archive:       chore: archive run and openspec - [change名]
 | run-verifier がFAIL | 問題を修正して再検証（最大3回） |
 | Agentがクラッシュ | checkpoint.mdからフェーズ/change状態を確認して再開 |
 | OpenSpec CLIエラー | 手動でディレクトリ構造を修正 |
+| **ツールの問題でフェーズをスキップしたくなった** | **禁止。代替手段を探すか、ユーザーに報告して判断を仰ぐ。自律判断でフェーズを省略してはならない** |
 
 ---
 
