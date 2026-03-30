@@ -1,7 +1,7 @@
 {
   "name": "run",
-  "version": "4.1.0",
-  "description": "Claude Code 自律実行システム v4.1。orchestratorをSkillに変更しサブエージェントネスティング制限を解決。5フェーズ（Plan→Build→Verify→Feedback→Archive）で品質を担保した自律的実装を完遂する。",
+  "version": "4.2.0",
+  "description": "Claude Code 自律実行システム v4.2。Verify2段階分離（静的検証+ブラウザ検証）、Playwright MCP優先のブラウザ自動化。5フェーズで品質を担保した自律的実装を完遂する。",
   "author": {
     "name": "Oratta"
   },
@@ -21,6 +21,7 @@
   "agents": [
     "./agents/run-builder.md",
     "./agents/run-verifier.md",
+    "./agents/run-browser-verifier.md",
     "./agents/run-reviewer.md"
   ]
 }

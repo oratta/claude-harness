@@ -218,51 +218,62 @@ checkpoint.md 更新: `Build: Complete` + 次フェーズ引き継ぎ情報
 
 ---
 
-## Verifyフェーズ（定量評価）
+## Verifyフェーズ（2段階検証）
 
 <GATE>
 このフェーズをスキップしてはならない。
-orchestratorが自分でテストを実行して「問題ありません」と判断してはならない。
-必ず Agent ツールで run-verifier を呼び出すこと。
+orchestratorが自分でテストやブラウザ確認をして「問題ありません」と判断してはならない。
+必ず2つのAgentを順番に呼び出すこと。
 </GATE>
+
+### Step 1: 静的検証（run-verifier）
 
 **必須アクション — Agent ツール呼び出し:**
 ```
 Agent ツールを呼び出す:
   subagent_type: "run-verifier"
-  prompt: "実装完了後の統合検証を実行してください。run-dir: [パス]。checkpoint.md, plan.md, openspec/changes/ のspec Scenariosを参照し、4軸定量評価を行ってください。"
+  prompt: "静的検証を実行してください。run-dir: [パス]。テスト・lint・型チェック・ビルドの品質検証と、コードレビューによる完成度評価を行ってください。"
 ```
 
-### 4軸定量評価
+| 軸 | ハードしきい値 |
+|----|-------------|
+| **品質** (テスト+lint+型チェック+ビルド) | 100% 必須 |
+| **完成度** (エッジケース・エラーハンドリング) | 80% 以上 |
 
-run-verifier は以下の4軸で評価する:
+**run-verifier が FAIL → run-builder に修正依頼 → 再検証（最大3回）**
+静的検証がPASSしてからStep 2に進む。
 
-| 軸 | 内容 | ハードしきい値 |
-|----|------|-------------|
-| **機能性** | spec Scenario 通過率 | 100% 必須 |
-| **品質** | テスト通過率 + lint + 型チェック | 100% 必須 |
-| **完成度** | エッジケース対応、エラーハンドリング | 80% 以上 |
-| **UX** | 実際の操作フロー確認（Playwright） | 70% 以上 |
+### Step 2: ブラウザ検証（run-browser-verifier）
 
-**しきい値未達 → run-verifierが具体的修正提案を返す → orchestratorがrun-builderに修正を依頼 → 再度run-verifierで検証（最大3回）**
+**必須アクション — Agent ツール呼び出し:**
+```
+Agent ツールを呼び出す:
+  subagent_type: "run-browser-verifier"
+  prompt: "ブラウザ動作検証を実行してください。run-dir: [パス]。開発サーバーを起動し、spec ScenarioのWHEN/THENをブラウザ上で実際に操作して確認してください。Playwright MCPを優先し、使えない場合のみclaude-in-chromeにフォールバックしてください。verification-guide.mdも生成してください。"
+```
 
-### 検証プロセス
+| 軸 | ハードしきい値 |
+|----|-------------|
+| **機能性** (spec Scenario通過率) | 100% 必須 |
+| **UX** (操作フロー) | 70% 以上 |
 
-1. checkpoint.md + plan.md + spec Scenarios を読み込む
-2. 全テストスイート実行
-3. spec Scenarioベースのブラウザ確認（Playwright）
-4. 4軸スコアリング
-5. verification-guide.md 生成（ユーザー手動確認用）
+**run-browser-verifier が FAIL → run-builder に修正依頼 → 再検証（最大3回）**
 
-checkpoint.md 更新: `Verify: PASS/FAIL` + 4軸スコア
+### 4軸統合スコア
 
-### FAIL時の修正ループ
+両Agentの結果を統合してcheckpoint.mdに記録:
 
-run-verifier が FAIL を返した場合:
-1. FAILの修正提案を確認
-2. run-builder Agent を起動して修正を実装
-3. 再度 run-verifier Agent を起動して再検証
-4. 最大3回。3回FAILしたら残課題を明記してFeedbackフェーズへ
+```markdown
+## Verify結果
+| 軸 | スコア | しきい値 | 判定 | 検証Agent |
+|----|-------|---------|------|----------|
+| 品質 | 100% | 100% | ✅ | run-verifier |
+| 完成度 | 85% | 80% | ✅ | run-verifier |
+| 機能性 | 100% | 100% | ✅ | run-browser-verifier |
+| UX | 80% | 70% | ✅ | run-browser-verifier |
+```
+
+checkpoint.md 更新: `Verify: PASS/FAIL` + 4軸スコア + 使用ツール（Playwright MCP / claude-in-chrome）
 
 ---
 
