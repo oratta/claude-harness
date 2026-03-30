@@ -167,7 +167,7 @@ checkpoint.md 更新: `Build Contract: APPROVED by run-reviewer`
 
 ---
 
-## Buildフェーズ（TDD実装）
+## Buildフェーズ
 
 <GATE>
 orchestratorが直接コードを書いてはならない。
@@ -175,10 +175,64 @@ orchestratorが直接コードを書いてはならない。
 「簡単だから自分でやる」「1ファイルだけだから」は理由にならない。
 </GATE>
 
+### Build前半: OpenSpec change作成 + verification-guide.md生成
+
+#### 1. 各changeのOpenSpecドキュメント作成
+
+changeごとにサブエージェントでOpenSpecドキュメントを作成:
+- `openspec new change <change-name>`
+- proposal.md / specs/spec.md / design.md / tasks.md を生成
+- `openspec validate` で構造検証
+- run-reviewer Agent で仕様レビュー（Spec Reviewモード）
+
+#### 2. verification-guide.md 生成（spec.md Scenariosから）
+
+<GATE>
+全changeのspec.md作成・レビュー完了後、TDD実装開始前に、
+verification-guide.md を `{run-dir}/` に生成すること。
+このファイルがBuild後半〜Feedback までの全フェーズの進捗基盤となる。
+</GATE>
+
+各changeの `openspec/changes/<name>/specs/<capability>/spec.md` からScenario（WHEN/THEN）を抽出し、以下のフォーマットで生成:
+
+```markdown
+# Verification Guide
+
+## 環境
+- URL: [plan.mdの動作確認方法から]
+- 起動: [コマンド]
+- テスト: [テスト実行コマンド]
+
+## change-A: [change名]
+
+### S1: [Scenario名]
+- WHEN: [ユーザー操作]
+- THEN: [期待結果]
+- [ ] テスト実装完了
+- [ ] ロジック実装完了
+- [ ] 動作確認完了
+- [ ] ユーザー確認完了
+
+### S2: [Scenario名]
+- WHEN: [ユーザー操作]
+- THEN: [期待結果]
+- [ ] テスト実装完了
+- [ ] ロジック実装完了
+- [ ] 動作確認完了
+- [ ] ユーザー確認完了
+
+## change-B: [change名]
+...
+```
+
+**権威ソースはspec.md。verification-guide.mdはspec.mdの派生ビュー + 進捗トラッカー。**
+
+### Build後半: TDD実装
+
 各changeをrun-builder Agentに委譲して実装する。
 **依存関係がないchangeは並列（worktree）、依存があるchangeは直列で処理する。**
 
-### 並列実行（独立change）
+#### 並列実行（独立change）
 
 1. changeごとにGit Worktreeを作成:
    ```bash
@@ -189,24 +243,27 @@ orchestratorが直接コードを書いてはならない。
    ```
    Agent ツールを呼び出す:
      subagent_type: "run-builder"
-     prompt: "以下のchangeをTDD実装してください: [change名]。worktreeパス: [パス]。plan.md: [パス]。OpenSpec apply を使用すること。"
+     prompt: "以下のchangeをTDD実装してください: [change名]。worktreeパス: [パス]。plan.md: [パス]。verification-guide.md: [パス]。OpenSpec apply を使用すること。テスト実装完了・ロジック実装完了のタイミングでverification-guide.mdの該当Scenarioに[x]を入れること。"
    ```
    - config.yaml動的生成（このchange専用）
    - `openspec apply <change-name>` を実行（カスタムスキーマがTDDを強制）
    - apply内で: テスト先行 → 最小実装 → リファクタ → tasks.md更新
+   - **テスト実装時**: verification-guide.mdの該当Scenarioの `[ ] テスト実装完了` → `[x]`
+   - **ロジック実装時**: verification-guide.mdの該当Scenarioの `[ ] ロジック実装完了` → `[x]`
 
 3. 完了条件チェックリスト（Context Anxiety対策）:
    - [ ] 全タスクが `[x]` になっている
    - [ ] 全テストがPASS
    - [ ] lint / 型チェックが通る
    - [ ] ビルドが成功する
+   - [ ] verification-guide.mdの全Scenarioで「テスト実装完了」「ロジック実装完了」が `[x]`
    **チェックリスト完了まで「完了」と報告してはならない**
 
-### 直列実行（依存change）
+#### 直列実行（依存change）
 
 依存先changeが完了 → メインブランチにマージ → その上で依存changeのworktreeを作成
 
-### Worktreeマージ
+#### Worktreeマージ
 
 全change完了後:
 1. 各worktreeをメインブランチにマージ
@@ -214,7 +271,16 @@ orchestratorが直接コードを書いてはならない。
 3. worktreeを削除
 4. 全テストスイート実行 + lint + 型チェック + ビルド
 
-checkpoint.md 更新: `Build: Complete` + 次フェーズ引き継ぎ情報
+#### Build完了確認
+
+orchestratorが verification-guide.md を確認:
+```bash
+grep -c "\[x\] テスト実装完了" {run-dir}/verification-guide.md
+grep -c "\[x\] ロジック実装完了" {run-dir}/verification-guide.md
+# 全Scenario数と一致すること
+```
+
+checkpoint.md 更新: `Build: Complete` + verification-guide.md進捗
 
 ---
 
@@ -249,7 +315,7 @@ Agent ツールを呼び出す:
 ```
 Agent ツールを呼び出す:
   subagent_type: "run-browser-verifier"
-  prompt: "ブラウザ動作検証を実行してください。run-dir: [パス]。開発サーバーを起動し、spec ScenarioのWHEN/THENをブラウザ上で実際に操作して確認してください。Playwright MCPを優先し、使えない場合のみclaude-in-chromeにフォールバックしてください。verification-guide.mdも生成してください。"
+  prompt: "ブラウザ動作検証を実行してください。run-dir: [パス]。開発サーバーを起動し、verification-guide.mdの各Scenarioをブラウザ上で実際に操作して確認してください。PASSしたScenarioは verification-guide.md の '[ ] 動作確認完了' にチェックを入れてください。Playwright MCPを優先し、使えない場合のみclaude-in-chromeにフォールバックしてください。"
 ```
 
 | 軸 | ハードしきい値 |
@@ -281,34 +347,42 @@ checkpoint.md 更新: `Verify: PASS/FAIL` + 4軸スコア + 使用ツール（Pl
 
 ### 成果物作成
 
-**verification-guide.md**（動作確認ガイド）:
-spec.mdのScenariosから自動生成。各changeのWHEN/THENをユーザー向けチェックリストに変換。
-
 **summary.md**（完了サマリー）:
 開始/完了時刻、Changes一覧、テスト結果、意思決定サマリー、4軸評価スコア。
 
+**verification-guide.md** は Build前半で生成済み。この時点で以下の状態になっているはず:
+- [x] テスト実装完了（全Scenario）
+- [x] ロジック実装完了（全Scenario）
+- [x] 動作確認完了（全Scenario）
+- [ ] ユーザー確認完了 ← これだけ残っている
+
 ### ユーザー確認（承認ゲート + フィードバックループ）
 
-AskUserQuestion でユーザーに確認:
+AskUserQuestion でユーザーに verification-guide.md の内容を提示:
 
 ```
 自律実行が完了しました。
 
-## 評価スコア（by run-verifier）
-| 軸 | スコア | しきい値 |
-|----|-------|---------|
-| 機能性 | 100% | 100% ✅ |
-| 品質 | 100% | 100% ✅ |
-| 完成度 | 85% | 80% ✅ |
-| UX | 78% | 70% ✅ |
+## 評価スコア
+| 軸 | スコア | しきい値 | 検証Agent |
+|----|-------|---------|----------|
+| 品質 | 100% | 100% ✅ | run-verifier |
+| 完成度 | 85% | 80% ✅ | run-verifier |
+| 機能性 | 100% | 100% ✅ | run-browser-verifier |
+| UX | 80% | 70% ✅ | run-browser-verifier |
 
-## 確認をお願いする項目
-[verification-guide.mdの受け入れ条件チェックリスト]
+## verification-guide.md 進捗
+[verification-guide.mdの全Scenarioリストを表示。
+テスト実装/ロジック実装/動作確認は全て[x]。ユーザー確認のみ[ ]。]
 
 動作確認して、気づいたことがあれば何でも教えてください。
 分類は不要です。思ったことをそのまま全部伝えてください。
 問題なければ「OK」でアーカイブに進みます。
 ```
+
+**ユーザーが「OK」と応答した場合:**
+- verification-guide.md の全Scenarioで `[ ] ユーザー確認完了` → `[x] ユーザー確認完了`
+- Archiveフェーズへ
 
 **ユーザーの応答に応じた処理:**
 

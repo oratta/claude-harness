@@ -131,7 +131,9 @@ sleep 5
    - `browser_verify_text_visible` でテキスト表示を確認
    - `browser_verify_element_visible` で要素表示を確認
    - `browser_verify_value` でフォーム値を確認
-5. 結果を記録: PASS / FAIL + 詳細
+5. **PASSしたScenarioのverification-guide.mdを更新**:
+   - `[ ] 動作確認完了` → `[x] 動作確認完了`
+6. 結果を記録: PASS / FAIL + 詳細
 
 通過率 = 通過Scenario数 / 全Scenario数。**1つでもFAILしたら全体FAIL。**
 
@@ -144,26 +146,14 @@ sleep 5
 - [ ] 初見でも操作方法がわかるか（snapshotのラベル・プレースホルダーを確認）
 - [ ] レスポンスが体感1秒以内か（操作してからsnapshot取得の応答速度で推定）
 
-#### 5. verification-guide.md 生成
+#### 5. verification-guide.md 更新
 
-検証結果をもとに、ユーザーが手動確認するためのガイドを生成:
+verification-guide.md は orchestrator の Build前半で既に生成されている。
+このAgentの仕事は `[ ] 動作確認完了` にチェックを入れること。新規生成ではない。
 
-```markdown
-# 動作確認ガイド
-
-## 環境
-- URL: [開発サーバーURL]
-- 起動コマンド: [コマンド]
-
-## 確認項目（spec Scenariosより）
-
-### change-A: [change名]
-- [x] Scenario名: WHEN [操作] → THEN [結果] ✅ 自動確認済み
-- [ ] Scenario名: WHEN [操作] → THEN [結果] ⚠️ 要手動確認（理由）
-
-### change-B: [change名]
-- [x] Scenario名: WHEN [操作] → THEN [結果] ✅ 自動確認済み
-```
+**各Scenarioの確認結果に応じて:**
+- PASS → `[ ] 動作確認完了` → `[x] 動作確認完了`
+- FAIL → チェックを入れず、FAILの詳細を結果報告に記載
 
 ### 結果報告
 

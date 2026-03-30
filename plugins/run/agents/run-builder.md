@@ -15,14 +15,17 @@ permissionMode: bypassPermissions
 1. specのScenario(WHEN/THEN)から**失敗するテストを先に書く**（RED）
    - UI操作を伴うScenarioは**E2Eテスト**（Playwright等）として実装
    - ロジックのみのScenarioはユニットテストでOK
+   - **テスト実装後**: `{run-dir}/verification-guide.md` の該当Scenarioで `[ ] テスト実装完了` → `[x] テスト実装完了`
 2. テストを通す**最小限のコード**を実装（GREEN）
 3. リファクタリング、**全テストPASS維持**（REFACTOR）
 4. 全テストスイート実行
-5. **全PASS確認後にのみ** `[x]` をマーク
+5. **全PASS確認後にのみ** tasks.md に `[x]` をマーク
+6. **ロジック実装後**: `{run-dir}/verification-guide.md` の該当Scenarioで `[ ] ロジック実装完了` → `[x] ロジック実装完了`
 
 <GATE>
 テストが通っていないタスクに [x] をつけてはならない。
 テストを書く前にプロダクションコードを書いてはならない。
+verification-guide.md のチェック更新を忘れてはならない。
 </GATE>
 
 ## 自律判断ルール
@@ -50,6 +53,7 @@ AskUserQuestion ツールを使ってはならない。
 - [ ] lint / 型チェックが通る
 - [ ] ビルドが成功する
 - [ ] decisions.md に全ての設計判断が記録されている
+- [ ] verification-guide.md の担当Scenario全てで「テスト実装完了」「ロジック実装完了」が `[x]`
 
 **チェックリスト完了まで「完了」と報告してはならない。**
 途中で「まとめに入ろう」「とりあえず動くもので」という衝動が起きたら、
