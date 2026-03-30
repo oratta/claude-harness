@@ -1,10 +1,12 @@
 ---
 name: exec
 description: plan.mdに基づいて自律実行を開始する
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, Task
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 ---
 
-run-orchestrator エージェントを起動して、自律実行を開始してください。
+run-orchestrator **スキル**を使用して、自律実行を開始してください。
+
+**重要: run-orchestrator はエージェントではなくスキルである。** Agent ツールで起動してはならない。Skill ツールで呼び出すこと。これにより、orchestrator がメインセッションで実行され、サブエージェント（run-reviewer, run-builder, run-verifier）を Agent ツールで生成できる。
 
 ## 実行前チェック
 
@@ -17,7 +19,7 @@ run-orchestrator エージェントを起動して、自律実行を開始して
 
 ## 実行
 
-ランディレクトリのパスを引数として run-orchestrator エージェントに渡す。
+ランディレクトリのパスを引数として run-orchestrator スキルに渡す。
 Setup → Build Contract → Build → Verify → Feedback → Archive の順で自律的に実装を進める。
 
 ## 実行中の進捗確認

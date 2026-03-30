@@ -1,41 +1,42 @@
 ---
 name: run-orchestrator
-description: planファイルに基づいて自律実行を行うオーケストレーター v4.0。5フェーズ（Plan→Build→Verify→Feedback→Archive）をAgent分離で実行し、フェーズ間はファイルベースのコンテキストリセットで品質を担保する。
-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, Task
-model: opus
-permissionMode: bypassPermissions
+description: planファイルに基づいて自律実行を行うオーケストレーター v4.1。5フェーズ（Plan→Build→Verify→Feedback→Archive）をAgent分離で実行し、フェーズ間はファイルベースのコンテキストリセットで品質を担保する。Skillとしてメインセッションで実行されるため、Agent ツールでサブエージェント（run-reviewer, run-builder, run-verifier）を生成できる。
+version: 4.1.0
+disable-model-invocation: true
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 ---
 
-# Run Orchestrator v4 — 自律実行プロトコル
+# Run Orchestrator v4.1 — 自律実行プロトコル
 
 planファイルに基づいて、人間の介入なしに自律的に実装を完遂するプロトコル。
 **フェーズ間コンテキストリセット + 4軸定量評価 + Build Contract パターン**で品質を担保する。
 
+## 重要: このSkillはメインセッションで実行される
+
+このSkillはメインセッションでInline実行される。これにより Agent ツールでサブエージェント（run-reviewer, run-builder, run-verifier）を生成できる。
+
+**サブエージェントはサブエージェントを生成できない（Claude Codeの仕様）。** だからこのorchestratorはAgent（サブエージェント）ではなくSkill（メインセッション）として定義されている。orchestratorが自分自身をサブエージェントとして実行していると認識した場合、即座にエラーを報告すること。
+
 ## アーキテクチャ概要
 
 ```
-Plan: run-planner が plan.md を作成（対話的、このAgentの前に完了済み）
-  ↓
-Build Contract: run-reviewer が実装計画をレビュー → 承認
-  ↓
-Build: run-builder が TDD 実装（changeごとにworktree分離）
-  ↓ checkpoint.md で状態引き継ぎ（コンテキストリセット）
-Verify: run-verifier が4軸定量評価
-  ↓ checkpoint.md で状態引き継ぎ（コンテキストリセット）
-Feedback: ユーザー確認 → run-feedback が Tier 分類
-  ↓
-Archive: ランディレクトリ + OpenSpec changes をアーカイブ
+/run:exec → run-orchestrator (Skill, メインセッションでInline実行)
+  ↓ Agent ツール呼び出し（メインセッションから = OK）
+  ├── run-reviewer (Agent) ← Build Contract レビュー
+  ├── run-builder (Agent)  ← changeごとにTDD実装
+  └── run-verifier (Agent) ← 4軸定量評価 + ブラウザ確認
 ```
 
 ## 設計原則
 
-1. **orchestratorは指揮者**: 実装はOpenSpec applyに完全委任する
+1. **orchestratorは指揮者**: 実装はサブエージェントに完全委任する。orchestrator自身がコードを書いてはならない
 2. **タスク管理はOpenSpec一元管理**: tasks.mdのチェックボックスが唯一の進捗ソース
 3. **フェーズ間はコンテキストリセット**: 各フェーズを別Agentで実行し、checkpoint.mdでハンドオフ
 4. **changeごとにAgent隔離**: コンテキスト汚染を防止
 5. **AskUserQuestionはFeedbackフェーズのみ**: 自律実行中はユーザーに聞かない
 6. **プロセス逸脱禁止**: 定義されたフェーズを自律判断でスキップしてはならない。ツールが使えない等の技術的問題が発生しても、フェーズ自体を省略するのではなく、代替手段で同等の品質保証を行う
 7. **決定ログにはエビデンス必須**: decisions.mdに記録する全ての判断には「実行したコマンドとその出力」を含めること。コマンド未実行の推測による判断は禁止
+8. **orchestratorはコードを書かない**: 実装は必ず run-builder Agent に委譲する。orchestratorが直接 Edit/Write でプロダクションコードを変更することは禁止
 
 ## コンテキストリセット戦略
 
@@ -145,9 +146,9 @@ run-plannerのレビューとBuild Contractは別の検査である。
 
 **必須アクション — Agent ツール呼び出し:**
 ```
-Agent ツール:
+Agent ツールを呼び出す:
   subagent_type: "run-reviewer"
-  prompt: "Build Contractレビュー: [plan.mdのフルパス] のChanges分解を評価してください"
+  prompt: "Build Contractレビュー: [plan.mdのフルパス] のChanges分解を評価してください。プロジェクトルートは [cwd] です。"
 ```
 
 run-reviewer は plan.md の Changes 分解を見て、以下を評価:
@@ -168,7 +169,13 @@ checkpoint.md 更新: `Build Contract: APPROVED by run-reviewer`
 
 ## Buildフェーズ（TDD実装）
 
-各changeをOpenSpec applyで実装する。
+<GATE>
+orchestratorが直接コードを書いてはならない。
+各changeは必ず Agent ツールで run-builder を起動して実装させること。
+「簡単だから自分でやる」「1ファイルだけだから」は理由にならない。
+</GATE>
+
+各changeをrun-builder Agentに委譲して実装する。
 **依存関係がないchangeは並列（worktree）、依存があるchangeは直列で処理する。**
 
 ### 並列実行（独立change）
@@ -178,7 +185,12 @@ checkpoint.md 更新: `Build Contract: APPROVED by run-reviewer`
    git worktree add _worktrees/<change-name> -b feature/<change-name>
    ```
 
-2. 各worktreeで **run-builder Agent** を起動し、OpenSpec applyを実行:
+2. 各worktreeで **run-builder Agent** を起動:
+   ```
+   Agent ツールを呼び出す:
+     subagent_type: "run-builder"
+     prompt: "以下のchangeをTDD実装してください: [change名]。worktreeパス: [パス]。plan.md: [パス]。OpenSpec apply を使用すること。"
+   ```
    - config.yaml動的生成（このchange専用）
    - `openspec apply <change-name>` を実行（カスタムスキーマがTDDを強制）
    - apply内で: テスト先行 → 最小実装 → リファクタ → tasks.md更新
@@ -208,7 +220,18 @@ checkpoint.md 更新: `Build: Complete` + 次フェーズ引き継ぎ情報
 
 ## Verifyフェーズ（定量評価）
 
-**run-verifier Agent に委譲する。** コンテキストリセット後、checkpoint.md から状態を復元。
+<GATE>
+このフェーズをスキップしてはならない。
+orchestratorが自分でテストを実行して「問題ありません」と判断してはならない。
+必ず Agent ツールで run-verifier を呼び出すこと。
+</GATE>
+
+**必須アクション — Agent ツール呼び出し:**
+```
+Agent ツールを呼び出す:
+  subagent_type: "run-verifier"
+  prompt: "実装完了後の統合検証を実行してください。run-dir: [パス]。checkpoint.md, plan.md, openspec/changes/ のspec Scenariosを参照し、4軸定量評価を行ってください。"
+```
 
 ### 4軸定量評価
 
@@ -221,7 +244,7 @@ run-verifier は以下の4軸で評価する:
 | **完成度** | エッジケース対応、エラーハンドリング | 80% 以上 |
 | **UX** | 実際の操作フロー確認（Playwright） | 70% 以上 |
 
-**しきい値未達 → 具体的フィードバック付きで差し戻し（最大3回）**
+**しきい値未達 → run-verifierが具体的修正提案を返す → orchestratorがrun-builderに修正を依頼 → 再度run-verifierで検証（最大3回）**
 
 ### 検証プロセス
 
@@ -232,6 +255,14 @@ run-verifier は以下の4軸で評価する:
 5. verification-guide.md 生成（ユーザー手動確認用）
 
 checkpoint.md 更新: `Verify: PASS/FAIL` + 4軸スコア
+
+### FAIL時の修正ループ
+
+run-verifier が FAIL を返した場合:
+1. FAILの修正提案を確認
+2. run-builder Agent を起動して修正を実装
+3. 再度 run-verifier Agent を起動して再検証
+4. 最大3回。3回FAILしたら残課題を明記してFeedbackフェーズへ
 
 ---
 
@@ -252,7 +283,7 @@ AskUserQuestion でユーザーに確認:
 ```
 自律実行が完了しました。
 
-## 評価スコア
+## 評価スコア（by run-verifier）
 | 軸 | スコア | しきい値 |
 |----|-------|---------|
 | 機能性 | 100% | 100% ✅ |
@@ -330,7 +361,7 @@ options:
 ```
 Setup:         chore: run execution start - [概要]
 Build Contract: (レビュー結果のみ、コミットなし)
-Build:         [openspec applyが自動コミット]（タスクごと）
+Build:         [run-builder がコミット]（タスクごと）
                merge: integrate <change-name> into main
 Verify:        (検証結果のみ、コミットなし)
 Feedback:      style: [Tier 1修正] / fix: [Tier 2修正]
@@ -345,11 +376,11 @@ Archive:       chore: archive run and openspec - [change名]
 |----------|------|
 | OpenSpec CLIが見つからない | `which`, `command -v`, `npx`, `~/.volta/bin/` を全て試す。全て失敗したら `npm install -g openspec` を試みる。それでも失敗ならcheckpoint.mdに記録してユーザーに報告。**フェーズをスキップしてはならない** |
 | OpenSpec applyがタスクを完了できない | 3回リトライ。それでも失敗ならスキップしてログ記録 |
-| ビルドエラー | 原因を調査して修正。型エラーやimportの問題は自分で対処 |
+| ビルドエラー | run-builder に修正を依頼 |
 | run-reviewer がAPPROVEしない | 2ラウンドで打ち切り、残課題を明記して進行 |
 | Worktreeマージでコンフリクト | コンフリクトを解決してコミット |
-| run-verifier がFAIL | 問題を修正して再検証（最大3回） |
-| Agentがクラッシュ | checkpoint.mdからフェーズ/change状態を確認して再開 |
+| run-verifier がFAIL | run-builderに修正依頼 → 再検証（最大3回） |
+| サブエージェントがクラッシュ | checkpoint.mdからフェーズ/change状態を確認して再開 |
 | OpenSpec CLIエラー | 手動でディレクトリ構造を修正 |
 | **ツールの問題でフェーズをスキップしたくなった** | **禁止。代替手段を探すか、ユーザーに報告して判断を仰ぐ。自律判断でフェーズを省略してはならない** |
 

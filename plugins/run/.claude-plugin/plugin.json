@@ -1,13 +1,14 @@
 {
   "name": "run",
-  "version": "4.0.0",
-  "description": "Claude Code 自律実行システム v4.0。Anthropic Harness Design知見を反映: フェーズ間コンテキストリセット + 4軸定量評価 + Build Contractパターン + Agent/Skill正しい使い分け。5フェーズ（Plan→Build→Verify→Feedback→Archive）で品質を担保した自律的実装を完遂する。",
+  "version": "4.1.0",
+  "description": "Claude Code 自律実行システム v4.1。orchestratorをSkillに変更しサブエージェントネスティング制限を解決。5フェーズ（Plan→Build→Verify→Feedback→Archive）で品質を担保した自律的実装を完遂する。",
   "author": {
     "name": "Oratta"
   },
   "skills": [
     "./skills/run-planner",
-    "./skills/run-feedback"
+    "./skills/run-feedback",
+    "./skills/run-orchestrator"
   ],
   "commands": [
     "./commands/plan.md",
@@ -18,7 +19,6 @@
     "./commands/feedback.md"
   ],
   "agents": [
-    "./agents/run-orchestrator.md",
     "./agents/run-builder.md",
     "./agents/run-verifier.md",
     "./agents/run-reviewer.md"
