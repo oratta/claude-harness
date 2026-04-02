@@ -28,10 +28,10 @@
     },
     {
       "name": "run",
-      "description": "Claude Code 自律実行システム v4.0。5フェーズ（Plan→Build→Verify→Feedback→Archive）で品質を担保した自律的実装を完遂する。",
+      "description": "Claude Code 自律実行システム v4.3。フェーズ前宣言（自己拘束）パターンでAgent呼び出し・TDD手順のスキップを防止。",
       "source": "./plugins/run",
       "category": "workflow",
-      "version": "4.0.0",
+      "version": "4.3.0",
       "author": { "name": "Oratta" },
       "keywords": ["run", "autonomous", "execution", "agents", "openspec", "tdd", "feedback", "harness"]
     },

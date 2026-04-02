@@ -1,7 +1,7 @@
 ---
 name: run-feedback
 description: 自律実行完了後のフィードバックを分類・実行する。ユーザーの無選別フィードバック（brain dump）をTier 1（cosmetic）/ Tier 2（spec-aligned fix）/ Tier 3（new change）に自動分類し、Tier 1/2は即座に修正、Tier 3はopenspec/backlog.mdに記録する。orchestratorのFeedbackフェーズからも呼ばれる共通ロジック。
-version: 4.0.0
+version: 4.1.0
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Task
 ---
 
@@ -117,6 +117,36 @@ run-orchestratorのFeedbackフェーズと、`/run:feedback` コマンドの両�
 
 この分類で進めていいですか？変更があれば教えてください。
 ```
+
+### Step 4b: 実行計画の宣言（必須出力 — 自己拘束）
+
+<GATE>
+ユーザーが分類結果を承認した後、実際の修正に入る前に、以下の宣言を必ず出力すること。
+この宣言を出力せずに Step 5 以降に進むことは禁止。
+</GATE>
+
+分類結果がユーザーに承認されたら、以下を出力する:
+
+```
+分類が確定しました。以下の順で実行します:
+
+🎨 Tier 1（Cosmetic Fix）: N件
+- specは変更しない。コード修正のみ。
+
+🔧 Tier 2（Spec-Aligned Fix）: N件 — 各アイテムについて:
+  1. spec.md の Scenario を追加/修正
+  2. テストを追加（RED確認）
+  3. 実装を修正（GREEN確認）
+  4. 全テスト PASS 確認
+  ※ spec更新なしにコードだけ直すことは禁止
+
+📋 Tier 3（New Change）: N件
+- backlog.md に記録。現runでは対応しない。
+
+Tier 1 から開始します。
+```
+
+**なぜこの宣言が必要か:** 特にTier 2でspec更新→テスト追加(RED)→実装修正(GREEN)のTDDサイクルが省略されやすい。「小さい修正だからspecもテストも不要」と合理化しがちだが、自分で「spec更新なしにコードだけ直すことは禁止」と宣言することで、その省略が自己矛盾になり抑制される。
 
 ### Step 5: Tier 1実行（Cosmetic Fix）
 

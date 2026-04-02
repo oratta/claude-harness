@@ -1,7 +1,7 @@
 ---
 name: run-orchestrator
 description: planファイルに基づいて自律実行を行うオーケストレーター v4.1。5フェーズ（Plan→Build→Verify→Feedback→Archive）をAgent分離で実行し、フェーズ間はファイルベースのコンテキストリセットで品質を担保する。Skillとしてメインセッションで実行されるため、Agent ツールでサブエージェント（run-reviewer, run-builder, run-verifier）を生成できる。
-version: 4.1.0
+version: 4.2.0
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 ---
@@ -37,6 +37,7 @@ planファイルに基づいて、人間の介入なしに自律的に実装を�
 6. **プロセス逸脱禁止**: 定義されたフェーズを自律判断でスキップしてはならない。ツールが使えない等の技術的問題が発生しても、フェーズ自体を省略するのではなく、代替手段で同等の品質保証を行う
 7. **決定ログにはエビデンス必須**: decisions.mdに記録する全ての判断には「実行したコマンドとその出力」を含めること。コマンド未実行の推測による判断は禁止
 8. **orchestratorはコードを書かない**: 実装は必ず run-builder Agent に委譲する。orchestratorが直接 Edit/Write でプロダクションコードを変更することは禁止
+9. **フェーズ前宣言（自己拘束）**: 各フェーズ開始前に「これから何をやるか」「どのAgentを呼ぶか」を必ず出力する。自分で出力した宣言はコンテキスト内で拘束として機能し、フェーズスキップやAgent呼び出し省略を防ぐ
 
 ## コンテキストリセット戦略
 
@@ -132,6 +133,31 @@ orchestratorはこの plan.md を入力として受け取る。
 1. `openspec schema fork spec-driven run-tdd` を実行
 2. プラグイン内の `templates/run-tdd-schema/apply.md` を `openspec/schemas/run-tdd/templates/apply.md` にコピー
 3. プラグイン内の `templates/run-tdd-schema/propose.md` を反映
+
+---
+
+## フェーズ前宣言（Setup完了後、必須出力）
+
+<GATE>
+Setupフェーズ完了後、Build Contractフェーズに入る前に、以下の宣言を必ず出力すること。
+この宣言を出力せずにBuild Contractに進むことは禁止。
+</GATE>
+
+Setupが完了したら、以下を出力する:
+
+```
+Setupフェーズ完了。これから以下のフェーズを順に実行します:
+
+1. **Build Contract** — run-reviewer Agent を呼び出してChanges分解をレビュー
+2. **Build** — 各changeごとに run-builder Agent を呼び出してTDD実装
+3. **Verify** — run-verifier Agent + run-browser-verifier Agent を呼び出して4軸定量評価
+4. **Feedback** — ユーザーに動作確認を依頼し、フィードバックを処理
+5. **Archive** — OpenSpec changeとランディレクトリをアーカイブ
+
+Build Contractフェーズから開始します。
+```
+
+**なぜこの宣言が必要か:** orchestratorがSetup完了後に「Build Contractは既にplannerでレビュー済み」「Verifyは自分でテスト通したから不要」と合理化してフェーズをスキップすることを防ぐ。宣言した内容は自己拘束として機能し、各Agentの呼び出しを省略しにくくなる。
 
 ---
 
@@ -281,6 +307,26 @@ grep -c "\[x\] ロジック実装完了" {run-dir}/verification-guide.md
 ```
 
 checkpoint.md 更新: `Build: Complete` + verification-guide.md進捗
+
+---
+
+## Verify前宣言（Build完了後、必須出力）
+
+<GATE>
+Buildフェーズ完了後、Verifyフェーズに入る前に、以下の宣言を必ず出力すること。
+この宣言を出力せずにVerifyに進むことは禁止。
+</GATE>
+
+Buildが完了したら、以下を出力する:
+
+```
+Buildフェーズ完了。次に2段階のVerifyフェーズを実行します:
+
+1. **静的検証** — run-verifier Agent を呼び出し、テスト・lint・型チェック・ビルド + コードレビュー
+2. **ブラウザ検証** — run-browser-verifier Agent を呼び出し、verification-guide.mdの各Scenarioを実際に操作確認
+
+静的検証から開始します。自分でテストを実行して「問題ない」と判断することは禁止です。
+```
 
 ---
 
