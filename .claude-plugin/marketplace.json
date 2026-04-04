@@ -28,10 +28,10 @@
     },
     {
       "name": "run",
-      "description": "Claude Code 自律実行システム v4.3。フェーズ前宣言（自己拘束）パターンでAgent呼び出し・TDD手順のスキップを防止。",
+      "description": "Claude Code 自律実行システム v4.4。run-reviewer指摘フォーマット改善、スコープ分割基準を自律実行中断ベースに変更。",
       "source": "./plugins/run",
       "category": "workflow",
-      "version": "4.3.0",
+      "version": "4.4.0",
       "author": { "name": "Oratta" },
       "keywords": ["run", "autonomous", "execution", "agents", "openspec", "tdd", "feedback", "harness"]
     },

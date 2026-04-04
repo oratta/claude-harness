@@ -1,7 +1,7 @@
 {
   "name": "run",
-  "version": "4.3.0",
-  "description": "Claude Code 自律実行システム v4.3。フェーズ前宣言（自己拘束）パターン追加。orchestrator・planner・feedbackの各フェーズ開始前に実行計画を出力させ、Agent呼び出しやTDD手順のスキップを防止。",
+  "version": "4.4.0",
+  "description": "Claude Code 自律実行システム v4.4。run-reviewerの指摘フォーマット改善（種別分類・推奨アクション必須化）、スコープ分割基準を自律実行中断ベースに変更、APPROVE基準明示。",
   "author": {
     "name": "Oratta"
   },
