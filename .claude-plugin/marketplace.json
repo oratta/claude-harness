@@ -28,10 +28,10 @@
     },
     {
       "name": "run",
-      "description": "Claude Code 自律実行システム v4.4。run-reviewer指摘フォーマット改善、スコープ分割基準を自律実行中断ベースに変更。",
+      "description": "Claude Code 自律実行システム v4.5。Worktree安全性強化: コミット義務、順次作成、git merge必須、検証前削除禁止。",
       "source": "./plugins/run",
       "category": "workflow",
-      "version": "4.4.0",
+      "version": "4.5.0",
       "author": { "name": "Oratta" },
       "keywords": ["run", "autonomous", "execution", "agents", "openspec", "tdd", "feedback", "harness"]
     },

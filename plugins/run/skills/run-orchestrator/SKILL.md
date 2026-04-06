@@ -260,16 +260,24 @@ verification-guide.md を `{run-dir}/` に生成すること。
 
 #### 並列実行（独立change）
 
-1. changeごとにGit Worktreeを作成:
+<GATE>
+Worktreeの作成は**必ず順次実行**すること。並列でworktreeを作成すると `.git/config.lock` の競合が発生する。
+worktree作成完了後のrun-builder Agent起動は並列でOK。
+</GATE>
+
+1. changeごとにGit Worktreeを**順次**作成:
    ```bash
-   git worktree add _worktrees/<change-name> -b feature/<change-name>
+   # 1つずつ順番に作成する。並列実行禁止（.git/config.lock競合を回避）
+   git worktree add _worktrees/<change-name-A> -b feature/<change-name-A>
+   git worktree add _worktrees/<change-name-B> -b feature/<change-name-B>
+   # ...
    ```
 
-2. 各worktreeで **run-builder Agent** を起動:
+2. 全worktree作成完了後、各worktreeで **run-builder Agent** を並列起動:
    ```
    Agent ツールを呼び出す:
      subagent_type: "run-builder"
-     prompt: "以下のchangeをTDD実装してください: [change名]。worktreeパス: [パス]。plan.md: [パス]。verification-guide.md: [パス]。OpenSpec apply を使用すること。テスト実装完了・ロジック実装完了のタイミングでverification-guide.mdの該当Scenarioに[x]を入れること。"
+     prompt: "以下のchangeをTDD実装してください: [change名]。worktreeパス: [パス]。plan.md: [パス]。verification-guide.md: [パス]。OpenSpec apply を使用すること。テスト実装完了・ロジック実装完了のタイミングでverification-guide.mdの該当Scenarioに[x]を入れること。**実装完了後、必ずworktreeブランチにコミットすること（git add -A && git commit）。未コミットの変更はworktree削除時に消失する。コミットハッシュを報告に含めること。**"
    ```
    - config.yaml動的生成（このchange専用）
    - `openspec apply <change-name>` を実行（カスタムスキーマがTDDを強制）
@@ -291,11 +299,48 @@ verification-guide.md を `{run-dir}/` に生成すること。
 
 #### Worktreeマージ
 
-全change完了後:
-1. 各worktreeをメインブランチにマージ
-2. コンフリクトがあれば解決
-3. worktreeを削除
-4. 全テストスイート実行 + lint + 型チェック + ビルド
+<GATE>
+**ファイルコピー（cp）によるマージは禁止。** 必ず `git merge` を使うこと。
+cpは漏れ検出が困難で、エイリアス（cp -i）によるサイレント失敗のリスクがある。
+git mergeならコンフリクト検出・差分検証が自動化される。
+
+**マージ完了を検証するまでworktreeを削除してはならない。**
+未コミットの変更はworktree削除で完全に消失し、復旧不可能になる。
+</GATE>
+
+全change完了後、以下の手順で**順次**マージ:
+
+1. **コミット確認**: 各worktreeブランチにコミットがあることを確認
+   ```bash
+   # 各worktreeでコミット状態を確認
+   git -C _worktrees/<change-name> log --oneline -3
+   git -C _worktrees/<change-name> status  # clean であること
+   ```
+   **未コミットの変更がある場合**: run-builderが完了条件を満たしていない。worktreeで追加コミットするか、run-builderを再起動する
+
+2. **git mergeで統合**: メインブランチに各worktreeブランチを順次マージ
+   ```bash
+   git merge feature/<change-name-A> --no-ff -m "merge: integrate <change-name-A> into main"
+   git merge feature/<change-name-B> --no-ff -m "merge: integrate <change-name-B> into main"
+   ```
+   コンフリクトがあれば解決してコミット
+
+3. **マージ検証**: 全変更が正しく統合されたことを確認
+   ```bash
+   # 全テストスイート実行
+   npm test  # or appropriate test command
+   # lint + 型チェック + ビルド
+   npm run lint && npm run typecheck && npm run build
+   # マージされたファイル数を確認
+   git diff --stat HEAD~<change数>..HEAD
+   ```
+
+4. **worktree削除**: マージ検証が**全てPASS**した後にのみ削除
+   ```bash
+   git worktree remove _worktrees/<change-name-A>
+   git branch -d feature/<change-name-A>
+   # 全worktreeに対して繰り返す
+   ```
 
 #### Build完了確認
 
@@ -510,6 +555,9 @@ Archive:       chore: archive run and openspec - [change名]
 | ビルドエラー | run-builder に修正を依頼 |
 | run-reviewer がAPPROVEしない | 2ラウンドで打ち切り、残課題を明記して進行 |
 | Worktreeマージでコンフリクト | コンフリクトを解決してコミット |
+| Worktreeに未コミットの変更がある | run-builderの完了条件未達。worktreeで `git add -A && git commit` するか、run-builderを再起動 |
+| `.git/config.lock` 競合 | worktree作成を順次実行に切り替える。lockファイルが残っている場合は `rm .git/config.lock` 後にリトライ |
+| worktreeブランチにコミットがない | **絶対にworktreeを削除しない**。run-builderが正常終了したか確認し、必要なら再実行 |
 | run-verifier がFAIL | run-builderに修正依頼 → 再検証（最大3回） |
 | サブエージェントがクラッシュ | checkpoint.mdからフェーズ/change状態を確認して再開 |
 | OpenSpec CLIエラー | 手動でディレクトリ構造を修正 |
