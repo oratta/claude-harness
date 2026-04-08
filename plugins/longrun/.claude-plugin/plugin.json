@@ -1,0 +1,27 @@
+{
+  "name": "longrun",
+  "version": "5.0.0",
+  "description": "Claude Code 自律実行システム v4.5。Worktree安全性強化: longrun-builderにコミット義務追加、worktree順次作成（config.lock競合回避）、git merge必須化（cp禁止）、マージ検証前のworktree削除禁止。",
+  "author": {
+    "name": "Oratta"
+  },
+  "skills": [
+    "./skills/longrun-planner",
+    "./skills/longrun-feedback",
+    "./skills/longrun-orchestrator"
+  ],
+  "commands": [
+    "./commands/plan.md",
+    "./commands/exec.md",
+    "./commands/status.md",
+    "./commands/decisions.md",
+    "./commands/archive.md",
+    "./commands/feedback.md"
+  ],
+  "agents": [
+    "./agents/longrun-builder.md",
+    "./agents/longrun-verifier.md",
+    "./agents/longrun-browser-verifier.md",
+    "./agents/longrun-reviewer.md"
+  ]
+}

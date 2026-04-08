@@ -1,0 +1,16 @@
+{
+  "name": "lr",
+  "version": "5.0.0",
+  "description": "longrunプラグインの短縮コマンド。/lr:p, /lr:e, /lr:s, /lr:d, /lr:a, /lr:f で各longrunコマンドを呼び出せる。",
+  "author": {
+    "name": "Oratta"
+  },
+  "commands": [
+    "./commands/p.md",
+    "./commands/e.md",
+    "./commands/s.md",
+    "./commands/d.md",
+    "./commands/a.md",
+    "./commands/f.md"
+  ]
+}
