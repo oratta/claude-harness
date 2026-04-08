@@ -27,22 +27,22 @@
       "keywords": ["obsidian", "llm", "session", "context", "auto-save"]
     },
     {
-      "name": "run",
-      "description": "Claude Code 自律実行システム v4.5。Worktree安全性強化: コミット義務、順次作成、git merge必須、検証前削除禁止。",
-      "source": "./plugins/run",
+      "name": "longrun",
+      "description": "Claude Code 自律実行システム v5.0。TDD + 4軸定量評価 + Build Contract パターンで品質担保。",
+      "source": "./plugins/longrun",
       "category": "workflow",
-      "version": "4.5.0",
+      "version": "5.0.0",
       "author": { "name": "Oratta" },
-      "keywords": ["run", "autonomous", "execution", "agents", "openspec", "tdd", "feedback", "harness"]
+      "keywords": ["longrun", "autonomous", "execution", "agents", "openspec", "tdd", "feedback", "harness"]
     },
     {
-      "name": "r",
-      "description": "runプラグインの短縮コマンド。/r:p, /r:e, /r:s, /r:d, /r:a, /r:f",
-      "source": "./plugins/r",
+      "name": "lr",
+      "description": "longrunプラグインの短縮コマンド。/lr:p, /lr:e, /lr:s, /lr:d, /lr:a, /lr:f",
+      "source": "./plugins/lr",
       "category": "workflow",
-      "version": "4.0.0",
+      "version": "5.0.0",
       "author": { "name": "Oratta" },
-      "keywords": ["run", "alias", "shortcut"]
+      "keywords": ["longrun", "alias", "shortcut"]
     },
     {
       "name": "weekly-report",
@@ -59,7 +59,7 @@
     {
       "name": "all",
       "description": "全プラグインをインストール",
-      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "run", "r", "weekly-report"],
+      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun", "lr", "weekly-report"],
       "skills": []
     }
   ]
