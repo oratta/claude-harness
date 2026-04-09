@@ -14,6 +14,15 @@ Git worktree作成後に実行し、開発に必要なファイル・設定を�
 - 現在のカレントディレクトリがworktree内であること
 - メインリポジトリ（worktreeの親）が存在すること
 
+## ⚠️ 重要ルール: .claude/ の取り扱い
+
+**`.claude/` がgitで追跡されている場合、symlinkを絶対に作成してはならない。**
+
+`.claude/` が追跡されていれば、worktreeにはチェックアウト時に既にファイルが存在する。
+symlinkで置換するとgitが汚れる（tracked filesがdeletedになる）。
+
+→ Step 3a で必ず判定し、追跡済みなら Step 3b を**丸ごとスキップ**すること。
+
 ## 実行フロー
 
 ### Step 1: 環境判定
@@ -75,48 +84,51 @@ while IFS= read -r pattern; do
 done < .worktreeinclude
 ```
 
-### Step 3: .claude/ symlink 作成（条件付き）
+### Step 3a: .claude/ の追跡状態を判定（必須）
 
-`.claude/` がgitで追跡されている場合、worktreeにはチェックアウト時に既にファイルが存在する。
-この場合symlinkを作成するとgitが汚れるため、**スキップする**。
+**このステップは絶対にスキップしてはならない。** 判定結果をユーザーに報告すること。
+
+```bash
+git ls-files --error-unmatch .claude/ &>/dev/null 2>&1
+```
+
+- **コマンドが成功（exit 0）** → `.claude/` はgit追跡されている → **Step 3bをスキップ**して Step 4 へ進む
+- **コマンドが失敗（exit 1）** → `.claude/` は未追跡またはgitignore → Step 3b を実行
+
+### Step 3b: .claude/ symlink 作成（3aで未追跡の場合のみ）
+
+**⚠️ Step 3a で追跡済みと判定された場合、このステップを実行してはならない。**
 
 `.claude/` が `.gitignore` で除外されている場合のみ、メインリポからsymlinkを作成する。
 
 ```bash
 MAIN_REPO=$(git worktree list | head -1 | awk '{print $1}')
 
-# .claude/ がgit追跡されているか判定
-if git ls-files --error-unmatch .claude/ &>/dev/null 2>&1; then
-  # 追跡されている → worktreeに既にあるのでsymlinkしない
-  echo ".claude/ is tracked by git, skipping symlink (already available in worktree)"
-else
-  # gitignoreされている or 未追跡 → symlink作成
-  mkdir -p .claude
+mkdir -p .claude
 
-  # skills
-  if [ -d "$MAIN_REPO/.claude/skills" ]; then
-    ln -sfn "$MAIN_REPO/.claude/skills" .claude/skills
-  fi
+# skills
+if [ -d "$MAIN_REPO/.claude/skills" ]; then
+  ln -sfn "$MAIN_REPO/.claude/skills" .claude/skills
+fi
 
-  # commands  
-  if [ -d "$MAIN_REPO/.claude/commands" ]; then
-    ln -sfn "$MAIN_REPO/.claude/commands" .claude/commands
-  fi
+# commands  
+if [ -d "$MAIN_REPO/.claude/commands" ]; then
+  ln -sfn "$MAIN_REPO/.claude/commands" .claude/commands
+fi
 
-  # rules
-  if [ -d "$MAIN_REPO/.claude/rules" ]; then
-    ln -sfn "$MAIN_REPO/.claude/rules" .claude/rules
-  fi
+# rules
+if [ -d "$MAIN_REPO/.claude/rules" ]; then
+  ln -sfn "$MAIN_REPO/.claude/rules" .claude/rules
+fi
 
-  # settings.json（ファイル単位）
-  if [ -f "$MAIN_REPO/.claude/settings.json" ]; then
-    ln -sfn "$MAIN_REPO/.claude/settings.json" .claude/settings.json
-  fi
+# settings.json（ファイル単位）
+if [ -f "$MAIN_REPO/.claude/settings.json" ]; then
+  ln -sfn "$MAIN_REPO/.claude/settings.json" .claude/settings.json
+fi
 
-  # settings.local.json（ファイル単位）
-  if [ -f "$MAIN_REPO/.claude/settings.local.json" ]; then
-    ln -sfn "$MAIN_REPO/.claude/settings.local.json" .claude/settings.local.json
-  fi
+# settings.local.json（ファイル単位）
+if [ -f "$MAIN_REPO/.claude/settings.local.json" ]; then
+  ln -sfn "$MAIN_REPO/.claude/settings.local.json" .claude/settings.local.json
 fi
 ```
 
