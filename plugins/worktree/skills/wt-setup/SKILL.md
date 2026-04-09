@@ -59,7 +59,11 @@ MAIN_REPO=$(git worktree list | head -1 | awk '{print $1}')
       - `config/secrets*` 系 → 追加提案
       - `node_modules`, `out`, `dist`, `*.log` 系 → **追加しない**（ビルド成果物）
    d. AskUserQuestion で追加パターンを確認
-   e. worktree内に `.worktreeinclude` を作成（git addされる = 次回コミットに含まれる）
+   e. worktree内に `.worktreeinclude` を作成
+   f. `.worktreeinclude` を `.git/info/exclude` に追加（worktreeローカルのgitignore。リポジトリには影響しない）:
+      ```bash
+      grep -qxF '.worktreeinclude' .git/info/exclude 2>/dev/null || echo '.worktreeinclude' >> .git/info/exclude
+      ```
 
 4. `.worktreeinclude` に記載されたファイルをメインリポからworktreeにコピー:
 
@@ -75,38 +79,48 @@ while IFS= read -r pattern; do
 done < .worktreeinclude
 ```
 
-### Step 3: .claude/ symlink 作成
+### Step 3: .claude/ symlink 作成（条件付き）
 
-メインリポの `.claude/` 内のスキル・コマンド・ルールをworktreeにsymlinkする。
+`.claude/` がgitで追跡されている場合、worktreeにはチェックアウト時に既にファイルが存在する。
+この場合symlinkを作成するとgitが汚れるため、**スキップする**。
+
+`.claude/` が `.gitignore` で除外されている場合のみ、メインリポからsymlinkを作成する。
 
 ```bash
 MAIN_REPO=$(git worktree list | head -1 | awk '{print $1}')
 
-mkdir -p .claude
+# .claude/ がgit追跡されているか判定
+if git ls-files --error-unmatch .claude/ &>/dev/null 2>&1; then
+  # 追跡されている → worktreeに既にあるのでsymlinkしない
+  echo ".claude/ is tracked by git, skipping symlink (already available in worktree)"
+else
+  # gitignoreされている or 未追跡 → symlink作成
+  mkdir -p .claude
 
-# skills
-if [ -d "$MAIN_REPO/.claude/skills" ]; then
-  ln -sfn "$MAIN_REPO/.claude/skills" .claude/skills
-fi
+  # skills
+  if [ -d "$MAIN_REPO/.claude/skills" ]; then
+    ln -sfn "$MAIN_REPO/.claude/skills" .claude/skills
+  fi
 
-# commands  
-if [ -d "$MAIN_REPO/.claude/commands" ]; then
-  ln -sfn "$MAIN_REPO/.claude/commands" .claude/commands
-fi
+  # commands  
+  if [ -d "$MAIN_REPO/.claude/commands" ]; then
+    ln -sfn "$MAIN_REPO/.claude/commands" .claude/commands
+  fi
 
-# rules
-if [ -d "$MAIN_REPO/.claude/rules" ]; then
-  ln -sfn "$MAIN_REPO/.claude/rules" .claude/rules
-fi
+  # rules
+  if [ -d "$MAIN_REPO/.claude/rules" ]; then
+    ln -sfn "$MAIN_REPO/.claude/rules" .claude/rules
+  fi
 
-# settings.json（ファイル単位）
-if [ -f "$MAIN_REPO/.claude/settings.json" ]; then
-  ln -sfn "$MAIN_REPO/.claude/settings.json" .claude/settings.json
-fi
+  # settings.json（ファイル単位）
+  if [ -f "$MAIN_REPO/.claude/settings.json" ]; then
+    ln -sfn "$MAIN_REPO/.claude/settings.json" .claude/settings.json
+  fi
 
-# settings.local.json（ファイル単位）
-if [ -f "$MAIN_REPO/.claude/settings.local.json" ]; then
-  ln -sfn "$MAIN_REPO/.claude/settings.local.json" .claude/settings.local.json
+  # settings.local.json（ファイル単位）
+  if [ -f "$MAIN_REPO/.claude/settings.local.json" ]; then
+    ln -sfn "$MAIN_REPO/.claude/settings.local.json" .claude/settings.local.json
+  fi
 fi
 ```
 
@@ -124,7 +138,7 @@ fi
 wt-setup 完了:
   .worktreeinclude: [作成済み / 既存]
   コピーしたファイル: .env, .env.local (2 files)
-  symlink: .claude/skills, .claude/commands, .claude/rules
+  .claude/: [symlink作成 / git追跡済みのためスキップ]
   依存: npm install 実行済み
 ```
 
