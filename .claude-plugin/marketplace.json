@@ -45,6 +45,15 @@
       "keywords": ["longrun", "alias", "shortcut"]
     },
     {
+      "name": "worktree",
+      "description": "Git worktreeのセットアップとクリーンアップ。symlink、envコピー、マージ、削除を自動化。",
+      "source": "./plugins/worktree",
+      "category": "workflow",
+      "version": "1.0.0",
+      "author": { "name": "Oratta" },
+      "keywords": ["worktree", "git", "setup", "cleanup", "symlink"]
+    },
+    {
       "name": "weekly-report",
       "description": "週次プロジェクト実績レポートを自動生成する。",
       "source": "./plugins/weekly-report",
@@ -59,7 +68,7 @@
     {
       "name": "all",
       "description": "全プラグインをインストール",
-      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun", "lr", "weekly-report"],
+      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun", "lr", "worktree", "weekly-report"],
       "skills": []
     }
   ]
