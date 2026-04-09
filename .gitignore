@@ -20,3 +20,7 @@ node_modules/
 *.tmp
 *.temp
 *.log
+
+# Session logs & superset
+LLM/
+.superset/
