@@ -1,0 +1,18 @@
+{
+  "name": "worktree",
+  "version": "1.0.0",
+  "description": "Git worktreeのセットアップとクリーンアップ。wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー。wt-clean: 診断・LLM保全・マージ・削除。",
+  "author": {
+    "name": "Oratta"
+  },
+  "license": "MIT",
+  "keywords": ["worktree", "git", "setup", "cleanup", "symlink"],
+  "skills": [
+    "./skills/wt-setup",
+    "./skills/wt-clean"
+  ],
+  "commands": [
+    "./commands/wt-setup.md",
+    "./commands/wt-clean.md"
+  ]
+}
