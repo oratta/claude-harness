@@ -14,18 +14,9 @@ Git worktree作成後に実行し、開発に必要なファイル・設定を�
 - 現在のカレントディレクトリがworktree内であること
 - メインリポジトリ（worktreeの親）が存在すること
 
-## ⚠️ 重要ルール: .claude/ の取り扱い
-
-**`.claude/` がgitで追跡されている場合、symlinkを絶対に作成してはならない。**
-
-`.claude/` が追跡されていれば、worktreeにはチェックアウト時に既にファイルが存在する。
-symlinkで置換するとgitが汚れる（tracked filesがdeletedになる）。
-
-→ Step 3a で必ず判定し、追跡済みなら Step 3b を**丸ごとスキップ**すること。
-
 ## 実行フロー
 
-### Step 1: 環境判定
+### Step 1: 環境判定 & .claude/ 追跡チェック
 
 ```bash
 # worktree内かどうか判定
@@ -39,7 +30,14 @@ git worktree list               # → 自分がworktreeかメインか判定
 ```bash
 # メインリポのパスを取得
 MAIN_REPO=$(git worktree list | head -1 | awk '{print $1}')
+
+# .claude/ がgit追跡されているか判定（この結果をStep 3で使う）
+git ls-files --error-unmatch .claude/ &>/dev/null 2>&1
+# exit 0 → CLAUDE_TRACKED=true（追跡されている）
+# exit 1 → CLAUDE_TRACKED=false（未追跡 or gitignore）
 ```
+
+**判定結果をユーザーに報告すること。** この結果がStep 3の分岐を決定する。
 
 ### Step 2: .worktreeinclude チェック & 生成
 
@@ -84,22 +82,43 @@ while IFS= read -r pattern; do
 done < .worktreeinclude
 ```
 
-### Step 3a: .claude/ の追跡状態を判定（必須）
+### Step 3: .claude/ の共有
 
-**このステップは絶対にスキップしてはならない。** 判定結果をユーザーに報告すること。
+Step 1 の判定結果に基づいて分岐する:
 
-```bash
-git ls-files --error-unmatch .claude/ &>/dev/null 2>&1
+- **CLAUDE_TRACKED=true（追跡されている）** → 何もしない。worktreeに既にチェックアウトされている。Step 4 へ進む。
+- **CLAUDE_TRACKED=false（未追跡/gitignore）** → Appendix A の手順に従ってsymlinkを作成する。
+
+### Step 4: 依存インストール（任意）
+
+- `package.json` が存在し `node_modules/` がない場合: `npm install` を実行するか確認
+- `Gemfile` が存在し `.bundle/` がない場合: `bundle install` を提案
+- その他のパッケージマネージャも同様
+
+### Step 5: 完了レポート
+
+```
+wt-setup 完了:
+  .worktreeinclude: [作成済み / 既存]
+  コピーしたファイル: .env, .env.local (2 files)
+  .claude/: [symlink作成 / git追跡済みのためスキップ]
+  依存: npm install 実行済み
 ```
 
-- **コマンドが成功（exit 0）** → `.claude/` はgit追跡されている → **Step 3bをスキップ**して Step 4 へ進む
-- **コマンドが失敗（exit 1）** → `.claude/` は未追跡またはgitignore → Step 3b を実行
+## エラーハンドリング
 
-### Step 3b: .claude/ symlink 作成（3aで未追跡の場合のみ）
+- メインリポが見つからない場合: エラーメッセージを表示して終了
+- コピー元ファイルが存在しない場合: 警告のみ（gitignoreに書いてあるがファイルがない = まだ作ってない）
+- symlink先が既に存在する場合: `-sfn` で上書き（既存symlinkの更新）
 
-**⚠️ Step 3a で追跡済みと判定された場合、このステップを実行してはならない。**
+---
 
-`.claude/` が `.gitignore` で除外されている場合のみ、メインリポからsymlinkを作成する。
+## Appendix A: .claude/ symlink 作成手順
+
+**この手順は Step 3 で CLAUDE_TRACKED=false の場合にのみ実行する。**
+**追跡されている場合にこの手順を実行するとgitが汚れる（tracked filesがdeletedになる）。**
+
+`.claude/` ディレクトリ自体はsymlinkしない（worktree固有の設定が上書きされるリスク）。中のサブディレクトリ/ファイルを個別にsymlinkする。
 
 ```bash
 MAIN_REPO=$(git worktree list | head -1 | awk '{print $1}')
@@ -131,27 +150,3 @@ if [ -f "$MAIN_REPO/.claude/settings.local.json" ]; then
   ln -sfn "$MAIN_REPO/.claude/settings.local.json" .claude/settings.local.json
 fi
 ```
-
-**注意**: `.claude/` ディレクトリ自体はsymlinkしない（worktree固有の設定が上書きされるリスク）。中のサブディレクトリ/ファイルを個別にsymlinkする。
-
-### Step 4: 依存インストール（任意）
-
-- `package.json` が存在し `node_modules/` がない場合: `npm install` を実行するか確認
-- `Gemfile` が存在し `.bundle/` がない場合: `bundle install` を提案
-- その他のパッケージマネージャも同様
-
-### Step 5: 完了レポート
-
-```
-wt-setup 完了:
-  .worktreeinclude: [作成済み / 既存]
-  コピーしたファイル: .env, .env.local (2 files)
-  .claude/: [symlink作成 / git追跡済みのためスキップ]
-  依存: npm install 実行済み
-```
-
-## エラーハンドリング
-
-- メインリポが見つからない場合: エラーメッセージを表示して終了
-- コピー元ファイルが存在しない場合: 警告のみ（gitignoreに書いてあるがファイルがない = まだ作ってない）
-- symlink先が既に存在する場合: `-sfn` で上書き（既存symlinkの更新）
