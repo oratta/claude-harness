@@ -106,7 +106,87 @@ AskUserQuestion で確認:
 - 「変更を破棄して削除」
 - 「スキップ（あとで手動対応）」
 
-### Step 6: 削除実行
+### Step 6: マージ後サニティチェック（Post-Merge Verify）
+
+マージ済みworktreeの削除前に、メインブランチでテスト・ビルドが壊れていないことを確認する。
+**チェックに失敗したworktreeは削除しない。**
+
+#### 6a. テストコマンドの自動検出
+
+メインリポのルートで以下を順に確認し、最初に見つかったものを使用:
+
+```bash
+MAIN_REPO=$(git worktree list | head -1 | awk '{print $1}')
+
+# Node.js
+if [ -f "$MAIN_REPO/package.json" ]; then
+  # package.json の scripts から test/lint/typecheck/build を検出
+  # 例: npm test, npm run lint, npm run typecheck, npm run build
+
+# Rust
+elif [ -f "$MAIN_REPO/Cargo.toml" ]; then
+  # cargo test, cargo clippy, cargo build
+
+# Python
+elif [ -f "$MAIN_REPO/pyproject.toml" ] || [ -f "$MAIN_REPO/setup.py" ]; then
+  # pytest, python -m pytest
+
+# Go
+elif [ -f "$MAIN_REPO/go.mod" ]; then
+  # go test ./..., go vet ./...
+fi
+```
+
+テストコマンドが見つからない場合はこのステップをスキップし、Step 7 に進む。
+
+#### 6b. チェック実行
+
+検出したコマンドを実行する。実行するのはメインリポのルート（worktree内ではない）。
+
+```bash
+cd "$MAIN_REPO"
+
+# 検出したコマンドを順に実行（例: Node.js の場合）
+npm test          # テスト
+npm run lint      # lint（scripts に存在すれば）
+npm run typecheck # 型チェック（scripts に存在すれば）
+npm run build     # ビルド（scripts に存在すれば）
+```
+
+#### 6c. 結果判定
+
+- **全PASS** → Step 7（削除実行）に進む
+- **1つでもFAIL** → 以下を表示して**そのworktreeの削除を中止**:
+
+```
+⚠️ マージ後チェックで問題が検出されました:
+
+失敗コマンド: npm test
+エラー出力: [抜粋]
+
+以下のworktreeブランチのマージが原因の可能性があります:
+  - feat-x (直前にマージ)
+
+対応オプション:
+  1. git revert でマージを取り消して調査する
+  2. このまま進めて手動で修正する
+
+このworktreeは削除せず保持します。
+```
+
+**重要**: チェック失敗時、該当worktreeだけでなく、そのworktreeのマージ以降にマージされたworktreeも全て削除を保留する（マージ順序が影響するため）。
+
+#### 6d. チェック対象の範囲
+
+- 🟢 Safe かつ「今回の wt-clean で新たにマージした」worktree → チェック対象
+- 🟢 Safe で「以前からマージ済み」のworktree → チェック不要（既にメインに統合済み）
+- 🟡 Recoverable → チェック対象（LLMコピー後、削除前に）
+
+チェックは**バッチ実行**する。個別のworktreeごとではなく、全マージ完了後に1回だけ実行する（テスト実行コストを最小化）。
+
+### Step 7: 削除実行
+
+**Step 6 でチェックPASSしたworktreeのみ削除する。**
 
 ```bash
 # git worktree remove
@@ -121,15 +201,26 @@ git branch -d "$BRANCH_NAME"
 - `git worktree remove` + `git branch -d` を実行
 - 「Superset UI上でもnot foundになるので、UIから削除してください」と案内
 
-### Step 7: 完了レポート
+### Step 8: 完了レポート
 
 ```
 wt-clean 完了:
   処理: 2 worktrees
   削除: feat-x (🟢), fix-y (🟡)
   LLMコピー: 2 files → LLM/
+  サニティチェック: ✅ PASS (npm test, npm run build)
   スキップ: wip-z (🔴 active)
   残存worktrees: 1
+```
+
+チェック失敗時:
+```
+wt-clean 完了:
+  処理: 1 worktree
+  削除: feat-x (🟢)
+  ⚠️ チェック失敗で保留: fix-y (🟡) — npm test FAIL
+  スキップ: wip-z (🔴 active)
+  残存worktrees: 2
 ```
 
 ## 🔴 Active worktreeの強制処理
