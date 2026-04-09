@@ -59,11 +59,7 @@ MAIN_REPO=$(git worktree list | head -1 | awk '{print $1}')
       - `config/secrets*` 系 → 追加提案
       - `node_modules`, `out`, `dist`, `*.log` 系 → **追加しない**（ビルド成果物）
    d. AskUserQuestion で追加パターンを確認
-   e. worktree内に `.worktreeinclude` を作成
-   f. `.worktreeinclude` を `.git/info/exclude` に追加（worktreeローカルのgitignore。リポジトリには影響しない）:
-      ```bash
-      grep -qxF '.worktreeinclude' .git/info/exclude 2>/dev/null || echo '.worktreeinclude' >> .git/info/exclude
-      ```
+   e. worktree内に `.worktreeinclude` を作成（作業コミットに含めてマージする。以降のworktreeではチェックアウト時に存在するため再生成不要）
 
 4. `.worktreeinclude` に記載されたファイルをメインリポからworktreeにコピー:
 
