@@ -1,7 +1,9 @@
 ---
 name: wt-setup
 description: Git worktreeの開発環境セットアップ。worktree作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。
-version: 1.0.0
+version: 1.1.0
+model: sonnet
+context: fork
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 

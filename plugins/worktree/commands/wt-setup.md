@@ -1,6 +1,6 @@
 ---
 name: wt-setup
-description: Worktreeのセットアップ（.claude/ symlink、.worktreeinclude生成、envコピー）
+description: Git worktreeの開発環境セットアップ
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
