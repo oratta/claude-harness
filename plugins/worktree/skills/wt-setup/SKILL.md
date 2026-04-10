@@ -1,6 +1,6 @@
 ---
 name: wt-setup
-description: Git worktreeのセットアップ。.claude/のsymlink作成、.worktreeincludeの生成（なければ）、gitignoreされたファイルのコピー。worktree作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。
+description: Git worktreeの開発環境セットアップ。worktree作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。
 version: 1.0.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
@@ -18,13 +18,13 @@ Git worktree作成後に実行し、開発に必要なファイル・設定を�
 
 ### Step 1: セットアップスクリプトを実行
 
-以下のスクリプトが環境判定、.worktreeincludeファイルのコピー、.claude/の判定とsymlink作成を一括で行う。
+以下のスクリプトを実行する。
 
 ```bash
 bash ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/worktree/scripts/wt-setup.sh
 ```
 
-スクリプトの出力を確認し、結果をユーザーに報告する。
+スクリプトの出力を確認し、出力内容に基づいて後続ステップを判断する。
 
 ### Step 2: .worktreeinclude が存在しない場合のみ — 生成
 
@@ -67,6 +67,4 @@ bash ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/worktree/scrip
 
 ## エラーハンドリング
 
-- メインリポが見つからない場合: スクリプトがエラー終了する
-- コピー元ファイルが存在しない場合: 警告のみ（gitignoreに書いてあるがファイルがない = まだ作ってない）
-- symlink先が既に存在する場合: `-sfn` で上書き（既存symlinkの更新）
+- スクリプトがエラー終了した場合: エラー出力をそのままユーザーに報告する
