@@ -1,0 +1,21 @@
+{
+  "name": "infra",
+  "version": "0.1.0",
+  "description": "Webアプリのインフラを対話的に一括セットアップするプラグイン。Vercel + Supabase + GitHub Actions構成で、local/staging/prod の4環境を構築する（`/infra-setup`）。既存 supabase-project-setup スキルを統合。",
+  "author": {
+    "name": "Oratta"
+  },
+  "skills": [
+    "./skills/infra-setup"
+  ],
+  "commands": [
+    "./commands/infra-setup.md"
+  ],
+  "agents": [
+    "./agents/infra-phase-1-hearing.md",
+    "./agents/infra-phase-2-supabase.md",
+    "./agents/infra-phase-3-vercel.md",
+    "./agents/infra-phase-4-github-actions.md",
+    "./agents/infra-phase-5-finalize.md"
+  ]
+}
