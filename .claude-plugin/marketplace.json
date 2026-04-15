@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -70,6 +70,15 @@
       "version": "0.1.0",
       "author": { "name": "Oratta" },
       "keywords": ["infra", "setup", "vercel", "supabase", "github-actions", "deploy", "nextjs"]
+    },
+    {
+      "name": "experience-to-skill",
+      "description": "作業履歴（commit + session jsonl）を素材に、LLM駆動で都度コミット → verified タグ → skill 蒸留する統合ワークフロー。Stop hook を使わずマルチセッション安全。/e2s:commit /e2s:ok /e2s:rewind /e2s:reflect /e2s:distill /e2s:status。",
+      "source": "./plugins/experience-to-skill",
+      "category": "workflow",
+      "version": "0.1.0",
+      "author": { "name": "Oratta" },
+      "keywords": ["skill-distillation", "commit", "git", "verified-tag", "reflection", "llm-driven", "auto-commit", "multi-session"]
     }
   ],
   "skills": [],
@@ -77,7 +86,7 @@
     {
       "name": "all",
       "description": "全プラグインをインストール",
-      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun", "lr", "worktree", "weekly-report", "infra"],
+      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun", "lr", "worktree", "weekly-report", "infra", "experience-to-skill"],
       "skills": []
     }
   ]
