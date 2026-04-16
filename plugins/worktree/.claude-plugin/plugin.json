@@ -1,6 +1,6 @@
 {
   "name": "worktree",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Git worktreeのセットアップとクリーンアップ。wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー。wt-clean: 診断・LLM保全・マージ・削除。",
   "author": {
     "name": "Oratta"
