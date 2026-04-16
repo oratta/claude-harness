@@ -1,6 +1,6 @@
 ---
 name: experience-to-skill
-description: 作業完了時に LLM 駆動で自動コミットを実行する。自セッション編集ファイルのみを安全にステージングし、Conventional Commits subject + Intent/Result/Prompted-by 構造化 body を持つコミットメッセージを生成、二重 secret filter で credentials 混入を防ぐ。完了を示すフレーズ（「完了」「終わった」「動作確認して」「確認お願いします」「archive して」「commit して」「done」「finished」「完成」「ok」「OK」）や `longrun:archive` / `openspec:archive` 完了イベントで自動起動。Stop hook は使わないためマルチセッション並行実行時も衝突しない。単発コミットでは `/e2s:commit` を明示起動しても同じワークフローが走る。archive トリガー後は続いて `/e2s:ok` による verified タグ付与を提案する。作業終了・コミット作成・スキル化を狙った履歴構築・mintsession安全なコミット管理に言及があれば積極的に起動。
+description: 作業完了時に LLM 駆動で自動コミットを実行する。**LLM（自分）が assistant 応答として作業完了を報告する時（「〜しました」「〜を追加しました」「〜完了です」「修正しました」「更新しました」等）は必ずその報告を書く直前にこのスキルを起動する。**ユーザーの完了フレーズ（「完了」「終わった」「動作確認して」「確認お願いします」「archive して」「commit して」「done」「finished」「完成」「ok」「OK」）、`longrun:archive` / `openspec:archive` 完了イベントでも自動起動。自セッション編集ファイルのみを安全にステージングし、Conventional Commits subject + Intent/Result/Prompted-by 構造化 body を持つコミットメッセージを生成、二重 secret filter で credentials 混入を防ぐ。Stop hook は使わないためマルチセッション並行実行時も衝突しない。単発コミットでは `/e2s:commit` を明示起動しても同じワークフローが走る。archive トリガー後は続いて `/e2s:ok` による verified タグ付与を提案する。作業終了・コミット作成・スキル化を狙った履歴構築・マルチセッション安全なコミット管理・LLM 応答境界でのコミットに言及があれば積極的に起動。
 allowed-tools: Read, Bash, Glob, Grep
 ---
 
@@ -10,13 +10,47 @@ allowed-tools: Read, Bash, Glob, Grep
 
 ## 起動タイミング
 
-**auto-trigger 条件:**
+**auto-trigger 条件（以下のいずれかに該当したら起動）:**
 
-- ユーザーメッセージに次のいずれかのフレーズが含まれる: `完了`, `終わった`, `動作確認して`, `確認お願いします`, `archive して`, `commit して`, `お願いします`, `done`, `finished`, `完成`, `ok`, `OK`
-- `longrun:archive` / `openspec:archive` スラッシュコマンドの主要ワークフローが成功完了した直後（archive 側からこのスキルを明示起動）
-- ユーザーが `/e2s:commit` を明示実行
+### Trigger 1: LLM（自分）の作業完了報告（★ 最優先・最頻出）
 
-**起動前に一度 git status を確認し、差分ゼロなら即座に終了する（Precondition 参照）。**
+**自分が assistant 応答として次のパターンで作業完了を報告しようとしている時、その応答を書く前にこのスキルを起動する。**
+
+報告パターンの例：
+
+- 「〜を実装しました」「〜を追加しました」「〜を作成しました」
+- 「〜を更新しました」「〜を修正しました」「〜を削除しました」
+- 「〜完了です」「〜できました」「〜終わりました」
+- 「実装が終わりました」「作業が完了しました」「反映しました」
+- plan.md / tasks.md / openspec 系ファイルの更新完了を伝える報告
+- `TodoWrite` でタスクを `completed` にマークした直後の総括報告
+- ファイル作成・編集・削除を伴う tool call が1つ以上走った後、ユーザーへの応答本文を書こうとしている時
+
+**運用ルール:**
+
+- 応答を書き始める前に頭の中で「今、作業完了を伝えようとしているか？」を自問する
+- YES なら**応答本文を出力する前に**本スキルを起動
+- スキル実行（コミット）を終えてから、あらためてユーザーへの報告を書く
+- ただし Precondition（差分ゼロ）にかかれば何もせず通常通り応答する
+- 「調べました」「確認しました」のような読み取りだけの報告は対象外（差分ゼロで Precondition 通過）
+
+これは Stop hook を使わずに **LLM 応答境界 ≈ コミット境界** を実現するための自己規律。Trigger 1 を無視して報告を書いてしまうと、ユーザー側からは「黙って編集→報告」の流れで変更が untracked のまま溜まっていくので、必ず優先する。
+
+### Trigger 2: ユーザーメッセージの完了示唆フレーズ
+
+ユーザーメッセージに次のいずれかが含まれる：`完了`, `終わった`, `動作確認して`, `確認お願いします`, `archive して`, `commit して`, `お願いします`, `done`, `finished`, `完成`, `ok`, `OK`
+
+### Trigger 3: archive 系コマンド成功完了
+
+`longrun:archive` / `openspec:archive` スラッシュコマンドの主要ワークフローが成功完了した直後。archive 側からこのスキルを明示起動する。
+
+### Trigger 4: 明示起動
+
+ユーザーが `/e2s:commit` を実行。
+
+---
+
+**どの trigger でも起動前に一度 git status を確認し、差分ゼロなら即座に終了する（Precondition 参照）。**
 
 ## Precondition: 差分ゼロ時は即座に終了
 

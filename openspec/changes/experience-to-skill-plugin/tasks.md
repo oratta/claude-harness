@@ -60,7 +60,7 @@
 
 ## 7. Marketplace Integration
 
-- [ ] 7.1 Verify `.claude-plugin/marketplace.json` version bump is semver-appropriate (minor version for new plugin addition)
-- [ ] 7.2 Commit all changes with Conventional Commits-compliant message (this plugin's own dogfooding: first commit should use the new format)
-- [ ] 7.3 Push to the marketplace git repository (requires explicit user approval per plugin's own guardrails)
+- [x] 7.1 Verify `.claude-plugin/marketplace.json` version bump is semver-appropriate (minor version for new plugin addition)
+- [x] 7.2 Commit all changes with Conventional Commits-compliant message (this plugin's own dogfooding: first commit should use the new format)
+- [x] 7.3 Push to the marketplace git repository (requires explicit user approval per plugin's own guardrails)
 - [ ] 7.4 Post-push: run `/plugin install experience-to-skill@oratta-claude-harness` in a fresh session to verify end-to-end installation works
