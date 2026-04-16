@@ -1,15 +1,21 @@
 ---
 name: wt-setup
 description: Git worktreeの開発環境セットアップ。worktree作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。
-version: 1.1.0
+version: 1.2.0
 model: sonnet
 context: fork
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
 # wt-setup — Worktree セットアップスキル
 
 Git worktree作成後に実行し、開発に必要なファイル・設定を整えるスキル。
+
+## 禁止事項
+
+- `.claude/` ディレクトリに対する直接操作（削除、移動、リンク作成等）は絶対に実行しない
+- `.claude/` の操作は全てスクリプト（wt-setup.sh）に委譲する
+- スクリプトの処理を「効率化」「最適化」する目的で独自コマンドを実行しない。スクリプトが担当する処理はスクリプトに任せること
 
 ## 前提条件
 
@@ -49,14 +55,11 @@ bash ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/worktree/scrip
 *.local.md
 ```
 
-3. さらに `.gitignore` 内のパターンから推測して追加候補を提案:
-   - `.env*` 系 → 追加
-   - `*.pem`, `*.key` 系 → 追加提案
-   - `config/secrets*` 系 → 追加提案
-   - `node_modules`, `out`, `dist`, `*.log` 系 → **追加しない**（ビルド成果物）
-4. AskUserQuestion で追加パターンを確認
-5. worktree内に `.worktreeinclude` を作成（作業コミットに含めてマージする。以降のworktreeではチェックアウト時に存在するため再生成不要）
-6. 作成後、再度スクリプトを実行してファイルをコピーする
+3. `.gitignore` の内容を以下の分類ルールで自動判定し、パターンを追加する（ユーザーに確認しない）:
+   - **含める**: `.env*` 系、`*.pem`, `*.key` 系、`config/secrets*` 系（開発に必要な環境・秘密鍵ファイル）
+   - **除外する**: `node_modules`, `out`, `dist`, `build`, `.next`, `*.log` 系（ビルド成果物・一時ファイル。再生成可能）
+4. worktree内に `.worktreeinclude` を作成（作業コミットに含めてマージする。以降のworktreeではチェックアウト時に存在するため再生成不要）
+5. 作成後、再度スクリプトを実行してファイルをコピーする
 
 ### Step 3: 依存インストール（任意）
 
@@ -66,6 +69,7 @@ bash ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/worktree/scrip
 ### Step 4: 完了レポート
 
 スクリプトの出力結果を元に、セットアップ結果をまとめてユーザーに報告する。
+`.worktreeinclude` を新規生成した場合は、含めたパターンと除外したパターンの一覧もレポートに含める。
 
 ## エラーハンドリング
 

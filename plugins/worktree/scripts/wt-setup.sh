@@ -43,7 +43,10 @@ fi
 #=== Step 3: .claude/ の共有 ===
 
 echo ""
-if git ls-files --error-unmatch .claude/ &>/dev/null 2>&1; then
+if [ -L .claude ]; then
+  echo "=== .claude/: 既にシンボリンク → スキップ ==="
+  echo "  WARNING: .claude/ が丸ごとシンボリンクになっています。サブディレクトリ単位のリンクが推奨です。"
+elif git ls-files --error-unmatch .claude/ &>/dev/null 2>&1; then
   echo "=== .claude/: git追跡済み → symlinkスキップ（既にworktreeに存在） ==="
 else
   echo "=== .claude/: 未追跡 → symlinkを作成 ==="
