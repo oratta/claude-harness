@@ -10,9 +10,5 @@
   "skills": [
     "./skills/wt-setup",
     "./skills/wt-clean"
-  ],
-  "commands": [
-    "./commands/wt-setup.md",
-    "./commands/wt-clean.md"
   ]
 }
