@@ -1,14 +1,19 @@
 ---
 name: wt-clean
-description: Git worktreeの安全なクリーンアップ。診断（マージ状態・未コミット変更・LLMファイル）→ LLM保全 → マージ → 削除。「worktree整理」「ワークツリークリーン」「worktree削除」で起動。
-version: 1.0.0
+description: Git worktreeの安全なクリーンアップ。診断（マージ状態・未コミット変更・LLMファイル）→ LLM保全 → マージ → 削除 or 再利用化。`--keep` オプションでクリーンなworktreeをmainに戻して再利用可能状態に保つ。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」で起動。
+version: 1.1.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
 # wt-clean — Worktree クリーンアップスキル
 
 Git worktreeを安全にクリーンアップするスキル。
-診断 → LLM保全 → マージ → 削除の順で、データロスなく整理する。
+診断 → LLM保全 → マージ → 削除 or 再利用化 の順で、データロスなく整理する。
+
+## オプション
+
+- オプションなし（デフォルト）: 削除モード。マージ済み worktree をディレクトリごと削除する
+- `--keep`: 再利用モード。🟢 Safe worktree はディレクトリを残し、worktree内のブランチをmainに戻して元ブランチを削除する。`node_modules` / `.env` / 未追跡ファイルは保持されるため、次作業時のセットアップコストがゼロになる。🟡 Recoverable は従来通り削除、🔴 Active はスキップ
 
 ## 前提条件
 
@@ -62,16 +67,23 @@ git log -1 --format='%ci' "$BRANCH_NAME"
 
 ### Step 3: レポート表示
 
-AskUserQuestion でレポートを表示し、ユーザーに確認:
+AskUserQuestion でレポートを表示し、ユーザーに確認。冒頭に現在のモードを明示する。
 
 ```
-Worktree診断結果:
+Worktree診断結果 (モード: 削除 / --keep で再利用):
 
 | Worktree | Branch | 状態 | 未マージ | Dirty | LLM | 推奨 |
 |----------|--------|------|----------|-------|-----|------|
-| /path/a  | feat-x | 🟢 Safe | 0 | No | No | 削除 |
+| /path/a  | feat-x | 🟢 Safe | 0 | No | No | 削除 (または再利用) |
 | /path/b  | fix-y  | 🟡 Recover | 0 | No | 2files | LLMコピー→削除 |
 | /path/c  | wip-z  | 🔴 Active | 3 | Yes | No | スキップ |
+```
+
+`--keep` 指定時のレポート冒頭:
+```
+Worktree診断結果 (モード: 再利用 [--keep]):
+...
+推奨列の 🟢 Safe は「再利用可能化（main切替＋元ブランチ削除）」となる。🟡/🔴 は削除/スキップで変化なし。
 ```
 
 選択肢:
@@ -174,7 +186,7 @@ npm run build     # ビルド（scripts に存在すれば）
 このworktreeは削除せず保持します。
 ```
 
-**重要**: チェック失敗時、該当worktreeだけでなく、そのworktreeのマージ以降にマージされたworktreeも全て削除を保留する（マージ順序が影響するため）。
+**重要**: チェック失敗時、該当worktreeだけでなく、そのworktreeのマージ以降にマージされたworktreeも全て削除を保留する（マージ順序が影響するため）。`--keep` 指定時も同様に、FAIL した worktree およびそれ以降の worktree は**削除も再利用化も保留**する（安全側に倒す）。
 
 #### 6d. チェック対象の範囲
 
@@ -184,9 +196,17 @@ npm run build     # ビルド（scripts に存在すれば）
 
 チェックは**バッチ実行**する。個別のworktreeごとではなく、全マージ完了後に1回だけ実行する（テスト実行コストを最小化）。
 
-### Step 7: 削除実行
+### Step 7: 削除 / 再利用 実行
 
-**Step 6 でチェックPASSしたworktreeのみ削除する。**
+**Step 6 でチェックPASSしたworktreeのみ処理する。**
+
+モードに応じて分岐する:
+- オプションなし（デフォルト） → **Step 7a: 削除モード**
+- `--keep` 指定 → **Step 7b: 再利用モード**（🟢 Safe のみ対象）
+
+いずれのモードでも、🟡 Recoverable は **Step 7a（削除）** で処理する（未コミット変更を main に戻す際の事故リスクを避けるため）。🔴 Active は明示指示がない限り常にスキップ。
+
+#### Step 7a: 削除モード
 
 ```bash
 # git worktree remove
@@ -201,7 +221,43 @@ git branch -d "$BRANCH_NAME"
 - `git worktree remove` + `git branch -d` を実行
 - 「Superset UI上でもnot foundになるので、UIから削除してください」と案内
 
+#### Step 7b: 再利用モード（`--keep` 指定時、🟢 Safe のみ）
+
+🟢 Safe worktree に対してのみ実行する。処理前に main/master の重複チェックアウト競合を検査する。
+
+```bash
+# main or master を自動検出（Step 1 と同じロジック）
+MAIN_BRANCH="main"
+git show-ref --verify --quiet refs/heads/master && MAIN_BRANCH="master" || true
+
+# 他の worktree が既に MAIN_BRANCH をチェックアウトしているか確認
+# `git worktree list` の末尾カラムは `[branch-name]` 形式
+OTHER_CHECKOUT=$(git worktree list | awk -v b="[$MAIN_BRANCH]" '$NF==b {print $1}' | grep -v "^$MAIN_REPO$" | head -1)
+
+if [ -n "$OTHER_CHECKOUT" ]; then
+  echo "⚠️ $MAIN_BRANCH は $OTHER_CHECKOUT で既にチェックアウト中"
+  echo "  $WORKTREE_PATH の再利用化をスキップ（競合のため）"
+  # このworktreeは再利用化対象から除外、次のworktreeへ
+else
+  # 再利用化実行
+  git -C "$WORKTREE_PATH" checkout "$MAIN_BRANCH"
+  git branch -d "$BRANCH_NAME"
+  # worktree ディレクトリは残す。node_modules / .env / untracked は全て保持される
+fi
+```
+
+**メインリポ自体が main をチェックアウトしている状態は競合ではない**（通常運用）。`grep -v "^$MAIN_REPO$"` で除外する。
+
+**実行してはならない操作** (SHALL NOT):
+- `git reset --hard` — 万一 tracked 変更が残っていた場合に破壊する
+- `git clean -fd` — `node_modules` / `.env` / 作業中ファイルを消してしまう
+- `git pull` / `git fetch` — 最新化はユーザー責任
+
+**🟢 Safe が 0 件の場合**: 「再利用化対象なし（🟢 Safe worktree がありません）」とレポートに明示し、🟡/🔴 に対する従来処理を継続する。`--keep` 指定だけでエラーにはしない。
+
 ### Step 8: 完了レポート
+
+#### 削除モード（デフォルト）
 
 ```
 wt-clean 完了:
@@ -213,12 +269,43 @@ wt-clean 完了:
   残存worktrees: 1
 ```
 
-チェック失敗時:
+#### 再利用モード（`--keep` 指定）
+
+```
+wt-clean --keep 完了:
+  処理: 2 worktrees
+  再利用可能化: feat-x (🟢)
+    ディレクトリ: /Users/oratta/repo/.worktrees/feat-x
+    現在ブランチ: main（元 feat-x は削除済み）
+    次の作業: cd /Users/oratta/repo/.worktrees/feat-x && git checkout -b <new-branch>
+  削除: fix-y (🟡)
+  LLMコピー: 1 file → LLM/
+  サニティチェック: ✅ PASS (npm test)
+  スキップ: wip-z (🔴 active)
+  残存worktrees: 2
+
+注意:
+  - package.json / Gemfile 等が更新されていれば、再作業前に依存を再インストールしてください
+  - 必ず `git checkout -b <new-branch>` で新ブランチを切ってから作業を開始してください（main で直接作業しない）
+```
+
+再利用化がスキップされた場合（競合・0件）も明示する:
+```
+  再利用可能化: なし (🟢 Safe が 0 件)
+```
+または
+```
+  再利用可能化スキップ: feat-x — main が別worktreeで使用中のため
+```
+
+#### チェック失敗時（削除モード・再利用モード共通）
+
 ```
 wt-clean 完了:
   処理: 1 worktree
   削除: feat-x (🟢)
   ⚠️ チェック失敗で保留: fix-y (🟡) — npm test FAIL
+      → 削除も再利用化も行われていません
   スキップ: wip-z (🔴 active)
   残存worktrees: 2
 ```
