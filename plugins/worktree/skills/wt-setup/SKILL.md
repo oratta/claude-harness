@@ -1,7 +1,7 @@
 ---
 name: wt-setup
-description: Git worktreeの開発環境セットアップ。worktree作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。
-version: 1.2.0
+description: Git worktreeの開発環境セットアップ。worktree作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。コマンド引数として後続作業指示を渡せる（例: `/wt-setup issue#3の対応`）。
+version: 1.3.0
 model: sonnet
 context: fork
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
@@ -10,6 +10,18 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 # wt-setup — Worktree セットアップスキル
 
 Git worktree作成後に実行し、開発に必要なファイル・設定を整えるスキル。
+
+## 後続作業指示の扱い
+
+コマンド引数（`$ARGUMENTS`）にセットアップ後の作業指示が含まれることが多い。
+ユースケースは「worktreeを作って即座に何かに着手する」流れがほとんど。
+
+- 例: `/wt-setup issue#3の対応`
+- 例: `/wt-setup ログイン画面のバグ修正`
+- 例: `/wt-setup セットアップ終わったらXXXやって`
+
+引数がある場合は、Step 4 完了レポート後に Step 5 として後続作業に着手する（後述）。
+引数なしの場合はセットアップのみ実行して完了。
 
 ## 禁止事項
 
@@ -71,6 +83,15 @@ bash ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/worktree/scrip
 スクリプトの出力結果を元に、セットアップ結果をまとめてユーザーに報告する。
 `.worktreeinclude` を新規生成した場合は、含めたパターンと除外したパターンの一覧もレポートに含める。
 
+### Step 5: 後続作業の実行（引数がある場合のみ）
+
+コマンド引数に作業指示が含まれている場合、完了レポートに続けてその作業に着手する。
+
+- 引数を新規ユーザー指示として扱い、通常通りタスク分解・実装を進める
+- 完了レポートと作業着手は明確に区切る（例: 「セットアップ完了。続けて『issue#3の対応』に着手します。」）
+- 引数が空の場合はこのステップをスキップして終了
+
 ## エラーハンドリング
 
 - スクリプトがエラー終了した場合: エラー出力をそのままユーザーに報告する
+- セットアップでエラーが発生した場合、引数で指定された後続作業には着手しない（先にエラー解消が必要）
