@@ -30,6 +30,17 @@
 - **エビデンス**: plan.md の動作確認方法セクション
 - **影響**: 4軸評価のうち「機能性」「UX」は手動確認に委譲。verify 自動化は「品質」「完成度」のみ
 
+## D5: version 同期 bump は 4.3.0 ではなく 5.2.0 に統一する
+- **日時**: 2026-05-07 change-C 実装フェーズ
+- **判断**: `plugin.json` を `5.1.0 → 5.2.0` に minor bump し、`SKILL.md` frontmatter を `4.2.0 → 5.2.0` に**揃える**（plan.md 当初指定の 4.3.0 ではない）
+- **根拠**:
+  - plan.md（受け入れ条件 #10）は両者を 4.3.0 にすると指示しているが、実際の `plugin.json` は既に 5.1.0 まで進んでいた（v5.0 / v5.1 のリネーム作業で先行 bump 済み）
+  - plan.md の指示通り 4.3.0 にすると plugin.json を **downgrade** することになり、プラグインキャッシュの新旧判定が破綻し他プロジェクトで配信トラブルが起きる（plugin-editing.md ルール「バージョン単位でキャッシュされる」より）
+  - 「同期 bump」の本質は「両ファイルが揃った状態でキャッシュ無効化を起こすこと」であり、特定数値 4.3.0 への固執ではない
+  - SKILL.md frontmatter の 4.2.0 は v5.x への bump 取り込み漏れであり、本 change で揃えるのが正しい
+- **エビデンス**: `plugin.json` 現状 `"version": "5.1.0"`、SKILL.md frontmatter `version: 4.2.0`
+- **影響**: 受け入れ条件 #10 の数値解釈を「4.3.0」から「両者一致 minor bump」と読み替える。後の archive で本決定を spec.md にも反映する
+
 ## D4: Build Contract レビューは plan 段階の APPROVE と別に再実行
 - **日時**: 2026-05-07 Setup フェーズ
 - **判断**: plan 段階で longrun-reviewer から APPROVE を得ているが、orchestrator SKILL.md の指示通り Build Contract フェーズで再度 longrun-reviewer を呼ぶ
