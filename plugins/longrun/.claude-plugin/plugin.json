@@ -22,6 +22,9 @@
     "./agents/longrun-builder.md",
     "./agents/longrun-verifier.md",
     "./agents/longrun-browser-verifier.md",
-    "./agents/longrun-reviewer.md"
+    "./agents/longrun-reviewer.md",
+    "./agents/longrun-mvp-research.md",
+    "./agents/longrun-mvp-plan-reviewer.md",
+    "./agents/longrun-mvp-bestpractice-reviewer.md"
   ]
 }
