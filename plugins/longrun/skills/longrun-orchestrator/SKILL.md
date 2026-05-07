@@ -72,7 +72,7 @@ last_updated: 2026-03-26T08:00:00
 
 ## Planフェーズ（前提: 既に完了）
 
-longrun-planner Skillによって plan.md が `_longruns/YYYY-MM-DD_slug/` に作成済み。
+longrun-plan Skillによって plan.md が `_longruns/YYYY-MM-DD_slug/` に作成済み。
 orchestratorはこの plan.md を入力として受け取る。
 
 ---
@@ -165,8 +165,8 @@ Build Contractフェーズから開始します。
 
 <GATE>
 このフェーズをスキップしてはならない。
-「plan.mdは既にレビュー済み」「longrun-plannerでレビュー通過済み」は理由にならない。
-longrun-plannerのレビューとBuild Contractは別の検査である。
+「plan.mdは既にレビュー済み」「longrun-planでレビュー通過済み」は理由にならない。
+longrun-planのレビューとBuild Contractは別の検査である。
 必ず Agent ツールで longrun-reviewer を呼び出すこと。
 </GATE>
 
@@ -188,6 +188,28 @@ longrun-reviewer は plan.md の Changes 分解を見て、以下を評価:
 - APPROVE → Build フェーズへ
 - REQUEST_CHANGES → 具体的な修正提案付き。orchestratorが plan.md を修正して再レビュー
 - 最大2ラウンド。2回でAPPROVEされない場合は残課題を明記して進行
+
+### レビュー結果の取捨選択（バイアス緩和ガード）
+
+<GATE>
+longrun-reviewer の指摘を全採用してはならない。指摘ごとに根拠の有無を判定し、嗜好レベルの指摘は plan の意図を優先して反論すること。
+</GATE>
+
+reviewer の指摘は **仮説** として扱う。指摘ごとに以下の二択で判定する:
+
+- **(a) 採用すべき指摘**: spec 違反 / 契約違反（受け入れ条件と矛盾）/ 事実誤認 / 依存順序の誤り / セキュリティ問題 のいずれかに該当するもの
+- **(b) 反論すべき指摘**: 嗜好（命名・読みやすさ・好みのスタイル）/ plan に明示された判断と単に意見が違うだけ / 「もっと一般化できそう」レベルの提案
+
+(a) のみ採用して plan.md を修正する。(b) には決定理由を `decisions.md` に記録した上で反論し、**plan の意図を保持する**。
+
+**なぜこのガードが必要か:** Claude Opus 系には2つのバイアスが知られている:
+
+1. **self-preference bias**: モデルが自分の出力を識別すると高評価しやすい（Panickssery et al., NeurIPS 2024）
+2. **過剰受容バイアス**: 外部からのフィードバックを「明らかな誤り」でない限り採用しがち
+
+この2つが組み合わさると、orchestrator は自分が生成（または保持）した plan を守らず、reviewer 指摘を全採用して plan が骨抜きになる。`decisions.md` への記録を必須にすることで、反論の意図的な実行を強制する。
+
+REQUEST_CHANGES のラウンドでも同じガードを適用する。
 
 checkpoint.md 更新: `Build Contract: APPROVED by longrun-reviewer`
 

@@ -1,11 +1,11 @@
 ---
-name: longrun-planner
+name: longrun-plan
 description: 自律実行用のplan.mdを対話的に作成する。ユーザーのbrain dumpを分析し、発散リスクの高い論点を特定して質問で埋めた上で、構造化されたplanファイルを生成する。OpenSpecのbacklog・既存changesも自動参照し、巻き込めるタスクを提案する。「planを作りたい」「実行計画を作成」「run準備」で起動。
-version: 4.1.0
+version: 4.2.0
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash
 ---
 
-# Run Planner — plan.md 作成スキル
+# Run Plan — plan.md 作成スキル
 
 自律実行のための plan.md を対話的に作成するスキル。
 Brain Dump → 開発フレームワーク理解 → Gap Analysis → Interview → Synthesis → Validation の6フェーズで、ユーザーの意図を最大限正確に構造化する。
