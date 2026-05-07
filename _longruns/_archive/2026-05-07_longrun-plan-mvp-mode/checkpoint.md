@@ -1,11 +1,26 @@
 ---
-phase: Setup
+phase: Verify
 status: complete
-last_updated: 2026-05-07T10:35:00+09:00
+last_updated: 2026-05-07T11:50:00+09:00
 ---
+
+## Verify結果
+| 軸 | スコア | しきい値 | 判定 | 検証Agent |
+|----|-------|---------|------|----------|
+| 品質 | 100% | 100% | ✅ | longrun-verifier |
+| 完成度 | 100% | 80% | ✅ | longrun-verifier (BLOCKER修正後) |
+| 機能性 | N/A | - | manual | (Feedbackフェーズで手動 invocation) |
+| UX | N/A | - | manual | (該当なし - CLI/Markdown) |
+
+修正コミット: aeb5b57 (plugin.json agents 配列に 3 MVP agent 登録)
 
 ## 完了フェーズ
 - [x] Setup: ツール検証 + ディレクトリ初期化
+- [x] Build Contract: APPROVE by longrun-reviewer (2回目)
+- [x] Build:
+  - [x] change-A `longrun-mvp-mode-subagents` (commit 58f5f9f) — 3 agents 追加 + spec
+  - [x] change-B `longrun-mvp-mode-skill-branch` (commit 905b44b) — SKILL.md MVP モード分岐追加（既存本文 0 deletion）
+  - [x] change-C `longrun-mvp-mode-template-archive` (commit 123474a) — 軽量テンプレ + archive 拡張 + version 同期 bump 5.2.0
 
 ## ツール検証結果
 - openspec: `/Users/oratta/.volta/bin/openspec` (v1.2.0)
