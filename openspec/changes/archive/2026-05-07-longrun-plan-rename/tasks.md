@@ -42,5 +42,5 @@
 ## 8. コミット & デプロイ
 
 - [x] 8.1 変更内容を Conventional Commits 形式でコミット（subject 例: `refactor(longrun): rename longrun-planner skill to longrun-plan`）→ commit c60c2d8
-- [ ] 8.2 `~/.claude/plugins/known_marketplaces.json` でリポジトリ URL を確認し push
+- [x] 8.2 `~/.claude/plugins/known_marketplaces.json` でリポジトリ URL を確認し push → main にマージしてpush済み（merge commit 8d19fd0、push 9b14793..8d19fd0）
 - [ ] 8.3 別プロジェクトで `/plugin update longrun@oratta-claude-harness` または再インストールを行い、version 5.1.0 が反映されて Agent 誤起動が再発しないことをサンプル確認
