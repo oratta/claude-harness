@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -79,6 +79,15 @@
       "version": "0.1.0",
       "author": { "name": "Oratta" },
       "keywords": ["skill-distillation", "commit", "git", "verified-tag", "reflection", "llm-driven", "auto-commit", "multi-session"]
+    },
+    {
+      "name": "skill-pack",
+      "description": "プロジェクトごとに skillOverrides / enabledPlugins を対話的に編集して必要なスキル/プラグインだけ ON にする。/skill-pack init で初期セットアップ、list/on/off/suggest で運用。コピーや symlink ではなく公式の設定ファイル機構（Local > Project > User）に乗る。",
+      "source": "./plugins/skill-pack",
+      "category": "workflow",
+      "version": "0.1.0",
+      "author": { "name": "Oratta" },
+      "keywords": ["skills", "configuration", "skillOverrides", "enabledPlugins", "project-setup", "doctor"]
     }
   ],
   "skills": [],
@@ -86,7 +95,7 @@
     {
       "name": "all",
       "description": "全プラグインをインストール",
-      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun", "lr", "worktree", "weekly-report", "infra", "experience-to-skill"],
+      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun", "lr", "worktree", "weekly-report", "infra", "experience-to-skill", "skill-pack"],
       "skills": []
     }
   ]

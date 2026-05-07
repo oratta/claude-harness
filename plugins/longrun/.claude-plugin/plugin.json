@@ -1,7 +1,7 @@
 {
   "name": "longrun",
   "version": "5.2.0",
-  "description": "Claude Code 自律実行システム v5.2。MVP モード（--mode=mvp）を longrun:plan に追加: ヒアリング → 並列リサーチ → 軽量 plan.md → 並列レビュー → 人間ハンドオフの軽量フロー。Build Contract / TDD / Verifier をスキップし、archive 側は <!-- mvp-mode --> マーカー検知で OpenSpec change 生成をスキップ。フルモードは既存挙動を完全維持。",
+  "description": "Claude Code 自律実行システム v5.2。MVP モード（--mode=mvp）を longrun:plan に追加: ヒアリング → 並列リサーチ → 軽量 plan.md → 並列レビュー → 人間ハンドオフの軽量フロー。Build Contract / TDD / Verifier をスキップし、archive 側は <!-- mvp-mode --> マーカー検知で OpenSpec change 生成をスキップ。フルモードは既存挙動を完全維持。commands/exec.md は Skill tool 呼び出しから SKILL.md インライン実行に変更し、disable-model-invocation 付き longrun-orchestrator が起動できないバグも修正済み。",
   "author": {
     "name": "Oratta"
   },
