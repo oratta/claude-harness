@@ -4,11 +4,31 @@ description: plan.mdに基づいて自律実行を開始する
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 ---
 
-longrun-orchestrator **スキル**を使用して、自律実行を開始してください。
+longrun-orchestrator の手順をメインセッションでインライン実行して、自律実行を開始してください。
 
-**重要: longrun-orchestrator はエージェントではなくスキルである。** Agent ツールで起動してはならない。Skill ツールで呼び出すこと。これにより、orchestrator がメインセッションで実行され、サブエージェント（longrun-reviewer, longrun-builder, longrun-verifier）を Agent ツールで生成できる。
+**重要: Skill tool / Agent tool は使わないこと。** longrun-orchestrator の SKILL.md には `disable-model-invocation: true` が指定されており、Skill tool 経由で呼ぶと `cannot be used with Skill tool due to disable-model-invocation` エラーで失敗する。これは設計上の意図で、orchestrator はメインセッションでインライン実行されないとサブエージェント（longrun-reviewer / longrun-builder / longrun-verifier）を Agent ツールで生成できないため（サブエージェントはサブエージェントを生成できないという Claude Code の仕様）。Agent tool で起動するのも同じ理由で禁止。
 
-## 実行前チェック
+## 手順
+
+### Step 1: SKILL.md を読み込む
+
+orchestrator の本体は以下にある:
+```
+${CLAUDE_PLUGIN_ROOT}/skills/longrun-orchestrator/SKILL.md
+```
+
+`CLAUDE_PLUGIN_ROOT` が解決できない環境では bash で探索:
+```bash
+for dir in \
+  ~/.claude/plugins/marketplaces/*/plugins/longrun/skills/longrun-orchestrator \
+  ~/.claude/plugins/installed/*/longrun/skills/longrun-orchestrator; do
+  [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
+done
+```
+
+特定した絶対パスを Read tool で読み込む。
+
+### Step 2: 実行前チェック
 
 1. 実行対象のランディレクトリを特定する:
    - 引数でディレクトリパスが渡された場合: そのディレクトリを使用
@@ -17,10 +37,12 @@ longrun-orchestrator **スキル**を使用して、自律実行を開始して�
 2. ランディレクトリ内に既に `checkpoint.md` がある場合:
    - 続行するか新規開始するか確認
 
-## 実行
+### Step 3: インライン実行
 
-ランディレクトリのパスを引数として longrun-orchestrator スキルに渡す。
+ランディレクトリのパスを引数として、SKILL.md の手順をメインセッションでインライン実行する。
 Setup → Build Contract → Build → Verify → Feedback → Archive の順で自律的に実装を進める。
+
+引数: `$ARGUMENTS`
 
 ## 実行中の進捗確認
 

@@ -1,7 +1,7 @@
 {
   "name": "longrun",
-  "version": "5.1.0",
-  "description": "Claude Code 自律実行システム v4.6。Skill命名統一（longrun-planner → longrun-plan）でAgent誤起動を防止、commands/plan.mdをSkill tool明示呼び出しに変更、orchestratorにreviewerフィードバック過剰受容バイアスへの緩和ガード追加。",
+  "version": "5.2.0",
+  "description": "Claude Code 自律実行システム v4.7。commands/exec.md を Skill tool 呼び出しから SKILL.md インライン実行に変更し、disable-model-invocation 付き longrun-orchestrator が起動できないバグを修正。",
   "author": {
     "name": "Oratta"
   },
