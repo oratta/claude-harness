@@ -1,6 +1,6 @@
 {
   "name": "weekly-report",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "週次プロジェクト実績レポートを自動生成する。Gitコミット・LLMセッションログ・フェーズ状態を集約し、Obsidian週次ノートに挿入する。",
   "author": {
     "name": "Oratta"

@@ -46,6 +46,18 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__sunsama__read_resource
 
 ### Step 3: Sunsamaタスク収集
 
+#### 3-0. Deferred Tool スキーマのロード（必須）
+
+Claude Code 環境では MCP ツールが "deferred tools" として登録されており、初期状態ではスキーマがロードされていない。`mcp__sunsama__read_resource` を直接呼ぶと `InputValidationError` となり「MCP未接続」と誤判定してしまうため、**呼び出し前に必ず ToolSearch でスキーマをロードする**:
+
+```
+ToolSearch(query="select:mcp__sunsama__read_resource", max_results=1)
+```
+
+ロードに失敗した場合（`claude mcp list` で `sunsama: ... ✗` 等）にのみ、本ステップ全体をスキップしてレポートに `⚠️ Sunsama MCP が未接続` と記載する。ロード成功時は通常通り続行する。
+
+#### 3-1. タスク収集
+
 対象週の月〜日（7日間）について `sunsama://tasks/{YYYY-MM-DD}` リソースを読み取る。
 
 各タスクについて:
