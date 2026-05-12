@@ -48,3 +48,28 @@ Claude Code では Skill / Agent / Command が同じディスカバリカタロ�
 
 - 命名規則の定義: `CONTRIBUTING.md` の「命名規則（Skill / Agent / Command）」
 - 発端バグ修正: コミット `89f2181` (`fix(longrun,lr): replace Skill-tool delegation with inline SKILL.md exec`)
+
+---
+
+## `longrun-pr-merge-sync` skill 候補 — キャンセル
+
+**日付**: 2026-05-13
+**状態**: 作成しない
+
+### 経緯
+
+worktree で作業 → push → GitHub PR → merge on GitHub → 親リポ main から後片付け、という Issue-Driven workflow 終端の skill として `longrun-pr-merge-sync`（仮称）が想定されていた。役割は「ローカル `main` を `origin/main` に pull → feature branch 削除 → worktree 撤去」。
+
+### キャンセル理由
+
+`wt-clean` との差分が実質「事前に `git pull origin <main>` するか否か」の 1 点だけで、責務分割するほどの差ではないと判明。`wt-clean` に Step 0「Remote 同期」フェーズを追加すれば同一フローで処理できる。
+
+### 統合先
+
+OpenSpec change `wt-clean-remote-sync`（2026-05-13）で `wt-clean` に統合済み。
+- デフォルトで `git fetch` + `git pull --ff-only origin <main>` を実行
+- `--no-sync` でオプトアウト可能
+- `--keep` との併用も可
+- 参照: `openspec/changes/wt-clean-remote-sync/proposal.md`
+
+PR マージ後の片付けは `wt-clean`（または `wt-clean --keep`）を親リポ main から実行することで完結する。

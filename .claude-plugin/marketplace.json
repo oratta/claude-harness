@@ -46,10 +46,10 @@
     },
     {
       "name": "worktree",
-      "description": "Git worktreeのセットアップとクリーンアップ。symlink、envコピー、マージ後サニティチェック、削除を自動化。",
+      "description": "Git worktreeのセットアップとクリーンアップ。symlink、envコピー、Step 0でorigin/<main>を同期してから診断・マージ後サニティチェック・削除/再利用化を自動化。",
       "source": "./plugins/worktree",
       "category": "workflow",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "author": { "name": "Oratta" },
       "keywords": ["worktree", "git", "setup", "cleanup", "symlink"]
     },
