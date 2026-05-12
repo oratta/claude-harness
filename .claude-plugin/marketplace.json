@@ -58,7 +58,7 @@
       "description": "週次プロジェクト実績レポートを自動生成する。",
       "source": "./plugins/weekly-report",
       "category": "productivity",
-      "version": "1.0.0",
+      "version": "1.0.2",
       "author": { "name": "Oratta" },
       "keywords": ["weekly", "report", "obsidian"]
     },

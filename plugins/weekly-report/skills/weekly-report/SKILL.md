@@ -152,6 +152,35 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 - `progress`: 進捗率（%）
 - フェーズ名（ファイル名またはH1見出し）
 
+#### 4d. 1h-cooking セッション
+
+`/Users/oratta/Dropbox/WorkSpace` 配下の cooking jsonl をスキャンする。cooking plugin は作業 repo の cwd 直下に `data/sessions/<slug>.jsonl` を生成する設計のため、この location pattern で検索する。
+
+```bash
+find /Users/oratta/Dropbox/WorkSpace -type f -path "*/data/sessions/*.jsonl" \
+  -not -path "*/node_modules/*" \
+  -not -path "*/venv/*" \
+  -not -path "*/.venv/*" \
+  -not -path "*/site-packages/*" \
+  -not -path "*/storage/framework/sessions/*"
+```
+
+各 jsonl について:
+- ファイル名（`.jsonl` を除いた basename）が **slug**
+- 各行をJSONパースし、`time` フィールドが対象週内のイベントを抽出
+- イベント種別: `session_start`, `session_finish`, `plan_done`, `retrospect_start`, `retrospect_done` 等
+- `session_finish` イベントの `work_minutes` フィールドがあれば作業時間として記録（未取得の場合は空）
+
+**プロジェクトへのマッピング:**
+- jsonl の親 repo path（`*/data/sessions/` の手前）を取得
+- レジストリの `source_path` と前方一致でマッチ → プロジェクト名を解決
+- マッチしない場合は、path の `WorkSpace/<category>/<group>/...` のディレクトリ名から推測（例: `00_IndieDev/genetta-inc/1h-cooking` → Genetta-inc）
+- どのプロジェクトにも紐付かない場合は「個人タスク」セクションに集約
+
+**集計:**
+- slug ごとに session_start / session_finish の有無、合計 work_minutes、最新イベント時刻を記録
+- session_start のみ（session_finish なし）は「進行中」として扱う
+
 ### Step 6: レポート生成
 
 以下の構造でMarkdownを生成する:
@@ -170,6 +199,7 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 - **コード変更量**: N行
 - **Sunsamaタスク完了**: N件（計画 Nh — 仕事 Nh + 個人 Nh）
 - **LLMセッション数**: N（Vault: N + ソースリポジトリ: N）
+- **1h-cooking セッション**: N件（完了 N + 進行中 N）
 
 ---
 
@@ -201,6 +231,10 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 - [[ログファイル名|表示名]]（Vaultログ）
 - セッション要約テキスト（ソースリポジトリ、sessionID: XXXXXXXX）
 
+**1h-cooking** (Nセッション / 計 Nmin):
+- slug-a (60min, ✅完了)
+- slug-b (進行中)
+
 ### レビュー
 - {ユーザーが自由入力するための空セクション}
 
@@ -224,6 +258,7 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 - Sunsamaタスクもコミットもない場合は「完了作業」サブセクションを省略
 - Obsidian更新がない場合はそのサブセクションを省略
 - LLMセッションがない場合はそのサブセクションを省略
+- 1h-cookingセッションがない場合はそのサブセクションを省略
 - 全サブセクションが空のプロジェクトは「活動なしのプロジェクト」に列挙
 - プロジェクト名・フェーズ名は `[[]]` でwikilink化
 - 個人タスクはルーチン除外後に「個人タスク（プロジェクト外）」セクションに集約
@@ -253,6 +288,8 @@ Edit ツールで更新する。
 | 日本語ファイル名 | `git -c core.quotePath=false` を常に使用 |
 | 再実行（冪等性） | 既存の「今週の実績サマリ（自動生成）」セクションを置換 |
 | Gitリポジトリでない | ソースコード活動をスキップ |
+| 1h-cooking jsonl が破損/不正JSON | 該当行をスキップして次の行を処理 |
+| cooking session の project マッピング不可 | 「個人タスク」セクションに集約 |
 
 ## 注意事項
 
