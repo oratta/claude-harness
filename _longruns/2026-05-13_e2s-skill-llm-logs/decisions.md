@@ -63,3 +63,41 @@ Status: REQUEST_CHANGES → 6 件の指摘を受領。全て技術的根拠あ�
   1. 旧 change の Manual Test を完了させる意味がない（その実装を新設計で完全に置き換えるため）
   2. 新 capability 構造（旧 3 capability → 新 1 capability）は新規 change として記述する方が clean
 - **archive 時のラベル候補**: `2026-05-13-experience-to-skill-plugin-superseded`
+
+## change-A 実装決定（2026-05-13、builder agent）
+
+### 決定 9: 旧コマンド参照の許可リスト
+
+旧コマンド `/e2s:commit` `/e2s:ok` `/e2s:rewind` `/e2s:status` `/e2s:reflect` への文字列言及を意図的に残すファイル（受け入れ条件 6 のサブ条件 (a) `grep -rE '/e2s:(commit|ok|rewind|status|reflect)\b' .` での 0 件担保はこれらを除外した上で評価する）:
+
+- `_longruns/2026-05-13_e2s-skill-llm-logs/plan.md`（本 longrun の元設計）
+- `_longruns/2026-05-13_e2s-skill-llm-logs/decisions.md`（本ファイル）
+- `_longruns/2026-05-13_e2s-skill-llm-logs/checkpoint.md`（履歴記録）
+- `_longruns/2026-05-13_e2s-skill-llm-logs/verification-guide.md`（受け入れ条件追跡）
+- `openspec/changes/experience-to-skill-plugin/`（旧 OpenSpec change、change-B で archive 予定）
+- `openspec/changes/experience-to-skill-jsonl-refocus/proposal.md`（BREAKING マーカーとして旧コマンド名を列挙する必要あり）
+- `openspec/changes/experience-to-skill-jsonl-refocus/design.md`（リスク欄で旧コマンド名を引用する必要あり）
+- `openspec/changes/experience-to-skill-jsonl-refocus/specs/experience-to-skill-jsonl-distillation/spec.md`（依存削除を明記するため `reflect-candidates` への言及を許容）
+- `plugins/experience-to-skill/README.md`（BREAKING 変更点として旧コマンド名を列挙する必要あり）
+- `plugins/experience-to-skill/commands/e2s-distill.md`（旧 2 段階分離を廃止した経緯の言及）
+
+これら以外で旧コマンド参照が新たに検出された場合は、受け入れ条件 6(a) 違反として扱う。
+
+### 決定 10: jsonl ディレクトリの実環境エンコーディング検証結果
+
+実機 `~/.claude/projects/` で 3 例以上を検証:
+
+| cwd | 実エントリ | naive encode | 一致 |
+|---|---|---|---|
+| `/Users/oratta` | `-Users-oratta` | `-Users-oratta` | 完全一致 |
+| `/Users/oratta/.claude-mem` | `-Users-oratta--claude-mem-observer-sessions` | `-Users-oratta--claude-mem` | prefix のみ一致 |
+| `/Users/oratta/.superset/worktrees/ef0031fc-885f-4c05-adfc-99fa2da76f43/e2s-skill-llm-logs-2` | `-Users-oratta--superset-worktrees-ef0031fc-885f-4c05-adfc-99fa2da76f43-e2s-skill-llm-logs-2` | 同左 | 完全一致 |
+
+UUID 形式の `-` を含むパスは naive encode で一致した。一方 `.claude-mem` のような実用パスでは Claude Code 側がさらに subdirectory（observer-sessions 等）を付加するケースがあるため、**逆引きフォールバック（longest-prefix match）は必須**であることが確認できた。`scripts/jsonl-finder.sh::e2s_resolve_jsonl_dir` で実装済み。
+
+### 決定 11: 旧 SKILL.md からのロジック転写元
+
+- Layer 1 正規表現セット: 旧 SKILL.md の Step 4「Layer 1 コンテンツベースの secret 正規表現スキャン」セクションから採取（AWS / OpenAI / Anthropic / GitHub token / GitHub PAT / Slack / JWT / PEM）
+- 加えて Layer 1 にメールアドレスパターンを追加（旧 SKILL.md Step 5 の Layer 2 で PII として扱われていたものを正規表現として下層に降格、確実性のため）
+- Layer 2 LLM 意味判定方針: 旧 SKILL.md の Step 5「Layer 2 LLM による意味的 secret チェック」を新 SKILL.md および新 e2s-distill.md にそれぞれ転写
+- 旧 SKILL.md は新 SKILL.md で完全に置き換え。`git log -p` で旧版は復元可能

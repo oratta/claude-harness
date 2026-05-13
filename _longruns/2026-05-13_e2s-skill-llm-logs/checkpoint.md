@@ -1,5 +1,5 @@
 ---
-phase: Setup
+phase: Build
 status: in_progress
 last_updated: 2026-05-13T00:00:00Z
 ---
@@ -16,10 +16,10 @@ last_updated: 2026-05-13T00:00:00Z
 ## フェーズ進捗
 
 - [x] Setup: ツール検証完了
-- [ ] Setup: Explore コードベース調査（実行中）
-- [ ] Setup: OpenSpec 初期化チェック
-- [ ] Setup: 初期コミット
-- [ ] Build Contract: longrun-reviewer による Changes 分解レビュー
+- [x] Setup: Explore コードベース調査完了（旧コマンド参照 113 件、jsonl 命名規約確認、既存 change archive 方針確定）
+- [x] Setup: OpenSpec カスタムスキーマ skip 判断（decisions.md 決定 7）
+- [x] Setup: 初期コミット完了 (0f4d8bb)
+- [x] Build Contract: longrun-reviewer による APPROVE（決定 7, 8 含めて再確認、BLOCKER 0 件）
 - [ ] Build: change-A の OpenSpec 仕様作成 + verification-guide.md 生成
 - [ ] Build: change-A の TDD 実装（longrun-builder）
 - [ ] Build: change-B の OpenSpec 仕様作成 + 実装
