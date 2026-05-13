@@ -1,7 +1,7 @@
 {
   "name": "experience-to-skill",
-  "version": "0.1.0",
-  "description": "Claude Code セッションの作業履歴（コミット + session jsonl）を素材にして、LLM駆動で都度コミット → verified タグで検証点記録 → 区間から skill を蒸留する統合ワークフロー。Stop hook を使わない LLM駆動方式でマルチセッションでも衝突しない。",
+  "version": "0.2.0",
+  "description": "Claude Code セッションの jsonl ログを素材に、自然言語の依頼で SKILL.md を蒸留する専門ツール。コミット運用には一切関与せず、`/e2s:distill` 1 コマンドで対話完結する。",
   "author": {
     "name": "Oratta"
   },
@@ -9,11 +9,6 @@
     "./skills/experience-to-skill"
   ],
   "commands": [
-    "./commands/e2s-commit.md",
-    "./commands/e2s-ok.md",
-    "./commands/e2s-rewind.md",
-    "./commands/e2s-reflect.md",
-    "./commands/e2s-distill.md",
-    "./commands/e2s-status.md"
+    "./commands/e2s-distill.md"
   ]
 }
