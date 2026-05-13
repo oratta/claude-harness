@@ -1,191 +1,186 @@
 ---
 name: e2s-distill
-description: /e2s:reflect で提示された skill 候補を SKILL.md ファイルとして生成する。
-allowed-tools: Read, Write, Bash, Glob, AskUserQuestion
+description: cwd のセッション jsonl から自然言語の依頼でスキルを蒸留し SKILL.md を生成する（対話完結 1 コマンド）。
+allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 
-# /e2s:distill — skill 候補の SKILL.md 実体化
+# /e2s:distill — 対話完結のスキル蒸留
 
-`/e2s:reflect` で生成された候補リスト（`/tmp/e2s/reflect-candidates.json`）から指定 ID を選び、`SKILL.md` ファイルとして書き出す。
+`~/.claude/projects/<encoded-cwd>/*.jsonl` から、ユーザーが自然言語で示した過去作業を見つけ出し、その成功手順を SKILL.md として蒸留する。**1 コマンドで完結する**（旧 `/e2s:reflect` → `/e2s:distill` の 2 段階分離は廃止）。
 
 ## $ARGUMENTS
 
-- 引数 `<candidate-id>`: 必須。整数（例: `1`, `2`）
-- 引数なし / 不正な ID: エラー終了
+- 引数なし: cwd の jsonl 一覧（日付・サイズ）を表示して、ユーザーに「どんな作業をスキル化したいか」自然言語で示してもらう
+- 引数 `<自然言語指示>`: 例「先週どこかで動画の生成を行ったと思う。最終的に成功したプロセスをスキルにしてほしい」
 
 ## 実行手順
 
-### Step 1: 候補リストの読み込み
+### Step 1: jsonl ディレクトリの解決
 
 ```bash
-if [ ! -f /tmp/e2s/reflect-candidates.json ]; then
-  echo "❌ 候補リストがありません。先に /e2s:reflect を実行してください。"
+PLUGIN_ROOT="$(dirname "$(dirname "$(realpath "$0")")")"
+# shellcheck source=/dev/null
+source "$PLUGIN_ROOT/scripts/jsonl-finder.sh"
+
+cwd="$(pwd)"
+jsonl_dir="$(e2s_resolve_jsonl_dir "$cwd")" || {
+  echo "❌ cwd '$cwd' に対応する jsonl ディレクトリが ~/.claude/projects/ 配下に見つかりません。"
+  echo "   このディレクトリで Claude Code が起動した実績がない可能性があります。"
   exit 1
-fi
+}
+echo "📂 jsonl ディレクトリ: $jsonl_dir"
 ```
 
-JSON を parse し、`$ARGUMENTS` の ID に該当する候補を取り出す。該当なしなら：
+逆引きフォールバックは `e2s_resolve_jsonl_dir` 内で自動適用される。
 
-```
-❌ 候補 ID <id> は存在しません。
-利用可能な ID: 1, 2, 3
-
-候補リストを再生成するには /e2s:reflect を実行してください。
-```
-
-### Step 2: 配置先の決定
-
-AskUserQuestion で以下を問う：
-
-```
-候補 <id>「<name>」を SKILL.md として書き出します。
-配置先を選んでください：
-
-1. プロジェクトローカル: <repo-root>/.claude/skills/distilled/<name>/SKILL.md
-   → このプロジェクトでのみ有効。リポジトリ内なので git 管理可能。
-
-2. ユーザーグローバル: ~/.claude/skills/distilled/<name>/SKILL.md
-   → 全プロジェクトで有効。個人資産として蓄積。
-
-3. キャンセル
-```
-
-repo-root は `git rev-parse --show-toplevel` で取得。
-
-### Step 3: ディレクトリと名前の確認
-
-skill 名は `e2s-` または `distilled-` prefix を必須とする：
+### Step 2: 初期候補リストの提示
 
 ```bash
-# candidate.name が "verify-infra-setup" なら
-# prefixed_name = "e2s-verify-infra-setup" (デフォルト)
-prefixed_name="e2s-${candidate_name}"
-
-# frontmatter の name field に prefixed_name を使う
-# ディレクトリ名は distilled/<candidate_name>/ でも distilled/<prefixed_name>/ でもOK
-# デフォルトは distilled/<candidate_name>/ で短くする
-skill_dir="${base_path}/.claude/skills/distilled/${candidate_name}"
+# デフォルトは「過去 30 日 / 50MB 以下」
+E2S_JSONL_SINCE_DAYS=30 e2s_list_jsonl "$cwd" | head -20
 ```
 
-### Step 4: 既存チェックと衝突時の対応
+各 jsonl について以下を整形して表示する（LLM が `jq` / `python3` で parse）：
+
+- 日付（mtime）
+- ファイルサイズ
+- 先頭 user メッセージ抜粋（30 字程度、必ず Layer 1 `e2s_sanitize` を通す）
+- ターン数（行数 / 2 で概算）
+
+### Step 3: ユーザー指示の解釈
+
+引数として渡された自然言語指示から以下のヒントを抽出する：
+
+- **期間**: 「先週」「3日前」「昨日」等を ISO 日付範囲に変換
+- **トピックキーワード**: 「動画」「ffmpeg」「デプロイ」等
+- **成否ヒント**: 「成功したプロセス」「うまくいった方」等
+
+抽出した日付範囲は `E2S_JSONL_SINCE_DAYS`（または独自 since 計算）、キーワードは `E2S_JSONL_KEYWORDS` 環境変数で `e2s_list_jsonl` に渡す。
+
+### Step 4: 候補絞り込みとユーザー確認
+
+絞り込み後の jsonl が 1 件: そのまま Step 5 へ。
+2 件以上: ユーザーに番号付きリストで提示し、選択してもらう。各候補について以下も提示：
+
+- そのファイル内でキーワード（複数あれば全部）が最初に出現するターン
+- そのファイル内で最後に「成功」「ok」「done」相当の語が出現するターン
+
+### Step 5: 該当ターンの読み込み
+
+選ばれた jsonl について、キーワード初出ターン〜成功ターンを `+5` ターンずつ含めて読み込む。Bash で `jq -c '.[]'` または `python3 -c "import json; ..."` を活用。
+
+### Step 6: Layer 1 サニタイズ
+
+抽出テキストを `e2s_sanitize` に通す：
 
 ```bash
-target_file="${skill_dir}/SKILL.md"
-
-if [ -f "$target_file" ]; then
-  # 衝突
-fi
+sanitized="$(printf '%s' "$extracted_text" | bash "$PLUGIN_ROOT/scripts/sanitize.sh")"
 ```
 
-衝突時は AskUserQuestion で：
+API key / PEM / メール等の正規表現マッチが `[REDACTED:<kind>]` に置換される。
 
-```
-既に <target_file> が存在します。どうしますか？
+### Step 7: Layer 2 セマンティックレビュー（LLM 判断）
 
-1. 上書きする (既存を失う)
-2. バージョン suffix を付ける (<name>-v2/)
-3. キャンセル
-```
+サニタイズ後テキストを LLM 自身が再レビューし、以下を確認・処理：
 
-バージョン suffix 選択時:
-- `<name>-v2` → 存在すれば `<name>-v3` ... と最初の空き番号を使う
-- frontmatter の name も `<prefixed_name>-v2` 等に合わせる
+- **独自形式トークン**: 社内 API token、カスタム認証 string、personal access token 相当
+- **PII**: 個人名 + 識別子の組合せ、住所、電話
+- **URL embedded credentials**: `https://user:password@...`
+- **TODO/FIXME 仮 credentials**: 「後で直す」系の placeholder
 
-### Step 5: SKILL.md の生成
+疑わしい箇所は抽象化・削除。判断が分かれる場合は必ずユーザーに確認する。
 
-以下のテンプレートに沿って生成：
+### Step 8: SKILL.md 草案生成
+
+以下のテンプレートに沿って構築する。**frontmatter の `name:` は `e2s-` または `distilled-` prefix 必須**：
 
 ```markdown
 ---
-name: <prefixed_name>
-description: <candidate.description の一行。絶対に session 原文を含めない>
+name: e2s-<kebab-case>
+description: <一行説明、原文転記禁止>
 ---
 
 # <Human-readable title>
 
-## このスキルの起動タイミング
+## このスキルを起動する条件
 
-<candidate.triggers から導出した条件文>
+<どんなときに役立つかを自然言語で>
 
 ## 手順
 
-<candidate.steps を番号付きリストで>
-
-## 根拠
-
-<candidate.rationale を抽象化して転記>
-
-## 参照すべきファイル・概念
-
-<candidate が検出されたコミットで頻繁に変更されたファイル・概念を列挙>
+1. <step>
+2. <step>
+...
 
 ## 注意事項
 
-<LLM が抽出した「やってはいけないこと」「落とし穴」があれば記載>
+<試行錯誤の中で発見した「やってはいけないこと」、落とし穴>
 
 ## Source
 
-このスキルは以下の作業履歴から蒸留されました：
-
-- commit <sha1> — <subject>
-  session: <session-id>#turn-<N> (or `session-unavailable`)
-- commit <sha2> — <subject>
-  session: ...
-- ...
-
+蒸留元 jsonl: <relative-path-to-jsonl> (turns N-M)
 蒸留日時: <ISO timestamp>
-蒸留元範囲: <range>
-蒸留元コマンド: /e2s:reflect <args> → /e2s:distill <id>
+蒸留コマンド: /e2s:distill <自然言語指示>
 ```
 
-**sanitize 絶対ルール**（再掲）:
+### Step 9: 配置先選択
 
-- session jsonl の原文を転記しない
-- API key / PII を含む可能性がある文字列は除外
-- 固有の個人名・会社名・URL が含まれる場合は抽象化するか削除
-- frontmatter description は session 原文ではなく**パターンの抽象表現**
+LLM がユーザーに以下を尋ねる（AskUserQuestion は使わず通常の対話で）：
 
-### Step 6: ファイル書き出し
+```
+SKILL.md を生成します:
+  - skill 名: e2s-<name>
+  - 配置先候補:
+    1) プロジェクトローカル: <repo>/.claude/skills/distilled/<name>/SKILL.md
+    2) ユーザーグローバル: ~/.claude/skills/distilled/<name>/SKILL.md
+
+どちらに配置しますか？（1 / 2）
+```
+
+`<repo>` は `git rev-parse --show-toplevel` で取得。git 管理外なら 2 のみ提示。
+
+### Step 10: 書き出し
 
 ```bash
 mkdir -p "$skill_dir"
-cat > "$target_file" <<'EOF'
-<...上記テンプレート展開結果...>
-EOF
+# Write tool で SKILL.md を作成
 ```
 
-### Step 7: 結果報告
+衝突時は AskUserQuestion ではなく通常の対話で次を尋ねる：
+
+```
+既に <target_file> が存在します:
+  1) 上書きする
+  2) -v2 等の suffix を付けて別ファイルにする
+  3) キャンセル
+```
+
+### Step 11: 結果報告
 
 ```
 ✅ SKILL.md を生成しました
 
 場所: <target_file>
-frontmatter name: <prefixed_name>
+frontmatter name: e2s-<name>
+蒸留元: <jsonl-path> (turns N-M)
 
 次のアクション:
-- 内容をレビュー: <target_file> を開いて確認
-- 有効化: Claude Code の skills は配置すれば自動検出されます
-  (プロジェクトローカルなら /reload-plugins、グローバルなら新セッションで認識)
-- 別の候補も蒸留: /e2s:distill <other-id>
-- 改善したい: 生成された SKILL.md を手で編集してください
+  - 内容をレビューして手直し
+  - Claude Code で `/reload-plugins` または新セッションで認識
+  - 別の作業も蒸留: /e2s:distill <次の自然言語指示>
 ```
 
 ## Guardrails
 
-- frontmatter の `name:` に必ず `e2s-` または `distilled-` prefix を付ける（本家 skill-creator との衝突回避）
-- 既存ファイルを黙って上書きしない（必ず確認）
-- session jsonl 原文の転記を絶対にしない
+- frontmatter `name:` に `e2s-` または `distilled-` prefix を必ず付ける（本家 skill-creator との衝突回避）
 - `~/.claude/skills/` 直下（`distilled/` サブディレクトリ外）には書き込まない
-- git 操作は一切行わない（書き込まれる SKILL.md をユーザー自身でコミットするかは任意）
+- 既存ファイルを黙って上書きしない（必ず確認）
+- jsonl 原文を SKILL.md にそのまま転記しない
+- 旧 e2s が依存していた一時候補ファイル（旧 reflect 系コマンドの中間生成物）には **依存しない**。このコマンドだけで自己完結する
+- git 操作（add / commit / tag）は一切行わない
 
-## 使い分けのガイド（プロジェクトローカル vs グローバル）
+## 関連参照
 
-- **プロジェクトローカル (`<repo>/.claude/skills/distilled/`)**:
-  - このコードベース固有のパターン（該当のアーキテクチャでのみ意味がある）
-  - チーム共有したい（git に含めてレビュー可能）
-  - ユーザーへの提案: 「このプロジェクト固有？」→ Yes ならプロジェクトローカル
-
-- **ユーザーグローバル (`~/.claude/skills/distilled/`)**:
-  - 複数プロジェクトで使い回せる汎用パターン
-  - 個人の作業スタイル（コミットルール、レビュー手順など）
-  - ユーザーへの提案: 「汎用性ある？」→ Yes ならグローバル
+- スキル本体: `plugins/experience-to-skill/skills/experience-to-skill/SKILL.md`
+- jsonl 探索: `plugins/experience-to-skill/scripts/jsonl-finder.sh`
+- サニタイズ: `plugins/experience-to-skill/scripts/sanitize.sh`
