@@ -48,3 +48,40 @@
 - **選択**: ①事前 `git status` クリーン化、②実行直後 `git diff --name-only` で sandbox 外即時破棄、③Bats でガード自体をテスト (#12)
 - **根拠**: Codex CLI に `--cd` / `--sandbox` 相当はあるが、PoC 段階で過信せず多段防御
 - **エビデンス**: plan.md change-A config.yaml rules + 受け入れ条件 #12
+
+## Build フェーズで確定した意思決定
+
+### D-009: Bats テストは fake repo で隔離実行
+- **コンテキスト**: 本物の worktree で `run-poc.sh` を回すと dirty 検出ガードで全テストが落ちる、または評価用 evaluation.md を毎テスト書き換えてしまう
+- **選択**: `BATS_TEST_TMPDIR` 配下に最小レイアウト (`_longruns/.../{scripts,sandbox,evaluation.md}`) を作って `git init` し、`scripts/*.sh` をコピーしてテスト
+- **却下案**: ①本物の worktree 直叩き（破壊的）/ ②`docker` コンテナ（依存重い）
+- **根拠**: 各テストが完全に独立。本物の git 履歴・ファイルに副作用ゼロ
+- **エビデンス**: `scripts/tests/helpers.bash` の `setup_fake_repo` + 10/10 Bats PASS
+
+### D-010: スクリプトの REPO_ROOT 解決は script-dir 起点
+- **コンテキスト**: Bats から `bash run-poc.sh` を叩くと、CWD が caller の dir のままになり `git rev-parse --show-toplevel` が本物の worktree を返してしまう（fake repo が無視される）
+- **選択**: 全 scripts で `SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"` 経由で `git -C "$SCRIPT_DIR" rev-parse --show-toplevel`
+- **却下案**: ①テスト側で `cd $FAKE_REPO` 強制（運用時の罠を増やす）/ ②REPO_ROOT を env 強制注入（CLI から使いにくい）
+- **根拠**: 「scripts は自分が住んでいる repo に対して動く」が直感的。Bats でも実運用でも同じ挙動
+- **エビデンス**: 修正後の bats 全 PASS
+
+### D-011: `npm install` は本タスクで実行しない
+- **コンテキスト**: tasks.md §1.6 は `npm install` を要求するが、リポジトリ容量と Volta lockfile 要求の衝突あり
+- **選択**: §1.6 は `[ ]` のまま残し、Task #6 で必要に応じ実行する。型チェックはグローバル TypeScript で代替確認
+- **却下案**: ①sandbox に lockfile commit（差分が大きすぎる）/ ②本タスクで `npm install` 実行（user instruction 違反）
+- **根拠**: user instruction で明示禁止された
+- **エビデンス**: tasks.md §1.6 のコメント、§6.1 のコメント
+
+### D-012: `git diff main` は merge-base 経由で検証
+- **コンテキスト**: 単純 `git diff main -- ...` は main が PoC ブランチより進んでいる場合に「PoC が変えた」のではなく「main が進んだ」差分まで拾う
+- **選択**: 検証は `git diff $(git merge-base main HEAD) HEAD -- ...` を使う
+- **却下案**: 単純 `git diff main`（false positive 多い）
+- **根拠**: 受け入れ条件 #11 / #4 の「本 PoC で一切変更されていない」という意味論を正確に反映
+- **エビデンス**: tasks.md §6.3, verification-guide.md S12 / S11
+
+### D-013: 実 Codex 呼び出しは Task #6 に委譲
+- **コンテキスト**: 本タスクは「harness の構造とガード機構を実装するだけ」が user instruction
+- **選択**: `run-poc.sh` 内に codex-companion 呼び出しの行をコメントアウトで埋め込み、`CODEX_DRY_RUN=1` で skip 可能にする。Bats でも `CODEX_DRY_RUN=1` を必ず付与
+- **却下案**: 実 Codex 呼び出し付き（user instruction 違反 + Bats が遅くなる）
+- **根拠**: user instruction「★最重要」セクションの明示要求
+- **エビデンス**: run-poc.sh の `CODEX_DRY_RUN` 分岐, evaluation.md の TBD プレースホルダ
