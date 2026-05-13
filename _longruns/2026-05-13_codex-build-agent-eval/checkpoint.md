@@ -1,8 +1,16 @@
 ---
-phase: Verify (static)
+phase: PoC execution
 status: complete
-last_updated: 2026-05-13T11:40:00+09:00
+last_updated: 2026-05-13T13:35:00+09:00
 ---
+
+## PoC 実行結果（Task #6 サマリ）
+- Codex CLI: 0.130.0、モデル: `gpt-5.5`、サブスク認証経由
+- 実 codex exec: **完走（165s, 45559 tokens）**、RED→GREEN 達成、`npm test` 2/2 PASS
+- ⚠️ **重要発見**: Codex は `--skip-git-repo-check` + `-C sandbox` で sandbox 内に独自 gitmeta/ を作り、親 repo にコミットしない。受け入れ条件 #6b の検証設計は Phase 2 で要再設計
+- run-fallback.sh: 擬似 codex-down → Opus 経路ログ確認 OK
+- measure-tdd-fidelity.sh: 親 repo 1.7% / Codex 内部 50%（重要発見と一体）
+- 判定: **Conditional Go**（#6a / #7 PASS、#6b と忠実度に shortfall）
 
 ## 完了フェーズ
 - [x] Setup: ツール検証 + OpenSpec カスタムスキーマセットアップ + checkpoint/decisions 初期化
@@ -11,6 +19,7 @@ last_updated: 2026-05-13T11:40:00+09:00
 - [x] Build 後半: longrun-builder TDD 実装完了 (3 commits)、bats 10/10 PASS、worktree マージ・削除完了
 - [x] Verify 静的検証: longrun-verifier PASS（品質 100% / 完成度 86%）。指摘 1, 2 を修正コミット
 - [N/A] Verify ブラウザ検証: PoC は CLI のみで UI を持たないため対象外（longrun-browser-verifier の起動はスキップ、本判定を明示記録）
+- [x] PoC 実行: 実 codex exec で TDD 完走、フォールバック検証、忠実度計測、evaluation.md に Conditional Go 判定記録
 
 ## Verify結果（静的）
 | 軸 | スコア | しきい値 | 判定 | 検証Agent |

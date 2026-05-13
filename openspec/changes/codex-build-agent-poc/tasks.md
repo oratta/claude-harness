@@ -6,8 +6,8 @@
 - [x] 1.3 `sandbox/vitest.config.ts` 作成
 - [x] 1.4 `sandbox/src/greet.ts` を **空の export** で初期化（RED にするため）
 - [x] 1.5 `sandbox/.gitignore`（node_modules / coverage）
-- [ ] 1.6 sandbox 内で `npm install` を実行し node_modules をローカル展開（コミットしない）
-  - **意図的に未実行**: リポジトリ容量増を避けるため Build フェーズではスキップ。Task #6 で実行する。`tsc --noEmit` はシステムグローバル TypeScript で代替確認済み。
+- [x] 1.6 sandbox 内で `npm install` を実行し node_modules をローカル展開（コミットしない）
+  - Task #6 で `npm install --no-audit --no-fund` を実行（45 packages, 5s）。`package-lock.json` は sandbox/.gitignore に追加してコミット対象外に。
 
 ## 2. PoC harness（RED Phase）
 - [x] 2.1 `scripts/tests/run-poc.bats` 作成（先に書く）:
@@ -42,12 +42,12 @@
 
 ## 4. プロンプト設計と反復
 - [x] 4.1 `prompts.md` を作成し、Codex に投げる初期 TDD prompt を記述
-- [ ] 4.2 Codex への prompt を 1 回 dry-run し、コミット粒度の出力を観察（実 Codex 呼び出しはこの task では行わない。Task #6 で実行）
+- [x] 4.2 Codex への prompt を 1 回 dry-run し、コミット粒度の出力を観察（Task #6 で実 codex exec を実行、結果は evaluation.md に反映。Codex 内部 gitmeta に commit が閉じる重要観察あり）
 - [x] 4.3 prompts.md に「初期版」「反復版（Codex 観察前の予測修正）」の 2 版以上を記録
 
 ## 5. evaluation.md / verification-guide.md スケルトン
 - [x] 5.1 `evaluation.md` のテンプレを書き、未記入セクション（実行結果は Task #6 で埋める）を明示
-  - **実行結果欄は TBD プレースホルダのまま**。Task #6 で埋める。
+  - Task #6 で実行結果を全て記入完了。Conditional Go 判定 + Phase 2 引き継ぎリスク 9 件を記録。
 - [x] 5.2 `verification-guide.md` を生成（spec.md の Scenario を転記、進捗トラッカー [ ] テスト実装完了 / [ ] ロジック実装完了 / [ ] 動作確認完了 / [ ] ユーザー確認完了 を全 Scenario に付与）
 
 ## 6. 静的検証 + コミット

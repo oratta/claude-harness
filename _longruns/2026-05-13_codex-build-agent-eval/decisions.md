@@ -85,3 +85,29 @@
 - **却下案**: 実 Codex 呼び出し付き（user instruction 違反 + Bats が遅くなる）
 - **根拠**: user instruction「★最重要」セクションの明示要求
 - **エビデンス**: run-poc.sh の `CODEX_DRY_RUN` 分岐, evaluation.md の TBD プレースホルダ
+
+## Task #6（PoC 実行）で確定した意思決定
+
+### D-014: モデル ID は `gpt-5.5`（`gpt-5.5-pro` は実在せず）
+- **コンテキスト**: `codex` CLI 0.130.0 にはモデル一覧 API が無い。`~/.codex/config.toml` のデフォルトモデルは `gpt-5.5`
+- **選択**: 「5.5 Pro 相当」として `gpt-5.5` を採用、evaluation.md に「`gpt-5.5-pro` 不在 / `gpt-5.5` を最上位 Pro 系として採用」を明記
+- **エビデンス**: `~/.codex/config.toml` の `model = "gpt-5.5"` 行 + Codex completion 165s + GREEN 観測
+
+### D-015: 実 Codex 呼び出しは `codex exec` 直接利用（codex-companion 経由ではなく）
+- **コンテキスト**: `codex-companion.mjs` は `CLAUDE_PLUGIN_ROOT` 環境変数を要求し、Claude Code Skill 外から手動 bash で呼ぶには依存解決が面倒
+- **選択**: `codex exec -m gpt-5.5 -C <sandbox> -s workspace-write --skip-git-repo-check < /tmp/prompt-v2.txt` で直接実行
+- **却下案**: codex-companion 経由（Skill 外で動かしにくい）
+- **根拠**: PoC 主目的は Codex の能力評価。ラッパー選択は Phase 2 で決める
+- **エビデンス**: Task #6 の Bash 実行ログ、evaluation.md の Environment セクション
+
+### D-016: `--skip-git-repo-check` で Codex が gitmeta/ を作る挙動を観察
+- **コンテキスト**: PoC で Codex commit が親 repo に乗らない致命的挙動を発見
+- **選択**: 観察結果を evaluation.md「重要観察（Phase 2 必読）」+ Phase 2 carry-over リスク #5 に明記
+- **却下案**: 即座に修正して再実行（PoC スコープを Phase 2 にはみ出す）
+- **根拠**: PoC は Phase 2 plan のリスク抽出が主目的。観察を残すこと自体が成果
+- **エビデンス**: evaluation.md の重要観察セクション + Phase 2 carry-over #5（Codex commit を親 repo に乗せる方式案 A/B/C）
+
+### D-017: 判定は Conditional Go
+- **コンテキスト**: #6a / #7 / Bats #12 は PASS、#6b と no-test-rate は shortfall
+- **選択**: Conditional Go として Phase 2 plan の起票を推奨、ただし Phase 2 の最初のタスクとして「Codex commit を親 repo に乗せる方式の確立」を必須化
+- **エビデンス**: evaluation.md 判定セクション
