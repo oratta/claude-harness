@@ -1,11 +1,14 @@
 ---
-phase: Setup
+phase: Build
 status: complete
-last_updated: 2026-05-13T10:55:00+09:00
+last_updated: 2026-05-13T11:30:00+09:00
 ---
 
 ## 完了フェーズ
 - [x] Setup: ツール検証 + OpenSpec カスタムスキーマセットアップ + checkpoint/decisions 初期化
+- [x] Build Contract: longrun-reviewer APPROVED (orchestrator round, 2nd opinion)
+- [x] Build 前半: OpenSpec change 作成 + Spec review APPROVED + verification-guide.md 生成
+- [x] Build 後半: longrun-builder TDD 実装完了 (3 commits)、bats 10/10 PASS、worktree マージ・削除完了
 
 ## ツール検証結果
 - openspec: /Users/oratta/.volta/bin/openspec (v1.2.0)
