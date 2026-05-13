@@ -1,7 +1,7 @@
 {
   "name": "worktree",
-  "version": "1.6.0",
-  "description": "Git worktreeのセットアップとクリーンアップ。wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー、引数で後続作業指示を受け取り可能。wt-clean: 診断・LLM保全・マージ・削除、または `--keep` で再利用可能化。",
+  "version": "1.7.0",
+  "description": "Git worktreeのセットアップとクリーンアップ。wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー、引数で後続作業指示を受け取り可能。wt-clean: Step 0でorigin/<main>を同期 → 診断・LLM保全・マージ・削除、または `--keep` で再利用可能化。`--no-sync` で同期スキップ。",
   "author": {
     "name": "Oratta"
   },

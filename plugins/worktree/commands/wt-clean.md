@@ -11,8 +11,9 @@ Git worktreeを安全にクリーンアップするスキル。
 
 ## オプション
 
-- オプションなし（デフォルト）: 削除モード。マージ済み worktree をディレクトリごと削除する
+- オプションなし（デフォルト）: 削除モード。マージ済み worktree をディレクトリごと削除する。実行前にローカル `<main>` を `origin/<main>` に同期する（Step 0）
 - `--keep`: 再利用モード。🟢 Safe worktree はディレクトリを残し、worktree内のブランチをmainに戻して元ブランチを削除する。`node_modules` / `.env` / 未追跡ファイルは保持されるため、次作業時のセットアップコストがゼロになる。🟡 Recoverable は従来通り削除、🔴 Active はスキップ
+- `--no-sync`: Step 0 の Remote 同期をスキップする。オフライン作業や、意図的に古い `<main>` のまま診断したい場合に使用。`--keep` と併用可能（例: `wt-clean --keep --no-sync`）
 
 ## 前提条件
 
@@ -20,6 +21,57 @@ Git worktreeを安全にクリーンアップするスキル。
 - worktree内で実行した場合: 「メインリポで実行してください」と案内
 
 ## 実行フロー
+
+### Step 0: Remote 同期（Sync）
+
+GitHub 側で PR がマージされた feature ブランチを Step 1 の `git branch --merged` で正しく Safe 判定するため、ローカル `<main>` を `origin/<main>` に同期する。`--no-sync` 指定時はこの Step を完全にスキップする。
+
+```bash
+# --no-sync 指定時は即座にスキップ
+if [ "$NO_SYNC" = "1" ]; then
+  echo "Remote 同期: -- skipped (--no-sync)"
+  # Step 1 へ進む
+fi
+
+# origin remote の存在確認
+if ! git remote get-url origin >/dev/null 2>&1; then
+  echo "Remote 同期: -- skipped (no origin remote)"
+  # Step 1 へ進む
+fi
+
+# main / master 検出（Step 7b と同じロジック）
+MAIN_BRANCH="main"
+git show-ref --verify --quiet refs/heads/master && MAIN_BRANCH="master" || true
+
+# fetch
+git fetch origin   # 失敗時はエラー中断、後続 Step に進まない
+
+# 進行差を測定（左=ローカル独自, 右=remote 独自）
+read AHEAD BEHIND < <(git rev-list --left-right --count "$MAIN_BRANCH"...origin/"$MAIN_BRANCH" | awk '{print $1, $2}')
+
+if [ "$BEHIND" = "0" ]; then
+  echo "Remote 同期: ✅ already up-to-date"
+elif [ "$AHEAD" = "0" ]; then
+  # fast-forward 可能 → pull
+  git pull --ff-only origin "$MAIN_BRANCH"   # 失敗時はエラー中断、後続 Step に進まない
+  echo "Remote 同期: ✅ pulled $BEHIND commits (origin/$MAIN_BRANCH → $MAIN_BRANCH)"
+else
+  # ローカルが diverge している → ff-only で失敗するので中断
+  echo "⚠️ ローカル $MAIN_BRANCH が origin/$MAIN_BRANCH と diverge しています"
+  echo "  AHEAD=$AHEAD, BEHIND=$BEHIND"
+  echo "  git status / git log で状態を確認し、解消後に再実行してください"
+  echo "  （または --no-sync で同期をスキップして実行）"
+  exit 1
+fi
+```
+
+**失敗時の扱い**:
+- `git fetch origin` 失敗（ネットワーク到達不能等）→ エラー中断。後続 Step に進まない。再実行 or `--no-sync` を案内
+- `git pull --ff-only` 失敗（diverge / force-push）→ エラー中断。`git status` で状態確認するよう案内
+- 中断時、Step 8 完了レポートは表示しない（処理が走っていないため）
+
+**禁則**:
+- 本 Step では `git pull --ff-only` 以外の pull 戦略（merge / rebase）を使ってはならない。`<main>` 履歴の意図せぬ改変を避けるため
 
 ### Step 1: 診断（Diagnose）
 
@@ -246,19 +298,27 @@ fi
 
 **メインリポ自体が main をチェックアウトしている状態は競合ではない**（通常運用）。`grep -v "^$MAIN_REPO$"` で除外する。
 
-**実行してはならない操作** (SHALL NOT):
-- `git reset --hard` — 万一 tracked 変更が残っていた場合に破壊する
-- `git clean -fd` — `node_modules` / `.env` / 作業中ファイルを消してしまう
-- `git pull` / `git fetch` — 最新化はユーザー責任
+**Step 7b 内（worktree 内）で実行してはならない操作** (SHALL NOT):
+- `git -C "$WORKTREE_PATH" reset --hard` — 万一 tracked 変更が残っていた場合に破壊する
+- `git -C "$WORKTREE_PATH" clean -fd` — `node_modules` / `.env` / 作業中ファイルを消してしまう
+- `git -C "$WORKTREE_PATH" pull` / `git -C "$WORKTREE_PATH" fetch` — worktree 内での remote 操作は tracked 変更を巻き込むリスク。`<main>` の最新化は Step 0 がメインリポで実行済み
 
 **🟢 Safe が 0 件の場合**: 「再利用化対象なし（🟢 Safe worktree がありません）」とレポートに明示し、🟡/🔴 に対する従来処理を継続する。`--keep` 指定だけでエラーにはしない。
 
 ### Step 8: 完了レポート
 
+完了レポートの先頭に Step 0 の同期結果を 1 行で表示する。表記は以下のいずれか:
+
+- `Remote 同期: ✅ pulled N commits (origin/<main> → <main>)` — fast-forward pull 実行時
+- `Remote 同期: ✅ already up-to-date` — pull 不要時
+- `Remote 同期: -- skipped (--no-sync)` — `--no-sync` 指定時
+- `Remote 同期: -- skipped (no origin remote)` — origin remote 不在時
+
 #### 削除モード（デフォルト）
 
 ```
 wt-clean 完了:
+  Remote 同期: ✅ pulled 3 commits (origin/main → main)
   処理: 2 worktrees
   削除: feat-x (🟢), fix-y (🟡)
   LLMコピー: 2 files → LLM/
@@ -271,6 +331,7 @@ wt-clean 完了:
 
 ```
 wt-clean --keep 完了:
+  Remote 同期: ✅ already up-to-date
   処理: 2 worktrees
   再利用可能化: feat-x (🟢)
     ディレクトリ: /Users/oratta/repo/.worktrees/feat-x
@@ -296,10 +357,21 @@ wt-clean --keep 完了:
   再利用可能化スキップ: feat-x — main が別worktreeで使用中のため
 ```
 
+#### --no-sync 指定時
+
+```
+wt-clean --no-sync 完了:
+  Remote 同期: -- skipped (--no-sync)
+  処理: 1 worktree
+  削除: feat-x (🟢)
+  ...
+```
+
 #### チェック失敗時（削除モード・再利用モード共通）
 
 ```
 wt-clean 完了:
+  Remote 同期: ✅ pulled 3 commits (origin/main → main)
   処理: 1 worktree
   削除: feat-x (🟢)
   ⚠️ チェック失敗で保留: fix-y (🟡) — npm test FAIL
