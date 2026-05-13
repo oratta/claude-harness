@@ -24,9 +24,12 @@ last_updated: 2026-05-13T01:00:00Z
 - [x] Build: change-A の TDD 実装（4 コミット 5a1a55a → a8a8e92、Bats 24/24 PASS、OpenSpec validate PASS）
 - [x] Verify: longrun-verifier 静的検証 PASS（品質 80%、完成度 100%、BLOCKER/SHOULD_FIX 0 件）
 - [x] Verify: longrun-browser-verifier スキップ（CLI plugin のため対象外、decisions.md 決定 12 記録予定）
-- [ ] Build: change-B の OpenSpec 仕様作成 + 実装（change-A の main マージ後）
-- [ ] Feedback: ユーザー動作確認
-- [ ] Archive: change-A の main マージ → change-B 実施 → OpenSpec change + ランディレクトリのアーカイブ
+- [x] Feedback: ユーザー動作確認 OK（2026-05-13）、change-B を本 longrun の Archive フェーズに組み込む方針確定
+- [ ] Archive Step 1: change-A worktree を main にマージ（divergence あり、--no-ff）
+- [ ] Archive Step 2: change-B 実施（`~/.claude/rules/git-commit-policy.md` 書き換え + 既存 openspec change `experience-to-skill-plugin` archive）
+- [ ] Archive Step 3: OpenSpec change `experience-to-skill-jsonl-refocus` archive (`openspec archive`)
+- [ ] Archive Step 4: ランディレクトリを `_longruns/_archive/` に移動
+- [ ] Archive Step 5: worktree クリーンアップ案内（wt-clean）
 
 ## Verify 結果（4 軸統合）
 
