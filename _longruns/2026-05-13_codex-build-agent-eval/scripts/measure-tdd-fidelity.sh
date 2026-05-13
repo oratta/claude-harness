@@ -11,7 +11,9 @@
 #
 # no-test-rate = production-only / total  (rendered as a percentage)
 #
-# By default we walk *all* commits reachable from HEAD on the current branch.
+# By default we walk *all* commits reachable from HEAD on the current branch,
+# excluding merge commits (which would otherwise pollute the `neither` bucket
+# and unfairly lower the no-test-rate denominator).
 # A future iteration can scope this to e.g. `main..HEAD`.
 
 set -euo pipefail
@@ -55,7 +57,7 @@ while IFS= read -r sha; do
   else
     neither=$((neither + 1))
   fi
-done < <(git -C "$REPO_ROOT" log --pretty=%H)
+done < <(git -C "$REPO_ROOT" log --no-merges --pretty=%H)
 
 if [ "$total" -eq 0 ]; then
   rate="0"

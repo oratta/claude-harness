@@ -33,6 +33,7 @@ log() {
 if [ "$SIMULATE" -eq 1 ]; then
   log "simulating codex-down: injecting fake codex into PATH"
   fakebin="$(mktemp -d)"
+  trap 'rm -rf "$fakebin"' EXIT
   cat >"$fakebin/codex" <<'BASH'
 #!/usr/bin/env bash
 echo "codex: authentication failed (simulated)" >&2
