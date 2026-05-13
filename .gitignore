@@ -24,3 +24,4 @@ node_modules/
 # Session logs & superset
 LLM/
 .superset/
+openspec/config.yaml
