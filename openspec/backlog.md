@@ -6,6 +6,30 @@
 
 ---
 
+## Phase 2: Codex Builder Integration（次セッション着手予定）
+
+Phase 1 PoC（`_longruns/2026-05-13_codex-build-agent-eval/`）の Conditional Go 判定を踏まえ、`longrun-builder-codex` Agent 新設 + orchestrator 分岐の本実装。
+
+**起点**: 次セッションで以下を実行
+```
+/longrun:plan _longruns/_archive/2026-05-13_codex-build-agent-eval/phase2-draft.md
+```
+（Phase 1 archive 後のパス。archive 前なら `_longruns/2026-05-13_codex-build-agent-eval/phase2-draft.md`）
+
+**主要内容** (詳細は phase2-draft.md):
+- change-1: Codex commit を親 repo に乗せる方式（案 A/B/C から選択） — **★最重要**
+- change-2: prompt 規律見直し（`--allow-empty` noop 撤廃）
+- change-3: `longrun-builder-codex` Agent 新設
+- change-4: orchestrator 分岐ロジック
+- change-5: Codex vs Opus 実時間比較ハーネス
+
+**Phase 1 carry-over リスク 9 件**:
+- 必須 4 件: タイムアウト / 部分成功ロールバック / quota 判別 / NW vs 認証
+- ★最重要 1 件: gitmeta 統合方式
+- stretch 4 件: fidelity drift / empty-test anti-pattern / `~/.codex/` 排他 / fidelity スコープ
+
+---
+
 ## Skill 命名規則リファクタリング
 
 `CONTRIBUTING.md` の「命名規則（Skill / Agent / Command）」セクションに従い、`-er` / `-or` 終わりの Skill を名詞形にリネームする。
