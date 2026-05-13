@@ -7,7 +7,6 @@
 // The type signature is provided so that `tsc --noEmit` passes even
 // before the implementation is written.
 
-export function greet(_name: string): string {
-  // TODO(codex): implement greeting per tests/greet.test.ts (RED state).
-  throw new Error('NOT_IMPLEMENTED');
+export function greet(name: string): string {
+  return `Hello, ${name || 'stranger'}!`;
 }
