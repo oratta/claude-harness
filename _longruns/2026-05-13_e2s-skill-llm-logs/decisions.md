@@ -95,6 +95,13 @@ Status: REQUEST_CHANGES → 6 件の指摘を受領。全て技術的根拠あ�
 
 UUID 形式の `-` を含むパスは naive encode で一致した。一方 `.claude-mem` のような実用パスでは Claude Code 側がさらに subdirectory（observer-sessions 等）を付加するケースがあるため、**逆引きフォールバック（longest-prefix match）は必須**であることが確認できた。`scripts/jsonl-finder.sh::e2s_resolve_jsonl_dir` で実装済み。
 
+### 決定 12: ブラウザ検証（longrun-browser-verifier）のスキップ
+
+- **エビデンス**: experience-to-skill プラグインは CLI 専用で Web UI / 開発サーバーを持たない
+- **判断**: orchestrator の Verify フェーズ Step 2「ブラウザ検証」を本 longrun では対象外とする
+- **代替担保**: 機能性軸（spec Scenario 通過率 100%）は Feedback フェーズの「ユーザー動作確認」で手動 E2E として実施。テスト fixture `tests/fixtures/sample-session.jsonl` を用いた再現可能な手動検証で代替
+- **UX 軸**: CLI 対話の UX 評価は Feedback フェーズでユーザーが実機で判断
+
 ### 決定 11: 旧 SKILL.md からのロジック転写元
 
 - Layer 1 正規表現セット: 旧 SKILL.md の Step 4「Layer 1 コンテンツベースの secret 正規表現スキャン」セクションから採取（AWS / OpenAI / Anthropic / GitHub token / GitHub PAT / Slack / JWT / PEM）
