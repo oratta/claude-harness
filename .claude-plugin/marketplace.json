@@ -73,12 +73,12 @@
     },
     {
       "name": "experience-to-skill",
-      "description": "作業履歴（commit + session jsonl）を素材に、LLM駆動で都度コミット → verified タグ → skill 蒸留する統合ワークフロー。Stop hook を使わずマルチセッション安全。/e2s:commit /e2s:ok /e2s:rewind /e2s:reflect /e2s:distill /e2s:status。",
+      "description": "Claude Code セッションの jsonl ログを素材に、自然言語の依頼で SKILL.md を蒸留する専門ツール。コミット運用には関与せず、/e2s:distill 1 コマンドで対話完結。",
       "source": "./plugins/experience-to-skill",
       "category": "workflow",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": { "name": "Oratta" },
-      "keywords": ["skill-distillation", "commit", "git", "verified-tag", "reflection", "llm-driven", "auto-commit", "multi-session"]
+      "keywords": ["skill-distillation", "jsonl", "session-logs", "llm-driven", "sanitize", "claude-code"]
     },
     {
       "name": "skill-pack",
