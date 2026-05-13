@@ -49,5 +49,5 @@
 
 ## 7. コミット & 反映
 
-- [ ] 7.1 変更を commit（Conventional Commits 準拠）
+- [x] 7.1 変更を commit（Conventional Commits 準拠）
 - [ ] 7.2 push 後、プラグイン再インストール or `/reload-plugins` で反映確認（ユーザー実施）

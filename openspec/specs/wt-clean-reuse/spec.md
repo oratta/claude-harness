@@ -3,9 +3,7 @@
 ## Purpose
 
 `wt-clean` コマンドに、マージ済み worktree を削除せず再利用可能な状態へ戻す `--keep` オプションを提供する。worktree 内の untracked ファイル（`node_modules`, `.env` 等）を保持したまま、tracked 状態を `main` に揃え元ブランチを削除することで、次の作業を高速に開始できる状態を作る。
-
 ## Requirements
-
 ### Requirement: wt-clean は --keep オプションを受け付ける
 
 `wt-clean` コマンドおよびスキルは `--keep` オプションを受け付けるものとする（SHALL）。オプション未指定時は従来通りの全削除動作を実行し、指定時は再利用モードで動作する。後方互換性のため、デフォルト動作は削除のまま変更しない。
@@ -36,19 +34,29 @@
 
 ### Requirement: 再利用化は最小操作で安全に行う
 
-`--keep` モードの再利用化処理は、worktree 内で `main`（または `master`）ブランチへ `git checkout` し、元のブランチを `git branch -d` で削除するものとする（SHALL）。`git reset --hard` / `git clean` / `git pull` などの破壊的操作は実行しないものとする（SHALL NOT）。untracked ファイル（`node_modules`, `.env`, 作業中ファイル等）は一切変更しない。
+`--keep` モードの再利用化処理は、worktree 内で `main`（または `master`）ブランチへ `git checkout` し、元のブランチを `git branch -d` で削除するものとする（SHALL）。**worktree 内**での `git reset --hard` / `git clean` / `git pull` / `git fetch` などの破壊的操作は実行しないものとする（SHALL NOT）。untracked ファイル（`node_modules`, `.env`, 作業中ファイル等）は一切変更しない。
+
+なお、本禁則は Step 7b（再利用化処理）**内**の worktree に対する制約であり、Step 0（Remote 同期）でメインリポにて実行する `git fetch origin` / `git pull --ff-only origin <main>` は本禁則の対象外である。Step 0 と Step 7b は実行コンテキスト（メインリポ vs 各 worktree）と目的（最新化 vs 再利用化）が異なる。
 
 #### Scenario: 再利用化で tracked ファイルが main と一致する
+
 - **WHEN** 再利用化処理が完了する
 - **THEN** 対象 worktree の HEAD は `main`（または `master`）を指し、tracked ファイルは main と一致する
 
 #### Scenario: untracked ファイルは保持される
+
 - **WHEN** 再利用化処理を実行する
 - **THEN** `node_modules`, `.env`, その他 untracked ファイルは全て保持される
 
 #### Scenario: 元ブランチが削除される
+
 - **WHEN** 再利用化処理が完了する
 - **THEN** `git branch` の出力に元のマージ済みブランチが含まれない
+
+#### Scenario: Step 7b 内では worktree に対して pull/fetch しない
+
+- **WHEN** `--keep` モードで Step 7b の再利用化処理を実行する
+- **THEN** `git -C <worktree> pull` や `git -C <worktree> fetch` は実行されない（Step 0 のメインリポでの fetch/pull とは区別される）
 
 ### Requirement: サニティチェック FAIL 時は再利用化も保留する
 
@@ -97,3 +105,4 @@ Step 6 のマージ後サニティチェックで FAIL した worktree は、`--
 #### Scenario: 🟢 Safe が 0 件
 - **WHEN** `--keep` 指定で実行したが🟢 Safe worktree が存在しない
 - **THEN** 「再利用化対象なし」とレポートに明示し、🟡 Recoverable / 🔴 Active に対する従来処理を継続する
+
