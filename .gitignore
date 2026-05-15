@@ -25,3 +25,6 @@ node_modules/
 LLM/
 .superset/
 openspec/config.yaml
+
+# 1h-cooking session output (should not live in marketplace repo per cooking-usage rule)
+sessions/
