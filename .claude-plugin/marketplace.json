@@ -67,7 +67,7 @@
       "description": "Fieldy（Notion DB_FIELDY）の音声トランスクリプトと、Vault編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブの日次日記を生成する。",
       "source": "./plugins/daily-report",
       "category": "productivity",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": { "name": "Oratta" },
       "keywords": ["daily", "diary", "fieldy", "notion", "obsidian", "narrative"]
     },
