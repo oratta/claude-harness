@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -63,6 +63,15 @@
       "keywords": ["weekly", "report", "obsidian"]
     },
     {
+      "name": "daily-report",
+      "description": "Fieldy（Notion DB_FIELDY）の音声トランスクリプトと、Vault編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブの日次日記を生成する。",
+      "source": "./plugins/daily-report",
+      "category": "productivity",
+      "version": "0.1.0",
+      "author": { "name": "Oratta" },
+      "keywords": ["daily", "diary", "fieldy", "notion", "obsidian", "narrative"]
+    },
+    {
       "name": "infra",
       "description": "Webアプリのインフラを対話的に一括セットアップ。Vercel + Supabase + GitHub Actions構成で local/staging/prod を自動構築（/infra-setup）。",
       "source": "./plugins/infra",
@@ -95,7 +104,7 @@
     {
       "name": "all",
       "description": "全プラグインをインストール",
-      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun", "lr", "worktree", "weekly-report", "infra", "experience-to-skill", "skill-pack"],
+      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun", "lr", "worktree", "weekly-report", "daily-report", "infra", "experience-to-skill", "skill-pack"],
       "skills": []
     }
   ]

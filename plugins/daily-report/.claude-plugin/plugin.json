@@ -1,0 +1,16 @@
+{
+  "name": "daily-report",
+  "version": "0.2.0",
+  "description": "Fieldyの音声トランスクリプト（Notion DB_FIELDY）と、Obsidian Vaultの編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブで日次日記を生成する。--with-album フラグで marketing-harness の vlog-album を連鎖呼び出しできる。",
+  "author": {
+    "name": "Oratta"
+  },
+  "license": "MIT",
+  "keywords": ["obsidian", "daily", "diary", "fieldy", "notion", "claude-code"],
+  "skills": [
+    "./skills/daily-report"
+  ],
+  "commands": [
+    "./commands/daily-report.md"
+  ]
+}
