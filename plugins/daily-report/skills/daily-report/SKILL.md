@@ -136,7 +136,7 @@ NEXT_DATETIME="${NEXT_DATE} 00:00"
 find "$VAULT_ROOT" -name "*.md" \
   -newermt "${TARGET_DATE} 00:00" ! -newermt "$NEXT_DATETIME" \
   -not -path "*/.git/*" -not -path "*/.obsidian/*" \
-  -not -path "*/02 - PERIODIC/*" -not -path "*/90 - LLM/*" \
+  -not -path "*/01 - DAILY/*" -not -path "*/02 - PERIODIC/*" -not -path "*/90 - LLM/*" \
   -not -path "*/LLM/*" 2>/dev/null
 ```
 
@@ -220,10 +220,10 @@ frontmatter, callouts, wikilinks の表記規約を確認する。
 #### 3a. ファイル配置
 
 ```
-$VAULT_ROOT/02 - PERIODIC/Daily/<TARGET_DATE>/diary.md
+$VAULT_ROOT/01 - DAILY/<TARGET_DATE>/diary.md
 ```
 
-`02 - PERIODIC/Daily/<TARGET_DATE>/` ディレクトリが無ければ作る。同名ファイルが既にある場合は `diary-v2.md` 等の suffix を付けて衝突回避（既存日記を上書きしない）。
+`01 - DAILY/<TARGET_DATE>/` ディレクトリが無ければ作る。同名ファイルが既にある場合は `diary-v2.md` 等の suffix を付けて衝突回避（既存日記を上書きしない）。
 
 #### 3b. 構造テンプレート
 
@@ -315,7 +315,7 @@ tags:
 
 # 作成したファイル
 
-- 作成: [[02 - PERIODIC/Daily/<TARGET_DATE>/diary|<TARGET_DATE> Daily Diary]]
+- 作成: [[01 - DAILY/<TARGET_DATE>/diary|<TARGET_DATE> Daily Diary]]
 - 作成: 本ログ
 ```
 
@@ -336,7 +336,7 @@ Skill: vlog-album
 args: "<DIARY_ABS_PATH>${ALBUM_ARGS}"
 ```
 
-- `DIARY_ABS_PATH` は Step 3a で書き出した diary の絶対パス（`$VAULT_ROOT/02 - PERIODIC/Daily/<TARGET_DATE>/diary.md` もしくは衝突回避で suffix が付いた版）。
+- `DIARY_ABS_PATH` は Step 3a で書き出した diary の絶対パス（`$VAULT_ROOT/01 - DAILY/<TARGET_DATE>/diary.md` もしくは衝突回避で suffix が付いた版）。
 - `ALBUM_ARGS` は Step 0 で組み立てた `--cells N` / `--split A:B` の pass-through 文字列（空でも可）。
 
 vlog-album は cwd 配下に `output/<TARGET_DATE>-vlog/album.png` と `output/<TARGET_DATE>-vlog/prompt.md` を生成する。**cwd は本スキル実行時のディレクトリ**（通常は Vault root）になることに留意。
@@ -347,7 +347,7 @@ vlog-album は cwd 配下に `output/<TARGET_DATE>-vlog/album.png` と `output/<
 #### 5b. 生成物を diary と同じディレクトリへ移動
 
 ```bash
-DIARY_DIR="$VAULT_ROOT/02 - PERIODIC/Daily/$TARGET_DATE"
+DIARY_DIR="$VAULT_ROOT/01 - DAILY/$TARGET_DATE"
 ALBUM_SRC_DIR="$(pwd)/output/${TARGET_DATE}-vlog"
 
 if [ -f "$ALBUM_SRC_DIR/album.png" ]; then
@@ -381,7 +381,7 @@ Step 4 で書いた `90 - LLM/` のログに、アルバム生成の事実を追
 ```markdown
 # 作成したファイル（追記）
 
-- 作成: [[02 - PERIODIC/Daily/<TARGET_DATE>/album.png|<TARGET_DATE> Vlog Album]]
+- 作成: [[01 - DAILY/<TARGET_DATE>/album.png|<TARGET_DATE> Vlog Album]]
 - 参考: <DIARY_DIR>/album-prompt.md（vlog-album が使った最終プロンプト）
 ```
 
@@ -416,7 +416,7 @@ Step 4 で書いた `90 - LLM/` のログに、アルバム生成の事実を追
 
 ## 出力例
 
-実際の出力例: `02 - PERIODIC/Daily/2026-05-13/diary.md`（v3 として採用された版）。
+実際の出力例: `01 - DAILY/2026-05-13/diary.md`（v3 として採用された版）。
 
 このスキルはその v3 を蒸留して作られているので、生成物の参考にするとよい。
 
