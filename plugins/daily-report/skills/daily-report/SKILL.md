@@ -1,10 +1,10 @@
 ---
 name: daily-report
-description: Fieldyの音声トランスクリプト（Notion DB_FIELDY）と、Obsidian Vault内の編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブで日次日記を生成する。「日記作って」「昨日の振り返りを作って」「Fieldyから日記を生成」で起動。`--with-album` フラグ付きで実行すると、diary 生成後に marketing-harness の `vlog-album` スキルを呼び出して diary と同じディレクトリにトイカメラ風 Vlog アルバム画像を出力する。
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, ToolSearch, Skill
+description: Fieldyの音声トランスクリプト（Notion DB_FIELDY）と、Obsidian Vault内の編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブで日次日記を生成する。「日記作って」「昨日の振り返りを作って」「Fieldyから日記を生成」で起動。`--with-album` フラグ付きで実行すると、diary 生成後に marketing-harness の `vlog-album` スキルを呼び出して diary と同じディレクトリにトイカメラ風 Vlog アルバム画像を出力する。`--force-rebuild` フラグで中間ファイル（voice.md / dailyLLM.md）を含めて再生成する。
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, Skill
 ---
 
-# Daily Report スキル — 自然言語ナラティブの日次日記
+# Daily Report スキル — 自然言語ナラティブの日次日記（2フェーズ・パイプライン構成）
 
 ## このスキルを起動する条件
 
@@ -29,19 +29,35 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, ToolSearch, Skill
 
 取得に失敗した時間帯・セグメントは「未取得」と明記する。**音声がない時間帯を「おそらく〜」で埋めない**。事実と空白を区別する誠実さがこの日記の信頼性を支える。
 
-### 3. jsonl は最初の userメッセージだけ読む
+### 3. メイン文脈を汚さない（2フェーズ・パイプライン）
 
-Claude Code のセッション jsonl は数MB〜数十MB あり、全文読むとコンテキストがパンクする。**最初の user メッセージ抜粋（300字程度）だけで、そのセッションが何をやろうとしていたか** はほぼ分かる。詳細は Fieldy 音声・LLMログ・編集ノートで補う。
+生 transcript と jsonl 本体はサブエージェントに閉じ込め、メインスレッドは中間ファイル（voice.md / dailyLLM.md）と編集ノートだけを参照する。**メインから Notion MCP をロードしない / jsonl 本体を Read しない** を厳守し、コンテキスト消費を最小化する。
+
+## 全体構成（2 フェーズ）
+
+```
+Phase 1 (中間ファイル生成 — 並列サブエージェント):
+   voice-compactor     -> voice.md
+   llm-log-compactor   -> dailyLLM.md
+   ↓ 単一メッセージ内で 2 つの Agent tool_use を並列起動
+   ↓ STATUS line を集約してパース
+
+Phase 2 (diary 生成 — メイン):
+   voice.md + dailyLLM.md + 編集ノート -> diary.md
+   ↓ (必要時のみ) 90 - LLM/ ログを部分 Read
+   ↓ 90 - LLM/<TARGET_DATE_COMPACT>-*.md にスキル実行ログ
+```
 
 ## 手順
 
 ### Step 0: 引数解釈と対象日決定
 
-`$ARGUMENTS` から **日付（positional）** と **オプション（`--with-album` / `--cells N` / `--split A:B`）** を分離する。`--with-album` 以外のオプションは vlog-album への pass-through。
+`$ARGUMENTS` から **日付（positional）** と **オプション（`--with-album` / `--force-rebuild` / `--cells N` / `--split A:B`）** を分離する。`--with-album` 以外は vlog-album への pass-through、`--force-rebuild` は Phase 1 制御フラグ。
 
 ```bash
 # 引数を分解（順不同に対応）
 WITH_ALBUM=false
+FORCE_REBUILD=false
 ALBUM_ARGS=""
 TARGET_DATE=""
 
@@ -51,6 +67,10 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --with-album)
       WITH_ALBUM=true
+      shift
+      ;;
+    --force-rebuild)
+      FORCE_REBUILD=true
       shift
       ;;
     --cells)
@@ -81,55 +101,110 @@ NEXT_DATE=$(date -j -v+1d -f %Y-%m-%d "$TARGET_DATE" +%Y-%m-%d 2>/dev/null \
 
 Vault root を `git rev-parse --show-toplevel` で取得。Vault が git 管理されていない場合は cwd を Vault root と仮定し、ユーザーに警告。
 
-`WITH_ALBUM=true` の場合の追加処理は Step 5 で実行する（diary 生成完了後）。`ALBUM_ARGS` が空でも `WITH_ALBUM=false` なら無視される（誤指定時はユーザーに警告するのみ）。
-
-### Step 1: 情報源を集める（並列）
-
-1a〜1d は独立しているので、可能な限り並列で投げる。
-
-#### 1a. Fieldy 音声トランスクリプト（Notion）
-
-Notion MCP のツールはデフォルトで未ロード。**必ず ToolSearch でロードしてから使う**:
-
-```
-ToolSearch(query="select:mcp__claude_ai_Notion__notion-search,mcp__claude_ai_Notion__notion-fetch", max_results=2)
+```bash
+VAULT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+DIARY_DIR="$VAULT_ROOT/01 - DAILY/$TARGET_DATE"
+mkdir -p "$DIARY_DIR"
+VOICE_MD="$DIARY_DIR/voice.md"
+DAILY_LLM_MD="$DIARY_DIR/dailyLLM.md"
 ```
 
-その後の流れ:
+`WITH_ALBUM=true` の場合の追加処理は Step 5（旧 Step 5、Phase 2 末尾）で実行する。`ALBUM_ARGS` が空でも `WITH_ALBUM=false` なら無視される。
 
-1. `notion-search` で `DB_FIELDY` を query="DB_FIELDY" / filters={} / page_size=5 で検索 → database id を取得
-2. `notion-fetch` で database id を fetch → `<data-source url="collection://...">` を抜き出す
-3. `notion-search` を再度呼ぶ。`data_source_url=collection://...`, `filters.created_date_range={start_date: TARGET_DATE, end_date: NEXT_DATE}`, page_size=25, max_highlight_length=0 でページ一覧を取得
-4. 取得したページ ID 群を、`notion-fetch(include_transcript=true)` で **5 並列ずつ** 取得（同時5ツール呼び出し）
-5. **トークン上限エラー（~50K characters 超）が返ったページは "未取得" として記録**。`Error: result (NNN characters) exceeds maximum allowed tokens` の場合、そのページのファイルは Read で取れるが、本日記の趣旨上は無理に読まず注釈で「20:00–20:59 はトークン上限で未取得」と明記する
+---
 
-> [!warning] DB_FIELDY が無い / Notion MCP 未接続の場合
-> 1a を完全にスキップして、1b〜1d だけで進める。日記冒頭に「音声記録なし」と明記。
+## Phase 1 — 中間ファイル生成（並列サブエージェント）
 
-#### 1b. Vault の LLM ログ
+### Step 1: 中間ファイル存在チェック
+
+`voice.md` と `dailyLLM.md` の **両方** が既に存在し `--force-rebuild` が無ければ Phase 1 を **スキップ** する:
 
 ```bash
-VAULT_ROOT="<取得済み>"
-ls "$VAULT_ROOT/90 - LLM/" | grep "^$TARGET_DATE_COMPACT"
-# 例: 20260513-Wikiリンク自動ディレクトリ設定.md
-# あれば全文 Read。複数あれば全部読む
+if [ -f "$VOICE_MD" ] && [ -f "$DAILY_LLM_MD" ] && [ "$FORCE_REBUILD" != "true" ]; then
+  echo "Phase 1 skip: 中間ファイルあり（再生成は --force-rebuild）"
+  PHASE1_SKIPPED=true
+else
+  PHASE1_SKIPPED=false
+fi
 ```
 
-加えて、Vault 内に **タイムスタンプ命名 + ハッシュ** 形式のログがある場合があるので、そちらも探す:
+### Step 2: voice-compactor / llm-log-compactor を **並列起動**
+
+`PHASE1_SKIPPED=false` の場合のみ実行。**単一メッセージ内に 2 つの Agent tool_use を並べて並列起動する**（順次起動は禁止）。
+
+メインは以下の 2 つの Agent を **同じ assistant message に並べて** 同時起動する:
+
+1. `Agent: voice-compactor`
+   - 引数本文に `TARGET_DATE`, `NEXT_DATE`, `VAULT_ROOT`, `OUTPUT_PATH=$VOICE_MD` を含める
+   - 役割: Fieldy DB から transcript を fetch して圧縮、`$VOICE_MD` に Write
+2. `Agent: llm-log-compactor`
+   - 引数本文に `TARGET_DATE`, `NEXT_DATE`, `VAULT_ROOT`, `OUTPUT_PATH=$DAILY_LLM_MD` を含める
+   - 役割: `~/.claude/projects/*/` の jsonl から指示・最終出力・メタ統計を集計、`$DAILY_LLM_MD` に Write
+
+両 Agent は最終 assistant message として **STATUS line 1 行のみ** を返却する。本文要約・件数詳細・抜粋は voice.md / dailyLLM.md に書かれており、メインの context には乗らない。
+
+### Step 3: STATUS line の集約とエラー処理
+
+両 Agent の STATUS line をパース（正規表現 `^STATUS: (ok|partial|fail)\b`）して分岐する:
+
+| Agent | STATUS | 振る舞い |
+|-------|--------|----------|
+| voice-compactor | `ok` | そのまま Phase 2 へ |
+| voice-compactor | `partial` | 警告ログを出して Phase 2 へ（未取得時間帯は voice.md に `- (未取得: token-limit)` 記載済み） |
+| voice-compactor | `fail reason=notion-mcp-unavailable` | **既存挙動を継承**: voice.md なしで dailyLLM.md + 編集ノートのみで Phase 2 継続。diary 冒頭に「音声記録なし」と明記する |
+| voice-compactor | その他の `fail` | フェーズ単位で中断、ユーザーへ報告 |
+| llm-log-compactor | `ok` / `partial` | Phase 2 へ（`partial` は警告） |
+| llm-log-compactor | `fail` | フェーズ単位で中断、ユーザーへ報告（jsonl は LLM ログ index 不在では diary 品質が大きく落ちるため） |
+
+正規表現の参考:
 
 ```bash
-find "$VAULT_ROOT/LLM" -name "${TARGET_DATE}_*.md" 2>/dev/null
-# 例: LLM/2026-05-13_0a7f36bd.md
+# fail reason 抽出
+reason=$(echo "$line" | sed -nE 's/^STATUS: fail reason=([a-z0-9-]+).*/\1/p')
+# voice の特例フォールバック
+if [ "$reason" = "notion-mcp-unavailable" ]; then
+  VOICE_AVAILABLE=false
+else
+  # 他の fail は中断
+  ...
+fi
 ```
 
-プロジェクト別 LLM/ にも対象日のログがあれば取り込む:
+### Step 4: Phase 1 完了直後の sanity check（冒頭 40 行 Read）
+
+メインは voice.md / dailyLLM.md の **冒頭 40 行だけを Read** して frontmatter + 最初の数セクションが妥当か確認する（本文全体は読まない）。
 
 ```bash
-find "$VAULT_ROOT/12 - PROJECT" -path "*/LLM/${TARGET_DATE}*" -name "*.md" 2>/dev/null
-find "$VAULT_ROOT/12 - PROJECT" -path "*/LLM/${TARGET_DATE_COMPACT}*" -name "*.md" 2>/dev/null
+# 行数だけ wc で確認
+voice_lines=$(wc -l < "$VOICE_MD" 2>/dev/null || echo 0)
+llm_lines=$(wc -l < "$DAILY_LLM_MD" 2>/dev/null || echo 0)
+
+# < 50 行なら警告（明らかに空・極端に短い）
+if [ "$voice_lines" -lt 50 ] && [ "$VOICE_AVAILABLE" = "true" ]; then
+  echo "WARNING: voice.md が $voice_lines 行（< 50 行）。--force-rebuild を検討してください。"
+fi
+if [ "$llm_lines" -lt 50 ]; then
+  echo "WARNING: dailyLLM.md が $llm_lines 行（< 50 行）。--force-rebuild を検討してください。"
+fi
 ```
 
-#### 1c. Vault の編集ノート
+行数チェックを通った後、冒頭 40 行だけ `Read(limit=40)` で確認する。本文全体は Read しない（コンテキスト効率維持）。
+
+---
+
+## Phase 2 — diary 生成（メインスレッド）
+
+### Step 5: obsidian-markdown スキルをロード
+
+```
+Skill: obsidian:obsidian-markdown
+```
+
+frontmatter, callouts, wikilinks の表記規約を確認する。
+
+### Step 6: 中間ファイルと編集ノートを入力に diary を生成
+
+#### 6a. 編集ノートの収集
 
 ```bash
 NEXT_DATETIME="${NEXT_DATE} 00:00"
@@ -142,82 +217,30 @@ find "$VAULT_ROOT" -name "*.md" \
 
 ファイル数が 10 以下なら全部 Read。多い場合は head -30 だけ抽出して概要把握、本文を引用したいものだけ Read。
 
-#### 1d. Claude Code セッション jsonl の概要
+#### 6b. dailyLLM.md の `**参照**:` wikilink 補完（必要時のみ）
 
-cwd が Vault root の場合、jsonl ディレクトリは:
+dailyLLM.md の各セッションエントリには `**参照**: [[90 - LLM/<filename>|...]] · <jsonl-path>` 形式の wikilink がある。**ナラティブで深堀りしたいセッションに限り**、対応する `90 - LLM/<filename>.md` をメインが Read で補完する。
 
-```bash
-ENCODED_CWD=$(echo "$VAULT_ROOT" | sed 's|/|-|g')
-JSONL_DIR="$HOME/.claude/projects/$ENCODED_CWD"
-```
+> [!warning] 禁止
+> **全セッションを Read してはならない**。コンテキスト効率維持のため、深堀り対象は最大 3〜5 セッションに留める。
 
-しかし、**並行作業（worktree）も同じ日に走っていることが多い**ので、`~/.claude/projects/` 配下を横断検索:
+#### 6c. 物語の骨格を作る
 
-```bash
-find ~/.claude/projects -maxdepth 1 -type d | while read d; do
-  count=$(find "$d" -name "*.jsonl" \
-    -newermt "${TARGET_DATE} 00:00" ! -newermt "$NEXT_DATETIME" 2>/dev/null | wc -l | tr -d ' ')
-  if [ "$count" -gt 0 ]; then
-    echo "$count $(basename $d)"
-  fi
-done
-```
+中間ファイル（voice.md / dailyLLM.md）+ 編集ノートを元に、時系列で **朝/午前/昼/午後/夕方/夜** のスロットに振り分ける:
 
-セッション数が多い（10超）ディレクトリだけ深掘りする。各 jsonl の最初の user メッセージを抽出:
-
-```bash
-for f in $(find "$dir" -name "*.jsonl" \
-  -newermt "${TARGET_DATE} 00:00" ! -newermt "$NEXT_DATETIME"); do
-  head -5 "$f" | python3 -c "
-import json,sys
-for line in sys.stdin:
-    try:
-        d = json.loads(line)
-        if d.get('type') == 'user' and d.get('message',{}).get('role') == 'user':
-            content = d['message'].get('content','')
-            if isinstance(content, list):
-                content = next((c.get('text','') for c in content
-                              if isinstance(c,dict) and c.get('type')=='text'), '')
-            print('FIRST_USER:', str(content)[:300].replace(chr(10),' '))
-            break
-    except: pass
-" 2>/dev/null
-done
-```
-
-**重要**: ここで取れる「最初のユーザーメッセージ」だけで、そのセッションが何の change / どの worktree / どのフェーズだったか判別できる。原則として **jsonl 本体は読まない**。
-
-### Step 2: 統合の前段準備
-
-#### 2a. obsidian-markdown スキルをロード
-
-```
-Skill: obsidian:obsidian-markdown
-```
-
-frontmatter, callouts, wikilinks の表記規約を確認する。
-
-#### 2b. 物語の骨格を作る
-
-集めた情報を時系列で並べ、**朝/午前/昼/午後/夕方/夜** のスロットに振り分ける:
-
-- 朝の小ハマり（LLMログ・jsonl 朝イチの会話）
-- 午前〜午後の作業（jsonl の userメッセージから "何のロングランが走っていたか" を逆引き、Fieldy 音声と突き合わせる）
-- 環境トラブル（PC 暴走など、LLMログから拾う）
+- 朝の小ハマり（dailyLLM.md 朝イチのセッション）
+- 午前〜午後の作業（dailyLLM.md の指示から "何のロングランが走っていたか" を逆引き、voice.md と突き合わせる）
+- 環境トラブル（dailyLLM.md および編集ノートから拾う）
 - Vault 側の編集（編集ノートから "どのプロジェクトの何を進めたか"）
-- 昼の予定電話・買い物（Fieldy 音声）
-- 夜の食事・飲み（Fieldy 音声）
-- 帰路の出来事（Fieldy 音声）
+- 昼の予定電話・買い物（voice.md）
+- 夜の食事・飲み（voice.md）
+- 帰路の出来事（voice.md）
 
-**Fieldy で語っていた抽象的な話を、jsonl の具体実装と突き合わせて "あれはこの作業だった" と紐付ける** のが、このスキルの肝。例:
+**voice.md で語っていた抽象的な話を、dailyLLM.md の具体実装と突き合わせて "あれはこの作業だった" と紐付ける** のが、このスキルの肝。
 
-- Fieldy 「結果論プロンプトを skill 化したい」 ↔ jsonl `final-prompts-synthesis` sub-agent
-- Fieldy 「ワークツリー単位で from-worktree を作りたい」 ↔ jsonl `add-cooking-from-worktree` capability
-- Fieldy 「Codex に実装エージェントだけ渡してみた」 ↔ jsonl `codex-build-agent-poc` change
+### Step 7: 日記本文を書く
 
-### Step 3: 日記本文を書く（ここが本番）
-
-#### 3a. ファイル配置
+#### 7a. ファイル配置
 
 ```
 $VAULT_ROOT/01 - DAILY/<TARGET_DATE>/diary.md
@@ -225,7 +248,7 @@ $VAULT_ROOT/01 - DAILY/<TARGET_DATE>/diary.md
 
 `01 - DAILY/<TARGET_DATE>/` ディレクトリが無ければ作る。同名ファイルが既にある場合は `diary-v2.md` 等の suffix を付けて衝突回避（既存日記を上書きしない）。
 
-#### 3b. 構造テンプレート
+#### 7b. 構造テンプレート
 
 ```markdown
 ---
@@ -233,10 +256,9 @@ created: <生成ISO timestamp>
 type: daily-diary
 date: <TARGET_DATE>
 source:
-  - Fieldy / DB_FIELDY
-  - "90 - LLM/ + project LLM logs"
-  - Claude Code session jsonl (`~/.claude/projects/`)
-  - Obsidian-edited notes (<TARGET_DATE>)
+  - "[[voice|<TARGET_DATE> Voice Log]]"
+  - "[[dailyLLM|<TARGET_DATE> LLM Log Index]]"
+  - "Obsidian-edited notes (<TARGET_DATE>)"
 tags:
   - diary
   - fieldy
@@ -255,7 +277,7 @@ cssclasses:
 <以下、自然言語ナラティブで時系列に書く>
 ```
 
-#### 3c. ナラティブのトーン
+#### 7c. ナラティブのトーン
 
 - **語り口**: 「〜と気づいた」「腑に落ちた」「結論としては」「整理がついた」
 - **段落構成**: 1セクションあたり 2〜4 段落、各段落は 3〜6 行
@@ -264,7 +286,7 @@ cssclasses:
 - **callout**: `> [!quote]` で印象的な発言を引用、`> [!todo]` で翌日アクション、`> [!warning]` で当日露呈した問題
 - **コードブロック**: コマンド・コミット hash・change 名は inline backtick で十分。長いブロックは避ける
 
-#### 3d. 必須セクション
+#### 7d. 必須セクション
 
 末尾には必ず以下を入れる:
 
@@ -272,21 +294,26 @@ cssclasses:
 ## 自分用メモ
 
 > [!quote] 印象的だったセリフ
-> <Fieldy 音声から拾った1〜2文>
+> <voice.md から拾った1〜2文>
 
 > [!todo] 翌日以降のアクション
-> - [ ] <jsonl やLLMログから読み取れる未完了タスク>
-> - [ ] <Fieldyで言及された予定>
+> - [ ] <dailyLLM.md やLLMログから読み取れる未完了タスク>
+> - [ ] <voice.mdで言及された予定>
 > - [ ] <Vault編集ノートに残っていた TODO>
 
 ## 関連
 
+- [[voice|<TARGET_DATE> Voice Log]]
+- [[dailyLLM|<TARGET_DATE> LLM Log Index]]
 - [[LLM/<関連ログ>]]
-- [[2026-XX-XX/report|XX月XX日 Daily Report]] — 機械集約版（あれば）
 - <その他関連ノート>
 ```
 
-### Step 4: セッションログを残す
+#### 7e. 未取得時間帯の取り扱い
+
+voice.md / dailyLLM.md に `(未取得)` セクションがある場合、diary.md でも対応時間帯を「未取得」と明記する。**推測補完禁止**（既存原則を継承）。
+
+### Step 8: セッションログを残す（既存 Step 4 を維持）
 
 `90 - LLM/<TARGET_DATE_COMPACT_TODAY>-<タイトル>.md` に、本スキル実行のログを記録する。Vault の basic.md ルールに従う:
 
@@ -308,24 +335,25 @@ tags:
 
 # 参照した情報
 
-- DB_FIELDY (<件数>ページ取得, <未取得件数>ページがトークン上限超で未取得)
-- <vault LLM logs>
+- voice.md (Phase 1 voice-compactor 生成, <件数>ページ取得, <未取得件数>ページがトークン上限超で未取得)
+- dailyLLM.md (Phase 1 llm-log-compactor 生成, <セッション数>セッション)
 - <vault edited notes>
-- Claude Code sessions: <jsonl ディレクトリ別の件数>
 
 # 作成したファイル
 
 - 作成: [[01 - DAILY/<TARGET_DATE>/diary|<TARGET_DATE> Daily Diary]]
+- 作成: [[01 - DAILY/<TARGET_DATE>/voice|<TARGET_DATE> Voice Log]]
+- 作成: [[01 - DAILY/<TARGET_DATE>/dailyLLM|<TARGET_DATE> LLM Log Index]]
 - 作成: 本ログ
 ```
 
-### Step 5: `--with-album` 指定時のみ — Vlog アルバム生成
+### Step 9: `--with-album` 指定時のみ — Vlog アルバム生成
 
-Step 0 で `WITH_ALBUM=true` だった場合のみ実行する。`WITH_ALBUM=false` ならこの Step をスキップして Step 6 へ。
+Step 0 で `WITH_ALBUM=true` だった場合のみ実行する。`WITH_ALBUM=false` ならこの Step をスキップして Step 10 へ。
 
 このスキルは **marketing-harness の `vlog-album` スキル** に diary パスを渡してアルバム画像を生成し、生成物を **diary.md と同じディレクトリ** に配置する。
 
-#### 5a. vlog-album スキルを呼び出す
+#### 9a. vlog-album スキルを呼び出す
 
 `vlog-album` スキルの description には「Triggered ONLY by /vlog-album slash command」というガードがあるが、これは **自然言語の auto-trigger を防ぐためのガード** であり、`--with-album` フラグでユーザーが明示的にオプトインした本ケースでは Skill ツール経由での明示的な呼び出しが許容される。
 
@@ -336,15 +364,15 @@ Skill: vlog-album
 args: "<DIARY_ABS_PATH>${ALBUM_ARGS}"
 ```
 
-- `DIARY_ABS_PATH` は Step 3a で書き出した diary の絶対パス（`$VAULT_ROOT/01 - DAILY/<TARGET_DATE>/diary.md` もしくは衝突回避で suffix が付いた版）。
+- `DIARY_ABS_PATH` は Step 7a で書き出した diary の絶対パス（`$VAULT_ROOT/01 - DAILY/<TARGET_DATE>/diary.md` もしくは衝突回避で suffix が付いた版）。
 - `ALBUM_ARGS` は Step 0 で組み立てた `--cells N` / `--split A:B` の pass-through 文字列（空でも可）。
 
 vlog-album は cwd 配下に `output/<TARGET_DATE>-vlog/album.png` と `output/<TARGET_DATE>-vlog/prompt.md` を生成する。**cwd は本スキル実行時のディレクトリ**（通常は Vault root）になることに留意。
 
 > [!warning] codex CLI セットアップ不全時
-> vlog-album が codex CLI 未セットアップで失敗した場合、本スキルの責務外なので、エラーをそのままユーザーに伝えて Step 6 に進む（diary 自体は完成しているので報告で握り潰さない）。
+> vlog-album が codex CLI 未セットアップで失敗した場合、本スキルの責務外なので、エラーをそのままユーザーに伝えて Step 10 に進む（diary 自体は完成しているので報告で握り潰さない）。
 
-#### 5b. 生成物を diary と同じディレクトリへ移動
+#### 9b. 生成物を diary と同じディレクトリへ移動
 
 ```bash
 DIARY_DIR="$VAULT_ROOT/01 - DAILY/$TARGET_DATE"
@@ -370,13 +398,13 @@ if [ -f "$ALBUM_SRC_DIR/album.png" ]; then
   # 空になった一時ディレクトリを掃除（codex.log は残しておく方が debug 用に便利）
   rmdir "$ALBUM_SRC_DIR" 2>/dev/null || true
 else
-  echo "WARNING: vlog-album が album.png を生成しなかった。Step 6 で報告に含める。"
+  echo "WARNING: vlog-album が album.png を生成しなかった。Step 10 で報告に含める。"
 fi
 ```
 
-#### 5c. Step 4 のセッションログに追記
+#### 9c. Step 8 のセッションログに追記
 
-Step 4 で書いた `90 - LLM/` のログに、アルバム生成の事実を追記する:
+Step 8 で書いた `90 - LLM/` のログに、アルバム生成の事実を追記する:
 
 ```markdown
 # 作成したファイル（追記）
@@ -385,34 +413,50 @@ Step 4 で書いた `90 - LLM/` のログに、アルバム生成の事実を追
 - 参考: <DIARY_DIR>/album-prompt.md（vlog-album が使った最終プロンプト）
 ```
 
-### Step 6: 結果報告
+### Step 10: 結果報告
 
 ユーザーに以下を伝える:
 
-- 日記の保存先パス
-- 取得できた情報源の件数（Fieldy何ページ、未取得何ページ、jsonl 何セッション、編集ノート何件）
+- 日記の保存先パス（および voice.md / dailyLLM.md の同居パス）
+- Phase 1 が実行されたかスキップされたか（`PHASE1_SKIPPED` 参照）
+- 取得できた情報源の件数（voice.md の pages_fetched / pages_missing、dailyLLM.md の sessions 数、編集ノート何件）
 - 推測補完できなかった時間帯（音声未取得など）
 - 日記の総文字数の目安
 - **`--with-album` 指定時のみ**: アルバム画像のパス（`<DIARY_DIR>/album.png`）、セル数 / グリッド / 配分、保存済み `album-prompt.md` のパス。vlog-album が失敗した場合はその旨と diary 自体は完成している事実を併せて報告
+
+---
+
+# DEPRECATED: removed in change-5
+
+以下の旧経路コードは **change-4 では一時的に残置** され、**change-5 で完全削除** される。
+メインスレッドから Notion MCP をロードする経路 / jsonl 本体を直接 Read する経路は新パイプラインでは使用しない。
+新経路は Phase 1（サブエージェント）が中間ファイルに圧縮し、Phase 2 はそれを Read するのみ。
+
+旧 Step 1a (Notion MCP load) / 旧 Step 1d (jsonl head -5 Read) は本ファイルから削除済み。
+本ブロックは change-5 完了時に「以下旧経路は完全に削除されました」を明示するためのアンカーとして残し、change-5 commit で本ブロック自体も削除する。
+
+---
 
 ## 注意事項（試行錯誤から得た教訓）
 
 > [!warning] やってはいけない
 > 1. **change 名や slug の羅列を表にする** — カタログ化して読まれない（v2 で失敗済）
 > 2. **音声がない時間帯を推測で埋める** — 信頼性を失う、「未取得」と明記
-> 3. **jsonl の本文を全文読む** — コンテキストパンク、最初の user メッセージで十分
-> 4. **Notion MCP をロードせずに呼ぶ** — `InputValidationError` で全プロセスが詰まる
-> 5. **`mcp__claude_ai_Notion__notion-fetch` を 10 並列以上で投げる** — トークン上限の累積で1つでも巨大ページが混じると全体失敗
+> 3. **メインから jsonl の本文を Read する** — コンテキストパンク、必ず llm-log-compactor サブエージェントに閉じる
+> 4. **メインから Notion MCP をロードする** — voice-compactor サブエージェントに閉じる、メインは voice.md だけ Read
+> 5. **Phase 1 を順次起動する** — 必ず単一メッセージ内に 2 つの Agent tool_use を並べて並列起動する
 > 6. **既存の diary.md を黙って上書きする** — 必ず suffix 付与で衝突回避
-> 7. **`--with-album` 指定時に vlog-album 失敗を握り潰す** — diary 本体は完成しているので、必ず Step 6 で「diary は OK / album は失敗」を別個に報告する
-> 8. **`--with-album` なしで `--cells` / `--split` を渡されたまま album 生成に走る** — Step 0 で `WITH_ALBUM=false` なら ALBUM_ARGS は完全に無視（誤指定の旨を Step 6 で軽く触れる程度に留める）
+> 7. **`--with-album` 指定時に vlog-album 失敗を握り潰す** — diary 本体は完成しているので、必ず Step 10 で「diary は OK / album は失敗」を別個に報告する
+> 8. **`--with-album` なしで `--cells` / `--split` を渡されたまま album 生成に走る** — Step 0 で `WITH_ALBUM=false` なら ALBUM_ARGS は完全に無視（誤指定の旨を Step 10 で軽く触れる程度に留める）
+> 9. **dailyLLM.md の `**参照**:` 全セッションをメインで Read する** — 深堀り対象 3〜5 セッションに限る
 
 > [!tip] うまくいくコツ
-> - notion-fetch は **5 並列まで**
-> - jsonl は worktree 横断で見る（`~/.superset/worktrees/*` 系も対象に）
-> - Fieldy で抽象的に語っていた内容を jsonl の change 名で具体化すると、読み物として一段深くなる
-> - 夜の飲み会パートは Fieldy が強い領域なので、音声のニュアンスを残して書く
-> - 朝〜午後の画面作業パートは Fieldy が弱い領域なので、LLMログ・jsonl・編集ノートで補う
+> - サブエージェント並列起動は **単一の assistant message に 2 つの Agent tool_use を並べる**
+> - voice-compactor の `fail reason=notion-mcp-unavailable` だけは Phase 2 継続のフォールバックとして特別扱い
+> - jsonl は worktree 横断で見る（`~/.superset/worktrees/*` 系も対象に） — これは llm-log-compactor 側で処理される
+> - voice.md で抽象的に語っていた内容を dailyLLM.md の change 名で具体化すると、読み物として一段深くなる
+> - 夜の飲み会パートは voice.md が強い領域なので、音声のニュアンスを残して書く
+> - 朝〜午後の画面作業パートは voice.md が弱い領域なので、dailyLLM.md + 編集ノートで補う
 
 ## 出力例
 
@@ -424,4 +468,4 @@ Step 4 で書いた `90 - LLM/` のログに、アルバム生成の事実を追
 
 蒸留元 jsonl: `~/.claude/projects/-Users-oratta-Dropbox-Application-Obsidian-oratta2025/82b8ae4c-c934-422a-8133-63ab00d90d58.jsonl`
 蒸留日時: 2026-05-14
-蒸留コマンド: `/e2s:distill ここでのやったことをもとに、oratta/claude-harnessにdaily-reportスキルを作成してほしい。`
+2フェーズ・パイプライン化: 2026-05-20 (change-1〜5)
