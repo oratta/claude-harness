@@ -46,15 +46,22 @@ daily-report スキルを **2フェーズ・サブエージェント分離型** 
 - **テストフレームワーク**: bats-core（bash 用テスト）
 - **テスト実行コマンド**: `bats plugins/daily-report/tests/*.bats`
 
-### change-0 spike 検証結果（メインセッションで実機検証後に記入）
+### change-0 spike 検証結果（2026-05-20 実機検証）
 
-- Agent frontmatter tools 方式: [direct / wildcard / 失敗→ToolSearch フォールバック]
-- plugin.json agents 配列への登録の要否: [必須 / 不要]
-- Agent 戻り値が STATUS line のみで構成可能: [yes / no]
-- 採用方針: [文章]
-- 既知の制約 / 注意点: [箇条書き]
-- 検証日時: [日時]
-- 検証コミット: [hash]
+- **Agent frontmatter tools 方式**: direct list 方式を採用（`tools: Read, Write, Bash, mcp__claude_ai_Notion__notion-search, mcp__claude_ai_Notion__notion-fetch`）。参考実装 `plugins/longrun/agents/longrun-browser-verifier.md` で wildcard 方式が動いている既存実証あり
+- **plugin.json agents 配列への登録の要否**: **必須**。`plugins/daily-report/.claude-plugin/plugin.json` の `agents` フィールドにファイルパスを列挙する必要がある（空配列だけでは Agent 起動不可、`Agent type 'xxx' not found` エラー）
+- **Agent 戻り値が STATUS line のみで構成可能**: 設計上 yes（実機検証は plugin reload 後に持ち越し、下記参照）
+- **重要な制約 — ホットリロード不可**: `plugin.json` の `agents` 配列を編集しても **現在の Claude Code セッションではリロードされない**。Agent type 'daily-report:_spike-notion-mcp' not found のまま。これは Claude Code が session 起動時に marketplace cache (`~/.claude/plugins/cache/oratta-claude-harness/...`) からロードしているためで、worktree 内の plugin.json 編集はホットリロードされない
+- **採用方針**:
+  - change-2/3/4 の Agent 実装は **worktree 内で bats テストでロジック単位で検証**
+  - 統合動作確認（Agent 経由のメイン → 実機 STATUS line 観測）は **全 change 完了後に plugin reinstall + session restart** を経て実施
+  - これは Verify フェーズ後半 / Feedback フェーズで実機確認する設計に変更
+- **既知の制約**:
+  - Agent ホットリロード不可（session restart 必須）
+  - Build 中の各 change は Agent の動作確認ができないため bats テストで十分なカバレッジを確保する必要がある
+  - 最終確認は `/plugin uninstall daily-report@oratta-claude-harness` → marketplace に push → `/plugin install daily-report@oratta-claude-harness` の流れがユーザー操作として必要
+- **検証日時**: 2026-05-20
+- **検証コミット**: cf40ac6（spike + plugin.json + tests/）+ 本検証時の plugin.json 編集
 
 ## スコープ
 

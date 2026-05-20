@@ -13,5 +13,7 @@
   "commands": [
     "./commands/daily-report.md"
   ],
-  "agents": []
+  "agents": [
+    "./agents/_spike-notion-mcp.md"
+  ]
 }
