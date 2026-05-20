@@ -12,5 +12,9 @@
   ],
   "commands": [
     "./commands/daily-report.md"
+  ],
+  "agents": [
+    "./agents/llm-log-compactor.md",
+    "./agents/voice-compactor.md"
   ]
 }
