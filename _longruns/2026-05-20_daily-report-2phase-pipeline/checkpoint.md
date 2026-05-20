@@ -1,7 +1,7 @@
 ---
-phase: Setup
+phase: Build
 status: complete
-last_updated: 2026-05-20T13:30:00+09:00
+last_updated: 2026-05-20T17:00:00+09:00
 ---
 
 ## ツール検証結果
@@ -37,13 +37,25 @@ last_updated: 2026-05-20T13:30:00+09:00
 ## 完了フェーズ
 - [x] Setup: ツール検証 / コードベース調査 / checkpoint 初期化
 - [x] Build Contract: longrun-reviewer Round 2 APPROVE（Round 1 で BLOCKER 1 + SHOULD_FIX 4 + NOTE 2 を全採用、D3 として記録）
-- [ ] Build: 各 change を longrun-builder で TDD 実装
+- [x] Build: change-1〜5 を連続 TDD 実装、bats 48/48 PASS、spike Agent 削除済み
 - [ ] Verify: longrun-verifier + longrun-browser-verifier で4軸定量評価
 - [ ] Feedback: ユーザー確認
 - [ ] Archive: OpenSpec change + ランディレクトリのアーカイブ
 
+## Build フェーズ実行サマリ（2026-05-20）
+
+- 着手順: change-1 → change-2 → change-3 → change-4 → change-5 を連続実装（worktree 並列は省略）
+- コミット履歴:
+  - ea497a9 feat(change-1): output path migration to 01 - DAILY/
+  - bfd798b feat(change-2): voice-compactor agent + bats tests
+  - af07e37 feat(change-3): llm-log-compactor agent + bats tests
+  - bf0c1a0 refactor(change-4): 2-phase pipeline refactor (incl. spike Agent removal)
+  - fd3ba3b refactor(change-5): remove DEPRECATED block (legacy paths verified absent)
+- bats テスト総数: 48 PASS / 0 FAIL（voice-compactor.bats=14 / llm-log-compactor.bats=10 / skill-phase-control.bats=24）
+- grep 検証（change-5 完了条件）: 3 パターンすべて 0 件（ToolSearch.*Notion / notion-fetch / ~/.claude/projects.*Read）
+
 ## 次フェーズへの引き継ぎ
 - plan.md は longrun-plan Round 2 + Build Contract Round 2 で2度 APPROVE 済み
-- change-0 spike は OpenSpec change として正式登録しない（検証タスクのため）。change-1〜5 のみ OpenSpec change として登録
-- 着手順序: change-0 → change-1 → (change-2 ∥ change-3 worktree 並列) → change-4 → change-5
-- spike Agent は change-4 完了時点で削除
+- change-0 spike Agent は change-4 commit (bf0c1a0) で削除済み
+- Verify は **ユーザー手動の plugin reinstall + session restart 後の `/daily-report 2026-05-19` 実機実行** が必要（ホットリロード不可制約により）
+- 次の手順: `/plugin uninstall daily-report@oratta-claude-harness` → marketplace push（本ブランチ）→ `/plugin install daily-report@oratta-claude-harness` → セッション再起動 → 統合動作確認
