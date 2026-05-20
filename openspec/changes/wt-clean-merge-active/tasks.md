@@ -13,11 +13,14 @@
   - 通常: 「1) main にマージ (推奨) / 2) スキップ / 3) 破棄削除 (force)」
   - Dirty 同時時: 「1) スキップ / 2) 破棄削除 (force)」（マージ選択肢を除外）
   - 表示には未マージコミット一覧（`git log --oneline $MAIN_BRANCH..$BRANCH_NAME`）と Dirty / LLM 状況を含める
+  - [x] 1.4.1 全 🔴 が Dirty の場合、per-worktree ループ前に「マージ可能な 🔴 が 0 件です（全件 Dirty）。先にコミットしてから wt-clean を再実行するか、個別にスキップ/破棄削除を選んでください」と 1 度だけ案内してからループに入る（エラー中断しない）
+  - [x] 1.4.2 detached HEAD（`BRANCH_NAME` が空）の 🔴 worktree はマージ選択肢を除外し、Dirty 同時時と同じく「1) スキップ / 2) 破棄削除 (force)」の 2 択を提示。表示文言で「⚠️ detached HEAD のためマージできません」と理由を明示
 - [x] 1.5 新規 **Step 5b「マージ実行とエラーハンドリング」** を Step 5a 直後に挿入
   - 事前確認: `git -C "$MAIN_REPO" branch --show-current` が `$MAIN_BRANCH` と一致することを検証。違う場合は新ルート全体を中断し checkout 案内を表示
   - マージ実行: `cd "$MAIN_REPO" && git checkout "$MAIN_BRANCH" && git merge "$BRANCH_NAME" --no-ff -m "merge: integrate $BRANCH_NAME (wt-clean active merge)"`
   - 成功時: `MERGED_BRANCHES+=("$BRANCH_NAME")` で配列に追記し、Step 6 サニティチェック対象に含める
   - 競合時: `git merge --abort` を**自動実行せず**競合状態を保持。すでにマージ成功した worktree（MERGED_BRANCHES に記録）も含め Step 6 以降を中断し全削除保留
+  - [x] 1.5.1 事前確認に `.git/MERGE_HEAD` 存在チェックを追加。メインリポで前回のマージが進行中なら新ルート全体を中断し、「`cd $MAIN_REPO` で `git status` を確認し、競合解決→commit、または `git merge --abort` してから wt-clean を再実行してください」と案内
 - [x] 1.6 Step 6d「チェック対象の範囲」のロジック改修
   - 既存条件「🟢 Safe かつ今回 wt-clean で新たにマージした worktree」**または**「`MERGED_BRANCHES` に含まれるブランチに対応する worktree」をチェック対象とする
   - 競合発生で中断した場合は Step 6 自体を実行せず、`MERGED_BRANCHES` に記録された worktree も全て削除保留

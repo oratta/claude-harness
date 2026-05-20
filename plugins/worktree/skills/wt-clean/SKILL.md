@@ -189,6 +189,27 @@ AskUserQuestion で確認:
 Step 3 で選択肢 1)「🔴 を main にマージしてから処理 (推奨・安全)」が選ばれた場合のみ実行する。
 🔴 worktree を `git worktree list` の順（作成順）に 1 つずつ AskUserQuestion で確認する。
 
+**事前案内: 全 🔴 が Dirty の場合（per-worktree ループ前）**
+
+per-worktree ループに入る前に、🔴 worktree の Dirty 状態を一括スキャンする。**全件が Dirty を持つ場合のみ**、ループ開始前に以下の案内を 1 度だけ表示してから個別確認に進む（エラー中断はしない）:
+
+```bash
+# 🔴 worktree のうち Dirty を持つものの件数をカウント
+ACTIVE_TOTAL=${#ACTIVE_WORKTREES[@]}
+ACTIVE_DIRTY=0
+for WT in "${ACTIVE_WORKTREES[@]}"; do
+  if [ -n "$(git -C "$WT" status --porcelain)" ]; then
+    ACTIVE_DIRTY=$((ACTIVE_DIRTY + 1))
+  fi
+done
+
+if [ "$ACTIVE_TOTAL" -gt 0 ] && [ "$ACTIVE_DIRTY" -eq "$ACTIVE_TOTAL" ]; then
+  echo "ℹ️ マージ可能な 🔴 が 0 件です（全件 Dirty）。"
+  echo "  先にコミットしてから wt-clean を再実行するか、個別にスキップ/破棄削除を選んでください。"
+fi
+# その後、通常通り per-worktree ループに入る（各 🔴 で Dirty 2 択 AskUserQuestion を提示）
+```
+
 各 🔴 worktree に対し、表示には以下を含める:
 
 - Branch 名（`BRANCH_NAME`）
@@ -228,6 +249,24 @@ Step 3 で選択肢 1)「🔴 を main にマージしてから処理 (推奨・
   2) 破棄削除 (force)
 ```
 
+**detached HEAD の 🔴 の場合**: `BRANCH_NAME` が空（`git worktree list --porcelain` の `branch` 行が無く `detached` 状態）の 🔴 worktree も、マージできないためマージ選択肢を除外し、Dirty 同時時と同じく **「1) スキップ / 2) 破棄削除 (force)」の 2 択** を提示する。表示文言で理由を明示する（detached HEAD のためマージ対象のブランチ名が無い）。
+
+```
+🔴 (detached HEAD) の処理:
+  Branch: (detached HEAD)
+  未マージコミット: 3件
+  Dirty: なし
+  LLM: なし
+
+⚠️ detached HEAD のためマージできません（マージ対象のブランチ名がありません）。
+
+選択肢:
+  1) スキップ
+  2) 破棄削除 (force)
+```
+
+Dirty と detached HEAD が両方該当する場合も同じ 2 択を提示し、表示文言には両方の理由を併記する。
+
 ユーザーの選択ごとの分岐:
 
 - 「マージ」 → Step 5b へ進み、当該 worktree を順次マージ実行
@@ -246,7 +285,7 @@ Step 5a で「マージ」を選ばれた worktree について、マージは�
 MERGED_BRANCHES=()
 ```
 
-#### 5b-2. 事前確認: メインリポが MAIN_BRANCH をチェックアウト中か
+#### 5b-2. 事前確認: メインリポが MAIN_BRANCH をチェックアウト中か / merge in progress でないか
 
 ```bash
 # Step 0 / Step 7b と同じ MAIN_BRANCH 検出ロジック
@@ -260,6 +299,14 @@ if [ "$CURRENT_BRANCH" != "$MAIN_BRANCH" ]; then
   echo "⚠️ メインリポが $MAIN_BRANCH 以外をチェックアウト中（現在: $CURRENT_BRANCH）。新ルートを中断します。"
   echo "  対応: cd $MAIN_REPO && git checkout $MAIN_BRANCH してから wt-clean を再実行してください。"
   exit 1   # 新ルート全体を中断（既マージ分があれば後述の通り全保留扱い）
+fi
+
+# メインリポで前回のマージが進行中（.git/MERGE_HEAD 存在）でないかを検出
+# 進行中の場合、新たな merge を重ねると履歴が複雑化するため新ルート全体を中断する
+if [ -f "$MAIN_REPO/.git/MERGE_HEAD" ]; then
+  echo "⚠️ メインリポで前回のマージが進行中（.git/MERGE_HEAD 検出）。新ルートを中断します。"
+  echo "  対応: cd $MAIN_REPO で git status を確認し、競合解決→commit、または git merge --abort してから wt-clean を再実行してください。"
+  exit 1   # 新ルート全体を中断
 fi
 ```
 

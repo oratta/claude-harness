@@ -154,3 +154,40 @@
 - [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
+
+### S12: 全 🔴 が Dirty の場合は案内を出してから per-worktree ループに入る
+
+- **GIVEN** 🔴 worktree が複数（例: 2 件）あり、全件が Dirty（未コミット変更）を持つ
+- **WHEN** Step 3 で新ルート選択 → Step 5a の per-worktree ループ開始時
+- **THEN**
+  - AskUserQuestion 前に「マージ可能な 🔴 が 0 件です（全件 Dirty）。先にコミットしてから wt-clean を再実行するか、個別にスキップ/破棄削除を選んでください」と 1 度だけ案内が表示される
+  - エラー中断はせず、その後各 🔴 worktree に対し Dirty 2 択（1) スキップ / 2) 破棄削除 (force)）の AskUserQuestion が提示される
+- [x] テスト実装完了（spec.md「全 🔴 が Dirty の場合は案内を出してから per-worktree ループに入る」に対応）
+- [x] ロジック実装完了
+- [ ] 動作確認完了
+- [ ] ユーザー確認完了
+
+### S13: detached HEAD の 🔴 worktree はマージ選択肢が除外される
+
+- **GIVEN** 🔴 worktree が 1 件あり、detached HEAD 状態（`BRANCH_NAME` が空）で未マージのコミットを持つ
+- **WHEN** 新ルート選択後、Step 5a でその worktree を処理する番になる
+- **THEN**
+  - AskUserQuestion で「1) スキップ / 2) 破棄削除 (force)」の 2 択のみが提示される
+  - 表示文言に「⚠️ detached HEAD のためマージできません」と理由が明示される
+- [x] テスト実装完了（spec.md「detached HEAD の 🔴 worktree はマージ選択肢が除外される」に対応）
+- [x] ロジック実装完了
+- [ ] 動作確認完了
+- [ ] ユーザー確認完了
+
+### S14: メインリポで merge in progress 中なら新ルート中断
+
+- **GIVEN** メインリポの `.git/MERGE_HEAD` が存在する（前回のマージが未解決）、🔴 worktree が 1 件
+- **WHEN** Step 3 で新ルート選択 → Step 5a で「マージ」を選択 → Step 5b に入る
+- **THEN**
+  - Step 5b の事前確認（5b-2）で `.git/MERGE_HEAD` の存在を検出
+  - 新ルート全体を中断
+  - 「`cd $MAIN_REPO` で `git status` を確認し、競合解決→commit、または `git merge --abort` してから wt-clean を再実行してください」と案内が表示される
+- [x] テスト実装完了（spec.md「メインリポで merge in progress 中なら新ルート中断」に対応）
+- [x] ロジック実装完了
+- [ ] 動作確認完了
+- [ ] ユーザー確認完了

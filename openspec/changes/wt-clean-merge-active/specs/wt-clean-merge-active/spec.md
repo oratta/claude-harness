@@ -33,6 +33,20 @@
 - **THEN** AskUserQuestion で「1) スキップ / 2) 破棄削除 (force)」の 2 択のみが提示される
 - **AND** 表示文言に「⚠️ Dirty な変更があるため main にマージできません（merge は clean working tree が前提）」と理由が明示される
 
+#### Scenario: 全 🔴 が Dirty の場合は案内を出してから per-worktree ループに入る
+
+- **GIVEN** 新ルートが選択され、🔴 worktree が複数あるが全件 Dirty を持つ
+- **WHEN** Step 5a の個別確認ループ開始時
+- **THEN** AskUserQuestion 前に「マージ可能な 🔴 が 0 件です（全件 Dirty）。先にコミットしてから wt-clean を再実行するか、個別にスキップ/破棄削除を選んでください」と案内が表示される
+- **AND** その後、各 🔴 worktree に対し Dirty 2 択（スキップ / 破棄削除）の AskUserQuestion が提示される
+
+#### Scenario: detached HEAD の 🔴 worktree はマージ選択肢が除外される
+
+- **GIVEN** 🔴 worktree が detached HEAD 状態（`BRANCH_NAME` が空）にある
+- **WHEN** 新ルート選択後、Step 5a でその worktree を処理する番になる
+- **THEN** AskUserQuestion で「1) スキップ / 2) 破棄削除 (force)」の 2 択のみが提示される
+- **AND** 表示文言に「⚠️ detached HEAD のためマージできません」と理由が明示される
+
 ### Requirement: マージ実行はメインリポの MAIN_BRANCH チェックアウト下で `git merge --no-ff` により行う
 
 `wt-clean` は新ルートで「マージ」が選択された worktree について、メインリポで `MAIN_BRANCH` をチェックアウトした状態で `git merge "$BRANCH_NAME" --no-ff -m "merge: integrate $BRANCH_NAME (wt-clean active merge)"` を実行するものとする（SHALL）。`BRANCH_NAME` は既存 Step 1 と同じく `git worktree list` から抽出した worktree のチェックアウト中ブランチ名そのもの（`feature/` 等のプレフィックスは含まない）。
@@ -50,6 +64,14 @@
 - **WHEN** ユーザーが新ルートを選択する
 - **THEN** Step 5b 開始時に検証で失敗し、新ルート全体を中断する
 - **AND** 「`cd $MAIN_REPO && git checkout $MAIN_BRANCH` してから wt-clean を再実行してください」と案内が表示される
+
+#### Scenario: メインリポで merge in progress 中なら新ルート中断
+
+- **GIVEN** メインリポの `.git/MERGE_HEAD` が存在する（前回のマージが未解決）
+- **WHEN** ユーザーが新ルートを選択し Step 5b に入る
+- **THEN** Step 5b の事前確認で `.git/MERGE_HEAD` の存在を検出する
+- **AND** 新ルート全体を中断する
+- **AND** 「`cd $MAIN_REPO` で `git status` を確認し、競合解決→commit、または `git merge --abort` してから wt-clean を再実行してください」と案内が表示される
 
 ### Requirement: マージ成功した worktree はサニティチェック対象に含め、PASS なら通常削除する
 
