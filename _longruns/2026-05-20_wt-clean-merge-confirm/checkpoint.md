@@ -1,12 +1,36 @@
 ---
-phase: Build Contract
+phase: Verify
 status: complete
-last_updated: 2026-05-20T09:35:00+09:00
+last_updated: 2026-05-20T10:30:00+09:00
 ---
 
 ## 完了フェーズ
 - [x] Setup: ツール検証 + OpenSpec 確認 + checkpoint/decisions 初期化
 - [x] Build Contract: APPROVED by longrun-reviewer (capability 名: wt-clean-merge-active)
+- [x] Build 前半: OpenSpec ドキュメント作成 + Spec Review APPROVED + verification-guide.md 生成
+- [x] Build 後半: longrun-builder が wt-clean.md / SKILL.md / plugin.json / marketplace.json 編集 (commit 39c60ec, 3ba42a8)
+- [x] Verify: 静的検証 PASS（openspec validate / JSON 構文 / commands-SKILL 同期 / version bump / plan 16 条件カバー）+ エッジケース 3 件追加実装 (commit c4cf96b)
+
+## Verify 結果
+| 評価軸 | 結果 |
+|---|---|
+| openspec validate | PASS |
+| plugin.json / marketplace.json JSON 構文 | PASS |
+| commands ↔ SKILL 同期 | PASS（frontmatter + 既存 6a コメント差分のみ） |
+| version bump（plugin 1.7.0→1.8.0 / marketplace 1.2.0→1.3.0 / SKILL 1.2.0→1.3.0） | PASS |
+| plan.md 受け入れ条件 16 件カバー | PASS |
+| エッジケース網羅（全 Dirty / detached HEAD / merge in progress） | PASS（追加実装後） |
+| ブラウザ検証 | N/A（CLI スキル、手動シナリオは Feedback フェーズでユーザー実行） |
+
+## コミット履歴
+- 540c20c chore: longrun execution start - wt-clean-merge-active
+- 39c60ec feat(wt-clean): add 🔴 active worktree merge confirmation route
+- 3ba42a8 chore(wt-clean-merge-active): mark task 6.1 complete with commit hash
+- c4cf96b feat(wt-clean-merge-active): add 3 edge-case guards (all-dirty / detached HEAD / merge in progress)
+
+## 次フェーズへの引き継ぎ
+- 次フェーズ: Feedback（summary.md 作成 + ユーザーに動作確認依頼）
+- 手動シナリオ S1〜S14 はユーザーがサンドボックス repo で実行する想定（Skill 自体が AskUserQuestion ベースで動くため自動化困難）
 
 ## ツール検証結果
 - openspec: /Users/oratta/.volta/bin/openspec (v1.2.0)
