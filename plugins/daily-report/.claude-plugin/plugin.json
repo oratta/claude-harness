@@ -12,5 +12,6 @@
   ],
   "commands": [
     "./commands/daily-report.md"
-  ]
+  ],
+  "agents": []
 }

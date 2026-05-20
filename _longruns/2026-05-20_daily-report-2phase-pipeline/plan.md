@@ -46,6 +46,16 @@ daily-report スキルを **2フェーズ・サブエージェント分離型** 
 - **テストフレームワーク**: bats-core（bash 用テスト）
 - **テスト実行コマンド**: `bats plugins/daily-report/tests/*.bats`
 
+### change-0 spike 検証結果（メインセッションで実機検証後に記入）
+
+- Agent frontmatter tools 方式: [direct / wildcard / 失敗→ToolSearch フォールバック]
+- plugin.json agents 配列への登録の要否: [必須 / 不要]
+- Agent 戻り値が STATUS line のみで構成可能: [yes / no]
+- 採用方針: [文章]
+- 既知の制約 / 注意点: [箇条書き]
+- 検証日時: [日時]
+- 検証コミット: [hash]
+
 ## スコープ
 
 ### 含むもの
