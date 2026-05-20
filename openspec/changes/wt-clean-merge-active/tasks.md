@@ -61,5 +61,5 @@
 
 ## 6. コミット & 反映
 
-- [ ] 6.1 変更を commit（Conventional Commits 準拠）
+- [x] 6.1 変更を commit（Conventional Commits 準拠）: `feat(wt-clean): add 🔴 active worktree merge confirmation route` (39c60ec)
 - [ ] 6.2 push 後、プラグイン再インストール or `/reload-plugins` で反映確認（ユーザー実施）
