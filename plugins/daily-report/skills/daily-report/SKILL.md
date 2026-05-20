@@ -426,17 +426,6 @@ Step 8 で書いた `90 - LLM/` のログに、アルバム生成の事実を追
 
 ---
 
-# DEPRECATED: removed in change-5
-
-以下の旧経路コードは **change-4 では一時的に残置** され、**change-5 で完全削除** される。
-メインスレッドから Notion MCP をロードする経路 / jsonl 本体を直接 Read する経路は新パイプラインでは使用しない。
-新経路は Phase 1（サブエージェント）が中間ファイルに圧縮し、Phase 2 はそれを Read するのみ。
-
-旧 Step 1a (Notion MCP load) / 旧 Step 1d (jsonl head -5 Read) は本ファイルから削除済み。
-本ブロックは change-5 完了時に「以下旧経路は完全に削除されました」を明示するためのアンカーとして残し、change-5 commit で本ブロック自体も削除する。
-
----
-
 ## 注意事項（試行錯誤から得た教訓）
 
 > [!warning] やってはいけない
