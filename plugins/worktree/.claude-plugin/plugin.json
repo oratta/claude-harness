@@ -1,7 +1,7 @@
 {
   "name": "worktree",
-  "version": "1.8.0",
-  "description": "Git worktreeのセットアップとクリーンアップ。wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー、引数で後続作業指示を受け取り可能。wt-clean: Step 0でorigin/<main>を同期 → 診断・LLM保全・マージ・削除、または `--keep` で再利用可能化。`--no-sync` で同期スキップ。🔴 Active worktree のマージ確認に対応（未マージコミットを main にマージしてから削除する推奨ルートを最優先選択肢として提示）。",
+  "version": "1.9.0",
+  "description": "Git worktreeのセットアップとクリーンアップ。wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー、引数で後続作業指示を受け取り可能。`--with-pr` で空 commit → push → Draft PR を自動作成し marketplace 自動更新による worktree 消失に備える運用に切替可能。wt-clean: Step 0でorigin/<main>を同期 → 診断・LLM保全・マージ・削除、または `--keep` で再利用可能化。`--no-sync` で同期スキップ。🔴 Active worktree のマージ確認に対応（未マージコミットを main にマージしてから削除する推奨ルートを最優先選択肢として提示）。",
   "author": {
     "name": "Oratta"
   },
