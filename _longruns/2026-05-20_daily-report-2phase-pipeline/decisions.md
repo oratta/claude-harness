@@ -18,6 +18,19 @@
 
 ---
 
+## D3: Build Contract Round 1 指摘 BLOCKER 1 + SHOULD_FIX 4 + NOTE 2 すべて採用
+
+- **背景**: Build Contract Round 1 で longrun-reviewer から指摘 7 件
+- **判断**: 全採用（バイアス緩和ガード適用後も嗜好レベルの指摘無し）
+- **採用内容**:
+  - 指摘1 (BLOCKER): plugin.json `agents` 空配列初期化を change-0 に追加、change-2/3 で各 Agent を ASCII ソート順で追記
+  - 指摘2 (SHOULD_FIX): worktree append コンフリクト対策として ASCII ソート順厳守 + change-4 で最終確認
+  - 指摘3 (SHOULD_FIX): change-4 中間状態で新経路 diary 動作（旧経路は `# DEPRECATED` コメント付き残置）、change-5 で完全削除
+  - 指摘4 (SHOULD_FIX): bats テストを各 Change のスコープに明示分配（change-2 / change-3 / change-4）
+  - 指摘5 (NOTE): spike Agent 削除を change-4 完了時に変更（change-2/3 実装中のリファレンス温存）
+  - 指摘6 (NOTE): change-5 完了条件に grep 3パターン明示
+- **エビデンス**: plan.md change-0 / change-2 / change-3 / change-4 / change-5 の rules セクション参照（commit 1b4d292 以降の編集差分）
+
 ## D2: MCP ツール使用 Agent の frontmatter スタイルは wildcard 指定（`mcp__claude_ai_Notion__*`）
 
 - **背景**: change-0 spike で「Agent から MCP ツールを呼ぶ方式」を検証するが、Explore 調査で前例が見つかった

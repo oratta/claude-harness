@@ -36,12 +36,14 @@ last_updated: 2026-05-20T13:30:00+09:00
 
 ## 完了フェーズ
 - [x] Setup: ツール検証 / コードベース調査 / checkpoint 初期化
-- [ ] Build Contract: longrun-reviewer で Changes 分解レビュー
+- [x] Build Contract: longrun-reviewer Round 2 APPROVE（Round 1 で BLOCKER 1 + SHOULD_FIX 4 + NOTE 2 を全採用、D3 として記録）
 - [ ] Build: 各 change を longrun-builder で TDD 実装
 - [ ] Verify: longrun-verifier + longrun-browser-verifier で4軸定量評価
 - [ ] Feedback: ユーザー確認
 - [ ] Archive: OpenSpec change + ランディレクトリのアーカイブ
 
 ## 次フェーズへの引き継ぎ
-- plan.md は longrun-plan で Round 2 APPROVE 済み（自己レビューバイアス除去のため Build Contract で再レビュー）
-- change-0 spike を最初に実行し、結果を plan.md 末尾に追記してから change-2/3 着手
+- plan.md は longrun-plan Round 2 + Build Contract Round 2 で2度 APPROVE 済み
+- change-0 spike は OpenSpec change として正式登録しない（検証タスクのため）。change-1〜5 のみ OpenSpec change として登録
+- 着手順序: change-0 → change-1 → (change-2 ∥ change-3 worktree 並列) → change-4 → change-5
+- spike Agent は change-4 完了時点で削除

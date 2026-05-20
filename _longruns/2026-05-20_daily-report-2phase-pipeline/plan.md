@@ -68,19 +68,24 @@ daily-report スキルを **2フェーズ・サブエージェント分離型** 
 
 ## Changes分解
 
-### change-0: agent-mcp-spike（技術検証）
+### change-0: agent-mcp-spike（技術検証 + 共通基盤整備）
 
-- **スコープ**: サブエージェントから Notion MCP ツールを呼ぶ方式の技術検証スパイク。最小実装の Agent (`plugins/daily-report/agents/_spike-notion-mcp.md`) を作り、DB_FIELDY を1ページだけ fetch して STATUS line を返す動作を実機確認する
+- **スコープ**: サブエージェントから Notion MCP ツールを呼ぶ方式の技術検証スパイク + change-2/3 並列実装の共通基盤整備（plugin.json agents フィールド初期化、tests/ ディレクトリ初期化）。最小実装の Agent (`plugins/daily-report/agents/_spike-notion-mcp.md`) を作り、DB_FIELDY を1ページだけ fetch して STATUS line を返す動作を実機確認する
 - **使用スキル**: なし
 - **依存関係**: 独立（最初に着手）
 - **config.yaml rules**:
-  - "Agent frontmatter の `tools:` フィールドに `mcp__claude_ai_Notion__notion-search`, `mcp__claude_ai_Notion__notion-fetch` を直接書く方式を最初に試す"
+  - "Agent frontmatter の `tools:` フィールドに `mcp__claude_ai_Notion__notion-search`, `mcp__claude_ai_Notion__notion-fetch` を直接書く方式を最初に試す（参考実装: `plugins/longrun/agents/longrun-browser-verifier.md` の `mcp__playwright__*` wildcard 指定）"
   - "失敗した場合は Agent 本文内で `ToolSearch(select:...)` を呼ぶ方式にフォールバック"
-  - "検証結果（採用方式 / 制約 / 既知の問題）を plan の「技術要件」セクションに反映してから change-2/3 本実装に着手する"
-  - "spike Agent は検証完了後に削除する（プロダクションには残さない）"
+  - "**plugin.json `agents` フィールドへの登録の有無で起動可否がどう変わるかを実機検証**: (a) Agent ファイル配置のみで起動可能か、(b) `plugin.json` に `\"agents\": [\"./agents/_spike-notion-mcp.md\"]` 登録が必要か。検証結果に応じて change-2/3 のスコープに登録要否を反映"
+  - "**`plugin.json` の `agents` フィールドを空配列 `\"agents\": []` で初期化**（change-2/3 worktree 並列実装時のマージコンフリクト回避のため、共通祖先 commit で空配列を確定させる）"
+  - "**`plugins/daily-report/tests/` ディレクトリを初期化**し、`tests/.gitkeep` または bats helper（`tests/helper.bash`）を配置。change-2/3 worktree が同時にディレクトリ初期化することを防ぐ"
+  - "検証結果（採用方式 / 制約 / 既知の問題）を plan.md の「技術要件」末尾に追記してから change-2/3 本実装に着手する"
+  - "spike Agent は **change-4 完了時点で削除** する（change-2/3 実装中のトラブルシューティング・リファレンス用に温存）"
 - **完了条件**:
   - Skill から Agent ツール経由で `voice-compactor` 的な Agent を起動し、Notion MCP 呼び出しが成功する
   - Agent の戻り値（メインへの返却本文）が STATUS line のみで構成できることを確認
+  - `plugin.json` の `agents` フィールド空配列初期化が完了
+  - `plugins/daily-report/tests/` ディレクトリが初期化済み
   - 検証結果を plan.md の「技術要件」末尾に追記
 
 ### change-1: output-path-migration
@@ -107,6 +112,8 @@ daily-report スキルを **2フェーズ・サブエージェント分離型** 
   - "STATUS line のフォーマット: `STATUS: ok` / `STATUS: partial pages=N missing=[hh:00,...]` / `STATUS: fail reason=<short-message>`"
   - "トークン上限超で取得不能なページは `STATUS: partial` で報告し、voice.md 本文には `## hh:00-hh:59` + `- (未取得: token-limit)` を明記"
   - "DB_FIELDY 未接続 / 未ロード時は `STATUS: fail reason=notion-mcp-unavailable` を返す（メイン側で dailyLLM.md のみで Phase 2 継続するためのフォールバック識別子）"
+  - "**plugin.json `agents` 配列への登録**: change-0 検証結果に従い、必要なら `./agents/voice-compactor.md` を `plugin.json` の `agents` 配列に追記する。配列要素は ASCII ソート順を厳守（`./agents/llm-log-compactor.md` → `./agents/voice-compactor.md`）。worktree マージ時の append コンフリクト回避は change-4 が最終マージで責任を持つ"
+  - "**bats テストの分配**: 受け入れ条件 #18 の (a) ノイズタグ除去関数 / (b) カーナビ定型句マッチ を `plugins/daily-report/tests/voice-compactor.bats` に実装する"
 
 ### change-3: llm-log-compactor-agent
 
@@ -121,6 +128,8 @@ daily-report スキルを **2フェーズ・サブエージェント分離型** 
   - "Vault 内 `90 - LLM/<TIMESTAMP>-*.md` および `12 - PROJECT/**/LLM/<date>*.md` を grep し、対応ログがあれば wikilink を構築。なければ jsonl 絶対パスを参照として残す（両方残す方針）"
   - "セッションは jsonl 作成時刻の昇順で並べる"
   - "出力契約（メインへの返却）: change-2 と同じく `STATUS: <ok|partial|fail> ...` の 1行のみ。dailyLLM.md の本文要約・セッション数詳細・抜粋等を返却本文に含めない"
+  - "**plugin.json `agents` 配列への登録**: change-0 検証結果に従い、必要なら `./agents/llm-log-compactor.md` を `plugin.json` の `agents` 配列に追記する。配列要素は ASCII ソート順を厳守（`./agents/llm-log-compactor.md` → `./agents/voice-compactor.md`）"
+  - "**bats テストの分配**: `plugins/daily-report/tests/llm-log-compactor.bats` で turn 数集計（user role メッセージ総数のカウント）の決定論的テストを最低1件実装"
 
 ### change-4: skill-2phase-refactor
 
@@ -135,6 +144,9 @@ daily-report スキルを **2フェーズ・サブエージェント分離型** 
   - "メインスレッドで Notion MCP をロードしない（旧 Step 1a の `ToolSearch` 呼び出しはメインスキル本文から削除）"
   - "jsonl の本文を Read するコードはメインスレッドから削除"
   - "Step 4（90 - LLM/<TARGET_DATE_COMPACT_TODAY>-<タイトル>.md 生成）は Phase 2 の最後に維持。ただし wikilink は新パス `01 - DAILY/<TARGET_DATE>/diary` に更新する"
+  - "**中間状態（change-4 完了 ～ change-5 着手前）の動作仕様**: Phase 1 サブエージェント呼び出し → 中間ファイル生成 → Phase 2 旧経路（中間ファイル無視で Fieldy 直/jsonl 直に再アクセス）という **二重 fetch は禁止**。change-4 完了時点で diary 生成は voice.md / dailyLLM.md を Read する経路に切り替える。旧経路コード（Fieldy 直アクセス / jsonl Read）は `# DEPRECATED: removed in change-5` コメント付きで残置のみ（change-5 で削除）"
+  - "**plugin.json `agents` 配列の最終確定**: change-2/3 worktree のマージ完了時、`agents` 配列が ASCII ソート順（`./agents/_spike-notion-mcp.md` → `./agents/llm-log-compactor.md` → `./agents/voice-compactor.md`）になっていることを確認。append コンフリクトが発生した場合は change-4 で解消する責任を持つ"
+  - "**bats テストの分配**: 受け入れ条件 #18 の (c) STATUS line パーサ / (d) 中間ファイル存在チェック / (e) Phase 1 sanity check（冒頭 40 行 Read で行数下限判定）を `plugins/daily-report/tests/skill-phase-control.bats` に実装"
 
 ### change-5: diary-generation-from-intermediate
 
@@ -146,7 +158,8 @@ daily-report スキルを **2フェーズ・サブエージェント分離型** 
   - "diary.md 本文のトーン・構造（既存 SKILL.md の Step 3b/3c/3d）は維持"
   - "voice.md / dailyLLM.md に `(未取得)` セクションがある場合、diary.md でも対応時間帯を「未取得」と明記（推測補完禁止の既存原則を継承）"
   - "diary.md の `source:` frontmatter を新形式に変更: `[[voice|2026-05-19 Voice Log]] / [[dailyLLM|2026-05-19 LLM Log Index]] / Obsidian-edited notes (<date>)` の 3ソース wikilink を含める"
-  - "備考（嗜好レベル指摘への反論）: change-4 と change-5 を分割した意図は、change-4 完了時点で「中間ファイル生成 + sanity check + Step 4 ログ」までを動作確認可能なマイルストーンとし、change-5 で diary 生成側を書き換える順序を明示することにある。change-4 単体マージ後の中間状態でも、voice.md / dailyLLM.md / Step 4 ログは生成され、diary は旧経路で動く（または `--skip-diary` 相当のフラグなしでもエラーにならない）よう、change-4 のスコープで diary 生成の旧経路を温存する。change-5 で旧経路を削除する"
+  - "**完了条件の grep 基準**: SKILL.md 内で以下3パターンが grep で検出されないことを完了条件とする: (1) `ToolSearch.*Notion`（メインからの Notion MCP ロード）、(2) `notion-fetch`（メインからの Notion fetch 呼び出し）、(3) `~/.claude/projects.*Read`（メインからの jsonl 本体 Read）。change-4 で `# DEPRECATED` コメント付きで残された旧経路コード行も含めて完全削除する"
+  - "備考（嗜好レベル指摘への反論）: change-4 と change-5 を分割した意図は、change-4 完了時点で「中間ファイル生成 + sanity check + Step 4 ログ + 新経路 diary」までを動作確認可能なマイルストーンとし、change-5 で旧経路コードの削除を独立タスクにすることで Build Contract レビューが粒度細かく可能になることにある。Build Contract Round 1 指摘3への対応として、change-4 中間状態では新経路で diary が動作する（旧経路は `# DEPRECATED` コメント付きで残置のみ）。change-5 はその旧コード削除のみを担当する"
 
 ## 画面・UI設計
 
