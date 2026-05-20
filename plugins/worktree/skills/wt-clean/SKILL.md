@@ -1,7 +1,7 @@
 ---
 name: wt-clean
-description: Git worktreeの安全なクリーンアップ。Step 0で `origin/<main>` を pull してからの診断（マージ状態・未コミット変更・LLMファイル）→ LLM保全 → マージ → 削除 or 再利用化。GitHub 側で PR がマージされたあとの片付けにも対応。`--keep` オプションでクリーンなworktreeをmainに戻して再利用可能状態に保つ。`--no-sync` で remote 同期をスキップ。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」で起動。
-version: 1.2.0
+description: Git worktreeの安全なクリーンアップ。Step 0で `origin/<main>` を pull してからの診断（マージ状態・未コミット変更・LLMファイル）→ LLM保全 → マージ → 削除 or 再利用化。GitHub 側で PR がマージされたあとの片付けにも対応。`--keep` オプションでクリーンなworktreeをmainに戻して再利用可能状態に保つ。`--no-sync` で remote 同期をスキップ。🔴 Active worktree のマージ確認に対応（未マージコミットを main にマージしてから削除する推奨ルートを最優先選択肢として提示）。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」で起動。
+version: 1.3.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -139,10 +139,24 @@ Worktree診断結果 (モード: 再利用 [--keep]):
 ```
 
 選択肢:
+
+**🔴 Active worktree が 1 件以上ある場合（5 択、新選択肢を先頭に挿入）**:
+
+- 1) 「🔴 を main にマージしてから処理 (推奨・安全)」 ← New（最頻パスを先頭推奨）
+- 2) 「🟢🟡 のみ処理する」
+- 3) 「🟢 のみ処理する」
+- 4) 「全て処理する（🔴含む — 破棄ルート、危険）」
+- 5) 「キャンセル」
+
+**🔴 Active worktree が 0 件の場合（従来 4 択、既存挙動を完全維持）**:
+
 - 「🟢🟡を処理する」（推奨）
 - 「🟢のみ処理する」
 - 「全て処理する（🔴含む — 危険）」
 - 「キャンセル」
+
+選択肢 1)「🔴 を main にマージしてから処理」は新ルート（Step 5a / 5b → Step 6 → Step 7a）に分岐する。
+選択肢 2)〜5) は既存ルートと完全に同じ動作（回帰防止のため動作変更しない）。
 
 ### Step 4: LLM保全
 
@@ -169,6 +183,142 @@ git -C "$WORKTREE_PATH" diff --stat
 AskUserQuestion で確認:
 - 「変更を破棄して削除」
 - 「スキップ（あとで手動対応）」
+
+### Step 5a: 🔴 個別マージ確認（新ルート選択時のみ）
+
+Step 3 で選択肢 1)「🔴 を main にマージしてから処理 (推奨・安全)」が選ばれた場合のみ実行する。
+🔴 worktree を `git worktree list` の順（作成順）に 1 つずつ AskUserQuestion で確認する。
+
+各 🔴 worktree に対し、表示には以下を含める:
+
+- Branch 名（`BRANCH_NAME`）
+- 未マージコミット一覧: `git log --oneline "$MAIN_BRANCH".."$BRANCH_NAME"`
+- Dirty 状態（`git -C "$WORKTREE_PATH" status --porcelain` の有無）
+- LLM ファイル状況（Step 1 と同じ検出）
+
+```
+🔴 wip-z の処理:
+  Branch: feat-wip
+  未マージコミット: 3件
+    abc1234 feat: ユーザー登録フォームの追加
+    def5678 fix: バリデーションエラー
+    ghi9012 chore: テスト整備
+  Dirty: なし
+  LLM: なし
+
+選択肢:
+  1) main にマージ (推奨)
+  2) スキップ
+  3) 破棄削除 (force)
+```
+
+**Dirty 同時 🔴 の場合**: 「1) main にマージ」を**選択肢から除外**し、表示文言で理由を明示する（merge は clean working tree が前提）。
+
+```
+🔴 wip-z の処理:
+  Branch: feat-wip
+  未マージコミット: 3件
+  Dirty: 2 files (uncommitted changes)
+  LLM: なし
+
+⚠️ Dirty な変更があるため main にマージできません（merge は clean working tree が前提）。
+
+選択肢:
+  1) スキップ
+  2) 破棄削除 (force)
+```
+
+ユーザーの選択ごとの分岐:
+
+- 「マージ」 → Step 5b へ進み、当該 worktree を順次マージ実行
+- 「スキップ」 → 状態維持（worktree も main も触らない）
+- 「破棄削除 (force)」 → `git worktree remove --force "$WORKTREE_PATH"` + `git branch -D "$BRANCH_NAME"`（既存「全て処理する（🔴破棄）」と同じ操作）
+
+### Step 5b: マージ実行とエラーハンドリング（新ルート選択時のみ）
+
+Step 5a で「マージ」を選ばれた worktree について、マージは必ず **メインリポで `MAIN_BRANCH` をチェックアウトした状態で** `git merge --no-ff` で実行する。fast-forward は許可しない（履歴トレーサビリティ確保）。
+
+#### 5b-1. セッション内状態管理
+
+```bash
+# 新ルートで実際にマージ成功したブランチ名を順次蓄積する配列（push 順 = マージ順）
+# Step 6d のチェック対象判定 / Step 8 完了レポートの両方で参照する
+MERGED_BRANCHES=()
+```
+
+#### 5b-2. 事前確認: メインリポが MAIN_BRANCH をチェックアウト中か
+
+```bash
+# Step 0 / Step 7b と同じ MAIN_BRANCH 検出ロジック
+MAIN_BRANCH="main"
+git show-ref --verify --quiet refs/heads/master && MAIN_BRANCH="master" || true
+
+MAIN_REPO=$(git worktree list | head -1 | awk '{print $1}')
+CURRENT_BRANCH=$(git -C "$MAIN_REPO" branch --show-current)
+
+if [ "$CURRENT_BRANCH" != "$MAIN_BRANCH" ]; then
+  echo "⚠️ メインリポが $MAIN_BRANCH 以外をチェックアウト中（現在: $CURRENT_BRANCH）。新ルートを中断します。"
+  echo "  対応: cd $MAIN_REPO && git checkout $MAIN_BRANCH してから wt-clean を再実行してください。"
+  exit 1   # 新ルート全体を中断（既マージ分があれば後述の通り全保留扱い）
+fi
+```
+
+#### 5b-3. マージ実行
+
+```bash
+cd "$MAIN_REPO"
+# MAIN_BRANCH チェックアウト確認済み（5b-2）
+
+# 当該 worktree のブランチをマージ。fast-forward は禁止 → --no-ff 必須
+git -C "$MAIN_REPO" merge "$BRANCH_NAME" --no-ff \
+  -m "merge: integrate $BRANCH_NAME (wt-clean active merge)"
+
+if [ $? -eq 0 ]; then
+  # マージ成功 → MERGED_BRANCHES に追記
+  MERGED_BRANCHES+=("$BRANCH_NAME")
+  echo "  ✅ マージ成功（${BRANCH_NAME}）→ Step 6 サニティチェック対象に追加"
+else
+  # 競合発生 → 5b-4 へ
+  :
+fi
+```
+
+成功時の表示:
+
+```
+🔴 wip-z を main にマージ中:
+  cd <main-repo> && git checkout main && git merge feat-wip --no-ff -m "merge: integrate feat-wip (wt-clean active merge)"
+  ✅ マージ成功（3 commits, 5 files changed）
+
+→ Step 6 サニティチェック対象に追加（MERGED_BRANCHES に記録）
+```
+
+#### 5b-4. 競合時のエラーハンドリング
+
+`git merge` が exit code 非 0（competing 変更で競合）を返した場合:
+
+- `git merge --abort` は **自動実行しない**（SHALL NOT）。`MAIN_BRANCH` は merge 進行中状態（`.git/MERGE_HEAD` 存在）のまま保持する。
+- すでにマージ成功した worktree（`MERGED_BRANCHES` に記録されたもの）も含めて **Step 6 サニティチェック以降を実行せず**、全て削除保留する（中途半端な状態を避けるため安全側に倒す）。
+- 残りの 🔴 worktree（未処理分）も処理せず、未処理として完了レポートに表示する。
+- 完了レポート（Step 8）の「競合保留時」表示に分岐する。
+
+```
+⚠️ マージで競合が発生しました:
+  Branch: feat-wip → main
+  Conflict files:
+    src/foo.ts
+    src/bar.ts
+
+対応手順:
+  1. cd <main-repo>
+  2. 競合を解決して `git add` + `git commit`
+  3. wt-clean を再実行
+
+※ feat-wip worktree は削除されていません（競合状態を保持しています）。
+※ 他の 🔴 worktree の処理も中断しました（順序依存を避けるため）。
+※ すでに今回 wt-clean でマージ成功した 🔴 worktree（MERGED_BRANCHES に記録されたもの）も Step 6 サニティチェック以降を実行せず、削除を全て保留します（中途半端な状態を避けるため安全側に倒す）。
+※ `git merge --abort` で main を元に戻したい場合は手動で実行してください（自動 abort はしません）。
+```
 
 ### Step 6: マージ後サニティチェック（Post-Merge Verify）
 
@@ -242,11 +392,26 @@ npm run build     # ビルド（scripts に存在すれば）
 
 #### 6d. チェック対象の範囲
 
-- 🟢 Safe かつ「今回の wt-clean で新たにマージした」worktree → チェック対象
-- 🟢 Safe で「以前からマージ済み」のworktree → チェック不要（既にメインに統合済み）
+新ルート（Step 5a / 5b）でマージ昇格した worktree もサニティチェック対象に含めるため、判定ロジックは以下の OR で記述する:
+
+- 🟢 Safe かつ「今回の wt-clean で新たにマージした」worktree（既存判定） → チェック対象
+- **または** ブランチ名が `MERGED_BRANCHES` 配列に含まれる worktree（新ルートでマージ昇格した 🔴 → 🟢 相当） → チェック対象
+- 🟢 Safe で「以前からマージ済み」の worktree → チェック不要（既にメインに統合済み）
 - 🟡 Recoverable → チェック対象（LLMコピー後、削除前に）
 
+```bash
+# 擬似コード: チェック対象判定
+for WT in "${ALL_WORKTREES[@]}"; do
+  BRANCH=$(get_branch "$WT")
+  if is_freshly_merged_safe "$WT" || array_contains "$BRANCH" "${MERGED_BRANCHES[@]}" || is_recoverable "$WT"; then
+    CHECK_TARGETS+=("$WT")
+  fi
+done
+```
+
 チェックは**バッチ実行**する。個別のworktreeごとではなく、全マージ完了後に1回だけ実行する（テスト実行コストを最小化）。
+
+**競合発生で中断した場合の特例**: Step 5b で `git merge` 競合が発生して中断した場合、`MERGED_BRANCHES` に既に記録されている worktree も含めて Step 6 自体を実行しない。全 worktree を削除せず保留する（既存 Step 6c「FAIL したマージ以降を保留」と同じ思想で、安全側に倒す）。
 
 ### Step 7: 削除 / 再利用 実行
 
@@ -380,6 +545,45 @@ wt-clean 完了:
       → 削除も再利用化も行われていません
   スキップ: wip-z (🔴 active)
   残存worktrees: 2
+```
+
+#### 新ルート（🔴 マージ確認）成功時
+
+```
+wt-clean 完了:
+  Remote 同期: ✅ pulled 0 commits (already up-to-date)
+  処理: 2 worktrees
+  🔴 マージ→削除: wip-z (3 commits merged)
+  削除: feat-x (🟢)
+  サニティチェック: ✅ PASS (npm test, npm run build)
+  スキップ: なし
+  残存worktrees: 0
+```
+
+#### 新ルート × `--keep` 指定時（マージ後は通常削除にフォールバック）
+
+```
+wt-clean --keep 完了:
+  Remote 同期: ✅ already up-to-date
+  処理: 1 worktree
+  🔴 マージ→削除（--keep 指定だが新ルートのため通常削除）: wip-z (3 commits merged)
+    理由: マージ後はブランチが削除済みで「再利用化＝main切替」が実質ノーオペのため
+  サニティチェック: ✅ PASS
+  残存worktrees: 0
+```
+
+#### 新ルート × 競合保留時（複数 🔴 を順次処理中に競合発生 → 既マージ成功分も全保留）
+
+```
+wt-clean 中断:
+  Remote 同期: ✅ already up-to-date
+  処理: 3 worktrees (中断)
+  🔴 マージ成功・削除保留: wip-z (3 commits merged, awaiting conflict resolution)
+      → 競合解決後の wt-clean 再実行時に Step 6 サニティチェック以降を実行します
+  ⚠️ マージ競合で中断: wip-y (src/foo.ts, src/bar.ts)
+      → 競合解決後に wt-clean を再実行してください
+  未処理: wip-x (🔴)
+  残存worktrees: 3
 ```
 
 ## 🔴 Active worktreeの強制処理

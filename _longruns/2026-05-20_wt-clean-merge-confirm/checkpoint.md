@@ -1,11 +1,12 @@
 ---
-phase: Setup
+phase: Build Contract
 status: complete
-last_updated: 2026-05-20T09:30:00+09:00
+last_updated: 2026-05-20T09:35:00+09:00
 ---
 
 ## 完了フェーズ
 - [x] Setup: ツール検証 + OpenSpec 確認 + checkpoint/decisions 初期化
+- [x] Build Contract: APPROVED by longrun-reviewer (capability 名: wt-clean-merge-active)
 
 ## ツール検証結果
 - openspec: /Users/oratta/.volta/bin/openspec (v1.2.0)
