@@ -1,7 +1,7 @@
 ---
 name: wt-setup
 description: Git worktreeの開発環境セットアップ
-argument-hint: "[セットアップ完了後に続けて実行する作業指示（任意）]"
+argument-hint: "[--with-pr] [セットアップ完了後に続けて実行する作業指示（任意）]"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
@@ -11,11 +11,17 @@ Git worktree作成後に実行し、開発に必要なファイル・設定を�
 
 ## 引数の扱い
 
-このコマンドは引数として「セットアップ完了後に続けて実行する作業指示」を受け取れる。
+このコマンドは以下を引数として受け取れる:
 
-- 例: `/wt-setup issue#3の対応` → セットアップ完了後に issue#3 の対応に着手する
-- 例: `/wt-setup ログイン画面のバグ修正` → セットアップ完了後にログイン画面のバグ修正に着手する
-- 引数なしの場合: セットアップのみ実行して完了レポートで終わる
+1. **`--with-pr` フラグ**（任意）: worktree 作成と同時に空 commit → push → Draft PR を作る。Claude Code のプラグイン自動更新で marketplace 配下の worktree が吹き飛ぶ事故に備える運用。プラグイン自体のリポジトリでのみ使う想定。
+2. **セットアップ完了後の作業指示**（任意）: 自然文。
+
+例:
+
+- `/wt-setup issue#3の対応` → セットアップ後に issue#3 の対応に着手
+- `/wt-setup --with-pr` → セットアップ後に Draft PR を作る
+- `/wt-setup --with-pr ログイン画面のバグ修正` → 両方
+- 引数なし → セットアップのみ実行して完了レポートで終わる
 
 引数 (`$ARGUMENTS`) の内容: $ARGUMENTS
 
@@ -74,20 +80,54 @@ bash ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/worktree/scrip
 スクリプト出力に `NEEDS_NPM_INSTALL=true` と表示された場合、`npm install` を実行するか確認する。
 `Gemfile` がある場合は `bundle install` を提案。
 
-### Step 4: 完了レポート
+### Step 4: Draft PR ブートストラップ（`--with-pr` フラグがある場合のみ）
+
+`$ARGUMENTS` に `--with-pr` が含まれている場合のみ実行する。それ以外はスキップ。
+
+事前チェック:
+
+1. `git remote get-url origin` が成功すること
+2. `git branch --show-current` が `main` / `master` ではないこと
+3. `gh pr list --head <branch>` で既存 PR が無いこと（既存なら URL を報告してスキップ）
+
+手順:
+
+```bash
+BRANCH=$(git branch --show-current)
+BASE=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
+
+git commit --allow-empty -m "chore: init draft PR for ${BRANCH}"
+git push -u origin "${BRANCH}"
+
+gh pr create --draft \
+  --head "${BRANCH}" \
+  --base "${BASE}" \
+  --title "${BRANCH}" \
+  --body "<Draft PR テンプレ（作業中である旨・CI skip 想定・復元手順）>"
+```
+
+PR 本文には以下を含める:
+
+- 「これは作業中の Draft PR です」
+- Draft 中の CI skip 想定（`if: github.event_name == 'push' || github.event.pull_request.draft == false`）
+- 復元手順（`git fetch origin <branch>` → 新しい worktree 作成）
+
+### Step 5: 完了レポート
 
 スクリプトの出力結果を元に、セットアップ結果をまとめてユーザーに報告する。
 `.worktreeinclude` を新規生成した場合は、含めたパターンと除外したパターンの一覧もレポートに含める。
+`--with-pr` で Draft PR を作った場合は PR URL もレポートに含める。
 
-### Step 5: 後続作業の実行（引数がある場合のみ）
+### Step 6: 後続作業の実行（後続作業指示がある場合のみ）
 
-`$ARGUMENTS` に作業指示が含まれている場合、セットアップ完了レポートに続けてその作業に着手する。
+`$ARGUMENTS` から `--with-pr` を取り除いた残りに作業指示が含まれている場合、完了レポートに続けてその作業に着手する。
 
 - 引数を新規ユーザー指示として扱い、通常通りタスク分解・実装を進める
 - 完了レポートと作業着手は明確に区切る（例: 「セットアップ完了。続けて『issue#3の対応』に着手します。」）
-- 引数が空の場合はこのステップをスキップして終了
+- 残り引数が空の場合はこのステップをスキップして終了
 
 ## エラーハンドリング
 
 - スクリプトがエラー終了した場合: エラー出力をそのままユーザーに報告する
 - セットアップでエラーが発生した場合、引数で指定された後続作業には着手しない（先にエラー解消が必要）
+- Step 4 の Draft PR ブートストラップで `gh` 由来のエラーが出た場合: Step 5・Step 6 は通常通り続行する（PR は手動で作り直せるため）
