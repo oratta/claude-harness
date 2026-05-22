@@ -37,6 +37,16 @@ cd ~/.superset/worktrees/<uuid>/<branch-name>
 
 session.jsonl のような ephemeral ファイルは **復元対象外**。Draft PR にバックアップされるのは git tracked なファイルと commit 履歴のみ。
 
+## LLM ログ保存先
+
+このリポジトリ配下に `LLM/` を作っても plugin update（dir 再 clone）で untracked ファイルごと消える。**LLM 会話ログはこの marketplace dir の外に保存すること**。
+
+- 保存先は環境変数 **`LLM_LOG_DIR`** を参照する
+- `LLM_LOG_DIR` が未設定の場合は **ユーザーに保存先を確認すること**。デフォルトパスを勝手に決めて書き込まない（個人のディレクトリ構成を git に残さないため）
+- このリポジトリ配下（`./LLM/` を含む）には絶対に書かない
+
+`session-logger` / `daily-report` / `weekly-report` など LLM ログを扱う skill を呼び出すときも、この優先順位でパスを解決すること。
+
 ## CI 設計指針（将来 CI を追加するときの参考）
 
 現状このリポジトリには `.github/workflows/` が無いが、追加する場合は **Draft PR では CI を skip するパターン** を使う:
