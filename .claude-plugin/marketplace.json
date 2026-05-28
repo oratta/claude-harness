@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -64,10 +64,10 @@
     },
     {
       "name": "daily-report",
-      "description": "Fieldy（Notion DB_FIELDY）の音声トランスクリプトと、Vault編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブの日次日記を生成する。",
+      "description": "Fieldy（Notion DB_FIELDY）の音声トランスクリプトと、Vault編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブの日次日記を生成する。`--with-album` で marketing-harness の vlog-album を連鎖呼び出し可能（デフォルトは女子 3 人版、`--gene male` で男性 Gene 版）。",
       "source": "./plugins/daily-report",
       "category": "productivity",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": { "name": "Oratta" },
       "keywords": ["daily", "diary", "fieldy", "notion", "obsidian", "narrative"]
     },

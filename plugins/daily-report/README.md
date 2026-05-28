@@ -30,7 +30,7 @@ Fieldy（ボイスレコーダー）の音声トランスクリプトと、Obsid
 - 以下のディレクトリ構造（[Vault basic ルール](https://github.com/oratta) 準拠）:
   ```
   vault/
-  ├── 02 - PERIODIC/Daily/<YYYY-MM-DD>/diary.md   # 出力先
+  ├── 01 - DAILY/<YYYY-MM-DD>/diary.md   # 出力先
   ├── 90 - LLM/<YYYYMMDD>-*.md                    # 任意、あれば取り込む
   ├── LLM/<YYYY-MM-DD>_<hash>.md                  # 任意、あれば取り込む
   ├── 12 - PROJECT/.../LLM/*.md                   # 任意
@@ -57,15 +57,16 @@ Fieldy（ボイスレコーダー）の音声トランスクリプトと、Obsid
 
 出力先:
 
-- 日記: `<vault>/02 - PERIODIC/Daily/<date>/diary.md`
-- アルバム（`--with-album` 指定時）: `<vault>/02 - PERIODIC/Daily/<date>/album.png` および同ディレクトリの `album-prompt.md`（再生成用）
+- 日記: `<vault>/01 - DAILY/<date>/diary.md`
+- アルバム（`--with-album` 指定時）: `<vault>/01 - DAILY/<date>/album.png` および同ディレクトリの `album-prompt.md`（再生成用）
 
 既存の `diary.md` / `album.png` がある場合は `diary-v2.md` / `album-v2.png` ... と suffix を付けて衝突回避する。
 
 ### `--with-album` の挙動
 
 - marketing-harness の `vlog-album` スキルに diary パスを渡してトイカメラ風コンタクトシートを生成する
-- `--cells 9|16`（デフォルト `9`、3×3）と `--split office:private`（デフォルト `2:1`）は vlog-album に pass-through
+- `--cells 9|16`（デフォルト `9`、3×3）/ `--split office:private`（デフォルト `2:1`）/ `--gene female|male`（デフォルト `female`）は vlog-album に pass-through
+- `--gene` のデフォルト `female` は「Gene を mid-20s 女性として描き、Netta / Pikke と並んで女子 3 人の startup 友達」になる版。`--gene male` で旧デフォルトの男性 Gene 版に切り替え
 - 画像生成は Codex CLI built-in（サブスク枠）。`OPENAI_API_KEY` は vlog-album 側で明示的に unset される
 - vlog-album が失敗しても diary 本体は壊れない（Step 6 で「diary は OK / album は失敗」を別個に報告）
 
@@ -86,5 +87,6 @@ Fieldy（ボイスレコーダー）の音声トランスクリプトと、Obsid
 
 ## バージョン
 
+- 0.3.0 (2026-05-28): `--gene female|male` オプションを追加し、vlog-album へ pass-through。デフォルトを `female`（3 人とも女性版）に変更。
 - 0.2.0 (2026-05-16): `--with-album` オプションを追加。marketing-harness の `vlog-album` を連鎖呼び出しし、diary と同じディレクトリに `album.png` を出力する。
 - 0.1.0 (2026-05-14): 初版。`/e2s:distill` で蒸留して生成。

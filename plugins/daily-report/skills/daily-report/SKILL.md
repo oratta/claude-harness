@@ -1,6 +1,6 @@
 ---
 name: daily-report
-description: Fieldyの音声トランスクリプト（Notion DB_FIELDY）と、Obsidian Vault内の編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブで日次日記を生成する。「日記作って」「昨日の振り返りを作って」「Fieldyから日記を生成」で起動。`--with-album` フラグ付きで実行すると、diary 生成後に marketing-harness の `vlog-album` スキルを呼び出して diary と同じディレクトリにトイカメラ風 Vlog アルバム画像を出力する。`--force-rebuild` フラグで中間ファイル（voice.md / dailyLLM.md）を含めて再生成する。
+description: Fieldyの音声トランスクリプト（Notion DB_FIELDY）と、Obsidian Vault内の編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブで日次日記を生成する。「日記作って」「昨日の振り返りを作って」「Fieldyから日記を生成」で起動。`--with-album` フラグ付きで実行すると、diary 生成後に marketing-harness の `vlog-album` スキルを呼び出して diary と同じディレクトリにトイカメラ風 Vlog アルバム画像を出力する（デフォルトは 3 人とも女性版、`--gene male` で男性 Gene を opt-in）。`--force-rebuild` フラグで中間ファイル（voice.md / dailyLLM.md）を含めて再生成する。
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, Skill
 ---
 
@@ -52,7 +52,7 @@ Phase 2 (diary 生成 — メイン):
 
 ### Step 0: 引数解釈と対象日決定
 
-`$ARGUMENTS` から **日付（positional）** と **オプション（`--with-album` / `--force-rebuild` / `--cells N` / `--split A:B`）** を分離する。`--with-album` 以外は vlog-album への pass-through、`--force-rebuild` は Phase 1 制御フラグ。
+`$ARGUMENTS` から **日付（positional）** と **オプション（`--with-album` / `--force-rebuild` / `--cells N` / `--split A:B` / `--gene female|male`）** を分離する。`--with-album` と `--force-rebuild` 以外は vlog-album への pass-through、`--force-rebuild` は Phase 1 制御フラグ。`--gene` は省略時 `female`（vlog-album のデフォルトに揃える）。
 
 ```bash
 # 引数を分解（順不同に対応）
@@ -79,6 +79,10 @@ while [ $# -gt 0 ]; do
       ;;
     --split)
       ALBUM_ARGS="$ALBUM_ARGS --split $2"
+      shift 2
+      ;;
+    --gene)
+      ALBUM_ARGS="$ALBUM_ARGS --gene $2"
       shift 2
       ;;
     *)
