@@ -1,7 +1,7 @@
 ---
 name: wt-clean
 description: Git worktreeの安全なクリーンアップ。Step 0で `origin/<main>` を pull してからの診断（マージ状態・未コミット変更・LLMファイル）→ LLM保全 → マージ → 削除 or 再利用化。GitHub 側で PR がマージされたあとの片付けにも対応。`--keep` オプションでクリーンなworktreeをmainに戻して再利用可能状態に保つ。`--no-sync` で remote 同期をスキップ。🔴 Active worktree のマージ確認に対応（未マージコミットを main にマージしてから削除する推奨ルートを最優先選択肢として提示）。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」で起動。
-version: 1.3.0
+version: 1.4.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -9,6 +9,28 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 
 Git worktreeを安全にクリーンアップするスキル。
 診断 → LLM保全 → マージ → 削除 or 再利用化 の順で、データロスなく整理する。
+
+## 絶対禁則（最優先・データロス防止）
+
+このスキルは `git worktree remove` / `git branch -D` という**取り消し不能な破壊操作**を含む。
+以下は他のどのルールよりも優先する。違反すると過去に「ユーザーが作業中の worktree を誤削除する」事故が発生している。
+
+1. **AskUserQuestion の回答を待たずに破壊操作を実行してはならない（最重要）**
+   - `git worktree remove` / `git branch -d` / `git branch -D` は、削除範囲を確定する AskUserQuestion の**回答を受け取った後の、別のアシスタントターンで**実行する。
+   - AskUserQuestion ツール呼び出しと、削除を実行する Bash 呼び出しを**同一ターンの並列ツール呼び出しに含めてはならない**。並列にするとユーザーの回答が届く前に削除が走り、回答が「やめて」「対象が違う」でも手遅れになる。
+   - 回答が届いたら、その回答が**どの worktree を指しているか**を文章で読み直し、削除対象リストを再確定してから実行する。曖昧な回答（パスだけ列挙等）は「削除してよい」と解釈せず、意図を一度確認する。
+
+2. **「マージ済み & クリーン」でも、ユーザーがアクティブに使っている worktree は削除しない**
+   - 独自 commit が無く working tree がクリーンでも、`LLM/` にログがある worktree は**現在進行中の作業セッション**である可能性が高い。LLM ログがある worktree は🟢 Safe に分類せず、必ず🟡 Recoverable 扱いとし、Step 4 で保全してから確認する（Step 2 の分類表を厳守）。
+   - 設計議論・調査が中心のセッションは git に commit が残らず、成果が `LLM/` ログにしか存在しないことがある。LLM ログの消失は復元困難なため、保全を最優先する。
+
+3. **削除判定は必ず実ブランチ名で行う（ディレクトリ名 ≠ ブランチ名）**
+   - worktree のディレクトリ名と、そこで checkout 中のブランチ名は一致しないことがある（例: `setup-longrun-plan` ディレクトリで `ISSUE-129_xxx` ブランチを checkout）。
+   - マージ判定・PR 突合・`git branch -D` は、`git worktree list` の末尾 `[branch-name]` で得た**実ブランチ名**を使う。ディレクトリ名で判断しない。
+
+4. **破壊操作の前に LLM 保全を済ませる**
+   - `git worktree remove --force` は gitignore 対象（`LLM/`・`node_modules`・`.env`）も巻き込んで削除する。削除前に `LLM/` をメインリポへコピーする（Step 4）。
+   - 万一保全前に削除してしまった場合、`~/.claude/projects/<worktree-path-slug>/<session>.jsonl` にセッション生ログが残っていれば LLM ログを再生成できる。worktree とブランチは `git worktree add <path> -b <branch> <last-sha>` で復旧できる。
 
 ## オプション
 
@@ -120,6 +142,11 @@ git log -1 --format='%ci' "$BRANCH_NAME"
 ### Step 3: レポート表示
 
 AskUserQuestion でレポートを表示し、ユーザーに確認。冒頭に現在のモードを明示する。
+
+> ⚠️ **このターンでは AskUserQuestion を出すだけにとどめる。** 同じターンで `git worktree remove` /
+> `git branch -d/-D` を並列実行してはならない（絶対禁則 1）。ユーザーの回答を受け取った後、回答内容を
+> 読み直して削除対象を再確定してから、次のターンで削除を実行する。回答がパスの羅列など曖昧な場合は、
+> 「これらを削除してよいか」を一度確認する。
 
 ```
 Worktree診断結果 (モード: 削除 / --keep で再利用):
