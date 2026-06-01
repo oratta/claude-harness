@@ -1,8 +1,19 @@
-# wt-clean-merge-active Specification
+## REMOVED Requirements
 
-## Purpose
-TBD - created by archiving change wt-clean-merge-active. Update Purpose after archive.
-## Requirements
+### Requirement: wt-clean は 🔴 Active worktree がある場合に main マージ確認ルートを最優先選択肢として提示する
+
+**Reason**: 全件先診断 → Step 3 一括モード選択というフロー自体が `wt-clean-target-selection` の「選択 → 逐次遅延診断」フローに置き換わる。対象選択は色（🟢🟡🔴）を見ずに行うため、「🔴 があるかどうかで Step 3 の一括選択肢を増減する」という仕組みが不要になる。
+
+**Migration**: 🔴 のマージ確認は、逐次処理ループで当該 worktree が 🔴 と診断された時にその場で行う（本 delta の MODIFIED「🔴 と診断された worktree ごとの個別確認を行う」を参照）。
+
+### Requirement: 既存ルートは新ルート追加で動作変更しない（回帰防止）
+
+**Reason**: 本要件が回帰防止対象としていた既存ルート（「🟢🟡 のみ処理する」「🟢 のみ処理する」「全て処理する（🔴破棄）」の一括 4 択）が `wt-clean-target-selection` への刷新で廃止されるため、これらの不変性を保証する要件自体が意味を失う。
+
+**Migration**: 一括処理は `wt-clean-target-selection` の対象選択 UI で「全て」を選ぶことに統合される。`--keep`（再利用化）・`--no-sync`（Step 0 スキップ）の挙動は各々 `wt-clean-reuse` / `wt-clean-remote-sync` の delta で逐次フロー上に再定義される。
+
+## MODIFIED Requirements
+
 ### Requirement: 🔴 と診断された worktree ごとの個別確認を行う
 
 `wt-clean` は逐次処理ループ（`wt-clean-target-selection`）で対象 worktree が 🔴 Active（未マージのコミットあり）と診断された時、その場で AskUserQuestion により「マージ / スキップ / 破棄削除」のいずれかを選ばせるものとする（SHALL）。表示には未マージコミットの一覧（`git log --oneline $MAIN_BRANCH..$BRANCH_NAME`）、Dirty 状態、LLM ファイル有無を含める。独立した「Step 3 先頭の一括選択肢」や「新ルート」を経由しない。
@@ -113,4 +124,3 @@ TBD - created by archiving change wt-clean-merge-active. Update Purpose after ar
 
 - **WHEN** 逐次処理で 1 件マージ成功・削除確定 → 別の 1 件で競合 → 1 件未処理
 - **THEN** 完了レポートに「⚠️ マージ競合で中断: <branch2>」「未処理: <branch3>」が区別表示される
-
