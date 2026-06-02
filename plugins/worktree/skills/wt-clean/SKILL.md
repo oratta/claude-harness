@@ -74,6 +74,8 @@ Step C  完了レポート
 
 GitHub 側で PR がマージされた feature ブランチを後段のマージ済み判定（`git branch --merged`）で正しく Safe 判定するため、対象選択・診断に先立ってローカル `<main>` を `origin/<main>` に同期する。`--no-sync` 指定時はこの Step を完全にスキップする。**位置引数で対象を指定した場合も Step 0 は実行される**（単一対象のマージ済み判定を正確にするため。`--no-sync` で停止可能）。
 
+> ⚠️ **この同期で救えるのは普通の merge / ff だけ**。**squash マージ**は元ブランチの SHA が main に残らないため、同期しても `git branch --merged` / `git log main..branch` は未マージと誤判定する。squash の検出は Step B の遅延診断（後述の「squash マージの罠」）で行う。Step 0 同期を怠ると squash 以前に**普通の merge すら**未マージ誤判定するので、`--no-sync` は「直前に手動同期済み」など確信がある場合のみ使う。
+
 ```bash
 # --no-sync 指定時は即座にスキップ
 if [ "$NO_SYNC" = "1" ]; then
@@ -227,9 +229,9 @@ echo "[$i/$N] $WT をチェック中…"
 **遅延診断**（この対象についてのみ実行）:
 
 ```bash
-# 1. マージ済みか
+# 1. マージ済みか（SHA ベース。普通の merge / ff のみ検出できる）
 MERGED=$(git branch --merged "$MAIN_BRANCH" | grep -E "[[:space:]]$BRANCH_NAME$" || true)
-# 2. 未マージコミット数
+# 2. 未マージコミット数（SHA ベース）
 AHEAD_COUNT=$(git log --oneline "$MAIN_BRANCH".."$BRANCH_NAME" 2>/dev/null | wc -l | tr -d ' ')
 # 3. dirty
 DIRTY=$(git -C "$WT" status --porcelain)
@@ -237,13 +239,41 @@ DIRTY=$(git -C "$WT" status --porcelain)
 LLM=$(ls "$WT/LLM/" 2>/dev/null)
 ```
 
+**⚠️ squash マージの罠（最重要・必読）**: `git branch --merged` も `git log main..branch` も**コミット SHA の到達可能性**で判定する。**squash マージ**（GitHub の "Squash and merge"）では PR の全コミットが main 上で 1 個の**新しい SHA** に潰れるため、元ブランチの SHA はどれも main の祖先にならず、**実際にはマージ済みでも `AHEAD_COUNT > 0`（= 🔴 Active）と誤判定する**。Step 0 の remote 同期で救えるのは**普通の merge / ff だけ**で、squash は救えない。squash 運用のプロジェクト（PR を Squash merge で取り込む）ではほぼ全 PR がこの罠に該当する。
+
+過去に同一セッションで 3 連続「マージ済みブランチを未マージ誤判定 → ユーザーに『ほんとに？マージ済みだと思ってる。ちゃんと確認して』と指摘される」事故が発生している。
+
+そこで **`AHEAD_COUNT > 0` のときは即 🔴 と判定せず、squash マージ済みでないかを必ず追加検証する**:
+
+```bash
+SQUASHED=""   # squash マージ済みと判定できたら理由を入れる
+if [ "$AHEAD_COUNT" != "0" ]; then
+  # 検証A: tracked source の実ツリー差分が空か（最も信頼できる。main が先行していても
+  #        branch 固有の追加が無ければ空になる）。LLM/ など gitignore 対象は元から無視される。
+  TREE_DIFF=$(git diff "$MAIN_BRANCH" "$BRANCH_NAME" --stat -- 'src/**' 'app/**' 'lib/**' 'tests/**' 'e2e/**' '*.ts' '*.tsx' '*.js' '*.jsx' 2>/dev/null)
+  # 検証B: cherry の全行が "-"（patch-equivalent が upstream 済み）か
+  CHERRY_PLUS=$(git cherry "$MAIN_BRANCH" "$BRANCH_NAME" 2>/dev/null | grep -c '^+' || true)
+  # 検証C: gh で当該ブランチ発の PR が MERGED か（リポジトリに gh がある場合のみ）
+  PR_MERGED=$(gh pr list --head "$BRANCH_NAME" --state merged --limit 1 --json number 2>/dev/null | grep -c '"number"' || true)
+
+  if [ -z "$TREE_DIFF" ] || [ "$CHERRY_PLUS" = "0" ] || [ "$PR_MERGED" != "0" ]; then
+    SQUASHED="squash済み (tree_diff空=$([ -z \"$TREE_DIFF\" ] && echo yes || echo no), cherry+=$CHERRY_PLUS, pr_merged=$PR_MERGED)"
+  fi
+fi
+```
+
+- **`cherry` の `+` 判定だけを信じてはいけない**: squash マージは diff 内容を 1 commit にまとめ patch-id が変わるため、`git cherry` が `+`（= 未 upstream）を返すことがある。**最も信頼できるのは検証A（tracked source の実ツリー差分が空）**。3 検証のいずれかが「マージ済み」を示せば squash 済みと扱う。判断が割れたら**実ツリー差分（検証A）を優先**する。
+- gh が無い / PR 運用でないプロジェクトでは検証A・Bだけで判定する。
+
 分類（color は対象ごとにその場で決める）:
 
 | カテゴリ | 条件 |
 |---|---|
-| 🟢 Safe | マージ済み & dirty なし & LLM なし |
-| 🟡 Recoverable | マージ済み だが LLM あり or dirty あり |
-| 🔴 Active | 未マージのコミットあり（`AHEAD_COUNT > 0`） |
+| 🟢 Safe | マージ済み（`MERGED` or `SQUASHED`）& dirty なし & LLM なし |
+| 🟡 Recoverable | マージ済み（`MERGED` or `SQUASHED`）だが LLM あり or dirty あり |
+| 🔴 Active | `AHEAD_COUNT > 0` **かつ** `SQUASHED` が空（squash でも普通 merge でもなく、本当に未マージの固有コミットがある） |
+
+**squash 済み（`SQUASHED` が非空）の worktree は 🟢/🟡 として扱う**。`AHEAD_COUNT > 0` でも 🔴 にしない。ブランチ削除は元 SHA が main の祖先にならないため `git branch -D`（大文字）を使う。
 
 カテゴリに応じて以下へ分岐する。
 
