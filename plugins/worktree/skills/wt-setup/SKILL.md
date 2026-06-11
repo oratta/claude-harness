@@ -51,7 +51,7 @@ Git worktree作成後に実行し、開発に必要なファイル・設定を�
 以下のスクリプトを実行する。
 
 ```bash
-bash ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/worktree/scripts/wt-setup.sh
+bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/oratta-claude-harness/plugins/worktree}/scripts/wt-setup.sh"
 ```
 
 スクリプトの出力を確認し、出力内容に基づいて後続ステップを判断する。
