@@ -1,6 +1,6 @@
 {
   "name": "lr",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "description": "longrunプラグインの短縮コマンド。/lr:p, /lr:e, /lr:s, /lr:d, /lr:a, /lr:f で各longrunコマンドを呼び出せる。各短縮版は対応する longrun コマンドファイルを Read してメインセッションでインライン実行する（Skill tool ではコマンドを呼べないため）。",
   "author": {
     "name": "Oratta"
