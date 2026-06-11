@@ -12,9 +12,10 @@ allowed-tools: Read, Glob, Bash
 
 ```bash
 for dir in \
+  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/../longrun/commands}" \
   ~/.claude/plugins/marketplaces/*/plugins/longrun/commands \
   ~/.claude/plugins/installed/*/longrun/commands; do
-  [ -f "$dir/status.md" ] && echo "$dir/status.md" && break
+  [ -n "$dir" ] && [ -f "$dir/status.md" ] && echo "$dir/status.md" && break
 done
 ```
 
