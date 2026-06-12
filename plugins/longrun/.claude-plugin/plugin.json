@@ -1,16 +1,18 @@
 {
   "name": "longrun",
-  "version": "6.0.0",
-  "description": "Claude Code 自律実行システム v6.0（BREAKING）。/longrun:exec を Workflow ツール載せ替え: plan.md を読んで Workflow スクリプト（templates/workflow/）を生成・起動し、agent()/pipeline()/parallel() でオーケストレーションする。サブエージェント成果物（builder レポート / verifier 4 軸スコア / reviewer 判定）を schemas/*.schema.json の JSON Schema（StructuredOutput）で機構的に強制。Verify ループは while + 上限 3 周 + budget ガードで暴走を構造的に防止。中断再開は resumeFromRunId 一次手段（runId を _longruns/<run>/ に記録）、checkpoint.md は人間向け監査ログに格下げ。進捗確認はネイティブ /workflows ライブビュー。TDD + 4 軸定量評価 + Build Contract パターンで品質担保。OpenSpec 縮退モードは exec Step 0 の preflight で判定。",
+  "version": "6.1.0",
+  "description": "Claude Code 自律実行システム v6.1。MVP プラン作成を独立スキル longrun-mvp-plan（/longrun:mvp、短縮 /lr:m）に分離: 旧 /longrun:plan の mvp フラグは移行案内を出して終了する。/longrun:exec は Workflow ツール載せ替え: plan.md を読んで Workflow スクリプト（templates/workflow/）を生成・起動し、agent()/pipeline()/parallel() でオーケストレーションする。サブエージェント成果物（builder レポート / verifier 4 軸スコア / reviewer 判定）を schemas/*.schema.json の JSON Schema（StructuredOutput）で機構的に強制。Verify ループは while + 上限 3 周 + budget ガードで暴走を構造的に防止。中断再開は resumeFromRunId 一次手段（runId を _longruns/<run>/ に記録）、checkpoint.md は人間向け監査ログに格下げ。進捗確認はネイティブ /workflows ライブビュー。TDD + 4 軸定量評価 + Build Contract パターンで品質担保。OpenSpec 縮退モードは exec Step 0 の preflight で判定。",
   "author": {
     "name": "Oratta"
   },
   "skills": [
     "./skills/longrun-plan",
+    "./skills/longrun-mvp-plan",
     "./skills/longrun-feedback"
   ],
   "commands": [
     "./commands/plan.md",
+    "./commands/mvp.md",
     "./commands/exec.md",
     "./commands/archive.md",
     "./commands/feedback.md"
