@@ -131,3 +131,50 @@
 - **決定**: B。`plugins/harvest/scripts/knowledge-cleanup.sh <knowledge_dir>` を新設。`.property.raw.json` / `.property.json` / `.property.md.tmp` を検出 → 検出ファイル名を stdout に通知 → 削除。SKILL.md Step 0 がこれを呼ぶ。
 - **理由**: 受け入れ条件 18 を「3 失敗パス × fixture で raw 残置 → cleanup 実行 → 不在」の実動作 bats で検証できる（C の複製はドリフトする）。ヘルパ化は redact-secrets.sh / bestprac-refresh.sh と同じ既存パターン（スクリプトに副作用を閉じ込め SKILL.md は手続き記述）。可逆（revert で SKILL.md 散文に戻せる）。
 - **リスク**: スクリプト追加で表面積が増えるが、テスト容易性の利得が上回る。削除対象は引数 dir 配下のドットファイル 3 種に限定し誤削除を防ぐ。
+
+## change-2 (workflow-exec) Build フェーズ
+
+### D-C2-1: Workflow テンプレートを 2 本に分割（review / build-verify）
+
+- **日時**: 2026-06-12（change-2 TDD 実装）
+- **コンテキスト**: D5（承認ゲートで workflow 分割）の実装形。1 本の workflow 内で AskUserQuestion 不可。
+- **選択肢**: A: 1 本のテンプレートに全フェーズ（承認待ちを擬似化）/ B: review.workflow.js + build-verify.workflow.js の 2 本に分割し、Build Contract 承認はメインループ（exec.md）で挟む / C: フェーズ数だけ細分化（review/build/verify を 3 本）
+- **決定**: B。plan.md / design.md D5 に明記済み（可逆性より plan 準拠を優先）。Build と Verify は承認ゲートを挟まないため 1 本に同居（build-verify）。Feedback Tier 確認は build-verify 完了後にメインループで実施。
+- **理由**: ツール制約（workflow 内 AskUserQuestion 不可）に対する design 確定解。C は分割境界が増えるが承認ゲートは 1 箇所（Build Contract）のみなので過剰。runId 記録は workflow 起動ごと（2 行）で済む。
+- **エビデンス**: `plugins/longrun/templates/workflow/{review,build-verify}.workflow.js`。bats `workflow-template.bats` 20 本 PASS。
+
+### D-C2-2: 埋め込みプレースホルダを `${NAME}` ではなく `__NAME__` 形式にする
+
+- **日時**: 2026-06-12
+- **コンテキスト**: テンプレート充填の置換構文。当初 `${NAME}` を採用したが、生成スクリプトは JS であり `${round}` 等の**ランタイム テンプレートリテラル補間**を含む。`${VERIFY_MAX_ROUNDS}`（上限到達ログの補間）が全大文字のため、置換正規表現 `\$\{[A-Z_]+\}` が誤マッチして renderer がエラーになった（実測: `missing param for placeholder ${VERIFY_MAX_ROUNDS}`）。
+- **選択肢**: A: `${NAME}` のまま、定数名を小文字化して衝突回避 / B: 置換構文を `__NAME__` に変える / C: 置換を JSON 注入ポイントだけに限定し本文補間を全て関数化
+- **決定**: B（`__NAME__`）。renderer 正規表現 `__([A-Z][A-Z0-9_]*)__`。JS のランタイム `${...}` 補間と構文的に完全分離できる。
+- **理由**: A は「上限がコードの条件式に現れる」可読性（D3）を損なう（定数を小文字化すると意図が薄れる）。C は過剰。B は可逆・最小・衝突ゼロ。reference §7（Date.now 不可）由来の args.timestamp 注入とも干渉しない。
+- **エビデンス**: `scripts/render-workflow.mjs`。`workflow-template.bats` の「no leftover __NAME__ placeholders」「rendered passes node --check」PASS。
+
+### D-C2-3: schema 検証層の機構拒否を最小バリレータ（validate-against-schema.mjs）で機械検証する
+
+- **日時**: 2026-06-12（タスク 5.5）
+- **コンテキスト**: 受け入れ条件 8a / spec「不正形式の成果物が機構的に拒否される」。Workflow ツールの `opts.schema` 強制は実走が必要だが、builder（サブエージェント）は Workflow を起動できない。bats で「不適合 fixture が拒否される」を機械検証する手段が要る。
+- **選択肢**: A: ajv を devDependency に追加して厳密検証 / B: 外部依存なしの最小 draft-07 バリレータを自作（type/enum/required/additionalProperties:false/min/max/pattern/items）/ C: bats 内で jq 式を個別に書いて各制約を手検証
+- **決定**: B。`scripts/validate-against-schema.mjs`（外部依存なし、Date.now/Math.random 不使用）。valid fixture は exit 0、invalid（enum 違反 / 余剰プロパティ / 必須欠落 / 範囲外 / verdict enum 違反 / severity enum 違反）は exit 1。
+- **理由**: A はこのリポジトリ（プラグイン markdown 主体・npm 依存を持たない）に node_modules を持ち込む。C は schema とロジックが二重管理でドリフトする。B は schema を唯一ソースにしたまま実動作検証でき、ノードのみで完結（既存 bats も node 前提なし→ node は volta で利用可）。本バリレータは Workflow ツールの検証層の**同等物**であり、実走時の真の検証はツールが行う旨をスクリプト冒頭に明記。
+- **エビデンス**: `schema-rejection.bats` 11 本 PASS（valid 3 受理 / invalid 7 拒否 + validator 存在）。
+
+### D-C2-4: 縮退モードの spec 自己完結生成ロジックを exec.md 付録へ移管（orchestrator 解体に伴う保全）
+
+- **日時**: 2026-06-12
+- **コンテキスト**: change-1 が直前にマージされ、orchestrator SKILL.md に「縮退モード分岐」（specs/<change>/proposal.md + tasks.md 自己完結生成、verification-guide 生成、openspec/ 書き込み禁止 GATE）が追記されていた。change-2 は orchestrator を解体するため、この分岐の行き先が必要。
+- **選択肢**: A: 縮退分岐を捨てる（change-1 の機能後退）/ B: exec.md 末尾の付録セクションへ逐語移管 / C: 別スキル新設
+- **決定**: B。exec.md「付録: 縮退モードの spec 類自己完結生成（change-1 から移管）」に GATE・生成パス・テンプレート参照を保全。
+- **理由**: A は change-1 の回帰（不可）。C は「スキル層を不要にする」D1 と矛盾。B は exec が縮退マーカーを見て分岐する既存設計（Step 0b）と整合し、orchestrator 由来のテスト（`degraded-artifacts.bats` の 4 本）を exec.md 参照に貼り替えるだけで保全できる。
+- **エビデンス**: `degraded-artifacts.bats`（ORCH_MD → DEGRADED_MD=exec.md に貼り替え）13 本 PASS。
+
+### D-C2-5: marketplace top-level version は 2.6.0 → 2.7.0 に bump
+
+- **日時**: 2026-06-12（タスク 5.1）
+- **コンテキスト**: tasks 5.1 は「2 箇所同期（plugin.json + marketplace plugins[]）」を必須とし、top-level の bump 要否は「別途判断」とする。change-1 が既に 2.5.1 → 2.6.0 に上げていた。
+- **選択肢**: A: top-level 据え置き（2.6.0）/ B: 2.7.0 に bump
+- **決定**: B（2.7.0）。
+- **理由**: longrun・lr とも v6.0.0 BREAKING を含む新リリースであり、過去に「3 箇所同期漏れ事故」（PR #5）があった運用方針に沿って top-level も上げる方が一貫する。既存 bats（`> 2.5.1` を要求）も満たす。可逆（PR 未マージならクローズで戻せる）。
+- **エビデンス**: `release-and-readme.bats`「marketplace top-level bumped above 2.5.1」PASS。jq 構文 OK。

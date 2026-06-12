@@ -118,3 +118,11 @@ Workflow({ scriptPath: "<永続化されたスクリプトパス>", resumeFromRu
 - 4 軸スコア / builder レポート / reviewer 判定は §3 の `schema` opts で強制（schema は `plugins/longrun/schemas/*.schema.json` に外部化し、exec が読み込んで埋め込む）
 - runId は起動応答から取得して `_longruns/<run>/` に記録（§5）
 - agentType による既存 agent 再利用（`longrun:longrun-builder` 等）は**未実機**のため、生成 workflow の最初の実行時に必ず動作確認し、結果を本ファイルに追記すること
+
+## 10. change-2 実装後メモ（builder による静的実装）
+
+- change-2 のテンプレート実装は本 reference §1〜§9 の確定事項のみを使用した（記憶・推測でのシグネチャ追加なし）。具体的には: `agent(prompt, {label, phase, agentType, schema})`（§3）、`pipeline`/`parallel` は未使用（Build は逐次 for ループ）、`budget.total && budget.remaining()` の null ガード（§6）、`args.timestamp` 注入（§6・§7）、meta ピュアリテラル（§2）、ネスト 1 段（§7）、`resumeFromRunId` + runId 記録（§5）。
+- **未実機のまま残る確認項目（orchestrator の実走で確定すること）**:
+  1. **`agentType: 'longrun:longrun-builder'` 等が生成 workflow 内で正しく解決されるか**（§3 で未実機）。最小 fixture plan（`plugins/longrun/tests/fixtures/minimal-plan/plan.md`）で `review.workflow.js` → `build-verify.workflow.js` を実走し、agentType 解決・schema 強制・runId 記録・Verify 1 周完走を観測して本節に追記する。
+  2. `opts.schema` にインライン JS オブジェクト（外部 schema を `JSON.parse` したもの）を渡したときの StructuredOutput 強制挙動（§3 の schema は別オブジェクトで検証済みだが、本実装の埋め込み形での実走は未確認）。
+- 生成テンプレートの静的検証（禁止 API 不使用・meta ピュアリテラル・Verify 上限 3・schema インライン・ネスト 1 段・`node --check`）は `plugins/longrun/tests/workflow-template.bats`（20 本）で機械化済み。schema 不適合の拒否は `plugins/longrun/tests/schema-rejection.bats`（11 本）で機械化済み。
