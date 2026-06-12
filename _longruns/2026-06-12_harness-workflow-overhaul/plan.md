@@ -24,7 +24,7 @@ longrun の手書きオーケストレーション（SKILL.md インライン展
 - 参照パターン:
   - Workflow スクリプトの作法: Workflow ツールの組み込みドキュメント（meta ピュアリテラル / Date.now() 不可 / ネスト1段 / JS のみ）
   - 既存 agent 定義: `plugins/longrun/agents/*.md`（`agentType: 'longrun:longrun-builder'` 等でそのまま再利用、書き直し不要）
-  - bats テスト: `plugins/experience-to-skill/tests/`・`plugins/daily-report/tests/`（claude-harness 側）、`plugins/harvest/tests/`（marketing-harness 側、既存約 230 テスト）
+  - bats テスト: `plugins/experience-to-skill/tests/`・`plugins/daily-report/tests/`（claude-harness 側）、`plugins/harvest/tests/`（marketing-harness 側、既存 `@test` 313 本）
 - 制約:
   - marketplace 版のみを編集（`~/.claude/rules/plugin-editing.md`）
   - version 同期は plugin.json / marketplace.json top-level / marketplace.json plugins[] の **3 箇所**（過去に同期漏れ事故あり。PR #5 で解消直後）
@@ -115,7 +115,7 @@ longrun の手書きオーケストレーション（SKILL.md インライン展
 ### change-4: model-allocation（Change D）
 - **対象リポジトリ**: claude-harness
 - **スコープ**: plan 段階で change × agent ロールごとの推奨モデルを生成し、exec がそれを消費する機構
-  - `templates/plan-template.md` に「モデル割り当て」セクションを追加（ロール / 推奨ティア / 理由 / 上書き欄の表）
+  - `plugins/longrun/templates/plan-template.md` に「モデル割り当て」セクションを追加（ロール / 推奨ティア / 理由 / 上書き欄の表）。ティア → モデル ID 対応表も `plugins/longrun/` 配下のリファレンスドキュメントに置く
   - `longrun-plan` スキルに推奨生成ステップを追加。ヒューリスティクス: アーキテクチャレビュー・複雑な TDD 実装 → 指定なし（inherit）/ 定型的検証・要約 → `haiku` / リサーチ・ブラウザ操作・中規模実装 → `sonnet`
   - **保守的デフォルト**: 確信度の低いタスクは「指定なし（inherit）」。Workflow ツール自体の設計指針に整合
   - ティア → モデル ID の対応はリファレンスドキュメント 1 箇所に集約（ハードコード散在禁止）
@@ -131,7 +131,7 @@ longrun の手書きオーケストレーション（SKILL.md インライン展
 ### change-5: harvest-structured-output（Change B）
 - **対象リポジトリ**: **marketing-harness**（`~/.claude/plugins/marketplaces/marketing-harness`。worktree を同リポジトリから切る）
 - **スコープ**: harvest プラグインのサブエージェント契約を StructuredOutput 化（v0.13.1 → v0.14.0）
-  - **最初のタスク**: 散文契約（STATUS line / BEGIN_RAW_JSON / `Status:` 文字列マッチ / 5 セクション位置パース）に依存する既存 bats を grep で洗い出し、書き換え対象本数を design.md に列挙する（既存スイートは実測約 230 本）
+  - **最初のタスク**: 散文契約（STATUS line / BEGIN_RAW_JSON / `Status:` 文字列マッチ / 5 セクション位置パース）に依存する既存 bats を grep で洗い出し、書き換え対象本数を design.md に列挙する（既存スイートは実測で `@test` **313 本**（ファイル数は約 230）。母数は `@test` 数で固定すること）
   - **契約の外部化**: `plugins/harvest/schemas/{property,plan,researcher,evaluator}.schema.json` を新設。SKILL.md は schema を参照する形に（STATUS line + BEGIN_RAW_JSON/END_RAW_JSON フェンスの散文契約と、bestprac-refresh の「5 セクション固定順序」位置パース・`Status:` 文字列マッチを廃止）
   - **検証層**: sub agent の戻りを `scripts/validate-contract.sh`（jq ベース）で検証してから後続処理へ。失敗時は 1 回リトライ → フォールバック（メイン逐次実行、既存設計踏襲）
   - **マスキングの原子性**: redact 完了まで property.md を書かない（tmp に書いて mv）+ クラッシュ残骸 `.property.raw.json` の起動時クリーンアップ
@@ -142,7 +142,7 @@ longrun の手書きオーケストレーション（SKILL.md インライン展
 - **依存関係**: 独立（別リポジトリ。change-1〜4 と完全並行可）
 - **バージョン**: harvest 0.13.1 → 0.14.0（marketing-harness 側も version 3 箇所同期）
 - **config.yaml rules**:
-  - "既存 bats スイート（実測約 230 本）を壊さない（契約関連テストの書き換えは最初のタスクで洗い出した一覧との差分で明示）"
+  - "既存 bats スイート（実 `@test` 313 本）を壊さない（契約関連テストの書き換えは最初のタスクで洗い出した一覧との差分で明示。全 PASS 判定の母数は `@test` 数 313 を基準とする）"
   - "フォールバック発動時も成果物（knowledge/*.md）の形式は現行と同一"
 
 ## 画面・UI設計
@@ -180,7 +180,7 @@ CLI（Claude Code セッション内）のみ。Web UI なし。
 8. [ ] (change-2) (a) 生成される workflow スクリプトが構文検証と schema 検証を通り、(b) 最小 fixture plan（1 change / 1 タスク）で Review → Build → Verify が 1 周完走して runId が記録される — を builder が確認しログに残す（フル代表 plan の完走確認は「動作確認方法」のユーザー手動確認に委ねる）
 9. [ ] (change-2) Verify ループが上限 3 周到達で必ず停止し、状態がユーザーに報告される（workflow スクリプトの単体検証）
 10. [ ] (change-2) 中断 → `resumeFromRunId` 再開で、完了済み change の builder agent が再実行されない
-11. [ ] (change-2) `/longrun:status` `/longrun:decisions` `/lr:s` `/lr:d` が削除され、`plugins/longrun/` と `plugins/lr/` 配下の全 plugin.json / README / commands/*.md（exec.md 含む）に残存参照がない（grep で 0 件）
+11. [ ] (change-2) `/longrun:status` `/longrun:decisions` `/lr:s` `/lr:d` が削除され、`plugins/longrun/` と `plugins/lr/` 配下の全 plugin.json / README / commands/*.md（exec.md 含む）、**およびリポジトリ直下 `.claude-plugin/marketplace.json`（lr / longrun の description 文字列・plugins[] エントリ）** に残存参照がない（grep で 0 件）
 11b. [ ] (change-2) Workflow ツールの実機検証結果が `_longruns/<run>/workflow-tool-reference.md` にエビデンス（実行した workflow とその出力）付きで固定されている
 12. [ ] (change-3) `/longrun:mvp`（`/lr:m`）で従来の MVP フローが完走し、`<!-- mvp-mode -->` マーカー付き plan.md が生成される
 13. [ ] (change-3) `/longrun:plan --mode=mvp` 指定時に移行案内が表示される（サイレント無視しない）
