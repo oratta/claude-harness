@@ -87,39 +87,48 @@ orchestratorはこの plan.md を入力として受け取る。
 2. `{longrun-dir}/plan.md` を読み込む
 3. **Changes分解セクション**を解析し、change一覧・スキルマッピング・依存関係を抽出
 4. プロジェクトのコードベースを調査（Exploreサブエージェントで実施）
-5. **ツール検証（必須）**:
+5. **ツール検証（必須）— Step 0 の判定結果を消費する**:
 
    <GATE>
-   以下のコマンドを全て実行し、結果をcheckpoint.mdに記録すること。
-   コマンドを実行せずに「インストールされていない」と判断してはならない。
+   OpenSpec CLI の検出は exec の Step 0（preflight）で既に実施済みである。
+   ここで多段フォールバック（which → command -v → npx → ~/.volta → npm install -g）を
+   再実行してはならない。Step 0 が確定した動作モード（通常 / 縮退）に従うこと。
    </GATE>
 
+   **動作モードの判定**: ランディレクトリに `{longrun-dir}/.degraded-mode` マーカーが
+   存在するかを 1 行で確認する:
    ```bash
-   # OpenSpec CLI検出（必須実行）
-   which openspec 2>/dev/null || command -v openspec 2>/dev/null || echo "OPENSPEC_NOT_FOUND"
-   openspec --version 2>/dev/null || echo "OPENSPEC_VERSION_UNKNOWN"
-
-   # Git検証
-   git --version
-   git branch --show-current
+   test -f "{longrun-dir}/.degraded-mode" && echo "DEGRADED" || echo "NORMAL"
    ```
+   - **NORMAL（通常モード）** → 従来どおり OpenSpec を使う。Step 0 で preflight が `OK` を
+     返した（CLI 解決可・init 済み）ことが保証されている。Git 検証のみ実施:
+     ```bash
+     git --version
+     git branch --show-current
+     ```
+   - **DEGRADED（縮退モード）** → OpenSpec CLI を一切呼ばない。Git 検証のみ実施し、
+     以降の OpenSpec フェーズ（change 作成 / verification-guide 生成 / archive）は
+     縮退分岐（後述「縮退モード分岐」）に入る。
 
    **結果をcheckpoint.mdに記録:**
    ```markdown
    ## ツール検証結果
-   - openspec: [パス] (v[バージョン]) ← 実際のコマンド出力を転記
+   - 動作モード: NORMAL | DEGRADED ← Step 0 preflight の結果（OK / NO_CLI / NO_INIT）と
+     ユーザー選択を転記
+   - openspec: [Step 0 で記録済みのパス・バージョン]（DEGRADED 時は「未使用」）
    - git: [バージョン] on [ブランチ]
    ```
 
-   **OpenSpecが見つからない場合でも、フェーズをスキップしてはならない。** npm/volta/グローバルパスを順に確認:
-   ```bash
-   npx openspec --version 2>/dev/null
-   ~/.volta/bin/openspec --version 2>/dev/null
-   ```
+   検出基準・preflight の一次ソースは `${CLAUDE_PLUGIN_ROOT}/docs/openspec-cli-verification.md`。
+   多段フォールバックと `npm install -g openspec` 試行は廃止された（preflight に一元化）。
 
-6. **OpenSpec初期化**:
-   - `openspec/` が存在しなければ `openspec init --tools claude` を実行
-   - カスタムスキーマ `longrun-tdd` が存在しなければセットアップ
+6. **OpenSpec初期化**（NORMAL モードのみ）:
+   - **DEGRADED モードではこのステップを完全にスキップする。** `openspec/` を作らず、
+     `openspec init` / `schema fork` を呼ばない（後述「縮退モード分岐」に従う）。
+   - NORMAL モード: `openspec/` が存在しなければ `openspec init --tools claude` を実行
+   - カスタムスキーマ `longrun-tdd` が存在しなければセットアップ（`openspec schema fork
+     spec-driven longrun-tdd` + テンプレートコピー。init では入らない点に注意 —
+     `docs/openspec-cli-verification.md` §3 参照）
    - config.yamlを `.gitignore` に追加
 7. テストフレームワークの確認と既存テストの実行（ベースライン記録）
 8. checkpoint.md を初期化（フロントマター + フェーズ進捗 + ツール検証結果）
@@ -225,6 +234,49 @@ orchestratorが直接コードを書いてはならない。
 
 ### Build前半: OpenSpec change作成 + verification-guide.md生成
 
+<GATE>
+このフェーズの冒頭で動作モードを再確認すること:
+`test -f "{longrun-dir}/.degraded-mode" && echo DEGRADED || echo NORMAL`
+DEGRADED の場合は下記「縮退モード分岐」に入り、OpenSpec CLI を一切呼ばない。
+NORMAL の場合は従来どおり下記「通常モード（OpenSpec あり）」を実行する。
+</GATE>
+
+#### 縮退モード分岐（`.degraded-mode` マーカーあり）
+
+縮退モードでは OpenSpec CLI（`openspec new change` / `openspec validate` / apply 等）を
+**一切呼び出さず**、`openspec/` 配下にも**一切書き込まない**。代わりに change ごとの spec 類を
+`{longrun-dir}/specs/<change-name>/` 配下に自己完結生成する。
+
+<GATE>
+縮退モードで `openspec` コマンドを実行すること、および `openspec/` ディレクトリに
+書き込むことは禁止。生成物は全て `{longrun-dir}/` 配下に収める。
+</GATE>
+
+1. **change ごとに spec 類を自己完結生成**（`openspec new change` の代替）:
+   plan.md の Changes 分解から change 名を取得し、各 change について以下を生成する:
+   - `{longrun-dir}/specs/<change-name>/proposal.md` — capability スコープ（Why / What Changes /
+     Capabilities）。longrun-tdd の propose テンプレート相当の構成
+   - `{longrun-dir}/specs/<change-name>/tasks.md` — **チェックボックス形式**のタスクリスト。
+     longrun-tdd の tasks テンプレート相当（`## N. <グループ>` 見出し + `- [ ] N.M <内容>` 行）。
+     Build 後半（TDD 実装）の進捗トラッキングはこの tasks.md のチェックボックスで行う
+   - spec の Scenario（WHEN/THEN）は proposal.md 内または
+     `{longrun-dir}/specs/<change-name>/spec.md` に WHEN/THEN 形式で記述する
+   生成テンプレートの一次ソースは
+   `${CLAUDE_PLUGIN_ROOT}/templates/longrun-tdd-schema/{propose.md,apply.md}`（形式の参照）。
+   `openspec validate` は使えないため、形式逸脱は Verify フェーズのレビューで補完する。
+
+2. **verification-guide.md 生成（縮退）**: 下記「verification-guide.md 生成」の手順を、
+   抽出元を `{longrun-dir}/specs/` 配下の WHEN/THEN に差し替えて実行する（出力先は
+   通常モードと同じ `{longrun-dir}/verification-guide.md`、形式も同一）。
+
+3. **Spec レビュー**: longrun-reviewer Agent で `{longrun-dir}/specs/` の内容をレビュー
+   （`openspec validate` の代替）。
+
+縮退分岐の完了後は、通常モードと同じ「Build後半: TDD実装」に合流する（実装は
+longrun-builder Agent に委譲。tasks.md のチェックボックスで進捗管理）。
+
+#### 通常モード（OpenSpec あり）
+
 #### 1. 各changeのOpenSpecドキュメント作成
 
 changeごとにサブエージェントでOpenSpecドキュメントを作成:
@@ -241,7 +293,8 @@ verification-guide.md を `{longrun-dir}/` に生成すること。
 このファイルがBuild後半〜Feedback までの全フェーズの進捗基盤となる。
 </GATE>
 
-各changeの `openspec/changes/<name>/specs/<capability>/spec.md` からScenario（WHEN/THEN）を抽出し、以下のフォーマットで生成:
+各changeの spec.md（通常モード: `openspec/changes/<name>/specs/<capability>/spec.md`、
+縮退モード: `{longrun-dir}/specs/<change-name>/`）からScenario（WHEN/THEN）を抽出し、以下のフォーマットで生成:
 
 ```markdown
 # Verification Guide
@@ -508,13 +561,21 @@ AskUserQuestion でユーザーに verification-guide.md の内容を提示:
 
 ## Archiveフェーズ
 
-### OpenSpec changeのアーカイブ
-各changeに対して:
-- delta specがある場合: specs/ をメインspecsにコピー
-- `openspec/changes/<name>` → `openspec/changes/archive/YYYY-MM-DD-<name>` に移動
+<GATE>
+Archive 冒頭で動作モードを再確認すること:
+`test -f "{longrun-dir}/.degraded-mode" && echo DEGRADED || echo NORMAL`
+DEGRADED の場合は OpenSpec change のアーカイブをスキップし、ランディレクトリのみ
+アーカイブする（spec 類は `{longrun-dir}/specs/` に内包されているため一緒に保全される）。
+</GATE>
+
+### OpenSpec changeのアーカイブ（NORMAL モードのみ）
+- **DEGRADED モードではこのステップをスキップする**（`openspec/changes/` を一切触らない）。
+- NORMAL モード — 各changeに対して:
+  - delta specがある場合: specs/ をメインspecsにコピー
+  - `openspec/changes/<name>` → `openspec/changes/archive/YYYY-MM-DD-<name>` に移動
 
 ### ランディレクトリのアーカイブ
-- `{longrun-dir}` → `_longruns/_archive/` に移動
+- `{longrun-dir}` → `_longruns/_archive/` に移動（縮退 run の `specs/` も一緒に移動される）
 
 ### Worktreeのクリーンアップ
 - 残存worktreeがあれば削除
@@ -572,7 +633,7 @@ Archive:       chore: archive longrun and openspec - [change名]
 
 | シナリオ | 対処 |
 |----------|------|
-| OpenSpec CLIが見つからない | `which`, `command -v`, `npx`, `~/.volta/bin/` を全て試す。全て失敗したら `npm install -g openspec` を試みる。それでも失敗ならcheckpoint.mdに記録してユーザーに報告。**フェーズをスキップしてはならない** |
+| OpenSpec CLIが見つからない | **exec の Step 0（preflight）で確定済み**。多段フォールバックや `npm install -g openspec` の試行は廃止。preflight が `NO_CLI` のときユーザーが縮退モードを選べば `.degraded-mode` マーカーが立ち、OpenSpec を呼ばない縮退分岐で進む。**フェーズをスキップしてはならない**（縮退分岐は別フェーズではなく同一フェーズの代替パス） |
 | OpenSpec applyがタスクを完了できない | 3回リトライ。それでも失敗ならスキップしてログ記録 |
 | ビルドエラー | longrun-builder に修正を依頼 |
 | longrun-reviewer がAPPROVEしない | 2ラウンドで打ち切り、残課題を明記して進行 |

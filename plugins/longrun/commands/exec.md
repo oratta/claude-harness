@@ -28,6 +28,59 @@ done
 
 特定した絶対パスを Read tool で読み込む。
 
+### Step 0: OpenSpec 前提条件チェック（preflight）と動作モード確定
+
+<GATE>
+Setup フェーズ本体に入る前に、必ず preflight スクリプトを実行して結果を読むこと。
+コマンドを実行せずに「OpenSpec がインストールされていない」と推測判断してはならない。
+</GATE>
+
+まずランディレクトリを Step 2 の規則で特定し（`{longrun-dir}`）、その後 preflight を実行する。
+
+1. **preflight スクリプトを実行する**:
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/openspec-preflight.sh"
+   ```
+   `CLAUDE_PLUGIN_ROOT` が解決できない場合は exec.md を見つけたのと同じ marketplace パスから
+   `scripts/openspec-preflight.sh` を探索して実行する。標準出力は `OK` / `NO_CLI` / `NO_INIT`
+   のいずれか。**この出力（実行したコマンドと結果）を checkpoint.md の「ツール検証結果」に記録する。**
+
+2. **結果に応じて AskUserQuestion で動作モードを確定する**:
+
+   - **`OK`（CLI 解決可・openspec init 済み）** → 動作モード確認 AskUserQuestion を表示する。
+     **preflight が OK でも縮退選択肢を常時含める**（「OpenSpec 不要」の明示的 opt-out 手段。
+     専用の引数は追加しない）:
+     - 選択肢A: **通常モード（OpenSpec あり）** ← デフォルト
+     - 選択肢B: **縮退モード（OpenSpec を使わない）**
+
+   - **`NO_CLI`（CLI が解決できない）** → 縮退モード提案 AskUserQuestion を表示する:
+     - 選択肢A: **縮退モードで実行する**（spec 類を `_longruns/<run>/` 内に自己完結生成）
+     - 選択肢B: **中断して OpenSpec をセットアップする**（下記セットアップ案内を出して exec 終了）
+
+   - **`NO_INIT`（CLI はあるが openspec/ が無い）** → 提案 AskUserQuestion を表示する:
+     - 選択肢A: **openspec init して通常モードで続行する**（`openspec init --tools claude` +
+       `openspec schema fork spec-driven longrun-tdd` を実行してから通常モードへ）
+     - 選択肢B: **縮退モードで実行する**
+     - 選択肢C: **中断する**（セットアップ案内を出して exec 終了）
+
+3. **モードの確定処理**:
+   - **通常モードを選択** → 何も特別なことはしない。Setup フェーズを従来どおり開始する
+     （`{longrun-dir}/.degraded-mode` マーカーは作成しない）。
+   - **縮退モードを選択** → ランディレクトリに縮退マーカーを作成する:
+     ```bash
+     touch "{longrun-dir}/.degraded-mode"
+     ```
+     その旨と「OpenSpec CLI を一切呼ばない縮退モードで進める」ことを checkpoint.md に記録し、
+     縮退モードで Setup フェーズを開始する。
+   - **`NO_INIT` で「init して通常続行」を選択** → init / schema fork を実行してから通常モードへ。
+   - **中断を選択** → run を開始せず、以下のセットアップ案内を表示して exec を終了する。
+
+   セットアップ案内文言の確定版は `${CLAUDE_PLUGIN_ROOT}/docs/openspec-cli-verification.md` §5
+   を参照（`NO_CLI` 用 / `NO_INIT` 用の 2 種）。
+
+**preflight の判定基準・検出コマンド系列・導入案内の一次ソースは
+`${CLAUDE_PLUGIN_ROOT}/docs/openspec-cli-verification.md` である。** 推測でコマンドを書かない。
+
 ### Step 2: 実行前チェック
 
 1. 実行対象のランディレクトリを特定する:
@@ -36,6 +89,9 @@ done
    - `plan.md` が見つからない場合: `/longrun:plan` コマンドで先に作成するよう案内
 2. ランディレクトリ内に既に `checkpoint.md` がある場合:
    - 続行するか新規開始するか確認
+3. **Step 0 で確定した動作モード（通常 / 縮退）を Setup フェーズに引き継ぐ**。縮退モードの場合は
+   `{longrun-dir}/.degraded-mode` マーカーが存在し、orchestrator はこれを見て OpenSpec CLI を
+   呼ばない縮退分岐に入る。
 
 ### Step 3: インライン実行
 
