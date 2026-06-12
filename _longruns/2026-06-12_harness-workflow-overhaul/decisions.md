@@ -207,3 +207,52 @@
 - **コンテキスト**: spec「Marketplace top-level bump」は本 change 適用前の値より厳密に大きいことを要求。change-2 が 2.7.0 まで上げている。
 - **決定**: 2.8.0 に bump。
 - **理由**: longrun/lr とも 6.1.0 の新リリースを含むため top-level も上げる（過去の同期漏れ事故対策の運用方針に沿う）。可逆。
+
+---
+
+## change-4: model-allocation の自律判断
+
+### D-4-1: exec のモデル割り当て消費を専用スクリプト resolve-model-allocation.mjs に切り出す
+
+- **日時**: 2026-06-12
+- **コンテキスト**: tasks 4.x は exec が plan.md のモデル割り当て表を読んで opts.model を反映する処理を求めるが、exec.md は散文の control-plane であり、生成 workflow スクリプトのレンダリングは render-workflow.mjs の決定論的スクリプトに集約されている（change-2 の設計）。tasks 4.4 は「生成 workflow スクリプトの opts.model 有無・値」を fixture 5 系で機械検証することを要求しており、純散文の手順記述だけでは静的検証できない。
+- **選択肢**:
+  - A: exec.md に手順を散文で書くのみ（テストは grep で文言確認）
+  - B: パース＋ティア解決を `scripts/resolve-model-allocation.mjs` に実装し、render-workflow.mjs に MODEL_OVERRIDES を渡す経路を作る。exec.md はこのスクリプトを呼ぶ手順を記述
+  - C: render-workflow.mjs 自体に plan.md パースを埋め込む
+- **決定**: B。`scripts/resolve-model-allocation.mjs`（plan.md + model-tiers.md → `{change, role, tier, model|null, warnings[]}` の JSON を出力）を新設。テンプレートには `opts.model` を条件付きで出力できる構造（agent 呼び出しに model キーを動的付与する仕組み）を追加し、render が解決結果を埋める。
+- **理由**: change-2 が確立した「決定論的レンダリング＋bats 静的検証」のパターンに揃える（fixture 5 系の opts.model 有無を node/grep で検証可能）。C は render-workflow.mjs の単一責務（プレースホルダ置換）を壊し、change-2 の既存 20 本テストの前提と衝突する。D5 fail-soft の警告も B なら stderr/JSON で機械検証できる。
+- **可逆性**: 新規スクリプト追加 + テンプレートへの非破壊的追加（inherit 時は従来どおり model キー無し = 現行挙動）。6.1.0 へ戻しても害なし。
+
+### D-4-2: テンプレートのモデル注入は per-role の MODEL_* プレースホルダ + スプレッド方式
+
+- **日時**: 2026-06-12
+- **コンテキスト**: build-verify テンプレートは builder/verifier、review テンプレートは reviewer の agent() 呼び出しを持つ。inherit はキー自体を省略する必要がある（D2）。JS で「条件付きでキーを含める」には `...(model ? {model} : {})` のスプレッドが最も簡潔。
+- **選択肢**:
+  - A: テンプレートに `__BUILDER_MODEL_OPT__` 等の「opts 断片文字列」を埋め込む（inherit 時は空文字）
+  - B: `...__BUILDER_MODEL_SPREAD__` のスプレッドで、render が `model: 'sonnet',` か空を埋める
+  - C: model 値を変数として埋め、`...(BUILDER_MODEL ? {model: BUILDER_MODEL} : {})` をテンプレ側に固定で書く
+- **決定**: C。テンプレートに `const builderModel = __BUILDER_MODEL__;` を置き（render が `'sonnet'` または `null` を埋める）、agent opts で `...(builderModel ? { model: builderModel } : {})` をテンプレ固定コードにする。
+- **理由**: C はテンプレートが常に node --check を通る正当な JS のままで、inherit（null 埋め）でも sonnet（'sonnet' 埋め）でも構文が壊れない。スプレッド条件式がテンプレに固定されるので「inherit はキー省略」(D2) がコードの構造で保証され、bats で `model:` の有無を生成結果に対して検証できる。A は空文字断片が node --check を壊すリスク、B は render 側ロジックが増える。
+- **可逆性**: テンプレ追加行のみ。__*_MODEL__ に null を渡せば現行と同一出力。
+
+### D-4-3: opts.model の渡し値はエイリアス（'haiku' / 'sonnet'）を採用
+
+- **日時**: 2026-06-12
+- **コンテキスト**: model-tiers.md のティア→ID 解決値を確定する必要。workflow-tool-reference.md §3 line 44 は `model: 'haiku'` を実機検証済み、`'sonnet' | 'opus'` も同じ機構（組み込みドキュメント由来）と明記。
+- **選択肢**: (a) フルモデル ID（claude-...）/ (b) エイリアス（'haiku'/'sonnet'）
+- **決定**: (b) エイリアス。haiku→`'haiku'`、sonnet→`'sonnet'`、inherit→キー省略（null）。
+- **理由**: reference の実機検証値がエイリアス。エイリアスは世代交代に追従するため model-tiers.md の更新すら不要になりやすい（D3 のドリフト排除をさらに強化）。フルID が必要と判明しても model-tiers.md 1 行変更で吸収できる（D3）。config.yaml rule「モデル ID のハードコード散在禁止」にも合致（そもそも ID を書かない）。
+- **可逆性**: model-tiers.md の解決値 1 箇所変更で切替可能。
+
+### D-4-4: version bump で change-3 の version-pin テストを 6.2.0 へ更新、lr は据え置き、mvp-plan SKILL.md も 6.2.0 に揃える
+
+- **日時**: 2026-06-12
+- **コンテキスト**: change-4 で longrun を 6.1.0 → 6.2.0 に bump する。change-3 が追加した mvp-plan-split.bats に「longrun version=6.1.0」「plan/mvp-plan SKILL.md とも 6.1.0」「lr version=6.1.0」を pin するテストがあり、bump で 3 本が落ちる。
+- **選択肢**:
+  - A: longrun のみ 6.2.0、mvp-plan SKILL.md は 6.1.0 据え置き、change-3 テストを「plan=6.2.0 / mvp-plan=6.1.0」に分離
+  - B: longrun plugin に属する SKILL.md は両方 6.2.0 に揃える（mvp-plan も bump）。lr は instruction どおり据え置き
+  - C: lr も 6.2.0 に上げる
+- **決定**: B。longrun の plugin.json / marketplace longrun エントリ / 両 SKILL.md frontmatter を 6.2.0 に揃える。lr は「変更なし」の instruction どおり 6.1.0 据え置き。change-3 テストの pin 値を更新。
+- **理由**: SKILL.md frontmatter version は marketplace キャッシュ無効化のためにプラグイン version と揃える運用（過去 commit の慣行）。同一プラグイン内で plan=6.2.0 / mvp-plan=6.1.0 が混在すると、どちらが新リリースか不明瞭になりキャッシュ事故の温床。mvp-plan の内容は変えないが version だけ揃えるのは既存の bump 慣行（例: v5.2 で SKILL.md のみ bump）と整合。lr 据え置きは instruction の明示指示。C は instruction 違反。
+- **可逆性**: version 数値変更のみ。テストの pin 値更新も可逆。

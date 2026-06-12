@@ -657,128 +657,128 @@
 ### S1: [longrun-model-allocation] テンプレートにモデル割り当て表が存在する
 - WHEN: `plugins/longrun/templates/plan-template.md` を開く
 - THEN: 「モデル割り当て」セクションが存在し、`| change | ロール | ティア(haiku/sonnet/inherit) | 理由 | 上書き |` のヘッダ行を持つ Markdown 表が含まれる
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S2: [longrun-model-allocation] ユーザー編集可能である旨の案内がある
 - WHEN: 「モデル割り当て」セクションの説明文を読む
 - THEN: plan 確認時に表を直接編集して上書きできること、`上書き` 欄がティア欄より優先されることが記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S3: [longrun-model-allocation] テンプレートにモデル ID がハードコードされていない
 - WHEN: plan-template.md 内で `claude-` で始まるモデル ID 文字列を grep する
 - THEN: 該当行は 0 件（ティア名 haiku / sonnet / inherit のみが現れる）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S4: [longrun-model-allocation] リファレンスドキュメントが対応を定義している
 - WHEN: `plugins/longrun/references/model-tiers.md` を開く
 - THEN: haiku / sonnet 各ティアの `opts.model` 渡し値の対応表と、inherit が「opts.model を渡さない」ことを意味する説明が記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S5: [longrun-model-allocation] モデル ID の散在が無い
 - WHEN: plugins/longrun/ 配下で references/model-tiers.md を除外して `claude-` 始まりのモデル ID を grep する
 - THEN: plan-template.md・longrun-plan SKILL.md・exec.md・workflow スクリプト生成テンプレートのいずれにもヒットしない（0 件）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S6: [longrun-model-allocation] sonnet ティアが opts.model に反映される
 - WHEN: ロール verifier にティア sonnet（上書き欄空）を指定した plan.md に対して /longrun:exec を実行する
 - THEN: 生成 workflow スクリプトの該当 verifier agent 呼び出しに、リファレンスで解決された sonnet ティアの値が `opts.model` として設定されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S7: [longrun-model-allocation] inherit ティアでは opts.model を出力しない
 - WHEN: ロール builder にティア inherit を指定した plan.md に対して /longrun:exec を実行する
 - THEN: 生成 workflow スクリプトの該当 builder agent 呼び出しには `opts.model` キーが存在しない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S8: [longrun-model-allocation] 上書き欄がティア欄より優先される
 - WHEN: ティア欄 haiku の行の `上書き` 欄に sonnet を記入してから /longrun:exec を実行する
 - THEN: 該当 agent 呼び出しには haiku ではなく sonnet ティアの解決値が `opts.model` として設定されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S9: [longrun-model-allocation] 未知のティア値は inherit として扱い警告する
 - WHEN: ティア欄に `opus-max` のような未知の値を含む plan.md に対して /longrun:exec を実行する
 - THEN: 該当行は inherit として扱われ（opts.model 無し）、「未知のティア値のため inherit として扱った」旨の警告が表示され、workflow 起動は中断されない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S10: [longrun-model-allocation] セクション無し plan.md で exec が完走する
 - WHEN: 「モデル割り当て」セクションを持たない旧形式の plan.md に対して /longrun:exec を実行する
 - THEN: エラーや追加質問（AskUserQuestion）なしで workflow スクリプトが生成・起動され、全 agent 呼び出しに `opts.model` キーが存在しない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S11: [longrun-plan-skill] 生成された plan.md にモデル割り当て表が含まれる
 - WHEN: /longrun:plan で plan.md を作成し Step 5（Synthesis）が完了する
 - THEN: 「モデル割り当て」セクションが存在し、Changes分解の各 change × agent ロールごとの行にティア（haiku / sonnet / inherit）と理由が記入されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S12: [longrun-plan-skill] SKILL.md にヒューリスティクスが明記されている
 - WHEN: `plugins/longrun/skills/longrun-plan/SKILL.md` の推奨生成ステップを読む
 - THEN: 「アーキレビュー・複雑 TDD → inherit」「定型検証・要約 → haiku」「リサーチ・ブラウザ・中規模実装 → sonnet」の 3 ルールと「迷ったら inherit」の保守的デフォルトが記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S13: [longrun-plan-skill] 確信度の低いタスクは inherit に倒される
 - WHEN: Synthesis 中にあるタスクがどのヒューリスティクス分類にも明確に該当しない
 - THEN: 該当行のティアに inherit が記入され、理由欄に確信度が低いため保守的デフォルトを適用した旨が記載される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S14: [longrun-plan-skill] ユーザーが plan 確認時に表を上書きできる
 - WHEN: Step 8（ユーザー確認）で plan.md のモデル割り当て表の `上書き` 欄またはティア欄を直接編集する
 - THEN: スキルは編集後の値をそのまま確定し、推奨値への巻き戻しや再生成を行わない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S15: [longrun-plan-skill] Validation チェックリストにモデル割り当てが含まれる
 - WHEN: SKILL.md の Step 6（Validation）のセクション存在チェックリストを読む
 - THEN: 「モデル割り当て」セクションの存在確認項目がチェックリストに含まれている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S16: [longrun-plan-skill] セクション欠落時は保存前に修復される
 - WHEN: Step 6 の Validation で生成済み plan.md に「モデル割り当て」セクションが無いことが検出される
 - THEN: plan.md を修正してセクションを追加してから保存し、欠落したままファイルを保存しない（GATE セマンティクス）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
