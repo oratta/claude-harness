@@ -1,26 +1,38 @@
 ---
 name: longrun-plan
 description: 自律実行用のplan.mdを対話的に作成する。ユーザーのbrain dumpを分析し、発散リスクの高い論点を特定して質問で埋めた上で、構造化されたplanファイルを生成する。OpenSpecのbacklog・既存changesも自動参照し、巻き込めるタスクを提案する。「planを作りたい」「実行計画を作成」「run準備」で起動。
-version: 5.2.0
+version: 6.1.0
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash
 ---
 
-## モード分岐（フルモード / MVP モード）
+## 起動前チェック: 廃止された `--mode=mvp` フラグの移行案内
 
 <GATE>
-本スキルは Step 1 以降を実行する前に、必ず引数を検査して以下のいずれかのモードを決定すること。
-モード決定をスキップして既存 Step 1 に直行することは禁止。
+本スキルは Step 1 以降を実行する前に、必ず引数を検査すること。
+`--mode=mvp` が含まれていた場合は、以下の移行案内を出力して**ただちに終了**する。
+Step 1 〜 Step 8 を実行してはならない。plan.md を生成してはならない。
+サイレント無視やフルモードへの暗黙フォールバックは禁止。
 </GATE>
 
-引数（コマンド経由のテキストおよびフラグ）を解釈して、起動モードを以下のルールで決定する:
+引数（コマンド経由のテキストおよびフラグ）を検査する:
 
-- 引数に `--mode=mvp` が含まれる → **MVP モード** に分岐し、本ファイル末尾の `## MVP モード（--mode=mvp）` セクションへ制御を移す
-- 引数に `--mode=full` が含まれる、または `--mode=` フラグが一切無い → **フルモード**。下記の既存 `# Run Plan — plan.md 作成スキル` 以降（Step 1 〜 Step 8）を**そのまま**実行する
-- 上記以外（例: `--mode=experimental` など未知の値）→ フルモードにフォールバックし、ユーザーに「未知のモード値だったためフルモードで継続する」と通知する
+- 引数に `--mode=mvp` が含まれる → **MVP プラン作成は独立スキルに移動した**。以下の移行案内を出力し、何も生成せずに終了する:
 
-モードを決定したら、決定結果を 1 行で出力する（例: `モード判定: MVP モード（--mode=mvp）` / `モード判定: フルモード（既定）`）。これにより受け入れ条件 #7 のログ確認が可能になる。
+  ```
+  ⚠️ `--mode=mvp` は廃止されました。
 
-**設計原則（regression 回避）**: フルモードに分岐した場合、以降の Step 1 〜 Step 8 の本文には**一切の差分**が無い。MVP モード固有の追記はすべて本セクションおよび末尾の `## MVP モード（--mode=mvp）` セクションに閉じている。
+  MVP プラン作成は独立スキル `/longrun:mvp`（短縮 `/lr:m`）に移動しました。
+  以下のコマンドで再実行してください:
+
+    /longrun:mvp <ブレインダンプ or テーマ>
+    /lr:m <ブレインダンプ or テーマ>
+
+  （フルモードの plan.md を作成したい場合は、廃止された旧フラグ `--mode=mvp` を外して `/longrun:plan` を再実行してください）
+  ```
+
+  この案内を出したら plan.md を生成せずに終了する。Step 1 以降には進まない。
+
+- 引数に廃止フラグ `--mode=mvp` が**含まれない**（`--mode=full` 指定 / `--mode=` フラグなし / その他）→ **フルモード**。下記の既存 `# Run Plan — plan.md 作成スキル` 以降（Step 1 〜 Step 8）を**そのまま**実行する。
 
 # Run Plan — plan.md 作成スキル
 
@@ -393,184 +405,3 @@ plan.md が確定したら（ユーザーがOKを出した後）:
 
 2. **確定報告**:
    「自律実行の準備完了」を報告し、`/longrun:exec` コマンドでの実行を案内する。
-
-## MVP モード（--mode=mvp）
-
-### 概要
-
-短時間で**人間が手で MVP を実装する**用途のための軽量フロー。フルモードに含まれる Build Contract レビュー / TDD 強制 / Verifier 自動起動はスキップする。レビューは subagent による APPROVE/REQUEST_CHANGES で完結し、最終判断は人間に委ねる。
-
-このモードは**特定のプロジェクトには依存しない汎用機能**であり、任意のプロジェクトから `/longrun:plan --mode=mvp` で呼び出せる。
-
-### Step 1〜8 × MVP モード対応マッピング
-
-| 既存 Step | MVP モード対応 | 内容 |
-|---|---|---|
-| Step 1（テンプレート読み込み） | REPLACE | `templates/plan-template-mvp.md`（軽量版）を読み込む |
-| Step 2（OpenSpec 状態確認） | SKIP | 人間実装前提なので backlog 照合不要 |
-| Step 2b（Brain Dump 収集） | REUSE | 引数 / 対話で取得する流れは同じ |
-| Step 3（Gap Analysis） | REUSE | 軽量化せずそのまま実施 |
-| Step 4（Interview） | REUSE | AskUserQuestion で 3〜5 問 |
-| **Step 4.5（並列リサーチ）【新規】** | ADD | `longrun-mvp-research` subagent×1 を Agent ツールで起動。1 レポート 2 セクション（類似サービス / 実装パターン）を取得 |
-| Step 5（Synthesis） | REPLACE | 軽量テンプレに従って v0 plan.md を生成。先頭に `<!-- mvp-mode -->` マーカーを必ず埋め込む |
-| Step 5a（残りステップ宣言） | REPLACE | MVP 用文言（review subagent×2 並列レビュー → ユーザー確認）に書き換え |
-| Step 5b（Backlog 照合） | SKIP | Step 2 をスキップしているため不要 |
-| Step 6（Validation） | REPLACE | 軽量テンプレ用 Validation チェックリストに切り替え |
-| Step 7（Plan Review） | REPLACE | `longrun-mvp-plan-reviewer` + `longrun-mvp-bestpractice-reviewer` を**単一メッセージ内の複数 tool_use として並列起動** |
-| Step 8（確認 + 確定） | REPLACE | backlog 消込みなし。OpenSpec change 生成もしない。ハンドオフ案内のみ |
-
-**SKIP の根拠**: Step 2 / Step 5b を SKIP するのは、MVP モードで生成される plan.md が人間実装を前提としており OpenSpec change 自動生成パイプラインに乗せない設計だからである（archive 側で `<!-- mvp-mode -->` マーカーを見て OpenSpec 生成をスキップする / change-C で実装）。
-
-### MVP Step 1（REPLACE）: 軽量テンプレート読み込み
-
-Read ツールで `templates/plan-template-mvp.md`（同プラグイン内の軽量テンプレ）を読み込む。フル版 `templates/plan-template.md` は読み込まない。読み込んだテンプレから必須セクション一覧を抽出し、Step 6 の Validation で使用する。
-
-### MVP Step 2（SKIP）
-
-OpenSpec backlog および既存 changes の確認は行わない。MVP モード plan.md は OpenSpec change 自動生成パイプラインに乗らないため、backlog 照合の意味がない。
-
-### MVP Step 2b〜Step 4（REUSE）
-
-フルモードの Step 2b（Brain Dump 収集）/ Step 3（Gap Analysis）/ Step 4（Interview, AskUserQuestion 1 問ずつ）をそのまま流用する。プロジェクトコンテキスト（`context/core/project.md` / `CLAUDE.md` 等）の読み込みも同様に実施する。
-
-### MVP Step 4.5（NEW）: 並列リサーチ
-
-<GATE>
-Step 4 の Interview 完了後、Step 5 の Synthesis に進む前に必ず本ステップを実行する。
-リサーチ結果無しに plan.md の Synthesis を行うことは禁止。
-</GATE>
-
-Agent ツールで `longrun-mvp-research` subagent を **1 つ起動**する。現状 1 個でも、将来的なリサーチ拡張（領域別 research）を視野に、**Agent ツール呼び出しは単一メッセージ内に複数 tool_use を配置するパターン**で実装すること（並列起動の作法を MVP モード全体で統一するため）。
-
-呼び出し例:
-
-```
-Agent ツール:
-  subagent_type: "longrun-mvp-research"
-  prompt: |
-    以下のテーマで MVP 向け調査を実施してください。
-    テーマ: {Interview で確定した機能・対象ドメインの 1〜2 文要約}
-    出力契約:
-    - 単一レポートに `## 類似サービス事例` と `## 実装パターン` の両セクションを含めること
-    - 末尾に `## Search Audit` を必ず付け、`- queries: <N>` と `- list: [...]` を記載
-    - 同一クエリの重複検索を行わない（理想は queries: 1）
-```
-
-subagent から返ってきた 1 レポート（2 セクション + Search Audit）を context 内に保持し、Step 5 の Synthesis で軽量テンプレの「調査結果サマリ（類似サービス）」「調査結果サマリ（実装パターン）」セクションに圧縮反映する。
-
-### MVP Step 5（REPLACE）: 軽量 Synthesis
-
-軽量テンプレ `plan-template-mvp.md` の構造に従って v0 plan.md を生成する。**生成されるファイルの 1 行目（タイトル見出しより前）に必ず以下のマーカーコメントを入れる:**
-
-```
-<!-- mvp-mode -->
-```
-
-このマーカーが `/longrun:archive`（change-C）で OpenSpec change 生成をスキップする判定根拠となる。フルモードの plan.md にはこのマーカーが存在しないため、archive 側は安全に分岐できる。
-
-保存先パス決定の規則（英語 slug + 日付 `YYYY-MM-DD_slug` を `_longruns/` 配下に作る）はフルモードと同じ。
-
-### MVP Step 5a（REPLACE）: 残りステップの宣言
-
-plan.md を保存する**前に**以下の宣言を出力する:
-
-```
-plan.md を生成しました。保存前に以下の3ステップを実行します:
-
-1. **Validation** — 軽量テンプレ必須セクションの存在チェック
-2. **Plan Review** — longrun-mvp-plan-reviewer と longrun-mvp-bestpractice-reviewer を**並列起動**（単一メッセージ内に2つの Agent tool_use）
-3. **ユーザー確認** — レビュー結果とともに最終確認を依頼
-
-まず Validation から開始します。
-```
-
-### MVP Step 5b（SKIP）
-
-MVP モードでは Step 2 で backlog 照合をしていないため本ステップも実行しない。
-
-### MVP Step 6（REPLACE）: 軽量 Validation
-
-<GATE>
-このチェックに全て合格するまで、plan.md をファイルに保存してはならない。
-1 つでも欠けていたら plan.md を修正してから保存すること。
-</GATE>
-
-軽量テンプレの必須セクション存在チェックを行う。次の 7 セクションを必ず含むこと:
-
-- [ ] ゴール
-- [ ] 技術要件
-- [ ] スコープ
-- [ ] 受け入れ条件
-- [ ] 動作確認方法
-- [ ] 調査結果サマリ（Step 4.5 の 2 セクションを軽量化反映）
-- [ ] レビュー結果サマリ（Step 7 の出力を反映する空欄プレースホルダでも可）
-
-加えて、ファイル先頭に `<!-- mvp-mode -->` マーカーが存在することを Grep で確認する。フルモードの「OpenSpec 必須条件 / TDD 必須条件 / ビルド必須条件」チェックは MVP モードでは行わない（軽量テンプレに該当セクションが無いため）。
-
-### MVP Step 7（REPLACE）: 並列レビュー
-
-<GATE>
-本ステップは省略禁止。`longrun-mvp-plan-reviewer` と `longrun-mvp-bestpractice-reviewer` を**必ず並列起動**する。
-2 つの Agent ツール呼び出しを別メッセージに分けて発行することは禁止（並列性が失われる）。
-</GATE>
-
-**必須アクション — 単一の assistant メッセージ内に以下の 2 つの Agent ツール呼び出しを並べて発行する:**
-
-```
-Agent ツール (1):
-  subagent_type: "longrun-mvp-plan-reviewer"
-  prompt: |
-    以下の v0 plan.md を MVP プランとしてレビューしてください: {plan.md フルパス}
-    評価軸:
-    - スコープが MVP として過大でないか
-    - 矛盾がないか
-    - 受け入れ条件が検証可能か
-    出力: APPROVE または REQUEST_CHANGES + 具体的指摘 + `## Search Audit`
-
-Agent ツール (2):
-  subagent_type: "longrun-mvp-bestpractice-reviewer"
-  prompt: |
-    以下の v0 plan.md について該当ドメインの落とし穴・anti-pattern を指摘してください: {plan.md フルパス}
-    制約: 外部検索は最大 1 回。`## Search Audit` を必ず付与（queries: <=1）
-```
-
-両 subagent からの結果を集約し、ユーザーに以下の形式で表示する:
-
-```
-📋 MVP Plan Review 結果:
-
-[longrun-mvp-plan-reviewer] Status: APPROVE / REQUEST_CHANGES
-- スコープ: ...
-- 矛盾: ...
-- 受け入れ条件検証可能性: ...
-Search Audit: queries: <N>
-
-[longrun-mvp-bestpractice-reviewer]
-- 落とし穴: ...
-- Anti-pattern: ...
-Search Audit: queries: <=1
-```
-
-両者が APPROVE → MVP Step 8 へ。一方でも REQUEST_CHANGES → 指摘に基づき plan.md を修正し、最大 2 ラウンドまで再レビューを実施。2 ラウンドで通らない指摘は plan.md の「レビュー結果サマリ」セクションに残課題として明記したうえで Step 8 へ進む。
-
-### MVP Step 8（REPLACE）: ハンドオフ案内
-
-ユーザーに plan.md の最終確認を依頼し、修正があれば反映する。OK を得た後、以下のハンドオフメッセージを出力して MVP モードのフローを終える:
-
-```
-✅ MVP plan.md を確定しました。
-
-保存先: _longruns/YYYY-MM-DD_slug/plan.md
-（先頭に `<!-- mvp-mode -->` マーカー入り）
-
-このまま人間が手で実装する場合: plan.md の「動作確認方法」セクションに従って着手してください。
-自動実装に渡す場合: `/longrun:exec _longruns/YYYY-MM-DD_slug/` で開始できます（ただし MVP モード plan.md は自動実装パイプライン未対応の可能性あり）。
-アーカイブ: `/longrun:archive _longruns/YYYY-MM-DD_slug/` を実行すると、`<!-- mvp-mode -->` マーカーを検知して OpenSpec change 生成をスキップし、ディレクトリのみアーカイブします。
-```
-
-**MVP Step 8 で実施しないこと**:
-- `openspec/backlog.md` の編集（Step 2 / Step 5b を SKIP しているため照合自体していない）
-- `openspec change add` 等による OpenSpec change の自動生成
-- TDD テストハーネスの起動
-
-これらが必要な場合はフルモード（`/longrun:plan` 引数なし）で再生成すること。

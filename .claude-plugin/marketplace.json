@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -28,19 +28,19 @@
     },
     {
       "name": "longrun",
-      "description": "Claude Code 自律実行システム v6.0（BREAKING）。/longrun:exec を Workflow ツールに載せ替え、サブエージェント成果物を JSON Schema（StructuredOutput）で機構的に強制。Verify ループは上限 3 周 + budget ガード。中断再開は resumeFromRunId 一次手段。進捗は /workflows ライブビュー。TDD + 4軸定量評価 + Build Contract パターンで品質担保。OpenSpec 縮退モード対応。",
+      "description": "Claude Code 自律実行システム v6.1。MVP プラン作成を独立スキル longrun-mvp-plan（/longrun:mvp、短縮 /lr:m）に分離。/longrun:exec を Workflow ツールに載せ替え、サブエージェント成果物を JSON Schema（StructuredOutput）で機構的に強制。Verify ループは上限 3 周 + budget ガード。中断再開は resumeFromRunId 一次手段。進捗は /workflows ライブビュー。TDD + 4軸定量評価 + Build Contract パターンで品質担保。OpenSpec 縮退モード対応。",
       "source": "./plugins/longrun",
       "category": "workflow",
-      "version": "6.0.0",
+      "version": "6.1.0",
       "author": { "name": "Oratta" },
-      "keywords": ["longrun", "autonomous", "execution", "agents", "openspec", "tdd", "feedback", "harness"]
+      "keywords": ["longrun", "autonomous", "execution", "agents", "openspec", "tdd", "feedback", "harness", "mvp"]
     },
     {
       "name": "lr",
-      "description": "longrunプラグインの短縮コマンド。/lr:p, /lr:e, /lr:a, /lr:f",
+      "description": "longrunプラグインの短縮コマンド。/lr:p, /lr:m, /lr:e, /lr:a, /lr:f",
       "source": "./plugins/lr",
       "category": "workflow",
-      "version": "6.0.0",
+      "version": "6.1.0",
       "author": { "name": "Oratta" },
       "keywords": ["longrun", "alias", "shortcut"]
     },

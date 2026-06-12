@@ -1,6 +1,15 @@
-# Longrun Plugin v6.0
+# Longrun Plugin v6.1
 
 Claude Code 自律実行システム。Anthropic の [Harness Design for Long-Running Apps](https://www.anthropic.com/engineering/harness-design-long-running-apps) の知見を反映した設計。
+
+## v6.1 変更点
+
+- **MVP プラン作成を独立スキル `longrun-mvp-plan` に分離**。新コマンド `/longrun:mvp`（短縮 `/lr:m`）で起動する。旧 `longrun-plan` 内のモード分岐（`--mode=mvp`）は廃止され、独立スキルとして自己完結したステップ群に再構成された。詳細は下記「MVP プランモード」セクション参照。
+- **`--mode=mvp` フラグを廃止（deprecation）**。`/longrun:plan --mode=mvp`（および `/lr:p --mode=mvp`）を実行すると、MVP フローを走らせる代わりに `/longrun:mvp` への移行案内を出力して終了する（サイレント無視・フルモードへの暗黙フォールバックはしない）。
+- MVP 用 agent 3 種（`longrun-mvp-research` / `longrun-mvp-plan-reviewer` / `longrun-mvp-bestpractice-reviewer`）と軽量テンプレ `plan-template-mvp.md` は配置を変えず、帰属記述を `longrun-mvp-plan` スキルに整理（出力契約は不変）。
+- Gap Analysis / Interview の方法論を `references/plan-interview-methodology.md` に切り出し、新スキルが自己完結に参照できるようにした。
+- `<!-- mvp-mode -->` マーカーと `/longrun:archive` 側のマーカー分岐は現状維持（成果物形式は不変）。
+- `plugin.json` / `marketplace.json`（top-level / plugins[]）の version を longrun・lr とも 6.1.0 に同期 bump。
 
 ## v6.0 変更点（BREAKING）
 
@@ -31,8 +40,8 @@ Claude Code 自律実行システム。Anthropic の [Harness Design for Long-Ru
 
 ## v5.2 変更点
 
-- **MVP モード（`--mode=mvp`）を `/longrun:plan` に追加**。詳細は下記「MVP モード」セクション参照。
-- フルモードの既存挙動は完全維持（regression なし）。`--mode=mvp` フラグなし or `--mode=full` の場合は従来通り Step 1〜8 を実行する。
+- **MVP モード（旧 `--mode=mvp` フラグ）を `/longrun:plan` に追加**（このフラグは v6.1 で廃止され、独立コマンド `/longrun:mvp` に移行した）。詳細は下記「MVP プランモード」セクション参照。
+- フルモードの既存挙動は完全維持（regression なし）。旧 `--mode=mvp`（v6.1 で廃止・移行案内化）フラグなし or `--mode=full` の場合は従来通り Step 1〜8 を実行する。
 - `plugins/longrun/templates/plan-template-mvp.md`（軽量テンプレ）を新規追加。
 - `/longrun:archive` に `<!-- mvp-mode -->` マーカー判定を追加。MVP モード plan.md は OpenSpec change archive をスキップしてランディレクトリのみアーカイブ。
 - `plugin.json` と `longrun-plan` SKILL.md frontmatter の version を 5.2.0 に同期 bump（プラグインキャッシュ無効化）。
@@ -63,7 +72,8 @@ Claude Code 自律実行システム。Anthropic の [Harness Design for Long-Ru
 
 | コマンド | 短縮 | 説明 |
 |---------|------|------|
-| `/longrun:plan` | `/lr:p` | plan.md を対話的に作成 |
+| `/longrun:plan` | `/lr:p` | plan.md を対話的に作成（フルモード） |
+| `/longrun:mvp` | `/lr:m` | 軽量 MVP plan.md を対話的に作成（人間実装向け） |
 | `/longrun:exec` | `/lr:e` | Workflow を生成・起動して自律実行を開始 |
 | `/longrun:archive` | `/lr:a` | 完了した実行をアーカイブ |
 | `/longrun:feedback` | `/lr:f` | フィードバックを分類・実行 |
@@ -99,23 +109,25 @@ Skill と Agent の役割を名前で識別可能にしている。命名違反�
 
 | 種別 | 命名パターン | 例 |
 |------|-------------|----|
-| **Skill** | 動詞または名詞単独 | `longrun-plan`, `longrun-feedback` |
+| **Skill** | 動詞または名詞単独 | `longrun-plan`, `longrun-mvp-plan`, `longrun-feedback` |
 | **Agent** | 役割名（`-er` / `-or` 終わり） | `longrun-builder`, `longrun-reviewer`, `longrun-verifier`, `longrun-browser-verifier` |
 
 新規追加時は本ルールに従うこと。違反すると `/longrun:plan` 系コマンドの起動経路で再び誤起動エラーが発生する。
 
-## MVP モード（`--mode=mvp`）
+## MVP プランモード（`/longrun:mvp`）
 
-`/longrun:plan` に追加された軽量フロー。**短時間で人間が手で MVP を実装する**ケース向けの汎用機能で、特定プロジェクトに依存しない。
+独立スキル `longrun-mvp-plan` による軽量フロー。**短時間で人間が手で MVP を実装する**ケース向けの汎用機能で、特定のプロジェクトに依存しない（どのプロジェクトからでも呼び出せる）。
 
 ### 起動方法
 
 ```
-/longrun:plan --mode=mvp <ブレインダンプ or テーマ>
-/lr:p --mode=mvp <ブレインダンプ or テーマ>   # 短縮形（lr プラグインがある場合）
+/longrun:mvp <ブレインダンプ or テーマ>
+/lr:m <ブレインダンプ or テーマ>   # 短縮形（lr プラグインがある場合）
 ```
 
-`--mode` フラグなし、または `--mode=full` の場合は従来のフルモードで起動する。
+### `--mode=mvp` は廃止（deprecation）
+
+v6.1 で `--mode=mvp` フラグは**廃止**された。`/longrun:plan --mode=mvp`（および `/lr:p --mode=mvp`）を実行すると、MVP フローを走らせる代わりに `/longrun:mvp`（短縮 `/lr:m`）への**移行案内を出力して終了**する。`/longrun:plan` は引数フラグなし、または `--mode=full` の場合のみ従来どおりフルモードで起動する。
 
 ### フルモードとの違い
 

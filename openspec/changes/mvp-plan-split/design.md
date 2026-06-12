@@ -61,6 +61,14 @@ longrun プラグイン v5.2.0 で MVP モードが `longrun-plan` SKILL.md 内�
 - plugin.json / marketplace.json top-level / marketplace.json plugins[] の 3 箇所 × 2 プラグイン。過去に同期漏れ事故があるため受け入れ条件に明示（plan.md 受け入れ条件 19）
 - `longrun-plan` と `longrun-mvp-plan` の SKILL.md frontmatter `version` も plugin.json と一致させる（既存 spec のバージョン同期要件を踏襲）
 
+### D6: Gap Analysis / Interview 方法論は共有リファレンスに切り出す（option (a)）— 両スキルから Read、ただし longrun-plan の Step 3/4 本文は温存
+
+- 採用: `plugins/longrun/references/plan-interview-methodology.md` を新設（Gap Analysis フォーマット + 発散リスク判定表 + Interview 質問設計原則 + 閾値を内包）。**新スキル `longrun-mvp-plan`** はこのリファレンスを Read 指示で参照して方法論を適用する。**既存 `longrun-plan` SKILL.md は一切変更しない**（Step 1〜8 本文を温存し、task 3.3 の「git diff で Step 1〜8 に差分なし」を厳格に満たす。MVP セクション削除とモード分岐の移行案内化のみ手を入れる）。
+- spec 要件「Methodology source MUST be self-contained without runtime dependency on longrun-plan」の充足: 新スキルは references ファイルを Read するのみで、`skills/longrun-plan/SKILL.md` を実行時に Read しない（S25 を満たす）。
+- option (a)/(b) ハイブリッドの根拠: spec は「両スキルが同一 reference を Read する」を理想とするが、`longrun-plan` の Step 3/4 を reference 参照に置換すると task 3.3 のフルモード regression ガード（Step 1〜8 本文 no-diff）と衝突する。よって reference は新設しつつ、`longrun-plan` 側の置換は本 change のスコープ外（フルモード本文不変が最優先）とする。reference 冒頭に「longrun-plan SKILL.md Step 3/4 と同期すること」の divergence 防止コメントを置き、将来 longrun-plan 側を reference 参照に寄せる余地を残す。
+- 代替案 1: 新 SKILL.md にインライン複製 + divergence 防止コメント（option (b)） — 採用見送り。reference 切り出しの方が将来の single-source 化に繋がり、新スキル本文も短く保てる。
+- 代替案 2: longrun-plan の Step 3/4 も reference 参照に置換（純 option (a)） — 却下。task 3.3 のフルモード本文 no-diff ガードに反する。本 change は「移動と分離のみ・フルモード挙動不変」が config 制約。
+
 ## Risks / Trade-offs
 
 - [フルモード regression] モード分岐ブロックの書き換え時に Step 1〜8 本文へ意図しない差分が入る → Mitigation: 書き換え範囲を frontmatter 直後の分岐ブロックと末尾 MVP セクションの削除に限定し、`git diff` で Step 1〜8 本文に差分がないことを確認する
