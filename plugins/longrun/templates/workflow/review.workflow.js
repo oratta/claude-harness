@@ -16,6 +16,9 @@
 //   __PROJECT_ROOT__         プロジェクトルート（cwd）
 //   __REVIEWER_SCHEMA__      reviewer-verdict.schema.json の中身（インライン JSON オブジェクト）
 //   __REVIEWER_AGENT_TYPE__  既定 'longrun:longrun-reviewer'
+//   __REVIEWER_MODEL__       reviewer の opts.model 値（エイリアス文字列リテラル 'sonnet' 等、または null）
+//                            null のときは下の条件付きスプレッドで model キー自体を出力しない（inherit, change-4 D2）。
+//                            ティア → エイリアス値の解決は plugins/longrun/references/model-tiers.md（1 箇所集約）。
 
 export const meta = {
   name: 'longrun-review',
@@ -29,6 +32,9 @@ phase('Review');
 
 const reviewerSchema = __REVIEWER_SCHEMA__;
 
+// モデル割り当て（change-4）。エイリアス文字列 or null。null は inherit = opts.model を渡さない（D2）。
+const reviewerModel = __REVIEWER_MODEL__;
+
 // reviewer 判定を StructuredOutput で強制する。散文 STATUS パースは行わない。
 const verdict = await agent(
   `Build Contract レビュー: __PLAN_PATH__ の Changes 分解を評価してください。` +
@@ -40,6 +46,7 @@ const verdict = await agent(
     phase: 'Review',
     agentType: '__REVIEWER_AGENT_TYPE__',
     schema: reviewerSchema,
+    ...(reviewerModel ? { model: reviewerModel } : {}),
   }
 );
 

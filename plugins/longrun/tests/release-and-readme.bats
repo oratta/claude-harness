@@ -46,14 +46,14 @@ setup() {
 
 # --- version sync (task 5.2 / S of plan acceptance 19) ---
 
-@test "plugin.json: longrun version is 6.1.0" {
+@test "plugin.json: longrun version is 6.2.0" {
   v="$(jq -r '.version' "$PLUGIN_JSON")"
-  [ "$v" = "6.1.0" ]
+  [ "$v" = "6.2.0" ]
 }
 
-@test "marketplace.json: longrun plugins[] entry is 6.1.0" {
+@test "marketplace.json: longrun plugins[] entry is 6.2.0" {
   v="$(jq -r '.plugins[] | select(.name=="longrun") | .version' "$MARKETPLACE_JSON")"
-  [ "$v" = "6.1.0" ]
+  [ "$v" = "6.2.0" ]
 }
 
 @test "version 3-way sync: plugin.json == marketplace plugins[] longrun" {

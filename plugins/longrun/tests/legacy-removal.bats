@@ -8,7 +8,7 @@
 #   - no residual /longrun:status /longrun:decisions /lr:s /lr:d functional refs in
 #     the scoped surface (plugin.json / README / commands/*.md / marketplace.json)
 #   - orchestrator skill dir is gone and removed from plugin.json skills[]
-#   - longrun & lr versions are 6.1.0 across the 2 sync locations
+#   - longrun version is 6.2.0 (bumped by change-4); lr stays 6.1.0 across the 2 sync locations
 
 load "$(dirname "$BATS_TEST_FILENAME")/helper.bash"
 
@@ -90,11 +90,11 @@ setup() {
 
 # --- S25: version sync ---
 
-@test "legacy: longrun version is 6.1.0 in plugin.json and marketplace plugins[]" {
+@test "legacy: longrun version is 6.2.0 in plugin.json and marketplace plugins[]" {
   a="$(jq -r '.version' "$LONGRUN_JSON")"
   b="$(jq -r '.plugins[] | select(.name=="longrun") | .version' "$MARKETPLACE_JSON")"
-  [ "$a" = "6.1.0" ]
-  [ "$b" = "6.1.0" ]
+  [ "$a" = "6.2.0" ]
+  [ "$b" = "6.2.0" ]
 }
 
 @test "legacy: lr version is 6.1.0 in plugin.json and marketplace plugins[] (no bump miss)" {
