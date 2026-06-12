@@ -51,7 +51,7 @@ longrun（v5.2.0）の自律実行は OpenSpec を仕様管理の中核に置い
 
 - **選択肢**: A: `which openspec`（グローバル優先） / B: `npx openspec`（ローカル優先） / C: 多段フォールバック現状維持
 - **決定**: B を暫定の正とし、タスク 1.1 の実機検証（init / apply / schema fork / validate が期待どおり動く系統はどちらか）で最終確定する
-- **理由**: plan.md の受け入れ条件 5 が「`npx openspec` が解決できない環境で」と明示しており、リポジトリローカルの node_modules でバージョンを固定できる方が repo 間の再現性が高い。volta グローバル 1.2.0 と npx ローカル 0.23.0 は major が異なり CLI 仕様差のリスクがあるため、現状の多段フォールバック（C）は「どのバージョンで動いているか不定」という不確実性の温床であり廃止する。実機検証の結果 1.2.0 系を正とすべきと判明した場合は、スクリプトの検出系列と docs の記録だけを差し替えれば良い構造にしておく（検出系列はスクリプト 1 箇所に集約）
+- **理由**: plan.md の受け入れ条件 5 が「`npx openspec` が解決できない環境で」と明示しており、リポジトリローカルの node_modules でバージョンを固定できる方が repo 間の再現性が高い。volta グローバル 1.2.0 と npx ローカル 0.23.0 は major が異なり CLI 仕様差のリスクがあるため、現状の多段フォールバック（C）は「どのバージョンで動いているか不定」という不確実性の温床であり廃止する。検出系列はスクリプト 1 箇所に集約し、実機検証で結論が変わっても差し替えが 1 箇所で済む構造にする。**最終確定値（正系統・検出コマンド系列・導入案内）は本ドキュメントには書かず、`plugins/longrun/docs/openspec-cli-verification.md` を参照すること**（タスク 1.1 / 1.2 で記録）
 
 ### Decision: 縮退 artifacts は `_longruns/<run>/specs/<change-name>/` に openspec/changes 配下とほぼ同じレイアウトで置く
 
@@ -64,6 +64,7 @@ longrun（v5.2.0）の自律実行は OpenSpec を仕様管理の中核に置い
 - **選択肢**: A: openspec change 相当の擬似 archive を `_longruns/` 内に再現 / B: ランディレクトリのみアーカイブ
 - **決定**: B
 - **理由**: archive skill には既に MVP モード（`<!-- mvp-mode -->`）で「OpenSpec change 生成をスキップしてディレクトリのみアーカイブ」する分岐が存在する。縮退 run の spec 類は `_longruns/<run>/specs/` に内包されているため、ランディレクトリごとアーカイブすれば spec も一緒に保全される。判定は `.degraded-mode` マーカーで行う
+- **注意（判定ソースの不一致）**: 既存 MVP 分岐（`plugins/longrun/commands/archive.md` L15-19）の判定ソースは **plan.md 先頭の `<!-- mvp-mode -->` マーカー**であり、縮退分岐の判定ソース（run ディレクトリの `.degraded-mode` ファイル）とは**別物**。archive.md には両分岐を併記し、判定順は `.degraded-mode` → `<!-- mvp-mode -->` とする（動作はいずれも「ディレクトリのみアーカイブ」で同一だが、判定根拠の表示を分ける）。`plugins/longrun/commands/archive.md` は本 change の編集対象ファイルである（タスク 3.3）
 
 ### Decision: status コマンドには触らない
 
@@ -77,6 +78,7 @@ longrun（v5.2.0）の自律実行は OpenSpec を仕様管理の中核に置い
 - [Risk] 縮退分岐の追加が既存 openspec あり repo の挙動を変えてしまう（回帰） → 通常モードのパスでは preflight が `OK` を返した後の処理を従来コードパスと完全に同一に保つ。回帰観点の bats（preflight OK 時に縮退マーカーが作られない・openspec フローが選ばれる）を追加
 - [Risk] change-2 の exec 全面書き換えで Step 0 分岐が移植漏れする → 本 change の spec（longrun-openspec-preflight）が要求として残るため、change-2 の検証で grep / bats が落ちる構造にする。preflight ロジックをスクリプト外出しにしたことで移植対象が「スクリプト呼び出し 1 箇所」に縮む
 - [Risk] markdown skill の対話分岐（AskUserQuestion）は bats で検証できない → 機械検証はスクリプトの判定値まで、対話部分は plan.md の「動作確認方法」手順 4（PATH から外して `/lr:e` → 縮退提案）の手動確認に委ねる、と責務を明示
+- [明確化] 「縮退 run は Archive まで完走できる」Requirement の全フェーズ E2E は bats では検証しない: 全フェーズ完走の確認は plan.md「動作確認方法」手順 4 のユーザー手動確認に委ね、bats は archive 縮退分岐の単体検証（`.degraded-mode` マーカー判定 → ランディレクトリのみ移動・`openspec/changes/archive/` への移動が発生しないこと）に限定する
 - [Trade-off] 縮退 run では `openspec validate` による構造検証が効かない → tasks 相当のチェックボックス形式と spec 相当の WHEN/THEN 形式はテンプレートで担保し、形式逸脱は Verify フェーズのレビューで補完する（縮退モードの本質的な劣化として受容）
 
 ## Migration Plan

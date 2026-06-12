@@ -25,10 +25,10 @@
 - **WHEN** 解体完了後に backlog（Skill 命名規則リファクタリング）を確認する
 - **THEN** orchestrator 分の項目が消し込まれている
 
-### Requirement: バージョンを両プラグイン 3 箇所で同期して BREAKING bump する
-longrun を 5.3.0 → 6.0.0、lr を 5.1.1 → 6.0.0 に bump し、各プラグインについて plugin.json / marketplace.json top-level（該当時）/ marketplace.json plugins[] の 3 箇所でバージョンが一致していなければならない（MUST）。
+### Requirement: バージョンを両プラグインで同期して BREAKING bump する
+longrun は着手時点の現行 version を起点に 6.0.0 へ、lr は 5.1.1 → 6.0.0 に bump しなければならない（MUST）（longrun の起点は change-1 マージ済みなら 5.3.0、未マージなら現行値。最終的に 6.0.0 に揃える）。各プラグインについて plugin.json と marketplace.json plugins[] の 2 箇所でバージョンが一致していなければならない（MUST）。marketplace.json の top-level version はマーケットプレイス全体のものであり、bump 要否は別途判断とする。
 
-#### Scenario: longrun と lr の version 3 箇所同期が取れている
+#### Scenario: longrun と lr の version 同期が取れている
 - **WHEN** `plugins/longrun/.claude-plugin/plugin.json`、`plugins/lr/.claude-plugin/plugin.json`、`.claude-plugin/marketplace.json` の plugins[]（longrun / lr エントリ）を比較する
 - **THEN** longrun は全箇所 6.0.0、lr は全箇所 6.0.0 で一致している（lr の bump 漏れがない）
 - **THEN** 全 JSON が `jq .` の構文検証を通る

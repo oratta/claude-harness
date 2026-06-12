@@ -6,7 +6,7 @@ longrun の自律実行は OpenSpec CLI（`npx openspec`）が解決可能であ
 
 ## What Changes
 
-- **exec の Step 0 前提条件チェックを昇格**: 「`npx openspec` 解決可能 + openspec init 済み」のチェックを exec 起動直後（Step 0）に行い、失敗時は AskUserQuestion で縮退モードを提案する（継続 / 中断をユーザーが選択）
+- **exec の Step 0 前提条件チェックを昇格**: 「`npx openspec` 解決可能 + openspec init 済み」のチェックを exec 起動直後（Step 0）に行い、失敗時は AskUserQuestion で縮退モードを提案する（継続 / 中断をユーザーが選択）。preflight OK 時も Step 0 の AskUserQuestion（動作モード確認）に縮退選択肢を常時含めることで「OpenSpec 不要」の明示的 opt-out を可能にする（専用引数は追加しない）
 - **縮退モードの自己完結 artifacts**: 縮退時は spec 類（proposal / tasks / verification-guide 相当）を `openspec/changes/` ではなく `_longruns/<run>/` 内に自己完結生成する。`openspec/` 配下には一切書き込まない
 - **feedback の Tier 3 記録先フォールバック**: 縮退 run では Tier 3（new change）の記録先を `openspec/backlog.md` から `_longruns/<run>/backlog.md` にフォールバックする
 - **実機検証とバージョン乖離の解消**: 素の repo での `openspec init --tools claude` → `openspec apply` を実機検証し、カスタムスキーマ（longrun-tdd）の出所と、volta グローバル（1.2.0）/ npx ローカル（0.23.0）のどちらを正とするかを確定して docs に記録する
@@ -31,6 +31,7 @@ longrun の自律実行は OpenSpec CLI（`npx openspec`）が解決可能であ
 - **`plugins/longrun/commands/exec.md`**: Step 0（前提条件チェック + 縮退提案）の追加
 - **`plugins/longrun/skills/longrun-orchestrator/SKILL.md`**: Setup フェーズのツール検証を Step 0 の判定結果消費に整理。OpenSpec フェーズ（change 作成 / apply / verification-guide 生成 / archive）に縮退分岐を追加
 - **`plugins/longrun/skills/longrun-feedback/SKILL.md`**: Tier 3 記録先の縮退フォールバック分岐を追加
+- **`plugins/longrun/commands/archive.md`**: `_longruns/<run>/.degraded-mode` マーカー判定による縮退分岐（ランディレクトリのみアーカイブ）の追加。既存の MVP 分岐（plan.md 先頭の `<!-- mvp-mode -->` マーカー判定、archive.md L15-19）とは**判定ソースが別**であり、両者の優先順位も定義する
 - **`plugins/longrun/scripts/`**: preflight 判定スクリプトの新設（bats でテスト可能にするため bash に切り出し）
 - **`plugins/longrun/tests/`**: bats テスト新設（このリポジトリの longrun プラグイン初のテストディレクトリ）
 - **`plugins/longrun/README.md` / docs**: 縮退モードの説明と実機検証結果の記録

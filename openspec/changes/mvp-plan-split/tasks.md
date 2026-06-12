@@ -19,7 +19,7 @@
 - [ ] 3.1 `plugins/longrun/skills/longrun-plan/SKILL.md` の冒頭モード分岐ブロックを書き換える: `--mode=mvp` 検出時は「MVP プラン作成は `/longrun:mvp`（短縮 `/lr:m`）に移動した」旨の移行案内を出力して終了（Step 1〜8 を実行しない・plan.md を生成しない・サイレント無視しない）。フラグなし / `--mode=full` は従来どおりフルモード続行
 - [ ] 3.2 同 SKILL.md 末尾の「MVP モード（--mode=mvp）」セクション全体を削除する
 - [ ] 3.3 `git diff` でフルモード本文（Step 1〜Step 8）に意図しない差分がないことを確認する
-- [ ] 3.4 `plugins/lr/commands/p.md` から `--mode=mvp` 透過転送の説明・使用例を削除し、MVP は `/lr:m` を使う旨に更新する。`plugins/longrun/commands/plan.md` も同様に確認・更新する
+- [ ] 3.4 `plugins/lr/commands/p.md` から `--mode=mvp` 透過転送の説明・使用例を削除し、MVP は `/lr:m` を使う旨に更新する。`plugins/longrun/commands/plan.md` も同様に確認・更新する。なお引数透過（`$ARGUMENTS` の forward）自体は維持し、`--mode=mvp` の「使い方」記述のみ削除する（透過まで消すと旧フラグが skill に届かず移行案内が出なくなる）
 
 ## 4. 帰属整理（agent 3 種・テンプレート）
 

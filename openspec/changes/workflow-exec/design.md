@@ -13,7 +13,7 @@ Claude Code の Workflow ツールは `agent()` / `pipeline()` / `parallel()` �
 - workflow のネストは 1 段まで。meta はピュアリテラル
 - workflow 内 agent から AskUserQuestion 不可
 - 既存 agent 定義 7 種の .md は書き直さない（agentType 参照で再利用）
-- marketplace 版のみを編集。version 同期は 3 箇所 × 2 プラグイン（longrun / lr）
+- marketplace 版のみを編集。version 同期は plugin.json + marketplace.json plugins[] の 2 箇所 × 2 プラグイン（longrun / lr）。marketplace top-level version の bump 要否は別途判断
 
 ## Goals / Non-Goals
 
@@ -107,7 +107,7 @@ Workflow ツールのシグネチャ・制約は学習知識で書かず、最�
 1. change-1（openspec-degradation）マージ後の main から worktree を切る（Draft PR 運用）
 2. 最初のタスク: Workflow 実機検証 → workflow-tool-reference.md 固定
 3. schema 新設 → スクリプトテンプレート → exec.md 書き換え → 削除系 → version bump の順で実装（各節目でコミット）
-4. ロールバック: PR 未マージならクローズで戻せる。マージ後に問題が出た場合は longrun 5.3.0 / lr 5.1.1 タグ時点の plugin を再インストール（checkpoint.md は人間向けに書き続けているため旧版でも run ディレクトリは読める）
+4. ロールバック: PR 未マージならクローズで戻せる。マージ後に問題が出た場合は本 change 直前の version（longrun は着手時点の起点 version、lr は 5.1.1）タグ時点の plugin を再インストール（checkpoint.md は人間向けに書き続けているため旧版でも run ディレクトリは読める）
 
 ## Open Questions
 

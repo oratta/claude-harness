@@ -10,8 +10,8 @@ exec 起動直後（Step 0）に OpenSpec の前提条件（`npx openspec` 解�
 
 #### Scenario: 前提条件を満たす repo では従来どおり起動する
 
-- **WHEN** `npx openspec` が解決可能で `openspec/` が存在する repo でユーザーが `/lr:e` を実行する
-- **THEN** 縮退モードの提案は表示されず、従来どおり通常モード（OpenSpec あり）で Setup フェーズが開始され、checkpoint.md に前提条件チェックの実行結果（コマンド出力）が記録される
+- **WHEN** `npx openspec` が解決可能で `openspec/` が存在する repo でユーザーが `/lr:e` を実行し、Step 0 の動作モード確認（通常モードがデフォルト・縮退選択肢を常時含む AskUserQuestion）で通常モードを選択する
+- **THEN** 従来どおり通常モード（OpenSpec あり）で Setup フェーズが開始され、checkpoint.md に前提条件チェックの実行結果（コマンド出力）が記録される
 
 #### Scenario: npx openspec が解決できない環境で縮退モードを提案する
 
@@ -25,7 +25,7 @@ exec 起動直後（Step 0）に OpenSpec の前提条件（`npx openspec` 解�
 
 ### Requirement: ユーザーの選択で run の動作モードが確定する
 
-縮退モード提案に対するユーザーの回答に従って run の動作モードを確定し、縮退モードを選択した場合はランディレクトリに縮退マーカー（`_longruns/<run>/.degraded-mode`）を作成しなければならない（SHALL）。ユーザーが中断を選択した場合は run を開始せず、OpenSpec のセットアップ手順を案内して終了する（SHALL）。ユーザーが OpenSpec 不要と明示した場合（前提条件を満たす環境であっても）、縮退モードでの実行を許可する（SHALL）。
+Step 0 の AskUserQuestion に対するユーザーの回答に従って run の動作モードを確定し、縮退モードを選択した場合はランディレクトリに縮退マーカー（`_longruns/<run>/.degraded-mode`）を作成しなければならない（SHALL）。ユーザーが中断を選択した場合は run を開始せず、OpenSpec のセットアップ手順を案内して終了する（SHALL）。「OpenSpec 不要」の明示的 opt-out の入力手段として、preflight が OK の場合も Step 0 の動作モード確認 AskUserQuestion に縮退モードの選択肢を常時含めなければならない（SHALL。デフォルト選択肢は通常モード、専用の引数は追加しない）。
 
 #### Scenario: 縮退モードを承諾すると縮退 run が開始される
 
@@ -39,14 +39,14 @@ exec 起動直後（Step 0）に OpenSpec の前提条件（`npx openspec` 解�
 
 #### Scenario: ユーザーが OpenSpec 不要と明示して縮退モードで実行する
 
-- **WHEN** 前提条件を満たす repo でユーザーが OpenSpec 不要の意思を明示して `/lr:e` を実行する（例: 縮退モード指定の引数を渡す）
+- **WHEN** 前提条件を満たす repo（preflight 結果 `OK`）でユーザーが `/lr:e` を実行し、Step 0 の動作モード確認 AskUserQuestion で「縮退モード（OpenSpec を使わない）」を選択する
 - **THEN** 縮退マーカーが作成され、縮退モードで run が開始される
 
 ### Requirement: 既存の openspec あり repo の従来挙動は変わらない
 
-前提条件を満たす repo（既存の openspec/ あり repo）において、Step 0 チェックの追加によって従来の実行フロー・成果物のパス・成果物の形式が一切変化してはならない（MUST NOT）。また `/longrun:status` には縮退分岐を実装しない（change-2 で廃止されるため）（SHALL NOT）。
+前提条件を満たす repo（既存の openspec/ あり repo）において、Step 0 で通常モードを選択した後の実行フロー・成果物のパス・成果物の形式は従来から一切変化してはならない（MUST NOT）。Step 0 で追加されるユーザー対話は動作モード確認の 1 問のみとする（SHALL）。また `/longrun:status` には縮退分岐を実装しない（change-2 で廃止されるため）（SHALL NOT）。
 
 #### Scenario: 通常モードの run は従来と同一の成果物を生成する
 
-- **WHEN** openspec init 済みの repo でユーザーが `/lr:e` を実行して run を完走させる
+- **WHEN** openspec init 済みの repo でユーザーが `/lr:e` を実行し、Step 0 で通常モードを選択して run を完走させる
 - **THEN** OpenSpec change（`openspec/changes/<name>/`）・checkpoint.md・verification-guide.md が従来バージョン（5.2.0）と同一のパス・形式で生成され、縮退マーカーは作成されない

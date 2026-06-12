@@ -6,7 +6,7 @@
 
 ## What Changes
 
-- **BREAKING** `/longrun:exec` を「plan.md を読んだ後、Workflow スクリプトを生成・起動する」形に全面書き換え（longrun 5.3.0 → 6.0.0）。`meta.phases` で Review → Build → Verify を表現し、既存 agent 定義 7 種は `agentType: 'longrun:longrun-builder'` 等の参照でそのまま再利用する（agent .md の書き直しはしない）
+- **BREAKING** `/longrun:exec` を「plan.md を読んだ後、Workflow スクリプトを生成・起動する」形に全面書き換え（longrun は着手時点の現行 version を起点に 6.0.0 へ bump。change-1 マージ済みなら 5.3.0 起点、未マージなら現行値起点で最終的に 6.0.0 に揃える）。`meta.phases` で Review → Build → Verify を表現し、既存 agent 定義 7 種は `agentType: 'longrun:longrun-builder'` 等の参照でそのまま再利用する（agent .md の書き直しはしない）
 - **BREAKING** `/longrun:status` `/longrun:decisions` `/lr:s` `/lr:d` を削除（lr 5.1.1 → 6.0.0）。進捗確認はネイティブの `/workflows` ライブビューで代替する。削除対象: `plugins/longrun/commands/{status,decisions}.md`、`plugins/lr/commands/{s,d}.md`、`plugins/lr/.claude-plugin/plugin.json` の commands[] と description、`.claude-plugin/marketplace.json` の lr / longrun description 文字列、longrun 側 plugin.json / README、`exec.md` 末尾の「実行中の進捗確認」セクション
 - **BREAKING** `longrun-orchestrator` スキルを解体。Workflow スクリプト生成ロジックは exec コマンド + 同梱スクリプトテンプレートへ移管する。backlog の Skill 命名規則リファクタリング（-or 終わり廃止）の orchestrator 分をこれで消化する
 - サブエージェント成果物の構造化: `agent(prompt, {schema})` で builder 完了レポート / verifier 4 軸スコア / reviewer 判定を JSON Schema で機構的に強制。schema は `plugins/longrun/schemas/*.schema.json` に外部化
@@ -24,7 +24,7 @@
 ### New Capabilities
 - `workflow-exec`: exec コマンドによる Workflow スクリプトの生成・起動。フェーズ構成、JSON Schema による成果物強制、権限モード検査、承認ゲートでの workflow 分割、builder agentType パラメータ化、起動 opt-in を含む
 - `workflow-run-control`: 実行制御。Verify ループの上限 3 周 + budget ガードによる暴走防止、`resumeFromRunId` による中断再開、runId の記録、checkpoint.md の人間向け監査ログへの格下げ
-- `legacy-command-removal`: `/longrun:status` `/longrun:decisions` `/lr:s` `/lr:d` の削除と全残存参照の排除、`longrun-orchestrator` スキルの解体、バージョン 3 箇所同期（longrun / lr 両プラグイン）
+- `legacy-command-removal`: `/longrun:status` `/longrun:decisions` `/lr:s` `/lr:d` の削除と全残存参照の排除、`longrun-orchestrator` スキルの解体、バージョン同期（longrun / lr 両プラグインの plugin.json と marketplace.json plugins[] の 2 箇所）
 - `workflow-tool-reference`: Workflow ツールの実機検証結果のエビデンス付き固定と、それを一次ソースとする実装規律
 
 ### Modified Capabilities
@@ -37,6 +37,6 @@
 - **削除**: `plugins/longrun/commands/status.md`、`plugins/longrun/commands/decisions.md`、`plugins/lr/commands/s.md`、`plugins/lr/commands/d.md`、`plugins/longrun/skills/longrun-orchestrator/`（解体）
 - **新設**: `plugins/longrun/schemas/builder-report.schema.json` / `verifier-score.schema.json` / `reviewer-verdict.schema.json`、Workflow スクリプトテンプレート（`plugins/longrun/templates/` 配下）、`plugins/longrun/tests/`（bats 新設）
 - **修正**: `plugins/longrun/.claude-plugin/plugin.json`（skills[] / commands[] / description / version）、`plugins/lr/.claude-plugin/plugin.json`（commands[] / description / version）、`.claude-plugin/marketplace.json`（lr / longrun の description・version）、`plugins/longrun/README.md`
-- **バージョン**: longrun 5.3.0 → 6.0.0、lr 5.1.1 → 6.0.0（いずれも BREAKING。3 箇所同期: plugin.json / marketplace.json top-level / marketplace.json plugins[]）
+- **バージョン**: longrun は着手時点の現行 version（change-1 マージ済みなら 5.3.0、未マージなら 5.2.0）→ 6.0.0、lr 5.1.1 → 6.0.0（いずれも BREAKING）。各プラグインは plugin.json と marketplace.json plugins[] の 2 箇所を同期する。marketplace.json の top-level version はマーケットプレイス全体のものであり、bump 要否は別途判断
 - **互換性**: 旧 checkpoint.md 形式の互換読み取りは提供しない（`/lr:s` `/lr:d` 自体が廃止されるため不要）。既存 agent 定義 7 種（`plugins/longrun/agents/*.md`）は無変更
 - **依存**: change-1（openspec-degradation）完了後に着手（縮退モードの Step 0 分岐を前提に exec を設計するため）
