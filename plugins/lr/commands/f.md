@@ -12,9 +12,10 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Task
 
 ```bash
 for dir in \
+  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/../longrun/commands}" \
   ~/.claude/plugins/marketplaces/*/plugins/longrun/commands \
   ~/.claude/plugins/installed/*/longrun/commands; do
-  [ -f "$dir/feedback.md" ] && echo "$dir/feedback.md" && break
+  [ -n "$dir" ] && [ -f "$dir/feedback.md" ] && echo "$dir/feedback.md" && break
 done
 ```
 
