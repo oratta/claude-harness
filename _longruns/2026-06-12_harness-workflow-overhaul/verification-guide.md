@@ -142,8 +142,8 @@
 - WHEN: 最小 fixture plan（1 change / 1 タスク）を対象に /longrun:exec を実行する
 - THEN: 生成 workflow スクリプトが構文検証と schema 検証を通り、Review → Build → Verify が 1 周完走して runId が `_longruns/<run>/` 内に記録され、builder が完走エビデンスをログに残す
 - [x] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] ロジック実装完了
+- [x] 動作確認完了（orchestrator 実走 2026-06-12: review=wf_b0263fa2-2fe APPROVE / build-verify=wf_a36f47ee-baf 1周PASS、builder commit 95b6e23。reference §11 参照）
 - [ ] ユーザー確認完了
 
 ### S5: [workflow-exec] 生成スクリプトが Workflow ツールの制約を遵守する
@@ -246,8 +246,8 @@
 - WHEN: 実行を中断した後、記録済み runId を使って resumeFromRunId で再開する
 - THEN: 完了済み change の builder agent は再実行されず、未完了のステップから実行が継続される
 - [x] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] ロジック実装完了
+- [x] 動作確認完了（orchestrator 実走 2026-06-12: resumeFromRunId=wf_a36f47ee-baf → 3ms / subagent_tokens 0 / tool_uses 0 で同一結果。builder 再実行なし。reference §11 参照）
 - [ ] ユーザー確認完了
 
 ### S18: [workflow-run-control] runId がランディレクトリに記録される

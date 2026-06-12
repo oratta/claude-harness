@@ -122,7 +122,21 @@ Workflow({ scriptPath: "<永続化されたスクリプトパス>", resumeFromRu
 ## 10. change-2 実装後メモ（builder による静的実装）
 
 - change-2 のテンプレート実装は本 reference §1〜§9 の確定事項のみを使用した（記憶・推測でのシグネチャ追加なし）。具体的には: `agent(prompt, {label, phase, agentType, schema})`（§3）、`pipeline`/`parallel` は未使用（Build は逐次 for ループ）、`budget.total && budget.remaining()` の null ガード（§6）、`args.timestamp` 注入（§6・§7）、meta ピュアリテラル（§2）、ネスト 1 段（§7）、`resumeFromRunId` + runId 記録（§5）。
-- **未実機のまま残る確認項目（orchestrator の実走で確定すること）**:
-  1. **`agentType: 'longrun:longrun-builder'` 等が生成 workflow 内で正しく解決されるか**（§3 で未実機）。最小 fixture plan（`plugins/longrun/tests/fixtures/minimal-plan/plan.md`）で `review.workflow.js` → `build-verify.workflow.js` を実走し、agentType 解決・schema 強制・runId 記録・Verify 1 周完走を観測して本節に追記する。
-  2. `opts.schema` にインライン JS オブジェクト（外部 schema を `JSON.parse` したもの）を渡したときの StructuredOutput 強制挙動（§3 の schema は別オブジェクトで検証済みだが、本実装の埋め込み形での実走は未確認）。
+- ~~未実機のまま残る確認項目~~ → **全て実走確認済み（2026-06-12、下記 §11）**
+
+## 11. 実走確認結果（orchestrator による最小 fixture 実走、2026-06-12）
+
+テンプレート実体化（プレースホルダ手動充填）で review → build-verify を実走し、未実機項目を全て確定した。
+
+| 項目 | 結果 | エビデンス |
+|------|------|-----------|
+| `agentType: 'longrun:longrun-reviewer'` の解決 | **OK** | review workflow（runId `wf_b0263fa2-2fe`、23s）が APPROVE + findings(NOTE 2件) の型付き JSON を返却 |
+| `agentType: 'longrun:longrun-builder'` の解決 | **OK** | build-verify workflow（runId `wf_a36f47ee-baf`）で builder が /tmp/fixture-hello に hello.sh + tests/hello.bats を TDD 実装、commit `95b6e23`、bats 1/1 PASS |
+| `agentType: 'longrun:longrun-verifier'` の解決 | **OK** | verifier が 4 軸スコア {functionality:100, quality:100, completeness:90, ux:80, verdict:"PASS"} を schema どおり返却 |
+| インライン展開した外部 schema での StructuredOutput 強制 | **OK** | reviewer-verdict / builder-report / verifier-score の 3 schema とも required キー完備・enum 遵守のオブジェクトを受領 |
+| Verify ループの機構判定 | **OK** | round 1 で verdict=PASS → `stopReason: 'PASS'` で break。`verify.rounds: 1, maxRounds: 3, passed: true` |
+| resume（受け入れ条件 10 / S17） | **OK** | 同 scriptPath + `resumeFromRunId: wf_a36f47ee-baf` で再実行 → **3ms / subagent_tokens 0 / tool_uses 0**、builds[].report 完全一致 = builder 再実行なし |
+
+- 残る未実機: `isolation: 'worktree'`（本テンプレートでは未使用のため不要）、`pipeline`/`parallel` のテンプレート内使用（Build は逐次 for ループ採用のため不要）
+- fixture サンドボックス: `/tmp/longrun-fixture-run/`（plan.md）+ `/tmp/fixture-hello/`（git repo、builder 成果物 commit 95b6e23）
 - 生成テンプレートの静的検証（禁止 API 不使用・meta ピュアリテラル・Verify 上限 3・schema インライン・ネスト 1 段・`node --check`）は `plugins/longrun/tests/workflow-template.bats`（20 本）で機械化済み。schema 不適合の拒否は `plugins/longrun/tests/schema-rejection.bats`（11 本）で機械化済み。
