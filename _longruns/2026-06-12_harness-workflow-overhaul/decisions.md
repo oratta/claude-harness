@@ -178,3 +178,32 @@
 - **決定**: B（2.7.0）。
 - **理由**: longrun・lr とも v6.0.0 BREAKING を含む新リリースであり、過去に「3 箇所同期漏れ事故」（PR #5）があった運用方針に沿って top-level も上げる方が一貫する。既存 bats（`> 2.5.1` を要求）も満たす。可逆（PR 未マージならクローズで戻せる）。
 - **エビデンス**: `release-and-readme.bats`「marketplace top-level bumped above 2.5.1」PASS。jq 構文 OK。
+
+## change-3: mvp-plan-split
+
+### D-3-1: Gap Analysis / Interview 方法論は references に切り出し、longrun-plan 本文は温存
+
+- **日時**: 2026-06-12
+- **コンテキスト**: design.md Open Questions「方法論の切り出し vs 複製」の実装時判断。spec は option (a) 共有reference / (b) インライン複製 + divergence防止コメント の両方を許容。task 3.3 は「git diff でフルモード Step 1〜8 に差分なし」を要求。
+- **選択肢**:
+  - A: `plugins/longrun/references/plan-interview-methodology.md` を新設、両スキルから Read
+  - B: 新 SKILL.md にインライン複製 + divergence 防止コメント
+  - C: 純 option (a)（longrun-plan の Step 3/4 も reference 参照に置換）
+- **決定**: A をベースに、longrun-plan 本文は温存（reference は新スキルのみが Read）。C は不採用。
+- **理由**: reference 切り出しの方が将来の single-source 化に繋がる。C は task 3.3 のフルモード本文 no-diff ガードと衝突するため却下（config 制約「移動と分離のみ・フルモード挙動不変」を最優先）。reference 冒頭に divergence 防止コメント（longrun-plan Step 3/4 と同期せよ）を置く。新スキルは references を Read するのみで `skills/longrun-plan/SKILL.md` を実行時 Read しない（S25 充足）。
+- **可逆性**: reference ファイルは追加のみ。longrun-plan 側無変更なので regression 面で安全。
+
+### D-3-2: /lr:m は p.md と同じ Skill tool 直接委譲パターン（Read 経由にしない）
+
+- **日時**: 2026-06-12
+- **コンテキスト**: lr プラグインの短縮コマンドは 2 系統ある。p.md/f.md は Skill tool 直接委譲、e.md/a.md は commands/*.md を Read してインライン実行。
+- **決定**: m.md は p.md と同じ Skill tool 直接委譲（`longrun:longrun-mvp-plan` を $ARGUMENTS 付きで起動、Agent tool 禁止明記）。
+- **理由**: tasks 2.3 が「既存 p.md と同じ Skill tool 委譲パターン」を明示。mvp は Skill であり、Skill tool で直接呼べる（e/a はコマンド= Skill tool で呼べないため Read 経由だった）。
+- **可逆性**: 新規ファイル追加のみ。
+
+### D-3-3: marketplace top-level は 2.7.0 → 2.8.0 に bump
+
+- **日時**: 2026-06-12
+- **コンテキスト**: spec「Marketplace top-level bump」は本 change 適用前の値より厳密に大きいことを要求。change-2 が 2.7.0 まで上げている。
+- **決定**: 2.8.0 に bump。
+- **理由**: longrun/lr とも 6.1.0 の新リリースを含むため top-level も上げる（過去の同期漏れ事故対策の運用方針に沿う）。可逆。

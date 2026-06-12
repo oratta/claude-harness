@@ -319,336 +319,336 @@
 ### S1: [longrun-mvp-plan-skill] Skill directory and frontmatter
 - WHEN: `plugins/longrun/skills/longrun-mvp-plan/SKILL.md` を開く
 - THEN: `name: longrun-mvp-plan`・非空 description・version・allowed-tools（Read / Write / Grep / AskUserQuestion / Agent dispatch 能力を最低限含む）を持つ有効な YAML frontmatter でファイルが存在する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S2: [longrun-mvp-plan-skill] plugin.json registration
 - WHEN: `plugins/longrun/.claude-plugin/plugin.json` の skills 配列を読む
 - THEN: 既存エントリに加えて `./skills/longrun-mvp-plan` が含まれている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S3: [longrun-mvp-plan-skill] Noun-form naming is respected
 - WHEN: スキル名を longrun 命名規則と照合する
 - THEN: `longrun-mvp-plan` は -er / -or で終わらず、`longrun-mvp-planner` という名前のファイルは skills/ 配下に存在しない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S4: [longrun-mvp-plan-skill] Command file content
 - WHEN: `plugins/longrun/commands/mvp.md` を開く
 - THEN: Skill ツールで `longrun:longrun-mvp-plan` を $ARGUMENTS 付きで起動する旨と、Agent ツールを使わない旨が明記されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S5: [longrun-mvp-plan-skill] Command registration
 - WHEN: `plugins/longrun/.claude-plugin/plugin.json` の commands 配列を読む
 - THEN: `./commands/mvp.md` が含まれている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S6: [longrun-mvp-plan-skill] No Agent-tool misfire
 - WHEN: ユーザーが `/longrun:mvp <任意の引数>` を実行する
 - THEN: Skill ツール経由で longrun-mvp-plan スキルが開始され、`Agent type 'longrun:longrun-mvp-plan' not found` エラーが発生しない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S7: [longrun-mvp-plan-skill] Shortcut file content
 - WHEN: `plugins/lr/commands/m.md` を開く
 - THEN: Skill ツールで `longrun:longrun-mvp-plan` に $ARGUMENTS を転送して委譲する旨と、Agent ツールを使わない旨が記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S8: [longrun-mvp-plan-skill] Shortcut registration
 - WHEN: `plugins/lr/.claude-plugin/plugin.json` の commands 配列を読む
 - THEN: `./commands/m.md` が含まれている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S9: [longrun-mvp-plan-skill] Flow completion produces an MVP plan
 - WHEN: `/longrun:mvp <brain dump>`（または /lr:m）を実行し、インタビューとレビューのステップを完了する
 - THEN: `templates/plan-template-mvp.md` に従う `_longruns/YYYY-MM-DD_slug/plan.md` が生成され、旧 `--mode=mvp` フローの成果物と同一形式である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S10: [longrun-mvp-plan-skill] Full-mode-only steps are absent
 - WHEN: `plugins/longrun/skills/longrun-mvp-plan/SKILL.md` を走査する
 - THEN: openspec/backlog.md の読み込み・既存 OpenSpec changes の照合・longrun-reviewer Agent の起動・フルテンプレート plan-template.md の読み込み指示が本文に存在しない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S11: [longrun-mvp-plan-skill] Orchestration stays Agent-parallel
 - WHEN: スキル本文のオーケストレーション指示を走査する
 - THEN: サブエージェント起動は Agent ツール（並列は単一メッセージ内複数 tool_use）で指定され、Workflow ツール使用の指示は現れない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S12: [longrun-mvp-plan-skill] Research step names the agent
 - WHEN: SKILL.md のリサーチステップを読む
 - THEN: リテラル文字列 `longrun-mvp-research` が Agent ツール起動のターゲットとして現れる
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S13: [longrun-mvp-plan-skill] Prompt template demands dual sections and Search Audit
 - WHEN: リサーチステップ内のプロンプトテンプレートを読む
 - THEN: 1 レポートに `## 類似サービス事例` と `## 実装パターン` の両方を含め、末尾に `## Search Audit`（クエリ数付き）を付ける指示がある
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S14: [longrun-mvp-plan-skill] Both reviewers named
 - WHEN: レビューステップを読む
 - THEN: `longrun-mvp-plan-reviewer` と `longrun-mvp-bestpractice-reviewer` の両リテラルが、それぞれ Agent ツール起動のターゲットとして現れる
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S15: [longrun-mvp-plan-skill] Parallel invocation is explicit
 - WHEN: レビューステップの周辺文章を読む
 - THEN: 2 つの Agent ツール呼び出しを 1 つの assistant メッセージ内（複数 tool_use）で発行することが必須とされ、片方を待ってから他方を呼ぶ指示が無い
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S16: [longrun-mvp-plan-skill] Marker is the first content
 - WHEN: スキルが `_longruns/<dir>/plan.md` を生成する
 - THEN: ファイル先頭（最初の見出しより前）にリテラル HTML コメント `<!-- mvp-mode -->` が含まれる
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S17: [longrun-mvp-plan-skill] Archive compatibility is preserved
 - WHEN: longrun-mvp-plan が生成した plan.md を持つディレクトリに /longrun:archive を実行する
 - THEN: 既存のマーカー検出が MVP 分岐（OpenSpec change アーカイブをスキップしランディレクトリのみアーカイブ）を発動し、archive 側の改修は不要のまま動作する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S18: [longrun-mvp-plan-skill] Checklist is explicit
 - WHEN: Validation ステップを読む
 - THEN: 7 必須セクション名（ゴール / 技術要件 / スコープ / 受け入れ条件 / 動作確認方法 / 調査結果サマリ / レビュー結果サマリ）が 1 項目ずつのチェックリストとして現れ、マーカー存在チェックも含まれる
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S19: [longrun-mvp-plan-skill] Missing section blocks save
 - WHEN: Validation で 7 セクションのいずれかの欠落が見つかる
 - THEN: 保存前に plan.md を修復する指示（GATE セマンティクス）が適用され、欠落したままの保存は行われない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S20: [longrun-mvp-plan-skill] No backlog or change writes
 - WHEN: ハンドオフステップを読む
 - THEN: openspec/backlog.md の編集や OpenSpec change 作成ツールの起動を指示する記述が本文に存在しない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S21: [longrun-mvp-plan-skill] Handoff message present
 - WHEN: ユーザー確認後にフローがハンドオフステップに到達する
 - THEN: 保存済み plan.md のパスを名指しし、人間実装パスを案内するハンドオフメッセージが出力される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S22: [longrun-mvp-plan-skill] Agent prose references the new owner
 - WHEN: 3 つの MVP agent .md ファイルを `--mode=mvp` で grep する
 - THEN: ヒットが 0 件で、各 agent の呼び出し元記述が longrun-mvp-plan スキル / /longrun:mvp コマンドを参照している
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S23: [longrun-mvp-plan-skill] Template structure is intact
 - WHEN: `plugins/longrun/templates/plan-template-mvp.md` を開く
 - THEN: 先頭 `<!-- mvp-mode -->`・divergence 防止コメント（plan-template.md 参照）・8 つの H2 セクションが維持され、生成情報の mode 表記のみ `/longrun:mvp` に変わっている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S24: [longrun-mvp-plan-skill] Agent contracts are unchanged
 - WHEN: 3 つの MVP agent .md を変更前後で diff する
 - THEN: 呼び出し元帰属の文章（description / 呼び出し元）のみが差分で、出力契約（レポートセクション・Search Audit・APPROVE/REQUEST_CHANGES 形式・検索上限）はテキストとして不変である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S25: [longrun-mvp-plan-skill] No cross-skill SKILL.md read
 - WHEN: `plugins/longrun/skills/longrun-mvp-plan/SKILL.md` の Read 指示を走査する
 - THEN: `skills/longrun-plan/SKILL.md` を読む指示が存在しない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S26: [longrun-mvp-plan-skill] Shared reference or guarded duplication
 - WHEN: Gap Analysis / Interview 方法論の提供方法を実装で検査する
 - THEN: 両スキルが Read する plugins/longrun/ 配下の共有リファレンスが存在するか、またはインラインコピーそれぞれに対応ファイルを名指しした divergence 防止コメントが含まれる
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S27: [longrun-mvp-plan-skill] longrun version sync
 - WHEN: `plugins/longrun/.claude-plugin/plugin.json` と marketplace.json plugins[] の longrun エントリを比較する
 - THEN: 両者が 6.1.0 で、longrun-plan / longrun-mvp-plan の SKILL.md frontmatter version も 6.1.0 である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S28: [longrun-mvp-plan-skill] lr version sync
 - WHEN: `plugins/lr/.claude-plugin/plugin.json` と marketplace.json plugins[] の lr エントリを比較する
 - THEN: 両者が 6.1.0 で一致している
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S29: [longrun-mvp-plan-skill] Marketplace top-level bump
 - WHEN: `.claude-plugin/marketplace.json` の top-level version を読む
 - THEN: 本 change 適用前の値より厳密に大きい
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S30: [longrun-mvp-research] Standard research invocation produces unified report
 - WHEN: longrun-mvp-plan SKILL がトピック（例: 1時間で作る料理レシピ提案ツール）で agent を起動する
 - THEN: 同一の検索セッションから抽出した内容で `## 類似サービス事例` と `## 実装パターン` の両見出しを含む単一レポートが出力される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S31: [longrun-mvp-research] Section is missing
 - WHEN: 2 つの観点のいずれかで有用な結果が見つからない
 - THEN: 該当セクションは省略されず、「該当なし」等を明示した上でレポートに必ず存在する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S32: [longrun-mvp-plan-reviewer] Plan with vague acceptance criteria
 - WHEN: v0 plan の受け入れ条件が「良い感じに動く」のような計測不能な記述を含む
 - THEN: 検証不能な条件を 1 件以上具体的に指摘し、具体的な書き換え案付きの REQUEST_CHANGES を出力する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S33: [longrun-mvp-plan-reviewer] Plan that explicitly mentions "1 hour" budget
 - WHEN: 入力 plan が 1 時間の実装予算に言及している
 - THEN: 「1 時間」をハードコード閾値として扱わず、列挙された項目（Changes / ファイル / 受け入れ条件数）に基づいてスコープを評価する（他の時間予算でも再利用可能）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S34: [longrun-mvp-plan-reviewer] Plan with internal contradiction
 - WHEN: 同じ機能が「含むもの」「含まないもの」の両方に現れる、または受け入れ条件が除外スコープを参照している
 - THEN: その矛盾が出力で明示的に指摘される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S35: [longrun-plan-skill] Old flag shows migration notice
 - WHEN: ユーザーが `/longrun:plan --mode=mvp <args>` を実行する
 - THEN: /longrun:mvp（と /lr:m）を新エントリポイントとして名指しした移行案内が出力され、Step 1〜8 は実行されず plan.md も生成されない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S36: [longrun-plan-skill] Old flag via shortcut shows the same notice
 - WHEN: ユーザーが `/lr:p --mode=mvp <args>` を実行する（引数はスキルに透過転送）
 - THEN: 同じ移行案内が表示され、plan.md を生成せずにフローが終了する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S37: [longrun-plan-skill] Full mode is unaffected
 - WHEN: ユーザーが `/longrun:plan` を --mode フラグなし、または --mode=full で実行する
 - THEN: 既存のフルモード Step 1〜8（plan-template.md 読み込み・Step 7 の longrun-reviewer Agent 起動を含む）が従来どおり実行される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S38: [longrun-plan-skill] MVP-mode section is removed from the skill body
 - WHEN: `plugins/longrun/skills/longrun-plan/SKILL.md` を MVP モードのステップ定義（MVP Step 4.5 / longrun-mvp-plan-reviewer 等）で grep する
 - THEN: ヒットが 0 件で、移行案内の処理のみが MVP に言及してよい
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S39: [longrun-plan-skill] MVP section is present
 - WHEN: `plugins/longrun/README.md` を走査する
 - THEN: MVP plan スキルを名指しし、リテラル `/longrun:mvp` を含むセクションが存在する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S40: [longrun-plan-skill] Differences from full mode are described
 - WHEN: README の MVP セクションを読む
 - THEN: Build Contract レビュー / TDD 強制 / Verifier 自動起動のスキップ、archive 時の OpenSpec change アーカイブのスキップという差分が最低限記述されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S41: [longrun-plan-skill] Deprecation of the old flag is documented
 - WHEN: README の MVP セクションを読む
 - THEN: --mode=mvp が deprecated であり、`/longrun:plan --mode=mvp` が MVP フローではなく /longrun:mvp への移行案内を出すことが記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S42: [longrun-plan-skill] Use-case guidance is generic
 - WHEN: README の MVP セクションを読む
 - THEN: MVP plan スキルが短時間・人間実装の MVP シナリオ向けの汎用機能であり、特定プロジェクトに紐づかないことが記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
