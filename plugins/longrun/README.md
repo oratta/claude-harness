@@ -41,7 +41,7 @@ Claude Code 自律実行システム。Anthropic の [Harness Design for Long-Ru
 
 - **Skill 命名統一**: `longrun-planner` → `longrun-plan` にリネーム（命名規則 §参照）。`/longrun:plan` 経由で Agent 誤起動が発生するエラー（`Agent type 'longrun:longrun-planner' not found`）を解消。
 - `commands/plan.md` を Skill tool 明示呼び出しに変更（Agent tool 禁止を明記）
-- `longrun-orchestrator` の Build Contract レビュー段階に **バイアス緩和ガード** を追加。reviewer の指摘を仮説として扱い、根拠（spec違反・契約違反・事実誤認）の有無で採否を判定するルールを固定文として埋め込み。Opus 系の self-preference bias と過剰受容バイアスへの対処。
+- 当時の `longrun-orchestrator` の Build Contract レビュー段階に **バイアス緩和ガード** を追加。reviewer の指摘を仮説として扱い、根拠（spec違反・契約違反・事実誤認）の有無で採否を判定するルールを固定文として埋め込み。Opus 系の self-preference bias と過剰受容バイアスへの対処。（orchestrator は v6.0 で解体され、このガードは exec が生成する Review workflow と Build Contract 承認ゲートの手順に引き継がれた。）
 
 ## v5.0 変更点
 
@@ -181,7 +181,7 @@ _longruns/<run>/
 
 ### 既知の制限
 
-- **`/longrun:status` は縮退モードに非対応**。status コマンドへの縮退分岐は実装していない（status は change-2 で廃止予定のため、捨てるコードへの投資をしない方針）。縮退 run 中に `/longrun:status` を叩いた場合の表示は劣化する可能性がある（5.3.0 の既知の制限）。
+- ~~`/longrun:status` は縮退モードに非対応~~ → **v6.0.0 で `/longrun:status` 自体が削除されたため本制限は消滅**。縮退 run を含め進捗確認はネイティブの `/workflows` ライブビューで行う（5.3.0 時点では status に縮退分岐を実装していなかったが、change-2 で status を廃止したため投資不要だった判断が結実した）。
 - 縮退モードでは `openspec validate` による構造検証が効かない。tasks のチェックボックス形式・spec の WHEN/THEN 形式はテンプレートで担保し、形式逸脱は Verify フェーズのレビューで補完する。
 - 縮退 run から OpenSpec あり構成への「昇格」変換は未実装（backlog 残置）。
 
