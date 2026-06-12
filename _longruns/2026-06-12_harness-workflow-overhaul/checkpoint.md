@@ -1,7 +1,7 @@
 ---
-phase: Build Contract
-status: complete
-last_updated: 2026-06-12T11:20:00
+phase: Build
+status: in_progress
+last_updated: 2026-06-12T13:45:00
 ---
 
 # Checkpoint — harness 大型改修 run
@@ -53,6 +53,10 @@ longrun-dir: `_longruns/2026-06-12_harness-workflow-overhaul/`
 - [x] Setup: ツール検証・ベースライン・checkpoint/decisions 初期化
 - [x] Build Contract: APPROVED by longrun-reviewer（1ラウンド、SHOULD_FIX 2 + NOTE 1 を plan.md に反映済み。decisions.md D-BC1 参照）
 - [ ] Build: change-1〜4 直列（claude-harness）+ change-5 並行（marketing-harness）
+  - [x] Build前半: 全 5 change の OpenSpec ドキュメント作成（validate --strict PASS）
+  - [x] Spec Review: ラウンド1（3 APPROVE / 2 REQUEST_CHANGES）→ 修正 → ラウンド2（change-1/2 APPROVE）。全件 APPROVE（D-B2, D-B3）
+  - [ ] verification-guide.md 生成
+  - [ ] Build後半: TDD 実装（longrun-builder）
 - [ ] Verify: 静的検証 + 動作検証
 - [ ] Feedback: ユーザー確認
 - [ ] Integration: マルチリポジトリ統合（options.integrate: true）
