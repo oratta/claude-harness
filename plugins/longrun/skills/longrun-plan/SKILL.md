@@ -35,7 +35,7 @@ plan.md は単なる「やりたいことリスト」ではない。自律実行
 
 ```
 plan.md（このスキルの出力）
-  ↓ longrun-orchestrator が読み込む
+  ↓ /longrun:exec が読み込んで Workflow スクリプトを生成・起動する
 Build Contract: longrun-reviewer が実装計画をレビュー
   ↓ 承認後
 Build: longrun-builder が TDD 実装
@@ -86,9 +86,9 @@ Brain Dumpの分析、ユーザーとの対話、plan.mdの生成、いずれも
 1. `templates/plan-template.md`（パス: 同プラグイン内の `templates/plan-template.md`）
    - **これが plan.md の必須セクション構造を定義する**
    - 全セクション名を抽出し、生成時のチェックリストとして保持する
-2. `longrun-orchestrator` エージェント定義を読み込む（パス: 同プラグイン内の `agents/longrun-orchestrator.md`）
-   - Plan → Build → Verify → Feedback → Archive の流れを把握
-   - 特に Build フェーズが plan.md をどう消費するかを理解
+2. `commands/exec.md` を読み込む（パス: 同プラグイン内の `commands/exec.md`）
+   - Review → Build → Verify → Feedback → Archive の流れ（Workflow スクリプト生成・起動）を把握
+   - 特に Build フェーズが plan.md の Changes 分解をどう消費するかを理解
 
 **Step 1の完了条件**: テンプレートから以下の必須セクションを抽出できていること:
 - ゴール

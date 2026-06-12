@@ -1,0 +1,6 @@
+{
+  "status": "SUCCESS",
+  "change": "fixture-hello",
+  "commits": ["a1b2c3d"],
+  "tasks": { "completed": 1, "total": 1 }
+}

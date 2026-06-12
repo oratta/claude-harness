@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "verifier-score",
+  "description": "longrun-verifier / longrun-browser-verifier の 4 軸定量評価。各軸 0-100。Workflow スクリプトの Verify ループが verdict で PASS/FAIL を機構判定する。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["functionality", "quality", "completeness", "ux", "verdict"],
+  "properties": {
+    "functionality": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "機能性（spec Scenario 通過率）。ハードしきい値 100"
+    },
+    "quality": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "品質（テスト + lint + 型チェック + ビルド）。ハードしきい値 100"
+    },
+    "completeness": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "完成度（エッジケース・エラーハンドリング）。ハードしきい値 80"
+    },
+    "ux": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "UX（操作フロー）。ハードしきい値 70"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "FAIL"],
+      "description": "4 軸のハードしきい値を全て満たすかの総合判定。FAIL なら Verify ループが builder に修正依頼する"
+    },
+    "findings": {
+      "type": "array",
+      "description": "FAIL 時の残課題（修正依頼の根拠）。各要素は人間可読の一文",
+      "items": { "type": "string" }
+    }
+  }
+}

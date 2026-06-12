@@ -1,20 +1,17 @@
 {
   "name": "longrun",
-  "version": "5.3.0",
-  "description": "Claude Code 自律実行システム v5.3。OpenSpec 縮退モードを一級の動作モードとして追加: exec Step 0 の preflight（scripts/openspec-preflight.sh）で OpenSpec CLI 解決可否 + init 済みを判定し、不可 / 未 init / ユーザー明示の opt-out 時は AskUserQuestion で縮退モードを提案。縮退時は spec 類（proposal/tasks/verification-guide）を _longruns/<run>/ 内に自己完結生成し openspec/ へ一切書き込まず、feedback Tier 3 は run 内 backlog にフォールバック、archive は .degraded-mode マーカーでランディレクトリのみアーカイブ。多段フォールバック検出 + npm install -g 試行を廃止し preflight に一元化。通常モード（既存 openspec あり repo）は挙動完全維持（回帰なし）。MVP モード（--mode=mvp）は v5.2 から継続。",
+  "version": "6.0.0",
+  "description": "Claude Code 自律実行システム v6.0（BREAKING）。/longrun:exec を Workflow ツール載せ替え: plan.md を読んで Workflow スクリプト（templates/workflow/）を生成・起動し、agent()/pipeline()/parallel() でオーケストレーションする。サブエージェント成果物（builder レポート / verifier 4 軸スコア / reviewer 判定）を schemas/*.schema.json の JSON Schema（StructuredOutput）で機構的に強制。Verify ループは while + 上限 3 周 + budget ガードで暴走を構造的に防止。中断再開は resumeFromRunId 一次手段（runId を _longruns/<run>/ に記録）、checkpoint.md は人間向け監査ログに格下げ。進捗確認はネイティブ /workflows ライブビュー。TDD + 4 軸定量評価 + Build Contract パターンで品質担保。OpenSpec 縮退モードは exec Step 0 の preflight で判定。",
   "author": {
     "name": "Oratta"
   },
   "skills": [
     "./skills/longrun-plan",
-    "./skills/longrun-feedback",
-    "./skills/longrun-orchestrator"
+    "./skills/longrun-feedback"
   ],
   "commands": [
     "./commands/plan.md",
     "./commands/exec.md",
-    "./commands/status.md",
-    "./commands/decisions.md",
     "./commands/archive.md",
     "./commands/feedback.md"
   ],
