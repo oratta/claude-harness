@@ -70,3 +70,64 @@
   - change-1: **APPROVE**。BLOCKER（archive 判定ソース）は proposal/design/tasks の 3 ファイルで一貫解消を確認。新論点「常時 AskUserQuestion 1 問追加」は「従来挙動 = 実行フロー・成果物パス・形式の不変」を侵さず、proposal の Why（opt-out 手段の欠如）を解決する意図された仕様差分のため回帰に当たらないと判定。残 NOTE: 常用ユーザーの毎 run 1 タップ（デフォルト通常モード・Enter 即決 UX を実装時徹底。将来 always-normal スキップが欲しくなったら backlog 化）
   - change-2: **APPROVE**。BLOCKER 2 件解消確認。Requirement 名変更は ADDED のみの delta のため validate/archive 整合に影響なしを確認。残課題なし
 - **判断**: 全 5 change の仕様確定。verification-guide.md 生成 → Build 後半（TDD 実装）へ進行
+
+## change-1 (openspec-degradation) Build フェーズ
+
+### D-C1-1: 実機検証で `openspec apply` 不在を確定、通常モードの apply 置換は本 change スコープ外
+
+- **日時**: 2026-06-12（タスク 1.1）
+- **コンテキスト**: orchestrator/builder の従来手順は `openspec apply <change>` 前提。実機検証で apply の有無と longrun-tdd スキーマの出所を確定する必要があった。
+- **エビデンス**: `/tmp/openspec-init-probe` での実コマンド出力（`plugins/longrun/docs/openspec-cli-verification.md` セクション 2-4）。
+  - `openspec init --tools claude` → `openspec/{changes,changes/archive,specs}` のみ生成、`schemas/` は作られない
+  - `openspec schema fork spec-driven longrun-tdd` で初めて `longrun-tdd` が生成（init の成果物ではない）
+  - 1.2.0・0.23.0 とも `apply` サブコマンド不在（root help にフォールスルー）。代替は `instructions tasks`
+- **選択肢**: A: 本 change で通常モードの apply→instructions 置換も行う / B: 縮退モードのみ実装し、apply 置換は change-2 に委ねる
+- **決定**: B
+- **理由**: 本 change の制約は「通常モードの従来挙動を変えない（回帰なし）」。apply 置換は通常モードフローの書き換えであり回帰リスクがある。change-2 が exec を全面書き換えするのでそこで扱うのが適切（YAGNI / 可逆性）。縮退モードは CLI を一切呼ばないため apply 不在の影響を受けず、本 change 単独で完結できる。
+- **リスク**: 通常モードで `openspec apply` を叩く既存手順が現 CLI で失敗する点は残るが、これは本 change 以前から存在する既知の問題であり change-2 で解消される。docs に明記済み。
+
+### D-C1-2: preflight 検出は「command -v OR npx --no-install」の OR 条件
+
+- **日時**: 2026-06-12（タスク 1.2）
+- **コンテキスト**: design.md 暫定決定は「npx openspec 解決可能を正」。実機では volta グローバル 1.2.0（`which` で解決）と npx キャッシュ 0.23.0（`npx --no-install` で解決）が併存。
+- **選択肢**: A: `npx` のみで判定 / B: `which`/`command -v` のみ / C: 両方の OR
+- **決定**: C（`command -v openspec` OR `npx --no-install openspec`）。両方失敗で `NO_CLI`。
+- **理由**: plan.md 受け入れ条件 5 は「npx openspec が解決できない環境で」と書くが、グローバル openspec が PATH にある環境（この環境）を「CLI 不可」と誤判定すると回帰になる。OR にすれば「いずれかで openspec が解決できれば通常モード可」となり実態に合う。`--no-install` でネットワーク/インストール待ちを避け純粋な解決可否のみ判定。検出系列はスクリプト 1 箇所に集約。
+- **リスク**: なし（OR で広く拾うため誤って縮退に倒れることはない）。確定値は `openspec-cli-verification.md` に一本化。
+
+## change-5 実装フェーズ（harvest-structured-output / marketing-harness）
+
+### D-5.1: tasks 1.1 — 散文契約依存 bats の確定（書き換え対象 12 本）
+
+- **日時**: 2026-06-12（TDD 実装開始時）
+- **エビデンス**:
+  ```
+  $ bats plugins/harvest/tests/*.bats --count
+  313
+  $ grep -lE 'STATUS:|BEGIN_RAW_JSON|...|Status: (APPROVE|REQUEST_CHANGES)|Fact-check Findings|TOS Risk Findings|5 セクション|セクション固定' plugins/harvest/tests/*.bats
+  bestprac_evaluator_agent.bats
+  bestprac_researcher_agent.bats
+  ```
+- **コンテキスト**: design.md の事前概観（evaluator 8-10 / researcher 3-5 / refresh_flow 5-8 本推定）を実 @test 単位で確定する必要があった。
+- **選択肢**: A: 推定どおり refresh_flow も書き換える / B: grep 実測ヒットの 2 ファイルのみに絞る / C: 全 63 本を機械的に再生成
+- **決定**: B。grep ヒットは evaluator / researcher の 2 ファイルのみ。refresh_flow.bats は SKILL.md 側の契約消費記述を grep するが `Status:` リテラル / 5 セクション位置パースに直接依存する @test は無く、新 SKILL.md（`.status`/`validate-contract.sh evaluator` 参照）でも既存 32 本が全 PASS する設計。確定書き換えは evaluator 7 本 + researcher 5 本 = **12 本**。
+- **理由**: 一覧外に触れない原則（design D8 / Risks）。refresh_flow を不必要に書き換えると過剰書き換えリスク。
+- **リスク**: refresh_flow の S4.x が新 SKILL.md で PASS しなくなる可能性 → 6.2 のフルスイート実行で機械的に確認。
+
+### D-5.2: redact フォールバック時の raw 残置と Step 0 クリーンアップの両立
+
+- **日時**: 2026-06-12
+- **コンテキスト**: spec（masking-atomicity）は「redact 失敗時に raw を手動調査用に残す現行例外を維持」しつつ「翌回起動時には残らない（受け入れ条件 18）」を要求する。
+- **選択肢**: A: redact 失敗時に即削除 / B: 当該 run は残置、次回 run の Step 0 が削除（design D6）/ C: 別パス退避
+- **決定**: B（design D6 を踏襲）。当該 run の redact 失敗時は `.property.raw.json` を残してパス報告、次回起動時の Step 0 クリーンアップが `.property.raw.json` / `.property.json` / `.property.md.tmp` を検出 → ユーザー通知 → 削除。
+- **理由**: plan.md / design.md に明記済み。保守的（調査用残置の現行 UX を壊さない）。
+- **リスク**: 正当な調査中ファイルを次回 run が消す → 削除前ユーザー通知を必須化（spec 準拠）。
+
+### D-5.3: Step 0 残骸クリーンアップを knowledge-cleanup.sh ヘルパに切り出す
+
+- **日時**: 2026-06-12（タスク 4.4 / 4.6）
+- **コンテキスト**: 受け入れ条件 18「いかなる失敗パスでも翌回起動時に .property.raw.json が残らない」を bats で機械検証する必要があるが、クリーンアップロジックが SKILL.md 散文のみだとシミュレーション bats が「散文 grep」止まりになり、実際の削除動作を検証できない。
+- **選択肢**: A: SKILL.md 散文に手順を書くだけ（grep 検査のみ）/ B: `scripts/knowledge-cleanup.sh` ヘルパに切り出し、SKILL.md Step 0 がそれを呼ぶ形にして bats で実動作検証 / C: bats 内に削除ロジックを複製
+- **決定**: B。`plugins/harvest/scripts/knowledge-cleanup.sh <knowledge_dir>` を新設。`.property.raw.json` / `.property.json` / `.property.md.tmp` を検出 → 検出ファイル名を stdout に通知 → 削除。SKILL.md Step 0 がこれを呼ぶ。
+- **理由**: 受け入れ条件 18 を「3 失敗パス × fixture で raw 残置 → cleanup 実行 → 不在」の実動作 bats で検証できる（C の複製はドリフトする）。ヘルパ化は redact-secrets.sh / bestprac-refresh.sh と同じ既存パターン（スクリプトに副作用を閉じ込め SKILL.md は手続き記述）。可逆（revert で SKILL.md 散文に戻せる）。
+- **リスク**: スクリプト追加で表面積が増えるが、テスト容易性の利得が上回る。削除対象は引数 dir 配下のドットファイル 3 種に限定し誤削除を防ぐ。

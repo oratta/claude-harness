@@ -55,8 +55,23 @@ longrun-dir: `_longruns/2026-06-12_harness-workflow-overhaul/`
 - [ ] Build: change-1〜4 直列（claude-harness）+ change-5 並行（marketing-harness）
   - [x] Build前半: 全 5 change の OpenSpec ドキュメント作成（validate --strict PASS）
   - [x] Spec Review: ラウンド1（3 APPROVE / 2 REQUEST_CHANGES）→ 修正 → ラウンド2（change-1/2 APPROVE）。全件 APPROVE（D-B2, D-B3）
-  - [ ] verification-guide.md 生成
-  - [ ] Build後半: TDD 実装（longrun-builder）
+  - [x] verification-guide.md 生成（162 Scenario）
+  - [x] Workflow ツール実機検証（orchestrator 実施）→ workflow-tool-reference.md 固定（受け入れ条件 11b。agentType のみ未実機）
+  - [x] change-1 (openspec-degradation): 実装完了・マージ済み（15/15 タスク、bats 55 本 PASS、回帰なし、longrun 5.3.0。merge commit 6ee81e5）
+  - [ ] change-2 (workflow-exec): builder 実行中（feature/workflow-exec、5.3.0 起点 → 6.0.0）
+  - [ ] change-3 (mvp-plan-split): change-2 待ち
+  - [ ] change-4 (model-allocation): change-3 待ち
+  - [ ] change-5 (harvest-structured-output): builder 実行中（marketing-harness worktree、並行）
+
+## Changes状態
+
+| Change | Tasks | Tests | Status |
+|--------|-------|-------|--------|
+| change-1 openspec-degradation | 15/15 | bats 55 PASS | **Complete & merged (6ee81e5)** |
+| change-2 workflow-exec | 0/n | - | Building |
+| change-3 mvp-plan-split | 0/n | - | Pending (change-2 待ち) |
+| change-4 model-allocation | 0/n | - | Pending (change-3 待ち) |
+| change-5 harvest-structured-output | 進行中 | - | Building (並行) |
 - [ ] Verify: 静的検証 + 動作検証
 - [ ] Feedback: ユーザー確認
 - [ ] Integration: マルチリポジトリ統合（options.integrate: true）

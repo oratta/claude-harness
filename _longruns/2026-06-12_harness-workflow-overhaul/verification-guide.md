@@ -11,104 +11,104 @@
 ### S1: [longrun-openspec-preflight] 前提条件を満たす repo では従来どおり起動する
 - WHEN: npx openspec 解決可・openspec/ ありの repo で /lr:e を実行し、Step 0 の動作モード確認で通常モードを選択する
 - THEN: 従来どおり通常モードで Setup フェーズが開始され、checkpoint.md に前提条件チェックの実行結果（コマンド出力）が記録される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S2: [longrun-openspec-preflight] npx openspec が解決できない環境で縮退モードを提案する
 - WHEN: npx openspec が解決できない環境で /lr:e を実行する
 - THEN: AskUserQuestion で「縮退モードで実行」か「中断して OpenSpec をセットアップ」かの選択肢が提示される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S3: [longrun-openspec-preflight] openspec 未 init の repo で縮退モードを提案する
 - WHEN: npx openspec は解決できるが openspec/ ディレクトリが無い repo で /lr:e を実行する
 - THEN: AskUserQuestion で「openspec init して通常続行」「縮退モードで実行」「中断」の選択肢が提示される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S4: [longrun-openspec-preflight] 縮退モードを承諾すると縮退 run が開始される
 - WHEN: 縮退モード提案に対してユーザーが「縮退モードで実行する」を選択する
 - THEN: `_longruns/<run>/.degraded-mode` マーカーが作成され、OpenSpec CLI を一切呼び出さない縮退モードで Setup フェーズが開始される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S5: [longrun-openspec-preflight] 中断を選択するとセットアップ案内が表示される
 - WHEN: 縮退モード提案に対してユーザーが「中断する」を選択する
 - THEN: run は開始されず、OpenSpec のインストール / init 手順の案内が表示されて exec が終了する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S6: [longrun-openspec-preflight] ユーザーが OpenSpec 不要と明示して縮退モードで実行する
 - WHEN: preflight 結果 OK の repo で /lr:e を実行し、Step 0 の動作モード確認で「縮退モード（OpenSpec を使わない）」を選択する
 - THEN: 縮退マーカーが作成され、縮退モードで run が開始される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S7: [longrun-openspec-preflight] 通常モードの run は従来と同一の成果物を生成する
 - WHEN: openspec init 済みの repo で /lr:e を実行し、Step 0 で通常モードを選択して run を完走させる
 - THEN: OpenSpec change・checkpoint.md・verification-guide.md が従来バージョン（5.2.0）と同一のパス・形式で生成され、縮退マーカーは作成されない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S8: [longrun-degraded-run-artifacts] 縮退 run で proposal / tasks 相当が run ディレクトリに生成される
 - WHEN: 縮退モードで run を開始し、Setup フェーズの change 分解が完了する
 - THEN: 各 change の proposal.md / tasks.md 相当が `_longruns/<run>/specs/<change-name>/` 配下に生成され、tasks はチェックボックス形式で Build フェーズから参照できる
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S9: [longrun-degraded-run-artifacts] 縮退 run は openspec ディレクトリに書き込まない
 - WHEN: openspec 未 init の repo で縮退 run を完走させる
 - THEN: repo 内に openspec/ ディレクトリは作成されず、生成物はすべて `_longruns/<run>/` 配下に収まる
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S10: [longrun-degraded-run-artifacts] 縮退 run で verification-guide が生成される
 - WHEN: 縮退モードの run が Verify フェーズを完了して Feedback フェーズに入る
 - THEN: `_longruns/<run>/verification-guide.md` が通常モードと同等の WHEN/THEN チェックリスト形式で生成され、動作確認手順として提示される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S11: [longrun-degraded-run-artifacts] コマンド不在環境で縮退 run が全フェーズ完走する
 - WHEN: npx openspec が解決できない環境で縮退モードを承諾して run を実行し、Archive フェーズまで進める
 - THEN: OpenSpec CLI 起因のエラーなしで全フェーズが完了し、ランディレクトリのみ `_longruns/` のアーカイブ先に移動される（openspec/changes/archive/ への移動は発生しない）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S12: [longrun-feedback-backlog-fallback] 縮退 run のフィードバックで Tier 3 が run 内 backlog に記録される
 - WHEN: 縮退 run の動作確認後、ユーザーが /lr:f でスコープ外の新規要件を含むフィードバックを伝える
 - THEN: Tier 3 に分類され `_longruns/<run>/backlog.md` に追記され、記録先が明示される。openspec/backlog.md は作成・変更されない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S13: [longrun-feedback-backlog-fallback] 通常 run のフィードバックで Tier 3 が openspec backlog に記録される
 - WHEN: 通常モード（openspec あり）の run でユーザーが /lr:f でスコープ外の新規要件を含むフィードバックを伝える
 - THEN: Tier 3 に分類され、従来どおり openspec/backlog.md に追記される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
@@ -811,80 +811,80 @@
 ### S4: [harvest-subagent-schemas] schema 4 本が存在する
 - WHEN: property / plan / researcher / evaluator の 4 schema ファイルの存在を `test -f` で確認する
 - THEN: `plugins/harvest/schemas/{property,plan,researcher,evaluator}.schema.json` がすべて存在する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S5: [harvest-subagent-schemas] 各 schema が jq 構文検証を通る
 - WHEN: `jq empty plugins/harvest/schemas/*.schema.json`（4 本）を実行する
 - THEN: exit 0 で終了する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S6: [harvest-subagent-schemas] 各 schema が required キーを宣言している
 - WHEN: `grep -l '"required"' plugins/harvest/schemas/*.schema.json | wc -l` を実行する
 - THEN: 出力が 4 である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S7: [harvest-subagent-schemas] evaluator.schema.json の status が 2 値 enum である
 - WHEN: `jq -r '.. | .enum? // empty | @json' plugins/harvest/schemas/evaluator.schema.json` を実行する
 - THEN: APPROVE と REQUEST_CHANGES の両方を含む enum 定義が 1 件以上出力される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S8: [harvest-subagent-schemas] researcher.schema.json は WebSearch 回数を定義しない
 - WHEN: researcher.schema.json を WebSearch で grep し、agent 定義側を検索回数規定（3 カテゴリ / 3-5 回）で grep する
 - THEN: schema 側のヒットは 0 件、agent 定義側（harvest-bestprac-researcher.md）に手続き契約が 1 件以上残る
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S9: [harvest-subagent-schemas] property.schema.json は形式のみを定義し合成手順は SKILL.md に残る
 - WHEN: property.schema.json を `"final_prompts"` で、knowledge SKILL.md を「合成」で grep する
 - THEN: schema 側に final_prompts キー定義が 1 件以上、SKILL.md 側に合成手順が 1 件以上残る
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S10: [harvest-contract-validation] 正常 payload で exit 0
 - WHEN: 各 contract type の正例 fixture に対して `bash plugins/harvest/scripts/validate-contract.sh <type> <fixture>` を実行する
 - THEN: 4 type すべてで exit 0 で終了する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S11: [harvest-contract-validation] 必須キー欠落 payload で非 0 終了 + stderr 理由
 - WHEN: 必須キーを 1 つ欠いた不正 fixture に対して validate-contract.sh を実行する
 - THEN: exit code が 0 以外で、stderr に欠落キー名を含む理由が出力される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S12: [harvest-contract-validation] 不正 JSON（パース不能）で非 0 終了
 - WHEN: JSON としてパースできないファイルに対して `validate-contract.sh property <file>` を実行する
 - THEN: exit code が 0 以外である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S13: [harvest-contract-validation] 不明 contract type で exit 2
 - WHEN: `validate-contract.sh unknown-type some.json` を実行する
 - THEN: exit code が 2 で、stderr または stdout に usage が表示される
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
@@ -1155,8 +1155,8 @@
 ### S47: [harvest-bestprac-evaluator] validate-contract.sh が REQUEST_CHANGES 時の 3 フィールドを機構検証する
 - WHEN: status が REQUEST_CHANGES で suggested_fix を欠いた finding を含む不正 fixture に対して `validate-contract.sh evaluator <fixture>` を実行する
 - THEN: exit code が 0 以外である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
