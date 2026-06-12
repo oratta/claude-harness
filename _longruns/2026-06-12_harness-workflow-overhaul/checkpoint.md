@@ -58,20 +58,20 @@ longrun-dir: `_longruns/2026-06-12_harness-workflow-overhaul/`
   - [x] verification-guide.md 生成（162 Scenario）
   - [x] Workflow ツール実機検証（orchestrator 実施）→ workflow-tool-reference.md 固定（受け入れ条件 11b。agentType のみ未実機）
   - [x] change-1 (openspec-degradation): 実装完了・マージ済み（15/15 タスク、bats 55 本 PASS、回帰なし、longrun 5.3.0。merge commit 6ee81e5）
-  - [ ] change-2 (workflow-exec): builder 実行中（feature/workflow-exec、5.3.0 起点 → 6.0.0）
-  - [ ] change-3 (mvp-plan-split): change-2 待ち
-  - [ ] change-4 (model-allocation): change-3 待ち
-  - [ ] change-5 (harvest-structured-output): builder 実行中（marketing-harness worktree、並行）
+  - [x] change-2 (workflow-exec): 実装完了・マージ済み（29/29 タスク + README 修正、bats 139 本 PASS、longrun/lr 6.0.0。merge 346f3b9 + d4aab36）。実走確認 S4/S17 も完了（reference §11、runId wf_b0263fa2-2fe / wf_a36f47ee-baf）
+  - [x] change-3 (mvp-plan-split): 実装完了・マージ済み（26/26 タスク、bats 193 本 PASS、longrun/lr 6.1.0。merge c742b3d）
+  - [ ] change-4 (model-allocation): builder 実行中（feature/model-allocation、6.1.0 起点 → 6.2.0）
+  - [x] change-5 (harvest-structured-output): 実装完了（27/29、E2E 2 タスクはユーザー手動確認待ち。bats 374 ok / 0 fail、harvest 0.14.0。feature/harvest-structured-output に push 済み、Draft PR #8）
 
 ## Changes状態
 
 | Change | Tasks | Tests | Status |
 |--------|-------|-------|--------|
 | change-1 openspec-degradation | 15/15 | bats 55 PASS | **Complete & merged (6ee81e5)** |
-| change-2 workflow-exec | 0/n | - | Building |
-| change-3 mvp-plan-split | 0/n | - | Pending (change-2 待ち) |
-| change-4 model-allocation | 0/n | - | Pending (change-3 待ち) |
-| change-5 harvest-structured-output | 進行中 | - | Building (並行) |
+| change-2 workflow-exec | 29/29 | bats 139 PASS + 実走 S4/S17 | **Complete & merged (346f3b9, d4aab36)** |
+| change-3 mvp-plan-split | 26/26 | bats 193 PASS | **Complete & merged (c742b3d)** |
+| change-4 model-allocation | 0/n | - | Building |
+| change-5 harvest-structured-output | 27/29 | bats 374 PASS | **Complete on branch（E2E 待ち、PR #8）** |
 - [ ] Verify: 静的検証 + 動作検証
 - [ ] Feedback: ユーザー確認
 - [ ] Integration: マルチリポジトリ統合（options.integrate: true）
