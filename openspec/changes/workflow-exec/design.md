@@ -93,6 +93,20 @@ workflow 内 agent から AskUserQuestion が使えないため、Build Contract
 
 Workflow ツールのシグネチャ・制約は学習知識で書かず、最初のタスクで hello-world workflow を実機起動して観測し、エビデンス付きで `_longruns/2026-06-12_harness-workflow-overhaul/workflow-tool-reference.md` に固定する。以降の全実装タスクはこのファイルを一次ソースとする（change-1 の openspec 実機検証と同じパターン）。
 
+### D9〜D13: 実装フェーズの自律判断（builder 記録）
+
+実装中に確定した判断（詳細とエビデンスは run の `decisions.md` D-C2-1〜D-C2-5）:
+
+- **D9（= D-C2-1）**: Workflow テンプレートを `review.workflow.js` + `build-verify.workflow.js` の 2 本に分割（D5 の承認ゲート分割の実装形）。Build と Verify は承認ゲートを挟まないため 1 本に同居。
+- **D10（= D-C2-2）**: テンプレート埋め込みプレースホルダを `${NAME}` ではなく `__NAME__` 形式にする。生成 JS のランタイム `${...}` 補間（例 `${VERIFY_MAX_ROUNDS}`）との置換衝突を構造的に回避。renderer 正規表現 `__([A-Z][A-Z0-9_]*)__`。
+- **D11（= D-C2-3）**: schema 機構拒否の bats 検証は外部依存なしの最小バリデータ `scripts/validate-against-schema.mjs` で行う（ajv 等の npm 依存を持ち込まない）。これは Workflow ツール検証層の同等物で、真の検証は実走時にツールが行う。
+- **D12（= D-C2-4）**: change-1 が orchestrator SKILL.md に入れた縮退モード分岐を exec.md 付録へ逐語移管して保全（orchestrator 解体に伴う回帰防止）。
+- **D13（= D-C2-5）**: marketplace top-level version を 2.6.0 → 2.7.0 に bump（v6.0.0 BREAKING リリースの一貫性 + 3 箇所同期運用方針）。
+
+### 未実機の残課題（orchestrator による実走確認待ち）
+
+`agentType` 解決と `opts.schema` インライン埋め込みでの StructuredOutput 強制は reference §3 で未実機。最小 fixture plan（`plugins/longrun/tests/fixtures/minimal-plan/`）での Review → Build → Verify 1 周完走（受け入れ条件 8b）と Verify 上限 3 周停止・resume スキップ（受け入れ条件 9・10）の**実走**は builder（サブエージェント）が Workflow を起動できないため未実施。静的検証・schema 拒否・テンプレート制約遵守は bats で機械化済み。実走は orchestrator（メインループ）に委ねる（reference §10 に追記済み）。
+
 ## Risks / Trade-offs
 
 - [Workflow ツールの実仕様が想定と異なる（opts キー不足・resumeFromRunId のスキップ粒度等）] → 最初のタスク（実機検証）で確定してから設計詳細を確定。reference に記載のない挙動は追加検証してから使う

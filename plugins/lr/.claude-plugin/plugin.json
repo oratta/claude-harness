@@ -1,15 +1,13 @@
 {
   "name": "lr",
-  "version": "5.1.1",
-  "description": "longrunプラグインの短縮コマンド。/lr:p, /lr:e, /lr:s, /lr:d, /lr:a, /lr:f で各longrunコマンドを呼び出せる。各短縮版は対応する longrun コマンドファイルを Read してメインセッションでインライン実行する（Skill tool ではコマンドを呼べないため）。",
+  "version": "6.0.0",
+  "description": "longrunプラグインの短縮コマンド。/lr:p, /lr:e, /lr:a, /lr:f で各longrunコマンドを呼び出せる。各短縮版は対応する longrun コマンドファイルを Read してメインセッションでインライン実行する（Skill tool ではコマンドを呼べないため）。",
   "author": {
     "name": "Oratta"
   },
   "commands": [
     "./commands/p.md",
     "./commands/e.md",
-    "./commands/s.md",
-    "./commands/d.md",
     "./commands/a.md",
     "./commands/f.md"
   ]

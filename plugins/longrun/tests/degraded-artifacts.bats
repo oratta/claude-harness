@@ -19,7 +19,9 @@ load "$(dirname "$BATS_TEST_FILENAME")/helper.bash"
 setup() {
   lr_setup_paths
   lr_make_tmpdir
-  ORCH_MD="${PLUGIN_DIR}/skills/longrun-orchestrator/SKILL.md"
+  # change-2: orchestrator SKILL.md was dismantled; the degraded-mode branch
+  # moved to commands/exec.md (付録: 縮退モードの spec 類自己完結生成).
+  DEGRADED_MD="${PLUGIN_DIR}/commands/exec.md"
   ARCHIVE_MD="${PLUGIN_DIR}/commands/archive.md"
 }
 
@@ -119,23 +121,23 @@ degraded_archive() {
   [ ! -d "${repo}/openspec" ]
 }
 
-# --- structural: docs describe the degraded branch correctly ---
+# --- structural: docs describe the degraded branch correctly (now in exec.md) ---
 
-@test "orchestrator: documents degraded-mode branch in Build phase" {
-  grep -q '\.degraded-mode' "$ORCH_MD"
-  grep -Eq '縮退モード分岐' "$ORCH_MD"
+@test "exec: documents degraded-mode branch" {
+  grep -q '\.degraded-mode' "$DEGRADED_MD"
+  grep -Eq '縮退モード' "$DEGRADED_MD"
 }
 
-@test "orchestrator: degraded branch writes specs under run dir" {
-  grep -Eq '\{longrun-dir\}/specs/<change-name>/' "$ORCH_MD"
+@test "exec: degraded branch writes specs under run dir" {
+  grep -Eq '\{longrun-dir\}/specs/<change-name>/' "$DEGRADED_MD"
 }
 
-@test "orchestrator: forbids writing openspec/ in degraded mode" {
-  grep -Eq 'openspec/.*一切.*書き込|書き込.*禁止|openspec/` 配下にも.*一切' "$ORCH_MD"
+@test "exec: forbids writing openspec/ in degraded mode" {
+  grep -Eq 'openspec/.*一切.*書き込|書き込.*禁止|openspec/` 配下にも.*一切|openspec/` 配下にも\*\*一切\*\*書き込' "$DEGRADED_MD"
 }
 
-@test "orchestrator: degraded archive skips openspec change move" {
-  grep -Eq 'DEGRADED モードではこのステップをスキップ' "$ORCH_MD"
+@test "exec: degraded archive skips openspec change move" {
+  grep -Eq '\.degraded-mode.*マーカーを見て|OpenSpec change の移動をスキップ' "$DEGRADED_MD"
 }
 
 @test "archive.md: documents degraded branch with priority over mvp" {

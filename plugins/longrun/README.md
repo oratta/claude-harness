@@ -1,6 +1,24 @@
-# Longrun Plugin v5.3
+# Longrun Plugin v6.0
 
 Claude Code 自律実行システム。Anthropic の [Harness Design for Long-Running Apps](https://www.anthropic.com/engineering/harness-design-long-running-apps) の知見を反映した設計。
+
+## v6.0 変更点（BREAKING）
+
+- **`/longrun:exec` を Workflow ツールに載せ替え**。plan.md を読んで Workflow スクリプト（`templates/workflow/review.workflow.js` / `build-verify.workflow.js`）を生成・起動し、`agent()` / `pipeline()` / `parallel()` でオーケストレーションする。旧 `longrun-orchestrator` SKILL.md のインライン展開・Agent 手動制御・checkpoint.md の散文パースは**全廃**された。
+- **サブエージェント成果物を JSON Schema（StructuredOutput）で機構的に強制**。builder 完了レポート / verifier 4 軸スコア / reviewer 判定を `schemas/*.schema.json` に外部化し、`agent(prompt, {schema})` で検証層が不正形式を拒否する（散文ドリフトの無言破壊を排除）。
+- **Verify ループに上限 3 周 + budget ガード**。`while (round < 3)` + `budget.total && budget.remaining()` の null ガードで暴走を構造的に防止。上限到達 / budget 枯渇時は状態を報告して停止（LLM の自制に依存しない）。
+- **中断再開を `resumeFromRunId` 一次手段に**。runId を `_longruns/<run>/workflow-runs.jsonl` に記録し、同一 scriptPath + args で再開すると完了済み change の builder agent が再実行されない（same-session only）。
+- **`/longrun:status` `/longrun:decisions` `/lr:s` `/lr:d` を削除**。進捗確認はネイティブの **`/workflows` ライブビュー**、意思決定は `decisions.md` を直接 Read で代替する。
+- **`longrun-orchestrator` スキルを解体**（命名規則 backlog の -or 終わり廃止分を消化）。生成ロジックは exec コマンド + 同梱テンプレートへ移管。
+- builder の agentType をパラメータ化（デフォルト `longrun:longrun-builder` 固定。Codex Builder Phase 2 の受け皿）。
+- `plugin.json` / `marketplace.json` plugins[] の version を longrun・lr とも 6.0.0 に同期 bump。
+
+### v6.0 移行ノート
+
+- v6.0 は BREAKING。互換シムや deprecation 期間は設けない。marketplace 配布はバージョン単位キャッシュのため、bump で明示的に伝播する。
+- 旧 `/longrun:status` `/longrun:decisions` `/lr:s` `/lr:d` は削除された。進捗は `/workflows`、意思決定は `decisions.md` の直接 Read を使う。
+- 旧 checkpoint.md 形式の機械可読パースは廃止。checkpoint.md は人間向け監査ログとして書き続けられるが、状態復元には使わない（再開は `resumeFromRunId`）。
+- 既存 agent 定義 7 種（`agents/*.md`）は無変更で、`agentType` 参照によりそのまま再利用される。
 
 ## v5.3 変更点
 
@@ -46,26 +64,34 @@ Claude Code 自律実行システム。Anthropic の [Harness Design for Long-Ru
 | コマンド | 短縮 | 説明 |
 |---------|------|------|
 | `/longrun:plan` | `/lr:p` | plan.md を対話的に作成 |
-| `/longrun:exec` | `/lr:e` | 自律実行を開始 |
-| `/longrun:status` | `/lr:s` | 進捗状況を確認 |
-| `/longrun:decisions` | `/lr:d` | 意思決定一覧を確認 |
+| `/longrun:exec` | `/lr:e` | Workflow を生成・起動して自律実行を開始 |
 | `/longrun:archive` | `/lr:a` | 完了した実行をアーカイブ |
 | `/longrun:feedback` | `/lr:f` | フィードバックを分類・実行 |
+
+進捗確認はネイティブの **`/workflows` ライブビュー** を使う（旧 `/longrun:status` `/lr:s` は v6.0 で廃止）。意思決定は `_longruns/<run>/decisions.md` を直接 Read する（旧 `/longrun:decisions` `/lr:d` は v6.0 で廃止）。
 
 ## アーキテクチャ
 
 ```
-Skills (対話的・メインセッションで実行):
-  longrun-plan          ← plan.md 作成
-  longrun-orchestrator  ← 全体指揮（Plan→Build→Verify→Feedback→Archive）
-  longrun-feedback      ← フィードバック Tier 分類
+/longrun:exec → Workflow スクリプト生成・起動（exec コマンド + templates/workflow/）
+  ├── workflow #1 (Review)        ← longrun-reviewer agent で Build Contract レビュー
+  │     ↓ メインループに戻り AskUserQuestion（Build Contract 承認ゲート）
+  └── workflow #2 (Build→Verify)  ← change ごとに longrun-builder で TDD 実装
+        Verify ループ（上限3周 + budget ガード） ← longrun-verifier の 4 軸スコア
+        ↓ メインループに戻り AskUserQuestion（Feedback Tier 確認）
 
-Agents (自律実行・別コンテキスト):
-  longrun-builder           ← TDD 実装
-  longrun-verifier          ← 4軸定量評価（静的）
+Skills (対話的・メインセッションで実行):
+  longrun-plan      ← plan.md 作成
+  longrun-feedback  ← フィードバック Tier 分類
+
+Agents (自律実行・別コンテキスト。Workflow から agentType で参照):
+  longrun-builder           ← TDD 実装（builder-report schema）
+  longrun-verifier          ← 4軸定量評価・静的（verifier-score schema）
   longrun-browser-verifier  ← ブラウザ動作検証
-  longrun-reviewer          ← Build Contract + Spec Review
+  longrun-reviewer          ← Build Contract + Spec Review（reviewer-verdict schema）
 ```
+
+成果物の StructuredOutput 契約は `schemas/builder-report.schema.json` / `verifier-score.schema.json` / `reviewer-verdict.schema.json` に外部化されており、生成 Workflow スクリプトが `agent(prompt, {schema})` で機構的に強制する。
 
 ## 命名規則
 
@@ -73,7 +99,7 @@ Skill と Agent の役割を名前で識別可能にしている。命名違反�
 
 | 種別 | 命名パターン | 例 |
 |------|-------------|----|
-| **Skill** | 動詞または名詞単独 | `longrun-plan`, `longrun-orchestrator`, `longrun-feedback` |
+| **Skill** | 動詞または名詞単独 | `longrun-plan`, `longrun-feedback` |
 | **Agent** | 役割名（`-er` / `-or` 終わり） | `longrun-builder`, `longrun-reviewer`, `longrun-verifier`, `longrun-browser-verifier` |
 
 新規追加時は本ルールに従うこと。違反すると `/longrun:plan` 系コマンドの起動経路で再び誤起動エラーが発生する。

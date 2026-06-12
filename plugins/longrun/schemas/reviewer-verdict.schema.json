@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "reviewer-verdict",
+  "description": "longrun-reviewer の Build Contract / Spec Review 判定。Workflow スクリプトの Review フェーズが status で承認ゲート分岐を機構判定する。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "findings"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["APPROVE", "REQUEST_CHANGES"],
+      "description": "BLOCKER 0 なら APPROVE、1 件以上なら REQUEST_CHANGES"
+    },
+    "findings": {
+      "type": "array",
+      "description": "指摘事項。APPROVE 時は空配列または NOTE のみ",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "message"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["BLOCKER", "SHOULD_FIX", "NOTE"]
+          },
+          "message": { "type": "string" }
+        }
+      }
+    },
+    "summary": {
+      "type": "string",
+      "description": "判定の総括（任意）"
+    }
+  }
+}

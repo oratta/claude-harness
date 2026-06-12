@@ -16,7 +16,9 @@ setup() {
 }
 
 @test "exec.md: declares Step 0 preflight section" {
-  grep -Eq '^### Step 0' "$EXEC_MD"
+  # change-2 restructured exec.md: Step 0 is now a top-level (##) section with
+  # 0a (permission check) / 0b (preflight) subsections.
+  grep -Eq '^##+ Step 0' "$EXEC_MD"
 }
 
 @test "exec.md: runs openspec-preflight.sh" {
