@@ -1,6 +1,15 @@
-# Longrun Plugin v5.2
+# Longrun Plugin v5.3
 
 Claude Code 自律実行システム。Anthropic の [Harness Design for Long-Running Apps](https://www.anthropic.com/engineering/harness-design-long-running-apps) の知見を反映した設計。
+
+## v5.3 変更点
+
+- **OpenSpec 縮退モードを一級の動作モードとして追加**。OpenSpec CLI が解決できない / 未 init の環境、またはユーザーが OpenSpec 不要と明示した場合に、spec 類を `_longruns/<run>/` 内に自己完結生成して run を完走させる。詳細は下記「OpenSpec 縮退モード」セクション参照。
+- `/longrun:exec`（`/lr:e`）に **Step 0（preflight）** を追加。`scripts/openspec-preflight.sh` で前提条件（CLI 解決可 + init 済み）を判定し、AskUserQuestion で動作モード（通常 / 縮退）を確定する。
+- orchestrator の多段フォールバック検出（which → command -v → npx → ~/.volta → `npm install -g openspec`）を廃止し、preflight に一元化。
+- `plugins/longrun/tests/` を新設（longrun プラグイン初の bats テストディレクトリ）。
+- 通常モード（既存の openspec/ あり repo）の挙動は完全維持（regression なし）。
+- `plugin.json` / `marketplace.json`（top-level / plugins[]）の version を 5.3.0 に 3 箇所同期 bump。
 
 ## v5.2 変更点
 
@@ -109,3 +118,47 @@ Skill と Agent の役割を名前で識別可能にしている。命名違反�
 ```
 
 `plan.md` 先頭の `<!-- mvp-mode -->` マーカーを自動検知し、OpenSpec change の archive をスキップしてランディレクトリのみ `_longruns/_archive/` に移動する。フルモード plan.md（マーカーなし）は従来通り OpenSpec change と一緒に archive される。
+
+## OpenSpec 縮退モード（v5.3 で追加）
+
+OpenSpec CLI を前提にしない（または使わない）環境でも longrun の Review → Build → Verify → Feedback → Archive サイクルを完走させるための一級の動作モード。
+
+### 発動条件
+
+`/lr:e` 起動直後の **Step 0（preflight）** で `scripts/openspec-preflight.sh` を実行し、以下を判定する:
+
+| preflight 出力 | 条件 | Step 0 の提案 |
+|----------------|------|---------------|
+| `OK`      | CLI 解決可 かつ `openspec/` 存在 | 動作モード確認（通常モードがデフォルト。**縮退選択肢を常時含む** = OpenSpec 不要の明示的 opt-out） |
+| `NO_CLI`  | `openspec` が PATH にも npx にも解決できない | 縮退モードで実行 / 中断してセットアップ |
+| `NO_INIT` | CLI はあるが `openspec/` が無い | init して通常続行 / 縮退モード / 中断 |
+
+検出は `command -v openspec` **または** `npx --no-install openspec` の OR 条件（確定値とエビデンスは `docs/openspec-cli-verification.md`）。ユーザーが縮退を選ぶと `_longruns/<run>/.degraded-mode` マーカーが作成される。
+
+### 成果物パス（縮退時）
+
+縮退モードでは `openspec/` 配下に一切書き込まず、すべて run ディレクトリ内に自己完結する:
+
+```
+_longruns/<run>/
+├── .degraded-mode                    # 縮退マーカー（exec Step 0 で作成）
+├── plan.md
+├── specs/<change-name>/
+│   ├── proposal.md                   # openspec new change の代替（自己完結生成）
+│   └── tasks.md                      # チェックボックス形式（- [ ] X.Y）で進捗管理
+├── verification-guide.md             # specs/ の WHEN/THEN から生成（通常モードと同形式）
+└── backlog.md                        # feedback Tier 3 のフォールバック記録先
+```
+
+- Archive は OpenSpec change の移動をスキップし、ランディレクトリのみ `_longruns/_archive/` へ移動（spec 類は内包されるため一緒に保全される）。判定は `.degraded-mode` マーカーで行い、MVP マーカー（`<!-- mvp-mode -->`）より優先する。
+- feedback の Tier 3（new change）は `openspec/backlog.md` ではなく `_longruns/<run>/backlog.md` に記録される。
+
+### 既知の制限
+
+- **`/longrun:status` は縮退モードに非対応**。status コマンドへの縮退分岐は実装していない（status は change-2 で廃止予定のため、捨てるコードへの投資をしない方針）。縮退 run 中に `/longrun:status` を叩いた場合の表示は劣化する可能性がある（5.3.0 の既知の制限）。
+- 縮退モードでは `openspec validate` による構造検証が効かない。tasks のチェックボックス形式・spec の WHEN/THEN 形式はテンプレートで担保し、形式逸脱は Verify フェーズのレビューで補完する。
+- 縮退 run から OpenSpec あり構成への「昇格」変換は未実装（backlog 残置）。
+
+### 回帰（通常モードへの影響）
+
+既存の openspec/ あり repo で Step 0 が `OK` を返し通常モードを選んだ場合、実行フロー・成果物のパス・形式は 5.2.0 と完全に同一。Step 0 で増えるユーザー対話は動作モード確認の 1 問のみ。`.degraded-mode` マーカーは通常モードでは作成されない。
