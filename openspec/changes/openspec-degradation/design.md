@@ -90,8 +90,8 @@ longrun（v5.2.0）の自律実行は OpenSpec を仕様管理の中核に置い
 3. 既存の進行中 run: `.degraded-mode` マーカーが無いため全て通常モードとして扱われる（安全側）
 4. ロールバック: 5.2.0 に戻すだけ。縮退 run の成果物は `_longruns/<run>/` 内に自己完結しており repo を汚さない
 
-## Open Questions
+## Open Questions（タスク 1.1 / 1.2 で解消済み）
 
-- カスタムスキーマ longrun-tdd は `openspec init --tools claude` で入るのか、fork + テンプレートコピーが常に必要か → **タスク 1.1 の実機検証で確定**（本 change 内で解消する前提の question）
-- 正系統を npx ローカル（0.23.0）とした場合、openspec 未インストール repo への導入案内は `npm i -D openspec` とすべきか → タスク 1.1 の結果と合わせて docs に記載
+- ~~カスタムスキーマ longrun-tdd は `openspec init --tools claude` で入るのか、fork + テンプレートコピーが常に必要か~~ → **解消**: init では入らない。`openspec schema fork spec-driven longrun-tdd` + テンプレートコピーが必須。確定エビデンスは `plugins/longrun/docs/openspec-cli-verification.md` セクション 2-3。
+- ~~正系統を npx ローカル（0.23.0）とした場合の導入案内~~ → **解消**: 検出は `command -v openspec` OR `npx --no-install openspec` の OR 条件で確定（両系統を正として許容）。導入案内文言・検出系列の確定値は `plugins/longrun/docs/openspec-cli-verification.md` セクション 5 に一本化（design.md には確定値を書かない方針に従う）。なお実機検証で **`openspec apply` が現行 CLI に存在しない**ことも判明（セクション 4）。通常モードの apply 置換は本 change スコープ外（change-2 で扱う）。
 - 縮退 run の「昇格」変換（`_longruns/<run>/specs/` → `openspec/changes/`）の需要 → スコープ外。利用実績を見て backlog から判断

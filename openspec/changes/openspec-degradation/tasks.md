@@ -2,8 +2,8 @@
 
 ## 1. 実機検証とバージョン乖離の解消（最初に実行・以降の一次ソース）
 
-- [ ] 1.1 素の repo（openspec 未 init の一時ディレクトリ）で `openspec init --tools claude` → `openspec apply` を実機検証する。volta グローバル 1.2.0 と npx ローカル 0.23.0 の両系統で挙動を確認し、どちらを正とするかを確定する。カスタムスキーマ longrun-tdd の出所（init で入るのか、`openspec schema fork` + テンプレートコピーが必要な claude-harness 固有手順か）を確定し、実コマンド出力のエビデンス付きで `plugins/longrun/docs/openspec-cli-verification.md` に記録する（ギャップ 2 の解消）
-- [ ] 1.2 1.1 の結果に基づき、preflight の検出コマンド系列（npx 優先 / which 優先）と未インストール環境への導入案内文言を確定し、確定結果を `plugins/longrun/docs/openspec-cli-verification.md` に一本化して記録する（design.md には確定値を書かない。design.md の該当 Decision は同ファイルへの参照のみ）
+- [x] 1.1 素の repo（openspec 未 init の一時ディレクトリ）で `openspec init --tools claude` → `openspec apply` を実機検証する。volta グローバル 1.2.0 と npx ローカル 0.23.0 の両系統で挙動を確認し、どちらを正とするかを確定する。カスタムスキーマ longrun-tdd の出所（init で入るのか、`openspec schema fork` + テンプレートコピーが必要な claude-harness 固有手順か）を確定し、実コマンド出力のエビデンス付きで `plugins/longrun/docs/openspec-cli-verification.md` に記録する（ギャップ 2 の解消）
+- [x] 1.2 1.1 の結果に基づき、preflight の検出コマンド系列（npx 優先 / which 優先）と未インストール環境への導入案内文言を確定し、確定結果を `plugins/longrun/docs/openspec-cli-verification.md` に一本化して記録する（design.md には確定値を書かない。design.md の該当 Decision は同ファイルへの参照のみ）
 
 ## 2. preflight 判定（exec Step 0）
 
