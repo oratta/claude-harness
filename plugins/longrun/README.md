@@ -1,6 +1,22 @@
-# Longrun Plugin v6.1
+# Longrun Plugin v6.2
 
 Claude Code 自律実行システム。Anthropic の [Harness Design for Long-Running Apps](https://www.anthropic.com/engineering/harness-design-long-running-apps) の知見を反映した設計。
+
+## v6.2 変更点
+
+- **モデル割り当て機構を追加**。plan.md に「モデル割り当て」セクション（`| change | ロール | ティア(haiku/sonnet/inherit) | 理由 | 上書き |` の表）を導入し、change × agent ロール（builder / verifier / reviewer）ごとに使用モデルのティアを指定できるようにした。全 agent 一律 opus からの最適化余地（コスト・レイテンシ）を plan 段階で構造的に扱う。
+- **推奨生成は `longrun-plan` スキル側**。Synthesis（Step 5c）でヒューリスティクスに基づきティアを推奨生成する:
+  - アーキテクチャレビュー・複雑な TDD 実装 → **inherit**（`opts.model` を渡さず agent 定義の opus を継承）
+  - 定型的な検証・要約 → **haiku**
+  - リサーチ・ブラウザ操作・中規模実装 → **sonnet**
+  - **保守的デフォルト: 迷ったら inherit**（確信度が低いタスクは inherit に倒す）
+- **ユーザーが plan 確認時に表を直接編集して上書きできる**。`上書き` 欄が非空ならティア欄より優先される（編集後の値は巻き戻されない）。
+- **消費は `/longrun:exec` 側**（責務分離）。exec が表を読み、ティアを `references/model-tiers.md` で解決して Workflow の `opts.model` に反映する。`inherit` は `opts.model` キー自体を出力しない（agent frontmatter の `model:` を上書きしない）。
+- **ティア → モデル ID の対応は [`references/model-tiers.md`](references/model-tiers.md) の 1 箇所に集約**。plan.md・SKILL.md・exec.md・workflow テンプレートはティア名（haiku/sonnet/inherit）のみを扱い、モデル ID を直書きしない（世代交代時の更新箇所はこのリファレンス 1 ファイルのみ）。
+- **fail-soft**: 未知のティア値・パース不能行は inherit + 警告で続行（exec を中断しない／AskUserQuestion を出さない）。
+- **旧 plan.md 後方互換**: 「モデル割り当て」セクションが無い旧形式の plan.md は全ロール inherit にフォールバックし、無変更で動く（移行作業不要）。
+- 消費ロジックは `scripts/resolve-model-allocation.mjs`（plan.md + model-tiers.md → 解決済み JSON）に集約。workflow テンプレートは条件付きスプレッド `...(model ? { model } : {})` で inherit 時にキーを省略する。
+- `plugin.json` / `marketplace.json`（plugins[] longrun エントリ）/ longrun-plan・longrun-mvp-plan SKILL.md frontmatter の version を 6.2.0 に同期 bump（lr プラグインは変更なし＝6.1.0 据え置き）。
 
 ## v6.1 変更点
 

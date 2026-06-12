@@ -39,8 +39,15 @@ const params = JSON.parse(readFileSync(paramsPath, 'utf8'));
 // __NAME__ 形式の埋め込みポイントを params[NAME] で置換する。
 // （${NAME} 形式は JS テンプレートリテラルの補間 ${round} 等と衝突するため使わない。）
 // 置換値が未指定の埋め込みポイントが残ったらエラー（推測値の混入を防ぐ）。
+//
+// 例外: モデル割り当て（change-4）の __*_MODEL__ 系は未指定なら 'null' を既定値にする。
+// inherit（model 未指定 = opts.model キーを出力しない）が安全側のデフォルトであり（D2/D5）、
+// モデル割り当て表の無い旧 plan.md でも render が落ちないようにするため（受け入れ条件 14）。
 let rendered = template.replace(/__([A-Z][A-Z0-9_]*)__/g, (whole, key) => {
   if (!(key in params)) {
+    if (/_MODEL$/.test(key)) {
+      return 'null';
+    }
     die(`missing param for placeholder __${key}__`);
   }
   return params[key];

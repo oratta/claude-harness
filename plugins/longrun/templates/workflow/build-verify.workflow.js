@@ -23,6 +23,10 @@
 //   __VERIFIER_AGENT_TYPE__  既定 'longrun:longrun-verifier'
 //   __BUILDER_SCHEMA__       builder-report.schema.json の中身（インライン JSON オブジェクト）
 //   __VERIFIER_SCHEMA__      verifier-score.schema.json の中身（インライン JSON オブジェクト）
+//   __BUILDER_MODEL__        builder の opts.model 値（エイリアス文字列リテラル 'sonnet' 等、または null）
+//   __VERIFIER_MODEL__       verifier の opts.model 値（同上）
+//                            null のときは下の条件付きスプレッドで model キー自体を出力しない（inherit, change-4 D2）。
+//                            ティア → エイリアス値の解決は plugins/longrun/references/model-tiers.md（1 箇所集約）。
 
 export const meta = {
   name: 'longrun-build-verify',
@@ -40,6 +44,11 @@ const VERIFY_ROUND_COST = 50000;   // 1 周あたりの想定トークン消費�
 const builderSchema = __BUILDER_SCHEMA__;
 const verifierSchema = __VERIFIER_SCHEMA__;
 const changes = __CHANGES_JSON__;
+
+// モデル割り当て（change-4）。エイリアス文字列 or null。null は inherit = opts.model を渡さない（D2）。
+// 解決は exec が resolve-model-allocation.mjs + references/model-tiers.md で行い、ここに埋める。
+const builderModel = __BUILDER_MODEL__;
+const verifierModel = __VERIFIER_MODEL__;
 
 // ===== Build フェーズ =====
 phase('Build');
@@ -59,6 +68,7 @@ for (let i = 0; i < changes.length; i++) {
       phase: 'Build',
       agentType: '__BUILDER_AGENT_TYPE__',
       schema: builderSchema,
+      ...(builderModel ? { model: builderModel } : {}),
     }
   );
   buildReports.push({ change: change.name, report });
@@ -96,6 +106,7 @@ while (round < VERIFY_MAX_ROUNDS) {
       phase: 'Verify',
       agentType: '__VERIFIER_AGENT_TYPE__',
       schema: verifierSchema,
+      ...(verifierModel ? { model: verifierModel } : {}),
     }
   );
   lastScore = score;
@@ -116,6 +127,7 @@ while (round < VERIFY_MAX_ROUNDS) {
         phase: 'Verify',
         agentType: '__BUILDER_AGENT_TYPE__',
         schema: builderSchema,
+        ...(builderModel ? { model: builderModel } : {}),
       }
     );
   }

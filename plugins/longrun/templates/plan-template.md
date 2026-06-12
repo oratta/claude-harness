@@ -44,6 +44,26 @@
 - **config.yaml rules**:
   - "[このchangeに固有のルール]"
 
+## モデル割り当て
+
+自律実行（exec）の各フェーズ agent に割り当てるモデルティアを change × ロールごとに指定する。
+exec はこの表を読み、ティアを `plugins/longrun/references/model-tiers.md` で解決して
+Workflow の `opts.model` に反映する。
+
+- ティアは `haiku` / `sonnet` / `inherit` の 3 値（モデル ID は書かない。解決は references/model-tiers.md が 1 箇所で担う）
+  - `inherit` = `opts.model` を渡さず agent 定義のモデル（現状 opus）を継承する。高能力が必要なタスク向け
+  - `haiku` = 定型的な検証・要約など軽量タスク向け
+  - `sonnet` = リサーチ・ブラウザ操作・中規模実装向け
+- **この表は plan 確認時にユーザーが直接編集して上書きできる**。編集後の値は巻き戻されない
+- **`上書き` 欄がティア欄より優先される**（上書き欄が非空ならティア欄を無視。上書き欄もティア語彙 haiku/sonnet/inherit で記入する）
+- 「モデル割り当て」セクションが無い旧形式の plan.md でも exec は動く（全ロール inherit にフォールバック）
+
+| change | ロール | ティア(haiku/sonnet/inherit) | 理由 | 上書き |
+|--------|--------|------------------------------|------|--------|
+| change-[A] | builder | inherit | 複雑な TDD 実装 | |
+| change-[A] | verifier | haiku | 定型的な静的検証 | |
+| change-[A] | reviewer | inherit | アーキテクチャレビュー | |
+
 ## 画面・UI設計
 [大まかな方向性、ワイヤーフレーム的な記述]
 [参考になる既存プロダクトやUIがあれば記載]

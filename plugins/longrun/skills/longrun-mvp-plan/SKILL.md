@@ -1,7 +1,7 @@
 ---
 name: longrun-mvp-plan
 description: 短時間で人間が手で MVP を実装するための軽量 plan.md を対話的に作成する。Brain Dump → Gap Analysis → Interview → 並列リサーチ → 軽量 Synthesis → 並列レビュー → 人間ハンドオフ。Build Contract / TDD / Verifier 自動起動 / OpenSpec 連携はスキップする。先頭に `<!-- mvp-mode -->` マーカー付き plan.md を生成。「MVP プランを作りたい」「軽量な実行計画」「手で作る MVP の準備」で起動。`/longrun:mvp`（短縮 `/lr:m`）。
-version: 6.1.0
+version: 6.2.0
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash, Agent
 ---
 

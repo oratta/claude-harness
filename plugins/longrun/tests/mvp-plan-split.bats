@@ -296,20 +296,20 @@ setup() {
   grep -qE 'Interview|インタビュー' "$METHODOLOGY_REF"
 }
 
-# --- S27 / S28: version sync at 6.1.0 ---
+# --- S27 / S28: version sync (longrun bumped to 6.2.0 by change-4; lr unchanged at 6.1.0) ---
 
-@test "mvp: longrun version 6.1.0 in plugin.json and marketplace plugins[]" {
+@test "mvp: longrun version 6.2.0 in plugin.json and marketplace plugins[]" {
   a="$(jq -r '.version' "$LONGRUN_JSON")"
   b="$(jq -r '.plugins[] | select(.name=="longrun") | .version' "$MARKETPLACE_JSON")"
-  [ "$a" = "6.1.0" ]
-  [ "$b" = "6.1.0" ]
+  [ "$a" = "6.2.0" ]
+  [ "$b" = "6.2.0" ]
 }
 
-@test "mvp: SKILL.md frontmatter versions are 6.1.0 for both plan and mvp-plan" {
+@test "mvp: SKILL.md frontmatter versions are 6.2.0 for both plan and mvp-plan" {
   va="$(grep -E '^version: ' "$PLAN_SKILL" | head -1 | awk '{print $2}')"
   vb="$(grep -E '^version: ' "$MVP_SKILL" | head -1 | awk '{print $2}')"
-  [ "$va" = "6.1.0" ]
-  [ "$vb" = "6.1.0" ]
+  [ "$va" = "6.2.0" ]
+  [ "$vb" = "6.2.0" ]
 }
 
 @test "mvp: lr version 6.1.0 in plugin.json and marketplace plugins[]" {

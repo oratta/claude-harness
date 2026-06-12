@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -28,10 +28,10 @@
     },
     {
       "name": "longrun",
-      "description": "Claude Code 自律実行システム v6.1。MVP プラン作成を独立スキル longrun-mvp-plan（/longrun:mvp、短縮 /lr:m）に分離。/longrun:exec を Workflow ツールに載せ替え、サブエージェント成果物を JSON Schema（StructuredOutput）で機構的に強制。Verify ループは上限 3 周 + budget ガード。中断再開は resumeFromRunId 一次手段。進捗は /workflows ライブビュー。TDD + 4軸定量評価 + Build Contract パターンで品質担保。OpenSpec 縮退モード対応。",
+      "description": "Claude Code 自律実行システム v6.2。モデル割り当て機構を追加: plan.md の「モデル割り当て」表（change × ロール × ティア haiku/sonnet/inherit）を longrun-plan が推奨生成し、exec が references/model-tiers.md でティアを解決して Workflow opts.model に反映（inherit はキー省略、未知ティアは inherit + 警告、表無し旧 plan.md は全 inherit）。MVP プラン作成を独立スキル longrun-mvp-plan（/longrun:mvp、短縮 /lr:m）に分離。/longrun:exec を Workflow ツールに載せ替え、サブエージェント成果物を JSON Schema（StructuredOutput）で機構的に強制。Verify ループは上限 3 周 + budget ガード。中断再開は resumeFromRunId 一次手段。進捗は /workflows ライブビュー。TDD + 4軸定量評価 + Build Contract パターンで品質担保。OpenSpec 縮退モード対応。",
       "source": "./plugins/longrun",
       "category": "workflow",
-      "version": "6.1.0",
+      "version": "6.2.0",
       "author": { "name": "Oratta" },
       "keywords": ["longrun", "autonomous", "execution", "agents", "openspec", "tdd", "feedback", "harness", "mvp"]
     },

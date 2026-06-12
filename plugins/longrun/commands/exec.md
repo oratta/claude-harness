@@ -149,6 +149,36 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/render-workflow.mjs" <template> <params.json
 | `VERIFIER_AGENT_TYPE` | 既定 `longrun:longrun-verifier` |
 | `REVIEWER_AGENT_TYPE` | 既定 `longrun:longrun-reviewer` |
 | `BUILDER_SCHEMA` / `VERIFIER_SCHEMA` / `REVIEWER_SCHEMA` | 対応する `*.schema.json` を `JSON.stringify(JSON.parse(...))` した**オブジェクトリテラル文字列**（スクリプトに JS オブジェクトとして埋め込まれ、`opts.schema` で StructuredOutput を強制する。プロンプトへのインライン重複はしない） |
+| `BUILDER_MODEL` / `VERIFIER_MODEL` / `REVIEWER_MODEL` | 各ロールの `opts.model` 値（**エイリアス文字列リテラル** `'sonnet'` 等、または `null`）。下記「モデル割り当ての消費」で解決する。`null`（= inherit）のときテンプレートは条件付きスプレッドで `model` キー自体を出力しない。**未指定なら render が `null` を既定値にする**（旧 plan.md フォールバック） |
+
+### モデル割り当ての消費（change-4）
+
+plan.md の「モデル割り当て」表を読み、各 change × ロールの `opts.model` 値を解決する。**この処理は
+専用スクリプトに集約する**（モデル ID を exec.md・テンプレートに散在させない）:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-model-allocation.mjs" \
+  {longrun-dir}/plan.md "${CLAUDE_PLUGIN_ROOT}/references/model-tiers.md"
+```
+
+- 出力 JSON は `{ hasSection, allocations:[{change, role, tier, model}], warnings:[...] }`。
+  `model` はエイリアス文字列（`'haiku'`/`'sonnet'`）または `null`（inherit = `opts.model` を渡さない）。
+- ティア → エイリアス値の解決元は **`references/model-tiers.md` の 1 箇所のみ**（D3）。exec はティア名と
+  リファレンスだけを扱い、モデル ID を直書きしない。
+- **`上書き` 欄が非空ならティア欄より優先**する（D4。スクリプトが処理済み）。
+- **fail-soft**: 未知のティア値・パース不能行は inherit 扱い + `warnings` に列挙される（D5）。**exec は
+  `warnings` をユーザーに表示するだけで、中断も AskUserQuestion もしない**。
+- 「モデル割り当て」セクションが無い旧 plan.md は `hasSection:false` で `allocations` が空 → 全ロール
+  inherit（`MODEL` パラメータ未指定 → render が `null` を既定値にする）。エラーにしない。
+
+解決した `model` 値を、対応する change のロール（builder/verifier/reviewer）の `BUILDER_MODEL` /
+`VERIFIER_MODEL` / `REVIEWER_MODEL` 埋め込みポイントに、**JS リテラルとして**渡す
+（文字列なら `'sonnet'` のようにクォート込み、inherit なら `null`）。
+
+<GATE>
+具体的なモデル ID 文字列を exec.md・workflow テンプレート・plan.md に直書きしてはならない。
+ティア → 値の解決は `references/model-tiers.md` を唯一のソースとする（config.yaml rule / D3）。
+</GATE>
 
 <GATE>
 schema は外部ファイル（`plugins/longrun/schemas/*.schema.json`）を唯一のソースとし、スクリプトや
