@@ -280,4 +280,21 @@
   - **[低] claude-harness update-checkpoint.sh の SC2012 info（不採用・記録のみ）**: info 重大度（`--severity=warning` ではクリーン）、glob `20*` は統制下で機能リスクなし。任意改善。
   - **[INFO] verification-guide.md.tmp 残骸（対応済み）**: change-5 builder の編集前中間状態の untracked 残骸（本体と diff したところ S41 以降の checkbox が古い状態）。本体が正しいため削除済み。
 - **判断**: 両リポジトリ PASS。change-5 の中 finding のみ修正ループを 1 回回す（実在のドリフト穴で core value 直結のため）。完了後に再検証は finding 限定（bats 全 PASS + ラッパー residue 0 件の grep 確認）で足りる。
+
+### D-V2: change-5 finding 修正の再検証 — 完成度 100% に更新、Verify 完了
+
+- **日時**: 2026-06-13
+- **エビデンス**: change-5 builder 修正（commit b6c80d2、harvest-knowledge.md +11/-7・knowledge_contract.bats +9/-1）→ longrun-verifier (a0f6701806723874f) finding 限定再検証
+  - residue 0 件（grep exit 1）、SKILL.md 現行契約との一致確認（plan/property/フォールバック 3 ケースとも L 番号レベルで照合）、再発防止テストがラッパーを実検査（S23 を SKILL.md 版/command.md 版の 2 本に分割、ok 146/147）、bats 375 ok / 0 fail（374→375、回帰なし）
+  - **完成度 86% → 100%**（7/7。「散文契約がコマンド定義から除去され schema 参照に置換」項目が PASS に転じた）
+- **判断**: Verify→Build 修正ループ 1 回で finding 解消。両リポジトリとも品質 100% / 完成度 100% で Verify フェーズ完了。Feedback フェーズへ進行。
+
+### Verify 4 軸統合スコア（最終）
+
+| 軸 | claude-harness | marketing-harness | しきい値 | 判定 |
+|----|---------------|-------------------|---------|------|
+| 品質 (テスト+lint+ビルド) | 100% | 100% | 100% | ✅ |
+| 完成度 (エッジ・エラー処理) | 100% | 100% | 80% | ✅ |
+| 機能性 (spec Scenario) | bats 162 Scenario + fixture 実走で代替担保 | 同左 | 100% | ✅（CLI のため bats + 実走、live E2E は Feedback） |
+| UX (操作フロー) | CLI（Web UI なし）→ N/A | 同左 | 70% | N/A |
 - **ブラウザ検証の扱い**: 本プロジェクトは CLI プラグイン（Web UI なし、plan.md「開発サーバー: なし」）。longrun-browser-verifier によるブラウザ操作検証は適用不可。機能性軸（spec Scenario 通過）の代替担保は (1) 162 Scenario の bats カバレッジ（全 PASS）、(2) change-2 の fixture workflow 実走（reference §11、review=APPROVE / build-verify=1周PASS / resume=builder 再実行なし）。残る live E2E（条件 12/17 等の slash command 実走）は Feedback フェーズのユーザー手動確認に委ねる（プロセス逸脱ではなく、対象が CLI 対話のため検証主体がユーザーになる切り分け）。
