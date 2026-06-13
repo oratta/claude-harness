@@ -256,3 +256,28 @@
 - **決定**: B。longrun の plugin.json / marketplace longrun エントリ / 両 SKILL.md frontmatter を 6.2.0 に揃える。lr は「変更なし」の instruction どおり 6.1.0 据え置き。change-3 テストの pin 値を更新。
 - **理由**: SKILL.md frontmatter version は marketplace キャッシュ無効化のためにプラグイン version と揃える運用（過去 commit の慣行）。同一プラグイン内で plan=6.2.0 / mvp-plan=6.1.0 が混在すると、どちらが新リリースか不明瞭になりキャッシュ事故の温床。mvp-plan の内容は変えないが version だけ揃えるのは既存の bump 慣行（例: v5.2 で SKILL.md のみ bump）と整合。lr 据え置きは instruction の明示指示。C は instruction 違反。
 - **可逆性**: version 数値変更のみ。テストの pin 値更新も可逆。
+
+## Verify フェーズ（2 段階検証）
+
+### D-V1: 静的検証（longrun-verifier 2 体並列）結果と finding 採否
+
+- **日時**: 2026-06-13
+- **エビデンス**: longrun-verifier Agent 2 体の並列静的検証
+  - **claude-harness（change-1〜4 マージ済み、a2fb22ddf7b6f57a1）**: 品質 **100** / 完成度 **100** / **PASS**
+    - bats: longrun 219 ok / 0 fail（`--count` 219 一致）、e2s 24 ok・daily-report 48 ok（回帰なし）
+    - lint 相当: shellcheck `--severity=warning` で scripts/tests 全クリーン、node --check で .mjs 3 本 + workflow テンプレート 2 本 PASS
+    - ビルド相当: plugin.json（longrun/lr）・marketplace.json・schema 3 本の jq 全 PASS
+    - version 同期（条件19）: longrun 6.2.0（plugin.json + marketplace plugins[] 一致）/ lr 6.1.0（両方一致、5.1.1→6.x bump 着地）/ marketplace top-level 2.9.0
+    - 旧コマンド grep（条件11）: status/decisions/s/d の commands[] エントリ 0 件、残存 grep ヒットは全て削除を記録する散文・テストアサーション（legacy-removal.bats が機械検証）
+  - **marketing-harness（change-5、a0f6701806723874f）**: 品質 **100** / 完成度 **86（6/7）** / **PASS**
+    - bats: `*.bats` glob 形式で 374 ok / 0 fail（baseline 313 + 新規 61）
+    - schema 4 本 jq PASS、validate-contract.sh / knowledge-cleanup.sh の bash -n・shellcheck クリーン
+    - version 同期（条件19）: harvest 0.14.0（plugin.json + plugins[] 一致）/ marketplace top-level 0.14.1→0.15.0
+    - 受け入れ条件 15/16/18 を実動作 bats で確認（validator 不正 fixture 拒否・cleanup 実動作）
+- **finding 採否（バイアス緩和ガード）**:
+  - **[中] change-5 `commands/harvest-knowledge.md` の旧散文契約残存（採用 (a)・契約の穴/ドリフト）**: SKILL.md は schema 参照に移行済みなのにコマンドラッパーが旧 STATUS/フェンス契約を「現行」として記述。本 change が排除しようとした無言ドリフトそのもの。かつ knowledge_contract.bats S23 がラッパー未検査というテストの穴あり。→ change-5 builder（a41d16bc9d5ce90b6）に修正依頼（ラッパー書き換え + S23 検査対象追加）。Verify→Build 修正ループ 1 回目。
+  - **[低] change-5 schema の additionalProperties:true（不採用・記録のみ）**: verifier 自身が「フォールバック互換重視の意図的設計、条件15/16 達成に影響なし、修正不要」と判定。required + enum + 構造の機構検証は厳密。嗜好レベルではなく設計判断の追認のため反論不要、現状維持。
+  - **[低] claude-harness update-checkpoint.sh の SC2012 info（不採用・記録のみ）**: info 重大度（`--severity=warning` ではクリーン）、glob `20*` は統制下で機能リスクなし。任意改善。
+  - **[INFO] verification-guide.md.tmp 残骸（対応済み）**: change-5 builder の編集前中間状態の untracked 残骸（本体と diff したところ S41 以降の checkbox が古い状態）。本体が正しいため削除済み。
+- **判断**: 両リポジトリ PASS。change-5 の中 finding のみ修正ループを 1 回回す（実在のドリフト穴で core value 直結のため）。完了後に再検証は finding 限定（bats 全 PASS + ラッパー residue 0 件の grep 確認）で足りる。
+- **ブラウザ検証の扱い**: 本プロジェクトは CLI プラグイン（Web UI なし、plan.md「開発サーバー: なし」）。longrun-browser-verifier によるブラウザ操作検証は適用不可。機能性軸（spec Scenario 通過）の代替担保は (1) 162 Scenario の bats カバレッジ（全 PASS）、(2) change-2 の fixture workflow 実走（reference §11、review=APPROVE / build-verify=1周PASS / resume=builder 再実行なし）。残る live E2E（条件 12/17 等の slash command 実走）は Feedback フェーズのユーザー手動確認に委ねる（プロセス逸脱ではなく、対象が CLI 対話のため検証主体がユーザーになる切り分け）。

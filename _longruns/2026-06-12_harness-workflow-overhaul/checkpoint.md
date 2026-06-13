@@ -1,7 +1,7 @@
 ---
-phase: Build
+phase: Verify
 status: in_progress
-last_updated: 2026-06-12T13:45:00
+last_updated: 2026-06-13T00:00:00
 ---
 
 # Checkpoint — harness 大型改修 run
@@ -72,6 +72,17 @@ longrun-dir: `_longruns/2026-06-12_harness-workflow-overhaul/`
 | change-3 mvp-plan-split | 26/26 | bats 193 PASS | **Complete & merged (c742b3d)** |
 | change-4 model-allocation | 0/n | - | Building |
 | change-5 harvest-structured-output | 27/29 | bats 374 PASS | **Complete on branch（E2E 待ち、PR #8）** |
+
+## Verify結果（静的検証）
+
+| リポジトリ | 品質 | 完成度 | 判定 | 検証Agent |
+|----|------|-------|------|----------|
+| claude-harness (change-1〜4) | 100% | 100% | ✅ PASS | longrun-verifier (a2fb22ddf7b6f57a1) |
+| marketing-harness (change-5) | 100% | 86% | ✅ PASS | longrun-verifier (a0f6701806723874f) |
+
+- ブラウザ検証: CLI プラグインのため適用不可。機能性は bats 162 Scenario カバレッジ + change-2 fixture workflow 実走（reference §11）で代替担保。live E2E は Feedback でユーザー手動確認
+- change-5 に中重大度 finding 1 件（harvest-knowledge.md の旧散文契約残存）→ Verify→Build 修正ループ 1 回目を実行中（builder a41d16bc9d5ce90b6）
+- detail: decisions.md D-V1
 - [ ] Verify: 静的検証 + 動作検証
 - [ ] Feedback: ユーザー確認
 - [ ] Integration: マルチリポジトリ統合（options.integrate: true）
