@@ -1,20 +1,19 @@
 {
   "name": "longrun",
-  "version": "5.2.0",
-  "description": "Claude Code 自律実行システム v5.2。MVP モード（--mode=mvp）を longrun:plan に追加: ヒアリング → 並列リサーチ → 軽量 plan.md → 並列レビュー → 人間ハンドオフの軽量フロー。Build Contract / TDD / Verifier をスキップし、archive 側は <!-- mvp-mode --> マーカー検知で OpenSpec change 生成をスキップ。フルモードは既存挙動を完全維持。commands/exec.md は Skill tool 呼び出しから SKILL.md インライン実行に変更し、disable-model-invocation 付き longrun-orchestrator が起動できないバグも修正済み。",
+  "version": "6.2.0",
+  "description": "Claude Code 自律実行システム v6.2。モデル割り当て機構を追加: plan.md の「モデル割り当て」表（change × ロール × ティア haiku/sonnet/inherit）を longrun-plan が推奨生成し、ユーザーが上書き編集でき、exec が references/model-tiers.md でティアを解決して Workflow の opts.model に反映する（inherit はキー省略、未知ティアは inherit + 警告で fail-soft、表の無い旧 plan.md は全 inherit フォールバック）。MVP プラン作成を独立スキル longrun-mvp-plan（/longrun:mvp、短縮 /lr:m）に分離: 旧 /longrun:plan の mvp フラグは移行案内を出して終了する。/longrun:exec は Workflow ツール載せ替え: plan.md を読んで Workflow スクリプト（templates/workflow/）を生成・起動し、agent()/pipeline()/parallel() でオーケストレーションする。サブエージェント成果物（builder レポート / verifier 4 軸スコア / reviewer 判定）を schemas/*.schema.json の JSON Schema（StructuredOutput）で機構的に強制。Verify ループは while + 上限 3 周 + budget ガードで暴走を構造的に防止。中断再開は resumeFromRunId 一次手段（runId を _longruns/<run>/ に記録）、checkpoint.md は人間向け監査ログに格下げ。進捗確認はネイティブ /workflows ライブビュー。TDD + 4 軸定量評価 + Build Contract パターンで品質担保。OpenSpec 縮退モードは exec Step 0 の preflight で判定。",
   "author": {
     "name": "Oratta"
   },
   "skills": [
     "./skills/longrun-plan",
-    "./skills/longrun-feedback",
-    "./skills/longrun-orchestrator"
+    "./skills/longrun-mvp-plan",
+    "./skills/longrun-feedback"
   ],
   "commands": [
     "./commands/plan.md",
+    "./commands/mvp.md",
     "./commands/exec.md",
-    "./commands/status.md",
-    "./commands/decisions.md",
     "./commands/archive.md",
     "./commands/feedback.md"
   ],

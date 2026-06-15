@@ -1,14 +1,14 @@
 ---
 name: longrun-feedback
-description: 自律実行完了後のフィードバックを分類・実行する。ユーザーの無選別フィードバック（brain dump）をTier 1（cosmetic）/ Tier 2（spec-aligned fix）/ Tier 3（new change）に自動分類し、Tier 1/2は即座に修正、Tier 3はopenspec/backlog.mdに記録する。orchestratorのFeedbackフェーズからも呼ばれる共通ロジック。
-version: 4.1.0
+description: 自律実行完了後のフィードバックを分類・実行する。ユーザーの無選別フィードバック（brain dump）をTier 1（cosmetic）/ Tier 2（spec-aligned fix）/ Tier 3（new change）に自動分類し、Tier 1/2は即座に修正、Tier 3はopenspec/backlog.mdに記録する。/longrun:exec の Feedback Tier 確認（Build→Verify workflow 完了後のメインループ）からも呼ばれる共通ロジック。
+version: 4.2.0
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Task
 ---
 
 # Run Feedback — フィードバック分類・実行スキル
 
 自律実行完了後のフィードバックを処理するスキル。
-longrun-orchestratorのFeedbackフェーズと、`/longrun:feedback` コマンドの両方から使われる共通ロジック。
+`/longrun:exec` の Feedback Tier 確認（Build→Verify workflow 完了後にメインループへ戻った時点）と、`/longrun:feedback` コマンドの両方から使われる共通ロジック。
 
 ## 設計原則
 
@@ -38,7 +38,10 @@ longrun-orchestratorのFeedbackフェーズと、`/longrun:feedback` コマン�
 ### Tier 3: New Change（新規要件）
 - **対象**: 既存changeのcapabilityスコープ外、または工数が大きい（30分超の見積もり）
 - **基準**: 新しいcapabilityが必要、またはアーキテクチャに影響する変更
-- **処理**: `openspec/backlog.md` に記録。現runではやらない
+- **処理**: backlog に記録。現runではやらない。**記録先は動作モードで分岐する**:
+  - **通常 run**（縮退マーカーなし）→ `openspec/backlog.md`（従来どおり）
+  - **縮退 run**（`{longrun-dir}/.degraded-mode` あり）→ `{longrun-dir}/backlog.md` に
+    フォールバック。`openspec/` ディレクトリは作成しない（後述「Step 7」参照）
 - **例**: 「通知機能も欲しい」「管理画面を追加して」「パフォーマンスを抜本的に改善して」
 
 ## 実行フロー
@@ -51,16 +54,27 @@ longrun-orchestratorのFeedbackフェーズと、`/longrun:feedback` コマン�
    ```
    見つからない場合はエラー: 「アクティブなrunが見つかりません」
 
-2. **必要ファイルの読み込み**:
+2. **必要ファイルの読み込み**（spec 類のパスは動作モードで分岐）:
    - `{longrun-dir}/plan.md` — スコープ・受け入れ条件の把握
    - `{longrun-dir}/decisions.md` — 設計判断の把握
-   - `openspec/changes/` 配下の各changeの:
-     - `proposal.md` — capabilityスコープの把握
-     - `specs/<capability>/spec.md` — 現在のScenarios
-     - `tasks.md` — タスク状態
+   - 各 change の spec 類:
+     - **NORMAL run** → `openspec/changes/<name>/` 配下の `proposal.md` /
+       `specs/<capability>/spec.md` / `tasks.md`
+     - **DEGRADED run** → `{longrun-dir}/specs/<change-name>/` 配下の `proposal.md` /
+       `spec.md` / `tasks.md`（縮退モードの自己完結 spec）
 
-3. **既存backlogの確認**:
-   - `openspec/backlog.md` が存在すれば読み込む
+3. **動作モードの判定（縮退フォールバックの起点）**:
+   ```bash
+   test -f "{longrun-dir}/.degraded-mode" && echo "DEGRADED" || echo "NORMAL"
+   ```
+   - **NORMAL** → Tier 3 の記録先は `openspec/backlog.md`（従来どおり）
+   - **DEGRADED** → Tier 3 の記録先は `{longrun-dir}/backlog.md`（フォールバック。
+     `openspec/` は作成しない）
+   以降この記録先を **`{backlog-path}`** として参照する。
+
+4. **既存backlogの確認**:
+   - `{backlog-path}` が存在すれば読み込む（NORMAL なら `openspec/backlog.md`、
+     DEGRADED なら `{longrun-dir}/backlog.md`）
 
 ### Step 1: フィードバック収集
 
@@ -114,9 +128,13 @@ longrun-orchestratorのFeedbackフェーズと、`/longrun:feedback` コマン�
 📋 New Change（backlogに記録、今回は対応しない）:
 5. 通知機能の追加
 6. 管理画面
+   → 記録先: {backlog-path}（縮退 run の場合は `_longruns/<run>/backlog.md` と明示）
 
 この分類で進めていいですか？変更があれば教えてください。
 ```
+
+**Tier 3 を提示する際は、記録先パス（`{backlog-path}`）を必ず明示する**。縮退 run では
+`_longruns/<run>/backlog.md` に記録されることをユーザーが分かるようにする。
 
 ### Step 4b: 実行計画の宣言（必須出力 — 自己拘束）
 
@@ -173,7 +191,9 @@ Tier 2のアイテムを処理:
 
 ### Step 7: Tier 3記録（Backlog）
 
-Tier 3のアイテムを `openspec/backlog.md` に記録:
+Tier 3のアイテムを **Step 0 で確定した `{backlog-path}`** に記録する:
+- **NORMAL run** → `openspec/backlog.md`
+- **DEGRADED run** → `{longrun-dir}/backlog.md`（`openspec/` ディレクトリは作成しない）
 
 ```markdown
 # Backlog
@@ -186,9 +206,15 @@ OpenSpec changeとして未対応のフィードバック。
 - [ ] [アイテム内容] — [簡単な背景/理由]
 ```
 
-既に `openspec/backlog.md` が存在する場合は追記する。
+記録フォーマットは NORMAL / DEGRADED で同一。既に `{backlog-path}` が存在する場合は追記する。
 
-commit: `docs: add feedback items to openspec backlog`
+<GATE>
+DEGRADED run では `openspec/backlog.md` に書いてはならず、`openspec/` ディレクトリを
+作成してもならない。記録先は必ず `{longrun-dir}/backlog.md`。
+NORMAL run のフォールバック分岐への迂回も禁止（従来どおり `openspec/backlog.md`）。
+</GATE>
+
+commit: `docs: add feedback items to backlog`（DEGRADED 時はメッセージに run 名を含めてもよい）
 
 ### Step 8: 完了報告 + 継続確認
 
@@ -205,12 +231,13 @@ commit: `docs: add feedback items to openspec backlog`
 ユーザーが追加フィードバックを出した場合 → Step 1に戻る（ただし全体で最大3ラウンド）。
 3ラウンド超えた場合 → 残りは全てTier 3としてbacklogに記録し、アーカイブを促す。
 
-「OK」の場合 → `/longrun:archive` を案内（またはorchestratorならArchiveフェーズに進む）。
+「OK」の場合 → `/longrun:archive` を案内（exec のメインループから呼ばれている場合は Archive フェーズへ進む）。
 
-## orchestratorからの呼び出し
+## /longrun:exec のメインループからの呼び出し
 
-Feedbackフェーズでユーザーがフィードバックを返した場合、orchestratorはこのスキルのStep 2以降を実行する。
-Step 0（コンテキストロード）はorchestratorが既にコンテキストを持っているためスキップ可能。
+Build→Verify workflow の完了後、メインループが Feedback Tier 確認でユーザーがフィードバックを返した場合、
+このスキルのStep 2以降を実行する。Step 0（コンテキストロード）はメインループが既にコンテキストを
+持っているためスキップ可能。
 
 ## 注意事項
 

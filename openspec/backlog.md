@@ -38,11 +38,14 @@ Phase 1 PoC（`_longruns/2026-05-13_codex-build-agent-eval/`）の Conditional G
 
 Claude Code では Skill / Agent / Command が同じディスカバリカタログに混在表示されるが、現状は両者とも `-er` / `-or` 終わりが多く、名前から種別を判断できない。実際 `longrun-orchestrator` を Skill tool で呼ぼうとして `disable-model-invocation` エラーになるバグが発生した（2026-05-07 修正済み、コミット `89f2181`）。
 
+### 消化済み
+
+- `longrun-orchestrator`（命名規則の発端）→ **change-2 (workflow-exec, longrun v6.0.0) で消化済み**。リネームではなく**スキル解体**で解消した。Workflow ツール載せ替えにより orchestrator スキル層そのものが不要になり、`plugins/longrun/skills/longrun-orchestrator/` を削除、生成ロジックは exec コマンド + 同梱テンプレート（`templates/workflow/`）へ移管。
+
 ### 対象（Skill 名 = `-er` / `-or` 終わり）
 
 | 現在名 | 提案リネーム | プラグイン | 備考 |
 |---|---|---|---|
-| `longrun-orchestrator` | `longrun-orchestration` | longrun | 命名規則の発端 |
 | `pre-task-orchestrator` | `pre-task-orchestration` | skill-aware-workflow | |
 | `context-reader` | `context-loading` または `context-bootstrap` | obsidian-llm-session-rules | |
 | `execution-tracker` | `execution-tracking` | skill-aware-workflow | |
@@ -66,7 +69,7 @@ Claude Code では Skill / Agent / Command が同じディスカバリカタロ�
 - **プラグイン単位で 1 PR**: 影響範囲を限定。`skill-aware-workflow` は5個まとめて1PRでもOK
 - **巨大 PR にしない**: レビュー負荷の観点
 - **rename と同時に他のリファクタを混ぜない**: 純粋な rename で diff を読みやすく
-- **優先度**: `longrun-orchestrator` → 既にユーザー文脈で問題発覚しているため最優先。他は順次。
+- **優先度**: `longrun-orchestrator` は change-2 で消化済み。残りは順次。
 
 ### 関連
 
