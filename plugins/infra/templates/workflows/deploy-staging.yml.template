@@ -9,6 +9,7 @@ env:
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   NODE_VERSION: '{{NODE_VERSION}}'
 
+# main への push が連続した場合、前のデプロイをキャンセル
 concurrency:
   group: staging-deploy
   cancel-in-progress: true
@@ -31,8 +32,43 @@ jobs:
       - name: Install Vercel CLI
         run: npm i -g vercel
 
-      - name: Pull Vercel project settings (Preview)
+      - name: Pull Vercel project settings
         run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      # =================================================================
+      # ▼▼▼ PROJECT-SPECIFIC OVERRIDE ▼▼▼
+      # Staging は Vercel の Preview env を継承するため、staging 専用の値に
+      # 差し替えたい env をここで上書きする。プロジェクトごとに差分が出るのは
+      # 原則このブロックだけ。
+      #   例) Smitch: Supabase を本番 DB (prod) に差し替え（下のステップの形）
+      #   例) pre-demo: LIFF_ID など LINE 系 env を staging 用に追加
+      # client bundle に焼き込む値（NEXT_PUBLIC_*）は build 前に
+      # .vercel/.env.preview.local を書き換える必要がある。
+      # =================================================================
+      - name: Override env for Staging
+        env:
+          PROD_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          PROD_SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+          PROD_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PROD_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          # Supabase を本番 DB (prod) に差し替える例。
+          # staging/本番を同じ DB にする設計 → ステークホルダー/QA が
+          # 本番と同等データで動作確認可能。
+          ENV_FILE=.vercel/.env.preview.local
+          if [ -f "$ENV_FILE" ]; then
+            sed -i -e '/^NEXT_PUBLIC_SUPABASE_URL=/d' \
+                   -e '/^NEXT_PUBLIC_SUPABASE_ANON_KEY=/d' \
+                   -e '/^SUPABASE_SERVICE_ROLE_KEY=/d' \
+                   "$ENV_FILE"
+            {
+              echo "NEXT_PUBLIC_SUPABASE_URL=\"$PROD_SUPABASE_URL\""
+              echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=\"$PROD_SUPABASE_ANON_KEY\""
+              echo "SUPABASE_SERVICE_ROLE_KEY=\"$PROD_SUPABASE_SERVICE_ROLE_KEY\""
+            } >> "$ENV_FILE"
+          fi
+      # =================================================================
+      # ▲▲▲ PROJECT-SPECIFIC OVERRIDE ▲▲▲
+      # =================================================================
 
       - name: Build
         run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
@@ -42,14 +78,37 @@ jobs:
 
       - name: Deploy to Vercel (Preview = Staging)
         id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PROD_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          PROD_SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+          PROD_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PROD_SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          DEPLOYMENT_URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          # ▼ PROJECT-SPECIFIC OVERRIDE（runtime 側）
+          # 上の sed override (build step 前) は client bundle 焼込用で、
+          # -e はサーバレス関数 runtime の process.env 用。二重注入は意図的。
+          # override が不要なプロジェクトは -e オプションを削る。
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt \
+            --token="$VERCEL_TOKEN" \
+            -e "NEXT_PUBLIC_SUPABASE_URL=$PROD_SUPABASE_URL" \
+            -e "NEXT_PUBLIC_SUPABASE_ANON_KEY=$PROD_SUPABASE_ANON_KEY" \
+            -e "SUPABASE_SERVICE_ROLE_KEY=$PROD_SUPABASE_SERVICE_ROLE_KEY")
           echo "url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Alias staging domain
+        if: ${{ vars.STAGING_DOMAIN != '' }}
+        env:
+          STAGING_DOMAIN: ${{ vars.STAGING_DOMAIN }}
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+        run: vercel alias "$DEPLOY_URL" "$STAGING_DOMAIN" --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Summary
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+          STAGING_DOMAIN: ${{ vars.STAGING_DOMAIN }}
         run: |
           echo "### Staging Deploy Complete" >> "$GITHUB_STEP_SUMMARY"
           echo "- Deployment: $DEPLOY_URL" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Supabase: prod (動作確認は本番DBで実施されます)" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$STAGING_DOMAIN" ]; then
+            echo "- Staging: https://$STAGING_DOMAIN" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -27,8 +27,10 @@ Web アプリのインフラ（Vercel + Supabase + GitHub Actions）を対話的
 | prod | カスタムドメイン | prod（リモート） |
 
 - Vercel の Git 自動連携は `vercel.json` で OFF
-- 全デプロイは GitHub Actions で制御（ci / deploy-staging / deploy-production / migrate-production の4本）
-- PR 時は CI のみ、自動 Preview deploy はしない（個人開発前提）
+- 全デプロイは GitHub Actions で制御（ci / deploy-preview / deploy-staging / deploy-production / migrate-production の5本）
+- PR は Draft + Ready for review 方式（Draft 中は CI・Preview deploy を skip、Ready for review で発火）
+- deploy-production には安全装置つき: 未適用マイグレーション検出ゲート（Supabase Management API）/ デプロイ前バックアップ（db dump → artifact 30日）/ デプロイ後スモークチェック / メンテナンスモード（Edge Config フラグ + REVOKE による書き込み停止。破壊的マイグレーション時のみ ON にする2モード運用）
+- ロールバック手順書テンプレ（`templates/docs/deploy-rollback.md` → プロジェクトの `docs/deploy-rollback.md`）付き
 
 ## 依存ツール
 

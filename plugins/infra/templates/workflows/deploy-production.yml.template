@@ -1,6 +1,7 @@
 name: Deploy to Production
 
 on:
+  # 手動トリガーのみ（承認ゲート付き）
   workflow_dispatch:
     inputs:
       confirm:
@@ -8,22 +9,46 @@ on:
         required: true
         type: boolean
         default: false
+      maintenance:
+        description: 'メンテナンスモード（破壊的マイグレーション時のみON: メンテ表示→書き込み停止→migrate→deploy→解除）'
+        required: false
+        type: boolean
+        default: false
 
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  PROD_SUPABASE_PROJECT_REF: ${{ secrets.PROD_SUPABASE_PROJECT_REF }}
   NODE_VERSION: '{{NODE_VERSION}}'
 
 concurrency:
   group: production-deploy
   cancel-in-progress: false
 
+# 必要な Secrets:
+# - VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID
+# - SUPABASE_ACCESS_TOKEN: Management API 用（マイグレーションゲート / REVOKE）
+# - PROD_SUPABASE_PROJECT_REF: 本番プロジェクトの ref
+# - PROD_SUPABASE_DB_URL: Session Pooler の接続文字列（バックアップ / migrate 用。
+#   GitHub Actions runner は IPv4 のため direct connection ではなく pooler 経由必須）
+# - EDGE_CONFIG_ID: メンテナンスモード用 Edge Config ストア ID（メンテモードを使う場合のみ）
+# 必要な Variables:
+# - PRODUCTION_DOMAIN: 本番ドメイン（スモークチェック用）
+#
+# メンテナンスモードの前提（使う場合のみ）:
+# - Vercel Edge Config ストアに `maintenance` キー（boolean）
+# - middleware が Edge Config の maintenance フラグを読んで /maintenance へ rewrite すること
+# - /maintenance ページの実装
+
 jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
+    # GitHub Environment "Production" で approval gate を設定
     environment:
       name: Production
+      url: https://${{ vars.PRODUCTION_DOMAIN }}
     steps:
       - name: Validate confirmation
         if: ${{ github.event.inputs.confirm != 'true' }}
@@ -32,6 +57,76 @@ jobs:
           exit 1
 
       - uses: actions/checkout@v4
+
+      # ---------------------------------------------------------------
+      # 未適用マイグレーション検出ゲート
+      # ローカル supabase/migrations/ と本番 schema_migrations を
+      # Supabase Management API（access token のみ・DB パスワード不要）で突き合わせる。
+      # - 本番にだけ存在するバージョン → 常に fail（ローカルが古い）
+      # - 未適用（ローカルにだけ存在） → 通常モードでは fail（先に適用してからデプロイ）
+      #                                  メンテモードでは本ワークフロー内で適用するため通過
+      # ---------------------------------------------------------------
+      - name: Migration gate (compare local vs production)
+        env:
+          MAINTENANCE: ${{ github.event.inputs.maintenance }}
+        run: |
+          LOCAL=$(basename -a supabase/migrations/*.sql 2>/dev/null | grep -oE '^[0-9]+' | sort -u)
+          RESPONSE=$(curl -sf -X POST \
+            "https://api.supabase.com/v1/projects/${PROD_SUPABASE_PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"select version from supabase_migrations.schema_migrations order by version"}') || {
+              echo "::error::Management API での schema_migrations 取得に失敗しました。SUPABASE_ACCESS_TOKEN / PROD_SUPABASE_PROJECT_REF を確認してください。"
+              exit 1
+            }
+          REMOTE=$(echo "$RESPONSE" | jq -r '.[].version' | sort -u)
+
+          PENDING=$(comm -23 <(echo "$LOCAL") <(echo "$REMOTE") | sed '/^$/d')
+          REMOTE_ONLY=$(comm -13 <(echo "$LOCAL") <(echo "$REMOTE") | sed '/^$/d')
+
+          if [ -n "$REMOTE_ONLY" ]; then
+            echo "::error::本番にのみ存在するマイグレーションがあります（ローカルが古い）: $(echo "$REMOTE_ONLY" | tr '\n' ' ')"
+            exit 1
+          fi
+
+          if [ -n "$PENDING" ]; then
+            if [ "$MAINTENANCE" = "true" ]; then
+              echo "未適用マイグレーションをメンテナンスモードで適用します: $(echo "$PENDING" | tr '\n' ' ')"
+            else
+              echo "::error::未適用のマイグレーションがあります: $(echo "$PENDING" | tr '\n' ' ')。先に本番へ適用するか、maintenance=true で実行してください。"
+              exit 1
+            fi
+          else
+            echo "マイグレーションは本番と同期済みです。"
+          fi
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # ---------------------------------------------------------------
+      # デプロイ前バックアップ（Free tier に PITR がないため必須）
+      # ---------------------------------------------------------------
+      - name: Backup production database
+        env:
+          PROD_SUPABASE_DB_URL: ${{ secrets.PROD_SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$PROD_SUPABASE_DB_URL" ]; then
+            echo "::error::PROD_SUPABASE_DB_URL が未設定です。Session Pooler の接続文字列を GitHub Secrets に登録してください。"
+            exit 1
+          fi
+          mkdir -p backup
+          supabase db dump --db-url "$PROD_SUPABASE_DB_URL" -f backup/roles.sql --role-only
+          supabase db dump --db-url "$PROD_SUPABASE_DB_URL" -f backup/schema.sql
+          supabase db dump --db-url "$PROD_SUPABASE_DB_URL" -f backup/data.sql --data-only --use-copy
+          ls -la backup/
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: backup/
+          retention-days: 30
 
       - uses: actions/setup-node@v4
         with:
@@ -44,11 +139,46 @@ jobs:
       - name: Install Vercel CLI
         run: npm i -g vercel
 
-      - name: Pull Vercel project settings (Production)
+      - name: Pull Vercel project settings
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Build
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      # ---------------------------------------------------------------
+      # メンテナンスモード（maintenance=true のときのみ）
+      # フラグON → 書き込み停止（REVOKE）→ migrate → deploy → 解除。
+      # 途中で失敗した場合、以降の解除ステップは実行されない
+      # ＝メンテ状態のまま停止する（中途半端な状態で公開しない）。
+      # 注意: REVOKE の対象は anon / authenticated のみ。service_role
+      # （webhook 等のサーバー処理）は止まらない。
+      # ---------------------------------------------------------------
+      - name: Enable maintenance mode (Edge Config)
+        if: ${{ github.event.inputs.maintenance == 'true' }}
+        run: |
+          curl -sf -X PATCH \
+            "https://api.vercel.com/v1/edge-config/${{ secrets.EDGE_CONFIG_ID }}/items?teamId=${VERCEL_ORG_ID}" \
+            -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"items":[{"operation":"upsert","key":"maintenance","value":true}]}'
+          echo "メンテナンスモード ON。伝播を待機します..."
+          sleep 15
+
+      - name: Stop writes (REVOKE)
+        if: ${{ github.event.inputs.maintenance == 'true' }}
+        run: |
+          curl -sf -X POST \
+            "https://api.supabase.com/v1/projects/${PROD_SUPABASE_PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"revoke insert, update, delete, truncate on all tables in schema public from anon, authenticated;"}'
+          echo "anon / authenticated の書き込みを停止しました（service_role は対象外）。"
+
+      - name: Apply migrations
+        if: ${{ github.event.inputs.maintenance == 'true' }}
+        env:
+          PROD_SUPABASE_DB_URL: ${{ secrets.PROD_SUPABASE_DB_URL }}
+        run: supabase db push --db-url "$PROD_SUPABASE_DB_URL" --include-all --yes
 
       - name: Remove .git to bypass Vercel author check
         run: rm -rf .git
@@ -59,10 +189,68 @@ jobs:
           DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
           echo "url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
 
+      - name: Restore writes (GRANT)
+        if: ${{ github.event.inputs.maintenance == 'true' }}
+        run: |
+          curl -sf -X POST \
+            "https://api.supabase.com/v1/projects/${PROD_SUPABASE_PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"grant insert, update, delete, truncate on all tables in schema public to anon, authenticated;"}'
+          echo "書き込みを再開しました。"
+
+      - name: Disable maintenance mode (Edge Config)
+        if: ${{ github.event.inputs.maintenance == 'true' }}
+        run: |
+          curl -sf -X PATCH \
+            "https://api.vercel.com/v1/edge-config/${{ secrets.EDGE_CONFIG_ID }}/items?teamId=${VERCEL_ORG_ID}" \
+            -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"items":[{"operation":"upsert","key":"maintenance","value":false}]}'
+          echo "メンテナンスモード OFF。"
+
+      # ---------------------------------------------------------------
+      # デプロイ後スモークチェック（本番 URL への疎通確認）
+      # プロジェクトに合わせて公開パスに変更する（認証リダイレクト先など）
+      # ---------------------------------------------------------------
+      - name: Smoke check
+        env:
+          PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
+        run: |
+          URL="https://${PRODUCTION_DOMAIN}/"
+          for i in $(seq 1 5); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 15 "$URL" || echo "000")
+            echo "attempt $i: $URL -> $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "スモークチェック OK"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::スモークチェック失敗: $URL が 200 を返しません（最終: $STATUS）"
+          exit 1
+
+      - name: Warn if maintenance mode left enabled
+        if: ${{ failure() && github.event.inputs.maintenance == 'true' }}
+        run: |
+          # shellcheck disable=SC2016
+          {
+            echo "### :warning: メンテナンスモードが解除されていない可能性があります"
+            echo "ワークフローが途中で失敗しました。状態を確認し、必要なら手動で解除してください:"
+            echo '- Edge Config: `maintenance` キーを `false` に戻す'
+            echo '- 書き込み再開: `grant insert, update, delete, truncate on all tables in schema public to anon, authenticated;`'
+            echo '- バックアップ artifact: `db-backup-${{ github.run_id }}`（roles / schema / data）'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Summary
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+          PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
         run: |
-          echo "### Production Deploy Complete" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Deployment: $DEPLOY_URL" >> "$GITHUB_STEP_SUMMARY"
-          echo "- カスタムドメインに紐付き完了（反映まで数秒〜）" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Production Deploy Complete"
+            echo "- Deployment: $DEPLOY_URL"
+            echo "- Production: https://$PRODUCTION_DOMAIN"
+            echo "- Backup artifact: db-backup-${{ github.run_id }} (30日保持)"
+            echo "- Maintenance mode: ${{ github.event.inputs.maintenance }}"
+          } >> "$GITHUB_STEP_SUMMARY"

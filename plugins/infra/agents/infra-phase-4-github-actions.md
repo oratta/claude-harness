@@ -1,6 +1,6 @@
 ---
 name: infra-phase-4-github-actions
-description: infra-setup スキルの Phase 4。GitHub Actions ワークフロー4本（ci.yml / deploy-staging.yml / deploy-production.yml / migrate-production.yml）を templates/ から読み込んで生成し、必要な GitHub Secrets を gh secret set で自動投入する。Vercel Token は Playwright MCP で取得、利用不可時は手動案内。
+description: infra-setup スキルの Phase 4。GitHub Actions ワークフロー5本（ci.yml / deploy-preview.yml / deploy-staging.yml / deploy-production.yml / migrate-production.yml）と補助ファイル（scripts/check-migration-numbers.mjs / docs/deploy-rollback.md）を templates/ から読み込んで生成し、必要な GitHub Secrets を gh secret set で自動投入する。Vercel Token は Playwright MCP で取得、利用不可時は手動案内。
 tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion
 model: sonnet
 ---
@@ -11,9 +11,9 @@ model: sonnet
 ## あなたのゴール
 
 1. `.github/workflows/` ディレクトリを作成
-2. プラグインの `templates/workflows/` から 4本のテンプレートを読み込み
+2. プラグインの `templates/workflows/` から 5本のテンプレートを読み込み
 3. placeholder（`{{NODE_VERSION}}` 等）を state の値で置換
-4. 置換結果を `.github/workflows/*.yml` として Write
+4. 置換結果を `.github/workflows/*.yml` として Write（＋ `templates/scripts/` `templates/docs/` の補助ファイルをコピー）
 5. VERCEL_TOKEN を取得（Playwright MCP もしくは手動）
 6. `.vercel/project.json` から VERCEL_ORG_ID / VERCEL_PROJECT_ID を抽出
 7. `gh secret set` で GitHub Secrets を自動投入
@@ -59,7 +59,7 @@ done
 mkdir -p .github/workflows
 ```
 
-既存のワークフローファイルがある場合（`ci.yml` / `deploy-staging.yml` / `deploy-production.yml` / `migrate-production.yml`）:
+既存のワークフローファイルがある場合（`ci.yml` / `deploy-preview.yml` / `deploy-staging.yml` / `deploy-production.yml` / `migrate-production.yml`）:
 ```
 AskUserQuestion: 既存のワークフローファイル {ファイル名} が存在します。どうしますか？
 - 上書きする（このスキルのテンプレートに置き換え）
@@ -67,9 +67,9 @@ AskUserQuestion: 既存のワークフローファイル {ファイル名} が�
 - 差分を見てから判断する（diff 表示）
 ```
 
-### Step 4: 4つのワークフローを生成
+### Step 4: 5つのワークフローと補助ファイルを生成
 
-以下を 4ファイル分繰り返す:
+以下を 5ファイル分繰り返す:
 
 1. テンプレートを Read: `{templates_dir}/ci.yml.template`
 2. placeholder を置換:
@@ -77,11 +77,19 @@ AskUserQuestion: 既存のワークフローファイル {ファイル名} が�
 3. `.github/workflows/ci.yml` として Write
 
 同様に:
+- `deploy-preview.yml.template` → `.github/workflows/deploy-preview.yml`
 - `deploy-staging.yml.template` → `.github/workflows/deploy-staging.yml`
 - `deploy-production.yml.template` → `.github/workflows/deploy-production.yml`
 - `migrate-production.yml.template` → `.github/workflows/migrate-production.yml`
 
 **注意**: GitHub Actions の `${{ ... }}` は残す必要がある。`{{NODE_VERSION}}` だけを置換し、その他の `${{ secrets.* }}` や `${{ env.* }}` はそのまま保持すること。
+
+**deploy-staging.yml の PROJECT-SPECIFIC OVERRIDE ブロック**: staging 用に Preview env を上書きするポイントはこのマーカーブロックに集約されている。プロジェクト固有の差分（例: Supabase を prod に差し替え / LIFF 系 env 追加）が必要ならこのブロックだけを編集する。
+
+補助ファイルもコピーする:
+- `{templates_dir}/../scripts/check-migration-numbers.mjs` → `scripts/check-migration-numbers.mjs`
+  - あわせて package.json の scripts に `"check:migrations": "node scripts/check-migration-numbers.mjs"` を追加（ci.yml が `--if-present` で実行する）
+- `{templates_dir}/../docs/deploy-rollback.md` → `docs/deploy-rollback.md`（ロールバック手順書）
 
 ### Step 5: Vercel Token 取得
 
@@ -128,6 +136,22 @@ Phase 2 が正しく完了していない可能性があります。
 手動で値を入力しますか？
 ```
 
+さらに **PROD_SUPABASE_DB_URL**（Session Pooler 接続文字列）を組み立てる。
+GitHub Actions runner は IPv4 のため direct connection ではなく pooler 経由必須:
+
+```bash
+# Management API から pooler 接続文字列の雛形を取得（パスワードは含まれない）
+POOLER_URL=$(curl -sf "https://api.supabase.com/v1/projects/${prod_project_ref}/config/database/pooler" \
+  -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+  | jq -r '.[] | select(.database_type == "PRIMARY") | .connection_string' | head -n1)
+# 例: postgresql://postgres.{ref}@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres
+# ユーザー名の後にパスワードを挿入する（パスワードは URL エンコードすること）
+PROD_SUPABASE_DB_URL="${POOLER_URL/@/:${SUPABASE_DB_PASSWORD_PROD_URLENCODED}@}"
+```
+
+API 形状が変わっていて取得できない場合は、Supabase Dashboard の
+Connect → Session pooler の接続文字列をユーザーに聞いて組み立てる。
+
 ### Step 7: GitHub Secrets 投入
 
 各 secret を一つずつ投入:
@@ -137,9 +161,13 @@ gh secret set VERCEL_TOKEN --body "$vercel_token" --repo "$github_repo"
 gh secret set VERCEL_ORG_ID --body "$vercel_org_id" --repo "$github_repo"
 gh secret set VERCEL_PROJECT_ID --body "$vercel_project_id" --repo "$github_repo"
 gh secret set SUPABASE_ACCESS_TOKEN --body "$SUPABASE_ACCESS_TOKEN" --repo "$github_repo"
-gh secret set SUPABASE_PROD_REF --body "$prod_project_ref" --repo "$github_repo"
-gh secret set SUPABASE_DB_PASSWORD_PROD --body "$SUPABASE_DB_PASSWORD_PROD" --repo "$github_repo"
+gh secret set PROD_SUPABASE_PROJECT_REF --body "$prod_project_ref" --repo "$github_repo"
+gh secret set PROD_SUPABASE_DB_URL --body "$PROD_SUPABASE_DB_URL" --repo "$github_repo"
 ```
+
+**EDGE_CONFIG_ID（オプション）**: deploy-production.yml のメンテナンスモードを使う場合のみ必要。
+Vercel API で Edge Config ストアを作成して投入する（アプリ側の middleware 実装も必要なので、Phase 4 では作成せずスキップしてよい。使う段になったら:
+`POST https://api.vercel.com/v1/edge-config?teamId={org_id}` でストア作成 → `maintenance: false` を初期値に設定 → 読み取りトークンを発行して接続文字列を `EDGE_CONFIG` env としてプロジェクトに追加 → ストア ID を `gh secret set EDGE_CONFIG_ID` で投入）。
 
 各投入後、`gh secret list --repo "$github_repo"` で確認できる。
 
@@ -179,17 +207,21 @@ https://github.com/{github_repo}/settings/environments
 ## Phase 4 (GitHub Actions)
 - workflows_created:
   - .github/workflows/ci.yml
+  - .github/workflows/deploy-preview.yml
   - .github/workflows/deploy-staging.yml
   - .github/workflows/deploy-production.yml
   - .github/workflows/migrate-production.yml
+- support_files_created:
+  - scripts/check-migration-numbers.mjs
+  - docs/deploy-rollback.md
 - node_version_used: {node_version_detected}
 - secrets_set:
   - VERCEL_TOKEN
   - VERCEL_ORG_ID
   - VERCEL_PROJECT_ID
   - SUPABASE_ACCESS_TOKEN
-  - SUPABASE_PROD_REF
-  - SUPABASE_DB_PASSWORD_PROD
+  - PROD_SUPABASE_PROJECT_REF
+  - PROD_SUPABASE_DB_URL
 - production_environment_created: {true|false|skipped}
 - vercel_token_method: {playwright|manual}
 - completed_at: {ISO8601_TIMESTAMP}
@@ -203,14 +235,20 @@ https://github.com/{github_repo}/settings/environments
 ## Phase 4 完了: GitHub Actions セットアップ
 
 テンプレートから生成したワークフロー（Node {node_version_detected}）:
-- .github/workflows/ci.yml（PR時 test/lint/type-check）
-- .github/workflows/deploy-staging.yml（main push で自動 Preview deploy）
-- .github/workflows/deploy-production.yml（workflow_dispatch + confirm で Production deploy）
-- .github/workflows/migrate-production.yml（workflow_dispatch + confirm で Supabase prod migrations）
+- .github/workflows/ci.yml（Draft+Ready for review 方式の lint/typecheck/test/actionlint）
+- .github/workflows/deploy-preview.yml（PR Ready for review で Preview deploy + PR コメント）
+- .github/workflows/deploy-staging.yml（main push で自動 staging deploy）
+- .github/workflows/deploy-production.yml（workflow_dispatch + confirm。マイグレーションゲート / バックアップ / スモークチェック / メンテモード付き）
+- .github/workflows/migrate-production.yml（workflow_dispatch + confirm。バックアップ + db push + 適用検証）
+
+補助ファイル:
+- scripts/check-migration-numbers.mjs（マイグレーション番号重複チェック、CI で実行）
+- docs/deploy-rollback.md（ロールバック手順書）
 
 GitHub Secrets 投入:
 - VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID
-- SUPABASE_ACCESS_TOKEN / SUPABASE_PROD_REF / SUPABASE_DB_PASSWORD_PROD
+- SUPABASE_ACCESS_TOKEN / PROD_SUPABASE_PROJECT_REF / PROD_SUPABASE_DB_URL
+- EDGE_CONFIG_ID は未投入（メンテナンスモードを使う場合に別途セットアップ）
 
 GitHub Environment "Production": {作成済み / 未設定（推奨: 作成）}
 
@@ -238,8 +276,8 @@ GitHub Environment "Production": {作成済み / 未設定（推奨: 作成）}
 ### Vercel Token Scope が不足
 GHA から `vercel build --prod` するには `Full Account` scope が必要。
 
-### `supabase link` が DB password を要求する
-`migrate-production.yml` では `--password` フラグで明示的に渡しているのでプロンプト不要。CLI バージョンによって挙動が変わる可能性があるので、実行失敗時は `supabase/setup-cli@v1` のバージョンを `version: '1.200.0'` 等に固定する。
+### `supabase db push` / `db dump` が接続できない
+`migrate-production.yml` / `deploy-production.yml` は `--db-url` に PROD_SUPABASE_DB_URL（Session Pooler）を渡す方式。direct connection の URL（`db.{ref}.supabase.co:5432`）は runner が IPv4 のため接続できない。pooler 経由（`aws-*-*.pooler.supabase.com:5432`）の URL になっているか、パスワードが URL エンコードされているかを確認する。
 
 ### migrate-production.yml 初回実行時 supabase/migrations がない
 初期状態ではマイグレーションファイル自体が無いため、実際に実行するのはファイル追加後。Phase 4 ではワークフロー**生成のみ**で、初回実行はユーザーの判断に任せる。

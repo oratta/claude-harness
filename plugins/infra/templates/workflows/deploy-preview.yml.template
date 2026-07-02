@@ -1,0 +1,97 @@
+name: Deploy Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# 同一 PR の古いデプロイをキャンセルし、最新 commit のみデプロイする
+concurrency:
+  group: preview-deploy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  NODE_VERSION: '{{NODE_VERSION}}'
+
+jobs:
+  deploy-preview:
+    name: Deploy Preview to Vercel
+    # Draft 中は skip（Ready for review で発火） + Fork PR では Secret を渡さないため job ごとスキップする
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    outputs:
+      preview_url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel
+
+      - name: Pull Vercel project settings
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+
+      - name: Build (preview)
+        run: vercel build --token="$VERCEL_TOKEN"
+
+      - name: Remove .git to bypass Vercel author check
+        run: rm -rf .git
+
+      - name: Deploy to Vercel (Preview)
+        id: deploy
+        run: |
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")
+          echo "url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Comment Preview URL on PR
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const url = process.env.PREVIEW_URL;
+            const sha = process.env.COMMIT_SHA;
+            const shortSha = sha ? sha.substring(0, 7) : 'unknown';
+            const timestamp = new Date().toISOString();
+            const body = [
+              'Preview deployed!',
+              '',
+              `URL: ${url}`,
+              `Commit: \`${shortSha}\``,
+              `Updated: ${timestamp}`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Summary
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          {
+            echo "### Preview Deploy Complete"
+            echo "- PR: #${PR_NUMBER}"
+            echo "- Preview: ${PREVIEW_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -14,8 +14,15 @@
       "source": "./plugins/skill-aware-workflow",
       "category": "workflow",
       "version": "2.0.0",
-      "author": { "name": "Oratta" },
-      "keywords": ["skill-discovery", "workflow", "learning", "automation"]
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "skill-discovery",
+        "workflow",
+        "learning",
+        "automation"
+      ]
     },
     {
       "name": "obsidian-llm-session-rules",
@@ -23,8 +30,16 @@
       "source": "./plugins/obsidian-llm-session-rules",
       "category": "productivity",
       "version": "1.1.2",
-      "author": { "name": "Oratta" },
-      "keywords": ["obsidian", "llm", "session", "context", "auto-save"]
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "obsidian",
+        "llm",
+        "session",
+        "context",
+        "auto-save"
+      ]
     },
     {
       "name": "longrun",
@@ -32,8 +47,20 @@
       "source": "./plugins/longrun",
       "category": "workflow",
       "version": "6.2.0",
-      "author": { "name": "Oratta" },
-      "keywords": ["longrun", "autonomous", "execution", "agents", "openspec", "tdd", "feedback", "harness", "mvp"]
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "longrun",
+        "autonomous",
+        "execution",
+        "agents",
+        "openspec",
+        "tdd",
+        "feedback",
+        "harness",
+        "mvp"
+      ]
     },
     {
       "name": "lr",
@@ -41,8 +68,14 @@
       "source": "./plugins/lr",
       "category": "workflow",
       "version": "6.1.0",
-      "author": { "name": "Oratta" },
-      "keywords": ["longrun", "alias", "shortcut"]
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "longrun",
+        "alias",
+        "shortcut"
+      ]
     },
     {
       "name": "worktree",
@@ -50,8 +83,16 @@
       "source": "./plugins/worktree",
       "category": "workflow",
       "version": "2.1.1",
-      "author": { "name": "Oratta" },
-      "keywords": ["worktree", "git", "setup", "cleanup", "symlink"]
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "worktree",
+        "git",
+        "setup",
+        "cleanup",
+        "symlink"
+      ]
     },
     {
       "name": "weekly-report",
@@ -59,8 +100,14 @@
       "source": "./plugins/weekly-report",
       "category": "productivity",
       "version": "1.0.2",
-      "author": { "name": "Oratta" },
-      "keywords": ["weekly", "report", "obsidian"]
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "weekly",
+        "report",
+        "obsidian"
+      ]
     },
     {
       "name": "daily-report",
@@ -68,17 +115,36 @@
       "source": "./plugins/daily-report",
       "category": "productivity",
       "version": "0.3.0",
-      "author": { "name": "Oratta" },
-      "keywords": ["daily", "diary", "fieldy", "notion", "obsidian", "narrative"]
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "daily",
+        "diary",
+        "fieldy",
+        "notion",
+        "obsidian",
+        "narrative"
+      ]
     },
     {
       "name": "infra",
       "description": "Webアプリのインフラを対話的に一括セットアップ。Vercel + Supabase + GitHub Actions構成で local/staging/prod を自動構築（/infra-setup）。",
       "source": "./plugins/infra",
       "category": "workflow",
-      "version": "0.1.0",
-      "author": { "name": "Oratta" },
-      "keywords": ["infra", "setup", "vercel", "supabase", "github-actions", "deploy", "nextjs"]
+      "version": "0.2.0",
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "infra",
+        "setup",
+        "vercel",
+        "supabase",
+        "github-actions",
+        "deploy",
+        "nextjs"
+      ]
     },
     {
       "name": "experience-to-skill",
@@ -86,8 +152,17 @@
       "source": "./plugins/experience-to-skill",
       "category": "workflow",
       "version": "0.2.0",
-      "author": { "name": "Oratta" },
-      "keywords": ["skill-distillation", "jsonl", "session-logs", "llm-driven", "sanitize", "claude-code"]
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "skill-distillation",
+        "jsonl",
+        "session-logs",
+        "llm-driven",
+        "sanitize",
+        "claude-code"
+      ]
     },
     {
       "name": "skill-pack",
@@ -95,8 +170,17 @@
       "source": "./plugins/skill-pack",
       "category": "workflow",
       "version": "0.1.0",
-      "author": { "name": "Oratta" },
-      "keywords": ["skills", "configuration", "skillOverrides", "enabledPlugins", "project-setup", "doctor"]
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "skills",
+        "configuration",
+        "skillOverrides",
+        "enabledPlugins",
+        "project-setup",
+        "doctor"
+      ]
     }
   ],
   "skills": [],
@@ -104,7 +188,18 @@
     {
       "name": "all",
       "description": "全プラグインをインストール",
-      "plugins": ["skill-aware-workflow", "obsidian-llm-session-rules", "longrun", "lr", "worktree", "weekly-report", "daily-report", "infra", "experience-to-skill", "skill-pack"],
+      "plugins": [
+        "skill-aware-workflow",
+        "obsidian-llm-session-rules",
+        "longrun",
+        "lr",
+        "worktree",
+        "weekly-report",
+        "daily-report",
+        "infra",
+        "experience-to-skill",
+        "skill-pack"
+      ],
       "skills": []
     }
   ]

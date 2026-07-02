@@ -1,16 +1,45 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 env:
   NODE_VERSION: '{{NODE_VERSION}}'
 
+# デプロイフロー:
+# - Preview (PR): deploy-preview.yml が Ready for review で実行
+# - Staging (main push): deploy-staging.yml が自動実行
+# - Production: deploy-production.yml を workflow_dispatch で手動実行
+# このワークフローはチェック(lint + typecheck + test + actionlint)を担当
+#
+# トリガー設計（Draft + Ready for review 方式）:
+# - push (main): マージ後の最終 CI
+# - pull_request: Draft 中は job 側 `draft == false` ガードで skip し、
+#   「Ready for review」ボタン（ready_for_review）で発火する
+# - workflow_dispatch: 手動トリガー
+
 jobs:
-  check:
-    name: Test / Lint / Type-check
+  actionlint:
+    name: Actionlint
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:latest
+        with:
+          args: -color
+
+  lint-and-typecheck:
+    name: Lint & Type Check & Test
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
@@ -22,11 +51,59 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
+      # supabase/migrations/ の番号重複チェック（重複は db push で silently skip され
+      # prod/dev drift の原因になる）。scripts/check-migration-numbers.mjs +
+      # package.json に "check:migrations" script が前提。無ければ skip される。
+      - name: Check migration version uniqueness
+        run: npm run check:migrations --if-present
+
+      - name: Run ESLint
         run: npm run lint --if-present
 
-      - name: Type check
-        run: npm run type-check --if-present
+      - name: TypeScript type check (via Next.js build)
+        run: npx next build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          # 型チェック中の OOM (JavaScript heap out of memory) 回避。
+          # runner デフォルトのヒープ上限(約2GB)を引き上げる。
+          NODE_OPTIONS: '--max-old-space-size=4096'
 
-      - name: Test
-        run: npm test --if-present
+      - name: Run unit tests
+        run: npm run test:run --if-present
+
+  # Playwright E2E テスト（必要になったらコメントを外して有効化する）。
+  # 前提: `npx playwright test` が動く設定 (playwright.config.ts) があること。
+  # e2e-tests:
+  #   name: Playwright E2E Tests
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+  #   needs: lint-and-typecheck
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: ${{ env.NODE_VERSION }}
+  #         cache: 'npm'
+  #
+  #     - name: Install dependencies
+  #       run: npm ci
+  #
+  #     - name: Install Playwright browsers
+  #       run: npx playwright install chromium --with-deps
+  #
+  #     - name: Run Playwright tests
+  #       run: npx playwright test
+  #       env:
+  #         NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+  #         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+  #         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+  #
+  #     - name: Upload test results
+  #       uses: actions/upload-artifact@v4
+  #       if: always()
+  #       with:
+  #         name: playwright-report
+  #         path: playwright-report/
+  #         retention-days: 30
