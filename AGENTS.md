@@ -45,7 +45,7 @@ session.jsonl のような ephemeral ファイルは **復元対象外**。Draft
 - `LLM_LOG_DIR` が未設定の場合は **ユーザーに保存先を確認すること**。デフォルトパスを勝手に決めて書き込まない（個人のディレクトリ構成を git に残さないため）
 - このリポジトリ配下（`./LLM/` を含む）には絶対に書かない
 
-`session-logger` / `daily-report` / `weekly-report` など LLM ログを扱う skill を呼び出すときも、この優先順位でパスを解決すること。
+`daily-report` / `weekly-report` など LLM ログを扱う skill を呼び出すときも、この優先順位でパスを解決すること。
 
 ## CI 設計指針（将来 CI を追加するときの参考）
 

@@ -9,39 +9,6 @@
   },
   "plugins": [
     {
-      "name": "skill-aware-workflow",
-      "description": "タスク実行前にスキルを探索し、実行中の摩擦を記録、完了後に新スキル作成を提案するワークフローシステム。",
-      "source": "./plugins/skill-aware-workflow",
-      "category": "workflow",
-      "version": "2.0.0",
-      "author": {
-        "name": "Oratta"
-      },
-      "keywords": [
-        "skill-discovery",
-        "workflow",
-        "learning",
-        "automation"
-      ]
-    },
-    {
-      "name": "obsidian-llm-session-rules",
-      "description": "Obsidian LLM Session用のルールセット",
-      "source": "./plugins/obsidian-llm-session-rules",
-      "category": "productivity",
-      "version": "1.1.2",
-      "author": {
-        "name": "Oratta"
-      },
-      "keywords": [
-        "obsidian",
-        "llm",
-        "session",
-        "context",
-        "auto-save"
-      ]
-    },
-    {
       "name": "longrun",
       "description": "Claude Code 自律実行システム v6.2。モデル割り当て機構を追加: plan.md の「モデル割り当て」表（change × ロール × ティア haiku/sonnet/inherit）を longrun-plan が推奨生成し、exec が references/model-tiers.md でティアを解決して Workflow opts.model に反映（inherit はキー省略、未知ティアは inherit + 警告、表無し旧 plan.md は全 inherit）。MVP プラン作成を独立スキル longrun-mvp-plan（/longrun:mvp、短縮 /lr:m）に分離。/longrun:exec を Workflow ツールに載せ替え、サブエージェント成果物を JSON Schema（StructuredOutput）で機構的に強制。Verify ループは上限 3 周 + budget ガード。中断再開は resumeFromRunId 一次手段。進捗は /workflows ライブビュー。TDD + 4軸定量評価 + Build Contract パターンで品質担保。OpenSpec 縮退モード対応。",
       "source": "./plugins/longrun",
@@ -189,8 +156,6 @@
       "name": "all",
       "description": "全プラグインをインストール",
       "plugins": [
-        "skill-aware-workflow",
-        "obsidian-llm-session-rules",
         "longrun",
         "lr",
         "worktree",

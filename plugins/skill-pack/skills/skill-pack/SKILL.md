@@ -137,7 +137,7 @@ Claude Code の `skillOverrides` と `enabledPlugins` を対話的に編集し�
   },
   "enabledPlugins": {
     "cooking@1h-cooking": false,
-    "obsidian-llm-session-rules@oratta-claude-harness": false
+    "worktree@oratta-claude-harness": false
   }
 }
 ```

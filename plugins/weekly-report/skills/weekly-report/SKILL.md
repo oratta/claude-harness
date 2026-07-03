@@ -91,7 +91,7 @@ ToolSearch(query="select:mcp__sunsama__read_resource", max_results=1)
 
 #### 3b. ソースリポジトリ Claude Code セッション（native jsonl 直読）
 
-> 流用元: `plugins/daily-report/agents/llm-log-compactor.md:33-100` の jq ロジック（初回 user メッセージ抽出・メタ統計集計）を、週次（複数日横断）集計向けに適用したもの。obsidian-llm-session-rules / auto-save.py が生成する旧形式の劣化コピー（ソースリポジトリ配下の `LLM/` ディレクトリの markdown）は参照しない。
+> 流用元: `plugins/daily-report/agents/llm-log-compactor.md:33-100` の jq ロジック（初回 user メッセージ抽出・メタ統計集計）を、週次（複数日横断）集計向けに適用したもの。廃止済み hook が生成していた旧形式の劣化コピー（ソースリポジトリ配下の `LLM/` ディレクトリの markdown）は参照しない。
 
 レジストリの各プロジェクトについて、`source_path` を Claude Code の `~/.claude/projects/` エンコード規則（`/` を `-` に置換）で変換し、対応するセッション jsonl を対象週の日付範囲（月曜 00:00 〜 翌月曜 00:00）でフィルタして直読する:
 

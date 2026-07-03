@@ -67,6 +67,27 @@
 
 - 採用: 「Skill 命名規則リファクタリング」節（33-79行目相当、前後の `---` セパレータは残す）を全削除する、または対象7スキル部分のみ「本 change で消滅済み」の1行注記に置き換える、のいずれかを builder が選択してよい（plan.md 付録F item 4「消化の経緯を1行残すかbacklogから完全除去かはbuilder判断」を反映）
 - 制約: どちらを選んでも、削除後の `openspec/backlog.md` に9個の旧 Skill 名の生文字列が残らないこと（1行注記に残す場合は「Skill 名」ではなく「対象7スキル」等の総称で言及する）
+- **実装結果（builder確定）**: 節は全削除し、単一行の解消済みノートに置換した。ただし既存 regression test
+  （`plugins/longrun/tests/backlog-cleanup.bats`、change-3 で追加）が「`longrun-orchestrator` は change-2 で
+  消化済み」という文言の残存を要求していたため、その1文（`longrun-orchestrator` という名前自体は本 change の
+  対象9スキルに含まれず削除禁止対象ではない）をノートに含めて両立させた。詳細は decisions.md D-change6-2。
+
+### D7: bats テスト・実退避スクリプトの置き場所は run ディレクトリ（`_longruns/2026-07-03_plugin-review-fixes/{scripts,tests}/`）に co-locate する
+
+本 capability 群（llm-log-relocation / plugin-retirement-cleanup / retirement-handoff-docs）はいずれもリポジトリ
+ルート横断の一度きりの移行作業であり、既存6 changeの「`plugins/<plugin>/tests/` に bats を置く」慣習をそのまま
+適用できる特定プラグインを持たない。
+
+- 検討した選択肢:
+  1. 既存プラグイン（例: worktree や skill-pack）の `tests/` に間借りする — 却下。所有権が不明瞭
+  2. リポジトリルートに新規 `tests/` を作る — 却下。他 change が誰も確立していない永続的なトップレベル規約を
+     1 change のためだけに導入するのは YAGNI 違反
+  3. `_longruns/2026-07-03_plugin-review-fixes/{scripts,tests}/` に co-locate（採用）
+- 理由: 本 change の性質（run-scoped の一度きりの移行）に最も忠実。過去の run ディレクトリ
+  （`_longruns/2026-06-12_harness-workflow-overhaul/` 等）が最終的に git 履歴へコミットされている前例に倣う
+- `evacuate-llm-log.sh` は `snapshot` / `execute` の2サブコマンドに分割し、`mktemp -d` の fixture に対して
+  spec の8シナリオ（S1-S8）を機械テストしてから、実リポジトリの `LLM/` に対して実行する設計とした（実 `LLM/`
+  は hook の稼働実績があるため fixture 経由のテストのみが安全に繰り返し実行可能）
 
 ## Risks / Trade-offs
 
