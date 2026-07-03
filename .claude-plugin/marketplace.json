@@ -96,10 +96,10 @@
     },
     {
       "name": "weekly-report",
-      "description": "週次プロジェクト実績レポートを自動生成する。",
+      "description": "週次プロジェクト実績レポートを自動生成する。Gitコミット・LLMセッションログ（native jsonl直読）・フェーズ状態を集約し、Obsidian週次ノートに挿入する。cron非対話実行に対応。",
       "source": "./plugins/weekly-report",
       "category": "productivity",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "author": {
         "name": "Oratta"
       },
@@ -111,10 +111,10 @@
     },
     {
       "name": "daily-report",
-      "description": "Fieldy（Notion DB_FIELDY）の音声トランスクリプトと、Vault編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブの日次日記を生成する。`--with-album` で marketing-harness の vlog-album を連鎖呼び出し可能（デフォルトは女子 3 人版、`--gene male` で男性 Gene 版）。",
+      "description": "Fieldy（Notion DB_FIELDY）の音声トランスクリプトと、Vault編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブの日次日記を生成する。`--with-album` で marketing-harness の vlog-album を連鎖呼び出し可能（デフォルトは女子 3 人版、`--gene male` で男性 Gene 版）。cron非対話実行に対応。",
       "source": "./plugins/daily-report",
       "category": "productivity",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "author": {
         "name": "Oratta"
       },

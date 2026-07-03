@@ -53,6 +53,24 @@
 - **決定**: (b)
 - **理由**: plan.md 付録の受け入れ条件 15（「編集した全プラグインで version bump + marketplace.json 一致」）と技術要件の制約（`~/.claude/rules/plugin-editing.md` 準拠を全編集プラグインに適用）は change 単位で除外を明記していない。change-7 の依存関係リストに change-5 が挙がっていないのは「他 change の marketplace.json 同時編集による競合を避ける直列化」が目的であり（change-1/3/4/6 は change-7 と同一ファイルを触るため直列化が必要）、change-5 は独立して自己完結できる範囲（weekly-report・daily-report の 2 エントリのみ）なので先に確定させてよい。change-7 が最終統合で version drift を再検査する際もこの事前同期は矛盾しない
 
+### D6: 週次の per-project jsonl 特定は `source_path` → `~/.claude/projects/` エンコードパスの直接変換
+
+- **選択肢**: (a) `~/.claude/projects/` 配下を全走査して jsonl 内の cwd フィールドとレジストリの `source_path` を突き合わせる / (b) `source_path` を Claude Code のディレクトリエンコード規則（`/` → `-`）でそのまま変換し、対象ディレクトリを直接特定する
+- **決定**: (b)
+- **理由**: (a) は cwd を確認するためにどのみち各 jsonl を jq で開く必要があり、全プロジェクト分の jsonl を都度スキャンする O(N) コストがかかる。(b) はパス変換のみで対象ディレクトリを O(1) 特定でき、daily-report の `llm-log-compactor`（全プロジェクト横断で 1 日分を集計する設計）が持たないロジックを週次側で素直に追加できる。`project_dir` が存在しない場合は当該プロジェクトの LLM セッションサブセクションを省略するフェイルソフトとする
+
+### D7: 非対話モードの判断ログの具体的な埋め込み位置は各プラグインの既存記法に合わせる
+
+- **選択肢**: (a) 両プラグイン共通の書式（例: 固定の HTML コメント）を新設する / (b) 各プラグインの既存の記法慣習（weekly-report: blockquote 行、daily-report: `> [!info]` callout）に合わせて個別に定義する
+- **決定**: (b)
+- **理由**: D4 は「生成物本体に埋め込む」までを決定しており、書式は未確定だった。daily-report は既に `> [!warning]` / `> [!todo]` callout 記法を多用しており、判断ログだけ異質な書式にすると読み物としてのトーン（設計思想「ナラティブ > カタログ」）を損なう。weekly-report は表・blockquote ベースの機械的レポートであり、既存の「エラーハンドリング」節と同じ「状況→対応」的な簡潔な blockquote が自然。対話実行時（デフォルト値未使用時）はこの行/callout を出力しないことで既存 Scenario への影響をゼロに保つ
+
+### D8: `report-noninteractive-mode` の共通 Scenario（S13-S15）は daily-report / weekly-report 双方の `tests/` に重複実装する
+
+- **選択肢**: (a) 共通 Scenario 用の bats ファイルをどちらかのプラグイン配下にのみ置く / (b) 両プラグインの `tests/noninteractive-mode.bats` にそれぞれ同等のアサーションを実装する
+- **決定**: (b)
+- **理由**: spec 上は 1 つの Requirement/Scenario 群だが、実装は SKILL.md 2 本（daily-report・weekly-report）に分かれており、どちらか一方の bats ファイルに寄せると検証対象外のプラグインの regression を検知できなくなる。tests/ ディレクトリはプラグイン単位（`plugins/<name>/tests/`）で完結させる既存の bats-core 運用（daily-report の既存 tests/ 構成）とも整合する
+
 ## Risks / Trade-offs
 
 - [SKILL.md 本文への jq インライン記述（D1）が daily-report 側の将来のロジック改善に追随しない] → コメントで `plugins/daily-report/agents/llm-log-compactor.md` を一次ソースとして明記し、将来の同期ズレをレビューで検知できるようにする

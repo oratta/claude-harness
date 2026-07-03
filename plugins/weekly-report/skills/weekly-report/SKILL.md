@@ -89,20 +89,37 @@ ToolSearch(query="select:mcp__sunsama__read_resource", max_results=1)
 
 プロジェクトごとにグルーピングする。プロジェクトに紐付かないログは「その他」として集約。
 
-#### 3b. ソースリポジトリLLMセッション（`{source_path}/LLM/`）
+#### 3b. ソースリポジトリ Claude Code セッション（native jsonl 直読）
 
-レジストリの各プロジェクトについて、`{source_path}/LLM/` ディレクトリが存在する場合、対象週の日付範囲でファイルを収集する。
+> 流用元: `plugins/daily-report/agents/llm-log-compactor.md:33-100` の jq ロジック（初回 user メッセージ抽出・メタ統計集計）を、週次（複数日横断）集計向けに適用したもの。obsidian-llm-session-rules / auto-save.py が生成する旧形式の劣化コピー（ソースリポジトリ配下の `LLM/` ディレクトリの markdown）は参照しない。
+
+レジストリの各プロジェクトについて、`source_path` を Claude Code の `~/.claude/projects/` エンコード規則（`/` を `-` に置換）で変換し、対応するセッション jsonl を対象週の日付範囲（月曜 00:00 〜 翌月曜 00:00）でフィルタして直読する:
 
 ```bash
-ls {source_path}/LLM/ | grep "^{YYYY-MM-DD}" # 対象週の各日付でフィルタ
+encoded_path=$(echo "{source_path}" | sed 's#/#-#g')
+project_dir="$HOME/.claude/projects/${encoded_path}"
+
+# 対象週の月曜 00:00 〜 翌月曜 00:00 の範囲で作成された jsonl のみを対象にする
+find "$project_dir" -maxdepth 1 -name "*.jsonl" \
+  -newermt "{monday} 00:00" ! -newermt "{next_monday} 00:00" 2>/dev/null
 ```
 
-ソースリポジトリのLLMログは自動保存形式（`YYYY-MM-DD_sessionID.md`）:
-- **セッションIDでグルーピング**: 同一sessionIDのファイルは1つのセッションとしてカウント（例: `2026-03-17_80d89249.md` と `2026-03-18_80d89249.md` は同一セッション）
-- **セッション要約の抽出**: 各セッション（最も古い日付のファイル）から最初の `## **User**` セクションの内容を読み、ユーザーの最初のリクエストを1行に要約する
+各 jsonl ファイル = 1 セッション。各セッションについて `plugins/daily-report/agents/llm-log-compactor.md` の 2a ロジックと同じパターンで初回 user メッセージを抽出する（`head -5` 制限は撤廃し、先頭から順次スキャン。sidechain は除外）:
+
+```bash
+jq -r -c 'select(.type == "user" and .message.role == "user")' "$f" \
+  | head -1 \
+  | jq -r 'if (.message.content | type) == "string" then .message.content
+           else (.message.content[] | select(.type=="text") | .text) end' \
+  | head -c 300
+```
+
+- **セッションIDでグルーピング**: jsonl のファイル名（`.jsonl` を除いた basename）をそのまま session ID として使う（native jsonl は 1 セッション 1 ファイルのため、旧形式のような日付跨ぎのファイル分割は発生しない）
+- **セッション要約の抽出**: 上記 jq で取得した初回 user メッセージから、ユーザーの最初のリクエストを1行に要約する
   - コマンド呼び出し（`<command-name>` タグ）がある場合はコマンド名を記載
   - 通常のテキストの場合は最初の1文を要約
-- **セッション数をカウント**: ユニークなsessionID数 = セッション数
+- **セッション数をカウント**: 対象週内で `find` が列挙した jsonl 件数 = セッション数
+- `jq` が利用できない、または `project_dir` が存在しない場合はそのプロジェクトの LLM セッションセクションを省略する（フェイルソフト、エラー扱いにしない）
 
 ### Step 5: プロジェクト別データ収集
 
@@ -152,17 +169,22 @@ git -c core.quotePath=false log --since={monday} --until={next_monday} \
 - `progress`: 進捗率（%）
 - フェーズ名（ファイル名またはH1見出し）
 
-#### 4d. 1h-cooking セッション
+#### 4d. harvest セッション
 
-`/Users/oratta/Dropbox/WorkSpace` 配下の cooking jsonl をスキャンする。cooking plugin は作業 repo の cwd 直下に `data/sessions/<slug>.jsonl` を生成する設計のため、この location pattern で検索する。
+harvest plugin（`/harvest:*` slash command 群）はツール本体を marketplace dir に置き、コンテンツ（slug データ）を各作業 repo の cwd 直下 `data/sessions/<slug>.jsonl` に分散させる責務分離モデルで運用されている（`~/.claude/rules/harvest-usage.md` 参照）。検索ルートは環境変数 `$WORKSPACE_ROOT` で解決する。
 
 ```bash
-find /Users/oratta/Dropbox/WorkSpace -type f -path "*/data/sessions/*.jsonl" \
-  -not -path "*/node_modules/*" \
-  -not -path "*/venv/*" \
-  -not -path "*/.venv/*" \
-  -not -path "*/site-packages/*" \
-  -not -path "*/storage/framework/sessions/*"
+if [ -z "$WORKSPACE_ROOT" ]; then
+  # 未設定時はフェイルソフト: 本サブセクションを省略してレポート生成を継続する
+  echo "WORKSPACE_ROOT 未設定のため harvest セッション集計をスキップ"
+else
+  find "$WORKSPACE_ROOT" -type f -path "*/data/sessions/*.jsonl" \
+    -not -path "*/node_modules/*" \
+    -not -path "*/venv/*" \
+    -not -path "*/.venv/*" \
+    -not -path "*/site-packages/*" \
+    -not -path "*/storage/framework/sessions/*"
+fi
 ```
 
 各 jsonl について:
@@ -174,7 +196,7 @@ find /Users/oratta/Dropbox/WorkSpace -type f -path "*/data/sessions/*.jsonl" \
 **プロジェクトへのマッピング:**
 - jsonl の親 repo path（`*/data/sessions/` の手前）を取得
 - レジストリの `source_path` と前方一致でマッチ → プロジェクト名を解決
-- マッチしない場合は、path の `WorkSpace/<category>/<group>/...` のディレクトリ名から推測（例: `00_IndieDev/genetta-inc/1h-cooking` → Genetta-inc）
+- マッチしない場合は、path のディレクトリ名から推測（例: `00_IndieDev/genetta-inc/` → Genetta-inc）
 - どのプロジェクトにも紐付かない場合は「個人タスク」セクションに集約
 
 **集計:**
@@ -199,7 +221,7 @@ find /Users/oratta/Dropbox/WorkSpace -type f -path "*/data/sessions/*.jsonl" \
 - **コード変更量**: N行
 - **Sunsamaタスク完了**: N件（計画 Nh — 仕事 Nh + 個人 Nh）
 - **LLMセッション数**: N（Vault: N + ソースリポジトリ: N）
-- **1h-cooking セッション**: N件（完了 N + 進行中 N）
+- **harvest セッション**: N件（完了 N + 進行中 N）
 
 ---
 
@@ -231,7 +253,7 @@ find /Users/oratta/Dropbox/WorkSpace -type f -path "*/data/sessions/*.jsonl" \
 - [[ログファイル名|表示名]]（Vaultログ）
 - セッション要約テキスト（ソースリポジトリ、sessionID: XXXXXXXX）
 
-**1h-cooking** (Nセッション / 計 Nmin):
+**harvest** (Nセッション / 計 Nmin):
 - slug-a (60min, ✅完了)
 - slug-b (進行中)
 
@@ -258,7 +280,7 @@ find /Users/oratta/Dropbox/WorkSpace -type f -path "*/data/sessions/*.jsonl" \
 - Sunsamaタスクもコミットもない場合は「完了作業」サブセクションを省略
 - Obsidian更新がない場合はそのサブセクションを省略
 - LLMセッションがない場合はそのサブセクションを省略
-- 1h-cookingセッションがない場合はそのサブセクションを省略
+- harvestセッションがない場合はそのサブセクションを省略
 - 全サブセクションが空のプロジェクトは「活動なしのプロジェクト」に列挙
 - プロジェクト名・フェーズ名は `[[]]` でwikilink化
 - 個人タスクはルーチン除外後に「個人タスク（プロジェクト外）」セクションに集約
@@ -288,8 +310,22 @@ Edit ツールで更新する。
 | 日本語ファイル名 | `git -c core.quotePath=false` を常に使用 |
 | 再実行（冪等性） | 既存の「今週の実績サマリ（自動生成）」セクションを置換 |
 | Gitリポジトリでない | ソースコード活動をスキップ |
-| 1h-cooking jsonl が破損/不正JSON | 該当行をスキップして次の行を処理 |
-| cooking session の project マッピング不可 | 「個人タスク」セクションに集約 |
+| harvest jsonl が破損/不正JSON | 該当行をスキップして次の行を処理 |
+| harvest session の project マッピング不可 | 「個人タスク」セクションに集約 |
+| WORKSPACE_ROOT 未設定 | harvest セッション集計サブセクションを省略しレポート生成は継続（フェイルソフト） |
+| ソースリポジトリの ~/.claude/projects ディレクトリが存在しない | そのプロジェクトの LLM セッションサブセクションを省略 |
+
+## 非対話実行モード（`/schedule` cron 対応）
+
+`/schedule` 等の cron 経由で本スキルが非対話コンテキストから起動され、`AskUserQuestion` が使用できない場合は以下のルールで続行する:
+
+- **対象週のデフォルト**: `$ARGUMENTS` が空、かつ AskUserQuestion が使用できない場合はデフォルト対象週「先週」（直近の完了した週）を採用して処理を続行する。質問はスキップする
+- **対話依存ステップの代替**: 本スキルは元々 Sunsama/Git/LLM ログの機械集計が中心で対話ステップをほとんど持たないが、`Step 5` の「### レビュー」セクション（ユーザーが自由入力するための空セクション）は非対話時もそのままプレースホルダー（`- {ユーザーが自由入力するための空セクション}`）として出力し、対話で埋めようとしない
+- **判断ログ**: 非対話実行によりデフォルト値（先週）を採用した場合、Step 6 で生成する「## 今週の実績サマリ（自動生成）」の冒頭（`> 生成日: ...` 行の直後）に判断ログを1行追記する:
+  ```markdown
+  > 判断ログ: 非対話実行（cron）のためデフォルト対象週「先週」を採用
+  ```
+  対話実行時（`$ARGUMENTS` で週が明示された、または AskUserQuestion が利用可能な通常フロー）はこの行を出力しない。既存のエラーハンドリング表と同じ「状況→対応」の粒度で判断内容を残す
 
 ## 注意事項
 

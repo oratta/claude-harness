@@ -1,6 +1,6 @@
 {
   "name": "daily-report",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Fieldyの音声トランスクリプト（Notion DB_FIELDY）と、Obsidian Vaultの編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブで日次日記を生成する。--with-album フラグで marketing-harness の vlog-album を連鎖呼び出しできる（デフォルトは女子 3 人版、--gene male で男性 Gene 版）。",
   "author": {
     "name": "Oratta"
