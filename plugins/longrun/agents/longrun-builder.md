@@ -1,6 +1,6 @@
 ---
 name: longrun-builder
-description: 独立コンテキストでTDD実装を行う。plan.mdからspec読み込み、E2Eテスト生成、Red/Green/Refactorサイクルでコードを実装し、checkpoint.mdを更新する。
+description: 独立コンテキストでTDD実装を行う。plan.mdからspec読み込み、E2Eテスト生成、Red/Green/Refactorサイクルでコードを実装し、`builder-report` schema による構造化完了レポートを返す。
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: opus
 permissionMode: bypassPermissions

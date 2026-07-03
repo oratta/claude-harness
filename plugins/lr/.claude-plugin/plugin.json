@@ -1,7 +1,7 @@
 {
   "name": "lr",
-  "version": "6.1.0",
-  "description": "longrunプラグインの短縮コマンド。/lr:p, /lr:m, /lr:e, /lr:a, /lr:f で各longrunコマンド／スキルを呼び出せる。/lr:p と /lr:m は Skill tool で longrun スキルに直接委譲し、/lr:e /lr:a /lr:f は対応する longrun コマンドファイルを Read してメインセッションでインライン実行する（Skill tool ではコマンドを呼べないため）。",
+  "version": "6.2.0",
+  "description": "longrun プラグインの短縮コマンド集。/lr:p, /lr:m, /lr:e, /lr:a, /lr:f で各 longrun コマンド／スキルを呼び出せる。",
   "author": {
     "name": "Oratta"
   },

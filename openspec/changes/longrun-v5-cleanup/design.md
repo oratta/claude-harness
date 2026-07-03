@@ -63,6 +63,18 @@ GATE ブロックを完全削除すると、`/longrun:plan --mode=mvp` を実行
 
 具体的な数値（例: 6.2.0 → 6.3.0）は change-2 が着地させた baseline に依存するため本 design では固定しない。builder は着手時点の `jq -r .version plugins/longrun/.claude-plugin/plugin.json` を読み、minor（3 桁目）を 1 つ上げた値を longrun・lr 両方に適用する（lr も `commands/p.md` を編集するため version bump 対象。lr の内容変更が p.md の 1 文削除のみであっても plugin-editing.md の「変更内容に応じてバージョンを上げる」原則に従い bump する）。`marketplace.json` は編集しない（change-7 が同期。D0 = plan.md 本文の依存関係節に明記済み）。
 
+### D7 (builder addendum): S18 の decisions.md 記録先は run 側 decisions.md のみとし、bats では検証しない
+
+`longrun-orphan-cleanup` spec の S18（残存 test-file occurrence の記録）は `_longruns/2026-07-03_plugin-review-fixes/decisions.md`（このリポジトリ外・run ディレクトリ配下）を対象とする。これは配布物として持ち歩く plugin の一部ではなく、特定 run に固有の一次ファイルであるため、`plugins/longrun/tests/` に恒久的な bats アサーションとして埋め込まない（他 repo にこの plugin をインストールした際に存在しないパスを前提とする壊れたテストになるため）。S18 の充足は当該 decisions.md への直接記載で確認する（本 design.md D-change3-1 相当のエントリを参照）。
+
+### D8 (builder addendum): `longrun-orphan-cleanup` / `longrun-docs-restructure` 用の新規 bats 追加
+
+tasks.md セクション8は3つの既存bats更新のみを明示するが、TDDのテストファースト原則に従い、両 capability の Scenario（S1-S9, S16-S17, S19-S28 相当）を機械検証する新規ファイル `plugins/longrun/tests/orphan-cleanup.bats` / `plugins/longrun/tests/docs-restructure.bats` を追加した。既存bats「削除しない」ポリシーには抵触しない。
+
+### D9 (builder addendum): bash 3.2 の `!` 否定バグを回避するテスト記法
+
+macOS 標準 `/bin/bash`（3.2.57）は、1つのテスト本体内で bare `! command` を複数回使うと2個目以降の否定失敗が正しく伝播しない既知の挙動がある（実機で再現確認済み）。新規追加した2ファイルは否定アサーションを `run command; [ "$status" -ne 0 ]` に統一してこれを回避した。既存ファイルの複数 `!` パターンは非破壊のため残置（詳細は run の decisions.md D-change3-3）。
+
 ## Open Questions
 
 なし（付録 C の 7 findings と受け入れ条件 9 の間の解釈上の緊張は D1・D2・D3 で解消済み）。

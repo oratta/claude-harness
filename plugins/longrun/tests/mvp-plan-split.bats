@@ -296,13 +296,20 @@ setup() {
   grep -qE 'Interview|インタビュー' "$METHODOLOGY_REF"
 }
 
-# --- S27 / S28: version sync (longrun bumped to 6.2.0 by change-4; lr unchanged at 6.1.0) ---
+# --- S27 / S28: version sync (longrun bumped to 6.3.0, lr to 6.2.0 by change-3) ---
+# NOTE: marketplace.json sync is change-7's responsibility (design.md D6 / plan.md
+# dependency note), so these no longer assert plugin.json == marketplace.json parity
+# mid-change. They only assert plugin.json's own value and that marketplace.json
+# still parses and still contains the corresponding entry.
 
-@test "mvp: longrun version 6.2.0 in plugin.json and marketplace plugins[]" {
+@test "mvp: longrun plugin.json version is 6.3.0" {
   a="$(jq -r '.version' "$LONGRUN_JSON")"
+  [ "$a" = "6.3.0" ]
+}
+
+@test "mvp: marketplace.json still contains a longrun entry (version sync deferred to change-7)" {
   b="$(jq -r '.plugins[] | select(.name=="longrun") | .version' "$MARKETPLACE_JSON")"
-  [ "$a" = "6.2.0" ]
-  [ "$b" = "6.2.0" ]
+  [ -n "$b" ]
 }
 
 @test "mvp: SKILL.md frontmatter versions are 6.2.0 for both plan and mvp-plan" {
@@ -312,11 +319,14 @@ setup() {
   [ "$vb" = "6.2.0" ]
 }
 
-@test "mvp: lr version 6.1.0 in plugin.json and marketplace plugins[]" {
+@test "mvp: lr plugin.json version is 6.2.0" {
   a="$(jq -r '.version' "$LR_JSON")"
+  [ "$a" = "6.2.0" ]
+}
+
+@test "mvp: marketplace.json still contains an lr entry (version sync deferred to change-7)" {
   b="$(jq -r '.plugins[] | select(.name=="lr") | .version' "$MARKETPLACE_JSON")"
-  [ "$a" = "6.1.0" ]
-  [ "$b" = "6.1.0" ]
+  [ -n "$b" ]
 }
 
 # --- S29: marketplace top-level bump (> 2.7.0) ---
@@ -328,17 +338,16 @@ setup() {
   [ "$v" != "2.7.0" ]
 }
 
-# --- S35 / S36: old flag migration notice in longrun-plan ---
+# --- S35 / S36 (change-3 update): --mode=mvp shim fully removed from longrun-plan ---
 
-@test "plan: SKILL.md handles --mode=mvp with migration notice to /longrun:mvp" {
-  grep -q -- '--mode=mvp' "$PLAN_SKILL"
-  grep -q '/longrun:mvp' "$PLAN_SKILL"
-  grep -q '/lr:m' "$PLAN_SKILL"
+@test "plan: SKILL.md contains zero occurrences of mode=mvp (GATE removed)" {
+  run grep -q -- 'mode=mvp' "$PLAN_SKILL"
+  [ "$status" -ne 0 ]
 }
 
-@test "plan: migration notice instructs no Step 1-8 and no plan.md generation" {
-  grep -qE '移行案内|移動した' "$PLAN_SKILL"
-  grep -qE 'plan\.md を生成しない|生成せず|Step 1.*実行しない|終了' "$PLAN_SKILL"
+@test "plan: SKILL.md's first H1 after frontmatter is the full-mode heading (no mode-dispatch GATE before it)" {
+  first_heading="$(grep -m1 -n '^# ' "$PLAN_SKILL" | cut -d: -f2-)"
+  [ "$first_heading" = "# Run Plan — plan.md 作成スキル" ]
 }
 
 # --- S37: full mode unaffected ---
@@ -381,9 +390,9 @@ setup() {
   grep -qE 'OpenSpec change.*archive|archive.*スキップ|OpenSpec.*アーカイブ.*スキップ' "$README"
 }
 
-@test "readme: MVP section documents --mode=mvp deprecation and migration notice" {
-  grep -qE 'deprecated|廃止|deprecation' "$README"
-  grep -qE '移行案内|/longrun:plan --mode=mvp' "$README"
+@test "readme: MVP section no longer documents a --mode=mvp deprecation subsection (change-3: shim fully removed)" {
+  run grep -qE '^### .?--mode=mvp' "$README"
+  [ "$status" -ne 0 ]
 }
 
 @test "readme: MVP section states generic / short-time human-implemented use case" {
@@ -391,19 +400,14 @@ setup() {
   grep -qE '人間が手で.*実装|人間実装|短時間' "$README"
 }
 
-# --- task 7.2: no residual --mode=mvp launch instructions in plugins/ ---
+# --- change-3 (S30): residual scan upgraded to strict scoped-zero ---
+# The shim is fully removed now (no more "deprecation prose" tolerance). The only
+# remaining tolerance is self-referential search patterns inside plugins/longrun/tests/
+# and plugins/lr/tests/ (see longrun-orphan-cleanup capability D1/D2).
 
-@test "residual: --mode=mvp only appears as deprecation/migration prose" {
-  # Collect all --mode=mvp hits under plugins/. Every hit must be on a line that
-  # also contains a deprecation/migration/旧 marker word, OR be in this test file.
-  run bash -c "grep -rn -- '--mode=mvp' '${PLUGIN_ROOT}/plugins' | grep -v 'tests/mvp-plan-split.bats' | grep -v 'tests/legacy-removal.bats' || true"
-  while IFS= read -r line; do
-    [ -z "$line" ] && continue
-    echo "$line" | grep -qE 'deprecat|廃止|移行|旧|移動した|deprecation|legacy' || {
-      echo "Unexpected --mode=mvp launch reference: $line"
-      false
-    }
-  done <<< "$output"
+@test "residual: mode=mvp is scoped-zero outside tests/ (longrun + lr)" {
+  run bash -c "grep -rln 'mode=mvp' '${PLUGIN_DIR}' '${LR_DIR}' | grep -v '/tests/' || true"
+  [ -z "$output" ]
 }
 
 # --- syntax: all touched JSON parses ---

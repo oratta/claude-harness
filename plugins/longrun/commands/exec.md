@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, AskUserQuestion
 
 plan.md に基づいて Workflow スクリプトを生成し、Workflow ツールで起動して自律実行を駆動する。
 
-v6.0.0 BREAKING: 旧 `longrun-orchestrator` SKILL.md のインライン展開・Agent 手動制御・
+v6.0.0 BREAKING: 旧 orchestrator スキル（SKILL.md）のインライン展開・Agent 手動制御・
 checkpoint.md の散文パースは廃止された。オーケストレーションは Claude Code の **Workflow ツール**
 （`agent()` / `pipeline()` / `parallel()` / `opts.schema` / `opts.agentType` / `resumeFromRunId` /
 `budget`）が担う。Review → Build → Verify の各フェーズはコード（生成 Workflow スクリプト）と
@@ -263,13 +263,14 @@ Workflow 内の agent から AskUserQuestion は使えない（サブエージ�
 
 ---
 
-## checkpoint.md（人間向け監査ログ）
+## checkpoint.md（任意の人間向けメモ）
 
-checkpoint.md は **人間が読む監査ログ**として各フェーズの進捗・ツール検証結果・意思決定の要約を
-書き続ける。ただし exec / 生成 Workflow スクリプトの**いかなるコードパスも checkpoint.md を
-grep/sed/正規表現でパースして制御フローを決めてはならない**（D4 / S20）。状態の真のソースは
-Workflow ツール（runId + キャッシュ）と OpenSpec の tasks.md（縮退時は `{longrun-dir}/specs/` の
-tasks.md）である。decisions.md は現行どおり維持する。
+checkpoint.md は**任意**の人間向けメモであり、各フェーズの進捗・ツール検証結果・意思決定の要約を
+書き残したい場合に使う。すべての run が checkpoint.md を必ず生成する必要はなく、内容は
+`{longrun-dir}/decisions.md` に統合してもよい。ただし exec / 生成 Workflow スクリプトの
+**いかなるコードパスも checkpoint.md を grep/sed/正規表現でパースして制御フローを決めてはならない**
+（D4 / S20）。状態の真のソースは Workflow ツール（runId + キャッシュ）と OpenSpec の tasks.md
+（縮退時は `{longrun-dir}/specs/` の tasks.md）である。decisions.md は現行どおり維持する。
 
 進捗の確認は **ネイティブの `/workflows` ライブビュー** で行う（旧 `/longrun:status` は v6.0.0 で
 廃止された）。意思決定は `{longrun-dir}/decisions.md` を直接 Read する。

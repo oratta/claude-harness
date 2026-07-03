@@ -34,9 +34,9 @@ permissionMode: bypassPermissions
 ### 評価手順
 
 #### 1. コンテキスト復元
-- `{longrun-dir}/checkpoint.md` から現在状態を把握
 - `{longrun-dir}/plan.md` の受け入れ条件を確認
 - `{longrun-dir}/decisions.md` で設計判断を確認
+- `{longrun-dir}/checkpoint.md`（存在する場合）は補助的な人間向けログとして参照してよい
 
 #### 2. 品質（100%必須）
 
@@ -95,4 +95,5 @@ npm run build
 ### FAILの場合
 - 問題の原因を具体的に特定
 - 修正方法を具体的に提案（ファイル名・行番号レベル）
-- orchestratorに修正を依頼
+- `verifier-score` schema に従った構造化 FAIL 結果を返す。生成 Workflow スクリプトがこの結果を受けて
+  `longrun-builder` を再呼び出しする（別コンポーネントへのエスカレーションは存在しない）
