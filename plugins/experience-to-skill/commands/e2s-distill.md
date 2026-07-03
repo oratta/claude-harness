@@ -18,7 +18,10 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 ### Step 1: jsonl ディレクトリの解決
 
 ```bash
-PLUGIN_ROOT="$(dirname "$(dirname "$(realpath "$0")")")"
+# plugin ルートは Claude Code が注入する ${CLAUDE_PLUGIN_ROOT} を基点に解決する。
+# （slash command 実行時のシェル位置パラメータは command ファイルを指さないため、
+#  位置パラメータからの逆算による plugin ルート導出は使えない）
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
 # shellcheck source=/dev/null
 source "$PLUGIN_ROOT/scripts/jsonl-finder.sh"
 

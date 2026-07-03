@@ -58,10 +58,15 @@ setup() {
 }
 
 # --- S14: Zero plugin-name references outside archive/_longruns ---
+# NOTE (change-7): docs/ was removed entirely by change-7 (repo-cleanup-final),
+# so we only scan paths that still exist. Intent (zero live references in the
+# scoped surface) is preserved.
 
 @test "S14: zero references to retired plugin names outside plugins/, README.md, docs/" {
   cd "$REPO_ROOT"
-  run grep -rln "obsidian-llm-session-rules\|skill-aware-workflow" plugins/ README.md docs/
+  targets=(plugins/ README.md)
+  [ -d docs ] && targets+=(docs/)
+  run grep -rln "obsidian-llm-session-rules\|skill-aware-workflow" "${targets[@]}"
   [ "$status" -ne 0 ]
   [ -z "$output" ]
 }
