@@ -26,5 +26,6 @@ LLM/
 .superset/
 openspec/config.yaml
 
-# 1h-cooking session output (should not live in marketplace repo per cooking-usage rule)
+# harvest session output (should not live in the marketplace repo; harvest writes
+# work-session data under each work repo's data/sessions/ per harvest-usage rule)
 sessions/

@@ -9,44 +9,11 @@
   },
   "plugins": [
     {
-      "name": "skill-aware-workflow",
-      "description": "タスク実行前にスキルを探索し、実行中の摩擦を記録、完了後に新スキル作成を提案するワークフローシステム。",
-      "source": "./plugins/skill-aware-workflow",
-      "category": "workflow",
-      "version": "2.0.0",
-      "author": {
-        "name": "Oratta"
-      },
-      "keywords": [
-        "skill-discovery",
-        "workflow",
-        "learning",
-        "automation"
-      ]
-    },
-    {
-      "name": "obsidian-llm-session-rules",
-      "description": "Obsidian LLM Session用のルールセット",
-      "source": "./plugins/obsidian-llm-session-rules",
-      "category": "productivity",
-      "version": "1.1.2",
-      "author": {
-        "name": "Oratta"
-      },
-      "keywords": [
-        "obsidian",
-        "llm",
-        "session",
-        "context",
-        "auto-save"
-      ]
-    },
-    {
       "name": "longrun",
-      "description": "Claude Code 自律実行システム v6.2。モデル割り当て機構を追加: plan.md の「モデル割り当て」表（change × ロール × ティア haiku/sonnet/inherit）を longrun-plan が推奨生成し、exec が references/model-tiers.md でティアを解決して Workflow opts.model に反映（inherit はキー省略、未知ティアは inherit + 警告、表無し旧 plan.md は全 inherit）。MVP プラン作成を独立スキル longrun-mvp-plan（/longrun:mvp、短縮 /lr:m）に分離。/longrun:exec を Workflow ツールに載せ替え、サブエージェント成果物を JSON Schema（StructuredOutput）で機構的に強制。Verify ループは上限 3 周 + budget ガード。中断再開は resumeFromRunId 一次手段。進捗は /workflows ライブビュー。TDD + 4軸定量評価 + Build Contract パターンで品質担保。OpenSpec 縮退モード対応。",
+      "description": "Claude Code 向け自律実行ハーネス。plan.md から Workflow スクリプトを生成し、TDD 実装（Build）と4軸定量評価（Verify）を Build Contract レビュー付きで自律的に回す。",
       "source": "./plugins/longrun",
       "category": "workflow",
-      "version": "6.2.0",
+      "version": "6.3.0",
       "author": {
         "name": "Oratta"
       },
@@ -64,10 +31,10 @@
     },
     {
       "name": "lr",
-      "description": "longrunプラグインの短縮コマンド。/lr:p, /lr:m, /lr:e, /lr:a, /lr:f",
+      "description": "longrun プラグインの短縮コマンド集。/lr:p, /lr:m, /lr:e, /lr:a, /lr:f で各 longrun コマンド／スキルを呼び出せる。",
       "source": "./plugins/lr",
       "category": "workflow",
-      "version": "6.1.0",
+      "version": "6.2.0",
       "author": {
         "name": "Oratta"
       },
@@ -79,10 +46,10 @@
     },
     {
       "name": "worktree",
-      "description": "Git worktreeのセットアップとクリーンアップ。symlink、envコピー、Step 0でorigin/<main>を同期してから診断・マージ後サニティチェック・削除/再利用化を自動化。🔴 Active worktree のマージ確認に対応。`wt-setup --with-pr` で worktree 作業内容を Draft PR にバックアップする運用に切替可能。",
+      "description": "Git worktreeのセットアップとクリーンアップ。wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー、引数で後続作業指示を受け取り可能。`--with-pr` で空 commit → push → Draft PR を自動作成し marketplace 自動更新による worktree 消失に備える運用に切替可能。wt-clean: 対象を選んでから1個ずつ遅延診断＆対話処理する選択ベースフロー。`wt-clean <path|branch>` で特定 worktree だけにスコープ（複数可）、引数なしなら worktree をリストアップして対象を選ぶ（「全て」あり）。Step 0でorigin/<main>を同期 → 各対象を i/N 進捗で診断（🟢🟡🔴）→ 🟢削除/再利用・🟡 LLM退避→削除・🔴 マージ/スキップ/破棄 を対話。`AHEAD_COUNT>0`でも squash マージ済み（実ツリー差分空 / cherry / gh pr で検証）なら 🟡 にフォールバックし誤判定を防ぐ。マージは都度サニティチェック。`--keep` で再利用可能化、`--no-sync` で同期スキップ。破壊操作は AskUserQuestion 回答到着後の別ターンで実行する絶対禁則を明文化（データロス防止）。",
       "source": "./plugins/worktree",
       "category": "workflow",
-      "version": "2.1.1",
+      "version": "2.2.0",
       "author": {
         "name": "Oratta"
       },
@@ -96,10 +63,10 @@
     },
     {
       "name": "weekly-report",
-      "description": "週次プロジェクト実績レポートを自動生成する。",
+      "description": "週次プロジェクト実績レポートを自動生成する。Gitコミット・LLMセッションログ（native jsonl直読）・フェーズ状態を集約し、Obsidian週次ノートに挿入する。cron非対話実行に対応。",
       "source": "./plugins/weekly-report",
       "category": "productivity",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "author": {
         "name": "Oratta"
       },
@@ -111,10 +78,10 @@
     },
     {
       "name": "daily-report",
-      "description": "Fieldy（Notion DB_FIELDY）の音声トランスクリプトと、Vault編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブの日次日記を生成する。`--with-album` で marketing-harness の vlog-album を連鎖呼び出し可能（デフォルトは女子 3 人版、`--gene male` で男性 Gene 版）。",
+      "description": "Fieldyの音声トランスクリプト（Notion DB_FIELDY）と、Obsidian Vaultの編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブで日次日記を生成する。--with-album フラグで marketing-harness の vlog-album を連鎖呼び出しできる（デフォルトは女子 3 人版、--gene male で男性 Gene 版）。",
       "source": "./plugins/daily-report",
       "category": "productivity",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "author": {
         "name": "Oratta"
       },
@@ -129,10 +96,10 @@
     },
     {
       "name": "infra",
-      "description": "Webアプリのインフラを対話的に一括セットアップ。Vercel + Supabase + GitHub Actions構成で local/staging/prod を自動構築（/infra-setup）。",
+      "description": "Webアプリのインフラを対話的に一括セットアップするプラグイン。Vercel + Supabase + GitHub Actions構成で、local/staging/prod の4環境を構築する（`/infra-setup`）。既存 supabase-project-setup スキルを統合。",
       "source": "./plugins/infra",
       "category": "workflow",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": {
         "name": "Oratta"
       },
@@ -148,10 +115,10 @@
     },
     {
       "name": "experience-to-skill",
-      "description": "Claude Code セッションの jsonl ログを素材に、自然言語の依頼で SKILL.md を蒸留する専門ツール。コミット運用には関与せず、/e2s:distill 1 コマンドで対話完結。",
+      "description": "Claude Code セッションの jsonl ログを素材に、自然言語の依頼で SKILL.md を蒸留する専門ツール。コミット運用には一切関与せず、`/e2s:distill` 1 コマンドで対話完結する。",
       "source": "./plugins/experience-to-skill",
       "category": "workflow",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": {
         "name": "Oratta"
       },
@@ -166,10 +133,10 @@
     },
     {
       "name": "skill-pack",
-      "description": "プロジェクトごとに skillOverrides / enabledPlugins を対話的に編集して必要なスキル/プラグインだけ ON にする。/skill-pack init で初期セットアップ、list/on/off/suggest で運用。コピーや symlink ではなく公式の設定ファイル機構（Local > Project > User）に乗る。",
+      "description": "プロジェクトごとに skillOverrides と enabledPlugins を対話的に編集し、必要なスキルだけを ON にする。/skill-pack init で初期セットアップ、list/on/off/suggest で運用。",
       "source": "./plugins/skill-pack",
       "category": "workflow",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "Oratta"
       },
@@ -189,8 +156,6 @@
       "name": "all",
       "description": "全プラグインをインストール",
       "plugins": [
-        "skill-aware-workflow",
-        "obsidian-llm-session-rules",
         "longrun",
         "lr",
         "worktree",

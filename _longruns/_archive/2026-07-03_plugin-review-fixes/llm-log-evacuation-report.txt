@@ -1,0 +1,10 @@
+# LLM/ evacuation report
+
+Snapshot count: 1
+Moved: 1
+
+## Collisions
+zero collisions
+
+## Hook-attributed new files (excluded from reconciliation)
+none

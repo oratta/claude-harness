@@ -243,6 +243,7 @@ model_of() {
       CHANGES_JSON: JSON.stringify([{name:"c1",worktree:"_w/c1",dependsOn:[]}]),
       BUILDER_AGENT_TYPE:"longrun:longrun-builder",
       VERIFIER_AGENT_TYPE:"longrun:longrun-verifier",
+      BROWSER_VERIFIER_AGENT_TYPE:"longrun:longrun-browser-verifier",
       BUILDER_SCHEMA: JSON.stringify(JSON.parse(bs)),
       VERIFIER_SCHEMA: JSON.stringify(JSON.parse(vs)),
       BUILDER_MODEL: "'"'"'sonnet'"'"'",

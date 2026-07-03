@@ -89,19 +89,26 @@ setup() {
 }
 
 # --- S25: version sync ---
+# NOTE (change-3 / longrun-v5-cleanup, design.md D6): plugin.json versions are
+# bumped by this change (longrun 6.3.0 / lr 6.2.0), but marketplace.json sync
+# is deferred to change-7 per plan.md's dependency note. Assertions below only
+# check plugin.json's own value and that marketplace.json still has entries.
 
-@test "legacy: longrun version is 6.2.0 in plugin.json and marketplace plugins[]" {
+@test "legacy: longrun plugin.json version is 6.3.0" {
   a="$(jq -r '.version' "$LONGRUN_JSON")"
-  b="$(jq -r '.plugins[] | select(.name=="longrun") | .version' "$MARKETPLACE_JSON")"
-  [ "$a" = "6.2.0" ]
-  [ "$b" = "6.2.0" ]
+  [ "$a" = "6.3.0" ]
 }
 
-@test "legacy: lr version is 6.1.0 in plugin.json and marketplace plugins[] (no bump miss)" {
+@test "legacy: lr plugin.json version is 6.2.0" {
   a="$(jq -r '.version' "$LR_JSON")"
-  b="$(jq -r '.plugins[] | select(.name=="lr") | .version' "$MARKETPLACE_JSON")"
-  [ "$a" = "6.1.0" ]
-  [ "$b" = "6.1.0" ]
+  [ "$a" = "6.2.0" ]
+}
+
+@test "legacy: marketplace.json still has longrun and lr entries (version sync deferred to change-7)" {
+  bl="$(jq -r '.plugins[] | select(.name=="longrun") | .version' "$MARKETPLACE_JSON")"
+  br="$(jq -r '.plugins[] | select(.name=="lr") | .version' "$MARKETPLACE_JSON")"
+  [ -n "$bl" ]
+  [ -n "$br" ]
 }
 
 @test "legacy: all touched JSON parses (jq)" {

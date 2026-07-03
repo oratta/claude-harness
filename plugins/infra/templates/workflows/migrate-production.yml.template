@@ -41,10 +41,10 @@ jobs:
           echo "::error::マイグレーションが確認されていません。confirm を true にしてください。"
           exit 1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v2
         with:
           version: latest
 
@@ -63,7 +63,7 @@ jobs:
           supabase db dump --db-url "$PROD_SUPABASE_DB_URL" -f backup/data.sql --data-only --use-copy
 
       - name: Upload backup artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: db-backup-migrate-${{ github.run_id }}
           path: backup/

@@ -6,14 +6,14 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, AskUserQuestion
 
 plan.md に基づいて Workflow スクリプトを生成し、Workflow ツールで起動して自律実行を駆動する。
 
-v6.0.0 BREAKING: 旧 `longrun-orchestrator` SKILL.md のインライン展開・Agent 手動制御・
+v6.0.0 BREAKING: 旧 orchestrator スキル（SKILL.md）のインライン展開・Agent 手動制御・
 checkpoint.md の散文パースは廃止された。オーケストレーションは Claude Code の **Workflow ツール**
 （`agent()` / `pipeline()` / `parallel()` / `opts.schema` / `opts.agentType` / `resumeFromRunId` /
 `budget`）が担う。Review → Build → Verify の各フェーズはコード（生成 Workflow スクリプト）と
 JSON Schema（StructuredOutput）で機構的に表現する。
 
 **Workflow ツールのシグネチャ・制約の一次ソースは
-`_longruns/2026-06-12_harness-workflow-overhaul/workflow-tool-reference.md`（実機検証済み）。
+`${CLAUDE_PLUGIN_ROOT}/references/workflow-tool-reference.md`（実機検証済み・配布物内同梱）。
 記憶・推測で API を書かない。記載のない挙動が必要になったら追加検証して reference を更新してから使う。**
 
 ## Workflow 起動の opt-in（追加確認不要）
@@ -146,10 +146,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/render-workflow.mjs" <template> <params.json
 | `RUN_DIR` | `{longrun-dir}` の絶対パス |
 | `CHANGES_JSON` | Changes 分解を `[{name, worktree, dependsOn:[...]}]` にした JSON 配列を `JSON.stringify` した**オブジェクトリテラル文字列** |
 | `BUILDER_AGENT_TYPE` | 既定 `longrun:longrun-builder`（**D6: パラメータ化**。本 change ではデフォルト固定。ユーザー上書き手段は提供しない。Codex Builder Phase 2 の受け皿） |
-| `VERIFIER_AGENT_TYPE` | 既定 `longrun:longrun-verifier` |
+| `VERIFIER_AGENT_TYPE` | 静的 verifier（quality/completeness 担当）。既定 `longrun:longrun-verifier` |
+| `BROWSER_VERIFIER_AGENT_TYPE` | ブラウザ verifier（functionality/ux 担当）。既定 `longrun:longrun-browser-verifier`（change-2。Verify ループが静的 + ブラウザの 2 verifier を 2+2 軸で呼び分ける。`*_MODEL` でない通常パラメータのため params に**常時供給**する） |
 | `REVIEWER_AGENT_TYPE` | 既定 `longrun:longrun-reviewer` |
-| `BUILDER_SCHEMA` / `VERIFIER_SCHEMA` / `REVIEWER_SCHEMA` | 対応する `*.schema.json` を `JSON.stringify(JSON.parse(...))` した**オブジェクトリテラル文字列**（スクリプトに JS オブジェクトとして埋め込まれ、`opts.schema` で StructuredOutput を強制する。プロンプトへのインライン重複はしない） |
-| `BUILDER_MODEL` / `VERIFIER_MODEL` / `REVIEWER_MODEL` | 各ロールの `opts.model` 値（**エイリアス文字列リテラル** `'sonnet'` 等、または `null`）。下記「モデル割り当ての消費」で解決する。`null`（= inherit）のときテンプレートは条件付きスプレッドで `model` キー自体を出力しない。**未指定なら render が `null` を既定値にする**（旧 plan.md フォールバック） |
+| `BUILDER_SCHEMA` / `VERIFIER_SCHEMA` / `REVIEWER_SCHEMA` | 対応する `*.schema.json` を `JSON.stringify(JSON.parse(...))` した**オブジェクトリテラル文字列**（スクリプトに JS オブジェクトとして埋め込まれ、`opts.schema` で StructuredOutput を強制する。プロンプトへのインライン重複はしない）。`VERIFIER_SCHEMA`（`verifier-score.schema.json`）は静的・ブラウザ両 verifier で共用し、各 verifier が担当 2 軸 + verdict を部分返却する（change-2 D2 候補1） |
+| `BUILDER_MODEL` / `VERIFIER_MODEL` / `BROWSER_VERIFIER_MODEL` / `REVIEWER_MODEL` | 各ロールの `opts.model` 値（**エイリアス文字列リテラル** `'sonnet'` 等、または `null`）。下記「モデル割り当ての消費」で解決する。`null`（= inherit）のときテンプレートは条件付きスプレッドで `model` キー自体を出力しない。**未指定なら render が `null` を既定値にする**（旧 plan.md フォールバック。`BROWSER_VERIFIER_MODEL` も同規則） |
 
 ### モデル割り当ての消費（change-4）
 
@@ -229,8 +230,11 @@ Workflow 内の agent から AskUserQuestion は使えない（サブエージ�
    ```
    - Build フェーズ: change ごとに `agentType: 'longrun:longrun-builder'` で TDD 実装。builder は
      完了レポートを `builder-report` schema で返す（散文 STATUS パースは廃止）。
-   - Verify フェーズ: **while + 上限 3 周 + `budget.total && budget.remaining()` ガード**で 4 軸スコア
-     （`verifier-score` schema）を機構判定。上限到達 / budget 枯渇時は状態を構造化して返し停止する
+   - Verify フェーズ: **while + 上限 3 周 + `budget.total && budget.remaining()` ガード**で、各周に
+     静的 verifier（`longrun:longrun-verifier`、quality/completeness の 2 軸）と ブラウザ verifier
+     （`longrun:longrun-browser-verifier`、functionality/ux の 2 軸）を呼び、両者の verdict の**論理積**を
+     総合 verdict とする（`verifier-score` schema。両 verifier が担当 2 軸 + verdict を部分返却）。FAIL 時は
+     合算 findings を builder へ渡して修正依頼する。上限到達 / budget 枯渇時は状態を構造化して返し停止する
      （`stopReason: MAX_ROUNDS_REACHED | BUDGET_EXHAUSTED | PASS`）。
 3. 完了通知の `<result>` を見て **AskUserQuestion で Feedback Tier 確認**を取得する（D5）。フィードバック
    分類とループは `/longrun:feedback`（`longrun-feedback` スキル）に委譲する。
@@ -259,13 +263,14 @@ Workflow 内の agent から AskUserQuestion は使えない（サブエージ�
 
 ---
 
-## checkpoint.md（人間向け監査ログ）
+## checkpoint.md（任意の人間向けメモ）
 
-checkpoint.md は **人間が読む監査ログ**として各フェーズの進捗・ツール検証結果・意思決定の要約を
-書き続ける。ただし exec / 生成 Workflow スクリプトの**いかなるコードパスも checkpoint.md を
-grep/sed/正規表現でパースして制御フローを決めてはならない**（D4 / S20）。状態の真のソースは
-Workflow ツール（runId + キャッシュ）と OpenSpec の tasks.md（縮退時は `{longrun-dir}/specs/` の
-tasks.md）である。decisions.md は現行どおり維持する。
+checkpoint.md は**任意**の人間向けメモであり、各フェーズの進捗・ツール検証結果・意思決定の要約を
+書き残したい場合に使う。すべての run が checkpoint.md を必ず生成する必要はなく、内容は
+`{longrun-dir}/decisions.md` に統合してもよい。ただし exec / 生成 Workflow スクリプトの
+**いかなるコードパスも checkpoint.md を grep/sed/正規表現でパースして制御フローを決めてはならない**
+（D4 / S20）。状態の真のソースは Workflow ツール（runId + キャッシュ）と OpenSpec の tasks.md
+（縮退時は `{longrun-dir}/specs/` の tasks.md）である。decisions.md は現行どおり維持する。
 
 進捗の確認は **ネイティブの `/workflows` ライブビュー** で行う（旧 `/longrun:status` は v6.0.0 で
 廃止された）。意思決定は `{longrun-dir}/decisions.md` を直接 Read する。

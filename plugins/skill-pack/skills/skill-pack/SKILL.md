@@ -14,6 +14,12 @@ Claude Code の `skillOverrides` と `enabledPlugins` を対話的に編集し�
 
 - **個人スキル** (`~/.claude/skills/`): `skillOverrides` で個別に `"on" / "off" / "name-only" / "user-invocable-only"` を指定
 - **プラグインのスキル群**: `enabledPlugins` で plugin 単位に `true / false`
+
+> **適用範囲の境界（重要）**: `skillOverrides` が制御するのは **個人スキル（`~/.claude/skills/` 配下）のみ** であり、
+> **plugin skill（`plugin:skill` 形式で提供されるプラグイン同梱スキル）は `skillOverrides` では制御できない**。
+> プラグイン由来のスキルを ON/OFF したい場合は `enabledPlugins` で **plugin 単位** に切り替える
+> （個別スキル単位の抑制は不可）。`on <name>` / `off <name>` を使うときも、対象が個人スキルなら
+> `skillOverrides`、プラグインなら `enabledPlugins` を編集する、という切り分けを守る。
 - **設定ファイル優先度**: Local > Project > User
   - `.claude/settings.json` (チーム共有, commit 対象)
   - `.claude/settings.local.json` (個人専用, gitignore 標準)
@@ -94,7 +100,7 @@ Claude Code の `skillOverrides` と `enabledPlugins` を対話的に編集し�
 
 === Plugins ===
   ✅ longrun@oratta-claude-harness
-  ❌ cooking@1h-cooking            (disabled in .claude/settings.local.json)
+  ❌ harvest@marketing-harness     (disabled in .claude/settings.local.json)
 ```
 
 #### `on <name>` / `off <name>`
@@ -136,8 +142,8 @@ Claude Code の `skillOverrides` と `enabledPlugins` を対話的に編集し�
     "pencil-mcp-workaround": "off"
   },
   "enabledPlugins": {
-    "cooking@1h-cooking": false,
-    "obsidian-llm-session-rules@oratta-claude-harness": false
+    "harvest@marketing-harness": false,
+    "worktree@oratta-claude-harness": false
   }
 }
 ```

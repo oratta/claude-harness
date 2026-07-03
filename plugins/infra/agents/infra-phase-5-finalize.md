@@ -10,10 +10,10 @@ model: sonnet
 
 ## あなたのゴール
 
-1. `.env.local` の最終検証（dev プロジェクトの URL / ANON_KEY が有効、prod 側はコメントアウト状態）
+1. `.env.local` / `.env.production.local` の最終検証（`.env.local` は dev プロジェクトの URL / ANON_KEY が有効、`.env.production.local` は prod プロジェクトの値が active に書かれていること）
 2. `npx supabase link --project-ref {DEV_REF}` 実行（マイグレーション管理用）
 3. `next dev` 動作確認の案内（`supabase start` は実行しない旨を明示）
-4. 完了サマリー表示（環境一覧、URL、DB接続先、警告 2件、prod 昇格手順、PR Preview なしの旨）
+4. 完了サマリー表示（環境一覧、URL、DB接続先、警告 2件、prod 昇格手順、PR Preview 方針の旨）
 5. state ファイル `## Phase 5 (Finalize)` セクションへの記録
 
 ## 実行手順
@@ -36,21 +36,23 @@ Read /tmp/infra-setup-state.md
 - `## Phase 3 (Vercel)` から:
   - `vercel_project_id` / `vercel_org_id` / `custom_domain_added`
 
-### Step 2: `.env.local` 最終検証
+### Step 2: `.env.local` / `.env.production.local` 最終検証
 
 ```bash
 grep -E '^NEXT_PUBLIC_SUPABASE_URL=' .env.local
 grep -E '^NEXT_PUBLIC_SUPABASE_ANON_KEY=' .env.local
+grep -E '^NEXT_PUBLIC_SUPABASE_URL=' .env.production.local
+grep -E '^NEXT_PUBLIC_SUPABASE_ANON_KEY=' .env.production.local
 ```
 
 期待する状態:
-- `NEXT_PUBLIC_SUPABASE_URL` = dev プロジェクトの URL（`https://{DEV_REF}.supabase.co`）
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` = dev プロジェクトの ANON KEY
-- prod 側の `# NEXT_PUBLIC_SUPABASE_URL=...` / `# NEXT_PUBLIC_SUPABASE_ANON_KEY=...` はコメントアウトで保存されている
+- `.env.local` の `NEXT_PUBLIC_SUPABASE_URL` = dev プロジェクトの URL（`https://{DEV_REF}.supabase.co`）
+- `.env.local` の `NEXT_PUBLIC_SUPABASE_ANON_KEY` = dev プロジェクトの ANON KEY
+- `.env.production.local` が存在し、`NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` が prod プロジェクトの値で active に書かれている（Phase 2 Step 11.5 が書き込み済みのはず）
 
-検証失敗（値が空、または prod の値が有効になっているなど）の場合:
+検証失敗（値が空、`.env.production.local` が存在しない、または dev/prod の値が入れ替わっているなど）の場合:
 ```
-.env.local の Supabase 設定が期待と異なります:
+.env.local / .env.production.local の Supabase 設定が期待と異なります:
 {検出した状態}
 
 修正しますか？
@@ -176,10 +178,11 @@ local 環境は **リモートの dev Supabase** を参照します（Docker な
 
 ## PR Preview について
 
-**PR 時は CI（test/lint/type-check）のみ実行されます。自動 Preview deploy は行われません。**
+**Draft 中は CI（test/lint/type-check）のみ実行され、Preview deploy は skip されます。Ready for review に切り替えると Preview deploy が実行されます。**
 動作確認は以下で実施してください:
 
-- コード単位: ローカルで `npm run dev`（dev DB 接続）
+- コード単位: ローカルで `npm run dev`（dev DB 接続）または Draft PR の CI 結果
+- Preview 確認: PR を Ready for review にすると Preview deploy（prod DB 接続）が実行され、PR コメントに URL が投稿されます
 - 統合確認: main にマージ後、staging（prod DB 接続）で検証 → prod 昇格
 
 ## 次に何をする？
@@ -222,7 +225,7 @@ local 環境は **リモートの dev Supabase** を参照します（Docker な
 ## 重要な注意事項
 
 - **`supabase start` は絶対に実行しない**。設計の根幹なので、コマンドを提案することも避ける。
-- **`.env.local` の prod 系がコメントアウトで保存されている前提**を崩さない。staging/prod は Vercel env vars 側で管理されるため、local にアクティブな prod 接続情報を置いてはいけない。
+- **`.env.production.local` に prod 値が分離保存されている前提**を崩さない。staging/prod は Vercel env vars 側で管理されるため、`.env.local` にアクティブな prod 接続情報を置いてはいけない（prod 値は `.env.production.local` にのみ active に保存する）。
 - **警告メッセージを省略しない**。完了サマリーの2つの警告はユーザーが後で事故らないための重要情報。
 - **既存スキル削除は必ず AskUserQuestion**。勝手に `rm -rf` しない。
 

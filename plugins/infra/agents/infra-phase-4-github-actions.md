@@ -93,6 +93,8 @@ AskUserQuestion: 既存のワークフローファイル {ファイル名} が�
 
 ### Step 5: Vercel Token 取得
 
+**CLI 化の検証結果**: 2026-07-03 時点で Vercel CLI（48.x）の `vercel help` に `tokens`/`token` サブコマンドは存在しない（`vercel tokens --help` はトップレベル `deploy` のヘルプにフォールバックする）。Access Token の新規発行は Vercel ダッシュボード UI 経由のみサポートされており、CLI/REST API から「最初の」トークンを作る手段はない（トークンで認証しないと呼べない REST API はこの用途に使えない、鶏と卵の制約）。よって CLI 化は不可と判定し、以下の Playwright MCP 自動モード / 手動モードの 2 分岐フォールバック方式を維持する。
+
 state の `playwright_mcp_available` を確認:
 
 #### 自動モード（Playwright MCP 利用可）
@@ -119,19 +121,31 @@ Vercel Token の手動取得が必要です:
 （注）Token は一度しか表示されないので、確実にコピーしてください。
 ```
 
-### Step 6: .env.local から必要な値を読み取り
+### Step 6: `.env.local` / `.env.production.local` から必要な値を読み取り
+
+CI 用（dev プロジェクトの値、型チェックのみが目的で実データ疎通は不要なため）は **`.env.local`** から取得する:
 
 ```bash
 SUPABASE_ACCESS_TOKEN=$(grep -m1 '^SUPABASE_ACCESS_TOKEN=' .env.local | cut -d= -f2-)
 SUPABASE_DB_PASSWORD_PROD=$(grep -m1 '^SUPABASE_DB_PASSWORD_PROD=' .env.local | cut -d= -f2-)
+NEXT_PUBLIC_SUPABASE_URL=$(grep -m1 '^NEXT_PUBLIC_SUPABASE_URL=' .env.local | cut -d= -f2-)
+NEXT_PUBLIC_SUPABASE_ANON_KEY=$(grep -m1 '^NEXT_PUBLIC_SUPABASE_ANON_KEY=' .env.local | cut -d= -f2-)
+```
+
+staging（`deploy-staging.yml` が prod DB へ差し替えるための値）は **`.env.production.local`**（Phase 2 Step 11.5 が書き込み済み）から取得する:
+
+```bash
+PROD_SUPABASE_URL=$(grep -m1 '^NEXT_PUBLIC_SUPABASE_URL=' .env.production.local | cut -d= -f2-)
+PROD_SUPABASE_ANON_KEY=$(grep -m1 '^NEXT_PUBLIC_SUPABASE_ANON_KEY=' .env.production.local | cut -d= -f2-)
+PROD_SUPABASE_SERVICE_ROLE_KEY=$(grep -m1 '^SUPABASE_SERVICE_ROLE_KEY=' .env.production.local | cut -d= -f2-)
 ```
 
 - `-m1`: 重複行があっても最初の一致のみ
 - `cut -d= -f2-`: `key=value` の `value` 部分を取得（値に `=` が含まれても対応）
 
-両方とも空の場合はユーザーに報告（Phase 2 の完了を疑う）:
+いずれかが空の場合はユーザーに報告（Phase 2 の完了を疑う）:
 ```
-.env.local から SUPABASE_ACCESS_TOKEN / SUPABASE_DB_PASSWORD_PROD を取得できませんでした。
+.env.local / .env.production.local から必要な Supabase 値を取得できませんでした。
 Phase 2 が正しく完了していない可能性があります。
 手動で値を入力しますか？
 ```
@@ -163,7 +177,15 @@ gh secret set VERCEL_PROJECT_ID --body "$vercel_project_id" --repo "$github_repo
 gh secret set SUPABASE_ACCESS_TOKEN --body "$SUPABASE_ACCESS_TOKEN" --repo "$github_repo"
 gh secret set PROD_SUPABASE_PROJECT_REF --body "$prod_project_ref" --repo "$github_repo"
 gh secret set PROD_SUPABASE_DB_URL --body "$PROD_SUPABASE_DB_URL" --repo "$github_repo"
+gh secret set NEXT_PUBLIC_SUPABASE_URL --body "$NEXT_PUBLIC_SUPABASE_URL" --repo "$github_repo"
+gh secret set NEXT_PUBLIC_SUPABASE_ANON_KEY --body "$NEXT_PUBLIC_SUPABASE_ANON_KEY" --repo "$github_repo"
+gh secret set PROD_SUPABASE_URL --body "$PROD_SUPABASE_URL" --repo "$github_repo"
+gh secret set PROD_SUPABASE_ANON_KEY --body "$PROD_SUPABASE_ANON_KEY" --repo "$github_repo"
+gh secret set PROD_SUPABASE_SERVICE_ROLE_KEY --body "$PROD_SUPABASE_SERVICE_ROLE_KEY" --repo "$github_repo"
 ```
+
+- `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`: `ci.yml` の型チェック用（dev プロジェクトの値。`.env.local` から取得）
+- `PROD_SUPABASE_URL` / `PROD_SUPABASE_ANON_KEY` / `PROD_SUPABASE_SERVICE_ROLE_KEY`: `deploy-staging.yml` が prod DB へ差し替えるための値（`.env.production.local` から取得）。`SERVICE_ROLE_KEY` は staging が本番相当のサーバー権限で動作する設計（ビルド時 sed 置換 + ランタイム `-e` 注入）で実使用する
 
 **EDGE_CONFIG_ID（オプション）**: deploy-production.yml のメンテナンスモードを使う場合のみ必要。
 Vercel API で Edge Config ストアを作成して投入する（アプリ側の middleware 実装も必要なので、Phase 4 では作成せずスキップしてよい。使う段になったら:
@@ -222,6 +244,11 @@ https://github.com/{github_repo}/settings/environments
   - SUPABASE_ACCESS_TOKEN
   - PROD_SUPABASE_PROJECT_REF
   - PROD_SUPABASE_DB_URL
+  - NEXT_PUBLIC_SUPABASE_URL
+  - NEXT_PUBLIC_SUPABASE_ANON_KEY
+  - PROD_SUPABASE_URL
+  - PROD_SUPABASE_ANON_KEY
+  - PROD_SUPABASE_SERVICE_ROLE_KEY
 - production_environment_created: {true|false|skipped}
 - vercel_token_method: {playwright|manual}
 - completed_at: {ISO8601_TIMESTAMP}
@@ -248,6 +275,8 @@ https://github.com/{github_repo}/settings/environments
 GitHub Secrets 投入:
 - VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID
 - SUPABASE_ACCESS_TOKEN / PROD_SUPABASE_PROJECT_REF / PROD_SUPABASE_DB_URL
+- NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY（CI 用、dev 値）
+- PROD_SUPABASE_URL / PROD_SUPABASE_ANON_KEY / PROD_SUPABASE_SERVICE_ROLE_KEY（staging 用、prod 値）
 - EDGE_CONFIG_ID は未投入（メンテナンスモードを使う場合に別途セットアップ）
 
 GitHub Environment "Production": {作成済み / 未設定（推奨: 作成）}

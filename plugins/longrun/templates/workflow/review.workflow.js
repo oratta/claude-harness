@@ -4,7 +4,7 @@
 // Workflow ツールで起動する。本ファイルは「埋め込みポイントを ${...} で示した骨格」であり、
 // 生成後のスクリプトは plain JavaScript（型注釈なし）になる。
 //
-// === Workflow ツール制約（_longruns/<run>/workflow-tool-reference.md を一次ソースとする）===
+// === Workflow ツール制約（plugins/longrun/references/workflow-tool-reference.md を一次ソースとする）===
 //   - JavaScript のみ。Date.now() / Math.random() / 引数なし new Date() は throw する
 //     → タイムスタンプは args.timestamp で注入する
 //   - meta はピュアリテラル（変数・関数・スプレッド・テンプレート補間 不可）

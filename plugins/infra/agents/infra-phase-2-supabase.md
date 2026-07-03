@@ -184,6 +184,9 @@ SUPABASE_ACCESS_TOKEN={TOKEN} npx supabase projects api-keys --project-ref {PROD
 各プロジェクトの `anon` key を抽出:
 - `DEV_ANON_KEY` / `PROD_ANON_KEY`
 
+加えて、**prod プロジェクトについてのみ** `service_role` key も抽出する（`deploy-staging.yml` がステークホルダー/QA 向けに本番相当のサーバー権限で動作する設計の一部として実使用するため）:
+- `PROD_SERVICE_ROLE_KEY`（dev プロジェクトの service_role key は取得しない。dev 側では service_role を使わない設計のため）
+
 URL は `https://{REF}.supabase.co` 形式で組み立てる:
 - `DEV_SUPABASE_URL` / `PROD_SUPABASE_URL`
 
@@ -235,11 +238,14 @@ SUPABASE_PROD_REF={PROD_REF}
 
 ```env
 # Production Supabase values ({project_name}-prod / {PROD_REF})
-# These are used by Phase 3 (Vercel env var setup) and for any production-mode local runs.
+# These are used by Phase 3 (Vercel env var setup), Phase 4 (GitHub Secrets) and for any production-mode local runs.
 # This file is gitignored.
 NEXT_PUBLIC_SUPABASE_URL={PROD_SUPABASE_URL}
 NEXT_PUBLIC_SUPABASE_ANON_KEY={PROD_ANON_KEY}
+SUPABASE_SERVICE_ROLE_KEY={PROD_SERVICE_ROLE_KEY}
 ```
+
+**`service_role` key の扱い**: `service_role` key は RLS を完全にバイパスする最強権限のため、`.env.production.local`（gitignore 済み）にのみ書き込む。`.env.local` には**絶対に書かない**（dev 側は service_role を使わない設計のため）。ログ・state・完了報告メッセージにも実値を出力しない。
 
 **なぜ別ファイルか**:
 - 以前は `.env.local` に prod 値をコメントアウトで保存していたが、コメント化値を `grep`/`sed` で抽出する設計が脆すぎた
@@ -297,7 +303,7 @@ AskUserQuestion: 既存の .env.production.local を検出しました。上書�
 - completed_at: {ISO8601_TIMESTAMP}
 ```
 
-**セキュリティ**: Access Token / DB パスワード / API Keys / ダッシュボードパスワード の**実値は state に書かない**。これらは `.env.local` / `.env.production.local` / ユーザーのパスワードマネージャーに保存する。
+**セキュリティ**: Access Token / DB パスワード / API Keys（`anon` key・`service_role` key を含む）/ ダッシュボードパスワード の**実値は state に書かない**。これらは `.env.local` / `.env.production.local` / ユーザーのパスワードマネージャーに保存する。
 
 ### Step 14: 完了報告
 
@@ -311,7 +317,7 @@ AskUserQuestion: 既存の .env.production.local を検出しました。上書�
 
 更新したファイル:
 - .env.local (dev 用 Supabase 認証情報 + Access Token + DB passwords)
-- .env.production.local (prod 用 NEXT_PUBLIC_SUPABASE_URL / ANON_KEY)
+- .env.production.local (prod 用 NEXT_PUBLIC_SUPABASE_URL / ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)
 - .mcp.json (Supabase MCP サーバー設定)
 - .gitignore ({追記あり/既に含まれる})
 

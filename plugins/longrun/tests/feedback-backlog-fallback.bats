@@ -42,7 +42,7 @@ record_tier3() {
 
 @test "resolver: DEGRADED run resolves to run-dir backlog" {
   repo="${LR_TEST_TMPDIR}/repo"
-  run_dir="${repo}/_longruns/2026-06-12_x"
+  run_dir="${repo}/_longruns/2099-01-01_x"
   mkdir -p "$run_dir"
   : > "${run_dir}/.degraded-mode"
   [ "$(resolve_backlog_path "$repo" "$run_dir")" = "${run_dir}/backlog.md" ]
@@ -50,7 +50,7 @@ record_tier3() {
 
 @test "resolver: NORMAL run resolves to openspec backlog" {
   repo="${LR_TEST_TMPDIR}/repo"
-  run_dir="${repo}/_longruns/2026-06-12_x"
+  run_dir="${repo}/_longruns/2099-01-01_x"
   mkdir -p "$run_dir"
   [ "$(resolve_backlog_path "$repo" "$run_dir")" = "${repo}/openspec/backlog.md" ]
 }
@@ -59,7 +59,7 @@ record_tier3() {
 
 @test "S12: DEGRADED Tier 3 appends to run-dir backlog and does NOT create openspec/" {
   repo="${LR_TEST_TMPDIR}/repo"
-  run_dir="${repo}/_longruns/2026-06-12_x"
+  run_dir="${repo}/_longruns/2099-01-01_x"
   mkdir -p "$run_dir"
   : > "${run_dir}/.degraded-mode"
   path="$(resolve_backlog_path "$repo" "$run_dir")"
@@ -74,7 +74,7 @@ record_tier3() {
 
 @test "S13: NORMAL Tier 3 appends to openspec/backlog.md" {
   repo="${LR_TEST_TMPDIR}/repo"
-  run_dir="${repo}/_longruns/2026-06-12_x"
+  run_dir="${repo}/_longruns/2099-01-01_x"
   mkdir -p "${repo}/openspec" "$run_dir"
   path="$(resolve_backlog_path "$repo" "$run_dir")"
   record_tier3 "$path" "管理画面を追加して"
@@ -85,7 +85,7 @@ record_tier3() {
 
 @test "S13: NORMAL run does not write run-dir backlog (no degraded leakage)" {
   repo="${LR_TEST_TMPDIR}/repo"
-  run_dir="${repo}/_longruns/2026-06-12_x"
+  run_dir="${repo}/_longruns/2099-01-01_x"
   mkdir -p "${repo}/openspec" "$run_dir"
   path="$(resolve_backlog_path "$repo" "$run_dir")"
   [ "$path" = "${repo}/openspec/backlog.md" ]

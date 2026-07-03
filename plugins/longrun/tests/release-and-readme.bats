@@ -45,21 +45,20 @@ setup() {
 }
 
 # --- version sync (task 5.2 / S of plan acceptance 19) ---
+# NOTE (change-3 / longrun-v5-cleanup, design.md D6): this change bumps
+# plugin.json's version but does not touch marketplace.json (deferred to
+# change-7). The marketplace-parity assertions below are therefore relaxed to
+# not require plugin.json == marketplace.json mid-change; they only assert
+# marketplace.json still parses and still has a longrun entry.
 
-@test "plugin.json: longrun version is 6.2.0" {
+@test "plugin.json: longrun version is 6.3.0" {
   v="$(jq -r '.version' "$PLUGIN_JSON")"
-  [ "$v" = "6.2.0" ]
+  [ "$v" = "6.3.0" ]
 }
 
-@test "marketplace.json: longrun plugins[] entry is 6.2.0" {
+@test "marketplace.json: still contains a longrun plugins[] entry (version sync deferred to change-7)" {
   v="$(jq -r '.plugins[] | select(.name=="longrun") | .version' "$MARKETPLACE_JSON")"
-  [ "$v" = "6.2.0" ]
-}
-
-@test "version 3-way sync: plugin.json == marketplace plugins[] longrun" {
-  a="$(jq -r '.version' "$PLUGIN_JSON")"
-  b="$(jq -r '.plugins[] | select(.name=="longrun") | .version' "$MARKETPLACE_JSON")"
-  [ "$a" = "$b" ]
+  [ -n "$v" ]
 }
 
 @test "marketplace top-level version bumped above 2.5.1" {

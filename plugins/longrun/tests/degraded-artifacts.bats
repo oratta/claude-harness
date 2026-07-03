@@ -85,20 +85,20 @@ degraded_archive() {
 
 @test "degraded archive: moves run dir into _archive" {
   repo="${LR_TEST_TMPDIR}/repo"
-  mkdir -p "${repo}/_longruns/2026-06-12_x/specs/change-a"
-  : > "${repo}/_longruns/2026-06-12_x/.degraded-mode"
-  : > "${repo}/_longruns/2026-06-12_x/specs/change-a/proposal.md"
-  degraded_archive "$repo" "${repo}/_longruns/2026-06-12_x"
-  [ -d "${repo}/_longruns/_archive/2026-06-12_x" ]
-  [ -f "${repo}/_longruns/_archive/2026-06-12_x/specs/change-a/proposal.md" ]
-  [ ! -d "${repo}/_longruns/2026-06-12_x" ]
+  mkdir -p "${repo}/_longruns/2099-01-01_x/specs/change-a"
+  : > "${repo}/_longruns/2099-01-01_x/.degraded-mode"
+  : > "${repo}/_longruns/2099-01-01_x/specs/change-a/proposal.md"
+  degraded_archive "$repo" "${repo}/_longruns/2099-01-01_x"
+  [ -d "${repo}/_longruns/_archive/2099-01-01_x" ]
+  [ -f "${repo}/_longruns/_archive/2099-01-01_x/specs/change-a/proposal.md" ]
+  [ ! -d "${repo}/_longruns/2099-01-01_x" ]
 }
 
 @test "degraded archive: does NOT create or move openspec/changes/archive" {
   repo="${LR_TEST_TMPDIR}/repo"
-  mkdir -p "${repo}/_longruns/2026-06-12_x"
-  : > "${repo}/_longruns/2026-06-12_x/.degraded-mode"
-  degraded_archive "$repo" "${repo}/_longruns/2026-06-12_x"
+  mkdir -p "${repo}/_longruns/2099-01-01_x"
+  : > "${repo}/_longruns/2099-01-01_x/.degraded-mode"
+  degraded_archive "$repo" "${repo}/_longruns/2099-01-01_x"
   # No openspec/ writes happened
   [ ! -d "${repo}/openspec" ]
 }
@@ -107,7 +107,7 @@ degraded_archive() {
 
 @test "degraded artifacts: specs live under run dir, not openspec/" {
   repo="${LR_TEST_TMPDIR}/repo"
-  run_dir="${repo}/_longruns/2026-06-12_x"
+  run_dir="${repo}/_longruns/2099-01-01_x"
   # Simulate the orchestrator degraded branch output layout.
   mkdir -p "${run_dir}/specs/change-a"
   : > "${run_dir}/.degraded-mode"

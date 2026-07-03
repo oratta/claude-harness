@@ -17,9 +17,12 @@
 //     "CHANGES_JSON": "[{\"name\":\"c1\",\"worktree\":\"_worktrees/c1\",\"dependsOn\":[]}]",
 //     "BUILDER_AGENT_TYPE": "longrun:longrun-builder",
 //     "VERIFIER_AGENT_TYPE": "longrun:longrun-verifier",
+//     "BROWSER_VERIFIER_AGENT_TYPE": "longrun:longrun-browser-verifier",
 //     "BUILDER_SCHEMA": "<schema json string>",
 //     "VERIFIER_SCHEMA": "<schema json string>"
 //   }
+//   （*_MODEL 系 — BUILDER_MODEL / VERIFIER_MODEL / BROWSER_VERIFIER_MODEL — は
+//    未指定なら null 既定。エイリアス文字列 'sonnet' 等 or null を渡す。）
 
 import { readFileSync } from 'node:fs';
 

@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Skill, ToolSearch
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, Skill, ToolSearch
 description: Fieldy音声+Vault編集+LLMログ+Claude Codeセッションを集約して自然言語の日記を生成。--with-album でトイカメラ風 Vlog アルバムも併せて生成（デフォルトは女子 3 人版、--gene male で男性 Gene 版に切替）。
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "skill-pack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "プロジェクトごとに skillOverrides と enabledPlugins を対話的に編集し、必要なスキルだけを ON にする。/skill-pack init で初期セットアップ、list/on/off/suggest で運用。",
   "author": {
     "name": "Oratta"

@@ -8,4 +8,4 @@ Skill toolを使って `longrun:longrun-plan` スキルを引数 `$ARGUMENTS` �
 自分で処理せず、必ずSkill toolで委譲すること。Agent tool は使わない（longrun-plan は Skill であり Agent ではない）。
 
 `$ARGUMENTS` はそのまま skill に渡るため、フラグも透過的に転送される（引数透過は維持）。
-なお MVP プラン作成は独立コマンド `/lr:m`（`/longrun:mvp`）に移動した。旧 `--mode=mvp` フラグは skill 側で移行案内を出して終了する（フルモードへのフォールバックはしない）。
+なお MVP プラン作成は独立コマンド `/lr:m`（`/longrun:mvp`）に移動した。

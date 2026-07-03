@@ -64,13 +64,9 @@ version: 1.0.0             # 必須: SemVer
 #### NG パターン
 
 - **Skill 名を `-er` / `-or` で終わらせない**: Agent と区別がつかず、Skill tool / Agent tool のどちらで呼ぶべきか命名から判断できない。
-  - 悪い: `longrun-orchestrator`, `session-logger`, `skill-finder`
-  - 良い: `longrun-orchestration`, `session-logging`, `skill-discovery`
+  - 悪い: `data-fetcher`, `image-processor`
+  - 良い: `data-fetching`, `image-processing`
 - **Command 名を `-er` / `-or` で終わらせない**: 動詞由来の slash command という慣習が崩れる。
-
-#### 既存の不整合
-
-`pre-task-orchestrator`, `skill-finder`, `task-analyzer` など既存 Skill には `-er` / `-or` 終わりが多数残存している。段階的リネーム対象として `openspec/backlog.md` に記録済み。
 
 ### 記述スタイル
 
