@@ -58,6 +58,7 @@ render_bv() {
       CHANGES_JSON: JSON.stringify([{name:"fixture-hello",worktree:"_worktrees/fixture-hello",dependsOn:[]}]),
       BUILDER_AGENT_TYPE:"longrun:longrun-builder",
       VERIFIER_AGENT_TYPE:"longrun:longrun-verifier",
+      BROWSER_VERIFIER_AGENT_TYPE:"longrun:longrun-browser-verifier",
       BUILDER_SCHEMA: JSON.stringify(JSON.parse(bs)),
       VERIFIER_SCHEMA: JSON.stringify(JSON.parse(vs))
     };

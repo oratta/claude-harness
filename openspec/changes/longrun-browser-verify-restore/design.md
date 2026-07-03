@@ -50,6 +50,8 @@ Verify ループの各周で、まず静的 verifier（quality/completeness）�
 
 いずれを採っても spec Requirement「4 軸のハードしきい値が schema と矛盾しない」「schema は外部ファイルが唯一のソース」を満たすこと。**最終判断は builder が実装時に行い reviewer 承認を得る**（config.yaml rule）。
 
+**確定（builder, 2026-07-03）: 候補1（1 schema の部分返却）を採用。** `verifier-score.schema.json` の `required` を `["verdict"]` へ緩和し、4 軸の property 定義・しきい値 description は保持。各 verifier は自分の 2 軸 + verdict を返し、workflow 側で 2 返却をマージして 4 軸を合成、総合 verdict = 論理積。理由: 4 軸定義の単一ソース維持・YAGNI（schema を増やさない）・可逆性（`required` 緩和のみで property 名/定義は不変）。軸欠落は agent 担当宣言 + workflow マージロジックで担保する（候補1 の既知トレードオフを許容）。詳細は `_longruns/2026-07-03_plugin-review-fixes/decisions.md#D-change2-1`。
+
 ### D3: `BROWSER_VERIFIER_AGENT_TYPE` は exec.md params で常時供給、`BROWSER_VERIFIER_MODEL` は render デフォルト null
 
 `render-workflow.mjs` は `__*_MODEL__` サフィックスの埋め込みポイントのみ未指定時 `null` 既定にし、それ以外は未解決で die する（推測値の混入防止）。この規律を維持するため:

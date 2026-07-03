@@ -16,7 +16,7 @@
 
 `opts.model` は Workflow ツールの `agent(prompt, opts)` に渡すモデル指定で、
 **agent 定義 frontmatter の `model:` 指定より優先される**
-（一次ソース: `_longruns/2026-06-12_harness-workflow-overhaul/workflow-tool-reference.md` §3）。
+（一次ソース: `plugins/longrun/references/workflow-tool-reference.md` §3）。
 
 渡し値は **エイリアス**を採用する（reference §3 で `model: 'haiku'` を実機検証済み、
 `'sonnet' | 'opus'` も同一機構）。エイリアスはモデル世代交代に追従するため、

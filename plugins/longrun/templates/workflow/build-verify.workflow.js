@@ -4,7 +4,7 @@
 // Workflow ツールで起動する。Review フェーズが APPROVE され、メインループが Build Contract
 // 承認を取得した後に起動される（D5 の分割境界）。
 //
-// === Workflow ツール制約（_longruns/<run>/workflow-tool-reference.md を一次ソースとする）===
+// === Workflow ツール制約（plugins/longrun/references/workflow-tool-reference.md を一次ソースとする）===
 //   - JavaScript のみ。Date.now() / Math.random() / 引数なし new Date() は throw する
 //     → タイムスタンプは args.timestamp で注入する
 //   - meta はピュアリテラル
@@ -19,21 +19,23 @@
 //   __RUN_DIR__              ランディレクトリの絶対パス（_longruns/<run>/）
 //   __PROJECT_ROOT__         プロジェクトルート（cwd）
 //   __CHANGES_JSON__         plan.md の Changes 分解を [{name, worktree, dependsOn:[...]}] にした配列リテラル
-//   __BUILDER_AGENT_TYPE__   builder agentType。既定 'longrun:longrun-builder'（D6: パラメータ化）
-//   __VERIFIER_AGENT_TYPE__  既定 'longrun:longrun-verifier'
-//   __BUILDER_SCHEMA__       builder-report.schema.json の中身（インライン JSON オブジェクト）
-//   __VERIFIER_SCHEMA__      verifier-score.schema.json の中身（インライン JSON オブジェクト）
-//   __BUILDER_MODEL__        builder の opts.model 値（エイリアス文字列リテラル 'sonnet' 等、または null）
-//   __VERIFIER_MODEL__       verifier の opts.model 値（同上）
-//                            null のときは下の条件付きスプレッドで model キー自体を出力しない（inherit, change-4 D2）。
+//   __BUILDER_AGENT_TYPE__            builder agentType。既定 'longrun:longrun-builder'（D6: パラメータ化）
+//   __VERIFIER_AGENT_TYPE__           静的 verifier agentType。既定 'longrun:longrun-verifier'（quality/completeness 担当）
+//   __BROWSER_VERIFIER_AGENT_TYPE__   ブラウザ verifier agentType。既定 'longrun:longrun-browser-verifier'（functionality/ux 担当。change-2）
+//   __BUILDER_SCHEMA__                builder-report.schema.json の中身（インライン JSON オブジェクト）
+//   __VERIFIER_SCHEMA__               verifier-score.schema.json の中身（インライン JSON オブジェクト。静的/ブラウザ両 verifier で共用 = 部分返却, change-2 D2 候補1）
+//   __BUILDER_MODEL__                 builder の opts.model 値（エイリアス文字列リテラル 'sonnet' 等、または null）
+//   __VERIFIER_MODEL__                静的 verifier の opts.model 値（同上）
+//   __BROWSER_VERIFIER_MODEL__        ブラウザ verifier の opts.model 値（同上。change-2）
+//                            *_MODEL は null のとき下の条件付きスプレッドで model キー自体を出力しない（inherit, change-4 D2）。
 //                            ティア → エイリアス値の解決は plugins/longrun/references/model-tiers.md（1 箇所集約）。
 
 export const meta = {
   name: 'longrun-build-verify',
-  description: 'longrun Build → Verify フェーズ: change ごとに longrun-builder で TDD 実装し、Verify ループ（上限 3 周 + budget ガード）で longrun-verifier の 4 軸スコアを機構判定する',
+  description: 'longrun Build → Verify フェーズ: change ごとに longrun-builder で TDD 実装し、Verify ループ（上限 3 周 + budget ガード）で静的 verifier（quality/completeness）とブラウザ verifier（functionality/ux）を 2+2 分担で呼び、総合 verdict = 両者の論理積で機構判定する',
   phases: [
     { title: 'Build', detail: 'change ごとに longrun-builder で TDD 実装（builder-report schema 強制）' },
-    { title: 'Verify', detail: '4 軸定量評価ループ（上限 3 周 + budget ガード、verifier-score schema 強制）' },
+    { title: 'Verify', detail: '静的 2 軸 + ブラウザ 2 軸の定量評価ループ（上限 3 周 + budget ガード、verifier-score schema 強制、総合 verdict は論理積）' },
   ],
 };
 
@@ -49,6 +51,7 @@ const changes = __CHANGES_JSON__;
 // 解決は exec が resolve-model-allocation.mjs + references/model-tiers.md で行い、ここに埋める。
 const builderModel = __BUILDER_MODEL__;
 const verifierModel = __VERIFIER_MODEL__;
+const browserVerifierModel = __BROWSER_VERIFIER_MODEL__;
 
 // ===== Build フェーズ =====
 phase('Build');
@@ -95,32 +98,69 @@ while (round < VERIFY_MAX_ROUNDS) {
   }
 
   round++;
-  const score = await agent(
+
+  // --- 静的 verifier（quality / completeness の 2 軸）---
+  const staticScore = await agent(
     `静的検証を実行してください。longrun-dir: __RUN_DIR__。` +
-    `テスト・lint・型チェック・ビルドの品質検証とコードレビューによる完成度評価を行い、` +
-    `functionality / quality / completeness / ux を各 0-100 で採点し、` +
-    `ハードしきい値（quality=100, functionality=100, completeness>=80, ux>=70）を全て満たせば verdict=PASS、` +
+    `テスト・lint・型チェック・ビルドの品質評価とエッジケース/エラーハンドリングのコードレビューによる完成度評価を行い、` +
+    `quality / completeness を各 0-100 で採点し、` +
+    `ハードしきい値（quality=100, completeness>=80）を満たせば verdict=PASS、` +
     `満たさなければ verdict=FAIL として findings に残課題を列挙してください。（round ${round}）`,
     {
-      label: `verify round ${round}`,
+      label: `verify(static) round ${round}`,
       phase: 'Verify',
       agentType: '__VERIFIER_AGENT_TYPE__',
       schema: verifierSchema,
       ...(verifierModel ? { model: verifierModel } : {}),
     }
   );
-  lastScore = score;
 
-  if (score && score.verdict === 'PASS') {
+  // --- ブラウザ verifier（functionality / ux の 2 軸）---
+  const browserScore = await agent(
+    `ブラウザ動作検証を実行してください。longrun-dir: __RUN_DIR__。` +
+    `Playwright MCP（優先）または claude-in-chrome で spec Scenario の WHEN/THEN を実操作し、` +
+    `functionality / ux を各 0-100 で採点し、` +
+    `ハードしきい値（functionality=100, ux>=70）を満たせば verdict=PASS、` +
+    `満たさなければ verdict=FAIL として findings に残課題を列挙してください。（round ${round}）`,
+    {
+      label: `verify(browser) round ${round}`,
+      phase: 'Verify',
+      agentType: '__BROWSER_VERIFIER_AGENT_TYPE__',
+      schema: verifierSchema,
+      ...(browserVerifierModel ? { model: browserVerifierModel } : {}),
+    }
+  );
+
+  // 2 返却を 4 軸へマージ（agent() は null を返しうる → null ガード）。
+  // 総合 verdict = 静的 verdict ∧ ブラウザ verdict（両方 PASS のときのみ PASS）。
+  const bothPass =
+    staticScore && staticScore.verdict === 'PASS' &&
+    browserScore && browserScore.verdict === 'PASS';
+  const mergedFindings = []
+    .concat(staticScore && staticScore.findings ? staticScore.findings : [])
+    .concat(browserScore && browserScore.findings ? browserScore.findings : []);
+  const merged = {
+    quality: staticScore ? staticScore.quality : null,
+    completeness: staticScore ? staticScore.completeness : null,
+    functionality: browserScore ? browserScore.functionality : null,
+    ux: browserScore ? browserScore.ux : null,
+    staticVerdict: staticScore ? staticScore.verdict : null,
+    browserVerdict: browserScore ? browserScore.verdict : null,
+    verdict: bothPass ? 'PASS' : 'FAIL',
+    findings: mergedFindings,
+  };
+  lastScore = merged;
+
+  if (bothPass) {
     stopReason = 'PASS';
     break;
   }
 
-  // FAIL → builder に修正依頼（次周で再検証）。上限到達時はループ条件で停止する。
+  // FAIL → builder に合算 findings で修正依頼（次周で両 verifier を再評価）。上限到達時はループ条件で停止。
   if (round < VERIFY_MAX_ROUNDS) {
     await agent(
-      `Verify が FAIL しました（round ${round}）。以下の残課題を修正してください: ` +
-      `${score && score.findings ? JSON.stringify(score.findings) : '(詳細不明)'}。` +
+      `Verify が FAIL しました（round ${round}、静的=${merged.staticVerdict} / ブラウザ=${merged.browserVerdict}）。` +
+      `以下の残課題を修正してください: ${mergedFindings.length ? JSON.stringify(mergedFindings) : '(詳細不明)'}。` +
       `修正後コミットすること。`,
       {
         label: `fix round ${round}`,
