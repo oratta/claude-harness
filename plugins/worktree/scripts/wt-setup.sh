@@ -28,6 +28,13 @@ if [ -f .worktreeinclude ]; then
   COPIED=0
   while IFS= read -r pattern; do
     [[ "$pattern" =~ ^#.*$ || -z "$pattern" ]] && continue
+    # find -path のグロブ挙動（実挙動確認済み・意図の明文化）:
+    #   `find . -path "./$pattern"` は $pattern を 1 個のパス glob として扱う。
+    #   `.env` / `.env.*` / `*.local.json` / `*.local.md` のような 1 階層パターンは
+    #   リポジトリ直下のファイルのみに一致し、サブディレクトリ配下（例: config/foo.env.local）
+    #   には一致しない。.worktreeinclude の既定パターンはいずれもリポジトリ直下想定のため、
+    #   この直下限定挙動が意図通り（サブディレクトリまで拾いたい場合は "./**/$pattern" を
+    #   別パターンとして追記する運用にする）。
     while IFS= read -r file; do
       dir=$(dirname "$file")
       mkdir -p "$dir"
@@ -59,6 +66,12 @@ else
     fi
   done
 
+  # settings.local.json の symlink 是非（実挙動確認済み・意図の明文化）:
+  #   settings.local.json はマシンローカルの権限許可（permissions.allow 等）を含みうる。
+  #   worktree にこれを symlink すると、メインリポの許可設定が worktree にも効く。
+  #   同一マシン・同一ユーザーの worktree では、毎回許可し直さずに済むためむしろ望ましい。
+  #   よって symlink 対象として現状維持する（worktree 固有の設定で上書きしたい特殊ケースが
+  #   出た場合のみ、この file ループから settings.local.json を外す）。
   for file in settings.json settings.local.json; do
     if [ -f "$MAIN_REPO/.claude/$file" ]; then
       ln -sfn "$MAIN_REPO/.claude/$file" ".claude/$file"
