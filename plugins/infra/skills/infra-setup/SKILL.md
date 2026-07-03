@@ -1,7 +1,7 @@
 ---
 name: infra-setup
 description: 新規/既存Webアプリに Vercel + Supabase + GitHub Actions のデプロイ基盤を一括構築する。「インフラを構築」「デプロイ環境を作って」「Vercel と Supabase のセットアップ」「GitHub Actions のワークフローを作って」「本番デプロイ環境を用意して」「staging/production 環境を作って」で積極的に起動。5フェーズ（ヒアリング → Supabase → Vercel → GitHub Actions → ローカル仕上げ）を Agent 分離で順に実行。既存 supabase-project-setup スキルの上位互換。
-version: 0.1.0
+version: 0.3.0
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 ---
 
@@ -22,7 +22,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
   ├── infra-phase-1-hearing         ← プロジェクト情報ヒアリング
   ├── infra-phase-2-supabase        ← Supabase dev/prod プロジェクト作成
   ├── infra-phase-3-vercel          ← Vercel セットアップ + vercel.json
-  ├── infra-phase-4-github-actions  ← CI + deploy-staging + deploy-production + migrate-production
+  ├── infra-phase-4-github-actions  ← CI + deploy-preview + deploy-staging + deploy-production + migrate-production
   └── infra-phase-5-finalize        ← .env.local 仕上げ + 動作確認 + サマリー
   ↓ state ファイル削除
 ```
@@ -37,7 +37,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 | staging | `*-git-main-*.vercel.app` | **prod** | GitHub Actions（main push） |
 | prod | カスタムドメイン | prod | GitHub Actions（`workflow_dispatch`） |
 
-**ポイント:** Vercel の Git 自動連携は `vercel.json` で OFF にし、全デプロイを GitHub Actions で制御する。staging と prod は同じ prod DB を参照するため、staging で本番に近い状態を確認できる。PR時は CI のみで自動 preview deploy は行わない（個人開発前提）。
+**ポイント:** Vercel の Git 自動連携は `vercel.json` で OFF にし、全デプロイを GitHub Actions で制御する。staging と prod は同じ prod DB を参照するため、staging で本番に近い状態を確認できる。PR は Draft + Ready for review 方式で、Draft 中は CI・Preview deploy を skip し、Ready for review で Preview deploy が実行される。
 
 ## 前提条件チェック（Phase 0）
 
@@ -234,7 +234,7 @@ Agent({
 - **Supabase Free tier 制限**: アクティブ 2 プロジェクトまで（アカウント単位）。だから「1プロジェクト = 1アカウント」運用にする。
 - **`.env.local` と `.mcp.json` は必ず `.gitignore` に含める**。Phase 2 でこれを検証する。
 - **DB パスワード**: `openssl rand -base64 24 | tr -d '/+='` で生成する。Supabase CLI の `--db-password` で指定。
-- **Vercel Token**: ダッシュボード手動生成のみ（`vercel login` では取得できない）。Playwright MCP でダッシュボードを自動操作するか、ユーザーに案内する。
+- **Vercel Token**: ダッシュボード手動生成のみ（`vercel login` では取得できない）。Playwright MCP でダッシュボードを自動操作するか、ユーザーに案内する。CLI 化は検証済み: 2026-07-03 時点で Vercel CLI 48.x に `tokens`/`token` サブコマンドは存在せず、CLI 化不可と確認済み。
 
 ## トラブルシューティング
 
@@ -258,4 +258,3 @@ maximum limits for the number of active free projects
 - Vercel CLI: https://vercel.com/docs/cli
 - Supabase CLI: https://supabase.com/docs/guides/cli
 - GitHub Actions: https://docs.github.com/actions
-- OAK Casino プロジェクト（`/Users/oratta/Dropbox/WorkSpace/10_BusinessProject/Kajino/pre-demo`）: 本スキルのデプロイ構成の参考元

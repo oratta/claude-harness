@@ -283,7 +283,7 @@ vercel domains inspect {custom_domain}
 ## トラブルシューティング
 
 ### `vercel link` が対話型で止まる
-`--yes --project {project_name}` を使う。それでも止まる場合、`.vercel/project.json` を手動で作成する案内をユーザーに行う:
+（既存プロジェクトへの再リンク時のみ。新規作成は Step 3 の対話フローに従うこと）`--yes --project {project_name}` を使う。それでも止まる場合、`.vercel/project.json` を手動で作成する案内をユーザーに行う:
 
 ```json
 {

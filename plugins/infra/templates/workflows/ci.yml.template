@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run actionlint
         uses: docker://rhysd/actionlint:latest
@@ -41,9 +41,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -80,9 +80,9 @@ jobs:
   #   if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
   #   needs: lint-and-typecheck
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v7
   #
-  #     - uses: actions/setup-node@v4
+  #     - uses: actions/setup-node@v6
   #       with:
   #         node-version: ${{ env.NODE_VERSION }}
   #         cache: 'npm'
@@ -101,7 +101,7 @@ jobs:
   #         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
   #
   #     - name: Upload test results
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@v7
   #       if: always()
   #       with:
   #         name: playwright-report

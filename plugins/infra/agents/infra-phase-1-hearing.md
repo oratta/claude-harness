@@ -159,7 +159,7 @@ Supabase プロジェクトのリージョンを選択:
 - `org_id`
 - `skip_phase_2: true`
 
-`.env.local` への書き込み形式は Phase 2 の手順（`infra-phase-2-supabase.md` の Step 10）に従う。`.env.production.local` への書き込みは Phase 2 の Step 10.5 に従う（prod 用の値を active な形で保存）。
+`.env.local` への書き込み形式は Phase 2 の手順（`infra-phase-2-supabase.md` の Step 11）に従う。`.env.production.local` への書き込みは Phase 2 の Step 11.5 に従う（prod 用の値を active な形で保存）。
 
 ### Step 9: GitHub リポジトリの検出
 

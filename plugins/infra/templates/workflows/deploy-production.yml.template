@@ -56,7 +56,7 @@ jobs:
           echo "::error::デプロイが確認されていません。confirm を true にしてください。"
           exit 1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ---------------------------------------------------------------
       # 未適用マイグレーション検出ゲート
@@ -100,7 +100,7 @@ jobs:
             echo "マイグレーションは本番と同期済みです。"
           fi
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v2
         with:
           version: latest
 
@@ -122,13 +122,13 @@ jobs:
           ls -la backup/
 
       - name: Upload backup artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: db-backup-${{ github.run_id }}
           path: backup/
           retention-days: 30
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
