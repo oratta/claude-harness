@@ -66,7 +66,10 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
   2. **State 規約**: プロアクティブ/長期ループが使う `loops/state/<name>.state.md` の形式（現在の作業 / 前回の試行と結果 / 人間への引き継ぎ待ち / 繰り越しタスク）とテンプレート。「エージェントは忘れるが、リポジトリは記憶する」
   3. **`/loops:design`**: 公式の選択フレームワーク（何を手放すか: 検証ステップ→停止条件→トリガー→プロンプト自体）に沿って対話でループ型を選び、レシピ形式の定義を書き出すガイドスキル。Bad Loop 検査（停止基準の欠如・検証なき成功宣告・報酬ハッキング余地・過剰な実行頻度）を組み込む
   4. **選択フレームワーク reference**: `references/loop-types.md` に公式4タイプ表と使い分け・具体例を収録（`research/loop-engineering.md` 冒頭の要約を配布物化）
-  5. **実行機構 reference**: `references/execution-mechanisms.md` — 定期実行の3機構（/loop=セッション内・/schedule=クラウド[ローカルファイル不可]・OS launchd/cron + `claude -p`=ローカル定時）の使い分け表と、launchd 設定のテンプレート（plist 例 + 登録/解除手順）。「ローカルの `~/.claude/projects/` jsonl を読むループは launchd 経路が必須」という制約を明記
+  5. **実行機構 reference**: `references/execution-mechanisms.md` — 定期実行の機構の使い分け表と設定手順。優先順位:
+     - **① 常駐セッション + セッション内 cron（推奨）**: 常時起動している Claude Code セッション（例: ユーザーの AGENT/Pikke 運用）内で CronCreate / /loop により定時発火。**ローカルファイル（`~/.claude/projects/` jsonl 含む）にアクセスでき、サブスクリプション枠で動く**。ローカルデータを読むループはこれを第一候補とする
+     - **② launchd/cron + `claude -p`（フォールバック）**: 常駐セッションが無い環境向け。ローカル定時 headless 実行（同一ログイン認証のため通常はサブスク枠）。plist テンプレート + 登録/解除手順を同梱
+     - **③ /schedule（クラウド）**: リポジトリだけで完結する仕事専用。PC を閉じても動くが、**ローカルファイルは読めず、従量課金になる点に注意**を明記
 - **使用スキル**: なし（longrun の plan-interview-methodology.md を参照流用）
 - **依存関係**: 独立（change-2〜4 の前提）
 - **config.yaml rules**:
@@ -94,7 +97,7 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
      - `goal-lighthouse.md`: 公式例の移植（Web プロジェクト汎用）
   2. **time レシピ**:
      - `loop-pr-babysit.md`: `/loop 5m check my PR, address review comments, and fix failing CI` の Draft PR 運用（このリポジトリの CLAUDE.md 運用）向け調整版
-     - `schedule-daily-report.md` / `schedule-weekly-report.md`: 既存 daily/weekly-report の非対話モードを /schedule ルーチン登録するレシピ（既存プラグインの記述と重複させず、登録コマンドと停止・頻度設計のみ）
+     - `cron-daily-report.md` / `cron-weekly-report.md`: 既存 daily/weekly-report の非対話モードを定期実行に登録するレシピ。**両者ともローカルデータ（Vault・セッション jsonl）を読むため、常駐セッション内 cron を第一候補**とする（/schedule クラウドは不可。execution-mechanisms.md の使い分けに従う）。既存プラグインの記述と重複させず、登録コマンドと停止・頻度設計のみ
   3. 各レシピに公式トークン管理の該当項目（頻度最小化・決定論部分のスクリプト化・パイロット実行）を明記
   4. この6本は**初期シード**という位置づけ。以降の棚の成長・実測チューニングは change-4 の recipe-miner ルーチンが担う
 - **使用スキル**: daily-report / weekly-report（レシピの対象として参照）
@@ -108,7 +111,7 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
 - **スコープ**: 公式の合成パターン（/schedule + /goal + 動的ワークフロー + オートモード）で、人間不在で回るルーチンを 3 本実装する。
   1. **backlog 消化ルーチン** `recipes/routine-backlog-triage.md`: /schedule（日次等）で起動 → discovery: `openspec/backlog.md` と open issues から着手可能タスクを選定（1 サイクルの処理数上限をレシピに明記）→ worktree を切って実装（第一エージェント）→ /code-review 相当の第二エージェントレビュー（公式品質プラクティス「第二エージェントによるレビュー」）→ **Draft PR まで**（マージは人間）→ state 更新（処理済み / 繰り越し / 引き継ぎ待ち）。/goal で「このサイクルで選定したタスクが全て Draft PR または凍結記録に到達するまで」を停止基準化
   2. **長期ビルドルーチン** `recipes/routine-long-build.md`: harnesses 論文の外部状態設計をネイティブ合成で実現。前提: `{longrun-dir}/feature-list.json`（`{id, description, verification, passes:false}`、項目・テスト削除禁止）と `claude-progress.md`。/schedule または手動再起動で 1 サイクル = 「smoke check（直近 passing 項目の検証再実行）→ `passes:false` の先頭 1 項目のみ実装 → verification コマンドの exit 0 evidence がある場合のみ `passes:true` 更新 → 説明的 commit → progress 追記」。/goal「全項目 passes:true、ただし同一項目 2 連続 FAIL で凍結して人間へ」を停止基準化。feature-list の形式は `plugins/loops/references/feature-list-format.md` に記載（schema 強制はしない）
-  3. **レシピ採掘・更新ルーチン（メタループ）** `recipes/routine-recipe-miner.md`: ハーネス自身を実使用ログで改善し続けるループ。トリガー: **launchd/cron + `claude -p`（週1・ローカル実行必須。`~/.claude/projects/` の jsonl はクラウドから読めないため /schedule 不可**。この制約と launchd 設定は change-1 の execution-mechanisms.md を参照）。1サイクル = discovery: 直近7日のセッション jsonl をサブエージェントで圧縮解析（daily-report の llm-log-compactor の jq パターン流用。生ログをメインに載せない）し、(a) 同型依頼の3回以上の反復=ループ化候補、(b) 修正→テスト→修正の長い往復=/goal 化候補、(c) 定時性のある依頼=/schedule 化候補、(d) 既存レシピの実行痕跡=停止基準・頻度の実測チューニング候補、を抽出 → 生成: /loops:design の検査（停止基準必須・Bad Loop 検査）を通したレシピ新規案/更新 diff（**1サイクル最大3件**）→ 出力: この marketplace リポジトリへ **Draft PR**（自動 merge 禁止。レシピの採否は人間）→ persistence: state に提案済み/見送り理由/繰り越し候補を記録。候補ゼロなら「提案なし」で正常終了
+  3. **レシピ採掘・更新ルーチン（メタループ）** `recipes/routine-recipe-miner.md`: ハーネス自身を実使用ログで改善し続けるループ。トリガー: **常駐セッション内の cron（週1）を第一候補**（`~/.claude/projects/` の jsonl を読むためローカル実行必須・サブスク枠で動く。常駐セッションが無い場合は launchd + `claude -p` にフォールバック。/schedule はローカルファイル不可のため使えない。詳細は change-1 の execution-mechanisms.md）。1サイクル = discovery: 直近7日のセッション jsonl をサブエージェントで圧縮解析（daily-report の llm-log-compactor の jq パターン流用。生ログをメインに載せない）し、(a) 同型依頼の3回以上の反復=ループ化候補、(b) 修正→テスト→修正の長い往復=/goal 化候補、(c) 定時性のある依頼=/schedule 化候補、(d) 既存レシピの実行痕跡=停止基準・頻度の実測チューニング候補、を抽出 → 生成: /loops:design の検査（停止基準必須・Bad Loop 検査）を通したレシピ新規案/更新 diff（**1サイクル最大3件**）→ 出力: この marketplace リポジトリへ **Draft PR**（自動 merge 禁止。レシピの採否は人間）→ persistence: state に提案済み/見送り理由/繰り越し候補を記録。候補ゼロなら「提案なし」で正常終了
   4. 全ルーチンの動作確認をこのリポジトリ（または安全なサンドボックス）で 1 サイクル実施
 - **使用スキル**: worktree（隔離）、loops の State 規約、/loops:design（miner の生成検査）
 - **依存関係**: change-1, change-3（/goal レシピの流用。miner はシードレシピの存在が前提）
@@ -175,8 +178,8 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
 9. [ ] goal レシピ 3 本・time レシピ 3 本以上が存在し、goal レシピの成功基準が全て機械検証可能（コマンド + 期待値）で書かれている
 10. [ ] `recipes/routine-backlog-triage.md` が存在し、非破壊制約（Draft PR まで）・処理数上限・繰り越し記録・2連続失敗凍結の 4 点を含む。1 サイクルのデモ実行ログが `{longrun-dir}` に残っている
 11. [ ] `recipes/routine-long-build.md` が存在し、1サイクル1項目・evidence 必須の passes 更新・smoke check・凍結条件を含む。3 項目以上の feature-list で 2 サイクル以上に分けた完走デモのログが残っている
-12. [ ] `recipes/routine-recipe-miner.md` が存在し、(a) launchd/cron + `claude -p` によるローカル定期実行（/schedule 不可の理由付き）、(b) 1サイクル最大3提案、(c) Draft PR 出力・自動 merge 禁止、(d) サブエージェント隔離のログ解析、の 4 点を含む。実ログに対する 1 サイクルのデモ実行で提案（または「提案なし」の正常終了）と state 更新が確認できる
-13. [ ] `references/execution-mechanisms.md` が 3 機構の使い分け表と launchd テンプレートを含む
+12. [ ] `recipes/routine-recipe-miner.md` が存在し、(a) 常駐セッション内 cron を第一候補とするローカル定期実行（/schedule 不可の理由と launchd フォールバック付き）、(b) 1サイクル最大3提案、(c) Draft PR 出力・自動 merge 禁止、(d) サブエージェント隔離のログ解析、の 4 点を含む。実ログに対する 1 サイクルのデモ実行で提案（または「提案なし」の正常終了）と state 更新が確認できる
+13. [ ] `references/execution-mechanisms.md` が機構の使い分け表（常駐セッション cron 推奨・/schedule の従量課金注意を含む）と launchd テンプレートを含む
 14. [ ] `references/cost-guardrails.md` が公式トークン管理 6 項目を含む
 15. [ ] `loops` が marketplace.json に登録され、編集した全プラグインで plugin.json version が bump され marketplace.json と一致する
 
@@ -196,7 +199,7 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
   3. **goal デモ**: `goal-tests-green.md` のコマンドをこのリポジトリで実行し、全 bats PASS で停止することを確認
   4. **backlog triage デモ**: 1 サイクル実行 → Draft PR 作成・state 更新・繰り越し記録を確認
   5. **long-build デモ**: 3 項目 feature-list で 2 サイクル完走 → 1 項目を故意に失敗させ凍結 + エスカレーションを確認
-  6. **recipe-miner デモ**: 直近の実ログに対して 1 サイクル実行 → 提案 Draft PR（または「提案なし」の正常終了）と state 更新・繰り越し記録を確認。launchd 登録 → 解除の手順が execution-mechanisms.md の通りに動くことを確認
+  6. **recipe-miner デモ**: 直近の実ログに対して 1 サイクル実行 → 提案 Draft PR（または「提案なし」の正常終了）と state 更新・繰り越し記録を確認。常駐セッションでの cron 登録 → 発火 → 解除の一連が execution-mechanisms.md の手順通りに動くことを確認（launchd フォールバックは手順の机上確認でよい）
   7. マージ後、新セッションで `/plugin install loops@oratta-claude-harness` → `/reload-plugins` で新プラグインが見えることを確認
 
 ## Brain Dumpからの原文メモ
