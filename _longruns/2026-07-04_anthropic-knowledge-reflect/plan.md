@@ -1,116 +1,127 @@
-# Plan: Loop Engineering をハーネスとして実装する（anthropic-knowledge-reflect）
+# Plan: 公式ループ4タイプをハーネスに実装する（anthropic-knowledge-reflect）
 
 ## 生成情報
 - 作成日: 2026-07-04
-- Brain Dump元: /goal 指示「Anthropic公式ナレッジ調査→claude-harness実装 goal指示書」+ フィードバック2件（①既存資産の活用ではなく「公式が推奨するが普通に使うだけでは実現できないもの」をハーネスとして追加したい ②loop engineering で調べ直せ）
-- 中核コンセプト: **Loop Engineering**（2026-06 成立。Boris Cherny [Anthropic・Claude Code 責任者]「I don't prompt Claude anymore. My job is to write loops.」）。詳細は `research/loop-engineering.md`
+- Brain Dump元: /goal 指示「Anthropic公式ナレッジ調査→claude-harness実装 goal指示書」+ フィードバック3件（①既存資産活用でなく「普通に使うだけでは実現できないもの」のハーネス追加 ②loop engineering で調べ直せ ③公式記事 https://claude.com/blog/getting-started-with-loops がやりたいことの本体）
+- 中核ソース: **"Getting started with loops"（claude.com 公式ブログ、Claude Code チーム、2026-06-30）**。詳細は `research/loop-engineering.md` 冒頭
 - 別トラック: 既存資産のコンテンツ品質監査は `plan-b-existing-audit.md` に分離済み
 
 ## ゴール
-「エージェントに人間がプロンプトする」から「**エージェントをプロンプトするループを設計する**」への転換（Loop Engineering）を、このハーネスの機構として実装する。Claude Code 本体はループの**部品**（/loop・/goal・cron・worktree・skills・MCP・subagents）を提供済みだが、「**設計されたループそのもの**」——ループ定義の規約、State レイヤー、discovery（仕事を自分で見つける）、generator/evaluator 分離の汎用部品、ループの安全監査——は提供していない。このギャップを新プラグイン `loops` と longrun 拡張として埋める。
+公式記事が定義する **4つのループタイプ（ターンベース / ゴールベース / タイムベース / プロアクティブ）** を、このユーザーの実際の定常業務に落とした「**設計されたループのレシピ集 + State 規約**」としてハーネスに実装する。
+
+公式の立場は「ループのランタイムはネイティブプリミティブ（skill / /goal / /loop / /schedule / workflows / auto mode）であり、ループは**その合成**で作る」。したがって**独自のループ実行系（カスタム schema + driver）は作らない**。ハーネスが提供するのは:
+1. **skill への自己検証ステップの組み込み**（ターンベースの公式最適化）
+2. **定量的成功基準を持つ /goal レシピ**（ゴールベース）
+3. **定常業務の /loop・/schedule レシピ**（タイムベース）
+4. **プロアクティブ合成ルーチン**（/schedule + /goal + workflows + auto mode）と State 規約
 
 ## ビジネスコンテキスト
 - 対象ユーザー: このユーザー本人（marketplace の唯一のメンテナ兼利用者）
-- 提供価値: (1) 「人間が plan を書いて渡す」（現行 longrun）から「ループが仕事を見つけて回り、人間は例外だけ処理する」への移行、(2) ループを1枚の定義ファイルで宣言・監査できるため、Cherny の言う「ループを書く仕事」が再利用可能な資産になる、(3) 停止条件・予算・無進捗検出を機構で持つため、悪いループ（暴走・報酬ハッキング・検証なき成功宣告）を設計段階で排除できる
-- 成功指標: 受け入れ条件の機械検証が全て PASS。canonical loop 2 本（triage / build）が実タスクでデモ完走する
+- 提供価値: 「人間が毎回プロンプトする」から「ループが定常業務を回し、人間は例外だけ処理する」への移行。具体的には (1) 既存スキルが自己検証するようになり手戻りが減る、(2) 定常業務（PR 面倒見・レポート・backlog 消化・依存更新）がレシピ1発でループ化できる、(3) 停止基準・コスト管理が公式ベストプラクティスに沿った形でレシピに焼き込まれる
+- 成功指標: 受け入れ条件の機械検証が全て PASS。プロアクティブルーチン 1 本以上が実際に /schedule 登録されて 1 サイクル完走する
 
 ## 一次ソース（実装時の判断基準）
 builder / reviewer は迷ったら以下を参照する（全て本 run の `research/` に保存済み・URL 実在確認済み）:
-- `research/loop-engineering.md` — **本 plan の中核**。5+1 構成要素（Automations / Worktrees / Skills / Connectors / Sub-agents / State）、5つのムーブ（discovery→handoff→verification→persistence→scheduling）、generator/evaluator/loop の3部構成、失敗6類型、Good/Bad Loop
-- `research/gap-analysis.md` — 公式推奨 × 素のCC × 既存ハーネスの判定表
-- `research/claude-code-official.md` — §7 に harnesses 論文の要点（build loop の外部状態設計の原典）
-- `research/anthropic-agent-knowledge.md` — engineering 記事11本（evaluator のルーブリック設計・敵対的レビュー・fan-outコスト等）
+- `research/loop-engineering.md` — **冒頭の公式記事セクションが最上位**（4ループタイプ・選択フレームワーク・品質/トークン管理ベストプラクティス）。後半はコミュニティ側の背景（Osmani の 5+1 構成要素・State・失敗6類型は設計の参考として有効）
+- `research/claude-code-official.md` — §7 harnesses 論文（長期タスクの外部状態設計: feature-list / progress notes / 1セッション1機能）
+- `research/anthropic-agent-knowledge.md` — engineering 記事11本（fan-out コスト・敵対的レビュー・委譲契約）
+- `research/gap-analysis.md` — ギャップ判定表
 
 ## 技術要件
-- スタック: Markdown（SKILL.md / commands / agents）+ bash / node スクリプト + JSON Schema + bats-core + `claude -p`（headless）+ cron ルーチン（/schedule）
+- スタック: Markdown（SKILL.md / commands / references）+ JSON Schema（最小限）+ bats-core + ネイティブプリミティブ（/goal・/loop・/schedule・Workflow・auto mode）
 - 参照パターン:
-  - schema 契約: `plugins/longrun/schemas/*.schema.json`（外部ファイルが唯一のソース）
-  - 実装者/検証者分離の既存形: longrun の builder / verifier / reviewer agents
-  - worktree 隔離: `plugins/worktree/`（wt-setup --with-pr の Draft PR バックアップ運用）
+  - 検証ステップの既存形: longrun の verifier 4軸・browser-verifier（機能性/UX の E2E）
+  - 非対話・cron 実行の既存形: daily-report / weekly-report の非対話モード節
+  - worktree 隔離 + Draft PR: `plugins/worktree/`（wt-setup --with-pr）
 - 制約:
   - `~/.claude/rules/plugin-editing.md` 準拠: version bump + marketplace.json 同期必須
   - このリポジトリの CLAUDE.md 準拠: worktree 作業は Draft PR バックアップ、main 直 push 禁止
   - モデル ID 直書き禁止（`plugins/longrun/references/model-tiers.md` が唯一のソース）
-  - **ループの停止条件はコードの条件式で持つ**（LLM の自制に依存しない。longrun 既存 GATE の踏襲）。headless / cron 実行は課金実行のため、反復上限・トークン予算・無進捗検出の 3 種を必須とする
-  - ループが行う外向きアクション（PR 作成・issue 更新）は Draft / 非破壊デフォルト。マージ等の不可逆操作は人間へのエスカレーションに倒す
-- テストフレームワーク: bats-core + `node --check` + grep ベース検証
+  - **独自ループランタイムの再発明禁止**: 反復・スケジュール・停止判定はネイティブ（/goal の最大試行・/loop/schedule のキャンセル・Workflow の budget）に任せ、レシピは「明確な停止基準を宣言する」ことに責任を持つ
+  - ループの外向きアクションは非破壊デフォルト（Draft PR / issue コメントまで）。マージ等の不可逆操作は人間へエスカレーション
+  - 全レシピに停止基準（最大試行数 or 時間 or 定量ゴール）とコスト注意（公式トークン管理6項目のうち該当するもの）を必ず含める
+- テストフレームワーク: bats-core + grep ベース検証
 - テスト実行コマンド: `find plugins -name '*.bats' -print0 | xargs -0 bats`
 
 ## スコープ
 ### 含むもの
-- ループ定義規約・State 規約・設計/監査スキルを持つ新プラグイン `loops`（change-1）
-- canonical loop その1: **triage loop**（discovery 型。仕事を自分で見つける）（change-2）
-- canonical loop その2: **build loop**（long-horizon 型。harnesses 論文の外部状態設計）（change-3）
-- generator/evaluator 分離の汎用部品と決定論的検証ゲート（change-4）
-- marketplace 同期・README・コストガードレール文書（change-5）
+- 新プラグイン `loops`（レシピ集 + State 規約 + 設計ガイドスキル）（change-1）
+- ターンベース: 既存スキルへの自己検証ステップ組み込み（change-2）
+- ゴールベース + タイムベース: /goal・/loop・/schedule レシピ集（change-3）
+- プロアクティブ: 合成ルーチン 2 本（backlog 消化 / 長期ビルド）（change-4）
+- marketplace 同期・README・コストガードレール（change-5）
 
 ### 含まないもの
+- 独自のループ実行系（loop-definition schema による宣言的ランタイム・headless driver スクリプト）（理由: 公式路線は「ネイティブプリミティブの合成」。前版 plan で設計したが公式記事の確認により方針転換）
 - 既存資産のコンテンツ品質監査（`plan-b-existing-audit.md` に分離済み）
-- skill 評価ハーネス（skill-eval）と e2s 自己改善ループ（理由: 前版 plan の候補だったが、これらは「スキルを改善するループ」であり本 plan の loops 基盤の上に将来のループとして実装する方が筋が良い。`openspec/backlog.md` へ記録）
-- Slack / Linear 等の外部コネクタ統合（理由: このユーザーの現行ワークフローは gh CLI + openspec/backlog.md で足りる。必要になったら個別ループに追加）
-- harvest / sns-strategy 等、別 marketplace のプラグイン（対象リポジトリ外。ただし loops の規約はそちらでも使える設計にする）
+- Slack / Linear 等の外部コネクタ（現行ワークフローは gh + openspec/backlog.md で足りる）
+- skill-eval / e2s-tune（「スキルを改善するループ」として将来のレシピ追加で対応。backlog へ）
+- 別 marketplace のプラグイン（対象リポジトリ外。ただしレシピ形式はそちらでも使える書き方にする）
 
 ## Changes分解
 
-### change-1: loops-foundation（ループ定義規約と設計・監査スキル）
-- **スコープ**: 新プラグイン `plugins/loops/` を作り、Loop Engineering の土台を実装する。
-  1. **ループ定義規約**: `loops/<name>.loop.md`（YAML frontmatter + 本文）を規約化。必須フィールド: `goal`（テスト可能な完了条件）/ `trigger`（cron | 手動 | イベント）/ `discovery`（仕事の見つけ方）/ `generator`（実装エージェントと委譲契約4点）/ `evaluator`（検証エージェント or 決定論コマンドとルーブリック）/ `stop`（**反復上限・トークン予算・無進捗検出の3種必須**）/ `persist`（State への書き込み内容）/ `escalation`(人間に返す条件)。schema は `plugins/loops/schemas/loop-definition.schema.json`
-  2. **State 規約**: `{project}/loops/state/<loop-name>.state.md` に「現在の作業 / 前回の試行と結果 / 人間への引き継ぎ待ち」を記録する形式を定義（「エージェントは忘れるが、リポジトリは記憶する」）。テンプレートを同梱
-  3. **`/loops:design`**: 対話インタビューでループ定義を作成するスキル（longrun-plan のインタビュー方法論を流用）。5つのムーブ（discovery→handoff→verification→persistence→scheduling）を順に埋め、Bad Loop 検査（停止条件の欠如・検証なき成功宣告・報酬ハッキング余地）を組み込む
-  4. **`/loops:audit`**: 既存ループ定義を機械チェックするスキル。停止3種の有無 / evaluator の独立性（generator と同一エージェントに採点させていないか）/ 外向きアクションの非破壊性 / State 書き込みの有無を検査し、失敗6類型（`research/loop-engineering.md`）に照らしたレポートを出す
-  5. **`/loops:run`**: ループ定義を読み、trigger に応じて実行をセットアップする（cron なら /schedule ルーチン登録、手動なら即時1周実行）。実行1周は「discovery → handoff（worktree + generator）→ verification（evaluator）→ persistence（state 更新）→ scheduling（次回予約 or 停止）」の5ムーブを踏む
+### change-1: loops-plugin（レシピ集の器 + State 規約 + 設計ガイド）
+- **スコープ**: 新プラグイン `plugins/loops/` を作る。
+  1. **レシピ形式の規約**: `recipes/<name>.md` — 各レシピは「ループ型（4分類のどれか）/ 目的 / 起動コマンド（コピペ可能な /goal・/loop・/schedule 文字列）/ 停止基準 / 必要な前提（skill・設定）/ コスト注意 / エスカレーション条件」の固定見出しで書く。**ランタイムを持たない**（レシピは人間とエージェントが読む設計図）
+  2. **State 規約**: プロアクティブ/長期ループが使う `loops/state/<name>.state.md` の形式（現在の作業 / 前回の試行と結果 / 人間への引き継ぎ待ち / 繰り越しタスク）とテンプレート。「エージェントは忘れるが、リポジトリは記憶する」
+  3. **`/loops:design`**: 公式の選択フレームワーク（何を手放すか: 検証ステップ→停止条件→トリガー→プロンプト自体）に沿って対話でループ型を選び、レシピ形式の定義を書き出すガイドスキル。Bad Loop 検査（停止基準の欠如・検証なき成功宣告・報酬ハッキング余地・過剰な実行頻度）を組み込む
+  4. **選択フレームワーク reference**: `references/loop-types.md` に公式4タイプ表と使い分け・具体例を収録（`research/loop-engineering.md` 冒頭の要約を配布物化）
 - **使用スキル**: なし（longrun の plan-interview-methodology.md を参照流用）
 - **依存関係**: 独立（change-2〜4 の前提）
 - **config.yaml rules**:
-  - "loop-definition.schema.json が唯一のソース。スキル本文へ JSON 構造を重複コピーしない"
-  - "stop 3種（反復上限・予算・無進捗検出）が欠けた定義は /loops:run が実行を拒否する（audit 任せにしない）"
-  - "MVP スコープ厳守: trigger は cron と手動の 2 種のみ。イベント駆動（webhook 等）は backlog へ"
+  - "レシピはネイティブコマンド文字列を第一級の成果物とする（コピペで動くこと）。独自 CLI やラッパースクリプトを作らない"
+  - "停止基準の無いレシピを /loops:design が出力しないことをテストで確認する"
+  - "MVP スコープ厳守: レシピ形式は markdown 見出し規約のみ。schema 化・機械検証は必要になってから（backlog）"
 
-### change-2: triage-loop（canonical loop その1: 仕事を自分で見つける）
-- **スコープ**: Osmani essay の代表例（朝のトリアージループ）をこのリポジトリの実情に合わせた ready-made ループ定義 + 支援スキルとして実装する。
-  1. **ループ定義**: `plugins/loops/templates/triage.loop.md` — discovery: 対象リポジトリの (a) CI 失敗（`gh run list`）、(b) open issues / PR レビューコメント（`gh`）、(c) `openspec/backlog.md` の未消化項目 を読み、優先度付きタスクリストを作る → handoff: タスク毎に worktree を切り generator subagent に委譲（委譲契約4点付き）→ verification: evaluator subagent + テスト実行 → 外向きアクション: **Draft PR 作成まで**（マージは人間）→ persistence: state 更新と人間向けサマリ → scheduling: cron（朝次）
-  2. **トリアージの努力量スケーリング**: 発見タスク数に応じた fan-out 上限（同時 worktree 数・1周あたり処理タスク数）を定義側のパラメータで持つ（multi-agent 論文の「単純クエリに50サブエージェント」暴走の防止）
-  3. **デモ**: このリポジトリ自身を対象に 1 周実行し、backlog から拾ったタスクが Draft PR + state 更新まで到達することを確認
-- **使用スキル**: worktree（wt-setup 相当の隔離）、loops-foundation の実行系
-- **依存関係**: change-1
-- **config.yaml rules**:
-  - "外向きアクションは Draft PR / issue コメントまで。merge・close・force 系は escalation（人間）に必ず倒す"
-  - "discovery で拾ったが処理しなかったタスクは state に『未処理として繰り越し』を明記する（silent drop 禁止）"
-  - "同一タスクで 2 周連続 evaluator FAIL したらそのタスクを凍結して人間へエスカレーション（無限リトライ禁止）"
-
-### change-3: build-loop（canonical loop その2: long-horizon ビルド）
-- **スコープ**: harnesses 論文の外部状態設計（feature-list + progress notes + 1セッション1機能）を、change-1 のループ定義形式に載せた long-horizon ビルドループとして longrun に追加する。
-  1. **ループ定義**: `plugins/longrun/templates/build.loop.md` — goal: feature-list.json の全項目 `passes:true` / discovery: `passes:false` の先頭項目を 1 つ選ぶ / generator: fresh session（`claude -p`）で 1 項目のみ実装 / evaluator: 各項目の `verification` コマンド実行（exit code 0 の evidence がある場合のみ `passes:true` 更新）/ persist: `claude-progress.md` 追記 + 説明的 commit / stop: セッション上限・全PASS・連続失敗上限
-  2. **feature-list 契約**: `plugins/longrun/schemas/feature-list.schema.json`（各項目 `{id, description, verification, passes:false}`）。項目・テストの削除禁止を明記
-  3. **driver**: `plugins/longrun/scripts/build-loop.sh` — 停止3種を bash 条件式で実装。セッション開始時 smoke check（直近 passing 項目の検証コマンド再実行）
-  4. **エントリポイント**: `/longrun:loop <longrun-dir>` + `/lr:l`。既存 `/longrun:exec` との使い分け（1セッションに収まる規模=exec / 収まらない規模=loop）を exec.md と README に明記
-- **使用スキル**: loops-foundation の規約（定義形式・state）
-- **依存関係**: change-1
-- **config.yaml rules**:
-  - "generator セッションのプロンプトに『1セッション1項目のみ』『トークン残量を理由に途中終了せず、区切りの良い状態で commit して progress に引き継ぎを書く』を含める"
-  - "`passes:true` への更新は evaluator（検証コマンド）の exit code 0 evidence がある場合のみ。generator の自己申告更新を禁止し、driver 側でも抜き取り再実行する"
-  - "headless 実行は `--permission-mode` と `--allowedTools` を明示し bypassPermissions を使わない"
-  - "デモタスク（3項目以上の feature-list）を 2 セッション以上に分けて完走する E2E 検証を受け入れに含める"
-
-### change-4: evaluator-pack（generator/evaluator 分離の汎用部品）
-- **スコープ**: 「自分の成果物を自分で採点させない」を任意のループに差し込める汎用部品にする。
-  1. **汎用 evaluator agent**: `plugins/loops/agents/loop-evaluator.md` — フレッシュコンテキストで diff / 成果物 / ルーブリックだけを見て採点する。プロンプトに「correctness / 要件に関わるギャップのみ flag する（健全でも何か報告しようとする過剰指摘を抑止）」を明記（Claude Code best practices の敵対的レビュー原則）。返却は `plugins/loops/schemas/evaluator-verdict.schema.json`（verdict / evidence / 修正指示）に準拠
-  2. **決定論 evaluator の優先原則**: ループ定義の evaluator フィールドは「決定論コマンド（テスト・型チェック・lint）を第一候補、LLM-judge は検証不可能な性質（文章品質等）に限定」を schema の説明と /loops:design のインタビューに組み込む
-  3. **verify-gate hook（opt-in）**: `plugins/loops/hooks/` に Stop hook を同梱。対象プロジェクトに `.claude/loops-gate.json`（テストコマンド登録）がある場合のみ、Stop 時にテストを実行し失敗なら exit 2 でブロック。**設定が無ければ完全 no-op**。連続ブロック回数上限とタイムアウトをコードで持つ
+### change-2: skill-verification（ターンベースループの公式最適化）
+- **スコープ**: 「skill に自己検証メカニズムを明示する」（公式ベストプラクティス）を、このリポジトリの成果物を出す主要スキルに適用する。
+  1. 対象スキルの棚卸し: `plugins/*/skills/*/SKILL.md` のうち、成果物（コード・ファイル・レポート・設定）を出すものについて「完了宣言の前に何をどう検証するか」が本文に明示されているかを監査
+  2. 欠けているスキルに **検証ステップ節**を追加: 公式例の粒度（「dev サーバーを起動し、ブラウザで操作確認、コンソールエラーなしを確認」）で、そのスキル固有の検証手段（テスト・lint・生成物の存在と形式チェック・実行結果の evidence）を具体的に書く
+  3. 検証の書き方の共通原則を `plugins/loops/references/self-verification.md` に 1 枚化（「完了は主張であり証明ではない。evidence を提示してから完了を宣言する」）し、各スキルからは 1 行参照 + スキル固有手順のみ記載（重複コピー禁止）
 - **使用スキル**: なし
-- **依存関係**: change-1（schema 配置と /loops:design への組み込み）
+- **依存関係**: change-1（references の置き場所）
 - **config.yaml rules**:
-  - "evaluator agent は評価対象を生成したコンテキストから隔離する（fresh subagent）。generator と同一セッション内での自己評価をループ定義上許可しない"
-  - "hook は plugin を入れただけで挙動が変わらないこと（設定ファイル無し=no-op）を bats で検証する"
-  - "hook スクリプトは stdin JSON を1回だけ読む・出力上限に収める等の公式仕様（research/claude-code-official.md §3）に準拠する"
+  - "検証ステップは各スキルの実際の成果物に即して具体的に書く（汎用文言のコピペ追加を禁止）"
+  - "既存スキルの機能・発火条件を変えない。追加は検証節のみ"
+  - "追加によって SKILL.md が 500 行を超える場合は references へ分離する"
+
+### change-3: goal-and-time-recipes（ゴールベース + タイムベースのレシピ集）
+- **スコープ**: このユーザーの定常業務を /goal・/loop・/schedule レシピにする。初期セット:
+  1. **goal レシピ**（定量基準 + 最大試行数を必須とする）:
+     - `goal-tests-green.md`: 「全 bats PASS まで、最大 N 回」（このリポジトリの開発用）
+     - `goal-acceptance-pass.md`: 「longrun plan.md の受け入れ条件の機械検証が全て PASS まで」（longrun 完了ゲート用）
+     - `goal-lighthouse.md`: 公式例の移植（Web プロジェクト汎用）
+  2. **time レシピ**:
+     - `loop-pr-babysit.md`: `/loop 5m check my PR, address review comments, and fix failing CI` の Draft PR 運用（このリポジトリの CLAUDE.md 運用）向け調整版
+     - `schedule-daily-report.md` / `schedule-weekly-report.md`: 既存 daily/weekly-report の非対話モードを /schedule ルーチン登録するレシピ（既存プラグインの記述と重複させず、登録コマンドと停止・頻度設計のみ）
+  3. 各レシピに公式トークン管理の該当項目（頻度最小化・決定論部分のスクリプト化・パイロット実行）を明記
+- **使用スキル**: daily-report / weekly-report（レシピの対象として参照）
+- **依存関係**: change-1
+- **config.yaml rules**:
+  - "goal レシピの成功基準は必ず機械検証可能（コマンドと期待値）で書く。『良くなったら』等の主観基準を禁止"
+  - "schedule レシピの実行頻度はデフォルトを保守的に（daily 系は日次、PR babysit は 5-10 分）設定し、変更方法を併記する"
+  - "既存プラグイン（daily/weekly-report）の本文は変更しない。レシピはあくまで登録・運用手順"
+
+### change-4: proactive-routines（プロアクティブ合成ルーチン 2 本）
+- **スコープ**: 公式の合成パターン（/schedule + /goal + 動的ワークフロー + オートモード）で、人間不在で回るルーチンを 2 本実装する。
+  1. **backlog 消化ルーチン** `recipes/routine-backlog-triage.md`: /schedule（日次等）で起動 → discovery: `openspec/backlog.md` と open issues から着手可能タスクを選定（1 サイクルの処理数上限をレシピに明記）→ worktree を切って実装（第一エージェント）→ /code-review 相当の第二エージェントレビュー（公式品質プラクティス「第二エージェントによるレビュー」）→ **Draft PR まで**（マージは人間）→ state 更新（処理済み / 繰り越し / 引き継ぎ待ち）。/goal で「このサイクルで選定したタスクが全て Draft PR または凍結記録に到達するまで」を停止基準化
+  2. **長期ビルドルーチン** `recipes/routine-long-build.md`: harnesses 論文の外部状態設計をネイティブ合成で実現。前提: `{longrun-dir}/feature-list.json`（`{id, description, verification, passes:false}`、項目・テスト削除禁止）と `claude-progress.md`。/schedule または手動再起動で 1 サイクル = 「smoke check（直近 passing 項目の検証再実行）→ `passes:false` の先頭 1 項目のみ実装 → verification コマンドの exit 0 evidence がある場合のみ `passes:true` 更新 → 説明的 commit → progress 追記」。/goal「全項目 passes:true、ただし同一項目 2 連続 FAIL で凍結して人間へ」を停止基準化。feature-list の形式は `plugins/loops/references/feature-list-format.md` に記載（schema 強制はしない）
+  3. 両ルーチンの動作確認をこのリポジトリ（または安全なサンドボックス）で 1 サイクル実施
+- **使用スキル**: worktree（隔離）、loops の State 規約
+- **依存関係**: change-1, change-3（/goal レシピの流用）
+- **config.yaml rules**:
+  - "外向きアクションは Draft PR / issue コメントまで。merge・close・force 系はレシピの禁止事項節に明記し、エスカレーションに倒す"
+  - "discovery で拾ったが処理しなかったタスクは state に繰り越しとして必ず記録する（silent drop 禁止）"
+  - "同一タスク・同一項目の 2 連続失敗は凍結 + 人間へエスカレーション（無限リトライ禁止）をレシピの停止基準に含める"
+  - "`passes:true` への更新は verification コマンドの exit 0 evidence がある場合のみ。自己申告更新の禁止をルーチンプロンプトに明記する"
 
 ### change-5: integration（marketplace 同期・README・コストガードレール）
-- **スコープ**: (1) 新プラグイン `loops` の marketplace.json 登録、(2) 編集した全プラグイン（longrun / lr / loops）の version bump と同期、(3) ルート README に Loop Engineering の位置づけ（prompt ⊂ context ⊂ harness ⊂ loop、Cherny の引用、`research/loop-engineering.md` へのリンク）を追記、(4) **コストガードレール文書**: ループはチャットの約4倍、マルチエージェント構成は約15倍のトークンを消費する事実と、予算設定の目安を `plugins/loops/references/cost-guardrails.md` に記載、(5) 受け入れ条件の統合検証
+- **スコープ**: (1) 新プラグイン `loops` の marketplace.json 登録、(2) 編集した全プラグインの version bump と同期、(3) ルート README に公式4ループタイプとレシピ集の位置づけ（公式記事リンク付き）を追記、(4) `plugins/loops/references/cost-guardrails.md`: 公式トークン管理6項目 + 「ループはチャットの約4倍、マルチエージェント構成は約15倍」の定量事実 + /usage・/workflows でのレビュー手順、(5) 受け入れ条件の統合検証
 - **使用スキル**: なし
 - **依存関係**: change-1〜4 全て（同期は最後に直列実行）
 - **config.yaml rules**:
   - "marketplace.json の version は各 plugin.json と完全一致させる"
-  - "README への追記は要約に留め、詳細は plugins/loops/ 側と research/ に委ねる"
+  - "README への追記は要約に留め、詳細は plugins/loops/ と research/ に委ねる"
 
 ## モデル割り当て
 
@@ -118,18 +129,18 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
 
 | change | ロール | ティア(haiku/sonnet/inherit) | 理由 | 上書き |
 |--------|--------|------------------------------|------|--------|
-| change-1 | builder | inherit | 規約・schema・実行拒否ロジックの新規設計 | |
-| change-1 | verifier | sonnet | schema/スキル整合の中規模検証 | |
-| change-1 | reviewer | inherit | ループ規約の設計レビュー（以降全 change の土台） | |
-| change-2 | builder | inherit | 外向きアクション制御と fan-out 上限が安全性 critical | |
-| change-2 | verifier | sonnet | デモ1周の E2E 検証 | |
-| change-2 | reviewer | inherit | 非破壊デフォルト・エスカレーション設計のレビュー | |
-| change-3 | builder | inherit | headless driver・停止条件など安全性 critical な実装 | |
-| change-3 | verifier | sonnet | デモタスク E2E とスクリプト検証 | |
-| change-3 | reviewer | inherit | 暴走・課金制御のアーキテクチャレビュー | |
-| change-4 | builder | sonnet | agent 定義 + schema + hook の中規模実装 | |
-| change-4 | verifier | sonnet | hook の bats ユニットテスト検証 | |
-| change-4 | reviewer | inherit | 自己評価禁止・no-op 保証の安全レビュー | |
+| change-1 | builder | inherit | レシピ規約と設計ガイドの新規設計（以降の土台） | |
+| change-1 | verifier | sonnet | 規約準拠・停止基準必須の中規模検証 | |
+| change-1 | reviewer | inherit | 「ランタイム再発明禁止」制約との整合レビュー | |
+| change-2 | builder | sonnet | 既存スキルへの検証節追加（基準明確な文書作業） | |
+| change-2 | verifier | haiku | 検証節の存在・重複コピー無しの定型検証 | |
+| change-2 | reviewer | inherit | スキル毎の検証手段の妥当性判断 | |
+| change-3 | builder | sonnet | レシピ執筆（定型寄り） | |
+| change-3 | verifier | haiku | 機械検証可能な基準・頻度設定の定型チェック | |
+| change-3 | reviewer | inherit | 停止基準・コスト設計の妥当性判断 | |
+| change-4 | builder | inherit | 人間不在ルーチンの安全設計（非破壊・凍結・State）が critical | |
+| change-4 | verifier | sonnet | 1 サイクルデモの E2E 検証 | |
+| change-4 | reviewer | inherit | 不可逆アクション防止・暴走防止の安全レビュー | |
 | change-5 | builder | sonnet | version 同期・README 追記の定型作業 | |
 | change-5 | verifier | haiku | 統合 grep 検証一式の定型実行 | |
 | change-5 | reviewer | inherit | リポジトリ全体整合の最終レビュー | |
@@ -138,11 +149,9 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
 該当なし（CLI プラグイン）
 
 ## データモデル
-- `loops/<name>.loop.md` ↔ `plugins/loops/schemas/loop-definition.schema.json`（ループの真のソース）
-- `loops/state/<name>.state.md`（State レイヤー規約）
-- `feature-list.json` ↔ `plugins/longrun/schemas/feature-list.schema.json`（build loop の真のソース）
-- evaluator 返却 ↔ `plugins/loops/schemas/evaluator-verdict.schema.json`
-- `.claude/loops-gate.json`（対象プロジェクト側の opt-in ゲート設定）
+- `recipes/<name>.md`（固定見出し規約。schema 強制なし）
+- `loops/state/<name>.state.md`（State 規約: 現在の作業 / 前回の試行と結果 / 引き継ぎ待ち / 繰り越し）
+- `{longrun-dir}/feature-list.json`（長期ビルドルーチンの真のソース。形式は references に記載）
 - marketplace.json ↔ 各 plugin.json の version 一致
 
 ## 受け入れ条件
@@ -150,37 +159,36 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
 **必須条件（常に含める）:**
 1. [ ] 全changeのOpenSpec仕様が作成・レビュー済み
 2. [ ] 全changeのテストが作成され全てPASSしている（`find plugins -name '*.bats' -print0 | xargs -0 bats`）
-3. [ ] ビルドエラーなし（全 .sh の `bash -n` PASS + .mjs の `node --check` PASS + 全 *.json の JSON parse PASS）
-4. [ ] 統合テストがPASS（worktreeマージ後、下記 5-14 を main 上で再実行して全 PASS）
+3. [ ] ビルドエラーなし（全 *.json の JSON parse PASS。スクリプトを追加した場合は `bash -n` / `node --check` PASS）
+4. [ ] 統合テストがPASS（worktreeマージ後、下記 5-13 を main 上で再実行して全 PASS）
 
 **機能固有の条件:**
-5. [ ] `plugins/loops/` が存在し、design / audit / run の 3 スキルと loop-definition.schema.json / evaluator-verdict.schema.json を持つ
-6. [ ] loop-definition.schema.json が stop 3種（反復上限・トークン予算・無進捗検出）を必須フィールドとして定義し、stop が欠けた定義で `/loops:run` が実行を拒否することがテストで確認できる
-7. [ ] State 規約テンプレートが存在し、「現在の作業 / 前回の試行と結果 / 人間への引き継ぎ待ち」の 3 節を持つ
-8. [ ] `plugins/loops/templates/triage.loop.md` が存在し schema 検証を通る。このリポジトリを対象にしたデモ 1 周で「discovery → worktree → generator → evaluator → Draft PR → state 更新」が完走したログが `{longrun-dir}` に残っている
-9. [ ] triage loop の外向きアクションに merge / close / force 系が含まれないことが定義と実装の grep で確認できる
-10. [ ] `plugins/longrun/scripts/build-loop.sh` が存在し、停止条件 3 種が bash 条件式として grep で確認できる。feature-list.schema.json が存在し JSON parse PASS
-11. [ ] デモタスク（3項目以上の feature-list）を build loop で 2 セッション以上に分けて完走し、全項目が evidence 付きで `passes:true` になったログが残っている
-12. [ ] `plugins/loops/agents/loop-evaluator.md` が存在し、委譲契約 4 点と「correctness / 要件に関わるもののみ flag」の記述を持つ
-13. [ ] verify-gate hook が設定ファイル無し環境で no-op であること、連続ブロック上限・タイムアウトを持つことが bats で検証されている
-14. [ ] `loops` が marketplace.json に登録され、編集した全プラグインで plugin.json version が bump され marketplace.json と一致する
+5. [ ] `plugins/loops/` が存在し、`/loops:design` スキル・`references/loop-types.md`・State テンプレート・レシピ形式規約を持つ
+6. [ ] 全レシピ（recipes/*.md）が固定見出し（ループ型 / 目的 / 起動コマンド / 停止基準 / 前提 / コスト注意 / エスカレーション）を持つことが grep で確認できる。停止基準の無いレシピが 0 件
+7. [ ] `plugins/loops/` に独自ランタイム（ループを回す常駐スクリプト・カスタム driver）が存在しない。レシピの起動コマンドが全てネイティブプリミティブ（/goal・/loop・/schedule・skill 起動）である
+8. [ ] 成果物を出す主要スキル（棚卸しリストは change-2 で確定、最低でも longrun-plan / wt-setup / wt-clean / daily-report / weekly-report / infra-setup / e2s-distill を含む）の SKILL.md に自己検証ステップ節がある
+9. [ ] goal レシピ 3 本・time レシピ 3 本以上が存在し、goal レシピの成功基準が全て機械検証可能（コマンド + 期待値）で書かれている
+10. [ ] `recipes/routine-backlog-triage.md` が存在し、非破壊制約（Draft PR まで）・処理数上限・繰り越し記録・2連続失敗凍結の 4 点を含む。1 サイクルのデモ実行ログが `{longrun-dir}` に残っている
+11. [ ] `recipes/routine-long-build.md` が存在し、1サイクル1項目・evidence 必須の passes 更新・smoke check・凍結条件を含む。3 項目以上の feature-list で 2 サイクル以上に分けた完走デモのログが残っている
+12. [ ] `references/cost-guardrails.md` が公式トークン管理 6 項目を含む
+13. [ ] `loops` が marketplace.json に登録され、編集した全プラグインで plugin.json version が bump され marketplace.json と一致する
 
 ## 意思決定ガイドライン
-- 優先順位: 安全性（暴走・課金・不可逆アクションの防止） > Loop Engineering アーキテクチャへの忠実さ > シンプルさ > 機能の豊富さ
-- リスク許容度: 保守的。特に「ループが自分で仕事を見つけて外向きアクションを打つ」triage loop は非破壊デフォルト（Draft PR まで）を厳守
-- Good Loop 原則の内面化: 「ループの完了は主張であり証明ではない」。全ループで evidence（テスト出力・exit code）を state に残す設計とし、検証なき成功宣告を機構で禁止する
-- 不明点の扱い: Loop Engineering の解釈に迷ったら `research/loop-engineering.md` の 5+1 構成要素と失敗 6 類型に立ち返る。それでも曖昧なら「小さく作って decisions.md に論点記録」
-- 実装中に見つけた拡張候補（イベント駆動 trigger・外部コネクタ・skill-eval/e2s-tune のループ化）は実装せず `openspec/backlog.md` に記録する
+- 優先順位: 安全性（暴走・課金・不可逆アクション防止） > 公式路線への忠実さ（ネイティブ合成・ランタイム再発明禁止） > シンプルさ > レシピの本数
+- リスク許容度: 保守的。特にプロアクティブルーチンは非破壊デフォルト（Draft PR まで）を厳守
+- 「完了は主張であり証明ではない」: 全ループ・全スキルで evidence（テスト出力・exit code・生成物の実在）を確認してから完了を宣言する設計とする
+- 不明点の扱い: 迷ったら `research/loop-engineering.md` 冒頭の公式記事セクション（4タイプ表・品質/トークン管理）に立ち返る。コミュニティ由来の概念（5+1構成要素・失敗6類型）は参考に留め、公式と矛盾したら公式に従う
+- 実装中に見つけた拡張候補（レシピの schema 化・イベント駆動・skill-eval/e2s-tune のループ化・外部コネクタ）は実装せず `openspec/backlog.md` に記録する
 
 ## 動作確認方法
 - 開発サーバー: なし
-- テスト: `find plugins -name '*.bats' -print0 | xargs -0 bats` / `bash -n` / hook への stdin JSON 注入テスト
+- テスト: `find plugins -name '*.bats' -print0 | xargs -0 bats` + レシピ見出しの grep 検証
 - 確認手順:
-  1. 受け入れ条件 5-14 の各検証コマンドを実行し全て期待値になることを確認
-  2. **loops:design デモ**: 対話で小さなループ定義を 1 本作り、schema 検証と `/loops:audit` が通ることを確認。stop を故意に欠落させ、run が拒否することを確認
-  3. **triage デモ**: このリポジトリを対象に 1 周実行（backlog 由来タスク → Draft PR → state 更新）。処理しなかったタスクの繰り越しが state に残ることを確認
-  4. **build デモ**: 3 項目の feature-list をセッション上限 4 で完走。次に 1 項目の検証コマンドを故意に失敗させ、連続失敗上限で停止することを確認
-  5. **verify-gate デモ**: サンドボックスで設定を有効化 → テストを壊して Stop がブロックされること、設定削除で no-op に戻ることを確認
+  1. 受け入れ条件 5-13 の各検証コマンドを実行し全て期待値になることを確認
+  2. **design デモ**: `/loops:design` で小さなループを 1 本設計し、停止基準必須が機能することを確認（停止基準なしでは出力されない）
+  3. **goal デモ**: `goal-tests-green.md` のコマンドをこのリポジトリで実行し、全 bats PASS で停止することを確認
+  4. **backlog triage デモ**: 1 サイクル実行 → Draft PR 作成・state 更新・繰り越し記録を確認
+  5. **long-build デモ**: 3 項目 feature-list で 2 サイクル完走 → 1 項目を故意に失敗させ凍結 + エスカレーションを確認
   6. マージ後、新セッションで `/plugin install loops@oratta-claude-harness` → `/reload-plugins` で新プラグインが見えることを確認
 
 ## Brain Dumpからの原文メモ
@@ -190,36 +198,36 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
 >
 > （フィードバック2）違うな、それloopじゃない。loop engineeringで調べてみて
 >
-> （解釈: 中核コンセプトは Loop Engineering [Cherny/Steinberger/Osmani, 2026-06]。「エージェントをプロンプトするループを設計する」ための機構——ループ定義規約・State・discovery・generator/evaluator 分離・監査——をハーネスに追加する。既存資産監査は plan-b、調査資料は research/ に分離）
+> （フィードバック3）https://claude.com/blog/getting-started-with-loops これは読んだ？こういうことなんだけど
+>
+> （解釈: 中核は公式記事「Getting started with loops」の4ループタイプ。ハーネスの責務は独自ランタイムではなく「ネイティブプリミティブの合成レシピ + skill 自己検証 + State 規約」の提供。既存資産監査は plan-b、調査資料は research/ に分離）
 
 ---
 
 ## 付録: 各 change の根拠（一次ソース要約）
 
-### 付録 A: change-1 (loops-foundation) の根拠
-`research/loop-engineering.md`:
-- ループの解剖学 = 5つのムーブ（discovery → handoff → verification → persistence → scheduling）と 5+1 構成要素（Automations / Worktrees / Skills / Connectors / Sub-agents / **State**）
-- 「明確でテスト可能な終了条件を持つ目標。**停止条件の欠如が最も一般的な失敗**。複数の独立した出口（ルーブリック通過 / 予算切れ / 反復上限 / 無進捗検出）」
-- State: 「エージェントは忘れるが、リポジトリは記憶する」。STATE.md に現在の作業・前回の試行と結果・人間への引き継ぎ待ち
-- 素の Claude Code とのギャップ: 部品（/loop・/goal・cron・worktree・subagents）はあるが、**ループ定義の規約・State 規約・監査の道具が無く、毎回アドホックに組む**しかない
-- 先行実装の存在確認: loop-audit / loop-init / loop-cost（https://github.com/cobusgreyling/loop-engineering）
+### 付録 A: change-1 (loops-plugin) の根拠
+公式記事（`research/loop-engineering.md` 冒頭）:
+- 選択フレームワーク: ループ型ごとに「手放す対象」が異なる（ターンベース=検証ステップ / ゴールベース=停止条件 / タイムベース=トリガー / プロアクティブ=プロンプト自体）→ /loops:design のインタビュー構造そのもの
+- 「明確な成功・停止基準を定義（曖昧さを減らす）」→ 停止基準必須の規約
+- State はコミュニティ側（Osmani）由来だが公式のプロアクティブ合成例（「翌日 state から再開」相当の運用）と整合し、harnesses 論文（progress notes）でも公式裏付けあり
 
-### 付録 B: change-2 (triage-loop) の根拠
-- Osmani essay の代表例: 「朝の automation 実行 → CI 失敗と open issues をトリアージ → タスク毎に隔離 worktree → 第一サブエージェントが修正案 → 第二サブエージェントが検証 → コネクタで PR 作成 → state へ保存 → 翌日 state から再開」
-- Cherny: 「ループが実行されて Claude にプロンプトを与え、何をすべきか見つけ出す」——**discovery（仕事を自分で見つける）が現行ハーネスに無い最大の欠落**（longrun は人間が plan を書く起点）
-- fan-out 上限: multi-agent 論文（`research/anthropic-agent-knowledge.md` ソース2）「努力量スケーリングルールをスキル内に明記して暴走を防ぐ」
+### 付録 B: change-2 (skill-verification) の根拠
+公式記事: ターンベースループの最適化 = 「**スキルに検証ステップを組み込み、自己検証能力を向上**」。公式例: 「フロントエンド変更を確認する前に dev サーバーを起動し、ブラウザで操作確認、コンソールエラーなしを確認」と具体的に記述する。
+`research/anthropic-agent-knowledge.md` ソース9: 「『成功した』と主張させず evidence を提示させる」。
 
-### 付録 C: change-3 (build-loop) の根拠
-- `research/claude-code-official.md` §7（harnesses 論文、本文直接確認済み）: 「compaction だけでは不十分。外部状態ファイル + git」「機能リスト JSON（`passes:false`）」「1セッション1機能」「丁寧なテスト後にのみ passing」「セッション開始時に動作確認」
-- `research/anthropic-agent-knowledge.md` ソース11: 「トークン残量を理由に早期終了するな」「テスト削除禁止を明記」「状態追跡は git が得意」
-- Loop Engineering との合流: build loop は「trigger=手動/駆動スクリプト、discovery=passes:false の先頭、evaluator=検証コマンド」という**ループ定義形式の一具体例**として実装する（前版 plan の session-loop 設計を規約に載せ直したもの）
+### 付録 C: change-3 (goal-and-time-recipes) の根拠
+公式記事:
+- /goal は「エバリュエータモデルが成功基準を評価し、基準達成まで反復。**定量的な基準（テスト合格数・スコア閾値）が最も効果的**」。公式例 `/goal get the homepage Lighthouse score to 90 or above, stop after 5 tries`
+- /loop はローカル・/schedule はクラウド。公式例 `/loop 5m check my PR, address review comments, and fix failing CI`
+- トークン管理: 「ルーチン実行頻度を必要最小限に」「決定論的作業はスクリプト化」「大規模実行前にパイロット」
 
-### 付録 D: change-4 (evaluator-pack) の根拠
-- `research/loop-engineering.md`: 3部構成「generator + evaluator + loop」。「**実装者と検証者を分離**（自分の成果物を自分で評価する構造的課題の解決）」「決定論的検証（テスト・型チェッカー）を報酬信号として信頼し、LLM 判定は検証不可能な場面に限定」
-- `research/anthropic-agent-knowledge.md` ソース9: 敵対的レビューは「correctness / 要件に関わるもののみ flag」。「hooks = 決定論的アクション（CLAUDE.md は助言、hook は保証）」
-- 失敗類型「検証なしでの成功宣告」への機構的対策が verify-gate
+### 付録 D: change-4 (proactive-routines) の根拠
+公式記事: プロアクティブループ = 「イベント/スケジュールがトリガー、人間不在。バグ分類・マイグレーション・依存関係更新などの定期業務」。合成例: `/schedule every hour: check #project-feedback for bug reports. /goal: don't stop until every report found this run is triaged, actioned, and responded to.` 品質プラクティス「**第二エージェントによるレビュー**（/code-review 等）」。
+`research/claude-code-official.md` §7（harnesses 論文）: feature-list JSON（`passes:false`）・progress notes・1セッション1機能・「丁寧なテスト後にのみ passing」・セッション開始時 smoke check → 長期ビルドルーチンの外部状態設計。
+`research/anthropic-agent-knowledge.md` ソース2: fan-out 暴走防止のスケーリングルール（1 サイクルの処理数上限）。
 
-### 付録 E: 今回対応しないもの（判定済み）
-- **skill-eval / e2s-tune**（前版 plan の change-2/3）: 「スキルを改善するループ」として loops 基盤の上に将来実装する方が一貫する。backlog へ
-- **イベント駆動 trigger・外部コネクタ（Slack/Linear）**: 現行ワークフローでは gh + backlog で足りる。backlog へ
-- **既存資産のコンテンツ品質監査**: `plan-b-existing-audit.md` に分離済み
+### 付録 E: 前版 plan からの方針転換の記録
+- 前版（Loop Engineering コミュニティ解釈版）は `loop-definition.schema.json` + `/loops:run` + `build-loop.sh` driver という**独自ランタイム**を設計していた
+- 公式記事の確認により「ランタイムはネイティブ、ハーネスはレシピと規約」に転換。schema 強制・driver スクリプトは廃案（レシピの markdown 規約と references での形式記載に置換）
+- 廃案分で将来も価値がありうるもの（レシピの機械検証・loop-audit 相当）は backlog へ記録する
