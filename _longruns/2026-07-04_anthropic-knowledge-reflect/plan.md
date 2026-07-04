@@ -1,227 +1,231 @@
-# Plan: Anthropic公式ナレッジのハーネス反映（anthropic-knowledge-reflect）
+# Plan: 公式推奨×素のClaude Codeのギャップをハーネス機能として追加する（anthropic-knowledge-reflect）
 
 ## 生成情報
 - 作成日: 2026-07-04
-- Brain Dump元: /goal 指示「Anthropic公式ナレッジ調査→claude-harness実装 goal指示書」
-- 調査体制: 並列3エージェント（Anthropicエージェント設計ナレッジ / Claude Code公式ベストプラクティス / リポジトリ現状マップ）。調査結果の全文は `research/` 配下に保存済み
+- Brain Dump元: /goal 指示「Anthropic公式ナレッジ調査→claude-harness実装 goal指示書」+ ユーザーフィードバック「既存のものをどう活かすかではなく、Anthropic はこう使うべきと言っているが普通に使っているだけでは実現できないものを、ハーネスとして追加したい」
+- 調査体制: 並列3エージェント調査 → ギャップ分析。全資料は `research/` 配下に保存済み
+- 別トラック: 既存資産のコンテンツ品質監査（description・schema横展開・語調調律等）は `plan-b-existing-audit.md` に分離。本 plan の完了後に必要なら別 run で実施
 
 ## ゴール
-Anthropic が公式に公開しているエージェント構築ナレッジ（engineering 記事11本 + Claude Code / Agent SDK 公式ドキュメント）を一次ソースとして調査し、その原則をこの marketplace リポジトリの 8 プラグインに反映する。longrun が既に体現している好パターン（schema契約・コードでの上限・単一ソース・context isolation・gate明文化）を基準系とし、未適用プラグイン（infra / weekly-report / worktree 等）への横展開と、公式基準（skill authoring / writing-tools / long-running harness / prompting）による全体監査を行う。
+Anthropic 公式ナレッジのうち「**公式が推奨しているが、素の Claude Code を普通に使うだけでは実現できず、毎回自前で組むことになるもの**」（`research/gap-analysis.md` で特定した 4 機構）をこの marketplace のハーネス機能として新規追加する:
+1. **外側セッションループ**（longrun 新モード）— harnesses 論文のリファレンスアーキテクチャ
+2. **skill 評価ハーネス**（新プラグイン）— eval 駆動開発の機構化
+3. **スキル自己改善ループ**（e2s 拡張）— 実使用ログからの description/指示文チューニング
+4. **検証ゲート hook pack**（新プラグイン）— 決定論的検証ゲートの配布可能化
 
 ## ビジネスコンテキスト
 - 対象ユーザー: このユーザー本人（marketplace の唯一のメンテナ兼利用者）
-- 提供価値: (1) infra の散文状態受け渡し・`/tmp` 直書きなど実リスクの解消、(2) description・SKILL.md の公式基準準拠によるスキル自動起動精度とコンテキスト効率の改善、(3) longrun を公式ハーネス論文の語彙で明文化し、今後の設計判断の基準を一次ソースに接続する
-- 成功指標: 受け入れ条件の grep/bats 機械検証が全て PASS、`research/` の一次ソース資料が run ディレクトリに永続化され今後の設計判断から参照可能になる
+- 提供価値: (1) コンテキストウィンドウを超える長期タスクを「セッションを跨いで」自律駆動できるようになる（現状 longrun は 1 セッション内で完結する規模が上限）、(2) スキルの品質を主観でなく評価で担保できるようになる、(3) スキルが使われるほど自動的に良くなる改善サイクルが回る、(4) 「テストが通るまで終われない」を宣言でなく機構で保証できる
+- 成功指標: 受け入れ条件の機械検証が全て PASS。特に change-1 はデモタスク（複数セッションを要する規模の実装）を外側ループで完走できること
 
 ## 一次ソース（実装時の判断基準）
 builder / reviewer は迷ったら以下を参照する（全て本 run の `research/` に保存済み・URL 実在確認済み）:
-- `research/anthropic-agent-knowledge.md` — engineering 記事11本の統合資料（Building Effective Agents / multi-agent research / writing-tools / Agent SDK / context engineering / Agent Skills / code execution with MCP / advanced tool use / Claude Code best practices / skill authoring / prompting）
-- `research/claude-code-official.md` — Claude Code 公式ドキュメント（Skills / Subagents / Hooks / Plugins / Memory / settings / Headless）の推奨・アンチパターン
-- `research/repo-survey.md` — このリポジトリの現状マップと弱点 A〜H（ファイルパス特定済み）
+- `research/gap-analysis.md` — 本 plan の選定根拠（公式推奨 × 素のCC × 既存ハーネスの判定表）
+- `research/anthropic-agent-knowledge.md` — engineering 記事11本の統合資料
+- `research/claude-code-official.md` — Claude Code 公式ドキュメントの推奨・アンチパターン（§7 に harnesses 論文の要点）
+- `research/repo-survey.md` — リポジトリ現状マップ
 
 ## 技術要件
-- スタック: Markdown（SKILL.md / commands / agents）+ bash / node スクリプト + JSON Schema + bats-core
+- スタック: Markdown（SKILL.md / commands / agents）+ bash / node スクリプト + JSON Schema + bats-core + `claude -p`（headless）
 - 参照パターン:
-  - schema 契約の参照元: `plugins/longrun/schemas/*.schema.json` + `plugins/longrun/commands/exec.md`（外部ファイルが唯一のソース、プロンプトへ重複禁止の GATE 方式）
-  - context 分離の参照元: `plugins/daily-report/skills/daily-report/SKILL.md` + `plugins/daily-report/agents/*.md`（サブエージェント並列起動・中間ファイル返却・最終 message は STATUS line のみ）
+  - schema 契約: `plugins/longrun/schemas/*.schema.json`（外部ファイルが唯一のソース）
+  - 状態外部化の既存資産: `_longruns/<run>/` の plan.md / decisions.md / workflow-runs.jsonl
+  - jsonl 解析: `plugins/daily-report/agents/llm-log-compactor.md` の jq ロジック（change-3 で流用）
 - 制約:
   - `~/.claude/rules/plugin-editing.md` 準拠: 編集した全プラグインで plugin.json version bump + marketplace.json 同期必須
   - このリポジトリの CLAUDE.md 準拠: worktree 作業は Draft PR バックアップ運用、main 直 push 禁止
-  - `openspec/changes/archive/` と `_longruns/_archive/` は履歴のため一切触らない
   - モデル ID を直書きしない（`plugins/longrun/references/model-tiers.md` が唯一のソース）
-  - **安全ゲートの文言は弱めない**: wt-clean のデータロス防止禁則・longrun の `<GATE>` 群は「決定論的に守らせる意図を持つ文」であり、強語調調律（change-5）の対象外
-- テストフレームワーク: bats-core + `node --check` + grep ベースの参照ゼロ検証
+  - headless 実行（`claude -p`）は課金実行になるため、driver スクリプトには**セッション数上限・停止条件をコードの条件式で**必ず持たせる（「上限は LLM の自制に依存しない」という longrun 既存 GATE の踏襲）
+  - 新プラグインは既存の構成規約（`.claude-plugin/plugin.json` + ルート直下 `skills/` `commands/` `agents/` `hooks/`）に従う
+- テストフレームワーク: bats-core + `node --check` + grep ベース検証
 - テスト実行コマンド: `find plugins -name '*.bats' -print0 | xargs -0 bats`
 
 ## スコープ
 ### 含むもの
-- 全プラグインの description（plugin.json / SKILL.md / agents frontmatter）の公式基準監査と修正（change-1）
-- infra の構造化出力契約導入と状態ファイルの `/tmp` 直書き是正（change-2）
-- weekly-report の重量処理サブエージェント隔離（change-3）
-- longrun のハーネス論文アラインメント（委譲契約・verify三層・敵対的レビュー調整・スケーリングルール・early-stop 抑制の明文化）（change-4）
-- SKILL.md の progressive disclosure 準拠（500行制限・1階層参照・目次）と強語調の調律（change-5）
-- プラグイン衛生の最終監査（`${CLAUDE_PLUGIN_ROOT}` 統一・永続データの `${CLAUDE_PLUGIN_DATA}` 検討・version/marketplace 最終同期）（change-6）
+- longrun への外側セッションループモードの追加（change-1）
+- skill 評価ハーネスの新設（change-2）
+- e2s へのスキル自己改善ループ追加（change-3）
+- 検証ゲート hook pack の新設（change-4）
+- 上記に伴う marketplace.json 同期・README 更新（change-5）
 
 ### 含まないもの
-- harvest / sns-strategy / codex / vlog-album 等、別 marketplace（marketing-harness 等）のプラグイン（理由: 対象リポジトリ外。ただし本指示書の原則は将来そちらにも適用可能）
-- 新規プラグイン・新規スキルの開発（理由: 本 run は既存資産への公式ナレッジ反映に限定）
-- longrun の resumeFromRunId セッション跨ぎ制約（repo-survey 弱点H）の解消（理由: Claude Code 本体機能の制約であり plugin 側で解決不能。decisions.md に制約として記録するに留める）
-- skill 評価スイート（3シナリオ評価・Claude A/B法）の本格導入（理由: 公式推奨だが工数大。backlog に記録して別 run）
-- CLAUDE.md・`.claude/rules/` の変更（理由: 調査の結論は「現行運用ルールは公式仕様で追認される正しい設計。変更不要」）
+- 既存資産のコンテンツ品質監査（description 三人称化・infra schema 化・weekly-report 隔離・SKILL.md 分割・語調調律）（理由: `plan-b-existing-audit.md` に分離済み。新機構追加が本 run の主目的）
+- harvest / sns-strategy 等、別 marketplace のプラグイン（理由: 対象リポジトリ外）
+- Tool Search / defer_loading / Tool Use Examples への対応（理由: API・Claude Code 本体が提供済みでハーネス不要。gap-analysis #9〜#10）
+- CLAUDE.md・`.claude/rules/` の変更（理由: 調査結論は「現行運用ルールは公式仕様で追認済み。変更不要」）
 
 ## Changes分解
 
-### change-1: description-audit
-- **スコープ**: 全 8 プラグインの description をスキルオーサリング公式基準で監査・修正する。対象は (a) `plugins/*/.claude-plugin/plugin.json` の description、(b) `plugins/*/skills/*/SKILL.md` frontmatter の description、(c) `plugins/*/agents/*.md` frontmatter の description。基準: **三人称で書く（"I can help you..." 禁止）／「何をするか＋いつ使うか」の両方を含む／具体的トリガーキーワードを含む／1024字以内／曖昧語（helper/utils等）排除**。agent description には**委譲トリガー**（いつ委譲されるべきか）を明示する。特に `plugins/worktree/.claude-plugin/plugin.json` の複数段落 description を 1〜2 文に圧縮し、詳細は README へ移す。lr（6.2.0）と longrun（6.3.0）のバージョン非同期はエイリアス関係を確認し、意図的でなければ揃える。詳細は付録 A
+### change-1: longrun-session-loop（外側セッションループ）
+- **スコープ**: harnesses 論文のリファレンスアーキテクチャを longrun の新モードとして実装する。
+  1. **feature-list 契約**: `plugins/longrun/schemas/feature-list.schema.json` を新設。plan.md の Changes/受け入れ条件から生成する `{longrun-dir}/feature-list.json`（各項目 `{id, description, verification, passes: false}`）が外側ループの真のソース。**テスト・項目の削除禁止**を schema コメントと GATE で明記
+  2. **driver スクリプト**: `plugins/longrun/scripts/session-loop.sh` を新設。while ループで `claude -p`（headless・`--output-format json`）を起動し、各セッションに「feature-list.json を読む → `passes:false` の項目を **1 つだけ**選ぶ → 実装 → 検証コマンドで evidence を取る → 通ったら `passes:true` に更新 → 説明的 commit → progress notes 追記 → 終了」を指示する。**セッション数上限（デフォルト設定可能）・全項目 PASS・連続失敗数**の 3 つをコードの条件式で停止判定
+  3. **セッションプロンプトのテンプレート化**: `plugins/longrun/templates/session-loop/` に init セッション用（環境セットアップ・init.sh 生成・初期 commit）と feature セッション用（1機能実装）の 2 プロンプトテンプレートを置く（論文の init agent / coding agent 分離）。feature セッションは開始時に smoke check（直近 passing 項目の検証コマンド再実行）を行い、壊れていたら新機能より先に修復する
+  4. **progress notes**: `{longrun-dir}/claude-progress.md` にセッション毎の要約を追記（次セッションが最初に読む。compaction に依存しない状態引き継ぎ）
+  5. **エントリポイント**: `/longrun:loop <longrun-dir>`（`plugins/longrun/commands/loop.md`）と lr エイリアス `/lr:l` を追加。既存 `/longrun:exec`（in-session Workflow）とは併存し、使い分け（1セッションに収まる規模=exec / 収まらない規模=loop）を exec.md と README に 1 段落で明記
 - **使用スキル**: なし
 - **依存関係**: 独立
 - **config.yaml rules**:
-  - "description の書き換えは『トリガー精度の改善』が目的。既存のトリガー句・限定句（Triggered ONLY by 等）の意図を保ったまま公式基準の型に整える（機能や発火条件を変えない）"
-  - "marketplace.json の description 同期は change-6 に委ねる（本 change では plugin 側のみ）"
-  - "SKILL.md frontmatter の description 変更後、当該スキルの発火条件が変わっていないことを変更前後の diff レビューで確認する"
+  - "driver の停止条件（セッション上限・全PASS・連続失敗）は bash の条件式で実装し、LLM の判断に委ねない"
+  - "feature セッションのプロンプトには『1 セッションで 1 項目のみ。他の passes:false に手を出さない』『トークン残量を理由に途中終了せず、区切りの良い状態で commit して progress notes に引き継ぎを書く』を含める"
+  - "`passes:true` への更新は検証コマンドの exit code 0 の evidence がある場合のみ（自己申告での更新をプロンプトで禁止し、driver 側でも検証コマンド再実行による抜き取り確認を行う）"
+  - "headless 実行の permission は `--permission-mode` と `--allowedTools` で明示し、bypassPermissions を使わない"
+  - "デモタスクによる E2E 検証（3 項目以上の feature-list を 2 セッション以上に分けて完走）を受け入れに含める"
 
-### change-2: infra-structured-output
-- **スコープ**: `plugins/infra/` の 5 フェーズ agent（`agents/infra-phase-*.md`）に構造化出力契約を導入する。(1) longrun の `schemas/*.schema.json` 方式に倣い `plugins/infra/schemas/phase-result.schema.json`（フェーズ毎の完了状態・生成物パス・警告・次フェーズへの引き継ぎ値）を新設し、各フェーズ agent の返却をこれに準拠させる、(2) 状態受け渡しファイル `/tmp/infra-setup-state.md` のハードコードを廃し、`${CLAUDE_PLUGIN_DATA}` 配下（または呼び出し元が指定するセッション毎パス）に移す、(3) 各フェーズの失敗時に「何が失敗し・どう直すか・リトライ可能か」を構造化して返すエラー契約を追加（writing-tools の actionable error 原則）。詳細は付録 B
-- **使用スキル**: なし（longrun schemas/ パターンを流用）
+### change-2: skill-eval（評価ハーネス新プラグイン）
+- **スコープ**: 「スキルを書く前に評価を作れ」という公式の開発プロセスを新プラグイン `plugins/skill-eval/` として機構化する。
+  1. **評価定義の規約**: 評価対象スキルの隣に `evals/scenarios.md`（3 シナリオ以上: 入力プロンプト・期待挙動・判定基準）を置く規約を定義。schema は `plugins/skill-eval/schemas/scenario.schema.json`
+  2. **実行スキル**: `/skill-eval:run <plugin>:<skill>` — 各シナリオをサブエージェント（フレッシュコンテキスト）で実行し、LLM-as-judge（ルーブリック: 期待挙動の充足 / 指示への忠実さ / トークン効率。0.0〜1.0）で採点、`evals/results/<date>.md` にベースラインとして保存。2 回目以降は前回との差分を表示
+  3. **Claude A/B 法スキル**: `/skill-eval:ab <plugin>:<skill>` — 設計役（スキルを読み改善案を出す）とフレッシュ実使用役（改善版でシナリオを実行）を交互に回す反復改善セッションのガイド
+  4. **トリガー精度チェック**: `/skill-eval:trigger <plugin>:<skill>` — description だけを見て「このプロンプトで発火すべきか」を判定するテーブル（発火すべき 5 例・すべきでない 5 例）を生成・実行し、description の過発火/不発火を検出
+- **使用スキル**: なし
 - **依存関係**: 独立
 - **config.yaml rules**:
-  - "schema は外部ファイルを唯一のソースとし、agent プロンプトへ JSON 構造を重複コピーしない（longrun と同じ GATE）"
-  - "`${CLAUDE_PLUGIN_DATA}` が実行環境で未定義の場合のフォールバック（ユーザー確認 or セッション scratchpad）を必ず定義する。`/tmp` 固定パスへのフォールバックは禁止"
-  - "infra は対話型スキル（AskUserQuestion 使用）のため、フェーズ agent の schema 化が対話フローを壊さないことを SKILL.md のフェーズ受け渡し記述と突き合わせて確認する"
+  - "judge はフレッシュなサブエージェントで実行し、評価対象スキルの実行コンテキストと分離する"
+  - "採点ルーブリックは schema 外部ファイルを唯一のソースとする（longrun GATE の踏襲）"
+  - "MVP スコープ厳守: 対象はこの marketplace の skill のみ。任意リポジトリの skill 対応・CI 統合は backlog へ"
+  - "サブエージェント消費が大きい（1 シナリオ=1 エージェント+judge）ため、1 回の run で実行するシナリオ数の上限をコマンド引数で制御できるようにする"
 
-### change-3: weekly-report-isolation
-- **スコープ**: `plugins/weekly-report/` の jsonl 直読・集約処理をサブエージェントに隔離する。daily-report の `agents/llm-log-compactor.md` パターン（生データをサブエージェント内に閉じ込め、凝縮した中間ファイルだけメインに返す。最終 message は STATUS line 1 行）を流用し、`plugins/weekly-report/agents/` に週次版 compactor を新設。SKILL.md 側は「compactor 起動 → 中間ファイル読込 → レポート合成」の薄いオーケストレーションに書き換える。サブエージェントの返却サマリは公式推奨の **1,000〜2,000 トークンの高シグナル凝縮**を目安とする。詳細は付録 C
-- **使用スキル**: なし（daily-report の compactor パターンを流用）
+### change-3: e2s-skill-tuner（自己改善ループ）
+- **スコープ**: `plugins/experience-to-skill/` に既存スキルの改善ループを追加する。公式事例（Claude 自身に失敗を診断させツール説明を書き換えさせ完了時間40%短縮）の機構化。
+  1. **新コマンド**: `/e2s:tune <plugin>:<skill>` — cwd（および `~/.claude/projects/`）のセッション jsonl から対象スキルが発火したセッションを抽出し、サブエージェントに「混乱・手戻り・誤発火・指示の無視が起きた箇所」を診断させる（jsonl 解析は daily-report の `llm-log-compactor` の jq ロジックを流用し、生ログをメインに返さない）
+  2. **改善提案の構造化**: 診断結果を `{発火判定の問題 | 指示の曖昧さ | 情報の欠落 | 過剰な指示}` に分類し、description・SKILL.md 本文への具体 diff 案として提示。**適用はユーザー承認後**（自動書き換えしない）
+  3. **skill-eval 連携**: 対象スキルに `evals/scenarios.md` があれば、適用前後で `/skill-eval:run` を実行して改善を数値で確認する手順を組み込む（無ければ省略可のオプション扱い）
+- **使用スキル**: なし（daily-report の jq パターンと e2s 既存の jsonl 抽出基盤を流用）
+- **依存関係**: change-2（skill-eval 連携部分のみ。連携を除く本体は独立実装可）
+- **config.yaml rules**:
+  - "スキル本文の自動書き換えは禁止。必ず diff 提示 → ユーザー承認 → 適用の順"
+  - "jsonl 解析はサブエージェントに隔離し、メインコンテキストに生ログを載せない"
+  - "診断対象セッションが 0 件の場合は『データ不足』を明示して終了する（推測で改善案を出さない）"
+
+### change-4: verify-gate（検証ゲート hook pack）
+- **スコープ**: 「CLAUDE.md は助言、hook は保証」の公式定義に基づき、決定論的検証ゲートを配布可能な新プラグイン `plugins/verify-gate/` として実装する。
+  1. **Stop hook: tests-pass gate**: 作業ディレクトリにテストコマンド設定（`.claude/verify-gate.json` 等）がある場合、Stop 時にテストを実行し、失敗していたら exit 2 + stderr で停止をブロックして修正を促す。設定が無いプロジェクトでは何もしない（opt-in）
+  2. **PreToolUse hook: 破壊的 git 操作ガード**: `git push --force` / `git reset --hard` / `git clean -f` 等（`~/.claude/rules/git-commit-policy.md` の禁止リスト準拠）を deny し、明示承認を促すメッセージを返す
+  3. **設定スキル**: `/verify-gate:setup` — 対象プロジェクトでゲートを対話的に有効化（テストコマンドの登録・ガード対象の選択）し、`.claude/verify-gate.json` を生成
+  4. hooks は `${CLAUDE_PLUGIN_ROOT}` 参照で実装し、hook スクリプトは stdin JSON を 1 回だけ読む・出力上限に収める等の公式仕様（`research/claude-code-official.md` §3）に準拠
+- **使用スキル**: なし
 - **依存関係**: 独立
 - **config.yaml rules**:
-  - "既存の非対話（cron）モードと bats テスト（`plugins/weekly-report/tests/*.bats`）を壊さない。テストは新構造に追随更新する"
-  - "サブエージェント隔離により機能が変わらないこと（同じ週・同じデータで同等のレポートが出ること）を検証手順に含める"
-  - "サブエージェント定義には objective / output format / tool guidance / task boundaries の 4 点を明記する（multi-agent research の委譲フレームワーク）"
+  - "ゲートは全て opt-in（設定ファイルが無ければ完全に無音・no-op）。plugin を入れただけで全プロジェクトの挙動が変わってはならない"
+  - "Stop hook のテスト実行にはタイムアウトを設け、テストが遅い/壊れている場合に停止不能ループへ陥らないこと（連続ブロック回数の上限をコードで持つ）"
+  - "hook スクリプトは bats でユニットテスト（stdin JSON を与えて exit code / stdout を検証）する"
 
-### change-4: longrun-paper-alignment
-- **スコープ**: `plugins/longrun/` を公式ハーネス論文・ベストプラクティスの語彙で強化する。(1) **委譲契約の明文化**: `agents/longrun-{builder,verifier,browser-verifier,reviewer}.md` 等の定義に objective / output format / tool guidance / task boundaries の 4 点が揃っているか監査し、欠けを補う、(2) **verify 三層の明示**: verifier 系ドキュメントに rules-based（lint/test）＋ visual（ブラウザ/スクショ）＋ LLM-judge の三層分担と「『成功した』と主張せず evidence（テスト出力・exit code・スクショ）を提示する」原則を明文化、(3) **敵対的レビューの調整**: reviewer/verifier のプロンプトに「correctness / 要件に関わるギャップのみ flag する（健全でも何か報告しようとする過剰指摘・過剰エンジニアリング誘発を抑止）」を追加、(4) **スケーリングルール**: exec.md / workflow テンプレに「サブエージェントはチャットの約15倍のトークンを消費する。並列 fan-out は変更の複雑度に応じてスケールさせる」旨の努力量スケーリング指針を追加、(5) **early-stop 抑制**: builder 系プロンプトに「トークン残量を理由に早期終了せず、限界前に進捗を外部状態（git commit / decisions.md）へ保存する」を追加、(6) **1セッション1機能・外部状態+git**: exec.md の設計思想節に公式論文の語彙（compaction だけでは不十分、状態の外部化、説明的 commit）で現行設計の根拠を記述し references/ の一次ソースリンクを付す、(7) 弱点G（frontmatter `model:` と実行時 `opts.model` の二重管理）の優先順位を exec.md か references/model-tiers.md に 1 行で明記。詳細は付録 D
+### change-5: integration（marketplace 同期・README・使い分けガイド）
+- **スコープ**: (1) 新設 2 プラグイン（skill-eval / verify-gate）の marketplace.json 登録、(2) 編集した全プラグイン（longrun / lr / experience-to-skill）の plugin.json version bump と marketplace.json 同期、(3) ルート README に 4 機構の位置づけ（どの公式ナレッジのどのギャップを埋めるか。`research/gap-analysis.md` へのリンク）を追記、(4) 受け入れ条件の統合検証一式の実行
 - **使用スキル**: なし
-- **依存関係**: 独立（ただし change-5 と同一ファイルを触る場合は change-5 を後に直列化）
+- **依存関係**: change-1〜4 全て（同期は全編集完了後に直列実行）
 - **config.yaml rules**:
-  - "既存の `<GATE>` 群・schema 外部ファイル原則・stopReason 構造化・model-tiers 単一ソースは変更しない（既に公式準拠。触るのは追記と語彙の接続のみ）"
-  - "追記は『最小の高シグナルトークン集合』原則に従い、各追記に対して『この行を消すと agent がミスするか？』を自問して過剰な説明を足さない"
-  - "workflow テンプレ（*.workflow.js）を触った場合はレンダリング後 `node --check` PASS を必須とする"
-
-### change-5: progressive-disclosure-slim
-- **スコープ**: 全プラグインの SKILL.md / commands を progressive disclosure 公式基準に揃える。(1) **500 行超の SKILL.md を分割**: `plugins/worktree/skills/wt-clean/SKILL.md`（506行）を本文と `references/` に分割（他に 500 行超が見つかれば同様に）。477 行の daily-report、420 行の longrun-plan は「500 行未満」基準内のため必須対象外（余裕があれば参照分離を検討）、(2) **参照は 1 階層のみ**: SKILL.md → 参照ファイル → さらに別ファイル、というネスト参照を検出して 1 階層に平坦化、(3) **100 行超の参照ファイルに目次**を付す、(4) **強語調の調律**: 全プラグインの指示文から「CRITICAL / You MUST / 絶対に」等の強語調の**乱用**を検出し、現行モデルでは overtrigger を招くため通常語調に落とす。ただし技術要件の制約に定めた通り、**安全ゲート（データロス防止・破壊的操作の禁則・GATE 表記）は対象外として維持**、(5) 時限情報（「2026年時点では」等、賞味期限のある記述）の排除。詳細は付録 E
-- **使用スキル**: なし
-- **依存関係**: change-1, change-4（同一ファイル群を触るため、description 確定・longrun 追記の後に直列実行）
-- **config.yaml rules**:
-  - "分割は『本文=ワークフローの骨格と判断基準、references/=詳細手順・具体例・トラブルシュート』の切り方とする。発火時に必要な判断材料を references へ追い出さない"
-  - "強語調の調律は 1 ファイルずつ diff レビューし、安全ゲート・禁則に該当する文が 1 つでも弱まっていないかを明示的に確認する。迷ったら現状維持"
-  - "wt-clean の squash マージ検出（検証A/B/C）と AskUserQuestion 後別ターン実行の禁則は一言一句失わない（過去 run の GATE を継承）"
-
-### change-6: plugin-hygiene-final
-- **スコープ**: プラグイン衛生の最終監査と統合。(1) plugin 内スクリプト・ドキュメントの `${CLAUDE_PLUGIN_ROOT}` 参照統一（plugin 外への `../` 相対参照が残っていないか棚卸し。キャッシュ配布で壊れるため）、(2) 永続データ（実行間で残すべき状態・キャッシュ）を持つプラグインの `${CLAUDE_PLUGIN_DATA}` 移行検討（少なくとも infra の状態ファイルは change-2 で移行済み。他に該当があれば同方式）、(3) 編集した全プラグインの plugin.json version bump、(4) marketplace.json の version・description 最終同期（plugin.json と完全一致）、(5) 受け入れ条件の統合 grep 検証一式の実行。詳細は付録 F
-- **使用スキル**: なし
-- **依存関係**: change-1〜5 全て（marketplace.json 同期は全プラグイン編集の完了後。同一ファイル競合回避のため最後に直列実行）
-- **config.yaml rules**:
-  - "version bump は SemVer に従う（description のみ=patch、schema/構造変更=minor）"
-  - "marketplace.json と plugin.json の両方に version を書いた場合 plugin.json が無警告で優先される公式仕様に注意し、両者を機械照合する"
-  - "`${CLAUDE_PLUGIN_DATA}` への移行は『update で消えては困るデータ』のみ。一時ファイルはセッション scratchpad のままでよい（過剰移行しない）"
+  - "marketplace.json の version は各 plugin.json と完全一致させる"
+  - "README への追記は各機構 2〜3 行の要約に留め、詳細は各プラグインの README / research/ に委ねる"
 
 ## モデル割り当て
 
-自律実行（exec）の各フェーズ agent に割り当てるモデルティアを change × ロールごとに指定する。
 ティアは `plugins/longrun/references/model-tiers.md` で解決する（モデル ID は書かない）。
 
 | change | ロール | ティア(haiku/sonnet/inherit) | 理由 | 上書き |
 |--------|--------|------------------------------|------|--------|
-| change-1 | builder | sonnet | description 書き換えは基準明確な文書修正 | |
-| change-1 | verifier | haiku | 三人称・字数・型の grep/目視定型検証 | |
-| change-1 | reviewer | inherit | トリガー精度への影響判断（発火条件を変えない）が必要 | |
-| change-2 | builder | inherit | schema 設計 + 対話フロー非破壊の複雑実装 | |
-| change-2 | verifier | sonnet | schema/agent 間の整合確認（中規模） | |
-| change-2 | reviewer | inherit | 状態受け渡し設計のアーキテクチャレビュー | |
-| change-3 | builder | sonnet | 既存 compactor パターンの流用実装 | |
-| change-3 | verifier | sonnet | 同等出力の機能検証（bats + 実行比較） | |
-| change-3 | reviewer | inherit | 委譲契約 4 点の充足判断 | |
-| change-4 | builder | inherit | 論文語彙と既存設計の接続。過剰追記の抑制判断が必要 | |
-| change-4 | verifier | haiku | 追記箇所の存在確認と node --check の定型検証 | |
-| change-4 | reviewer | inherit | 「最小の高シグナル」原則との整合レビュー | |
-| change-5 | builder | inherit | 安全ゲートを弱めない調律判断が必要（誤修正リスク高） | |
-| change-5 | verifier | sonnet | 分割後の参照整合・行数・目次の検証 | |
-| change-5 | reviewer | inherit | 禁則文言の保全レビュー（一言一句） | |
-| change-6 | builder | sonnet | version bump・同期・棚卸しの定型寄り作業 | |
-| change-6 | verifier | haiku | 統合 grep 検証一式の定型実行 | |
-| change-6 | reviewer | inherit | リポジトリ全体整合の最終レビュー | |
+| change-1 | builder | inherit | driver の停止条件・headless 制御など安全性 critical な新規設計 | |
+| change-1 | verifier | sonnet | デモタスク E2E とスクリプト検証（中規模） | |
+| change-1 | reviewer | inherit | 暴走防止・課金実行制御のアーキテクチャレビュー | |
+| change-2 | builder | inherit | 評価ルーブリック・judge 分離の新規設計 | |
+| change-2 | verifier | sonnet | シナリオ実行の機能検証 | |
+| change-2 | reviewer | inherit | 評価設計の妥当性判断 | |
+| change-3 | builder | sonnet | 既存 jq 基盤流用の中規模実装 | |
+| change-3 | verifier | haiku | diff 提示フロー・0件時挙動の定型検証 | |
+| change-3 | reviewer | inherit | 自動書き換え禁止ガードの保全レビュー | |
+| change-4 | builder | inherit | hook は全プロジェクトに影響しうる。公式仕様準拠と no-op 保証が critical | |
+| change-4 | verifier | sonnet | bats による hook ユニットテスト検証 | |
+| change-4 | reviewer | inherit | opt-in 設計・停止不能ループ回避の安全レビュー | |
+| change-5 | builder | sonnet | version 同期・README 追記の定型作業 | |
+| change-5 | verifier | haiku | 統合 grep 検証一式の定型実行 | |
+| change-5 | reviewer | inherit | リポジトリ全体整合の最終レビュー | |
 
 ## 画面・UI設計
-該当なし（Markdown プラグイン集リポジトリ。UI 成果物は生成しない）
+該当なし（CLI プラグイン。UI 成果物は生成しない）
 
 ## データモデル
-該当なし。構造的整合性制約は (1) marketplace.json ↔ 各 plugin.json の version 一致、(2) 新設する `plugins/infra/schemas/phase-result.schema.json` ↔ 各フェーズ agent の返却構造の一致、の 2 点
+- `feature-list.json` ↔ `plugins/longrun/schemas/feature-list.schema.json`（change-1 の真のソース）
+- `evals/scenarios.md` ↔ `plugins/skill-eval/schemas/scenario.schema.json`
+- `.claude/verify-gate.json`（対象プロジェクト側のゲート設定）
+- marketplace.json ↔ 各 plugin.json の version 一致
 
 ## 受け入れ条件
 
 **必須条件（常に含める）:**
 1. [ ] 全changeのOpenSpec仕様が作成・レビュー済み
 2. [ ] 全changeのテストが作成され全てPASSしている（`find plugins -name '*.bats' -print0 | xargs -0 bats`）
-3. [ ] ビルドエラーなし（全 workflow テンプレ・.mjs の `node --check` PASS + 全 *.json の JSON parse PASS）
-4. [ ] 統合テストがPASS（worktreeマージ後、下記 5-14 の機械検証を main 上で再実行して全 PASS）
+3. [ ] ビルドエラーなし（全 .sh の `bash -n` PASS + .mjs の `node --check` PASS + 全 *.json の JSON parse PASS）
+4. [ ] 統合テストがPASS（worktreeマージ後、下記 5-13 を main 上で再実行して全 PASS）
 
 **機能固有の条件:**
-5. [ ] 全 SKILL.md / agents の frontmatter description に一人称表現（"I can" / 「私が」等）が無い: `grep -rn '^description:.*\bI can\b' plugins/` が 0 件
-6. [ ] `plugins/worktree/.claude-plugin/plugin.json` の description が 2 文以内（複数段落ブロブの解消）
-7. [ ] `grep -rn "/tmp/infra-setup-state" plugins/infra/` が 0 件、`plugins/infra/schemas/phase-result.schema.json` が存在し JSON parse PASS、全 5 フェーズ agent が同 schema を参照している
-8. [ ] `plugins/weekly-report/agents/` に compactor agent が存在し、その定義に objective / output format / tool guidance / task boundaries の 4 節がある。SKILL.md 本体に jsonl 直読の jq 手順が残っていない
-9. [ ] longrun の builder/verifier/reviewer 系 agent 定義すべてに委譲契約 4 点（objective / output format / tool guidance / task boundaries）が確認できる
-10. [ ] longrun の verifier 系ドキュメントに「evidence 提示」原則と verify 三層（rules-based / visual / LLM-judge）の記述があり、reviewer 系プロンプトに「correctness / 要件に関わるもののみ flag」の記述がある
-11. [ ] `plugins/*/skills/*/SKILL.md` に 500 行以上のファイルが無い: `find plugins -path '*/skills/*/SKILL.md' | xargs wc -l | awk '$1>=500 && $2!="total"'` が 0 件
-12. [ ] wt-clean の squash マージ検出（検証A/B/C）と AskUserQuestion 後別ターン実行の禁則文言が変更前と同一内容で存在する（diff で確認）
-13. [ ] plugin 外への相対参照が無い: `grep -rn '\.\./\.\./' plugins/*/skills/ plugins/*/commands/ plugins/*/agents/` で plugin ルートを越える参照が 0 件
-14. [ ] 編集した全プラグインで plugin.json の version が bump され、marketplace.json の対応エントリと version・description が一致する
+5. [ ] `plugins/longrun/scripts/session-loop.sh` が存在し、停止条件 3 種（セッション上限・全項目PASS・連続失敗上限）が bash 条件式として grep で確認できる
+6. [ ] `plugins/longrun/schemas/feature-list.schema.json` が存在し JSON parse PASS。テンプレート 2 種（init / feature セッション）が `plugins/longrun/templates/session-loop/` に存在する
+7. [ ] デモタスク（3 項目以上の feature-list）を session-loop で 2 セッション以上に分けて完走し、feature-list.json の全項目が evidence 付きで `passes:true` になったログが `{longrun-dir}` に残っている
+8. [ ] `/longrun:loop` と `/lr:l` のコマンドが存在し、exec.md と README に exec / loop の使い分けが記載されている
+9. [ ] `plugins/skill-eval/` が存在し、run / ab / trigger の 3 コマンドと scenario.schema.json を持つ。このリポジトリ内の実スキル 1 つ以上に `evals/scenarios.md`（3 シナリオ以上）が作成され、`/skill-eval:run` の結果ファイルが生成できる
+10. [ ] `/e2s:tune` コマンドが存在し、(a) 自動書き換えをしない（diff 提示→承認フロー）、(b) 対象セッション 0 件時にデータ不足で終了する、の 2 点が定義に明記されている
+11. [ ] `plugins/verify-gate/` が存在し、Stop hook / PreToolUse hook / setup スキルを持つ。設定ファイルが無い環境で両 hook が no-op であることが bats で検証されている
+12. [ ] verify-gate の Stop hook に連続ブロック回数上限とタイムアウトがコードとして存在する
+13. [ ] 新設 2 プラグインが marketplace.json に登録され、編集した全プラグインで plugin.json version が bump され marketplace.json と一致する
 
 ## 意思決定ガイドライン
-- 優先順位: 安全性（安全ゲートを弱めない・機能を壊さない） > 公式基準準拠 > トークン効率 > 網羅性
-- リスク許容度: 保守的。特に change-5 の語調調律は「迷ったら現状維持」。削除・書き換えは git tracked の状態で行う
-- 不明点の扱い: 公式基準の解釈に迷ったら `research/` の一次ソース資料を再読する。それでも曖昧なら「現状維持 + decisions.md に論点記録」に倒す
-- 過剰反映の抑制: 公式ナレッジの反映自体が overengineering にならないこと。「この行を消すと agent がミスするか？」を全追記に適用する（Claude Code best practices の CLAUDE.md 基準を plugin 指示文にも準用）
-- スコープ外事項の発見: 実装中に見つけた改善候補（skill 評価スイート等）は実装せず `openspec/backlog.md` に記録する
+- 優先順位: 安全性（暴走・課金・停止不能ループの防止） > 公式アーキテクチャへの忠実さ > シンプルさ > 機能の豊富さ
+- リスク許容度: change-1 と change-4 は保守的に（headless 課金実行と hook は影響が大きい）。change-2 / 3 は MVP 割り切りで小さく作る
+- 不明点の扱い: 公式アーキテクチャの解釈に迷ったら `research/claude-code-official.md` §7（harnesses 論文の要点）と `research/gap-analysis.md` を再読。それでも曖昧なら「小さく作って decisions.md に論点記録」に倒す
+- 各機構は独立に価値が出る MVP を優先し、相互連携（e2s-tune → skill-eval 等）は疎結合のオプションに留める
+- 実装中に見つけた拡張候補（CI 統合・任意リポジトリ対応等）は実装せず `openspec/backlog.md` に記録する
 
 ## 動作確認方法
-- 開発サーバー: なし（Markdown プラグイン集。アプリケーションではない）
-- テスト: `find plugins -name '*.bats' -print0 | xargs -0 bats` / `node --check <各 .mjs / レンダリング済み workflow .js>`
+- 開発サーバー: なし
+- テスト: `find plugins -name '*.bats' -print0 | xargs -0 bats` / `bash -n plugins/*/scripts/*.sh` / hook への stdin JSON 注入テスト
 - 確認手順:
-  1. 受け入れ条件 5-14 の各 grep / find コマンドを実行し全て期待値になることを確認
-  2. `node plugins/longrun/scripts/render-workflow.mjs` でテンプレをレンダリングし `node --check` が通ることを確認
-  3. マージ後、新しい Claude Code セッションで `/reload-plugins` を実施し、スキル一覧の description が更新されていることを確認
-  4. `/wt-clean`（引数なし・選択画面まで）、`/daily-report --help` 相当、`/lr:p` 起動で各プラグインが壊れていないことを smoke 確認
-  5. weekly-report を過去週に対して実行し、隔離前と同等のレポートが生成されることを確認
+  1. 受け入れ条件 5-13 の各検証コマンドを実行し全て期待値になることを確認
+  2. **session-loop デモ**: 小さなデモリポジトリ（または本リポジトリの安全なサンドボックス dir）で 3 項目の feature-list を作り、`session-loop.sh` をセッション上限 4 で実行 → 完走・commit 履歴・progress notes を確認。次に故意に 1 項目の検証コマンドを失敗させ、連続失敗上限で停止することを確認
+  3. **skill-eval デモ**: 既存スキル 1 つに scenarios.md を書き `/skill-eval:run` → 結果ファイルとスコアを確認
+  4. **verify-gate デモ**: サンドボックスプロジェクトで `/verify-gate:setup` → わざとテストを壊して Stop がブロックされること、設定削除で no-op に戻ることを確認
+  5. マージ後、新セッションで `/reload-plugins` → `/plugin install skill-eval@oratta-claude-harness` 等で新プラグインが見えることを確認
 
 ## Brain Dumpからの原文メモ
 > /goal Anthropic公式ナレッジ調査→claude-harness実装 goal指示書
 >
-> （解釈: Anthropic 公式のエージェント構築ナレッジ（論文・エンジニアリングブログ・公式ドキュメント）を調査し、この claude-harness リポジトリへの実装計画を goal 指示書としてまとめる。調査は並列 3 エージェントで実施し、結果は research/ に永続化した）
+> （初版への フィードバック）loopに関してはなんかなかった？今、ちょっと思ったのと違うのは、既存のものをどう活かしてほしいわけじゃなくて、アンソロピックはこういう風に使うべきだって言ってるけども、普通に使ってるだけじゃ実現できないものみたいなものをハーネスとして追加したいっていうふうになってたんで、そういう動き方できてたんでしょうか。
+>
+> （解釈: 既存プラグインの品質監査ではなく、「公式推奨 − 素の Claude Code の標準機能 = ギャップ」を新しいハーネス機構として実装する。ギャップ分析は research/gap-analysis.md に、既存資産監査は plan-b-existing-audit.md に分離）
 
 ---
 
-## 付録: 公式ナレッジ → 実装対応表（一次ソース要約）
+## 付録: 各 change の公式ナレッジ根拠（一次ソース要約）
 
-builder はこの付録と `research/*.md` を実装仕様の一次ソースとして使うこと（調査セッションのコンテキストは実行時に存在しない）。
+### 付録 A: change-1 (session-loop) の根拠
+`research/claude-code-official.md` §7「長時間エージェントのハーネス」（effective-harnesses-for-long-running-agents、本文直接確認済み）:
+- 「**compaction だけでは不十分**。セッションをまたぐ一貫性は、外部状態ファイル + git で担保する」
+- 「**init エージェント**（初回のみ環境セットアップ）と **coding エージェント**（以降、段階的に前進）を、同じツール・異なるプロンプトで分ける」
+- 「状態の外部化: 機能リストファイル（JSON で `passes:false` 列挙）、`init.sh`、`claude-progress.txt`、初期 git commit」
+- 「**1セッション1機能**に限定して過剰実装を防ぐ。セッション末に説明的な git commit」
+- 「丁寧なテスト後にのみ `passing` を立てる。セッション開始時に基本機能の動作確認をしてバグを早期検出」
 
-### 付録 A: change-1 (description-audit) の根拠
-- **Skill authoring best practices**（`research/anthropic-agent-knowledge.md` ソース10）: description はトリガー精度を決める最重要フィールド。**必ず三人称**（システムプロンプトに注入されるため）・「何をするか＋いつ使うか」の両方・具体的キーワード・最大1024字。曖昧名（helper/utils）回避。Claude は 100+ スキルから description だけで選ぶ。
-- **Subagents 公式Doc**（`research/claude-code-official.md` §2）: agent description には**委譲トリガー**を書く（例: "Expert code reviewer. Use proactively after code changes."）。範囲は狭く具体的に。
-- **context engineering**（ソース5）: トリガー条件が重複するスキルは bloated tool set 問題を起こす。「人間がどのツールを使うか断定できないなら AI にも無理」。
-- **現状の問題**（`research/repo-survey.md` 弱点C）: `plugins/worktree/.claude-plugin/plugin.json` の description が複数段落の巨大ブロブで marketplace.json にも重複コピーされ、全セッションでトークンを消費。lr 6.2.0 vs longrun 6.3.0 のバージョン非同期。
+`research/anthropic-agent-knowledge.md` ソース11（prompting）: 「トークン残量を理由に早期終了するな、限界前に progress を保存せよ」「`tests.json` で構造化テスト管理（テスト削除禁止を明記）」「状態追跡は git（最新モデルは git での複数セッション跨ぎ状態管理が得意）」
 
-### 付録 B: change-2 (infra-structured-output) の根拠
-- **multi-agent research**（ソース2）: サブエージェントには objective / **output format** / tool guidance / task boundaries を明示。曖昧だと重複・欠落が起きる。
-- **writing-tools**（ソース3）: エラーメッセージは不透明コードでなく「具体的で実行可能な改善」を返す。返り値は高シグナルのみ。
-- **Plugins 公式Doc**（`research/claude-code-official.md` §4）: 永続データは `${CLAUDE_PLUGIN_DATA}`（plugin update で消えない領域）。plugin 外パスのハードコードはキャッシュ配布で壊れる。
-- **現状の問題**（repo-survey 弱点A・B）: `plugins/infra/agents/infra-phase-*.md` は構造化出力契約がなく `/tmp/infra-setup-state.md` 直書きの散文で状態を受け渡す。longrun が v6.0.0 で廃止した「散文パース」方式の真逆。longrun の `schemas/{builder-report,verifier-score,reviewer-verdict}.schema.json` + 「schema は外部ファイルが唯一のソース」GATE が流用元。
+素の Claude Code とのギャップ: /loop・cron・auto memory・compaction はあるが、「fresh context のセッションを外部状態から再開させる駆動ループ」「passes の evidence 管理」「1セッション1機能の強制」は全て自前実装が必要（gap-analysis #1）。longrun の resumeFromRunId same-session 制約（repo-survey 弱点H）もこの機構が実質解となる。
 
-### 付録 C: change-3 (weekly-report-isolation) の根拠
-- **context engineering**（ソース5）: サブエージェントは「親のコンテキストを汚さない関心の分離装置」。クリーンなコンテキストで探索し **1,000〜2,000 トークンの凝縮サマリ**を返す。
-- **Claude Code best practices**（ソース9）: 調査・大量データ処理はサブエージェントに委譲し、メインコンテキストを保護する。
-- **現状の問題**（repo-survey 弱点E）: weekly-report は agent 0 本で jsonl 直読・集約をメインコンテキストで実行。daily-report が確立した隔離パターン（`agents/llm-log-compactor.md`: 生データを閉じ込め voice.md/dailyLLM.md だけ返す、最終 message は STATUS line 1 行）と非対称。
-- **委譲契約**（ソース2）: 新設 agent には objective / output format / tool guidance / task boundaries の 4 点を明記。
+### 付録 B: change-2 (skill-eval) の根拠
+- ソース10（skill authoring）: 「**広範なドキュメントを書く前に評価を作れ**。skill なしで実行しギャップ記録 → 3シナリオ評価 → ベースライン測定 → 最小限の命令 → 反復」「**Claude A/B 法**（設計役 A とフレッシュ実使用役 B を交互）」
+- ソース2（multi-agent）: 「評価は約20クエリの小規模から始めよ。LLM-as-judge（0.0〜1.0、ルーブリック=factual accuracy/citation/completeness/source quality/tool efficiency）」
+- ソース6（Agent Skills）: 「Claude 視点で name/description を**実使用ログで磨く**」
+- 素の Claude Code とのギャップ: 評価の機構は一切なく全て手動（gap-analysis #2）。
 
-### 付録 D: change-4 (longrun-paper-alignment) の根拠
-- **effective-harnesses-for-long-running-agents**（`research/claude-code-official.md` §7、直接確認済み）: compaction だけでは不十分。外部状態ファイル + git で一貫性担保。**1セッション1機能**で過剰実装を防ぐ。セッション末に説明的 commit。検証は人間と同じ E2E で、丁寧なテスト後にのみ passing を立てる。→ longrun は既にほぼ同型。論文の語彙で明文化し一次ソースに接続する。
-- **Agent SDK**（ソース4）: verify は rules-based ＋ visual ＋ LLM-judge の**三層**。longrun の verifier（品質/完成度）+ browser-verifier（機能性/UX）分担を三層の語彙で説明する。
-- **Claude Code best practices**（ソース9）: 「成功した」と主張させず **evidence**（テスト出力・exit code・スクショ）を提示させる。**敵対的レビューは correctness / 要件に関わるもののみ flag**（レビュアーは健全でも何か報告しようとするため過剰エンジニアリングを誘発する）。
-- **multi-agent research**（ソース2）: エージェントはチャットの約4倍、マルチエージェントは約15倍のトークン消費。**努力量スケーリングルールをスキル内に明記**して過剰 fan-out を防ぐ（初期版は単純クエリに 50 サブエージェントを生成する暴走をした）。
-- **Prompting best practices**（ソース11）: 「トークン残量を理由に早期終了するな、限界前に progress を外部保存せよ」を明示。状態追跡は git が得意。
-- **現状の問題**（repo-survey 弱点G）: frontmatter `model: opus` と実行時 `opts.model` の優先順位が読めない。1 行の明記で解消。
+### 付録 C: change-3 (e2s-tune) の根拠
+- ソース2（multi-agent）: 「Claude 自身に失敗を診断させツール説明を書き換えさせ、**完了時間40%短縮**を達成」
+- ソース3（writing-tools）: 「Agent 自身に評価トランスクリプトを分析させ改善提案させる（"with agents" の由来）」
+- 素の Claude Code とのギャップ: セッション jsonl はあるが、それを既存スキルの改善に還流する機構は無い。e2s は新スキル蒸留のみ（gap-analysis #3）。
 
-### 付録 E: change-5 (progressive-disclosure-slim) の根拠
-- **Skill authoring best practices**（ソース10）: SKILL.md 本文は **500 行未満**。**参照は SKILL.md から 1 階層のみ**（ネストすると部分読みで不完全になる）。**100 行超の参照ファイルには目次**。時限情報を避ける。「Claude は既に賢い」前提で既知のことは書かない（良い例≈50トークン、悪い例≈150トークン）。
-- **Agent Skills**（ソース6）: progressive disclosure 3層により、バンドルできるコンテキスト量は事実上無制限（読まれるまでコスト0）。→ 分割はペナルティなし。
-- **Prompting best practices**（ソース11）: **現行モデルは system prompt への反応が強く、旧来の「CRITICAL: You MUST…」は overtrigger する**ため通常語調に落とす。ただし本 plan の制約どおり安全ゲートは対象外。
-- **現状の問題**（repo-survey 弱点D）: `wt-clean` SKILL.md が 506 行で公式基準超過。daily-report(477)/longrun-plan(420) は基準内。
+### 付録 D: change-4 (verify-gate) の根拠
+- ソース9（Claude Code best practices）: 「拡張機能の責務: **hooks=毎回例外なく起きる決定論的アクション（CLAUDE.md は助言的、hook は保証）**」「ゲート強度4段階: プロンプト指示 < /goal 条件 < **Stop フックで決定論的ブロック** < 検証サブエージェント」「『成功した』と主張させず evidence 提示させる」
+- `research/claude-code-official.md` §3（hooks 公式仕様）: exit 2 + stderr でブロック、stdin JSON は 1 回のみ、出力上限、`${CLAUDE_PLUGIN_ROOT}` 参照。
+- 素の Claude Code とのギャップ: hooks 機構自体は本体にあるが、検証ゲートは毎回自前で書く必要があり、配布可能な hook pack が無い（gap-analysis #4）。
 
-### 付録 F: change-6 (plugin-hygiene-final) の根拠
-- **Plugins 公式Doc**（`research/claude-code-official.md` §4）: version bump しない内容変更はキャッシュのため他プロジェクトに反映されない（既知事故の公式裏付け）。plugin.json と marketplace.json 両方に version を書くと **plugin.json が無警告で優先**。plugin 内参照は `${CLAUDE_PLUGIN_ROOT}`、永続データは `${CLAUDE_PLUGIN_DATA}`。
-- **現行運用ルールの追認**: 調査の結論として、`~/.claude/rules/plugin-editing.md`（marketplace 版のみ編集・version 必須 bump・ローカルコピー禁止）と CLAUDE.md の Draft PR 運用は**公式仕様から導かれる正しい設計であり変更不要**。
-
-### 付録 G: 今回反映しない公式ナレッジ（backlog 候補）
-- **skill 評価スイート**: 「広範なドキュメントを書く前に評価を作れ」「3シナリオ評価 + Claude A/B 法」「約20クエリの LLM-as-judge」（ソース2・10）。→ 効果は大きいが工数大。`openspec/backlog.md` へ記録。
-- **Tool Use Examples**: 複雑パラメータのツール定義に利用例を添えると精度 72%→90%（ソース8）。→ 自作 MCP ツールを持たない本リポジトリでは適用面が薄い。将来 MCP を同梱する際の基準として記録。
-- **Stop hook による決定論的検証ゲート**: 「check を出せないなら ship しない」（ソース9）。→ longrun の verify は Workflow 内で機構化済みのため二重化しない。プロジェクト側 CI の将来課題として記録。
+### 付録 E: 今回対応しないギャップ（判定済み）
+- **defer_loading / Tool Search / Tool Use Examples**（gap-analysis #9）: API・本体提供済み。ハーネス不要
+- **compaction / auto memory / subagents / worktree**（#10）: 本体提供済み
+- **既存資産のコンテンツ品質**（#6〜8, #11〜12）: `plan-b-existing-audit.md` に分離済み。本 run 完了後に別 run で実施可
