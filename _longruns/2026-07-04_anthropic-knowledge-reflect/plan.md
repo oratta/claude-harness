@@ -68,8 +68,9 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
   4. **選択フレームワーク reference**: `references/loop-types.md` に公式4タイプ表と使い分け・具体例を収録（`research/loop-engineering.md` 冒頭の要約を配布物化）
   5. **実行機構 reference**: `references/execution-mechanisms.md` — 定期実行の機構の使い分け表と設定手順。優先順位:
      - **① 常駐セッション + セッション内 cron（推奨）**: 常時起動している Claude Code セッション（例: ユーザーの AGENT/Pikke 運用）内で CronCreate / /loop により定時発火。**ローカルファイル（`~/.claude/projects/` jsonl 含む）にアクセスでき、サブスクリプション枠で動く**。ローカルデータを読むループはこれを第一候補とする
-     - **② launchd/cron + `claude -p`（フォールバック）**: 常駐セッションが無い環境向け。ローカル定時 headless 実行（同一ログイン認証のため通常はサブスク枠）。plist テンプレート + 登録/解除手順を同梱
-     - **③ /schedule（クラウド）**: リポジトリだけで完結する仕事専用。PC を閉じても動くが、**ローカルファイルは読めず、従量課金になる点に注意**を明記
+     - **② launchd/cron + `claude -p`（最終フォールバック・課金リスクあり）**: 常駐セッションが無い環境向け。**注意: OAuth のみの Max アカウントでも `claude -p` が API 従量課金される事故が報告されており（anthropics/claude-code issue #43333, #37686。2日で$1,800の事例あり）、さらに Anthropic は headless / Agent SDK をサブスク枠から切り離し API 単価の別クレジットに移す変更を公表済み（2026-06-15 予定→一時停止中）**。使う場合は課金モニタリング必須である旨をレシピに明記する
+     - **③ /schedule（クラウド）**: リポジトリだけで完結する仕事専用。PC を閉じても動くが、**ローカルファイルは読めず、サブスク枠外の課金になる点に注意**を明記
+     - まとめ: **サブスク枠で確実に動くのは常駐セッション内の実行のみ**。ローカルデータ系・定期系のループは全て①に寄せる
 - **使用スキル**: なし（longrun の plan-interview-methodology.md を参照流用）
 - **依存関係**: 独立（change-2〜4 の前提）
 - **config.yaml rules**:
@@ -111,7 +112,7 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
 - **スコープ**: 公式の合成パターン（/schedule + /goal + 動的ワークフロー + オートモード）で、人間不在で回るルーチンを 3 本実装する。
   1. **backlog 消化ルーチン** `recipes/routine-backlog-triage.md`: /schedule（日次等）で起動 → discovery: `openspec/backlog.md` と open issues から着手可能タスクを選定（1 サイクルの処理数上限をレシピに明記）→ worktree を切って実装（第一エージェント）→ /code-review 相当の第二エージェントレビュー（公式品質プラクティス「第二エージェントによるレビュー」）→ **Draft PR まで**（マージは人間）→ state 更新（処理済み / 繰り越し / 引き継ぎ待ち）。/goal で「このサイクルで選定したタスクが全て Draft PR または凍結記録に到達するまで」を停止基準化
   2. **長期ビルドルーチン** `recipes/routine-long-build.md`: harnesses 論文の外部状態設計をネイティブ合成で実現。前提: `{longrun-dir}/feature-list.json`（`{id, description, verification, passes:false}`、項目・テスト削除禁止）と `claude-progress.md`。/schedule または手動再起動で 1 サイクル = 「smoke check（直近 passing 項目の検証再実行）→ `passes:false` の先頭 1 項目のみ実装 → verification コマンドの exit 0 evidence がある場合のみ `passes:true` 更新 → 説明的 commit → progress 追記」。/goal「全項目 passes:true、ただし同一項目 2 連続 FAIL で凍結して人間へ」を停止基準化。feature-list の形式は `plugins/loops/references/feature-list-format.md` に記載（schema 強制はしない）
-  3. **レシピ採掘・更新ルーチン（メタループ）** `recipes/routine-recipe-miner.md`: ハーネス自身を実使用ログで改善し続けるループ。トリガー: **常駐セッション内の cron（週1）を第一候補**（`~/.claude/projects/` の jsonl を読むためローカル実行必須・サブスク枠で動く。常駐セッションが無い場合は launchd + `claude -p` にフォールバック。/schedule はローカルファイル不可のため使えない。詳細は change-1 の execution-mechanisms.md）。1サイクル = discovery: 直近7日のセッション jsonl をサブエージェントで圧縮解析（daily-report の llm-log-compactor の jq パターン流用。生ログをメインに載せない）し、(a) 同型依頼の3回以上の反復=ループ化候補、(b) 修正→テスト→修正の長い往復=/goal 化候補、(c) 定時性のある依頼=/schedule 化候補、(d) 既存レシピの実行痕跡=停止基準・頻度の実測チューニング候補、を抽出 → 生成: /loops:design の検査（停止基準必須・Bad Loop 検査）を通したレシピ新規案/更新 diff（**1サイクル最大3件**）→ 出力: この marketplace リポジトリへ **Draft PR**（自動 merge 禁止。レシピの採否は人間）→ persistence: state に提案済み/見送り理由/繰り越し候補を記録。候補ゼロなら「提案なし」で正常終了
+  3. **レシピ採掘・更新ルーチン（メタループ）** `recipes/routine-recipe-miner.md`: ハーネス自身を実使用ログで改善し続けるループ。トリガー: **常駐セッション内の cron（週1）を第一候補**（`~/.claude/projects/` の jsonl を読むためローカル実行必須・サブスク枠で動く。launchd + `claude -p` は課金リスクがあるため最終フォールバック扱い。/schedule はローカルファイル不可のため使えない。詳細は change-1 の execution-mechanisms.md）。1サイクル = discovery: 直近7日のセッション jsonl をサブエージェントで圧縮解析（daily-report の llm-log-compactor の jq パターン流用。生ログをメインに載せない）し、(a) 同型依頼の3回以上の反復=ループ化候補、(b) 修正→テスト→修正の長い往復=/goal 化候補、(c) 定時性のある依頼=/schedule 化候補、(d) 既存レシピの実行痕跡=停止基準・頻度の実測チューニング候補、を抽出 → 生成: /loops:design の検査（停止基準必須・Bad Loop 検査）を通したレシピ新規案/更新 diff（**1サイクル最大3件**）→ 出力: この marketplace リポジトリへ **Draft PR**（自動 merge 禁止。レシピの採否は人間）→ persistence: state に提案済み/見送り理由/繰り越し候補を記録。候補ゼロなら「提案なし」で正常終了
   4. 全ルーチンの動作確認をこのリポジトリ（または安全なサンドボックス）で 1 サイクル実施
 - **使用スキル**: worktree（隔離）、loops の State 規約、/loops:design（miner の生成検査）
 - **依存関係**: change-1, change-3（/goal レシピの流用。miner はシードレシピの存在が前提）
