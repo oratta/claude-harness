@@ -71,6 +71,11 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
      - **② launchd/cron + `claude -p`（最終フォールバック・課金リスクあり）**: 常駐セッションが無い環境向け。**注意: OAuth のみの Max アカウントでも `claude -p` が API 従量課金される事故が報告されており（anthropics/claude-code issue #43333, #37686。2日で$1,800の事例あり）、さらに Anthropic は headless / Agent SDK をサブスク枠から切り離し API 単価の別クレジットに移す変更を公表済み（2026-06-15 予定→一時停止中）**。使う場合は課金モニタリング必須である旨をレシピに明記する
      - **③ /schedule（クラウド）**: リポジトリだけで完結する仕事専用。PC を閉じても動くが、**ローカルファイルは読めず、サブスク枠外の課金になる点に注意**を明記
      - まとめ: **サブスク枠で確実に動くのは常駐セッション内の実行のみ**。ローカルデータ系・定期系のループは全て①に寄せる
+  6. **常駐セッションでの登録・復元機構**: セッション内 cron の実体は「発火時に注入されるプロンプト文字列」であり、作業ロジックはプラグイン同梱スキル側に置く。同梱物:
+     - **`/loops:enable <レシピ名>`**: レシピの schedule と発火プロンプト（例: `Skill(loops:mine) を1サイクル実行し state を更新`）を読んで CronCreate を実行し、**レジストリ** `loops/state/registry.md`（登録済みループ・cron 式・登録日）に記録する
+     - **`/loops:disable <レシピ名>`**: CronDelete + レジストリ更新
+     - **SessionStart hook**（`hooks/hooks.json`）: セッション起動時にレジストリと CronList を照合し、消えている cron があれば additionalContext で再登録を促す（**セッション再起動でループが自動復旧する**ための機構。「登録済みであるべき台帳」はファイルが記憶する）
+     - 実装時の検証必須項目: (a) CronCreate がセッション再起動・compaction を跨いで生存するか実測（生存するなら hook は保険、消えるなら必須）、(b) enable スキルの `allowed-tools` に CronCreate/CronDelete/CronList を含めて権限プロンプトなしで動くか、(c) 発火プロンプトのスラッシュ形式（`/loops:mine`）でスキル起動が確実か（不確実なら Skill ツール明示の書式に倒す）
 - **使用スキル**: なし（longrun の plan-interview-methodology.md を参照流用）
 - **依存関係**: 独立（change-2〜4 の前提）
 - **config.yaml rules**:
@@ -172,7 +177,7 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
 4. [ ] 統合テストがPASS（worktreeマージ後、下記 5-15 を main 上で再実行して全 PASS）
 
 **機能固有の条件:**
-5. [ ] `plugins/loops/` が存在し、`/loops:design` スキル・`references/loop-types.md`・State テンプレート・レシピ形式規約を持つ
+5. [ ] `plugins/loops/` が存在し、`/loops:design`・`/loops:enable`・`/loops:disable` スキル・`references/loop-types.md`・State テンプレート・レシピ形式規約・SessionStart hook（レジストリ照合）を持つ。enable → CronList で登録確認 → セッション再起動 → hook による復元（または cron 生存の実測記録）→ disable の一連が動作確認されている
 6. [ ] 全レシピ（recipes/*.md）が固定見出し（ループ型 / 目的 / 起動コマンド / 停止基準 / 前提 / コスト注意 / エスカレーション）を持つことが grep で確認できる。停止基準の無いレシピが 0 件
 7. [ ] `plugins/loops/` に独自ランタイム（ループを回す常駐スクリプト・カスタム driver）が存在しない。レシピの起動コマンドが全てネイティブプリミティブ（/goal・/loop・/schedule・skill 起動）である
 8. [ ] 成果物を出す主要スキル（棚卸しリストは change-2 で確定、最低でも longrun-plan / wt-setup / wt-clean / daily-report / weekly-report / infra-setup / e2s-distill を含む）の SKILL.md に自己検証ステップ節がある
