@@ -20,6 +20,20 @@
 | 11 | 構造化出力契約（サブエージェント返却を schema で強制） | multi-agent | △（Workflow の opts.schema はあるが設計は自前） | ✅（longrun schemas/）、✗（infra 等未適用） | 既存監査（別トラック） |
 | 12 | プロンプト調律（強語調の overtrigger 対策・early-stop 抑制） | prompting | —（コンテンツ品質の問題） | △ | 既存監査（別トラック） |
 
+## 追補（2026-07-04 更新）: Loop Engineering
+
+初版のギャップ分析後、ユーザー指摘により **Loop Engineering**（2026-06 成立、Boris Cherny / Peter Steinberger / Addy Osmani。詳細は `loop-engineering.md`）を調査。上記 #1〜#4 を包含する上位概念であることが判明した。
+
+| # | 公式・業界推奨 | 出典 | 素のCC | 既存ハーネス | 判定 |
+|---|---|---|---|---|---|
+| 13 | **ループ定義の規約**: goal / trigger / discovery / generator / evaluator / stop / persist を1枚で宣言 | Osmani essay | ✗（部品はあるが規約が無い） | ✗ | **新機構** |
+| 14 | **State レイヤー**: STATE.md（現在の作業・前回の試行・引き継ぎ待ち） | Osmani essay | ✗ | △（longrun の decisions.md は run 内のみ） | **新機構** |
+| 15 | **discovery**: ループが仕事を自分で見つける（CI失敗・issue・backlog のトリアージ） | Osmani essay / Cherny | ✗ | ✗（longrun は人間が plan を書く起点） | **新機構** |
+| 16 | **generator/evaluator 分離の汎用部品**: 自分の成果物を自分で採点させない | Osmani essay | △（subagents はあるが自前設計） | △（longrun verifier は build 専用） | **新機構** |
+| 17 | **loop-audit / cost guardrails**: 停止条件・無進捗検出・予算の機械チェック | コミュニティ先行例 | ✗ | ✗ | **新機構** |
+
+→ **plan.md は Loop Engineering を中核に再構成**（#1 の外側セッションループは build loop として #13 の規約に載せ直し、#2〜#3 [skill-eval / e2s-tune] は「スキルを改善するループ」として loops 基盤の上に将来実装する方針に変更し backlog へ）。
+
 ## 結論
 
 **ハーネスとして新規追加すべきは #1〜#4 の 4 機構**。いずれも「公式が『こうすべき』と明言しているが、素の Claude Code の標準機能を普通に使うだけでは手に入らず、毎回自前で組むことになる」もの。
