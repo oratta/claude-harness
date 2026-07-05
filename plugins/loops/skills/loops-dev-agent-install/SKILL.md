@@ -46,7 +46,7 @@ gh repo view --json viewerPermission # push 権限があること
 | レート閾値 | 5時間枠 70% / 7日枠 85% |
 | 朝ダイジェスト時刻 | 7 時 |
 | 提案ストック上限 | 3 件 |
-| worktree 置き場 | `~/.superset/worktrees/<リポジトリ名>` |
+| worktree 置き場 | `~/orca/workspaces/<プロジェクト名>`（orca 標準） |
 
 ## Step 2: GitHub ラベルの作成
 
