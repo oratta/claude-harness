@@ -18,3 +18,26 @@
   - `REVIEWER_MODEL = null` — 表の全行が inherit。
 - 理由: plan.md の意思決定ガイドライン「安全性 > 忠実さ > シンプルさ」。ティア縮約はコスト面の劣化のみで品質面の劣化はない（下位ティア指定 change を上位で実行する方向の縮約）。
 - 備考: change 毎の `opts.model` 粒度対応はテンプレート側の将来課題（openspec/backlog.md 行き）。
+
+## D-1a: State 規約は独立 references 文書に置く（recipe-format には同梱しない）
+
+- 日付: 2026-07-05 / change: loops-plugin
+- 背景: spec（loops-state-convention）は「規約は `references/recipe-format.md` または独立した references 文書のいずれかに記載」と選択肢を許容。
+- 選択肢: (A) recipe-format.md に同梱 / (B) 独立 `references/state-convention.md` / (C) templates 側に規約も書く。
+- 判断: (B) 独立文書 `plugins/loops/references/state-convention.md`。
+- 理由: 関心の分離（レシピ形式と State は別概念で、参照する主体も異なる: State は change-4 のプロアクティブ/長期ループが参照）。YAGNI に反しない範囲で、recipe-format.md の肥大化を防ぎ、change-4 からの単一責務参照を可能にする。可逆（後で統合も分割も容易）。
+
+## D-1b: /loops:design・/loops:goalify は commands ではなく skills として登録
+
+- 日付: 2026-07-05 / change: loops-plugin
+- 背景: plugin.json に skills[] と commands[] の両方を書ける。他プラグイン（daily-report）は commands + skills 併用。
+- 選択肢: (A) skills のみ / (B) commands + skills 併用 / (C) commands のみ。
+- 判断: (A) skills のみ（`skills/loops-design`・`skills/loops-goalify`）。
+- 理由: proposal.md の Impact が列挙する新規ファイルは SKILL.md のみで commands/*.md は含まない（YAGNI: 最小構成に忠実）。スキルは自然言語トリガー（description）で起動でき、MVP スコープでは commands ラッパーは不要。反復利用で `/loops:xxx` の明示コマンドが欲しくなれば後付け可能（可逆）。
+
+## D-1c: 設計/goalify デモは plugins/loops/recipes ではなく longrun demos/ に出力
+
+- 日付: 2026-07-05 / change: loops-plugin
+- 背景: recipes/ ディレクトリと正式レシピ集は change-3 スコープ。change-1 のデモで recipes/*.md を作ると change-3 の器と混線する。
+- 判断: デモ生成物（recipe / goal ブリーフ / brain dump）は `_longruns/2026-07-04_anthropic-knowledge-reflect/demos/` に `*.demo.md` として置く。
+- 理由: 受け入れ条件 5.2/5.3 は「ログを {longrun-dir} に残す」ことを要求。change 間のスコープ汚染を避け（plugins/loops/ には正式成果物のみ）、demo は longrun 配下に隔離。

@@ -1,0 +1,5 @@
+loops プラグインの bats テストを全部通したい（目的）。
+成功基準: `find plugins/loops -name '*.bats' | xargs bats` が exit 0（全 ok）になること。
+停止条件: 最大 5 回まで試行、それでも通らなければ停止。
+スコープ境界: 触ってよいのは plugins/loops/ 配下のみ。テストファイル自体の削除・改変はしない。
+前提: bats はインストール済み。リポジトリの git root で実行。参照は openspec/changes/loops-plugin/ の spec。

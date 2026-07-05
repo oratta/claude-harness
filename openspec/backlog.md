@@ -56,3 +56,17 @@ OpenSpec change `wt-clean-remote-sync`（2026-05-13）で `wt-clean` に統合�
 - 参照: `openspec/changes/wt-clean-remote-sync/proposal.md`
 
 PR マージ後の片付けは `wt-clean`（または `wt-clean --keep`）を親リポ main から実行することで完結する。
+
+---
+
+## loops プラグイン: 廃案分の将来候補（change-1 タスク 5.5 記録）
+
+前版 plan（Loop Engineering コミュニティ解釈版）で設計したが、公式路線（ネイティブプリミティブの合成）への
+方針転換で廃案にした要素。将来価値がありうるため記録する。実装は「必要になってから」。
+
+- **レシピの機械検証（loop-audit 相当）**: `recipes/*.md` が固定見出し 7 項目と停止基準を持つことを bats/CI で機械検証する。
+  現状は Markdown 見出し規約のみ（schema 強制なし）。件数が増えて手動 grep が辛くなったら着手。
+- **レシピの schema 化**: `loop-definition.schema.json` によるレシピの構造化。公式は「ランタイムはネイティブ」路線のため
+  宣言的ランタイムは作らないが、**検証専用**の schema（実行はしない）なら価値がありうる。
+- **loop-cost 相当**: レシピ単位のトークン予算見積り・実測の突き合わせ。`references/cost-guardrails.md`（change-5）の定量化。
+- **skill-eval / e2s-tune のループ化**: 「スキルを改善するループ」を将来のレシピ追加（recipe-miner の生成対象）で対応。

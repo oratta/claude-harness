@@ -1,0 +1,3 @@
+loops プラグインの bats テストを全部通したい。
+成功したかどうかは `find plugins/loops -name '*.bats' | xargs bats` が全部 ok になれば OK。
+前提として bats はインストール済みで、リポジトリの git root で動かす。
