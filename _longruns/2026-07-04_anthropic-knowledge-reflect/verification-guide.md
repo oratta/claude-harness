@@ -930,191 +930,191 @@
 ### S115: [loops-cost-guardrails] 6 項目が数えられる形式で存在する
 - WHEN: ユーザーが `plugins/loops/references/cost-guardrails.md` のトークン管理セクションの項目（見出しまたは番号付きリスト）を数える
 - THEN: ちょうど 6 項目が列挙されている（`research/loop-engineering.md` 冒頭の公式記事セクションを一次ソースとする公式トークン管理ベストプラクティス 6 項目）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S116: [loops-cost-guardrails] 主要 3 項目の文言が確認できる
 - WHEN: ユーザーが `cost-guardrails.md` に対して「頻度」「スクリプト化」「パイロット」をそれぞれ grep する
 - THEN: 3 語すべてが 6 項目の記述内でヒットする（「ルーチン実行頻度を必要最小限にする」「決定論的作業はスクリプト化する」「大規模実行前にパイロット実行する」）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S117: [loops-cost-guardrails] 定量事実が記載されている
 - WHEN: ユーザーが `cost-guardrails.md` に対して「4倍」（または「約 4 倍」）と「15倍」（または「約 15 倍」）を grep する
 - THEN: 両方の倍率がループ / マルチエージェントのトークン消費に関する文脈でヒットする（「ループはチャットの約 4 倍のトークンを消費する」「マルチエージェント構成は約 15 倍のトークンを消費する」）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S118: [loops-cost-guardrails] レビュー手順に 2 コマンドが含まれる
 - WHEN: ユーザーが `cost-guardrails.md` に対して `/usage` と `/workflows` をそれぞれ grep する
 - THEN: 両コマンドがコストレビュー手順の記述内でヒットする（手順は「いつ確認するか（例: 新レシピのパイロット実行後・定常運用の定期見直し時）」を含む）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S119: [loops-cost-guardrails] モデル ID のハードコードが無い
 - WHEN: ユーザーが `cost-guardrails.md` に対して `claude-` で始まるモデル ID 文字列を grep する
 - THEN: ヒットは 0 件である（モデルティアへの言及は `plugins/longrun/references/model-tiers.md` への参照で行う）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S120: [loops-integration-verification] 統合テストが存在し全 PASS する
 - WHEN: ユーザーが `bats plugins/loops/tests/integration.bats` を実行する
 - THEN: 全テストケースが PASS し exit 0 で終了する（統合テストは grep / jq / find のみで構成され、(a) marketplace.json ↔ 各 plugin.json の version 完全一致、(b) 全レシピの固定見出し規約、(c) plugins/loops/ に独自ランタイムが存在しないこと、(d) README の loops セクションの存在、を検証する）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S121: [loops-integration-verification] リポジトリ全体の bats スイートが PASS する
 - WHEN: ユーザーが `find plugins -name '*.bats' -print0 | xargs -0 bats` を実行する
 - THEN: 全テストが PASS し exit 0 で終了する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S122: [loops-integration-verification] 固定見出しの横断 grep 検証が PASS する
 - WHEN: ユーザーが `plugins/loops/recipes/*.md` の各ファイルに対して 7 つの固定見出し（ループ型 / 目的 / 起動コマンド / 停止基準 / 前提 / コスト注意 / エスカレーション）の存在を grep で確認するループを実行する
 - THEN: 全レシピで 7 見出しすべてがヒットし、欠落は 0 件である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S123: [loops-integration-verification] 停止基準の無いレシピが存在しない
 - WHEN: ユーザーが `grep -L '停止基準' plugins/loops/recipes/*.md` を実行する
 - THEN: 出力は空である（停止基準見出しを持たないレシピが 0 件）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S124: [loops-integration-verification] 常駐スクリプト・driver が存在しない
 - WHEN: ユーザーが `plugins/loops/` 配下のスクリプトファイルを `find` で列挙し、反復実行・スケジューリングの自前実装（例: `while true`・sleep ループによる常駐処理）を grep で検査する
 - THEN: 該当するスクリプトは 0 件である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S125: [loops-integration-verification] 起動コマンドが全てネイティブプリミティブである
 - WHEN: ユーザーが全レシピの「起動コマンド」節からコマンド行を抽出する
 - THEN: すべての行が `/goal`・`/loop`・`/schedule` またはスラッシュコマンド（skill）起動のいずれかで始まり、独自 CLI やラッパースクリプトの呼び出しが 0 件である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S126: [loops-integration-verification] エビデンスログが残っている
 - WHEN: ユーザーが `{longrun-dir}` 配下の統合検証ログを開く
 - THEN: 全 bats 実行の出力（PASS 件数と exit 0）および version 一致・レシピ規約・ランタイム不在の各検証コマンドの実行結果が確認できる（「完了は主張であり証明ではない」原則に従い、エビデンスなしに受け入れ条件を PASS と報告しない）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S127: [loops-marketplace-sync] loops エントリが存在する
 - WHEN: ユーザーが `jq '.plugins[] | select(.name == "loops")' .claude-plugin/marketplace.json` を実行する
 - THEN: `source` が `./plugins/loops` であるエントリが 1 件返り、`description` と `version` が非空である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S128: [loops-marketplace-sync] loops の version が plugin.json と一致する
 - WHEN: ユーザーが `jq -r '.plugins[] | select(.name == "loops") | .version' .claude-plugin/marketplace.json` と `jq -r '.version' plugins/loops/.claude-plugin/plugin.json` の出力を比較する
 - THEN: 両者は文字列として完全一致する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S129: [loops-marketplace-sync] インストールコマンドで新プラグインが見える
 - WHEN: マージ後の新セッションでユーザーが `/plugin install loops@oratta-claude-harness` → `/reload-plugins` を実行する
 - THEN: `/loops:design`・`/loops:goalify` がスラッシュコマンド一覧に現れる
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S130: [loops-marketplace-sync] 全プラグインで plugin.json と marketplace.json の version が一致する
 - WHEN: ユーザーが marketplace.json の `plugins[]` 全エントリについて、`jq -r .version plugins/<name>/.claude-plugin/plugin.json` と marketplace.json 側の `version` を突き合わせるループを実行する
 - THEN: 全エントリで両者が完全一致し、不一致は 0 件である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S131: [loops-marketplace-sync] 編集済みプラグインの version が bump されている
 - WHEN: ユーザーが `git diff origin/main --name-only` で変更されたプラグインを特定し、各プラグインの plugin.json の `version` を `git show origin/main:plugins/<name>/.claude-plugin/plugin.json` の `version` と比較する
 - THEN: 変更された全プラグインで version が main 時点より上がっている（変更していないプラグインの version は bump しない）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S132: [loops-marketplace-sync] top-level version が上がっている
 - WHEN: ユーザーが `jq -r .version .claude-plugin/marketplace.json` の出力を `git show origin/main:.claude-plugin/marketplace.json | jq -r .version` と比較する
 - THEN: top-level version が main 時点より上がっている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S133: [loops-marketplace-sync] 全 JSON ファイルが parse できる
 - WHEN: ユーザーが `jq . .claude-plugin/marketplace.json` と、全プラグインの `jq . plugins/*/.claude-plugin/plugin.json` を実行する
 - THEN: 全ファイルが exit 0 で parse に成功する
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S134: [loops-readme-positioning] 4 ループタイプの名称が README に現れる
 - WHEN: ユーザーが `README.md` に対して「ターンベース」「ゴールベース」「タイムベース」「プロアクティブ」の 4 語をそれぞれ grep する
 - THEN: 4 語すべてが loops プラグインのセクション内でヒットする
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S135: [loops-readme-positioning] 公式記事リンクが記載されている
 - WHEN: ユーザーが `README.md` に対して `https://claude.com/blog/getting-started-with-loops` を grep する
 - THEN: 1 件以上ヒットする
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S136: [loops-readme-positioning] インストールコマンドが記載されている
 - WHEN: ユーザーが `README.md` に対して `/plugin install loops@oratta-claude-harness` を grep する
 - THEN: 1 件以上ヒットする
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S137: [loops-readme-positioning] 詳細への導線がある
 - WHEN: ユーザーが README の loops セクションを読む
 - THEN: `plugins/loops/` への参照（パスまたはリンク）が記載されている（README は要約に留め、詳細は `plugins/loops/` および調査資料の `research/` に委ねる。ハーネスの責務は「ネイティブプリミティブの合成レシピ」であり独自ランタイムではない旨を 1 文で示し、定期実行のスケジューラ登録手順は README に書かない）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S138: [loops-readme-positioning] レシピ本文が README に複製されていない
 - WHEN: ユーザーが `README.md` に対してレシピ固定見出し（「## 停止基準」「## エスカレーション」等のレシピ規約見出し）を grep する
 - THEN: ヒットは 0 件である（README にはレシピの固定見出し構造が現れない）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了

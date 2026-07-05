@@ -1,0 +1,69 @@
+# loops-integration (change-5) 統合検証エビデンス
+生成: 2026-07-05T02:27:33Z
+commit: 5fb4901
+merge-base(main 時点の基準, D-5a): cb9f2f0
+
+## 1. 全 bats スイート: find plugins -name '*.bats' -print0 | xargs -0 bats
+  TOTAL=571  FAILS=0  EXIT=0  (全 PASS)
+    ok 569 S48: change is additive only vs merge-base
+    ok 570 S49: skills at or under 500 lines keep the section inline
+    ok 571 S50: skills over 500 lines split detail to references with a short section
+
+## 2. 統合テスト単体: bats plugins/loops/tests/integration.bats  (21/21 PASS, EXIT=0)
+    ok 1 S115: cost-guardrails token-management section lists exactly 6 numbered items
+    ok 2 S116: cost-guardrails names frequency, scripting, and pilot items
+    ok 3 S117: cost-guardrails states the ~4x and ~15x token facts
+    ok 4 S118: cost-guardrails documents /usage and /workflows review
+    ok 5 S119: cost-guardrails has no hardcoded claude- model id
+    ok 6 S122: all recipes have the 7 fixed headings (no missing)
+    ok 7 S123: no recipe is missing the stop-criteria heading
+    ok 8 S124: no runner scripts (.sh/.js/.py) under plugins/loops
+    ok 9 S124b: no while-true / sleep-loop resident processes in plugins/loops
+    ok 10 S125: every recipe startup section uses native primitives only
+    ok 11 S127: marketplace.json has a loops entry with source ./plugins/loops
+    ok 12 S128: loops version matches between marketplace.json and plugin.json
+    ok 13 S130: all marketplace plugins[] versions match their plugin.json
+    ok 14 S131: edited plugins have version bumped above merge-base
+    ok 15 S132: marketplace top-level version bumped above merge-base
+    ok 16 S133: marketplace.json and all plugin.json parse
+    ok 17 S134: README names all 4 loop types
+    ok 18 S135: README links the official loops article
+    ok 19 S136: README has the loops install command
+    ok 20 S137: README points to plugins/loops/ for details
+    ok 21 S138: README has no recipe fixed-heading structure
+
+## 3. 全 JSON parse (jq)
+  marketplace.json: parse OK (exit 0)
+  plugin.json: 9 件すべて parse OK
+
+## 4. version 一致 (plugin.json <-> marketplace.json)
+  longrun              marketplace=6.3.1    plugin=6.3.1    OK
+  lr                   marketplace=6.2.0    plugin=6.2.0    OK
+  worktree             marketplace=2.2.1    plugin=2.2.1    OK
+  weekly-report        marketplace=1.1.1    plugin=1.1.1    OK
+  daily-report         marketplace=0.3.2    plugin=0.3.2    OK
+  infra                marketplace=0.3.1    plugin=0.3.1    OK
+  experience-to-skill  marketplace=0.3.1    plugin=0.3.1    OK
+  skill-pack           marketplace=0.2.0    plugin=0.2.0    OK
+  loops                marketplace=0.5.0    plugin=0.5.0    OK
+  top-level: 2.11.0  (merge-base: 2.9.0)
+
+## 5. bump 検証 (本 run 変更プラグイン vs merge-base)
+  daily-report         0.3.1 -> 0.3.2
+  experience-to-skill  0.3.0 -> 0.3.1
+  infra                0.3.0 -> 0.3.1
+  longrun              6.3.0 -> 6.3.1
+  loops                (new) -> 0.5.0
+  weekly-report        1.1.0 -> 1.1.1
+  worktree             2.2.0 -> 2.2.1
+
+## 6. レシピ規約横断 (停止基準欠落)
+  grep -L 停止基準 recipes/*.md 出力: '' (空=欠落0件)
+  recipes 総数: 9
+
+## 7. 独自ランタイム不在
+  find (.sh/.js/.py) 出力: '' (空=0件)
+
+## 8. loops エントリ登録
+  source: ./plugins/loops
+  bundle 'all' に loops: 1 件
