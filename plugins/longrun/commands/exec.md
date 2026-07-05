@@ -20,8 +20,20 @@ JSON Schema（StructuredOutput）で機構的に表現する。
 
 `/longrun:exec` および `/lr:e` は **ユーザーが起動した slash command** である。Workflow ツールの
 「ユーザーが起動した slash command の指示で呼ぶ」要件に該当するため、Workflow の起動について
-**追加の確認ダイアログは不要**。Step 0 の権限モード検査と承認ゲート（Build Contract / Feedback
-Tier）以外で、Workflow 起動そのものをユーザーに確認し直す必要はない。
+**追加の確認ダイアログは不要**。
+
+## 停止ポリシー（v6.4: ノンストップ実行）
+
+exec は「plan 承認済みの計画を自律実行する」コマンドであり、**ユーザーへの質問（AskUserQuestion）で
+実行を止めてよいのは以下の場合のみ**:
+
+1. **権限モードが `acceptEdits` 未満**（Step 0a。放置すると run 全体が承認ダイアログ地獄になる事故防止）
+2. **preflight が `NO_CLI` / `NO_INIT`**（Step 0b。環境が期待状態でないときのセットアップ分岐）
+3. **reviewer が `REQUEST_CHANGES` を返した**（Step 3。計画に問題が見つかったときだけ人間の判断を仰ぐ）
+
+上記以外の分岐（preflight `OK` 時の動作モード、reviewer `APPROVE` 時の続行、再開 vs 新規、
+フィードバック待ち）は**質問せずデフォルトで自動続行する**。判断の記録は decisions.md /
+checkpoint.md に残し、事後に監査可能にする。
 
 ---
 
@@ -63,14 +75,18 @@ preflight スクリプトを実行して結果を読むこと。コマンドを�
    のいずれか。**この出力（実行したコマンドと結果）を checkpoint.md の「ツール検証結果」に
    人間向け監査ログとして記録する。**
 
-2. **結果に応じて AskUserQuestion で動作モードを確定する**:
+2. **結果に応じて動作モードを確定する**（v6.4: `OK` なら質問しない）:
 
-   - **`OK`（CLI 解決可・openspec init 済み）** → 動作モード確認 AskUserQuestion を表示する。
-     preflight が OK でも縮退選択肢を常時含める（「OpenSpec 不要」の明示的 opt-out 手段）:
-     - 選択肢A: **通常モード（OpenSpec あり）** ← デフォルト（Enter 即決）
-     - 選択肢B: **縮退モード（OpenSpec を使わない）**
+   - **引数に `--degraded` フラグがある場合** → preflight 結果に関わらず**質問なしで縮退モード即決**。
+     これが「OpenSpec を使わない」の明示的 opt-out 手段（旧: OK 時の動作モード確認 AskUserQuestion。
+     v6.4 で質問は廃止され、opt-out はこのフラグに移った）。preflight 自体は監査ログのため実行する。
 
-   - **`NO_CLI`（CLI が解決できない）** → 縮退モード提案 AskUserQuestion を表示する:
+   - **`OK`（CLI 解決可・openspec init 済み）** → **AskUserQuestion を出さず通常モードで即続行する**。
+     「通常モード（OpenSpec あり）で実行します。OpenSpec を使わない場合は `--degraded` を付けて
+     再実行してください」の 1 行を表示するのみで停止しない。
+
+   - **`NO_CLI`（CLI が解決できない）** → 縮退モード提案 AskUserQuestion を表示する（環境が期待
+     状態でないため停止が正当）:
      - 選択肢A: **縮退モードで実行する**（spec 類を `_longruns/<run>/` 内に自己完結生成）
      - 選択肢B: **中断して OpenSpec をセットアップする**（下記セットアップ案内を出して exec 終了）
 
@@ -112,8 +128,13 @@ preflight スクリプトを実行して結果を読むこと。コマンドを�
    - 依存関係に基づく直列／並列の構造
    - （存在すれば）モデル割り当て表 — 本 change のスコープ外だが、生成スクリプトが `opts.model` を
      受け取れる構造を妨げない（change-4 で消費する。表が無ければ全 inherit）
-3. ランディレクトリに既存の `checkpoint.md` / runId 記録（後述 Step 4 の `workflow-runs.jsonl`）が
-   ある場合は、**Step 5 の再開フロー**に分岐するか新規開始するかを確認する。
+3. ランディレクトリに既存の runId 記録（後述 Step 4 の `workflow-runs.jsonl`）がある場合は、
+   **質問せず機械的に判断する**（v6.4）:
+   - 記録された runId が**本セッションで起動したもの**（この会話の中で Workflow を起動した記憶がある /
+     直前のコンテキストに起動応答がある）→ **Step 5 の再開フロー**（`resumeFromRunId`）へ自動分岐。
+   - それ以外（セッションをまたいでいる = resume 不可能。reference §5 same-session only）→
+     checkpoint.md / OpenSpec tasks.md の進行記録を参照して**未完了フェーズから新規 runId で
+     自動的に起動し直す**。どちらに分岐したかを 1 行報告する（確認は取らない）。
 
 ---
 
@@ -191,11 +212,12 @@ schema は外部ファイル（`plugins/longrun/schemas/*.schema.json`）を唯�
 
 ---
 
-## Step 3: Review workflow の起動 → Build Contract 承認ゲート（メインループに戻る）
+## Step 3: Review workflow の起動 → Build Contract 判定（APPROVE は自動続行）
 
 <GATE>
-Workflow 内の agent から AskUserQuestion は使えない（サブエージェント全般の制約）。承認ゲートは
-**workflow を分割してメインループに戻り AskUserQuestion → 次の workflow を起動**する（D5）。
+Workflow 内の agent から AskUserQuestion は使えない（サブエージェント全般の制約）。人間の判断が
+必要になった場合（REQUEST_CHANGES）は **workflow を分割してメインループに戻り AskUserQuestion →
+次の workflow を起動**する（D5）。
 </GATE>
 
 1. `review.workflow.js` を Workflow ツールで起動する:
@@ -206,15 +228,23 @@ Workflow 内の agent から AskUserQuestion は使えない（サブエージ�
      スクリプト内では `Date.now()` / 引数なし `new Date()` が throw するため、時刻は必ず args 経由。
    - 起動応答から **runId を取得**し、Step 4 の手順で記録する。
 2. 完了通知の `<result>` に reviewer 判定 JSON（`reviewer-verdict` schema）が入る。
-   `verdict.status` を見て **AskUserQuestion で Build Contract 承認**を取得する:
-   - `APPROVE` → ユーザーに承認可否を提示（承認ゲート）→ 承認されたら Step 4 の Build workflow へ
-   - `REQUEST_CHANGES` → findings を提示し、plan.md を修正して再度 Review workflow を起動するか、
-     残課題を明記して進むかを確認（バイアス緩和: 嗜好レベルの指摘は plan の意図を優先し
-     decisions.md に反論を記録）
+   `verdict.status` で分岐する（v6.4: APPROVE 時の承認 AskUserQuestion は廃止）:
+   - `APPROVE` → **AskUserQuestion を出さず Step 4 の Build workflow へ自動続行する**。
+     続行前に承認記録を `{longrun-dir}/decisions.md` へ追記する（監査ログ。Build Contract の
+     「実装前にスコープを確定した」という記録はこれで担保する）:
+     ```markdown
+     ## Build Contract 承認（自動）— <ISO8601>
+     - reviewer verdict: APPROVE
+     - findings 要約: <verdict の要点を 1-3 行>
+     - 承認方式: v6.4 ノンストップ実行ポリシーにより APPROVE を自動承認
+     ```
+   - `REQUEST_CHANGES` → findings を提示し、**AskUserQuestion で**plan.md を修正して再度 Review
+     workflow を起動するか、残課題を明記して進むかを確認（計画に問題が見つかった唯一の停止点。
+     バイアス緩和: 嗜好レベルの指摘は plan の意図を優先し decisions.md に反論を記録）
 
 ---
 
-## Step 4: Build → Verify workflow の起動と runId 記録 → Feedback Tier 確認（メインループに戻る）
+## Step 4: Build → Verify workflow の起動と runId 記録 → 完了レポート（ノンブロッキング）
 
 1. **runId 記録（再開の一次手段。D4 / 受け入れ条件 10・18）**:
    workflow を起動したら、起動応答の runId を**直後に**ランディレクトリへ追記式で記録する:
@@ -236,8 +266,21 @@ Workflow 内の agent から AskUserQuestion は使えない（サブエージ�
      総合 verdict とする（`verifier-score` schema。両 verifier が担当 2 軸 + verdict を部分返却）。FAIL 時は
      合算 findings を builder へ渡して修正依頼する。上限到達 / budget 枯渇時は状態を構造化して返し停止する
      （`stopReason: MAX_ROUNDS_REACHED | BUDGET_EXHAUSTED | PASS`）。
-3. 完了通知の `<result>` を見て **AskUserQuestion で Feedback Tier 確認**を取得する（D5）。フィードバック
-   分類とループは `/longrun:feedback`（`longrun-feedback` スキル）に委譲する。
+3. 完了通知の `<result>` を見て**完了レポートを出力し、ターンを終了する**（v6.4: 旧 Feedback Tier
+   確認の AskUserQuestion は廃止。フィードバックの中身はユーザーの動作確認後にしか出せないため、
+   ブロックして待たない）:
+   ```
+   自律実行が完了しました（stopReason: <PASS | MAX_ROUNDS_REACHED | BUDGET_EXHAUSTED>）。
+   - 実装 change: <一覧と結果要約>
+   - Verify 結果: <4軸スコア / 残 findings があれば列挙>
+
+   動作確認をして、気づいたことがあれば /lr:f（/longrun:feedback）でフィードバックしてください。
+   問題なければ /lr:a（/longrun:archive）でアーカイブできます。
+   ```
+   - `stopReason` が `MAX_ROUNDS_REACHED` / `BUDGET_EXHAUSTED` の場合は未解決の findings を明示し、
+     `/lr:f` での修正継続を推奨する 1 行を添える。
+   - フィードバック分類とループは `/longrun:feedback`（`longrun-feedback` スキル）が担う。同スキルは
+     セッション切れ後の再開エントリポイントとして設計されており、exec がここで待機する必要はない。
 
 ---
 

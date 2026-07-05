@@ -51,9 +51,9 @@ setup() {
 # not require plugin.json == marketplace.json mid-change; they only assert
 # marketplace.json still parses and still has a longrun entry.
 
-@test "plugin.json: longrun version is 6.3.0" {
+@test "plugin.json: longrun version is 6.4.0" {
   v="$(jq -r '.version' "$PLUGIN_JSON")"
-  [ "$v" = "6.3.0" ]
+  [ "$v" = "6.4.0" ]
 }
 
 @test "marketplace.json: still contains a longrun plugins[] entry (version sync deferred to change-7)" {

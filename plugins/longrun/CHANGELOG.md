@@ -2,6 +2,17 @@
 
 現行版のドキュメントは [README.md](README.md) を参照。本ファイルは版履歴のみを記録する。
 
+## v6.4 変更点
+
+- **ノンストップ実行ポリシーを導入**。`/longrun:exec` の停止ポイント5箇所のうち、ユーザーがほぼ推奨選択肢で即決していた4箇所を自動化した。plan 承認済みなら「AI レビューで問題（REQUEST_CHANGES）が出ない限り、完了レポートまで一度も止まらない」状態になる。exec.md に「停止ポリシー」セクションを新設し、停止してよい条件（権限モード不足 / preflight NO_CLI・NO_INIT / REQUEST_CHANGES）を明文化。
+- **OpenSpec 動作モード確認の廃止（Step 0b）**: preflight が `OK` なら AskUserQuestion を出さず通常モードで即続行する。「OpenSpec を使わない」opt-out は新設の **`--degraded` フラグ**（`/lr:e --degraded`）に移行。`NO_CLI` / `NO_INIT` の提案質問は環境異常のため従来どおり停止する。
+- **Build Contract 承認の自動化（Step 3）**: reviewer が `APPROVE` を返した場合は AskUserQuestion を出さず Build workflow へ自動続行し、承認記録（verdict 要約 + 自動承認である旨）を `decisions.md` に追記して監査可能性を担保する。`REQUEST_CHANGES` 時のみ従来どおり停止して確認する。
+- **Feedback Tier 確認のノンブロッキング化（Step 4）**: Build→Verify 完了後に AskUserQuestion でブロック待機する設計を廃止し、完了レポート（stopReason / change 一覧 / Verify 結果）を出力してターンを終了する。フィードバックは `/lr:f`、アーカイブは `/lr:a` で再開する（`longrun-feedback` スキルは元々セッション切れ後の再開エントリポイントとして自己完結設計）。
+- **再開 vs 新規の自動判断（Step 1）**: `workflow-runs.jsonl` に runId 記録がある場合の確認質問を廃止。本セッション起動の runId なら `resumeFromRunId` で自動再開、セッションをまたいでいれば未完了フェーズから新規 runId で自動起動し直す（分岐結果は 1 行報告のみ）。
+- 権限モード検査（Step 0a）は事故防止ゲートとして現状維持。
+- 連動更新: `longrun-feedback` SKILL の exec 連携セクション（4.3.0）、README アーキテクチャ図、`references/workflow-tool-reference.md` §8、`docs/openspec-cli-verification.md` の案内文言。
+- `plugin.json` / `marketplace.json`（plugins[] longrun エントリ）の version を 6.4.0 に同期 bump（lr プラグインは薄い委譲のみで変更なし）。
+
 ## v6.2 変更点
 
 - **モデル割り当て機構を追加**。plan.md に「モデル割り当て」セクション（`| change | ロール | ティア(haiku/sonnet/inherit) | 理由 | 上書き |` の表）を導入し、change × agent ロール（builder / verifier / reviewer）ごとに使用モデルのティアを指定できるようにした。全 agent 一律 opus からの最適化余地（コスト・レイテンシ）を plan 段階で構造的に扱う。

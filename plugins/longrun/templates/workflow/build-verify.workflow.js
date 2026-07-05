@@ -1,8 +1,9 @@
 // build-verify.workflow.js — longrun Build → Verify フェーズ workflow（テンプレート）
 //
 // exec コマンドが plan.md の Changes 分解から具体値を埋めてこのテンプレートを生成し、
-// Workflow ツールで起動する。Review フェーズが APPROVE され、メインループが Build Contract
-// 承認を取得した後に起動される（D5 の分割境界）。
+// Workflow ツールで起動する。Review フェーズの verdict が APPROVE のとき（v6.4: メインループが
+// decisions.md に承認記録を書いて自動続行）に起動される（D5 の分割境界。REQUEST_CHANGES 時のみ
+// AskUserQuestion を挟む）。
 //
 // === Workflow ツール制約（plugins/longrun/references/workflow-tool-reference.md を一次ソースとする）===
 //   - JavaScript のみ。Date.now() / Math.random() / 引数なし new Date() は throw する
