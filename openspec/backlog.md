@@ -70,3 +70,20 @@ PR マージ後の片付けは `wt-clean`（または `wt-clean --keep`）を親
   宣言的ランタイムは作らないが、**検証専用**の schema（実行はしない）なら価値がありうる。
 - **loop-cost 相当**: レシピ単位のトークン予算見積り・実測の突き合わせ。`references/cost-guardrails.md`（change-5）の定量化。
 - **skill-eval / e2s-tune のループ化**: 「スキルを改善するループ」を将来のレシピ追加（recipe-miner の生成対象）で対応。
+
+---
+
+## proactive-routines（change-4）実装中に見つけた拡張候補（tasks 7.5 記録）
+
+実装せず記録のみ。実装は「必要になってから」。
+
+- **feature-list.json の JSON Schema 化**: `routine-long-build` の feature-list（`{id, description, verification, passes}`）を
+  schema で機械検証する。現状は `references/feature-list-format.md` の記載のみ（強制なし）。長期ビルドの利用が増え、
+  形式ミスが頻発したら着手。公式路線（ランタイムはネイティブ）に反しない**検証専用**の範囲に留める。
+- **recipe-miner の実測チューニングデータ蓄積**: `/loops:design` / `/loops:goalify` 等の実使用痕跡がまだ薄く、
+  頻度・停止基準の実測チューニング（4 種候補の (d)）は判断材料が不足。使用痕跡が蓄積したら miner の次サイクルで再評価
+  （routine-recipe-miner-demo の繰り越し候補として記録済み）。
+- **routine 系レシピの state ファイル雛形の同梱**: 現状 State 規約（`references/state-convention.md` + `templates/state-template.md`）は
+  汎用。routine-backlog-triage / routine-long-build / routine-recipe-miner 専用の初期 state 雛形を templates に置くと初回サイクルが楽になる。
+- **backlog-triage と recipe-miner の worktree 隔離フローの共通化**: 両者とも「worktree を切って Draft PR まで」を含むため、
+  共通の隔離サブフローを reference 化できる余地がある（recipe-miner デモで重複を検出）。

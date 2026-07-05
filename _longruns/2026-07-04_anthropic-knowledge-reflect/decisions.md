@@ -73,3 +73,19 @@
 - **文脈**: `@test` の説明文に日本語（ゴールベース/タイムベース/前提）を含めると bats がテスト関数名の解決に失敗し「Executed N instead of expected M」警告で一部テストが実行されない事象が発生。
 - **決定**: `@test` の説明文は ASCII のみとし、日本語の意味はコメント行に書く。本文（grep 対象）の日本語は問題ないため維持。
 - **可逆性**: 命名変更のみで可逆。
+
+## change-4 (proactive-routines) 実装時の判断
+
+### D-PR1: S88（long-build 起動コマンドの model ID 不在）検証で claude-progress.md の誤検出を回避
+- **文脈**: routine-long-build は外部状態ファイル `claude-progress.md` を正当に参照する。既存 recipes-seed.bats の model ID 検出正規表現 `claude-[a-z0-9]` は `claude-progress` に誤マッチする。
+- **選択肢**: (A) 状態ファイル名を変える（harnesses 論文の慣用名を捨てる）/ (B) テスト側の正規表現を実モデル ID 形（`claude-(opus|sonnet|haiku|[0-9])`）に精緻化。
+- **決定**: (B)。harnesses 論文由来の `claude-progress.md` は変えず、テストの意図（モデル ID 直書き禁止）を保ったまま誤検出のみ除去する最小変更。
+- **可逆性**: テスト正規表現のみで可逆。
+
+### D-PR2: backlog-triage デモは処理数上限 1 件のサンドボックス方式
+- **文脈**: design.md Open Questions / Risks の通り、実 backlog に対して実 Draft PR を量産すると意図しない PR が残る。
+- **決定**: 実 backlog.md を discovery 入力に使いつつ、Draft PR はドライラン相当物で評価し非破壊制約の遵守を確認（受け入れ条件 10 を満たす）。design D5 の「スキル起動非依存の手動規約検査」も適用。
+
+### D-PR3: recipe-miner デモは実ログ解析の結果「提案なし」で正常終了
+- **文脈**: `~/.claude/projects/` の直近 7 日 jsonl を jq で圧縮集計（生ログをメインに載せない）。抽出候補は既存レシピ（backlog-triage / cron-*・goal-tests-green）でカバー済み or 実測データ不足だった。
+- **決定**: spec の「候補ゼロ＝提案なしの正常終了」は正常系。新規性のある提案が無い場合に無理に提案を作らず、繰り越し候補を state に記録して正常終了とした（報酬ハッキング＝無理な提案生成の回避）。
