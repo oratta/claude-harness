@@ -17,7 +17,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion
 ## 設計思想
 
 - ループを設計せよ。エンジニアであり続けよ。設計を「考えることの回避」に使わない。
-- 「完了は主張であり証明ではない」。全ループは evidence（テスト出力・exit code・生成物の実在）で成功を判定する設計にする。
+- 完了の宣言には evidence（テスト出力・exit code・生成物の実在）の提示を伴わせる。全ループはこの原則（`plugins/loops/references/self-verification.md`）で成功を判定する設計にする。
 - 安全性（暴走・課金・不可逆アクション防止）＞公式路線への忠実さ＞シンプルさ の優先順位で判断する。
 
 ## フロー

@@ -292,121 +292,121 @@
 ### S36: [loops-self-verification-reference] リファレンスが中核原則を含む
 - WHEN: ユーザーが `plugins/loops/references/self-verification.md` を開き「完了は主張であり証明ではない」を grep する
 - THEN: ファイルが存在し、中核原則の文（「完了は主張であり証明ではない。evidence を提示してから完了を宣言する」）が本文に記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S37: [loops-self-verification-reference] evidence の 4 種別が列挙されている
 - WHEN: ユーザーが `plugins/loops/references/self-verification.md` の evidence 種別の節を読む
 - THEN: 「テスト出力」「exit code」「生成物の実在と形式チェック」「実行結果ログ」の 4 種がすべて列挙されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S38: [loops-self-verification-reference] 記載ルールが明記されている
 - WHEN: ユーザーが `plugins/loops/references/self-verification.md` のスキル側への記載ルールの節を読む
 - THEN: 「1 行参照 + スキル固有の検証手順のみ」「共通原則本文のコピー禁止」に相当するルールが記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S39: [loops-self-verification-reference] 中核原則の文言が SKILL.md に重複していない
 - WHEN: ユーザーが `plugins/*/skills/*/SKILL.md` の全ファイルに対して「完了は主張であり証明ではない」を grep する
 - THEN: ヒットは 0 件である（中核原則の本文は `plugins/loops/references/self-verification.md` にのみ存在する）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S40: [loops-self-verification-reference] 棚卸しリストに最低 7 スキルの実パスが記録されている
 - WHEN: ユーザーが `plugins/loops/references/self-verification.md` の「対象スキル一覧」節で対象と判定されたスキルのパスを確認する
 - THEN: 7 スキル（`plugins/longrun/skills/longrun-plan/SKILL.md`・`plugins/worktree/skills/wt-setup/SKILL.md`・`plugins/worktree/skills/wt-clean/SKILL.md`・`plugins/daily-report/skills/daily-report/SKILL.md`・`plugins/weekly-report/skills/weekly-report/SKILL.md`・`plugins/infra/skills/infra-setup/SKILL.md`・`plugins/experience-to-skill/skills/experience-to-skill/SKILL.md`）の実パスがすべて対象として記録されており、e2s-distill のエントリは `plugins/experience-to-skill/skills/experience-to-skill/SKILL.md` の実パスで記載されている（`e2s-distill` をパスに含む存在しないパスの記載が 0 件）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S41: [loops-self-verification-reference] 対象外スキルに理由が記録されている
 - WHEN: ユーザーが「対象スキル一覧」節で対象外と判定されたスキルのエントリを読む
 - THEN: 各対象外エントリに判定理由（例: 成果物を出さない、既に検証ステップが本文に明示されている）が記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S42: [skill-verification-sections] 最低 7 スキルの SKILL.md に「## 自己検証」節が存在する
 - WHEN: ユーザーが `plugins/longrun/skills/longrun-plan/SKILL.md`・`plugins/worktree/skills/wt-setup/SKILL.md`・`plugins/worktree/skills/wt-clean/SKILL.md`・`plugins/daily-report/skills/daily-report/SKILL.md`・`plugins/weekly-report/skills/weekly-report/SKILL.md`・`plugins/infra/skills/infra-setup/SKILL.md`・`plugins/experience-to-skill/skills/experience-to-skill/SKILL.md` の各ファイルで「## 自己検証」を grep する
 - THEN: 7 ファイルすべてで見出しがちょうど 1 件ヒットする
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S43: [skill-verification-sections] 各節が共通原則リファレンスへの参照 1 行を含む
 - WHEN: ユーザーが対象スキルの「## 自己検証」節で `loops/references/self-verification.md` を grep する
 - THEN: 各対象スキルの節にリファレンスへのパス参照が 1 行含まれている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S44: [skill-verification-sections] 各節に検証コマンドまたは成果物パスが最低 1 つある
 - WHEN: ユーザーが対象スキルの「## 自己検証」節の固有手順を読む
 - THEN: 各節に、実行可能な検証コマンド（例: テスト実行・lint・`jq` による形式チェック）または検証対象の成果物パス（例: 生成されるファイルのパス）が最低 1 つ記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S45: [skill-verification-sections] 節本文の完全一致ペアが存在しない
 - WHEN: ユーザーが全対象スキルの「## 自己検証」節から参照 1 行を除いた本文を相互に比較する
 - THEN: 完全一致する本文のペアは 0 組である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S46: [skill-verification-sections] 検証手段がそのスキルの成果物を名指ししている
 - WHEN: レビュアーが任意の対象スキルの「## 自己検証」節を読む
 - THEN: そのスキル固有の成果物（例: daily-report なら生成される diary ファイル、wt-setup なら作成された worktree と Draft PR）が検証対象として名指しされており、どのスキルにも当てはまる汎用文言だけの節が 0 件である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S47: [skill-verification-sections] frontmatter が変更されていない
 - WHEN: ユーザーが本 change の実装前後で各対象 SKILL.md の frontmatter を diff する
 - THEN: name・description を含む frontmatter の変更行は 0 件である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S48: [skill-verification-sections] 変更が節の追加のみである
 - WHEN: ユーザーが本 change の実装前後で各対象 SKILL.md を `git diff` で比較する
 - THEN: 削除行・既存行の変更は 0 件であり、追加行は「## 自己検証」節（見出し・参照 1 行・固有手順）のみである
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S49: [skill-verification-sections] 追加後 500 行以下のスキルは節が SKILL.md 内に完結している
 - WHEN: ユーザーが「## 自己検証」節の追加後に `wc -l` が 500 行以下の対象 SKILL.md を確認する
 - THEN: 検証手順が SKILL.md の節内に完結しており、references への分離は要求されない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S50: [skill-verification-sections] 追加後 500 行を超えるスキルは詳細が references に分離されている
 - WHEN: ユーザーが「## 自己検証」節の追加後に 500 行を超える対象 SKILL.md（例: 追加前から 506 行ある `plugins/worktree/skills/wt-clean/SKILL.md`）を確認する
 - THEN: 検証詳細が同プラグインの `references/` 配下のファイルに存在し、SKILL.md 内の「## 自己検証」節は見出し行を含めて 15 行以内である
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
-- [ ] 動作確認完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
+- [x] 動作確認完了
 - [ ] ユーザー確認完了
 
 ## change-3: goal-time-recipes

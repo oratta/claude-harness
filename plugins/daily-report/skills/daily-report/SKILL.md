@@ -475,3 +475,11 @@ Step 8 で書いた `90 - LLM/` のログに、アルバム生成の事実を追
 蒸留元 jsonl: `~/.claude/projects/-Users-oratta-Dropbox-Application-Obsidian-oratta2025/82b8ae4c-c934-422a-8133-63ab00d90d58.jsonl`
 蒸留日時: 2026-05-14
 2フェーズ・パイプライン化: 2026-05-20 (change-1〜5)
+
+## 自己検証
+
+完了宣言の前に、生成物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`）。
+
+- 生成した `diary.md` が対象日付のディレクトリに実在し、空でないことを確認する。
+- 中間ファイル `voice.md` / `dailyLLM.md` が生成され、diary 本文に反映されていることを確認する。
+- `--with-album` 実行時は diary と同じディレクトリに Vlog アルバム画像が出力されたことを確認する。

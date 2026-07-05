@@ -258,3 +258,11 @@ maximum limits for the number of active free projects
 - Vercel CLI: https://vercel.com/docs/cli
 - Supabase CLI: https://supabase.com/docs/guides/cli
 - GitHub Actions: https://docs.github.com/actions
+
+## 自己検証
+
+完了宣言の前に、infra 成果物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`）。
+
+- 生成した `vercel.json` が妥当な JSON であることを確認する: `jq . vercel.json` が exit 0。
+- GitHub Actions ワークフロー（deploy-preview / deploy-production / migrate-production 等）が `.github/workflows/` に生成され、YAML として妥当であることを確認する。
+- 環境変数配線（Supabase dev/prod・Vercel）が設定され、preview デプロイが成功することを確認する。

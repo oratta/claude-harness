@@ -1,0 +1,146 @@
+#!/usr/bin/env bats
+#
+# Tests for capability: skill-verification-sections
+# Spec: openspec/changes/skill-verification/specs/skill-verification-sections/spec.md
+# Covers verification-guide.md scenarios S42-S50.
+
+load "$(dirname "$BATS_TEST_FILENAME")/helper.bash"
+
+setup() {
+  loops_setup_paths
+  TARGETS=(
+    "plugins/longrun/skills/longrun-plan/SKILL.md"
+    "plugins/worktree/skills/wt-setup/SKILL.md"
+    "plugins/worktree/skills/wt-clean/SKILL.md"
+    "plugins/daily-report/skills/daily-report/SKILL.md"
+    "plugins/weekly-report/skills/weekly-report/SKILL.md"
+    "plugins/infra/skills/infra-setup/SKILL.md"
+    "plugins/experience-to-skill/skills/experience-to-skill/SKILL.md"
+  )
+  REF_PATH="loops/references/self-verification.md"
+}
+
+# Extract the self-verification section body (lines after the heading, up to next "## " or EOF).
+_section_body() {
+  awk '/^## 自己検証[[:space:]]*$/{f=1;next} f&&/^## /{f=0} f{print}' "$1"
+}
+
+# Extract the self-verification section including its heading line.
+_section_with_heading() {
+  awk '/^## 自己検証[[:space:]]*$/{f=1} f&&/^## /&&!/^## 自己検証[[:space:]]*$/{f=0} f{print}' "$1"
+}
+
+# Per-skill concrete artifact keyword (rejects generic-only sections; S46 machine approximation).
+_artifact_kw() {
+  case "$1" in
+    *longrun-plan*) echo "plan.md" ;;
+    *wt-setup*)     echo "worktree" ;;
+    *wt-clean*)     echo "worktree" ;;
+    *daily-report*) echo "diary" ;;
+    *weekly-report*) echo "weekly" ;;
+    *infra-setup*)  echo "infra" ;;
+    *experience-to-skill*) echo "SKILL.md" ;;
+  esac
+}
+
+# --- S42: each of the 7 target SKILL.md has exactly one self-verification heading ---
+@test "S42: each target has exactly one self-verification heading" {
+  for rel in "${TARGETS[@]}"; do
+    f="${PLUGIN_ROOT}/${rel}"
+    [ -f "$f" ]
+    run bash -c "grep -c '^## 自己検証[[:space:]]*\$' '$f'"
+    [ "$output" = "1" ]
+  done
+}
+
+# --- S43: each section references the shared reference file ---
+@test "S43: each section references self-verification.md at least once" {
+  for rel in "${TARGETS[@]}"; do
+    f="${PLUGIN_ROOT}/${rel}"
+    body="$(_section_body "$f")"
+    n="$(printf '%s\n' "$body" | grep -cF "$REF_PATH")"
+    [ "$n" -ge 1 ]
+  done
+}
+
+# --- S44: each section has at least one backtick command or artifact path ---
+@test "S44: each section has at least one backtick command or artifact path" {
+  for rel in "${TARGETS[@]}"; do
+    f="${PLUGIN_ROOT}/${rel}"
+    body="$(_section_body "$f")"
+    stripped="$(printf '%s\n' "$body" | grep -vF "$REF_PATH")"
+    printf '%s\n' "$stripped" | grep -q '`'
+  done
+}
+
+# --- S45: no two section bodies (excluding the reference line) are identical ---
+@test "S45: no two section bodies excluding the reference line are identical" {
+  hashes=()
+  for rel in "${TARGETS[@]}"; do
+    f="${PLUGIN_ROOT}/${rel}"
+    body="$(_section_body "$f" | grep -vF "$REF_PATH" | sed 's/[[:space:]]*$//' | grep -v '^[[:space:]]*$')"
+    h="$(printf '%s' "$body" | shasum | awk '{print $1}')"
+    for prev in "${hashes[@]}"; do
+      [ "$h" != "$prev" ]
+    done
+    hashes+=("$h")
+  done
+}
+
+# --- S46: each section names a concrete artifact (not generic-only) ---
+@test "S46: each section names a concrete skill-specific artifact" {
+  for rel in "${TARGETS[@]}"; do
+    f="${PLUGIN_ROOT}/${rel}"
+    kw="$(_artifact_kw "$rel")"
+    body="$(_section_body "$f")"
+    printf '%s\n' "$body" | grep -qi "$kw"
+  done
+}
+
+# --- S47: frontmatter unchanged vs merge-base with main ---
+@test "S47: frontmatter name/description unchanged vs merge-base with main" {
+  base="$(cd "$PLUGIN_ROOT" && git merge-base HEAD main 2>/dev/null)" || skip "no merge-base"
+  [ -n "$base" ] || skip "no merge-base"
+  for rel in "${TARGETS[@]}"; do
+    run bash -c "cd '$PLUGIN_ROOT' && git diff '$base' -- '$rel' | grep -E '^[+-](name|description):' | wc -l | tr -d ' '"
+    [ "$output" = "0" ]
+  done
+}
+
+# --- S48: change is additive only (no deleted lines vs merge-base) ---
+@test "S48: change is additive only vs merge-base" {
+  base="$(cd "$PLUGIN_ROOT" && git merge-base HEAD main 2>/dev/null)" || skip "no merge-base"
+  [ -n "$base" ] || skip "no merge-base"
+  for rel in "${TARGETS[@]}"; do
+    run bash -c "cd '$PLUGIN_ROOT' && git diff '$base' -- '$rel' | grep -E '^-[^-]' | wc -l | tr -d ' '"
+    [ "$output" = "0" ]
+  done
+}
+
+# --- S49: skills at/under 500 lines keep the section inline ---
+@test "S49: skills at or under 500 lines keep the section inline" {
+  for rel in "${TARGETS[@]}"; do
+    f="${PLUGIN_ROOT}/${rel}"
+    lines="$(wc -l < "$f" | tr -d ' ')"
+    if [ "$lines" -le 500 ]; then
+      body="$(_section_body "$f")"
+      [ -n "$body" ]
+    fi
+  done
+}
+
+# --- S50: skills over 500 lines split detail to references and keep section <=15 lines ---
+@test "S50: skills over 500 lines split detail to references with a short section" {
+  for rel in "${TARGETS[@]}"; do
+    f="${PLUGIN_ROOT}/${rel}"
+    lines="$(wc -l < "$f" | tr -d ' ')"
+    if [ "$lines" -gt 500 ]; then
+      sec_lines="$(_section_with_heading "$f" | wc -l | tr -d ' ')"
+      [ "$sec_lines" -le 15 ]
+      plugin_dir="${f%/skills/*}"
+      run bash -c "ls '${plugin_dir}/references/'*.md 2>/dev/null | wc -l | tr -d ' '"
+      [ "$output" -ge 1 ]
+      _section_body "$f" | grep -Eq 'references/[^ ]+\.md'
+    fi
+  done
+}

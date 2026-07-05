@@ -41,3 +41,19 @@
 - 背景: recipes/ ディレクトリと正式レシピ集は change-3 スコープ。change-1 のデモで recipes/*.md を作ると change-3 の器と混線する。
 - 判断: デモ生成物（recipe / goal ブリーフ / brain dump）は `_longruns/2026-07-04_anthropic-knowledge-reflect/demos/` に `*.demo.md` として置く。
 - 理由: 受け入れ条件 5.2/5.3 は「ログを {longrun-dir} に残す」ことを要求。change 間のスコープ汚染を避け（plugins/loops/ には正式成果物のみ）、demo は longrun 配下に隔離。
+
+## D-2a: 対象スキルは必須 7 件のみ。追加 5 件は全て対象外 + 理由記録（change: skill-verification）
+
+- 日付: 2026-07-05 / change: skill-verification
+- 背景: `plugins/*/skills/*/SKILL.md` は 12 件。受け入れ条件 8 は最低 7 件を対象と規定。残り 5 件（longrun-feedback / longrun-mvp-plan / loops-design / loops-goalify / skill-pack）の扱いを決める必要がある。
+- 選択肢: (A) 5 件も対象化して検証節を追加 / (B) 7 件のみ対象、5 件は理由付き対象外。
+- 判断: (B)。5 件は self-verification.md の「対象スキル一覧」に対象外 + 理由で記録。loops-design/loops-goalify は「既に検証ステップ/機械検証可能な成功基準が本文に明示」、longrun-feedback は「分類・振り分けロジックで独立成果物なし」、longrun-mvp-plan は「subagent レビュー + 人間ハンドオフが本文に組込済」、skill-pack は「設定編集のみで反映確認は Claude Code に委譲」。
+- 理由: plan は 7 件を下限として固定し、それ以外は監査判断に委ねる。YAGNI + 可逆（後から対象化可能）+ 「追加は検証節のみ・既存本文不変」の不変条件を守るため、対象を最小化。全 5 件に honest な対象外理由があり S41 を満たす。
+
+## D-2b: S39 のため loops-design SKILL.md の中核原則引用を参照に置換（change: skill-verification）
+
+- 日付: 2026-07-05 / change: skill-verification
+- 背景: change-1 で作った loops-design/SKILL.md 行 20 に「完了は主張であり証明ではない」の literal が既存。S39（中核原則文言は SKILL.md に 0 件、reference のみ）に抵触。
+- 選択肢: (A) loops-design を放置し S39 を緩める / (B) 行 20 を reference 参照 + 言い換えに置換。
+- 判断: (B)。「完了の宣言には evidence…の提示を伴わせる（`plugins/loops/references/self-verification.md`）」に書き換え、literal を除去。
+- 理由: S39 は全 SKILL.md 対象の dedup 要件。原則本文は self-verification.md 1 箇所に集約する設計（D2）と整合。意味は保持し literal のみ除去する最小変更。loops-design は 7 対象外だが phrase-dedup は全ファイルに適用されるため正当。
