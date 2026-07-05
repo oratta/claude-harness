@@ -211,7 +211,7 @@ OpenSpec CLI が解決できませんでした。通常モードで使うには�
   openspec schema fork spec-driven longrun-tdd   # カスタムスキーマ longrun-tdd を用意
 
 セットアップ後に再度 /lr:e を実行してください。
-（OpenSpec を使わずに進める場合は、再実行時に「縮退モード」を選択してください）
+（OpenSpec を使わずに進める場合は `/lr:e --degraded` で再実行するか、再実行時に「縮退モード」を選択してください）
 ```
 
 `NO_INIT` 時（CLI はあるが未 init）の案内:

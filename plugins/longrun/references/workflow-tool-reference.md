@@ -109,7 +109,7 @@ Workflow({ scriptPath: "<永続化されたスクリプトパス>", resumeFromRu
 ## 8. ユーザー対話の境界（組み込みドキュメント由来 + 設計判断）
 
 - workflow 内の agent から AskUserQuestion は**使えない**（subagent 全般の制約）
-- → change-2 設計どおり、Build Contract 承認ゲート / Feedback Tier 確認は **workflow を分割してメインループに戻り AskUserQuestion → 次の workflow を起動**する
+- → change-2 設計どおり、人間の判断が必要な分岐は **workflow を分割してメインループに戻り AskUserQuestion → 次の workflow を起動**する。ただし v6.4 のノンストップ実行ポリシーにより、メインループに戻っても質問するのは reviewer が REQUEST_CHANGES を返した場合のみ（APPROVE は decisions.md 記録 + 自動続行、Build→Verify 完了後は完了レポートでターン終了）
 - Workflow 起動の opt-in: 「ユーザーが起動した slash command の指示で呼ぶ」場合は追加確認不要（`/lr:e` はこれに該当）
 
 ## 9. change-2 実装への適用メモ

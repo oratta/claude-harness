@@ -31,9 +31,15 @@ setup() {
   grep -Eq '`OK`' "$EXEC_MD"
 }
 
-@test "exec.md: OK path still offers a degraded-mode opt-out choice" {
-  # The preflight-OK branch must include 縮退 as a non-default option.
-  grep -Eq 'OpenSpec 不要|opt-out|縮退モード（OpenSpec を使わない）' "$EXEC_MD"
+@test "exec.md: OK path proceeds without AskUserQuestion (v6.4 non-stop policy)" {
+  # The preflight-OK branch must NOT stop for a mode question.
+  grep -Eq 'AskUserQuestion を出さず通常モードで即続行' "$EXEC_MD"
+}
+
+@test "exec.md: degraded opt-out is available via --degraded flag" {
+  # The explicit opt-out moved from the OK-path question to a launch flag.
+  grep -Eq -- '--degraded' "$EXEC_MD"
+  grep -Eq '質問なしで縮退モード即決' "$EXEC_MD"
 }
 
 @test "exec.md: NO_CLI offers degraded-or-abort, NO_INIT offers init/degraded/abort" {
