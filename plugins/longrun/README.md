@@ -21,10 +21,12 @@ Claude Code 自律実行システム。Anthropic の [Harness Design for Long-Ru
 ```
 /longrun:exec → Workflow スクリプト生成・起動（exec コマンド + templates/workflow/）
   ├── workflow #1 (Review)        ← longrun-reviewer agent で Build Contract レビュー
-  │     ↓ メインループに戻り AskUserQuestion（Build Contract 承認ゲート）
+  │     ↓ メインループに戻る: APPROVE は decisions.md に記録して自動続行、
+  │       REQUEST_CHANGES のみ AskUserQuestion で停止（v6.4）
   └── workflow #2 (Build→Verify)  ← change ごとに longrun-builder で TDD 実装
         Verify ループ（上限3周 + budget ガード） ← longrun-verifier の 4 軸スコア
-        ↓ メインループに戻り AskUserQuestion（Feedback Tier 確認）
+        ↓ 完了レポートを出してターン終了（ブロック待機しない）。
+          フィードバックは /lr:f、アーカイブは /lr:a で再開（v6.4）
 
 Skills (対話的・メインセッションで実行):
   longrun-plan      ← plan.md 作成
@@ -97,13 +99,13 @@ OpenSpec CLI を前提にしない（または使わない）環境でも longru
 
 `/lr:e` 起動直後の **Step 0（preflight）** で `scripts/openspec-preflight.sh` を実行し、以下を判定する:
 
-| preflight 出力 | 条件 | Step 0 の提案 |
+| preflight 出力 | 条件 | Step 0 の動作（v6.4） |
 |----------------|------|---------------|
-| `OK`      | CLI 解決可 かつ `openspec/` 存在 | 動作モード確認（通常モードがデフォルト。**縮退選択肢を常時含む** = OpenSpec 不要の明示的 opt-out） |
-| `NO_CLI`  | `openspec` が PATH にも npx にも解決できない | 縮退モードで実行 / 中断してセットアップ |
-| `NO_INIT` | CLI はあるが `openspec/` が無い | init して通常続行 / 縮退モード / 中断 |
+| `OK`      | CLI 解決可 かつ `openspec/` 存在 | **質問なしで通常モード即続行**（OpenSpec を使わない opt-out は `/lr:e --degraded` フラグ） |
+| `NO_CLI`  | `openspec` が PATH にも npx にも解決できない | AskUserQuestion: 縮退モードで実行 / 中断してセットアップ |
+| `NO_INIT` | CLI はあるが `openspec/` が無い | AskUserQuestion: init して通常続行 / 縮退モード / 中断 |
 
-検出は `command -v openspec` **または** `npx --no-install openspec` の OR 条件（確定値とエビデンスは `docs/openspec-cli-verification.md`）。ユーザーが縮退を選ぶと `_longruns/<run>/.degraded-mode` マーカーが作成される。
+検出は `command -v openspec` **または** `npx --no-install openspec` の OR 条件（確定値とエビデンスは `docs/openspec-cli-verification.md`）。`--degraded` フラグまたは NO_CLI/NO_INIT 時の選択で縮退が確定すると `_longruns/<run>/.degraded-mode` マーカーが作成される。
 
 ### 成果物パス（縮退時）
 
@@ -131,4 +133,4 @@ _longruns/<run>/
 
 ### 回帰（通常モードへの影響）
 
-既存の openspec/ あり repo で Step 0 が `OK` を返し通常モードを選んだ場合、実行フロー・成果物のパス・形式は 5.2.0 と完全に同一。Step 0 で増えるユーザー対話は動作モード確認の 1 問のみ。`.degraded-mode` マーカーは通常モードでは作成されない。
+既存の openspec/ あり repo で Step 0 が `OK` を返した場合、実行フロー・成果物のパス・形式は 5.2.0 と完全に同一。v6.4 以降、Step 0 で増えるユーザー対話は**ゼロ**（旧: 動作モード確認の 1 問。ノンストップ実行ポリシーで廃止）。`.degraded-mode` マーカーは通常モードでは作成されない。

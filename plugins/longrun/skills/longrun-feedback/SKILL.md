@@ -1,14 +1,14 @@
 ---
 name: longrun-feedback
-description: 自律実行完了後のフィードバックを分類・実行する。ユーザーの無選別フィードバック（brain dump）をTier 1（cosmetic）/ Tier 2（spec-aligned fix）/ Tier 3（new change）に自動分類し、Tier 1/2は即座に修正、Tier 3はopenspec/backlog.mdに記録する。/longrun:exec の Feedback Tier 確認（Build→Verify workflow 完了後のメインループ）からも呼ばれる共通ロジック。
-version: 4.2.0
+description: 自律実行完了後のフィードバックを分類・実行する。ユーザーの無選別フィードバック（brain dump）をTier 1（cosmetic）/ Tier 2（spec-aligned fix）/ Tier 3（new change）に自動分類し、Tier 1/2は即座に修正、Tier 3はopenspec/backlog.mdに記録する。/longrun:exec 完了レポート後のフィードバック受付（`/lr:f`）の標準エントリポイント。
+version: 4.3.0
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Task
 ---
 
 # Run Feedback — フィードバック分類・実行スキル
 
 自律実行完了後のフィードバックを処理するスキル。
-`/longrun:exec` の Feedback Tier 確認（Build→Verify workflow 完了後にメインループへ戻った時点）と、`/longrun:feedback` コマンドの両方から使われる共通ロジック。
+`/longrun:exec` の完了レポート後にユーザーが `/lr:f`（`/longrun:feedback`）で戻ってきたとき、および exec と同一セッション内でフィードバックが直接返されたときの両方から使われる共通ロジック（v6.4 以降、exec はフィードバック待ちでブロックしない。詳細は後述「/longrun:exec との連携」）。
 
 ## 設計原則
 
@@ -233,11 +233,15 @@ commit: `docs: add feedback items to backlog`（DEGRADED 時はメッセージ�
 
 「OK」の場合 → `/longrun:archive` を案内（exec のメインループから呼ばれている場合は Archive フェーズへ進む）。
 
-## /longrun:exec のメインループからの呼び出し
+## /longrun:exec との連携（v6.4 以降）
 
-Build→Verify workflow の完了後、メインループが Feedback Tier 確認でユーザーがフィードバックを返した場合、
-このスキルのStep 2以降を実行する。Step 0（コンテキストロード）はメインループが既にコンテキストを
-持っているためスキップ可能。
+exec は Build→Verify workflow の完了後、完了レポートを出して**ターンを終了する**（旧 Feedback Tier
+確認の AskUserQuestion ブロック待機は v6.4 で廃止）。ユーザーは動作確認後に `/lr:f`
+（`/longrun:feedback`）でこのスキルに入るのが標準経路であり、本スキルは**セッション切れ後の
+再開エントリポイント**として Step 0（コンテキストロード）から自己完結で動く。
+
+exec と同一セッション内でユーザーがフィードバックを直接返してきた場合は、メインループが既に
+コンテキストを持っているため Step 0 をスキップして Step 2 以降を実行してよい。
 
 ## 注意事項
 
