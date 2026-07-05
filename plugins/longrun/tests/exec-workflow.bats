@@ -52,16 +52,33 @@ setup() {
   grep -Eq 'ユーザーが起動した slash command' "$EXEC_MD"
 }
 
-# --- S10/S11: approval gates split the workflow ---
+# --- S10/S11: workflow split boundary + v6.4 non-stop policy ---
 
-@test "exec.md: splits workflow at Build Contract approval gate" {
-  grep -Eq 'Build Contract.*承認' "$EXEC_MD"
+@test "exec.md: splits workflow at Build Contract boundary in the main loop" {
+  grep -Eq 'Build Contract' "$EXEC_MD"
   grep -Eq 'メインループに戻' "$EXEC_MD"
   grep -q 'AskUserQuestion' "$EXEC_MD"
 }
 
-@test "exec.md: documents Feedback Tier confirmation back in the main loop" {
-  grep -Eq 'Feedback Tier' "$EXEC_MD"
+@test "exec.md: APPROVE auto-continues and records approval to decisions.md (v6.4)" {
+  grep -Eq 'APPROVE.*自動続行|自動続行.*APPROVE' "$EXEC_MD"
+  grep -Eq 'Build Contract 承認（自動）' "$EXEC_MD"
+  grep -q 'decisions.md' "$EXEC_MD"
+}
+
+@test "exec.md: only REQUEST_CHANGES stops for user confirmation (v6.4)" {
+  grep -Eq 'REQUEST_CHANGES' "$EXEC_MD"
+  grep -Eq 'REQUEST_CHANGES.*(のみ|だけ)|(のみ|だけ).*REQUEST_CHANGES' "$EXEC_MD"
+}
+
+@test "exec.md: completion is non-blocking — report + /lr:f handoff, no feedback wait (v6.4)" {
+  grep -Eq '完了レポート' "$EXEC_MD"
+  grep -Eq '/lr:f|longrun:feedback' "$EXEC_MD"
+  grep -Eq 'ブロックして待たない|ブロック待機.*廃止|待機する.*廃止' "$EXEC_MD"
+}
+
+@test "exec.md: declares the non-stop policy section" {
+  grep -Eq '停止ポリシー' "$EXEC_MD"
 }
 
 # --- S12: builder agentType default ---
