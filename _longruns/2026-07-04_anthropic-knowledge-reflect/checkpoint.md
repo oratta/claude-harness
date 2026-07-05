@@ -36,6 +36,20 @@ longrun-dir: `_longruns/2026-07-04_anthropic-knowledge-reflect/`
   - verification-guide.md: 138 Scenario（S1-S138）
   - 事後修正: `.openspec.yaml` の created:undefined → 2026-07-05、SHOULD_FIX 2 件を tasks.md に反映（skill-verification 2.2 の検証コマンド存在チェック / goal-time-recipes 1.3-1.5 の grep アンカー・主観語デナイリスト・非破壊固定文言）
   - commit a33e9d4 として Draft PR #9 ブランチへ push 済み
-- [ ] Build → Verify **実行中**（build-verify.workflow.js、runId wf_3ee4cf6b-c06）: 5 change 直列 build → Verify ループ（静的+ブラウザ 2 verifier、上限 3 周）
-- [ ] Feedback
-- [ ] Archive
+- [x] Build → Verify **完了**（build-verify.workflow.js、runId wf_3ee4cf6b-c06、7 agents / エラー 0）
+  - Build: 全 5 change SUCCESS（failedBuilds 0）
+    - loops-plugin: ea3af49（tasks 21/21、bats +32、S1-S35）
+    - skill-verification: 435fbb1（tasks 20/20、bats +16、S36-S50）
+    - goal-time-recipes: b414cfc（tasks 20/20、bats +24、S51-S74）
+    - proactive-routines: 5491c10 / 326027c / 7de85cc（tasks 26/26、bats +40、S75-S114。3 ルーチン独立コミット）
+    - loops-integration: 5fb4901 / 66df369（tasks 19/19、bats +21、S115-S138。version bump ベースラインは merge-base、D-5a）
+  - Verify: **round 1 で PASS**（stopReason=PASS）。quality 100 / completeness 85 / functionality 100 / ux 85
+    - ブラウザ検証は N/A（Web UI なし）→ bats 571/571 ok + verification-guide 138 Scenario 動作確認で機能性を代替担保
+  - 全 bats 571 PASS をメインループでも再実行確認（exit 0）
+  - Draft PR #9 へ push 済み（a33e9d4..66df369、計 13 commits）
+- [x] Feedback: ユーザー確認開始（成果物の試用ガイドを提示済み）。ユーザー指示により origin/main 取り込み + version 整合を先行実施
+  - origin/main（PR #10、longrun 6.4.0）をマージ: longrun **6.4.1** / marketplace top **2.11.0** に解決（D-5d、merge commit 90d06b8）
+  - マージ後 全 bats **575 PASS / 0 FAIL**、JSON parse・version パリティ OK
+  - PR #9 をタイトル・本文更新のうえ **Ready for Review** に切替済み
+- [ ] マージ（人間の明示承認）→ マージ後: `/plugin install loops@oratta-claude-harness` → `/reload-plugins`（plan 動作確認手順 7）
+- [ ] Archive（/lr:a）
