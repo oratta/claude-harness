@@ -1,0 +1,5 @@
+[
+  { "id": "feat-1", "description": "greet.txt に Hello を書く", "verification": "grep -q Hello greet.txt", "passes": false },
+  { "id": "feat-2", "description": "nums.txt を JSON 配列 [1,2,3] にする", "verification": "jq -e '.==[1,2,3]' nums.txt", "passes": false },
+  { "id": "feat-3", "description": "impossible.txt に決して現れない語を含める（デモ用・故意失敗）", "verification": "grep -q NEVER_EVER_PRESENT impossible.txt", "passes": false }
+]

@@ -17,18 +17,18 @@
 
 ## 3. 長期ビルドルーチン（レシピ + feature-list リファレンス実装・独立 commit）
 
-- [ ] 3.1 bats テストを先に書く: `routine-long-build.md` の固定見出し 7 節、1 サイクル 1 項目、smoke check が実装より前、evidence（verification exit 0）必須の passes 更新 + 自己申告禁止、凍結条件（同一項目 2 連続 FAIL + 削除禁止）、および `references/feature-list-format.md` の 4 キー（id / description / verification / passes）・`passes:false` 初期値・削除禁止の記載を grep 検証する（この時点では FAIL）
-- [ ] 3.2 `plugins/loops/references/feature-list-format.md` を執筆する（形式記載のみ。JSON Schema ファイルは作らない）
-- [ ] 3.3 `plugins/loops/recipes/routine-long-build.md` を執筆する: 1 サイクル = smoke check → `passes:false` 先頭 1 項目のみ実装 → exit 0 evidence 確認後に `passes:true` 更新 → 説明的 commit → progress 追記。停止基準は /goal「全項目 passes:true、同一項目 2 連続 FAIL で凍結して人間へ」。発火時プロンプトに自己申告更新禁止を含める
-- [ ] 3.4 references の規約検査手順（停止基準必須・Bad Loop 検査）をこのレシピに手動適用し、全項目 PASS を確認する
-- [ ] 3.5 3.1 の bats テストが全て PASS することを確認し、レシピ + リファレンス + テストを独立 commit する
+- [x] 3.1 bats テストを先に書く: `routine-long-build.md` の固定見出し 7 節、1 サイクル 1 項目、smoke check が実装より前、evidence（verification exit 0）必須の passes 更新 + 自己申告禁止、凍結条件（同一項目 2 連続 FAIL + 削除禁止）、および `references/feature-list-format.md` の 4 キー（id / description / verification / passes）・`passes:false` 初期値・削除禁止の記載を grep 検証する（この時点では FAIL）
+- [x] 3.2 `plugins/loops/references/feature-list-format.md` を執筆する（形式記載のみ。JSON Schema ファイルは作らない）
+- [x] 3.3 `plugins/loops/recipes/routine-long-build.md` を執筆する: 1 サイクル = smoke check → `passes:false` 先頭 1 項目のみ実装 → exit 0 evidence 確認後に `passes:true` 更新 → 説明的 commit → progress 追記。停止基準は /goal「全項目 passes:true、同一項目 2 連続 FAIL で凍結して人間へ」。発火時プロンプトに自己申告更新禁止を含める
+- [x] 3.4 references の規約検査手順（停止基準必須・Bad Loop 検査）をこのレシピに手動適用し、全項目 PASS を確認する
+- [x] 3.5 3.1 の bats テストが全て PASS することを確認し、レシピ + リファレンス + テストを独立 commit する
 
 ## 4. 長期ビルドルーチン（複数サイクル完走デモ・独立 commit）
 
-- [ ] 4.1 3 項目以上の feature-list.json を実在の verification コマンド（bats / grep / jq 等、exit code が本物のもの）で用意する
-- [ ] 4.2 2 サイクル以上に分けて完走させる: 各サイクルの smoke check 結果・実装した 1 項目・verification exit code・passes 更新・progress 追記をログに記録する
-- [ ] 4.3 1 項目を故意に 2 連続 FAIL させ、凍結（feature-list から削除されない）+ 人間へのエスカレーション記録（progress notes）を確認する
-- [ ] 4.4 実行ログ（4.2 + 4.3 + 3.4 の手動規約検査結果）を `{longrun-dir}` に evidence として保存し、独立 commit する
+- [x] 4.1 3 項目以上の feature-list.json を実在の verification コマンド（bats / grep / jq 等、exit code が本物のもの）で用意する
+- [x] 4.2 2 サイクル以上に分けて完走させる: 各サイクルの smoke check 結果・実装した 1 項目・verification exit code・passes 更新・progress 追記をログに記録する
+- [x] 4.3 1 項目を故意に 2 連続 FAIL させ、凍結（feature-list から削除されない）+ 人間へのエスカレーション記録（progress notes）を確認する
+- [x] 4.4 実行ログ（4.2 + 4.3 + 3.4 の手動規約検査結果）を `{longrun-dir}` に evidence として保存し、独立 commit する
 
 ## 5. レシピ採掘メタループ（レシピ実装・独立 commit）
 

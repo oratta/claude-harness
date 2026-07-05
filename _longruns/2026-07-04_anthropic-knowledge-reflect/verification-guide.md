@@ -696,120 +696,120 @@
 ### S86: [loops-routine-long-build] レシピファイルが固定見出しを全て持つ
 - WHEN: `plugins/loops/recipes/routine-long-build.md` に対して固定見出し 7 節を grep する
 - THEN: 7 節すべてがヒットし、ループ型節にプロアクティブの記載がある
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S87: [loops-routine-long-build] 前提節が外部状態ファイルを宣言している
 - WHEN: レシピの前提節を検査する
 - THEN: feature-list.json（`{longrun-dir}/feature-list.json`）と claude-progress.md（progress notes）の 2 つの外部状態ファイルへの言及がある
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S88: [loops-routine-long-build] 起動コマンドがネイティブプリミティブのみである
 - WHEN: レシピの起動コマンド節を検査する
 - THEN: /schedule または手動再起動 + /goal によるコピペ可能なコマンド文字列が存在し、独自 driver スクリプト（常駐スクリプト・カスタム driver）への参照は現れない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S89: [loops-routine-long-build] 1 サイクル 1 項目が明記されている
 - WHEN: レシピの 1 サイクル手順を検査する
 - THEN: `passes:false` の先頭 1 項目のみを実装対象とする旨が明記され、複数項目の同時実装を認める記載がない
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S90: [loops-routine-long-build] サイクルは smoke check から始まる
 - WHEN: レシピの 1 サイクル手順の先頭ステップを検査する
 - THEN: 直近 passing 項目の verification コマンド再実行（smoke check）が実装ステップより前に置かれている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S91: [loops-routine-long-build] サイクルは commit と progress 追記で終わる
 - WHEN: レシピの 1 サイクル手順の末尾を検査する
 - THEN: 説明的 commit と claude-progress.md への追記が passes 更新の後に置かれている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S92: [loops-routine-long-build] evidence 必須の passes 更新条件が記載されている
 - WHEN: レシピの passes 更新手順を検査する
 - THEN: 当該項目の verification コマンドを実行し exit 0 の evidence（実行ログ）がある場合のみ `passes:true` に更新できる旨の記載がある
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S93: [loops-routine-long-build] 自己申告更新の禁止がルーチンプロンプトに含まれる
 - WHEN: レシピの発火時プロンプト本文を検査する
 - THEN: evidence なしで `passes:true` にしてはならない旨の指示が含まれている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S94: [loops-routine-long-build] 停止基準に凍結条件が含まれる
 - WHEN: レシピの停止基準節を検査する
 - THEN: 「全項目 passes:true」の定量ゴール（/goal による）と「同一項目 2 連続 FAIL で凍結 + 人間へエスカレーション」の両方が記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S95: [loops-routine-long-build] 凍結項目は削除ではなく記録される
 - WHEN: レシピの凍結手順を検査する
 - THEN: 凍結項目を feature-list から削除せず、凍結の事実と理由を progress notes に記録する旨が記載されている
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S96: [loops-routine-long-build] リファレンスが feature-list の形式を定義している
 - WHEN: `plugins/loops/references/feature-list-format.md` を検査する
 - THEN: `id` / `description` / `verification` / `passes` の 4 キーの説明、`passes:false` 初期値、項目・verification の削除禁止の記載がある
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S97: [loops-routine-long-build] schema による強制が存在しない
 - WHEN: `plugins/loops/` 配下で feature-list 用の JSON Schema ファイルを探索する
 - THEN: feature-list を機械検証する schema ファイルは存在しない（形式は references の記載のみ）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S98: [loops-routine-long-build] 2 サイクル以上の完走デモログが存在する
 - WHEN: `{longrun-dir}` 配下を検査する
 - THEN: 3 項目以上の feature-list に対する 2 サイクル以上のデモ実行ログが存在し、各サイクルの smoke check・実装項目・verification exit code・passes 更新・progress 追記が確認できる
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S99: [loops-routine-long-build] 故意の失敗で凍結とエスカレーションが機能する
 - WHEN: デモ中に 1 項目を故意に 2 連続 FAIL させる
 - THEN: 当該項目が凍結され（`passes:false` のまま削除されない）、人間へのエスカレーションが progress notes に記録されたことがログで確認できる
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
 ### S100: [loops-routine-long-build] 規約検査はスキル起動に依存せず手動実行される
 - WHEN: デモの evidence を検査する
 - THEN: references の検査手順（停止基準必須・Bad Loop 検査）を手動実行した結果（各検査項目の PASS/FAIL）が記録されている（`/loops:design` の起動には依存しない）
-- [ ] テスト実装完了
-- [ ] ロジック実装完了
+- [x] テスト実装完了
+- [x] ロジック実装完了
 - [ ] 動作確認完了
 - [ ] ユーザー確認完了
 
