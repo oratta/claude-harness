@@ -108,11 +108,18 @@ _artifact_kw() {
 }
 
 # --- S48: change is additive only (no deleted lines vs merge-base) ---
+# NOTE (loops-integration / change-5, decisions.md D-5c): the release-metadata
+# frontmatter `version:` line is excluded from the deleted-line count. change-5
+# bumps plugin.json versions and, for plugins whose own tests couple the SKILL
+# frontmatter version to plugin.json (e.g. infra S29), the frontmatter version is
+# bumped in lock-step. That single metadata line is not a change-2 skill-logic
+# deletion, so it must not fail this additive-only guard. The guard still forbids
+# deleting/rewriting any skill-logic line.
 @test "S48: change is additive only vs merge-base" {
   base="$(cd "$PLUGIN_ROOT" && git merge-base HEAD main 2>/dev/null)" || skip "no merge-base"
   [ -n "$base" ] || skip "no merge-base"
   for rel in "${TARGETS[@]}"; do
-    run bash -c "cd '$PLUGIN_ROOT' && git diff '$base' -- '$rel' | grep -E '^-[^-]' | wc -l | tr -d ' '"
+    run bash -c "cd '$PLUGIN_ROOT' && git diff '$base' -- '$rel' | grep -E '^-[^-]' | grep -vE '^-version:' | wc -l | tr -d ' '"
     [ "$output" = "0" ]
   done
 }

@@ -49,6 +49,32 @@ Claude Code ロングラン自律実行システム。instruction.mdを対話的
 
 ---
 
+### loops
+
+公式記事「Getting started with loops」（https://claude.com/blog/getting-started-with-loops）が定義する **4 つのループタイプ**を、Claude Code のネイティブプリミティブ（`/goal`・`/loop`・`/schedule`・skill・workflows・auto mode）の**合成レシピ集**として設計・記述するためのプラグイン。**独自のループ実行系（常駐スクリプト・カスタム driver）は持たない**——ハーネスが提供するのはレシピ（設計図）と規約であり、反復・スケジュール・停止判定はネイティブプリミティブに委ねる。
+
+```bash
+/plugin install loops@oratta-claude-harness
+```
+
+**公式 4 ループタイプ:**
+
+| タイプ | 何を手放すか | 主なプリミティブ |
+|--------|--------------|------------------|
+| ターンベース | 検証ステップ（skill の自己検証） | skill |
+| ゴールベース | 停止条件（定量基準まで反復） | `/goal` |
+| タイムベース | トリガー（定期・イベント起動） | `/loop`・`/schedule` |
+| プロアクティブ | プロンプト自体（人間不在で回る） | 合成（`/schedule` + `/goal` + workflows + auto mode） |
+
+**機能:**
+- `/loops:design` — 選択フレームワークに沿ってループ型を選び、停止基準必須・Bad Loop 検査を通したレシピを設計する
+- `/loops:goalify <テキスト|ファイル>` — brain dump から機械検証可能な goal ブリーフと `/goal` 起動コマンドを一発生成する
+- レシピ集（ゴール / タイム / プロアクティブ）と State 規約・コストガードレール
+
+詳細は `plugins/loops/`（レシピ・規約・リファレンス）および調査資料 `research/` を参照。定期実行のスケジューラ登録・課金選択はレシピのスコープ外（呼び出し側の責務）。
+
+---
+
 ## バンドル
 
 複数のプラグインを一括でインストールできます。

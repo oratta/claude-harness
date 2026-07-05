@@ -41,9 +41,11 @@ setup() {
 
 # --- version sync (task 6.x): plugin.json bumped to 2.2.0, JSON parses ---
 
-@test "version: worktree plugin.json version is 2.2.0" {
+@test "version: worktree plugin.json version is 2.2.1" {
+  # bumped 2.2.0 -> 2.2.1 by loops-integration (change-5) for the self-verification
+  # sections added to wt-setup / wt-clean SKILL.md. See decisions.md D-5b.
   v="$(jq -r '.version' "$PLUGIN_JSON")"
-  [ "$v" = "2.2.0" ]
+  [ "$v" = "2.2.1" ]
 }
 
 @test "version: worktree plugin.json parses (jq)" {

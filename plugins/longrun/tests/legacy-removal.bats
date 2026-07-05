@@ -94,9 +94,11 @@ setup() {
 # is deferred to change-7 per plan.md's dependency note. Assertions below only
 # check plugin.json's own value and that marketplace.json still has entries.
 
-@test "legacy: longrun plugin.json version is 6.3.0" {
+@test "legacy: longrun plugin.json version is 6.3.1" {
+  # bumped 6.3.0 -> 6.3.1 by loops-integration (change-5) for the self-verification
+  # section added to longrun-plan/SKILL.md. See decisions.md D-5b.
   a="$(jq -r '.version' "$LONGRUN_JSON")"
-  [ "$a" = "6.3.0" ]
+  [ "$a" = "6.3.1" ]
 }
 
 @test "legacy: lr plugin.json version is 6.2.0" {

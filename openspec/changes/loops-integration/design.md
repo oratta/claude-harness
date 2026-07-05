@@ -70,6 +70,13 @@
 - **決定**: (b)
 - **理由**: change-2（skill-verification）の棚卸し結果によって編集対象プラグインが変動するため、plan 時点のリストでは過不足が出うる。実変更ベースなら「変更していないプラグインを bump しない」（無意味なキャッシュ無効化の回避）も同時に担保できる
 
+### D8: origin/main が無関係 PR で先行したため bump ベースラインを merge-base に切替
+
+- **背景**: 実装時点で origin/main が本 run と無関係な PR #10（longrun ノンストップ実行、`longrun 6.4.0 / marketplace 2.10.0`）で先行していた。本 run の分岐点 merge-base は `longrun 6.3.0 / marketplace 2.9.0`。D7 の `git diff origin/main` では origin/main 側の先行差分が混入し「本 run が変更したプラグイン」を誤判定する
+- **選択肢**: (a) spec 文言どおり origin/main HEAD 基準 / (b) merge-base 基準
+- **決定**: (b)。統合テストの「main 時点より bump」検証と変更プラグイン列挙は `git merge-base HEAD origin/main` を基準に行う。version パリティ（plugin.json == marketplace.json）は基準非依存の恒久検証として別途実装し、bump 検証は base 未取得/base==current 時に skip する（マージ後の再実行でも安全）
+- **理由**: D7 の意図（本 run の実変更プラグインだけ bump）に merge-base が正確に一致する。origin/main HEAD は無関係な先行差分を含み誤判定する。longrun は origin/main 6.4.0 とは別系統（本 run は自己検証節の追記のみ）のため 6.3.1（patch）とし、マージ時の最終 version 再調整は人間の責務（本 change のスコープ外）
+
 ## Risks / Trade-offs
 
 - [change-1〜4 の成果物が不完全なまま本 change が走ると統合検証が大量 FAIL する] → 依存関係を「change-1〜4 全て完了後に直列実行」と固定（plan.md）。FAIL 時は D6 の方針で最小修正し、修正不能な構造問題は凍結して人間へエスカレーション

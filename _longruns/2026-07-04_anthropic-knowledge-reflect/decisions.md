@@ -89,3 +89,27 @@
 ### D-PR3: recipe-miner デモは実ログ解析の結果「提案なし」で正常終了
 - **文脈**: `~/.claude/projects/` の直近 7 日 jsonl を jq で圧縮集計（生ログをメインに載せない）。抽出候補は既存レシピ（backlog-triage / cron-*・goal-tests-green）でカバー済み or 実測データ不足だった。
 - **決定**: spec の「候補ゼロ＝提案なしの正常終了」は正常系。新規性のある提案が無い場合に無理に提案を作らず、繰り越し候補を state に記録して正常終了とした（報酬ハッキング＝無理な提案生成の回避）。
+
+## D-5a: version bump のベースラインは origin/main HEAD ではなく merge-base
+
+- 日付: 2026-07-05 / change: loops-integration
+- 背景: 実装時点で origin/main が本 run と無関係な PR #10（longrun ノンストップ実行）で先行しており、`longrun 6.4.0 / marketplace 2.10.0` へ進んでいた。本 run の分岐点（merge-base `cb9f2f0`）は `longrun 6.3.0 / marketplace 2.9.0`。design.md D7 は「`git diff origin/main` で変更プラグインを確定」としていたが、origin/main の先行差分（PR #10 の longrun 大量ファイル変更）が混入し「本 run が変更したプラグイン」を正しく判定できない。
+- 選択肢: (A) origin/main HEAD を基準（spec 文言どおり） / (B) merge-base を基準 / (C) 目視で本 run の変更を列挙。
+- 判断: (B) `git merge-base HEAD origin/main` を「main 時点」の基準とする。統合テストの bump 検証・変更プラグイン列挙は merge-base に対して行う。version パリティ（plugin.json == marketplace.json）は基準非依存の恒久検証として別途実装。
+- 理由: D7 の意図は「本 run が実変更したプラグインだけを bump する（無関係な変更で無意味な bump をしない）」。merge-base は本ブランチが main を離れた点であり、この意図に正確に一致する。origin/main HEAD は無関係な先行差分を含むため誤判定する。可逆（マージ時に人間が最終 version を再調整する前提）。
+- 波及: 本 run が変更したプラグイン = daily-report / experience-to-skill / infra / longrun / weekly-report / worktree（+ 新規 loops）。各を merge-base 版から patch/minor bump し marketplace.json と同期。longrun は origin/main の 6.4.0 とは別系統（本 run は自己検証節の追記のみ）のため 6.3.1（patch）とし、マージ時の version 再調整は人間の責務（本 change のスコープ外）とする。
+
+## D-5b: 統合 bats のハードコード version 検証は本 run の bump に追随して更新する
+
+- 日付: 2026-07-05 / change: loops-integration
+- 背景: 既存テスト（longrun legacy-removal.bats / mvp-plan-split.bats / release-and-readme.bats、worktree setup-script.bats）が plugin.json version を文字列ハードコードで検証していた。本 change の bump によりこれらが FAIL する。
+- 判断: design.md D6（FAIL は成果物側を最小修正、spec は緩めない）に従い、ハードコードされた期待 version 値を本 run の新 version に更新する（検証の意図＝「plugin.json が期待 version である」は維持し、期待値のみ追随）。SKILL.md frontmatter の version（6.2.0 等）は本 run で変更しないため据え置く。
+- 理由: version 検証の意味を保ったまま bump と整合させる最小修正。テスト自体の削除・緩和はしない。
+
+## D-5c: S48（additive-only）は frontmatter version 行を除外する
+
+- 日付: 2026-07-05 / change: loops-integration
+- 背景: infra プラグインの既存テスト S29 は「SKILL.md frontmatter version == plugin.json version」を強制する。change-5 が infra plugin.json を 0.3.0→0.3.1 に bump するため、S29 を保つには infra SKILL.md の frontmatter `version:` も 0.3.1 に上げる必要がある。しかし change-2 のテスト S48（additive-only: merge-base に対し削除行 0）は、この version 行の変更を「削除行」として誤検知し FAIL する。S29・S48・S131（bump 必須）が infra について同時成立しない。
+- 選択肢: (A) infra を bump しない（S131 違反） / (B) plugin.json だけ bump し SKILL 据え置き（S29 違反） / (C) 両方 bump し S48 を version 行除外に精緻化。
+- 判断: (C)。S48 の削除行カウントから frontmatter `version:` 行を除外（`grep -vE '^-version:'`）。
+- 理由: S48 の文書化された意図は「change-2 の編集は『## 自己検証』節の追加のみで、スキルロジックの削除・書き換えをしない」こと。リリースメタデータの version bump は change-5 の正当な責務であり change-2 のロジック削除ではない。S48 は累積 diff を測るため両者を区別できない。version 行のみ除外することで S48 の本来の保証（スキルロジック追加のみ）を維持しつつ、必須の version bump と両立させる。スキルロジック行の削除・書き換えは引き続き 0 件を強制する。

@@ -302,9 +302,10 @@ setup() {
 # mid-change. They only assert plugin.json's own value and that marketplace.json
 # still parses and still contains the corresponding entry.
 
-@test "mvp: longrun plugin.json version is 6.3.0" {
+@test "mvp: longrun plugin.json version is 6.3.1" {
+  # bumped 6.3.0 -> 6.3.1 by loops-integration (change-5). See decisions.md D-5b.
   a="$(jq -r '.version' "$LONGRUN_JSON")"
-  [ "$a" = "6.3.0" ]
+  [ "$a" = "6.3.1" ]
 }
 
 @test "mvp: marketplace.json still contains a longrun entry (version sync deferred to change-7)" {
