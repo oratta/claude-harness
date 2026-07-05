@@ -418,3 +418,11 @@ plan.md が確定したら（ユーザーがOKを出した後）:
 
 2. **確定報告**:
    「自律実行の準備完了」を報告し、`/longrun:exec` コマンドでの実行を案内する。
+
+## 自己検証
+
+完了宣言の前に、生成物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`）。
+
+- 生成した `plan.md` が実在し、必須見出し（ゴール / Changes分解 / 受け入れ条件）を持つことを確認する: `grep -E '^## (ゴール|Changes分解|受け入れ条件)' plan.md`。
+- `plan.md` の受け入れ条件が機械検証可能なコマンド + 期待値で書かれ、主観基準になっていないことを確認する。
+- OpenSpec 連携時は `openspec/changes/<change>/` の spec/tasks が生成され、`openspec validate` が exit 0 になることを確認する。

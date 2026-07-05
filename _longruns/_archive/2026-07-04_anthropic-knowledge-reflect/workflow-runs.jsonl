@@ -1,0 +1,3 @@
+{"phase":"Review","runId":"wf_d7862caf-4a9","scriptPath":"/Users/oratta/orca/workspaces/oratta-claude-harness/anthropic論文をハーネスに反映/_longruns/2026-07-04_anthropic-knowledge-reflect/review.workflow.js","timestamp":"2026-07-05T00:42:59Z"}
+{"phase":"SpecPrep","runId":"wf_689a80a7-8cb","scriptPath":"/Users/oratta/orca/workspaces/oratta-claude-harness/anthropic論文をハーネスに反映/_longruns/2026-07-04_anthropic-knowledge-reflect/spec-prep.workflow.js","timestamp":"2026-07-05T00:55:00Z"}
+{"phase":"BuildVerify","runId":"wf_3ee4cf6b-c06","scriptPath":"/Users/oratta/orca/workspaces/oratta-claude-harness/anthropic論文をハーネスに反映/_longruns/2026-07-04_anthropic-knowledge-reflect/build-verify.workflow.js","timestamp":"2026-07-05T01:20:00Z"}

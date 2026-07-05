@@ -1,0 +1,14 @@
+{
+  "name": "loops",
+  "version": "0.5.0",
+  "description": "公式記事「Getting started with loops」の4ループタイプ（ターンベース/ゴールベース/タイムベース/プロアクティブ）を、ネイティブプリミティブ（/goal・/loop・/schedule・skill・workflows・auto mode）の合成レシピとして設計・記述するための器。レシピ形式規約・State 規約・設計ガイド（/loops:design）・brain dump から goal ブリーフを一発生成するコマンド（/loops:goalify）を提供する。独自のループ実行系（常駐スクリプト・カスタム driver・宣言的 schema ランタイム）は持たない。",
+  "author": {
+    "name": "Oratta"
+  },
+  "license": "MIT",
+  "keywords": ["loops", "loop-engineering", "goal", "schedule", "recipe", "claude-code"],
+  "skills": [
+    "./skills/loops-design",
+    "./skills/loops-goalify"
+  ]
+}

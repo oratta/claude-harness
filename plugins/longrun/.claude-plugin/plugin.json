@@ -1,6 +1,6 @@
 {
   "name": "longrun",
-  "version": "6.4.0",
+  "version": "6.4.1",
   "description": "Claude Code 向け自律実行ハーネス。plan.md から Workflow スクリプトを生成し、TDD 実装（Build）と4軸定量評価（Verify）を Build Contract レビュー付きで自律的に回す。",
   "author": {
     "name": "Oratta"

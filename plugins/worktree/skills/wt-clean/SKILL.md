@@ -504,3 +504,10 @@ Step B-🔴 で「破棄削除 (force)」を選んだ場合のみ:
 - detached HEAD の worktree: ブランチ削除はスキップ。🔴 判定時はマージ選択肢を除外（Step B-🔴）
 - worktree のパスが存在しない（既に手動削除済み）: `git worktree prune` で整理
 - Superset 作成の worktree: 削除後「Superset UI 上でも not found になるので UI から削除してください」と案内
+
+## 自己検証
+
+完了宣言の前に成果物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`、詳細手順: `plugins/worktree/references/wt-clean-verification.md`）。
+
+- 削除した worktree が `git worktree list` に現れないことを確認する。
+- 🟡 判定で LLM 退避を行った場合、退避先ファイルが実在することを確認する。

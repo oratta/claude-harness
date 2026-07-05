@@ -167,3 +167,11 @@ EOF
 - スクリプトがエラー終了した場合: エラー出力をそのままユーザーに報告する
 - セットアップでエラーが発生した場合、引数で指定された後続作業には着手しない（先にエラー解消が必要）
 - Step 4 の Draft PR ブートストラップで `gh` 由来のエラーが出た場合: Step 5・Step 6 は通常通り続行する（PR は手動で作り直せるため）
+
+## 自己検証
+
+完了宣言の前に、成果物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`）。
+
+- 作成した worktree が登録されていることを確認する: `git worktree list` に対象パスが現れる。
+- `--with-pr` 実行時は Draft PR が作成されたことを確認する: `gh pr view --json isDraft,url` で `isDraft` が true。
+- カレントディレクトリが作成した worktree 内であり、後続作業指示に着手できる状態が整っていることを確認する。
