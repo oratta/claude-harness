@@ -113,3 +113,10 @@
 - 選択肢: (A) infra を bump しない（S131 違反） / (B) plugin.json だけ bump し SKILL 据え置き（S29 違反） / (C) 両方 bump し S48 を version 行除外に精緻化。
 - 判断: (C)。S48 の削除行カウントから frontmatter `version:` 行を除外（`grep -vE '^-version:'`）。
 - 理由: S48 の文書化された意図は「change-2 の編集は『## 自己検証』節の追加のみで、スキルロジックの削除・書き換えをしない」こと。リリースメタデータの version bump は change-5 の正当な責務であり change-2 のロジック削除ではない。S48 は累積 diff を測るため両者を区別できない。version 行のみ除外することで S48 の本来の保証（スキルロジック追加のみ）を維持しつつ、必須の version bump と両立させる。スキルロジック行の削除・書き換えは引き続き 0 件を強制する。
+
+## D-5d: origin/main（PR #10）マージ時の version 最終調整
+
+- 日付: 2026-07-05 / メインループ（exec 後処理、ユーザー指示）
+- 背景: D-5a の予告どおり、origin/main は PR #10 で longrun 6.4.0 / marketplace 2.10.0 に先行。本ブランチは longrun 6.3.1 / marketplace 2.11.0。
+- 判断: origin/main をマージし、longrun = **6.4.1**（main の 6.4.0 の上に本 run の自己検証節追記を patch として乗せる）、marketplace top = **2.11.0**（両系統の大きい方）で解決。version ハードコードテスト 3 本（legacy-removal / mvp-plan-split / release-and-readme）を 6.4.1 に追随。
+- evidence: マージ後 全 bats 575 PASS（exit 0）、全 plugin.json / marketplace.json parse OK、version パリティ mismatch 0 件。merge commit 90d06b8。
