@@ -76,6 +76,11 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
      - **`/loops:disable <レシピ名>`**: CronDelete + レジストリ更新
      - **SessionStart hook**（`hooks/hooks.json`）: セッション起動時にレジストリと CronList を照合し、消えている cron があれば additionalContext で再登録を促す（**セッション再起動でループが自動復旧する**ための機構。「登録済みであるべき台帳」はファイルが記憶する）
      - 実装時の検証必須項目: (a) CronCreate がセッション再起動・compaction を跨いで生存するか実測（生存するなら hook は保険、消えるなら必須）、(b) enable スキルの `allowed-tools` に CronCreate/CronDelete/CronList を含めて権限プロンプトなしで動くか、(c) 発火プロンプトのスラッシュ形式（`/loops:mine`）でスキル起動が確実か（不確実なら Skill ツール明示の書式に倒す）
+  7. **session-host 運用機構（常駐セッション自体の面倒を見る仕組み）**: 常駐前提の残る2リスク——プロセス死（クラッシュ・Mac再起動。tmux は端末切断は守るがこれは守れない）とコンテキスト劣化（長期稼働の context rot）——への対策を同梱する:
+     - **supervisor**: `scripts/loops-host.sh` — tmux セッション（例: `pikke`）内の claude 対話セッションの生存チェック + 死んでいれば再起動するラッパー。launchd KeepAlive（または watchdog cron）で駆動し、Mac 再起動後も自動復帰。起動するのは**対話セッション**であり `claude -p` ではない（サブスク枠の前提を維持）
+     - **計画的リサイクル**: ループの記憶は全てファイル（registry.md / state.md / feature-list / git）にあるため、セッションは消耗品として**夜間に定期破棄→新規起動**する（`--continue` は使わずフレッシュ開始）。再起動後は SessionStart hook が cron を自動再登録し、ループが無人で再開する。「圧迫する前に毎日捨てる」= compaction に依存しない原則をセッションホスト自体に適用
+     - 運用手順とテンプレートは `references/session-host.md` に記載（tmux ラッパー・launchd plist・リサイクル時刻の設計指針）
+     - 実装時の検証必須項目: (d) 無人再起動セッションの permission 設定（cron 発火時に権限プロンプトで停止しない allowlist / mode）、(e) リサイクル時刻と cron 発火時刻の衝突回避（例: 4時リサイクルなら cron は5時以降）、(f) リサイクル→hook 復元→次回 cron 発火までの一連が無人で通ること
 - **使用スキル**: なし（longrun の plan-interview-methodology.md を参照流用）
 - **依存関係**: 独立（change-2〜4 の前提）
 - **config.yaml rules**:
@@ -186,6 +191,7 @@ builder / reviewer は迷ったら以下を参照する（全て本 run の `res
 11. [ ] `recipes/routine-long-build.md` が存在し、1サイクル1項目・evidence 必須の passes 更新・smoke check・凍結条件を含む。3 項目以上の feature-list で 2 サイクル以上に分けた完走デモのログが残っている
 12. [ ] `recipes/routine-recipe-miner.md` が存在し、(a) 常駐セッション内 cron を第一候補とするローカル定期実行（/schedule 不可の理由と launchd フォールバック付き）、(b) 1サイクル最大3提案、(c) Draft PR 出力・自動 merge 禁止、(d) サブエージェント隔離のログ解析、の 4 点を含む。実ログに対する 1 サイクルのデモ実行で提案（または「提案なし」の正常終了）と state 更新が確認できる
 13. [ ] `references/execution-mechanisms.md` が機構の使い分け表（常駐セッション cron 推奨・/schedule の従量課金注意を含む）と launchd テンプレートを含む
+13b. [ ] `scripts/loops-host.sh` と `references/session-host.md` が存在し、supervisor（生存チェック+再起動）と計画的リサイクル（夜間破棄→フレッシュ起動→hook 復元）の手順を含む。「リサイクル→cron 自動再登録→次回発火」の一連が無人で通ることが実機確認されている
 14. [ ] `references/cost-guardrails.md` が公式トークン管理 6 項目を含む
 15. [ ] `loops` が marketplace.json に登録され、編集した全プラグインで plugin.json version が bump され marketplace.json と一致する
 
