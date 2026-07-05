@@ -4,16 +4,16 @@
 
 ## 1. backlog 消化ルーチン（レシピ実装・独立 commit）
 
-- [ ] 1.1 bats テストを先に書く: `routine-backlog-triage.md` の固定見出し 7 節（ループ型 / 目的 / 起動コマンド / 停止基準 / 前提 / コスト注意 / エスカレーション）の存在、非破壊制約（Draft PR まで + merge・close・force 禁止の列挙）、処理数上限の数値記載、繰り越し記録（silent drop 禁止）、2 連続失敗凍結の各キーフレーズを grep 検証する（この時点では FAIL）
-- [ ] 1.2 `plugins/loops/recipes/routine-backlog-triage.md` を執筆する: /schedule 起動 → discovery（backlog.md + open issues、処理数上限明記）→ worktree 隔離実装 → 第二エージェントレビュー → Draft PR まで → state 更新（処理済み / 繰り越し / 引き継ぎ待ち）。停止基準は /goal「選定タスクが全て Draft PR または凍結記録に到達するまで」+ 同一タスク 2 連続失敗凍結。起動コマンドはネイティブプリミティブのコピペ可能文字列のみ
-- [ ] 1.3 references の規約検査手順（停止基準必須・Bad Loop 検査 4 項目）をこのレシピに手動適用し、全項目 PASS を確認する
-- [ ] 1.4 1.1 の bats テストが全て PASS することを確認し、レシピ + テストを独立 commit する
+- [x] 1.1 bats テストを先に書く: `routine-backlog-triage.md` の固定見出し 7 節（ループ型 / 目的 / 起動コマンド / 停止基準 / 前提 / コスト注意 / エスカレーション）の存在、非破壊制約（Draft PR まで + merge・close・force 禁止の列挙）、処理数上限の数値記載、繰り越し記録（silent drop 禁止）、2 連続失敗凍結の各キーフレーズを grep 検証する（この時点では FAIL）
+- [x] 1.2 `plugins/loops/recipes/routine-backlog-triage.md` を執筆する: /schedule 起動 → discovery（backlog.md + open issues、処理数上限明記）→ worktree 隔離実装 → 第二エージェントレビュー → Draft PR まで → state 更新（処理済み / 繰り越し / 引き継ぎ待ち）。停止基準は /goal「選定タスクが全て Draft PR または凍結記録に到達するまで」+ 同一タスク 2 連続失敗凍結。起動コマンドはネイティブプリミティブのコピペ可能文字列のみ
+- [x] 1.3 references の規約検査手順（停止基準必須・Bad Loop 検査 4 項目）をこのレシピに手動適用し、全項目 PASS を確認する
+- [x] 1.4 1.1 の bats テストが全て PASS することを確認し、レシピ + テストを独立 commit する
 
 ## 2. backlog 消化ルーチン（1 サイクルデモ・独立 commit）
 
-- [ ] 2.1 デモ計画を確定する: このリポジトリの実 backlog に安全な小タスクがあればそれを、なければ安全なサンドボックスを使う（処理数上限 1 件で実行）
-- [ ] 2.2 1 サイクルを実行する: discovery → 実装 → 第二エージェントレビュー → Draft PR 作成（またはサンドボックス相当物）→ state 更新・繰り越し記録
-- [ ] 2.3 実行ログ（Draft PR 作成・state 更新・繰り越し記録の確認結果 + 1.3 の手動規約検査結果）を `{longrun-dir}` に evidence として保存し、独立 commit する
+- [x] 2.1 デモ計画を確定する: このリポジトリの実 backlog に安全な小タスクがあればそれを、なければ安全なサンドボックスを使う（処理数上限 1 件で実行）
+- [x] 2.2 1 サイクルを実行する: discovery → 実装 → 第二エージェントレビュー → Draft PR 作成（またはサンドボックス相当物）→ state 更新・繰り越し記録
+- [x] 2.3 実行ログ（Draft PR 作成・state 更新・繰り越し記録の確認結果 + 1.3 の手動規約検査結果）を `{longrun-dir}` に evidence として保存し、独立 commit する
 
 ## 3. 長期ビルドルーチン（レシピ + feature-list リファレンス実装・独立 commit）
 
