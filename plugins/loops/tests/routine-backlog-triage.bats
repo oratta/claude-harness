@@ -9,7 +9,11 @@ load "$(dirname "$BATS_TEST_FILENAME")/helper.bash"
 setup() {
   loops_setup_paths
   RECIPE="${PLUGIN_DIR}/recipes/routine-backlog-triage.md"
+  # run dir may live under _longruns/ (active) or _longruns/_archive/ (after /lr:a)
   LONGRUN_DIR="${PLUGIN_ROOT}/_longruns/2026-07-04_anthropic-knowledge-reflect"
+  if [ ! -d "$LONGRUN_DIR" ]; then
+    LONGRUN_DIR="${PLUGIN_ROOT}/_longruns/_archive/2026-07-04_anthropic-knowledge-reflect"
+  fi
   HEADINGS=("ループ型" "目的" "起動コマンド" "停止基準" "前提" "コスト注意" "エスカレーション")
 }
 
