@@ -118,12 +118,11 @@ deny 配列に追記。既存エントリは消さない）。main ブランチ�
     "deny": [
       "Bash(git push origin main:*)",
       "Bash(git push origin master:*)",
+      "Bash(git push -f:*)",
       "Bash(git push --force:*)",
       "Bash(git push --force-with-lease:*)",
-      "Bash(git merge:*)",
-      "Bash(gh pr merge:*)",
-      "Bash(git rebase:*)",
-      "Bash(git push --no-verify:*)"
+      "Bash(git push --no-verify:*)",
+      "Bash(gh pr merge:*)"
     ]
   }
 }
@@ -132,6 +131,12 @@ deny 配列に追記。既存エントリは消さない）。main ブランチ�
 > これはプロンプトではなくハーネスが実行前にブロックする層であり、無課金 private リポジトリで
 > branch protection が使えない場合の主防壁になる。branch protection が使えるリポジトリでは
 > あわせて GitHub 側でも main を保護すること（required status checks + PR 必須）。
+>
+> **`git merge` / `git rebase` そのものは deny しない**: レビューモードの main 追従
+> （`origin/main` を feature ブランチへマージ）や worktree 掃除の正当なローカルマージを
+> 塞いでしまうため。main への統合は「push する瞬間」に pre-push フック（全形式を捕捉）と
+> 上記 push deny で封鎖する設計とする。deny のプレフィックスマッチはよくあるコマンド形のみを
+> 捕捉するので、網羅的な防壁は Step 6 の pre-push フックが担う。
 
 ## Step 6: pre-push フックの設置
 
