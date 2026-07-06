@@ -1,14 +1,15 @@
 ---
 name: loops-review-queue
-description: プロジェクト横断のレビューキューを優先順位付きで表示する。複数リポジトリで並行稼働する自律開発ループ（loop-dev-agent）が出した PR を、GitHub Project「Review Queue」と gh search を突き合わせて「今どの PR から捌くべきか」の順に一覧する。`/loops:review-queue` で起動するほか、「レビュー待ちPRを一覧して」「マージ待ちを横断で見せて」「レビューキュー」でも起動。
+description: プロジェクト横断の「人間待ち」キューを優先順位付きで表示する。複数リポジトリで並行稼働する自律開発ループ（loop-dev-agent）のマージ判断待ち PR と、トリアージ待ち・要介入 issue を、GitHub Project「Review Queue」と gh search を突き合わせて「今どれから捌くべきか」（ブロッカー優先）の順に一覧する。`/loops:review-queue` で起動するほか、「レビュー待ちPRを一覧して」「マージ待ちを横断で見せて」「確認待ちタスクを見せて」「レビューキュー」でも起動。
 allowed-tools: Read, Bash
 ---
 
-# /loops:review-queue — プロジェクト横断レビューキュー
+# /loops:review-queue — プロジェクト横断の人間待ちキュー
 
-複数リポジトリで並行する自律開発ループのレビュー待ち PR を1つのビューに集約し、
-**人間が次にどの PR を捌くべきか**を優先順位付きで提示する。読み取り専用であり、
-PR やラベル、Project の状態は一切変更しない。
+複数リポジトリで並行する自律開発ループの「人間待ち」——マージ判断待ちの PR と、
+トリアージ待ち（`agent-proposed` / `needs-approval`）・要介入（`agent-blocked`）の issue——を
+1つのビューに集約し、**次にどれを捌くべきか**をブロッカー優先で提示する。読み取り専用であり、
+PR・issue・ラベル・Project の状態は一切変更しない。
 
 ## Step 1: Review Queue Project の解決
 
@@ -28,36 +29,46 @@ NUM=$(gh project list --owner "$LOGIN" --format json \
 gh project item-list "$NUM" --owner "$LOGIN" --format json --limit 200
 ```
 
-JSON から open な PR アイテムだけを対象に、以下を抽出する:
-リポジトリ名 / PR タイトル / URL / `Review state` / `Blocked count` / `Updated`。
+JSON から open なアイテム（PR と issue の両方）を対象に、以下を抽出する:
+リポジトリ名 / タイトル / URL / `State` / `Blocked count` / `Updated`。
 
-## Step 3: フォールバック検索（Project 未登録 PR の拾い漏れ防止）
+## Step 3: フォールバック検索（Project 未登録の拾い漏れ防止）
 
-Project に登録されていない自分の open PR（手動作業分や連携導入前のループ PR）も横断で拾う:
+Project に登録されていない「人間待ち」も横断で拾う:
 
 ```bash
+# 自分の open PR（手動作業分や連携導入前のループ PR）
 gh search prs --author "@me" --state open --json repository,title,number,url,labels,isDraft,updatedAt --limit 100
+# 人間の判断を待っている issue
+gh search issues --owner "$LOGIN" --state open --label agent-proposed --json repository,title,number,url,updatedAt --limit 50
+gh search issues --owner "$LOGIN" --state open --label agent-blocked --json repository,title,number,url,updatedAt --limit 50
+gh search issues --owner "$LOGIN" --state open --label needs-approval --json repository,title,number,url,updatedAt --limit 50
 ```
 
-Step 2 の結果と URL で突き合わせ、未登録のものは Review state をラベル
-（`agent-review:passed` → Approved / `agent-review:failed` → Changes Requested /
-`agent-review:pending` → Needs Review / それ以外 → `-`）から推定して表に混ぜ、
-`未登録` マークを付ける。
+Step 2 の結果と URL で突き合わせ、未登録のものは State をラベルから推定して表に混ぜ、`未登録` マークを付ける:
+`agent-review:passed` → マージ判断 / `agent-review:failed` → 修正中 / `agent-review:pending` → レビュー中 /
+`agent-proposed`・`needs-approval` → トリアージ / `agent-blocked` → 要介入 / それ以外の PR → `-`。
 
 ## Step 4: 優先順位付けと表示
 
+**人間のアクションが必要なもの**（マージ判断 / トリアージ / 要介入）だけを本表に載せ、
 以下の順でソートした1枚のテーブルを表示する:
 
-1. **Review state = Approved が最上位**（人間のマージ判断だけで前進する。放置すると main が進んでコンフリクトし、ループが再レビューをやり直すコストが発生する）
-2. 同率内は **Blocked count 降順**（塞いでいる後続タスクが多い PR ほど先）
+1. **Blocked count 降順**（他のタスクのブロッカーになっているものが最優先。ブロッカーを放置すると
+   後続タスク全体が止まる）
+2. 同率内は State の優先度: **マージ判断 → 要介入 → トリアージ**（マージ判断は放置すると main が進んで
+   コンフリクトし再レビューコストが発生する。要介入はその issue のラインが完全停止している。
+   トリアージは将来の仕事の供給なので相対的に緩い）
 3. 次いで **更新が古い順**（滞留が長いものを先に）
+
+レビュー中 / 修正中（ループが処理中）は本表に載せず、末尾に件数のみ添える。
 
 表の後に必ず添えるもの:
 
-- **推奨アクション 1 行**: 「まず `<repo>#<番号>` をマージ判断（Approved・Blocked count N・M 日滞留）」の形式
+- **推奨アクション 1 行**: 「まず `<repo>#<番号>` を<マージ判断|トリアージ|介入>（Blocked count N・M 日滞留）」の形式
 - Project の URL（ボードで見たい場合のリンク）
-- Changes Requested / Needs Review はループが処理中であり人間の対応不要であること
-  （2回失敗して `agent-blocked` になった issue がある場合のみ人間の判断が要る旨）
+- ネイティブ dependencies で blocked 状態の issue には GitHub がボード上に「Blocked」アイコンを出すこと
+  （ブロックされている側は着手対象でないことの注意）
 
 ## してはならないこと
 

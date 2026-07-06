@@ -81,17 +81,24 @@ gh project create --owner "$LOGIN" --title "Review Queue" --format json --jq .nu
 
 # 2. カスタムフィールド（field-list で存在確認してから、無いものだけ作成）
 gh project field-list <番号> --owner "$LOGIN" --format json --jq '.fields[].name'
-gh project field-create <番号> --owner "$LOGIN" --name "Review state" \
-  --data-type SINGLE_SELECT --single-select-options "Needs Review,Changes Requested,Approved"
+gh project field-create <番号> --owner "$LOGIN" --name "State" \
+  --data-type SINGLE_SELECT --single-select-options "レビュー中,修正中,マージ判断,トリアージ,要介入"
 gh project field-create <番号> --owner "$LOGIN" --name "Blocked count" --data-type NUMBER
 ```
+
+State は PR の待ち（レビュー中 / 修正中 / マージ判断）と issue の待ち（トリアージ / 要介入）の両方を
+1フィールドで扱う（対応表は憲法テンプレートの「Review Queue 連携」参照）。既存 Project のフィールドが
+旧仕様（`Review state` 3値）の場合は、GraphQL の `updateProjectV2Field` ミューテーションで
+フィールド名とオプションを上書き更新できる（field id は維持されるためビュー設定は壊れない。
+ただしオプション id は変わるので既存 item の値は再設定が必要）。
 
 確定した `<owner>/<番号>` を Step 4 の `{{REVIEW_QUEUE}}` に使う（連携「なし」の場合は `なし`）。
 
 ビューと built-in workflow は API 非対応のため、初回作成時のみ以下の手動設定（2 分）を完了レポートで案内する:
 
-1. ボードビューを追加し、列（グルーピング）を `Review state` に、カード並び順を `Blocked count` 降順にする
-2. Workflows → 「Item closed」→ Status: Done を有効化、「Auto-archive items」を有効化
+1. ボードビューを追加し、列（グルーピング）を `State` に、カード並び順を `Blocked count` 降順、
+   フィルタを `is:open` にする。Fields で `Blocked count` と `Repository` をカード表示に加える
+2. Workflows → 「Auto-archive items」を有効化し、フィルタを `is:issue,pr is:closed updated:<@today-2w` にする
 
 ## Step 3: issue テンプレートの設置
 
