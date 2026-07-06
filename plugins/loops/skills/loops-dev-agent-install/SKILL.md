@@ -47,6 +47,11 @@ gh repo view --json viewerPermission # push 権限があること
 | 朝ダイジェスト時刻 | 7 時 |
 | 提案ストック上限 | 3 件 |
 | worktree 置き場 | `~/orca/workspaces/<プロジェクト名>`（orca 標準） |
+| Review Queue 連携 | あり（`project` scope があれば） |
+
+**Review Queue 連携の扱い**: `gh auth status` のトークン scope に `project` が含まれていれば「あり」を推奨する。
+含まれていなければ「なし」をデフォルトにし、有効化したい場合は `gh auth refresh -s project` を
+ユーザー自身が実行する必要があることを伝える（対話認証のためスキルからは実行しない）。
 
 ## Step 2: GitHub ラベルの作成
 
@@ -62,6 +67,31 @@ gh label create "agent-review:pending" -c "#BFD4F2" -d "レビューエージェ
 gh label create "agent-review:passed"  -c "#0E8A16" -d "レビュー合格。マージ判断待ち" --force
 gh label create "agent-review:failed"  -c "#E99695" -d "レビュー不合格。修正対象" --force
 ```
+
+## Step 2.5: Review Queue Project の準備（連携「あり」の場合のみ）
+
+ユーザーレベルの GitHub Project「Review Queue」とカスタムフィールドを**冪等に**用意する。
+既存があれば再利用し、無いものだけ作る:
+
+```bash
+LOGIN=$(gh api user --jq .login)
+# 1. タイトル "Review Queue" の user project を探す。無ければ作成
+gh project list --owner "$LOGIN" --format json --jq '.projects[] | select(.title == "Review Queue") | .number'
+gh project create --owner "$LOGIN" --title "Review Queue" --format json --jq .number   # 見つからなかった場合のみ
+
+# 2. カスタムフィールド（field-list で存在確認してから、無いものだけ作成）
+gh project field-list <番号> --owner "$LOGIN" --format json --jq '.fields[].name'
+gh project field-create <番号> --owner "$LOGIN" --name "Review state" \
+  --data-type SINGLE_SELECT --single-select-options "Needs Review,Changes Requested,Approved"
+gh project field-create <番号> --owner "$LOGIN" --name "Blocked count" --data-type NUMBER
+```
+
+確定した `<owner>/<番号>` を Step 4 の `{{REVIEW_QUEUE}}` に使う（連携「なし」の場合は `なし`）。
+
+ビューと built-in workflow は API 非対応のため、初回作成時のみ以下の手動設定（2 分）を完了レポートで案内する:
+
+1. ボードビューを追加し、列（グルーピング）を `Review state` に、カード並び順を `Blocked count` 降順にする
+2. Workflows → 「Item closed」→ Status: Done を有効化、「Auto-archive items」を有効化
 
 ## Step 3: issue テンプレートの設置
 
@@ -100,7 +130,7 @@ Step 1 の値で置換して対象リポジトリの `docs/agent-loop.md` に書
 
 置換対象: `{{MAIN_BRANCH}}` `{{TEST_CMD}}` `{{LINT_CMD}}` `{{BUILD_CMD}}` `{{DEV_SERVER_CMD}}`
 `{{DEV_URL}}` `{{BROWSER_VERIFY}}` `{{WORKTREE_BASE}}` `{{RATE_5H_MAX}}` `{{RATE_7D_MAX}}`
-`{{DIGEST_HOUR}}` `{{PROPOSAL_CAP}}`
+`{{DIGEST_HOUR}}` `{{PROPOSAL_CAP}}` `{{REVIEW_QUEUE}}`（Step 2.5 の `<owner>/<番号>`、連携なしなら `なし`）
 
 該当しない項目（例: CLI ツールで dev サーバーが無い）は値を `なし` にする。
 
@@ -196,6 +226,9 @@ git config core.hooksPath .githooks
    ```
 3. 人間側の日常運用: 「`agent-proposed` を見て良いものに `agent-ready` を付ける」
    「`agent-review:passed` の PR をマージする」の 2 点だけであること
+   （Review Queue 連携ありの場合はマージ判断を Project ボードの Approved 列で横断確認できること、
+   Project の URL、初回のみ必要なビュー・workflow の手動設定（Step 2.5）、
+   ターミナルからは `/loops:review-queue` で同じキューを一覧できることも添える）
    （タスクを追加したくなったら書き殴りを `/loops:issueify` に渡せば、原子化と
    測定可能な受け入れ条件の定義までスキルがフォローすること）
 4. 初回はパイロット実行（1〜2 サイクルを見ている状態で回す）を推奨すること

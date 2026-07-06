@@ -19,6 +19,7 @@
 | レート上限 | 5時間枠 {{RATE_5H_MAX}}% / 7日枠 {{RATE_7D_MAX}}% |
 | 朝ダイジェスト | {{DIGEST_HOUR}} 時以降のその日最初のサイクル |
 | 提案ストック上限 | {{PROPOSAL_CAP}} 件 |
+| Review Queue Project | {{REVIEW_QUEUE}}（`<owner>/<番号>` 形式。`なし` なら連携をスキップ） |
 
 ## 大原則（全モード共通・違反禁止）
 
@@ -54,6 +55,41 @@
 | `agent-review:pending` | PR | 実装済み・レビューエージェント待ち |
 | `agent-review:passed` | PR | レビュー合格。人間はマージ判断のみでよい |
 | `agent-review:failed` | PR | レビュー不合格。修正モードの対象 |
+
+## Review Queue 連携（プロジェクト横断レビューボード）
+
+Review Queue Project が `なし` 以外なら、PR の状態変化をユーザーレベルの GitHub Project に反映する。
+人間はこのボード1枚で**全リポジトリ**のマージ待ち PR を横断で捌く。操作はすべて決定論的な `gh` コマンドで行う。
+
+`Review state`（単一選択フィールド）は PR ラベルと1対1で対応させる。**`agent-review:*` ラベルを付け替えたら、同じ手順内で必ず Review state も揃える**:
+
+| PR ラベル | Review state |
+|---|---|
+| `agent-review:pending` | Needs Review |
+| `agent-review:failed` | Changes Requested |
+| `agent-review:passed` | Approved（人間のマージ判断待ち） |
+
+`Blocked count`（数値フィールド）= この PR の対象 issue 番号 `#<N>` を本文で参照している open な `agent-ready` issue の件数。この PR のマージを前提に積まれている後続タスク数の近似であり、人間が「どの PR から捌くか」を決めるソートキーになる。
+
+手順（`<owner>/<番号>` はプロジェクト設定の Review Queue Project の値）:
+
+```bash
+PROJECT_ID=$(gh project view <番号> --owner <owner> --format json --jq .id)
+# 登録（登録済み URL に対しては既存 item が返るため冪等）
+ITEM_ID=$(gh project item-add <番号> --owner <owner> --url <PR URL> --format json --jq .id)
+# Blocked count の算出（対象リポジトリで実行）
+BLOCKED=$(gh issue list --state open --label agent-ready --json number,body \
+  --jq '[.[] | select(.body | test("#<N>([^0-9]|$)"))] | length')
+# field id / option id を取得してから書き込む
+gh project field-list <番号> --owner <owner> --format json
+gh project item-edit --project-id $PROJECT_ID --id $ITEM_ID \
+  --field-id <Review_state_の_field_id> --single-select-option-id <対応する_option_id>
+gh project item-edit --project-id $PROJECT_ID --id $ITEM_ID \
+  --field-id <Blocked_count_の_field_id> --number $BLOCKED
+```
+
+- **連携の失敗でサイクルを止めない**: `gh project` 系コマンドがエラーになっても警告として報告するだけにとどめ、本来の仕事（実装・レビュー・修正）は完了させる。
+- マージ・クローズされた PR の後片付けは Project 側の built-in workflow（auto-archive）に任せる。ループは何もしない。
 
 ## 状態機械
 
@@ -91,18 +127,19 @@ Step 0 と 0.5 は毎サイクル評価する。Step 1〜4 は**上から順に�
 6. 判定を PR コメントに書き、ラベルを付け替える:
    - 合格 → `agent-review:passed`（検証ログ・実機確認の内容を添える）
    - 不合格 → `agent-review:failed`（欠陥の再現手順と修正すべき点を具体的に書く）
-7. 更新したブランチは push する（feature ブランチへの push は許可されている）。
+7. Review Queue 連携（該当時）: 付け替え後のラベルに合わせて Review state を更新し、Blocked count を再計算する（「Review Queue 連携」参照）。
+8. 更新したブランチは push する（feature ブランチへの push は許可されている）。
 
 ### Step 1.5: passed の鮮度チェック
 
-`agent-review:passed` の PR のうち、`origin/{{MAIN_BRANCH}}` との間でコンフリクトが発生しているものがあれば、`agent-review:pending` に戻して次サイクル以降で再レビューさせる。これにより「passed = 今すぐコンフリクトなしでマージでき、直近の main で動作確認済み」が常に保たれる。
+`agent-review:passed` の PR のうち、`origin/{{MAIN_BRANCH}}` との間でコンフリクトが発生しているものがあれば、`agent-review:pending` に戻して次サイクル以降で再レビューさせる（Review Queue 連携時は Review state も Needs Review に戻す）。これにより「passed = 今すぐコンフリクトなしでマージでき、直近の main で動作確認済み」が常に保たれる。
 
 ### Step 2: 修正モード — `agent-review:failed` の PR がある
 
 最も古い1件を選び、PR ブランチの worktree でレビューコメントの指摘を修正する。
 
 1. 修正後、`{{TEST_CMD}}` / `{{LINT_CMD}}` を実行し、証拠をターン内に表示する。
-2. push して PR コメントに対応内容を書き、`agent-review:pending` に戻す。
+2. push して PR コメントに対応内容を書き、`agent-review:pending` に戻す（Review Queue 連携時は Review state も Needs Review に戻す）。
 3. 同一 PR で failed が2回付いたら、それ以上触らず PR コメントに経緯をまとめ、元 issue を `agent-blocked` にして人間へ引き渡す。
 
 ### Step 3: 実装モード — 実行可能な issue がある
@@ -114,7 +151,7 @@ Step 0 と 0.5 は毎サイクル評価する。Step 1〜4 は**上から順に�
 3. `{{WORKTREE_BASE}}` 配下に worktree を作成する（ブランチ名: `agent/issue-<番号>-<slug>`、起点は `origin/{{MAIN_BRANCH}}`）。wt-setup スキルが使えるなら使う。
 4. 受け入れ条件を仕様として実装する。テストを先に書く（大原則 6・7 を遵守）。
 5. `{{TEST_CMD}}` / `{{LINT_CMD}}` / `{{BUILD_CMD}}` を実行し、証拠をターン内に表示する。
-6. 通ったら push して **Draft PR** を作成する。本文に `Closes #<番号>` と検証ログを書き、`agent-review:pending` ラベルを付ける。
+6. 通ったら push して **Draft PR** を作成する。本文に `Closes #<番号>` と検証ログを書き、`agent-review:pending` ラベルを付ける。Review Queue 連携（該当時）: PR を Project に登録し、Review state を Needs Review に、Blocked count を算出して設定する（「Review Queue 連携」参照）。
 7. issue に PR の URL と要約をコメントし、`agent-wip` と **`agent-ready` の両方を外す**（PR が open な間に別サイクルが同じ issue を再実装しないため。マージされれば `Closes` で自動クローズされ、PR がマージされずクローズされた場合は人間が再トリアージして `agent-ready` を付け直す）。
 8. 行き詰まったら: worktree は残し、issue に失敗ログをコメントする。同一 issue の失敗コメントが2件になったら `agent-blocked` に切り替えて以後拾わない。教訓を `.agent-loop/GUARDRAILS.md` に追記する（大原則 4 のミラーも忘れずに）。
 

@@ -60,6 +60,10 @@
 - タスクの投入は `/loops:issueify` が支援する（書き殴り・既存バックログ・TODO コメントを、
   原子化 + 測定可能な受け入れ条件付きの issue に変換して起票するまでフォローする）。
 - `gh` CLI が使え、対象リポジトリの issue / PR にアクセスできること。
+- （任意）**Review Queue 連携**: 複数リポジトリで本ループを並行稼働させる場合、ユーザーレベルの
+  GitHub Project「Review Queue」に PR を自動登録し、人間のマージ判断をボード1枚に集約できる
+  （`gh` トークンに `project` scope が必要。導入は `/loops:dev-agent-install` が行い、
+  横断ビューの閲覧は `/loops:review-queue` を使う）。
 - 権限モードが acceptEdits 以上（無人サイクル中に権限プロンプトで止まらないこと）。
 - worktree 運用（1 issue = 1 worktree = 1 ブランチ = 1 Draft PR）。
 
