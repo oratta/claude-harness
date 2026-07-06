@@ -36,13 +36,18 @@ JSON から open なアイテム（PR と issue の両方）を対象に、以�
 
 Project に登録されていない「人間待ち」も横断で拾う:
 
+**owner は個人アカウントだけでなく所属組織も含める**（組織リポジトリのループを取りこぼさない。
+`--owner` はカンマ区切りで複数指定できる）:
+
 ```bash
-# 自分の open PR（手動作業分や連携導入前のループ PR）
+# 検索対象 owner = 自分 + 所属組織（カンマ区切りに連結）
+OWNERS=$({ echo "$LOGIN"; gh api user/orgs --jq '.[].login'; } | paste -sd, -)
+# 自分の open PR（手動作業分や連携導入前のループ PR。author 指定なので owner 不要）
 gh search prs --author "@me" --state open --json repository,title,number,url,labels,isDraft,updatedAt --limit 100
-# 人間の判断を待っている issue
-gh search issues --owner "$LOGIN" --state open --label agent-proposed --json repository,title,number,url,updatedAt --limit 50
-gh search issues --owner "$LOGIN" --state open --label agent-blocked --json repository,title,number,url,updatedAt --limit 50
-gh search issues --owner "$LOGIN" --state open --label needs-approval --json repository,title,number,url,updatedAt --limit 50
+# 人間の判断を待っている issue（組織リポジトリを含めて横断検索）
+for label in agent-proposed agent-blocked needs-approval; do
+  gh search issues --owner "$OWNERS" --state open --label "$label" --json repository,title,number,url,updatedAt --limit 50
+done
 ```
 
 Step 2 の結果と URL で突き合わせ、未登録のものは State をラベルから推定して表に混ぜ、`未登録` マークを付ける:
