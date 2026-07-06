@@ -107,7 +107,7 @@ Step 0 と 0.5 は毎サイクル評価する。Step 1〜4 は**上から順に�
 
 ### Step 3: 実装モード — 実行可能な issue がある
 
-**実行可能な issue** = open かつ `agent-ready` 付き、かつ `agent-wip` / `agent-blocked` / `size:large` が付いていないもの。最も番号の小さい1件を選ぶ。
+**実行可能な issue** = open かつ `agent-ready` 付き、かつ `agent-wip` / `agent-blocked` / `size:large` が付いていないもの。念のため、open な PR が既に紐づいている issue も除外する（`gh pr list --search "<番号> in:body"` 等で確認）。最も番号の小さい1件を選ぶ。
 
 1. 受け入れ条件が測定可能な形で書かれていない issue は拾わない。不足点を issue コメントで指摘し、次の候補へ（候補が尽きたら Step 4 へ）。
 2. 着手宣言: `agent-wip` ラベルを付け、着手コメントを残す。
@@ -115,7 +115,7 @@ Step 0 と 0.5 は毎サイクル評価する。Step 1〜4 は**上から順に�
 4. 受け入れ条件を仕様として実装する。テストを先に書く（大原則 6・7 を遵守）。
 5. `{{TEST_CMD}}` / `{{LINT_CMD}}` / `{{BUILD_CMD}}` を実行し、証拠をターン内に表示する。
 6. 通ったら push して **Draft PR** を作成する。本文に `Closes #<番号>` と検証ログを書き、`agent-review:pending` ラベルを付ける。
-7. issue に PR の URL と要約をコメントし、`agent-wip` を外す。
+7. issue に PR の URL と要約をコメントし、`agent-wip` と **`agent-ready` の両方を外す**（PR が open な間に別サイクルが同じ issue を再実装しないため。マージされれば `Closes` で自動クローズされ、PR がマージされずクローズされた場合は人間が再トリアージして `agent-ready` を付け直す）。
 8. 行き詰まったら: worktree は残し、issue に失敗ログをコメントする。同一 issue の失敗コメントが2件になったら `agent-blocked` に切り替えて以後拾わない。教訓を `.agent-loop/GUARDRAILS.md` に追記する（大原則 4 のミラーも忘れずに）。
 
 途中で `size:large` 相当（1サイクルで完結しない規模）と判明したら、着手を中止して issue に分割案をコメントし、`size:large` を付けて終了する。
