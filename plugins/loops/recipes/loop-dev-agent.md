@@ -57,6 +57,8 @@
     `needs-approval` / `human-only` / `size:large` / `agent-review:pending` / `agent-review:passed` / `agent-review:failed`）
   - permission deny ルール（main へのマージ・push・force 系の封鎖）と pre-push フック
   - issue テンプレート（測定可能な受け入れ条件を必須化）
+- タスクの投入は `/loops:issueify` が支援する（書き殴り・既存バックログ・TODO コメントを、
+  原子化 + 測定可能な受け入れ条件付きの issue に変換して起票するまでフォローする）。
 - `gh` CLI が使え、対象リポジトリの issue / PR にアクセスできること。
 - 権限モードが acceptEdits 以上（無人サイクル中に権限プロンプトで止まらないこと）。
 - worktree 運用（1 issue = 1 worktree = 1 ブランチ = 1 Draft PR）。
