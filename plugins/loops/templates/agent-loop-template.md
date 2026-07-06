@@ -16,7 +16,8 @@
 | dev サーバー起動 | `{{DEV_SERVER_CMD}}`（URL: {{DEV_URL}}） |
 | ブラウザ実機検証 | {{BROWSER_VERIFY}} |
 | worktree 置き場 | `{{WORKTREE_BASE}}` |
-| レート上限 | 5時間枠 {{RATE_5H_MAX}}% / 7日枠 {{RATE_7D_MAX}}% |
+| レート上限（ハードキャップ） | 5時間枠 {{RATE_5H_MAX}}% / 7日枠 {{RATE_7D_MAX}}% |
+| レートヘッドルーム（ペース超過許容） | 5時間枠 +{{RATE_5H_HEADROOM}}pt / 7日枠 +{{RATE_7D_HEADROOM}}pt |
 | 朝ダイジェスト | {{DIGEST_HOUR}} 時以降のその日最初のサイクル |
 | 提案ストック上限 | {{PROPOSAL_CAP}} 件 |
 | Review Queue Project | {{REVIEW_QUEUE}}（`<owner>/<番号>` 形式。`なし` なら連携をスキップ） |
@@ -110,12 +111,35 @@ gh project item-edit --project-id $PROJECT_ID --id $ITEM_ID \
 
 Step 0 と 0.5 は毎サイクル評価する。Step 1〜4 は**上から順に評価し、最初に該当した1つのモードだけ**を実行する。
 
-### Step 0: レートガード
+### Step 0: レートガード（ペース基準の動的閾値）
 
-1. `~/.claude/.rate-limit-snapshot` を読む（JSON: `five_hour_pct` / `seven_day_pct` / `ts`）。
-2. `five_hour_pct > {{RATE_5H_MAX}}` または `seven_day_pct > {{RATE_7D_MAX}}` なら、このサイクルは**何もせずスキップ**し、現在値と復帰見込み（`*_resets_at`）を報告して終了する。
+固定閾値ではなく**枠の経過率に連動した動的閾値**で判定する。同じ使用率でも、枠の序盤なら「行き過ぎ」としてスキップし、終盤ならハードキャップまで許容する。
+
+- 判定式: `動的閾値 = min(ハードキャップ, 枠の経過率% + ヘッドルーム)`
+  - 枠の経過率 = `(枠の長さ − (resets_at − 現在時刻)) ÷ 枠の長さ × 100`（0〜100 にクランプ。枠の長さ: 5時間枠 = 18000 秒、7日枠 = 604800 秒）
+  - 消費ペースが時間経過ペースをヘッドルーム分を超えて上回っていたらスキップ。枠の開始直後はヘッドルームがそのまま下限の閾値になる
+  - `resets_at` が無い（null）枠はハードキャップのみで判定する（従来動作へのフォールバック）
+
+1. 以下のコマンドで判定する（決定論的作業のスクリプト化。LLM が暗算しない）:
+
+   ```bash
+   jq -r --argjson now "$(date +%s)" \
+      --argjson cap5 {{RATE_5H_MAX}} --argjson head5 {{RATE_5H_HEADROOM}} \
+      --argjson cap7 {{RATE_7D_MAX}} --argjson head7 {{RATE_7D_HEADROOM}} '
+     def clamp: if . < 0 then 0 elif . > 100 then 100 else . end;
+     def th(resets; win; cap; head):
+       if resets == null then cap
+       else [cap, ((100 * (win - (resets - $now)) / win) | clamp) + head] | min end;
+     . as $s
+     | th($s.five_hour_resets_at; 18000; $cap5; $head5) as $t5
+     | th($s.seven_day_resets_at; 604800; $cap7; $head7) as $t7
+     | "\(if ($s.five_hour_pct > $t5) or ($s.seven_day_pct > $t7) then "SKIP" else "GO" end) 5h=\($s.five_hour_pct)%(閾値\($t5|floor)%) 7d=\($s.seven_day_pct)%(閾値\($t7|floor)%) ts=\($s.ts)"
+   ' "$HOME/.claude/.rate-limit-snapshot"
+   ```
+
+2. 出力が `SKIP` なら、このサイクルは**何もせずスキップ**し、出力（現在値と動的閾値）と復帰見込み（`*_resets_at`）を報告して終了する。
 3. `ts` が現在時刻より2時間以上古い場合は「スナップショットが古い」と明記した上で続行してよい。
-4. ファイルが存在しない場合はガードなしで続行し、その旨を報告に含める。
+4. ファイルが存在しない・jq が失敗する場合はガードなしで続行し、その旨を報告に含める。
 
 ### Step 0.5: 朝ダイジェスト（報告のみ・手は止めない）
 
@@ -188,7 +212,7 @@ Step 0 と 0.5 は毎サイクル評価する。Step 1〜4 は**上から順に�
 |---|---|---|---|---|
 | 2026-01-01 09:00 | review | PR #12 | passed | ブラウザ検証OK |
 | 2026-01-01 10:00 | implement | #15 | PR #18 作成 | テスト 34 passed |
-| 2026-01-01 11:00 | skip | - | rate guard | 5h 82% |
+| 2026-01-01 11:00 | skip | - | rate guard | 5h 45%（閾値 38%） |
 ```
 
 このログはレビュー段階の効果測定に使う。**レビュー検出率（failed / レビュー総数）が数週間ほぼ 0% なら、レビューモードの廃止を人間に提案すること。**
