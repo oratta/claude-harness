@@ -70,6 +70,12 @@ AskUserQuestion でまとめて質問する（MUST）。導出できた項目は
 3. ユーザーの承認を得てから `gh issue create`（`--existing` モードは `gh issue edit`）で反映する。
    **ユーザーがこの場で承認した分は直接 `agent-ready` を付けてよい**（このスキルの対話自体が
    人間ゲートを兼ねるため）。ユーザーが「あとで見る」と言った分は `agent-proposed` で起票する。
+   起票後、issue 間に実行順の依存（「#A が終わらないと #B に着手できない」）があるものは、
+   備考への記述だけでなく **GitHub ネイティブの issue dependencies を張る**:
+   `gh api -X POST repos/<owner>/<repo>/issues/<後続の番号>/dependencies/blocked_by -F issue_id=<前提issueのid>`
+   （id は `gh api repos/<owner>/<repo>/issues/<番号> --jq .id`）。これにより loop-dev-agent は
+   ブロックされた issue を拾わなくなり、Review Queue ボードには Blocked アイコンと
+   Blocked count（ブロッカーの優先度シグナル）が自動で乗る。
 4. 元ファイルから移行した場合は、元ファイルに「issue へ移行済み（#番号）」の注記を追記する
    （削除はしない）。
 
