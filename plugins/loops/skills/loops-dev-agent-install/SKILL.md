@@ -43,7 +43,8 @@ gh repo view --json viewerPermission # push 権限があること
 | 項目 | デフォルト |
 |---|---|
 | ブラウザ実機検証（Web アプリか否か） | あり（Web アプリなら） |
-| レート閾値 | 5時間枠 70% / 7日枠 85% |
+| レート閾値（ハードキャップ） | 5時間枠 70% / 7日枠 85% |
+| レートヘッドルーム（ペース超過許容） | 5時間枠 +20pt / 7日枠 +10pt |
 | 朝ダイジェスト時刻 | 7 時 |
 | 提案ストック上限 | 3 件 |
 | worktree 置き場 | `~/orca/workspaces/<プロジェクト名>`（orca 標準） |
@@ -100,7 +101,7 @@ Step 1 の値で置換して対象リポジトリの `docs/agent-loop.md` に書
 
 置換対象: `{{MAIN_BRANCH}}` `{{TEST_CMD}}` `{{LINT_CMD}}` `{{BUILD_CMD}}` `{{DEV_SERVER_CMD}}`
 `{{DEV_URL}}` `{{BROWSER_VERIFY}}` `{{WORKTREE_BASE}}` `{{RATE_5H_MAX}}` `{{RATE_7D_MAX}}`
-`{{DIGEST_HOUR}}` `{{PROPOSAL_CAP}}`
+`{{RATE_5H_HEADROOM}}` `{{RATE_7D_HEADROOM}}` `{{DIGEST_HOUR}}` `{{PROPOSAL_CAP}}`
 
 該当しない項目（例: CLI ツールで dev サーバーが無い）は値を `なし` にする。
 
