@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.13.1",
+  "version": "2.14.0",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -151,10 +151,10 @@
     },
     {
       "name": "loops",
-      "description": "公式記事「Getting started with loops」の4ループタイプ（ターンベース/ゴールベース/タイムベース/プロアクティブ）を、ネイティブプリミティブ（/goal・/loop・/schedule・skill・workflows・auto mode）の合成レシピとして設計・記述するための器。レシピ形式規約・State 規約・設計ガイド（/loops:design）・brain dump から goal ブリーフを一発生成するコマンド（/loops:goalify）・ゴール/タイム/プロアクティブのレシピ集・コストガードレール・GitHub Issues をタスクキューにした常設自律開発ループ（loop-dev-agent レシピ + /loops:dev-agent-install 導入コマンド + タスクを測定可能な受け入れ条件付き issue に変換する /loops:issueify）を提供する。独自のループ実行系（常駐スクリプト・カスタム driver・宣言的 schema ランタイム）は持たない。",
+      "description": "公式記事「Getting started with loops」の4ループタイプ（ターンベース/ゴールベース/タイムベース/プロアクティブ）を、ネイティブプリミティブ（/goal・/loop・/schedule・skill・workflows・auto mode）の合成レシピとして設計・記述するための器。レシピ形式規約・State 規約・設計ガイド（/loops:design）・brain dump から goal ブリーフを一発生成するコマンド（/loops:goalify）・ゴール/タイム/プロアクティブのレシピ集・コストガードレール・GitHub Issues をタスクキューにした常設自律開発ループ（loop-dev-agent レシピ + /loops:dev-agent-install 導入コマンド + タスクを測定可能な受け入れ条件付き issue に変換する /loops:issueify）を提供する。複数リポジトリ並行稼働時のレビュー・マージ判断は GitHub Project「Review Queue」連携と横断ビュー /loops:review-queue で1箇所に集約する。独自のループ実行系（常駐スクリプト・カスタム driver・宣言的 schema ランタイム）は持たない。",
       "source": "./plugins/loops",
       "category": "workflow",
-      "version": "0.7.1",
+      "version": "0.8.0",
       "author": {
         "name": "Oratta"
       },
