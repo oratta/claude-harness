@@ -191,7 +191,8 @@ git config core.hooksPath .githooks
 以下を報告して終了する:
 
 1. 作成・変更したファイルとラベルの一覧
-2. 起動コマンド（コピペ可能な形で）:
+2. 起動コマンド: `/loops:dev-agent-start`（デフォルト間隔 1h。`/loops:dev-agent-start 2h` で変更可）。
+   手動で `/loop` に貼る場合の正規文字列も併記する:
    ```
    /loop 1h docs/agent-loop.md を読み、そこに定義された1サイクルを厳密に実行して。結果（実行モード、対象の issue/PR 番号、スキップ・提案の場合はその理由）を必ず報告して
    ```
