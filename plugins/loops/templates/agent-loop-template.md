@@ -71,7 +71,12 @@ GitHub Project に反映する。人間はこのボード1枚で全リポジト�
 | PR | `agent-review:failed` | 修正中 | 不要（ループが処理中） |
 | PR | `agent-review:passed` | マージ判断 | **マージするか判断** |
 | issue | `agent-proposed` / `needs-approval` | トリアージ | **実行を承認するか判断** |
+| issue | `agent-ready`（未着手） | 着手可能 | 不要（ループの実行待ち） |
 | issue | `agent-blocked` | 要介入 | **2回失敗の原因を判断** |
+
+**ボード上のドラッグが承認操作になる**: 人間が issue カードを トリアージ → 着手可能 へ動かすと、
+次サイクル冒頭の Step 0.8 がラベルを `agent-ready` に同期する。**issue の item は State（ボード）が正、
+PR の item はラベルが正**（PR の State はループだけが動かす）。
 
 `Blocked count`（数値フィールド）= その item が塞いでいる後続タスク数。人間が「どれから捌くか」を決める
 ソートキーになる（ボードは Blocked count 降順）。算出は **GitHub ネイティブの issue dependencies** を正とする:
@@ -152,6 +157,19 @@ Step 0 と 0.5 は毎サイクル評価する。Step 1〜4 は**上から順に�
 
 「その日最初」の判定は `.agent-loop/log.md` の最終行の日付が今日より前かどうかで行う。
 
+### Step 0.8: Review Queue ボード同期（連携時のみ・毎サイクル）
+
+Project にはフィールド変更のリアルタイム通知が無いため、人間のドラッグ操作を毎サイクル冒頭でラベルへ反映する。
+
+1. `gh project item-list <番号> --owner <owner> --format json` から**このリポジトリの issue item** を抽出する。
+2. State とラベルの食い違いを **State に合わせて**解消する:
+   - State=着手可能 なのに `agent-proposed` / `needs-approval` / `agent-blocked` が付いている →
+     それらを外して `agent-ready` を付け、issue に「Review Queue ボードから承認」とコメントする。
+   - State=トリアージ なのに `agent-ready` が付いている → `agent-ready` を外して `agent-proposed` を付ける（承認の取り消し）。
+3. 逆方向の反映: このリポジトリの open な `agent-ready` issue（`agent-wip` 無し）でボード未登録のものを
+   State=着手可能 で登録する（着手可能列 = 実行待ちキューの一覧を常に完全に保つ）。
+4. 同期の失敗はサイクルを止めない（警告のみ報告して次の Step へ進む）。
+
 ### Step 1: レビューモード — `agent-review:pending` の PR がある
 
 `gh pr list --label "agent-review:pending" --state open` で最も古い1件を選ぶ。
@@ -186,7 +204,7 @@ Step 0 と 0.5 は毎サイクル評価する。Step 1〜4 は**上から順に�
 **実行可能な issue** = open かつ `agent-ready` 付き、かつ `agent-wip` / `agent-blocked` / `size:large` が付いていないもの。念のため、open な PR が既に紐づいている issue も除外する（`gh pr list --search "<番号> in:body"` 等で確認）。さらに、ネイティブの依存関係で **open な issue にブロックされているものは拾わない**（`gh api repos/<owner>/<repo>/issues/<番号>/dependencies/blocked_by --jq '[.[] | select(.state == "open")] | length'` が 0 でないもの。ブロッカー側を先に片付ける）。最も番号の小さい1件を選ぶ。
 
 1. 受け入れ条件が測定可能な形で書かれていない issue は拾わない。不足点を issue コメントで指摘し、次の候補へ（候補が尽きたら Step 4 へ）。
-2. 着手宣言: `agent-wip` ラベルを付け、着手コメントを残す。Review Queue 連携（該当時）: この issue がボードに載っていれば（トリアージ済みの昇格）item を削除する。
+2. 着手宣言: `agent-wip` ラベルを付け、着手コメントを残す。Review Queue 連携（該当時）: この issue がボードに載っていれば（着手可能 など）item を削除する（着手した issue は実行待ちキューから消す）。
 3. `{{WORKTREE_BASE}}` 配下に worktree を作成する（ブランチ名: `agent/issue-<番号>-<slug>`、起点は `origin/{{MAIN_BRANCH}}`）。wt-setup スキルが使えるなら使う。
 4. 受け入れ条件を仕様として実装する。テストを先に書く（大原則 6・7 を遵守）。
 5. `{{TEST_CMD}}` / `{{LINT_CMD}}` / `{{BUILD_CMD}}` を実行し、証拠をターン内に表示する。

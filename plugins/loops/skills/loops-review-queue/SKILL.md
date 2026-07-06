@@ -52,7 +52,8 @@ done
 
 Step 2 の結果と URL で突き合わせ、未登録のものは State をラベルから推定して表に混ぜ、`未登録` マークを付ける:
 `agent-review:passed` → マージ判断 / `agent-review:failed` → 修正中 / `agent-review:pending` → レビュー中 /
-`agent-proposed`・`needs-approval` → トリアージ / `agent-blocked` → 要介入 / それ以外の PR → `-`。
+`agent-proposed`・`needs-approval` → トリアージ / `agent-ready` → 着手可能 / `agent-blocked` → 要介入 /
+それ以外の PR → `-`。
 
 ## Step 4: 優先順位付けと表示
 
@@ -66,7 +67,7 @@ Step 2 の結果と URL で突き合わせ、未登録のものは State をラ�
    トリアージは将来の仕事の供給なので相対的に緩い）
 3. 次いで **更新が古い順**（滞留が長いものを先に）
 
-レビュー中 / 修正中（ループが処理中）は本表に載せず、末尾に件数のみ添える。
+レビュー中 / 修正中 / 着手可能（ループが処理中・実行待ち）は本表に載せず、末尾に件数のみ添える。
 
 表の後に必ず添えるもの:
 
