@@ -112,7 +112,7 @@ gh project item-edit --project-id $PROJECT_ID --id $ITEM_ID \
 
 ## 状態機械
 
-Step 0 と 0.5 は毎サイクル評価する。Step 1〜4 は**上から順に評価し、最初に該当した1つのモードだけ**を実行する。
+Step 0〜0.8 は毎サイクル評価する。**Step 0.9 で対象を決定論的に選定し**、その `mode` に一致する Step 1〜4 の**1つだけ**を実行する。
 
 ### Step 0: レートガード（実行系によって判定位置が変わる）
 
@@ -178,9 +178,36 @@ Project にはフィールド変更のリアルタイム通知が無いため、
    State=着手可能 で登録する（着手可能列 = 実行待ちキューの一覧を常に完全に保つ）。
 4. 同期の失敗はサイクルを止めない（警告のみ報告して次の Step へ進む）。
 
-### Step 1: レビューモード — `agent-review:pending` の PR がある
+### Step 0.9: 対象選定（決定論・LLM は目視で選ばない）
 
-`gh pr list --label "agent-review:pending" --state open` で最も古い1件を選ぶ。
+Step 1〜4 の「どのモードで・どの issue/PR 番号を対象にするか」は決定論的なので、**必ず選定スクリプトで決める**。
+LLM が `gh` の一覧を目視して対象を選ぶことは禁止する（存在しない番号を対象に捏造する事故を構造的に防ぐため。
+レートガード Step 0 を jq に閉じ込めたのと同じ理由）。
+
+```bash
+bash scripts/agent-loop-select.sh
+```
+
+出力は JSON 1 オブジェクト:
+
+| フィールド | 意味 |
+|---|---|
+| `mode` | `review` / `fix` / `implement` / `propose` / `skip` / `error` |
+| `target` | 対象の issue/PR 番号（対象の無いモードは `null`） |
+| `target_kind` | `pr` / `issue` / `null` |
+| `candidates` | implement モードのみ: 実装可能 issue の昇順リスト |
+| `reason` | 判定理由（そのまま報告に使う） |
+
+**絶対ルール**:
+
+1. 実行するモードは `mode` に従う。`mode` が指すもの以外の Step を実行しない。
+2. **`target`（および implement の `candidates`）に無い issue/PR 番号を対象にしてはならない。** 一覧を目視で足さない・言い換えない・想像で補わない。
+3. `mode:"error"` はガード付きで扱う: `reason` を報告し、そのサイクルは対象作業をせず終了する（`gh`/`jq` の不調を握りつぶさない）。
+4. スクリプトの出力（`mode` と `reason`）は最終報告にそのまま含める。
+
+### Step 1: レビューモード — `mode:"review"`
+
+対象は Step 0.9 の `target`（`target_kind:"pr"`）。目視で選び直さない。
 
 1. PR ブランチを `{{WORKTREE_BASE}}` 配下の worktree に checkout する。
 2. **main 追従**: `git fetch origin` → `origin/{{MAIN_BRANCH}}` をブランチにマージする（rebase + force-push は禁止）。
@@ -199,19 +226,19 @@ Project にはフィールド変更のリアルタイム通知が無いため、
 
 `agent-review:passed` の PR のうち、`origin/{{MAIN_BRANCH}}` との間でコンフリクトが発生しているものがあれば、`agent-review:pending` に戻して次サイクル以降で再レビューさせる（Review Queue 連携時は State も レビュー中 に戻す）。これにより「passed = 今すぐコンフリクトなしでマージでき、直近の main で動作確認済み」が常に保たれる。
 
-### Step 2: 修正モード — `agent-review:failed` の PR がある
+### Step 2: 修正モード — `mode:"fix"`
 
-最も古い1件を選び、PR ブランチの worktree でレビューコメントの指摘を修正する。
+対象は Step 0.9 の `target`（`target_kind:"pr"`）。その PR ブランチの worktree でレビューコメントの指摘を修正する。
 
 1. 修正後、`{{TEST_CMD}}` / `{{LINT_CMD}}` を実行し、証拠をターン内に表示する。
 2. push して PR コメントに対応内容を書き、`agent-review:pending` に戻す（Review Queue 連携時は State も レビュー中 に戻す）。
 3. 同一 PR で failed が2回付いたら、それ以上触らず PR コメントに経緯をまとめ、元 issue を `agent-blocked` にして人間へ引き渡す（Review Queue 連携時は元 issue を State=要介入 で登録し、PR の item は削除する）。
 
-### Step 3: 実装モード — 実行可能な issue がある
+### Step 3: 実装モード — `mode:"implement"`
 
-**実行可能な issue** = open かつ `agent-ready` 付き、かつ `agent-wip` / `agent-blocked` / `size:large` が付いていないもの。念のため、open な PR が既に紐づいている issue も除外する（`gh pr list --search "<番号> in:body"` 等で確認）。さらに、ネイティブの依存関係で **open な issue にブロックされているものは拾わない**（`gh api repos/<owner>/<repo>/issues/<番号>/dependencies/blocked_by --jq '[.[] | select(.state == "open")] | length'` が 0 でないもの。ブロッカー側を先に片付ける）。最も番号の小さい1件を選ぶ。
+対象は Step 0.9 の `target`（＝ `candidates` の最小番号）。`candidates` は「open ∧ `agent-ready` ∧ ¬(`agent-wip`/`agent-blocked`/`size:large`) ∧ open PR 未紐付け ∧ open issue に blocked_by されていない」を満たす issue の昇順リストで、選定スクリプトが `gh pr list --search "<番号> in:body"` と `gh api .../dependencies/blocked_by` まで含めて算出済み。**この `candidates` に無い番号を対象にしない。**
 
-1. 受け入れ条件が測定可能な形で書かれていない issue は拾わない。不足点を issue コメントで指摘し、次の候補へ（候補が尽きたら Step 4 へ）。
+1. 受け入れ条件が測定可能な形で書かれていない issue は拾わない。不足点を issue コメントで指摘し、**`candidates` の次の番号**へ（候補が尽きたら Step 4 = 提案モードへ）。
 2. 着手宣言: `agent-wip` ラベルを付け、着手コメントを残す。Review Queue 連携（該当時）: この issue がボードに載っていれば（着手可能 など）item を削除する（着手した issue は実行待ちキューから消す）。
 3. `{{WORKTREE_BASE}}` 配下に worktree を作成する（ブランチ名: `agent/issue-<番号>-<slug>`、起点は `origin/{{MAIN_BRANCH}}`）。wt-setup スキルが使えるなら使う。
 4. 受け入れ条件を仕様として実装する。テストを先に書く（大原則 6・7 を遵守）。
@@ -222,10 +249,12 @@ Project にはフィールド変更のリアルタイム通知が無いため、
 
 途中で `size:large` 相当（1サイクルで完結しない規模）と判明したら、着手を中止して issue に分割案をコメントし、`size:large` を付けて終了する。
 
-### Step 4: 提案モード — 上記のどれにも該当しない
+### Step 4: 提案モード / スキップ — `mode:"propose"` / `mode:"skip"`
 
-1. open な `agent-proposed` の件数を数える。**{{PROPOSAL_CAP}} 件以上あれば新規起票せず**「未トリアージの提案が溜まっている」と報告して終了する（承認待ちを溜めてラバースタンプ化させないため）。
-2. 上限未満なら、コードベース・既存 issue・`.agent-loop/GUARDRAILS.md`・直近のログを調査し、価値のあるタスク案を**最大2件**、`agent-proposed` ラベルで起票する。各案には測定可能な受け入れ条件と、触るファイル・関数の見当を必ず書く。既存 issue との依存関係が明確なら、ネイティブの dependencies も張る（`gh api -X POST repos/<owner>/<repo>/issues/<後続>/dependencies/blocked_by -F issue_id=<前提のissue id>`）。Review Queue 連携（該当時）: 起票した issue を State=トリアージ で登録し、Blocked count を設定する。
+提案ストックの上限（{{PROPOSAL_CAP}} 件）判定は選定スクリプトが済ませており、`mode` に反映されている。
+
+1. `mode:"skip"` の場合（未トリアージ提案が上限以上）: **新規起票せず**、`reason` を報告して終了する（承認待ちを溜めてラバースタンプ化させないため）。
+2. `mode:"propose"` の場合（提案枠に空きがある）: コードベース・既存 issue・`.agent-loop/GUARDRAILS.md`・直近のログを調査し、価値のあるタスク案を**最大2件**、`agent-proposed` ラベルで起票する。各案には測定可能な受け入れ条件と、触るファイル・関数の見当を必ず書く。既存 issue との依存関係が明確なら、ネイティブの dependencies も張る（`gh api -X POST repos/<owner>/<repo>/issues/<後続>/dependencies/blocked_by -F issue_id=<前提のissue id>`）。Review Queue 連携（該当時）: 起票した issue を State=トリアージ で登録し、Blocked count を設定する。
 3. **起票のみで終了する。実行しない。** 人間が `agent-ready` に昇格させるまで待つ。
 
 ## 実行ログ形式（.agent-loop/log.md）
