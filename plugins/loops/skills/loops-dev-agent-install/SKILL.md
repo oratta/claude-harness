@@ -149,6 +149,21 @@ Step 1 の値で置換して対象リポジトリの `docs/agent-loop.md` に書
 
 該当しない項目（例: CLI ツールで dev サーバーが無い）は値を `なし` にする。
 
+あわせて**対象選定スクリプト**を設置する。`${CLAUDE_PLUGIN_ROOT}/templates/select-target.sh` を読み、
+`{{PROPOSAL_CAP}}` を Step 1 の値で置換して対象リポジトリの `scripts/agent-loop-select.sh` に書き出し、実行権限を付ける:
+
+```bash
+mkdir -p scripts
+# {{PROPOSAL_CAP}} を置換して書き出す（他のプレースホルダは無い）
+sed "s/{{PROPOSAL_CAP}}/<提案ストック上限>/g" "${CLAUDE_PLUGIN_ROOT}/templates/select-target.sh" > scripts/agent-loop-select.sh
+chmod +x scripts/agent-loop-select.sh
+```
+
+このスクリプトは Step 1〜4 のモード選定（どのモードで・どの issue/PR 番号を対象にするか）を決定論的に行い、
+JSON 1 オブジェクトを出力する。憲法の「Step 0.9: 対象選定」がこれを必須で呼び、LLM が一覧を目視して
+対象番号を捏造する事故を構造的に防ぐ。`.agent-loop/`（git 管理外）ではなく `scripts/`（追跡対象）に置く
+——選定ロジックはインフラであり、状態キャッシュではないため。
+
 あわせてループの**状態ディレクトリ**を作成する。状態ファイルは git 管理外に置く
 （ループがログを main にコミットすると origin と恒常的に分岐し、人間のマージ作業が再生産されるため。
 main はループによって一切動かない設計とする）:
