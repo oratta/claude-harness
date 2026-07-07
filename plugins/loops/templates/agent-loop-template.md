@@ -16,9 +16,7 @@
 | dev サーバー起動 | `{{DEV_SERVER_CMD}}`（URL: {{DEV_URL}}） |
 | ブラウザ実機検証 | {{BROWSER_VERIFY}} |
 | worktree 置き場 | `{{WORKTREE_BASE}}` |
-| レート上限（ハードキャップ） | 5時間枠 {{RATE_5H_MAX}}% / 7日枠 {{RATE_7D_MAX}}% |
-| レートヘッドルーム（ペース超過許容） | 5時間枠 +{{RATE_5H_HEADROOM}}pt / 7日枠 +{{RATE_7D_HEADROOM}}pt |
-| 朝ダイジェスト | {{DIGEST_HOUR}} 時以降のその日最初のサイクル |
+| 朝ダイジェスト | 環境変数 `AGENT_DIGEST_HOUR`（デフォルト 7）時以降のその日最初のサイクル |
 | 提案ストック上限 | {{PROPOSAL_CAP}} 件 |
 | Review Queue Project | {{REVIEW_QUEUE}}（`<owner>/<番号>` 形式。`なし` なら連携をスキップ） |
 
@@ -116,21 +114,31 @@ gh project item-edit --project-id $PROJECT_ID --id $ITEM_ID \
 
 Step 0 と 0.5 は毎サイクル評価する。Step 1〜4 は**上から順に評価し、最初に該当した1つのモードだけ**を実行する。
 
-### Step 0: レートガード（ペース基準の動的閾値）
+### Step 0: レートガード（実行系によって判定位置が変わる）
 
-固定閾値ではなく**枠の経過率に連動した動的閾値**で判定する。同じ使用率でも、枠の序盤なら「行き過ぎ」としてスキップし、終盤ならハードキャップまで許容する。
+レート判定を「サイクル内でやるか、発火前の hook でやるか」は実行系（配線）によって変わる。憲法としては
+どちらの実行系でも同じ閾値観（枠の経過率に連動した動的閾値）が適用されることだけを固定し、判定の実装位置は配線側に委ねる。
+
+**標準（flatmate 常駐運転）**: レート判定は配線側の `UserPromptSubmit` rate-guard hook が
+`[tick]` プロンプトの**発火前**に行う（SKIP はゼロトークン）。閾値は flatmate 側の環境変数
+（`RATE_5H_MAX` / `RATE_5H_HEADROOM` / `RATE_7D_MAX` / `RATE_7D_HEADROOM`、デフォルト 70/20/85/10）が正。
+この運転ではサイクル内での判定は不要で、**このステップはスキップされる前提**（hook が SKIP を返したサイクルはそもそも起動しない）。
+
+**フォールバック（単独 /loop 運転・hook なし環境）**: 手元で `/loop` だけで数時間回す場合は発火前 hook が無いため、
+サイクル冒頭で従来の判定を実行する。固定閾値ではなく**枠の経過率に連動した動的閾値**で判定する。同じ使用率でも、枠の序盤なら「行き過ぎ」としてスキップし、終盤ならハードキャップまで許容する。
 
 - 判定式: `動的閾値 = min(ハードキャップ, 枠の経過率% + ヘッドルーム)`
   - 枠の経過率 = `(枠の長さ − (resets_at − 現在時刻)) ÷ 枠の長さ × 100`（0〜100 にクランプ。枠の長さ: 5時間枠 = 18000 秒、7日枠 = 604800 秒）
   - 消費ペースが時間経過ペースをヘッドルーム分を超えて上回っていたらスキップ。枠の開始直後はヘッドルームがそのまま下限の閾値になる
   - `resets_at` が無い（null）枠はハードキャップのみで判定する（従来動作へのフォールバック）
 
-1. 以下のコマンドで判定する（決定論的作業のスクリプト化。LLM が暗算しない）:
+1. 以下のコマンドで判定する（決定論的作業のスクリプト化。LLM が暗算しない）。閾値はプレースホルダではなく環境変数
+   （`RATE_5H_MAX` / `RATE_5H_HEADROOM` / `RATE_7D_MAX` / `RATE_7D_HEADROOM`、未設定時のデフォルト 70/20/85/10）で解決する:
 
    ```bash
    jq -r --argjson now "$(date +%s)" \
-      --argjson cap5 {{RATE_5H_MAX}} --argjson head5 {{RATE_5H_HEADROOM}} \
-      --argjson cap7 {{RATE_7D_MAX}} --argjson head7 {{RATE_7D_HEADROOM}} '
+      --argjson cap5 "${RATE_5H_MAX:-70}"  --argjson head5 "${RATE_5H_HEADROOM:-20}" \
+      --argjson cap7 "${RATE_7D_MAX:-85}"  --argjson head7 "${RATE_7D_HEADROOM:-10}" '
      def clamp: if . < 0 then 0 elif . > 100 then 100 else . end;
      def th(resets; win; cap; head):
        if resets == null then cap
@@ -148,7 +156,7 @@ Step 0 と 0.5 は毎サイクル評価する。Step 1〜4 は**上から順に�
 
 ### Step 0.5: 朝ダイジェスト（報告のみ・手は止めない）
 
-{{DIGEST_HOUR}} 時以降のその日最初のサイクルなら、通常のモード実行の**前に**以下を報告する:
+環境変数 `AGENT_DIGEST_HOUR`（デフォルト 7）時以降のその日最初のサイクルなら、通常のモード実行の**前に**以下を報告する:
 
 - マージ待ち PR（`agent-review:passed`）の件数と最古の経過日数
 - トリアージ待ち提案（`agent-proposed`）の件数
