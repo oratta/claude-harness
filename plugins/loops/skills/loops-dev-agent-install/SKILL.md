@@ -38,17 +38,20 @@ gh repo view --json viewerPermission # push 権限があること
 - **テスト / lint / ビルドコマンド**: `package.json` の scripts、`Makefile`、`Cargo.toml` 等から検出
 - **dev サーバー起動コマンドと URL**: 同上（例: `npm run dev` / `http://localhost:3000`）
 
-検出できなかった項目と以下の運用値を AskUserQuestion でまとめて確認する（デフォルトを推奨選択肢にする）:
+検出できなかった項目と以下の**契約項目**を AskUserQuestion でまとめて確認する（デフォルトを推奨選択肢にする）:
 
 | 項目 | デフォルト |
 |---|---|
 | ブラウザ実機検証（Web アプリか否か） | あり（Web アプリなら） |
-| レート閾値（ハードキャップ） | 5時間枠 70% / 7日枠 85% |
-| レートヘッドルーム（ペース超過許容） | 5時間枠 +20pt / 7日枠 +10pt |
-| 朝ダイジェスト時刻 | 7 時 |
 | 提案ストック上限 | 3 件 |
 | worktree 置き場 | `~/orca/workspaces/<プロジェクト名>`（orca 標準） |
 | Review Queue 連携 | あり（`project` scope があれば） |
+
+**レート閾値・ヘッドルーム・朝ダイジェスト時刻は install では聞かない**（憲法テンプレから運用値プレースホルダを廃止済み）。
+これらは実行時の環境変数で解決する: レートは配線側の `RATE_5H_MAX` / `RATE_5H_HEADROOM` / `RATE_7D_MAX` /
+`RATE_7D_HEADROOM`（デフォルト 70/20/85/10）、朝ダイジェスト時刻は `AGENT_DIGEST_HOUR`（デフォルト 7）。
+flatmate 常駐運転ではレート判定を配線側 hook が肩代わりするため、閾値の設定先も配線側になる（レシピ
+`recipes/loop-dev-agent.md` の「起動コマンド」参照）。
 
 **Review Queue 連携の扱い**: `gh auth status` のトークン scope に `project` が含まれていれば「あり」を推奨する。
 含まれていなければ「なし」をデフォルトにし、有効化したい場合は `gh auth refresh -s project` を
@@ -139,9 +142,10 @@ about: 自律開発ループに実行させるタスク
 Step 1 の値で置換して対象リポジトリの `docs/agent-loop.md` に書き出す。
 
 置換対象: `{{MAIN_BRANCH}}` `{{TEST_CMD}}` `{{LINT_CMD}}` `{{BUILD_CMD}}` `{{DEV_SERVER_CMD}}`
-`{{DEV_URL}}` `{{BROWSER_VERIFY}}` `{{WORKTREE_BASE}}` `{{RATE_5H_MAX}}` `{{RATE_7D_MAX}}`
-`{{RATE_5H_HEADROOM}}` `{{RATE_7D_HEADROOM}}` `{{DIGEST_HOUR}}` `{{PROPOSAL_CAP}}`
+`{{DEV_URL}}` `{{BROWSER_VERIFY}}` `{{WORKTREE_BASE}}` `{{PROPOSAL_CAP}}`
 `{{REVIEW_QUEUE}}`（Step 2.5 の `<owner>/<番号>`、連携なしなら `なし`）
+
+レート閾値・ヘッドルーム・朝ダイジェスト時刻のプレースホルダは新テンプレには存在しない（実行時の環境変数で解決するため。Step 1 参照）。置換不要。
 
 該当しない項目（例: CLI ツールで dev サーバーが無い）は値を `なし` にする。
 
