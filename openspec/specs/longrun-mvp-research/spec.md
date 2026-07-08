@@ -23,7 +23,7 @@ When invoked, the agent SHALL produce a single Markdown report containing exactl
 
 #### Scenario: Standard research invocation produces unified report
 
-- **WHEN** the longrun-plan SKILL invokes the agent with a topic such as "1時間で作る料理レシピ提案ツール"
+- **WHEN** the longrun-mvp-plan SKILL invokes the agent with a topic such as "1時間で作る料理レシピ提案ツール"
 - **THEN** the agent's output MUST contain both `## 類似サービス事例` and `## 実装パターン` as headings within the same report, populated with content distilled from a shared search session
 
 #### Scenario: Section is missing

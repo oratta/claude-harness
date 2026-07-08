@@ -60,143 +60,6 @@ skill ディレクトリ名・SKILL.md の `name:` フィールド・skills 配�
 - **WHEN** longrun プラグインで skill 名・skill ディレクトリ・skills 配列が変更される
 - **THEN** `plugin.json` の `version` フィールドが旧バージョンより大きい値（最低でも minor bump）に更新されていなければならない
 
-### Requirement: SKILL.md MUST dispatch on a `--mode=mvp` flag at the top of its execution flow
-
-The `longrun-plan` Skill (defined in `plugins/longrun/skills/longrun-plan/SKILL.md`) SHALL inspect its invocation arguments before executing any of the existing Step 1〜Step 8 logic and route control based on the presence of `--mode=mvp`. When the flag is absent, or when `--mode=full` is provided explicitly, the Skill SHALL execute the existing full-mode flow (Step 1 〜 Step 8) without any behavioral change. When `--mode=mvp` is provided, the Skill SHALL transfer control to the MVP-mode section instead. The dispatching block MUST be placed immediately after the YAML frontmatter and before the existing Step 1 GATE, so the existing body remains textually untouched.
-
-#### Scenario: Full-mode invocation without flag
-
-- **WHEN** a user runs `/longrun:plan` with no `--mode` flag
-- **THEN** the Skill MUST proceed to execute Step 1 〜 Step 8 exactly as defined in the existing body, including reading `templates/plan-template.md` (the full template) and invoking the `longrun-reviewer` Agent at Step 7
-
-#### Scenario: Explicit full-mode invocation
-
-- **WHEN** a user runs `/longrun:plan --mode=full <args>`
-- **THEN** the Skill MUST treat this identically to the no-flag case and execute Step 1 〜 Step 8 with no MVP-mode side effects
-
-#### Scenario: MVP-mode dispatch
-
-- **WHEN** a user runs `/longrun:plan --mode=mvp <args>`
-- **THEN** the Skill MUST jump to the MVP-mode section and MUST NOT execute the full-mode Step 1 (full template loading), Step 2 (OpenSpec backlog reconciliation), Step 5b (backlog adoption), or full-mode Step 7 (longrun-reviewer invocation)
-
-#### Scenario: Existing Step 1〜8 body is unchanged
-
-- **WHEN** a reviewer compares the SKILL.md body before and after this change with `git diff`
-- **THEN** no edits SHALL appear inside the existing Step 1 〜 Step 8 sections; only additions are permitted, in the form of (a) a new dispatch section above Step 1 and (b) a new MVP-mode section appended after Step 8
-
-### Requirement: MVP mode MUST define a Step-by-Step mapping of full-mode steps
-
-The MVP-mode section in SKILL.md SHALL include a mapping table (Markdown table form) that lists every existing full-mode step and classifies its MVP-mode treatment as one of three values: REUSE, REPLACE, or SKIP. The mapping MUST cover Step 1, Step 2, Step 2b, Step 3, Step 4, Step 5, Step 5a, Step 5b, Step 6, Step 7, Step 8, and the new Step 4.5. The body of each REPLACE or new step MUST contain prose detail sufficient for an executor to perform the action without consulting the original full-mode prose.
-
-#### Scenario: Mapping table is present and complete
-
-- **WHEN** a reader scans the MVP-mode section
-- **THEN** a Markdown table MUST be present with columns identifying the existing step, its MVP treatment (REUSE / REPLACE / SKIP), and a short description, and the rows MUST cover Step 1 through Step 8 plus the new Step 4.5
-
-#### Scenario: Skipped steps justification
-
-- **WHEN** Step 2 and Step 5b are listed as SKIP
-- **THEN** the table or surrounding prose MUST state the rationale (no OpenSpec backlog reconciliation needed because MVP plans are human-implemented and bypass OpenSpec change generation)
-
-### Requirement: MVP mode MUST introduce a parallel-research Step 4.5 that invokes the `longrun-mvp-research` subagent
-
-After Step 4 (Interview) and before MVP Step 5 (Synthesis), the MVP-mode section SHALL define a new Step 4.5 that invokes the `longrun-mvp-research` subagent via the Agent tool. The invocation pattern MUST use the Agent tool form (single tool_use entry; the section MUST also state that future expansion to multiple parallel research subagents is supported via multiple tool_use entries in a single message). The Step 4.5 description MUST include the agent name (`longrun-mvp-research`) and a representative prompt template that asks for a single report containing both the `## 類似サービス事例` and `## 実装パターン` sections plus the trailing `## Search Audit` block.
-
-#### Scenario: Step 4.5 specifies the agent name
-
-- **WHEN** an executor reads Step 4.5
-- **THEN** the literal string `longrun-mvp-research` MUST appear in the step body, identifying the subagent that the Agent tool call targets
-
-#### Scenario: Step 4.5 prompt template references the dual-section output
-
-- **WHEN** an executor reads the prompt template inside Step 4.5
-- **THEN** the prompt MUST instruct the subagent to output both `## 類似サービス事例` and `## 実装パターン` in a single report and to append the `## Search Audit` section
-
-### Requirement: MVP mode Step 7 MUST invoke plan-reviewer and bestpractice-reviewer subagents in parallel
-
-The MVP-mode replacement of Step 7 SHALL invoke `longrun-mvp-plan-reviewer` and `longrun-mvp-bestpractice-reviewer` subagents via the Agent tool, with the two invocations placed inside a single assistant message as two distinct tool_use entries (parallel execution pattern). The section MUST explicitly state that the two invocations are placed in one message to achieve parallelism, and MUST NOT instruct the executor to call them sequentially in separate messages. After the two reviewers respond, the MVP-mode flow SHALL aggregate their results and proceed to MVP Step 8.
-
-#### Scenario: Two reviewer agents named in Step 7
-
-- **WHEN** an executor reads MVP-mode Step 7
-- **THEN** both literal strings `longrun-mvp-plan-reviewer` and `longrun-mvp-bestpractice-reviewer` MUST appear in the body, each as the `subagent_type` of an Agent tool invocation
-
-#### Scenario: Parallel invocation is explicit
-
-- **WHEN** an executor reads the surrounding prose
-- **THEN** the section MUST state that both Agent tool calls MUST be issued within a single assistant message (multiple tool_use entries) to run in parallel, and MUST NOT instruct the executor to wait for the first reviewer before invoking the second
-
-#### Scenario: Full-mode Step 7 path remains the longrun-reviewer
-
-- **WHEN** the SKILL.md is executed in full mode (no `--mode=mvp` flag)
-- **THEN** the existing Step 7 body MUST still call the `longrun-reviewer` Agent and MUST NOT call the MVP reviewers
-
-### Requirement: MVP mode Step 5 MUST embed the `<!-- mvp-mode -->` marker in the generated plan.md
-
-When MVP mode synthesizes the plan.md (replacement of Step 5), the generated file SHALL begin with an HTML comment marker `<!-- mvp-mode -->` placed before any other content. This marker is the discriminant used by the `/longrun:archive` command (delivered in change-C) to skip OpenSpec change generation. Full-mode plan.md MUST NOT include this marker.
-
-#### Scenario: Marker is the first line content
-
-- **WHEN** MVP mode generates `_longruns/<dir>/plan.md`
-- **THEN** the file MUST contain the literal HTML comment `<!-- mvp-mode -->` at or near the top, before the first heading
-
-#### Scenario: Full mode does not embed the marker
-
-- **WHEN** full-mode Synthesis (existing Step 5) generates `_longruns/<dir>/plan.md`
-- **THEN** the literal string `<!-- mvp-mode -->` MUST NOT appear anywhere in the generated file
-
-### Requirement: MVP mode MUST replace Step 6 Validation with a lightweight checklist
-
-The MVP-mode replacement of Step 6 SHALL define a lightweight Validation checklist that targets the lightweight template `templates/plan-template-mvp.md` (delivered in change-C). The checklist MUST cover the existence of these required sections in the generated plan.md: ゴール, 技術要件, スコープ, 受け入れ条件, 動作確認方法, 調査結果サマリ, レビュー結果サマリ. Validation MUST NOT be skipped in MVP mode; it MUST be performed against the lightweight section list rather than the full-mode list.
-
-#### Scenario: Lightweight checklist present
-
-- **WHEN** an executor reads MVP-mode Step 6
-- **THEN** the seven required section names listed above MUST appear as an explicit checklist (each as its own bullet) so an executor can mark each as present/absent
-
-#### Scenario: Validation is mandatory in MVP mode
-
-- **WHEN** Step 6 finds any of the seven sections missing in the generated plan.md
-- **THEN** the SKILL MUST instruct the executor to repair the plan.md before saving, mirroring the GATE semantics of full-mode Step 6 (no save with missing sections)
-
-### Requirement: MVP mode Step 8 MUST omit OpenSpec backlog reconciliation and recommend human handoff
-
-The MVP-mode replacement of Step 8 SHALL NOT modify `openspec/backlog.md` and SHALL NOT instruct the executor to run any OpenSpec change-creation workflow. Instead it SHALL announce completion of plan generation and present a handoff message describing the human-implementation path (and optionally `/longrun:exec` for those who choose to delegate). The MVP-mode flow ends at this announcement.
-
-#### Scenario: No backlog write in Step 8
-
-- **WHEN** an executor reads MVP-mode Step 8
-- **THEN** the body MUST NOT contain any instruction to edit `openspec/backlog.md`, and MUST NOT contain any instruction to invoke `openspec change add` or equivalent change-creation tooling
-
-#### Scenario: Handoff message present
-
-- **WHEN** MVP mode reaches Step 8
-- **THEN** the body MUST output a handoff message naming the saved plan.md path and inviting the human to either implement directly or invoke `/longrun:exec`
-
-### Requirement: MVP lightweight template MUST exist with mvp-mode marker and divergence-prevention header
-
-The longrun plugin SHALL provide a lightweight plan template at `plugins/longrun/templates/plan-template-mvp.md`. The first content of this file MUST be the literal HTML comment `<!-- mvp-mode -->` (used by the archive command to detect MVP-mode plans), immediately followed by a multi-line HTML comment that states the template is derived from the full version `plan-template.md` and instructs editors to update both files when modifying any of the shared sections (ゴール / 技術要件 / スコープ / 受け入れ条件 / 動作確認方法). The template SHALL include the seven required sections that the SKILL.md MVP-mode Step 6 Validation enumerates: ゴール, 技術要件, スコープ（含むもの / 含まないもの）, 調査結果サマリ（類似サービス）, 調査結果サマリ（実装パターン）, レビュー結果サマリ（plan-reviewer / bestpractice-reviewer）, 受け入れ条件, 動作確認方法. The template SHALL NOT include sections specific to the full-mode autonomous-execution pipeline, namely Changes 分解 (Build Contract decomposition for autonomous execution) and the TDD / build / Verifier-related items inside the standard 必須条件 4 項目.
-
-#### Scenario: Marker is the first content line
-
-- **WHEN** a reader opens `plugins/longrun/templates/plan-template-mvp.md`
-- **THEN** the file MUST begin with the literal HTML comment `<!-- mvp-mode -->` before any heading, prose, or other comment
-
-#### Scenario: Divergence-prevention comment is present
-
-- **WHEN** a reader inspects the top of `plugins/longrun/templates/plan-template-mvp.md`
-- **THEN** an HTML comment block MUST appear within the first few lines that explicitly states the file is derived from `plan-template.md` and that the shared sections (ゴール / 技術要件 / スコープ / 受け入れ条件 / 動作確認方法) MUST be kept in sync between both templates when edited
-
-#### Scenario: Required sections are present
-
-- **WHEN** a reader scans the headings of `plugins/longrun/templates/plan-template-mvp.md`
-- **THEN** all of the following section headings MUST be present at H2 level: ゴール, 技術要件, スコープ, 調査結果サマリ（類似サービス）, 調査結果サマリ（実装パターン）, レビュー結果サマリ, 受け入れ条件, 動作確認方法
-
-#### Scenario: Heavyweight sections are excluded
-
-- **WHEN** a reader scans the headings of `plugins/longrun/templates/plan-template-mvp.md`
-- **THEN** the heading `Changes分解` MUST NOT appear, and the 受け入れ条件 section MUST NOT include the autonomous-execution-only required items related to TDD enforcement or Verifier auto-invocation
-
 ### Requirement: Archive command MUST branch on the mvp-mode marker
 
 `plugins/longrun/commands/archive.md` SHALL define a discriminator step that inspects the target longrun directory's `plan.md` for the literal HTML comment `<!-- mvp-mode -->`. When the marker is present, the command MUST skip the OpenSpec-change archival step (the existing step that copies delta specs and moves `openspec/changes/<name>` to `openspec/changes/archive/...`) and proceed directly to archive only the longrun directory under `_longruns/_archive/`, then perform the standard worktree cleanup, commit, and completion report. When the marker is absent, the command MUST execute the existing full-mode flow without modification, including OpenSpec-change archival.
@@ -232,20 +95,94 @@ When the MVP-mode feature set (template + archive branch + README update) is add
 
 ### Requirement: README MUST document MVP mode usage
 
-`plugins/longrun/README.md` SHALL contain a section that documents the MVP mode entry point, its differences from full mode, and the situations in which it is appropriate to use. The section MUST include the literal command form `/longrun:plan --mode=mvp` (and MAY include the alias `/lr:p --mode=mvp` if the alias plugin is available). The section MUST state that MVP mode is a generic capability not tied to any specific project and is intended for short-time human-implemented MVP scenarios.
+`plugins/longrun/README.md` SHALL contain a section that documents the standalone MVP plan entry point, its differences from full mode, and the situations in which it is appropriate to use. The section MUST include the literal command form `/longrun:mvp` (and MAY include the alias `/lr:m` if the alias plugin is available). The section MUST state that `--mode=mvp` is deprecated and that invoking `/longrun:plan --mode=mvp` produces a migration notice instead of running the MVP flow. The section MUST state that the MVP plan skill is a generic capability not tied to any specific project and is intended for short-time human-implemented MVP scenarios.
 
-#### Scenario: MVP mode section is present
+#### Scenario: MVP section is present
 
 - **WHEN** a reader scans `plugins/longrun/README.md`
-- **THEN** a section MUST exist that names MVP mode and includes the literal text `--mode=mvp`
+- **THEN** a section MUST exist that names the MVP plan skill and includes the literal text `/longrun:mvp`
 
 #### Scenario: Differences from full mode are described
 
-- **WHEN** a reader reads the MVP mode section in the README
+- **WHEN** a reader reads the MVP section in the README
 - **THEN** the section MUST describe at least these differences: Build Contract review is skipped, TDD enforcement is skipped, Verifier auto-invocation is skipped, OpenSpec change archival is skipped on `/longrun:archive`
+
+#### Scenario: Deprecation of the old flag is documented
+
+- **WHEN** a reader reads the MVP section in the README
+- **THEN** the section MUST state that `--mode=mvp` is deprecated and that `/longrun:plan --mode=mvp` now emits a migration notice pointing to `/longrun:mvp`
 
 #### Scenario: Use-case guidance is generic
 
-- **WHEN** a reader reads the MVP mode section in the README
-- **THEN** the section MUST state that MVP mode is suitable for short-time human-implemented MVP scenarios and is not specific to any particular project
+- **WHEN** a reader reads the MVP section in the README
+- **THEN** the section MUST state that the MVP plan skill is suitable for short-time human-implemented MVP scenarios and is not specific to any particular project
+
+### Requirement: Deprecated `--mode=mvp` flag MUST surface a migration notice and terminate
+
+The `longrun-plan` Skill (`plugins/longrun/skills/longrun-plan/SKILL.md`) SHALL inspect its invocation arguments before executing Step 1. When `--mode=mvp` is present, the Skill MUST output a migration notice stating that MVP plan creation has moved to `/longrun:mvp` (with the `/lr:m` shortcut), and MUST terminate without executing any of Step 1〜Step 8 and without generating a plan.md. The flag MUST NOT be silently ignored and MUST NOT fall through to full mode. When the flag is absent, or when `--mode=full` is provided, the Skill SHALL execute the existing full-mode flow (Step 1〜Step 8) without any behavioral change. The SKILL.md MUST no longer contain the MVP-mode section body (moved to the `longrun-mvp-plan` skill).
+
+#### Scenario: Old flag shows migration notice
+
+- **WHEN** a user runs `/longrun:plan --mode=mvp <args>`
+- **THEN** the Skill MUST output a notice naming `/longrun:mvp` (and `/lr:m`) as the new entry point, MUST NOT execute Step 1〜Step 8, and MUST NOT generate any plan.md
+
+#### Scenario: Old flag via shortcut shows the same notice
+
+- **WHEN** a user runs `/lr:p --mode=mvp <args>` (arguments forwarded transparently to the skill)
+- **THEN** the same migration notice MUST be shown and the flow MUST terminate without producing a plan.md
+
+#### Scenario: Full mode is unaffected
+
+- **WHEN** a user runs `/longrun:plan` with no `--mode` flag, or with `--mode=full`
+- **THEN** the Skill MUST execute the existing full-mode Step 1〜Step 8 exactly as before, including reading `templates/plan-template.md` and invoking the `longrun-reviewer` Agent at Step 7
+
+#### Scenario: MVP-mode section is removed from the skill body
+
+- **WHEN** a reader greps `plugins/longrun/skills/longrun-plan/SKILL.md` for the MVP-mode step definitions (e.g., `MVP Step 4.5`, `longrun-mvp-plan-reviewer`)
+- **THEN** zero matches MUST be found; only the migration-notice handling MAY reference MVP
+
+### Requirement: longrun-plan は Synthesis でモデル割り当て推奨を生成する
+
+`longrun-plan` スキル（`plugins/longrun/skills/longrun-plan/SKILL.md`、change-3 分離後のフルモード plan スキル）は、Step 5（Synthesis）で plan.md を生成する際に「モデル割り当て」セクションを必ず含めなければならない (MUST)。表には Changes分解 の各 change × 自律実行で起動される agent ロール（reviewer / builder / verifier / browser-verifier 等）ごとに 1 行を生成し、ティア（haiku / sonnet / inherit）の推奨と推奨理由を記入すること。推奨は以下のヒューリスティクスに従う:
+
+- アーキテクチャレビュー・複雑な TDD 実装 → `inherit`（指定なし）
+- 定型的検証・要約 → `haiku`
+- リサーチ・ブラウザ操作・中規模実装 → `sonnet`
+- 確信度が低い・分類に迷うタスク → `inherit`（保守的デフォルト。「迷ったら inherit」）
+
+SKILL.md にはこのヒューリスティクスと保守的デフォルトの方針を明記し、ティアからモデル ID への解決は `plugins/longrun/references/model-tiers.md` を参照する旨を記載すること。SKILL.md 本文にモデル ID をハードコードしてはならない (MUST NOT)。
+
+#### Scenario: 生成された plan.md にモデル割り当て表が含まれる
+
+- **WHEN** ユーザーが `/longrun:plan` で plan.md を作成し Step 5（Synthesis）が完了する
+- **THEN** 生成された plan.md に「モデル割り当て」セクションが存在し、Changes分解 の各 change × agent ロールごとの行にティア（haiku / sonnet / inherit のいずれか）と理由が記入されている
+
+#### Scenario: SKILL.md にヒューリスティクスが明記されている
+
+- **WHEN** ユーザーが `plugins/longrun/skills/longrun-plan/SKILL.md` の推奨生成ステップを読む
+- **THEN** 「アーキテクチャレビュー・複雑な TDD 実装 → inherit」「定型的検証・要約 → haiku」「リサーチ・ブラウザ操作・中規模実装 → sonnet」の 3 ルールと「迷ったら inherit に倒す」保守的デフォルトが記載されている
+
+#### Scenario: 確信度の低いタスクは inherit に倒される
+
+- **WHEN** Synthesis 中にあるタスクがどのヒューリスティクス分類にも明確に該当しない
+- **THEN** スキルは該当行のティアに `inherit` を記入し、理由欄に確信度が低いため保守的デフォルトを適用した旨を記載する
+
+#### Scenario: ユーザーが plan 確認時に表を上書きできる
+
+- **WHEN** ユーザーが Step 8（ユーザー確認）で plan.md のモデル割り当て表の `上書き` 欄またはティア欄を直接編集する
+- **THEN** スキルは編集後の値をそのまま確定し、推奨値への巻き戻しや再生成を行わない
+
+### Requirement: longrun-plan の Validation はモデル割り当てセクションの存在を検査する
+
+`longrun-plan` スキルの Step 6（Validation）のセクション存在チェックリストは、「モデル割り当て」セクションの存在確認項目を含まなければならない (MUST)。セクションが欠落している場合は、フルモード Step 6 の既存 GATE セマンティクスに従い、plan.md を修正してから保存すること（欠落したままの保存は禁止）。
+
+#### Scenario: Validation チェックリストにモデル割り当てが含まれる
+
+- **WHEN** ユーザーが SKILL.md の Step 6（Validation）のセクション存在チェックリストを読む
+- **THEN** 「モデル割り当て」セクションの存在確認項目がチェックリストに含まれている
+
+#### Scenario: セクション欠落時は保存前に修復される
+
+- **WHEN** Step 6 の Validation で生成済み plan.md に「モデル割り当て」セクションが無いことが検出される
+- **THEN** スキルは plan.md を修正してセクションを追加してから保存し、欠落したままファイルを保存しない
 

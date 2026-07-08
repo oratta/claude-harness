@@ -14,7 +14,7 @@ The `longrun-mvp-plan-reviewer` subagent SHALL be defined in `plugins/longrun/ag
 
 ### Requirement: Plan reviewer MUST evaluate v0 plan generically without time-window assumptions
 
-The agent SHALL receive an initial plan v0 (from the longrun-plan SKILL Step 5 synthesis) as its input and SHALL evaluate three dimensions: (1) whether the scope is excessively large for an MVP, (2) whether internal contradictions exist (e.g., a "not included" item appearing in the included scope), (3) whether the acceptance criteria are objectively verifiable. The agent MUST NOT hard-code any specific time window (e.g., "1時間" / "1 hour" / "30分") as a sizing criterion; it MUST evaluate scope using generic MVP heuristics so that the same agent serves any time-bounded MVP context.
+The agent SHALL receive an initial plan v0 (from the longrun-mvp-plan SKILL Step 5 synthesis) as its input and SHALL evaluate three dimensions: (1) whether the scope is excessively large for an MVP, (2) whether internal contradictions exist (e.g., a "not included" item appearing in the included scope), (3) whether the acceptance criteria are objectively verifiable. The agent MUST NOT hard-code any specific time window (e.g., "1時間" / "1 hour" / "30分") as a sizing criterion; it MUST evaluate scope using generic MVP heuristics so that the same agent serves any time-bounded MVP context.
 
 #### Scenario: Plan with vague acceptance criteria
 
