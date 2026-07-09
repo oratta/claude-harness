@@ -91,6 +91,7 @@ flatmate（セッション常駐ハーネス）の住人としてループを回
 
 ## 前提
 
+- **`dev-workflow` プラグインの導入が必要**: Step 3（実装モード）は開発の中身（wt-setup 判定・opsx 仕様化要否・単一/複数 change 判定・TDD 実装）を `dev-workflow` プラグインの `github-issue` スキルに委譲する。ラベル操作・Draft PR 作成・Review Queue 連携などの無人運用の外形は引き続き本レシピが担う。人間がオンデマンドで issue に取り組む場合も同じスキルを `/work-issue` から使う（`dev-workflow/README.md` 参照）。
 - **ローカル実行が必要**: レートガードがローカルの `~/.claude/.rate-limit-snapshot`
   （statusline が毎ターン更新する JSON）を読むため。
 - `/loops:dev-agent-install` による導入が完了していること。具体的には対象リポジトリに:

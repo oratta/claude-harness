@@ -240,14 +240,18 @@ bash scripts/agent-loop-select.sh
 
 1. 受け入れ条件が測定可能な形で書かれていない issue は拾わない。不足点を issue コメントで指摘し、**`candidates` の次の番号**へ（候補が尽きたら Step 4 = 提案モードへ）。
 2. 着手宣言: `agent-wip` ラベルを付け、着手コメントを残す。Review Queue 連携（該当時）: この issue がボードに載っていれば（着手可能 など）item を削除する（着手した issue は実行待ちキューから消す）。
-3. `{{WORKTREE_BASE}}` 配下に worktree を作成する（ブランチ名: `agent/issue-<番号>-<slug>`、起点は `origin/{{MAIN_BRANCH}}`）。wt-setup スキルが使えるなら使う。
-4. 受け入れ条件を仕様として実装する。テストを先に書く（大原則 6・7 を遵守）。
-5. `{{TEST_CMD}}` / `{{LINT_CMD}}` / `{{BUILD_CMD}}` を実行し、証拠をターン内に表示する。
-6. 通ったら push して **Draft PR** を作成する。本文に `Closes #<番号>` と検証ログを書き、`agent-review:pending` ラベルを付ける。Review Queue 連携（該当時）: PR を Project に登録し、State を レビュー中 に、Blocked count を算出して設定する（「Review Queue 連携」参照）。
-7. issue に PR の URL と要約をコメントし、`agent-wip` と **`agent-ready` の両方を外す**（PR が open な間に別サイクルが同じ issue を再実装しないため。マージされれば `Closes` で自動クローズされ、PR がマージされずクローズされた場合は人間が再トリアージして `agent-ready` を付け直す）。
-8. 行き詰まったら: worktree は残し、issue に失敗ログをコメントする。同一 issue の失敗コメントが2件になったら `agent-blocked` に切り替えて以後拾わない（Review Queue 連携時は State=要介入 で登録する）。教訓を `.agent-loop/GUARDRAILS.md` に追記する（大原則 4 のミラーも忘れずに）。
+3. **開発の中身は `dev-workflow` プラグインの `github-issue` スキルに委譲する**（Skill ツールで起動。`--unmanned` を付け、対象 issue 番号・`{{WORKTREE_BASE}}`・`{{MAIN_BRANCH}}` を渡す）。このスキルが以下を判定・実行する:
+   - worktree 作成（`{{WORKTREE_BASE}}` 配下、ブランチ名 `agent/issue-<番号>-<slug>`、起点は `origin/{{MAIN_BRANCH}}`）と wt-setup
+   - 仕様として残すべき変更なら opsx（openspec）フロー、そうでなければコード直行
+   - **単一 change で完結する場合**: そのまま TDD で実装する（テストを先に書く。大原則 6・7 を遵守）
+   - **複数 change に割れる場合**: change 単位でサブ issue を作成し `blocked_by` で順序を付け、各サブ issue に `agent-ready` を付ける（親 issue の承認は既に済んでいるため個別承認は不要）。元 issue には分割結果（#a → #b → #c）をコメントし `agent-wip` を外して**このサイクルはここで終了**（次サイクル以降が各サブ issue を1つずつ拾い、それぞれ本 Step から同じスキルを通す）
+   - **仕様化・分割の判断がつかないほど曖昧な場合**: Discord でユーザーに質問を送り、`agent-wip` を外して `needs-approval` を付け、経緯を issue にコメントしてこのサイクルは終了する（返信が来たら次サイクル以降で再開する）
+4. （単一 change で実装まで完了した場合）`{{TEST_CMD}}` / `{{LINT_CMD}}` / `{{BUILD_CMD}}` を実行し、証拠をターン内に表示する。
+5. 通ったら push して **Draft PR** を作成する。本文に `Closes #<番号>` と検証ログを書き、`agent-review:pending` ラベルを付ける。Review Queue 連携（該当時）: PR を Project に登録し、State を レビュー中 に、Blocked count を算出して設定する（「Review Queue 連携」参照）。
+6. issue に PR の URL と要約をコメントし、`agent-wip` と **`agent-ready` の両方を外す**（PR が open な間に別サイクルが同じ issue を再実装しないため。マージされれば `Closes` で自動クローズされ、PR がマージされずクローズされた場合は人間が再トリアージして `agent-ready` を付け直す）。
+7. 行き詰まったら: worktree は残し、issue に失敗ログをコメントする。同一 issue の失敗コメントが2件になったら `agent-blocked` に切り替えて以後拾わない（Review Queue 連携時は State=要介入 で登録する）。教訓を `.agent-loop/GUARDRAILS.md` に追記する（大原則 4 のミラーも忘れずに）。
 
-途中で `size:large` 相当（1サイクルで完結しない規模）と判明したら、着手を中止して issue に分割案をコメントし、`size:large` を付けて終了する。
+`size:large` ラベルは、github-issue スキルが分割の是非すら判断できないほど曖昧なケースで、分割の方向性自体を人間の設計判断に委ねたい場合にのみ使う（着手中止・分割案をコメントするだけで、ラベルも人間が手動で付ける）。通常の複数 change 分割は上記 3. のサブ issue 化でループが自動処理するため、`size:large` を自動付与することはない。
 
 ### Step 4: 提案モード / スキップ — `mode:"propose"` / `mode:"skip"`
 

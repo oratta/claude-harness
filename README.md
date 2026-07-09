@@ -75,6 +75,24 @@ Claude Code ロングラン自律実行システム。instruction.mdを対話的
 
 ---
 
+### dev-workflow
+
+この開発ハーネスでの標準開発ワークフローを集めるプラグイン。`github-issue` スキルは、GitHub issue（番号/URL/自然文）に取り組む時に発火し、worktree なら `wt-setup` 未実行を検出して先に実行 → 仕様として残すべき変更なら opsx（openspec）フロー → 単一 change で足りるか複数 change に割れるかを判定 → TDD で実装、という標準手順を毎回同じに通す。
+
+```bash
+/plugin install dev-workflow@oratta-claude-harness
+```
+
+**機能:**
+- `/work-issue [issue番号|URL|自然文]` — github-issue スキルを interactive モードで起動する
+- 人間の直接依頼でも `loops` プラグインの loop-dev-agent の無人サイクルからでも同じ判定ロジックを共有する（`--unmanned` で無人モード）
+- 複数 change に割れる場合、対話セッション中はその場で順番に実行、無人ループ中はサブ issue に分割して `blocked_by` で順序付けし次サイクルへ委ねる（1サイクル1仕事を維持）
+- `longrun:plan` は呼ばない（issue 化前の壁打ちとは切り分ける）
+
+詳細は `plugins/dev-workflow/skills/github-issue/SKILL.md` を参照。
+
+---
+
 ## バンドル
 
 複数のプラグインを一括でインストールできます。

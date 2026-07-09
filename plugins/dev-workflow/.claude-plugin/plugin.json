@@ -1,0 +1,16 @@
+{
+  "name": "dev-workflow",
+  "version": "1.0.0",
+  "description": "この開発ハーネスでの標準開発ワークフローを集めるプラグイン。github-issue: GitHub issue（番号/URL/自然文）に取り組む時に発火し、worktree なら wt-setup 未実行を検出して先に実行 → 仕様として残すべき変更なら opsx（openspec）フロー → 単一 change で足りるか複数 change に割れるかを判定 → TDD で実装、という標準手順を毎回同じに通す。人間の直接依頼でも loop-dev-agent の無人サイクルからでも同じフローを共有する（--unmanned で無人モード）。longrun:plan は呼ばず、issue 化前の壁打ちとは切り分ける。",
+  "author": {
+    "name": "Oratta"
+  },
+  "license": "MIT",
+  "keywords": ["dev-workflow", "github", "issue", "openspec", "opsx", "worktree", "tdd", "spec-driven"],
+  "skills": [
+    "./skills/github-issue"
+  ],
+  "commands": [
+    "./commands/work-issue.md"
+  ]
+}
