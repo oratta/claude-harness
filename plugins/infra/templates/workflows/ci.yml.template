@@ -12,7 +12,7 @@ env:
   NODE_VERSION: '{{NODE_VERSION}}'
 
 # デプロイフロー:
-# - Preview (PR): deploy-preview.yml が Ready for review で実行
+# - Preview (PR): deploy-preview.yml は `preview` ラベルを貼ったときだけ実行（opt-in）
 # - Staging (main push): deploy-staging.yml が自動実行
 # - Production: deploy-production.yml を workflow_dispatch で手動実行
 # このワークフローはチェック(lint + typecheck + test + actionlint)を担当

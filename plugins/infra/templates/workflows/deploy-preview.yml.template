@@ -1,8 +1,11 @@
 name: Deploy Preview
 
+# Preview は「明示的に要求されたときだけ」デプロイする opt-in 方式。
+# PR に `preview` ラベルを貼ると発火し、貼っている間は push のたびに更新される。
+# ラベルを剥がすと以降は何も走らない。Draft / Ready for review の状態は問わない。
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [labeled, synchronize]
 
 # 同一 PR の古いデプロイをキャンセルし、最新 commit のみデプロイする
 concurrency:
@@ -19,8 +22,15 @@ env:
 jobs:
   deploy-preview:
     name: Deploy Preview to Vercel
-    # Draft 中は skip（Ready for review で発火） + Fork PR では Secret を渡さないため job ごとスキップする
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    # Fork PR では Secret を渡さないため job ごとスキップする。
+    # labeled: 貼られたラベルが `preview` のときだけ発火（他ラベルでは走らせない）
+    # synchronize: `preview` ラベルが付いている PR への push だけ追随更新する
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        (github.event.action == 'labeled' && github.event.label.name == 'preview') ||
+        (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'preview'))
+      )
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -78,6 +88,9 @@ jobs:
               `URL: ${url}`,
               `Commit: \`${shortSha}\``,
               `Updated: ${timestamp}`,
+              '',
+              '`preview` ラベルが付いている間、push のたびにこの URL の中身が更新されます。',
+              '確認が終わったらラベルを剥がしてください（以降デプロイされなくなります）。',
             ].join('\n');
             await github.rest.issues.createComment({
               owner: context.repo.owner,

@@ -91,6 +91,18 @@ AskUserQuestion: 既存のワークフローファイル {ファイル名} が�
   - あわせて package.json の scripts に `"check:migrations": "node scripts/check-migration-numbers.mjs"` を追加（ci.yml が `--if-present` で実行する）
 - `{templates_dir}/../docs/deploy-rollback.md` → `docs/deploy-rollback.md`（ロールバック手順書）
 
+### Step 4.5: `preview` ラベルの作成
+
+`deploy-preview.yml` は PR に `preview` ラベルが貼られたときだけ発火する opt-in 方式のため、
+ラベルがリポジトリに存在しないとユーザーが貼れない。必ず作成する（既存なら成功扱い）:
+
+```bash
+gh label create preview \
+  --description "貼ると Vercel Preview をデプロイ。剥がすと停止" \
+  --color 0E8A16 \
+  2>/dev/null || echo "label 'preview' already exists"
+```
+
 ### Step 5: Vercel Token 取得
 
 **CLI 化の検証結果**: 2026-07-03 時点で Vercel CLI（48.x）の `vercel help` に `tokens`/`token` サブコマンドは存在しない（`vercel tokens --help` はトップレベル `deploy` のヘルプにフォールバックする）。Access Token の新規発行は Vercel ダッシュボード UI 経由のみサポートされており、CLI/REST API から「最初の」トークンを作る手段はない（トークンで認証しないと呼べない REST API はこの用途に使えない、鶏と卵の制約）。よって CLI 化は不可と判定し、以下の Playwright MCP 自動モード / 手動モードの 2 分岐フォールバック方式を維持する。
@@ -263,7 +275,7 @@ https://github.com/{github_repo}/settings/environments
 
 テンプレートから生成したワークフロー（Node {node_version_detected}）:
 - .github/workflows/ci.yml（Draft+Ready for review 方式の lint/typecheck/test/actionlint）
-- .github/workflows/deploy-preview.yml（PR Ready for review で Preview deploy + PR コメント）
+- .github/workflows/deploy-preview.yml（PR に `preview` ラベルを貼ると Preview deploy + PR コメント。opt-in）
 - .github/workflows/deploy-staging.yml（main push で自動 staging deploy）
 - .github/workflows/deploy-production.yml（workflow_dispatch + confirm。マイグレーションゲート / バックアップ / スモークチェック / メンテモード付き）
 - .github/workflows/migrate-production.yml（workflow_dispatch + confirm。バックアップ + db push + 適用検証）

@@ -1,7 +1,7 @@
 ---
 name: infra-setup
 description: 新規/既存Webアプリに Vercel + Supabase + GitHub Actions のデプロイ基盤を一括構築する。「インフラを構築」「デプロイ環境を作って」「Vercel と Supabase のセットアップ」「GitHub Actions のワークフローを作って」「本番デプロイ環境を用意して」「staging/production 環境を作って」で積極的に起動。5フェーズ（ヒアリング → Supabase → Vercel → GitHub Actions → ローカル仕上げ）を Agent 分離で順に実行。既存 supabase-project-setup スキルの上位互換。
-version: 0.3.1
+version: 0.4.0
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 ---
 
@@ -37,7 +37,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 | staging | `*-git-main-*.vercel.app` | **prod** | GitHub Actions（main push） |
 | prod | カスタムドメイン | prod | GitHub Actions（`workflow_dispatch`） |
 
-**ポイント:** Vercel の Git 自動連携は `vercel.json` で OFF にし、全デプロイを GitHub Actions で制御する。staging と prod は同じ prod DB を参照するため、staging で本番に近い状態を確認できる。PR は Draft + Ready for review 方式で、Draft 中は CI・Preview deploy を skip し、Ready for review で Preview deploy が実行される。
+**ポイント:** Vercel の Git 自動連携は `vercel.json` で OFF にし、全デプロイを GitHub Actions で制御する。staging と prod は同じ prod DB を参照するため、staging で本番に近い状態を確認できる。PR は Draft + Ready for review 方式で、Draft 中は CI を skip し、Ready for review で CI が発火する。Preview deploy は opt-in で、PR に `preview` ラベルを貼ったときだけ実行される（Draft 中でも動く）。ラベルが付いている間は push のたびに同じ URL が更新され、剥がすと停止する。
 
 ## 前提条件チェック（Phase 0）
 
