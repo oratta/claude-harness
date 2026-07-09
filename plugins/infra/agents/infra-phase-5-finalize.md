@@ -178,11 +178,20 @@ local 環境は **リモートの dev Supabase** を参照します（Docker な
 
 ## PR Preview について
 
-**Draft 中は CI（test/lint/type-check）のみ実行され、Preview deploy は skip されます。Ready for review に切り替えると Preview deploy が実行されます。**
-動作確認は以下で実施してください:
+**Preview deploy は自動では行われません。見たいときに PR へ `preview` ラベルを貼ってください。**
 
-- コード単位: ローカルで `npm run dev`（dev DB 接続）または Draft PR の CI 結果
-- Preview 確認: PR を Ready for review にすると Preview deploy（prod DB 接続）が実行され、PR コメントに URL が投稿されます
+操作手順:
+
+1. **見たくなったら**: PR 画面の Labels から `preview` を選ぶ（GitHub モバイルアプリでも可）。2〜3 分後に PR コメントに URL が投稿されます（prod DB 接続）
+2. **コードを直したあと**: 何もしなくて構いません。ラベルが付いている間は push のたびに同じ URL の中身が更新されます
+3. **見終わったら**: `preview` ラベルを剥がしてください。以降その PR ではデプロイされません
+
+Draft / Ready for review の状態は問いません（Draft のままでも貼れば動きます）。
+**ラベルを剥がし忘れると、その PR への push のたびにビルドが走り続けます。**
+
+その他の動作確認:
+
+- コード単位: ローカルで `npm run dev`（dev DB 接続）または PR の CI 結果
 - 統合確認: main にマージ後、staging（prod DB 接続）で検証 → prod 昇格
 
 ## 次に何をする？

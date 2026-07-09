@@ -142,26 +142,45 @@ setup() {
 
 # --- infra-doc-integrity (S21-S31) ---
 
-@test "S21: no claim of 'no automatic preview deploy' remains" {
-  run grep -n "自動 preview deploy は行わない\|自動 Preview deploy は行われません" "$SKILL" "$P5"
+@test "S21: SKILL.md and Phase 5 document preview as label opt-in" {
+  grep -q 'preview` ラベル' "$SKILL"
+  grep -q 'preview` ラベル' "$P5"
+  # 「Ready for review にすると Preview deploy が走る」旧仕様の記述が残っていないこと
+  run grep -n 'Ready for review にすると Preview deploy\|Ready for review で Preview deploy' "$SKILL" "$P5" "$README"
   [ "$status" -ne 0 ]
 }
 
-@test "S22: SKILL.md and Phase 5 state Draft-skip / Ready-for-review-fire wording" {
+@test "S22: SKILL.md keeps Draft-skip/Ready-for-review CI wording; Phase 5 states label add/remove steps" {
   grep -q 'Draft 中は' "$SKILL"
   grep -q 'Ready for review' "$SKILL"
-  grep -q 'Draft 中は' "$P5"
-  grep -q 'Ready for review' "$P5"
+  grep -q '剥がし' "$P5"
+  grep -q '貼っ' "$P5"
 }
 
-@test "S23: README.md is unchanged for this change" {
-  cd "$REPO_ROOT"
-  if git rev-parse --verify HEAD >/dev/null 2>&1; then
-    run git diff --quiet HEAD -- plugins/infra/README.md
-    [ "$status" -eq 0 ]
-  else
-    skip "no HEAD to diff against"
-  fi
+@test "S23: README.md documents the preview label opt-in" {
+  grep -q 'preview` ラベル' "$README"
+  grep -q 'opt-in' "$README"
+}
+
+@test "S23a: deploy-preview template triggers on labeled/synchronize only" {
+  local tpl="${WORKFLOWS_DIR}/deploy-preview.yml.template"
+  grep -qE '^\s+types: \[labeled, synchronize\]' "$tpl"
+  # 旧仕様のトリガーが残っていないこと
+  run grep -nE '^\s+types:.*(opened|ready_for_review)' "$tpl"
+  [ "$status" -ne 0 ]
+}
+
+@test "S23b: deploy-preview gates on the 'preview' label, not on draft state" {
+  local tpl="${WORKFLOWS_DIR}/deploy-preview.yml.template"
+  grep -q "github.event.label.name == 'preview'" "$tpl"
+  grep -q "contains(github.event.pull_request.labels.\*.name, 'preview')" "$tpl"
+  # draft ガードは撤去済み（Draft のままでもラベルで発火させるため）
+  run grep -n 'pull_request.draft == false' "$tpl"
+  [ "$status" -ne 0 ]
+}
+
+@test "S23c: Phase 4 creates the 'preview' label so users can apply it" {
+  grep -q 'gh label create preview' "$P4"
 }
 
 @test "S24: Phase 1 references correct Phase 2 step numbers (11 / 11.5)" {
