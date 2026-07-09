@@ -2,7 +2,7 @@
 name: llm-log-compactor
 description: 対象日の `~/.claude/projects/*/` 配下 jsonl から、初回 user 指示と最終 assistant 出力を抽出し、メタ統計（turn数/files/commits/top3 ツール/Files top5/Commits top5）を jq/grep で集計して dailyLLM.md に書き出す。jsonl 本文をメインに送らない。最終 assistant message は STATUS line 1 行のみ。
 tools: Read, Write, Bash, Glob
-model: opus
+model: sonnet
 permissionMode: bypassPermissions
 ---
 

@@ -2,7 +2,7 @@
 name: voice-compactor
 description: Fieldy（Notion DB_FIELDY）から対象日の音声トランスクリプトを取得し、ノイズフィルタ＋固定8カテゴリで LLM 圧縮して voice.md に書き出す。生 transcript はメインに返さず、最終 assistant message は STATUS line 1 行のみ。
 tools: Read, Write, Bash, mcp__claude_ai_Notion__notion-search, mcp__claude_ai_Notion__notion-fetch
-model: opus
+model: sonnet
 permissionMode: bypassPermissions
 ---
 
