@@ -1,7 +1,7 @@
 ---
 name: wt-clean
-description: Git worktreeの安全なクリーンアップ。対象を「選んでから」1個ずつ遅延診断＆対話処理する選択ベースフロー。`wt-clean <path|branch>` でその worktree だけにスコープ（複数可）、引数なしなら worktree をリストアップして対象を選ぶ（「全て」あり）。選択後に各対象を i/N 進捗付きで診断（🟢🟡🔴）し、🟢→削除/再利用・🟡→LLM退避→削除・🔴→マージ/スキップ/破棄 を対話。Step 0で `origin/<main>` を同期。`--keep` で 🟢 を再利用可能化、`--no-sync` で同期スキップ。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「特定worktreeだけ片付け」「未マージworktreeのマージ」で起動。
-version: 2.0.0
+description: Git worktreeの安全なクリーンアップ。対象を「選んでから」ノンブロッキング自動処理する 2 パスフロー。`wt-clean <path|branch>` でその worktree だけにスコープ（複数可）、引数なしなら worktree をリストアップして対象を選ぶ（「全て」あり）。Pass 1 で各対象を i/N 進捗付きで診断（🟢🟡🔴）し、🟢→確認なしで削除/再利用・🟡(LLMのみ)→LLM退避検証→確認なしで削除を自動実行。🔴 と dirty は Pass 2 の判断バッチでまとめて マージ/スキップ/破棄 を対話。Step 0で `origin/<main>` を同期。`--keep` で 🟢 を再利用可能化、`--no-sync` で同期スキップ。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「特定worktreeだけ片付け」「未マージworktreeのマージ」で起動。
+version: 3.0.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -9,17 +9,23 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 
 Git worktree を安全にクリーンアップするスキル。
 
-**設計の核**: 「対象を選ぶ → 選んだものだけ 1 個ずつ遅延診断＆対話処理」。最初に全件を診断（🟢🟡🔴 分類）せず、対象を確定してから 1 件ずつその場で診断する。パス／ブランチ名引数は「対象選択を引数で前倒ししたショートカット」であり、引数あり／なしのどちらも `TARGETS を確定 → 1 個ずつ処理` という共通パイプラインに合流する。
+**設計の核**: 「対話を前倒しし、走行中はブロックしない」。ユーザーとの対話は **Step A の対象確定**（起動直後）と **Pass 2 の判断バッチ**（自動処理が全部終わった後）の 2 箇所だけに寄せる。ほとんどのケース（🟢 Safe と LLM 退避だけで済む 🟡）は確認なしで自動処理されるため、「実行して放っておいたら作業が終わっている。判断が必要な分だけ最後に質問が残っている」という体験になる。最初に全件を診断（🟢🟡🔴 分類）せず、対象を確定してから 1 件ずつその場で診断する点は従来どおり。パス／ブランチ名引数は「対象選択を引数で前倒ししたショートカット」であり、引数あり／なしのどちらも `TARGETS を確定 → 2 パス処理` という共通パイプラインに合流する。
 
 ```
 Step 0  Remote 同期（--no-sync で skip）
    │
-Step A  TARGETS 確定
+Step A  TARGETS 確定  ←―――――――――――― 対話ポイント①（起動直後）
    ├ 引数あり <path|branch> … → 引数を解決して TARGETS に（リスト/選択はしない）
    └ 引数なし → リストアップ（診断しない）→ 対象選択（全て/個別/キャンセル）
    │
-Step B  TARGETS を [i/N] 進捗で 1 個ずつ:  遅延診断 → カテゴリ別対話
-   │       🟢 削除（--keep なら再利用化） / 🟡 LLM退避→削除 / 🔴 マージ/スキップ/破棄
+Step B  Pass 1: [i/N] 進捗で 1 個ずつ遅延診断 → ノンブロッキング自動処理
+   │       🟢 → 根拠表示して即削除（--keep なら即再利用化）
+   │       🟡 dirtyなし（LLMのみ）→ LLM退避 → 退避検証 → 即削除
+   │       🔴 / dirtyあり → DEFERRED に積んで次へ（この時点では触らない）
+   │
+Step B  Pass 2: 判断バッチ（DEFERRED が空ならスキップ） ←― 対話ポイント②
+   │       状況をまとめて提示 → AskUserQuestion（1対象1問・最大4問/回）
+   │       回答後の別ターンで マージ/スキップ/破棄 を逐次実行
 Step C  完了レポート
 ```
 
@@ -45,11 +51,23 @@ Step C  完了レポート
 
 このスキルは `git worktree remove` / `git branch -D` という**取り消し不能な破壊操作**を含む。以下は他のどのルールよりも優先する。違反すると過去に「ユーザーが作業中の worktree（成果が LLM ログのみに残る設計議論セッション）を誤削除する」事故が発生している。
 
-1. **AskUserQuestion の回答を待たずに破壊操作を実行してはならない（最重要）**
-   - `git worktree remove` / `git branch -d` / `git branch -D` は、対象を確定する AskUserQuestion の**回答を受け取った後の、別のアシスタントターンで**実行する。
-   - AskUserQuestion ツール呼び出しと、削除を実行する Bash 呼び出しを**同一ターンの並列ツール呼び出しに含めてはならない**。並列にするとユーザーの回答が届く前に削除が走り、回答が「やめて」「対象が違う」でも手遅れになる。
-   - 回答が届いたら、その回答が**どの worktree を指しているか**を文章で読み直し、対象を再確定してから実行する。曖昧な回答は「削除してよい」と解釈せず一度確認する。
-   - これは Step A-2 の対象選択、Step B の各カテゴリ削除対話の両方に適用する。
+1. **破壊操作の実行条件を守る（最重要）**
+
+   破壊操作は「自動実行してよいもの」と「AskUserQuestion 必須のもの」に区分される。この区分を勝手に拡大解釈してはならない。
+
+   **自動実行してよい**（Step A で TARGETS に含めたことを承認とみなす）:
+   - 🟢 Safe（マージ済み & dirty なし & LLM なし）の削除・再利用化
+   - 🟡 で dirty なし（LLM のみ）の、**LLM 退避の実在検証成功後**の削除
+   - いずれも削除直前に**診断根拠（マージ済み判定の根拠）を必ず表示**する。無音削除は禁止。
+
+   **AskUserQuestion の回答後の別ターンでのみ実行してよい**（自動実行の絶対禁止）:
+   - dirty な変更の破棄（🟡 dirty あり・🔴 dirty あり）
+   - 🔴 Active の破棄削除（`git worktree remove --force` + `git branch -D`）
+   - 🔴 Active の main へのマージ
+   - AskUserQuestion ツール呼び出しと、これらを実行する Bash 呼び出しを**同一ターンの並列ツール呼び出しに含めてはならない**。並列にするとユーザーの回答が届く前に実行が走り、回答が「やめて」「対象が違う」でも手遅れになる。
+   - 回答が届いたら、その回答が**どの worktree を指しているか**を文章で読み直し、対象を再確定してから実行する。曖昧な回答は「実行してよい」と解釈せず一度確認する。
+
+   自動実行が許されるのは分類が厳格であることが前提である。禁則 2（LLM→🟡 強制）・禁則 3（実ブランチ名判定）・squash 3 重検証を省略した状態での自動削除は、この区分に違反する。
 
 2. **「マージ済み & クリーン」でも LLM ログがある worktree は🟢 Safe にしない**
    - 独自 commit が無く working tree がクリーンでも、`LLM/` にログがある worktree は**現在進行中の作業セッション**の可能性が高い。Step B 診断で🟢 Safe に分類せず、必ず🟡 Recoverable 扱いとし、LLM を保全してから確認する（分類表を厳守）。
@@ -58,14 +76,15 @@ Step C  完了レポート
 3. **削除判定は必ず実ブランチ名で行う（ディレクトリ名 ≠ ブランチ名）**
    - worktree のディレクトリ名と checkout 中ブランチ名は一致しないことがある（例: `setup-foo` ディレクトリで `ISSUE-129_xxx` ブランチを checkout）。マージ判定・`git branch -D` は `git worktree list` 由来の**実ブランチ名（`BRANCH_NAME`）**を使う。ディレクトリ名で判断しない。
 
-4. **破壊操作の前に LLM 保全を済ませる**
+4. **破壊操作の前に LLM 保全を済ませ、退避の実在を検証する**
    - `git worktree remove --force` は gitignore 対象（`LLM/`・`node_modules`・`.env`）も巻き込んで削除する。削除前に `LLM/` をメインリポへコピーする（Step B-🟡）。
+   - **退避検証の成功が 🟡 自動削除の前提**。コピー後、退避先に元と同数のファイルが実在し空でないことを確認できるまで削除してはならない。検証に失敗したら削除せず HELD として保留する。
    - 万一保全前に削除してしまった場合、`~/.claude/projects/<worktree-path-slug>/<session>.jsonl` にセッション生ログが残っていれば LLM ログを再生成できる。worktree とブランチは `git worktree add <path> -b <branch> <last-sha>` で復旧できる。
 
 加えて、本スキル固有の SHALL NOT:
 
 - 引数の曖昧マッチ（複数件ヒット）を**自動選択しない**。必ず候補提示して中断する（Step A-1）
-- 競合発生時に `git merge --abort` を**自動実行しない**（Step B-🔴）
+- 競合発生時に `git merge --abort` を**自動実行しない**（Step B Pass 2）
 - Step B 再利用化（worktree 内）で `git reset --hard` / `git clean -fd` / worktree 内 `git pull` / `git fetch` を**実行しない**
 
 ## 実行フロー
@@ -204,17 +223,18 @@ Worktree 一覧（診断前 / どれに wt-clean を適用するか選んでく�
 
 選択された worktree が `TARGETS`。0 件なら「対象が選択されませんでした」と表示して終了。
 
-### Step B: 逐次処理ループ（遅延診断 + カテゴリ別対話）
+### Step B: 2 パス処理（Pass 1 自動処理 → Pass 2 判断バッチ）
 
-確定した `TARGETS` を `git worktree list` の順に 1 件ずつ、`[i/N]` 進捗表示付きで処理する。
+確定した `TARGETS` を `git worktree list` の順に 1 件ずつ、`[i/N]` 進捗表示付きで遅延診断する。診断結果に応じて **Pass 1 で自動処理できるものは確認なしで処理**し、判断が必要なもの（🔴 / dirty）は `DEFERRED` に積んで **Pass 2 でまとめて対話**する。Pass 1 の走行中に AskUserQuestion を呼んではならない（SHALL NOT — ブロックすると「実行して放置」ができなくなる）。
 
-> ⚠️ **絶対禁則 1 の再掲**: 各対象の削除／破棄／再利用化は、その対象の AskUserQuestion 回答を**受け取った後の別ターン**で実行する。AskUserQuestion ツール呼び出しと削除 Bash を**同一ターンの並列ツール呼び出しに含めてはならない**。回答が届いたら対象を読み直して再確定してから削除する。
+> ⚠️ **絶対禁則 1 の再掲**: 🟢 と 🟡（LLM 退避検証済み・dirty なし）の削除は Step A の対象確定を承認として自動実行してよいが、診断根拠の表示を省略しない。dirty 破棄・🔴 破棄削除・🔴 マージは Pass 2 の AskUserQuestion 回答を**受け取った後の別ターン**でのみ実行する。AskUserQuestion ツール呼び出しとこれらの Bash を**同一ターンの並列ツール呼び出しに含めてはならない**。回答が届いたら対象を読み直して再確定してから実行する。
 
 ```bash
 # 競合中断などで先行処理済みを確定扱いするためのカウンタ
 PROCESSED=()   # 削除/再利用化が完了したもの
 SKIPPED=()     # スキップ
-HELD=()        # サニティ FAIL / 競合で保留・未処理
+HELD=()        # サニティ FAIL / 競合 / 退避検証失敗で保留・未処理
+DEFERRED=()    # 🔴 / dirty あり → Pass 2 の判断バッチへ
 N=${#TARGETS[@]}
 i=0
 ```
@@ -275,17 +295,22 @@ fi
 
 **squash 済み（`SQUASHED` が非空）の worktree は 🟢/🟡 として扱う**。`AHEAD_COUNT > 0` でも 🔴 にしない。ブランチ削除は元 SHA が main の祖先にならないため `git branch -D`（大文字）を使う。
 
-カテゴリに応じて以下へ分岐する。
+Pass 1 では、カテゴリに応じて以下へ分岐する:
 
-#### Step B-🟢: Safe → 削除（`--keep` 時は再利用化）
+- 🟢 Safe → **Step B-🟢**（確認なしで自動削除／`--keep` 時は自動再利用化）
+- 🟡 で dirty なし（LLM のみ）→ **Step B-🟡**（LLM 退避 → 検証 → 確認なしで自動削除）
+- 🟡 で dirty あり／🔴 Active → **破壊操作はその場では一切行わない**。判断材料（dirty stat・未マージコミット一覧・LLM 有無）をこの時点で収集・表示し、LLM があれば非破壊の退避（コピー + 検証）だけ済ませて `DEFERRED+=("$WT")` し、次の対象へ進む。Pass 1 完了後に **Step B Pass 2** でまとめて対話する
 
-AskUserQuestion で確認（「削除」/「スキップ」、`--keep` 時は「再利用化」/「スキップ」）。
+#### Step B-🟢: Safe → 確認なしで削除（`--keep` 時は再利用化）
+
+AskUserQuestion は行わない。Step A で TARGETS に含めたことを承認とみなし、**診断根拠を 1 行表示してから**自動実行する（無音削除の禁止）。
 
 **削除モード（デフォルト）**:
 
 ```bash
+echo "  🟢 Safe: merged=${MERGED:+branch--merged}${SQUASHED:+$SQUASHED} / clean / LLMなし → 削除します"
 git worktree remove "$WT" --force
-git branch -d "$BRANCH_NAME"
+git branch -d "$BRANCH_NAME"    # SQUASHED のときは -D（元 SHA が main の祖先にならないため）
 PROCESSED+=("$BRANCH_NAME (🟢 削除)")
 ```
 
@@ -310,52 +335,81 @@ fi
 
 マージを伴わない 🟢 再利用化・🟡 削除では**サニティチェックを走らせない**（既に main にマージ済みのため）。
 
-#### Step B-🟡: Recoverable → LLM 退避 → 削除
+#### Step B-🟡: Recoverable（dirty なし・LLM のみ）→ LLM 退避 → 検証 → 確認なしで削除
+
+dirty がある 🟡 はここに来ない（Pass 1 の分岐で `DEFERRED` 行き）。
 
 ```bash
 # LLM ファイルをメインリポに退避（ファイル名にセッションIDが含まれ衝突しない）
 mkdir -p "$MAIN_REPO/LLM"
 cp "$WT/LLM/"* "$MAIN_REPO/LLM/" 2>/dev/null
+
+# 退避検証（絶対禁則 4）: 元と同数のファイルが退避先に実在し、空でないこと
+SRC_COUNT=$(ls "$WT/LLM/" | wc -l | tr -d ' ')
+OK_COUNT=0
+for f in "$WT/LLM/"*; do
+  dst="$MAIN_REPO/LLM/$(basename "$f")"
+  [ -s "$dst" ] && OK_COUNT=$((OK_COUNT+1))
+done
 ```
 
-dirty がある場合は `git -C "$WT" diff --stat` を表示し、AskUserQuestion で「変更を破棄して削除」/「スキップ」を確認。削除する場合:
+- **検証成功（`OK_COUNT == SRC_COUNT`）** → 診断根拠と退避結果を表示して確認なしで削除:
+  ```bash
+  echo "  🟡 Recoverable: merged / clean / LLM ${SRC_COUNT}files → 退避検証OK → 削除します"
+  git worktree remove "$WT" --force   # LLM/ は gitignore 対象のため --force が必要
+  git branch -d "$BRANCH_NAME"        # SQUASHED のときは -D
+  PROCESSED+=("$BRANCH_NAME (🟡 LLM退避→削除)")
+  ```
+- **検証失敗** → 削除しない。`HELD+=("$BRANCH_NAME (LLM退避検証失敗)")` として次の対象へ
 
-```bash
-git worktree remove "$WT"        # 確認済み（dirty 破棄時は --force）
-git branch -d "$BRANCH_NAME"
-PROCESSED+=("$BRANCH_NAME (🟡 LLM退避→削除)")
+#### Step B Pass 2: 判断バッチ（🔴 Active / dirty あり 🟡）
+
+Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` が空なら対話せず Step C へ。
+
+非空なら、各対象の状況を**まとめて**表示する:
+
 ```
+自動処理が完了しました（削除 3 / 保留 0）。残り 2 件は判断が必要です:
 
-#### Step B-🔴: Active → マージ / スキップ / 破棄
-
-未マージコミット一覧・Dirty 状態・LLM 有無を表示し、AskUserQuestion で確認する。**独立した一括ルートは経由しない**（その場で対話）。
-
-```
-[i/N] baz の処理:
-  Branch: wip-z
+[1] baz (wip-z) — 🔴 未マージ
   未マージコミット: 3件
     abc1234 feat: ユーザー登録フォームの追加
     def5678 fix: バリデーションエラー
     ghi9012 chore: テスト整備
-  Dirty: なし
-  LLM: なし
+  Dirty: なし / LLM: なし
+
+[2] qux (fix-q) — 🟡 dirty あり
+  マージ済みだが未コミット変更あり:
+    src/foo.ts | 12 ++++++++----
+  LLM: あり（退避済み）
 ```
 
-選択肢の出し分け:
+続けて AskUserQuestion で **1 対象 1 問**として選択させる。1 回の呼び出しは最大 4 問なので、`DEFERRED` が 4 件を超える場合は複数回に分け、各回の提示範囲を明示する（無音での打ち切りを行わない）。
 
-- **通常（Dirty なし & ブランチ名あり）**: 「1) main にマージ (推奨) / 2) スキップ / 3) 破棄削除 (force)」の 3 択
-- **Dirty 同時**: マージ選択肢を**除外**し「1) スキップ / 2) 破棄削除 (force)」の 2 択。理由明示「⚠️ Dirty な変更があるため main にマージできません（merge は clean working tree が前提）」
-- **detached HEAD（`BRANCH_NAME` 空）**: マージ選択肢を除外し同 2 択。理由明示「⚠️ detached HEAD のためマージできません（マージ対象のブランチ名がありません）」
+選択肢の出し分け（対象ごと）:
+
+- **🔴 通常（Dirty なし & ブランチ名あり）**: 「1) main にマージ (推奨) / 2) スキップ / 3) 破棄削除 (force)」の 3 択
+- **🔴 Dirty 同時**: マージ選択肢を**除外**し「1) スキップ / 2) 破棄削除 (force)」の 2 択。理由明示「⚠️ Dirty な変更があるため main にマージできません（merge は clean working tree が前提）」
+- **🔴 detached HEAD（`BRANCH_NAME` 空）**: マージ選択肢を除外し同 2 択。理由明示「⚠️ detached HEAD のためマージできません（マージ対象のブランチ名がありません）」
 - Dirty と detached が両方該当する場合も 2 択を提示し、両方の理由を併記する
+- **🟡 dirty あり**: 「1) 変更を破棄して削除 / 2) スキップ」の 2 択（LLM は Pass 1 で退避・検証済みであることを前提とし、未退避なら実行前に退避する）
+
+回答を受け取ったら、**別ターンで**回答がどの worktree を指すか読み直して再確定し、選択ごとに逐次実行する（絶対禁則 1）。
 
 **選択ごとの分岐**:
 
 - **スキップ** → 状態維持。`SKIPPED+=("$BRANCH_NAME")`
-- **破棄削除 (force)** →
+- **破棄削除 (force)**（🔴） →
   ```bash
   git worktree remove --force "$WT"
   git branch -D "$BRANCH_NAME"
   PROCESSED+=("$BRANCH_NAME (🔴 破棄削除)")
+  ```
+- **変更を破棄して削除**（🟡 dirty あり） →
+  ```bash
+  git worktree remove --force "$WT"
+  git branch -d "$BRANCH_NAME"    # SQUASHED のときは -D
+  PROCESSED+=("$BRANCH_NAME (🟡 dirty破棄→削除)")
   ```
 - **マージ** → 下記マージ実行へ
 
@@ -386,8 +440,8 @@ git -C "$MAIN_REPO" merge "$BRANCH_NAME" --no-ff \
 
 - **成功** → そのまま Step B-サニティ（マージ都度）へ
 - **競合（exit 非 0）** → `git merge --abort` は**自動実行しない**（SHALL NOT）。`.git/MERGE_HEAD` を保持したまま中断する。
-  - 競合より前に処理（削除/再利用化）が完了した先行 `TARGETS`（`PROCESSED`）は**確定済みとして扱い巻き戻さない**
-  - 競合した worktree（`HELD`）以降の未処理 `TARGETS` は処理しない
+  - 競合より前に処理が完了したもの（Pass 1 の自動処理分と、Pass 2 で先に処理した分。いずれも `PROCESSED`）は**確定済みとして扱い巻き戻さない**
+  - 競合した worktree（`HELD`）以降の未処理 `DEFERRED` は処理しない
   - ループを抜けて Step C（競合中断レポート）へ
 
 ```
@@ -443,18 +497,18 @@ cd "$MAIN_REPO"
 - `Remote 同期: -- skipped (--no-sync)`
 - `Remote 同期: -- skipped (no origin remote)`
 
-続けて `PROCESSED` / `SKIPPED` / `HELD` と残存 worktree 件数を区別表示する。
+続けて `PROCESSED` / `SKIPPED` / `HELD` と残存 worktree 件数を区別表示する。自動処理分（Pass 1）と判断バッチ分（Pass 2）が区別できるよう表示する。
 
 ```
 wt-clean 完了:
   Remote 同期: ✅ pulled 3 commits (origin/main → main)
   対象: 4 worktrees（選択: 全て）
-  削除: feat-x (🟢), bar (🟡 LLM退避→削除)
+  自動処理（確認なし）: feat-x (🟢 削除), bar (🟡 LLM退避→削除)
   再利用化: -
-  🔴 マージ→削除: wip-z (3 commits merged)
+  判断バッチ: wip-z (🔴 マージ→削除, 3 commits merged)
   サニティチェック: ✅ PASS (npm test, npm run build)
-  スキップ: -
-  LLMコピー: 2 files → LLM/
+  スキップ: fix-q (🟡 dirty, ユーザー選択)
+  LLMコピー: 2 files → LLM/（退避検証 OK）
   残存worktrees: 1
 ```
 
@@ -490,18 +544,18 @@ wt-clean 中断:
 
 ## 🔴 Active worktree の強制破棄（破棄削除選択時）
 
-Step B-🔴 で「破棄削除 (force)」を選んだ場合のみ:
+Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 
-1. 未マージコミットのログを表示
-2. 未コミット変更の diff を表示
-3. 「本当に削除しますか？この操作は取り消せません」と最終確認
-4. LLM ファイルがあればコピー
-5. `git worktree remove --force` + `git branch -D`（大文字 D = 強制削除）
+1. 未マージコミットのログ・未コミット変更の diff は判断バッチの提示時点で表示済みであること（未表示なら実行前に表示する）
+2. LLM ファイルがあればコピーし、退避検証（絶対禁則 4）を行う
+3. `git worktree remove --force` + `git branch -D`（大文字 D = 強制削除）
+
+判断バッチでの「破棄削除」回答がユーザーの最終確認である。追加の「本当に削除しますか？」は挟まない（判断材料は回答前に提示済みであることが前提）。ただし回答が曖昧（どの対象か特定できない・選択肢外の自由入力）な場合は実行せず確認し直す。
 
 ## エッジケース
 
 - メインリポ自体が worktree の場合: スキップ（削除対象外）
-- detached HEAD の worktree: ブランチ削除はスキップ。🔴 判定時はマージ選択肢を除外（Step B-🔴）
+- detached HEAD の worktree: ブランチ削除はスキップ。🔴 判定時はマージ選択肢を除外（Step B Pass 2）
 - worktree のパスが存在しない（既に手動削除済み）: `git worktree prune` で整理
 - Superset 作成の worktree: 削除後「Superset UI 上でも not found になるので UI から削除してください」と案内
 
@@ -510,4 +564,6 @@ Step B-🔴 で「破棄削除 (force)」を選んだ場合のみ:
 完了宣言の前に成果物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`、詳細手順: `plugins/worktree/references/wt-clean-verification.md`）。
 
 - 削除した worktree が `git worktree list` に現れないことを確認する。
-- 🟡 判定で LLM 退避を行った場合、退避先ファイルが実在することを確認する。
+- 🟡 判定で LLM 退避を行った場合、退避先ファイルが実在し空でないことを**削除前に**検証済みであることを確認する（検証失敗のまま削除していないこと）。
+- 🟢/🟡 の自動削除について、削除直前に診断根拠を表示したことを確認する（無音削除をしていないこと）。
+- dirty 破棄・🔴 破棄削除・🔴 マージを行った場合、それぞれ Pass 2 の AskUserQuestion 回答後の別ターンで実行したことを確認する。
