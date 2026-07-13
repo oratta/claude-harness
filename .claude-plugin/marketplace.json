@@ -186,6 +186,24 @@
         "tdd",
         "spec-driven"
       ]
+    },
+    {
+      "name": "agent-owner",
+      "description": "エージェントオーナープロジェクト（AI自動運営モード）のセットアップオーケストレーター（v0 仮）。開発エージェント + マーケエージェントが有料プロダクトを自動運営する仕組み（genetta-inc/suimei での実証済み構成）を任意プロジェクトにテンプレート展開する。インフラ（infra プラグイン）・開発自律ループ（loops プラグイン）・Layer 0 マージ自動化（auto-merge ロボット + staging スモーク + auto-revert）・運営責任（窓口・法務ドラフト）・マーケ運転（sns-autopilot プラグイン）・教訓ログとマスタープラン issue の6フェーズを対話的に導入する。テンプレ駆動運用: 展開先で問題が出たら展開先ではなく本プラグイン側を直す。",
+      "source": "./plugins/agent-owner",
+      "category": "workflow",
+      "version": "0.1.0",
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "agent-owner",
+        "autonomous-operations",
+        "auto-merge",
+        "layer0",
+        "ai-ops",
+        "template"
+      ]
     }
   ],
   "skills": [],
@@ -203,7 +221,8 @@
         "experience-to-skill",
         "skill-pack",
         "loops",
-        "dev-workflow"
+        "dev-workflow",
+        "agent-owner"
       ],
       "skills": []
     }
