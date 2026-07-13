@@ -121,8 +121,8 @@ gh label create "human-decision"      -c "#5319E7" -d "意思決定論点あり�
 
 - 命名規則: `support-<slug>@<domain>`（ハイフン区切り。`<slug>` はプロダクト名から機械的に導出）
 - **`+` ではなくハイフンを使う理由**: Cloudflare Email Routing は `+` サフィックスを完全一致解決しない（2026-07-13 に実弾で判明）うえ、`+` 入りアドレスは Web フォームの email バリデーションで弾かれることがある。ハイフンなら全メールシステムで安全に扱える
-- ドメインの Email Routing で catch-all が有効か確認する（個別ルールでの解決に頼らず、catch-all → 集約先 Gmail への転送を前提にする。ハイフンでもワイルドカードでも配送自体は catch-all が担う）
-- 集約先 Gmail 側にこのアドレス宛のフィルタを作成する案内を行う（ラベル付け・優先度設定等）
+- **catch-all は使わず、個別ルーティングルール方式にする**: catch-all はドメイン宛のランダム送信・スパム攻撃をすべて受信してしまいスパム面が広い。新サービスごとに Cloudflare Email Routing に **個別ルール `support-<slug>@<domain>` → 集約先 Gmail** を1件作成する（ダッシュボードまたは Cloudflare API で作成。API 自動化が可能な場合は導入手順に含める）。ドメインの catch-all は無効のままにしておくことを推奨する
+- 集約先 Gmail 側に `to:support-<slug>@<domain>` でこのアドレス宛のフィルタを作成する案内を行う（ラベル付け・優先度設定等）
 
 ### 4.2 法務・運営ドラフトの生成
 
@@ -189,7 +189,7 @@ gh issue create --repo {owner}/{repo} \
 | Phase 3 | `vars.STAGING_DOMAIN` 登録 |
 | Phase 3 | `VERCEL_AUTOMATION_BYPASS_SECRET` 発行・登録 |
 | Phase 3 | 聖域パスに触れる PR（`human-merge` ラベル）のマージボタン（継続的） |
-| Phase 4 | ドメインの Email Routing catch-all 有効化確認、Gmail フィルタ作成 |
+| Phase 4 | Cloudflare Email Routing の個別ルール（`support-<slug>@<domain>` → 集約先 Gmail）作成、Gmail フィルタ作成（API 自動化不可の場合はダッシュボード操作） |
 | Phase 4 | 特定商取引法表記の事業者情報穴埋め（課金ありの場合） |
 | Phase 4 | Stripe 本番鍵の発行（課金ありの場合） |
 | Phase 5 | X アカウント開設・API キー取得（SNS 運用ありの場合） |
