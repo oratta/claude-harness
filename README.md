@@ -110,6 +110,24 @@ Claude Code ロングラン自律実行システム。instruction.mdを対話的
 
 ---
 
+### genetta-mail
+
+genetta.jp ドメイン配下の新サービス向けサポート窓口メール（`support-<slug>@genetta.jp`）を、1コマンド分の作業量でセットアップするプラグイン。設計の正本は genetta-inc/suimei の `docs/ops/genetta-mail-skill-design.md`（個別ルーティングルール方式に改訂済み）。
+
+```bash
+/plugin install genetta-mail@oratta-claude-harness
+```
+
+**機能:**
+- `genetta-mail-setup` スキルが5手順を対話的に進める: ヒアリング → Cloudflare Email Routing の個別ルール作成（`CLOUDFLARE_API_TOKEN` があれば API、なければダッシュボード手順を提示）→ Gmail のラベル・フィルタ作成 → 対象サービス docs への窓口追記 → 到達テスト
+- **catch-all は不採用**: ドメイン宛のランダム送信攻撃を全受信してしまいスパムの攻撃面が広すぎるため、サービスごとに個別ルーティングルールを1件作成する方式を採る
+- **命名はハイフン区切り**（`support-<slug>@`）: `+` サブアドレス方式は Cloudflare Email Routing が解決せず 550 で不達になることが実弾で判明しているため不採用
+- 窓口を「使える状態にする」ところまでがスコープ。問い合わせの分類・自動返信等の CS エージェント本体は扱わない
+
+詳細は `plugins/genetta-mail/skills/genetta-mail-setup/SKILL.md` を参照。
+
+---
+
 ## バンドル
 
 複数のプラグインを一括でインストールできます。

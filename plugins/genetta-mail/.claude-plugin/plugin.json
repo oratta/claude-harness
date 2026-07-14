@@ -1,0 +1,11 @@
+{
+  "name": "genetta-mail",
+  "version": "0.1.0",
+  "description": "genetta.jp ドメイン配下の新サービス向けサポート窓口メール（support-<slug>@genetta.jp）を1コマンド分の作業量でセットアップする。Cloudflare Email Routing の個別ルーティングルール作成（catch-all は不採用）、Gmail のラベル・フィルタ作成、対象サービス docs への窓口追記、到達テストまでを扱う。CS 対応本体（分類・自動返信）はスコープ外。",
+  "author": {
+    "name": "Oratta"
+  },
+  "skills": [
+    "./skills/genetta-mail-setup"
+  ]
+}
