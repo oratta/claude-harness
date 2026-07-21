@@ -107,20 +107,25 @@ _artifact_kw() {
   done
 }
 
-# --- S48: change is additive only (no deleted lines vs merge-base) ---
-# NOTE (loops-integration / change-5, decisions.md D-5c): the release-metadata
-# frontmatter `version:` line is excluded from the deleted-line count. change-5
-# bumps plugin.json versions and, for plugins whose own tests couple the SKILL
-# frontmatter version to plugin.json (e.g. infra S29), the frontmatter version is
-# bumped in lock-step. That single metadata line is not a change-2 skill-logic
-# deletion, so it must not fail this additive-only guard. The guard still forbids
-# deleting/rewriting any skill-logic line.
-@test "S48: change is additive only vs merge-base" {
+# --- S48: self-verification section is preserved vs merge-base ---
+# NOTE (loops-integration / change-5, decisions.md D-5c → loop-dev-agent-tripwires で
+# スコープ縮小): 旧 S48 は対象ファイル「全体」の行削除を禁止していたが、これは change-5
+# 時点のポイントインタイムガードであり、後続の spec 承認済み編集（例: longrun-plan の
+# ヒューリスティクス改訂 = longrun-exec-model-allocation）まで恒久的にブロックしてしまう。
+# 本テストの実際の保護対象は「自己検証」セクションなので、ガードをセクション単位に絞る:
+# merge-base 時点の自己検証セクションの各行が HEAD でも残っていること（追記は可、
+# 削除・書き換えは不可）。
+@test "S48: self-verification section is not rewritten vs merge-base" {
   base="$(cd "$PLUGIN_ROOT" && git merge-base HEAD main 2>/dev/null)" || skip "no merge-base"
   [ -n "$base" ] || skip "no merge-base"
   for rel in "${TARGETS[@]}"; do
-    run bash -c "cd '$PLUGIN_ROOT' && git diff '$base' -- '$rel' | grep -E '^-[^-]' | grep -vE '^-version:' | wc -l | tr -d ' '"
-    [ "$output" = "0" ]
+    old_section="$(cd "$PLUGIN_ROOT" && git show "$base:$rel" 2>/dev/null | awk '/^## 自己検証[[:space:]]*$/{f=1} f&&/^## /&&!/^## 自己検証[[:space:]]*$/{f=0} f{print}')"
+    [ -n "$old_section" ] || continue
+    new_section="$(_section_with_heading "$PLUGIN_ROOT/$rel")"
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      grep -qxF -- "$line" <<<"$new_section"
+    done <<<"$old_section"
   done
 }
 
