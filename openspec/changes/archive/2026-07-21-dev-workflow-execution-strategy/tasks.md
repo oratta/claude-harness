@@ -19,4 +19,4 @@
 
 - [x] 4.1 スキル/テンプレートの整合検査: テンプレートに Workflow ツール直接操作が無いこと、SKILL.md と decision-criteria.md の相互参照が正しいこと、全 spec シナリオが文書上で充足されていることを確認する
 - [x] 4.2 `plugins/dev-workflow/.claude-plugin/plugin.json` のバージョンを上げる
-- [ ] 4.3 commit / push で Draft PR #29 を更新する
+- [x] 4.3 commit / push で Draft PR #29 を更新する
