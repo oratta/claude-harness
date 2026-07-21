@@ -2,10 +2,14 @@
 
 <!--
 導入手順:
-- interactive で使う場合: このセクション（「## 昇格トリップワイヤー」以下）を、あなたの
-  グローバルルール（~/.claude/rules/ 配下の md）またはプロジェクトの CLAUDE.md にコピーする。
+- interactive で使う場合: **手動導入は不要**。dev-workflow プラグインの SessionStart hook
+  （hooks/hooks.json → scripts/session-tripwires.sh）が、セッション開始時に本ファイルの
+  「## 昇格トリップワイヤー」節を自動で文脈に注入する。
+  手動コピー（グローバルルール ~/.claude/rules/ またはプロジェクト CLAUDE.md への転記）は、
+  プラグイン未導入の環境や閾値を独自に改変したい場合向けのオプション。hook 注入と併存しても
+  同文が2回載るだけで無害。
 - unmanned（loop-dev-agent）で使う場合: 憲法ファイル（docs/agent-loop.md）への組み込みを
-  loops プラグイン側が行う（別 change: loop-dev-agent-tripwires）。手動コピーは不要。
+  loops プラグイン側が行う（loop-dev-agent-tripwires）。手動コピーは不要。
 - このテンプレートは「いつ手を止めるか」だけを定義する。「どう実行するか」は発火先の
   スキル（/lr:e、/lr:p 等）が持つ。ここに実行手順を書き足さないこと。
 - 閾値（ファイル5個・2回など）は初期値であり、運用しながら調整してよい。
