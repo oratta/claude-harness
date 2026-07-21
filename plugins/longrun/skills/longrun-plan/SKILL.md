@@ -231,7 +231,7 @@ AskUserQuestion を使い、**1問ずつ**質問する。
 ### Step 5c: モデル割り当て推奨の生成（必須）
 
 `templates/plan-template.md` の「モデル割り当て」セクションを、Changes 分解の各 change × agent ロール
-（builder / verifier / reviewer）ごとに **1 行**埋めて生成する。各行にティア（haiku / sonnet / inherit）と
+（builder / verifier / reviewer）ごとに **1 行**埋めて生成する。各行にティア（haiku / sonnet / fable / inherit）と
 理由を記入する。
 
 **ティア解決のヒューリスティクス**（モデル ID は書かない。ティア → 実モデルの対応は
@@ -239,18 +239,21 @@ AskUserQuestion を使い、**1問ずつ**質問する。
 
 | タスクの性質 | 推奨ティア |
 |--------------|-----------|
-| アーキテクチャレビュー・複雑な TDD 実装 | **inherit**（高能力が必要。`opts.model` を渡さず agent 定義の opus を継承） |
+| 判断が集中する場所（checkpoint 再ランク・verify の最終判定・アーキテクチャレビュー） | **fable**（判断点には賢いモデル、のモード不変ルール） |
 | 定型的な検証・要約 | **haiku** |
 | リサーチ・ブラウザ操作・中規模実装 | **sonnet** |
+| どのヒューリスティクスにも明確に該当しない | **inherit**（保守的デフォルト） |
 
 **保守的デフォルト: 迷ったら inherit。** どのヒューリスティクスにも明確に該当しない、または確信度が低い
 タスクのティアは `inherit` にし、理由欄に「確信度が低いため保守的デフォルト（inherit）を適用」と記入する。
 haiku は「定型的検証・要約」と明確に判断できる場合に限って推奨し、品質懸念があれば inherit に倒す。
+`fable` は reserve 降格の対象（`FABLE_BUDGET_MODE=reserve` の自動実行では opus に解決される。
+`references/model-tiers.md` の reserve 降格ルール参照）。
 
 ロールごとの典型割り当ての出発点（タスク性質で上書きしてよい）:
-- **builder**: 複雑な TDD 実装が中心なら inherit、中規模実装なら sonnet
-- **verifier**: 定型的な静的検証なら haiku、ブラウザ検証を伴うなら sonnet
-- **reviewer**: アーキテクチャ／Build Contract レビューは inherit
+- **builder**: builder は sonnet を出発点にする（実装はテストと verify に守られ、失敗ループは昇格トリップワイヤーが救済する）。最初から高能力が必要な複雑 TDD 実装のみ inherit
+- **verifier**: verify の最終判定を含むなら fable、定型的な静的検証のみなら haiku、ブラウザ検証を伴うなら sonnet
+- **reviewer**: アーキテクチャ／Build Contract レビューは fable
 
 `上書き` 欄は空のまま生成する（ユーザーが Step 8 で必要なら記入する）。
 

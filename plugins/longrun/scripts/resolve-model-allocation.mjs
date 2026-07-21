@@ -5,13 +5,15 @@
 // exec コマンドはこのスクリプトを呼び出し、出力 JSON を render-workflow.mjs の
 // MODEL_* 埋め込みポイントに渡す（exec.md 参照）。
 //
-// 設計（change-4 / design.md）:
-//   - ティア語彙は haiku / sonnet / inherit の 3 値（D1）
+// 設計（change-4 / design.md、longrun-exec-model-allocation で拡張）:
+//   - ティア語彙は haiku / sonnet / fable / inherit の 4 値（D1）
 //   - inherit = opts.model キーを出力しない（D2）→ model: null で表現する
 //   - ティア → opts.model 値の解決は model-tiers.md の表 1 箇所のみ（D3）
 //   - 上書き欄 > ティア欄（D4。上書き欄が非空ならそれを採用）
 //   - 未知ティア・パース不能行は inherit + 警告で続行（D5 fail-soft）
 //   - 「モデル割り当て」セクションが無い旧 plan.md は hasSection:false で全 inherit（D5 特殊ケース）
+//   - reserve 降格: FABLE_BUDGET_MODE=reserve かつ LONGRUN_AUTOMATED=1 のとき
+//     fable を 'opus' に降格 + 警告（実行は中断しない）。他ティアは影響を受けない
 //
 // 規律: Date.now() / Math.random() を使わない（テンプレート規律をスクリプトも守る）。
 //
@@ -46,7 +48,7 @@ function buildTierMap(doc) {
     if (cells.length < 4) continue;
     const tierCell = cells[1].replace(/`/g, '').trim();
     const valCell = cells[3];
-    if (tierCell !== 'haiku' && tierCell !== 'sonnet') continue;
+    if (tierCell !== 'haiku' && tierCell !== 'sonnet' && tierCell !== 'fable') continue;
     // バッククォートで囲まれたエイリアス値を取り出す
     const m = valCell.match(/`'([^']+)'`/);
     if (m) map[tierCell] = m[1];
@@ -54,11 +56,17 @@ function buildTierMap(doc) {
   // フォールバック（表が読めなかった場合でもティア名自体をエイリアスとして使う）
   if (!('haiku' in map) || map.haiku == null) map.haiku = 'haiku';
   if (!('sonnet' in map) || map.sonnet == null) map.sonnet = 'sonnet';
+  if (!('fable' in map) || map.fable == null) map.fable = 'fable';
   return map;
 }
 
 const tierMap = buildTierMap(tiersDoc);
-const KNOWN_TIERS = ['haiku', 'sonnet', 'inherit'];
+const KNOWN_TIERS = ['haiku', 'sonnet', 'fable', 'inherit'];
+
+// reserve 降格（model-tiers.md「reserve 降格ルール」参照）:
+// FABLE_BUDGET_MODE=reserve かつ LONGRUN_AUTOMATED=1（無人配線が設定）のときのみ発動。
+const RESERVE_DOWNGRADE =
+  process.env.FABLE_BUDGET_MODE === 'reserve' && process.env.LONGRUN_AUTOMATED === '1';
 
 // --- plan.md から「モデル割り当て」セクションの表をパースする ---
 const warnings = [];
@@ -110,7 +118,13 @@ if (hasSection) {
       tier = 'inherit';
     }
 
-    const model = tier === 'inherit' ? null : tierMap[tier];
+    let model = tier === 'inherit' ? null : tierMap[tier];
+    if (tier === 'fable' && RESERVE_DOWNGRADE) {
+      model = 'opus';
+      warnings.push(
+        `FABLE_BUDGET_MODE=reserve の自動実行のため fable を opus に降格しました（change=${change}, role=${role}）`
+      );
+    }
     allocations.push({ change, role, tier, model });
   }
 }

@@ -2,6 +2,12 @@
 
 現行版のドキュメントは [README.md](README.md) を参照。本ファイルは版履歴のみを記録する。
 
+## v6.5 変更点
+
+- **`fable` ティアを追加**（cost-effective harness / claude-harness#26 v2）。ティア語彙は haiku / sonnet / fable / inherit の 4 値になり、判断が集中する場所（checkpoint 再ランク・verify の最終判定・アーキテクチャレビュー）に Fable を割り当てられるようになった。
+- **推奨ヒューリスティクスを4象限準拠に更新**: builder は sonnet を出発点（失敗ループは昇格トリップワイヤーが救済）、verifier / reviewer の判断集中点は fable。「迷ったら inherit」の保守的デフォルトは維持。
+- **reserve 降格を resolver に実装**: `FABLE_BUDGET_MODE=reserve` かつ `LONGRUN_AUTOMATED=1`（無人配線が設定）のとき、fable を `'opus'` に降格して解決し警告を出す。自動実行での Fable 温存（人間の interactive 利用優先）のため。interactive では降格しない。
+
 ## v6.4 変更点
 
 - **ノンストップ実行ポリシーを導入**。`/longrun:exec` の停止ポイント5箇所のうち、ユーザーがほぼ推奨選択肢で即決していた4箇所を自動化した。plan 承認済みなら「AI レビューで問題（REQUEST_CHANGES）が出ない限り、完了レポートまで一度も止まらない」状態になる。exec.md に「停止ポリシー」セクションを新設し、停止してよい条件（権限モード不足 / preflight NO_CLI・NO_INIT / REQUEST_CHANGES）を明文化。

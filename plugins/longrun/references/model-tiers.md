@@ -4,7 +4,7 @@
 
 <!-- DRIFT 防止: モデル ID / エイリアスを書いてよいのは本ファイルのみ。
      plan-template.md・longrun-plan SKILL.md・commands/exec.md・templates/workflow/*.js は
-     ティア名（haiku / sonnet / inherit）だけを扱い、解決はここを参照すること（change-4 / D3）。 -->
+     ティア名（haiku / sonnet / fable / inherit）だけを扱い、解決はここを参照すること（change-4 / D3）。 -->
 
 ## なぜ 1 箇所に集約するか
 
@@ -25,8 +25,22 @@
 | ティア | 用途の目安 | `opts.model` に渡す値 |
 |--------|-----------|----------------------|
 | `haiku`   | 定型的な検証・要約など軽量タスク | `'haiku'` |
-| `sonnet`  | リサーチ・ブラウザ操作・中規模実装 | `'sonnet'` |
-| `inherit` | アーキテクチャレビュー・複雑な TDD 実装（高能力が必要） | （**渡さない**） |
+| `sonnet`  | リサーチ・ブラウザ操作・中規模実装。builder の出発点 | `'sonnet'` |
+| `fable`   | 判断が集中する場所（checkpoint 再ランク・verify の最終判定・アーキテクチャレビュー） | `'fable'` |
+| `inherit` | 分類に迷うタスクの保守的デフォルト（高能力が必要） | （**渡さない**） |
+
+## reserve 降格ルール（fable のみ対象）
+
+環境変数 `FABLE_BUDGET_MODE` が `reserve` **かつ** `LONGRUN_AUTOMATED` が `1` のとき、
+`fable` ティア（上書き欄経由を含む）は `'opus'` に降格して解決される（resolver が処理し、
+降格した旨を `warnings` に含める。実行は中断しない）。
+
+- 目的: 週次の全体枠は残っているが Fable 枠だけ枯渇しそうな時、残りの Fable を
+  ユーザーの interactive 利用のために温存する（dev-workflow の残量モード定義を参照）。
+- `LONGRUN_AUTOMATED=1` は**無人配線（cron / loop-dev-agent 等）側が設定する責務**。
+  interactive セッションでは未設定のため降格は起きない。設定漏れ時は降格されない方向
+  （品質は守られ、温存だけが効かない）に倒れる。
+- haiku / sonnet / inherit の解決は reserve の影響を受けない。
 
 > モデル ID 世代交代の参考対応（2026 時点。実際に渡すのは上表のエイリアス）:
 > haiku エイリアスは `claude-haiku` 系、sonnet エイリアスは `claude-sonnet` 系の最新世代に解決される。

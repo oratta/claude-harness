@@ -75,7 +75,7 @@ model_of() {
 }
 
 @test "plan-template: has the model allocation table header" {
-  grep -q '| change | ロール | ティア(haiku/sonnet/inherit) | 理由 | 上書き |' "$PLAN_TPL"
+  grep -q '| change | ロール | ティア(haiku/sonnet/fable/inherit) | 理由 | 上書き |' "$PLAN_TPL"
 }
 
 @test "plan-template: documents user-editable / override-priority semantics" {
@@ -93,8 +93,10 @@ model_of() {
 # ===========================================================================
 
 @test "plan-skill: states the three heuristics" {
-  # アーキレビュー・複雑 TDD → inherit
-  grep -Eq 'アーキ.*(レビュー).*inherit|inherit.*アーキ' "$PLAN_SKILL"
+  # 判断が集中する場所（アーキレビュー・verify 最終判定）→ fable
+  grep -Eq '判断が集中.*fable|fable.*判断' "$PLAN_SKILL"
+  # builder は sonnet を出発点
+  grep -Eq 'builder は sonnet を出発点' "$PLAN_SKILL"
   # 定型検証・要約 → haiku
   grep -Eq '(定型|要約).*haiku|haiku.*(定型|要約)' "$PLAN_SKILL"
   # リサーチ・ブラウザ・中規模 → sonnet
@@ -278,4 +280,49 @@ model_of() {
   node --check "${LR_TEST_TMPDIR}/review.out.js"
   grep -q 'const reviewerModel = null' "${LR_TEST_TMPDIR}/review.out.js"
   grep -qE 'reviewerModel \? \{ model: reviewerModel \}' "${LR_TEST_TMPDIR}/review.out.js"
+}
+
+# ===========================================================================
+# change longrun-exec-model-allocation — fable tier + reserve downgrade (#26)
+# ===========================================================================
+
+@test "model-tiers: defines fable tier with opts.model value" {
+  lr_require_file "$TIERS_MD"
+  grep -qE "fable.*\`'fable'\`" "$TIERS_MD"
+}
+
+@test "model-tiers: documents reserve downgrade rule" {
+  grep -q 'FABLE_BUDGET_MODE' "$TIERS_MD"
+  grep -q 'LONGRUN_AUTOMATED' "$TIERS_MD"
+}
+
+@test "plan-template: header uses 4-tier vocabulary" {
+  grep -q 'ティア(haiku/sonnet/fable/inherit)' "$PLAN_TPL"
+}
+
+@test "plan-skill: heuristics mention fable for judgment-dense roles" {
+  grep -q 'fable' "$PLAN_SKILL"
+}
+
+@test "resolve: fable tier resolves to model 'fable'" {
+  json="$(env -u FABLE_BUDGET_MODE -u LONGRUN_AUTOMATED node "$RESOLVE" "${MA_FIXTURES}/fable.plan.md" "$TIERS_MD")"
+  [ "$(model_of "$json" feature-x reviewer)" = "fable" ]
+}
+
+@test "resolve: reserve + automated downgrades fable to opus with warning" {
+  json="$(env FABLE_BUDGET_MODE=reserve LONGRUN_AUTOMATED=1 node "$RESOLVE" "${MA_FIXTURES}/fable.plan.md" "$TIERS_MD")"
+  [ "$(model_of "$json" feature-x reviewer)" = "opus" ]
+  node -e 'const j=JSON.parse(process.argv[1]); process.exit((j.warnings||[]).some(w=>/reserve/.test(w))?0:1)' "$json"
+}
+
+@test "resolve: reserve without automated keeps fable" {
+  json="$(env -u LONGRUN_AUTOMATED FABLE_BUDGET_MODE=reserve node "$RESOLVE" "${MA_FIXTURES}/fable.plan.md" "$TIERS_MD")"
+  [ "$(model_of "$json" feature-x reviewer)" = "fable" ]
+}
+
+@test "resolve: reserve does not affect other tiers" {
+  json="$(env FABLE_BUDGET_MODE=reserve LONGRUN_AUTOMATED=1 node "$RESOLVE" "${MA_FIXTURES}/fable.plan.md" "$TIERS_MD")"
+  [ "$(model_of "$json" feature-x builder)" = "sonnet" ]
+  [ "$(model_of "$json" feature-x verifier)" = "haiku" ]
+  [ "$(model_of "$json" feature-x browser-verifier)" = "INHERIT" ]
 }
