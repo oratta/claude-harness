@@ -50,6 +50,9 @@ gh repo view --json viewerPermission # push 権限があること
 **レート閾値・ヘッドルーム・朝ダイジェスト時刻は install では聞かない**（憲法テンプレから運用値プレースホルダを廃止済み）。
 これらは実行時の環境変数で解決する: レートは配線側の `RATE_5H_MAX` / `RATE_5H_HEADROOM` / `RATE_7D_MAX` /
 `RATE_7D_HEADROOM`（デフォルト 70/20/85/10）、朝ダイジェスト時刻は `AGENT_DIGEST_HOUR`（デフォルト 7）。
+残量モード関連も同じ規約で配線側が設定する: `LONGRUN_AUTOMATED=1`（無人セッション宣言。longrun の
+reserve 降格が参照）、`FABLE_BUDGET_MODE`（`abundant` / `conserve` / `reserve`。未設定 = `conserve`）。
+いずれも install のヒアリング項目には含めない。
 flatmate 常駐運転ではレート判定を配線側 hook が肩代わりするため、閾値の設定先も配線側になる（レシピ
 `recipes/loop-dev-agent.md` の「起動コマンド」参照）。
 

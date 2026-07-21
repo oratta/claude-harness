@@ -67,8 +67,11 @@ openspec --version 2>/dev/null && echo "OPENSPEC_CLI"
 
 次に、この issue を**仕様として残すべきか**を判定する（判定基準の詳細は `references/decision-criteria.md`）:
 
-- **仕様化する**（下記いずれか成立）: 外部から観測可能な振る舞いの追加・変更／issue に受け入れ条件・期待動作が書かれている（WHEN/THEN に変換できる）／既存 capability や docs に触れる／「なぜこう作ったか」を決定履歴に残す価値のある設計判断を含む。
-- **仕様化しない（コード直行）**: typo・lint・コメント・フォーマットのみ／振る舞い不変の内部リファクタ・ワンライナー fix・依存バージョン上げのみ。
+- **仕様化する**（一次基準: 設計判断・トレードオフを含むか）: 複数案からの選択・採用理由など「なぜこう作ったか」を決定履歴に残す価値のある設計判断を含む／外部から観測可能な振る舞いの変更のうち実装方針に選択肢が残るもの／既存 capability の要件や docs に触れる。
+- **仕様化しない（コード直行）**: typo・lint・コメント・フォーマットのみ／振る舞い不変の内部リファクタ・ワンライナー fix・依存バージョン上げのみ／**受け入れ条件が issue に明記された機械的な振る舞い変更**（設計判断なし。issue とテストが記録として十分）。
+- どの判定でも**テスト作成は必須**（テストはドキュメントであると同時に、昇格トリップワイヤーの信号源）。
+
+このとき同じ流れの中で**実行戦略**（solo / delegate+verify / workflow 型）も仮決めする。4象限モデル・決定論的シグナルの収集コマンド・判定表・残量モード（`FABLE_BUDGET_MODE`: abundant / conserve / reserve）は `references/decision-criteria.md` の「実行戦略の判定」節を参照。実行戦略の判定は独立 Step にしない（Step B/C への相乗り）。事前判定は仮決めであり、誤分類は実行中の昇格トリップワイヤーが修正する。
 
 仕様化しないと判定した場合は Step C を飛ばし、Step D（TDD 実装）へ直行する。
 
@@ -100,6 +103,18 @@ openspec --version 2>/dev/null && echo "OPENSPEC_CLI"
 
 単一 change 1 つ分の実装手順。仕様化する場合と直行する場合で入口が違うだけで、**テストを先に書く**のは共通。
 
+**実行戦略による分岐**（Step B/C で仮決めしたラベルに従う）:
+
+- **solo**: 以下の手順をメインセッションがそのまま実行する（現行どおり。大多数の issue はこれ）。
+- **delegate+verify**: 以下の手順（テスト先行含む）を安い実行役（Sonnet subagent または codex:rescue）に委譲する。実行役とは**別の**賢いモデル（既定 Fable。`FABLE_BUDGET_MODE=reserve` の自動実行では Opus）が、受け入れ条件とテスト・lint の exit code を確認して verify してから完了を宣言する。実行役の自己申告だけで完了にしない。
+- **workflow 型**: `/lr:e` 系のスキル呼び出しで Workflow 実行に委ねる（builder=安いモデル、checkpoint/verify=Fable）。常駐ルールや Step D から Workflow ツールを直接呼ばない。
+
+**昇格ルール**（全戦略共通。詳細は `templates/escalation-tripwires.md`）:
+
+- 同じテストが2連続で落ちた、または同じ箇所を2回書き直した → 実行役を1段昇格（Sonnet → Opus → Fable）
+- `FABLE_BUDGET_MODE=reserve` の自動実行では昇格上限は Opus。Opus でも2連続失敗が続く場合は issue に `needs-approval` を付けて経緯をコメントし、サイクルを終了する
+- 昇格・乗り換え時は、ここまでの成果（編集済みファイル・通ったテスト・判明した事実）を破棄せず引き継ぐ
+
 **仕様化する場合（opsx 利用可能時）**:
 ```
 /opsx:ff <change-name>     # 全 artifact（proposal/specs/design/tasks）を一括生成
@@ -130,6 +145,7 @@ opsx コマンドが無く openspec CLI だけある場合は `openspec new chan
 
 ## 参照
 
-- 判定基準の詳細表: `references/decision-criteria.md`
+- 判定基準の詳細表（Step B/C + 実行戦略・残量モード）: `references/decision-criteria.md`
+- 昇格トリップワイヤーの常駐ルールテンプレート: `plugins/dev-workflow/templates/escalation-tripwires.md`
 - 呼び出す既存スキル/コマンド: `wt-setup`（worktree プラグイン）、`/opsx:*`（openspec 生成物）、`openspec` CLI
 - 棲み分け相手: `loops` プラグインの loop-dev-agent（`recipes/loop-dev-agent.md`、憲法テンプレート `templates/agent-loop-template.md`）

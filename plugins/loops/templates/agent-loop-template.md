@@ -313,6 +313,19 @@ bash scripts/agent-loop-select.sh
 
 `size:large` ラベルは、github-issue スキルが分割の是非すら判断できないほど曖昧なケースで、分割の方向性自体を人間の設計判断に委ねたい場合にのみ使う（着手中止・分割案をコメントするだけで、ラベルも人間が手動で付ける）。通常の複数 change 分割は上記 3. のサブ issue 化でループが自動処理するため、`size:large` を自動付与することはない。
 
+#### 昇格トリップワイヤー（Step 3 の全経路に常時適用）
+
+作業中に以下のいずれかを踏んだら、その場で手を止めて乗り換える。「あと少しで終わるから」は乗り換えない理由にならない。乗り換え・昇格の際、ここまでの成果（編集済みファイル・通ったテスト・判明した事実）は破棄せず引き継ぐ。閾値は初期値であり運用調整してよい（設計意図の詳細は dev-workflow プラグインの `templates/escalation-tripwires.md` を参照）。
+
+1. **規模超過**: 編集対象ファイルが5個を超えた、または着手前の見積もりから作業項目が2回増えた → solo を続けず、github-issue スキルの判定に従って workflow 型（/lr:e 系スキル）またはサブ issue 分割（上記 3.）に乗り換える。
+2. **失敗ループ**: 同じテストが2連続で落ちた、または同じ箇所を2回書き直した → 実行役を1段昇格する（Sonnet → Opus → Fable）。`FABLE_BUDGET_MODE=reserve` のときは **Opus を上限**とし、Opus でも2連続失敗が続く場合は `agent-blocked` ではなく `needs-approval` を付けて経緯をコメントし、このサイクルを終了する（Fable なら解けるかもしれない問題を人間が判断すべき状態のため）。既存の「失敗コメント2件 → `agent-blocked`」（上記 7.）はサイクル横断のセーフティネットとしてそのまま生きる。
+3. **仕様の発明**: issue に書かれていない仕様上の決定を自分で埋めた回数が2回に達した → 埋めた決定を列挙して Discord でユーザーに質問し、`agent-wip` を外して `needs-approval` を付け、経緯を issue にコメントしてこのサイクルを終了する（上記 3. の曖昧ケースと同じ経路）。
+
+**環境変数の前提**（RATE_* と同じく配線側が実行時に設定する。install ではヒアリングしない）:
+
+- `LONGRUN_AUTOMATED=1` — 無人セッションであることの宣言。longrun の reserve 降格（`references/model-tiers.md`）がこれを参照する
+- `FABLE_BUDGET_MODE` — 残量モード（`abundant` / `conserve` / `reserve`。未設定 = `conserve`）。定義は dev-workflow の `references/decision-criteria.md`
+
 ### Step 4: 提案モード / スキップ — `mode:"propose"` / `mode:"skip"`
 
 提案ストックの上限（{{PROPOSAL_CAP}} 件）判定は選定スクリプトが済ませており、`mode` に反映されている。

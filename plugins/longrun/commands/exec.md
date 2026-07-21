@@ -184,7 +184,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-model-allocation.mjs" \
 ```
 
 - 出力 JSON は `{ hasSection, allocations:[{change, role, tier, model}], warnings:[...] }`。
-  `model` はエイリアス文字列（`'haiku'`/`'sonnet'`）または `null`（inherit = `opts.model` を渡さない）。
+  `model` はエイリアス文字列（`'haiku'`/`'sonnet'`/`'fable'`。reserve 降格時は `'opus'`）または
+  `null`（inherit = `opts.model` を渡さない）。
+- **reserve 降格**: `FABLE_BUDGET_MODE=reserve` かつ `LONGRUN_AUTOMATED=1` の環境では、resolver が
+  `fable` ティアを `'opus'` に降格して解決し `warnings` に列挙する（`references/model-tiers.md` の
+  reserve 降格ルール参照）。exec 側の追加処理は不要（警告表示のみ）。
 - ティア → エイリアス値の解決元は **`references/model-tiers.md` の 1 箇所のみ**（D3）。exec はティア名と
   リファレンスだけを扱い、モデル ID を直書きしない。
 - **`上書き` 欄が非空ならティア欄より優先**する（D4。スクリプトが処理済み）。

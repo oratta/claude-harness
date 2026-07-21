@@ -1,8 +1,5 @@
-# longrun-model-allocation Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change model-allocation. Update Purpose after archive.
-## Requirements
 ### Requirement: plan テンプレートはモデル割り当てセクションを含む
 
 `plugins/longrun/templates/plan-template.md` は「モデル割り当て」セクションを含まなければならない (MUST)。セクションは Markdown 表で構成し、ヘッダ行は `| change | ロール | ティア(haiku/sonnet/fable/inherit) | 理由 | 上書き |` の 5 列でなければならない。セクションには、ユーザーが plan 確認時にこの表を直接編集して推奨を上書きできる旨と、`上書き` 欄が非空の場合はティア欄より優先される旨の説明文を含めること。テンプレート本文にモデル ID（`claude-` で始まる具体的なモデル識別子）を記載してはならない (MUST NOT)。
@@ -65,14 +62,7 @@ longrun プラグインは、ティア（haiku / sonnet / fable / inherit）か�
 - **WHEN** ユーザーが、ティア欄に `opus-max` のような未知の値を含む plan.md に対して `/longrun:exec` を実行する
 - **THEN** 該当行は inherit として扱われ（`opts.model` 無し）、「未知のティア値のため inherit として扱った」旨の警告が表示され、workflow の起動は中断されない
 
-### Requirement: モデル割り当てセクションが無い旧 plan.md では全 inherit にフォールバックする
-
-`/longrun:exec` は、plan.md に「モデル割り当て」セクションが存在しない場合でもエラーにせず動作しなければならない (MUST)。この場合、全 change × 全ロールを `inherit` として扱い、生成する workflow スクリプトのいかなる agent 呼び出しにも `opts.model` を設定しないこと。フォールバックの発動についてユーザーへの追加質問（AskUserQuestion）を行ってはならない (MUST NOT)。
-
-#### Scenario: セクション無し plan.md で exec が完走する
-
-- **WHEN** ユーザーが「モデル割り当て」セクションを持たない旧形式の plan.md に対して `/longrun:exec` を実行する
-- **THEN** エラーや追加質問なしで workflow スクリプトが生成・起動され、スクリプト内のすべての agent 呼び出しに `opts.model` キーが存在しない
+## ADDED Requirements
 
 ### Requirement: reserve モードの自動実行では fable ティアを opus に降格する
 

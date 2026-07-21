@@ -50,19 +50,20 @@
 exec はこの表を読み、ティアを `plugins/longrun/references/model-tiers.md` で解決して
 Workflow の `opts.model` に反映する。
 
-- ティアは `haiku` / `sonnet` / `inherit` の 3 値（モデル ID は書かない。解決は references/model-tiers.md が 1 箇所で担う）
-  - `inherit` = `opts.model` を渡さず agent 定義のモデル（現状 opus）を継承する。高能力が必要なタスク向け
+- ティアは `haiku` / `sonnet` / `fable` / `inherit` の 4 値（モデル ID は書かない。解決は references/model-tiers.md が 1 箇所で担う）
+  - `inherit` = `opts.model` を渡さず agent 定義のモデル（現状 opus）を継承する。分類に迷うタスクの保守的デフォルト
   - `haiku` = 定型的な検証・要約など軽量タスク向け
-  - `sonnet` = リサーチ・ブラウザ操作・中規模実装向け
+  - `sonnet` = リサーチ・ブラウザ操作・中規模実装向け。builder の出発点
+  - `fable` = 判断が集中する場所（checkpoint 再ランク・verify の最終判定・アーキテクチャレビュー）向け。`FABLE_BUDGET_MODE=reserve` の自動実行では opus に降格して解決される（references/model-tiers.md の reserve 降格ルール参照）
 - **この表は plan 確認時にユーザーが直接編集して上書きできる**。編集後の値は巻き戻されない
 - **`上書き` 欄がティア欄より優先される**（上書き欄が非空ならティア欄を無視。上書き欄もティア語彙 haiku/sonnet/inherit で記入する）
 - 「モデル割り当て」セクションが無い旧形式の plan.md でも exec は動く（全ロール inherit にフォールバック）
 
-| change | ロール | ティア(haiku/sonnet/inherit) | 理由 | 上書き |
-|--------|--------|------------------------------|------|--------|
-| change-[A] | builder | inherit | 複雑な TDD 実装 | |
-| change-[A] | verifier | haiku | 定型的な静的検証 | |
-| change-[A] | reviewer | inherit | アーキテクチャレビュー | |
+| change | ロール | ティア(haiku/sonnet/fable/inherit) | 理由 | 上書き |
+|--------|--------|------------------------------------|------|--------|
+| change-[A] | builder | sonnet | 実装は安いモデルを出発点にする（失敗ループは昇格で救済） | |
+| change-[A] | verifier | fable | verify の最終判定は判断集中点 | |
+| change-[A] | reviewer | fable | アーキテクチャレビューは判断集中点 | |
 
 ## 画面・UI設計
 [大まかな方向性、ワイヤーフレーム的な記述]
