@@ -114,19 +114,46 @@ gh issue view $N --json body --jq '.body' | grep -oE '[A-Za-z0-9_./-]+\.[a-z]{2,
 | ③ トークン大 × 判断少 | delegate+verify: 実行=Sonnet subagent / codex、verify=Fable | 同左（実行を Fable にしない。無駄撃ち） | 実行=Sonnet / codex、verify=Opus |
 | ④ トークン大 × 判断多 | workflow 型（/lr:e 系）: builder=安いモデル、checkpoint/verify=Fable | 同左 | workflow 型: checkpoint/verify=Opus 上限 |
 
-*reserve の interactive セッションは conserve と同一に扱う。
+*reserve の interactive セッションは conserve と同一に扱う。`exhausted` は reserve 列と同じ割り当てを **interactive / unmanned の両方** に適用する（Fable をどの役割でも使わず、昇格上限 Opus）。
 
 ### 残量モード `FABLE_BUDGET_MODE`
 
-サブスクの Fable 枠の残り具合をユーザーが手動宣言する環境変数。settings.json の `env` ブロックで永続化できる。**未設定は `conserve` 扱い（安全側）**。
+サブスクの Fable 枠の残り具合を表す環境変数。**明示設定が最優先**で、未設定時は usage snapshot からの自動導出結果を用いる（後述）。導出もできなければ `conserve` 扱い（安全側）。settings.json の `env` ブロックで明示的に固定することもできる。
 
 | 値 | 意味 | 効果 |
 |---|---|---|
-| `abundant` | Fable が余っている | solo の推奨モデルを Fable に倒す。委譲は「結果が変わらない機械的な大量仕事」に限定 |
-| `conserve` | 使い切りそう（既定） | solo=Opus。Fable は verify / checkpoint のみ |
+| `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | solo の推奨モデルを Fable に倒す。委譲は「結果が変わらない機械的な大量仕事」かつ **self-contained なタスク**（後述）に限定 |
+| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | solo=Opus。Fable は verify / checkpoint のみ |
 | `reserve` | Fable 枠を人間用に温存 | conserve に加えて、**自動実行（unmanned / cron / loop 経由）では Fable をいかなる役割でも使わない**。昇格ラダーは Opus 上限。Opus でも2連続失敗が続く問題は `needs-approval` で人間に返す。interactive は conserve と同一 |
+| `exhausted` | Fable 週次枠を実質使い切った（`fable_weekly_pct > 90`、または明示宣言） | **reserve と異なり interactive を含む全経路で Fable を一切使わない**（枠が実際に無いため）。昇格ラダーは Opus 上限。加えて rate-limit 実エラーで reactive に Opus へ降格する（`escalation-tripwires.md` トリップワイヤー4） |
 
-モードが動かすのは solo の推奨モデルと委譲閾値だけで、判定の構造は変えない。v0 の制約: env のためセッション起動後の変更は次セッションから反映される（モード切替は週単位想定のため許容）。
+`reserve` と `exhausted` の差: reserve は「温存」で自動実行のみ Fable を禁じ interactive は自由。exhausted は「枠が実際に無い」ため interactive を含む全経路で禁じる。
+
+モードが動かすのは solo の推奨モデルと委譲閾値・昇格上限だけで、判定の構造は変えない。env のためセッション起動後の明示的な変更は次セッションから反映される（モード切替は週単位想定のため許容）。自動導出は SessionStart 毎に更新される。
+
+### `FABLE_BUDGET_MODE` の自動導出（usage snapshot 契約）
+
+`scripts/usage-probe.sh` が OAuth usage API（`/api/oauth/usage`）から Fable 週次消費率を取得し、`~/.claude/.usage-snapshot`（`fable_weekly_pct` / `fable_active` / `weekly_resets_epoch` を含む JSON）を書く。5 分キャッシュ・fail-open（取得失敗時は snapshot を書かず既存を保持）。`scripts/session-tripwires.sh` が SessionStart 毎にこの probe を best-effort 実行し、snapshot からモードを導出して残量ブロックを文脈に注入する。
+
+導出は「Fable の消費ペースが週の経過ペースを上回るか」のバーンレート比較で、次の優先順位に従う:
+
+1. **明示 env `FABLE_BUDGET_MODE` があればそれを使う**（自動導出より優先）
+2. snapshot が無い / `fable_weekly_pct` が読めない → `conserve`（既定・安全側）
+3. `fable_weekly_pct > 90` → `exhausted`
+4. `fable_weekly_pct <= 週経過%`（週次リセット時刻から算出）→ `abundant`
+5. それ以外（消費が週経過を上回る）→ `conserve`
+
+週経過% = `(7日 − (リセット時刻 − 現在)) / 7日 × 100`。probe が失敗しても導出は conserve に倒れ、トリップワイヤー注入自体は従来どおり行われる。
+
+### abundant の委譲は self-contained タスクに限定（クリーンなハンドオフ）
+
+abundant で solo を Fable に倒しても、委譲（delegate+verify）に回してよいのは **self-contained なタスク** に限る。self-contained とは以下をすべて満たすこと:
+
+1. 委譲側（賢いモデル）が**再文脈化なしに検証できる**受け入れ条件が明確
+2. 実装中の**追加ヒアリング（往復）を要しない**
+3. **入力・出力が着手前に確定**している
+
+これを満たさない（実装中に仕様の往復や再文脈化が必要な）タスクは、abundant でも solo に留める。ハンドオフの固定コーディネーションコストが便益を上回るため（小タスクの委譲が損なのと同じ理屈を、判断が絡むタスクにも適用する）。
 
 ### モード不変ルール（どのモードでも変えない2本）
 

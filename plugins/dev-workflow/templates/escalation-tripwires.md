@@ -31,7 +31,10 @@
    → 実行役を1段昇格する（Sonnet → Opus → Fable）。
    `FABLE_BUDGET_MODE=reserve` の自動実行（unmanned / cron / loop）では Opus を上限とし、
    Opus でも2連続失敗が続く場合は issue に needs-approval を付けて経緯をコメントし、
-   そのサイクルを終了する
+   そのサイクルを終了する。
+   `FABLE_BUDGET_MODE=exhausted`（Fable 週次枠を実質使い切った。明示宣言または
+   usage snapshot からの自動導出）では、interactive / unmanned を問わず昇格上限を Opus とする
+   （Fable へは昇格しない）
 
 3. 【仕様の発明検知 → plan/質問へ】
    実装を進めるために、ユーザーの指示に書かれていない仕様上の決定を自分で埋めた回数が
@@ -42,3 +45,9 @@
       - 決定が構造に及ぶ（データモデル・フロー・スコープ） → /lr:p を起動して壁打ちに戻す
       - unmanned なら Discord でユーザーに質問し、issue に needs-approval を付けて
         経緯をコメントし、そのサイクルを終了する
+
+4. 【rate-limit 実エラー → reactive 降格】
+   Fable 実行が rate-limit / weekly-limit の実エラー（429、weekly limit reached 等）を返した
+   → 予測的な閾値判定（トリップワイヤー2）とは別系統の事後対応。その場で Fable を諦め、
+   実行役を Opus に降格して同じ作業を続行する（成果は引き継ぐ）。併せて usage-probe を
+   再実行して snapshot を更新し、以降のセッションの残量モード導出に反映させる
