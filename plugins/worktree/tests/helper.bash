@@ -27,8 +27,9 @@ wt_setup_paths() {
   WT_SETUP_SKILL="${PLUGIN_DIR}/skills/wt-setup/SKILL.md"
   WT_SETUP_SH="${PLUGIN_DIR}/scripts/wt-setup.sh"
   PLUGIN_JSON="${PLUGIN_DIR}/.claude-plugin/plugin.json"
+  WT_CLEAN_VERIFICATION="${PLUGIN_DIR}/references/wt-clean-verification.md"
   export PLUGIN_DIR PLUGIN_ROOT WT_CLEAN_CMD WT_SETUP_CMD \
-    WT_CLEAN_SKILL WT_SETUP_SKILL WT_SETUP_SH PLUGIN_JSON
+    WT_CLEAN_SKILL WT_SETUP_SKILL WT_SETUP_SH PLUGIN_JSON WT_CLEAN_VERIFICATION
 }
 
 # Extract only the YAML frontmatter (between the first two `---` lines).
