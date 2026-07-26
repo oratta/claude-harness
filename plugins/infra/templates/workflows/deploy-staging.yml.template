@@ -56,10 +56,11 @@ jobs:
           # 本番と同等データで動作確認可能。
           ENV_FILE=.vercel/.env.preview.local
           if [ -f "$ENV_FILE" ]; then
-            sed -i -e '/^NEXT_PUBLIC_SUPABASE_URL=/d' \
-                   -e '/^NEXT_PUBLIC_SUPABASE_ANON_KEY=/d' \
-                   -e '/^SUPABASE_SERVICE_ROLE_KEY=/d' \
-                   "$ENV_FILE"
+            # sed -i は GNU/BSD で非互換（macOS セルフホストランナーで
+            # `sed: -e: No such file or directory` になる）ため grep で除去する
+            grep -vE '^(NEXT_PUBLIC_SUPABASE_URL|NEXT_PUBLIC_SUPABASE_ANON_KEY|SUPABASE_SERVICE_ROLE_KEY)=' \
+              "$ENV_FILE" > "$ENV_FILE.tmp" || true
+            mv "$ENV_FILE.tmp" "$ENV_FILE"
             {
               echo "NEXT_PUBLIC_SUPABASE_URL=\"$PROD_SUPABASE_URL\""
               echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=\"$PROD_SUPABASE_ANON_KEY\""
