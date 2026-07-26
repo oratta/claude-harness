@@ -31,7 +31,7 @@ concurrency:
 jobs:
   migrate:
     name: Run Supabase Migrations (Production)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     environment:
       name: Production
     steps:

@@ -1,0 +1,108 @@
+# 週次フルスイート — 省エネ CI 設計の Tier 3
+#
+# PR ごとの CI（ci.yml）は軽量チェックのみ。ここで週 1 回、フルスイート
+# （build + 全テスト + npm audit + 任意で E2E）を回して drift を検知する。
+# 本番デプロイ直前にも同等の preflight が走る（deploy-production.yml）ため、
+# 「フルチェックが最後に走ってからリリースまでの空白」は最大でもデプロイ間隔にならない。
+#
+# 失敗時は issue を自動起票する（自律開発ループがあるプロジェクトでは agent が拾う）。
+name: Weekly Full Suite
+
+on:
+  schedule:
+    # 毎週月曜 06:00 JST（日曜 21:00 UTC）。週初めの作業開始前に結果が出ている状態にする
+    - cron: "0 21 * * 0"
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '{{NODE_VERSION}}'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: weekly-full
+  cancel-in-progress: false
+
+jobs:
+  full:
+    name: Full Suite (tests + audit)
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check migration version uniqueness
+        run: npm run check:migrations --if-present
+
+      # =================================================================
+      # ▼▼▼ PROJECT-SPECIFIC OVERRIDE ▼▼▼
+      # DB 疎通の統合テストを持つプロジェクトは、ここでローカル Supabase を起動して
+      # .env.test を生成する（例: suimei の weekly-full.yml を参照）。
+      # supabase CLI はローカル開発と同一バージョンに固定すること（latest 禁止）。
+      # =================================================================
+
+      - name: Run ESLint
+        run: npm run lint --if-present
+
+      - name: Build (type check)
+        run: npx next build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NODE_OPTIONS: '--max-old-space-size=4096'
+
+      - name: Run all tests
+        run: npm run test:run --if-present
+
+      # 依存脆弱性の定常スキャン。ブロッキングは本番依存（--omit=dev）のみ。
+      # dev 依存は成果物に含まれず、「lockfile 側に修正版が存在しない dev の脆弱性」で
+      # 無期限に赤くなり続けるため（2026-07-25 に suimei で実発生: GHSA-mh99-v99m-4gvg）。
+      - name: npm audit (本番依存 / high・critical で fail)
+        run: npm audit --omit=dev --audit-level=high
+
+      # dev 依存の脆弱性は成果物に載らないためブロックしないが、放置しないよう
+      # ログには必ず出す。上流が追従したらここが緑に戻る。
+      - name: npm audit (dev 依存含む / 参考・非ブロッキング)
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+      # Playwright E2E を持つプロジェクトは以下を有効化（PR CI ではなく週次に置く）
+      # - name: Install Playwright browsers
+      #   run: npx playwright install chromium --with-deps
+      # - name: Run Playwright tests
+      #   run: npx playwright test
+
+  # 失敗したら issue を起票する（既に open の同種 issue があれば重複起票しない）
+  report-failure:
+    name: File issue on failure
+    needs: full
+    if: failure()
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - name: Create or skip issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          EXISTING=$(gh issue list --repo "$REPO" --state open --label "weekly-full-failure" --json number --jq 'length')
+          if [ "$EXISTING" -gt 0 ]; then
+            echo "既に open の weekly-full-failure issue があるためスキップ"
+            exit 0
+          fi
+          gh label create "weekly-full-failure" --repo "$REPO" --color D93F0B \
+            --description "週次フルスイートの失敗（自動起票）" 2>/dev/null || true
+          gh issue create --repo "$REPO" \
+            --title "週次フルスイートが失敗（フルテスト or audit）" \
+            --label "weekly-full-failure" \
+            --body "Weekly Full Suite が失敗しました。PR CI は軽量チェックのみのため、フルテストの回帰か依存脆弱性の可能性があります。ログ: $RUN_URL"

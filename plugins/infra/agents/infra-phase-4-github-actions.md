@@ -1,6 +1,6 @@
 ---
 name: infra-phase-4-github-actions
-description: infra-setup スキルの Phase 4。GitHub Actions ワークフロー5本（ci.yml / deploy-preview.yml / deploy-staging.yml / deploy-production.yml / migrate-production.yml）と補助ファイル（scripts/check-migration-numbers.mjs / docs/deploy-rollback.md）を templates/ から読み込んで生成し、必要な GitHub Secrets を gh secret set で自動投入する。Vercel Token は Playwright MCP で取得、利用不可時は手動案内。
+description: infra-setup スキルの Phase 4。product_stage（pre-release/released）に応じて GitHub Actions ワークフローを templates/ から生成する。pre-release は deploy-on-merge.yml + migrate-production.yml の最短経路のみ、released は ci.yml（軽量）/ weekly-full.yml / deploy-preview.yml / deploy-staging.yml / deploy-production.yml（preflight 付き）/ migrate-production.yml のフルセット。補助ファイルコピーと GitHub Secrets の gh secret set 自動投入も担当。Vercel Token は Playwright MCP で取得、利用不可時は手動案内。
 tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion
 model: sonnet
 ---
@@ -11,7 +11,7 @@ model: sonnet
 ## あなたのゴール
 
 1. `.github/workflows/` ディレクトリを作成
-2. プラグインの `templates/workflows/` から 5本のテンプレートを読み込み
+2. state の `product_stage` / `dev_mode`（Phase 1）に応じたテンプレートセットを `templates/workflows/` から読み込み
 3. placeholder（`{{NODE_VERSION}}` 等）を state の値で置換
 4. 置換結果を `.github/workflows/*.yml` として Write（＋ `templates/scripts/` `templates/docs/` の補助ファイルをコピー）
 5. VERCEL_TOKEN を取得（Playwright MCP もしくは手動）
@@ -28,7 +28,9 @@ Read /tmp/infra-setup-state.md
 ```
 
 以下を取得:
-- `project_name` / `github_repo` (Phase 1)
+- `project_name` / `github_repo` / `dev_mode` / `product_stage` (Phase 1)
+  - `dev_mode` / `product_stage` が state に無い（旧 Phase 1 で作られた state）場合は
+    ここで AskUserQuestion で確認する（選択肢は infra-phase-1-hearing.md Step 7.5 と同じ）
 - `node_version_detected` (Phase 0)
 - `prod_project_ref` (Phase 2)
 - `vercel_project_id` / `vercel_org_id` (Phase 3)
@@ -67,20 +69,39 @@ AskUserQuestion: 既存のワークフローファイル {ファイル名} が�
 - 差分を見てから判断する（diff 表示）
 ```
 
-### Step 4: 5つのワークフローと補助ファイルを生成
+### Step 4: ワークフローと補助ファイルを生成（product_stage で分岐）
 
-以下を 5ファイル分繰り返す:
+**生成セットを `product_stage` で決める**（省エネ CI 設計。壊れて困る人がいるかで重さを変える）:
 
-1. テンプレートを Read: `{templates_dir}/ci.yml.template`
-2. placeholder を置換:
-   - `{{NODE_VERSION}}` → `{node_version_detected}`（他 placeholder がテンプレに追加されたら同様に）
-3. `.github/workflows/ci.yml` として Write
+**`pre-release`（リリース前 = 実利用者ゼロ）** — 最短経路のみ:
+- `deploy-on-merge.yml.template` → `.github/workflows/deploy-on-merge.yml`
+  （main push で即本番デプロイ。PR CI なし・staging なし・承認ゲートなし）
+- `migrate-production.yml.template` → `.github/workflows/migrate-production.yml`
+- ci.yml / weekly-full.yml / deploy-staging.yml / deploy-preview.yml / deploy-production.yml は**生成しない**。
+  ローカルの pre-push hook（Tier 0）が防衛線であることをユーザーに明示する
+- 完了報告に「本番リリース時は `/infra-setup` を再実行して released に昇格
+  （deploy-on-merge.yml は削除され、フルセットに置き換わる）」を必ず含める
 
-同様に:
+**`released`（リリース済み = 実利用者あり）** — フルセット:
+- `ci.yml.template` → `.github/workflows/ci.yml`（軽量 1 job。actionlint 内包・concurrency・runs-on 切替）
+- `weekly-full.yml.template` → `.github/workflows/weekly-full.yml`（週次フル + audit + 失敗時 issue 起票）
 - `deploy-preview.yml.template` → `.github/workflows/deploy-preview.yml`
 - `deploy-staging.yml.template` → `.github/workflows/deploy-staging.yml`
-- `deploy-production.yml.template` → `.github/workflows/deploy-production.yml`
+- `deploy-production.yml.template` → `.github/workflows/deploy-production.yml`（preflight 付き）
 - `migrate-production.yml.template` → `.github/workflows/migrate-production.yml`
+- 既に `deploy-on-merge.yml` が存在する場合（pre-release からの昇格）は削除を提案する
+
+`dev_mode` の扱い:
+- `solo-agent` / `team`: PR CI（ci.yml）はマージゲートとして必須（released 時）
+- `solo`: released でも ci.yml は生成する（軽量なので害がない）が、
+  「第一防衛線はローカルの pre-push hook」であることを完了報告に明記する
+
+各ファイルの生成手順:
+
+1. テンプレートを Read: `{templates_dir}/{name}.yml.template`
+2. placeholder を置換:
+   - `{{NODE_VERSION}}` → `{node_version_detected}`（他 placeholder がテンプレに追加されたら同様に）
+3. `.github/workflows/{name}.yml` として Write
 
 **注意**: GitHub Actions の `${{ ... }}` は残す必要がある。`{{NODE_VERSION}}` だけを置換し、その他の `${{ secrets.* }}` や `${{ env.* }}` はそのまま保持すること。
 

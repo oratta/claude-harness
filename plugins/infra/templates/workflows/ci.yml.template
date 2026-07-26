@@ -3,6 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+    # マージ後の最終 CI はコード変更のみ対象（PR 側はマージゲートに使うため paths-ignore を付けない）
+    paths-ignore:
+      - "docs/**"
+      - "openspec/**"
+      - "**.md"
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
@@ -15,33 +20,41 @@ env:
 # - Preview (PR): deploy-preview.yml は `preview` ラベルを貼ったときだけ実行（opt-in）
 # - Staging (main push): deploy-staging.yml が自動実行
 # - Production: deploy-production.yml を workflow_dispatch で手動実行
-# このワークフローはチェック(lint + typecheck + test + actionlint)を担当
+#
+# 省エネ CI 設計（Tier 構成。2026-07 に suimei で free 枠 2,000 分/月を 5 日で
+# 使い切った反省から。個人開発の PR CI は「軽く・速く」が正）:
+# - Tier 0: lint + typecheck + unit は pre-push hook（ローカル）が第一防衛線
+# - Tier 1: この CI。actionlint + lint + build(型チェック) + unit を 1 job で 5 分以内
+# - Tier 2: 本番デプロイ直前の preflight（deploy-production.yml 内）
+# - Tier 3: weekly-full.yml が週次でフルスイート + npm audit + (任意で E2E)
+# - runs-on は vars.CI_RUNNER で切替可能。free 枠を使い切った月はセルフホスト
+#   ランナーを登録して CI_RUNNER=self-hosted をセット、月初に variable を消して戻す
 #
 # トリガー設計（Draft + Ready for review 方式）:
 # - push (main): マージ後の最終 CI
 # - pull_request: Draft 中は job 側 `draft == false` ガードで skip し、
 #   「Ready for review」ボタン（ready_for_review）で発火する
-# - workflow_dispatch: 手動トリガー
+
+concurrency:
+  # 同一 PR / ブランチへの push 連打で古い run を走り切らせない
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  actionlint:
-    name: Actionlint
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Run actionlint
-        uses: docker://rhysd/actionlint:latest
-        with:
-          args: -color
-
-  lint-and-typecheck:
+  test:
+    # auto-merge 等がチェック名で参照する場合があるため、job 名の変更は参照側とセットで行う
     name: Lint & Type Check & Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v7
+
+      # コンテナアクション（docker://rhysd/actionlint）は macOS セルフホストで動かないため
+      # バイナリ直実行。独立 job にしない（job 起動オーバーヘッドだけで 1 分課金されるため）
+      - name: Run actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.7 ./
+          ./actionlint -color
 
       - uses: actions/setup-node@v6
         with:
@@ -69,41 +82,8 @@ jobs:
           # runner デフォルトのヒープ上限(約2GB)を引き上げる。
           NODE_OPTIONS: '--max-old-space-size=4096'
 
+      # DB 連携の統合テストをプロジェクトが持つ場合は、Supabase env 不在時に
+      # skip される作りにしておくこと（PR CI では unit だけ走らせる。
+      # フル実行は weekly-full.yml と deploy-production.yml の preflight が担う）
       - name: Run unit tests
         run: npm run test:run --if-present
-
-  # Playwright E2E テスト（必要になったらコメントを外して有効化する）。
-  # 前提: `npx playwright test` が動く設定 (playwright.config.ts) があること。
-  # e2e-tests:
-  #   name: Playwright E2E Tests
-  #   runs-on: ubuntu-latest
-  #   if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-  #   needs: lint-and-typecheck
-  #   steps:
-  #     - uses: actions/checkout@v7
-  #
-  #     - uses: actions/setup-node@v6
-  #       with:
-  #         node-version: ${{ env.NODE_VERSION }}
-  #         cache: 'npm'
-  #
-  #     - name: Install dependencies
-  #       run: npm ci
-  #
-  #     - name: Install Playwright browsers
-  #       run: npx playwright install chromium --with-deps
-  #
-  #     - name: Run Playwright tests
-  #       run: npx playwright test
-  #       env:
-  #         NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-  #         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-  #         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-  #
-  #     - name: Upload test results
-  #       uses: actions/upload-artifact@v7
-  #       if: always()
-  #       with:
-  #         name: playwright-report
-  #         path: playwright-report/
-  #         retention-days: 30
