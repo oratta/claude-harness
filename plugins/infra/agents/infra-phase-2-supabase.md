@@ -1,6 +1,6 @@
 ---
 name: infra-phase-2-supabase
-description: infra-setup スキルの Phase 2。Supabase アカウント（エイリアス戦略に応じたメール）、Organization、Dev/Prod プロジェクトを作成し、Access Token / DB パスワード / API Keys を取得して .env.local と .env.production.local、.mcp.json に書き込む。Playwright MCP でブラウザ操作を自動化し、利用不可時は手動フォールバック。
+description: infra-setup スキルの Phase 2。Supabase の Organization と Dev/Prod プロジェクトを作成し、認証情報を env ファイルに配線する。infra-setup からのみ起動される。
 tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion
 model: opus
 ---

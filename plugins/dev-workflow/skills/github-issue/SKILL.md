@@ -1,7 +1,7 @@
 ---
 name: github-issue
-description: 開発 repo で GitHub issue に取り組む時の標準ワークフロー。issue 番号・URL・「このissue対応して」「issue#12 実装して」等の自然文で起動する。worktree なら wt-setup 未実行を検出して先に実行し、仕様として残すべき変更なら opsx（openspec）フローに乗せ、複数 change に割れる規模なら change ごとに分けて実装する。TDD（テスト先行）を全経路で徹底する。人間の直接依頼でも loop-dev-agent の無人サイクルからでも同じ手順を通す（--unmanned で無人モード）。
-version: 1.0.0
+description: 開発 repo で GitHub issue に取り組む標準ワークフロー（wt-setup 判定 → opsx 要否 → change 分割 → TDD 実装）。issue 番号・URL・「このissue対応して」等の自然文で起動。人間依頼と loop-dev-agent 無人サイクル（--unmanned）の両対応。
+version: 1.0.1
 ---
 
 # github-issue — GitHub issue 対応の標準開発ワークフロー

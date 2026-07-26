@@ -1,6 +1,6 @@
 ---
 name: infra-phase-4-github-actions
-description: infra-setup スキルの Phase 4。GitHub Actions ワークフロー5本（ci.yml / deploy-preview.yml / deploy-staging.yml / deploy-production.yml / migrate-production.yml）と補助ファイル（scripts/check-migration-numbers.mjs / docs/deploy-rollback.md）を templates/ から読み込んで生成し、必要な GitHub Secrets を gh secret set で自動投入する。Vercel Token は Playwright MCP で取得、利用不可時は手動案内。
+description: infra-setup スキルの Phase 4。GitHub Actions ワークフロー 5 本と補助ファイルを templates/ から生成し、GitHub Secrets を投入する。infra-setup からのみ起動される。
 tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion
 model: sonnet
 ---

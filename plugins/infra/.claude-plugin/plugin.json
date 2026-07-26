@@ -1,6 +1,6 @@
 {
   "name": "infra",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Webアプリのインフラを対話的に一括セットアップするプラグイン。Vercel + Supabase + GitHub Actions構成で、local/staging/prod の4環境を構築する（`/infra-setup`）。既存 supabase-project-setup スキルを統合。",
   "author": {
     "name": "Oratta"

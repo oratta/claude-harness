@@ -1,7 +1,7 @@
 ---
 name: longrun-feedback
-description: 自律実行完了後のフィードバックを分類・実行する。ユーザーの無選別フィードバック（brain dump）をTier 1（cosmetic）/ Tier 2（spec-aligned fix）/ Tier 3（new change）に自動分類し、Tier 1/2は即座に修正、Tier 3はopenspec/backlog.mdに記録する。/longrun:exec 完了レポート後のフィードバック受付（`/lr:f`）の標準エントリポイント。
-version: 4.3.0
+description: 自律実行完了後の無選別フィードバックを Tier 1（cosmetic）/ 2（fix）/ 3（new change）に自動分類し、1/2 は即実行・3 は backlog に記録する。`/lr:f` の標準エントリポイント。セッション切れ後の再開にも使う。
+version: 4.3.1
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Task
 ---
 

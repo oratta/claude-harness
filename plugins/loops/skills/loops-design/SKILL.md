@@ -1,6 +1,6 @@
 ---
 name: loops-design
-description: 公式記事「Getting started with loops」の選択フレームワーク（何を手放すか）に沿って、対話でループ型（ターンベース/ゴールベース/タイムベース/プロアクティブ）を選定し、レシピ形式規約に準拠した `recipes/<name>.md` を書き出す設計ガイド。「ループを設計したい」「このタスクをループ化したい」「loop recipe を作って」で起動。停止基準が確定するまでレシピを出力せず、出力前に Bad Loop 検査（停止基準の欠如・検証なき成功宣告・報酬ハッキング余地・過剰な実行頻度）を通す。
+description: 対話でループ型（ターンベース/ゴールベース/タイムベース/プロアクティブ）を選定し、レシピ形式規約準拠の `recipes/<name>.md` を書き出す設計ガイド。「ループを設計したい」「このタスクをループ化したい」「loop recipe を作って」で起動。
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion
 ---
 
