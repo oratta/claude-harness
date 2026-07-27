@@ -138,6 +138,39 @@ Supabase プロジェクトのリージョンを選択:
 - その他（手入力）
 ```
 
+### Step 7.5: 開発形態とプロダクトステージ（CI/CD の重さを決める 2 軸）
+
+Phase 4 が生成するワークフロー構成を決める最重要の質問。2026-07 に suimei で
+Actions free 枠 2,000 分/月を 5 日で使い切った反省から、「誰が守るか」と
+「壊れたら誰が困るか」で CI の重さを変える。
+
+AskUserQuestion（1問目: 開発形態）:
+```
+このプロジェクトの開発形態は？
+- ソロ（自分だけ。レビューは自分、ローカルの pre-push hook が第一防衛線）
+- ソロ + エージェント自動マージ（loop-dev-agent 等が PR を作り人間レビューなしでマージする。CI がレビューの代替になる）
+- チーム（複数人。他人のローカル環境と規律に依存できないため GitHub 側で強制）
+```
+
+AskUserQuestion（2問目: プロダクトステージ）:
+```
+プロダクトのステージは？
+- リリース前（実利用者ゼロ。壊れても困る人がいない → マージ = 本番反映の最短経路にする）
+- リリース済み（実利用者あり。デプロイ前の厳格チェックが必須）
+```
+
+結果を `dev_mode`（`solo` / `solo-agent` / `team`）と `product_stage`（`pre-release` / `released`）
+として state に記録。
+
+**この 2 軸が Phase 4 の生成内容を変える**:
+- `pre-release`（dev_mode 不問）→ deploy-on-merge.yml + migrate-production.yml のみ（PR CI なし・staging なし）
+- `released` → ci.yml（軽量）/ weekly-full.yml / deploy-staging.yml / deploy-preview.yml /
+  deploy-production.yml（preflight 付き）/ migrate-production.yml のフルセット
+- `solo-agent` または `team` の場合、PR CI はマージゲートとして必須。`solo` は任意だが軽量なので入れておく
+
+リリース前 → リリース済みへの昇格は `/infra-setup` を再実行して `product_stage: released` を
+選び直せばよい（Phase 4 だけ再実行される）。
+
 ### Step 8: 既存 Supabase 情報ヒアリング（Step 2 で「はい」だった場合のみ）
 
 以下を順次 AskUserQuestion でヒアリング:
@@ -193,6 +226,8 @@ git remote get-url origin 2>/dev/null || echo "NO_REMOTE"
 - email_alias_strategy: {main|dedicated|try-alias}
 - region: {REGION}
 - github_repo: {OWNER}/{REPO}
+- dev_mode: {solo|solo-agent|team}
+- product_stage: {pre-release|released}
 - supabase_already_setup: {true|false}
 # Step 8 で既存値があれば以下も追記:
 - dev_project_ref: {DEV_REF}
@@ -216,6 +251,8 @@ git remote get-url origin 2>/dev/null || echo "NO_REMOTE"
 - メール: {EMAIL}（プロバイダ: {PROVIDER}、戦略: {STRATEGY}）
 - リージョン: {REGION}
 - GitHub: {OWNER/REPO}
+- 開発形態: {ソロ/ソロ+エージェント/チーム} × ステージ: {リリース前/リリース済み}
+  → Phase 4 は {最短経路（deploy-on-merge のみ）/ フルセット} を生成します
 - Supabase 既セットアップ: {はい/いいえ}
   {はいの場合: dev/prod Ref を表示}
 
