@@ -1,6 +1,6 @@
 ---
 name: loops-dev-agent-install
-description: 自律開発ループ（loop-dev-agent レシピ）を対象リポジトリに導入する。docs/agent-loop.md（憲法ファイル）の生成、GitHub ラベル一式の作成、issue テンプレート、permission deny ルール、pre-push フックの設置までを一括で行う。`/loops:dev-agent-install` で起動するほか、「自律開発ループを導入して」「dev-agent ループをセットアップ」でも起動。既存のバックログ md ファイルがあれば issue への移行も提案する。
+description: 自律開発ループ（loop-dev-agent レシピ）を対象リポジトリに一括導入する（憲法ファイル・GitHub ラベル・issue テンプレート・deny ルール・pre-push フック）。`/loops:dev-agent-install`、「自律開発ループを導入して」「dev-agent ループをセットアップ」で起動。
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 

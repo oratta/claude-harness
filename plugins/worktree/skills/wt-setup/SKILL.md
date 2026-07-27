@@ -1,7 +1,7 @@
 ---
 name: wt-setup
-description: Git worktreeの開発環境セットアップ。worktree作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。コマンド引数として後続作業指示を渡せる（例: `/wt-setup issue#3の対応`）。`--with-pr` フラグで作業内容を remote の Draft PR に常時バックアップする運用（プラグイン自体のリポジトリで marketplace 自動更新による worktree 消失に備える用途）に切替可能。
-version: 1.4.0
+description: Git worktree の開発環境セットアップ。worktree 作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。引数で後続作業指示を渡せる。`--with-pr` で Draft PR 常時バックアップ運用（プラグイン自体の repo 向け）。
+version: 1.4.1
 model: sonnet
 context: fork
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash

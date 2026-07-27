@@ -1,7 +1,7 @@
 ---
 name: infra-setup
-description: 新規/既存Webアプリに Vercel + Supabase + GitHub Actions のデプロイ基盤を一括構築する。「インフラを構築」「デプロイ環境を作って」「Vercel と Supabase のセットアップ」「GitHub Actions のワークフローを作って」「本番デプロイ環境を用意して」「staging/production 環境を作って」で積極的に起動。5フェーズ（ヒアリング → Supabase → Vercel → GitHub Actions → ローカル仕上げ）を Agent 分離で順に実行。既存 supabase-project-setup スキルの上位互換。
-version: 0.5.0
+description: 新規/既存 Web アプリに Vercel + Supabase + GitHub Actions のデプロイ基盤を 5 フェーズで一括構築する。「インフラを構築」「デプロイ環境を作って」「Vercel と Supabase のセットアップ」「本番デプロイ環境を用意して」で起動。
+version: 0.5.1
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 ---
 

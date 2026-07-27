@@ -1,7 +1,7 @@
 ---
 name: wt-clean
-description: Git worktreeの安全なクリーンアップ。対象を確定してからノンブロッキング自動処理する 2 パスフロー。`wt-clean <path|branch>` でその worktree だけにスコープ（複数可）、引数なし（または対象を定めないオプションのみ）なら全 worktree を確認なしで対象にする（対象選択の質問はしない）。Pass 1 で各対象を i/N 進捗付きで診断（🟢🟡🔴）し、🟢→確認なしで削除/再利用・🟡(LLMのみ)→LLM退避検証→確認なしで削除を自動実行。🔴 と dirty は Pass 2 の判断バッチでまとめて マージ/スキップ/破棄 を対話。Step 0で `origin/<main>` を同期。`--keep` で 🟢 を再利用可能化、`--no-sync` で同期スキップ。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「特定worktreeだけ片付け」「未マージworktreeのマージ」で起動。
-version: 3.1.0
+description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。`wt-clean [<path|branch>…] [--keep] [--no-sync]`、引数なしは全 worktree を対象。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」で起動。
+version: 3.1.1
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 

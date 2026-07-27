@@ -1,6 +1,6 @@
 ---
 name: infra-phase-3-vercel
-description: infra-setup スキルの Phase 3。Vercel プロジェクトを作成して GitHub リポジトリと連携、vercel.json で Git 自動連携を OFF、Preview/Production 両方の環境変数に prod Supabase を設定、カスタムドメインを Production のみに紐付ける。全デプロイを GitHub Actions で制御できる状態にする。
+description: infra-setup スキルの Phase 3。Vercel プロジェクト作成・GitHub 連携・環境変数・ドメイン設定を行い、デプロイを GitHub Actions 制御にする。infra-setup からのみ起動される。
 tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion
 model: sonnet
 ---

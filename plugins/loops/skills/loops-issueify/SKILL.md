@@ -1,6 +1,6 @@
 ---
 name: loops-issueify
-description: 書き殴りのタスクメモ・既存のバックログ md・TODO コメント・受け入れ条件の無い既存 issue を、自律開発ループ（loop-dev-agent）が実行できる「測定可能な受け入れ条件付き GitHub issue」に変換する。`/loops:issueify <テキスト|ファイルパス>` で起動するほか、引数なしならリポジトリから候補を自動発見する。「これをissueにして」「タスクをissue化」「バックログをissueに移行」「issueに受け入れ条件を付けて」でも起動。
+description: タスクメモ・バックログ md・TODO・受け入れ条件の無い issue を、測定可能な受け入れ条件付き GitHub issue に変換する。`/loops:issueify <テキスト|ファイルパス>`（引数なしは候補を自動発見）。「これをissueにして」「タスクをissue化」「バックログをissueに移行」で起動。
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
