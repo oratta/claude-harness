@@ -42,9 +42,54 @@ concurrency:
 # - /maintenance ページの実装
 
 jobs:
+  # ---------------------------------------------------------------
+  # デプロイ直前のフルチェック（省エネ CI 設計の Tier 2）
+  # PR CI（ci.yml）は軽量チェックのみのため、フルテストはここが本番前の
+  # 最後のゲートになる。週次の weekly-full.yml と同内容。
+  # ---------------------------------------------------------------
+  preflight:
+    name: Preflight (full tests)
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - name: Validate confirmation
+        if: ${{ github.event.inputs.confirm != 'true' }}
+        run: |
+          echo "::error::デプロイが確認されていません。confirm を true にしてください。"
+          exit 1
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # =================================================================
+      # ▼▼▼ PROJECT-SPECIFIC OVERRIDE ▼▼▼
+      # DB 疎通の統合テストを持つプロジェクトは、ここでローカル Supabase を起動して
+      # .env.test を生成する（例: suimei の deploy-production.yml preflight を参照）
+      # =================================================================
+
+      - name: Run ESLint
+        run: npm run lint --if-present
+
+      - name: Build (type check)
+        run: npx next build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NODE_OPTIONS: '--max-old-space-size=4096'
+
+      - name: Run all tests
+        run: npm run test:run --if-present
+
   deploy:
     name: Deploy to Production
-    runs-on: ubuntu-latest
+    needs: preflight
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     # GitHub Environment "Production" で approval gate を設定
     environment:
       name: Production
