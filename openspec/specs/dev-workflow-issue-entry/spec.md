@@ -33,7 +33,7 @@ issueify フォールバックは、`loops-issueify/SKILL.md` を github-issue �
 
 #### Scenario: loops プラグイン未導入時は fail-soft で縮退する
 - **WHEN** path-discovery で `loops-issueify/SKILL.md` が見つからない
-- **THEN** コマンド定義に明記された最小手順（概要・触るファイル・測定可能な受け入れ条件を含むドラフトを提示し、承認後 `gh issue create` で起票）にフォールバックし、エラーで停止しない
+- **THEN** コマンド定義に明記された最小手順（「これで何が変わるか」「やらないとどうなるか / 今のコスト」・概要・触るファイル・測定可能な受け入れ条件を含むドラフトを提示し、承認後 `gh issue create` で起票）にフォールバックし、エラーで停止しない
 
 ### Requirement: 複数 issue に割れた場合は着手1件を選択する
 issueify の原子化により依頼が複数 issue に割れた場合、全件を起票した上で着手する1件をユーザーに選択させ、選択された1件のみを github-issue パイプラインに渡さなければならない（MUST）。残りは起票のみで実行しない（MUST NOT）。

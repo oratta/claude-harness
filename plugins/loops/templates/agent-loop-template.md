@@ -307,7 +307,7 @@ bash scripts/agent-loop-select.sh
    - **複数 change に割れる場合**: change 単位でサブ issue を作成し `blocked_by` で順序を付け、各サブ issue に `agent-ready` を付ける（親 issue の承認は既に済んでいるため個別承認は不要）。元 issue には分割結果（#a → #b → #c）をコメントし `agent-wip` を外して**このサイクルはここで終了**（次サイクル以降が各サブ issue を1つずつ拾い、それぞれ本 Step から同じスキルを通す）
    - **仕様化・分割の判断がつかないほど曖昧な場合**: Discord でユーザーに質問を送り、`agent-wip` を外して `needs-approval` を付け、経緯を issue にコメントしてこのサイクルは終了する（返信が来たら次サイクル以降で再開する）
 4. （単一 change で実装まで完了した場合）`{{TEST_CMD}}` / `{{LINT_CMD}}` / `{{BUILD_CMD}}` を実行し、証拠をターン内に表示する。
-5. 通ったら push して **Draft PR** を作成する。本文に `Closes #<番号>` と検証ログを書き、`agent-review:pending` ラベルを付ける。Review Queue 連携（該当時）: PR を Project に登録し、State を レビュー中 に、Blocked count を算出して設定する（「Review Queue 連携」参照）。
+5. 通ったら push して **Draft PR** を作成する。本文は loops プラグインの `references/pr-body-format.md` の型（5 セクション + `Closes #<番号>` + 検証ログの折りたたみ。小変更は軽量モード可）に従って書き、`agent-review:pending` ラベルを付ける。Review Queue 連携（該当時）: PR を Project に登録し、State を レビュー中 に、Blocked count を算出して設定する（「Review Queue 連携」参照）。
 6. issue に PR の URL と要約をコメントし、`agent-wip` と **`agent-ready` の両方を外す**（PR が open な間に別サイクルが同じ issue を再実装しないため。マージされれば `Closes` で自動クローズされ、PR がマージされずクローズされた場合は人間が再トリアージして `agent-ready` を付け直す）。
 7. 行き詰まったら: worktree は残し、issue に失敗ログをコメントする。同一 issue の失敗コメントが2件になったら `agent-blocked` に切り替えて以後拾わない（Review Queue 連携時は State=要介入 で登録する）。教訓を `.agent-loop/GUARDRAILS.md` に追記する（大原則 4 のミラーも忘れずに）。
 
