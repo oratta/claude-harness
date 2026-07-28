@@ -40,6 +40,7 @@
 
 ### D4: fmtoken.sh は flatmate 版（fb21df1）をそのまま移設し、flatmate 側は削除する方針
 - 採用: スクリプトは cwd 基準で動く自己完結設計（`git rev-parse --show-toplevel`）のため、無改変で移設できる。issue 記載の 29ceb6a 以後に fb21df1（600 権限ファイルのフォールバック）が入っており、これを含む最新版を正とする。
+- 実装時の逸脱（記録）: exit 43 メッセージ内の `$TOKEN_FILE` を `${TOKEN_FILE}` にブレース化する 1 行のみ修正した。全角括弧が直後に続くと bash が変数名を誤パースして `set -u` で落ちる潜在バグで、テストで顕在化した。挙動は同等。flatmate 側の扱いは genetta-inc/flatmate#126 に起票済み。
 - flatmate 側の扱い: プラグイン版を single source of truth とし、flatmate の `scripts/fmtoken.sh` は削除して flatmate 側ドキュメントからプラグインパス（`~/.claude/plugins/cache/oratta-claude-harness/capability-registry/<ver>/scripts/fmtoken.sh` またはインストール済みスキル経由）を参照する。実作業は flatmate リポの後続 issue として起票する（本リポの change には含めない）。
 
 ### D5: 索引 SKILL.md + サービス別ファイルの遅延ロード

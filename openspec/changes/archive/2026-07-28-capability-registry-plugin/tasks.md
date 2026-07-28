@@ -25,4 +25,4 @@
 
 - [x] 5.1 `.claude-plugin/marketplace.json` に capability-registry を登録し marketplace version を bump
 - [x] 5.2 bats テスト全件実行し exit 0 を確認（既存プラグインのテストにも回帰がないこと）
-- [ ] 5.3 flatmate 側 fmtoken.sh の扱い（削除 + プラグイン参照への置換）を flatmate リポの issue として起票し、本 change の記録に issue URL を残す
+- [x] 5.3 flatmate 側 fmtoken.sh の扱い（削除 + プラグイン参照への置換）を flatmate リポの issue として起票し、本 change の記録に issue URL を残す → https://github.com/genetta-inc/flatmate/issues/126
