@@ -22,4 +22,4 @@
 
 - [x] 5.1 `plugins/loops/.claude-plugin/plugin.json` を 0.17.0 に、`plugins/dev-workflow/.claude-plugin/plugin.json` を 1.5.1 に更新する
 - [x] 5.2 テストスクリプトを実行し全件 pass（exit 0）を確認する
-- [ ] 5.3 issue #47 にスコープ外項目（生成済み docs/agent-loop.md への反映・D-4・wt-setup テンプレ据え置き判断）をコメントで残す
+- [x] 5.3 issue #47 にスコープ外項目（生成済み docs/agent-loop.md への反映・D-4・wt-setup テンプレ据え置き判断）をコメントで残す
