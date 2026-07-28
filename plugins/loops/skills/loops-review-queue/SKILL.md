@@ -1,6 +1,6 @@
 ---
 name: loops-review-queue
-description: プロジェクト横断の「人間待ち」キューを優先順位付きで表示する。複数リポジトリで並行稼働する自律開発ループ（loop-dev-agent）のマージ判断待ち PR と、トリアージ待ち・要介入 issue を、GitHub Project「Review Queue」と gh search を突き合わせて「今どれから捌くべきか」（ブロッカー優先）の順に一覧する。`/loops:review-queue` で起動するほか、「レビュー待ちPRを一覧して」「マージ待ちを横断で見せて」「確認待ちタスクを見せて」「レビューキュー」でも起動。
+description: プロジェクト横断の「人間待ち」（マージ判断待ち PR・トリアージ待ち/要介入 issue）をブロッカー優先で一覧する。読み取り専用。`/loops:review-queue`、「レビュー待ちPRを一覧して」「マージ待ちを横断で見せて」「レビューキュー」で起動。
 allowed-tools: Read, Bash
 ---
 

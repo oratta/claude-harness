@@ -1,7 +1,7 @@
 ---
 name: wt-setup
-description: Git worktreeの開発環境セットアップ。worktree作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。コマンド引数として後続作業指示を渡せる（例: `/wt-setup issue#3の対応`）。`--with-pr` フラグで作業内容を remote の Draft PR に常時バックアップする運用（プラグイン自体のリポジトリで marketplace 自動更新による worktree 消失に備える用途）に切替可能。
-version: 1.4.0
+description: Git worktree の開発環境セットアップ。worktree 作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。引数で後続作業指示を渡せる。`--with-pr` で Draft PR 常時バックアップ運用（プラグイン自体の repo 向け）。
+version: 1.5.0
 model: sonnet
 context: fork
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
@@ -10,6 +10,26 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 # wt-setup — Worktree セットアップスキル
 
 Git worktree作成後に実行し、開発に必要なファイル・設定を整えるスキル。
+
+## 自動実行との関係（このスキルを手で呼ぶ必要がある場面）
+
+このプラグインの hooks（`hooks/hooks.json`）が、**Step 1 に相当する部分は自動で済ませている**。
+
+| 経路 | 何が起きるか |
+| --- | --- |
+| `--worktree` / Agent の `isolation:"worktree"` / background session | `WorktreeCreate` hook（`scripts/wt-create-hook.sh`）が worktree 作成を代行し、その場で `wt-setup.sh` まで実行する |
+| 手動の `git worktree add` | `SessionStart` hook（`scripts/wt-setup-guard.sh`）が、その worktree の**初回セッションだけ** `wt-setup.sh` を実行し、残タスクを context に載せる |
+
+どちらの経路でも `<gitdir>/wt-setup-done` に済みマーカーが置かれ、2 回目以降は無出力で何もしない。
+
+したがってこのスキルを明示的に起動するのは、次のいずれかの場合になる:
+
+- **`.worktreeinclude` の生成が必要**なとき（Step 2。hook は LLM 判断が要るこの処理をしない）
+- **`--with-pr` で Draft PR を作りたい**とき（Step 4。hook は push/PR 作成のような外向き操作をしない）
+- 依存インストールを含めてセットアップをやり直したいとき
+- hook が無効な環境（プラグイン未インストール等）で手動セットアップするとき
+
+`wt-setup.sh` は冪等なので、hook 実行後に改めてこのスキルを走らせても壊れない。
 
 ## 引数の扱い
 

@@ -1,6 +1,6 @@
 ---
 name: loops-goalify
-description: 「やりたいことを書き出す → /goal に読ませるファイルを作る → 足りない情報はヒアリングする」を一発化するコマンド。`/loops:goalify <テキスト|ファイルパス>` で起動し、brain dump を 4 観点（成功基準の機械検証可能化 / 停止条件 / スコープ境界 / 前提）で分析し、不足しているものだけを AskUserQuestion でヒアリングして、`goals/<name>.goal.md`（成功基準は全てコマンド+期待値で機械検証可能）と /goal 起動コマンド 1 行を生成する。「goal ファイルを作って」「これを goal 化して」「goalify」で起動。
+description: brain dump から /goal 用の goal ファイル（機械検証可能な成功基準付き `goals/<name>.goal.md`）を生成し、不足情報だけヒアリングで埋める。`/loops:goalify <テキスト|ファイルパス>`。「goal ファイルを作って」「これを goal 化して」「goalify」で起動。
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: infra-setup
-description: 新規/既存Webアプリに Vercel + Supabase + GitHub Actions のデプロイ基盤を一括構築する。「インフラを構築」「デプロイ環境を作って」「Vercel と Supabase のセットアップ」「GitHub Actions のワークフローを作って」「本番デプロイ環境を用意して」「staging/production 環境を作って」で積極的に起動。5フェーズ（ヒアリング → Supabase → Vercel → GitHub Actions → ローカル仕上げ）を Agent 分離で順に実行。既存 supabase-project-setup スキルの上位互換。
-version: 0.4.0
+description: 新規/既存 Web アプリに Vercel + Supabase + GitHub Actions のデプロイ基盤を 5 フェーズで一括構築する。「インフラを構築」「デプロイ環境を作って」「Vercel と Supabase のセットアップ」「本番デプロイ環境を用意して」で起動。
+version: 0.5.1
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 ---
 
@@ -252,6 +252,23 @@ maximum limits for the number of active free projects
 
 ### Vercel の Preview / Production 環境変数の挙動
 → Vercel の Preview env vars と Production env vars は独立した設定枠。`vercel pull --environment=preview` / `--environment=production` でどちらを引き抜くか選べる。staging ワークフローは `--environment=preview`、production ワークフローは `--environment=production` を使う。
+
+## CI/CD 構成の 2 軸（省エネ CI 設計）
+
+Phase 1 で「開発形態（solo / solo-agent / team）」と「プロダクトステージ（pre-release / released）」を
+ヒアリングし、Phase 4 の生成内容を変える。2026-07 に suimei で Actions free 枠 2,000 分/月を
+5 日で使い切った反省が起点。判断基準は「誰が守るか」「壊れたら誰が困るか」。
+
+| ステージ | 生成されるワークフロー | 思想 |
+|---|---|---|
+| pre-release | deploy-on-merge.yml + migrate-production.yml のみ | 実利用者ゼロ。マージ = 本番反映の最短経路。防衛線はローカル pre-push hook（Tier 0） |
+| released | ci.yml（軽量 Tier 1）/ weekly-full.yml（Tier 3）/ deploy-preview / deploy-staging / deploy-production（preflight = Tier 2）/ migrate-production | PR は 5 分以内の軽いチェック、フルテストは週次 + 本番デプロイ直前 |
+
+- solo-agent（エージェント自動マージ）は人間レビューが無い分、PR CI がレビューの代替 = マージゲートとして必須
+- 全ワークフローの `runs-on` は `${{ vars.CI_RUNNER || 'ubuntu-latest' }}`。free 枠を使い切ったら
+  セルフホストランナー登録 + repo variable `CI_RUNNER=self-hosted` で無課金継続、月初に variable を消して復帰
+- **昇格**: pre-release → released は `/infra-setup` を再実行して released を選ぶ。
+  Phase 4 が deploy-on-merge.yml の削除を提案し、フルセットに置き換える
 
 ## 参考: 関連ドキュメント
 
