@@ -12,9 +12,14 @@ setup() {
   STUB="${WORK}/stub-bin"
   mkdir -p "$STUB"
 
-  # 登録済みアイテムを FMTOKEN_TEST_REGISTERED（ref 完全一致）で表現する op スタブ
+  # 登録済みアイテムを FMTOKEN_TEST_REGISTERED（ref 完全一致）で表現する op スタブ。
+  # FMTOKEN_TEST_EXPECT_SA が設定されていれば、OP_SERVICE_ACCOUNT_TOKEN の一致も要求する
+  # （どの経路の SA トークンが使われたかを検証するため）
   cat >"${STUB}/op" <<'EOF'
 #!/usr/bin/env bash
+if [[ -n "${FMTOKEN_TEST_EXPECT_SA:-}" && "${OP_SERVICE_ACCOUNT_TOKEN:-}" != "$FMTOKEN_TEST_EXPECT_SA" ]]; then
+  exit 1
+fi
 if [[ "$1" == "read" ]]; then
   if [[ "$2" == "${FMTOKEN_TEST_REGISTERED:-}" ]]; then
     echo "tok-secret-123"
@@ -118,6 +123,40 @@ make_repo() {
   mkdir -p "${WORK}/.config/op-sa"
   printf 'file-sa-token' >"${WORK}/.config/op-sa/claude-agents-ro.token"
   chmod 600 "${WORK}/.config/op-sa/claude-agents-ro.token"
+  export FMTOKEN_TEST_REGISTERED="op://agents/myproj--github/credential"
+  HOME="$WORK" run "$FMTOKEN" github
+  [ "$status" -eq 0 ]
+  [ "$output" = "tok-secret-123" ]
+}
+
+@test "600 file takes precedence over Keychain (unattended-first)" {
+  make_repo "myproj"
+  unset OP_SERVICE_ACCOUNT_TOKEN
+  # Keychain が値を返す状況（＝生体認証プロンプトの原因になる経路）でも、
+  # ファイルが先に解決され Keychain には触れない
+  cat >"${STUB}/security" <<'EOF'
+#!/usr/bin/env bash
+echo "keychain-sa-token"
+exit 0
+EOF
+  chmod +x "${STUB}/security"
+  mkdir -p "${WORK}/.config/op-sa"
+  printf 'file-sa-token' >"${WORK}/.config/op-sa/claude-agents-ro.token"
+  chmod 600 "${WORK}/.config/op-sa/claude-agents-ro.token"
+  export FMTOKEN_TEST_EXPECT_SA="file-sa-token"
+  export FMTOKEN_TEST_REGISTERED="op://agents/myproj--github/credential"
+  HOME="$WORK" run "$FMTOKEN" github
+  [ "$status" -eq 0 ]
+  [ "$output" = "tok-secret-123" ]
+}
+
+@test "env var takes precedence over 600 file" {
+  make_repo "myproj"
+  mkdir -p "${WORK}/.config/op-sa"
+  printf 'file-sa-token' >"${WORK}/.config/op-sa/claude-agents-ro.token"
+  chmod 600 "${WORK}/.config/op-sa/claude-agents-ro.token"
+  export OP_SERVICE_ACCOUNT_TOKEN="env-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA="env-sa-token"
   export FMTOKEN_TEST_REGISTERED="op://agents/myproj--github/credential"
   HOME="$WORK" run "$FMTOKEN" github
   [ "$status" -eq 0 ]

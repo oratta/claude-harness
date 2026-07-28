@@ -32,16 +32,18 @@ project="$(normalize "$(basename "$root")")"
 # ディレクトリ名全体がバージョン（例: ver0.0.1）だった場合は親ディレクトリ名を使う
 [[ -z "$project" ]] && project="$(normalize "$(basename "$(dirname "$root")")")"
 
-# SA トークンの取得順: env → Keychain → 600権限ファイル
-# （SSH 専用マシンや Keychain がロックされる常駐文脈ではファイル方式を使う。例: MacBook Air）
+# SA トークンの取得順: env → 600権限ファイル → Keychain
+# 無人経路（cron・常駐・SSH）を優先する順序。Keychain は ACL 次第で読み出しごとに
+# 生体認証ダイアログを出し、無人文脈ではそこでブロックする（GUI が無ければ即失敗）ため、
+# 対話マシン用の最終フォールバックに置く。ファイル未配布のマシンだけが Keychain に落ちる。
 TOKEN_FILE="$HOME/.config/op-sa/claude-agents-ro.token"
 if [[ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]]; then
-  if OP_SERVICE_ACCOUNT_TOKEN="$(security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w 2>/dev/null)"; then
-    :
-  elif [[ -r "$TOKEN_FILE" ]]; then
+  if [[ -r "$TOKEN_FILE" ]]; then
     OP_SERVICE_ACCOUNT_TOKEN="$(tr -d '\n' < "$TOKEN_FILE")"
+  elif OP_SERVICE_ACCOUNT_TOKEN="$(security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w 2>/dev/null)"; then
+    :
   else
-    echo "fmtoken: SA トークンが見つかりません（Keychain: ${KEYCHAIN_SERVICE} / ファイル: ${TOKEN_FILE}）。このマシンは未セットアップです。" >&2
+    echo "fmtoken: SA トークンが見つかりません（ファイル: ${TOKEN_FILE} / Keychain: ${KEYCHAIN_SERVICE}）。このマシンは未セットアップです。" >&2
     echo "→ 主に『SA トークンをこのマシンに配布して』と依頼すること（ブラウザでのログイン代行は不要）" >&2
     exit 43
   fi
