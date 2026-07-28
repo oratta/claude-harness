@@ -30,9 +30,10 @@ wt_setup_paths() {
   WT_SETUP_GUARD_SH="${PLUGIN_DIR}/scripts/wt-setup-guard.sh"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
   PLUGIN_JSON="${PLUGIN_DIR}/.claude-plugin/plugin.json"
+  WT_CLEAN_VERIFICATION="${PLUGIN_DIR}/references/wt-clean-verification.md"
   export PLUGIN_DIR PLUGIN_ROOT WT_CLEAN_CMD WT_SETUP_CMD \
     WT_CLEAN_SKILL WT_SETUP_SKILL WT_SETUP_SH WT_CREATE_HOOK_SH \
-    WT_SETUP_GUARD_SH HOOKS_JSON PLUGIN_JSON
+    WT_SETUP_GUARD_SH HOOKS_JSON PLUGIN_JSON WT_CLEAN_VERIFICATION
 }
 
 # Create a throwaway git repo under BATS_TEST_TMPDIR and echo its path.

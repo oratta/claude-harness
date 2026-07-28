@@ -1,7 +1,7 @@
 ---
 name: wt-clean
-description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。`wt-clean [<path|branch>…] [--keep] [--no-sync]`、引数なしは全 worktree を対象。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」で起動。
-version: 3.1.1
+description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。`wt-clean [<path|branch>…] [--keep] [--no-sync]`、引数なしは全 worktree を対象。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」で起動。
+version: 3.2.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -297,6 +297,67 @@ Pass 1 では、カテゴリに応じて以下へ分岐する:
 - 🟡 で dirty なし（LLM のみ）→ **Step B-🟡**（LLM 退避 → 検証 → 確認なしで自動削除）
 - 🟡 で dirty あり／🔴 Active → **破壊操作はその場では一切行わない**。判断材料（dirty stat・未マージコミット一覧・LLM 有無）をこの時点で収集・表示し、LLM があれば非破壊の退避（コピー + 検証）だけ済ませて `DEFERRED+=("$WT")` し、次の対象へ進む。Pass 1 完了後に **Step B Pass 2** でまとめて対話する
 
+#### Step B-共通: 削除前のプロセス停止（devサーバー等）
+
+`git worktree remove` を呼ぶ**全ての分岐**（🟢 / 🟡 / Pass 2 の 🔴 破棄削除・🟡 dirty 破棄・🔴 マージ後削除）は、実行前に必ず以下の `kill_devserver_under` を呼び、削除対象パス配下で稼働中のプロセスを停止する。`git worktree remove --force` は参照先ソースが消えた状態でプロセスだけ生き残ることがあり（issue #39: `next dev` プロセスツリーが worktree 削除後も2日以上残留し再ビルドループで CPU 165〜210%・swap 98% に達したインシデントの実例）、削除の**前に**必ず停止する。停止結果（PID・コマンド名、または「プロセスなし」）は無音にせず必ず表示する（無音削除の禁止と同じ思想）。
+
+```bash
+kill_devserver_under() {
+  local target="$1"
+  local abs
+  abs=$(realpath -m "$target" 2>/dev/null) || abs="$target"
+
+  # 検出: lsof +D は対象パス配下に実際にオープンファイル/cwdを持つプロセスのみを返す
+  # （pgrep -f はコマンドライン文字列の部分一致のため誤検出しうる。lsof 不在時のみフォールバック）
+  local pids
+  if command -v lsof >/dev/null 2>&1; then
+    pids=$(lsof +D "$abs" 2>/dev/null | awk 'NR>1{print $2}' | sort -u)
+  else
+    echo "  ⚠️ lsof が見つかりません。pgrep -f にフォールバックします"
+    pids=$(pgrep -f "$abs" 2>/dev/null | sort -u)
+  fi
+
+  if [ -z "$pids" ]; then
+    echo "  プロセス残留チェック: $abs 配下に稼働中プロセスなし"
+    return 0
+  fi
+
+  local killed=() skipped=()
+  for pid in $pids; do
+    local comm
+    comm=$(ps -o comm= -p "$pid" 2>/dev/null | xargs -I{} basename {} 2>/dev/null)
+    # 対話用のシェル/エディタ（対象 worktree に cd しているだけのセッション）は誤 kill を避けるため除外。
+    # 除外リストに無いコマンドは全て停止対象にする（false negative より false positive を避ける設計）。
+    case "$comm" in
+      bash|zsh|sh|fish|tmux|ssh|vim|nvim|code|Cursor|login)
+        skipped+=("$pid($comm)")
+        continue
+        ;;
+    esac
+    kill -TERM "$pid" 2>/dev/null
+    killed+=("$pid($comm)")
+  done
+
+  if [ ${#killed[@]} -gt 0 ]; then
+    sleep 3
+    for entry in "${killed[@]}"; do
+      pid="${entry%%(*}"
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -KILL "$pid" 2>/dev/null
+        echo "  🔪 devサーバー(PID $pid)を SIGKILL で停止しました（SIGTERM後も生存）"
+      else
+        echo "  🔪 devサーバー(PID $pid)を停止しました"
+      fi
+    done
+  fi
+  if [ ${#skipped[@]} -gt 0 ]; then
+    echo "  ⚠️ シェル/エディタと判定してスキップ: ${skipped[*]}"
+  fi
+}
+```
+
+検出範囲は削除対象パス（`$WT`）配下に厳密に限定される（`lsof +D`／`pgrep -f` とも `$abs` 配下のみを対象にする）ため、メインリポや他の worktree のプロセスを誤って止めることはない。
+
 #### Step B-🟢: Safe → 確認なしで削除（`--keep` 時は再利用化）
 
 AskUserQuestion は行わない。Step A で TARGETS に含めたことを承認とみなし、**診断根拠を 1 行表示してから**自動実行する（無音削除の禁止）。
@@ -305,6 +366,7 @@ AskUserQuestion は行わない。Step A で TARGETS に含めたことを承認
 
 ```bash
 echo "  🟢 Safe: merged=${MERGED:+branch--merged}${SQUASHED:+$SQUASHED} / clean / LLMなし → 削除します"
+kill_devserver_under "$WT"
 git worktree remove "$WT" --force
 git branch -d "$BRANCH_NAME"    # SQUASHED のときは -D（元 SHA が main の祖先にならないため）
 PROCESSED+=("$BRANCH_NAME (🟢 削除)")
@@ -352,6 +414,7 @@ done
 - **検証成功（`OK_COUNT == SRC_COUNT`）** → 診断根拠と退避結果を表示して確認なしで削除:
   ```bash
   echo "  🟡 Recoverable: merged / clean / LLM ${SRC_COUNT}files → 退避検証OK → 削除します"
+  kill_devserver_under "$WT"
   git worktree remove "$WT" --force   # LLM/ は gitignore 対象のため --force が必要
   git branch -d "$BRANCH_NAME"        # SQUASHED のときは -D
   PROCESSED+=("$BRANCH_NAME (🟡 LLM退避→削除)")
@@ -397,12 +460,14 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
 - **スキップ** → 状態維持。`SKIPPED+=("$BRANCH_NAME")`
 - **破棄削除 (force)**（🔴） →
   ```bash
+  kill_devserver_under "$WT"
   git worktree remove --force "$WT"
   git branch -D "$BRANCH_NAME"
   PROCESSED+=("$BRANCH_NAME (🔴 破棄削除)")
   ```
 - **変更を破棄して削除**（🟡 dirty あり） →
   ```bash
+  kill_devserver_under "$WT"
   git worktree remove --force "$WT"
   git branch -d "$BRANCH_NAME"    # SQUASHED のときは -D
   PROCESSED+=("$BRANCH_NAME (🟡 dirty破棄→削除)")
@@ -471,6 +536,7 @@ cd "$MAIN_REPO"
 
 - **全 PASS（またはテスト未検出）** → 通常削除（`--keep` 指定でもマージを伴うため**通常削除**にフォールバック）:
   ```bash
+  kill_devserver_under "$WT"
   git worktree remove "$WT" --force
   git branch -d "$BRANCH_NAME"
   PROCESSED+=("$BRANCH_NAME (🔴 マージ→削除, N commits)")
@@ -544,7 +610,8 @@ Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 
 1. 未マージコミットのログ・未コミット変更の diff は判断バッチの提示時点で表示済みであること（未表示なら実行前に表示する）
 2. LLM ファイルがあればコピーし、退避検証（絶対禁則 4）を行う
-3. `git worktree remove --force` + `git branch -D`（大文字 D = 強制削除）
+3. `kill_devserver_under "$WT"` で削除対象パス配下の稼働中プロセス（devサーバー等）を停止する
+4. `git worktree remove --force` + `git branch -D`（大文字 D = 強制削除）
 
 判断バッチでの「破棄削除」回答がユーザーの最終確認である。追加の「本当に削除しますか？」は挟まない（判断材料は回答前に提示済みであることが前提）。ただし回答が曖昧（どの対象か特定できない・選択肢外の自由入力）な場合は実行せず確認し直す。
 
@@ -563,3 +630,4 @@ Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 - 🟡 判定で LLM 退避を行った場合、退避先ファイルが実在し空でないことを**削除前に**検証済みであることを確認する（検証失敗のまま削除していないこと）。
 - 🟢/🟡 の自動削除について、削除直前に診断根拠を表示したことを確認する（無音削除をしていないこと）。
 - dirty 破棄・🔴 破棄削除・🔴 マージを行った場合、それぞれ Pass 2 の AskUserQuestion 回答後の別ターンで実行したことを確認する。
+- `git worktree remove` の直前に `kill_devserver_under` を実行し、削除対象パス配下にプロセス残留が無いことを確認したこと（停止した PID または「プロセスなし」がログに表示されていること）。
