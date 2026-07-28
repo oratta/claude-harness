@@ -39,13 +39,17 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-# --- version sync (task 6.x): plugin.json bumped to 2.2.0, JSON parses ---
+# --- version sync (task 6.x): plugin.json version is bumped and JSON parses ---
 
-@test "version: worktree plugin.json version is 2.2.1" {
-  # bumped 2.2.0 -> 2.2.1 by loops-integration (change-5) for the self-verification
-  # sections added to wt-setup / wt-clean SKILL.md. See decisions.md D-5b.
+@test "version: worktree plugin.json version is semver and not below the 2.2.1 baseline" {
+  # 元は "2.2.1 と等しい" 固定アサーションだったが、plugin.json を上げるたびに落ちる
+  # 陳腐化テストになっていた（実際 2.4.1 の時点で失敗したまま放置されていた）。
+  # 意図は「バージョンが退行していないこと」なので、semver 形式 + baseline 以上に変更する。
+  # baseline 2.2.1 = loops-integration (change-5) の自己検証節追加時点。decisions.md D-5b。
   v="$(jq -r '.version' "$PLUGIN_JSON")"
-  [ "$v" = "2.2.1" ]
+  [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+  run bash -c "printf '%s\n%s\n' '2.2.1' '$v' | sort -V | head -1"
+  [ "$output" = "2.2.1" ]
 }
 
 @test "version: worktree plugin.json parses (jq)" {

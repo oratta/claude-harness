@@ -1,7 +1,7 @@
 {
   "name": "worktree",
-  "version": "2.4.1",
-  "description": "Git worktreeのセットアップとクリーンアップ。wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー、引数で後続作業指示を受け取り可能。`--with-pr` で空 commit → push → Draft PR を自動作成し marketplace 自動更新による worktree 消失に備える運用に切替可能。wt-clean: 対象を確定してからノンブロッキング自動処理する 2 パスフロー。`wt-clean <path|branch>` で特定 worktree だけにスコープ（複数可）、引数なし（または対象を定めないオプションのみ）なら全 worktree を確認なしで対象にする（対象選択の質問はしない）。Step 0でorigin/<main>を同期 → Pass 1 で各対象を i/N 進捗で診断（🟢🟡🔴）し 🟢→確認なしで削除/再利用・🟡(LLMのみ)→LLM退避検証→確認なしで削除を自動実行。🔴 と dirty は Pass 2 の判断バッチでまとめて マージ/スキップ/破棄 を対話。`AHEAD_COUNT>0`でも squash マージ済み（実ツリー差分空 / cherry / gh pr で検証）なら 🟡 にフォールバックし誤判定を防ぐ。マージは都度サニティチェック。`--keep` で再利用可能化、`--no-sync` で同期スキップ。dirty破棄・🔴破棄・マージは AskUserQuestion 回答到着後の別ターンで実行する絶対禁則を維持（データロス防止）。",
+  "version": "2.5.0",
+  "description": "Git worktreeのセットアップとクリーンアップ。hooks: WorktreeCreate で worktree 作成そのものを置き換え、作成と同時に wt-setup（.claude/ symlink + .worktreeinclude コピー）まで済ませる。`--worktree` / Agent の isolation:\"worktree\" / background session が対象で、並列サブエージェントが worktree で走る場合も取りこぼさない。既定の配置規約（.claude/worktrees/<name>・branch worktree-<name>・locked）は踏襲する。SessionStart（wt-setup-guard）は手で `git worktree add` した worktree の取りこぼしを初回だけ拾い、済みマーカー（<gitdir>/wt-setup-done）以降とメインリポ・git 外では完全に無出力。wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー、引数で後続作業指示を受け取り可能。`--with-pr` で空 commit → push → Draft PR を自動作成し marketplace 自動更新による worktree 消失に備える運用に切替可能。wt-clean: 対象を確定してからノンブロッキング自動処理する 2 パスフロー。`wt-clean <path|branch>` で特定 worktree だけにスコープ（複数可）、引数なし（または対象を定めないオプションのみ）なら全 worktree を確認なしで対象にする（対象選択の質問はしない）。Step 0でorigin/<main>を同期 → Pass 1 で各対象を i/N 進捗で診断（🟢🟡🔴）し 🟢→確認なしで削除/再利用・🟡(LLMのみ)→LLM退避検証→確認なしで削除を自動実行。🔴 と dirty は Pass 2 の判断バッチでまとめて マージ/スキップ/破棄 を対話。`AHEAD_COUNT>0`でも squash マージ済み（実ツリー差分空 / cherry / gh pr で検証）なら 🟡 にフォールバックし誤判定を防ぐ。マージは都度サニティチェック。`--keep` で再利用可能化、`--no-sync` で同期スキップ。dirty破棄・🔴破棄・マージは AskUserQuestion 回答到着後の別ターンで実行する絶対禁則を維持（データロス防止）。",
   "author": {
     "name": "Oratta"
   },
