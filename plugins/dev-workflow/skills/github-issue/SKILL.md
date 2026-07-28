@@ -1,12 +1,12 @@
 ---
 name: github-issue
-description: 開発 repo で GitHub issue に取り組む標準ワークフロー（wt-setup 判定 → opsx 要否 → change 分割 → TDD 実装）。issue 番号・URL・「このissue対応して」等の自然文で起動。人間依頼と loop-dev-agent 無人サイクル（--unmanned）の両対応。
-version: 1.0.1
+description: 開発 repo で GitHub issue に取り組む標準ワークフロー（worktree セットアップは hooks 任せ → opsx 要否 → change 分割 → TDD 実装）。issue 番号・URL・「このissue対応して」等の自然文で起動。人間依頼と loop-dev-agent 無人サイクル（--unmanned）の両対応。
+version: 1.1.0
 ---
 
 # github-issue — GitHub issue 対応の標準開発ワークフロー
 
-GitHub issue に取り組む一連の手順を毎回同じに通すためのスキル。「issue に触る」という行為そのものが起動トリガーであり、**それを人間が今すぐ頼んだのか、loop-dev-agent が無人で拾ったのかは問わない**。どちらの入口でも `wt-setup 判定 → 仕様化要否（opsx）→ 単一/複数 change 判定 → TDD 実装` という同じパイプラインを通す。
+GitHub issue に取り組む一連の手順を毎回同じに通すためのスキル。「issue に触る」という行為そのものが起動トリガーであり、**それを人間が今すぐ頼んだのか、loop-dev-agent が無人で拾ったのかは問わない**。どちらの入口でも `worktree 確認 → 仕様化要否（opsx）→ 単一/複数 change 判定 → TDD 実装` という同じパイプラインを通す。
 
 このスキルの目的は、開発者が毎回プロンプトで手打ちしていた「worktree を用意して、仕様として残すべきなら opsx を使い、テストを先に書いて実装する」を、issue 着手時に自動で乗る標準手順として固定することにある。
 
@@ -14,7 +14,7 @@ GitHub issue に取り組む一連の手順を毎回同じに通すためのス�
 
 このスキルと `loops` プラグインの loop-dev-agent（無人常設ループ）は**競合ではなく分業**である。
 
-- **このスキル**が担うのは「開発の中身」: wt-setup 判定・仕様化要否・change 分割・TDD 実装。
+- **このスキル**が担うのは「開発の中身」: 仕様化要否・change 分割・TDD 実装。
 - **loop-dev-agent** が担うのは「無人運用の外形」: `agent-ready` ラベルの周期的な拾い上げ、`agent-wip`/`agent-blocked` ラベル操作、Draft PR 作成、Review Queue 連携、GUARDRAILS。
 
 loop-dev-agent の憲法（`docs/agent-loop.md`）の実装モード（Step 3）は、実装の実体をこのスキルに `--unmanned` 付きで委譲する。ラベル・PR・worktree の外枠は憲法側が持ち、このスキルは中身の開発手順だけを担う。二重管理を避けるため、このスキルはラベル操作や Draft PR 作成を**自分では行わない**（対話モードでの単発利用時を除く。後述）。
@@ -30,7 +30,7 @@ loop-dev-agent の憲法（`docs/agent-loop.md`）の実装モード（Step 3）
 
 ## パイプライン
 
-### Step A: worktree 判定と wt-setup
+### Step A: worktree 確認
 
 1. **worktree かどうか判定する**:
    ```bash
@@ -41,16 +41,13 @@ loop-dev-agent の憲法（`docs/agent-loop.md`）の実装モード（Step 3）
 2. **worktree でない場合**: 「1 issue = 1 worktree = 1 ブランチ」がこのハーネスの標準。まだ専用 worktree にいなければ、実装着手時（Step D）で worktree を作る前提で Step B に進む。
    - **unmanned モード**では worktree 作成・ブランチ命名は憲法側（loop-dev-agent Step 3）の責務なので、このスキルは worktree を作らず、既に憲法が用意した worktree 内で呼ばれる前提で進む。
 
-3. **worktree の場合、wt-setup 済みか判定する**:
-   ```bash
-   # wt-setup.sh は .claude/<subdir> を symlink する（.claude 丸ごとではない）。
-   # commands か skills が symlink でも git 追跡でもなければ未セットアップの強いシグナル。
-   ls -la .claude/ 2>/dev/null
-   ```
-   - `.claude/` が無い、または中身が空 → **未セットアップ**
-   - 判断がつかない時は `/wt-setup` を実行してよい（wt-setup.sh は冪等で、既にリンク済みならスキップする）。
+3. **worktree の場合、セットアップは原則すでに済んでいる**。worktree プラグインの hooks が担当するため、このスキルからは**判定も `/wt-setup` 実行も行わない**（二重管理を避ける）:
+   - `WorktreeCreate` hook: `--worktree` / Agent の `isolation:"worktree"` / background session で作られた worktree は、作成時に `wt-setup.sh` まで完了している
+   - `SessionStart` hook: 手動 `git worktree add` の worktree も、初回セッションで自動セットアップされ、残タスクがあれば context に載る
 
-4. **未セットアップなら `/wt-setup` を先に実行する**。後続の作業指示があれば引数で渡す（例: `/wt-setup issue#12 の対応`）。
+4. **例外的に `/wt-setup` を呼ぶのは次の場合だけ**:
+   - context に「`.worktreeinclude` が無い」と載っている（`.env` 等が未コピー。LLM 判断が要るため hook は生成しない）
+   - `.claude/` に `skills`/`commands` がどちらも無く、hook が動いていない疑いがある（プラグイン未インストール等）
    - 補足: `docs/agent-loop.md` の有無は loop-dev-agent 用の判定材料であって、**wt-setup 済みの判定材料ではない**。混同しないこと。
 
 ### Step B: 仕様化要否（opsx / openspec）の判定
@@ -147,5 +144,6 @@ opsx コマンドが無く openspec CLI だけある場合は `openspec new chan
 
 - 判定基準の詳細表（Step B/C + 実行戦略・残量モード）: `references/decision-criteria.md`
 - 昇格トリップワイヤーの常駐ルールテンプレート: `plugins/dev-workflow/templates/escalation-tripwires.md`
-- 呼び出す既存スキル/コマンド: `wt-setup`（worktree プラグイン）、`/opsx:*`（openspec 生成物）、`openspec` CLI
+- worktree セットアップの自動化: worktree プラグインの `hooks/hooks.json`（`WorktreeCreate` / `SessionStart`）。例外時のみ `wt-setup` スキルを呼ぶ
+- 呼び出す既存スキル/コマンド: `/opsx:*`（openspec 生成物）、`openspec` CLI
 - 棲み分け相手: `loops` プラグインの loop-dev-agent（`recipes/loop-dev-agent.md`、憲法テンプレート `templates/agent-loop-template.md`）
