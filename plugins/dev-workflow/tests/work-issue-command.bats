@@ -53,6 +53,7 @@ setup() {
   grep -q "gh issue list" "$CMD"
 }
 
-@test "manifest: plugin version is 1.4.0" {
-  [ "$(jq -r .version "$MANIFEST")" = "1.4.0" ]
+@test "manifest: plugin version is at least 1.4.0" {
+  # issue #36 時点で 1.4.0 に上げた。以降のバージョンアップで壊れないよう下限チェックにする
+  printf '1.4.0\n%s\n' "$(jq -r .version "$MANIFEST")" | sort -V -C
 }

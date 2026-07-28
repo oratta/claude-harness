@@ -39,8 +39,11 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 
 ### Step 2: 各タスクのドラフト生成
 
-タスクごとに issue テンプレート（`.github/ISSUE_TEMPLATE/agent-task.md`）の構造でドラフトを作る:
+タスクごとに issue テンプレート（`.github/ISSUE_TEMPLATE/agent-task.md`）の構造でドラフトを作る
+（先頭 2 節は人間の承認・優先度判断用。翻訳の規律は `references/pr-body-format.md` を参照）:
 
+- **これで何が変わるか** — 最大 3 行・技術用語禁止。機構名ではなく発生する事象を書く
+- **やらないとどうなるか / 今のコスト** — 着手優先度の判断材料。最大 3 行
 - **概要** — 1〜3 行。何を・なぜ
 - **触るファイル・関数** — codebase を Grep / Glob して当たりを付け、実在するパスを書く（推定なら推定と明記）
 - **受け入れ条件（測定可能な形で）** — goalify の方法論で**実行コマンド + 期待値**に変換する:

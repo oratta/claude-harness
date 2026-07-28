@@ -1,0 +1,163 @@
+#!/usr/bin/env bats
+#
+# loops-pr-body-format: エージェントが書く PR / issue 本文フォーマット（issue #47）
+#
+# reference / テンプレート / スキルは実行コードではないため、
+# 仕様（5 セクション順・翻訳例・軽量モード・2 節追加・参照配線）の記述が
+# 存在することを grep で検証する。挙動の担保はドッグフーディングで行う。
+#
+# spec: loops-pr-body-format
+
+load "$(dirname "$BATS_TEST_FILENAME")/helper.bash"
+
+setup() {
+  loops_setup_paths
+  REF="${PLUGIN_DIR}/references/pr-body-format.md"
+  TEMPLATE="${PLUGIN_DIR}/templates/agent-loop-template.md"
+  ISSUEIFY="${PLUGIN_DIR}/skills/loops-issueify/SKILL.md"
+  INSTALL="${PLUGIN_DIR}/skills/loops-dev-agent-install/SKILL.md"
+  MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
+}
+
+# --- Requirement: PR 本文フォーマット reference の新設 ---
+
+@test "reference: pr-body-format.md exists" {
+  [ -f "$REF" ]
+}
+
+@test "reference: 5 sections appear in the prescribed order" {
+  python3 - "$REF" <<'PY'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+sections = [
+    "これで何が変わるか",
+    "良くなること / 悪くなりうること",
+    "壊れうるポイント",
+    "動作確認ポイント",
+    "実装メモ",
+]
+pos = -1
+for s in sections:
+    i = text.find("## " + s)
+    assert i >= 0, f"section heading missing: {s}"
+    assert i > pos, f"section heading out of order: {s}"
+    pos = i
+PY
+}
+
+@test "reference: Closes trailer is part of the format" {
+  grep -q 'Closes #' "$REF"
+}
+
+@test "reference: details collapse is restricted to regenerable output" {
+  grep -q '<details>' "$REF"
+  grep -q '再生成可能' "$REF"
+  # 設計判断を折りたたみに入れない旨の明記
+  grep -E '設計判断.*(入れない|入れてはならない)' "$REF" >/dev/null
+}
+
+# --- Requirement: 二重読者のための設計原則 ---
+
+@test "reference: same-information-once principle is stated" {
+  grep -E '同じ情報を.?2.?回書かない' "$REF" >/dev/null
+}
+
+@test "reference: translation discipline has at least 3 good/bad example pairs" {
+  python3 - "$REF" <<'PY'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+assert text.count("❌") >= 3, f"bad examples: {text.count('❌')}"
+assert text.count("✅") >= 3, f"good examples: {text.count('✅')}"
+PY
+}
+
+@test "reference: negative sections require a reason even when empty" {
+  grep -q '根拠' "$REF"
+  grep -q '「なし」' "$REF"
+}
+
+@test "reference: line limits are specified" {
+  grep -E '最大.?[0-9]+.?(行|項目)' "$REF" >/dev/null
+}
+
+# --- Requirement: 誇張防止の検証紐付け制約 ---
+
+@test "reference: claims must be verifiable via verification checklist (D-5)" {
+  grep -E '動作確認ポイントで検証できないこと.*(書いてはならない|書かない)' "$REF" >/dev/null
+}
+
+@test "reference: verification items use operation-to-expected-result form" {
+  grep -q '期待される結果' "$REF"
+}
+
+# --- Requirement: 軽量モードの規定 ---
+
+@test "reference: lightweight mode defines the 2 mandatory sections" {
+  grep -q '軽量モード' "$REF"
+  python3 - "$REF" <<'PY'
+import sys, re
+text = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r"軽量モード", text)
+tail = text[m.start():]
+assert "これで何が変わるか" in tail, "lightweight mode must reference section 1"
+assert "動作確認ポイント" in tail, "lightweight mode must reference verification section"
+PY
+}
+
+@test "reference: lightweight mode requires a reason line in the PR body" {
+  grep -E '軽量モード適用.*理由' "$REF" >/dev/null
+}
+
+@test "reference: when unsure, full format wins" {
+  grep -E '迷った(ら|場合).*(5 ?節|フル)' "$REF" >/dev/null
+}
+
+# --- Requirement: agent-loop-template からの参照配線 ---
+
+@test "template: Draft PR step references pr-body-format.md" {
+  grep -q 'pr-body-format\.md' "$TEMPLATE"
+}
+
+@test "template: old ad-hoc body rule is replaced" {
+  ! grep -q '本文に `Closes #<番号>` と検証ログを書き' "$TEMPLATE"
+}
+
+# --- Requirement: issue ドラフトへの承認判断 2 節の追加 ---
+
+@test "issueify: draft structure gains the 2 approval sections before existing 4" {
+  python3 - "$ISSUEIFY" <<'PY'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+i_change = text.find("これで何が変わるか")
+i_cost = text.find("やらないとどうなるか")
+i_overview = text.find("**概要**")
+assert i_change >= 0, "missing: これで何が変わるか"
+assert i_cost >= 0, "missing: やらないとどうなるか"
+assert i_overview >= 0, "existing 概要 section must remain"
+assert i_change < i_overview and i_cost < i_overview, "new sections must precede 概要"
+PY
+}
+
+@test "install: agent-task.md template gains the 2 approval sections" {
+  python3 - "$INSTALL" <<'PY'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+i_change = text.find("これで何が変わるか")
+i_cost = text.find("やらないとどうなるか")
+i_overview = text.find("## 概要")
+assert i_change >= 0, "missing: これで何が変わるか"
+assert i_cost >= 0, "missing: やらないとどうなるか"
+assert i_overview >= 0, "existing 概要 section must remain"
+assert i_change < i_overview and i_cost < i_overview, "new sections must precede 概要"
+PY
+}
+
+# --- Requirement: プラグインバージョンの更新 ---
+
+@test "manifest: loops version is greater than 0.16.1" {
+  python3 - "$MANIFEST" <<'PY'
+import json, sys
+v = json.load(open(sys.argv[1]))["version"]
+assert tuple(map(int, v.split("."))) > (0, 16, 1), v
+PY
+}
