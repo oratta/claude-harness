@@ -15,8 +15,12 @@
 - **WHEN** git root のディレクトリ名が `Buffon_ver.0.4.0` のようなバージョン付き・大文字混じりで `fmtoken.sh` を実行する
 - **THEN** プロジェクト名は `buffon` に正規化されてアイテム参照が組み立てられる
 
-### Requirement: SA トークンは env → Keychain → 600 ファイルの順で解決する
-fmtoken.sh は `OP_SERVICE_ACCOUNT_TOKEN` 環境変数 → macOS Keychain `op-sa-claude-agents-ro` → `~/.config/op-sa/claude-agents-ro.token`（600 権限ファイル）の順で SA トークンを解決しなければならない（SHALL）。どこにも無い場合は exit 43 で「主に SA トークンの配布を依頼する」案内を stderr に返し、ブラウザでのログイン代行に誘導しない。
+### Requirement: SA トークンは env → 600 ファイル → Keychain の順で解決する（無人経路優先）
+fmtoken.sh は `OP_SERVICE_ACCOUNT_TOKEN` 環境変数 → `~/.config/op-sa/claude-agents-ro.token`（600 権限ファイル）→ macOS Keychain `op-sa-claude-agents-ro` の順で SA トークンを解決しなければならない（SHALL）。Keychain は ACL 次第で読み出しごとに生体認証ダイアログを出し、無人文脈（cron・常駐・SSH）ではそこでブロックするため、対話マシン用の最終フォールバックに置く。ファイルが配布済みのマシンでは Keychain に一切触れないこと。どこにも無い場合は exit 43 で「主に SA トークンの配布を依頼する」案内を stderr に返し、ブラウザでのログイン代行に誘導しない。
+
+#### Scenario: 600 ファイルが Keychain より優先される
+- **WHEN** Keychain にも 600 ファイルにも SA トークンがあるマシンで `fmtoken.sh <service>` を実行する
+- **THEN** ファイルのトークンが使われ、Keychain（`security find-generic-password`）は呼ばれない
 
 #### Scenario: 未セットアップマシン
 - **WHEN** SA トークンが env にも Keychain にもファイルにも無いマシンで `fmtoken.sh <service>` を実行する
