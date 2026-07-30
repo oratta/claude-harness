@@ -2,18 +2,18 @@
 
 ## 1. テスト先行（Red）
 
-- [ ] 1.1 fmtoken.bats の make_repo を origin remote 付きに拡張し、既存テストを remote 導出前提（`repo--*` でなく remote 名）に更新する
-- [ ] 1.2 新規テスト追加: `workspace/<住人>/repo` 構造（HTTPS remote）で remote 名に解決される
-- [ ] 1.3 新規テスト追加: SSH scp 形式 remote（`git@github.com:org/name.git`）で同じ名前に解決される
-- [ ] 1.4 新規テスト追加: worktree 配下でメイン repo と同じ project 名に解決される
-- [ ] 1.5 新規テスト追加: origin remote 無し → exit 45・登録依頼メッセージを出さない / git リポ外 → exit 45
-- [ ] 1.6 bats 実行で新規テストが失敗することを確認（Red）
+- [x] 1.1 fmtoken.bats の make_repo を origin remote 付きに拡張し、既存テストを remote 導出前提（`repo--*` でなく remote 名）に更新する
+- [x] 1.2 新規テスト追加: `workspace/<住人>/repo` 構造（HTTPS remote）で remote 名に解決される
+- [x] 1.3 新規テスト追加: SSH scp 形式 remote（`git@github.com:org/name.git`）で同じ名前に解決される
+- [x] 1.4 新規テスト追加: worktree 配下でメイン repo と同じ project 名に解決される
+- [x] 1.5 新規テスト追加: origin remote 無し → exit 45・登録依頼メッセージを出さない / git リポ外 → exit 45
+- [x] 1.6 bats 実行で新規テストが失敗することを確認（Red）
 
 ## 2. 実装（Green）
 
-- [ ] 2.1 fmtoken.sh の project 導出を `git remote get-url origin` ベースに変更（`.git` 除去 → 最終パス要素 → 小文字化）。normalize 関数・親 dir フォールバック・pwd フォールバックを削除
-- [ ] 2.2 remote 取得不能時の exit 45 と専用 stderr メッセージを実装
-- [ ] 2.3 bats 全件パスを確認（Green）、ヘッダコメントの導出説明も更新
+- [x] 2.1 fmtoken.sh の project 導出を `git remote get-url origin` ベースに変更（`.git` 除去 → 最終パス要素 → 小文字化）。normalize 関数・親 dir フォールバック・pwd フォールバックを削除
+- [x] 2.2 remote 取得不能時の exit 45 と専用 stderr メッセージを実装
+- [x] 2.3 bats 全件パスを確認（Green）、ヘッダコメントの導出説明も更新
 
 ## 3. vault リネーム（実装と同一 PR・分割不可）
 
