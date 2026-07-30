@@ -24,5 +24,5 @@
 
 ## 4. 仕上げ
 
-- [ ] 4.1 `/opsx:verify` で artifact と実装の整合を検証する
+- [x] 4.1 `/opsx:verify` で artifact と実装の整合を検証する
 - [ ] 4.2 PR 本文を `plugins/loops/references/pr-body-format.md` の 5 節構成で更新し、Ready for Review に切り替える

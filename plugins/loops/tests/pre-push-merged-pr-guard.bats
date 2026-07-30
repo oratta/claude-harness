@@ -22,11 +22,12 @@ setup() {
   HOOK="${TMP}/pre-push"
   extract_hook "$INSTALL" "$HOOK"
 
-  # gh スタブ: GH_MERGED / GH_OPEN が件数、GH_FAIL=1 で非 0 終了
+  # gh スタブ: GH_MERGED / GH_OPEN が件数、GH_FAIL=1 で非 0 終了、GH_EMPTY=1 で exit 0 のまま無出力
   mkdir -p "${TMP}/bin"
   cat > "${TMP}/bin/gh" <<'STUB'
 #!/bin/sh
 [ "${GH_FAIL:-0}" = "1" ] && exit 1
+[ "${GH_EMPTY:-0}" = "1" ] && exit 0
 for a in "$@"; do
   case "$a" in
     merged) echo "${GH_MERGED:-0}"; exit 0 ;;
@@ -87,6 +88,11 @@ run_hook() {
 
 @test "hook: fails open when gh exits non-zero" {
   GH_FAIL=1 run run_hook "refs/heads/feature-a" "$SHA"
+  [ "$status" -eq 0 ]
+}
+
+@test "hook: fails open when gh exits 0 but prints nothing" {
+  GH_EMPTY=1 run run_hook "refs/heads/feature-a" "$SHA"
   [ "$status" -eq 0 ]
 }
 
