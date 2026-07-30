@@ -2,7 +2,7 @@
 # fmtoken — プロジェクトスコープのトークン取得ラッパー
 #
 # エージェントが「このプロジェクトのセッションです」と名乗る代わりに、
-# cwd の git root 名からプロジェクトを機械的に導出し、1Password の
+# origin remote のリポ名からプロジェクトを機械的に導出し、1Password の
 # agents 保管庫（read-only Service Account 経由）から正しいトークンだけを返す。
 #
 # 使い方（トークンを transcript に出さないため、必ずコマンド置換で使う）:
@@ -24,13 +24,25 @@ mode="read"
 if [[ "${1:-}" == "--check" ]]; then mode="check"; shift; fi
 if [[ "${1:-}" == "--list" ]]; then mode="list"; fi
 
-# プロジェクト名: git root のディレクトリ名を正規化（小文字化・先頭 _ とバージョン接尾辞を除去）
-# 例: Buffon_ver.0.4.0 → buffon / Shukan_ver.1.0 → shukan / flatmate → flatmate
-root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-normalize() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/^_+//; s/_?ver[._]?[0-9][0-9.]*$//'; }
-project="$(normalize "$(basename "$root")")"
-# ディレクトリ名全体がバージョン（例: ver0.0.1）だった場合は親ディレクトリ名を使う
-[[ -z "$project" ]] && project="$(normalize "$(basename "$(dirname "$root")")")"
+# プロジェクト名: origin remote のリポ名（末尾 .git 除去 → 最終パス要素 → 小文字化）。
+# 例: https://github.com/genetta-inc/suimei.git / git@github.com:genetta-inc/suimei.git → suimei
+# dir 名導出は flatmate 住人の workspace/<住人>/repo 構造（basename が一律 repo）で破綻し、
+# 登録済みトークンに登録依頼を飛ばす誤誘導を生んだため廃止（oratta/claude-harness#56）。
+# メイン repo・worktree・住人 dir のどこで実行しても同じ名前に解決される。
+if ! remote_url="$(git remote get-url origin 2>/dev/null)"; then
+  echo "fmtoken: origin remote が無いためプロジェクトを特定できません（git リポジトリ外か remote 未設定）。" >&2
+  echo "→ プロジェクトの正式リポジトリ（origin 設定済み）の中で実行すること。主への依頼は不要（トークンが無いのではなく実行場所の問題）" >&2
+  exit 45
+fi
+remote_url="${remote_url%/}"
+remote_url="${remote_url%.git}"
+project="${remote_url##*/}"
+project="${project##*:}"  # scp 形式で org が無い場合（git@host:name）の保険
+project="$(printf '%s' "$project" | tr '[:upper:]' '[:lower:]')"
+if [[ -z "$project" ]]; then
+  echo "fmtoken: origin remote の URL からプロジェクト名を導出できません: $(git remote get-url origin)" >&2
+  exit 45
+fi
 
 # SA トークンの取得順: env → 600権限ファイル → Keychain
 # 無人経路（cron・常駐・SSH）を優先する順序。Keychain は ACL 次第で読み出しごとに

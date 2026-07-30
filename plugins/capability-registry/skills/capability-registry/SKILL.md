@@ -1,7 +1,7 @@
 ---
 name: capability-registry
 description: 外部サービスを操作する前に必ず参照するレジストリ（GitHub/Supabase/Vercel/Stripe/1Password 等）。CLI の有無・認証確認コマンド・トークンの在処（fmtoken.sh）を索引で返す。ブラウザを開こうとした時・ユーザーにログインを依頼したくなった時も、その前にここで CLI 代替を確認する。
-version: 1.1.0
+version: 1.2.0
 ---
 
 # capability-registry — 外部サービスの CLI とトークンの在処

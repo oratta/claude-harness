@@ -50,11 +50,14 @@ teardown() {
   rm -rf "$WORK"
 }
 
-# git root 名 $1 の作業ディレクトリを作って移動する
+# 作業ディレクトリ $1（WORK 相対）に git リポを作り、origin remote を設定して移動する。
+# $2 で remote URL を指定できる（省略時は https://github.com/test-org/<basename>.git）。
+# project 導出は remote のリポ名ベースなので、dir 名は導出結果に影響しない。
 make_repo() {
   local repo="${WORK}/$1"
   mkdir -p "$repo"
   git -C "$repo" init --quiet
+  git -C "$repo" remote add origin "${2:-https://github.com/test-org/$(basename "$1").git}"
   cd "$repo"
 }
 
@@ -70,12 +73,58 @@ make_repo() {
   [ "$output" = "tok-secret-123" ]
 }
 
-@test "project name normalization: Buffon_ver.0.4.0 -> buffon" {
-  make_repo "Buffon_ver.0.4.0"
+@test "project derives from remote repo name, not directory name (workspace/x/repo)" {
+  make_repo "workspace/uranai-market/repo" "https://github.com/genetta-inc/suimei.git"
+  export FMTOKEN_TEST_REGISTERED="op://agents/suimei--github/credential"
+  run "$FMTOKEN" github
+  [ "$status" -eq 0 ]
+  [ "$output" = "tok-secret-123" ]
+}
+
+@test "SSH scp-style remote resolves to same name as HTTPS" {
+  make_repo "traore-checkout" "git@github.com:oratta/traore.git"
+  export FMTOKEN_TEST_REGISTERED="op://agents/traore--github/credential"
+  run "$FMTOKEN" github
+  [ "$status" -eq 0 ]
+  [ "$output" = "tok-secret-123" ]
+}
+
+@test "uppercase remote repo name is lowercased" {
+  make_repo "buffon-dir" "https://github.com/oratta/Buffon.git"
   export FMTOKEN_TEST_REGISTERED="op://agents/buffon--github/credential"
   run "$FMTOKEN" github
   [ "$status" -eq 0 ]
   [ "$output" = "tok-secret-123" ]
+}
+
+@test "worktree resolves to same project as main repo" {
+  make_repo "mainrepo" "https://github.com/test-org/suimei.git"
+  git -c user.email=t@example.com -c user.name=t commit --allow-empty --quiet -m init
+  git worktree add --quiet "${WORK}/wt-feature" -b wt-feature
+  cd "${WORK}/wt-feature"
+  export FMTOKEN_TEST_REGISTERED="op://agents/suimei--github/credential"
+  run "$FMTOKEN" github
+  [ "$status" -eq 0 ]
+  [ "$output" = "tok-secret-123" ]
+}
+
+@test "no origin remote: exit 45, no registration request in message" {
+  local repo="${WORK}/noremote"
+  mkdir -p "$repo"
+  git -C "$repo" init --quiet
+  cd "$repo"
+  export FMTOKEN_TEST_REGISTERED="op://agents/noremote--github/credential"
+  run "$FMTOKEN" github
+  [ "$status" -eq 45 ]
+  [[ "$output" == *"origin"* ]]
+  [[ "$output" != *"登録"* ]]
+}
+
+@test "outside a git repo: exit 45 (no cwd fallback reference)" {
+  mkdir -p "${WORK}/plaindir"
+  cd "${WORK}/plaindir"
+  run "$FMTOKEN" github
+  [ "$status" -eq 45 ]
 }
 
 @test "unregistered service: exit 44 with registration request on stderr" {
