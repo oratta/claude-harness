@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.28.0",
+  "version": "2.28.1",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -154,7 +154,7 @@
       "description": "公式記事「Getting started with loops」の4ループタイプ（ターンベース/ゴールベース/タイムベース/プロアクティブ）を、ネイティブプリミティブ（/goal・/loop・/schedule・skill・workflows・auto mode）の合成レシピとして設計・記述するための器。レシピ形式規約・State 規約・設計ガイド（/loops:design）・brain dump から goal ブリーフを一発生成するコマンド（/loops:goalify）・ゴール/タイム/プロアクティブのレシピ集・コストガードレール・GitHub Issues をタスクキューにした常設自律開発ループ（loop-dev-agent レシピ + /loops:dev-agent-install 導入コマンド + タスクを測定可能な受け入れ条件付き issue に変換する /loops:issueify）を提供する。実装モード（Step 3）の開発の中身は dev-workflow プラグインの github-issue スキルに委譲し、ラベル操作・Draft PR・Review Queue 連携などの無人運用の外形のみを本プラグインが担う。複数リポジトリ並行稼働時のレビュー・マージ判断は GitHub Project「Review Queue」連携と横断ビュー /loops:review-queue で1箇所に集約する。独自のループ実行系（常駐スクリプト・カスタム driver・宣言的 schema ランタイム）は持たない。",
       "source": "./plugins/loops",
       "category": "workflow",
-      "version": "0.19.0",
+      "version": "0.19.1",
       "author": {
         "name": "Oratta"
       },
@@ -172,7 +172,7 @@
       "description": "この開発ハーネスでの標準開発ワークフローを集めるプラグイン。github-issue: GitHub issue（番号/URL/自然文）に取り組む時に発火し、worktree なら wt-setup 未実行を検出して先に実行 → 仕様として残すべき変更なら opsx（openspec）フロー → 単一 change で足りるか複数 change に割れるかを判定 → TDD で実装、という標準手順を毎回同じに通す。人間の直接依頼（`/work-issue`）でも loop-dev-agent の無人サイクルからでも同じフローを共有する（--unmanned で無人モード）。longrun:plan は呼ばず、issue 化前の壁打ちとは切り分ける。",
       "source": "./plugins/dev-workflow",
       "category": "workflow",
-      "version": "1.6.0",
+      "version": "1.6.1",
       "author": {
         "name": "Oratta"
       },
