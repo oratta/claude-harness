@@ -17,13 +17,13 @@
 
 ## 3. vault リネーム（実装と同一 PR・分割不可）
 
-- [ ] 3.1 rw SA（Keychain `op-sa-claude-agents-rw`）で vault `agents` の現在の title 一覧を取得（前状態の記録）
-- [ ] 3.2 `uranai--*` 13件 → `suimei--*` にリネーム（`op item edit`・タイムアウト長め・分割実行）
-- [ ] 3.3 `traoremvp--*` 4件 → `traore--*` にリネーム
-- [ ] 3.4 後状態の title 一覧で `buffon`(2)/`flatmate`(2)/`shukan`(7)/`suimei`(14)/`traore`(4)=29件 を確認
+- [x] 3.1 rw SA（Keychain `op-sa-claude-agents-rw`）で vault `agents` の現在の title 一覧を取得（前状態の記録）
+- [x] 3.2 `uranai--*` 13件 → `suimei--*` にリネーム（`op item edit`・タイムアウト長め・分割実行）
+- [x] 3.3 `traoremvp--*` 4件 → `traore--*` にリネーム
+- [x] 3.4 後状態の title 一覧で `buffon`(2)/`flatmate`(2)/`shukan`(7)/`suimei`(14)/`traore`(4)=29件 を確認
 
 ## 4. 実機確認・仕上げ
 
-- [ ] 4.1 `~/Dropbox/WorkSpace/00_IndieDev/flatmate/workspace/uranai-market/repo` から fmtoken.sh --list が suimei の一覧を返すことを確認
-- [ ] 4.2 worktree 配下（本 worktree 等）で同じ project 名に解決されることを実機確認
-- [ ] 4.3 PR 本文を5節フォーマットで確定し、検証ログ（bats 出力・リネーム前後一覧）を添付
+- [x] 4.1 `~/Dropbox/WorkSpace/00_IndieDev/flatmate/workspace/uranai-market/repo` から fmtoken.sh --list が suimei の一覧を返すことを確認
+- [x] 4.2 worktree 配下（本 worktree 等）で同じ project 名に解決されることを実機確認
+- [x] 4.3 PR 本文を5節フォーマットで確定し、検証ログ（bats 出力・リネーム前後一覧）を添付
