@@ -24,11 +24,11 @@
 
 - [x] 4.1 `~/.githooks/pre-push` を生成し `git config --global core.hooksPath ~/.githooks` を設定する（既存値が無いことを確認済み）
 - [x] 4.2 マージ済みブランチ（`oratta/pre-push-pr-push`）への push が拒否されることを確認する
-- [ ] 4.3 現在の作業ブランチ（open PR あり）への push が通ることを確認する
+- [x] 4.3 現在の作業ブランチ（open PR あり）への push が通ることを確認する
 - [x] 4.4 このリポジトリはローカル `core.hooksPath` を持たないため、グローバル層が実際に適用されていることを確認する
 
 ## 5. 仕上げ
 
-- [ ] 5.1 `/opsx:verify` で artifact と実装の整合を検証する
+- [x] 5.1 `/opsx:verify` で artifact と実装の整合を検証する
 - [ ] 5.2 change を archive し main specs へ sync する
 - [ ] 5.3 PR 本文を 5 節構成で更新し、Ready for Review に切り替える
