@@ -191,6 +191,9 @@ base_ref() {
 @test "S132: marketplace top-level version bumped above merge-base" {
   base="$(base_ref)"
   [ -n "$base" ] || skip "origin/main unavailable"
+  # On main itself base == HEAD, so "bumped above base" is vacuous — same
+  # guard shape as S131's "no plugin changes vs merge-base" skip.
+  [ "$base" != "$(git -C "$PLUGIN_ROOT" rev-parse HEAD)" ] || skip "HEAD is at merge-base (on main)"
   cur="$(jq -r '.version' "$MARKETPLACE")"
   old="$(git -C "$PLUGIN_ROOT" show "${base}:.claude-plugin/marketplace.json" 2>/dev/null | jq -r '.version' 2>/dev/null)"
   [ -n "$old" ] || skip "no marketplace at base"
