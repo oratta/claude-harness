@@ -31,4 +31,4 @@
 
 - [x] 5.1 `/opsx:verify` で artifact と実装の整合を検証する
 - [x] 5.2 change を archive し main specs へ sync する
-- [ ] 5.3 PR 本文を 5 節構成で更新し、Ready for Review に切り替える
+- [x] 5.3 PR 本文を 5 節構成で更新し、Ready for Review に切り替える
