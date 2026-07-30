@@ -9,7 +9,7 @@
 - **グローバル層の新設**: `~/.githooks/pre-push` を生成し `git config --global core.hooksPath` を設定する導入スキル `push-guard-setup` を `dev-workflow` プラグインに追加する。グローバル層は**マージ済み PR チェックのみ**を持つ。
 - **main/master 直 push 拒否はグローバル層に入れない**。「ローカル main 運用」のリポジトリでは承認後の `git push origin main` が正常系であり、全リポジトリで拒否すると正当な操作を壊すため。従来どおりリポジトリローカル層（`loops-dev-agent-install`）だけが持つ。
 - **`gh` 呼び出しの 1 回化**: `--state all` で 1 回だけ呼び、merged / open を jq で数える（両テンプレート共通）。
-- **自前タイムアウトの追加**: `gh` が応答しない場合に数秒で諦めて fail-open する。`timeout` / `gtimeout` があれば使い、無ければバックグラウンド実行 + ポーリング + kill にフォールバックする（macOS には coreutils の `timeout` が無い）。
+- **自前タイムアウトの追加**: `gh` が応答しない場合に 3 秒で諦めて fail-open する。実装はバックグラウンド実行 + ポーリング + kill の 1 本とし、`timeout` / `gtimeout` などの外部コマンドに依存しない（macOS には coreutils の `timeout` が無く、有無で分岐すると片方の経路がマシン依存でテストできなくなるため）。
 - **層の優先関係の明文化**: ローカル `core.hooksPath` がグローバルより優先されること、グローバル設定が `.git/hooks/` 直置きフックを無効化すること、その回避方法を SKILL.md に書く。
 
 ## Capabilities

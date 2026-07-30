@@ -232,6 +232,30 @@ worktree は同一リポジトリの config を共有するため、全 worktree
 protected="main master"
 zero="0000000000000000000000000000000000000000"
 
+# gh を最大 3 秒で実行し "<merged件数> <open件数>" を返す。
+# timeout(1) は macOS に無いため外部コマンドに依存せず、バックグラウンド + ポーリングで打ち切る。
+# stdin はフック本体が push 対象の ref を読んでいるので、子プロセスには渡さない。
+pr_counts() {
+  _out=$(mktemp) || return 1
+  gh pr list --head "$1" --state all --json state \
+    --jq '"\([.[]|select(.state=="MERGED")]|length) \([.[]|select(.state=="OPEN")]|length)"' \
+    >"$_out" 2>/dev/null </dev/null &
+  _pid=$!
+  _i=0
+  while kill -0 "$_pid" 2>/dev/null; do
+    _i=$((_i + 1))
+    if [ "$_i" -gt 30 ]; then          # 0.1 秒 x 30 = 3 秒
+      kill "$_pid" 2>/dev/null
+      rm -f "$_out"
+      return 1
+    fi
+    sleep 0.1
+  done
+  wait "$_pid" 2>/dev/null || { rm -f "$_out"; return 1; }
+  cat "$_out"
+  rm -f "$_out"
+}
+
 while read local_ref local_sha remote_ref remote_sha; do
   for b in $protected; do
     if [ "$remote_ref" = "refs/heads/$b" ]; then
@@ -249,9 +273,11 @@ while read local_ref local_sha remote_ref remote_sha; do
   branch=${remote_ref#refs/heads/}
   [ "$branch" = "$remote_ref" ] && continue   # refs/heads/ 以外（tag 等）は対象外
 
-  # gh が使えない・失敗する場合は fail-open（オフライン・未認証で作業を止めない）
-  merged=$(gh pr list --head "$branch" --state merged --json number --jq 'length' 2>/dev/null) || continue
-  open=$(gh pr list --head "$branch" --state open --json number --jq 'length' 2>/dev/null) || continue
+  # gh が使えない・失敗する・3 秒で応答しない場合は fail-open（オフラインや未認証で作業を止めない）
+  counts=$(pr_counts "$branch") || continue
+  set -- $counts
+  merged=$1
+  open=$2
   case "$merged" in ''|*[!0-9]*) continue ;; esac
   case "$open"   in ''|*[!0-9]*) continue ;; esac
 
@@ -278,6 +304,11 @@ git config core.hooksPath .githooks
   同名ブランチで意図的に PR を開き直したケースは通す
 - **`gh` の失敗時は fail-open**（未インストール・未認証・オフライン・非 GitHub remote）。ガードのために
   日常の push が止まると `--no-verify` が常用され、main 直 push 拒否まで含めてガード全体が形骸化するため
+- **3 秒で打ち切る**。fail-open は「最終的には通す」保証でしかなく、回線が死んでいると `gh` の接続
+  タイムアウトまでフックが固まる。`timeout(1)` は macOS に無いため、バックグラウンド実行 + 0.1 秒
+  ポーリング + `kill` で外部コマンドに依存せず打ち切る
+- **`gh` の呼び出しは 1 回**（`--state all` で取得して merged / open を jq で数える）。2 回呼びは
+  実測で +約 1.0 秒、1 回なら約 0.5 秒
 - **バイパスは `PREPUSH_ALLOW_MERGED=1`**。`--no-verify` に逃げられないよう、拒否メッセージ内で安全な
   逃げ道を明示する（`--no-verify` は main 直 push 拒否まで無効化するうえ deny ルールの対象）
 - **`core.hooksPath` は全 worktree で共有される**ため、この事故の典型経路（マージ後に残った worktree での

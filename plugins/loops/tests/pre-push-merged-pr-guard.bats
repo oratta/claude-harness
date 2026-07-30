@@ -22,19 +22,19 @@ setup() {
   HOOK="${TMP}/pre-push"
   extract_hook "$INSTALL" "$HOOK"
 
-  # gh スタブ: GH_MERGED / GH_OPEN が件数、GH_FAIL=1 で非 0 終了、GH_EMPTY=1 で exit 0 のまま無出力
+  # gh スタブ: "<merged> <open>" を返す。GH_FAIL=1 で非 0 終了、GH_EMPTY=1 で無出力、
+  # GH_HANG=1 で応答しない。呼び出し回数は GH_CALLS に 1 行ずつ記録する。
+  GH_CALLS="${TMP}/gh-calls"
+  : > "$GH_CALLS"
+  export GH_CALLS
   mkdir -p "${TMP}/bin"
   cat > "${TMP}/bin/gh" <<'STUB'
 #!/bin/sh
+echo "call" >> "$GH_CALLS"
+[ "${GH_HANG:-0}" = "1" ] && exec sleep 30
 [ "${GH_FAIL:-0}" = "1" ] && exit 1
 [ "${GH_EMPTY:-0}" = "1" ] && exit 0
-for a in "$@"; do
-  case "$a" in
-    merged) echo "${GH_MERGED:-0}"; exit 0 ;;
-    open)   echo "${GH_OPEN:-0}";   exit 0 ;;
-  esac
-done
-exit 1
+echo "${GH_MERGED:-0} ${GH_OPEN:-0}"
 STUB
   chmod +x "${TMP}/bin/gh"
   PATH="${TMP}/bin:${PATH}"
@@ -84,6 +84,19 @@ run_hook() {
   [ "$status" -eq 1 ]
 }
 
+@test "hook: calls gh exactly once per pushed ref" {
+  GH_MERGED=0 GH_OPEN=1 run run_hook "refs/heads/feature-a" "$SHA"
+  [ "$status" -eq 0 ]
+  [ "$(wc -l < "$GH_CALLS" | tr -d ' ')" -eq 1 ]
+}
+
+@test "hook: does not query gh with two separate --state calls" {
+  run grep -c -- "--state merged" "$INSTALL"
+  [ "$output" -eq 0 ]
+  run grep -c -- "--state open" "$INSTALL"
+  [ "$output" -eq 0 ]
+}
+
 # --- Requirement: gh 失敗時の fail-open ---
 
 @test "hook: fails open when gh exits non-zero" {
@@ -103,6 +116,22 @@ run_hook() {
 
 @test "skill: fail-open policy is documented" {
   grep -q 'fail-open' "$INSTALL"
+}
+
+@test "hook: gives up within a few seconds when gh hangs" {
+  start=$SECONDS
+  GH_HANG=1 run run_hook "refs/heads/feature-a" "$SHA"
+  elapsed=$((SECONDS - start))
+  [ "$status" -eq 0 ]
+  [ "$elapsed" -lt 6 ]
+}
+
+@test "hook: does not depend on the timeout / gtimeout commands" {
+  ! grep -Eq '(^|[^a-zA-Z-])g?timeout ' "$HOOK"
+}
+
+@test "hook: runs gh with stdin detached" {
+  grep -q '</dev/null' "$HOOK"
 }
 
 # --- Requirement: ブランチ削除 push の許可 ---
