@@ -226,8 +226,12 @@ worktree は同一リポジトリの config を共有するため、全 worktree
 
 ```sh
 #!/bin/sh
-# agent-loop policy: 保護ブランチへの直接 push を拒否する
+# agent-loop policy:
+#   1. 保護ブランチ（main/master）への直接 push を拒否する
+#   2. マージ済み PR のブランチへの push を拒否する（コミットが宙に浮くのを防ぐ）
 protected="main master"
+zero="0000000000000000000000000000000000000000"
+
 while read local_ref local_sha remote_ref remote_sha; do
   for b in $protected; do
     if [ "$remote_ref" = "refs/heads/$b" ]; then
@@ -236,6 +240,29 @@ while read local_ref local_sha remote_ref remote_sha; do
       exit 1
     fi
   done
+
+  # ブランチ削除 push は許可（マージ済みブランチの削除はむしろ望ましい）
+  [ "$local_sha" = "$zero" ] && continue
+  # 明示バイパス（main/master 拒否には効かない）
+  [ "${PREPUSH_ALLOW_MERGED:-0}" = "1" ] && continue
+
+  branch=${remote_ref#refs/heads/}
+  [ "$branch" = "$remote_ref" ] && continue   # refs/heads/ 以外（tag 等）は対象外
+
+  # gh が使えない・失敗する場合は fail-open（オフライン・未認証で作業を止めない）
+  merged=$(gh pr list --head "$branch" --state merged --json number --jq 'length' 2>/dev/null) || continue
+  open=$(gh pr list --head "$branch" --state open --json number --jq 'length' 2>/dev/null) || continue
+  case "$merged" in ''|*[!0-9]*) continue ;; esac
+  case "$open"   in ''|*[!0-9]*) continue ;; esac
+
+  # マージ済み PR があり、open な PR が無い = 行き先の無いブランチ
+  if [ "$merged" -gt 0 ] && [ "$open" -eq 0 ]; then
+    echo "pre-push: $branch はマージ済み PR のブランチです（open な PR がありません）" >&2
+    echo "pre-push: このまま push しても変更はどこにも取り込まれません。新しいブランチを切ってください:" >&2
+    echo "pre-push:   git switch -c <new-branch> && git push -u origin <new-branch>" >&2
+    echo "pre-push: 意図的に push する場合は PREPUSH_ALLOW_MERGED=1 git push ... で明示バイパスできます" >&2
+    exit 1
+  fi
 done
 exit 0
 ```
@@ -244,6 +271,39 @@ exit 0
 chmod +x .githooks/pre-push
 git config core.hooksPath .githooks
 ```
+
+マージ済みチェックの設計方針（対象リポジトリのレビュー時に説明できるようにしておく）:
+
+- **拒否するのは「merged な PR が 1 件以上 ∧ open な PR が 0 件」のときだけ**。初回 push（PR 未作成）や、
+  同名ブランチで意図的に PR を開き直したケースは通す
+- **`gh` の失敗時は fail-open**（未インストール・未認証・オフライン・非 GitHub remote）。ガードのために
+  日常の push が止まると `--no-verify` が常用され、main 直 push 拒否まで含めてガード全体が形骸化するため
+- **バイパスは `PREPUSH_ALLOW_MERGED=1`**。`--no-verify` に逃げられないよう、拒否メッセージ内で安全な
+  逃げ道を明示する（`--no-verify` は main 直 push 拒否まで無効化するうえ deny ルールの対象）
+- **`core.hooksPath` は全 worktree で共有される**ため、この事故の典型経路（マージ後に残った worktree での
+  作業再開）をそのまま塞げる
+- push 毎に `gh` を 2 回呼ぶので 1 秒弱遅くなる。fail-open で見逃した分は第 2 層（GitHub の
+  「Automatically delete head branches」）と第 3 層（マージ後の `/wt-clean`）で回収する
+- closed（マージされず閉じた）PR のブランチは対象外。意図的な作り直し運用があり誤検知率が高いため
+
+### 導入済みリポジトリへのフック再適用
+
+既に loop-dev-agent を導入済みのリポジトリには、フックの更新が自動では届かない（`.githooks/pre-push` は
+生成物であり、プラグイン更新に追随しない）。Step 0 の「再導入か中断か」で中断を選んだ場合や、フックだけを
+最新化したい場合は、**Step 6 のみを再実行**する:
+
+```bash
+# 1) 上記テンプレートで .githooks/pre-push を上書き
+chmod +x .githooks/pre-push
+git config core.hooksPath .githooks   # 未設定なら設定、設定済みなら冪等
+
+# 2) 反映確認（マージ済みチェックが入っているか）
+grep -q PREPUSH_ALLOW_MERGED .githooks/pre-push && echo "updated"
+git config --get core.hooksPath
+```
+
+古いフックのまま残っているリポジトリも main 直 push 拒否は動作し続ける（後方互換）ため、再適用は
+リポジトリ単位で任意のタイミングに行ってよい。
 
 ## Step 7: 既存バックログの移行（任意）
 
