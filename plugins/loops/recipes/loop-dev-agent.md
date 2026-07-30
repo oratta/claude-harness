@@ -103,6 +103,8 @@ flatmate（セッション常駐ハーネス）の住人としてループを回
   - GitHub ラベル一式（`agent-ready` / `agent-proposed` / `agent-wip` / `agent-blocked` /
     `needs-approval` / `human-only` / `size:large` / `agent-review:pending` / `agent-review:passed` / `agent-review:failed`）
   - permission deny ルール（main へのマージ・push・force 系の封鎖）と pre-push フック
+    （main 直 push の拒否に加え、**マージ済み PR のブランチへの push も拒否**する。
+    マージ後に残った worktree で作業を再開してもコミットが宙に浮かない）
   - issue テンプレート（測定可能な受け入れ条件を必須化）
 - タスクの投入は `/loops:issueify` が支援する（書き殴り・既存バックログ・TODO コメントを、
   原子化 + 測定可能な受け入れ条件付きの issue に変換して起票するまでフォローする）。
@@ -135,6 +137,8 @@ flatmate（セッション常駐ハーネス）の住人としてループを回
 
 - **マージしない**（deny ルールで封鎖。合格 PR は `agent-review:passed` を付けて人間のマージ判断を待つ）。
 - **main への直接 push をしない**（deny ルール + pre-push フックで封鎖）。
+- **マージ済み PR のブランチへ push しない**（pre-push フックで封鎖。open な PR が無いブランチへの
+  push は行き場が無いため、新しいブランチを切って Draft PR を作り直す）。
 - force push・PR クローズ・ブランチ削除・rebase などの不可逆操作もしない（main 追従は
   ブランチへのマージ方式で行い、force push を必要としない）。
 - 同一 issue / PR で 2 回失敗 → `agent-blocked` にして経緯をコメントし、人間の判断を待つ。
