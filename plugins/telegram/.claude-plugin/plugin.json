@@ -1,0 +1,11 @@
+{
+  "name": "telegram",
+  "description": "Telegram channel for Claude Code \u2014 messaging bridge with built-in access control. Manage pairing, allowlists, and policy via /telegram:access. Fork of the official plugin (v0.0.6) that also delivers the sender's message reactions to the session.",
+  "version": "0.1.0",
+  "keywords": [
+    "telegram",
+    "messaging",
+    "channel",
+    "mcp"
+  ]
+}
