@@ -1,13 +1,47 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.28.1",
+  "version": "2.29.1",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
     "url": "https://github.com/oratta"
   },
   "plugins": [
+    {
+      "name": "telegram",
+      "description": "Telegram messaging bridge — 公式プラグインの fork。主のリアクション（👍👀等）をセッションに配送する（flatmate #178）。",
+      "source": "./plugins/telegram",
+      "category": "productivity",
+      "version": "0.1.0",
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "telegram",
+        "messaging",
+        "channel",
+        "reactions",
+        "mcp"
+      ]
+    },
+    {
+      "name": "discord",
+      "description": "Discord messaging bridge — 公式プラグインの fork。fetch_messages がリアクションを返す（flatmate #178）。",
+      "source": "./plugins/discord",
+      "category": "productivity",
+      "version": "0.1.0",
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "discord",
+        "messaging",
+        "channel",
+        "reactions",
+        "mcp"
+      ]
+    },
     {
       "name": "longrun",
       "description": "Claude Code 向け自律実行ハーネス。plan.md から Workflow スクリプトを生成し、TDD 実装（Build）と4軸定量評価（Verify）を Build Contract レビュー付きで自律的に回す。",
