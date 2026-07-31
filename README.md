@@ -16,36 +16,39 @@ Claude Code用スキル・プラグインのマーケットプレイス
 
 ### longrun
 
-Claude Code ロングラン自律実行システム。instruction.mdを対話的に作成し、人間の介入なしに長時間の自律的実装を完遂する。
+Claude Code 向け自律実行ハーネス。plan.md から Workflow スクリプトを生成し、TDD 実装（Build）と 4 軸定量評価（Verify）を Build Contract レビュー付きで自律的に回す。
 
 ```bash
 /plugin install longrun@oratta-claude-harness
 ```
 
 **機能:**
-- Brain Dump → Gap Analysis → Interview → Synthesis で instruction.md を対話的に作成
-- 専門サブエージェント（意思決定・検証・テスト・仕様管理）による品質担保
-- 意思決定の分岐点でGitコミット（ロールバックポイント）
-- リアルタイム進捗追跡（`_longrun/progress.md`）
+- brain dump を分析し、発散リスクの高い論点を質問で埋めて plan.md を対話的に作成
+- Build Contract パターンの実装前レビューと、独立コンテキストのサブエージェントによる TDD 実装
+- 静的検証（テスト・lint・型・ビルド）とブラウザ動作検証による定量評価
+- 完了後は OpenSpec change + ランディレクトリとしてアーカイブし、フィードバックを自動分類して反映
 
 **コマンド:**
 
 | コマンド | 説明 |
 |----------|------|
-| `/instruction [brain-dump]` | instruction.mdを対話的に作成する |
-| `/exec [instruction-path]` | ロングラン自律実行を開始する |
-| `/status` | 実行中の進捗状況を確認する |
-| `/decisions [番号]` | 意思決定の一覧・詳細を確認する |
+| `/longrun:plan [brain-dump]` | 自律実行用の plan.md を対話的に作成する |
+| `/longrun:mvp` | 短時間・人間実装向けの軽量 MVP plan.md を作成する |
+| `/longrun:exec [plan-path]` | plan.md から Workflow スクリプトを生成・起動し、自律実行する |
+| `/longrun:archive` | 完了した自律実行をアーカイブする（OpenSpec change + ランディレクトリ） |
+| `/longrun:feedback` | 完了後のフィードバックを自動分類し、即実行または backlog に記録する |
 
 **含まれるスキル:**
-- `instruction-builder` - 指示ファイルの対話的作成
-- `longrun-orchestrator` - 自律実行オーケストレーション
+- `longrun-plan` - 自律実行用 plan.md の対話的作成
+- `longrun-mvp-plan` - 軽量 MVP plan.md の対話的作成
+- `longrun-feedback` - 完了後フィードバックの自動分類（Tier 1/2 即実行・Tier 3 backlog）
 
 **含まれるエージェント:**
-- `decision-agent` - 設計上の意思決定（Opus）
-- `verification-agent` - ブラウザ動作確認（Opus）
-- `test-agent` - テスト作成・実行（Sonnet）
-- `spec-agent` - 仕様書メンテナンス（Sonnet）
+- `longrun-builder` - 独立コンテキストでの TDD 実装
+- `longrun-reviewer` - Build Contract パターンの実装前レビュー
+- `longrun-verifier` - 静的検証（テスト・lint・型チェック・ビルド）
+- `longrun-browser-verifier` - ブラウザ動作検証
+- `longrun-mvp-plan-reviewer` / `longrun-mvp-bestpractice-reviewer` / `longrun-mvp-research` - MVP プランのレビューとリサーチ
 
 ---
 
@@ -71,7 +74,7 @@ Claude Code ロングラン自律実行システム。instruction.mdを対話的
 - `/loops:goalify <テキスト|ファイル>` — brain dump から機械検証可能な goal ブリーフと `/goal` 起動コマンドを一発生成する
 - レシピ集（ゴール / タイム / プロアクティブ）と State 規約・コストガードレール
 
-詳細は `plugins/loops/`（レシピ・規約・リファレンス）および調査資料 `research/` を参照。定期実行のスケジューラ登録・課金選択はレシピのスコープ外（呼び出し側の責務）。
+詳細は `plugins/loops/`（レシピ・規約・リファレンス）を参照。定期実行のスケジューラ登録・課金選択はレシピのスコープ外（呼び出し側の責務）。
 
 ---
 
@@ -107,6 +110,25 @@ Claude Code ロングラン自律実行システム。instruction.mdを対話的
 - **テンプレ駆動運用**: 展開先で問題が出たら展開先だけを直さず、本プラグイン側を修正する PR を出す
 
 詳細は `plugins/agent-owner/skills/agent-owner-setup/SKILL.md` を参照。**v0 は仮版であり、今後の展開結果に応じてフェーズ構成・自動化範囲が変わる前提。**
+
+---
+
+### その他のプラグイン
+
+いずれも `/plugin install <プラグイン名>@oratta-claude-harness` でインストールする。
+
+| プラグイン | 説明 |
+|-----------|------|
+| `telegram` | Telegram messaging bridge。公式プラグインの fork で、主のリアクション（👍👀等）をセッションに配送する |
+| `discord` | Discord messaging bridge。公式プラグインの fork で、`fetch_messages` がリアクションを返す |
+| `lr` | longrun の短縮コマンド集（`/lr:p` `/lr:m` `/lr:e` `/lr:a` `/lr:f`） |
+| `worktree` | Git worktree のセットアップ（`/wt-setup`。`--with-pr` で Draft PR まで作成）とクリーンアップ（`/wt-clean`） |
+| `weekly-report` | 週次プロジェクト実績レポートを自動生成し、Obsidian 週次ノートに挿入する。cron 非対話実行に対応 |
+| `daily-report` | 音声トランスクリプト・Obsidian ノート・LLM セッションログを横断集約し、日次日記を生成する |
+| `infra` | Vercel + Supabase + GitHub Actions で local/staging/prod の環境を一括セットアップする（`/infra-setup`） |
+| `experience-to-skill` | セッションの jsonl ログを素材に、自然言語の依頼で SKILL.md を蒸留する（`/e2s:distill`） |
+| `skill-pack` | プロジェクトごとに skillOverrides / enabledPlugins を対話的に編集し、必要なスキルだけを ON にする |
+| `capability-registry` | 外部サービスを操作する前に CLI とトークンの在処を教える発見層。`fmtoken.sh` を同梱 |
 
 ---
 
