@@ -92,7 +92,7 @@ if [ "$settings_action" != "up-to-date" ]; then
         mv -f "$tmp" "$SETTINGS"
     else
         rm -f "$tmp"
-        fail "settings.json の更新に失敗（バックアップ: $SETTINGS.bak-$ts）"
+        fail "settings.json の更新に失敗（バックアップ: ${SETTINGS}.bak-${ts}）"
     fi
 fi
 

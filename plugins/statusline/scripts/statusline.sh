@@ -42,7 +42,9 @@ seven_d_resets=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empt
 
 # $1=パス → mtime(epoch)。取れなければ 0
 file_mtime() {
-    stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0
+    # GNU（-c）を先に試す。逆順だと Linux で `stat -f` がファイルシステム情報の表示として
+    # 成功し、mtime ではない値を返す（usage-probe.sh と同じ理由）。
+    stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
 }
 
 # $1=日数 → N日前の YYYYMMDD

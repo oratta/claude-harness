@@ -104,7 +104,60 @@ base_ref() {
 
 # --- S124: no resident loop-runner / driver script in plugins/loops ---
 @test "S124: no runner scripts (.sh/.js/.py) under plugins/loops" {
-  run bash -c "find '${PLUGIN_DIR}' -type f \( -name '*.sh' -o -name '*.js' -o -name '*.py' \) ! -name '*.bats'"
+  # PR #76（global-rules-pack）が templates/select-target.sh を追加して以降、
+  # このガードは落ちたままだった。禁じたいのは「loops がループを回すための常駐
+  # ランナー / ドライバを同梱すること」であって、ユーザーがコピーして使う雛形ではない。
+  #
+  # ただし templates/ をディレクトリごと除外はしない。除外すると、そこに常駐
+  # スクリプトを置かれたときに素通りするため。allowlist（helper.bash の
+  # LOOPS_SCRIPT_ALLOWLIST）に載っている具体ファイルだけを許し、載っていない
+  # スクリプトが現れたら落とす。新しい雛形を足すときは allowlist に追記して
+  # 意図を宣言すること。
+  #
+  # 常駐プロセス化そのものの実害は下の S124b が引き続き plugins/loops 全域で見張る
+  # （この節に禁止パターンそのものを書くと S124b の grep に自分で引っかかるため列挙しない）。
+  run loops_unlisted_scripts
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+# --- S124c: symlink による allowlist 迂回を塞げていること（負のテスト）---
+#
+# find -type f は symlink を拾わないため、対策前は templates/ に repo 外の常駐
+# スクリプトへの symlink を置くだけで S23 / S124 / S124b の全てを素通りできた
+# （S124b の grep もリンク先は読まないので中身が見えない）。
+# 実際に symlink を作って検出されることを確かめる。allowlist に載っているパスを
+# symlink に差し替える経路も塞げているかを併せて確認する。
+@test "S124c: a symlinked runner under plugins/loops is reported as a violation" {
+  local sneaky="${PLUGIN_DIR}/templates/sneaky-runner.sh"
+  local target="${BATS_TEST_TMPDIR}/resident-runner.sh"
+  printf '#!/bin/sh\n' > "$target"
+
+  # 後片付けは必ず通す（アサーションで落ちても repo に symlink を残さない）。
+  ln -s "$target" "$sneaky"
+  run loops_unlisted_scripts
+  rm -f "$sneaky"
+
+  echo "$output" | grep -q 'templates/sneaky-runner.sh (symlink)'
+}
+
+@test "S124c: an allowlisted path replaced by a symlink is still a violation" {
+  local allowed="${PLUGIN_DIR}/templates/select-target.sh"
+  local backup="${BATS_TEST_TMPDIR}/select-target.sh.orig"
+  # -p でモードごと退避する。復元時に実行ビットを落とすと、テストが repo の
+  # ファイルモードを黙って書き換えることになる。
+  cp -p "$allowed" "$backup"
+
+  rm -f "$allowed"
+  ln -s "$backup" "$allowed"
+  run loops_unlisted_scripts
+  rm -f "$allowed"
+  cp -p "$backup" "$allowed"
+
+  echo "$output" | grep -q 'templates/select-target.sh (symlink)'
+  # 復元が完全であること（実体に戻り、git 上の差分が出ていない）を確認する。
+  [ -f "$allowed" ] && [ ! -L "$allowed" ]
+  run git -C "$PLUGIN_ROOT" status --porcelain -- plugins/loops/templates/select-target.sh
   [ -z "$output" ]
 }
 
@@ -191,6 +244,10 @@ base_ref() {
 @test "S132: marketplace top-level version bumped above merge-base" {
   base="$(base_ref)"
   [ -n "$base" ] || skip "origin/main unavailable"
+  # merge-base と差分が無い（= main 上、または未コミットの変更しか無い）場合は
+  # 「この run で bump すべきもの」が存在しないので検査対象外。これが無いと
+  # clean な main で必ず落ち、CI の push:main 実行が常に赤くなる。
+  git -C "$PLUGIN_ROOT" diff --quiet "$base" HEAD && skip "no changes vs merge-base"
   cur="$(jq -r '.version' "$MARKETPLACE")"
   old="$(git -C "$PLUGIN_ROOT" show "${base}:.claude-plugin/marketplace.json" 2>/dev/null | jq -r '.version' 2>/dev/null)"
   [ -n "$old" ] || skip "no marketplace at base"

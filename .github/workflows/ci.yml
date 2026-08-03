@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────────────────────────
+# ci.yml — claude-harness CI（lint + テスト）
+#
+# ubuntu ランナーを使う理由:
+#   プラグインの実行環境は macOS だが、macOS ランナーは分課金が 10 倍で、
+#   PR ごとに回すゲートとしては無料枠を圧迫する。bats スイートは全 768 件が
+#   Linux でそのまま動く（BSD date / stat -f 等の macOS 固有コマンドへの依存は
+#   grep で 0 件）ため、ubuntu で全件を回す。
+#
+#   将来 macOS 固有スイートが増えたら scripts/test.sh の TEST_EXCLUDE に
+#   パス片を並べて明示スキップする（下の env を有効化する）。除外は
+#   test.sh が "skipped by TEST_EXCLUDE: N" として出力するので無言では減らない。
+#
+# 前提パッケージ:
+#   shellcheck / jq / node / python3 は ubuntu-latest にプリインストール済み。
+#   bats のみ apt で導入する。
+#
+# バージョン整合ガード（S131 / S132）について:
+#   plugins/*/.claude-plugin/plugin.json と marketplace.json の bump を
+#   merge-base と比較して検査するテストは origin/main の ref を要求する。
+#   actions/checkout の既定（fetch-depth: 1）では origin/main が無いので
+#   これらは skip される（ローカル実行で担保）。CI を「常に取れる決定論的な
+#   検査」に限定するための意図的な設計で、fetch-depth: 0 にはしない。
+# ─────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 同一 PR / ブランチへ連続 push したとき、古い run を打ち切って最新だけ走らせる。
+# 打ち切らないと lint / test が世代ぶん並走し、ランナー時間を食う上に
+# 「どの run が最新か」が checks 一覧から読み取りにくくなる。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# 既定の GITHUB_TOKEN 権限を最小に固定する。このワークフローは checkout して
+# lint / test を回すだけで、issue / PR / パッケージへの書き込みは一切行わない。
+# repo 既定が write のままだと、将来ここに追加されるステップが暗黙に書き込み権限を
+# 持ってしまうので、ワークフロー側で明示的に読み取りだけに絞る。
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ubuntu-latest には shellcheck がプリインストールされている
+      - name: shellcheck (scripts/lint.sh)
+        run: scripts/lint.sh
+
+  test:
+    name: bats suites
+    runs-on: ubuntu-latest
+    # macOS 固有スイートが出てきたらここに空白区切りのパス片を並べる
+    # env:
+    #   TEST_EXCLUDE: some-macos-only-suite
+    steps:
+      - uses: actions/checkout@v4
+      # バージョンを固定する。無指定だと ubuntu-latest のイメージ更新で bats が
+      # 黙って上がり、テストの落ち方が変わったときに「自分の変更か bats か」を
+      # 切り分けられなくなる。ubuntu-24.04 の universe が提供する版に固定。
+      # 上げるときはこのピンを明示的に書き換える（ランナーの ubuntu が上がって
+      # この版が消えた場合は install が非0で落ちるので、無言の追随は起きない）。
+      - name: install bats (1.10.0-1)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bats=1.10.0-1
+      - name: run bats suites (scripts/test.sh)
+        run: scripts/test.sh
