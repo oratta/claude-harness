@@ -104,7 +104,12 @@ base_ref() {
 
 # --- S124: no resident loop-runner / driver script in plugins/loops ---
 @test "S124: no runner scripts (.sh/.js/.py) under plugins/loops" {
-  run bash -c "find '${PLUGIN_DIR}' -type f \( -name '*.sh' -o -name '*.js' -o -name '*.py' \) ! -name '*.bats'"
+  # templates/ は除外する。PR #76（global-rules-pack）が templates/select-target.sh を
+  # 追加して以降このガードは落ちたままだった。禁じたいのは「loops がループを回すための
+  # 常駐ランナー/ドライバを同梱すること」であって、ユーザーがコピーして使う雛形ではない。
+  # 常駐プロセス化そのものの実害は下の S124b が引き続き plugins/loops 全域で見張る
+  # （この節に禁止パターンそのものを書くと S124b の grep に自分で引っかかるため列挙しない）。
+  run bash -c "find '${PLUGIN_DIR}' -type f \( -name '*.sh' -o -name '*.js' -o -name '*.py' \) ! -name '*.bats' ! -path '*/templates/*'"
   [ -z "$output" ]
 }
 
@@ -191,6 +196,10 @@ base_ref() {
 @test "S132: marketplace top-level version bumped above merge-base" {
   base="$(base_ref)"
   [ -n "$base" ] || skip "origin/main unavailable"
+  # merge-base と差分が無い（= main 上、または未コミットの変更しか無い）場合は
+  # 「この run で bump すべきもの」が存在しないので検査対象外。これが無いと
+  # clean な main で必ず落ち、CI の push:main 実行が常に赤くなる。
+  git -C "$PLUGIN_ROOT" diff --quiet "$base" HEAD && skip "no changes vs merge-base"
   cur="$(jq -r '.version' "$MARKETPLACE")"
   old="$(git -C "$PLUGIN_ROOT" show "${base}:.claude-plugin/marketplace.json" 2>/dev/null | jq -r '.version' 2>/dev/null)"
   [ -n "$old" ] || skip "no marketplace at base"

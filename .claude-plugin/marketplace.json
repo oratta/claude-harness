@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.30.0",
+  "version": "2.31.0",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -47,7 +47,7 @@
       "description": "Claude Code 向け自律実行ハーネス。plan.md から Workflow スクリプトを生成し、TDD 実装（Build）と4軸定量評価（Verify）を Build Contract レビュー付きで自律的に回す。",
       "source": "./plugins/longrun",
       "category": "workflow",
-      "version": "6.5.1",
+      "version": "6.5.2",
       "author": {
         "name": "Oratta"
       },
@@ -83,7 +83,7 @@
       "description": "Git worktreeのセットアップとクリーンアップ。wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー、引数で後続作業指示を受け取り可能。`--with-pr` で空 commit → push → Draft PR を自動作成し marketplace 自動更新による worktree 消失に備える運用に切替可能。wt-clean: 対象を選んでから1個ずつ遅延診断＆対話処理する選択ベースフロー。`wt-clean <path|branch>` で特定 worktree だけにスコープ（複数可）、引数なしなら worktree をリストアップして対象を選ぶ（「全て」あり）。Step 0でorigin/<main>を同期 → 各対象を i/N 進捗で診断（🟢🟡🔴）→ 🟢削除/再利用・🟡 LLM退避→削除・🔴 マージ/スキップ/破棄 を対話。`AHEAD_COUNT>0`でも squash マージ済み（実ツリー差分空 / cherry / gh pr で検証）なら 🟡 にフォールバックし誤判定を防ぐ。マージは都度サニティチェック。`--keep` で再利用可能化、`--no-sync` で同期スキップ。破壊操作は AskUserQuestion 回答到着後の別ターンで実行する絶対禁則を明文化（データロス防止）。",
       "source": "./plugins/worktree",
       "category": "workflow",
-      "version": "2.6.0",
+      "version": "2.6.1",
       "author": {
         "name": "Oratta"
       },
@@ -188,7 +188,7 @@
       "description": "公式記事「Getting started with loops」の4ループタイプ（ターンベース/ゴールベース/タイムベース/プロアクティブ）を、ネイティブプリミティブ（/goal・/loop・/schedule・skill・workflows・auto mode）の合成レシピとして設計・記述するための器。レシピ形式規約・State 規約・設計ガイド（/loops:design）・brain dump から goal ブリーフを一発生成するコマンド（/loops:goalify）・ゴール/タイム/プロアクティブのレシピ集・コストガードレール・GitHub Issues をタスクキューにした常設自律開発ループ（loop-dev-agent レシピ + /loops:dev-agent-install 導入コマンド + タスクを測定可能な受け入れ条件付き issue に変換する /loops:issueify）を提供する。実装モード（Step 3）の開発の中身は dev-workflow プラグインの github-issue スキルに委譲し、ラベル操作・Draft PR・Review Queue 連携などの無人運用の外形のみを本プラグインが担う。複数リポジトリ並行稼働時のレビュー・マージ判断は GitHub Project「Review Queue」連携と横断ビュー /loops:review-queue で1箇所に集約する。独自のループ実行系（常駐スクリプト・カスタム driver・宣言的 schema ランタイム）は持たない。",
       "source": "./plugins/loops",
       "category": "workflow",
-      "version": "0.19.1",
+      "version": "0.19.2",
       "author": {
         "name": "Oratta"
       },
@@ -244,7 +244,7 @@
       "description": "外部サービスを操作する前に CLI とトークンの在処を教える発見層プラグイン。サービス索引スキル（description トリガー・CLAUDE.md 無編集で発火・CLI が無いネガティブエントリ付き）+ fmtoken.sh（1Password agents 保管庫からプロジェクトスコープでトークンを引くラッパー）+ ブラウザ系 MCP ツールの PreToolUse 注意喚起 hook（deny はしない）で、ブラウザとログイン依頼への逃げ道を減らす。",
       "source": "./plugins/capability-registry",
       "category": "workflow",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "author": {
         "name": "Oratta"
       },

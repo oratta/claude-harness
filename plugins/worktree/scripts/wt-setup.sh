@@ -7,8 +7,7 @@ set -euo pipefail
 
 #=== Step 1: 環境判定 ===
 
-# worktree内かどうか判定
-GIT_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null)
+# worktree内かどうか判定（判定は TOPLEVEL と MAIN_REPO の一致で行う）
 TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null)
 MAIN_REPO=$(git worktree list | head -1 | awk '{print $1}')
 

@@ -32,7 +32,9 @@ setup() {
 
 # --- S23: 実行スクリプトが存在しない ---
 @test "S23: no runtime scripts (*.sh/*.js/*.py excluding *.bats)" {
-  run bash -c "find '${PLUGIN_DIR}' -type f \( -name '*.sh' -o -name '*.js' -o -name '*.py' \) ! -name '*.bats' | grep -v '/tests/' || true"
+  # templates/ は除外する（理由は integration.bats の S124 と同一 — PR #76 が追加した
+  # templates/select-target.sh は雛形であってランタイムではない）。
+  run bash -c "find '${PLUGIN_DIR}' -type f \( -name '*.sh' -o -name '*.js' -o -name '*.py' \) ! -name '*.bats' | grep -v '/tests/' | grep -v '/templates/' || true"
   [ -z "$output" ]
 }
 

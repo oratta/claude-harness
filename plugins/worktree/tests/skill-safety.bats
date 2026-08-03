@@ -48,7 +48,10 @@ setup() {
 }
 
 @test "skill: wt-clean SKILL.md keeps 'execute in a separate turn after answer'" {
-  grep -q '回答を受け取った後の、別のアシスタントターンで' "$WT_CLEAN_SKILL"
+  # 規範自体は SKILL.md に残っているが、文面が「回答を**受け取った後の別ターン**で」に
+  # 書き換わって固定文字列 grep が空振りしていた。装飾（** **）と読点の有無に依存しない
+  # 正規表現に変更する。守りたいのは「回答を受け取ってから別ターンで実行する」の明記。
+  grep -Eq '回答を\*{0,2}受け取った後の、?\*{0,2}別(の)?(アシスタント)?ターン' "$WT_CLEAN_SKILL"
 }
 
 # --- wt-setup SKILL.md keeps Step 1-6 (the source of truth for setup) ---
