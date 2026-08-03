@@ -95,7 +95,10 @@ setup() {
 
 @test "car-nav phrase: matches distance+direction prompt" {
   input='300メートル先、右方向です'
-  echo "$input" | grep -Eq '[0-9０-９]+(メートル|m|キロ|km)先、(右|左|斜め右|斜め左)?方向'
+  # 全角数字は範囲 [０-９] ではなく列挙で書く。GNU grep は C ロケールだと多バイトの
+  # 範囲指定を "Invalid collation character" で拒否し、終了コード 2 で落ちる（macOS の
+  # BSD grep では通るため、ロケール依存の差異になる）。
+  echo "$input" | grep -Eq '([0-9]|[０１２３４５６７８９])+(メートル|m|キロ|km)先、(右|左|斜め右|斜め左)?方向'
 }
 
 @test "car-nav phrase: matches destination-approach prompt" {
@@ -116,7 +119,9 @@ setup() {
 @test "car-nav phrase: does NOT match generic driving thought" {
   # A regular driver thought should NOT match the car-nav regex.
   input='今日は道が空いてるな'
-  ! echo "$input" | grep -Eq '[0-9０-９]+(メートル|m|キロ|km)先、(右|左)?方向'
+  # 上と同じ理由で列挙にする。範囲のままだと grep が終了コード 2（エラー）で落ち、
+  # 否定の ! が真になって「マッチしなかった」と区別できず、偶然 pass していた。
+  ! echo "$input" | grep -Eq '([0-9]|[０１２３４５６７８９])+(メートル|m|キロ|km)先、(右|左)?方向'
   ! echo "$input" | grep -Eq '(まもなく|間もなく).*目的地'
   ! echo "$input" | grep -Eq 'ルート.*(再検索|検索|更新)'
   ! echo "$input" | grep -Eq '(次の|この先の)?信号を(右折|左折|直進)'

@@ -115,7 +115,7 @@
       "description": "Fieldyの音声トランスクリプト（Notion DB_FIELDY）と、Obsidian Vaultの編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブで日次日記を生成する。--with-album フラグで marketing-harness の vlog-album を連鎖呼び出しできる（デフォルトは女子 3 人版、--gene male で男性 Gene 版）。",
       "source": "./plugins/daily-report",
       "category": "productivity",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "author": {
         "name": "Oratta"
       },
@@ -206,7 +206,7 @@
       "description": "この開発ハーネスでの標準開発ワークフローを集めるプラグイン。github-issue: GitHub issue（番号/URL/自然文）に取り組む時に発火し、worktree なら wt-setup 未実行を検出して先に実行 → 仕様として残すべき変更なら opsx（openspec）フロー → 単一 change で足りるか複数 change に割れるかを判定 → TDD で実装、という標準手順を毎回同じに通す。人間の直接依頼（`/work-issue`）でも loop-dev-agent の無人サイクルからでも同じフローを共有する（--unmanned で無人モード）。longrun:plan は呼ばず、issue 化前の壁打ちとは切り分ける。",
       "source": "./plugins/dev-workflow",
       "category": "workflow",
-      "version": "1.6.1",
+      "version": "1.6.2",
       "author": {
         "name": "Oratta"
       },
@@ -264,7 +264,7 @@
       "description": "使用量が一目で分かる Claude Code ステータスライン。5h / 7d（全体・Fable）のレートリミットを、クォータ消化率をバーの塗り・窓の日程消化率をバー下端の細線と分母（例 25%/29%）で同時に表示し、「今のペースでリセットまで持つか」を色で示す。コンテキスト残量と ccusage 由来の API 換算月額ペースも表示。`/statusline:setup` で settings.json への配線まで行う。",
       "source": "./plugins/statusline",
       "category": "productivity",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "Oratta"
       },
