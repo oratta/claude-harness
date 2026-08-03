@@ -4,12 +4,12 @@
 
 ### Requirement: auto-merge workflow 一式がテンプレートとして配布される
 
-dev-workflow プラグインは `templates/auto-merge/` に `auto-merge.yml` / `revert-pr.yml` / `test-auto-merge-workflow.sh` / `README.md` を含む（SHALL）。テンプレートはリポ固有の差し替え箇所を既存マーカー（`# >>> sacred-paths` / `# >>> required-checks` 等）で明示し、README がそれ以外を変更せずに展開できる手順を提供する（SHALL）。
+dev-workflow プラグインは `templates/auto-merge/` に、展開先リポのツリーをそのまま鏡写しにした形（`.github/workflows/auto-merge.yml` / `.github/workflows/revert-pr.yml` / `docs/auto-merge.md` / `scripts/test-auto-merge-workflow.sh`）と展開手順 `README.md` を含む（SHALL）。テンプレートはリポ固有の差し替え箇所を既存マーカー（`# >>> sacred-paths` / `# >>> required-checks` 等）で明示し、README がそれ以外を変更せずに展開できる手順を提供する（SHALL）。
 
-#### Scenario: テンプレート 4 ファイルの存在
+#### Scenario: テンプレートファイル群の存在
 
 - **WHEN** `plugins/dev-workflow/templates/auto-merge/` を確認する
-- **THEN** auto-merge.yml / revert-pr.yml / test-auto-merge-workflow.sh / README.md の 4 ファイルが存在する
+- **THEN** README.md と、展開先ツリーを鏡写しにした `.github/workflows/auto-merge.yml` / `.github/workflows/revert-pr.yml` / `docs/auto-merge.md` / `scripts/test-auto-merge-workflow.sh` の計 5 ファイルが存在する
 
 #### Scenario: 差し替え箇所のマーカーが揃っている
 
@@ -37,7 +37,7 @@ dev-workflow プラグインは `templates/auto-merge/` に `auto-merge.yml` / `
 
 ### Requirement: 運用ガイドはリポ非依存の記述で提供される
 
-テンプレートの README（運用ガイド部分を含む）は特定リポの URL を直書きせず、`<owner>/<repo>` 形式のプレースホルダまたは相対参照で記述する（SHALL）。
+テンプレートの README と運用ガイド（`docs/auto-merge.md`）は特定リポの URL を直書きせず、`<owner>/<repo>` 形式のプレースホルダまたは相対参照で記述する（SHALL）。
 
 #### Scenario: flatmate URL の不在
 
