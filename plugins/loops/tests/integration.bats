@@ -121,6 +121,46 @@ base_ref() {
   [ -z "$output" ]
 }
 
+# --- S124c: symlink による allowlist 迂回を塞げていること（負のテスト）---
+#
+# find -type f は symlink を拾わないため、対策前は templates/ に repo 外の常駐
+# スクリプトへの symlink を置くだけで S23 / S124 / S124b の全てを素通りできた
+# （S124b の grep もリンク先は読まないので中身が見えない）。
+# 実際に symlink を作って検出されることを確かめる。allowlist に載っているパスを
+# symlink に差し替える経路も塞げているかを併せて確認する。
+@test "S124c: a symlinked runner under plugins/loops is reported as a violation" {
+  local sneaky="${PLUGIN_DIR}/templates/sneaky-runner.sh"
+  local target="${BATS_TEST_TMPDIR}/resident-runner.sh"
+  printf '#!/bin/sh\n' > "$target"
+
+  # 後片付けは必ず通す（アサーションで落ちても repo に symlink を残さない）。
+  ln -s "$target" "$sneaky"
+  run loops_unlisted_scripts
+  rm -f "$sneaky"
+
+  echo "$output" | grep -q 'templates/sneaky-runner.sh (symlink)'
+}
+
+@test "S124c: an allowlisted path replaced by a symlink is still a violation" {
+  local allowed="${PLUGIN_DIR}/templates/select-target.sh"
+  local backup="${BATS_TEST_TMPDIR}/select-target.sh.orig"
+  # -p でモードごと退避する。復元時に実行ビットを落とすと、テストが repo の
+  # ファイルモードを黙って書き換えることになる。
+  cp -p "$allowed" "$backup"
+
+  rm -f "$allowed"
+  ln -s "$backup" "$allowed"
+  run loops_unlisted_scripts
+  rm -f "$allowed"
+  cp -p "$backup" "$allowed"
+
+  echo "$output" | grep -q 'templates/select-target.sh (symlink)'
+  # 復元が完全であること（実体に戻り、git 上の差分が出ていない）を確認する。
+  [ -f "$allowed" ] && [ ! -L "$allowed" ]
+  run git -C "$PLUGIN_ROOT" status --porcelain -- plugins/loops/templates/select-target.sh
+  [ -z "$output" ]
+}
+
 @test "S124b: no while-true / sleep-loop resident processes in plugins/loops" {
   run bash -c "grep -rEl 'while +true|sleep +[0-9].*done' '${PLUGIN_DIR}' || true"
   [ -z "$output" ]

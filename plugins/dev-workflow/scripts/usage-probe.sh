@@ -2,7 +2,7 @@
 # usage-probe.sh: Anthropic OAuth usage API から Fable 週次残量を取得し snapshot に書く。
 #
 # 契約:
-#   - 出力先 snapshot: $USAGE_SNAPSHOT（既定 ~/.claude/.usage-snapshot）
+#   - 出力先 snapshot: ${USAGE_SNAPSHOT}（既定 ~/.claude/.usage-snapshot）
 #   - snapshot が TTL（$USAGE_PROBE_TTL 秒、既定 300）以内に更新済みなら再フェッチしない
 #   - 認証取得・通信・パースのいずれが失敗しても exit 0 で snapshot を書かない（fail-open）
 #   - snapshot JSON は少なくとも fable_weekly_pct / fable_active を含む

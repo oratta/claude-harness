@@ -99,8 +99,8 @@ rc=$?
 
 echo "========================================"
 if [ "$rc" -eq 0 ]; then
-  echo "bats: 全スイート pass（excluded: $SKIPPED）"
+  echo "bats: 全スイート pass（excluded: ${SKIPPED}）"
 else
-  echo "bats: 失敗あり（上記 TAP 出力の not ok を参照。excluded: $SKIPPED）"
+  echo "bats: 失敗あり（上記 TAP 出力の not ok を参照。excluded: ${SKIPPED}）"
 fi
 exit "$rc"
