@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.29.1",
+  "version": "2.30.0",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -258,6 +258,24 @@
         "discovery",
         "browser-guard"
       ]
+    },
+    {
+      "name": "statusline",
+      "description": "使用量が一目で分かる Claude Code ステータスライン。5h / 7d（全体・Fable）のレートリミットを、クォータ消化率をバーの塗り・窓の日程消化率をバー下端の細線と分母（例 25%/29%）で同時に表示し、「今のペースでリセットまで持つか」を色で示す。コンテキスト残量と ccusage 由来の API 換算月額ペースも表示。`/statusline:setup` で settings.json への配線まで行う。",
+      "source": "./plugins/statusline",
+      "category": "productivity",
+      "version": "0.1.0",
+      "author": {
+        "name": "Oratta"
+      },
+      "keywords": [
+        "statusline",
+        "rate-limit",
+        "usage",
+        "quota",
+        "ccusage",
+        "claude-code"
+      ]
     }
   ],
   "skills": [],
@@ -276,7 +294,8 @@
         "skill-pack",
         "loops",
         "dev-workflow",
-        "agent-owner"
+        "agent-owner",
+        "statusline"
       ],
       "skills": []
     }
