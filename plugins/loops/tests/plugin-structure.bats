@@ -32,9 +32,10 @@ setup() {
 
 # --- S23: 実行スクリプトが存在しない ---
 @test "S23: no runtime scripts (*.sh/*.js/*.py excluding *.bats)" {
-  # templates/ は除外する（理由は integration.bats の S124 と同一 — PR #76 が追加した
-  # templates/select-target.sh は雛形であってランタイムではない）。
-  run bash -c "find '${PLUGIN_DIR}' -type f \( -name '*.sh' -o -name '*.js' -o -name '*.py' \) ! -name '*.bats' | grep -v '/tests/' | grep -v '/templates/' || true"
+  # 許可されるのは helper.bash の LOOPS_SCRIPT_ALLOWLIST に明示された具体ファイルだけ
+  # （理由と運用は integration.bats の S124 と同一。allowlist は helper.bash が正本）。
+  run loops_unlisted_scripts
+  [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 

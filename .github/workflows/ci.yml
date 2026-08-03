@@ -29,6 +29,20 @@ on:
   push:
     branches: [main]
 
+# 同一 PR / ブランチへ連続 push したとき、古い run を打ち切って最新だけ走らせる。
+# 打ち切らないと lint / test が世代ぶん並走し、ランナー時間を食う上に
+# 「どの run が最新か」が checks 一覧から読み取りにくくなる。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# 既定の GITHUB_TOKEN 権限を最小に固定する。このワークフローは checkout して
+# lint / test を回すだけで、issue / PR / パッケージへの書き込みは一切行わない。
+# repo 既定が write のままだと、将来ここに追加されるステップが暗黙に書き込み権限を
+# 持ってしまうので、ワークフロー側で明示的に読み取りだけに絞る。
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: shellcheck
@@ -47,9 +61,14 @@ jobs:
     #   TEST_EXCLUDE: some-macos-only-suite
     steps:
       - uses: actions/checkout@v4
-      - name: install bats
+      # バージョンを固定する。無指定だと ubuntu-latest のイメージ更新で bats が
+      # 黙って上がり、テストの落ち方が変わったときに「自分の変更か bats か」を
+      # 切り分けられなくなる。ubuntu-24.04 の universe が提供する版に固定。
+      # 上げるときはこのピンを明示的に書き換える（ランナーの ubuntu が上がって
+      # この版が消えた場合は install が非0で落ちるので、無言の追随は起きない）。
+      - name: install bats (1.10.0-1)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bats
+          sudo apt-get install -y --no-install-recommends bats=1.10.0-1
       - name: run bats suites (scripts/test.sh)
         run: scripts/test.sh

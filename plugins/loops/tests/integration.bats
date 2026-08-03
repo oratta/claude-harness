@@ -104,12 +104,20 @@ base_ref() {
 
 # --- S124: no resident loop-runner / driver script in plugins/loops ---
 @test "S124: no runner scripts (.sh/.js/.py) under plugins/loops" {
-  # templates/ は除外する。PR #76（global-rules-pack）が templates/select-target.sh を
-  # 追加して以降このガードは落ちたままだった。禁じたいのは「loops がループを回すための
-  # 常駐ランナー/ドライバを同梱すること」であって、ユーザーがコピーして使う雛形ではない。
+  # PR #76（global-rules-pack）が templates/select-target.sh を追加して以降、
+  # このガードは落ちたままだった。禁じたいのは「loops がループを回すための常駐
+  # ランナー / ドライバを同梱すること」であって、ユーザーがコピーして使う雛形ではない。
+  #
+  # ただし templates/ をディレクトリごと除外はしない。除外すると、そこに常駐
+  # スクリプトを置かれたときに素通りするため。allowlist（helper.bash の
+  # LOOPS_SCRIPT_ALLOWLIST）に載っている具体ファイルだけを許し、載っていない
+  # スクリプトが現れたら落とす。新しい雛形を足すときは allowlist に追記して
+  # 意図を宣言すること。
+  #
   # 常駐プロセス化そのものの実害は下の S124b が引き続き plugins/loops 全域で見張る
   # （この節に禁止パターンそのものを書くと S124b の grep に自分で引っかかるため列挙しない）。
-  run bash -c "find '${PLUGIN_DIR}' -type f \( -name '*.sh' -o -name '*.js' -o -name '*.py' \) ! -name '*.bats' ! -path '*/templates/*'"
+  run loops_unlisted_scripts
+  [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
