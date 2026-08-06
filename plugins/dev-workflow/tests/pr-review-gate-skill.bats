@@ -123,3 +123,73 @@ setup() {
 @test "convergence: verification runs in parallel while awaiting risk acceptance" {
   grep -q '並行' "$SKILL"
 }
+
+# --- Requirement: レビュー実行者を変更内容から事前判定する（light / full） ---
+
+@test "triage: review weight section exists at the head of step 2" {
+  grep -qF 'レビュー重量の判定' "$SKILL"
+  # 手順2（レビュー）の中にあること — 手順3 より前に現れる
+  triage="$(grep -n 'レビュー重量の判定' "$SKILL" | head -1 | cut -d: -f1)"
+  step2="$(grep -n '^### 2\. レビュー' "$SKILL" | head -1 | cut -d: -f1)"
+  step3="$(grep -n '^### 3\. リスク宣言' "$SKILL" | head -1 | cut -d: -f1)"
+  [ "$triage" -gt "$step2" ]
+  [ "$triage" -lt "$step3" ]
+}
+
+@test "triage: decision inputs are mechanical (file list + changed line count)" {
+  grep -qF 'gh pr diff' "$SKILL"
+  grep -qF -- '--name-only' "$SKILL"
+  grep -q '行数' "$SKILL"
+}
+
+@test "triage: light condition (a) excludes agent-behavior-defining files" {
+  # 「md だけ」では light にならない — エージェントの行動を定義する md は full 側
+  grep -qF 'エージェントの行動を定義するファイル' "$SKILL"
+  grep -qF 'CLAUDE.md' "$SKILL"
+  grep -qF '.github/workflows/' "$SKILL"
+}
+
+@test "triage: light condition (b) caps at 30 changed lines and requires behavior-neutral" {
+  grep -qF '30 行' "$SKILL"
+  grep -q '挙動を変えない' "$SKILL"
+}
+
+@test "triage: full is the default and ties break toward full (fail-closed)" {
+  grep -q '既定.*full\|full.*既定' "$SKILL"
+  grep -qF '迷ったら full' "$SKILL"
+  grep -qF '「判断がつかない」は light の理由にならない' "$SKILL"
+}
+
+@test "triage: light swaps only the reviewer, exempts no gate step" {
+  # 免除されない工程が名指しで列挙されている
+  grep -q 'light.*変わるのは.*実行者\|レビュー実行者だけ' "$SKILL"
+  grep -q '免除' "$SKILL"
+}
+
+@test "triage: decision and reason are recorded as a PR comment" {
+  grep -qF 'レビュー重量: light' "$SKILL"
+}
+
+@test "triage: pre-triage and availability fallback are distinguished, fallback kept" {
+  # 既存のフォールバック記述（Codex が使えないときの迂回路）が残っている（回帰ガード）
+  grep -q 'フォールバック' "$SKILL"
+  grep -q 'サブスク切れ' "$SKILL"
+  grep -q 'タイムアウト' "$SKILL"
+  # 事前判定と障害時フォールバックの役割が書き分けられている
+  grep -q '事前判定' "$SKILL"
+}
+
+@test "manifest: version bumped above 1.7.0" {
+  v="$(jq -r '.version' "$MANIFEST")"
+  [ "$v" != "1.7.0" ]
+  highest="$(printf '1.7.0\n%s\n' "$v" | sort -V | tail -1)"
+  [ "$highest" = "$v" ]
+}
+
+@test "skill: frontmatter version bumped above 1.0.0" {
+  v="$(awk -F': ' '/^version:/{print $2; exit}' "$SKILL")"
+  [ -n "$v" ]
+  [ "$v" != "1.0.0" ]
+  highest="$(printf '1.0.0\n%s\n' "$v" | sort -V | tail -1)"
+  [ "$highest" = "$v" ]
+}
