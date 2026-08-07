@@ -81,7 +81,7 @@ Step C  完了レポート
 
    そこで削除の可否は git 状態だけで決めず、**「今そこで誰かが作業しているか」を示す稼働シグナル**を必ず併せて見る:
 
-   - **配下プロセス**: 削除対象パス配下で稼働中の**非シェルプロセス**（`claude` / `node` / `next` など）。判定は `lsof +D` と `kill_devserver_under` と**同一の除外基準**で行う（Step B-共通の `detect_active_signals_under`）。「`kill_devserver_under` が停止する対象が居るなら、それは自動削除してよい worktree ではない」という対応関係を崩さない。
+   - **配下プロセス**: 削除対象パス配下で稼働中の**非シェルプロセス**（`claude` / `node` / `next` など）。判定は `lsof +D` と `kill_devserver_under` と**同一の除外基準**で行う（Step B-共通の `detect_active_procs_under`）。「`kill_devserver_under` が停止する対象が居るなら、それは自動削除してよい worktree ではない」という対応関係を崩さない。
    - **当日のセッションログ**: `~/.claude/projects/<worktree-path-slug>/` に 24 時間以内に更新された `.jsonl` がある。プロセスが一時的に落ちている壁打ちセッションもこれで拾える。
 
    どちらか一方でも該当したら、マージ済み & クリーンでも **🟢 にせず 🟡 Recoverable とし、Pass 1 で自動処理せず `DEFERRED`（Pass 2 の判断バッチ）へ回す**。Pass 2 の提示には検出内容（PID・コマンド名／セッションログの更新時刻）を必ず含め、ユーザーが「作業中セッションかどうか」を判断できるようにする。稼働シグナルの検出は**削除しない方向にのみ働く**（🔴 を 🟡 に緩めることはしない）。
