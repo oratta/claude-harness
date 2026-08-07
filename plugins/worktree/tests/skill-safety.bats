@@ -54,6 +54,34 @@ setup() {
   grep -Eq '回答を\*{0,2}受け取った後の、?\*{0,2}別(の)?(アシスタント)?ターン' "$WT_CLEAN_SKILL"
 }
 
+# --- issue #87: unattended mode must not enter the Pass 2 interactive branch ---
+
+@test "skill: unattended mode never calls AskUserQuestion" {
+  # 無人モードは cron から人間の目が入らずに走る。Pass 2 の対話分岐に入らないことが
+  # 「進行中セッションの worktree を無人で消す経路を作らない」ための前提になる。
+  grep -q '`--unattended` 実行中に \*\*`AskUserQuestion` を呼んではならない\*\*' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: unattended mode does not run the Pass 2 destructive branches" {
+  grep -q 'Pass 2 の破壊分岐（dirty 破棄・🔴 破棄削除・🔴 マージ）を\*\*実行してはならない\*\*' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: unattended mode is a route around the prohibitions, not a relaxation" {
+  # 禁則を緩めるのではなく、禁則対象の分岐に入らないルートを足す設計であること。
+  grep -q '`--unattended` はこの区分を緩めない' "$WT_CLEAN_SKILL"
+  grep -q '到達しないルート' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: unattended mode still honours the active-session guard (#77)" {
+  # #87 は #77 をブロッカーとして待っていた。無人モードでガードが緩むと意味がない。
+  grep -q '禁則 3（稼働シグナル）のガードを\*\*無人だからといって緩めてはならない\*\*' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: Pass 2 section routes unattended runs away from AskUserQuestion" {
+  awk '/^#### Step B Pass 2/,/^### Step C/' "$WT_CLEAN_SKILL" \
+    | grep -q '`--unattended` ならここで打ち切る'
+}
+
 # --- wt-setup SKILL.md keeps Step 1-6 (the source of truth for setup) ---
 
 @test "skill: wt-setup SKILL.md keeps the setup script invocation" {
