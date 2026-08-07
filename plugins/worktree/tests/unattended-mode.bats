@@ -168,7 +168,11 @@ wt_load_classify_dirty() {
   local snippet
   snippet="$(wt_load_classify_dirty)"
   bash -n "$snippet"
-  command -v zsh >/dev/null 2>&1 && zsh -n "$snippet"
+  # `command -v zsh && zsh -n` を最終文にすると zsh が無い CI（ubuntu）で
+  # テスト自体が落ちる。if で包んで「無ければ bash だけ検査」にする。
+  if command -v zsh >/dev/null 2>&1; then
+    zsh -n "$snippet"
+  fi
 }
 
 @test "classify_dirty: lockfile-only porcelain yields no offenders" {
