@@ -160,7 +160,11 @@ wt_load_detect_helpers() {
   local snippet
   snippet="$(wt_load_detect_helpers)"
   bash -n "$snippet"
-  command -v zsh >/dev/null 2>&1 && zsh -n "$snippet"
+  # `command -v zsh && zsh -n` と書くと、zsh が無い環境（CI の ubuntu）では
+  # 最後の文が非0を返しテスト自体が落ちる。if で包んで「無ければ bash だけ検査」にする。
+  if command -v zsh >/dev/null 2>&1; then
+    zsh -n "$snippet"
+  fi
 }
 
 @test "skill: embedded kill_devserver_under is syntactically valid under bash and zsh" {
@@ -168,7 +172,9 @@ wt_load_detect_helpers() {
   awk '/^kill_devserver_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >"$snippet"
   [ -s "$snippet" ]
   bash -n "$snippet"
-  command -v zsh >/dev/null 2>&1 && zsh -n "$snippet"
+  if command -v zsh >/dev/null 2>&1; then
+    zsh -n "$snippet"
+  fi
 }
 
 @test "detect_active_procs_under: finds a live non-shell process under the path" {
