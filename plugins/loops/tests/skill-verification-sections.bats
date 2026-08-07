@@ -97,13 +97,38 @@ _artifact_kw() {
   done
 }
 
-# --- S47: frontmatter unchanged vs merge-base with main ---
-@test "S47: frontmatter name/description unchanged vs merge-base with main" {
+# --- S47: skill identity (name:) unchanged vs merge-base with main ---
+# NOTE (S48 と同じスコープ縮小): 旧 S47 は name: と description: の両方を
+# merge-base から凍結していた。しかし spec の要件文は「**本 change の**実装前後で
+# frontmatter を変更しない」であり、これは「自己検証セクションを追加する作業が
+# ついでに発火条件を書き換えてしまわないように」というポイントインタイムガード
+# だった。恒久ガードとして残すと、対象 7 スキルの description が**未来永劫**
+# 変更できなくなる — 新オプションの追加も、発火フレーズの改善もできない。
+# 実際 wt-clean は --unattended / --repo の追加（issue #87）で description の
+# 更新が必要になり、ここで詰まった。
+#
+# 本テストが本当に守りたいのは「スキルの同一性（ルーティングキー）が黙って
+# すり替わらないこと」なので、ガードを name: だけに絞る。description: の変更は
+# 発火条件の意図的な改訂として許可し、PR の diff レビューで担保する。
+@test "S47: skill name is unchanged vs merge-base with main" {
   base="$(cd "$PLUGIN_ROOT" && git merge-base HEAD main 2>/dev/null)" || skip "no merge-base"
   [ -n "$base" ] || skip "no merge-base"
   for rel in "${TARGETS[@]}"; do
-    run bash -c "cd '$PLUGIN_ROOT' && git diff '$base' -- '$rel' | grep -E '^[+-](name|description):' | wc -l | tr -d ' '"
+    run bash -c "cd '$PLUGIN_ROOT' && git diff '$base' -- '$rel' | grep -E '^[+-]name:' | wc -l | tr -d ' '"
     [ "$output" = "0" ]
+  done
+}
+
+# --- S47b: description は消さない（空にする・削除するのは禁止） ---
+# description を「変更してよい」にした代償として、最低限「発火条件が失われて
+# いないこと」だけは機械的に守る。中身の良し悪しはレビューの担当。
+@test "S47b: every target skill still has a non-empty description" {
+  for rel in "${TARGETS[@]}"; do
+    f="${PLUGIN_ROOT}/${rel}"
+    desc="$(awk 'NR==1 && $0=="---"{infm=1; next} infm && $0=="---"{exit} infm' "$f" \
+      | sed -n 's/^description:[[:space:]]*//p')"
+    [ -n "$desc" ]
+    [ "${#desc}" -ge 40 ]
   done
 }
 
