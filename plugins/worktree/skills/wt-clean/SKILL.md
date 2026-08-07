@@ -1,7 +1,7 @@
 ---
 name: wt-clean
-description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。`wt-clean [<path|branch>…] [--keep] [--no-sync]`、引数なしは全 worktree を対象。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」で起動。
-version: 3.2.0
+description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある worktree は git がクリーンでも自動削除せず判断バッチに回す。`wt-clean [<path|branch>…] [--keep] [--no-sync]`、引数なしは全 worktree を対象。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」で起動。
+version: 3.3.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -20,8 +20,8 @@ Step A  TARGETS 確定（対話しない）
    │
 Step B  Pass 1: [i/N] 進捗で 1 個ずつ遅延診断 → ノンブロッキング自動処理
    │       🟢 → 根拠表示して即削除（--keep なら即再利用化）
-   │       🟡 dirtyなし（LLMのみ）→ LLM退避 → 退避検証 → 即削除
-   │       🔴 / dirtyあり → DEFERRED に積んで次へ（この時点では触らない）
+   │       🟡 dirtyなし・稼働シグナルなし（LLMのみ）→ LLM退避 → 退避検証 → 即削除
+   │       🔴 / dirtyあり / 稼働シグナルあり → DEFERRED に積んで次へ（この時点では触らない）
    │
 Step B  Pass 2: 判断バッチ（DEFERRED が空ならスキップ） ←― 唯一の対話ポイント
    │       状況をまとめて提示 → AskUserQuestion（1対象1問・最大4問/回）
@@ -57,27 +57,39 @@ Step C  完了レポート
    破壊操作は「自動実行してよいもの」と「AskUserQuestion 必須のもの」に区分される。この区分を勝手に拡大解釈してはならない。
 
    **自動実行してよい**（Step A で TARGETS に含めたことを承認とみなす）:
-   - 🟢 Safe（マージ済み & dirty なし & LLM なし）の削除・再利用化
-   - 🟡 で dirty なし（LLM のみ）の、**LLM 退避の実在検証成功後**の削除
+   - 🟢 Safe（マージ済み & dirty なし & LLM なし & 稼働シグナルなし）の削除・再利用化
+   - 🟡 で dirty なし & 稼働シグナルなし（LLM のみ）の、**LLM 退避の実在検証成功後**の削除
    - いずれも削除直前に**診断根拠（マージ済み判定の根拠）を必ず表示**する。無音削除は禁止。
 
    **AskUserQuestion の回答後の別ターンでのみ実行してよい**（自動実行の絶対禁止）:
    - dirty な変更の破棄（🟡 dirty あり・🔴 dirty あり）
+   - **稼働シグナルあり（禁則 3）の worktree の削除・再利用化**（マージ済み & クリーンでも同じ）
    - 🔴 Active の破棄削除（`git worktree remove --force` + `git branch -D`）
    - 🔴 Active の main へのマージ
    - AskUserQuestion ツール呼び出しと、これらを実行する Bash 呼び出しを**同一ターンの並列ツール呼び出しに含めてはならない**。並列にするとユーザーの回答が届く前に実行が走り、回答が「やめて」「対象が違う」でも手遅れになる。
    - 回答が届いたら、その回答が**どの worktree を指しているか**を文章で読み直し、対象を再確定してから実行する。曖昧な回答は「実行してよい」と解釈せず一度確認する。
 
-   自動実行が許されるのは分類が厳格であることが前提である。禁則 2（LLM→🟡 強制）・禁則 3（実ブランチ名判定）・squash 3 重検証を省略した状態での自動削除は、この区分に違反する。
+   自動実行が許されるのは分類が厳格であることが前提である。禁則 2（LLM→🟡 強制）・禁則 3（稼働シグナル→自動処理禁止）・禁則 4（実ブランチ名判定）・squash 3 重検証を省略した状態での自動削除は、この区分に違反する。
 
 2. **「マージ済み & クリーン」でも LLM ログがある worktree は🟢 Safe にしない**
    - 独自 commit が無く working tree がクリーンでも、`LLM/` にログがある worktree は**現在進行中の作業セッション**の可能性が高い。Step B 診断で🟢 Safe に分類せず、必ず🟡 Recoverable 扱いとし、LLM を保全してから確認する（分類表を厳守）。
    - 設計議論・調査中心のセッションは git に commit が残らず、成果が `LLM/` ログにしか存在しないことがある。LLM ログの消失は復元困難なため保全を最優先する。
 
-3. **削除判定は必ず実ブランチ名で行う（ディレクトリ名 ≠ ブランチ名）**
+3. **配下にプロセスが稼働中／当日のセッションログがある worktree は自動処理しない（稼働シグナル）**
+
+   2026-08-01 に flatmate リポで、壁打ち（設計議論）作業中の worktree を 🟢 Safe と誤判定して自動削除する事故が発生した。git 診断は完全にクリーン（マージ済み・dirty なし・`LLM/` なし）で、**稼働中の claude セッションのプロセスまで `kill_devserver_under` が停止した**。壁打ちセッションは commit も `LLM/` も残さないため、禁則 2 も git ベースの診断も効かない。
+
+   そこで削除の可否は git 状態だけで決めず、**「今そこで誰かが作業しているか」を示す稼働シグナル**を必ず併せて見る:
+
+   - **配下プロセス**: 削除対象パス配下で稼働中の**非シェルプロセス**（`claude` / `node` / `next` など）。判定は `lsof +D` と `kill_devserver_under` と**同一の除外基準**で行う（Step B-共通の `detect_active_signals_under`）。「`kill_devserver_under` が停止する対象が居るなら、それは自動削除してよい worktree ではない」という対応関係を崩さない。
+   - **当日のセッションログ**: `~/.claude/projects/<worktree-path-slug>/` に 24 時間以内に更新された `.jsonl` がある。プロセスが一時的に落ちている壁打ちセッションもこれで拾える。
+
+   どちらか一方でも該当したら、マージ済み & クリーンでも **🟢 にせず 🟡 Recoverable とし、Pass 1 で自動処理せず `DEFERRED`（Pass 2 の判断バッチ）へ回す**。Pass 2 の提示には検出内容（PID・コマンド名／セッションログの更新時刻）を必ず含め、ユーザーが「作業中セッションかどうか」を判断できるようにする。稼働シグナルの検出は**削除しない方向にのみ働く**（🔴 を 🟡 に緩めることはしない）。
+
+4. **削除判定は必ず実ブランチ名で行う（ディレクトリ名 ≠ ブランチ名）**
    - worktree のディレクトリ名と checkout 中ブランチ名は一致しないことがある（例: `setup-foo` ディレクトリで `ISSUE-129_xxx` ブランチを checkout）。マージ判定・`git branch -D` は `git worktree list` 由来の**実ブランチ名（`BRANCH_NAME`）**を使う。ディレクトリ名で判断しない。
 
-4. **破壊操作の前に LLM 保全を済ませ、退避の実在を検証する**
+5. **破壊操作の前に LLM 保全を済ませ、退避の実在を検証する**
    - `git worktree remove --force` は gitignore 対象（`LLM/`・`node_modules`・`.env`）も巻き込んで削除する。削除前に `LLM/` をメインリポへコピーする（Step B-🟡）。
    - **退避検証の成功が 🟡 自動削除の前提**。コピー後、退避先に元と同数のファイルが実在し空でないことを確認できるまで削除してはならない。検証に失敗したら削除せず HELD として保留する。
    - 万一保全前に削除してしまった場合、`~/.claude/projects/<worktree-path-slug>/<session>.jsonl` にセッション生ログが残っていれば LLM ログを再生成できる。worktree とブランチは `git worktree add <path> -b <branch> <last-sha>` で復旧できる。
@@ -253,6 +265,13 @@ AHEAD_COUNT=$(git log --oneline "$MAIN_BRANCH".."$BRANCH_NAME" 2>/dev/null | wc 
 DIRTY=$(git -C "$WT" status --porcelain)
 # 4. LLM/
 LLM=$(ls "$WT/LLM/" 2>/dev/null)
+# 5. 稼働シグナル（絶対禁則 3）: 配下の非シェルプロセス / 当日のセッションログ
+#    ここでは検出のみ行い、プロセスの停止は一切しない（停止は削除直前の kill_devserver_under）
+ACTIVE_PROCS=$(detect_active_procs_under "$WT")      # 例: "48213(claude), 48310(node)"
+RECENT_SESSION=$(detect_recent_session_log "$WT")    # 例: "~/.claude/projects/<slug>/ab12.jsonl (3時間前)"
+ACTIVE_SIGNAL=""
+[ -n "$ACTIVE_PROCS" ] && ACTIVE_SIGNAL="稼働中プロセス: $ACTIVE_PROCS"
+[ -n "$RECENT_SESSION" ] && ACTIVE_SIGNAL="${ACTIVE_SIGNAL:+$ACTIVE_SIGNAL / }直近セッションログ: $RECENT_SESSION"
 ```
 
 **⚠️ squash マージの罠（最重要・必読）**: `git branch --merged` も `git log main..branch` も**コミット SHA の到達可能性**で判定する。**squash マージ**（GitHub の "Squash and merge"）では PR の全コミットが main 上で 1 個の**新しい SHA** に潰れるため、元ブランチの SHA はどれも main の祖先にならず、**実際にはマージ済みでも `AHEAD_COUNT > 0`（= 🔴 Active）と誤判定する**。Step 0 の remote 同期で救えるのは**普通の merge / ff だけ**で、squash は救えない。squash 運用のプロジェクト（PR を Squash merge で取り込む）ではほぼ全 PR がこの罠に該当する。
@@ -285,8 +304,8 @@ fi
 
 | カテゴリ | 条件 |
 |---|---|
-| 🟢 Safe | マージ済み（`MERGED` or `SQUASHED`）& dirty なし & LLM なし |
-| 🟡 Recoverable | マージ済み（`MERGED` or `SQUASHED`）だが LLM あり or dirty あり |
+| 🟢 Safe | マージ済み（`MERGED` or `SQUASHED`）& dirty なし & LLM なし & **稼働シグナルなし（`ACTIVE_SIGNAL` が空）** |
+| 🟡 Recoverable | マージ済み（`MERGED` or `SQUASHED`）だが LLM あり or dirty あり or **稼働シグナルあり** |
 | 🔴 Active | `AHEAD_COUNT > 0` **かつ** `SQUASHED` が空（squash でも普通 merge でもなく、本当に未マージの固有コミットがある） |
 
 **squash 済み（`SQUASHED` が非空）の worktree は 🟢/🟡 として扱う**。`AHEAD_COUNT > 0` でも 🔴 にしない。ブランチ削除は元 SHA が main の祖先にならないため `git branch -D`（大文字）を使う。
@@ -294,8 +313,77 @@ fi
 Pass 1 では、カテゴリに応じて以下へ分岐する:
 
 - 🟢 Safe → **Step B-🟢**（確認なしで自動削除／`--keep` 時は自動再利用化）
-- 🟡 で dirty なし（LLM のみ）→ **Step B-🟡**（LLM 退避 → 検証 → 確認なしで自動削除）
-- 🟡 で dirty あり／🔴 Active → **破壊操作はその場では一切行わない**。判断材料（dirty stat・未マージコミット一覧・LLM 有無）をこの時点で収集・表示し、LLM があれば非破壊の退避（コピー + 検証）だけ済ませて `DEFERRED+=("$WT")` し、次の対象へ進む。Pass 1 完了後に **Step B Pass 2** でまとめて対話する
+- 🟡 で dirty なし & 稼働シグナルなし（LLM のみ）→ **Step B-🟡**（LLM 退避 → 検証 → 確認なしで自動削除）
+- 🟡 で dirty あり／**🟡 で稼働シグナルあり**／🔴 Active → **破壊操作はその場では一切行わない**。判断材料（dirty stat・未マージコミット一覧・LLM 有無・`ACTIVE_SIGNAL` の内訳）をこの時点で収集・表示し、LLM があれば非破壊の退避（コピー + 検証）だけ済ませて `DEFERRED+=("$WT")` し、次の対象へ進む。Pass 1 完了後に **Step B Pass 2** でまとめて対話する
+
+> ⚠️ **稼働シグナルは 🟢/🟡 の自動処理を止めるためだけに使う**（絶対禁則 3）。`ACTIVE_SIGNAL` が非空なら、git 状態がどれだけクリーンでも Pass 1 の自動削除・自動再利用化の分岐に**入れてはならない**。`--keep` 指定時も同様（再利用化は元ブランチを `git branch -d` で消すため、作業中セッションにとっては同じく破壊的）。
+
+#### Step B-共通: 稼働シグナルの検出（診断時・非破壊）
+
+絶対禁則 3 の稼働シグナルを検出する 2 つのヘルパ。**遅延診断の中でのみ呼び、プロセスの停止・ファイルの変更は一切行わない**（破壊操作は削除直前の `kill_devserver_under` だけが行う）。
+
+```bash
+# 配下で稼働中の非シェルプロセスを列挙する。
+# 検出範囲と除外リストは kill_devserver_under と完全に同一に保つこと
+# ——「kill_devserver_under が停止する対象が居るなら自動削除しない」という対応関係が本ガードの根拠。
+detect_active_procs_under() {
+  local target="$1" abs pids pid comm out=""
+  abs=$(realpath -m "$target" 2>/dev/null) || abs="$target"
+
+  if command -v lsof >/dev/null 2>&1; then
+    pids=$(lsof +D "$abs" 2>/dev/null | awk 'NR>1{print $2}' | sort -u)
+  else
+    pids=$(pgrep -f "$abs" 2>/dev/null | sort -u)
+  fi
+
+  # ⚠️ `for pid in $pids` と書いてはならない。zsh は未クォート変数を単語分割しないため
+  #    複数行の $pids が 1 要素に潰れ、検出が黙って 1 件（実質ゼロ件）になる。
+  #    while read + here-string なら bash / zsh のどちらでも行ごとに回る。
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    comm=$(ps -o comm= -p "$pid" 2>/dev/null | xargs -I{} basename {} 2>/dev/null)
+    # comm が引けない = lsof と ps の間に終了した短命プロセス。既に居ないので稼働シグナルにしない。
+    # （kill 側にこの分岐は無い。あちらは「消えた PID に空振りの kill を撃つ」だけで無害だが、
+    #   こちらで拾うと全 worktree が毎回 Pass 2 送りになり、ガードが形骸化する）
+    [ -n "$comm" ] || continue
+    # kill_devserver_under と同じ除外リスト（対話用シェル/エディタは稼働シグナルにしない）
+    case "$comm" in
+      bash|zsh|sh|fish|tmux|ssh|vim|nvim|code|Cursor|login) continue ;;
+    esac
+    out="${out:+$out, }$pid($comm)"
+  done <<< "$pids"
+  echo "$out"
+}
+
+# worktree に対応する Claude セッションログのうち、24 時間以内に更新された .jsonl を探す。
+# プロセスが一時的に落ちている壁打ちセッションを拾うための補助判定。
+# projects ディレクトリの slug 規則は Claude Code のバージョンで揺れる（`.` を `-` に置換する
+# 版としない版が混在する）ため、両方の候補を見る。
+detect_recent_session_log() {
+  local target="$1" abs slug dir hit
+  abs=$(realpath -m "$target" 2>/dev/null) || abs="$target"
+
+  # 候補A: `/` と空白のみ `-` に置換（旧形式・`.` を残す）
+  # 候補B: 候補A に加えて `.` も `-` に置換（新形式）
+  local slug_a slug_b
+  slug_a=$(printf '%s' "$abs" | sed 's/[/ ]/-/g')
+  slug_b=$(printf '%s' "$slug_a" | sed 's/\./-/g')
+
+  for slug in "$slug_a" "$slug_b"; do
+    dir="$HOME/.claude/projects/$slug"
+    [ -d "$dir" ] || continue
+    # -mtime -1 = 24時間以内（BSD/GNU find 共通）
+    hit=$(find "$dir" -maxdepth 1 -name '*.jsonl' -mtime -1 2>/dev/null | head -1)
+    if [ -n "$hit" ]; then
+      echo "$hit ($(date -r "$hit" '+%Y-%m-%d %H:%M' 2>/dev/null))"
+      return 0
+    fi
+  done
+  echo ""
+}
+```
+
+**誤検出（false positive）は許容する**。稼働シグナルの誤検出が起こしうる最悪は「削除されず Pass 2 で 1 問聞かれる」だけであり、見逃し（false negative）の最悪は「作業中セッションの永久消失」である。判定は常に**検出する側に倒す**。
 
 #### Step B-共通: 削除前のプロセス停止（devサーバー等）
 
@@ -323,7 +411,11 @@ kill_devserver_under() {
   fi
 
   local killed=() skipped=()
-  for pid in $pids; do
+  # ⚠️ `for pid in $pids` と書いてはならない（detect_active_procs_under と同じ理由）。
+  #    zsh では複数行の $pids が 1 要素に潰れ、存在しない PID 1 個に kill を撃って
+  #    「1件も止められないのに成功したように見える」状態になる。
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
     local comm
     comm=$(ps -o comm= -p "$pid" 2>/dev/null | xargs -I{} basename {} 2>/dev/null)
     # 対話用のシェル/エディタ（対象 worktree に cd しているだけのセッション）は誤 kill を避けるため除外。
@@ -336,7 +428,7 @@ kill_devserver_under() {
     esac
     kill -TERM "$pid" 2>/dev/null
     killed+=("$pid($comm)")
-  done
+  done <<< "$pids"
 
   if [ ${#killed[@]} -gt 0 ]; then
     sleep 3
@@ -362,10 +454,12 @@ kill_devserver_under() {
 
 AskUserQuestion は行わない。Step A で TARGETS に含めたことを承認とみなし、**診断根拠を 1 行表示してから**自動実行する（無音削除の禁止）。
 
+`ACTIVE_SIGNAL` が非空の対象はここに来ない（絶対禁則 3 により Pass 1 の分岐で `DEFERRED` 行き）。
+
 **削除モード（デフォルト）**:
 
 ```bash
-echo "  🟢 Safe: merged=${MERGED:+branch--merged}${SQUASHED:+$SQUASHED} / clean / LLMなし → 削除します"
+echo "  🟢 Safe: merged=${MERGED:+branch--merged}${SQUASHED:+$SQUASHED} / clean / LLMなし / 稼働シグナルなし → 削除します"
 kill_devserver_under "$WT"
 git worktree remove "$WT" --force
 git branch -d "$BRANCH_NAME"    # SQUASHED のときは -D（元 SHA が main の祖先にならないため）
@@ -393,16 +487,16 @@ fi
 
 マージを伴わない 🟢 再利用化・🟡 削除では**サニティチェックを走らせない**（既に main にマージ済みのため）。
 
-#### Step B-🟡: Recoverable（dirty なし・LLM のみ）→ LLM 退避 → 検証 → 確認なしで削除
+#### Step B-🟡: Recoverable（dirty なし・稼働シグナルなし・LLM のみ）→ LLM 退避 → 検証 → 確認なしで削除
 
-dirty がある 🟡 はここに来ない（Pass 1 の分岐で `DEFERRED` 行き）。
+dirty がある 🟡、および `ACTIVE_SIGNAL` が非空の 🟡 はここに来ない（Pass 1 の分岐で `DEFERRED` 行き）。
 
 ```bash
 # LLM ファイルをメインリポに退避（ファイル名にセッションIDが含まれ衝突しない）
 mkdir -p "$MAIN_REPO/LLM"
 cp "$WT/LLM/"* "$MAIN_REPO/LLM/" 2>/dev/null
 
-# 退避検証（絶対禁則 4）: 元と同数のファイルが退避先に実在し、空でないこと
+# 退避検証（絶対禁則 5）: 元と同数のファイルが退避先に実在し、空でないこと
 SRC_COUNT=$(ls "$WT/LLM/" | wc -l | tr -d ' ')
 OK_COUNT=0
 for f in "$WT/LLM/"*; do
@@ -413,7 +507,7 @@ done
 
 - **検証成功（`OK_COUNT == SRC_COUNT`）** → 診断根拠と退避結果を表示して確認なしで削除:
   ```bash
-  echo "  🟡 Recoverable: merged / clean / LLM ${SRC_COUNT}files → 退避検証OK → 削除します"
+  echo "  🟡 Recoverable: merged / clean / 稼働シグナルなし / LLM ${SRC_COUNT}files → 退避検証OK → 削除します"
   kill_devserver_under "$WT"
   git worktree remove "$WT" --force   # LLM/ は gitignore 対象のため --force が必要
   git branch -d "$BRANCH_NAME"        # SQUASHED のときは -D
@@ -421,14 +515,14 @@ done
   ```
 - **検証失敗** → 削除しない。`HELD+=("$BRANCH_NAME (LLM退避検証失敗)")` として次の対象へ
 
-#### Step B Pass 2: 判断バッチ（🔴 Active / dirty あり 🟡）
+#### Step B Pass 2: 判断バッチ（🔴 Active / dirty あり 🟡 / 稼働シグナルあり 🟡）
 
 Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` が空なら対話せず Step C へ。
 
-非空なら、各対象の状況を**まとめて**表示する:
+非空なら、各対象の状況を**まとめて**表示する。`ACTIVE_SIGNAL` が非空の対象は、検出内容（PID・コマンド名／セッションログの更新時刻）を必ず明示する（絶対禁則 3）。ユーザーが判断できる材料はこれだけなので省略・要約してはならない:
 
 ```
-自動処理が完了しました（削除 3 / 保留 0）。残り 2 件は判断が必要です:
+自動処理が完了しました（削除 3 / 保留 0）。残り 3 件は判断が必要です:
 
 [1] baz (wip-z) — 🔴 未マージ
   未マージコミット: 3件
@@ -441,6 +535,12 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
   マージ済みだが未コミット変更あり:
     src/foo.ts | 12 ++++++++----
   LLM: あり（退避済み）
+
+[3] business-idea (idea-x) — 🟡 稼働中の可能性
+  git 上はマージ済み・clean・LLM なし（＝従来なら 🟢 Safe 判定）
+  ⚠️ 稼働中プロセスあり: 48213(claude), 48310(node)
+  ⚠️ 直近セッションログ: ~/.claude/projects/-Users-…-business-idea/ab12.jsonl (2026-08-07 14:32)
+  → 壁打ち等の進行中セッションの可能性があります。削除するとプロセスも停止されます
 ```
 
 続けて AskUserQuestion で **1 対象 1 問**として選択させる。1 回の呼び出しは最大 4 問なので、`DEFERRED` が 4 件を超える場合は複数回に分け、各回の提示範囲を明示する（無音での打ち切りを行わない）。
@@ -452,6 +552,7 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
 - **🔴 detached HEAD（`BRANCH_NAME` 空）**: マージ選択肢を除外し同 2 択。理由明示「⚠️ detached HEAD のためマージできません（マージ対象のブランチ名がありません）」
 - Dirty と detached が両方該当する場合も 2 択を提示し、両方の理由を併記する
 - **🟡 dirty あり**: 「1) 変更を破棄して削除 / 2) スキップ」の 2 択（LLM は Pass 1 で退避・検証済みであることを前提とし、未退避なら実行前に退避する）
+- **🟡 稼働シグナルあり（dirty なし）**: 「1) スキップ（推奨） / 2) 削除する（稼働中プロセスも停止される）」の 2 択。**推奨をスキップ側に置く**（絶対禁則 3 — 判断がつかないまま削除する方が損失が大きい）。稼働中プロセスの PID・コマンド名を選択肢の説明に含める
 
 回答を受け取ったら、**別ターンで**回答がどの worktree を指すか読み直して再確定し、選択ごとに逐次実行する（絶対禁則 1）。
 
@@ -471,6 +572,13 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
   git worktree remove --force "$WT"
   git branch -d "$BRANCH_NAME"    # SQUASHED のときは -D
   PROCESSED+=("$BRANCH_NAME (🟡 dirty破棄→削除)")
+  ```
+- **削除する**（🟡 稼働シグナルあり・dirty なし） →
+  ```bash
+  kill_devserver_under "$WT"        # ここで初めて稼働中プロセスを停止する（ユーザーが承認済み）
+  git worktree remove "$WT" --force
+  git branch -d "$BRANCH_NAME"      # SQUASHED のときは -D
+  PROCESSED+=("$BRANCH_NAME (🟡 稼働シグナルあり→ユーザー承認で削除)")
   ```
 - **マージ** → 下記マージ実行へ
 
@@ -569,9 +677,15 @@ wt-clean 完了:
   再利用化: -
   判断バッチ: wip-z (🔴 マージ→削除, 3 commits merged)
   サニティチェック: ✅ PASS (npm test, npm run build)
-  スキップ: fix-q (🟡 dirty, ユーザー選択)
+  スキップ: fix-q (🟡 dirty, ユーザー選択), idea-x (🟡 稼働シグナル, ユーザー選択)
   LLMコピー: 2 files → LLM/（退避検証 OK）
   残存worktrees: 1
+```
+
+稼働シグナルで判断バッチに回った対象は、選択結果にかかわらず検出内容をレポートにも 1 行残す:
+
+```
+  ⚠️ 稼働シグナルで自動処理を保留: idea-x — 稼働中プロセス 48213(claude) / セッションログ 2026-08-07 14:32
 ```
 
 **再利用モード（`--keep`）** のレポートには、再利用化した worktree ごとにディレクトリパスと次作業コマンドを含める:
@@ -609,7 +723,7 @@ wt-clean 中断:
 Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 
 1. 未マージコミットのログ・未コミット変更の diff は判断バッチの提示時点で表示済みであること（未表示なら実行前に表示する）
-2. LLM ファイルがあればコピーし、退避検証（絶対禁則 4）を行う
+2. LLM ファイルがあればコピーし、退避検証（絶対禁則 5）を行う
 3. `kill_devserver_under "$WT"` で削除対象パス配下の稼働中プロセス（devサーバー等）を停止する
 4. `git worktree remove --force` + `git branch -D`（大文字 D = 強制削除）
 
@@ -629,5 +743,6 @@ Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 - 削除した worktree が `git worktree list` に現れないことを確認する。
 - 🟡 判定で LLM 退避を行った場合、退避先ファイルが実在し空でないことを**削除前に**検証済みであることを確認する（検証失敗のまま削除していないこと）。
 - 🟢/🟡 の自動削除について、削除直前に診断根拠を表示したことを確認する（無音削除をしていないこと）。
+- 稼働シグナル（配下の非シェルプロセス／24時間以内のセッションログ）を検出した worktree を Pass 1 で自動削除・自動再利用化していないこと、および Pass 2 の提示に検出内容（PID・コマンド名／セッションログ更新時刻）を含めたことを確認する（絶対禁則 3）。
 - dirty 破棄・🔴 破棄削除・🔴 マージを行った場合、それぞれ Pass 2 の AskUserQuestion 回答後の別ターンで実行したことを確認する。
 - `git worktree remove` の直前に `kill_devserver_under` を実行し、削除対象パス配下にプロセス残留が無いことを確認したこと（停止した PID または「プロセスなし」がログに表示されていること）。
