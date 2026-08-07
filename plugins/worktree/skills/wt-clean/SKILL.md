@@ -1,7 +1,7 @@
 ---
 name: wt-clean
-description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある worktree は git がクリーンでも自動削除せず判断バッチに回す。`wt-clean [<path|branch>…] [--keep] [--no-sync]`、引数なしは全 worktree を対象。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」で起動。
-version: 3.3.0
+description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある worktree は git がクリーンでも自動削除せず判断バッチに回す。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
+version: 3.4.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -12,6 +12,8 @@ Git worktree を安全にクリーンアップするスキル。
 **設計の核**: 「対話は判断が必要な分だけに絞り、走行中はブロックしない」。ユーザーとの対話は **Pass 2 の判断バッチ**（自動処理が全部終わった後）の 1 箇所だけに寄せる。**対象選択の質問はしない** ── 引数なしなら全 worktree を確認なしで対象にし、対象を絞りたいときだけ位置引数 `<path|branch>` を渡す。ほとんどのケース（🟢 Safe と LLM 退避だけで済む 🟡）は確認なしで自動処理されるため、「実行して放っておいたら作業が終わっている。判断が必要な分だけ最後に質問が残っている」という体験になる。最初に全件を診断（🟢🟡🔴 分類）せず、対象を確定してから 1 件ずつその場で診断する点は従来どおり。パス／ブランチ名引数は「対象を絞るショートカット」であり、引数あり／なしのどちらも `TARGETS を確定 → 2 パス処理` という共通パイプラインに合流する。
 
 ```
+Step -1 対象リポジトリの解決（--repo、未指定なら cwd）→ MAIN_REPO 確定
+   │
 Step 0  Remote 同期（--no-sync で skip）
    │
 Step A  TARGETS 確定（対話しない）
@@ -24,29 +26,33 @@ Step B  Pass 1: [i/N] 進捗で 1 個ずつ遅延診断 → ノンブロッキ�
    │       🔴 / dirtyあり / 稼働シグナルあり → DEFERRED に積んで次へ（この時点では触らない）
    │
 Step B  Pass 2: 判断バッチ（DEFERRED が空ならスキップ） ←― 唯一の対話ポイント
-   │       状況をまとめて提示 → AskUserQuestion（1対象1問・最大4問/回）
-   │       回答後の別ターンで マージ/スキップ/破棄 を逐次実行
+   │       通常     : 状況をまとめて提示 → AskUserQuestion（1対象1問・最大4問/回）
+   │                  回答後の別ターンで マージ/スキップ/破棄 を逐次実行
+   │       --unattended: AskUserQuestion を呼ばず、一覧を出力して終了（破壊操作なし）
 Step C  完了レポート
 ```
 
 ## オプションと引数
 
 - **位置引数 `<path|branch> …`**（任意・複数可）: 処理対象を絞る。指定した worktree のみを対象にし、他は完全に無視する。位置引数があると全件対象化をスキップして、その worktree だけを対象にする
-- **位置引数なし（`--keep` / `--no-sync` のみ・完全無指定を含む）**: 全 worktree を確認なしで対象にする。対象選択の質問（全て/個別/キャンセル）はしない
+- **位置引数なし（オプションのみ・完全無指定を含む）**: 全 worktree を確認なしで対象にする。対象選択の質問（全て/個別/キャンセル）はしない
 - **オプションなし（デフォルト）**: 削除モード。🟢 Safe はディレクトリごと削除する
 - **`--keep`**: 再利用モード。🟢 Safe はディレクトリを残し、worktree 内のブランチを main に戻して元ブランチを削除する（`node_modules` / `.env` / 未追跡ファイルは保持）。🟡 は削除、🔴 はマージ後通常削除へフォールバック
 - **`--no-sync`**: Step 0 の Remote 同期をスキップする。`--keep` や位置引数と併用可能（例: `wt-clean --keep --no-sync ~/wt/foo`）
+- **`--unattended`**: 無人モード。Pass 1（🟢/🟡 の自動処理）は通常どおり実行し、**Pass 2 に到達した対象は `AskUserQuestion` を呼ばず一覧を出力して終了**する。cron から定期実行するためのモード（後述「無人モード」）
+- **`--repo <path>`**: 対象リポジトリを外から指定する。未指定時は cwd（現行どおり）。worktree のパスを渡してもそのメインリポに正規化される（後述「対象リポジトリの解決」）
 
 例:
 - `wt-clean` → 全 worktree を確認なしで対象に診断・処理
 - `wt-clean ~/wt/foo` → `foo` だけを対象に診断・処理
 - `wt-clean feat-x` → `feat-x` をチェックアウト中の worktree を逆引きして対象に
 - `wt-clean ~/wt/foo feat-y` → 2 件を対象に
+- `wt-clean --unattended --repo ~/repos/flatmate` → cron 用。別リポの worktree を無人で掃除し、判断が要る分は報告だけする
 
 ## 前提条件
 
-- メインリポのルートで実行すること（worktree 内ではなく）
-- worktree 内で実行した場合: 「メインリポで実行してください」と案内
+- **`--repo` 未指定時**: メインリポのルートで実行すること（worktree 内ではなく）。worktree 内で実行した場合は「メインリポで実行してください」と案内する（現行どおり）
+- **`--repo <path>` 指定時**: cwd がどこであっても構わない。指定されたパスから**そのリポジトリのメイン worktree** を解決し、以降の git 操作はすべてそのメインリポに対して行う（cwd のリポジトリは一切触らない）
 
 ## 絶対禁則（最優先・データロス防止）
 
@@ -70,6 +76,8 @@ Step C  完了レポート
    - 回答が届いたら、その回答が**どの worktree を指しているか**を文章で読み直し、対象を再確定してから実行する。曖昧な回答は「実行してよい」と解釈せず一度確認する。
 
    自動実行が許されるのは分類が厳格であることが前提である。禁則 2（LLM→🟡 強制）・禁則 3（稼働シグナル→自動処理禁止）・禁則 4（実ブランチ名判定）・squash 3 重検証を省略した状態での自動削除は、この区分に違反する。
+
+   **`--unattended` はこの区分を緩めない。** 無人モードは「AskUserQuestion 必須」の側を自動実行に格下げするものでは**なく**、その分岐に**到達しないルート**である。無人モードでは Pass 2 の対象を報告して終了するだけで、dirty 破棄・🔴 破棄削除・🔴 マージは**一切実行しない**（実行したら禁則違反）。人間の目が入らない実行形態だからこそ、判断が要るものには手を触れない。
 
 2. **「マージ済み & クリーン」でも LLM ログがある worktree は🟢 Safe にしない**
    - 独自 commit が無く working tree がクリーンでも、`LLM/` にログがある worktree は**現在進行中の作業セッション**の可能性が高い。Step B 診断で🟢 Safe に分類せず、必ず🟡 Recoverable 扱いとし、LLM を保全してから確認する（分類表を厳守）。
@@ -102,6 +110,47 @@ Step C  完了レポート
 
 ## 実行フロー
 
+### Step -1: 対象リポジトリの解決（`--repo`）
+
+**すべての git 操作より先に `MAIN_REPO` を確定し、以降の git 呼び出しは例外なく `git -C "$MAIN_REPO"` を通す。** 素の `git ...`（= cwd 依存）を書いてはならない（SHALL NOT）。`--repo` の要点は「cwd のリポジトリを一切触らないこと」なので、1 箇所でも `-C` が漏れると別リポを掃除しに行く事故になる。
+
+```bash
+# --repo 未指定なら cwd（現行どおりの後方互換）
+REPO_ARG="${REPO_ARG:-$PWD}"
+
+if ! git -C "$REPO_ARG" rev-parse --git-dir >/dev/null 2>&1; then
+  echo "❌ $REPO_ARG は git リポジトリではありません"
+  exit 1
+fi
+
+# worktree list の 1 行目は常にメイン worktree。
+# --repo に worktree のパスを渡されてもここでメイン側へ正規化される。
+MAIN_REPO=$(git -C "$REPO_ARG" worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+
+if [ -z "$MAIN_REPO" ]; then
+  echo "❌ $REPO_ARG のメイン worktree を解決できませんでした"
+  exit 1
+fi
+```
+
+**前提条件チェックの出し分け**:
+
+```bash
+if [ -n "$REPO_OPT_GIVEN" ]; then
+  # --repo 指定時: cwd がどこでも構わない。正規化した MAIN_REPO を使う
+  echo "対象リポジトリ: $MAIN_REPO  (--repo $REPO_ARG)"
+else
+  # --repo 未指定時: 現行どおり「メインリポで実行すること」を要求する
+  if [ "$(realpath -m "$PWD")" != "$(realpath -m "$MAIN_REPO")" ]; then
+    echo "❌ worktree 内で実行されています。メインリポで実行してください: $MAIN_REPO"
+    echo "  （または wt-clean --repo $MAIN_REPO で実行してください）"
+    exit 1
+  fi
+fi
+```
+
+以降、本スキル内の `git worktree list` / `git branch` / `git log` / `git fetch` / `git pull` / `git merge` / `git worktree remove` / `git worktree prune` は**すべて `git -C "$MAIN_REPO"`** で実行する。worktree 内で実行するものだけが `git -C "$WT"` である（この 2 つを取り違えないこと）。
+
 ### Step 0: Remote 同期（Sync）
 
 GitHub 側で PR がマージされた feature ブランチを後段のマージ済み判定（`git branch --merged`）で正しく Safe 判定するため、対象選択・診断に先立ってローカル `<main>` を `origin/<main>` に同期する。`--no-sync` 指定時はこの Step を完全にスキップする。**位置引数で対象を指定した場合も Step 0 は実行される**（単一対象のマージ済み判定を正確にするため。`--no-sync` で停止可能）。
@@ -116,25 +165,25 @@ if [ "$NO_SYNC" = "1" ]; then
 fi
 
 # origin remote の存在確認
-if ! git remote get-url origin >/dev/null 2>&1; then
+if ! git -C "$MAIN_REPO" remote get-url origin >/dev/null 2>&1; then
   echo "Remote 同期: -- skipped (no origin remote)"
   # Step A へ進む
 fi
 
 # main / master 検出
 MAIN_BRANCH="main"
-git show-ref --verify --quiet refs/heads/master && MAIN_BRANCH="master" || true
+git -C "$MAIN_REPO" show-ref --verify --quiet refs/heads/master && MAIN_BRANCH="master" || true
 
 # fetch
-git fetch origin   # 失敗時はエラー中断、後続 Step に進まない
+git -C "$MAIN_REPO" fetch origin   # 失敗時はエラー中断、後続 Step に進まない
 
 # 進行差を測定（左=ローカル独自, 右=remote 独自）
-read AHEAD BEHIND < <(git rev-list --left-right --count "$MAIN_BRANCH"...origin/"$MAIN_BRANCH" | awk '{print $1, $2}')
+read AHEAD BEHIND < <(git -C "$MAIN_REPO" rev-list --left-right --count "$MAIN_BRANCH"...origin/"$MAIN_BRANCH" | awk '{print $1, $2}')
 
 if [ "$BEHIND" = "0" ]; then
   echo "Remote 同期: ✅ already up-to-date"
 elif [ "$AHEAD" = "0" ]; then
-  git pull --ff-only origin "$MAIN_BRANCH"   # 失敗時はエラー中断
+  git -C "$MAIN_REPO" pull --ff-only origin "$MAIN_BRANCH"   # 失敗時はエラー中断
   echo "Remote 同期: ✅ pulled $BEHIND commits (origin/$MAIN_BRANCH → $MAIN_BRANCH)"
 else
   echo "⚠️ ローカル $MAIN_BRANCH が origin/$MAIN_BRANCH と diverge しています"
@@ -159,20 +208,18 @@ fi
 位置引数（パス／ブランチ名）が 1 個以上ある場合、リストアップ・対象選択を**行わず**、各引数トークンを解決して `TARGETS` に格納する。
 
 ```bash
-# 解決ロジック（各トークンごと）
-MAIN_REPO=$(git worktree list | head -1 | awk '{print $1}')
-
+# 解決ロジック（各トークンごと）。MAIN_REPO は Step -1 で確定済み。
 resolve_token() {
   local token="$1"
   # 1. realpath 正規化 → worktree list の絶対パスと完全一致
   local abs
   abs=$(realpath -m "$token" 2>/dev/null)
   local matches
-  matches=$(git worktree list --porcelain | awk '/^worktree /{print $2}' | grep -Fx "$abs")
+  matches=$(git -C "$MAIN_REPO" worktree list --porcelain | awk '/^worktree /{print $2}' | grep -Fx "$abs")
 
   # 2. パス一致しなければブランチ名として逆引き
   if [ -z "$matches" ]; then
-    matches=$(git worktree list --porcelain | awk '
+    matches=$(git -C "$MAIN_REPO" worktree list --porcelain | awk '
       /^worktree /{wt=$2}
       /^branch /{sub("refs/heads/","",$2); if($2=="'"$token"'") print wt}
     ')
@@ -211,7 +258,7 @@ resolve_token() {
 
 ```bash
 # メインリポ自身は対象外。各 worktree のブランチ名と最終コミット日（相対）を表示
-git worktree list --porcelain | awk '
+git -C "$MAIN_REPO" worktree list --porcelain | awk '
   /^worktree /{wt=$2}
   /^branch /{sub("refs/heads/","",$2); print wt"\t"$2}
   /^detached/{print wt"\t(detached HEAD)"}
@@ -256,13 +303,24 @@ echo "[$i/$N] $WT をチェック中…"
 
 **遅延診断**（この対象についてのみ実行）:
 
+> ℹ️ 以下で使う `classify_dirty` / `detect_active_procs_under` / `detect_recent_session_log` は後述の「Step B-共通」節で定義している（`kill_devserver_under` と同じ扱い）。**Pass 1 のループに入る前にまとめて定義しておくこと。**
+
 ```bash
 # 1. マージ済みか（SHA ベース。普通の merge / ff のみ検出できる）
-MERGED=$(git branch --merged "$MAIN_BRANCH" | grep -E "[[:space:]]$BRANCH_NAME$" || true)
+MERGED=$(git -C "$MAIN_REPO" branch --merged "$MAIN_BRANCH" | grep -E "[[:space:]]$BRANCH_NAME$" || true)
 # 2. 未マージコミット数（SHA ベース）
-AHEAD_COUNT=$(git log --oneline "$MAIN_BRANCH".."$BRANCH_NAME" 2>/dev/null | wc -l | tr -d ' ')
-# 3. dirty
+AHEAD_COUNT=$(git -C "$MAIN_REPO" log --oneline "$MAIN_BRANCH".."$BRANCH_NAME" 2>/dev/null | wc -l | tr -d ' ')
+# 3. dirty（表示用の生データ）と、無害パターンを除いた実効 dirty
 DIRTY=$(git -C "$WT" status --porcelain)
+HARMLESS_DIRTY=""              # 無害と判定できた場合に根拠を入れる
+EFFECTIVE_DIRTY="$DIRTY"       # 分類に使うのはこちら
+if [ -n "$DIRTY" ]; then
+  OFFENDERS=$(classify_dirty "$DIRTY")
+  if [ -z "$OFFENDERS" ]; then
+    HARMLESS_DIRTY="dirty=lockfileのみ ($(printf '%s\n' "$DIRTY" | wc -l | tr -d ' ')件: $(printf '%s\n' "$DIRTY" | sed 's/^...//' | tr '\n' ' '))"
+    EFFECTIVE_DIRTY=""
+  fi
+fi
 # 4. LLM/
 LLM=$(ls "$WT/LLM/" 2>/dev/null)
 # 5. 稼働シグナル（絶対禁則 3）: 配下の非シェルプロセス / 当日のセッションログ
@@ -285,11 +343,13 @@ SQUASHED=""   # squash マージ済みと判定できたら理由を入れる
 if [ "$AHEAD_COUNT" != "0" ]; then
   # 検証A: tracked source の実ツリー差分が空か（最も信頼できる。main が先行していても
   #        branch 固有の追加が無ければ空になる）。LLM/ など gitignore 対象は元から無視される。
-  TREE_DIFF=$(git diff "$MAIN_BRANCH" "$BRANCH_NAME" --stat -- 'src/**' 'app/**' 'lib/**' 'tests/**' 'e2e/**' '*.ts' '*.tsx' '*.js' '*.jsx' 2>/dev/null)
+  TREE_DIFF=$(git -C "$MAIN_REPO" diff "$MAIN_BRANCH" "$BRANCH_NAME" --stat -- 'src/**' 'app/**' 'lib/**' 'tests/**' 'e2e/**' '*.ts' '*.tsx' '*.js' '*.jsx' 2>/dev/null)
   # 検証B: cherry の全行が "-"（patch-equivalent が upstream 済み）か
-  CHERRY_PLUS=$(git cherry "$MAIN_BRANCH" "$BRANCH_NAME" 2>/dev/null | grep -c '^+' || true)
+  CHERRY_PLUS=$(git -C "$MAIN_REPO" cherry "$MAIN_BRANCH" "$BRANCH_NAME" 2>/dev/null | grep -c '^+' || true)
   # 検証C: gh で当該ブランチ発の PR が MERGED か（リポジトリに gh がある場合のみ）
-  PR_MERGED=$(gh pr list --head "$BRANCH_NAME" --state merged --limit 1 --json number 2>/dev/null | grep -c '"number"' || true)
+  # gh はリポジトリを cwd から解決するため、--repo 指定時に cwd のリポを見に行かないよう
+  # MAIN_REPO 側で実行する（-C を持たないので subshell で cd する）
+  PR_MERGED=$( (cd "$MAIN_REPO" && gh pr list --head "$BRANCH_NAME" --state merged --limit 1 --json number) 2>/dev/null | grep -c '"number"' || true)
 
   if [ -z "$TREE_DIFF" ] || [ "$CHERRY_PLUS" = "0" ] || [ "$PR_MERGED" != "0" ]; then
     SQUASHED="squash済み (tree_diff空=$([ -z \"$TREE_DIFF\" ] && echo yes || echo no), cherry+=$CHERRY_PLUS, pr_merged=$PR_MERGED)"
@@ -304,8 +364,8 @@ fi
 
 | カテゴリ | 条件 |
 |---|---|
-| 🟢 Safe | マージ済み（`MERGED` or `SQUASHED`）& dirty なし & LLM なし & **稼働シグナルなし（`ACTIVE_SIGNAL` が空）** |
-| 🟡 Recoverable | マージ済み（`MERGED` or `SQUASHED`）だが LLM あり or dirty あり or **稼働シグナルあり** |
+| 🟢 Safe | マージ済み（`MERGED` or `SQUASHED`）& **実効 dirty なし（`EFFECTIVE_DIRTY` が空）** & LLM なし & **稼働シグナルなし（`ACTIVE_SIGNAL` が空）** |
+| 🟡 Recoverable | マージ済み（`MERGED` or `SQUASHED`）だが LLM あり or **実効 dirty あり** or **稼働シグナルあり** |
 | 🔴 Active | `AHEAD_COUNT > 0` **かつ** `SQUASHED` が空（squash でも普通 merge でもなく、本当に未マージの固有コミットがある） |
 
 **squash 済み（`SQUASHED` が非空）の worktree は 🟢/🟡 として扱う**。`AHEAD_COUNT > 0` でも 🔴 にしない。ブランチ削除は元 SHA が main の祖先にならないため `git branch -D`（大文字）を使う。
@@ -313,10 +373,48 @@ fi
 Pass 1 では、カテゴリに応じて以下へ分岐する:
 
 - 🟢 Safe → **Step B-🟢**（確認なしで自動削除／`--keep` 時は自動再利用化）
-- 🟡 で dirty なし & 稼働シグナルなし（LLM のみ）→ **Step B-🟡**（LLM 退避 → 検証 → 確認なしで自動削除）
-- 🟡 で dirty あり／**🟡 で稼働シグナルあり**／🔴 Active → **破壊操作はその場では一切行わない**。判断材料（dirty stat・未マージコミット一覧・LLM 有無・`ACTIVE_SIGNAL` の内訳）をこの時点で収集・表示し、LLM があれば非破壊の退避（コピー + 検証）だけ済ませて `DEFERRED+=("$WT")` し、次の対象へ進む。Pass 1 完了後に **Step B Pass 2** でまとめて対話する
+- 🟡 で実効 dirty なし & 稼働シグナルなし（LLM のみ）→ **Step B-🟡**（LLM 退避 → 検証 → 確認なしで自動削除）
+- 🟡 で実効 dirty あり／**🟡 で稼働シグナルあり**／🔴 Active → **破壊操作はその場では一切行わない**。判断材料（dirty stat・未マージコミット一覧・LLM 有無・`ACTIVE_SIGNAL` の内訳）をこの時点で収集・表示し、LLM があれば非破壊の退避（コピー + 検証）だけ済ませて `DEFERRED+=("$WT")` し、次の対象へ進む。Pass 1 完了後に **Step B Pass 2** でまとめて対話する
 
 > ⚠️ **稼働シグナルは 🟢/🟡 の自動処理を止めるためだけに使う**（絶対禁則 3）。`ACTIVE_SIGNAL` が非空なら、git 状態がどれだけクリーンでも Pass 1 の自動削除・自動再利用化の分岐に**入れてはならない**。`--keep` 指定時も同様（再利用化は元ブランチを `git branch -d` で消すため、作業中セッションにとっては同じく破壊的）。
+
+#### Step B-共通: 無害な dirty の判定（`classify_dirty`）
+
+`git status --porcelain` の各行を見て、**成果物でないと言い切れるファイル**（依存解決の副産物である lockfile）だけの汚れなら「無害な dirty」として扱い、分類上は clean と同じにする。
+
+2026-08-07 に shukan-dev で実走したところ、dirty 判定された 9 本すべてが `package-lock.json` の同一の 11 行削除（`npm install` の副産物）だった。これを全部 Pass 2 に送ると、無人モードでは大半が保留に落ちて自動化の効果がほぼ消える（実測: 14 本中 🟢 が 3 本、うち 4 本が lockfile ノイズだけで Pass 2 行き）。
+
+```bash
+# 無害パターン（初期セット）。ここに無いファイルが 1 つでもあれば従来どおり dirty 扱い（安全側）。
+# 追加するときは「消えても再生成できる」ことが機械的に保証できるものだけにする。
+HARMLESS_DIRTY_FILES="package-lock.json yarn.lock pnpm-lock.yaml Cargo.lock poetry.lock"
+
+# porcelain 出力を受け取り、無害パターンに当てはまらないパスだけを出力する。
+# 出力が空 = 全部無害。1 行でもあれば dirty 扱い。
+classify_dirty() {
+  local porcelain="$1" line path base
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    path=${line:3}                 # "XY path" の path 部分
+    path=${path##* -> }            # rename は新パス側を見る
+    # 未追跡ディレクトリ（"?? dir/"）は中身が分からないため無害と見なさない
+    case "$path" in
+      */) echo "$path"; continue ;;
+    esac
+    # 外部 basename は使わない（最小 PATH の非対話シェルで command not found になる実績あり）
+    base=${path##*/}
+    base=${base%\"}                # core.quotePath による末尾のダブルクォートを落とす
+    case " $HARMLESS_DIRTY_FILES " in
+      *" $base "*) ;;              # 無害
+      *) echo "$path" ;;           # 無害でない
+    esac
+  done <<< "$porcelain"
+}
+```
+
+- 判定に使うのは `EFFECTIVE_DIRTY`（無害分を除いたもの）、**表示に使うのは `DIRTY`（生データ）**。無害と判断して削除するときは `HARMLESS_DIRTY` の根拠を必ず出す（無音削除の禁止は無害 dirty でも同じ）
+- `core.quotePath` によりパスがダブルクォートで囲まれることがある。囲まれていても `basename` の一致には影響しないが、判定に迷ったら**無害と見なさない**（安全側）
+- 無害 dirty はあくまで**分類上 clean と同じにする**だけで、禁則 2（LLM）・禁則 3（稼働シグナル）の判定には一切影響しない
 
 #### Step B-共通: 稼働シグナルの検出（診断時・非破壊）
 
@@ -459,10 +557,11 @@ AskUserQuestion は行わない。Step A で TARGETS に含めたことを承認
 **削除モード（デフォルト）**:
 
 ```bash
-echo "  🟢 Safe: merged=${MERGED:+branch--merged}${SQUASHED:+$SQUASHED} / clean / LLMなし / 稼働シグナルなし → 削除します"
+# HARMLESS_DIRTY が非空なら「なぜ dirty なのに削除してよいのか」の根拠をここに必ず出す
+echo "  🟢 Safe: merged=${MERGED:+branch--merged}${SQUASHED:+$SQUASHED} / ${HARMLESS_DIRTY:-clean} / LLMなし / 稼働シグナルなし → 削除します"
 kill_devserver_under "$WT"
-git worktree remove "$WT" --force
-git branch -d "$BRANCH_NAME"    # SQUASHED のときは -D（元 SHA が main の祖先にならないため）
+git -C "$MAIN_REPO" worktree remove "$WT" --force
+git -C "$MAIN_REPO" branch -d "$BRANCH_NAME"    # SQUASHED のときは -D（元 SHA が main の祖先にならないため）
 PROCESSED+=("$BRANCH_NAME (🟢 削除)")
 ```
 
@@ -470,14 +569,14 @@ PROCESSED+=("$BRANCH_NAME (🟢 削除)")
 
 ```bash
 # 他の worktree が既に MAIN_BRANCH をチェックアウトしているか
-OTHER_CHECKOUT=$(git worktree list | awk -v b="[$MAIN_BRANCH]" '$NF==b {print $1}' | grep -v "^$MAIN_REPO$" | head -1)
+OTHER_CHECKOUT=$(git -C "$MAIN_REPO" worktree list | awk -v b="[$MAIN_BRANCH]" '$NF==b {print $1}' | grep -v "^$MAIN_REPO$" | head -1)
 
 if [ -n "$OTHER_CHECKOUT" ]; then
   echo "⚠️ $MAIN_BRANCH は $OTHER_CHECKOUT で既にチェックアウト中 → $WT の再利用化をスキップ"
   HELD+=("$BRANCH_NAME (再利用化スキップ: main 使用中)")
 else
   git -C "$WT" checkout "$MAIN_BRANCH"
-  git branch -d "$BRANCH_NAME"
+  git -C "$MAIN_REPO" branch -d "$BRANCH_NAME"
   PROCESSED+=("$BRANCH_NAME (🟢 再利用化)")
   # worktree ディレクトリは残す。node_modules / .env / untracked は全て保持
 fi
@@ -487,9 +586,9 @@ fi
 
 マージを伴わない 🟢 再利用化・🟡 削除では**サニティチェックを走らせない**（既に main にマージ済みのため）。
 
-#### Step B-🟡: Recoverable（dirty なし・稼働シグナルなし・LLM のみ）→ LLM 退避 → 検証 → 確認なしで削除
+#### Step B-🟡: Recoverable（実効 dirty なし・稼働シグナルなし・LLM のみ）→ LLM 退避 → 検証 → 確認なしで削除
 
-dirty がある 🟡、および `ACTIVE_SIGNAL` が非空の 🟡 はここに来ない（Pass 1 の分岐で `DEFERRED` 行き）。
+実効 dirty がある 🟡（`EFFECTIVE_DIRTY` 非空）、および `ACTIVE_SIGNAL` が非空の 🟡 はここに来ない（Pass 1 の分岐で `DEFERRED` 行き）。無害 dirty のみの 🟡 はここに来る（削除時に `HARMLESS_DIRTY` の根拠を表示すること）。
 
 ```bash
 # LLM ファイルをメインリポに退避（ファイル名にセッションIDが含まれ衝突しない）
@@ -507,10 +606,10 @@ done
 
 - **検証成功（`OK_COUNT == SRC_COUNT`）** → 診断根拠と退避結果を表示して確認なしで削除:
   ```bash
-  echo "  🟡 Recoverable: merged / clean / 稼働シグナルなし / LLM ${SRC_COUNT}files → 退避検証OK → 削除します"
+  echo "  🟡 Recoverable: merged / ${HARMLESS_DIRTY:-clean} / 稼働シグナルなし / LLM ${SRC_COUNT}files → 退避検証OK → 削除します"
   kill_devserver_under "$WT"
-  git worktree remove "$WT" --force   # LLM/ は gitignore 対象のため --force が必要
-  git branch -d "$BRANCH_NAME"        # SQUASHED のときは -D
+  git -C "$MAIN_REPO" worktree remove "$WT" --force   # LLM/ は gitignore 対象のため --force が必要
+  git -C "$MAIN_REPO" branch -d "$BRANCH_NAME"        # SQUASHED のときは -D
   PROCESSED+=("$BRANCH_NAME (🟡 LLM退避→削除)")
   ```
 - **検証失敗** → 削除しない。`HELD+=("$BRANCH_NAME (LLM退避検証失敗)")` として次の対象へ
@@ -518,6 +617,8 @@ done
 #### Step B Pass 2: 判断バッチ（🔴 Active / dirty あり 🟡 / 稼働シグナルあり 🟡）
 
 Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` が空なら対話せず Step C へ。
+
+> 🤖 **`--unattended` 指定時は、この節の状況表示までを行い `AskUserQuestion` を呼ばずに Step C へ抜ける**（後述「無人モード」）。以降の選択肢提示・回答待ち・選択ごとの分岐には**一切入らない**。
 
 非空なら、各対象の状況を**まとめて**表示する。`ACTIVE_SIGNAL` が非空の対象は、検出内容（PID・コマンド名／セッションログの更新時刻）を必ず明示する（絶対禁則 3）。ユーザーが判断できる材料はこれだけなので省略・要約してはならない:
 
@@ -543,6 +644,8 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
   → 壁打ち等の進行中セッションの可能性があります。削除するとプロセスも停止されます
 ```
 
+**`--unattended` ならここで打ち切る**（`DEFERRED` を全件 `SKIPPED` として Step C の完了レポートへ。破壊操作は一切行わない）。以下は対話モード（`--unattended` なし）のみ。
+
 続けて AskUserQuestion で **1 対象 1 問**として選択させる。1 回の呼び出しは最大 4 問なので、`DEFERRED` が 4 件を超える場合は複数回に分け、各回の提示範囲を明示する（無音での打ち切りを行わない）。
 
 選択肢の出し分け（対象ごと）:
@@ -562,22 +665,22 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
 - **破棄削除 (force)**（🔴） →
   ```bash
   kill_devserver_under "$WT"
-  git worktree remove --force "$WT"
-  git branch -D "$BRANCH_NAME"
+  git -C "$MAIN_REPO" worktree remove --force "$WT"
+  git -C "$MAIN_REPO" branch -D "$BRANCH_NAME"
   PROCESSED+=("$BRANCH_NAME (🔴 破棄削除)")
   ```
 - **変更を破棄して削除**（🟡 dirty あり） →
   ```bash
   kill_devserver_under "$WT"
-  git worktree remove --force "$WT"
-  git branch -d "$BRANCH_NAME"    # SQUASHED のときは -D
+  git -C "$MAIN_REPO" worktree remove --force "$WT"
+  git -C "$MAIN_REPO" branch -d "$BRANCH_NAME"    # SQUASHED のときは -D
   PROCESSED+=("$BRANCH_NAME (🟡 dirty破棄→削除)")
   ```
 - **削除する**（🟡 稼働シグナルあり・dirty なし） →
   ```bash
   kill_devserver_under "$WT"        # ここで初めて稼働中プロセスを停止する（ユーザーが承認済み）
-  git worktree remove "$WT" --force
-  git branch -d "$BRANCH_NAME"      # SQUASHED のときは -D
+  git -C "$MAIN_REPO" worktree remove "$WT" --force
+  git -C "$MAIN_REPO" branch -d "$BRANCH_NAME"      # SQUASHED のときは -D
   PROCESSED+=("$BRANCH_NAME (🟡 稼働シグナルあり→ユーザー承認で削除)")
   ```
 - **マージ** → 下記マージ実行へ
@@ -645,8 +748,8 @@ cd "$MAIN_REPO"
 - **全 PASS（またはテスト未検出）** → 通常削除（`--keep` 指定でもマージを伴うため**通常削除**にフォールバック）:
   ```bash
   kill_devserver_under "$WT"
-  git worktree remove "$WT" --force
-  git branch -d "$BRANCH_NAME"
+  git -C "$MAIN_REPO" worktree remove "$WT" --force
+  git -C "$MAIN_REPO" branch -d "$BRANCH_NAME"
   PROCESSED+=("$BRANCH_NAME (🔴 マージ→削除, N commits)")
   ```
 - **FAIL** → 当該 worktree は削除せず保留:
@@ -657,11 +760,13 @@ cd "$MAIN_REPO"
     このマージ（wip-z）が原因の可能性があります。
   → この worktree は削除せず保持します。
   ```
-  `HELD+=("$BRANCH_NAME (サニティ FAIL 保留)")`。FAIL 後は安全側に倒し、ユーザーに「以降の処理を続けるか中断するか」を AskUserQuestion で確認する。
+  `HELD+=("$BRANCH_NAME (サニティ FAIL 保留)")`。FAIL 後は安全側に倒し、ユーザーに「以降の処理を続けるか中断するか」を AskUserQuestion で確認する。**`--unattended` ではこの確認も行わず、その場で中断して Step C へ抜ける**（無人モードではそもそもマージが起きないためここには到達しないが、到達した場合も対話しない）。
 
 ### Step C: 完了レポート
 
-先頭に Step 0 の同期結果を 1 行で表示する:
+`--repo` を指定した場合は、先頭に対象リポジトリを 1 行で表示する（`対象リポジトリ: $MAIN_REPO`）。cwd と対象がずれる実行形態なので、どのリポを掃除したのかがレポートだけで分かるようにする。
+
+続けて Step 0 の同期結果を 1 行で表示する:
 - `Remote 同期: ✅ pulled N commits (origin/<main> → <main>)`
 - `Remote 同期: ✅ already up-to-date`
 - `Remote 同期: -- skipped (--no-sync)`
@@ -718,6 +823,59 @@ wt-clean 中断:
   残存worktrees: 2
 ```
 
+## 無人モード（`--unattended`）
+
+cron から定期実行するためのモード。**「危ないものだけを対話に送る」という既存の 2 パス設計をそのまま使い、その対話を報告に置き換えるだけ**である。禁則を緩めるのではなく、禁則対象（dirty 破棄・🔴 破棄・🔴 マージ）の分岐に**入らないルート**を足している。
+
+### 挙動
+
+| Step | `--unattended` での挙動 |
+|---|---|
+| Step -1 / Step 0 / Step A | 通常どおり（`--repo` と併用されることが多い） |
+| Pass 1（🟢・🟡 の自動処理） | **通常どおり実行する**。ここは元々確認なしの分岐であり、無人でも判定基準は 1 ミリも変えない |
+| Pass 2 | 状況を表示したら **`AskUserQuestion` を呼ばずに終了**。`DEFERRED` は全件 `SKIPPED` 扱い |
+| Step C | 通常のレポート + 「判断が必要な残件」の一覧 |
+
+### SHALL NOT（無人モード固有）
+
+- `--unattended` 実行中に **`AskUserQuestion` を呼んではならない**（Pass 2 の判断バッチ・サニティ FAIL 後の継続確認を含め、例外なく）
+- Pass 2 の破壊分岐（dirty 破棄・🔴 破棄削除・🔴 マージ）を**実行してはならない**。「無人だから自動で判断する」は絶対禁則 1 の違反
+- 禁則 3（稼働シグナル）のガードを**無人だからといって緩めてはならない**。むしろ人間の目が入らない実行形態なので、このガードが最後の砦になる
+- Pass 1 の判定基準（squash 3 重検証・LLM 退避検証・無害 dirty の判定）を**無人だからといって甘くしてはならない**
+
+### 完了レポート（無人モード）
+
+Pass 2 送りになった対象を、**番号・パス・ブランチ名・分類・理由**付きで列挙する。cron のログをあとから人間が読んで判断できることが唯一の出口なので、件数だけの要約で済ませてはならない。
+
+```
+wt-clean 完了（無人モード）:
+  対象リポジトリ: /Users/oratta/repos/flatmate
+  Remote 同期: ✅ pulled 3 commits (origin/main → main)
+  対象: 14 worktrees（全件・確認なし）
+  自動処理（確認なし）: 7 件
+    feat-a (🟢 削除), feat-b (🟢 削除, dirty=lockfileのみ), feat-c (🟡 LLM退避→削除) …
+  残存worktrees: 7
+
+判断が必要な残件（無人モードのため未処理・4 件）:
+  [1] /Users/oratta/wt/wip-z   ブランチ: wip-z    分類: 🔴 未マージ
+      理由: 未マージコミット 3 件（squash 検証も未マージと判定）
+  [2] /Users/oratta/wt/fix-q   ブランチ: fix-q    分類: 🟡 dirty
+      理由: src/foo.ts ほか 2 ファイルに未コミット変更（lockfile 以外を含む）
+  [3] /Users/oratta/wt/idea-x  ブランチ: idea-x   分類: 🟡 稼働シグナル
+      理由: 稼働中プロセス 48213(claude) / セッションログ 2026-08-07 14:32
+  [4] /Users/oratta/wt/det-h   (detached HEAD)    分類: 🔴 未マージ
+      理由: detached HEAD のためマージ判定不能
+
+→ 対話モードで処理するには: wt-clean --repo /Users/oratta/repos/flatmate
+```
+
+### cron への載せ方（参考）
+
+各住人の `cron-jobs.md` に週 1 の反応型ジョブとして登録する運用を想定している（本スキルの範囲外）。ジョブ側は次を守ること:
+
+- `--repo` を必ず指定する（住人の作業ディレクトリと対象リポジトリを分離するため）
+- 出力は破棄せずログに残す。残件一覧は人間が後で読む前提の成果物である
+
 ## 🔴 Active worktree の強制破棄（破棄削除選択時）
 
 Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
@@ -733,7 +891,10 @@ Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 
 - メインリポ自体が worktree の場合: スキップ（削除対象外）
 - detached HEAD の worktree: ブランチ削除はスキップ。🔴 判定時はマージ選択肢を除外（Step B Pass 2）
-- worktree のパスが存在しない（既に手動削除済み）: `git worktree prune` で整理
+- worktree のパスが存在しない（既に手動削除済み）: `git -C "$MAIN_REPO" worktree prune` で整理
+- `--repo` に worktree のパスを渡された: エラーにせず、`git worktree list` の 1 行目からメイン worktree に正規化して続行する（Step -1）
+- `--repo` に git リポジトリでないパスを渡された: エラー中断（Step -1）。Step C 完了レポートは表示しない
+- `--unattended` で `DEFERRED` が 0 件: 残件一覧の節は出さず、通常の完了レポートのみ表示する
 - Superset 作成の worktree: 削除後「Superset UI 上でも not found になるので UI から削除してください」と案内
 
 ## 自己検証
@@ -746,3 +907,6 @@ Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 - 稼働シグナル（配下の非シェルプロセス／24時間以内のセッションログ）を検出した worktree を Pass 1 で自動削除・自動再利用化していないこと、および Pass 2 の提示に検出内容（PID・コマンド名／セッションログ更新時刻）を含めたことを確認する（絶対禁則 3）。
 - dirty 破棄・🔴 破棄削除・🔴 マージを行った場合、それぞれ Pass 2 の AskUserQuestion 回答後の別ターンで実行したことを確認する。
 - `git worktree remove` の直前に `kill_devserver_under` を実行し、削除対象パス配下にプロセス残留が無いことを確認したこと（停止した PID または「プロセスなし」がログに表示されていること）。
+- 無害 dirty（lockfile のみ）として自動処理した場合、削除直前の表示に `dirty=lockfileのみ` と対象ファイル名が含まれていることを確認する。lockfile 以外を 1 つでも含む worktree が自動処理されていないことも確認する。
+- `--unattended` で実行した場合、`AskUserQuestion` を**一度も呼んでいない**こと、Pass 2 の破壊分岐を実行していないこと、残件が番号・パス・ブランチ名・分類・理由付きでレポートに列挙されていることを確認する。
+- `--repo` を指定した場合、操作対象が指定リポジトリのメイン worktree に解決されており、cwd 側のリポジトリの worktree・ブランチが一切変更されていないことを確認する（`git -C <cwd-repo> worktree list` が実行前後で不変）。
