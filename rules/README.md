@@ -24,7 +24,7 @@ done
 
 | ファイル | 内容 |
 |---|---|
-| `communication-style.md` | ラベルの使い回し禁止・論点は推奨＋残リスク確認で渡す・ヒアリングで選択肢UIを使わない |
+| `communication-style.md` | 参照は中身で書く・比喩を作らない・判断依頼は背景から推奨まで・ヒアリングは1問ずつ（全文は Output Style `readable` が正本） |
 | `destructive-git-guard.md` | 破壊的 git 操作の事前承認必須と「戻すだけ」自己正当化への警戒 |
 | `git-commit-policy.md` | 細かい自律コミット・PR運用/ローカルmain運用の判定・承認が要る操作 |
 | `browser-infra-env-capture.md` | ダッシュボード操作で生成された認証情報の即時 env 保存 |
