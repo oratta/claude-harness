@@ -46,6 +46,14 @@ gh repo view --json viewerPermission # push 権限があること
 | 提案ストック上限 | 3 件 |
 | worktree 置き場 | `~/orca/workspaces/<プロジェクト名>`（orca 標準） |
 | Review Queue 連携 | あり（`project` scope があれば） |
+| 応答モードのメンションマーカー（`{{AGENT_MENTION}}`） | ループが投稿に使う GitHub アカウントの `@<login>`（`gh api user --jq .login` で検出） |
+
+**メンションマーカーの決め方**: 応答モード（Step 0.9b）は「人間がコメントの**行頭**にこのマーカーを
+書いたら最優先で応答する」という入口で、これを配線しないと **issue に何を書いてもループに届かない**。
+既定は `gh api user --jq .login` の `@<login>`（ループが実際に投稿に使うアカウント）だが、**人間が
+呼びかけるときに自然に打てる名前**であることが最優先なので、検出値をそのまま採らず必ず確認する。
+選んだ値はテンプレの `{{AGENT_MENTION}}` に置換される（スクリプト側の既定値になる）。
+実行時に `AGENT_INBOX_MARKER` / `AGENT_INBOX_DONE_REACTION`（既定 `rocket`）で上書きできる。
 
 **レート閾値・ヘッドルーム・朝ダイジェスト時刻は install では聞かない**（憲法テンプレから運用値プレースホルダを廃止済み）。
 これらは実行時の環境変数で解決する: レートは配線側の `RATE_5H_MAX` / `RATE_5H_HEADROOM` / `RATE_7D_MAX` /
@@ -153,27 +161,75 @@ about: 自律開発ループに実行させるタスク
 Step 1 の値で置換して対象リポジトリの `docs/agent-loop.md` に書き出す。
 
 置換対象: `{{MAIN_BRANCH}}` `{{TEST_CMD}}` `{{LINT_CMD}}` `{{BUILD_CMD}}` `{{DEV_SERVER_CMD}}`
-`{{DEV_URL}}` `{{BROWSER_VERIFY}}` `{{WORKTREE_BASE}}` `{{PROPOSAL_CAP}}`
+`{{DEV_URL}}` `{{BROWSER_VERIFY}}` `{{WORKTREE_BASE}}` `{{PROPOSAL_CAP}}` `{{AGENT_MENTION}}`
 `{{REVIEW_QUEUE}}`（Step 2.5 の `<owner>/<番号>`、連携なしなら `なし`）
 
 レート閾値・ヘッドルーム・朝ダイジェスト時刻のプレースホルダは新テンプレには存在しない（実行時の環境変数で解決するため。Step 1 参照）。置換不要。
 
 該当しない項目（例: CLI ツールで dev サーバーが無い）は値を `なし` にする。
 
-あわせて**対象選定スクリプト**を設置する。`${CLAUDE_PLUGIN_ROOT}/templates/select-target.sh` を読み、
-`{{PROPOSAL_CAP}}` を Step 1 の値で置換して対象リポジトリの `scripts/agent-loop-select.sh` に書き出し、実行権限を付ける:
+あわせて**ループのスクリプト 3 本**を設置する。3 本セットで 1 つの機能なので、**1 本でも欠けたら
+配線されていない**（選定スクリプトだけを置くと、応答モードが `agent-loop-inbox.sh` を見つけられず
+永久に発火しない ＝ issue に何を書いてもループに届かない）:
+
+| 置き場所 | テンプレート | 役割 |
+|---|---|---|
+| `scripts/agent-loop-select.sh` | `templates/select-target.sh` | モード選定（決定論） |
+| `scripts/agent-loop-inbox.sh` | `templates/agent-loop-inbox.sh` | 応答モードの検出（人間の印が付いた未対応コメント） |
+| `scripts/agent-loop-reply.sh` | `templates/agent-loop-reply.sh` | 応答モードの返信投稿 + rocket 付与 |
 
 ```bash
 mkdir -p scripts
-# {{PROPOSAL_CAP}} を置換して書き出す（他のプレースホルダは無い）
-sed "s/{{PROPOSAL_CAP}}/<提案ストック上限>/g" "${CLAUDE_PLUGIN_ROOT}/templates/select-target.sh" > scripts/agent-loop-select.sh
-chmod +x scripts/agent-loop-select.sh
+CAP='<提案ストック上限>'        # 例: 3
+MENTION='<メンションマーカー>'  # 例: @my-agent（Step 1 で確定した値）
+
+# 選定スクリプト（{{PROPOSAL_CAP}} と {{AGENT_MENTION}} を置換）
+sed -e "s|{{PROPOSAL_CAP}}|${CAP}|g" -e "s|{{AGENT_MENTION}}|${MENTION}|g" \
+  "${CLAUDE_PLUGIN_ROOT}/templates/select-target.sh" > scripts/agent-loop-select.sh
+
+# 応答モードの検出・返信スクリプト（{{AGENT_MENTION}} のみ）
+sed "s|{{AGENT_MENTION}}|${MENTION}|g" \
+  "${CLAUDE_PLUGIN_ROOT}/templates/agent-loop-inbox.sh" > scripts/agent-loop-inbox.sh
+sed "s|{{AGENT_MENTION}}|${MENTION}|g" \
+  "${CLAUDE_PLUGIN_ROOT}/templates/agent-loop-reply.sh" > scripts/agent-loop-reply.sh
+
+chmod +x scripts/agent-loop-select.sh scripts/agent-loop-inbox.sh scripts/agent-loop-reply.sh
+
+# 置換漏れと構文を実測確認する（{{...}} が残っていたら配線ミス）
+! grep -l '{{' scripts/agent-loop-select.sh scripts/agent-loop-inbox.sh scripts/agent-loop-reply.sh
+for f in scripts/agent-loop-select.sh scripts/agent-loop-inbox.sh scripts/agent-loop-reply.sh; do bash -n "$f"; done
 ```
 
-このスクリプトは Step 1〜4 のモード選定（どのモードで・どの issue/PR 番号を対象にするか）を決定論的に行い、
+選定スクリプトはモード選定（どのモードで・どの issue/PR 番号を対象にするか）を決定論的に行い、
 JSON 1 オブジェクトを出力する。憲法の「Step 0.9: 対象選定」がこれを必須で呼び、LLM が一覧を目視して
 対象番号を捏造する事故を構造的に防ぐ。`.agent-loop/`（git 管理外）ではなく `scripts/`（追跡対象）に置く
 ——選定ロジックはインフラであり、状態キャッシュではないため。
+
+`agent-loop-inbox.sh` は選定スクリプトが**最優先（Step 0.9・ラベル書き換えより前）**で呼ぶ。
+人間がコメントの行頭にマーカーを書いた issue/PR を検索 API 1 回で拾い、rocket リアクションが
+付いていないものだけを未対応として返す（fail-open。ローカル状態ファイルを持たない）。
+`agent-loop-reply.sh` は返信の投稿と rocket 付与を 1 コマンドに束ね、**投稿前に本文の行頭マーカーを
+機械検査**して自己発火（返信が返信を呼ぶ無限ループ）を止める。この 2 本は同じマーカー定義を
+共有するので、`AGENT_INBOX_MARKER` を上書きするなら**両方に同じ値**を渡すこと。
+
+### 導入済みリポジトリへの応答モードの追加配線
+
+応答モードより前に導入したリポジトリには `scripts/agent-loop-inbox.sh` / `scripts/agent-loop-reply.sh` が
+存在せず、`scripts/agent-loop-select.sh` にも Step 0.9 の分岐が無い。この状態では**人間が issue に
+コメントしてもループは永久に拾わない**（ラベルを動かさない限り届かない）。Step 6 の pre-push フックを
+後から配り直すのと同じ扱いで、**Step 4 のスクリプト設置ブロックのみを再実行**して最新化する:
+
+```bash
+# 未配線の検出（どちらかが出たら追加配線が必要）
+ls scripts/agent-loop-inbox.sh scripts/agent-loop-reply.sh 2>&1
+grep -c 'mode: "respond"' scripts/agent-loop-select.sh   # 0 なら未配線
+
+# 上の設置ブロックを再実行して 3 本を上書きしたあと、実測確認する
+bash scripts/agent-loop-select.sh | jq -r .mode          # 印が無ければ respond 以外が出れば OK
+```
+
+憲法ファイル `docs/agent-loop.md` も同時に更新する（Step 0.9 の `mode` 表に `respond` / `comment_id` が
+無い版のままだと、スクリプトが `respond` を返してもエージェントが何をすべきか書かれていない）。
 
 あわせてループの**状態ディレクトリ**を作成する。状態ファイルは git 管理外に置く
 （ループがログを main にコミットすると origin と恒常的に分岐し、人間のマージ作業が再生産されるため。
@@ -357,7 +413,9 @@ git config --get core.hooksPath
    /loop 1h docs/agent-loop.md を読み、そこに定義された1サイクルを厳密に実行して。結果（実行モード、対象の issue/PR 番号、スキップ・提案の場合はその理由）を必ず報告して
    ```
 3. 人間側の日常運用: 「`agent-proposed` を見て良いものに `agent-ready` を付ける」
-   「`agent-review:passed` の PR をマージする」の 2 点だけであること
+   「`agent-review:passed` の PR をマージする」の 2 点だけであること。
+   あわせて**呼びかけ方**を伝える: issue / PR のコメントの**行頭**に `{{AGENT_MENTION}}`（Step 1 で
+   確定した値）を書けば、次のサイクルで最優先に応答が返る（対応済みになるとそのコメントに 🚀 が付く）
    （Review Queue 連携ありの場合はマージ判断を Project ボードの Approved 列で横断確認できること、
    Project の URL、初回のみ必要なビュー・workflow の手動設定（Step 2.5）、
    ターミナルからは `/loops:review-queue` で同じキューを一覧できることも添える）

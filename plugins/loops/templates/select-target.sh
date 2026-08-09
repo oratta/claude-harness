@@ -10,7 +10,11 @@
 # 出力: stdout に JSON 1 オブジェクト。診断は stderr。gh/jq 失敗時は mode:"error"。
 # 契約: LLM は candidates に無い番号を絶対に対象にしてはならない。
 #
-# 環境変数: AGENT_PROPOSE_LIMIT — 提案ストック上限（未設定時 {{PROPOSAL_CAP}}）
+# 環境変数:
+#   AGENT_PROPOSE_LIMIT        — 提案ストック上限（未設定時 {{PROPOSAL_CAP}}）
+#   AGENT_INBOX_MARKER         — 応答モードの検出マーカー（未設定時 {{AGENT_MENTION}}。
+#                                実体は agent-loop-inbox.sh 側の既定値）
+#   AGENT_INBOX_DONE_REACTION  — 対応済みリアクション（未設定時 rocket）
 set -uo pipefail
 
 PROPOSE_LIMIT="${AGENT_PROPOSE_LIMIT:-{{PROPOSAL_CAP}}}"
@@ -20,6 +24,26 @@ fail() { jq -n --arg m "$1" '{mode:"error",target:null,target_kind:null,reason:$
 
 command -v gh >/dev/null 2>&1 || fail "gh 未インストール"
 command -v jq >/dev/null 2>&1 || fail "jq 未インストール"
+
+# --- Step 0.9: 人間の印が付いた未対応コメント → 応答モード ---
+# 全モードの中で最優先。人間が `{{AGENT_MENTION}}` と行頭に書いたコメントは
+# 「今これを見てほしい」の明示的な合図で、他のどの自動作業よりも先に扱う。
+# **この判定より前に副作用を持つ処理（ラベル書き換え・同期・投稿）を置かない**
+# （印への応答だけをしたい tick で無関係な issue/PR のラベルが動くのを避けるため）。
+# 検出は agent-loop-inbox.sh（決定論・fail-open・投稿者を見ない）に閉じ込めてある。
+# stderr は捨てない: inbox はコメント取得に失敗した件数をそこに出しており、
+# 握り潰すと「本当に印が 0 件」と「取得できなかったので分からない」を運用者が
+# 区別できなくなる（障害中に respond が無言で止まる）。
+INBOX_OUT="$("$(dirname "$0")/agent-loop-inbox.sh" || printf '{"pending":[]}')"
+INBOX_FIRST="$(printf '%s' "$INBOX_OUT" | jq -c '.pending[0] // empty' 2>/dev/null || true)"
+if [ -n "$INBOX_FIRST" ]; then
+  emit "$(printf '%s' "$INBOX_OUT" | jq -c '
+    .pending[0] as $p
+    | { mode: "respond", target: $p.number, target_kind: $p.kind,
+        comment_id: $p.comment_id,
+        reason: "人間の印（{{AGENT_MENTION}}）が付いた未対応コメントの最古 1 件。対応したらそのコメントに rocket リアクションを付けて完了とする",
+        candidates: [ .pending[].number ] | unique }')"
+fi
 
 # --- Step 1: agent-review:pending の最古 PR → レビューモード ---
 pending=$(gh pr list --label "agent-review:pending" --state open --json number,createdAt 2>/dev/null) \

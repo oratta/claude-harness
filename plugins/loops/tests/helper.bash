@@ -29,8 +29,15 @@ loops_setup_paths() {
 # 無言で増やせないことがこのガードの本体。
 #
 # 1 行 1 パス。PLUGIN_DIR からの相対パスで書く。
+#
+# templates/agent-loop-inbox.sh / templates/agent-loop-reply.sh は応答モード
+# （人間が issue コメントの行頭にメンションを書いたら最優先で拾う）の雛形。
+# どちらも 1 回実行して終了する決定論スクリプトで、常駐もポーリングもしない
+# （呼び出し元は導入先の scripts/agent-loop-select.sh とエージェント本体）。
 LOOPS_SCRIPT_ALLOWLIST='
 templates/select-target.sh
+templates/agent-loop-inbox.sh
+templates/agent-loop-reply.sh
 '
 
 # allowlist に載っていないスクリプトを PLUGIN_DIR 配下から列挙する（相対パスで出力）。
