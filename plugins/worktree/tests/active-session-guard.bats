@@ -19,7 +19,29 @@ setup() {
 
 @test "skill: wt-clean SKILL.md declares the active-signal absolute prohibition" {
   grep -q '稼働シグナル' "$WT_CLEAN_SKILL"
-  grep -Eq '^3\. \*\*配下にプロセスが稼働中／当日のセッションログがある worktree は自動処理しない' "$WT_CLEAN_SKILL"
+  # 禁則 3 は「プロセス / セッションログ / worktree ロック」の 3 シグナルを覆う
+  grep -Eq '^3\. \*\*配下にプロセスが稼働中／当日のセッションログがある／worktree がロックされている場合は自動処理しない' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: worktree lock is one of the active signals" {
+  grep -q 'detect_worktree_lock' "$WT_CLEAN_SKILL"
+  # ロックは ACTIVE_SIGNAL に合流し、Pass 1 の自動処理を止める
+  grep -q 'WT_LOCKED=$(detect_worktree_lock' "$WT_CLEAN_SKILL"
+  grep -q 'worktree ロック: \$WT_LOCKED' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: lock is never auto-unlocked in Pass 1" {
+  # 解除は Pass 2 でユーザーが削除を選んだ対象のみ
+  grep -q 'Pass 1 での自動 unlock は禁止' "$WT_CLEAN_SKILL"
+  # 解除失敗・状態不明なら remove に進まない
+  grep -q 'unlock_if_locked "$WT" || exit 1' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: lock detection does not parse porcelain by whitespace" {
+  # パスに空白がある worktree のロックを取りこぼす解析を禁じている
+  grep -q '空白区切りで解析してはならない' "$WT_CLEAN_SKILL"
+  # 検査不能を「ロックなし」に倒さない
+  grep -q 'ロック状態不明' "$WT_CLEAN_SKILL"
 }
 
 @test "skill: wt-clean SKILL.md keeps the later prohibitions renumbered (branch name, LLM escrow)" {
@@ -58,7 +80,8 @@ setup() {
 }
 
 @test "skill: detection is documented as non-destructive (no kill during diagnosis)" {
-  grep -q 'プロセスの停止・ファイルの変更は一切行わない' "$WT_CLEAN_SKILL"
+  # 診断中はプロセス停止もロック解除もファイル変更もしない
+  grep -q 'プロセスの停止・ロック解除・ファイルの変更は一切行わない' "$WT_CLEAN_SKILL"
 }
 
 # --- classification: active signal blocks 🟢 ---
@@ -150,8 +173,13 @@ setup() {
 
 wt_load_detect_helpers() {
   local snippet="${BATS_TEST_TMPDIR}/detect.sh"
-  awk '/^detect_active_procs_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >"$snippet"
+  # 検出ヘルパは abs_path（Step -1 で定義）に依存する。SKILL.md は「Pass 1 のループに
+  # 入る前にまとめて定義しておくこと」と指示しており実行時は揃っているが、
+  # ここで抽出しないと abs_path 未定義で全ヘルパが「検査不能」を返してしまう。
+  awk '/^abs_path\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >"$snippet"
+  awk '/^detect_active_procs_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^detect_recent_session_log\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
+  grep -q '^abs_path() {' "$snippet"
   [ -s "$snippet" ]
   echo "$snippet"
 }

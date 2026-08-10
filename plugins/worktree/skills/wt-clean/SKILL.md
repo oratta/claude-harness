@@ -1,7 +1,7 @@
 ---
 name: wt-clean
-description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある worktree は git がクリーンでも自動削除せず判断バッチに回す。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
-version: 3.4.0
+description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある／git worktree lock されている worktree は git がクリーンでも自動削除せず判断バッチに回す。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
+version: 3.5.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -83,7 +83,7 @@ Step C  完了レポート
    - 独自 commit が無く working tree がクリーンでも、`LLM/` にログがある worktree は**現在進行中の作業セッション**の可能性が高い。Step B 診断で🟢 Safe に分類せず、必ず🟡 Recoverable 扱いとし、LLM を保全してから確認する（分類表を厳守）。
    - 設計議論・調査中心のセッションは git に commit が残らず、成果が `LLM/` ログにしか存在しないことがある。LLM ログの消失は復元困難なため保全を最優先する。
 
-3. **配下にプロセスが稼働中／当日のセッションログがある worktree は自動処理しない（稼働シグナル）**
+3. **配下にプロセスが稼働中／当日のセッションログがある／worktree がロックされている場合は自動処理しない（稼働シグナル）**
 
    2026-08-01 に flatmate リポで、壁打ち（設計議論）作業中の worktree を 🟢 Safe と誤判定して自動削除する事故が発生した。git 診断は完全にクリーン（マージ済み・dirty なし・`LLM/` なし）で、**稼働中の claude セッションのプロセスまで `kill_devserver_under` が停止した**。壁打ちセッションは commit も `LLM/` も残さないため、禁則 2 も git ベースの診断も効かない。
 
@@ -91,8 +91,9 @@ Step C  完了レポート
 
    - **配下プロセス**: 削除対象パス配下で稼働中の**非シェルプロセス**（`claude` / `node` / `next` など）。判定は `lsof +D` と `kill_devserver_under` と**同一の除外基準**で行う（Step B-共通の `detect_active_procs_under`）。「`kill_devserver_under` が停止する対象が居るなら、それは自動削除してよい worktree ではない」という対応関係を崩さない。
    - **当日のセッションログ**: `~/.claude/projects/<worktree-path-slug>/` に 24 時間以内に更新された `.jsonl` がある。プロセスが一時的に落ちている壁打ちセッションもこれで拾える。
+   - **worktree ロック**: `git worktree list --porcelain` が当該 worktree に `locked` を出している。ロックは「別のセッション／エージェントがこの worktree を所有している」という**最も強い所有権の表明**で、しかも git 側が既に持っている情報なので追加コストがゼロである。wt-setup の hooks が作る worktree（`--lock` 付き）や並列サブエージェントの worktree がこれに当たる。`git worktree remove --force`（`-f` 1 個）はロック済み worktree を拒否するため、ロックを無視して自動削除しようとすると Pass 1 が `fatal: cannot remove a locked working tree` で落ちる。**ロックの解除（`git worktree unlock`）は Pass 2 でユーザーが削除を選んだ場合にのみ行う**（SHALL NOT: Pass 1 での自動 unlock）。
 
-   どちらか一方でも該当したら、マージ済み & クリーンでも **🟢 にせず 🟡 Recoverable とし、Pass 1 で自動処理せず `DEFERRED`（Pass 2 の判断バッチ）へ回す**。Pass 2 の提示には検出内容（PID・コマンド名／セッションログの更新時刻）を必ず含め、ユーザーが「作業中セッションかどうか」を判断できるようにする。稼働シグナルの検出は**削除しない方向にのみ働く**（🔴 を 🟡 に緩めることはしない）。
+   いずれか 1 つでも該当したら、マージ済み & クリーンでも **🟢 にせず 🟡 Recoverable とし、Pass 1 で自動処理せず `DEFERRED`（Pass 2 の判断バッチ）へ回す**。Pass 2 の提示には検出内容（PID・コマンド名／セッションログの更新時刻／ロックの有無と理由）を必ず含め、ユーザーが「作業中セッションかどうか」を判断できるようにする。稼働シグナルの検出は**削除しない方向にのみ働く**（🔴 を 🟡 に緩めることはしない）。
 
 4. **削除判定は必ず実ブランチ名で行う（ディレクトリ名 ≠ ブランチ名）**
    - worktree のディレクトリ名と checkout 中ブランチ名は一致しないことがある（例: `setup-foo` ディレクトリで `ISSUE-129_xxx` ブランチを checkout）。マージ判定・`git branch -D` は `git worktree list` 由来の**実ブランチ名（`BRANCH_NAME`）**を使う。ディレクトリ名で判断しない。
@@ -113,6 +114,55 @@ Step C  完了レポート
 ### Step -1: 対象リポジトリの解決（`--repo`）
 
 **すべての git 操作より先に `MAIN_REPO` を確定し、以降の git 呼び出しは例外なく `git -C "$MAIN_REPO"` を通す。** 素の `git ...`（= cwd 依存）を書いてはならない（SHALL NOT）。`--repo` の要点は「cwd のリポジトリを一切触らないこと」なので、1 箇所でも `-C` が漏れると別リポを掃除しに行く事故になる。
+
+**パス正規化には `realpath -m` を使ってはならない（SHALL NOT）。** `-m` は GNU coreutils 専用オプションで、macOS 標準の BSD `realpath` では `illegal option -- m` となり**必ず失敗する**。2026-08-10 に flatmate で実走したとき、削除直前のプロセス残留チェックで `abs` が空文字に潰れ、`lsof +D ""` が何も返さないまま「配下に稼働中プロセスなし」と表示された（チェックしていないのにチェックしたと出る silent no-op）。以降のパス正規化は次の `abs_path` に統一する。
+
+```bash
+# BSD/GNU 両対応のパス正規化。
+# 存在するディレクトリは cd -P + pwd -P で symlink まで解決する（`pwd` 既定の論理パスでは
+# macOS の /var → /private/var のような symlink が解決されず、lsof +D の対象や
+# worktree 一覧との突き合わせがずれる）。
+# 存在しないパスは、最も近い親を物理パス化してから欠落部分を継ぎ足す。
+# **解決できなければ空文字を返さず非 0 で失敗する**（呼び出し側が「空パスのまま検査した」
+# ことに気づけるようにするため。旧実装は失敗を空文字で握り潰していた）。
+abs_path() {
+  local p="$1" parent leaf parent_abs
+
+  if [ -z "$p" ]; then
+    echo "abs_path: empty path" >&2
+    return 1
+  fi
+
+  # root 以外の末尾スラッシュを除去
+  while [ "$p" != "/" ] && [ "${p%/}" != "$p" ]; do
+    p=${p%/}
+  done
+
+  if [ -d "$p" ]; then
+    (cd -P -- "$p" 2>/dev/null && pwd -P) || {
+      echo "abs_path: cannot resolve directory: $p" >&2
+      return 1
+    }
+    return 0
+  fi
+
+  # 欠落パスは親を再帰的に正規化してから末尾要素を付ける
+  case "$p" in
+    */*) parent=${p%/*}; leaf=${p##*/}; [ -n "$parent" ] || parent="/" ;;
+    *)   parent="."; leaf="$p" ;;
+  esac
+
+  # 欠落した . / .. を文字列操作だけで畳むと symlink の意味論が壊れるため拒否する
+  case "$leaf" in
+    ''|.|..) echo "abs_path: cannot resolve path: $1" >&2; return 1 ;;
+  esac
+
+  parent_abs=$(abs_path "$parent") || return 1
+  printf '%s/%s\n' "${parent_abs%/}" "$leaf"
+}
+```
+
+**呼び出し側は `abs_path` の失敗を必ず受け止める**（SHALL NOT: 失敗を無視して空の `abs` で `lsof +D` を撃つ）。稼働シグナル検出の中で失敗した場合は、**「検査不能」を稼働シグナルとして扱い Pass 2 へ送る**（削除しない側に倒す）。
 
 ```bash
 # --repo 未指定なら cwd（現行どおりの後方互換）
@@ -141,7 +191,7 @@ if [ -n "$REPO_OPT_GIVEN" ]; then
   echo "対象リポジトリ: $MAIN_REPO  (--repo $REPO_ARG)"
 else
   # --repo 未指定時: 現行どおり「メインリポで実行すること」を要求する
-  if [ "$(realpath -m "$PWD")" != "$(realpath -m "$MAIN_REPO")" ]; then
+  if [ "$(abs_path "$PWD")" != "$(abs_path "$MAIN_REPO")" ]; then
     echo "❌ worktree 内で実行されています。メインリポで実行してください: $MAIN_REPO"
     echo "  （または wt-clean --repo $MAIN_REPO で実行してください）"
     exit 1
@@ -174,8 +224,13 @@ fi
 MAIN_BRANCH="main"
 git -C "$MAIN_REPO" show-ref --verify --quiet refs/heads/master && MAIN_BRANCH="master" || true
 
-# fetch
-git -C "$MAIN_REPO" fetch origin   # 失敗時はエラー中断、後続 Step に進まない
+# fetch。⚠️ コメントで「失敗時は中断」と書いても終了コードは検査されない。
+# 必ず if ! ... で囲むこと（本スキルは set -e を前提にできない）。
+# ここで失敗したまま進むと、古い origin/<main> を基準に削除判定を行うことになる。
+if ! git -C "$MAIN_REPO" fetch origin; then
+  echo "❌ git fetch origin に失敗しました。ネットワーク・認証を確認して再実行するか、同期済みなら --no-sync を指定してください。" >&2
+  exit 1
+fi
 
 # 進行差を測定（左=ローカル独自, 右=remote 独自）
 read AHEAD BEHIND < <(git -C "$MAIN_REPO" rev-list --left-right --count "$MAIN_BRANCH"...origin/"$MAIN_BRANCH" | awk '{print $1, $2}')
@@ -183,7 +238,24 @@ read AHEAD BEHIND < <(git -C "$MAIN_REPO" rev-list --left-right --count "$MAIN_B
 if [ "$BEHIND" = "0" ]; then
   echo "Remote 同期: ✅ already up-to-date"
 elif [ "$AHEAD" = "0" ]; then
-  git -C "$MAIN_REPO" pull --ff-only origin "$MAIN_BRANCH"   # 失敗時はエラー中断
+  # メインリポが <main> 以外をチェックアウトしている場合、pull は「現在のブランチ」への
+  # マージになるため ff できず fatal: Not possible to fast-forward で落ちる。
+  # その場合は作業ツリーを触らず、ref だけを ff 更新する。
+  CURRENT_BRANCH=$(git -C "$MAIN_REPO" branch --show-current)
+  if [ "$CURRENT_BRANCH" = "$MAIN_BRANCH" ]; then
+    if ! git -C "$MAIN_REPO" pull --ff-only origin "$MAIN_BRANCH"; then
+      echo "❌ git pull --ff-only origin $MAIN_BRANCH に失敗しました。git status / git log で状態を確認してください。" >&2
+      exit 1
+    fi
+  else
+    # refs/heads/<main> を直接 ff 更新（非 ff なら git 側が拒否するので安全）
+    if ! git -C "$MAIN_REPO" fetch origin "$MAIN_BRANCH:$MAIN_BRANCH"; then
+      echo "❌ origin/$MAIN_BRANCH からローカル $MAIN_BRANCH ref の更新に失敗しました。git status / git log で状態を確認してください。" >&2
+      exit 1
+    fi
+    echo "  （メインリポは $CURRENT_BRANCH をチェックアウト中のため、作業ツリーに触れず ref のみ更新）"
+  fi
+  # 成功分岐の後だけ表示する（失敗しても "✅ pulled" が出る事故を防ぐ）
   echo "Remote 同期: ✅ pulled $BEHIND commits (origin/$MAIN_BRANCH → $MAIN_BRANCH)"
 else
   echo "⚠️ ローカル $MAIN_BRANCH が origin/$MAIN_BRANCH と diverge しています"
@@ -196,10 +268,10 @@ fi
 
 **失敗時の扱い**:
 - `git fetch origin` 失敗（ネットワーク到達不能等）→ エラー中断。再実行 or `--no-sync` を案内
-- `git pull --ff-only` 失敗（diverge / force-push）→ エラー中断。`git status` で状態確認するよう案内
+- `git pull --ff-only` / `git fetch origin <main>:<main>` 失敗（diverge / force-push）→ エラー中断。`git status` で状態確認するよう案内
 - 中断時、Step C 完了レポートは表示しない
 
-**禁則**: 本 Step では `git pull --ff-only` 以外の pull 戦略（merge / rebase）を使ってはならない。
+**禁則**: 本 Step では `git pull --ff-only` 以外の pull 戦略（merge / rebase）を使ってはならない。`<main>` 以外がチェックアウトされているときに、同期のためだけに `git checkout` でブランチを切り替えてはならない（ユーザーの作業ツリーを勝手に動かさない。ref 更新の `fetch <main>:<main>` を使う）。
 
 ### Step A: TARGETS 確定
 
@@ -213,7 +285,7 @@ resolve_token() {
   local token="$1"
   # 1. realpath 正規化 → worktree list の絶対パスと完全一致
   local abs
-  abs=$(realpath -m "$token" 2>/dev/null)
+  abs=$(abs_path "$token")
   local matches
   matches=$(git -C "$MAIN_REPO" worktree list --porcelain | awk '/^worktree /{print $2}' | grep -Fx "$abs")
 
@@ -323,13 +395,16 @@ if [ -n "$DIRTY" ]; then
 fi
 # 4. LLM/
 LLM=$(ls "$WT/LLM/" 2>/dev/null)
-# 5. 稼働シグナル（絶対禁則 3）: 配下の非シェルプロセス / 当日のセッションログ
-#    ここでは検出のみ行い、プロセスの停止は一切しない（停止は削除直前の kill_devserver_under）
+# 5. 稼働シグナル（絶対禁則 3）: 配下の非シェルプロセス / 当日のセッションログ / worktree ロック
+#    ここでは検出のみ行い、プロセスの停止・ロック解除は一切しない
+#    （停止は削除直前の kill_devserver_under、解除は Pass 2 でユーザーが削除を選んだ後）
 ACTIVE_PROCS=$(detect_active_procs_under "$WT")      # 例: "48213(claude), 48310(node)"
 RECENT_SESSION=$(detect_recent_session_log "$WT")    # 例: "~/.claude/projects/<slug>/ab12.jsonl (3時間前)"
+WT_LOCKED=$(detect_worktree_lock "$WT")              # 例: "added with --lock (2026-08-07 21:41)"
 ACTIVE_SIGNAL=""
 [ -n "$ACTIVE_PROCS" ] && ACTIVE_SIGNAL="稼働中プロセス: $ACTIVE_PROCS"
 [ -n "$RECENT_SESSION" ] && ACTIVE_SIGNAL="${ACTIVE_SIGNAL:+$ACTIVE_SIGNAL / }直近セッションログ: $RECENT_SESSION"
+[ -n "$WT_LOCKED" ] && ACTIVE_SIGNAL="${ACTIVE_SIGNAL:+$ACTIVE_SIGNAL / }worktree ロック: $WT_LOCKED"
 ```
 
 **⚠️ squash マージの罠（最重要・必読）**: `git branch --merged` も `git log main..branch` も**コミット SHA の到達可能性**で判定する。**squash マージ**（GitHub の "Squash and merge"）では PR の全コミットが main 上で 1 個の**新しい SHA** に潰れるため、元ブランチの SHA はどれも main の祖先にならず、**実際にはマージ済みでも `AHEAD_COUNT > 0`（= 🔴 Active）と誤判定する**。Step 0 の remote 同期で救えるのは**普通の merge / ff だけ**で、squash は救えない。squash 運用のプロジェクト（PR を Squash merge で取り込む）ではほぼ全 PR がこの罠に該当する。
@@ -338,27 +413,103 @@ ACTIVE_SIGNAL=""
 
 そこで **`AHEAD_COUNT > 0` のときは即 🔴 と判定せず、squash マージ済みでないかを必ず追加検証する**:
 
-```bash
-SQUASHED=""   # squash マージ済みと判定できたら理由を入れる
-if [ "$AHEAD_COUNT" != "0" ]; then
-  # 検証A: tracked source の実ツリー差分が空か（最も信頼できる。main が先行していても
-  #        branch 固有の追加が無ければ空になる）。LLM/ など gitignore 対象は元から無視される。
-  TREE_DIFF=$(git -C "$MAIN_REPO" diff "$MAIN_BRANCH" "$BRANCH_NAME" --stat -- 'src/**' 'app/**' 'lib/**' 'tests/**' 'e2e/**' '*.ts' '*.tsx' '*.js' '*.jsx' 2>/dev/null)
-  # 検証B: cherry の全行が "-"（patch-equivalent が upstream 済み）か
-  CHERRY_PLUS=$(git -C "$MAIN_REPO" cherry "$MAIN_BRANCH" "$BRANCH_NAME" 2>/dev/null | grep -c '^+' || true)
-  # 検証C: gh で当該ブランチ発の PR が MERGED か（リポジトリに gh がある場合のみ）
-  # gh はリポジトリを cwd から解決するため、--repo 指定時に cwd のリポを見に行かないよう
-  # MAIN_REPO 側で実行する（-C を持たないので subshell で cd する）
-  PR_MERGED=$( (cd "$MAIN_REPO" && gh pr list --head "$BRANCH_NAME" --state merged --limit 1 --json number) 2>/dev/null | grep -c '"number"' || true)
+> 🚨 **実ツリー差分にパスフィルタを掛けてはならない（SHALL NOT・データロス直結）。**
+> かつて検証A は `-- 'src/**' 'app/**' 'lib/**' 'tests/**' 'e2e/**' '*.ts' '*.tsx' '*.js' '*.jsx'` という
+> JS/TS 前提のパスフィルタを付けていた。この結果、**Markdown・シェル・Python 中心のリポジトリでは
+> 対象ファイルが 1 つも一致せず差分が常に空になり、全ブランチが無条件で「squash 済み」と誤判定された**。
+> 2026-08-10 に flatmate で実走したとき、PR が OPEN のままの未マージブランチ 6 本（うち 1 本は
+> 106 ファイル・914 行の差分あり）が揃って「マージ済み」と判定された。このとき削除を実際に止めたのは
+> git 自身の worktree ロックで、判定ロジックは 1 つも守っていない。
+> 検証A は**全 tracked ファイルを対象**にする。「言語ごとの主要ソースだけ見れば十分」は成り立たない。
 
-  if [ -z "$TREE_DIFF" ] || [ "$CHERRY_PLUS" = "0" ] || [ "$PR_MERGED" != "0" ]; then
-    SQUASHED="squash済み (tree_diff空=$([ -z \"$TREE_DIFF\" ] && echo yes || echo no), cherry+=$CHERRY_PLUS, pr_merged=$PR_MERGED)"
+**判定の原則: 「マージ済み」と言うには、実際に成功した検査からの積極的な証拠を要求する（fail-closed）。** 検査が失敗したとき、その失敗が「マージ済み」を示す側に倒れてはならない。旧実装は `gh ... | grep -c` の形だったため、`gh` が未認証・通信断で失敗しても `grep -c` が 0 を返し、**OPEN PR の拒否権が黙って消えていた**（パイプの終了コードは末尾の `grep` のもので、`gh` の失敗は観測できない）。
+
+```bash
+SQUASHED=""            # squash マージ済みと判定できたら理由を入れる
+NOT_MERGED_REASON=""   # 未マージと判定した根拠（Pass 2 の提示に使う）
+if [ "$AHEAD_COUNT" != "0" ]; then
+  # 検証A: 両 tip の tracked tree が完全一致するか。
+  #   一致 = 内容保存の十分条件（branch の tracked 内容は全て main にある＝削除で失われない）。
+  #   不一致は main 側が先行しただけでも起きるため、「branch 固有の内容がある」証拠にはならない
+  #   （この非対称性が重要。不一致を単独で未マージ判定に使わない）。
+  TREE_STATE="unknown"; TREE_DIFF=""
+  if TREE_DIFF=$(git -C "$MAIN_REPO" diff "$MAIN_BRANCH" "$BRANCH_NAME" --stat 2>/dev/null); then
+    if [ -z "$TREE_DIFF" ]; then TREE_STATE="equal"; else TREE_STATE="different"; fi
+  fi
+
+  # 検証B: git cherry は Pass 2 の診断表示のためだけに取る。単独では自動削除の根拠にしない
+  #   （squash は patch-id が変わるため + が出る／失敗時も 0 に見えるため、両方向に信用できない）。
+  CHERRY_STATE="unknown"; CHERRY_PLUS=""; CHERRY_OUTPUT=""
+  if CHERRY_OUTPUT=$(git -C "$MAIN_REPO" cherry "$MAIN_BRANCH" "$BRANCH_NAME" 2>/dev/null); then
+    CHERRY_PLUS=$(printf '%s\n' "$CHERRY_OUTPUT" | awk '$1=="+"{c++} END{print c+0}')
+    CHERRY_STATE="known"
+  fi
+
+  # 検証C: PR 状態。gh をパイプに繋がず、変数代入の終了コードで成否を判定する。
+  #   まず「そもそも PR 状態を取れて当然の環境か」を決める。GitHub リモートかつ gh がある
+  #   場合のみ、取得失敗を異常（= fail-closed の対象）とみなす。非 GitHub / gh 不在の
+  #   ローカル運用リポでは PR 検査は構造的に N/A で、失敗扱いにすると永久に自動削除できなくなる。
+  GH_APPLICABLE=0
+  if command -v gh >/dev/null 2>&1 &&
+     git -C "$MAIN_REPO" remote get-url origin 2>/dev/null | grep -qi 'github\.com'; then
+    GH_APPLICABLE=1
+  fi
+
+  PR_STATE="n/a"; PR_OPEN=""; PR_MERGED=""; PR_MERGED_AT_HEAD="0"; MERGED_PR_NUMBER=""
+  if [ "$GH_APPLICABLE" = "1" ]; then
+    PR_STATE="unknown"
+    BRANCH_OID=""; PR_OPEN_RESULT=""; PR_MERGED_RESULT=""
+    # gh はリポジトリを cwd から解決するため、--repo 指定時に cwd のリポを見に行かないよう
+    # MAIN_REPO 側で実行する（-C を持たないので subshell で cd する）
+    if BRANCH_OID=$(git -C "$MAIN_REPO" rev-parse "$BRANCH_NAME^{commit}" 2>/dev/null) &&
+       PR_OPEN_RESULT=$( (cd "$MAIN_REPO" && gh pr list --head "$BRANCH_NAME" --state open --limit 1 --json number --jq 'length') 2>/dev/null) &&
+       PR_MERGED_RESULT=$( (cd "$MAIN_REPO" && gh pr list --head "$BRANCH_NAME" --state merged --limit 100 --json number,headRefOid --jq '.[] | [.number, .headRefOid] | @tsv') 2>/dev/null); then
+      case "$PR_OPEN_RESULT" in
+        ''|*[!0-9]*) ;;   # 成功しても件数として解釈できなければ unknown のまま
+        *)
+          PR_STATE="known"
+          PR_OPEN="$PR_OPEN_RESULT"
+          PR_MERGED=$(printf '%s\n' "$PR_MERGED_RESULT" | awk 'NF{c++} END{print c+0}')
+          # 「マージ済み PR が存在する」だけでは現在の tip が取り込まれた証明にならない
+          # （マージ後に同じブランチへ追加コミットしても件数は 1 のまま）。
+          # PR の headRefOid が現在の tip と一致することまで確認する。
+          MERGED_PR_NUMBER=$(printf '%s\n' "$PR_MERGED_RESULT" | awk -F'\t' -v oid="$BRANCH_OID" '$2==oid{print $1; exit}')
+          [ -n "$MERGED_PR_NUMBER" ] && PR_MERGED_AT_HEAD="1"
+          ;;
+      esac
+    fi
+  fi
+
+  if [ "$PR_STATE" = "unknown" ]; then
+    # GitHub リポなのに PR 状態を取れない = OPEN PR が無いことを確認できない
+    NOT_MERGED_REASON="PR 状態を確認できない（gh 未認証・通信失敗等。OPEN PR の不在を確認できないため自動削除しない）"
+  elif [ "$PR_STATE" = "known" ] && [ "$PR_OPEN" != "0" ]; then
+    # OPEN な PR は「レビュー中の生きた作業」。ツリーが一致していても自動削除の対象にしない
+    NOT_MERGED_REASON="PR が OPEN（レビュー中の作業）"
+  elif [ "$TREE_STATE" = "equal" ]; then
+    SQUASHED="squash済み (tracked tree が $MAIN_BRANCH と完全一致)"
+  elif [ "$PR_MERGED_AT_HEAD" = "1" ]; then
+    SQUASHED="squash済み (merged PR #$MERGED_PR_NUMBER の headRefOid が branch tip と一致)"
+  else
+    NOT_MERGED_REASON="自動削除の十分条件なし (tree=$TREE_STATE, cherry+=${CHERRY_PLUS:-unknown}, pr=$PR_STATE, merged_pr_at_head=$PR_MERGED_AT_HEAD)"
   fi
 fi
 ```
 
-- **`cherry` の `+` 判定だけを信じてはいけない**: squash マージは diff 内容を 1 commit にまとめ patch-id が変わるため、`git cherry` が `+`（= 未 upstream）を返すことがある。**最も信頼できるのは検証A（tracked source の実ツリー差分が空）**。3 検証のいずれかが「マージ済み」を示せば squash 済みと扱う。判断が割れたら**実ツリー差分（検証A）を優先**する。
-- gh が無い / PR 運用でないプロジェクトでは検証A・Bだけで判定する。
+判定規則（**「どれか 1 つでもマージ済みを示せば squash 済み」という旧規則は廃止した**）。上から順に評価し、最初に当たったものを採る:
+
+| 順 | 状況 | 判定 | 根拠 |
+|---|---|---|---|
+| 1 | GitHub リポなのに PR 状態を取得できない | **未マージ** | OPEN PR の不在を確認できない。検査不能をマージ済み側に倒さない |
+| 2 | OPEN な PR がある | **未マージ**（他の検証で覆さない） | レビュー中の作業を掃除対象にしない |
+| 3 | tracked tree が main と完全一致 | squash 済み | ブランチの内容が全て main にある＝削除で内容を失わない |
+| 4 | マージ済み PR の `headRefOid` が現在の tip と一致 | squash 済み | この tip 自体が取り込まれたことの直接証拠 |
+| 5 | 上記いずれにも当たらない | **未マージ（🔴）** | マージ済みと言える積極的な証拠が無い |
+
+- **ツリー差分の非対称性を守る**: 「差分が空」は削除して安全であることの十分条件だが、「差分がある」はブランチに未マージ内容があることを意味しない（main が先行しただけでも差分は出る）。したがって差分の有無を**未マージ判定の根拠には使わない**。
+- **マージ済み PR の件数を根拠にしない**: 同名 head ブランチのマージ済み PR が 1 件あっても、そのマージ後に同じブランチへコミットを積んでいれば現在の tip は未マージである。必ず `headRefOid` と tip の一致まで確認する。
+- **`cherry` を削除許可に使わない**: squash では patch-id が変わって `+` が出るため未マージの証明にならず、コマンド失敗時も 0 になるためマージ済みの証明にもならない。Pass 2 の表示にのみ使う。
+- **非 GitHub / gh 不在のリポでは PR 検査を N/A とし、tracked tree の一致だけで判断する**。ここを「取得失敗」と同じ扱いにすると、ローカル運用リポで自動削除が永久に効かなくなるため区別する。
 
 分類（color は対象ごとにその場で決める）:
 
@@ -418,7 +569,7 @@ classify_dirty() {
 
 #### Step B-共通: 稼働シグナルの検出（診断時・非破壊）
 
-絶対禁則 3 の稼働シグナルを検出する 2 つのヘルパ。**遅延診断の中でのみ呼び、プロセスの停止・ファイルの変更は一切行わない**（破壊操作は削除直前の `kill_devserver_under` だけが行う）。
+絶対禁則 3 の稼働シグナルを検出する 3 つのヘルパ。**遅延診断の中でのみ呼び、プロセスの停止・ロック解除・ファイルの変更は一切行わない**（破壊操作は削除直前の `kill_devserver_under` だけが行う）。
 
 ```bash
 # 配下で稼働中の非シェルプロセスを列挙する。
@@ -426,7 +577,12 @@ classify_dirty() {
 # ——「kill_devserver_under が停止する対象が居るなら自動削除しない」という対応関係が本ガードの根拠。
 detect_active_procs_under() {
   local target="$1" abs pids pid comm out=""
-  abs=$(realpath -m "$target" 2>/dev/null) || abs="$target"
+  # 正規化できないまま空パスで lsof を撃つと、何も返らないのに「プロセスなし」と
+  # 表示される silent no-op になる。失敗は稼働シグナルとして扱う（削除しない側へ）。
+  if ! abs=$(abs_path "$target"); then
+    echo "プロセス検査不能: パスを解決できない（安全のため稼働扱い）"
+    return 0
+  fi
 
   if command -v lsof >/dev/null 2>&1; then
     pids=$(lsof +D "$abs" 2>/dev/null | awk 'NR>1{print $2}' | sort -u)
@@ -455,19 +611,42 @@ detect_active_procs_under() {
 
 # worktree に対応する Claude セッションログのうち、24 時間以内に更新された .jsonl を探す。
 # プロセスが一時的に落ちている壁打ちセッションを拾うための補助判定。
-# projects ディレクトリの slug 規則は Claude Code のバージョンで揺れる（`.` を `-` に置換する
-# 版としない版が混在する）ため、両方の候補を見る。
+#
+# slug の候補を広く取る理由が 2 つある。どちらも**取りこぼし＝作業中 worktree の誤削除**に
+# 直結するため、候補は多すぎるくらいでちょうどよい（誤検出の最悪は Pass 2 で 1 問増えるだけ）。
+#   1. projects ディレクトリの slug 規則は Claude Code のバージョンで揺れる
+#      （`.` を `-` に置換する版としない版が混在する）
+#   2. **symlink 経由のパスと物理パスで slug が変わる**。abs_path は物理パスを返すが、
+#      Claude Code 側の projects ディレクトリはセッションが見ていた論理パスで作られている
+#      ことがある（macOS の /var → /private/var、Dropbox 配下の symlink 等）。
+#      物理パスだけで探すと、そこに実在するログを取りこぼす。
 detect_recent_session_log() {
-  local target="$1" abs slug dir hit
-  abs=$(realpath -m "$target" 2>/dev/null) || abs="$target"
+  local target="$1" abs logical slug dir hit
+  if ! abs=$(abs_path "$target"); then
+    echo "セッションログ検査不能: パスを解決できない（安全のため稼働扱い）"
+    return 0
+  fi
 
-  # 候補A: `/` と空白のみ `-` に置換（旧形式・`.` を残す）
-  # 候補B: 候補A に加えて `.` も `-` に置換（新形式）
-  local slug_a slug_b
-  slug_a=$(printf '%s' "$abs" | sed 's/[/ ]/-/g')
-  slug_b=$(printf '%s' "$slug_a" | sed 's/\./-/g')
+  # 論理パス（symlink を解決しないまま絶対化したもの）も候補に含める
+  case "$target" in
+    /*) logical="$target" ;;
+    *)  logical="$PWD/$target" ;;
+  esac
 
-  for slug in "$slug_a" "$slug_b"; do
+  # 各ベースパスについて 候補A: `/` と空白のみ `-` に置換（旧形式・`.` を残す）
+  #                   候補B: 候補A に加えて `.` も `-` に置換（新形式）
+  local base slug_a slug_b slugs=""
+  for base in "$abs" "$logical"; do
+    [ -n "$base" ] || continue
+    slug_a=$(printf '%s' "$base" | sed 's/[/ ]/-/g')
+    slug_b=$(printf '%s' "$slug_a" | sed 's/\./-/g')
+    slugs="$slugs$slug_a
+$slug_b
+"
+  done
+
+  # 重複を除いて順に探す
+  for slug in $(printf '%s' "$slugs" | awk 'NF && !seen[$0]++'); do
     dir="$HOME/.claude/projects/$slug"
     [ -d "$dir" ] || continue
     # -mtime -1 = 24時間以内（BSD/GNU find 共通）
@@ -479,9 +658,60 @@ detect_recent_session_log() {
   done
   echo ""
 }
+
+# worktree が git worktree lock されているかを返す（ロック理由 + ロックファイルの更新時刻）。
+# ロックは「別のセッション/エージェントがこの worktree を所有している」という最も強い信号で、
+# git worktree list が既に持っている情報のため追加コストはゼロ。
+# ロック時刻も併せて返すのは、Pass 2 で「今まさに作業中」と「PR マージ後の外し忘れ」を
+# ユーザーが見分けられるようにするため（古いロックは後者の可能性が高い）。
+# 対象 worktree 専用の管理ディレクトリから locked ファイルを直接検査する。
+# ⚠️ `git worktree list --porcelain` を空白区切りで解析してはならない（SHALL NOT）。
+#    porcelain の worktree 行はパス全体が入るため、`awk '{print $2}'` 系は
+#    "/Users/x/my repo/foo" を "/Users/x/my" に切り落とし、ロックを取りこぼす。
+# 検査に失敗した場合は空文字（＝ロックなし）を返さず、「ロック状態不明」という
+# 非空の稼働シグナルを返して Pass 2 に送る（検査不能を安全側に倒す）。
+detect_worktree_lock() {
+  local target="$1" abs gitdir lockfile reason mtime
+
+  if ! abs=$(abs_path "$target"); then
+    echo "ロック状態不明: 対象パスを解決できない（安全のため稼働扱い）"
+    return 0
+  fi
+
+  # worktree 管理情報そのものを読めない場合は「ロックなし」に倒さない
+  if ! git -C "$MAIN_REPO" worktree list --porcelain >/dev/null 2>&1; then
+    echo "ロック状態不明: git worktree list --porcelain 失敗（安全のため稼働扱い）"
+    return 0
+  fi
+
+  # 対象 worktree 専用の gitdir を直接取得する
+  # （linked worktree では <main-git-dir>/worktrees/<name> の絶対パスになる）
+  if ! gitdir=$(git -C "$abs" rev-parse --absolute-git-dir 2>/dev/null); then
+    echo "ロック状態不明: worktree の gitdir を解決できない（安全のため稼働扱い）"
+    return 0
+  fi
+
+  lockfile="$gitdir/locked"
+  if [ ! -e "$lockfile" ]; then
+    echo ""
+    return 0
+  fi
+
+  # locked ファイルの中身がロック理由。空ファイルも有効なロックとして扱う
+  reason=""
+  IFS= read -r reason < "$lockfile" || true
+
+  if mtime=$(date -r "$lockfile" '+%Y-%m-%d %H:%M' 2>/dev/null); then
+    echo "${reason:-locked} ($mtime)"
+  else
+    echo "${reason:-locked}"
+  fi
+}
 ```
 
 **誤検出（false positive）は許容する**。稼働シグナルの誤検出が起こしうる最悪は「削除されず Pass 2 で 1 問聞かれる」だけであり、見逃し（false negative）の最悪は「作業中セッションの永久消失」である。判定は常に**検出する側に倒す**。
+
+> ℹ️ **ロックは他の 2 つと性質が違う**。配下プロセスとセッションログは「今動いているか」の観測だが、ロックは**明示的な所有権の宣言**であり、放置されると古いまま残る（wt-setup の hooks が `--lock` 付きで作った worktree は、PR がマージされてもロックが自動で外れない）。そのため Pass 2 の提示ではロック時刻を必ず併記し、ユーザーが「作業中」と「外し忘れ」を区別できるようにする。**ロックが古いことを理由にスキル側で自動削除に格下げしてはならない**（SHALL NOT）。判断はユーザーに委ねる。
 
 #### Step B-共通: 削除前のプロセス停止（devサーバー等）
 
@@ -491,7 +721,7 @@ detect_recent_session_log() {
 kill_devserver_under() {
   local target="$1"
   local abs
-  abs=$(realpath -m "$target" 2>/dev/null) || abs="$target"
+  abs=$(abs_path "$target")
 
   # 検出: lsof +D は対象パス配下に実際にオープンファイル/cwdを持つプロセスのみを返す
   # （pgrep -f はコマンドライン文字列の部分一致のため誤検出しうる。lsof 不在時のみフォールバック）
@@ -620,12 +850,13 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
 
 > 🤖 **`--unattended` 指定時は、この節の状況表示までを行い `AskUserQuestion` を呼ばずに Step C へ抜ける**（後述「無人モード」）。以降の選択肢提示・回答待ち・選択ごとの分岐には**一切入らない**。
 
-非空なら、各対象の状況を**まとめて**表示する。`ACTIVE_SIGNAL` が非空の対象は、検出内容（PID・コマンド名／セッションログの更新時刻）を必ず明示する（絶対禁則 3）。ユーザーが判断できる材料はこれだけなので省略・要約してはならない:
+非空なら、各対象の状況を**まとめて**表示する。`ACTIVE_SIGNAL` が非空の対象は、検出内容（PID・コマンド名／セッションログの更新時刻／ロック理由と時刻）を必ず明示する（絶対禁則 3）。未マージと判定した対象は `NOT_MERGED_REASON` をそのまま出す。ユーザーが判断できる材料はこれだけなので省略・要約してはならない:
 
 ```
-自動処理が完了しました（削除 3 / 保留 0）。残り 3 件は判断が必要です:
+自動処理が完了しました（削除 3 / 保留 0）。残り 4 件は判断が必要です:
 
 [1] baz (wip-z) — 🔴 未マージ
+  判定根拠: ツリー差分あり / cherry+=3 / マージ済みPRなし
   未マージコミット: 3件
     abc1234 feat: ユーザー登録フォームの追加
     def5678 fix: バリデーションエラー
@@ -642,6 +873,11 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
   ⚠️ 稼働中プロセスあり: 48213(claude), 48310(node)
   ⚠️ 直近セッションログ: ~/.claude/projects/-Users-…-business-idea/ab12.jsonl (2026-08-07 14:32)
   → 壁打ち等の進行中セッションの可能性があります。削除するとプロセスも停止されます
+
+[4] agent-a3ac2db (agent/issue-148-xxx) — 🔴 未マージ + ロック
+  判定根拠: PR が OPEN（レビュー中の作業） — PR #289
+  ⚠️ worktree ロック: added with --lock (2026-08-07 21:41)
+  → 削除するには先に git worktree unlock が必要です（Pass 1 では自動解除しません）
 ```
 
 **`--unattended` ならここで打ち切る**（`DEFERRED` を全件 `SKIPPED` として Step C の完了レポートへ。破壊操作は一切行わない）。以下は対話モード（`--unattended` なし）のみ。
@@ -659,12 +895,42 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
 
 回答を受け取ったら、**別ターンで**回答がどの worktree を指すか読み直して再確定し、選択ごとに逐次実行する（絶対禁則 1）。
 
+> ℹ️ **ロック済み worktree の削除にはロック解除が要る**。`git worktree remove --force`（`-f` 1 個）はロック済み worktree を `fatal: cannot remove a locked working tree` で拒否する。ユーザーが Pass 2 で削除を選んだ対象がロックされている場合に限り、削除の直前に `git -C "$MAIN_REPO" worktree unlock "$WT"` を実行してよい。**Pass 1 での自動 unlock は禁止**（SHALL NOT）。以下の削除分岐はいずれも次の `unlock_if_locked` を通す。
+
+```bash
+# Pass 2 でユーザーが削除を選んだ対象にのみ使う。ロックされていなければ何もしない。
+# ロック状態を確認できない場合・解除に失敗した場合は非 0 を返し、呼び出し側で削除を中断する
+# （確認できないまま remove に進むのは、ロックガードを無効化するのと同じ）。
+unlock_if_locked() {
+  local wt="$1" lock_state
+  lock_state=$(detect_worktree_lock "$wt")
+
+  case "$lock_state" in
+    "")
+      return 0
+      ;;
+    ロック状態不明:*)
+      echo "❌ $lock_state。削除を中断します: $wt" >&2
+      return 1
+      ;;
+    *)
+      echo "  🔓 worktree のロックを解除します（ユーザーが削除を承認済み）: $wt"
+      if ! git -C "$MAIN_REPO" worktree unlock "$wt"; then
+        echo "❌ worktree のロック解除に失敗したため、削除を中断します: $wt" >&2
+        return 1
+      fi
+      ;;
+  esac
+}
+```
+
 **選択ごとの分岐**:
 
 - **スキップ** → 状態維持。`SKIPPED+=("$BRANCH_NAME")`
 - **破棄削除 (force)**（🔴） →
   ```bash
   kill_devserver_under "$WT"
+  unlock_if_locked "$WT" || exit 1
   git -C "$MAIN_REPO" worktree remove --force "$WT"
   git -C "$MAIN_REPO" branch -D "$BRANCH_NAME"
   PROCESSED+=("$BRANCH_NAME (🔴 破棄削除)")
@@ -672,6 +938,7 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
 - **変更を破棄して削除**（🟡 dirty あり） →
   ```bash
   kill_devserver_under "$WT"
+  unlock_if_locked "$WT" || exit 1
   git -C "$MAIN_REPO" worktree remove --force "$WT"
   git -C "$MAIN_REPO" branch -d "$BRANCH_NAME"    # SQUASHED のときは -D
   PROCESSED+=("$BRANCH_NAME (🟡 dirty破棄→削除)")
@@ -679,6 +946,7 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
 - **削除する**（🟡 稼働シグナルあり・dirty なし） →
   ```bash
   kill_devserver_under "$WT"        # ここで初めて稼働中プロセスを停止する（ユーザーが承認済み）
+  unlock_if_locked "$WT" || exit 1   # 状態確認・解除に失敗したら remove に進まない
   git -C "$MAIN_REPO" worktree remove "$WT" --force
   git -C "$MAIN_REPO" branch -d "$BRANCH_NAME"      # SQUASHED のときは -D
   PROCESSED+=("$BRANCH_NAME (🟡 稼働シグナルあり→ユーザー承認で削除)")
@@ -905,6 +1173,8 @@ Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 - 🟡 判定で LLM 退避を行った場合、退避先ファイルが実在し空でないことを**削除前に**検証済みであることを確認する（検証失敗のまま削除していないこと）。
 - 🟢/🟡 の自動削除について、削除直前に診断根拠を表示したことを確認する（無音削除をしていないこと）。
 - 稼働シグナル（配下の非シェルプロセス／24時間以内のセッションログ）を検出した worktree を Pass 1 で自動削除・自動再利用化していないこと、および Pass 2 の提示に検出内容（PID・コマンド名／セッションログ更新時刻）を含めたことを確認する（絶対禁則 3）。
+- **検査の失敗が「マージ済み」側に倒れていないこと**（パスフィルタなしの実ツリー差分・`headRefOid` 一致・`gh` の終了コード・ロック検出・Step 0 の同期）。個別項目は `plugins/worktree/references/wt-clean-verification.md` の「判定が『マージ済み』側に倒れていないことの確認」を参照する。
+- worktree ロックを検出した対象を Pass 1 で自動処理せず、Pass 1 で `git worktree unlock` を実行していないことを確認する（解除は Pass 2 で削除を選んだ対象のみ）。
 - dirty 破棄・🔴 破棄削除・🔴 マージを行った場合、それぞれ Pass 2 の AskUserQuestion 回答後の別ターンで実行したことを確認する。
 - `git worktree remove` の直前に `kill_devserver_under` を実行し、削除対象パス配下にプロセス残留が無いことを確認したこと（停止した PID または「プロセスなし」がログに表示されていること）。
 - 無害 dirty（lockfile のみ）として自動処理した場合、削除直前の表示に `dirty=lockfileのみ` と対象ファイル名が含まれていることを確認する。lockfile 以外を 1 つでも含む worktree が自動処理されていないことも確認する。
