@@ -437,7 +437,7 @@ if [ "$AHEAD_COUNT" != "0" ]; then
     if [ -z "$TREE_DIFF" ]; then TREE_STATE="equal"; else TREE_STATE="different"; fi
   fi
 
-  # 検証B: cherry は Pass 2 の診断表示のためだけに取る。単独では自動削除の根拠にしない
+  # 検証B: git cherry は Pass 2 の診断表示のためだけに取る。単独では自動削除の根拠にしない
   #   （squash は patch-id が変わるため + が出る／失敗時も 0 に見えるため、両方向に信用できない）。
   CHERRY_STATE="unknown"; CHERRY_PLUS=""; CHERRY_OUTPUT=""
   if CHERRY_OUTPUT=$(git -C "$MAIN_REPO" cherry "$MAIN_BRANCH" "$BRANCH_NAME" 2>/dev/null); then
@@ -611,22 +611,42 @@ detect_active_procs_under() {
 
 # worktree に対応する Claude セッションログのうち、24 時間以内に更新された .jsonl を探す。
 # プロセスが一時的に落ちている壁打ちセッションを拾うための補助判定。
-# projects ディレクトリの slug 規則は Claude Code のバージョンで揺れる（`.` を `-` に置換する
-# 版としない版が混在する）ため、両方の候補を見る。
+#
+# slug の候補を広く取る理由が 2 つある。どちらも**取りこぼし＝作業中 worktree の誤削除**に
+# 直結するため、候補は多すぎるくらいでちょうどよい（誤検出の最悪は Pass 2 で 1 問増えるだけ）。
+#   1. projects ディレクトリの slug 規則は Claude Code のバージョンで揺れる
+#      （`.` を `-` に置換する版としない版が混在する）
+#   2. **symlink 経由のパスと物理パスで slug が変わる**。abs_path は物理パスを返すが、
+#      Claude Code 側の projects ディレクトリはセッションが見ていた論理パスで作られている
+#      ことがある（macOS の /var → /private/var、Dropbox 配下の symlink 等）。
+#      物理パスだけで探すと、そこに実在するログを取りこぼす。
 detect_recent_session_log() {
-  local target="$1" abs slug dir hit
+  local target="$1" abs logical slug dir hit
   if ! abs=$(abs_path "$target"); then
     echo "セッションログ検査不能: パスを解決できない（安全のため稼働扱い）"
     return 0
   fi
 
-  # 候補A: `/` と空白のみ `-` に置換（旧形式・`.` を残す）
-  # 候補B: 候補A に加えて `.` も `-` に置換（新形式）
-  local slug_a slug_b
-  slug_a=$(printf '%s' "$abs" | sed 's/[/ ]/-/g')
-  slug_b=$(printf '%s' "$slug_a" | sed 's/\./-/g')
+  # 論理パス（symlink を解決しないまま絶対化したもの）も候補に含める
+  case "$target" in
+    /*) logical="$target" ;;
+    *)  logical="$PWD/$target" ;;
+  esac
 
-  for slug in "$slug_a" "$slug_b"; do
+  # 各ベースパスについて 候補A: `/` と空白のみ `-` に置換（旧形式・`.` を残す）
+  #                   候補B: 候補A に加えて `.` も `-` に置換（新形式）
+  local base slug_a slug_b slugs=""
+  for base in "$abs" "$logical"; do
+    [ -n "$base" ] || continue
+    slug_a=$(printf '%s' "$base" | sed 's/[/ ]/-/g')
+    slug_b=$(printf '%s' "$slug_a" | sed 's/\./-/g')
+    slugs="$slugs$slug_a
+$slug_b
+"
+  done
+
+  # 重複を除いて順に探す
+  for slug in $(printf '%s' "$slugs" | awk 'NF && !seen[$0]++'); do
     dir="$HOME/.claude/projects/$slug"
     [ -d "$dir" ] || continue
     # -mtime -1 = 24時間以内（BSD/GNU find 共通）
@@ -1152,15 +1172,9 @@ Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 - 削除した worktree が `git worktree list` に現れないことを確認する。
 - 🟡 判定で LLM 退避を行った場合、退避先ファイルが実在し空でないことを**削除前に**検証済みであることを確認する（検証失敗のまま削除していないこと）。
 - 🟢/🟡 の自動削除について、削除直前に診断根拠を表示したことを確認する（無音削除をしていないこと）。
-- 稼働シグナル（配下の非シェルプロセス／24時間以内のセッションログ／worktree ロック）を検出した worktree を Pass 1 で自動削除・自動再利用化していないこと、および Pass 2 の提示に検出内容（PID・コマンド名／セッションログ更新時刻／ロック理由と時刻）を含めたことを確認する（絶対禁則 3）。
-- squash 判定を行った対象について、実ツリー差分をパスフィルタなし（全 tracked ファイル）で取ったことを確認する。`-- 'src/**' '*.ts'` のような言語別フィルタを付けていないこと。
-- 「マージ済み」と判定した根拠を報告に出したこと、および `pr_open` が非 0 の対象・PR 状態を取得できなかった対象をマージ済みとして扱っていないことを確認する。
-- マージ済み PR を根拠に削除した場合、PR の `headRefOid` と現在の branch tip の一致まで確認したことを検証する（件数だけを根拠にしていないこと）。
-- `gh` をパイプに繋いで終了コードを潰していないこと（`gh ... | grep -c` は gh の失敗を 0 件と区別できない）。変数代入の終了コードで成否を判定していることを確認する。
-- ロック検出で `git worktree list --porcelain` を空白区切り（`$2`）で解析していないこと。検査に失敗した対象を「ロックなし」として自動削除していないことを確認する。
-- Step 0 の `fetch` / `pull` の終了コードを検査したこと、失敗時に「✅ pulled」を表示していないことを確認する。
-- パス正規化に `realpath -m` を使っていないこと（macOS で必ず失敗し、プロセス検出が silent no-op になる）。`abs_path` を使い、プロセス残留チェックの表示に実際のパスが出ていることを確認する。
-- Pass 1 で `git worktree unlock` を実行していないことを確認する（解除は Pass 2 でユーザーが削除を選んだ対象のみ）。
+- 稼働シグナル（配下の非シェルプロセス／24時間以内のセッションログ）を検出した worktree を Pass 1 で自動削除・自動再利用化していないこと、および Pass 2 の提示に検出内容（PID・コマンド名／セッションログ更新時刻）を含めたことを確認する（絶対禁則 3）。
+- **検査の失敗が「マージ済み」側に倒れていないこと**（パスフィルタなしの実ツリー差分・`headRefOid` 一致・`gh` の終了コード・ロック検出・Step 0 の同期）。個別項目は `plugins/worktree/references/wt-clean-verification.md` の「判定が『マージ済み』側に倒れていないことの確認」を参照する。
+- worktree ロックを検出した対象を Pass 1 で自動処理せず、Pass 1 で `git worktree unlock` を実行していないことを確認する（解除は Pass 2 で削除を選んだ対象のみ）。
 - dirty 破棄・🔴 破棄削除・🔴 マージを行った場合、それぞれ Pass 2 の AskUserQuestion 回答後の別ターンで実行したことを確認する。
 - `git worktree remove` の直前に `kill_devserver_under` を実行し、削除対象パス配下にプロセス残留が無いことを確認したこと（停止した PID または「プロセスなし」がログに表示されていること）。
 - 無害 dirty（lockfile のみ）として自動処理した場合、削除直前の表示に `dirty=lockfileのみ` と対象ファイル名が含まれていることを確認する。lockfile 以外を 1 つでも含む worktree が自動処理されていないことも確認する。

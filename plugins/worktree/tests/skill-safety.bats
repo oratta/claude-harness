@@ -31,8 +31,41 @@ setup() {
   grep -q 'gh pr list' "$WT_CLEAN_SKILL"
 }
 
-@test "skill: wt-clean SKILL.md prefers the real tree diff when verdicts differ" {
-  grep -q '実ツリー差分（検証A）を優先' "$WT_CLEAN_SKILL"
+# 旧テストは「検証が割れたら実ツリー差分（検証A）を優先」を要求していた。
+# その規則こそが 2026-08-10 の誤判定の一因（検証A にパスフィルタが掛かっており、
+# Markdown 中心のリポジトリでは差分が常に空＝常にマージ済みになった）ため、
+# 「検査が失敗したらマージ済み側に倒れない」という fail-closed の検証に置き換える。
+@test "skill: squash detection takes no path filter on the real tree diff" {
+  # 全 tracked ファイル対象であること
+  grep -q 'git -C "$MAIN_REPO" diff "$MAIN_BRANCH" "$BRANCH_NAME" --stat 2>/dev/null' "$WT_CLEAN_SKILL"
+  # 言語別フィルタが復活していないこと
+  ! grep -q "diff \"\$MAIN_BRANCH\" \"\$BRANCH_NAME\" --stat -- " "$WT_CLEAN_SKILL"
+  grep -q 'パスフィルタを掛けてはならない' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: an OPEN pull request vetoes automatic deletion" {
+  grep -q 'PR が OPEN（レビュー中の作業）' "$WT_CLEAN_SKILL"
+  grep -q 'PR_OPEN' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: unknown PR state fails closed (never treated as merged)" {
+  grep -q 'PR 状態を確認できない' "$WT_CLEAN_SKILL"
+  grep -q 'PR_STATE' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: gh is not piped into grep -c (its exit code must be observable)" {
+  # `gh ... | grep -c` はパイプ末尾の grep の終了コードになり gh の失敗を隠す
+  ! grep -Eq 'gh pr list[^|]*\| *grep -c' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: a merged PR is only trusted when its headRefOid matches the branch tip" {
+  grep -q 'headRefOid' "$WT_CLEAN_SKILL"
+  grep -q 'PR_MERGED_AT_HEAD' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: the tree-diff asymmetry is documented" {
+  # 「差分が空」は削除可の十分条件だが、「差分がある」は未マージの証明にならない
+  grep -q '非対称' "$WT_CLEAN_SKILL"
 }
 
 @test "skill: wt-clean SKILL.md keeps SQUASHED not-red rule" {
