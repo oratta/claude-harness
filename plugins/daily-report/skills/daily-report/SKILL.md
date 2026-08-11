@@ -103,7 +103,7 @@ NEXT_DATE=$(date -j -v+1d -f %Y-%m-%d "$TARGET_DATE" +%Y-%m-%d 2>/dev/null \
   || date -d "$TARGET_DATE + 1 day" +%Y-%m-%d)
 ```
 
-Vault root を `git rev-parse --show-toplevel` で取得。Vault が git 管理されていない場合は cwd を Vault root と仮定し、ユーザーに警告。
+Obsidian Vault root を `git rev-parse --show-toplevel` で取得。Vault が git 管理されていない場合は cwd を Vault root と仮定し、ユーザーに警告。
 
 ```bash
 VAULT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
@@ -235,7 +235,7 @@ dailyLLM.md の各セッションエントリには `**参照**: [[90 - LLM/<fil
 - 朝の小ハマり（dailyLLM.md 朝イチのセッション）
 - 午前〜午後の作業（dailyLLM.md の指示から "何のロングランが走っていたか" を逆引き、voice.md と突き合わせる）
 - 環境トラブル（dailyLLM.md および編集ノートから拾う）
-- Vault 側の編集（編集ノートから "どのプロジェクトの何を進めたか"）
+- Obsidian Vault 側の編集（編集ノートから "どのプロジェクトの何を進めたか"）
 - 昼の予定電話・買い物（voice.md）
 - 夜の食事・飲み（voice.md）
 - 帰路の出来事（voice.md）
@@ -303,7 +303,7 @@ cssclasses:
 > [!todo] 翌日以降のアクション
 > - [ ] <dailyLLM.md やLLMログから読み取れる未完了タスク>
 > - [ ] <voice.mdで言及された予定>
-> - [ ] <Vault編集ノートに残っていた TODO>
+> - [ ] <Obsidian Vault編集ノートに残っていた TODO>
 
 ## 関連
 
@@ -319,7 +319,7 @@ voice.md / dailyLLM.md に `(未取得)` セクションがある場合、diary.
 
 ### Step 8: セッションログを残す（既存 Step 4 を維持）
 
-`90 - LLM/<TARGET_DATE_COMPACT_TODAY>-<タイトル>.md` に、本スキル実行のログを記録する。Vault の basic.md ルールに従う:
+`90 - LLM/<TARGET_DATE_COMPACT_TODAY>-<タイトル>.md` に、本スキル実行のログを記録する。Obsidian Vault の basic.md ルールに従う:
 
 ```markdown
 ---
@@ -371,7 +371,7 @@ args: "<DIARY_ABS_PATH>${ALBUM_ARGS}"
 - `DIARY_ABS_PATH` は Step 7a で書き出した diary の絶対パス（`$VAULT_ROOT/01 - DAILY/<TARGET_DATE>/diary.md` もしくは衝突回避で suffix が付いた版）。
 - `ALBUM_ARGS` は Step 0 で組み立てた `--cells N` / `--split A:B` の pass-through 文字列（空でも可）。
 
-vlog-album は cwd 配下に `output/<TARGET_DATE>-vlog/album.png` と `output/<TARGET_DATE>-vlog/prompt.md` を生成する。**cwd は本スキル実行時のディレクトリ**（通常は Vault root）になることに留意。
+vlog-album は cwd 配下に `output/<TARGET_DATE>-vlog/album.png` と `output/<TARGET_DATE>-vlog/prompt.md` を生成する。**cwd は本スキル実行時のディレクトリ**（通常は Obsidian Vault root）になることに留意。
 
 > [!warning] codex CLI セットアップ不全時
 > vlog-album が codex CLI 未セットアップで失敗した場合、本スキルの責務外なので、エラーをそのままユーザーに伝えて Step 10 に進む（diary 自体は完成しているので報告で握り潰さない）。
