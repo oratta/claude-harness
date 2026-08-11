@@ -1,6 +1,6 @@
 ---
 name: wt-clean
-description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。`wt-clean [<path|branch>…] [--keep] [--no-sync]`、引数なしは全 worktree を対象。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」で起動。
+description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。配下で claude 等のプロセスが稼働中／当日のセッションログがある worktree は自動削除せず判断バッチに回す。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」で起動。
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -21,10 +21,12 @@ for dir in \
 done
 ```
 
-特定した絶対パス（`skills/wt-clean/SKILL.md`）を Read tool で読み込み、その手順（Step 0 同期 → Step A TARGETS 確定 → Step B 遅延診断 → Step C レポート）に一言一句従って実行する。
+特定した絶対パス（`skills/wt-clean/SKILL.md`）を Read tool で読み込み、その手順（Step -1 対象リポ解決 → Step 0 同期 → Step A TARGETS 確定 → Step B 遅延診断 → Step C レポート）に一言一句従って実行する。
 
 ## 引数の透過
 
-`$ARGUMENTS` を SKILL.md の実行にそのまま渡す。位置引数（`<path|branch> …`）・`--keep`・`--no-sync` の解釈はすべて SKILL.md 側の定義に従い、この command で意味を再定義・上書きしない。
+`$ARGUMENTS` を SKILL.md の実行にそのまま渡す。位置引数（`<path|branch> …`）・`--keep`・`--no-sync`・`--unattended`・`--repo <path>` の解釈はすべて SKILL.md 側の定義に従い、この command で意味を再定義・上書きしない。
+
+`--unattended` が渡された場合は、SKILL.md の「無人モード」節の SHALL NOT を厳守する。とくに **`AskUserQuestion` を一度も呼ばずに完了する**こと（この command の `allowed-tools` に AskUserQuestion が含まれているのは対話モードのためであり、無人モードでの使用許可ではない）。
 
 引数 (`$ARGUMENTS`) の内容: $ARGUMENTS

@@ -2,7 +2,7 @@
 # usage-probe.sh: Anthropic OAuth usage API から Fable 週次残量を取得し snapshot に書く。
 #
 # 契約:
-#   - 出力先 snapshot: $USAGE_SNAPSHOT（既定 ~/.claude/.usage-snapshot）
+#   - 出力先 snapshot: ${USAGE_SNAPSHOT}（既定 ~/.claude/.usage-snapshot）
 #   - snapshot が TTL（$USAGE_PROBE_TTL 秒、既定 300）以内に更新済みなら再フェッチしない
 #   - 認証取得・通信・パースのいずれが失敗しても exit 0 で snapshot を書かない（fail-open）
 #   - snapshot JSON は少なくとも fable_weekly_pct / fable_active を含む
@@ -23,7 +23,11 @@ ENDPOINT="${USAGE_PROBE_ENDPOINT:-https://api.anthropic.com/api/oauth/usage}"
 # age は実時刻で計算する（USAGE_PROBE_NOW は導出の決定論化用であり、mtime は実時刻のため混ぜない）。
 if [ -f "$SNAPSHOT" ]; then
   real_now="$(date +%s 2>/dev/null || echo 0)"
-  mtime="$(stat -f %m "$SNAPSHOT" 2>/dev/null || stat -c %Y "$SNAPSHOT" 2>/dev/null || echo 0)"
+  # GNU（-c）を先に試す。逆順にすると Linux で `stat -f` が「ファイルシステム情報の
+  # 表示」として成功してしまい（BSD の -f=フォーマット指定とは別物）、mtime ではない
+  # 値が返って || のフォールバックに落ちない。macOS の stat は -c を不正オプションとして
+  # 非0終了するため、この順序なら両プラットフォームで正しく mtime が取れる。
+  mtime="$(stat -c %Y "$SNAPSHOT" 2>/dev/null || stat -f %m "$SNAPSHOT" 2>/dev/null || echo 0)"
   age=$(( real_now - mtime ))
   if [ "$age" -ge 0 ] && [ "$age" -lt "$TTL" ] 2>/dev/null; then
     exit 0

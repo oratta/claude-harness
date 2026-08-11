@@ -1,0 +1,17 @@
+{
+  "name": "statusline",
+  "version": "0.1.1",
+  "description": "使用量が一目で分かる Claude Code ステータスライン。5h / 7d（全体・Fable）のレートリミットを、クォータ消化率をバーの塗り・窓の日程消化率をバー下端の細線と分母（例 25%/29%）で同時に表示し、「今のペースでリセットまで持つか」を色で示す。コンテキスト残量と ccusage 由来の API 換算月額ペースも表示。`/statusline:setup` で settings.json への配線まで行う。",
+  "author": {
+    "name": "Oratta"
+  },
+  "license": "MIT",
+  "keywords": [
+    "statusline",
+    "rate-limit",
+    "usage",
+    "quota",
+    "ccusage",
+    "claude-code"
+  ]
+}

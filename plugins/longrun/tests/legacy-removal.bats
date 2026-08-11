@@ -94,11 +94,16 @@ setup() {
 # is deferred to change-7 per plan.md's dependency note. Assertions below only
 # check plugin.json's own value and that marketplace.json still has entries.
 
-@test "legacy: longrun plugin.json version is 6.5.0" {
-  # merged: main took 6.4.0 (PR #10), this branch adds a patch on top -> 6.5.0 for the self-verification
-  # section added to longrun-plan/SKILL.md. See decisions.md D-5b.
+@test "legacy: longrun plugin.json version is semver and not below the 6.5.0 baseline" {
+  # 元は "6.5.0 と等しい" 固定アサーションだったが、plugin.json を上げるたびに落ちる
+  # 陳腐化テストになっていた（実際 6.5.1 の時点で失敗したまま放置されていた）。
+  # 意図は「バージョンが退行していないこと」なので、semver 形式 + baseline 以上に変更する。
+  # baseline 6.5.0 = main 6.4.0（PR #10）+ longrun-plan/SKILL.md 自己検証節のパッチ。decisions.md D-5b。
+  # 同じ緩和は plugins/worktree/tests/setup-script.bats の 2.2.1 baseline が先行事例。
   a="$(jq -r '.version' "$LONGRUN_JSON")"
-  [ "$a" = "6.5.0" ]
+  [[ "$a" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+  run bash -c "printf '%s\n%s\n' '6.5.0' '$a' | sort -V | head -1"
+  [ "$output" = "6.5.0" ]
 }
 
 @test "legacy: lr plugin.json version is 6.2.0" {

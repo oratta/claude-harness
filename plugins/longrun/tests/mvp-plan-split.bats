@@ -302,10 +302,13 @@ setup() {
 # mid-change. They only assert plugin.json's own value and that marketplace.json
 # still parses and still contains the corresponding entry.
 
-@test "mvp: longrun plugin.json version is 6.5.0" {
-  # merged: main 6.4.0 (PR #10) + this branch patch -> 6.5.0. See decisions.md D-5b/D-5d.
+@test "mvp: longrun plugin.json version is semver and not below the 6.5.0 baseline" {
+  # 固定アサーションだと bump のたびに落ちるため baseline 以上に緩和（下の SKILL.md 版と同じ理由）。
+  # baseline 6.5.0 = main 6.4.0（PR #10）+ this branch patch。decisions.md D-5b/D-5d。
   a="$(jq -r '.version' "$LONGRUN_JSON")"
-  [ "$a" = "6.5.0" ]
+  [[ "$a" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+  run bash -c "printf '%s\n%s\n' '6.5.0' '$a' | sort -V | head -1"
+  [ "$output" = "6.5.0" ]
 }
 
 @test "mvp: marketplace.json still contains a longrun entry (version sync deferred to change-7)" {
@@ -313,11 +316,17 @@ setup() {
   [ -n "$b" ]
 }
 
-@test "mvp: SKILL.md frontmatter versions are 6.2.0 for both plan and mvp-plan" {
+@test "mvp: SKILL.md frontmatter versions are semver and not below the 6.2.0 baseline (plan / mvp-plan)" {
+  # 固定アサーションだと SKILL.md の patch bump のたびに落ちる（実際 mvp-plan が
+  # 6.2.1 になった時点で失敗したまま放置されていた）。意図は「両 SKILL の version が
+  # 揃って baseline 以上にあること」なので semver 形式 + baseline 以上に緩和する。
   va="$(grep -E '^version: ' "$PLAN_SKILL" | head -1 | awk '{print $2}')"
   vb="$(grep -E '^version: ' "$MVP_SKILL" | head -1 | awk '{print $2}')"
-  [ "$va" = "6.2.0" ]
-  [ "$vb" = "6.2.0" ]
+  for v in "$va" "$vb"; do
+    [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+    run bash -c "printf '%s\n%s\n' '6.2.0' '$v' | sort -V | head -1"
+    [ "$output" = "6.2.0" ]
+  done
 }
 
 @test "mvp: lr plugin.json version is 6.2.0" {

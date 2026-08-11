@@ -21,21 +21,7 @@ git push -u origin <branch>
 gh pr create --draft --head <branch> --base main --title "<branch>" --body "<テンプレ>"
 ```
 
-## 復元手順（worktree dir がプラグイン更新で消えた場合）
-
-```bash
-# 1. branch を取得
-git fetch origin <branch-name>
-
-# 2. 新しい worktree を作る（marketplace dir の外がおすすめ）
-git worktree add ~/.superset/worktrees/<uuid>/<branch-name> <branch-name>
-
-# 3. wt-setup で開発環境を整える
-cd ~/.superset/worktrees/<uuid>/<branch-name>
-# Claude Code を立ち上げて /wt-setup
-```
-
-session.jsonl のような ephemeral ファイルは **復元対象外**。Draft PR にバックアップされるのは git tracked なファイルと commit 履歴のみ。
+worktree dir がプラグイン更新で消えた場合の復元手順は `docs/worktree-recovery.md` を参照。
 
 ## LLM ログ保存先
 
@@ -47,27 +33,7 @@ session.jsonl のような ephemeral ファイルは **復元対象外**。Draft
 
 `daily-report` / `weekly-report` など LLM ログを扱う skill を呼び出すときも、この優先順位でパスを解決すること。
 
-## CI 設計指針（将来 CI を追加するときの参考）
-
-現状このリポジトリには `.github/workflows/` が無いが、追加する場合は **Draft PR では CI を skip するパターン** を使う:
-
-```yaml
-on:
-  push:
-  pull_request:
-    types: [opened, reopened, ready_for_review, synchronize]
-
-jobs:
-  build:
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
-    # ...
-```
-
-- 普通の push（feature branch への直接 push 含む）では走る
-- Draft PR の push では skip
-- Ready for Review に切り替えた瞬間に走る
-- Preview deploy 系は Draft でも走らせて OK（プレビュー用途のため）
+CI を将来追加する場合の設計指針（Draft PR では skip するパターン）は `docs/ci-design.md` を参照。
 
 ## 適用範囲
 

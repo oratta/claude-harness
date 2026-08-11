@@ -1,7 +1,7 @@
 ---
 name: push-guard-setup
 description: マージ済み PR のブランチへの push を全リポジトリで拒否するグローバル pre-push ガードを導入する（`~/.githooks/pre-push` + `git config --global core.hooksPath`）。「push ガードを入れて」「マージ済みブランチへの push を止めたい」「グローバル git フックを設定して」で起動。人間の手打ち push と Claude の push の両方を同じ層で止める。
-version: 1.0.0
+version: 1.0.1
 allowed-tools: Read, Write, Edit, Bash
 ---
 
@@ -65,10 +65,9 @@ pr_counts() {
     --jq '"\([.[]|select(.state=="MERGED")]|length) \([.[]|select(.state=="OPEN")]|length)"' \
     >"$_out" 2>/dev/null </dev/null &
   _pid=$!
-  _i=0
+  _deadline=$(( $(date +%s) + 3 ))   # 壁時計で最大 3 秒（回数ベースだと sleep のプロセス生成コストで上限が保証されない）
   while kill -0 "$_pid" 2>/dev/null; do
-    _i=$((_i + 1))
-    if [ "$_i" -gt 30 ]; then          # 0.1 秒 x 30 = 3 秒
+    if [ "$(date +%s)" -ge "$_deadline" ]; then
       kill "$_pid" 2>/dev/null
       rm -f "$_out"
       return 1
