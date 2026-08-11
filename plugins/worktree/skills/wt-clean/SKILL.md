@@ -1,7 +1,7 @@
 ---
 name: wt-clean
 description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある／git worktree lock されている worktree は git がクリーンでも自動削除せず判断バッチに回す。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
-version: 3.5.0
+version: 3.6.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -53,6 +53,21 @@ Step C  完了レポート
 
 - **`--repo` 未指定時**: メインリポのルートで実行すること（worktree 内ではなく）。worktree 内で実行した場合は「メインリポで実行してください」と案内する（現行どおり）
 - **`--repo <path>` 指定時**: cwd がどこであっても構わない。指定されたパスから**そのリポジトリのメイン worktree** を解決し、以降の git 操作はすべてそのメインリポに対して行う（cwd のリポジトリは一切触らない）
+
+## コード片の実行シェルは zsh も含む（bash 専用構文を書かない）
+
+このスキルは「SKILL.md を Read して、載っているコード片をそのまま **Bash ツールでインライン実行する**」設計であり、Claude Code の Bash ツールは macOS では既定で **zsh** を起動する。つまり ```bash と書かれたコードブロックも実際には zsh で走ることがある。**このファイルに載せるコード片は bash と zsh の両方で同じ結果になる書き方に限ること。**
+
+zsh で実際に事故になった書き方（そのままコピーしないこと）:
+
+| 書き方 | zsh での挙動 | 代わりに |
+|---|---|---|
+| `${var%%(*}` のようにパターンメタ文字（`(` `)` `[` `]` `#` `~`）を区切りに使う | `bad pattern: (*` の**パースエラーでシェルごと即終了**する。`\|\| true` / `set +e` でも救えない（コマンドの非ゼロ終了ではないため）。issue #66 | 区切りに `\|` や `/` などメタ文字でない文字を使う（`killed+=("$pid\|$comm")` → `${entry%%\|*}`） |
+| `for x in $pids`（複数行の変数を単語分割で回す） | zsh は既定で単語分割しないため全行が 1 要素に潰れる | `while IFS= read -r x; do … done <<< "$pids"` |
+| ループ本体で `local x` を毎周回宣言する | 2 周目以降の再宣言が `x=前回の値` を**標準出力に印字する**（bash は無言）。レポートにゴミ行が混ざる | 宣言は関数先頭にまとめる |
+| 配列の添字を 0 始まりで直接参照する | zsh の配列は 1 始まり | 添字を直に書かず `"${arr[@]}"` で回す |
+
+新しいコード片を足すときは、`bats plugins/worktree/tests/` に **bash と zsh の両方で実行して結果が一致することを確かめるテスト**を添えること（既存例: `classify_dirty: behaves identically under bash and zsh`）。
 
 ## 絶対禁則（最優先・データロス防止）
 
@@ -738,13 +753,15 @@ kill_devserver_under() {
     return 0
   fi
 
-  local killed=() skipped=()
+  # ⚠️ comm はここで 1 回だけ宣言する。ループ本体に `local comm` を置くと、zsh では
+  #    2 周目以降の再宣言が `comm=sleep` のように**変数の中身を標準出力に印字する**
+  #    （bash は無言）。停止レポートの途中にゴミ行が混ざるため、宣言はループ外に出す。
+  local killed=() skipped=() comm
   # ⚠️ `for pid in $pids` と書いてはならない（detect_active_procs_under と同じ理由）。
   #    zsh では複数行の $pids が 1 要素に潰れ、存在しない PID 1 個に kill を撃って
   #    「1件も止められないのに成功したように見える」状態になる。
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
-    local comm
     comm=$(ps -o comm= -p "$pid" 2>/dev/null | xargs -I{} basename {} 2>/dev/null)
     # 対話用のシェル/エディタ（対象 worktree に cd しているだけのセッション）は誤 kill を避けるため除外。
     # 除外リストに無いコマンドは全て停止対象にする（false negative より false positive を避ける設計）。
@@ -755,18 +772,24 @@ kill_devserver_under() {
         ;;
     esac
     kill -TERM "$pid" 2>/dev/null
-    killed+=("$pid($comm)")
+    # ⚠️ 区切り文字に `(` を使ってはならない（issue #66）。`${entry%%(*}` は zsh で
+    #    `bad pattern: (*` というパースエラーになり、`|| true` でも救えずシェルごと即死する。
+    #    しかも死ぬのは killed が非空のとき、つまり kill -TERM 送信後・SIGKILL
+    #    フォールバック前・git worktree remove 前という最悪の位置。パターンメタ文字では
+    #    ない `|` を区切りにし、表示だけ "$pid($comm)" に組み立て直す。
+    killed+=("$pid|$comm")
   done <<< "$pids"
 
   if [ ${#killed[@]} -gt 0 ]; then
     sleep 3
     for entry in "${killed[@]}"; do
-      pid="${entry%%(*}"
+      pid="${entry%%|*}"
+      comm="${entry##*|}"
       if kill -0 "$pid" 2>/dev/null; then
         kill -KILL "$pid" 2>/dev/null
-        echo "  🔪 devサーバー(PID $pid)を SIGKILL で停止しました（SIGTERM後も生存）"
+        echo "  🔪 devサーバー(PID $pid($comm))を SIGKILL で停止しました（SIGTERM後も生存）" # 表示は $pid($comm) に戻す
       else
-        echo "  🔪 devサーバー(PID $pid)を停止しました"
+        echo "  🔪 devサーバー(PID $pid($comm))を停止しました"
       fi
     done
   fi

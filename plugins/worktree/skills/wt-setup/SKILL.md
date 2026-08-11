@@ -1,7 +1,7 @@
 ---
 name: wt-setup
 description: Git worktree の開発環境セットアップ。worktree 作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。引数で後続作業指示を渡せる。`--with-pr` で Draft PR 常時バックアップ運用（プラグイン自体の repo 向け）。
-version: 1.5.0
+version: 1.6.0
 model: sonnet
 context: fork
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
@@ -102,6 +102,14 @@ bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/oratta-claude-har
    - **除外する**: `node_modules`, `out`, `dist`, `build`, `.next`, `*.log` 系（ビルド成果物・一時ファイル。再生成可能）
 4. worktree内に `.worktreeinclude` を作成（作業コミットに含めてマージする。以降のworktreeではチェックアウト時に存在するため再生成不要）
 5. 作成後、再度スクリプトを実行してファイルをコピーする
+
+**コピー対象は gitignore されたファイルだけ**（issue #80）。`.env.*` のような glob は
+`.env.local.example` のような**追跡済み**ファイルにも一致するが、スクリプトはコピー直前に
+メインリポ側で `git check-ignore` / `git ls-files` を確認し、git が管理しているファイルは
+`skipped (tracked): <path>` と出して飛ばす。メインリポの checkout が古いと、その古い内容が
+worktree の追跡ファイルを上書きして「誰も触っていないのに行が消えた」差分になるため。
+`.worktreeinclude` にパターンを足すときも、この「gitignore されたものだけ運ぶ」契約は変わらない
+（追跡済みファイルを持ち込みたい場合は、そもそも worktree のチェックアウトに入っている）。
 
 ### Step 3: 依存インストール（任意）
 
