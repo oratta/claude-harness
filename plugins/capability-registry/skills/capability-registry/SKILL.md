@@ -10,7 +10,7 @@ version: 1.3.0
 
 1. 索引の記述を信じず、verify（認証確認コマンド）を実行して確かめる
 2. トークンは `"${CLAUDE_PLUGIN_ROOT}/scripts/fmtoken.sh" <service>` で取得する。値を transcript に出さないため必ずコマンド置換で使う（例: `GITHUB_TOKEN="$(fmtoken.sh github)" gh api ...`）
-   - 未登録なら exit 44 → ブラウザに行かず、主に 1Password `agents` 保管庫への登録（`<project>--<service>` / フィールド `credential`）を依頼する
+   - 未登録なら exit 44 → ブラウザに行かず、主に 1Password `agents` 保管庫への登録（`<project>--<service>` / フィールド `credential`）を依頼する（prod の書き込み可能キーは例外 — 後述『資格情報の階層』参照）
    - SA トークン未配布なら exit 43 → 主に SA トークンの配布を依頼する
    - 存在確認だけなら `fmtoken.sh --check <service>`、一覧は `fmtoken.sh --list`
 3. ブラウザ操作が正当なのは、索引の「ブラウザ必須の例外」とネガティブエントリに該当する場合のみ
