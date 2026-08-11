@@ -244,7 +244,7 @@
       "description": "外部サービスを操作する前に CLI とトークンの在処を教える発見層プラグイン。サービス索引スキル（description トリガー・CLAUDE.md 無編集で発火・CLI が無いネガティブエントリ付き）+ fmtoken.sh（1Password agents 保管庫からプロジェクトスコープでトークンを引くラッパー）+ ブラウザ系 MCP ツールの PreToolUse 注意喚起 hook（deny はしない）で、ブラウザとログイン依頼への逃げ道を減らす。",
       "source": "./plugins/capability-registry",
       "category": "workflow",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "author": {
         "name": "Oratta"
       },

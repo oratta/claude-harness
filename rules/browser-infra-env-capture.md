@@ -8,3 +8,14 @@
 - 保存前に `git check-ignore` で gitignore を確認。シークレット値は echo せず `pbpaste` → 変数経由、確認は形式チェックのみ
 - キーにはコメントで日付・発行元・スコープを添える。env に入れない判断をしたら、どこに設定済みか・再発行方法をコメントかメモリに残す
 - repo に残らないインフラ事実（アカウント名・リージョン等）は env ではなく**メモリ**に記録する
+
+## 捕獲後の昇格（env は仮置き、正本は 1Password）
+
+即時 env 保存は**消失防止の仮置き**であり、恒久の置き場ではない。捕獲した同じターンで:
+
+1. エージェントは 1Password に書き込めない（SA は read-only、アイテム登録は人間の作業）。
+   だから**主に `agents` 保管庫への登録を依頼する**（アイテム名 `<project>--<service>` / フィールド `credential`）
+2. ただし **prod の書き込み可能キー**（service_role・live secret key 等）は保管庫に入れず
+   **GitHub Actions secrets へ**登録依頼する。階層の正本は capability-registry スキルの「資格情報の階層」
+3. 登録が確認できたら、env 側のコメントに「正本: 1Password / Actions secrets」と追記する
+   （env から消すかは主の判断 — 無断で消さない）
