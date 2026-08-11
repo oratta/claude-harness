@@ -39,6 +39,73 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+# --- issue #80: only gitignored files may be copied ---
+#
+# `.worktreeinclude` promises "gitignored files worth copying into the worktree",
+# but its globs (`.env.*` by default) also match *tracked* files such as
+# `.env.local.example`. When the main repo's checkout is stale, that stale copy
+# overwrote the worktree's tracked file and produced a diff nobody made.
+
+@test "script: wt-setup.sh checks gitignore status before copying" {
+  grep -q 'check-ignore' "$WT_SETUP_SH"
+  grep -q 'skipped (tracked)' "$WT_SETUP_SH"
+}
+
+# Build a main repo + worktree where the .worktreeinclude glob matches both a
+# tracked file and an ignored one, then run the real script inside the worktree.
+# Echoes the worktree path; the script output lands in $BATS_TEST_TMPDIR/out.txt.
+wt_run_setup_with_include() {
+  local main wt
+  main="$(wt_make_repo main80)"
+  (
+    cd "$main" || exit 1
+    printf '.env.local\n' >.gitignore
+    printf 'PUBLIC=committed\n' >.env.local.example   # tracked, matches .env.*
+    printf 'SECRET=s3cret\n' >.env.local              # ignored, matches .env.*
+    printf '.env.*\n' >.worktreeinclude
+    git add -A .gitignore .env.local.example .worktreeinclude
+    git commit -qm "add env example"
+    # Simulate a stale main checkout: the working copy loses a line that the
+    # worktree's committed version still has.
+    printf 'PUBLIC=stale\n' >.env.local.example
+    git worktree add -q -b wt80 "$main-wt" HEAD
+  ) >/dev/null 2>&1
+  wt="$main-wt"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/out.txt" 2>&1
+  echo "$wt"
+}
+
+@test "script: a tracked file matching the glob is skipped, not copied" {
+  local wt out
+  wt="$(wt_run_setup_with_include)"
+  out="$(cat "${BATS_TEST_TMPDIR}/out.txt")"
+  [[ "$out" == *"skipped (tracked): ./.env.local.example"* ]]
+  # the worktree's tracked file still holds the committed content
+  [ "$(cat "$wt/.env.local.example")" = "PUBLIC=committed" ]
+}
+
+@test "script: a gitignored file matching the same glob is still copied" {
+  local wt out
+  wt="$(wt_run_setup_with_include)"
+  out="$(cat "${BATS_TEST_TMPDIR}/out.txt")"
+  [[ "$out" == *"copied: ./.env.local"* ]]
+  [ "$(cat "$wt/.env.local")" = "SECRET=s3cret" ]
+}
+
+@test "script: the copy summary reports both copied and skipped counts" {
+  wt_run_setup_with_include >/dev/null
+  grep -q 'total: 1 files copied, 1 skipped (tracked)' "${BATS_TEST_TMPDIR}/out.txt"
+}
+
+@test "script: skipping a tracked file leaves the worktree git-clean" {
+  # The whole point of #80: no phantom diff appears just from running wt-setup.
+  local wt
+  wt="$(wt_run_setup_with_include)"
+  run git -C "$wt" status --porcelain -- .env.local.example
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 # --- version sync (task 6.x): plugin.json version is bumped and JSON parses ---
 
 @test "version: worktree plugin.json version is semver and not below the 2.2.1 baseline" {

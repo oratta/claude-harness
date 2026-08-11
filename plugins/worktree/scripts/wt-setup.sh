@@ -25,6 +25,7 @@ if [ -f .worktreeinclude ]; then
   echo ""
   echo "=== .worktreeinclude: 既存 ==="
   COPIED=0
+  SKIPPED=0
   while IFS= read -r pattern; do
     [[ "$pattern" =~ ^#.*$ || -z "$pattern" ]] && continue
     # find -path のグロブ挙動（実挙動確認済み・意図の明文化）:
@@ -35,12 +36,30 @@ if [ -f .worktreeinclude ]; then
     #   この直下限定挙動が意図通り（サブディレクトリまで拾いたい場合は "./**/$pattern" を
     #   別パターンとして追記する運用にする）。
     while IFS= read -r file; do
+      # gitignore されたファイルだけをコピーする（issue #80）。
+      # .worktreeinclude の契約は「gitignore されたファイルのうち worktree に
+      # コピーすべきもの」だが、`.env.*` のような glob は `.env.local.example` の
+      # ような**追跡済み**ファイルにも一致する。メインリポの checkout が古いと、
+      # その古い内容が worktree の追跡ファイルを上書きし、「誰も触っていないのに
+      # 行が消えた」幽霊差分になる（実例: suimei の .env.local.example から
+      # SM_LP_ORIGIN が消えた件）。判定はメインリポ側で行う。
+      # ls-files も見るのは、`.gitignore` に載っているのに force-add されて
+      # 追跡されているファイルが check-ignore では「ignore 済み」と出るため。
+      # 上書きすると幽霊差分になる点は同じなので、どちらか一方でも該当したら飛ばす。
+      # check-ignore が異常終了（128 等）した場合も「ignore ではない」側に倒れて
+      # スキップされる ＝ 検査不能ならコピーしない fail-closed になっている。
+      if git -C "$MAIN_REPO" ls-files --error-unmatch "$file" >/dev/null 2>&1 \
+        || ! git -C "$MAIN_REPO" check-ignore -q "$file"; then
+        echo "  skipped (tracked): $file"
+        SKIPPED=$((SKIPPED + 1))
+        continue
+      fi
       dir=$(dirname "$file")
       mkdir -p "$dir"
       cp "$MAIN_REPO/$file" "$file" 2>/dev/null && echo "  copied: $file" && COPIED=$((COPIED + 1))
     done < <(cd "$MAIN_REPO" && find . -path "./$pattern" -type f 2>/dev/null)
   done < .worktreeinclude
-  echo "  total: $COPIED files copied"
+  echo "  total: $COPIED files copied, $SKIPPED skipped (tracked)"
 else
   echo ""
   echo "=== .worktreeinclude: なし（SKILL.mdの手順で生成してください） ==="
