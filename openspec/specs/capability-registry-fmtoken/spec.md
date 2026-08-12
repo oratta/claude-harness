@@ -1,10 +1,10 @@
 # capability-registry-fmtoken Specification
 
 ## Purpose
-プロジェクトスコープのトークン取得ラッパー fmtoken.sh。1Password vault agents から read-only SA 経由でトークンを引き、未登録・未配布時は人間への依頼文を返す。
+プロジェクトスコープのトークン取得ラッパー fmtoken.sh。1Password の agents 保管庫から read-only SA 経由でトークンを引き、未登録・未配布時は人間への依頼文を返す。
 ## Requirements
 ### Requirement: fmtoken.sh がプラグイン内から動作する
-プラグインは `scripts/fmtoken.sh` を同梱し、以下の振る舞いを提供しなければならない（SHALL）: プロジェクト名を `git remote get-url origin` のリポジトリ名（URL 末尾の `.git` を除いた最終パス要素を小文字化したもの）から機械導出し、1Password vault `agents` のアイテム `<project>--<service>`（フィールド `credential`）を read-only Service Account 経由で読む。導出はディレクトリ名に依存しないため、メイン repo・worktree・flatmate 住人の作業リポ（`workspace/<住人>/repo`）のすべてで同じプロジェクト名に解決される。スキルや hook からは `${CLAUDE_PLUGIN_ROOT}/scripts/fmtoken.sh` で参照できること。
+プラグインは `scripts/fmtoken.sh` を同梱し、以下の振る舞いを提供しなければならない（SHALL）: プロジェクト名を `git remote get-url origin` のリポジトリ名（URL 末尾の `.git` を除いた最終パス要素を小文字化したもの）から機械導出し、1Password の agents 保管庫のアイテム `<project>--<service>`（フィールド `credential`）を read-only Service Account 経由で読む。導出はディレクトリ名に依存しないため、メイン repo・worktree・flatmate 住人の作業リポ（`workspace/<住人>/repo`）のすべてで同じプロジェクト名に解決される。スキルや hook からは `${CLAUDE_PLUGIN_ROOT}/scripts/fmtoken.sh` で参照できること。
 
 #### Scenario: トークンの取得
 - **WHEN** origin remote を持つ登録済みプロジェクトで `fmtoken.sh <service>` を実行する
@@ -34,10 +34,10 @@ fmtoken.sh は `OP_SERVICE_ACCOUNT_TOKEN` 環境変数 → `~/.config/op-sa/clau
 - **THEN** exit 43 となり、stderr に「主に『SA トークンをこのマシンに配布して』と依頼すること」の案内が出る
 
 ### Requirement: 未登録サービスは exit 44 で登録依頼を返す
-要求されたサービスが vault に未登録の場合、fmtoken.sh は exit 44 で終了し、stderr に「ブラウザに行かず、主に 1Password の agents 保管庫への登録を依頼する」案内を返さなければならない（SHALL）。
+要求されたサービスが agents 保管庫に未登録の場合、fmtoken.sh は exit 44 で終了し、stderr に「ブラウザに行かず、主に 1Password の agents 保管庫への登録を依頼する」案内を返さなければならない（SHALL）。
 
 #### Scenario: 未登録サービスの要求
-- **WHEN** vault に `<project>--<service>` が存在しない状態で `fmtoken.sh <service>` を実行する
+- **WHEN** agents 保管庫に `<project>--<service>` が存在しない状態で `fmtoken.sh <service>` を実行する
 - **THEN** exit 44 となり、stderr に登録依頼の案内（アイテム名とフィールド名を含む）が出る
 
 #### Scenario: 存在確認モード

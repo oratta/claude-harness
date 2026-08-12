@@ -101,7 +101,7 @@ jq -r -c 'select(.type == "assistant" and (.message.content | type) == "array")'
 
 すべて jq / grep / sort / uniq / head のパイプで完結する。**jsonl の行を Read してメインに送ることはしない**。
 
-### 3. Vault 内対応 LLM ログの wikilink 構築
+### 3. Obsidian Vault 内対応 LLM ログの wikilink 構築
 
 ```bash
 # 1. 90 - LLM/ 配下の TIMESTAMP-* / TARGET_DATE_COMPACT-*

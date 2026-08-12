@@ -1,10 +1,14 @@
 ---
 name: capability-registry
 description: 外部サービスを操作する前に必ず参照するレジストリ（GitHub/Supabase/Vercel/Stripe/1Password 等）。CLI の有無・認証確認コマンド・トークンの在処（fmtoken.sh）を索引で返す。ブラウザを開こうとした時・ユーザーにログインを依頼したくなった時も、その前にここで CLI 代替を確認する。
-version: 1.3.0
+version: 1.4.0
 ---
 
 # capability-registry — 外部サービスの CLI とトークンの在処
+
+## 表記規約（生成文にも適用すること）
+
+1Password 側は裸の「vault」を使わず「agents 保管庫」（文脈が曖昧なら「1Password の agents 保管庫」）と書く。Obsidian 側の vault とは常に区別し、必ず「Obsidian vault」と修飾する。CLI 引数（`op item list --vault agents` 等）は原文のまま変更しない。
 
 ## 原則
 
@@ -25,7 +29,7 @@ version: 1.3.0
 | dev / test / 読み取り系 | `agents` 保管庫（fmtoken 経由） | 自由 |
 | **prod の書き込み可能キー**（service_role・live secret key 等） | **GitHub Actions secrets のみ**。保管庫にも `.env.local` にも置かない | 不可。CI ジョブだけが触る |
 
-- 根拠: `agents` 保管庫の SA は vault 単位スコープで、fmtoken のプロジェクト別プレフィックスは
+- 根拠: `agents` 保管庫の SA は保管庫単位スコープで、fmtoken のプロジェクト別プレフィックスは
   アクセス制御ではない。prod 書き込みキーを保管庫に入れる ＝ 全プロジェクトの全エージェントに配るのと同義
 - prod のデータが要る処理（集計・レポート等）は、キーを手元に持ってくるのではなく
   **処理を Actions 内に持っていく**（例: suimei のマーケ日報 PR #235 — `PROD_SUPABASE_*` secrets を
