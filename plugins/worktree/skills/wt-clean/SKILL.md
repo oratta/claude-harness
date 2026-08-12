@@ -1,7 +1,7 @@
 ---
 name: wt-clean
 description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある／git worktree lock されている worktree は git がクリーンでも自動削除せず判断バッチに回す。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
-version: 3.6.0
+version: 3.7.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -104,11 +104,32 @@ zsh で実際に事故になった書き方（そのままコピーしないこ�
 
    そこで削除の可否は git 状態だけで決めず、**「今そこで誰かが作業しているか」を示す稼働シグナル**を必ず併せて見る:
 
-   - **配下プロセス**: 削除対象パス配下で稼働中の**非シェルプロセス**（`claude` / `node` / `next` など）。判定は `lsof +D` と `kill_devserver_under` と**同一の除外基準**で行う（Step B-共通の `detect_active_procs_under`）。「`kill_devserver_under` が停止する対象が居るなら、それは自動削除してよい worktree ではない」という対応関係を崩さない。
+   - **配下プロセス**: 削除対象パス配下で稼働中の**非シェルプロセス**（`claude` / `node` / `next` など）。判定は `lsof +D` と `kill_devserver_under` と**同一の除外基準**で行う（Step B-共通の `detect_active_procs_under`）。「`kill_devserver_under` が停止する対象が居るなら、それは自動削除してよい worktree ではない」という対応関係を崩さない。**ただし居残り（下記）は除く。**
    - **当日のセッションログ**: `~/.claude/projects/<worktree-path-slug>/` に 24 時間以内に更新された `.jsonl` がある。プロセスが一時的に落ちている壁打ちセッションもこれで拾える。
    - **worktree ロック**: `git worktree list --porcelain` が当該 worktree に `locked` を出している。ロックは「別のセッション／エージェントがこの worktree を所有している」という**最も強い所有権の表明**で、しかも git 側が既に持っている情報なので追加コストがゼロである。wt-setup の hooks が作る worktree（`--lock` 付き）や並列サブエージェントの worktree がこれに当たる。`git worktree remove --force`（`-f` 1 個）はロック済み worktree を拒否するため、ロックを無視して自動削除しようとすると Pass 1 が `fatal: cannot remove a locked working tree` で落ちる。**ロックの解除（`git worktree unlock`）は Pass 2 でユーザーが削除を選んだ場合にのみ行う**（SHALL NOT: Pass 1 での自動 unlock）。
 
    いずれか 1 つでも該当したら、マージ済み & クリーンでも **🟢 にせず 🟡 Recoverable とし、Pass 1 で自動処理せず `DEFERRED`（Pass 2 の判断バッチ）へ回す**。Pass 2 の提示には検出内容（PID・コマンド名／セッションログの更新時刻／ロックの有無と理由）を必ず含め、ユーザーが「作業中セッションかどうか」を判断できるようにする。稼働シグナルの検出は**削除しない方向にのみ働く**（🔴 を 🟡 に緩めることはしない）。
+
+   **例外 — 居残り（leftover）は配下プロセスとして数えない（issue #98）**
+
+   配下プロセスの存在は「作業中」の証拠にはならない。セッションを閉じてもプロセスがデタッチして
+   残る運用（worktree ごとに codex / claude CLI を開く orca 等）では、シグナルが恒久的に立ちっぱなしになり、
+   マージ済み・clean な worktree が**永久に Pass 2 送り**になる。2026-08-10 に flatmate で全件実行したとき、
+   11 件中 Pass 1 で自動処理できたのは **0 件**だった（うち 5 件は squash マージ済み・clean）。実測した居残りは
+   `PPID=1` のまま 7 日・3 日・1 日と生き続け、`lsof +D` は cwd が配下にあるだけの無関係プロセス
+   （ChatGPT.app の `cua_node`、Pencil.app の MCP サーバー）まで巻き込んで拾っていた。
+
+   そこで次の **3 条件をすべて満たす**プロセス群は、作業中ではなく残骸とみなして稼働シグナルから外す:
+
+   1. 検出した PID 集合の外に生きた親がいない（集合のルートが `PPID=1` ＝ 起動元セッションが既に無い）
+   2. worktree 配下に 24 時間以内に更新されたファイルが無い（`.git` 配下を除く）
+   3. 対応する `~/.claude/projects/<slug>/` に 24 時間以内に更新された `.jsonl` が無い
+
+   **AND を崩してはならない（SHALL NOT）。** 孤児であることだけを根拠にすると `launchd` 常駐の住人
+   セッションを、活動痕跡が無いことだけを根拠にすると「開いたまま少し離席している対話セッション」を、
+   それぞれ誤って削除対象にしてしまう。issue #77 で消してしまった壁打ちセッションは親プロセスが
+   生きていたため、この 3 条件では引き続き守られる。判定できない場合（`ps` が引けない等）は
+   居残りと見なさない側に倒す。
 
 4. **削除判定は必ず実ブランチ名で行う（ディレクトリ名 ≠ ブランチ名）**
    - worktree のディレクトリ名と checkout 中ブランチ名は一致しないことがある（例: `setup-foo` ディレクトリで `ISSUE-129_xxx` ブランチを checkout）。マージ判定・`git branch -D` は `git worktree list` 由来の**実ブランチ名（`BRANCH_NAME`）**を使う。ディレクトリ名で判断しない。
@@ -416,6 +437,14 @@ LLM=$(ls "$WT/LLM/" 2>/dev/null)
 ACTIVE_PROCS=$(detect_active_procs_under "$WT")      # 例: "48213(claude), 48310(node)"
 RECENT_SESSION=$(detect_recent_session_log "$WT")    # 例: "~/.claude/projects/<slug>/ab12.jsonl (3時間前)"
 WT_LOCKED=$(detect_worktree_lock "$WT")              # 例: "added with --lock (2026-08-07 21:41)"
+# 居残りの除外（issue #98）: プロセスは居るが起動元セッションが無く活動痕跡も無いなら、
+# それは作業中ではなく残骸なので稼働シグナルから外す。外した事実は無音にせず、
+# 削除直前の根拠表示に必ず出す（LEFTOVER_NOTE）。
+LEFTOVER_NOTE=""
+if [ -n "$ACTIVE_PROCS" ] && is_leftover_under "$WT"; then
+  LEFTOVER_NOTE="居残り除外: $ACTIVE_PROCS（起動元セッションなし / 24h以内の更新なし / セッションログなし）"
+  ACTIVE_PROCS=""
+fi
 ACTIVE_SIGNAL=""
 [ -n "$ACTIVE_PROCS" ] && ACTIVE_SIGNAL="稼働中プロセス: $ACTIVE_PROCS"
 [ -n "$RECENT_SESSION" ] && ACTIVE_SIGNAL="${ACTIVE_SIGNAL:+$ACTIVE_SIGNAL / }直近セッションログ: $RECENT_SESSION"
@@ -587,6 +616,50 @@ classify_dirty() {
 絶対禁則 3 の稼働シグナルを検出する 3 つのヘルパ。**遅延診断の中でのみ呼び、プロセスの停止・ロック解除・ファイルの変更は一切行わない**（破壊操作は削除直前の `kill_devserver_under` だけが行う）。
 
 ```bash
+# 対象パス配下で稼働中のプロセス ID を列挙する（生の PID のみ・除外リスト適用前）。
+# 検出範囲を 1 箇所に集約するためのヘルパで、detect_active_procs_under と
+# is_leftover_under の両方がこれを使う（範囲がずれると両者の判定が食い違う）。
+list_pids_under() {
+  local abs="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof +D "$abs" 2>/dev/null | awk 'NR>1{print $2}' | sort -u
+  else
+    pgrep -f "$abs" 2>/dev/null | sort -u
+  fi
+}
+
+# 検出した PID 集合の「外」に生きた親を持つプロセスがあるかを返す（0=ある）。
+# 集合の外の親とは、そのプロセス群を起動した側（ターミナルのシェル・orca・エージェント
+# ランナー等）のこと。それがまだ生きているなら、誰かがこの worktree でセッションを
+# 開いたままにしているということで、居残りではない。
+# 親が PID 1 なら起動元は既に終了して init/launchd に引き取られている＝孤児。
+has_live_parent_outside() {
+  local pids="$1" pid ppid
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+    [ -n "$ppid" ] || continue                            # 引けない = 既に終了した短命プロセス
+    [ "$ppid" = "1" ] && continue                         # init に引き取られた孤児
+    printf '%s\n' "$pids" | grep -qx "$ppid" && continue  # 親も集合の中 = 同一セッションの子
+    return 0
+  done <<< "$pids"
+  return 1
+}
+
+# worktree 配下に 24 時間以内に更新されたファイルがあれば、その 1 件目を返す。
+# .git 配下を除外するのは、wt-clean 自身が診断で git を呼ぶと index 等が更新され、
+# 「常に活動あり」になって判定が意味を失うため。
+detect_recent_activity_under() {
+  local abs="$1" hit
+  [ -d "$abs" ] || { echo ""; return 0; }
+  hit=$(find "$abs" -type f -mtime -1 -not -path '*/.git/*' -print -quit 2>/dev/null | head -1)
+  if [ -n "$hit" ]; then
+    echo "$hit ($(date -r "$hit" '+%Y-%m-%d %H:%M' 2>/dev/null))"
+  else
+    echo ""
+  fi
+}
+
 # 配下で稼働中の非シェルプロセスを列挙する。
 # 検出範囲と除外リストは kill_devserver_under と完全に同一に保つこと
 # ——「kill_devserver_under が停止する対象が居るなら自動削除しない」という対応関係が本ガードの根拠。
@@ -599,11 +672,7 @@ detect_active_procs_under() {
     return 0
   fi
 
-  if command -v lsof >/dev/null 2>&1; then
-    pids=$(lsof +D "$abs" 2>/dev/null | awk 'NR>1{print $2}' | sort -u)
-  else
-    pids=$(pgrep -f "$abs" 2>/dev/null | sort -u)
-  fi
+  pids=$(list_pids_under "$abs")
 
   # ⚠️ `for pid in $pids` と書いてはならない。zsh は未クォート変数を単語分割しないため
   #    複数行の $pids が 1 要素に潰れ、検出が黙って 1 件（実質ゼロ件）になる。
@@ -622,6 +691,22 @@ detect_active_procs_under() {
     out="${out:+$out, }$pid($comm)"
   done <<< "$pids"
   echo "$out"
+}
+
+# 配下のプロセスが「作業中」ではなく残骸（居残り）かを返す（0=居残り）。issue #98。
+# **3 条件の AND**で、ひとつでも欠けたら居残りと見なさない（＝従来どおり稼働シグナル扱い）。
+# 孤児だけを根拠にすると launchd 常駐の住人セッションを、活動痕跡が無いことだけを根拠にすると
+# 「開いたまま少し離席している対話セッション」を、それぞれ誤って削除対象にしてしまう。
+# 判定不能（パス解決失敗・ps が引けない）も居残りと見なさない側に倒す。
+is_leftover_under() {
+  local target="$1" abs pids
+  abs=$(abs_path "$target") || return 1
+  pids=$(list_pids_under "$abs")
+  [ -n "$pids" ] || return 1                                  # そもそもプロセスが居ない
+  has_live_parent_outside "$pids" && return 1                 # 起動元セッションがまだ生きている
+  [ -n "$(detect_recent_activity_under "$abs")" ] && return 1 # 配下に 24h 以内の更新がある
+  [ -n "$(detect_recent_session_log "$target")" ] && return 1 # 24h 以内のセッションログがある
+  return 0
 }
 
 # worktree に対応する Claude セッションログのうち、24 時間以内に更新された .jsonl を探す。
@@ -811,7 +896,7 @@ AskUserQuestion は行わない。Step A で TARGETS に含めたことを承認
 
 ```bash
 # HARMLESS_DIRTY が非空なら「なぜ dirty なのに削除してよいのか」の根拠をここに必ず出す
-echo "  🟢 Safe: merged=${MERGED:+branch--merged}${SQUASHED:+$SQUASHED} / ${HARMLESS_DIRTY:-clean} / LLMなし / 稼働シグナルなし → 削除します"
+echo "  🟢 Safe: merged=${MERGED:+branch--merged}${SQUASHED:+$SQUASHED} / ${HARMLESS_DIRTY:-clean} / LLMなし / 稼働シグナルなし${LEFTOVER_NOTE:+ / $LEFTOVER_NOTE} → 削除します"
 kill_devserver_under "$WT"
 git -C "$MAIN_REPO" worktree remove "$WT" --force
 git -C "$MAIN_REPO" branch -d "$BRANCH_NAME"    # SQUASHED のときは -D（元 SHA が main の祖先にならないため）
@@ -1196,6 +1281,7 @@ Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 - 🟡 判定で LLM 退避を行った場合、退避先ファイルが実在し空でないことを**削除前に**検証済みであることを確認する（検証失敗のまま削除していないこと）。
 - 🟢/🟡 の自動削除について、削除直前に診断根拠を表示したことを確認する（無音削除をしていないこと）。
 - 稼働シグナル（配下の非シェルプロセス／24時間以内のセッションログ）を検出した worktree を Pass 1 で自動削除・自動再利用化していないこと、および Pass 2 の提示に検出内容（PID・コマンド名／セッションログ更新時刻）を含めたことを確認する（絶対禁則 3）。
+- 配下プロセスを居残りとして稼働シグナルから外した場合、3 条件（集合の外に生きた親が無い・配下に 24 時間以内の更新ファイルが無い・24 時間以内のセッションログが無い）を**すべて**確かめたことを確認する（issue #98）。1 つでも満たさないものを居残り扱いしていないこと、`detect_recent_activity_under` の検査から `.git` 配下を除外していることも確認する。
 - **検査の失敗が「マージ済み」側に倒れていないこと**（パスフィルタなしの実ツリー差分・`headRefOid` 一致・`gh` の終了コード・ロック検出・Step 0 の同期）。個別項目は `plugins/worktree/references/wt-clean-verification.md` の「判定が『マージ済み』側に倒れていないことの確認」を参照する。
 - worktree ロックを検出した対象を Pass 1 で自動処理せず、Pass 1 で `git worktree unlock` を実行していないことを確認する（解除は Pass 2 で削除を選んだ対象のみ）。
 - dirty 破棄・🔴 破棄削除・🔴 マージを行った場合、それぞれ Pass 2 の AskUserQuestion 回答後の別ターンで実行したことを確認する。

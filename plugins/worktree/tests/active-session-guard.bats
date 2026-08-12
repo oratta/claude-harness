@@ -177,9 +177,17 @@ wt_load_detect_helpers() {
   # 入る前にまとめて定義しておくこと」と指示しており実行時は揃っているが、
   # ここで抽出しないと abs_path 未定義で全ヘルパが「検査不能」を返してしまう。
   awk '/^abs_path\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >"$snippet"
+  awk '/^list_pids_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
+  awk '/^has_live_parent_outside\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
+  awk '/^detect_recent_activity_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^detect_active_procs_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
+  awk '/^is_leftover_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^detect_recent_session_log\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   grep -q '^abs_path() {' "$snippet"
+  grep -q '^list_pids_under() {' "$snippet"
+  grep -q '^has_live_parent_outside() {' "$snippet"
+  grep -q '^detect_recent_activity_under() {' "$snippet"
+  grep -q '^is_leftover_under() {' "$snippet"
   [ -s "$snippet" ]
   echo "$snippet"
 }
@@ -300,4 +308,173 @@ wt_load_detect_helpers() {
 
   out=$(HOME="${BATS_TEST_TMPDIR}/empty-home" bash -c ". '$snippet'; detect_recent_session_log '$dir'")
   [ -z "$out" ]
+}
+
+# --- issue #98: leftover (orphaned + no recent activity) is not an active signal ---
+
+@test "skill: SKILL.md declares the leftover exception with all three conditions" {
+  grep -q '居残り（leftover）は配下プロセスとして数えない' "$WT_CLEAN_SKILL"
+  grep -q '集合の外に生きた親がいない' "$WT_CLEAN_SKILL"
+  grep -q 'AND を崩してはならない' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: SKILL.md defines the leftover helpers" {
+  grep -q '^list_pids_under() {' "$WT_CLEAN_SKILL"
+  grep -q '^has_live_parent_outside() {' "$WT_CLEAN_SKILL"
+  grep -q '^detect_recent_activity_under() {' "$WT_CLEAN_SKILL"
+  grep -q '^is_leftover_under() {' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: detection range is shared, not duplicated (list_pids_under used by both)" {
+  # 検出範囲がずれると detect と leftover 判定が食い違う。両者が同じヘルパを通ること。
+  local n
+  n=$(grep -c 'list_pids_under "$abs"' "$WT_CLEAN_SKILL")
+  [ "$n" -ge 2 ]
+}
+
+@test "skill: recent-activity scan excludes .git so wt-clean's own git calls do not mask it" {
+  grep -q "not -path '\*/\.git/\*'" "$WT_CLEAN_SKILL"
+}
+
+@test "skill: the leftover exclusion is reported, never silent" {
+  grep -q 'LEFTOVER_NOTE="居残り除外' "$WT_CLEAN_SKILL"
+  # 削除直前の 🟢 根拠表示に載ること
+  grep -q 'LEFTOVER_NOTE:+ / \$LEFTOVER_NOTE' "$WT_CLEAN_SKILL"
+}
+
+@test "has_live_parent_outside: true when a process has a living parent outside the set" {
+  local snippet dir pid
+  snippet="$(wt_load_detect_helpers)"
+  dir="${BATS_TEST_TMPDIR}/liveparent"
+  mkdir -p "$dir"
+
+  # 親はこの bats シェル（集合の外で生きている）
+  ( cd "$dir" && exec sleep 30 ) &
+  pid=$!
+  sleep 1
+
+  run bash -c ". '$snippet'; has_live_parent_outside '$pid'"
+  kill "$pid" 2>/dev/null || true
+  [ "$status" -eq 0 ]
+}
+
+@test "has_live_parent_outside: false for an orphan adopted by init" {
+  local snippet dir pid
+  snippet="$(wt_load_detect_helpers)"
+  dir="${BATS_TEST_TMPDIR}/orphan"
+  mkdir -p "$dir"
+
+  # 二重 fork: 中間のサブシェルが即終了するので sleep は PPID=1 に引き取られる
+  ( ( cd "$dir" && exec sleep 30 ) & echo $! >"${BATS_TEST_TMPDIR}/orphan.pid" )
+  sleep 1
+  pid=$(cat "${BATS_TEST_TMPDIR}/orphan.pid")
+  [ "$(ps -o ppid= -p "$pid" | tr -d '[:space:]')" = "1" ] || skip "orphan setup did not reparent to init"
+
+  run bash -c ". '$snippet'; has_live_parent_outside '$pid'"
+  kill "$pid" 2>/dev/null || true
+  [ "$status" -ne 0 ]
+}
+
+@test "detect_recent_activity_under: finds a file touched within 24h" {
+  local snippet dir out
+  snippet="$(wt_load_detect_helpers)"
+  dir="${BATS_TEST_TMPDIR}/fresh"
+  mkdir -p "$dir"
+  echo hi >"$dir/note.txt"
+
+  out=$(bash -c ". '$snippet'; detect_recent_activity_under '$dir'")
+  [[ "$out" == *"note.txt"* ]]
+}
+
+@test "detect_recent_activity_under: ignores .git so git calls do not count as activity" {
+  local snippet dir out
+  snippet="$(wt_load_detect_helpers)"
+  dir="${BATS_TEST_TMPDIR}/gitonly"
+  mkdir -p "$dir/.git"
+  echo ref >"$dir/.git/index"
+
+  out=$(bash -c ". '$snippet'; detect_recent_activity_under '$dir'")
+  [ -z "$out" ]
+}
+
+@test "is_leftover_under: an orphan with no activity trace is a leftover" {
+  command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
+  local snippet dir pid
+  snippet="$(wt_load_detect_helpers)"
+  dir="${BATS_TEST_TMPDIR}/leftover"
+  mkdir -p "$dir"          # ファイルは置かない = 24h 以内の更新なし
+
+  ( ( cd "$dir" && exec sleep 30 ) & echo $! >"${BATS_TEST_TMPDIR}/leftover.pid" )
+  sleep 1
+  pid=$(cat "${BATS_TEST_TMPDIR}/leftover.pid")
+  [ "$(ps -o ppid= -p "$pid" | tr -d '[:space:]')" = "1" ] || skip "orphan setup did not reparent to init"
+
+  run env HOME="${BATS_TEST_TMPDIR}/nohome" bash -c ". '$snippet'; is_leftover_under '$dir'"
+  kill "$pid" 2>/dev/null || true
+  [ "$status" -eq 0 ]
+}
+
+@test "is_leftover_under: an orphan WITH a fresh file is NOT a leftover (AND not broken)" {
+  command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
+  local snippet dir pid
+  snippet="$(wt_load_detect_helpers)"
+  dir="${BATS_TEST_TMPDIR}/orphanbusy"
+  mkdir -p "$dir"
+  echo working >"$dir/wip.txt"      # 直近の活動痕跡あり
+
+  ( ( cd "$dir" && exec sleep 30 ) & echo $! >"${BATS_TEST_TMPDIR}/orphanbusy.pid" )
+  sleep 1
+  pid=$(cat "${BATS_TEST_TMPDIR}/orphanbusy.pid")
+
+  run env HOME="${BATS_TEST_TMPDIR}/nohome" bash -c ". '$snippet'; is_leftover_under '$dir'"
+  kill "$pid" 2>/dev/null || true
+  [ "$status" -ne 0 ]
+}
+
+@test "is_leftover_under: a live session is NOT a leftover (issue #77 regression)" {
+  command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
+  local snippet dir pid out
+  snippet="$(wt_load_detect_helpers)"
+  dir="${BATS_TEST_TMPDIR}/livesession"
+  mkdir -p "$dir"          # 痕跡が無くても、親が生きていれば居残りではない
+
+  ( cd "$dir" && exec sleep 30 ) &
+  pid=$!
+  sleep 1
+
+  run env HOME="${BATS_TEST_TMPDIR}/nohome" bash -c ". '$snippet'; is_leftover_under '$dir'"
+  [ "$status" -ne 0 ]
+  # 稼働シグナル自体は従来どおり立つ
+  out=$(bash -c ". '$snippet'; detect_active_procs_under '$dir'")
+  kill "$pid" 2>/dev/null || true
+  [[ "$out" == *"$pid"* ]]
+}
+
+@test "is_leftover_under: reports not-leftover when no process is under the path" {
+  command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
+  local snippet dir
+  snippet="$(wt_load_detect_helpers)"
+  dir="${BATS_TEST_TMPDIR}/emptydir"
+  mkdir -p "$dir"
+
+  run env HOME="${BATS_TEST_TMPDIR}/nohome" bash -c ". '$snippet'; is_leftover_under '$dir'"
+  [ "$status" -ne 0 ]
+}
+
+@test "is_leftover_under: behaves identically under bash and zsh" {
+  command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
+  command -v zsh >/dev/null 2>&1 || skip "zsh unavailable"
+  local snippet dir pid st_bash st_zsh
+  snippet="$(wt_load_detect_helpers)"
+  dir="${BATS_TEST_TMPDIR}/bothleftover"
+  mkdir -p "$dir"
+
+  ( ( cd "$dir" && exec sleep 30 ) & echo $! >"${BATS_TEST_TMPDIR}/bothleftover.pid" )
+  sleep 1
+  pid=$(cat "${BATS_TEST_TMPDIR}/bothleftover.pid")
+
+  env HOME="${BATS_TEST_TMPDIR}/nohome" bash -c ". '$snippet'; is_leftover_under '$dir'"; st_bash=$?
+  env HOME="${BATS_TEST_TMPDIR}/nohome" zsh  -c ". '$snippet'; is_leftover_under '$dir'"; st_zsh=$?
+  kill "$pid" 2>/dev/null || true
+  [ "$st_bash" -eq "$st_zsh" ]
 }
