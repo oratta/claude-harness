@@ -1,7 +1,7 @@
 # 1Password (op)
 
 - **verify**: `op whoami`（SA トークン経由なら Service Account 情報が返る）
-- **トークンの構造**: エージェントは read-only Service Account（SA）で vault `agents` だけを読む。SA トークン自体の在処は env `OP_SERVICE_ACCOUNT_TOKEN` → `~/.config/op-sa/claude-agents-ro.token`（600 権限）→ Keychain `op-sa-claude-agents-ro` の順（無人経路優先）
+- **トークンの構造**: エージェントは read-only Service Account（SA）で agents 保管庫だけを読む。SA トークン自体の在処は env `OP_SERVICE_ACCOUNT_TOKEN` → `~/.config/op-sa/claude-agents-ro.token`（600 権限）→ Keychain `op-sa-claude-agents-ro` の順（無人経路優先）
 - **アイテム命名規約**: `<project>--<service>` / フィールド `credential`。project は origin remote のリポ名（末尾 `.git` 除去 → 最終パス要素 → 小文字化。例: `genetta-inc/suimei` → `suimei`）。dir 名からは導出しない（origin が無い場所では fmtoken は exit 45 で止まる）
 
 ## 運用知見

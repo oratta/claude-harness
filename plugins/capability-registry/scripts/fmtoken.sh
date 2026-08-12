@@ -17,7 +17,7 @@
 #   保管庫: agents / アイテム名: <project>--<service> / フィールド: credential
 set -euo pipefail
 
-VAULT="agents"
+OP_VAULT="agents"
 KEYCHAIN_SERVICE="op-sa-claude-agents-ro"
 
 mode="read"
@@ -63,13 +63,13 @@ if [[ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]]; then
 fi
 
 if [[ "$mode" == "list" ]]; then
-  op item list --vault "$VAULT" --format json |
+  op item list --vault "$OP_VAULT" --format json |
     /usr/bin/python3 -c "import json,sys; [print(t.split('--',1)[1]) for i in json.load(sys.stdin) if (t:=i['title']).startswith('${project}--')]"
   exit 0
 fi
 
 service="${1:?usage: fmtoken.sh [--check] <service> | fmtoken.sh --list}"
-ref="op://${VAULT}/${project}--${service}/credential"
+ref="op://${OP_VAULT}/${project}--${service}/credential"
 
 if [[ "$mode" == "check" ]]; then
   if op read "$ref" >/dev/null 2>&1; then
@@ -83,5 +83,5 @@ else
 fi
 
 echo "fmtoken: 未登録 → ${ref}" >&2
-echo "→ ブラウザに行かず、主に『1Password の ${VAULT} 保管庫に ${project}--${service}（フィールド: credential）を登録して』と依頼すること" >&2
+echo "→ ブラウザに行かず、主に『1Password の ${OP_VAULT} 保管庫に ${project}--${service}（フィールド: credential）を登録して』と依頼すること" >&2
 exit 44

@@ -1,7 +1,7 @@
 ---
 name: github-issue
 description: 開発 repo で GitHub issue に取り組む標準ワークフロー（worktree セットアップは hooks 任せ → opsx 要否 → change 分割 → TDD 実装）。issue 番号・URL・「このissue対応して」等の自然文で起動。人間依頼と loop-dev-agent 無人サイクル（--unmanned）の両対応。
-version: 1.1.0
+version: 1.2.0
 ---
 
 # github-issue — GitHub issue 対応の標準開発ワークフロー
@@ -105,6 +105,21 @@ openspec --version 2>/dev/null && echo "OPENSPEC_CLI"
 - **solo**: 以下の手順をメインセッションがそのまま実行する（現行どおり。大多数の issue はこれ）。
 - **delegate+verify**: 以下の手順（テスト先行含む）を安い実行役（Sonnet subagent または codex:rescue）に委譲する。実行役とは**別の**賢いモデル（既定 Fable。`FABLE_BUDGET_MODE=reserve` の自動実行では Opus）が、受け入れ条件とテスト・lint の exit code を確認して verify してから完了を宣言する。実行役の自己申告だけで完了にしない。
 - **workflow 型**: `/lr:e` 系のスキル呼び出しで Workflow 実行に委ねる（builder=安いモデル、checkpoint/verify=Fable）。常駐ルールや Step D から Workflow ツールを直接呼ばない。
+
+**重要実装の事前分類（1周目から Fable）**:
+
+次のいずれかに触れる実装は、失敗1周のコスト（再実装＋再レビュー＋ゲート往復＋コンテキスト肥大）が Fable の単価差を上回るため、**トリップワイヤーの昇格を待たず最初から実装サブエージェントを `model: fable` で spawn する**（Agent ツールの `model` パラメータ。セッション本体のモデル＝`AGENT_MODEL` は変えない）。
+
+| 分類 | 具体 |
+|---|---|
+| 聖域パス | auto-merge の SACRED 定義に含まれるもの（`.github/workflows/` / `CLAUDE.md` / `.claude/` 配下 / 憲法 doc） |
+| マージ権限 | マージ条件・ラベル判定・レビューゲートの通過条件そのもの |
+| 層間契約 | プラグイン間・スキル間で共有する規約（hook 契約・スキーマ・レシピ形式・環境変数の意味） |
+| 課金/法務 | 支払い・レート/使用量制御・ライセンス・個人情報の扱い |
+
+- **この分類表がモデル事前分類の正本**（pr-review-gate スキルからも参照される）。
+- **残量モードが優先する**: `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では、事前分類に当たっても Fable に上げず Opus を上限とする（`references/decision-criteria.md` の残量モード表がそのまま効く）。
+- Fable がレート制限等で使えなかったときのフォールバック記録の形式は pr-review-gate スキルの「修正サイクルのモデル昇格」が正本。ここでは再掲しない。
 
 **昇格ルール**（全戦略共通。詳細は `templates/escalation-tripwires.md`）:
 

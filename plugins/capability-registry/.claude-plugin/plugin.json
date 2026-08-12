@@ -1,7 +1,7 @@
 {
   "name": "capability-registry",
-  "version": "1.3.0",
-  "description": "外部サービスを操作する前に CLI とトークンの在処を教える発見層プラグイン。skills/capability-registry: サービス索引（CLI 名 / 認証確認コマンド / fmtoken.sh によるトークン取得 / ブラウザ必須の例外 / CLI が無いネガティブエントリ）を description トリガーで全セッションに常駐させ、CLAUDE.md 無編集で発火する。scripts/fmtoken.sh: 1Password vault agents（read-only Service Account 経由）からプロジェクトスコープでトークンを引くラッパー（flatmate から移設、全プロジェクト共通の道具）。hooks: ブラウザ系 MCP ツールの PreToolUse でセッション初回のみ CLI 代替の検討を促す注意喚起を注入する（deny はしない）。",
+  "version": "1.4.0",
+  "description": "外部サービスを操作する前に CLI とトークンの在処を教える発見層プラグイン。skills/capability-registry: サービス索引（CLI 名 / 認証確認コマンド / fmtoken.sh によるトークン取得 / ブラウザ必須の例外 / CLI が無いネガティブエントリ）を description トリガーで全セッションに常駐させ、CLAUDE.md 無編集で発火する。scripts/fmtoken.sh: 1Password の agents 保管庫（read-only Service Account 経由）からプロジェクトスコープでトークンを引くラッパー（flatmate から移設、全プロジェクト共通の道具）。hooks: ブラウザ系 MCP ツールの PreToolUse でセッション初回のみ CLI 代替の検討を促す注意喚起を注入する（deny はしない）。",
   "author": {
     "name": "Oratta"
   },
