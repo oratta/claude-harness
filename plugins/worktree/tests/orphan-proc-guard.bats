@@ -74,8 +74,26 @@ wt_ppid_of() {
 
 @test "skill: the two orphan conditions are joined by AND and must not be loosened" {
   grep -q 'この AND を崩してはならない' "$WT_CLEAN_SKILL"
-  # 片方だけで判定した場合に何が壊れるかまで書いてあること（#77 の回帰防止）
-  grep -q '条件 1 で引き続き守られる' "$WT_CLEAN_SKILL"
+  # 片方だけで判定した場合に何が壊れるかは reference 側に置く（S50: 本文は短く保つ）
+  grep -q '条件 1 で引き続き守られる' "$WT_CLEAN_ORPHAN_REF"
+  grep -q 'AND を崩さないことが安全側の担保' "$WT_CLEAN_ORPHAN_REF"
+}
+
+@test "skill: the detail is split out to references and linked from the skill body" {
+  # S50（500 行超のスキルは詳細を references に出す）を壊さないための構造テスト
+  [ -f "$WT_CLEAN_ORPHAN_REF" ]
+  grep -q 'references/wt-clean-orphan-detection\.md' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: the self-verification section stays within the S50 budget (<=15 lines)" {
+  # 本 issue の修正で 1 行足したところ S50（<=15 行）を割り、CI が落ちた。
+  # 追加の確認項目は references/wt-clean-verification.md 側に置く。
+  local n
+  n=$(awk '/^## 自己検証[[:space:]]*$/{f=1} f&&/^## /&&!/^## 自己検証[[:space:]]*$/{f=0} f{print}' \
+        "$WT_CLEAN_SKILL" | wc -l | tr -d ' ')
+  [ "$n" -le 15 ]
+  # 節から詳細手順ファイルへの導線が残っていること
+  grep -q 'references/wt-clean-verification\.md' "$WT_CLEAN_SKILL"
 }
 
 @test "skill: undecidable orphan checks fall back to the active signal (fail-closed)" {
@@ -87,6 +105,8 @@ wt_ppid_of() {
   # 「Pass 2 で 1 問聞かれるだけ」が成り立つのは一過性のシグナルに限る
   grep -q '永久に自動処理されない' "$WT_CLEAN_SKILL"
   grep -q '一過性の誤検出（false positive）は許容する' "$WT_CLEAN_SKILL"
+  # 見積もり改訂の背景（実測値）は reference 側
+  grep -q '誤検出コストの見積もりの改訂' "$WT_CLEAN_ORPHAN_REF"
 }
 
 @test "skill: helpers proc_tree_top and worktree_has_recent_activity are defined" {
@@ -97,6 +117,7 @@ wt_ppid_of() {
 @test "skill: recent-activity scan excludes .git so our own git calls do not mask staleness" {
   awk '/^worktree_has_recent_activity\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" | grep -q '\-name \.git'
   grep -q 'index の' "$WT_CLEAN_SKILL"
+  grep -q '痕跡スキャンから `\.git` を除外する' "$WT_CLEAN_ORPHAN_REF"
 }
 
 # --- 除外根拠の可視化（Pass 1 / Pass 2 / Step C） ---
@@ -116,8 +137,10 @@ wt_ppid_of() {
     | grep -q '居残りプロセスとして稼働シグナルから除外'
 }
 
-@test "skill: self-verification checks the orphan exclusion evidence" {
-  awk '/## 自己検証/,0' "$WT_CLEAN_SKILL" | grep -q '居残り（孤児）プロセス'
+@test "verification: the orphan exclusion evidence is checked in the detailed procedure" {
+  # 自己検証セクションは S50 の 15 行枠に収める必要があるため、追加の確認項目は
+  # 詳細手順ファイル側に置く（SKILL.md の節からリンク済み）
+  grep -q '除外根拠（PID・コマンド名・親セッション消滅・痕跡なし）' "$WT_CLEAN_VERIFICATION"
 }
 
 @test "reference: wt-clean-verification.md checks the AND of the two orphan conditions" {
