@@ -349,9 +349,9 @@ wt_load_detect_helpers() {
   mkdir -p "$dir"
 
   # 親はこの bats シェル（集合の外で生きている）
-  ( cd "$dir" && exec sleep 30 ) &
+  ( cd "$dir" && exec sleep 45 ) &
   pid=$!
-  sleep 1
+  sleep 2
 
   run bash -c ". '$snippet'; has_live_parent_outside '$pid'"
   kill "$pid" 2>/dev/null || true
@@ -365,8 +365,8 @@ wt_load_detect_helpers() {
   mkdir -p "$dir"
 
   # 二重 fork: 中間のサブシェルが即終了するので sleep は PPID=1 に引き取られる
-  ( ( cd "$dir" && exec sleep 30 ) & echo $! >"${BATS_TEST_TMPDIR}/orphan.pid" )
-  sleep 1
+  ( ( cd "$dir" && exec sleep 45 ) & echo $! >"${BATS_TEST_TMPDIR}/orphan.pid" )
+  sleep 2
   pid=$(cat "${BATS_TEST_TMPDIR}/orphan.pid")
   [ "$(ps -o ppid= -p "$pid" | tr -d '[:space:]')" = "1" ] || skip "orphan setup did not reparent to init"
 
@@ -404,8 +404,8 @@ wt_load_detect_helpers() {
   dir="${BATS_TEST_TMPDIR}/leftover"
   mkdir -p "$dir"          # ファイルは置かない = 24h 以内の更新なし
 
-  ( ( cd "$dir" && exec sleep 30 ) & echo $! >"${BATS_TEST_TMPDIR}/leftover.pid" )
-  sleep 1
+  ( ( cd "$dir" && exec sleep 45 ) & echo $! >"${BATS_TEST_TMPDIR}/leftover.pid" )
+  sleep 2
   pid=$(cat "${BATS_TEST_TMPDIR}/leftover.pid")
   [ "$(ps -o ppid= -p "$pid" | tr -d '[:space:]')" = "1" ] || skip "orphan setup did not reparent to init"
 
@@ -422,8 +422,8 @@ wt_load_detect_helpers() {
   mkdir -p "$dir"
   echo working >"$dir/wip.txt"      # 直近の活動痕跡あり
 
-  ( ( cd "$dir" && exec sleep 30 ) & echo $! >"${BATS_TEST_TMPDIR}/orphanbusy.pid" )
-  sleep 1
+  ( ( cd "$dir" && exec sleep 45 ) & echo $! >"${BATS_TEST_TMPDIR}/orphanbusy.pid" )
+  sleep 2
   pid=$(cat "${BATS_TEST_TMPDIR}/orphanbusy.pid")
 
   run env HOME="${BATS_TEST_TMPDIR}/nohome" bash -c ". '$snippet'; is_leftover_under '$dir'"
@@ -438,9 +438,9 @@ wt_load_detect_helpers() {
   dir="${BATS_TEST_TMPDIR}/livesession"
   mkdir -p "$dir"          # 痕跡が無くても、親が生きていれば居残りではない
 
-  ( cd "$dir" && exec sleep 30 ) &
+  ( cd "$dir" && exec sleep 45 ) &
   pid=$!
-  sleep 1
+  sleep 2
 
   run env HOME="${BATS_TEST_TMPDIR}/nohome" bash -c ". '$snippet'; is_leftover_under '$dir'"
   [ "$status" -ne 0 ]
@@ -469,12 +469,17 @@ wt_load_detect_helpers() {
   dir="${BATS_TEST_TMPDIR}/bothleftover"
   mkdir -p "$dir"
 
-  ( ( cd "$dir" && exec sleep 30 ) & echo $! >"${BATS_TEST_TMPDIR}/bothleftover.pid" )
-  sleep 1
+  ( ( cd "$dir" && exec sleep 45 ) & echo $! >"${BATS_TEST_TMPDIR}/bothleftover.pid" )
+  sleep 2
   pid=$(cat "${BATS_TEST_TMPDIR}/bothleftover.pid")
 
   env HOME="${BATS_TEST_TMPDIR}/nohome" bash -c ". '$snippet'; is_leftover_under '$dir'"; st_bash=$?
   env HOME="${BATS_TEST_TMPDIR}/nohome" zsh  -c ". '$snippet'; is_leftover_under '$dir'"; st_zsh=$?
   kill "$pid" 2>/dev/null || true
   [ "$st_bash" -eq "$st_zsh" ]
+}
+
+@test "reference: wt-clean-verification.md covers the leftover exclusion" {
+  grep -q '居残りを外すときは 3 条件をすべて確かめている' "$WT_CLEAN_VERIFICATION"
+  grep -q 'PPID=1' "$WT_CLEAN_VERIFICATION"
 }
