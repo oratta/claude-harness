@@ -1,7 +1,7 @@
 ---
 name: wt-clean
-description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある／git worktree lock されている worktree は git がクリーンでも自動削除せず判断バッチに回す。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
-version: 3.6.0
+description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある／git worktree lock されている worktree は git がクリーンでも自動削除せず判断バッチに回す。ただし「親セッションが消えて init に引き取られた（PPID=1）」かつ「worktree の更新もセッションログの更新も 24 時間以上前」の両方を満たす居残りプロセスは稼働シグナルから外し、根拠を表示する。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
+version: 3.7.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -107,6 +107,13 @@ zsh で実際に事故になった書き方（そのままコピーしないこ�
    - **配下プロセス**: 削除対象パス配下で稼働中の**非シェルプロセス**（`claude` / `node` / `next` など）。判定は `lsof +D` と `kill_devserver_under` と**同一の除外基準**で行う（Step B-共通の `detect_active_procs_under`）。「`kill_devserver_under` が停止する対象が居るなら、それは自動削除してよい worktree ではない」という対応関係を崩さない。
    - **当日のセッションログ**: `~/.claude/projects/<worktree-path-slug>/` に 24 時間以内に更新された `.jsonl` がある。プロセスが一時的に落ちている壁打ちセッションもこれで拾える。
    - **worktree ロック**: `git worktree list --porcelain` が当該 worktree に `locked` を出している。ロックは「別のセッション／エージェントがこの worktree を所有している」という**最も強い所有権の表明**で、しかも git 側が既に持っている情報なので追加コストがゼロである。wt-setup の hooks が作る worktree（`--lock` 付き）や並列サブエージェントの worktree がこれに当たる。`git worktree remove --force`（`-f` 1 個）はロック済み worktree を拒否するため、ロックを無視して自動削除しようとすると Pass 1 が `fatal: cannot remove a locked working tree` で落ちる。**ロックの解除（`git worktree unlock`）は Pass 2 でユーザーが削除を選んだ場合にのみ行う**（SHALL NOT: Pass 1 での自動 unlock）。
+
+   **配下プロセスの例外 — 居残り（孤児）プロセスは稼働シグナルに数えない**（issue #98）。次の **2 条件を両方**満たすプロセスだけを稼働シグナルから外す:
+
+   1. **プロセスツリーの最上位が `PPID=1`**（init/launchd に引き取られている＝起動した親セッションが既に存在しない）で、かつその最上位自身も削除対象パス配下で検出されている
+   2. **worktree 配下のファイル更新も、対応する `~/.claude/projects/<slug>/*.jsonl` の更新も 24 時間以上前**（＝人の作業痕跡がどこにも無い）
+
+   **この AND を崩してはならない（SHALL NOT）**。片方だけで居残りと判定すると issue #77 のガードが壊れる。判定に必要な情報が取れないとき（`ps` が引けない・ヘルパ未定義・セッションログ検査不能）は**居残りと断定せず稼働シグナルとして扱う**（fail-closed）。除外したプロセスは黙って捨てず、**Pass 1 の診断表示・Pass 2 の提示・Step C のレポートに根拠を残す**（PID・コマンド名・親セッション消滅・痕跡なしの旨）。背景（2026-08-10 の実測）と各条件がどのケースを守るかは `plugins/worktree/references/wt-clean-orphan-detection.md` を参照。
 
    いずれか 1 つでも該当したら、マージ済み & クリーンでも **🟢 にせず 🟡 Recoverable とし、Pass 1 で自動処理せず `DEFERRED`（Pass 2 の判断バッチ）へ回す**。Pass 2 の提示には検出内容（PID・コマンド名／セッションログの更新時刻／ロックの有無と理由）を必ず含め、ユーザーが「作業中セッションかどうか」を判断できるようにする。稼働シグナルの検出は**削除しない方向にのみ働く**（🔴 を 🟡 に緩めることはしない）。
 
@@ -413,7 +420,13 @@ LLM=$(ls "$WT/LLM/" 2>/dev/null)
 # 5. 稼働シグナル（絶対禁則 3）: 配下の非シェルプロセス / 当日のセッションログ / worktree ロック
 #    ここでは検出のみ行い、プロセスの停止・ロック解除は一切しない
 #    （停止は削除直前の kill_devserver_under、解除は Pass 2 でユーザーが削除を選んだ後）
-ACTIVE_PROCS=$(detect_active_procs_under "$WT")      # 例: "48213(claude), 48310(node)"
+#    居残り（孤児）と判定して稼働シグナルから外したプロセスは stderr のノートに残るので、
+#    Pass 1 の表示・Pass 2 の提示・Step C のレポートで根拠として使う（黙って捨てない）
+ORPHAN_NOTE_TMP=$(mktemp)
+ACTIVE_PROCS=$(detect_active_procs_under "$WT" 2>"$ORPHAN_NOTE_TMP")   # 例: "48213(claude), 48310(node)"
+STALE_ORPHANS=$(grep '居残りプロセス' "$ORPHAN_NOTE_TMP" 2>/dev/null || true)
+rm -f "$ORPHAN_NOTE_TMP"
+[ -n "$STALE_ORPHANS" ] && echo "  $STALE_ORPHANS"
 RECENT_SESSION=$(detect_recent_session_log "$WT")    # 例: "~/.claude/projects/<slug>/ab12.jsonl (3時間前)"
 WT_LOCKED=$(detect_worktree_lock "$WT")              # 例: "added with --lock (2026-08-07 21:41)"
 ACTIVE_SIGNAL=""
@@ -587,16 +600,71 @@ classify_dirty() {
 絶対禁則 3 の稼働シグナルを検出する 3 つのヘルパ。**遅延診断の中でのみ呼び、プロセスの停止・ロック解除・ファイルの変更は一切行わない**（破壊操作は削除直前の `kill_devserver_under` だけが行う）。
 
 ```bash
+# pid の祖先を辿り、プロセスツリーの最上位（PPID が 1 = init/launchd の祖先）を返す。
+# 「起動元セッションがまだ生きているか」を見るための土台。生きた端末/シェルから起動された
+# プロセスは、最上位が端末アプリ側（= worktree 配下では検出されないプロセス）になる。
+# 取得できない場合は非 0 を返す（呼び出し側は「判定不能」として居残り扱いにしない）。
+proc_tree_top() {
+  local pid="$1" ppid hops=0
+  while [ "$hops" -lt 64 ]; do
+    hops=$((hops+1))
+    ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+    case "$ppid" in
+      ''|*[!0-9]*) return 1 ;;   # ps が引けない = 判定不能
+    esac
+    if [ "$ppid" = "1" ] || [ "$ppid" = "0" ]; then
+      printf '%s\n' "$pid"
+      return 0
+    fi
+    pid="$ppid"
+  done
+  return 1
+}
+
+# worktree 配下に 24 時間以内に更新されたファイルがあれば 0（＝人の作業痕跡あり）。
+# ⚠️ `.git` を除外するのは、診断中に自分が撃つ git コマンド（status など）が index の
+#    mtime を動かし、どの worktree も常に「最近更新あり」に見えてしまうため。
+#    依存物・ビルド生成物のディレクトリも人の作業痕跡ではないので除外する。
+# 検査できない場合は「痕跡あり」（= 居残り判定をしない側）に倒す。
+worktree_has_recent_activity() {
+  local dir="$1" hit
+  [ -d "$dir" ] || return 0
+  # -mtime -1 = 24 時間以内（BSD/GNU find 共通）。-prune で除外ディレクトリに降りない
+  hit=$(find "$dir" \
+    \( -name .git -o -name node_modules -o -name .next -o -name dist \
+       -o -name build -o -name .venv -o -name target \) -prune \
+    -o -mtime -1 -print 2>/dev/null | head -1)
+  [ -n "$hit" ]
+}
+
 # 配下で稼働中の非シェルプロセスを列挙する。
 # 検出範囲と除外リストは kill_devserver_under と完全に同一に保つこと
 # ——「kill_devserver_under が停止する対象が居るなら自動削除しない」という対応関係が本ガードの根拠。
+#
+# 唯一の例外が**居残り（孤児）プロセス**である（絶対禁則 3 の例外）。次の 2 条件を
+# **両方**満たすものだけを稼働シグナルから外し、除外した根拠を stderr のノートに残す。
+#   1. プロセスツリーの最上位が PPID=1（親セッション消滅）で、その最上位も配下で検出されている
+#   2. worktree の更新もセッションログの更新も 24 時間以上前（痕跡なし）
+# **AND を崩してはならない（SHALL NOT）**。判定材料が欠けたら居残りと断定しない（fail-closed）。
 detect_active_procs_under() {
-  local target="$1" abs pids pid comm out=""
+  local target="$1" abs pids pid comm out="" stale_ok=0 session_hit top orphans=""
   # 正規化できないまま空パスで lsof を撃つと、何も返らないのに「プロセスなし」と
   # 表示される silent no-op になる。失敗は稼働シグナルとして扱う（削除しない側へ）。
   if ! abs=$(abs_path "$target"); then
     echo "プロセス検査不能: パスを解決できない（安全のため稼働扱い）"
     return 0
+  fi
+
+  # 居残り除外の前提（条件 2）。ヘルパが無い・検査不能なら stale_ok=0 のまま（fail-closed）
+  if command -v detect_recent_session_log >/dev/null 2>&1; then
+    session_hit=$(detect_recent_session_log "$target")
+  else
+    session_hit="セッションログ検査不能: ヘルパ未定義（安全のため稼働扱い）"
+  fi
+  if [ -z "$session_hit" ] &&
+     command -v worktree_has_recent_activity >/dev/null 2>&1 &&
+     ! worktree_has_recent_activity "$abs"; then
+    stale_ok=1
   fi
 
   if command -v lsof >/dev/null 2>&1; then
@@ -619,8 +687,20 @@ detect_active_procs_under() {
     case "$comm" in
       bash|zsh|sh|fish|tmux|ssh|vim|nvim|code|Cursor|login) continue ;;
     esac
+    # 居残り判定（条件 1）。痕跡なし（stale_ok=1）のときだけ評価する
+    if [ "$stale_ok" = "1" ] &&
+       command -v proc_tree_top >/dev/null 2>&1 &&
+       top=$(proc_tree_top "$pid") &&
+       printf '%s\n' "$pids" | grep -qx "$top"; then
+      orphans="${orphans:+$orphans, }$pid($comm)"
+      continue
+    fi
     out="${out:+$out, }$pid($comm)"
   done <<< "$pids"
+
+  if [ -n "$orphans" ]; then
+    echo "ℹ️ 居残りプロセスとして稼働シグナルから除外: $orphans — 親セッション消滅（プロセスツリー最上位が PPID=1）かつ worktree 更新もセッションログも 24 時間以上前" >&2
+  fi
   echo "$out"
 }
 
@@ -724,7 +804,7 @@ detect_worktree_lock() {
 }
 ```
 
-**誤検出（false positive）は許容する**。稼働シグナルの誤検出が起こしうる最悪は「削除されず Pass 2 で 1 問聞かれる」だけであり、見逃し（false negative）の最悪は「作業中セッションの永久消失」である。判定は常に**検出する側に倒す**。
+**一過性の誤検出（false positive）は許容する**。見逃し（false negative）の最悪は「作業中セッションの永久消失」なので、判定は常に**検出する側に倒す**。ただし「誤検出のコストは Pass 2 で 1 問聞かれるだけ」という見積もりが成り立つのは**シグナルがいずれ消える場合に限る**。恒久的に立ちっぱなしのシグナルでは、コストは「その worktree が**永久に自動処理されない**」に変わる。居残りプロセスの除外（上の 2 条件 AND）はこの一点のためだけにあり、それ以外の誤検出は従来どおり許容する。**除外条件を片方だけに緩めてはならない**（SHALL NOT）。詳細は `plugins/worktree/references/wt-clean-orphan-detection.md`。
 
 > ℹ️ **ロックは他の 2 つと性質が違う**。配下プロセスとセッションログは「今動いているか」の観測だが、ロックは**明示的な所有権の宣言**であり、放置されると古いまま残る（wt-setup の hooks が `--lock` 付きで作った worktree は、PR がマージされてもロックが自動で外れない）。そのため Pass 2 の提示ではロック時刻を必ず併記し、ユーザーが「作業中」と「外し忘れ」を区別できるようにする。**ロックが古いことを理由にスキル側で自動削除に格下げしてはならない**（SHALL NOT）。判断はユーザーに委ねる。
 
@@ -873,7 +953,7 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
 
 > 🤖 **`--unattended` 指定時は、この節の状況表示までを行い `AskUserQuestion` を呼ばずに Step C へ抜ける**（後述「無人モード」）。以降の選択肢提示・回答待ち・選択ごとの分岐には**一切入らない**。
 
-非空なら、各対象の状況を**まとめて**表示する。`ACTIVE_SIGNAL` が非空の対象は、検出内容（PID・コマンド名／セッションログの更新時刻／ロック理由と時刻）を必ず明示する（絶対禁則 3）。未マージと判定した対象は `NOT_MERGED_REASON` をそのまま出す。ユーザーが判断できる材料はこれだけなので省略・要約してはならない:
+非空なら、各対象の状況を**まとめて**表示する。`ACTIVE_SIGNAL` が非空の対象は、検出内容（PID・コマンド名／セッションログの更新時刻／ロック理由と時刻）を必ず明示する（絶対禁則 3）。**居残りと判定して稼働シグナルから外したプロセス（`STALE_ORPHANS`）がある対象は、それも 1 行で出す**（何を見逃していないかをユーザーが確かめられるようにするため）。未マージと判定した対象は `NOT_MERGED_REASON` をそのまま出す。ユーザーが判断できる材料はこれだけなので省略・要約してはならない:
 
 ```
 自動処理が完了しました（削除 3 / 保留 0）。残り 4 件は判断が必要です:
@@ -900,6 +980,7 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
 [4] agent-a3ac2db (agent/issue-148-xxx) — 🔴 未マージ + ロック
   判定根拠: PR が OPEN（レビュー中の作業） — PR #289
   ⚠️ worktree ロック: added with --lock (2026-08-07 21:41)
+  ℹ️ 居残りプロセスとして稼働シグナルから除外: 13955(node), 13977(codex) — 親セッション消滅（プロセスツリー最上位が PPID=1）かつ worktree 更新もセッションログも 24 時間以上前
   → 削除するには先に git worktree unlock が必要です（Pass 1 では自動解除しません）
 ```
 
@@ -1082,6 +1163,12 @@ wt-clean 完了:
 
 ```
   ⚠️ 稼働シグナルで自動処理を保留: idea-x — 稼働中プロセス 48213(claude) / セッションログ 2026-08-07 14:32
+```
+
+居残りと判定して稼働シグナルから外したプロセスがあれば、その対象が自動処理されたかどうかにかかわらず**レポートにも根拠を 1 行残す**。「なぜ止まらずに消えたのか」を後から追えるようにするためで、無人モードのログでは唯一の手がかりになる:
+
+```
+  ℹ️ 居残りプロセスとして稼働シグナルから除外: feat-a — 13955(node), 13977(codex)（親セッション消滅 PPID=1 / 24 時間以内の更新なし）
 ```
 
 **再利用モード（`--keep`）** のレポートには、再利用化した worktree ごとにディレクトリパスと次作業コマンドを含める:
