@@ -2,6 +2,7 @@
 
 - **verify**: `op whoami`（SA トークン経由なら Service Account 情報が返る）
 - **トークンの構造**: エージェントは read-only Service Account（SA）で agents 保管庫だけを読む。SA トークン自体の在処は env `OP_SERVICE_ACCOUNT_TOKEN` → `~/.config/op-sa/claude-agents-ro.token`（600 権限）→ Keychain `op-sa-claude-agents-ro` の順（無人経路優先）
+- **保管庫は 2 つ**: `agents` 保管庫には dev / test / 読み取り系の資格情報が入り、SA から読める（`op item list --vault agents`）。`human-only` 保管庫には prod の書き込み可能キーの原本（`uranai--STRIPE_SECRET_KEY_PROD` / `shukan--SUPABASE_SERVICE_ROLE_KEY` 等）が入り、SA からは保管庫ごと見えない — 人間が 1Password アプリで扱い、CI へは Actions secrets の稼働コピーで渡る（階層の正本は SKILL.md の「資格情報の階層」）
 - **アイテム命名規約**: `<project>--<service>` / フィールド `credential`。project は origin remote のリポ名（末尾 `.git` 除去 → 最終パス要素 → 小文字化。例: `genetta-inc/suimei` → `suimei`）。dir 名からは導出しない（origin が無い場所では fmtoken は exit 45 で止まる）
 
 ## 運用知見

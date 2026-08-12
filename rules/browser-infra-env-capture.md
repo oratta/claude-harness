@@ -15,7 +15,8 @@
 
 1. エージェントは 1Password に書き込めない（SA は read-only、アイテム登録は人間の作業）。
    だから**主に `agents` 保管庫への登録を依頼する**（アイテム名 `<project>--<service>` / フィールド `credential`）
-2. ただし **prod の書き込み可能キー**（service_role・live secret key 等）は保管庫に入れず
-   **GitHub Actions secrets へ**登録依頼する。階層の正本は capability-registry スキルの「資格情報の階層」
+2. ただし **prod の書き込み可能キー**（service_role・live secret key 等）は、原本を
+   **human-only 保管庫**（エージェントの SA からは見えない保管庫）へ、稼働コピーを **GitHub Actions secrets** へ
+   登録依頼する。階層の正本は capability-registry スキルの「資格情報の階層」
 3. 登録が確認できたら、env 側のコメントに「正本: 1Password / Actions secrets」と追記する
    （env から消すかは主の判断 — 無断で消さない）
