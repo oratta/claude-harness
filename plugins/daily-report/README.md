@@ -7,8 +7,8 @@ Fieldy（ボイスレコーダー）の音声トランスクリプトと、Obsid
 1日を振り返るとき、情報源は複数ある:
 
 - **Fieldy** に録音された音声（独り言・会話・電話）
-- **Vault の編集ノート**（プロジェクトの context 更新、リサーチノート）
-- **Vault の LLM ログ**（Claude Code との対話の保存）
+- **Obsidian Vault の編集ノート**（プロジェクトの context 更新、リサーチノート）
+- **Obsidian Vault の LLM ログ**（Claude Code との対話の保存）
 - **Claude Code のセッション jsonl**（worktree 単位の作業履歴）
 
 これらを 1 つずつ手で読むのは現実的でないが、機械的に要約しても読み物にならない。`weekly-report` の縦集約とは別で、**読み物として腹落ちする日記** を作ることが本プラグインの目的。
@@ -27,7 +27,7 @@ Fieldy（ボイスレコーダー）の音声トランスクリプトと、Obsid
 ### 必須
 
 - Obsidian Vault が手元にあり、git 管理されている
-- 以下のディレクトリ構造（[Vault basic ルール](https://github.com/oratta) 準拠）:
+- 以下のディレクトリ構造（[Obsidian Vault basic ルール](https://github.com/oratta) 準拠）:
   ```
   vault/
   ├── 01 - DAILY/<YYYY-MM-DD>/diary.md   # 出力先

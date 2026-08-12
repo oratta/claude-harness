@@ -78,7 +78,7 @@ ToolSearch(query="select:mcp__sunsama__read_resource", max_results=1)
 
 ### Step 4: LLMセッションログ収集
 
-#### 3a. VaultレベルLLMログ（`90 - LLM/`）
+#### 3a. Obsidian VaultレベルLLMログ（`90 - LLM/`）
 
 `90 - LLM/YYYYMMDD-*.md` を対象週の各日付（月〜日）でGlob検索する。
 
@@ -152,7 +152,7 @@ cd {source_path} && git -c core.quotePath=false log \
 
 #### 4b. Obsidianファイル変更
 
-Vault git logから対象プロジェクトの変更ファイルを取得:
+Obsidian Vault git logから対象プロジェクトの変更ファイルを取得:
 ```bash
 git -c core.quotePath=false log --since={monday} --until={next_monday} \
   --name-only --format="" --diff-filter=ACMR -- "12 - PROJECT/{name}/"
@@ -220,7 +220,7 @@ fi
 - **ソースコミット数**: N
 - **コード変更量**: N行
 - **Sunsamaタスク完了**: N件（計画 Nh — 仕事 Nh + 個人 Nh）
-- **LLMセッション数**: N（Vault: N + ソースリポジトリ: N）
+- **LLMセッション数**: N（Obsidian Vault: N + ソースリポジトリ: N）
 - **harvest セッション**: N件（完了 N + 進行中 N）
 
 ---
@@ -250,7 +250,7 @@ fi
 - phases/: 変更ファイル名
 
 **LLMセッション** (Nセッション):
-- [[ログファイル名|表示名]]（Vaultログ）
+- [[ログファイル名|表示名]]（Obsidian Vaultログ）
 - セッション要約テキスト（ソースリポジトリ、sessionID: XXXXXXXX）
 
 **harvest** (Nセッション / 計 Nmin):
@@ -331,7 +331,7 @@ Edit ツールで更新する。
 
 - **テンプレートは変更しない**: `__META/TEMPLATE/02 - WEEKLY Template.md` は読み取り専用
 - **既存コンテンツを保持**: 週次ノートの他のセクション（フォーカス、振り返り等）は一切変更しない
-- **Vault外のリポジトリにアクセスするため** `cd` を使ったBashコマンドが必要
+- **Obsidian Vault外のリポジトリにアクセスするため** `cd` を使ったBashコマンドが必要
 - **大量コミット対策**: コミットが50件を超える場合はサマリのみ（type別件数）表示
 
 ## 自己検証
