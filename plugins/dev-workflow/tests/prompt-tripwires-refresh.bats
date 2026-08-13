@@ -5,7 +5,7 @@
 #
 # spec: dev-workflow-escalation-tripwires（issue #34 縮小版）
 #
-# 偽プラグインルート（$FAKE）を組んで検証する。usage-probe.sh は意図的にコピーしない
+# 偽プラグインルート（${FAKE}）を組んで検証する。usage-probe.sh は意図的にコピーしない
 # ので、session-tripwires.sh はネットワークに出ず conserve 既定で決定論的に走る。
 
 setup() {
