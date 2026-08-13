@@ -13,7 +13,7 @@
 #   fmtoken.sh --check <service>   # 値を出力せず 0/44 で返す
 #   fmtoken.sh --list              # このプロジェクトに登録済みのサービス一覧
 #
-# 登録は人間（主）が 1Password アプリで行う:
+# 登録は人間の 1Password デスクトップ CLI セッション内でエージェントが代行してよい:
 #   保管庫: agents / アイテム名: <project>--<service> / フィールド: credential
 set -euo pipefail
 
