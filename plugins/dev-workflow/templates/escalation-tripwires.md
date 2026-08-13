@@ -8,6 +8,10 @@
   手動コピー（グローバルルール ~/.claude/rules/ またはプロジェクト CLAUDE.md への転記）は、
   プラグイン未導入の環境や閾値を独自に改変したい場合向けのオプション。hook 注入と併存しても
   同文が2回載るだけで無害。
+  セッションを跨がずにプラグインを更新した場合（/plugin update・/reload-plugins）は
+  SessionStart が再発火しないため、UserPromptSubmit hook（scripts/prompt-tripwires-refresh.sh）が
+  「plugin.json のバージョンが前回注入時から変わったとき」だけ同じ本文を再注入する。
+  バージョンが同じ間は毎プロンプト無出力で、文脈を食わない。
 - unmanned（loop-dev-agent）で使う場合: 憲法ファイル（docs/agent-loop.md）への組み込みを
   loops プラグイン側が行う（loop-dev-agent-tripwires）。手動コピーは不要。
 - このテンプレートは「いつ手を止めるか」だけを定義する。「どう実行するか」は発火先の
