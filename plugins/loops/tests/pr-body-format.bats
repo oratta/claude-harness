@@ -30,9 +30,9 @@ setup() {
 import sys
 text = open(sys.argv[1], encoding="utf-8").read()
 sections = [
-    "これで何が変わるか",
-    "良くなること / 悪くなりうること",
-    "壊れうるポイント",
+    "位置づけ",
+    "実装方針",
+    "リスク（重い順）",
     "動作確認ポイント",
     "実装メモ",
 ]
@@ -76,6 +76,18 @@ PY
   grep -q '「なし」' "$REF"
 }
 
+@test "reference: risk section requires likelihood and impact weighting" {
+  grep -q '起きやすさ' "$REF"
+  grep -q '起きたときの影響' "$REF"
+  grep -E '高/中/低' "$REF" >/dev/null
+  grep -q '戻し方' "$REF"
+}
+
+@test "reference: positioning section descends from product goal in 3 lines" {
+  grep -q '上から降りる' "$REF"
+  grep -E '目指していること' "$REF" >/dev/null
+}
+
 @test "reference: line limits are specified" {
   grep -E '最大.?[0-9]+.?(行|項目)' "$REF" >/dev/null
 }
@@ -99,7 +111,7 @@ import sys, re
 text = open(sys.argv[1], encoding="utf-8").read()
 m = re.search(r"軽量モード", text)
 tail = text[m.start():]
-assert "これで何が変わるか" in tail, "lightweight mode must reference section 1"
+assert "位置づけ" in tail, "lightweight mode must reference section 1"
 assert "動作確認ポイント" in tail, "lightweight mode must reference verification section"
 PY
 }
@@ -154,10 +166,10 @@ PY
 
 # --- Requirement: プラグインバージョンの更新 ---
 
-@test "manifest: loops version is greater than 0.16.1" {
+@test "manifest: loops version is greater than 0.21.1" {
   python3 - "$MANIFEST" <<'PY'
 import json, sys
 v = json.load(open(sys.argv[1]))["version"]
-assert tuple(map(int, v.split("."))) > (0, 16, 1), v
+assert tuple(map(int, v.split("."))) > (0, 21, 1), v
 PY
 }

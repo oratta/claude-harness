@@ -1,8 +1,7 @@
-# loops-pr-body-format Specification
+# loops-pr-body-format Specification (Delta)
 
-## Purpose
-TBD - created by archiving change agent-pr-issue-body-format. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: PR 本文フォーマット reference の新設
 `plugins/loops/references/pr-body-format.md` は、エージェントが書く PR 本文の 5 セクション型を定義しなければならない（MUST）。セクションは上から順に「位置づけ」「実装方針」「リスク（重い順）」「動作確認ポイント」「実装メモ」であり、この順序（判断に必要な順）を入れ替えてはならない（MUST NOT）。「位置づけ」はプロダクトの目的 → この PR が担う部分 → 起きる変化、の 3 行で上から降りる構成とする。「リスク」は起きうること / 起きやすさ / 起きたときの影響 / 戻し方 の 4 列表とする。末尾に `Closes #<番号>` と、再生成可能な出力（検証ログ等）のみを入れる任意の `<details>` 折りたたみを置く。
 
@@ -39,30 +38,14 @@ reference は軽量モード（「位置づけ」＋「動作確認ポイント�
 - **WHEN** reference の軽量モードの節を読む
 - **THEN** 適用基準の明文リストと、PR 冒頭への適用理由 1 行の明記義務が定義されている
 
-### Requirement: agent-loop-template からの参照配線
-`plugins/loops/templates/agent-loop-template.md` の実装モード Step 3 の Draft PR 作成手順は、PR 本文について `pr-body-format.md` の型に従う旨を参照しなければならない（MUST）。従来の「本文に `Closes #<番号>` と検証ログを書き」という独自規定は参照に置き換える。
-
-#### Scenario: 憲法テンプレートが reference を参照している
-- **WHEN** `plugins/loops/templates/agent-loop-template.md` の Draft PR 作成手順を読む
-- **THEN** `pr-body-format.md` への参照があり、本文構造の独自規定が残っていない
-
-### Requirement: issue ドラフトへの承認判断 2 節の追加
-`plugins/loops/skills/loops-issueify/SKILL.md` の issue ドラフト構造および `plugins/loops/skills/loops-dev-agent-install/SKILL.md` Step 3 の `agent-task.md` テンプレートは、既存 4 節（概要 / 触るファイル・関数 / 受け入れ条件 / 備考）の先頭に「これで何が変わるか」（最大 3 行・技術用語禁止）と「やらないとどうなるか / 今のコスト」（最大 3 行）の 2 節を追加しなければならない（MUST）。既存 4 節の構造は変更してはならない（MUST NOT）。
-
-#### Scenario: issueify のドラフト構造に 2 節が先頭追加されている
-- **WHEN** `plugins/loops/skills/loops-issueify/SKILL.md` のドラフト生成手順を読む
-- **THEN** 「これで何が変わるか」「やらないとどうなるか / 今のコスト」が既存 4 節の前に定義され、既存 4 節が維持されている
-
-#### Scenario: インストールされる issue テンプレートに 2 節が含まれる
-- **WHEN** `plugins/loops/skills/loops-dev-agent-install/SKILL.md` Step 3 の `agent-task.md` テンプレートを読む
-- **THEN** 同 2 節が既存 4 節の前に含まれている
-
 ### Requirement: プラグインバージョンの更新
 本変更を含むリリースでは `plugins/loops/.claude-plugin/plugin.json` のバージョンを 0.21.1 から上げなければならない（MUST）。同バージョンのままではプラグインキャッシュにより他プロジェクトへ反映されないため。dev-workflow 側の追従変更（revert テンプレート）も同様に `plugins/dev-workflow/.claude-plugin/plugin.json` のバージョンを上げる。marketplace.json の各プラグインの version は plugin.json と一致させる。
 
 #### Scenario: バージョンが更新されている
 - **WHEN** 両 plugin.json の `version` を読む
 - **THEN** loops は 0.21.1 より大きく、dev-workflow は 1.9.0 より大きい
+
+## ADDED Requirements
 
 ### Requirement: 配布テンプレートの新型追従
 `plugins/dev-workflow/templates/auto-merge/.github/workflows/revert-pr.yml` が自動生成する revert PR 本文の見出しと、本リポジトリの `.github/PULL_REQUEST_TEMPLATE.md` は、PR 本文の新 5 セクション型（軽量モードは「位置づけ」＋「動作確認ポイント」）に従わなければならない（MUST）。旧セクション名（「これで何が変わるか」「壊れうるポイント」等）を PR 本文の見出しとして残してはならない（MUST NOT）。issue 本文の型（「これで何が変わるか」先頭 2 節）はこの制約の対象外である。
@@ -74,4 +57,3 @@ reference は軽量モード（「位置づけ」＋「動作確認ポイント�
 #### Scenario: リポジトリに PR テンプレートが存在する
 - **WHEN** `.github/PULL_REQUEST_TEMPLATE.md` を読む
 - **THEN** 新 5 セクション型の見出しとコメントによる書き方指示が含まれている
-
