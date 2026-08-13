@@ -1,7 +1,7 @@
 ---
 name: capability-registry
 description: 外部サービスを操作する前に必ず参照するレジストリ（GitHub/Supabase/Vercel/Stripe/1Password 等）。CLI の有無・認証確認コマンド・トークンの在処（fmtoken.sh）を索引で返す。ブラウザを開こうとした時・ユーザーにログインを依頼したくなった時も、その前にここで CLI 代替を確認する。
-version: 1.5.0
+version: 1.6.0
 ---
 
 # capability-registry — 外部サービスの CLI とトークンの在処
@@ -44,7 +44,7 @@ version: 1.5.0
 
 | サービス | CLI | 認証確認（verify） | トークン | ブラウザ必須の例外 |
 |---|---|---|---|---|
-| 1Password | op | `op whoami` | SA トークン（env / 600 ファイル / Keychain）。SA が読めるのは `agents` 保管庫のみ | アイテム登録・SA 権限変更（人間が行う） |
+| 1Password | op | `op whoami` | SA トークン（env / 600 ファイル / Keychain）。SA が読めるのは `agents` 保管庫のみ | SA 権限変更（人間が行う） |
 | GitHub | gh | `gh auth status` | `fmtoken.sh github` | OAuth アプリ承認・組織設定の一部 |
 | Supabase | supabase | `supabase projects list` | `SUPABASE_ACCESS_TOKEN="$(fmtoken.sh supabase)"` | ダッシュボード限定の設定変更 |
 | Vercel | vercel | `vercel whoami` | `vercel --token "$(fmtoken.sh vercel)"` | ドメイン購入・課金設定 |

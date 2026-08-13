@@ -11,4 +11,5 @@
 - op をデスクトップアプリ連携で叩くと macOS がターミナル名義の「他アプリのデータへのアクセス」確認を op プロセスごとに出す。**フックやスクリプトは必ず SA 経由で叩く**（SA トークン経由なら無音）
 - Keychain 保管の SA トークンも ACL 次第で**読み出しごとに生体認証**が出る。生体認証が繰り返し出る = SA の無音経路（env / 600 ファイル）に乗れていないサイン。そのマシンに 600 ファイルを配布して解消する:
   `security find-generic-password -a "$USER" -s op-sa-claude-agents-ro -w > ~/.config/op-sa/claude-agents-ro.token && chmod 600 ~/.config/op-sa/claude-agents-ro.token`（生体認証はこの 1 回だけ）
-- アイテム登録は人間が 1Password アプリで行う（ブラウザ・CLI とも不可の運用）
+- **アイテム登録**: 人間の 1Password デスクトップ CLI セッション（`op signin` 済み、または op デスクトップアプリ連携）の中でエージェントが `op item create` を代行してよい（2026-07-30 主判断）。手作業の GUI 登録は命名規約 `<project>--<service>` / `<agent>--<service>` の逸脱源になりやすく、機械的な CLI 登録の方が規約を守れる。エージェント自身の read-only SA（`op-sa-claude-agents-ro`）は書き込めない点は変わらず、代行はあくまで人間のセッション権限で行う
+- **SA の保管庫アクセス権限変更**は引き続き人間が 1Password アプリで行う（Individual プランでは CLI/API から不可）
