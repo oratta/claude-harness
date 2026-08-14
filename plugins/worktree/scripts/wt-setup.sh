@@ -22,6 +22,11 @@ print_default_worktreeinclude() {
 # （*.bak / *.bak-* / *.old / *.orig / *~ など）はスクリプト側で常に除外されるため
 # ここに書く必要はない。repo 固有の除外だけを `!` 行で足す。
 #
+# `/` を含まないパターン（.env / *.local.json 等）はリポジトリ直下のファイルにのみ
+# 一致する。サブディレクトリまで拾いたい場合は `config/**/*.env` のようにパスを含む
+# パターンを別行で追記する（パスを含むパターンでも `.claude/worktrees/` 配下の
+# 入れ子 worktree は常に走査から除外される。flatmate#320）。
+#
 # .vercel は既定では配布しない（必要な repo だけがオプトインで下の行を有効化する）。
 #   `vercel link` / `vercel env pull` が .vercel/.env.production.local を作ると、
 #   本番環境変数一式がすべての worktree に複製されるため（issue #55）。
@@ -110,6 +115,39 @@ AWS アクセスキー|(AKIA|ASIA)[0-9A-Z]{16}
 PATTERNS
 }
 
+# 入れ子 worktree 除外つきのパターン探索（flatmate#320）。
+# 旧実装は全パターンを `find . -path "./$pattern"` で探索していたが、find -path の
+# グロブは `*` が `/` にも一致するため、`*.local.json` のようなパターンが実際には
+# リポジトリ全体に再帰マッチしていた（「直下限定」という意図コメントと実挙動が乖離）。
+# さらに find はパターンに関係なく全ツリーを走査するため、`.claude/worktrees/` 配下に
+# 入れ子 worktree 残骸が大量にあるリポ（例: flatmate の workspace/*/.claude/worktrees/）
+# では走査だけで WorktreeCreate フックがタイムアウトし、加えて作成中の worktree 自身が
+# コピー対象に入って自己参照コピーが増殖していた。対策:
+#   - `/` を含まないパターンはリポジトリ直下のみに一致させる（-maxdepth 1。
+#     意図コメントどおりの挙動に実装を合わせる。サブディレクトリまで拾いたい場合は
+#     "config/**/<pattern>" のようなパス付きパターンを別行で追記する）
+#   - `/` を含むパターンは従来どおり深く探索するが、どの深さにあっても
+#     `*/.claude/worktrees`（入れ子 worktree。作成中の worktree 自身を含む）と
+#     .git / node_modules（マッチし得ない巨大ツリー）を prune する
+#   - 作成先 worktree がメインリポ内の `.claude/worktrees/` 以外に切られている場合に
+#     備え、作成先 worktree 自身のパスも prune する
+WT_FIND_PRUNE=('(' -path '*/.claude/worktrees' -o -name .git -o -name node_modules)
+case "$TOPLEVEL" in
+  "$MAIN_REPO"/*) WT_FIND_PRUNE+=(-o -path "./${TOPLEVEL#"$MAIN_REPO"/}") ;;
+esac
+WT_FIND_PRUNE+=(')' -prune)
+
+# $1: .worktreeinclude の 1 パターン。メインリポジトリに cd してから呼ぶこと。
+# 一致した `./` 付き相対パスを 1 行ずつ stdout に返す。
+wt_find_matches() {
+  local pattern="$1"
+  if [[ "$pattern" != */* ]]; then
+    find . -maxdepth 1 -name "$pattern" -type f 2>/dev/null
+  else
+    find . "${WT_FIND_PRUNE[@]}" -o -path "./$pattern" -type f -print 2>/dev/null
+  fi
+}
+
 if [ -f .worktreeinclude ]; then
   echo ""
   echo "=== .worktreeinclude: 既存 ==="
@@ -124,13 +162,9 @@ if [ -f .worktreeinclude ]; then
   done < .worktreeinclude
   while IFS= read -r pattern; do
     [[ "$pattern" =~ ^#.*$ || -z "$pattern" || "$pattern" =~ ^! ]] && continue
-    # find -path のグロブ挙動（実挙動確認済み・意図の明文化）:
-    #   `find . -path "./$pattern"` は $pattern を 1 個のパス glob として扱う。
-    #   `.env` / `.env.*` / `*.local.json` / `*.local.md` のような 1 階層パターンは
-    #   リポジトリ直下のファイルのみに一致し、サブディレクトリ配下（例: config/foo.env.local）
-    #   には一致しない。.worktreeinclude の既定パターンはいずれもリポジトリ直下想定のため、
-    #   この直下限定挙動が意図通り（サブディレクトリまで拾いたい場合は "./**/$pattern" を
-    #   別パターンとして追記する運用にする）。
+    # パターン探索は wt_find_matches に集約（`/` なし＝リポジトリ直下限定・
+    # `/` あり＝入れ子 worktree を prune した深い探索）。挙動の詳細と flatmate#320 の
+    # 経緯は関数定義側のコメントを参照。
     while IFS= read -r file; do
       # gitignore されたファイルだけをコピーする（issue #80）。
       # .worktreeinclude の契約は「gitignore されたファイルのうち worktree に
@@ -165,7 +199,7 @@ if [ -f .worktreeinclude ]; then
       dir=$(dirname "$file")
       mkdir -p "$dir"
       cp "$MAIN_REPO/$file" "$file" 2>/dev/null && echo "  copied: $file" && COPIED=$((COPIED + 1))
-    done < <(cd "$MAIN_REPO" && find . -path "./$pattern" -type f 2>/dev/null)
+    done < <(cd "$MAIN_REPO" && wt_find_matches "$pattern")
   done < .worktreeinclude
   echo "  total: $COPIED files copied, $SKIPPED skipped (tracked), $EXCLUDED skipped (excluded), $WARNED warnings"
   if [ "$WARNED" -gt 0 ]; then
