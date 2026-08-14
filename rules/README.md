@@ -18,6 +18,7 @@ done
 ```
 
 - symlink 先は marketplace dir（plugin 更新で再 clone されても tracked ファイルなので復元される）
+- **ルールファイルが増えたら上のスクリプトを再実行する**（symlink は実行時にしか作られないため、既存インストールには新ファイルの link が生えない）
 - ローカル限定のルールを追加したい場合は、symlink せず `~/.claude/rules/` に実ファイルとして置けばよい（共存可能）
 
 ## ファイル一覧
@@ -31,3 +32,4 @@ done
 | `link-when-requesting-review.md` | 人間に確認を求めるときは必ずクリック可能なフル URL を添える |
 | `plugin-editing.md` | プラグイン編集は marketplace 版のみ・バージョン同期 |
 | `dev-server.md` | 他プロジェクトのプロセス kill 禁止・ポート運用 |
+| `subagent-model-selection.md` | サブエージェントの model 明示必須・役割ベースのティア選択（最上位モデルの継承漏れ防止） |
