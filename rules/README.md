@@ -31,3 +31,4 @@ done
 | `link-when-requesting-review.md` | 人間に確認を求めるときは必ずクリック可能なフル URL を添える |
 | `plugin-editing.md` | プラグイン編集は marketplace 版のみ・バージョン同期 |
 | `dev-server.md` | 他プロジェクトのプロセス kill 禁止・ポート運用 |
+| `subagent-model-selection.md` | サブエージェントの model 明示必須・役割ベースのティア選択（最上位モデルの継承漏れ防止） |
