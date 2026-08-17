@@ -118,7 +118,11 @@ fork:
   flow. DMs check `allowFrom`; guild channels require the channel's entry in
   `groups` **and** the sender in its `allowFrom` (falling back to the
   top-level `allowFrom` when empty — reactions can't carry a mention, so the
-  paired-sender list substitutes for `requireMention`).
+  paired-sender list substitutes for `requireMention`). To receive reactions
+  in a guild channel, either list the sender via
+  `/discord:access group add <channelId> --allow <id>` or have them paired
+  via DM — with both lists empty every reaction is dropped (with a stderr
+  note).
 
 Works for messages posted before the bot started too (`Partials` handling) —
 a 👍 on an old message survives bot restarts. The reaction intents are not

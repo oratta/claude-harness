@@ -38,7 +38,7 @@ discord プラグインの MCP サーバは、`messageReactionAdd` / `messageRea
 
 ### Requirement: allowlist に無い送信者のリアクションは配送しない
 
-リアクションの送信者がアクセス制御を通らない場合、通知を配送してはならない（MUST NOT）。DM は `access.allowFrom` で判定する。guild チャンネルは `access.groups` に登録済みであることに加え、チャンネルの `allowFrom`（空のときは `access.allowFrom` にフォールバック）に送信者が含まれることを要求する — テキスト経路で空の `allowFrom` を補っている requireMention はリアクションには適用できないため、代替としてペアリング済み送信者に絞る（これが無いと、登録チャンネルにいる第三者の 👍 が主の承認として配送されてしまう）。リアクションにはペアリング案内を返せないため、`gate()` のペアリングフローには載せず単純に drop する。`dmPolicy: "disabled"` のときは一切配送しない。
+リアクションの送信者がアクセス制御を通らない場合、通知を配送してはならない（MUST NOT）。DM は `access.allowFrom` で判定する。guild チャンネルは `access.groups` に登録済みであることに加え、チャンネルの `allowFrom`（空のときは `access.allowFrom` にフォールバック）に送信者が含まれることを要求する — テキスト経路で空の `allowFrom` を補っている requireMention はリアクションには適用できないため、代替としてペアリング済み送信者に絞る（これが無いと、登録チャンネルにいる第三者の 👍 が主の承認として配送されてしまう）。リアクションにはペアリング案内を返せないため、`gate()` のペアリングフローには載せず単純に drop する。`dmPolicy: "disabled"` のときは一切配送しない。ただし、チャンネルの `allowFrom` とフォールバック先の `access.allowFrom` が両方空で drop する場合（guild 専用構成で DM ペアリング未実施のとき恒常的に起きる）は、無言で捨てず stderr に 1 行（対処方法 `/discord:access group add <channelId> --allow <id>` または DM ペアリングを含む）を残す。
 
 #### Scenario: 未登録チャンネルのリアクションは落ちる
 
@@ -55,6 +55,22 @@ discord プラグインの MCP サーバは、`messageReactionAdd` / `messageRea
 - **GIVEN** `access.groups` に登録済みで `allowFrom` が空の guild チャンネル
 - **WHEN** `access.allowFrom` に無いユーザーがリアクションを付ける
 - **THEN** 通知は送られない（`access.allowFrom` へのフォールバック判定で drop）
+
+#### Scenario: allowlist が両方空の drop は stderr に痕跡を残す
+
+- **GIVEN** チャンネルの `allowFrom` も `access.allowFrom` も空
+- **WHEN** そのチャンネルのメッセージにリアクションが付く
+- **THEN** 通知は送られず、stderr に対処方法（`--allow` 指定または DM ペアリング）を含む 1 行が出る
+
+### Requirement: 同一対象へのリアクションイベントは受信順に配送する
+
+同じチャンネル・メッセージ・ユーザー・絵文字の組に対する付与/除去イベントは、受信した順に配送しなければならない（MUST）。ハンドラは partial 解決等で await するため、素直に並行実行すると「付けてすぐ外す」で除去が先に配送され、実際は取り消された承認をセッションが最後に見てしまう。実装はこの組をキーにした promise チェーンで直列化し、決着したキーのエントリは削除してリークさせない。
+
+#### Scenario: 付けてすぐ外しても順序が保たれる
+
+- **GIVEN** bot 起動前のメッセージ（partial 解決の待ちが発生する）
+- **WHEN** 同一ユーザーが 👍 を付けて即座に外す
+- **THEN** セッションには `(reaction) +👍` → `(reaction) -👍` の順で届き、最後に見えるのは除去である
 
 ### Requirement: bot 起動前のメッセージへのリアクションも partial 解決で拾う
 

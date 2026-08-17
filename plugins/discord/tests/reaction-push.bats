@@ -105,6 +105,20 @@ reaction_block() {
   reaction_block | grep -q 'groupAllowFrom : access.allowFrom'
 }
 
+@test "allowlist: drop with no allowlist at all leaves a stderr breadcrumb" {  # guild 専用構成（DM ペアリング未実施）で無言で全滅しない
+  reaction_block | grep -q 'allowed.length === 0'
+  reaction_block | grep -q 'group add'
+  reaction_block | grep -q -- '--allow'
+}
+
+@test "ordering: same-key reaction events are serialized via a promise chain" {  # 付けてすぐ外しても remove が先に届かない
+  block="$(awk '/^function enqueueReaction/,/^}/' "$SERVER")"
+  [ -n "$block" ]
+  echo "$block" | grep -q 'reactionChains.get(key)'
+  echo "$block" | grep -q 'then(() => handleReaction'
+  echo "$block" | grep -q 'reactionChains.delete(key)'
+}
+
 @test "delivery: uncached DM channel is fetched, not dropped" {  # 起動後まだ会話の無い DM への 👍 も拾う
   reaction_block | grep -q 'fetchTextChannel(reaction.message.channelId)'
 }

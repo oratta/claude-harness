@@ -833,17 +833,34 @@ client.on('messageCreate', msg => {
 // channel as inbound messages. Contract matches the telegram fork:
 // content "(reaction) +👍" (+ added, - removed), message_id = the reacted-to
 // message. A fetch failure (deleted message, missing history perms) lands in
-// the catch below — one stderr line, no throw.
-client.on('messageReactionAdd', (reaction, user) => {
-  handleReaction(reaction, user, '+').catch(e =>
-    process.stderr.write(`discord: handleReaction failed: ${e}\n`),
-  )
-})
-client.on('messageReactionRemove', (reaction, user) => {
-  handleReaction(reaction, user, '-').catch(e =>
-    process.stderr.write(`discord: handleReaction failed: ${e}\n`),
-  )
-})
+// the enqueue catch — one stderr line, no throw.
+client.on('messageReactionAdd', (reaction, user) => enqueueReaction(reaction, user, '+'))
+client.on('messageReactionRemove', (reaction, user) => enqueueReaction(reaction, user, '-'))
+
+// Same-key reaction events must deliver in arrival order. handleReaction
+// awaits fetches (partials, uncached channels), so a quick add→remove on a
+// pre-restart message could otherwise deliver the remove first — the session
+// would see "+👍" last and act on a withdrawn approval. Chain events keyed on
+// channel/message/user/emoji; the entry is removed once its chain drains.
+const reactionChains = new Map<string, Promise<void>>()
+
+function enqueueReaction(
+  reaction: MessageReaction | PartialMessageReaction,
+  user: User | PartialUser,
+  sign: '+' | '-',
+): void {
+  const key = `${reaction.message.channelId}:${reaction.message.id}:${user.id}:${reaction.emoji.id ?? reaction.emoji.name}`
+  const next = (reactionChains.get(key) ?? Promise.resolve())
+    .then(() => handleReaction(reaction, user, sign))
+    .catch(e => {
+      process.stderr.write(`discord: handleReaction failed: ${e}\n`)
+    })
+  reactionChains.set(key, next)
+  void next.finally(() => {
+    // Only drop the entry if no newer event chained onto it meanwhile.
+    if (reactionChains.get(key) === next) reactionChains.delete(key)
+  })
+}
 
 // Reaction emoji names are server-controlled (custom emoji) — the name lands
 // inside the <channel> notification content, so strip delimiter chars the
@@ -893,6 +910,18 @@ async function handleReaction(
     if (!policy) return
     const groupAllowFrom = policy.allowFrom ?? []
     const allowed = groupAllowFrom.length > 0 ? groupAllowFrom : access.allowFrom
+    if (allowed.length === 0) {
+      // Guild-only setups never populate access.allowFrom (only DM pairing
+      // does), so this fallback can be empty too. Stay fail-closed — opening
+      // up would let any channel member forge the owner's 👍 — but leave a
+      // trace instead of dying silently.
+      process.stderr.write(
+        `discord channel: reaction from ${user.id} in channel ${channelId} dropped — ` +
+        `no allowlist to check against. Add senders via ` +
+        `/discord:access group add ${channelId} --allow <id>, or pair via DM.\n`,
+      )
+      return
+    }
     if (!allowed.includes(user.id)) return
   }
 
