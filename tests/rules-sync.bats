@@ -71,6 +71,20 @@ teardown() {
   [ -L "$FAKE_CLAUDE/rules/other-link.md" ]
 }
 
+@test "same-name symlink pointing outside harness is left untouched and reported" {
+  mkdir -p "$FAKE_CLAUDE/rules"
+  ln -s /etc/hosts "$FAKE_CLAUDE/rules/communication-style.md"
+  run sh "$SYNC" --no-pull
+  [ "$status" -ne 0 ]
+  [ "$(readlink "$FAKE_CLAUDE/rules/communication-style.md")" = "/etc/hosts" ]
+}
+
+@test "unwritable claude dir yields non-zero exit (fail-loud)" {
+  touch "$FAKE_CLAUDE/blocker"
+  CLAUDE_CONFIG_DIR="$FAKE_CLAUDE/blocker" run sh "$SYNC" --no-pull
+  [ "$status" -ne 0 ]
+}
+
 @test "dangling symlinks pointing into this harness are pruned" {
   mkdir -p "$FAKE_CLAUDE/rules"
   ln -s "$REPO_ROOT/rules/deleted-rule.md" "$FAKE_CLAUDE/rules/deleted-rule.md"

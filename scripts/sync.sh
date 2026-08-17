@@ -37,13 +37,21 @@ CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 rc=0
 
 if [ "${1:-}" != "--no-pull" ]; then
-  if git -C "$HARNESS_DIR" diff --quiet 2>/dev/null && git -C "$HARNESS_DIR" diff --cached --quiet 2>/dev/null; then
-    if ! git -C "$HARNESS_DIR" pull --ff-only >/dev/null; then
+  # dirty 判定は「追跡ファイルの変更のみ」（--untracked-files=no。repo-sync.sh と同じ理由:
+  # marketplace dir には untracked の実行時ファイルが常駐しうるため、untracked を dirty 扱いすると
+  # pull が恒久スキップされる）。untracked が pull で上書きされる心配は不要 — merge/checkout は
+  # 未追跡（非 ignored）ファイルを上書きせず "Aborting" で止まる（2026-08-17 実測済み）。
+  # git コマンド自体の失敗（clone 破損等）は dirty と区別して非0で知らせる。
+  if dirty="$(git -C "$HARNESS_DIR" status --porcelain --untracked-files=no 2>/dev/null)"; then
+    if [ -n "$dirty" ]; then
+      echo "[harness-sync] tracked ファイルが dirty のため pull をスキップしました（作業保護。symlink 配線は続行）" >&2
+    elif ! git -C "$HARNESS_DIR" pull --ff-only >/dev/null; then
       echo "[harness-sync] pull（ff-only）に失敗しました。clone が origin と分岐しているかネットワーク断です（symlink 配線は続行）" >&2
       rc=1
     fi
   else
-    echo "[harness-sync] tracked ファイルが dirty のため pull をスキップしました（作業保護。symlink 配線は続行）" >&2
+    echo "[harness-sync] git 状態を取得できません（clone 破損の可能性）。pull をスキップします（symlink 配線は続行）" >&2
+    rc=1
   fi
 fi
 
@@ -51,13 +59,17 @@ link_dir() {
   # $1=正本ディレクトリ $2=配線先ディレクトリ
   src="$1"; dst="$2"
   [ -d "$src" ] || return 0
-  mkdir -p "$dst"
+  if ! mkdir -p "$dst" 2>/dev/null; then
+    echo "[harness-sync] 配線先を作成できません: $dst" >&2
+    rc=1
+    return 0
+  fi
 
   # この harness を指す壊れた symlink を掃除する
   for l in "$dst"/*.md; do
     [ -L "$l" ] || continue
     case "$(readlink "$l")" in
-      "$HARNESS_DIR"/*) [ -e "$l" ] || rm -f "$l" ;;
+      "$HARNESS_DIR"/*) [ -e "$l" ] || rm -f "$l" || rc=1 ;;
     esac
   done
 
@@ -67,17 +79,28 @@ link_dir() {
     [ "$base" = "README.md" ] && continue
     t="$dst/$base"
     if [ -L "$t" ]; then
-      [ "$(readlink "$t")" = "$f" ] || ln -sfn "$f" "$t"
+      cur="$(readlink "$t")"
+      if [ "$cur" != "$f" ]; then
+        case "$cur" in
+          "$HARNESS_DIR"/*)
+            # この harness 内の旧パスを指す symlink だけ張り替える
+            ln -sfn "$f" "$t" || { echo "[harness-sync] symlink を更新できません: $t" >&2; rc=1; } ;;
+          *)
+            # harness と無関係な symlink には触らない（README の約束）
+            echo "[harness-sync] $t は harness 外（$cur）を指す symlink のため触りません（手動で統合してください）" >&2
+            rc=1 ;;
+        esac
+      fi
     elif [ -e "$t" ]; then
       if cmp -s "$f" "$t"; then
         # 内容同一の実ファイルは symlink 化する（コピー運用から正本一本化への移行）
-        ln -sfn "$f" "$t"
+        ln -sfn "$f" "$t" || { echo "[harness-sync] symlink 化に失敗しました: $t" >&2; rc=1; }
       else
         echo "[harness-sync] $t は harness と内容の異なる実ファイルのため触りません（手動で統合してください）" >&2
         rc=1
       fi
     else
-      ln -s "$f" "$t"
+      ln -s "$f" "$t" || { echo "[harness-sync] symlink を作成できません: $t" >&2; rc=1; }
     fi
   done
 }
