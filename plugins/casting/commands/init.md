@@ -52,6 +52,10 @@ fi
 
 GITIGNORE="${REPO_ROOT%/}/.gitignore"
 touch "$GITIGNORE"
+# 既存 .gitignore の末尾に改行が無いと追記行が最終行と連結されるため、先に改行を補う
+if [ -s "$GITIGNORE" ] && [ "$(tail -c 1 "$GITIGNORE" | wc -l | tr -d ' ')" -eq 0 ]; then
+  printf '\n' >> "$GITIGNORE"
+fi
 if ! grep -qxF '.claude/casting/local.md' "$GITIGNORE"; then
   printf '%s\n' '.claude/casting/local.md' >> "$GITIGNORE"
   echo "appended to .gitignore: .claude/casting/local.md"

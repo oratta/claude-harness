@@ -59,3 +59,35 @@ setup() {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/ok"
   [[ "$output" != *"version-mismatch"* ]]
 }
+
+# --- 回帰: 1周目レビューの blocking 指摘（シェル堅牢性） ---
+
+@test "missing-version fixture: reports the missing catalog_version instead of dying silently" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/missing-version"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"catalog_version が front matter に無い"* ]]
+}
+
+@test "no-front-matter fixture: treated as missing catalog_version without misparsing the body" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/no-front-matter"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"catalog_version が front matter に無い"* ]]
+  [[ "$output" != *"unknown-vocab"* ]]
+}
+
+@test "tight-pipes fixture: rows without a space after the pipe are still linted" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/tight-pipes"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"謎のタイト観点"* ]]
+  [[ "$output" != *"財務・コスト"* ]]
+}
+
+@test "trailing-space fixture: trailing spaces do not cause a false unknown-vocab" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/trailing-space"
+  [ "$status" -eq 0 ]
+}
+
+@test "multi-perspective fixture: comma-separated perspectives are each validated" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/multi-perspective"
+  [ "$status" -eq 0 ]
+}

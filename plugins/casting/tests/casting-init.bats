@@ -76,6 +76,20 @@ run_init() {
   [ "$(grep -cxF '.claude/casting/local.md' "${REPO}/.gitignore")" -eq 1 ]
 }
 
+# --- 回帰: 既存 .gitignore の末尾に改行が無い場合 ---
+
+@test "no trailing newline in .gitignore: entry still lands on its own line" {
+  printf 'node_modules' > "${REPO}/.gitignore"
+  run run_init
+  [ "$status" -eq 0 ]
+  [ "$(grep -cxF 'node_modules' "${REPO}/.gitignore")" -eq 1 ]
+  [ "$(grep -cxF '.claude/casting/local.md' "${REPO}/.gitignore")" -eq 1 ]
+
+  run run_init
+  [ "$status" -eq 0 ]
+  [ "$(grep -cxF '.claude/casting/local.md' "${REPO}/.gitignore")" -eq 1 ]
+}
+
 @test "second run: does not overwrite precedents.md" {
   run_init
   printf '\n追記した判例\n' >> "${REPO}/.claude/casting/precedents.md"

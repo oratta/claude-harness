@@ -55,21 +55,41 @@ report() {
   printf '[%s] %s\n' "$1" "$2" >> "$FINDINGS"
 }
 
-# front_matter <file> — front matter 本体（--- と --- の間）を出力する
+# front_matter <file> — front matter 本体（--- と --- の間）を出力する。
+# 1行目が --- でない・閉じの --- が無いファイルは front matter 無しとして何も出力しない
 front_matter() {
+  head -1 "$1" | LC_ALL=C grep -qx -- '---' || return 0
+  tail -n +2 "$1" | LC_ALL=C grep -qx -- '---' || return 0
   sed -n '2,/^---$/p' "$1" | sed '$d'
 }
 
-# field_value <label> <front-matter-text> — "label: value" 行から value を取り出す
+# field_value <label> <front-matter-text> — "label: value" 行から value を取り出す。
+# 該当行が無ければ空を返す（set -euo pipefail 下で grep の exit 1 が代入ごと
+# スクリプトを殺さないよう、grep は必ずガードする）
 field_value() {
   local label="$1" text="$2"
-  printf '%s\n' "$text" | LC_ALL=C grep -F -- "${label}:" | head -1 | sed -E "s/^${label}: *//"
+  printf '%s\n' "$text" \
+    | { LC_ALL=C grep -F -- "${label}:" || true; } \
+    | head -1 | sed -E "s/^${label}: *//; s/ *$//"
 }
 
 # ---- 1. catalog.md から観点語彙を抽出する（グループA/B/C の5列表の1列目） ----
 
 CATALOG_VOCAB="${WORK_DIR}/catalog-vocab"
 : > "$CATALOG_VOCAB"
+
+# 表の行から1列目の値を取り出す共通フィルタ。
+# ・パイプ直後の空白は必須にしない（`|観点名|` 形式も有効な Markdown 表）
+# ・区切り行（---）とヘッダ行は値のレベルで除外する
+# ・対象行ゼロでも pipefail でスクリプトが死なないよう grep はガードする
+table_first_column() {
+  { grep -E '^\|' || true; } \
+    | cut -d'|' -f2 \
+    | sed -E 's/^ *//; s/ *$//' \
+    | { LC_ALL=C grep -vE '^:?-+:?$' || true; } \
+    | { LC_ALL=C grep -vxF -- '観点' || true; } \
+    | { LC_ALL=C grep -vxF -- '' || true; }
+}
 
 extract_group_vocab() {
   local start_marker="$1" end_marker="$2"
@@ -79,11 +99,7 @@ extract_group_vocab() {
   end_line="$(LC_ALL=C grep -nF -- "$end_marker" "$CATALOG" | head -1 | cut -d: -f1)"
   [ -z "$end_line" ] && end_line="$(wc -l < "$CATALOG" | tr -d ' ')"
   sed -n "${start_line},${end_line}p" "$CATALOG" \
-    | grep -E '^\| ' \
-    | LC_ALL=C grep -vF -- '|---' \
-    | LC_ALL=C grep -vF -- '| 観点 | この観点が要る論点の条件 |' \
-    | cut -d'|' -f2 \
-    | sed -E 's/^ *//; s/ *$//' \
+    | table_first_column \
     >> "$CATALOG_VOCAB"
 }
 
@@ -104,18 +120,21 @@ is_known_vocab() {
 extract_table_vocab() {
   local file="$1"
   [ -f "$file" ] || return 0
-  grep -E '^\| ' "$file" \
-    | LC_ALL=C grep -vF -- '|---' \
-    | LC_ALL=C grep -vF -- '| 観点 | この観点が要る論点の条件 |' \
-    | cut -d'|' -f2 \
-    | sed -E 's/^ *//; s/ *$//'
+  table_first_column < "$file"
 }
 
 extract_precedent_field() {
-  # extract_precedent_field <file> <label>
+  # extract_precedent_field <file> <label> — 値の前後空白は除去して返す
   local file="$1" label="$2"
   [ -f "$file" ] || return 0
-  LC_ALL=C grep -F -- "- ${label}:" "$file" | sed -E "s/^- ${label}: *//"
+  { LC_ALL=C grep -F -- "- ${label}:" "$file" || true; } \
+    | sed -E "s/^- ${label}: *//; s/ *$//"
+}
+
+# 観点フィールドの値を「、」で分割して1行1観点にする（複数観点の判例に対応）
+split_perspectives() {
+  sed 's/、/\
+/g' | sed -E 's/^ *//; s/ *$//'
 }
 
 # ---- 検出1: 未知の観点語彙 ----
@@ -141,13 +160,13 @@ if [ -f "$PRECEDENTS_MD" ]; then
     if ! is_known_vocab "$val"; then
       report "unknown-vocab" "${PRECEDENTS_MD}: ${val}"
     fi
-  done < <(extract_precedent_field "$PRECEDENTS_MD" "観点")
+  done < <(extract_precedent_field "$PRECEDENTS_MD" "観点" | split_perspectives)
 fi
 
 # ---- 検出2: 「カタログ外」判例 ----
 
 if [ -f "$PRECEDENTS_MD" ]; then
-  count="$(extract_precedent_field "$PRECEDENTS_MD" "観点" | LC_ALL=C grep -Fx -c -- "カタログ外" || true)"
+  count="$(extract_precedent_field "$PRECEDENTS_MD" "観点" | split_perspectives | LC_ALL=C grep -Fx -c -- "カタログ外" || true)"
   if [ "${count:-0}" -gt 0 ]; then
     report "catalog-external-precedent" "${PRECEDENTS_MD}: カタログ外判例が ${count} 件（観点追加の起案シグナル）"
   fi
@@ -186,6 +205,10 @@ fi
 # ---- 検出4: catalog_version 不一致 ----
 
 CATALOG_VERSION="$(field_value "version" "$(front_matter "$CATALOG")")"
+if [ -z "$CATALOG_VERSION" ]; then
+  echo "casting-check: catalog.md の front matter に version が無い: $CATALOG" >&2
+  exit 2
+fi
 
 check_version() {
   local file="$1"
