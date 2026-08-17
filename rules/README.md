@@ -4,28 +4,33 @@
 
 実運用で繰り返し起きた問題（認知負荷・事故・手戻り）から抽出したエッセンスだけを置く。事故の具体的経緯・個人向けの詳細な分析はローカルの `~/.claude/rules-archive/`（repo には含めない）に保存する方針。
 
-## 導入
+## 導入・更新（scripts/sync.sh）
 
-marketplace として install 済みなら、各ファイルを `~/.claude/rules/` に symlink する:
+marketplace として install 済みなら、`scripts/sync.sh` を1回実行する:
 
 ```bash
-HARNESS=~/.claude/plugins/marketplaces/oratta-claude-harness
-mkdir -p ~/.claude/rules
-for f in "$HARNESS"/rules/*.md; do
-  [ "$(basename "$f")" = "README.md" ] && continue
-  ln -sf "$f" ~/.claude/rules/"$(basename "$f")"
-done
+~/.claude/plugins/marketplaces/oratta-claude-harness/scripts/sync.sh
 ```
 
+pull（ff-only）→ `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.md` を
+`~/.claude/output-styles/` へ symlink、まで冪等に行う。ファイルが増えても・rename されても
+再実行するだけでよい（この harness を指す壊れた symlink は掃除される）。
+
 - symlink 先は marketplace dir（plugin 更新で再 clone されても tracked ファイルなので復元される）
-- **ルールファイルが増えたら上のスクリプトを再実行する**（symlink は実行時にしか作られないため、既存インストールには新ファイルの link が生えない）
-- ローカル限定のルールを追加したい場合は、symlink せず `~/.claude/rules/` に実ファイルとして置けばよい（共存可能）
+- **定期実行の足**: flatmate 住人が起動ルーティン（boot.sh）で毎世代実行するため、住人が稼働する
+  PC は自動で最新に保たれる。鮮度の PC 横断可視化は flatmate の agent-status ハートビートが担う
+  （flatmate#362。かつては手作業2点セット＝pull＋手動 symlink で、未実行の PC にはルールが
+  一切届かないままドリフトしていた）
+- ローカル限定のルールを追加したい場合は、symlink せず `~/.claude/rules/` に実ファイルとして置けばよい
+  （共存可能。sync.sh は harness と無関係な実ファイル・symlink に触らない）
+- Output Style の有効化（settings の `outputStyle`）は sync.sh では書き換えない。新しい PC では
+  一度だけ `/output-style readable` で選ぶ
 
 ## ファイル一覧
 
 | ファイル | 内容 |
 |---|---|
-| `communication-style.md` | 参照は中身で書く・比喩を作らない・判断依頼は背景から推奨まで・ヒアリングは1問ずつ（全文は Output Style `readable` が正本） |
+| `communication-style.md` | 参照は中身で書く・比喩を作らない・判断依頼は背景から推奨まで・ヒアリングは1問ずつ（全文は同リポジトリ `output-styles/readable.md` が正本） |
 | `destructive-git-guard.md` | 破壊的 git 操作の事前承認必須と「戻すだけ」自己正当化への警戒 |
 | `git-commit-policy.md` | 細かい自律コミット・PR運用/ローカルmain運用の判定・承認が要る操作 |
 | `browser-infra-env-capture.md` | ダッシュボード操作で生成された認証情報の即時 env 保存 |
