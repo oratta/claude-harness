@@ -42,7 +42,7 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 
 ### Requirement: casting-check.sh の検出項目
 
-`plugins/casting/scripts/casting-check.sh` は対象 repo の `.claude/casting/` に対して次の4項目を検査しなければならない (MUST): ①配役表・判例台帳に catalog.md に無い観点語彙（「カタログ外」を除く）が使われていないか ②判例台帳に「カタログ外」判例があるか（観点追加の起案シグナルとして報告）③同一観点で帰結「論点じゃなかった」が2件以上あるか（移譲仕組み化の起案シグナルとして報告）④各ファイルの `catalog_version` が catalog.md の `version` と一致するか。検出なしなら exit 0、検出ありなら対象の一覧を出力して exit 1 としなければならない (MUST)。日本語語彙の照合に awk のマルチバイト文字列比較を使ってはならない (MUST NOT)（macOS awk は多バイト比較が壊れるため。`LC_ALL=C` の grep -F 等で照合する）。
+`plugins/casting/scripts/casting-check.sh` は対象 repo の `.claude/casting/` に対して次の5項目を検査しなければならない (MUST): ⓪配役表に5列未満の壊れた表行が無いか（「行を書くなら5列すべて」の強制。壊れた行は resolve の合成で有効値として扱わない）①配役表・判例台帳に catalog.md に無い観点語彙（「カタログ外」を除く）が使われていないか ②判例台帳に「カタログ外」判例があるか（観点追加の起案シグナルとして報告）③同一観点で帰結「論点じゃなかった」が2件以上あるか（移譲仕組み化の起案シグナルとして報告）④各ファイルの `catalog_version` が catalog.md の `version` と一致するか。検出なしなら exit 0、検出ありなら対象の一覧を出力して exit 1 としなければならない (MUST)。日本語語彙の照合に awk のマルチバイト文字列比較を使ってはならない (MUST NOT)（macOS awk は多バイト比較が壊れるため。`LC_ALL=C` の grep -F 等で照合する）。
 
 #### Scenario: 問題のないフィクスチャで exit 0
 
@@ -56,7 +56,7 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 
 ### Requirement: resolve による有効な配役表の合成表示
 
-`casting-check.sh resolve [<repo-root>]` は、catalog.md・project.md・local.md を観点（行）単位で合成した有効な配役表を出力しなければならない (MUST)。各観点の行には、その値がどの層から来たかの由来（`カタログ既定`／`project`／`local`）を付けなければならない (MUST)。カタログの全観点が出力に含まれなければならない (MUST)。
+`casting-check.sh resolve [<repo-root>]` は、catalog.md・project.md・local.md を観点（行）単位で合成した有効な配役表を出力しなければならない (MUST)。HTML コメント（`<!-- -->`）内の表行（テンプレートの記入例など）を実在の上書き行として扱ってはならない (MUST NOT)。各観点の行には、その値がどの層から来たかの由来（`カタログ既定`／`project`／`local`）を付けなければならない (MUST)。カタログの全観点が出力に含まれなければならない (MUST)。
 
 #### Scenario: 上書きと継承が由来つきで合成される
 

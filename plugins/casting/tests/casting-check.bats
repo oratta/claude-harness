@@ -91,3 +91,10 @@ setup() {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/multi-perspective"
   [ "$status" -eq 0 ]
 }
+
+@test "malformed-row fixture: a row with fewer than 5 columns is reported" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/malformed-row"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"malformed-row"* ]]
+  [[ "$output" == *"5列未満"* ]]
+}

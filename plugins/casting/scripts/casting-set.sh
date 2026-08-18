@@ -83,16 +83,34 @@ field_value() {
 
 # perspective_in_file <file> <観点名> — 5列表の1列目にその観点名の行があるか
 # （table_first_column と同じフィルタ規則。casting-check.sh の実装と揃える）
+# HTML コメント内の記入例を実在の行と誤認しないよう、先にコメント行を除いて読む
 perspective_in_file() {
   local file="$1" name="$2"
   [ -f "$file" ] || return 1
-  { grep -E '^\|' "$file" || true; } \
+  sed '/<!--/,/-->/d' "$file" \
+    | { grep -E '^\|' || true; } \
     | cut -d'|' -f2 \
     | sed -E 's/^ *//; s/ *$//' \
     | { LC_ALL=C grep -vE '^:?-+:?$' || true; } \
     | { LC_ALL=C grep -vxF -- '観点' || true; } \
     | { LC_ALL=C grep -vxF -- '' || true; } \
     | LC_ALL=C grep -qxF -- "$name"
+}
+
+# assert_cell_safe <ラベル> <値> — Markdown 表のセルに埋め込む値の検証。
+# | と改行は列構造を壊すため拒否する
+assert_cell_safe() {
+  local label="$1" value="$2"
+  case "$value" in
+    *'|'*)
+      echo "casting-set: ${label}に | は使えません（表の列構造が壊れるため）: ${value}" >&2
+      exit 1
+      ;;
+  esac
+  if [ "$(printf '%s' "$value" | wc -l | tr -d ' ')" -gt 0 ]; then
+    echo "casting-set: ${label}に改行は使えません" >&2
+    exit 1
+  fi
 }
 
 # append_changelog <file> <line> — "## 変更記録" 節の末尾（次の "## " 見出しの直前、
@@ -147,8 +165,10 @@ rewrite_owner_row() {
     fi
     printf '%s\n' "$line" >> "$tmp"
   done < "$file"
+  # 呼び出し側が変更記録を書き足してから mv する（カタログ確定と記録追記を1回の mv に
+  # まとめて原子的にするため、ここでは確定しない）
   [ "$found" -eq 1 ] || return 1
-  mv "$tmp" "$file"
+  printf '%s\n' "$tmp" > "${WORK_DIR}/rewrite-path"
   return 0
 }
 
@@ -158,10 +178,11 @@ rewrite_owner_row() {
 report_registry_impact() {
   local name="$1" repo
   if [ ! -f "$REGISTRY" ]; then
-    echo "（registry が見つかりません: $REGISTRY）"
+    echo "（registry が見つかりません: ${REGISTRY}）"
     return 0
   fi
-  while IFS= read -r repo; do
+  # `|| [ -n "$repo" ]` は末尾改行の無い最終行を読み飛ばさないため
+  while IFS= read -r repo || [ -n "$repo" ]; do
     [ -z "$repo" ] && continue
     if [ ! -d "$repo" ]; then
       echo "警告: registry のパスが存在しません（スキップ）: $repo"
@@ -174,6 +195,65 @@ report_registry_impact() {
       echo "${repo}: 継承中（影響あり）"
     fi
   done < "$REGISTRY"
+}
+
+# report_registry_impact_all — replace-catalog 用。各 repo の上書き行数を数え、
+# 「どの repo にどれだけ独自配役が残っているか」を出力する
+report_registry_impact_all() {
+  local repo n f
+  if [ ! -f "$REGISTRY" ]; then
+    echo "（registry が見つかりません: ${REGISTRY}）"
+    return 0
+  fi
+  while IFS= read -r repo || [ -n "$repo" ]; do
+    [ -z "$repo" ] && continue
+    if [ ! -d "$repo" ]; then
+      echo "警告: registry のパスが存在しません（スキップ）: $repo"
+      continue
+    fi
+    n=0
+    for f in "${repo%/}/.claude/casting/project.md" "${repo%/}/.claude/casting/local.md"; do
+      [ -f "$f" ] || continue
+      n=$((n + $(sed '/<!--/,/-->/d' "$f" \
+        | { grep -E '^\|' || true; } \
+        | cut -d'|' -f2 \
+        | sed -E 's/^ *//; s/ *$//' \
+        | { LC_ALL=C grep -vE '^:?-+:?$' || true; } \
+        | { LC_ALL=C grep -vxF -- '観点' || true; } \
+        | { LC_ALL=C grep -vxF -- '' || true; } \
+        | wc -l | tr -d ' ')))
+    done
+    if [ "$n" -gt 0 ]; then
+      echo "${repo}: ${n}観点を上書き中（それ以外は新カタログを継承・影響あり）"
+    else
+      echo "${repo}: 全観点継承中（影響あり）"
+    fi
+  done < "$REGISTRY"
+}
+
+# validate_catalog_structure <file> — replace-catalog の差し替えファイルがカタログとして
+# 最低限の構造（3グループ見出し・変更記録節・グループA に1行以上の観点行）を持つか
+validate_catalog_structure() {
+  local file="$1" section
+  for section in '## グループA' '## グループB' '## グループC' '## 変更記録'; do
+    if ! LC_ALL=C grep -qF -- "$section" "$file"; then
+      echo "casting-set: 差し替えファイルに必須節がありません: ${section}" >&2
+      return 1
+    fi
+  done
+  section="$(sed '/<!--/,/-->/d' "$file" | sed -n '/## グループA/,/## グループB/p' \
+    | { grep -E '^\|' || true; } \
+    | cut -d'|' -f2 \
+    | sed -E 's/^ *//; s/ *$//' \
+    | { LC_ALL=C grep -vE '^:?-+:?$' || true; } \
+    | { LC_ALL=C grep -vxF -- '観点' || true; } \
+    | { LC_ALL=C grep -vxF -- '' || true; } \
+    | wc -l | tr -d ' ')"
+  if [ "$section" -eq 0 ]; then
+    echo "casting-set: 差し替えファイルのグループA に観点の行がありません" >&2
+    return 1
+  fi
+  return 0
 }
 
 cmd_owner() {
@@ -208,16 +288,23 @@ cmd_owner() {
     exit 1
   fi
 
+  assert_cell_safe "新しい既定の担い手" "$new_owner"
+  assert_cell_safe "--why の理由" "$why"
+
   if ! rewrite_owner_row "$CATALOG" "$name" "$new_owner"; then
     echo "casting-set: 観点が見つかりません: $name" >&2
     exit 1
   fi
-  local old_owner
+  local old_owner tmp_new
   old_owner="$(cat "${WORK_DIR}/old-owner")"
+  tmp_new="$(cat "${WORK_DIR}/rewrite-path")"
 
+  # 行の書き換えと変更記録の追記を作業コピー上で済ませてから1回の mv で確定する
+  # （途中失敗で「値だけ変わって記録が無い」状態を残さない）
   local today
   today="$(date +%F)"
-  append_changelog "$CATALOG" "| ${today} | 観点「${name}」の既定の担い手を「${old_owner}」→「${new_owner}」に変更 | ${why} | — |"
+  append_changelog "$tmp_new" "| ${today} | 観点「${name}」の既定の担い手を「${old_owner}」→「${new_owner}」に変更 | ${why} | — |"
+  mv "$tmp_new" "$CATALOG"
 
   echo "casting-set: 観点「${name}」の既定の担い手を更新しました（${old_owner} → ${new_owner}）"
   echo ""
@@ -267,14 +354,23 @@ cmd_replace_catalog() {
     echo "casting-set: version を増やす必要があります（現行 version=${cur_version:-不明}、差し替え version=${new_version}）" >&2
     exit 1
   fi
+  assert_cell_safe "--why の理由" "$why"
+  if ! validate_catalog_structure "$new_file"; then
+    exit 1
+  fi
 
-  cp "$new_file" "$CATALOG"
-
+  # 差し替えと変更記録の追記を作業コピー上で済ませてから1回の mv で確定する
+  local tmp_new="${WORK_DIR}/catalog-replace"
+  cp "$new_file" "$tmp_new"
   local today
   today="$(date +%F)"
-  append_changelog "$CATALOG" "| ${today} | replace-catalog によりカタログを version ${new_version} に差し替え | ${why} | — |"
+  append_changelog "$tmp_new" "| ${today} | replace-catalog によりカタログを version ${new_version} に差し替え | ${why} | — |"
+  mv "$tmp_new" "$CATALOG"
 
   echo "casting-set: カタログを version ${new_version} に差し替えました"
+  echo ""
+  echo "影響一覧:"
+  report_registry_impact_all
 }
 
 case "$SUBCOMMAND" in

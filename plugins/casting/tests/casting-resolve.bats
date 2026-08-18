@@ -46,3 +46,24 @@ setup() {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/resolve-catalog-only"
   [ "$status" -eq 0 ]
 }
+
+# --- 回帰: 2周目レビューの blocking 指摘 ---
+
+@test "template project.md: comment example is not treated as an override" {
+  REPO="${BATS_TEST_TMPDIR}/template-repo"
+  mkdir -p "${REPO}/.claude/casting"
+  cp "$(dirname "$BATS_TEST_FILENAME")/../templates/project.md" "${REPO}/.claude/casting/project.md"
+  run "$SCRIPT" resolve --catalog "$CATALOG" "$REPO"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"| project |"* ]]
+  row="$(echo "$output" | grep -F '| 財務・コスト |')"
+  [[ "$row" == *"カタログ既定 |" ]]
+  [ "$(echo "$output" | grep -cF 'カタログ既定')" -eq 14 ]
+}
+
+@test "malformed 3-column row: resolve falls back to the catalog default" {
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/malformed-row"
+  [ "$status" -eq 0 ]
+  row="$(echo "$output" | grep -F '| 財務・コスト |')"
+  [[ "$row" == *"カタログ既定 |" ]]
+}

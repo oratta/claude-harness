@@ -66,6 +66,21 @@ report() {
   printf '[%s] %s\n' "$1" "$2" >> "$FINDINGS"
 }
 
+# stripped_copy <file> — HTML コメント（<!-- ... -->）の行を除いた作業コピーのパスを返す。
+# テンプレの記入例（コメント内の表行）を実在の行として解釈しないための前処理。
+# パースはこのコピーに対して行い、報告のパスは元ファイルを使う
+stripped_copy() {
+  local file="$1" out
+  out="${WORK_DIR}/stripped-$(printf '%s' "$file" | cksum | cut -d' ' -f1)"
+  sed '/<!--/,/-->/d' "$file" > "$out"
+  printf '%s\n' "$out"
+}
+
+# pipe_count <line> — 行に含まれる | の個数（5列表の行なら6以上）
+pipe_count() {
+  printf '%s' "$1" | tr -cd '|' | wc -c | tr -d ' '
+}
+
 # front_matter <file> — front matter 本体（--- と --- の間）を出力する。
 # 1行目が --- でない・閉じの --- が無いファイルは front matter 無しとして何も出力しない
 front_matter() {
@@ -132,19 +147,22 @@ is_known_vocab() {
 table_rows() {
   local file="$1"
   [ -f "$file" ] || return 0
-  local line c1 c2 c3 c4 c5
+  local src line c1 c2 c3 c4 c5
+  src="$(stripped_copy "$file")"
   while IFS= read -r line; do
     printf '%s\n' "$line" | LC_ALL=C grep -qE '^\|' || continue
     c1="$(printf '%s\n' "$line" | cut -d'|' -f2 | sed -E 's/^ *//; s/ *$//')"
     [ -z "$c1" ] && continue
     LC_ALL=C grep -qxF -- '観点' <<<"$c1" && continue
     printf '%s\n' "$c1" | LC_ALL=C grep -qE '^:?-+:?$' && continue
+    # 5列未満（| が6個未満）の壊れた行は有効値として扱わない（検出は check 側が担う）
+    [ "$(pipe_count "$line")" -lt 6 ] && continue
     c2="$(printf '%s\n' "$line" | cut -d'|' -f3 | sed -E 's/^ *//; s/ *$//')"
     c3="$(printf '%s\n' "$line" | cut -d'|' -f4 | sed -E 's/^ *//; s/ *$//')"
     c4="$(printf '%s\n' "$line" | cut -d'|' -f5 | sed -E 's/^ *//; s/ *$//')"
     c5="$(printf '%s\n' "$line" | cut -d'|' -f6 | sed -E 's/^ *//; s/ *$//')"
     printf '%s\t%s\t%s\t%s\t%s\n' "$c1" "$c2" "$c3" "$c4" "$c5"
-  done < "$file"
+  done < "$src"
 }
 
 # extract_group_rows <start-marker> <end-marker> <out-file> — catalog.md の指定グループ範囲の
@@ -216,15 +234,34 @@ fi
 extract_table_vocab() {
   local file="$1"
   [ -f "$file" ] || return 0
-  table_first_column < "$file"
+  table_first_column < "$(stripped_copy "$file")"
 }
 
 extract_precedent_field() {
   # extract_precedent_field <file> <label> — 値の前後空白は除去して返す
   local file="$1" label="$2"
   [ -f "$file" ] || return 0
-  { LC_ALL=C grep -F -- "- ${label}:" "$file" || true; } \
+  { LC_ALL=C grep -F -- "- ${label}:" "$(stripped_copy "$file")" || true; } \
     | sed -E "s/^- ${label}: *//; s/ *$//"
+}
+
+# ---- 検出0: 5列未満の壊れた表行（配役表のみ。「行を書くなら5列」の強制） ----
+
+check_malformed_rows() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  local src line c1
+  src="$(stripped_copy "$file")"
+  while IFS= read -r line; do
+    printf '%s\n' "$line" | LC_ALL=C grep -qE '^\|' || continue
+    c1="$(printf '%s\n' "$line" | cut -d'|' -f2 | sed -E 's/^ *//; s/ *$//')"
+    [ -z "$c1" ] && continue
+    LC_ALL=C grep -qxF -- '観点' <<<"$c1" && continue
+    printf '%s\n' "$c1" | LC_ALL=C grep -qE '^:?-+:?$' && continue
+    if [ "$(pipe_count "$line")" -lt 6 ]; then
+      report "malformed-row" "${file}: 5列未満の行（行を書く場合は5列すべて必要）: ${line}"
+    fi
+  done < "$src"
 }
 
 # 観点フィールドの値を「、」で分割して1行1観点にする（複数観点の判例に対応）
@@ -246,6 +283,9 @@ check_unknown_vocab() {
     fi
   done < <(extract_table_vocab "$file")
 }
+
+check_malformed_rows "$PROJECT_MD"
+check_malformed_rows "$LOCAL_MD"
 
 check_unknown_vocab "$PROJECT_MD" "$PROJECT_MD"
 check_unknown_vocab "$LOCAL_MD" "$LOCAL_MD"

@@ -117,3 +117,49 @@ EOF
   [[ "$output" == *"does-not-exist"* ]]
   [[ "$output" == *"${repo_ok}: 継承中（影響あり）"* ]]
 }
+
+# --- 回帰: 2周目レビューの blocking 指摘 ---
+
+@test "owner rejects a new owner value containing a pipe" {
+  run "$SCRIPT" --catalog "$CATALOG" owner "財務・コスト" "agent|主" --why "test"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"| は使えません"* ]]
+  grep -qF '方針文あり: エージェント' "$CATALOG"
+}
+
+@test "owner rejects a --why containing a pipe" {
+  run "$SCRIPT" --catalog "$CATALOG" owner "財務・コスト" "主" --why "a|b"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"| は使えません"* ]]
+}
+
+@test "replace-catalog rejects a structurally empty file even with a higher version" {
+  newfile="${TMP}/empty-v3.md"
+  printf -- '---\nversion: 3\n---\n\nこれはカタログではない\n' > "$newfile"
+  run "$SCRIPT" --catalog "$CATALOG" replace-catalog "$newfile" --why "test"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"必須節がありません"* ]]
+  head -3 "$CATALOG" | grep -qx 'version: 1'
+}
+
+@test "replace-catalog prints the registry impact listing" {
+  repo="${TMP}/repo-r"
+  mkdir -p "${repo}/.claude/casting"
+  printf -- '---\ncatalog_version: 1\n---\n' > "${repo}/.claude/casting/project.md"
+  printf '%s\n' "$repo" > "$REGISTRY"
+  newfile="${TMP}/v2.md"
+  sed 's/^version: 1$/version: 2/' "$CATALOG" > "$newfile"
+  run "$SCRIPT" --catalog "$CATALOG" replace-catalog "$newfile" --why "v2 rollout"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"影響一覧"* ]]
+  [[ "$output" == *"${repo}: 全観点継承中（影響あり）"* ]]
+}
+
+@test "registry without a trailing newline: the last repo is still scanned" {
+  repo="${TMP}/repo-nl"
+  mkdir -p "${repo}/.claude/casting"
+  printf '%s' "$repo" > "$REGISTRY"
+  run "$SCRIPT" --catalog "$CATALOG" owner "財務・コスト" "主" --why "test"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"${repo}: 継承中（影響あり）"* ]]
+}

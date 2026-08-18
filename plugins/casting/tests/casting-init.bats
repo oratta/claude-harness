@@ -19,6 +19,10 @@ setup() {
   REPO="${TMP}/repo"
   mkdir -p "$REPO"
   git -C "$REPO" init -q
+
+  # 実ホームの ~/.claude/casting/registry.txt を汚染しないため、全テストで registry を
+  # テスト一時ディレクトリに向ける（registry 検証テストは同じパスを明示 export している）
+  export CASTING_REGISTRY="${TMP}/registry.txt"
 }
 
 # commands/init.md の "## 生成スクリプト" 以降にある最初の ```sh ブロックを取り出す
