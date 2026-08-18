@@ -99,3 +99,23 @@ run_init() {
   [ "$status" -eq 0 ]
   diff "${REPO}/.claude/casting/precedents.md" "${TMP}/edited-precedents.md"
 }
+
+# --- Scenario: 導入 repo 台帳への冪等追記（CASTING_REGISTRY） ---
+
+@test "first run: appends the resolved repo path to CASTING_REGISTRY" {
+  export CASTING_REGISTRY="${TMP}/registry.txt"
+  run run_init
+  [ "$status" -eq 0 ]
+  [ -f "$CASTING_REGISTRY" ]
+  [ "$(wc -l < "$CASTING_REGISTRY" | tr -d ' ')" -eq 1 ]
+  registered="$(cat "$CASTING_REGISTRY")"
+  [ "$(cd "$registered" && pwd)" = "$(cd "$REPO" && pwd)" ]
+}
+
+@test "second run: does not duplicate the registry entry" {
+  export CASTING_REGISTRY="${TMP}/registry.txt"
+  run_init
+  run run_init
+  [ "$status" -eq 0 ]
+  [ "$(wc -l < "$CASTING_REGISTRY" | tr -d ' ')" -eq 1 ]
+}

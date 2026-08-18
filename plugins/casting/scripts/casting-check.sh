@@ -13,13 +13,24 @@
 # 日本語語彙の照合は LC_ALL=C の grep -F / sed で行う（awk のマルチバイト文字列比較は
 # macOS 実装で壊れる実績があるため使わない）。
 #
-# usage: casting-check.sh [--catalog <path>] [<target-repo-root>]
+# サブコマンド:
+#   （省略時）      対象 repo の配役表・判例台帳を検査する（上記4項目）
+#   resolve          catalog.md・project.md・local.md を観点（行）単位で合成した
+#                     有効な配役表を、由来（カタログ既定／project／local）付きで出力する
+#
+# usage: casting-check.sh [resolve] [--catalog <path>] [<target-repo-root>]
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CATALOG="${SCRIPT_DIR}/../catalog/catalog.md"
 TARGET="."
+SUBCOMMAND="check"
+
+if [ $# -gt 0 ] && [ "$1" = "resolve" ]; then
+  SUBCOMMAND="resolve"
+  shift
+fi
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -112,6 +123,91 @@ is_known_vocab() {
   [ "$val" = "カタログ外" ] && return 0
   LC_ALL=C grep -F -x -q -- "$val" "$CATALOG_VOCAB"
 }
+
+# ---- resolve: catalog.md・project.md・local.md を観点（行）単位で合成する ----
+#
+# table_first_column と同じ1列目フィルタ規則（パイプ直後スペース非依存・値レベル除外）を
+# 適用しつつ、残り4列も一緒に「c1<TAB>c2<TAB>c3<TAB>c4<TAB>c5」で取り出す。
+
+table_rows() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  local line c1 c2 c3 c4 c5
+  while IFS= read -r line; do
+    printf '%s\n' "$line" | LC_ALL=C grep -qE '^\|' || continue
+    c1="$(printf '%s\n' "$line" | cut -d'|' -f2 | sed -E 's/^ *//; s/ *$//')"
+    [ -z "$c1" ] && continue
+    LC_ALL=C grep -qxF -- '観点' <<<"$c1" && continue
+    printf '%s\n' "$c1" | LC_ALL=C grep -qE '^:?-+:?$' && continue
+    c2="$(printf '%s\n' "$line" | cut -d'|' -f3 | sed -E 's/^ *//; s/ *$//')"
+    c3="$(printf '%s\n' "$line" | cut -d'|' -f4 | sed -E 's/^ *//; s/ *$//')"
+    c4="$(printf '%s\n' "$line" | cut -d'|' -f5 | sed -E 's/^ *//; s/ *$//')"
+    c5="$(printf '%s\n' "$line" | cut -d'|' -f6 | sed -E 's/^ *//; s/ *$//')"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$c1" "$c2" "$c3" "$c4" "$c5"
+  done < "$file"
+}
+
+# extract_group_rows <start-marker> <end-marker> <out-file> — catalog.md の指定グループ範囲の
+# 行を table_rows と同じ書式で out-file に追記する（extract_group_vocab と対の実装）
+extract_group_rows() {
+  local start_marker="$1" end_marker="$2" out_file="$3"
+  local start_line end_line slice
+  start_line="$(LC_ALL=C grep -nF -- "$start_marker" "$CATALOG" | head -1 | cut -d: -f1)"
+  [ -z "$start_line" ] && return 0
+  end_line="$(LC_ALL=C grep -nF -- "$end_marker" "$CATALOG" | head -1 | cut -d: -f1)"
+  [ -z "$end_line" ] && end_line="$(wc -l < "$CATALOG" | tr -d ' ')"
+  slice="${WORK_DIR}/group-slice"
+  sed -n "${start_line},${end_line}p" "$CATALOG" > "$slice"
+  table_rows "$slice" >> "$out_file"
+}
+
+# find_row <rows-file> <perspective> — table_rows 形式のファイルから観点名（1列目）が
+# 完全一致する最初の行を返す。無ければ何も出力せず戻り値1（grep は必ずガードする）
+find_row() {
+  local file="$1" name="$2" lineno
+  [ -f "$file" ] || return 1
+  lineno="$(cut -f1 "$file" | { LC_ALL=C grep -nxF -- "$name" || true; } | head -1 | cut -d: -f1)"
+  [ -z "$lineno" ] && return 1
+  sed -n "${lineno}p" "$file"
+}
+
+cmd_resolve() {
+  local catalog_rows="${WORK_DIR}/catalog-rows"
+  : > "$catalog_rows"
+  extract_group_rows '## グループA' '## グループB' "$catalog_rows"
+  extract_group_rows '## グループB' '## グループC' "$catalog_rows"
+  extract_group_rows '## グループC' '## 横断軸' "$catalog_rows"
+
+  local project_rows="${WORK_DIR}/project-rows"
+  local local_rows="${WORK_DIR}/local-rows"
+  : > "$project_rows"
+  : > "$local_rows"
+  table_rows "$PROJECT_MD" >> "$project_rows"
+  table_rows "$LOCAL_MD" >> "$local_rows"
+
+  printf '| 観点 | この観点が要る論点の条件 | 判断基準の出どころ | 移譲に必要な文書 | 既定の担い手 | 由来 |\n'
+  printf '|---|---|---|---|---|---|\n'
+
+  local name c2 c3 c4 c5 row origin n1 n2 n3 n4 n5
+  while IFS=$'\t' read -r name c2 c3 c4 c5; do
+    [ -z "$name" ] && continue
+    if row="$(find_row "$local_rows" "$name")"; then
+      origin="local"
+    elif row="$(find_row "$project_rows" "$name")"; then
+      origin="project"
+    else
+      row="$(printf '%s\t%s\t%s\t%s\t%s' "$name" "$c2" "$c3" "$c4" "$c5")"
+      origin="カタログ既定"
+    fi
+    IFS=$'\t' read -r n1 n2 n3 n4 n5 <<<"$row"
+    printf '| %s | %s | %s | %s | %s | %s |\n' "$n1" "$n2" "$n3" "$n4" "$n5" "$origin"
+  done < "$catalog_rows"
+}
+
+if [ "$SUBCOMMAND" = "resolve" ]; then
+  cmd_resolve
+  exit 0
+fi
 
 # ---- 対象ファイルから「観点」語彙を集める ----
 # project.md / local.md: 5列表の1列目

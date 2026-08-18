@@ -62,6 +62,22 @@ if ! grep -qxF '.claude/casting/local.md' "$GITIGNORE"; then
 else
   echo "skip (already ignored): .claude/casting/local.md"
 fi
+
+# 導入 repo 台帳（既定 ~/.claude/casting/registry.txt。CASTING_REGISTRY で差し替え可能）に
+# repo ルートの絶対パスを冪等追記する
+REGISTRY="${CASTING_REGISTRY:-$HOME/.claude/casting/registry.txt}"
+mkdir -p "$(dirname "$REGISTRY")"
+touch "$REGISTRY"
+ABS_REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
+if [ -s "$REGISTRY" ] && [ "$(tail -c 1 "$REGISTRY" | wc -l | tr -d ' ')" -eq 0 ]; then
+  printf '\n' >> "$REGISTRY"
+fi
+if ! grep -qxF "$ABS_REPO_ROOT" "$REGISTRY"; then
+  printf '%s\n' "$ABS_REPO_ROOT" >> "$REGISTRY"
+  echo "appended to registry: $ABS_REPO_ROOT"
+else
+  echo "skip (already registered): $ABS_REPO_ROOT"
+fi
 ```
 
 `local.md`（第2層・エージェント/マシン別の上書き）自体は生成しない。gitignore に追記するだけで、必要になったエージェントが各自作成する。
