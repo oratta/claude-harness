@@ -33,3 +33,4 @@ done
 | `plugin-editing.md` | プラグイン編集は marketplace 版のみ・バージョン同期 |
 | `dev-server.md` | 他プロジェクトのプロセス kill 禁止・ポート運用 |
 | `subagent-model-selection.md` | サブエージェントの model 明示必須・役割ベースのティア選択（最上位モデルの継承漏れ防止） |
+| `perspective-casting.md` | 「観点の配役」フレームワークの返信前チェック5手順（主に上げてよい論点＝主の視線で結論が変わるものだけ） |
