@@ -63,11 +63,27 @@ setup() {
   LC_ALL=C grep -qx 'model: fable' "$ARBITER"
 }
 
-@test "arbiter: input is limited to phase declaration plus both claims, no work context" {
-  LC_ALL=C grep -qF -- "フェーズ宣言文と双方の主張のみ" "$ARBITER"
+@test "arbiter: input is limited to phase declaration plus the claim list, no work context" {
+  LC_ALL=C grep -qF -- "フェーズ宣言文と主張リストのみ" "$ARBITER"
   LC_ALL=C grep -qF -- "作業コンテキスト" "$ARBITER"
   LC_ALL=C grep -qF -- "渡された入力以外を読みに行かない" "$ARBITER"
   LC_ALL=C grep -qF -- "ファイルパスが渡されても開かない" "$ARBITER"
+}
+
+@test "arbiter: claim list carries main session plus one claim per persona" {
+  LC_ALL=C grep -qF -- "主張リスト" "$ARBITER"
+  LC_ALL=C grep -qF -- "メインセッションの主張1件" "$ARBITER"
+  LC_ALL=C grep -qF -- "人格名付き" "$ARBITER"
+}
+
+@test "arbiter: tools frontmatter grants Read only, nothing else" {
+  LC_ALL=C grep -qx 'tools: Read' "$ARBITER"
+  [ "$(LC_ALL=C grep -c '^tools:' "$ARBITER" | tr -d ' ')" -eq 1 ]
+}
+
+@test "arbiter: opening referenced paths is a contract violation that aborts the verdict" {
+  LC_ALL=C grep -qF -- "入力契約違反" "$ARBITER"
+  LC_ALL=C grep -qF -- "裁定を拒否" "$ARBITER"
 }
 
 @test "arbiter: verdict is attributed by persona name with rationale" {
@@ -100,7 +116,38 @@ setup() {
 
 @test "skill: caller convention forbids passing work context to the arbiter" {
   LC_ALL=C grep -qF -- "作業コンテキスト" "$SKILL"
-  LC_ALL=C grep -qF -- "フェーズ宣言文と双方の主張" "$SKILL"
+  LC_ALL=C grep -qF -- "フェーズ宣言文と主張リスト" "$SKILL"
+}
+
+@test "skill: arbiter input must not contain file paths or URLs" {
+  LC_ALL=C grep -qF -- "参照可能な文字列を一切含めない" "$SKILL"
+}
+
+@test "skill: consultation fans out to every agent-held perspective" {
+  LC_ALL=C grep -qF -- "担い手がエージェントの観点すべて" "$SKILL"
+  LC_ALL=C grep -qF -- "並行" "$SKILL"
+}
+
+@test "skill: a single dissent, including between specialists, triggers arbitration" {
+  LC_ALL=C grep -qF -- "誰か1人でも" "$SKILL"
+  LC_ALL=C grep -qF -- "スペシャリスト同士" "$SKILL"
+}
+
+@test "skill: out-of-scope or missing policy escalates to the owner" {
+  LC_ALL=C grep -qF -- "判断基準の範囲外" "$SKILL"
+  LC_ALL=C grep -qF -- "policy 不在" "$SKILL"
+  LC_ALL=C grep -qF -- "読み取り不能" "$SKILL"
+  LC_ALL=C grep -qF -- "主へ上げる" "$SKILL"
+}
+
+@test "specialist: missing or unreadable policy is reported, not improvised" {
+  LC_ALL=C grep -qF -- "policy 不在" "$SPECIALIST"
+  LC_ALL=C grep -qF -- "読み取り不能" "$SPECIALIST"
+}
+
+@test "rule: step 4 escalates out-of-scope replies to the owner" {
+  LC_ALL=C grep -qF -- "範囲外" "$RULE"
+  LC_ALL=C grep -qF -- "policy 不在" "$RULE"
 }
 
 @test "precedents template: route vocabulary includes consultation" {

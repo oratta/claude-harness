@@ -20,3 +20,9 @@
 - [x] 3.1 `scripts/test.sh casting` を実行し全件 Green を確認する（exit code を記録）
 - [x] 3.2 `scripts/test.sh` 全件を実行し既存スイートを壊していないことを確認する（exit code を記録）
 - [x] 3.3 意味のある単位で git commit を積む（push はしない）
+
+## 4. Codex アドバーサリアルレビュー対応（2026-08-19、PR #129 High 3件）
+
+- [x] 4.1 相談を「担い手がエージェントの観点すべて」への並行起動に拡張し、仲裁の入力契約を主張リスト（メインセッション1件＋各人格1件ずつ、人格名付き）に拡張する（SKILL.md・casting-arbiter.md・injection.md・specs・bats）
+- [x] 4.2 「判断基準の範囲外」・policy 不在・読み取り不能を主へ上げる fail-closed の第3分岐を rules 手順④・SKILL.md・casting-specialist.md に明記する（specs・bats 追随）
+- [x] 4.3 仲裁のツール境界を防御層で補強する — bats で `tools: Read` のみを検査、定義文面に「参照を開くことは入力契約違反＝裁定拒否」の自己監視、呼び出し規約で入力からパス・URL を排除、design.md に限界を明記

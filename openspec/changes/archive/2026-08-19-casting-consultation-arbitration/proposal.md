@@ -7,7 +7,7 @@
 ## What Changes
 
 - 汎用の観点スペシャリスト subagent（`plugins/casting/agents/casting-specialist.md`）を新設する。呼び出し時に指定された `policies/<slug>.md` を自分で Read し、人格ブロックを纏って意見を返す
-- 汎用の仲裁 subagent（`plugins/casting/agents/casting-arbiter.md`）を新設する。入力は**フェーズ宣言文＋双方の主張のみ**（作業コンテキスト非共有を定義文面で保証）
+- 汎用の仲裁 subagent（`plugins/casting/agents/casting-arbiter.md`）を新設する。入力は**フェーズ宣言文＋主張リスト（メインセッション1件＋各人格1件ずつ）のみ**（作業コンテキスト非共有を定義文面で保証）
 - policy 文書テンプレート（`plugins/casting/templates/policy.md`）を新設し、人格ブロック（名前・スタンス・口調）の形式を定義する
 - `rules/perspective-casting.md` 手順④を「全観点移譲済みなら観点スペシャリストに相談 → 割れたら仲裁 → 裁定実行・主へ事後報告」に差し替え、手順⑤に人格名帰属を追記する（**聖域パス**: SACRED 判定により人間マージ）
 - casting SKILL.md に「論点相談・仲裁」の運用手順（相談の発火点・事後報告フォーマット・再相談しない終端条件）を追記する
