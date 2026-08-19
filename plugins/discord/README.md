@@ -101,6 +101,33 @@ Quick reference: IDs are Discord **snowflakes** (numeric — enable Developer Mo
 Inbound messages trigger a typing indicator automatically — Discord shows
 "botname is typing…" while the assistant works on a response.
 
+## Reactions
+
+When an allowlisted sender adds or removes a reaction on a message, the event
+is pushed to the assistant as a `<channel>` notification — same delivery path
+as inbound messages, no polling needed. The contract matches the telegram
+fork:
+
+- `content` is `(reaction) +👍` — `+` for added, `-` for removed. Custom
+  (server) emoji appear as `<:name:id>`.
+- `message_id` is the id of the message that was reacted to — **not** a new
+  message id. The assistant treats reactions as lightweight signals
+  (acknowledgement, approval, "seen — later"); they rarely need a reply.
+- Reactions from senders outside the allowlist are dropped silently — a
+  reaction can't receive a pairing prompt, so it never enters the pairing
+  flow. DMs check `allowFrom`; guild channels require the channel's entry in
+  `groups` **and** the sender in its `allowFrom` (falling back to the
+  top-level `allowFrom` when empty — reactions can't carry a mention, so the
+  paired-sender list substitutes for `requireMention`). To receive reactions
+  in a guild channel, either list the sender via
+  `/discord:access group add <channelId> --allow <id>` or have them paired
+  via DM — with both lists empty every reaction is dropped (with a stderr
+  note).
+
+Works for messages posted before the bot started too (`Partials` handling) —
+a 👍 on an old message survives bot restarts. The reaction intents are not
+privileged, so no extra Developer Portal setup is needed.
+
 ## Attachments
 
 Attachments are **not** auto-downloaded. The `<channel>` notification lists

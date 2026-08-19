@@ -87,7 +87,7 @@ link_dir() {
             ln -sfn "$f" "$t" || { echo "[harness-sync] symlink を更新できません: $t" >&2; rc=1; } ;;
           *)
             # harness と無関係な symlink には触らない（README の約束）
-            echo "[harness-sync] $t は harness 外（$cur）を指す symlink のため触りません（手動で統合してください）" >&2
+            echo "[harness-sync] $t は harness 外（${cur}）を指す symlink のため触りません（手動で統合してください）" >&2
             rc=1 ;;
         esac
       fi

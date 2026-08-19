@@ -72,3 +72,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends bats=1.10.0-1
       - name: run bats suites (scripts/test.sh)
         run: scripts/test.sh
+      # auto-merge workflow の安全不変条件（聖域判定・必須チェック名の一致・fail-closed）。
+      # bats ではなく素の sh なので test.sh の自動発見に乗らず、ここで明示実行する。
+      - name: auto-merge workflow invariants
+        run: scripts/test-auto-merge-workflow.sh
