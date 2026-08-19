@@ -66,11 +66,11 @@ map_rows() {
   diff <(catalog_names | LC_ALL=C sort) <(map_names | LC_ALL=C sort)
 }
 
-# --- Scenario: タイミング語彙の8分類が定義されている ---
+# --- Scenario: タイミング語彙の9分類が定義されている ---
 
-@test "injection: vocabulary section defines all 8 timings" {
+@test "injection: vocabulary section defines all 9 timings" {
   local timings=(
-    "常時" "毎ターンの配役判定" "PR 時レンズ" "アクション直前ゲート"
+    "常時" "毎ターンの配役判定" "論点相談" "PR 時レンズ" "アクション直前ゲート"
     "定期監査" "注入しない" "起票・選定時" "設計時"
   )
   for t in "${timings[@]}"; do
@@ -79,7 +79,7 @@ map_rows() {
 }
 
 # --- Scenario: 全行のタイミングが定義済み語彙に収まる ---
-# タイミングセルを「＋」で分割し、各トークンが8語彙のいずれかと完全一致することを検査する
+# タイミングセルを「＋」で分割し、各トークンが9語彙のいずれかと完全一致することを検査する
 # （部分一致では「PR 時レンズ＋未定義」等が素通りするため）。
 
 @test "injection: every map row's timing tokens exactly match the defined vocabulary" {
@@ -90,11 +90,19 @@ map_rows() {
       tok=$(printf '%s' "$tok" | sed 's/^ *//; s/ *$//')
       [ -n "$tok" ]
       case "$tok" in
-        "常時"|"毎ターンの配役判定"|"PR 時レンズ"|"アクション直前ゲート"|"定期監査"|"注入しない"|"起票・選定時"|"設計時") ;;
+        "常時"|"毎ターンの配役判定"|"論点相談"|"PR 時レンズ"|"アクション直前ゲート"|"定期監査"|"注入しない"|"起票・選定時"|"設計時") ;;
         *) echo "undefined timing token: [$tok] in row: $row"; return 1 ;;
       esac
     done < <(printf '%s\n' "$timing_cell" | sed 's/＋/\n/g')
   done < <(map_rows)
+}
+
+# --- Scenario: 大原則と人格規約が読み取れる ---
+
+@test "injection: states the subagent-only principle and the persona convention" {
+  LC_ALL=C grep -qF -- "注入文書はメインセッションに読み込まない" "$INJECTION"
+  LC_ALL=C grep -qF -- "人格ブロック" "$INJECTION"
+  LC_ALL=C grep -qF -- "事後報告" "$INJECTION"
 }
 
 # --- Scenario: マップ行の後ろ3列（タイミング・配線先・注入文書）が非空 ---
