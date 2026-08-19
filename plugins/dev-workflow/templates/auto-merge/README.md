@@ -67,3 +67,16 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
 - **`AUTOMERGE_PAUSED` / PAT 未設定の fail-closed を外さない**
 
 運用（緊急停止・巻き戻し・マージされないときの調べ方）: 展開後の `docs/auto-merge.md` を参照。
+
+## 配備済みリポ一覧（正本。テンプレ改修時はここに載る全リポへ伝播する）
+
+| リポ | 配備日 | PAT（AUTOMERGE_PAT） |
+|---|---|---|
+| genetta-inc/flatmate | 2026-08 | 登録済み（無期限） |
+| genetta-inc/suimei | 2026-08 | 登録済み（無期限） |
+| oratta/claude-harness | 2026-08-18（PR #118） | 登録済み（失効 2026-11-17） |
+| oratta/marketing-harness | 2026-08-18（PR #36） | 登録済み（失効 2026-11-17） |
+
+- テンプレ本体（workflow・スクリプト・不変条件テスト）を改修したら、**この表の全リポへ同じ変更を展開する**（伝播漏れは「リポごとに違う安全条件」という最悪の状態を生む）
+- 新規展開したらこの表に 1 行足す。展開の見送り判断（クライアント案件・停止中プロジェクト等）は genetta-inc/flatmate#371 の A2 判断を参照
+- 停止中の genetta-inc/shukan は**プロジェクト再開のタイミングで展開する**（2026-08-19 主の判断）
