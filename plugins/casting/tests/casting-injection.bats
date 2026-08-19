@@ -44,6 +44,14 @@ map_rows() {
     | LC_ALL=C grep -v '^| 観点 '
 }
 
+# 語彙定義表の行（ヘッダ・区切りを除く）を返す
+vocab_rows() {
+  sed -n '/^## 注入タイミングの語彙/,/^## 14観点の注入マップ/p' "$INJECTION" \
+    | LC_ALL=C grep '^|' \
+    | LC_ALL=C grep -v '^|---' \
+    | LC_ALL=C grep -v '^| タイミング '
+}
+
 # --- Scenario: 注入マップに catalog_version と14観点が入っている ---
 
 @test "injection: file exists" {
@@ -68,14 +76,22 @@ map_rows() {
 
 # --- Scenario: タイミング語彙の9分類が定義されている ---
 
-@test "injection: vocabulary section defines all 9 timings" {
-  local timings=(
-    "常時" "毎ターンの配役判定" "論点相談" "PR 時レンズ" "アクション直前ゲート"
-    "定期監査" "注入しない" "起票・選定時" "設計時"
-  )
-  for t in "${timings[@]}"; do
-    LC_ALL=C grep -qF -- "$t" "$INJECTION"
-  done
+@test "injection: vocabulary table rows equal exactly the 9 timings (set match)" {
+  diff <(vocab_rows | cut -d'|' -f2 | sed 's/^ *//; s/ *$//' | LC_ALL=C sort) \
+       <(printf '%s\n' "常時" "毎ターンの配役判定" "論点相談" "PR 時レンズ" "アクション直前ゲート" \
+                        "定期監査" "注入しない" "起票・選定時" "設計時" | LC_ALL=C sort)
+}
+
+@test "injection: every vocabulary row has non-empty meaning and mechanism cells" {
+  while IFS= read -r row; do
+    for f in 3 4; do
+      cell=$(printf '%s' "$row" | cut -d'|' -f$f | sed 's/^ *//; s/ *$//')
+      if [ -z "$cell" ]; then
+        echo "empty cell (field $f) in vocab row: $row"
+        return 1
+      fi
+    done
+  done < <(vocab_rows)
 }
 
 # --- Scenario: 全行のタイミングが定義済み語彙に収まる ---
@@ -97,12 +113,26 @@ map_rows() {
   done < <(map_rows)
 }
 
-# --- Scenario: 大原則と人格規約が読み取れる ---
+# --- Scenario: 大原則と人格規約が読み取れる（spec の必須要素を個別検査） ---
 
-@test "injection: states the subagent-only principle and the persona convention" {
+@test "injection: states the subagent-only principle with its reader definition" {
   LC_ALL=C grep -qF -- "注入文書はメインセッションに読み込まない" "$INJECTION"
+  LC_ALL=C grep -qF -- "専任サブエージェント" "$INJECTION"
+}
+
+@test "injection: persona convention carries all required elements" {
   LC_ALL=C grep -qF -- "人格ブロック" "$INJECTION"
-  LC_ALL=C grep -qF -- "事後報告" "$INJECTION"
+  LC_ALL=C grep -qF -- "名前・スタンス・口調" "$INJECTION"
+  LC_ALL=C grep -qF -- "人格は判断基準の入れ物であって代替ではない" "$INJECTION"
+  LC_ALL=C grep -qF -- "人格名で発言を帰属" "$INJECTION"
+}
+
+@test "injection: arbitration requirements live in the consultation vocabulary row" {
+  row=$(vocab_rows | LC_ALL=C grep -F -- "| 論点相談 " | head -1)
+  [ -n "$row" ]
+  for phrase in "仲裁エージェント" "新品コンテキスト" "フェーズ宣言文と双方の主張" "事後報告"; do
+    printf '%s' "$row" | LC_ALL=C grep -qF -- "$phrase"
+  done
 }
 
 # --- Scenario: マップ行の後ろ3列（タイミング・配線先・注入文書）が非空 ---
