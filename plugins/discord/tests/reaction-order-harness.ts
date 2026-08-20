@@ -28,6 +28,10 @@ const MESSAGE_ID = '900000000000000002'
 const TIMEOUT_MS = 15000
 // After the 2nd event, wait this long to catch duplicates/strays.
 const SETTLE_MS = 250
+// The watchdog below only starts once the child is up, so a stalled registry
+// fetch during install would otherwise hang until the CI job's own 6h timeout.
+// Bound it here instead: a cold `bun install` of discord.js is seconds.
+const INSTALL_TIMEOUT_MS = 180000
 
 // server.ts imports discord.js — make sure deps exist (fresh worktrees and CI
 // don't have node_modules). Frozen: an out-of-sync lockfile should fail loud,
@@ -35,9 +39,16 @@ const SETTLE_MS = 250
 const install = spawnSync('bun', ['install', '--no-summary', '--frozen-lockfile'], {
   cwd: PLUGIN_DIR,
   stdio: 'inherit',
+  timeout: INSTALL_TIMEOUT_MS,
 })
-if (install.status !== 0) {
-  console.error(`bun install failed (exit ${install.status})`)
+// A timeout surfaces as error=ETIMEDOUT with status null (not a non-zero exit),
+// and a missing bun binary as error=ENOENT — check both so neither is read as
+// success.
+if (install.error || install.status !== 0) {
+  console.error(
+    `bun install failed (exit ${install.status}, signal ${install.signal}` +
+    `${install.error ? `, ${install.error.message}` : ''})`,
+  )
   process.exit(1)
 }
 
@@ -71,6 +82,22 @@ const events: ChannelEvent[] = []
 let initialized = false
 let done = false
 
+// Cleanup hangs off process exit rather than off finish() alone, so a throw
+// or a Ctrl-C / SIGTERM (CI cancelling the job) can't leave the child server
+// running or the temp state dir behind. Must stay synchronous — an 'exit'
+// handler cannot await.
+let cleaned = false
+function cleanup(): void {
+  if (cleaned) return
+  cleaned = true
+  try { child.kill() } catch {}
+  try { rmSync(stateDir, { recursive: true, force: true }) } catch {}
+}
+process.on('exit', cleanup)
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => { cleanup(); process.exit(130) })
+}
+
 function finish(code: number, verdict: string): void {
   if (done) return
   done = true
@@ -79,8 +106,7 @@ function finish(code: number, verdict: string): void {
     console.log(`observed events: ${JSON.stringify(events, null, 2)}`)
     console.log(`server stderr:\n${stderrBuf}`)
   }
-  child.kill()
-  rmSync(stateDir, { recursive: true, force: true })
+  cleanup()
   process.exit(code)
 }
 
