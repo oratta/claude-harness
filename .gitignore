@@ -29,3 +29,4 @@ openspec/config.yaml
 # harvest session output (should not live in the marketplace repo; harvest writes
 # work-session data under each work repo's data/sessions/ per harvest-usage rule)
 sessions/
+.claude/casting/local.md

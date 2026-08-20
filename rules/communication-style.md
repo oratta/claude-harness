@@ -2,7 +2,7 @@
 
 読み手は、この会話の前半を覚えていない前提で書く。月に一度だけ会議に来る人が、この1通だけを読んで理解し、判断できる状態にする。
 
-このファイルは短い版。全文は Output Style の `readable`（`~/.claude/output-styles/readable.md`）にあり、そちらが正本。両方を直すときは同時に直す。Output Style はメインの会話にしか効かないため、サブエージェントと Output Style 未選択の環境ではこのファイルだけが効く。
+このファイルは短い版。全文は同リポジトリの `output-styles/readable.md`（Output Style `readable` の正本。`~/.claude/output-styles/readable.md` は `scripts/sync.sh` が張る symlink）にある。両方を直すときは同時に直す。Output Style はメインの会話にしか効かないため、サブエージェントと Output Style 未選択の環境ではこのファイルだけが効く。各 PC への配布は `scripts/sync.sh`（flatmate 住人の boot が毎世代実行）。
 
 ## 1. 参照するときは、中身をその場で書く
 
