@@ -18,5 +18,5 @@ flatmate の burn-mode 論点ゲート（genetta-inc/flatmate PR #368）が `cas
 
 - `plugins/casting/scripts/casting-check.sh` — resolve 分岐を検証後に移動、check_layer_files を check/resolve 共通化
 - `plugins/casting/tests/casting-resolve.bats` — fail-closed 5 フィクスチャ＋起案シグナル非停止 2 件を追加。既存の「malformed 行はカタログ既定にフォールバック」テストは非 0 終了を期待する形に置き換え（table_rows が5列未満行を有効値にしない防御は維持）
-- `plugins/casting/.claude-plugin/plugin.json` — version 0.2.0 → 0.2.1
+- `plugins/casting/.claude-plugin/plugin.json` — version 0.2.0 → 0.2.2（main が先に 0.2.1 を取得したため取り直し）
 - `plugins/casting/skills/casting/SKILL.md`・`plugins/casting/README.md` — resolve の fail-closed 挙動を追記

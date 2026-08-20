@@ -9,6 +9,6 @@
 
 ## 3. 追随
 
-- [x] 3.1 `plugin.json` の version を 0.2.1 に上げる
+- [x] 3.1 `plugin.json` の version を 0.2.2 に上げる（main の 0.2.1 の次に取り直し）
 - [x] 3.2 `SKILL.md`・`README.md` に fail-closed 挙動を追記する
 - [x] 3.3 `openspec validate resolve-fail-closed --strict` を通し、archive して PR に含める
