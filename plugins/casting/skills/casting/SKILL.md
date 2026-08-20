@@ -110,4 +110,4 @@ version: 0.3.0
 
 `scripts/casting-check.sh [--catalog <path>] [<repo-root>]` は対象 repo の `.claude/casting/` に対して、未知の観点語彙・「カタログ外」判例・同一観点の「論点じゃなかった」2件以上・`catalog_version` 不一致の4項目を検査する。検出なしで exit 0、検出ありなら一覧を出力して exit 1。CI やコミット前フックに組み込んでよい。
 
-`scripts/casting-check.sh resolve [<repo-root>]` は catalog.md・project.md・local.md を観点（行）単位で合成した有効な配役表を、各行の由来（`カタログ既定`／`project`／`local`）付きで出力する。
+`scripts/casting-check.sh resolve [<repo-root>]` は catalog.md・project.md・local.md を観点（行）単位で合成した有効な配役表を、各行の由来（`カタログ既定`／`project`／`local`）付きで出力する。出力の前に project.md / local.md へ check モードと同じ検証（行形式・語彙・catalog_version）を通し、**検証を通らない配役表では合成表を出力せず、理由を stderr に出して exit 1 する**（fail-closed）。起案シグナル（「カタログ外」判例・「論点じゃなかった」2件以上）では止まらない。呼び出し側は exit 0 以外の resolve 出力を担い手解決の根拠に使ってはならない。
