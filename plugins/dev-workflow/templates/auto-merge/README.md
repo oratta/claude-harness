@@ -67,3 +67,11 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
 - **`AUTOMERGE_PAUSED` / PAT 未設定の fail-closed を外さない**
 
 運用（緊急停止・巻き戻し・マージされないときの調べ方）: 展開後の `docs/auto-merge.md` を参照。
+
+## 配備済みリポ一覧（伝播先の正本）
+
+どのリポに配備済みか・テンプレ改修時にどこへ伝播するかの正本は
+**プラグインの `../../docs/auto-merge-deployments.md`**。テンプレ改修を入れたら必ずそこを見て、
+載っている全リポへ展開する。新規展開したらそこに 1 行足す。
+（このテンプレ配下はリポ非依存の記述に限る — 具体的なリポ名は上記の正本にのみ書く。
+`tests/automerge-templates.bats` の portability テストが強制している）

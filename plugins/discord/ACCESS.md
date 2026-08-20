@@ -58,6 +58,12 @@ With the default `requireMention: true`, the bot responds only when @mentioned o
 /discord:access group rm 846209781206941736
 ```
 
+Reactions in guild channels are gated by `--allow` (falling back to the
+top-level DM allowlist when the channel's list is empty) — `requireMention`
+can't apply, since a reaction can't carry a mention. To receive reactions,
+either list the sender with `--allow` or have them paired via DM; with both
+lists empty every reaction is dropped, with a note on stderr.
+
 ## Mention detection
 
 In channels with `requireMention: true`, any of the following triggers the bot:

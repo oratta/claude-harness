@@ -1,0 +1,65 @@
+# casting-catalog Specification
+
+## Purpose
+TBD - created by archiving change casting-plugin. Update Purpose after archive.
+## Requirements
+### Requirement: カタログ正本の存在と構成
+
+`plugins/casting/catalog/catalog.md` は観点カタログの唯一の正本として存在しなければならない (MUST)。front matter に `version`（整数、初期値 1）を持ち、本文に①列定義（凡例: 観点／この観点が要る論点の条件／判断基準の出どころ／移譲に必要な文書／既定の担い手 の5列の意味）②3グループ14観点の表（グループA 守り6観点・グループB 前進6観点・グループC 主に固有2観点。内容は oratta/claude-harness#112 の表と一致）③横断軸2つ（可逆性・影響範囲＝乗数、能力・権限の借用＝手の借用）④変更手続き⑤変更記録（追記型: 日付・何を・なぜ・きっかけの判例）の5節を含まなければならない (MUST)。
+
+#### Scenario: カタログに version と14観点が入っている
+
+- **WHEN** `plugins/casting/catalog/catalog.md` を読む
+- **THEN** front matter に `version: 1` があり、観点の表の行数が全グループ合計で14である
+
+#### Scenario: 列定義がカタログ内に存在する
+
+- **WHEN** catalog.md の凡例節を読む
+- **THEN** 5列すべての名前と意味の定義が本文に含まれている
+
+### Requirement: 観点語彙の固定
+
+配役表（project.md / local.md）と判例台帳（precedents.md）に書く観点名は、catalog.md に存在する観点名、または「カタログ外」のいずれかでなければならない (MUST)。それ以外の語彙は `casting-check.sh` が未知語彙として検出しなければならない (MUST)。
+
+#### Scenario: 未知の観点語彙が検出される
+
+- **WHEN** カタログに存在しない観点名を含む配役表フィクスチャに対して `casting-check.sh` を実行する
+- **THEN** 当該の語彙とファイルが一覧表示され、exit code が 1 になる
+
+### Requirement: カタログの変更手続き
+
+catalog.md は変更手続きとして、軽量ルート（配役の変更＝担い手・移譲に必要な文書の中身。エージェント→主へ戻す方向は即時、主→エージェントへ移す方向は文書整備＋主承認）と重量ルート（構造の変更＝観点の追加・削除・統合・分割・列定義変更。version 増加＋変更記録追記＋主承認必須）の2ルートを明記しなければならない (MUST)。カタログへの書き込みは `scripts/casting-set.sh` を唯一の入口とし、直接編集しないことを catalog.md と SKILL.md に明記しなければならない (MUST)。カタログの既定は行単位の継承元であり、変更は上書きしていない全導入プロジェクトに自動で効くことを明記しなければならない (MUST)。
+
+#### Scenario: 変更手続きの2ルートと書き込み経路が明記されている
+
+- **WHEN** catalog.md の変更手続き節を読む
+- **THEN** 軽量ルートと重量ルートの区別、重量ルートの3条件（version 増加・変更記録・主承認）、書き込みは casting-set.sh 経由であること、変更が継承中の全プロジェクトに自動で効くことが読み取れる
+
+### Requirement: 常時ロード層の返信前チェック rule
+
+`rules/perspective-casting.md` は返信前チェック5手順（①聖域か→無条件人間承認 ②論点に必要な観点の特定 ③担い手は主か ④主でないなら送らず自走で決め直す ⑤結果を判例台帳に記録）と、主から配役へのフィードバックを受けたらそのターンで該当層の該当行を更新して判例に記録するフィードバック規則、および正本（catalog.md・casting スキル）へのポインタを持たなければならない (MUST)。ファイルは30行以内でなければならず (MUST)、カタログ本文を複製してはならない (MUST NOT)。`rules/README.md` のファイル一覧に掲載されなければならない (MUST)。
+
+#### Scenario: rule が薄いままフィードバック規則を含む
+
+- **WHEN** `rules/perspective-casting.md` を読む
+- **THEN** 30行以内で、5手順・フィードバック時の即時更新規則・正本へのパスが含まれている
+
+### Requirement: casting-set.sh によるカタログ書き込み
+
+`scripts/casting-set.sh` はカタログ書き込みの唯一の入口として次の2サブコマンドを持たなければならない (MUST)。`owner <観点名> <新しい既定の担い手> --why <理由>` はカタログの当該観点の「既定の担い手」列だけを書き換え、変更記録節に日付・変更内容・理由を追記する (MUST)。`replace-catalog <file> --why <理由>` はカタログを丸ごと差し替え、差し替えファイルの front matter version が現行より大きくない場合は拒否しなければならない (MUST)。存在しない観点名の指定と `--why` の欠落はエラーにしなければならない (MUST)。書き込み後、導入 repo 台帳の各 repo について当該観点を「継承中（影響あり）」か「上書き中（影響なし）」かの一覧を出力しなければならない (MUST)。日本語語彙の照合に awk のマルチバイト文字列比較を使ってはならない (MUST NOT)。
+
+#### Scenario: owner が行単位で書き換え変更記録を残す
+
+- **WHEN** `casting-set.sh owner 財務・コスト "エージェント（予算方針文の範囲内）" --why "uranai の予算方針文を整備したため"` を実行する
+- **THEN** カタログの財務・コスト行の「既定の担い手」列だけが更新され、他の行は変わらず、変更記録節に日付・観点名・新旧の値・理由が追記される
+
+#### Scenario: version が増えていない差し替えは拒否される
+
+- **WHEN** 現行と同じ version の差し替えファイルで `replace-catalog` を実行する
+- **THEN** 差し替えは行われず、version 増加が必要である旨のエラーで exit code が 0 以外になる
+
+#### Scenario: 継承中と上書き中が区別して表示される
+
+- **WHEN** 台帳に「当該観点を project.md で上書き済みの repo」と「上書きしていない repo」を登録した状態で owner を実行する
+- **THEN** 前者は上書き中（影響なし）、後者は継承中（影響あり）として一覧に出力される
+
