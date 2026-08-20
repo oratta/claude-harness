@@ -250,3 +250,116 @@ wt_run_setup_issue55() {
 @test "version: worktree plugin.json parses (jq)" {
   jq empty "$PLUGIN_JSON"
 }
+
+# --- flatmate#320: nested-worktree recursion / self-replication ---
+#
+# `find -path "./$pattern"` lets `*` match `/` too, so `*.local.json` recursed
+# over the whole repo — including nested worktree debris under
+# */.claude/worktrees/ and the worktree being created itself — timing out the
+# WorktreeCreate hook and self-replicating copies. Patterns without `/` must
+# match repo-root files only; patterns with `/` must prune nested worktrees
+# and the destination worktree.
+
+# Main repo with root-level env/local files, a subdir file no pattern reaches,
+# a workspace file matched by a slash pattern, and nested worktree debris.
+# The worktree is created at .claude/worktrees/wt320 like the real hook does.
+wt_run_setup_issue320() {
+  local main wt
+  main="$(wt_make_repo main320)"
+  (
+    cd "$main" || exit 1
+    printf '.env.*\n*.local.json\nworkspace/\n' >.gitignore
+    printf '.env.*\n*.local.json\nworkspace/**/*.local.json\n' >.worktreeinclude
+    git add -A .gitignore .worktreeinclude
+    git commit -qm "add worktreeinclude"
+    printf 'ROOT=1\n' >.env.local
+    printf '{}\n' >app.local.json
+    mkdir -p sub
+    printf '{}\n' >sub/other.local.json
+    mkdir -p workspace/gene
+    printf '{}\n' >workspace/gene/data.local.json
+    mkdir -p workspace/gene/.claude/worktrees/agent-old
+    printf '{}\n' >workspace/gene/.claude/worktrees/agent-old/leftover.local.json
+    git worktree add -q -b wt320 .claude/worktrees/wt320 HEAD
+  ) >/dev/null 2>&1
+  wt="$main/.claude/worktrees/wt320"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/out320.txt" 2>&1
+  echo "$wt"
+}
+
+@test "script: repo-root files still copy with the default-style patterns" {
+  local wt
+  wt="$(wt_run_setup_issue320)"
+  [ -e "$wt/.env.local" ]
+  [ -e "$wt/app.local.json" ]
+  grep -q 'copied: ./.env.local' "${BATS_TEST_TMPDIR}/out320.txt"
+}
+
+@test "script: a slash-less pattern no longer recurses into subdirectories" {
+  local wt
+  wt="$(wt_run_setup_issue320)"
+  [ ! -e "$wt/sub/other.local.json" ]
+}
+
+@test "script: nested worktree debris under */.claude/worktrees is never copied" {
+  local wt
+  wt="$(wt_run_setup_issue320)"
+  # the slash pattern still reaches legitimate workspace files...
+  [ -e "$wt/workspace/gene/data.local.json" ]
+  # ...but prunes nested worktrees at any depth
+  [ ! -e "$wt/workspace/gene/.claude/worktrees" ]
+}
+
+@test "script: the created worktree does not contain a copy of itself" {
+  local wt
+  wt="$(wt_run_setup_issue320)"
+  [ ! -e "$wt/.claude/worktrees" ]
+}
+
+@test "script: the destination worktree is pruned even outside .claude/worktrees" {
+  local main wt
+  main="$(wt_make_repo main320s)"
+  (
+    cd "$main" || exit 1
+    printf '*.local.json\ninner-wt/\n' >.gitignore
+    printf '**/*.local.json\n' >.worktreeinclude
+    git add -A .gitignore .worktreeinclude
+    git commit -qm "add worktreeinclude"
+    mkdir -p sub
+    printf '{}\n' >sub/deep.local.json
+    git worktree add -q -b wt320s inner-wt HEAD
+    # pre-seed a matching file inside the destination worktree: without the
+    # self-prune this would be re-copied into $wt/inner-wt/ (self-replication)
+    printf '{}\n' >inner-wt/seed.local.json
+  ) >/dev/null 2>&1
+  wt="$main/inner-wt"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/out320s.txt" 2>&1
+  [ -e "$wt/sub/deep.local.json" ]
+  [ ! -e "$wt/inner-wt" ]
+}
+
+@test "script: a sibling worktree inside the main repo is pruned too" {
+  local main wt
+  main="$(wt_make_repo main320sib)"
+  (
+    cd "$main" || exit 1
+    printf '*.local.json\ndest-wt/\nsibling-wt/\n' >.gitignore
+    printf '**/*.local.json\n' >.worktreeinclude
+    git add -A .gitignore .worktreeinclude
+    git commit -qm "add worktreeinclude"
+    mkdir -p sub
+    printf '{}\n' >sub/deep.local.json
+    git worktree add -q -b wt320sib-a sibling-wt HEAD
+    git worktree add -q -b wt320sib-b dest-wt HEAD
+    # a gitignored match living inside the *sibling* worktree: pruning only
+    # `.git` lets find descend into it and replicate another worktree's files
+    printf '{}\n' >sibling-wt/leaked.local.json
+  ) >/dev/null 2>&1
+  wt="$main/dest-wt"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/out320sib.txt" 2>&1
+  # legitimate main-repo matches still copy
+  [ -e "$wt/sub/deep.local.json" ]
+  # neither the sibling worktree nor the destination itself is reproduced
+  [ ! -e "$wt/sibling-wt" ]
+  [ ! -e "$wt/dest-wt" ]
+}
