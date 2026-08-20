@@ -31,6 +31,11 @@ if [[ "$1" == "item" && "$2" == "list" ]]; then
   echo '[{"title":"proj--github"},{"title":"proj--supabase"},{"title":"other--vercel"}]'
   exit 0
 fi
+if [[ "$1" == "item" && "$2" == "create" ]]; then
+  # 呼び出し引数を記録する（値そのものはテストのアサート対象にしない）
+  printf '%s\n' "$@" >"${FMTOKEN_TEST_CREATE_LOG:-/dev/null}"
+  exit 0
+fi
 exit 1
 EOF
   chmod +x "${STUB}/op"
@@ -44,6 +49,7 @@ EOF
 
   PATH="${STUB}:${PATH}"
   export OP_SERVICE_ACCOUNT_TOKEN="dummy-sa-token"
+  export FMTOKEN_TEST_CREATE_LOG="${WORK}/op-create.log"
 }
 
 teardown() {
@@ -210,4 +216,122 @@ EOF
   HOME="$WORK" run "$FMTOKEN" github
   [ "$status" -eq 0 ]
   [ "$output" = "tok-secret-123" ]
+}
+
+# ─── 明示名参照（--name）: <agent>--<SERVICE> / <project>--<service> 両規約 ───
+
+@test "--name: agent-prefixed item resolves by explicit name" {
+  make_repo "myproj"
+  export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
+  run "$FMTOKEN" --name moko--TRELLO_TOKEN
+  [ "$status" -eq 0 ]
+  [ "$output" = "tok-secret-123" ]
+}
+
+@test "--name: project-prefixed item also resolves by explicit name" {
+  make_repo "myproj"
+  export FMTOKEN_TEST_REGISTERED="op://agents/suimei--github/credential"
+  run "$FMTOKEN" --name suimei--github
+  [ "$status" -eq 0 ]
+  [ "$output" = "tok-secret-123" ]
+}
+
+@test "--name: works outside a git repo (no origin derivation needed)" {
+  mkdir -p "${WORK}/no-repo-here"
+  cd "${WORK}/no-repo-here"
+  export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
+  run "$FMTOKEN" --name moko--TRELLO_TOKEN
+  [ "$status" -eq 0 ]
+  [ "$output" = "tok-secret-123" ]
+}
+
+@test "--check --name: exit 0 without printing token value" {
+  make_repo "myproj"
+  export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
+  run "$FMTOKEN" --check --name moko--TRELLO_TOKEN
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"tok-secret-123"* ]]
+}
+
+@test "--name unregistered: exit 44 with --register hint" {
+  make_repo "myproj"
+  run "$FMTOKEN" --name moko--NOT_THERE
+  [ "$status" -eq 44 ]
+  [[ "$output" == *"moko--NOT_THERE"* ]]
+  [[ "$output" == *"--register"* ]]
+}
+
+@test "--name: naming convention violation exits 46" {
+  make_repo "myproj"
+  run "$FMTOKEN" --name not_a_valid_name
+  [ "$status" -eq 46 ]
+  [[ "$output" == *"命名規約"* ]]
+}
+
+# ─── 登録（--register）: rw SA 経由・命名規約の機械検証・上書き防止 ───
+
+@test "--register: project-prefixed item is created via rw SA (not ambient ro token)" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA="rw-sa-token"
+  run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register newproj--newsvc"
+  [ "$status" -eq 0 ]
+  grep -q -- "newproj--newsvc" "$FMTOKEN_TEST_CREATE_LOG"
+  [[ "$output" != *"sekrit-value"* ]]
+}
+
+@test "--register: agent-prefixed item is created" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA="rw-sa-token"
+  run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register moko--TRELLO_TOKEN"
+  [ "$status" -eq 0 ]
+  grep -q -- "moko--TRELLO_TOKEN" "$FMTOKEN_TEST_CREATE_LOG"
+}
+
+@test "--register: naming convention violation exits 46, op item create not called" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  run bash -c "printf '%s' v | '$FMTOKEN' --register BadName"
+  [ "$status" -eq 46 ]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+@test "--register: double separator in name exits 46" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  run bash -c "printf '%s' v | '$FMTOKEN' --register a--b--c"
+  [ "$status" -eq 46 ]
+}
+
+@test "--register: already-registered item exits 47 without overwrite" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
+  run bash -c "printf '%s' v | '$FMTOKEN' --register moko--TRELLO_TOKEN"
+  [ "$status" -eq 47 ]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+  [[ "$output" == *"登録済み"* ]]
+}
+
+@test "--register: empty stdin exits 46" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  run bash -c "printf '' | '$FMTOKEN' --register moko--EMPTY"
+  [ "$status" -eq 46 ]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+@test "--register: missing rw SA token everywhere exits 43 (ro token is not reused)" {
+  # 環境には ro トークン（dummy-sa-token）があるが、rw の解決先はどこにも無い
+  HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
+  [ "$status" -eq 43 ]
+  [[ "$output" == *"claude-agents-rw"* ]]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+@test "--register: rw SA token falls back to 600-permission rw file" {
+  mkdir -p "${WORK}/.config/op-sa"
+  printf 'file-rw-token' >"${WORK}/.config/op-sa/claude-agents-rw.token"
+  chmod 600 "${WORK}/.config/op-sa/claude-agents-rw.token"
+  export FMTOKEN_TEST_EXPECT_SA="file-rw-token"
+  HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
+  [ "$status" -eq 0 ]
+  grep -q -- "moko--NEWTOKEN" "$FMTOKEN_TEST_CREATE_LOG"
 }
