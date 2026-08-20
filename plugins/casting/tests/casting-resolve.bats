@@ -4,6 +4,8 @@
 # spec: openspec/changes/casting-row-level-inheritance/specs/casting-project-files/spec.md
 #   Requirement: resolve による有効な配役表の合成表示
 
+bats_require_minimum_version 1.5.0
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/casting-check.sh"
@@ -61,9 +63,61 @@ setup() {
   [ "$(echo "$output" | grep -cF 'カタログ既定')" -eq 14 ]
 }
 
-@test "malformed 3-column row: resolve falls back to the catalog default" {
-  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/malformed-row"
+# --- Scenario: 検証を通らない配役表では合成表を出さない（fail-closed / #117） ---
+
+@test "malformed-row fixture: resolve refuses with exit 1, empty stdout, reason on stderr" {
+  run --separate-stderr "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/malformed-row"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"malformed-row"* ]]
+  [[ "$stderr" == *"project.md"* ]]
+  [[ "$stderr" == *"5列未満"* ]]
+}
+
+@test "unknown-vocab fixture: resolve refuses and names the unknown perspective on stderr" {
+  run --separate-stderr "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/unknown-vocab"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"unknown-vocab"* ]]
+  [[ "$stderr" == *"project.md"* ]]
+  [[ "$stderr" == *"謎の観点"* ]]
+}
+
+@test "version-mismatch fixture: resolve refuses and shows both versions on stderr" {
+  run --separate-stderr "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/version-mismatch"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"version-mismatch"* ]]
+  [[ "$stderr" == *"catalog_version=2"* ]]
+  [[ "$stderr" == *"version=1"* ]]
+}
+
+@test "missing-version fixture: resolve refuses when catalog_version is absent" {
+  run --separate-stderr "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/missing-version"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"catalog_version が front matter に無い"* ]]
+  [[ "$stderr" == *"project.md"* ]]
+}
+
+@test "no-front-matter fixture: resolve treats it as missing catalog_version and refuses" {
+  run --separate-stderr "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/no-front-matter"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"catalog_version が front matter に無い"* ]]
+  [[ "$stderr" == *"project.md"* ]]
+}
+
+# --- Scenario: 起案シグナルだけの repo は今までどおり合成できる（過剰な fail-closed をしない） ---
+
+@test "catalog-external-precedent fixture: resolve still emits the table (proposal signals do not block)" {
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/catalog-external-precedent"
   [ "$status" -eq 0 ]
-  row="$(echo "$output" | grep -F '| 財務・コスト |')"
-  [[ "$row" == *"カタログ既定 |" ]]
+  [ "$(echo "$output" | grep -cF 'カタログ既定')" -eq 14 ]
+}
+
+@test "repeated-not-issue fixture: resolve still emits the table (proposal signals do not block)" {
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/repeated-not-issue"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | grep -cF 'カタログ既定')" -eq 14 ]
 }
