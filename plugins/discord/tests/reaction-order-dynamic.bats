@@ -19,9 +19,15 @@ setup() {
 
 @test "ordering: synthetic add then remove delivers in arrival order over MCP stdio" {  # 付けてすぐ外しても remove が先に届かない
   if ! command -v bun >/dev/null 2>&1; then
-    # bun は discord プラグインの実行ランタイムそのもの。無いのに無言で成功扱いにしない。
-    echo "bun が見つかりません（server.ts の実行に必要）。https://bun.sh で導入してください" >&2
-    return 1
+    # CI では ci.yml が bun をピン導入するので、無いのは配線ミス。無言で成功扱いにせず落とす。
+    if [ -n "${CI:-}" ]; then
+      echo "bun が見つかりません（ci.yml の setup-bun が効いていない）" >&2
+      return 1
+    fi
+    # ローカルは bun 未導入の PC がありうる。scripts/test.sh は repo 共通のランナーで、
+    # ここで全体を落とすと無関係な変更の検証まで止まる。本スイートの担保は CI が持つ。
+    # 外部ツール不在の扱いはリポ既存の慣例（lsof / zsh / jq unavailable）に合わせる。
+    skip "bun unavailable — server.ts の実行に必要（https://bun.sh）"
   fi
   run bun "${PLUGIN_DIR}/tests/reaction-order-harness.ts"
   echo "$output"
