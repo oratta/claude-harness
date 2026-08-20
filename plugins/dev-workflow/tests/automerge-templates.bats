@@ -32,7 +32,7 @@ setup() {
 }
 
 @test "markers: auto-merge.yml has all replacement/extraction marker pairs" {
-  for m in sacred-paths sacred-paths-jq required-checks labeled-target pre-merge-recheck automerge-script; do
+  for m in sacred-paths sacred-paths-jq required-checks labeled-target passed-head-binding pre-merge-recheck automerge-script; do
     grep -qF "# >>> $m" "$WF"
     grep -qF "# <<< $m" "$WF"
   done
@@ -75,6 +75,17 @@ setup() {
   ! sed -n '/# >>> automerge-script/,/# <<< automerge-script/p' "$WF" | sed 's/#.*//' | grep -qF 'gh pr merge'
   grep -qF -- '-f sha="$HEAD_SHA"' "$WF"
   grep -qF -- '-f merge_method=squash' "$WF"
+}
+
+@test "invariant: passed label is bound to current HEAD (stale passed never merges)" {
+  block="$(sed -n '/# >>> passed-head-binding/,/# <<< passed-head-binding/p' "$WF")"
+  [ -n "$block" ]
+  # 判定ループ内で PR コメントを取得し、判定時の $HEAD_SHA（マージの SHA ピンと同一変数）と照合する
+  printf '%s\n' "$block" | grep -qF 'issues/$N/comments'
+  printf '%s\n' "$block" | grep -qF '対象 HEAD: $HEAD_SHA'
+  # 不一致は continue（マージ側へ落ちない fail-closed）。取得失敗も || true で同じ側に倒れる
+  printf '%s\n' "$block" | grep -qF 'continue'
+  printf '%s\n' "$block" | grep -qF '|| true'
 }
 
 @test "invariant: fail-closed on AUTOMERGE_PAUSED and missing PAT" {
