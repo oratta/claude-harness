@@ -258,7 +258,7 @@ jobs:
             # >>> passed-head-binding
             DECLARED_BODIES=$(gh api "repos/$REPO/issues/$N/comments?per_page=100" --paginate --jq '.[].body' || true)
             if ! printf '%s\n' "$DECLARED_BODIES" | grep -qF "対象 HEAD: $HEAD_SHA"; then
-              echo "agent-review:passed はあるが「対象 HEAD: $HEAD_SHA」を含むコメントが無い（合格後の push で stale の疑い。pr-review-gate をやり直すこと）: スキップ"
+              echo "agent-review:passed はあるが「対象 HEAD: ${HEAD_SHA}」を含むコメントが無い（合格後の push で stale の疑い。pr-review-gate をやり直すこと）: スキップ"
               continue
             fi
             # <<< passed-head-binding

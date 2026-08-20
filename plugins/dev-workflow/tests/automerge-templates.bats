@@ -80,7 +80,7 @@ setup() {
 @test "invariant: passed label is bound to current HEAD (stale passed never merges)" {
   block="$(sed -n '/# >>> passed-head-binding/,/# <<< passed-head-binding/p' "$WF")"
   [ -n "$block" ]
-  # 判定ループ内で PR コメントを取得し、判定時の $HEAD_SHA（マージの SHA ピンと同一変数）と照合する
+  # 判定ループ内で PR コメントを取得し、判定時の ${HEAD_SHA}（マージの SHA ピンと同一変数）と照合する
   printf '%s\n' "$block" | grep -qF 'issues/$N/comments'
   printf '%s\n' "$block" | grep -qF '対象 HEAD: $HEAD_SHA'
   # 不一致は continue（マージ側へ落ちない fail-closed）。取得失敗も || true で同じ側に倒れる
