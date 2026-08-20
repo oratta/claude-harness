@@ -1,7 +1,7 @@
 # capability-registry-fmtoken Specification
 
 ## Purpose
-プロジェクトスコープのトークン取得ラッパー fmtoken.sh。1Password の agents 保管庫から read-only SA 経由でトークンを引き、未登録・未配布時は人間への依頼文を返す。
+1Password agents 保管庫のトークン取得・登録ラッパー fmtoken.sh。読み取りは read-only SA 経由（プロジェクトスコープ導出、または `--name` による明示名参照）、登録は書き込み用 SA（claude-agents-rw）経由の `--register` で命名規約を機械検証して行う。未配布・値が無い時だけ人間への依頼文を返す。
 ## Requirements
 ### Requirement: fmtoken.sh がプラグイン内から動作する
 プラグインは `scripts/fmtoken.sh` を同梱し、以下の振る舞いを提供しなければならない（SHALL）: プロジェクト名を `git remote get-url origin` のリポジトリ名（URL 末尾の `.git` を除いた最終パス要素を小文字化したもの）から機械導出し、1Password の agents 保管庫のアイテム `<project>--<service>`（フィールド `credential`）を read-only Service Account 経由で読む。導出はディレクトリ名に依存しないため、メイン repo・worktree・flatmate 住人の作業リポ（`workspace/<住人>/repo`）のすべてで同じプロジェクト名に解決される。スキルや hook からは `${CLAUDE_PLUGIN_ROOT}/scripts/fmtoken.sh` で参照できること。
@@ -33,8 +33,8 @@ fmtoken.sh は `OP_SERVICE_ACCOUNT_TOKEN` 環境変数 → `~/.config/op-sa/clau
 - **WHEN** SA トークンが env にも Keychain にもファイルにも無いマシンで `fmtoken.sh <service>` を実行する
 - **THEN** exit 43 となり、stderr に「主に『SA トークンをこのマシンに配布して』と依頼すること」の案内が出る
 
-### Requirement: 未登録サービスは exit 44 で登録依頼を返す
-要求されたサービスが agents 保管庫に未登録の場合、fmtoken.sh は exit 44 で終了し、stderr に「ブラウザに行かず、主に 1Password の agents 保管庫への登録を依頼する」案内を返さなければならない（SHALL）。
+### Requirement: 未登録サービスは exit 44 で自己登録経路か登録依頼を返す
+要求されたサービスが agents 保管庫に未登録の場合、fmtoken.sh は exit 44 で終了し、stderr に「ブラウザに行かず、値が手元にあるなら `--register` で自分で登録し、値が無ければ主に登録を依頼する」案内を返さなければならない（SHALL）。
 
 #### Scenario: 未登録サービスの要求
 - **WHEN** agents 保管庫に `<project>--<service>` が存在しない状態で `fmtoken.sh <service>` を実行する
@@ -54,6 +54,40 @@ fmtoken.sh は `OP_SERVICE_ACCOUNT_TOKEN` 環境変数 → `~/.config/op-sa/clau
 #### Scenario: git リポジトリ外での実行
 - **WHEN** git リポジトリでないディレクトリで `fmtoken.sh <service>` を実行する
 - **THEN** exit 45 となる（旧実装の cwd フォールバックで誤った参照を組み立てない）
+
+### Requirement: 明示名参照（--name）はプロジェクト導出を経由しない
+`fmtoken.sh --name <item>` は、渡されたアイテム名をそのまま `op://agents/<item>/credential` の参照に使い、read-only SA 経由で読まなければならない（SHALL）。この経路では origin remote の有無を要求してはならない（MUST NOT）— エージェント名接頭辞のアイテム（例: `moko--TRELLO_TOKEN`）はプロジェクト導出（flatmate 住人は全員 `flatmate` に解決される）では引けないため。`--check --name <item>` は値を出力せず 0/44 で返すこと。未登録の場合は exit 44 で、stderr に `--register` による自己登録経路を案内する。
+
+#### Scenario: エージェント名接頭辞のアイテムを明示名で読む
+- **WHEN** agents 保管庫に `moko--TRELLO_TOKEN` が登録済みの状態で `fmtoken.sh --name moko--TRELLO_TOKEN` を実行する
+- **THEN** `op://agents/moko--TRELLO_TOKEN/credential` の値が標準出力に返り exit 0 となる
+
+#### Scenario: git リポジトリ外でも明示名参照は動く
+- **WHEN** git リポジトリでないディレクトリで `fmtoken.sh --name <登録済みアイテム>` を実行する
+- **THEN** exit 45 にはならず、値が返る
+
+### Requirement: 登録（--register）は書き込み用 SA 経由で命名規約を機械検証して行う
+`fmtoken.sh --register <item>` は、値を stdin から受け取り（argv で受けてはならない — transcript / ps への露出防止）、書き込み用 SA トークン（claude-agents-rw）を env `OP_SERVICE_ACCOUNT_TOKEN_RW` → `~/.config/op-sa/claude-agents-rw.token`（600 権限）→ Keychain `op-sa-claude-agents-rw` の順で解決して `op item create --vault agents`（フィールド `credential`）を実行しなければならない（SHALL）。環境の `OP_SERVICE_ACCOUNT_TOKEN`（多くのマシンで read-only トークン）を登録に流用してはならない（MUST NOT）。アイテム名は命名規約 `<prefix>--<service>`（prefix は小文字のプロジェクト名またはエージェント名、区切り `--` はちょうど 1 回）に反する場合 exit 46 で拒否し（SHALL）、既に登録済みのアイテムは上書きせず exit 47 で止まる（SHALL）。rw トークンがどこにも無い場合は exit 43 で配布依頼の案内を返す。
+
+#### Scenario: プロジェクト名接頭辞のアイテムを登録する
+- **WHEN** rw SA トークンが解決できるマシンで `printf '%s' "$VALUE" | fmtoken.sh --register newproj--newsvc` を実行する
+- **THEN** rw トークンを使った `op item create` が実行され exit 0 となり、値は標準出力に現れない
+
+#### Scenario: エージェント名接頭辞のアイテムを登録する
+- **WHEN** `printf '%s' "$VALUE" | fmtoken.sh --register moko--TRELLO_TOKEN` を実行する
+- **THEN** `<agent>--<SERVICE>` 形式として命名検証を通過し、登録が実行される
+
+#### Scenario: 命名規約違反は登録前に弾かれる
+- **WHEN** `--` 区切りを持たない名前や `--` を 2 回含む名前で `--register` を実行する
+- **THEN** exit 46 となり、`op item create` は呼ばれない
+
+#### Scenario: 登録済みアイテムへの二重登録
+- **WHEN** agents 保管庫に既に存在するアイテム名で `--register` を実行する
+- **THEN** exit 47 となり、上書きは行われない
+
+#### Scenario: rw トークン未配布
+- **WHEN** rw SA トークンが env・ファイル・Keychain のどこにも無いマシンで `--register` を実行する
+- **THEN** ro トークンが環境にあっても流用されず、exit 43 で rw トークンの配布依頼の案内が出る
 
 （dir 名正規化の廃止は上記 MODIFIED に含まれる — 旧要件「fmtoken.sh がプラグイン内から動作する」の導出記述とその正規化シナリオを、remote 導出の記述・シナリオで置き換えた。理由と移行は proposal / design を参照）
 

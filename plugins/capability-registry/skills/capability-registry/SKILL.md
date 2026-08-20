@@ -1,7 +1,7 @@
 ---
 name: capability-registry
 description: 外部サービスを操作する前に必ず参照するレジストリ（GitHub/Supabase/Vercel/Stripe/1Password 等）。CLI の有無・認証確認コマンド・トークンの在処（fmtoken.sh）を索引で返す。ブラウザを開こうとした時・ユーザーにログインを依頼したくなった時も、その前にここで CLI 代替を確認する。
-version: 1.6.0
+version: 1.7.0
 ---
 
 # capability-registry — 外部サービスの CLI とトークンの在処
@@ -14,9 +14,10 @@ version: 1.6.0
 
 1. 索引の記述を信じず、verify（認証確認コマンド）を実行して確かめる
 2. トークンは `"${CLAUDE_PLUGIN_ROOT}/scripts/fmtoken.sh" <service>` で取得する。値を transcript に出さないため必ずコマンド置換で使う（例: `GITHUB_TOKEN="$(fmtoken.sh github)" gh api ...`）
-   - 未登録なら exit 44 → ブラウザに行かず、主に 1Password `agents` 保管庫への登録（`<project>--<service>` / フィールド `credential`）を依頼する（prod の書き込み可能キーは後述『資格情報の階層』の行に従う）
-   - SA トークン未配布なら exit 43 → 主に SA トークンの配布を依頼する
+   - 未登録なら exit 44 → ブラウザに行かず、値が手元にあるなら `printf '%s' "$VALUE" | fmtoken.sh --register <project>--<service>` で自分で登録する（rw SA 経由・命名規約は機械検証される）。値が無ければ主に発行を依頼する（prod の書き込み可能キーは後述『資格情報の階層』の行に従う）
+   - SA トークン未配布なら exit 43 → 主に SA トークン（読み取りは ro / 登録は rw）の配布を依頼する
    - 存在確認だけなら `fmtoken.sh --check <service>`、一覧は `fmtoken.sh --list`
+   - エージェント名接頭辞のアイテム（`<agent>--<SERVICE>`、例: `moko--TRELLO_TOKEN`）はプロジェクト導出で引けない → `fmtoken.sh --name <item>` で参照・`--register <item>` で登録する
 3. ブラウザ操作が正当なのは、索引の「ブラウザ必須の例外」とネガティブエントリに該当する場合のみ
 
 ## 資格情報の階層（どこに置くかはプロジェクトごとに決めない）
@@ -27,7 +28,7 @@ version: 1.6.0
 
 | 階層 | 原本の置き場 | 稼働コピー | エージェントはどう動くか |
 |---|---|---|---|
-| dev / test / 読み取り系 | `agents` 保管庫（`<project>--<service>` / フィールド `credential`） | 各 repo の `.env.local` | `fmtoken.sh <service>` で引いて手元で実行する。未登録（exit 44）なら主に `agents` 保管庫への登録を依頼する |
+| dev / test / 読み取り系 | `agents` 保管庫（`<project>--<service>` / フィールド `credential`） | 各 repo の `.env.local` | `fmtoken.sh <service>` で引いて手元で実行する。未登録（exit 44）なら、値が手元にあれば `fmtoken.sh --register` で登録し、無ければ主に発行を依頼する |
 | prod の書き込み可能キー（service_role・live secret key 等） | human-only 保管庫（例: `uranai--STRIPE_SECRET_KEY_PROD`） | 対象 repo の GitHub Actions secrets | 処理を Actions のワークフロー内に置き、CI に実行させる。secrets が無ければ主に Actions secrets への登録を依頼する |
 
 - 境界の根拠: SA の権限は保管庫単位スコープで、fmtoken のプロジェクト別プレフィックスはアクセス制御ではない。
@@ -44,7 +45,7 @@ version: 1.6.0
 
 | サービス | CLI | 認証確認（verify） | トークン | ブラウザ必須の例外 |
 |---|---|---|---|---|
-| 1Password | op | `op whoami` | SA トークン（env / 600 ファイル / Keychain）。SA が読めるのは `agents` 保管庫のみ | SA 権限変更（人間が行う） |
+| 1Password | op | `op whoami` | SA トークン（env / 600 ファイル / Keychain）。読み取りは ro SA（`agents` 保管庫のみ）・登録は rw SA（`fmtoken.sh --register`） | SA 権限変更（人間が行う） |
 | GitHub | gh | `gh auth status` | `fmtoken.sh github` | OAuth アプリ承認・組織設定の一部 |
 | Supabase | supabase | `supabase projects list` | `SUPABASE_ACCESS_TOKEN="$(fmtoken.sh supabase)"` | ダッシュボード限定の設定変更 |
 | Vercel | vercel | `vercel whoami` | `vercel --token "$(fmtoken.sh vercel)"` | ドメイン購入・課金設定 |
