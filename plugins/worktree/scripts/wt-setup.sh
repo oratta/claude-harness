@@ -129,9 +129,20 @@ PATTERNS
 #   - `/` を含むパターンは従来どおり深く探索するが、どの深さにあっても
 #     `*/.claude/worktrees`（入れ子 worktree。作成中の worktree 自身を含む）と
 #     .git / node_modules（マッチし得ない巨大ツリー）を prune する
-#   - 作成先 worktree がメインリポ内の `.claude/worktrees/` 以外に切られている場合に
-#     備え、作成先 worktree 自身のパスも prune する
+#   - `.claude/worktrees/` 以外の場所に切られた worktree（作成先自身を含む）も
+#     取りこぼさないよう、**登録済み worktree のうちメインリポ配下にあるもの全部**を
+#     prune する。`.git` の prune では足りない — find は worktree dir に入った後で
+#     その中の `.git` を prune するだけなので、配下のファイルには到達してしまう。
+#     到達すると兄弟 worktree の gitignore 済みファイルがコピー対象になり、
+#     入れ子 worktree の複製（＝本 issue の自己増殖）が再発する。
 WT_FIND_PRUNE=('(' -path '*/.claude/worktrees' -o -name .git -o -name node_modules)
+# 登録済み worktree の一覧。作成先自身が未登録の状況にも備えて TOPLEVEL も足す
+# （重複して -path が並んでも find の評価結果は変わらない）。
+while IFS= read -r wt_path; do
+  case "$wt_path" in
+    "$MAIN_REPO"/*) WT_FIND_PRUNE+=(-o -path "./${wt_path#"$MAIN_REPO"/}") ;;
+  esac
+done < <(git -C "$MAIN_REPO" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
 case "$TOPLEVEL" in
   "$MAIN_REPO"/*) WT_FIND_PRUNE+=(-o -path "./${TOPLEVEL#"$MAIN_REPO"/}") ;;
 esac

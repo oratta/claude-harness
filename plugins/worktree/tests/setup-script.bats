@@ -337,3 +337,29 @@ wt_run_setup_issue320() {
   [ -e "$wt/sub/deep.local.json" ]
   [ ! -e "$wt/inner-wt" ]
 }
+
+@test "script: a sibling worktree inside the main repo is pruned too" {
+  local main wt
+  main="$(wt_make_repo main320sib)"
+  (
+    cd "$main" || exit 1
+    printf '*.local.json\ndest-wt/\nsibling-wt/\n' >.gitignore
+    printf '**/*.local.json\n' >.worktreeinclude
+    git add -A .gitignore .worktreeinclude
+    git commit -qm "add worktreeinclude"
+    mkdir -p sub
+    printf '{}\n' >sub/deep.local.json
+    git worktree add -q -b wt320sib-a sibling-wt HEAD
+    git worktree add -q -b wt320sib-b dest-wt HEAD
+    # a gitignored match living inside the *sibling* worktree: pruning only
+    # `.git` lets find descend into it and replicate another worktree's files
+    printf '{}\n' >sibling-wt/leaked.local.json
+  ) >/dev/null 2>&1
+  wt="$main/dest-wt"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/out320sib.txt" 2>&1
+  # legitimate main-repo matches still copy
+  [ -e "$wt/sub/deep.local.json" ]
+  # neither the sibling worktree nor the destination itself is reproduced
+  [ ! -e "$wt/sibling-wt" ]
+  [ ! -e "$wt/dest-wt" ]
+}
