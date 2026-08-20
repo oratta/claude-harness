@@ -5,7 +5,7 @@ catalog_version: 1
 
 # <観点名> policy — 判断基準と人格
 
-「観点の配役」の注入文書。`.claude/casting/policies/<slug>.md`（slug 対応表は `plugins/casting/catalog/injection.md`）に置き、観点スペシャリスト（casting-specialist）だけが読む。**メインセッションには読み込まない**（大原則の正本は injection.md）。
+「観点の配役」の注入文書。`.claude/casting/policies/<slug>.md`（slug 対応表は `~/.claude/plugins/marketplaces/*/plugins/casting/catalog/injection.md`）に置き、観点スペシャリスト（casting-specialist）だけが読む。**メインセッションには読み込まない**（大原則の正本は injection.md）。
 
 ## 人格
 
