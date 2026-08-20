@@ -83,6 +83,18 @@ setup() {
   done
 }
 
+# --- Scenario: テンプレのパス表記が生成先 repo ルートから解決できる ---
+# issue #116: プラグイン内相対のパス表記（`scripts/…` `skills/…` `plugins/casting/…`）は
+# /casting:init の生成先 repo ルートから解決できないため、テンプレに含めない
+
+@test "templates: no plugin-internal relative path notation in backticks" {
+  local bt='`'
+  for t in "${PLUGIN_DIR}"/templates/*.md; do
+    run grep -nE "${bt}(scripts/|skills/|plugins/casting/)" "$t"
+    [ "$status" -ne 0 ]
+  done
+}
+
 # --- marketplace 登録 ---
 
 @test "marketplace: casting plugin is registered" {
