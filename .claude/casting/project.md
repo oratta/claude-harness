@@ -5,16 +5,18 @@ catalog_version: 1
 # 配役表（プロジェクト既定）
 
 「観点の配役」フレームワークの第1層（git 追跡・プロジェクト既定）。列の意味の凡例、観点の判定条件・
-判断基準の出どころ、14観点全体は `plugins/casting/catalog/catalog.md` が正本。
+判断基準の出どころ、14観点全体は casting プラグイン内の catalog.md（インストール先
+`~/.claude/plugins/marketplaces/*/plugins/casting/catalog/catalog.md`）が正本。
 
 **このファイルには、カタログの既定から変えたい観点の行だけを書く。書いていない観点は自動的に
 カタログの既定値を踏襲する。** カタログの既定を変更すれば、このファイルで上書きしていない全観点に
 自動で効く（コピーの伝搬は不要）。行を書く場合は5列すべてを埋める（列単位の部分上書きはしない）。
 観点名・列構成そのものは変えない（観点の追加/削除/統合は catalog.md 側の重量ルート）。
-有効な配役の合成結果は `scripts/casting-check.sh resolve` で確認できる。
+有効な配役の合成結果は `~/.claude/plugins/marketplaces/*/plugins/casting/scripts/casting-check.sh resolve <repoルート>` で確認できる。
 
-第2層（エージェント/マシン別の上書き）は `local.md`（gitignore 対象）、第3層（セッション単位の上書き）は
-起動プロンプトでの宣言（宣言形式は `skills/casting/SKILL.md`）で、番号の大きい層が小さい層を上書きする。
+第2層（エージェント/マシン別の上書き）は `.claude/casting/local.md`（gitignore 対象・必要になった
+エージェントが各自作成）、第3層（セッション単位の上書き）は起動プロンプトでの宣言（宣言形式は casting
+スキル内の `~/.claude/plugins/marketplaces/*/plugins/casting/skills/casting/SKILL.md`）で、番号の大きい層が小さい層を上書きする。
 解決は観点（行）単位で行い、ある観点の行を持つ最も強い層がその観点の有効値になる。
 
 ## 配役（上書きする行だけを書く）
