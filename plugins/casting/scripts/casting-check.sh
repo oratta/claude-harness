@@ -16,7 +16,10 @@
 # サブコマンド:
 #   （省略時）      対象 repo の配役表・判例台帳を検査する（上記4項目）
 #   resolve          catalog.md・project.md・local.md を観点（行）単位で合成した
-#                     有効な配役表を、由来（カタログ既定／project／local）付きで出力する
+#                     有効な配役表を、由来（カタログ既定／project／local）付きで出力する。
+#                     出力前に合成の入力（project.md / local.md）へ配役表の検証
+#                     （行形式・語彙・catalog_version）を通し、失敗時は合成表を出さずに
+#                     理由を stderr へ出力して exit 1 する（fail-closed / #117）
 #
 # usage: casting-check.sh [resolve] [--catalog <path>] [<target-repo-root>]
 
@@ -222,11 +225,6 @@ cmd_resolve() {
   done < "$catalog_rows"
 }
 
-if [ "$SUBCOMMAND" = "resolve" ]; then
-  cmd_resolve
-  exit 0
-fi
-
 # ---- 対象ファイルから「観点」語彙を集める ----
 # project.md / local.md: 5列表の1列目
 # precedents.md: "- 観点: <値>" 行
@@ -284,11 +282,57 @@ check_unknown_vocab() {
   done < <(extract_table_vocab "$file")
 }
 
-check_malformed_rows "$PROJECT_MD"
-check_malformed_rows "$LOCAL_MD"
+# ---- catalog.md の version（検出4で使う。catalog 側の欠落は使い方エラー） ----
 
-check_unknown_vocab "$PROJECT_MD" "$PROJECT_MD"
-check_unknown_vocab "$LOCAL_MD" "$LOCAL_MD"
+CATALOG_VERSION="$(field_value "version" "$(front_matter "$CATALOG")")"
+if [ -z "$CATALOG_VERSION" ]; then
+  echo "casting-check: catalog.md の front matter に version が無い: $CATALOG" >&2
+  exit 2
+fi
+
+check_version() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  local v
+  v="$(field_value "catalog_version" "$(front_matter "$file")")"
+  if [ -z "$v" ]; then
+    report "version-mismatch" "${file}: catalog_version が front matter に無い"
+  elif [ "$v" != "$CATALOG_VERSION" ]; then
+    report "version-mismatch" "${file}: catalog_version=${v}（catalog.md は version=${CATALOG_VERSION}）"
+  fi
+}
+
+# ---- 配役表2層（project.md / local.md）の検証。check と resolve の両モードで通す ----
+
+check_layer_files() {
+  check_malformed_rows "$PROJECT_MD"
+  check_malformed_rows "$LOCAL_MD"
+  check_unknown_vocab "$PROJECT_MD" "$PROJECT_MD"
+  check_unknown_vocab "$LOCAL_MD" "$LOCAL_MD"
+  check_version "$PROJECT_MD"
+  check_version "$LOCAL_MD"
+}
+
+# ---- resolve: 合成の入力を検証してから合成表を出力する（fail-closed / #117） ----
+#
+# 検証対象は合成の入力になる層だけ（precedents.md は合成に使わないので check モード専任）。
+# 起案シグナル（「カタログ外」判例・「論点じゃなかった」2件以上）では止めない — 観点追加の
+# 提案がそのリポの自走を全面停止させないため。検証に失敗したら stdout には部分表も含めて
+# 何も出さず、理由（検出カテゴリ・ファイル・該当行/観点）を stderr に出して exit 1 する。
+# バイパスフラグは設けない（壊れているときの調査は check モードが行と理由を出す）。
+
+if [ "$SUBCOMMAND" = "resolve" ]; then
+  check_layer_files
+  if [ -s "$FINDINGS" ]; then
+    echo "casting-check: resolve を中止（配役表が検証を通らない）:" >&2
+    cat "$FINDINGS" >&2
+    exit 1
+  fi
+  cmd_resolve
+  exit 0
+fi
+
+check_layer_files
 
 if [ -f "$PRECEDENTS_MD" ]; then
   while IFS= read -r val; do
@@ -338,28 +382,8 @@ if [ -f "$PRECEDENTS_MD" ]; then
   done
 fi
 
-# ---- 検出4: catalog_version 不一致 ----
+# ---- 検出4: catalog_version 不一致（precedents.md のみ。配役表2層は check_layer_files で済み） ----
 
-CATALOG_VERSION="$(field_value "version" "$(front_matter "$CATALOG")")"
-if [ -z "$CATALOG_VERSION" ]; then
-  echo "casting-check: catalog.md の front matter に version が無い: $CATALOG" >&2
-  exit 2
-fi
-
-check_version() {
-  local file="$1"
-  [ -f "$file" ] || return 0
-  local v
-  v="$(field_value "catalog_version" "$(front_matter "$file")")"
-  if [ -z "$v" ]; then
-    report "version-mismatch" "${file}: catalog_version が front matter に無い"
-  elif [ "$v" != "$CATALOG_VERSION" ]; then
-    report "version-mismatch" "${file}: catalog_version=${v}（catalog.md は version=${CATALOG_VERSION}）"
-  fi
-}
-
-check_version "$PROJECT_MD"
-check_version "$LOCAL_MD"
 check_version "$PRECEDENTS_MD"
 
 # ---- 結果 ----
