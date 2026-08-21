@@ -43,8 +43,12 @@ jobs:
 
       - uses: actions/checkout@v7
 
+      # サードパーティ製 action はコミット SHA で固定する（oratta/claude-harness#138 / #162）。
+      # supabase/setup-cli の `v2` は tag ではなくブランチで、上流が push しただけで
+      # secrets を持つこの production ジョブが別コードを実行しうる。
+      # 上げるときは横のバージョンコメントと SHA を一緒に書き換えること。
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v2
+        uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1
         with:
           version: latest
 
