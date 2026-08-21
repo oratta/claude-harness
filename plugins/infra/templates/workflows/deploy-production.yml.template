@@ -145,7 +145,11 @@ jobs:
             echo "マイグレーションは本番と同期済みです。"
           fi
 
-      - uses: supabase/setup-cli@v2
+      # サードパーティ製 action はコミット SHA で固定する（oratta/claude-harness#138 / #162）。
+      # supabase/setup-cli の `v2` は tag ではなくブランチで、上流が push しただけで
+      # secrets を持つこの production ジョブが別コードを実行しうる。
+      # 上げるときは横のバージョンコメントと SHA を一緒に書き換えること。
+      - uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1
         with:
           version: latest
 
