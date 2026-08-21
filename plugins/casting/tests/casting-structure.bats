@@ -109,77 +109,104 @@ setup() {
 #   Requirement: 検出項目数の表記と実装の一致
 #
 # 検出0（malformed-row）を後から足したときに、文書側が「4項目」のまま取り残された
-# 事故（#141）の再発防止。実装が報告する検出カテゴリ（report の第1引数）の異なり数を
-# スクリプトから機械的に数え、「N項目」と書いている文書がその数と一致するかを見る。
+# 事故（#141）の再発防止。実装が報告する検出カテゴリ（report の第1引数）を
+# スクリプトから機械的に取り、「N項目」と書いている文書がその数と一致するかを見る。
 
-# 実装が持つ検出カテゴリの異なり数を casting-check.sh から数える。
+CHECK_SCRIPT() { printf '%s\n' "${PLUGIN_DIR}/scripts/casting-check.sh"; }
+
+# report の実呼び出しから検出カテゴリ名を1行1件で出す。
+#   - 行頭コメント行は先に落とす（コメント中の report "..." を数えないため）
+#   - report と第1引数の間の空白は可変（空白2個・タブでもすり抜けない）
+#   - report() の定義行は直後が "(" なので拾わない
+detection_categories() {
+  LC_ALL=C sed -E 's/^[[:space:]]*#.*$//' "$(CHECK_SCRIPT)" \
+    | LC_ALL=C grep -oE '(^|[;&|(){}[:space:]])report[[:space:]]+"[a-z][a-z-]*"' \
+    | LC_ALL=C sed -E 's/.*report[[:space:]]+"([a-z][a-z-]*)".*/\1/' \
+    | LC_ALL=C sort -u
+}
+
 detection_category_count() {
-  LC_ALL=C grep -oE 'report "[a-z-]+"' "${PLUGIN_DIR}/scripts/casting-check.sh" \
-    | LC_ALL=C sed -E 's/report "(.*)"/\1/' \
-    | LC_ALL=C sort -u \
-    | wc -l | tr -d ' '
+  detection_categories | wc -l | tr -d ' '
+}
+
+# 第1引数がリテラルでない report 呼び出し（report "$var" 等）があると
+# detection_categories が黙って数え漏らす。数え方の前提そのものを検査する。
+@test "check: every report call passes a literal lowercase category as its first argument" {
+  local body calls literal
+  body="$(LC_ALL=C sed -E 's/^[[:space:]]*#.*$//' "$(CHECK_SCRIPT)")"
+  calls="$(printf '%s\n' "$body" \
+    | LC_ALL=C grep -cE '(^|[;&|(){}[:space:]])report[[:space:]]+[^[:space:]]' || true)"
+  literal="$(printf '%s\n' "$body" \
+    | LC_ALL=C grep -cE '(^|[;&|(){}[:space:]])report[[:space:]]+"[a-z][a-z-]*"' || true)"
+  if [ "$calls" != "$literal" ]; then
+    echo "report の呼び出し ${calls} 件のうちリテラルの第1引数は ${literal} 件。" >&2
+    echo "リテラルでない呼び出しは検出カテゴリの数え方（detection_categories）から漏れる。" >&2
+    printf '%s\n' "$body" | LC_ALL=C grep -nE '(^|[;&|(){}[:space:]])report[[:space:]]+[^"]' >&2 || true
+    return 1
+  fi
+  [ "$calls" -ge 1 ]
 }
 
 @test "check: detection categories in casting-check.sh are the documented five" {
-  local expected=(
-    "catalog-external-precedent" "malformed-row" "repeated-not-issue"
-    "unknown-vocab" "version-mismatch"
-  )
-  local actual
-  actual="$(LC_ALL=C grep -oE 'report "[a-z-]+"' "${PLUGIN_DIR}/scripts/casting-check.sh" \
-    | LC_ALL=C sed -E 's/report "(.*)"/\1/' | LC_ALL=C sort -u | tr '\n' ' ')"
-  [ "$actual" = "${expected[*]} " ]
+  local expected actual
+  expected="catalog-external-precedent malformed-row repeated-not-issue unknown-vocab version-mismatch"
+  actual="$(detection_categories | tr '\n' ' ')"
+  actual="${actual% }"
+  if [ "$actual" != "$expected" ]; then
+    echo "検出カテゴリが変わっている。実装: [${actual}] / テストの想定: [${expected}]" >&2
+    echo "カテゴリを増減したら、この配列と文書の「N項目」表記の両方を直すこと。" >&2
+    return 1
+  fi
 }
 
-@test "docs: item-count wording in README, SKILL, script and plugin.json matches the implementation" {
+# 「N項目」と書いている全文書を、出現ごとに実装のカテゴリ数と突き合わせる。
+# 全角数字（「５項目」）も半角に正規化してから比較するので、片側だけ全角で
+# 残した状態も落ちる。失敗時は実装側の数と文書側の表記の両方を出す。
+@test "docs: item-count wording in README, SKILL, script, plugin.json and marketplace.json matches the implementation" {
   local n
   n="$(detection_category_count)"
   [ "$n" -ge 1 ]
 
-  local docs=(
-    "${PLUGIN_DIR}/README.md"
-    "${PLUGIN_DIR}/skills/casting/SKILL.md"
-    "${PLUGIN_DIR}/scripts/casting-check.sh"
-    "${PLUGIN_DIR}/.claude-plugin/plugin.json"
-  )
-  local d
-  for d in "${docs[@]}"; do
-    # 実装の数と同じ「N項目」が書かれていること。
-    if ! LC_ALL=C grep -qF -- "${n}項目" "$d"; then
-      echo "実装の検出カテゴリ数は ${n} だが ${d} に「${n}項目」が無い" >&2
-      LC_ALL=C grep -nE '[0-9]+項目' "$d" >&2 || true
-      return 1
-    fi
-    # 別の数の「M項目」が残っていないこと（片側だけ直した状態を落とす）。
-    # 1行に複数の表記が混ざる場合があるので、行ではなく出現単位で数える。
-    local stale
-    stale="$(LC_ALL=C grep -oE '[0-9]+項目' "$d" | LC_ALL=C grep -vF -- "${n}項目" || true)"
-    if [ -n "$stale" ]; then
-      echo "実装の検出カテゴリ数は ${n} だが ${d} に古い表記が残っている: ${stale}" >&2
-      return 1
-    fi
-  done
-}
+  run python3 - "$n" "${PLUGIN_DIR}" "${REPO_ROOT}/.claude-plugin/marketplace.json" <<'PY'
+import json, re, sys, unicodedata
 
-@test "docs: marketplace.json casting description matches the category count" {
-  local n
-  n="$(detection_category_count)"
-  local desc
-  desc="$(python3 - "${REPO_ROOT}/.claude-plugin/marketplace.json" <<'PY'
-import json, sys
-mk = json.load(open(sys.argv[1], encoding="utf-8"))
-for p in mk["plugins"]:
-    if p.get("name") == "casting":
-        print(p["description"])
-        break
-else:
-    raise SystemExit("casting entry not found in marketplace.json")
+n = int(sys.argv[1])
+plugin_dir, marketplace_path = sys.argv[2], sys.argv[3]
+
+targets = {}
+for rel in ("README.md", "skills/casting/SKILL.md",
+            "scripts/casting-check.sh", ".claude-plugin/plugin.json"):
+    with open(f"{plugin_dir}/{rel}", encoding="utf-8") as fh:
+        targets[rel] = fh.read()
+
+with open(marketplace_path, encoding="utf-8") as fh:
+    entries = json.load(fh)["plugins"]
+desc = next((e["description"] for e in entries if e.get("name") == "casting"), None)
+if desc is None:
+    print("marketplace.json に casting エントリが無い")
+    raise SystemExit(1)
+targets["marketplace.json (casting description)"] = desc
+
+pattern = re.compile(r"([0-9０-９]+)項目")
+failures = []
+for name, text in targets.items():
+    found = [int(unicodedata.normalize("NFKC", m)) for m in pattern.findall(text)]
+    if not found:
+        failures.append(f"{name}: 実装の検出カテゴリ数は {n} だが「{n}項目」の記述が無い")
+        continue
+    stale = sorted({v for v in found if v != n})
+    if stale:
+        failures.append(
+            f"{name}: 実装の検出カテゴリ数は {n} だが文書の表記は {stale}（全角も半角に正規化して比較）"
+        )
+
+for line in failures:
+    print(line)
+raise SystemExit(1 if failures else 0)
 PY
-)"
-  [ -n "$desc" ]
-  printf '%s\n' "$desc" | LC_ALL=C grep -qF -- "${n}項目"
-  # 別の数が残っていないこと（出現単位で数える）。
-  local stale
-  stale="$(printf '%s\n' "$desc" | LC_ALL=C grep -oE '[0-9]+項目' | LC_ALL=C grep -vF -- "${n}項目" || true)"
-  [ -z "$stale" ]
+
+  if [ "$status" -ne 0 ]; then
+    echo "$output" >&2
+    return 1
+  fi
 }
