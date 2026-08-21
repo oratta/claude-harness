@@ -55,7 +55,8 @@ _extract_stale_wip_snippet() {
 #   STUB_LINKED      : gh pr list が返す件数（既定 0）
 #   STUB_FAIL_SEARCH : 非空なら gh search issues を失敗させる
 #   STUB_FAIL_PRLIST : 非空なら gh pr list を失敗させる
-#   STUB_FAIL_USER   : 非空なら gh api user を失敗させる
+#   STUB_FAIL_USER   : 非空なら gh api user（本人）だけを失敗させる
+#   STUB_FAIL_ORGS   : 非空なら gh api user/orgs だけを失敗させる
 # 受け取った引数は $STUB_LOG に追記し、owner が空でないことなどを後から検査できるようにする。
 _install_gh_stub() {
   mkdir -p "${BATS_TEST_TMPDIR}/bin"
@@ -72,7 +73,7 @@ case "$1 $2" in
     esac
     ;;
   "api user/orgs")
-    [ -n "${STUB_FAIL_USER:-}" ] && exit 1
+    [ -n "${STUB_FAIL_ORGS:-}" ] && exit 1
     echo "testorg"
     ;;
   "search issues")
@@ -210,8 +211,38 @@ _hours_ago() {
   _install_gh_stub
   export STUB_FAIL_SEARCH=1
   _run_snippet
-  # 空の結果を黙って返さず、取得に失敗したことが分かる出力を出す
-  echo "$output" | grep -q '取得に失敗'
+  # stderr の警告だけでは読み落とされる。表に載る構造化行を stdout に出し、
+  # 終了ステータスでも失敗を伝えること（「孤児ゼロ」と見分けが付くように）
+  echo "$output" | grep -q '^stale-wip?	(全体)	判定不能'
+  [ "$status" -ne 0 ]
+}
+
+@test "S155-21: fail-closed — a partial owner failure must not silently narrow the search scope" {
+  # 本人と組織をまとめて取ると、片方だけ失敗しても OWNERS が非空になり、
+  # 個人 repo が丸ごと検索対象から落ちたまま正常終了してしまう
+  _install_gh_stub
+  export STUB_FAIL_USER=1
+  _run_snippet
+  [ "$status" -ne 0 ]
+  ! grep -q 'search issues' "$STUB_LOG"
+}
+
+@test "S155-22: fail-closed — an org lookup failure also aborts" {
+  _install_gh_stub
+  export STUB_FAIL_ORGS=1
+  _run_snippet
+  [ "$status" -ne 0 ]
+  ! grep -q 'search issues' "$STUB_LOG"
+}
+
+@test "S155-23: fail-closed — a successful gh pr list returning a non-number is not read as zero" {
+  # 終了 0 でも中身が数値でないことがある。0 に潰すと進行中の issue を孤児と誤報する
+  _install_gh_stub
+  export STUB_ISSUES_TSV="$(_row 'o/r' 7 "$(_hours_ago 100)")"
+  export STUB_LINKED='not-a-number'
+  _run_snippet
+  echo "$output" | grep -q '^stale-wip?	o/r#7	判定不能'
+  ! echo "$output" | grep -qE '^stale-wip	o/r#7'
 }
 
 @test "S155-16: the snippet derives OWNERS itself instead of searching all of GitHub" {
@@ -223,9 +254,9 @@ _hours_ago() {
   ! grep -q 'search issues --owner  ' "$STUB_LOG"
 }
 
-@test "S155-17: the snippet aborts when owner resolution fails" {
+@test "S155-17: the snippet aborts when owner resolution fails entirely" {
   _install_gh_stub
-  export STUB_FAIL_USER=1
+  export STUB_FAIL_USER=1 STUB_FAIL_ORGS=1
   _run_snippet
   [ "$status" -ne 0 ]
   # owner を解決できないまま検索に進まないこと

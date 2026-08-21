@@ -79,8 +79,15 @@ NOW_EPOCH=$(date -u +%s)
 
 # owner はこのブロック内で再導出する。未定義のまま `--owner ""` を渡すと gh はエラーにせず
 # GitHub 全体の横断検索にフォールバックし、意図と違うスコープのまま結果が出てしまう。
-OWNERS=$({ gh api user --jq '.login'; gh api user/orgs --jq '.[].login'; } | paste -sd, -)
-[ -n "$OWNERS" ] || { echo 'stale-wip: owner の解決に失敗（gh 未認証の可能性）。判定を中止' >&2; return 1 2>/dev/null || exit 1; }
+# 本人と組織は**別々に取って個別に終了コードを見る**。まとめて取ると、片方だけ失敗しても
+# もう片方の出力で $OWNERS が非空になり、検索範囲が黙って狭まる（個人 repo が丸ごと落ちる）。
+# 中止は exit で行う（このブロックは 1 本のスクリプトとして実行する前提。
+# 対話シェルに source して使うなら `bash -c` か subshell 越しに呼ぶこと）。
+abort_stale_wip() { echo "stale-wip: $1。判定を中止" >&2; exit 1; }
+SELF=$(gh api user --jq '.login') || abort_stale_wip 'owner（本人）の解決に失敗（gh 未認証の可能性）'
+ORGS=$(gh api user/orgs --jq '.[].login') || abort_stale_wip 'owner（所属組織）の解決に失敗'
+OWNERS=$(printf '%s\n%s\n' "$SELF" "$ORGS" | grep . | paste -sd, -)
+[ -n "$OWNERS" ] || abort_stale_wip 'owner が 1 件も解決できなかった'
 
 # updatedAt（ISO8601 UTC）を epoch 秒に変換する。BSD date（macOS）と GNU date の両対応。
 iso_to_epoch() {
@@ -94,8 +101,10 @@ if ! WIP_TSV=$(gh search issues --owner "$OWNERS" --state open --label agent-wip
      --sort updated --order asc \
      --json repository,title,number,url,updatedAt --limit "$STALE_WIP_LIMIT" \
      --jq '.[] | [.repository.nameWithOwner, .number, .updatedAt, .url, .title] | @tsv'); then
-  echo 'stale-wip: agent-wip issue の取得に失敗。stale-wip 判定は「不明」として表に注記する' >&2
-  WIP_TSV=''
+  # 空集合に潰さない。stdout に構造化した行を出して Step 4 に必ず表示させる
+  # （stderr だけだと読み落とされ、「孤児ゼロ」と見分けが付かなくなる）。
+  printf 'stale-wip?\t(全体)\t判定不能（agent-wip issue の取得に失敗）\t-\t-\n'
+  abort_stale_wip 'agent-wip issue の取得に失敗。stale-wip 判定は「不明」として表に注記する'
 fi
 # 上限に張り付いたら未走査が残っている。件数を黙って減らさず注意を出す
 [ "$(printf '%s' "$WIP_TSV" | grep -c .)" -ge "$STALE_WIP_LIMIT" ] &&
@@ -108,7 +117,14 @@ printf '%s\n' "$WIP_TSV" | grep . | while IFS=$'\t' read -r REPO ISSUE_NUM UPDAT
       printf 'stale-wip?\t%s#%s\t判定不能（PR 取得に失敗）\t%s\t%s\n' "$REPO" "$ISSUE_NUM" "$URL" "$TITLE"
       continue
     fi
-    case "$LINKED" in ''|*[!0-9]*) LINKED=0 ;; esac   # 非数値は 0 に潰さず上で弾いた後の保険
+    # 終了 0 でも中身が数値でないことがある（想定外の出力・空応答）。
+    # ここで 0 に潰すと「PR なし」＝孤児として誤報するので、判定不能として出す
+    case "$LINKED" in
+      ''|*[!0-9]*)
+        printf 'stale-wip?\t%s#%s\t判定不能（PR 件数が数値でない: %s）\t%s\t%s\n' \
+          "$REPO" "$ISSUE_NUM" "$LINKED" "$URL" "$TITLE"
+        continue ;;
+    esac
     if [ "$LINKED" -gt 0 ]; then continue; fi
     AGE_H=$(( (NOW_EPOCH - $(iso_to_epoch "$UPDATED")) / 3600 ))
     if [ "$AGE_H" -ge "$STALE_WIP_HOURS" ]; then
