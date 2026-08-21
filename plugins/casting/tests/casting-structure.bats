@@ -300,6 +300,33 @@ SH
   fi
 }
 
+# 未引用ヒアドキュメント本文の中を走査するようにした副作用の退行ガード（PR #179 レビュー指摘）。
+# 本文に不均衡な `` ` `` や `'` があるとフレームが積まれたまま残り、区切り語の照合を
+# スタック最上段だけで行うと終端行を取りこぼす。ヒアドキュメントが閉じないまま以降の行が
+# 全部本文扱いになり、本物の呼び出しが全消滅する（算術左シフトの誤認と同じ壊れ方）。
+# 区切り語の照合は行単位なので、本文の中で閉じ損ねたフレームより優先して終端させる。
+@test "check: a heredoc terminates even when its body leaves a quote frame open" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-heredoc-leak.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+cat <<EOS
+use the ` char
+don't panic
+EOS
+report "after-leaky-heredoc" "a"
+cat <<'EOT'
+still ` unbalanced
+EOT
+report "after-leaky-literal-heredoc" "b"
+SH
+
+  [ "$(count_report_calls "$synthetic")" = "2" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "2" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-leaky-heredoc after-leaky-literal-heredoc " ]
+}
+
 # 上の検査が「行数」で数えていた頃は、1行に2件並べると非リテラル呼び出しを見逃した。
 # 合成スクリプトで、同一行の混在・行継続の両方が数え方に乗ることを直接確かめる。
 @test "check: the report-call counter counts occurrences, not lines" {

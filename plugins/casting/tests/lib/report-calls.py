@@ -36,6 +36,10 @@ grep だけで数えていた頃は、行頭コメント行しか落とせず、
   dquote / heredoc                  非コード。ただし中の `$(…)` `` `…` `` はコード領域として再走査する
   squote / ansic / heredoc-literal  すべて非コード（引用ヒアドキュメント本文は展開されない）
 
+ヒアドキュメントの終端は行単位で照合する。本文の中で開いたまま閉じ損ねたフレーム
+（不均衡な `` ` `` や `'` など）がスタックに残っていても、区切り語の行でそれごと捨てる。
+そうしないと本文が終わらず、以降の行が全部本文扱いになって呼び出しを数え落とす。
+
 出力（1呼び出し1行・空白区切り）:
 
     <行番号> literal <カテゴリ名>      第1引数が "小文字とハイフン" のリテラル
@@ -96,13 +100,18 @@ class _Scanner:
         """
         mask = [False] * len(line)
 
-        top = self.stack[-1]
-        if top.kind in ("heredoc", "heredoc-literal"):
-            body = line.lstrip("\t") if top.strip_tabs else line
-            if body.rstrip() == top.delim:
-                self.stack.pop()
+        hd = self._innermost_heredoc()
+        if hd is not None:
+            frame = self.stack[hd]
+            body = line.lstrip("\t") if frame.strip_tabs else line
+            if body.rstrip() == frame.delim:
+                # 区切り語の照合は行単位で、本文の中で開いたまま閉じ損ねたフレーム
+                # （不均衡な `` ` `` や `'` など）より優先する。上に残ったフレームごと
+                # 捨てないとヒアドキュメントが終端せず、以降の行が全部本文扱いになって
+                # 本物の呼び出しを数え落とす。
+                del self.stack[hd:]
                 return mask
-            if top.kind == "heredoc-literal":
+            if frame.kind == "heredoc-literal" and hd == len(self.stack) - 1:
                 return mask  # 引用ヒアドキュメントの本文は展開されないので丸ごと非コード
 
         self._scan_chars(line, mask)
@@ -114,6 +123,13 @@ class _Scanner:
         self.pending_heredocs = []
 
         return mask
+
+    def _innermost_heredoc(self):
+        """スタック最上段から見て最初のヒアドキュメント本文フレームの位置を返す（無ければ None）。"""
+        for idx in range(len(self.stack) - 1, -1, -1):
+            if self.stack[idx].kind in ("heredoc", "heredoc-literal"):
+                return idx
+        return None
 
     def _scan_chars(self, line, mask):
         i, n = 0, len(line)
