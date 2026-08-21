@@ -10,6 +10,14 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   REPO_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   CATALOG="${PLUGIN_DIR}/catalog/catalog.md"
+  PATH_LINT="${PLUGIN_DIR}/tests/lib/template-path-lint.awk"
+  FIXTURES="${PLUGIN_DIR}/tests/fixtures/template-paths"
+}
+
+# テンプレのパス表記検査。違反 0 件で exit 0、1 件以上で違反行を出して exit 1。
+# LC_ALL=C はマルチバイトの扱いを awk 実装差から切り離すため（macOS awk 対策）。
+lint_template_paths() {
+  LC_ALL=C awk -f "$PATH_LINT" "$@"
 }
 
 # --- Scenario: カタログに version と14観点が入っている ---
@@ -84,15 +92,39 @@ setup() {
 }
 
 # --- Scenario: テンプレのパス表記が生成先 repo ルートから解決できる ---
-# issue #116: プラグイン内相対のパス表記（`scripts/…` `skills/…` `plugins/casting/…`）は
+# issue #116: プラグイン内相対のパス表記（scripts/… skills/… plugins/casting/…）は
 # /casting:init の生成先 repo ルートから解決できないため、テンプレに含めない
+# issue #137: 検出をコードスパンの先頭からスパン内の任意位置に広げる。検査ロジックは
+# tests/lib/template-path-lint.awk に切り出し、下のフィクスチャで検査自体を検証する
 
-@test "templates: no plugin-internal relative path notation in backticks" {
-  local bt='`'
-  for t in "${PLUGIN_DIR}"/templates/*.md; do
-    run grep -nE "${bt}(scripts/|skills/|plugins/casting/)" "$t"
-    [ "$status" -ne 0 ]
-  done
+@test "templates: no plugin-internal relative path notation in code spans" {
+  run lint_template_paths "${PLUGIN_DIR}"/templates/*.md
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "path lint: flags a plugin-internal path that is not at the head of the code span" {
+  run lint_template_paths "${FIXTURES}/violation-mid-span.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"scripts/casting-check.sh"* ]]
+}
+
+@test "path lint: flags a plugin-internal path inside a fenced code block" {
+  run lint_template_paths "${FIXTURES}/violation-fenced-block.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"plugins/casting/scripts/casting-check.sh"* ]]
+}
+
+@test "path lint: passes install-path notation that contains the plugin directory names" {
+  run lint_template_paths "${FIXTURES}/ok-install-path.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "path lint: passes forbidden tokens that sit in plain text outside code spans" {
+  run lint_template_paths "${FIXTURES}/ok-plain-text-outside-span.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 # --- marketplace 登録 ---
