@@ -29,7 +29,7 @@
       "description": "Discord messaging bridge — 公式プラグインの fork。fetch_messages がリアクションを返し、リアクション付与/除去を push 配送する（flatmate #178 / claude-harness #108）。",
       "source": "./plugins/discord",
       "category": "productivity",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "author": {
         "name": "Oratta"
       },

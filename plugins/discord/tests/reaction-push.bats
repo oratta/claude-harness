@@ -111,13 +111,8 @@ reaction_block() {
   reaction_block | grep -q -- '--allow'
 }
 
-@test "ordering: same-key reaction events are serialized via a promise chain" {  # 付けてすぐ外しても remove が先に届かない
-  block="$(awk '/^function enqueueReaction/,/^}/' "$SERVER")"
-  [ -n "$block" ]
-  echo "$block" | grep -q 'reactionChains.get(key)'
-  echo "$block" | grep -q 'then(() => handleReaction'
-  echo "$block" | grep -q 'reactionChains.delete(key)'
-}
+# ordering（同一キーの add→remove が受信順で届くこと）の検査は、実装の形を grep する
+# 構造検査から tests/reaction-order-dynamic.bats の動的検証に移した（issue #110）。
 
 @test "delivery: uncached DM channel is fetched, not dropped" {  # 起動後まだ会話の無い DM への 👍 も拾う
   reaction_block | grep -q 'fetchTextChannel(reaction.message.channelId)'
