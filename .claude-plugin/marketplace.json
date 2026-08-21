@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oratta-claude-harness",
-  "version": "2.50.0",
+  "version": "2.52.0",
   "description": "Claude Code用スキル・プラグインのマーケットプレイス",
   "owner": {
     "name": "Oratta",
@@ -244,7 +244,7 @@
       "description": "外部サービスを操作する前に CLI とトークンの在処を教える発見層プラグイン。サービス索引スキル（description トリガー・CLAUDE.md 無編集で発火・CLI が無いネガティブエントリ付き）+ fmtoken.sh（1Password agents 保管庫からトークンを引く・登録するラッパー。--name で明示名参照 / --register は rw SA 経由で命名規約を機械検証して登録）+ ブラウザ系 MCP ツールの PreToolUse 注意喚起 hook（deny はしない）で、ブラウザとログイン依頼への逃げ道を減らす。",
       "source": "./plugins/capability-registry",
       "category": "workflow",
-      "version": "1.7.0",
+      "version": "1.7.2",
       "author": {
         "name": "Oratta"
       },

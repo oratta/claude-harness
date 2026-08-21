@@ -13,4 +13,5 @@
   `security find-generic-password -a "$USER" -s op-sa-claude-agents-ro -w > ~/.config/op-sa/claude-agents-ro.token && chmod 600 ~/.config/op-sa/claude-agents-ro.token`（生体認証はこの 1 回だけ）
 - **アイテム登録（CLI 代行が正規手順）**: SA の役割分担は read = `op-sa-claude-agents-ro`（読み取り専用）/ register = `op-sa-claude-agents-rw`（書き込み用。解決順は env `OP_SERVICE_ACCOUNT_TOKEN_RW` → `~/.config/op-sa/claude-agents-rw.token`（600 権限）→ Keychain `op-sa-claude-agents-rw`）。エージェントが発行フローで秘密を手に入れたら、人間に依頼せず rw SA 経由の CLI で自分で登録する（2026-07-30 主判断。実績: #49 / #58、moko の `moko--TRELLO_TOKEN`）。手作業の GUI 登録は命名規約 `<project>--<service>` / `<agent>--<SERVICE>` の逸脱源になりやすく、機械的な CLI 登録の方が規約を守れる
 - **登録には `fmtoken.sh --register` を使う**: `printf '%s' "$VALUE" | fmtoken.sh --register <名前>--<service>`（値は stdin 渡し — transcript / ps への露出防止）。命名規約の機械検証・既存アイテムの上書き拒否（exit 47）・rw トークン解決が自動で効くため、生の `op item create` より優先する。rw トークンが未配布のマシン（exit 43）でだけ主に配布を依頼する
+- **二重登録ガードは ro SA の read で判定する（rw SA の read 権に依存しない）**: 判定は `op item list --vault agents` の title 完全一致。ro トークンが解決できず判定不能なら登録せず exit 48 で止まる（fail-closed — 1Password は同名アイテムの作成を許すため、判定できないまま作ると重複ができる）
 - **SA の保管庫アクセス権限変更**は引き続き人間が 1Password アプリで行う（Individual プランでは CLI/API から不可）
