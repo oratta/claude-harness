@@ -34,13 +34,20 @@ TBD - created by archiving change infra-fixes. Update Purpose after archive.
 
 ### Requirement: Third-party actions in workflow templates MUST be pinned to a commit SHA
 
-`plugins/infra/templates/workflows/*.yml.template` の `uses:` のうち GitHub 公式（`actions/*`）以外のものは、40 桁のコミット SHA で参照し、その SHA が指すバージョンを同じ行のコメントに併記しなければならない。テンプレートの展開先では production のデプロイ／マイグレーションという secrets を持つジョブで動くため、可変タグ／ブランチ参照（例: `supabase/setup-cli@v2` は tag ではなくブランチ）は上流の push だけで別コードの実行につながる。This requirement MUST be satisfied.
+`plugins/infra/templates/workflows/*.yml.template` の `uses:` のうち GitHub 公式（`actions/*`）以外のものは、40 桁のコミット SHA で参照し、その SHA が指すバージョンを同じ行のコメントに併記しなければならない。テンプレートの展開先では production のデプロイ／マイグレーションという secrets を持つジョブで動くため、可変タグ／ブランチ参照（例: `supabase/setup-cli@v2` は tag ではなくブランチ）は上流の push だけで別コードの実行につながる。この検査は「抽出」「公式判定」「コメント形」の 3 点で fail-closed でなければならない — 抽出は YAML として有効な `uses :`（コロン前に空白）を含む全形を拾い、公式判定は行全体の部分一致ではなく `uses:` の値の位置で行い、コメントはバージョンらしい形（`v` 省略可の数値列）でなければならない。This requirement MUST be satisfied.
 
 #### Scenario: Every third-party `uses:` in the templates carries a SHA and a version comment
 
-- **WHEN** `plugins/infra/templates/workflows/` 配下の全 `*.yml.template` から `uses:` 行を全数抽出し、`actions/` で始まらないものを検査する
-- **THEN** 各行が `@` に続く 40 桁の 16 進数を持ち、同じ行にバージョンを示すコメントが併記されていなければならない
+- **WHEN** `plugins/infra/templates/workflows/` 配下の全 `*.yml.template` から、キーの正規表現 `uses[[:space:]]*:` に一致する行を全数抽出し、その `uses:` の**値**（行内で最初に現れるキーの値。前後の引用符は除く）が `actions/` で始まらないものを検査する
+- **THEN** 値が `<owner>/<action>@<40 桁 16 進数>` の形でなければならない
+- **AND** 同じ行に、`#` の直後（空白は挟んでよい）がバージョンらしい形（`v` は省略可、`1` / `v2.1.1` のような数値列）のコメントが併記されていなければならない
 - **AND** 抽出された `uses:` 行が 1 件以上存在しなければならない（テンプレートの改名・移動で走査対象が 0 件になり無言で pass するのを防ぐ）
+
+#### Scenario: Known bypasses of the check are rejected
+
+- **WHEN** 次の 3 形をテンプレートに置いて検査する — ① `uses: <owner>/<action>@<40 桁 16 進数> # TODO`（バージョンでないコメント）② `uses: evil/action@v1 # mimics uses: actions/cache@v4`（コメント中の `actions/` で公式を騙る）③ `uses : evil/action@v1`（コロン前に空白）
+- **THEN** 3 形すべてが検査に fail しなければならない
+- **AND** 正しく固定された行（`uses: <owner>/<action>@<40 桁 16 進数> # v2.1.1`。引用符で囲んだ形を含む）と GitHub 公式（`actions/*`）の行は pass しなければならない
 
 ### Requirement: Vercel Token CLI feasibility MUST be documented with the investigation outcome
 
