@@ -98,6 +98,30 @@ setup() {
   grep -qF -- '-m 1' "$RV"
 }
 
+@test "invariant: revert validates base branch and merge-commit ancestry before side effects" {
+  # base 検証: PR の base を取得し、$BASE_BRANCH 以外を拒否する（issue #121）
+  grep -qF '.base.ref' "$RV"
+  grep -qF '"$PR_BASE" != "$BASE_BRANCH"' "$RV"
+  # ancestor 検証: merge_commit_sha が base の履歴に含まれることを push より前に確認する
+  grep -qF 'merge-base --is-ancestor' "$RV"
+  ancestor_line="$(grep -nF 'merge-base --is-ancestor' "$RV" | head -1 | cut -d: -f1)"
+  push_line="$(grep -nF 'git push origin' "$RV" | head -1 | cut -d: -f1)"
+  [ "$ancestor_line" -lt "$push_line" ]
+}
+
+@test "invariant: revert re-run resumes from existing branch and PR (issue #121)" {
+  # 失敗 run の re-run は RUN_ID が同じ（attempt だけ増える）。既存ブランチ・既存 PR を
+  # 発見して残工程だけ続行しないと non-fast-forward / PR 重複で落ちる
+  grep -qF 'ls-remote' "$RV"
+  grep -qF 'gh pr list' "$RV"
+  lsremote_line="$(grep -nF 'ls-remote' "$RV" | head -1 | cut -d: -f1)"
+  push_line="$(grep -nF 'git push origin' "$RV" | head -1 | cut -d: -f1)"
+  prlist_line="$(grep -nF 'gh pr list' "$RV" | head -1 | cut -d: -f1)"
+  prcreate_line="$(grep -nF 'gh pr create' "$RV" | head -1 | cut -d: -f1)"
+  [ "$lsremote_line" -lt "$push_line" ]
+  [ "$prlist_line" -lt "$prcreate_line" ]
+}
+
 # --- Requirement: 運用ガイドはリポ非依存の記述で提供される ---
 
 @test "portability: no hardcoded flatmate repo URL anywhere in the template" {
