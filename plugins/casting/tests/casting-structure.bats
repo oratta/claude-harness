@@ -109,10 +109,38 @@ lint_template_paths() {
   [[ "$output" == *"scripts/casting-check.sh"* ]]
 }
 
+@test "path lint: flags quoted tokens inside a code span" {
+  run lint_template_paths "${FIXTURES}/violation-quoted-token.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"scripts/casting-check.sh"* ]]
+  [[ "$output" == *"skills/casting/SKILL.md"* ]]
+}
+
+@test "path lint: flags a multi-backtick code span" {
+  run lint_template_paths "${FIXTURES}/violation-double-backtick.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"scripts/casting-check.sh"* ]]
+}
+
 @test "path lint: flags a plugin-internal path inside a fenced code block" {
   run lint_template_paths "${FIXTURES}/violation-fenced-block.md"
   [ "$status" -eq 1 ]
   [[ "$output" == *"plugins/casting/scripts/casting-check.sh"* ]]
+}
+
+@test "path lint: stays inside the fence when a different fence marker appears" {
+  run lint_template_paths "${FIXTURES}/violation-nested-fence.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"plugins/casting/scripts/casting-check.sh"* ]]
+}
+
+# 検出プレフィックスを1つ削っても全フィクスチャが通ってしまう状態を防ぐ
+@test "path lint: the violation fixtures exercise all three forbidden prefixes" {
+  run lint_template_paths "${FIXTURES}"/violation-*.md
+  [ "$status" -eq 1 ]
+  [[ "$output" == *": scripts/"* ]]
+  [[ "$output" == *": skills/"* ]]
+  [[ "$output" == *": plugins/casting/"* ]]
 }
 
 @test "path lint: passes install-path notation that contains the plugin directory names" {
@@ -123,6 +151,12 @@ lint_template_paths() {
 
 @test "path lint: passes forbidden tokens that sit in plain text outside code spans" {
   run lint_template_paths "${FIXTURES}/ok-plain-text-outside-span.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "path lint: passes backslash-escaped backticks (not code span delimiters)" {
+  run lint_template_paths "${FIXTURES}/ok-escaped-backtick.md"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
