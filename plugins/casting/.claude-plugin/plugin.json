@@ -1,7 +1,7 @@
 {
   "name": "casting",
   "version": "0.2.5",
-  "description": "意思決定移譲のフレームワーク「観点の配役」の実装プラグイン。catalog/catalog.md: 3グループ14観点・列定義・横断軸・変更手続き・変更記録を持つ観点カタログの唯一の正本。catalog/injection.md: 14観点の注入タイミング（9分類）・配線先機構・注入文書（.claude/casting/policies/）の置き場所規約を持つ注入マップの正本。skills/casting: 配役表（project.md/local.md/セッション宣言の3層）の作り方・判例台帳の書き方・カタログ変更手続きの手順正本。commands/init.md（/casting:init）: 対象 git repo に `.claude/casting/` 一式を雛形から生成し、gitignore に local.md を冪等追記する。scripts/casting-check.sh: 配役表の5列ちょうどに割れない壊れた表行・HTML コメントの開閉不一致・未知の観点語彙・「カタログ外」判例・同一観点の「論点じゃなかった」2件以上・catalog_version 不一致の6項目を検出する lint。resolve サブコマンドは有効配役表を合成して出力する（検証を通らない配役表では出力せず exit 1 の fail-closed）。rules/perspective-casting.md（このプラグインとは別ファイル）が毎ターン効く返信前チェック5手順を持つ薄い常時ロード層。",
+  "description": "意思決定移譲のフレームワーク「観点の配役」の実装プラグイン。catalog/catalog.md: 3グループ14観点・列定義・横断軸・変更手続き・変更記録を持つ観点カタログの唯一の正本。catalog/injection.md: 14観点の注入タイミング（9分類）・配線先機構・注入文書（.claude/casting/policies/）の置き場所規約を持つ注入マップの正本。skills/casting: 配役表（project.md/local.md/セッション宣言の3層）の作り方・判例台帳の書き方・カタログ変更手続きの手順正本。commands/init.md（/casting:init）: 対象 git repo に `.claude/casting/` 一式を雛形から生成し、gitignore に local.md を冪等追記する。scripts/casting-check.sh: 配役表の5列ちょうどに割れない壊れた表行・閉じられていない HTML コメント・未知の観点語彙・「カタログ外」判例・同一観点の「論点じゃなかった」2件以上・catalog_version 不一致の6項目を検出する lint。resolve サブコマンドは有効配役表を合成して出力する（検証を通らない配役表では出力せず exit 1 の fail-closed）。rules/perspective-casting.md（このプラグインとは別ファイル）が毎ターン効く返信前チェック5手順を持つ薄い常時ロード層。",
   "author": {
     "name": "Oratta"
   },
