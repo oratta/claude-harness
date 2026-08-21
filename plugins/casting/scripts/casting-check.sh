@@ -399,8 +399,15 @@ check_version "$PRECEDENTS_MD"
 #
 # ラベルの存在だけを見ると、値が空のラベルを並べただけのブロックが通ってしまう
 # （実質的な事後報告を欠いた判例が無言で配布される fail-open）。そのため
-# 「ラベルの直後に非空白の文字が1つ以上ある」ことまでを合格条件にする。
-# 先頭を固定しないのは、インデントされた箇条書きも同じ要素として数えるため。
+# 「ラベルの後ろに実質的な値が1文字以上ある」ことまでを合格条件にする。
+#
+# 判定は「値部分を取り出す → 空白を全部取り除く → 何か残るか」の順で行う。
+# grep の文字クラス1発で書けないのは、LC_ALL=C では [[:space:]] が全角スペース
+# （U+3000）を空白と見なさず、全角スペースだけの値が「値あり」に化けるため。
+# かといって全角スペースをバイトで否定すると、先頭バイト 0xe3 を共有する日本語文字まで
+# 巻き込む。そこで空白除去は sed に任せ、残りの有無だけを見る。
+# 行頭を固定しないのは、インデントされた箇条書きも同じ要素として数えるため。
+# 同じラベルが複数行あるときは、どれか1行に値があれば「値あり」とする。
 
 check_consultation_block() {
   # check_consultation_block <block-file> <heading>
@@ -408,7 +415,9 @@ check_consultation_block() {
   [ -s "$block" ] || return 0
   { LC_ALL=C grep -F -- "- 経路:" "$block" || true; } | LC_ALL=C grep -qF -- "相談の上自走した" || return 0
   for label in "論点" "各人格の主張" "裁定" "根拠" "判例リンク"; do
-    if ! LC_ALL=C grep -qE -- "- ${label}:[[:space:]]*[^[:space:]]" "$block"; then
+    if ! LC_ALL=C sed -n "s/.*- ${label}:\\(.*\\)\$/\\1/p" "$block" \
+      | LC_ALL=C sed 's/[[:space:]]//g; s/　//g' \
+      | LC_ALL=C grep -q .; then
       missing="${missing}${missing:+・}${label}"
     fi
   done

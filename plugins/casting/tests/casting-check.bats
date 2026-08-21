@@ -112,19 +112,49 @@ setup() {
 }
 
 # ラベルの存在だけを見る実装では、値が空のラベルを5つ並べただけのブロックが通ってしまう
-# （実質的な事後報告を欠いた判例が無言で配布される fail-open）。空値・空白のみの値の両方を
-# 欠落として数えることを固定する。
+# （実質的な事後報告を欠いた判例が無言で配布される fail-open）。fixture は空値・半角空白のみ・
+# 全角スペースのみの3種を1ブロックに混ぜてあり、どれも欠落として数えることを固定する。
+# 全角スペースを別建てにするのは、LC_ALL=C の [[:space:]] がこれを空白と見なさないため。
 @test "consultation-empty-value fixture: labels present but with empty values are reported and exits 1" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/consultation-empty-value"
   [ "$status" -eq 1 ]
   [[ "$output" == *"consultation-missing-element"* ]]
   [[ "$output" == *"5要素のラベルはあるが値が空の判例"* ]]
-  # 5要素すべてが欠落として列挙される（「- 根拠:   」の空白のみの値を含む）
+  # 5要素すべてが欠落として列挙される（半角空白のみの「- 根拠:」と全角スペースのみの「- 裁定:」を含む）
   [[ "$output" == *"論点"* ]]
   [[ "$output" == *"各人格の主張"* ]]
   [[ "$output" == *"裁定"* ]]
   [[ "$output" == *"根拠"* ]]
   [[ "$output" == *"判例リンク"* ]]
+}
+
+# 空白除去は「値が空か」の判定にだけ効かせる。値の先頭に全角スペースが混ざっていても、
+# 実質的な中身があれば有効な値として扱う（過剰検出の回帰よけ）。
+@test "consultation block: a value padded with a full-width space but carrying content passes" {
+  local dir="${BATS_TEST_TMPDIR}/fullwidth-padded"
+  mkdir -p "${dir}/.claude/casting"
+  cat > "${dir}/.claude/casting/precedents.md" <<'PRECEDENTS'
+---
+catalog_version: 1
+---
+
+# 判例台帳
+
+### 2026-08-21 全角スペースで字下げされた値
+
+- 観点: 技術設計・品質
+- 経路: 相談の上自走した
+- 帰結: 論点じゃなかった（意見が一致し合意で確定）
+- 還元: なし
+- 論点: 　実装方式Aか方式Bか
+- 各人格の主張: 　メインセッション「方式A」／見張りのハト「方式Aを支持」
+- 裁定: 合意（方式A）
+- 根拠: 判断基準の互換性優先の定め
+- 判例リンク: 「2026-08-17 API の月額プランを Pro に上げるか」
+PRECEDENTS
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"consultation-missing-element"* ]]
 }
 
 @test "ok fixture: a compliant consultation block and a note block without a route line pass" {
