@@ -1,6 +1,8 @@
-# loops-marketplace-sync Specification (Delta)
+# loops-marketplace-sync Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change loops-integration. Update Purpose after archive.
+## Requirements
 
 ### Requirement: loops プラグインが marketplace.json に登録されている
 

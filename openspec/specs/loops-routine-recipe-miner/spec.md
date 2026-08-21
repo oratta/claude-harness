@@ -1,6 +1,8 @@
-# loops-routine-recipe-miner Specification (Delta)
+# loops-routine-recipe-miner Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change proactive-routines. Update Purpose after archive.
+## Requirements
 
 ### Requirement: レシピ採掘ルーチンのレシピが固定見出し規約に従って存在する
 

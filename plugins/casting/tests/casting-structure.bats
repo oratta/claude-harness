@@ -11,6 +11,7 @@ setup() {
   REPO_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   CATALOG="${PLUGIN_DIR}/catalog/catalog.md"
   PATH_LINT="${PLUGIN_DIR}/tests/lib/template-path-lint.awk"
+  REPORT_CALLS="${PLUGIN_DIR}/tests/lib/report-calls.py"
   FIXTURES="${PLUGIN_DIR}/tests/fixtures/template-paths"
 }
 
@@ -180,34 +181,37 @@ lint_template_paths() {
 
 CHECK_SCRIPT() { printf '%s\n' "${PLUGIN_DIR}/scripts/casting-check.sh"; }
 
-# 行頭コメント行を落とした本文を出す（コメント中の report "..." を数えないため）。
+# report の実呼び出しを「<行番号> literal <カテゴリ> / <行番号> nonliteral <抜粋>」で列挙する。
+# 数え方の本体は tests/lib/report-calls.py（シェルの引用・コメント・ヒアドキュメントだけを
+# 見る軽量スキャナ）。行頭コメント行を sed で落として grep するだけだった頃は、
+# ヒアドキュメント本文・行末コメント・文字列リテラルの中の report まで呼び出しとして
+# 数えていた（#163）。report と第1引数の間の空白が可変であること・report() の定義行を
+# 拾わないことは、スキャナ側が同じ規則を引き継いでいる。
 # 引数でスクリプトを差し替えられるのは、数え方そのものを検査するテストが
 # 合成スクリプトを食わせるため（既定は casting-check.sh 本体）。
-check_script_body() {
-  LC_ALL=C sed -E 's/^[[:space:]]*#.*$//' "${1:-$(CHECK_SCRIPT)}"
+report_calls() {
+  LC_ALL=C python3 "$REPORT_CALLS" "${1:-$(CHECK_SCRIPT)}"
 }
 
-# report の実呼び出しから検出カテゴリ名を1行1件で出す。
-#   - report と第1引数の間の空白は可変（空白2個・タブでもすり抜けない）
-#   - report() の定義行は直後が "(" なので拾わない
+# 第1引数がリテラルの呼び出しだけを、カテゴリ名1行1件で出す（重複はそのまま）。
+literal_report_categories() {
+  report_calls "$@" | LC_ALL=C sed -n 's/^[0-9][0-9]* literal //p'
+}
+
 detection_categories() {
-  check_script_body "$@" \
-    | LC_ALL=C grep -oE '(^|[;&|(){}[:space:]])report[[:space:]]+"[a-z][a-z-]*"' \
-    | LC_ALL=C sed -E 's/.*report[[:space:]]+"([a-z][a-z-]*)".*/\1/' \
-    | LC_ALL=C sort -u
+  literal_report_categories "$@" | LC_ALL=C sort -u
 }
 
 detection_category_count() {
   detection_categories "$@" | wc -l | tr -d ' '
 }
 
-# 呼び出しは「行数」ではなく「出現数」で数える。grep -c は一致した行数しか返さないので、
+# 呼び出しは「行数」ではなく「出現数」で数える。行単位で数えていた頃は、
 # 1行に `report "literal" …; report "$var" …` と並べると calls == literal になり、
-# 非リテラル呼び出しがこの検査をすり抜ける（Codex レビュー指摘・実測で再現）。
-count_report_calls() { check_script_body "$@" \
-  | LC_ALL=C grep -oE '(^|[;&|(){}[:space:]])report[[:space:]]+[^[:space:]]' | wc -l | tr -d ' '; }
-count_literal_report_calls() { check_script_body "$@" \
-  | LC_ALL=C grep -oE '(^|[;&|(){}[:space:]])report[[:space:]]+"[a-z][a-z-]*"' | wc -l | tr -d ' '; }
+# 非リテラル呼び出しがこの検査をすり抜けた（Codex レビュー指摘・実測で再現）。
+# report-calls.py は1呼び出し1行で出すので、行数がそのまま出現数になる。
+count_report_calls() { report_calls "$@" | wc -l | tr -d ' '; }
+count_literal_report_calls() { literal_report_categories "$@" | wc -l | tr -d ' '; }
 
 # 第1引数がリテラルでない report 呼び出し（report "$var" 等）があると
 # detection_categories が黙って数え漏らす。数え方の前提そのものを検査する。
@@ -218,10 +222,41 @@ count_literal_report_calls() { check_script_body "$@" \
   if [ "$calls" != "$literal" ]; then
     echo "report の呼び出し ${calls} 件のうちリテラルの第1引数は ${literal} 件。" >&2
     echo "リテラルでない呼び出しは検出カテゴリの数え方（detection_categories）から漏れる。" >&2
-    check_script_body | LC_ALL=C grep -nE '(^|[;&|(){}[:space:]])report[[:space:]]+[^"]' >&2 || true
+    report_calls | LC_ALL=C grep -F ' nonliteral ' >&2 || true
     return 1
   fi
   [ "$calls" -ge 1 ]
+}
+
+# 数え方が grep だけだった頃は、ヒアドキュメント本文・行末コメント・文字列リテラルの中の
+# report まで呼び出しとして数えた（#163）。ずれる向きは偽陽性側だけなので検査をすり抜ける
+# 経路にはならないが、casting-check.sh に report の語を含む使い方出力やエラーメッセージを
+# 足しただけで「documented five」と「N項目」の突き合わせが理由なく落ちる。
+# 合成スクリプトで、3形とも1件も足さないこと（前半）と、カウンタを緩めて逃げていないこと
+# ＝本物の呼び出しはちゃんと数えること（後半）を、同じスクリプトで続けて確かめる。
+@test "check: heredoc bodies, trailing comments and string literals are not report calls" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-noncode.sh"
+
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'report() { printf "[%s] %s\n" "$1" "$2"; }' \
+    "usage() { cat <<'EOF'" \
+    '  report "heredoc-cat" "…"' \
+    'EOF' \
+    '}' \
+    'true  # report "trailing-cat" と書き換える' \
+    "echo 'usage: report \"string-cat\" msg'" \
+    'echo "usage: report \"dquote-cat\" msg"' \
+    > "$synthetic"
+  [ "$(count_report_calls "$synthetic")" = "0" ]
+  [ "$(detection_category_count "$synthetic")" = "0" ]
+
+  # 本物の6個目を足したら数に乗ること（数え落とし側へ倒して逃げていないことの確認）。
+  printf '%s\n' '  report "sixth-category" "b"' >> "$synthetic"
+  [ "$(count_report_calls "$synthetic")" = "1" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "1" ]
+  [ "$(detection_category_count "$synthetic")" = "1" ]
+  [ "$(detection_categories "$synthetic")" = "sixth-category" ]
 }
 
 # 上の検査が「行数」で数えていた頃は、1行に2件並べると非リテラル呼び出しを見逃した。

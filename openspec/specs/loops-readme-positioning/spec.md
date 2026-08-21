@@ -1,6 +1,8 @@
-# loops-readme-positioning Specification (Delta)
+# loops-readme-positioning Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change loops-integration. Update Purpose after archive.
+## Requirements
 
 ### Requirement: README に公式 4 ループタイプと loops プラグインの位置づけが記載されている
 

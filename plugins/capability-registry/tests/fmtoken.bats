@@ -508,3 +508,174 @@ EOF
   [[ "$output" == *"claude-agents-ro.token"* ]]
   [[ "$output" == *"read 権"* ]]
 }
+
+# ── issue #159-1: --register が末尾改行を落とさないこと ────────────────────────
+#
+# 既存の `--register: value containing quotes, backslashes, newlines and $ survives intact`
+# はこの欠陥を検出できない。(a) 検証値に末尾改行が無く (b) 比較が
+# `[ "$(created_credential)" = "$(cat file)" ]` とコマンド置換同士で、両辺が同じように
+# 削れて素通りするため。だから既存ケースを拡張せず、バイト単位で見る別ケースを足す。
+
+# op item create の stdin ログの credential 値が、ファイル $1 の中身と**バイト単位**で
+# 一致することを検証する。比較を python の中で完結させるのが要点で、シェル側の
+# コマンド置換を1回でも挟むと末尾改行がそこで削れて検査が無意味になる。
+assert_credential_matches_file() {
+  /usr/bin/python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+got=[f for f in d["fields"] if f["id"]=="credential"][0]["value"].encode()
+want=open(sys.argv[2],"rb").read()
+if got != want:
+    sys.stderr.write("credential mismatch: got %r (%d bytes) / want %r (%d bytes)\n"
+                     % (got, len(got), want, len(want)))
+    sys.exit(1)' "$FMTOKEN_TEST_CREATE_STDIN_LOG" "$1"
+}
+
+# 検出器そのものが素通りしないことを固定する（refute_in_file と同じ趣旨）。
+# 末尾改行の保存を検査する唯一の手段がこのヘルパなので、緩いと検査が黙って消える。
+@test "assert_credential_matches_file: fails when the stored value lost its trailing newlines" {
+  printf 'x\n\n' >"${WORK}/want-trailing"
+  write_credential_log() {
+    /usr/bin/python3 -c 'import json,sys
+open(sys.argv[1],"w").write(json.dumps({"fields":[{"id":"credential","value":sys.argv[2]}]}))' \
+      "$FMTOKEN_TEST_CREATE_STDIN_LOG" "$1"
+  }
+  write_credential_log 'x'
+  run assert_credential_matches_file "${WORK}/want-trailing"
+  [ "$status" -ne 0 ]
+  write_credential_log 'x
+
+'
+  run assert_credential_matches_file "${WORK}/want-trailing"
+  [ "$status" -eq 0 ]
+}
+
+@test "--register: trailing newlines survive (PEM-style value is stored byte for byte)" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  # 13 バイト・末尾 \n\n。`value="$(cat)"` のままだと 11 バイトで登録される
+  printf 'line1\nline2\n\n' >"${WORK}/trailing-nl"
+  [ "$(wc -c <"${WORK}/trailing-nl" | tr -d ' ')" -eq 13 ]
+  run bash -c "'$FMTOKEN' --register newproj--pem < '${WORK}/trailing-nl'"
+  [ "$status" -eq 0 ]
+  assert_credential_matches_file "${WORK}/trailing-nl"
+}
+
+@test "--register: a value that is only a newline is not mistaken for empty stdin" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  printf '\n' >"${WORK}/nl-only"
+  run bash -c "'$FMTOKEN' --register newproj--nlonly < '${WORK}/nl-only'"
+  [ "$status" -eq 0 ]
+  assert_credential_matches_file "${WORK}/nl-only"
+}
+
+# ── issue #159-2: xtrace 下で値が stderr に出ないこと ─────────────────────────
+#
+# `bash -x fmtoken.sh --register ...` は `+ value=<値>` として呼び出し側自身の stderr に
+# 値を吐いていた。stderr は bats の $output に混ざると検査しづらいので、ファイルに落として
+# refute_in_file で見る。
+
+XTRACE_SECRET="SUPERSECRET-VALUE"
+
+# bash -x 配下で --register を実行し、stderr を $WORK/xtrace.err に落とす。
+# $1 = アイテム名。値は固定の XTRACE_SECRET を stdin から渡す。
+run_register_under_xtrace() {
+  run bash -c "printf '%s' '${XTRACE_SECRET}' | bash -x '$FMTOKEN' --register '$1' 2>'${WORK}/xtrace.err'"
+}
+
+# 「トレース自体は出ている」ことを先に要求する。xtrace が最初から効いていない状態で
+# 「値が出ていない」を確認しても、露出検査が成立していない。
+assert_xtrace_active() {
+  if ! grep -q -- '^+ ' "${WORK}/xtrace.err"; then
+    echo "xtrace が有効になっていない（トレース行が 1 行も無い）: ${WORK}/xtrace.err" >&2
+    return 1
+  fi
+}
+
+@test "--register: value never reaches stderr under bash -x (success path, exit 0)" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run_register_under_xtrace "newproj--xtok"
+  [ "$status" -eq 0 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+  # 値は握りつぶされたのではなく、確かに op へ渡っている
+  [ "$(created_credential)" = "$XTRACE_SECRET" ]
+}
+
+@test "--register: xtrace is restored after the secret region (not left off)" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run_register_under_xtrace "newproj--xtrestore"
+  [ "$status" -eq 0 ]
+  # 値の取り込み（前半の抑止区間）より後にある二重登録ガードがトレースされている。
+  # `+` の数はコマンド置換の入れ子で増える（op item list は `$(...)` の中なので `++`）ため、
+  # 個数に依存しない形で見る
+  grep -qE '^\++ op item list' "${WORK}/xtrace.err"
+  # create（後半の抑止区間）より後もトレースされている＝最後まで off のままにしていない
+  grep -q -- '^+ exit 0' "${WORK}/xtrace.err"
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+}
+
+@test "--register: value never reaches stderr under bash -x (name violation, exit 46)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  run_register_under_xtrace "BadName"
+  [ "$status" -eq 46 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+}
+
+@test "--register: value never reaches stderr under bash -x (already registered, exit 47)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
+  run_register_under_xtrace "moko--TRELLO_TOKEN"
+  [ "$status" -eq 47 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+@test "--register: value never reaches stderr under bash -x (ro token unresolvable, exit 48)" {
+  unset OP_SERVICE_ACCOUNT_TOKEN
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  HOME="$WORK" run bash -c "printf '%s' '${XTRACE_SECRET}' | bash -x '$FMTOKEN' --register moko--NEWTOKEN 2>'${WORK}/xtrace.err'"
+  [ "$status" -eq 48 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+@test "--register: value never reaches stderr under bash -x (unparsable item list, exit 48)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_LIST_BROKEN=1
+  run_register_under_xtrace "moko--NEWTOKEN"
+  [ "$status" -eq 48 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+}
+
+# rw SA トークン自体も xtrace に出さない。値と同じ代入経路の欠陥で、
+# 「--register の値は隠れたが SA トークンは出る」では塞いだことにならない。
+@test "--register: rw SA token itself never reaches stderr under bash -x" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token-SECRETLY"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token-SECRETLY"
+  run_register_under_xtrace "newproj--rwtrace"
+  [ "$status" -eq 0 ]
+  assert_xtrace_active
+  refute_in_file "rw-sa-token-SECRETLY" "${WORK}/xtrace.err"
+}
+
+@test "--register: value never reaches stderr with inherited SHELLOPTS=xtrace" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run bash -c "printf '%s' '${XTRACE_SECRET}' | env SHELLOPTS=xtrace '$FMTOKEN' --register newproj--shellopts 2>'${WORK}/xtrace.err'"
+  [ "$status" -eq 0 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+  [ "$(created_credential)" = "$XTRACE_SECRET" ]
+}

@@ -1,6 +1,8 @@
-# loops-routine-backlog-triage Specification (Delta)
+# loops-routine-backlog-triage Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change proactive-routines. Update Purpose after archive.
+## Requirements
 
 ### Requirement: backlog 消化ルーチンのレシピが固定見出し規約に従って存在する
 
