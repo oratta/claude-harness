@@ -1,6 +1,8 @@
-# loops-plugin-structure Specification (Delta)
+# loops-plugin-structure Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change loops-plugin. Update Purpose after archive.
+## Requirements
 
 ### Requirement: loops プラグインのディレクトリ構成と plugin.json
 

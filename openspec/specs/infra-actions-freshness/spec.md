@@ -5,7 +5,7 @@ TBD - created by archiving change infra-fixes. Update Purpose after archive.
 ## Requirements
 ### Requirement: GitHub Actions version pins MUST match verified latest major tags
 
-`plugins/infra/templates/workflows/*.yml.template` が pin する `actions/checkout` / `actions/setup-node` / `actions/upload-artifact` / `actions/github-script` / `supabase/setup-cli` の各バージョンは、実装時点で `gh api /repos/<owner>/<repo>/tags` により実在確認された最新メジャータグでなければならない。確認できなかった action は現行バージョンを維持し、その旨を該当テンプレート内にコメントで注記しなければならない。This requirement MUST be satisfied.
+`plugins/infra/templates/workflows/*.yml.template` が pin する GitHub 公式 action（`actions/*`）の各バージョンは、実装時点で `gh api /repos/<owner>/<repo>/tags` により実在確認された最新メジャータグでなければならない。確認できなかった action は現行バージョンを維持し、その旨を該当テンプレート内にコメントで注記しなければならない。`actions/*` 以外のサードパーティ製 action は可変タグではなく 40 桁のコミット SHA で参照し、対応するバージョンを同じ行のコメントに併記しなければならない（下の別 Requirement で規定する）。This requirement MUST be satisfied.
 
 #### Scenario: No stale v4 pins for checkout/setup-node remain
 
@@ -31,6 +31,16 @@ TBD - created by archiving change infra-fixes. Update Purpose after archive.
 
 - **WHEN** バージョン bump 後の各 `.yml.template` を `render-workflow` 相当の置換処理を経て YAML としてパースする（例: `python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))"` または同等ツール）
 - **THEN** 5 ファイル全てがパースエラーなく成功しなければならない
+
+### Requirement: Third-party actions in workflow templates MUST be pinned to a commit SHA
+
+`plugins/infra/templates/workflows/*.yml.template` の `uses:` のうち GitHub 公式（`actions/*`）以外のものは、40 桁のコミット SHA で参照し、その SHA が指すバージョンを同じ行のコメントに併記しなければならない。テンプレートの展開先では production のデプロイ／マイグレーションという secrets を持つジョブで動くため、可変タグ／ブランチ参照（例: `supabase/setup-cli@v2` は tag ではなくブランチ）は上流の push だけで別コードの実行につながる。This requirement MUST be satisfied.
+
+#### Scenario: Every third-party `uses:` in the templates carries a SHA and a version comment
+
+- **WHEN** `plugins/infra/templates/workflows/` 配下の全 `*.yml.template` から `uses:` 行を全数抽出し、`actions/` で始まらないものを検査する
+- **THEN** 各行が `@` に続く 40 桁の 16 進数を持ち、同じ行にバージョンを示すコメントが併記されていなければならない
+- **AND** 抽出された `uses:` 行が 1 件以上存在しなければならない（テンプレートの改名・移動で走査対象が 0 件になり無言で pass するのを防ぐ）
 
 ### Requirement: Vercel Token CLI feasibility MUST be documented with the investigation outcome
 

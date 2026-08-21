@@ -1,6 +1,8 @@
-# loops-routine-long-build Specification (Delta)
+# loops-routine-long-build Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change proactive-routines. Update Purpose after archive.
+## Requirements
 
 ### Requirement: 長期ビルドルーチンのレシピが固定見出し規約に従って存在する
 

@@ -1,6 +1,8 @@
-# loops-self-verification-reference Specification (Delta)
+# loops-self-verification-reference Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change skill-verification. Update Purpose after archive.
+## Requirements
 
 ### Requirement: 自己検証の共通原則リファレンスが存在し原則と evidence 種別を定義する
 
