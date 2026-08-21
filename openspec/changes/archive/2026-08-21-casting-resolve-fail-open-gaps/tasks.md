@@ -6,7 +6,7 @@
 ## 2. 実装（Green）
 
 - [x] 2.1 `check_malformed_rows` / `table_rows` の列数判定を `!= 6` にし、6列以上は専用メッセージで報告する
-- [x] 2.2 `check_comment_balance` を追加し、配役表2層（resolve でも fail-closed）と precedents.md（check モード）に掛ける
+- [x] 2.2 `check_unclosed_comment` を追加し、配役表2層（resolve でも fail-closed）と precedents.md（check モード）に掛ける
 - [x] 2.3 resolve に配役表ゼロの分岐（exit 3）と、対象 repo ルート不在のチェック（exit 2）を追加する
 - [x] 2.4 引数パーサを書き直し、`resolve` を順不同で受け、positional 1個に限定して超過は exit 2 にする
 - [x] 2.5 bats 全テスト green を確認し、正常系3フィクスチャの resolve 出力が修正前後で一致することを shasum で確かめる
