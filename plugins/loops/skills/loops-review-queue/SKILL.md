@@ -74,33 +74,70 @@ open issue のうち**紐づく open PR が無く、かつ滞留が閾値を超�
 # = 1h で外れるので、24h は 24 サイクル分空振りしたことを意味する。同レシピの朝ダイジェストが
 # 滞留を日次で可視化する周期とも一致する。短く詰めると実行中のサイクルを孤児と誤検出する。
 STALE_WIP_HOURS="${STALE_WIP_HOURS:-24}"
+STALE_WIP_LIMIT="${STALE_WIP_LIMIT:-50}"
 NOW_EPOCH=$(date -u +%s)
+
+# owner はこのブロック内で再導出する。未定義のまま `--owner ""` を渡すと gh はエラーにせず
+# GitHub 全体の横断検索にフォールバックし、意図と違うスコープのまま結果が出てしまう。
+OWNERS=$({ gh api user --jq '.login'; gh api user/orgs --jq '.[].login'; } | paste -sd, -)
+[ -n "$OWNERS" ] || { echo 'stale-wip: owner の解決に失敗（gh 未認証の可能性）。判定を中止' >&2; return 1 2>/dev/null || exit 1; }
 
 # updatedAt（ISO8601 UTC）を epoch 秒に変換する。BSD date（macOS）と GNU date の両対応。
 iso_to_epoch() {
   date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null || date -u -d "$1" +%s
 }
 
-gh search issues --owner "$OWNERS" --state open --label agent-wip \
-  --json repository,title,number,url,updatedAt --limit 50 \
-  --jq '.[] | [.repository.nameWithOwner, .number, .updatedAt, .url, .title] | @tsv' \
-| while IFS=$'\t' read -r REPO ISSUE_NUM UPDATED URL TITLE; do
-    # 紐づく open PR があれば実装は進行中。孤児ではないので除外する
-    LINKED=$(gh pr list --repo "$REPO" --search "$ISSUE_NUM in:body" --state open --json number --jq 'length')
-    [ "${LINKED:-0}" -gt 0 ] && continue
+# 候補の取得は fail-closed。gh が失敗したら空リストを「孤児ゼロ」と読まずに中止する
+# （認証切れ・rate limit・API 障害を「全部健全」と誤報しないため）。
+# --sort updated --order asc: 既定の best-match だと上限打ち切りで最古の孤児が落ちうる。
+if ! WIP_TSV=$(gh search issues --owner "$OWNERS" --state open --label agent-wip \
+     --sort updated --order asc \
+     --json repository,title,number,url,updatedAt --limit "$STALE_WIP_LIMIT" \
+     --jq '.[] | [.repository.nameWithOwner, .number, .updatedAt, .url, .title] | @tsv'); then
+  echo 'stale-wip: agent-wip issue の取得に失敗。stale-wip 判定は「不明」として表に注記する' >&2
+  WIP_TSV=''
+fi
+# 上限に張り付いたら未走査が残っている。件数を黙って減らさず注意を出す
+[ "$(printf '%s' "$WIP_TSV" | grep -c .)" -ge "$STALE_WIP_LIMIT" ] &&
+  echo "stale-wip: 候補が上限 $STALE_WIP_LIMIT 件に達した。STALE_WIP_LIMIT を上げて再実行する" >&2
+
+printf '%s\n' "$WIP_TSV" | grep . | while IFS=$'\t' read -r REPO ISSUE_NUM UPDATED URL TITLE; do
+    # 紐づく open PR があれば実装は進行中。孤児ではないので除外する。
+    # 取得に失敗したときは「PR なし」に倒さない（進行中の issue を要介入と誤報するため）
+    if ! LINKED=$(gh pr list --repo "$REPO" --search "$ISSUE_NUM in:body" --state open --json number --jq 'length'); then
+      printf 'stale-wip?\t%s#%s\t判定不能（PR 取得に失敗）\t%s\t%s\n' "$REPO" "$ISSUE_NUM" "$URL" "$TITLE"
+      continue
+    fi
+    case "$LINKED" in ''|*[!0-9]*) LINKED=0 ;; esac   # 非数値は 0 に潰さず上で弾いた後の保険
+    if [ "$LINKED" -gt 0 ]; then continue; fi
     AGE_H=$(( (NOW_EPOCH - $(iso_to_epoch "$UPDATED")) / 3600 ))
-    [ "$AGE_H" -ge "$STALE_WIP_HOURS" ] && printf 'stale-wip\t%s#%s\t%sh\t%s\t%s\n' \
-      "$REPO" "$ISSUE_NUM" "$AGE_H" "$URL" "$TITLE"
+    if [ "$AGE_H" -ge "$STALE_WIP_HOURS" ]; then
+      printf 'stale-wip\t%s#%s\t%sh\t%s\t%s\n' "$REPO" "$ISSUE_NUM" "$AGE_H" "$URL" "$TITLE"
+    fi
   done
 ```
 
 閾値未満のものは実行中のサイクルとみなし、本表には載せない（末尾の件数にも数えない）。
 
+**`in:body` は「リンク関係」ではなく本文テキスト検索であることに注意する。** GitHub の
+Development 欄の紐づけは見ておらず、番号が本文に現れるだけの無関係な PR にも当たる
+（実測例: `#89` がテスト出力行 `Test Files 89 passed` や「30〜89日=2倍」にヒットする）。
+誤ヒットは**孤児を取りこぼす側**に倒れるので既存の見え方より悪くはならないが、
+取りこぼしが疑わしいときは `--search "\"Closes #$ISSUE_NUM\" in:body"` のように
+closing キーワードごと照合して絞り込む。逆に、本文に番号を書かず Development 欄だけで
+リンクした PR は stale-wip として出るので、表の行を人間が見て判断する。
+
 Step 2 の結果と URL で突き合わせ、未登録のものは State をラベルから推定して表に混ぜ、`未登録` マークを付ける:
 `agent-review:passed` → マージ判断 / `agent-review:failed` → 修正中 / `agent-review:pending` → レビュー中 /
 `agent-proposed`・`needs-approval` → トリアージ / `agent-ready` → 着手可能 / `agent-blocked` → 要介入 /
 上で検出した stale-wip（`agent-wip` 単独・open PR 無し・閾値超え） → 要介入（stale-wip） /
+上の `stale-wip?` 行（gh の取得に失敗して判定できなかったもの） → 要介入（stale-wip 判定不能） /
 それ以外の PR → `-`。
+
+**取得に失敗したものを「該当なし」に丸めない。** `gh` が認証切れ・rate limit・API 障害で
+落ちたときに空結果を「孤児ゼロ」と読むと、このスキルは黙って何も報告しなくなる
+（元の issue #155 が問題にした「見えない停止」を、検出側が自分で再生産することになる）。
+失敗は必ず `判定不能` として表に出し、件数からも隠さない。
 
 `needs-approval` がここに残っているものは、憲法の3軸ゲート（①止められるか ②決められるか ③取り消せるか）を
 通らなかった issue である。落ちた軸と「人間が何を決めれば通るか」は issue のコメントに書かれているので、

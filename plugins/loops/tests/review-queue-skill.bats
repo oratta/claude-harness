@@ -32,6 +32,82 @@ _forbidden_body() {
   awk '/^## してはならないこと/{f=1;next} f&&/^## /{f=0} f{print}' "$SKILL"
 }
 
+# ── ここから下は「書いてあるか」ではなく「書いてあるコマンドが実際にそう動くか」の検査 ──
+#
+# grep だけの検査では、SKILL.md のコマンド例が gh 障害時に fail-open する・owner が
+# 空のまま全 GitHub を検索する、といった実挙動の欠陥を一切captureできない。
+# そこで SKILL.md から stale-wip ブロックをそのまま抜き出し、gh をスタブして実行する。
+# これにより「ドキュメントに書いてあるコマンド」自体が回帰検査の対象になる。
+
+# SKILL.md の stale-wip 節にある bash フェンスの中身をそのまま取り出す。
+_extract_stale_wip_snippet() {
+  awk '
+    /^### stale-wip/      { in_sec = 1; next }
+    in_sec && /^## /      { in_sec = 0 }
+    in_sec && /^```bash$/ { in_fence = 1; next }
+    in_fence && /^```$/   { in_fence = 0; next }
+    in_fence              { print }
+  ' "$SKILL"
+}
+
+# gh のスタブを PATH の先頭に置く。挙動は環境変数で切り替える:
+#   STUB_ISSUES_TSV  : gh search issues が返す TSV（既定は空）
+#   STUB_LINKED      : gh pr list が返す件数（既定 0）
+#   STUB_FAIL_SEARCH : 非空なら gh search issues を失敗させる
+#   STUB_FAIL_PRLIST : 非空なら gh pr list を失敗させる
+#   STUB_FAIL_USER   : 非空なら gh api user を失敗させる
+# 受け取った引数は $STUB_LOG に追記し、owner が空でないことなどを後から検査できるようにする。
+_install_gh_stub() {
+  mkdir -p "${BATS_TEST_TMPDIR}/bin"
+  STUB_LOG="${BATS_TEST_TMPDIR}/gh-args.log"
+  : > "$STUB_LOG"
+  cat > "${BATS_TEST_TMPDIR}/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$STUB_LOG"
+case "$1 $2" in
+  "api user")
+    [ -n "${STUB_FAIL_USER:-}" ] && exit 1
+    case "$2" in
+      user) echo "testuser" ;;
+    esac
+    ;;
+  "api user/orgs")
+    [ -n "${STUB_FAIL_USER:-}" ] && exit 1
+    echo "testorg"
+    ;;
+  "search issues")
+    [ -n "${STUB_FAIL_SEARCH:-}" ] && { echo "gh: API error" >&2; exit 1; }
+    printf '%b' "${STUB_ISSUES_TSV:-}"
+    ;;
+  "pr list")
+    [ -n "${STUB_FAIL_PRLIST:-}" ] && { echo "gh: API error" >&2; exit 1; }
+    echo "${STUB_LINKED:-0}"
+    ;;
+  *) echo "unexpected gh invocation: $*" >&2; exit 99 ;;
+esac
+STUB
+  chmod +x "${BATS_TEST_TMPDIR}/bin/gh"
+  export STUB_LOG
+  PATH="${BATS_TEST_TMPDIR}/bin:${PATH}"
+}
+
+# SKILL.md から抜き出したスニペットをスタブ環境で実行する。
+_run_snippet() {
+  _extract_stale_wip_snippet > "${BATS_TEST_TMPDIR}/snippet.sh"
+  run bash "${BATS_TEST_TMPDIR}/snippet.sh"
+}
+
+# TSV 1 行を組み立てる（repo / 番号 / updatedAt / URL / title）。
+_row() {
+  printf '%s\t%s\t%s\t%s\t%s\\n' "$1" "$2" "$3" "https://example.test/$2" "title $2"
+}
+
+# 現在から $1 時間前の ISO8601 UTC を返す（BSD / GNU date 両対応）。
+_hours_ago() {
+  date -u -v "-$1H" +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+    || date -u -d "$1 hours ago" +'%Y-%m-%dT%H:%M:%SZ'
+}
+
 @test "S155-1: step 3 searches open issues labeled agent-wip" {
   _step3_body | grep -q 'agent-wip'
 }
@@ -43,8 +119,12 @@ _forbidden_body() {
   echo "$body" | grep -q -- '--state open'
 }
 
-@test "S155-3: step 3 computes staleness from updatedAt" {
-  _step3_body | grep -q 'updatedAt'
+@test "S155-3: step 3 computes staleness by comparing updatedAt against the threshold" {
+  # 既存 Step 3 にも --json ...,updatedAt はあるので「updatedAt がある」だけでは何も守れない。
+  # 閾値と突き合わせて経過時間を出している箇所があることまで見る。
+  body="$(_step3_body)"
+  echo "$body" | grep -q 'iso_to_epoch "$UPDATED"'
+  echo "$body" | grep -qE 'AGE_H.*-ge.*STALE_WIP_HOURS|-ge "\$STALE_WIP_HOURS"'
 }
 
 @test "S155-4: staleness threshold is an env var with a default, not a hardcoded literal" {
@@ -76,4 +156,101 @@ _forbidden_body() {
   run grep -c 'stale-wip\|agent-wip' "$SKILL"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
+}
+
+# ── 実行検査（SKILL.md のコマンド例をそのまま動かす） ──
+
+@test "S155-10: the documented snippet is extractable and syntactically valid bash" {
+  _extract_stale_wip_snippet > "${BATS_TEST_TMPDIR}/snippet.sh"
+  [ -s "${BATS_TEST_TMPDIR}/snippet.sh" ]
+  run bash -n "${BATS_TEST_TMPDIR}/snippet.sh"
+  [ "$status" -eq 0 ]
+}
+
+@test "S155-11: an orphan (no linked PR, past the threshold) is reported" {
+  _install_gh_stub
+  export STUB_ISSUES_TSV="$(_row 'o/r' 7 "$(_hours_ago 100)")"
+  export STUB_LINKED=0
+  _run_snippet
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '^stale-wip	o/r#7	'
+}
+
+@test "S155-12: an issue with a linked open PR is excluded" {
+  _install_gh_stub
+  export STUB_ISSUES_TSV="$(_row 'o/r' 7 "$(_hours_ago 100)")"
+  export STUB_LINKED=1
+  _run_snippet
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -q 'stale-wip	o/r#7'
+}
+
+@test "S155-13: an issue younger than the threshold is excluded" {
+  _install_gh_stub
+  export STUB_ISSUES_TSV="$(_row 'o/r' 7 "$(_hours_ago 2)")"
+  export STUB_LINKED=0
+  _run_snippet
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -q 'stale-wip	o/r#7'
+}
+
+@test "S155-14: fail-closed — a failing gh pr list must not be read as 'no linked PR'" {
+  # ここが fail-open だと、認証切れ・rate limit のたびに進行中の issue が
+  # 「要介入」として誤報される。判定不能として出すのが正。
+  _install_gh_stub
+  export STUB_ISSUES_TSV="$(_row 'o/r' 7 "$(_hours_ago 100)")"
+  export STUB_FAIL_PRLIST=1
+  _run_snippet
+  echo "$output" | grep -q 'stale-wip?	o/r#7'
+  echo "$output" | grep -q '判定不能'
+  ! echo "$output" | grep -qE '^stale-wip	o/r#7'
+}
+
+@test "S155-15: fail-closed — a failing gh search issues is not silently read as zero orphans" {
+  _install_gh_stub
+  export STUB_FAIL_SEARCH=1
+  _run_snippet
+  # 空の結果を黙って返さず、取得に失敗したことが分かる出力を出す
+  echo "$output" | grep -q '取得に失敗'
+}
+
+@test "S155-16: the snippet derives OWNERS itself instead of searching all of GitHub" {
+  # --owner が空だと gh はエラーにせず GitHub 全体を検索する（スコープが黙って変わる）
+  _install_gh_stub
+  export STUB_ISSUES_TSV=''
+  _run_snippet
+  grep -q 'search issues --owner testuser,testorg ' "$STUB_LOG"
+  ! grep -q 'search issues --owner  ' "$STUB_LOG"
+}
+
+@test "S155-17: the snippet aborts when owner resolution fails" {
+  _install_gh_stub
+  export STUB_FAIL_USER=1
+  _run_snippet
+  [ "$status" -ne 0 ]
+  # owner を解決できないまま検索に進まないこと
+  ! grep -q 'search issues' "$STUB_LOG"
+}
+
+@test "S155-18: candidates are fetched oldest-first so the limit does not hide old orphans" {
+  _install_gh_stub
+  export STUB_ISSUES_TSV=''
+  _run_snippet
+  grep -q -- '--sort updated --order asc' "$STUB_LOG"
+}
+
+@test "S155-19: exit status stays 0 when the last candidate is below the threshold" {
+  # `[ ... ] && printf` を最終文にすると pipeline が 1 で終わり、
+  # 呼び出し側が「検索が失敗した」と誤読する。
+  _install_gh_stub
+  export STUB_ISSUES_TSV="$(_row 'o/r' 7 "$(_hours_ago 2)")"
+  export STUB_LINKED=0
+  _run_snippet
+  [ "$status" -eq 0 ]
+}
+
+@test "S155-20: step 3 warns that in:body is a text search, not a GitHub link relation" {
+  body="$(_step3_body)"
+  echo "$body" | grep -q 'in:body'
+  echo "$body" | grep -q 'テキスト検索'
 }
