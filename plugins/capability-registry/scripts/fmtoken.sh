@@ -32,6 +32,22 @@ set -euo pipefail
 OP_VAULT="agents"
 KEYCHAIN_SERVICE_RO="op-sa-claude-agents-ro"
 KEYCHAIN_SERVICE_RW="op-sa-claude-agents-rw"
+
+# ── 秘密を扱う区間だけ xtrace を落とす（issue #159）──
+# `bash -x fmtoken.sh --register ...` や SHELLOPTS=xtrace を継承した起動では、秘密を代入する行が
+# `+ value=<値>` として**呼び出し側自身の stderr** に出る。#130 が塞いだのは `ps`（他プロセスからの
+# 観測）で、こちらは脅威モデルが別（自プロセスの stderr）だが、CI ログや tee したファイルに
+# 残ると回収できない。
+#
+# 常時 off にはしない。呼び出し側が `-x` でデバッグする手段を丸ごと奪うことになるので、
+# 秘密の代入区間に入る前に落とし、抜けたら**元の状態に戻す**（起動時に off だったなら off のまま）。
+# 早期 exit する経路でも、秘密の参照が終わった時点で戻してから message / exit に進む。
+XTRACE_WAS_ON=""
+case "$-" in *x*) XTRACE_WAS_ON=1 ;; esac
+# 末尾の `return 0` は必須。`[[ ... ]] && set +x` は条件が偽のとき 1 を返し、
+# それが関数の終了ステータスになると errexit でスクリプトごと落ちる。
+secret_begin() { [[ -n "$XTRACE_WAS_ON" ]] && set +x; return 0; }
+secret_end() { [[ -n "$XTRACE_WAS_ON" ]] && set -x; return 0; }
 USAGE="usage: fmtoken.sh [--check] <service> | fmtoken.sh --list | fmtoken.sh [--check] --name <item> | fmtoken.sh --register <item> (value via stdin)"
 
 mode="read"
@@ -73,17 +89,21 @@ resolve_ro_token() {
   if [[ "${1:-}" == "--optional" ]]; then optional=1; fi
   local token_file="$HOME/.config/op-sa/claude-agents-ro.token"
   if [[ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]]; then
+    # SA トークンを変数に代入する区間。xtrace 下では代入行がそのまま値を吐く（issue #159）
+    secret_begin
     if [[ -r "$token_file" ]]; then
       OP_SERVICE_ACCOUNT_TOKEN="$(tr -d '\n' < "$token_file")"
     elif OP_SERVICE_ACCOUNT_TOKEN="$(security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE_RO" -w 2>/dev/null)"; then
       :
     else
+      secret_end
       if [[ -n "$optional" ]]; then return 1; fi
       echo "fmtoken: SA トークンが見つかりません（ファイル: ${token_file} / Keychain: ${KEYCHAIN_SERVICE_RO}）。このマシンは未セットアップです。" >&2
       echo "→ 主に『SA トークンをこのマシンに配布して』と依頼すること（ブラウザでのログイン代行は不要）" >&2
       exit 43
     fi
     export OP_SERVICE_ACCOUNT_TOKEN
+    secret_end
   fi
   return 0
 }
@@ -94,6 +114,8 @@ resolve_ro_token() {
 # 分からない。rw を明示的に解決してから OP_SERVICE_ACCOUNT_TOKEN を差し替える）。
 resolve_rw_token() {
   local rw_file="$HOME/.config/op-sa/claude-agents-rw.token" rw=""
+  # ro 側と同じ理由で、rw トークンの代入区間も xtrace から隠す（issue #159）
+  secret_begin
   if [[ -n "${OP_SERVICE_ACCOUNT_TOKEN_RW:-}" ]]; then
     rw="$OP_SERVICE_ACCOUNT_TOKEN_RW"
   elif [[ -r "$rw_file" ]]; then
@@ -101,11 +123,13 @@ resolve_rw_token() {
   elif rw="$(security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE_RW" -w 2>/dev/null)"; then
     :
   else
+    secret_end
     echo "fmtoken: 書き込み用 SA トークン（claude-agents-rw）が見つかりません（env: OP_SERVICE_ACCOUNT_TOKEN_RW / ファイル: ${rw_file} / Keychain: ${KEYCHAIN_SERVICE_RW}）。" >&2
     echo "→ 主に『rw SA トークンをこのマシンに配布して』と依頼すること（読み取り用の ro トークンでは登録できない）" >&2
     exit 43
   fi
   export OP_SERVICE_ACCOUNT_TOKEN="$rw"
+  secret_end
 }
 
 # --register: 明示名アイテムを agents 保管庫に作成する（rw SA 経由）
@@ -115,11 +139,24 @@ if [[ "$mode" == "register" ]]; then
     echo "fmtoken: 登録する値を stdin から渡してください（例: printf '%s' \"\$VALUE\" | fmtoken.sh --register ${explicit_name}）。値を引数で渡さないのは transcript / ps への露出を避けるため" >&2
     exit 46
   fi
-  value="$(cat)"
+  # ここから値を変数に持つ。xtrace 下では `+ value=<値>` や `+ [[ -z <値> ]]` として
+  # 呼び出し側の stderr に出てしまうので、値の参照が終わるまで落としておく（issue #159）。
+  secret_begin
+  # 番兵 `x` を付けてから剥がす。素の `$(cat)` はコマンド置換の仕様で**末尾の改行をすべて**
+  # 削るため、末尾改行を持つ資格情報（PEM 秘密鍵・一部の証明書）が黙って壊れる。
+  # 登録は上書き禁止なので、壊れたまま入ると人間が `op item edit` を叩くまで直らず、
+  # 参照側では「なぜか認証が通らない」形でしか表面化しない（issue #159）。
+  value="$(cat; printf x)"
+  value="${value%x}"
+  # 空判定は番兵を剥がしたあとに行う。改行だけの値（`printf '\n'`）は正当な入力なので、
+  # ここで空扱いにして 46 に落としてはいけない。
   if [[ -z "$value" ]]; then
+    secret_end
     echo "fmtoken: stdin が空です。登録する値を stdin から渡してください" >&2
     exit 46
   fi
+  # 以降 create までは値を参照しないので、xtrace を元に戻して二重登録ガードを追えるようにする。
+  secret_end
   # 判定不能（exit 48）で共通して出す案内。1Password 側の権限変更は人間の GUI 作業なので、
   # スクリプトは選択肢の提示までで止まる。
   GUARD_HINT="→ ro SA トークンをこのマシンに配布する（env OP_SERVICE_ACCOUNT_TOKEN / ~/.config/op-sa/claude-agents-ro.token / Keychain ${KEYCHAIN_SERVICE_RO}）か、rw SA に agents 保管庫の read 権を付けて OP_SERVICE_ACCOUNT_TOKEN に設定すること（1Password 側の権限変更は人間の GUI 作業）"
@@ -176,9 +213,14 @@ sys.exit(0 if sys.argv[1] in titles else 1)' "$explicit_name" || guard_rc=$?
   # 失敗時は fail-closed: assignment statement へのフォールバックを書かないこと
   # （例外時にだけ argv 経路が開く穴になり、しかも例外時こそ気づかれない）。
   # set -euo pipefail によりパイプのどの段が落ちても非 0 で即死する。
+  #
+  # 値を再び参照する区間なので xtrace を落とす（issue #159）。`printf '%s' "$value"` は
+  # xtrace 下で `+ printf %s <値>` として stderr に出る。
+  secret_begin
   printf '%s' "$value" |
     /usr/bin/python3 -c 'import json,sys; print(json.dumps({"title":sys.argv[1],"category":"API_CREDENTIAL","fields":[{"id":"credential","type":"CONCEALED","label":"credential","value":sys.stdin.read()}]}))' "$explicit_name" |
     op item create --vault "$OP_VAULT" - >/dev/null
+  secret_end
   echo "OK: ${explicit_name} を ${OP_VAULT} 保管庫に登録した（フィールド: credential）"
   exit 0
 fi
