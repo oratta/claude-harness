@@ -54,6 +54,7 @@ jobs:
     name: shellcheck
     runs-on: ubuntu-latest
     steps:
+      # actions/checkout は GitHub 公式 action なので SHA 固定の対象外（方針は上記コメント参照）
       - uses: actions/checkout@v4
       # ubuntu-latest には shellcheck がプリインストールされている
       - name: shellcheck (scripts/lint.sh)
@@ -66,6 +67,7 @@ jobs:
     # env:
     #   TEST_EXCLUDE: some-macos-only-suite
     steps:
+      # actions/checkout は GitHub 公式 action なので SHA 固定の対象外（方針は上記コメント参照）
       - uses: actions/checkout@v4
       # バージョンを固定する。無指定だと ubuntu-latest のイメージ更新で bats が
       # 黙って上がり、テストの落ち方が変わったときに「自分の変更か bats か」を
