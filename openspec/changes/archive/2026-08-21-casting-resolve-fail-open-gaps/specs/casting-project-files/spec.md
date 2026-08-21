@@ -1,44 +1,4 @@
-# casting-project-files Specification
-
-## Purpose
-TBD - created by archiving change casting-plugin. Update Purpose after archive.
-## Requirements
-### Requirement: 3層デフォルトの配置規約
-
-プロジェクト側の配役ファイルは `<repo>/.claude/casting/` 配下に置かなければならない (MUST)。第1層＝`project.md`（git 追跡・プロジェクト既定）、第2層＝`local.md`（gitignore 対象・エージェント/マシン別上書き）、第3層＝セッション起動時のプロンプト宣言（ファイルなし。宣言形式は `skills/casting/SKILL.md` に定義）とする (MUST)。解決は**観点（行）単位**で行い、強い順にセッション宣言 > local.md > project.md > catalog.md とし、ある観点の行を持つ最も強い層がその観点の有効値になる (MUST)。各層のファイルには**カタログと変えたい観点の行だけ**を書き、行を書く場合は5列すべてを記載する (MUST)。列の部分上書きをしてはならない (MUST NOT)。判例台帳は同ディレクトリの `precedents.md`（git 追跡・追記型）とする (MUST)。project.md / local.md / precedents.md は front matter に `catalog_version` を持たなければならない (MUST)。
-
-#### Scenario: 行単位の解決規則が SKILL.md に定義されている
-
-- **WHEN** `plugins/casting/skills/casting/SKILL.md` を読む
-- **THEN** 3層の置き場・観点（行）単位の解決順・「変えたい行だけ書く」規則・セッション宣言の形式が定義されている
-
-#### Scenario: 書いていない観点はカタログに踏襲される
-
-- **WHEN** project.md に1観点だけ上書き行があるプロジェクトの有効な配役を合成する
-- **THEN** その1観点は project.md の値、残りの観点はカタログの既定値になる
-
-### Requirement: /casting:init による生成
-
-`/casting:init` コマンドは、実行した git repo に `.claude/casting/project.md`（差分方式の空表＋書き方説明。カタログ全行のコピーを含まない）と `.claude/casting/precedents.md` を雛形から生成し、`.gitignore` に `.claude/casting/local.md` を追記しなければならない (MUST)。あわせて導入 repo 台帳 `~/.claude/casting/registry.txt` に repo ルートの絶対パスを追記しなければならない (MUST)。既存のファイルがある場合は上書きしてはならない (MUST NOT)。gitignore 追記と台帳追記は冪等でなければならない (MUST)。
-
-#### Scenario: 初回実行で一式が生成される
-
-- **WHEN** `.claude/casting/` が無い git repo で init の生成手順を実行する
-- **THEN** project.md（カタログ全行のコピーを含まない差分表）と precedents.md が生成され、.gitignore に local.md の行が1行だけ追加され、registry.txt に repo パスが1行追加される
-
-#### Scenario: 再実行しても上書き・重複しない
-
-- **WHEN** 生成済みの repo で project.md を編集した後、もう一度 init の生成手順を実行する
-- **THEN** 編集内容が保持され、.gitignore と registry.txt の行も重複しない
-
-### Requirement: 判例台帳の形式
-
-`precedents.md` の判例は1判例1ブロックの追記型とし、見出し（日付＋論点1行）と4フィールド — 観点（catalog.md の語彙、当てはまらなければ「カタログ外」）・経路（主に上げた／自走した）・帰結（論点だった／じゃなかった＋一言の理由）・還元（配役既定表のどこを変えたか。変更なしは「なし」）— を持たなければならない (MUST)。この形式は雛形 `templates/precedents.md` と SKILL.md の両方に記載されなければならない (MUST)。
-
-#### Scenario: 雛形が4フィールドの記入例を含む
-
-- **WHEN** `plugins/casting/templates/precedents.md` を読む
-- **THEN** 観点・経路・帰結・還元の4フィールドを持つ記入例が含まれている
+## MODIFIED Requirements
 
 ### Requirement: casting-check.sh の検出項目
 
@@ -97,13 +57,3 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 
 - **WHEN** 有効な project.md があり、precedents.md に「カタログ外」判例（または同一観点の「論点じゃなかった」2件以上）がある repo に対して resolve を実行する
 - **THEN** 合成表が出力され exit code が 0 になる
-
-### Requirement: 導入 repo 台帳
-
-導入 repo 台帳は `~/.claude/casting/registry.txt`（1行1 repo ルートの絶対パス）とする (MUST)。casting-set.sh は台帳を走査して影響一覧を表示し、存在しないパスはスキップして警告を出さなければならない (MUST)。テストではホームディレクトリ直書きを避け、台帳パスを環境変数で差し替えられなければならない (MUST)。
-
-#### Scenario: 存在しないパスが台帳にあっても走査が失敗しない
-
-- **WHEN** 台帳に存在しないパスを1行含めて casting-set.sh を実行する
-- **THEN** そのパスは警告つきでスキップされ、他の repo の影響一覧は正常に出力される
-
