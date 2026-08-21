@@ -1,6 +1,8 @@
-# loops-recipe-format Specification (Delta)
+# loops-recipe-format Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change loops-plugin. Update Purpose after archive.
+## Requirements
 
 ### Requirement: レシピ形式規約は固定見出し 7 項目を定義する
 

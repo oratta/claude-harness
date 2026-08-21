@@ -1,6 +1,8 @@
-# loop-dev-agent-tripwires Specification (Delta)
+# loop-dev-agent-tripwires Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change loop-dev-agent-tripwires. Update Purpose after archive.
+## Requirements
 
 ### Requirement: 憲法テンプレートは昇格トリップワイヤーを Step 3 に含む
 `plugins/loops/templates/agent-loop-template.md` は、Step 3（実装モード）に昇格トリップワイヤー節を含まなければならない (SHALL)。節は3本のワイヤーを行為ベースの数えられる条件で定義し、それぞれ unmanned の既存経路に写像する: ①規模超過（編集対象ファイル5個超、または作業項目が見積もりから2回増）→ github-issue スキルの判定（workflow 型 / サブ issue 分割）に従う、②失敗ループ（同一テスト2連続失敗、または同一箇所2回書き直し）→ 実行役を1段昇格、③仕様の発明（issue に無い仕様決定を2回埋めた）→ 埋めた決定を列挙して Discord で質問し `needs-approval` を付けてサイクル終了。閾値が初期値であること、乗り換え時の成果引き継ぎ、dev-workflow のテンプレートへの参照を含めること。

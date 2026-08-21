@@ -1,6 +1,8 @@
-# dev-workflow-execution-strategy Specification (Delta)
+# dev-workflow-execution-strategy Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change dev-workflow-execution-strategy. Update Purpose after archive.
+## Requirements
 
 ### Requirement: 実行戦略の判定表
 `references/decision-criteria.md` は、Step B・Step C の既存の表に加えて、実行戦略の判定表を提供しなければならない（SHALL）。判定表は4象限モデル（縦軸: 実行が吸収するトークン量、横軸: 判断の分布）に基づき、決定論的シグナルと残量モードから solo / delegate+verify / workflow 型のいずれかを導く。判定表にはモード不変ルール2本（「結果が変わらない大量トークン仕事は常に安いモデル」「判断が集中する場所は常に賢いモデル」）を明記しなければならない（SHALL）。

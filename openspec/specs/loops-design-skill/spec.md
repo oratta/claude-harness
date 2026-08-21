@@ -1,6 +1,8 @@
-# loops-design-skill Specification (Delta)
+# loops-design-skill Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change loops-plugin. Update Purpose after archive.
+## Requirements
 
 ### Requirement: /loops:design は公式選択フレームワークでループ型を選ぶ
 

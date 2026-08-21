@@ -1,6 +1,8 @@
-# loops-loop-types-reference Specification (Delta)
+# loops-loop-types-reference Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change loops-plugin. Update Purpose after archive.
+## Requirements
 
 ### Requirement: loop-types.md は公式 4 タイプの選択リファレンスを提供する
 

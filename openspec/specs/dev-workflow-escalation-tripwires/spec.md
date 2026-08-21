@@ -1,6 +1,8 @@
-# dev-workflow-escalation-tripwires Specification (Delta)
+# dev-workflow-escalation-tripwires Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change dev-workflow-execution-strategy. Update Purpose after archive.
+## Requirements
 
 ### Requirement: 昇格トリップワイヤー3本の定義
 dev-workflow プラグインは、solo からの離脱条件を定義する常駐ルールテンプレートを配布しなければならない（SHALL）。テンプレートは以下のトリップワイヤーを、行為ベースの数えられる条件として定義する:

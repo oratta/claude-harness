@@ -1,6 +1,8 @@
-# loops-integration-verification Specification (Delta)
+# loops-integration-verification Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change loops-integration. Update Purpose after archive.
+## Requirements
 
 ### Requirement: 統合検証を bats テストとして実装する
 
