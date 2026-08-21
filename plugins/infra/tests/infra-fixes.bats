@@ -132,17 +132,23 @@ check_third_party_pins() {
   local dir="$1"
   local total=0
   local unpinned=""
-  local line value
+  local line value body
 
   while IFS= read -r line; do
     total=$((total + 1))
+
+    # `grep -rn` の出力には `<パス>:<行番号>:` が前置される。コメント形の検査を
+    # YAML 本文だけに当てるため、ここで剥がす（パス側の `#` が版数コメントに化けるのを防ぐ）。
+    # 前置が付いていない形（パスに `:` を含む等）では sed が何もしないので、
+    # 剥がし損ねても検査が緩む方向には動かない。
+    body="$(printf '%s' "$line" | sed -E 's/^([^:]+):([0-9]+)://')"
 
     # `uses:` の「値」だけを切り出してから公式判定する（#176 その2）。
     # 行全体の部分一致で `actions/` を探すと、コメント中の文字列
     # （例: `uses: evil/action@v1 # mimics uses: actions/cache@v4`）にも当たって
     # 第三者 action が公式扱いでスキップされる。grep -o は行内の全一致を順に返すので、
     # 先頭の 1 件＝キーとしての `uses:` を取る（コメント側は 2 件目以降になる）。
-    value="$(printf '%s\n' "$line" \
+    value="$(printf '%s\n' "$body" \
       | grep -oE 'uses[[:space:]]*:[[:space:]]*[^[:space:]]+' \
       | head -n 1 \
       | sed -E 's/^uses[[:space:]]*:[[:space:]]*//')"
@@ -155,8 +161,12 @@ check_third_party_pins() {
       actions/*) continue ;;
     esac
 
-    # 値そのものが `<owner>/<action>@<40 桁 hex>` であること
-    if ! printf '%s' "$value" | grep -qE '^[^@[:space:]]+@[0-9a-f]{40}$'; then
+    # 値そのものが `<owner>/<action>@<40 桁 hex>` であること。
+    # `<owner>/` を必須にしてあるのは spec の字面に合わせるため（#180 レビュー指摘 A）。
+    # owner を落とした `uses: evil@<40hex>` は GitHub 上の第三者 action を指し得ないが、
+    # 検査が素通りさせると spec が保証すると読める形を実装が見ていないことになる。
+    # `<action>` 側は `owner/repo/subdir@<sha>` のサブパス形を許すため `/` を含んでよい。
+    if ! printf '%s' "$value" | grep -qE '^[^@[:space:]/]+/[^@[:space:]]+@[0-9a-f]{40}$'; then
       unpinned="${unpinned}${line}"$'\n'
       continue
     fi
@@ -165,7 +175,11 @@ check_third_party_pins() {
     # `#` の後に非空白が 1 文字でもあれば通す旧判定だと `# TODO` でも合格してしまい、
     # spec の「その SHA が指すバージョンを同じ行のコメントに併記」と字面が合わない。
     # SHA とバージョンの対応そのものはオフラインで検証できないので、形だけ縛る。
-    if ! printf '%s' "$line" | grep -qE '#[[:space:]]*v?[0-9]+(\.[0-9]+)*'; then
+    # 終端を空白で締めるのは、`# v1evil` / `# 1.` / `# 2026-08-22` /
+    # 行内の別の `#176` のような「バージョンに見えるだけ」の形を弾くため。
+    # 行末を表すのに `(...|$)` を使わず末尾に空白 1 個を足しているのは、
+    # 括弧内の `$` をアンカーとして扱うかが grep 実装で揺れるのを避けるため。
+    if ! printf '%s ' "$body" | grep -qE '#[[:space:]]*v?[0-9]+(\.[0-9]+)*[[:space:]]'; then
       unpinned="${unpinned}${line}"$'\n'
     fi
     # 抽出パターンが `uses[[:space:]]*:` なのは、YAML として有効な `uses : owner/action@v1`
@@ -261,6 +275,51 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   mkdir -p "$dir"
   run check_third_party_pins "$dir"
   [ "$status" -eq 2 ]
+}
+
+@test "S16a-7: a value without an <owner>/ prefix is rejected" {
+  # spec の Scenario は値が `<owner>/<action>@<40 桁 16 進数>` であることを要求している。
+  # `/` を見ない実装だと owner の無い `evil@<40hex>` が素通りし、spec の字面と実装がズレる。
+  run check_third_party_pins "$(write_uses_fixture \
+    'uses: evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v1' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"* ]]
+}
+
+@test "S16a-8: comments that only look like a version are rejected" {
+  # 終端境界の無い判定だと、下の 4 形はいずれも「バージョンコメントあり」で通ってしまう。
+  local bad
+  for bad in \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v1evil' \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # 1.' \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO (#176)' \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # 2026-08-22'
+  do
+    run check_third_party_pins "$(write_uses_fixture "$bad" "$PINNED_OK")"
+    [ "$status" -eq 1 ] || { echo "not rejected: $bad"; return 1; }
+  done
+}
+
+@test "S16a-9: the grep -rn path prefix does not satisfy the comment check" {
+  # 検査対象は YAML 本文であって `grep -rn` が前置する `<パス>:<行番号>:` ではない。
+  # 前置を剥がさないと、パスに含まれる `# v9` がバージョンコメントの代わりを務めてしまう。
+  local dir="$BATS_TEST_TMPDIR/dir # v9"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+}
+
+@test "S16a-10: a sub-path action reference stays valid when SHA-pinned" {
+  # `owner/repo/subdir@<sha>` は GitHub 上で有効な参照形。`<owner>/` 必須化で
+  # これを巻き込んで落とすと、正しく固定された action が使えなくなる。
+  run check_third_party_pins "$(write_uses_fixture \
+    'uses: aws-actions/aws-cli/setup@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1')"
+  [ "$status" -eq 0 ]
 }
 
 @test "S17: all five workflow templates parse as YAML" {
