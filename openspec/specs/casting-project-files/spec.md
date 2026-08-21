@@ -49,9 +49,9 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 - **WHEN** カタログ語彙のみ・カタログ外なし・version 一致のフィクスチャに対して実行する
 - **THEN** exit code が 0 になる
 
-#### Scenario: 5種の検出がそれぞれ報告される
+#### Scenario: 6種の検出がそれぞれ報告される
 
-- **WHEN** ⓪5列未満の壊れた表行①未知語彙②カタログ外判例③同一観点の「論点じゃなかった」2件④version 不一致 をそれぞれ含む5つのフィクスチャに対して実行する
+- **WHEN** ⓪5列未満の壊れた表行 ⓪'閉じ忘れの HTML コメント ①未知語彙 ②カタログ外判例 ③同一観点の「論点じゃなかった」2件 ④version 不一致 をそれぞれ含む6つのフィクスチャに対して実行する
 - **THEN** いずれも該当項目が一覧出力され、exit code が 1 になる
 
 #### Scenario: セル内の | で6列以上に割れる行が報告される
