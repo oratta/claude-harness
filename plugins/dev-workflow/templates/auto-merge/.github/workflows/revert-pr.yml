@@ -80,10 +80,11 @@ jobs:
           N="$PR_INPUT"
           REASON="${REASON:-}"
 
-          META=$(gh api "repos/$REPO/pulls/$N" --jq '[(.merged|tostring), (.merge_commit_sha // ""), .title] | @tsv')
+          META=$(gh api "repos/$REPO/pulls/$N" --jq '[(.merged|tostring), (.merge_commit_sha // ""), (.base.ref // ""), .title] | @tsv')
           MERGED=$(printf '%s' "$META" | cut -f1)
           SHA=$(printf '%s' "$META" | cut -f2)
-          TITLE=$(printf '%s' "$META" | cut -f3)
+          PR_BASE=$(printf '%s' "$META" | cut -f3)
+          TITLE=$(printf '%s' "$META" | cut -f4-)
 
           if [ "$MERGED" != "true" ]; then
             echo "::error::PR #$N はマージされていません（revert 対象になりません）"
@@ -91,6 +92,12 @@ jobs:
           fi
           if [ -z "$SHA" ]; then
             echo "::error::PR #$N のマージコミット SHA を取得できませんでした"
+            exit 1
+          fi
+          # base 検証: $BASE_BRANCH 以外へマージされた PR を revert すると
+          # 「$BASE_BRANCH に元々無かった変更の逆パッチ」PR が生成されてしまう
+          if [ "$PR_BASE" != "$BASE_BRANCH" ]; then
+            echo "::error::PR #$N のマージ先は $PR_BASE です（$BASE_BRANCH ではない）。この workflow は $BASE_BRANCH に入った変更の巻き戻し専用です"
             exit 1
           fi
 
@@ -101,20 +108,37 @@ jobs:
           git checkout "$BASE_BRANCH"
           git pull --ff-only origin "$BASE_BRANCH"
 
-          BRANCH="revert/pr-${N}-${RUN_ID}"
-          git checkout -b "$BRANCH"
-
-          # squash マージ（単一親）と merge commit（親2つ以上）で revert の指定が変わる
-          PARENT_COUNT=$(git rev-list --parents -n 1 "$SHA" | wc -w | tr -d ' ')
-          if [ "$PARENT_COUNT" -ge 3 ]; then
-            echo "merge commit として revert（-m 1）"
-            git revert --no-edit -m 1 "$SHA"
-          else
-            echo "単一親コミットとして revert"
-            git revert --no-edit "$SHA"
+          # ancestor 検証: マージコミットが $BASE_BRANCH の履歴に実在することを、
+          # ブランチ作成・push 等の副作用より前に確認する（base 検証をすり抜ける
+          # 経路 — base の付け替え・履歴の書き換え — への最終防衛線）
+          if ! git merge-base --is-ancestor "$SHA" "origin/$BASE_BRANCH"; then
+            echo "::error::マージコミット $SHA は origin/$BASE_BRANCH の履歴に含まれていません（revert すると $BASE_BRANCH に無かった変更の逆パッチが生成されるため中止）"
+            exit 1
           fi
 
-          git push origin "$BRANCH"
+          BRANCH="revert/pr-${N}-${RUN_ID}"
+
+          # 部分失敗からの再開: 失敗 run の re-run は RUN_ID が変わらない（run attempt
+          # だけ増える）ため、前回 attempt が push 済みのブランチが残っていることがある。
+          # 同名ブランチは同じ入力（PR 番号・base）から作られた revert なので、作り直さず
+          # そのまま使い、残工程（PR 作成・ラベル・コメント）だけ続行する
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "既存の revert ブランチ $BRANCH を再利用します（前回 attempt が push 済み）"
+          else
+            git checkout -b "$BRANCH"
+
+            # squash マージ（単一親）と merge commit（親2つ以上）で revert の指定が変わる
+            PARENT_COUNT=$(git rev-list --parents -n 1 "$SHA" | wc -w | tr -d ' ')
+            if [ "$PARENT_COUNT" -ge 3 ]; then
+              echo "merge commit として revert（-m 1）"
+              git revert --no-edit -m 1 "$SHA"
+            else
+              echo "単一親コミットとして revert"
+              git revert --no-edit "$SHA"
+            fi
+
+            git push origin "$BRANCH"
+          fi
 
           WARN=""
           if [ "$HAS_PAT" != "true" ]; then
@@ -143,9 +167,16 @@ jobs:
             --description "聖域パス（憲法・ワークフロー等）に触れるため auto-merge 対象外。人間がマージする" \
             --color D93F0B >/dev/null 2>&1 || true
 
-          URL=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" \
-            --title "revert: PR #${N} を巻き戻す" --body "$BODY")
-          echo "revert PR を作成しました: $URL"
+          # 部分失敗からの再開: 前回 attempt が PR 作成まで済ませていたら再利用する
+          # （gh pr create は同一 head の重複 PR で落ちるため、先に発見する）
+          URL=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')
+          if [ -n "$URL" ]; then
+            echo "既存の revert PR を再利用します: $URL"
+          else
+            URL=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" \
+              --title "revert: PR #${N} を巻き戻す" --body "$BODY")
+            echo "revert PR を作成しました: $URL"
+          fi
 
           NUM=$(printf '%s' "$URL" | sed 's|.*/||')
           gh api "repos/$REPO/issues/$NUM/labels" -f "labels[]=human-merge" >/dev/null
