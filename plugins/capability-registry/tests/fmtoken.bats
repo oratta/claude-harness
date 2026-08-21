@@ -34,6 +34,11 @@ if [[ "$1" == "read" ]]; then
   exit 1
 fi
 if [[ "$1" == "item" && "$2" == "list" ]]; then
+  # exit 0 のまま解析できない出力を返す（op の出力形式が変わった / 途中で切れた状況）
+  if [[ -n "${FMTOKEN_TEST_LIST_BROKEN:-}" ]]; then
+    echo 'not json at all'
+    exit 0
+  fi
   extra=""
   if [[ -n "${FMTOKEN_TEST_REGISTERED:-}" ]]; then
     t="${FMTOKEN_TEST_REGISTERED#op://agents/}"
@@ -389,4 +394,27 @@ EOF
   run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
   [ "$status" -eq 48 ]
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+  # 判定不能で止めたときは、どちらを直せばいいかの選択肢まで出す
+  [[ "$output" == *"claude-agents-ro.token"* ]]
+  [[ "$output" == *"read 権"* ]]
+}
+
+@test "--register: unparsable item list exits 48 without create (parse failure is not 'not found')" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  export FMTOKEN_TEST_LIST_BROKEN=1
+  run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
+  [ "$status" -eq 48 ]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+  [[ "$output" == *"解析できませんでした"* ]]
+  [[ "$output" == *"claude-agents-ro.token"* ]]
+}
+
+@test "--register: ro token unresolvable message offers both remedies" {
+  unset OP_SERVICE_ACCOUNT_TOKEN
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
+  [ "$status" -eq 48 ]
+  [[ "$output" == *"claude-agents-ro.token"* ]]
+  [[ "$output" == *"read 権"* ]]
 }
