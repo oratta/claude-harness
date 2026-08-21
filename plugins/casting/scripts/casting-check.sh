@@ -2,19 +2,21 @@
 #
 # casting-check.sh — 「観点の配役」フレームワークの語彙 lint ＋ 起案シグナル検出
 #
-# 対象 repo の .claude/casting/{project.md,local.md,precedents.md} に対して検査する:
-#   0. 配役表の表行が5列に割れない（5列未満／セル内の | で6列以上に割れる）
-#   0'. HTML コメント（<!-- -->）の開閉が不一致（閉じ忘れは以降を EOF まで飲み込む）
-#   1. catalog.md に無い観点語彙（「カタログ外」を除く）
-#   2. 判例台帳の「カタログ外」判例（観点追加の起案シグナル）
-#   3. 同一観点で帰結「論点じゃなかった」が2件以上（移譲仕組み化の起案シグナル）
-#   4. 各ファイルの catalog_version が catalog.md の version と不一致
+# 対象 repo の .claude/casting/{project.md,local.md,precedents.md} に対して6項目を検査する
+# （検出カテゴリ名は report の第1引数と一対一。項目数の表記は tests/casting-structure.bats が
+#  この report 呼び出しの異なり数と突き合わせる）:
+#   0. 配役表の表行が5列に割れない（5列未満／セル内の | で6列以上に割れる）（malformed-row）
+#   0'. HTML コメント（<!-- -->）の開閉が不一致（閉じ忘れは以降を EOF まで飲み込む）（unclosed-comment）
+#   1. catalog.md に無い観点語彙（「カタログ外」を除く）（unknown-vocab）
+#   2. 判例台帳の「カタログ外」判例（観点追加の起案シグナル）（catalog-external-precedent）
+#   3. 同一観点で帰結「論点じゃなかった」が2件以上（移譲仕組み化の起案シグナル）（repeated-not-issue）
+#   4. 各ファイルの catalog_version が catalog.md の version と不一致（version-mismatch）
 #
 # 日本語語彙の照合は LC_ALL=C の grep -F / sed で行う（awk のマルチバイト文字列比較は
 # macOS 実装で壊れる実績があるため使わない）。
 #
 # サブコマンド:
-#   （省略時）      対象 repo の配役表・判例台帳を検査する（上記の検出項目）
+#   （省略時）      対象 repo の配役表・判例台帳を検査する（上記6項目）
 #   resolve          catalog.md・project.md・local.md を観点（行）単位で合成した
 #                     有効な配役表を、由来（カタログ既定／project／local）付きで出力する。
 #                     出力前に合成の入力（project.md / local.md）へ配役表の検証

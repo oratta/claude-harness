@@ -49,9 +49,9 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 - **WHEN** カタログ語彙のみ・カタログ外なし・version 一致のフィクスチャに対して実行する
 - **THEN** exit code が 0 になる
 
-#### Scenario: 4種の検出がそれぞれ報告される
+#### Scenario: 5種の検出がそれぞれ報告される
 
-- **WHEN** ①未知語彙②カタログ外判例③同一観点の「論点じゃなかった」2件④version 不一致 をそれぞれ含む4つのフィクスチャに対して実行する
+- **WHEN** ⓪5列未満の壊れた表行①未知語彙②カタログ外判例③同一観点の「論点じゃなかった」2件④version 不一致 をそれぞれ含む5つのフィクスチャに対して実行する
 - **THEN** いずれも該当項目が一覧出力され、exit code が 1 になる
 
 #### Scenario: セル内の | で6列以上に割れる行が報告される
@@ -68,6 +68,20 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 
 - **WHEN** 存在しないパスを対象に実行する
 - **THEN** 検査結果を出力せず、exit code が 2 になる
+
+### Requirement: 検出項目数の表記と実装の一致
+
+検出項目数を数字で書いている文書（`plugins/casting/README.md`・`plugins/casting/skills/casting/SKILL.md`・`plugins/casting/scripts/casting-check.sh` の冒頭コメント・`plugins/casting/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の description）の「N項目」は、`casting-check.sh` が実際に報告する検出カテゴリ（`report` の第1引数）の異なり数と一致しなければならない (MUST)。この一致は人手のレビューではなくテストで機械的に突き合わせなければならない (MUST)（検出が後から足されたときに文書だけ取り残される事故が起きたため）。
+
+#### Scenario: 検出カテゴリを増やすと文書を直すまでテストが落ちる
+
+- **WHEN** `casting-check.sh` の検出カテゴリ数と文書の「N項目」表記が食い違っている状態でテストスイートを実行する
+- **THEN** 該当テストが失敗し、実装側のカテゴリ数と文書側の表記の両方が失敗メッセージに出る
+
+#### Scenario: 数え方から漏れる report 呼び出しは無言で通らない
+
+- **WHEN** 第1引数がリテラルでない `report` 呼び出し（`report "$var"` 等）を、既存のリテラル呼び出しと同一行に並べた状態でテストスイートを実行する
+- **THEN** 呼び出しの数え方が行単位ではなく出現単位であるため食い違いが検出され、該当テストが失敗する
 
 ### Requirement: resolve による有効な配役表の合成表示
 

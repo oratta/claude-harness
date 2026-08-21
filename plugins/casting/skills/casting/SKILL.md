@@ -86,7 +86,7 @@ version: 0.2.0
 
 ## casting-check.sh
 
-`scripts/casting-check.sh [--catalog <path>] [<repo-root>]` は対象 repo の `.claude/casting/` に対して、配役表の表行が5列ちょうどに割れるか・HTML コメントの開閉が一致するか・未知の観点語彙・「カタログ外」判例・同一観点の「論点じゃなかった」2件以上・`catalog_version` 不一致を検査する。検出なしで exit 0、検出ありなら一覧を出力して exit 1、対象 repo ルートが存在しなければ exit 2。CI やコミット前フックに組み込んでよい。
+`scripts/casting-check.sh [--catalog <path>] [<repo-root>]` は対象 repo の `.claude/casting/` に対して、配役表の表行が5列ちょうどに割れるか・HTML コメントの開閉が一致するか・未知の観点語彙・「カタログ外」判例・同一観点の「論点じゃなかった」2件以上・`catalog_version` 不一致の6項目を検査する。検出なしで exit 0、検出ありなら一覧を出力して exit 1、対象 repo ルートが存在しなければ exit 2。CI やコミット前フックに組み込んでよい。
 
 表行の列数は `|` がちょうど6個かで見る。セルの中に `|` をそのまま書くと表が6列以上に割れ、`既定の担い手` 列が右へずれて別のセルが担い手として解決されるため、5列未満と同じく malformed-row になる。閉じ忘れた `<!--` は以降の行を EOF まで無視させて上書きを全滅させるため、開閉の個数不一致も検出する。
 
