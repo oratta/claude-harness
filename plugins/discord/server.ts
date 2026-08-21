@@ -1032,7 +1032,24 @@ client.once('ready', c => {
   process.stderr.write(`discord channel: gateway connected as ${c.user.tag}\n`)
 })
 
-client.login(TOKEN).catch(err => {
-  process.stderr.write(`discord channel: login failed: ${err}\n`)
-  process.exit(1)
-})
+// ── Test seam ──────────────────────────────────────────────────────────────
+// DISCORD_SYNTH_DRIVER names a module that fabricates gateway events by
+// emitting on the discord.js client (tests/synth-driver.ts). When set, the
+// process serves MCP over stdio as usual but never contacts Discord — no real
+// token, no gateway connection — so delivery behaviour (ordering, allowlist,
+// formatting) is testable from synthetic events alone. Production never sets
+// it and takes the login path below unchanged.
+const SYNTH_DRIVER = process.env.DISCORD_SYNTH_DRIVER
+if (SYNTH_DRIVER) {
+  process.stderr.write(`discord channel: synth driver active — gateway login skipped\n`)
+  const { default: drive } = await import(SYNTH_DRIVER)
+  ;(drive(client) as Promise<void>).catch((err: unknown) => {
+    process.stderr.write(`discord channel: synth driver failed: ${err}\n`)
+    process.exit(1)
+  })
+} else {
+  client.login(TOKEN).catch(err => {
+    process.stderr.write(`discord channel: login failed: ${err}\n`)
+    process.exit(1)
+  })
+}
