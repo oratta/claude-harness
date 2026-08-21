@@ -379,6 +379,18 @@ else
   ng "PAT 未設定時の fail-closed が無い"
 fi
 
+# マージ失敗のログが「認証・認可の失敗」と「それ以外」に分かれているか。
+# 一本のメッセージに丸めると、PAT 失効（401）が 409 と同じ「次回イベントで再検証する」に
+# 見え、実際には差し替えるまで永久に通らないことに誰も気付けない（#157）。
+AM_SCRIPT="$(extract_script "$WF" "automerge-script")"
+if printf '%s\n' "$AM_SCRIPT" | grep -qF '401|403)' \
+  && printf '%s\n' "$AM_SCRIPT" | grep -qF 'AUTOMERGE_PAT が失効' \
+  && [ "$(printf '%s\n' "$AM_SCRIPT" | grep -cF '次回イベントで再検証する')" -eq 1 ]; then
+  ok "マージ失敗のログが認証失敗（401/403）とそれ以外（409 等）で分かれている"
+else
+  ng "マージ失敗のログが一本化されている（PAT 失効が 409 と同じ案内に丸められる）"
+fi
+
 if has "$WF" 'secrets.AUTOMERGE_PAT' && grep -qF 'GH_TOKEN="$MERGE_TOKEN" gh api -X PUT' "$TMPD/am-code.txt"; then
   ok "マージだけ secrets.AUTOMERGE_PAT を使う（後続 workflow を発火させるため）"
 else

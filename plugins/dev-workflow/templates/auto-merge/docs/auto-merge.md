@@ -239,12 +239,18 @@ CI green の判定は**チェック名の完全一致**で auto-merge が自前�
 3. PR に `human-merge` / `needs-human-merge` / `human-only` / `needs-approval` が付いていないか
 4. `agent-review:passed` が付いているか、draft でないか、base が `main` か
 5. CI が green か。green に見えるのに通らないなら `REQUIRED_CHECKS` とジョブ名のズレを疑う
-6. `AUTOMERGE_PAT` の期限切れ（ログに「未設定」と出る）
+6. `AUTOMERGE_PAT` の期限切れ・権限剥奪。**「未設定」とは出ない**（未設定チェックは
+   secret が空のときだけ効き、期限切れの PAT は「設定済み」として素通りする）。
+   出るのは `PR #N のマージが認証・認可で失敗（HTTP 401）。secrets.AUTOMERGE_PAT が
+   失効／権限不足の可能性が高く、差し替えるまで自己回復しません` という **error** ログ。
+   これが出ていたら PAT を再発行して secret を差し替える（手順はこの文書の PAT の節）
 7. ラベル付与（`agent-review:passed`）では即時に判定が走る（`pull_request_target: labeled`）。
    その run のログを見る。付与時点で CI が未 green だった場合はスキップされるのが正常で、
    次の CI 完了（`workflow_run`）か日次 cron が拾う。急ぐときは手動実行で `pr` に番号を入れる
 8. ログに 409 が出ていないか（判定後に新しいコミットが push されると SHA ピンで拒否される。
-   次のイベントで新しい HEAD を検証し直すので、放置しても最終的にマージされる）
+   次のイベントで新しい HEAD を検証し直すので、放置しても最終的にマージされる）。
+   ただし**自己回復するのは 409 だけ**で、401 / 403（PAT 失効・権限不足）は別のログ
+   （項目 6）に分けて出る。そちらは放置しても直らないので、409 の案内を当てはめない
 
 ---
 
