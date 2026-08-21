@@ -159,3 +159,17 @@ pr-review-gate スキルは、実装と説明文の食い違いを follow-up iss
 - **WHEN** SKILL.md の手順4-2 と「やらないこと」を読む
 - **THEN** 実装と説明文の食い違いを follow-up issue に先送りせず同じ PR で直すことが明記されており、整合確認を飛ばして `agent-review:passed` を付けないことが「やらないこと」に含まれている
 
+
+### Requirement: ゲートの必須条件を説明する文字列は全箇所そろって更新される
+
+ゲートの合格必須条件を説明している利用者向け文字列は、必須条件をすべて列挙しなければならない (MUST)。対象は次の5か所である: pr-review-gate スキルの frontmatter `description`、`plugins/dev-workflow/.claude-plugin/plugin.json` の `description`、`.claude-plugin/marketplace.json` の dev-workflow エントリの `description`、`plugins/dev-workflow/README.md` の pr-review-gate 節、`plugins/dev-workflow/templates/auto-merge/README.md` のスキル連携の説明。ゲートに必須条件を追加したとき、この5か所の一部だけを更新して残りを旧条件のまま残してはならない (MUST NOT)。この同時更新は目視ではなく自動テストで機械的に検証しなければならない (MUST)。
+
+#### Scenario: 説明文だけ旧条件のまま取り残されると落ちる
+
+- **WHEN** ゲートの必須条件を追加し、5か所のうち一部の説明文を更新しないまま `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` を実行する
+- **THEN** `gate-description` テストが失敗し、どの場所でどの条件が抜けているかを名指しで出力する
+
+#### Scenario: 収束ルールの例外が説明文にも現れる
+
+- **WHEN** `plugins/dev-workflow/README.md` の収束ルールの記述を読む
+- **THEN** 「マージ後に直せるものは blocking にしない」に、実装とドキュメント文字列の食い違いは例外で同じ PR の中で直す旨が併記されている

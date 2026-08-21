@@ -269,3 +269,45 @@ setup() {
   highest="$(printf '1.2.0\n%s\n' "$v" | sort -V | tail -1)"
   [ "$highest" = "$v" ]
 }
+
+# --- Requirement: ゲートの必須条件を説明する文字列を全箇所そろって更新する（PR #174 レビュー指摘） ---
+
+@test "gate-description: every user-facing description enumerates all required conditions" {
+  # ゲートの合格必須条件（この列挙が正本）。条件を1つ足したら、下の5か所すべての
+  # 説明文を同じ PR の中で更新しないとこのテストが落ちる。
+  # 「実装は締めたが説明文だけ旧条件のまま取り残される」再発を機械的に止めるためのガード。
+  required_conditions="リスク宣言
+動作確認
+ドキュメント文字列の整合確認
+agent-review:passed"
+
+  DEV_README="${PLUGIN_DIR}/README.md"
+  AUTOMERGE_README="${PLUGIN_DIR}/templates/auto-merge/README.md"
+
+  # 説明文の在り処（利用者・エージェントがゲートの合格条件を読む場所）。
+  # 抽出パターンはすべて ASCII アンカーにする（macOS awk のマルチバイト比較を避けるため）。
+  extract_skill_description() { grep '^description: ' "$SKILL"; }
+  extract_plugin_description() { jq -r '.description' "$MANIFEST"; }
+  extract_marketplace_description() {
+    jq -r '.plugins[] | select(.name == "dev-workflow") | .description' "$MARKETPLACE"
+  }
+  extract_dev_readme_section() {
+    awk '/^### pr-review-gate$/ { f = 1; next } /^### / { if (f) exit } f' "$DEV_README"
+  }
+  extract_automerge_readme_section() {
+    awk '/^pr-review-gate/ { f = 1 } f && NF == 0 { exit } f' "$AUTOMERGE_README"
+  }
+
+  failures=""
+  for location in skill_description plugin_description marketplace_description \
+                  dev_readme_section automerge_readme_section; do
+    body="$("extract_${location}")"
+    [ -n "$body" ] || { failures="${failures}${location}: 説明文を抽出できなかった"$'\n'; continue; }
+    while IFS= read -r condition; do
+      printf '%s' "$body" | grep -qF "$condition" \
+        || failures="${failures}${location}: 「${condition}」が抜けている"$'\n'
+    done <<< "$required_conditions"
+  done
+
+  [ -z "$failures" ] || { printf '%s' "$failures" >&2; false; }
+}
