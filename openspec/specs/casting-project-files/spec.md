@@ -63,6 +63,11 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 - **WHEN** `casting-check.sh` の検出カテゴリ数と文書の「N項目」表記が食い違っている状態でテストスイートを実行する
 - **THEN** 該当テストが失敗し、実装側のカテゴリ数と文書側の表記の両方が失敗メッセージに出る
 
+#### Scenario: 数え方から漏れる report 呼び出しは無言で通らない
+
+- **WHEN** 第1引数がリテラルでない `report` 呼び出し（`report "$var"` 等）を、既存のリテラル呼び出しと同一行に並べた状態でテストスイートを実行する
+- **THEN** 呼び出しの数え方が行単位ではなく出現単位であるため食い違いが検出され、該当テストが失敗する
+
 ### Requirement: resolve による有効な配役表の合成表示
 
 `casting-check.sh resolve [<repo-root>]` は、catalog.md・project.md・local.md を観点（行）単位で合成した有効な配役表を出力しなければならない (MUST)。出力の前に、合成の入力になる project.md・local.md へ check モードと同じ配役表検証（⓪5列未満の壊れた表行 ①catalog.md に無い観点語彙 ④catalog_version の catalog.md との不一致・front matter 欠落）を実行しなければならず (MUST)、検証に失敗した場合は合成表を stdout に一切出力せず（部分表・ヘッダ行も含む）、失敗理由（検出カテゴリ・ファイル・該当行または観点）を stderr に出して exit 1 しなければならない (MUST)。起案シグナル（②「カタログ外」判例 ③同一観点の「論点じゃなかった」2件以上）と precedents.md を resolve の検証対象にしてはならない (MUST NOT)（観点追加の提案がその repo の自走を止めないため。check モードでは従来どおり検査する）。検証バイパスのフラグを設けてはならない (MUST NOT)。HTML コメント（`<!-- -->`）内の表行（テンプレートの記入例など）を実在の上書き行として扱ってはならない (MUST NOT)。各観点の行には、その値がどの層から来たかの由来（`カタログ既定`／`project`／`local`）を付けなければならない (MUST)。カタログの全観点が出力に含まれなければならない (MUST)。

@@ -180,37 +180,74 @@ lint_template_paths() {
 
 CHECK_SCRIPT() { printf '%s\n' "${PLUGIN_DIR}/scripts/casting-check.sh"; }
 
+# 行頭コメント行を落とした本文を出す（コメント中の report "..." を数えないため）。
+# 引数でスクリプトを差し替えられるのは、数え方そのものを検査するテストが
+# 合成スクリプトを食わせるため（既定は casting-check.sh 本体）。
+check_script_body() {
+  LC_ALL=C sed -E 's/^[[:space:]]*#.*$//' "${1:-$(CHECK_SCRIPT)}"
+}
+
 # report の実呼び出しから検出カテゴリ名を1行1件で出す。
-#   - 行頭コメント行は先に落とす（コメント中の report "..." を数えないため）
 #   - report と第1引数の間の空白は可変（空白2個・タブでもすり抜けない）
 #   - report() の定義行は直後が "(" なので拾わない
 detection_categories() {
-  LC_ALL=C sed -E 's/^[[:space:]]*#.*$//' "$(CHECK_SCRIPT)" \
+  check_script_body "$@" \
     | LC_ALL=C grep -oE '(^|[;&|(){}[:space:]])report[[:space:]]+"[a-z][a-z-]*"' \
     | LC_ALL=C sed -E 's/.*report[[:space:]]+"([a-z][a-z-]*)".*/\1/' \
     | LC_ALL=C sort -u
 }
 
 detection_category_count() {
-  detection_categories | wc -l | tr -d ' '
+  detection_categories "$@" | wc -l | tr -d ' '
 }
+
+# 呼び出しは「行数」ではなく「出現数」で数える。grep -c は一致した行数しか返さないので、
+# 1行に `report "literal" …; report "$var" …` と並べると calls == literal になり、
+# 非リテラル呼び出しがこの検査をすり抜ける（Codex レビュー指摘・実測で再現）。
+count_report_calls() { check_script_body "$@" \
+  | LC_ALL=C grep -oE '(^|[;&|(){}[:space:]])report[[:space:]]+[^[:space:]]' | wc -l | tr -d ' '; }
+count_literal_report_calls() { check_script_body "$@" \
+  | LC_ALL=C grep -oE '(^|[;&|(){}[:space:]])report[[:space:]]+"[a-z][a-z-]*"' | wc -l | tr -d ' '; }
 
 # 第1引数がリテラルでない report 呼び出し（report "$var" 等）があると
 # detection_categories が黙って数え漏らす。数え方の前提そのものを検査する。
 @test "check: every report call passes a literal lowercase category as its first argument" {
-  local body calls literal
-  body="$(LC_ALL=C sed -E 's/^[[:space:]]*#.*$//' "$(CHECK_SCRIPT)")"
-  calls="$(printf '%s\n' "$body" \
-    | LC_ALL=C grep -cE '(^|[;&|(){}[:space:]])report[[:space:]]+[^[:space:]]' || true)"
-  literal="$(printf '%s\n' "$body" \
-    | LC_ALL=C grep -cE '(^|[;&|(){}[:space:]])report[[:space:]]+"[a-z][a-z-]*"' || true)"
+  local calls literal
+  calls="$(count_report_calls)"
+  literal="$(count_literal_report_calls)"
   if [ "$calls" != "$literal" ]; then
     echo "report の呼び出し ${calls} 件のうちリテラルの第1引数は ${literal} 件。" >&2
     echo "リテラルでない呼び出しは検出カテゴリの数え方（detection_categories）から漏れる。" >&2
-    printf '%s\n' "$body" | LC_ALL=C grep -nE '(^|[;&|(){}[:space:]])report[[:space:]]+[^"]' >&2 || true
+    check_script_body | LC_ALL=C grep -nE '(^|[;&|(){}[:space:]])report[[:space:]]+[^"]' >&2 || true
     return 1
   fi
   [ "$calls" -ge 1 ]
+}
+
+# 上の検査が「行数」で数えていた頃は、1行に2件並べると非リテラル呼び出しを見逃した。
+# 合成スクリプトで、同一行の混在・行継続の両方が数え方に乗ることを直接確かめる。
+@test "check: the report-call counter counts occurrences, not lines" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-synthetic.sh"
+
+  # 同一行にリテラルと非リテラルを並べた形
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'report() { printf "[%s] %s\n" "$1" "$2"; }' \
+    '  report "malformed-row" "a"; report "${EXTRA:-sixth-category}" "b"' \
+    > "$synthetic"
+  [ "$(count_report_calls "$synthetic")" = "2" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "1" ]
+  [ "$(detection_category_count "$synthetic")" = "1" ]
+
+  # 行継続で第1引数を次の行に送った形
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'report() { printf "[%s] %s\n" "$1" "$2"; }' \
+    '  report \' \
+    '    "sixth-category" "b"' \
+    > "$synthetic"
+  [ "$(count_report_calls "$synthetic")" = "1" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "0" ]
 }
 
 @test "check: detection categories in casting-check.sh are the documented five" {
