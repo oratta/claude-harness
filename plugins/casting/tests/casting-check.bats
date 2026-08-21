@@ -111,6 +111,22 @@ setup() {
   [[ "$output" == *"判例リンク"* ]]
 }
 
+# ラベルの存在だけを見る実装では、値が空のラベルを5つ並べただけのブロックが通ってしまう
+# （実質的な事後報告を欠いた判例が無言で配布される fail-open）。空値・空白のみの値の両方を
+# 欠落として数えることを固定する。
+@test "consultation-empty-value fixture: labels present but with empty values are reported and exits 1" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/consultation-empty-value"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"consultation-missing-element"* ]]
+  [[ "$output" == *"5要素のラベルはあるが値が空の判例"* ]]
+  # 5要素すべてが欠落として列挙される（「- 根拠:   」の空白のみの値を含む）
+  [[ "$output" == *"論点"* ]]
+  [[ "$output" == *"各人格の主張"* ]]
+  [[ "$output" == *"裁定"* ]]
+  [[ "$output" == *"根拠"* ]]
+  [[ "$output" == *"判例リンク"* ]]
+}
+
 @test "ok fixture: a compliant consultation block and a note block without a route line pass" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/ok"
   [ "$status" -eq 0 ]

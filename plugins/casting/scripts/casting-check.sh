@@ -396,6 +396,11 @@ check_version "$PRECEDENTS_MD"
 # ブロックは、事後報告フォーマットの5要素（- 論点: / - 各人格の主張: / - 裁定: / - 根拠: /
 # - 判例リンク:）をブロック内にすべて持たなければならない（正本: SKILL.md「論点相談・仲裁」）。
 # 経路行を持たないブロック（注記など）は対象外。
+#
+# ラベルの存在だけを見ると、値が空のラベルを並べただけのブロックが通ってしまう
+# （実質的な事後報告を欠いた判例が無言で配布される fail-open）。そのため
+# 「ラベルの直後に非空白の文字が1つ以上ある」ことまでを合格条件にする。
+# 先頭を固定しないのは、インデントされた箇条書きも同じ要素として数えるため。
 
 check_consultation_block() {
   # check_consultation_block <block-file> <heading>
@@ -403,12 +408,12 @@ check_consultation_block() {
   [ -s "$block" ] || return 0
   { LC_ALL=C grep -F -- "- 経路:" "$block" || true; } | LC_ALL=C grep -qF -- "相談の上自走した" || return 0
   for label in "論点" "各人格の主張" "裁定" "根拠" "判例リンク"; do
-    if ! LC_ALL=C grep -qF -- "- ${label}:" "$block"; then
+    if ! LC_ALL=C grep -qE -- "- ${label}:[[:space:]]*[^[:space:]]" "$block"; then
       missing="${missing}${missing:+・}${label}"
     fi
   done
   if [ -n "$missing" ]; then
-    report "consultation-missing-element" "${PRECEDENTS_MD}: ${heading}: 相談判例に事後報告5要素の欠落（${missing}）"
+    report "consultation-missing-element" "${PRECEDENTS_MD}: ${heading}: 相談判例に事後報告5要素の欠落または値の空（${missing}）"
   fi
 }
 
