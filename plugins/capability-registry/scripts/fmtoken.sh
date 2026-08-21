@@ -23,7 +23,8 @@
 #   printf '%s' "$VALUE" | fmtoken.sh --register <project|agent>--<service>
 #
 # exit code: 0 成功 / 43 SA トークン未配布 / 44 未登録 / 45 プロジェクト導出不能 /
-#            46 命名規約違反・入力不正 / 47 登録済みアイテムへの二重登録
+#            46 命名規約違反・入力不正 / 47 登録済みアイテムへの二重登録 /
+#            48 二重登録判定の不能（読み取り用 SA が解決できない・op item list 失敗 — fail-closed）
 set -euo pipefail
 
 OP_VAULT="agents"
@@ -63,7 +64,11 @@ validate_item_name() {
 # 無人経路（cron・常駐・SSH）を優先する順序。Keychain は ACL 次第で読み出しごとに
 # 生体認証ダイアログを出し、無人文脈ではそこでブロックする（GUI が無ければ即失敗）ため、
 # 対話マシン用の最終フォールバックに置く。ファイル未配布のマシンだけが Keychain に落ちる。
+# `--optional` 付きの呼び出しは、解決できない時に exit せず非 0 を返す
+# （呼び出し側が fail-closed の文脈に合ったエラーを出すため。--register の二重登録ガードが使う）。
 resolve_ro_token() {
+  local optional=""
+  if [[ "${1:-}" == "--optional" ]]; then optional=1; fi
   local token_file="$HOME/.config/op-sa/claude-agents-ro.token"
   if [[ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]]; then
     if [[ -r "$token_file" ]]; then
@@ -71,12 +76,14 @@ resolve_ro_token() {
     elif OP_SERVICE_ACCOUNT_TOKEN="$(security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE_RO" -w 2>/dev/null)"; then
       :
     else
+      if [[ -n "$optional" ]]; then return 1; fi
       echo "fmtoken: SA トークンが見つかりません（ファイル: ${token_file} / Keychain: ${KEYCHAIN_SERVICE_RO}）。このマシンは未セットアップです。" >&2
       echo "→ 主に『SA トークンをこのマシンに配布して』と依頼すること（ブラウザでのログイン代行は不要）" >&2
       exit 43
     fi
     export OP_SERVICE_ACCOUNT_TOKEN
   fi
+  return 0
 }
 
 # 書き込み用 SA トークン（claude-agents-rw）の取得順: env → 600権限ファイル → Keychain。
@@ -111,12 +118,28 @@ if [[ "$mode" == "register" ]]; then
     echo "fmtoken: stdin が空です。登録する値を stdin から渡してください" >&2
     exit 46
   fi
-  resolve_rw_token
-  ref="op://${OP_VAULT}/${explicit_name}/credential"
-  if op read "$ref" >/dev/null 2>&1; then
+  # 二重登録ガード（issue #131）: 判定は読み取り用 SA（claude-agents-ro）で行い、
+  # rw SA の read 権には依存しない。rw で `op read` して判定すると、rw に read 権が無い構成で
+  # 判定が常に「未登録」側に倒れ（fail-open）、1Password は同名アイテムの作成を許すため
+  # 重複アイテムができる。ro SA はこのスクリプトの読み取り経路全体が依存している＝定義上
+  # read 可能なので、存在判定はそちらに寄せる。判定は title 完全一致（op item list）で行い、
+  # credential フィールドの有無に依存しない（フィールド欠落アイテムを「未登録」と誤判定して
+  # 同名重複を作らないため）。判定できない時は create せず止まる（fail-closed / exit 48）。
+  if ! resolve_ro_token --optional; then
+    echo "fmtoken: 二重登録の判定に使える読み取り用 SA トークン（claude-agents-ro）が解決できません。判定できないまま登録すると同名アイテムの重複を作りうるため、登録を中止します（fail-closed）" >&2
+    echo "→ ro SA トークンをこのマシンに配布する（env OP_SERVICE_ACCOUNT_TOKEN / ~/.config/op-sa/claude-agents-ro.token / Keychain ${KEYCHAIN_SERVICE_RO}）か、rw SA に agents 保管庫の read 権を付けて OP_SERVICE_ACCOUNT_TOKEN に設定すること（1Password 側の権限変更は人間の GUI 作業）" >&2
+    exit 48
+  fi
+  if ! existing_items="$(op item list --vault "$OP_VAULT" --format json 2>/dev/null)"; then
+    echo "fmtoken: 二重登録の判定（op item list --vault ${OP_VAULT}）に失敗しました。判定できないまま登録すると同名アイテムの重複を作りうるため、登録を中止します（fail-closed）" >&2
+    exit 48
+  fi
+  if printf '%s' "$existing_items" |
+     /usr/bin/python3 -c 'import json,sys; sys.exit(0 if any(i["title"] == sys.argv[1] for i in json.load(sys.stdin)) else 1)' "$explicit_name"; then
     echo "fmtoken: ${explicit_name} は既に登録済みです → 上書きしない（更新が必要なら主の判断を経て op item edit を使う。無断上書き防止）" >&2
     exit 47
   fi
+  resolve_rw_token
   op item create --vault "$OP_VAULT" --category "API Credential" --title "$explicit_name" "credential[password]=${value}" >/dev/null
   echo "OK: ${explicit_name} を ${OP_VAULT} 保管庫に登録した（フィールド: credential）"
   exit 0

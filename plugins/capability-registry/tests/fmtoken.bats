@@ -12,12 +12,18 @@ setup() {
   STUB="${WORK}/stub-bin"
   mkdir -p "$STUB"
 
-  # 登録済みアイテムを FMTOKEN_TEST_REGISTERED（ref 完全一致）で表現する op スタブ。
-  # FMTOKEN_TEST_EXPECT_SA が設定されていれば、OP_SERVICE_ACCOUNT_TOKEN の一致も要求する
-  # （どの経路の SA トークンが使われたかを検証するため）
+  # 登録済みアイテムを FMTOKEN_TEST_REGISTERED（ref 完全一致。item list の title にも反映）で
+  # 表現する op スタブ。FMTOKEN_TEST_EXPECT_SA が設定されていれば、OP_SERVICE_ACCOUNT_TOKEN の
+  # 一致も要求する（どの経路の SA トークンが使われたかを検証するため）。
+  # item create だけは FMTOKEN_TEST_EXPECT_SA_CREATE を優先して照合する
+  # （--register が「二重登録判定は ro / 作成は rw」と SA を使い分けるため、経路別に検証する）
   cat >"${STUB}/op" <<'EOF'
 #!/usr/bin/env bash
-if [[ -n "${FMTOKEN_TEST_EXPECT_SA:-}" && "${OP_SERVICE_ACCOUNT_TOKEN:-}" != "$FMTOKEN_TEST_EXPECT_SA" ]]; then
+expect_sa="${FMTOKEN_TEST_EXPECT_SA:-}"
+if [[ "$1" == "item" && "$2" == "create" && -n "${FMTOKEN_TEST_EXPECT_SA_CREATE:-}" ]]; then
+  expect_sa="$FMTOKEN_TEST_EXPECT_SA_CREATE"
+fi
+if [[ -n "$expect_sa" && "${OP_SERVICE_ACCOUNT_TOKEN:-}" != "$expect_sa" ]]; then
   exit 1
 fi
 if [[ "$1" == "read" ]]; then
@@ -28,7 +34,13 @@ if [[ "$1" == "read" ]]; then
   exit 1
 fi
 if [[ "$1" == "item" && "$2" == "list" ]]; then
-  echo '[{"title":"proj--github"},{"title":"proj--supabase"},{"title":"other--vercel"}]'
+  extra=""
+  if [[ -n "${FMTOKEN_TEST_REGISTERED:-}" ]]; then
+    t="${FMTOKEN_TEST_REGISTERED#op://agents/}"
+    t="${t%/credential}"
+    extra="{\"title\":\"${t}\"},"
+  fi
+  echo "[${extra}{\"title\":\"proj--github\"},{\"title\":\"proj--supabase\"},{\"title\":\"other--vercel\"}]"
   exit 0
 fi
 if [[ "$1" == "item" && "$2" == "create" ]]; then
@@ -273,7 +285,8 @@ EOF
 @test "--register: project-prefixed item is created via rw SA (not ambient ro token)" {
   make_repo "myproj"
   export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
-  export FMTOKEN_TEST_EXPECT_SA="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA="dummy-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
   run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register newproj--newsvc"
   [ "$status" -eq 0 ]
   grep -q -- "newproj--newsvc" "$FMTOKEN_TEST_CREATE_LOG"
@@ -283,7 +296,8 @@ EOF
 @test "--register: agent-prefixed item is created" {
   make_repo "myproj"
   export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
-  export FMTOKEN_TEST_EXPECT_SA="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA="dummy-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
   run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register moko--TRELLO_TOKEN"
   [ "$status" -eq 0 ]
   grep -q -- "moko--TRELLO_TOKEN" "$FMTOKEN_TEST_CREATE_LOG"
@@ -330,8 +344,49 @@ EOF
   mkdir -p "${WORK}/.config/op-sa"
   printf 'file-rw-token' >"${WORK}/.config/op-sa/claude-agents-rw.token"
   chmod 600 "${WORK}/.config/op-sa/claude-agents-rw.token"
-  export FMTOKEN_TEST_EXPECT_SA="file-rw-token"
+  export FMTOKEN_TEST_EXPECT_SA="dummy-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="file-rw-token"
   HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
   [ "$status" -eq 0 ]
   grep -q -- "moko--NEWTOKEN" "$FMTOKEN_TEST_CREATE_LOG"
+}
+
+# ─── 二重登録ガード（issue #131）: 判定は ro SA・title 一致・fail-closed ───
+
+@test "--register: duplicate title exits 47 even when rw SA cannot read (guard uses ro SA)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  # 許可 SA を ro トークンに固定 = rw トークンでの op は全て失敗（rw に read 権が無い構成の再現）
+  export FMTOKEN_TEST_EXPECT_SA="dummy-sa-token"
+  export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
+  run bash -c "printf '%s' v | '$FMTOKEN' --register moko--TRELLO_TOKEN"
+  [ "$status" -eq 47 ]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+  [[ "$output" == *"登録済み"* ]]
+}
+
+@test "--register: no duplicate title: create is called and exits 0" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA="dummy-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run bash -c "printf '%s' v | '$FMTOKEN' --register moko--BRANDNEW"
+  [ "$status" -eq 0 ]
+  grep -q -- "moko--BRANDNEW" "$FMTOKEN_TEST_CREATE_LOG"
+}
+
+@test "--register: ro token unresolvable anywhere exits 48 without create (fail-closed)" {
+  unset OP_SERVICE_ACCOUNT_TOKEN
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
+  [ "$status" -eq 48 ]
+  [[ "$output" == *"fail-closed"* ]]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+@test "--register: op item list failure exits 48 without create (fail-closed)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  # ro でも rw でもない SA だけを許可 = 判定の op item list が失敗する状況
+  export FMTOKEN_TEST_EXPECT_SA="some-other-token"
+  run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
+  [ "$status" -eq 48 ]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
 }
