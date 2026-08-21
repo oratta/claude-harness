@@ -56,6 +56,7 @@ jobs:
             ''|*[!0-9]*) echo "::error::pr 入力が PR 番号ではありません: $PR_INPUT"; exit 1 ;;
           esac
 
+      # actions/checkout は GitHub 公式 action なので SHA 固定の対象外（方針は ci.yml 参照、issue #138）
       - uses: actions/checkout@v4
         with:
           # revert 対象のコミットに到達するため全履歴が要る
