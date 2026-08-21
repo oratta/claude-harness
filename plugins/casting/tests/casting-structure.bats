@@ -242,6 +242,7 @@ count_literal_report_calls() { literal_report_categories "$@" | wc -l | tr -d ' 
     'report() { printf "[%s] %s\n" "$1" "$2"; }' \
     "usage() { cat <<'EOF'" \
     '  report "heredoc-cat" "…"' \
+    '  $(report "quoted-heredoc-subst-cat" "…")' \
     'EOF' \
     '}' \
     'true  # report "trailing-cat" と書き換える' \
@@ -257,6 +258,46 @@ count_literal_report_calls() { literal_report_categories "$@" | wc -l | tr -d ' 
   [ "$(count_literal_report_calls "$synthetic")" = "1" ]
   [ "$(detection_category_count "$synthetic")" = "1" ]
   [ "$(detection_categories "$synthetic")" = "sixth-category" ]
+}
+
+# #175 の退行ガード。#163 でコード領域だけを見る走査に変えたとき、次の4形で本物の
+# 呼び出しを数え落とすようになっていた（いずれも main の grep 方式では数えられていた）:
+#   算術左シフト `(( v = 1 << 2 ))`      `<<` をヒアドキュメント開始と誤認し、
+#                                        区切り語が終端しないままファイル末尾まで本文扱い
+#   ANSI-C クオート `$'don\'t'`          `\'` を終端と誤認して引用状態が解除できない
+#   二重引用の中の `"$(report …)"`       外側の `"` の中を丸ごと非コード扱いしていた
+#   未引用ヒアドキュメント本文の `$(…)`  本文行を無条件で探索対象外にしていた
+# 前2形は以降の呼び出しが全消滅するのでカテゴリ数が落ちて赤くなるが、後2形は既存
+# カテゴリを削らずに新規カテゴリだけを消すので、突き合わせが緑のまますり抜ける。
+@test "check: shell forms that still run report are counted" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-false-negatives.sh"
+  local expected actual
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+(( value = 1 << 2 ))
+report "after-arith-shift" "a"
+shifted=$(( 1 << 3 ))
+report "after-arith-expansion" "b"
+msg=$'don\'t'
+report "after-ansi-c-quote" "c"
+out="$(report "dquote-subst" "d")"
+cat <<EOS
+$(report "unquoted-heredoc-subst" "e")
+EOS
+SH
+
+  [ "$(count_report_calls "$synthetic")" = "5" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "5" ]
+
+  expected="after-ansi-c-quote after-arith-expansion after-arith-shift dquote-subst unquoted-heredoc-subst"
+  actual="$(detection_categories "$synthetic" | tr '\n' ' ')"
+  actual="${actual% }"
+  if [ "$actual" != "$expected" ]; then
+    echo "数え落とし側へ倒れている。実装: [${actual}] / 期待: [${expected}]" >&2
+    return 1
+  fi
 }
 
 # 上の検査が「行数」で数えていた頃は、1行に2件並べると非リテラル呼び出しを見逃した。
