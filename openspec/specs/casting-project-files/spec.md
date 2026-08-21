@@ -33,7 +33,7 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 
 ### Requirement: 判例台帳の形式
 
-`precedents.md` の判例は1判例1ブロックの追記型とし、見出し（日付＋論点1行）と4フィールド — 観点（catalog.md の語彙、当てはまらなければ「カタログ外」）・経路（主に上げた／自走した）・帰結（論点だった／じゃなかった＋一言の理由）・還元（配役既定表のどこを変えたか。変更なしは「なし」）— を持たなければならない (MUST)。この形式は雛形 `templates/precedents.md` と SKILL.md の両方に記載されなければならない (MUST)。
+`precedents.md` の判例は1判例1ブロックの追記型とし、見出し（日付＋論点1行）と4フィールド — 観点（catalog.md の語彙、当てはまらなければ「カタログ外」）・経路（主に上げた／自走した／相談の上自走した）・帰結（論点だった／じゃなかった＋一言の理由）・還元（配役既定表のどこを変えたか。変更なしは「なし」）— を持たなければならない (MUST)。この形式は雛形 `templates/precedents.md` と SKILL.md の両方に記載されなければならない (MUST)。
 
 #### Scenario: 雛形が4フィールドの記入例を含む
 
@@ -42,21 +42,21 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 
 ### Requirement: casting-check.sh の検出項目
 
-`plugins/casting/scripts/casting-check.sh` は対象 repo の `.claude/casting/` に対して次の5項目を検査しなければならない (MUST): ⓪配役表に5列未満の壊れた表行が無いか（「行を書くなら5列すべて」の強制。壊れた行は resolve の合成で有効値として扱わない）①配役表・判例台帳に catalog.md に無い観点語彙（「カタログ外」を除く）が使われていないか ②判例台帳に「カタログ外」判例があるか（観点追加の起案シグナルとして報告）③同一観点で帰結「論点じゃなかった」が2件以上あるか（移譲仕組み化の起案シグナルとして報告）④各ファイルの `catalog_version` が catalog.md の `version` と一致するか。検出なしなら exit 0、検出ありなら対象の一覧を出力して exit 1 としなければならない (MUST)。日本語語彙の照合に awk のマルチバイト文字列比較を使ってはならない (MUST NOT)（macOS awk は多バイト比較が壊れるため。`LC_ALL=C` の grep -F 等で照合する）。
+`plugins/casting/scripts/casting-check.sh` は対象 repo の `.claude/casting/` に対して次の6項目を検査しなければならない (MUST): ⓪配役表に5列未満の壊れた表行が無いか（「行を書くなら5列すべて」の強制。壊れた行は resolve の合成で有効値として扱わない）①配役表・判例台帳に catalog.md に無い観点語彙（「カタログ外」を除く）が使われていないか ②判例台帳に「カタログ外」判例があるか（観点追加の起案シグナルとして報告）③同一観点で帰結「論点じゃなかった」が2件以上あるか（移譲仕組み化の起案シグナルとして報告）④各ファイルの `catalog_version` が catalog.md の `version` と一致するか ⑤判例台帳の相談判例（経路「相談の上自走した」のブロック）が事後報告フォーマットの5要素（論点・各人格の主張・裁定・根拠・判例リンク）をすべて**実質的な値つきで**持つか（ラベルだけ並べて値が空・空白のみのものは欠落として報告する。規約に反する形の相談実例が過去判例として配られるのを防ぐ）。検出なしなら exit 0、検出ありなら対象の一覧を出力して exit 1 としなければならない (MUST)。日本語語彙の照合に awk のマルチバイト文字列比較を使ってはならない (MUST NOT)（macOS awk は多バイト比較が壊れるため。`LC_ALL=C` の grep -F 等で照合する）。
 
 #### Scenario: 問題のないフィクスチャで exit 0
 
 - **WHEN** カタログ語彙のみ・カタログ外なし・version 一致のフィクスチャに対して実行する
 - **THEN** exit code が 0 になる
 
-#### Scenario: 5種の検出がそれぞれ報告される
+#### Scenario: 6種の検出がそれぞれ報告される
 
-- **WHEN** ⓪5列未満の壊れた表行①未知語彙②カタログ外判例③同一観点の「論点じゃなかった」2件④version 不一致 をそれぞれ含む5つのフィクスチャに対して実行する
+- **WHEN** ⓪5列未満の壊れた表行①未知語彙②カタログ外判例③同一観点の「論点じゃなかった」2件④version 不一致⑤事後報告5要素を欠くか値が空の相談判例 をそれぞれ含む6つのフィクスチャに対して実行する
 - **THEN** いずれも該当項目が一覧出力され、exit code が 1 になる
 
 ### Requirement: 検出項目数の表記と実装の一致
 
-検出項目数を数字で書いている文書（`plugins/casting/README.md`・`plugins/casting/skills/casting/SKILL.md`・`plugins/casting/scripts/casting-check.sh` の冒頭コメント・`plugins/casting/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の description）の「N項目」は、`casting-check.sh` が実際に報告する検出カテゴリ（`report` の第1引数）の異なり数と一致しなければならない (MUST)。この一致は人手のレビューではなくテストで機械的に突き合わせなければならない (MUST)（検出が後から足されたときに文書だけ取り残される事故が起きたため）。
+検出項目数を数字で書いている文書（`plugins/casting/README.md`・`plugins/casting/skills/casting/SKILL.md`・`plugins/casting/scripts/casting-check.sh` の冒頭コメント・`plugins/casting/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の description・この spec の「casting-check.sh の検出項目」要件）の「N項目」は、`casting-check.sh` が実際に報告する検出カテゴリ（`report` の第1引数）の異なり数と一致しなければならない (MUST)。この一致は人手のレビューではなくテストで機械的に突き合わせなければならない (MUST)（検出が後から足されたときに文書だけ取り残される事故が起きたため）。
 
 #### Scenario: 検出カテゴリを増やすと文書を直すまでテストが落ちる
 
