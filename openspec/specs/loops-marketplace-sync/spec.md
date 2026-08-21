@@ -35,14 +35,14 @@
 - **WHEN** ユーザーが `git diff origin/main --name-only` で変更されたプラグインを特定し、各プラグインの plugin.json の `version` を `git show origin/main:plugins/<name>/.claude-plugin/plugin.json` の `version` と比較する
 - **THEN** 変更された全プラグインで version が main 時点より上がっている
 
-### Requirement: marketplace.json top-level version が bump され JSON 構文が正しい
+### Requirement: marketplace.json はトップレベル version を持たず JSON 構文が正しい
 
-プラグイン構成の変更（loops 追加・各プラグイン version 更新）に伴い、`.claude-plugin/marketplace.json` の top-level `version` を bump しなければならない (MUST)。また、変更後の marketplace.json および全プラグインの plugin.json は JSON として構文的に正しくなければならない (MUST)。
+`.claude-plugin/marketplace.json` はトップレベルの `version` フィールドを持ってはならない (MUST NOT)。また、marketplace.json および全プラグインの plugin.json は JSON として構文的に正しくなければならない (MUST)。トップレベル version は全プラグイン共通の単一行で、プラグインを変更するすべての PR を互いに衝突させるため廃止した（oratta/claude-harness#140）。バージョンの正本は各 `plugin.json` と marketplace.json の対応エントリの 2 点同期で、プラグインキャッシュ（`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`）もプラグイン単位の version をキーにする。
 
-#### Scenario: top-level version が上がっている
+#### Scenario: トップレベル version が存在しない
 
-- **WHEN** ユーザーが `jq -r .version .claude-plugin/marketplace.json` の出力を `git show origin/main:.claude-plugin/marketplace.json | jq -r .version` と比較する
-- **THEN** top-level version が main 時点より上がっている
+- **WHEN** ユーザーが `jq 'has("version")' .claude-plugin/marketplace.json` を実行する
+- **THEN** 出力は `false` である
 
 #### Scenario: 全 JSON ファイルが parse できる
 

@@ -177,9 +177,9 @@ The Gap Analysis and Interview methodology used by `longrun-mvp-plan` SHALL be a
 - **WHEN** the implementation is inspected for how Gap Analysis / Interview methodology is provided
 - **THEN** either a shared reference document under `plugins/longrun/` MUST be Read by both skills, or each inline copy MUST contain a divergence-prevention comment naming the counterpart file to update in sync
 
-### Requirement: Plugin versions MUST be synchronized at 6.1.0 across all three locations
+### Requirement: Plugin versions MUST be synchronized at 6.1.0 across their sync locations
 
-After this change is delivered, the longrun plugin version MUST be `6.1.0` and the lr plugin version MUST be `6.1.0`, with each version synchronized across its three locations: the plugin's `.claude-plugin/plugin.json` `version`, the matching entry in the repository-root `.claude-plugin/marketplace.json` `plugins[]` array, and the marketplace.json top-level `version` (which MUST be bumped relative to its previous value). Additionally, the `version` frontmatter of `plugins/longrun/skills/longrun-mvp-plan/SKILL.md` and `plugins/longrun/skills/longrun-plan/SKILL.md` MUST equal the longrun plugin.json version.
+After this change is delivered, the longrun plugin version MUST be `6.1.0` and the lr plugin version MUST be `6.1.0`, with each version synchronized across its three locations: the plugin's `.claude-plugin/plugin.json` `version` and the matching entry in the repository-root `.claude-plugin/marketplace.json` `plugins[]` array (the marketplace.json top-level `version` was retired by oratta/claude-harness#140 and is no longer a sync location). Additionally, the `version` frontmatter of `plugins/longrun/skills/longrun-mvp-plan/SKILL.md` and `plugins/longrun/skills/longrun-plan/SKILL.md` MUST equal the longrun plugin.json version.
 
 #### Scenario: longrun version sync
 
@@ -191,8 +191,4 @@ After this change is delivered, the longrun plugin version MUST be `6.1.0` and t
 - **WHEN** a reader compares `plugins/lr/.claude-plugin/plugin.json` with the `lr` entry in `.claude-plugin/marketplace.json` `plugins[]`
 - **THEN** both MUST read `6.1.0`
 
-#### Scenario: Marketplace top-level bump
-
-- **WHEN** a reader reads the top-level `version` of `.claude-plugin/marketplace.json`
-- **THEN** the value MUST be strictly greater than the value recorded before this change was applied
 

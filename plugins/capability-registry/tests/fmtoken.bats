@@ -12,12 +12,18 @@ setup() {
   STUB="${WORK}/stub-bin"
   mkdir -p "$STUB"
 
-  # 登録済みアイテムを FMTOKEN_TEST_REGISTERED（ref 完全一致）で表現する op スタブ。
-  # FMTOKEN_TEST_EXPECT_SA が設定されていれば、OP_SERVICE_ACCOUNT_TOKEN の一致も要求する
-  # （どの経路の SA トークンが使われたかを検証するため）
+  # 登録済みアイテムを FMTOKEN_TEST_REGISTERED（ref 完全一致。item list の title にも反映）で
+  # 表現する op スタブ。FMTOKEN_TEST_EXPECT_SA が設定されていれば、OP_SERVICE_ACCOUNT_TOKEN の
+  # 一致も要求する（どの経路の SA トークンが使われたかを検証するため）。
+  # item create だけは FMTOKEN_TEST_EXPECT_SA_CREATE を優先して照合する
+  # （--register が「二重登録判定は ro / 作成は rw」と SA を使い分けるため、経路別に検証する）
   cat >"${STUB}/op" <<'EOF'
 #!/usr/bin/env bash
-if [[ -n "${FMTOKEN_TEST_EXPECT_SA:-}" && "${OP_SERVICE_ACCOUNT_TOKEN:-}" != "$FMTOKEN_TEST_EXPECT_SA" ]]; then
+expect_sa="${FMTOKEN_TEST_EXPECT_SA:-}"
+if [[ "$1" == "item" && "$2" == "create" && -n "${FMTOKEN_TEST_EXPECT_SA_CREATE:-}" ]]; then
+  expect_sa="$FMTOKEN_TEST_EXPECT_SA_CREATE"
+fi
+if [[ -n "$expect_sa" && "${OP_SERVICE_ACCOUNT_TOKEN:-}" != "$expect_sa" ]]; then
   exit 1
 fi
 if [[ "$1" == "read" ]]; then
@@ -28,12 +34,25 @@ if [[ "$1" == "read" ]]; then
   exit 1
 fi
 if [[ "$1" == "item" && "$2" == "list" ]]; then
-  echo '[{"title":"proj--github"},{"title":"proj--supabase"},{"title":"other--vercel"}]'
+  # exit 0 のまま解析できない出力を返す（op の出力形式が変わった / 途中で切れた状況）
+  if [[ -n "${FMTOKEN_TEST_LIST_BROKEN:-}" ]]; then
+    echo 'not json at all'
+    exit 0
+  fi
+  extra=""
+  if [[ -n "${FMTOKEN_TEST_REGISTERED:-}" ]]; then
+    t="${FMTOKEN_TEST_REGISTERED#op://agents/}"
+    t="${t%/credential}"
+    extra="{\"title\":\"${t}\"},"
+  fi
+  echo "[${extra}{\"title\":\"proj--github\"},{\"title\":\"proj--supabase\"},{\"title\":\"other--vercel\"}]"
   exit 0
 fi
 if [[ "$1" == "item" && "$2" == "create" ]]; then
-  # 呼び出し引数を記録する（値そのものはテストのアサート対象にしない）
+  # argv と stdin を別ログに分けて記録する。値がどちらの経路を通ったかを
+  # テストで区別するため（issue #130: 値は argv に載せず stdin の JSON で渡す）。
   printf '%s\n' "$@" >"${FMTOKEN_TEST_CREATE_LOG:-/dev/null}"
+  cat >"${FMTOKEN_TEST_CREATE_STDIN_LOG:-/dev/null}"
   exit 0
 fi
 exit 1
@@ -50,6 +69,41 @@ EOF
   PATH="${STUB}:${PATH}"
   export OP_SERVICE_ACCOUNT_TOKEN="dummy-sa-token"
   export FMTOKEN_TEST_CREATE_LOG="${WORK}/op-create.log"
+  export FMTOKEN_TEST_CREATE_STDIN_LOG="${WORK}/op-create-stdin.log"
+}
+
+# op item create の stdin ログに記録された JSON から、credential フィールドの値を取り出す。
+# 値の完全一致を見るため、文字列の部分一致ではなく JSON をパースして比較する。
+created_credential() {
+  /usr/bin/python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+print([f for f in d["fields"] if f["id"]=="credential"][0]["value"], end="")' "$FMTOKEN_TEST_CREATE_STDIN_LOG"
+}
+
+# ファイル $2 にパターン $1 が現れないことを検証する。
+# `! grep ...` を直接書かないのは、bash の errexit が `!` で始まる形では無効化され、
+# アサートが黙って素通りするため（露出検査が常に緑になる事故を防ぐ）。
+# grep の終了コードは 0=一致 / 1=不一致 / 2=エラー（ファイルが無い・読めない等）。
+# 2 を 1 と一緒に「不一致」へ丸めると、露出検査の対象ログが作られていない状態を
+# 「値が漏れていない」と誤判定して素通りする。読めることを先に要求し、2 は失敗にする。
+refute_in_file() {
+  if [[ ! -r "$2" ]]; then
+    echo "refute_in_file: ${2} が読めない（露出検査が成立していない）" >&2
+    return 1
+  fi
+  local rc=0
+  grep -q -- "$1" "$2" || rc=$?
+  case "$rc" in
+    0) echo "unexpected match: ${1} found in ${2}" >&2; return 1 ;;
+    1) return 0 ;;
+    *) echo "refute_in_file: grep が異常終了した（rc=${rc} / ${2}）" >&2; return 1 ;;
+  esac
+}
+
+# 同じく stdin ログの JSON から任意のトップレベルキーを取り出す（title / category）。
+created_field() {
+  /usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]], end="")' \
+    "$FMTOKEN_TEST_CREATE_STDIN_LOG" "$1"
 }
 
 teardown() {
@@ -273,20 +327,75 @@ EOF
 @test "--register: project-prefixed item is created via rw SA (not ambient ro token)" {
   make_repo "myproj"
   export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
-  export FMTOKEN_TEST_EXPECT_SA="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA="dummy-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
   run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register newproj--newsvc"
   [ "$status" -eq 0 ]
-  grep -q -- "newproj--newsvc" "$FMTOKEN_TEST_CREATE_LOG"
+  [ "$(created_field title)" = "newproj--newsvc" ]
   [[ "$output" != *"sekrit-value"* ]]
+}
+
+# 露出検査（refute_in_file）自身が素通りしないことを固定する。issue #130 の受け入れ条件
+# 「値が argv に載らない」を検査する唯一の手段がこのヘルパなので、ログが欠けたときに
+# 緑になる形だと検査が黙って消える。
+@test "refute_in_file: unreadable log fails instead of silently passing" {
+  printf 'haystack only\n' >"${WORK}/refute-probe.log"
+  run refute_in_file "needle" "${WORK}/no-such-file.log"
+  [ "$status" -ne 0 ]
+  run refute_in_file "needle" "${WORK}/refute-probe.log"
+  [ "$status" -eq 0 ]
+  run refute_in_file "haystack" "${WORK}/refute-probe.log"
+  [ "$status" -ne 0 ]
+}
+
+@test "--register: value goes through stdin only, never through op's argv" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  # 二重登録判定（op item list）は ro SA、作成は rw SA で走る（issue #131）
+  export FMTOKEN_TEST_EXPECT_SA="dummy-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register newproj--newsvc"
+  [ "$status" -eq 0 ]
+  # 値は op の argv に載らない（ps から見えない）
+  refute_in_file "sekrit-value" "$FMTOKEN_TEST_CREATE_LOG"
+  # assignment statement 形式そのものが消えていること
+  refute_in_file "credential\[password\]" "$FMTOKEN_TEST_CREATE_LOG"
+  # 値は stdin 経由で確かに渡っている（両方見ないと「どこにも渡さない」実装が通る）
+  [ "$(created_credential)" = "sekrit-value" ]
+}
+
+@test "--register: created item keeps the API Credential shape (category / credential field)" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register newproj--newsvc"
+  [ "$status" -eq 0 ]
+  [ "$(created_field category)" = "API_CREDENTIAL" ]
+  grep -q -- "--vault" "$FMTOKEN_TEST_CREATE_LOG"
+  grep -q -- "agents" "$FMTOKEN_TEST_CREATE_LOG"
+  # JSON テンプレートを stdin で読ませる形（op item create ... -）
+  grep -qx -- "-" "$FMTOKEN_TEST_CREATE_LOG"
+}
+
+@test "--register: value containing quotes, backslashes, newlines and \$ survives intact" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  # " \ 改行 $ ' タブ を含む値。手組み JSON や shell 展開で壊れるとここで落ちる。
+  # 値はファイル経由で渡す（テスト側のクォートで壊すと検証の意味が無くなるため）
+  printf 'a"b\\c$d\n%s\tsingle'\''quote' "line2" >"${WORK}/tricky"
+  run bash -c "'$FMTOKEN' --register newproj--tricky < '${WORK}/tricky'"
+  [ "$status" -eq 0 ]
+  [ "$(created_credential)" = "$(cat "${WORK}/tricky")" ]
+  refute_in_file 'a"b' "$FMTOKEN_TEST_CREATE_LOG"
 }
 
 @test "--register: agent-prefixed item is created" {
   make_repo "myproj"
   export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
-  export FMTOKEN_TEST_EXPECT_SA="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA="dummy-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
   run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register moko--TRELLO_TOKEN"
   [ "$status" -eq 0 ]
-  grep -q -- "moko--TRELLO_TOKEN" "$FMTOKEN_TEST_CREATE_LOG"
+  [ "$(created_field title)" = "moko--TRELLO_TOKEN" ]
 }
 
 @test "--register: naming convention violation exits 46, op item create not called" {
@@ -330,8 +439,72 @@ EOF
   mkdir -p "${WORK}/.config/op-sa"
   printf 'file-rw-token' >"${WORK}/.config/op-sa/claude-agents-rw.token"
   chmod 600 "${WORK}/.config/op-sa/claude-agents-rw.token"
-  export FMTOKEN_TEST_EXPECT_SA="file-rw-token"
+  export FMTOKEN_TEST_EXPECT_SA="dummy-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="file-rw-token"
   HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
   [ "$status" -eq 0 ]
-  grep -q -- "moko--NEWTOKEN" "$FMTOKEN_TEST_CREATE_LOG"
+  [ "$(created_field title)" = "moko--NEWTOKEN" ]
+}
+
+# ─── 二重登録ガード（issue #131）: 判定は ro SA・title 一致・fail-closed ───
+
+@test "--register: duplicate title exits 47 even when rw SA cannot read (guard uses ro SA)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  # 許可 SA を ro トークンに固定 = rw トークンでの op は全て失敗（rw に read 権が無い構成の再現）
+  export FMTOKEN_TEST_EXPECT_SA="dummy-sa-token"
+  export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
+  run bash -c "printf '%s' v | '$FMTOKEN' --register moko--TRELLO_TOKEN"
+  [ "$status" -eq 47 ]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+  [[ "$output" == *"登録済み"* ]]
+}
+
+@test "--register: no duplicate title: create is called and exits 0" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA="dummy-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run bash -c "printf '%s' v | '$FMTOKEN' --register moko--BRANDNEW"
+  [ "$status" -eq 0 ]
+  [ "$(created_field title)" = "moko--BRANDNEW" ]
+}
+
+@test "--register: ro token unresolvable anywhere exits 48 without create (fail-closed)" {
+  unset OP_SERVICE_ACCOUNT_TOKEN
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
+  [ "$status" -eq 48 ]
+  [[ "$output" == *"fail-closed"* ]]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+@test "--register: op item list failure exits 48 without create (fail-closed)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  # ro でも rw でもない SA だけを許可 = 判定の op item list が失敗する状況
+  export FMTOKEN_TEST_EXPECT_SA="some-other-token"
+  run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
+  [ "$status" -eq 48 ]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+  # 判定不能で止めたときは、どちらを直せばいいかの選択肢まで出す
+  [[ "$output" == *"claude-agents-ro.token"* ]]
+  [[ "$output" == *"read 権"* ]]
+}
+
+@test "--register: unparsable item list exits 48 without create (parse failure is not 'not found')" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  export FMTOKEN_TEST_LIST_BROKEN=1
+  run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
+  [ "$status" -eq 48 ]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+  [[ "$output" == *"解析できませんでした"* ]]
+  [[ "$output" == *"claude-agents-ro.token"* ]]
+}
+
+@test "--register: ro token unresolvable message offers both remedies" {
+  unset OP_SERVICE_ACCOUNT_TOKEN
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
+  [ "$status" -eq 48 ]
+  [[ "$output" == *"claude-agents-ro.token"* ]]
+  [[ "$output" == *"read 権"* ]]
 }
