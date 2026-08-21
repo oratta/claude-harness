@@ -2,11 +2,13 @@
 #
 # casting-check.sh — 「観点の配役」フレームワークの語彙 lint ＋ 起案シグナル検出
 #
-# 対象 repo の .claude/casting/{project.md,local.md,precedents.md} に対して4項目を検査する:
+# 対象 repo の .claude/casting/{project.md,local.md,precedents.md} に対して5項目を検査する:
 #   1. catalog.md に無い観点語彙（「カタログ外」を除く）
 #   2. 判例台帳の「カタログ外」判例（観点追加の起案シグナル）
 #   3. 同一観点で帰結「論点じゃなかった」が2件以上（移譲仕組み化の起案シグナル）
 #   4. 各ファイルの catalog_version が catalog.md の version と不一致
+#   5. 相談判例（経路「相談の上自走した」）に事後報告5要素（論点・各人格の主張・裁定・
+#      根拠・判例リンク）の欠落（規約に反する形の相談実例が過去判例として配られるのを防ぐ）
 #
 # 検出なしなら exit 0、検出ありなら対象一覧を出力して exit 1。
 #
@@ -14,7 +16,7 @@
 # macOS 実装で壊れる実績があるため使わない）。
 #
 # サブコマンド:
-#   （省略時）      対象 repo の配役表・判例台帳を検査する（上記4項目）
+#   （省略時）      対象 repo の配役表・判例台帳を検査する（上記5項目）
 #   resolve          catalog.md・project.md・local.md を観点（行）単位で合成した
 #                     有効な配役表を、由来（カタログ既定／project／local）付きで出力する。
 #                     出力前に合成の入力（project.md / local.md）へ配役表の検証
@@ -374,7 +376,9 @@ if [ -f "$PRECEDENTS_MD" ]; then
     i=$((i + 1))
   done
 
-  sort "$NOT_ISSUE_PERSPECTIVES" | uniq -c | while read -r cnt perspective; do
+  # sort/uniq もロケール依存の照合で異なる日本語文字列を同一視する（冒頭の LC_ALL=C 方針の
+  # 対象。macOS 実測: 異なる2観点列が uniq -c で 2件に合算された）ため LC_ALL=C を強制する
+  LC_ALL=C sort "$NOT_ISSUE_PERSPECTIVES" | LC_ALL=C uniq -c | while read -r cnt perspective; do
     [ -z "$perspective" ] && continue
     if [ "$cnt" -ge 2 ]; then
       report "repeated-not-issue" "${PRECEDENTS_MD}: ${perspective}（論点じゃなかった ${cnt}件・移譲仕組み化の起案シグナル）"
@@ -385,6 +389,48 @@ fi
 # ---- 検出4: catalog_version 不一致（precedents.md のみ。配役表2層は check_layer_files で済み） ----
 
 check_version "$PRECEDENTS_MD"
+
+# ---- 検出5: 相談判例（経路「相談の上自走した」）の事後報告5要素 ----
+#
+# 判例ブロック（"### " 見出し区切り）単位で検査する。経路に「相談の上自走した」を含む
+# ブロックは、事後報告フォーマットの5要素（- 論点: / - 各人格の主張: / - 裁定: / - 根拠: /
+# - 判例リンク:）をブロック内にすべて持たなければならない（正本: SKILL.md「論点相談・仲裁」）。
+# 経路行を持たないブロック（注記など）は対象外。
+
+check_consultation_block() {
+  # check_consultation_block <block-file> <heading>
+  local block="$1" heading="$2" missing="" label
+  [ -s "$block" ] || return 0
+  { LC_ALL=C grep -F -- "- 経路:" "$block" || true; } | LC_ALL=C grep -qF -- "相談の上自走した" || return 0
+  for label in "論点" "各人格の主張" "裁定" "根拠" "判例リンク"; do
+    if ! LC_ALL=C grep -qF -- "- ${label}:" "$block"; then
+      missing="${missing}${missing:+・}${label}"
+    fi
+  done
+  if [ -n "$missing" ]; then
+    report "consultation-missing-element" "${PRECEDENTS_MD}: ${heading}: 相談判例に事後報告5要素の欠落（${missing}）"
+  fi
+}
+
+if [ -f "$PRECEDENTS_MD" ]; then
+  PRECEDENTS_SRC="$(stripped_copy "$PRECEDENTS_MD")"
+  BLOCK_FILE="${WORK_DIR}/consultation-block"
+  : > "$BLOCK_FILE"
+  block_heading=""
+  while IFS= read -r line; do
+    case "$line" in
+      "### "*)
+        check_consultation_block "$BLOCK_FILE" "$block_heading"
+        : > "$BLOCK_FILE"
+        block_heading="${line#\#\#\# }"
+        ;;
+      *)
+        printf '%s\n' "$line" >> "$BLOCK_FILE"
+        ;;
+    esac
+  done < "$PRECEDENTS_SRC"
+  check_consultation_block "$BLOCK_FILE" "$block_heading"
+fi
 
 # ---- 結果 ----
 

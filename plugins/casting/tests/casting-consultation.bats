@@ -154,12 +154,24 @@ setup() {
   LC_ALL=C grep -qF -- "相談の上自走した" "$PRECEDENTS_TMPL"
 }
 
-@test "repo precedents: carries one persona-attributed consultation example" {
+@test "repo precedents: the consultation example block itself carries all five report elements" {
   [ -f "$REPO_PRECEDENTS" ]
-  LC_ALL=C grep -qF -- "相談の上自走した" "$REPO_PRECEDENTS"
-  for f in "主張" "裁定" "根拠" "判例リンク" "人格" ; do
-    LC_ALL=C grep -qF -- "$f" "$REPO_PRECEDENTS"
+  # ブロック単位で切り出して検査する（ファイル全体への語句 grep では他ブロックの語句で偽合格する）
+  local block
+  block="$(awk '/^### 2026-08-19 観点スペシャリスト/{on=1; next} /^### /{on=0} on' "$REPO_PRECEDENTS")"
+  printf '%s' "$block" | LC_ALL=C grep -qF -- "相談の上自走した"
+  for f in "- 論点:" "- 各人格の主張:" "- 裁定:" "- 根拠:" "- 判例リンク:" ; do
+    printf '%s' "$block" | LC_ALL=C grep -qF -- "$f"
   done
+  # 発言の人格名帰属（保守番のクレバス）もブロック内で確認する
+  printf '%s' "$block" | LC_ALL=C grep -qF -- "保守番のクレバス"
+}
+
+@test "repo precedents: the annotation block marks the dogfood trial as pre-protocol" {
+  # 既存判例は書き換えず、直後の注記ブロックで「確定版規約の実例ではない」ことを明示する
+  LC_ALL=C grep -qF -- "### 2026-08-21 注記" "$REPO_PRECEDENTS"
+  LC_ALL=C grep -qF -- "プロトコル確定前の dogfood 試行" "$REPO_PRECEDENTS"
+  LC_ALL=C grep -qF -- "確定版規約の実例ではない" "$REPO_PRECEDENTS"
 }
 
 # --- 受け入れ条件4: 担い手が主の観点が絡む論点は相談・仲裁に入らず主へ ---
@@ -185,4 +197,35 @@ setup() {
 
 @test "skill: owner-held branch is stated ahead of consultation" {
   LC_ALL=C grep -qF -- "担い手が主の観点が1つでも" "$SKILL"
+}
+
+# --- 回帰: レビューゲート Blocking 指摘（2026-08-20） ---
+
+@test "skill: the assessment section no longer restates the old self-drive step and routes to consultation" {
+  # 判定節（## 論点が来たときの判定 〜 次の ## 見出し）に旧手順④「方針文・判断基準に従って自走する」が
+  # 残っていないこと、相談手順への接続があることをブロック単位で検査する（Blocking 1）
+  local section
+  section="$(awk '/^## 論点が来たときの判定/{on=1; next} /^## /{on=0} on' "$SKILL")"
+  [ -n "$section" ]
+  ! printf '%s' "$section" | LC_ALL=C grep -qF -- "方針文・判断基準に従って自走する"
+  printf '%s' "$section" | LC_ALL=C grep -qF -- "「論点相談・仲裁」の手順に入る"
+}
+
+@test "arbiter: the precedent link is declared caller-appended, not part of the verdict output" {
+  # 仲裁は作業コンテキストを持たず判例リンクを知り得ない（Blocking 3）
+  LC_ALL=C grep -qF -- "判例リンク" "$ARBITER"
+  LC_ALL=C grep -qF -- "記録時に呼び出し側が付与する" "$ARBITER"
+}
+
+@test "spec: consultation protocol spec ends without a trailing blank line" {
+  # EOF の余分な空行（Blocking 4）。tail -1 が空でない＝末尾は本文行
+  local spec_file="${REPO_ROOT}/openspec/specs/casting-consultation-protocol/spec.md"
+  [ -f "$spec_file" ]
+  [ -n "$(tail -1 "$spec_file")" ]
+}
+
+@test "plugin.json: description states the claim list, not the retired two-party wording" {
+  # 旧仕様「双方の主張」（2者固定）が説明文に残らないこと（Blocking 5）
+  ! LC_ALL=C grep -qF -- "双方の主張" "$PLUGIN_JSON"
+  LC_ALL=C grep -qF -- "主張リスト" "$PLUGIN_JSON"
 }

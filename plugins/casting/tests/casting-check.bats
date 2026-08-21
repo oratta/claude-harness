@@ -98,3 +98,29 @@ setup() {
   [[ "$output" == *"malformed-row"* ]]
   [[ "$output" == *"5列未満"* ]]
 }
+
+# --- 検出5: 相談判例（経路「相談の上自走した」）の事後報告5要素 ---
+
+@test "consultation-missing-element fixture: reports the missing report elements and exits 1" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/consultation-missing-element"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"consultation-missing-element"* ]]
+  # ブロック見出しと、欠けている要素名（各人格の主張・根拠・判例リンク）が列挙される
+  [[ "$output" == *"相談を経たが事後報告が欠けた判例"* ]]
+  [[ "$output" == *"各人格の主張"* ]]
+  [[ "$output" == *"判例リンク"* ]]
+}
+
+@test "ok fixture: a compliant consultation block and a note block without a route line pass" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/ok"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"consultation-missing-element"* ]]
+}
+
+# --- 回帰: macOS の sort/uniq がロケール照合で異なる日本語観点列を同一視する（LC_ALL=C 強制） ---
+
+@test "distinct-not-issue fixture: two different multi-perspective strings are not merged into a repeated-not-issue" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/distinct-not-issue"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"repeated-not-issue"* ]]
+}

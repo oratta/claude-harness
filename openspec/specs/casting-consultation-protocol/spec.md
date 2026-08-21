@@ -67,4 +67,3 @@ casting SKILL.md は「論点相談・仲裁」の節を持ち、①発火点（
 
 - **WHEN** `.claude/casting/precedents.md` を読む
 - **THEN** 経路「相談の上自走した」の判例が1件以上あり、各人格の主張・裁定・根拠・判例リンクが読み取れる
-
