@@ -21,7 +21,9 @@
 # 登録（正規手順は CLI 代行。read = claude-agents-ro / register = claude-agents-rw の
 # 役割分担。値は argv でなく stdin で渡す — transcript / ps への露出を避けるため。
 # 内部で起動する op へも JSON テンプレートを stdin で渡す。assignment statement
-# 形式（credential[password]=...）に戻すと op プロセスの argv 経由で ps に露出する）:
+# 形式（credential[password]=...）に戻すと op プロセスの argv 経由で ps に露出する。
+# 値はシェル変数にも載せない — stdin を読むのは python 1 か所だけで、そこから op まで
+# パイプで直行する）:
 #   printf '%s' "$VALUE" | fmtoken.sh --register <project|agent>--<service>
 #
 # exit code: 0 成功 / 43 SA トークン未配布 / 44 未登録 / 45 プロジェクト導出不能 /
@@ -35,9 +37,12 @@ KEYCHAIN_SERVICE_RW="op-sa-claude-agents-rw"
 
 # ── 秘密を扱う区間だけ xtrace を落とす（issue #159）──
 # `bash -x fmtoken.sh --register ...` や SHELLOPTS=xtrace を継承した起動では、秘密を代入する行が
-# `+ value=<値>` として**呼び出し側自身の stderr** に出る。#130 が塞いだのは `ps`（他プロセスからの
+# `+ rw=<SA トークン>` として**呼び出し側自身の stderr** に出る。#130 が塞いだのは `ps`（他プロセスからの
 # 観測）で、こちらは脅威モデルが別（自プロセスの stderr）だが、CI ログや tee したファイルに
 # 残ると回収できない。
+#
+# 登録する値そのものはもうシェル変数を通らない（issue #170。stdin → python → op のパイプだけ）ので、
+# この抑止が要るのは SA トークンを変数に載せる resolve_ro_token / resolve_rw_token の区間だけ。
 #
 # 常時 off にはしない。呼び出し側が `-x` でデバッグする手段を丸ごと奪うことになるので、
 # 秘密の代入区間に入る前に落とし、抜けたら**元の状態に戻す**（起動時に off だったなら off のまま）。
@@ -139,24 +144,57 @@ if [[ "$mode" == "register" ]]; then
     echo "fmtoken: 登録する値を stdin から渡してください（例: printf '%s' \"\$VALUE\" | fmtoken.sh --register ${explicit_name}）。値を引数で渡さないのは transcript / ps への露出を避けるため" >&2
     exit 46
   fi
-  # ここから値を変数に持つ。xtrace 下では `+ value=<値>` や `+ [[ -z <値> ]]` として
-  # 呼び出し側の stderr に出てしまうので、値の参照が終わるまで落としておく（issue #159）。
-  secret_begin
-  # 番兵 `x` を付けてから剥がす。素の `$(cat)` はコマンド置換の仕様で**末尾の改行をすべて**
-  # 削るため、末尾改行を持つ資格情報（PEM 秘密鍵・一部の証明書）が黙って壊れる。
-  # 登録は上書き禁止なので、壊れたまま入ると人間が `op item edit` を叩くまで直らず、
-  # 参照側では「なぜか認証が通らない」形でしか表面化しない（issue #159）。
-  value="$(cat; printf x)"
-  value="${value%x}"
-  # 空判定は番兵を剥がしたあとに行う。改行だけの値（`printf '\n'`）は正当な入力なので、
-  # ここで空扱いにして 46 に落としてはいけない。
-  if [[ -z "$value" ]]; then
-    secret_end
-    echo "fmtoken: stdin が空です。登録する値を stdin から渡してください" >&2
-    exit 46
-  fi
-  # 以降 create までは値を参照しないので、xtrace を元に戻して二重登録ガードを追えるようにする。
-  secret_end
+  # ── 値をシェル変数に一切載せない（issue #170）─────────────────────────────
+  # 以前は cat の出力を一度 bash 変数（`value`）に載せてから python に渡していた。
+  # 変数を通すこと自体が 2 つの欠陥の根になっていた:
+  #   (1) 変数は `secret_end` の後も残るので、呼び出し側が `PS4` にその変数名の展開を
+  #       含む値を設定していると、以降のトレース行のプレフィックスとして値が stderr に出る。
+  #   (2) bash 変数は NUL バイトを保持できないので、NUL を含む値が黙って縮む
+  #       （`printf 'A\0B\n'` の 4 バイトが 3 バイトで登録される）。
+  # どちらも「秘密がシェルを通る」ことが原因なので、stdin を読むのは python 1 か所だけにし、
+  # 値は「python → op item create」のパイプの中だけを通す（argv にも環境変数にも載せない
+  # ＝ issue #130 の性質は維持）。sys.stdin.buffer で読むのでバイト列がそのまま JSON になり、
+  # 末尾改行（issue #159）も NUL も CRLF も変換されない。
+  #
+  # 空判定は「二重登録ガードより前」でなければならない（exit 46 が ro トークン解決・
+  # op item list・op item create のどれよりも先に来る、が既存の受け入れ条件）。一方 stdin は
+  # 一度しか読めないので、python には最初に stdin を読み切らせ、判定結果だけを 1 行目の
+  # ステータス（ready / empty / notutf8）として先に流させる。JSON 本体は同じパイプの
+  # 2 行目以降に続き、`op item create - <&3` がそれを読む。
+  # ※ fd 3 はここから create まで「JSON が待っているパイプ」なので、途中で読まないこと。
+  exec 3< <(/usr/bin/python3 -c 'import json,sys
+data = sys.stdin.buffer.read()
+out = sys.stdout.buffer
+if not data:
+    out.write(b"empty\n"); out.flush(); sys.exit(0)
+try:
+    text = data.decode("utf-8")
+except UnicodeDecodeError:
+    out.write(b"notutf8\n"); out.flush(); sys.exit(0)
+payload = json.dumps({"title": sys.argv[1], "category": "API_CREDENTIAL",
+                      "fields": [{"id": "credential", "type": "CONCEALED",
+                                  "label": "credential", "value": text}]}).encode("utf-8")
+out.write(b"ready\n"); out.flush()
+out.write(payload); out.flush()' "$explicit_name")
+  # ステータス行が読めない＝python が起動できなかった等。値が渡らない以上 create してはいけない。
+  stdin_status=""
+  read -r stdin_status <&3 || stdin_status=""
+  case "$stdin_status" in
+    ready) ;;
+    empty)
+      # 改行だけの値（`printf '\n'`）は空ではない。python 側もバイト列が空のときだけ empty を返す。
+      echo "fmtoken: stdin が空です。登録する値を stdin から渡してください" >&2
+      exit 46
+      ;;
+    notutf8)
+      echo "fmtoken: stdin の値を UTF-8 として解釈できませんでした。1Password の credential フィールドはテキストなので、バイナリを登録するなら base64 等でテキスト化してから渡すこと" >&2
+      exit 46
+      ;;
+    *)
+      echo "fmtoken: stdin の値を読み取れませんでした（/usr/bin/python3 が実行できない可能性）。登録を中止します（fail-closed）" >&2
+      exit 46
+      ;;
+  esac
   # 判定不能（exit 48）で共通して出す案内。1Password 側の権限変更は人間の GUI 作業なので、
   # スクリプトは選択肢の提示までで止まる。
   GUARD_HINT="→ ro SA トークンをこのマシンに配布する（env OP_SERVICE_ACCOUNT_TOKEN / ~/.config/op-sa/claude-agents-ro.token / Keychain ${KEYCHAIN_SERVICE_RO}）か、rw SA に agents 保管庫の read 権を付けて OP_SERVICE_ACCOUNT_TOKEN に設定すること（1Password 側の権限変更は人間の GUI 作業）"
@@ -209,18 +247,15 @@ sys.exit(0 if sys.argv[1] in titles else 1)' "$explicit_name" || guard_rc=$?
   # 値に含まれる " \ 改行 でクレデンシャルが黙って壊れる。argv に渡してよいのは
   # アイテム名（秘密でない）だけで、値はパイプの中だけを通す（環境変数も不可 —
   # 同一ユーザーからは argv と同程度に見えるため塞いだことにならない）。
+  # JSON は上流の python が fd 3 のパイプで待っているので、それをそのまま op に読ませる。
   #
   # 失敗時は fail-closed: assignment statement へのフォールバックを書かないこと
   # （例外時にだけ argv 経路が開く穴になり、しかも例外時こそ気づかれない）。
-  # set -euo pipefail によりパイプのどの段が落ちても非 0 で即死する。
+  # set -euo pipefail により op が落ちれば非 0 で即死する。
   #
-  # 値を再び参照する区間なので xtrace を落とす（issue #159）。`printf '%s' "$value"` は
-  # xtrace 下で `+ printf %s <値>` として stderr に出る。
-  secret_begin
-  printf '%s' "$value" |
-    /usr/bin/python3 -c 'import json,sys; print(json.dumps({"title":sys.argv[1],"category":"API_CREDENTIAL","fields":[{"id":"credential","type":"CONCEALED","label":"credential","value":sys.stdin.read()}]}))' "$explicit_name" |
-    op item create --vault "$OP_VAULT" - >/dev/null
-  secret_end
+  # ここに xtrace の抑止（secret_begin）は不要になった（issue #170）。値はシェルの
+  # 変数にも argv にも現れないので、トレースされるのは `op item create --vault agents -` だけ。
+  op item create --vault "$OP_VAULT" - <&3 >/dev/null
   echo "OK: ${explicit_name} を ${OP_VAULT} 保管庫に登録した（フィールド: credential）"
   exit 0
 fi

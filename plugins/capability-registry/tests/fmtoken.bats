@@ -580,8 +580,16 @@ XTRACE_SECRET="SUPERSECRET-VALUE"
 
 # bash -x 配下で --register を実行し、stderr を $WORK/xtrace.err に落とす。
 # $1 = アイテム名。値は固定の XTRACE_SECRET を stdin から渡す。
+# $2（省略可）= 呼び出し側が設定している PS4。env で渡すのは、テスト側の二重クォートで
+# `${value-}` のような展開がテスト自身のシェルで潰れるのを避けるため（PS4 は環境変数として
+# 渡せば bash がそのままシェル変数として取り込み、トレース行のプレフィックスに使う）。
 run_register_under_xtrace() {
-  run bash -c "printf '%s' '${XTRACE_SECRET}' | bash -x '$FMTOKEN' --register '$1' 2>'${WORK}/xtrace.err'"
+  local cmd="printf '%s' '${XTRACE_SECRET}' | bash -x '$FMTOKEN' --register '$1' 2>'${WORK}/xtrace.err'"
+  if [[ $# -ge 2 ]]; then
+    run env PS4="$2" bash -c "$cmd"
+  else
+    run bash -c "$cmd"
+  fi
 }
 
 # 「トレース自体は出ている」ことを先に要求する。xtrace が最初から効いていない状態で
@@ -678,4 +686,90 @@ assert_xtrace_active() {
   assert_xtrace_active
   refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
   [ "$(created_credential)" = "$XTRACE_SECRET" ]
+}
+
+# ── issue #170: 値がシェル変数を経由しないこと ────────────────────────────────
+#
+# #159 までは stdin の値を一度 bash 変数（`value`）に載せてから python に渡していた。
+# 「変数を通す」こと自体が 2 つの欠陥の根で、どちらも xtrace の on/off では塞げない。
+
+@test "--register: a value containing NUL bytes is stored byte for byte" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  # 4 バイト。bash 変数は NUL を保持できないので、`value="$(cat; printf x)"` を経由する
+  # 実装だと NUL が黙って落ちて 3 バイトで登録される。
+  printf 'A\0B\n' >"${WORK}/nul-value"
+  [ "$(wc -c <"${WORK}/nul-value" | tr -d ' ')" -eq 4 ]
+  run bash -c "'$FMTOKEN' --register newproj--nul < '${WORK}/nul-value'"
+  [ "$status" -eq 0 ]
+  # 固定できるのは op item create に渡す JSON まで。1Password 側が NUL を保持するかは
+  # スタブでは検証できないので、この受け入れ条件には含めない。
+  assert_credential_matches_file "${WORK}/nul-value"
+}
+
+# これは #170 の欠陥の検出器ではなく（変更前の実装でも通る）、将来の回帰ガード。
+# CPython は std ストリームを newline="\n" で開くので、テキストモードで読んでいた頃も
+# \r\n は潰れていなかった。ただし読み手を `io.TextIOWrapper(newline=None)` や
+# `open(0, "r")` に変えると universal newlines が効いて \r\n が \n に化ける。
+# 「バイト単位で保存する」（#159 / #170）を名乗る以上、そこを踏んだら落ちるようにしておく。
+@test "--register: CRLF line endings are not rewritten to LF" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  printf 'line1\r\nline2\r\n' >"${WORK}/crlf-value"
+  [ "$(wc -c <"${WORK}/crlf-value" | tr -d ' ')" -eq 14 ]
+  run bash -c "'$FMTOKEN' --register newproj--crlf < '${WORK}/crlf-value'"
+  [ "$status" -eq 0 ]
+  assert_credential_matches_file "${WORK}/crlf-value"
+}
+
+# 呼び出し側が fmtoken.sh の内部変数名を狙った PS4 を設定していると、`secret_end` で
+# xtrace を戻したあとのトレース行のプレフィックスとして値が stderr に出ていた
+# （値が変数に残っているため）。値を変数に載せなければ PS4 が何を展開しても出ない。
+@test "--register: value never reaches stderr under a PS4 that expands the internal variable name" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run_register_under_xtrace "newproj--ps4trace" '+ ${value-} '
+  [ "$status" -eq 0 ]
+  # PS4 を差し替えてもトレース自体は出ている（出ていなければ露出検査が成立していない）
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+  [ "$(created_credential)" = "$XTRACE_SECRET" ]
+}
+
+# 早期 exit する経路でも同じ（値の参照が終わっていても変数は残るため、旧実装は
+# 47 / 48 で抜ける経路でも PS4 経由で漏れた）。
+@test "--register: PS4 leak is closed on the early-exit paths too (already registered, exit 47)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
+  run_register_under_xtrace "moko--TRELLO_TOKEN" '+ ${value-} '
+  [ "$status" -eq 47 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+}
+
+# 実装の性質そのものを固定する。上の 3 ケースは「観測されない」ことしか見ていないので、
+# 将来また変数経由に戻したときに（別の抑止でたまたま緑になって）素通りしないよう、
+# --register の区間に stdin 由来の代入が無いことを直接見る。
+@test "--register: the register block assigns no stdin-derived shell variable" {
+  local block="${WORK}/register-block.sh"
+  sed -n '/^if \[\[ "$mode" == "register" \]\]/,/^fi$/p' "$FMTOKEN" >"$block"
+  [ -s "$block" ]
+  refute_in_file 'value=' "$block"
+  refute_in_file '\$(cat' "$block"
+}
+
+# 値の取り込みを python の sys.stdin.buffer に寄せた結果、UTF-8 として解釈できない
+# バイト列は「python の traceback + exit 1」ではなく、案内つきの exit 46 で止まる。
+# 1Password の credential フィールドはテキストなので、ここは通してはいけない経路。
+@test "--register: a non-UTF-8 value exits 46 before any op call" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  printf '\xff\xfe\xfd' >"${WORK}/binary-value"
+  run bash -c "'$FMTOKEN' --register newproj--binary < '${WORK}/binary-value'"
+  [ "$status" -eq 46 ]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+  [[ "$output" == *"UTF-8"* ]]
 }
