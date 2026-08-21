@@ -96,7 +96,7 @@ jobs:
             fi
 
             if GH_TOKEN="$MERGE_TOKEN" gh pr merge "$N" --repo "$REPO" --squash; then
-              gh pr comment "$N" --repo "$REPO" --body "🤖 **auto-merged** — 根拠: agent-review:passed / 必須チェック（Actionlint, Lint & Type Check & Test）green / 聖域パス非接触。判定ログ: $RUN_URL（マージ後は staging デプロイ → スモークテスト → 失敗時は自動 revert）"
+              gh pr comment "$N" --repo "$REPO" --body "🤖 **auto-merged** — 根拠: agent-review:passed / 必須チェック（Actionlint, Lint & Type Check & Test）green / 聖域パス非接触。判定ログ: ${RUN_URL}（マージ後は staging デプロイ → スモークテスト → 失敗時は自動 revert）"
               echo "マージ完了"
             else
               echo "::warning::PR #$N のマージに失敗（コンフリクト等）。レビューループの鮮度チェックに任せる"

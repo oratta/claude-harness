@@ -138,7 +138,7 @@ jobs:
           # issue 作成は GITHUB_TOKEN（PAT に Issues 権限を要求しない）
           BODY="## 事実経過（自動記録）"$'\n'
           BODY+="- 対象コミット: $BAD_SHA"$'\n'
-          BODY+="- 検知: staging スモークテスト失敗（$RUN_URL）"$'\n'
+          BODY+="- 検知: staging スモークテスト失敗（${RUN_URL}）"$'\n'
           BODY+="- 自動対応: revert PR $PR_URL を起票"$'\n\n'
           BODY+="## 残タスク（docs/ops/incident-runbook.md の様式）"$'\n'
           BODY+="- [ ] revert 取り込みと staging 復旧の確認"$'\n'
