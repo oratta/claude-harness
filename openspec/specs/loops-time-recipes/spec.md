@@ -1,6 +1,8 @@
-# loops-time-recipes Specification (Delta)
+# loops-time-recipes Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change goal-time-recipes. Update Purpose after archive.
+## Requirements
 
 ### Requirement: time レシピ 3 本が存在し固定見出し規約に準拠する
 

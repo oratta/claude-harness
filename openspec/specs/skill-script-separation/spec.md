@@ -1,4 +1,8 @@
-## ADDED Requirements
+# skill-script-separation Specification
+
+## Purpose
+TBD - created by archiving change hide-script-internals-from-skill. Update Purpose after archive.
+## Requirements
 
 ### Requirement: SKILL.mdはスクリプト内部実装を記述しない
 

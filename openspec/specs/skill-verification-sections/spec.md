@@ -1,6 +1,8 @@
-# skill-verification-sections Specification (Delta)
+# skill-verification-sections Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change skill-verification. Update Purpose after archive.
+## Requirements
 
 ### Requirement: 対象スキルの SKILL.md は「## 自己検証」節を持つ
 

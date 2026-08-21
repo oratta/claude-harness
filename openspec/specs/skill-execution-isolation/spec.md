@@ -1,4 +1,8 @@
-## ADDED Requirements
+# skill-execution-isolation Specification
+
+## Purpose
+TBD - created by archiving change wt-setup-model-and-fork. Update Purpose after archive.
+## Requirements
 
 ### Requirement: スキルはモデルを明示的に指定する
 

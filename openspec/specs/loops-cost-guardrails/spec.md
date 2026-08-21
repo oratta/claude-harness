@@ -1,6 +1,8 @@
-# loops-cost-guardrails Specification (Delta)
+# loops-cost-guardrails Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change loops-integration. Update Purpose after archive.
+## Requirements
 
 ### Requirement: cost-guardrails.md が公式トークン管理 6 項目を収録している
 
