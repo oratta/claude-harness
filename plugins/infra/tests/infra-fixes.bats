@@ -120,6 +120,32 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
+@test "S16a: third-party actions are pinned to a 40-hex SHA with a version comment" {
+  # actions/* 以外の `uses:` は「コミット SHA ＋ 同一行のバージョンコメント」を必須にする全数検査。
+  # 可変タグ／ブランチ参照（例: supabase/setup-cli@v2 は tag ではなくブランチ）は、上流の push だけで
+  # 展開先の production ジョブが別コードを実行しうる。方針は oratta/claude-harness#138 / #162。
+  local total=0
+  local unpinned=""
+  while IFS= read -r line; do
+    total=$((total + 1))
+    # actions/* は GitHub 公式所有なので #138 の方針どおり対象外
+    case "$line" in
+      *"uses: actions/"*) continue ;;
+    esac
+    if ! printf '%s' "$line" | grep -qE 'uses: [^@[:space:]]+@[0-9a-f]{40} +#[[:space:]]*[^[:space:]]'; then
+      unpinned="${unpinned}${line}"$'\n'
+    fi
+  done < <(grep -rnE --include='*.yml.template' '^[[:space:]]*-?[[:space:]]*uses:' "$WORKFLOWS_DIR")
+
+  # テンプレートの改名・移動で走査対象が 0 件になり、テストが無言で pass するのを防ぐ
+  [ "$total" -gt 0 ]
+
+  if [ -n "$unpinned" ]; then
+    printf 'unpinned third-party action(s):\n%s' "$unpinned" >&2
+    return 1
+  fi
+}
+
 @test "S17: all five workflow templates parse as YAML" {
   for f in "$WORKFLOWS_DIR"/*.yml.template; do
     ruby -ryaml -e "YAML.load_file('$f')" || return 1
