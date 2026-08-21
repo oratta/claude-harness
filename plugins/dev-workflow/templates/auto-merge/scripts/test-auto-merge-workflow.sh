@@ -382,13 +382,20 @@ fi
 # マージ失敗のログが「認証・認可の失敗」と「それ以外」に分かれているか。
 # 一本のメッセージに丸めると、PAT 失効（401）が 409 と同じ「次回イベントで再検証する」に
 # 見え、実際には差し替えるまで永久に通らないことに誰も気付けない（#157）。
+# 分岐の骨格（case の判定対象・分岐ラベル・gh の理由文の再表示）は、コメントを剥がした
+# am-code.txt で見る。文字列の有無だけを見ると、case の判定対象を定数に書き換えて
+# 401 を *) 側に落とす壊し方が素通りする。
+# 一方でメッセージ本文は am-code.txt では見られない（`PR #$N` の `#` 以降が sed で切られる）ため、
+# 剥がす前の本文に対して照合する。
 AM_SCRIPT="$(extract_script "$WF" "automerge-script")"
-if printf '%s\n' "$AM_SCRIPT" | grep -qF '401|403)' \
+if grep -qF 'case "$MERGE_HTTP" in' "$TMPD/am-code.txt" \
+  && grep -qF '401|403)' "$TMPD/am-code.txt" \
+  && grep -qF '"$MERGE_ERR" >&2' "$TMPD/am-code.txt" \
   && printf '%s\n' "$AM_SCRIPT" | grep -qF 'AUTOMERGE_PAT が失効' \
   && [ "$(printf '%s\n' "$AM_SCRIPT" | grep -cF '次回イベントで再検証する')" -eq 1 ]; then
-  ok "マージ失敗のログが認証失敗（401/403）とそれ以外（409 等）で分かれている"
+  ok "マージ失敗のログが認証失敗（401/403）とそれ以外（409 等）で分かれ、gh の理由文も残る"
 else
-  ng "マージ失敗のログが一本化されている（PAT 失効が 409 と同じ案内に丸められる）"
+  ng "マージ失敗のログが一本化されている／判定対象がズレている／gh の理由文が捨てられている"
 fi
 
 if has "$WF" 'secrets.AUTOMERGE_PAT' && grep -qF 'GH_TOKEN="$MERGE_TOKEN" gh api -X PUT' "$TMPD/am-code.txt"; then
