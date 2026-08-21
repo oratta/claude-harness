@@ -3,7 +3,7 @@
 # Tests for capabilities:
 #   - loops-cost-guardrails            (S115-S119)
 #   - loops-integration-verification   (S120-S126)
-#   - loops-marketplace-sync           (S127-S133)
+#   - loops-marketplace-sync           (S127-S133, S139)
 #   - loops-readme-positioning         (S134-S138)
 # Spec: openspec/changes/loops-integration/specs/*/spec.md
 #
@@ -240,20 +240,17 @@ base_ref() {
   done
 }
 
-# --- S132: marketplace top-level version bumped above merge-base ---
-@test "S132: marketplace top-level version bumped above merge-base" {
-  base="$(base_ref)"
-  [ -n "$base" ] || skip "origin/main unavailable"
-  # merge-base と差分が無い（= main 上、または未コミットの変更しか無い）場合は
-  # 「この run で bump すべきもの」が存在しないので検査対象外。これが無いと
-  # clean な main で必ず落ち、CI の push:main 実行が常に赤くなる。
-  git -C "$PLUGIN_ROOT" diff --quiet "$base" HEAD && skip "no changes vs merge-base"
-  cur="$(jq -r '.version' "$MARKETPLACE")"
-  old="$(git -C "$PLUGIN_ROOT" show "${base}:.claude-plugin/marketplace.json" 2>/dev/null | jq -r '.version' 2>/dev/null)"
-  [ -n "$old" ] || skip "no marketplace at base"
-  [ "$cur" != "$old" ] || { echo "top-level version not bumped (still ${cur})"; return 1; }
-  lowest="$(printf '%s\n%s\n' "$cur" "$old" | sort -V | head -1)"
-  [ "$lowest" = "$old" ]
+# --- S132: marketplace top-level version field is absent ---
+# 旧 S132 は「トップレベル version が merge-base より bump されている」を検査していたが、
+# その単一行が全プラグイン PR の共有変更点になり、無関係な PR 同士を必ず衝突させていた
+# (issue #140)。トップレベル version はプラグインキャッシュのキーでも更新検知の材料でも
+# ない（キャッシュは cache/<marketplace>/<plugin>/<plugin.json の version>/ 単位・更新は
+# git pull）ためフィールドごと廃止した。このテストは再導入を防ぐガード。
+@test "S132: marketplace.json has no top-level version field" {
+  if jq -e 'has("version")' "$MARKETPLACE" >/dev/null; then
+    echo "top-level version field reintroduced ($(jq -r '.version' "$MARKETPLACE")) — see issue #140"
+    return 1
+  fi
 }
 
 # --- S133: all JSON files parse ---
@@ -262,6 +259,53 @@ base_ref() {
   for pj in "${PLUGIN_ROOT}"/plugins/*/.claude-plugin/plugin.json; do
     jq empty "$pj"
   done
+}
+
+# --- S139: unrelated plugin PRs merge cleanly via marketplace.json (issue #140) ---
+# 受け入れ条件「互いに無関係なプラグインを変更する 2 本の PR が、片方のマージによって
+# 他方が CONFLICTING にならない」の回帰テスト。実リポの marketplace.json を scratch repo に
+# 置き、2 ブランチがそれぞれ別プラグインの entry version だけを bump（トップレベル version が
+# 存在する場合は当時の規約どおりそれも bump）し、片方をマージした後にもう片方が
+# クリーンにマージできることを検証する。トップレベル version が存在した旧方式では
+# 両ブランチが同一行を書き換えるため、この 2 本目のマージが必ず衝突して fail する。
+@test "S139: two PRs editing different plugin entries merge cleanly" {
+  scratch="${BATS_TEST_TMPDIR}/mkt-repo"
+  mkdir -p "$scratch"
+  # jq で正規化してから base commit にする（後続の jq 編集の diff を変更行だけに局所化する）
+  jq . "$MARKETPLACE" > "${scratch}/marketplace.json"
+  git -C "$scratch" init -q -b main
+  git -C "$scratch" config user.email loops-tests@example.invalid
+  git -C "$scratch" config user.name loops-tests
+  git -C "$scratch" add marketplace.json
+  git -C "$scratch" commit -qm base
+
+  # 実在の entry から離れた 2 つを選ぶ（先頭と末尾）
+  first="$(jq -r '.plugins[0].name' "$MARKETPLACE")"
+  last="$(jq -r '.plugins[-1].name' "$MARKETPLACE")"
+  [ "$first" != "$last" ]
+
+  bump_entry() { # $1=branch $2=plugin name $3=toplevel version if field exists
+    git -C "$scratch" checkout -qb "$1" main
+    jq --arg n "$2" --arg tv "$3" \
+      '(.plugins[] | select(.name==$n) | .version) = "999.9.9"
+       | if has("version") then .version = $tv else . end' \
+      "${scratch}/marketplace.json" > "${scratch}/marketplace.json.tmp"
+    mv "${scratch}/marketplace.json.tmp" "${scratch}/marketplace.json"
+    git -C "$scratch" commit -qam "bump $2"
+  }
+  bump_entry pr-a "$first" "999.0.1"
+  bump_entry pr-b "$last"  "999.0.2"
+
+  git -C "$scratch" checkout -q main
+  git -C "$scratch" merge -q --no-edit pr-a
+  if ! git -C "$scratch" merge --no-edit pr-b; then
+    echo "merging pr-b after pr-a conflicted — marketplace.json still has a shared single line (issue #140)"
+    return 1
+  fi
+  # マージ結果が壊れていないこと（両 entry の bump が残り、JSON として parse できる）
+  jq empty "${scratch}/marketplace.json"
+  [ "$(jq -r --arg n "$first" '.plugins[] | select(.name==$n) | .version' "${scratch}/marketplace.json")" = "999.9.9" ]
+  [ "$(jq -r --arg n "$last"  '.plugins[] | select(.name==$n) | .version' "${scratch}/marketplace.json")" = "999.9.9" ]
 }
 
 # ============================================================
