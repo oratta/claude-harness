@@ -98,26 +98,36 @@ setup() {
   grep -qF -- '-m 1' "$RV"
 }
 
+# revert-script の実行コード（コメント除去済み）を取り出す。コメント内の言及に
+# 惑わされず、実際に実行される行だけで検査するため
+extract_revert_code() {
+  sed -n '/# >>> revert-script/,/# <<< revert-script/p' "$RV" | sed 's/#.*//'
+}
+
 @test "invariant: revert validates base branch and merge-commit ancestry before side effects" {
+  code="$BATS_TEST_TMPDIR/rv-code.txt"
+  extract_revert_code > "$code"
   # base 検証: PR の base を取得し、$BASE_BRANCH 以外を拒否する（issue #121）
-  grep -qF '.base.ref' "$RV"
-  grep -qF '"$PR_BASE" != "$BASE_BRANCH"' "$RV"
+  grep -qF '.base.ref' "$code"
+  grep -qF '"$PR_BASE" != "$BASE_BRANCH"' "$code"
   # ancestor 検証: merge_commit_sha が base の履歴に含まれることを push より前に確認する
-  grep -qF 'merge-base --is-ancestor' "$RV"
-  ancestor_line="$(grep -nF 'merge-base --is-ancestor' "$RV" | head -1 | cut -d: -f1)"
-  push_line="$(grep -nF 'git push origin' "$RV" | head -1 | cut -d: -f1)"
+  grep -qF 'merge-base --is-ancestor' "$code"
+  ancestor_line="$(grep -nF 'merge-base --is-ancestor' "$code" | head -1 | cut -d: -f1)"
+  push_line="$(grep -nF 'git push origin' "$code" | head -1 | cut -d: -f1)"
   [ "$ancestor_line" -lt "$push_line" ]
 }
 
 @test "invariant: revert re-run resumes from existing branch and PR (issue #121)" {
+  code="$BATS_TEST_TMPDIR/rv-code.txt"
+  extract_revert_code > "$code"
   # 失敗 run の re-run は RUN_ID が同じ（attempt だけ増える）。既存ブランチ・既存 PR を
   # 発見して残工程だけ続行しないと non-fast-forward / PR 重複で落ちる
-  grep -qF 'ls-remote' "$RV"
-  grep -qF 'gh pr list' "$RV"
-  lsremote_line="$(grep -nF 'ls-remote' "$RV" | head -1 | cut -d: -f1)"
-  push_line="$(grep -nF 'git push origin' "$RV" | head -1 | cut -d: -f1)"
-  prlist_line="$(grep -nF 'gh pr list' "$RV" | head -1 | cut -d: -f1)"
-  prcreate_line="$(grep -nF 'gh pr create' "$RV" | head -1 | cut -d: -f1)"
+  grep -qF 'ls-remote' "$code"
+  grep -qF 'gh pr list' "$code"
+  lsremote_line="$(grep -nF 'ls-remote' "$code" | head -1 | cut -d: -f1)"
+  push_line="$(grep -nF 'git push origin' "$code" | head -1 | cut -d: -f1)"
+  prlist_line="$(grep -nF 'gh pr list' "$code" | head -1 | cut -d: -f1)"
+  prcreate_line="$(grep -nF 'gh pr create' "$code" | head -1 | cut -d: -f1)"
   [ "$lsremote_line" -lt "$push_line" ]
   [ "$prlist_line" -lt "$prcreate_line" ]
 }
