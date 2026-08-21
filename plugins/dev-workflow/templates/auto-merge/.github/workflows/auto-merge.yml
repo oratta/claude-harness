@@ -376,10 +376,17 @@ jobs:
               gh pr comment "$N" --repo "$REPO" --body "🤖 **auto-merged** — 根拠: \`agent-review:passed\` / 必須チェック green / 聖域パス非接触（rename 元パス含む） / \`AUTOMERGE_PAUSED\` 未設定。検証してマージした SHA: \`${HEAD_SHA}\`。判定ログ: ${RUN_URL}（条件と巻き戻し手順: docs/auto-merge.md）"
               echo "マージ完了（sha=$HEAD_SHA）"
             else
+              # gh が出した理由文はログにそのまま残す。変更前は stderr が素通しでログに出ており、
+              # 「なぜマージできなかったか」（コンフリクト・ruleset 拒否等）はそこに載っていた。
+              # 捕捉したまま捨てると、401 以外の失敗の診断が HTTP 番号だけに痩せる。
+              # トークンは環境変数で渡しており gh の stderr には載らない（set -x も足さない）。
+              if [ -n "$MERGE_ERR" ]; then
+                printf 'gh の応答: %s\n' "$MERGE_ERR" >&2
+              fi
               MERGE_HTTP=$(printf '%s\n' "$MERGE_ERR" | sed -n 's/.*(HTTP \([0-9][0-9]*\)).*/\1/p' | tail -1)
               case "$MERGE_HTTP" in
                 401|403)
-                  echo "::error::PR #$N のマージが認証・認可で失敗（HTTP $MERGE_HTTP）。secrets.AUTOMERGE_PAT が失効／権限不足の可能性が高く、差し替えるまで自己回復しません（再発行手順: docs/auto-merge.md）"
+                  echo "::error::PR #$N のマージが認証・認可で失敗（HTTP ${MERGE_HTTP}）。secrets.AUTOMERGE_PAT が失効／権限不足の可能性が高く、差し替えるまで自己回復しません（再発行手順: docs/auto-merge.md）"
                   ;;
                 *)
                   echo "::warning::PR #$N のマージに失敗（HTTP ${MERGE_HTTP:-不明}。409=検証後に head が動いた／コンフリクト等）。次回イベントで再検証する"
