@@ -12,6 +12,49 @@ setup() {
   STUB="${WORK}/stub-bin"
   mkdir -p "$STUB"
 
+  # 継承した fd から値が読めていないかを調べる検出器。fd 番号を決め打ちせず 3〜63 を
+  # 総当たりする（PR #177 レビュー指摘: `{ …; } 3<&-` で閉じた実装は、bash が退避に使う
+  # fd 10 から同じパイプが読めていた。fd 3 だけを見る検出器はそれを 1 件も捕まえられない）。
+  # 読めたバイトはログに追記する。呼び出し側（スタブ）は $FMTOKEN_TEST_FDSCAN_LOG が
+  # 設定されているときだけ呼ぶ。
+  # 書き込み専用の fd（bats 自身が使う fd 3 など）は read できないので最初に外す。
+  # 読み口が open でもデータが来ていない fd で os.read がブロックするのを避けるため、
+  # select で「今読めるもの」だけを対象にする（値の JSON は既にパイプに乗っているので、
+  # 漏れているなら必ずここで読める）。
+  cat >"${STUB}/fdscan" <<'EOF'
+#!/usr/bin/python3
+import fcntl, os, select, sys
+
+log, who = sys.argv[1], sys.argv[2]
+cands = []
+for n in range(3, 64):
+    try:
+        fl = fcntl.fcntl(n, fcntl.F_GETFL)
+    except OSError:
+        continue
+    if (fl & os.O_ACCMODE) == os.O_WRONLY:
+        continue
+    cands.append(n)
+hits = []
+if cands:
+    try:
+        ready = select.select(cands, [], [], 0.5)[0]
+    except OSError:
+        ready = []
+    for n in ready:
+        try:
+            data = os.read(n, 65536)
+        except OSError:
+            continue
+        if data:
+            hits.append((n, data))
+with open(log, "ab") as f:
+    f.write(("FDSCAN %s readable_fds=%s\n" % (who, cands)).encode())
+    for n, data in hits:
+        f.write(("FD%d:" % n).encode() + data + b"\n")
+EOF
+  chmod +x "${STUB}/fdscan"
+
   # 登録済みアイテムを FMTOKEN_TEST_REGISTERED（ref 完全一致。item list の title にも反映）で
   # 表現する op スタブ。FMTOKEN_TEST_EXPECT_SA が設定されていれば、OP_SERVICE_ACCOUNT_TOKEN の
   # 一致も要求する（どの経路の SA トークンが使われたかを検証するため）。
@@ -34,13 +77,13 @@ if [[ "$1" == "read" ]]; then
   exit 1
 fi
 if [[ "$1" == "item" && "$2" == "list" ]]; then
-  # FMTOKEN_TEST_PEEK_FD3_LOG が設定されていれば、継承した fd 3 から読めたバイトを記録する。
-  # item list は「op item create より前に走る子プロセス」の代表で、fd 3（値の JSON が
-  # 待っているパイプ）が渡っていれば、ここで平文が読める。読めなかった場合もログ自体は
-  # 作る（空ファイル）— 検査側が「ログが無い＝検査が成立していない」を区別できるようにするため。
-  if [[ -n "${FMTOKEN_TEST_PEEK_FD3_LOG:-}" ]]; then
-    : >>"$FMTOKEN_TEST_PEEK_FD3_LOG"
-    head -c 400 <&3 >>"$FMTOKEN_TEST_PEEK_FD3_LOG" 2>/dev/null || true
+  # FMTOKEN_TEST_FDSCAN_LOG が設定されていれば、継承した fd を 3〜63 まで総当たりで読み、
+  # 読めたバイトを記録する。item list は「op item create より前に走る子プロセス」の代表で、
+  # 値の JSON が待っているパイプが渡っていれば、ここで平文が読める。読めなかった場合も
+  # ログ自体は作る（FDSCAN 行だけが並ぶ）— 検査側が「ログが無い＝検査が成立していない」を
+  # 区別できるようにするため。
+  if [[ -n "${FMTOKEN_TEST_FDSCAN_LOG:-}" ]]; then
+    fdscan "$FMTOKEN_TEST_FDSCAN_LOG" "op-item-list" || true
   fi
   # exit 0 のまま解析できない出力を返す（op の出力形式が変わった / 途中で切れた状況）
   if [[ -n "${FMTOKEN_TEST_LIST_BROKEN:-}" ]]; then
@@ -791,79 +834,109 @@ assert_xtrace_active() {
 # スクリプトは「OK: … 登録した」で exit 0 する（無言の fail-open）。
 # 旧実装（値を bash 変数に置く形）は非 export の変数で、macOS には /proc も無いので
 # 子プロセスからは原理的に読めなかった＝塞がないと退行になる。
+#
+# 検査は「fd 3 から読めないこと」ではなく「**どの fd からも**読めないこと」で行う。
+# 最初の修正は区間全体を `{ …; } 3<&-` のグループで囲む形で、fd 3 は確かに閉じていたが、
+# bash が複合コマンドのリダイレクトを戻すために取る退避コピー（fd 10）が close-on-exec 無しで
+# 子プロセスに渡り、そこから同じ平文が読めていた。fd 番号を決め打ちする検査はこれを素通りする。
 
-FD3_SECRET="PEEKSECRET-123"
+FD_SECRET="PEEKSECRET-123"
+
+# fdscan ログから「読めたバイト」の行だけを数える。FDSCAN 行（どの fd が open だったかの記録）は
+# 常に出るので、ログの存在やサイズではなく FD<n>: 行の有無で判定する。
+assert_no_fd_leak() {
+  local log="$1"
+  if [[ ! -r "$log" ]]; then
+    echo "assert_no_fd_leak: ${log} が読めない（fd 検査が成立していない）" >&2
+    return 1
+  fi
+  # 覗き見の対象になる子プロセスが実際に走ったこと（＝検査が成立していること）を先に要求する
+  if ! grep -q '^FDSCAN ' "$log"; then
+    echo "assert_no_fd_leak: FDSCAN 行が無い（検出器が一度も走っていない）: ${log}" >&2
+    return 1
+  fi
+  if grep -q '^FD[0-9]' "$log"; then
+    echo "fd leak: 継承した fd から読めたバイトがある" >&2
+    cat "$log" >&2
+    return 1
+  fi
+}
 
 # 検出器そのものが素通りしないことを先に固定する（refute_in_file と同じ趣旨）。
-# fd 3 を継承したまま op スタブを呼べば読める、が成立していなければ、
-# 下の 2 ケースは「実装が塞いだから」ではなく「そもそも読めない構成だから」緑になる。
-@test "the op stub's fd 3 peek really reads an inherited fd (detector sanity)" {
-  export FMTOKEN_TEST_PEEK_FD3_LOG="${WORK}/peek-sanity.log"
-  run bash -c "exec 3< <(printf 'CANARY-FD3'); op item list --vault agents --format json >/dev/null"
+# 値の待つパイプを継承したまま op スタブを呼べば読める、が成立していなければ、
+# 下のケースは「実装が塞いだから」ではなく「そもそも読めない構成だから」緑になる。
+@test "the fd scan detector really reads an inherited pipe (detector sanity)" {
+  export FMTOKEN_TEST_FDSCAN_LOG="${WORK}/fdscan-sanity.log"
+  run bash -c "exec 3< <(printf 'CANARY-FD3'; sleep 2); op item list --vault agents --format json >/dev/null"
   [ "$status" -eq 0 ]
-  [ "$(cat "$FMTOKEN_TEST_PEEK_FD3_LOG")" = "CANARY-FD3" ]
+  grep -q '^FD[0-9]*:CANARY-FD3$' "$FMTOKEN_TEST_FDSCAN_LOG"
 }
 
-@test "--register: op item list cannot read the value from an inherited fd" {
+# 検出器が fd 3 決め打ちでないことも固定する。ここを落とすと、fd 10 に退避された
+# コピーから漏れる（この PR の 1 周目の修正で実際に起きた）形を捕まえられなくなる。
+@test "the fd scan detector is not hardcoded to fd 3" {
+  export FMTOKEN_TEST_FDSCAN_LOG="${WORK}/fdscan-notfd3.log"
+  run bash -c "exec 7< <(printf 'CANARY-FD7'; sleep 2); op item list --vault agents --format json >/dev/null"
+  [ "$status" -eq 0 ]
+  grep -q '^FD7:CANARY-FD7$' "$FMTOKEN_TEST_FDSCAN_LOG"
+}
+
+@test "--register: op item list cannot read the value from any inherited fd" {
   export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
   export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
-  export FMTOKEN_TEST_PEEK_FD3_LOG="${WORK}/peek-list.log"
-  run bash -c "printf '%s' '${FD3_SECRET}' | '$FMTOKEN' --register newproj--peek"
+  export FMTOKEN_TEST_FDSCAN_LOG="${WORK}/fdscan-list.log"
+  run bash -c "printf '%s' '${FD_SECRET}' | '$FMTOKEN' --register newproj--peek"
   [ "$status" -eq 0 ]
-  # 覗き見の対象になる子プロセスが実際に走ったこと（＝検査が成立していること）を先に要求する
-  [ -f "$FMTOKEN_TEST_PEEK_FD3_LOG" ]
   # 値の断片どころか JSON の 1 バイト目も渡らない
-  [ "$(wc -c <"$FMTOKEN_TEST_PEEK_FD3_LOG" | tr -d ' ')" -eq 0 ]
-  refute_in_file "$FD3_SECRET" "$FMTOKEN_TEST_PEEK_FD3_LOG"
+  assert_no_fd_leak "$FMTOKEN_TEST_FDSCAN_LOG"
+  refute_in_file "$FD_SECRET" "$FMTOKEN_TEST_FDSCAN_LOG"
   # 吸われていないので create には完全な JSON が届く（無言の fail-open が起きていない）
-  [ "$(created_credential)" = "$FD3_SECRET" ]
+  [ "$(created_credential)" = "$FD_SECRET" ]
 }
 
-@test "--register: the Keychain read cannot read the value from an inherited fd" {
+@test "--register: the Keychain read cannot read the value from any inherited fd" {
   unset OP_SERVICE_ACCOUNT_TOKEN
   export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
   export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
-  export FMTOKEN_TEST_PEEK_FD3_LOG="${WORK}/peek-keychain.log"
+  export FMTOKEN_TEST_FDSCAN_LOG="${WORK}/fdscan-keychain.log"
   # ro トークンの解決を Keychain 経路に落とす（600 ファイルが配布されていないマシン）。
   # security は op スタブとは別クラスの「create より前に走る外部コマンド」で、
   # 個々のコマンドに fd を閉じる指定を足す当て方だと拾い漏れが起きうる側。
   cat >"${STUB}/security" <<'EOF'
 #!/usr/bin/env bash
-: >>"${FMTOKEN_TEST_PEEK_FD3_LOG:-/dev/null}"
-head -c 400 <&3 >>"${FMTOKEN_TEST_PEEK_FD3_LOG:-/dev/null}" 2>/dev/null || true
+if [[ -n "${FMTOKEN_TEST_FDSCAN_LOG:-}" ]]; then
+  fdscan "$FMTOKEN_TEST_FDSCAN_LOG" "security" || true
+fi
 echo "keychain-sa-token"
 exit 0
 EOF
   chmod +x "${STUB}/security"
-  HOME="$WORK" run bash -c "printf '%s' '${FD3_SECRET}' | '$FMTOKEN' --register newproj--kcpeek"
+  HOME="$WORK" run bash -c "printf '%s' '${FD_SECRET}' | '$FMTOKEN' --register newproj--kcpeek"
   [ "$status" -eq 0 ]
-  [ -f "$FMTOKEN_TEST_PEEK_FD3_LOG" ]
-  [ "$(wc -c <"$FMTOKEN_TEST_PEEK_FD3_LOG" | tr -d ' ')" -eq 0 ]
-  refute_in_file "$FD3_SECRET" "$FMTOKEN_TEST_PEEK_FD3_LOG"
-  [ "$(created_credential)" = "$FD3_SECRET" ]
+  assert_no_fd_leak "$FMTOKEN_TEST_FDSCAN_LOG"
+  refute_in_file "$FD_SECRET" "$FMTOKEN_TEST_FDSCAN_LOG"
+  [ "$(created_credential)" = "$FD_SECRET" ]
 }
 
-# 上の 2 ケースは「今ある子プロセスからは読めない」ことしか見ていない。この区間に
-# コマンドを 1 つ足した人が fd を閉じ忘れれば同じ穴がまた開くので、実装の形そのもの
-# （区間全体が fd を閉じたグループに入っていること）を固定する。
-@test "--register: the double-registration guard runs inside an fd-3-closed group" {
-  local block="${WORK}/register-block.sh"
-  sed -n '/^if \[\[ "$mode" == "register" \]\]/,/^fi$/p' "$FMTOKEN" >"$block"
-  [ -s "$block" ]
-  local ln_exec ln_open ln_guard ln_close ln_create
-  ln_exec="$(grep -n '^  exec 3< ' "$block" | head -1 | cut -d: -f1)"
-  ln_open="$(grep -n '^  {$' "$block" | head -1 | cut -d: -f1)"
-  ln_guard="$(grep -n '^    if ! existing_items=' "$block" | head -1 | cut -d: -f1)"
-  ln_close="$(grep -n '^  } 3<&-$' "$block" | head -1 | cut -d: -f1)"
-  ln_create="$(grep -n '^  op item create ' "$block" | head -1 | cut -d: -f1)"
-  [ -n "$ln_exec" ]
-  [ -n "$ln_open" ]
-  [ -n "$ln_guard" ]
-  [ -n "$ln_close" ]
-  [ -n "$ln_create" ]
-  # exec でパイプを開く → グループを開く → 判定（外部コマンド）→ グループを閉じる → create
-  [ "$ln_exec" -lt "$ln_open" ]
-  [ "$ln_open" -lt "$ln_guard" ]
-  [ "$ln_guard" -lt "$ln_close" ]
-  [ "$ln_close" -lt "$ln_create" ]
+# rw トークン解決（create の直前に走る最後の外部コマンド）も同じ性質を満たすこと。
+# ro 側と経路が分かれているので、片方だけ閉じても緑になる形を潰しておく。
+@test "--register: the rw token Keychain read cannot read the value from any inherited fd" {
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="keychain-rw-token"
+  export FMTOKEN_TEST_FDSCAN_LOG="${WORK}/fdscan-rw.log"
+  # rw は env にも 600 ファイルにも無い状態にして Keychain 経路へ落とす
+  unset OP_SERVICE_ACCOUNT_TOKEN_RW
+  cat >"${STUB}/security" <<'EOF'
+#!/usr/bin/env bash
+if [[ -n "${FMTOKEN_TEST_FDSCAN_LOG:-}" ]]; then
+  fdscan "$FMTOKEN_TEST_FDSCAN_LOG" "security-rw" || true
+fi
+echo "keychain-rw-token"
+exit 0
+EOF
+  chmod +x "${STUB}/security"
+  HOME="$WORK" run bash -c "printf '%s' '${FD_SECRET}' | '$FMTOKEN' --register newproj--rwpeek"
+  [ "$status" -eq 0 ]
+  assert_no_fd_leak "$FMTOKEN_TEST_FDSCAN_LOG"
+  refute_in_file "$FD_SECRET" "$FMTOKEN_TEST_FDSCAN_LOG"
+  [ "$(created_credential)" = "$FD_SECRET" ]
 }

@@ -92,8 +92,8 @@ fmtoken.sh は `OP_SERVICE_ACCOUNT_TOKEN` 環境変数 → `~/.config/op-sa/clau
 
 #### Scenario: 値のパイプが create 以外の子プロセスから読めない
 
-- **WHEN** `op item list`（二重登録判定）と Keychain 読み出しが、値の JSON が待っているパイプの fd を読もうとする状態で `--register` を実行する
-- **THEN** どちらも 1 バイトも読めず、`op item create` は完全な JSON を受け取って登録が成功する
+- **WHEN** `op item list`（二重登録判定）と Keychain 読み出し（ro / rw の両経路）が、開いているすべての fd を走査して読もうとする状態で `--register` を実行する
+- **THEN** どの fd からも 1 バイトも読めず、`op item create` は完全な JSON を受け取って登録が成功する（fd 番号を決め打ちしないこと — 特定の番号だけを閉じる形は、bash が複合コマンドのリダイレクトで取る退避コピーを見落とす）
 
 #### Scenario: エージェント名接頭辞のアイテムを登録する
 
