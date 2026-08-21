@@ -2,54 +2,112 @@
 #
 # casting-check.sh — 「観点の配役」フレームワークの語彙 lint ＋ 起案シグナル検出
 #
-# 対象 repo の .claude/casting/{project.md,local.md,precedents.md} に対して4項目を検査する:
+# 対象 repo の .claude/casting/{project.md,local.md,precedents.md} に対して検査する:
+#   0. 配役表の表行が5列に割れない（5列未満／セル内の | で6列以上に割れる）
+#   0'. HTML コメント（<!-- -->）の開閉が不一致（閉じ忘れは以降を EOF まで飲み込む）
 #   1. catalog.md に無い観点語彙（「カタログ外」を除く）
 #   2. 判例台帳の「カタログ外」判例（観点追加の起案シグナル）
 #   3. 同一観点で帰結「論点じゃなかった」が2件以上（移譲仕組み化の起案シグナル）
 #   4. 各ファイルの catalog_version が catalog.md の version と不一致
 #
-# 検出なしなら exit 0、検出ありなら対象一覧を出力して exit 1。
-#
 # 日本語語彙の照合は LC_ALL=C の grep -F / sed で行う（awk のマルチバイト文字列比較は
 # macOS 実装で壊れる実績があるため使わない）。
 #
 # サブコマンド:
-#   （省略時）      対象 repo の配役表・判例台帳を検査する（上記4項目）
+#   （省略時）      対象 repo の配役表・判例台帳を検査する（上記の検出項目）
 #   resolve          catalog.md・project.md・local.md を観点（行）単位で合成した
 #                     有効な配役表を、由来（カタログ既定／project／local）付きで出力する。
 #                     出力前に合成の入力（project.md / local.md）へ配役表の検証
-#                     （行形式・語彙・catalog_version）を通し、失敗時は合成表を出さずに
-#                     理由を stderr へ出力して exit 1 する（fail-closed / #117）
+#                     （行形式・コメント開閉・語彙・catalog_version）を通し、失敗時は
+#                     合成表を出さずに理由を stderr へ出力して exit 1 する（fail-closed / #117）
 #
-# usage: casting-check.sh [resolve] [--catalog <path>] [<target-repo-root>]
+# exit code:
+#   0  検出なし（resolve は合成表を出力した）
+#   1  検出あり（resolve は合成表を出力していない）
+#   2  使い方エラー（catalog 不在・対象 repo ルート不在・引数過多・不明オプション）
+#   3  resolve のみ: 配役表（project.md / local.md）が1枚も無いため解決していない（#139）
+#
+# usage: casting-check.sh [resolve] [--catalog <path>] [--] [<target-repo-root>]
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CATALOG="${SCRIPT_DIR}/../catalog/catalog.md"
-TARGET="."
+TARGET=""
 SUBCOMMAND="check"
 
-if [ $# -gt 0 ] && [ "$1" = "resolve" ]; then
-  SUBCOMMAND="resolve"
-  shift
-fi
+usage() {
+  cat <<'USAGE'
+usage: casting-check.sh [resolve] [--catalog <path>] [--] [<target-repo-root>]
+
+  （省略時）  対象 repo の配役表・判例台帳を検査する
+  resolve     有効な配役表を合成して出力する（検証を通らなければ出力しない）
+
+exit code: 0=検出なし / 1=検出あり / 2=使い方エラー / 3=配役表が1枚も無い（resolve）
+USAGE
+}
+
+# 引数はサブコマンド・オプション・positional 1個をどの順でも受け取る。
+# positional が2個以上来たら「どちらが対象か」を黙って決めずに使い方エラーにする
+# （旧実装は後勝ちで上書きし、`--catalog <path> resolve <repo>` が黙って check に落ちていた / #139）。
+set_target() {
+  if [ -n "$TARGET" ]; then
+    echo "casting-check: 引数が多すぎます（対象 repo ルートは1つだけ）: $1" >&2
+    usage >&2
+    exit 2
+  fi
+  TARGET="$1"
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --)
+      shift
+      while [ $# -gt 0 ]; do
+        set_target "$1"
+        shift
+      done
+      break
+      ;;
+    resolve)
+      SUBCOMMAND="resolve"
+      shift
+      ;;
     --catalog)
+      if [ $# -lt 2 ]; then
+        echo "casting-check: --catalog に値がありません" >&2
+        usage >&2
+        exit 2
+      fi
       CATALOG="$2"
       shift 2
       ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      echo "casting-check: 不明なオプション: $1" >&2
+      usage >&2
+      exit 2
+      ;;
     *)
-      TARGET="$1"
+      set_target "$1"
       shift
       ;;
   esac
 done
 
+TARGET="${TARGET:-.}"
+
 if [ ! -f "$CATALOG" ]; then
   echo "casting-check: catalog not found: $CATALOG" >&2
+  exit 2
+fi
+
+# 対象 repo ルートの打ち間違えを「配役表が無い repo」と同じ扱いにしない（#139）
+if [ ! -d "$TARGET" ]; then
+  echo "casting-check: 対象 repo ルートが存在しません: $TARGET" >&2
   exit 2
 fi
 
@@ -79,7 +137,7 @@ stripped_copy() {
   printf '%s\n' "$out"
 }
 
-# pipe_count <line> — 行に含まれる | の個数（5列表の行なら6以上）
+# pipe_count <line> — 行に含まれる | の個数（5列表の有効行・区切り行はちょうど6）
 pipe_count() {
   printf '%s' "$1" | tr -cd '|' | wc -c | tr -d ' '
 }
@@ -158,8 +216,10 @@ table_rows() {
     [ -z "$c1" ] && continue
     LC_ALL=C grep -qxF -- '観点' <<<"$c1" && continue
     printf '%s\n' "$c1" | LC_ALL=C grep -qE '^:?-+:?$' && continue
-    # 5列未満（| が6個未満）の壊れた行は有効値として扱わない（検出は check 側が担う）
-    [ "$(pipe_count "$line")" -lt 6 ] && continue
+    # 5列に割れない行（| が6個ちょうどでない）は有効値として扱わない（検出は check 側が担う）。
+    # 6個超はセル内に | が紛れた行で、cut の列位置が右へずれて別のセルが担い手として
+    # 解決される（#139）。片側だけの判定にしないこと
+    [ "$(pipe_count "$line")" -ne 6 ] && continue
     c2="$(printf '%s\n' "$line" | cut -d'|' -f3 | sed -E 's/^ *//; s/ *$//')"
     c3="$(printf '%s\n' "$line" | cut -d'|' -f4 | sed -E 's/^ *//; s/ *$//')"
     c4="$(printf '%s\n' "$line" | cut -d'|' -f5 | sed -E 's/^ *//; s/ *$//')"
@@ -243,12 +303,12 @@ extract_precedent_field() {
     | sed -E "s/^- ${label}: *//; s/ *$//"
 }
 
-# ---- 検出0: 5列未満の壊れた表行（配役表のみ。「行を書くなら5列」の強制） ----
+# ---- 検出0: 5列に割れない壊れた表行（配役表のみ。「行を書くなら5列ちょうど」の強制） ----
 
 check_malformed_rows() {
   local file="$1"
   [ -f "$file" ] || return 0
-  local src line c1
+  local src line c1 pipes
   src="$(stripped_copy "$file")"
   while IFS= read -r line; do
     printf '%s\n' "$line" | LC_ALL=C grep -qE '^\|' || continue
@@ -256,10 +316,30 @@ check_malformed_rows() {
     [ -z "$c1" ] && continue
     LC_ALL=C grep -qxF -- '観点' <<<"$c1" && continue
     printf '%s\n' "$c1" | LC_ALL=C grep -qE '^:?-+:?$' && continue
-    if [ "$(pipe_count "$line")" -lt 6 ]; then
+    pipes="$(pipe_count "$line")"
+    if [ "$pipes" -lt 6 ]; then
       report "malformed-row" "${file}: 5列未満の行（行を書く場合は5列すべて必要）: ${line}"
+    elif [ "$pipes" -gt 6 ]; then
+      report "malformed-row" "${file}: 6列以上に割れる行（セル内の | が列をずらし、既定の担い手が別のセルに解決される）: ${line}"
     fi
   done < "$src"
+}
+
+# ---- 検出0': HTML コメントの開閉不一致（閉じ忘れは以降を EOF まで飲み込む） ----
+#
+# stripped_copy の `sed '/<!--/,/-->/d'` は閉じタグが無ければファイル末尾まで削るため、
+# 閉じ忘れが1つあるだけでその配役表の上書き行が全滅し、しかも何も検出されないまま
+# 「全部カタログ既定」に化ける（#139）。開閉の個数不一致を findings に積んで塞ぐ。
+
+check_comment_balance() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  local opens closes
+  opens="$({ LC_ALL=C grep -o -F -- '<!--' "$file" || true; } | wc -l | tr -d ' ')"
+  closes="$({ LC_ALL=C grep -o -F -- '-->' "$file" || true; } | wc -l | tr -d ' ')"
+  if [ "$opens" != "$closes" ]; then
+    report "unclosed-comment" "${file}: HTML コメントの開閉が不一致（<!-- が ${opens}個 / --> が ${closes}個）。閉じ忘れは以降の行を丸ごと無視させる"
+  fi
 }
 
 # 観点フィールドの値を「、」で分割して1行1観点にする（複数観点の判例に対応）
@@ -307,6 +387,8 @@ check_version() {
 check_layer_files() {
   check_malformed_rows "$PROJECT_MD"
   check_malformed_rows "$LOCAL_MD"
+  check_comment_balance "$PROJECT_MD"
+  check_comment_balance "$LOCAL_MD"
   check_unknown_vocab "$PROJECT_MD" "$PROJECT_MD"
   check_unknown_vocab "$LOCAL_MD" "$LOCAL_MD"
   check_version "$PROJECT_MD"
@@ -322,6 +404,14 @@ check_layer_files() {
 # バイパスフラグは設けない（壊れているときの調査は check モードが行と理由を出す）。
 
 if [ "$SUBCOMMAND" = "resolve" ]; then
+  # 配役表が1枚も無い対象は「検証を通った解決結果」と区別できない完全な表を返していた（#139）。
+  # カタログ既定だけを返すのは正しい答えでもあるが、repo ルートの打ち間違え・casting 未導入と
+  # 見分けが付かないため、合成表を出さず専用の exit code で呼び出し側に知らせる
+  if [ ! -f "$PROJECT_MD" ] && [ ! -f "$LOCAL_MD" ]; then
+    echo "casting-check: resolve を中止（配役表が1枚も無い）: ${CASTING_DIR}/{project.md,local.md} が存在しない" >&2
+    echo "  カタログ既定だけで解決したい repo なら、行を持たない project.md を置く（/casting:init が生成する）" >&2
+    exit 3
+  fi
   check_layer_files
   if [ -s "$FINDINGS" ]; then
     echo "casting-check: resolve を中止（配役表が検証を通らない）:" >&2
@@ -333,6 +423,8 @@ if [ "$SUBCOMMAND" = "resolve" ]; then
 fi
 
 check_layer_files
+
+check_comment_balance "$PRECEDENTS_MD"
 
 if [ -f "$PRECEDENTS_MD" ]; then
   while IFS= read -r val; do
