@@ -19,7 +19,9 @@
 #   fmtoken.sh --check --name moko--TRELLO_TOKEN
 #
 # 登録（正規手順は CLI 代行。read = claude-agents-ro / register = claude-agents-rw の
-# 役割分担。値は argv でなく stdin で渡す — transcript / ps への露出を避けるため）:
+# 役割分担。値は argv でなく stdin で渡す — transcript / ps への露出を避けるため。
+# 内部で起動する op へも JSON テンプレートを stdin で渡す。assignment statement
+# 形式（credential[password]=...）に戻すと op プロセスの argv 経由で ps に露出する）:
 #   printf '%s' "$VALUE" | fmtoken.sh --register <project|agent>--<service>
 #
 # exit code: 0 成功 / 43 SA トークン未配布 / 44 未登録 / 45 プロジェクト導出不能 /
@@ -117,7 +119,24 @@ if [[ "$mode" == "register" ]]; then
     echo "fmtoken: ${explicit_name} は既に登録済みです → 上書きしない（更新が必要なら主の判断を経て op item edit を使う。無断上書き防止）" >&2
     exit 47
   fi
-  op item create --vault "$OP_VAULT" --category "API Credential" --title "$explicit_name" "credential[password]=${value}" >/dev/null
+  # 値は op の argv に載せない（issue #130）。assignment statement
+  # （`credential[password]=<値>`）で渡すと op プロセスの実行中に ps から値が見え、
+  # 「stdin で受けるので ps に出ない」という文書の主張が実装で担保されない。
+  # op 公式も `op item create --help` で assignment statement による秘密の受け渡しを
+  # 警告し、JSON テンプレートを推奨している。ここではその JSON をパイプで渡す
+  # （`op item create --vault <v> -` が stdin から JSON を読む形）。
+  #
+  # JSON の組み立ては /usr/bin/python3（--list と同じ既存依存）。printf で手組みすると
+  # 値に含まれる " \ 改行 でクレデンシャルが黙って壊れる。argv に渡してよいのは
+  # アイテム名（秘密でない）だけで、値はパイプの中だけを通す（環境変数も不可 —
+  # 同一ユーザーからは argv と同程度に見えるため塞いだことにならない）。
+  #
+  # 失敗時は fail-closed: assignment statement へのフォールバックを書かないこと
+  # （例外時にだけ argv 経路が開く穴になり、しかも例外時こそ気づかれない）。
+  # set -euo pipefail によりパイプのどの段が落ちても非 0 で即死する。
+  printf '%s' "$value" |
+    /usr/bin/python3 -c 'import json,sys; print(json.dumps({"title":sys.argv[1],"category":"API_CREDENTIAL","fields":[{"id":"credential","type":"CONCEALED","label":"credential","value":sys.stdin.read()}]}))' "$explicit_name" |
+    op item create --vault "$OP_VAULT" - >/dev/null
   echo "OK: ${explicit_name} を ${OP_VAULT} 保管庫に登録した（フィールド: credential）"
   exit 0
 fi

@@ -32,8 +32,10 @@ if [[ "$1" == "item" && "$2" == "list" ]]; then
   exit 0
 fi
 if [[ "$1" == "item" && "$2" == "create" ]]; then
-  # 呼び出し引数を記録する（値そのものはテストのアサート対象にしない）
+  # argv と stdin を別ログに分けて記録する。値がどちらの経路を通ったかを
+  # テストで区別するため（issue #130: 値は argv に載せず stdin の JSON で渡す）。
   printf '%s\n' "$@" >"${FMTOKEN_TEST_CREATE_LOG:-/dev/null}"
+  cat >"${FMTOKEN_TEST_CREATE_STDIN_LOG:-/dev/null}"
   exit 0
 fi
 exit 1
@@ -50,6 +52,31 @@ EOF
   PATH="${STUB}:${PATH}"
   export OP_SERVICE_ACCOUNT_TOKEN="dummy-sa-token"
   export FMTOKEN_TEST_CREATE_LOG="${WORK}/op-create.log"
+  export FMTOKEN_TEST_CREATE_STDIN_LOG="${WORK}/op-create-stdin.log"
+}
+
+# op item create の stdin ログに記録された JSON から、credential フィールドの値を取り出す。
+# 値の完全一致を見るため、文字列の部分一致ではなく JSON をパースして比較する。
+created_credential() {
+  /usr/bin/python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+print([f for f in d["fields"] if f["id"]=="credential"][0]["value"], end="")' "$FMTOKEN_TEST_CREATE_STDIN_LOG"
+}
+
+# ファイル $2 にパターン $1 が現れないことを検証する。
+# `! grep ...` を直接書かないのは、bash の errexit が `!` で始まる形では無効化され、
+# アサートが黙って素通りするため（露出検査が常に緑になる事故を防ぐ）。
+refute_in_file() {
+  if grep -q -- "$1" "$2"; then
+    echo "unexpected match: ${1} found in ${2}" >&2
+    return 1
+  fi
+}
+
+# 同じく stdin ログの JSON から任意のトップレベルキーを取り出す（title / category）。
+created_field() {
+  /usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]], end="")' \
+    "$FMTOKEN_TEST_CREATE_STDIN_LOG" "$1"
 }
 
 teardown() {
@@ -276,8 +303,46 @@ EOF
   export FMTOKEN_TEST_EXPECT_SA="rw-sa-token"
   run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register newproj--newsvc"
   [ "$status" -eq 0 ]
-  grep -q -- "newproj--newsvc" "$FMTOKEN_TEST_CREATE_LOG"
+  [ "$(created_field title)" = "newproj--newsvc" ]
   [[ "$output" != *"sekrit-value"* ]]
+}
+
+@test "--register: value goes through stdin only, never through op's argv" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA="rw-sa-token"
+  run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register newproj--newsvc"
+  [ "$status" -eq 0 ]
+  # 値は op の argv に載らない（ps から見えない）
+  refute_in_file "sekrit-value" "$FMTOKEN_TEST_CREATE_LOG"
+  # assignment statement 形式そのものが消えていること
+  refute_in_file "credential\[password\]" "$FMTOKEN_TEST_CREATE_LOG"
+  # 値は stdin 経由で確かに渡っている（両方見ないと「どこにも渡さない」実装が通る）
+  [ "$(created_credential)" = "sekrit-value" ]
+}
+
+@test "--register: created item keeps the API Credential shape (category / credential field)" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register newproj--newsvc"
+  [ "$status" -eq 0 ]
+  [ "$(created_field category)" = "API_CREDENTIAL" ]
+  grep -q -- "--vault" "$FMTOKEN_TEST_CREATE_LOG"
+  grep -q -- "agents" "$FMTOKEN_TEST_CREATE_LOG"
+  # JSON テンプレートを stdin で読ませる形（op item create ... -）
+  grep -qx -- "-" "$FMTOKEN_TEST_CREATE_LOG"
+}
+
+@test "--register: value containing quotes, backslashes, newlines and \$ survives intact" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  # " \ 改行 $ ' タブ を含む値。手組み JSON や shell 展開で壊れるとここで落ちる。
+  # 値はファイル経由で渡す（テスト側のクォートで壊すと検証の意味が無くなるため）
+  printf 'a"b\\c$d\n%s\tsingle'\''quote' "line2" >"${WORK}/tricky"
+  run bash -c "'$FMTOKEN' --register newproj--tricky < '${WORK}/tricky'"
+  [ "$status" -eq 0 ]
+  [ "$(created_credential)" = "$(cat "${WORK}/tricky")" ]
+  refute_in_file 'a"b' "$FMTOKEN_TEST_CREATE_LOG"
 }
 
 @test "--register: agent-prefixed item is created" {
@@ -286,7 +351,7 @@ EOF
   export FMTOKEN_TEST_EXPECT_SA="rw-sa-token"
   run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register moko--TRELLO_TOKEN"
   [ "$status" -eq 0 ]
-  grep -q -- "moko--TRELLO_TOKEN" "$FMTOKEN_TEST_CREATE_LOG"
+  [ "$(created_field title)" = "moko--TRELLO_TOKEN" ]
 }
 
 @test "--register: naming convention violation exits 46, op item create not called" {
@@ -333,5 +398,5 @@ EOF
   export FMTOKEN_TEST_EXPECT_SA="file-rw-token"
   HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
   [ "$status" -eq 0 ]
-  grep -q -- "moko--NEWTOKEN" "$FMTOKEN_TEST_CREATE_LOG"
+  [ "$(created_field title)" = "moko--NEWTOKEN" ]
 }
