@@ -98,3 +98,39 @@ setup() {
   [[ "$output" == *"malformed-row"* ]]
   [[ "$output" == *"5列未満"* ]]
 }
+
+# --- 回帰: #139（check モードでも同じ経路を検出する） ---
+
+@test "over-column fixture: a row that splits into more than 5 columns is reported" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/over-column"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"malformed-row"* ]]
+  [[ "$output" == *"6列以上"* ]]
+}
+
+@test "unclosed-comment fixture: an unbalanced HTML comment is reported" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/unclosed-comment"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unclosed-comment"* ]]
+  [[ "$output" == *"project.md"* ]]
+}
+
+@test "local-malformed fixture: a broken local.md is reported with its own path" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/local-malformed"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"malformed-row"* ]]
+  [[ "$output" == *"local.md"* ]]
+}
+
+@test "ok fixture: a balanced HTML comment is not reported as unclosed" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/ok"
+  [[ "$output" != *"unclosed-comment"* ]]
+}
+
+@test "template project.md: the commented-out example is balanced and not reported" {
+  REPO="${BATS_TEST_TMPDIR}/template-repo"
+  mkdir -p "${REPO}/.claude/casting"
+  cp "${PLUGIN_DIR}/templates/project.md" "${REPO}/.claude/casting/project.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$REPO"
+  [ "$status" -eq 0 ]
+}
