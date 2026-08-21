@@ -205,7 +205,7 @@
       "description": "この開発ハーネスでの標準開発ワークフローを集めるプラグイン。github-issue: GitHub issue（番号/URL/自然文）に取り組む時に発火し、worktree のセットアップは worktree プラグインの hooks（WorktreeCreate / SessionStart）が自動で済ませる前提に立ち、このスキルでは判定しない → 仕様として残すべき変更なら opsx（openspec）フロー → 単一 change で足りるか複数 change に割れるかを判定 → 実行戦略（solo / delegate+verify / workflow 型）を残量モード（FABLE_BUDGET_MODE）込みで仮決め → TDD で実装、という標準手順を毎回同じに通す。work-issue: 対象 issue が未起票なら loops-issueify の手順で起票してから同パイプラインに接続する（issueify フォールバック）。pr-review-gate: PR 作成後に必ず通す品質ゲート（別コンテキストレビュー・リスク宣言の positive affirmation・動作確認証拠・agent-review:passed 付与を fail-closed で行う。レビューの重量は変更内容から light / full に事前判定し、既定と迷ったときは full＝Codex に倒す。auto-merge workflow のリポ展開テンプレートは templates/auto-merge/）。誤分類は昇格トリップワイヤー（templates/escalation-tripwires.md）が実行中に修正する。人間の直接依頼でも loop-dev-agent の無人サイクルからでも同じフローを共有する（--unmanned で無人モード）。longrun:plan は呼ばず、issue 化前の壁打ちとは切り分ける。実装モデルのエスカレーションポリシー: 聖域パス・マージ権限・層間契約・課金/法務に触れる実装は1周目から model: fable で spawn し（分類表の正本は github-issue の Step D）、レビュー failed からの修正実装は実装品質起因のときだけ fable へ昇格する（仕様曖昧・レビュアー誤検出はモデル昇格しない。フォールバック記録の正本は pr-review-gate）。",
       "source": "./plugins/dev-workflow",
       "category": "workflow",
-      "version": "1.10.1",
+      "version": "1.10.2",
       "author": {
         "name": "Oratta"
       },
