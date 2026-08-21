@@ -34,6 +34,14 @@ if [[ "$1" == "read" ]]; then
   exit 1
 fi
 if [[ "$1" == "item" && "$2" == "list" ]]; then
+  # FMTOKEN_TEST_PEEK_FD3_LOG が設定されていれば、継承した fd 3 から読めたバイトを記録する。
+  # item list は「op item create より前に走る子プロセス」の代表で、fd 3（値の JSON が
+  # 待っているパイプ）が渡っていれば、ここで平文が読める。読めなかった場合もログ自体は
+  # 作る（空ファイル）— 検査側が「ログが無い＝検査が成立していない」を区別できるようにするため。
+  if [[ -n "${FMTOKEN_TEST_PEEK_FD3_LOG:-}" ]]; then
+    : >>"$FMTOKEN_TEST_PEEK_FD3_LOG"
+    head -c 400 <&3 >>"$FMTOKEN_TEST_PEEK_FD3_LOG" 2>/dev/null || true
+  fi
   # exit 0 のまま解析できない出力を返す（op の出力形式が変わった / 途中で切れた状況）
   if [[ -n "${FMTOKEN_TEST_LIST_BROKEN:-}" ]]; then
     echo 'not json at all'
@@ -772,4 +780,90 @@ assert_xtrace_active() {
   [ "$status" -eq 46 ]
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
   [[ "$output" == *"UTF-8"* ]]
+}
+
+# ── PR #177 レビュー指摘: 値のパイプを create 以外の子プロセスに継承させないこと ──
+#
+# 値の JSON は `exec 3< <(python …)` から `op item create - <&3` までパイプの中で待つ。
+# その間に開いている fd は close-on-exec が付かないので、間に挟まる子プロセス
+# （ro/rw トークンの読み出し・二重登録ガードの `op item list` とその解析）にすべて渡り、
+# そこから平文が読めていた。しかも先に吸われると `op item create` は 0 バイトを受け取るのに
+# スクリプトは「OK: … 登録した」で exit 0 する（無言の fail-open）。
+# 旧実装（値を bash 変数に置く形）は非 export の変数で、macOS には /proc も無いので
+# 子プロセスからは原理的に読めなかった＝塞がないと退行になる。
+
+FD3_SECRET="PEEKSECRET-123"
+
+# 検出器そのものが素通りしないことを先に固定する（refute_in_file と同じ趣旨）。
+# fd 3 を継承したまま op スタブを呼べば読める、が成立していなければ、
+# 下の 2 ケースは「実装が塞いだから」ではなく「そもそも読めない構成だから」緑になる。
+@test "the op stub's fd 3 peek really reads an inherited fd (detector sanity)" {
+  export FMTOKEN_TEST_PEEK_FD3_LOG="${WORK}/peek-sanity.log"
+  run bash -c "exec 3< <(printf 'CANARY-FD3'); op item list --vault agents --format json >/dev/null"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$FMTOKEN_TEST_PEEK_FD3_LOG")" = "CANARY-FD3" ]
+}
+
+@test "--register: op item list cannot read the value from an inherited fd" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  export FMTOKEN_TEST_PEEK_FD3_LOG="${WORK}/peek-list.log"
+  run bash -c "printf '%s' '${FD3_SECRET}' | '$FMTOKEN' --register newproj--peek"
+  [ "$status" -eq 0 ]
+  # 覗き見の対象になる子プロセスが実際に走ったこと（＝検査が成立していること）を先に要求する
+  [ -f "$FMTOKEN_TEST_PEEK_FD3_LOG" ]
+  # 値の断片どころか JSON の 1 バイト目も渡らない
+  [ "$(wc -c <"$FMTOKEN_TEST_PEEK_FD3_LOG" | tr -d ' ')" -eq 0 ]
+  refute_in_file "$FD3_SECRET" "$FMTOKEN_TEST_PEEK_FD3_LOG"
+  # 吸われていないので create には完全な JSON が届く（無言の fail-open が起きていない）
+  [ "$(created_credential)" = "$FD3_SECRET" ]
+}
+
+@test "--register: the Keychain read cannot read the value from an inherited fd" {
+  unset OP_SERVICE_ACCOUNT_TOKEN
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  export FMTOKEN_TEST_PEEK_FD3_LOG="${WORK}/peek-keychain.log"
+  # ro トークンの解決を Keychain 経路に落とす（600 ファイルが配布されていないマシン）。
+  # security は op スタブとは別クラスの「create より前に走る外部コマンド」で、
+  # 個々のコマンドに fd を閉じる指定を足す当て方だと拾い漏れが起きうる側。
+  cat >"${STUB}/security" <<'EOF'
+#!/usr/bin/env bash
+: >>"${FMTOKEN_TEST_PEEK_FD3_LOG:-/dev/null}"
+head -c 400 <&3 >>"${FMTOKEN_TEST_PEEK_FD3_LOG:-/dev/null}" 2>/dev/null || true
+echo "keychain-sa-token"
+exit 0
+EOF
+  chmod +x "${STUB}/security"
+  HOME="$WORK" run bash -c "printf '%s' '${FD3_SECRET}' | '$FMTOKEN' --register newproj--kcpeek"
+  [ "$status" -eq 0 ]
+  [ -f "$FMTOKEN_TEST_PEEK_FD3_LOG" ]
+  [ "$(wc -c <"$FMTOKEN_TEST_PEEK_FD3_LOG" | tr -d ' ')" -eq 0 ]
+  refute_in_file "$FD3_SECRET" "$FMTOKEN_TEST_PEEK_FD3_LOG"
+  [ "$(created_credential)" = "$FD3_SECRET" ]
+}
+
+# 上の 2 ケースは「今ある子プロセスからは読めない」ことしか見ていない。この区間に
+# コマンドを 1 つ足した人が fd を閉じ忘れれば同じ穴がまた開くので、実装の形そのもの
+# （区間全体が fd を閉じたグループに入っていること）を固定する。
+@test "--register: the double-registration guard runs inside an fd-3-closed group" {
+  local block="${WORK}/register-block.sh"
+  sed -n '/^if \[\[ "$mode" == "register" \]\]/,/^fi$/p' "$FMTOKEN" >"$block"
+  [ -s "$block" ]
+  local ln_exec ln_open ln_guard ln_close ln_create
+  ln_exec="$(grep -n '^  exec 3< ' "$block" | head -1 | cut -d: -f1)"
+  ln_open="$(grep -n '^  {$' "$block" | head -1 | cut -d: -f1)"
+  ln_guard="$(grep -n '^    if ! existing_items=' "$block" | head -1 | cut -d: -f1)"
+  ln_close="$(grep -n '^  } 3<&-$' "$block" | head -1 | cut -d: -f1)"
+  ln_create="$(grep -n '^  op item create ' "$block" | head -1 | cut -d: -f1)"
+  [ -n "$ln_exec" ]
+  [ -n "$ln_open" ]
+  [ -n "$ln_guard" ]
+  [ -n "$ln_close" ]
+  [ -n "$ln_create" ]
+  # exec でパイプを開く → グループを開く → 判定（外部コマンド）→ グループを閉じる → create
+  [ "$ln_exec" -lt "$ln_open" ]
+  [ "$ln_open" -lt "$ln_guard" ]
+  [ "$ln_guard" -lt "$ln_close" ]
+  [ "$ln_close" -lt "$ln_create" ]
 }

@@ -195,47 +195,63 @@ out.write(payload); out.flush()' "$explicit_name")
       exit 46
       ;;
   esac
-  # 判定不能（exit 48）で共通して出す案内。1Password 側の権限変更は人間の GUI 作業なので、
-  # スクリプトは選択肢の提示までで止まる。
-  GUARD_HINT="→ ro SA トークンをこのマシンに配布する（env OP_SERVICE_ACCOUNT_TOKEN / ~/.config/op-sa/claude-agents-ro.token / Keychain ${KEYCHAIN_SERVICE_RO}）か、rw SA に agents 保管庫の read 権を付けて OP_SERVICE_ACCOUNT_TOKEN に設定すること（1Password 側の権限変更は人間の GUI 作業）"
-  # 二重登録ガード（issue #131）: 判定は読み取り用 SA（claude-agents-ro）で行い、
-  # rw SA の read 権には依存しない。rw で `op read` して判定すると、rw に read 権が無い構成で
-  # 判定が常に「未登録」側に倒れ（fail-open）、1Password は同名アイテムの作成を許すため
-  # 重複アイテムができる。ro SA はこのスクリプトの読み取り経路全体が依存している＝定義上
-  # read 可能なので、存在判定はそちらに寄せる。判定は title 完全一致（op item list）で行い、
-  # credential フィールドの有無に依存しない（フィールド欠落アイテムを「未登録」と誤判定して
-  # 同名重複を作らないため）。判定できない時は create せず止まる（fail-closed / exit 48）。
-  if ! resolve_ro_token --optional; then
-    echo "fmtoken: 二重登録の判定に使える読み取り用 SA トークン（claude-agents-ro）が解決できません。判定できないまま登録すると同名アイテムの重複を作りうるため、登録を中止します（fail-closed）" >&2
-    echo "${GUARD_HINT}" >&2
-    exit 48
-  fi
-  if ! existing_items="$(op item list --vault "$OP_VAULT" --format json 2>/dev/null)"; then
-    echo "fmtoken: 二重登録の判定（op item list --vault ${OP_VAULT}）に失敗しました。判定できないまま登録すると同名アイテムの重複を作りうるため、登録を中止します（fail-closed）" >&2
-    echo "${GUARD_HINT}" >&2
-    exit 48
-  fi
-  # 一致（0）/ 不一致（1）/ 解析不能（2）を区別する。JSON が壊れている・想定の形でない場合を
-  # 「不一致」に混ぜると、判定できていないのに create に進んでしまう（fail-open）。
-  guard_rc=0
-  printf '%s' "$existing_items" |
-    /usr/bin/python3 -c 'import json,sys
+  # ── fd 3 は create までの間、他のどの子プロセスにも渡さない（PR #177 レビュー指摘）──
+  # fd 3 は exec で開いた時点から `op item create` まで開きっぱなしで、その間に起動する
+  # 子プロセスは**すべて fd 3 を継承する**（close-on-exec が付かない）。ここには
+  # ro/rw トークンを読む `tr` と Keychain 読み出し、二重登録ガードの `op item list` と
+  # その解析 python が挟まるので、放置すると「値をパイプの中だけに閉じ込める」という
+  # この経路の前提が崩れる:
+  #   - 平文の JSON を `<&3` で読める（旧実装の値は非 export の bash 変数で、macOS には
+  #     /proc が無いので子プロセスからは原理的に読めなかった＝**退行**になる）
+  #   - 先に吸われると `op item create` が 0 バイトを受け取り、それでも「OK: … 登録した」で
+  #     exit 0 する（無言の fail-open。--register は上書き禁止なので人力復旧待ちになる）
+  # 個々のコマンドに `3<&-` を足す当て方だと、この区間に将来コマンドを 1 つ足した人が
+  # 忘れた時点で同じ穴が開く。区間全体をグループにまとめて 1 か所で閉じる
+  # （`{ …; } 3<&-` はサブシェルを作らないので export も exit も従来どおり効き、
+  # グループを抜けたあと fd 3 は open のまま create に渡る）。
+  {
+    # 判定不能（exit 48）で共通して出す案内。1Password 側の権限変更は人間の GUI 作業なので、
+    # スクリプトは選択肢の提示までで止まる。
+    GUARD_HINT="→ ro SA トークンをこのマシンに配布する（env OP_SERVICE_ACCOUNT_TOKEN / ~/.config/op-sa/claude-agents-ro.token / Keychain ${KEYCHAIN_SERVICE_RO}）か、rw SA に agents 保管庫の read 権を付けて OP_SERVICE_ACCOUNT_TOKEN に設定すること（1Password 側の権限変更は人間の GUI 作業）"
+    # 二重登録ガード（issue #131）: 判定は読み取り用 SA（claude-agents-ro）で行い、
+    # rw SA の read 権には依存しない。rw で `op read` して判定すると、rw に read 権が無い構成で
+    # 判定が常に「未登録」側に倒れ（fail-open）、1Password は同名アイテムの作成を許すため
+    # 重複アイテムができる。ro SA はこのスクリプトの読み取り経路全体が依存している＝定義上
+    # read 可能なので、存在判定はそちらに寄せる。判定は title 完全一致（op item list）で行い、
+    # credential フィールドの有無に依存しない（フィールド欠落アイテムを「未登録」と誤判定して
+    # 同名重複を作らないため）。判定できない時は create せず止まる（fail-closed / exit 48）。
+    if ! resolve_ro_token --optional; then
+      echo "fmtoken: 二重登録の判定に使える読み取り用 SA トークン（claude-agents-ro）が解決できません。判定できないまま登録すると同名アイテムの重複を作りうるため、登録を中止します（fail-closed）" >&2
+      echo "${GUARD_HINT}" >&2
+      exit 48
+    fi
+    if ! existing_items="$(op item list --vault "$OP_VAULT" --format json 2>/dev/null)"; then
+      echo "fmtoken: 二重登録の判定（op item list --vault ${OP_VAULT}）に失敗しました。判定できないまま登録すると同名アイテムの重複を作りうるため、登録を中止します（fail-closed）" >&2
+      echo "${GUARD_HINT}" >&2
+      exit 48
+    fi
+    # 一致（0）/ 不一致（1）/ 解析不能（2）を区別する。JSON が壊れている・想定の形でない場合を
+    # 「不一致」に混ぜると、判定できていないのに create に進んでしまう（fail-open）。
+    guard_rc=0
+    printf '%s' "$existing_items" |
+      /usr/bin/python3 -c 'import json,sys
 try:
     items = json.load(sys.stdin)
     titles = [i["title"] for i in items]
 except Exception:
     sys.exit(2)
 sys.exit(0 if sys.argv[1] in titles else 1)' "$explicit_name" || guard_rc=$?
-  if [[ "$guard_rc" -eq 0 ]]; then
-    echo "fmtoken: ${explicit_name} は既に登録済みです → 上書きしない（更新が必要なら主の判断を経て op item edit を使う。無断上書き防止）" >&2
-    exit 47
-  fi
-  if [[ "$guard_rc" -ne 1 ]]; then
-    echo "fmtoken: 二重登録の判定に使う ${OP_VAULT} 保管庫のアイテム一覧を解析できませんでした（op item list --format json の出力が想定の形ではありません）。判定できないまま登録すると同名アイテムの重複を作りうるため、登録を中止します（fail-closed）" >&2
-    echo "${GUARD_HINT}" >&2
-    exit 48
-  fi
-  resolve_rw_token
+    if [[ "$guard_rc" -eq 0 ]]; then
+      echo "fmtoken: ${explicit_name} は既に登録済みです → 上書きしない（更新が必要なら主の判断を経て op item edit を使う。無断上書き防止）" >&2
+      exit 47
+    fi
+    if [[ "$guard_rc" -ne 1 ]]; then
+      echo "fmtoken: 二重登録の判定に使う ${OP_VAULT} 保管庫のアイテム一覧を解析できませんでした（op item list --format json の出力が想定の形ではありません）。判定できないまま登録すると同名アイテムの重複を作りうるため、登録を中止します（fail-closed）" >&2
+      echo "${GUARD_HINT}" >&2
+      exit 48
+    fi
+    resolve_rw_token
+  } 3<&-
   # 値は op の argv に載せない（issue #130）。assignment statement
   # （`credential[password]=<値>`）で渡すと op プロセスの実行中に ps から値が見え、
   # 「stdin で受けるので ps に出ない」という文書の主張が実装で担保されない。
