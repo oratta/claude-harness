@@ -487,6 +487,72 @@ else
   ng "revert: merge commit の revert に対応していない"
 fi
 
+# ── (4-b) 事故再現: $BASE_BRANCH 以外へマージされた PR を revert 指定する ──
+# revert-pr.yml が PR の merged / merge_commit_sha しか見ないと、feature ブランチ等
+# $BASE_BRANCH 以外へマージされた PR を指定されたとき「$BASE_BRANCH に元々無かった変更の
+# 逆パッチ」PR を生成してしまう（出典: oratta/marketing-harness#36 の Codex レビュー）。
+# META に .base.ref を含め、$BASE_BRANCH 以外を拒否していることを実行コードで検査する。
+extract_script "$RV" "revert-script" > "$TMPD/rv-script.sh"
+sed 's/#.*//' "$TMPD/rv-script.sh" > "$TMPD/rv-code.txt"
+
+if grep -qF '.base.ref' "$TMPD/rv-code.txt"; then
+  ok "revert: META で PR の base ブランチ（.base.ref）を取得している"
+else
+  ng "revert: PR の base ブランチを取得していない（\$BASE_BRANCH 以外へのマージ PR を検出できない）"
+fi
+
+if grep -qF '"$PR_BASE" != "$BASE_BRANCH"' "$TMPD/rv-code.txt"; then
+  ok "revert: base が \$BASE_BRANCH 以外なら拒否している"
+else
+  ng "revert: base 検証が無い（\$BASE_BRANCH 以外へマージされた PR の逆パッチ PR が生成されてしまう）"
+fi
+
+# ── (4-c) 事故再現: base の履歴に無いコミットを revert する ──
+# merge_commit_sha が origin/$BASE_BRANCH の ancestor でなければ、その revert は
+# 「$BASE_BRANCH に無かった変更の取り消し」という無意味な逆パッチになる。
+# push 等の副作用より前に merge-base --is-ancestor で拒否していることと、その順序を検査する。
+if grep -qF 'merge-base --is-ancestor' "$TMPD/rv-code.txt"; then
+  ok "revert: merge-base --is-ancestor で ancestor 検証をしている"
+else
+  ng "revert: ancestor 検証が無い（base の履歴に無いコミットが revert されうる）"
+fi
+
+ANCESTOR_LINE=$(grep -n 'merge-base --is-ancestor' "$TMPD/rv-code.txt" | head -1 | cut -d: -f1)
+REVERT_LINE=$(grep -n 'git revert' "$TMPD/rv-code.txt" | head -1 | cut -d: -f1)
+RV_PUSH_LINE=$(grep -n 'git push origin' "$TMPD/rv-code.txt" | head -1 | cut -d: -f1)
+if [ -n "$ANCESTOR_LINE" ] && [ -n "$REVERT_LINE" ] && [ -n "$RV_PUSH_LINE" ] \
+   && [ "$ANCESTOR_LINE" -lt "$REVERT_LINE" ] && [ "$ANCESTOR_LINE" -lt "$RV_PUSH_LINE" ]; then
+  ok "revert: ancestor 検証が revert / push より前にある"
+else
+  ng "revert: ancestor 検証が revert / push より前に無い（副作用の後で落ちても遅い）"
+fi
+
+# ── (4-d) 事故再現: push 後・PR 作成後の部分失敗を re-run する ──
+# 失敗 run の re-run は RUN_ID が変わらない（run attempt だけ増える）ため、ブランチ名が
+# RUN_ID 固定のままだと前回 attempt の残骸（push 済みブランチ・作成済み PR）に衝突して
+# non-fast-forward / PR 重複で落ちる。既存状態を発見して残工程だけ続行することを検査する。
+if grep -qF 'ls-remote' "$TMPD/rv-code.txt"; then
+  ok "revert: 既存の revert ブランチを発見している（ls-remote）"
+else
+  ng "revert: 既存ブランチの発見が無い（re-run が non-fast-forward で落ちる）"
+fi
+
+if grep -qF 'gh pr list' "$TMPD/rv-code.txt"; then
+  ok "revert: 既存の revert PR を発見している（gh pr list）"
+else
+  ng "revert: 既存 PR の発見が無い（re-run が PR 重複で落ちる）"
+fi
+
+RV_LSREMOTE_LINE=$(grep -n 'ls-remote' "$TMPD/rv-code.txt" | head -1 | cut -d: -f1)
+RV_PRLIST_LINE=$(grep -n 'gh pr list' "$TMPD/rv-code.txt" | head -1 | cut -d: -f1)
+RV_PRCREATE_LINE=$(grep -n 'gh pr create' "$TMPD/rv-code.txt" | head -1 | cut -d: -f1)
+if [ -n "$RV_LSREMOTE_LINE" ] && [ -n "$RV_PUSH_LINE" ] && [ "$RV_LSREMOTE_LINE" -lt "$RV_PUSH_LINE" ] \
+   && [ -n "$RV_PRLIST_LINE" ] && [ -n "$RV_PRCREATE_LINE" ] && [ "$RV_PRLIST_LINE" -lt "$RV_PRCREATE_LINE" ]; then
+  ok "revert: 既存状態の発見が push / PR 作成より前にある"
+else
+  ng "revert: 発見と作成の順序が不正（作ってから見つけても衝突は防げない）"
+fi
+
 # ── (5) 運用ドキュメント ─────────────────────────────────────
 for token in \
   'AUTOMERGE_PAUSED' \

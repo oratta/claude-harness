@@ -177,6 +177,12 @@ gh api -X DELETE repos/<owner>/<repo>/actions/variables/AUTOMERGE_PAUSED        
   `git revert -m 1` の要否を自動で切り替える）。
 - revert PR には `human-merge` が付くので、auto-merge が拾うことはない。
 - revert がコンフリクトした場合はワークフローが失敗する。その場合は手で revert ブランチを作る。
+- 指定できるのは**既定ブランチへマージされた PR だけ**。別ブランチへマージされた PR や、
+  マージコミットが既定ブランチの履歴に無い PR は、副作用（ブランチ作成・push）より前に
+  エラーで拒否される（既定ブランチに無かった変更の「逆パッチ」PR を作らないため）。
+- push や PR 作成の後でワークフローが部分失敗しても、**そのまま同じ run を re-run すればよい**。
+  前回 attempt が push 済みのブランチ・作成済みの PR を発見して、残工程（ラベル付与・
+  元 PR へのコメント）だけ続行する。
 - `AUTOMERGE_PAT` が未設定でも revert PR は作れる（緊急時に「PAT が無いから巻き戻せない」を
   作らないため GITHUB_TOKEN にフォールバックする）。ただしその PR では CI が自動起動しないので、
   空コミットの push か手動 re-run で CI を回してからマージする。
