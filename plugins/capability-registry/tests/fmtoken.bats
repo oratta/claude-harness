@@ -83,11 +83,21 @@ print([f for f in d["fields"] if f["id"]=="credential"][0]["value"], end="")' "$
 # ファイル $2 にパターン $1 が現れないことを検証する。
 # `! grep ...` を直接書かないのは、bash の errexit が `!` で始まる形では無効化され、
 # アサートが黙って素通りするため（露出検査が常に緑になる事故を防ぐ）。
+# grep の終了コードは 0=一致 / 1=不一致 / 2=エラー（ファイルが無い・読めない等）。
+# 2 を 1 と一緒に「不一致」へ丸めると、露出検査の対象ログが作られていない状態を
+# 「値が漏れていない」と誤判定して素通りする。読めることを先に要求し、2 は失敗にする。
 refute_in_file() {
-  if grep -q -- "$1" "$2"; then
-    echo "unexpected match: ${1} found in ${2}" >&2
+  if [[ ! -r "$2" ]]; then
+    echo "refute_in_file: ${2} が読めない（露出検査が成立していない）" >&2
     return 1
   fi
+  local rc=0
+  grep -q -- "$1" "$2" || rc=$?
+  case "$rc" in
+    0) echo "unexpected match: ${1} found in ${2}" >&2; return 1 ;;
+    1) return 0 ;;
+    *) echo "refute_in_file: grep が異常終了した（rc=${rc} / ${2}）" >&2; return 1 ;;
+  esac
 }
 
 # 同じく stdin ログの JSON から任意のトップレベルキーを取り出す（title / category）。
@@ -323,6 +333,19 @@ EOF
   [ "$status" -eq 0 ]
   [ "$(created_field title)" = "newproj--newsvc" ]
   [[ "$output" != *"sekrit-value"* ]]
+}
+
+# 露出検査（refute_in_file）自身が素通りしないことを固定する。issue #130 の受け入れ条件
+# 「値が argv に載らない」を検査する唯一の手段がこのヘルパなので、ログが欠けたときに
+# 緑になる形だと検査が黙って消える。
+@test "refute_in_file: unreadable log fails instead of silently passing" {
+  printf 'haystack only\n' >"${WORK}/refute-probe.log"
+  run refute_in_file "needle" "${WORK}/no-such-file.log"
+  [ "$status" -ne 0 ]
+  run refute_in_file "needle" "${WORK}/refute-probe.log"
+  [ "$status" -eq 0 ]
+  run refute_in_file "haystack" "${WORK}/refute-probe.log"
+  [ "$status" -ne 0 ]
 }
 
 @test "--register: value goes through stdin only, never through op's argv" {
