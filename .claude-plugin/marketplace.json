@@ -132,7 +132,7 @@
       "description": "Webアプリのインフラを対話的に一括セットアップするプラグイン。Vercel + Supabase + GitHub Actions構成で、local/staging/prod の4環境を構築する（`/infra-setup`）。既存 supabase-project-setup スキルを統合。",
       "source": "./plugins/infra",
       "category": "workflow",
-      "version": "0.5.2",
+      "version": "0.5.4",
       "author": {
         "name": "Oratta"
       },
@@ -243,7 +243,7 @@
       "description": "外部サービスを操作する前に CLI とトークンの在処を教える発見層プラグイン。サービス索引スキル（description トリガー・CLAUDE.md 無編集で発火・CLI が無いネガティブエントリ付き）+ fmtoken.sh（1Password agents 保管庫からトークンを引く・登録するラッパー。--name で明示名参照 / --register は rw SA 経由で命名規約を機械検証して登録）+ ブラウザ系 MCP ツールの PreToolUse 注意喚起 hook（deny はしない）で、ブラウザとログイン依頼への逃げ道を減らす。",
       "source": "./plugins/capability-registry",
       "category": "workflow",
-      "version": "1.7.4",
+      "version": "1.7.7",
       "author": {
         "name": "Oratta"
       },
@@ -281,7 +281,7 @@
       "description": "意思決定移譲のフレームワーク「観点の配役」の実装プラグイン。catalog/catalog.md が観点カタログ（3グループ14観点・列定義・横断軸・変更手続き）の唯一の正本、catalog/injection.md が観点の注入設計（注入タイミング9分類・配線先機構・注入文書 policies/ の置き場所規約）の正本、skills/casting が配役表3層（project.md/local.md/セッション宣言）と判例台帳の書き方の手順正本、/casting:init が対象 repo に `.claude/casting/` 一式を雛形から生成、scripts/casting-check.sh が配役表の壊れた表行（5列ちょうどに割れない行）・閉じられていない HTML コメント・観点語彙 lint・起案シグナル（カタログ外判例・同一観点の非論点2件）・catalog_version 不一致の6項目を検出する。毎ターン効く返信前チェック5手順は rules/perspective-casting.md（常時ロード層）が持つ。",
       "source": "./plugins/casting",
       "category": "workflow",
-      "version": "0.2.5",
+      "version": "0.2.7",
       "author": {
         "name": "Oratta"
       },
