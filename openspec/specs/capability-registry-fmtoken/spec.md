@@ -68,7 +68,7 @@ fmtoken.sh は `OP_SERVICE_ACCOUNT_TOKEN` 環境変数 → `~/.config/op-sa/clau
 
 ### Requirement: 登録（--register）は書き込み用 SA 経由で命名規約を機械検証して行う
 
-`fmtoken.sh --register <item>` は、値を stdin から受け取り（argv で受けてはならない — transcript / ps への露出防止）、書き込み用 SA トークン（claude-agents-rw）を env `OP_SERVICE_ACCOUNT_TOKEN_RW` → `~/.config/op-sa/claude-agents-rw.token`（600 権限）→ Keychain `op-sa-claude-agents-rw` の順で解決して `op item create --vault agents`（フィールド `credential`）を実行しなければならない（SHALL）。受け取った値を `op` の argv に載せてはならない（MUST NOT）— JSON テンプレートを `op` の stdin に渡す形で受け渡し、argv に載せてよいのはアイテム名（秘密でない）だけとする。値を環境変数で子プロセスに渡してはならない（MUST NOT）（同一ユーザーからは argv と同程度に見えるため）。argv 経路へのフォールバックを設けてはならない（MUST NOT）— 値を渡す経路を組み立てられない場合は登録せずに非 0 で終了する。環境の `OP_SERVICE_ACCOUNT_TOKEN`（多くのマシンで read-only トークン）を登録に流用してはならない（MUST NOT）。アイテム名は命名規約 `<prefix>--<service>`（prefix は小文字のプロジェクト名またはエージェント名、区切り `--` はちょうど 1 回）に反する場合 exit 46 で拒否し（SHALL）、既に登録済みのアイテムは上書きせず exit 47 で止まる（SHALL）。二重登録の判定は読み取り用 SA（claude-agents-ro。解決順は読み取り経路と同じ env → 600 ファイル → Keychain）による `op item list --vault agents` の title 完全一致で行わなければならず（SHALL）、rw SA の read 権に依存させてはならない（MUST NOT — read 権が無い構成では判定が「未登録」側に倒れ、1Password は同名アイテムの作成を許すため重複ができる）。判定を `credential` フィールドの有無に依存させてもならない（MUST NOT — フィールド欠落アイテムを「未登録」と誤判定して同名重複を作らないため）。読み取り用 SA が解決できない、`op item list` が失敗する、またはその出力を解析できず判定が不能な場合は、`op item create` を実行せず exit 48 で終了し（SHALL — fail-closed。解析失敗を「未登録」と同じ扱いにしてはならない（MUST NOT）— 判定できていないまま作成に進むため）、stderr に「ro トークンをこのマシンに配布する」か「rw SA に agents 保管庫の read 権を付ける」かの選択肢を案内する。rw トークンがどこにも無い場合は exit 43 で配布依頼の案内を返す。登録されるアイテムは category が API Credential・フィールド名が `credential` であり、`op://agents/<item>/credential` で参照できなければならない（SHALL）。
+`fmtoken.sh --register <item>` は、値を stdin から受け取り（argv で受けてはならない — transcript / ps への露出防止）、書き込み用 SA トークン（claude-agents-rw）を env `OP_SERVICE_ACCOUNT_TOKEN_RW` → `~/.config/op-sa/claude-agents-rw.token`（600 権限）→ Keychain `op-sa-claude-agents-rw` の順で解決して `op item create --vault agents`（フィールド `credential`）を実行しなければならない（SHALL）。受け取った値を `op` の argv に載せてはならない（MUST NOT）— JSON テンプレートを `op` の stdin に渡す形で受け渡し、argv に載せてよいのはアイテム名（秘密でない）だけとする。値を環境変数で子プロセスに渡してはならない（MUST NOT）（同一ユーザーからは argv と同程度に見えるため）。値をシェル変数に載せてはならない（MUST NOT）— 変数は参照が終わったあとも残るため、呼び出し側が設定した `PS4` の展開を経由して xtrace の stderr に漏れうる（xtrace の on/off では塞げない。秘密の代入区間だけ `set +x` にしても、変数が残っている限り以降のトレース行のプレフィックスとして出る）。加えて bash 変数は NUL バイトを保持できず、値が黙って縮む。stdin の読み取りから JSON 化までを 1 プロセス内で完結させ、値は「読み取ったプロセス → `op`」のパイプの中だけを通すこと。そのパイプの読み口を `op item create` 以外の子プロセスに継承させてはならない（MUST NOT）— 開いたままの fd は間に起動する子プロセス（トークンの読み出し・二重登録判定の `op item list` とその解析）にすべて渡り、そこから平文が読める上に、先に読まれると `op item create` が空を受け取ったまま成功を報告する（fail-open）。stdin が空の場合の exit 46 は、この構成でも二重登録の判定（`op item list`）・読み取り用 SA の解決・`op item create` のいずれよりも前に返さなければならない（SHALL）。argv 経路へのフォールバックを設けてはならない（MUST NOT）— 値を渡す経路を組み立てられない場合は登録せずに非 0 で終了する。環境の `OP_SERVICE_ACCOUNT_TOKEN`（多くのマシンで read-only トークン）を登録に流用してはならない（MUST NOT）。アイテム名は命名規約 `<prefix>--<service>`（prefix は小文字のプロジェクト名またはエージェント名、区切り `--` はちょうど 1 回）に反する場合 exit 46 で拒否し（SHALL）、既に登録済みのアイテムは上書きせず exit 47 で止まる（SHALL）。二重登録の判定は読み取り用 SA（claude-agents-ro。解決順は読み取り経路と同じ env → 600 ファイル → Keychain）による `op item list --vault agents` の title 完全一致で行わなければならず（SHALL）、rw SA の read 権に依存させてはならない（MUST NOT — read 権が無い構成では判定が「未登録」側に倒れ、1Password は同名アイテムの作成を許すため重複ができる）。判定を `credential` フィールドの有無に依存させてもならない（MUST NOT — フィールド欠落アイテムを「未登録」と誤判定して同名重複を作らないため）。読み取り用 SA が解決できない、`op item list` が失敗する、またはその出力を解析できず判定が不能な場合は、`op item create` を実行せず exit 48 で終了し（SHALL — fail-closed。解析失敗を「未登録」と同じ扱いにしてはならない（MUST NOT）— 判定できていないまま作成に進むため）、stderr に「ro トークンをこのマシンに配布する」か「rw SA に agents 保管庫の read 権を付ける」かの選択肢を案内する。rw トークンがどこにも無い場合は exit 43 で配布依頼の案内を返す。登録されるアイテムは category が API Credential・フィールド名が `credential` であり、`op://agents/<item>/credential` で参照できなければならない（SHALL）。
 
 #### Scenario: プロジェクト名接頭辞のアイテムを登録する
 
@@ -79,6 +79,21 @@ fmtoken.sh は `OP_SERVICE_ACCOUNT_TOKEN` 環境変数 → `~/.config/op-sa/clau
 
 - **WHEN** `"` `\` 改行 `$` `'` タブ を含む値を stdin から渡して `--register` を実行する
 - **THEN** `op` の stdin に渡る JSON をパースした `credential` フィールドの値が、渡した値と完全一致する
+
+#### Scenario: NUL バイトを含む値がバイト単位で保存される
+
+- **WHEN** `printf 'A\0B\n'`（4 バイト）を stdin から渡して `--register` を実行する
+- **THEN** `op` の stdin に渡る JSON の `credential` フィールドが 4 バイトのまま一致する（値をシェル変数に載せる実装では NUL が落ちて 3 バイトになる）
+
+#### Scenario: 呼び出し側のカスタム PS4 でも値が stderr に出ない
+
+- **WHEN** `PS4` に fmtoken.sh の内部変数名の展開を含めた状態で `bash -x` 配下から `--register` を実行する
+- **THEN** トレース自体は出ているが、値は stderr に一度も現れない（成功経路でも、二重登録などの早期 exit 経路でも同じ）
+
+#### Scenario: 値のパイプが create 以外の子プロセスから読めない
+
+- **WHEN** `op item list`（二重登録判定）と Keychain 読み出し（ro / rw の両経路）が、開いているすべての fd を走査して読もうとする状態で `--register` を実行する
+- **THEN** どの fd からも 1 バイトも読めず、`op item create` は完全な JSON を受け取って登録が成功する（fd 番号を決め打ちしないこと — 特定の番号だけを閉じる形は、bash が複合コマンドのリダイレクトで取る退避コピーを見落とす）
 
 #### Scenario: エージェント名接頭辞のアイテムを登録する
 

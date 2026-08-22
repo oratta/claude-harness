@@ -132,7 +132,7 @@
       "description": "Webアプリのインフラを対話的に一括セットアップするプラグイン。Vercel + Supabase + GitHub Actions構成で、local/staging/prod の4環境を構築する（`/infra-setup`）。既存 supabase-project-setup スキルを統合。",
       "source": "./plugins/infra",
       "category": "workflow",
-      "version": "0.5.1",
+      "version": "0.5.4",
       "author": {
         "name": "Oratta"
       },
@@ -243,7 +243,7 @@
       "description": "外部サービスを操作する前に CLI とトークンの在処を教える発見層プラグイン。サービス索引スキル（description トリガー・CLAUDE.md 無編集で発火・CLI が無いネガティブエントリ付き）+ fmtoken.sh（1Password agents 保管庫からトークンを引く・登録するラッパー。--name で明示名参照 / --register は rw SA 経由で命名規約を機械検証して登録）+ ブラウザ系 MCP ツールの PreToolUse 注意喚起 hook（deny はしない）で、ブラウザとログイン依頼への逃げ道を減らす。",
       "source": "./plugins/capability-registry",
       "category": "workflow",
-      "version": "1.7.4",
+      "version": "1.7.7",
       "author": {
         "name": "Oratta"
       },
