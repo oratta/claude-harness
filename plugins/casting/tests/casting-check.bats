@@ -98,3 +98,79 @@ setup() {
   [[ "$output" == *"malformed-row"* ]]
   [[ "$output" == *"5列未満"* ]]
 }
+
+# --- 回帰: #139（check モードでも同じ経路を検出する） ---
+
+@test "over-column fixture: a row that splits into more than 5 columns is reported" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/over-column"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"malformed-row"* ]]
+  [[ "$output" == *"6列以上"* ]]
+}
+
+@test "unclosed-comment fixture: an unbalanced HTML comment is reported" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/unclosed-comment"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unclosed-comment"* ]]
+  [[ "$output" == *"project.md"* ]]
+}
+
+@test "local-malformed fixture: a broken local.md is reported with its own path" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/local-malformed"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"malformed-row"* ]]
+  [[ "$output" == *"local.md"* ]]
+}
+
+@test "ok fixture: a balanced HTML comment is not reported as unclosed" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/ok"
+  [[ "$output" != *"unclosed-comment"* ]]
+}
+
+@test "template project.md: the commented-out example is balanced and not reported" {
+  REPO="${BATS_TEST_TMPDIR}/template-repo"
+  mkdir -p "${REPO}/.claude/casting"
+  cp "${PLUGIN_DIR}/templates/project.md" "${REPO}/.claude/casting/project.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$REPO"
+  [ "$status" -eq 0 ]
+}
+
+# --- 回帰: #145 レビュー（開閉の「個数」判定と stripped_copy の行範囲走査のずれ） ---
+#
+# 個数比較は (A) HTML コメントを1つも持たず本文に `-->` があるだけの正常な配役表を
+# 止め、(B) 対応の無い `-->` と本物の閉じ忘れ `<!--` が釣り合うと検出を落とし、
+# (C) 1行で閉じたコメントが以降を EOF まで飲み込む事故を報告しない。
+# 判定は「開いた `<!--` が閉じられているか」で行い、対応の無い `-->` は無視する。
+
+@test "stray-close-arrow fixture: a lone --> with no HTML comment is not reported" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/stray-close-arrow"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"unclosed-comment"* ]]
+}
+
+@test "stray-close-arrow fixture: resolve keeps the human-written row" {
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/stray-close-arrow"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
+}
+
+@test "stray-close-plus-unclosed fixture: an unclosed <!-- is reported even when a stray --> balances the count" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/stray-close-plus-unclosed"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unclosed-comment"* ]]
+  [[ "$output" == *"project.md"* ]]
+}
+
+@test "stray-close-plus-unclosed fixture: resolve refuses instead of silently dropping the swallowed row" {
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/stray-close-plus-unclosed"
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"| project |"* ]]
+}
+
+@test "inline-comment fixture: a comment closed on its own line does not swallow the rows after it" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/inline-comment"
+  [ "$status" -eq 0 ]
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/inline-comment"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
+}

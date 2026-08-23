@@ -86,6 +86,10 @@ version: 0.2.0
 
 ## casting-check.sh
 
-`scripts/casting-check.sh [--catalog <path>] [<repo-root>]` は対象 repo の `.claude/casting/` に対して、配役表の5列未満の壊れた表行・未知の観点語彙・「カタログ外」判例・同一観点の「論点じゃなかった」2件以上・`catalog_version` 不一致の5項目を検査する。検出なしで exit 0、検出ありなら一覧を出力して exit 1。CI やコミット前フックに組み込んでよい。
+`scripts/casting-check.sh [--catalog <path>] [<repo-root>]` は対象 repo の `.claude/casting/` に対して、配役表の表行が5列ちょうどに割れるか・開いた HTML コメント `<!--` が閉じられているか・未知の観点語彙・「カタログ外」判例・同一観点の「論点じゃなかった」2件以上・`catalog_version` 不一致の6項目を検査する。検出なしで exit 0、検出ありなら一覧を出力して exit 1、対象 repo ルートが存在しなければ exit 2。CI やコミット前フックに組み込んでよい。
 
-`scripts/casting-check.sh resolve [<repo-root>]` は catalog.md・project.md・local.md を観点（行）単位で合成した有効な配役表を、各行の由来（`カタログ既定`／`project`／`local`）付きで出力する。出力の前に project.md / local.md へ check モードと同じ検証（行形式・語彙・catalog_version）を通し、**検証を通らない配役表では合成表を出力せず、理由を stderr に出して exit 1 する**（fail-closed）。起案シグナル（「カタログ外」判例・「論点じゃなかった」2件以上）では止まらない。呼び出し側は exit 0 以外の resolve 出力を担い手解決の根拠に使ってはならない。
+表行の列数は `|` がちょうど6個かで見る。セルの中に `|` をそのまま書くと表が6列以上に割れ、`既定の担い手` 列が右へずれて別のセルが担い手として解決されるため、5列未満と同じく malformed-row になる。閉じ忘れた `<!--` は以降の行を EOF まで無視させて上書きを全滅させるため、対応する `-->` が無いままファイル末尾に達したら unclosed-comment になる。判定は開閉の個数ではなく実際のコメント除去と同じ走査で行うので、本文にある対応先の無い `-->`（矢印・コード例）は止めない。`<!-- メモ -->` のように同じ行で閉じたコメントも、その行だけが落ちて以降の行は残る。
+
+`scripts/casting-check.sh resolve [<repo-root>]` は catalog.md・project.md・local.md を観点（行）単位で合成した有効な配役表を、各行の由来（`カタログ既定`／`project`／`local`）付きで出力する。出力の前に project.md / local.md へ check モードと同じ検証（行形式・コメントの閉じ忘れ・語彙・catalog_version）を通し、**検証を通らない配役表では合成表を出力せず、理由を stderr に出して exit 1 する**（fail-closed）。起案シグナル（「カタログ外」判例・「論点じゃなかった」2件以上）では止まらない。
+
+配役表が1枚も無い repo（project.md も local.md も無い）では、カタログ既定だけの表を返さずに exit 3 で止まる。カタログ既定だけを返すのは答えとしては正しいが、repo ルートの打ち間違えや casting 未導入と区別が付かないため。カタログ既定で解決したい repo には、行を持たない project.md を置く（`/casting:init` が生成する形）。サブコマンドとオプションの順序は問わない（`--catalog <path> resolve <repo>` も resolve として動く）。**呼び出し側は exit 0 以外の resolve 出力を担い手解決の根拠に使ってはならない。**
