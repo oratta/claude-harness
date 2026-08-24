@@ -1,8 +1,5 @@
-# dev-workflow-automerge-templates Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change promote-pr-review-gate-to-dev-workflow. Update Purpose after archive.
-## Requirements
 ### Requirement: auto-merge workflow 一式がテンプレートとして配布される
 
 dev-workflow プラグインは `templates/auto-merge/` に、展開先リポのツリーをそのまま鏡写しにした形（`.github/workflows/auto-merge.yml` / `.github/workflows/revert-pr.yml` / `docs/auto-merge.md` / `scripts/test-auto-merge-workflow.sh`）と展開手順 `README.md` を含む（SHALL）。テンプレートはリポ固有の差し替え箇所を既存マーカー（`# >>> sacred-paths` / `# >>> required-checks` 等）で明示し、README がそれ以外を変更せずに展開できる手順を提供する（SHALL）。
@@ -24,7 +21,7 @@ dev-workflow プラグインは `templates/auto-merge/` に、展開先リポの
 
 ### Requirement: テンプレートは flatmate で実証済みの安全不変条件を維持する
 
-テンプレートの auto-merge.yml は次の安全不変条件を維持する（SHALL）: 素の `pull_request` トリガーを持たない、`pull_request_target` のイベント種は labeled のみ、`actions/checkout` や head の clone を行わない、マージは `gh pr merge` ではなく REST API に検証済み HEAD SHA をピンして行う、`agent-review:passed` ラベルは判定時の HEAD SHA と一致する「対象 HEAD: <40桁フル SHA>」コメント（pr-review-gate スキルの宣言・証拠コメント規約）が実在しない限り合格として扱わない（stale passed の fail-closed 無効化。コメント取得失敗もマージしない側に倒す）、PAT 未設定時と `AUTOMERGE_PAUSED` 設定時は fail-closed で何もマージしない。revert-pr.yml は revert PR の作成までを行いマージしない（SHALL NOT merge）。revert-pr.yml は、対象 PR の base（`.base.ref`）が既定ブランチ以外なら拒否し（SHALL）、マージコミットが既定ブランチの履歴に含まれること（`git merge-base --is-ancestor`）を副作用（ブランチ作成・push）より前に検証し（SHALL）、部分失敗後の re-run（RUN_ID 同一・attempt 増加）では既存の revert ブランチと revert PR を発見して残工程だけを続行する（SHALL）。
+テンプレートの auto-merge.yml は次の安全不変条件を維持する（SHALL）: 素の `pull_request` トリガーを持たない、`pull_request_target` のイベント種は labeled のみ、`actions/checkout` や head の clone を行わない、マージは `gh pr merge` ではなく REST API に検証済み HEAD SHA をピンして行う、`agent-review:passed` ラベルは判定時の HEAD SHA と一致する「対象 HEAD: <40桁フル SHA>」コメント（pr-review-gate スキルの宣言・証拠コメント規約）が実在しない限り合格として扱わない（stale passed の fail-closed 無効化。コメント取得失敗もマージしない側に倒す）、PAT 未設定時と `AUTOMERGE_PAUSED` 設定時は fail-closed で何もマージしない。revert-pr.yml は revert PR の作成までを行いマージしない（SHALL NOT merge）。
 
 #### Scenario: 安全不変条件の退行検知
 
@@ -40,18 +37,3 @@ dev-workflow プラグインは `templates/auto-merge/` に、展開先リポの
 
 - **WHEN** HEAD A で `agent-review:passed` が付与された後にコミット B が push され、いずれかのトリガーで判定 run が走る
 - **THEN** PR コメントに「対象 HEAD: <B の40桁フル SHA>」が実在しないため PR はスキップされ、B はマージされない（スキップ理由がログに出る）
-
-#### Scenario: revert の base/ancestor 検証と再開の退行検知
-
-- **WHEN** CI（automerge-templates.bats と test-auto-merge-workflow.sh）が revert-pr.yml の実行コード（コメント除去済みの revert-script ブロック）を検査する
-- **THEN** `.base.ref` の取得と `$BASE_BRANCH` 不一致の拒否・`merge-base --is-ancestor` が revert / push より前にあること・`ls-remote` / `gh pr list` による既存状態の発見が push / `gh pr create` より前にあることが機械検証され、破れていればテストが落ちる
-
-### Requirement: 運用ガイドはリポ非依存の記述で提供される
-
-テンプレートの README と運用ガイド（`docs/auto-merge.md`）は特定リポの URL を直書きせず、`<owner>/<repo>` 形式のプレースホルダまたは相対参照で記述する（SHALL）。
-
-#### Scenario: flatmate URL の不在
-
-- **WHEN** templates/auto-merge/ 配下の全ファイルを検査する
-- **THEN** `genetta-inc/flatmate` の直書きが存在しない
-
