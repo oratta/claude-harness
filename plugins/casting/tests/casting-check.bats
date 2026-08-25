@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# casting-catalog / casting-project-files: casting-check.sh の5検出項目
+# casting-catalog / casting-project-files: casting-check.sh の7検出項目
 # spec: openspec/changes/casting-plugin/specs/casting-project-files/spec.md
 #   Requirement: casting-check.sh の検出項目
 
@@ -18,7 +18,7 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-# --- Scenario: 5種の検出がそれぞれ報告される（⓪malformed-row はファイル末尾） ---
+# --- Scenario: 7種の検出がそれぞれ報告される（⓪malformed-row はファイル末尾） ---
 
 @test "unknown-vocab fixture: reports the unknown perspective name and exits 1" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/unknown-vocab"
