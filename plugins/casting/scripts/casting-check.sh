@@ -2,7 +2,7 @@
 #
 # casting-check.sh — 「観点の配役」フレームワークの語彙 lint ＋ 起案シグナル検出
 #
-# 対象 repo の .claude/casting/{project.md,local.md,precedents.md} に対して6項目を検査する
+# 対象 repo の .claude/casting/{project.md,local.md,precedents.md} に対して7項目を検査する
 # （検出カテゴリ名は report の第1引数と一対一。項目数の表記は tests/casting-structure.bats が
 #  この report 呼び出しの異なり数と突き合わせる）:
 #   0. 配役表の表行が5列に割れない（5列未満／セル内の | で6列以上に割れる）（malformed-row）
@@ -11,12 +11,15 @@
 #   2. 判例台帳の「カタログ外」判例（観点追加の起案シグナル）（catalog-external-precedent）
 #   3. 同一観点で帰結「論点じゃなかった」が2件以上（移譲仕組み化の起案シグナル）（repeated-not-issue）
 #   4. 各ファイルの catalog_version が catalog.md の version と不一致（version-mismatch）
+#   5. 相談判例（経路「相談の上自走した」）に事後報告5要素（論点・各人格の主張・裁定・
+#      根拠・判例リンク）の欠落（consultation-missing-element）。規約に反する形の相談実例が
+#      過去判例として配られるのを防ぐ
 #
 # 日本語語彙の照合は LC_ALL=C の grep -F / sed で行う（awk のマルチバイト文字列比較は
 # macOS 実装で壊れる実績があるため使わない）。
 #
 # サブコマンド:
-#   （省略時）      対象 repo の配役表・判例台帳を検査する（上記6項目）
+#   （省略時）      対象 repo の配役表・判例台帳を検査する（上記7項目）
 #   resolve          catalog.md・project.md・local.md を観点（行）単位で合成した
 #                     有効な配役表を、由来（カタログ既定／project／local）付きで出力する。
 #                     出力前に合成の入力（project.md / local.md）へ配役表の検証
@@ -523,7 +526,9 @@ if [ -f "$PRECEDENTS_MD" ]; then
     i=$((i + 1))
   done
 
-  sort "$NOT_ISSUE_PERSPECTIVES" | uniq -c | while read -r cnt perspective; do
+  # sort/uniq もロケール依存の照合で異なる日本語文字列を同一視する（冒頭の LC_ALL=C 方針の
+  # 対象。macOS 実測: 異なる2観点列が uniq -c で 2件に合算された）ため LC_ALL=C を強制する
+  LC_ALL=C sort "$NOT_ISSUE_PERSPECTIVES" | LC_ALL=C uniq -c | while read -r cnt perspective; do
     [ -z "$perspective" ] && continue
     if [ "$cnt" -ge 2 ]; then
       report "repeated-not-issue" "${PRECEDENTS_MD}: ${perspective}（論点じゃなかった ${cnt}件・移譲仕組み化の起案シグナル）"
@@ -534,6 +539,62 @@ fi
 # ---- 検出4: catalog_version 不一致（precedents.md のみ。配役表2層は check_layer_files で済み） ----
 
 check_version "$PRECEDENTS_MD"
+
+# ---- 検出5: 相談判例（経路「相談の上自走した」）の事後報告5要素 ----
+#
+# 判例ブロック（"### " 見出し区切り）単位で検査する。経路に「相談の上自走した」を含む
+# ブロックは、事後報告フォーマットの5要素（- 論点: / - 各人格の主張: / - 裁定: / - 根拠: /
+# - 判例リンク:）をブロック内にすべて持たなければならない（正本: SKILL.md「論点相談・仲裁」）。
+# 経路行を持たないブロック（注記など）は対象外。
+#
+# ラベルの存在だけを見ると、値が空のラベルを並べただけのブロックが通ってしまう
+# （実質的な事後報告を欠いた判例が無言で配布される fail-open）。そのため
+# 「ラベルの後ろに実質的な値が1文字以上ある」ことまでを合格条件にする。
+#
+# 判定は「値部分を取り出す → 空白を全部取り除く → 何か残るか」の順で行う。
+# grep の文字クラス1発で書けないのは、LC_ALL=C では [[:space:]] が全角スペース
+# （U+3000）を空白と見なさず、全角スペースだけの値が「値あり」に化けるため。
+# かといって全角スペースをバイトで否定すると、先頭バイト 0xe3 を共有する日本語文字まで
+# 巻き込む。そこで空白除去は sed に任せ、残りの有無だけを見る。
+# 行頭を固定しないのは、インデントされた箇条書きも同じ要素として数えるため。
+# 同じラベルが複数行あるときは、どれか1行に値があれば「値あり」とする。
+
+check_consultation_block() {
+  # check_consultation_block <block-file> <heading>
+  local block="$1" heading="$2" missing="" label
+  [ -s "$block" ] || return 0
+  { LC_ALL=C grep -F -- "- 経路:" "$block" || true; } | LC_ALL=C grep -qF -- "相談の上自走した" || return 0
+  for label in "論点" "各人格の主張" "裁定" "根拠" "判例リンク"; do
+    if ! LC_ALL=C sed -n "s/.*- ${label}:\\(.*\\)\$/\\1/p" "$block" \
+      | LC_ALL=C sed 's/[[:space:]]//g; s/　//g' \
+      | LC_ALL=C grep -q .; then
+      missing="${missing}${missing:+・}${label}"
+    fi
+  done
+  if [ -n "$missing" ]; then
+    report "consultation-missing-element" "${PRECEDENTS_MD}: ${heading}: 相談判例に事後報告5要素の欠落または値の空（${missing}）"
+  fi
+}
+
+if [ -f "$PRECEDENTS_MD" ]; then
+  PRECEDENTS_SRC="$(stripped_copy "$PRECEDENTS_MD")"
+  BLOCK_FILE="${WORK_DIR}/consultation-block"
+  : > "$BLOCK_FILE"
+  block_heading=""
+  while IFS= read -r line; do
+    case "$line" in
+      "### "*)
+        check_consultation_block "$BLOCK_FILE" "$block_heading"
+        : > "$BLOCK_FILE"
+        block_heading="${line#\#\#\# }"
+        ;;
+      *)
+        printf '%s\n' "$line" >> "$BLOCK_FILE"
+        ;;
+    esac
+  done < "$PRECEDENTS_SRC"
+  check_consultation_block "$BLOCK_FILE" "$block_heading"
+fi
 
 # ---- 結果 ----
 

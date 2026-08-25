@@ -33,7 +33,7 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 
 ### Requirement: 判例台帳の形式
 
-`precedents.md` の判例は1判例1ブロックの追記型とし、見出し（日付＋論点1行）と4フィールド — 観点（catalog.md の語彙、当てはまらなければ「カタログ外」）・経路（主に上げた／自走した）・帰結（論点だった／じゃなかった＋一言の理由）・還元（配役既定表のどこを変えたか。変更なしは「なし」）— を持たなければならない (MUST)。この形式は雛形 `templates/precedents.md` と SKILL.md の両方に記載されなければならない (MUST)。
+`precedents.md` の判例は1判例1ブロックの追記型とし、見出し（日付＋論点1行）と4フィールド — 観点（catalog.md の語彙、当てはまらなければ「カタログ外」）・経路（主に上げた／自走した／相談の上自走した）・帰結（論点だった／じゃなかった＋一言の理由）・還元（配役既定表のどこを変えたか。変更なしは「なし」）— を持たなければならない (MUST)。この形式は雛形 `templates/precedents.md` と SKILL.md の両方に記載されなければならない (MUST)。
 
 #### Scenario: 雛形が4フィールドの記入例を含む
 
@@ -42,16 +42,16 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 
 ### Requirement: casting-check.sh の検出項目
 
-`plugins/casting/scripts/casting-check.sh` は対象 repo の `.claude/casting/` に対して次の6項目を検査しなければならない (MUST): ⓪配役表の表行が5列ちょうどに割れるか（`|` が6個ちょうどでない行は malformed-row として報告する。5列未満だけでなく、セル内の `|` で6列以上に割れる行も対象にしなければならない (MUST)。列がずれると `既定の担い手` 列が別のセルに解決されるため。壊れた行は resolve の合成で有効値として扱わない）⓪'各ファイルで開いた HTML コメント `<!--` が閉じられているか（対応する `-->` が無いままファイル末尾に達したときだけ unclosed-comment として報告しなければならない (MUST)。閉じ忘れは以降の行を EOF まで無視させ、上書き行を黙って全滅させるため。`<!--` と `-->` の出現「個数」で判定してはならない (MUST NOT)（コメントの外にある対応先の無い `-->`（本文の矢印・コード例）だけを含む正常な配役表を止めてしまい、逆にその `-->` が本物の閉じ忘れ `<!--` と釣り合うと検出を落とすため）。判定はパース側のコメント除去と同一の走査で行わなければならない (MUST)）①配役表・判例台帳に catalog.md に無い観点語彙（「カタログ外」を除く）が使われていないか ②判例台帳に「カタログ外」判例があるか（観点追加の起案シグナルとして報告）③同一観点で帰結「論点じゃなかった」が2件以上あるか（移譲仕組み化の起案シグナルとして報告）④各ファイルの `catalog_version` が catalog.md の `version` と一致するか。検出なしなら exit 0、検出ありなら対象の一覧を出力して exit 1 としなければならない (MUST)。対象 repo ルートが存在しない場合は検査結果を返してはならず (MUST NOT)、使い方エラーとして exit 2 としなければならない (MUST)（打ち間違えたパスを「問題のない repo」と同じ exit 0 で返さないため）。日本語語彙の照合に awk のマルチバイト文字列比較を使ってはならない (MUST NOT)（macOS awk は多バイト比較が壊れるため。`LC_ALL=C` の grep -F 等で照合する）。
+`plugins/casting/scripts/casting-check.sh` は対象 repo の `.claude/casting/` に対して次の7項目を検査しなければならない (MUST): ⓪配役表の表行が5列ちょうどに割れるか（`|` が6個ちょうどでない行は malformed-row として報告する。5列未満だけでなく、セル内の `|` で6列以上に割れる行も対象にしなければならない (MUST)。列がずれると `既定の担い手` 列が別のセルに解決されるため。壊れた行は resolve の合成で有効値として扱わない）⓪'各ファイルで開いた HTML コメント `<!--` が閉じられているか（対応する `-->` が無いままファイル末尾に達したときだけ unclosed-comment として報告しなければならない (MUST)。閉じ忘れは以降の行を EOF まで無視させ、上書き行を黙って全滅させるため。`<!--` と `-->` の出現「個数」で判定してはならない (MUST NOT)（コメントの外にある対応先の無い `-->`（本文の矢印・コード例）だけを含む正常な配役表を止めてしまい、逆にその `-->` が本物の閉じ忘れ `<!--` と釣り合うと検出を落とすため）。判定はパース側のコメント除去と同一の走査で行わなければならない (MUST)）①配役表・判例台帳に catalog.md に無い観点語彙（「カタログ外」を除く）が使われていないか ②判例台帳に「カタログ外」判例があるか（観点追加の起案シグナルとして報告）③同一観点で帰結「論点じゃなかった」が2件以上あるか（移譲仕組み化の起案シグナルとして報告）④各ファイルの `catalog_version` が catalog.md の `version` と一致するか⑤判例台帳の相談判例（経路「相談の上自走した」のブロック）が事後報告フォーマットの5要素（論点・各人格の主張・裁定・根拠・判例リンク）をすべて**実質的な値つきで**持つか（ラベルだけ並べて値が空・空白のみのものは欠落として報告する。規約に反する形の相談実例が過去判例として配られるのを防ぐ）。検出なしなら exit 0、検出ありなら対象の一覧を出力して exit 1 としなければならない (MUST)。対象 repo ルートが存在しない場合は検査結果を返してはならず (MUST NOT)、使い方エラーとして exit 2 としなければならない (MUST)（打ち間違えたパスを「問題のない repo」と同じ exit 0 で返さないため）。日本語語彙の照合に awk のマルチバイト文字列比較を使ってはならない (MUST NOT)（macOS awk は多バイト比較が壊れるため。`LC_ALL=C` の grep -F 等で照合する）。
 
 #### Scenario: 問題のないフィクスチャで exit 0
 
 - **WHEN** カタログ語彙のみ・カタログ外なし・version 一致のフィクスチャに対して実行する
 - **THEN** exit code が 0 になる
 
-#### Scenario: 6種の検出がそれぞれ報告される
+#### Scenario: 7種の検出がそれぞれ報告される
 
-- **WHEN** ⓪5列未満の壊れた表行 ⓪'閉じ忘れの HTML コメント ①未知語彙 ②カタログ外判例 ③同一観点の「論点じゃなかった」2件 ④version 不一致 をそれぞれ含む6つのフィクスチャに対して実行する
+- **WHEN** ⓪5列未満の壊れた表行 ⓪'閉じ忘れの HTML コメント ①未知語彙 ②カタログ外判例 ③同一観点の「論点じゃなかった」2件 ④version 不一致 ⑤事後報告5要素を欠くか値が空の相談判例 をそれぞれ含む7つのフィクスチャに対して実行する
 - **THEN** いずれも該当項目が一覧出力され、exit code が 1 になる
 
 #### Scenario: セル内の | で6列以上に割れる行が報告される
@@ -86,7 +86,7 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 
 ### Requirement: 検出項目数の表記と実装の一致
 
-検出項目数を数字で書いている文書（`plugins/casting/README.md`・`plugins/casting/skills/casting/SKILL.md`・`plugins/casting/scripts/casting-check.sh` の冒頭コメント・`plugins/casting/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の description）の「N項目」は、`casting-check.sh` が実際に報告する検出カテゴリ（`report` の第1引数）の異なり数と一致しなければならない (MUST)。この一致は人手のレビューではなくテストで機械的に突き合わせなければならない (MUST)（検出が後から足されたときに文書だけ取り残される事故が起きたため）。
+検出項目数を数字で書いている文書（`plugins/casting/README.md`・`plugins/casting/skills/casting/SKILL.md`・`plugins/casting/scripts/casting-check.sh` の冒頭コメント・`plugins/casting/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の description・この spec の「casting-check.sh の検出項目」要件）の「N項目」は、`casting-check.sh` が実際に報告する検出カテゴリ（`report` の第1引数）の異なり数と一致しなければならない (MUST)。この一致は人手のレビューではなくテストで機械的に突き合わせなければならない (MUST)（検出が後から足されたときに文書だけ取り残される事故が起きたため）。
 
 検出カテゴリの数え上げは、シェルのコード領域にある `report` 呼び出しだけを対象にしなければならない (MUST)。ヒアドキュメント本文・行末コメント・文字列リテラルの中に現れる `report` を呼び出しとして数えてはならない (MUST NOT)（`report` の語を含む使い方出力やエラーメッセージを `casting-check.sh` に足しただけで、数え方と無関係なテストが落ちて原因が分かりにくくなるため）。判定に迷う形は多めに数える側（偽陽性）へ倒し、数え落とし側へ倒してはならない (MUST NOT)（検出カテゴリが黙って減ると、文書の「N項目」との突き合わせと「第1引数はリテラル」の検査の両方がすり抜けるため）。
 
