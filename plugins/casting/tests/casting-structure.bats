@@ -353,9 +353,9 @@ SH
   [ "$(count_literal_report_calls "$synthetic")" = "0" ]
 }
 
-@test "check: detection categories in casting-check.sh are the documented six" {
+@test "check: detection categories in casting-check.sh are the documented seven" {
   local expected actual
-  expected="catalog-external-precedent consultation-missing-element malformed-row repeated-not-issue unknown-vocab version-mismatch"
+  expected="catalog-external-precedent consultation-missing-element malformed-row repeated-not-issue unclosed-comment unknown-vocab version-mismatch"
   actual="$(detection_categories | tr '\n' ' ')"
   actual="${actual% }"
   if [ "$actual" != "$expected" ]; then

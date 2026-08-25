@@ -278,7 +278,7 @@
     },
     {
       "name": "casting",
-      "description": "意思決定移譲のフレームワーク「観点の配役」の実装プラグイン。catalog/catalog.md が観点カタログ（3グループ14観点・列定義・横断軸・変更手続き）の唯一の正本、catalog/injection.md が観点の注入設計（注入タイミング9分類・配線先機構・注入文書 policies/ の置き場所規約）の正本、skills/casting が配役表3層（project.md/local.md/セッション宣言）と判例台帳の書き方の手順正本、/casting:init が対象 repo に `.claude/casting/` 一式を雛形から生成、scripts/casting-check.sh が配役表の壊れた表行・観点語彙 lint・起案シグナル（カタログ外判例・同一観点の非論点2件）・catalog_version 不一致・相談判例の事後報告5要素欠落の6項目を検出する。毎ターン効く返信前チェック5手順は rules/perspective-casting.md（常時ロード層）が持つ。",
+      "description": "意思決定移譲のフレームワーク「観点の配役」の実装プラグイン。catalog/catalog.md が観点カタログ（3グループ14観点・列定義・横断軸・変更手続き）の唯一の正本、catalog/injection.md が観点の注入設計（注入タイミング9分類・配線先機構・注入文書 policies/ の置き場所規約）の正本、skills/casting が配役表3層（project.md/local.md/セッション宣言）と判例台帳の書き方の手順正本、/casting:init が対象 repo に `.claude/casting/` 一式を雛形から生成、scripts/casting-check.sh が配役表の壊れた表行（5列ちょうどに割れない行）・閉じられていない HTML コメント・観点語彙 lint・起案シグナル（カタログ外判例・同一観点の非論点2件）・catalog_version 不一致・相談判例の事後報告5要素欠落の7項目を検出する。毎ターン効く返信前チェック5手順は rules/perspective-casting.md（常時ロード層）が持つ。",
       "source": "./plugins/casting",
       "category": "workflow",
       "version": "0.3.0",
