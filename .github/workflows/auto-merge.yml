@@ -237,7 +237,7 @@ jobs:
             # base が既定ブランチ以外（スタック PR 等）は自動マージの対象外にする。
             # 親ブランチへのマージは main に入る内容と一致しないため、人間の判断に残す。
             if [ "$BASE_REF" != "$BASE_BRANCH" ]; then
-              echo "base が $BASE_BRANCH ではない（$BASE_REF）: スキップ"
+              echo "base が $BASE_BRANCH ではない（${BASE_REF}）: スキップ"
               continue
             fi
 
@@ -297,7 +297,7 @@ jobs:
               fi
               gh api "repos/$REPO/issues/$N/labels" -f "labels[]=human-merge" >/dev/null
               gh pr comment "$N" --repo "$REPO" --body "🔒 **auto-merge 対象外（聖域パス接触）**: 憲法・判定ルール側のファイルに変更が含まれるため、人間のマージ判断が必要です（\`human-merge\` を付与）。対象: ${SACRED_LIST}（条件の一覧: docs/auto-merge.md）"
-              echo "聖域接触: human-merge を付与してスキップ（$SACRED_LIST）"
+              echo "聖域接触: human-merge を付与してスキップ（${SACRED_LIST}）"
               continue
             fi
 
@@ -398,7 +398,7 @@ jobs:
             if GH_TOKEN="$MERGE_TOKEN" gh api -X PUT "repos/$REPO/pulls/$N/merge" \
                  -f sha="$HEAD_SHA" -f merge_method=squash >/dev/null; then
               gh pr comment "$N" --repo "$REPO" --body "🤖 **auto-merged** — 根拠: \`agent-review:passed\`（対象 HEAD 照合済み） / 必須チェック green / 聖域パス非接触（rename 元パス含む） / \`AUTOMERGE_PAUSED\` 未設定。検証してマージした SHA: \`${HEAD_SHA}\`。判定ログ: ${RUN_URL}（条件と巻き戻し手順: docs/auto-merge.md）"
-              echo "マージ完了（sha=$HEAD_SHA）"
+              echo "マージ完了（sha=${HEAD_SHA}）"
             else
               echo "::warning::PR #$N のマージに失敗（409=検証後に head が動いた／コンフリクト等）。次回イベントで再検証する"
             fi
