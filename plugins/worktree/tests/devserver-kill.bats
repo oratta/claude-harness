@@ -192,9 +192,14 @@ DRIVER
 # 立てて除外が効くか一度も検証されていなかったため 3 度目を防げなかった。
 
 wt_comm_block() {
-  # $1 = 関数名。comm 取り出しの 3 行だけを返す（後続ループの `comm="${entry##*|}"` を拾わない）。
+  # $1 = 関数名。comm 取り出しブロック（`comm=$(ps ...)` から連続する comm 代入）を返す。
+  # 後続ループの `comm="${entry##*|}"` は間にコメント以外の行が挟まるので拾わない。
+  # ⚠️ 行数を固定してはならない（`grep -A2` 等）。正規化が 4 行に増えたとき、両側とも
+  #    4 行目が切り捨てられて「片側だけ変わったのに一致」と誤判定する。
   awk -v fn="$1() {" 'index($0, fn)==1,/^}$/' "$WT_CLEAN_SKILL" \
-    | grep -A2 -E '^[[:space:]]+comm=\$\(ps '
+    | awk '/^[[:space:]]+comm=\$\(ps /{on=1}
+           on && /^[[:space:]]+comm=/{print; next}
+           on && !/^[[:space:]]*#/{exit}'
 }
 
 @test "skill: comm extraction does not shell out to basename" {
@@ -233,12 +238,21 @@ wt_build_comm_normaliser() {
     echo '}'
   } >"$out"
   grep -q '^comm_of() {' "$out"
+  # 置換が効いたことを確認する。空振りすると comm_of が本物の `ps -p '-/bin/zsh'` を呼び、
+  # bash も zsh も空文字を返して「一致」になり、テストが常に通ってしまう。
+  grep -q 'comm="$pid"' "$out"
+  run grep -q 'ps -o comm=' "$out"
+  [ "$status" -ne 0 ]
   echo "$out"
 }
 
 @test "comm extraction: login-shell argv[0] normalises onto the exclusion list" {
   local snippet
   snippet="$(wt_build_comm_normaliser)"
+  # bats は `x="$(f)"` の f 失敗を代入経由では捕まえないため、本体側でも実測する。
+  # これが無いと旧実装で snippet="" になり、空文字同士の比較でテストが常に通る。
+  [ -s "$snippet" ]
+  grep -q 'comm="$pid"' "$snippet"
   [ "$(bash -c ". '$snippet'; comm_of '-/bin/zsh'")" = "zsh" ]
   [ "$(bash -c ". '$snippet'; comm_of '-zsh'")"      = "zsh" ]
   [ "$(bash -c ". '$snippet'; comm_of '/bin/zsh'")"  = "zsh" ]
@@ -254,6 +268,10 @@ wt_build_comm_normaliser() {
   command -v zsh >/dev/null 2>&1 || skip "zsh unavailable"
   local snippet v
   snippet="$(wt_build_comm_normaliser)"
+  # bats は `x="$(f)"` の f 失敗を代入経由では捕まえないため、本体側でも実測する。
+  # これが無いと旧実装で snippet="" になり、空文字同士の比較でテストが常に通る。
+  [ -s "$snippet" ]
+  grep -q 'comm="$pid"' "$snippet"
   for v in '-/bin/zsh' '-zsh' '/bin/zsh' '/usr/bin/perl' ''; do
     [ "$(bash -c ". '$snippet'; comm_of '$v'")" = "$(zsh -c ". '$snippet'; comm_of '$v'")" ]
   done
@@ -261,6 +279,9 @@ wt_build_comm_normaliser() {
 
 @test "kill_devserver_under: does not kill a login shell under the worktree" {
   command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
+  # ⚠️ CI（ubuntu-latest）では必ず skip される。Linux の ps -o comm= は argv[0] ではなく
+  #    実行ファイル名を返すため、偽タブの comm が `sleep` になりテストが意味を成さない。
+  #    実プロセスでの検証は macOS 上でのみ行われる。
   [ "$(uname)" = "Darwin" ] || skip "ps -o comm= returns argv[0] only on BSD/macOS"
   local snippet="${BATS_TEST_TMPDIR}/kill-login.sh"
   local dir="${BATS_TEST_TMPDIR}/login-shell"
@@ -283,7 +304,9 @@ wt_build_comm_normaliser() {
   local shell_alive victim_alive
   kill -0 "$shell_pid"  2>/dev/null && shell_alive=1  || shell_alive=0
   kill -0 "$victim_pid" 2>/dev/null && victim_alive=1 || victim_alive=0
-  kill -KILL "$shell_pid" "$victim_pid" 2>/dev/null
+  # `|| true` 必須。両方すでに死んでいるときだけ非ゼロになり、それは「ログインシェルが
+  # 殺された = 退行が再発した」ケースそのもの。ここで打ち切ると肝心の assertion が出ない。
+  kill -KILL "$shell_pid" "$victim_pid" 2>/dev/null || true
 
   # ログインシェルは生存し、スキップとして報告される
   [ "$shell_alive" = "1" ]
