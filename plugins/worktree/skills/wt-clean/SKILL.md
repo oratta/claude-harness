@@ -1,7 +1,7 @@
 ---
 name: wt-clean
 description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある／git worktree lock されている worktree は git がクリーンでも自動削除せず判断バッチに回す。ただし「親セッションが消えて init に引き取られた（PPID=1）」かつ「worktree の更新もセッションログの更新も 24 時間以上前」の両方を満たす居残りプロセスは稼働シグナルから外し、根拠を表示する。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
-version: 3.7.0
+version: 3.7.1
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -678,10 +678,21 @@ detect_active_procs_under() {
   #    while read + here-string なら bash / zsh のどちらでも行ごとに回る。
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
-    comm=$(ps -o comm= -p "$pid" 2>/dev/null | xargs -I{} basename {} 2>/dev/null)
+    # macOS の ps -o comm= は argv[0] を返すため、ログインシェルは "-/bin/zsh" のように
+    # 先頭が `-` になる。`basename -/bin/zsh` はハイフンをオプションと解釈して失敗し、
+    # comm が空文字に潰れる → 除外リストに一致せず、対象 worktree に cd しているだけの
+    # ターミナルのタブが停止対象になる（2026-08-27 実例: ログインシェル 2 個を SIGKILL した）。
+    # 先頭の `-` を落としてから basename 相当を行う。外部 basename は使わない
+    # （最小 PATH の非対話シェルで command not found になる実績あり。classify_dirty と同じ理由）。
+    comm=$(ps -o comm= -p "$pid" 2>/dev/null)
+    comm=${comm#-}
+    comm=${comm##*/}
     # comm が引けない = lsof と ps の間に終了した短命プロセス。既に居ないので稼働シグナルにしない。
     # （kill 側にこの分岐は無い。あちらは「消えた PID に空振りの kill を撃つ」だけで無害だが、
     #   こちらで拾うと全 worktree が毎回 Pass 2 送りになり、ガードが形骸化する）
+    # ⚠️ この「空文字 = 既に死んでいる」という前提は、上の comm 取り出しが生きたプロセスに対して
+    #    失敗しないことに依存する。取り出しを変えるときは、両側とも同じ形のまま変えること
+    #    （かつて basename がログインシェルで失敗し、生きた端末を「死んだプロセス」と誤認した）。
     [ -n "$comm" ] || continue
     # kill_devserver_under と同じ除外リスト（対話用シェル/エディタは稼働シグナルにしない）
     case "$comm" in
@@ -842,7 +853,15 @@ kill_devserver_under() {
   #    「1件も止められないのに成功したように見える」状態になる。
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
-    comm=$(ps -o comm= -p "$pid" 2>/dev/null | xargs -I{} basename {} 2>/dev/null)
+    # macOS の ps -o comm= は argv[0] を返すため、ログインシェルは "-/bin/zsh" のように
+    # 先頭が `-` になる。`basename -/bin/zsh` はハイフンをオプションと解釈して失敗し、
+    # comm が空文字に潰れる → 除外リストに一致せず、対象 worktree に cd しているだけの
+    # ターミナルのタブが停止対象になる（2026-08-27 実例: ログインシェル 2 個を SIGKILL した）。
+    # 先頭の `-` を落としてから basename 相当を行う。外部 basename は使わない
+    # （最小 PATH の非対話シェルで command not found になる実績あり。classify_dirty と同じ理由）。
+    comm=$(ps -o comm= -p "$pid" 2>/dev/null)
+    comm=${comm#-}
+    comm=${comm##*/}
     # 対話用のシェル/エディタ（対象 worktree に cd しているだけのセッション）は誤 kill を避けるため除外。
     # 除外リストに無いコマンドは全て停止対象にする（false negative より false positive を避ける設計）。
     case "$comm" in
