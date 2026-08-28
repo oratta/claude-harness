@@ -219,6 +219,20 @@ base_ref() {
   done
 }
 
+# --- S130b: every plugins/ directory has a marketplace entry (reverse of S130) ---
+# S130 は marketplace entry → plugin.json の一方向しか見ない。プラグインを削除するとき
+# plugin.json だけ消して他のファイルを残すと、S130 も S131 も素通りして「entry の無い
+# プラグインディレクトリ」が残る（claude-harness#206 のレビューで判明）。逆方向を固定する。
+@test "S130b: every plugins/ directory is registered in marketplace.json" {
+  registered="$(jq -r '.plugins[].name' "$MARKETPLACE" | sort)"
+  present="$(ls -1 "${PLUGIN_ROOT}/plugins" | sort)"
+  if [ "$registered" != "$present" ]; then
+    echo "marketplace plugins[] and plugins/ differ:"
+    diff <(echo "$registered") <(echo "$present") || true
+    return 1
+  fi
+}
+
 # --- S131: plugins changed by THIS run are bumped above the branch point ---
 @test "S131: edited plugins have version bumped above merge-base" {
   base="$(base_ref)"
