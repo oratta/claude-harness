@@ -1,7 +1,7 @@
 # dev-workflow-spec-review Specification
 
 ## Purpose
-TBD - created by archiving change spec-decision-record-and-review. Update Purpose after archive.
+github-issue スキルが、仕様化要否の判断を機械照合できる書式で元 issue に残し、書いた仕様（openspec の change artifact）を実装前に別コンテキストが審査してから実装に入ることを規定する。longrun の Build Contract レビューを dev-workflow のパイプラインに置き直したもの。
 ## Requirements
 ### Requirement: 仕様化要否の判定結果を固定書式で issue に記録する
 github-issue スキルの SKILL.md は、Step B で仕様化要否を判定した直後に、その結果を元 issue のコメントとして記録する手順を明記しなければならない（MUST）。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致し（装飾・全角コロン・末尾句点を含めない）（MUST）、2 行目以降に判定理由（`references/decision-criteria.md` のどの条件に当たったか）を書く（MUST）。同接頭辞のコメントが複数あるときは作成日時が最新の 1 件を正とし（SHALL）、この記録は interactive / unmanned の両モードで行い（MUST）、記録せずに Step C / Step D へ進んではならない（MUST NOT）。後続の照合で PR から元 issue を解決する規則（PR 本文中で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`、大文字小文字不問）は `references/spec-review.md` に定義する（SHALL）。
