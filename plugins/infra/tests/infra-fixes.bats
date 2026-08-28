@@ -153,9 +153,12 @@ check_third_party_pins() {
     # 第三者 action が公式扱いでスキップされる。grep -o は行内の全一致を順に返すので、
     # 先頭の 1 件＝キーとしての `uses:` を取る（コメント側は 2 件目以降になる）。
     value="$(printf '%s\n' "$body" \
-      | grep -oE 'uses[[:space:]]*:[[:space:]]*[^[:space:]]+' \
+      | grep -oE "[\"']?uses[\"']?[[:space:]]*:[[:space:]]*[^[:space:]]+" \
       | head -n 1 \
-      | sed -E 's/^uses[[:space:]]*:[[:space:]]*//')"
+      | sed -E "s/^[\"']?uses[\"']?[[:space:]]*:[[:space:]]*//")"
+    # flow mapping では値の直後に `}` や `,` が密着しうる（`- {uses: x@sha}` /
+    # `- {uses: x@sha, name: y}`）ので、引用符を剥がす前に終端記号を剥がす
+    value="${value%\}}"; value="${value%,}"
     # YAML の引用符は値の一部ではないので剥がす（`uses: 'owner/action@sha'` 形の偽陽性を除く）
     value="${value#\'}"; value="${value%\'}"
     value="${value#\"}"; value="${value%\"}"
@@ -195,7 +198,13 @@ check_third_party_pins() {
     fi
     # 抽出パターンが `uses[[:space:]]*:` なのは、YAML として有効な `uses : owner/action@v1`
     # （コロン前に空白）が密着形の grep から丸ごと漏れるのを防ぐため（#176 その3）。
-  done < <(grep -nE '^[[:space:]]*-?[[:space:]]*uses[[:space:]]*:' "$file")
+    # キーの引用（`- "uses": ...`）と flow mapping（`- { uses: ... }`）も YAML として
+    # 有効なので抽出対象に含める（#182）。flow mapping 側の `[^#]*` は、コメント中の
+    # `uses:`（例: `- run: x # uses: evil`）を実在のキーと誤認して無関係な行を
+    # fail させないための境界。
+  done < <(grep -nE \
+    "^[[:space:]]*-?[[:space:]]*[\"']?uses[\"']?[[:space:]]*:|^[[:space:]]*-?[[:space:]]*\\{[^#]*[\"']?uses[\"']?[[:space:]]*:" \
+    "$file")
   done < <(find "$dir" -type f -name '*.yml.template')
 
   # テンプレートの改名・移動で走査対象が 0 件になり、テストが無言で pass するのを防ぐ
@@ -357,6 +366,54 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     > "$dir/fixture.yml.template"
   run check_third_party_pins "$dir"
   [ "$status" -eq 1 ]
+}
+
+@test "S16a-13: a quoted 'uses' key is still extracted and checked" {
+  # 旧抽出（素のキー形のみ）は `- "uses": ...` を検査対象から丸ごと落としていた（#182）。
+  # 正しく固定された行を並べてあるので、旧実装は総数ガードにも掛からず PASS していた。
+  run check_third_party_pins "$(write_uses_fixture \
+    '"uses": evil/action@v1' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+
+  run check_third_party_pins "$(write_uses_fixture \
+    "'uses': evil/action@v1" \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+}
+
+@test "S16a-14: a flow-mapping step is still extracted and checked" {
+  # `- { uses: ... }` は YAML として有効だが、行頭キー形の旧抽出には一致しない（#182）。
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ uses: evil/action@v1 }' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+
+  # 密着形＋ uses が先頭キーでない形（値の直後に `}` が密着する）
+  run check_third_party_pins "$(write_uses_fixture \
+    '{name: deploy, uses: evil/action@v1}' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+}
+
+@test "S16a-15: properly pinned quoted-key and flow-mapping forms pass" {
+  run check_third_party_pins "$(write_uses_fixture \
+    '"uses": supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1')"
+  [ "$status" -eq 0 ]
+
+  # flow mapping の中にはコメントを置けない（`#` 以降はコメントになり `}` が閉じない）ので、
+  # バージョンコメントは閉じ括弧の後に置く
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf } # v2.1.1')"
+  [ "$status" -eq 0 ]
+
+  run check_third_party_pins "$(write_uses_fixture \
+    '{uses: "supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"} # v2.1.1')"
+  [ "$status" -eq 0 ]
 }
 
 @test "S17: all five workflow templates parse as YAML" {
