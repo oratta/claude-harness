@@ -132,16 +132,20 @@ check_third_party_pins() {
   local dir="$1"
   local total=0
   local unpinned=""
-  local line value body
+  local file line value body comment
 
+  # ファイルを 1 本ずつ回して `grep -n`（前置は `<行番号>:` のみ）を使う。
+  # `grep -rn` の前置 `<パス>:<行番号>:` を sed で剥がす方式は、パスが `:` を含むと
+  # 誤った位置で剥がれてパス片が本文に残り、片中の `# v9 ` がコメント検査を
+  # 肩代わりしていた（#183 その2）。行番号は数字だけで `:` を含まないため、
+  # 最初の `:` までを剥がせば YAML 本文が一意に取れる。
+  while IFS= read -r file; do
   while IFS= read -r line; do
     total=$((total + 1))
 
-    # `grep -rn` の出力には `<パス>:<行番号>:` が前置される。コメント形の検査を
-    # YAML 本文だけに当てるため、ここで剥がす（パス側の `#` が版数コメントに化けるのを防ぐ）。
-    # 前置が付いていない形（パスに `:` を含む等）では sed が何もしないので、
-    # 剥がし損ねても検査が緩む方向には動かない。
-    body="$(printf '%s' "$line" | sed -E 's/^([^:]+):([0-9]+)://')"
+    # 前置 `<行番号>:` を剥がして YAML 本文だけにする（パス側・前置側の `#` が
+    # 版数コメントに化けるのを防ぐ）。違反報告にはパスを自前で付け直す。
+    body="${line#*:}"
 
     # `uses:` の「値」だけを切り出してから公式判定する（#176 その2）。
     # 行全体の部分一致で `actions/` を探すと、コメント中の文字列
@@ -170,7 +174,7 @@ check_third_party_pins() {
     # 検査が素通りさせると spec が保証すると読める形を実装が見ていないことになる。
     # `<action>` 側は `owner/repo/subdir@<sha>` のサブパス形を許すため `/` を含んでよい。
     if ! printf '%s' "$value" | grep -qE '^[^@[:space:]/]+/[^@[:space:]]+@[0-9a-f]{40}$'; then
-      unpinned="${unpinned}${line}"$'\n'
+      unpinned="${unpinned}${file}:${line}"$'\n'
       continue
     fi
 
@@ -178,12 +182,19 @@ check_third_party_pins() {
     # `#` の後に非空白が 1 文字でもあれば通す旧判定だと `# TODO` でも合格してしまい、
     # spec の「その SHA が指すバージョンを同じ行のコメントに併記」と字面が合わない。
     # SHA とバージョンの対応そのものはオフラインで検証できないので、形だけ縛る。
-    # 終端を空白で締めるのは、`# v1evil` / `# 1.` / `# 2026-08-22` /
-    # 行内の別の `#176` のような「バージョンに見えるだけ」の形を弾くため。
+    # 判定は行内で最初に現れる `#` 以降（＝コメント部分）に限定し、その先頭で当てる。
+    # 行全体への部分一致だと、コメント本体が `# TODO` でも行内の別位置の `#176 ` が
+    # 条件を満たしてしまう（#183 その1）。ここまで来た行の値は
+    # `<owner>/<action>@<40 桁 hex>` で `#` を含み得ないので、最初の `#` は必ずコメント開始。
+    # `#` が無い行は sed が何もせず本文のままになり、先頭アンカーの `^#` に
+    # 一致しないので違反側に落ちる（緩む方向には動かない）。
+    # 終端を空白で締めるのは、`# v1evil` / `# 1.` / `# 2026-08-22` のような
+    # 「バージョンに見えるだけ」の形を弾くため。
     # 行末を表すのに `(...|$)` を使わず末尾に空白 1 個を足しているのは、
     # 括弧内の `$` をアンカーとして扱うかが grep 実装で揺れるのを避けるため。
-    if ! printf '%s ' "$body" | grep -qE '#[[:space:]]*v?[0-9]+(\.[0-9]+)*[[:space:]]'; then
-      unpinned="${unpinned}${line}"$'\n'
+    comment="$(printf '%s' "$body" | sed -E 's/^[^#]*#/#/')"
+    if ! printf '%s ' "$comment" | grep -qE '^#[[:space:]]*v?[0-9]+(\.[0-9]+)*[[:space:]]'; then
+      unpinned="${unpinned}${file}:${line}"$'\n'
     fi
     # 抽出パターンが `uses[[:space:]]*:` なのは、YAML として有効な `uses : owner/action@v1`
     # （コロン前に空白）が密着形の grep から丸ごと漏れるのを防ぐため（#176 その3）。
@@ -191,9 +202,10 @@ check_third_party_pins() {
     # 有効なので抽出対象に含める（#182）。flow mapping 側の `[^#]*` は、コメント中の
     # `uses:`（例: `- run: x # uses: evil`）を実在のキーと誤認して無関係な行を
     # fail させないための境界。
-  done < <(grep -rnE --include='*.yml.template' \
+  done < <(grep -nE \
     "^[[:space:]]*-?[[:space:]]*[\"']?uses[\"']?[[:space:]]*:|^[[:space:]]*-?[[:space:]]*\\{[^#]*[\"']?uses[\"']?[[:space:]]*:" \
-    "$dir")
+    "$file")
+  done < <(find "$dir" -type f -name '*.yml.template')
 
   # テンプレートの改名・移動で走査対象が 0 件になり、テストが無言で pass するのを防ぐ
   if [ "$total" -eq 0 ]; then
@@ -331,7 +343,32 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   [ "$status" -eq 0 ]
 }
 
-@test "S16a-11: a quoted 'uses' key is still extracted and checked" {
+@test "S16a-11: a version-like token elsewhere in the line does not satisfy the comment check" {
+  # コメント判定を行全体への部分一致で行うと、コメント本体が `# TODO` でも
+  # 行内の別位置にある `#176 ` が「バージョンらしいコメント」の条件を満たしてしまう。
+  # 判定は行内で最初に現れる `#` 以降（＝コメント部分）の先頭に限定する（#183 その1）。
+  run check_third_party_pins "$(write_uses_fixture \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO #176 follow-up' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"# TODO #176 follow-up"* ]]
+}
+
+@test "S16a-12: a scan path containing ':' does not let a path fragment satisfy the comment check" {
+  # `grep -rn` の前置剥がし（`<パス>:<行番号>:` 想定の sed）は、パス自体が `:` を含むと
+  # 誤った位置で剥がれてパス片が本文に残る。残った片の `# v9 ` がコメント検査を
+  # 肩代わりし、コメントが `# TODO` の行が pass していた（#183 その2、S16a-9 の変種）。
+  local dir="$BATS_TEST_TMPDIR/a:4:b # v9 x"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+}
+
+@test "S16a-13: a quoted 'uses' key is still extracted and checked" {
   # 旧抽出（素のキー形のみ）は `- "uses": ...` を検査対象から丸ごと落としていた（#182）。
   # 正しく固定された行を並べてあるので、旧実装は総数ガードにも掛からず PASS していた。
   run check_third_party_pins "$(write_uses_fixture \
@@ -347,7 +384,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   [[ "$output" == *"evil/action@v1"* ]]
 }
 
-@test "S16a-12: a flow-mapping step is still extracted and checked" {
+@test "S16a-14: a flow-mapping step is still extracted and checked" {
   # `- { uses: ... }` は YAML として有効だが、行頭キー形の旧抽出には一致しない（#182）。
   run check_third_party_pins "$(write_uses_fixture \
     '{ uses: evil/action@v1 }' \
@@ -363,7 +400,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   [[ "$output" == *"evil/action@v1"* ]]
 }
 
-@test "S16a-13: properly pinned quoted-key and flow-mapping forms pass" {
+@test "S16a-15: properly pinned quoted-key and flow-mapping forms pass" {
   run check_third_party_pins "$(write_uses_fixture \
     '"uses": supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1')"
   [ "$status" -eq 0 ]
