@@ -225,7 +225,8 @@ base_ref() {
 # プラグインディレクトリ」が残る（claude-harness#206 のレビューで判明）。逆方向を固定する。
 @test "S130b: every plugins/ directory is registered in marketplace.json" {
   registered="$(jq -r '.plugins[].name' "$MARKETPLACE" | sort)"
-  present="$(ls -1 "${PLUGIN_ROOT}/plugins" | sort)"
+  # ディレクトリだけを数える（plugins/ 直下に .DS_Store 等が置かれても誤検知しない）
+  present="$(find "${PLUGIN_ROOT}/plugins" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)"
   if [ "$registered" != "$present" ]; then
     echo "marketplace plugins[] and plugins/ differ:"
     diff <(echo "$registered") <(echo "$present") || true

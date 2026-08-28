@@ -113,7 +113,7 @@ setup() {
   # 許可リストだと .github/ や openspec/ など新しい場所への再混入を捕まえられない。
   # 除外は2つだけ: 移行手順を書く CHANGELOG.md と、旧名を検査語として持つ本テスト自身。
   # _longruns/ は過去の自律実行のアーカイブなので対象外（scripts/test.sh の除外と同じ理由）。
-  run bash -c "cd '${REPO_ROOT}' && grep -rn 'agent-owner' . --exclude-dir=.git --exclude-dir=_longruns | grep -v '/product-handover/CHANGELOG.md:' | grep -v '/product-handover/tests/plugin-structure.bats:'"
+  run bash -c "cd '${REPO_ROOT}' && grep -rn 'agent-owner' . --exclude-dir=.git --exclude-dir=_longruns | grep -v '^\\./plugins/product-handover/CHANGELOG\\.md:' | grep -v '^\\./plugins/product-handover/tests/plugin-structure\\.bats:'"
   [ "$status" -ne 0 ]
 }
 
