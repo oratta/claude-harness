@@ -118,8 +118,10 @@ has() { LC_ALL=C grep -qF -- "$2" "$1"; }
   SPECIALIST="${PLUGIN_DIR}/agents/casting-specialist.md"
   head -6 "$SPECIALIST" | LC_ALL=C grep -q '^tools: .*WebFetch'
   has "$SPECIALIST" "前提とする外部規約"
-  has "$SPECIALIST" "WebFetch"
-  has "$SPECIALIST" "読み取り不能"
+  # 手順の回帰（「判断の後に」「URL なら Read」への改変）を検出するため、文言そのものを固定する
+  has "$SPECIALIST" "判断の前に参照先を読む"
+  has "$SPECIALIST" "URL なら WebFetch"
+  has "$SPECIALIST" "「読み取り不能」を確度欄に書いて返す"
 }
 
 # --- Scenario: rule に許可ツールの確認と正本ポインタがある ---
