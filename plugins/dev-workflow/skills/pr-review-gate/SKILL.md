@@ -270,8 +270,9 @@ gh api repos/$R/issues/$N/comments --jq \
 
 ```bash
 ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')
-gh api repos/$R/issues/$ISSUE/comments --jq '[.[] | select(.body | test("^仕様化判断: (する|しない)$"; "m"))] | last | .body'
-gh api repos/$R/issues/$ISSUE/comments --jq '[.[] | select(.body | test("^仕様レビュー: APPROVE$"; "m"))] | length'
+# jq の ^ $ は行頭・行末に掛からない（文字列全体の先頭・末尾）ので、1 行目を split で切り出してから照合する
+gh api repos/$R/issues/$ISSUE/comments --jq '[.[] | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body'
+gh api repos/$R/issues/$ISSUE/comments --jq '[.[] | select(.body | split("\n")[0] | test("^仕様レビュー: APPROVE$"))] | length'
 bash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF / 触れた規範パス。終了コード 2 = 規範パスに触れて openspec 差分なし
 ```
 
