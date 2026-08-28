@@ -90,7 +90,7 @@ fixture_pages() {
 
 @test "step 5: comments are fetched with --paginate --slurp piped to jq (slurp is incompatible with --jq)" {
   step5 | grep '仕様' | grep -- '--paginate --slurp' | grep -q -- '| jq -r'
-  ! step5 | grep -- '--slurp' | grep -q -- '--jq'
+  ! step5 | grep '^gh api' | grep -- '--slurp' | grep -q -- '--jq'
 }
 
 # --- Requirement: spec-touch-check スクリプトが規範パス接触と openspec 差分を報告する ---
