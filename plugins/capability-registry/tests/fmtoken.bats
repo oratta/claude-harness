@@ -100,6 +100,13 @@ if [[ "$1" == "item" && "$2" == "list" ]]; then
   exit 0
 fi
 if [[ "$1" == "item" && "$2" == "create" ]]; then
+  # stdin を読まずに成功を報告する op（issue #181-2 の再現用）。値のパイプが途中で
+  # 詰まった/吸われた状況で、op 自身は exit 0 を返すのに producer が値を書き終えて
+  # いない、という「無言の fail-open」の条件を作る。
+  if [[ -n "${FMTOKEN_TEST_CREATE_NOREAD:-}" ]]; then
+    printf '%s\n' "$@" >"${FMTOKEN_TEST_CREATE_LOG:-/dev/null}"
+    exit 0
+  fi
   # argv と stdin を別ログに分けて記録する。値がどちらの経路を通ったかを
   # テストで区別するため（issue #130: 値は argv に載せず stdin の JSON で渡す）。
   printf '%s\n' "$@" >"${FMTOKEN_TEST_CREATE_LOG:-/dev/null}"
@@ -803,13 +810,40 @@ assert_xtrace_active() {
 
 # 実装の性質そのものを固定する。上の 3 ケースは「観測されない」ことしか見ていないので、
 # 将来また変数経由に戻したときに（別の抑止でたまたま緑になって）素通りしないよう、
-# --register の区間に stdin 由来の代入が無いことを直接見る。
-@test "--register: the register block assigns no stdin-derived shell variable" {
+# --register の区間に stdin を読む構文が無いことを直接見る。
+#
+# issue #181-5: 以前は `refute_in_file 'value='` と、変数名に依存する形だった。
+# `secret="$(</dev/stdin)"` のような別名での再導入は素通りするので、変数名ではなく
+# 「シェルが stdin を取り込みうる構文」そのものを禁止する。bash レベルの `read` は
+# 網羅列挙できない（producer の python コード内の `.read()` と区別がつかない）ため、
+# ここでは拾わず、次の PS4 全変数ダンプの動的検査が名前非依存で塞ぐ。
+@test "--register: the register block contains no stdin-capturing shell syntax" {
   local block="${WORK}/register-block.sh"
   sed -n '/^if \[\[ "$mode" == "register" \]\]/,/^fi$/p' "$FMTOKEN" >"$block"
   [ -s "$block" ]
-  refute_in_file 'value=' "$block"
-  refute_in_file '\$(cat' "$block"
+  refute_in_file '\$(cat' "$block"      # var="$(cat)" 系
+  refute_in_file '\$(<' "$block"        # var="$(</dev/stdin)" 系のファイル読み置換
+  refute_in_file '\$( <' "$block"       # 同上（空白入り）
+  refute_in_file '/dev/stdin' "$block"
+  refute_in_file '/dev/fd/0' "$block"
+  refute_in_file '\$(dd' "$block"
+  refute_in_file '\$(head' "$block"
+}
+
+# 変数名にも構文の列挙にも依存しない動的検査（issue #181-5）。PS4 の展開はコマンド置換を
+# 実行できるので、`$(set)` で fmtoken 自身の全シェル変数（関数含む）を全トレース行に
+# ダンプさせる。どんな名前の変数であれ、値がシェル変数に載った状態でトレース対象の
+# コマンドが 1 つでも走れば stderr に現れて捕まる。
+@test "--register: no shell variable of any name ever holds the value (PS4 dumps all variables)" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run_register_under_xtrace "newproj--setdump" '+ $(set) '
+  [ "$status" -eq 0 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+  # 値は握りつぶされたのではなく、確かに op へ渡っている
+  [ "$(created_credential)" = "$XTRACE_SECRET" ]
 }
 
 # 値の取り込みを python の sys.stdin.buffer に寄せた結果、UTF-8 として解釈できない
@@ -939,4 +973,86 @@ EOF
   assert_no_fd_leak "$FMTOKEN_TEST_FDSCAN_LOG"
   refute_in_file "$FD_SECRET" "$FMTOKEN_TEST_FDSCAN_LOG"
   [ "$(created_credential)" = "$FD_SECRET" ]
+}
+
+# ── issue #181: SIGPIPE traceback / producer の終了ステータス / exit 46 の多義性 ──
+#
+# 値がパイプ容量（64KB）を超えると、producer は書き終える前にブロックする。
+# 早期 exit（47/48）で bash が先に抜けると producer は SIGPIPE を受けるが、これは
+# 「登録済みなので止めた」正常系の一部であり、Python の Traceback として呼び出し側の
+# stderr に見せてはいけない。stderr は 2>&1 でまとめて捕る — producer は捕捉パイプを
+# 継承しているので、bats の run は producer が死ぬまで EOF を待つ（取りこぼしの race が無い）。
+
+# パイプ容量を確実に超える値（1MB）をファイルに用意する
+make_big_value() {
+  /usr/bin/python3 -c 'import sys; sys.stdout.write("A"*(1<<20))' >"${WORK}/bigvalue"
+}
+
+@test "--register: early exit with a >64KB value leaves no traceback on stderr (already registered, exit 47)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
+  make_big_value
+  run bash -c "'$FMTOKEN' --register moko--TRELLO_TOKEN <'${WORK}/bigvalue' 2>&1"
+  [ "$status" -eq 47 ]
+  [[ "$output" != *"Traceback"* ]]
+  [[ "$output" == *"登録済み"* ]]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+@test "--register: early exit with a >64KB value leaves no traceback on stderr (guard unresolvable, exit 48)" {
+  unset OP_SERVICE_ACCOUNT_TOKEN
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  make_big_value
+  HOME="$WORK" run bash -c "'$FMTOKEN' --register moko--BIGVAL <'${WORK}/bigvalue' 2>&1"
+  [ "$status" -eq 48 ]
+  [[ "$output" != *"Traceback"* ]]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+@test "--register: closed stdin is rejected as bad input (exit 46) without a traceback" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  run bash -c "'$FMTOKEN' --register moko--NOSTDIN <&- 2>&1"
+  [ "$status" -eq 46 ]
+  [[ "$output" != *"Traceback"* ]]
+  [[ "$output" == *"stdin"* ]]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+# issue #181-2: producer の終了ステータスを検査する。op（create）が stdin を読み切らずに
+# exit 0 を返すと、producer は値を書き終えられないまま死ぬ（SIGPIPE）。旧実装は誰も
+# それを見ていないので「OK: … 登録した」で exit 0 していた（無言の fail-open）。
+@test "--register: producer dying mid-transfer is not reported as success even when create exits 0" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_CREATE_NOREAD=1
+  make_big_value
+  run bash -c "'$FMTOKEN' --register newproj--gone <'${WORK}/bigvalue' 2>&1"
+  [ "$status" -eq 49 ]
+  [[ "$output" != *"OK:"* ]]
+  [[ "$output" == *"異常終了"* ]]
+  [[ "$output" != *"Traceback"* ]]
+}
+
+# issue #181-3: 環境障害（producer が起動できない）は入力不正（exit 46）と同じコードに
+# 混ぜない。「入力を直せ」と「このマシンを直せ」を呼び出し側が区別できるよう exit 49。
+# FMTOKEN_TEST_PYTHON3 は fmtoken.sh 側のテスト専用差し替え口（本文コメント参照）。
+@test "--register: producer launch failure is an environment error (exit 49, not 46), create not called" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_PYTHON3="${WORK}/no-such-python3"
+  run bash -c "printf '%s' v | '$FMTOKEN' --register moko--ENVFAIL 2>&1"
+  [ "$status" -eq 49 ]
+  [[ "$output" != *"Traceback"* ]]
+  [[ "$output" == *"fail-closed"* ]]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+# 正常系の受け入れが 49 の追加で壊れていないこと（producer は exit 0 で回収され、
+# 大きい値でも create まで通る）
+@test "--register: a >64KB value registers successfully end to end" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  make_big_value
+  run bash -c "'$FMTOKEN' --register newproj--big <'${WORK}/bigvalue'"
+  [ "$status" -eq 0 ]
+  assert_credential_matches_file "${WORK}/bigvalue"
 }

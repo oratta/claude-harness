@@ -27,8 +27,11 @@
 #   printf '%s' "$VALUE" | fmtoken.sh --register <project|agent>--<service>
 #
 # exit code: 0 成功 / 43 SA トークン未配布 / 44 未登録 / 45 プロジェクト導出不能 /
-#            46 命名規約違反・入力不正 / 47 登録済みアイテムへの二重登録 /
-#            48 二重登録判定の不能（読み取り用 SA が解決できない・op item list 失敗 — fail-closed）
+#            46 命名規約違反・入力不正（stdin が tty・空・非 UTF-8・閉じられている）/
+#            47 登録済みアイテムへの二重登録 /
+#            48 二重登録判定の不能（読み取り用 SA が解決できない・op item list 失敗 — fail-closed）/
+#            49 環境障害（値を運ぶ producer が起動できない・値を書き終える前に異常終了 — fail-closed。
+#               46 と分けるのは「入力を直せ」と「このマシンを直せ」を呼び出し側が区別するため。issue #181）
 set -euo pipefail
 
 OP_VAULT="agents"
@@ -169,8 +172,32 @@ if [[ "$mode" == "register" ]]; then
   # ステータス（ready / empty / notutf8）として先に流させる。JSON 本体は同じパイプの
   # 2 行目以降に続き、`op item create - <&3` がそれを読む。
   # ※ fd 3 はここから create まで「JSON が待っているパイプ」なので、途中で読まないこと。
-  exec 3< <(/usr/bin/python3 -c 'import json,sys
-data = sys.stdin.buffer.read()
+  #
+  # producer の終了は `wait` では検査できない（bash 3.2 は process substitution の PID を
+  # wait できない — "not a child of this shell"）。代わりに完了ファイルで見る（issue #181-2）:
+  # producer は payload を書き終えた**あと**に completed ファイルへ書き込むので、
+  # `op item create` が EOF まで読んで戻った時点でファイルが空なら、producer は値を
+  # 書き終える前に死んでいる（op が exit 0 でも成功を報告してはいけない）。
+  # 逆方向の race は無い — op の EOF は producer の exit（= completed 書き込みの後）でしか
+  # 発生せず、途中で死んだ producer は completed に永遠に書かない。
+  producer_completed="$(mktemp "${TMPDIR:-/tmp}/fmtoken-producer-completed.XXXXXX")"
+  trap 'rm -f "$producer_completed"' EXIT
+  # 先頭の SIGPIPE の既定化（issue #181-1）: 早期 exit（46/47/48）で bash が先に抜けると、
+  # payload を書いている途中の producer は SIGPIPE を受ける。CPython は SIGPIPE を SIG_IGN に
+  # して起動するため、放置すると BrokenPipeError の Traceback が呼び出し側の stderr に出て、
+  # 「登録済みなので止めた」という正常系がクラッシュに見える。SIG_DFL に戻せば黙って死ぬ。
+  #
+  # 起動する python は FMTOKEN_TEST_PYTHON3 で差し替えられる（テスト専用の口。
+  # 「producer が起動できない」経路は本物の /usr/bin/python3 を消さないと再現できないため。
+  # 秘密は通らない設定名なので、呼び出し側が誤って設定しても値の露出には繋がらない）。
+  exec 3< <("${FMTOKEN_TEST_PYTHON3:-/usr/bin/python3}" -c 'import json,signal,sys
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+try:
+    data = sys.stdin.buffer.read()
+except Exception:
+    # stdin が閉じられている（fmtoken.sh --register x <&-）と sys.stdin は None になる。
+    # Traceback ではなくステータスとして呼び出し側に返す（issue #181-1）。
+    sys.stdout.buffer.write(b"nostdin\n"); sys.stdout.buffer.flush(); sys.exit(0)
 out = sys.stdout.buffer
 if not data:
     out.write(b"empty\n"); out.flush(); sys.exit(0)
@@ -182,10 +209,12 @@ payload = json.dumps({"title": sys.argv[1], "category": "API_CREDENTIAL",
                       "fields": [{"id": "credential", "type": "CONCEALED",
                                   "label": "credential", "value": text}]}).encode("utf-8")
 out.write(b"ready\n"); out.flush()
-out.write(payload); out.flush()' "$explicit_name")
+out.write(payload); out.flush()
+with open(sys.argv[2], "w") as f:
+    f.write("completed\n")' "$explicit_name" "$producer_completed")
   # ステータス行が読めない＝python が起動できなかった等。値が渡らない以上 create してはいけない。
   stdin_status=""
-  read -r stdin_status <&3 || stdin_status=""
+  if ! read -r stdin_status <&3; then stdin_status=""; fi
   case "$stdin_status" in
     ready) ;;
     empty)
@@ -197,9 +226,16 @@ out.write(payload); out.flush()' "$explicit_name")
       echo "fmtoken: stdin の値を UTF-8 として解釈できませんでした。1Password の credential フィールドはテキストなので、バイナリを登録するなら base64 等でテキスト化してから渡すこと" >&2
       exit 46
       ;;
-    *)
-      echo "fmtoken: stdin の値を読み取れませんでした（/usr/bin/python3 が実行できない可能性）。登録を中止します（fail-closed）" >&2
+    nostdin)
+      echo "fmtoken: stdin が閉じられていて値を読めません。登録する値を stdin から渡してください（例: printf '%s' \"\$VALUE\" | fmtoken.sh --register ${explicit_name}）" >&2
       exit 46
+      ;;
+    *)
+      # 46（入力不正）と分ける: これは入力の問題ではなく、このマシンで /usr/bin/python3 が
+      # 起動できない環境障害（issue #181-3）。呼び出し側が「入力を直す」か「マシンを直す」かを
+      # exit code で区別できるようにする。
+      echo "fmtoken: 値を読み取る python3 を起動できませんでした（環境障害。/usr/bin/python3 を確認すること）。登録を中止します（fail-closed）" >&2
+      exit 49
       ;;
   esac
   # ── fd 3 は create までの間、他のどの子プロセスにも渡さない（PR #177 レビュー指摘）──
@@ -247,26 +283,39 @@ out.write(payload); out.flush()' "$explicit_name")
     echo "${GUARD_HINT}" >&2
     exit 48
   fi
-  # 一致（0）/ 不一致（1）/ 解析不能（2）を区別する。JSON が壊れている・想定の形でない場合を
-  # 「不一致」に混ぜると、判定できていないのに create に進んでしまう（fail-open）。
-  guard_rc=0
-  printf '%s' "$existing_items" 3<&- |
+  # 一致（found）/ 不一致（notfound）/ 解析不能（unparsable）を区別する。JSON が壊れている・
+  # 想定の形でない場合を「不一致」に混ぜると、判定できていないのに create に進んでしまう
+  # （fail-open）。
+  #
+  # 判定は exit code でなく**印字した結果文字列**で受け取る（issue #181-5 の検出テストで発覚）:
+  # bash 3.2 は、呼び出し側の PS4 にコマンド置換が含まれると「直前のコマンドが非 0 の状態で
+  # 代入文をトレースした」瞬間に errexit を誤発火してスクリプトごと落ちる。
+  # `… || guard_rc=$?` も `if …; then :; else guard_rc=$?; fi` も同じ条件で落ちるため、
+  # 「非 0 の直後に代入する」形そのものを避け、python には常に exit 0 で結果を印字させる。
+  # fmtoken は「呼び出し側がどんな PS4 を設定していても正しく動く」を性質として
+  # 固定しているので、この書き分けは好みではなく要件。
+  # `|| true` は python 自体が起動できない場合の保険（guard_result が空のまま下の case の
+  # `*)` に落ち、判定不能として exit 48 — fail-closed）。
+  guard_result="$(printf '%s' "$existing_items" 3<&- |
     /usr/bin/python3 -c 'import json,sys
 try:
     items = json.load(sys.stdin)
     titles = [i["title"] for i in items]
 except Exception:
-    sys.exit(2)
-sys.exit(0 if sys.argv[1] in titles else 1)' "$explicit_name" 3<&- || guard_rc=$?
-  if [[ "$guard_rc" -eq 0 ]]; then
-    echo "fmtoken: ${explicit_name} は既に登録済みです → 上書きしない（更新が必要なら主の判断を経て op item edit を使う。無断上書き防止）" >&2
-    exit 47
-  fi
-  if [[ "$guard_rc" -ne 1 ]]; then
-    echo "fmtoken: 二重登録の判定に使う ${OP_VAULT} 保管庫のアイテム一覧を解析できませんでした（op item list --format json の出力が想定の形ではありません）。判定できないまま登録すると同名アイテムの重複を作りうるため、登録を中止します（fail-closed）" >&2
-    echo "${GUARD_HINT}" >&2
-    exit 48
-  fi
+    print("unparsable"); sys.exit(0)
+print("found" if sys.argv[1] in titles else "notfound")' "$explicit_name" 3<&-)" || true
+  case "$guard_result" in
+    found)
+      echo "fmtoken: ${explicit_name} は既に登録済みです → 上書きしない（更新が必要なら主の判断を経て op item edit を使う。無断上書き防止）" >&2
+      exit 47
+      ;;
+    notfound) ;;
+    *)
+      echo "fmtoken: 二重登録の判定に使う ${OP_VAULT} 保管庫のアイテム一覧を解析できませんでした（op item list --format json の出力が想定の形ではありません）。判定できないまま登録すると同名アイテムの重複を作りうるため、登録を中止します（fail-closed）" >&2
+      echo "${GUARD_HINT}" >&2
+      exit 48
+      ;;
+  esac
   resolve_rw_token
   # 値は op の argv に載せない（issue #130）。assignment statement
   # （`credential[password]=<値>`）で渡すと op プロセスの実行中に ps から値が見え、
@@ -288,6 +337,17 @@ sys.exit(0 if sys.argv[1] in titles else 1)' "$explicit_name" 3<&- || guard_rc=$
   # ここに xtrace の抑止（secret_begin）は不要になった（issue #170）。値はシェルの
   # 変数にも argv にも現れないので、トレースされるのは `op item create --vault agents -` だけ。
   op item create --vault "$OP_VAULT" - <&3 >/dev/null
+  # fd 3 を閉じる。producer がまだ書き込み待ちで残っていれば、ここで SIGPIPE を受けて終わる
+  # （SIG_DFL に戻してあるので Traceback は出ない）。
+  exec 3<&-
+  # producer の完了検査（issue #181-2）: `set -o pipefail` がパイプ全段の失敗を拾うのと
+  # 同じ役割。op が exit 0 でも、producer が値を書き終えていなければ成功を報告しない。
+  # op 側が stdin を読み切らずに成功を返した（パイプが途中で吸われた・詰まった）ケースが
+  # これに落ちる。上書き禁止（exit 47）のため自動リトライはできず、人力確認に振る。
+  if [[ ! -s "$producer_completed" ]]; then
+    echo "fmtoken: 値を op に送る producer が値を書き終える前に異常終了しました。op item create は実行済みのため、${explicit_name} が不完全な値で作られていないか確認すること（不完全なら主の判断を経て op item delete → 再登録。fail-closed）" >&2
+    exit 49
+  fi
   echo "OK: ${explicit_name} を ${OP_VAULT} 保管庫に登録した（フィールド: credential）"
   exit 0
 fi
