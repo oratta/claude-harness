@@ -149,9 +149,12 @@ check_third_party_pins() {
     # 第三者 action が公式扱いでスキップされる。grep -o は行内の全一致を順に返すので、
     # 先頭の 1 件＝キーとしての `uses:` を取る（コメント側は 2 件目以降になる）。
     value="$(printf '%s\n' "$body" \
-      | grep -oE 'uses[[:space:]]*:[[:space:]]*[^[:space:]]+' \
+      | grep -oE "[\"']?uses[\"']?[[:space:]]*:[[:space:]]*[^[:space:]]+" \
       | head -n 1 \
-      | sed -E 's/^uses[[:space:]]*:[[:space:]]*//')"
+      | sed -E "s/^[\"']?uses[\"']?[[:space:]]*:[[:space:]]*//")"
+    # flow mapping では値の直後に `}` や `,` が密着しうる（`- {uses: x@sha}` /
+    # `- {uses: x@sha, name: y}`）ので、引用符を剥がす前に終端記号を剥がす
+    value="${value%\}}"; value="${value%,}"
     # YAML の引用符は値の一部ではないので剥がす（`uses: 'owner/action@sha'` 形の偽陽性を除く）
     value="${value#\'}"; value="${value%\'}"
     value="${value#\"}"; value="${value%\"}"
@@ -184,7 +187,13 @@ check_third_party_pins() {
     fi
     # 抽出パターンが `uses[[:space:]]*:` なのは、YAML として有効な `uses : owner/action@v1`
     # （コロン前に空白）が密着形の grep から丸ごと漏れるのを防ぐため（#176 その3）。
-  done < <(grep -rnE --include='*.yml.template' '^[[:space:]]*-?[[:space:]]*uses[[:space:]]*:' "$dir")
+    # キーの引用（`- "uses": ...`）と flow mapping（`- { uses: ... }`）も YAML として
+    # 有効なので抽出対象に含める（#182）。flow mapping 側の `[^#]*` は、コメント中の
+    # `uses:`（例: `- run: x # uses: evil`）を実在のキーと誤認して無関係な行を
+    # fail させないための境界。
+  done < <(grep -rnE --include='*.yml.template' \
+    "^[[:space:]]*-?[[:space:]]*[\"']?uses[\"']?[[:space:]]*:|^[[:space:]]*-?[[:space:]]*\\{[^#]*[\"']?uses[\"']?[[:space:]]*:" \
+    "$dir")
 
   # テンプレートの改名・移動で走査対象が 0 件になり、テストが無言で pass するのを防ぐ
   if [ "$total" -eq 0 ]; then
