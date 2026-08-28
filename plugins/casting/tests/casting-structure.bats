@@ -327,6 +327,29 @@ SH
   [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-leaky-heredoc after-leaky-literal-heredoc " ]
 }
 
+# #184 の退行ガード。#175 で `(( … ))` / `$(( … ))` の左シフトは塞いだが、配列添字も
+# bash の算術コンテキストであることは追跡できていなかった。`a[1<<2]=3` は bash -n を
+# 通る有効な代入だが、`<<` をヒアドキュメント開始と誤認すると区切り語 `2]=3` が現れる
+# まで以降の行が全部本文扱いになり、その間の呼び出しが全消滅する（数え落とし側の
+# 無言経路）。未引用のパラメータ展開 `${a[1<<2]}` も同じ壊れ方をするので併せて押さえる。
+@test "check: report calls after array-subscript left shifts are counted" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-array-subscript.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+a[1<<2]=3
+report "after-array-shift" "m"
+echo ${a[1<<2]}
+report "after-array-expansion-shift" "n"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "2" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "2" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-array-expansion-shift after-array-shift " ]
+}
+
 # 上の検査が「行数」で数えていた頃は、1行に2件並べると非リテラル呼び出しを見逃した。
 # 合成スクリプトで、同一行の混在・行継続の両方が数え方に乗ることを直接確かめる。
 @test "check: the report-call counter counts occurrences, not lines" {

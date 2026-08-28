@@ -24,6 +24,9 @@ grep だけで数えていた頃は、行頭コメント行しか落とせず、
   - 算術式の中の左シフト     (( v = 1 << 2 )) / $(( 1 << 2 ))
                              `<<` をヒアドキュメント開始と誤認するとファイル末尾まで
                              本文扱いになり、以降の呼び出しが全消滅していた
+  - 配列添字の中の左シフト   a[1<<2]=3 / ${a[1<<2]}（#184）
+                             配列添字も bash の算術コンテキスト。識別子直後の `[` から
+                             `]` までを算術として読み、ヒアドキュメントと誤認しない
   - ANSI-C クオート          msg=$'don\\'t'
                              `\\'` を終端と誤認して引用状態が解除できず、以降が全消滅していた
   - 二重引用の中の $()       out="$(report "x" "m")"
@@ -32,7 +35,10 @@ grep だけで数えていた頃は、行頭コメント行しか落とせず、
 
 走査は「文脈フレームのスタック」で行う。フレームの種類とコード領域の扱いは次のとおり:
 
-  code / subst / backtick / arith   コード領域（arith だけは `<<` `>>` を演算子として読む）
+  code / subst / backtick / arith / subscript
+                                    コード領域（arith と subscript は `<<` `>>` を
+                                    演算子として読む。subscript は識別子直後の `[` で
+                                    開き `]` で閉じる配列添字の算術コンテキスト）
   dquote / heredoc                  非コード。ただし中の `$(…)` `` `…` `` はコード領域として再走査する
   squote / ansic / heredoc-literal  すべて非コード（引用ヒアドキュメント本文は展開されない）
 
@@ -68,7 +74,11 @@ _LITERAL_ARG = re.compile(r'^"([a-z][a-z-]*)"')
 _DELIM_STOP = set(" \t;&|<>()\n")
 
 # コード領域として扱うフレーム。この中の `report` だけを呼び出しとして数える。
-_CODE_KINDS = ("code", "subst", "backtick", "arith")
+_CODE_KINDS = ("code", "subst", "backtick", "arith", "subscript")
+# `<<` `>>` をヒアドキュメントでなく演算子として読む算術コンテキストのフレーム。
+_ARITH_KINDS = ("arith", "subscript")
+# 配列添字 `[` の直前に来ていれば添字とみなす識別子文字（bash の変数名）。
+_IDENT_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
 # 中身は非コードだが `$(…)` `` `…` `` だけはコードとして再走査するフレーム。
 _EXPANDING_KINDS = ("dquote", "heredoc")
 
@@ -115,6 +125,12 @@ class _Scanner:
                 return mask  # 引用ヒアドキュメントの本文は展開されないので丸ごと非コード
 
         self._scan_chars(line, mask)
+
+        # 配列添字は行をまたがない（引用のない改行で代入が終わる）。閉じ `]` を見ない
+        # まま行が終わったら添字フレームを捨て、以降の行の `<<` を演算子扱いのままに
+        # しない（残すと本物のヒアドキュメント開始を取りこぼす側に漏れる）。
+        while self.stack[-1].kind == "subscript":
+            self.stack.pop()
 
         # 本文は次の行から始まる。1行に複数あるときは先に書いた方が先に閉じる＝上に積む。
         for delim, strip_tabs, expand in reversed(self.pending_heredocs):
@@ -171,7 +187,7 @@ class _Scanner:
                 i += 1
                 continue
 
-            # --- コード領域（code / subst / backtick / arith）---
+            # --- コード領域（code / subst / backtick / arith / subscript）---
             if ch == "\\" and i + 1 < n:
                 i += 2  # エスケープされた文字はコードとして扱わない
                 continue
@@ -230,7 +246,25 @@ class _Scanner:
                 i += 1
                 continue
 
-            if kind == "arith" and (line.startswith("<<", i) or line.startswith(">>", i)):
+            if kind == "subscript" and ch == "]":
+                self.stack.pop()
+                mask[i] = True
+                i += 1
+                continue
+
+            if ch == "[" and i > 0 and line[i - 1] in _IDENT_CHARS:
+                # 配列添字も bash の算術コンテキスト（a[1<<2]=3 / ${a[1<<2]}。#184）。
+                # `]` までを算術として読み、中の `<<` をヒアドキュメント開始と誤認しない。
+                # 添字とみなすのは識別子文字の直後の `[` だけ（`[ -f x ]` の test コマンドや
+                # `[[` は開かない。そこでの `<<` は本物のヒアドキュメント）。
+                # `echo a[1<<EOF` のような添字でない語中の `[` も開いてしまうが、誤認の
+                # ずれる向きは多めに数える側（偽陽性）で、設計どおり数え落とし側には倒れない。
+                self.stack.append(_Frame("subscript"))
+                mask[i] = True
+                i += 1
+                continue
+
+            if kind in _ARITH_KINDS and (line.startswith("<<", i) or line.startswith(">>", i)):
                 mask[i] = mask[i + 1] = True
                 i += 2
                 continue
