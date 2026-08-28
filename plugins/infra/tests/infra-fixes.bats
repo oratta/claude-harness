@@ -322,6 +322,54 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   [ "$status" -eq 0 ]
 }
 
+@test "S16a-11: a quoted 'uses' key is still extracted and checked" {
+  # 旧抽出（素のキー形のみ）は `- "uses": ...` を検査対象から丸ごと落としていた（#182）。
+  # 正しく固定された行を並べてあるので、旧実装は総数ガードにも掛からず PASS していた。
+  run check_third_party_pins "$(write_uses_fixture \
+    '"uses": evil/action@v1' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+
+  run check_third_party_pins "$(write_uses_fixture \
+    "'uses': evil/action@v1" \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+}
+
+@test "S16a-12: a flow-mapping step is still extracted and checked" {
+  # `- { uses: ... }` は YAML として有効だが、行頭キー形の旧抽出には一致しない（#182）。
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ uses: evil/action@v1 }' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+
+  # 密着形＋ uses が先頭キーでない形（値の直後に `}` が密着する）
+  run check_third_party_pins "$(write_uses_fixture \
+    '{name: deploy, uses: evil/action@v1}' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+}
+
+@test "S16a-13: properly pinned quoted-key and flow-mapping forms pass" {
+  run check_third_party_pins "$(write_uses_fixture \
+    '"uses": supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1')"
+  [ "$status" -eq 0 ]
+
+  # flow mapping の中にはコメントを置けない（`#` 以降はコメントになり `}` が閉じない）ので、
+  # バージョンコメントは閉じ括弧の後に置く
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf } # v2.1.1')"
+  [ "$status" -eq 0 ]
+
+  run check_third_party_pins "$(write_uses_fixture \
+    '{uses: "supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"} # v2.1.1')"
+  [ "$status" -eq 0 ]
+}
+
 @test "S17: all five workflow templates parse as YAML" {
   for f in "$WORKFLOWS_DIR"/*.yml.template; do
     ruby -ryaml -e "YAML.load_file('$f')" || return 1
