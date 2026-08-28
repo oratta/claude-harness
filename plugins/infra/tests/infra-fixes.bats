@@ -120,6 +120,208 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
+# S16a 本体。引数のディレクトリ配下の *.yml.template から `uses:` 行を全数抽出し、
+# actions/* 以外が「40 桁コミット SHA ＋ 同一行のバージョンコメント」で固定されているか検査する。
+# 可変タグ／ブランチ参照（例: supabase/setup-cli@v2 は tag ではなくブランチ）は、上流の push だけで
+# 展開先の production ジョブが別コードを実行しうる。方針は oratta/claude-harness#138 / #162 / #176。
+#
+# 戻り値: 0=合格 / 1=違反あり（違反行を stderr に出す）/ 2=抽出 0 件
+# テスト関数から分離してあるのは、本物のテンプレート（正例）と、すり抜けを狙った
+# フィクスチャ（負例）の両方に同じ検査を当てるため。
+check_third_party_pins() {
+  local dir="$1"
+  local total=0
+  local unpinned=""
+  local line value body
+
+  while IFS= read -r line; do
+    total=$((total + 1))
+
+    # `grep -rn` の出力には `<パス>:<行番号>:` が前置される。コメント形の検査を
+    # YAML 本文だけに当てるため、ここで剥がす（パス側の `#` が版数コメントに化けるのを防ぐ）。
+    # 前置が付いていない形（パスに `:` を含む等）では sed が何もしないので、
+    # 剥がし損ねても検査が緩む方向には動かない。
+    body="$(printf '%s' "$line" | sed -E 's/^([^:]+):([0-9]+)://')"
+
+    # `uses:` の「値」だけを切り出してから公式判定する（#176 その2）。
+    # 行全体の部分一致で `actions/` を探すと、コメント中の文字列
+    # （例: `uses: evil/action@v1 # mimics uses: actions/cache@v4`）にも当たって
+    # 第三者 action が公式扱いでスキップされる。grep -o は行内の全一致を順に返すので、
+    # 先頭の 1 件＝キーとしての `uses:` を取る（コメント側は 2 件目以降になる）。
+    value="$(printf '%s\n' "$body" \
+      | grep -oE 'uses[[:space:]]*:[[:space:]]*[^[:space:]]+' \
+      | head -n 1 \
+      | sed -E 's/^uses[[:space:]]*:[[:space:]]*//')"
+    # YAML の引用符は値の一部ではないので剥がす（`uses: 'owner/action@sha'` 形の偽陽性を除く）
+    value="${value#\'}"; value="${value%\'}"
+    value="${value#\"}"; value="${value%\"}"
+
+    # actions/* は GitHub 公式所有なので #138 の方針どおり対象外
+    case "$value" in
+      actions/*) continue ;;
+    esac
+
+    # 値そのものが `<owner>/<action>@<40 桁 hex>` であること。
+    # `<owner>/` を必須にしてあるのは spec の字面に合わせるため（#180 レビュー指摘 A）。
+    # owner を落とした `uses: evil@<40hex>` は GitHub 上の第三者 action を指し得ないが、
+    # 検査が素通りさせると spec が保証すると読める形を実装が見ていないことになる。
+    # `<action>` 側は `owner/repo/subdir@<sha>` のサブパス形を許すため `/` を含んでよい。
+    if ! printf '%s' "$value" | grep -qE '^[^@[:space:]/]+/[^@[:space:]]+@[0-9a-f]{40}$'; then
+      unpinned="${unpinned}${line}"$'\n'
+      continue
+    fi
+
+    # 同じ行のコメントが「バージョンらしい」こと（#176 その1）。
+    # `#` の後に非空白が 1 文字でもあれば通す旧判定だと `# TODO` でも合格してしまい、
+    # spec の「その SHA が指すバージョンを同じ行のコメントに併記」と字面が合わない。
+    # SHA とバージョンの対応そのものはオフラインで検証できないので、形だけ縛る。
+    # 終端を空白で締めるのは、`# v1evil` / `# 1.` / `# 2026-08-22` /
+    # 行内の別の `#176` のような「バージョンに見えるだけ」の形を弾くため。
+    # 行末を表すのに `(...|$)` を使わず末尾に空白 1 個を足しているのは、
+    # 括弧内の `$` をアンカーとして扱うかが grep 実装で揺れるのを避けるため。
+    if ! printf '%s ' "$body" | grep -qE '#[[:space:]]*v?[0-9]+(\.[0-9]+)*[[:space:]]'; then
+      unpinned="${unpinned}${line}"$'\n'
+    fi
+    # 抽出パターンが `uses[[:space:]]*:` なのは、YAML として有効な `uses : owner/action@v1`
+    # （コロン前に空白）が密着形の grep から丸ごと漏れるのを防ぐため（#176 その3）。
+  done < <(grep -rnE --include='*.yml.template' '^[[:space:]]*-?[[:space:]]*uses[[:space:]]*:' "$dir")
+
+  # テンプレートの改名・移動で走査対象が 0 件になり、テストが無言で pass するのを防ぐ
+  if [ "$total" -eq 0 ]; then
+    printf 'no `uses:` lines extracted from %s\n' "$dir" >&2
+    return 2
+  fi
+
+  if [ -n "$unpinned" ]; then
+    printf 'unpinned third-party action(s):\n%s' "$unpinned" >&2
+    return 1
+  fi
+  return 0
+}
+
+# 引数の各 `uses:` 行を 1 本のテンプレートに詰めた一時 dir を作り、そのパスを stdout に返す。
+# 負例／正例テストの共通ヘルパー。
+write_uses_fixture() {
+  local dir="$BATS_TEST_TMPDIR/fixture"
+  local step
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  {
+    printf 'jobs:\n'
+    printf '  build:\n'
+    printf '    steps:\n'
+    for step in "$@"; do
+      printf '      - %s\n' "$step"
+    done
+  } > "$dir/fixture.yml.template"
+  printf '%s\n' "$dir"
+}
+
+# 検査対象が 1 件以上ある「普通のテンプレート」を装うための、正しく固定された行。
+# 負例に混ぜることで、旧実装が総数ガード（total > 0）で偶然 fail するのではなく
+# 本当にすり抜けていたことを負例テストが突けるようにする。
+PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1'
+
+@test "S16a: third-party actions are pinned to a 40-hex SHA with a version comment" {
+  run check_third_party_pins "$WORKFLOWS_DIR"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-1: a non-version comment on a SHA-pinned third-party action is rejected" {
+  # 旧判定（`#` の後に非空白が 1 文字あれば通る）はこの形を PASS させていた
+  run check_third_party_pins "$(write_uses_fixture \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"# TODO"* ]]
+}
+
+@test "S16a-2: 'uses: actions/' inside a comment does not exempt a third-party action" {
+  # 旧判定（行全体の部分一致）はこの形を公式 action と誤認してスキップしていた
+  run check_third_party_pins "$(write_uses_fixture \
+    'uses: evil/action@v1 # mimics uses: actions/cache@v4' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+}
+
+@test "S16a-3: 'uses :' with a space before the colon is still extracted and checked" {
+  # 旧抽出（密着形の `uses:` のみ）はこの行を検査対象から丸ごと落としていた。
+  # 正しく固定された行を並べてあるので、旧実装は総数ガードにも掛からず PASS していた。
+  run check_third_party_pins "$(write_uses_fixture \
+    'uses : evil/action@v1' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+}
+
+@test "S16a-4: a properly pinned third-party action passes (quoted form included)" {
+  run check_third_party_pins "$(write_uses_fixture "$PINNED_OK")"
+  [ "$status" -eq 0 ]
+
+  run check_third_party_pins "$(write_uses_fixture \
+    "uses: 'supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf' # v2.1.1")"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-5: official actions/* stay exempt from the SHA requirement" {
+  run check_third_party_pins "$(write_uses_fixture 'uses: actions/checkout@v7')"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-6: an empty template dir fails instead of silently passing" {
+  local dir="$BATS_TEST_TMPDIR/empty"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 2 ]
+}
+
+@test "S16a-7: a value without an <owner>/ prefix is rejected" {
+  # spec の Scenario は値が `<owner>/<action>@<40 桁 16 進数>` であることを要求している。
+  # `/` を見ない実装だと owner の無い `evil@<40hex>` が素通りし、spec の字面と実装がズレる。
+  run check_third_party_pins "$(write_uses_fixture \
+    'uses: evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v1' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"* ]]
+}
+
+@test "S16a-8: comments that only look like a version are rejected" {
+  # 終端境界の無い判定だと、下の 4 形はいずれも「バージョンコメントあり」で通ってしまう。
+  local bad
+  for bad in \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v1evil' \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # 1.' \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO (#176)' \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # 2026-08-22'
+  do
+    run check_third_party_pins "$(write_uses_fixture "$bad" "$PINNED_OK")"
+    [ "$status" -eq 1 ] || { echo "not rejected: $bad"; return 1; }
+  done
+}
+
+@test "S16a-9: the grep -rn path prefix does not satisfy the comment check" {
+  # 検査対象は YAML 本文であって `grep -rn` が前置する `<パス>:<行番号>:` ではない。
+  # 前置を剥がさないと、パスに含まれる `# v9` がバージョンコメントの代わりを務めてしまう。
+  local dir="$BATS_TEST_TMPDIR/dir # v9"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+}
+
+@test "S16a-10: a sub-path action reference stays valid when SHA-pinned" {
+  # `owner/repo/subdir@<sha>` は GitHub 上で有効な参照形。`<owner>/` 必須化で
+  # これを巻き込んで落とすと、正しく固定された action が使えなくなる。
+  run check_third_party_pins "$(write_uses_fixture \
+    'uses: aws-actions/aws-cli/setup@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1')"
+  [ "$status" -eq 0 ]
+}
+
 @test "S17: all five workflow templates parse as YAML" {
   for f in "$WORKFLOWS_DIR"/*.yml.template; do
     ruby -ryaml -e "YAML.load_file('$f')" || return 1

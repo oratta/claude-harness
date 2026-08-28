@@ -1,6 +1,8 @@
-# loops-goalify-skill Specification (Delta)
+# loops-goalify-skill Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change loops-plugin. Update Purpose after archive.
+## Requirements
 
 ### Requirement: /loops:goalify は brain dump を入力に取る
 

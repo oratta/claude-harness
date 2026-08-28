@@ -7,9 +7,10 @@
 # **決定論的に判定できる条件だけ**をこのロボットが機械判定してマージする:
 #
 #   1. PR に `agent-review:passed` ラベル（レビューループ通過）
-#   2. ci.yml の必須チェックが green（下の REQUIRED_CHECKS で名前指定）
-#   3. 聖域パスに一切触れていない（パスベース判定。機械判定に委ねない）
-#   4. リポ変数 AUTOMERGE_PAUSED が未設定（＝緊急停止されていない）
+#   2. その合格が現在の HEAD に束縛されている（`対象 HEAD: <HEAD SHA>` コメントの実在）
+#   3. ci.yml の必須チェックが green（下の REQUIRED_CHECKS で名前指定）
+#   4. 聖域パスに一切触れていない（パスベース判定。機械判定に委ねない）
+#   5. リポ変数 AUTOMERGE_PAUSED が未設定（＝緊急停止されていない）
 #
 # 設計上の要点（変更前に必ず読むこと）:
 #
@@ -47,6 +48,16 @@
 #   検証していないコードがマージされる（TOCTOU）。sha を渡せば head が動いていた場合は
 #   409 で失敗し、何もマージされない。次回の workflow_run / schedule で新しい head を
 #   最初から検証し直す流れになる。
+# - **合格ラベルは HEAD に束縛して判定する**。`agent-review:passed` は PR 番号にしか
+#   紐づかないため、SHA ピンだけでは「ラベル付与から次の run が始まるまでの間」に push
+#   された未レビューコミットが合格扱いのまま残る（stale passed）。pr-review-gate スキル
+#   （dev-workflow プラグイン）が宣言・証拠コメントの 1 行目に必須と定める規約
+#   「対象 HEAD: <40桁フル SHA>」を判定時の HEAD SHA と突き合わせ、一致するコメントが
+#   実在しない限りマージしない（fail-closed。コメント取得の失敗も同じ側に倒れる）。
+#   この照合は `対象 HEAD:` という文言規約に依存する — スキル側の規約を変えると機械
+#   マージが全停止するため、変更は必ずスキルとこのファイルを同時に直す。守っているのは
+#   stale 検知であって、コメント偽装への対策ではない（ラベル付与に write 権限が要る
+#   ことが引き続き認可の主条件）。
 # - 手動実行（workflow_dispatch）に dry_run 入力がある。PAT 発行前でも判定ログだけ出せる。
 #
 # 運用（停止方法・PAT 発行手順・revert 手順）の正本: docs/auto-merge.md
@@ -220,7 +231,7 @@ jobs:
             # base が既定ブランチ以外（スタック PR 等）は自動マージの対象外にする。
             # 親ブランチへのマージは main に入る内容と一致しないため、人間の判断に残す。
             if [ "$BASE_REF" != "$BASE_BRANCH" ]; then
-              echo "base が $BASE_BRANCH ではない（$BASE_REF）: スキップ"
+              echo "base が $BASE_BRANCH ではない（${BASE_REF}）: スキップ"
               continue
             fi
 
@@ -230,6 +241,21 @@ jobs:
               echo "agent-review:passed が無い: スキップ"
               continue
             fi
+
+            # ── 合格ラベルの HEAD 束縛（stale passed の機械的な無効化）──
+            # ラベルは PR 番号にしか紐づかない。合格後に push された未レビューコミットを
+            # マージしないよう、pr-review-gate 規約の宣言・証拠コメント（1 行目が
+            # 「対象 HEAD: <40桁フル SHA>」）が判定時の HEAD_SHA と一致して実在することを
+            # 合格条件に加える。取得失敗・不在はどちらもスキップ（fail-closed）。
+            # マージは同じ HEAD_SHA にピンされるため、照合対象とマージ対象の一致は
+            # 変数の同一性で保証される（追加のロック不要）。
+            # >>> passed-head-binding
+            DECLARED_BODIES=$(gh api "repos/$REPO/issues/$N/comments?per_page=100" --paginate --jq '.[].body' || true)
+            if ! printf '%s\n' "$DECLARED_BODIES" | grep -qF "対象 HEAD: $HEAD_SHA"; then
+              echo "agent-review:passed はあるが「対象 HEAD: ${HEAD_SHA}」を含むコメントが無い（合格後の push で stale の疑い。pr-review-gate をやり直すこと）: スキップ"
+              continue
+            fi
+            # <<< passed-head-binding
 
             BLOCKED=""
             while IFS= read -r L; do
@@ -265,7 +291,7 @@ jobs:
               fi
               gh api "repos/$REPO/issues/$N/labels" -f "labels[]=human-merge" >/dev/null
               gh pr comment "$N" --repo "$REPO" --body "🔒 **auto-merge 対象外（聖域パス接触）**: 憲法・判定ルール側のファイルに変更が含まれるため、人間のマージ判断が必要です（\`human-merge\` を付与）。対象: ${SACRED_LIST}（条件の一覧: docs/auto-merge.md）"
-              echo "聖域接触: human-merge を付与してスキップ（$SACRED_LIST）"
+              echo "聖域接触: human-merge を付与してスキップ（${SACRED_LIST}）"
               continue
             fi
 
@@ -373,8 +399,8 @@ jobs:
             MERGE_ERR=$(GH_TOKEN="$MERGE_TOKEN" gh api -X PUT "repos/$REPO/pulls/$N/merge" \
                  -f sha="$HEAD_SHA" -f merge_method=squash 2>&1 >/dev/null) || MERGE_OK=false
             if [ "$MERGE_OK" = "true" ]; then
-              gh pr comment "$N" --repo "$REPO" --body "🤖 **auto-merged** — 根拠: \`agent-review:passed\` / 必須チェック green / 聖域パス非接触（rename 元パス含む） / \`AUTOMERGE_PAUSED\` 未設定。検証してマージした SHA: \`${HEAD_SHA}\`。判定ログ: ${RUN_URL}（条件と巻き戻し手順: docs/auto-merge.md）"
-              echo "マージ完了（sha=$HEAD_SHA）"
+              gh pr comment "$N" --repo "$REPO" --body "🤖 **auto-merged** — 根拠: \`agent-review:passed\`（対象 HEAD 照合済み） / 必須チェック green / 聖域パス非接触（rename 元パス含む） / \`AUTOMERGE_PAUSED\` 未設定。検証してマージした SHA: \`${HEAD_SHA}\`。判定ログ: ${RUN_URL}（条件と巻き戻し手順: docs/auto-merge.md）"
+              echo "マージ完了（sha=${HEAD_SHA}）"
             else
               # gh が出した理由文はログにそのまま残す。変更前は stderr が素通しでログに出ており、
               # 「なぜマージできなかったか」（コンフリクト・ruleset 拒否等）はそこに載っていた。

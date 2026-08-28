@@ -1,6 +1,8 @@
-# loops-state-convention Specification (Delta)
+# loops-state-convention Specification
 
-## ADDED Requirements
+## Purpose
+TBD - created by archiving change loops-plugin. Update Purpose after archive.
+## Requirements
 
 ### Requirement: State 規約は 4 節構成の形式を定義する
 

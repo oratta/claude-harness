@@ -12,6 +12,49 @@ setup() {
   STUB="${WORK}/stub-bin"
   mkdir -p "$STUB"
 
+  # 継承した fd から値が読めていないかを調べる検出器。fd 番号を決め打ちせず 3〜63 を
+  # 総当たりする（PR #177 レビュー指摘: `{ …; } 3<&-` で閉じた実装は、bash が退避に使う
+  # fd 10 から同じパイプが読めていた。fd 3 だけを見る検出器はそれを 1 件も捕まえられない）。
+  # 読めたバイトはログに追記する。呼び出し側（スタブ）は $FMTOKEN_TEST_FDSCAN_LOG が
+  # 設定されているときだけ呼ぶ。
+  # 書き込み専用の fd（bats 自身が使う fd 3 など）は read できないので最初に外す。
+  # 読み口が open でもデータが来ていない fd で os.read がブロックするのを避けるため、
+  # select で「今読めるもの」だけを対象にする（値の JSON は既にパイプに乗っているので、
+  # 漏れているなら必ずここで読める）。
+  cat >"${STUB}/fdscan" <<'EOF'
+#!/usr/bin/python3
+import fcntl, os, select, sys
+
+log, who = sys.argv[1], sys.argv[2]
+cands = []
+for n in range(3, 64):
+    try:
+        fl = fcntl.fcntl(n, fcntl.F_GETFL)
+    except OSError:
+        continue
+    if (fl & os.O_ACCMODE) == os.O_WRONLY:
+        continue
+    cands.append(n)
+hits = []
+if cands:
+    try:
+        ready = select.select(cands, [], [], 0.5)[0]
+    except OSError:
+        ready = []
+    for n in ready:
+        try:
+            data = os.read(n, 65536)
+        except OSError:
+            continue
+        if data:
+            hits.append((n, data))
+with open(log, "ab") as f:
+    f.write(("FDSCAN %s readable_fds=%s\n" % (who, cands)).encode())
+    for n, data in hits:
+        f.write(("FD%d:" % n).encode() + data + b"\n")
+EOF
+  chmod +x "${STUB}/fdscan"
+
   # 登録済みアイテムを FMTOKEN_TEST_REGISTERED（ref 完全一致。item list の title にも反映）で
   # 表現する op スタブ。FMTOKEN_TEST_EXPECT_SA が設定されていれば、OP_SERVICE_ACCOUNT_TOKEN の
   # 一致も要求する（どの経路の SA トークンが使われたかを検証するため）。
@@ -34,6 +77,14 @@ if [[ "$1" == "read" ]]; then
   exit 1
 fi
 if [[ "$1" == "item" && "$2" == "list" ]]; then
+  # FMTOKEN_TEST_FDSCAN_LOG が設定されていれば、継承した fd を 3〜63 まで総当たりで読み、
+  # 読めたバイトを記録する。item list は「op item create より前に走る子プロセス」の代表で、
+  # 値の JSON が待っているパイプが渡っていれば、ここで平文が読める。読めなかった場合も
+  # ログ自体は作る（FDSCAN 行だけが並ぶ）— 検査側が「ログが無い＝検査が成立していない」を
+  # 区別できるようにするため。
+  if [[ -n "${FMTOKEN_TEST_FDSCAN_LOG:-}" ]]; then
+    fdscan "$FMTOKEN_TEST_FDSCAN_LOG" "op-item-list" || true
+  fi
   # exit 0 のまま解析できない出力を返す（op の出力形式が変わった / 途中で切れた状況）
   if [[ -n "${FMTOKEN_TEST_LIST_BROKEN:-}" ]]; then
     echo 'not json at all'
@@ -507,4 +558,385 @@ EOF
   [ "$status" -eq 48 ]
   [[ "$output" == *"claude-agents-ro.token"* ]]
   [[ "$output" == *"read 権"* ]]
+}
+
+# ── issue #159-1: --register が末尾改行を落とさないこと ────────────────────────
+#
+# 既存の `--register: value containing quotes, backslashes, newlines and $ survives intact`
+# はこの欠陥を検出できない。(a) 検証値に末尾改行が無く (b) 比較が
+# `[ "$(created_credential)" = "$(cat file)" ]` とコマンド置換同士で、両辺が同じように
+# 削れて素通りするため。だから既存ケースを拡張せず、バイト単位で見る別ケースを足す。
+
+# op item create の stdin ログの credential 値が、ファイル $1 の中身と**バイト単位**で
+# 一致することを検証する。比較を python の中で完結させるのが要点で、シェル側の
+# コマンド置換を1回でも挟むと末尾改行がそこで削れて検査が無意味になる。
+assert_credential_matches_file() {
+  /usr/bin/python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+got=[f for f in d["fields"] if f["id"]=="credential"][0]["value"].encode()
+want=open(sys.argv[2],"rb").read()
+if got != want:
+    sys.stderr.write("credential mismatch: got %r (%d bytes) / want %r (%d bytes)\n"
+                     % (got, len(got), want, len(want)))
+    sys.exit(1)' "$FMTOKEN_TEST_CREATE_STDIN_LOG" "$1"
+}
+
+# 検出器そのものが素通りしないことを固定する（refute_in_file と同じ趣旨）。
+# 末尾改行の保存を検査する唯一の手段がこのヘルパなので、緩いと検査が黙って消える。
+@test "assert_credential_matches_file: fails when the stored value lost its trailing newlines" {
+  printf 'x\n\n' >"${WORK}/want-trailing"
+  write_credential_log() {
+    /usr/bin/python3 -c 'import json,sys
+open(sys.argv[1],"w").write(json.dumps({"fields":[{"id":"credential","value":sys.argv[2]}]}))' \
+      "$FMTOKEN_TEST_CREATE_STDIN_LOG" "$1"
+  }
+  write_credential_log 'x'
+  run assert_credential_matches_file "${WORK}/want-trailing"
+  [ "$status" -ne 0 ]
+  write_credential_log 'x
+
+'
+  run assert_credential_matches_file "${WORK}/want-trailing"
+  [ "$status" -eq 0 ]
+}
+
+@test "--register: trailing newlines survive (PEM-style value is stored byte for byte)" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  # 13 バイト・末尾 \n\n。`value="$(cat)"` のままだと 11 バイトで登録される
+  printf 'line1\nline2\n\n' >"${WORK}/trailing-nl"
+  [ "$(wc -c <"${WORK}/trailing-nl" | tr -d ' ')" -eq 13 ]
+  run bash -c "'$FMTOKEN' --register newproj--pem < '${WORK}/trailing-nl'"
+  [ "$status" -eq 0 ]
+  assert_credential_matches_file "${WORK}/trailing-nl"
+}
+
+@test "--register: a value that is only a newline is not mistaken for empty stdin" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  printf '\n' >"${WORK}/nl-only"
+  run bash -c "'$FMTOKEN' --register newproj--nlonly < '${WORK}/nl-only'"
+  [ "$status" -eq 0 ]
+  assert_credential_matches_file "${WORK}/nl-only"
+}
+
+# ── issue #159-2: xtrace 下で値が stderr に出ないこと ─────────────────────────
+#
+# `bash -x fmtoken.sh --register ...` は `+ value=<値>` として呼び出し側自身の stderr に
+# 値を吐いていた。stderr は bats の $output に混ざると検査しづらいので、ファイルに落として
+# refute_in_file で見る。
+
+XTRACE_SECRET="SUPERSECRET-VALUE"
+
+# bash -x 配下で --register を実行し、stderr を $WORK/xtrace.err に落とす。
+# $1 = アイテム名。値は固定の XTRACE_SECRET を stdin から渡す。
+# $2（省略可）= 呼び出し側が設定している PS4。env で渡すのは、テスト側の二重クォートで
+# `${value-}` のような展開がテスト自身のシェルで潰れるのを避けるため（PS4 は環境変数として
+# 渡せば bash がそのままシェル変数として取り込み、トレース行のプレフィックスに使う）。
+run_register_under_xtrace() {
+  local cmd="printf '%s' '${XTRACE_SECRET}' | bash -x '$FMTOKEN' --register '$1' 2>'${WORK}/xtrace.err'"
+  if [[ $# -ge 2 ]]; then
+    run env PS4="$2" bash -c "$cmd"
+  else
+    run bash -c "$cmd"
+  fi
+}
+
+# 「トレース自体は出ている」ことを先に要求する。xtrace が最初から効いていない状態で
+# 「値が出ていない」を確認しても、露出検査が成立していない。
+assert_xtrace_active() {
+  if ! grep -q -- '^+ ' "${WORK}/xtrace.err"; then
+    echo "xtrace が有効になっていない（トレース行が 1 行も無い）: ${WORK}/xtrace.err" >&2
+    return 1
+  fi
+}
+
+@test "--register: value never reaches stderr under bash -x (success path, exit 0)" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run_register_under_xtrace "newproj--xtok"
+  [ "$status" -eq 0 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+  # 値は握りつぶされたのではなく、確かに op へ渡っている
+  [ "$(created_credential)" = "$XTRACE_SECRET" ]
+}
+
+@test "--register: xtrace is restored after the secret region (not left off)" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run_register_under_xtrace "newproj--xtrestore"
+  [ "$status" -eq 0 ]
+  # 値の取り込み（前半の抑止区間）より後にある二重登録ガードがトレースされている。
+  # `+` の数はコマンド置換の入れ子で増える（op item list は `$(...)` の中なので `++`）ため、
+  # 個数に依存しない形で見る
+  grep -qE '^\++ op item list' "${WORK}/xtrace.err"
+  # create（後半の抑止区間）より後もトレースされている＝最後まで off のままにしていない
+  grep -q -- '^+ exit 0' "${WORK}/xtrace.err"
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+}
+
+@test "--register: value never reaches stderr under bash -x (name violation, exit 46)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  run_register_under_xtrace "BadName"
+  [ "$status" -eq 46 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+}
+
+@test "--register: value never reaches stderr under bash -x (already registered, exit 47)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
+  run_register_under_xtrace "moko--TRELLO_TOKEN"
+  [ "$status" -eq 47 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+@test "--register: value never reaches stderr under bash -x (ro token unresolvable, exit 48)" {
+  unset OP_SERVICE_ACCOUNT_TOKEN
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  HOME="$WORK" run bash -c "printf '%s' '${XTRACE_SECRET}' | bash -x '$FMTOKEN' --register moko--NEWTOKEN 2>'${WORK}/xtrace.err'"
+  [ "$status" -eq 48 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+}
+
+@test "--register: value never reaches stderr under bash -x (unparsable item list, exit 48)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_LIST_BROKEN=1
+  run_register_under_xtrace "moko--NEWTOKEN"
+  [ "$status" -eq 48 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+}
+
+# rw SA トークン自体も xtrace に出さない。値と同じ代入経路の欠陥で、
+# 「--register の値は隠れたが SA トークンは出る」では塞いだことにならない。
+@test "--register: rw SA token itself never reaches stderr under bash -x" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token-SECRETLY"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token-SECRETLY"
+  run_register_under_xtrace "newproj--rwtrace"
+  [ "$status" -eq 0 ]
+  assert_xtrace_active
+  refute_in_file "rw-sa-token-SECRETLY" "${WORK}/xtrace.err"
+}
+
+@test "--register: value never reaches stderr with inherited SHELLOPTS=xtrace" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run bash -c "printf '%s' '${XTRACE_SECRET}' | env SHELLOPTS=xtrace '$FMTOKEN' --register newproj--shellopts 2>'${WORK}/xtrace.err'"
+  [ "$status" -eq 0 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+  [ "$(created_credential)" = "$XTRACE_SECRET" ]
+}
+
+# ── issue #170: 値がシェル変数を経由しないこと ────────────────────────────────
+#
+# #159 までは stdin の値を一度 bash 変数（`value`）に載せてから python に渡していた。
+# 「変数を通す」こと自体が 2 つの欠陥の根で、どちらも xtrace の on/off では塞げない。
+
+@test "--register: a value containing NUL bytes is stored byte for byte" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  # 4 バイト。bash 変数は NUL を保持できないので、`value="$(cat; printf x)"` を経由する
+  # 実装だと NUL が黙って落ちて 3 バイトで登録される。
+  printf 'A\0B\n' >"${WORK}/nul-value"
+  [ "$(wc -c <"${WORK}/nul-value" | tr -d ' ')" -eq 4 ]
+  run bash -c "'$FMTOKEN' --register newproj--nul < '${WORK}/nul-value'"
+  [ "$status" -eq 0 ]
+  # 固定できるのは op item create に渡す JSON まで。1Password 側が NUL を保持するかは
+  # スタブでは検証できないので、この受け入れ条件には含めない。
+  assert_credential_matches_file "${WORK}/nul-value"
+}
+
+# これは #170 の欠陥の検出器ではなく（変更前の実装でも通る）、将来の回帰ガード。
+# CPython は std ストリームを newline="\n" で開くので、テキストモードで読んでいた頃も
+# \r\n は潰れていなかった。ただし読み手を `io.TextIOWrapper(newline=None)` や
+# `open(0, "r")` に変えると universal newlines が効いて \r\n が \n に化ける。
+# 「バイト単位で保存する」（#159 / #170）を名乗る以上、そこを踏んだら落ちるようにしておく。
+@test "--register: CRLF line endings are not rewritten to LF" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  printf 'line1\r\nline2\r\n' >"${WORK}/crlf-value"
+  [ "$(wc -c <"${WORK}/crlf-value" | tr -d ' ')" -eq 14 ]
+  run bash -c "'$FMTOKEN' --register newproj--crlf < '${WORK}/crlf-value'"
+  [ "$status" -eq 0 ]
+  assert_credential_matches_file "${WORK}/crlf-value"
+}
+
+# 呼び出し側が fmtoken.sh の内部変数名を狙った PS4 を設定していると、`secret_end` で
+# xtrace を戻したあとのトレース行のプレフィックスとして値が stderr に出ていた
+# （値が変数に残っているため）。値を変数に載せなければ PS4 が何を展開しても出ない。
+@test "--register: value never reaches stderr under a PS4 that expands the internal variable name" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  run_register_under_xtrace "newproj--ps4trace" '+ ${value-} '
+  [ "$status" -eq 0 ]
+  # PS4 を差し替えてもトレース自体は出ている（出ていなければ露出検査が成立していない）
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+  [ "$(created_credential)" = "$XTRACE_SECRET" ]
+}
+
+# 早期 exit する経路でも同じ（値の参照が終わっていても変数は残るため、旧実装は
+# 47 / 48 で抜ける経路でも PS4 経由で漏れた）。
+@test "--register: PS4 leak is closed on the early-exit paths too (already registered, exit 47)" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
+  run_register_under_xtrace "moko--TRELLO_TOKEN" '+ ${value-} '
+  [ "$status" -eq 47 ]
+  assert_xtrace_active
+  refute_in_file "$XTRACE_SECRET" "${WORK}/xtrace.err"
+}
+
+# 実装の性質そのものを固定する。上の 3 ケースは「観測されない」ことしか見ていないので、
+# 将来また変数経由に戻したときに（別の抑止でたまたま緑になって）素通りしないよう、
+# --register の区間に stdin 由来の代入が無いことを直接見る。
+@test "--register: the register block assigns no stdin-derived shell variable" {
+  local block="${WORK}/register-block.sh"
+  sed -n '/^if \[\[ "$mode" == "register" \]\]/,/^fi$/p' "$FMTOKEN" >"$block"
+  [ -s "$block" ]
+  refute_in_file 'value=' "$block"
+  refute_in_file '\$(cat' "$block"
+}
+
+# 値の取り込みを python の sys.stdin.buffer に寄せた結果、UTF-8 として解釈できない
+# バイト列は「python の traceback + exit 1」ではなく、案内つきの exit 46 で止まる。
+# 1Password の credential フィールドはテキストなので、ここは通してはいけない経路。
+@test "--register: a non-UTF-8 value exits 46 before any op call" {
+  make_repo "myproj"
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  printf '\xff\xfe\xfd' >"${WORK}/binary-value"
+  run bash -c "'$FMTOKEN' --register newproj--binary < '${WORK}/binary-value'"
+  [ "$status" -eq 46 ]
+  [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
+  [[ "$output" == *"UTF-8"* ]]
+}
+
+# ── PR #177 レビュー指摘: 値のパイプを create 以外の子プロセスに継承させないこと ──
+#
+# 値の JSON は `exec 3< <(python …)` から `op item create - <&3` までパイプの中で待つ。
+# その間に開いている fd は close-on-exec が付かないので、間に挟まる子プロセス
+# （ro/rw トークンの読み出し・二重登録ガードの `op item list` とその解析）にすべて渡り、
+# そこから平文が読めていた。しかも先に吸われると `op item create` は 0 バイトを受け取るのに
+# スクリプトは「OK: … 登録した」で exit 0 する（無言の fail-open）。
+# 旧実装（値を bash 変数に置く形）は非 export の変数で、macOS には /proc も無いので
+# 子プロセスからは原理的に読めなかった＝塞がないと退行になる。
+#
+# 検査は「fd 3 から読めないこと」ではなく「**どの fd からも**読めないこと」で行う。
+# 最初の修正は区間全体を `{ …; } 3<&-` のグループで囲む形で、fd 3 は確かに閉じていたが、
+# bash が複合コマンドのリダイレクトを戻すために取る退避コピー（fd 10）が close-on-exec 無しで
+# 子プロセスに渡り、そこから同じ平文が読めていた。fd 番号を決め打ちする検査はこれを素通りする。
+
+FD_SECRET="PEEKSECRET-123"
+
+# fdscan ログから「読めたバイト」の行だけを数える。FDSCAN 行（どの fd が open だったかの記録）は
+# 常に出るので、ログの存在やサイズではなく FD<n>: 行の有無で判定する。
+assert_no_fd_leak() {
+  local log="$1"
+  if [[ ! -r "$log" ]]; then
+    echo "assert_no_fd_leak: ${log} が読めない（fd 検査が成立していない）" >&2
+    return 1
+  fi
+  # 覗き見の対象になる子プロセスが実際に走ったこと（＝検査が成立していること）を先に要求する
+  if ! grep -q '^FDSCAN ' "$log"; then
+    echo "assert_no_fd_leak: FDSCAN 行が無い（検出器が一度も走っていない）: ${log}" >&2
+    return 1
+  fi
+  if grep -q '^FD[0-9]' "$log"; then
+    echo "fd leak: 継承した fd から読めたバイトがある" >&2
+    cat "$log" >&2
+    return 1
+  fi
+}
+
+# 検出器そのものが素通りしないことを先に固定する（refute_in_file と同じ趣旨）。
+# 値の待つパイプを継承したまま op スタブを呼べば読める、が成立していなければ、
+# 下のケースは「実装が塞いだから」ではなく「そもそも読めない構成だから」緑になる。
+@test "the fd scan detector really reads an inherited pipe (detector sanity)" {
+  export FMTOKEN_TEST_FDSCAN_LOG="${WORK}/fdscan-sanity.log"
+  run bash -c "exec 3< <(printf 'CANARY-FD3'; sleep 2); op item list --vault agents --format json >/dev/null"
+  [ "$status" -eq 0 ]
+  grep -q '^FD[0-9]*:CANARY-FD3$' "$FMTOKEN_TEST_FDSCAN_LOG"
+}
+
+# 検出器が fd 3 決め打ちでないことも固定する。ここを落とすと、fd 10 に退避された
+# コピーから漏れる（この PR の 1 周目の修正で実際に起きた）形を捕まえられなくなる。
+@test "the fd scan detector is not hardcoded to fd 3" {
+  export FMTOKEN_TEST_FDSCAN_LOG="${WORK}/fdscan-notfd3.log"
+  run bash -c "exec 7< <(printf 'CANARY-FD7'; sleep 2); op item list --vault agents --format json >/dev/null"
+  [ "$status" -eq 0 ]
+  grep -q '^FD7:CANARY-FD7$' "$FMTOKEN_TEST_FDSCAN_LOG"
+}
+
+@test "--register: op item list cannot read the value from any inherited fd" {
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  export FMTOKEN_TEST_FDSCAN_LOG="${WORK}/fdscan-list.log"
+  run bash -c "printf '%s' '${FD_SECRET}' | '$FMTOKEN' --register newproj--peek"
+  [ "$status" -eq 0 ]
+  # 値の断片どころか JSON の 1 バイト目も渡らない
+  assert_no_fd_leak "$FMTOKEN_TEST_FDSCAN_LOG"
+  refute_in_file "$FD_SECRET" "$FMTOKEN_TEST_FDSCAN_LOG"
+  # 吸われていないので create には完全な JSON が届く（無言の fail-open が起きていない）
+  [ "$(created_credential)" = "$FD_SECRET" ]
+}
+
+@test "--register: the Keychain read cannot read the value from any inherited fd" {
+  unset OP_SERVICE_ACCOUNT_TOKEN
+  export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="rw-sa-token"
+  export FMTOKEN_TEST_FDSCAN_LOG="${WORK}/fdscan-keychain.log"
+  # ro トークンの解決を Keychain 経路に落とす（600 ファイルが配布されていないマシン）。
+  # security は op スタブとは別クラスの「create より前に走る外部コマンド」で、
+  # 個々のコマンドに fd を閉じる指定を足す当て方だと拾い漏れが起きうる側。
+  cat >"${STUB}/security" <<'EOF'
+#!/usr/bin/env bash
+if [[ -n "${FMTOKEN_TEST_FDSCAN_LOG:-}" ]]; then
+  fdscan "$FMTOKEN_TEST_FDSCAN_LOG" "security" || true
+fi
+echo "keychain-sa-token"
+exit 0
+EOF
+  chmod +x "${STUB}/security"
+  HOME="$WORK" run bash -c "printf '%s' '${FD_SECRET}' | '$FMTOKEN' --register newproj--kcpeek"
+  [ "$status" -eq 0 ]
+  assert_no_fd_leak "$FMTOKEN_TEST_FDSCAN_LOG"
+  refute_in_file "$FD_SECRET" "$FMTOKEN_TEST_FDSCAN_LOG"
+  [ "$(created_credential)" = "$FD_SECRET" ]
+}
+
+# rw トークン解決（create の直前に走る最後の外部コマンド）も同じ性質を満たすこと。
+# ro 側と経路が分かれているので、片方だけ閉じても緑になる形を潰しておく。
+@test "--register: the rw token Keychain read cannot read the value from any inherited fd" {
+  export FMTOKEN_TEST_EXPECT_SA_CREATE="keychain-rw-token"
+  export FMTOKEN_TEST_FDSCAN_LOG="${WORK}/fdscan-rw.log"
+  # rw は env にも 600 ファイルにも無い状態にして Keychain 経路へ落とす
+  unset OP_SERVICE_ACCOUNT_TOKEN_RW
+  cat >"${STUB}/security" <<'EOF'
+#!/usr/bin/env bash
+if [[ -n "${FMTOKEN_TEST_FDSCAN_LOG:-}" ]]; then
+  fdscan "$FMTOKEN_TEST_FDSCAN_LOG" "security-rw" || true
+fi
+echo "keychain-rw-token"
+exit 0
+EOF
+  chmod +x "${STUB}/security"
+  HOME="$WORK" run bash -c "printf '%s' '${FD_SECRET}' | '$FMTOKEN' --register newproj--rwpeek"
+  [ "$status" -eq 0 ]
+  assert_no_fd_leak "$FMTOKEN_TEST_FDSCAN_LOG"
+  refute_in_file "$FD_SECRET" "$FMTOKEN_TEST_FDSCAN_LOG"
+  [ "$(created_credential)" = "$FD_SECRET" ]
 }

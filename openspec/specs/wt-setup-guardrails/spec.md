@@ -1,3 +1,5 @@
+# wt-setup-guardrails Specification
+
 ## Purpose
 
 wt-setup スキルにおける LLM の危険なファイル操作を防止するガードレール。SKILL.md の禁止ルールとスクリプト側の防御ガードを定義する。

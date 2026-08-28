@@ -11,6 +11,7 @@ setup() {
   REPO_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   CATALOG="${PLUGIN_DIR}/catalog/catalog.md"
   PATH_LINT="${PLUGIN_DIR}/tests/lib/template-path-lint.awk"
+  REPORT_CALLS="${PLUGIN_DIR}/tests/lib/report-calls.py"
   FIXTURES="${PLUGIN_DIR}/tests/fixtures/template-paths"
 }
 
@@ -180,34 +181,37 @@ lint_template_paths() {
 
 CHECK_SCRIPT() { printf '%s\n' "${PLUGIN_DIR}/scripts/casting-check.sh"; }
 
-# 行頭コメント行を落とした本文を出す（コメント中の report "..." を数えないため）。
+# report の実呼び出しを「<行番号> literal <カテゴリ> / <行番号> nonliteral <抜粋>」で列挙する。
+# 数え方の本体は tests/lib/report-calls.py（シェルの引用・コメント・ヒアドキュメントだけを
+# 見る軽量スキャナ）。行頭コメント行を sed で落として grep するだけだった頃は、
+# ヒアドキュメント本文・行末コメント・文字列リテラルの中の report まで呼び出しとして
+# 数えていた（#163）。report と第1引数の間の空白が可変であること・report() の定義行を
+# 拾わないことは、スキャナ側が同じ規則を引き継いでいる。
 # 引数でスクリプトを差し替えられるのは、数え方そのものを検査するテストが
 # 合成スクリプトを食わせるため（既定は casting-check.sh 本体）。
-check_script_body() {
-  LC_ALL=C sed -E 's/^[[:space:]]*#.*$//' "${1:-$(CHECK_SCRIPT)}"
+report_calls() {
+  LC_ALL=C python3 "$REPORT_CALLS" "${1:-$(CHECK_SCRIPT)}"
 }
 
-# report の実呼び出しから検出カテゴリ名を1行1件で出す。
-#   - report と第1引数の間の空白は可変（空白2個・タブでもすり抜けない）
-#   - report() の定義行は直後が "(" なので拾わない
+# 第1引数がリテラルの呼び出しだけを、カテゴリ名1行1件で出す（重複はそのまま）。
+literal_report_categories() {
+  report_calls "$@" | LC_ALL=C sed -n 's/^[0-9][0-9]* literal //p'
+}
+
 detection_categories() {
-  check_script_body "$@" \
-    | LC_ALL=C grep -oE '(^|[;&|(){}[:space:]])report[[:space:]]+"[a-z][a-z-]*"' \
-    | LC_ALL=C sed -E 's/.*report[[:space:]]+"([a-z][a-z-]*)".*/\1/' \
-    | LC_ALL=C sort -u
+  literal_report_categories "$@" | LC_ALL=C sort -u
 }
 
 detection_category_count() {
   detection_categories "$@" | wc -l | tr -d ' '
 }
 
-# 呼び出しは「行数」ではなく「出現数」で数える。grep -c は一致した行数しか返さないので、
+# 呼び出しは「行数」ではなく「出現数」で数える。行単位で数えていた頃は、
 # 1行に `report "literal" …; report "$var" …` と並べると calls == literal になり、
-# 非リテラル呼び出しがこの検査をすり抜ける（Codex レビュー指摘・実測で再現）。
-count_report_calls() { check_script_body "$@" \
-  | LC_ALL=C grep -oE '(^|[;&|(){}[:space:]])report[[:space:]]+[^[:space:]]' | wc -l | tr -d ' '; }
-count_literal_report_calls() { check_script_body "$@" \
-  | LC_ALL=C grep -oE '(^|[;&|(){}[:space:]])report[[:space:]]+"[a-z][a-z-]*"' | wc -l | tr -d ' '; }
+# 非リテラル呼び出しがこの検査をすり抜けた（Codex レビュー指摘・実測で再現）。
+# report-calls.py は1呼び出し1行で出すので、行数がそのまま出現数になる。
+count_report_calls() { report_calls "$@" | wc -l | tr -d ' '; }
+count_literal_report_calls() { literal_report_categories "$@" | wc -l | tr -d ' '; }
 
 # 第1引数がリテラルでない report 呼び出し（report "$var" 等）があると
 # detection_categories が黙って数え漏らす。数え方の前提そのものを検査する。
@@ -218,10 +222,109 @@ count_literal_report_calls() { check_script_body "$@" \
   if [ "$calls" != "$literal" ]; then
     echo "report の呼び出し ${calls} 件のうちリテラルの第1引数は ${literal} 件。" >&2
     echo "リテラルでない呼び出しは検出カテゴリの数え方（detection_categories）から漏れる。" >&2
-    check_script_body | LC_ALL=C grep -nE '(^|[;&|(){}[:space:]])report[[:space:]]+[^"]' >&2 || true
+    report_calls | LC_ALL=C grep -F ' nonliteral ' >&2 || true
     return 1
   fi
   [ "$calls" -ge 1 ]
+}
+
+# 数え方が grep だけだった頃は、ヒアドキュメント本文・行末コメント・文字列リテラルの中の
+# report まで呼び出しとして数えた（#163）。ずれる向きは偽陽性側だけなので検査をすり抜ける
+# 経路にはならないが、casting-check.sh に report の語を含む使い方出力やエラーメッセージを
+# 足しただけで「documented five」と「N項目」の突き合わせが理由なく落ちる。
+# 合成スクリプトで、3形とも1件も足さないこと（前半）と、カウンタを緩めて逃げていないこと
+# ＝本物の呼び出しはちゃんと数えること（後半）を、同じスクリプトで続けて確かめる。
+@test "check: heredoc bodies, trailing comments and string literals are not report calls" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-noncode.sh"
+
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'report() { printf "[%s] %s\n" "$1" "$2"; }' \
+    "usage() { cat <<'EOF'" \
+    '  report "heredoc-cat" "…"' \
+    '  $(report "quoted-heredoc-subst-cat" "…")' \
+    'EOF' \
+    '}' \
+    'true  # report "trailing-cat" と書き換える' \
+    "echo 'usage: report \"string-cat\" msg'" \
+    'echo "usage: report \"dquote-cat\" msg"' \
+    > "$synthetic"
+  [ "$(count_report_calls "$synthetic")" = "0" ]
+  [ "$(detection_category_count "$synthetic")" = "0" ]
+
+  # 本物の6個目を足したら数に乗ること（数え落とし側へ倒して逃げていないことの確認）。
+  printf '%s\n' '  report "sixth-category" "b"' >> "$synthetic"
+  [ "$(count_report_calls "$synthetic")" = "1" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "1" ]
+  [ "$(detection_category_count "$synthetic")" = "1" ]
+  [ "$(detection_categories "$synthetic")" = "sixth-category" ]
+}
+
+# #175 の退行ガード。#163 でコード領域だけを見る走査に変えたとき、次の4形で本物の
+# 呼び出しを数え落とすようになっていた（いずれも main の grep 方式では数えられていた）:
+#   算術左シフト `(( v = 1 << 2 ))`      `<<` をヒアドキュメント開始と誤認し、
+#                                        区切り語が終端しないままファイル末尾まで本文扱い
+#   ANSI-C クオート `$'don\'t'`          `\'` を終端と誤認して引用状態が解除できない
+#   二重引用の中の `"$(report …)"`       外側の `"` の中を丸ごと非コード扱いしていた
+#   未引用ヒアドキュメント本文の `$(…)`  本文行を無条件で探索対象外にしていた
+# 前2形は以降の呼び出しが全消滅するのでカテゴリ数が落ちて赤くなるが、後2形は既存
+# カテゴリを削らずに新規カテゴリだけを消すので、突き合わせが緑のまますり抜ける。
+@test "check: shell forms that still run report are counted" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-false-negatives.sh"
+  local expected actual
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+(( value = 1 << 2 ))
+report "after-arith-shift" "a"
+shifted=$(( 1 << 3 ))
+report "after-arith-expansion" "b"
+msg=$'don\'t'
+report "after-ansi-c-quote" "c"
+out="$(report "dquote-subst" "d")"
+cat <<EOS
+$(report "unquoted-heredoc-subst" "e")
+EOS
+SH
+
+  [ "$(count_report_calls "$synthetic")" = "5" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "5" ]
+
+  expected="after-ansi-c-quote after-arith-expansion after-arith-shift dquote-subst unquoted-heredoc-subst"
+  actual="$(detection_categories "$synthetic" | tr '\n' ' ')"
+  actual="${actual% }"
+  if [ "$actual" != "$expected" ]; then
+    echo "数え落とし側へ倒れている。実装: [${actual}] / 期待: [${expected}]" >&2
+    return 1
+  fi
+}
+
+# 未引用ヒアドキュメント本文の中を走査するようにした副作用の退行ガード（PR #179 レビュー指摘）。
+# 本文に不均衡な `` ` `` や `'` があるとフレームが積まれたまま残り、区切り語の照合を
+# スタック最上段だけで行うと終端行を取りこぼす。ヒアドキュメントが閉じないまま以降の行が
+# 全部本文扱いになり、本物の呼び出しが全消滅する（算術左シフトの誤認と同じ壊れ方）。
+# 区切り語の照合は行単位なので、本文の中で閉じ損ねたフレームより優先して終端させる。
+@test "check: a heredoc terminates even when its body leaves a quote frame open" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-heredoc-leak.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+cat <<EOS
+use the ` char
+don't panic
+EOS
+report "after-leaky-heredoc" "a"
+cat <<'EOT'
+still ` unbalanced
+EOT
+report "after-leaky-literal-heredoc" "b"
+SH
+
+  [ "$(count_report_calls "$synthetic")" = "2" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "2" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-leaky-heredoc after-leaky-literal-heredoc " ]
 }
 
 # 上の検査が「行数」で数えていた頃は、1行に2件並べると非リテラル呼び出しを見逃した。
@@ -250,9 +353,9 @@ count_literal_report_calls() { check_script_body "$@" \
   [ "$(count_literal_report_calls "$synthetic")" = "0" ]
 }
 
-@test "check: detection categories in casting-check.sh are the documented five" {
+@test "check: detection categories in casting-check.sh are the documented seven" {
   local expected actual
-  expected="catalog-external-precedent malformed-row repeated-not-issue unknown-vocab version-mismatch"
+  expected="catalog-external-precedent consultation-missing-element malformed-row repeated-not-issue unclosed-comment unknown-vocab version-mismatch"
   actual="$(detection_categories | tr '\n' ' ')"
   actual="${actual% }"
   if [ "$actual" != "$expected" ]; then
@@ -265,16 +368,16 @@ count_literal_report_calls() { check_script_body "$@" \
 # 「N項目」と書いている全文書を、出現ごとに実装のカテゴリ数と突き合わせる。
 # 全角数字（「５項目」）も半角に正規化してから比較するので、片側だけ全角で
 # 残した状態も落ちる。失敗時は実装側の数と文書側の表記の両方を出す。
-@test "docs: item-count wording in README, SKILL, script, plugin.json and marketplace.json matches the implementation" {
+@test "docs: item-count wording in README, SKILL, script, plugin.json, marketplace.json and the spec matches the implementation" {
   local n
   n="$(detection_category_count)"
   [ "$n" -ge 1 ]
 
-  run python3 - "$n" "${PLUGIN_DIR}" "${REPO_ROOT}/.claude-plugin/marketplace.json" <<'PY'
+  run python3 - "$n" "${PLUGIN_DIR}" "${REPO_ROOT}/.claude-plugin/marketplace.json" "${REPO_ROOT}/openspec/specs/casting-project-files/spec.md" <<'PY'
 import json, re, sys, unicodedata
 
 n = int(sys.argv[1])
-plugin_dir, marketplace_path = sys.argv[2], sys.argv[3]
+plugin_dir, marketplace_path, spec_path = sys.argv[2], sys.argv[3], sys.argv[4]
 
 targets = {}
 for rel in ("README.md", "skills/casting/SKILL.md",
@@ -289,6 +392,11 @@ if desc is None:
     print("marketplace.json に casting エントリが無い")
     raise SystemExit(1)
 targets["marketplace.json (casting description)"] = desc
+
+# 規範の正本。実装とプラグイン文書だけを揃えても spec が取り残されると、
+# 「何項目を検査しなければならないか」の MUST が実装と食い違ったまま残る。
+with open(spec_path, encoding="utf-8") as fh:
+    targets["openspec/specs/casting-project-files/spec.md"] = fh.read()
 
 pattern = re.compile(r"([0-9０-９]+)項目")
 failures = []
