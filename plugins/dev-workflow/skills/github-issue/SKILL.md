@@ -1,12 +1,12 @@
 ---
 name: github-issue
-description: 開発 repo で GitHub issue に取り組む標準ワークフロー（worktree セットアップは hooks 任せ → opsx 要否 → change 分割 → TDD 実装）。issue 番号・URL・「このissue対応して」等の自然文で起動。人間依頼と loop-dev-agent 無人サイクル（--unmanned）の両対応。
-version: 1.2.0
+description: 開発 repo で GitHub issue に取り組む標準ワークフロー（worktree セットアップは hooks 任せ → opsx 要否と判断の記録 → change 分割 → 仕様レビュー → TDD 実装）。issue 番号・URL・「このissue対応して」等の自然文で起動。人間依頼と loop-dev-agent 無人サイクル（--unmanned）の両対応。
+version: 1.3.0
 ---
 
 # github-issue — GitHub issue 対応の標準開発ワークフロー
 
-GitHub issue に取り組む一連の手順を毎回同じに通すためのスキル。「issue に触る」という行為そのものが起動トリガーであり、**それを人間が今すぐ頼んだのか、loop-dev-agent が無人で拾ったのかは問わない**。どちらの入口でも `worktree 確認 → 仕様化要否（opsx）→ 単一/複数 change 判定 → TDD 実装` という同じパイプラインを通す。
+GitHub issue に取り組む一連の手順を毎回同じに通すためのスキル。「issue に触る」という行為そのものが起動トリガーであり、**それを人間が今すぐ頼んだのか、loop-dev-agent が無人で拾ったのかは問わない**。どちらの入口でも `worktree 確認 → 仕様化要否（opsx）と判断の記録 → 単一/複数 change 判定 → 仕様レビュー → TDD 実装` という同じパイプラインを通す。
 
 このスキルの目的は、開発者が毎回プロンプトで手打ちしていた「worktree を用意して、仕様として残すべきなら opsx を使い、テストを先に書いて実装する」を、issue 着手時に自動で乗る標準手順として固定することにある。
 
@@ -26,7 +26,7 @@ loop-dev-agent の憲法（`docs/agent-loop.md`）の実装モード（Step 3）
 | **interactive**（デフォルト） | 人間が `/work-issue` や自然文で依頼 | AskUserQuestion で聞ける | その場で change を順番に実装 |
 | **unmanned**（`--unmanned`） | loop-dev-agent の Step 3 から呼ばれる | 聞けない（1サイクル1仕事） | change 単位でサブ issue に分割し次サイクルへ委ねる |
 
-無人モードで判断に迷った時は Discord 経由でユーザーに質問できる（後述）。
+無人モードで判断に迷った時は Discord 経由でユーザーに質問できる（後述）。**Step B の仕様化判断の記録と Step D の仕様レビューは、どちらのモードでも免除しない**（unmanned でも同じ書式で issue に記録し、APPROVE まで実装に入らない）。
 
 ## パイプライン
 
@@ -70,6 +70,14 @@ openspec --version 2>/dev/null && echo "OPENSPEC_CLI"
 
 このとき同じ流れの中で**実行戦略**（solo / delegate+verify / workflow 型）も仮決めする。4象限モデル・決定論的シグナルの収集コマンド・判定表・残量モード（`FABLE_BUDGET_MODE`: abundant / conserve / reserve）は `references/decision-criteria.md` の「実行戦略の判定」節を参照。実行戦略の判定は独立 Step にしない（Step B/C への相乗り）。事前判定は仮決めであり、誤分類は実行中の昇格トリップワイヤーが修正する。
 
+**判定したら、先に進む前に元 issue へ記録する**（interactive / unmanned 共通）。後から「不要と判断した」のか「飛ばした」のかを区別し、pr-review-gate が出口で機械照合できるようにするため。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致させる（太字・全角コロン・末尾句点を付けない）。2 行目以降に理由（`references/decision-criteria.md` のどの条件に当たったか）を書く:
+
+```bash
+gh issue comment <issue番号> --body "$(printf '仕様化判断: する\n理由: 既存 capability の要件を変える（レビューの担い手と記録先の設計判断を含む）')"
+```
+
+判定をやり直したら同じ書式で投稿し直す（照合側は最新 1 件を正とする。契約の正本は `references/spec-review.md`「判断記録の契約」）。**記録する前に Step C / Step D へ進まない。**
+
 仕様化しないと判定した場合は Step C を飛ばし、Step D（TDD 実装）へ直行する。
 
 ### Step C: 単一 change か複数 change か
@@ -83,7 +91,7 @@ openspec --version 2>/dev/null && echo "OPENSPEC_CLI"
 
 **複数 change に割れた場合の振る舞いはモードで分かれる**:
 
-- **interactive モード**: change を機械的に分割し、その場で 1 つずつ `/opsx:ff → apply → verify → archive`（Step D の単一 change 手順）を順番に回す。独立していて並列可能なものは並列に進めてよい。longrun:plan は呼ばない（後述）。
+- **interactive モード**: change を機械的に分割し、その場で 1 つずつ `/opsx:ff → 仕様レビュー → apply → verify → archive`（Step D の単一 change 手順。仕様レビューは change ごとに行う）を順番に回す。独立していて並列可能なものは並列に進めてよい。longrun:plan は呼ばない（後述）。
 - **unmanned モード（1サイクル1仕事を守る）**: その場で全部やらず、**change 単位でサブ issue を作成**する。各サブ issue は自然言語でも「それ単体で実装可能」な記述（受け入れ条件付き）にし、`gh` の依存関係で順序を付ける:
   ```bash
   # 後続 issue が前提 issue に blocked_by されるよう依存を張る
@@ -130,11 +138,25 @@ openspec --version 2>/dev/null && echo "OPENSPEC_CLI"
 **仕様化する場合（opsx 利用可能時）**:
 ```
 /opsx:ff <change-name>     # 全 artifact（proposal/specs/design/tasks）を一括生成
+（仕様レビュー — 下の小節。APPROVE が出るまで次へ進まない）
 /opsx:apply <change-name>  # tasks を TDD で実装
 /opsx:verify <change-name> # 実装が artifact と一致するか検証
 /opsx:archive <change-name># 完了した change をアーカイブ
 ```
-opsx コマンドが無く openspec CLI だけある場合は `openspec new change` → 各 artifact 生成 → 実装 → `openspec archive` を直叩きで行う（longrun-plan の縮退モードと同じ思想）。
+opsx コマンドが無く openspec CLI だけある場合は `openspec new change` → 各 artifact 生成 → **仕様レビュー（同じ手順）** → 実装 → `openspec archive` を直叩きで行う（longrun-plan の縮退モードと同じ思想）。
+
+#### 仕様レビュー（ff と apply の間）
+
+artifact を生成したら、**実装に入る前に**、実装と別コンテキストのサブエージェントに仕様を審査させる。観点・入力・出力書式・往復上限の正本は `references/spec-review.md`（longrun の Build Contract レビューの置き直し）。ここでは手順だけ書く:
+
+1. **spawn する**（Agent ツール。`model` を必ず明示）。既定は `opus`。仕様が下の「重要実装の事前分類」表に当たるなら `fable`。残量モードは `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路で `opus` 上限（interactive の reserve は制限しない）。プロンプトには change ディレクトリ・元 issue・「既存 `openspec/specs/` は grep で当たりを付けてから該当ファイルだけ読む」・`references/spec-review.md` の 5 観点と出力書式を渡す。読み取り専用で spawn する
+2. **判定を読む**。`APPROVE`（BLOCKER 0 件）なら 3 へ。`REQUEST_CHANGES` なら指摘に従って artifact を直し、**修正箇所に限定した再レビューを 1 回**行う（初回＋差分再レビューの **2 周が上限**。3 周目の例外は設けない）。2 周目でも BLOCKER が残るなら issue に `needs-approval` を付けて経緯をコメントし、interactive モードでは AskUserQuestion で判断を仰ぎ、unmanned モードではそのサイクルを終了する
+3. **結果を元 issue に記録する**。1 行目は正規表現 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$` に完全一致、2 行目以降に周回数（何周目で確定したか）・レビュアーのモデル・残課題を書く:
+   ```bash
+   gh issue comment <issue番号> --body "$(printf '仕様レビュー: APPROVE\n2 周目・レビュアー opus。1 周目 BLOCKER 1 件を修正して確定。残課題: なし')"
+   ```
+4. **APPROVE を記録するまで `/opsx:apply`（実装）に進まない。** 実行戦略が workflow 型（`/lr:e` に委ねる）のときだけは、longrun の Build Contract レビューをもってこの工程の代替とし、二重にはレビューしない。
+
 
 **コード直行する場合（仕様化不要）**:
 1. 実装前に必ず codebase を grep して既存実装を確認する（二重実装しない）。
