@@ -193,3 +193,121 @@ setup() {
   highest="$(printf '1.0.0\n%s\n' "$v" | sort -V | tail -1)"
   [ "$highest" = "$v" ]
 }
+
+# --- Requirement: 実装とドキュメント文字列の整合を合格の必須条件にする（issue #166） ---
+
+@test "doc-consistency: step 4 is split into 4-1 behavior check and 4-2 doc-string check" {
+  grep -qF '#### 4-1' "$SKILL"
+  grep -qF '#### 4-2' "$SKILL"
+  grep -qF 'ドキュメント文字列の整合確認' "$SKILL"
+}
+
+@test "doc-consistency: 4-2 is stated as a required condition for passing" {
+  # 合格（手順5）の必須条件であることが明記されている
+  grep -q '4-2.*必須\|必須.*4-2\|ドキュメント文字列の整合確認（必須）' "$SKILL"
+}
+
+@test "doc-consistency: the four kinds of doc strings are named" {
+  grep -qF 'JSDoc' "$SKILL"
+  grep -qF 'usage' "$SKILL"
+  grep -qF 'README' "$SKILL"
+  grep -qF 'エラーメッセージ' "$SKILL"
+}
+
+@test "doc-consistency: concrete git grep commands are given, not hand-waving" {
+  grep -qF 'git grep -n' "$SKILL"
+  # フラグ名・関数名・既定値を説明する語、の3系統の例が揃っている
+  [ "$(grep -c 'git grep -n' "$SKILL")" -ge 3 ]
+  grep -qF 'gh pr diff' "$SKILL"
+}
+
+@test "doc-consistency: zero hits must be recorded, blanks are forbidden" {
+  grep -qF '0 件' "$SKILL"
+  grep -qF '確認していないものを空欄にしない' "$SKILL"
+}
+
+@test "doc-consistency: evidence comment has its own heading and HEAD SHA line" {
+  grep -qF '## ドキュメント文字列の整合確認' "$SKILL"
+  # 証拠コメントのテンプレに 対象 HEAD 行がある（既存の宣言・動作確認と同形式）
+  [ "$(grep -c '^対象 HEAD: ' "$SKILL")" -ge 3 ]
+}
+
+@test "doc-consistency: step 5 measures three headings, not two" {
+  grep -qF 'ドキュメント文字列の整合確認の3つの見出しがすべて' "$SKILL"
+  grep -qF '1つでも欠けていれば' "$SKILL"
+  # 旧文言（2見出し前提）が残っていない
+  ! grep -qF '動作確認の見出しが両方' "$SKILL"
+}
+
+@test "doc-consistency: deferring the mismatch to a follow-up issue is forbidden" {
+  grep -q '先送り' "$SKILL"
+  # 「やらないこと」節に整合確認スキップの禁止が入っている
+  awk '/^\*\*やらないこと\*\*/,0' "$SKILL" | grep -qF 'ドキュメント文字列の整合確認'
+}
+
+@test "doc-consistency: existing mandatory steps are not removed (regression guard)" {
+  # 既存の必須ステップが1つも消えていない
+  grep -qF 'stale な `agent-review:passed` を必ず外す' "$SKILL"
+  grep -qF '実装したコンテキストで自己レビューしない' "$SKILL"
+  grep -qF '## リスク宣言' "$SKILL"
+  grep -qF '## 動作確認' "$SKILL"
+  grep -qF '真正性確認' "$SKILL"
+  grep -qF 'agent-review:passed' "$SKILL"
+}
+
+@test "manifest: version bumped above 1.10.1" {
+  v="$(jq -r '.version' "$MANIFEST")"
+  [ "$v" != "1.10.1" ]
+  highest="$(printf '1.10.1\n%s\n' "$v" | sort -V | tail -1)"
+  [ "$highest" = "$v" ]
+}
+
+@test "skill: frontmatter version bumped above 1.2.0" {
+  v="$(awk -F': ' '/^version:/{print $2; exit}' "$SKILL")"
+  [ -n "$v" ]
+  [ "$v" != "1.2.0" ]
+  highest="$(printf '1.2.0\n%s\n' "$v" | sort -V | tail -1)"
+  [ "$highest" = "$v" ]
+}
+
+# --- Requirement: ゲートの必須条件を説明する文字列を全箇所そろって更新する（PR #174 レビュー指摘） ---
+
+@test "gate-description: every user-facing description enumerates all required conditions" {
+  # ゲートの合格必須条件（この列挙が正本）。条件を1つ足したら、下の5か所すべての
+  # 説明文を同じ PR の中で更新しないとこのテストが落ちる。
+  # 「実装は締めたが説明文だけ旧条件のまま取り残される」再発を機械的に止めるためのガード。
+  required_conditions="リスク宣言
+動作確認
+ドキュメント文字列の整合確認
+agent-review:passed"
+
+  DEV_README="${PLUGIN_DIR}/README.md"
+  AUTOMERGE_README="${PLUGIN_DIR}/templates/auto-merge/README.md"
+
+  # 説明文の在り処（利用者・エージェントがゲートの合格条件を読む場所）。
+  # 抽出パターンはすべて ASCII アンカーにする（macOS awk のマルチバイト比較を避けるため）。
+  extract_skill_description() { grep '^description: ' "$SKILL"; }
+  extract_plugin_description() { jq -r '.description' "$MANIFEST"; }
+  extract_marketplace_description() {
+    jq -r '.plugins[] | select(.name == "dev-workflow") | .description' "$MARKETPLACE"
+  }
+  extract_dev_readme_section() {
+    awk '/^### pr-review-gate$/ { f = 1; next } /^### / { if (f) exit } f' "$DEV_README"
+  }
+  extract_automerge_readme_section() {
+    awk '/^pr-review-gate/ { f = 1 } f && NF == 0 { exit } f' "$AUTOMERGE_README"
+  }
+
+  failures=""
+  for location in skill_description plugin_description marketplace_description \
+                  dev_readme_section automerge_readme_section; do
+    body="$("extract_${location}")"
+    [ -n "$body" ] || { failures="${failures}${location}: 説明文を抽出できなかった"$'\n'; continue; }
+    while IFS= read -r condition; do
+      printf '%s' "$body" | grep -qF "$condition" \
+        || failures="${failures}${location}: 「${condition}」が抜けている"$'\n'
+    done <<< "$required_conditions"
+  done
+
+  [ -z "$failures" ] || { printf '%s' "$failures" >&2; false; }
+}

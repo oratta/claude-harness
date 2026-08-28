@@ -16,7 +16,7 @@ worktree セットアップ済み / `gh pr list` で過去 PR あり / PR テン
 
 PR 運用のリポでは、PR を作成し**変更が出揃った時点**で dev-workflow プラグインの
 **pr-review-gate** スキルを読み込んでゲート（別コンテキストのレビュー・リスク宣言・
-動作確認の証拠添付・`agent-review:passed`）を通す。ゲート通過後に commit を積んだら、
+動作確認の証拠添付・実装とドキュメント文字列の整合確認・`agent-review:passed`）を通す。ゲート通過後に commit を積んだら、
 宣言・証拠・`agent-review:passed` を取り直す（手順の正本はスキル側）。
 auto-merge 配備リポ（`.github/workflows/auto-merge.yml` があるリポ）では、
 **ゲート通過 → auto-merge の機械マージが唯一のマージ経路**。これは上の
