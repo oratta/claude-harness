@@ -1,19 +1,20 @@
 # dev-workflow
 
-この開発ハーネスでの標準開発ワークフローを集めるプラグイン。issue 着手（`github-issue`）から PR の品質ゲート（`pr-review-gate`）・自動マージ（`templates/auto-merge/`）まで、「開発するときはこうする」という汎用的な手順を集約する。
+この開発ハーネスでの標準開発ワークフローを集めるプラグイン。開発の 1 ループ（`develop`）から PR の品質ゲート（`pr-review-gate`）・自動マージ（`templates/auto-merge/`）まで、「開発するときはこうする」という汎用的な手順を集約する。
 
 ## 含まれるスキル
 
-### github-issue
+### develop
 
-GitHub issue（番号・URL・自然文）に取り組む時の標準ワークフロー。
+コード・スキル・コマンド・規範文書（openspec / docs / CLAUDE.md 等）を変えるときに、入口（issue 番号・URL・自然文・会話・cron・エピックの子）を問わず通す標準ワークフロー。旧スキル（issue 限定の入口だったもの）の後継。
 
-- worktree 上なのに `wt-setup` が未実行なら先に実行する
-- 仕様として残すべき変更なら opsx（openspec）フローに乗せ、そうでなければコード直行する
-- 単一 change で足りるか複数 change に割れるかを判定し、複数なら change ごとに分けて処理する
-- 全経路で TDD（テスト先行）を徹底する
+- **本体はオーケストレータ専任**: Edit でコードを書かず、レビューを代行しない。作業者 W・仕様レビュアー R1・ゲート実行者 G を `model` 明示で spawn し、return の要約と記録先のコメント・ラベルだけを見て次に誰を起こすかを決める（役割の指示書は `skills/develop/references/roles/`）
+- **入口 0（記録先の決定）**: issue があればそれ、無ければ issue を切らず、worktree 直後の空 commit → push → Draft PR を記録先にする（受け入れ条件は PR 本文。PR 本文に issue 参照を書かない）
+- **1 ループ**: W（仕様化判断の記録 → 分割判定 → `/opsx:ff`）→ R1（別コンテキストの仕様レビュー・2 周キャップ）→ W 再開（TDD 実装 → verify → archive → PR → 仕様宣言）→ G（pr-review-gate 手順 1〜5・2 周キャップ）
+- **モデル**: W / R1 / G は既定 `opus`。`worker.md` の「重要実装の事前分類」（聖域パス・マージ権限・層間契約・課金/法務）やマージ条件・聖域・層間契約に触れれば `fable`。残量モード（`FABLE_BUDGET_MODE`）は `references/decision-criteria.md`
+- **エピック**: 条件・作り方・回し方・完了条件を SKILL.md に規定。子 issue ごとに 1 ループを `isolation: "worktree"` で並列に回し、子が全部マージされただけでは閉じない
 
-人間が `/work-issue` で直接依頼した場合でも、`loops` プラグインの loop-dev-agent が無人サイクルの中から呼ぶ場合でも、同じ判定ロジックを共有する（`--unmanned` で無人モードに切り替え）。
+人間が `/develop` で直接依頼した場合でも、`loops` プラグインの loop-dev-agent が無人サイクルの中から呼ぶ場合でも同じループを回す（`--unmanned` では憲法のメインが本体を務め、G は憲法 Step 1 に委ねる）。
 
 ### pr-review-gate
 
@@ -39,11 +40,12 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 
 | コマンド | 説明 |
 |---|---|
-| `/work-issue [issue番号\|URL\|自然文]` | github-issue スキルを interactive モードで起動する |
+| `/develop [issue番号\|URL\|自然文]` | develop スキルを interactive モードで起動する（issue が無ければ Draft PR を記録先にする） |
+| `/work-issue [issue番号\|URL\|自然文]` | `/develop` のエイリアス（旧名） |
 
 ## loop-dev-agent との関係
 
-`loops` プラグインの loop-dev-agent（無人常設ループ）は、実装モード（Step 3）の中身をこのプラグインの `github-issue` スキルに委譲する。ラベル操作・Draft PR 作成・Review Queue 連携などの「無人運用の外形」は引き続き loop-dev-agent 側の責務。詳細は `github-issue/SKILL.md` の「このスキルの立ち位置」を参照。
+`loops` プラグインの loop-dev-agent（無人常設ループ）は、実装モード（Step 3）の中身をこのプラグインの `develop` スキルに委譲する。委譲の形は「憲法のメインが develop の本体として W / R1 を spawn する」で、Step 3 をサブエージェントに丸投げしない。ラベル操作・Draft PR 作成・Review Queue 連携などの「無人運用の外形」は引き続き loop-dev-agent 側の責務。詳細は `develop/SKILL.md` の「実行モード」を参照。
 
 ```bash
 /plugin install dev-workflow@oratta-claude-harness

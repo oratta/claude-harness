@@ -1,7 +1,7 @@
 {
   "name": "dev-workflow",
-  "version": "1.13.0",
-  "description": "この開発ハーネスでの標準開発ワークフローを集めるプラグイン。github-issue: GitHub issue（番号/URL/自然文）に取り組む時に発火し、worktree のセットアップは worktree プラグインの hooks（WorktreeCreate / SessionStart）が自動で済ませる前提に立ち、このスキルでは判定しない → 仕様として残すべき変更なら opsx（openspec）フロー → 判定結果を `仕様化判断: する|しない` の固定書式で issue に記録 → 単一 change で足りるか複数 change に割れるかを判定 → 仕様化経路では /opsx:ff の直後・apply の前に別コンテキストの仕様レビュー（references/spec-review.md。longrun の Build Contract の置き直し・2 周キャップ・結果を `仕様レビュー: APPROVE|REQUEST_CHANGES` で issue に記録）を挟み → 実行戦略（solo / delegate+verify / workflow 型）を残量モード（FABLE_BUDGET_MODE）込みで仮決め → TDD で実装、という標準手順を毎回同じに通す。work-issue: 対象 issue が未起票なら loops-issueify の手順で起票してから同パイプラインに接続する（issueify フォールバック）。pr-review-gate: PR 作成後に必ず通す品質ゲート（別コンテキストレビュー・リスク宣言と仕様宣言の positive affirmation・動作確認証拠・agent-review:passed 付与を fail-closed で行う。仕様宣言は元 issue の `仕様化判断:` 記録と突き合わせ、記録なし PR は合格させない。規範パス接触の裏取りは scripts/spec-touch-check.sh。レビューの重量は変更内容から light / full に事前判定し、既定と迷ったときは full＝Codex に倒す。auto-merge workflow のリポ展開テンプレートは templates/auto-merge/）。誤分類は昇格トリップワイヤー（templates/escalation-tripwires.md）が実行中に修正する。人間の直接依頼でも loop-dev-agent の無人サイクルからでも同じフローを共有する（--unmanned で無人モード）。longrun:plan は呼ばず、issue 化前の壁打ちとは切り分ける。実装モデルのエスカレーションポリシー: 聖域パス・マージ権限・層間契約・課金/法務に触れる実装は1周目から model: fable で spawn し（分類表の正本は github-issue の Step D）、レビュー failed からの修正実装は実装品質起因のときだけ fable へ昇格する（仕様曖昧・レビュアー誤検出はモデル昇格しない。フォールバック記録の正本は pr-review-gate）。",
+  "version": "2.0.0",
+  "description": "この開発ハーネスでの標準開発ワークフローを集めるプラグイン。develop: コード・スキル・コマンド・規範文書を変えるときは入口（issue 番号/URL/自然文・会話・cron・エピックの子）を問わず必ず通すワークフロー。本体はオーケストレータ専任（Edit でコードを書かず、レビューを代行しない）で、作業者 W・仕様レビュアー R1・ゲート実行者 G を model 明示で spawn し 1 ループ（入口 0 で記録先＝issue または Draft PR を確定 → W が `仕様化判断: する|しない` を記録先に記録し change 分割と /opsx:ff → R1 が別コンテキストで仕様レビュー（2 周キャップ・結果を `仕様レビュー: APPROVE|REQUEST_CHANGES` で記録）→ W が TDD で実装・verify・archive・PR・仕様宣言 → G が pr-review-gate 手順 1〜5）を回す。issue が無ければ issue を切らず、空 commit → Draft PR を記録先にする（issue を切るのは追跡・キュー・議論が要るときだけ）。エピックの条件・作り方・回し方・完了条件も規定。役割のモデルは worker.md の事前分類（聖域パス・マージ権限・層間契約・課金/法務は 1 周目から fable）と残量モード（FABLE_BUDGET_MODE。reserve は自動実行のみ・exhausted は全経路で opus 上限）で決め、昇格トリップワイヤー（templates/escalation-tripwires.md）は W の再開時のモデル選択として残す。/develop（/work-issue はエイリアス）: 5 分岐で記録先を確定し、issue を切ると決めたときだけ loops-issueify で起票する。loop-dev-agent の無人サイクルでは憲法のメインが develop の本体を務める（--unmanned）。pr-review-gate: PR 作成後に必ず通す品質ゲート（別コンテキストレビュー・リスク宣言と仕様宣言の positive affirmation・動作確認証拠・agent-review:passed 付与を fail-closed で行う。仕様宣言は記録先（issue → 無ければ PR 自身）の `仕様化判断:` 記録と突き合わせ、記録なし PR は合格させない。規範パス接触の裏取りは scripts/spec-touch-check.sh。レビューの重量は変更内容から light / full に事前判定し、既定と迷ったときは full＝Codex に倒す。auto-merge workflow のリポ展開テンプレートは templates/auto-merge/）。レビュー failed からの修正実装は実装品質起因のときだけ fable へ昇格する（仕様曖昧・レビュアー誤検出はモデル昇格しない。フォールバック記録の正本は pr-review-gate）。longrun:plan は呼ばず、issue 化前の壁打ちとは切り分ける。",
   "author": {
     "name": "Oratta"
   },
@@ -17,11 +17,12 @@
     "spec-driven"
   ],
   "skills": [
-    "./skills/github-issue",
+    "./skills/develop",
     "./skills/push-guard-setup",
     "./skills/pr-review-gate"
   ],
   "commands": [
+    "./commands/develop.md",
     "./commands/work-issue.md"
   ]
 }

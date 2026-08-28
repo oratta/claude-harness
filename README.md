@@ -76,23 +76,26 @@ Claude Code 向け自律実行ハーネス。plan.md から Workflow スクリ�
 
 詳細は `plugins/loops/`（レシピ・規約・リファレンス）を参照。定期実行のスケジューラ登録・課金選択はレシピのスコープ外（呼び出し側の責務）。
 
+loop-dev-agent の配備済み憲法（各リポの `docs/agent-loop.md`）は、`plugins/loops/templates/agent-loop-template.md` の更新後に `/loops:dev-agent-install` で再生成が必要（Step 3 の委譲先は dev-workflow の `develop` スキル）。
+
 ---
 
 ### dev-workflow
 
-この開発ハーネスでの標準開発ワークフローを集めるプラグイン。`github-issue` スキルは、GitHub issue（番号/URL/自然文）に取り組む時に発火し、worktree なら `wt-setup` 未実行を検出して先に実行 → 仕様として残すべき変更なら opsx（openspec）フロー → 単一 change で足りるか複数 change に割れるかを判定 → TDD で実装、という標準手順を毎回同じに通す。
+この開発ハーネスでの標準開発ワークフローを集めるプラグイン。`develop` スキルは、コード・スキル・コマンド・規範文書を変える作業に入口（issue 番号/URL/自然文・会話・cron・エピックの子）を問わず発火する。本体はオーケストレータ専任で、作業者 W・仕様レビュアー R1・ゲート実行者 G を `model` 明示で spawn し、記録先（issue、無ければ Draft PR）の確定 → 仕様化判断の記録 → 仕様レビュー → TDD 実装 → pr-review-gate の 1 ループを回す。
 
 ```bash
 /plugin install dev-workflow@oratta-claude-harness
 ```
 
 **機能:**
-- `/work-issue [issue番号|URL|自然文]` — github-issue スキルを interactive モードで起動する
-- 人間の直接依頼でも `loops` プラグインの loop-dev-agent の無人サイクルからでも同じ判定ロジックを共有する（`--unmanned` で無人モード）
-- 複数 change に割れる場合、対話セッション中はその場で順番に実行、無人ループ中はサブ issue に分割して `blocked_by` で順序付けし次サイクルへ委ねる（1サイクル1仕事を維持）
+- `/develop [issue番号|URL|自然文]`（`/work-issue` はエイリアス）— develop スキルを interactive モードで起動する。issue が無ければ issue を切らず Draft PR を記録先にする（issue を切るのは追跡・キュー・議論が要るときだけ）
+- 本体は Edit でコードを書かず、レビューを代行しない。別コンテキストを要する工程（仕様レビュー・PR レビュー）はすべて本体が起こす
+- エピック（独立してマージできる PR が 2 本以上・複数 capability・順序依存）は子 issue ごとに 1 ループを `isolation: "worktree"` で並列に回す
+- `loops` プラグインの loop-dev-agent の無人サイクルでは、憲法のメインが develop の本体を務める（`--unmanned`）
 - `longrun:plan` は呼ばない（issue 化前の壁打ちとは切り分ける）
 
-詳細は `plugins/dev-workflow/skills/github-issue/SKILL.md` を参照。
+詳細は `plugins/dev-workflow/skills/develop/SKILL.md` を参照。
 
 ---
 
