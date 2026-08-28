@@ -227,6 +227,9 @@ base_ref() {
   [ -n "$changed" ] || skip "no plugin changes vs merge-base"
   for d in $changed; do
     n="${d#plugins/}"
+    # 削除されたプラグインは bump する version が存在しない（entry ごと消えるので
+    # marketplace 側との齟齬は S130 が検出する）。削除を「bump 忘れ」と誤検出しない。
+    [ -f "${PLUGIN_ROOT}/${d}/.claude-plugin/plugin.json" ] || continue
     cur="$(jq -r '.version' "${PLUGIN_ROOT}/${d}/.claude-plugin/plugin.json")"
     old="$(git -C "$PLUGIN_ROOT" show "${base}:${d}/.claude-plugin/plugin.json" 2>/dev/null | jq -r '.version' 2>/dev/null)"
     # new plugin (absent at base) needs no bump, only registration
