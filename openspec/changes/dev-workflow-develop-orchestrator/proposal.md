@@ -24,7 +24,8 @@ dev-workflow の `github-issue` スキルは「本体セッションが自分で
 - `dev-workflow-issue-entry`: `/work-issue` の 5 分岐を `/develop` の入口分岐に置き換える。issue を特定できない入力の既定を issueify 直行から入口 0（Draft PR を記録先）に変え、issueify は追跡・キュー・議論が要るときの選択肢にする。`/work-issue` はエイリアス
 - `dev-workflow-execution-strategy`: 実行戦略の判定表・決定論的シグナル・Step D の 3 分岐・abundant の self-contained 委譲条件を REMOVED。残量モードの定義・自動導出・Step B 基準の重心移動は develop の `references/decision-criteria.md` に置く形で MODIFIED
 - `dev-workflow-spec-review`: 記録先を「元 issue」から「記録先（issue または Draft PR）」に、手順の置き場所を github-issue SKILL.md から develop の `references/roles/worker.md` / `spec-reviewer.md` に、レビュアーを本体が spawn する R1 に MODIFIED
-- `loop-dev-agent-tripwires`: 憲法テンプレートのトリップワイヤー①の乗り換え先の参照を github-issue → develop に MODIFIED
+- `loop-dev-agent-tripwires`: 憲法テンプレートの Step 3 の委譲先を github-issue → develop に付け替え、develop の本体を憲法のメイン自身が務める（Step 3 をサブエージェントに委譲しない）形に MODIFIED
+- `dev-workflow-escalation-tripwires`: トリップワイヤー①の乗り換え先を「workflow 型」から「分割（W なら本体に return、本体なら develop のエピック化または /lr:e 系）」に、「2段構えの配線」の表現形式に「本体への return」を加える形で MODIFIED
 
 ## Impact
 

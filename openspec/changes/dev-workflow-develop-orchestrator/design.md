@@ -30,14 +30,19 @@ issue を切ると追跡対象が増え、閉じる手間が発生する。GitHu
 ### D4. G が孫を持てない問題は `needs-reviewer` の return で本体に戻す（issue に無い決定を埋めた）
 pr-review-gate の手順 2 は「full = Codex CLI、light または Codex 不可 = Task サブエージェント」で、後者は Agent ツールを要する。G はサブエージェントなので自分では起こせない。選択肢は (a) G が本体に `needs-reviewer` を return し、本体が別のレビュアー（既定 `opus`。マージ条件・聖域・層間契約に触れれば `fable`）を spawn して要約を G に SendMessage で渡す、(b) 本体が G を起こす前に常にレビュアーも起こしておく、(c) G のレビューを本体が代行する。(c) は「本体がレビューを代行しない」に反する。(b) は Codex で済む full の場合に無駄なレビューが走る。(a) を採る。G はレビュー以外の手順（1・3・4・5）を自分で行い、レビュー要約を受け取った後に手順 3 以降を続ける。
 
+往復に必要な契約: G も名前付きで spawn する（SendMessage で再開するため）。`needs-reviewer` の return には light/full の判定と根拠・PR 番号と HEAD SHA・推奨モデルと根拠・受け入れ条件の所在を含める。「レビュー実行者:」の PR コメントは要約を受け取った G が投稿する。G の failed の return には手順 2-2 の原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）を含め、本体が W の再開モデルを決められるようにする。Codex の呼び出しは G の Bash から `codex exec -c approval_policy=never -c model_reasoning_effort=medium` または `codex-companion.mjs` を直接叩く（`/codex:adversarial-review` と `codex:codex-rescue` は G からは使えない）。
+
 ### D5. `commands/work-issue.md` はエイリアスとして残す
 他リポの運用メモや memory に `/work-issue` が残っている。エイリアスは develop.md へのポインタだけを持ち、5 分岐の本文は develop.md にのみ置く（既存テスト `work-issue-command.bats` の「正本は 1 箇所」の思想を維持）。
 
 ### D6. 昇格トリップワイヤーの「規模超過 → workflow 型」は「分割へ」に付け替える（issue に無い決定を埋めた）
-テンプレート `templates/escalation-tripwires.md` のトリップワイヤー 1 は `/lr:e` 系への乗り換えを指示している。develop から workflow 型を外すので、規模超過の乗り換え先は「W を止めて本体に return し、本体が change / 子 issue（エピック）に分割する」にする。`/lr:e` 自体は longrun プラグインの経路として残るため、テンプレートの文面は「分割（エピック化）または /lr:e 系」の両方を挙げる。loops 憲法テンプレートの対応行も同じ文面に揃える。
+テンプレート `templates/escalation-tripwires.md` のトリップワイヤー 1 は `/lr:e` 系への乗り換えを指示している。develop から workflow 型を外すので、規模超過の乗り換え先は「W として動いているなら本体に return し、本体が change / 子 issue（エピック）に分割する。本体自身が読んでいるなら develop のエピック化または /lr:e 系」にする。テンプレートは hook 注入で本体も読むため、両方の立場で意味が通る文面にする。このテンプレートを規定する既存 spec `dev-workflow-escalation-tripwires` の「2段構えの配線」は「アクションはすべてスキル呼び出し」だったので、「または本体への return」を加える delta を本 change に含める。loops 憲法テンプレートの対応行も同じ文面に揃える。
 
-### D7. loops 側は名前の付け替えだけ行い、Step 3 の外形は変えない
-`agent-loop-template.md` / `recipes/loop-dev-agent.md` / loops `plugin.json` の `github-issue` を `develop` に置換し、loops のバージョンを上げる。unmanned の「複数 change → サブ issue に分割してサイクル終了」はエピックの「子 issue」に相当するので、文面をエピック用語に寄せるが挙動は変えない。
+### D7. loops 側は Step 3 の本体を憲法のメインに移す（委譲対象から Step 3 を外す）
+憲法テンプレートの「コンテキスト管理（ディスパッチャ方式）」は Step 3 の実装をサブエージェントに委譲し、そのサブエージェントが Skill ツールで `github-issue --unmanned` を起動する構造だった。これを develop に付け替えるだけでは、develop の本体がサブエージェントになって W / R1 を起こせず、本 change が解こうとしている孫問題が unmanned 経路に残る。そこで Step 3 だけは「メインが develop の本体（オーケストレータ）として動き、W / R1 をメインが spawn する」に改める。メインは既に「委譲・ログ・報告のみ」の役割なので、W / R1 の spawn と return の転記は同じ性格の仕事であり、メインのコンテキスト肥大は起きない（作業の詳細は W / R1 側に閉じる）。責務分割: 1 ループの (0)〜(3) を回し、Draft PR 作成と `agent-review:pending` 付与（憲法 Step 3 の 5〜6）は (3) の W が行う。(4) の G は起こさず、憲法 Step 1（レビューモード）が次サイクルで担う（1 サイクル 1 仕事）。worktree は憲法側が用意したものを使う。`recipes/loop-dev-agent.md` / loops `plugin.json` の `github-issue` も `develop` に置換し、loops のバージョンを上げる。
+
+### D8. worktree は本体が用意し、W は切らない
+「エピックの子は `isolation: "worktree"`」と「W が worktree を切る」が二重になるのを避け、worktree の用意を本体に寄せる。本体が既に対象専用の worktree にいればそこで W を起こし、そうでなければ `isolation: "worktree"` で W を spawn する。セットアップ（`.env` コピー等）は worktree プラグインの `WorktreeCreate` / `SessionStart` hooks が担うので W は判定もしない。Draft PR を記録先にする場合は、W が worktree 直後に空 commit → push → `gh pr create --draft` を先に行い、その PR に仕様化判断を投稿する（記録先が無い状態で判定を進めない）。
 
 ## Risks / Trade-offs
 
@@ -57,4 +62,4 @@ pr-review-gate の手順 2 は「full = Codex CLI、light または Codex 不可
 
 ## Open Questions
 
-- なし（D4・D6 は issue に無い決定を本 change 側で埋めたもの。仕様レビューと PR の説明で明示する）
+- なし（D4・D6・D7・D8 は issue に無い決定を本 change 側で埋めたもの。仕様レビューと PR の説明で明示する）
