@@ -982,7 +982,7 @@ EOF
 # 「登録済みなので止めた」正常系の一部であり、Python の Traceback として呼び出し側の
 # stderr に見せてはいけない。
 #
-# 検査は $output（2>&1）ではなく stderr をファイルに落として行う。bats の run は
+# 検査は ${output}（2>&1）ではなく stderr をファイルに落として行う。bats の run は
 # 出力を一時ファイルで捕っており、直接の子（bash）の終了時点で読むため、bash の exit
 # **後**に SIGPIPE で死ぬ producer の Traceback は $output に間に合わないことがある
 # （修正前の実装でもこのテストが緑になってしまう＝検出力ゼロの race。手動実行では
