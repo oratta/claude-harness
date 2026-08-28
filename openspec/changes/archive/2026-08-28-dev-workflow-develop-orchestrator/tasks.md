@@ -30,6 +30,6 @@
 
 ## 4. 検証
 
-- [ ] 4.1 `scripts/test.sh` を全件実行し合格（exit 0）を確認する
-- [ ] 4.2 `openspec validate dev-workflow-develop-orchestrator` が通ることを確認する
-- [ ] 4.3 `grep -rn "github-issue" plugins/ README.md scripts/` が 0 件であることを確認する。`openspec/specs/` は archive 後に `dev-workflow-spec-review/spec.md` の Purpose 行（archive のマージで書き換わらない）を手で develop に直し、その上で 0 件を確認する
+- [x] 4.1 `scripts/test.sh` を全件実行し合格（exit 0）を確認する
+- [x] 4.2 `openspec validate dev-workflow-develop-orchestrator` が通ることを確認する
+- [x] 4.3 `grep -rn "github-issue" plugins/ README.md scripts/` が 0 件であることを確認する。`openspec/specs/` は archive 後に `dev-workflow-spec-review/spec.md` の Purpose 行（archive のマージで書き換わらない）を手で develop に直し、その上で 0 件を確認する
