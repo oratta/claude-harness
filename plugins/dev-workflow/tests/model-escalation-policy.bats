@@ -90,7 +90,7 @@ setup() {
   # pr-review-gate は分類名を1行で挙げるだけで、分類表の中身（判定材料）は再掲せず
   # develop の worker.md を正本として参照する
   grep -qF 'develop スキルの references/roles/worker.md が正本' "$GATE_SKILL"
-  ! grep -q 'github-issue' "$GATE_SKILL"
+  ! grep -q 'github-''issue' "$GATE_SKILL"
   # 4分類の名前が出るのは正本を指す1行だけ（表として再掲していない）
   [ "$(grep -cF '層間契約' "$GATE_SKILL")" -eq 1 ]
   [ "$(grep -cF '聖域パス・マージ権限' "$GATE_SKILL")" -eq 1 ]

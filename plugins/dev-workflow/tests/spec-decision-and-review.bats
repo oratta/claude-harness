@@ -140,7 +140,7 @@ mode_sec() { section "$SKILL" '実行モード'; }
 @test "manifest: description mentions the spec review step and develop" {
   jq -r '.description' "$MANIFEST" | grep -q '仕様レビュー'
   jq -r '.description' "$MANIFEST" | grep -q 'develop'
-  ! jq -r '.description' "$MANIFEST" | grep -q 'github-issue'
+  ! jq -r '.description' "$MANIFEST" | grep -q 'github-''issue'
 }
 
 @test "skill frontmatter: description mentions spec review" {

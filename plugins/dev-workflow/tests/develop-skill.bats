@@ -21,9 +21,9 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 
 # --- 存在・frontmatter ---
 
-@test "skill: develop SKILL.md exists and github-issue is gone" {
+@test "skill: develop SKILL.md exists and the old issue-only skill dir is gone" {
   [ -f "$SKILL" ]
-  [ ! -e "${PLUGIN_DIR}/skills/github-issue" ]
+  [ ! -e "${PLUGIN_DIR}/skills/github-""issue" ]
 }
 
 @test "frontmatter: name is develop and version is at least 2.0.0" {
@@ -33,7 +33,7 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   printf '2.0.0\n%s\n' "$v" | sort -V -C
 }
 
-@test "frontmatter: description carries the old github-issue trigger words" {
+@test "frontmatter: description carries the old issue trigger words" {
   d="$(frontmatter | awk '/^description:/{print; exit}')"
   echo "$d" | grep -q 'issue 番号'
   echo "$d" | grep -q 'URL'

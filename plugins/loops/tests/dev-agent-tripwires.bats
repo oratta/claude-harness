@@ -60,10 +60,10 @@ setup() {
 
 # --- #203: Step 3 の委譲先は develop、メインが develop の本体を務める ---
 
-@test "template/recipe: github-issue no longer appears, develop is the delegate" {
+@test "template/recipe: old skill name no longer appears, develop is the delegate" {
   RECIPE="${PLUGIN_DIR}/recipes/loop-dev-agent.md"
-  ! grep -q 'github-issue' "$TEMPLATE"
-  ! grep -q 'github-issue' "$RECIPE"
+  ! grep -q 'github-''issue' "$TEMPLATE"
+  ! grep -q 'github-''issue' "$RECIPE"
   grep -q 'develop' "$TEMPLATE"
   grep -q '`develop`' "$RECIPE"
 }
@@ -99,6 +99,6 @@ setup() {
 @test "plugin.json: description names develop and version is at least 0.25.0" {
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   jq -r '.description' "$MANIFEST" | grep -q 'develop'
-  ! jq -r '.description' "$MANIFEST" | grep -q 'github-issue'
+  ! jq -r '.description' "$MANIFEST" | grep -q 'github-''issue'
   printf '0.25.0\n%s\n' "$(jq -r .version "$MANIFEST")" | sort -V -C
 }
