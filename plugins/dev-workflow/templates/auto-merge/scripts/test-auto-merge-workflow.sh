@@ -11,8 +11,8 @@
 #   (2) 必須チェック名（REQUIRED_CHECKS）と ci.yml のジョブ名が**完全に一致**する
 #       （GitHub Free private は branch protection が使えず、名前一致だけが CI green の
 #       判定根拠。ズレると原因不明の停滞に見えるので、ズレた瞬間に CI で落とす）
-#   (3) 4条件（agent-review:passed / CI green / 聖域 / AUTOMERGE_PAUSED）と
-#       PAT 未設定時の fail-closed が workflow に存在する
+#   (3) 5条件（agent-review:passed / 合格の HEAD 束縛 / CI green / 聖域 /
+#       AUTOMERGE_PAUSED）と PAT 未設定時の fail-closed が workflow に存在する
 #   (4) revert workflow は revert PR を作るだけでマージしない
 #   (5) 運用ドキュメント（docs/auto-merge.md）に停止方法・PAT 発行・聖域一覧がある
 #   (6) workflow に埋め込まれたシェルスクリプトが構文的に正しい（bash -n）
@@ -327,6 +327,62 @@ else
   fi
 fi
 
+# ── (1-f) 攻撃再現: 合格ラベル付与後に push して stale 合格のままマージさせる ───
+# agent-review:passed は PR 番号にしか紐づかない。SHA ピン（1-d）が守るのは「判定〜マージ」の
+# 隙だけで、「ラベル付与〜次の run」の間の push は素通りする。pr-review-gate 規約の
+# 「対象 HEAD: <40桁フル SHA>」コメントを判定時の $HEAD_SHA と突き合わせる照合の存在と、
+# 不一致が continue（マージ側へ落ちない）であることを固定する。
+extract_block "$WF" "passed-head-binding" > "$TMPD/binding.txt"
+if [ ! -s "$TMPD/binding.txt" ]; then
+  ng "合格ラベルの HEAD 束縛ブロックを抽出できない（# >>> passed-head-binding マーカーを確認）"
+else
+  # (a) 照合が agent-review:passed チェックと同じ判定ループ（automerge-script）内にある
+  if extract_script "$WF" "automerge-script" | grep -qF 'issues/$N/comments'; then
+    ok "判定ループ内で PR コメントを取得して照合している"
+  else
+    ng "判定ループ内にコメント照合が無い（stale passed が素通りする）"
+  fi
+
+  # (b) 照合対象は判定時の $HEAD_SHA そのもの（別途取り直した SHA ではない）。
+  #     マージの SHA ピン（-f sha="$HEAD_SHA"）と同一変数なので、照合した HEAD 以外は
+  #     マージされない
+  if grep -qF '対象 HEAD: $HEAD_SHA' "$TMPD/binding.txt"; then
+    ok '照合対象が判定時の $HEAD_SHA に固定されている（マージの SHA ピンと同一変数）'
+  else
+    ng '照合が $HEAD_SHA を使っていない（別途取り直した SHA では隙間が再発する）'
+  fi
+  if grep -qF 'head.sha' "$TMPD/binding.txt"; then
+    ng "束縛ブロック内で SHA を取り直している（判定時の \$HEAD_SHA と食い違いうる）"
+  else
+    ok "束縛ブロック内で SHA を取り直していない"
+  fi
+
+  # (c) 不一致の分岐は continue（マージ側へ落ちない fail-closed）
+  if grep -qF 'continue' "$TMPD/binding.txt"; then
+    ok "SHA 不一致の分岐が continue（マージへ落ちない）"
+  else
+    ng "SHA 不一致でも continue しない（未レビュー HEAD がマージされうる）"
+  fi
+
+  # コメント取得の失敗が fail-open にならない（|| true で空 → 照合失敗 → スキップ）
+  if grep -qF '|| true' "$TMPD/binding.txt"; then
+    ok "コメント取得の失敗はスキップ側に倒れる（fail-closed）"
+  else
+    ng "コメント取得失敗時の扱いが不明（fail-open になっていないか確認）"
+  fi
+
+  # 順序: ラベルチェックの後・マージ呼び出しの前に無いと効かない
+  PASSED_LINE=$(grep -n 'agent-review:passed が無い' "$WF" | head -1 | cut -d: -f1)
+  BIND_LINE=$(grep -n '# >>> passed-head-binding' "$WF" | head -1 | cut -d: -f1)
+  MERGE_LINE_B=$(grep -n 'gh api -X PUT "repos/\$REPO/pulls/\$N/merge"' "$WF" | head -1 | cut -d: -f1)
+  if [ -n "$PASSED_LINE" ] && [ -n "$BIND_LINE" ] && [ -n "$MERGE_LINE_B" ] \
+     && [ "$PASSED_LINE" -lt "$BIND_LINE" ] && [ "$BIND_LINE" -lt "$MERGE_LINE_B" ]; then
+    ok "HEAD 束縛の照合がラベルチェックの後・マージ呼び出しの前にある"
+  else
+    ng "HEAD 束縛の照合位置が不正（ラベルチェック後〜マージ前に無いと効かない）"
+  fi
+fi
+
 # ── (2) 必須チェック名 == ci.yml のジョブ名（完全一致）────────
 extract_block "$WF" "required-checks" \
   | grep -v '# >>>' | grep -v '# <<<' \
@@ -507,7 +563,8 @@ for token in \
   'CLAUDE.md' \
   '.claude/' \
   'docs/agent-loop*.md' \
-  'REQUIRED_CHECKS'; do
+  'REQUIRED_CHECKS' \
+  '対象 HEAD'; do
   if has "$DOC" "$token"; then
     ok "docs/auto-merge.md が $token に言及している"
   else

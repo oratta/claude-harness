@@ -130,7 +130,7 @@ vocab_rows() {
 @test "injection: arbitration requirements live in the consultation vocabulary row" {
   row=$(vocab_rows | LC_ALL=C grep -F -- "| 論点相談 " | head -1)
   [ -n "$row" ]
-  for phrase in "仲裁エージェント" "新品コンテキスト" "フェーズ宣言文と双方の主張" "事後報告"; do
+  for phrase in "仲裁エージェント" "新品コンテキスト" "フェーズ宣言文と主張リスト" "事後報告"; do
     printf '%s' "$row" | LC_ALL=C grep -qF -- "$phrase"
   done
 }

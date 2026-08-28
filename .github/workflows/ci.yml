@@ -45,11 +45,18 @@ concurrency:
 permissions:
   contents: read
 
+# サードパーティ製 action の固定方針（issue #138）:
+#   oven-sh/setup-bun のようなサードパーティ製 action はコミット SHA で固定する
+#   （タグは上流が同じ名前のまま別コミットへ差し替えられるため、可変タグ参照だと
+#   CI が偽 green になりうる）。actions/* は GitHub 公式が所有する action なので
+#   このリポで得られるリスク低減幅が小さい一方、更新追随の対象だけ増えるため対象外。
+
 jobs:
   lint:
     name: shellcheck
     runs-on: ubuntu-latest
     steps:
+      # actions/checkout は GitHub 公式 action なので SHA 固定の対象外（方針は上記コメント参照）
       - uses: actions/checkout@v4
       # ubuntu-latest には shellcheck がプリインストールされている
       - name: shellcheck (scripts/lint.sh)
@@ -62,6 +69,7 @@ jobs:
     # env:
     #   TEST_EXCLUDE: some-macos-only-suite
     steps:
+      # actions/checkout は GitHub 公式 action なので SHA 固定の対象外（方針は上記コメント参照）
       - uses: actions/checkout@v4
       # バージョンを固定する。無指定だと ubuntu-latest のイメージ更新で bats が
       # 黙って上がり、テストの落ち方が変わったときに「自分の変更か bats か」を
@@ -77,7 +85,7 @@ jobs:
       # （無指定だとアクション側の既定更新で bun が黙って上がり、落ち方が変わったときに
       # 切り分けられない）。上げるときはこのピンを明示的に書き換える。
       - name: install bun (1.3.5)
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.3.5
       - name: run bats suites (scripts/test.sh)
