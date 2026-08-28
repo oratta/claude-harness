@@ -182,3 +182,137 @@ DRIVER
 @test "skill: self-verification section references the process-residue check" {
   awk '/## 自己検証/,0' "$WT_CLEAN_SKILL" | grep -q 'プロセス'
 }
+
+# --- login shells must survive (2026-08-27) ---
+#
+# macOS の `ps -o comm=` は argv[0] を返すため、ターミナルのタブは `-/bin/zsh` になる。
+# 旧実装の `basename -/bin/zsh` はハイフンをオプションと解釈して失敗し、comm が空文字に
+# 潰れて除外リスト（bash|zsh|sh|...）に一致せず、削除対象 worktree に cd しているだけの
+# タブを SIGKILL していた。除外リストのテストは文字列 grep しか無く、実際にシェルを
+# 立てて除外が効くか一度も検証されていなかったため 3 度目を防げなかった。
+
+wt_comm_block() {
+  # $1 = 関数名。comm 取り出しブロック（`comm=$(ps ...)` から連続する comm 代入）を返す。
+  # 後続ループの `comm="${entry##*|}"` は間にコメント以外の行が挟まるので拾わない。
+  # ⚠️ 行数を固定してはならない（`grep -A2` 等）。正規化が 4 行に増えたとき、両側とも
+  #    4 行目が切り捨てられて「片側だけ変わったのに一致」と誤判定する。
+  awk -v fn="$1() {" 'index($0, fn)==1,/^}$/' "$WT_CLEAN_SKILL" \
+    | awk '/^[[:space:]]+comm=\$\(ps /{on=1}
+           on && /^[[:space:]]+comm=/{print; next}
+           on && !/^[[:space:]]*#/{exit}'
+}
+
+@test "skill: comm extraction does not shell out to basename" {
+  # basename は (a) 先頭ハイフンをオプション扱いし (b) 最小 PATH で command not found になる。
+  run grep -q 'xargs -I{} basename' "$WT_CLEAN_SKILL"
+  [ "$status" -ne 0 ]
+}
+
+@test "skill: comm extraction strips a leading dash before taking the basename" {
+  local lines
+  lines=$(wt_comm_block kill_devserver_under)
+  [[ "$lines" == *'comm=${comm#-}'* ]]
+  [[ "$lines" == *'comm=${comm##*/}'* ]]
+}
+
+@test "skill: kill and detect sides extract comm identically" {
+  # SKILL.md は「検出範囲と除外リストは kill_devserver_under と完全に同一に保つこと」と
+  # 定めている。取り出しが片側だけ直ると、また片側だけがシェルを殺す。
+  local detect kill
+  detect=$(wt_comm_block detect_active_procs_under)
+  kill=$(wt_comm_block kill_devserver_under)
+  [ -n "$detect" ]
+  [ "$detect" = "$kill" ]
+}
+
+wt_build_comm_normaliser() {
+  # SKILL.md 自身の comm 正規化行から関数を組み立てる（`ps` 呼び出しだけをテスト入力に
+  # 差し替える）。ロジックを書き写さないので、SKILL.md が変われば必ずこのテストが追随する。
+  local out="${BATS_TEST_TMPDIR}/comm-norm.sh"
+  {
+    echo 'comm_of() {'
+    echo '  local pid="$1" comm'
+    wt_comm_block kill_devserver_under \
+      | sed 's|\$(ps -o comm= -p "\$pid" 2>/dev/null)|"$pid"|'
+    echo '  printf "%s" "$comm"'
+    echo '}'
+  } >"$out"
+  grep -q '^comm_of() {' "$out"
+  # 置換が効いたことを確認する。空振りすると comm_of が本物の `ps -p '-/bin/zsh'` を呼び、
+  # bash も zsh も空文字を返して「一致」になり、テストが常に通ってしまう。
+  grep -q 'comm="$pid"' "$out"
+  run grep -q 'ps -o comm=' "$out"
+  [ "$status" -ne 0 ]
+  echo "$out"
+}
+
+@test "comm extraction: login-shell argv[0] normalises onto the exclusion list" {
+  local snippet
+  snippet="$(wt_build_comm_normaliser)"
+  # bats は `x="$(f)"` の f 失敗を代入経由では捕まえないため、本体側でも実測する。
+  # これが無いと旧実装で snippet="" になり、空文字同士の比較でテストが常に通る。
+  [ -s "$snippet" ]
+  grep -q 'comm="$pid"' "$snippet"
+  [ "$(bash -c ". '$snippet'; comm_of '-/bin/zsh'")" = "zsh" ]
+  [ "$(bash -c ". '$snippet'; comm_of '-zsh'")"      = "zsh" ]
+  [ "$(bash -c ". '$snippet'; comm_of '/bin/zsh'")"  = "zsh" ]
+  [ "$(bash -c ". '$snippet'; comm_of '-/bin/bash'")" = "bash" ]
+  # 非シェルは名前が変わらない（停止対象のまま）
+  [ "$(bash -c ". '$snippet'; comm_of '/usr/bin/perl'")" = "perl" ]
+  [ "$(bash -c ". '$snippet'; comm_of '/opt/homebrew/bin/node'")" = "node" ]
+  # 取得できなかったケースは空のまま（診断側の「既に死んでいる」判定を壊さない）
+  [ -z "$(bash -c ". '$snippet'; comm_of ''")" ]
+}
+
+@test "comm extraction: normaliser agrees under bash and zsh" {
+  command -v zsh >/dev/null 2>&1 || skip "zsh unavailable"
+  local snippet v
+  snippet="$(wt_build_comm_normaliser)"
+  # bats は `x="$(f)"` の f 失敗を代入経由では捕まえないため、本体側でも実測する。
+  # これが無いと旧実装で snippet="" になり、空文字同士の比較でテストが常に通る。
+  [ -s "$snippet" ]
+  grep -q 'comm="$pid"' "$snippet"
+  for v in '-/bin/zsh' '-zsh' '/bin/zsh' '/usr/bin/perl' ''; do
+    [ "$(bash -c ". '$snippet'; comm_of '$v'")" = "$(zsh -c ". '$snippet'; comm_of '$v'")" ]
+  done
+}
+
+@test "kill_devserver_under: does not kill a login shell under the worktree" {
+  command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
+  # ⚠️ CI（ubuntu-latest）では必ず skip される。Linux の ps -o comm= は argv[0] ではなく
+  #    実行ファイル名を返すため、偽タブの comm が `sleep` になりテストが意味を成さない。
+  #    実プロセスでの検証は macOS 上でのみ行われる。
+  [ "$(uname)" = "Darwin" ] || skip "ps -o comm= returns argv[0] only on BSD/macOS"
+  local snippet="${BATS_TEST_TMPDIR}/kill-login.sh"
+  local dir="${BATS_TEST_TMPDIR}/login-shell"
+  awk '/^abs_path\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >"$snippet"
+  awk '/^kill_devserver_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
+  mkdir -p "$dir"
+
+  # argv[0] をログインシェルの形にした偽タブ。実体は sleep なので rc も読まず終了する。
+  ( cd "$dir" && exec -a "-/bin/zsh" sleep 30 ) &
+  local shell_pid=$!
+  # 比較用の停止対象（除外リストに無い名前）
+  ( cd "$dir" && exec perl -e 'sleep 30' ) &
+  local victim_pid=$!
+  sleep 1
+
+  local out
+  out=$(bash -c ". '$snippet'; kill_devserver_under '$dir'" 2>&1)
+  sleep 1
+
+  local shell_alive victim_alive
+  kill -0 "$shell_pid"  2>/dev/null && shell_alive=1  || shell_alive=0
+  kill -0 "$victim_pid" 2>/dev/null && victim_alive=1 || victim_alive=0
+  # `|| true` 必須。両方すでに死んでいるときだけ非ゼロになり、それは「ログインシェルが
+  # 殺された = 退行が再発した」ケースそのもの。ここで打ち切ると肝心の assertion が出ない。
+  kill -KILL "$shell_pid" "$victim_pid" 2>/dev/null || true
+
+  # ログインシェルは生存し、スキップとして報告される
+  [ "$shell_alive" = "1" ]
+  [[ "$out" == *"シェル/エディタと判定してスキップ"* ]]
+  [[ "$out" == *"${shell_pid}(zsh)"* ]]
+  # 非シェルは従来どおり停止される（issue #39 のガードを緩めていない）
+  [ "$victim_alive" = "0" ]
+  [[ "$out" == *"${victim_pid}(perl)"* ]]
+}

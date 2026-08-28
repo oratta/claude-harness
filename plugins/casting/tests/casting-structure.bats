@@ -242,6 +242,7 @@ count_literal_report_calls() { literal_report_categories "$@" | wc -l | tr -d ' 
     'report() { printf "[%s] %s\n" "$1" "$2"; }' \
     "usage() { cat <<'EOF'" \
     '  report "heredoc-cat" "…"' \
+    '  $(report "quoted-heredoc-subst-cat" "…")' \
     'EOF' \
     '}' \
     'true  # report "trailing-cat" と書き換える' \
@@ -257,6 +258,73 @@ count_literal_report_calls() { literal_report_categories "$@" | wc -l | tr -d ' 
   [ "$(count_literal_report_calls "$synthetic")" = "1" ]
   [ "$(detection_category_count "$synthetic")" = "1" ]
   [ "$(detection_categories "$synthetic")" = "sixth-category" ]
+}
+
+# #175 の退行ガード。#163 でコード領域だけを見る走査に変えたとき、次の4形で本物の
+# 呼び出しを数え落とすようになっていた（いずれも main の grep 方式では数えられていた）:
+#   算術左シフト `(( v = 1 << 2 ))`      `<<` をヒアドキュメント開始と誤認し、
+#                                        区切り語が終端しないままファイル末尾まで本文扱い
+#   ANSI-C クオート `$'don\'t'`          `\'` を終端と誤認して引用状態が解除できない
+#   二重引用の中の `"$(report …)"`       外側の `"` の中を丸ごと非コード扱いしていた
+#   未引用ヒアドキュメント本文の `$(…)`  本文行を無条件で探索対象外にしていた
+# 前2形は以降の呼び出しが全消滅するのでカテゴリ数が落ちて赤くなるが、後2形は既存
+# カテゴリを削らずに新規カテゴリだけを消すので、突き合わせが緑のまますり抜ける。
+@test "check: shell forms that still run report are counted" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-false-negatives.sh"
+  local expected actual
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+(( value = 1 << 2 ))
+report "after-arith-shift" "a"
+shifted=$(( 1 << 3 ))
+report "after-arith-expansion" "b"
+msg=$'don\'t'
+report "after-ansi-c-quote" "c"
+out="$(report "dquote-subst" "d")"
+cat <<EOS
+$(report "unquoted-heredoc-subst" "e")
+EOS
+SH
+
+  [ "$(count_report_calls "$synthetic")" = "5" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "5" ]
+
+  expected="after-ansi-c-quote after-arith-expansion after-arith-shift dquote-subst unquoted-heredoc-subst"
+  actual="$(detection_categories "$synthetic" | tr '\n' ' ')"
+  actual="${actual% }"
+  if [ "$actual" != "$expected" ]; then
+    echo "数え落とし側へ倒れている。実装: [${actual}] / 期待: [${expected}]" >&2
+    return 1
+  fi
+}
+
+# 未引用ヒアドキュメント本文の中を走査するようにした副作用の退行ガード（PR #179 レビュー指摘）。
+# 本文に不均衡な `` ` `` や `'` があるとフレームが積まれたまま残り、区切り語の照合を
+# スタック最上段だけで行うと終端行を取りこぼす。ヒアドキュメントが閉じないまま以降の行が
+# 全部本文扱いになり、本物の呼び出しが全消滅する（算術左シフトの誤認と同じ壊れ方）。
+# 区切り語の照合は行単位なので、本文の中で閉じ損ねたフレームより優先して終端させる。
+@test "check: a heredoc terminates even when its body leaves a quote frame open" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-heredoc-leak.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+cat <<EOS
+use the ` char
+don't panic
+EOS
+report "after-leaky-heredoc" "a"
+cat <<'EOT'
+still ` unbalanced
+EOT
+report "after-leaky-literal-heredoc" "b"
+SH
+
+  [ "$(count_report_calls "$synthetic")" = "2" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "2" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-leaky-heredoc after-leaky-literal-heredoc " ]
 }
 
 # 上の検査が「行数」で数えていた頃は、1行に2件並べると非リテラル呼び出しを見逃した。
@@ -285,9 +353,9 @@ count_literal_report_calls() { literal_report_categories "$@" | wc -l | tr -d ' 
   [ "$(count_literal_report_calls "$synthetic")" = "0" ]
 }
 
-@test "check: detection categories in casting-check.sh are the documented five" {
+@test "check: detection categories in casting-check.sh are the documented seven" {
   local expected actual
-  expected="catalog-external-precedent malformed-row repeated-not-issue unknown-vocab version-mismatch"
+  expected="catalog-external-precedent consultation-missing-element malformed-row repeated-not-issue unclosed-comment unknown-vocab version-mismatch"
   actual="$(detection_categories | tr '\n' ' ')"
   actual="${actual% }"
   if [ "$actual" != "$expected" ]; then
@@ -300,16 +368,16 @@ count_literal_report_calls() { literal_report_categories "$@" | wc -l | tr -d ' 
 # 「N項目」と書いている全文書を、出現ごとに実装のカテゴリ数と突き合わせる。
 # 全角数字（「５項目」）も半角に正規化してから比較するので、片側だけ全角で
 # 残した状態も落ちる。失敗時は実装側の数と文書側の表記の両方を出す。
-@test "docs: item-count wording in README, SKILL, script, plugin.json and marketplace.json matches the implementation" {
+@test "docs: item-count wording in README, SKILL, script, plugin.json, marketplace.json and the spec matches the implementation" {
   local n
   n="$(detection_category_count)"
   [ "$n" -ge 1 ]
 
-  run python3 - "$n" "${PLUGIN_DIR}" "${REPO_ROOT}/.claude-plugin/marketplace.json" <<'PY'
+  run python3 - "$n" "${PLUGIN_DIR}" "${REPO_ROOT}/.claude-plugin/marketplace.json" "${REPO_ROOT}/openspec/specs/casting-project-files/spec.md" <<'PY'
 import json, re, sys, unicodedata
 
 n = int(sys.argv[1])
-plugin_dir, marketplace_path = sys.argv[2], sys.argv[3]
+plugin_dir, marketplace_path, spec_path = sys.argv[2], sys.argv[3], sys.argv[4]
 
 targets = {}
 for rel in ("README.md", "skills/casting/SKILL.md",
@@ -324,6 +392,11 @@ if desc is None:
     print("marketplace.json に casting エントリが無い")
     raise SystemExit(1)
 targets["marketplace.json (casting description)"] = desc
+
+# 規範の正本。実装とプラグイン文書だけを揃えても spec が取り残されると、
+# 「何項目を検査しなければならないか」の MUST が実装と食い違ったまま残る。
+with open(spec_path, encoding="utf-8") as fh:
+    targets["openspec/specs/casting-project-files/spec.md"] = fh.read()
 
 pattern = re.compile(r"([0-9０-９]+)項目")
 failures = []
