@@ -7,8 +7,8 @@
 #   (b) product-handover が「法務ドラフト・サポート窓口・教訓ログ」の雛形と
 #       README / plugin.json だけで構成されること（オーケストレーターを持たない）
 #   (c) marketplace.json が product-handover に差し替わり agent-owner を含まないこと
-#   (d) 旧名 agent-owner の参照が repo に残っていないこと
-#       （移行手順を書く CHANGELOG.md だけは例外）
+#   (d) 旧名の参照が repo に残っていないこと。例外は2つだけで、移行手順を書く
+#       CHANGELOG.md と、その不在を検査する本テスト自身
 #
 # テスト名は ASCII のみ（bats はマルチバイトのテスト名を扱えない）。
 
@@ -67,8 +67,9 @@ setup() {
 }
 
 @test "no dependency on the loops dev-agent-install command" {
-  # tests/ 自身はこの文字列を検査対象として持つので除外する。
-  run bash -c "grep -rn 'dev-agent-install' '${PLUGIN_DIR}' --exclude-dir=tests"
+  # 検査するのは「現に依存しているか」なので、稼働する部品（雛形・plugin.json・README）だけを見る。
+  # tests/ と CHANGELOG.md は依存を外したこと自体を記録するため旧コマンド名を持つ。
+  run bash -c "grep -rn 'dev-agent-install' '${TPL}' '${PLUGIN_DIR}/README.md' '${PLUGIN_DIR}/.claude-plugin/plugin.json'"
   [ "$status" -ne 0 ]
 }
 
@@ -107,8 +108,9 @@ setup() {
 
 # --- (d) 旧名の残存 ---
 
-@test "no agent-owner references remain outside the migration changelog" {
-  run bash -c "cd '${REPO_ROOT}' && grep -rn 'agent-owner' plugins rules docs README.md .claude-plugin | grep -v '^plugins/product-handover/CHANGELOG.md:'"
+@test "no old plugin name references remain outside changelog and this suite" {
+  # 除外は2つだけ: 移行手順を書く CHANGELOG.md と、旧名を検査語として持つ本テスト自身。
+  run bash -c "cd '${REPO_ROOT}' && grep -rn 'agent-owner' plugins rules docs README.md .claude-plugin | grep -v '^plugins/product-handover/CHANGELOG.md:' | grep -v '^plugins/product-handover/tests/plugin-structure.bats:'"
   [ "$status" -ne 0 ]
 }
 
