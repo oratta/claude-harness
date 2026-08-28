@@ -63,4 +63,3 @@ policy 雛形 `templates/policy.md` は「前提とする外部規約」節を�
 
 - **WHEN** `rules/perspective-casting.md` を読む
 - **THEN** 「許可ツール」の語と `plugins/casting/catalog/delegation.md` が含まれ、行数が 30 以下である
-

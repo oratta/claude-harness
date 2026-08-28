@@ -114,6 +114,14 @@ has() { LC_ALL=C grep -qF -- "$2" "$1"; }
   has "$POLICY_TEMPLATE" "名前のみ"
 }
 
+@test "specialist: can fetch a URL-referenced external rule and falls back to unreadable" {
+  SPECIALIST="${PLUGIN_DIR}/agents/casting-specialist.md"
+  head -6 "$SPECIALIST" | LC_ALL=C grep -q '^tools: .*WebFetch'
+  has "$SPECIALIST" "前提とする外部規約"
+  has "$SPECIALIST" "WebFetch"
+  has "$SPECIALIST" "読み取り不能"
+}
+
 # --- Scenario: rule に許可ツールの確認と正本ポインタがある ---
 
 @test "rule: step 3 checks the tool side too and points to delegation.md" {

@@ -48,7 +48,7 @@ setup() {
 @test "specialist: exists with mid-tier model and read-only tools" {
   [ -f "$SPECIALIST" ]
   LC_ALL=C grep -qx 'model: sonnet' "$SPECIALIST"
-  LC_ALL=C grep -qx 'tools: Read, Grep, Glob' "$SPECIALIST"
+  LC_ALL=C grep -qx 'tools: Read, Grep, Glob, WebFetch' "$SPECIALIST"
 }
 
 @test "specialist: instructed to read the policy, wear the persona and cite precedents" {

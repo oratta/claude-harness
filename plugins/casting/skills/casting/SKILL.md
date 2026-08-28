@@ -48,7 +48,7 @@ version: 0.4.0
 起動プロンプトには、上の 5 列上書き表とは別に、`## 委任` 見出しの下に「許可ツール」表（`| ツール/パターン | 許可 | 出どころ |`）と「任された観点」表（`| 観点 | 担い手 | 根拠 |`）を並べる委任宣言を書いてよい（書式の正本は `../../catalog/delegation.md`。repo 共通の宣言は `.claude/casting/delegation.md`）。**この 2 表は要約であり、観点の第 3 層上書きではない** — `## 委任` の 3 列表に担い手を書いても resolve の結果は変わらない。観点の担い手をそのセッションで変えたいときは、従来どおり 5 列の上書き表を書く。
 ## 配役表の作り方
 
-1. 対象 repo で `/casting:init` を実行する（`plugins/casting/commands/init.md`）。`project.md`（差分方式の空表＋書き方説明）と `precedents.md` が雛形から生成され、`local.md` が `.gitignore` に追記され、導入 repo 台帳 `~/.claude/casting/registry.txt` に repo パスが追記される
+1. 対象 repo で `/casting:init` を実行する（`plugins/casting/commands/init.md`）。`project.md`（差分方式の空表＋書き方説明）・`precedents.md`・`delegation.md`（委任宣言の 2 表）が雛形から生成され、`local.md` が `.gitignore` に追記され、導入 repo 台帳 `~/.claude/casting/registry.txt` に repo パスが追記される
 2. カタログの既定から変えたい観点だけ、`project.md` に5列そろえて行を追加する（観点名・列構成そのものは変えない。変えたくなったら下記「カタログの変更手続き」の重量ルート）
 3. 主→エージェントへ移譲する行は、「移譲に必要な文書」列に書かれた文書を先に用意してから書く（判断基準の注入文書 `policies/<slug>.md` は `/casting:policy-interview <観点>` で主と 1 問ずつやり取りして作る）。文書なし（「—」）の行はそのまま書いてよい。移譲したら `.claude/casting/delegation.md` の「任された観点」表にも同じ変更を写す
 4. 有効な配役の完成形を見たいときは `scripts/casting-check.sh resolve` を実行する
