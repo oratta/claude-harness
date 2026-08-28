@@ -176,10 +176,10 @@ if [[ "$mode" == "register" ]]; then
   # producer の終了は `wait` では検査できない（bash 3.2 は process substitution の PID を
   # wait できない — "not a child of this shell"）。代わりに完了ファイルで見る（issue #181-2）:
   # producer は payload を書き終えた**あと**に completed ファイルへ書き込むので、
-  # `op item create` が EOF まで読んで戻った時点でファイルが空なら、producer は値を
-  # 書き終える前に死んでいる（op が exit 0 でも成功を報告してはいけない）。
-  # 逆方向の race は無い — op の EOF は producer の exit（= completed 書き込みの後）でしか
-  # 発生せず、途中で死んだ producer は completed に永遠に書かない。
+  # `op item create` が戻ったあと producer の終了を待ってからファイルが空なら、producer は
+  # 値を書き終える前に死んでいる（op が exit 0 でも成功を報告してはいけない）。
+  # 逆方向（完走したのに空と誤判定）の race は create 直後のポーリング待ちで塞ぐ —
+  # 途中で死んだ producer は completed に永遠に書かないので、終了後の判定は安定する。
   producer_completed="$(mktemp "${TMPDIR:-/tmp}/fmtoken-producer-completed.XXXXXX")"
   trap 'rm -f "$producer_completed"' EXIT
   # 先頭の SIGPIPE の既定化（issue #181-1）: 早期 exit（46/47/48）で bash が先に抜けると、
@@ -212,6 +212,7 @@ out.write(b"ready\n"); out.flush()
 out.write(payload); out.flush()
 with open(sys.argv[2], "w") as f:
     f.write("completed\n")' "$explicit_name" "$producer_completed")
+  producer_pid=$!
   # ステータス行が読めない＝python が起動できなかった等。値が渡らない以上 create してはいけない。
   stdin_status=""
   if ! read -r stdin_status <&3; then stdin_status=""; fi
@@ -340,6 +341,18 @@ print("found" if sys.argv[1] in titles else "notfound")' "$explicit_name" 3<&-)"
   # fd 3 を閉じる。producer がまだ書き込み待ちで残っていれば、ここで SIGPIPE を受けて終わる
   # （SIG_DFL に戻してあるので Traceback は出ない）。
   exec 3<&-
+  # 完了ファイルを見る前に producer の終了を待つ。op が EOF まで読む consumer なら
+  # producer は既に終わっている（EOF は producer の exit でしか発生しない）が、
+  # JSON を読み終えた時点で EOF を待たずに戻る consumer だと「payload の write は
+  # 返ったが完了ファイルはまだ」という一瞬に検査が走りうる（偽陽性）。bash 3.2 は
+  # process substitution の PID を wait できないので kill -0 でポーリングする
+  # （fd 3 は閉じたので、生きているとしても SIGPIPE で即終わる。上限 5 秒は保険で、
+  # 万一残っていても検査は空ファイル＝失敗側に倒れる — fail-closed）。
+  producer_wait=0
+  while kill -0 "$producer_pid" 2>/dev/null && [[ "$producer_wait" -lt 100 ]]; do
+    sleep 0.05
+    producer_wait=$((producer_wait + 1))
+  done
   # producer の完了検査（issue #181-2）: `set -o pipefail` がパイプ全段の失敗を拾うのと
   # 同じ役割。op が exit 0 でも、producer が値を書き終えていなければ成功を報告しない。
   # op 側が stdin を読み切らずに成功を返した（パイプが途中で吸われた・詰まった）ケースが

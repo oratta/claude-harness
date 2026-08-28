@@ -980,22 +980,35 @@ EOF
 # 値がパイプ容量（64KB）を超えると、producer は書き終える前にブロックする。
 # 早期 exit（47/48）で bash が先に抜けると producer は SIGPIPE を受けるが、これは
 # 「登録済みなので止めた」正常系の一部であり、Python の Traceback として呼び出し側の
-# stderr に見せてはいけない。stderr は 2>&1 でまとめて捕る — producer は捕捉パイプを
-# 継承しているので、bats の run は producer が死ぬまで EOF を待つ（取りこぼしの race が無い）。
+# stderr に見せてはいけない。
+#
+# 検査は $output（2>&1）ではなく stderr をファイルに落として行う。bats の run は
+# 出力を一時ファイルで捕っており、直接の子（bash）の終了時点で読むため、bash の exit
+# **後**に SIGPIPE で死ぬ producer の Traceback は $output に間に合わないことがある
+# （修正前の実装でもこのテストが緑になってしまう＝検出力ゼロの race。手動実行では
+# Traceback が確実に観測される）。ファイルなら producer の死を待ってから読める。
+# 待ち時間 1 秒の根拠: producer への SIGPIPE 配送は bash の exit（fd close）と同時で、
+# Traceback の出力はその直後の ms オーダー。1 秒は2桁の余裕。
 
 # パイプ容量を確実に超える値（1MB）をファイルに用意する
 make_big_value() {
   /usr/bin/python3 -c 'import sys; sys.stdout.write("A"*(1<<20))' >"${WORK}/bigvalue"
 }
 
+# 早期 exit 後、遅れて stderr ファイルに書かれる Traceback を待ってから検査する
+refute_traceback_settles() {
+  sleep 1
+  refute_in_file 'Traceback' "$1"
+}
+
 @test "--register: early exit with a >64KB value leaves no traceback on stderr (already registered, exit 47)" {
   export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
   export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
   make_big_value
-  run bash -c "'$FMTOKEN' --register moko--TRELLO_TOKEN <'${WORK}/bigvalue' 2>&1"
+  run bash -c "'$FMTOKEN' --register moko--TRELLO_TOKEN <'${WORK}/bigvalue' 2>'${WORK}/early47.err'"
   [ "$status" -eq 47 ]
-  [[ "$output" != *"Traceback"* ]]
-  [[ "$output" == *"登録済み"* ]]
+  refute_traceback_settles "${WORK}/early47.err"
+  grep -q '登録済み' "${WORK}/early47.err"
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
 }
 
@@ -1003,18 +1016,18 @@ make_big_value() {
   unset OP_SERVICE_ACCOUNT_TOKEN
   export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
   make_big_value
-  HOME="$WORK" run bash -c "'$FMTOKEN' --register moko--BIGVAL <'${WORK}/bigvalue' 2>&1"
+  HOME="$WORK" run bash -c "'$FMTOKEN' --register moko--BIGVAL <'${WORK}/bigvalue' 2>'${WORK}/early48.err'"
   [ "$status" -eq 48 ]
-  [[ "$output" != *"Traceback"* ]]
+  refute_traceback_settles "${WORK}/early48.err"
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
 }
 
 @test "--register: closed stdin is rejected as bad input (exit 46) without a traceback" {
   export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
-  run bash -c "'$FMTOKEN' --register moko--NOSTDIN <&- 2>&1"
+  run bash -c "'$FMTOKEN' --register moko--NOSTDIN <&- 2>'${WORK}/nostdin.err'"
   [ "$status" -eq 46 ]
-  [[ "$output" != *"Traceback"* ]]
-  [[ "$output" == *"stdin"* ]]
+  refute_traceback_settles "${WORK}/nostdin.err"
+  grep -q 'stdin' "${WORK}/nostdin.err"
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
 }
 
