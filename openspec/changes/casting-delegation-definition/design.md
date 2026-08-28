@@ -33,4 +33,5 @@ casting は「観点」側のホワイトリスト（配役表 3 層＋返信前
 ## Risks / Trade-offs
 
 - 宣言ファイルと正本の乖離を機械検査しない → 立ち上げ時の 1 枚として使い、迷ったら正本（permission / resolve）を見る、と定義文で明示して受け入れる
+- delegation.md の front matter `catalog_version` は `casting-check.sh` の検出④（version 不一致）の対象外（走査対象は project/local/precedents の固定 3 パス）。要約ファイルなので検査しないことを受け入れる
 - rule の追記で 30 行制限に近づく → 現在 22 行。1 文追記＋正本 1 行で 24 行に収める

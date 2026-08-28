@@ -8,11 +8,11 @@
 
 - [ ] 2.1 `plugins/casting/catalog/delegation.md` を書く（定義・宣言書式・置き場・正本の優先順・ロールの位置づけ・論点の定義）
 - [ ] 2.2 `plugins/casting/templates/delegation.md` を書く（front matter・`## 委任`・許可ツール表・任された観点表・書き方説明。コードスパンにプラグイン内相対パスを書かない）
-- [ ] 2.3 `plugins/casting/commands/policy-interview.md` を書く（slug 解決・1 問ずつ自由回答の質問順・生成/更新手順・例外規定・完了報告）
+- [ ] 2.3 `plugins/casting/commands/policy-interview.md` を書く（slug 解決・対応表に無い観点は生成せず終了・1 問ずつ自由回答の質問順・生成/更新手順・例外規定・完了報告）
 - [ ] 2.4 `plugins/casting/templates/policy.md` に「前提とする外部規約（全文未把握でよい）」節を足す
-- [ ] 2.5 `plugins/casting/commands/init.md` の生成スクリプトに delegation.md の非上書きコピーを足す
+- [ ] 2.5 `plugins/casting/commands/init.md` の生成スクリプトに delegation.md の非上書きコピーを足し、front matter の description と完了報告の生成物一覧も更新する
 - [ ] 2.6 `rules/perspective-casting.md` 手順③に許可ツールの確認を 1 文足し、正本に delegation.md を 1 行足す（30 行以内）
-- [ ] 2.7 `plugins/casting/skills/casting/SKILL.md`・`catalog/injection.md`・`README.md`・`.claude-plugin/plugin.json`（0.4.0・commands 追加）・`.claude-plugin/marketplace.json` の説明を更新する
+- [ ] 2.7 `plugins/casting/skills/casting/SKILL.md`（セッション宣言の `## 委任` 節と 5 列上書き表の区別を書く）・`catalog/injection.md`・`README.md`・`.claude-plugin/plugin.json`（0.4.0・commands 追加）・`.claude-plugin/marketplace.json` の説明を更新する
 
 ## 3. 整合・検証
 

@@ -2,7 +2,7 @@
 
 ### Requirement: 注入文書の置き場所規約
 
-観点の移譲に必要な注入文書は `<repo>/.claude/casting/policies/<slug>.md` に置かなければならない (MUST)。`catalog/injection.md` は観点名と slug の対応表を持たなければならない (MUST)。注入文書の生成・更新の入口は `/casting:policy-interview` であり、`injection.md` はそのポインタを持たなければならない (MUST)。既存の別置き文書がある repo は policies/ からの参照 stub でよい (MAY)。
+観点の移譲に必要な注入文書は `<repo>/.claude/casting/policies/<slug>.md` に置かなければならない (MUST)。`catalog/injection.md` は観点名と slug の対応表を持たなければならない (MUST)。注入文書の生成・更新の入口は `/casting:policy-interview` であり、`injection.md` はそのポインタを持たなければならない (MUST)。既存の別置き文書（repo ルートの PHASE.md 等）がある repo では実体の移動を強制せず、policies/ からの参照 stub を許容することを明記しなければならない (MUST)。
 
 #### Scenario: policies 規約と slug 対応表がある
 
