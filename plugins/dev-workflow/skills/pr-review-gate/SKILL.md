@@ -270,15 +270,17 @@ gh api repos/$R/issues/$N/comments --jq \
 
 ```bash
 ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')
-# jq の ^ $ は行頭・行末に掛からない（文字列全体の先頭・末尾）ので、1 行目を split で切り出してから照合する
-gh api repos/$R/issues/$ISSUE/comments --jq '[.[] | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body'
-gh api repos/$R/issues/$ISSUE/comments --jq '[.[] | select(.body | split("\n")[0] | test("^仕様レビュー: APPROVE$"))] | length'
+# jq の ^ $ は行頭・行末に掛からない（文字列全体の先頭・末尾）ので、1 行目を split で切り出してから照合する。
+# コメントは 30 件でページが切れるので --paginate --slurp で全ページを取り（--slurp は --jq と併用不可なので jq へパイプ）、add で 1 配列にしてから「最新 1 件」を選ぶ
+gh api --paginate --slurp repos/$R/issues/$ISSUE/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body | split("\n")[0]'
+gh api --paginate --slurp repos/$R/issues/$ISSUE/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様レビュー: (APPROVE|REQUEST_CHANGES)$"))] | last | .body | split("\n")[0]'
+# 2 つ目の出力が「仕様レビュー: APPROVE」ちょうどであること（最新のレビュー結果が正。古い APPROVE の後に REQUEST_CHANGES が出ていれば不合格）
 bash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF / 触れた規範パス。終了コード 2 = 規範パスに触れて openspec 差分なし
 ```
 
 | issue の記録 | 合格に必要な状態 |
 |---|---|
-| `仕様化判断: する` | PR の変更ファイルに `openspec/` が含まれる、**または**宣言が指す change が base で archive 済み（`openspec/changes/archive/*-<change-name>/` の実在を実測。スタック PR で仕様が先行 PR に入っている場合）。**かつ** issue に `仕様レビュー: APPROVE` がある。仕様宣言は「更新した」形 |
+| `仕様化判断: する` | PR の変更ファイルに `openspec/` が含まれる、**または**宣言が指す change が base で archive 済み（`openspec/changes/archive/*-<change-name>/` の実在を実測。スタック PR で仕様が先行 PR に入っている場合）。**かつ** issue の最新の `仕様レビュー:` コメントが `APPROVE`（古い APPROVE の後に REQUEST_CHANGES があれば不可）。仕様宣言は「更新した」形 |
 | `仕様化判断: しない` | 仕様宣言は「変更なし＋理由」形。PR に `openspec/` 差分が**無い**こと（差分があれば「しない」と矛盾＝合格しない。判断を「する」に取り直すか差分を外す）。`spec-touch-check.sh` が終了コード 2 なら、理由に規範パス接触への言及があること |
 | 記録なし | **合格しない**。今から判断して issue に `仕様化判断:` を投稿する（「する」なら仕様化・仕様レビューからやり直す）。issue が無い PR に限り PR 自身のコメントに同書式で記録してよい |
 

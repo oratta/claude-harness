@@ -56,3 +56,25 @@ setup() {
   run "$SCRIPT"
   [ "$status" -eq 1 ]
 }
+
+@test "file-name entries match exactly (CLAUDE.md.bak is not a touch)" {
+  SPEC_TOUCH_FILES=$'CLAUDE.md.bak\nAGENTS.md.old\ndocs-old/x.md\nscripts.md' run "$SCRIPT" owner/repo 1
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qx 'SPEC_TOUCH=no'
+}
+
+@test "empty or comment-only .spec-touch-paths -> exit 1 (config error, not fail-open)" {
+  printf '# nothing\n\n' > .spec-touch-paths
+  SPEC_TOUCH_FILES='docs/foo.md' run "$SCRIPT" owner/repo 1
+  [ "$status" -eq 1 ]
+}
+
+@test "no readable input -> exit 1 (fail-closed)" {
+  SPEC_TOUCH_FILES=$'\n' run "$SCRIPT" owner/repo 1
+  [ "$status" -eq 1 ]
+}
+
+@test "runs under bash 3.2 semantics (empty arrays with set -u)" {
+  SPEC_TOUCH_FILES='lib/a.ts' run /bin/bash "$SCRIPT" owner/repo 1
+  [ "$status" -eq 0 ]
+}

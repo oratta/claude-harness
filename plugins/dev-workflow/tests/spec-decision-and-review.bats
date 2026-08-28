@@ -54,10 +54,14 @@ review_sec() { awk '/^#### 仕様レビュー/{f=1} /^\*\*コード直行する�
 
 # --- Requirement: 書いた仕様は実装前に別コンテキストがレビューする ---
 
-@test "step D: review sits between ff and apply" {
-  ff="$(grep -n '/opsx:ff' "$SKILL" | awk -F: '$1>0{print $1}' | head -1)"
-  rev="$(grep -n '^#### 仕様レビュー' "$SKILL" | head -1 | cut -d: -f1)"
-  apply="$(awk -v s="$rev" 'NR>s && /\/opsx:apply/{print NR; exit}' "$SKILL")"
+# Step D「仕様化する場合」のコマンドブロック（``` で囲まれた ff〜archive の列）だけを切り出す
+step_d_block() { awk '/^\*\*仕様化する場合/{f=1} f&&/^```/{c++} f&&c==1{print} f&&c==2{exit}' "$SKILL"; }
+
+@test "step D: review sits between ff and apply inside the opsx command block" {
+  step_d_block | grep -q '/opsx:ff'
+  ff="$(step_d_block | grep -n '/opsx:ff' | head -1 | cut -d: -f1)"
+  rev="$(step_d_block | grep -n '仕様レビュー' | head -1 | cut -d: -f1)"
+  apply="$(step_d_block | grep -n '/opsx:apply' | head -1 | cut -d: -f1)"
   [ -n "$ff" ] && [ -n "$rev" ] && [ -n "$apply" ]
   [ "$ff" -lt "$rev" ] && [ "$rev" -lt "$apply" ]
 }

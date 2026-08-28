@@ -67,6 +67,32 @@ step5() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "$SKILL"; }
   step5 | grep -qE '記録なし.*(合格しない|合格処理をしない|不可)'
 }
 
+# 手順 5 に書かれた jq 式を SKILL.md から抜き出し、fixture で実行する（式が実際に「最新 1 件」を選ぶこと）
+jq_prog() { step5 | grep -- "| jq -r" | grep "$1" | head -1 | sed -E "s/.*jq -r '([^']*)'.*/\\1/"; }
+fixture_pages() {
+  # --paginate --slurp の出力形（ページの配列）を模す
+  printf '[[{"body":"仕様レビュー: APPROVE\\n1 周目"},{"body":"雑談"}],[{"body":"仕様レビュー: REQUEST_CHANGES\\n2 周目"},{"body":"仕様化判断: **する**"},{"body":"仕様化判断: しない\\n理由: x"}]]'
+}
+
+@test "step 5 jq: latest review result wins (stale APPROVE does not pass)" {
+  prog="$(jq_prog '仕様レビュー')"
+  [ -n "$prog" ]
+  out="$(fixture_pages | jq -r "$prog")"
+  [ "$out" = "仕様レビュー: REQUEST_CHANGES" ]
+}
+
+@test "step 5 jq: decision picks the latest exact-format comment across pages" {
+  prog="$(jq_prog '仕様化判断')"
+  [ -n "$prog" ]
+  out="$(fixture_pages | jq -r "$prog")"
+  [ "$out" = "仕様化判断: しない" ]
+}
+
+@test "step 5: comments are fetched with --paginate --slurp piped to jq (slurp is incompatible with --jq)" {
+  step5 | grep '仕様' | grep -- '--paginate --slurp' | grep -q -- '| jq -r'
+  ! step5 | grep -- '--slurp' | grep -q -- '--jq'
+}
+
 # --- Requirement: spec-touch-check スクリプトが規範パス接触と openspec 差分を報告する ---
 
 @test "step 5: runs spec-touch-check.sh and demands a reason on exit 2" {
