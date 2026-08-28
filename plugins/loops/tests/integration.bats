@@ -219,6 +219,21 @@ base_ref() {
   done
 }
 
+# --- S130b: every plugins/ directory has a marketplace entry (reverse of S130) ---
+# S130 は marketplace entry → plugin.json の一方向しか見ない。プラグインを削除するとき
+# plugin.json だけ消して他のファイルを残すと、S130 も S131 も素通りして「entry の無い
+# プラグインディレクトリ」が残る（claude-harness#206 のレビューで判明）。逆方向を固定する。
+@test "S130b: every plugins/ directory is registered in marketplace.json" {
+  registered="$(jq -r '.plugins[].name' "$MARKETPLACE" | sort)"
+  # ディレクトリだけを数える（plugins/ 直下に .DS_Store 等が置かれても誤検知しない）
+  present="$(find "${PLUGIN_ROOT}/plugins" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)"
+  if [ "$registered" != "$present" ]; then
+    echo "marketplace plugins[] and plugins/ differ:"
+    diff <(echo "$registered") <(echo "$present") || true
+    return 1
+  fi
+}
+
 # --- S131: plugins changed by THIS run are bumped above the branch point ---
 @test "S131: edited plugins have version bumped above merge-base" {
   base="$(base_ref)"
@@ -227,6 +242,9 @@ base_ref() {
   [ -n "$changed" ] || skip "no plugin changes vs merge-base"
   for d in $changed; do
     n="${d#plugins/}"
+    # 削除されたプラグインは bump する version が存在しない（entry ごと消えるので
+    # marketplace 側との齟齬は S130 が検出する）。削除を「bump 忘れ」と誤検出しない。
+    [ -f "${PLUGIN_ROOT}/${d}/.claude-plugin/plugin.json" ] || continue
     cur="$(jq -r '.version' "${PLUGIN_ROOT}/${d}/.claude-plugin/plugin.json")"
     old="$(git -C "$PLUGIN_ROOT" show "${base}:${d}/.claude-plugin/plugin.json" 2>/dev/null | jq -r '.version' 2>/dev/null)"
     # new plugin (absent at base) needs no bump, only registration
