@@ -57,3 +57,48 @@ setup() {
   grep -q 'LONGRUN_AUTOMATED' "$INSTALL_SKILL"
   grep -q 'FABLE_BUDGET_MODE' "$INSTALL_SKILL"
 }
+
+# --- #203: Step 3 の委譲先は develop、メインが develop の本体を務める ---
+
+@test "template/recipe: github-issue no longer appears, develop is the delegate" {
+  RECIPE="${PLUGIN_DIR}/recipes/loop-dev-agent.md"
+  ! grep -q 'github-issue' "$TEMPLATE"
+  ! grep -q 'github-issue' "$RECIPE"
+  grep -q 'develop' "$TEMPLATE"
+  grep -q '`develop`' "$RECIPE"
+}
+
+@test "template: Step 3 says main acts as develop's orchestrator and spawns W / R1 with --unmanned" {
+  step3="$(awk '/^### Step 3/{f=1} /^### Step 4/{f=0} f' "$TEMPLATE")"
+  echo "$step3" | grep -q 'メインが develop の本体'
+  echo "$step3" | grep -qE 'W / R1.*spawn'
+  echo "$step3" | grep -q -- '--unmanned'
+  echo "$step3" | grep -q 'agent-review:pending'
+  echo "$step3" | grep -qE 'G.*Step 1'
+}
+
+@test "template: dispatcher section no longer delegates Step 3 to a subagent" {
+  disp="$(awk '/^## コンテキスト管理/{f=1} /^## ラベル定義/{f=0} f' "$TEMPLATE")"
+  [ -n "$disp" ]
+  ! echo "$disp" | grep -q 'Step 3 の実装'
+  echo "$disp" | grep -q 'Step 3'
+  echo "$disp" | grep -q 'develop'
+}
+
+@test "template: tripwire 1 routes W back to main for sub-issue split" {
+  w1="$(sed -n '/昇格トリップワイヤー/,/^### /p' "$TEMPLATE" | grep '規模超過' | head -1)"
+  echo "$w1" | grep -q '本体'
+  echo "$w1" | grep -q 'return'
+  ! echo "$w1" | grep -q 'workflow 型'
+}
+
+@test "template: env section points FABLE_BUDGET_MODE to develop's decision-criteria" {
+  grep 'FABLE_BUDGET_MODE' "$TEMPLATE" | grep 'decision-criteria' | grep -q 'develop'
+}
+
+@test "plugin.json: description names develop and version is at least 0.25.0" {
+  MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
+  jq -r '.description' "$MANIFEST" | grep -q 'develop'
+  ! jq -r '.description' "$MANIFEST" | grep -q 'github-issue'
+  printf '0.25.0\n%s\n' "$(jq -r .version "$MANIFEST")" | sort -V -C
+}

@@ -1,50 +1,49 @@
 #!/usr/bin/env bats
 #
-# 実装モデルのエスカレーションポリシー（issue #84）
+# 実装モデルのエスカレーションポリシー（issue #84 → #203 で develop 構造に移行）
 #
 # 「レビュー不合格の修正・重要実装（聖域/マージ権限/層間契約/課金・法務）は Fable 担当」という
 # 運用判断を、セッション内の心がけから dev-workflow の機械的ルールへ昇格させたもの。
+# 事前分類の正本は develop スキルの W の指示書（references/roles/worker.md）にあり、
 # 正本の置き場所が1箇所であること（重複記述を作らないこと）も検証する。
 #
-# spec: dev-workflow-model-escalation-policy
+# spec: dev-workflow-model-escalation-policy, dev-workflow-develop
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
-  ISSUE_SKILL="${PLUGIN_DIR}/skills/github-issue/SKILL.md"
+  DEV_SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
   GATE_SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
 }
 
-# --- ルール1: 事前分類（1周目から Fable）は github-issue の Step D にある ---
+# --- ルール1: 事前分類（1周目から Fable）は develop の worker.md にある ---
 
-@test "pre-classification: section lives in github-issue Step D" {
-  grep -qF '重要実装の事前分類' "$ISSUE_SKILL"
-  sec="$(grep -n '重要実装の事前分類' "$ISSUE_SKILL" | head -1 | cut -d: -f1)"
-  stepd="$(grep -n '^### Step D' "$ISSUE_SKILL" | head -1 | cut -d: -f1)"
-  [ "$sec" -gt "$stepd" ]
+@test "pre-classification: section lives in develop worker.md" {
+  grep -qF '重要実装の事前分類' "$WORKER"
 }
 
 @test "pre-classification: names all 4 categories" {
-  grep -qF '聖域パス' "$ISSUE_SKILL"
-  grep -qF 'マージ権限' "$ISSUE_SKILL"
-  grep -qF '層間契約' "$ISSUE_SKILL"
-  grep -qF '課金/法務' "$ISSUE_SKILL"
+  grep -qF '聖域パス' "$WORKER"
+  grep -qF 'マージ権限' "$WORKER"
+  grep -qF '層間契約' "$WORKER"
+  grep -qF '課金/法務' "$WORKER"
 }
 
 @test "pre-classification: spawns with model fable from the first round" {
-  grep -qF '`model: fable`' "$ISSUE_SKILL"
-  grep -q '最初から' "$ISSUE_SKILL"
+  grep -qF '`model: fable`' "$WORKER"
+  grep -q '最初から' "$WORKER"
 }
 
 @test "pre-classification: session model (AGENT_MODEL) is left unchanged" {
-  grep -qF 'AGENT_MODEL' "$ISSUE_SKILL"
+  grep -qF 'AGENT_MODEL' "$WORKER"
 }
 
 @test "pre-classification: budget mode still caps escalation" {
-  grep -qF 'FABLE_BUDGET_MODE=reserve' "$ISSUE_SKILL"
-  grep -qF 'exhausted' "$ISSUE_SKILL"
+  grep -qF 'FABLE_BUDGET_MODE=reserve' "$WORKER"
+  grep -qF 'exhausted' "$WORKER"
 }
 
 # --- ルール2: エスカレーション（failed → 修正実装）は pr-review-gate にある ---
@@ -89,25 +88,28 @@ setup() {
 
 @test "single source: the 4-category table is not duplicated into the gate skill" {
   # pr-review-gate は分類名を1行で挙げるだけで、分類表の中身（判定材料）は再掲せず
-  # github-issue を正本として参照する
-  grep -qF 'github-issue スキルの Step D が正本' "$GATE_SKILL"
+  # develop の worker.md を正本として参照する
+  grep -qF 'develop スキルの references/roles/worker.md が正本' "$GATE_SKILL"
+  ! grep -q 'github-issue' "$GATE_SKILL"
   # 4分類の名前が出るのは正本を指す1行だけ（表として再掲していない）
   [ "$(grep -cF '層間契約' "$GATE_SKILL")" -eq 1 ]
   [ "$(grep -cF '聖域パス・マージ権限' "$GATE_SKILL")" -eq 1 ]
 }
 
 @test "single source: the fallback record format points back to pr-review-gate" {
-  grep -qF 'pr-review-gate' "$ISSUE_SKILL"
-  grep -q '正本' "$ISSUE_SKILL"
+  grep -qF 'pr-review-gate' "$WORKER"
+  grep -q '正本' "$WORKER"
+}
+
+@test "single source: develop SKILL.md model section defers the table to worker.md" {
+  awk 'index($0,"## モデル")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL" | grep -q 'worker.md'
 }
 
 # --- バージョン ---
 
-@test "manifest: dev-workflow version bumped above 1.8.1" {
+@test "manifest: dev-workflow version is at least 2.0.0" {
   v="$(jq -r '.version' "$MANIFEST")"
-  [ "$v" != "1.8.1" ]
-  highest="$(printf '1.8.1\n%s\n' "$v" | sort -V | tail -1)"
-  [ "$highest" = "$v" ]
+  printf '2.0.0\n%s\n' "$v" | sort -V -C
 }
 
 @test "manifest: marketplace dev-workflow entry matches plugin.json" {
@@ -116,19 +118,12 @@ setup() {
   [ "$m" = "$v" ]
 }
 
-@test "manifest: marketplace top-level version bumped above 2.38.0" {
-  v="$(jq -r '.version' "$MARKETPLACE")"
-  [ "$v" != "2.38.0" ]
-  highest="$(printf '2.38.0\n%s\n' "$v" | sort -V | tail -1)"
-  [ "$highest" = "$v" ]
-}
-
-@test "skills: both edited skills bumped their frontmatter version above 1.1.0" {
-  for f in "$ISSUE_SKILL" "$GATE_SKILL"; do
-    v="$(awk -F': ' '/^version:/{print $2; exit}' "$f")"
-    [ -n "$v" ]
-    [ "$v" != "1.1.0" ]
-    highest="$(printf '1.1.0\n%s\n' "$v" | sort -V | tail -1)"
-    [ "$highest" = "$v" ]
-  done
+@test "skills: develop SKILL.md is at least 2.0.0 and gate SKILL.md is above 1.4.0" {
+  v="$(awk -F': ' '/^version:/{print $2; exit}' "$DEV_SKILL")"
+  [ -n "$v" ]
+  printf '2.0.0\n%s\n' "$v" | sort -V -C
+  g="$(awk -F': ' '/^version:/{print $2; exit}' "$GATE_SKILL")"
+  [ -n "$g" ]
+  [ "$g" != "1.4.0" ]
+  printf '1.4.0\n%s\n' "$g" | sort -V -C
 }
