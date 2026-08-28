@@ -6,7 +6,7 @@
 - [ ] 1.4 `tests/model-escalation-policy.bats` を移行する: 事前分類の正本を `references/roles/worker.md` に、pr-review-gate 側の参照文言を `develop スキルの references/roles/worker.md が正本` に（gate SKILL.md 内の `層間契約` の出現回数は 1 のまま。`pr-review-gate-spec-declaration.bats` も同じ回数を要求する）、plugin バージョン下限を 2.0.0 に、skill frontmatter version の検査対象を develop SKILL.md（2.0.0 で新設。旧 github-issue の系譜を継ぐ番号にする）と gate SKILL.md に更新
 - [ ] 1.5 `tests/spec-decision-and-review.bats` を移行する: Step B / Step D の切り出しを worker.md / SKILL.md の 1 ループ / spec-reviewer.md に付け替え、`references/spec-review.md` の参照を `references/roles/spec-reviewer.md` に変更。workflow 型の廃止に伴い「workflow strategy substitutes longrun Build Contract」テストは削除する
 - [ ] 1.6 loops 側の退行ガードを `plugins/loops/tests/dev-agent-tripwires.bats` に追加する: テンプレートとレシピに `github-issue` が現れず `develop` が委譲先であること、Step 3 は「メインが develop の本体として W / R1 を spawn する」と書かれ、ディスパッチャ方式の委譲対象に Step 3 が含まれないこと
-- [ ] 1.6b `tests/tripwire-hook.bats` に、テンプレートのトリップワイヤー 1 の乗り換え先が「本体に return して分割」と「/lr:e 系」の両方を含むことを追加する
+- [ ] 1.6b `tests/develop-skill.bats` に、`templates/escalation-tripwires.md` のトリップワイヤー 1 の乗り換え先が「本体に return して分割」と「/lr:e 系」の両方を含むことを追加する（hook 出力を検査する tripwire-hook.bats には混ぜない）
 - [ ] 1.7 この時点で `scripts/test.sh dev-workflow loops` を実行し、新規テストが Red であることを確認する
 
 ## 2. develop スキルの新設
@@ -32,4 +32,4 @@
 
 - [ ] 4.1 `scripts/test.sh` を全件実行し合格（exit 0）を確認する
 - [ ] 4.2 `openspec validate dev-workflow-develop-orchestrator` が通ることを確認する
-- [ ] 4.3 `grep -rn "github-issue" plugins/ README.md scripts/ openspec/specs/` が archive 以外で 0 件であることを確認する
+- [ ] 4.3 `grep -rn "github-issue" plugins/ README.md scripts/` が 0 件であることを確認する。`openspec/specs/` は archive 後に `dev-workflow-spec-review/spec.md` の Purpose 行（archive のマージで書き換わらない）を手で develop に直し、その上で 0 件を確認する

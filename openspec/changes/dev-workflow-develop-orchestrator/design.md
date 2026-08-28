@@ -47,6 +47,7 @@ pr-review-gate の手順 2 は「full = Codex CLI、light または Codex 不可
 ## Risks / Trade-offs
 
 - [配備済みリポの憲法 `docs/agent-loop.md` が `github-issue` を Skill ツールで呼び続ける] → 憲法は各リポで再生成する運用。本 change の PR 本文と loops の README に「テンプレート更新後に再生成」を明記する。移行期間は `github-issue` 削除で Skill 呼び出しが失敗し、loop-dev-agent は失敗コメント → `agent-blocked` の既存セーフティネットに落ちる（無言で壊れない）
+- [unmanned の G を委ねる憲法 Step 1（レビューモード）は今もサブエージェント委譲のため、light 判定や Codex 不可時のレビュアー起動で孫問題が残る] → 本 change の Non-Goals（loop-dev-agent の外形変更なし）。次の change の候補として、Step 1 も「メインが G の本体を務める」形に揃える
 - [本体が「Edit でコードを書かない」を守らない] → 文書アサーション（bats）で規定の存在は保証できるが行動は保証できない。pr-review-gate の別コンテキストレビューが最後の網
 - [W を fable で起こす頻度が上がり Fable 枠を消費する] → 事前分類に当たるときだけ fable。残量モードの表（`exhausted` は全経路 opus）はそのまま効く
 - [Draft PR を記録先にした PR で、pr-review-gate の照合が issue を探しに行って空振りする] → 手順 5 の探索順は「PR 本文に issue 参照が無ければ PR 自身のコメント」（#193）で既に対応済み。本 change では文言の参照先だけ直す
