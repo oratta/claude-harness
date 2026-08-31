@@ -12,12 +12,12 @@
 
 ## 3. spec とバージョン
 
-- [ ] 3.1 `openspec/specs/dev-workflow-develop/spec.md` の Requirement「入口 0 は記録先を決める」を delta spec（`specs/dev-workflow-develop/spec.md` の MODIFIED）の内容に同期する（`/opsx:archive` の sync で行う。手で先に直す場合は delta と一字一句一致させる）
+- [x] 3.1 `openspec/specs/dev-workflow-develop/spec.md` の Requirement「入口 0 は記録先を決める」を delta spec（`specs/dev-workflow-develop/spec.md` の MODIFIED）の内容に同期する（`/opsx:archive` の sync で行う。手で先に直す場合は delta と一字一句一致させる）
 - [x] 3.2 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow エントリのバージョンを `2.0.2` に上げる
 - [x] 3.3 develop 配下の references（worker.md / spec-reviewer.md / gate-runner.md）に同じ食い違い（仕様宣言を記録先に置くと読める文）が無いことを grep で確認する
 
 ## 4. 検証
 
-- [ ] 4.1 `scripts/test.sh` 全件と `scripts/lint.sh` を実行し、exit code 0 を確認する
-- [ ] 4.2 `/opsx:verify develop-spec-declaration-target` で実装が artifact と一致することを確認する
-- [ ] 4.3 `/opsx:archive develop-spec-declaration-target` で change をアーカイブし、main spec が更新されたことを `git diff` で確認する
+- [x] 4.1 `scripts/test.sh` 全件と `scripts/lint.sh` を実行し、exit code 0 を確認する
+- [x] 4.2 `/opsx:verify develop-spec-declaration-target` で実装が artifact と一致することを確認する
+- [x] 4.3 `/opsx:archive develop-spec-declaration-target` で change をアーカイブし、main spec が更新されたことを `git diff` で確認する
