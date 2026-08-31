@@ -47,7 +47,9 @@ setup() {
 # --- Requirement: 解散した capability の spec を消す ---
 
 @test "retired capability spec directories are absent" {
+  # loops-longrun-retirement は本 change 自身の spec（解散を規定する側）なので対象外
   for d in "${REPO_ROOT}"/openspec/specs/loops-* "${REPO_ROOT}"/openspec/specs/longrun-*; do
+    case "$d" in */loops-longrun-retirement) continue ;; esac
     [ ! -e "$d" ] || { echo "still present: $d"; return 1; }
   done
   for n in workflow-exec workflow-tool-reference workflow-run-control legacy-command-removal loop-dev-agent-tripwires; do
