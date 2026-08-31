@@ -26,6 +26,7 @@
 - `loops-longrun-retirement`: 3 プラグインの git 追跡削除・marketplace エントリと bundle からの除去・参照ゼロの掃除条件・解散 capability の spec 削除・アンインストール手順の CHANGELOG 記載・憲法の正本宣言
 - `dev-workflow-shared-references`: dev-workflow プラグイン直下 `references/` に置く他プラグイン共有の契約 4 本（self-verification / pr-body-format / model-tiers / workflow-execution）の内容と、各契約が守るべき要件（旧 `loops-pr-body-format` の reference 要件と旧 `longrun-model-allocation` のティア表要件を引き継ぐ）
 - `dev-workflow-issueify`: タスクメモ・バックログ・受け入れ条件の無い issue を測定可能な受け入れ条件付き issue に変換する `issueify` スキル（4 入力モード・原子化・不足だけヒアリング・承認ゲート・依存関係の張り方）
+- `marketplace-plugin-sync`: `plugins/` 配下と `.claude-plugin/marketplace.json` の整合を守るリポ横断ガード（全エントリの version 一致・全ディレクトリの登録・変更したプラグインの bump・トップレベル version の不在・JSON 妥当性・無関係 PR の衝突しないマージ）。旧 `loops-marketplace-sync`（loops のテストに同居していた S130〜S139）をルート `tests/` に移して引き継ぐ
 
 ### Modified Capabilities
 - `dev-workflow-issue-entry`: issueify フォールバックの解決先を loops への path-discovery から同プラグイン内の `skills/issueify/SKILL.md` に変える（fail-soft の縮退手順は維持）
@@ -37,7 +38,7 @@
 ## Impact
 
 - 削除: `plugins/loops/`（49 ファイル）、`plugins/longrun/`（約 75 ファイル）、`plugins/lr/`（6 ファイル）、`openspec/specs/{loops-*,longrun-*,workflow-exec,workflow-tool-reference,workflow-run-control,legacy-command-removal,loop-dev-agent-tripwires}/`（38 ディレクトリ）
-- 追加: `plugins/dev-workflow/references/{self-verification,pr-body-format,model-tiers,workflow-execution}.md`、`plugins/dev-workflow/skills/issueify/SKILL.md`、`plugins/dev-workflow/CHANGELOG.md`、`plugins/dev-workflow/tests/{pr-body-format,shared-references,issueify-skill,retirement}.bats`
+- 追加: `plugins/dev-workflow/references/{self-verification,pr-body-format,model-tiers,workflow-execution}.md`、`plugins/dev-workflow/skills/issueify/SKILL.md`、`plugins/dev-workflow/CHANGELOG.md`、`plugins/dev-workflow/tests/{pr-body-format,shared-references,self-verification-sections,issueify-skill,retirement}.bats`、`tests/marketplace-sync.bats`（loops の `integration.bats` から S130/S130b/S131/S132/S133/S139 を移設）
 - 変更: `.claude-plugin/marketplace.json`、`README.md`、`rules/subagent-model-selection.md`、`rules/git-commit-policy.md`、`plugins/dev-workflow/{.claude-plugin/plugin.json,README.md,commands/develop.md,skills/develop/SKILL.md,skills/push-guard-setup/SKILL.md,templates/escalation-tripwires.md,tests/*.bats}`、`plugins/{infra,weekly-report,daily-report,experience-to-skill}/skills/*/SKILL.md` と `plugins/worktree/{skills/wt-setup,skills/wt-clean}/SKILL.md`・`plugins/worktree/references/wt-clean-verification.md`（自己検証の参照パス）、`plugins/casting/catalog/injection.md`、`plugins/skill-pack/skills/skill-pack/SKILL.md`、`plugins/experience-to-skill/{README.md,skills/experience-to-skill/SKILL.md}`、`scripts/test-auto-merge-workflow.sh`、`openspec/backlog.md`、各 plugin.json の version
 - 外部への影響: 既に install 済みの環境では `/plugin uninstall loops|longrun|lr@oratta-claude-harness` が必要（CHANGELOG に記載）。flatmate の `docs/agent-loop.md`（憲法。正本宣言後は自立）・`docs/burn-mode.md`（review-queue の参照）・issue テンプレートは flatmate 側の issue で更新する。`rules/` に触れるため PR は human-merge
 - 触らないもの: ルート `_longruns/`（過去の自律実行のアーカイブ。`scripts/test.sh`・`lint.sh` の除外指定も残す）、`openspec/changes/archive/`、`plugins/product-handover/CHANGELOG.md` の「loops の解散は #205」という説明文

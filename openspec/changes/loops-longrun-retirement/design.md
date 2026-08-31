@@ -88,12 +88,17 @@ openspec の delta で 38 spec 分の `## REMOVED Requirements` を書くのは�
 ### D10. テストは dev-workflow 側に移し、解散を機械検査する
 
 - `plugins/loops/tests/pr-body-format.bats` の reference 検査部分を `plugins/dev-workflow/tests/pr-body-format.bats` に移す（憲法テンプレ・dev-agent-install・loops version の検査は削除対象なので落とす。issueify の 2 節検査は新パスに向ける）
+- `plugins/loops/tests/skill-verification-sections.bats`（S42〜S50: 対象スキルの `## 自己検証` 節の実在・参照行・固有手順・本文の非重複・name 凍結・節の非書き換え・500 行分離）と `self-verification-reference.bats`（S36〜S41: 中核原則・4 種別・記載ルール・原則文の非コピー・棚卸しの実パス・対象外の理由）を `plugins/dev-workflow/tests/self-verification-sections.bats` に移す。対象は 6 スキル（`longrun-plan` を外す）、参照パスは新パス
 - 新設 `plugins/dev-workflow/tests/shared-references.bats`: 4 契約の実在・self-verification の参照元 7 か所が新パスを指す・旧パス `loops/references/` の参照が 0 件・model-tiers に `LONGRUN` / resolver の記述が無い・workflow-execution が `workflow-authoring` を正本として指す
 - 新設 `plugins/dev-workflow/tests/issueify-skill.bats`: frontmatter `name: issueify`・4 入力モード・承認ゲート・依存関係コマンド・解散プラグインへの参照 0 件・develop.md が同プラグイン内 Read に変わっている
 - 新設 `plugins/dev-workflow/tests/retirement.bats`: 3 ディレクトリ不在・marketplace に 3 名が無い（`plugins[]` と bundles）・38 spec ディレクトリ不在・`grep -rn "loops:\|/lr:\|longrun" plugins rules docs README.md .claude-plugin` の許容リスト外ヒット 0 件・CHANGELOG に uninstall 3 行
 - 既存テストの更新: `develop-skill.bats`（`longrun:plan` 見出し → 新見出し、wire 1 の `/lr:e` → `workflow-execution`）、`develop-command.bats`（`loops-issueify` → `skills/issueify`）、`push-guard-setup.bats`（`loops-dev-agent-install` → `loop-dev-agent`）
 
 許容リストの考え方: 「移設先の説明文」＝ CHANGELOG（新旧対応表）・spec-reviewer.md の由来説明・product-handover CHANGELOG の「loops の解散は #205」・`_longruns/`（ルートのアーカイブ dir 名）に限る。テストはこの 4 種を正規表現で除外し、それ以外のヒットを違反とする。
+
+### D11. marketplace 横断ガードはルート `tests/` に移す
+
+`plugins/loops/tests/integration.bats` には loops 固有の検査と一緒に、リポ全体を守るガード——S130（全エントリの version が plugin.json と一致）・S130b（`plugins/` の全ディレクトリが登録済み）・S131（変更したプラグインは merge-base より bump）・S132（トップレベル version の再導入禁止。issue #140）・S133（全 JSON がパース）・S139（無関係な 2 PR が衝突せずマージできる）——が同居していた。loops を消すとこれらも消える。特定プラグインに属さない検査なので、`tests/marketplace-sync.bats`（ルート。`agents-md-sync.bats` 等と同列）に移し、新 capability `marketplace-plugin-sync` として要件を引き継ぐ。loops 固有の S127/S128（loops エントリの存在）は捨てる。ヘルパは loops の `helper.bash` に依存しないよう、`REPO_ROOT` を `BATS_TEST_FILENAME` から解決する自前の `setup()` にする。
 
 ## Risks / Trade-offs
 

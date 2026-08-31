@@ -4,6 +4,8 @@
 - [ ] 1.2 `plugins/dev-workflow/tests/shared-references.bats` を新設: 4 契約の実在・README の `references/` 節・self-verification の中核原則と 4 種別・対象一覧に longrun/loops 無し・参照元 7 か所が新パス・model-tiers の 4 行表とエイリアス規則と `LONGRUN`/resolver/plan.md 不在・rules が model-tiers を指し行数 43 のまま・workflow-execution の 3 フェーズ/Build Contract/しきい値/schema/workflow-authoring と `/lr:e`・`plan.md` 不在・tripwires と develop SKILL.md が workflow-execution を指す
 - [ ] 1.3 `plugins/loops/tests/pr-body-format.bats` の reference 検査を `plugins/dev-workflow/tests/pr-body-format.bats` に移す（REF を新パスに、TEMPLATE/INSTALL/MANIFEST 系のテストは落とし、issueify の 2 節検査を `skills/issueify/SKILL.md` に向ける。正本パスが issueify の新パスであることも検査）
 - [ ] 1.4 `plugins/dev-workflow/tests/issueify-skill.bats` を新設: plugin.json の `skills[]` 登録・frontmatter `name: issueify`・4 入力モード・6 節ドラフト・4 型の受け入れ条件・承認ゲート・ラベル 5 種・`dependencies/blocked_by`・`loops`/`goalify`/`agent-loop-template` 0 件・pr-body-format 新パス参照・develop.md が同プラグイン内 Read で `plugins/loops` を含まない
+- [ ] 1.4b `tests/marketplace-sync.bats` を新設し、`plugins/loops/tests/integration.bats` の S130 / S130b / S131 / S132 / S133 / S139 を移す（loops の helper に依存しない自前 setup。S127/S128 は捨てる）
+- [ ] 1.4c `plugins/dev-workflow/tests/self-verification-sections.bats` を新設し、`plugins/loops/tests/skill-verification-sections.bats`（S42〜S50）と `self-verification-reference.bats`（S36〜S41）を移す（対象 6 スキル・REF を新パス・S40 の実パス一覧から longrun-plan を外す）
 - [ ] 1.5 既存テストを更新: `develop-skill.bats`（`longrun:plan` 見出し → 「上流の壁打ち」見出し、wire 1 の `/lr:e` → `workflow-execution`、`/lr:p` 不在）、`develop-command.bats`（`loops-issueify` → `skills/issueify`、`plugins/loops` 不在）、`push-guard-setup.bats`（`loops-dev-agent-install` → `loop-dev-agent`）
 - [ ] 1.6 `bash scripts/test.sh dev-workflow` を実行し、新設・更新したテストが Red であることを確認する
 
