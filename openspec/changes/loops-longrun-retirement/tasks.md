@@ -49,6 +49,6 @@
 
 ## 6. 検証と PR
 
-- [ ] 6.1 `bash scripts/lint.sh`、`bash scripts/test.sh dev-workflow casting worktree infra daily-report weekly-report experience-to-skill skill-pack product-handover tests` を実行して全件 pass・exit 0 を確認。`grep -rn "loops:\|/lr:\|longrun" plugins rules docs README.md .claude-plugin scripts` の許容リスト外ヒットが 0 件であることを目視でも確認
+- [ ] 6.1 `bash scripts/lint.sh`、`bash scripts/test.sh dev-workflow casting worktree infra daily-report weekly-report experience-to-skill skill-pack product-handover tests` を実行して全件 pass・exit 0 を確認。`grep -rn "loops:\|/lr:\|longrun" plugins rules docs README.md .claude-plugin .github scripts` の許容リスト外（例外 (a)〜(e)）ヒットが 0 件であることを目視でも確認
 - [ ] 6.2 flatmate 側の参照更新 issue を `gh issue create -R genetta-inc/flatmate` で起票し（`docs/agent-loop.md` の正本宣言後の自立・`docs/burn-mode.md` の review-queue 参照・issue テンプレの参照パス・リポジトリローカル pre-push フック（main 拒否込み）の雛形と挙動テスト `pre-push-merged-pr-guard.bats` が harness から消え以後の正本は `new-resident` 側であること。harness #205 / PR #216 へのリンク）、URL を CHANGELOG と issue #205 のコメントに残す
 - [ ] 6.3 `/opsx:verify loops-longrun-retirement` → `/opsx:archive loops-longrun-retirement`（archive 後に `openspec/specs/global-push-guard/spec.md` の Purpose にある `loops-dev-agent-install` を「loop-dev-agent 導入済み repo（flatmate `new-resident` が設置）」に手で直す。Purpose は delta の対象外のため）、commit / push、PR #216 の本文を `references/pr-body-format.md` の型で書き、例外 5 種を「移設先の説明文」と読む旨を 1 行添えて Ready for Review、pr-review-gate を通す
