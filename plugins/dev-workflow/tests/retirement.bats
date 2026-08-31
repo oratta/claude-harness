@@ -12,7 +12,9 @@
 #   (a) plugins/dev-workflow/CHANGELOG.md（解散記録・新旧パス対応表）
 #   (b) plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md（由来説明）
 #   (c) plugins/product-handover/CHANGELOG.md（「loops の解散は #205」）
-#   (d) ルートの過去実行アーカイブ _longruns/ を指す行
+#   (d) ルートの過去実行アーカイブ _longruns/ に言及する 4 ファイル（scripts/test.sh, scripts/lint.sh,
+#       plugins/product-handover/tests/plugin-structure.bats, plugins/worktree/tests/helper.bash）。
+#       文字列一致ではなくパス列挙にして、本物の残存参照が同じ行に同居しても素通りしないようにする
 #   (e) この掃除と解散を検査する bats 自身（plugins/dev-workflow/tests/*.bats, tests/marketplace-sync.bats）
 
 setup() {
@@ -21,7 +23,7 @@ setup() {
   MARKETPLACE="${REPO_ROOT}/.claude-plugin/marketplace.json"
   CHANGELOG="${PLUGIN_DIR}/CHANGELOG.md"
   ROOT_README="${REPO_ROOT}/README.md"
-  ALLOW_RE='^(plugins/dev-workflow/CHANGELOG\.md|plugins/dev-workflow/skills/develop/references/roles/spec-reviewer\.md|plugins/product-handover/CHANGELOG\.md|plugins/dev-workflow/tests/[^/]+\.bats|tests/marketplace-sync\.bats):|^[^:]*_longruns'
+  ALLOW_RE='^(plugins/dev-workflow/CHANGELOG\.md|plugins/dev-workflow/skills/develop/references/roles/spec-reviewer\.md|plugins/product-handover/CHANGELOG\.md|plugins/dev-workflow/tests/[^/]+\.bats|tests/marketplace-sync\.bats|scripts/(test|lint)\.sh|plugins/product-handover/tests/plugin-structure\.bats|plugins/worktree/tests/helper\.bash):'
 }
 
 # --- Requirement: 3 ディレクトリの git 追跡削除 ---

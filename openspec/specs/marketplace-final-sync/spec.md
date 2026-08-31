@@ -24,7 +24,7 @@ TBD - created by archiving change repo-cleanup-final. Update Purpose after archi
 #### Scenario: version の完全一致
 
 - **WHEN** marketplace.json の各エントリ version と対応 plugin.json の version を比較する
-- **THEN** infra / longrun / lr / worktree / daily-report / weekly-report / skill-pack / experience-to-skill の全てで両者が完全一致する（受け入れ条件 15）
+- **THEN** infra / longrun / lr / worktree / daily-report / weekly-report / skill-pack / experience-to-skill の全てで両者が完全一致する（受け入れ条件 15。longrun / lr は 2026-08 に解散したため対象外。#205）
 
 #### Scenario: description の同期
 
