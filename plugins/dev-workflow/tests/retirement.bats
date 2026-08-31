@@ -21,7 +21,7 @@ setup() {
   MARKETPLACE="${REPO_ROOT}/.claude-plugin/marketplace.json"
   CHANGELOG="${PLUGIN_DIR}/CHANGELOG.md"
   ROOT_README="${REPO_ROOT}/README.md"
-  ALLOW_RE='^(plugins/dev-workflow/CHANGELOG\.md|plugins/dev-workflow/skills/develop/references/roles/spec-reviewer\.md|plugins/product-handover/CHANGELOG\.md|plugins/dev-workflow/tests/[^/]+\.bats|tests/marketplace-sync\.bats):|_longruns'
+  ALLOW_RE='^(plugins/dev-workflow/CHANGELOG\.md|plugins/dev-workflow/skills/develop/references/roles/spec-reviewer\.md|plugins/product-handover/CHANGELOG\.md|plugins/dev-workflow/tests/[^/]+\.bats|tests/marketplace-sync\.bats):|^[^:]*_longruns'
 }
 
 # --- Requirement: 3 ディレクトリの git 追跡削除 ---
