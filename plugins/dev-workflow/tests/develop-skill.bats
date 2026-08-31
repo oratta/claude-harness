@@ -91,10 +91,15 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   section '入口 0' | grep -q '議論'
 }
 
-@test "entry-0: decision, review result and declaration live in record-target comments" {
+@test "entry-0: decision and review result live in record-target comments; the spec declaration always goes to a PR comment" {
+  # 記録先のコメントに置くのは仕様化判断と仕様レビュー結果
   section '入口 0' | grep -qF '仕様化判断: する|しない'
   section '入口 0' | grep -qF '仕様レビュー: APPROVE|REQUEST_CHANGES'
+  section '入口 0' | grep -F '仕様化判断: する|しない' | grep -q '記録先のコメント'
+  # 仕様宣言は記録先ではなく PR コメント（issue #212。pr-review-gate 手順 3-b / 5 と worker.md が正）:
+  # 節内で仕様宣言に触れる行はすべて 'PR コメント' を含む（冒頭文の「…仕様宣言を置く「記録先」」の再発もここで落ちる）
   section '入口 0' | grep -q '仕様宣言'
+  [ -z "$(section '入口 0' | grep '仕様宣言' | grep -v 'PR コメント')" ]
 }
 
 # --- worktree ---

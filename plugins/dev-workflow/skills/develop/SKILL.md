@@ -48,13 +48,14 @@ version: 2.1.0
 
 ## 入口 0: 記録先を決める
 
-1 ループの最初の工程。仕様化判断・仕様レビュー結果・仕様宣言を置く「記録先」を先に確定する。
+1 ループの最初の工程。仕様化判断・仕様レビュー結果を置く「記録先」を先に確定する。
 
 - **issue があればそれを記録先にする**（番号・URL・自然文マッチ。`/develop` の 5 分岐は `commands/develop.md`）。エピックの子は子 issue が記録先
 - **無ければ issue を切らない。** 本体が worktree を用意し、W が worktree 直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする（GitHub の "open a draft PR early" の慣行）。この Draft PR は**仕様化判断を記録する前**に存在していなければならない — 記録先が無い状態で判定を先に進めない（手順は `references/roles/worker.md`「記録先の用意」）
 - Draft PR を記録先にする場合、**受け入れ条件は PR 本文**（位置づけ・動作確認ポイント）に書く。issue に書かない分の省略であって、受け入れ条件自体を省くことはできない
 - 記録先を PR にした場合、PR 本文に `Closes #N` / `Fixes #N` / `Refs #N` の issue 参照を**書かない**。書くと pr-review-gate の照合先がその issue に移る（探索順は issue → 無ければ PR 自身のコメント）。エピックの子は子 issue が記録先なので `Closes #子` を書く
-- 仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）・仕様宣言は、いずれも記録先のコメントに置く（書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）
+- 仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）
+- **仕様宣言は記録先ではなく常に PR コメントに置く**（記録先が issue でも issue には書かない）。pr-review-gate 手順 5 が PR のコメントでリスク宣言・仕様宣言・動作確認の 3 見出しを照合し、`対象 HEAD:` 規約が PR の HEAD に紐づくため。書式の正本は pr-review-gate スキル手順 3-b
 
 **issue を切るのは追跡・キュー・議論が要るときだけ**: エピック（複数 PR にまたがる。下の「エピックの扱い」）／無人キュー（loop-dev-agent が拾う対象にしたい）／判断を残す議論（決定の経緯を issue スレッドに残したい）。この 3 つに当たらなければ Draft PR で足りる。issue を切る経路は `commands/develop.md` の issueify フォールバック。
 
@@ -77,7 +78,7 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
       （初回＋差分 1 回の 2 周キャップ。超えたら needs-approval を付けて本体がオーナーに 1 アクションで依頼）
       R1 の APPROVE が記録先に記録されるまで W を apply に進めない（再開しない）
 (3) W を SendMessage で再開:
-      apply（TDD。/opsx:apply または直叩き）→ verify → archive → PR を Ready に（または作成）→ 仕様宣言を書く → return「PR #N」
+      apply（TDD。/opsx:apply または直叩き）→ verify → archive → PR を Ready に（または作成）→ 仕様宣言を PR コメントに書く → return「PR #N」
 (4) G を名前付きで spawn（model: 既定 opus。ゲートがマージ条件・聖域・層間契約に触れれば fable）:
       pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer」
       needs-reviewer → 本体がレビュアーを spawn し、要約を SendMessage で G に渡す（gate-runner.md）
