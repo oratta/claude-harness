@@ -24,7 +24,7 @@ catalog_version: 1
 | 定期監査 | cron で状態を観点付きで見回る | （予約。現時点で割当なし） |
 | 注入しない | 移譲不能。主に上げるのが正しい | — |
 | 起票・選定時 | issue の起票・着手選定の時点で観点を効かせる | burn-select 論点ゲート・issueify |
-| 設計時 | plan・企画・仕様化の時点で観点を効かせる | longrun plan の research・opsx proposal |
+| 設計時 | plan・企画・仕様化の時点で観点を効かせる | `/opsx:explore` の壁打ち・opsx proposal（develop の W） |
 
 ## 14観点の注入マップ
 
@@ -43,7 +43,7 @@ catalog_version: 1
 | 開発スピード・機会損失 | 注入しない | —（担い手・移譲方針は catalog.md） | — |
 | 運用工数・維持 | PR 時レンズ | 維持コスト観点のレビューレンズ（#125） | `policies/maintenance.md` |
 | 技術設計・品質 | PR 時レンズ | pr-review-gate 本体 | テックスタック方針（repo の CLAUDE.md / docs） |
-| ユーザー価値・市場 | 設計時 | longrun plan の research agent（longrun-mvp-research 等） | — |
+| ユーザー価値・市場 | 設計時 | `/opsx:explore` の壁打ちと proposal 作成時のリサーチ（develop の W が担う） | — |
 | 美意識・ブランド感覚 | 注入しない | —（担い手・移譲方針は catalog.md） | — |
 | 感情的受容度 | 注入しない | —（担い手・移譲方針は catalog.md） | — |
 
@@ -78,7 +78,7 @@ catalog_version: 1
 | レビューゲート | PR 時レンズ | `plugins/dev-workflow/skills/pr-review-gate/SKILL.md` |
 | SNS 投稿前ゲート | アクション直前ゲート | sns-autopilot プラグインの sns-safety-reviewer agent |
 | burn-select 論点ゲート | 起票・選定時 | genetta-inc/flatmate の `scripts/burn-select.sh`（flatmate#368） |
-| plan 時リサーチ | 設計時 | `plugins/longrun` の research agent（longrun-mvp-research 等） |
+| plan 時リサーチ | 設計時 | `/opsx:explore`・opsx proposal 作成時のリサーチ（develop の W） |
 
 ## 未実装の配線（実装 issue）
 

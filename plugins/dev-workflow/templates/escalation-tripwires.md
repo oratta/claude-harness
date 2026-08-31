@@ -12,12 +12,14 @@
   SessionStart が再発火しないため、UserPromptSubmit hook（scripts/prompt-tripwires-refresh.sh）が
   「plugin.json のバージョンが前回注入時から変わったとき」だけ同じ本文を再注入する。
   バージョンが同じ間は毎プロンプト無出力で、文脈を食わない。
-- unmanned（loop-dev-agent）で使う場合: 憲法ファイル（docs/agent-loop.md）への組み込みを
-  loops プラグイン側が行う（loop-dev-agent-tripwires）。手動コピーは不要。
+- unmanned（loop-dev-agent）で使う場合: 各リポに配備済みの憲法ファイル（docs/agent-loop.md。
+  flatmate が保守する正本で、harness 側にテンプレートや再生成手順は無い）が同じ条件を
+  組み込んでいる。手動コピーは不要。
 - develop スキルの W（サブエージェント）は hook 注入を受けないため、W の指示書
   （skills/develop/references/roles/worker.md）が同じ条件を return の契機として持つ。
-- このテンプレートは「いつ手を止めるか」だけを定義する。「どう実行するか」は発火先の
-  スキル（develop の本体、/lr:e、/lr:p 等）が持つ。ここに実行手順を書き足さないこと。
+- このテンプレートは「いつ手を止めるか」だけを定義する。「どう実行するか」は発火先
+  （develop の本体、Workflow 実行の型 references/workflow-execution.md、/opsx:explore 等）が持つ。
+  ここに実行手順を書き足さないこと。
 - 閾値（ファイル5個・2回など）は初期値であり、運用しながら調整してよい。
 -->
 
@@ -32,7 +34,8 @@
    編集対象ファイルが5個を超えた、または着手前の見積もりから作業項目が2回増えた
    → develop スキルの W として起動されている場合は本体に return し、本体が change / 子 issue
       （develop のエピック化）に分割する。それ以外（本体自身が読んでいる場合）は develop の
-      エピック化、または /lr:e 系の workflow 実行スキルに切り替える（成果は引き継ぐ）
+      エピック化、またはネイティブ Workflow 実行（型は plugins/dev-workflow/references/workflow-execution.md。
+      スクリプトは workflow-authoring スキルを読んで書く）に切り替える（成果は引き継ぐ）
 
 2. 【失敗ループ → モデル昇格】
    同じテストが2連続で落ちた、または同じ箇所を2回書き直した
@@ -50,7 +53,7 @@
    その瞬間に1カウント）
    → 手を止める。埋めた決定を列挙し、
       - 決定が2〜3個で局所的 → AskUserQuestion で確認する
-      - 決定が構造に及ぶ（データモデル・フロー・スコープ） → /lr:p を起動して壁打ちに戻す
+      - 決定が構造に及ぶ（データモデル・フロー・スコープ） → /opsx:explore で壁打ちに戻す
       - unmanned なら Discord でユーザーに質問し、issue に needs-approval を付けて
         経緯をコメントし、そのサイクルを終了する
 

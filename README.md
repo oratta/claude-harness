@@ -9,76 +9,10 @@ Claude Code用スキル・プラグインのマーケットプレイス
 /plugin marketplace add oratta/claude-harness
 
 # プラグインをインストール
-/plugin install longrun@oratta-claude-harness
+/plugin install dev-workflow@oratta-claude-harness
 ```
 
 ## プラグイン一覧
-
-### longrun
-
-Claude Code 向け自律実行ハーネス。plan.md から Workflow スクリプトを生成し、TDD 実装（Build）と 4 軸定量評価（Verify）を Build Contract レビュー付きで自律的に回す。
-
-```bash
-/plugin install longrun@oratta-claude-harness
-```
-
-**機能:**
-- brain dump を分析し、発散リスクの高い論点を質問で埋めて plan.md を対話的に作成
-- Build Contract パターンの実装前レビューと、独立コンテキストのサブエージェントによる TDD 実装
-- 静的検証（テスト・lint・型・ビルド）とブラウザ動作検証による定量評価
-- 完了後は OpenSpec change + ランディレクトリとしてアーカイブし、フィードバックを自動分類して反映
-
-**コマンド:**
-
-| コマンド | 説明 |
-|----------|------|
-| `/longrun:plan [brain-dump]` | 自律実行用の plan.md を対話的に作成する |
-| `/longrun:mvp` | 短時間・人間実装向けの軽量 MVP plan.md を作成する |
-| `/longrun:exec [plan-path]` | plan.md から Workflow スクリプトを生成・起動し、自律実行する |
-| `/longrun:archive` | 完了した自律実行をアーカイブする（OpenSpec change + ランディレクトリ） |
-| `/longrun:feedback` | 完了後のフィードバックを自動分類し、即実行または backlog に記録する |
-
-**含まれるスキル:**
-- `longrun-plan` - 自律実行用 plan.md の対話的作成
-- `longrun-mvp-plan` - 軽量 MVP plan.md の対話的作成
-- `longrun-feedback` - 完了後フィードバックの自動分類（Tier 1/2 即実行・Tier 3 backlog）
-
-**含まれるエージェント:**
-- `longrun-builder` - 独立コンテキストでの TDD 実装
-- `longrun-reviewer` - Build Contract パターンの実装前レビュー
-- `longrun-verifier` - 静的検証（テスト・lint・型チェック・ビルド）
-- `longrun-browser-verifier` - ブラウザ動作検証
-- `longrun-mvp-plan-reviewer` / `longrun-mvp-bestpractice-reviewer` / `longrun-mvp-research` - MVP プランのレビューとリサーチ
-
----
-
-### loops
-
-公式記事「Getting started with loops」（https://claude.com/blog/getting-started-with-loops）が定義する **4 つのループタイプ**を、Claude Code のネイティブプリミティブ（`/goal`・`/loop`・`/schedule`・skill・workflows・auto mode）の**合成レシピ集**として設計・記述するためのプラグイン。**独自のループ実行系（常駐スクリプト・カスタム driver）は持たない**——ハーネスが提供するのはレシピ（設計図）と規約であり、反復・スケジュール・停止判定はネイティブプリミティブに委ねる。
-
-```bash
-/plugin install loops@oratta-claude-harness
-```
-
-**公式 4 ループタイプ:**
-
-| タイプ | 何を手放すか | 主なプリミティブ |
-|--------|--------------|------------------|
-| ターンベース | 検証ステップ（skill の自己検証） | skill |
-| ゴールベース | 停止条件（定量基準まで反復） | `/goal` |
-| タイムベース | トリガー（定期・イベント起動） | `/loop`・`/schedule` |
-| プロアクティブ | プロンプト自体（人間不在で回る） | 合成（`/schedule` + `/goal` + workflows + auto mode） |
-
-**機能:**
-- `/loops:design` — 選択フレームワークに沿ってループ型を選び、停止基準必須・Bad Loop 検査を通したレシピを設計する
-- `/loops:goalify <テキスト|ファイル>` — brain dump から機械検証可能な goal ブリーフと `/goal` 起動コマンドを一発生成する
-- レシピ集（ゴール / タイム / プロアクティブ）と State 規約・コストガードレール
-
-詳細は `plugins/loops/`（レシピ・規約・リファレンス）を参照。定期実行のスケジューラ登録・課金選択はレシピのスコープ外（呼び出し側の責務）。
-
-loop-dev-agent の配備済み憲法（各リポの `docs/agent-loop.md`）は、`plugins/loops/templates/agent-loop-template.md` の更新後に `/loops:dev-agent-install` で再生成が必要（Step 3 の委譲先は dev-workflow の `develop` スキル）。
-
----
 
 ### dev-workflow
 
@@ -92,8 +26,9 @@ loop-dev-agent の配備済み憲法（各リポの `docs/agent-loop.md`）は�
 - `/develop [issue番号|URL|自然文]`（`/work-issue` はエイリアス）— develop スキルを interactive モードで起動する。issue が無ければ issue を切らず Draft PR を記録先にする（issue を切るのは追跡・キュー・議論が要るときだけ）
 - 本体は Edit でコードを書かず、レビューを代行しない。別コンテキストを要する工程（仕様レビュー・PR レビュー）はすべて本体が起こす
 - エピック（独立してマージできる PR が 2 本以上・複数 capability・順序依存）は子 issue ごとに 1 ループを `isolation: "worktree"` で並列に回す
-- `loops` プラグインの loop-dev-agent の無人サイクルでは、憲法のメインが develop の本体を務める（`--unmanned`）
-- `longrun:plan` は呼ばない（issue 化前の壁打ちとは切り分ける）
+- loop-dev-agent の無人サイクル（憲法は各リポの `docs/agent-loop.md`。flatmate が保守）では、憲法のメインが develop の本体を務める（`--unmanned`）
+- 上流の壁打ち（`/opsx:explore`）は呼ばない（issue 化前の壁打ちとは切り分ける）
+- `references/`（プラグイン直下）に他プラグインと共有する契約を置く: 自己検証の共通原則・PR / issue 本文の型・Workflow 実行のロール別ティア・Workflow 実行の型。`issueify` スキルはタスクメモを受け入れ条件付き issue に変換する
 
 詳細は `plugins/dev-workflow/skills/develop/SKILL.md` を参照。
 
@@ -126,7 +61,6 @@ loop-dev-agent の配備済み憲法（各リポの `docs/agent-loop.md`）は�
 |-----------|------|
 | `telegram` | Telegram messaging bridge。公式プラグインの fork で、主のリアクション（👍👀等）をセッションに配送する |
 | `discord` | Discord messaging bridge。公式プラグインの fork で、`fetch_messages` がリアクションを返す |
-| `lr` | longrun の短縮コマンド集（`/lr:p` `/lr:m` `/lr:e` `/lr:a` `/lr:f`） |
 | `worktree` | Git worktree のセットアップ（`/wt-setup`。`--with-pr` で Draft PR まで作成）とクリーンアップ（`/wt-clean`） |
 | `weekly-report` | 週次プロジェクト実績レポートを自動生成し、Obsidian 週次ノートに挿入する。cron 非対話実行に対応 |
 | `daily-report` | 音声トランスクリプト・Obsidian ノート・LLM セッションログを横断集約し、日次日記を生成する |
@@ -157,7 +91,7 @@ git clone https://github.com/oratta/claude-harness
 cd claude-harness
 
 # Claude Codeでローカルプラグインを追加
-/plugin add ./plugins/longrun
+/plugin add ./plugins/dev-workflow
 ```
 
 ### 新しいプラグインを追加
@@ -190,3 +124,9 @@ MIT License
 ## Author
 
 Oratta
+
+---
+
+### 解散済みプラグイン
+
+ループレシピ集・自律実行ハーネス・その短縮コマンド集の 3 プラグインは 2026-08 に解散した（[#205](https://github.com/oratta/claude-harness/issues/205)）。手順書としての層をやめ、中に埋まっていた契約（自己検証の共通原則・PR / issue 本文の型・issueify・ロール別モデルティア）だけを `dev-workflow` に移した。install 済みの環境での `/plugin uninstall` 手順と新旧パスの対応表は `plugins/dev-workflow/CHANGELOG.md` にある。

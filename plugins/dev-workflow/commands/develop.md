@@ -38,18 +38,18 @@ done
 
 追跡・キュー・議論が要るときに、**起票してから標準パイプラインに乗せる**ための手順。ユーザーが `/develop` を明示的に起動していることが入口ゲートであり、これは自動の入口分類（issue #26 で却下済み）には該当しない。
 
-1. **loops-issueify を path-discovery で解決する**（develop と同じパターン）:
+1. **同じプラグイン内の issueify スキルを解決する**（develop 本体の特定と同じパターン。他プラグインへは探索しない）:
 
    ```bash
    for dir in \
-     "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT%/*}/loops/skills/loops-issueify}" \
-     ~/.claude/plugins/marketplaces/*/plugins/loops/skills/loops-issueify \
-     ~/.claude/plugins/installed/*/loops/skills/loops-issueify; do
+     "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/issueify}" \
+     ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/issueify \
+     ~/.claude/plugins/installed/*/dev-workflow/skills/issueify; do
      [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
    done
    ```
 
-2. **見つかった場合**: その SKILL.md を Read tool で読み込み、手順（原子化 → 測定可能な受け入れ条件のドラフト → 不足だけヒアリング → 承認 → 起票）をインライン実行する。Skill tool は使わない（この command の方針と同じ）。
+2. **見つかった場合**: その `skills/issueify/SKILL.md` を Read tool で読み込み、手順（原子化 → 測定可能な受け入れ条件のドラフト → 不足だけヒアリング → 承認 → 起票）をインライン実行する。Skill tool は使わない（この command の方針と同じ）。
 3. **見つからない場合（fail-soft）**: エラーで停止せず、最小手順に縮退する — 依頼内容から「これで何が変わるか（最大 3 行・技術用語禁止）/ やらないとどうなるか・今のコスト（最大 3 行）/ 概要 / 触るファイル（Grep で実在確認）/ 測定可能な受け入れ条件（実行コマンド + 期待値）」のドラフトを作って提示し、承認後に `gh issue create` で起票する。
 4. **承認ゲート（両経路共通）**: ドラフトを提示してユーザーの**承認を得てから**起票する。承認なしに `gh issue create` を実行しない。
 5. **複数 issue に割れた場合**: 原子化の結果が複数 issue になったら全件を起票した上で、**着手する1件**をユーザーに選択させ、その1件だけを SKILL.md の実行に渡す。残りは起票のみ（次回の `/develop` や loop-dev-agent が拾う）。複数 PR にまたがるなら SKILL.md「エピックの扱い」に従いエピックとして作る。

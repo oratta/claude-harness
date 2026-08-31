@@ -274,23 +274,35 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$e" | grep -qE '証拠.*エピック'
 }
 
-# --- longrun:plan ---
+# --- 上流の壁打ち（旧 longrun:plan。#205 で /opsx:explore に） ---
 
-@test "longrun:plan is explicitly not called from develop" {
-  grep -q '^## longrun:plan を呼ばない理由' "$SKILL"
+@test "upstream brainstorming (opsx:explore) is explicitly not called from develop" {
+  grep -q '^## 上流の壁打ち' "$SKILL"
+  grep -q 'opsx:explore' "$SKILL"
+  ! grep -q 'longrun' "$SKILL"
+  ! grep -qF '/lr:' "$SKILL"
 }
 
 # --- 昇格トリップワイヤーのテンプレート（1.6b。hook 出力を検査する tripwire-hook.bats には混ぜない） ---
 
-@test "tripwire template: wire 1 routes to return-to-main split or /lr:e, keeps heading and four wires" {
+@test "tripwire template: wire 1 routes to return-to-main split or native Workflow execution, keeps heading and four wires" {
   grep -q '^## 昇格トリップワイヤー' "$TRIPWIRES"
   w1="$(awk '/^1\. /{f=1} /^2\. /{f=0} f' "$TRIPWIRES")"
   echo "$w1" | grep -q '規模超過'
   echo "$w1" | grep -q '本体に return'
   echo "$w1" | grep -q 'エピック化'
-  echo "$w1" | grep -q '/lr:e'
+  echo "$w1" | grep -q 'workflow-execution.md'
   ! echo "$w1" | grep -q 'workflow 型へ'
+  ! grep -qF '/lr:' "$TRIPWIRES"
   grep -q '失敗ループ' "$TRIPWIRES"
   grep -q '仕様の発明' "$TRIPWIRES"
+  w3="$(awk '/^3\. /{f=1} /^4\. /{f=0} f' "$TRIPWIRES")"
+  echo "$w3" | grep -q 'opsx:explore'
   [ "$(grep -cE '^[1-4]\. 【' "$TRIPWIRES")" -eq 4 ]
+}
+
+@test "tripwire template: unmanned wiring names the flatmate-owned constitution, not a loops template" {
+  grep -q 'docs/agent-loop.md' "$TRIPWIRES"
+  ! grep -q 'loop-dev-agent-tripwires' "$TRIPWIRES"
+  ! grep -q 'loops プラグイン' "$TRIPWIRES"
 }

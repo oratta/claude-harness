@@ -20,7 +20,7 @@
 ## Goals / Non-Goals
 
 **Goals:**
-- `plugins/loops/`・`plugins/longrun/`・`plugins/lr/` を消し、`grep -rn "loops:\|/lr:\|longrun\|agent-owner" plugins rules docs` が移設先の説明文以外で 0 件になる（epic #208 の完了条件）
+- `plugins/loops/`・`plugins/longrun/`・`plugins/lr/` を消し、`grep -rn "loops:\|/lr:\|longrun" plugins rules docs` が移設先の説明文以外で 0 件になる（epic #208 の完了条件。旧名プラグインの掃除分は #206 で完了済み）
 - 生きている契約 4 本（self-verification / pr-body-format / model-tiers / Workflow 実行の型）と issueify スキルを dev-workflow に移し、既存の参照元（7 スキル・rules・develop）をすべて新パスに向ける
 - 解散した capability の spec を `openspec/specs/` から消し、正本の置き場に「存在しない機能の仕様」を残さない
 - `/plugin uninstall` の手順と、flatmate 側で追従が必要な箇所を CHANGELOG に書く

@@ -30,7 +30,7 @@
 - **THEN** 残るヒットは 0 件である
 
 #### Scenario: 旧 reference パスの参照が残っていない
-- **WHEN** `grep -rn "loops/references/\|longrun/references/" plugins rules docs README.md .github` を実行し、例外 (e) の bats ファイル自身を除く
+- **WHEN** `grep -rn "loops/references/\|longrun/references/" plugins rules docs README.md .github` を実行し、例外 (a) の CHANGELOG（新旧パス対応表が旧パスを必然的に含む）と例外 (e) の bats ファイル自身を除く
 - **THEN** ヒットは 0 件である（自己検証・PR 本文の型・モデルティアの参照、`.github/PULL_REQUEST_TEMPLATE.md` の書式の正本、`roles/worker.md` の PR 本文の型は、すべて `plugins/dev-workflow/references/` を指す）
 
 ### Requirement: 解散した capability の spec を正本の置き場から消す

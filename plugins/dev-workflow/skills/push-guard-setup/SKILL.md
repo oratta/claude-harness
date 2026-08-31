@@ -20,10 +20,10 @@ allowed-tools: Read, Write, Edit, Bash
 | 層 | 置き場所 | 内容 | 対象 |
 |---|---|---|---|
 | **グローバル**（このスキル） | `~/.githooks/pre-push` + `git config --global core.hooksPath` | マージ済み PR チェックのみ | 全リポジトリ |
-| **リポジトリローカル** | `<repo>/.githooks/pre-push`（`loops-dev-agent-install` が設置） | main/master 直 push 拒否 + マージ済み PR チェック | 自律開発ループ導入 repo |
+| **リポジトリローカル** | `<repo>/.githooks/pre-push`（loop-dev-agent 導入済み repo。flatmate の `new-resident` が設置） | main/master 直 push 拒否 + マージ済み PR チェック | 自律開発ループ導入 repo |
 
 **ローカルの `core.hooksPath` はグローバル設定より優先される**（git の設定優先順位）。したがって
-`loops-dev-agent-install` を導入済みのリポジトリでは、従来どおり厳しい方（main 拒否込み）のローカル層が
+loop-dev-agent を導入済みのリポジトリでは、従来どおり厳しい方（main 拒否込み）のローカル層が
 使われ、このスキルの導入によって緩くなることはない。片方を無効化する仕組みは不要である。
 
 **グローバル層に main/master 直 push 拒否を入れない理由**: `~/.claude/rules/git-commit-policy.md` の
@@ -142,7 +142,7 @@ git push --dry-run origin HEAD:refs/heads/<新しいブランチ名>
 `.git/hooks/` 直置きフックが無効化される**。git は hooksPath を「どちらか一方」としてしか見ないため。
 
 - husky など、自分で `core.hooksPath` を設定するツールを使っているリポジトリは影響を受けない
-- `loops-dev-agent-install` 導入済みのリポジトリも自前の設定を持つため影響を受けない
+- loop-dev-agent 導入済みのリポジトリも自前の設定を持つため影響を受けない
 - `.git/hooks/` に手書きのフックがあるリポジトリだけが影響を受ける。そのリポジトリで元に戻すには:
 
   ```bash
