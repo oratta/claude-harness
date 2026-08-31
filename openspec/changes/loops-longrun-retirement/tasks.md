@@ -5,7 +5,8 @@
 - [ ] 1.3 `plugins/loops/tests/pr-body-format.bats` の reference 検査を `plugins/dev-workflow/tests/pr-body-format.bats` に移す（REF を新パスに、TEMPLATE/INSTALL/MANIFEST 系のテストは落とし、issueify の 2 節検査を `skills/issueify/SKILL.md` に向ける。正本パスが issueify の新パスであることも検査）
 - [ ] 1.4 `plugins/dev-workflow/tests/issueify-skill.bats` を新設: plugin.json の `skills[]` 登録・frontmatter `name: issueify`・4 入力モード・6 節ドラフト・4 型の受け入れ条件・承認ゲート・ラベル 5 種・`dependencies/blocked_by`・`loops`/`goalify`/`agent-loop-template` 0 件・pr-body-format 新パス参照・develop.md が同プラグイン内 Read で `plugins/loops` を含まない
 - [ ] 1.4b `tests/marketplace-sync.bats` を新設し、`plugins/loops/tests/integration.bats` の S130 / S130b / S131 / S132 / S133 / S139 を移す（loops の helper に依存しない自前 setup。S127/S128 は捨てる）
-- [ ] 1.4c `plugins/dev-workflow/tests/self-verification-sections.bats` を新設し、`plugins/loops/tests/skill-verification-sections.bats`（S42〜S50）と `self-verification-reference.bats`（S36〜S41）を移す（対象 6 スキル・REF を新パス・S40 の実パス一覧から longrun-plan を外す）
+- [ ] 1.4c `plugins/dev-workflow/tests/self-verification-sections.bats` を新設し、`plugins/loops/tests/skill-verification-sections.bats`（S42〜S50）と `self-verification-reference.bats`（S36〜S41）を移す（対象 6 スキル・REF を新パス・S40 の実パス一覧から longrun-plan を外す。**S48 は `self-verification.md` を含む参照行を比較対象から除く**——本 change 自身がその行を書き換えるため）
+- [ ] 1.4d retirement.bats の掃除 grep は範囲に `.github` を含め、例外 (a)〜(e)（CHANGELOG・spec-reviewer.md 由来説明・product-handover CHANGELOG・`_longruns/`・検査 bats 自身）を正規表現で除外する
 - [ ] 1.5 既存テストを更新: `develop-skill.bats`（`longrun:plan` 見出し → 「上流の壁打ち」見出し、wire 1 の `/lr:e` → `workflow-execution`、`/lr:p` 不在）、`develop-command.bats`（`loops-issueify` → `skills/issueify`、`plugins/loops` 不在）、`push-guard-setup.bats`（`loops-dev-agent-install` → `loop-dev-agent`）
 - [ ] 1.6 `bash scripts/test.sh dev-workflow` を実行し、新設・更新したテストが Red であることを確認する
 
@@ -29,6 +30,8 @@
 - [ ] 3.8 `plugins/casting/catalog/injection.md` の設計時の配線先（3 か所）を longrun plan から「`/opsx:explore`・opsx proposal（develop の W が担う）」に書き換える
 - [ ] 3.9 `plugins/skill-pack/skills/skill-pack/SKILL.md` の例示 `✅ longrun@oratta-claude-harness` を `✅ dev-workflow@oratta-claude-harness` に
 - [ ] 3.10 `scripts/test-auto-merge-workflow.sh` の fixture パス `plugins/longrun/README.md` を `plugins/casting/README.md` に
+- [ ] 3.11 `.github/PULL_REQUEST_TEMPLATE.md` 1 行目の書式の正本を `plugins/dev-workflow/references/pr-body-format.md` に差し替える
+- [ ] 3.12 `skills/develop/references/roles/worker.md` の「unmanned では loops の `references/pr-body-format.md` の型に従い」を「`plugins/dev-workflow/references/pr-body-format.md` の型に従い」に書き換える
 
 ## 4. 解散プラグインと spec を消す
 
@@ -47,5 +50,5 @@
 ## 6. 検証と PR
 
 - [ ] 6.1 `bash scripts/lint.sh`、`bash scripts/test.sh dev-workflow casting worktree infra daily-report weekly-report experience-to-skill skill-pack product-handover tests` を実行して全件 pass・exit 0 を確認。`grep -rn "loops:\|/lr:\|longrun" plugins rules docs README.md .claude-plugin scripts` の許容リスト外ヒットが 0 件であることを目視でも確認
-- [ ] 6.2 flatmate 側の参照更新 issue を `gh issue create -R genetta-inc/flatmate` で起票し（`docs/agent-loop.md` の正本宣言後の自立・`docs/burn-mode.md` の review-queue 参照・issue テンプレの参照パス。harness #205 / PR #216 へのリンク）、URL を CHANGELOG と issue #205 のコメントに残す
-- [ ] 6.3 `/opsx:verify loops-longrun-retirement` → `/opsx:archive loops-longrun-retirement`、commit / push、PR #216 の本文を `references/pr-body-format.md` の型で書いて Ready for Review、pr-review-gate を通す
+- [ ] 6.2 flatmate 側の参照更新 issue を `gh issue create -R genetta-inc/flatmate` で起票し（`docs/agent-loop.md` の正本宣言後の自立・`docs/burn-mode.md` の review-queue 参照・issue テンプレの参照パス・リポジトリローカル pre-push フック（main 拒否込み）の雛形と挙動テスト `pre-push-merged-pr-guard.bats` が harness から消え以後の正本は `new-resident` 側であること。harness #205 / PR #216 へのリンク）、URL を CHANGELOG と issue #205 のコメントに残す
+- [ ] 6.3 `/opsx:verify loops-longrun-retirement` → `/opsx:archive loops-longrun-retirement`（archive 後に `openspec/specs/global-push-guard/spec.md` の Purpose にある `loops-dev-agent-install` を「loop-dev-agent 導入済み repo（flatmate `new-resident` が設置）」に手で直す。Purpose は delta の対象外のため）、commit / push、PR #216 の本文を `references/pr-body-format.md` の型で書き、例外 5 種を「移設先の説明文」と読む旨を 1 行添えて Ready for Review、pr-review-gate を通す

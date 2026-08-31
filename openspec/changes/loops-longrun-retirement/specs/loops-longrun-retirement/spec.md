@@ -19,19 +19,19 @@
 - **THEN** `plugins[].name` にも `bundles[] | select(.name=="all") | .plugins[]` にも `loops`・`longrun`・`lr` が現れない
 
 #### Scenario: plugins/ 配下と marketplace の登録が一致する
-- **WHEN** `plugins/` 直下のディレクトリ名一覧と `plugins[].name` の一覧を比較する
-- **THEN** 両者は完全一致する（片側だけにある名前が無い）
+- **WHEN** `tests/marketplace-sync.bats` の「全ディレクトリが登録されている」検査（capability `marketplace-plugin-sync`）を実行する
+- **THEN** pass する（`plugins/` 直下のディレクトリ名一覧と `plugins[].name` の一覧が完全一致し、片側だけにある名前が無い）
 
 ### Requirement: 解散プラグインへの参照を掃除する
-`plugins/`・`rules/`・`docs/`・`README.md`・`.claude-plugin/`・`scripts/` 配下のファイルは、`loops:`（スラッシュコマンド・スキル参照）・`/lr:`・`longrun`・`plugins/loops/`・`plugins/longrun/` の文字列を含んではならない（MUST NOT）。例外は次の 4 種に限る: (a) `plugins/dev-workflow/CHANGELOG.md` の解散記録と新旧パス対応表、(b) `plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md` の「旧 longrun の Build Contract レビューを置き直した」という由来説明、(c) `plugins/product-handover/CHANGELOG.md` の「loops の解散は #205」という説明文、(d) ルートの過去実行アーカイブ `_longruns/` を指すパス・除外指定（`scripts/test.sh`・`scripts/lint.sh`・`tests/shell-multibyte-expansion.bats`・`plugins/product-handover/tests/plugin-structure.bats`・`plugins/worktree/tests/helper.bash`）。
+`plugins/`・`rules/`・`docs/`・`README.md`・`.claude-plugin/`・`.github/`・`scripts/` 配下のファイルは、`loops:`（スラッシュコマンド・スキル参照）・`/lr:`・`longrun`・`plugins/loops/`・`plugins/longrun/`・`loops の references` の文字列を含んではならない（MUST NOT）。例外は次の 5 種に限る: (a) `plugins/dev-workflow/CHANGELOG.md` の解散記録と新旧パス対応表、(b) `plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md` の「旧 longrun の Build Contract レビューを置き直した」という由来説明、(c) `plugins/product-handover/CHANGELOG.md` の「loops の解散は #205」という説明文、(d) ルートの過去実行アーカイブ `_longruns/` を指すパス・除外指定（`scripts/test.sh`・`scripts/lint.sh`・`tests/shell-multibyte-expansion.bats`・`plugins/product-handover/tests/plugin-structure.bats`・`plugins/worktree/tests/helper.bash`）、(e) この掃除と解散を検査する bats ファイル自身（`plugins/dev-workflow/tests/*.bats`・`tests/marketplace-sync.bats`。検査対象の文字列を必然的に含むため。先例: `plugins/product-handover/tests/plugin-structure.bats` が自分を除外している）。
 
 #### Scenario: 許容リスト外のヒットが 0 件
-- **WHEN** リポジトリルートで `grep -rn "loops:\|/lr:\|longrun" plugins rules docs README.md .claude-plugin scripts` を実行し、上の 4 種の例外行を除く
+- **WHEN** リポジトリルートで `grep -rn "loops:\|/lr:\|longrun\|loops の references" plugins rules docs README.md .claude-plugin .github scripts` を実行し、上の 5 種の例外行を除く
 - **THEN** 残るヒットは 0 件である
 
 #### Scenario: 旧 reference パスの参照が残っていない
-- **WHEN** `grep -rn "loops/references/\|longrun/references/" plugins rules docs README.md` を実行する
-- **THEN** ヒットは 0 件である（自己検証・PR 本文の型・モデルティアの参照はすべて `plugins/dev-workflow/references/` を指す）
+- **WHEN** `grep -rn "loops/references/\|longrun/references/" plugins rules docs README.md .github` を実行し、例外 (e) の bats ファイル自身を除く
+- **THEN** ヒットは 0 件である（自己検証・PR 本文の型・モデルティアの参照、`.github/PULL_REQUEST_TEMPLATE.md` の書式の正本、`roles/worker.md` の PR 本文の型は、すべて `plugins/dev-workflow/references/` を指す）
 
 ### Requirement: 解散した capability の spec を正本の置き場から消す
 `openspec/specs/` 配下の `loops-*`・`longrun-*`・`workflow-exec`・`workflow-tool-reference`・`workflow-run-control`・`legacy-command-removal`・`loop-dev-agent-tripwires` の各ディレクトリは存在してはならない（MUST NOT）。これらは解散プラグインの振る舞いだけを規定していた spec であり、存在しない機能の仕様を「現行仕様の正本」に残さない。過去の一回性作業を記録した spec（`marketplace-final-sync`・`retirement-handoff-docs`・`llm-log-relocation`・`repo-root-cleanup`・`plugin-retirement-cleanup`）は歴史記述として残す。
@@ -45,7 +45,7 @@
 - **THEN** 全件 pass する（delta 見出しの残留・Purpose/Requirements 欠落・不正な題名が 0 件）
 
 ### Requirement: アンインストール手順と契約の移設先を CHANGELOG に書く
-`plugins/dev-workflow/CHANGELOG.md` は、dev-workflow 2.1.0 の項に (1) `/plugin uninstall loops@oratta-claude-harness`・`/plugin uninstall longrun@oratta-claude-harness`・`/plugin uninstall lr@oratta-claude-harness` と `/reload-plugins` の実行、(2) 各プロジェクトの `settings.local.json` の `enabledPlugins` から 3 名のキーを外すこと、(3) 契約の新旧パス対応表（self-verification / pr-body-format / model-tiers / issueify と、廃止した review-queue・feature-list-format・`/lr:e`・`/lr:p` の後継）、(4) flatmate 側で追従が必要な箇所（`docs/agent-loop.md` の正本宣言後の自立・`docs/burn-mode.md` の review-queue 参照・issue テンプレの参照パス）と対応 issue へのリンク、を含まなければならない（MUST）。
+`plugins/dev-workflow/CHANGELOG.md` は、dev-workflow 2.1.0 の項に (1) `/plugin uninstall loops@oratta-claude-harness`・`/plugin uninstall longrun@oratta-claude-harness`・`/plugin uninstall lr@oratta-claude-harness` と `/reload-plugins` の実行、(2) 各プロジェクトの `settings.local.json` の `enabledPlugins` から 3 名のキーを外すこと、(3) 契約の新旧パス対応表（self-verification / pr-body-format / model-tiers / issueify と、廃止した review-queue・feature-list-format・`/lr:e`・`/lr:p` の後継）、(4) flatmate 側で追従が必要な箇所（`docs/agent-loop.md` の正本宣言後の自立・`docs/burn-mode.md` の review-queue 参照・issue テンプレの参照パス・リポジトリローカル pre-push フック（main 拒否込み）の雛形と挙動テストが harness から消え、以後の正本は flatmate `new-resident` 側であること）と対応 issue へのリンク、を含まなければならない（MUST）。
 
 #### Scenario: uninstall 3 行と reload が書かれている
 - **WHEN** `plugins/dev-workflow/CHANGELOG.md` を読む

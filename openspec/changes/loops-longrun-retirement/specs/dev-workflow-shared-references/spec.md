@@ -54,7 +54,7 @@ dev-workflow プラグインは、他プラグインからも参照される契�
 
 #### Scenario: rules がこのファイルを指す
 - **WHEN** `rules/subagent-model-selection.md` を読む
-- **THEN** ロール別ティアの正本として `plugins/dev-workflow/references/model-tiers.md` が示され、`plugins/longrun/` は現れない。ファイルの行数は変更前（43 行）と同じである
+- **THEN** ロール別ティアの正本として `plugins/dev-workflow/references/model-tiers.md` が示され、`plugins/longrun/` は現れない。ポインタは 1 行に収め、この差し替えでファイルの行数を増やさない（rules は常時ロード層なので薄く保つ）
 
 ### Requirement: Workflow 実行の型を 1 ファイルで定める
 `plugins/dev-workflow/references/workflow-execution.md` は、develop の 1 ループに収まらない規模（トリップワイヤー 1 の発火・エピック化でも足りない探索的な実装）をネイティブ Workflow ツールで回すときの型を定めなければならない（MUST）。内容は (1) Review → Build → Verify の 3 フェーズを `meta.phases` で表す構成、(2) Build Contract レビュー（実装前に別コンテキストが計画を審査する。develop では R1 が担う工程で、Workflow 内では reviewer agent を `fable` で立てる）、(3) verifier の姿勢（自分が作っていないものを壊す立場・品質＝テスト/lint/型/ビルド 100% 必須・完成度 80% 以上・疑わしければ FAIL・`schema` 付きの構造化レポートで自己申告を排除）、(4) ロール別ティアは `model-tiers.md` を参照、(5) 外部状態は Workflow の `args` / return 値と `resumeFromRunId` で持つ（独自の状態ファイル形式を作らない）、(6) スクリプト API・resume・品質パターンの正本は `workflow-authoring` スキルであり、このファイルはそれを繰り返さない、の 6 点である。`/lr:e`・`/longrun:exec`・plan.md への言及を含んではならない（MUST NOT）。

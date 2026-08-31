@@ -94,7 +94,9 @@ openspec の delta で 38 spec 分の `## REMOVED Requirements` を書くのは�
 - 新設 `plugins/dev-workflow/tests/retirement.bats`: 3 ディレクトリ不在・marketplace に 3 名が無い（`plugins[]` と bundles）・38 spec ディレクトリ不在・`grep -rn "loops:\|/lr:\|longrun" plugins rules docs README.md .claude-plugin` の許容リスト外ヒット 0 件・CHANGELOG に uninstall 3 行
 - 既存テストの更新: `develop-skill.bats`（`longrun:plan` 見出し → 新見出し、wire 1 の `/lr:e` → `workflow-execution`）、`develop-command.bats`（`loops-issueify` → `skills/issueify`）、`push-guard-setup.bats`（`loops-dev-agent-install` → `loop-dev-agent`）
 
-許容リストの考え方: 「移設先の説明文」＝ CHANGELOG（新旧対応表）・spec-reviewer.md の由来説明・product-handover CHANGELOG の「loops の解散は #205」・`_longruns/`（ルートのアーカイブ dir 名）に限る。テストはこの 4 種を正規表現で除外し、それ以外のヒットを違反とする。
+許容リストの考え方: 「移設先の説明文」＝ CHANGELOG（新旧対応表）・spec-reviewer.md の由来説明・product-handover CHANGELOG の「loops の解散は #205」・`_longruns/`（ルートのアーカイブ dir 名）・**検査を実装する bats ファイル自身**（`plugins/dev-workflow/tests/*.bats`・`tests/marketplace-sync.bats`。「`/lr:` が無い」「`loops/references/` が 0 件」を検査するテストは検査対象の文字列を必ず含むので、先例 `plugins/product-handover/tests/plugin-structure.bats` と同じく自分を除外する）に限る。テストはこの 5 種を正規表現で除外し、それ以外のヒットを違反とする。grep の範囲には `.github/`（`PULL_REQUEST_TEMPLATE.md` の書式の正本コメント）も含める。epic #208 の完了条件「移設先の説明文以外で 0 件」は、この 5 種を「説明文」と読むことを PR 本文に 1 行書く。
+
+移設する S48（自己検証節が merge-base から書き換えられていない）は、本 change 自身が参照行を旧パス → 新パスに書き換えるため、素直に移すと本 PR で必ず Red になる。移設後の S48 は `self-verification.md` を含む参照行を比較対象から除く（守りたいのは固有手順の非書き換えで、参照行のパス差し替えは spec で要求している変更）。
 
 ### D11. marketplace 横断ガードはルート `tests/` に移す
 
