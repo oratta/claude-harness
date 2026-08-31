@@ -1,8 +1,23 @@
-# dev-workflow-execution-strategy Specification
+## REMOVED Requirements
 
-## Purpose
-TBD - created by archiving change dev-workflow-execution-strategy. Update Purpose after archive.
-## Requirements
+### Requirement: 実行戦略の判定表
+**Reason**: 本体がオーケストレータ専任になり、実行の主体は常に W（サブエージェント）になったため、solo / delegate+verify / workflow 型の 3 分岐は意味を失った。判断は「W をどのモデルで起こすか」に畳む。
+**Migration**: `dev-workflow-develop` の「役割のモデルは事前分類と残量モードで決める」要件に従う。4 象限モデルとモード不変ルールは削除する。
+
+### Requirement: 決定論的シグナルの前処理
+**Reason**: 実行戦略の判定表の入力としてのみ使われていたため、判定表と共に廃止する。
+**Migration**: 収集コマンド（issue 本文の長さ・チェックリスト数・size ラベル・言及ファイル数）は develop から削除する。分割判定（単一 change か複数 change か）は issue 本文の記述を根拠に行い、機械的シグナルは使わない。
+
+### Requirement: Step D の実行戦略分岐
+**Reason**: Step D は W の指示書（`references/roles/worker.md`）に移り、W は常にサブエージェントとして実行されるため分岐が不要になった。
+**Migration**: W の指示書は分岐を持たず、TDD と証拠付き完了宣言の大原則だけを持つ。workflow 型（`/lr:e`）への乗り換えは develop の経路から外す。
+
+### Requirement: abundant の委譲は self-contained タスクに限定
+**Reason**: 委譲するかどうかの判断（solo か delegate か）が無くなったため、委譲の限定条件も不要になった。
+**Migration**: 削除する。abundant の効果は「W / R1 / G の既定モデルを 1 段上げてよい」に限る。
+
+## MODIFIED Requirements
+
 ### Requirement: 残量モードによる閾値調整
 役割のモデル選択は環境変数 `FABLE_BUDGET_MODE`（`abundant` / `conserve` / `reserve` / `exhausted`）を参照しなければならない（SHALL）。定義表は develop スキルの `references/decision-criteria.md` に置く（SHALL）。未設定時は usage snapshot からの自動導出結果を用い、snapshot も無ければ `conserve` として扱う。明示的に設定された `FABLE_BUDGET_MODE` は自動導出より優先されなければならない（SHALL）。モードが変えるのは役割（W / R1 / G）の既定モデルと昇格上限のみであり、1 ループの構造・トリップワイヤーは変えない。`exhausted` は Fable 週次枠を実質使い切った状態を表し、`reserve` と異なり interactive を含む全経路で Fable をいかなる役割でも使わず、昇格ラダーを Opus 上限とする。
 
@@ -58,4 +73,3 @@ develop スキルの `references/decision-criteria.md` の仕様化要否（Step
 #### Scenario: 90% 超は exhausted
 - **WHEN** snapshot の `fable_weekly_pct` が 90 を超え、`FABLE_BUDGET_MODE` が未設定
 - **THEN** 残量モードは exhausted に導出される
-

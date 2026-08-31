@@ -35,7 +35,7 @@
 ループセッション（メイン）のコンテキストはサイクルを跨いで蓄積するため、メインは**配車係に徹する**。
 
 1. メインが自分で行うのは: レートガード（Step 0）、朝ダイジェスト（Step 0.5）、対象選定（Step 0.9 の選定スクリプト実行。目視でモード・対象を選ばない）、サブエージェントへの委譲、ログ追記、結果報告のみ。
-2. 各モードの作業本体（Step 1 のレビュー、Step 2 の修正、Step 3 の実装、Step 4 の調査・起票文案）は**サブエージェントに委譲**し、毎回まっさらなコンテキストで実行させる。メイン自身でファイルを読み込んで作業しない。
+2. 各モードの作業本体（Step 1 のレビュー、Step 2 の修正、Step 4 の調査・起票文案）は**サブエージェントに委譲**し、毎回まっさらなコンテキストで実行させる。メイン自身でファイルを読み込んで作業しない。Step 3（実装）だけは委譲対象に含めない — メインが `dev-workflow` の develop スキルの本体（オーケストレータ）として W / R1 を spawn する（サブエージェントは Agent ツールを持たず W / R1 を起こせないため。Step 3 参照）。メインがやるのは spawn と return の転記だけで、作業の詳細は W / R1 側に閉じる。
 3. サブエージェントへ渡すもの: 本憲法ファイルのパス（該当 Step を読んで従うよう指示）、対象の issue / PR 番号、`.agent-loop/GUARDRAILS.md` のパス。
 4. サブエージェントから受け取るもの: 結果サマリ（実行したコマンドと exit code の証拠、作成した PR / コメントの URL を含む）。メインはそれをログと報告に転記する。
 5. 作業中の詳細（ファイル内容・テスト出力・試行錯誤）はサブエージェント側に閉じ、サイクル終了とともに破棄される。長期稼働でメインのコンテキストが自動要約されても、状態はすべて外部（ラベル・issue / PR コメント・`.agent-loop/`）にあるため失われて困る記憶はない。
@@ -356,31 +356,32 @@ bash scripts/agent-loop-select.sh
 
 1. 受け入れ条件が測定可能な形で書かれていない issue は拾わない。不足点を issue コメントで指摘し、**`candidates` の次の番号**へ（候補が尽きたら Step 4 = 提案モードへ）。
 2. 着手宣言: `agent-wip` ラベルを付け、着手コメントを残す。Review Queue 連携（該当時）: この issue がボードに載っていれば（着手可能 など）item を削除する（着手した issue は実行待ちキューから消す）。
-3. **開発の中身は `dev-workflow` プラグインの `github-issue` スキルに委譲する**（Skill ツールで起動。`--unmanned` を付け、対象 issue 番号・`{{WORKTREE_BASE}}`・`{{MAIN_BRANCH}}` を渡す）。このスキルが以下を判定・実行する:
-   - worktree 作成（`{{WORKTREE_BASE}}` 配下、ブランチ名 `agent/issue-<番号>-<slug>`、起点は `origin/{{MAIN_BRANCH}}`）と wt-setup
+3. **開発の中身は `dev-workflow` プラグインの `develop` スキルに委譲する** — ただしサブエージェントに Skill ツールで起動させるのではなく、**メインが develop の本体（オーケストレータ）として W / R1 を `--unmanned` で spawn する**（`develop/SKILL.md` を Read し、対象 issue 番号・下で用意した worktree・`{{MAIN_BRANCH}}` を W に渡す。1 ループの (0)〜(3) を回し、(4) の G は起こさず Step 1（レビューモード）に委ねる）。W / R1 が以下を判定・実行する:
+   - worktree はメインが用意して W に渡す（`{{WORKTREE_BASE}}` 配下、ブランチ名 `agent/issue-<番号>-<slug>`、起点は `origin/{{MAIN_BRANCH}}`。wt-setup は worktree プラグインの hooks が担う。W は自分で worktree を切らない）
    - 仕様として残すべき変更なら opsx（openspec）フロー、そうでなければコード直行
-   - **単一 change で完結する場合**: そのまま TDD で実装する（テストを先に書く。大原則 6・7 を遵守）
+   - 仕様化判断を `仕様化判断: する|しない` の書式で issue に記録し、仕様化する場合は W の `/opsx:ff` の後に R1 が別コンテキストで仕様レビューし、APPROVE が記録されるまで実装に入らない（unmanned でも免除しない）
+   - **単一 change で完結する場合**: W がそのまま TDD で実装する（テストを先に書く。大原則 6・7 を遵守）
    - **複数 change に割れる場合**: change 単位でサブ issue を作成し `blocked_by` で順序を付け、各サブ issue に `agent-ready` を付ける（親 issue の承認は既に済んでいるため個別承認は不要）。元 issue には分割結果（#a → #b → #c）をコメントし `agent-wip` を外して**このサイクルはここで終了**（次サイクル以降が各サブ issue を1つずつ拾い、それぞれ本 Step から同じスキルを通す）
    - **仕様化・分割の判断がつかないほど曖昧な場合**: Discord でユーザーに質問を送り、`agent-wip` を外して `needs-approval` を付け、経緯を issue にコメントしてこのサイクルは終了する（返信が来たら次サイクル以降で再開する）
 4. （単一 change で実装まで完了した場合）`{{TEST_CMD}}` / `{{LINT_CMD}}` / `{{BUILD_CMD}}` を実行し、証拠をターン内に表示する。
-5. 通ったら push して **Draft PR** を作成する。本文は loops プラグインの `references/pr-body-format.md` の型（5 セクション + `Closes #<番号>` + 検証ログの折りたたみ。小変更は軽量モード可）に従って書き、`agent-review:pending` ラベルを付ける。Review Queue 連携（該当時）: PR を Project に登録し、State を レビュー中 に、Blocked count を算出して設定する（「Review Queue 連携」参照）。
+5. 通ったら W が push して **Draft PR** を作成する（1 ループの (3) に含まれる）。本文は loops プラグインの `references/pr-body-format.md` の型（5 セクション + `Closes #<番号>` + 検証ログの折りたたみ。小変更は軽量モード可）に従って書き、`agent-review:pending` ラベルを付ける。Review Queue 連携（該当時）: PR を Project に登録し、State を レビュー中 に、Blocked count を算出して設定する（「Review Queue 連携」参照）。
 6. issue に PR の URL と要約をコメントし、`agent-wip` と **`agent-ready` の両方を外す**（PR が open な間に別サイクルが同じ issue を再実装しないため。マージされれば `Closes` で自動クローズされ、PR がマージされずクローズされた場合は人間が再トリアージして `agent-ready` を付け直す）。
 7. 行き詰まったら: worktree は残し、issue に失敗ログをコメントする。同一 issue の失敗コメントが2件になったら `agent-blocked` に切り替えて以後拾わない（Review Queue 連携時は State=要介入 で登録する）。教訓を `.agent-loop/GUARDRAILS.md` に追記する（大原則 4 のミラーも忘れずに）。
 
-`size:large` ラベルは、github-issue スキルが分割の是非すら判断できないほど曖昧なケースで、分割の方向性自体を人間の設計判断に委ねたい場合にのみ使う（着手中止・分割案をコメントするだけで、ラベルも人間が手動で付ける）。通常の複数 change 分割は上記 3. のサブ issue 化でループが自動処理するため、`size:large` を自動付与することはない。
+`size:large` ラベルは、develop の W が分割の是非すら判断できないほど曖昧なケースで、分割の方向性自体を人間の設計判断に委ねたい場合にのみ使う（着手中止・分割案をコメントするだけで、ラベルも人間が手動で付ける）。通常の複数 change 分割は上記 3. のサブ issue 化でループが自動処理するため、`size:large` を自動付与することはない。
 
 #### 昇格トリップワイヤー（Step 3 の全経路に常時適用）
 
 作業中に以下のいずれかを踏んだら、その場で手を止めて乗り換える。「あと少しで終わるから」は乗り換えない理由にならない。乗り換え・昇格の際、ここまでの成果（編集済みファイル・通ったテスト・判明した事実）は破棄せず引き継ぐ。閾値は初期値であり運用調整してよい（設計意図の詳細は dev-workflow プラグインの `templates/escalation-tripwires.md` を参照）。
 
-1. **規模超過**: 編集対象ファイルが5個を超えた、または着手前の見積もりから作業項目が2回増えた → solo を続けず、github-issue スキルの判定に従って workflow 型（/lr:e 系スキル）またはサブ issue 分割（上記 3.）に乗り換える。
-2. **失敗ループ**: 同じテストが2連続で落ちた、または同じ箇所を2回書き直した → 実行役を1段昇格する（Sonnet → Opus → Fable）。`FABLE_BUDGET_MODE=reserve` のときは **Opus を上限**とし、Opus でも2連続失敗が続く場合は `agent-blocked` ではなく `needs-approval` を付けて経緯をコメントし、このサイクルを終了する（Fable なら解けるかもしれない問題を人間が判断すべき状態のため）。既存の「失敗コメント2件 → `agent-blocked`」（上記 7.）はサイクル横断のセーフティネットとしてそのまま生きる。
+1. **規模超過**: 編集対象ファイルが5個を超えた、または着手前の見積もりから作業項目が2回増えた → W は手を止めて本体（憲法のメイン）に return し、develop スキルの判定に従ってサブ issue 分割（上記 3.）に乗り換える。
+2. **失敗ループ**: 同じテストが2連続で落ちた、または同じ箇所を2回書き直した → W は本体に return し、本体が W を1段昇格したモデルで再開する（Sonnet → Opus → Fable）。`FABLE_BUDGET_MODE=reserve` のときは **Opus を上限**とし、Opus でも2連続失敗が続く場合は `agent-blocked` ではなく `needs-approval` を付けて経緯をコメントし、このサイクルを終了する（Fable なら解けるかもしれない問題を人間が判断すべき状態のため）。既存の「失敗コメント2件 → `agent-blocked`」（上記 7.）はサイクル横断のセーフティネットとしてそのまま生きる。
 3. **仕様の発明**: issue に書かれていない仕様上の決定を自分で埋めた回数が2回に達した → 埋めた決定を列挙して Discord でユーザーに質問し、`agent-wip` を外して `needs-approval` を付け、経緯を issue にコメントしてこのサイクルを終了する（上記 3. の曖昧ケースと同じ経路）。
 
 **環境変数の前提**（RATE_* と同じく配線側が実行時に設定する。install ではヒアリングしない）:
 
 - `LONGRUN_AUTOMATED=1` — 無人セッションであることの宣言。longrun の reserve 降格（`references/model-tiers.md`）がこれを参照する
-- `FABLE_BUDGET_MODE` — 残量モード（`abundant` / `conserve` / `reserve`。未設定 = `conserve`）。定義は dev-workflow の `references/decision-criteria.md`
+- `FABLE_BUDGET_MODE` — 残量モード（`abundant` / `conserve` / `reserve` / `exhausted`。未設定 = usage snapshot からの自動導出、無ければ `conserve`）。定義は dev-workflow の develop スキル `references/decision-criteria.md`
 
 ### Step 4: 提案モード / スキップ — `mode:"propose"` / `mode:"skip"`
 

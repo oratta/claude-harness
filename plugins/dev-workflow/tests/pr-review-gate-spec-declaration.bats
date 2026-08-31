@@ -24,7 +24,7 @@ step5() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "$SKILL"; }
   sed -n 1,20p "$SKILL" | grep '通過の必須' | grep -q '仕様宣言'
 }
 
-@test "step 3: spec declaration heading with 対象 HEAD first line" {
+@test "step 3: spec declaration heading with target-HEAD first line" {
   step3 | grep -q '^## 仕様宣言$'
   step3 | awk '/^## 仕様宣言$/{getline; print}' | grep -q '^対象 HEAD:'
 }
@@ -49,7 +49,7 @@ step5() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "$SKILL"; }
   ! step5 | grep -q '見出しが両方'
 }
 
-@test "step 5: consistency table has する / しない / 記録なし rows" {
+@test "step 5: consistency table has yes / no / no-record rows" {
   step5 | grep -q '仕様化判断: する'
   step5 | grep -q '仕様化判断: しない'
   step5 | grep -q '記録なし'
@@ -114,14 +114,14 @@ fixture_pages() {
 
 # --- 既存件数固定アサーションを壊さない ---
 
-@test "keeps single occurrence of 層間契約 and 聖域パス・マージ権限" {
+@test "keeps single occurrence of the cross-layer-contract and sanctuary/merge-permission phrases" {
   [ "$(grep -cF '層間契約' "$SKILL")" -eq 1 ]
   [ "$(grep -cF '聖域パス・マージ権限' "$SKILL")" -eq 1 ]
 }
 
 # --- 配布 ---
 
-@test "manifest: version above 1.12.0, marketplace in sync, description mentions 仕様宣言" {
+@test "manifest: version above 1.12.0, marketplace in sync, description mentions the spec declaration" {
   v="$(jq -r '.version' "$MANIFEST")"
   [ "$(printf '1.12.0\n%s\n' "$v" | sort -V | tail -1)" = "$v" ] && [ "$v" != "1.12.0" ]
   [ "$(jq -r '.plugins[] | select(.name=="dev-workflow") | .version' "$MARKETPLACE")" = "$v" ]

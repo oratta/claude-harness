@@ -1,7 +1,7 @@
 {
   "name": "loops",
-  "version": "0.24.1",
-  "description": "公式記事「Getting started with loops」の4ループタイプ（ターンベース/ゴールベース/タイムベース/プロアクティブ）を、ネイティブプリミティブ（/goal・/loop・/schedule・skill・workflows・auto mode）の合成レシピとして設計・記述するための器。レシピ形式規約・State 規約・設計ガイド（/loops:design）・brain dump から goal ブリーフを一発生成するコマンド（/loops:goalify）・GitHub Issues をタスクキューにした常設自律開発ループ（loop-dev-agent レシピ + issue コメントの行頭メンションを最優先で拾う応答モード + /loops:dev-agent-install 導入コマンド + タスクを測定可能な受け入れ条件付き issue に変換する /loops:issueify）を提供する。実装モード（Step 3）の開発の中身は dev-workflow プラグインの github-issue スキルに委譲し、ラベル操作・Draft PR・Review Queue 連携などの無人運用の外形のみを本プラグインが担う。複数リポジトリ並行稼働時のレビュー・マージ判断は GitHub Project「Review Queue」連携と横断ビュー /loops:review-queue で1箇所に集約する。独自のループ実行系（常駐スクリプト・カスタム driver・宣言的 schema ランタイム）は持たない。",
+  "version": "0.25.0",
+  "description": "公式記事「Getting started with loops」の4ループタイプ（ターンベース/ゴールベース/タイムベース/プロアクティブ）を、ネイティブプリミティブ（/goal・/loop・/schedule・skill・workflows・auto mode）の合成レシピとして設計・記述するための器。レシピ形式規約・State 規約・設計ガイド（/loops:design）・brain dump から goal ブリーフを一発生成するコマンド（/loops:goalify）・GitHub Issues をタスクキューにした常設自律開発ループ（loop-dev-agent レシピ + issue コメントの行頭メンションを最優先で拾う応答モード + /loops:dev-agent-install 導入コマンド + タスクを測定可能な受け入れ条件付き issue に変換する /loops:issueify）を提供する。実装モード（Step 3）の開発の中身は dev-workflow プラグインの develop スキルに委譲し（憲法のメインが develop の本体として W / R1 を spawn する）、ラベル操作・Draft PR・Review Queue 連携などの無人運用の外形のみを本プラグインが担う。複数リポジトリ並行稼働時のレビュー・マージ判断は GitHub Project「Review Queue」連携と横断ビュー /loops:review-queue で1箇所に集約する。独自のループ実行系（常駐スクリプト・カスタム driver・宣言的 schema ランタイム）は持たない。",
   "author": {
     "name": "Oratta"
   },

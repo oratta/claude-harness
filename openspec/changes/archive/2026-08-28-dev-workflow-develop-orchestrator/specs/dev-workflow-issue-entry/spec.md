@@ -1,8 +1,5 @@
-# dev-workflow-issue-entry Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change dev-workflow-work-issue-issueify-fallback. Update Purpose after archive.
-## Requirements
 ### Requirement: 入口分岐は5分岐で対象 issue を確定する
 `/develop` コマンド定義（`commands/develop.md`。`/work-issue` はそのエイリアス）は、引数から記録先を確定するための分岐として以下の5つをすべて明記しなければならない（MUST）。既存 issue が特定できる分岐（①③）の挙動は従来から変更してはならない（MUST NOT）。issue を特定できない分岐（②④⑤）の既定は develop スキルの入口 0（issue を切らず Draft PR を記録先にする）であり、issueify フォールバックは「追跡・キュー・議論が要る」とユーザーが選んだときに限る（SHALL）。
 
@@ -42,12 +39,7 @@ issueify の原子化により依頼が複数 issue に割れた場合、全件�
 - **WHEN** issueify の原子化が依頼を2つの独立した issue に分割し、両方が起票された
 - **THEN** どちらに着手するかをユーザーに確認し、選ばれた1件だけを develop パイプラインに渡し、もう1件は起票のみで終了する
 
-### Requirement: 起票前のユーザー承認ゲートを維持する
-issueify フォールバック経由の起票は、loops-issueify の承認ゲート（ドラフト提示 → ユーザー承認 → `gh issue create`）を維持しなければならない（MUST）。fail-soft の縮退手順でも承認なしに起票してはならない（MUST NOT）。
-
-#### Scenario: 承認前に起票されない
-- **WHEN** issueify フォールバックが issue ドラフトを生成した
-- **THEN** ドラフトの提示とユーザーの承認を経てから `gh issue create` が実行される
+## ADDED Requirements
 
 ### Requirement: /work-issue は /develop のエイリアスである
 `commands/work-issue.md` は独自の手順を持たず、`$ARGUMENTS` をそのまま `/develop` の手順に渡すエイリアスでなければならない（MUST）。5 分岐・issueify フォールバック・承認ゲートの本文は `commands/develop.md` の 1 箇所にのみ存在する（SHALL）。
@@ -55,4 +47,3 @@ issueify フォールバック経由の起票は、loops-issueify の承認ゲ�
 #### Scenario: エイリアスが本文を持たない
 - **WHEN** `commands/work-issue.md` を読む
 - **THEN** `/develop` のエイリアスである旨と `commands/develop.md` への参照だけがあり、5 分岐の本文は書かれていない
-

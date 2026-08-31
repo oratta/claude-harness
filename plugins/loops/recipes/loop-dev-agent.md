@@ -95,7 +95,8 @@ flatmate（セッション常駐ハーネス）の住人としてループを回
 
 ## 前提
 
-- **`dev-workflow` プラグインの導入が必要**: Step 3（実装モード）は開発の中身（wt-setup 判定・opsx 仕様化要否・単一/複数 change 判定・TDD 実装）を `dev-workflow` プラグインの `github-issue` スキルに委譲する。ラベル操作・Draft PR 作成・Review Queue 連携などの無人運用の外形は引き続き本レシピが担う。人間がオンデマンドで issue に取り組む場合も同じスキルを `/work-issue` から使う（`dev-workflow/README.md` 参照）。
+- **`dev-workflow` プラグインの導入が必要**: Step 3（実装モード）は開発の中身（opsx 仕様化要否と判断の記録・単一/複数 change 判定・仕様レビュー・TDD 実装）を `dev-workflow` プラグインの `develop` スキルに委譲する。委譲の形は「憲法のメインが develop の本体（オーケストレータ）として W / R1 を spawn する」であり、Step 3 をサブエージェントに丸投げしない（サブエージェントは孫を起こせないため）。ラベル操作・Draft PR 作成・Review Queue 連携などの無人運用の外形は引き続き本レシピが担う。人間がオンデマンドで issue に取り組む場合も同じスキルを `/develop`（旧 `/work-issue`）から使う（`dev-workflow/README.md` 参照）。
+- **配備済みの憲法（`docs/agent-loop.md`）はテンプレート更新後に `/loops:dev-agent-install` で再生成が必要**: 再生成するまで旧スキル名を Skill ツールで呼ぼうとして失敗し、失敗コメント → `agent-blocked` のセーフティネットに落ちる（無言では壊れない）。
 - **ローカル実行が必要**: レートガードがローカルの `~/.claude/.rate-limit-snapshot`
   （statusline が毎ターン更新する JSON）を読むため。
 - `/loops:dev-agent-install` による導入が完了していること。具体的には対象リポジトリに:
