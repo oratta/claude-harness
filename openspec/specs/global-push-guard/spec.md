@@ -1,8 +1,7 @@
 # global-push-guard Specification
 
 ## Purpose
-全リポジトリに効くグローバル pre-push ガード（`~/.githooks/pre-push` + `git config --global core.hooksPath`）の内容と導入手順を定める。マージ済み PR のブランチへの push を、人間の手打ちでもエージェント経由でも同じ層で止めることが目的であり、`loops-dev-agent-install` が設置するリポジトリローカル層（main 直 push 拒否込み・ローカル設定が優先される）との役割分担もここで規定する。
-
+全リポジトリに効くグローバル pre-push ガード（`~/.githooks/pre-push` + `git config --global core.hooksPath`）の内容と導入手順を定める。マージ済み PR のブランチへの push を、人間の手打ちでもエージェント経由でも同じ層で止めることが目的であり、loop-dev-agent 導入済み repo（flatmate の `new-resident` が設置）のリポジトリローカル層（main 直 push 拒否込み・ローカル設定が優先される）との役割分担もここで規定する。
 ## Requirements
 ### Requirement: グローバル pre-push ガードの導入スキル
 
@@ -58,12 +57,12 @@
 
 ### Requirement: 層の優先関係と副作用の明文化
 
-SKILL.md は次の 3 点を明記しなければならない (MUST): (1) リポジトリローカルの `core.hooksPath` はグローバル設定より優先されるため、`loops-dev-agent-install` 導入済み repo は従来どおりローカル層（main 拒否込み）が使われること、(2) グローバル `core.hooksPath` の設定は、自前で `core.hooksPath` を設定していないリポジトリの `.git/hooks/` 直置きフックを無効化すること、(3) その回避方法が当該リポジトリでの `git config core.hooksPath .git/hooks` であること。
+SKILL.md は次の 3 点を明記しなければならない (MUST): (1) リポジトリローカルの `core.hooksPath` はグローバル設定より優先されるため、loop-dev-agent 導入済み repo（flatmate の `new-resident` が `<repo>/.githooks/pre-push` を設置する）は従来どおりローカル層（main 拒否込み）が使われること、(2) グローバル `core.hooksPath` の設定は、自前で `core.hooksPath` を設定していないリポジトリの `.git/hooks/` 直置きフックを無効化すること、(3) その回避方法が当該リポジトリでの `git config core.hooksPath .git/hooks` であること。ローカル層の設置者として解散した `loops-dev-agent-install` を名指ししてはならない (MUST NOT)。
 
 #### Scenario: 優先関係が説明されている
 
 - **WHEN** SKILL.md を読む
-- **THEN** ローカル設定がグローバルより優先されることと、その帰結（導入済み repo は厳しい方が使われる）が説明されている
+- **THEN** ローカル設定がグローバルより優先されることと、その帰結（loop-dev-agent 導入済み repo は厳しい方が使われる）が説明され、`loops-dev-agent-install` の文字列は無い
 
 #### Scenario: .git/hooks 無効化の副作用と回避方法が示されている
 
@@ -86,10 +85,10 @@ SKILL.md は次の 3 点を明記しなければならない (MUST): (1) リポ�
 
 ### Requirement: プラグインバージョンの更新
 
-`plugins/dev-workflow/.claude-plugin/plugin.json` と `plugins/loops/.claude-plugin/plugin.json` の `version` は本変更に伴い更新前より大きい値へ上げ、`.claude-plugin/marketplace.json` の対応するエントリと一致させなければならない (MUST)。
+`plugins/dev-workflow/.claude-plugin/plugin.json` の `version` は本変更に伴い更新前より大きい値へ上げ、`.claude-plugin/marketplace.json` の対応するエントリと一致させなければならない (MUST)。（旧 loops プラグインは解散したため対象外）
 
-#### Scenario: 両プラグインのバージョンが上がり marketplace と一致する
+#### Scenario: バージョンが上がり marketplace と一致する
 
-- **WHEN** 2 つの plugin.json と marketplace.json の該当エントリを比較する
-- **THEN** それぞれ変更前より大きい値であり、marketplace.json の値と一致している
+- **WHEN** dev-workflow の plugin.json と marketplace.json の該当エントリを比較する
+- **THEN** 変更前より大きい値であり、marketplace.json の値と一致している
 
