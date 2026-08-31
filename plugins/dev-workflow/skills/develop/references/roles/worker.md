@@ -123,7 +123,7 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 ## PR と仕様宣言（(3) の終わり）
 
-1. PR を用意する: 記録先が Draft PR ならそれを **Ready for Review** に切り替える（`gh pr ready <PR番号>`）。issue が記録先なら PR を作成する（本文に `Closes #<issue>`。unmanned では loops の `references/pr-body-format.md` の型に従い **Draft** のまま `agent-review:pending` を付ける — 憲法 Step 3 の 5〜6 に相当）
+1. PR を用意する: 記録先が Draft PR ならそれを **Ready for Review** に切り替える（`gh pr ready <PR番号>`）。issue が記録先なら PR を作成する（本文に `Closes #<issue>`。unmanned では `plugins/dev-workflow/references/pr-body-format.md` の型に従い **Draft** のまま `agent-review:pending` を付ける — 憲法 Step 3 の 5〜6 に相当）
 2. **仕様宣言**を PR コメントに書く（書式・`対象 HEAD:` 規約の正本は pr-review-gate スキル手順 3。`仕様: 更新した`＋archive 済み・`仕様レビュー: APPROVE`、または `仕様: 変更なし`＋理由）
 3. return「PR #N（HEAD SHA）。実行したテストコマンドと exit code、仕様宣言のコメント URL、埋めた決定の列挙、昇格トリップワイヤーの発火有無」
 
