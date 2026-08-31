@@ -99,20 +99,22 @@ loop-dev-agent の配備済み憲法（各リポの `docs/agent-loop.md`）は�
 
 ---
 
-### agent-owner
+### product-handover
 
-任意のプロジェクトを「エージェントオーナープロジェクト（AI自動運営モード）」として立ち上げるセットアップオーケストレーター（v0 仮）。genetta-inc/suimei で実証した「開発エージェント + マーケエージェントが有料プロダクトを自動運営する仕組み」をテンプレート化したもの。
+プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を配るプラグイン。法務ドラフト・サポート窓口・教訓ログの雛形3種だけを持ち、オーケストレーターもスキルも持たない。
 
 ```bash
-/plugin install agent-owner@oratta-claude-harness
+/plugin install product-handover@oratta-claude-harness
 ```
 
 **機能:**
-- `agent-owner-setup` スキルが 6 フェーズを対話的に導入: インフラ（`infra` プラグイン起動）→ 開発自律ループ（`loops` プラグイン起動）→ Layer 0 マージ自動化（auto-merge ロボット + staging スモーク + auto-revert）→ 運営責任（窓口セットアップ + 利用規約/特商法/incident-runbook/support-desk ドラフト）→ マーケ運転（`sns-autopilot` プラグイン起動）→ 教訓ログとマスタープラン issue
-- `templates/` に実証済み資産を同梱: `auto-merge.yml`（聖域パス保護 + 必須チェック機械判定）、`staging-smoke.yml`（外形スモーク + 誤検知ガード付き auto-revert）、permission deny 設定、教訓ログ様式、運営責任マスタープラン issue 雛形
-- **テンプレ駆動運用**: 展開先で問題が出たら展開先だけを直さず、本プラグイン側を修正する PR を出す
+- `templates/legal/` — 利用規約・プライバシーポリシー・返金ポリシーのドラフト雛形（いずれも法務レビュー前である旨を明記した状態で配る）
+- `templates/support-desk.md` — サポート窓口メールの設定雛形（`support-<slug>@<domain>` の命名規則、catch-all を使わない理由、一次対応の範囲）
+- `templates/autonomy-lessons-skeleton.md` — 教訓ログの様式
+- 引き渡しの順番（インフラ → dev-workflow の導入 → auto-merge の配線 → product-handover → SNS）は README に書くだけで、他プラグインの起動はしない
+- リポ側と住人側の分担: 住人（workspace・cron・チャンネル）は flatmate の `new-resident` が担い、本プラグインはプロダクトのリポ側だけを扱う
 
-詳細は `plugins/agent-owner/skills/agent-owner-setup/SKILL.md` を参照。**v0 は仮版であり、今後の展開結果に応じてフェーズ構成・自動化範囲が変わる前提。**
+詳細は `plugins/product-handover/README.md` を参照。このプラグインは 2026-08-29 に旧名のプラグインを作り直したもので、入れ替え手順は `plugins/product-handover/CHANGELOG.md` にある。
 
 ---
 

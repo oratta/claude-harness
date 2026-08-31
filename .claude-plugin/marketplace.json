@@ -221,20 +221,20 @@
       ]
     },
     {
-      "name": "agent-owner",
-      "description": "エージェントオーナープロジェクト（AI自動運営モード）のセットアップオーケストレーター（v0 仮）。開発エージェント + マーケエージェントが有料プロダクトを自動運営する仕組み（genetta-inc/suimei での実証済み構成）を任意プロジェクトにテンプレート展開する。インフラ（infra プラグイン）・開発自律ループ（loops プラグイン）・Layer 0 マージ自動化（auto-merge ロボット + staging スモーク + auto-revert）・運営責任（窓口・法務ドラフト）・マーケ運転（sns-autopilot プラグイン）・教訓ログとマスタープラン issue の6フェーズを対話的に導入する。テンプレ駆動運用: 展開先で問題が出たら展開先ではなく本プラグイン側を直す。",
-      "source": "./plugins/agent-owner",
+      "name": "product-handover",
+      "description": "プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を配るプラグイン。法務ドラフト（利用規約・プライバシーポリシー・返金ポリシー）の雛形、サポート窓口メールの設定雛形、教訓ログの雛形の3種だけを持ち、オーケストレーターもスキルも持たない。インフラ（infra）・開発ワークフローの導入と auto-merge 配線（dev-workflow）・SNS 運用（sns-autopilot）はそれぞれのプラグインが持つため呼び出さず、引き渡しの順番（infra → dev-workflow の導入 → auto-merge → product-handover → sns）だけを README に書く。住人側（workspace・cron・チャンネル）は flatmate の new-resident が担い、本プラグインはプロダクトのリポ側だけを扱う。展開先で問題が出たら展開先ではなく本プラグイン側を直す。",
+      "source": "./plugins/product-handover",
       "category": "workflow",
       "version": "0.1.0",
       "author": {
         "name": "Oratta"
       },
       "keywords": [
-        "agent-owner",
-        "autonomous-operations",
-        "auto-merge",
-        "layer0",
-        "ai-ops",
+        "product-handover",
+        "handover",
+        "legal-drafts",
+        "support-desk",
+        "autonomy-lessons",
         "template"
       ]
     },
@@ -278,10 +278,10 @@
     },
     {
       "name": "casting",
-      "description": "意思決定移譲のフレームワーク「観点の配役」の実装プラグイン。catalog/catalog.md が観点カタログ（3グループ14観点・列定義・横断軸・変更手続き）の唯一の正本、catalog/injection.md が観点の注入設計（注入タイミング9分類・配線先機構・注入文書 policies/ の置き場所規約）の正本、skills/casting が配役表3層（project.md/local.md/セッション宣言）と判例台帳の書き方の手順正本、/casting:init が対象 repo に `.claude/casting/` 一式を雛形から生成、scripts/casting-check.sh が配役表の壊れた表行（5列ちょうどに割れない行）・閉じられていない HTML コメント・観点語彙 lint・起案シグナル（カタログ外判例・同一観点の非論点2件）・catalog_version 不一致・相談判例の事後報告5要素欠落の7項目を検出する。毎ターン効く返信前チェック5手順は rules/perspective-casting.md（常時ロード層）が持つ。",
+      "description": "意思決定移譲のフレームワーク「観点の配役」の実装プラグイン。catalog/catalog.md が観点カタログ（3グループ14観点・列定義・横断軸・変更手続き）の唯一の正本、catalog/injection.md が観点の注入設計（注入タイミング9分類・配線先機構・注入文書 policies/ の置き場所規約）の正本、skills/casting が配役表3層（project.md/local.md/セッション宣言）と判例台帳の書き方の手順正本、catalog/delegation.md が委任の定義正本（委任＝許可ツール × 任された観点。ロールは組み合わせ名。`## 委任` 配下に 2 表を並べる宣言書式）、/casting:init が対象 repo に `.claude/casting/` 一式（project.md・precedents.md・delegation.md）を雛形から生成、/casting:policy-interview が観点の判断基準を主と 1 問ずつやり取りして policies/<slug>.md に生成・更新、scripts/casting-check.sh が配役表の壊れた表行（5列ちょうどに割れない行）・閉じられていない HTML コメント・観点語彙 lint・起案シグナル（カタログ外判例・同一観点の非論点2件）・catalog_version 不一致・相談判例の事後報告5要素欠落の7項目を検出する。毎ターン効く返信前チェック5手順は rules/perspective-casting.md（常時ロード層）が持つ。",
       "source": "./plugins/casting",
       "category": "workflow",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "author": {
         "name": "Oratta"
       },
@@ -310,7 +310,7 @@
         "skill-pack",
         "loops",
         "dev-workflow",
-        "agent-owner",
+        "product-handover",
         "statusline"
       ],
       "skills": []

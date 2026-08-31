@@ -1,7 +1,7 @@
 {
   "name": "casting",
-  "version": "0.3.0",
-  "description": "意思決定移譲のフレームワーク「観点の配役」の実装プラグイン。catalog/catalog.md: 3グループ14観点・列定義・横断軸・変更手続き・変更記録を持つ観点カタログの唯一の正本。catalog/injection.md: 14観点の注入タイミング（9分類）・配線先機構・注入文書（.claude/casting/policies/）の置き場所規約を持つ注入マップの正本。skills/casting: 配役表（project.md/local.md/セッション宣言の3層）の作り方・判例台帳の書き方・カタログ変更手続きの手順正本。commands/init.md（/casting:init）: 対象 git repo に `.claude/casting/` 一式を雛形から生成し、gitignore に local.md を冪等追記する。scripts/casting-check.sh: 配役表の5列ちょうどに割れない壊れた表行・閉じられていない HTML コメント・未知の観点語彙・「カタログ外」判例・同一観点の「論点じゃなかった」2件以上・catalog_version 不一致・相談判例（経路「相談の上自走した」）の事後報告5要素欠落の7項目を検出する lint。resolve サブコマンドは有効配役表を合成して出力する（検証を通らない配役表では出力せず exit 1 の fail-closed）。rules/perspective-casting.md（このプラグインとは別ファイル）が毎ターン効く返信前チェック5手順を持つ薄い常時ロード層。　agents/casting-specialist.md（model: sonnet）・agents/casting-arbiter.md（model: fable）: 論点相談・仲裁プロトコル（#127）の汎用サブエージェント。スペシャリストは指定された policies/<slug>.md を読み人格ブロックを纏って意見を返し、仲裁はフェーズ宣言文と主張リスト（メインセッションの主張1件＋各人格の主張1件ずつ）のみを入力に裁定する。templates/policy.md: 注入文書（人格ブロック＋判断基準）の雛形。",
+  "version": "0.4.0",
+  "description": "意思決定移譲のフレームワーク「観点の配役」の実装プラグイン。catalog/catalog.md: 3グループ14観点・列定義・横断軸・変更手続き・変更記録を持つ観点カタログの唯一の正本。catalog/injection.md: 14観点の注入タイミング（9分類）・配線先機構・注入文書（.claude/casting/policies/）の置き場所規約を持つ注入マップの正本。skills/casting: 配役表（project.md/local.md/セッション宣言の3層）の作り方・判例台帳の書き方・カタログ変更手続きの手順正本。commands/init.md（/casting:init）: 対象 git repo に `.claude/casting/` 一式を雛形から生成し、gitignore に local.md を冪等追記する。scripts/casting-check.sh: 配役表の5列ちょうどに割れない壊れた表行・閉じられていない HTML コメント・未知の観点語彙・「カタログ外」判例・同一観点の「論点じゃなかった」2件以上・catalog_version 不一致・相談判例（経路「相談の上自走した」）の事後報告5要素欠落の7項目を検出する lint。resolve サブコマンドは有効配役表を合成して出力する（検証を通らない配役表では出力せず exit 1 の fail-closed）。rules/perspective-casting.md（このプラグインとは別ファイル）が毎ターン効く返信前チェック5手順を持つ薄い常時ロード層。　agents/casting-specialist.md（model: sonnet、tools: Read/Grep/Glob/WebFetch — 全文未把握の外部規約を判断前に参照先で読む）・agents/casting-arbiter.md（model: fable）: 論点相談・仲裁プロトコル（#127）の汎用サブエージェント。スペシャリストは指定された policies/<slug>.md を読み人格ブロックを纏って意見を返し、仲裁はフェーズ宣言文と主張リスト（メインセッションの主張1件＋各人格の主張1件ずつ）のみを入力に裁定する。templates/policy.md: 注入文書（人格ブロック＋判断基準＋前提とする外部規約）の雛形。catalog/delegation.md: 委任の定義正本（委任＝許可ツール × 任された観点。ロールは組み合わせ名。`## 委任` 配下に許可ツール表と任された観点表を並べる宣言書式。宣言は要約で正本は permission 設定と配役表 3 層）。commands/policy-interview.md（/casting:policy-interview <観点>）: 観点の判断基準を主と 1 問ずつやり取りして policies/<slug>.md を生成・更新する。templates/delegation.md: /casting:init が生成する委任宣言の雛形。",
   "author": {
     "name": "Oratta"
   },
@@ -21,6 +21,7 @@
     "./skills/casting"
   ],
   "commands": [
-    "./commands/init.md"
+    "./commands/init.md",
+    "./commands/policy-interview.md"
   ]
 }
