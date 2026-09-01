@@ -1,7 +1,7 @@
 ---
 name: casting
 description: 「観点の配役」フレームワークの運用手順（配役表の3層・判例の書き方・論点相談と仲裁・カタログの変更手続き）。「主に上げるべきか自走してよいか判断がつかない」「配役表を作りたい」「判例を記録したい」「観点スペシャリストに相談したい」「casting-check を直したい」ときに参照する。カタログ本文の正本は `catalog/catalog.md`、返信前チェック5手順は `rules/perspective-casting.md` が正本。
-version: 0.4.0
+version: 0.4.1
 ---
 
 # casting — 「観点の配役」フレームワーク運用ガイド

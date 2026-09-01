@@ -1,7 +1,7 @@
 ---
 name: develop
 description: コード・スキル・コマンド・規範文書（openspec / docs / CLAUDE.md 等）を変えるときは必ず通す標準開発ワークフロー。本体はオーケストレータ専任で、作業者 W・仕様レビュアー R1・ゲート実行者 G を model 明示で spawn し、記録先（issue または Draft PR）→ 仕様化判断の記録 → 仕様レビュー → TDD 実装 → pr-review-gate の 1 ループを回す。issue 番号・issue URL・「この issue 対応して」等の自然文、issue の無い会話依頼・cron・エピックの子のいずれからでも起動する。人間依頼（interactive）と loop-dev-agent 無人サイクル（--unmanned）の両対応。
-version: 2.0.1
+version: 2.1.0
 ---
 
 # develop — 入口を問わない標準開発ワークフロー（本体＝オーケストレータ）
@@ -142,9 +142,9 @@ unmanned で複数 change に割れた場合は、W が change 単位で子 issu
 
 全子 PR がマージされ、**かつ**本体（または G）がエピックの完了条件（ユーザーストーリーの成立）を実機で確認して、その証拠をエピックにコメントしたとき。子が全部マージされただけでは閉じない。
 
-## longrun:plan を呼ばない理由
+## 上流の壁打ち（`/opsx:explore`）を呼ばない理由
 
-このスキルは規模が大きくても `longrun:plan`（`/lr:p`）を内部から呼ばない。`longrun:plan` は「まだ形になっていない曖昧な要望（brain dump）を、対話で質問しながら実装可能な単位に分解し、相互矛盾がないか確認する」ための上流工程で、このスキルが扱う依頼（issue・受け入れ条件付きの会話依頼・エピックの子）は既にその「ほぐす作業」が終わった状態にある。複数 change が必要なら記録先の記述を根拠に分割すれば足りる（エピックの作り方）。`longrun:plan` は issue の体裁を成す前の構想専用として切り離す。
+このスキルは規模が大きくても、上流の壁打ち（openspec の `/opsx:explore`。まだ形になっていない曖昧な要望を、対話で質問しながら実装可能な単位に分解し、相互矛盾がないか確認する工程）を内部から呼ばない。このスキルが扱う依頼（issue・受け入れ条件付きの会話依頼・エピックの子）は既にその「ほぐす作業」が終わった状態にある。複数 change が必要なら記録先の記述を根拠に分割すれば足りる（エピックの作り方）。`/opsx:explore` は issue の体裁を成す前の構想専用として切り離し、その出口（`/opsx:new` / `/opsx:ff`）からこのスキルに入る。
 
 ## 参照
 
@@ -154,4 +154,5 @@ unmanned で複数 change に割れた場合は、W が change 単位で子 issu
 - G の手順書: `skills/pr-review-gate/SKILL.md`（記録先の探索順・仕様宣言の照合は据え置き）
 - 入口の 5 分岐と issueify フォールバック: `commands/develop.md`（`/work-issue` はエイリアス）
 - worktree セットアップの自動化: worktree プラグインの `hooks/hooks.json`（`WorktreeCreate` / `SessionStart`）
-- 棲み分け相手: `loops` プラグインの loop-dev-agent（`recipes/loop-dev-agent.md`、憲法テンプレート `templates/agent-loop-template.md`）。unmanned の外形（ラベル・Review Queue）は憲法側
+- 棲み分け相手: 各リポに配備された loop-dev-agent の憲法（`docs/agent-loop.md`。flatmate が保守する正本で、harness にテンプレートは無い）。unmanned の外形（ラベル・Draft PR・キュー）は憲法側
+- 1 ループに収まらない規模を Workflow で回す型: `plugins/dev-workflow/references/workflow-execution.md`（スクリプトの書き方は `workflow-authoring` スキル）

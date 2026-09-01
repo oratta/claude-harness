@@ -14,7 +14,7 @@
 - **モデル**: W / R1 / G は既定 `opus`。`worker.md` の「重要実装の事前分類」（聖域パス・マージ権限・層間契約・課金/法務）やマージ条件・聖域・層間契約に触れれば `fable`。残量モード（`FABLE_BUDGET_MODE`）は `references/decision-criteria.md`
 - **エピック**: 条件・作り方・回し方・完了条件を SKILL.md に規定。子 issue ごとに 1 ループを `isolation: "worktree"` で並列に回し、子が全部マージされただけでは閉じない
 
-人間が `/develop` で直接依頼した場合でも、`loops` プラグインの loop-dev-agent が無人サイクルの中から呼ぶ場合でも同じループを回す（`--unmanned` では憲法のメインが本体を務め、G は憲法 Step 1 に委ねる）。
+人間が `/develop` で直接依頼した場合でも、loop-dev-agent（各リポの憲法 `docs/agent-loop.md`）が無人サイクルの中から呼ぶ場合でも同じループを回す（`--unmanned` では憲法のメインが本体を務め、G は憲法 Step 1 に委ねる）。
 
 ### pr-review-gate
 
@@ -29,6 +29,21 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 ### push-guard-setup
 
 マージ済み PR のブランチへの push を全リポで拒否するグローバル pre-push ガードの導入。
+
+### issueify
+
+タスクメモ・バックログ md・TODO・受け入れ条件の無い issue を、測定可能な受け入れ条件付き GitHub issue に変換する（`skills/issueify/SKILL.md`。#205 で旧プラグインから移設）。入力はテキスト・ファイルパス・引数なし（`docs/` の未チェック項目や `TODO`/`FIXME` を自動発見）・`--existing`（既存 issue の補筆のみ）。1 issue = 1 論理タスクに原子化し、受け入れ条件を「実行コマンド + 期待値」に落とし、不足だけをヒアリングして、承認後に `gh issue create` する。`/develop` の issueify フォールバックはこのスキルを同プラグイン内で Read する。
+
+## references/（他プラグインと共有する契約）
+
+複数プラグインから参照される契約は、スキル配下ではなくプラグイン直下の `references/` に置く（#205 で旧プラグインから移設）。
+
+| ファイル | 内容 |
+|---|---|
+| `references/self-verification.md` | 自己検証の共通原則（完了は主張であり証明ではない。evidence を提示してから完了を宣言する）。worktree / infra / daily-report / weekly-report / experience-to-skill の `## 自己検証` 節が参照する |
+| `references/pr-body-format.md` | エージェントが書く PR / issue 本文の型（5 セクション・軽量モード・issue の承認判断 2 節）。`.github/PULL_REQUEST_TEMPLATE.md` と W の PR 手順が参照する |
+| `references/model-tiers.md` | Workflow スクリプトの `opts.model` に渡すロール別ティア → エイリアスの対応表と、残量モードによる降格。`rules/subagent-model-selection.md` が正本として指す |
+| `references/workflow-execution.md` | develop の 1 ループに収まらない規模をネイティブ Workflow ツールで回す型（Review → Build → Verify・Build Contract レビュー・verifier のしきい値・`resumeFromRunId`）。スクリプトの書き方は `workflow-authoring` スキルが正本 |
 
 ## テンプレート
 
@@ -45,7 +60,9 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 
 ## loop-dev-agent との関係
 
-`loops` プラグインの loop-dev-agent（無人常設ループ）は、実装モード（Step 3）の中身をこのプラグインの `develop` スキルに委譲する。委譲の形は「憲法のメインが develop の本体として W / R1 を spawn する」で、Step 3 をサブエージェントに丸投げしない。ラベル操作・Draft PR 作成・Review Queue 連携などの「無人運用の外形」は引き続き loop-dev-agent 側の責務。詳細は `develop/SKILL.md` の「実行モード」を参照。
+loop-dev-agent（無人常設ループ）の憲法は各リポに配備された `docs/agent-loop.md` で、**正本は flatmate 側（`new-resident` が配り、flatmate が保守する）**。harness はテンプレートを持たず、再生成や逆同期もしない（2026-08 の解散 #205 で旧テンプレートを廃止）。憲法は実装モード（Step 3）の中身をこのプラグインの `develop` スキルに委譲する。委譲の形は「憲法のメインが develop の本体として W / R1 を spawn する」で、Step 3 をサブエージェントに丸投げしない。ラベル操作・Draft PR 作成・キューの運用などの「無人運用の外形」は引き続き憲法側の責務。詳細は `develop/SKILL.md` の「実行モード」を参照。
+
+2026-08 に解散した旧プラグイン 3 本からの移行手順と契約の新旧パスは `CHANGELOG.md` を参照。
 
 ```bash
 /plugin install dev-workflow@oratta-claude-harness

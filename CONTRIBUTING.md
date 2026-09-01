@@ -57,8 +57,8 @@ version: 1.0.0             # 必須: SemVer
 
 | 種別 | 形 | 意味論 | 例 |
 |---|---|---|---|
-| **Skill** | 名詞（プロセス・能力・成果物） | 「これは○○の能力です」 | `infra-setup`, `longrun-plan`, `weekly-report`, `longrun-orchestration` |
-| **Agent** | `-er` / `-or`（人格・役割） | 「これは○○する人/役です」 | `code-reviewer`, `longrun-builder`, `longrun-verifier` |
+| **Skill** | 名詞（プロセス・能力・成果物） | 「これは○○の能力です」 | `infra-setup`, `release-plan`, `weekly-report`, `deploy-orchestration` |
+| **Agent** | `-er` / `-or`（人格・役割） | 「これは○○する人/役です」 | `code-reviewer`, `feature-builder`, `build-verifier` |
 | **Command** | 動詞（命令） | 「○○せよ」 | `/wt-setup`, `/exec`, `/archive` |
 
 #### NG パターン

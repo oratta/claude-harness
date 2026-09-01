@@ -67,10 +67,11 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
 
 # --- issueify フォールバック ---
 
-@test "fallback: mentions issueify and resolves loops-issueify via path-discovery" {
+@test "fallback: mentions issueify and resolves the in-plugin issueify skill, never loops" {
   grep -q 'issueify' "$CMD"
-  grep -q 'loops-issueify' "$CMD"
-  grep -q 'plugins/loops/skills/loops-issueify' "$CMD"
+  grep -q 'skills/issueify/SKILL.md' "$CMD"
+  ! grep -q 'loops-issueify' "$CMD"
+  ! grep -q 'plugins/loops' "$CMD"
 }
 
 @test "fallback: fail-soft degrades to minimal gh issue create" {
@@ -100,7 +101,7 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
   grep -qF '$ARGUMENTS' "$ALIAS"
   ! grep -q '数字のみ' "$ALIAS"
   ! grep -q 'typo' "$ALIAS"
-  ! grep -q 'loops-issueify' "$ALIAS"
+  ! grep -q 'skills/issueify' "$ALIAS"
   ! grep -q 'gh issue create' "$ALIAS"
 }
 
