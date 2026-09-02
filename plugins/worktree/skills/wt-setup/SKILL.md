@@ -224,7 +224,7 @@ EOF
 
 ## 自己検証
 
-完了宣言の前に、成果物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`）。
+完了宣言の前に、成果物の evidence を確認する（原則: `plugins/dev-workflow/references/self-verification.md`）。
 
 - 作成した worktree が登録されていることを確認する: `git worktree list` に対象パスが現れる。
 - `--with-pr` 実行時は Draft PR が作成されたことを確認する: `gh pr view --json isDraft,url` で `isDraft` が true。

@@ -1,7 +1,7 @@
 ---
 name: infra-setup
 description: 新規/既存 Web アプリに Vercel + Supabase + GitHub Actions のデプロイ基盤を 5 フェーズで一括構築する。「インフラを構築」「デプロイ環境を作って」「Vercel と Supabase のセットアップ」「本番デプロイ環境を用意して」で起動。
-version: 0.5.6
+version: 0.5.7
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 ---
 
@@ -278,7 +278,7 @@ Phase 1 で「開発形態（solo / solo-agent / team）」と「プロダクト
 
 ## 自己検証
 
-完了宣言の前に、infra 成果物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`）。
+完了宣言の前に、infra 成果物の evidence を確認する（原則: `plugins/dev-workflow/references/self-verification.md`）。
 
 - 生成した `vercel.json` が妥当な JSON であることを確認する: `jq . vercel.json` が exit 0。
 - GitHub Actions ワークフロー（deploy-preview / deploy-production / migrate-production 等）が `.github/workflows/` に生成され、YAML として妥当であることを確認する。

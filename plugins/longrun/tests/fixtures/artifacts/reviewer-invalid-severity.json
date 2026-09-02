@@ -1,4 +1,0 @@
-{
-  "status": "REQUEST_CHANGES",
-  "findings": [ { "severity": "CRITICAL", "message": "x" } ]
-}
