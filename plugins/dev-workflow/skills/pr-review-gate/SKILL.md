@@ -1,7 +1,7 @@
 ---
 name: pr-review-gate
 description: PR を作成したら必ず通す品質ゲート。別コンテキストのレビュー・リスク宣言（リスクなし or 主の許容確認）・動作確認の証拠添付・agent-review:passed の付与までを1本で行う。「PR を作った」「レビューして」「マージまで進めて」「auto-merge に載せたい」ときに必ず読み込む。保留中の PR を再開するとき（「主の回答が来た」「リスクを許容する/しない」「動作確認の結果を伝える」「保留を進めて」「レビュー指摘を直したので再レビュー」）も必ずこのスキルで復帰手順を確認する。このゲートを通っていない PR は主の承認なしにマージしてはならない。
-version: 1.5.0
+version: 1.6.0
 ---
 
 # PR レビューゲート
@@ -38,7 +38,11 @@ version: 1.5.0
    gh api repos/$R/issues/$N --jq '.labels[].name'                          # passed の有無を確認
    gh api -X DELETE repos/$R/issues/$N/labels/agent-review:passed           # 付いていたら外す
    ```
-3. 元 issue の**受け入れ条件**を取得する（`gh api repos/$R/issues/<issue番号> --jq '.body'`）。判定の唯一の根拠はこれ。
+3. 記録先の**受け入れ条件**を取得する。判定の唯一の根拠はこれ。記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す issue で、**issue 参照が無い PR（Draft PR を記録先にした依頼）では PR 本文そのもの**が受け入れ条件になる（develop スキルの W は受け入れ条件を PR 本文に書く）:
+   ```bash
+   ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')
+   if [ -n "$ISSUE" ]; then gh api repos/$R/issues/$ISSUE --jq '.body'; else gh api repos/$R/pulls/$N --jq '.body'; fi
+   ```
 4. `git fetch origin` → `origin/main` をブランチへマージ（rebase + force-push は禁止）。コンフリクトが実装判断を要する規模なら `agent-review:failed` にして終了。
 5. **対象 HEAD を固定する**（main 追従の push を済ませた**後**に取る。マージすると HEAD が動くため）:
    ```bash
@@ -182,7 +186,9 @@ gh api -X POST repos/$R/issues/$N/comments \
 
 リスク宣言とは**別のコメント**として、仕様宣言を必ず投稿する（リスク宣言の文言は書き換え禁止なので、仕様宣言だけを出し直せるよう分ける）。「書かない」は選べない。本文は次の 2 形のどちらかちょうど。
 
-仕様を更新した場合（元 issue に `仕様化判断: する` がある PR）:
+以下「記録先」は元 issue、issue 参照が無い PR では PR 自身（手順5の解決手順と同じ）。
+
+仕様を更新した場合（記録先に `仕様化判断: する` がある PR）:
 
 ```
 ## 仕様宣言
@@ -190,7 +196,7 @@ gh api -X POST repos/$R/issues/$N/comments \
 仕様: 更新した — change <change-name>（archive 済み）／仕様レビュー: APPROVE（<issue コメントの URL>）
 ```
 
-仕様変更なしの場合（元 issue に `仕様化判断: しない` がある PR）:
+仕様変更なしの場合（記録先に `仕様化判断: しない` がある PR）:
 
 ```
 ## 仕様宣言
@@ -198,7 +204,7 @@ gh api -X POST repos/$R/issues/$N/comments \
 仕様: 変更なし — 理由: <なぜ spec が不要か。規範を持ちうるパス（docs/・.claude/ 等）に触れているなら、それでも規範が変わらない理由>
 ```
 
-元 issue に `仕様化判断:` の記録が無い PR は、**先に判断を記録してから**宣言する（手順5の整合表を参照）。
+記録先に `仕様化判断:` の記録が無い PR は、**先に判断を記録してから**宣言する（手順5の整合表を参照）。
 
 ### 4. 動作確認
 
@@ -266,23 +272,24 @@ gh api repos/$R/issues/$N/comments --jq \
 出力に**リスク宣言・仕様宣言・動作確認の 3 見出しがすべて**現れることを確認する。
 1 つでも欠けていれば**合格処理をしない**（コメントを出し直してから再確認する）。
 
-**仕様宣言は元 issue の記録と突き合わせる。** 元 issue は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）で解決し、その最新の `仕様化判断:` コメント（1 行目が `^仕様化判断: (する|しない)$`）を取る。PR コメントへの記録が許されるのは **PR 本文に issue 参照が無い場合に限る**（issue 参照があれば issue 側が正。issue 側に記録が無ければ issue に投稿する）:
+**仕様宣言は記録先の記録と突き合わせる。** 記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す元 issue で、**issue 参照が無い PR では PR 自身**（`$REC` を PR 番号に切り替える。PR のコメントも `issues/<番号>/comments` で読める）。そこから最新の `仕様化判断:` コメント（1 行目が `^仕様化判断: (する|しない)$`）を取る。PR コメントへの記録が許されるのは **PR 本文に issue 参照が無い場合に限る**（issue 参照があれば issue 側が正。issue 側に記録が無ければ issue に投稿する）。`$ISSUE` が空のまま `issues/$ISSUE/comments` を叩くと `issues//comments` で 404 になるので、必ず `$REC` を経由する:
 
 ```bash
 ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')
+REC=${ISSUE:-$N}   # 記録先の番号: issue 参照があればその issue、無ければ PR 自身
 # jq の ^ $ は行頭・行末に掛からない（文字列全体の先頭・末尾）ので、1 行目を split で切り出してから照合する。
 # コメントは 30 件でページが切れるので --paginate --slurp で全ページを取り（--slurp は --jq と併用不可なので jq へパイプ）、add で 1 配列にしてから「最新 1 件」を選ぶ
-gh api --paginate --slurp repos/$R/issues/$ISSUE/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body | split("\n")[0]'
-gh api --paginate --slurp repos/$R/issues/$ISSUE/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様レビュー: (APPROVE|REQUEST_CHANGES)$"))] | last | .body | split("\n")[0]'
+gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body | split("\n")[0]'
+gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様レビュー: (APPROVE|REQUEST_CHANGES)$"))] | last | .body | split("\n")[0]'
 # 2 つ目の出力が「仕様レビュー: APPROVE」ちょうどであること（最新のレビュー結果が正。古い APPROVE の後に REQUEST_CHANGES が出ていれば不合格）
 bash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF / 触れた規範パス。終了コード 2 = 規範パスに触れて openspec 差分なし
 ```
 
-| issue の記録 | 合格に必要な状態 |
+| 記録先（issue、無ければ PR 自身）の記録 | 合格に必要な状態 |
 |---|---|
-| `仕様化判断: する` | PR の変更ファイルに `openspec/` が含まれる、**または**宣言が指す change が base で archive 済み（`openspec/changes/archive/*-<change-name>/` の実在を実測。スタック PR で仕様が先行 PR に入っている場合）。**かつ** issue の最新の `仕様レビュー:` コメントが `APPROVE`（古い APPROVE の後に REQUEST_CHANGES があれば不可）。仕様宣言は「更新した」形 |
+| `仕様化判断: する` | PR の変更ファイルに `openspec/` が含まれる、**または**宣言が指す change が base で archive 済み（`openspec/changes/archive/*-<change-name>/` の実在を実測。スタック PR で仕様が先行 PR に入っている場合）。**かつ** 記録先の最新の `仕様レビュー:` コメントが `APPROVE`（古い APPROVE の後に REQUEST_CHANGES があれば不可）。仕様宣言は「更新した」形 |
 | `仕様化判断: しない` | 仕様宣言は「変更なし＋理由」形。PR に `openspec/` 差分が**無い**こと（差分があれば「しない」と矛盾＝合格しない。判断を「する」に取り直すか差分を外す）。`spec-touch-check.sh` が終了コード 2 なら、理由に規範パス接触への言及があること |
-| 記録なし | **合格しない**。今から判断して issue に `仕様化判断:` を投稿する（「する」なら仕様化・仕様レビューからやり直す）。issue が無い PR に限り PR 自身のコメントに同書式で記録してよい |
+| 記録なし | **合格しない**。今から判断して記録先に `仕様化判断:` を投稿する（「する」なら仕様化・仕様レビューからやり直す）。issue が無い PR に限り PR 自身のコメントに同書式で記録してよい（`gh api -X POST repos/$R/issues/$REC/comments`） |
 
 ```bash
 gh api -X POST repos/$R/issues/$N/labels -f 'labels[]=agent-review:passed'

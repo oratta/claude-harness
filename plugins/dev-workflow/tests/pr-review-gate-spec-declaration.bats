@@ -112,6 +112,89 @@ fixture_pages() {
   head_sec | grep 'HEAD SHA' | grep -q '仕様宣言'
 }
 
+# --- Requirement（issue #211）: issue 参照の無い PR では受け入れ条件・仕様化判断の取得先が PR 自身にフォールバックする ---
+#
+# 散文（「PR コメントへの記録が許されるのは PR 本文に issue 参照が無い場合に限る」）だけでなく、
+# 手順 1 と手順 5 のコマンド例そのものが分岐を実装していることを、偽の gh で実行して確かめる。
+# 偽の gh は呼び出しを $GH_LOG に記録し、path に応じて fixture を返す。
+
+step1() { awk '/^### 1\. /{f=1} /^### 2\. /{f=0} f' "$SKILL"; }
+
+# 指定した手順の fenced bash ブロックのうち ISSUE= を含むものから、実行対象の行だけを抜く
+# （説明コメント行と <plugin> プレースホルダを含む spec-touch-check 行は除く）
+issue_block_cmds() {
+  "$1" | awk '/^ *```bash/{f=1; b=""; next} /^ *```/{ if (f && b ~ /ISSUE=/) printf "%s", b; f=0; next } f{ b = b $0 "\n" }' \
+    | grep -E '^ *(ISSUE=|REC=|gh api|if \[)'
+}
+
+install_fake_gh() {
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  cat > "$BATS_TEST_TMPDIR/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GH_LOG"
+path=""
+for a in "$@"; do case "$a" in repos/*) path="$a" ;; esac; done
+case "$path" in
+  repos/*/issues/*/comments) printf '%s' "$MOCK_PAGES" ;;          # --paginate --slurp のページ配列
+  repos/*/pulls/*)           printf '%s\n' "$MOCK_PR_BODY" ;;      # PR 本文（--jq .body）
+  repos/*/issues/*)          printf 'ISSUE BODY %s\n' "${path##*/}" ;;
+  *) echo "unexpected gh call: $*" >&2; exit 1 ;;
+esac
+EOF
+  chmod +x "$BATS_TEST_TMPDIR/bin/gh"
+  export GH_LOG="$BATS_TEST_TMPDIR/gh.log"
+  : > "$GH_LOG"
+  export MOCK_PAGES="$(fixture_pages)"
+  export R="o/r" N="42"
+}
+
+run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
+  cmds="$(issue_block_cmds "$1")"
+  [ -n "$cmds" ]
+  # set -e は付けない（issue 参照が無いとき grep が非 0 を返すのは正常経路。実行環境の Bash も -e ではない）
+  MOCK_PR_BODY="$2" PATH="$BATS_TEST_TMPDIR/bin:$PATH" bash -c "$cmds"
+}
+
+@test "step 1: acceptance criteria come from the issue when the PR body references one" {
+  install_fake_gh
+  out="$(run_step_cmds step1 'fix it. Closes #7')"
+  [ "$out" = "ISSUE BODY 7" ]
+  grep -q 'repos/o/r/issues/7 ' "$GH_LOG"
+}
+
+@test "step 1: acceptance criteria fall back to the PR body when there is no issue reference" {
+  install_fake_gh
+  out="$(run_step_cmds step1 'Draft PR 記録先。受け入れ条件はこの本文')"
+  [ "$out" = "Draft PR 記録先。受け入れ条件はこの本文" ]
+  ! grep -q 'issues/ ' "$GH_LOG"
+  ! grep -q 'issues//' "$GH_LOG"
+  grep -qE 'repos/o/r/pulls/42 .*\.body' "$GH_LOG"
+}
+
+@test "step 5: decision / review comments are read from the referenced issue" {
+  install_fake_gh
+  out="$(run_step_cmds step5 'Refs #7 の続き')"
+  [ "$(printf '%s\n' "$out" | sed -n 1p)" = "仕様化判断: しない" ]
+  [ "$(printf '%s\n' "$out" | sed -n 2p)" = "仕様レビュー: REQUEST_CHANGES" ]
+  grep -q 'repos/o/r/issues/7/comments' "$GH_LOG"
+  ! grep -q 'repos/o/r/issues/42/comments' "$GH_LOG"
+}
+
+@test "step 5: without an issue reference the PR's own comments (issues/<PR number>/comments) are read" {
+  install_fake_gh
+  out="$(run_step_cmds step5 'issue 参照なしの Draft PR 記録先')"
+  [ "$(printf '%s\n' "$out" | sed -n 1p)" = "仕様化判断: しない" ]
+  grep -q 'repos/o/r/issues/42/comments' "$GH_LOG"
+  ! grep -q 'issues//comments' "$GH_LOG"
+}
+
+@test "step 1 and 5: prose names the fallback target (PR itself) next to the commands" {
+  step1 | grep -qE 'issue 参照が無|issue が無'
+  step1 | grep -q 'pulls/\$N'
+  step5 | grep -q 'REC='
+  step5 | grep -qE 'issue 参照が無.*PR 自身|PR 自身.*issue 参照が無'
+}
+
 # --- 既存件数固定アサーションを壊さない ---
 
 @test "keeps single occurrence of the cross-layer-contract and sanctuary/merge-permission phrases" {
