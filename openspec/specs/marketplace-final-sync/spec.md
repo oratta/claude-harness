@@ -5,7 +5,7 @@ TBD - created by archiving change repo-cleanup-final. Update Purpose after archi
 ## Requirements
 ### Requirement: 全編集プラグインの plugin.json version bump を確認する
 
-本 run（change-1〜7）で編集した全プラグイン（infra / longrun / lr / worktree / daily-report / weekly-report / skill-pack / experience-to-skill）について、`plugins/<name>/.claude-plugin/plugin.json` の `version` が本 run の変更を反映して bump されていることを確認しなければならない（MUST）。本 change 自身が編集する skill-pack / experience-to-skill は本 change 内で bump する（MUST）。
+本 run（change-1〜7）で編集した全プラグイン（infra / longrun / lr / worktree / daily-report / weekly-report / skill-pack / experience-to-skill）について、`plugins/<name>/.claude-plugin/plugin.json` の `version` が本 run の変更を反映して bump されていることを確認しなければならない（MUST）。（longrun / lr は 2026-08 に解散したため対象外。#205）本 change 自身が編集する skill-pack / experience-to-skill は本 change 内で bump する（MUST）。
 
 #### Scenario: skill-pack / experience-to-skill の version bump
 
@@ -24,7 +24,7 @@ TBD - created by archiving change repo-cleanup-final. Update Purpose after archi
 #### Scenario: version の完全一致
 
 - **WHEN** marketplace.json の各エントリ version と対応 plugin.json の version を比較する
-- **THEN** infra / longrun / lr / worktree / daily-report / weekly-report / skill-pack / experience-to-skill の全てで両者が完全一致する（受け入れ条件 15）
+- **THEN** infra / longrun / lr / worktree / daily-report / weekly-report / skill-pack / experience-to-skill の全てで両者が完全一致する（受け入れ条件 15。longrun / lr は 2026-08 に解散したため対象外。#205）
 
 #### Scenario: description の同期
 

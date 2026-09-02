@@ -99,7 +99,7 @@ Claude Code の `skillOverrides` と `enabledPlugins` を対話的に編集し�
   📛 corporate-branding            (name-only)
 
 === Plugins ===
-  ✅ longrun@oratta-claude-harness
+  ✅ dev-workflow@oratta-claude-harness
   ❌ harvest@marketing-harness     (disabled in .claude/settings.local.json)
 ```
 

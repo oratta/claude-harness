@@ -46,13 +46,15 @@ run_init() {
 
 # --- Scenario: 初回実行で一式が生成される ---
 
-@test "first run: creates project.md and precedents.md" {
+@test "first run: creates project.md, precedents.md and delegation.md" {
   run run_init
   [ "$status" -eq 0 ]
   [ -f "${REPO}/.claude/casting/project.md" ]
   [ -f "${REPO}/.claude/casting/precedents.md" ]
+  [ -f "${REPO}/.claude/casting/delegation.md" ]
   diff "${REPO}/.claude/casting/project.md" "${TEMPLATES_DIR}/project.md"
   diff "${REPO}/.claude/casting/precedents.md" "${TEMPLATES_DIR}/precedents.md"
+  diff "${REPO}/.claude/casting/delegation.md" "${TEMPLATES_DIR}/delegation.md"
 }
 
 @test "first run: appends exactly one local.md line to .gitignore" {
@@ -92,6 +94,16 @@ run_init() {
   run run_init
   [ "$status" -eq 0 ]
   [ "$(grep -cxF '.claude/casting/local.md' "${REPO}/.gitignore")" -eq 1 ]
+}
+
+@test "second run: does not overwrite an edited delegation.md" {
+  run_init
+  printf '\n| Bash(npm test:*) | 許可 | settings.json |\n' >> "${REPO}/.claude/casting/delegation.md"
+  cp "${REPO}/.claude/casting/delegation.md" "${TMP}/edited-delegation.md"
+
+  run run_init
+  [ "$status" -eq 0 ]
+  diff "${REPO}/.claude/casting/delegation.md" "${TMP}/edited-delegation.md"
 }
 
 @test "second run: does not overwrite precedents.md" {

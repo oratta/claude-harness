@@ -114,9 +114,9 @@ else
     "notCLAUDE.md" \
     ".github/ISSUE_TEMPLATE/bug.md" \
     "openspec/specs/rate-guard/spec.md" \
-    "plugins/dev-workflow/skills/github-issue/SKILL.md" \
-    "plugins/dev-workflow/commands/work-issue.md" \
-    "plugins/longrun/README.md" \
+    "plugins/dev-workflow/skills/develop/SKILL.md" \
+    "plugins/dev-workflow/commands/develop.md" \
+    "plugins/casting/README.md" \
     "plugins/worktree/skills/wt-clean/SKILL.md"; do
     if printf '%s\n' "$p" | grep -qE "$SACRED"; then
       ng "聖域と誤判定される（人間マージに落ちてしまう）: $p"

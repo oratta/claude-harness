@@ -130,3 +130,32 @@ fmtoken.sh は `OP_SERVICE_ACCOUNT_TOKEN` 環境変数 → `~/.config/op-sa/clau
 - **WHEN** rw SA トークンが env・ファイル・Keychain のどこにも無いマシンで `--register` を実行する
 - **THEN** ro トークンが環境にあっても流用されず、exit 43 で rw トークンの配布依頼の案内が出る
 
+
+### Requirement: 登録の値取り込み経路は入力起因と環境起因の失敗を exit code で区別する
+
+`--register` は、stdin の値を取り込めない原因が入力側にある場合（値が空・非 UTF-8・stdin が閉じられている・stdin が tty のまま）は exit 46 で、環境側にある場合（値を運ぶ producer の python3 が起動できない・producer が値を書き終える前に異常終了した）は exit 49 で終了しなければならない（SHALL）— 呼び出し側が「入力を直す」対処と「マシンを直す」対処を exit code だけで選べるようにするため、両者を同じ exit code に混ぜてはならない（MUST NOT）。producer が値を書き終える前に異常終了した場合、`op item create` が exit 0 を返していても成功を報告してはならない（MUST NOT — パイプが途中で吸われた・詰まったまま「OK」を出すのは無言の fail-open で、上書き禁止（exit 47）のため人力復旧待ちになる）。値がパイプ容量（64KB）を超えていて producer が書き込み途中のまま早期 exit（46/47/48）する正常系で、producer の Traceback を呼び出し側の stderr に見せてはならない（MUST NOT — 「登録済みなので止めた」がクラッシュに見える）。
+
+#### Scenario: 非 UTF-8 の値は入力不正として拒否される
+
+- **WHEN** UTF-8 として解釈できないバイト列を stdin から渡して `--register` を実行する
+- **THEN** exit 46 となり、`op item create` は呼ばれない（1Password の credential フィールドはテキストのため。バイナリは base64 等でテキスト化してから登録する）
+
+#### Scenario: stdin を閉じたままの実行は入力不正
+
+- **WHEN** `fmtoken.sh --register <item> <&-`（stdin を閉じて）実行する
+- **THEN** exit 46 となり、stderr に stdin から値を渡す案内が出て、Traceback は現れない
+
+#### Scenario: producer が起動できないのは環境障害
+
+- **WHEN** 値を運ぶ producer の python3 が起動できない状態で `--register` を実行する
+- **THEN** exit 49（46 ではない）となり、`op item create` は呼ばれず、stderr に fail-closed で中止した旨が出る
+
+#### Scenario: producer が転送中に異常終了したら成功を報告しない
+
+- **WHEN** `op item create` が stdin を読み切らずに exit 0 を返し、producer が値を書き終える前に終了する
+- **THEN** exit 49 となり、「OK: … 登録した」は出力されず、stderr に producer の異常終了と登録アイテムの確認手順が出る
+
+#### Scenario: 64KB 超の値の早期 exit で Traceback が出ない
+
+- **WHEN** パイプ容量を超える値を渡し、二重登録（exit 47）または判定不能（exit 48）で早期 exit する
+- **THEN** それぞれの exit code はそのままで、stderr に Python の Traceback が現れない
