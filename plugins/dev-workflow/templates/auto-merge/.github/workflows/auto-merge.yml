@@ -389,12 +389,35 @@ jobs:
             # そのまま取り込んでしまう（TOCTOU）。REST の merge に sha を渡すと head が
             # 動いていた場合に 409 で拒否され、何もマージされない。その PR は次回の
             # workflow_run / schedule で新しい head を最初から検証し直す。
-            if GH_TOKEN="$MERGE_TOKEN" gh api -X PUT "repos/$REPO/pulls/$N/merge" \
-                 -f sha="$HEAD_SHA" -f merge_method=squash >/dev/null; then
+            # 失敗の理由は必ず切り分ける。認証・認可の失敗（401 = PAT 失効／403 = 権限不足）は
+            # 「次のイベントで直る」類の失敗ではなく、放置すると全 PR が永久に通らない。
+            # 上の fail-closed ガードは PAT **未設定**しか見ないので、期限切れの PAT は
+            # 「設定済み」として素通りし、ここで初めて失敗する。
+            # gh は HTTP エラーを stderr に `... (HTTP 401)` の形で出すので、そこから
+            # ステータス番号だけを取り出して分岐する（トークン値はログに出さない＝ set -x を足さない）。
+            MERGE_OK=true
+            MERGE_ERR=$(GH_TOKEN="$MERGE_TOKEN" gh api -X PUT "repos/$REPO/pulls/$N/merge" \
+                 -f sha="$HEAD_SHA" -f merge_method=squash 2>&1 >/dev/null) || MERGE_OK=false
+            if [ "$MERGE_OK" = "true" ]; then
               gh pr comment "$N" --repo "$REPO" --body "🤖 **auto-merged** — 根拠: \`agent-review:passed\`（対象 HEAD 照合済み） / 必須チェック green / 聖域パス非接触（rename 元パス含む） / \`AUTOMERGE_PAUSED\` 未設定。検証してマージした SHA: \`${HEAD_SHA}\`。判定ログ: ${RUN_URL}（条件と巻き戻し手順: docs/auto-merge.md）"
               echo "マージ完了（sha=${HEAD_SHA}）"
             else
-              echo "::warning::PR #$N のマージに失敗（409=検証後に head が動いた／コンフリクト等）。次回イベントで再検証する"
+              # gh が出した理由文はログにそのまま残す。変更前は stderr が素通しでログに出ており、
+              # 「なぜマージできなかったか」（コンフリクト・ruleset 拒否等）はそこに載っていた。
+              # 捕捉したまま捨てると、401 以外の失敗の診断が HTTP 番号だけに痩せる。
+              # トークンは環境変数で渡しており gh の stderr には載らない（set -x も足さない）。
+              if [ -n "$MERGE_ERR" ]; then
+                printf 'gh の応答: %s\n' "$MERGE_ERR" >&2
+              fi
+              MERGE_HTTP=$(printf '%s\n' "$MERGE_ERR" | sed -n 's/.*(HTTP \([0-9][0-9]*\)).*/\1/p' | tail -1)
+              case "$MERGE_HTTP" in
+                401|403)
+                  echo "::error::PR #$N のマージが認証・認可で失敗（HTTP ${MERGE_HTTP}）。secrets.AUTOMERGE_PAT が失効／権限不足の可能性が高く、差し替えるまで自己回復しません（再発行手順: docs/auto-merge.md）"
+                  ;;
+                *)
+                  echo "::warning::PR #$N のマージに失敗（HTTP ${MERGE_HTTP:-不明}。409=検証後に head が動いた／コンフリクト等）。次回イベントで再検証する"
+                  ;;
+              esac
             fi
           done
           # <<< automerge-script
