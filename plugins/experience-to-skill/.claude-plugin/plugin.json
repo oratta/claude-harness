@@ -1,6 +1,6 @@
 {
   "name": "experience-to-skill",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Claude Code セッションの jsonl ログを素材に、自然言語の依頼で SKILL.md を蒸留する専門ツール。コミット運用には一切関与せず、`/e2s:distill` 1 コマンドで対話完結する。",
   "author": {
     "name": "Oratta"

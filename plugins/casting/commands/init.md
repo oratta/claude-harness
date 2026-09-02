@@ -1,6 +1,6 @@
 ---
 name: casting:init
-description: 対象 git repo に `.claude/casting/` 一式（project.md・precedents.md・local.md の gitignore 追記）を雛形から生成する。「観点の配役を導入して」「casting init」で起動する。
+description: 対象 git repo に `.claude/casting/` 一式（project.md・precedents.md・delegation.md・local.md の gitignore 追記）を雛形から生成する。「観点の配役を導入して」「casting init」で起動する。
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
@@ -50,6 +50,14 @@ else
   echo "skip (exists): ${CASTING_DIR}/precedents.md"
 fi
 
+# 委任宣言（許可ツール × 任された観点の 2 表。定義の正本は catalog/delegation.md）
+if [ ! -f "${CASTING_DIR}/delegation.md" ]; then
+  cp "${TEMPLATES_DIR}/delegation.md" "${CASTING_DIR}/delegation.md"
+  echo "created: ${CASTING_DIR}/delegation.md"
+else
+  echo "skip (exists): ${CASTING_DIR}/delegation.md"
+fi
+
 GITIGNORE="${REPO_ROOT%/}/.gitignore"
 touch "$GITIGNORE"
 # 既存 .gitignore の末尾に改行が無いと追記行が最終行と連結されるため、先に改行を補う
@@ -80,8 +88,8 @@ else
 fi
 ```
 
-`local.md`（第2層・エージェント/マシン別の上書き）自体は生成しない。gitignore に追記するだけで、必要になったエージェントが各自作成する。
+`delegation.md` は「許可ツール」「任された観点」の 2 表を 1 か所に書く委任宣言（定義の正本は `catalog/delegation.md`。表は要約であり、正本は permission 設定と配役表の 3 層）。`local.md`（第2層・エージェント/マシン別の上書き）自体は生成しない。gitignore に追記するだけで、必要になったエージェントが各自作成する。
 
 ## 完了報告
 
-生成/スキップしたファイルの一覧をそのまま主に伝える。新規生成した場合は「生成直後は全観点がカタログの既定を踏襲します。このプロジェクトで変えたい観点があれば、その行だけを `.claude/casting/project.md` に追加してください（合成結果の確認は `casting-check.sh resolve`）」と一言添える。
+生成/スキップしたファイルの一覧をそのまま主に伝える。新規生成した場合は「生成直後は全観点がカタログの既定を踏襲します。このプロジェクトで変えたい観点があれば、その行だけを `.claude/casting/project.md` に追加してください（合成結果の確認は `casting-check.sh resolve`）。許可ツールと任された観点の宣言は `.claude/casting/delegation.md` の 2 表に、観点の判断基準は `/casting:policy-interview <観点>` で作れます」と一言添える。

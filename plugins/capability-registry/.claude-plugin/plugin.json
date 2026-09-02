@@ -1,6 +1,6 @@
 {
   "name": "capability-registry",
-  "version": "1.7.7",
+  "version": "1.7.8",
   "description": "外部サービスを操作する前に CLI とトークンの在処を教える発見層プラグイン。skills/capability-registry: サービス索引（CLI 名 / 認証確認コマンド / fmtoken.sh によるトークン取得 / ブラウザ必須の例外 / CLI が無いネガティブエントリ）を description トリガーで全セッションに常駐させ、CLAUDE.md 無編集で発火する。scripts/fmtoken.sh: 1Password の agents 保管庫からトークンを引く・登録するラッパー（読み取りは read-only SA でプロジェクトスコープ / --name で明示名参照 / --register は書き込み用 SA claude-agents-rw 経由で命名規約 <project>--<service> / <agent>--<SERVICE> を機械検証して登録。flatmate から移設、全プロジェクト共通の道具）。hooks: ブラウザ系 MCP ツールの PreToolUse でセッション初回のみ CLI 代替の検討を促す注意喚起を注入する（deny はしない）。",
   "author": {
     "name": "Oratta"

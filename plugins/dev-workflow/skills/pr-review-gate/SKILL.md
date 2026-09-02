@@ -1,7 +1,7 @@
 ---
 name: pr-review-gate
 description: PR を作成したら必ず通す品質ゲート。別コンテキストのレビュー・リスク宣言（リスクなし or 主の許容確認）・動作確認の証拠添付・agent-review:passed の付与までを1本で行う。「PR を作った」「レビューして」「マージまで進めて」「auto-merge に載せたい」ときに必ず読み込む。保留中の PR を再開するとき（「主の回答が来た」「リスクを許容する/しない」「動作確認の結果を伝える」「保留を進めて」「レビュー指摘を直したので再レビュー」）も必ずこのスキルで復帰手順を確認する。このゲートを通っていない PR は主の承認なしにマージしてはならない。
-version: 1.3.0
+version: 1.6.0
 ---
 
 # PR レビューゲート
@@ -9,15 +9,16 @@ version: 1.3.0
 主駆動型開発（主が席を外している間も PR がマージまで到達する）の品質ゲート。
 **通過 = 主の承認なしに auto-merge されてよい**という意味なので、通過判定は保守的に出す。
 
-- 通過の必須3点: **①リスク宣言 ②動作確認の証拠（or 3点セット依頼） ③`agent-review:passed` ラベル**
-- **fail-closed**: ①②が**現在の PR HEAD の SHA を明記した PR コメントとして実在する**ことを API で実測するまで③を付けない。手順5以外の経路で `agent-review:passed` を付けることを禁じる。
+- 通過の必須4点: **①リスク宣言 ②仕様宣言 ③動作確認の証拠（or 3点セット依頼） ④`agent-review:passed` ラベル**
+- **fail-closed**: ①②③が**現在の PR HEAD の SHA を明記した PR コメントとして実在する**ことを API で実測するまで④を付けない。手順5以外の経路で `agent-review:passed` を付けることを禁じる。
 - 実行は**サブエージェントに委譲**する（診断・diff 読み込みは本体セッションに流し込まない）。
 
 以下 `$R` = `<owner>/<repo>`、`$N` = PR 番号。
 
 ## 前提と理由（各手順で繰り返さない。ここが正本）
 
-- **HEAD SHA**: リスク宣言（手順3）と動作確認証拠（手順4）のコメントには対象 HEAD の 40 桁フル SHA を必ず記載する。どのコミットに対する宣言かを機械的に照合できるのは SHA だけで、手順5は「現在の HEAD と一致する SHA を含むコメントの実在」を実測してから合格処理する。レビュー中に新たなコミットを push したら、その時点で HEAD_SHA を取り直し、宣言・証拠を出し直す（古い SHA のコメントは合格根拠にならない）。**この `対象 HEAD:` 規約は auto-merge workflow（`templates/auto-merge/`）の合格条件そのものでもある** — workflow は判定時の HEAD と一致する「対象 HEAD: <40桁フル SHA>」コメントの実在を機械照合し、無ければマージしない。コメント 1 行目の文言形式（`対象 HEAD: ` ＋ 40 桁フル SHA）を変えると配備済み全リポの機械マージが止まるため、規約の変更は必ずテンプレート側と同時に行う。
+- **HEAD SHA**: リスク宣言・仕様宣言（手順3）と動作確認証拠（手順4）のコメントには対象 HEAD の 40 桁フル SHA を必ず記載する。どのコミットに対する宣言かを機械的に照合できるのは SHA だけで、手順5は「現在の HEAD と一致する SHA を含むコメントの実在」を実測してから合格処理する。レビュー中に新たなコミットを push したら、その時点で HEAD_SHA を取り直し、宣言・証拠を出し直す（古い SHA のコメントは合格根拠にならない）。**この `対象 HEAD:` 規約は auto-merge workflow（`templates/auto-merge/`）の合格条件そのものでもある** — workflow は判定時の HEAD と一致する「対象 HEAD: <40桁フル SHA>」コメントの実在を機械照合し、無ければマージしない。コメント 1 行目の文言形式（`対象 HEAD: ` ＋ 40 桁フル SHA）を変えると配備済み全リポの機械マージが止まるため、規約の変更は必ずテンプレート側と同時に行う。
+- **仕様宣言**: 「仕様（openspec）を更新したか／不要と判断したか」は、develop スキルの W（`references/roles/worker.md`）が記録先（元 issue。issue が無い依頼では Draft PR 自身）に `仕様化判断: する|しない` として記録する（契約の正本は develop スキルの `references/roles/spec-reviewer.md`「判断記録の契約」）。スキルを通らずに実装された PR はこの記録を持たないので、出口のこのゲートで手順3の仕様宣言と手順5の照合で fail-closed に止める。仕様宣言も `対象 HEAD:` 規約に乗せてあるので auto-merge workflow の合格条件に組み込めるが、配備済みリポへの伝播を伴うため**本スキルの範囲外（別 issue）**とし、当面はこのスキルの手順5だけが照合する。
 - **stale passed**: 開始時に残っている `agent-review:passed` は前回 HEAD の遺物（passed 後に積まれたコミットは未レビュー）。auto-merge workflow は「対象 HEAD: <現 HEAD>」コメントの照合で stale passed を機械的に無効化する（未レビュー HEAD はマージされない）が、**手順として開始時に外すことは変わらず必要** — passed が残っている間は人間からもボードからも「合格済み」に見え、再レビューで欠陥・保留に転んだ事実が隠れるため。
 - **auto-merge の配備状況**: auto-merge workflow（dev-workflow プラグインの `templates/auto-merge/` を展開したもの）が配備済みのリポでは、passed 付与でロボットが機械判定してマージする。**未配備のリポでは passed 付与後のマージは人間の操作**になる（ゲートの手順自体は変わらない）。どちらの場合も、LLM が `gh pr merge` や REST の merge API を直接叩いてマージすることは**禁止**（聖域・CI green・SHA ピン・緊急停止の判定を素通りするため）。
 - **リポ固有の仕組み**: このスキルはリポ非依存。保留の主向けミラーや投稿規約などのリポ固有の仕組みは「**存在すればそれに従い、無ければ各手順の縮退手順**」で扱う。
@@ -37,7 +38,11 @@ version: 1.3.0
    gh api repos/$R/issues/$N --jq '.labels[].name'                          # passed の有無を確認
    gh api -X DELETE repos/$R/issues/$N/labels/agent-review:passed           # 付いていたら外す
    ```
-3. 元 issue の**受け入れ条件**を取得する（`gh api repos/$R/issues/<issue番号> --jq '.body'`）。判定の唯一の根拠はこれ。
+3. 記録先の**受け入れ条件**を取得する。判定の唯一の根拠はこれ。記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す issue で、**issue 参照が無い PR（Draft PR を記録先にした依頼）では PR 本文そのもの**が受け入れ条件になる（develop スキルの W は受け入れ条件を PR 本文に書く）:
+   ```bash
+   ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')
+   if [ -n "$ISSUE" ]; then gh api repos/$R/issues/$ISSUE --jq '.body'; else gh api repos/$R/pulls/$N --jq '.body'; fi
+   ```
 4. `git fetch origin` → `origin/main` をブランチへマージ（rebase + force-push は禁止）。コンフリクトが実装判断を要する規模なら `agent-review:failed` にして終了。
 5. **対象 HEAD を固定する**（main 追従の push を済ませた**後**に取る。マージすると HEAD が動くため）:
    ```bash
@@ -140,7 +145,7 @@ gh api -X POST repos/$R/issues/$N/comments \
   -f body='修正実装モデル: opus（fable レート制限のためフォールバック）'
 ```
 
-1周目から `model: fable` で spawn する「重要実装」の事前分類（聖域パス・マージ権限・層間契約・課金/法務）は **github-issue スキルの Step D が正本** — このゲートでは再掲しない。
+1周目から `model: fable` で spawn する「重要実装」の事前分類（聖域パス・マージ権限・層間契約・課金/法務）は **develop スキルの references/roles/worker.md が正本** — このゲートでは再掲しない。
 
 ### 3. リスク宣言（positive affirmation・必須）
 
@@ -176,6 +181,30 @@ gh api -X POST repos/$R/issues/$N/comments \
 - 検知時点: issue 記載済み / 実装中に発覚
 これを許容するか。許容できないなら <代替案 or 見送り> に切り替える。
 ```
+
+#### 3-b. 仕様宣言（positive affirmation・必須）
+
+リスク宣言とは**別のコメント**として、仕様宣言を必ず投稿する（リスク宣言の文言は書き換え禁止なので、仕様宣言だけを出し直せるよう分ける）。「書かない」は選べない。本文は次の 2 形のどちらかちょうど。
+
+以下「記録先」は元 issue、issue 参照が無い PR では PR 自身（手順5の解決手順と同じ）。
+
+仕様を更新した場合（記録先に `仕様化判断: する` がある PR）:
+
+```
+## 仕様宣言
+対象 HEAD: <$HEAD_SHA 40桁フル>
+仕様: 更新した — change <change-name>（archive 済み）／仕様レビュー: APPROVE（<issue コメントの URL>）
+```
+
+仕様変更なしの場合（記録先に `仕様化判断: しない` がある PR）:
+
+```
+## 仕様宣言
+対象 HEAD: <$HEAD_SHA 40桁フル>
+仕様: 変更なし — 理由: <なぜ spec が不要か。規範を持ちうるパス（docs/・.claude/ 等）に触れているなら、それでも規範が変わらない理由>
+```
+
+記録先に `仕様化判断:` の記録が無い PR は、**先に判断を記録してから**宣言する（手順5の整合表を参照）。
 
 ### 4. 動作確認
 
@@ -240,8 +269,27 @@ gh api repos/$R/issues/$N/comments --jq \
   "[.[] | select(.body | contains(\"$HEAD_SHA\")) | .body | split(\"\n\")[0]]"
 ```
 
-出力に**リスク宣言の見出しと動作確認の見出しが両方**現れることを確認する。
-片方でも欠けていれば**合格処理をしない**（コメントを出し直してから再確認する）。
+出力に**リスク宣言・仕様宣言・動作確認の 3 見出しがすべて**現れることを確認する。
+1 つでも欠けていれば**合格処理をしない**（コメントを出し直してから再確認する）。
+
+**仕様宣言は記録先の記録と突き合わせる。** 記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す元 issue で、**issue 参照が無い PR では PR 自身**（`$REC` を PR 番号に切り替える。PR のコメントも `issues/<番号>/comments` で読める）。そこから最新の `仕様化判断:` コメント（1 行目が `^仕様化判断: (する|しない)$`）を取る。PR コメントへの記録が許されるのは **PR 本文に issue 参照が無い場合に限る**（issue 参照があれば issue 側が正。issue 側に記録が無ければ issue に投稿する）。`$ISSUE` が空のまま `issues/$ISSUE/comments` を叩くと `issues//comments` で 404 になるので、必ず `$REC` を経由する:
+
+```bash
+ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')
+REC=${ISSUE:-$N}   # 記録先の番号: issue 参照があればその issue、無ければ PR 自身
+# jq の ^ $ は行頭・行末に掛からない（文字列全体の先頭・末尾）ので、1 行目を split で切り出してから照合する。
+# コメントは 30 件でページが切れるので --paginate --slurp で全ページを取り（--slurp は --jq と併用不可なので jq へパイプ）、add で 1 配列にしてから「最新 1 件」を選ぶ
+gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body | split("\n")[0]'
+gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様レビュー: (APPROVE|REQUEST_CHANGES)$"))] | last | .body | split("\n")[0]'
+# 2 つ目の出力が「仕様レビュー: APPROVE」ちょうどであること（最新のレビュー結果が正。古い APPROVE の後に REQUEST_CHANGES が出ていれば不合格）
+bash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF / 触れた規範パス。終了コード 2 = 規範パスに触れて openspec 差分なし
+```
+
+| 記録先（issue、無ければ PR 自身）の記録 | 合格に必要な状態 |
+|---|---|
+| `仕様化判断: する` | PR の変更ファイルに `openspec/` が含まれる、**または**宣言が指す change が base で archive 済み（`openspec/changes/archive/*-<change-name>/` の実在を実測。スタック PR で仕様が先行 PR に入っている場合）。**かつ** 記録先の最新の `仕様レビュー:` コメントが `APPROVE`（古い APPROVE の後に REQUEST_CHANGES があれば不可）。仕様宣言は「更新した」形 |
+| `仕様化判断: しない` | 仕様宣言は「変更なし＋理由」形。PR に `openspec/` 差分が**無い**こと（差分があれば「しない」と矛盾＝合格しない。判断を「する」に取り直すか差分を外す）。`spec-touch-check.sh` が終了コード 2 なら、理由に規範パス接触への言及があること |
+| 記録なし | **合格しない**。今から判断して記録先に `仕様化判断:` を投稿する（「する」なら仕様化・仕様レビューからやり直す）。issue が無い PR に限り PR 自身のコメントに同書式で記録してよい（`gh api -X POST repos/$R/issues/$REC/comments`） |
 
 ```bash
 gh api -X POST repos/$R/issues/$N/labels -f 'labels[]=agent-review:passed'

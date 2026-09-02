@@ -478,7 +478,7 @@ Step 8 で書いた `90 - LLM/` のログに、アルバム生成の事実を追
 
 ## 自己検証
 
-完了宣言の前に、生成物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`）。
+完了宣言の前に、生成物の evidence を確認する（原則: `plugins/dev-workflow/references/self-verification.md`）。
 
 - 生成した `diary.md` が対象日付のディレクトリに実在し、空でないことを確認する。
 - 中間ファイル `voice.md` / `dailyLLM.md` が生成され、diary 本文に反映されていることを確認する。
