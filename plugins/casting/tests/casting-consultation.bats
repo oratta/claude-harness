@@ -94,7 +94,7 @@ setup() {
 @test "plugin.json: registers both agents and bumps version to at least 0.3.0" {
   LC_ALL=C grep -qF -- '"./agents/casting-specialist.md"' "$PLUGIN_JSON"
   LC_ALL=C grep -qF -- '"./agents/casting-arbiter.md"' "$PLUGIN_JSON"
-  LC_ALL=C grep -qF -- '"version": "0.4.1"' "$PLUGIN_JSON"
+  LC_ALL=C grep -qF -- '"version": "0.4.3"' "$PLUGIN_JSON"
 }
 
 # --- 受け入れ条件3: 事後報告フォーマットの定義と実例1件 ---

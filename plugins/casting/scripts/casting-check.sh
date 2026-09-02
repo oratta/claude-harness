@@ -7,6 +7,7 @@
 #  この report 呼び出しの異なり数と突き合わせる）:
 #   0. 配役表の表行が5列に割れない（5列未満／セル内の | で6列以上に割れる）（malformed-row）
 #   0'. 開いた HTML コメント <!-- が閉じられていない（以降を EOF まで飲み込む）（unclosed-comment）
+#       — Markdown のコードフェンス（``` / ~~~）の中はリテラルとして走査しない
 #   1. catalog.md に無い観点語彙（「カタログ外」を除く）（unknown-vocab）
 #   2. 判例台帳の「カタログ外」判例（観点追加の起案シグナル）（catalog-external-precedent）
 #   3. 同一観点で帰結「論点じゃなかった」が2件以上（移譲仕組み化の起案シグナル）（repeated-not-issue）
