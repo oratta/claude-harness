@@ -168,10 +168,10 @@
     },
     {
       "name": "product-handover",
-      "description": "プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を配るプラグイン。法務ドラフト（利用規約・プライバシーポリシー・返金ポリシー）の雛形、サポート窓口メールの設定雛形、教訓ログの雛形の3種だけを持ち、オーケストレーターもスキルも持たない。インフラ（infra）・開発ワークフローの導入と auto-merge 配線（dev-workflow）・SNS 運用（sns-autopilot）はそれぞれのプラグインが持つため呼び出さず、引き渡しの順番（infra → dev-workflow の導入 → auto-merge → product-handover → sns）だけを README に書く。住人側（workspace・cron・チャンネル）は flatmate の new-resident が担い、本プラグインはプロダクトのリポ側だけを扱う。展開先で問題が出たら展開先ではなく本プラグイン側を直す。",
+      "description": "プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を配るプラグイン。法務ドラフト（利用規約・プライバシーポリシー・返金ポリシー・特定商取引法に基づく表記）の雛形、インシデント対応手順書の雛形、サポート窓口メールの設定雛形、教訓ログの雛形の4種だけを持ち、オーケストレーターもスキルも持たない。インフラ（infra）・開発ワークフローの導入と auto-merge 配線（dev-workflow）・SNS 運用（sns-autopilot）はそれぞれのプラグインが持つため呼び出さず、引き渡しの順番（infra → dev-workflow の導入 → auto-merge → product-handover → sns）だけを README に書く。住人側（workspace・cron・チャンネル）は flatmate の new-resident が担い、本プラグインはプロダクトのリポ側だけを扱う。展開先で問題が出たら展開先ではなく本プラグイン側を直す。",
       "source": "./plugins/product-handover",
       "category": "workflow",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "Oratta"
       },
