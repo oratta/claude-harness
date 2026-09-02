@@ -49,7 +49,7 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 
 ### templates/auto-merge/
 
-`agent-review:passed` が付いた PR を決定論的な条件（ラベル / CI green / 聖域非接触 / 緊急停止なし）だけで機械マージするロボットと、ワンクリック巻き戻し・攻撃再現テストのリポ展開用一式。展開手順（差し替え必須3点: 聖域パス・REQUIRED_CHECKS・AUTOMERGE_PAT）は `templates/auto-merge/README.md` を参照。
+`agent-review:passed` が付いた PR を決定論的な条件（ラベル / CI green / 聖域非接触 / 緊急停止なし）だけで機械マージするロボットと、ワンクリック巻き戻し・攻撃再現テスト・staging デプロイ後の外形スモーク + auto-revert（staging を持つリポのみ）・LLM に `gh pr merge` / force push を禁じる `.claude/settings.json` の deny 断片のリポ展開用一式。展開手順（差し替え必須3点: 聖域パス・REQUIRED_CHECKS・AUTOMERGE_PAT、スモークの導線差し替え、deny のマージ）は `templates/auto-merge/README.md` を参照。
 
 ## コマンド
 

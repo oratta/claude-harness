@@ -252,8 +252,67 @@ CI green の判定は**チェック名の完全一致**で auto-merge が自前�
 
 ---
 
+## LLM 側の防壁: `.claude/settings.json` の deny 設定
+
+この仕組みは「マージするのはロボットだけ。LLM は `gh pr merge` も main への直接 push もしない」
+ことを前提にしている。その前提をプロンプト（規約文書）ではなく**ハーネスが実行前にブロックする層**で
+守るのが `.claude/settings.json` の `permissions.deny`（テンプレートの `.claude/settings.json`。
+展開手順は README の手順 7）:
+
+| deny | 塞ぐもの |
+|---|---|
+| `Bash(gh pr merge:*)` | LLM による直接マージ（ゲート・聖域判定・SHA ピンを全部素通りする経路） |
+| `Bash(git push origin main:*)` / `master:*` | PR を経ない main 更新 |
+| `Bash(git push -f:*)` / `--force:*` / `--force-with-lease:*` | 履歴の書き換え（マージ済み SHA の差し替え） |
+| `Bash(git push --no-verify:*)` | pre-push ガード（push-guard-setup）の迂回 |
+
+- 展開先に既存の deny があれば**消さずに足す**（README の jq コマンドは和集合を取る）。
+  deny を減らす変更は `.claude/` が聖域なので必ず human-merge になる。
+- `git merge` / `git rebase` そのものは deny しない（feature ブランチでの main 追従に要る）。
+- 無課金 private リポで branch protection が使えない場合、この deny が LLM 側の主防壁になる。
+  branch protection が使えるリポでは GitHub 側でも main を保護する（PR 必須 + required status checks）。
+
+---
+
+## staging スモーク + auto-revert（`staging-smoke.yml`）
+
+マージ前のゲートで拾えない意味的な破壊（ビルドは通るが画面が死ぬ等）を、**main マージ後の staging
+デプロイ直後に外形チェックで検知し、自分で戻す**層。staging デプロイ（`Deploy to Staging` という名前の
+workflow）を持つリポだけに展開する（README の手順 6）。
+
+### 動き
+
+1. `Deploy to Staging` が成功で完了 → `vars.STAGING_DOMAIN` の代表 URL（既定 3 本。展開時に差し替え）を
+   curl し、HTTP 200 と期待文字列を確認する
+2. 失敗が 1 件でもあれば（5xx / 接続失敗 / 期待文字列なし）→ **revert PR を自動起票**
+   （`revert-auto-<sha12>` ブランチ、`agent-review:passed` + `incident` ラベル、「対象 HEAD:」コメント付き）
+   + **incident issue を起票**（事実経過と残タスクのチェックリスト）
+3. `Deploy to Staging` 自体が失敗 → revert 対象なしとして incident issue だけ起票
+
+revert PR は auto-merge の合格条件（`agent-review:passed` + 現 HEAD の「対象 HEAD:」コメント）を
+機械的に満たす形で作られるので、**聖域パスに触れていなければ auto-merge が取り込んで staging が戻る**。
+聖域に触れていれば human-merge が付き、人間がマージする。
+
+### 誤検知ガード（revert しないケース）
+
+全チェックが**認証系（3xx / 401 / 403）だけ**で落ちたときは、Vercel の Deployment Protection 等に
+弾かれて「検証不能」なのであってコード欠陥の証拠ではない。この場合は revert せず、
+`warn: staging スモーク検証不能` の issue を 1 件だけ起票する（同種の open issue があれば重複起票しない）。
+対処は `VERCEL_AUTOMATION_BYPASS_SECRET` の登録か staging の保護解除。
+1 件でも認証系以外の失敗が混ざっていればコード欠陥の証拠ありとして revert する。
+この判定はプラグイン側の bats テストが固定している（401 のみ → revert 経路に入らない）。
+
+### 前提と止め方
+
+- `vars.STAGING_DOMAIN` 未設定の間はスモークをスキップして警告だけ出す（何も起票しない）
+- revert PR の push / 作成は `AUTOMERGE_PAT` を共用する。未設定なら自動 revert は失敗ログを残して終わる
+- 同じコミットに対する revert ブランチが既にあれば二重起票しない
+- 止めたいときは `vars.STAGING_DOMAIN` を空にするか、workflow を Actions 画面で disable する
+
+---
+
 ## この仕組みが担保していないこと（受容済みの残リスク）
 
-テストで拾えない意味的な破壊はこのゲートを通過しうる。その守りは main マージ後の検知
-（デプロイ後スモーク・稼働監視・この文書の巻き戻し手順）としてリポごとに別途用意する。
-本ドキュメントが扱うのは**マージ前のゲートと緊急停止・巻き戻し**まで。
+テストで拾えない意味的な破壊はマージ前のゲートを通過しうる。その守りは main マージ後の検知
+（上の staging スモーク・稼働監視・この文書の巻き戻し手順）として用意する。staging を持たないリポや
+スモークの導線に含まれない画面の破壊は、稼働監視と人間の巻き戻し判断に残る。

@@ -19,6 +19,39 @@ setup() {
   DOC="${TPL}/docs/auto-merge.md"
   TST="${TPL}/scripts/test-auto-merge-workflow.sh"
   README="${TPL}/README.md"
+  SMOKE="${TPL}/.github/workflows/staging-smoke.yml"
+  DENY="${TPL}/.claude/settings.json"
+}
+
+# staging-smoke.yml の smoke ステップ本体（# >>> smoke-script マーカーの間）を、YAML の
+# インデントを剥がした bash スクリプトとして取り出す。curl をスタブに差し替えて実行し、
+# 誤検知ガードの判定を実際に動かして固定する
+extract_smoke_script() {
+  sed -n '/# >>> smoke-script/,/# <<< smoke-script/p' "$SMOKE" | sed 's/^          //'
+}
+
+# $1=スタブ curl が返す HTTP コード、$2=本文。fixture dir を作って PATH 先頭に置く
+make_curl_stub() {
+  local dir="$BATS_TEST_TMPDIR/stub-$1"
+  mkdir -p "$dir"
+  cat > "$dir/curl" <<EOF
+#!/bin/sh
+# 実物と同じく "本文\n<code>" を返す（-w '\n%{http_code}' 相当）
+printf '%s\n%s' '$2' '$1'
+EOF
+  chmod +x "$dir/curl"
+  printf '%s' "$dir"
+}
+
+run_smoke_with_code() { # $1=HTTP code $2=body
+  local stub script out
+  stub="$(make_curl_stub "$1" "$2")"
+  script="$BATS_TEST_TMPDIR/smoke-$1.sh"
+  extract_smoke_script > "$script"
+  out="$BATS_TEST_TMPDIR/output-$1.txt"
+  : > "$out"
+  run env PATH="$stub:$PATH" STAGING_DOMAIN=staging.example.test VERCEL_BYPASS= GITHUB_OUTPUT="$out" bash "$script"
+  SMOKE_OUTPUT_FILE="$out"
 }
 
 # --- Requirement: auto-merge workflow 一式がテンプレートとして配布される ---
@@ -29,6 +62,8 @@ setup() {
   [ -f "$DOC" ]
   [ -f "$TST" ]
   [ -f "$README" ]
+  [ -f "$SMOKE" ]
+  [ -f "$DENY" ]
 }
 
 @test "markers: auto-merge.yml has all replacement/extraction marker pairs" {
@@ -141,6 +176,146 @@ extract_revert_code() {
   prcreate_line="$(grep -nF 'gh pr create' "$code" | head -1 | cut -d: -f1)"
   [ "$lsremote_line" -lt "$push_line" ]
   [ "$prlist_line" -lt "$prcreate_line" ]
+}
+
+# --- Requirement: staging スモーク + auto-revert がテンプレートとして配布される（issue #213） ---
+
+@test "smoke: staging-smoke.yml exists and subscribes to Deploy to Staging completion" {
+  [ -f "$SMOKE" ]
+  grep -qF 'workflow_run:' "$SMOKE"
+  grep -qF 'workflows: ["Deploy to Staging"]' "$SMOKE"
+  grep -qF 'types: [completed]' "$SMOKE"
+}
+
+@test "smoke: both revert-PR and incident-issue paths exist, gated on the blocked output" {
+  code="$(sed -n '/# >>> smoke-revert-script/,/# <<< smoke-revert-script/p' "$SMOKE" | sed 's/#.*//')"
+  printf '%s\n' "$code" | grep -qF 'git revert'
+  printf '%s\n' "$code" | grep -qF 'gh pr create'
+  printf '%s\n' "$code" | grep -qF 'gh issue create'
+  # revert PR は auto-merge の合格条件（passed ラベル + 対象 HEAD コメント）を機械的に満たす
+  printf '%s\n' "$code" | grep -qF -- '--label "agent-review:passed"'
+  printf '%s\n' "$code" | grep -qF '対象 HEAD: $REVERT_SHA'
+  # revert ジョブは「検証不能」判定のときは走らない
+  grep -qF "needs.smoke.outputs.blocked != 'true'" "$SMOKE"
+  grep -qF "needs.smoke.outputs.blocked == 'true'" "$SMOKE"
+  # デプロイ自体の失敗は incident issue の経路がある
+  grep -qF "github.event.workflow_run.conclusion == 'failure'" "$SMOKE"
+  # 自動 revert は絶対にマージしない
+  ! printf '%s\n' "$code" | grep -qF 'gh pr merge'
+}
+
+@test "smoke: false-positive guard comment (suimei lesson) and marker pairs survive" {
+  grep -qF 'genetta-inc/suimei の初回実戦で学習' "$SMOKE"
+  grep -qF 'デプロイ保護で検証不能' "$SMOKE"
+  for m in smoke-script smoke-checks smoke-revert-script; do
+    grep -qF "# >>> $m" "$SMOKE"
+    grep -qF "# <<< $m" "$SMOKE"
+  done
+}
+
+@test "smoke guard: all checks 401 -> blocked=true (revert path is NOT taken)" {
+  run_smoke_with_code 401 ""
+  [ "$status" -eq 1 ]
+  grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE"
+  printf '%s\n' "$output" | grep -qF '検証不能'
+}
+
+@test "smoke guard: all checks 302/403 (auth-like) -> blocked=true" {
+  run_smoke_with_code 302 ""
+  [ "$status" -eq 1 ]
+  grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE"
+  run_smoke_with_code 403 ""
+  [ "$status" -eq 1 ]
+  grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE"
+}
+
+@test "smoke guard: 500 -> failure without blocked (revert path IS taken)" {
+  run_smoke_with_code 500 ""
+  [ "$status" -eq 1 ]
+  ! grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE"
+  grep -qF 'failures=' "$SMOKE_OUTPUT_FILE"
+}
+
+@test "smoke guard: mixed 401 and 500 -> not blocked (any non-auth failure is evidence of a defect)" {
+  # 1 回目の curl は 401、2 回目以降は 500 を返すスタブ
+  dir="$BATS_TEST_TMPDIR/stub-mixed"
+  mkdir -p "$dir"
+  cat > "$dir/curl" <<'EOF'
+#!/bin/sh
+n="$(cat "$MIXED_COUNTER" 2>/dev/null || echo 0)"
+n=$((n + 1)); echo "$n" > "$MIXED_COUNTER"
+if [ "$n" -eq 1 ]; then printf '%s\n%s' '' '401'; else printf '%s\n%s' '' '500'; fi
+EOF
+  chmod +x "$dir/curl"
+  script="$BATS_TEST_TMPDIR/smoke-mixed.sh"
+  extract_smoke_script > "$script"
+  out="$BATS_TEST_TMPDIR/output-mixed.txt"
+  : > "$out"
+  run env PATH="$dir:$PATH" MIXED_COUNTER="$BATS_TEST_TMPDIR/mixed.n" STAGING_DOMAIN=staging.example.test VERCEL_BYPASS= GITHUB_OUTPUT="$out" bash "$script"
+  [ "$status" -eq 1 ]
+  ! grep -qF 'blocked=true' "$out"
+  printf '%s\n' "$output" | grep -qF 'HTTP401:認証系'
+  printf '%s\n' "$output" | grep -qF 'HTTP500'
+}
+
+@test "smoke guard: all 200 -> success, and unset STAGING_DOMAIN -> skipped" {
+  run_smoke_with_code 200 "ok"
+  [ "$status" -eq 0 ]
+  ! grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE"
+  script="$BATS_TEST_TMPDIR/smoke-skip.sh"
+  extract_smoke_script > "$script"
+  out="$BATS_TEST_TMPDIR/output-skip.txt"
+  : > "$out"
+  run env STAGING_DOMAIN= GITHUB_OUTPUT="$out" bash "$script"
+  [ "$status" -eq 0 ]
+  grep -qF 'skipped=true' "$out"
+}
+
+@test "smoke: README documents the deployment step" {
+  grep -q 'staging' "$README"
+  grep -qF 'staging-smoke.yml' "$README"
+  grep -qF 'STAGING_DOMAIN' "$README"
+  grep -qF 'smoke-checks' "$README"
+  grep -q 'staging' "$DOC"
+}
+
+# --- Requirement: deny 設定が auto-merge 配線と同じ場所から配布される（issue #213） ---
+
+@test "deny: settings.json fragment exists, parses, and denies merge / main push / force push" {
+  command -v jq >/dev/null || skip "jq not installed"
+  [ -f "$DENY" ]
+  jq -e '.permissions.deny | type == "array"' "$DENY" >/dev/null
+  for p in 'Bash(gh pr merge:*)' 'Bash(git push origin main:*)' 'Bash(git push origin master:*)' \
+           'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force-with-lease:*)' \
+           'Bash(git push --no-verify:*)'; do
+    jq -e --arg p "$p" '.permissions.deny | index($p) != null' "$DENY" >/dev/null
+  done
+}
+
+@test "deny: README and docs describe merging into an existing settings.json without dropping deny entries" {
+  grep -qF '.claude/settings.json' "$README"
+  grep -q 'deny' "$README"
+  grep -q '既存の deny を消さずに' "$README"
+  grep -q 'deny' "$DOC"
+  grep -qF 'Bash(gh pr merge:*)' "$DOC"
+}
+
+@test "deny: README merge command preserves existing deny entries and other keys" {
+  command -v jq >/dev/null || skip "jq not installed"
+  cur="$BATS_TEST_TMPDIR/settings.json"
+  cat > "$cur" <<'EOF'
+{"permissions":{"allow":["Bash(ls:*)"],"deny":["Bash(rm -rf:*)","Bash(gh pr merge:*)"]},"env":{"FOO":"bar"}}
+EOF
+  # README の jq 式をそのまま実行する（手順書とテストのズレを作らない）
+  expr="$(sed -n "/jq -s '/,/unique)'/p" "$README" | tr -d '\\' | sed "s/^ *//; s/[[:space:]]*\$//" | sed "s/^jq -s '//; s/'\$//" | tr '\n' ' ')"
+  [ -n "$expr" ]
+  jq -s "$expr" "$cur" "$DENY" > "$cur.merged"
+  jq -e '.permissions.deny | index("Bash(rm -rf:*)") != null' "$cur.merged" >/dev/null
+  jq -e '.permissions.deny | index("Bash(git push --force:*)") != null' "$cur.merged" >/dev/null
+  jq -e '.permissions.allow == ["Bash(ls:*)"]' "$cur.merged" >/dev/null
+  jq -e '.env.FOO == "bar"' "$cur.merged" >/dev/null
+  # 重複しない（既存にあった gh pr merge は 1 件のまま）
+  [ "$(jq '[.permissions.deny[] | select(. == "Bash(gh pr merge:*)")] | length' "$cur.merged")" -eq 1 ]
 }
 
 # --- Requirement: 運用ガイドはリポ非依存の記述で提供される ---
