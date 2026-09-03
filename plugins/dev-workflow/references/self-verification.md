@@ -30,7 +30,7 @@
 
 ## 対象スキル一覧
 
-`plugins/*/skills/*/SKILL.md` を「成果物を出すか」「完了前の検証が本文に明示されているか」で監査した結果（2026-08 の 3 プラグイン解散後は 6 スキルが対象）。パスはすべてスキル実体の実パスで記載する（コマンド名からパスを組み立てない）。
+`plugins/*/skills/*/SKILL.md` を「成果物を出すか」「完了前の検証が本文に明示されているか」で監査した結果（2026-08 の 3 プラグイン解散後は 6 スキル、2026-09 の再棚卸し（#218）で `push-guard-setup` を加えて 7 スキルが対象）。パスはすべてスキル実体の実パスで記載する（コマンド名からパスを組み立てない）。実在する `plugins/*/skills/*/SKILL.md` は全件が下の対象表か対象外表のどちらかに載っている（網羅性は `plugins/dev-workflow/tests/self-verification-sections.bats` が機械検査する。スキルを新設したら必ずどちらかに追記する）。
 
 ### 対象（`## 自己検証` 節を追加する）
 
@@ -42,6 +42,7 @@
 | `plugins/weekly-report/skills/weekly-report/SKILL.md` | 週次ノート `02 - PERIODIC/Weekly/{week}.md` | 週次ノート実在・frontmatter 確認 |
 | `plugins/infra/skills/infra-setup/SKILL.md` | `vercel.json`・GitHub Actions ワークフロー・環境変数配線 | `jq` パース・deploy チェック |
 | `plugins/experience-to-skill/skills/experience-to-skill/SKILL.md` | 蒸留 `SKILL.md`（`e2s-`/`distilled-` prefix） | frontmatter 検証・サニタイズ確認（`[REDACTED:...]`） |
+| `plugins/dev-workflow/skills/push-guard-setup/SKILL.md` | `~/.githooks/pre-push`・`git config --global core.hooksPath` | `core.hooksPath` の値・フックの `test -x`・`git push --dry-run` の exit code（#64 で節を先行導入。#218 で参照行を追加し対象に編入） |
 
 補足: `e2s-distill` はスラッシュコマンド名（`/e2s:distill`）であり、スキル実体は `plugins/experience-to-skill/skills/experience-to-skill/SKILL.md`。コマンド名 `e2s-distill` と同名のスキルディレクトリは存在しないため、上記の実パスで参照する（コマンド名からパスを組み立てない）。
 
@@ -49,6 +50,9 @@
 
 | 実パス | 判定理由 |
 |--------|----------|
-| `plugins/dev-workflow/skills/develop/SKILL.md`・`skills/pr-review-gate/SKILL.md`・`skills/issueify/SKILL.md` | 対象外。オーケストレータ／ゲート／起票の手順そのもので、成果物の検証（テスト・lint の exit code、宣言コメントの API 実測、承認後の `gh issue create`）が本文の手順に既に組み込まれている。 |
+| `plugins/dev-workflow/skills/develop/SKILL.md`・`plugins/dev-workflow/skills/pr-review-gate/SKILL.md`・`plugins/dev-workflow/skills/issueify/SKILL.md` | 対象外。オーケストレータ／ゲート／起票の手順そのもので、成果物の検証（テスト・lint の exit code、宣言コメントの API 実測、承認後の `gh issue create`）が本文の手順に既に組み込まれている。 |
 | `plugins/casting/skills/casting/SKILL.md` | 対象外。配役表・判例の書き方の手順で、生成物の lint は `scripts/casting-check.sh` が担い、コマンド側（`/casting:init`）が実行結果を確認する。 |
 | `plugins/skill-pack/skills/skill-pack/SKILL.md` | 対象外。`skillOverrides`/`enabledPlugins` の設定編集のみを行い、成果物は設定ファイルであって、反映確認は Claude Code の設定パースと `/reload-plugins` 後のスキル一覧に委ねる。 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md` | 対象外。外部サービスの CLI とトークンの在処を引く索引スキルで、成果物を出さない。唯一の書き込み（`fmtoken.sh --register`）は命名規約をスクリプト側が機械検証し、原則 1「索引の記述を信じず verify（認証確認コマンド）を実行して確かめる」が完了前の検証を本文に既に組み込んでいる。 |
+| `plugins/discord/skills/access/SKILL.md`・`plugins/telegram/skills/access/SKILL.md` | 対象外。公式チャンネルプラグインの fork で、SKILL.md は upstream の本文をそのまま保つ（追随差分を増やさない）。成果物は設定ファイル `~/.claude/channels/<channel>/access.json`（と `approved/<senderId>`）で、反映確認はチャンネルサーバーの再読込に委ねる（skill-pack と同じ分類）。allowed-tools が Read / Write / `ls` / `mkdir` に限られ、`jq` 等の形式チェックを節に書けない。本文の「Write の前に必ず Read する」が唯一の整合性手順。 |
+| `plugins/discord/skills/configure/SKILL.md`・`plugins/telegram/skills/configure/SKILL.md` | 対象外。同じく公式プラグインの fork（upstream 本文のまま）。成果物は `~/.claude/channels/<channel>/.env` の Bot トークン 1 行で、保存直後に引数なしの status（`.env` と `access.json` を読み直して set / not-set を表示）を出す手順が本文にあり、生成物の実在確認を既に含む。反映はサーバー再起動時の読込に委ねる。 |
