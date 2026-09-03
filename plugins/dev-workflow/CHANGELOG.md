@@ -1,5 +1,9 @@
 # Changelog — dev-workflow
 
+## 2.1.2 — 2026-09-03: 自己検証の棚卸しリストを実在する全 17 スキルに揃える（#218）
+
+`references/self-verification.md` の「対象スキル一覧」に載っていなかった 6 スキルを監査した。`push-guard-setup` は成果物（`~/.githooks/pre-push`）を出し既に `## 自己検証` 節を持つため対象に編入（参照 1 行を追記、bats の TARGETS に追加）。`capability-registry`・discord / telegram の `access` / `configure` は理由付きで対象外表に載せた。実在する `plugins/*/skills/*/SKILL.md` の全件がどちらかの表に現れることを `self-verification-sections.bats` の S51 が機械検査する。
+
 ## 2.1.0 — 2026-08-31: loops / longrun / lr の解散と契約の移設（#205）
 
 `loops`・`longrun`・`lr` の 3 プラグインを解散し、中に埋まっていた契約だけを dev-workflow に移した（oratta/claude-harness#205、epic #208）。手順書としての層はモデルが自力でできるようになったので持たない。契約は他プラグインからも参照されるため、スキル配下ではなくプラグイン直下の `references/` に置く。
