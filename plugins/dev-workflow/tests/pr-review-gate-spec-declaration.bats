@@ -3,6 +3,7 @@
 # pr-review-gate の仕様宣言（issue #191）
 # 手順 3 の第 3 のコメント（仕様宣言）、手順 5 の 3 見出し実測と issue 記録との整合照合、
 # spec-touch-check の参照、auto-merge 範囲外の明記を SKILL.md の記述として検証する。
+# issue #211（issue 無し PR のフォールバック）と issue #220（空本文の fail-closed）は手順 1 / 5 のコマンド例を偽 gh で実行して検証する。
 # spec: dev-workflow-pr-review-gate
 
 setup() {
@@ -124,7 +125,7 @@ step1() { awk '/^### 1\. /{f=1} /^### 2\. /{f=0} f' "$SKILL"; }
 # （説明コメント行と <plugin> プレースホルダを含む spec-touch-check 行は除く）
 issue_block_cmds() {
   "$1" | awk '/^ *```bash/{f=1; b=""; next} /^ *```/{ if (f && b ~ /ISSUE=/) printf "%s", b; f=0; next } f{ b = b $0 "\n" }' \
-    | grep -E '^ *(ISSUE=|REC=|gh api|if \[)'
+    | grep -E '^ *(ISSUE=|REC=|BODY=|gh api|if \[)'
 }
 
 install_fake_gh() {
@@ -132,12 +133,18 @@ install_fake_gh() {
   cat > "$BATS_TEST_TMPDIR/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GH_LOG"
+ARGS="$*"
 path=""
 for a in "$@"; do case "$a" in repos/*) path="$a" ;; esac; done
+# .body の値を --jq 式に応じて印字する（jq の挙動を模す）: 本文が JSON の null のとき、
+# '.body' は文字列 null を印字し、'.body // ""' は空を印字する。それ以外はそのまま
+jq_body() {
+  if [ "$1" = null ] && [[ "$ARGS" == *'.body // ""'* ]]; then echo ""; else printf '%s\n' "$1"; fi
+}
 case "$path" in
   repos/*/issues/*/comments) printf '%s' "$MOCK_PAGES" ;;          # --paginate --slurp のページ配列
-  repos/*/pulls/*)           printf '%s\n' "$MOCK_PR_BODY" ;;      # PR 本文（--jq .body）
-  repos/*/issues/*)          printf 'ISSUE BODY %s\n' "${path##*/}" ;;
+  repos/*/pulls/*)           jq_body "$MOCK_PR_BODY" ;;            # PR 本文（--jq .body）
+  repos/*/issues/*)          jq_body "${MOCK_ISSUE_BODY-ISSUE BODY ${path##*/}}" ;;   # issue 本文（未設定なら固定文字列）
   *) echo "unexpected gh call: $*" >&2; exit 1 ;;
 esac
 EOF
@@ -148,11 +155,15 @@ EOF
   export R="o/r" N="42"
 }
 
-run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
+run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文, $3 = issue 本文（省略時は固定文字列 ISSUE BODY N）
   cmds="$(issue_block_cmds "$1")"
   [ -n "$cmds" ]
   # set -e は付けない（issue 参照が無いとき grep が非 0 を返すのは正常経路。実行環境の Bash も -e ではない）
-  MOCK_PR_BODY="$2" PATH="$BATS_TEST_TMPDIR/bin:$PATH" bash -c "$cmds"
+  if [ $# -ge 3 ]; then
+    MOCK_PR_BODY="$2" MOCK_ISSUE_BODY="$3" PATH="$BATS_TEST_TMPDIR/bin:$PATH" bash -c "$cmds"
+  else
+    MOCK_PR_BODY="$2" PATH="$BATS_TEST_TMPDIR/bin:$PATH" bash -c "$cmds"
+  fi
 }
 
 @test "step 1: acceptance criteria come from the issue when the PR body references one" {
@@ -169,6 +180,47 @@ run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
   ! grep -q 'issues/ ' "$GH_LOG"
   ! grep -q 'issues//' "$GH_LOG"
   grep -qE 'repos/o/r/pulls/42 .*\.body' "$GH_LOG"
+}
+
+# --- Requirement（issue #220）: 記録先の本文が空・null・空白のみなら受け入れ条件なしとして機械的に不合格へ倒す ---
+#
+# 手順 1-3 のコマンド例を偽の gh で実行し、非 0 終了かつ stderr に agent-review:failed を含む失敗メッセージが
+# 出ることを、issue 本文経路・PR 本文経路の両方で確かめる（G が空出力を見て止まる、という運用頼みにしない）。
+
+# run_step_cmds を run で包む。stdout / stderr を分けて取る（失敗メッセージは stderr、受け入れ条件は stdout）
+run_step1_rejecting() {  # $1 = PR 本文, [$2 = issue 本文]
+  install_fake_gh
+  run --separate-stderr run_step_cmds step1 "$@"
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+  printf '%s\n' "$stderr" | grep -q 'agent-review:failed'
+}
+
+@test "step 1 (#220): empty PR body without an issue reference is rejected (non-zero + agent-review:failed)" {
+  run_step1_rejecting ''
+  grep -qE 'repos/o/r/pulls/42 .*\.body // ""' "$GH_LOG"
+  ! grep -q 'issues//' "$GH_LOG"
+}
+
+@test "step 1 (#220): whitespace-only PR body without an issue reference is rejected" {
+  run_step1_rejecting $'  \n\t \n'
+}
+
+@test "step 1 (#220): null issue body (Closes #N) is rejected — the command must use .body // \"\" so null does not pass as text" {
+  run_step1_rejecting 'fix it. Closes #7' null
+  grep -qE 'repos/o/r/issues/7 .*\.body // ""' "$GH_LOG"
+}
+
+@test "step 1 (#220): empty issue body (Closes #N) is rejected" {
+  run_step1_rejecting 'fix it. Closes #7' ''
+}
+
+@test "step 1 (#220): whitespace-only issue body (Closes #N) is rejected" {
+  run_step1_rejecting 'fix it. Closes #7' $'\n   \n'
+}
+
+@test "step 1 (#220): prose says an empty body cannot proceed to the pass path" {
+  step1 | grep -vE '^\s*(```|gh |if |ISSUE=|fi)' | grep -qE '本文が空.*(合格|不合格|failed)'
 }
 
 @test "step 5: decision / review comments are read from the referenced issue" {

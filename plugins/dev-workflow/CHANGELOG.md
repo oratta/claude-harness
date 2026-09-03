@@ -1,5 +1,9 @@
 # Changelog — dev-workflow
 
+## 2.2.0 — 2026-09-03: pr-review-gate 手順 1 の受け入れ条件取得を空本文で fail-closed にする（#220）
+
+手順 1-3 のコマンド例が、記録先（issue → 無ければ PR 自身）の本文を `--jq '.body // ""'` で取り、空・`null`・空白のみなら stderr に `agent-review:failed` を含む失敗メッセージを出して非 0 で終了する（oratta/claude-harness#220、#219 の Codex レビュー指摘の follow-up）。issue 本文経路・PR 本文経路の両方に同じ検査が掛かる。`pr-review-gate-spec-declaration.bats` の偽 gh が `MOCK_ISSUE_BODY` で issue 本文を差し替えられるようになり、jq の `// ""` の挙動（null → 空）を模す。スキル `pr-review-gate` 1.7.0。
+
 ## 2.1.0 — 2026-08-31: loops / longrun / lr の解散と契約の移設（#205）
 
 `loops`・`longrun`・`lr` の 3 プラグインを解散し、中に埋まっていた契約だけを dev-workflow に移した（oratta/claude-harness#205、epic #208）。手順書としての層はモデルが自力でできるようになったので持たない。契約は他プラグインからも参照されるため、スキル配下ではなくプラグイン直下の `references/` に置く。
