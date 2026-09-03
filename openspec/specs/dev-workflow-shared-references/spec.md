@@ -15,7 +15,7 @@ dev-workflow プラグインは、他プラグインからも参照される契�
 - **THEN** `references/` の節があり、4 本のファイル名がそれぞれ 1 行の説明付きで並ぶ
 
 ### Requirement: 自己検証の共通原則は解散プラグインの記述を除いて引き継ぐ
-`plugins/dev-workflow/references/self-verification.md` は、旧 `plugins/loops/references/self-verification.md` の中核原則（完了は主張であり証明ではない。evidence を提示してから完了を宣言する）・evidence の 4 種別・スキル側への記載ルール（本リファレンスへの 1 行参照 + 固有手順のみ。共通原則の本文をコピーしない）を維持しなければならない（MUST）。「スキル側への記載ルール」の参照パスは新パス `plugins/dev-workflow/references/self-verification.md` を示す。対象スキル一覧は解散プラグインのスキル（`longrun-plan`・`longrun-feedback`・`longrun-mvp-plan`・`loops-design`・`loops-goalify`）の行を持ってはならず（MUST NOT）、対象は `wt-setup`・`wt-clean`・`daily-report`・`weekly-report`・`infra-setup`・`experience-to-skill` の 6 スキルとする。
+`plugins/dev-workflow/references/self-verification.md` は、旧 `plugins/loops/references/self-verification.md` の中核原則（完了は主張であり証明ではない。evidence を提示してから完了を宣言する）・evidence の 4 種別・スキル側への記載ルール（本リファレンスへの 1 行参照 + 固有手順のみ。共通原則の本文をコピーしない）を維持しなければならない（MUST）。「スキル側への記載ルール」の参照パスは新パス `plugins/dev-workflow/references/self-verification.md` を示す。対象スキル一覧は解散プラグインのスキル（`longrun-plan`・`longrun-feedback`・`longrun-mvp-plan`・`loops-design`・`loops-goalify`）の行を持ってはならず（MUST NOT）、対象は `wt-setup`・`wt-clean`・`daily-report`・`weekly-report`・`infra-setup`・`experience-to-skill`・`push-guard-setup` の 7 スキルとする（`push-guard-setup` は #218 の棚卸しで追加。成果物 `~/.githooks/pre-push` を出し、既に `## 自己検証` 節を持つため）。
 
 #### Scenario: 中核原則と evidence 4 種が残っている
 - **WHEN** `plugins/dev-workflow/references/self-verification.md` を読む
@@ -23,11 +23,11 @@ dev-workflow プラグインは、他プラグインからも参照される契�
 
 #### Scenario: 対象スキル一覧に解散プラグインが無い
 - **WHEN** 対象スキル一覧の表を読む
-- **THEN** `plugins/longrun/`・`plugins/loops/` を含む実パスは 1 行も無く、6 スキルの実パスが並ぶ
+- **THEN** `plugins/longrun/`・`plugins/loops/` を含む実パスは 1 行も無く、7 スキルの実パスが並ぶ
 
-#### Scenario: 参照元 7 か所が新パスを指す
-- **WHEN** `plugins/infra/skills/infra-setup/SKILL.md`・`plugins/weekly-report/skills/weekly-report/SKILL.md`・`plugins/daily-report/skills/daily-report/SKILL.md`・`plugins/experience-to-skill/skills/experience-to-skill/SKILL.md`・`plugins/worktree/skills/wt-setup/SKILL.md`・`plugins/worktree/skills/wt-clean/SKILL.md`・`plugins/worktree/references/wt-clean-verification.md` で `self-verification.md` を grep する
-- **THEN** 7 ファイルすべてが `plugins/dev-workflow/references/self-verification.md` を指し、`plugins/loops/references/self-verification.md` は 0 件である
+#### Scenario: 参照元 8 か所が新パスを指す
+- **WHEN** `plugins/infra/skills/infra-setup/SKILL.md`・`plugins/weekly-report/skills/weekly-report/SKILL.md`・`plugins/daily-report/skills/daily-report/SKILL.md`・`plugins/experience-to-skill/skills/experience-to-skill/SKILL.md`・`plugins/worktree/skills/wt-setup/SKILL.md`・`plugins/worktree/skills/wt-clean/SKILL.md`・`plugins/worktree/references/wt-clean-verification.md`・`plugins/dev-workflow/skills/push-guard-setup/SKILL.md` で `self-verification.md` を grep する
+- **THEN** 8 ファイルすべてが `plugins/dev-workflow/references/self-verification.md` を指し、`plugins/loops/references/self-verification.md` は 0 件である
 
 ### Requirement: PR / issue 本文の型は内容を維持して引き継ぐ
 `plugins/dev-workflow/references/pr-body-format.md` は、旧 `plugins/loops/references/pr-body-format.md` が定義していた PR 本文の 5 セクション型（「位置づけ」「実装方針」「リスク（重い順）」「動作確認ポイント」「実装メモ」の順序固定）・末尾の `Closes #<番号>`・再生成可能な出力のみを入れる任意の `<details>`・二重読者のための設計原則 5 点（同じ情報を 2 回書かない／位置づけは上から降りる 3 段／翻訳の規律に良い例・悪い例 3 組以上／リスクは起きやすさ（高/中/低＋根拠）と影響の重み付きで「なし」にも根拠 1 行／セクションごとの行数上限）・誇張防止の検証紐付け（位置づけの変化は動作確認ポイントで検証できるものに限る。動作確認ポイントは「操作 → 期待される結果」形式）・軽量モード（位置づけ＋動作確認ポイントの 2 節。冒頭に「軽量モード適用（理由: …）」。迷ったらフル 5 節）を維持しなければならない（MUST）。issue ドラフトの承認判断 2 節（「これで何が変わるか」「やらないとどうなるか / 今のコスト」）の規定と、その生成ロジックの正本が `plugins/dev-workflow/skills/issueify/SKILL.md` であることを示さなければならない（MUST）。解散プラグインのパス（`loops-issueify`・`loops-dev-agent-install`・`agent-loop-template.md`）を含んではならない（MUST NOT）。
