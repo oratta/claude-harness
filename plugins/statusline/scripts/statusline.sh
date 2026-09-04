@@ -219,7 +219,12 @@ usnap="$CONFIG_DIR/.usage-snapshot"
 accounts_file="${CLAUDE_ACCOUNTS_FILE:-$CONFIG_DIR/accounts.json}"
 slot_ids=(); slot_labels=(); slot_secures=(); slot_services=()
 if [ -f "$accounts_file" ]; then
-    while IFS=$'\t' read -r _sid _slabel _ssecure _sservice; do
+    # `IFS=$'\t' read` は使えない: タブは IFS 空白なので連続タブが 1 つの区切りに畳まれ、
+    # securestorage が空の既定スロットで service 列が消える。IFS 空白でない US(0x1f) に
+    # 置換してから read する（usage-probe.sh と同じ理由・同じ対処）。
+    while IFS='' read -r _line; do
+        [ -n "$_line" ] || continue
+        IFS=$'\x1f' read -r _sid _slabel _ssecure _sservice <<< "${_line//$'\t'/$'\x1f'}"
         [ -n "$_sid" ] || continue
         slot_ids+=("$_sid"); slot_labels+=("$_slabel")
         slot_secures+=("$_ssecure"); slot_services+=("$_sservice")

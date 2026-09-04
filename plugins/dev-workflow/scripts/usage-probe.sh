@@ -91,8 +91,29 @@ slots_tsv="$(read_slots)"
 # python3 が無い等でレジストリ解決自体が落ちたら既定スロット 1 つに縮退する
 [ -n "$slots_tsv" ] || slots_tsv=$'default\tdefault\t\tClaude Code-credentials'
 
+# TSV を配列へ展開する。`IFS=$'\t' read` は使えない: タブは IFS 空白なので連続タブが
+# 1 つの区切りに畳まれ、securestorage が空の既定スロットで service 列が消える
+# （空のサービス名で Keychain を引いて全件検索になり固まる事故があった）。
+# 区切りを IFS 空白ではない US(0x1f) に置換してから read する。
+slot_ids=(); slot_labels=(); slot_secures=(); slot_services=()
+while IFS='' read -r line; do
+  [ -n "$line" ] || continue
+  IFS=$'\x1f' read -r _id _label _secure _service <<< "${line//$'\t'/$'\x1f'}"
+  [ -n "$_id" ] || continue
+  slot_ids+=("$_id"); slot_labels+=("$_label")
+  slot_secures+=("$_secure"); slot_services+=("$_service")
+done <<< "$slots_tsv"
+if [ "${#slot_ids[@]}" -eq 0 ]; then
+  slot_ids=("default"); slot_labels=("default")
+  slot_secures=(""); slot_services=("Claude Code-credentials")
+fi
+
 if [ "${1:-}" = "--print-slots" ]; then
-  printf '%s\n' "$slots_tsv"
+  # 解決済みの配列から出力する（フェッチ経路と同じ値を見せ、パース事故をテストで捕らえる）
+  for i in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
+    printf '%s\t%s\t%s\t%s\n' "${slot_ids[$i]}" "${slot_labels[$i]}" \
+           "${slot_secures[$i]}" "${slot_services[$i]}"
+  done
   exit 0
 fi
 
@@ -143,7 +164,8 @@ slot_token() {
   if [ -f "$cred" ]; then
     token="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('claudeAiOauth',{}).get('accessToken',''))" "$cred" 2>/dev/null || true)"
   fi
-  if [ -z "$token" ] && command -v security >/dev/null 2>&1; then
+  # サービス名が空のまま Keychain を引くと全件検索になり固まる。念のための番人。
+  if [ -z "$token" ] && [ -n "$service" ] && command -v security >/dev/null 2>&1; then
     token="$(security find-generic-password -s "$service" -w 2>/dev/null \
       | python3 -c "import json,sys;print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null || true)"
   fi
@@ -151,8 +173,8 @@ slot_token() {
 }
 
 any_new=0
-while IFS=$'\t' read -r sid slabel ssecure sservice; do
-  [ -n "$sid" ] || continue
+for idx in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
+  sid="${slot_ids[$idx]}"; ssecure="${slot_secures[$idx]}"; sservice="${slot_services[$idx]}"
   raw=""
   if [ "$test_mode" -eq 1 ]; then
     rf="$(slot_response_file "$sid")"
@@ -171,7 +193,7 @@ while IFS=$'\t' read -r sid slabel ssecure sservice; do
   if [ -n "$raw" ]; then
     printf '%s' "$raw" > "${raw_dir}/${sid}.json" 2>/dev/null && any_new=1
   fi
-done <<< "$slots_tsv"
+done
 
 # どのスロットからも新しい生レスポンスが取れなかった → fail-open（snapshot を書かない）
 [ "$any_new" -eq 1 ] || exit 0

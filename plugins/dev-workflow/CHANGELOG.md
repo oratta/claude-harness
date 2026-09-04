@@ -1,5 +1,38 @@
 # Changelog — dev-workflow
 
+## 2.2.0 — 2026-09-04: usage snapshot schema 2（複数アカウント対応）
+
+`usage-probe.sh` を複数の Claude アカウントに対応させ、`~/.claude/.usage-snapshot` を schema 2 に拡張した。`CLAUDE_SECURESTORAGE_CONFIG_DIR` を設定すると `CLAUDE_CONFIG_DIR` を共有したまま Keychain の認証情報だけを分けられるが、probe が Keychain のサービス名を `Claude Code-credentials` に固定していたため、常に既定アカウントの値しか取れず `FABLE_BUDGET_MODE` の導出もそこに固定されていた。
+
+### アカウントレジストリ（新規）
+
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json`（`CLAUDE_ACCOUNTS_FILE` で上書き可）にスロットを列挙する。**ファイルが無ければ既定スロット 1 つとして扱われ、挙動も出力も従来と変わらない。** 生成は `scripts/accounts-init.sh` を登録したいアカウントのシェルで実行する（`CLAUDE_SECURESTORAGE_CONFIG_DIR` の実値をそのまま書き出すので、パスの転記ミスが起きない）。
+
+Keychain サービス名の導出は Claude Code 本体と同じ規則: `securestorage` が空なら `Claude Code-credentials`、そうでなければ `Claude Code-credentials-` + NFC 正規化した値の sha256 先頭 8 桁。
+
+### snapshot schema 2
+
+| キー | 内容 |
+|---|---|
+| `schema` | `2` |
+| `active` | 現在アクティブなスロット id |
+| `accounts.<id>` | `label` / `securestorage` / `fetched_at` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `fable_weekly_pct` / `fable_active` |
+| トップレベルの上記同名キー | **active スロットのミラー**（独立に計算しない） |
+
+トップレベルのミラーを残しているのは、`session-tripwires.sh` の `FABLE_BUDGET_MODE` 導出と statusline の 6 時間鮮度ゲート（`fetched_at` を読む）を無改修で動かすため。schema 2 は追加のみなので、古い読み手も新しい読み手も同じ snapshot で動く。
+
+`fetched_at` は **そのスロットの値を実際に取得できた時刻**であって probe の実行時刻ではない。fail-open で前回値を引き継いだスロットは前回の `fetched_at` を保つ。
+
+### fail-open がスロット単位になった
+
+あるスロットのフェッチが失敗しても、そのスロットは既存 snapshot の前回値（`fetched_at` 込み）を引き継ぎ、他スロットの新しい値は書く。使っていないアカウントは OAuth アクセストークンが期限切れでフェッチが落ちるのが常態なので、1 スロットの失敗で snapshot 全体の更新が止まると使い物にならない。
+
+全スロットが失敗したとき、および組み立て・書き込みが失敗したときに snapshot を書かない従来の契約はそのまま。
+
+### refresh_token は使わない
+
+Keychain の `refreshToken` でアクセストークンを更新すれば非 active アカウントの値も新鮮に保てるが、リフレッシュはトークンをローテートするため、Claude Code 本体が同じ refresh_token でリフレッシュしたときに無効化され、そのアカウントがログアウトしうる。使用量表示のために認証を壊すのは割に合わないので意図的に非対応とし、鮮度は statusline 側の経過時間表示で扱う。
+
 ## 2.1.0 — 2026-08-31: loops / longrun / lr の解散と契約の移設（#205）
 
 `loops`・`longrun`・`lr` の 3 プラグインを解散し、中に埋まっていた契約だけを dev-workflow に移した（oratta/claude-harness#205、epic #208）。手順書としての層はモデルが自力でできるようになったので持たない。契約は他プラグインからも参照されるため、スキル配下ではなくプラグイン直下の `references/` に置く。
