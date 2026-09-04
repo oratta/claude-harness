@@ -206,10 +206,10 @@
     },
     {
       "name": "statusline",
-      "description": "使用量が一目で分かる Claude Code ステータスライン。5h / 7d（全体・Fable）のレートリミットを、クォータ消化率をバーの塗り・窓の日程消化率をバー下端の細線と分母（例 25%/29%）で同時に表示し、「今のペースでリセットまで持つか」を色で示す。コンテキスト残量と ccusage 由来の API 換算月額ペースも表示。`/statusline:setup` で settings.json への配線まで行う。 複数の Claude アカウント（`CLAUDE_SECURESTORAGE_CONFIG_DIR` で認証だけ分けた運用）を使っている場合は、`accounts.json` にスロットを列挙するとアカウントごとに 2 行ずつ並べ、いま使っていないアカウントは snapshot の値と取得からの経過時間で表示する（レジストリが無ければ従来と 1 バイトも変わらない）。",
+      "description": "使用量が一目で分かる Claude Code ステータスライン。5h / 7d（全体・Fable）のレートリミットを、クォータ消化率をバーの塗り・窓の日程消化率をバー下端の細線と分母（例 25%/29%）で同時に表示し、「今のペースでリセットまで持つか」を色で示す。コンテキスト残量と ccusage 由来の API 換算月額ペースも表示。`/statusline:setup` で settings.json への配線まで行う。 複数の Claude アカウント（`CLAUDE_SECURESTORAGE_CONFIG_DIR` で認証だけ分けた運用）を使っている場合は、`accounts.json` にスロットを列挙するとアカウントごとに 2 行ずつ並べ、いま使っていないアカウントは snapshot の値と取得からの経過時間で表示する（レジストリが無ければ従来と 1 バイトも変わらない）。 複数アカウント表示では、いま使っているアカウントの行に `▸` を付け label を明るく描いて区別する。",
       "source": "./plugins/statusline",
       "category": "productivity",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "author": {
         "name": "Oratta"
       },

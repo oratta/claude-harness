@@ -124,6 +124,13 @@ fi
 # ---------------------------------------------------------------------------
 BAR_WIDTH="${STATUSLINE_BAR_WIDTH:-16}"
 BAR_GLYPH="${STATUSLINE_BAR_GLYPH:-▂}"
+# active アカウントの行に付ける目印。East Asian Width が Neutral の記号でなければならない
+# （正本: openspec/specs/statusline-multi-account-usage「active スロットの行を視覚的に示す」）。
+# 見た目の似た ▶ U+25B6 / ● U+25CF / ◆ U+25C6 / · U+00B7 はいずれも Ambiguous で、
+# 曖昧幅を全角にする端末では active 行の行頭だけが 1 桁広がり、その差が label 以降の
+# すべての列に伝播する。差し替えるなら N の記号（▹ U+25B9 / › U+203A 等）にすること。
+# 環境変数で変えられるようにしていないのは、この制約を破る値を選べてしまうため。
+ACTIVE_MARK="▸"
 C_EMPTY_N=238      # バー本体の未消化部分
 C_TRACK_N=252      # 日程の線
 
@@ -438,7 +445,16 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
     prefix=""
     if [ "$multi" -eq 1 ]; then
         # printf の %-*s はバイト幅で詰めるので使えない。表示幅の差だけ手で空白を足す。
-        prefix="${DIM}${slot_labels[$i]}$(printf '%*s' "$(( label_w - ${slot_widths[$i]} ))" '')${RESET}  "
+        pad="$(printf '%*s' "$(( label_w - ${slot_widths[$i]} ))" '')"
+        if [ "$i" -eq "$active_idx" ]; then
+            # active 行: 記号 + 通常の明るさの label。記号が主・明るさが補助なので
+            # 記号にも DIM を掛けない（色が落ちても記号が残り、記号が出なくても明るさが残る）
+            prefix="${ACTIVE_MARK} ${slot_labels[$i]}${pad}  "
+        else
+            # 非 active 行: 記号と同じ表示幅 2 を半角スペースで埋め、label は DIM のまま。
+            # 全行が等しく 2 桁を占めるので、バーの左端は揃ったまま
+            prefix="  ${DIM}${slot_labels[$i]}${pad}${RESET}  "
+        fi
     fi
     fetched_at="${snap_fetched[$i]}"
     fable_pct="${snap_fable_pct[$i]}"
