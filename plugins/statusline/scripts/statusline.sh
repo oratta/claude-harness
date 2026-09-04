@@ -194,54 +194,204 @@ bar_seg() {
     fi
 }
 
+# $1=経過秒 → "45m前" / "2h前" / "3d前"
+fmt_ago() {
+    local s=$1
+    if [ "$s" -lt 3600 ]; then
+        printf '%dm前' $(( s / 60 ))
+    elif [ "$s" -lt 86400 ]; then
+        printf '%dh前' $(( s / 3600 ))
+    else
+        printf '%dd前' $(( s / 86400 ))
+    fi
+}
+
 # Usage (rate limit) indicator — Pro/Max only; fields absent otherwise
 now=$(date +%s)
 usage_lines=()
-if [ -n "$five_h_pct" ]; then
-    five_h_int=$(printf "%.0f" "$five_h_pct")
-    # 5h 窓（18000秒）の経過率と残り時間
-    five_h_elapsed=""
-    five_h_left=""
-    if [ -n "$five_h_resets" ]; then
-        secs_left_5h=$(( five_h_resets - now ))
+usnap="$CONFIG_DIR/.usage-snapshot"
+
+# ---- アカウントレジストリ（不在なら既定スロット 1 つ = 現行と同じ挙動） ----
+# 読み取り規則の正本は openspec/specs/usage-account-registry。トップレベルはオブジェクト、
+# id は英数字とハイフン 1〜32 文字で一意、先頭 8 スロットまで、不正なら既定スロットへ縮退。
+# dev-workflow の usage-probe.sh と同じ規則だが、プラグインを跨ぐ依存を作らないため
+# 実装は各スクリプトに置く（規則の正本は spec 側）。
+accounts_file="${CLAUDE_ACCOUNTS_FILE:-$CONFIG_DIR/accounts.json}"
+slot_ids=(); slot_labels=(); slot_secures=(); slot_services=()
+if [ -f "$accounts_file" ]; then
+    while IFS=$'\t' read -r _sid _slabel _ssecure _sservice; do
+        [ -n "$_sid" ] || continue
+        slot_ids+=("$_sid"); slot_labels+=("$_slabel")
+        slot_secures+=("$_ssecure"); slot_services+=("$_sservice")
+    done < <(ACCOUNTS_FILE="$accounts_file" python3 -c '
+import hashlib, json, os, re, sys, unicodedata
+ID_RE = re.compile(r"[A-Za-z0-9-]{1,32}\Z")
+def service(sec):
+    if not sec:
+        return "Claude Code-credentials"
+    return "Claude Code-credentials-" + hashlib.sha256(
+        unicodedata.normalize("NFC", sec).encode("utf-8")).hexdigest()[:8]
+slots = []
+try:
+    with open(os.environ["ACCOUNTS_FILE"], encoding="utf-8") as fh:
+        doc = json.load(fh)
+    entries = doc.get("accounts") if isinstance(doc, dict) else None
+    if isinstance(entries, list):
+        seen = set()
+        for e in entries:
+            if len(slots) >= 8:
+                break
+            if not isinstance(e, dict):
+                continue
+            sid = e.get("id")
+            if not isinstance(sid, str) or not ID_RE.match(sid) or sid in seen:
+                continue
+            seen.add(sid)
+            lab = e.get("label")
+            if not isinstance(lab, str) or not lab:
+                lab = sid
+            sec = e.get("securestorage")
+            if not isinstance(sec, str):
+                sec = ""
+            slots.append((sid, lab, sec, service(sec)))
+except Exception:
+    slots = []
+for row in slots:
+    sys.stdout.write("\t".join(row) + "\n")
+' 2>/dev/null)
+fi
+if [ "${#slot_ids[@]}" -eq 0 ]; then
+    # レジストリ不在・不正 → 既定スロット 1 つ。label は空にして列を出さない
+    slot_ids=("default"); slot_labels=(""); slot_secures=(""); slot_services=("Claude Code-credentials")
+fi
+
+n_slots="${#slot_ids[@]}"
+multi=0
+[ "$n_slots" -gt 1 ] && multi=1
+
+# ---- active スロットの判定（正本: usage-account-registry「active スロットの判定規則」） ----
+# 1 スロットのときは常にそのスロットが active（現行と同じ挙動を 1 バイトも変えないため、
+# env の突き合わせも python3 の起動も行わない）。
+active_idx=0
+if [ "$multi" -eq 1 ]; then
+    active_idx=-1
+    if [ -n "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
+        # 素の文字列比較ではなく導出後の Keychain サービス名で突き合わせる
+        want_service="$(SECURE="$CLAUDE_SECURESTORAGE_CONFIG_DIR" python3 -c '
+import hashlib, os, unicodedata
+sec = os.environ["SECURE"]
+print("Claude Code-credentials-" + hashlib.sha256(
+    unicodedata.normalize("NFC", sec).encode("utf-8")).hexdigest()[:8])
+' 2>/dev/null)"
+        if [ -n "$want_service" ]; then
+            for i in $(seq 0 $(( n_slots - 1 ))); do
+                if [ "${slot_services[$i]}" = "$want_service" ]; then active_idx=$i; break; fi
+            done
+        fi
+        # env が非空でどのスロットにも一致しないときは active 無し（-1 のまま）。
+        # ライブ値を誤ったスロットに帰属させるより、全スロットを snapshot 値で描くほうが安全。
+    else
+        snap_active="$(jq -r '.active // empty' "$usnap" 2>/dev/null)"
+        if [ -n "$snap_active" ]; then
+            for i in $(seq 0 $(( n_slots - 1 ))); do
+                if [ "${slot_ids[$i]}" = "$snap_active" ]; then active_idx=$i; break; fi
+            done
+        fi
+        [ "$active_idx" -lt 0 ] && active_idx=0
+    fi
+fi
+
+# label 列の幅（複数スロットのときだけ使う）
+label_w=0
+if [ "$multi" -eq 1 ]; then
+    for l in "${slot_labels[@]}"; do
+        [ "${#l}" -gt "$label_w" ] && label_w="${#l}"
+    done
+fi
+
+# $1=スロット id $2=キー → snapshot の値（1 スロット時はトップレベルにフォールバック）
+snap_get() {
+    local expr='.accounts[$id][$k] // empty'
+    [ "$multi" -eq 1 ] || expr='(.accounts[$id][$k] // .[$k]) // empty'
+    jq -r --arg id "$1" --arg k "$2" "$expr" "$usnap" 2>/dev/null
+}
+
+# $1=行頭 label 列 $2=5h消化率 $3=5hリセットepoch $4=7d消化率 $5=7dリセットepoch
+# $6=Fable週次消化率 $7=行末サフィックス（経過時間。空可）
+render_slot() {
+    local prefix="$1" f_pct="$2" f_res="$3" s_pct="$4" s_res="$5" fb_pct="$6" ago="$7"
+    [ -n "$f_pct" ] || return 0
+
+    local five_h_int five_h_elapsed="" five_h_left="" secs_left_5h
+    five_h_int=$(printf "%.0f" "$f_pct")
+    if [ -n "$f_res" ]; then
+        secs_left_5h=$(( f_res - now ))
         if [ "$secs_left_5h" -gt 0 ] && [ "$secs_left_5h" -lt 18000 ]; then
             five_h_left=$(fmt_left "$secs_left_5h")
             five_h_elapsed=$(( (18000 - secs_left_5h) * 100 / 18000 ))
         fi
     fi
-    line_5h="$(bar_seg "5h" 9 "$five_h_int" "$five_h_elapsed")"
+    local line_5h="${prefix}$(bar_seg "5h" 9 "$five_h_int" "$five_h_elapsed")"
     [ -n "$five_h_left" ] && line_5h+="  ${DIM}${five_h_left}${RESET}"
+
+    if [ -z "$s_pct" ]; then
+        # 7d が無いスロットは 5h 行だけ。経過時間はそのスロットの最後の行に付ける
+        [ -n "$ago" ] && line_5h+="  ${DIM}${ago}${RESET}"
+        usage_lines+=("$line_5h")
+        return 0
+    fi
     usage_lines+=("$line_5h")
 
-    if [ -n "$seven_d_pct" ]; then
-        seven_d_int=$(printf "%.0f" "$seven_d_pct")
-        # 7d 窓（604800秒）の経過率と残り時間。All と Fable で共通の窓。
-        elapsed_pct=""
-        seven_d_left=""
-        if [ -n "$seven_d_resets" ]; then
-            secs_left_7d=$(( seven_d_resets - now ))
-            if [ "$secs_left_7d" -gt 0 ] && [ "$secs_left_7d" -lt 604800 ]; then
-                seven_d_left=$(fmt_left "$secs_left_7d")
-                elapsed_pct=$(( (604800 - secs_left_7d) * 100 / 604800 ))
-                [ "$elapsed_pct" -le 0 ] && elapsed_pct=""
-            fi
+    local seven_d_int elapsed_pct="" seven_d_left="" secs_left_7d
+    seven_d_int=$(printf "%.0f" "$s_pct")
+    if [ -n "$s_res" ]; then
+        secs_left_7d=$(( s_res - now ))
+        if [ "$secs_left_7d" -gt 0 ] && [ "$secs_left_7d" -lt 604800 ]; then
+            seven_d_left=$(fmt_left "$secs_left_7d")
+            elapsed_pct=$(( (604800 - secs_left_7d) * 100 / 604800 ))
+            [ "$elapsed_pct" -le 0 ] && elapsed_pct=""
         fi
-        line_7d="$(bar_seg "7d All" 9 "$seven_d_int" "$elapsed_pct" 1)"
-
-        # Fable weekly 消化率（usage-probe が書く .usage-snapshot から。6h 以内の鮮度のみ表示）
-        usnap="$CONFIG_DIR/.usage-snapshot"
-        if [ -f "$usnap" ]; then
-            fable_pct=$(jq -r '.fable_weekly_pct // empty' "$usnap" 2>/dev/null)
-            snap_at=$(jq -r '.fetched_at // 0' "$usnap" 2>/dev/null)
-            if [ -n "$fable_pct" ] && [ $(( now - snap_at )) -lt 21600 ]; then
-                fable_int=$(printf "%.0f" "$fable_pct")
-                line_7d+="   $(bar_seg "Fable" 6 "$fable_int" "$elapsed_pct" 1)"
-            fi
-        fi
-        [ -n "$seven_d_left" ] && line_7d+="  ${DIM}${seven_d_left}${RESET}"
-        usage_lines+=("$line_7d")
     fi
-fi
+    local line_7d="${prefix}$(bar_seg "7d All" 9 "$seven_d_int" "$elapsed_pct" 1)"
+    if [ -n "$fb_pct" ]; then
+        local fable_int
+        fable_int=$(printf "%.0f" "$fb_pct")
+        line_7d+="   $(bar_seg "Fable" 6 "$fable_int" "$elapsed_pct" 1)"
+    fi
+    [ -n "$seven_d_left" ] && line_7d+="  ${DIM}${seven_d_left}${RESET}"
+    [ -n "$ago" ] && line_7d+="  ${DIM}${ago}${RESET}"
+    usage_lines+=("$line_7d")
+}
+
+for i in $(seq 0 $(( n_slots - 1 ))); do
+    sid="${slot_ids[$i]}"
+    prefix=""
+    if [ "$multi" -eq 1 ]; then
+        prefix="${DIM}$(printf '%-*s' "$label_w" "${slot_labels[$i]}")${RESET}  "
+    fi
+    fetched_at="$(snap_get "$sid" fetched_at)"
+    fable_pct="$(snap_get "$sid" fable_weekly_pct)"
+
+    if [ "$i" -eq "$active_idx" ]; then
+        # active スロットは stdin のライブ値。Fable だけ snapshot 由来で、
+        # 6h の鮮度ゲートは現行どおりここにだけ適用する
+        if [ -n "$fable_pct" ]; then
+            if [ -z "$fetched_at" ] || [ $(( now - fetched_at )) -ge 21600 ]; then
+                fable_pct=""
+            fi
+        fi
+        render_slot "$prefix" "$five_h_pct" "$five_h_resets" "$seven_d_pct" "$seven_d_resets" \
+                    "$fable_pct" ""
+    else
+        # 非 active スロットは snapshot の値。鮮度ゲートは適用せず、経過時間を併記する
+        ago=""
+        [ -n "$fetched_at" ] && ago="$(fmt_ago $(( now - fetched_at )))"
+        render_slot "$prefix" \
+                    "$(snap_get "$sid" five_hour_pct)" "$(snap_get "$sid" five_hour_resets_epoch)" \
+                    "$(snap_get "$sid" weekly_all_pct)" "$(snap_get "$sid" weekly_resets_epoch)" \
+                    "$fable_pct" "$ago"
+    fi
+done
 
 # API-equivalent monthly cost pace (last 30 days via ccusage; cached, refreshed in background)
 api_pace_info=""
