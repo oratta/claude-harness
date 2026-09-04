@@ -19,7 +19,7 @@ statusline は「今のペースでリセットまで持つか」を一目で判
 
 ## What Changes
 
-- **active スロットの行に目印を足す**: label の前に `▸ ` を置き、label を `DIM` ではなく通常の明るさで描く
+- **active スロットの行に目印を足す**: label の前に `▸ `（U+25B8）を置き、記号と label をどちらも `DIM` ではなく通常の明るさで描く。記号は East Asian Width が Neutral のものに限る（Ambiguous の記号だと、曖昧幅を全角にする端末で active 行だけ 1 桁ずれる）
 - **非 active スロットの行**: label の前に半角スペース 2 つを置き、label は現行どおり `DIM`
 - 目印の列は全行に等しく 2 桁足すので、バーの左端は揃ったまま
 
