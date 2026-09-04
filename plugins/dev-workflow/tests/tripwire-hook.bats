@@ -61,3 +61,52 @@ PY
   grep -q 'SessionStart' "$TEMPLATE"
   grep -Eq 'オプション|プラグイン未導入' "$TEMPLATE"
 }
+
+# ---- schema 2 snapshot に対する FABLE_BUDGET_MODE 導出の退行ガード ----
+# トップレベルの従来キーを active スロットのミラーとして残す唯一の存在理由がこれ。
+# spec: dev-workflow-escalation-tripwires（usage-probe と snapshot 契約 / 自動導出注入）
+
+@test "derivation: a schema 2 snapshot derives the same mode as schema 1" {
+  work="$(mktemp -d)"
+  now=1000000000
+  resets=$(( now + 2 * 86400 ))   # 週経過 ≈ 71%
+  s1="${work}/snap1.json"
+  s2="${work}/snap2.json"
+  cat > "$s1" <<JSON
+{ "schema": 1, "fetched_at": ${now}, "fable_weekly_pct": 30, "fable_active": true,
+  "weekly_all_pct": 55, "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets} }
+JSON
+  # 同じ active スロットの値を持つ schema 2（非 active スロットは別の値を持つ）
+  cat > "$s2" <<JSON
+{ "schema": 2, "active": "a", "fetched_at": ${now},
+  "fable_weekly_pct": 30, "fable_active": true,
+  "weekly_all_pct": 55, "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets},
+  "five_hour_pct": 55, "five_hour_resets_at": "iso", "five_hour_resets_epoch": ${now},
+  "accounts": {
+    "a": { "label": "A", "securestorage": null, "fetched_at": ${now},
+           "five_hour_pct": 55, "five_hour_resets_at": "iso", "five_hour_resets_epoch": ${now},
+           "weekly_all_pct": 55, "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets},
+           "fable_weekly_pct": 30, "fable_active": true },
+    "b": { "label": "B", "securestorage": "/tmp/cb", "fetched_at": ${now},
+           "five_hour_pct": 3, "five_hour_resets_at": "iso", "five_hour_resets_epoch": ${now},
+           "weekly_all_pct": 1, "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets},
+           "fable_weekly_pct": 95, "fable_active": false }
+  } }
+JSON
+  ctx_of() {
+    run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="$1" \
+        USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" \
+        USAGE_PROBE_NOW="$now" "$SCRIPT"
+    [ "$status" -eq 0 ]
+    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
+  }
+  out1="$(ctx_of "$s1")"
+  out2="$(ctx_of "$s2")"
+  # 30% <= 週経過 71% → abundant。非 active スロットの 95% に引きずられない
+  echo "$out1" | grep -q "abundant"
+  echo "$out2" | grep -q "abundant"
+  ! echo "$out2" | grep -q "exhausted"
+  # Fable 残量% も同じ（100 - 30 = 70）
+  echo "$out2" | grep -q "70"
+  rm -rf "$work"
+}
