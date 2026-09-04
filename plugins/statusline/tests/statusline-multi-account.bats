@@ -472,3 +472,36 @@ PY
   [ "$(wc -l < "$WORK/sl.tsv" | tr -d ' ')" = "8" ]
   ! grep -q 'ghost' "$WORK/sl.tsv"
 }
+
+# ---------- snapshot 読み取りが stdin に依存しないこと ----------
+# 実装中の実バグの回帰ガード: jq の `--args` をファイル名の前に置くと snapshot の
+# パスまで positional に食われ、jq が stdin から JSON を読もうとする。statusline は
+# 既に stdin を消費済みなので固まらず、代わりに snapshot 由来の値が**黙って全部空**になり、
+# Fable バーと非 active スロットの行が消えていた。値が実際に届いていることを見る。
+
+@test "snapshot: values reach the render even though stdin is already consumed" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  # active スロット: Fable は snapshot 由来（accounts.a）。読めていなければ消える
+  grep -E '^A ' "$WORK/out.txt" | grep -q 'Fable'
+  [[ "$(grep -E '^A +7d All' "$WORK/out.txt")" =~ 94% ]]
+  # 非 active スロット: 5h / 7d / Fable / 経過時間のすべてが snapshot 由来
+  [[ "$(grep -E '^B +5h' "$WORK/out.txt")" =~ 3% ]]
+  [[ "$(grep -E '^B +7d All' "$WORK/out.txt")" =~ 1% ]]
+  [[ "$(grep -E '^B +7d All' "$WORK/out.txt")" =~ 2h前 ]]
+}
+
+@test "label: a hand-written over-long label is clipped by the statusline reader too" {
+  # accounts-init.sh を通さず accounts.json を直接編集する経路のガード
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "0123456789abcdefghij0123456789abcdefghij", "securestorage": null },
+  { "id": "b", "label": "B", "securestorage": "${SECURE_B}" }
+] }
+JSON
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep -qE '^01234567 +5h' "$WORK/out.txt"
+  ! grep -q '0123456789abcdefghij' "$WORK/out.txt"
+}
