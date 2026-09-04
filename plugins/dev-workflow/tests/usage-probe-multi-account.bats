@@ -327,3 +327,127 @@ PY
   [ "$(jq -r '.accounts | length' "$ACCOUNTS")" = "2" ]
   [ "$(jq -r '.accounts[1].id' "$ACCOUNTS")" = "b" ]
 }
+
+# ---------- API エラーボディをフェッチ成功扱いにしない ----------
+# 401 / 429 / 5xx でも API は正しい JSON の dict を返す。これを成功扱いにすると
+# そのスロットの前回値を全 null で上書きしてしまい、スロット単位 fail-open が壊れる。
+# 非 active アカウントはトークン期限切れでこの経路に入るのが常態。
+
+write_error_resp() {
+  cat > "$1" <<'JSON'
+{ "type": "error",
+  "error": { "type": "authentication_error", "message": "OAuth token has expired" } }
+JSON
+}
+
+@test "error body: an API error response is treated as a fetch failure" {
+  write_resp "${WORK}/r.json" 55 82 94
+  env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$(jq -r '.fable_weekly_pct' "$SNAP")" = "94" ]
+  # エラーボディを返す 2 回目: 全スロット失敗と同じ扱いになり snapshot は据え置き
+  write_error_resp "${WORK}/err.json"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" USAGE_PROBE_TTL=0 \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/err.json" USAGE_PROBE_NOW="$((NOW + 7200))" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.fable_weekly_pct' "$SNAP")" = "94" ]
+  [ "$(jq -r '.fetched_at' "$SNAP")" = "$NOW" ]
+}
+
+@test "error body: one slot's API error keeps that slot's previous values" {
+  write_two_slot_registry
+  write_resp "${WORK}/ra.json" 55 82 94
+  write_resp "${WORK}/rb.json" 3 1 7
+  env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  # b のトークンが期限切れになり、API が 401 のエラーボディを返す
+  write_error_resp "${WORK}/err.json"
+  write_resp "${WORK}/ra.json" 60 85 96
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_TTL=0 \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/err.json" \
+      USAGE_PROBE_NOW="$((NOW + 7200))" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "96" ]
+  # b は前回値と前回の fetched_at を保つ（null で上書きされない）
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "7" ]
+  [ "$(jq -r '.accounts.b.five_hour_pct' "$SNAP")" = "3" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+}
+
+@test "error body: an active slot's API error keeps the top-level mirror intact" {
+  write_two_slot_registry
+  write_resp "${WORK}/ra.json" 55 82 94
+  write_resp "${WORK}/rb.json" 3 1 7
+  env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  write_error_resp "${WORK}/err.json"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_TTL=0 \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/err.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$((NOW + 7200))" "$PROBE"
+  [ "$status" -eq 0 ]
+  # FABLE_BUDGET_MODE の導出元が null に落ちない
+  [ "$(jq -r '.fable_weekly_pct' "$SNAP")" = "94" ]
+  [ "$(jq -r '.fetched_at' "$SNAP")" = "$NOW" ]
+}
+
+# ---------- レジストリの制御文字 ----------
+
+@test "registry: a slot whose label contains a control character is dropped" {
+  python3 - "$ACCOUNTS" <<'PY'
+import json, sys
+json.dump({"schema": 1, "accounts": [
+    {"id": "a", "label": "A\n../../../../tmp/pwned\t\tClaude Code-credentials", "securestorage": None},
+    {"id": "b", "label": "B", "securestorage": "/tmp/sec-b"},
+]}, open(sys.argv[1], "w"))
+PY
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$PROBE" --print-slots
+  [ "$status" -eq 0 ]
+  # 壊れたスロットは捨てられ、b だけが残る（幽霊スロットは現れない）
+  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" = "1" ]
+  [ "$(printf '%s' "$output" | cut -f1)" = "b" ]
+  ! printf '%s' "$output" | grep -q 'pwned'
+}
+
+@test "registry: a slot whose securestorage contains a tab is dropped" {
+  python3 - "$ACCOUNTS" <<'PY'
+import json, sys
+json.dump({"schema": 1, "accounts": [
+    {"id": "a", "label": "A", "securestorage": "/tmp/a\tghost"},
+    {"id": "b", "label": "B", "securestorage": None},
+]}, open(sys.argv[1], "w"))
+PY
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$PROBE" --print-slots
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" = "1" ]
+  [ "$(printf '%s' "$output" | cut -f1)" = "b" ]
+  # 残ったスロットの service 列は空にならない
+  [ "$(printf '%s' "$output" | cut -f4)" = "Claude Code-credentials" ]
+}
+
+# ---------- accounts-init.sh の引数処理 ----------
+
+@test "init: a value-less --id exits instead of looping forever" {
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "requires a value" ]]
+}
+
+@test "init: a value-less --label exits instead of looping forever" {
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id a --label
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "requires a value" ]]
+}
+
+@test "init: a label with a control character is rejected" {
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id a --label "$(printf 'A\tB')"
+  [ "$status" -eq 2 ]
+  [ ! -f "$ACCOUNTS" ]
+}
+
+@test "init: an over-long label is rejected" {
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id a --label "0123456789abcdefg"
+  [ "$status" -eq 2 ]
+  [ ! -f "$ACCOUNTS" ]
+}

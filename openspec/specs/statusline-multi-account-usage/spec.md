@@ -100,6 +100,10 @@ statusline サブプロセスへの環境変数の伝播が保証されていな
 - **THEN** snapshot の `active` が別のスロットを指していても、2 番目のスロットが active として扱われる
 
 #### Scenario: env が無ければ snapshot にフォールバックする
-- **WHEN** `CLAUDE_SECURESTORAGE_CONFIG_DIR` が未設定で、snapshot の `active` が 2 番目のスロットを指す状態で statusline を実行する
-- **THEN** 2 番目のスロットが active として扱われる
+- **WHEN** 既定スロットを持たない（全スロットが explicit な `securestorage` を持つ）レジストリで `CLAUDE_SECURESTORAGE_CONFIG_DIR` が未設定、かつ snapshot の `active` が 2 番目のスロットを指す状態で statusline を実行する
+- **THEN** 優先順位 1 が空振りし、2 番目のスロットが active として扱われる
+
+#### Scenario: env が未設定でも既定スロットには一致する
+- **WHEN** 既定スロットを含むレジストリで `CLAUDE_SECURESTORAGE_CONFIG_DIR` が未設定、かつ snapshot の `active` が別のスロットを指す状態で statusline を実行する
+- **THEN** 優先順位 1 が既定スロットに一致し、既定スロットが active として扱われる
 

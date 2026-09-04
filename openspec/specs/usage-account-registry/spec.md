@@ -49,6 +49,7 @@
 - `id` が欠けている、または `^[A-Za-z0-9-]{1,32}$` に一致しないスロットは捨てる
 - `id` が既出のスロットと重複する場合、先に現れたものを残し、後のものを捨てる
 - スロットは先頭から最大 8 個までを採用し、それを超えるスロットは捨てる（probe の実行時間がスロット数に比例するため）
+- `label` または `securestorage` に制御文字（`\t` `\n` `\r` 等の C0 制御文字および DEL）を含むスロットは捨てる。これらの値はスロット一覧として区切り付きで受け渡されるため、区切りを壊すと列がずれ、実在しない「幽霊スロット」が生まれる。幽霊スロットは `securestorage` が空になりやすく既定サービス名に一致して active を乗っ取りうるので、入口で落とす
 
 除外の結果スロットが 0 個になった場合は、レジストリ不在時と同じく既定スロット 1 つに縮退しなければならない（SHALL）。除外はエラーとして扱ってはならない（MUST NOT）。
 
@@ -63,6 +64,10 @@
 #### Scenario: label を欠くスロットは id を label にする
 - **WHEN** `label` の無いスロット（`id` は `"a"`）を含むレジストリを与えて読み取り処理を実行する
 - **THEN** そのスロットの `label` は `"a"` になる
+
+#### Scenario: 制御文字を含むスロットを捨てる
+- **WHEN** `label` に改行を含むスロットと正しいスロットが 1 つずつ含まれるレジストリを与えて読み取り処理を実行する
+- **THEN** 正しいスロットだけが得られ、列のずれによる幽霊スロットは現れない
 
 #### Scenario: 全スロットが不正なら既定スロットに縮退する
 - **WHEN** 全スロットが `id` を欠くレジストリを与えて読み取り処理を実行する
@@ -110,8 +115,8 @@
 
 判定の優先順位:
 
-1. `CLAUDE_SECURESTORAGE_CONFIG_DIR` から導出したサービス名と一致するスロットがあれば、それを active とする
-2. 環境変数が未設定、または一致するスロットが無い場合、snapshot の `active` が実在するスロット id を指していればそれを active とする（probe 側では前回の snapshot、statusline 側では現在の snapshot）
+1. `CLAUDE_SECURESTORAGE_CONFIG_DIR` から導出したサービス名と一致するスロットがあれば、それを active とする。**環境変数が未設定または空文字の場合も、空文字からの導出（＝既定サービス名 `Claude Code-credentials`）として突き合わせる**。既定スロット（`securestorage` が `null` または空文字）が存在すればここで一致する
+2. 一致するスロットが無い場合、snapshot の `active` が実在するスロット id を指していればそれを active とする（probe 側では前回の snapshot、statusline 側では現在の snapshot）。既定スロットを持たないレジストリ（全スロットが explicit な `securestorage` を持つ）で環境変数が未設定のときが、この経路に落ちる代表例
 3. どちらも得られない場合は最初のスロットを active とする
 
 #### Scenario: サービス名が一致すれば active になる
@@ -126,7 +131,11 @@
 - **WHEN** `CLAUDE_SECURESTORAGE_CONFIG_DIR` がレジストリのどのスロットの `securestorage` とも一致せず、snapshot の `active` が実在するスロットを指す状態で判定する
 - **THEN** snapshot の `active` が指すスロットが active になる
 
+#### Scenario: env 未設定は既定スロットに一致する
+- **WHEN** 既定スロット（`securestorage` が `null`）を含むレジストリで `CLAUDE_SECURESTORAGE_CONFIG_DIR` が未設定の状態で判定する
+- **THEN** 空文字から導出した既定サービス名が一致し、優先順位 1 でその既定スロットが active になる（snapshot の `active` が別のスロットを指していても優先順位 1 が勝つ）
+
 #### Scenario: 手掛かりが無ければ最初のスロット
-- **WHEN** `CLAUDE_SECURESTORAGE_CONFIG_DIR` が未設定で、snapshot も存在しない状態で判定する
+- **WHEN** 既定スロットを持たないレジストリで `CLAUDE_SECURESTORAGE_CONFIG_DIR` が未設定、かつ snapshot も存在しない状態で判定する
 - **THEN** レジストリの最初のスロットが active になる
 

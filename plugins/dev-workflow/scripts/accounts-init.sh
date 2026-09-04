@@ -30,10 +30,17 @@ usage: accounts-init.sh --id <slot-id> [--label <label>]
 USAGE
 }
 
+# 値を取るオプションは、値の有無を確かめてから shift 2 する。
+# $# が 1 のとき shift 2 は失敗して 1 つもシフトせず、set -e が無いので無限ループになる
+# （README が手打ちを案内するコマンドなので、タイプミスで端末が無言で固まる）。
+require_value() {
+  [ "$2" -ge 2 ] || { printf -- '%s requires a value\n' "$1" >&2; usage >&2; exit 2; }
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --id)    SLOT_ID="${2:-}"; shift 2 ;;
-    --label) SLOT_LABEL="${2:-}"; shift 2 ;;
+    --id)    require_value --id "$#";    SLOT_ID="$2";    shift 2 ;;
+    --label) require_value --label "$#"; SLOT_LABEL="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -49,6 +56,12 @@ case "$SLOT_ID" in
 esac
 [ "${#SLOT_ID}" -le 32 ] || { printf '--id is too long (max 32)\n' >&2; exit 2; }
 [ -n "$SLOT_LABEL" ] || SLOT_LABEL="$SLOT_ID"
+# label は snapshot 経由で TSV に載るので、区切りを壊す制御文字を弾く。
+# 長さも抑える（ステータスラインの左端に出す短いラベルという用途に合わせる）。
+case "$SLOT_LABEL" in
+  *[[:cntrl:]]*) printf -- '--label must not contain control characters\n' >&2; exit 2 ;;
+esac
+[ "${#SLOT_LABEL}" -le 16 ] || { printf -- '--label is too long (max 16)\n' >&2; exit 2; }
 
 dir="$(dirname "$ACCOUNTS_FILE")"
 mkdir -p "$dir" || exit 1

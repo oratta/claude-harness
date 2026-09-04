@@ -330,3 +330,57 @@ JSON
   ! grep -q '5h' "$WORK/out.txt"
   ! grep -q '7d All' "$WORK/out.txt"
 }
+
+# ---------- レジストリの制御文字 ----------
+
+@test "registry: a slot with control characters never becomes a ghost row" {
+  python3 - "$ACCOUNTS" "$SECURE_B" <<'PY'
+import json, sys
+json.dump({"schema": 1, "accounts": [
+    {"id": "a", "label": "A\n../../../../tmp/pwned", "securestorage": None},
+    {"id": "b", "label": "B", "securestorage": sys.argv[2]},
+]}, open(sys.argv[1], "w"))
+PY
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  ! grep -q 'pwned' "$WORK/out.txt"
+  # 生き残った b だけの 1 スロット構成になるので label 列は出ない
+  ! grep -qE '^B ' "$WORK/out.txt"
+  grep -qE '^5h' "$WORK/out.txt"
+}
+
+# ---------- schema 2 を書く前の snapshot（NIT） ----------
+
+@test "multi: the active slot falls back to top-level keys on a schema 1 snapshot" {
+  # probe がまだ schema 2 を書いていない間（最大 TTL 5 分）でも
+  # active スロットの Fable バーが消えない
+  write_two_slot_registry
+  cat > "$SNAP" <<JSON
+{"schema":1,"fetched_at":$NOW,"fable_weekly_pct":7,"fable_active":true}
+JSON
+  mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep -E '^A ' "$WORK/out.txt" | grep -q 'Fable'
+  # 非 active スロットはトップレベルを流用しない（b の行は出ない）
+  ! grep -qE '^B ' "$WORK/out.txt"
+}
+
+# ---------- snapshot の読み取りが原子的であること ----------
+
+@test "snapshot: the whole snapshot is read in a single jq call" {
+  # フィールドごとに jq を起動すると、呼び出しの合間に probe が snapshot を差し替えたとき
+  # 1 行の中に新旧 2 バージョンの値が混ざる。snapshot を読む jq は 1 回だけにする。
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  cat > "$WORK/jq" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in *.usage-snapshot) echo x >> "$WORK/jq-snap-calls" ;; esac
+done
+exec "$(command -v jq)" "\$@"
+SH
+  chmod +x "$WORK/jq"
+  : > "$WORK/jq-snap-calls"
+  mk_input 40 82 14000 172800 | PATH="$WORK:$PATH" bash "$SL" > /dev/null
+  count="$(wc -l < "$WORK/jq-snap-calls" | tr -d ' ')"
+  [ "$count" -eq 1 ]
+}

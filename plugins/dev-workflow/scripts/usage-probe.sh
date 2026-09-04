@@ -44,6 +44,7 @@ import hashlib, json, os, re, sys, unicodedata
 
 MAX_SLOTS = 8
 ID_RE = re.compile(r"[A-Za-z0-9-]{1,32}\Z")
+CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 def service(sec):
     # Claude Code 本体と同じ導出: 空なら既定、そうでなければ NFC 正規化して sha256 先頭 8 桁
@@ -75,6 +76,11 @@ try:
             sec = entry.get("securestorage")
             if not isinstance(sec, str):
                 sec = ""
+            # label / securestorage は TSV で bash に渡すので、区切りを壊す制御文字を
+            # 含むスロットは id 不正と同じく捨てる（列がずれて幽霊スロットが生まれ、
+            # 空の securestorage で既定サービス名に一致して active を乗っ取る事故を防ぐ）。
+            if CTRL_RE.search(label) or CTRL_RE.search(sec):
+                continue
             slots.append((sid, label, sec, service(sec)))
 except Exception:
     slots = []
@@ -175,6 +181,12 @@ slot_token() {
 any_new=0
 for idx in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
   sid="${slot_ids[$idx]}"; ssecure="${slot_secures[$idx]}"; sservice="${slot_services[$idx]}"
+  # id をファイル名に使う前に bash 側でも書式を検証する（TSV の列ずれ等で
+  # 想定外の値が入っても raw_dir の外に書き込まないための番人）
+  case "$sid" in
+    *[!A-Za-z0-9-]*|"") continue ;;
+  esac
+  [ "${#sid}" -le 32 ] || continue
   raw=""
   if [ "$test_mode" -eq 1 ]; then
     rf="$(slot_response_file "$sid")"
@@ -184,10 +196,24 @@ for idx in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
   else
     token="$(slot_token "$sservice" "$ssecure")"
     if [ -n "$token" ] && command -v curl >/dev/null 2>&1; then
-      raw="$(curl -sS --max-time 10 \
-        -H "Authorization: Bearer $token" \
-        -H 'anthropic-beta: oauth-2025-04-20' \
-        "$ENDPOINT" 2>/dev/null || true)"
+      # Authorization ヘッダは --config - で stdin から渡す。コマンドライン引数に載せると
+      # 同一ユーザーの任意プロセスと root から ps auxww でトークンが読める。
+      # curl の config ファイル書式に合わせて \ と " をエスケープする。
+      esc_token="$(printf '%s' "$token" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+      # 末尾に HTTP ステータスを付けて取得する。401 / 429 / 5xx でも API は
+      # 正しい JSON のエラーボディを返すため、ステータスを見ないと成功と区別できない。
+      resp="$(printf 'header = "Authorization: Bearer %s"\n' "$esc_token" \
+        | curl -sS --max-time 10 --config - \
+          -H 'anthropic-beta: oauth-2025-04-20' \
+          -w '\n%{http_code}' \
+          "$ENDPOINT" 2>/dev/null || true)"
+      unset esc_token
+      if [ -n "$resp" ]; then
+        http_code="${resp##*$'\n'}"
+        if [ "$http_code" = "200" ]; then
+          raw="${resp%$'\n'*}"
+        fi
+      fi
     fi
   fi
   if [ -n "$raw" ]; then
@@ -262,6 +288,14 @@ def parse(raw):
     five_pct, five_iso = window(d, "five_hour")
     seven_pct, seven_iso = window(d, "seven_day")
     weekly_iso = fable_resets_iso or seven_iso
+
+    # HTTP 401 / 429 / 5xx でも API は {"type":"error","error":{...}} という
+    # 正しい JSON の dict を返す。使える数字が 1 つも無いレスポンスは失敗として扱う
+    # （成功扱いにすると、そのスロットの前回値を全 null で上書きしてしまう）。
+    # 非 active アカウントはトークン期限切れでこの経路に入るのが常態なので、
+    # ここを塞がないとスロット単位 fail-open が機能しない。
+    if five_pct is None and seven_pct is None and fable_pct is None:
+        return None
 
     return {
         "fetched_at": now,

@@ -233,6 +233,7 @@ if [ -f "$accounts_file" ]; then
     done < <(ACCOUNTS_FILE="$accounts_file" python3 -c '
 import hashlib, json, os, re, sys, unicodedata
 ID_RE = re.compile(r"[A-Za-z0-9-]{1,32}\Z")
+CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
 def service(sec):
     if not sec:
         return "Claude Code-credentials"
@@ -260,6 +261,9 @@ try:
             sec = e.get("securestorage")
             if not isinstance(sec, str):
                 sec = ""
+            # TSV の区切りを壊す制御文字を含むスロットは捨てる（usage-probe.sh と同じ規則）
+            if CTRL_RE.search(lab) or CTRL_RE.search(sec):
+                continue
             slots.append((sid, lab, sec, service(sec)))
 except Exception:
     slots = []
@@ -321,12 +325,46 @@ if [ "$multi" -eq 1 ]; then
     done
 fi
 
-# $1=スロット id $2=キー → snapshot の値（1 スロット時はトップレベルにフォールバック）
-snap_get() {
-    local expr='.accounts[$id][$k] // empty'
-    [ "$multi" -eq 1 ] || expr='(.accounts[$id][$k] // .[$k]) // empty'
-    jq -r --arg id "$1" --arg k "$2" "$expr" "$usnap" 2>/dev/null
-}
+# ---- snapshot を jq 1 回で読む ----
+# 1 フィールドごとに jq を起動すると 1 描画あたり 10 プロセス近くになるうえ、
+# 呼び出しの合間に probe が mv -f で snapshot を差し替えると 1 行の中に新旧 2 バージョンの
+# 値が混ざる（書き込みが原子的でも読み取りが原子的でないため）。全スロット分を 1 回で読む。
+#
+# 取り出すのは数値フィールドだけなので、TSV に載せても区切りは壊れない
+# （label は snapshot 側にもあるがレジストリの値を使うのでここでは読まない）。
+# active スロットに限り、`accounts` がまだ無い snapshot（probe が schema 2 を書く前の
+# 最大 TTL 5 分）ではトップレベルへフォールバックする。
+snap_fetched=(); snap_five_pct=(); snap_five_res=()
+snap_seven_pct=(); snap_seven_res=(); snap_fable_pct=()
+snap_rows=""
+if [ -f "$usnap" ] && [ "$n_slots" -gt 0 ]; then
+    # `--args` はそれ以降のすべてを positional 扱いにするので、必ずファイル名の**後**に置く。
+    # 前に置くと snapshot のパスまで positional に食われ、jq が stdin を待って固まる。
+    # stdin は既に消費済みなので明示的に /dev/null を与える。
+    snap_rows="$(jq -r --arg active "${slot_ids[$active_idx]}" '
+      . as $d
+      | $ARGS.positional[] as $id
+      | (($d.accounts // {})[$id]) as $a
+      | (if $a == null and $id == $active then $d else ($a // {}) end) as $src
+      | [ ($src.fetched_at // ""), ($src.five_hour_pct // ""), ($src.five_hour_resets_epoch // ""),
+          ($src.weekly_all_pct // ""), ($src.weekly_resets_epoch // ""), ($src.fable_weekly_pct // "") ]
+      | @tsv
+    ' "$usnap" --args "${slot_ids[@]}" < /dev/null 2>/dev/null)"
+fi
+_row_i=0
+while IFS='' read -r _row; do
+    [ "$_row_i" -lt "$n_slots" ] || break
+    # タブ畳み込みで空フィールドが消えるのを避けるため US(0x1f) に置換してから読む
+    IFS=$'\x1f' read -r _f _fp _fr _sp _sr _fb <<< "${_row//$'\t'/$'\x1f'}"
+    snap_fetched+=("$_f"); snap_five_pct+=("$_fp"); snap_five_res+=("$_fr")
+    snap_seven_pct+=("$_sp"); snap_seven_res+=("$_sr"); snap_fable_pct+=("$_fb")
+    _row_i=$(( _row_i + 1 ))
+done <<< "$snap_rows"
+# jq が失敗した / 行が足りない場合は空で埋める（欠測として扱う）
+while [ "${#snap_fetched[@]}" -lt "$n_slots" ]; do
+    snap_fetched+=(""); snap_five_pct+=(""); snap_five_res+=("")
+    snap_seven_pct+=(""); snap_seven_res+=(""); snap_fable_pct+=("")
+done
 
 # $1=行頭 label 列 $2=5h消化率 $3=5hリセットepoch $4=7d消化率 $5=7dリセットepoch
 # $6=Fable週次消化率 $7=行末サフィックス（経過時間。空可）
@@ -378,13 +416,12 @@ render_slot() {
 }
 
 for i in $(seq 0 $(( n_slots - 1 ))); do
-    sid="${slot_ids[$i]}"
     prefix=""
     if [ "$multi" -eq 1 ]; then
         prefix="${DIM}$(printf '%-*s' "$label_w" "${slot_labels[$i]}")${RESET}  "
     fi
-    fetched_at="$(snap_get "$sid" fetched_at)"
-    fable_pct="$(snap_get "$sid" fable_weekly_pct)"
+    fetched_at="${snap_fetched[$i]}"
+    fable_pct="${snap_fable_pct[$i]}"
 
     if [ "$i" -eq "$active_idx" ]; then
         # active スロットは stdin のライブ値。Fable だけ snapshot 由来で、
@@ -401,8 +438,8 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
         ago=""
         [ -n "$fetched_at" ] && ago="$(fmt_ago $(( now - fetched_at )))"
         render_slot "$prefix" \
-                    "$(snap_get "$sid" five_hour_pct)" "$(snap_get "$sid" five_hour_resets_epoch)" \
-                    "$(snap_get "$sid" weekly_all_pct)" "$(snap_get "$sid" weekly_resets_epoch)" \
+                    "${snap_five_pct[$i]}" "${snap_five_res[$i]}" \
+                    "${snap_seven_pct[$i]}" "${snap_seven_res[$i]}" \
                     "$fable_pct" "$ago"
     fi
 done
