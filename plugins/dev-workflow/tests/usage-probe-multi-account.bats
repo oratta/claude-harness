@@ -451,3 +451,57 @@ PY
   [ "$status" -eq 2 ]
   [ ! -f "$ACCOUNTS" ]
 }
+
+# ---------- label の切り詰めと test_mode の判定 ----------
+
+@test "registry: an over-long label is clipped to the display-width cap" {
+  printf '{"schema":1,"accounts":[{"id":"a","label":"0123456789abcdef","securestorage":null}]}' > "$ACCOUNTS"
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$PROBE" --print-slots
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | cut -f2)" = "01234567" ]
+}
+
+@test "registry: a full-width label is clipped by display width, not character count" {
+  python3 - "$ACCOUNTS" <<'PY'
+import json, sys
+json.dump({"schema": 1, "accounts": [
+    {"id": "a", "label": "仕事用のアカウント", "securestorage": None},
+]}, open(sys.argv[1], "w"), ensure_ascii=False)
+PY
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$PROBE" --print-slots
+  [ "$status" -eq 0 ]
+  # 全角は 1 文字 2 桁なので、表示幅 8 = 4 文字ぶんで切られる
+  [ "$(printf '%s' "$output" | cut -f2)" = "仕事用の" ]
+}
+
+@test "test mode: an empty USAGE_PROBE_RESPONSE_FILE does not force the test path" {
+  # 空文字は main と同じく本番経路。テスト経路に入ると無言で exit 0 してしまう。
+  # 本番経路では Keychain / curl に進むが、認証が取れなければ fail-open で snapshot を書かない。
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
+      USAGE_PROBE_RESPONSE_FILE="" USAGE_PROBE_ENDPOINT="http://127.0.0.1:9/none" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ ! -f "$SNAP" ]
+}
+
+@test "test mode: a per-slot response file alone still selects the test path" {
+  write_two_slot_registry
+  write_resp "${WORK}/ra.json" 55 82 94
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "94" ]
+  # b は共通キーもスロット別キーも無いので失敗扱い（Keychain には触れない）
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "null" ]
+}
+
+@test "init: concurrent runs do not clobber each other via a fixed temp name" {
+  env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id a --label A
+  # 一時ファイルは固定名ではない（.tmp が残らず、mkstemp 由来の名前を使う）
+  [ ! -f "${ACCOUNTS}.tmp" ]
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/claude-b" \
+      "$INIT" --id b --label B
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts | length' "$ACCOUNTS")" = "2" ]
+  [ -z "$(ls "$WORK"/.accounts-* 2>/dev/null)" ]
+}

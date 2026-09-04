@@ -68,7 +68,7 @@ mkdir -p "$dir" || exit 1
 
 ACCOUNTS_FILE="$ACCOUNTS_FILE" SLOT_ID="$SLOT_ID" SLOT_LABEL="$SLOT_LABEL" \
 SLOT_SECURE="${CLAUDE_SECURESTORAGE_CONFIG_DIR-}" python3 <<'PY' || exit 1
-import json, os, sys
+import json, os, sys, tempfile
 
 path = os.environ["ACCOUNTS_FILE"]
 sid = os.environ["SLOT_ID"]
@@ -96,10 +96,19 @@ for i, existing in enumerate(doc["accounts"]):
 else:
     doc["accounts"].append(entry)
 
-tmp = path + ".tmp"
-with open(tmp, "w", encoding="utf-8") as fh:
-    json.dump(doc, fh, ensure_ascii=False, indent=2)
-    fh.write("\n")
-os.replace(tmp, path)
+# 一時ファイル名は固定にしない。README がアカウントごとに別シェルでの実行を案内するので、
+# 2 つのシェルが同時に走ると固定名の .tmp を奪い合って片方の登録が消える。
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", prefix=".accounts-", suffix=".tmp")
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+    os.replace(tmp, path)
+except Exception:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+    raise
 sys.stderr.write("registered slot %r (securestorage=%s) in %s\n" % (sid, secure, path))
 PY

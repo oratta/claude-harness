@@ -219,21 +219,35 @@ usnap="$CONFIG_DIR/.usage-snapshot"
 # dev-workflow の usage-probe.sh と同じ規則だが、プラグインを跨ぐ依存を作らないため
 # 実装は各スクリプトに置く（規則の正本は spec 側）。
 accounts_file="${CLAUDE_ACCOUNTS_FILE:-$CONFIG_DIR/accounts.json}"
-slot_ids=(); slot_labels=(); slot_secures=(); slot_services=()
+slot_ids=(); slot_labels=(); slot_secures=(); slot_services=(); slot_widths=()
 if [ -f "$accounts_file" ]; then
     # `IFS=$'\t' read` は使えない: タブは IFS 空白なので連続タブが 1 つの区切りに畳まれ、
     # securestorage が空の既定スロットで service 列が消える。IFS 空白でない US(0x1f) に
     # 置換してから read する（usage-probe.sh と同じ理由・同じ対処）。
     while IFS='' read -r _line; do
         [ -n "$_line" ] || continue
-        IFS=$'\x1f' read -r _sid _slabel _ssecure _sservice <<< "${_line//$'\t'/$'\x1f'}"
+        IFS=$'\x1f' read -r _sid _slabel _ssecure _sservice _swidth <<< "${_line//$'\t'/$'\x1f'}"
         [ -n "$_sid" ] || continue
         slot_ids+=("$_sid"); slot_labels+=("$_slabel")
         slot_secures+=("$_ssecure"); slot_services+=("$_sservice")
+        slot_widths+=("${_swidth:-0}")
     done < <(ACCOUNTS_FILE="$accounts_file" python3 -c '
 import hashlib, json, os, re, sys, unicodedata
+MAX_SLOTS = 8
+MAX_LABEL_WIDTH = 8   # 左端の label 列の表示幅の上限（全角なら 4 文字ぶん）
 ID_RE = re.compile(r"[A-Za-z0-9-]{1,32}\Z")
 CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
+def _cw(ch):
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+def disp_width(text):
+    return sum(_cw(ch) for ch in text)
+def clip_label(text, maxw):
+    out, w = [], 0
+    for ch in text:
+        if w + _cw(ch) > maxw:
+            break
+        out.append(ch); w += _cw(ch)
+    return "".join(out) or text[:1]
 def service(sec):
     if not sec:
         return "Claude Code-credentials"
@@ -247,7 +261,7 @@ try:
     if isinstance(entries, list):
         seen = set()
         for e in entries:
-            if len(slots) >= 8:
+            if len(slots) >= MAX_SLOTS:
                 break
             if not isinstance(e, dict):
                 continue
@@ -264,16 +278,20 @@ try:
             # TSV の区切りを壊す制御文字を含むスロットは捨てる（usage-probe.sh と同じ規則）
             if CTRL_RE.search(lab) or CTRL_RE.search(sec):
                 continue
+            lab = clip_label(lab, MAX_LABEL_WIDTH)
             slots.append((sid, lab, sec, service(sec)))
 except Exception:
     slots = []
 for row in slots:
-    sys.stdout.write("\t".join(row) + "\n")
+    # 5 列目は label の表示幅。bash の ${#var} は文字数なので、全角ラベルでは
+    # printf の %-*s（バイト幅パディング）と食い違って列がずれる。
+    sys.stdout.write("\t".join(row) + "\t" + str(disp_width(row[1])) + "\n")
 ' 2>/dev/null)
 fi
 if [ "${#slot_ids[@]}" -eq 0 ]; then
     # レジストリ不在・不正 → 既定スロット 1 つ。label は空にして列を出さない
     slot_ids=("default"); slot_labels=(""); slot_secures=(""); slot_services=("Claude Code-credentials")
+    slot_widths=(0)
 fi
 
 n_slots="${#slot_ids[@]}"
@@ -318,10 +336,11 @@ print("Claude Code-credentials-" + hashlib.sha256(
 fi
 
 # label 列の幅（複数スロットのときだけ使う）
+# 幅は文字数ではなく表示幅（python 側が 5 列目で渡す）。全角ラベルでも列が揃う。
 label_w=0
 if [ "$multi" -eq 1 ]; then
-    for l in "${slot_labels[@]}"; do
-        [ "${#l}" -gt "$label_w" ] && label_w="${#l}"
+    for w in "${slot_widths[@]}"; do
+        [ "$w" -gt "$label_w" ] && label_w="$w"
     done
 fi
 
@@ -418,7 +437,8 @@ render_slot() {
 for i in $(seq 0 $(( n_slots - 1 ))); do
     prefix=""
     if [ "$multi" -eq 1 ]; then
-        prefix="${DIM}$(printf '%-*s' "$label_w" "${slot_labels[$i]}")${RESET}  "
+        # printf の %-*s はバイト幅で詰めるので使えない。表示幅の差だけ手で空白を足す。
+        prefix="${DIM}${slot_labels[$i]}$(printf '%*s' "$(( label_w - ${slot_widths[$i]} ))" '')${RESET}  "
     fi
     fetched_at="${snap_fetched[$i]}"
     fable_pct="${snap_fable_pct[$i]}"

@@ -384,3 +384,91 @@ SH
   count="$(wc -l < "$WORK/jq-snap-calls" | tr -d ' ')"
   [ "$count" -eq 1 ]
 }
+
+# ---------- label の表示幅（全角ラベル） ----------
+
+@test "label: full-width labels keep the columns aligned" {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "仕事", "securestorage": null },
+  { "id": "b", "label": "B", "securestorage": "${SECURE_B}" }
+] }
+JSON
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  # 各行の "5h" / "7d All" の開始位置（表示幅）が全スロットで揃っている
+  widths="$(python3 - "$WORK/out.txt" <<'PY'
+import re, sys, unicodedata
+def w(s):
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
+cols = set()
+for line in open(sys.argv[1], encoding="utf-8"):
+    m = re.search(r"(5h|7d All)", line)
+    if m and not line.startswith(("5h", "7d")):
+        cols.add(w(line[:m.start()]))
+print(",".join(str(c) for c in sorted(cols)))
+PY
+)"
+  [ "$(printf '%s' "$widths" | tr -cd ',' | wc -c | tr -d ' ')" = "0" ]
+  [ -n "$widths" ]
+}
+
+@test "label: an over-long label is clipped instead of pushing every row out" {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "0123456789abcdefghij0123456789abcdefghij", "securestorage": null },
+  { "id": "b", "label": "B", "securestorage": "${SECURE_B}" }
+] }
+JSON
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  line="$(grep '5h' "$WORK/out.txt" | head -1)"
+  # label 列は表示幅 8 までに収まる（40 桁のパディングにならない）
+  col="$(python3 -c "
+import re,sys
+line = sys.argv[1]
+print(re.search(r'5h', line).start())
+" "$line")"
+  [ "$col" -le 10 ]
+}
+
+# ---------- 2 つのレジストリ実装のドリフト検出 ----------
+
+@test "registry: statusline and usage-probe parse the same registry identically" {
+  # 規則は spec が正本で実装は 2 本ある。片側だけがドリフトするのを止めるためのガード。
+  PROBE="${REPO_ROOT}/plugins/dev-workflow/scripts/usage-probe.sh"
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "label": "NoId" },
+  { "id": "bad id!", "label": "Bad" },
+  { "id": "a", "label": "First", "securestorage": null },
+  { "id": "a", "label": "Second", "securestorage": null },
+  { "id": "b", "label": "B", "securestorage": "${SECURE_B}" },
+  { "id": "c", "label": "C\nghost", "securestorage": null },
+  { "id": "d", "label": "D", "securestorage": "/tmp/d\tghost" },
+  { "id": "e1", "label": "E1", "securestorage": "/tmp/e1" },
+  { "id": "e2", "label": "E2", "securestorage": "/tmp/e2" },
+  { "id": "e3", "label": "E3", "securestorage": "/tmp/e3" },
+  { "id": "e4", "label": "E4", "securestorage": "/tmp/e4" },
+  { "id": "e5", "label": "E5", "securestorage": "/tmp/e5" },
+  { "id": "e6", "label": "E6", "securestorage": "/tmp/e6" },
+  { "id": "e7", "label": "E7", "securestorage": "/tmp/e7" },
+  { "id": "e8", "label": "E8", "securestorage": "/tmp/e8" }
+] }
+JSON
+  # statusline に埋め込まれた reader を取り出して単体で走らせる
+  python3 - "$SL" "$WORK/sl-reader.py" <<'PY'
+import re, sys
+src = open(sys.argv[1], encoding="utf-8").read()
+start = src.index("ACCOUNTS_FILE=\"$accounts_file\" python3 -c '")
+body = src[src.index("\n", start) + 1:]
+body = body[:body.index("\n' 2>/dev/null)")]
+open(sys.argv[2], "w", encoding="utf-8").write(body)
+PY
+  ACCOUNTS_FILE="$ACCOUNTS" python3 "$WORK/sl-reader.py" | cut -f1,4 > "$WORK/sl.tsv"
+  env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$PROBE" --print-slots | cut -f1,4 > "$WORK/probe.tsv"
+  diff "$WORK/probe.tsv" "$WORK/sl.tsv"
+  # 実際に規則が効いていることも確かめる（id 不正・重複・制御文字・8 個上限）
+  [ "$(wc -l < "$WORK/sl.tsv" | tr -d ' ')" = "8" ]
+  ! grep -q 'ghost' "$WORK/sl.tsv"
+}

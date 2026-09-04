@@ -43,8 +43,24 @@ read_slots() {
 import hashlib, json, os, re, sys, unicodedata
 
 MAX_SLOTS = 8
+MAX_LABEL_WIDTH = 8   # statusline の左端に出す列幅の上限（全角なら 4 文字ぶん）
 ID_RE = re.compile(r"[A-Za-z0-9-]{1,32}\Z")
 CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+def disp_width(text):
+    """端末上の表示幅。全角（East Asian Width が W / F）は 2 桁として数える。"""
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
+
+def clip_label(text, maxw):
+    """表示幅が maxw を超える label を切り詰める（長い label で全行が押し出されるのを防ぐ）。"""
+    out, w = [], 0
+    for ch in text:
+        cw = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        if w + cw > maxw:
+            break
+        out.append(ch)
+        w += cw
+    return "".join(out) or text[:1]
 
 def service(sec):
     # Claude Code 本体と同じ導出: 空なら既定、そうでなければ NFC 正規化して sha256 先頭 8 桁
@@ -81,6 +97,7 @@ try:
             # 空の securestorage で既定サービス名に一致して active を乗っ取る事故を防ぐ）。
             if CTRL_RE.search(label) or CTRL_RE.search(sec):
                 continue
+            label = clip_label(label, MAX_LABEL_WIDTH)
             slots.append((sid, label, sec, service(sec)))
 except Exception:
     slots = []
@@ -143,20 +160,32 @@ raw_dir="$(mktemp -d 2>/dev/null || true)"
 [ -n "$raw_dir" ] || exit 0
 trap 'rm -rf "$raw_dir"' EXIT
 
-# テスト経路の判定: USAGE_PROBE_RESPONSE_FILE 系の env が 1 つでもあれば全スロットがテスト経路
-test_mode=0
-if env | grep -q '^USAGE_PROBE_RESPONSE_FILE'; then
-  test_mode=1
-fi
+# $1=スロット id → 対応する USAGE_PROBE_RESPONSE_FILE_<ID> の env 変数名
+slot_response_var() {
+  printf 'USAGE_PROBE_RESPONSE_FILE_%s' "$(printf '%s' "$1" | tr 'a-z-' 'A-Z_')"
+}
 
-# $1=スロット id → 対応する USAGE_PROBE_RESPONSE_FILE_<ID> の値（無ければ共通の値）
+# $1=スロット id → 対応するレスポンスファイルのパス（無ければ共通の値）
 slot_response_file() {
-  local key
-  key="USAGE_PROBE_RESPONSE_FILE_$(printf '%s' "$1" | tr 'a-z-' 'A-Z_')"
-  local val="${!key:-}"
+  local key val
+  key="$(slot_response_var "$1")"
+  val="${!key:-}"
   [ -n "$val" ] || val="${USAGE_PROBE_RESPONSE_FILE:-}"
   printf '%s' "$val"
 }
+
+# テスト経路の判定: 共通キーかスロット別キーのいずれかが非空ならテスト経路。
+# `env | grep` は使わない（改行を含む無関係な変数の継続行に誤マッチするうえ、
+# 空文字で設定されたときに本番経路へ落ちる main の挙動と食い違うため）。
+test_mode=0
+if [ -n "${USAGE_PROBE_RESPONSE_FILE:-}" ]; then
+  test_mode=1
+else
+  for _sid in "${slot_ids[@]}"; do
+    _key="$(slot_response_var "$_sid")"
+    if [ -n "${!_key:-}" ]; then test_mode=1; break; fi
+  done
+fi
 
 # $1=Keychain サービス名 $2=securestorage パス → OAuth アクセストークン（取れなければ空）
 slot_token() {
