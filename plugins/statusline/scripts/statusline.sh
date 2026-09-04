@@ -197,6 +197,8 @@ bar_seg() {
 # $1=経過秒 → "45m前" / "2h前" / "3d前"
 fmt_ago() {
     local s=$1
+    # 時計ずれや未来の fetched_at で負になることがある（"-2m前" を描かせない）
+    [ "$s" -lt 0 ] && s=0
     if [ "$s" -lt 3600 ]; then
         printf '%dm前' $(( s / 60 ))
     elif [ "$s" -lt 86400 ]; then
@@ -280,30 +282,35 @@ multi=0
 active_idx=0
 if [ "$multi" -eq 1 ]; then
     active_idx=-1
+    # 優先順位 1: env から導出した Keychain サービス名と一致するスロット。
+    # 素の文字列比較ではなく導出後のサービス名で突き合わせる（本体と同じ同値関係になる）。
+    # env 未設定は空文字からの導出＝既定サービス名なので、既定スロットがあればここで一致する。
     if [ -n "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
-        # 素の文字列比較ではなく導出後の Keychain サービス名で突き合わせる
         want_service="$(SECURE="$CLAUDE_SECURESTORAGE_CONFIG_DIR" python3 -c '
 import hashlib, os, unicodedata
 sec = os.environ["SECURE"]
 print("Claude Code-credentials-" + hashlib.sha256(
     unicodedata.normalize("NFC", sec).encode("utf-8")).hexdigest()[:8])
 ' 2>/dev/null)"
-        if [ -n "$want_service" ]; then
-            for i in $(seq 0 $(( n_slots - 1 ))); do
-                if [ "${slot_services[$i]}" = "$want_service" ]; then active_idx=$i; break; fi
-            done
-        fi
-        # env が非空でどのスロットにも一致しないときは active 無し（-1 のまま）。
-        # ライブ値を誤ったスロットに帰属させるより、全スロットを snapshot 値で描くほうが安全。
     else
+        want_service="Claude Code-credentials"
+    fi
+    if [ -n "$want_service" ]; then
+        for i in $(seq 0 $(( n_slots - 1 ))); do
+            if [ "${slot_services[$i]}" = "$want_service" ]; then active_idx=$i; break; fi
+        done
+    fi
+    # 優先順位 2: snapshot の active が実在するスロットを指していればそれ
+    if [ "$active_idx" -lt 0 ]; then
         snap_active="$(jq -r '.active // empty' "$usnap" 2>/dev/null)"
         if [ -n "$snap_active" ]; then
             for i in $(seq 0 $(( n_slots - 1 ))); do
                 if [ "${slot_ids[$i]}" = "$snap_active" ]; then active_idx=$i; break; fi
             done
         fi
-        [ "$active_idx" -lt 0 ] && active_idx=0
     fi
+    # 優先順位 3: 最初のスロット
+    [ "$active_idx" -lt 0 ] && active_idx=0
 fi
 
 # label 列の幅（複数スロットのときだけ使う）
@@ -336,7 +343,8 @@ render_slot() {
             five_h_elapsed=$(( (18000 - secs_left_5h) * 100 / 18000 ))
         fi
     fi
-    local line_5h="${prefix}$(bar_seg "5h" 9 "$five_h_int" "$five_h_elapsed")"
+    local line_5h
+    line_5h="${prefix}$(bar_seg "5h" 9 "$five_h_int" "$five_h_elapsed")"
     [ -n "$five_h_left" ] && line_5h+="  ${DIM}${five_h_left}${RESET}"
 
     if [ -z "$s_pct" ]; then
@@ -357,7 +365,8 @@ render_slot() {
             [ "$elapsed_pct" -le 0 ] && elapsed_pct=""
         fi
     fi
-    local line_7d="${prefix}$(bar_seg "7d All" 9 "$seven_d_int" "$elapsed_pct" 1)"
+    local line_7d
+    line_7d="${prefix}$(bar_seg "7d All" 9 "$seven_d_int" "$elapsed_pct" 1)"
     if [ -n "$fb_pct" ]; then
         local fable_int
         fable_int=$(printf "%.0f" "$fb_pct")

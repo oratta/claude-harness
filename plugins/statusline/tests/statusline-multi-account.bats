@@ -45,6 +45,18 @@ write_two_slot_registry() {
 JSON
 }
 
+# 既定スロット（securestorage が null）を持たないレジストリ。
+# 両アカウントとも explicit な securestorage なので、env 未設定では優先順位 1 が空振りし、
+# snapshot の active へのフォールバック（優先順位 2）が観測できる。
+write_no_default_registry() {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "A", "securestorage": "${WORK}/claude-a" },
+  { "id": "b", "label": "B", "securestorage": "${SECURE_B}" }
+] }
+JSON
+}
+
 # $1=a の fetched_at $2=b の fetched_at $3=b の 7d リセット epoch
 write_two_slot_snapshot() {
   cat > "$SNAP" <<JSON
@@ -181,8 +193,26 @@ PY
   [[ "$(grep -E '^A +5h' "$WORK/out.txt")" =~ 55% ]]
 }
 
-@test "active: falls back to the snapshot active when the env is unset" {
+@test "active: an unset env still matches the default slot by service name" {
+  # 優先順位 1 は env 未設定でも効く（空文字 → 既定サービス名 → 既定スロット a に一致）。
+  # snapshot が別スロットを active と記録していても、こちらが勝つ。
   write_two_slot_registry
+  write_two_slot_snapshot "$((NOW - 7200))" "$NOW" "$((NOW + 172800))"
+  python3 - "$SNAP" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["active"] = "b"
+json.dump(d, open(p, "w"))
+PY
+  mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  [[ "$(grep -E '^A +5h' "$WORK/out.txt")" =~ 40% ]]
+  [[ "$(grep -E '^B +5h' "$WORK/out.txt")" =~ 3% ]]
+}
+
+@test "active: falls back to the snapshot active when the env is unset" {
+  # 既定スロットが無いレジストリなら優先順位 1 が空振りし、snapshot の active が使われる
+  write_no_default_registry
   write_two_slot_snapshot "$((NOW - 7200))" "$NOW" "$((NOW + 172800))"
   python3 - "$SNAP" <<'PY'
 import json, sys
@@ -196,15 +226,46 @@ PY
   [[ "$(grep -E '^A +5h' "$WORK/out.txt")" =~ 55% ]]
 }
 
-@test "active: an env matching no slot leaves every slot on snapshot values" {
+@test "active: an env matching no slot falls back to the snapshot active" {
   write_two_slot_registry
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  python3 - "$SNAP" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["active"] = "b"
+json.dump(d, open(p, "w"))
+PY
   mk_input 40 82 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/unknown" bash "$SL" \
     | strip_ansi > "$WORK/out.txt"
-  # ライブ値 40% はどの行にも現れない（誤った帰属をしない）
-  ! grep -q '40%' "$WORK/out.txt"
+  [[ "$(grep -E '^B +5h' "$WORK/out.txt")" =~ 40% ]]
   [[ "$(grep -E '^A +5h' "$WORK/out.txt")" =~ 55% ]]
+}
+
+@test "active: an env matching no slot and no snapshot active uses the first slot" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  python3 - "$SNAP" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d.pop("active", None)
+json.dump(d, open(p, "w"))
+PY
+  mk_input 40 82 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/unknown" bash "$SL" \
+    | strip_ansi > "$WORK/out.txt"
+  [[ "$(grep -E '^A +5h' "$WORK/out.txt")" =~ 40% ]]
   [[ "$(grep -E '^B +5h' "$WORK/out.txt")" =~ 3% ]]
+}
+
+@test "ago: a future fetched_at never renders a negative age" {
+  write_two_slot_registry
+  # b の fetched_at を未来にする（時計ずれの模擬）
+  write_two_slot_snapshot "$NOW" "$((NOW + 600))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  line="$(grep -E '^B +7d All' "$WORK/out.txt")"
+  ! [[ "$line" =~ -[0-9]+[mhd]前 ]]
+  [[ "$line" =~ 0m前 ]]
 }
 
 # ---------- 1 スロット時の退行ガード ----------
