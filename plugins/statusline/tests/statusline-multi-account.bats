@@ -85,10 +85,10 @@ JSON
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   [ "$(grep -c '5h' "$WORK/out.txt")" = "2" ]
   [ "$(grep -c '7d All' "$WORK/out.txt")" = "2" ]
-  grep -qE '^A +5h' "$WORK/out.txt"
-  grep -qE '^A +7d All' "$WORK/out.txt"
-  grep -qE '^B +5h' "$WORK/out.txt"
-  grep -qE '^B +7d All' "$WORK/out.txt"
+  grep -qE '^(▸ |  )A +5h' "$WORK/out.txt"
+  grep -qE '^(▸ |  )A +7d All' "$WORK/out.txt"
+  grep -qE '^(▸ |  )B +5h' "$WORK/out.txt"
+  grep -qE '^(▸ |  )B +7d All' "$WORK/out.txt"
 }
 
 @test "multi: a null-filled slot renders no line" {
@@ -111,7 +111,7 @@ JSON
 JSON
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   [ "$(grep -c '5h' "$WORK/out.txt")" = "1" ]
-  ! grep -qE '^B ' "$WORK/out.txt"
+  ! grep -qE '^(▸ |  )B ' "$WORK/out.txt"
 }
 
 @test "multi: a slot with 5h but no 7d renders only the 5h line" {
@@ -125,8 +125,8 @@ d["accounts"]["b"]["weekly_all_pct"] = None
 json.dump(d, open(p, "w"))
 PY
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  grep -qE '^B +5h' "$WORK/out.txt"
-  ! grep -qE '^B +7d All' "$WORK/out.txt"
+  grep -qE '^(▸ |  )B +5h' "$WORK/out.txt"
+  ! grep -qE '^(▸ |  )B +7d All' "$WORK/out.txt"
 }
 
 @test "multi: the active slot uses live stdin values" {
@@ -134,7 +134,7 @@ PY
   # snapshot の a は 55%、stdin のライブ値は 40%
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  line="$(grep -E '^A +5h' "$WORK/out.txt")"
+  line="$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")"
   [[ "$line" =~ 40% ]]
 }
 
@@ -142,10 +142,10 @@ PY
   write_two_slot_registry
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  line="$(grep -E '^B +7d All' "$WORK/out.txt")"
+  line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
   [[ "$line" =~ 2h前 ]]
   # active 側には経過時間を出さない
-  ! grep -E '^A ' "$WORK/out.txt" | grep -q '前'
+  ! grep -E '^(▸ |  )A ' "$WORK/out.txt" | grep -q '前'
 }
 
 # ---------- 6h 鮮度ゲート ----------
@@ -154,7 +154,7 @@ PY
   write_two_slot_registry
   write_two_slot_snapshot "$((NOW - 25000))" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  ! grep -E '^A ' "$WORK/out.txt" | grep -q 'Fable'
+  ! grep -E '^(▸ |  )A ' "$WORK/out.txt" | grep -q 'Fable'
 }
 
 @test "gate: a stale non-active slot keeps its Fable segment" {
@@ -162,8 +162,8 @@ PY
   # b は 2 日前（6h ゲートより遥かに古い）
   write_two_slot_snapshot "$NOW" "$((NOW - 172800))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  grep -E '^B ' "$WORK/out.txt" | grep -q 'Fable'
-  grep -E '^B +7d All' "$WORK/out.txt" | grep -q '2d前'
+  grep -E '^(▸ |  )B ' "$WORK/out.txt" | grep -q 'Fable'
+  grep -E '^(▸ |  )B +7d All' "$WORK/out.txt" | grep -q '2d前'
 }
 
 # ---------- リセット時刻が過去のとき ----------
@@ -173,7 +173,7 @@ PY
   # b の 7d リセットは 1 日前
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW - 86400))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  line="$(grep -E '^B +7d All' "$WORK/out.txt")"
+  line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
   [[ "$line" =~ 1% ]]
   # 分母（%/%）も残り時間（~Nd Nh）も出ない
   ! [[ "$line" =~ %/ ]]
@@ -189,8 +189,8 @@ PY
   mk_input 40 82 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" \
     | strip_ansi > "$WORK/out.txt"
   # b がライブ値 40% を使い、a が snapshot 値 + 経過時間になる
-  [[ "$(grep -E '^B +5h' "$WORK/out.txt")" =~ 40% ]]
-  [[ "$(grep -E '^A +5h' "$WORK/out.txt")" =~ 55% ]]
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 40% ]]
+  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 55% ]]
 }
 
 @test "active: an unset env still matches the default slot by service name" {
@@ -206,8 +206,8 @@ d["active"] = "b"
 json.dump(d, open(p, "w"))
 PY
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  [[ "$(grep -E '^A +5h' "$WORK/out.txt")" =~ 40% ]]
-  [[ "$(grep -E '^B +5h' "$WORK/out.txt")" =~ 3% ]]
+  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 40% ]]
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 3% ]]
 }
 
 @test "active: falls back to the snapshot active when the env is unset" {
@@ -222,8 +222,8 @@ d["active"] = "b"
 json.dump(d, open(p, "w"))
 PY
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  [[ "$(grep -E '^B +5h' "$WORK/out.txt")" =~ 40% ]]
-  [[ "$(grep -E '^A +5h' "$WORK/out.txt")" =~ 55% ]]
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 40% ]]
+  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 55% ]]
 }
 
 @test "active: an env matching no slot falls back to the snapshot active" {
@@ -238,8 +238,8 @@ json.dump(d, open(p, "w"))
 PY
   mk_input 40 82 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/unknown" bash "$SL" \
     | strip_ansi > "$WORK/out.txt"
-  [[ "$(grep -E '^B +5h' "$WORK/out.txt")" =~ 40% ]]
-  [[ "$(grep -E '^A +5h' "$WORK/out.txt")" =~ 55% ]]
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 40% ]]
+  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 55% ]]
 }
 
 @test "active: an env matching no slot and no snapshot active uses the first slot" {
@@ -254,8 +254,8 @@ json.dump(d, open(p, "w"))
 PY
   mk_input 40 82 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/unknown" bash "$SL" \
     | strip_ansi > "$WORK/out.txt"
-  [[ "$(grep -E '^A +5h' "$WORK/out.txt")" =~ 40% ]]
-  [[ "$(grep -E '^B +5h' "$WORK/out.txt")" =~ 3% ]]
+  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 40% ]]
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 3% ]]
 }
 
 @test "ago: a future fetched_at never renders a negative age" {
@@ -263,7 +263,7 @@ PY
   # b の fetched_at を未来にする（時計ずれの模擬）
   write_two_slot_snapshot "$NOW" "$((NOW + 600))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  line="$(grep -E '^B +7d All' "$WORK/out.txt")"
+  line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
   ! [[ "$line" =~ -[0-9]+[mhd]前 ]]
   [[ "$line" =~ 0m前 ]]
 }
@@ -312,7 +312,7 @@ JSON
 JSON
   mk_input 3 25 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   grep -qE '^5h' "$WORK/out.txt"
-  ! grep -qE '^A ' "$WORK/out.txt"
+  ! grep -qE '^(▸ |  )A ' "$WORK/out.txt"
 }
 
 @test "single: a schema 1 snapshot still renders the Fable segment" {
@@ -345,7 +345,7 @@ PY
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   ! grep -q 'pwned' "$WORK/out.txt"
   # 生き残った b だけの 1 スロット構成になるので label 列は出ない
-  ! grep -qE '^B ' "$WORK/out.txt"
+  ! grep -qE '^(▸ |  )B ' "$WORK/out.txt"
   grep -qE '^5h' "$WORK/out.txt"
 }
 
@@ -359,9 +359,9 @@ PY
 {"schema":1,"fetched_at":$NOW,"fable_weekly_pct":7,"fable_active":true}
 JSON
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  grep -E '^A ' "$WORK/out.txt" | grep -q 'Fable'
+  grep -E '^(▸ |  )A ' "$WORK/out.txt" | grep -q 'Fable'
   # 非 active スロットはトップレベルを流用しない（b の行は出ない）
-  ! grep -qE '^B ' "$WORK/out.txt"
+  ! grep -qE '^(▸ |  )B ' "$WORK/out.txt"
 }
 
 # ---------- snapshot の読み取りが原子的であること ----------
@@ -423,13 +423,14 @@ JSON
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   line="$(grep '5h' "$WORK/out.txt" | head -1)"
-  # label 列は表示幅 8 までに収まる（40 桁のパディングにならない）
+  # label 列は表示幅 8 までに収まる（40 桁のパディングにならない）。
+  # 先頭の 2 桁は active の目印列なので、その分を足した上限で見る。
   col="$(python3 -c "
 import re,sys
 line = sys.argv[1]
 print(re.search(r'5h', line).start())
 " "$line")"
-  [ "$col" -le 10 ]
+  [ "$col" -le 12 ]
 }
 
 # ---------- 2 つのレジストリ実装のドリフト検出 ----------
@@ -484,12 +485,12 @@ PY
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   # active スロット: Fable は snapshot 由来（accounts.a）。読めていなければ消える
-  grep -E '^A ' "$WORK/out.txt" | grep -q 'Fable'
-  [[ "$(grep -E '^A +7d All' "$WORK/out.txt")" =~ 94% ]]
+  grep -E '^(▸ |  )A ' "$WORK/out.txt" | grep -q 'Fable'
+  [[ "$(grep -E '^(▸ |  )A +7d All' "$WORK/out.txt")" =~ 94% ]]
   # 非 active スロット: 5h / 7d / Fable / 経過時間のすべてが snapshot 由来
-  [[ "$(grep -E '^B +5h' "$WORK/out.txt")" =~ 3% ]]
-  [[ "$(grep -E '^B +7d All' "$WORK/out.txt")" =~ 1% ]]
-  [[ "$(grep -E '^B +7d All' "$WORK/out.txt")" =~ 2h前 ]]
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 3% ]]
+  [[ "$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")" =~ 1% ]]
+  [[ "$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")" =~ 2h前 ]]
 }
 
 @test "label: a hand-written over-long label is clipped by the statusline reader too" {
@@ -502,6 +503,138 @@ PY
 JSON
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  grep -qE '^01234567 +5h' "$WORK/out.txt"
+  grep -qE '^(▸ |  )01234567 +5h' "$WORK/out.txt"
   ! grep -q '0123456789abcdefghij' "$WORK/out.txt"
+}
+
+# ---------- active スロットの目印 ----------
+# spec: statusline-multi-account-usage「active スロットの行を視覚的に示す」
+
+@test "marker: the active slot's rows start with the marker and the others with two spaces" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  # active = a（env 未設定 → 既定スロットにサービス名で一致）
+  [ "$(grep -cE '^▸ A ' "$WORK/out.txt")" = "2" ]
+  [ "$(grep -cE '^  B ' "$WORK/out.txt")" = "2" ]
+}
+
+@test "marker: survives stripping every ANSI escape" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  # 色が落ちても記号だけで active / 非 active が分かる
+  grep -qE '^▸ ' "$WORK/out.txt"
+  grep -qE '^  [A-Z]' "$WORK/out.txt"
+}
+
+@test "marker: the marker and the active label are not dimmed" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" > "$WORK/raw.txt"
+  python3 - "$WORK/raw.txt" <<'PY'
+import re, sys
+DIM = "\033[2m"
+lines = [l for l in open(sys.argv[1], encoding="utf-8") if "5h" in l or "7d All" in l]
+plain = {re.sub(r"\033\[[0-9;]*m", "", l): l for l in lines}
+active = [raw for p, raw in plain.items() if p.startswith("▸ ")]
+other = [raw for p, raw in plain.items() if p.startswith("  ")]
+assert active, "no active row found"
+assert other, "no non-active row found"
+def head_of(raw):
+    """行頭から bar_seg のラベルフィールド直前までを取る。
+    bar_seg は "5h" / "7d All" の直前に必ず DIM を出すので、それは剥がしてから見る。"""
+    idx = raw.index("5h") if "5h" in raw else raw.index("7d All")
+    head = raw[:idx]
+    return head[: -len(DIM)] if head.endswith(DIM) else head
+
+for raw in active:
+    head = head_of(raw)
+    assert DIM not in head, "active row head is dimmed: %r" % head
+for raw in other:
+    head = head_of(raw)
+    assert DIM in head, "non-active row head is not dimmed: %r" % head
+PY
+}
+
+@test "marker: whatever glyph is used has Neutral east asian width" {
+  # リテラル照合にしない。記号を差し替えてもこの制約自体は守られる必要がある。
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  python3 - "$WORK/out.txt" <<'PY'
+import sys, unicodedata
+rows = [l for l in open(sys.argv[1], encoding="utf-8") if ("5h" in l or "7d All" in l)]
+marked = [l for l in rows if not l.startswith("  ")]
+assert marked, "no marked row found"
+glyph = marked[0][0]
+eaw = unicodedata.east_asian_width(glyph)
+assert eaw == "N", "marker %r U+%04X has EAW=%s (must be N)" % (glyph, ord(glyph), eaw)
+assert marked[0][1] == " ", "marker must be followed by a single space"
+PY
+}
+
+@test "marker: follows the active slot when the env points at the other one" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" \
+    | strip_ansi > "$WORK/out.txt"
+  [ "$(grep -cE '^▸ B ' "$WORK/out.txt")" = "2" ]
+  [ "$(grep -cE '^  A ' "$WORK/out.txt")" = "2" ]
+}
+
+@test "marker: no marked row when the active slot has no values" {
+  write_two_slot_registry
+  # a（active）を欠測にし、b にだけ値を持たせる
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  python3 - "$SNAP" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+for k in ("fetched_at", "five_hour_pct", "five_hour_resets_at", "five_hour_resets_epoch",
+          "weekly_all_pct", "weekly_resets_at", "weekly_resets_epoch",
+          "fable_weekly_pct", "fable_active"):
+    d["accounts"]["a"][k] = None
+json.dump(d, open(p, "w"))
+PY
+  # stdin のライブ値も渡さない（active スロットの値が無い状態）
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$WORK" \
+    | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  ! grep -qE '^▸ ' "$WORK/out.txt"
+  [ "$(grep -cE '^  B ' "$WORK/out.txt")" = "2" ]
+}
+
+@test "marker: columns stay aligned across marked and unmarked rows" {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "仕事", "securestorage": null },
+  { "id": "b", "label": "B", "securestorage": "${SECURE_B}" }
+] }
+JSON
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  widths="$(python3 - "$WORK/out.txt" <<'PY'
+import re, sys, unicodedata
+def w(s):
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
+cols = set()
+for line in open(sys.argv[1], encoding="utf-8"):
+    m = re.search(r"(5h|7d All)", line)
+    if m and m.start() > 0:
+        cols.add(w(line[: m.start()]))
+print(",".join(str(c) for c in sorted(cols)))
+PY
+)"
+  [ "$(printf '%s' "$widths" | tr -cd ',' | wc -c | tr -d ' ')" = "0" ]
+  [ -n "$widths" ]
+}
+
+@test "marker: a single-slot registry renders no marker" {
+  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}]}' > "$ACCOUNTS"
+  cat > "$SNAP" <<JSON
+{"schema":1,"fetched_at":$NOW,"fable_weekly_pct":7,"fable_active":true}
+JSON
+  mk_input 3 25 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  ! grep -qE '^▸' "$WORK/out.txt"
+  grep -qE '^5h' "$WORK/out.txt"
 }
