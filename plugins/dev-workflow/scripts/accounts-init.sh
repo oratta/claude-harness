@@ -26,7 +26,7 @@ usage: accounts-init.sh --id <slot-id> [--label <label>]
   --id     スロット id（英数字とハイフン、1〜32 文字）。snapshot のキーになる
   --label  statusline に出す短いラベル（省略時は id）
 
-登録先は $CLAUDE_ACCOUNTS_FILE、無ければ ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json。
+登録先は ${CLAUDE_ACCOUNTS_FILE}、無ければ ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json。
 USAGE
 }
 
