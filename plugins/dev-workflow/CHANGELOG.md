@@ -1,5 +1,17 @@
 # Changelog — dev-workflow
 
+## 2.4.0 — 2026-09-06: Fable は判断だけ（聖域パスの実装は opus・G は sonnet・abundant の押し上げ廃止・修正実装は 1 段昇格）
+
+2.3.0 の後に Fable の行き先を再集計した。先週の Fable 消費のうち W 924・G 497・R1 464（API 定価換算）で、Fable で走った W / G 24 本のうち 20 本は事前分類の「聖域パス」（`.claude/` 配下・CLAUDE.md・スキル）によるものだった。エージェント設定が製品であるリポではほぼ全実装が聖域に当たり、例外のはずの Fable が既定になっていた。今週は abundant の押し上げで R1 / G が 100% Fable。G 自身の仕事は照合・ラベル操作で、判定は Codex か needs-reviewer のレビュアーが担っている。オーナー決定（2026-09-06）で「判断は Fable、実装と照合は Sonnet / Opus」に揃えた。
+
+- 事前分類表に「1 周目」列: 聖域パス = `opus`、マージ権限・層間契約・課金/法務 = `fable`
+- G の既定 `opus` → `sonnet`（上げない）。needs-reviewer のレビュアーは既定 `opus`、マージ権限・層間契約・課金/法務で `fable`
+- R1 は `opus` 固定。聖域パスだけでは `fable` にしない
+- `abundant` はどの役割の既定も上げない（session-tripwires の効果文言・decision-criteria 表・spec）
+- pr-review-gate 2-2: 実装品質起因の修正実装は `fable` 直行ではなく前回モデルの 1 段上
+- openspec change fable-judgment-only を archive
+- `scripts/agent-model-guard.sh`（新規）: PreToolUse（Agent）で `model` 未指定の spawn を拒否する hook スクリプト。fork は共有枠モードが ok のときだけ許可。**hooks.json への配線は聖域パスのため別 PR**（配線されるまで効かない）
+
 ## 2.3.0 — 2026-09-06: サブエージェントのコンテキスト上限（手渡し）・共有枠モード・W の既定を sonnet に
 
 2026-08-31〜09-05 の使用量監査（521 セッション・API 定価換算 12,159 USD）で、消費の 3 分の 2 が develop の W / G / R1 で、うち W が 44.5%（31 本・平均 174 USD・最大 745 USD）だった。原因はモデルではなくコンテキスト: W は SendMessage 再開のたびに全履歴を読み直し、Opus の W は平均 32.6 万トークンを毎ターン投げていた（W の消費の 63% が 30 万トークン超のリクエスト）。W に Sonnet は 1 本も無く、Fable 残量モードは 4 段すべて下限 Opus で、Fable が尽きた日に総量が最大になった。sonnet の別コンテキストで再集計し、分類境界の差はあるが機構（W の平均 34 万・上限超の割合 68%・Sonnet ゼロ・畳む仕組み無し）は一致した。

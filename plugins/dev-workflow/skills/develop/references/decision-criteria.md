@@ -78,8 +78,8 @@ W の指示書（`references/roles/worker.md`）の仕様化判断（Step B）�
 
 | 値 | 意味 | 効果 |
 |---|---|---|
-| `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | 判断役（R1 / G）の既定モデルを Fable に倒してよい。**W は abundant でも上げない**（W が Fable になるのは事前分類だけ。2026-09 の監査で W の 4 割が Fable で走っており、abundant の押し上げが例外を既定にしていた）。結果が変わらない機械的な大量仕事（fan-out ワーカー・機械的編集）は安いモデルのまま |
-| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | 役割表の既定どおり（W = Sonnet、R1 / G = Opus）。事前分類（`references/roles/worker.md`）に当たる場合のみ Fable |
+| `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | **どの役割の既定も上げない**。役割表の既定どおりで、Fable は事前分類の `fable` 行だけ。余った Fable 枠は人間の対話と verify に回す（2026-09 の監査で W の 4 割が Fable、翌週は R1 / G が 100% Fable で走っており、abundant の押し上げが例外を既定にしていた） |
+| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | 役割表の既定どおり（W = Sonnet、R1 = Opus、G = Sonnet）。事前分類（`references/roles/worker.md`）の `fable` 行に当たる場合のみ Fable |
 | `reserve` | Fable 枠を人間用に温存 | conserve に加えて、**自動実行（unmanned / cron / loop 経由）では Fable をいかなる役割でも使わない**。昇格ラダーは Opus 上限。Opus でも2連続失敗が続く問題は `needs-approval` で人間に返す。interactive は conserve と同一 |
 | `exhausted` | Fable 週次枠を実質使い切った（`fable_weekly_pct > 90`、または明示宣言） | **reserve と異なり interactive を含む全経路で Fable を一切使わない**（枠が実際に無いため）。昇格ラダーは Opus 上限。加えて rate-limit 実エラーで reactive に Opus へ降格する（`escalation-tripwires.md` トリップワイヤー5） |
 
@@ -97,7 +97,7 @@ W の指示書（`references/roles/worker.md`）の仕様化判断（Step B）�
 | `throttled` | `weekly_all_pct` が週経過% より大きい（このペースだと週末までに枠が尽きる） | W / R1 / G の既定を **Sonnet** に落とす。昇格上限 Opus。`abundant` の押し上げは無効 |
 | `depleted` | `weekly_all_pct > 90` | 全役割 Sonnet 固定・昇格なし。事前分類に当たっても Fable / Opus を使わない（枠が無いので使えば全員が止まる） |
 
-Fable 残量モードと共有枠モードが食い違うときは**共有枠モードの下限が勝つ**（例: `abundant` × `throttled` なら R1 / G も Sonnet 起点）。
+Fable 残量モードと共有枠モードが食い違うときは**共有枠モードの下限が勝つ**（例: `throttled` なら R1 も Sonnet 起点）。
 
 ## コンテキスト上限（サブエージェントの手渡し）
 

@@ -91,7 +91,7 @@ else:
     shared, shared_source = "ok", "自動導出"
 
 EFFECT = {
-    "abundant": "R1 / G（判断役）の既定を Fable に倒してよい。W は abundant でも上げない（事前分類だけ）。委譲は結果が変わらない機械的な大量仕事に限定。",
+    "abundant": "どの役割の既定も上げない（Fable は事前分類の fable 行だけ）。余った Fable 枠は人間の対話と verify に回す。",
     "conserve": "solo=Opus。Fable は verify / checkpoint のみ。",
     "reserve":  "conserve に加え、自動実行（unmanned/cron/loop）では Fable を一切使わない。昇格上限 Opus。interactive は conserve と同一。",
     "exhausted":"Fable 週次枠を実質使い切った。interactive/unmanned を問わず Fable を一切使わず、昇格上限 Opus。rate-limit 実エラーは reactive に Opus へ降格。",
@@ -99,7 +99,7 @@ EFFECT = {
 effect = EFFECT.get(mode, "未知のモード指定。conserve 相当（安全側）で扱う。")
 
 SHARED_EFFECT = {
-    "ok":        "制約なし。役割の既定は decision-criteria の役割表どおり（W=sonnet、R1/G=opus）。",
+    "ok":        "制約なし。役割の既定は decision-criteria の役割表どおり（W=sonnet、R1=opus、G=sonnet）。",
     "throttled": "全モデル枠の消費が週の経過ペースより速い。W/R1/G の既定を sonnet に落とし、昇格上限 opus。abundant の押し上げは無効。",
     "depleted":  "全モデル枠を実質使い切った。全役割 sonnet 固定・昇格なし。Fable/Opus は事前分類に当たっても使わない。",
 }
