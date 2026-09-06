@@ -120,91 +120,84 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
-# S16a 本体。引数のディレクトリ配下の *.yml.template から `uses:` 行を全数抽出し、
+# S16a 本体。引数のディレクトリ配下の *.yml.template を YAML としてパースし、`uses` キーを全数列挙して、
 # actions/* 以外が「40 桁コミット SHA ＋ 同一行のバージョンコメント」で固定されているか検査する。
 # 可変タグ／ブランチ参照（例: supabase/setup-cli@v2 は tag ではなくブランチ）は、上流の push だけで
 # 展開先の production ジョブが別コードを実行しうる。方針は oratta/claude-harness#138 / #162 / #176。
 #
-# 戻り値: 0=合格 / 1=違反あり（違反行を stderr に出す）/ 2=抽出 0 件
+# 抽出は行 grep ではなく list-uses.rb（ruby -ryaml の AST 走査）に任せる（#182 / #198）。
+# 行 grep でキー形（行頭・引用キー・flow mapping）を追いかける方式は、flow mapping の前置キーの
+# 引用値がコメント境界（`- { name: "a#b", uses: evil/action@v1 }` が `[^#]*` 境界に阻まれて
+# 抽出されない）や公式判定（`- { name: "uses: actions/cache@v4", uses: evil/action@v1 }` の
+# 行内最初の `uses:` 風文字列が name の値側で `actions/` に当たる）を騙る形を素通りしていた。
+# パーサに任せれば、キー・値・コメントの区別は YAML の文法どおりに付く。
+# S17 が既に ruby YAML でテンプレートのパース可否を見ているので、依存は増えない。
+#
+# 戻り値: 0=合格 / 1=違反あり（違反行を stderr に出す。パースできないファイルも違反）/ 2=抽出 0 件
 # テスト関数から分離してあるのは、本物のテンプレート（正例）と、すり抜けを狙った
 # フィクスチャ（負例）の両方に同じ検査を当てるため。
 check_third_party_pins() {
   local dir="$1"
+  local lister="$PLUGIN_DIR/tests/list-uses.rb"
   local total=0
   local unpinned=""
-  local file line value body comment
+  local file start_line end_line end_col value body rest comment listed
 
-  # ファイルを 1 本ずつ回して `grep -n`（前置は `<行番号>:` のみ）を使う。
-  # `grep -rn` の前置 `<パス>:<行番号>:` を sed で剥がす方式は、パスが `:` を含むと
-  # 誤った位置で剥がれてパス片が本文に残り、片中の `# v9 ` がコメント検査を
-  # 肩代わりしていた（#183 その2）。行番号は数字だけで `:` を含まないため、
-  # 最初の `:` までを剥がせば YAML 本文が一意に取れる。
   while IFS= read -r file; do
-  while IFS= read -r line; do
-    total=$((total + 1))
-
-    # 前置 `<行番号>:` を剥がして YAML 本文だけにする（パス側・前置側の `#` が
-    # 版数コメントに化けるのを防ぐ）。違反報告にはパスを自前で付け直す。
-    body="${line#*:}"
-
-    # `uses:` の「値」だけを切り出してから公式判定する（#176 その2）。
-    # 行全体の部分一致で `actions/` を探すと、コメント中の文字列
-    # （例: `uses: evil/action@v1 # mimics uses: actions/cache@v4`）にも当たって
-    # 第三者 action が公式扱いでスキップされる。grep -o は行内の全一致を順に返すので、
-    # 先頭の 1 件＝キーとしての `uses:` を取る（コメント側は 2 件目以降になる）。
-    value="$(printf '%s\n' "$body" \
-      | grep -oE "[\"']?uses[\"']?[[:space:]]*:[[:space:]]*[^[:space:]]+" \
-      | head -n 1 \
-      | sed -E "s/^[\"']?uses[\"']?[[:space:]]*:[[:space:]]*//")"
-    # flow mapping では値の直後に `}` や `,` が密着しうる（`- {uses: x@sha}` /
-    # `- {uses: x@sha, name: y}`）ので、引用符を剥がす前に終端記号を剥がす
-    value="${value%\}}"; value="${value%,}"
-    # YAML の引用符は値の一部ではないので剥がす（`uses: 'owner/action@sha'` 形の偽陽性を除く）
-    value="${value#\'}"; value="${value%\'}"
-    value="${value#\"}"; value="${value%\"}"
-
-    # actions/* は GitHub 公式所有なので #138 の方針どおり対象外
-    case "$value" in
-      actions/*) continue ;;
-    esac
-
-    # 値そのものが `<owner>/<action>@<40 桁 hex>` であること。
-    # `<owner>/` を必須にしてあるのは spec の字面に合わせるため（#180 レビュー指摘 A）。
-    # owner を落とした `uses: evil@<40hex>` は GitHub 上の第三者 action を指し得ないが、
-    # 検査が素通りさせると spec が保証すると読める形を実装が見ていないことになる。
-    # `<action>` 側は `owner/repo/subdir@<sha>` のサブパス形を許すため `/` を含んでよい。
-    if ! printf '%s' "$value" | grep -qE '^[^@[:space:]/]+/[^@[:space:]]+@[0-9a-f]{40}$'; then
-      unpinned="${unpinned}${file}:${line}"$'\n'
+    # ファイルパスは ruby の引数として渡す（`grep -rn` の前置 `<パス>:<行番号>:` を剥がす方式は
+    # パスが `:` や `# v9` を含むと本文に片が残ってコメント検査を肩代わりしていた。#183）。
+    # パースできないファイルは fail-closed で違反に数える（0 件扱いで無言 pass させない）。
+    if ! listed="$(ruby "$lister" "$file" 2>&1)"; then
+      total=$((total + 1))
+      unpinned="${unpinned}${file}: not parseable as YAML: ${listed}"$'\n'
       continue
     fi
+    while IFS=$'\t' read -r start_line end_line end_col value; do
+      # `uses` を 1 件も持たないファイルは here-string が空行 1 本になるので読み飛ばす
+      [ -n "$start_line" ] || continue
+      total=$((total + 1))
+      body="$(sed -n "${start_line}p" "$file")"
 
-    # 同じ行のコメントが「バージョンらしい」こと（#176 その1）。
-    # `#` の後に非空白が 1 文字でもあれば通す旧判定だと `# TODO` でも合格してしまい、
-    # spec の「その SHA が指すバージョンを同じ行のコメントに併記」と字面が合わない。
-    # SHA とバージョンの対応そのものはオフラインで検証できないので、形だけ縛る。
-    # 判定は行内で最初に現れる `#` 以降（＝コメント部分）に限定し、その先頭で当てる。
-    # 行全体への部分一致だと、コメント本体が `# TODO` でも行内の別位置の `#176 ` が
-    # 条件を満たしてしまう（#183 その1）。ここまで来た行の値は
-    # `<owner>/<action>@<40 桁 hex>` で `#` を含み得ないので、最初の `#` は必ずコメント開始。
-    # `#` が無い行は sed が何もせず本文のままになり、先頭アンカーの `^#` に
-    # 一致しないので違反側に落ちる（緩む方向には動かない）。
-    # 終端を空白で締めるのは、`# v1evil` / `# 1.` / `# 2026-08-22` のような
-    # 「バージョンに見えるだけ」の形を弾くため。
-    # 行末を表すのに `(...|$)` を使わず末尾に空白 1 個を足しているのは、
-    # 括弧内の `$` をアンカーとして扱うかが grep 実装で揺れるのを避けるため。
-    comment="$(printf '%s' "$body" | sed -E 's/^[^#]*#/#/')"
-    if ! printf '%s ' "$comment" | grep -qE '^#[[:space:]]*v?[0-9]+(\.[0-9]+)*[[:space:]]'; then
-      unpinned="${unpinned}${file}:${line}"$'\n'
-    fi
-    # 抽出パターンが `uses[[:space:]]*:` なのは、YAML として有効な `uses : owner/action@v1`
-    # （コロン前に空白）が密着形の grep から丸ごと漏れるのを防ぐため（#176 その3）。
-    # キーの引用（`- "uses": ...`）と flow mapping（`- { uses: ... }`）も YAML として
-    # 有効なので抽出対象に含める（#182）。flow mapping 側の `[^#]*` は、コメント中の
-    # `uses:`（例: `- run: x # uses: evil`）を実在のキーと誤認して無関係な行を
-    # fail させないための境界。
-  done < <(grep -nE \
-    "^[[:space:]]*-?[[:space:]]*[\"']?uses[\"']?[[:space:]]*:|^[[:space:]]*-?[[:space:]]*\\{[^#]*[\"']?uses[\"']?[[:space:]]*:" \
-    "$file")
+      # actions/* は GitHub 公式所有なので #138 の方針どおり対象外。
+      # 判定はパーサが返した `uses` の値そのものに対して行う（#176 その2 / #198 その1）。
+      # 引用符はパーサが剥がして返すので、`uses: 'owner/action@sha'` 形の偽陽性も出ない。
+      case "$value" in
+        actions/*) continue ;;
+      esac
+
+      # 値そのものが `<owner>/<action>@<40 桁 hex>` であること。
+      # `<owner>/` を必須にしてあるのは spec の字面に合わせるため（#180 レビュー指摘 A）。
+      # owner を落とした `uses: evil@<40hex>` は GitHub 上の第三者 action を指し得ないが、
+      # 検査が素通りさせると spec が保証すると読める形を実装が見ていないことになる。
+      # `<action>` 側は `owner/repo/subdir@<sha>` のサブパス形を許すため `/` を含んでよい。
+      # 複数行に跨る値（block scalar）や複合値は、パーサが空／改行入りで返すのでここで落ちる。
+      if [ "$start_line" != "$end_line" ] \
+        || ! printf '%s' "$value" | grep -qE '^[^@[:space:]/]+/[^@[:space:]]+@[0-9a-f]{40}$'; then
+        unpinned="${unpinned}${file}:${start_line}:${body}"$'\n'
+        continue
+      fi
+
+      # 同じ行のコメントが「バージョンらしい」こと（#176 その1）。
+      # `#` の後に非空白が 1 文字でもあれば通す旧判定だと `# TODO` でも合格してしまい、
+      # spec の「その SHA が指すバージョンを同じ行のコメントに併記」と字面が合わない。
+      # SHA とバージョンの対応そのものはオフラインで検証できないので、形だけ縛る。
+      # 判定は「値より後ろ」で最初に現れる `#` 以降（＝コメント部分）に限定し、その先頭で当てる。
+      # 行全体への部分一致だと、コメント本体が `# TODO` でも行内の別位置の `#176 ` が
+      # 条件を満たしてしまう（#183 その1）。値より前（flow mapping の前置キー）は見ない。
+      # 値より後ろにも他のキーの引用値（`{ uses: x@sha, name: "a#b" } # v1`）が来うるので、
+      # 引用文字列を除いてから最初の `#` を探す（flow context の plain scalar は ` #` を含めない）。
+      # `#` が無ければ sed が何もせず残りがそのまま残り、先頭アンカーの `^#` に
+      # 一致しないので違反側に落ちる（緩む方向には動かない）。
+      # 終端を空白で締めるのは、`# v1evil` / `# 1.` / `# 2026-08-22` のような
+      # 「バージョンに見えるだけ」の形を弾くため。
+      # 行末を表すのに `(...|$)` を使わず末尾に空白 1 個を足しているのは、
+      # 括弧内の `$` をアンカーとして扱うかが grep 実装で揺れるのを避けるため。
+      rest="${body:$end_col}"
+      comment="$(printf '%s' "$rest" | sed -E "s/\"[^\"]*\"//g; s/'[^']*'//g; s/^[^#]*#/#/")"
+      if ! printf '%s ' "$comment" | grep -qE '^#[[:space:]]*v?[0-9]+(\.[0-9]+)*[[:space:]]'; then
+        unpinned="${unpinned}${file}:${start_line}:${body}"$'\n'
+      fi
+    done <<< "$listed"
   done < <(find "$dir" -type f -name '*.yml.template')
 
   # テンプレートの改名・移動で走査対象が 0 件になり、テストが無言で pass するのを防ぐ
@@ -414,6 +407,47 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   run check_third_party_pins "$(write_uses_fixture \
     '{uses: "supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"} # v2.1.1')"
   [ "$status" -eq 0 ]
+}
+
+@test "S16a-16: a quoted 'uses: actions/' in a preceding flow-mapping key does not exempt the step" {
+  # 行 grep の値切り出し（行内最初の `uses:` 風文字列）は name の引用値内の `uses: actions/cache@v4`
+  # を拾い、第三者 action を公式扱いで素通りさせていた（#198 その1。S16a-2 の flow mapping 版）。
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ name: "uses: actions/cache@v4", uses: evil/action@v1 }' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+}
+
+@test "S16a-17: a '#' inside a preceding flow-mapping quoted value does not hide the step" {
+  # flow mapping 抽出の `[^#]*` 境界（コメント誤検知防止）は引用値内の `#` を越えられず、
+  # この行を検査対象から丸ごと落としていた（#198 その2）。
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ name: "a#b", uses: evil/action@v1 }' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+
+  # 同じ形で正しく固定されていれば pass する（`#` を含む引用値がコメント判定を邪魔しない）
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ name: "a#b", uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf } # v2.1.1')"
+  [ "$status" -eq 0 ]
+
+  # 値より後ろの引用値に `#` があっても、閉じ括弧の後のバージョンコメントを見る
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: "a#b" } # v2.1.1')"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-18: a template that does not parse as YAML fails instead of being skipped" {
+  # パーサ方式では「パースできない＝抽出 0 件」になりうる。無言で pass させず違反として落とす。
+  local dir="$BATS_TEST_TMPDIR/broken"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - uses: evil/action@v1\n   bad: [\n' > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not parseable as YAML"* ]]
 }
 
 @test "S17: all five workflow templates parse as YAML" {
