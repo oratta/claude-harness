@@ -168,11 +168,13 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 
 # --- モデル ---
 
-@test "model: W defaults to sonnet, R1/G default opus, escalate to fable by pre-classification / merge conditions" {
+@test "model: W defaults to sonnet, R1 opus, G sonnet; fable only by merge permission / cross-layer / billing" {
   m="$(section 'モデル')"
   echo "$m" | grep -qE '^\| W \| `sonnet` \|'
   echo "$m" | grep -qE 'W.*`opus`'
-  echo "$m" | grep -qE 'R1.*G.*`opus`|R1 / G.*opus'
+  echo "$m" | grep -qE '^\| R1 \| `opus` \|'
+  echo "$m" | grep -qE '^\| G \| `sonnet` \|'
+  ! echo "$m" | grep -qE 'マージ条件・聖域・層間契約'
   echo "$m" | grep -q '事前分類'
   echo "$m" | grep -q 'マージ条件'
   echo "$m" | grep -q '聖域'
@@ -199,7 +201,15 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$m" | grep -q 'SHARED_BUDGET_MODE'
   echo "$m" | grep -qE 'throttled.*`sonnet`'
   echo "$m" | grep -qE 'depleted.*`sonnet`'
-  echo "$m" | grep -q 'W は上げない'
+  echo "$m" | grep -q 'どの役割の既定も上げない'
+}
+
+@test "model: G defaults to sonnet and sanctuary paths lift W only to opus" {
+  m="$(section 'モデル')"
+  echo "$m" | grep -qE '^\| G \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| R1 \| `opus` \|'
+  echo "$m" | grep -q '聖域パス'
+  echo "$m" | grep -qE 'マージ権限・層間契約・課金/法務'
 }
 
 @test "loop: W and G are measured with subagent-context.sh before every SendMessage resume" {

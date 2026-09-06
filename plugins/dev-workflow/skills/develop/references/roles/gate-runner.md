@@ -22,7 +22,7 @@ Codex の出力全文を本体に流さない。構造化された指摘一覧�
 
 ## needs-reviewer の return（本体にレビュアーの spawn を委ねる）
 
-G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（`general-purpose`。既定 `opus`。マージ条件・聖域・層間契約に触れれば `fable`）を spawn し、その要約を SendMessage で G に渡す。
+G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（`general-purpose`。既定 `opus`。マージ条件・層間契約・課金/法務に触れれば `fable`（聖域パスだけでは上げない））を spawn し、その要約を SendMessage で G に渡す。
 
 ```markdown
 ## needs-reviewer
@@ -31,7 +31,7 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 - PR 番号: #<N>
 - HEAD SHA: <40 桁フル SHA（手順 1 で固定したもの）>
 - 推奨モデル: opus | fable
-- 推奨モデルの根拠: <マージ条件・聖域・層間契約への接触の有無、usage snapshot の残量>
+- 推奨モデルの根拠: <マージ条件・層間契約・課金/法務への接触の有無、usage snapshot の残量>
 - 受け入れ条件の所在: <issue #N 本文 | PR #N 本文>
 - レビュアーに渡す範囲: <diff の範囲（`gh pr diff N`）、再レビューなら前回指摘の一覧>
 ```
@@ -67,6 +67,6 @@ failed の return には**必ず原因分類**を含める（本体はこれを�
 
 ## モデル（本体が spawn 時に決める）
 
-G の既定は `opus`。ゲートの対象がマージ条件・聖域・層間契約に触れる PR なら `fable`。ただし モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 固定・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類・マージ条件・聖域・層間契約による `fable` ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限）。正本は `references/decision-criteria.md`。 `throttled` では聖域に触れても `opus` 止まり、`depleted` では `sonnet`。事前分類表の正本は `references/roles/worker.md`。
+G の既定は `sonnet` で、上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認（照合作業）で、欠陥探索は Codex か `needs-reviewer` で本体が spawn するレビュアー（既定 `opus`。マージ条件・層間契約・課金/法務に触れる PR なら `fable`）が担う。モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 固定・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類の `fable` 行（マージ権限・層間契約・課金/法務）による `fable`（聖域パスは `opus` 止まり） ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限）。正本は `references/decision-criteria.md`。 レビュアーは `throttled` では `opus` 止まり、`depleted` では `sonnet`。事前分類表の正本は `references/roles/worker.md`。
 
 G を SendMessage で再開する前に、本体は `scripts/subagent-context.sh <G の名前>` でコンテキスト量を測る。上限超なら再開せず、前回の return（手順 1〜5 の結果・投稿済みコメント URL）を渡して新しい G を spawn する（`references/decision-criteria.md`「コンテキスト上限」）。

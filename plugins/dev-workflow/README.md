@@ -11,7 +11,7 @@
 - **本体はオーケストレータ専任**: Edit でコードを書かず、レビューを代行しない。作業者 W・仕様レビュアー R1・ゲート実行者 G を `model` 明示で spawn し、return の要約と記録先のコメント・ラベルだけを見て次に誰を起こすかを決める（役割の指示書は `skills/develop/references/roles/`）
 - **入口 0（記録先の決定）**: issue があればそれ、無ければ issue を切らず、worktree 直後の空 commit → push → Draft PR を記録先にする（受け入れ条件は PR 本文。PR 本文に issue 参照を書かない）
 - **1 ループ**: W（仕様化判断の記録 → 分割判定 → `/opsx:ff`）→ R1（別コンテキストの仕様レビュー・2 周キャップ）→ W 再開（TDD 実装 → verify → archive → PR → 仕様宣言）→ G（pr-review-gate 手順 1〜5・2 周キャップ）
-- **モデル**: W は既定 `sonnet`、R1 / G は既定 `opus`。共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）が `throttled` / `depleted` なら全役割 `sonnet` 起点。W / G の SendMessage 再開は毎回 `scripts/subagent-context.sh` で測り、150K tokens 超なら再開せず同じ役割の新しいエージェント（新しい W / 新しい G）に手渡す。`worker.md` の「重要実装の事前分類」（聖域パス・マージ権限・層間契約・課金/法務）やマージ条件・聖域・層間契約に触れれば `fable`。残量モード（`FABLE_BUDGET_MODE`）は `references/decision-criteria.md`
+- **モデル**: W と G は既定 `sonnet`、R1 は既定 `opus`。Fable にするのは `worker.md` の事前分類のうちマージ権限・層間契約・課金/法務に触れる実装・仕様・レビューだけ（聖域パスは `opus` のまま）。共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）が `throttled` / `depleted` なら全役割 `sonnet` 起点。W / G の SendMessage 再開は毎回 `scripts/subagent-context.sh` で測り、150K tokens 超なら再開せず同じ役割の新しいエージェント（新しい W / 新しい G）に手渡す。残量モード（`FABLE_BUDGET_MODE`）は `references/decision-criteria.md`
 - **エピック**: 条件・作り方・回し方・完了条件を SKILL.md に規定。子 issue ごとに 1 ループを `isolation: "worktree"` で並列に回し、子が全部マージされただけでは閉じない
 
 人間が `/develop` で直接依頼した場合でも、loop-dev-agent（各リポの憲法 `docs/agent-loop.md`）が無人サイクルの中から呼ぶ場合でも同じループを回す（`--unmanned` では憲法のメインが本体を務め、G は憲法 Step 1 に委ねる）。

@@ -201,8 +201,11 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q '保留' "$GATE"
 }
 
-@test "gate-runner: reviewer model default opus, fable for merge conditions / sanctuary / cross-layer contracts" {
+@test "gate-runner: G itself defaults to sonnet; the reviewer defaults to opus, fable for merge conditions / cross-layer contracts" {
+  grep -q 'G の既定は `sonnet`' "$GATE"
   grep -q '`opus`' "$GATE"
+  ! grep -q 'マージ条件・聖域・層間契約' "$GATE"
+  ! grep -q '聖域・層間契約による' "$GATE"
   grep -q '`fable`' "$GATE"
   grep -q 'マージ条件' "$GATE"
   grep -q '聖域' "$GATE"
