@@ -255,3 +255,45 @@ PRECEDENTS
   [ "$status" -eq 0 ]
   [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
 }
+
+# --- Scenario: コードフェンス内の <!-- は HTML コメントとして走査しない（#187） ---
+
+@test "code-fence-comment fixture: a literal <!-- inside a code fence is not reported as unclosed" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/code-fence-comment"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"unclosed-comment"* ]]
+}
+
+@test "code-fence-comment fixture: resolve keeps the human-written row after the fences" {
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/code-fence-comment"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
+}
+
+@test "comment-with-fence-marks fixture: fence marks inside an HTML comment do not open a fence, so the comment still closes" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/comment-with-fence-marks"
+  [ "$status" -eq 0 ]
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/comment-with-fence-marks"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
+  [[ "$output" != *"記入例（コメント内なので無効）"* ]]
+}
+
+@test "code-fence-unclosed fixture: a fence left open until EOF does not break the scan" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/code-fence-unclosed"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"unclosed-comment"* ]]
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/code-fence-unclosed"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
+}
+
+@test "code-fence-plus-unclosed fixture: a real unclosed <!-- outside the fence is still reported" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/code-fence-plus-unclosed"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unclosed-comment"* ]]
+  [[ "$output" == *"project.md"* ]]
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/code-fence-plus-unclosed"
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"| project |"* ]]
+}

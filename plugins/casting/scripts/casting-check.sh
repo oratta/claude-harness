@@ -7,6 +7,7 @@
 #  この report 呼び出しの異なり数と突き合わせる）:
 #   0. 配役表の表行が5列に割れない（5列未満／セル内の | で6列以上に割れる）（malformed-row）
 #   0'. 開いた HTML コメント <!-- が閉じられていない（以降を EOF まで飲み込む）（unclosed-comment）
+#       — Markdown のコードフェンス（``` / ~~~）の中はリテラルとして走査しない
 #   1. catalog.md に無い観点語彙（「カタログ外」を除く）（unknown-vocab）
 #   2. 判例台帳の「カタログ外」判例（観点追加の起案シグナル）（catalog-external-precedent）
 #   3. 同一観点で帰結「論点じゃなかった」が2件以上（移譲仕組み化の起案シグナル）（repeated-not-issue）
@@ -153,11 +154,27 @@ report() {
 # 同じ行で閉じたコメント（<!-- メモ -->）はその行だけを落とす。sed の行範囲 /<!--/,/-->/d は
 # 終端を次の行から探すため1行コメントが以降を EOF まで飲み込んでいた（上書き行が黙って全滅する）。
 # コメントと同じ行にある地の文も落とす点は行単位削除のままで、表行は独立した行に書く前提。
+#
+# Markdown のコードフェンス（``` / ~~~。字下げは3スペースまで）の中はリテラルなので走査しない（#187）。
+# フェンス内に書いた説明用の <!-- が本物の閉じ忘れと区別されず、正常な配役表を unclosed-comment で
+# 止めていた。開きフェンスと同じ記号が同じ本数以上だけの行（CommonMark の閉じ条件）で閉じ、
+# 閉じられないまま EOF に達しても閉じ忘れとは扱わない（コメントが開いていなければ 0 を返す）。
+# コメントの中にあるフェンス記号はコメントの一部で、フェンスを開かない。フェンス内の行はそのまま出す。
 strip_html_comments() {
   local file="$1" out="$2"
   local line rest in_comment=0
+  local in_fence=0 fence_char= fence_len=0 fence_run
+  local fence_open_re='^[ ]{0,3}(`{3,}|~{3,})'
   : > "$out"
   while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$in_fence" -eq 1 ]; then
+      printf '%s\n' "$line" >> "$out"
+      if [[ "$line" =~ ^[\ ]{0,3}(${fence_char}{3,})[[:space:]]*$ ]] \
+        && [ "${#BASH_REMATCH[1]}" -ge "$fence_len" ]; then
+        in_fence=0
+      fi
+      continue
+    fi
     if [ "$in_comment" -eq 1 ]; then
       case "$line" in
         *'-->'*)
@@ -168,6 +185,18 @@ strip_html_comments() {
           ;;
       esac
       continue
+    fi
+    if [[ "$line" =~ $fence_open_re ]]; then
+      fence_run="${BASH_REMATCH[1]}"
+      rest="${line#*"$fence_run"}"
+      # バッククォート型の開きフェンスは info 文字列にバッククォートを含めない（``` a ``` はインラインコード）
+      if [ "${fence_run:0:1}" = '~' ] || [[ "$rest" != *'`'* ]]; then
+        in_fence=1
+        fence_char="${fence_run:0:1}"
+        fence_len="${#fence_run}"
+        printf '%s\n' "$line" >> "$out"
+        continue
+      fi
     fi
     case "$line" in
       *'<!--'*) ;;
