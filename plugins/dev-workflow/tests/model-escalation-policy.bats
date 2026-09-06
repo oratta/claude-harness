@@ -57,9 +57,12 @@ setup() {
   [ "$sec" -lt "$step3" ]
 }
 
-@test "escalation: only implementation-quality failures escalate to fable" {
-  grep -qF '実装品質起因' "$GATE_SKILL"
-  grep -qF '`model: fable`' "$GATE_SKILL"
+@test "escalation: implementation-quality failures escalate one rung (sonnet → opus → fable), never straight to fable" {
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$GATE_SKILL")"
+  echo "$sec" | grep -qF '実装品質起因'
+  echo "$sec" | grep -qF '1 段上'
+  echo "$sec" | grep -qF '`sonnet` → `opus` → `fable`'
+  ! echo "$sec" | grep -qF '修正実装を `model: fable` で spawn'
   grep -qF '昇格は実装品質起因のときだけ' "$GATE_SKILL"
 }
 

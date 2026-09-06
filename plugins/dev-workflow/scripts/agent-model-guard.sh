@@ -24,13 +24,15 @@ set -uo pipefail
 command -v python3 >/dev/null 2>&1 || exit 0   # fail-open（判定できなければ止めない）
 
 SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
-PAYLOAD="$(cat 2>/dev/null || true)"   # heredoc が stdin を奪うので先に読む
 
-SNAPSHOT="$SNAPSHOT" PAYLOAD="$PAYLOAD" python3 <<'PY'
+# Python 本体は fd 3 のヒアドキュメントで渡し、stdin（hook の payload）はそのまま Python に読ませる。
+# payload を環境変数や引数に載せると、長い prompt で ARG_MAX を超えて hook が非 0 で落ち、
+# Claude Code は非 0/非 2 の hook エラーを「続行」と扱うため、判定が素通りになる。
+SNAPSHOT="$SNAPSHOT" python3 /dev/fd/3 3<<'PY'
 import json, os, sys, time
 
 try:
-    payload = json.loads(os.environ.get("PAYLOAD") or "")
+    payload = json.load(sys.stdin)
 except Exception:
     sys.exit(0)  # 入力が読めなければ fail-open
 if not isinstance(payload, dict) or payload.get("tool_name") != "Agent":
@@ -48,11 +50,7 @@ def deny(reason):
                                               "permissionDecisionReason": reason}}, ensure_ascii=False))
     sys.exit(0)
 
-if model:
-    sys.exit(0)
-
-# 定義側に model を持つエージェント種別（plugin:agent 形式・casting 系）は省略が親継承にならない
-NEEDS_EXPLICIT = {"", "general-purpose", "Explore", "Plan", "claude", "claude-code-guide", "statusline-setup"}
+# fork は model パラメータを無視して常に親モデルで動くので、model の有無より先に判定する
 if stype == "fork":
     shared = (os.environ.get("SHARED_BUDGET_MODE") or "").strip()
     if not shared:
@@ -60,25 +58,32 @@ if stype == "fork":
         try:
             snap = json.load(open(os.environ["SNAPSHOT"], encoding="utf-8"))
             all_pct = float(snap.get("weekly_all_pct"))
-            resets = int(snap.get("weekly_resets_epoch"))
-            now_env = os.environ.get("USAGE_PROBE_NOW")
-            now = int(now_env) if now_env and now_env.lstrip("-").isdigit() else int(time.time())
-            WEEK = 7 * 86400
-            elapsed = max(0.0, min(100.0, (WEEK - (resets - now)) / WEEK * 100.0))
             if all_pct > 90:
-                shared = "depleted"
-            elif all_pct > elapsed:
-                shared = "throttled"
+                shared = "depleted"            # リセット時刻が読めなくても 90% 超は depleted
+            else:
+                resets = int(snap.get("weekly_resets_epoch"))
+                now_env = os.environ.get("USAGE_PROBE_NOW")
+                now = int(now_env) if now_env and now_env.lstrip("-").isdigit() else int(time.time())
+                WEEK = 7 * 86400
+                elapsed = max(0.0, min(100.0, (WEEK - (resets - now)) / WEEK * 100.0))
+                if all_pct > elapsed:
+                    shared = "throttled"
         except Exception:
-            shared = "ok"
+            if shared == "ok":
+                pass  # 読めなければ ok（fail-open）
     if shared == "ok":
         sys.exit(0)
-    deny(f"fork は親モデル（Fable）を継承して全履歴ごと動く。共有枠モードが {shared} のあいだは fork を使わず、"
+    deny(f"fork は親モデル（Fable）を継承して全履歴ごと動く（model パラメータは無視される）。共有枠モードが {shared} のあいだは fork を使わず、"
          "model を明示した general-purpose（sonnet / opus）で spawn する。規範: rules/subagent-model-selection.md")
 
+if model:
+    sys.exit(0)
+
+# 定義側に model を持つエージェント種別（plugin:agent 形式・casting 系）は省略が親継承にならない
+NEEDS_EXPLICIT = {"", "general-purpose", "Explore", "Plan", "claude", "claude-code-guide", "statusline-setup"}
 if stype in NEEDS_EXPLICIT:
     deny("Agent の model が未指定。省略すると親セッションのモデル（多くは Fable）を継承して週次枠を無言で消費する。"
-         "model: haiku（機械的）/ sonnet（通常実装・調査）/ opus（設計・レビュー）/ fable（最終 verify・聖域）を明示して再実行。"
+         "model: haiku（機械的）/ sonnet（通常実装・調査）/ opus（設計・レビュー）/ fable（最終 verify・マージ権限・層間契約・課金/法務）を明示して再実行。"
          "規範: rules/subagent-model-selection.md")
 sys.exit(0)
 PY

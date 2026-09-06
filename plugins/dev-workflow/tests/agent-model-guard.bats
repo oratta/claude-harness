@@ -68,6 +68,26 @@ denied() { echo "$output" | grep -q '"permissionDecision": "deny"'; }
   denied
 }
 
+@test "fork: denied even when a model is passed (fork ignores model and inherits the parent)" {
+  run env SHARED_BUDGET_MODE=depleted "$SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","model":"sonnet","prompt":"x"}}'
+  denied
+}
+
+@test "fork: weekly_all_pct above 90 is depleted even without a reset time in the snapshot" {
+  echo '{"weekly_all_pct": 95}' > "${WORK}/snap.json"
+  run env USAGE_SNAPSHOT="${WORK}/snap.json" "$SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  denied
+  echo "$output" | grep -q 'depleted'
+}
+
+@test "large payload: a multi-megabyte prompt is still judged (no ARG_MAX failure)" {
+  big="$(head -c 3000000 /dev/zero | tr '\0' 'a')"
+  printf '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"%s"}}' "$big" > "${WORK}/big.json"
+  run "$SCRIPT" < "${WORK}/big.json"
+  [ "$status" -eq 0 ]
+  denied
+}
+
 @test "fork: derives throttled from the snapshot (weekly_all_pct above week-elapsed)" {
   now=1000000000
   resets=$(( now + 2 * 86400 ))   # 週経過 ≈ 71%

@@ -206,6 +206,8 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q '`opus`' "$GATE"
   ! grep -q 'マージ条件・聖域・層間契約' "$GATE"
   ! grep -q '聖域・層間契約による' "$GATE"
+  ! grep -qE '実装品質起因なら.*`model: fable`' "$GATE"
+  grep -q '1 段上' "$GATE"
   grep -q '`fable`' "$GATE"
   grep -q 'マージ条件' "$GATE"
   grep -q '聖域' "$GATE"
