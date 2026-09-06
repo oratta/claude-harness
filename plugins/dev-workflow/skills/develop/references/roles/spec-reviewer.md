@@ -25,7 +25,7 @@ R1 は develop の本体が spawn するサブエージェント（W とは別�
 
 ## R1 の spawn（本体が行う。R1 は確認だけ）
 
-- **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。既定は中位ティア `opus`。仕様が `references/roles/worker.md` の「重要実装の事前分類」表（聖域パス等。正本はそこ）に当たる場合、またはマージ条件・聖域・層間契約に触れる場合は `fable`
+- **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。既定は `opus`（共有枠モード `SHARED_BUDGET_MODE` が `throttled` / `depleted` なら `sonnet`）。仕様が `references/roles/worker.md` の「重要実装の事前分類」表（聖域パス等。正本はそこ）に当たる場合、またはマージ条件・聖域・層間契約に触れる場合は `fable`
 - 残量モード（`FABLE_BUDGET_MODE`）は `references/decision-criteria.md` の規定どおり: `reserve` は**自動実行（unmanned / cron / loop 経由）のみ** `opus` 上限、`exhausted` は**全経路**で `opus` 上限。interactive の `reserve` は `conserve` と同一に扱う（仕様レビューは verify 側の役割なので `fable` 可）
 - R1 は**読み取り専用**。仕様ファイル・コードを一切変更しない（修正は本体が W を再開して行わせる）
 

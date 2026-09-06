@@ -129,6 +129,8 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 ## 重要実装の事前分類（1 周目から Fable）
 
+W の既定モデルは `sonnet`（役割表の正本は `SKILL.md`「モデル」。設計判断を含む記録先は `opus`）。この表に当たる実装だけが 1 周目から Fable になる。
+
 本体が W を spawn するときのモデル選択の正本（**この分類表がモデル事前分類の正本**。pr-review-gate スキル・R1・G からも参照される。ここ以外に再掲しない）。次のいずれかに触れる実装は、失敗 1 周のコスト（再実装＋再レビュー＋ゲート往復＋コンテキスト肥大）が Fable の単価差を上回るため、**トリップワイヤーの昇格を待たず最初から W を `model: fable` で spawn する**（Agent ツールの `model` パラメータ。セッション本体のモデル＝`AGENT_MODEL` は変えない）。
 
 | 分類 | 具体 |
@@ -138,7 +140,8 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 | 層間契約 | プラグイン間・スキル間で共有する規約（hook 契約・スキーマ・レシピ形式・環境変数の意味） |
 | 課金/法務 | 支払い・レート/使用量制御・ライセンス・個人情報の扱い |
 
-- **残量モードが優先する**: `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では、事前分類に当たっても Fable に上げず Opus を上限とする（`references/decision-criteria.md` の残量モード表がそのまま効く）
+- **残量モードが優先する**: `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では、事前分類に当たっても Fable に上げず Opus を上限とする（`references/decision-criteria.md` の残量モード表がそのまま効く）。共有枠モード `SHARED_BUDGET_MODE=depleted` では事前分類に当たっても Sonnet 固定
+- `FABLE_BUDGET_MODE=abundant` は W を押し上げない（R1 / G だけ）。W が Fable になる経路はこの表と失敗ループ昇格の 2 つ
 - Fable がレート制限等で使えなかったときのフォールバック記録の形式は pr-review-gate スキルの「修正サイクルのモデル昇格」が正本。ここでは再掲しない
 
 ## 昇格トリップワイヤー（W が return で報告する）
@@ -149,3 +152,10 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 - **失敗ループ**（同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直した）→ return。本体が W を 1 段昇格したモデル（Sonnet → Opus → Fable）で再開する。`FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では Opus 上限。Opus でも 2 連続失敗が続く場合は記録先に `needs-approval` を付けて経緯をコメントし、unmanned ならサイクルを終了する
 - **仕様の発明**（記録先に書かれていない仕様上の決定を自分で埋めた回数が 2 回に達した）→ 埋めた決定を列挙して return。interactive は本体が AskUserQuestion、unmanned は Discord で質問し `needs-approval` を付けてサイクル終了
 - 昇格・乗り換え時は成果を破棄せず引き継ぐ（再開時に前回の return を前提に続ける）
+
+## コンテキスト上限と手渡し（本体が測る。W は工程ごとに return する）
+
+W は再開のたびに全履歴を読み直すので、履歴は畳まれずに伸び続ける。本体は W を SendMessage で再開する前に毎回 `scripts/subagent-context.sh <W の名前>` で測り、上限（`DEV_WORKFLOW_CONTEXT_CAP`、既定 150000 tokens）を超えていたら再開せず、新しい W に**手渡し**する（正本: `references/decision-criteria.md`「コンテキスト上限」）。W 側の義務は次の 2 つ。
+
+- **工程の終わりに必ず return する**（(1) 仕様化まで／(3) 実装から、の単位。1 spawn で次の工程に進まない）。return には「編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業」を列挙する。これが手渡しの唯一の入力になる
+- **手渡しで起こされたら**（本体から「前任 W の return」が渡されたら）、前任の履歴は読めないし読まない。前任の return と記録先、ファイルの現状（`git status` / `git diff`）から再出発し、前任の埋めた決定を再発明しない

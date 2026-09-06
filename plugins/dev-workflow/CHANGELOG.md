@@ -1,5 +1,25 @@
 # Changelog — dev-workflow
 
+## 2.3.0 — 2026-09-06: サブエージェントのコンテキスト上限（手渡し）・共有枠モード・W の既定を sonnet に
+
+2026-08-31〜09-05 の使用量監査（521 セッション・API 定価換算 12,159 USD）で、消費の 3 分の 2 が develop の W / G / R1 で、うち W が 44.5%（31 本・平均 174 USD・最大 745 USD）だった。原因はモデルではなくコンテキスト: W は SendMessage 再開のたびに全履歴を読み直し、Opus の W は平均 32.6 万トークンを毎ターン投げていた（W の消費の 63% が 30 万トークン超のリクエスト）。W に Sonnet は 1 本も無く、Fable 残量モードは 4 段すべて下限 Opus で、Fable が尽きた日に総量が最大になった。sonnet の別コンテキストで再集計し、分類境界の差はあるが機構（W の平均 34 万・上限超の割合 68%・Sonnet ゼロ・畳む仕組み無し）は一致した。
+
+### コンテキスト上限（新規）
+
+- `scripts/subagent-context.sh <agent-name> [--cap N]`: 名前付きサブエージェントのトランスクリプト（`~/.claude/projects/*/*/subagents/agent-*<name>*.jsonl`）の最後の usage から input + cache_creation + cache_read を読み、上限超なら exit 2。cwd が一致するトランスクリプトを優先
+- 本体は W / G を SendMessage で再開する**前に毎回**測り、`DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）超なら再開せず、前回 return を渡した新しい W / G に**手渡し**する。W は工程ごとに必ず return し、return に「編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業」を列挙する（手渡しの唯一の入力）
+- 昇格トリップワイヤーに 4【コンテキスト上限 → 手渡し】を追加（旧 4 の rate-limit 実エラーは 5 へ）
+
+### 共有枠モード `SHARED_BUDGET_MODE`（新規）
+
+- `session-tripwires.sh` が snapshot の `weekly_all_pct`（全モデル共通の週次枠）から `ok` / `throttled`（週経過ペースより速い）/ `depleted`（90% 超）を導出し、Fable 残量モードと並べて注入する。明示 env が優先
+- `throttled`: W / R1 / G の既定を sonnet、昇格上限 opus、abundant の押し上げ無効。`depleted`: 全役割 sonnet 固定。Fable 残量モードと食い違えば共有枠モードの下限が勝つ
+
+### 役割の既定モデル（変更）
+
+- W の既定を `opus` → `sonnet`。`opus` は設計判断を含む記録先と失敗ループ昇格、`fable` は事前分類（従来どおり）。昇格ラダー sonnet → opus → fable の Sonnet 段が初めて到達可能になる
+- `abundant` が押し上げるのは R1 / G だけ。W は abundant でも上げない（W の 4 割が Fable で走っていた原因）
+
 ## 2.2.0 — 2026-09-04: usage snapshot schema 2（複数アカウント対応）
 
 `usage-probe.sh` を複数の Claude アカウントに対応させ、`~/.claude/.usage-snapshot` を schema 2 に拡張した。`CLAUDE_SECURESTORAGE_CONFIG_DIR` を設定すると `CLAUDE_CONFIG_DIR` を共有したまま Keychain の認証情報だけを分けられるが、probe が Keychain のサービス名を `Claude Code-credentials` に固定していたため、常に既定アカウントの値しか取れず `FABLE_BUDGET_MODE` の導出もそこに固定されていた。

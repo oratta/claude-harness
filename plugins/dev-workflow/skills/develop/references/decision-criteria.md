@@ -78,12 +78,36 @@ W の指示書（`references/roles/worker.md`）の仕様化判断（Step B）�
 
 | 値 | 意味 | 効果 |
 |---|---|---|
-| `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | 判断の濃い役割（W / R1 / G）の既定モデルを Fable に倒してよい。結果が変わらない機械的な大量仕事（fan-out ワーカー・機械的編集）は安いモデルのまま |
-| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | W / R1 / G = Opus 既定。事前分類（`references/roles/worker.md`）に当たる場合のみ Fable |
+| `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | 判断役（R1 / G）の既定モデルを Fable に倒してよい。**W は abundant でも上げない**（W が Fable になるのは事前分類だけ。2026-09 の監査で W の 4 割が Fable で走っており、abundant の押し上げが例外を既定にしていた）。結果が変わらない機械的な大量仕事（fan-out ワーカー・機械的編集）は安いモデルのまま |
+| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | 役割表の既定どおり（W = Sonnet、R1 / G = Opus）。事前分類（`references/roles/worker.md`）に当たる場合のみ Fable |
 | `reserve` | Fable 枠を人間用に温存 | conserve に加えて、**自動実行（unmanned / cron / loop 経由）では Fable をいかなる役割でも使わない**。昇格ラダーは Opus 上限。Opus でも2連続失敗が続く問題は `needs-approval` で人間に返す。interactive は conserve と同一 |
-| `exhausted` | Fable 週次枠を実質使い切った（`fable_weekly_pct > 90`、または明示宣言） | **reserve と異なり interactive を含む全経路で Fable を一切使わない**（枠が実際に無いため）。昇格ラダーは Opus 上限。加えて rate-limit 実エラーで reactive に Opus へ降格する（`escalation-tripwires.md` トリップワイヤー4） |
+| `exhausted` | Fable 週次枠を実質使い切った（`fable_weekly_pct > 90`、または明示宣言） | **reserve と異なり interactive を含む全経路で Fable を一切使わない**（枠が実際に無いため）。昇格ラダーは Opus 上限。加えて rate-limit 実エラーで reactive に Opus へ降格する（`escalation-tripwires.md` トリップワイヤー5） |
 
 `reserve` と `exhausted` の差: reserve は「温存」で自動実行のみ Fable を禁じ interactive は自由。exhausted は「枠が実際に無い」ため interactive を含む全経路で禁じる。
+
+**Fable 残量モードは総量を絞る装置ではない。** 4 段のどれも Fable と Opus のあいだで役割を付け替えるだけで、Fable が尽きた日に同じ W が Opus に落ちて走れば消費は減らない（2026-09-04 の実測: Fable 枯渇日が週で最も消費が大きかった）。総量を絞るのは次の共有枠モードとコンテキスト上限。
+
+## 共有枠モード `SHARED_BUDGET_MODE`
+
+全モデル共通の週次枠（`weekly_all_pct`）の残り具合。Fable 残量モードと独立に導出され、**役割の既定モデルの下限**を決める。明示 env が最優先、未設定時は usage snapshot から自動導出（`scripts/session-tripwires.sh`）。
+
+| 値 | 導出 | 効果 |
+|---|---|---|
+| `ok` | データ無し、または消費が週の経過ペース以下 | 制約なし。役割表の既定どおり |
+| `throttled` | `weekly_all_pct` が週経過% より大きい（このペースだと週末までに枠が尽きる） | W / R1 / G の既定を **Sonnet** に落とす。昇格上限 Opus。`abundant` の押し上げは無効 |
+| `depleted` | `weekly_all_pct > 90` | 全役割 Sonnet 固定・昇格なし。事前分類に当たっても Fable / Opus を使わない（枠が無いので使えば全員が止まる） |
+
+Fable 残量モードと共有枠モードが食い違うときは**共有枠モードの下限が勝つ**（例: `abundant` × `throttled` なら R1 / G も Sonnet 起点）。
+
+## コンテキスト上限（サブエージェントの手渡し）
+
+W / G は名前付き spawn ＋ SendMessage 再開でコンテキストを引き継ぐが、再開のたびに全履歴を読み直すため、履歴が畳まれずに伸び続ける。2026-08-31〜09-05 の監査では W の平均コンテキストが 33 万トークン（最大 1 本 745 USD 換算）で、W の消費の 3 分の 2 が 30 万トークン超のリクエストだった。モデルを下げるより先にここを畳む。
+
+- **上限**: `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000 tokens）
+- **測り方**: 本体が W / G を SendMessage で再開する**前に毎回** `scripts/subagent-context.sh <agent-name>` を実行する（トランスクリプトの最後の usage から input + cache_creation + cache_read を読む。exit 2 が上限超）
+- **上限超のとき**: 再開しない。前回の return（成果一覧）と記録先を渡して**新しい W を spawn する（手渡し）**。手渡し先は前任の return を前提に続け、記録先とファイルの現状から再出発する（前任の履歴は読めないし読まない）
+- **W 側の義務**: 工程の終わりに必ず return する（1 spawn で複数工程を続けない）。return には「編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業」を列挙する。これが手渡しの唯一の入力になる
+- 上限は初期値。品質が落ちる（手渡し先が前任の判断を取りこぼす）なら上げ、まだ肥大するなら下げる。監査の再集計は `~/.claude/projects` のトランスクリプトから行う
 
 モードが動かすのは役割の既定モデルと昇格上限だけで、1 ループの構造・トリップワイヤーは変えない。env のためセッション起動後の明示的な変更は次セッションから反映される（モード切替は週単位想定のため許容）。自動導出は SessionStart 毎に更新される。
 
