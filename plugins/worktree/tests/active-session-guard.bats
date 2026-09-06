@@ -177,6 +177,7 @@ wt_load_detect_helpers() {
   # 入る前にまとめて定義しておくこと」と指示しており実行時は揃っているが、
   # ここで抽出しないと abs_path 未定義で全ヘルパが「検査不能」を返してしまう。
   awk '/^abs_path\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >"$snippet"
+  awk '/^proc_comm\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^proc_tree_top\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^worktree_has_recent_activity\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^detect_active_procs_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
