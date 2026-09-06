@@ -110,3 +110,52 @@ JSON
   echo "$out2" | grep -q "70"
   rm -rf "$work"
 }
+
+@test "derivation: shared budget mode comes from weekly_all_pct and is independent of the Fable mode" {
+  work="$(mktemp -d)"
+  now=1000000000
+  resets=$(( now + 2 * 86400 ))   # 週経過 ≈ 71%
+  mk() {  # $1=file $2=fable_pct $3=all_pct
+    cat > "$1" <<JSON
+{ "schema": 1, "fetched_at": ${now}, "fable_weekly_pct": $2, "fable_active": true,
+  "weekly_all_pct": $3, "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets} }
+JSON
+  }
+  ctx_of() {
+    run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="$1" \
+        USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" \
+        USAGE_PROBE_NOW="$now" "$SCRIPT"
+    [ "$status" -eq 0 ]
+    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
+  }
+  # Fable は余っている（abundant）のに全モデル枠は週経過より速い → throttled が下限を決める
+  mk "${work}/a.json" 30 80
+  out="$(ctx_of "${work}/a.json")"
+  echo "$out" | grep -q "FABLE_BUDGET_MODE: abundant"
+  echo "$out" | grep -q "SHARED_BUDGET_MODE: throttled"
+  echo "$out" | grep -q "全モデル週次: 使用 80%"
+  # 全モデル枠 90% 超 → depleted
+  mk "${work}/b.json" 30 95
+  echo "$(ctx_of "${work}/b.json")" | grep -q "SHARED_BUDGET_MODE: depleted"
+  # 週経過以下 → ok
+  mk "${work}/c.json" 30 40
+  echo "$(ctx_of "${work}/c.json")" | grep -q "SHARED_BUDGET_MODE: ok"
+  # 明示 env が勝つ
+  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/c.json" SHARED_BUDGET_MODE=depleted \
+      USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" USAGE_PROBE_NOW="$now" "$SCRIPT"
+  echo "$output" | grep -q "depleted（明示 env）"
+  # コンテキスト上限の案内が載る
+  echo "$out" | grep -q "subagent-context.sh"
+  rm -rf "$work"
+}
+
+@test "derivation: no snapshot → SHARED_BUDGET_MODE ok (fail-open) while the Fable mode stays conserve" {
+  work="$(mktemp -d)"
+  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/missing.json" \
+      USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
+  [ "$status" -eq 0 ]
+  out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output")"
+  echo "$out" | grep -q "FABLE_BUDGET_MODE: conserve"
+  echo "$out" | grep -q "SHARED_BUDGET_MODE: ok（既定（usage データなし））"
+  rm -rf "$work"
+}

@@ -40,6 +40,8 @@
 2. 【失敗ループ → モデル昇格】
    同じテストが2連続で落ちた、または同じ箇所を2回書き直した
    → 実行役を1段昇格する（Sonnet → Opus → Fable）。
+   `SHARED_BUDGET_MODE=throttled`（全モデル共通の週次枠が週の経過ペースより速く減っている）では
+   昇格上限を Opus、`depleted`（同枠 90% 超）では昇格しない。
    `FABLE_BUDGET_MODE=reserve` の自動実行（unmanned / cron / loop）では Opus を上限とし、
    Opus でも2連続失敗が続く場合は issue に needs-approval を付けて経緯をコメントし、
    そのサイクルを終了する。
@@ -57,7 +59,16 @@
       - unmanned なら Discord でユーザーに質問し、issue に needs-approval を付けて
         経緯をコメントし、そのサイクルを終了する
 
-4. 【rate-limit 実エラー → reactive 降格】
+4. 【コンテキスト上限 → 手渡し】
+   名前付きサブエージェント（develop の W / G）を SendMessage で再開する前に
+   `${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <名前>` で測り、
+   `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000 tokens）を超えていた（exit 2）
+   → 再開しない。前回の return（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）
+      と記録先を渡して新しいサブエージェントを spawn する（手渡し。モデルは変えない）。
+      再開のたびに全履歴を読み直すため、畳まずに続けると 1 本で 30 万トークン超のリクエストを
+      毎ターン投げることになる（2026-09 監査の実測）
+
+5. 【rate-limit 実エラー → reactive 降格】
    Fable 実行が rate-limit / weekly-limit の実エラー（429、weekly limit reached 等）を返した
    → 予測的な閾値判定（トリップワイヤー2）とは別系統の事後対応。その場で Fable を諦め、
    実行役を Opus に降格して同じ作業を続行する（成果は引き継ぐ）。併せて usage-probe を

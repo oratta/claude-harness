@@ -168,9 +168,10 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 
 # --- モデル ---
 
-@test "model: W/R1/G default opus and escalate to fable by pre-classification / merge conditions" {
+@test "model: W defaults to sonnet, R1/G default opus, escalate to fable by pre-classification / merge conditions" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE 'W.*既定.*`opus`|W.*`opus`'
+  echo "$m" | grep -qE '^\| W \| `sonnet` \|'
+  echo "$m" | grep -qE 'W.*`opus`'
   echo "$m" | grep -qE 'R1.*G.*`opus`|R1 / G.*opus'
   echo "$m" | grep -q '事前分類'
   echo "$m" | grep -q 'マージ条件'
@@ -191,6 +192,22 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   m="$(section 'モデル')"
   echo "$m" | grep -q '2 連続'
   echo "$m" | grep -qE '再開.*(1 段|一段|昇格)'
+}
+
+@test "model: shared budget mode sets the floor and abundant no longer lifts W" {
+  m="$(section 'モデル')"
+  echo "$m" | grep -q 'SHARED_BUDGET_MODE'
+  echo "$m" | grep -qE 'throttled.*`sonnet`'
+  echo "$m" | grep -qE 'depleted.*`sonnet`'
+  echo "$m" | grep -q 'W は上げない'
+}
+
+@test "loop: W and G are measured with subagent-context.sh before every SendMessage resume" {
+  loop="$(section '1 ループ（W → R1 → W → G）')"
+  echo "$loop" | grep -q 'subagent-context.sh'
+  echo "$loop" | grep -q '手渡し'
+  echo "$loop" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
+  echo "$loop" | grep -q 'G の再開も同じ'
 }
 
 @test "model: no execution-strategy branches nor deterministic signal commands anywhere under develop" {
@@ -290,7 +307,17 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 
 # --- 昇格トリップワイヤーのテンプレート（1.6b。hook 出力を検査する tripwire-hook.bats には混ぜない） ---
 
-@test "tripwire template: wire 1 routes to return-to-main split or native Workflow execution, keeps heading and four wires" {
+@test "tripwire template: wire 4 is the context cap handoff and wire 5 is the rate-limit reactive downgrade" {
+  grep -qE '^4\. 【コンテキスト上限 → 手渡し】' "$TRIPWIRES"
+  grep -qE '^5\. 【rate-limit 実エラー → reactive 降格】' "$TRIPWIRES"
+  ! grep -qE '^6\. ' "$TRIPWIRES"
+  w4="$(awk '/^4\. /{f=1} /^5\. /{f=0} f' "$TRIPWIRES")"
+  echo "$w4" | grep -q 'subagent-context.sh'
+  echo "$w4" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
+  echo "$w4" | grep -q 'モデルは変えない'
+}
+
+@test "tripwire template: wire 1 routes to return-to-main split or native Workflow execution, keeps heading and five wires" {
   grep -q '^## 昇格トリップワイヤー' "$TRIPWIRES"
   w1="$(awk '/^1\. /{f=1} /^2\. /{f=0} f' "$TRIPWIRES")"
   echo "$w1" | grep -q '規模超過'
