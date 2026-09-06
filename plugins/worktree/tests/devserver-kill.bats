@@ -14,6 +14,10 @@ setup() {
   wt_setup_paths
 }
 
+teardown() {
+  wt_kill_tracked_pids
+}
+
 # --- detection ---
 
 @test "skill: wt-clean SKILL.md defines the kill_devserver_under helper" {
@@ -137,7 +141,8 @@ kill -0 "$PID_STUBBORN" 2>/dev/null && echo "ALIVE_STUBBORN" || echo "DEAD_STUBB
 kill -KILL "$PID_NORMAL" "$PID_STUBBORN" 2>/dev/null
 exit 0
 DRIVER
-  "$shell" "$driver" "$snippet" "$dir" 2>&1
+  # driver が立てる sleep/perl に bats の出力パイプを渡さない（helper.bash の約束事）
+  ( wt_close_inherited_fds && exec "$shell" "$driver" "$snippet" "$dir" 2>&1 )
 }
 
 @test "kill_devserver_under: runs to completion under zsh when processes are killed" {
@@ -290,11 +295,13 @@ wt_build_comm_normaliser() {
   mkdir -p "$dir"
 
   # argv[0] をログインシェルの形にした偽タブ。実体は sleep なので rc も読まず終了する。
-  ( cd "$dir" && exec -a "-/bin/zsh" sleep 30 ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec -a "-/bin/zsh" sleep 30 ) &
   local shell_pid=$!
+  wt_track_pid "$shell_pid"
   # 比較用の停止対象（除外リストに無い名前）
-  ( cd "$dir" && exec perl -e 'sleep 30' ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec perl -e 'sleep 30' ) &
   local victim_pid=$!
+  wt_track_pid "$victim_pid"
   sleep 1
 
   local out

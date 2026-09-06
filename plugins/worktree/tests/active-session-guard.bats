@@ -15,6 +15,10 @@ setup() {
   wt_setup_paths
 }
 
+teardown() {
+  wt_kill_tracked_pids
+}
+
 # --- the absolute prohibition itself ---
 
 @test "skill: wt-clean SKILL.md declares the active-signal absolute prohibition" {
@@ -215,8 +219,9 @@ wt_load_detect_helpers() {
   mkdir -p "$dir"
 
   # cwd が $dir の非シェルプロセスを 1 個立てる（lsof +D は cwd も拾う）
-  ( cd "$dir" && exec sleep 30 ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec sleep 30 ) &
   pid=$!
+  wt_track_pid "$pid"
   sleep 1
 
   out=$(bash -c ". '$snippet'; detect_active_procs_under '$dir'")
@@ -246,15 +251,18 @@ wt_load_detect_helpers() {
   mkdir -p "$dir"
 
   # 2 プロセス立てる。zsh の単語分割差が出ると片方しか（または 1 件も）検出されない
-  ( cd "$dir" && exec sleep 30 ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec sleep 30 ) &
   pid=$!
-  ( cd "$dir" && exec sleep 30 ) &
+  wt_track_pid "$pid"
+  ( cd "$dir" && wt_close_inherited_fds && exec sleep 30 ) &
+  pid2=$!
+  wt_track_pid "$pid2"
   sleep 1
 
   out_bash=$(bash -c ". '$snippet'; detect_active_procs_under '$dir'")
   out_zsh=$(zsh -c ". '$snippet'; detect_active_procs_under '$dir'")
-  kill "$pid" 2>/dev/null || true
-  pkill -f "sleep 30" 2>/dev/null || true
+  # 自分が立てた 2 つだけを止める（`pkill -f "sleep 30"` はホスト上の他プロセスまで巻き込む）
+  kill "$pid" "$pid2" 2>/dev/null || true
 
   [ "$out_bash" = "$out_zsh" ]
   # 2 件とも拾えていること（zsh で 1 件に潰れていない）
