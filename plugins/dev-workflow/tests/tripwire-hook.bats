@@ -159,3 +159,15 @@ JSON
   echo "$out" | grep -q "SHARED_BUDGET_MODE: ok（既定（usage データなし））"
   rm -rf "$work"
 }
+
+@test "hooks.json: PreToolUse entry wires agent-model-guard.sh on the Agent matcher" {
+  python3 - "$HOOKS_JSON" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+e = d["hooks"]["PreToolUse"][0]
+assert e["matcher"] == "Agent", e.get("matcher")
+cmd = e["hooks"][0]["command"]
+assert e["hooks"][0]["type"] == "command"
+assert "${CLAUDE_PLUGIN_ROOT}" in cmd and "agent-model-guard.sh" in cmd, cmd
+PY
+}
