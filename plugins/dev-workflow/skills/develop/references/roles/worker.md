@@ -149,7 +149,7 @@ W の既定モデルは `sonnet`（役割表の正本は `SKILL.md`「モデル�
 詳細は `templates/escalation-tripwires.md`。W は発火したら手を止め、ここまでの成果（編集済みファイル・通ったテスト・判明した事実・埋めた決定）を列挙して本体に return する。乗り換え先は本体が決める:
 
 - **規模超過**（編集対象ファイルが 5 個を超えた、または着手前の見積もりから作業項目が 2 回増えた）→ return。本体が change / 子 issue（エピック化）に分割する
-- **失敗ループ**（同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直した）→ return。本体が W を 1 段昇格したモデル（Sonnet → Opus → Fable）で再開する。`FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では Opus 上限。Opus でも 2 連続失敗が続く場合は記録先に `needs-approval` を付けて経緯をコメントし、unmanned ならサイクルを終了する
+- **失敗ループ**（同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直した）→ return。本体が W を 1 段昇格したモデル（Sonnet → Opus → Fable）で再開する。上限は共有枠モードが先に決める: `SHARED_BUDGET_MODE=depleted` は昇格なし（Sonnet 固定）、`throttled` は Opus 上限。その範囲内で `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では Opus 上限。Opus でも 2 連続失敗が続く場合は記録先に `needs-approval` を付けて経緯をコメントし、unmanned ならサイクルを終了する
 - **仕様の発明**（記録先に書かれていない仕様上の決定を自分で埋めた回数が 2 回に達した）→ 埋めた決定を列挙して return。interactive は本体が AskUserQuestion、unmanned は Discord で質問し `needs-approval` を付けてサイクル終了
 - 昇格・乗り換え時は成果を破棄せず引き継ぐ（再開時に前回の return を前提に続ける）
 

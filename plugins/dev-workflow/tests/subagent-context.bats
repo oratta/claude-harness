@@ -92,3 +92,17 @@ PY
   [ "$status" -eq 1 ]
   echo "$output" | grep -q 'no assistant usage'
 }
+
+@test "measure: a malformed or non-object line does not abort the scan (later usage still read)" {
+  f="$(make_transcript p1 s1 agent-aW-3-abcd.jsonl /tmp/x "0,0,5")"
+  printf 'null\n{not json\n{"type":"assistant","message":{"usage":{"input_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":10}}}\n' >> "$f"
+  run "$SCRIPT" W-3 --projects "$PROJECTS"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"context_tokens": 12'
+}
+
+@test "args: --cap without a value returns a one-line JSON error instead of a bare set -u failure" {
+  run "$SCRIPT" W-3 --cap
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q '"error"'
+}

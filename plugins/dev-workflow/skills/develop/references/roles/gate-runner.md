@@ -67,6 +67,6 @@ failed の return には**必ず原因分類**を含める（本体はこれを�
 
 ## モデル（本体が spawn 時に決める）
 
-G の既定は `opus`。ゲートの対象がマージ条件・聖域・層間契約に触れる PR なら `fable`。残量モードは `references/decision-criteria.md`（`reserve` は自動実行のみ、`exhausted` は全経路で `opus` 上限）。共有枠モード `SHARED_BUDGET_MODE` が `throttled` / `depleted` なら既定は `sonnet`。事前分類表の正本は `references/roles/worker.md`。
+G の既定は `opus`。ゲートの対象がマージ条件・聖域・層間契約に触れる PR なら `fable`。ただし モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 固定・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類・マージ条件・聖域・層間契約による `fable` ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限）。正本は `references/decision-criteria.md`。 `throttled` では聖域に触れても `opus` 止まり、`depleted` では `sonnet`。事前分類表の正本は `references/roles/worker.md`。
 
 G を SendMessage で再開する前に、本体は `scripts/subagent-context.sh <G の名前>` でコンテキスト量を測る。上限超なら再開せず、前回の return（手順 1〜5 の結果・投稿済みコメント URL）を渡して新しい G を spawn する（`references/decision-criteria.md`「コンテキスト上限」）。

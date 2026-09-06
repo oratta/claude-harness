@@ -307,7 +307,17 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 
 # --- 昇格トリップワイヤーのテンプレート（1.6b。hook 出力を検査する tripwire-hook.bats には混ぜない） ---
 
-@test "tripwire template: wire 1 routes to return-to-main split or native Workflow execution, keeps heading and four wires" {
+@test "tripwire template: wire 4 is the context cap handoff and wire 5 is the rate-limit reactive downgrade" {
+  grep -qE '^4\. 【コンテキスト上限 → 手渡し】' "$TRIPWIRES"
+  grep -qE '^5\. 【rate-limit 実エラー → reactive 降格】' "$TRIPWIRES"
+  ! grep -qE '^6\. ' "$TRIPWIRES"
+  w4="$(awk '/^4\. /{f=1} /^5\. /{f=0} f' "$TRIPWIRES")"
+  echo "$w4" | grep -q 'subagent-context.sh'
+  echo "$w4" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
+  echo "$w4" | grep -q 'モデルは変えない'
+}
+
+@test "tripwire template: wire 1 routes to return-to-main split or native Workflow execution, keeps heading and five wires" {
   grep -q '^## 昇格トリップワイヤー' "$TRIPWIRES"
   w1="$(awk '/^1\. /{f=1} /^2\. /{f=0} f' "$TRIPWIRES")"
   echo "$w1" | grep -q '規模超過'

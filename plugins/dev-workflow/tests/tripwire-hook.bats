@@ -148,3 +148,14 @@ JSON
   echo "$out" | grep -q "subagent-context.sh"
   rm -rf "$work"
 }
+
+@test "derivation: no snapshot → SHARED_BUDGET_MODE ok (fail-open) while the Fable mode stays conserve" {
+  work="$(mktemp -d)"
+  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/missing.json" \
+      USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
+  [ "$status" -eq 0 ]
+  out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output")"
+  echo "$out" | grep -q "FABLE_BUDGET_MODE: conserve"
+  echo "$out" | grep -q "SHARED_BUDGET_MODE: ok（既定（usage データなし））"
+  rm -rf "$work"
+}
