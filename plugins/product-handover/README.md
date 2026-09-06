@@ -1,11 +1,12 @@
 # product-handover
 
 プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を配るプラグイン。
-持っているのは雛形3種だけで、オーケストレーターもスキルも持たない。
+持っているのは雛形4種だけで、オーケストレーターもスキルも持たない。
 
 | 部品 | 置き場所 | 展開先の目安 |
 |---|---|---|
-| 法務ドラフト（利用規約・プライバシーポリシー・返金ポリシー） | `templates/legal/` | `docs/legal-drafts/` |
+| 法務ドラフト（利用規約・プライバシーポリシー・返金ポリシー・特定商取引法に基づく表記） | `templates/legal/` | `docs/legal-drafts/` |
+| インシデント対応手順書（個人情報漏えいの法定報告期限を含む） | `templates/ops/incident-runbook.md` | `docs/ops/incident-runbook.md` |
 | サポート窓口メールの設定 | `templates/support-desk.md` | `docs/ops/support-desk.md` |
 | 教訓ログ | `templates/autonomy-lessons-skeleton.md` | `docs/ops/autonomy-lessons.md` |
 
@@ -24,7 +25,7 @@
 1. **インフラ** — `/infra:infra-setup`（Vercel + Supabase + GitHub Actions）
 2. **開発ワークフローの導入** — dev-workflow プラグインの導入コマンド（#204 のマージ後は `develop` スキルが正本）
 3. **auto-merge の配線** — dev-workflow の `templates/auto-merge/` をリポに展開する
-4. **運営の引き渡し** — このプラグインの雛形3種を展開し、窓口と法務ドラフトを用意する
+4. **運営の引き渡し** — このプラグインの雛形4種を展開し、窓口・法務ドラフト・インシデント対応手順書を用意する
 5. **マーケ運転** — `/sns-autopilot:sns-autopilot-setup`（SNS 運用をするなら）
 
 auto-merge の配線を先に済ませてから運営の引き渡しに入る。マージが機械判定になっていない
