@@ -172,6 +172,116 @@ PRECEDENTS
   [[ "$output" != *"consultation-missing-element"* ]]
 }
 
+# --- 回帰: #186（ラベル照合の部分文字列一致と末尾改行なしで検査が外れる） ---
+
+# ラベル照合が `.*- ラベル:` の部分文字列一致だと、別要素の値の中に現れた
+# 「- 論点:」がその要素の行の実在に化け、欠落が素通りする（fail-open）。
+# 照合は行頭アンカー（インデント許容）でなければならない。
+@test "consultation block: a label string inside another element's value does not stand in for the missing line" {
+  local dir="${BATS_TEST_TMPDIR}/label-in-value"
+  mkdir -p "${dir}/.claude/casting"
+  cat > "${dir}/.claude/casting/precedents.md" <<'PRECEDENTS'
+---
+catalog_version: 1
+---
+
+# 判例台帳
+
+### 2026-08-27 別要素の値がラベルを含む判例
+
+- 観点: 技術設計・品質
+- 経路: 相談の上自走した
+- 帰結: 論点じゃなかった（意見が一致し合意で確定）
+- 還元: なし
+- 各人格の主張: メイン「本文中で - 論点: に触れた」
+- 裁定: 合意
+- 根拠: 判断基準の互換性優先の定め
+- 判例リンク: 「2026-08-17 API の月額プランを Pro に上げるか」
+PRECEDENTS
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"consultation-missing-element"* ]]
+  [[ "$output" == *"（論点）"* ]]
+}
+
+# インデントされた箇条書きのラベル行は行頭アンカー化の後も有効な要素として数える
+# （厳密化の巻き添えで正しい判例を落とさない回帰よけ）
+@test "consultation block: an indented label line still counts as the element" {
+  local dir="${BATS_TEST_TMPDIR}/indented-label"
+  mkdir -p "${dir}/.claude/casting"
+  cat > "${dir}/.claude/casting/precedents.md" <<'PRECEDENTS'
+---
+catalog_version: 1
+---
+
+# 判例台帳
+
+### 2026-08-27 インデントされた要素を持つ判例
+
+- 観点: 技術設計・品質
+- 経路: 相談の上自走した
+- 帰結: 論点じゃなかった（意見が一致し合意で確定）
+- 還元: なし
+  - 論点: 実装方式Aか方式Bか
+- 各人格の主張: メイン「方式A」／見張りのハト「方式Aを支持」
+- 裁定: 合意（方式A）
+- 根拠: 判断基準の互換性優先の定め
+- 判例リンク: 「2026-08-17 API の月額プランを Pro に上げるか」
+PRECEDENTS
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"consultation-missing-element"* ]]
+}
+
+# 経路の照合も同じ部分文字列一致の穴を持つ: 相談していない注記ブロックの値に
+# 「- 経路: 相談の上自走した」が引用されているだけで相談判例扱いになり、
+# 5要素の欠落が誤検出される。行頭アンカーで経路行の実在だけを見る。
+@test "consultation block: a quoted route string inside a value does not turn a note block into a consultation" {
+  local dir="${BATS_TEST_TMPDIR}/route-in-value"
+  mkdir -p "${dir}/.claude/casting"
+  cat > "${dir}/.claude/casting/precedents.md" <<'PRECEDENTS'
+---
+catalog_version: 1
+---
+
+# 判例台帳
+
+### 2026-08-27 経路文字列を引用しただけの注記
+
+- 観点: 技術設計・品質
+- 帰結: 自走した
+- 還元: 台帳の書き方メモ「相談したら - 経路: 相談の上自走した と書く」を追記
+PRECEDENTS
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"consultation-missing-element"* ]]
+}
+
+# 末尾改行の無いファイルで最終行が「- 判例リンク:」のとき、read ループが最終行を
+# 落とすと実在する要素が「欠落」に化ける（誤検出）。
+@test "consultation block: a complete block in a file without a trailing newline is not flagged" {
+  local dir="${BATS_TEST_TMPDIR}/no-eol-complete"
+  mkdir -p "${dir}/.claude/casting"
+  printf -- '---\ncatalog_version: 1\n---\n\n# 判例台帳\n\n### 2026-08-27 末尾改行なしの相談判例\n\n- 観点: 技術設計・品質\n- 経路: 相談の上自走した\n- 帰結: 論点じゃなかった（意見が一致し合意で確定）\n- 還元: なし\n- 論点: 実装方式Aか方式Bか\n- 各人格の主張: メイン「方式A」／見張りのハト「方式Aを支持」\n- 裁定: 合意（方式A）\n- 根拠: 判断基準の互換性優先の定め\n- 判例リンク: 「2026-08-17 API の月額プランを Pro に上げるか」' \
+    > "${dir}/.claude/casting/precedents.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"consultation-missing-element"* ]]
+}
+
+# 末尾改行の無いファイルで最終行が「- 経路: 相談の上自走した」のとき、最終行が
+# 落ちるとブロックが相談判例に見えず、5要素の検査ごと無言でスキップされる。
+@test "consultation block: a route line as the last line without a trailing newline still triggers the check" {
+  local dir="${BATS_TEST_TMPDIR}/no-eol-route-last"
+  mkdir -p "${dir}/.claude/casting"
+  printf -- '---\ncatalog_version: 1\n---\n\n# 判例台帳\n\n### 2026-08-27 末尾改行なしで経路が最終行\n\n- 観点: 技術設計・品質\n- 帰結: 自走した\n- 還元: なし\n- 経路: 相談の上自走した' \
+    > "${dir}/.claude/casting/precedents.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"consultation-missing-element"* ]]
+  [[ "$output" == *"論点・各人格の主張・裁定・根拠・判例リンク"* ]]
+}
+
 # --- 回帰: macOS の sort/uniq がロケール照合で異なる日本語観点列を同一視する（LC_ALL=C 強制） ---
 
 @test "distinct-not-issue fixture: two different multi-perspective strings are not merged into a repeated-not-issue" {
