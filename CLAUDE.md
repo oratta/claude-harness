@@ -5,7 +5,7 @@
 
 ## 開発場所
 
-- 開発用 clone は marketplace dir の外の任意の場所に置く。置き場所は PC ごとに自由で、パスをこのリポジトリの文書やスクリプトに固定で書かない
+- 開発用 clone は marketplace dir の外の任意の場所に置く。置き場所は PC ごとに自由で、パスをこのリポジトリの文書やスクリプトに固定で書かない。場所は環境変数 **`CLAUDE_HARNESS_DEV_DIR`**（`~/.claude/settings.json` の `env`）で解決する。他のプロジェクトで作業中に harness を直したくなったときの手順は `rules/plugin-editing.md` の「開発用 clone の場所」を参照 — 作業中のリポジトリの中でも marketplace dir でも直さない
 - worktree はその開発用 clone から生やす
 - marketplace dir では **feature ブランチを checkout しない・編集しない**。常に main のまま自動更新に任せる
 - Claude Code が実行時に読むのは `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` で、marketplace dir はそのコピー元にすぎない。cache はバージョンを上げなくても marketplace dir の HEAD に追随する。marketplace dir を feature ブランチにしていると、Claude Code の自動更新や `scripts/sync.sh` の `git pull --ff-only` がそのブランチ上で走り、cache にもマージ前の内容が入る
