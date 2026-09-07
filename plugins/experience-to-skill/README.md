@@ -69,7 +69,7 @@ LLM: experience-to-skill スキルが起動。/e2s:distill フローに沿って
 **意図的に起動しないケース**:
 
 - 「完了です」「done」「commit して」のような汎用完了フレーズ
-- `longrun:archive` / `openspec:archive` の完了通知
+- `openspec:archive`（`/opsx:archive`）の完了通知
 - ファイル編集完了の assistant 報告
 
 これは旧 e2s が全コミット境界で起動してコンテキストを浪費した反省を踏まえている。

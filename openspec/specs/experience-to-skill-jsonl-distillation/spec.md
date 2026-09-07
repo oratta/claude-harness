@@ -19,8 +19,8 @@ TBD - created by archiving change experience-to-skill-jsonl-refocus. Update Purp
 
 #### Scenario: Archive command completes
 
-- **WHEN** `longrun:archive` or `openspec:archive` completes its workflow
-- **THEN** the `experience-to-skill` skill MUST NOT be invoked (the new skill does not gate or augment archive flows)
+- **WHEN** `openspec:archive`（`/opsx:archive`）completes its workflow
+- **THEN** the `experience-to-skill` skill MUST NOT be invoked (the new skill does not gate or augment archive flows). SKILL.md と README の「絶対に起動しないケース」の列挙は `openspec:archive` のみを挙げ、解散した `longrun:archive` を含まない
 
 ### Requirement: Plugin MUST expose exactly one slash command e2s-distill
 

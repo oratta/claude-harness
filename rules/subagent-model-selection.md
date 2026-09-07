@@ -37,7 +37,7 @@ fork を使ってよいのは**役割が最上位ティア相当の仕事のと�
 
 `model` の明示義務は**すべての直接の Agent / Task 呼び出しに共通**で、ワークフロー経由でも
 免除されない。ワークフローを持つスキルは「どのティアを選ぶか」の決め方の正本を持つだけ:
-longrun のロール別ティアは `plugins/longrun/references/model-tiers.md`、
+ワークフロー実行のロール別ティアは `plugins/dev-workflow/references/model-tiers.md`、
 レビュー系の既定ティアと最上位ティアへの昇格条件は dev-workflow の pr-review-gate。
 それらの網に無い**アドホックに立てるサブエージェント**（Explore / general-purpose 等）は、
 このルールの原則で直接ティアを決める。

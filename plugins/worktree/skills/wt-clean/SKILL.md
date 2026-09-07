@@ -1296,7 +1296,7 @@ Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 
 ## 自己検証
 
-完了宣言の前に成果物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`、詳細手順: `plugins/worktree/references/wt-clean-verification.md`）。
+完了宣言の前に成果物の evidence を確認する（原則: `plugins/dev-workflow/references/self-verification.md`、詳細手順: `plugins/worktree/references/wt-clean-verification.md`）。
 
 - 削除した worktree が `git worktree list` に現れないことを確認する。
 - 🟡 判定で LLM 退避を行った場合、退避先ファイルが実在し空でないことを**削除前に**検証済みであることを確認する（検証失敗のまま削除していないこと）。

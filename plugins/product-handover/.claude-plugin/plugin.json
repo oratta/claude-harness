@@ -1,0 +1,8 @@
+{
+  "name": "product-handover",
+  "version": "0.1.0",
+  "description": "プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を持つプラグイン。法務ドラフト（利用規約・プライバシーポリシー・返金ポリシー）の雛形、サポート窓口メールの設定雛形、教訓ログの雛形の3つだけを配る。インフラ構築・開発ワークフロー導入・auto-merge 配線・SNS 運用はそれぞれ infra / dev-workflow / sns-autopilot が持つため本プラグインは呼び出さず、導入順だけを README に書く。住人側（workspace・cron・チャンネル）は flatmate の new-resident が担い、本プラグインはプロダクトのリポ側だけを扱う。",
+  "author": {
+    "name": "Oratta"
+  }
+}

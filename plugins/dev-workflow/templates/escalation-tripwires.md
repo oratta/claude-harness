@@ -1,4 +1,4 @@
-# 昇格トリップワイヤー（solo からの離脱条件）
+# 昇格トリップワイヤー（作業役が手を止める条件）
 
 <!--
 導入手順:
@@ -12,10 +12,14 @@
   SessionStart が再発火しないため、UserPromptSubmit hook（scripts/prompt-tripwires-refresh.sh）が
   「plugin.json のバージョンが前回注入時から変わったとき」だけ同じ本文を再注入する。
   バージョンが同じ間は毎プロンプト無出力で、文脈を食わない。
-- unmanned（loop-dev-agent）で使う場合: 憲法ファイル（docs/agent-loop.md）への組み込みを
-  loops プラグイン側が行う（loop-dev-agent-tripwires）。手動コピーは不要。
-- このテンプレートは「いつ手を止めるか」だけを定義する。「どう実行するか」は発火先の
-  スキル（/lr:e、/lr:p 等）が持つ。ここに実行手順を書き足さないこと。
+- unmanned（loop-dev-agent）で使う場合: 各リポに配備済みの憲法ファイル（docs/agent-loop.md。
+  flatmate が保守する正本で、harness 側にテンプレートや再生成手順は無い）が同じ条件を
+  組み込んでいる。手動コピーは不要。
+- develop スキルの W（サブエージェント）は hook 注入を受けないため、W の指示書
+  （skills/develop/references/roles/worker.md）が同じ条件を return の契機として持つ。
+- このテンプレートは「いつ手を止めるか」だけを定義する。「どう実行するか」は発火先
+  （develop の本体、Workflow 実行の型 references/workflow-execution.md、/opsx:explore 等）が持つ。
+  ここに実行手順を書き足さないこと。
 - 閾値（ファイル5個・2回など）は初期値であり、運用しながら調整してよい。
 -->
 
@@ -26,13 +30,18 @@
 乗り換え・昇格の際、ここまでの成果（編集済みファイル・通ったテスト・判明した事実）は
 破棄せず引き継ぐ。作業をやり直さない。
 
-1. 【規模超過 → workflow 型へ】
+1. 【規模超過 → 分割へ】
    編集対象ファイルが5個を超えた、または着手前の見積もりから作業項目が2回増えた
-   → solo をやめ、/lr:e 系の workflow 実行スキルに切り替える（成果は引き継ぐ）
+   → develop スキルの W として起動されている場合は本体に return し、本体が change / 子 issue
+      （develop のエピック化）に分割する。それ以外（本体自身が読んでいる場合）は develop の
+      エピック化、またはネイティブ Workflow 実行（型は plugins/dev-workflow/references/workflow-execution.md。
+      スクリプトは workflow-authoring スキルを読んで書く）に切り替える（成果は引き継ぐ）
 
 2. 【失敗ループ → モデル昇格】
    同じテストが2連続で落ちた、または同じ箇所を2回書き直した
    → 実行役を1段昇格する（Sonnet → Opus → Fable）。
+   `SHARED_BUDGET_MODE=throttled`（全モデル共通の週次枠が週の経過ペースより速く減っている）では
+   昇格上限を Opus、`depleted`（同枠 90% 超）では昇格しない。
    `FABLE_BUDGET_MODE=reserve` の自動実行（unmanned / cron / loop）では Opus を上限とし、
    Opus でも2連続失敗が続く場合は issue に needs-approval を付けて経緯をコメントし、
    そのサイクルを終了する。
@@ -46,11 +55,20 @@
    その瞬間に1カウント）
    → 手を止める。埋めた決定を列挙し、
       - 決定が2〜3個で局所的 → AskUserQuestion で確認する
-      - 決定が構造に及ぶ（データモデル・フロー・スコープ） → /lr:p を起動して壁打ちに戻す
+      - 決定が構造に及ぶ（データモデル・フロー・スコープ） → /opsx:explore で壁打ちに戻す
       - unmanned なら Discord でユーザーに質問し、issue に needs-approval を付けて
         経緯をコメントし、そのサイクルを終了する
 
-4. 【rate-limit 実エラー → reactive 降格】
+4. 【コンテキスト上限 → 手渡し】
+   名前付きサブエージェント（develop の W / G）を SendMessage で再開する前に
+   `${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <名前>` で測り、
+   `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000 tokens）を超えていた（exit 2）
+   → 再開しない。前回の return（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）
+      と記録先を渡して新しいサブエージェントを spawn する（手渡し。モデルは変えない）。
+      再開のたびに全履歴を読み直すため、畳まずに続けると 1 本で 30 万トークン超のリクエストを
+      毎ターン投げることになる（2026-09 監査の実測）
+
+5. 【rate-limit 実エラー → reactive 降格】
    Fable 実行が rate-limit / weekly-limit の実エラー（429、weekly limit reached 等）を返した
    → 予測的な閾値判定（トリップワイヤー2）とは別系統の事後対応。その場で Fable を諦め、
    実行役を Opus に降格して同じ作業を続行する（成果は引き継ぐ）。併せて usage-probe を

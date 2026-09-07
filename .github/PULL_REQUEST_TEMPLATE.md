@@ -1,4 +1,4 @@
-<!-- 書式の正本: plugins/loops/references/pr-body-format.md -->
+<!-- 書式の正本: plugins/dev-workflow/references/pr-body-format.md -->
 
 ## 位置づけ
 <!-- 3行で上から降りる（承認者はプロジェクト全体を頭に入れていない前提）:

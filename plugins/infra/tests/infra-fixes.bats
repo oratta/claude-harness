@@ -125,21 +125,38 @@ setup() {
 # 可変タグ／ブランチ参照（例: supabase/setup-cli@v2 は tag ではなくブランチ）は、上流の push だけで
 # 展開先の production ジョブが別コードを実行しうる。方針は oratta/claude-harness#138 / #162 / #176。
 #
-# 戻り値: 0=合格 / 1=違反あり（違反行を stderr に出す）/ 2=抽出 0 件
+# 戻り値: 0=合格 / 1=違反あり（違反行を stderr に出す）/ 2=抽出 0 件 / 3=走査エラー（読めないテンプレート等）
 # テスト関数から分離してあるのは、本物のテンプレート（正例）と、すり抜けを狙った
 # フィクスチャ（負例）の両方に同じ検査を当てるため。
 check_third_party_pins() {
   local dir="$1"
   local total=0
   local unpinned=""
-  local file line value body comment
+  local file line value body comment matches rc
 
   # ファイルを 1 本ずつ回して `grep -n`（前置は `<行番号>:` のみ）を使う。
   # `grep -rn` の前置 `<パス>:<行番号>:` を sed で剥がす方式は、パスが `:` を含むと
   # 誤った位置で剥がれてパス片が本文に残り、片中の `# v9 ` がコメント検査を
   # 肩代わりしていた（#183 その2）。行番号は数字だけで `:` を含まないため、
   # 最初の `:` までを剥がせば YAML 本文が一意に取れる。
-  while IFS= read -r file; do
+  #
+  # ファイル列挙は NUL 区切り（-print0 / read -d ''）。改行区切りだと改行を含む
+  # ファイル名が 2 つの実在しないパスに行分断され、grep のエラー（無視される）に
+  # 化けてそのファイルだけ未走査になる — 別ファイルの正例が total > 0 を満たすため、
+  # 違反が未走査のまま pass する fail-open だった（#197）。
+  while IFS= read -r -d '' file; do
+  # grep の終了コードを判定に使うため、行の供給をプロセス置換から変数経由にする。
+  # 0=一致あり / 1=一致なし（`uses:` を含まないテンプレは正常な空振り）/ 2 以上=走査エラー。
+  # 走査エラーはそのファイルの違反の有無を判定できないので、黙って続行（fail-open）せず
+  # 検査自体を fail させる（#197）。
+  matches="$(grep -nE \
+    "^[[:space:]]*-?[[:space:]]*[\"']?uses[\"']?[[:space:]]*:|^[[:space:]]*-?[[:space:]]*\\{[^#]*[\"']?uses[\"']?[[:space:]]*:" \
+    "$file")" && rc=0 || rc=$?
+  if [ "$rc" -ge 2 ]; then
+    printf 'failed to scan %s\n' "$file" >&2
+    return 3
+  fi
+  [ "$rc" -eq 1 ] && continue
   while IFS= read -r line; do
     total=$((total + 1))
 
@@ -202,10 +219,8 @@ check_third_party_pins() {
     # 有効なので抽出対象に含める（#182）。flow mapping 側の `[^#]*` は、コメント中の
     # `uses:`（例: `- run: x # uses: evil`）を実在のキーと誤認して無関係な行を
     # fail させないための境界。
-  done < <(grep -nE \
-    "^[[:space:]]*-?[[:space:]]*[\"']?uses[\"']?[[:space:]]*:|^[[:space:]]*-?[[:space:]]*\\{[^#]*[\"']?uses[\"']?[[:space:]]*:" \
-    "$file")
-  done < <(find "$dir" -type f -name '*.yml.template')
+  done <<< "$matches"
+  done < <(find "$dir" -type f -name '*.yml.template' -print0)
 
   # テンプレートの改名・移動で走査対象が 0 件になり、テストが無言で pass するのを防ぐ
   if [ "$total" -eq 0 ]; then
@@ -414,6 +429,47 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   run check_third_party_pins "$(write_uses_fixture \
     '{uses: "supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"} # v2.1.1')"
   [ "$status" -eq 0 ]
+}
+
+@test "S16a-19: a newline in a template filename does not skip that file's scan" {
+  # `find | while IFS= read -r` はファイル名の改行で行分断され、改行入りの名前が
+  # 2 つの実在しないパスに化けて grep がエラー（無視）→ そのファイルだけ未走査になる。
+  # 別ファイルに正例があれば total > 0 を満たすため、違反が未走査のまま pass していた（#197）。
+  local dir="$BATS_TEST_TMPDIR/newline"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$dir/"$'bad\nname.yml.template'
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+}
+
+@test "S16a-20: an unreadable template fails the scan instead of passing silently" {
+  # grep が読めないファイルを黙って無視すると、そのファイルの違反が未走査のまま
+  # 別ファイルの正例だけで pass する（改行入りファイル名の S16a-19 と同じ fail-open の別経路）。
+  # 走査エラーは違反の有無を判定できないので検査自体を fail させる（#197）。
+  [ "$(id -u)" -eq 0 ] && skip "root には chmod 000 が効かない"
+  local dir="$BATS_TEST_TMPDIR/unreadable"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$dir/secret.yml.template"
+  chmod 000 "$dir/secret.yml.template"
+  run check_third_party_pins "$dir"
+  chmod 644 "$dir/secret.yml.template"
+  # 「読めないファイルがあるのに pass しない」ことだけを固定する。走査エラーを
+  # 専用の 3 で返すか違反 1 に数えるかは抽出方式（行 grep / YAML パーサ）で変わるため、
+  # 合格 0 と抽出 0 件 2 を除外する形にして実装の書き換えに巻き込まれないようにする。
+  [ "$status" -ne 0 ]
+  [ "$status" -ne 2 ]
+  [[ "$output" == *"secret.yml.template"* ]]
 }
 
 @test "S17: all five workflow templates parse as YAML" {

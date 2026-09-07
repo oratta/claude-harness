@@ -24,7 +24,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 - 「完了です」「終わった」「done」「finished」のような汎用完了フレーズ
 - 「commit して」「コミットして」のようなコミット依頼
-- `longrun:archive` / `openspec:archive` の完了通知
+- `openspec:archive`（`/opsx:archive`）の完了通知
 - ファイルを編集した直後の assistant 報告
 
 この限定は、旧 e2s が全コミット境界で起動してコンテキストを浪費した反省を踏まえている。
@@ -102,7 +102,7 @@ description: <一行説明。session 原文を直接転記しない>
 
 ## 自己検証
 
-完了宣言の前に、生成物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`）。
+完了宣言の前に、生成物の evidence を確認する（原則: `plugins/dev-workflow/references/self-verification.md`）。
 
 - 生成した `SKILL.md` の frontmatter `name:` が `e2s-` または `distilled-` prefix を持つことを確認する: `grep -E '^name: (e2s-|distilled-)' <出力先>/SKILL.md`。
 - Layer 1/2 サニタイズを通過し、秘匿情報が `[REDACTED:<kind>]` に置換されて残存していないことを確認する。

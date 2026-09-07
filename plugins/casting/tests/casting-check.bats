@@ -18,6 +18,15 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+# --- Scenario: 宣言ファイル delegation.md は check の対象外（issue #207） ---
+
+@test "ok fixture: a delegation.md with a 3-column tools table is not reported as malformed-row" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/ok"
+  [ -f "${FIXTURES}/ok/.claude/casting/delegation.md" ]
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"delegation.md"* ]]
+}
+
 # --- Scenario: 7種の検出がそれぞれ報告される（⓪malformed-row はファイル末尾） ---
 
 @test "unknown-vocab fixture: reports the unknown perspective name and exits 1" {

@@ -151,7 +151,8 @@ PY
 import sys
 text = open(sys.argv[1], encoding="utf-8").read()
 assert "優先" in text, "precedence not explained"
-assert "loops-dev-agent-install" in text, "local layer not referenced"
+assert "loop-dev-agent" in text, "local layer not referenced"
+assert "loops-dev-agent-install" not in text, "retired loops installer still named (#205)"
 PY
 }
 

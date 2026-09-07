@@ -24,7 +24,7 @@ catalog_version: 1
 | 定期監査 | cron で状態を観点付きで見回る | （予約。現時点で割当なし） |
 | 注入しない | 移譲不能。主に上げるのが正しい | — |
 | 起票・選定時 | issue の起票・着手選定の時点で観点を効かせる | burn-select 論点ゲート・issueify |
-| 設計時 | plan・企画・仕様化の時点で観点を効かせる | longrun plan の research・opsx proposal |
+| 設計時 | plan・企画・仕様化の時点で観点を効かせる | `/opsx:explore` の壁打ち・opsx proposal（develop の W） |
 
 ## 14観点の注入マップ
 
@@ -43,7 +43,7 @@ catalog_version: 1
 | 開発スピード・機会損失 | 注入しない | —（担い手・移譲方針は catalog.md） | — |
 | 運用工数・維持 | PR 時レンズ | 維持コスト観点のレビューレンズ（#125） | `policies/maintenance.md` |
 | 技術設計・品質 | PR 時レンズ | pr-review-gate 本体 | テックスタック方針（repo の CLAUDE.md / docs） |
-| ユーザー価値・市場 | 設計時 | longrun plan の research agent（longrun-mvp-research 等） | — |
+| ユーザー価値・市場 | 設計時 | `/opsx:explore` の壁打ちと proposal 作成時のリサーチ（develop の W が担う） | — |
 | 美意識・ブランド感覚 | 注入しない | —（担い手・移譲方針は catalog.md） | — |
 | 感情的受容度 | 注入しない | —（担い手・移譲方針は catalog.md） | — |
 
@@ -53,7 +53,7 @@ catalog_version: 1
 
 ## 注入文書の置き場所規約
 
-観点の移譲に必要な注入文書は `<repo>/.claude/casting/policies/<slug>.md` に置く。配役表（`project.md`）の「移譲に必要な文書」列からはこのファイル名で参照する。既存の別置き文書（repo ルートの PHASE.md 等）がある repo は、実体の移動を強制せず policies/ からの参照 stub でよい。
+観点の移譲に必要な注入文書は `<repo>/.claude/casting/policies/<slug>.md` に置く。配役表（`project.md`）の「移譲に必要な文書」列からはこのファイル名で参照する。既存の別置き文書（repo ルートの PHASE.md 等）がある repo は、実体の移動を強制せず policies/ からの参照 stub でよい。注入文書の生成・更新の入口は `/casting:policy-interview <観点>`（`commands/policy-interview.md`。主と 1 問ずつやり取りして雛形 `templates/policy.md` から作る）。ツール側の許可と束ねた「委任」の定義は `delegation.md` が正本。
 
 **人格規約**: 各 policy 文書は判断基準に加えて**人格ブロック**（スペシャリストの名前・スタンス・口調を数行）を持つ。観点スペシャリストはこれをシステムプロンプトとして纏い、仲裁報告と判例台帳は人格名で発言を帰属する（「誰が何と言い、どう裁定されたか」が読める監査ログにするため）。人格は判断基準の入れ物であって代替ではない — 正はあくまで判断基準本文で、人格は数行に留める。スペシャリスト起動時には同観点の過去判例を渡し、セッションを跨ぐ一貫性は判例台帳経由で作る（形式の正本は #127 で確定）。
 
@@ -78,7 +78,7 @@ catalog_version: 1
 | レビューゲート | PR 時レンズ | `plugins/dev-workflow/skills/pr-review-gate/SKILL.md` |
 | SNS 投稿前ゲート | アクション直前ゲート | sns-autopilot プラグインの sns-safety-reviewer agent |
 | burn-select 論点ゲート | 起票・選定時 | genetta-inc/flatmate の `scripts/burn-select.sh`（flatmate#368） |
-| plan 時リサーチ | 設計時 | `plugins/longrun` の research agent（longrun-mvp-research 等） |
+| plan 時リサーチ | 設計時 | `/opsx:explore`・opsx proposal 作成時のリサーチ（develop の W） |
 
 ## 未実装の配線（実装 issue）
 

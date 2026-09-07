@@ -336,7 +336,7 @@ Edit ツールで更新する。
 
 ## 自己検証
 
-完了宣言の前に、成果物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`）。
+完了宣言の前に、成果物の evidence を確認する（原則: `plugins/dev-workflow/references/self-verification.md`）。
 
 - 週次ノート `02 - PERIODIC/Weekly/{week}.md` が実在し、frontmatter（`type: weekly` / `week`）を持つことを確認する。
 - 挿入した実績サマリが対象週のコミット・タスクを反映し、既存セクション（フォーカス・振り返り）を変更していないことを確認する。
