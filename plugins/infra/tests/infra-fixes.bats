@@ -133,7 +133,7 @@ setup() {
 # パーサに任せれば、キー・値・コメントの区別は YAML の文法どおりに付く。
 # S17 が既に ruby YAML でテンプレートのパース可否を見ているので、依存は増えない。
 #
-# 戻り値: 0=合格 / 1=違反あり（違反行を stderr に出す。パースできないファイルも違反）/ 2=抽出 0 件
+# 戻り値: 0=合格 / 1=違反あり（違反行を stderr に出す。読めない／パースできないファイルも違反）/ 2=抽出 0 件
 # テスト関数から分離してあるのは、本物のテンプレート（正例）と、すり抜けを狙った
 # フィクスチャ（負例）の両方に同じ検査を当てるため。
 check_third_party_pins() {
@@ -143,7 +143,13 @@ check_third_party_pins() {
   local unpinned=""
   local file start_line end_line end_col value body rest comment listed
 
-  while IFS= read -r file; do
+  # ファイル列挙は NUL 区切り（-print0 / read -d ''）。改行区切りだと改行を含む
+  # ファイル名が 2 つの実在しないパスに行分断され、そのファイルの中身が一度も
+  # 読まれないまま別のパス名で扱われる。以前は行 grep のエラーが無視されて
+  # そのファイルだけ未走査のまま pass する fail-open だった（#197）。パーサ方式では
+  # 分断されたパスが違反に落ちるので pass はしないが、報告が実在しないパスになり
+  # 本当の違反行が出ないので、列挙の時点で分断させない。
+  while IFS= read -r -d '' file; do
     # ファイルパスは ruby の引数として渡す（`grep -rn` の前置 `<パス>:<行番号>:` を剥がす方式は
     # パスが `:` や `# v9` を含むと本文に片が残ってコメント検査を肩代わりしていた。#183）。
     # パースできないファイルは fail-closed で違反に数える（0 件扱いで無言 pass させない）。
@@ -198,7 +204,7 @@ check_third_party_pins() {
         unpinned="${unpinned}${file}:${start_line}:${body}"$'\n'
       fi
     done <<< "$listed"
-  done < <(find "$dir" -type f -name '*.yml.template')
+  done < <(find "$dir" -type f -name '*.yml.template' -print0)
 
   # テンプレートの改名・移動で走査対象が 0 件になり、テストが無言で pass するのを防ぐ
   if [ "$total" -eq 0 ]; then
@@ -448,6 +454,48 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   run check_third_party_pins "$dir"
   [ "$status" -eq 1 ]
   [[ "$output" == *"not parseable as YAML"* ]]
+}
+
+@test "S16a-19: a newline in a template filename does not skip that file's scan" {
+  # `find | while IFS= read -r` はファイル名の改行で行分断され、改行入りの名前が
+  # 2 つの実在しないパスに化けて、そのファイルの中身が一度も読まれない。以前は
+  # 行 grep のエラーが無視されて未走査のまま pass する fail-open だった（#197）。
+  # NUL 区切りで列挙すれば、名前に改行があっても中身が読まれて違反行が報告される。
+  local dir="$BATS_TEST_TMPDIR/newline"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$dir/"$'bad\nname.yml.template'
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]]
+}
+
+@test "S16a-20: an unreadable template fails the scan instead of passing silently" {
+  # 読めないファイルを黙って無視すると、そのファイルの違反が未走査のまま
+  # 別ファイルの正例だけで pass する（改行入りファイル名の S16a-19 と同じ fail-open の別経路）。
+  # 走査エラーは違反の有無を判定できないので検査自体を fail させる（#197）。
+  [ "$(id -u)" -eq 0 ] && skip "root には chmod 000 が効かない"
+  local dir="$BATS_TEST_TMPDIR/unreadable"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$dir/secret.yml.template"
+  chmod 000 "$dir/secret.yml.template"
+  run check_third_party_pins "$dir"
+  chmod 644 "$dir/secret.yml.template"
+  # 「読めないファイルがあるのに pass しない」ことだけを固定する。走査エラーを
+  # 専用の 3 で返すか違反 1 に数えるかは抽出方式（行 grep / YAML パーサ）で変わるため、
+  # 合格 0 と抽出 0 件 2 を除外する形にして実装の書き換えに巻き込まれないようにする。
+  [ "$status" -ne 0 ]
+  [ "$status" -ne 2 ]
+  [[ "$output" == *"secret.yml.template"* ]]
 }
 
 @test "S17: all five workflow templates parse as YAML" {
