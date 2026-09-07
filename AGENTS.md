@@ -10,10 +10,10 @@
 - 開発用 clone は marketplace dir の外の任意の場所に置く。置き場所は PC ごとに自由で、パスをこのリポジトリの文書やスクリプトに固定で書かない
 - worktree はその開発用 clone から生やす
 - marketplace dir では **feature ブランチを checkout しない・編集しない**。常に main のまま自動更新に任せる
-- Claude Code が実行時に読むのは `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` で、marketplace dir はそのコピー元にすぎない。cache はバージョンを上げなくても marketplace dir の HEAD に追随する。marketplace dir を feature ブランチにしていると、自動更新（`merge origin/main --ff`）や `scripts/sync.sh` の pull がそのブランチ上で走り、cache にもマージ前の内容が入る
+- Claude Code が実行時に読むのは `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` で、marketplace dir はそのコピー元にすぎない。cache はバージョンを上げなくても marketplace dir の HEAD に追随する。marketplace dir を feature ブランチにしていると、Claude Code の自動更新や `scripts/sync.sh` の `git pull --ff-only` がそのブランチ上で走り、cache にもマージ前の内容が入る
 - worktree の管理情報は再 clone されうる `.git` の中にあるため、marketplace dir から生やした worktree は自動更新で失われることがある。開発を外に出すのはこの構造を避けるため
-- マージ前の動作確認は `claude --plugin-dir <開発用 clone または worktree のパス>` で、そのセッションだけプラグインを読み込ませて行う
-- マージ後の反映は `/plugin update`（または新規セッション起動時の自動更新）→ `/reload-plugins` か新規セッション
+- マージ前の動作確認は `claude --plugin-dir <worktree のパス>/plugins/<プラグイン名>` で、そのセッションだけプラグインを読み込ませて行う。`--plugin-dir` が取るのは `.claude-plugin/plugin.json` を持つ**プラグイン 1 個のディレクトリ**で、リポジトリのルート（`.claude-plugin/marketplace.json` を持つ marketplace）を渡しても警告なしに何も読み込まれない。複数のプラグインを見るときは `--plugin-dir` を繰り返す
+- マージ後の反映は `/plugin marketplace update oratta-claude-harness`（または新規セッション起動時の自動更新）→ `/reload-plugins` か新規セッション。`/plugin update` というスラッシュコマンドは存在しない
 
 ## PR 運用ルール
 

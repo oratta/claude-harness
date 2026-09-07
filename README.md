@@ -93,7 +93,8 @@ git clone https://github.com/oratta/claude-harness
 cd claude-harness
 
 # マージ前の動作確認は、そのセッションだけこの clone を読み込ませる
-claude --plugin-dir .
+# --plugin-dir はプラグイン 1 個のディレクトリを取る（リポジトリのルートを渡しても何も読み込まれない）
+claude --plugin-dir ./plugins/<変更したプラグイン>
 ```
 
 ### 新しいプラグインを追加
