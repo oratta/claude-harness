@@ -143,10 +143,14 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$loop" | grep -q 'needs-approval'
 }
 
-@test "loop: G failed resumes W (fable when implementation quality) then G for a diff re-review" {
+@test "loop: G failed raises only the cause side (never W to fable) then resumes W and G" {
   loop="$(section '1 ループ')"
-  echo "$loop" | grep -qE 'failed.*W を再開'
-  echo "$loop" | grep -qE '実装品質起因.*fable'
+  echo "$loop" | grep -qE 'failed.*原因分類'
+  echo "$loop" | grep -qF '実装品質起因のときだけ'
+  echo "$loop" | grep -qF '一方だけ'
+  echo "$loop" | grep -qF 'dev-workflow:decider'
+  echo "$loop" | grep -qF 'W を fable にはしない'
+  echo "$loop" | grep -qE 'W を再開'
   echo "$loop" | grep -qE 'G を再開'
 }
 
@@ -168,18 +172,21 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 
 # --- モデル ---
 
-@test "model: W defaults to sonnet, R1 opus, G sonnet; fable only by merge permission / cross-layer / billing" {
+@test "model: W defaults to sonnet and is capped at opus; R1 opus, G sonnet; fable only via the decider type" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE '^\| W \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| W（実行役） \| `sonnet` \|'
   echo "$m" | grep -qE 'W.*`opus`'
-  echo "$m" | grep -qE '^\| R1 \| `opus` \|'
+  echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
   echo "$m" | grep -qE '^\| G \| `sonnet` \|'
   ! echo "$m" | grep -qE 'マージ条件・聖域・層間契約'
   echo "$m" | grep -q '事前分類'
   echo "$m" | grep -q 'マージ条件'
   echo "$m" | grep -q '聖域'
   echo "$m" | grep -q '層間契約'
-  echo "$m" | grep -q '`fable`'
+  # W を fable にする行は無く、fable は決める役の種別だけ
+  echo "$m" | grep -qF 'W の上限は `opus`'
+  echo "$m" | grep -qF 'dev-workflow:decider'
+  echo "$m" | grep -qF 'agent-model-guard.sh'
 }
 
 @test "model: reserve only for automatic runs, exhausted caps every path at opus" {
@@ -190,10 +197,12 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$m" | grep -q 'references/decision-criteria.md'
 }
 
-@test "model: escalation tripwire survives as W's resume-time model choice" {
+@test "model: the escalation tripwire survives as a one-side-only ladder" {
   m="$(section 'モデル')"
   echo "$m" | grep -q '2 連続'
-  echo "$m" | grep -qE '再開.*(1 段|一段|昇格)'
+  echo "$m" | grep -qF 'どちらか一方だけ'
+  echo "$m" | grep -qF '両方同時に上げない'
+  echo "$m" | grep -qF 'dev-workflow:decider'
 }
 
 @test "model: shared budget mode sets the floor and abundant no longer lifts W" {
@@ -204,10 +213,10 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$m" | grep -q 'どの役割の既定も上げない'
 }
 
-@test "model: G defaults to sonnet and sanctuary paths lift W only to opus" {
+@test "model: G defaults to sonnet and every pre-classification lifts W only to opus" {
   m="$(section 'モデル')"
   echo "$m" | grep -qE '^\| G \| `sonnet` \|'
-  echo "$m" | grep -qE '^\| R1 \| `opus` \|'
+  echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
   echo "$m" | grep -q '聖域パス'
   echo "$m" | grep -qE 'マージ権限・層間契約・課金/法務'
 }

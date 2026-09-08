@@ -22,7 +22,7 @@ Codex の出力全文を本体に流さない。構造化された指摘一覧�
 
 ## needs-reviewer の return（本体にレビュアーの spawn を委ねる）
 
-G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（`general-purpose`。既定 `opus`。マージ条件・層間契約・課金/法務に触れれば `fable`（聖域パスだけでは上げない））を spawn し、その要約を SendMessage で G に渡す。
+G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: general-purpose` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、その要約を SendMessage で G に渡す。
 
 ```markdown
 ## needs-reviewer
@@ -30,7 +30,7 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 - 根拠: <2-0 の判定材料（変更ファイル一覧・行数・挙動定義ファイルの有無）、full なら Codex が使えなかった理由>
 - PR 番号: #<N>
 - HEAD SHA: <40 桁フル SHA（手順 1 で固定したもの）>
-- 推奨モデル: opus | fable
+- 推奨モデル: opus | dev-workflow:decider（種別で指定する。`general-purpose` に `model: fable` は付けない）
 - 推奨モデルの根拠: <マージ条件・層間契約・課金/法務への接触の有無、usage snapshot の残量>
 - 受け入れ条件の所在: <issue #N 本文 | PR #N 本文>
 - レビュアーに渡す範囲: <diff の範囲（`gh pr diff N`）、再レビューなら前回指摘の一覧>
@@ -52,12 +52,12 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 ### failed のとき
 - 原因分類（pr-review-gate 手順 2-2）: 実装品質起因 | 仕様が曖昧 | レビュアーの誤検出
 - 指摘一覧（再現手順・修正点）と PR コメント URL
-- 本体への提案: 実装品質起因なら W を前回の実装モデルの 1 段上（`sonnet` → `opus` → `fable`。残量モードと共有枠モードの上限内）で再開、仕様が曖昧なら受け入れ条件の確定（unmanned は needs-approval）、誤検出なら反証コメントの投稿
+- 本体への提案: 実装品質起因なら、失敗の原因が実行側（指示どおりやって結果が違う）か判断側（指示を解釈できなかった・指示自体が外れていた）かを書き添えて、実行側なら W を `opus` で再開、判断側なら `subagent_type: dev-workflow:decider`（`model` は `opus` → `fable`。種別は固定して `model` だけ切り替える）を立てて修正方針を作らせるよう提案する（**決める役と実行役のどちらか一方だけ**を上げる。W を `fable` にはしない。残量モードと共有枠モードの上限内）。仕様が曖昧なら受け入れ条件の確定（unmanned は needs-approval）、誤検出なら反証コメントの投稿
 ### 保留のとき
 - needs-approval の理由と、オーナーに依頼する 1 アクション（リスク許容の可否 / 動作確認の 3 点セット）
 ```
 
-failed の return には**必ず原因分類**を含める（本体はこれを見て W の再開モデルを決める。分類の定義は pr-review-gate 手順 2-2 が正本）。
+failed の return には**必ず原因分類**を含める（本体はこれを見て、決める役と実行役のどちらを上げるかを決める。分類の定義は pr-review-gate 手順 2-2 が正本。モデルを上げるのは実装品質起因のときだけ）。
 
 ## 再開（本体が SendMessage で G を再開する）
 
@@ -67,6 +67,6 @@ failed の return には**必ず原因分類**を含める（本体はこれを�
 
 ## モデル（本体が spawn 時に決める）
 
-G の既定は `sonnet` で、上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認（照合作業）で、欠陥探索は Codex か `needs-reviewer` で本体が spawn するレビュアー（既定 `opus`。マージ条件・層間契約・課金/法務に触れる PR なら `fable`）が担う。モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 固定・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類の `fable` 行（マージ権限・層間契約・課金/法務）による `fable`（聖域パスは `opus` 止まり） ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限）。正本は `references/decision-criteria.md`。 レビュアーは `throttled` では `opus` 止まり、`depleted` では `sonnet`。事前分類表の正本は `references/roles/worker.md`。
+G の既定は `sonnet` で、上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認（照合作業）で、欠陥探索は Codex か `needs-reviewer` で本体が spawn するレビュアー（既定 `opus`。マージ条件・層間契約・課金/法務に触れる PR なら `subagent_type: dev-workflow:decider`）が担う。モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 固定・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類（マージ権限・層間契約・課金/法務）による `dev-workflow:decider`（聖域パスは `opus` 止まり） ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限。このとき種別は `dev-workflow:decider` のまま `model: opus` に落とす）。正本は `references/decision-criteria.md`。 レビュアーは `throttled` では `opus` 止まり、`depleted` では `sonnet`。事前分類表の正本は `references/roles/worker.md`。
 
 G を SendMessage で再開する前に、本体は `scripts/subagent-context.sh <G の名前>` でコンテキスト量を測る。上限超なら再開せず、前回の return（手順 1〜5 の結果・投稿済みコメント URL）を渡して新しい G を spawn する（`references/decision-criteria.md`「コンテキスト上限」）。

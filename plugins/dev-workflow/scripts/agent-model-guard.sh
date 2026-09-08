@@ -8,6 +8,8 @@
 #
 # 判定:
 #   - tool_name が Agent 以外 → 何もしない（exit 0・無出力）
+#   - model が Fable（エイリアス fable / 完全 ID claude-fable-*）→ subagent_type が決める役
+#     （dev-workflow:decider）のときだけ許可。それ以外は拒否（実行役の上限は opus）
 #   - model あり → 許可
 #   - subagent_type が定義に model を持つエージェント（plugin:agent 形式や casting-* 等）→ 許可
 #     （Agent ツールは定義側の model を使うため、パラメータ省略が親継承にならない）
@@ -76,6 +78,17 @@ if stype == "fork":
     deny(f"fork は親モデル（Fable）を継承して全履歴ごと動く（model パラメータは無視される）。共有枠モードが {shared} のあいだは fork を使わず、"
          "model を明示した general-purpose（sonnet / opus）で spawn する。規範: rules/subagent-model-selection.md")
 
+# Fable は決める役の種別でだけ spawn できる（実行役の上限は opus）。
+# エイリアス fable の完全一致と、完全 ID claude-fable-* の前方一致で見る（世代交代で穴が開かないように）。
+DECIDER_TYPES = {"dev-workflow:decider"}   # env で外から足せるようにしない（例外がガードの外で作れてしまう）
+m = model.strip().lower()
+if (m == "fable" or m.startswith("claude-fable")) and stype not in DECIDER_TYPES:
+    deny(f"model: {model} は決める役の種別（{'/'.join(sorted(DECIDER_TYPES))}）でだけ spawn できる。"
+         "Fable が消費するのはターン数なので、実装・修正ループ（実行役）を Fable で回すと週次枠が溶ける。"
+         "実行役は model: sonnet（通常実装）/ opus（設計・レビュー・聖域パス）を使い、"
+         "決めさせたいなら subagent_type: dev-workflow:decider に替えて再実行。"
+         "規範: rules/subagent-model-selection.md")
+
 if model:
     sys.exit(0)
 
@@ -83,7 +96,8 @@ if model:
 NEEDS_EXPLICIT = {"", "general-purpose", "Explore", "Plan", "claude", "claude-code-guide", "statusline-setup"}
 if stype in NEEDS_EXPLICIT:
     deny("Agent の model が未指定。省略すると親セッションのモデル（多くは Fable）を継承して週次枠を無言で消費する。"
-         "model: haiku（機械的）/ sonnet（通常実装・調査）/ opus（設計・レビュー）/ fable（最終 verify・マージ権限・層間契約・課金/法務）を明示して再実行。"
+         "model: haiku（機械的）/ sonnet（通常実装・調査）/ opus（設計・レビュー・聖域パス）を明示して再実行。"
+         "fable は決める役の種別（subagent_type: dev-workflow:decider）でだけ使える。"
          "規範: rules/subagent-model-selection.md")
 sys.exit(0)
 PY

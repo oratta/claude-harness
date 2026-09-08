@@ -114,3 +114,73 @@ JSON
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+# ===== Fable は決める役の種別でだけ spawn できる（issue #250） =====
+
+@test "fable: general-purpose with model fable is denied, naming the decider type and the alternatives" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"fable","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  denied
+  echo "$output" | grep -q 'dev-workflow:decider'
+  echo "$output" | grep -q 'sonnet'
+  echo "$output" | grep -q 'opus'
+  echo "$output" | grep -q 'subagent-model-selection'
+}
+
+@test "fable: the full model id (claude-fable-*) is denied the same way" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"claude-fable-5-1","prompt":"x"}}'
+  denied
+  echo "$output" | grep -q 'dev-workflow:decider'
+}
+
+@test "fable: case and surrounding spaces do not slip through" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":" Fable ","prompt":"x"}}'
+  denied
+}
+
+@test "fable: denied for a missing subagent_type, Explore, Plan and other plugin types" {
+  call '{"tool_name":"Agent","tool_input":{"model":"fable","prompt":"x"}}'
+  denied
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"Explore","model":"fable","prompt":"x"}}'
+  denied
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"Plan","model":"fable","prompt":"x"}}'
+  denied
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"casting:casting-arbiter","model":"fable","prompt":"x"}}'
+  denied
+}
+
+@test "fable: dev-workflow:decider with model fable is allowed silently" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:decider","model":"fable","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "decider: opus and an omitted model are allowed (the type is fixed, only the model changes)" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:decider","model":"opus","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:decider","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "non-fable models on general-purpose keep passing" {
+  for m in opus sonnet haiku; do
+    call "{\"tool_name\":\"Agent\",\"tool_input\":{\"subagent_type\":\"general-purpose\",\"model\":\"$m\",\"prompt\":\"x\"}}"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
+}
+
+@test "escape hatch: DEV_WORKFLOW_MODEL_GUARD=off also allows fable on general-purpose" {
+  run env DEV_WORKFLOW_MODEL_GUARD=off "$SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","model":"fable","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "model-unspecified denial no longer advertises fable for the four classifications" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}'
+  denied
+  ! echo "$output" | grep -q 'fable（最終 verify'
+  echo "$output" | grep -q 'dev-workflow:decider'
+}

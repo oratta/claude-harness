@@ -57,6 +57,30 @@ PY
   [ -z "$output" ]
 }
 
+# このスクリプトは毎セッション残量モードの「効果」文をコンテキストに注入するので、
+# 旧方針（Fable を事前分類の fable 行 / verify・checkpoint で使う）が残っていると、
+# ガード（scripts/agent-model-guard.sh）が deny する指示を全セッションに配り続けることになる。
+# spec: dev-workflow-model-escalation-policy
+@test "injection: budget-mode effects route Fable through the decider type, not the retired fable row" {
+  ctx_of() {  # $1=FABLE_BUDGET_MODE
+    run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" FABLE_BUDGET_MODE="$1" \
+        USAGE_SNAPSHOT="${TMPDIR_EMPTY}/nonexistent.json" \
+        USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json" "$SCRIPT"
+    [ "$status" -eq 0 ]
+    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
+  }
+  for mode in abundant conserve; do
+    out="$(ctx_of "$mode")"
+    echo "$out" | grep -qF 'dev-workflow:decider'
+    # 旧方針の文言（決める役の種別を経由せず Fable を使わせるもの）は注入しない
+    ! echo "$out" | grep -qF '事前分類の fable 行'
+    ! echo "$out" | grep -qF 'Fable は verify / checkpoint のみ'
+    ! echo "$out" | grep -qF 'solo=Opus'
+  done
+  # 実行役の上限が opus であることも conserve の効果文に残す
+  echo "$(ctx_of conserve)" | grep -qF 'opus 止まり'
+}
+
 @test "template: intro documents hook-based default and optional manual copy" {
   grep -q 'SessionStart' "$TEMPLATE"
   grep -Eq 'オプション|プラグイン未導入' "$TEMPLATE"

@@ -37,17 +37,32 @@
       エピック化、またはネイティブ Workflow 実行（型は plugins/dev-workflow/references/workflow-execution.md。
       スクリプトは workflow-authoring スキルを読んで書く）に切り替える（成果は引き継ぐ）
 
-2. 【失敗ループ → モデル昇格】
+2. 【失敗ループ → 決める役 / 実行役の分離ラダー】
    同じテストが2連続で落ちた、または同じ箇所を2回書き直した
-   → 実行役を1段昇格する（Sonnet → Opus → Fable）。
+   → 実行役を1段ずつ上げるのではなく、失敗の原因が「決めた内容が間違っていた（判断側）」か
+      「決めたとおりに実行できなかった（実行側）」かで、上げる相手を**一方だけ**決める
+      （両方同時に上げない）。決める役は数ターンで終わるので先に上げ、実行役を上げるのは
+      実行側が原因と分かったときだけ。
+
+   | 段階 | 決める役 | 実行役 |
+   |---|---|---|
+   | 初回 | 仕様化判断と R1 レビューが担う（既存の流れ） | `sonnet` |
+   | 1 回目の失敗 | `dev-workflow:decider` を `model: opus` で spawn（本体が opus 以上ならその場で）し、失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする | `sonnet` で再試行 |
+   | 2 回目の失敗・指示どおりやって結果が違う | `dev-workflow:decider`（`model: opus`） | `opus` |
+   | 2 回目の失敗・指示を解釈できなかった / 指示自体が外れていた | `dev-workflow:decider`（`model: fable`。本体が fable ならその場で） | `sonnet` または `opus` |
+   | fable が決めて opus が実行しても落ちる | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
+
+   決める役はどの段階でも `subagent_type` を `dev-workflow:decider` に固定し、`model` だけを
+   切り替える（`general-purpose` に読み替えない）。**実行役の上限は `opus` で、実行役を Fable で
+   spawn しない**（強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`。`model: fable` の
+   実行役 spawn は PreToolUse で拒否される）。
    `SHARED_BUDGET_MODE=throttled`（全モデル共通の週次枠が週の経過ペースより速く減っている）では
    昇格上限を Opus、`depleted`（同枠 90% 超）では昇格しない。
-   `FABLE_BUDGET_MODE=reserve` の自動実行（unmanned / cron / loop）では Opus を上限とし、
-   Opus でも2連続失敗が続く場合は issue に needs-approval を付けて経緯をコメントし、
-   そのサイクルを終了する。
-   `FABLE_BUDGET_MODE=exhausted`（Fable 週次枠を実質使い切った。明示宣言または
-   usage snapshot からの自動導出）では、interactive / unmanned を問わず昇格上限を Opus とする
-   （Fable へは昇格しない）
+   `FABLE_BUDGET_MODE=reserve` の自動実行（unmanned / cron / loop）と `exhausted`（Fable 週次枠を
+   実質使い切った。明示宣言または usage snapshot からの自動導出）では、決める役も
+   `dev-workflow:decider` のまま `model: opus` 止まりとする（種別は変えない）。
+   Opus が決めて Opus が実行しても2連続失敗が続く場合は issue に needs-approval を付けて
+   経緯をコメントし、そのサイクルを終了する
 
 3. 【仕様の発明検知 → plan/質問へ】
    実装を進めるために、ユーザーの指示に書かれていない仕様上の決定を自分で埋めた回数が

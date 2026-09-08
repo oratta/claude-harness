@@ -78,8 +78,8 @@ W の指示書（`references/roles/worker.md`）の仕様化判断（Step B）�
 
 | 値 | 意味 | 効果 |
 |---|---|---|
-| `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | **どの役割の既定も上げない**。役割表の既定どおりで、Fable は事前分類の `fable` 行だけ。余った Fable 枠は人間の対話と verify に回す（2026-09 の監査で W の 4 割が Fable、翌週は R1 / G が 100% Fable で走っており、abundant の押し上げが例外を既定にしていた） |
-| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | 役割表の既定どおり（W = Sonnet、R1 = Opus、G = Sonnet）。事前分類（`references/roles/worker.md`）の `fable` 行に当たる場合のみ Fable |
+| `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | **どの役割の既定も上げない**。役割表の既定どおりで、Fable が使われる経路は決める役（`subagent_type: dev-workflow:decider`）だけ。余った Fable 枠は人間の対話と verify に回す（2026-09 の監査で W の 4 割が Fable、翌週は R1 / G が 100% Fable で走っており、abundant の押し上げが例外を既定にしていた） |
+| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | 役割表の既定どおり（W = Sonnet、R1 = Opus、G = Sonnet）。事前分類（`references/roles/worker.md`）に当たる場合、読んで判断する役（R1 / G が要求するレビュアー）だけ `subagent_type: dev-workflow:decider` で Fable。実行役（W）はどの分類でも `opus` 止まり |
 | `reserve` | Fable 枠を人間用に温存 | conserve に加えて、**自動実行（unmanned / cron / loop 経由）では Fable をいかなる役割でも使わない**。昇格ラダーは Opus 上限。Opus でも2連続失敗が続く問題は `needs-approval` で人間に返す。interactive は conserve と同一 |
 | `exhausted` | Fable 週次枠を実質使い切った（`fable_weekly_pct > 90`、または明示宣言） | **reserve と異なり interactive を含む全経路で Fable を一切使わない**（枠が実際に無いため）。昇格ラダーは Opus 上限。加えて rate-limit 実エラーで reactive に Opus へ降格する（`escalation-tripwires.md` トリップワイヤー5） |
 

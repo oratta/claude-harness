@@ -15,6 +15,7 @@ setup() {
   DEV_SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
   GATE_SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
+  CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
 }
@@ -32,13 +33,46 @@ setup() {
   grep -qF '課金/法務' "$WORKER"
 }
 
-@test "pre-classification: spawns with model fable from the first round" {
-  grep -qF '`model: fable`' "$WORKER"
+@test "pre-classification: the first-round column has no fable (the worker's cap is opus)" {
+  tbl="$(awk '/^## 重要実装の事前分類/{f=1} f && /^\| /{print} /^## 昇格トリップワイヤー/{f=0}' "$WORKER")"
+  [ -n "$tbl" ]
+  ! echo "$tbl" | grep -qF '`fable`'
+  echo "$tbl" | grep -qF '`opus`'
   grep -q '最初から' "$WORKER"
+  grep -qF 'W の上限は `opus`' "$WORKER"
+}
+
+@test "pre-classification: reviewers that hit the table are spawned as dev-workflow:decider" {
+  grep -qF 'dev-workflow:decider' "$WORKER"
+  grep -qF '`general-purpose` に `model: fable` を付けない' "$WORKER"
 }
 
 @test "pre-classification: session model (AGENT_MODEL) is left unchanged" {
   grep -qF 'AGENT_MODEL' "$WORKER"
+}
+
+# 残量モード表の abundant / conserve 行は「事前分類の fable 行」を前提に書かれていて、
+# 事前分類表から fable 行が消えた後も旧前提のまま残っていた（PR #252 の指摘）。
+@test "budget modes: the abundant / conserve rows route Fable through the decider type" {
+  for row in abundant conserve; do
+    line="$(grep -F "| \`${row}\`" "$CRITERIA")"
+    [ -n "$line" ]
+    echo "$line" | grep -qF 'dev-workflow:decider'
+  done
+  grep -qF '実行役（W）はどの分類でも `opus` 止まり' "$CRITERIA"
+}
+
+# 退役した言い回しがプラグインのどこかに残ると、配布される指示文がガードの deny する
+# 手順を案内することになる。文書・スクリプトを横断で見る（CHANGELOG は変更の記録なので対象外）。
+@test "retired wording: no live instruction still points at the removed fable row" {
+  offenders="$(grep -rn '事前分類の `\?fable`\? 行\|Fable は verify / checkpoint のみ' \
+      --include='*.md' --include='*.sh' --include='*.json' "$PLUGIN_DIR" \
+      | grep -v '/tests/' | grep -v '/CHANGELOG.md:' || true)"
+  if [ -n "$offenders" ]; then
+    echo "退役した『事前分類の fable 行』の言い回しが残っている:"
+    echo "$offenders"
+    false
+  fi
 }
 
 @test "pre-classification: budget mode still caps escalation" {
@@ -57,13 +91,30 @@ setup() {
   [ "$sec" -lt "$step3" ]
 }
 
-@test "escalation: implementation-quality failures escalate one rung (sonnet → opus → fable), never straight to fable" {
+@test "escalation: implementation-quality failures raise the decider or the executor, never both" {
   sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$GATE_SKILL")"
   echo "$sec" | grep -qF '実装品質起因'
-  echo "$sec" | grep -qF '1 段上'
-  echo "$sec" | grep -qF '`sonnet` → `opus` → `fable`'
+  echo "$sec" | grep -qF '決める役'
+  echo "$sec" | grep -qF '実行役'
+  echo "$sec" | grep -qF '一方だけ'
+  echo "$sec" | grep -qF 'dev-workflow:decider'
+  # 旧ラダー（実行役を 1 段ずつ sonnet → opus → fable）は残さない
+  ! echo "$sec" | grep -qF '`sonnet` → `opus` → `fable`'
   ! echo "$sec" | grep -qF '修正実装を `model: fable` で spawn'
   grep -qF '昇格は実装品質起因のときだけ' "$GATE_SKILL"
+}
+
+@test "escalation: the executor is capped at opus and never spawned as fable" {
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$GATE_SKILL")"
+  echo "$sec" | grep -qF '実行役の上限は `opus`'
+  echo "$sec" | grep -qF 'agent-model-guard.sh'
+}
+
+@test "escalation: the two-round cap is given as the reason for raising on the first failed" {
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$GATE_SKILL")"
+  echo "$sec" | grep -qF '2 周キャップ'
+  echo "$sec" | grep -qF '最終周'
+  echo "$sec" | grep -qF '1 回目の failed'
 }
 
 @test "escalation: ambiguous spec and reviewer false positives are not escalated" {
@@ -76,7 +127,8 @@ setup() {
 
 @test "fallback: falls back to the previous model and records one PR comment line" {
   grep -qF 'フォールバック' "$GATE_SKILL"
-  grep -qF '修正実装モデル: opus' "$GATE_SKILL"
+  grep -qF '決める役モデル: opus' "$GATE_SKILL"
+  grep -qF 'dev-workflow:decider のまま' "$GATE_SKILL"
   grep -qF 'レート制限' "$GATE_SKILL"
 }
 

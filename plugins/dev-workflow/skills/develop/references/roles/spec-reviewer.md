@@ -25,14 +25,14 @@ R1 は develop の本体が spawn するサブエージェント（W とは別�
 
 ## R1 の spawn（本体が行う。R1 は確認だけ）
 
-- **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。既定は `opus`。仕様が `references/roles/worker.md` の「重要実装の事前分類」表の `fable` 行（マージ権限・層間契約・課金/法務。正本はそこ）に当たる場合、またはマージ条件・層間契約に触れる場合は `fable`（聖域パスだけでは上げない）。ただし共有枠モードが上限を先に決める（次項）
-- モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 固定・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類の `fable` 行（マージ権限・層間契約・課金/法務）による `fable`（聖域パスは `opus` 止まり） ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限）。正本は `references/decision-criteria.md`。 interactive の `reserve` は `conserve` と同一に扱う（仕様レビューは verify 側の役割なので `fable` 可）。`throttled` では事前分類に当たっても `opus` 止まり、`depleted` では `sonnet`
+- **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。既定は `subagent_type: general-purpose` に `model: opus`。仕様が `references/roles/worker.md` の「重要実装の事前分類」表の分類（マージ権限・層間契約・課金/法務。正本はそこ）に当たる場合は、**`subagent_type: dev-workflow:decider` で spawn する**（`general-purpose` に `model: fable` を付けない。`scripts/agent-model-guard.sh` が拒否する）。聖域パスだけでは上げない。ただし共有枠モードが上限を先に決める（次項）
+- モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 固定・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類（マージ権限・層間契約・課金/法務）による `dev-workflow:decider`（聖域パスは `opus` 止まり） ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限。このとき種別は `dev-workflow:decider` のまま `model: opus` に落とす）。正本は `references/decision-criteria.md`。 interactive の `reserve` は `conserve` と同一に扱う（仕様レビューは verify 側の役割なので決める役として立ててよい）。`throttled` では事前分類に当たっても `opus` 止まり、`depleted` では `sonnet`
 - R1 は**読み取り専用**。仕様ファイル・コードを一切変更しない（修正は本体が W を再開して行わせる）
 
 ## レビュアーへの入力
 
 1. change ディレクトリ `openspec/changes/<name>/` の artifact（proposal / specs / design / tasks）を全部
-2. 記録先の受け入れ条件（issue 本文、または Draft PR 本文）とコメント
+2. 記録先の受け入れ条件（issue 本文、または Draft PR 本文）とコメント。**`dev-workflow:decider` で起こす経路では、R1 は `Bash` を持たず `gh` で記録先を取りに行けないので、本体が本文と関連コメント（受け入れ条件・`仕様化判断:` の記録・前周の指摘）を入力文に貼り付けて渡す**
 3. 関連する既存 `openspec/specs/`。**全読みしない** — `grep -rn` で当たりを付けてから該当 spec だけ Read する（コンテキスト溢れ防止）
 4. 触る予定のスキル・スクリプトの該当箇所
 
@@ -59,7 +59,9 @@ R1 は develop の本体が spawn するサブエージェント（W とは別�
 
 判定基準: BLOCKER 0 件なら APPROVE。過剰品質は求めず「実装に支障がないか」を基準にする。
 
-## 結果を記録先に記録する（R1 が投稿する）
+## 結果を記録先に記録する（R1 が投稿する。decider 経路は本体が代理投稿する）
+
+**`subagent_type: dev-workflow:decider` で起こされた R1 は投稿しない。** 決める役は `Bash` を持たず `gh` を実行できないので、下の書式の本文を return し、本体が同じ書式で代理投稿する（コメントの 2 行目に「レビュアー fable（dev-workflow:decider）・本体が代理投稿」と書く）。`general-purpose` + `model` で起こされた R1 は従来どおり自分で投稿する。
 
 return する前に、結果を記録先のコメントとして記録する。1 行目は正規表現 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$` に完全一致、2 行目以降に周回数（何周目で確定したか）・レビュアーのモデル・残課題を書く:
 
