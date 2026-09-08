@@ -15,6 +15,7 @@ setup() {
   DEV_SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
   GATE_SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
+  CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
 }
@@ -48,6 +49,30 @@ setup() {
 
 @test "pre-classification: session model (AGENT_MODEL) is left unchanged" {
   grep -qF 'AGENT_MODEL' "$WORKER"
+}
+
+# 残量モード表の abundant / conserve 行は「事前分類の fable 行」を前提に書かれていて、
+# 事前分類表から fable 行が消えた後も旧前提のまま残っていた（PR #252 の指摘）。
+@test "budget modes: the abundant / conserve rows route Fable through the decider type" {
+  for row in abundant conserve; do
+    line="$(grep -F "| \`${row}\`" "$CRITERIA")"
+    [ -n "$line" ]
+    echo "$line" | grep -qF 'dev-workflow:decider'
+  done
+  grep -qF '実行役（W）はどの分類でも `opus` 止まり' "$CRITERIA"
+}
+
+# 退役した言い回しがプラグインのどこかに残ると、配布される指示文がガードの deny する
+# 手順を案内することになる。文書・スクリプトを横断で見る（CHANGELOG は変更の記録なので対象外）。
+@test "retired wording: no live instruction still points at the removed fable row" {
+  offenders="$(grep -rn '事前分類の `\?fable`\? 行\|Fable は verify / checkpoint のみ' \
+      --include='*.md' --include='*.sh' --include='*.json' "$PLUGIN_DIR" \
+      | grep -v '/tests/' | grep -v '/CHANGELOG.md:' || true)"
+  if [ -n "$offenders" ]; then
+    echo "退役した『事前分類の fable 行』の言い回しが残っている:"
+    echo "$offenders"
+    false
+  fi
 }
 
 @test "pre-classification: budget mode still caps escalation" {

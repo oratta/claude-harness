@@ -91,8 +91,8 @@ else:
     shared, shared_source = "ok", "自動導出"
 
 EFFECT = {
-    "abundant": "どの役割の既定も上げない（Fable は事前分類の fable 行だけ）。余った Fable 枠は人間の対話と verify に回す。",
-    "conserve": "solo=Opus。Fable は verify / checkpoint のみ。",
+    "abundant": "どの役割の既定も上げない（Fable が使われる経路は決める役 subagent_type: dev-workflow:decider だけ）。余った Fable 枠は人間の対話と verify に回す。",
+    "conserve": "役割表の既定どおり（W=sonnet、R1=opus、G=sonnet）。Fable は決める役（subagent_type: dev-workflow:decider）だけで、実行役 W はどの事前分類でも opus 止まり。",
     "reserve":  "conserve に加え、自動実行（unmanned/cron/loop）では Fable を一切使わない。昇格上限 Opus。interactive は conserve と同一。",
     "exhausted":"Fable 週次枠を実質使い切った。interactive/unmanned を問わず Fable を一切使わず、昇格上限 Opus。rate-limit 実エラーは reactive に Opus へ降格。",
 }

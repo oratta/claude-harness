@@ -11,6 +11,8 @@
 - R1 を decider 経路で起こしたときは、R1 が `gh` を実行できないため本体が同じ書式で代理投稿する（記録先の本文と関連コメントは本体が入力文に貼って渡す）。`general-purpose` + `model` の従来経路は R1 が自分で投稿する
 - フォールバック記録の書式を「修正実装モデル: opus」→「決める役モデル: opus（… `subagent_type` は `dev-workflow:decider` のまま）」に変更
 - `tests/decider-agent.bats`（新規）: 定義の検証に加え、`plugins/*/agents/*.md` のうち `model` が Fable の定義が編集系ツールを持たないことを横断で assert
+- 旧方針が残っていた 4 か所を追随させた（レビュー指摘）: `gate-runner.md` の needs-reviewer 節とモデル節（`general-purpose` に `model: fable` を付けさせる案内）、`references/decision-criteria.md` の残量モード表 `abundant` / `conserve` 行、`scripts/session-tripwires.sh` の残量モード効果文（毎セッション旧方針を注入していた）、pr-review-gate のレビュアー昇格条件（`fable` への昇格を `subagent_type: dev-workflow:decider` に置換）
+- 書き換え漏れの再発防止として、`gate-runner.md` は Fable に触れる全行が決める役の種別を伴うことを行単位で assert し、退役した言い回し（「事前分類の fable 行」「Fable は verify / checkpoint のみ」）がプラグイン内の文書・スクリプトに残っていないことを横断で assert する。`session-tripwires.sh` は注入される実文字列で検証する
 - openspec change `fable-decider-only` を archive
 
 ## 2.4.1 — 2026-09-06: agent-model-guard を hooks.json に配線

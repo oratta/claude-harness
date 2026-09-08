@@ -99,7 +99,7 @@ Codex を full の既定にする理由: **実装者と別モデル系列で読�
 **Task サブエージェントのモデルは明示指定する（Agent ツールの `model` パラメータ）**:
 
 - **既定は `opus`。** モデル未指定のサブエージェントは親セッションのモデルを継承するため、親が Fable のセッションではフォールバックのたびに Fable レビューが自動発火し、週次枠を無言で消費する（2026-08-07 に主が明示的に懸念）。レビューの価値の中心は「実装者と別の目」であり、モデルの最高性能ではない。
-- **`fable` に上げてよいのは次の両方を満たすときだけ**: ①変更が壊れると影響の重い部分（マージ条件の判定・レート/使用量制御・エージェントの行動規約）に触れている ② usage snapshot（`~/.claude/.usage-snapshot` の `fable_weekly_pct`）が新鮮で、Fable 週次枠に余裕がある（`FABLE_BUDGET_MODE=exhausted` 相当なら上げない）。判断根拠を PR コメントのレビュー実行者行に添える（例: `レビュー実行者: Task サブエージェント（fable — マージ判定に接触・週次残 40%）`）。
+- **Fable に上げるときは `model` ではなく種別で上げる**: 次の両方を満たすときだけ `subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` は付けない。`scripts/agent-model-guard.sh` が PreToolUse で拒否する）。①変更が壊れると影響の重い部分（マージ条件の判定・レート/使用量制御・エージェントの行動規約）に触れている ② usage snapshot（`~/.claude/.usage-snapshot` の `fable_weekly_pct`）が新鮮で、Fable 週次枠に余裕がある（`FABLE_BUDGET_MODE=exhausted` 相当なら種別はそのままに `model: opus` へ落とす）。判断根拠を PR コメントのレビュー実行者行に添える（例: `レビュー実行者: dev-workflow:decider（fable — マージ判定に接触・週次残 40%）`）。決める役は `Bash` を持たないので、レビュー結果の PR コメント投稿はゲートを回す側が代理で行う。
 
 **Codex の呼び出し規約**（2026-08-07 の調査で確定。守らないと「原因不明のタイムアウト」になる）:
 

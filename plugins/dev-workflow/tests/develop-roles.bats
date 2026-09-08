@@ -223,3 +223,16 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q '聖域' "$GATE"
   grep -q '層間契約' "$GATE"
 }
+
+# 上のテストは新文言の存在と一部の旧文言の不在しか見ておらず、同じ文書の別の段落
+# （needs-reviewer 節のレビュアー説明・モデル節の優先順位）に「fable に触れれば model: fable」
+# という旧案内が残っていても緑になっていた（PR #252 の agent-review:failed の指摘）。
+# 文書全体を行単位で走査し、Fable に触れる行が決める役の種別を伴うことを要求する。
+@test "gate-runner: every line that mentions Fable also names the decider type" {
+  offenders="$(grep -in 'fable' "$GATE" | grep -iv 'decider' || true)"
+  if [ -n "$offenders" ]; then
+    echo "決める役の種別を伴わない Fable の言及が残っている:"
+    echo "$offenders"
+    false
+  fi
+}
