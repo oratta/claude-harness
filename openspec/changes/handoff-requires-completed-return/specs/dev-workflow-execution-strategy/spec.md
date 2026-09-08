@@ -3,7 +3,7 @@
 ### Requirement: サブエージェントのコンテキスト上限と手渡し
 `plugins/dev-workflow/scripts/subagent-context.sh <agent-name>` は、名前付きサブエージェントのトランスクリプト（`${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*<name>*.jsonl`。同名が複数あれば最初のレコードの `cwd` が現在のディレクトリと一致するものを優先し、次に更新時刻が新しいもの）の最後の assistant レコードの usage から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を読み、1 行 JSON（`agent` / `file` / `context_tokens` / `calls` / `cap` / `over_cap`）を出力しなければならない（SHALL）。上限は `--cap` または `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）で、上限超なら exit 2、上限以内なら exit 0、トランスクリプトが無い・usage が無い・読めないときは exit 1 とし、exit 1 は作業を止めない（fail-open。SHALL）。
 
-develop の本体は W / G を SendMessage で再開する前に毎回これを実行し、**exit 2 のときは前任の状態にかかわらず SendMessage を送ってはならない（MUST NOT。再開の禁止は無条件）**。この禁止は手渡し（新しいエージェントを spawn すること）の可否とは別の規則であり、手渡しを行わない場合でも exit 2 の前任を SendMessage で再開してはならない。
+develop の本体は W / G を SendMessage で再開する前に毎回これを実行し、**exit 2 のときは前任の状態にかかわらず、作業の継続を指示する SendMessage（＝再開）を送ってはならない（MUST NOT。再開の禁止は無条件）**。この禁止は手渡し（新しいエージェントを spawn すること）の可否とは別の規則であり、手渡しを行わない場合でも exit 2 の前任に作業継続の SendMessage を送ってはならない。停止を指示する SendMessage（下記「工程中断のときは手渡さない」）はこの禁止の対象外である（作業の継続ではなく停止の指示であるため）。
 
 **手渡し（前回の return と記録先を渡して新しい W / G を spawn すること）を行ってよいのは、前任の直近の return の 1 行目が `工程完了: <工程名>` に完全一致するときだけである（MUST）。** exit 2 は「次に再開するときは手渡しに切り替える」という条件にすぎず、単独では手渡しの十分条件にならない。W / G の return の 1 行目は次のいずれかに完全一致しなければならない（MUST。太字・全角コロン・末尾句点などの装飾を含めない。書式の正本は `references/roles/worker.md`）:
 
@@ -22,9 +22,9 @@ W は工程の終わりに必ず `工程完了:` で return し、手渡しで�
 - **WHEN** トランスクリプトの最後の assistant usage の合算が `DEV_WORKFLOW_CONTEXT_CAP` を超える
 - **THEN** `over_cap: true` の JSON を出力して exit 2 で終わる
 
-#### Scenario: 上限超のときは前任の状態にかかわらず再開しない
+#### Scenario: 上限超のときは前任の状態にかかわらず作業継続の SendMessage を送らない
 - **WHEN** 本体が W を SendMessage で再開しようとして `subagent-context.sh` が exit 2 を返す
-- **THEN** 本体は前任の return の内容（`工程完了:` か `工程中断:` か）にかかわらず SendMessage を送らない
+- **THEN** 本体は前任の return の内容（`工程完了:` か `工程中断:` か）にかかわらず、作業の継続を指示する SendMessage（再開）を送らない
 
 #### Scenario: 工程完了の return があるときだけ手渡す
 - **WHEN** 本体が exit 2 を検知し、前任の直近の return の 1 行目が `工程完了: <工程名>` である

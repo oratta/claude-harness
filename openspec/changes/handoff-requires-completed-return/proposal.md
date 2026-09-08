@@ -26,7 +26,8 @@ develop スキルの W（作業者サブエージェント）は、コンテキ�
 
 ## Impact
 
-- **docs**: `plugins/dev-workflow/skills/develop/references/decision-criteria.md`（「コンテキスト上限（サブエージェントの手渡し）」節）、`plugins/dev-workflow/skills/develop/references/roles/worker.md`（W の宣言義務・`工程完了:`/`工程中断:` 書式）、`plugins/dev-workflow/skills/develop/SKILL.md`（1 ループ (3)(4) への短いポインタ、並列許可の限定）、`plugins/dev-workflow/templates/escalation-tripwires.md`（トリップワイヤー 4 に宣言契約への簡潔なポインタを追記）
+- **docs**: `plugins/dev-workflow/skills/develop/references/decision-criteria.md`（「コンテキスト上限（サブエージェントの手渡し）」節）、`plugins/dev-workflow/skills/develop/references/roles/worker.md`（W の宣言義務・`工程完了:`/`工程中断:` 書式）、`plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`（G の宣言義務・return の 1 行目）、`plugins/dev-workflow/skills/develop/SKILL.md`（1 ループ (3)(4) への短いポインタ、並列許可の限定）、`plugins/dev-workflow/templates/escalation-tripwires.md`（トリップワイヤー 4 に宣言契約への簡潔なポインタを追記）
 - **plugin.json**: `plugins/dev-workflow/.claude-plugin/plugin.json` version bump
 - **spec**: `dev-workflow-execution-strategy` と `dev-workflow-develop` の delta（それぞれ MODIFIED 1）
-- **コードの振る舞い変更なし**（`subagent-context.sh` のロジック・閾値は不変）。手順書を読む本体・W の運用判断と return の書式が変わる
+- **tests**: 新規 bats（`plugins/dev-workflow/tests/handoff-declaration.bats`）で `工程完了:`/`工程中断:` 宣言契約・無条件再開禁止・同一 worktree 制約の記述を grep で固定する
+- **コードの振る舞い変更なし**（`subagent-context.sh` のロジック・閾値は不変）。手順書を読む本体・W / G の運用判断と return の書式が変わる
