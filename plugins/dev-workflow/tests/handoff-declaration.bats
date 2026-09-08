@@ -178,3 +178,76 @@ PY
   done < <(handoff_surfaces)
   [ "$fail" -eq 0 ]
 }
+
+# --- 文単位の走査（行単位の否定アサーションが取りこぼした 2 種を固定する） ---
+#
+# 上の 2 件の否定アサーションは「再開せず／再開しない」で始まる形しか見ないので、
+# PR #253 の 2 周目で SKILL.md の「コンテキスト上限（exit 2）は昇格ではなく手渡しで」という
+# 言い回し（「再開」の語を含まない）を検出できず 15/15 PASS のまま素通りした。以下は文単位で
+# 走査し、(a) 上限超過を手渡しの帰結として無条件に述べる文と、(b) 手渡しの許可条件を述べる
+# 絶対文から停止確認の例外が落ちている状態、の 2 種を固定する。
+
+# 文（。で区切る）ごとに python3 で走査する。マルチバイトの否定クラスは grep では壊れる。
+# 見出し行と【…】のラベル（【コンテキスト上限 → 手渡し】＝トリップワイヤー 4 の名前）は対象外。
+scan_sentences() {
+  local require_all="$1" trigger="$2" exempt="$3"; shift 3
+  python3 - "$require_all" "$trigger" "$exempt" "$@" <<'PY'
+import re, sys
+require_all, trigger, exempt, paths = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
+req = [t for t in require_all.split(',') if t]
+trig, exm = re.compile(trigger), (re.compile(exempt) if exempt else None)
+bad = 0
+for path in paths:
+    try:
+        text = open(path, encoding='utf-8').read()
+    except OSError:
+        print(f'missing surface: {path}')
+        bad = 1
+        continue
+    for i, line in enumerate(text.splitlines(), 1):
+        if line.lstrip().startswith('#'):
+            continue
+        for s in re.split('。', re.sub('【[^】]*】', '', line)):
+            if not trig.search(s):
+                continue
+            if exm and exm.search(s):
+                continue
+            # require_all が空なら純粋な否定走査（trigger に当たり exempt でない文は全部落とす）
+            if req and all(t in s for t in req):
+                continue
+            print(f'{path}:{i}: {s.strip()[:200]}')
+            bad = 1
+sys.exit(1 if bad else 0)
+PY
+}
+
+@test "no sentence states the handoff as the consequence of the context cap without naming its condition" {
+  local -a surfaces=()
+  while IFS= read -r f; do surfaces+=("$f"); done < <(handoff_surfaces)
+  # 上限超過（exit 2 等）と手渡しを同じ文で述べるなら、条件（工程完了 / 停止確認 / 条件 / だけ /
+  # 禁止）のいずれかを同じ文に持っていなければならない。
+  run scan_sentences '' '手渡.*(exit ?2|コンテキスト上限|上限を超え|上限超)|(exit ?2|コンテキスト上限|上限を超え|上限超).*手渡' \
+    '工程完了|停止確認|条件|だけ|禁止|MUST NOT' "${surfaces[@]}"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+# 手渡しの許可条件を絶対文で述べている面（同じ言い回しの再掲 3 箇所）
+handoff_permission_surfaces() {
+  local root; root="$(cd "${PLUGIN_DIR}/../.." && pwd)"
+  printf '%s\n' \
+    "${PLUGIN_DIR}/skills/develop/references/decision-criteria.md" \
+    "${root}/openspec/specs/dev-workflow-execution-strategy/spec.md" \
+    "${root}/openspec/changes/archive/2026-09-08-handoff-requires-completed-return/specs/dev-workflow-execution-strategy/spec.md"
+}
+
+@test "handoff permission sentence keeps the stop-confirmation route as an exception, not only the process-complete return" {
+  local -a surfaces=()
+  while IFS= read -r f; do surfaces+=("$f"); done < <(handoff_permission_surfaces)
+  # 「手渡しを行ってよいのは〜だけ」と述べる文は、工程完了の宣言と停止確認の両方を挙げること。
+  # 停止確認の経路（前任へ停止を指示し、確認を受け取ってから spawn する）は同じ Requirement が
+  # 意図的に許している経路なので、絶対文がそれを否定してはならない。
+  run scan_sentences '工程完了,停止確認' '手渡.*行ってよいのは' '' "${surfaces[@]}"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
