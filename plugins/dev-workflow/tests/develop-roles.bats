@@ -201,14 +201,18 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q '保留' "$GATE"
 }
 
-@test "gate-runner: G itself defaults to sonnet; the reviewer defaults to opus, fable for merge conditions / cross-layer contracts" {
+@test "gate-runner: G itself defaults to sonnet; the reviewer is opus or the decider type for merge conditions / cross-layer contracts" {
   grep -q 'G の既定は `sonnet`' "$GATE"
   grep -q '`opus`' "$GATE"
   ! grep -q 'マージ条件・聖域・層間契約' "$GATE"
   ! grep -q '聖域・層間契約による' "$GATE"
   ! grep -qE '実装品質起因なら.*`model: fable`' "$GATE"
-  grep -q '1 段上' "$GATE"
-  grep -q '`fable`' "$GATE"
+  # 旧ラダー（実行役を 1 段ずつ上げる）は残さず、決める役の種別で上げる
+  ! grep -q '1 段上' "$GATE"
+  grep -qF 'dev-workflow:decider' "$GATE"
+  grep -qF '一方だけ' "$GATE"
+  grep -qF 'W を `fable` にはしない' "$GATE"
+  grep -qF '`general-purpose` に `model: fable` は付けない' "$GATE"
   grep -q 'マージ条件' "$GATE"
   grep -q '聖域' "$GATE"
   grep -q '層間契約' "$GATE"

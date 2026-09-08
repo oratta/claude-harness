@@ -87,6 +87,8 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 ## 仕様化する場合（(1) の終わり）
 
+**対象の change が既に存在し artifact（proposal / design / tasks / specs）が揃っているなら、`/opsx:ff` を再実行しない。** 既存の artifact を上書きせず、そのまま「仕様できた: openspec/changes/<change-name>/」と本体に return して仕様レビューへ進む（Fable の対話セッションが `/develop` に入る前に change を作っておく形を禁じていないため、W が来た時点で既にあることがある）。
+
 ```
 /opsx:ff <change-name>     # 全 artifact（proposal / specs / design / tasks）を一括生成
 → 本体に return「仕様できた: openspec/changes/<change-name>/」
@@ -131,17 +133,21 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 W の既定モデルは `sonnet`（役割表の正本は `SKILL.md`「モデル」。設計判断を含む記録先は `opus`）。この表に当たる実装だけが 1 周目からモデルを上げる。
 
-本体が W を spawn するときのモデル選択の正本（**この分類表がモデル事前分類の正本**。pr-review-gate スキル・R1・G からも参照される。ここ以外に再掲しない）。次のいずれかに触れる実装は、失敗 1 周のコスト（再実装＋再レビュー＋ゲート往復＋コンテキスト肥大）が単価差を上回るため、**トリップワイヤーの昇格を待たず最初から表の「1 周目」のモデルで spawn する**（マージ権限・層間契約・課金/法務は最初から W を `model: fable` で、聖域パスは `model: opus` で。Agent ツールの `model` パラメータ。セッション本体のモデル＝`AGENT_MODEL` は変えない）。
+本体が W を spawn するときのモデル選択の正本（**この分類表がモデル事前分類の正本**。pr-review-gate スキル・R1・G からも参照される。ここ以外に再掲しない）。次のいずれかに触れる実装は、失敗 1 周のコスト（再実装＋再レビュー＋ゲート往復＋コンテキスト肥大）が単価差を上回るため、**トリップワイヤーの昇格を待たず最初から表の「1 周目」のモデルで spawn する**（4 分類のいずれでも `model: opus`。Agent ツールの `model` パラメータ。セッション本体のモデル＝`AGENT_MODEL` は変えない）。
 
 | 分類 | 具体 | 1 周目 |
 |---|---|---|
-| 聖域パス | auto-merge の SACRED 定義に含まれるもの（`.github/workflows/` / `CLAUDE.md` / `.claude/` 配下 / 憲法 doc） | `opus`（Fable にはしない。聖域の安全はゲート側の判定が見る。エージェント設定が製品であるリポではほぼ全実装が聖域に当たり、2026-09 の監査で W の Fable の大半がこの行だった） |
-| マージ権限 | マージ条件・ラベル判定・レビューゲートの通過条件そのもの | `fable` |
-| 層間契約 | プラグイン間・スキル間で共有する規約（hook 契約・スキーマ・レシピ形式・環境変数の意味） | `fable` |
-| 課金/法務 | 支払い・レート/使用量制御・ライセンス・個人情報の扱い | `fable` |
+| 聖域パス | auto-merge の SACRED 定義に含まれるもの（`.github/workflows/` / `CLAUDE.md` / `.claude/` 配下 / 憲法 doc） | `opus`（聖域の安全はゲート側の判定が見る。エージェント設定が製品であるリポではほぼ全実装が聖域に当たり、2026-09 の監査で W の Fable の大半がこの行だった） |
+| マージ権限 | マージ条件・ラベル判定・レビューゲートの通過条件そのもの | `opus` |
+| 層間契約 | プラグイン間・スキル間で共有する規約（hook 契約・スキーマ・レシピ形式・環境変数の意味） | `opus` |
+| 課金/法務 | 支払い・レート/使用量制御・ライセンス・個人情報の扱い | `opus` |
 
-- **残量モードが優先する**: `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では、事前分類に当たっても Fable に上げず Opus を上限とする（`references/decision-criteria.md` の残量モード表がそのまま効く）。共有枠モード `SHARED_BUDGET_MODE=depleted` では事前分類に当たっても Sonnet 固定
-- `FABLE_BUDGET_MODE=abundant` はどの役割の既定も押し上げない。W が Fable になる経路はこの表の `fable` 行と失敗ループ昇格の 2 つ
+**W の上限は `opus`。** 4 分類のどれに当たっても W を `model: fable` で spawn しない（`scripts/agent-model-guard.sh` が PreToolUse で拒否する）。Fable が消費するのはターン数（会話履歴の cache 読込）で、実装・修正ループは 1 件で数十〜数百ターン回るため、実行役を Fable にすると週次枠が溶ける。「層間契約だから判断が要る」ぶんは仕様化判断・R1 レビュー・本体（Fable）の判断で吸収し、**W は確定した内容を落とす作業だけを担う**。
+
+**読んで判断する役は種別で上げる。** R1（仕様レビュー）と G が要求するレビュアーがこの表の分類に当たるときは、`subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` を付けない（ガードが拒否する）。当たらなければ従来どおり `opus`。
+
+- **残量モードが優先する**: `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では、決める役も `dev-workflow:decider` のまま `model: opus` を上限とする（`references/decision-criteria.md` の残量モード表がそのまま効く）。共有枠モード `SHARED_BUDGET_MODE=depleted` では事前分類に当たっても Sonnet 固定
+- `FABLE_BUDGET_MODE=abundant` はどの役割の既定も押し上げない。Fable が使われる経路は決める役（`dev-workflow:decider`）だけ
 - Fable がレート制限等で使えなかったときのフォールバック記録の形式は pr-review-gate スキルの「修正サイクルのモデル昇格」が正本。ここでは再掲しない
 
 ## 昇格トリップワイヤー（W が return で報告する）
@@ -149,7 +155,7 @@ W の既定モデルは `sonnet`（役割表の正本は `SKILL.md`「モデル�
 詳細は `templates/escalation-tripwires.md`。W は発火したら手を止め、ここまでの成果（編集済みファイル・通ったテスト・判明した事実・埋めた決定）を列挙して本体に return する。乗り換え先は本体が決める:
 
 - **規模超過**（編集対象ファイルが 5 個を超えた、または着手前の見積もりから作業項目が 2 回増えた）→ return。本体が change / 子 issue（エピック化）に分割する
-- **失敗ループ**（同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直した）→ return。本体が W を 1 段昇格したモデル（Sonnet → Opus → Fable）で再開する。上限は共有枠モードが先に決める: `SHARED_BUDGET_MODE=depleted` は昇格なし（Sonnet 固定）、`throttled` は Opus 上限。その範囲内で `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では Opus 上限。Opus でも 2 連続失敗が続く場合は記録先に `needs-approval` を付けて経緯をコメントし、unmanned ならサイクルを終了する
+- **失敗ループ**（同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直した）→ return。**return には「指示のどこまでやって、どこで何が起きたか」を必ず書く**（本体が原因を判断側か実行側かに分類する入力になり、決める役の入力契約でもある）。本体は失敗の原因が実行側（指示どおりやって結果が違う）なら W を `opus` で再開し、判断側（指示を解釈できなかった・指示自体が外れていた）なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせる（決める役と実行役の**どちらか一方だけ**を上げる。ラダーの正本は `templates/escalation-tripwires.md`）。**W が `fable` で再開されることはない**（実行役の上限は `opus`。強制層は `scripts/agent-model-guard.sh`）。上限は共有枠モードが先に決める: `SHARED_BUDGET_MODE=depleted` は昇格なし（Sonnet 固定）、`throttled` は Opus 上限。その範囲内で `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では決める役も Opus 上限。Opus が決めて Opus が実行しても 2 連続失敗が続く場合は記録先に `needs-approval` を付けて経緯をコメントし、unmanned ならサイクルを終了する
 - **仕様の発明**（記録先に書かれていない仕様上の決定を自分で埋めた回数が 2 回に達した）→ 埋めた決定を列挙して return。interactive は本体が AskUserQuestion、unmanned は Discord で質問し `needs-approval` を付けてサイクル終了
 - 昇格・乗り換え時は成果を破棄せず引き継ぐ（再開時に前回の return を前提に続ける）
 

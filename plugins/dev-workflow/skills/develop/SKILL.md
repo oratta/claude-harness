@@ -44,7 +44,7 @@ version: 2.1.0
 - **本体はレビューを代行しない。** 仕様レビューは R1、PR レビューは G（と G が要求したレビュアー）が行う。本体が W の return を読んで「よさそう」と判断することはレビューではない
 - **W が孫を呼ぶ必要がある工程を設けない。** 別コンテキストを要する工程（R1・G・G のレビュアー）はすべて本体が起こす。W の指示書に「サブエージェントを spawn せよ」と書かない
 
-本体がやること: 入口 0 の記録先の確定、worktree の用意、各役割の spawn と再開、return の要約の転記（記録先のコメントは各役割が自分で投稿する）、needs-approval 時のオーナーへの依頼、エピックの進行管理。
+本体がやること: 入口 0 の記録先の確定、worktree の用意、各役割の spawn と再開、return の要約の転記（記録先のコメントは各役割が自分で投稿する。**例外: `subagent_type: dev-workflow:decider` で起こした役割は `Bash` を持たず `gh` を実行できないので、その return は本体が同じ書式で代理投稿する**）、needs-approval 時のオーナーへの依頼、エピックの進行管理。
 
 ## 入口 0: 記録先を決める
 
@@ -69,11 +69,13 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
 
 ```
 (0) 記録先を確定する（入口 0）。worktree を用意する
-(1) W を名前付きで spawn（model: worker.md の事前分類表の「1 周目」列に当たればその値（聖域パス = opus、マージ権限・層間契約・課金/法務 = fable）、それ以外 sonnet。共有枠モードが下限を決める）:
+(1) W を名前付きで spawn（model: worker.md の事前分類表の「1 周目」列に当たればその値（4 分類のいずれでも opus。W の上限は opus）、それ以外 sonnet。W を fable にはしない。共有枠モードが下限を決める）:
       記録先の用意（Draft PR 経路）→ 仕様化判断の記録 → 分割判定 → /opsx:ff → return「仕様できた」
       仕様化しない判定なら → (3) へ直行（TDD → PR）
-(2) R1 を spawn（model: 既定 opus。マージ条件・層間契約・課金/法務に触れれば fable。聖域パスだけでは上げない）:
+(2) R1 を spawn（model: 既定 opus。マージ条件・層間契約・課金/法務に触れれば subagent_type: dev-workflow:decider で spawn する。聖域パスだけでは上げない）:
       references/roles/spec-reviewer.md に従って別コンテキストで仕様レビュー → 結果を記録先にコメント → return
+      dev-workflow:decider で起こした R1 は gh を実行できないので投稿せず return し、本体が同じ書式で代理投稿する
+      （記録先の本文と関連コメントは本体が入力文に貼って渡す）
       REQUEST_CHANGES → W を SendMessage で再開して artifact を修正 → R1 を再開して差分再レビュー
       （初回＋差分 1 回の 2 周キャップ。超えたら needs-approval を付けて本体がオーナーに 1 アクションで依頼）
       R1 の APPROVE が記録先に記録されるまで W を apply に進めない（再開しない）
@@ -82,7 +84,10 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
 (4) G を名前付きで spawn（model: 既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は Codex か needs-reviewer のレビュアーが担う）:
       pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer」
       needs-reviewer → 本体がレビュアーを spawn し、要約を SendMessage で G に渡す（gate-runner.md）
-      failed → W を再開（再開前にコンテキストを測る。原因分類が実装品質起因なら 1 段昇格、同じテスト 2 連続失敗でも 1 段昇格。sonnet → opus → fable）→ G を再開して差分再レビュー（2 周キャップ。G も再開前に測る）
+      failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）で戻し方を決める。モデルを上げるのは実装品質起因のときだけで、
+           上げるのは決める役と実行役の一方だけ（実行側が原因なら W を opus に、判断側が原因なら dev-workflow:decider を立てて修正方針を作らせる。
+           W を fable にはしない）。仕様が曖昧なら仕様修正、誤検出なら反証で返す（どちらもモデルを上げない）
+           → W を再開（再開前にコンテキストを測る）→ G を再開して差分再レビュー（2 周キャップ。G も再開前に測る）
       保留 → needs-approval のまま本体がオーナーに 1 アクション（許容する／しない、動作確認の結果）で依頼する
 ```
 
@@ -92,18 +97,18 @@ W は名前付きで spawn し、SendMessage で再開してコンテキスト�
 
 役割ごとのモデルは事前分類と残量モードで決める。実行戦略の分岐はもう無く、判断は「どの役割をどのモデルで起こすか」だけ。
 
-| 役割 | 既定 | `fable` に上げる条件 |
+| 役割 | 既定 | 上げる条件 |
 |---|---|---|
-| W | `sonnet` | `opus`: 記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含む、失敗ループの昇格、または事前分類の聖域パス。`fable`: `worker.md` の「重要実装の事前分類」表のうちマージ権限・層間契約・課金/法務（正本は worker.md、ここに再掲しない）に当たる |
-| R1 | `opus` | 仕様の対象がマージ条件・層間契約・課金/法務に触れる（聖域パスだけでは上げない） |
+| W（実行役） | `sonnet` | `opus`: 記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含む、実行側が原因の失敗ループでの昇格、または事前分類の 4 分類（聖域パス・マージ権限・層間契約・課金/法務。正本は `worker.md`、ここに再掲しない）に当たる。**W の上限は `opus` で、`model: fable` の W は `scripts/agent-model-guard.sh` に拒否される** |
+| R1（読んで判断する役） | `opus` | 仕様の対象がマージ条件・層間契約・課金/法務に触れるときは `subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` を付けない。聖域パスだけでは上げない） |
 | G | `sonnet` | 上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う |
-| G が要求するレビュアー | `opus` | レビュー対象がマージ条件・層間契約・課金/法務に触れる（G の `needs-reviewer` の推奨モデルに従う） |
+| G が要求するレビュアー（読んで判断する役） | `opus` | レビュー対象がマージ条件・層間契約・課金/法務に触れるときは `subagent_type: dev-workflow:decider`（G の `needs-reviewer` の推奨モデルに従う） |
 
-W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 本も無く、昇格ラダーの Sonnet 段が構造的に通っていなかったため。W は事前分類と失敗ループで上がる。聖域パスを `fable` から `opus` に下げ、G を `sonnet` にしたのは同月の再集計で、Fable で走った W / G の大半が聖域パスの事前分類によるもので、G 自身は照合作業しかしていなかったため（判断は Fable に、実装と照合は Sonnet / Opus に）。
+W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 本も無く、昇格ラダーの Sonnet 段が構造的に通っていなかったため。W は事前分類と失敗ループで `opus` まで上がる。W の上限を `opus` にしたのは、Fable が消費するのはターン数（会話履歴の cache 読込）で、実装・修正ループは 1 件で数十〜数百ターン回るため。「層間契約だから判断が要る」ぶんは仕様化判断・R1 レビュー・本体の判断で吸収し、W は確定した内容を落とす作業だけを担う。読んで判断する役（R1・レビュアー）が Fable に当たるときは `dev-workflow:decider` で起こす — Fable を渡せる `subagent_type` はこれだけで、判定は `scripts/agent-model-guard.sh` が行う。
 
 残量モード（`FABLE_BUDGET_MODE`）は `references/decision-criteria.md` の表に従う: `abundant` はどの役割の既定も上げない（Fable の余裕は人間の対話と verify に回す）、`reserve` は**自動実行のみ** `opus` 上限（interactive は制限しない）、`exhausted` は**全経路**で `opus` 上限。共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）が下限を決め、`throttled` は W / R1 / G の既定を `sonnet` に落として昇格上限 `opus`、`depleted` は全役割 `sonnet` 固定。両者が食い違えば共有枠モードが勝つ。
 
-昇格トリップワイヤー（`templates/escalation-tripwires.md`）は W の再開時のモデル選択として残す: 同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直したと W が return したら、本体は W を 1 段昇格したモデルで再開する（`sonnet` → `opus` → `fable`。残量モードと共有枠モードの上限内）。コンテキスト上限（`subagent-context.sh` が exit 2）は昇格ではなく手渡しで、モデルは変えない。規模超過（編集対象 5 ファイル超・作業項目が 2 回増えた）を W が return したら、本体が change / 子 issue（エピック化）に分割する。
+昇格トリップワイヤー（`templates/escalation-tripwires.md`）は失敗の原因側だけを上げるラダーとして残す: 同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直したと W が return したら、本体は失敗の原因が判断側（指示を解釈できなかった・指示自体が外れていた）か実行側（指示どおりやって結果が違う）かで、**決める役と実行役のどちらか一方だけ**を上げる（両方同時に上げない）。判断側なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせ（`model` は `opus` → `fable`。種別は固定して `model` だけ切り替える）、実行側なら W を `opus` で再開する（W の上限は `opus`）。残量モードと共有枠モードの上限が先に効く。コンテキスト上限（`subagent-context.sh` が exit 2）は昇格ではなく手渡しで、モデルは変えない。規模超過（編集対象 5 ファイル超・作業項目が 2 回増えた）を W が return したら、本体が change / 子 issue（エピック化）に分割する。
 
 ## 実行モード
 

@@ -32,9 +32,18 @@ setup() {
   grep -qF '課金/法務' "$WORKER"
 }
 
-@test "pre-classification: spawns with model fable from the first round" {
-  grep -qF '`model: fable`' "$WORKER"
+@test "pre-classification: the first-round column has no fable (the worker's cap is opus)" {
+  tbl="$(awk '/^## 重要実装の事前分類/{f=1} f && /^\| /{print} /^## 昇格トリップワイヤー/{f=0}' "$WORKER")"
+  [ -n "$tbl" ]
+  ! echo "$tbl" | grep -qF '`fable`'
+  echo "$tbl" | grep -qF '`opus`'
   grep -q '最初から' "$WORKER"
+  grep -qF 'W の上限は `opus`' "$WORKER"
+}
+
+@test "pre-classification: reviewers that hit the table are spawned as dev-workflow:decider" {
+  grep -qF 'dev-workflow:decider' "$WORKER"
+  grep -qF '`general-purpose` に `model: fable` を付けない' "$WORKER"
 }
 
 @test "pre-classification: session model (AGENT_MODEL) is left unchanged" {
@@ -57,13 +66,30 @@ setup() {
   [ "$sec" -lt "$step3" ]
 }
 
-@test "escalation: implementation-quality failures escalate one rung (sonnet → opus → fable), never straight to fable" {
+@test "escalation: implementation-quality failures raise the decider or the executor, never both" {
   sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$GATE_SKILL")"
   echo "$sec" | grep -qF '実装品質起因'
-  echo "$sec" | grep -qF '1 段上'
-  echo "$sec" | grep -qF '`sonnet` → `opus` → `fable`'
+  echo "$sec" | grep -qF '決める役'
+  echo "$sec" | grep -qF '実行役'
+  echo "$sec" | grep -qF '一方だけ'
+  echo "$sec" | grep -qF 'dev-workflow:decider'
+  # 旧ラダー（実行役を 1 段ずつ sonnet → opus → fable）は残さない
+  ! echo "$sec" | grep -qF '`sonnet` → `opus` → `fable`'
   ! echo "$sec" | grep -qF '修正実装を `model: fable` で spawn'
   grep -qF '昇格は実装品質起因のときだけ' "$GATE_SKILL"
+}
+
+@test "escalation: the executor is capped at opus and never spawned as fable" {
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$GATE_SKILL")"
+  echo "$sec" | grep -qF '実行役の上限は `opus`'
+  echo "$sec" | grep -qF 'agent-model-guard.sh'
+}
+
+@test "escalation: the two-round cap is given as the reason for raising on the first failed" {
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$GATE_SKILL")"
+  echo "$sec" | grep -qF '2 周キャップ'
+  echo "$sec" | grep -qF '最終周'
+  echo "$sec" | grep -qF '1 回目の failed'
 }
 
 @test "escalation: ambiguous spec and reviewer false positives are not escalated" {
@@ -76,7 +102,8 @@ setup() {
 
 @test "fallback: falls back to the previous model and records one PR comment line" {
   grep -qF 'フォールバック' "$GATE_SKILL"
-  grep -qF '修正実装モデル: opus' "$GATE_SKILL"
+  grep -qF '決める役モデル: opus' "$GATE_SKILL"
+  grep -qF 'dev-workflow:decider のまま' "$GATE_SKILL"
   grep -qF 'レート制限' "$GATE_SKILL"
 }
 

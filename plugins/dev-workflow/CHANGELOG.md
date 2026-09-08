@@ -1,5 +1,18 @@
 # Changelog — dev-workflow
 
+## 2.5.0 — 2026-09-08: Fable は決める役の種別（dev-workflow:decider）でだけ立てる
+
+2.4.1 で配線したガードは `model` 未指定を拒否するが、`model: "fable"` を明示した spawn はどの種別でも素通りしていた（2026-09-08 に develop の本体が「層間契約だから」を根拠に実行役の W を fable で spawn した実例あり）。文書が自分で例外を作れる状態を、ガードに移した。
+
+- `agents/decider.md`（新規・`plugin.json` の `agents` で宣言）: 決める役の種別 `dev-workflow:decider`。`model: fable`、`tools: Read, Grep, Glob` の読み取り専用で Edit / Write / NotebookEdit / Bash を持たない（編集できないので実装ループを物理的に回せない）。入力（記録先の本文とコメントは呼び出し側が貼る・失敗の出力・対象ファイルのパス・実行役の return）と出力（原因の分類・実行役がそのまま実行できる指示・次の実行役のモデル）を契約として持ち、記録先への投稿は行わない
+- `scripts/agent-model-guard.sh`: Fable を指す `model`（`fable` の完全一致・`claude-fable` の前方一致）は `dev-workflow:decider` のときだけ許可し、それ以外は deny。判定は fork の後・`model` 有無の前。残量モードは見ない。`model` 未指定の拒否文からも fable の 4 分類を外した
+- 昇格ラダー: 「実行役を sonnet → opus → fable と 1 段ずつ」を廃止し、失敗の原因が判断側か実行側かで**決める役と実行役のどちらか一方だけ**を上げる形にした（`templates/escalation-tripwires.md` が正本。develop SKILL.md・worker.md・gate-runner.md・pr-review-gate 2-2・`rules/subagent-model-selection.md` を追随）。実行役の上限は `opus`
+- 重要実装の事前分類表（`references/roles/worker.md` が正本）: マージ権限・層間契約・課金/法務の「1 周目」を `fable` → `opus`。聖域パスの `opus` は据え置き。読んで判断する役（R1・G が要求するレビュアー）が分類に当たるときは `subagent_type: dev-workflow:decider` で spawn する
+- R1 を decider 経路で起こしたときは、R1 が `gh` を実行できないため本体が同じ書式で代理投稿する（記録先の本文と関連コメントは本体が入力文に貼って渡す）。`general-purpose` + `model` の従来経路は R1 が自分で投稿する
+- フォールバック記録の書式を「修正実装モデル: opus」→「決める役モデル: opus（… `subagent_type` は `dev-workflow:decider` のまま）」に変更
+- `tests/decider-agent.bats`（新規）: 定義の検証に加え、`plugins/*/agents/*.md` のうち `model` が Fable の定義が編集系ツールを持たないことを横断で assert
+- openspec change `fable-decider-only` を archive
+
 ## 2.4.1 — 2026-09-06: agent-model-guard を hooks.json に配線
 
 2.4.0 で同梱した `scripts/agent-model-guard.sh` を PreToolUse（matcher: Agent）に配線した。これ以降、`model` 未指定の `Agent` 呼び出し（general-purpose / Explore / Plan / 未指定）は拒否され、理由に規範（rules/subagent-model-selection.md）と選ぶべきティアが出る。fork は共有枠モードが ok のときだけ許可。`DEV_WORKFLOW_MODEL_GUARD=off` で一時的に外せる。
