@@ -15,7 +15,7 @@ TBD - created by archiving change dev-workflow-develop-orchestrator. Update Purp
 - **THEN** issue 番号・URL・「この issue 対応して」の発火語が含まれ、`skills/github-issue/SKILL.md` は存在しない
 
 ### Requirement: 本体はオーケストレータ専任でコードもレビューも書かない
-SKILL.md は本体（メインセッション）の役割を「役割 W / R1 / G を `model` 明示で spawn し、return の要約と記録先（issue または Draft PR）のコメント・ラベルだけを見て次に誰を起こすかを決める」と規定しなければならない（MUST）。禁止事項として、本体が Edit でコードを書かないこと、本体がレビュー（仕様レビュー・PR レビュー）を代行しないことを明記しなければならない（MUST）。並列可能な役割は並列に起こしてよい（MAY）。W は名前付きで spawn し、再開は SendMessage でコンテキストを引き継ぐ（SHALL）。別コンテキストを要する工程はすべて本体が起こし、W が孫を呼ぶ必要がある工程を設けてはならない（MUST NOT）。
+SKILL.md は本体（メインセッション）の役割を「役割 W / R1 / G を `model` 明示で spawn し、return の要約と記録先（issue または Draft PR）のコメント・ラベルだけを見て次に誰を起こすかを決める」と規定しなければならない（MUST）。禁止事項として、本体が Edit でコードを書かないこと、本体がレビュー（仕様レビュー・PR レビュー）を代行しないことを明記しなければならない（MUST）。並列可能な役割は並列に起こしてよい（MAY）。**ただし、1 つの作業ディレクトリ（worktree）で同時に動く同一役割のサブエージェントは常に 1 人でなければならない（MUST）。並列に起こしてよいのは、別々の worktree を持つ役割（エピックの子どうし、独立した change の W どうし）に限る（SHALL）。** 複数 change に割れた場合の change ごとの W 並列も、change ごとに worktree を分けて起こすものとする（MUST）。W は名前付きで spawn し、再開は SendMessage でコンテキストを引き継ぐ（SHALL）。別コンテキストを要する工程はすべて本体が起こし、W が孫を呼ぶ必要がある工程を設けてはならない（MUST NOT）。
 
 #### Scenario: 禁止事項が明記されている
 - **WHEN** SKILL.md の「本体の役割」節を読む
@@ -24,6 +24,14 @@ SKILL.md は本体（メインセッション）の役割を「役割 W / R1 / G
 #### Scenario: W の再開は SendMessage
 - **WHEN** SKILL.md の 1 ループの記述を読む
 - **THEN** W を名前付きで spawn し SendMessage で再開すること、W が孫を呼ぶ工程が無いことが書かれている
+
+#### Scenario: 同一 worktree に同一役割を二重に spawn しない
+- **WHEN** ある worktree で W が稼働中である（手渡し待ち・停止指示待ちを含む）
+- **THEN** 本体はその worktree に対して別の W をもう 1 人 spawn しない（手渡し・再開のいずれであっても、前任が停止確認を返すか工程完了で return するまで、新しい W を同じ worktree に置かない）
+
+#### Scenario: 別 worktree の並列はこの制約の対象外
+- **GIVEN** エピックの子どうし、または独立した change の W どうしが、それぞれ別の worktree で動いている
+- **THEN** 本体はこれらを並列に起こしてよく、同一 worktree 制約には抵触しない
 
 ### Requirement: 入口 0 は記録先を決める
 SKILL.md は 1 ループの最初の工程「入口 0」として記録先の決め方を規定しなければならない（MUST）: issue があれば（番号・URL・自然文マッチ）それを記録先にする。無ければ issue を切らず、W が worktree を用意された直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする。この Draft PR は仕様化判断を記録する**前**に存在していなければならない（MUST。記録先が無い状態で判定を先に進めない）。Draft PR を記録先にする場合、受け入れ条件は PR 本文（位置づけ・動作確認ポイント）に書かなければならず（MUST）、受け入れ条件自体を省いてはならない（MUST NOT）。記録先を PR にした場合、PR 本文に `Closes` / `Fixes` / `Refs #N` の issue 参照を書いてはならない（MUST NOT。書くと pr-review-gate の照合先がその issue に移る。エピックの子は子 issue が記録先なので `Closes #子` を書く）。仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（SHALL）。仕様宣言（`対象 HEAD:` 付き。書式の正本は pr-review-gate スキル手順 3-b）は記録先が issue か Draft PR かにかかわらず常に **PR コメント**に置き、記録先が issue のときに issue コメントへ置いてはならない（MUST NOT。pr-review-gate 手順 5 は PR のコメントで 3 見出しを照合し、`対象 HEAD:` 規約は PR の HEAD に紐づくため）。SKILL.md はこの分離（記録先に置くもの＝仕様化判断・仕様レビュー結果、PR コメントに置くもの＝仕様宣言）を入口 0 に明記しなければならない（MUST）。issue を切るのは追跡・キュー・議論が要るとき（エピック／無人キュー／判断を残す議論）に限ることを明記する（SHALL）。

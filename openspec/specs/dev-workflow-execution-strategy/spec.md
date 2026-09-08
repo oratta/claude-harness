@@ -79,15 +79,53 @@ develop スキルの `references/decision-criteria.md` の仕様化要否（Step
 - **THEN** 共有枠モードは ok（制約なし）に導出され、Fable 残量モードの導出は従来どおり conserve に倒れる
 
 ### Requirement: サブエージェントのコンテキスト上限と手渡し
-`plugins/dev-workflow/scripts/subagent-context.sh <agent-name>` は、名前付きサブエージェントのトランスクリプト（`${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*<name>*.jsonl`。同名が複数あれば最初のレコードの `cwd` が現在のディレクトリと一致するものを優先し、次に更新時刻が新しいもの）の最後の assistant レコードの usage から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を読み、1 行 JSON（`agent` / `file` / `context_tokens` / `calls` / `cap` / `over_cap`）を出力しなければならない（SHALL）。上限は `--cap` または `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）で、上限超なら exit 2、上限以内なら exit 0、トランスクリプトが無い・usage が無い・読めないときは exit 1 とし、exit 1 は作業を止めない（fail-open。SHALL）。develop の本体は W / G を SendMessage で再開する前に毎回これを実行し、exit 2 なら再開せず、前回の return（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）と記録先を渡して新しい W / G を spawn しなければならない（MUST。モデルは変えない）。W は工程の終わりに必ず return し、手渡しで起こされた W は前任の return と記録先・ファイルの現状から再出発して前任の埋めた決定を再発明してはならない（MUST NOT）。昇格トリップワイヤーの一覧（`templates/escalation-tripwires.md`）は【コンテキスト上限 → 手渡し】を 4 として含み、rate-limit 実エラーの reactive 降格を 5 とする（SHALL）。
+`plugins/dev-workflow/scripts/subagent-context.sh <agent-name>` は、名前付きサブエージェントのトランスクリプト（`${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*<name>*.jsonl`。同名が複数あれば最初のレコードの `cwd` が現在のディレクトリと一致するものを優先し、次に更新時刻が新しいもの）の最後の assistant レコードの usage から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を読み、1 行 JSON（`agent` / `file` / `context_tokens` / `calls` / `cap` / `over_cap`）を出力しなければならない（SHALL）。上限は `--cap` または `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）で、上限超なら exit 2、上限以内なら exit 0、トランスクリプトが無い・usage が無い・読めないときは exit 1 とし、exit 1 は作業を止めない（fail-open。SHALL）。
+
+develop の本体は W / G を SendMessage で再開する前に毎回これを実行し、**exit 2 のときは前任の状態にかかわらず、作業の継続を指示する SendMessage（＝再開）を送ってはならない（MUST NOT。再開の禁止は無条件）**。この禁止は手渡し（新しいエージェントを spawn すること）の可否とは別の規則であり、手渡しを行わない場合でも exit 2 の前任に作業継続の SendMessage を送ってはならない。停止を指示する SendMessage（下記「工程中断のときは手渡さない」）はこの禁止の対象外である（作業の継続ではなく停止の指示であるため）。
+
+**手渡し（前回の return と記録先を渡して新しい W / G を spawn すること）を行ってよいのは、前任の直近の return の 1 行目が `工程完了: <工程名>` に完全一致するときだけである（MUST）。** exit 2 は「次に再開するときは手渡しに切り替える」という条件にすぎず、単独では手渡しの十分条件にならない。W / G の return の 1 行目は次のいずれかに完全一致しなければならない（MUST。太字・全角コロン・末尾句点などの装飾を含めない。書式の正本は `references/roles/worker.md`）:
+
+- `工程完了: <工程名>`（例: `工程完了: 仕様化まで`、`工程完了: 実装から`）— 成果一覧（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を伴う、工程の正真正銘の終わり
+- `工程中断: <理由>`（例: `工程中断: テスト完了待ち`）— バックグラウンドコマンドの完了待ちなど、工程がまだ終わっていない状態の報告
+
+W / G は、自分が起動したバックグラウンドのコマンド（テスト・ビルド等）が完了していない状態で `工程完了:` を宣言してはならない（MUST NOT）。成果一覧とバックグラウンドコマンドの状況を同じ return に併記する場合も、そのコマンドが完了していなければ 1 行目は `工程中断:` でなければならない（MUST。成果一覧が含まれることは `工程完了:` を名乗る理由にならない）。
+
+develop の本体は、受け取った return の 1 行目が `工程完了:` であることを確認したときにだけ、新しい W / G を同じモデルで spawn してよい（MAY）。1 行目が `工程中断:` のときは、その回は再開もせず手渡しもしない。それでも交代させる必要がある場合（例: 別の理由で急ぎ乗り換えたい）は、本体は先に前任へ停止を指示し（自分で元に戻そうとしないこと＝破壊的 git 操作をしないことを含める）、停止確認（何を編集したか・何を投稿したかの報告）を受け取ってから手渡し先を spawn しなければならない（MUST）。停止確認を受け取る前に手渡し先を spawn してはならない（MUST NOT）。
+
+停止確認を待つ間、本体はブロッキングで待機してはならない（MUST NOT）。他に進められる役割（並列可能な別 worktree の W / G、エピックの別の子）があればそちらを先に進めてよい（MAY）。前任のバックグラウンドコマンドが終わって `工程完了:` の return が先に届いた場合は、前任を打ち切る必要がなくなったものとして扱い、そのまま続行し手渡しは行わない。unmanned（1 サイクル 1 仕事）で他に進められる作業が無い場合は、そのサイクル内で停止確認を待ち続けず、そのサイクルを終える（SHALL。次サイクルで同じ判定をやり直す）。
+
+W は工程の終わりに必ず `工程完了:` で return し、手渡しで起こされた W は前任の return と記録先・ファイルの現状から再出発して前任の埋めた決定を再発明してはならない（MUST NOT）。昇格トリップワイヤーの一覧（`templates/escalation-tripwires.md`）は【コンテキスト上限 → 手渡し】を 4 として含み、rate-limit 実エラーの reactive 降格を 5 とする（SHALL）。
 
 #### Scenario: 上限超のサブエージェントは exit 2
 - **WHEN** トランスクリプトの最後の assistant usage の合算が `DEV_WORKFLOW_CONTEXT_CAP` を超える
 - **THEN** `over_cap: true` の JSON を出力して exit 2 で終わる
 
-#### Scenario: 上限超なら再開せず手渡す
+#### Scenario: 上限超のときは前任の状態にかかわらず作業継続の SendMessage を送らない
 - **WHEN** 本体が W を SendMessage で再開しようとして `subagent-context.sh` が exit 2 を返す
-- **THEN** 本体は SendMessage を送らず、前回の return と記録先を渡して新しい W を同じモデルで spawn する
+- **THEN** 本体は前任の return の内容（`工程完了:` か `工程中断:` か）にかかわらず、作業の継続を指示する SendMessage（再開）を送らない
+
+#### Scenario: 工程完了の return があるときだけ手渡す
+- **WHEN** 本体が exit 2 を検知し、前任の直近の return の 1 行目が `工程完了: <工程名>` である
+- **THEN** 本体は前回の return と記録先を渡して新しい W を同じモデルで spawn する
+
+#### Scenario: 工程中断のときは手渡さない
+- **WHEN** 本体が exit 2 を検知した時点で、前任の直近の return の 1 行目が `工程中断: <理由>` である（例: バックグラウンドコマンドの完了待ち）
+- **THEN** 本体はその場で新しい W を spawn しない
+- **AND** それでも交代させる必要があるなら、先に前任へ停止を指示し、停止確認を受け取ってから手渡し先を spawn する
+
+#### Scenario: 成果一覧を併記していても未完了のコマンドがあれば工程中断のまま
+- **WHEN** W が成果一覧（編集済みファイル・通ったテスト等）と、自分が起動したバックグラウンドコマンドの完了待ちを同じ return に書く
+- **AND** そのコマンドが完了していない
+- **THEN** 1 行目は `工程中断:` でなければならず、`工程完了:` を宣言してはならない
+
+#### Scenario: 停止確認を待つ間ブロックしない
+- **WHEN** 本体が前任へ停止を指示し、停止確認の返信を待っている
+- **AND** 並列可能な別の役割（別 worktree の W / G、エピックの別の子）が起こせる状態にある
+- **THEN** 本体は停止確認を待たずにその役割を先に進めてよい
+
+#### Scenario: unmanned は停止確認を待ち続けずサイクルを終える
+- **WHEN** unmanned で前任へ停止を指示したが停止確認がまだ届かず、他に進められる作業も無い
+- **THEN** 本体はそのサイクル内で停止確認を待ち続けず、そのサイクルを終える
 
 #### Scenario: トランスクリプトが無くても作業は止まらない
 - **WHEN** `subagent-context.sh` が対象のトランスクリプトを見つけられない
