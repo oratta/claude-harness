@@ -26,6 +26,12 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 # ===== worker.md =====
 
+@test "worker: does not re-run /opsx:ff when the change already has its artifacts" {
+  grep -qF '`/opsx:ff` を再実行しない' "$WORKER"
+  grep -qF 'そのまま' "$WORKER"
+}
+
+
 @test "worker: records the spec decision with the exact first-line regex via gh, and does not proceed before" {
   grep -qF '^仕様化判断: (する|しない)$' "$WORKER"
   grep -qE 'gh (issue|pr) comment' "$WORKER"
