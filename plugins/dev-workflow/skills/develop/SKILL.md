@@ -79,7 +79,8 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
       REQUEST_CHANGES → W を SendMessage で再開して artifact を修正 → R1 を再開して差分再レビュー
       （初回＋差分 1 回の 2 周キャップ。超えたら needs-approval を付けて本体がオーナーに 1 アクションで依頼）
       R1 の APPROVE が記録先に記録されるまで W を apply に進めない（再開しない）
-(3) W を SendMessage で再開（再開前に `scripts/subagent-context.sh <W の名前>` で測り、上限超なら再開せず手渡しで新しい W を spawn）:
+(3) W を SendMessage で再開（再開前に `scripts/subagent-context.sh <W の名前>` で測り、上限超なら再開しない。
+      新しい W への手渡しは前任の return の 1 行目が `工程完了:` のときだけ。`工程中断:` なら再開も手渡しもしない）:
       apply（TDD。/opsx:apply または直叩き）→ verify → archive → PR を Ready に（または作成）→ 仕様宣言を PR コメントに書く → return「PR #N」
 (4) G を名前付きで spawn（model: 既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は Codex か needs-reviewer のレビュアーが担う）:
       pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer」
@@ -87,11 +88,11 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
       failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）で戻し方を決める。モデルを上げるのは実装品質起因のときだけで、
            上げるのは決める役と実行役の一方だけ（実行側が原因なら W を opus に、判断側が原因なら dev-workflow:decider を立てて修正方針を作らせる。
            W を fable にはしない）。仕様が曖昧なら仕様修正、誤検出なら反証で返す（どちらもモデルを上げない）
-           → W を再開（再開前にコンテキストを測る）→ G を再開して差分再レビュー（2 周キャップ。G も再開前に測る）
+           → W を再開（再開前に測り、上限超なら再開しない）→ G を再開して差分再レビュー（2 周キャップ。G も同じ）
       保留 → needs-approval のまま本体がオーナーに 1 アクション（許容する／しない、動作確認の結果）で依頼する
 ```
 
-W は名前付きで spawn し、SendMessage で再開してコンテキストを引き継ぐ（(1) の判定・(2) の指摘・(3) の実装が同じコンテキストにある）。**ただし再開の前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測り、上限（`DEV_WORKFLOW_CONTEXT_CAP`、既定 150000 tokens）を超えていたら再開せず、前回の return を渡して新しい W を spawn する（手渡し。正本は `references/decision-criteria.md`「コンテキスト上限」）。手渡してよいのは前任の return の 1 行目が `工程完了: <工程名>` のときだけで、`工程中断:`（バックグラウンドコマンド待ち等）のときは再開も手渡しもしない。** G の再開も同じ。W が孫を呼ぶ必要がある工程は存在しない。仕様化する場合で複数 change に割れたときは、interactive では change ごとに (1)〜(3) を回す（change ごとに仕様レビューを行う。並列可能なら W を並列に起こす。change ごとに worktree を分ける）。
+W は名前付きで spawn し、SendMessage で再開してコンテキストを引き継ぐ（(1) の判定・(2) の指摘・(3) の実装が同じコンテキストにある）。**ただし再開の前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測り、上限（`DEV_WORKFLOW_CONTEXT_CAP`、既定 150000 tokens）を超えていたら（exit 2）、前任の状態にかかわらず作業の継続を指示する SendMessage を送らない（再開の禁止は無条件）。手渡し（前回の return を渡して新しい W を spawn すること）を行ってよいのは前任の return の 1 行目が `工程完了: <工程名>` のときだけで、`工程中断:`（バックグラウンドコマンド待ち等）のときは再開も手渡しもしない（正本は `references/decision-criteria.md`「コンテキスト上限」）。** G の再開も同じ。W が孫を呼ぶ必要がある工程は存在しない。仕様化する場合で複数 change に割れたときは、interactive では change ごとに (1)〜(3) を回す（change ごとに仕様レビューを行う。並列可能なら W を並列に起こす。change ごとに worktree を分ける）。
 
 ## モデル
 

@@ -120,7 +120,9 @@ if all_pct is not None:
 lines.append(f"- {shared} の効果: {shared_effect}")
 lines.append("- サブエージェントのコンテキスト上限: W / G を SendMessage で再開する前に "
              "`${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <name>` で測り、"
-             f"{os.environ.get('DEV_WORKFLOW_CONTEXT_CAP', '150000')} tokens 超なら再開せず手渡し（新しい W）に切り替える")
+             f"{os.environ.get('DEV_WORKFLOW_CONTEXT_CAP', '150000')} tokens 超なら作業継続の SendMessage を送らない（無条件）。"
+             "手渡し（新しい W / G を spawn）は前任の return の 1 行目が「工程完了: <工程名>」のときだけで、"
+             "「工程中断:」なら再開も手渡しもしない")
 budget = "\n".join(lines)
 
 print(json.dumps({"additionalContext": budget + "\n\n" + tripwire}, ensure_ascii=False))

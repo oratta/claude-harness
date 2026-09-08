@@ -96,3 +96,85 @@ role_sec() { section "$SKILL" '本体の役割'; }
   echo "$w4" | grep -qF '工程完了: <工程名>'
   echo "$w4" | grep -qF '工程中断:'
 }
+
+# --- 旧文言の残留検出（否定アサーション） ---
+#
+# 上の 13 件は「新しい文言が存在するか」しか見ないので、同じ規則を述べている別の箇所に
+# 旧仕様（上限超なら無条件に新しい W / G を spawn）が残っていても全件 PASS する。実際に
+# PR #253 の 1 周目で SKILL.md の 1 ループ・`openspec/specs/dev-workflow-develop`・README・
+# `session-tripwires.sh`・`subagent-context.sh`・`plugin.json` の 6 か所が取り残された。
+# 「手渡しの規則を述べている面」を列挙し、旧文言が 1 か所でも残っていたら落とす。
+#
+# 対象外: `CHANGELOG.md` と過去の change の archive（`openspec/changes/archive/` のうち
+# この change 以外）。どちらも「そのリリース／その change の時点で何を決めたか」の歴史記録で、
+# 現行仕様に合わせて書き換えると記録そのものが嘘になる。
+
+# 手渡しの規則を述べる現行面（正本・live spec・この change の archive delta・配布物）
+handoff_surfaces() {
+  local root; root="$(cd "${PLUGIN_DIR}/../.." && pwd)"
+  local change="${root}/openspec/changes/archive/2026-09-08-handoff-requires-completed-return"
+  printf '%s\n' \
+    "${PLUGIN_DIR}/skills/develop/SKILL.md" \
+    "${PLUGIN_DIR}/skills/develop/references/decision-criteria.md" \
+    "${PLUGIN_DIR}/skills/develop/references/roles/worker.md" \
+    "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md" \
+    "${PLUGIN_DIR}/templates/escalation-tripwires.md" \
+    "${PLUGIN_DIR}/README.md" \
+    "${PLUGIN_DIR}/scripts/session-tripwires.sh" \
+    "${PLUGIN_DIR}/scripts/subagent-context.sh" \
+    "${PLUGIN_DIR}/.claude-plugin/plugin.json" \
+    "${root}/openspec/specs/dev-workflow-develop/spec.md" \
+    "${root}/openspec/specs/dev-workflow-execution-strategy/spec.md" \
+    "${change}/specs/dev-workflow-develop/spec.md" \
+    "${change}/specs/dev-workflow-execution-strategy/spec.md"
+}
+
+# grep は locale 次第でマルチバイトの否定クラスが壊れるので python3 で走査する
+scan_surfaces() {
+  local pattern="$1"; shift
+  python3 - "$pattern" "$@" <<'PY'
+import re, sys
+pattern, paths = sys.argv[1], sys.argv[2:]
+pat = re.compile(pattern)
+bad = 0
+for path in paths:
+    try:
+        text = open(path, encoding='utf-8').read()
+    except OSError:
+        print(f'missing surface: {path}')
+        bad = 1
+        continue
+    for i, line in enumerate(text.splitlines(), 1):
+        if pat.search(line):
+            print(f'{path}:{i}: {line.strip()[:200]}')
+            bad = 1
+sys.exit(1 if bad else 0)
+PY
+}
+
+@test "no surface still states the handoff as an unconditional consequence of the context cap" {
+  # 「再開せず／再開しない」と同じ文の中で手渡し・新しいエージェントの spawn に続ける形。
+  # exit 2 の再開禁止は無条件のまま正しいので、禁止だけを述べる文（文末まで）は素通りさせる。
+  local -a surfaces=()
+  while IFS= read -r f; do surfaces+=("$f"); done < <(handoff_surfaces)
+  run scan_surfaces '再開(せず|しない)[^。\n]{0,40}(手渡|新しい)' "${surfaces[@]}"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "every surface that mentions the handoff also carries the process-complete precondition" {
+  fail=0
+  while IFS= read -r f; do
+    if [ ! -f "$f" ]; then
+      echo "missing surface: $f"
+      fail=1
+      continue
+    fi
+    grep -qF '手渡' "$f" || continue
+    if ! grep -qF '工程完了' "$f"; then
+      echo "手渡しに触れているのに条件（工程完了:）が書かれていない: $f"
+      fail=1
+    fi
+  done < <(handoff_surfaces)
+  [ "$fail" -eq 0 ]
+}

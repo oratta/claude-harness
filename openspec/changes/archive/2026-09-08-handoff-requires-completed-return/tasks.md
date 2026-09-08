@@ -3,6 +3,7 @@
 - [x] 1.1 `dev-workflow-execution-strategy` の「サブエージェントのコンテキスト上限と手渡し」要件に MODIFIED delta（無条件の再開禁止と条件付き手渡し許可の分離、`工程完了:`/`工程中断:` 宣言契約、停止指示〜停止確認、ノンブロッキング待ち、unmanned のサイクル終了）
 - [x] 1.2 `dev-workflow-develop` の「本体はオーケストレータ専任でコードもレビューも書かない」要件に MODIFIED delta（同一 worktree の同一役割は常に 1 人）
 - [x] 1.3 R1 2 周目の指摘（禁止対象を「作業継続の SendMessage（再開）」に絞る）を spec delta の文言に反映する
+- [x] 1.4 `dev-workflow-develop` の「役割のモデルは事前分類と残量モードで決める」要件に重複していた無条件の手渡し記述を MODIFIED delta で条件付きに揃える（ゲート指摘: live spec と archive delta の両方）
 
 ## 2. decision-criteria.md 改訂（正本）
 
@@ -28,10 +29,12 @@
 ## 6. 周辺同期
 
 - [x] 6.1 `plugins/dev-workflow/.claude-plugin/plugin.json` の version bump
+- [x] 6.2 同じ規則を要約している重複記述を全部揃える（ゲート指摘）: `README.md`・`scripts/session-tripwires.sh` の注入文・`scripts/subagent-context.sh` のヘッダコメント・`plugin.json` の description・SKILL.md 1 ループ (3)(4)・`worker.md` の節冒頭
 
 ## 7. テスト
 
 - [x] 7.1 新規 `plugins/dev-workflow/tests/handoff-declaration.bats` で、宣言契約・無条件再開禁止・条件付き手渡し・同一 worktree 制約の記述を grep で固定する
+- [x] 7.3 同ファイルに否定アサーションを足す（ゲート指摘）: 手渡しの規則を述べる現行面（正本・live spec・この change の archive delta・README・スクリプト・plugin.json）を列挙し、旧文言（`再開せず／再開しない` に続けて手渡し・新しいエージェントを述べる形）が残っていたら落とす。手渡しに触れる面には必ず `工程完了:` の条件が書かれていることも固定する。CHANGELOG と過去の change の archive は歴史記録なので対象外
 - [x] 7.2 このリポジトリのテストスイート（`bats` 等。実行方法は `CONTRIBUTING.md` / `AGENTS.md` で確認）を実行し、既存テスト（`plugins/dev-workflow/tests/subagent-context.bats` を含む）と新規テストが通ることを確認する（`bats plugins/dev-workflow/tests/ tests/marketplace-sync.bats` → 431 件全通過）
 
 ## 8. デプロイ後（マージ後の運用）

@@ -13,7 +13,9 @@
 #   input_tokens + cache_creation_input_tokens + cache_read_input_tokens
 # ＝ そのリクエストがモデルに読ませたコンテキスト全量。develop の本体は W / G を
 # SendMessage で再開する前にこれを実行し、上限（既定 DEV_WORKFLOW_CONTEXT_CAP=150000）を
-# 超えていたら再開せず、手渡し（前回 return を引き継いだ同じ役割の新しい W / G）に切り替える
+# 超えていたら（exit 2）作業の継続を指示する SendMessage を送らない（再開の禁止は無条件）。
+# 手渡し（前回 return を引き継いだ同じ役割の新しい W / G）に切り替えてよいのは、前任の直近の
+# return の 1 行目が `工程完了: <工程名>` のときだけ
 # （正本: skills/develop/references/decision-criteria.md「コンテキスト上限」）。
 #
 # 探索: ${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*<name>*.jsonl

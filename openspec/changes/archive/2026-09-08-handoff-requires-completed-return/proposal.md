@@ -22,12 +22,13 @@ develop スキルの W（作業者サブエージェント）は、コンテキ�
 ### Modified Capabilities
 
 - `dev-workflow-execution-strategy`: 「サブエージェントのコンテキスト上限と手渡し」要件を、①exit 2 の無条件再開禁止と②`工程完了:`/`工程中断:` の 1 行目宣言契約による条件付き手渡し許可、に分離する。W / G の宣言義務、停止指示〜停止確認の手順、停止確認待ちのノンブロッキング方針、unmanned のサイクル終了条件を追加する。
-- `dev-workflow-develop`: 「本体はオーケストレータ専任でコードもレビューも書かない」要件に、同一 worktree での同一役割の同時実行数は常に 1 であることを追加する（既存の並列許可 MAY の限定）。
+- `dev-workflow-develop`: 「本体はオーケストレータ専任でコードもレビューも書かない」要件に、同一 worktree での同一役割の同時実行数は常に 1 であることを追加する（既存の並列許可 MAY の限定）。あわせて「役割のモデルは事前分類と残量モードで決める」要件に重複していた手渡しの記述（`dev-workflow-execution-strategy` と同じ規則の要約）も、無条件の再開禁止と条件付きの手渡し許可に分離した形へ揃える。
 
 ## Impact
 
 - **docs**: `plugins/dev-workflow/skills/develop/references/decision-criteria.md`（「コンテキスト上限（サブエージェントの手渡し）」節）、`plugins/dev-workflow/skills/develop/references/roles/worker.md`（W の宣言義務・`工程完了:`/`工程中断:` 書式）、`plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`（G の宣言義務・return の 1 行目）、`plugins/dev-workflow/skills/develop/SKILL.md`（1 ループ (3)(4) への短いポインタ、並列許可の限定）、`plugins/dev-workflow/templates/escalation-tripwires.md`（トリップワイヤー 4 に宣言契約への簡潔なポインタを追記）
 - **plugin.json**: `plugins/dev-workflow/.claude-plugin/plugin.json` version bump
-- **spec**: `dev-workflow-execution-strategy` と `dev-workflow-develop` の delta（それぞれ MODIFIED 1）
+- **spec**: `dev-workflow-execution-strategy`（MODIFIED 1）と `dev-workflow-develop`（MODIFIED 2）の delta
+- **重複記述の追随**: 同じ規則を要約している面をすべて揃える — `plugins/dev-workflow/README.md`、`plugins/dev-workflow/scripts/session-tripwires.sh`（毎セッション注入される案内文）、`plugins/dev-workflow/scripts/subagent-context.sh`（ヘッダコメント）、`plugins/dev-workflow/.claude-plugin/plugin.json`（description）
 - **tests**: 新規 bats（`plugins/dev-workflow/tests/handoff-declaration.bats`）で `工程完了:`/`工程中断:` 宣言契約・無条件再開禁止・同一 worktree 制約の記述を grep で固定する
 - **コードの振る舞い変更なし**（`subagent-context.sh` のロジック・閾値は不変）。手順書を読む本体・W / G の運用判断と return の書式が変わる
