@@ -350,6 +350,87 @@ SH
   [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-array-expansion-shift after-array-shift " ]
 }
 
+# #184 の修正（PR #199）に対するレビュー指摘の退行ガード。識別子直後の `[` を無条件に
+# 配列添字として開いていたため、`cat foo[bar <<EOF` のようなマッチしない glob でも添字
+# フレームが開き、本物のヒアドキュメント開始 `<<` を演算子として読み飛ばしていた。
+# 本文が次の行からコードとして走査され、本文のアポストロフィ1つで引用フレームが開いた
+# まま残り、以降のファイル全体の呼び出しが消える（main の grep 方式では数えられていた）。
+# 添字として開くのは bash が添字として読む位置（`${name[…]}` と代入語 `name[…]=`）だけ。
+@test "check: a glob-like word before a heredoc does not open an array subscript" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-glob-heredoc.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+cat foo[bar <<EOF
+don't touch this
+EOF
+report "after-glob-heredoc" "a"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "1" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "1" ]
+  [ "$(detection_categories "$synthetic")" = "after-glob-heredoc" ]
+}
+
+# 配列添字は論理行単位で読む。行継続 `\` で次の行に続く添字（`a[1 + \` の次の行の
+# `2 << 1]=3`）の `<<` も算術演算子であり、ヒアドキュメント開始と誤認すると区切り語
+# `1]=3` が現れるまで以降が全部本文扱いになる。`+=` の代入語も同じ規則で開く。
+@test "check: array subscripts continued with a backslash stay arithmetic" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-continued-subscript.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+a[1 + \
+2 << 1]=3
+report "after-continued-subscript" "m"
+b=1 c[1<<2]+=9
+report "after-plus-assign" "n"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "2" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "2" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-continued-subscript after-plus-assign " ]
+}
+
+# 添字判定を bash の位置規則に揃えた副作用で、添字でない `[` の扱いが変わっていないことの
+# 確認。test コマンド `[ -f x ]`・`[[ … ]]`・連想配列の `${m[key]}` `${#m[@]}` `${!m[@]}`・
+# glob の文字クラス `file[a-z].txt` のどれも、直後のヒアドキュメント本文を本文のまま扱い、
+# 本文の中の report を数えず、本文の後の本物の呼び出しは数える。
+@test "check: test commands, associative arrays and glob classes do not disturb heredocs" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-bracket-forms.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+declare -A m=([key]=v)
+[ -f x ] && cat <<EOF
+don't report "in-heredoc-test" "x"
+EOF
+report "after-test-command" "a"
+[[ -n "${m[key]}" ]] && cat <<EOF
+don't report "in-heredoc-conditional" "x"
+EOF
+report "after-conditional" "b"
+echo "${m[key]} ${#m[@]} ${!m[@]}"; cat <<EOF
+don't report "in-heredoc-assoc" "x"
+EOF
+report "after-assoc-expansion" "c"
+ls file[a-z].txt 2>/dev/null; cat <<EOF
+don't report "in-heredoc-glob" "x"
+EOF
+report "after-glob-class" "d"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "4" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "4" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-assoc-expansion after-conditional after-glob-class after-test-command " ]
+}
+
 # 上の検査が「行数」で数えていた頃は、1行に2件並べると非リテラル呼び出しを見逃した。
 # 合成スクリプトで、同一行の混在・行継続の両方が数え方に乗ることを直接確かめる。
 @test "check: the report-call counter counts occurrences, not lines" {
