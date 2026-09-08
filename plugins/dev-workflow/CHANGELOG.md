@@ -1,5 +1,9 @@
 # Changelog — dev-workflow
 
+## 2.4.1 — 2026-09-06: agent-model-guard を hooks.json に配線
+
+2.4.0 で同梱した `scripts/agent-model-guard.sh` を PreToolUse（matcher: Agent）に配線した。これ以降、`model` 未指定の `Agent` 呼び出し（general-purpose / Explore / Plan / 未指定）は拒否され、理由に規範（rules/subagent-model-selection.md）と選ぶべきティアが出る。fork は共有枠モードが ok のときだけ許可。`DEV_WORKFLOW_MODEL_GUARD=off` で一時的に外せる。
+
 ## 2.4.0 — 2026-09-06: Fable は判断だけ（聖域パスの実装は opus・G は sonnet・abundant の押し上げ廃止・修正実装は 1 段昇格）
 
 2.3.0 の後に Fable の行き先を再集計した。先週の Fable 消費のうち W 924・G 497・R1 464（API 定価換算）で、Fable で走った W / G 24 本のうち 20 本は事前分類の「聖域パス」（`.claude/` 配下・CLAUDE.md・スキル）によるものだった。エージェント設定が製品であるリポではほぼ全実装が聖域に当たり、例外のはずの Fable が既定になっていた。今週は abundant の押し上げで R1 / G が 100% Fable。G 自身の仕事は照合・ラベル操作で、判定は Codex か needs-reviewer のレビュアーが担っている。オーナー決定（2026-09-06）で「判断は Fable、実装と照合は Sonnet / Opus」に揃えた。
