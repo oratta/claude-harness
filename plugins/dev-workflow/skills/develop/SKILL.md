@@ -92,7 +92,7 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
       保留 → needs-approval のまま本体がオーナーに 1 アクション（許容する／しない、動作確認の結果）で依頼する
 ```
 
-W は名前付きで spawn し、SendMessage で再開してコンテキストを引き継ぐ（(1) の判定・(2) の指摘・(3) の実装が同じコンテキストにある）。**ただし再開の前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測り、上限（`DEV_WORKFLOW_CONTEXT_CAP`、既定 150000 tokens）を超えていたら（exit 2）、前任の状態にかかわらず作業の継続を指示する SendMessage を送らない（再開の禁止は無条件）。手渡し（前回の return を渡して新しい W を spawn すること）を行ってよいのは前任の return の 1 行目が `工程完了: <工程名>` のときだけで、`工程中断:`（バックグラウンドコマンド待ち等）のときは再開も手渡しもしない（正本は `references/decision-criteria.md`「コンテキスト上限」）。** G の再開も同じ。W が孫を呼ぶ必要がある工程は存在しない。仕様化する場合で複数 change に割れたときは、interactive では change ごとに (1)〜(3) を回す（change ごとに仕様レビューを行う。並列可能なら W を並列に起こす。change ごとに worktree を分ける）。
+W は名前付きで spawn し、SendMessage で再開してコンテキストを引き継ぐ（(1) の判定・(2) の指摘・(3) の実装が同じコンテキストにある）。**ただし再開の前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測り、上限（`DEV_WORKFLOW_CONTEXT_CAP`、既定 150000 tokens）を超えていたら（exit 2）、前任の状態にかかわらず作業の継続を指示する SendMessage を送らない（再開の禁止は無条件）。手渡し（前回の return を渡して新しい W を spawn すること）を行ってよいのは、①前任の return の 1 行目が `工程完了: <工程名>` のとき、②前任へ停止を指示して停止確認を受け取ったとき、のいずれかだけで、`工程中断:`（バックグラウンドコマンド待ち等）のままどちらも満たさないうちは再開も手渡しもしない（正本は `references/decision-criteria.md`「コンテキスト上限」）。** G の再開も同じ。W が孫を呼ぶ必要がある工程は存在しない。仕様化する場合で複数 change に割れたときは、interactive では change ごとに (1)〜(3) を回す（change ごとに仕様レビューを行う。並列可能なら W を並列に起こす。change ごとに worktree を分ける）。
 
 ## モデル
 

@@ -200,6 +200,8 @@ bad = 0
 for path in paths:
     try:
         text = open(path, encoding='utf-8').read()
+    except UnicodeDecodeError:
+        continue
     except OSError:
         print(f'missing surface: {path}')
         bad = 1
@@ -233,12 +235,17 @@ PY
 }
 
 # 手渡しの許可条件を絶対文で述べている面（同じ言い回しの再掲 3 箇所）
+# 手渡しの許可条件を述べている面は、リポジトリ全体から機械的に拾う。面の一覧を手で列挙すると
+# 「まだ直していない面が検査対象から外れる」形になり、取り残しを見逃す（PR #253 で 3 度目の
+# 見逃しを防ぐための決定）。対象外は歴史記録だけ: `CHANGELOG.md` と、この change 以外の
+# 過去 change の archive。
 handoff_permission_surfaces() {
   local root; root="$(cd "${PLUGIN_DIR}/../.." && pwd)"
-  printf '%s\n' \
-    "${PLUGIN_DIR}/skills/develop/references/decision-criteria.md" \
-    "${root}/openspec/specs/dev-workflow-execution-strategy/spec.md" \
-    "${root}/openspec/changes/archive/2026-09-08-handoff-requires-completed-return/specs/dev-workflow-execution-strategy/spec.md"
+  local this_change='openspec/changes/archive/2026-09-08-handoff-requires-completed-return/'
+  git -C "$root" ls-files -- '*.md' '*.sh' '*.bats' '*.json' '*.py' '*.yml' '*.yaml' \
+    | grep -Ev '(^|/)CHANGELOG\.md$' \
+    | awk -v keep="$this_change" 'index($0, "openspec/changes/archive/") != 1 || index($0, keep) == 1' \
+    | sed "s|^|${root}/|"
 }
 
 @test "handoff permission sentence keeps the stop-confirmation route as an exception, not only the process-complete return" {
