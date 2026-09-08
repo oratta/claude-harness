@@ -141,7 +141,7 @@ check_third_party_pins() {
   local lister="$PLUGIN_DIR/tests/list-uses.rb"
   local total=0
   local unpinned=""
-  local file start_line end_line end_col value body rest comment listed
+  local file start_line end_line comment value body listed
 
   # ファイル列挙は NUL 区切り（-print0 / read -d ''）。改行区切りだと改行を含む
   # ファイル名が 2 つの実在しないパスに行分断され、そのファイルの中身が一度も
@@ -158,7 +158,7 @@ check_third_party_pins() {
       unpinned="${unpinned}${file}: not parseable as YAML: ${listed}"$'\n'
       continue
     fi
-    while IFS=$'\t' read -r start_line end_line end_col value; do
+    while IFS=$'\t' read -r start_line end_line comment value; do
       # `uses` を 1 件も持たないファイルは here-string が空行 1 本になるので読み飛ばす
       [ -n "$start_line" ] || continue
       total=$((total + 1))
@@ -187,19 +187,18 @@ check_third_party_pins() {
       # `#` の後に非空白が 1 文字でもあれば通す旧判定だと `# TODO` でも合格してしまい、
       # spec の「その SHA が指すバージョンを同じ行のコメントに併記」と字面が合わない。
       # SHA とバージョンの対応そのものはオフラインで検証できないので、形だけ縛る。
-      # 判定は「値より後ろ」で最初に現れる `#` 以降（＝コメント部分）に限定し、その先頭で当てる。
-      # 行全体への部分一致だと、コメント本体が `# TODO` でも行内の別位置の `#176 ` が
-      # 条件を満たしてしまう（#183 その1）。値より前（flow mapping の前置キー）は見ない。
-      # 値より後ろにも他のキーの引用値（`{ uses: x@sha, name: "a#b" } # v1`）が来うるので、
-      # 引用文字列を除いてから最初の `#` を探す（flow context の plain scalar は ` #` を含めない）。
-      # `#` が無ければ sed が何もせず残りがそのまま残り、先頭アンカーの `^#` に
-      # 一致しないので違反側に落ちる（緩む方向には動かない）。
+      # コメント部分の切り出しは list-uses.rb がパーサの位置情報で行う: 値の行で終わる
+      # 本文ノード（Scalar / Alias / flow collection）の終端より後ろで最初に現れる `#` から
+      # 行末まで。行全体への部分一致だと、コメント本体が `# TODO` でも行内の別位置の
+      # `#176 ` が条件を満たしてしまう（#183 その1）し、値より後ろの引用値の `#`
+      # （`{ uses: x@sha, name: "a\"# v1 " } # TODO`）や flow context の plain scalar の `#`
+      # （`{ uses: x@sha, name: x#v1 } # TODO`）を bash 側の引用除去 sed で追いかけると
+      # エスケープや空白無しの `#` で境界を取り違える。コメントが無い行は `-` で来るので
+      # 先頭アンカーの `^#` に一致せず違反側に落ちる（緩む方向には動かない）。
       # 終端を空白で締めるのは、`# v1evil` / `# 1.` / `# 2026-08-22` のような
       # 「バージョンに見えるだけ」の形を弾くため。
       # 行末を表すのに `(...|$)` を使わず末尾に空白 1 個を足しているのは、
       # 括弧内の `$` をアンカーとして扱うかが grep 実装で揺れるのを避けるため。
-      rest="${body:$end_col}"
-      comment="$(printf '%s' "$rest" | sed -E "s/\"[^\"]*\"//g; s/'[^']*'//g; s/^[^#]*#/#/")"
       if ! printf '%s ' "$comment" | grep -qE '^#[[:space:]]*v?[0-9]+(\.[0-9]+)*[[:space:]]'; then
         unpinned="${unpinned}${file}:${start_line}:${body}"$'\n'
       fi
@@ -496,6 +495,60 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   [ "$status" -ne 0 ]
   [ "$status" -ne 2 ]
   [[ "$output" == *"secret.yml.template"* ]]
+}
+
+@test "S16a-21: a 'uses' in the second YAML document of a template is still checked" {
+  # `Psych.parse_file` は最初の document しか返さないので、`---` で区切った 2 つ目以降に
+  # 置いた `uses` が走査から丸ごと落ちていた。行 grep 版なら構造的に見落とせない形なので、
+  # パーサ方式で検査が弱くなる後退。stream 全体（`Psych.parse_stream`）を走査する。
+  local dir="$BATS_TEST_TMPDIR/multidoc"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n---\njobs:\n  b:\n    steps:\n      - uses: evil/action@v1\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:9:"*"evil/action@v1"* ]]
+
+  # 2 つ目の document が正しく固定されていれば pass する
+  printf 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n---\njobs:\n  b:\n    steps:\n      - %s\n' \
+    "$PINNED_OK" > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-22: a '#' that is YAML content after the value does not stand in for the version comment" {
+  # コメント境界を bash の引用除去 sed（`s/"[^"]*"//g`）で追いかけると、空白を挟まない `#`
+  # （flow context では plain scalar の一部）や `\"` のエスケープで境界を取り違え、
+  # コメント本体が `# TODO` の行が pass していた。境界はパーサの位置情報
+  # （値の行で終わる本文ノードの終端）で引く。
+  # フィクスチャ行は単引用の字面で書く（`"$(... "{ ..., ... }")"` の形は bash が
+  # 引用を越えて brace 展開し、`{ uses: ..., name: ... }` が壊れる）。
+  local bad
+  for bad in \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: x#v1 } # TODO' \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: "a\"# v1 " } # TODO'
+  do
+    run check_third_party_pins "$(write_uses_fixture "$bad" "$PINNED_OK")"
+    [ "$status" -eq 1 ] || { echo "not rejected: $bad"; return 1; }
+    [[ "$output" == *"# TODO"* ]] || { echo "unexpected output for: $bad"; return 1; }
+  done
+
+  # 値の行で始まって次行に続く引用値の中の `#` も境界にならない（その行にコメントは置けない）
+  local dir="$BATS_TEST_TMPDIR/spanning"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - { uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: "multi #v1\n          line" } # TODO\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:4:"* ]]
+
+  # 同じ形で閉じ括弧の後にバージョンコメントがあれば pass する
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: x#v9 } # v2.1.1' \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: "a\"# TODO " } # v2.1.1')"
+  [ "$status" -eq 0 ]
 }
 
 @test "S17: all five workflow templates parse as YAML" {
