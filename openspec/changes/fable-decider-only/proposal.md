@@ -20,15 +20,16 @@ Fable が消費するのはターン数（会話履歴の cache 読込）であ�
 ### Modified Capabilities
 - `dev-workflow-execution-strategy`: `agent-model-guard.sh` の判定に「Fable を指す `model` は決める役の種別でだけ許可」を追加する。既存の判定（`model` 未指定の deny・`fork` の共有枠判定・定義側 model の許可・`DEV_WORKFLOW_MODEL_GUARD=off`・fail-open）は変えない。あわせて重要実装の事前分類表から実行役の `fable` 行を無くし上限を opus とする
 - `dev-workflow-escalation-tripwires`: 失敗ループの昇格を「1 段ずつ Sonnet → Opus → Fable」から「決める役 / 実行役の分離ラダー」に置き換える
-- `dev-workflow-develop`: `worker.md` の事前分類表を規定する要件と、役割ごとのモデルを規定する要件から W の `fable` 行を無くし、レビュアーの fable を `dev-workflow:decider` 経由に変える
-- `dev-workflow-spec-review`: R1 が事前分類の `fable` 行に当たるとき、`model: fable` の `general-purpose` ではなく `dev-workflow:decider` で spawn すると規定する
+- `dev-workflow-develop`: `worker.md` の事前分類表を規定する要件と、役割ごとのモデルを規定する要件から W の `fable` 行を無くしてレビュアーの fable を `dev-workflow:decider` 経由に変える。あわせて 1 ループの要件（`failed なら W を再開（実装品質起因は fable）`）を、原因分類で決める役と実行役の一方だけを上げる形に置き換える
+- `dev-workflow-spec-review`: R1 が事前分類の `fable` 行に当たるとき、`model: fable` の `general-purpose` ではなく `dev-workflow:decider` で spawn すると規定する。決める役は `Bash` を持たず投稿も記録先の読み取りもできないため、判定結果は本体が同じ書式で代理投稿し、記録先の本文は呼び出し側が入力文に貼ると規定する
 
 ## Impact
 
-- 新規: `plugins/dev-workflow/agents/decider.md`
+- 新規: `plugins/dev-workflow/agents/decider.md`（`plugin.json` の `agents` に宣言）
 - 変更: `plugins/dev-workflow/scripts/agent-model-guard.sh`
 - 文書（昇格ラダー）: `plugins/dev-workflow/skills/develop/SKILL.md`、`skills/develop/references/roles/worker.md`、`skills/develop/references/roles/gate-runner.md`、`skills/pr-review-gate/SKILL.md`、`templates/escalation-tripwires.md`、`rules/subagent-model-selection.md`
 - 文書（事前分類表）: `skills/develop/references/roles/worker.md`（正本）、`skills/develop/SKILL.md`、`skills/develop/references/roles/spec-reviewer.md`、`skills/develop/references/roles/gate-runner.md`、`skills/pr-review-gate/SKILL.md`、`plugins/dev-workflow/README.md`
-- テスト: `plugins/dev-workflow/tests/agent-model-guard.bats`（追加）、`model-escalation-policy.bats`、`develop-roles.bats`、`spec-decision-and-review.bats`、`develop-skill.bats`、`tripwire-hook.bats`（緑のまま）、Fable 定義の読み取り専用検証テスト（新規）
-- バージョン: `plugins/dev-workflow/.claude-plugin/plugin.json` 2.4.1 → 2.5.0、`.claude-plugin/marketplace.json`、`CHANGELOG.md`
+- 文書（R1 の記録経路）: `skills/develop/references/roles/spec-reviewer.md`（レビュアーへの入力・結果の記録）、`skills/develop/SKILL.md`（本体がやること・1 ループの (2)）、`skills/develop/references/roles/worker.md`（既にある change で `/opsx:ff` を再実行しない）
+- テスト: `plugins/dev-workflow/tests/decider-agent.bats`（新規）、`plugins/dev-workflow/tests/agent-model-guard.bats`（追加）、`model-escalation-policy.bats`、`develop-roles.bats`、`spec-decision-and-review.bats`、`develop-skill.bats`、`tripwire-hook.bats`（緑のまま）。Fable 定義の読み取り専用検証は `decider-agent.bats` に含める
+- バージョン: `plugins/dev-workflow/.claude-plugin/plugin.json` 2.4.1 → 2.5.0（`agents` 宣言と `description` の旧表文言も更新）、`.claude-plugin/marketplace.json`（同じく `description`）、`CHANGELOG.md`
 - この change の外（別リポ）: flatmate `docs/agent-loop.md` の実装 fable 条件と修正ラダー。プラグイン更新後の住人再起動
