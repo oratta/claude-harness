@@ -16,6 +16,9 @@
     "tdd",
     "spec-driven"
   ],
+  "agents": [
+    "./agents/decider.md"
+  ],
   "skills": [
     "./skills/develop",
     "./skills/push-guard-setup",
