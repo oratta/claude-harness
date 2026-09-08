@@ -36,4 +36,4 @@
 
 ## 8. デプロイ後（マージ後の運用）
 
-- [ ] 8.1 change を archive し `openspec/specs/` に delta を sync する
+- [x] 8.1 change を archive し `openspec/specs/` に delta を sync する
