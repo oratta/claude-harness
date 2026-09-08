@@ -13,7 +13,7 @@ dev-workflow プラグインは決める役のエージェント定義 `agents/d
 
 verify・マージ可否で呼ばれたときは可否と根拠を返す（SHALL）。自分ではコードを書かず、「コードを触らないと直し方が決められない」と判断したときは、その旨と足りない情報を返さなければならない（MUST）。決める役は記録先へのコメント投稿も行わない（MUST NOT。`Bash` を持たないため）。記録が要る役割（仕様レビューの R1 など）を決める役として起こした場合、その return を記録先に投稿するのは呼び出し側（本体）の責務である（SHALL）。
 
-決める役は `model` を切り替えて使い分けなければならない（SHALL）。決める役を Opus で立てたいときも `subagent_type` は `dev-workflow:decider` のまま `model: opus`（または `model` を省略して定義の既定 `fable`）とし、`general-purpose` に読み替えてはならない（MUST NOT）。これにより `FABLE_BUDGET_MODE=exhausted` / `reserve` の自動実行で決める役を Opus 上限に落とすときも、種別は変えずモデルだけが変わる。
+決める役は `model` を切り替えて使い分けなければならない（SHALL）。決める役を Opus で立てたいときも `subagent_type` は `dev-workflow:decider` のまま `model: opus` とし、`general-purpose` に読み替えてはならない（MUST NOT）。`model` は `rules/subagent-model-selection.md` のとおり呼び出しごとに明示する（SHALL。定義側の既定に頼って `model` を省略する形は推奨しない）。これにより `FABLE_BUDGET_MODE=exhausted` / `reserve` の自動実行で決める役を Opus 上限に落とすときも、種別は変えずモデルだけが変わる。
 
 #### Scenario: 定義が読み取り専用ツールだけを持つ
 - **WHEN** `plugins/dev-workflow/agents/decider.md` の frontmatter を読む
