@@ -33,8 +33,8 @@
 
 #### Scenario: 2 本のスクリプトが同じトランスクリプトに同じ値を返す
 
-- **WHEN** 同じトランスクリプトを `subagent-context.sh --file <path>` と `context-tripwire.sh`（導出先が同じになる payload）の両方で測る
-- **THEN** どちらも同じ `context_tokens` を計測結果として扱う
+- **WHEN** **末尾 256KB に最後の `assistant` usage が含まれる**トランスクリプトを、`subagent-context.sh --file <path>` と `context-tripwire.sh`（導出先が同じになる payload）の両方で測る
+- **THEN** どちらも同じ `context_tokens` を計測結果として扱う（`context-tripwire.sh` は上限内だと無音なので、比較は `DEV_WORKFLOW_CONTEXT_CAP` を小さくして `additionalContext` 中の計測値を読む形で行う）
 
 ### Requirement: 起動の途中でコンテキストを測る hook
 
@@ -89,7 +89,7 @@
 
 PostToolUse で計測値が `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）を超えていたら、hook は `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"…"}}` を stdout に出して exit 0 で終わらなければならない（MUST）。素の文字列を stdout に出して exit 0 とする形にしてはならない（MUST NOT）— PostToolUse の exit 0 の stdout はトランスクリプト表示（ctrl+o）にしか出ずモデルには届かないため、その形では通知が永久に無音になる。
 
-`additionalContext` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_CAP` の値 ／ 今の工程を締め、成果（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を列挙して return せよという指示 ／ **return の 1 行目の書き分け**（そのとき進めていた tasks グループの項目がすべて済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:`）。
+`additionalContext` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_CAP` の値 ／ 今の工程を締め、成果（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を列挙して return せよという指示 ／ **return の 1 行目の書き分け**（そのとき進めていた tasks グループの項目がすべて済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:`）。この通知は役割で出し分けないため、`tasks.md` を持たない受け手にも届く。したがって「tasks グループ」の指すものを本文の中で一意にしなければならない（MUST）: **`tasks.md` が無い場合は本体から渡された作業項目、G は pr-review-gate の手順 1〜5 を 1 グループとみなす**。
 
 役割（W / R1 / G / decider）による出し分けをしてはならない（MUST NOT。全サブエージェント一律）。出力は 1 回あたり数行に抑え、ツールの実行結果を書き換えてはならない（MUST NOT）。
 
@@ -101,7 +101,7 @@ PostToolUse で計測値が `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）を超�
 #### Scenario: 通知は return の 1 行目の書き分けを含む
 
 - **WHEN** 同じ payload で `additionalContext` を読む
-- **THEN** tasks グループが全部済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:` を 1 行目にする旨が含まれる
+- **THEN** tasks グループが全部済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:` を 1 行目にする旨と、`tasks.md` が無い場合に何を 1 グループとみなすか（本体から渡された作業項目、G は pr-review-gate の手順 1〜5）が含まれる
 
 #### Scenario: 役割で出し分けない
 

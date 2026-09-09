@@ -118,9 +118,9 @@ hooks.json の登録内容の検査は**新規の `tests/context-tripwire.bats`*
 
 ### 11. 手順書への追記は最後の commit に分け、規則の本文は 1 箇所に置く
 
-`skills/develop/` 配下の 5 本は PR #253 が同時に書き換えている。コード（hook・`--file`・テスト）は先に進め、手順書への追記だけ #253 マージ後に最後の commit で載せる。
+`skills/develop/` 配下の手順書と `templates/escalation-tripwires.md` は PR #253 が同時に書き換えている。コード（hook・`--file`・テスト）は先に進め、手順書への追記だけ #253 マージ後に最後の commit で載せる。
 
-書き方も制約する。**規則の本文（閾値・2 経路・通知/強制停止時の振る舞い・`工程中断:` の使い分け）は `references/decision-criteria.md`「コンテキスト上限」の節 1 箇所に置き**、`SKILL.md` / `references/roles/worker.md` / `references/roles/gate-runner.md` / `templates/escalation-tripwires.md` は**その節へのポインタと、その役割固有の動作**（手渡し先が `git status` / `git diff` を先に見る、等）だけを書く。同じ規則を 4 ファイルに言い換えて置くと、次に閾値や振る舞いが変わったとき必ずどれかが取り残される（#253 で 3 周続けて言い換え漏れが出た）。
+書き方も制約する。**規則の本文（閾値・2 経路・通知/強制停止時の振る舞い・`工程中断:` の使い分け）は `references/decision-criteria.md`「コンテキスト上限」の節 1 箇所に置き**、`SKILL.md` / `references/roles/worker.md` / `references/roles/gate-runner.md` / `templates/escalation-tripwires.md` / `README.md` は**その節へのポインタと、その役割固有の動作**（手渡し先が `git status` / `git diff` を先に見る、等）だけを書く。`README.md` を対象に含めるのは、着手時点で `README.md:14` にも「150K tokens 超なら再開せず…」という再掲が実在し、プラグインの概観だからといって外すと次に閾値を動かしたとき README だけ取り残されるため。同じ規則を複数ファイルに言い換えて置くと、次に閾値や振る舞いが変わったとき必ずどれかが取り残される（#253 で 3 周続けて言い換え漏れが出た）。
 
 ### 12. G が強制停止に当たったときのレビュー結果は本体が代理投稿する
 
@@ -146,5 +146,6 @@ hooks.json の登録内容の検査は**新規の `tests/context-tripwire.bats`*
 
 ## Open Questions
 
+- **`additionalContext` が実際にモデルへ届かなかった場合の退避**: 出力スキーマ（`hookEventName: "PostToolUse"` + `additionalContext`）とセッション側の `hook_additional_context`（"Non-error feedback from hookSpecificOutput.additionalContext"）の存在までは配布バイナリ 2.1.266 で確認済みだが、PostToolUse の説明文が明記しているのは exit code の挙動だけなので、モデルに届くことの最終確認は実地確認（tasks 4.3）が担う。**届かなかった場合は exit 2 + stderr に切り替える**（同バイナリの説明文は exit 2 を "show stderr to model immediately" としている）。その場合は「エラー扱いでツール結果の扱いが変わる」（Decision 7 で採らなかった理由）を受け入れることになるので、仕様変更として扱う
 - 強制停止の既定値 220,000 は #257 の案のまま採る。実データでの妥当性は #259 の監視結果を見て見直す
 - 同一起動での通知の重複抑制（1 回だけ出す）が要るかは、#259 の監視で頻度を見てから決める

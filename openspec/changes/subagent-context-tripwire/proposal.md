@@ -12,7 +12,7 @@
 - **強制停止**: PreToolUse で `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220,000）超なら、`Edit` / `Write` / `NotebookEdit` と、許可した git サブコマンド以外の `Bash` を deny する。許可判定は「先頭トークンが `git` で、`-C <path>` / `-c <k=v>` を読み飛ばした次のトークンが `status` / `diff` / `add` / `commit` / `push`」とする（worktree 作業では `git -C <path> commit` を常用するため）。通知と強制停止の間の 70,000 は、編集の途中で切られて壊れた状態を次の担当に渡さないための余裕。
 - **計測対象の解決**: 着手前実験（下記「判明した事実」）により、hook の stdin `transcript_path` はサブエージェント自身ではなく**親セッションのトランスクリプト**を指すことが分かった。そのため計測対象は `transcript_path` の親ディレクトリ・`session_id`・`agent_id` から `<projects>/<slug>/<session_id>/subagents/agent-<agent_id>.jsonl` として導出する。`agent_id` が無い（メインスレッド）呼び出しでは何もしない。この判定は python3 を起動する前に bash 側で行う（この hook は install 先の全ユーザーの全ツール呼び出しで走るため）。
 - `scripts/subagent-context.sh` に `--file <path>` を追加する（#243 の統合）。**計測ロジックの共有ファイルは作らない** — 計測の式を spec の要件として 1 つに定め、`subagent-context.sh` と `context-tripwire.sh` はそれぞれ自前で実装する。`subagent-context.sh` への変更は引数処理と、ヘッダコメント 1 行・`--help` の行範囲に限る（同じファイルを PR #253 が触るため）。
-- develop の手順書に、途中計測の存在と 2 段の閾値・通知/強制停止時の振る舞い・`工程中断:` を追記する。ただし**規則の本文は `references/decision-criteria.md`「コンテキスト上限」1 箇所に置き**、`SKILL.md` / `references/roles/worker.md` / `references/roles/gate-runner.md` / `templates/escalation-tripwires.md` はその節へのポインタと役割固有の動作だけを書く（#253 で 3 周続けて言い換え漏れが出た教訓）。**この手順書への追記だけは PR #253 のマージ後に最後の commit で載せる**（同じファイルを #253 が書き換えているため）。
+- develop の手順書に、途中計測の存在と 2 段の閾値・通知/強制停止時の振る舞い・`工程中断:` を追記する。ただし**規則の本文は `references/decision-criteria.md`「コンテキスト上限」1 箇所に置き**、`SKILL.md` / `references/roles/worker.md` / `references/roles/gate-runner.md` / `templates/escalation-tripwires.md` / `README.md` はその節へのポインタと役割固有の動作だけを書き、既にある閾値の再掲は参照に置き換える（#253 で 3 周続けて言い換え漏れが出た教訓）。**この手順書への追記だけは PR #253 のマージ後に最後の commit で載せる**（同じファイルを #253 が書き換えているため）。
 - `plugins/dev-workflow/.claude-plugin/plugin.json` の version を **2.7.0** にする（#253 が 2.6.1 を取るための事前割当）。
 
 破壊的変更なし。上限内では hook は何も出力せず、既存の挙動は変わらない。
@@ -26,7 +26,7 @@
 ### Modified Capabilities
 
 - `dev-workflow-execution-strategy`: サブエージェントのコンテキスト計測が「本体が再開前に名前で測る」だけでなく「起動の途中で hook が自分自身を測る」を含むようになる。hook の登録先・計測対象の導出規則・2 段の閾値・通知の伝達経路（`additionalContext`）・拒否するツールの範囲・fail-open の条件・`subagent-context.sh --file` を要件として足す。
-- `dev-workflow-develop`: 本体の再開前チェックに加えて途中計測が存在することと、規則の本文を `decision-criteria.md` 1 箇所に置いて他の面はポインタにすること、手渡しで起こされた W / G は前任が途中停止した可能性を前提に未コミット差分を先に確認することを、手順書の要件として足す。
+- `dev-workflow-develop`: 本体の再開前チェックに加えて途中計測が存在することと、規則の本文を `decision-criteria.md` 1 箇所に置いて他の 5 面（`SKILL.md` / `worker.md` / `gate-runner.md` / `escalation-tripwires.md` / `README.md`）はポインタにすること、手渡しで起こされた W / G は前任が途中停止した可能性を前提に未コミット差分を先に確認することを、手順書の要件として足す。
 
 ## Impact
 
@@ -34,6 +34,6 @@
 - `plugins/dev-workflow/scripts/context-tripwire.sh`（新規）
 - `plugins/dev-workflow/scripts/subagent-context.sh`（`--file` 対応。引数処理・ヘッダ 1 行・`--help` の行範囲のみ）
 - `plugins/dev-workflow/tests/context-tripwire.bats`（新規。hooks.json の登録内容の検査もここに置き、#253 が編集中の `tripwire-hook.bats` には足さない）・`plugins/dev-workflow/tests/subagent-context.bats`（`--file` の追補）
-- `plugins/dev-workflow/skills/develop/` 配下の手順書 5 本（#253 マージ後）
+- `plugins/dev-workflow/skills/develop/` 配下の手順書と `templates/escalation-tripwires.md` / `README.md` の計 6 本（#253 マージ後）。本文は `references/decision-criteria.md` 1 箇所、残る 5 本はポインタ
 - `plugins/dev-workflow/.claude-plugin/plugin.json`（2.5.0 → 2.7.0）・`CHANGELOG.md`（2.7.0 の見出し）
 - 全ツール呼び出しごとに hook が 1 回走るため、実行時間が体感に影響しうる（トランスクリプト 5MB でも 100ms 未満を要件にし、メインスレッドでは python3 を起動しない）
