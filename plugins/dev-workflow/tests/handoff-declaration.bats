@@ -59,7 +59,7 @@ role_sec() { section "$SKILL" '本体の役割'; }
   cap_sec | grep -qF '「今すぐ交代させる」条件ではない'
 }
 
-# ③return の 1 行目の宣言書式と、どちらを選ぶかの義務
+# ③return の 1 行目の宣言（正本の③が規定する）
 @test "criteria(3): process-suspended covers waiting on a self-started background command" {
   cap_sec | grep -qF '工程中断: <理由>'
   cap_sec | grep -qF 'バックグラウンドコマンド'
@@ -207,7 +207,10 @@ run_scan() {
 #
 # ①〜④のうち一部しか見ていないと、同じ欠陥が別の規則で再発する（許可条件（②）だけを見ていた
 # ため、SKILL.md の失敗フローに残った再開の禁止（①）の再掲を PR #253 のゲートまで見逃した）。
-# 検出する形の定義は tests/lib/handoff-scan.py の RESTATEMENT_SENTENCES。
+# 検出する形の定義は tests/lib/handoff-scan.py の RESTATEMENT_SENTENCES で、語彙は spec が列挙する。
+#
+# この走査は spec が列挙した言い回しに対する検査であって、任意の言い換えを検出するものではない。
+# 本文が 1 箇所にあることの保証は上のホワイトリストとレビューが担い、この走査は補助の網である。
 # ---------------------------------------------------------------------------
 
 @test "single source: no surface other than the source states any of the four rules" {
@@ -218,27 +221,79 @@ run_scan() {
 
 # 上の検査が緑なのは「再掲が無いから」であって「何も見ていないから」ではないことを固定する。
 # 実際に、注入文のガード検査が対象を取り違えて緑のまま素通りしていた例がある（PR #253）。
-# ①〜④それぞれの再掲を書いた面を用意し、4 件とも報告されることを確かめる（サンプルはこの
-# ファイル自身ではなく使い捨てのリポジトリに置く。この bats は走査対象の面でもあるため）。
-@test "single source: the sentence-level scan actually fires on a restatement of each rule" {
-  local sandbox="${BATS_TEST_TMPDIR}/repo"
-  mkdir -p "$sandbox"
-  # 正本の旧版（本 PR 以前は同じ規則を各面に言い換えて配っていた）から 4 点を 1 行ずつ写したもの
-  cat > "${sandbox}/restated.md" <<'SAMPLE'
-上限超（exit 2）を検知したら、前任の状態にかかわらず作業継続の SendMessage を送らない（再開しない）。
-手渡しを行ってよいのは、前任の直近の return の 1 行目が完了宣言に完全一致するときだけである。
-return の 1 行目は `工程完了: <工程名>` か `工程中断: <理由>` に完全一致させること。
-本体は先に前任へ停止を指示し、停止確認を受け取ってから手渡し先を spawn する。
-SAMPLE
+#
+# ①〜④のサンプルを 1 回のスキャンにまとめて投入し「4 つの規則名が出力に全部含まれるか」だけを
+# 見ると、②のサンプルが②と③の両方に掛かるといった取り違えを検出できない（PR #253 のゲート指摘）。
+# 1 規則につき 1 回スキャンし、そのサンプルが **その規則だけ** で報告されることを確かめる。
+# サンプルは各規則 2 本ずつ: 正本の旧版から写した文と、正本の語をひとつも使わない言い換え
+# （後者が無いと、実装が正本の語をそのまま照合しているだけでも緑になる）。
+# サンプルはこのファイル自身ではなく使い捨てのリポジトリに置く（この bats も走査対象の面であるため。
+# 行末の印で走査から外している ＝ 印の無い行に規則を書けばこのファイルでも検出される）。
+#
+# 書式: <規則名><TAB><サンプル文>
+restatement_samples() {
+  printf '%s\n' \
+    "①再開の禁止	上限超（exit 2）を検知したら、前任の状態にかかわらず作業継続の SendMessage を送らない（再開しない）。 handoff-scan: fixture" \
+    "①再開の禁止	\`DEV_WORKFLOW_CONTEXT_CAP\` を超えたら、前任に続きを依頼してはならない。 handoff-scan: fixture" \
+    "②手渡しの許可条件	手渡しを行ってよいのは、前任が工程完了を宣言したときだけである。 handoff-scan: fixture" \
+    "②手渡しの許可条件	後任を spawn してよいのは、前任が工程の終わりを宣言した場合のみである。 handoff-scan: fixture" \
+    "③宣言の書式と選び方	return の 1 行目は \`工程完了: <工程名>\` か \`工程中断: <理由>\` に完全一致させること。 handoff-scan: fixture" \
+    "③宣言の書式と選び方	return の先頭行は、決められた 2 つの書式のどちらかにすること。 handoff-scan: fixture" \
+    "④停止指示と停止確認	本体は先に前任へ停止を指示し、停止確認を受け取ってから手渡し先を spawn する。 handoff-scan: fixture" \
+    "④停止指示と停止確認	前任がまだ動いているときは、止めるよう伝えて、その報告を受け取ってから新しい実行役を立てる。 handoff-scan: fixture"
+}
+
+ALL_RULES='①再開の禁止 ②手渡しの許可条件 ③宣言の書式と選び方 ④停止指示と停止確認'
+
+@test "single source: each rule is detected on its own, without being confused for another rule" {
+  local i=0 rule sample sandbox other
+  while IFS=$'\t' read -r rule sample; do
+    i=$((i + 1))
+    sandbox="${BATS_TEST_TMPDIR}/rule-${i}"
+    mkdir -p "$sandbox"
+    printf '%s\n' "$sample" > "${sandbox}/restated.md"
+    git -C "$sandbox" init -q
+    git -C "$sandbox" add -A
+    run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode restatement-sentences --source "$CRITERIA_REL"
+    echo "サンプル（$rule）: $sample"
+    echo "$output"
+    [ "$status" -eq 1 ] || { echo "このサンプルが検出されなかった"; return 1; }
+    echo "$output" | grep -qF "$rule" || { echo "$rule として報告されなかった"; return 1; }
+    for other in $ALL_RULES; do
+      if [ "$other" != "$rule" ]; then
+        if echo "$output" | grep -qF "$other"; then
+          echo "取り違え: $rule のサンプルが $other としても報告された"
+          return 1
+        fi
+      fi
+    done
+  done < <(restatement_samples)
+  [ "$i" -eq 8 ] || { echo "サンプル数が想定と違う: $i"; return 1; }
+}
+
+# 検出器の 2 ファイル（この bats と handoff-scan.py）はファイル単位では外れない。
+# 印を持たない行に規則を書けば検出される（ファイル全体を外すと、この 2 ファイルが
+# 何でも書ける穴になる。PR #253 のゲート指摘）。
+@test "single source: the detector files are exempt line by line, not as whole files" {
+  run run_scan --root "$ROOT" --this-change "$THIS_CHANGE" --mode list-inspected
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'plugins/dev-workflow/tests/lib/handoff-scan.py'
+  echo "$output" | grep -qF 'plugins/dev-workflow/tests/handoff-declaration.bats'
+
+  # 同じ①の再掲を 2 行書き、印のある 1 行目は外れ、印の無い 2 行目は検出されることを確かめる
+  local sandbox="${BATS_TEST_TMPDIR}/detector"
+  mkdir -p "${sandbox}/plugins/dev-workflow/tests"
+  {
+    printf '%s\n' '上限超（exit 2）を検知したら、前任に作業継続の SendMessage を送らない。 handoff-scan: fixture'
+    printf '%s\n' '上限超（exit 2）を検知したら、前任に作業継続の SendMessage を送らない。'  # handoff-scan: fixture
+  } > "${sandbox}/plugins/dev-workflow/tests/handoff-declaration.bats"
   git -C "$sandbox" init -q
   git -C "$sandbox" add -A
   run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode restatement-sentences --source "$CRITERIA_REL"
   echo "$output"
   [ "$status" -eq 1 ]
-  echo "$output" | grep -qF '①再開の禁止'
-  echo "$output" | grep -qF '②手渡しの許可条件'
-  echo "$output" | grep -qF '③宣言の書式と選び方'
-  echo "$output" | grep -qF '④停止指示と停止確認'
+  echo "$output" | grep -qF 'handoff-declaration.bats:2'
+  ! echo "$output" | grep -qF 'handoff-declaration.bats:1'
 }
 
 # 書式リテラルは spec が固定していて再掲に当たらないので、引用しただけの面は落とさない
