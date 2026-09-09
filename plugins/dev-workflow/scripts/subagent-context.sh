@@ -17,10 +17,12 @@
 # （正本: skills/develop/references/decision-criteria.md「コンテキスト上限」）。
 #
 # 探索: ${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*<name>*.jsonl
+# `--file <path>` はそのファイルを直接測る（worktree 隔離はファイル名に名前が入らず名前 glob で見つからない）。
 # 同名が複数あれば、cwd が現在のディレクトリと一致するものを優先し、次に更新時刻が新しいもの。
 set -uo pipefail
 
 name=""
+file=""
 cap="${DEV_WORKFLOW_CONTEXT_CAP:-150000}"
 projects="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
 while [ $# -gt 0 ]; do
@@ -31,15 +33,22 @@ while [ $# -gt 0 ]; do
     --projects)
       if [ -z "${2-}" ]; then echo '{"error":"--projects needs a directory"}'; exit 1; fi
       projects="$2"; shift 2 ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    --file)
+      if [ -z "${2-}" ]; then echo '{"error":"--file needs a path"}'; exit 1; fi
+      file="$2"; shift 2 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) if [ -z "$name" ]; then name="$1"; shift; else echo "unknown arg: $1" >&2; exit 1; fi ;;
   esac
 done
-if [ -z "$name" ]; then echo "usage: subagent-context.sh <agent-name> [--cap N]" >&2; exit 1; fi
+if [ -n "$file" ] && [ -z "$name" ]; then
+  # agent はファイル名から導く: agent-<何か>.jsonl → <何か>
+  name="$(basename "$file")"; name="${name#agent-}"; name="${name%.jsonl}"
+fi
+if [ -z "$name" ]; then echo "usage: subagent-context.sh <agent-name> [--cap N] | --file <path> [--cap N]" >&2; exit 1; fi
 if ! [[ "$cap" =~ ^[0-9]+$ ]]; then echo '{"error":"DEV_WORKFLOW_CONTEXT_CAP must be a positive integer"}'; exit 1; fi
 command -v python3 >/dev/null 2>&1 || { echo '{"error":"python3 not found"}'; exit 1; }
 
-NAME="$name" CAP="$cap" PROJECTS="$projects" CWD="$PWD" python3 <<'PY'
+NAME="$name" CAP="$cap" PROJECTS="$projects" CWD="$PWD" FILE="$file" python3 <<'PY'
 import glob, json, os, sys
 
 name = os.environ["NAME"]
@@ -47,13 +56,21 @@ cap = int(os.environ["CAP"])
 projects = os.environ["PROJECTS"]
 cwd = os.environ["CWD"]
 
-# Agent ツールはトランスクリプトを agent-<prefix><name>-<hash>.jsonl に置く（prefix は 1 文字のことがある）
-pattern = os.path.join(projects, "*", "*", "subagents", f"agent-*{name}-*.jsonl")
-files = glob.glob(pattern) + glob.glob(os.path.join(projects, "*", "*", "subagents", f"agent-*{name}.jsonl"))
-files = sorted(set(files), key=lambda p: os.path.getmtime(p), reverse=True)
-if not files:
-    print(json.dumps({"agent": name, "error": "transcript not found", "pattern": pattern}))
-    sys.exit(1)
+direct = os.environ.get("FILE") or ""
+if direct:
+    # --file: 名前 glob を使わずそのファイルを測る（worktree 隔離では名前で引けない。#243）
+    if not os.path.isfile(direct):
+        print(json.dumps({"agent": name, "error": "transcript not found", "file": direct}))
+        sys.exit(1)
+    files = [direct]
+else:
+    # Agent ツールはトランスクリプトを agent-<prefix><name>-<hash>.jsonl に置く（prefix は 1 文字のことがある）
+    pattern = os.path.join(projects, "*", "*", "subagents", f"agent-*{name}-*.jsonl")
+    files = glob.glob(pattern) + glob.glob(os.path.join(projects, "*", "*", "subagents", f"agent-*{name}.jsonl"))
+    files = sorted(set(files), key=lambda p: os.path.getmtime(p), reverse=True)
+    if not files:
+        print(json.dumps({"agent": name, "error": "transcript not found", "pattern": pattern}))
+        sys.exit(1)
 
 def first_cwd(path):
     try:
@@ -69,7 +86,7 @@ def first_cwd(path):
         pass
     return None
 
-chosen = next((p for p in files if first_cwd(p) == cwd), files[0])
+chosen = files[0] if direct else next((p for p in files if first_cwd(p) == cwd), files[0])
 
 ctx = None
 calls = 0

@@ -1,5 +1,18 @@
 # Changelog — dev-workflow
 
+## 2.7.0 — 2026-09-09: 起動の途中でコンテキストを測って止める hook
+
+サブエージェントのコンテキスト量は、本体が SendMessage で再開する直前にしか測られなかった。1 回の起動の中でどれだけ膨らんでも誰も止めないため、実測で W が 497,552 トークンに達していた（過去 14 日で上限 150,000 超が W 65%・G 63%）。1 起動の途中で測って止める経路を足した。あわせて、名前 glob が `isolation: "worktree"` のサブエージェントを見つけられない件（#243）を、名前ではなく hook が受け取る `agent_id` から解決する形で統合した。
+
+- `scripts/context-tripwire.sh`（新規）: PostToolUse（全ツール）で `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）超なら `hookSpecificOutput.additionalContext` で「今の工程を締めて成果を列挙して return せよ」を届け、PreToolUse（`Edit|Write|NotebookEdit|Bash`）で `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）超なら編集系を deny する。`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` で全解除
+- 計測対象は payload の `transcript_path` そのものではなく、その親ディレクトリ・`session_id`・`agent_id` から `<親>/<session_id>/subagents/agent-<agent_id>.jsonl` として導出する（`transcript_path` は hook が発火したセッション＝サブエージェントの中でも親のものを指す。着手前実験で確定）。直接パスが無ければ `subagents/` 以下を深さ 3 段まで、エントリ 200 件 / 20ms の上限つきで探す
+- 素の stdout + exit 0 はトランスクリプト表示（ctrl+o）にしか出ずモデルには届かないため、通知は `additionalContext` に固定した
+- 強制停止中の `Bash` は「先頭トークンが `git` で、`-C <path>` / `-c <k=v>` を読み飛ばした次が `status` / `diff` / `add` / `commit` / `push`」だけ通す（worktree 作業では `git -C <path> commit` を常用するため）。パイプ・`&&`・`;`・サブシェル・コマンド置換は拒否し、拒否理由に回避手段（`-m` を複数回に分けて 1 行ずつ渡す）を含める
+- 読み取り系（Read / Grep / Glob）は拒否しない。PreToolUse の matcher を編集系 + Bash に絞ることで構造的に保証している
+- メインスレッド（`agent_id` 無し）では python3 を起動せず bash 側で exit 0 する。この hook は install 先の全ユーザーの全ツール呼び出しで走るため。読み取りは末尾 256KB だけで、5MB のトランスクリプトでも 1 回 100ms 未満
+- `scripts/subagent-context.sh` に `--file <path>` を追加（#243 の統合）。名前 glob を使わずそのファイルを測る。名前指定の既存挙動は変えない
+- `tests/context-tripwire.bats`（新規）・`tests/subagent-context.bats`（`--file` の追補）
+
 ## 2.5.0 — 2026-09-08: Fable は決める役の種別（dev-workflow:decider）でだけ立てる
 
 2.4.1 で配線したガードは `model` 未指定を拒否するが、`model: "fable"` を明示した spawn はどの種別でも素通りしていた（2026-09-08 に develop の本体が「層間契約だから」を根拠に実行役の W を fable で spawn した実例あり）。文書が自分で例外を作れる状態を、ガードに移した。
