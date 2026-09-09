@@ -4,11 +4,15 @@
 
 `plugins/dev-workflow/scripts/subagent-context-audit.sh` は、直近 N 日（`--days`、既定 14）のサブエージェントのトランスクリプトを走査し、母集団の統計を 1 行 JSON で標準出力に出さなければならない（SHALL）。JSON は次のキーを含む（SHALL）: `count`（対象件数）/ `first_median` / `first_max`（初回コンテキストの中央値・最大）/ `last_median` / `last_max`（最終コンテキストの中央値・最大）/ `over_cap_pct`（最終コンテキストが上限を超えた件数の割合、0〜100）/ `cap` / `days` / `sources` / `generated_at`。
 
-`sources` は走査経路ごとの統計であり、`named`（名前付きサブエージェント）と `worktree`（`isolation: "worktree"` 経路）のそれぞれが `count` / `first_median` / `last_median` / `over_cap_pct` を持たなければならない（MUST）。件数だけの内訳にしてはならない（MUST NOT。worktree 経路には人間の対話セッションが混ざりうるため、母集団の構成比が動いただけの変化と固定分の増加を読み手が切り分けられる必要がある。混入の無い `sources.named.first_median` が傾向判断の主系列になる）。
+`sources` は隔離の有無で分けた統計であり、`isolated`（`isolation: "worktree"` で起こしたもの）と `non_isolated` のそれぞれが `count` / `first_median` / `last_median` / `over_cap_pct` を持たなければならない（MUST）。件数だけの内訳にしてはならない（MUST NOT。隔離の有無は役割と相関して母集団の性質が異なるため、構成比が動いただけの変化と固定分そのものの増加を読み手が後から切り分けられる必要がある）。傾向判断の主系列は全体の `first_median` とし、`sources` はその切り分けに使う。
 
 1 体のコンテキスト量の定義は `subagent-context.sh` と同一で、assistant レコードの `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` でなければならない（MUST）。初回はファイル先頭から最初に現れた `usage` 付き assistant レコード、最終は末尾から遡って最初に見つかる同レコードとする（SHALL）。上限は `--cap` または `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）を用いる（SHALL）。中央値は偶数件のとき中央 2 値の平均を四捨五入した整数とする（SHALL）。
 
-走査対象は 2 系統で、両方を含めなければならない（MUST）: ① 名前付きサブエージェント `${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*.jsonl`、② `isolation: "worktree"` で起こしたサブエージェント（project ディレクトリ名が `*--claude-worktrees-agent-*` に一致するディレクトリ直下の `*.jsonl`。名前も agentId もレコードに残らないため、Agent ツールの worktree パス規約に依る）。②はその worktree で人間が起動した対話セッションを含みうるため過大計上に倒れることを許容する（SHALL）。対象期間の判定はファイルの mtime で行う（SHALL。レコード内のタイムスタンプは見ない）。
+走査対象は `${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*.jsonl` の 1 経路に限らなければならない（MUST）。`isolation: "worktree"` で起こしたサブエージェントも同じ場所に置かれ、隔離によって変わるのはファイル名だけである（隔離ありは名前が載らず `agent-<agentId>.jsonl`、隔離なしは `agent-a<name>-<hash>.jsonl`）。したがってこの 1 経路で隔離エージェントも自然に含まれる。`subagents/` の外にあるトランスクリプト（メインセッション、および worktree の中から起動された入れ子の `claude` セッション。project ディレクトリ名が `*--claude-worktrees-agent-*` に一致するものを含む）は、サブエージェントではないので集計に含めてはならない（MUST NOT）。
+
+隔離の有無の分類は、同じディレクトリの `agent-<id>.meta.json` の `spawnedWithWorktree` が `true` かどうかで行う（SHALL）。meta.json が無い・読めない場合はファイル名のパターンで分類し、それも判定できなければ `non_isolated` に数える（SHALL）。分類できないことを理由にその 1 件を全体の `count` から落としてはならない（MUST NOT）。
+
+対象期間の判定はファイルの mtime で行う（SHALL。レコード内のタイムスタンプは見ない）。
 
 トランスクリプトの全文を読んではならない（MUST NOT）。初回は最初の `usage` 付きレコードで読み取りを打ち切り、最終は末尾から固定サイズの窓（既定 256 KiB）を読んで見つからなければ上限（4 MiB）まで窓を倍加し、それでも見つからない 1 件は最終側の集計から除く（SHALL）。
 
@@ -23,8 +27,18 @@
 
 #### Scenario: worktree 隔離のエージェントが集計に含まれる
 
-- **WHEN** project ディレクトリ名が `--claude-worktrees-agent-<hash>` で終わるディレクトリの直下にトランスクリプトがある
-- **THEN** そのファイルも `count` に含まれ、`sources.worktree` の `count` / `first_median` / `last_median` / `over_cap_pct` に反映される。同時に `sources.named` は名前付き経路だけの統計として単独で読める
+- **WHEN** `subagents/` に、隔離ありのトランスクリプト（`agent-<agentId>.jsonl` と `spawnedWithWorktree: true` を持つ meta.json）と隔離なしのトランスクリプト（`agent-a<name>-<hash>.jsonl`）が混在している
+- **THEN** 両方とも `count` に含まれ、前者は `sources.isolated`、後者は `sources.non_isolated` の `count` / `first_median` / `last_median` / `over_cap_pct` に反映される
+
+#### Scenario: サブエージェント以外のトランスクリプトは数えない
+
+- **WHEN** project ディレクトリ名が `--claude-worktrees-agent-<hash>` で終わるディレクトリの直下に `<uuid>.jsonl`（worktree の中から起動された入れ子の `claude` セッション）がある
+- **THEN** そのファイルは `count` にも `sources` のどちらにも含まれない
+
+#### Scenario: meta.json が無くても集計は落ちない
+
+- **WHEN** 対象トランスクリプトの隣に meta.json が無い、またはその中身が壊れている
+- **THEN** そのファイルは全体の `count` に含まれたまま、ファイル名のパターンで分類され、判定できなければ `sources.non_isolated` に数えられる
 
 #### Scenario: 対象期間外のトランスクリプトは数えない
 
@@ -53,7 +67,7 @@
 
 ### Requirement: 集計結果の永続化と監査手順の文書
 
-サブエージェントのコンテキスト量の監査手順は `plugins/dev-workflow/docs/usage-audit.md` を正本としなければならない（SHALL）。この文書は次を含む（SHALL）: ① 集計スクリプト `subagent-context-audit.sh` の実行コマンド（`--days` / `--cap` / `--refresh` の使い方を含む）② 出力キーの意味（`first_median` / `last_median` / `over_cap_pct` / `sources` の経路別統計）③ 何を見たら固定分が増えたと判断するか（混入の無い `sources.named.first_median` を主系列として推移を見る）④ 集計結果が残るキャッシュファイルの場所。
+サブエージェントのコンテキスト量の監査手順は `plugins/dev-workflow/docs/usage-audit.md` を正本としなければならない（SHALL）。この文書は次を含む（SHALL）: ① 集計スクリプト `subagent-context-audit.sh` の実行コマンド（`--days` / `--cap` / `--refresh` の使い方を含む）② 出力キーの意味（`first_median` / `last_median` / `over_cap_pct` / `sources` の隔離別統計）③ 何を見たら固定分が増えたと判断するか（全体の `first_median` の推移を主系列とし、動いたときは `sources` で母集団の構成変化と切り分ける）④ 集計結果が残るキャッシュファイルの場所。
 
 この監査の出力先を SessionStart hook（`scripts/session-tripwires.sh`）の注入内容に足してはならない（MUST NOT）。SessionStart への注入は全セッション・全サブエージェントの起動時固定分を増やす側の変更であり、固定分の増加を止めるという目的に反するため、観測の経路はキャッシュファイルと文書にとどめる。既存の残量モード導出・共有枠モード導出・`subagent-context.sh` の要件は変更しない（MUST NOT）。
 

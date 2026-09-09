@@ -8,27 +8,36 @@
 - `scripts/session-tripwires.sh` — SessionStart hook。usage-probe を best-effort 実行し、snapshot から残量モードを導出して `additionalContext` にブロックを注入する。既に「サブエージェントのコンテキスト上限」の 1 行がここに載っている。**この change では触らない**（issue #259 の 2026-09-09T12:01:34Z の主のコメント: #253 が編集中なので出力先をここに足さない）。
 - `scripts/subagent-context.sh` — 1 体の実測。
 
-トランスクリプトの置き場は実測で 2 系統ある:
+サブエージェントのトランスクリプトの置き場は、**隔離の有無にかかわらず 1 か所**である（2026-09-09 に実機で確認）:
 
-| 系統 | パス | 名前 |
-|---|---|---|
-| 名前付きサブエージェント | `~/.claude/projects/<encoded-cwd>/<session-uuid>/subagents/agent-*.jsonl` | ファイル名に agent 名が入る |
-| `isolation: "worktree"` のサブエージェント | `~/.claude/projects/<encoded-worktree-path>/<session-uuid>.jsonl` | agent 名も agentId も残らない |
+```
+~/.claude/projects/<encoded-cwd>/<session-uuid>/subagents/
+  agent-a2fc5405c6884838f.jsonl         ← isolation: "worktree" の W。ファイル名は agentId
+  agent-a2fc5405c6884838f.meta.json     ← 隣に必ずある
+  agent-aR1-259-16c5cef293400981.jsonl  ← 隔離なしの R1。ファイル名に名前が入る
+```
 
-後者の project ディレクトリ名は worktree のパスをエンコードしたもので、Agent ツールが作る worktree のパス規約（`<repo>/.claude/worktrees/agent-<hash>`）から必ず `--claude-worktrees-agent-<hash>` で終わる。実機（2026-09-09 時点）で 51 ディレクトリを確認した。これが #257 で「glob や agentId では直らない」とされた経路を、集計目的に限って拾える唯一の安価な手掛かりになる。
+隔離の有無で変わるのは**ファイル名だけ**で、置き場所は変わらない。隔離すると名前がファイル名に載らず `agent-<agentId>.jsonl` になり、隔離なしなら `agent-a<name>-<hash>.jsonl` になる。`subagent-context.sh` が隔離エージェントを名前で見つけられない（#243）のは、別の場所にあるからではなくファイル名に名前が無いからである。
+
+各トランスクリプトの隣には `agent-<id>.meta.json` があり、`agentType` / `worktreePath` / `spawnedWithWorktree` / `description` / `name` / `toolUseId` / `spawnDepth` / `model` を持つ。実機の 2020 件すべてが meta.json と 1 対 1 で対応していた（対応の無い `.jsonl` は 0 件）。隔離ありは `spawnedWithWorktree: true` を持ち、隔離なしはこのキー自体が無い。
+
+`~/.claude/projects/*--claude-worktrees-agent-<hash>/<uuid>.jsonl` という別 project ディレクトリのファイルも実在するが、これは**サブエージェント自身のトランスクリプトではなく、その worktree の中から起動された入れ子の `claude` セッション**（opsx のセキュリティレビュー等）である。集計に入れてはならない。
 
 ## Goals / Non-Goals
 
 **Goals:**
 
 - 直近 N 日（既定 14 日）のサブエージェントについて、件数 / 初回コンテキストの中央値・最大 / 最終コンテキストの中央値・最大 / 上限超の割合を 1 行 JSON で出す。
-- `isolation: "worktree"` のサブエージェントを集計対象に含める。
+- `isolation: "worktree"` のサブエージェントを集計対象に含める（単一の glob で自然に含まれる。取りこぼさないことをテストで固定する）。
+- 隔離の有無で分けた統計も出し、母集団の構成が変わっただけの動きと固定分の増加を切り分けられるようにする。
 - その値をキャッシュファイルに残し、監査手順の文書から読み方をたどれるようにして、固定分の増加に気づけるようにする。
 - どの失敗経路でもセッション開始を妨げない（fail-open）。
 
 **Non-Goals:**
 
 - 既存スクリプトの変更。とくに `session-tripwires.sh`（SessionStart hook）には一切触れない（主の指示。#253 が編集中。決定 2 参照）。
+- サブエージェント以外のトランスクリプト（メインセッション、worktree の中から起動された入れ子の `claude` セッション）の集計。母集団はサブエージェントに限る。
+- `subagent-context.sh` が隔離エージェントを名前で見つけられない問題（#243）の修正。meta.json を使えば直せると分かったが、それは #261 の担当範囲。
 
 - 閾値による強制停止・警告以上の介入（#261 が扱う）。この change は通知・記録だけで、判定に基づく分岐を一切足さない。
 - 固定分そのものの削減（#260）、編集時の予算ゲート（#258）。
@@ -75,13 +84,17 @@
 - **理由**: mtime は `stat` 1 回で取れ、走査対象を開く前に絞れる。レコードの時刻で切るとファイルを開かないと判定できず、絞り込みの意味が消える。
 - **トレードオフ**: 長時間走り続けた 1 体は最終書き込み時刻で分類されるため、窓の境界付近で数日ずれる。観測目的では許容する。
 
-### 6. worktree 隔離の判別はディレクトリ名の規約に依る
+### 6. 走査は単一の glob。隔離の有無は隣の meta.json で分類する
 
-project ディレクトリ名が `*--claude-worktrees-agent-*` に一致すれば、その直下の `*.jsonl` を「worktree 隔離のサブエージェント」として集計に含める。
+走査対象は `${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*.jsonl` の 1 経路だけとする。隔離の有無は、同じディレクトリにある `agent-<id>.meta.json` の `spawnedWithWorktree` が `true` かどうかで分類し、`sources.isolated` / `sources.non_isolated` として経路別の統計を出す。
 
-- **理由**: 名前も agentId もレコードに残らない以上、パス規約が唯一の手掛かり。実機で 51 ディレクトリを確認済み。
-- **既知の誤差と、その切り分け方**: その worktree で人間が手動で `claude` を起動した対話セッションも同じ場所に落ちるため、母集団に混ざる。**過大計上に倒れる**（サブエージェントでないものを数える）方向で、観測専用の指標としては安全側。ただし件数の内訳だけでは足りない。この指標の主な用途は `first_median` の推移を見て固定分の増加に気づくことだが、混入の割合は時期によって変わるため、母集団の構成比が動いただけで中央値が動き、逆に固定分が増えても打ち消されうる。そこで `sources` を件数ではなく**経路別の統計**にする（`sources.named` / `sources.worktree` がそれぞれ `count` / `first_median` / `last_median` / `over_cap_pct` を持つ）。集計側は既に経路を区別してファイルを集めているので追加コストはほぼ無い。**混入の無い `sources.named.first_median` を傾向判断の主系列とし**、全体値は参考として読む。この読み方は `docs/usage-audit.md` に書く。
-- **却下案**: レコードの内容（system prompt に含まれる agent 指示など）で分類する。全ファイルの先頭を開く必要があり、絞り込みの利点を失う。
+- **前提が覆った経緯**: 初回の設計は「`isolation: "worktree"` のサブエージェントは別 project ディレクトリ（`*--claude-worktrees-agent-*`）にセッション UUID 名で置かれる」という前提に立ち、走査経路を 2 系統にしていた。#261 の着手前実験で**この前提が誤りだと分かった**。隔離エージェントのトランスクリプトも通常と同じ `subagents/` に置かれ、違うのはファイル名だけである（Context 参照）。別 project ディレクトリにあるのは、その worktree の中から起動された入れ子の `claude` セッションで、サブエージェントではない。したがって 2 系統目の走査は**集計対象を汚すだけ**なので取り除く。
+- **受け入れ条件との関係**: issue #259 の受け入れ条件 2「`isolation: "worktree"` で起こしたエージェントも集計対象に含まれる」は、issue 本文に既に書かれている glob `*/*/subagents/agent-*.jsonl` でそのまま満たされる。追加の走査経路は要らない。要るのは「取りこぼしていないこと」をテストで固定することだけ。
+- **分類に meta.json を使う理由**: ファイル名のパターン（`agent-<agentId>.jsonl` か `agent-a<name>-<hash>.jsonl` か）でも隔離の有無は推定できるが、agentId とエージェント名の字面が似た形になれば誤判定しうる。meta.json の `spawnedWithWorktree` は Claude Code が書いた事実そのもので、`name` と `model` も同時に取れる。実機の 2020 件すべてで `.jsonl` と `.meta.json` が 1 対 1 に対応していた（対応の無いものは 0 件）。
+- **meta.json が読めないときの退避**: それでも meta.json が無い・壊れている 1 件のために集計全体を止めることはしない。その場合はファイル名のパターンで分類し、それも判定できなければ `non_isolated` 側に数える（全体の `count` からは落とさない）。
+- **却下案 A**: 別 project ディレクトリ（`*--claude-worktrees-agent-*`）も走査する。**初回の設計はこれを採用していたが、上記のとおり前提が誤りで、サブエージェントでないセッションを母集団に混ぜる**。
+- **却下案 B**: レコードの内容（system prompt に含まれる agent 指示など）で分類する。全ファイルの先頭を開く必要があり、meta.json を 1 個読むより高い。
+- **経路別に出す価値**: 混入が無くなったので「混入の無い側を主系列にする」という当初の根拠は消えたが、経路別統計は残す。隔離の有無は役割と相関する（隔離されるのは実装を回す W、隔離なしにはレビュー役が多い）ため、母集団の構成が変わっただけの動きと固定分そのものの増加を、読み手が後から切り分けられる。主系列は全体の `first_median` とし、経路別は切り分けに使う。この読み方は `docs/usage-audit.md` に書く。
 
 ### 7. コンテキスト量の定義は `subagent-context.sh` と揃える
 
@@ -99,7 +112,8 @@ project ディレクトリ名が `*--claude-worktrees-agent-*` に一致すれ�
 ## Risks / Trade-offs
 
 - **[走査が重い]** → キャッシュ TTL 6 時間＋ mtime による事前絞り込み＋部分読み。TTL 内はトランスクリプトを 1 個も開かない。
-- **[worktree 経路に人間の対話セッションが混ざる]** → 過大計上側に倒れることを spec に明記し、`sources` を経路別の統計にして混入の無い `named` 側を単独で読めるようにする（決定 6）。指標の用途は「増えているかどうか」の傾向把握で、絶対値の精度を要求しない。
+- **[サブエージェント以外のセッションが母集団に混ざる]** → 走査を `subagents/agent-*.jsonl` の 1 経路に限ることで構造的に起きない（決定 6）。初回設計はここを誤って別 project ディレクトリまで走査しており、入れ子の `claude` セッションを数えるところだった。テストの fixture に「別 project ディレクトリの `<uuid>.jsonl`」を置き、集計に入らないことを固定する。
+- **[隔離の有無の分類が meta.json のスキーマに依存する]** → `spawnedWithWorktree` が消えたり名前が変わったりすると分類が崩れる。崩れ方は「全件が `non_isolated` に寄る」で、全体の `count` と中央値は正しいまま。ファイル名パターンの退避も持つ（決定 6）。
 - **[Claude Code 側のディレクトリ構造・usage フィールドが変わると壊れる]** → 壊れ方は「対象 0 件」になるだけで、fail-open で無出力になる。`subagent-context.sh` が既に同じ依存を持っており、依存の総量は増えない。テストは実機の `~/.claude` を読まず、fixture ディレクトリ（`--projects`）に対して回す。
 - **[観測を足しただけでは固定分は減らない]** → この change は #260（削減）と #258（編集時ゲート）の前提を作るだけ、と proposal で明示する。効果の確認はエピック #257 の完了条件が担う。
 - **[観測の仕組み自身が固定分を増やす]** → 出力先をキャッシュファイルと文書に限り、SessionStart の注入経路に一切載せない（決定 2）。この change がセッションの起動時固定分に足す量はゼロ。
