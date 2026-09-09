@@ -336,6 +336,19 @@ check_single_line_description() { # <file...>
   [[ "$output" == *".claude/commands description"* ]]
 }
 
+@test "AGENTS.md is not counted; CLAUDE.md appears exactly once" {
+  # AGENTS.md は CLAUDE.md の同期複製（tests/agents-md-sync.bats が同一性を強制）で、
+  # セッションに注入されるのは片方だけ。両方数えると同じ文が二重計上される。
+  local lines
+  lines=$(breakdown)
+  [ "$(printf '%s\n' "$lines" | grep -c 'AGENTS.md')" -eq 0 ]
+  [ "$(printf '%s\n' "$lines" | grep -c '^CLAUDE.md\t')" -eq 1 ]
+  # 合計も CLAUDE.md 1 本ぶんしか増えていない（AGENTS.md のバイト数は含まれない）
+  local claude_bytes
+  claude_bytes=$(printf '%s\n' "$lines" | awk -F'\t' '$1 == "CLAUDE.md" { print $2 }')
+  [ "$claude_bytes" -eq "$(sum_files "$REPO_ROOT/CLAUDE.md")" ]
+}
+
 @test "the output-styles line carries the main-session-only note" {
   run report over 50000 52000 "$(breakdown)"
   [[ "$output" == *"メインセッションのみ"* ]]
