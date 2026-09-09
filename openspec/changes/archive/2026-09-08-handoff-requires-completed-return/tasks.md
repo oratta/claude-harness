@@ -70,3 +70,18 @@
 - [x] 9.8.10 `marketplace.json` の description だけ手渡しの記述が無かった（spec がズレを許容したのは `plugin.json` だけ）。参照込みで追随させる
 - [x] 9.8.11 spec に 2 点足す: 固定された 2 つの書式のどちらにも当てはまらない return の扱い（正本が規定する）、停止の指示に応答が返らないまま時間が過ぎたときの終端（同）。あわせて 9.8.2〜9.8.4・9.8.8 の検査を MUST として spec に書く
 
+## 10. 見張りテストの撤去（2026-09-09）
+
+9.5 系と 9.8.1〜9.8.4 で作った「本文が 1 箇所にあることの機械検査」を、この change から外した。
+ゲート 7 周・仕様レビュー 4 周がすべて同じ形（緑が「違反が無い」のか「検査が何も見ていない」のか
+区別できない）で落ち、原因が調整不足ではなく「規則の言い換えを機械で検出する」という目的そのもの
+にあると判断したため。事故を止める本体（return 1 行目の完全一致による宣言契約）は 9.1〜9.4 で
+完成しており、見張りはその保険にすぎない。
+
+- [x] 10.1 `plugins/dev-workflow/tests/lib/handoff-scan.py` を削除する（9.5 で新規作成したもの）
+- [x] 10.2 `plugins/dev-workflow/tests/handoff-declaration.bats` から走査系・ホワイトリスト系のテストを削除し、正本の中身を固定する `criteria:` 系と同一 worktree 制約の検査だけを残す（9.5.1 で残すと決めた分がそのまま残る）
+- [x] 10.3 `plugins/dev-workflow/tests/retirement.bats` の `ALLOW_RE` から、削除した `handoff-scan.py` の行を落とす
+- [x] 10.4 live spec と archive delta から、走査の語彙・除外表・検査対象の下限・パスの実在検査・負のコントロール・「テストが spec の語彙を読む」MUST を削除し、「本文が正本 1 箇所にしかないことは規約であり機械検査の対象外」を 1 段落で置く（follow-up は https://github.com/oratta/claude-harness/issues/265）
+- [x] 10.5 `plugins/dev-workflow/CHANGELOG.md` の 2.6.1 を、見張りを入れない形に書き直す
+- [x] 10.6 `bash scripts/test.sh` 全件と `openspec validate --specs --strict` を通す
+
