@@ -4,6 +4,8 @@
 
 R1 は develop の本体が spawn するサブエージェント（W とは別コンテキスト）。R1 が読むのは**このファイル**と、本体から渡される change ディレクトリ・記録先。
 
+**長い処理の完了を待つ目的でターンを終えない**（`subagent_type: dev-workflow:decider` で起こされた R1 は `Bash` を持たず、待ちを伴う作業自体を持たない）。待ちが要る役割の待ち方の正本は `plugins/dev-workflow/references/subagent-waiting.md`。
+
 ## 前提
 
 - `gh`（記録先＝issue または Draft PR にコメントを投稿する権限）

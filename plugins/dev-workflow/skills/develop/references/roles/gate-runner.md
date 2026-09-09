@@ -14,11 +14,19 @@ G はサブエージェントなので Agent ツールを持たず、Task サブ
 
 | 判定 | 実行者 | G の動き |
 |---|---|---|
-| **full**（既定） | Codex CLI | G の **Bash から直接**呼ぶ。どちらか: (a) `codex exec -c approval_policy=never -c model_reasoning_effort=medium "<レビュー指示>"` を Bash の `run_in_background` で起動し（フォアグラウンドは 10 分上限で切れる）、出力ファイルを読む。(b) codex プラグインの `scripts/codex-companion.mjs`（`~/.claude/plugins/marketplaces/*/plugins/codex/scripts/codex-companion.mjs` を path-discovery で特定）で `task … --effort medium` を投げ、`status <job-id> --wait --timeout-ms 900000` で待つ。slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは **G からは使えない**（前者は本体専用の slash command、後者は Agent ツールを要する）。`--effort minimal` は 400 エラーになるので使わない |
-| **full** だが Codex が使えない（未導入・サブスク切れ・タイムアウト） | 本体が spawn するレビュアー | `needs-reviewer` を return する（下） |
+| **full**（既定） | Codex CLI | G の **Bash から直接**呼ぶ。どちらか: (a) `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` を `run_in_background` で起動する（レビュー指示は引数に埋めず、ファイルに保存して標準入力から渡す。書き方は下の正本）、(b) codex プラグインの `scripts/codex-companion.mjs`（`~/.claude/plugins/marketplaces/*/plugins/codex/scripts/codex-companion.mjs` を path-discovery で特定）に `task … --effort medium` を投げる。**どちらの経路も完了の確認は下の「Codex の起動と完了確認」**（起動しただけで出力ファイルを読んで済ませない）。slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは **G からは使えない**（前者は本体専用の slash command、後者は Agent ツールを要する）。`--effort minimal` は 400 エラーになるので使わない |
+| **full** だが Codex が使えない（未導入・サブスク切れ・タイムアウト＝下記の正本が定める総待ちの上限に達した） | 本体が spawn するレビュアー | `needs-reviewer` を return する（下） |
 | **light** | 本体が spawn するレビュアー | `needs-reviewer` を return する（下） |
 
 Codex の出力全文を本体に流さない。構造化された指摘一覧だけを G が読み、本体には要約だけ返す。
+
+## Codex の起動と完了確認（待ちでターンを終えない）
+
+**完了通知を当てにしてターンを終えてはならない。** G は名前付きサブエージェントなので、自分が起動した背景タスクの完了では再起動されない。起動は `run_in_background` のままでよく、**完了の確認だけを同一ターン内の前景ポーリングで行う**。
+
+**待ち方の正本は `plugins/dev-workflow/references/subagent-waiting.md`。** 起動と完了確認の雛形（`codex exec` 直叩き経路・companion 経路）・待ち値・完了シグナルの作り方・総待ちの上限はすべてそこにあるので、**Codex を起動する前に開いて雛形どおりに実行する**。ここには再掲しない（同じ手順を 2 か所に置くと片方だけ古くなる。実際に 2026-09-09 のレビューで、ここに再掲していた companion の判定方法が事実と食い違っていた）。
+
+待ちに入る前に、これから最大何分待つかを出力する。総待ちの上限（正本が定める回数）に達したら待ちをやめ、`needs-reviewer` を return して根拠に「Codex タイムアウト（正本の総待ち上限に達した。実際に待った分数を書く）」と書く（上の表のフォールバック行に入る）。
 
 ## needs-reviewer の return（本体にレビュアーの spawn を委ねる）
 
