@@ -12,9 +12,11 @@
 # 測り方: トランスクリプトの最後の assistant レコードの
 #   input_tokens + cache_creation_input_tokens + cache_read_input_tokens
 # ＝ そのリクエストがモデルに読ませたコンテキスト全量。develop の本体は W / G を
-# SendMessage で再開する前にこれを実行し、上限（既定 DEV_WORKFLOW_CONTEXT_CAP=150000）を
-# 超えていたら再開せず、手渡し（前回 return を引き継いだ同じ役割の新しい W / G）に切り替える
-# （正本: skills/develop/references/decision-criteria.md「コンテキスト上限」）。
+# SendMessage で再開する前にこれを実行する（上限は既定 DEV_WORKFLOW_CONTEXT_CAP=150000）。
+# exit 2 を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい
+# 条件・return の 1 行目の宣言・前任が動作中のまま交代させる手順）の正本は
+# skills/develop/references/decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」。
+# このスクリプトには書かない。正本を読むまで手渡さない。
 #
 # 探索: ${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*<name>*.jsonl
 # `--file <path>` はそのファイルを直接測る（worktree 隔離はファイル名に名前が入らず名前 glob で見つからない）。

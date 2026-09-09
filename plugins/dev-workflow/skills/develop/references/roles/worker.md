@@ -2,7 +2,7 @@
 
 develop の本体（オーケストレータ）から名前付きで spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned）・今回の工程（(1) 仕様化まで／(3) 実装から）。
 
-W は**このファイルだけ**を読んで動く（`SKILL.md` は本体向け）。判定基準の詳細は `references/decision-criteria.md`。
+W は**このファイルだけ**を読んで動く（`SKILL.md` は本体向け）。判定基準の詳細は `skills/develop/references/decision-criteria.md`。
 
 ## W がしないこと
 
@@ -46,14 +46,14 @@ openspec --version 2>/dev/null && echo "OPENSPEC_CLI"        # 2) openspec CLI
 # 3) どちらも無ければ仕様化経路は発生しない（コード直行。理由に「openspec 不在」と書く）
 ```
 
-次に、この依頼を**仕様として残すべきか**を判定する（詳細は `references/decision-criteria.md` Step B）:
+次に、この依頼を**仕様として残すべきか**を判定する（詳細は `skills/develop/references/decision-criteria.md` Step B）:
 
 - **仕様化する**（一次基準: 設計判断・トレードオフを含むか）: 複数案からの選択・採用理由など「なぜこう作ったか」を決定履歴に残す価値のある設計判断を含む／外部から観測可能な振る舞いの変更のうち実装方針に選択肢が残るもの／既存 capability の要件や docs に触れる
 - **仕様化しない（コード直行）**: typo・lint・コメント・フォーマットのみ／振る舞い不変の内部リファクタ・ワンライナー fix・依存バージョン上げのみ／**受け入れ条件が記録先に明記された機械的な振る舞い変更**（設計判断なし。記録先とテストが記録として十分）
 - どの判定でも**テスト作成は必須**（テストはドキュメントであると同時に、昇格トリップワイヤーの信号源）
 - 判定に迷ったら: interactive は return で本体に聞いてもらう（本体が AskUserQuestion）。unmanned は**仕様化する側に倒す**
 
-**判定したら、先に進む前に記録先へ記録する**（interactive / unmanned 共通）。後から「不要と判断した」のか「飛ばした」のかを区別し、pr-review-gate が出口で機械照合できるようにするため。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致させる（太字・全角コロン・末尾句点を付けない）。2 行目以降に理由（`references/decision-criteria.md` のどの条件に当たったか）を書く:
+**判定したら、先に進む前に記録先へ記録する**（interactive / unmanned 共通）。後から「不要と判断した」のか「飛ばした」のかを区別し、pr-review-gate が出口で機械照合できるようにするため。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致させる（太字・全角コロン・末尾句点を付けない）。2 行目以降に理由（`skills/develop/references/decision-criteria.md` のどの条件に当たったか）を書く:
 
 ```bash
 # issue が記録先
@@ -68,7 +68,7 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 ## 分割判定（単一 change か複数 change か）
 
-仕様化すると判定した場合、規模を判定する（詳細は `references/decision-criteria.md` Step C）。根拠は**記録先の記述**（受け入れ条件・機能単位）だけで、機械的なシグナル（本文の長さやラベル）は使わない:
+仕様化すると判定した場合、規模を判定する（詳細は `skills/develop/references/decision-criteria.md` Step C）。根拠は**記録先の記述**（受け入れ条件・機能単位）だけで、機械的なシグナル（本文の長さやラベル）は使わない:
 
 - **単一 change で足りる**（すべて満たす）: 単一 capability に閉じる／受け入れ条件が概ね数個で 1 PR で完結／独立した設計判断が 1 つ以内
 - **複数 change に割れる**（いずれか成立）: 複数の独立 capability に跨る／受け入れ条件が多く順序依存のあるサブタスクに割れる／1 実装サイクルで完結しない規模
@@ -119,6 +119,7 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 5. テスト・lint・ビルドを実行し、**exit code と出力の要約をターン内に表示してから**「完了」を宣言する。自己申告のみの完了宣言は禁止
 
 **全経路共通の大原則**:
+- **長時間処理（フルテスト・ビルド）の完了を待つ目的でターンを終えない。** 待ちは同一ターン内の前景ポーリングで行う（正本: `plugins/dev-workflow/references/subagent-waiting.md`。雛形と上限はそこにあり、ここには再掲しない。総待ちの上限に達したら待ちをやめて本体に return する）
 - プレースホルダ・空実装・コンパイルを通すだけの実装で済ませない
 - 完了・合格の宣言には必ず証拠（実行コマンドと exit code）を付ける
 - 作業の節目ごとに commit → push（記録先が Draft PR なら PR が逐次更新される）
@@ -146,7 +147,7 @@ W の既定モデルは `sonnet`（役割表の正本は `SKILL.md`「モデル�
 
 **読んで判断する役は種別で上げる。** R1（仕様レビュー）と G が要求するレビュアーがこの表の分類に当たるときは、`subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` を付けない（ガードが拒否する）。当たらなければ従来どおり `opus`。
 
-- **残量モードが優先する**: `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では、決める役も `dev-workflow:decider` のまま `model: opus` を上限とする（`references/decision-criteria.md` の残量モード表がそのまま効く）。共有枠モード `SHARED_BUDGET_MODE=depleted` では事前分類に当たっても Sonnet 固定
+- **残量モードが優先する**: `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では、決める役も `dev-workflow:decider` のまま `model: opus` を上限とする（`skills/develop/references/decision-criteria.md` の残量モード表がそのまま効く）。共有枠モード `SHARED_BUDGET_MODE=depleted` では事前分類に当たっても Sonnet 固定
 - `FABLE_BUDGET_MODE=abundant` はどの役割の既定も押し上げない。Fable が使われる経路は決める役（`dev-workflow:decider`）だけ
 - Fable がレート制限等で使えなかったときのフォールバック記録の形式は pr-review-gate スキルの「修正サイクルのモデル昇格」が正本。ここでは再掲しない
 
@@ -161,7 +162,11 @@ W の既定モデルは `sonnet`（役割表の正本は `SKILL.md`「モデル�
 
 ## コンテキスト上限と手渡し（本体が測る。W は工程ごとに return する）
 
-W は再開のたびに全履歴を読み直すので、履歴は畳まれずに伸び続ける。本体は W を SendMessage で再開する前に毎回 `scripts/subagent-context.sh <W の名前>` で測り、上限（`DEV_WORKFLOW_CONTEXT_CAP`、既定 150000 tokens）を超えていたら再開せず、新しい W に**手渡し**する（正本: `references/decision-criteria.md`「コンテキスト上限」）。W 側の義務は次の 2 つ。
+W は再開のたびに全履歴を読み直すので、履歴は畳まれずに伸び続ける。本体は W を SendMessage で再開する前に毎回 `scripts/subagent-context.sh <W の名前>` で測る（上限は `DEV_WORKFLOW_CONTEXT_CAP`、既定 150000 tokens。exit 2 が上限超）。
 
-- **工程の終わりに必ず return する**（(1) 仕様化まで／(3) 実装から、の単位。1 spawn で次の工程に進まない）。return には「編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業」を列挙する。これが手渡しの唯一の入力になる
+上限超を検知したあとの扱いも、W が return の 1 行目に置く宣言の書式とどちらを選ぶかの義務も、本体から停止を指示されたときの動き方も、すべて `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本である。この worker.md には書かない（同じ規則の言い換えが複数の面に散らばっていたことが 2026-09 の書き換え漏れと二重 spawn 事故の原因だった）。**W は return を書く前に正本（`skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」）を読み、そこに書かれた書式で宣言する。**
+
+そのうえで、W 自身の動き方は次の 2 つ。
+
+- **工程の終わりに必ず return する**（(1) 仕様化まで／(3) 実装から、の単位。1 spawn で次の工程に進まない）。return は正本が定める 1 行目の宣言で始め、そのうしろに成果一覧（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を並べる。この成果一覧が手渡しの唯一の入力になる
 - **手渡しで起こされたら**（本体から「前任 W の return」が渡されたら）、前任の履歴は読めないし読まない。前任の return と記録先、ファイルの現状（`git status` / `git diff`）から再出発し、前任の埋めた決定を再発明しない
