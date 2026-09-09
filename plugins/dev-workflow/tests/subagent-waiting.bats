@@ -240,18 +240,24 @@ PY
 # サブシェルが同じ状態を継承して 5 回とも同じ nonce になった）が同一プロセス内でしか
 # 現れないから。抽出したブロックを 10 個連結した 1 本のスクリプトを 1 回実行する形にする。
 #
-# ただし重複検査だけで乱数版を落とせるとは限らない。2026-09-09 の実測では、この機の
-# bash 3.2 / 5.x はコマンド置換のサブシェルごとに RANDOM を再シードするため、$RANDOM 版に
-# 戻しても nonce は重複しなかった（そのとき落ちたのは長さの実行時検査と、$RANDOM を nonce の
-# 作り方として例示していないことを見る文言検査）。重複検査が確実に受け持つのは、nonce が
-# 実行ごとに変わらない形（固定文字列・プロセス内で定数になる値）で、こちらは実測で落ちる
-# ことを確認済み。3 つの検査を併せて初めて網になる。
+# 重複検査が乱数版を落とすかどうかは、走らせるシェルで変わる。16 文字ちょうどに整えた
+# $RANDOM 版を 10 個連結して 1 プロセスで走らせた 2026-09-09 の実測では、sh と bash
+# （3.2.57）はコマンド置換のサブシェルごとに RANDOM を再シードするので 10 個とも別の値に
+# なり、この検査は落ちなかった。一方 zsh（5.9）は 10 個とも完全に同じ値を返し、この検査で
+# 落ちた。そしてサブエージェントが実際に走らせる Claude Code の Bash ツールのシェルは zsh
+# （`ps -p $$ -o comm=` が `/bin/zsh`）。**zsh を対象から外すと、実行環境そのもので起きる
+# 重複を誰も見ていないことになる。**
 #
-# 対象シェルは sh と bash（サブエージェントが実行するのは Claude Code の Bash ツール）。
-# 雛形は POSIX 構文（case / ${#var} / ${var##*/} / ${var#prefix}）だけなので sh で完走する。
+# 対象シェルは sh / bash / zsh。雛形は POSIX 構文（case / ${#var} / ${var##*/} /
+# ${var#prefix}）だけなのでいずれでも完走する。入っていないシェルはそれ 1 つだけ飛ばす
+# （テスト全体を skip にすると、zsh が無い環境で他の 2 つの検査まで消える）。
 
 @test "step 1 template yields a distinct 16+ char alphanumeric nonce on every call in one process" {
-  for shell_bin in sh bash; do
+  for shell_bin in sh bash zsh; do
+    if ! command -v "$shell_bin" >/dev/null 2>&1; then
+      echo "note: ${shell_bin} が無いのでこのシェルだけ飛ばす" >&3
+      continue
+    fi
     driver="${BATS_TEST_TMPDIR}/driver-${shell_bin}.sh"
     : > "$driver"
     for _ in 1 2 3 4 5 6 7 8 9 10; do cat "$SNIP" >> "$driver"; done
