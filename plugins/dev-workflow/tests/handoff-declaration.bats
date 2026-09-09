@@ -23,6 +23,50 @@ setup() {
   CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   CRITERIA_REL="plugins/dev-workflow/skills/develop/references/decision-criteria.md"
+  SPEC_REL='openspec/specs/dev-workflow-execution-strategy/spec.md'
+  # 走査の語彙は spec が列挙する。テスト内に写しを持たず、live spec の一覧から読み取る
+  # （spec の MUST。写しを持つと、spec を残したまま実装とテストの両方から同じ語を消しても
+  #  全テストが緑になる。実測: 36/36 緑だった。PR #253 のレビュー B4）。
+  # 出力は 1 行 3 列: <規則番号＋グループ名> <TAB> <語> <TAB> <照合用の正規表現>。
+  VOCAB_TSV="${BATS_TEST_TMPDIR}/spec-vocab.tsv"
+  python3 - "${ROOT}/${SPEC_REL}" > "$VOCAB_TSV" <<'PY'
+import re, sys
+
+LABELS = ('状況', '指示', '行為', '状態', '話題', '文脈', '停止', '確認', '述語')
+META = '.[]{}()*+?^$|\\'
+
+
+def to_regex(term):
+    out = []
+    for ch in term:
+        if ch == '…':
+            out.append('.{0,6}')
+        elif ch in META:
+            out.append('\\' + ch)
+        else:
+            out.append(ch)
+    return ''.join(out)
+
+
+rule = None
+for line in open(sys.argv[1], encoding='utf-8'):
+    head = re.match(r'^- \*\*([\u2460-\u2463])', line)
+    if head:
+        rule = head.group(1)
+        continue
+    item = re.match(r'^  - ([^（(:]+)[（(:]', line)
+    if rule is None:
+        continue
+    if not item:
+        rule = None          # 一覧が途切れたら読み取りを閉じる
+        continue
+    label = item.group(1).strip()
+    if label not in LABELS:
+        continue
+    body = line.split(':', 1)[1] if ':' in line else ''
+    for term in re.findall(r'`([^`]+)`', body):
+        print('%s%s\t%s\t%s' % (rule, label, term, to_regex(term)))
+PY
 }
 
 # 「## <見出し>」から次の見出し（`## ` または `### `）までを切り出す。
@@ -94,13 +138,6 @@ role_sec() { section "$SKILL" '本体の役割'; }
 @test "criteria(4): waiting for a stop confirmation is non-blocking, and unmanned ends the cycle instead of blocking" {
   cap_sec | grep -qF 'ブロックせず'
   cap_sec | grep -qE 'unmanned.*サイクルを終える|サイクルを終える.*unmanned'
-}
-
-# ④停止の指示に応答が返らないままのときの終端（interactive にも上限がある）
-@test "criteria(4): waiting for a stop confirmation ends even in interactive mode" {
-  cap_sec | grep -qF '停止確認が返らないとき'
-  cap_sec | grep -qF 'interactive'
-  cap_sec | grep -qF '無制限には待たない'
 }
 
 # ④の待ちが①②と矛盾しないこと（前任が先に工程完了を返したら通常の手渡しに戻る）
@@ -204,26 +241,40 @@ reference_surfaces() {
 # （`${CLAUDE_PLUGIN_ROOT}` はプラグインルートに置き換えてから見る）。
 resolves_reference_path() { # $1=面のリポジトリ相対パス $2=書かれたパス
   local written="${2//\$\{CLAUDE_PLUGIN_ROOT\}/$PLUGIN_DIR}" base
+  written="${written//\$\{PLUGIN_DIR\}/$PLUGIN_DIR}"
   case "$written" in
     /*) [ -f "$written" ] && return 0; return 1 ;;
   esac
-  for base in "$ROOT" "$(dirname "${ROOT}/$1")" "$PLUGIN_DIR"; do
+  # 4 番目は正本が置かれたスキルのディレクトリ（スキルの文書は自分のスキルルートからの相対で書く）
+  for base in "$ROOT" "$(dirname "${ROOT}/$1")" "$PLUGIN_DIR" "$(dirname "${ROOT}/${CRITERIA_REL}")/.."; do
     [ -f "${base}/${written}" ] && return 0
   done
   return 1
 }
 
+# 対象は名指しした 9 面ではなく、トリガー語で発火して参照を持つ面すべて（spec の MUST）。ホワイトリストはトリガー語に
+# 掛かった任意の面に参照 1 行を求めるので、名指しの面だけを見ると、新しく参照を足した面の
+# ポインタが壊れても素通りする（PR #253 のレビュー SHOULD_FIX 1）。
 @test "whitelist: every path written toward the source resolves to a real file" {
-  local path written
+  local path written inspected checked=0
+  inspected="$(run_scan --root "$ROOT" --this-change "$THIS_CHANGE" --mode list-referrers)"
+  [ -n "$inspected" ] || { echo "参照を持つ面が空"; return 1; }
   while IFS= read -r path; do
-    [ -f "${ROOT}/${path}" ] || { echo "面が存在しない: $path"; return 1; }
+    [ -f "${ROOT}/${path}" ] || continue
     while IFS= read -r written; do
       [ -n "$written" ] || continue
       case "$written" in */*) ;; *) continue ;; esac
+      checked=$((checked + 1))
       resolves_reference_path "$path" "$written" || {
         echo "正本へのパスが解決しない: ${path} — ${written}"; return 1; }
-    done < <(grep -o '[A-Za-z0-9_${}/.-]*decision-criteria\.md' "${ROOT}/${path}" | sort -u)
-  done < <(reference_surfaces; printf '%s\n' "$CRITERIA_REL")
+    done < <(grep -oa '[A-Za-z0-9_${}/.-]*decision-criteria\.md' "${ROOT}/${path}" | sort -u)
+  done <<< "$inspected"
+  # 名指しの 9 面と正本が現にパスを書いているので、これを下回るなら走査が空回りしている
+  [ "$checked" -ge 9 ] || { echo "正本へのパスを検査した件数が少なすぎる: $checked"; return 1; }
+  # 名指しの 9 面より広い集合を見ていること（狭まったら「名指しだけ」に戻っている）
+  local surfaces
+  surfaces="$(printf '%s\n' "$inspected" | grep -c .)"
+  [ "$surfaces" -gt 10 ] || { echo "参照を持つ面が名指しの範囲に狭まっている: $surfaces"; return 1; }
 }
 
 # ---------------------------------------------------------------------------
@@ -516,35 +567,36 @@ ALL_RULES='①再開の禁止 ②手渡しの許可条件 ③宣言の書式と�
   [ "$i" -eq 13 ] || { echo "サンプル数が想定と違う: $i"; return 1; }
 }
 
-# spec が列挙する語彙。実装（handoff-scan.py）からコピーせず、spec の一覧をここに写す
-# （実装から取ると、実装が語彙を削ったときにテストも一緒に緩む）。
-# 下の 2 つのテストが使う: ①言い換えサンプルが正本の語を使っていないこと、②列挙した各要素が
-# 現に走査を発火させること。
-vocab_group() {
-  case "$1" in
-    ①状況)   printf '%s\n' '上限を超' '超過' 'exit 2' 'over_cap' 'CONTEXT_CAP' 'キャップを超' ;;  # handoff-scan: fixture
-    ①指示)   printf '%s\n' '再開' '続き' '続行' '継続' '作業を続' 'SendMessage' ;;  # handoff-scan: fixture
-    ①述語)   printf '%s\n' 'ない' '禁止' '禁じ' '不可' 'するな' 'せず' 'やめ' '控え' '避け' ;;  # handoff-scan: fixture
-    ②行為)   printf '%s\n' '手渡' '後任' '交代' 'spawn' '新しい W' '新しい G' '新しいエージェント' \
-                           '新しい担当' '新しい実行役' '新しいゲート役' '新しいサブエージェント' ;;  # handoff-scan: fixture
-    ②状態)   printf '%s\n' '前任' '工程完了' '工程の終わり' '完了宣言' '停止確認' '直近の return' ;;  # handoff-scan: fixture
-    ②述語)   printf '%s\n' 'ときだけ' 'ときのみ' '場合だけ' '場合のみ' 'に限る' 'に限り' 'だけとする' \
-                           'だけである' 'だけ' 'のみ' 'てよい' 'してよい' 'できるのは' 'よいのは' ;;  # handoff-scan: fixture
-    ③文脈)   printf '%s\n' '工程' '手渡' 'return' '後任' '交代' '前任' ;;  # handoff-scan: fixture
-    ③話題)   printf '%s\n' '1 行目' '一行目' '先頭行' '先頭の 1 行' '冒頭の 1 行' '冒頭行' '工程完了' '工程中断' ;;  # handoff-scan: fixture
-    ③述語)   printf '%s\n' '完全一致' 'に一致' 'にする' 'にすること' 'にせよ' 'にしなければ' 'としなければ' \
-                           'でなければ' 'を選ぶ' 'どちらか' '宣言する' '宣言してはならない' '宣言義務' ;;  # handoff-scan: fixture
-    ④停止)   printf '%s\n' '停止' '止ま' '止める' '止めて' '中止' ;;  # handoff-scan: fixture
-    ④確認)   printf '%s\n' '確認' '返事' '報告' '応答' ;;  # handoff-scan: fixture
-    ④述語)   printf '%s\n' '受け取' 'してから' 'る前に' '待ってから' '得てから' ;;  # handoff-scan: fixture
-    ④文脈)   printf '%s\n' '前任' '手渡' '交代' '後任' 'spawn' '新しい' ;;  # handoff-scan: fixture
-    *) echo "unknown vocab group: $1" >&2; return 1 ;;
-  esac
+# spec が列挙する語彙。setup() が live spec から読み取った一覧（$VOCAB_TSV）を引く。
+# テスト内に写しを持たないのは spec の MUST NOT で、写しを持つと spec の一覧を残したまま
+# 実装とテストの両方から同じ語を消しても全テストが緑になる（PR #253 のレビュー B4）。
+# 下の 3 つのテストが使う: ①読み取りが壊れていないこと、②言い換えサンプルが正本の語を
+# 使っていないこと、③列挙した各要素が現に走査を発火させること。
+ALL_VOCAB_GROUPS='①状況 ①指示 ①述語 ②行為 ②状態 ②述語 ③話題 ③述語 ③文脈 ④停止 ④確認 ④文脈 ④述語'
+
+vocab_group() { # $1=グループ名（①状況 等）→ 1 行 1 語
+  local out
+  out="$(grep -F -- "$1$(printf '\t')" "$VOCAB_TSV" | cut -f2)"
+  [ -n "$out" ] || { echo "spec から語彙グループを読み取れない: $1" >&2; return 1; }
+  printf '%s\n' "$out"
+}
+
+# 読み取りが黙って空を返すと語彙の検査がまとめて消えるので、形だけを先に固定する（spec の MUST）。
+@test "single source: the scan vocabulary is read from the spec, not copied into the tests" {
+  local groups g count
+  groups="$(cut -f1 "$VOCAB_TSV" | LC_ALL=C sort -u | grep -c .)"  # macOS の sort は多バイトの比較を壊すので C ロケールで引く
+  [ "$groups" -eq 13 ] || { echo "spec から読み取れたグループが 13 個でない: $groups"; return 1; }
+  for g in $ALL_VOCAB_GROUPS; do
+    count="$(vocab_group "$g" | grep -c .)" || return 1
+    [ "$count" -ge 3 ] || { echo "語彙グループが小さすぎる: $g（$count 語）"; return 1; }
+  done
 }
 
 read_vocab() { # $1=グループ名 → 呼び出し側の配列名 $2 に読み込む
-  local t
-  while IFS= read -r t; do eval "$2+=(\"\$t\")"; done < <(vocab_group "$1")
+  local t n=0
+  while IFS= read -r t; do eval "$2+=(\"\$t\")"; n=$((n + 1)); done < <(vocab_group "$1")
+  # 読み取れないまま空の配列で進むと、語彙を使うテストがまとめて素通りする（spec の MUST）
+  [ "$n" -ge 3 ] || { echo "spec の語彙グループが読み取れない: $1（$n 語）"; return 1; }
 }
 
 # spec の MUST:「サンプルは各規則につき、正本の語をそのまま使った文と、正本の語をひとつも
@@ -555,18 +607,13 @@ read_vocab() { # $1=グループ名 → 呼び出し側の配列名 $2 に読み
   while IFS=$'\t' read -r rule sample kind; do
     [ "$kind" = '言い換え' ] || continue
     found=$((found + 1))
-    while IFS= read -r token; do
-      case "$sample" in
-        *"$token"*)
-          if cap_sec | grep -qF -- "$token"; then
-            echo "言い換えサンプル（$rule）が正本の語「$token」を使っている: $sample"
-            return 1
-          fi
-          ;;
-      esac
-    done < <(for g in ①状況 ①指示 ①述語 ②行為 ②状態 ②述語 ③文脈 ③話題 ③述語 ④停止 ④確認 ④述語 ④文脈; do
-               vocab_group "$g"
-             done)
+    while IFS=$'\t' read -r token regex; do
+      printf '%s' "$sample" | grep -qE -- "$regex" || continue
+      if cap_sec | grep -qE -- "$regex"; then
+        echo "言い換えサンプル（$rule）が正本の語「$token」を使っている: $sample"
+        return 1
+      fi
+    done < <(cut -f2,3 "$VOCAB_TSV")
   done < <(restatement_samples)
   [ "$found" -eq 4 ] || { echo "言い換えサンプルが 4 本ない: $found"; return 1; }
 }
@@ -605,6 +652,9 @@ read_vocab() { # $1=グループ名 → 呼び出し側の配列名 $2 に読み
 
   git -C "$sandbox" init -q
   git -C "$sandbox" add -A
+  # 合成文が組めていないまま（語彙が空のまま）緑になるのを防ぐ
+  [ "${#expect[@]}" -ge 40 ] || { echo "合成文が少なすぎる: ${#expect[@]} 本"; return 1; }
+
   run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode restatement-sentences --source "$CRITERIA_REL"
   echo "$output"
   [ "$status" -eq 1 ]

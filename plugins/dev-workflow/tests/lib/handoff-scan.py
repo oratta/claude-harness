@@ -297,6 +297,16 @@ def main():
             else:
                 print(f'除外表の面がトリガー語を含まなくなった（stale。行を消すこと）: {path} — {reason}')
 
+    elif args.mode == 'list-referrers':
+        # トリガー語で発火して正本への参照を持つ面（＝参照 1 行で合格した面）。
+        # 参照のパスが実在するかは呼び出し側が見る（spec: 参照だけになった面はポインタが
+        # 壊れるとその面で機構が失効する）。
+        for path in sorted(set(fired_a) | set(fired_b)):
+            text = read(root, path)
+            if text is not None and has_reference(text):
+                print(path)
+        return 0
+
     elif args.mode == 'vocab-a-exempt':
         for path in sorted(exempt):
             if path in fired_a:
