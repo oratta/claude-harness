@@ -24,6 +24,28 @@ setup() {
   # Claude Code の Bash ツールの前景 1 回あたりの上限（ミリ秒）。
   # ハーネス側の上限が変わったら、この 1 行だけを直せば検査 2 全体が追随する。
   FOREGROUND_LIMIT_MS=600000
+
+  # 正本の「手順 1」の雛形を実際に走らせて検査するため、毎テストで抽出しておく。
+  SNIP="${BATS_TEST_TMPDIR}/step1.sh"
+  extract_step1 "$CANON" "$SNIP"
+}
+
+# 正本の「手順 1:」を含む ```bash ブロックを取り出す（push-guard-setup.bats と同じ手口）。
+# 雛形は「読まれる文書」であると同時に「実行されるコード」なので、文言検査だけでは
+# 16 文字を 1 文字に弱めるような改悪が素通りする。抽出して走らせて初めて落ちる。
+extract_step1() {
+  python3 - "$1" "$2" <<'PY'
+import sys, re
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src, encoding="utf-8").read()
+i = text.find("手順 1:")
+assert i >= 0, "step 1 heading not found"
+j = text.rfind("```bash", 0, i)
+assert j >= 0, "no bash block encloses step 1"
+m = re.search(r"```bash\n(.*?)```", text[j:], re.S)
+assert m, "bash block not closed"
+open(dst, "w", encoding="utf-8").write(m.group(1))
+PY
 }
 
 # --- 検査 1: 待ちを完了通知 / Monitor に委ねる指示が残っていないこと ---
@@ -151,7 +173,7 @@ setup() {
     return 1
   fi
   # 起動側で出力ファイルを作る手順があること（雛形どおりに実行して未定義変数にならないこと）
-  grep -qF 'out="/tmp/codex-review-<nonce>.log"' "$CANON"
+  grep -qF 'out="<dir>/review.log"' "$CANON"
   grep -qF ': > "$out"' "$CANON"
 
   # (b) companion 経路: exit code では区別できず、--json の waitTimedOut で判定する。
@@ -164,29 +186,110 @@ setup() {
   fi
 }
 
-# --- nonce の作り方（衝突と正規表現の誤マッチを両方止めること） ---
+# --- nonce の作り方（衝突・正規表現の誤マッチ・無言の縮退をまとめて止めること） ---
 #
 # 2 周目のゲート指摘: `date +%s` は秒精度なので、G / W / R1 が並行して走ると同じ秒に衝突し、
 # 一方の完了マーカーが他方の未完了ジョブを完了扱いにする。さらに nonce は未エスケープのまま
 # 拡張正規表現に埋まるので、メタ文字（`.` 等）を含む nonce は別の文字列に誤マッチする
-# （`nonce="a.b"` が `axb` に一致することを実測）。文字集合を英数字に限ると両方消える。
+# （`nonce="a.b"` が `axb` に一致することを実測）。
+#
+# 3 周目のゲート指摘: `uuidgen` が無い環境のフォールバック `$RANDOM` は、同一プロセスの
+# 複数のコマンド置換サブシェルが同じ乱数状態を継承するため 5 回とも同じ値になった。乱数は
+# 「たぶん被らない値」を作るだけで、被っていないことを誰も確認していない。確定形は一意性を
+# 排他生成（`mktemp -d` = `mkdtemp(3)` の `O_EXCL`）に置き、フォールバック経路を持たない。
 
-@test "the canonical contract generates a collision-resistant alphanumeric nonce" {
-  grep -qF 'uuidgen' "$CANON"
-  grep -qF "tr -dc 'A-Za-z0-9'" "$CANON"
+@test "the canonical contract derives the nonce from an exclusive directory creation" {
+  grep -qF 'mktemp -d "${TMPDIR:-/tmp}/codex-XXXXXXXXXXXXXXXX"' "$CANON"
   grep -qF '[A-Za-z0-9]' "$CANON"
 
-  # `date +%s` が nonce の作り方として例示されていないこと。
-  # 「使わない」と禁じる文の中に現れるのは許す（禁止の理由を書くために必要）。
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    case "$line" in
-      *使わない*|*してはならない*) continue ;;
-    esac
-    echo "hint: ${CANON} presents 'date +%s' as a way to make a nonce: ${line}"
-    echo "hint: 秒精度の値は並行実行で衝突する。uuidgen などの衝突しにくい生成に直す"
-    return 1
-  done <<< "$(grep -nF 'date +%s' "$CANON")"
+  # `date +%s` と `$RANDOM` が nonce の作り方として例示されていないこと。
+  # 「使わない」「してはならない」「置かない」と禁じる文の中に現れるのは許す
+  # （なぜ使わないかを書くために必要）。
+  for banned in 'date +%s' '$RANDOM'; do
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      case "$line" in
+        *使わない*|*してはならない*|*置かない*) continue ;;
+      esac
+      echo "hint: ${CANON} presents '${banned}' as a way to make a nonce: ${line}"
+      echo "hint: 一意性は排他生成（mktemp -d）で担保する。乱数や秒精度の値は衝突を誰も確認していない"
+      return 1
+    done <<< "$(grep -nF "$banned" "$CANON")"
+  done
+}
+
+@test "the canonical contract keeps the prompt and the log under the generated directory" {
+  # 固定パスは並行ジョブ間で上書きし合う。ディレクトリ自体が一意なら中の名前は固定でよい。
+  for pat in '/tmp/codex-prompt-' '/tmp/codex-review-'; do
+    if grep -qF "$pat" "$CANON"; then
+      echo "hint: ${CANON} still uses the fixed path '${pat}'"
+      echo "hint: プロンプトとログは mktemp -d で作った専用ディレクトリの配下に置く"
+      return 1
+    fi
+  done
+  grep -qF 'out="<dir>/review.log"' "$CANON"
+  grep -qF '"${dir}/prompt.txt"' "$CANON"
+}
+
+# --- 雛形を実際に走らせる検査（文言検査だけでは落ちない改悪を落とす） ---
+#
+# 「雛形は実行されるものなのに、実行して確かめていない」ことが、テンプレートの X を
+# 16 個から 1 個に減らすような弱体化を素通りさせた原因。ここは文字列ではなく挙動を見る。
+#
+# 同一プロセス内で 10 回走らせるのは、乱数状態の継承（3 周目の事故: 複数のコマンド置換
+# サブシェルが同じ状態を継承して 5 回とも同じ nonce になった）が同一プロセス内でしか
+# 現れないから。抽出したブロックを 10 個連結した 1 本のスクリプトを 1 回実行する形にする。
+#
+# ただし重複検査だけで乱数版を落とせるとは限らない。2026-09-09 の実測では、この機の
+# bash 3.2 / 5.x はコマンド置換のサブシェルごとに RANDOM を再シードするため、$RANDOM 版に
+# 戻しても nonce は重複しなかった（そのとき落ちたのは長さの実行時検査と、$RANDOM を nonce の
+# 作り方として例示していないことを見る文言検査）。重複検査が確実に受け持つのは、nonce が
+# 実行ごとに変わらない形（固定文字列・プロセス内で定数になる値）で、こちらは実測で落ちる
+# ことを確認済み。3 つの検査を併せて初めて網になる。
+#
+# 対象シェルは sh と bash（サブエージェントが実行するのは Claude Code の Bash ツール）。
+# 雛形は POSIX 構文（case / ${#var} / ${var##*/} / ${var#prefix}）だけなので sh で完走する。
+
+@test "step 1 template yields a distinct 16+ char alphanumeric nonce on every call in one process" {
+  for shell_bin in sh bash; do
+    driver="${BATS_TEST_TMPDIR}/driver-${shell_bin}.sh"
+    : > "$driver"
+    for _ in 1 2 3 4 5 6 7 8 9 10; do cat "$SNIP" >> "$driver"; done
+    TMPDIR="$BATS_TEST_TMPDIR" run "$shell_bin" "$driver"
+    [ "$status" -eq 0 ]
+    nonces="$(printf '%s\n' "$output" | sed -n 's/^nonce=//p')"
+    [ "$(printf '%s\n' "$nonces" | wc -l | tr -d ' ')" -eq 10 ]
+    while IFS= read -r n; do
+      [ "${#n}" -ge 16 ] || { echo "hint: nonce shorter than 16 (${shell_bin}): ${n}"; return 1; }
+      case "$n" in *[!A-Za-z0-9]*) echo "hint: non-alphanumeric nonce (${shell_bin}): ${n}"; return 1 ;; esac
+    done <<< "$nonces"
+    [ "$(printf '%s\n' "$nonces" | sort -u | wc -l | tr -d ' ')" -eq 10 ] || {
+      echo "hint: 同一プロセス内の複数回呼び出しで nonce が重複した（${shell_bin}）"
+      echo "hint: 一意性は排他生成（mktemp -d）で担保する。乱数に戻すとここで落ちる"
+      return 1
+    }
+  done
+}
+
+@test "step 1 template fails loudly instead of degrading when the temp dir cannot be created" {
+  mkdir -p "${BATS_TEST_TMPDIR}/bin"
+  printf '#!/bin/sh\nexit 1\n' > "${BATS_TEST_TMPDIR}/bin/mktemp"
+  chmod +x "${BATS_TEST_TMPDIR}/bin/mktemp"
+  PATH="${BATS_TEST_TMPDIR}/bin:${PATH}" TMPDIR="$BATS_TEST_TMPDIR" run sh "$SNIP"
+  [ "$status" -ne 0 ]
+  ! printf '%s\n' "$output" | grep -q '^nonce='
+}
+
+@test "step 1 template writes the prompt under the generated directory, not a fixed path" {
+  TMPDIR="$BATS_TEST_TMPDIR" run sh "$SNIP"
+  [ "$status" -eq 0 ]
+  d="$(printf '%s\n' "$output" | sed -n 's/^dir=//p')"
+  [ -d "$d" ]
+  [ -f "${d}/prompt.txt" ]
+  case "$d" in
+    "${BATS_TEST_TMPDIR}"/*) ;;
+    *) echo "hint: TMPDIR を無視して固定パスに書いている: ${d}"; return 1 ;;
+  esac
 }
 
 # --- レビュー指示の渡し方（引数埋め込みではなく標準入力） ---
@@ -196,7 +299,7 @@ setup() {
 # （`codex exec --help` の [PROMPT] の記述、および 2026-09-09 の実測）。
 
 @test "the canonical contract feeds the review prompt through stdin, not the command line" {
-  grep -qF 'codex exec -c approval_policy=never -c model_reasoning_effort=medium - < "/tmp/codex-prompt-<nonce>.txt"' "$CANON"
+  grep -qF 'codex exec -c approval_policy=never -c model_reasoning_effort=medium - < "<dir>/prompt.txt"' "$CANON"
   grep -qF "<<'PROMPT_EOF'" "$CANON"
 
   for f in "$CANON" "${SUBAGENT_DOCS[@]}"; do
