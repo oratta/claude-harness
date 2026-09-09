@@ -111,7 +111,7 @@ W / G は名前付き spawn ＋ SendMessage 再開でコンテキストを引き
 | `DEV_WORKFLOW_CONTEXT_HARD_CAP` | 220000 tokens | 途中計測の強制停止。PreToolUse が `Edit` / `Write` / `NotebookEdit` と、許可した git 以外の `Bash` を deny する |
 | `DEV_WORKFLOW_CONTEXT_TRIPWIRE` | `on` | `off` で途中計測を全解除する（再開前チェックは残る） |
 
-### 再開前チェック（本体が測る）
+**再開前チェック（本体が測る）**
 
 - **測り方**: 本体が W / G を SendMessage で再開する**前に毎回** `scripts/subagent-context.sh <agent-name>` を実行する（トランスクリプトの最後の usage から input + cache_creation + cache_read を読む。exit 2 が上限超）
 - **上限超のとき（再開の禁止は無条件）**: 前任の状態にかかわらず、**作業の継続を指示する SendMessage（＝再開）を送らない**。ただし下記の「前任が動作中に交代させる場合」の**停止を指示する SendMessage は禁止の対象外**（作業の継続ではなく停止の指示なので別扱い）
@@ -127,7 +127,7 @@ W / G は名前付き spawn ＋ SendMessage 再開でコンテキストを引き
 - **停止確認を待つ間**: 本体はブロックせずに待つ。他に進められる役割（別 worktree の並列作業）があれば先に進めてよい。前任が停止確認より先に `工程完了:` で return したら、この停止の手順は要らなくなり、上の「手渡しの許可」の条件①を満たした通常の手渡しとして扱う（停止確認を待たない）。unmanned（1 サイクル 1 仕事）で他に進められる作業が無ければ、そのサイクル内で停止確認を待ち続けず、そのサイクルを終える（次サイクルで同じ判定をやり直す）
 - 上限は初期値。品質が落ちる（手渡し先が前任の判断を取りこぼす）なら上げ、まだ肥大するなら下げる。監査の再集計は `~/.claude/projects` のトランスクリプトから行う
 
-### 途中計測（hook が本人を測る）
+**途中計測（hook が本人を測る）**
 
 再開前チェックは「再開の瞬間」しか見ないので、1 回の起動の中で膨らむぶんは素通りする（実測で W が 497,552 トークンに達した）。`hooks/hooks.json` に配線した `scripts/context-tripwire.sh` が PostToolUse（全ツール）と PreToolUse（`Edit|Write|NotebookEdit|Bash`）で走り、**そのサブエージェント自身の**トランスクリプトを測ってこれを止める。計測対象は hook が受け取る `agent_id` から導出するので、`isolation: "worktree"` で起こしたサブエージェントでも同じように効く。メインスレッド（親セッション）は対象外。
 

@@ -37,8 +37,8 @@
 
 ## 5. 全体テストと push
 
-- [ ] 5.1 `scripts/test.sh` を全件実行し、exit code と要約を出す（push 前の規約）
-- [ ] 5.2 commit → push し、PR を作る（記録先は issue #261。本文に `Closes #261`）
+- [x] 5.1 `scripts/test.sh` を全件実行し、exit code と要約を出す（push 前の規約）
+- [x] 5.2 commit → push し、PR を作る（記録先は issue #261。本文に `Closes #261`）
 
 ## 6. 手順書への追記（**PR #253 のマージ後に最後の commit で載せる**）
 
@@ -62,4 +62,4 @@
 - [x] 6.5 `references/roles/gate-runner.md` に役割固有の動作を足す: G が強制停止に当たると `gh pr comment` も拒否されるので、レビュー結果を return に含めて `工程中断:` で返し、**本体が代理投稿する**（R1 の仕様レビューを本体が代理投稿しているのと同じ形）。`SKILL.md` の本体側にも代理投稿する側の手順を足す
 - [x] 6.6 `templates/escalation-tripwires.md` の【コンテキスト上限 → 手渡し】で、**既存の再掲（上の表の行）を `decision-criteria.md` への参照に置き換え**、途中停止の経路があることを 1 行足す
 - [x] 6.7 `tests/develop-roles.bats` 等で、**5 本**（`SKILL.md` / `worker.md` / `gate-runner.md` / `escalation-tripwires.md` / `README.md`）が `decision-criteria.md` を参照していること・閾値の数値（`150000` / `220000` / `150K` 表記）と環境変数名（`DEV_WORKFLOW_CONTEXT_CAP` / `DEV_WORKFLOW_CONTEXT_HARD_CAP` / `DEV_WORKFLOW_CONTEXT_TRIPWIRE`）を再掲していないことを検査する
-- [ ] 6.8 `scripts/test.sh` を全件実行してから最後の commit として push する
+- [x] 6.8 `scripts/test.sh` を全件実行してから最後の commit として push する

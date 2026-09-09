@@ -273,7 +273,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
     # 閾値の数値・環境変数名の再掲が無いこと
     for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000 150K; do
       if grep -q -- "$token" "$f"; then
-        echo "restated in $f: $token（正本は decision-criteria.md「コンテキスト上限」）"
+        echo "restated in ${f}: ${token}（正本は decision-criteria.md「コンテキスト上限」）"
         return 1
       fi
     done
