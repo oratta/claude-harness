@@ -12,7 +12,7 @@
 # このファイルが担う検査は 3 つ:
 #   1. 正本が①〜④を実際に規定していること（`criteria:` 系）。spec は①〜④の答えを再掲しないので、
 #      正本の答えが逆に書き換わったときに落ちるのはこのテストだけになる
-#   2. 手渡しの許可条件を自分の言葉で述べた本文が、正本以外に無いこと
+#   2. 正本が規定する①〜④のどれかを自分の言葉で述べた本文が、正本以外に無いこと
 #   3. トリガー語に掛かった面が、正本への参照を持つこと（ホワイトリスト）
 #
 # spec: dev-workflow-execution-strategy, dev-workflow-develop
@@ -182,16 +182,76 @@ run_scan() {
   ! echo "$output" | grep -qF "${THIS_CHANGE}specs/dev-workflow-execution-strategy/spec.md"
 }
 
+# spec が歴史記録として除外したのは dev-workflow の CHANGELOG だけ。`*/CHANGELOG.md` で
+# 引っ掛けると他プラグインの CHANGELOG まで暗黙に検査から外れる（PR #253 のゲート指摘）。
+@test "whitelist: only the dev-workflow changelog is excluded as a history record" {
+  run run_scan --root "$ROOT" --this-change "$THIS_CHANGE" --mode list-excluded
+  echo "$output"
+  [ "$status" -eq 0 ]
+  while IFS= read -r path; do
+    case "$path" in
+      */CHANGELOG.md|CHANGELOG.md)
+        [ "$path" = 'plugins/dev-workflow/CHANGELOG.md' ] || {
+          echo "spec が定めていない CHANGELOG.md を除外している: $path"; return 1; }
+        ;;
+    esac
+  done <<< "$output"
+}
+
 # ---------------------------------------------------------------------------
-# 2. 手渡しの許可条件を述べた本文が正本以外に無いこと
+# 2. 正本が規定する①〜④を述べた本文が正本以外に無いこと
 #
-# ホワイトリストは「参照があるか」しか見ないので、参照を書いたうえで条件を言い換えた面は
-# 素通りする。正本以外の面が許可条件を絶対文の形で述べていないことを、文単位で固定する
-# （検出する形の定義は tests/lib/handoff-scan.py の PERMISSION_SENTENCE）。
+# ホワイトリストは「そのファイルが参照を持つか」しか見ないので、参照を書いたうえで規則を
+# 言い換えた面は素通りする。判定がファイル単位なのは spec の意図（箇所ごとに参照を書かせると
+# 再掲の圧力が戻る）なので、再掲そのものはこの文単位の走査が受け持つ。
+#
+# ①〜④のうち一部しか見ていないと、同じ欠陥が別の規則で再発する（許可条件（②）だけを見ていた
+# ため、SKILL.md の失敗フローに残った再開の禁止（①）の再掲を PR #253 のゲートまで見逃した）。
+# 検出する形の定義は tests/lib/handoff-scan.py の RESTATEMENT_SENTENCES。
 # ---------------------------------------------------------------------------
 
-@test "single source: no surface other than the source states the handoff permission condition" {
-  run run_scan --root "$ROOT" --this-change "$THIS_CHANGE" --mode permission-sentences --source "$CRITERIA_REL"
+@test "single source: no surface other than the source states any of the four rules" {
+  run run_scan --root "$ROOT" --this-change "$THIS_CHANGE" --mode restatement-sentences --source "$CRITERIA_REL"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+# 上の検査が緑なのは「再掲が無いから」であって「何も見ていないから」ではないことを固定する。
+# 実際に、注入文のガード検査が対象を取り違えて緑のまま素通りしていた例がある（PR #253）。
+# ①〜④それぞれの再掲を書いた面を用意し、4 件とも報告されることを確かめる（サンプルはこの
+# ファイル自身ではなく使い捨てのリポジトリに置く。この bats は走査対象の面でもあるため）。
+@test "single source: the sentence-level scan actually fires on a restatement of each rule" {
+  local sandbox="${BATS_TEST_TMPDIR}/repo"
+  mkdir -p "$sandbox"
+  # 正本の旧版（本 PR 以前は同じ規則を各面に言い換えて配っていた）から 4 点を 1 行ずつ写したもの
+  cat > "${sandbox}/restated.md" <<'SAMPLE'
+上限超（exit 2）を検知したら、前任の状態にかかわらず作業継続の SendMessage を送らない（再開しない）。
+手渡しを行ってよいのは、前任の直近の return の 1 行目が完了宣言に完全一致するときだけである。
+return の 1 行目は `工程完了: <工程名>` か `工程中断: <理由>` に完全一致させること。
+本体は先に前任へ停止を指示し、停止確認を受け取ってから手渡し先を spawn する。
+SAMPLE
+  git -C "$sandbox" init -q
+  git -C "$sandbox" add -A
+  run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode restatement-sentences --source "$CRITERIA_REL"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -qF '①再開の禁止'
+  echo "$output" | grep -qF '②手渡しの許可条件'
+  echo "$output" | grep -qF '③宣言の書式と選び方'
+  echo "$output" | grep -qF '④停止指示と停止確認'
+}
+
+# 書式リテラルは spec が固定していて再掲に当たらないので、引用しただけの面は落とさない
+# （落とすと「リテラルを書くな」という、spec と食い違う圧力が掛かる）。
+@test "single source: quoting the two fixed declaration literals alone is not a restatement" {
+  local sandbox="${BATS_TEST_TMPDIR}/literals"
+  mkdir -p "$sandbox"
+  cat > "${sandbox}/quote.md" <<'SAMPLE'
+W / G の return の 1 行目の書式リテラルは `工程完了: <工程名>` と `工程中断: <理由>` の 2 つである（規則の本文は正本にある）。
+SAMPLE
+  git -C "$sandbox" init -q
+  git -C "$sandbox" add -A
+  run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode restatement-sentences --source "$CRITERIA_REL"
   echo "$output"
   [ "$status" -eq 0 ]
 }
