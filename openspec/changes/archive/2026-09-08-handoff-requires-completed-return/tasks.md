@@ -84,4 +84,4 @@
 - [x] 10.4 live spec と archive delta から、走査の語彙・除外表・検査対象の下限・パスの実在検査・負のコントロール・「テストが spec の語彙を読む」MUST を削除し、「本文が正本 1 箇所にしかないことは規約であり機械検査の対象外」を 1 段落で置く（follow-up は https://github.com/oratta/claude-harness/issues/265）
 - [x] 10.5 `plugins/dev-workflow/CHANGELOG.md` の 2.6.1 を、見張りを入れない形に書き直す
 - [x] 10.6 `bash scripts/test.sh` 全件と `openspec validate --specs --strict` を通す
-
+- [x] 10.7 9.8.11 で spec に足した「停止の指示に応答が返らないまま時間が過ぎたときの終端」は `3fe3190` で撤回した（レビュー指摘 B1〜B3。終端の帰結がテストで固定できず、「人間に可否を仰ぐ」が手渡しの許可条件と矛盾する第 3 の経路を作り、「本体のターン 3 回」は単位が終端の役に立たなかった）。行き先は https://github.com/oratta/claude-harness/issues/266
