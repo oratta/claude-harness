@@ -5,25 +5,29 @@
 ## What Changes
 
 - サブエージェント（W / R1 / G）に対して「完了を待つためにターンを終えない」禁止を明文化し、代わりの待ち方（前景 Bash の有限 `until` ループを、同一ターン内で必要な回数だけ呼び直す）を規定する
-- `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` の Codex レビュー起動手順を、`run_in_background` ＋出力ファイル読みから前景ポーリングに書き換える
-- `plugins/dev-workflow/skills/pr-review-gate/SKILL.md` の Codex 呼び出し規約を、読み手（メインセッション / サブエージェント）で待ち方が分かれることが分かる形に直し、`--timeout-ms 900000` を Bash 前景上限 600 秒未満の値に修正する
+- 待ちの終了条件（完了シグナル）を起動経路ごとに定める。`codex exec` 直叩きは起動コマンドに完了マーカーを書き足し、companion 経由は `status --wait` の exit code を使う
+- 総待ちの上限（前景ループ 3 回 = 27 分）と超過時の分岐を定める。これが pr-review-gate のフォールバック条件にある「タイムアウト」の定義になる
+- `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` の Codex レビュー起動手順を 2 経路それぞれ書き換える
+- `plugins/dev-workflow/skills/pr-review-gate/SKILL.md` の Codex 呼び出し規約を読み手（メインセッション / サブエージェント）で書き分け、`--timeout-ms 900000` を 540000 に直し、「最長 15 分待てる」のような前景上限を超える待ちを示唆する散文を消す
 - `roles/worker.md` と `roles/spec-reviewer.md` にも同じ禁止を 1 行入れる
-- 上記の退行を機械検出する bats スイートを追加する（`run_in_background` での完了待ち指示が残っていないこと、`--timeout-ms` が 600000 未満であること、各役割の指示書に禁止行があること）
+- 上記の退行を機械検出する bats スイートを `plugins/dev-workflow/tests/` に追加する
 
 ## Capabilities
 
 ### New Capabilities
-- `dev-workflow-subagent-waiting`: サブエージェントが長時間処理の完了を待つ方法の契約（ターンを終えない・前景ポーリング・前景上限 600 秒）と、その正本の置き場
+- `dev-workflow-subagent-waiting`: サブエージェントが長時間処理の完了を待つ方法の契約（ターンを終えない・完了シグナルの定義・前景ポーリング・前景上限 600000 ms・総待ちの上限と分岐）と、その正本の置き場
 
 ### Modified Capabilities
-- `dev-workflow-develop`: 役割の指示書（`references/roles/`）が持つべき内容に「待ち方の禁止 1 行」が加わり、G の Codex 起動手順が前景ポーリングに変わる
-- `dev-workflow-pr-review-gate`: Codex 呼び出し規約の「フォアグラウンドで完了を待つ呼び方を禁止する」が読み手別に分かれ、`--timeout-ms` の指定値の上限が入る
+- `dev-workflow-develop`: 役割の指示書（`references/roles/`）が持つべき内容に「待ち方の禁止 1 行」が加わり、G の Codex 起動手順が 2 経路とも前景ポーリングに変わる
+- `dev-workflow-pr-review-gate`: Codex 呼び出し規約が読み手別に分かれ、`--timeout-ms` の指定値の上限とフォールバック条件「タイムアウト」の定義が入る
+- `dev-workflow-shared-references`: `plugins/dev-workflow/references/` に置く契約が 4 本から 5 本になり（`subagent-waiting.md` を追加）、dev-workflow 内の複数スキルが読む契約もここに置く旨が加わる
 
 ## Impact
 
 - `plugins/dev-workflow/references/subagent-waiting.md`（新規・正本）
+- `plugins/dev-workflow/README.md`（`references/` の表に 1 行追加。`dev-workflow-shared-references` の MUST）
 - `plugins/dev-workflow/skills/develop/references/roles/{gate-runner,worker,spec-reviewer}.md`
 - `plugins/dev-workflow/skills/pr-review-gate/SKILL.md`
-- `plugins/dev-workflow/.claude-plugin/plugin.json`（バージョン bump。テスト S131 が merge-base からの bump を要求する）
-- `tests/`（新規 bats スイート）
+- `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json`（バージョン bump と同期。S131 が merge-base からの bump を、S130 が marketplace エントリとの一致を要求する）
+- `plugins/dev-workflow/tests/subagent-waiting.bats`（新規）
 - 振る舞いへの影響は「エージェントの行動規約」。実行時のコード変更は無い

@@ -11,19 +11,43 @@ dev-workflow のサブエージェント（W / R1 / G）は、長時間処理（
 - **WHEN** サブエージェントが「完了通知を待つ」旨のテキストだけを出してターンを終えようとする
 - **THEN** 手順書がそれを禁止しており、代わりに前景ポーリングを繰り返す指示になっている
 
-### Requirement: 待ちは前景の有限ループを必要な回数呼び直す
-待ちループは `timeout` を明示した前景 Bash 呼び出しの中で、終了条件を持つ有限ループ（例: `until <条件>; do sleep <間隔>; done`）として書かなければならない（MUST）。1 回の呼び出しで完了しなければ、同じ呼び出しをもう一度発行して待ちを継続する（SHALL。1 回の Bash 呼び出しはターンの終わりではない）。行頭の裸の長時間 `sleep` は使わない（MUST NOT）が、ループ内の `sleep` は許可対象である。
+### Requirement: 完了シグナルを経路ごとに定める
+待ちループの終了条件は、起動経路ごとに手順書が一意に定めなければならない（MUST）。実装者が検知方法を自分で発明してはならない（MUST NOT）。`codex exec` も `codex-companion.mjs` も出力に完了マーカーを書かないため、マーカーは起動側で付ける。
+
+- **`codex exec` 直叩き経路**: 起動コマンドを `{ codex exec … ; echo "__CODEX_DONE__ rc=$?" ; } >> "$out" 2>&1` の形にし、ポーリングの終了条件を出力ファイル中の `__CODEX_DONE__` の出現とする（MUST）。`rc=` の値で成否を判定する（SHALL）
+- **`codex-companion.mjs` 経路**: `status <job-id> --wait --timeout-ms 540000` の exit code と status 出力を終了条件とする（MUST）。タイムアウトで返ったのか完了で返ったのかを exit code で区別する（SHALL）
+
+#### Scenario: codex exec を直叩きする
+- **WHEN** サブエージェントが `codex exec` を `run_in_background` で起動する
+- **THEN** 起動コマンドに `__CODEX_DONE__ rc=$?` を書き足す形が手順書に示され、ポーリングはそのマーカーの出現で終わる
+
+#### Scenario: companion 経由で起動する
+- **WHEN** サブエージェントが `codex-companion.mjs task` でジョブを投げる
+- **THEN** 待ちは `status <job-id> --wait --timeout-ms 540000` の exit code で判定し、出力ファイルの内容を推測しない
+
+### Requirement: 待ちは前景の有限ループを上限回数まで呼び直す
+待ちループは Bash ツール呼び出しの `timeout` パラメータを明示した前景実行の中で、終了条件を持つ有限ループ（例: `until <完了シグナル>; do sleep <間隔>; done`）として書かなければならない（MUST）。1 回の呼び出しで完了しなければ、同じ呼び出しをもう一度発行して待ちを継続する（SHALL。1 回の Bash 呼び出しはターンの終わりではない）。行頭の裸の長時間 `sleep` は使わない（MUST NOT）が、ループ内の `sleep` は許可対象である。
+
+**総待ちには上限を設けなければならない（MUST）。** 既定は前景ループ 3 回（540000 ms × 3 = 27 分）とする。上限に達しても完了しない場合は待ちをやめ、経路ごとの分岐に入らなければならない（MUST）。G は `needs-reviewer` を return し、根拠に「Codex タイムアウト（27 分）」と書く。これは `skills/pr-review-gate/SKILL.md` のフォールバック条件「未導入・サブスク切れ・タイムアウト」の「タイムアウト」の定義であり、この上限がフォールバックの発火点になる（SHALL）。W / R1 は待ちをやめて本体に return する。上限なしに待ち続けてはならない（MUST NOT。ジョブが死んで出力が来ない場合と、単に時間がかかっている場合を区別できなくなるため）。
 
 #### Scenario: 1 回の待ちで完了しない
 - **WHEN** 前景の待ちループがタイムアウトしても対象の処理が終わっていない
 - **THEN** 同じ待ちループをもう一度呼び出し、ターンは継続したままである
 
+#### Scenario: 上限回数まで待っても完了しない
+- **WHEN** 前景ループを 3 回（合計 27 分）呼んでも完了シグナルが現れない
+- **THEN** 待ちをやめ、G は `needs-reviewer`（根拠に「Codex タイムアウト（27 分）」）を return し、W / R1 は本体に return する
+
 #### Scenario: 待ちに入る前の告知
 - **WHEN** サブエージェントが長い待ちループに入る
-- **THEN** これから最大何分待つかを出力してからループに入る
+- **THEN** これから最大何分待つか（1 回あたり 9 分・上限 27 分）を出力してからループに入る
 
-### Requirement: 前景の待ち値は Bash の前景上限未満である
-前景 Bash 呼び出しの上限は 600000 ms であり、手順書が指定する待ち値（Bash の `timeout`、`codex-companion.mjs status --wait --timeout-ms` など）はすべて 600000 未満でなければならない（MUST）。dev-workflow の既定値は 540000 ms（9 分）とし、上限ちょうどを指定して後処理ごと打ち切られることを避ける（SHALL）。
+### Requirement: 待ち値は Bash ツールの timeout パラメータにミリ秒で指定する
+待ち値は Bash ツール呼び出しの `timeout` パラメータ（ミリ秒）に指定しなければならない（MUST）。シェルの `timeout(1)` コマンドを使ってはならない（MUST NOT。macOS の既定には GNU `timeout` が無く `gtimeout` になるため、環境依存になる）。Bash ツールの前景上限は 600000 ms であり、手順書が示す待ち値（Bash ツールの `timeout`、`codex-companion.mjs status --wait --timeout-ms`）はすべて 600000 未満でなければならない（MUST）。dev-workflow の既定値は 540000 ms（9 分）とし、上限ちょうどを指定して後処理ごと打ち切られることを避ける（SHALL）。
+
+#### Scenario: 待ちループの示し方
+- **WHEN** 手順書が待ちループを例示する
+- **THEN** Bash ツールの入力の形（`command` に `until … do sleep … done`、`timeout` に 540000）で示され、シェルの `timeout` コマンドは現れない
 
 #### Scenario: companion の待ち値
 - **WHEN** 手順書が `codex-companion.mjs status <job-id> --wait --timeout-ms <値>` を示す
@@ -37,8 +61,18 @@ dev-workflow のサブエージェント（W / R1 / G）は、長時間処理（
 - **THEN** 自分の指示書にある 1 行から `references/subagent-waiting.md` に到達できる
 
 ### Requirement: 待ち方の退行を機械検出する
-`tests/` 配下の bats スイートが、dev-workflow の手順書に対して次の 3 点を検査しなければならない（MUST）: 待ちを背景タスクの完了通知に委ねる指示が残っていないこと、`--timeout-ms` および Bash の `timeout` として書かれた値がすべて 600000 未満であること、`skills/develop/references/roles/` 配下の各指示書に待ちでターンを終えない旨の記述があること。正本ファイル自身とテスト自身は禁止語を説明のために含むため、検査対象から除外する（SHALL）。
+`plugins/dev-workflow/tests/subagent-waiting.bats` が、dev-workflow の手順書に対して次の 3 点を検査しなければならない（MUST）。
+
+1. 待ちを背景タスクの完了通知や Monitor に委ねる指示が残っていないこと
+2. 文書中に現れる `--timeout-ms <数値>` と `timeout: <数値>` の 2 パターンの数値がすべて前景上限未満であること。上限値はスイート内の 1 変数（`FOREGROUND_LIMIT_MS=600000`）にまとめ、出典（Claude Code の Bash ツールの前景上限）をコメントで書く（SHALL）。この 2 パターン以外の `timeout` の出現は検査対象にしない（無関係な出現が大半のため）
+3. `skills/develop/references/roles/` 配下の各指示書に、待ちでターンを終えない旨の記述と `references/subagent-waiting.md` への参照があること
+
+正本ファイル自身とテスト自身は禁止語を説明のために含むため、検査対象から除外する（SHALL）。
 
 #### Scenario: 古い書き方に戻したとき
 - **WHEN** 手順書の待ち値を 900000 に戻す、または待ちでターンを終える指示を書き戻す
 - **THEN** `scripts/test.sh` が失敗し、どのファイルの何を直すかを示す
+
+#### Scenario: 上限値の直し先
+- **WHEN** ハーネス側の前景上限が変わる
+- **THEN** スイート内の `FOREGROUND_LIMIT_MS` 1 か所を直せば検査全体が追随する
