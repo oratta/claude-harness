@@ -141,11 +141,11 @@ setup() {
 }
 
 @test "the canonical contract defines a completion signal per launch path" {
-  # (a) codex exec 直叩き: マーカーは実行ごとに一意（nonce）で、照合は行頭アンカー付きの完全な形。
+  # (a) codex exec 直叩き: マーカーは実行ごとに一意（nonce）で、照合は両端をアンカーした完全な形。
   # 固定文字列＋部分一致だと、レビュー対象の文書がその文字列を含むだけでポーリングが誤成立する。
   grep -qF '__CODEX_DONE_<nonce>__' "$CANON"
   grep -qF 'nonce' "$CANON"
-  grep -qF "'^__CODEX_DONE_<nonce>__ rc='" "$CANON"
+  grep -qF "'^__CODEX_DONE_<nonce>__ rc=[0-9]+\$'" "$CANON"
   if grep -qE "grep -q[a-zA-Z]* '__CODEX_DONE" "$CANON"; then
     echo "hint: 完了マーカーの照合が行頭アンカー無しの部分一致になっている"
     return 1
@@ -162,6 +162,50 @@ setup() {
     echo "hint: companion の status --wait はタイムアウトでも完了でも 0 を返す（2026-09-09 実測）"
     return 1
   fi
+}
+
+# --- nonce の作り方（衝突と正規表現の誤マッチを両方止めること） ---
+#
+# 2 周目のゲート指摘: `date +%s` は秒精度なので、G / W / R1 が並行して走ると同じ秒に衝突し、
+# 一方の完了マーカーが他方の未完了ジョブを完了扱いにする。さらに nonce は未エスケープのまま
+# 拡張正規表現に埋まるので、メタ文字（`.` 等）を含む nonce は別の文字列に誤マッチする
+# （`nonce="a.b"` が `axb` に一致することを実測）。文字集合を英数字に限ると両方消える。
+
+@test "the canonical contract generates a collision-resistant alphanumeric nonce" {
+  grep -qF 'uuidgen' "$CANON"
+  grep -qF "tr -dc 'A-Za-z0-9'" "$CANON"
+  grep -qF '[A-Za-z0-9]' "$CANON"
+
+  # `date +%s` が nonce の作り方として例示されていないこと。
+  # 「使わない」と禁じる文の中に現れるのは許す（禁止の理由を書くために必要）。
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in
+      *使わない*|*してはならない*) continue ;;
+    esac
+    echo "hint: ${CANON} presents 'date +%s' as a way to make a nonce: ${line}"
+    echo "hint: 秒精度の値は並行実行で衝突する。uuidgen などの衝突しにくい生成に直す"
+    return 1
+  done <<< "$(grep -nF 'date +%s' "$CANON")"
+}
+
+# --- レビュー指示の渡し方（引数埋め込みではなく標準入力） ---
+#
+# 2 周目のゲート指摘: `codex exec ... "<レビュー指示>"` の形だと、指示文の `"` / ` / $(...) で
+# 引数が壊れるか意図しないコマンドが実行される。`codex exec` は `-` で標準入力から指示を読む
+# （`codex exec --help` の [PROMPT] の記述、および 2026-09-09 の実測）。
+
+@test "the canonical contract feeds the review prompt through stdin, not the command line" {
+  grep -qF 'codex exec -c approval_policy=never -c model_reasoning_effort=medium - < "/tmp/codex-prompt-<nonce>.txt"' "$CANON"
+  grep -qF "<<'PROMPT_EOF'" "$CANON"
+
+  for f in "$CANON" "${SUBAGENT_DOCS[@]}"; do
+    if grep -qE 'codex exec[^`]*"<レビュー指示>"' "$f"; then
+      echo "hint: ${f} embeds the review prompt in the command line"
+      echo "hint: 指示文はファイルに保存し codex exec ... - < <プロンプトファイル> で渡す"
+      return 1
+    fi
+  done
 }
 
 @test "the canonical contract caps the total wait and defines the fallback trigger" {

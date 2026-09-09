@@ -38,23 +38,40 @@ timeout: 540000
 
 ### (a) `codex exec` 直叩き
 
-起動ごとに一意な nonce（`date +%s` の出力など、その場で決めた値なら何でもよい）を自分で決め、出力ファイル名と完了マーカーの両方に埋める。**マーカーを固定文字列にしない** — レビュー対象の文書がその文字列を含んでいると、Codex がそれを出力に書き写した時点でポーリングが誤って成立し、まだ動いているジョブを完了と誤認する（2026-09-09 に実際に発生した。この文書自身がマーカーを含むので、この文書をレビューさせるたびに再現する）。
+Bash 呼び出し 3 回で行う（nonce を決めてプロンプトを保存 → 起動 → 待ち）。呼び出しをまたぐとシェル変数は消えるので、**手順 1 が印字した nonce の値を、手順 2 と 3 には literal で書き写す**。
+
+**nonce は英数字（`[A-Za-z0-9]`）だけで作り、秒精度の値（`date +%s`）を使わない。** 理由は 2 つある。G / W / R1 が並行して走る運用では秒精度の値は同じ秒に衝突し、一方のジョブの完了マーカーが他方の未完了ジョブを完了扱いにする（落ちずに間違うので気づけない）。もう 1 つは、nonce をそのまま拡張正規表現に埋めるため — `.` などのメタ文字が入ると意図しない文字列に誤マッチする（`nonce="a.b"` が `axb` に一致する）。下の生成コマンドはこの 2 つを同時に満たす。
+
+**レビュー指示はコマンドラインに埋めず、ファイルに書いて標準入力から渡す。** 指示文に `"` や `` ` `` や `$(...)` が入ると、引数が壊れるか意図しないコマンドが実行されるため。`codex exec` は引数を省くか `-` を渡すと標準入力から指示を読む（`codex exec --help` の `[PROMPT]` の記述で確認済み）。
 
 ```bash
-# 起動: Bash ツールの run_in_background: true
-# <nonce> は自分で決めた一意な値に置き換える（下の 3 か所すべて同じ値にする）
+# 手順 1: 前景。nonce を決め、レビュー指示をファイルに保存する
+nonce="$( (uuidgen 2>/dev/null || printf '%s%s' "$$" "$RANDOM") | tr -dc 'A-Za-z0-9' | tr '[:upper:]' '[:lower:]' | cut -c1-16 )"
+cat > "/tmp/codex-prompt-${nonce}.txt" <<'PROMPT_EOF'
+<レビュー指示をそのまま書く。" ` $(...) を含んでよい（クォート付きヒアドキュメントなので展開されない）>
+PROMPT_EOF
+printf 'nonce=%s\n' "$nonce"   # ← この値を手順 2 / 3 に literal で書き写す
+```
+
+指示文が `PROMPT_EOF` で始まる行を含むときだけ、区切り語を `PROMPT_EOF_<nonce>` のように変える。
+
+```bash
+# 手順 2: 起動。Bash ツールの run_in_background: true
+# <nonce> は手順 1 が印字した値（下の 4 か所すべて同じ値）
 out="/tmp/codex-review-<nonce>.log"
 : > "$out"
-{ codex exec -c approval_policy=never -c model_reasoning_effort=medium "<レビュー指示>" ; printf '\n__CODEX_DONE_<nonce>__ rc=%s\n' "$?" ; } >> "$out" 2>&1
+{ codex exec -c approval_policy=never -c model_reasoning_effort=medium - < "/tmp/codex-prompt-<nonce>.txt" ; printf '\n__CODEX_DONE_<nonce>__ rc=%s\n' "$?" ; } >> "$out" 2>&1
 ```
 
 ```
-# 完了確認: Bash ツールの前景実行（別の呼び出しなので $out は使えない。パスを literal で書く）
-command: until grep -qE '^__CODEX_DONE_<nonce>__ rc=' /tmp/codex-review-<nonce>.log 2>/dev/null; do sleep 10; done; tail -n 200 /tmp/codex-review-<nonce>.log
+# 手順 3: 完了確認。Bash ツールの前景実行（別の呼び出しなので $out は使えない。パスを literal で書く）
+command: until grep -qE '^__CODEX_DONE_<nonce>__ rc=[0-9]+$' /tmp/codex-review-<nonce>.log 2>/dev/null; do sleep 10; done; tail -n 200 /tmp/codex-review-<nonce>.log
 timeout: 540000
 ```
 
-照合は**行頭アンカー付きの完全な形**（`^__CODEX_DONE_<nonce>__ rc=`）で行う。nonce と行頭アンカーの二重で、出力中の言及とマーカーそのものを分ける。`rc=` の値で `codex exec` の成否を判定する。
+**マーカーを固定文字列にしない** — レビュー対象の文書がその文字列を含んでいると、Codex がそれを出力に書き写した時点でポーリングが誤って成立し、まだ動いているジョブを完了と誤認する（2026-09-09 に実際に発生した。この文書自身がマーカーの雛形を含むので、この文書をレビューさせるたびに再現する）。
+
+照合は**行頭と行末をアンカーした完全な形**（`^__CODEX_DONE_<nonce>__ rc=[0-9]+$`）で行う。一意な nonce と両端のアンカーの二重で、出力中の言及とマーカーそのものを分ける。`rc=` の値で `codex exec` の成否を判定する。
 
 ### (b) `codex-companion.mjs` 経由
 
