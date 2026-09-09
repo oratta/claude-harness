@@ -6,12 +6,19 @@
 # 仕組みは作らず（どのルールが落ちたか誰も気づけない）、編集時にこのテストで止めて
 # 「削るか、予算を動かすか」を PR の diff として主の前に出す。
 #
-# 予算値は tests/injection-budget.txt（数値 1 行）。閾値をこのファイルに直書きしない。
+# 予算値は tests/injection-budget.txt（数字だけの 1 行）。閾値をこのファイルに直書きしない。
 # 判定は上下両方向のラチェット: 実測が予算を超えたら fail、予算が実測の 1.1 倍を超えても
 # fail。削減 PR に予算の引き下げを強制し、削った分が次の増加の余地として残らないようにする。
 #
 # 測定単位はバイト（wc -c）。文字数（wc -m）はロケール依存で、CI（ubuntu-latest、LC_ALL 未設定）
 # と手元（en_US.UTF-8）で同じ日本語ファイルが違う値になるため使わない。
+#
+# このゲートの目的は「測定合計だけを減らす抜け道を塞ぐ」ことなので、集計を迂回できる経路を
+# 作らないことを最優先にする。具体的には次の 4 点で、それぞれに退行テストがある:
+#   - description は frontmatter 内の**全件**を見る（重複キーで 2 本目に逃がせない）
+#   - 一覧の受け渡しは NUL 区切り（空白や改行を含むファイル名が単語分割で漏れない）
+#   - カテゴリのルートを plugins/<プラグイン>/<カテゴリ> に固定する（入れ子で二重計上しない）
+#   - 予算ファイルは数字だけの 1 行しか受理しない（変更が 1 行の diff として見える）
 #
 # テスト名は ASCII のみ（bats はマルチバイトのテスト名を扱えない。既存スイートと同じ制約）。
 
@@ -25,13 +32,32 @@ teardown() {
   rm -rf "$TMPD"
 }
 
-# ── 集計ヘルパ（すべて「ファイルの一覧を引数で渡す」形。テストは実 repo の
+# ── 一覧の受け渡し規約 ────────────────────────────────────────
+# ファイルの一覧は必ず NUL 区切りで渡す。改行区切りにして $(...) で展開すると、
+# 空白を含むファイル名が単語分割で 2 つに割れ、どちらも実在しないパスになって
+# 測定から丸ごと漏れる（測定合計を減らす抜け道になる）。正本の scripts/sync.sh も
+# glob と "$f" の引用で同じ安全性を持っている。
+# 表示・件数だけが要る場面は lines_of / count_z を通す。
+
+# emit_z <file...> — 引数のパスを NUL 区切りで出力する。
+emit_z() {
+  local f
+  for f in "$@"; do printf '%s\0' "$f"; done
+}
+
+# lines_of — NUL 区切りの一覧を改行区切りに直す（表示・grep 用）。
+lines_of() { tr '\0' '\n'; }
+
+# count_z — NUL 区切りの一覧の件数（改行を含むパスでも正しく数える）。
+count_z() { tr -cd '\0' | wc -c | tr -d '[:space:]'; }
+
+# ── 集計ヘルパ（すべて「ファイルの一覧を渡す」形。テストは実 repo の
 #    ファイルを 1 バイトも書き換えず、渡す一覧を差し替えて異常系を作る）──────
 
-# sum_files <file...> — 渡されたファイルの wc -c の合計（バイト）を返す。
-sum_files() {
+# sum_files_z — stdin の NUL 区切り一覧について wc -c の合計（バイト）を返す。
+sum_files_z() {
   local total=0 n f
-  for f in "$@"; do
+  while IFS= read -r -d '' f; do
     [ -f "$f" ] || continue
     n=$(wc -c < "$f")
     total=$((total + n))
@@ -39,7 +65,10 @@ sum_files() {
   printf '%s\n' "$total"
 }
 
-# list_synced_md <dir> — <dir>/*.md から basename が README.md のものを除いた一覧。
+# sum_files <file...> — 引数版（sum_files_z の薄いラッパ）。
+sum_files() { emit_z "$@" | sum_files_z; }
+
+# list_synced_md <dir> — <dir>/*.md から basename が README.md のものを除いた一覧（NUL 区切り）。
 # 注入対象の正本は scripts/sync.sh の link_dir（sync.sh:76-79 と 108-109 の 2 呼び出し）。
 # rules と output-styles はどちらも同じ 1 条件なので、テストは独自の除外リストを持たない。
 list_synced_md() {
@@ -48,43 +77,67 @@ list_synced_md() {
     if [ -f "$f" ]; then
       b=$(basename "$f")
       if [ "$b" != "README.md" ]; then
-        printf '%s\n' "$f"
+        printf '%s\0' "$f"
       fi
     fi
   done
 }
 
-# sum_descriptions <file...> — 各ファイルの frontmatter の最初の description 行から
-# `description:` の接頭辞と続く空白を落とした**値のみ**のバイト数を足す。
-# 末尾改行は数えない（printf '%s' で改行を付けずに wc -c へ流す）。1 行ずつ改行込みで
-# 流すとファイル本数ぶん（現状 59 バイト）ずれるため、この定義を動かさない。
-sum_descriptions() {
+# frontmatter_descriptions <file> — frontmatter（1 行目の `---` から次の `---` まで）に
+# 現れる `description:` 行を**全件**、「行番号<TAB>値」で出力する。
+#
+# 1 本目だけを見る（grep -m1）と、`description:` を 2 回書いて 2 本目を折りたたみ記法に
+# する経路（YAML の重複キー）が集計とガードの両方をすり抜ける。逆に本文中の
+# `description:`（SKILL.md のテンプレート例など、実在する）は注入されないので対象にしない。
+frontmatter_descriptions() {
+  awk 'NR == 1 { if ($0 != "---") exit; next }
+       /^---[ \t]*$/ { exit }
+       /^description:/ { line = $0; sub(/^description:[ \t]*/, "", line); print NR "\t" line }' "$1"
+}
+
+# sum_descriptions_z — stdin の NUL 区切り一覧について、frontmatter の description の
+# **値のみ**のバイト数を足す。末尾改行は数えない（printf '%s' で改行を付けずに wc -c へ流す）。
+# 1 行ずつ改行込みで流すとファイル本数ぶん（現状 59 バイト）ずれるため、この定義を動かさない。
+sum_descriptions_z() {
   local total=0 f v n
-  for f in "$@"; do
+  while IFS= read -r -d '' f; do
     [ -f "$f" ] || continue
-    v=$(grep -m1 '^description:' "$f" | sed 's/^description:[[:space:]]*//')
-    n=$(printf '%s' "$v" | wc -c)
-    total=$((total + n))
+    while IFS= read -r v; do
+      n=$(printf '%s' "$v" | wc -c)
+      total=$((total + n))
+    done < <(frontmatter_descriptions "$f" | cut -f2-)
   done
   printf '%s\n' "$total"
 }
 
-# description を持つカテゴリの一覧。1 階層深いディレクトリに置いて集計から逃げる経路を
-# 残さないため、glob ではなく find でディレクトリ配下を任意の深さで走査する。
-list_under() { # <dir> <find の -name パターン> [<find の -path パターン>]
+# sum_descriptions <file...> — 引数版（sum_descriptions_z の薄いラッパ）。
+sum_descriptions() { emit_z "$@" | sum_descriptions_z; }
+
+# list_dir_files <dir> <find の -name パターン> — <dir> 配下を任意の深さで走査した一覧。
+# 1 階層深いディレクトリに置いて集計から逃げる経路を残さないため、glob ではなく find を使う。
+list_dir_files() {
   [ -d "$1" ] || return 0
-  if [ "$#" -ge 3 ]; then
-    find "$1" -type f -name "$2" -path "$3" | LC_ALL=C sort
-  else
-    find "$1" -type f -name "$2" | LC_ALL=C sort
-  fi
+  find "$1" -type f -name "$2" -print0 | LC_ALL=C sort -z
 }
 
-list_plugin_skills()   { list_under "$REPO_ROOT/plugins" 'SKILL.md' '*/skills/*'; }
-list_plugin_agents()   { list_under "$REPO_ROOT/plugins" '*.md' '*/agents/*'; }
-list_plugin_commands() { list_under "$REPO_ROOT/plugins" '*.md' '*/commands/*'; }
-list_local_skills()    { list_under "$REPO_ROOT/.claude/skills" 'SKILL.md'; }
-list_local_commands()  { list_under "$REPO_ROOT/.claude/commands" '*.md'; }
+# list_plugin_category <plugins ルート> <カテゴリ名> <find の -name パターン>
+# カテゴリのルートを plugins/<プラグイン>/<カテゴリ> に固定したうえで、その下は任意の
+# 深さで走査する。find の -path '*/skills/*' で書くと * が / にも一致するため、
+# plugins/p/commands/x/skills/y/SKILL.md が skills と commands の両方に一致して二重計上される。
+list_plugin_category() {
+  local root="$1" category="$2" pattern="$3" d
+  [ -d "$root" ] || return 0
+  for d in "$root"/*/"$category"; do
+    [ -d "$d" ] || continue
+    find "$d" -type f -name "$pattern" -print0
+  done | LC_ALL=C sort -z
+}
+
+list_plugin_skills()   { list_plugin_category "$REPO_ROOT/plugins" skills   'SKILL.md'; }
+list_plugin_agents()   { list_plugin_category "$REPO_ROOT/plugins" agents   '*.md'; }
+list_plugin_commands() { list_plugin_category "$REPO_ROOT/plugins" commands '*.md'; }
+list_local_skills()    { list_dir_files "$REPO_ROOT/.claude/skills" 'SKILL.md'; }
+list_local_commands()  { list_dir_files "$REPO_ROOT/.claude/commands" '*.md'; }
 
 # すべての description 対象ファイル（折りたたみ記法ガードの対象でもある）。
 list_all_description_files() {
@@ -99,29 +152,41 @@ list_all_description_files() {
 # 内訳は「表示名 <TAB> バイト数」を 8 行。AGENTS.md は CLAUDE.md の同期複製
 # （tests/agents-md-sync.bats が同一性を強制）で、セッションに注入されるのは片方だけ
 # なので測定対象に含めない（含めると同じ文が二重計上される）。
-#
-# 一覧は改行区切りで、引数として単語分割させて渡す（このリポの git パスに空白は無い。
-# scripts/test.sh が bats へ $SUITES を渡すのと同じ前提）。
-# shellcheck disable=SC2046
 breakdown() {
-  printf '%s\t%s\n' "rules/*.md"        "$(sum_files $(list_synced_md "$REPO_ROOT/rules"))"
-  printf '%s\t%s\n' "CLAUDE.md"         "$(sum_files "$REPO_ROOT/CLAUDE.md")"
+  printf '%s\t%s\n' "rules/*.md"        "$(list_synced_md "$REPO_ROOT/rules" | sum_files_z)"
+  printf '%s\t%s\n' "CLAUDE.md"         "$(emit_z "$REPO_ROOT/CLAUDE.md" | sum_files_z)"
   printf '%s\t%s\n' "output-styles/*.md（メインセッションのみ。サブエージェントには載らない）" \
-                                        "$(sum_files $(list_synced_md "$REPO_ROOT/output-styles"))"
-  printf '%s\t%s\n' "plugins SKILL.md description"   "$(sum_descriptions $(list_plugin_skills))"
-  printf '%s\t%s\n' "plugins agent description"      "$(sum_descriptions $(list_plugin_agents))"
-  printf '%s\t%s\n' "plugins command description"    "$(sum_descriptions $(list_plugin_commands))"
-  printf '%s\t%s\n' ".claude/skills SKILL.md description" "$(sum_descriptions $(list_local_skills))"
-  printf '%s\t%s\n' ".claude/commands description"   "$(sum_descriptions $(list_local_commands))"
+                                        "$(list_synced_md "$REPO_ROOT/output-styles" | sum_files_z)"
+  printf '%s\t%s\n' "plugins SKILL.md description"   "$(list_plugin_skills | sum_descriptions_z)"
+  printf '%s\t%s\n' "plugins agent description"      "$(list_plugin_agents | sum_descriptions_z)"
+  printf '%s\t%s\n' "plugins command description"    "$(list_plugin_commands | sum_descriptions_z)"
+  printf '%s\t%s\n' ".claude/skills SKILL.md description" "$(list_local_skills | sum_descriptions_z)"
+  printf '%s\t%s\n' ".claude/commands description"   "$(list_local_commands | sum_descriptions_z)"
 }
 
 sum_breakdown() { # 内訳テキストを stdin から受け、バイト数の列を足す
   awk -F'\t' '{ s += $2 } END { print s + 0 }'
 }
 
-read_budget() {
-  tr -d '[:space:]' < "$BUDGET_FILE"
+# read_budget_from <file> — 予算ファイルを検証して値を返す。数字 1 個以上に
+# 末尾改行が 0 個か 1 個付いた形だけを受理し、それ以外は何も出力せず rc=1 を返す。
+# 空白を落としてから数字として読む（tr -d '[:space:]'）と複数行の予算ファイルが
+# 1 つの整数として通ってしまい、「予算の変更が 1 行の diff として見える」前提が崩れる。
+read_budget_from() {
+  local f="$1" content
+  [ -f "$f" ] || return 1
+  content=$(cat "$f"; printf 'X')   # 末尾の改行が $(...) に食われないようマーカーを付ける
+  content=${content%X}
+  case "$content" in
+    *$'\n') content=${content%$'\n'} ;;   # 末尾改行 1 個だけを許す
+  esac
+  case "$content" in
+    '' | *[!0-9]*) return 1 ;;
+  esac
+  printf '%s\n' "$content"
 }
+
+read_budget() { read_budget_from "$BUDGET_FILE"; }
 
 # ── 判定（整数演算のみ。浮動小数点を使わない）────────────────────
 # (a) total > budget            → 超過側 fail
@@ -161,31 +226,36 @@ report() { # <verdict> <budget> <total> <内訳テキスト>
 }
 
 # ── 折りたたみ記法のガード ──────────────────────────────────
-# description の値が単一行であることを検査する。YAML の折りたたみ／リテラル記法
-# （> | >- |- >+ |+）を使うと 2 行目以降が集計から漏れ、description を無制限に
-# 増やせてしまう。違反したファイル名を出力し、1 件でもあれば 1 を返す。
-check_single_line_description() { # <file...>
+# frontmatter の description の値が単一行であることを検査する。YAML の折りたたみ／
+# リテラル記法（> | >- |- >+ |+）を使うと 2 行目以降が集計から漏れ、description を
+# 無制限に増やせてしまう。frontmatter 内の description は**全件**検査する（1 本目だけを
+# 見ると、重複キーの 2 本目を折りたたみ記法にする経路がすり抜ける）。
+# 違反したファイル名を出力し、1 件でもあれば 1 を返す。
+check_single_line_description_z() { # stdin: NUL 区切りの一覧
   local f n v next rc=0
-  for f in "$@"; do
+  while IFS= read -r -d '' f; do
     [ -f "$f" ] || continue
-    n=$(grep -n -m1 '^description:' "$f" | cut -d: -f1)
-    [ -n "$n" ] || continue
-    v=$(sed -n "${n}p" "$f" | sed 's/^description:[[:space:]]*//')
-    case "$v" in
-      '>'*|'|'*) printf '%s\n' "$f"; rc=1; continue ;;
-    esac
-    next=$(sed -n "$((n + 1))p" "$f")
-    case "$next" in
-      '---') continue ;;
-    esac
-    if printf '%s' "$next" | grep -qE '^[A-Za-z_][A-Za-z0-9_-]*:'; then
-      continue
-    fi
-    printf '%s\n' "$f"
-    rc=1
+    while IFS= read -r n; do
+      v=$(sed -n "${n}p" "$f" | sed 's/^description:[[:space:]]*//')
+      case "$v" in
+        '>'*|'|'*) printf '%s\n' "$f"; rc=1; continue ;;
+      esac
+      next=$(sed -n "$((n + 1))p" "$f")
+      case "$next" in
+        '---') continue ;;
+      esac
+      if printf '%s' "$next" | grep -qE '^[A-Za-z_][A-Za-z0-9_-]*:'; then
+        continue
+      fi
+      printf '%s\n' "$f"
+      rc=1
+    done < <(frontmatter_descriptions "$f" | cut -f1)
   done
   return "$rc"
 }
+
+check_single_line_description() { emit_z "$@" | check_single_line_description_z; }
+check_all_descriptions() { list_all_description_files | check_single_line_description_z; }
 
 # ══ 1. 集計ヘルパ ══════════════════════════════════════════
 
@@ -201,12 +271,8 @@ check_single_line_description() { # <file...>
   printf '1234567890' > "$TMPD/README.md"
   printf '12345' > "$TMPD/kept.md"
   printf '12345' > "$TMPD/also-kept.md"
-  run list_synced_md "$TMPD"
-  [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | grep -c 'README.md')" -eq 0 ]
-  # shellcheck disable=SC2046
-  run sum_files $(list_synced_md "$TMPD")
-  [ "$output" -eq 10 ]
+  [ "$(list_synced_md "$TMPD" | lines_of | grep -c 'README.md')" -eq 0 ]
+  [ "$(list_synced_md "$TMPD" | sum_files_z)" -eq 10 ]
 }
 
 @test "description totals do not count trailing newlines" {
@@ -225,12 +291,72 @@ check_single_line_description() { # <file...>
   mkdir -p "$TMPD/commands/a/b"
   printf -- '---\ndescription: 0123456789\n---\n' > "$TMPD/commands/top.md"
   printf -- '---\ndescription: 0123456789\n---\n' > "$TMPD/commands/a/b/deep.md"
-  run list_under "$TMPD/commands" '*.md'
+  [ "$(list_dir_files "$TMPD/commands" '*.md' | lines_of | grep -c 'deep.md')" -eq 1 ]
+  [ "$(list_dir_files "$TMPD/commands" '*.md' | sum_descriptions_z)" -eq 20 ]
+}
+
+@test "a file name containing spaces is still measured" {
+  # 改行区切りの一覧を $(...) で展開すると単語分割で丸ごと漏れる（測定を回避できる）。
+  printf '1234567890' > "$TMPD/with space.md"
+  printf '12345' > "$TMPD/plain.md"
+  [ "$(list_synced_md "$TMPD" | count_z)" -eq 2 ]
+  [ "$(list_synced_md "$TMPD" | sum_files_z)" -eq 15 ]
+  mkdir -p "$TMPD/cat"
+  printf -- '---\ndescription: 0123456789\n---\n' > "$TMPD/cat/with space.md"
+  [ "$(list_dir_files "$TMPD/cat" '*.md' | count_z)" -eq 1 ]
+  [ "$(list_dir_files "$TMPD/cat" '*.md' | sum_descriptions_z)" -eq 10 ]
+}
+
+@test "a file name containing a newline is still measured" {
+  local nl
+  nl=$(printf 'line1\nline2')
+  printf '1234567890' > "$TMPD/$nl.md"
+  printf '12345' > "$TMPD/plain.md"
+  [ "$(list_synced_md "$TMPD" | count_z)" -eq 2 ]
+  [ "$(list_synced_md "$TMPD" | sum_files_z)" -eq 15 ]
+  mkdir -p "$TMPD/cat"
+  printf -- '---\ndescription: 0123456789\n---\n' > "$TMPD/cat/$nl.md"
+  [ "$(list_dir_files "$TMPD/cat" '*.md' | count_z)" -eq 1 ]
+  [ "$(list_dir_files "$TMPD/cat" '*.md' | sum_descriptions_z)" -eq 10 ]
+}
+
+@test "a skills directory nested under commands is not counted twice" {
+  # find の -path '*/skills/*' は * が / にも一致するため、commands 配下の入れ子
+  # （plugins/p/commands/x/skills/y/SKILL.md）が skills と commands の両方に一致する。
+  mkdir -p "$TMPD/plugins/p/commands/x/skills/y"
+  printf -- '---\ndescription: 0123456789\n---\n' > "$TMPD/plugins/p/commands/x/skills/y/SKILL.md"
+  [ "$(list_plugin_category "$TMPD/plugins" skills 'SKILL.md' | count_z)" -eq 0 ]
+  [ "$(list_plugin_category "$TMPD/plugins" commands '*.md' | count_z)" -eq 1 ]
+  local skills commands
+  skills=$(list_plugin_category "$TMPD/plugins" skills 'SKILL.md' | sum_descriptions_z)
+  commands=$(list_plugin_category "$TMPD/plugins" commands '*.md' | sum_descriptions_z)
+  [ "$((skills + commands))" -eq 10 ]
+}
+
+@test "a plugin category is still walked at any depth below its root" {
+  mkdir -p "$TMPD/plugins/p/skills/a/b"
+  printf -- '---\ndescription: 0123456789\n---\n' > "$TMPD/plugins/p/skills/a/b/SKILL.md"
+  [ "$(list_plugin_category "$TMPD/plugins" skills 'SKILL.md' | count_z)" -eq 1 ]
+  [ "$(list_plugin_category "$TMPD/plugins" skills 'SKILL.md' | sum_descriptions_z)" -eq 10 ]
+}
+
+@test "every description key in the frontmatter is counted, not just the first" {
+  # YAML の重複キー。1 本目だけを見ると 2 本目のバイト数が測定から漏れる。
+  printf -- '---\ndescription: 0123456789\ndescription: 0123456789\n---\nbody\n' > "$TMPD/dup.md"
+  run sum_descriptions "$TMPD/dup.md"
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | grep -c 'deep.md')" -eq 1 ]
-  # shellcheck disable=SC2046
-  run sum_descriptions $(list_under "$TMPD/commands" '*.md')
   [ "$output" -eq 20 ]
+}
+
+@test "a description written in the body is measured neither in the total nor by the guard" {
+  # 本文にテンプレートとして `description:` を書いてあるファイルが実在する
+  # （plugins/experience-to-skill 配下）。frontmatter の外は注入されないので対象外。
+  printf -- '---\ndescription: 0123456789\n---\n\ntemplate:\n\ndescription: >\n  folded example\n' > "$TMPD/body.md"
+  run sum_descriptions "$TMPD/body.md"
+  [ "$output" -eq 10 ]
+  run check_single_line_description "$TMPD/body.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 # ══ 2. 予算ファイルと判定 ═══════════════════════════════════
@@ -240,6 +366,38 @@ check_single_line_description() { # <file...>
   run read_budget
   [ "$status" -eq 0 ]
   [[ "$output" =~ ^[0-9]+$ ]]
+  [ "$(wc -l < "$BUDGET_FILE" | tr -d '[:space:]')" -eq 1 ]
+}
+
+@test "a budget file that is not a single integer line is rejected" {
+  # 空白を落としてから読むと、複数行でも 1 つの整数として通ってしまい、
+  # 「予算の変更が 1 行の diff として見える」という前提が崩れる。
+  printf '98765\n' > "$TMPD/ok.txt"
+  run read_budget_from "$TMPD/ok.txt"
+  [ "$status" -eq 0 ]
+  [ "$output" = "98765" ]
+
+  printf '98765' > "$TMPD/no-newline.txt"
+  run read_budget_from "$TMPD/no-newline.txt"
+  [ "$status" -eq 0 ]
+  [ "$output" = "98765" ]
+
+  printf '987\n65\n' > "$TMPD/two-lines.txt"
+  run read_budget_from "$TMPD/two-lines.txt"
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+
+  printf '98765\n\n' > "$TMPD/trailing-blank.txt"
+  run read_budget_from "$TMPD/trailing-blank.txt"
+  [ "$status" -ne 0 ]
+
+  printf '98765 \n' > "$TMPD/padded.txt"
+  run read_budget_from "$TMPD/padded.txt"
+  [ "$status" -ne 0 ]
+
+  printf '# comment\n98765\n' > "$TMPD/commented.txt"
+  run read_budget_from "$TMPD/commented.txt"
+  [ "$status" -ne 0 ]
 }
 
 @test "this suite is picked up by the dynamic test discovery" {
@@ -251,7 +409,10 @@ check_single_line_description() { # <file...>
 @test "current total stays inside the budget (resident ratchet, both directions)" {
   local total budget v
   total=$(breakdown | sum_breakdown)
-  budget=$(read_budget)
+  if ! budget=$(read_budget); then
+    echo "tests/injection-budget.txt は数字だけの 1 行でなければならない（複数行・空白・コメントは不可）" >&2
+    false
+  fi
   v=$(verdict "$budget" "$total")
   if [ "$v" != "ok" ]; then
     report "$v" "$budget" "$total" "$(breakdown)" >&2
@@ -299,13 +460,11 @@ check_single_line_description() { # <file...>
 @test "an over-budget failure is cleared by changing the budget value alone" {
   # 実 repo のファイルは書き換えず、集計ヘルパに渡す一覧に余分なファイルを足して超過を作る。
   local base extra total budget raised
-  # shellcheck disable=SC2046
-  base=$(sum_files $(list_synced_md "$REPO_ROOT/rules"))
+  base=$(list_synced_md "$REPO_ROOT/rules" | sum_files_z)
   budget=$(read_budget)
   # 予算を確実に超える大きさの余分なファイルを 1 本足す
   head -c $((budget + 1)) /dev/zero | tr '\0' 'x' > "$TMPD/extra.md"
-  # shellcheck disable=SC2046
-  total=$(sum_files $(list_synced_md "$REPO_ROOT/rules") "$TMPD/extra.md")
+  total=$({ list_synced_md "$REPO_ROOT/rules"; emit_z "$TMPD/extra.md"; } | sum_files_z)
   [ "$total" -gt "$base" ]
   [ "$(verdict "$budget" "$total")" = "over" ]
   # 予算値だけを「超過量以上、かつ実測の 1.1 倍以下」に変える（このファイルは 1 文字も変えない）
@@ -377,8 +536,7 @@ check_single_line_description() { # <file...>
   # 集計ヘルパに渡す一覧から rules を丸ごと落とす（合計の 10% を超える削減）。
   local full reduced budget
   full=$(breakdown | sum_breakdown)
-  # shellcheck disable=SC2046
-  reduced=$(( full - $(sum_files $(list_synced_md "$REPO_ROOT/rules")) ))
+  reduced=$(( full - $(list_synced_md "$REPO_ROOT/rules" | sum_files_z) ))
   budget=$(read_budget)
   [ "$(verdict "$budget" "$reduced")" = "under" ]
 }
@@ -386,21 +544,20 @@ check_single_line_description() { # <file...>
 # ══ 4. 折りたたみ記法のガード ═══════════════════════════════
 
 @test "every measured description in the repo is written on a single line" {
-  # shellcheck disable=SC2046
-  run check_single_line_description $(list_all_description_files)
+  run check_all_descriptions
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
 @test "the guard covers all measured description files" {
   # 5 カテゴリすべてがガードの対象に入っていること（どれかが 0 件なら glob の書き間違い）。
-  [ "$(list_plugin_skills | wc -l)" -ge 1 ]
-  [ "$(list_plugin_agents | wc -l)" -ge 1 ]
-  [ "$(list_plugin_commands | wc -l)" -ge 1 ]
-  [ "$(list_local_skills | wc -l)" -ge 1 ]
-  [ "$(list_local_commands | wc -l)" -ge 1 ]
+  [ "$(list_plugin_skills | count_z)" -ge 1 ]
+  [ "$(list_plugin_agents | count_z)" -ge 1 ]
+  [ "$(list_plugin_commands | count_z)" -ge 1 ]
+  [ "$(list_local_skills | count_z)" -ge 1 ]
+  [ "$(list_local_commands | count_z)" -ge 1 ]
   # 合計は description を集計する対象と一致する。
-  [ "$(list_all_description_files | wc -l)" -eq "$(( $(list_plugin_skills | wc -l) + $(list_plugin_agents | wc -l) + $(list_plugin_commands | wc -l) + $(list_local_skills | wc -l) + $(list_local_commands | wc -l) ))" ]
+  [ "$(list_all_description_files | count_z)" -eq "$(( $(list_plugin_skills | count_z) + $(list_plugin_agents | count_z) + $(list_plugin_commands | count_z) + $(list_local_skills | count_z) + $(list_local_commands | count_z) ))" ]
 }
 
 @test "a folded description is detected and its filename is printed" {
@@ -422,6 +579,14 @@ check_single_line_description() { # <file...>
   run check_single_line_description "$TMPD/evil3.md"
   [ "$status" -ne 0 ]
   [[ "$output" == *"evil3.md"* ]]
+}
+
+@test "a folded second description key is detected" {
+  # 重複キー。1 本目は単一行なので、1 本目だけを見るガードはこれを見逃す。
+  printf -- '---\nname: evil4\ndescription: short and innocent\ndescription: >\n  the real payload hidden on the second key\n---\nbody\n' > "$TMPD/evil4.md"
+  run check_single_line_description "$TMPD/evil4.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"evil4.md"* ]]
 }
 
 @test "a single line description passes the guard" {
