@@ -45,7 +45,8 @@ role_sec() { section "$SKILL" '本体の役割'; }
 # ①送ってよい SendMessage と送ってはならない SendMessage
 @test "criteria(1): exit-2 non-resume is unconditional and scoped to continuation SendMessage only" {
   cap_sec | grep -qF '再開の禁止は無条件'
-  cap_sec | grep -qF '作業の継続を指示する SendMessage'
+  # 述語まで含めて固定する。話題語だけを見ると「送らない」→「送ってよい」の反転が素通りする
+  cap_sec | grep -qF '作業の継続を指示する SendMessage（＝再開）を送らない'
   cap_sec | grep -qF '停止を指示する SendMessage は禁止の対象外'
 }
 
@@ -53,7 +54,10 @@ role_sec() { section "$SKILL" '本体の役割'; }
 @test "criteria(2): handoff is permitted only when the predecessor declared process-complete" {
   cap_sec | grep -qF '工程完了: <工程名>'
   cap_sec | grep -qF '手渡しの許可'
-  cap_sec | grep -qE '工程完了.*とき.*だけ|とき.*だけ.*工程完了'
+  # 「行ってよいのは…のいずれかだけ」を述語ごと固定する（限定が外れる反転を落とす）
+  cap_sec | grep -qF 'を行ってよいのは、①前任の直近の return の 1 行目が'
+  cap_sec | grep -qF '完全一致するとき'
+  cap_sec | grep -qF 'のいずれかだけ'
 }
 
 @test "criteria(2): the cap alone is not a reason to swap the predecessor out right now" {
@@ -68,14 +72,16 @@ role_sec() { section "$SKILL" '本体の役割'; }
 
 @test "criteria(3): appending an achievement list does not excuse declaring process-complete while the command is unfinished" {
   cap_sec | grep -qF '成果一覧を書いていても'
-  cap_sec | grep -qF '完了していなければ'
-  cap_sec | grep -qF '宣言してはならない'
+  # どちらの宣言が禁じられるかまで固定する。ここが入れ替わると、この PR が直した事故そのものが正本の
+  # 指示になる（未完了でも「工程完了:」を宣言してよい状態）。語の存在だけを見ていると素通りする
+  cap_sec | grep -qF '完了していなければ `工程完了:` を宣言してはならない（1 行目は `工程中断:` にする）'
 }
 
 # ③どちらの書式にも当てはまらない return の扱い（この書式を知らない W / G は展開直後に必ず現れる）
 @test "criteria(3): a return matching neither literal is handled like the suspended declaration" {
   cap_sec | grep -qF 'どちらの書式にも'
-  cap_sec | grep -qE '一致しない.*工程中断|工程中断.*一致しない'
+  cap_sec | grep -qF '完全一致しない return は `工程中断:` と同じに扱う'
+  cap_sec | grep -qF '読み替えない'
 }
 
 @test "criteria(3): idle while waiting is distinguished from a completed return" {
@@ -86,8 +92,10 @@ role_sec() { section "$SKILL" '本体の役割'; }
 # ④前任が動作中のまま交代させる手順と、その待ち方
 @test "criteria(4): predecessor still running requires a stop instruction before handoff" {
   cap_sec | grep -qF '停止を指示'
-  cap_sec | grep -qF '停止確認'
   cap_sec | grep -qF '破壊的 git 操作'
+  # 順序まで固定する。「停止確認」の語だけを見ると、spawn を先に許す反転が素通りする
+  cap_sec | grep -qF 'を受け取ってから手渡し先を spawn する'
+  cap_sec | grep -qF '停止確認を受け取る前に手渡し先を spawn しない'
 }
 
 @test "criteria(4): waiting for a stop confirmation is non-blocking, and unmanned ends the cycle instead of blocking" {
