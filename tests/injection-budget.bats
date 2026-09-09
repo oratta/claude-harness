@@ -46,10 +46,10 @@ emit_z() {
 }
 
 # lines_of — NUL 区切りの一覧を改行区切りに直す（表示・grep 用）。
-lines_of() { tr '\0' '\n'; }
+lines_of() { tr '\000' '\n'; }
 
 # count_z — NUL 区切りの一覧の件数（改行を含むパスでも正しく数える）。
-count_z() { tr -cd '\0' | wc -c | tr -d '[:space:]'; }
+count_z() { tr -cd '\000' | wc -c | tr -d '[:space:]'; }
 
 # ── 集計ヘルパ（すべて「ファイルの一覧を渡す」形。テストは実 repo の
 #    ファイルを 1 バイトも書き換えず、渡す一覧を差し替えて異常系を作る）──────
@@ -463,7 +463,7 @@ check_all_descriptions() { list_all_description_files | check_single_line_descri
   base=$(list_synced_md "$REPO_ROOT/rules" | sum_files_z)
   budget=$(read_budget)
   # 予算を確実に超える大きさの余分なファイルを 1 本足す
-  head -c $((budget + 1)) /dev/zero | tr '\0' 'x' > "$TMPD/extra.md"
+  head -c $((budget + 1)) /dev/zero | tr '\000' 'x' > "$TMPD/extra.md"
   total=$({ list_synced_md "$REPO_ROOT/rules"; emit_z "$TMPD/extra.md"; } | sum_files_z)
   [ "$total" -gt "$base" ]
   [ "$(verdict "$budget" "$total")" = "over" ]
