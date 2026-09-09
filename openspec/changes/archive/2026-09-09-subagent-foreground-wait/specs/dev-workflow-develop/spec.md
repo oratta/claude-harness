@@ -1,3 +1,13 @@
+> **実装後の訂正（2026-09-09、PR #256 のゲート指摘を受けて）**
+>
+> この change の記述のうち、次の 3 点は実装中に事実と食い違うことが判明したため、正本（`plugins/dev-workflow/references/subagent-waiting.md`）と main specs 側で訂正済み。この archive は承認時点の記録としてそのまま残す。
+>
+> 1. **companion 経路をこの change は「exit code でタイムアウトと完了を区別する」としているが、区別できない。** `codex-companion.mjs` の `handleStatus` は結果を出力して return するだけで `process.exitCode` を設定しないため、タイムアウトでも完了でも 0 を返す（実測）。訂正後は `--json` を付けて出力の `waitTimedOut` を見る
+> 2. **完了マーカーを固定文字列 `__CODEX_DONE__` にすると、レビュー対象の文書がその文字列を含むだけでポーリングが誤成立する。** 実際に PR #256 自身のレビューで発生した。訂正後は実行ごとに一意な nonce を埋め、行頭アンカー付きの完全な形で照合する
+> 3. **雛形の `$out` が定義されていなかった。** 起動と待ちは別々の Bash 呼び出しでシェル変数が引き継がれないため、訂正後は出力ファイルの作成を雛形に含め、待ち側にはパスを literal で書く
+>
+> あわせて、この change が置いた「正本 1 本・各指示書は禁止 1 行」の設計に対し `gate-runner.md` と `pr-review-gate/SKILL.md` が手順を再掲していた点も訂正し、再掲の禁止を退行検出で機械的に守る形にした。
+
 ## MODIFIED Requirements
 
 ### Requirement: 役割の指示書は references/roles/ に分かれている

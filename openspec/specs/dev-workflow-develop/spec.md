@@ -66,7 +66,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 
 `worker.md`・`spec-reviewer.md`・`gate-runner.md` の 3 つはいずれも、長時間処理の完了通知を待つためにターンを終えてはならない旨を明記しなければならない（MUST）。待ち方の詳細の正本は `plugins/dev-workflow/references/subagent-waiting.md` とし、各指示書はそこを参照する（SHALL）。`spec-reviewer.md` の 1 行は、decider 経路で spawn される R1 が `Bash` を持たず待ちループ自体を実行できないため、「長い処理の完了を待つ目的でターンを終えない（decider 経路の R1 は待ちを伴う作業を持たない）」の形で書く（SHALL。読んだ R1 が実行できない手順を探しに行かないようにするため）。
 
-`gate-runner.md` の Codex 起動手順は 2 経路をそれぞれ直さなければならない（MUST）。(a) `codex exec` 直叩き経路は、`run_in_background` での起動は残したまま、完了マーカー（`__CODEX_DONE__ rc=$?`）を起動コマンドに書き足し、そのマーカーを終了条件とする同一ターン内の前景ポーリングで待つ形にする。「出力ファイルを読め」だけで待ち方を書かない記述を残してはならない（MUST NOT）。(b) `codex-companion.mjs` 経路は `status <job-id> --wait --timeout-ms` を 540000 に直し、1 回で終わらなければ同じ呼び出しを繰り返す旨を書く。どちらの経路も総待ちの上限（前景ループ 3 回 = 27 分）に達したら待ちをやめ、`needs-reviewer`（根拠に「Codex タイムアウト（27 分）」）を return する（MUST）。前景の待ち値は Bash ツールの `timeout` パラメータにミリ秒で指定し、Bash ツールの前景上限（600000 ms）未満でなければならない（MUST）。シェルの `timeout(1)` コマンドを使ってはならない（MUST NOT）。
+`gate-runner.md` は Codex の**起動**の事実（(a) `codex exec -c approval_policy=never -c model_reasoning_effort=medium` を `run_in_background` で起動する経路と、(b) `codex-companion.mjs` に `task … --effort medium` を投げる経路。companion の path-discovery を含む）を持ち、**完了の確認方法は正本 `plugins/dev-workflow/references/subagent-waiting.md` に委ねなければならない（MUST）**。完了マーカーの雛形・具体の待ち値・総待ちの上限を `gate-runner.md` に再掲してはならない（MUST NOT。2026-09-09 のレビューで、再掲した companion の判定方法が事実と食い違ったまま残っていたため）。「出力ファイルを読め」だけで待ち方を書かない記述を残してはならない（MUST NOT）。`gate-runner.md` に残す待ち関連の記述は、完了通知に頼ってターンを終えない禁止・正本への参照・上限到達時の G 固有の分岐（待ちをやめて `needs-reviewer` を return し、根拠に「Codex タイムアウト」と実際に待った時間を書く）に限る（SHALL）。
 
 #### Scenario: worker.md に記録書式と事前分類表がある
 - **WHEN** `references/roles/worker.md` を読む
@@ -78,7 +78,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 
 #### Scenario: gate-runner.md は pr-review-gate を手順書として参照する
 - **WHEN** `references/roles/gate-runner.md` を読む
-- **THEN** pr-review-gate スキルを読んで手順 1〜5 を実行すること、Codex は `codex exec` / `codex-companion.mjs` を Bash で呼ぶこと、Codex が使えないときは `needs-reviewer`（判定・HEAD SHA・推奨モデル・受け入れ条件の所在を含む）を return して本体にレビュアーの spawn を委ねること、failed の return に原因分類を含めることが書かれている、Codex の完了確認を (a) `codex exec` 直叩きと (b) companion の 2 経路それぞれについて同一ターン内の前景ポーリングで行うこと、待ち値が 600000 ms 未満であること、総待ちの上限に達したら `needs-reviewer` を return することが書かれている
+- **THEN** pr-review-gate スキルを読んで手順 1〜5 を実行すること、Codex は `codex exec` / `codex-companion.mjs` を Bash で呼ぶこと、Codex が使えないときは `needs-reviewer`（判定・HEAD SHA・推奨モデル・受け入れ条件の所在を含む）を return して本体にレビュアーの spawn を委ねること、failed の return に原因分類を含めることが書かれている、Codex の完了確認を同一ターン内の前景ポーリングで行うこと・その手順の正本が `references/subagent-waiting.md` であること・総待ちの上限に達したら `needs-reviewer` を return することが書かれており、待ちの雛形と具体の待ち値は再掲されていない
 
 #### Scenario: 3 つの指示書に待ちでターンを終えない禁止がある
 - **WHEN** `references/roles/` 配下の `worker.md` / `spec-reviewer.md` / `gate-runner.md` をそれぞれ読む
