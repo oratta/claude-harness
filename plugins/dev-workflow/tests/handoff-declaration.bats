@@ -171,8 +171,10 @@ PY
       continue
     fi
     grep -qF '手渡' "$f" || continue
+    # 正本（decision-criteria.md）への参照だけを置いた面は、条件の本文を持たないのが正しい
+    grep -qF 'decision-criteria.md' "$f" && continue
     if ! grep -qF '工程完了' "$f"; then
-      echo "手渡しに触れているのに条件（工程完了:）が書かれていない: $f"
+      echo "手渡しに触れているのに条件（工程完了:）も正本への参照も書かれていない: $f"
       fail=1
     fi
   done < <(handoff_surfaces)
@@ -229,7 +231,7 @@ PY
   # 上限超過（exit 2 等）と手渡しを同じ文で述べるなら、条件（工程完了 / 停止確認 / 条件 / だけ /
   # 禁止）のいずれかを同じ文に持っていなければならない。
   run scan_sentences '' '手渡.*(exit ?2|コンテキスト上限|上限を超え|上限超)|(exit ?2|コンテキスト上限|上限を超え|上限超).*手渡' \
-    '工程完了|停止確認|条件|だけ|禁止|MUST NOT' "${surfaces[@]}"
+    '工程完了|停止確認|条件|だけ|禁止|MUST NOT|正本|decision-criteria' "${surfaces[@]}"
   echo "$output"
   [ "$status" -eq 0 ]
 }

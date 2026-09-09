@@ -40,3 +40,13 @@
 ## 8. デプロイ後（マージ後の運用）
 
 - [x] 8.1 change を archive し `openspec/specs/` に delta を sync する
+
+## 9. 手渡し規則を 1 箇所に畳む（2026-09-09 の設計変更。spec 済み・apply 未）
+
+- [x] 9.1 `dev-workflow-execution-strategy` の「サブエージェントのコンテキスト上限と手渡し」要件を、正本の位置・参照だけにする面の一覧・テストの形を規定する形に組み替える（live spec と archive delta の両方）
+- [x] 9.2 `dev-workflow-develop` の「役割のモデルは事前分類と残量モードで決める」要件と、旧一経路のままだった Scenario「再開前にコンテキスト量を測る」「同一 worktree に同一役割を二重に spawn しない」を参照だけの形に揃える（Requirement と Scenario の内部矛盾の解消。live spec と archive delta の両方）
+- [ ] 9.3 正本（`references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」）に本文を集約する（①送ってよい／送ってはならない SendMessage ②手渡しを行ってよい条件 ③return の 1 行目の宣言書式と選び方の義務 ④前任が動作中のまま交代させる手順と待ち方）
+- [ ] 9.4 `README.md`・`SKILL.md`・`worker.md`・`gate-runner.md`・`templates/escalation-tripwires.md`・`scripts/session-tripwires.sh` の常駐ルール文・`scripts/subagent-context.sh` のヘッダコメントを、正本への参照だけに置き換える（独自の言い換えを消す）
+- [ ] 9.5 `plugins/dev-workflow/tests/handoff-declaration.bats` をホワイトリスト型に作り替える（「正本以外の面が手渡しに言及するなら、その箇所は正本への参照を含む」。面は `git ls-files` から機械的に列挙し、除外は歴史記録と change の `proposal.md` / `tasks.md` だけ）。既存の「特定の言い回しを探す」アサーション（旧文言の否定走査・文単位の 2 件・worker.md / gate-runner.md の書式 grep）は、正本に本文が集まる前提で組み直す
+- [ ] 9.6 `plugins/dev-workflow/CHANGELOG.md` の 2.5.1 を、追随ではなく統合（本文 1 箇所＋参照）に合わせて書き直す
+- [ ] 9.7 `bats plugins/dev-workflow/tests/ tests/marketplace-sync.bats` と `openspec validate --specs --strict` を通す
