@@ -119,10 +119,14 @@ if all_pct is not None:
     lines.append(f"- 全モデル週次: 使用 {round(all_pct)}% / 残 {round(100 - all_pct)}%")
 lines.append(f"- {shared} の効果: {shared_effect}")
 lines.append("- サブエージェントのコンテキスト上限: W / G を SendMessage で再開する前に "
-             "`${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <name>` で測り、"
-             f"{os.environ.get('DEV_WORKFLOW_CONTEXT_CAP', '150000')} tokens 超なら作業継続の SendMessage を送らない（無条件）。"
-             "手渡し（新しい W / G を spawn）は前任の return の 1 行目が「工程完了: <工程名>」のときだけで、"
-             "「工程中断:」なら再開も手渡しもしない")
+             "`${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <name>` で測る"
+             f"（上限 {os.environ.get('DEV_WORKFLOW_CONTEXT_CAP', '150000')} tokens。exit 2 が上限超）。"
+             "上限超のあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・"
+             "return の 1 行目の宣言・前任が動作中のまま交代させる手順）の正本は "
+             "`${CLAUDE_PLUGIN_ROOT}/skills/develop/references/decision-criteria.md`"
+             "「コンテキスト上限（サブエージェントの手渡し）」。"
+             "**正本を読むまで手渡さない**（条件をここに再掲しないのは、同じ規則の言い換えが"
+             "複数の面に散らばっていたことが書き換え漏れの原因だったため）")
 budget = "\n".join(lines)
 
 print(json.dumps({"additionalContext": budget + "\n\n" + tripwire}, ensure_ascii=False))

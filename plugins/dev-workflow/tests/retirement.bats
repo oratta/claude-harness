@@ -17,13 +17,17 @@
 #       文字列一致ではなくパス列挙にして、本物の残存参照が同じ行に同居しても素通りしないようにする
 #   (e) この掃除と解散を検査する bats 自身（plugins/dev-workflow/tests/*.bats, tests/marketplace-sync.bats）
 
+# ALLOW_RE の tests/lib/handoff-scan.py は、解散した loops/longrun への参照ではなく
+# `_longruns/`（過去の実行記録）を検査の除外に指定している行のため（歴史記録の除外）。
+# その検査の規則そのものは skills/develop/references/decision-criteria.md
+#「コンテキスト上限（サブエージェントの手渡し）」が正本で、ここには書かない。
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   REPO_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   MARKETPLACE="${REPO_ROOT}/.claude-plugin/marketplace.json"
   CHANGELOG="${PLUGIN_DIR}/CHANGELOG.md"
   ROOT_README="${REPO_ROOT}/README.md"
-  ALLOW_RE='^(plugins/dev-workflow/CHANGELOG\.md|plugins/dev-workflow/skills/develop/references/roles/spec-reviewer\.md|plugins/product-handover/CHANGELOG\.md|plugins/dev-workflow/tests/[^/]+\.bats|tests/marketplace-sync\.bats|scripts/(test|lint)\.sh|plugins/product-handover/tests/plugin-structure\.bats|plugins/worktree/tests/helper\.bash):'
+  ALLOW_RE='^(plugins/dev-workflow/CHANGELOG\.md|plugins/dev-workflow/skills/develop/references/roles/spec-reviewer\.md|plugins/product-handover/CHANGELOG\.md|plugins/dev-workflow/tests/[^/]+\.bats|plugins/dev-workflow/tests/lib/handoff-scan\.py|tests/marketplace-sync\.bats|scripts/(test|lint)\.sh|plugins/product-handover/tests/plugin-structure\.bats|plugins/worktree/tests/helper\.bash):'
 }
 
 # --- Requirement: 3 ディレクトリの git 追跡削除 ---
