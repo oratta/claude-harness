@@ -30,6 +30,12 @@ plugins/dev-workflow/scripts/subagent-context-audit.sh --days 7 --cap 120000 --r
 ディレクトリが無い・`python3` が無い場合は `count` が 0 の結果と `note` を出す
 （走査できなかった結果はキャッシュに書かない。TTL のあいだ配られてしまうため）。
 
+権限などで**読めないディレクトリが 1 つでもあった**ときも同じ扱いで、集計値は出すが
+`note: "scan incomplete (unreadable directories)"` を付けてキャッシュに書かない
+（走査できた分だけの結果を「全部」として TTL のあいだ配らないため。権限が戻れば
+次の実行で普通に走査してキャッシュし直す）。`usage` の値が数値として扱えない行
+（`1e999` や `NaN`）は、その行だけを `usage` 無しとして飛ばす。
+
 ## 2. 出力キーの意味
 
 出力は 1 行 JSON。コンテキスト量の定義は `subagent-context.sh` と同じ

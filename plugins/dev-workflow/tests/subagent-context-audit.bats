@@ -210,6 +210,85 @@ assert d["last_max"] == 50000, d
 PY
 }
 
+@test "fail-open: an unreadable projects dir keeps the previous cache instead of caching an empty result" {
+  [ "$(id -u)" -ne 0 ] || skip "root には chmod 000 が効かない"
+  make_agent p1 s1 agent-aW-1-1111.jsonl plain 10000 40000 >/dev/null
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --refresh
+  [ "$status" -eq 0 ]
+  good="$output"
+  chmod 000 "$PROJECTS"
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --refresh
+  st="$status"; out="$output"
+  chmod 755 "$PROJECTS"
+  [ "$st" -eq 0 ]
+  echo "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["count"]==0, d; assert d.get("note"), d'
+  # 走査できなかった空の結果でキャッシュを上書きしない（TTL のあいだ配られてしまうため）
+  [ "$(cat "$CACHE")" = "$good" ]
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["count"]==1, d' "$CACHE"
+}
+
+@test "fail-open: an unreadable subdirectory yields a partial result that is not cached" {
+  [ "$(id -u)" -ne 0 ] || skip "root には chmod 000 が効かない"
+  make_agent p1 s1 agent-aW-1-1111.jsonl plain 10000 40000 >/dev/null
+  make_agent p2 s1 agent-aW-2-2222.jsonl plain 20000 50000 >/dev/null
+  chmod 000 "${PROJECTS}/p2"
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --refresh
+  st="$status"; out="$output"
+  chmod 755 "${PROJECTS}/p2"
+  [ "$st" -eq 0 ]
+  echo "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["count"]==1, d; assert d.get("note"), d'
+  [ ! -e "$CACHE" ]
+}
+
+@test "fail-open: usage values that are not real token counts do not abort the run" {
+  f="$(make_agent p1 s1 agent-aW-1-1111.jsonl plain 10000 40000)"
+  # JSON としては妥当だが実在しないトークン数。末尾に置いて last_ctx 側で踏ませる
+  printf '{"type":"assistant","message":{"usage":{"input_tokens":1e999,"cache_read_input_tokens":0}}}\n' >> "$f"
+  printf '{"type":"assistant","message":{"usage":{"input_tokens":NaN,"cache_read_input_tokens":0}}}\n' >> "$f"
+  make_agent p1 s1 agent-aW-2-2222.jsonl plain 20000 50000 >/dev/null
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE"
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+assert d["count"] == 2, d
+# inf / NaN の行は usage 無しとして飛ばし、その手前の妥当な行（40000）が最終値になる。
+# 0 として数えていれば last_median は 20000 に落ちる。
+assert d["last_median"] == 45000, d
+assert d["last_max"] == 50000, d
+assert d["first_max"] == 20000, d
+PY
+}
+
+@test "window: a usage line sitting exactly on the 4 MiB window boundary is still found" {
+  dir="${PROJECTS}/p1/s1/subagents"
+  mkdir -p "$dir"
+  python3 - "${dir}/agent-aW-1-1111.jsonl" <<'PY'
+import sys
+# 最終 usage 行の先頭から EOF までをちょうど 4 MiB（窓の倍加上限）にする。窓の左端が
+# 行頭と一致するので、先頭行を無条件に捨てる実装だとこの行を落として last が None になる。
+usage = ('{"type":"assistant","message":{"usage":{"input_tokens":0,'
+         '"cache_creation_input_tokens":0,"cache_read_input_tokens":123456,'
+         '"output_tokens":1}}}\n')
+head = '{"type":"user","message":{"role":"user","content":"start"}}\n'
+tail_len = 4 * 1024 * 1024 - len(usage)
+assert tail_len > 0
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    f.write(head)
+    f.write(usage)
+    f.write("x" * (tail_len - 1) + "\n")  # usage を持たない詰め物
+PY
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE"
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+assert d["count"] == 1, d
+assert d["first_max"] == 123456, d
+assert d["last_max"] == 123456, d
+PY
+}
+
 @test "args: an unknown flag or a missing value exits 1 with a one-line JSON error" {
   run "$SCRIPT" --days
   [ "$status" -eq 1 ]

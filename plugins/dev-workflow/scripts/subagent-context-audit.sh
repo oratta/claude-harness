@@ -30,7 +30,9 @@
 #
 # キャッシュ: 結果は --cache（既定 ${SUBAGENT_CONTEXT_AUDIT_CACHE:-~/.claude/.subagent-context-audit}）
 # に 1 行 JSON で残す。mtime が SUBAGENT_CONTEXT_AUDIT_TTL（秒、既定 21600）以内なら
-# 走査せずその内容を返す。--refresh で TTL を無視して再走査する。
+# 走査せずその内容を返す。--refresh で TTL を無視して再走査する。走査できなかった結果
+# （projects ディレクトリが無い / 読めないディレクトリがあった / python3 が無い）は
+# キャッシュに書かない。TTL のあいだ空の結果を正解として配ってしまうため。
 #
 # この集計は観測専用で、閾値による停止・警告は行わない（強制停止は別の仕組みが担う）。
 set -uo pipefail
@@ -59,7 +61,7 @@ while [ $# -gt 0 ]; do
       [ -n "${2-}" ] || die_arg "--cache needs a file path"
       cache="$2"; shift 2 ;;
     --refresh) refresh=1; shift ;;
-    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
     *) die_arg "unknown arg: $1" ;;
   esac
 done
@@ -82,7 +84,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 CAP="$cap" DAYS="$days" PROJECTS="$projects" CACHE="$cache" python3 <<'PY'
-import datetime, glob, json, os, sys, time
+import datetime, json, os, sys, time
 
 cap = int(os.environ["CAP"])
 days = int(os.environ["DAYS"])
@@ -106,11 +108,19 @@ def ctx_of(line):
     if not isinstance(u, dict):
         return None
 
-    def n(k):
+    total = 0
+    for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"):
         v = u.get(k)
-        return int(v) if isinstance(v, (int, float)) else 0
-
-    return n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            continue  # 欠けている / 数値でない項目は 0 として足す
+        try:
+            total += int(v)
+        except (OverflowError, ValueError):
+            # 1e999（inf）や NaN は実在のトークン数ではない。JSON としては妥当なので
+            # 例外を投げずに「usage の無い行」として飛ばす（例外を上げると exit 1 になり
+            # fail-open に反する）。
+            return None
+    return total
 
 
 def first_ctx(path):
@@ -137,13 +147,19 @@ def last_ctx(path):
         start = max(0, size - win)
         try:
             with open(path, "rb") as f:
-                f.seek(start)
+                # 窓の 1 バイト手前から読む。そこが改行なら窓の先頭はちょうど行頭なので、
+                # 先頭行は完全な行として残す（捨てると最終 usage 行を 1 件落とす）。
+                f.seek(max(0, start - 1))
                 chunk = f.read()
         except Exception:
             return None
-        lines = chunk.decode("utf-8", "replace").split("\n")
+        head_is_partial = False
         if start > 0:
-            lines = lines[1:]  # 窓の先頭は行の途中で切れている可能性があるので捨てる
+            head_is_partial = chunk[:1] != b"\n"
+            chunk = chunk[1:]
+        lines = chunk.decode("utf-8", "replace").split("\n")
+        if head_is_partial:
+            lines = lines[1:]  # 窓の先頭が行の途中で切れているときだけ捨てる
         for line in reversed(lines):
             v = ctx_of(line)
             if v is not None:
@@ -197,6 +213,42 @@ def source_view(items):
     return {k: s[k] for k in ("count", "first_median", "last_median", "over_cap_pct")}
 
 
+def scan(root):
+    """<root>/*/*/subagents/agent-*.jsonl を集めて (パスの列, 走査に失敗したか) を返す。
+
+    glob は走査に失敗しても空リストを返すので「該当 0 件」と「読めなかった」を
+    区別できない。ここは自前で listdir し、1 つでも読めないディレクトリがあれば
+    incomplete=True を立てる。呼び出し側はその結果をキャッシュに書かない
+    （権限が戻っても TTL のあいだ空の結果を配り続けてしまうため）。"""
+    incomplete = False
+
+    def listdir(d):
+        nonlocal incomplete
+        try:
+            return sorted(os.listdir(d))
+        except OSError:
+            incomplete = True
+            return []
+
+    paths = []
+    for slug in listdir(root):
+        if slug.startswith("."):
+            continue
+        d1 = os.path.join(root, slug)
+        if not os.path.isdir(d1):
+            continue
+        for sess in listdir(d1):
+            if sess.startswith("."):
+                continue
+            d2 = os.path.join(d1, sess, "subagents")
+            if not os.path.isdir(d2):
+                continue
+            for name in listdir(d2):
+                if name.startswith("agent-") and name.endswith(".jsonl"):
+                    paths.append(os.path.join(d2, name))
+    return sorted(paths), incomplete
+
+
 def emit(result, write_cache):
     line = json.dumps(result, ensure_ascii=False)
     print(line)
@@ -226,18 +278,21 @@ if not os.path.isdir(projects):
     emit(empty, write_cache=False)
 
 # 走査は固定深さの 1 経路だけ。Workflow 経由（subagents/workflows/<wf-id>/agent-*.jsonl）は
-# 階層が深いのでこの glob に当たらず、母集団に入らない（仕様どおり）。
-pattern = os.path.join(projects, "*", "*", "subagents", "agent-*.jsonl")
+# 階層が深いのでこの経路に当たらず、母集団に入らない（仕様どおり）。
+paths, incomplete = scan(projects)
 cutoff = time.time() - days * 86400
 
 isolated, non_isolated = [], []
-for path in sorted(glob.glob(pattern)):
+for path in paths:
     try:
         if os.path.getmtime(path) < cutoff:
             continue
     except Exception:
         continue
-    entry = (first_ctx(path), last_ctx(path))
+    try:
+        entry = (first_ctx(path), last_ctx(path))
+    except Exception:
+        entry = (None, None)  # 1 個の壊れたファイルで集計全体を止めない
     (isolated if is_isolated(path) else non_isolated).append(entry)
 
 result = summarize(isolated + non_isolated)
@@ -247,5 +302,9 @@ result.update({
     "sources": {"isolated": source_view(isolated), "non_isolated": source_view(non_isolated)},
     "generated_at": now,
 })
-emit(result, write_cache=True)
+if incomplete:
+    # 読めないディレクトリがあった＝この結果は母集団の全部ではない。出しはするが
+    # キャッシュには書かず、次回また走査させる。
+    result["note"] = "scan incomplete (unreadable directories)"
+emit(result, write_cache=not incomplete)
 PY
