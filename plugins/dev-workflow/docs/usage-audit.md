@@ -7,7 +7,7 @@ skill 一覧・接続コネクタ名など）が増えていないかを、実�
 事後にトランスクリプトを手集計するまで観測手段が無かったためである。
 
 集計スクリプトは `../scripts/subagent-context-audit.sh`。**この監査は観測専用**で、
-閾値でセッションやツールを止めることはしない。1 体分の実測（手渡し判定）は
+閾値でセッションやツールを止めることはしない。1 体分の実測（再開前の上限判定）は
 `../scripts/subagent-context.sh` が別に担う。
 
 ## 1. 実行する
@@ -47,7 +47,7 @@ plugins/dev-workflow/scripts/subagent-context-audit.sh --days 7 --cap 120000 --r
 | `count` | 窓の中にあったサブエージェントの件数（母集団の大きさ） |
 | `first_median` / `first_max` | 初回コンテキスト（最初の応答時点）の中央値・最大。**起動時固定分の指標** |
 | `last_median` / `last_max` | 最終コンテキスト（最後の応答時点）の中央値・最大。**1 体が膨らむ度合いの指標** |
-| `over_cap_pct` | 最終コンテキストが `cap` を超えた割合（0〜100）。手渡しに切り替わる頻度 |
+| `over_cap_pct` | 最終コンテキストが `cap` を超えた割合（0〜100）。前任をそのまま再開できない状態になる頻度 |
 | `cap` / `days` | 使った上限と窓（`--cap` / `--days`、既定 150000 / 14 日） |
 | `sources` | 隔離の有無で分けた統計。`isolated` / `non_isolated` がそれぞれ `count` / `first_median` / `last_median` / `over_cap_pct` を持つ |
 | `generated_at` | 集計時刻（UTC） |
@@ -70,8 +70,10 @@ plugins/dev-workflow/scripts/subagent-context-audit.sh --days 7 --cap 120000 --r
 `first_median` が**両方とも上がっていれば固定分そのものの増加**、片方だけで
 `count` の構成比が変わっていれば**母集団の構成が変わっただけ**と読める。
 
-`over_cap_pct` は手渡しの発生頻度で、上がっていれば 1 サイクルあたりの
-コンテキスト消費が増えている。`last_median` と合わせて見る。
+`over_cap_pct` は前任をそのまま再開できなくなった件の割合で、上がっていれば
+1 サイクルあたりのコンテキスト消費が増えている。`last_median` と合わせて見る。
+上限を超えたあとに何をしてよいかは
+`../skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本。
 
 ## 4. キャッシュファイル
 

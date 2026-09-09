@@ -13,7 +13,7 @@
 # exit code: 0 = 常に（fail-open）/ 1 = 引数エラーのみ
 #
 # 何のためのものか: `subagent-context.sh` は「今この 1 体がいくら読んでいるか」を測る。
-# こちらは母集団の傾向（起動直後の固定分が増えていないか、上限を超えて手渡しになる割合が
+# こちらは母集団の傾向（起動直後の固定分が増えていないか、上限を超えて再開できない割合が
 # 増えていないか）を測る。読み方の正本は plugins/dev-workflow/docs/usage-audit.md。
 #
 # 走査経路: <projects>/*/*/subagents/agent-*.jsonl の 1 経路だけ。isolation: "worktree" の
