@@ -2,15 +2,19 @@
 
 ### Requirement: サブエージェントのコンテキスト量の母集団集計
 
-`plugins/dev-workflow/scripts/subagent-context-audit.sh` は、直近 N 日（`--days`、既定 14）のサブエージェントのトランスクリプトを走査し、母集団の統計を 1 行 JSON で標準出力に出さなければならない（SHALL）。JSON は次のキーを含む（SHALL）: `count`（対象件数）/ `first_median` / `first_max`（初回コンテキストの中央値・最大）/ `last_median` / `last_max`（最終コンテキストの中央値・最大）/ `over_cap_pct`（最終コンテキストが上限を超えた件数の割合、0〜100）/ `cap` / `days` / `sources`（`named` と `worktree` の内訳件数）/ `generated_at`。
+`plugins/dev-workflow/scripts/subagent-context-audit.sh` は、直近 N 日（`--days`、既定 14）のサブエージェントのトランスクリプトを走査し、母集団の統計を 1 行 JSON で標準出力に出さなければならない（SHALL）。JSON は次のキーを含む（SHALL）: `count`（対象件数）/ `first_median` / `first_max`（初回コンテキストの中央値・最大）/ `last_median` / `last_max`（最終コンテキストの中央値・最大）/ `over_cap_pct`（最終コンテキストが上限を超えた件数の割合、0〜100）/ `cap` / `days` / `sources` / `generated_at`。
+
+`sources` は走査経路ごとの統計であり、`named`（名前付きサブエージェント）と `worktree`（`isolation: "worktree"` 経路）のそれぞれが `count` / `first_median` / `last_median` / `over_cap_pct` を持たなければならない（MUST）。件数だけの内訳にしてはならない（MUST NOT。worktree 経路には人間の対話セッションが混ざりうるため、母集団の構成比が動いただけの変化と固定分の増加を読み手が切り分けられる必要がある。混入の無い `sources.named.first_median` が傾向判断の主系列になる）。
 
 1 体のコンテキスト量の定義は `subagent-context.sh` と同一で、assistant レコードの `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` でなければならない（MUST）。初回はファイル先頭から最初に現れた `usage` 付き assistant レコード、最終は末尾から遡って最初に見つかる同レコードとする（SHALL）。上限は `--cap` または `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）を用いる（SHALL）。中央値は偶数件のとき中央 2 値の平均を四捨五入した整数とする（SHALL）。
 
-走査対象は 2 系統で、両方を含めなければならない（MUST）: ① 名前付きサブエージェント `${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*.jsonl`、② `isolation: "worktree"` で起こしたサブエージェント（project ディレクトリ名が `*--claude-worktrees-agent-*` に一致するディレクトリ直下の `*.jsonl`。名前も agentId もレコードに残らないため、Agent ツールの worktree パス規約に依る）。②はその worktree で人間が起動した対話セッションを含みうるため過大計上に倒れることを許容し、内訳を `sources` で示さなければならない（SHALL）。対象期間の判定はファイルの mtime で行う（SHALL。レコード内のタイムスタンプは見ない）。
+走査対象は 2 系統で、両方を含めなければならない（MUST）: ① 名前付きサブエージェント `${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*.jsonl`、② `isolation: "worktree"` で起こしたサブエージェント（project ディレクトリ名が `*--claude-worktrees-agent-*` に一致するディレクトリ直下の `*.jsonl`。名前も agentId もレコードに残らないため、Agent ツールの worktree パス規約に依る）。②はその worktree で人間が起動した対話セッションを含みうるため過大計上に倒れることを許容する（SHALL）。対象期間の判定はファイルの mtime で行う（SHALL。レコード内のタイムスタンプは見ない）。
 
 トランスクリプトの全文を読んではならない（MUST NOT）。初回は最初の `usage` 付きレコードで読み取りを打ち切り、最終は末尾から固定サイズの窓（既定 256 KiB）を読んで見つからなければ上限（4 MiB）まで窓を倍加し、それでも見つからない 1 件は最終側の集計から除く（SHALL）。
 
-この集計は観測専用であり、閾値に基づいてセッション・ツール・エージェントの実行を止めてはならない（MUST NOT。強制停止は別の仕組みが担う）。引数エラー以外はすべて exit 0 とし、トランスクリプトが 1 件も無い・projects ディレクトリが無い・`python3` が無い・JSON が壊れている場合は `count` が 0 の結果を出して exit 0 で終わらなければならない（MUST。fail-open）。
+集計結果は `${SUBAGENT_CONTEXT_AUDIT_CACHE:-~/.claude/.subagent-context-audit}` に 1 行 JSON で保存しなければならない（MUST）。キャッシュの mtime が `SUBAGENT_CONTEXT_AUDIT_TTL`（秒、既定 21600）以内なら、トランスクリプトを走査せずキャッシュの内容をそのまま出力する（SHALL）。`--refresh` は TTL を無視して再走査する（SHALL）。
+
+この集計は観測専用であり、閾値に基づいてセッション・ツール・エージェントの実行を止めてはならない（MUST NOT。強制停止は別の仕組みが担う）。引数エラー以外はすべて exit 0 とし、トランスクリプトが 1 件も無い・projects ディレクトリが無い・`python3` が無い場合は `count` が 0 の結果を出して exit 0 で終わらなければならない（MUST。fail-open）。個々のレコードの JSON が壊れていても、その行を飛ばして他の件の集計を続けなければならない（MUST）。
 
 #### Scenario: 直近 14 日の集計が 1 行 JSON で出る
 
@@ -20,37 +24,50 @@
 #### Scenario: worktree 隔離のエージェントが集計に含まれる
 
 - **WHEN** project ディレクトリ名が `--claude-worktrees-agent-<hash>` で終わるディレクトリの直下にトランスクリプトがある
-- **THEN** そのファイルも集計対象に含まれ、`sources.worktree` に件数として現れる
+- **THEN** そのファイルも `count` に含まれ、`sources.worktree` の `count` / `first_median` / `last_median` / `over_cap_pct` に反映される。同時に `sources.named` は名前付き経路だけの統計として単独で読める
+
+#### Scenario: 対象期間外のトランスクリプトは数えない
+
+- **WHEN** mtime が `--days` の窓より古いトランスクリプトが projects ディレクトリにある
+- **THEN** そのファイルは `count` にも `sources` のどちらの経路にも含まれない
 
 #### Scenario: トランスクリプトが 1 件も無い環境
 
 - **WHEN** projects ディレクトリが空、または存在しない状態で実行する
 - **THEN** `count` が 0 の結果を出力して exit 0 で終わる（エラー終了しない）
 
+#### Scenario: 一部のレコードが壊れていても集計が続く
+
+- **WHEN** 対象トランスクリプトの一部に JSON として解釈できない行が混ざっている
+- **THEN** その行は無視され、残りのレコードと他のファイルから統計が算出され、exit 0 になる
+
 #### Scenario: 上限超の割合が出る
 
 - **WHEN** 対象のうち最終コンテキストが `cap` を超えるものがある
 - **THEN** `over_cap_pct` がその割合（0〜100）として出力される
 
-### Requirement: 実測値の usage 監査への注入
-
-`scripts/session-tripwires.sh` は SessionStart のたびに `subagent-context-audit.sh` を best-effort で実行し、その結果を既存の残量モード・コンテキスト上限のブロックと同じ `additionalContext` に注入しなければならない（SHALL）。注入する本文は既存の「サブエージェントのコンテキスト上限」の行に続く **2 行以内**とし、件数・初回中央値・最終中央値・上限超の割合と集計窓の日数を含める（SHALL。この仕組み自体が固定分を増やす側に回らないため行数を縛る）。
-
-集計結果は `${SUBAGENT_CONTEXT_AUDIT_CACHE:-~/.claude/.subagent-context-audit}` に 1 行 JSON で保存し、キャッシュの mtime が `SUBAGENT_CONTEXT_AUDIT_TTL`（秒、既定 21600）以内なら再走査せずその内容を返さなければならない（SHALL）。`--refresh` は TTL を無視して再走査する（SHALL）。
-
-集計が失敗した・`count` が 0・スクリプトが存在しないいずれの場合も、注入は無出力とし、既存の残量モードブロックと昇格トリップワイヤーの注入を妨げてはならない（MUST NOT。fail-open）。この注入は既存の `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` の導出を変えてはならない（MUST NOT）。
-
-#### Scenario: 実測が注入される
-
-- **WHEN** 集計が `count` 1 以上を返した状態で SessionStart hook が走る
-- **THEN** 残量モードのブロックに続けて、件数・初回中央値・最終中央値・上限超の割合を含む 2 行以内の実測行が `additionalContext` に載る
-
-#### Scenario: 集計が空でも hook は壊れない
-
-- **WHEN** 集計が `count` 0 を返す、または集計スクリプトが存在しない
-- **THEN** 実測行は注入されず、残量モードブロックと昇格トリップワイヤーの注入は従来どおり行われ、hook は exit 0 で終わる
-
 #### Scenario: TTL 内はキャッシュを返す
 
-- **WHEN** キャッシュファイルの mtime が TTL 以内の状態で集計を実行する
-- **THEN** トランスクリプトを走査せずキャッシュの内容をそのまま出力する
+- **WHEN** キャッシュファイルの mtime が `SUBAGENT_CONTEXT_AUDIT_TTL` 以内の状態で集計を実行する
+- **THEN** トランスクリプトを走査せずキャッシュの内容をそのまま出力する。`--refresh` を付けた場合は TTL を無視して再走査し、キャッシュを更新する
+
+### Requirement: 集計結果の永続化と監査手順の文書
+
+サブエージェントのコンテキスト量の監査手順は `plugins/dev-workflow/docs/usage-audit.md` を正本としなければならない（SHALL）。この文書は次を含む（SHALL）: ① 集計スクリプト `subagent-context-audit.sh` の実行コマンド（`--days` / `--cap` / `--refresh` の使い方を含む）② 出力キーの意味（`first_median` / `last_median` / `over_cap_pct` / `sources` の経路別統計）③ 何を見たら固定分が増えたと判断するか（混入の無い `sources.named.first_median` を主系列として推移を見る）④ 集計結果が残るキャッシュファイルの場所。
+
+この監査の出力先を SessionStart hook（`scripts/session-tripwires.sh`）の注入内容に足してはならない（MUST NOT）。SessionStart への注入は全セッション・全サブエージェントの起動時固定分を増やす側の変更であり、固定分の増加を止めるという目的に反するため、観測の経路はキャッシュファイルと文書にとどめる。既存の残量モード導出・共有枠モード導出・`subagent-context.sh` の要件は変更しない（MUST NOT）。
+
+#### Scenario: 監査手順が文書からたどれる
+
+- **WHEN** 固定分が増えていないかを確認したい人が `plugins/dev-workflow/docs/usage-audit.md` を読む
+- **THEN** 実行コマンド・出力キーの意味・増加と判断する基準・キャッシュファイルの場所が揃っており、他のファイルを見ずに監査を 1 回回せる
+
+#### Scenario: 集計結果が機械可読な形で残る
+
+- **WHEN** 集計を 1 回実行したあとにキャッシュファイルを読む
+- **THEN** 直近の集計結果が 1 行 JSON として残っており、そのまま別のツールに渡せる
+
+#### Scenario: SessionStart の注入内容は増えない
+
+- **WHEN** この change の実装後にセッションを開始する
+- **THEN** `session-tripwires.sh` が注入する内容は従来どおりで、集計に由来する行は 1 行も増えていない
