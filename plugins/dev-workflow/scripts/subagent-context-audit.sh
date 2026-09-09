@@ -70,7 +70,15 @@ done
 
 # TTL 内のキャッシュがあれば、トランスクリプトを 1 個も開かずにそれを返す。
 if [ "$refresh" -eq 0 ] && [ -s "$cache" ] && [ "$ttl" -gt 0 ]; then
-  mt="$(stat -f %m "$cache" 2>/dev/null || stat -c %Y "$cache" 2>/dev/null || echo '')"
+  # GNU（-c）を先に試す。逆順にすると Linux で `stat -f` が「ファイルシステム情報の
+  # 表示」として扱われ（BSD の -f=フォーマット指定とは別物）、mtime ではない文字列が
+  # stdout に出て || のフォールバックに落ちない。macOS の stat は -c を不正オプションと
+  # して非0終了するため、この順序なら両プラットフォームで mtime が取れる
+  # （usage-probe.sh / statusline.sh と同じ理由）。
+  mt="$(stat -c %Y "$cache" 2>/dev/null || stat -f %m "$cache" 2>/dev/null || echo '')"
+  # 数値でなければキャッシュを使わず走査に落とす。ここで弾かないと、mtime でない文字列が
+  # そのまま算術展開に入って構文エラーになり、監査自体が非0終了する（fail-open に反する）。
+  [[ "$mt" =~ ^[0-9]+$ ]] || mt=""
   if [ -n "$mt" ] && [ $(( $(date +%s) - mt )) -le "$ttl" ]; then
     cat "$cache"
     exit 0

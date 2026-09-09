@@ -330,3 +330,49 @@ PY
   [ "$status" -eq 0 ]
   [ -f "${WORK}/env-cache" ]
 }
+
+# mtime を読む `stat` の実装差を再現するシム。$1 が受け付ける形式でだけ mtime を返し、
+# もう一方の形式では実物と同じ「mtime ではない結果」を返す。シムを置いたディレクトリを echo する。
+#   gnu: `-c %Y` が mtime。`-f` はファイルシステム情報の表示になり、stdout に非数値を残す
+#   bsd: `-f %m` が mtime。`-c` は不正オプションとして stderr に出して非0終了する
+make_stat_shim() {
+  local kind="$1" dir="${WORK}/shim-${kind}"
+  mkdir -p "$dir"
+  {
+    printf '#!/usr/bin/env bash\nkind=%s\n' "$kind"
+    cat <<'SHIM'
+mtime() { python3 -c 'import os,sys; print(int(os.path.getmtime(sys.argv[1])))' "$1"; }
+if [ "$kind" = gnu ]; then
+  case "$1" in
+    -c) mtime "$3"; exit 0 ;;
+    -f) echo "  File: \"$3\"    ID: 0 Namelen: 255     Type: ext2/ext3"; exit 0 ;;
+  esac
+else
+  case "$1" in
+    -f) mtime "$3"; exit 0 ;;
+    -c) echo "stat: illegal option -- c" >&2; exit 1 ;;
+  esac
+fi
+exit 1
+SHIM
+  } > "${dir}/stat"
+  chmod +x "${dir}/stat"
+  echo "$dir"
+}
+
+@test "portability: the TTL check reads the cache mtime with either GNU or BSD stat" {
+  make_agent p1 s1 agent-aW-1-1111.jsonl plain 10000 40000 >/dev/null
+  for kind in gnu bsd; do
+    shim="$(make_stat_shim "$kind")"
+    c="${WORK}/cache-${kind}"
+    run env PATH="${shim}:${PATH}" "$SCRIPT" --projects "$PROJECTS" --cache "$c"
+    [ "$status" -eq 0 ]
+    first="$output"
+    # 間で 1 体増やしても TTL 内なら出力が変わらない＝mtime が読めてキャッシュが効いている。
+    # mtime が読めないと走査に落ちて件数が変わり、算術展開が壊れると非0終了する。
+    make_agent "p-${kind}" s1 agent-aW-9-9999.jsonl plain 20000 50000 >/dev/null
+    run env PATH="${shim}:${PATH}" "$SCRIPT" --projects "$PROJECTS" --cache "$c"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$first" ]
+  done
+}
