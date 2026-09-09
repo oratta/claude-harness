@@ -38,34 +38,59 @@ timeout: 540000
 
 ### (a) `codex exec` 直叩き
 
-Bash 呼び出し 3 回で行う（nonce を決めてプロンプトを保存 → 起動 → 待ち）。呼び出しをまたぐとシェル変数は消えるので、**手順 1 が印字した nonce の値を、手順 2 と 3 には literal で書き写す**。
+Bash 呼び出し 3 回で行う（専用ディレクトリを作ってプロンプトを保存 → 起動 → 待ち）。呼び出しをまたぐとシェル変数は消えるので、**手順 1 が印字した `dir` と `nonce` の値を、手順 2 と 3 には literal で書き写す**。
 
-**nonce は英数字（`[A-Za-z0-9]`）だけで作り、秒精度の値（`date +%s`）を使わない。** 理由は 2 つある。G / W / R1 が並行して走る運用では秒精度の値は同じ秒に衝突し、一方のジョブの完了マーカーが他方の未完了ジョブを完了扱いにする（落ちずに間違うので気づけない）。もう 1 つは、nonce をそのまま拡張正規表現に埋めるため — `.` などのメタ文字が入ると意図しない文字列に誤マッチする（`nonce="a.b"` が `axb` に一致する）。下の生成コマンドはこの 2 つを同時に満たす。
+**一意性は乱数ではなく排他生成（`mktemp -d`）で担保する。** `mktemp -d` は `mkdtemp(3)` で `O_EXCL` 付きの排他生成を行い、既存名にぶつかったら別名で作り直す。つまり返ってきた時点で、そのディレクトリ名がこの瞬間その OS 上に他に存在しないことが確定している。乱数で作る値（`uuidgen` / `$RANDOM`）は「たぶん被らない値」を作るだけで、被っていないことを誰も確認していないので、nonce の生成には使わない。2026-09-09 には、同一プロセスの複数のコマンド置換サブシェルが同じ乱数状態を継承し、5 回とも同じ nonce になる事故が起きた。一意性の根拠を乱数生成器の状態からファイルシステムの事実へ移すと、その確認されない前提そのものが消える。
+
+**nonce は英数字（`[A-Za-z0-9]`）だけで作り、秒精度の値（`date +%s`）を使わない。** 秒精度の値は G / W / R1 が並行して走る運用で同じ秒に衝突し、一方のジョブの完了マーカーが他方の未完了ジョブを完了扱いにする（落ちずに間違うので気づけない）。文字集合を英数字に限るのは、nonce をそのまま拡張正規表現に埋めるため — `.` などのメタ文字が入ると意図しない文字列に誤マッチする（`nonce="a.b"` が `axb` に一致する）。`mktemp` のテンプレート（`X` の並び）は英数字に置き換えられるので、この条件は生成の時点で満たされる。
+
+**フォールバック経路を置かない。** `mktemp` は macOS（BSD）にも Linux（coreutils / busybox のいずれも）にも標準で存在し、`uuidgen`（Linux では util-linux の別パッケージになりうる）より確実にある。この雛形は 3 回続けて穴が残った箇所で、3 回とも原因は「2 本目の経路」か「静かに縮退する経路」だった（固定文字列 → 衝突、`$RANDOM` のフォールバック → 同値、`tr -dc` によるサニタイズ → 空でも続行）。経路を 1 本にすれば、レビューでも実行でも見るべき行が 1 本になる。`mktemp` が無い環境が実在したら、静かに劣化させず `|| exit 1` で止めて環境側を直す。`/dev/urandom` から読む形も採らない — `head` がパイプを閉じて `tr` が SIGPIPE で死に、`pipefail` 環境や macOS で `write error` を stderr に漏らすことがあるうえ、一時ディレクトリは別途要るので結局 `mktemp -d` も呼ぶことになる。
 
 **レビュー指示はコマンドラインに埋めず、ファイルに書いて標準入力から渡す。** 指示文に `"` や `` ` `` や `$(...)` が入ると、引数が壊れるか意図しないコマンドが実行されるため。`codex exec` は引数を省くか `-` を渡すと標準入力から指示を読む（`codex exec --help` の `[PROMPT]` の記述で確認済み）。
 
 ```bash
-# 手順 1: 前景。nonce を決め、レビュー指示をファイルに保存する
-nonce="$( (uuidgen 2>/dev/null || printf '%s%s' "$$" "$RANDOM") | tr -dc 'A-Za-z0-9' | tr '[:upper:]' '[:lower:]' | cut -c1-16 )"
-cat > "/tmp/codex-prompt-${nonce}.txt" <<'PROMPT_EOF'
+# 手順 1: 前景。専用ディレクトリを作り、その名前から nonce を取る
+dir="$(mktemp -d "${TMPDIR:-/tmp}/codex-XXXXXXXXXXXXXXXX")" || exit 1
+base="${dir##*/}"; nonce="${base#codex-}"
+case "$nonce" in ''|*[!A-Za-z0-9]*) printf 'nonce invalid: %s\n' "$nonce" >&2; exit 1 ;; esac
+[ "${#nonce}" -ge 16 ] || { printf 'nonce too short: %s\n' "$nonce" >&2; exit 1; }
+cat > "${dir}/prompt.txt" <<'PROMPT_EOF'
 <レビュー指示をそのまま書く。" ` $(...) を含んでよい（クォート付きヒアドキュメントなので展開されない）>
 PROMPT_EOF
-printf 'nonce=%s\n' "$nonce"   # ← この値を手順 2 / 3 に literal で書き写す
+printf 'dir=%s\nnonce=%s\n' "$dir" "$nonce"   # ← この 2 値を手順 2 / 3 に literal で書き写す
 ```
 
 指示文が `PROMPT_EOF` で始まる行を含むときだけ、区切り語を `PROMPT_EOF_<nonce>` のように変える。
 
+**細部を短くしない（どれも過去の穴に対応している）**:
+
+- `${dir##*/}` → `${base#codex-}` の 2 段にするのは、`${dir##*/codex-}` の 1 段にすると `TMPDIR` 自体が `/codex-` を含むときに最長一致で削りすぎるため
+- `tr -dc` によるサニタイズを**しない**。サニタイズは壊れた入力を黙って通す動作で、無言で縮退した過去の事故と同じ性質。ここは削らず**検証して落とす**
+- 小文字化（`tr '[:upper:]' '[:lower:]'`）も要らない。マーカーの照合は literal なので大小は問題にならない
+
+生成した値は、`codex exec` を起動する**前に**次の 3 点で検証する。外れたら起動せず非 0 で終了する。
+
+| 検査 | 落ちる条件 | 何を防ぐか |
+|---|---|---|
+| `case "$nonce" in ''\|*[!A-Za-z0-9]*)` | 空、または英数字以外を含む | 空 nonce による固定パスへの縮退。正規表現メタ文字による誤マッチ（`a.b` が `axb` に一致する） |
+| `[ "${#nonce}" -ge 16 ]` | 16 文字未満 | テンプレートの `X` を減らす弱体化。エントロピーの低下 |
+| `mktemp -d … \|\| exit 1` | 生成そのものの失敗 | ディレクトリが無いまま以降のリダイレクトが走ること |
+
+**検証はサニタイズではない。値を直して続行してはならない** — 直すと壊れた値のまま起動して、落ちずに間違う。`-ge 16` はテンプレートの `X` が 16 個であることと一致させた厳密な下限。
+
+**一時ファイルは固定パスに置かず、生成した専用ディレクトリの配下に置く。** ディレクトリ自体が排他生成で一意なので、中のファイル名は固定（`prompt.txt` / `review.log`）でよく、並行ジョブ間の上書きは構造的に起きない（`mktemp -d` はモード 700 なので同居ユーザからも読まれない）。`${TMPDIR:-/tmp}` を使うのは、macOS のユーザ別 TMPDIR を尊重するためと、テストで置き場を差し替えられるようにするため。
+
 ```bash
 # 手順 2: 起動。Bash ツールの run_in_background: true
-# <nonce> は手順 1 が印字した値（下の 4 か所すべて同じ値）
-out="/tmp/codex-review-<nonce>.log"
+# <dir> と <nonce> は手順 1 が印字した値
+out="<dir>/review.log"
 : > "$out"
-{ codex exec -c approval_policy=never -c model_reasoning_effort=medium - < "/tmp/codex-prompt-<nonce>.txt" ; printf '\n__CODEX_DONE_<nonce>__ rc=%s\n' "$?" ; } >> "$out" 2>&1
+{ codex exec -c approval_policy=never -c model_reasoning_effort=medium - < "<dir>/prompt.txt" ; printf '\n__CODEX_DONE_<nonce>__ rc=%s\n' "$?" ; } >> "$out" 2>&1
 ```
 
 ```
 # 手順 3: 完了確認。Bash ツールの前景実行（別の呼び出しなので $out は使えない。パスを literal で書く）
-command: until grep -qE '^__CODEX_DONE_<nonce>__ rc=[0-9]+$' /tmp/codex-review-<nonce>.log 2>/dev/null; do sleep 10; done; tail -n 200 /tmp/codex-review-<nonce>.log
+command: until grep -qE '^__CODEX_DONE_<nonce>__ rc=[0-9]+$' <dir>/review.log 2>/dev/null; do sleep 10; done; tail -n 200 <dir>/review.log
 timeout: 540000
 ```
 
