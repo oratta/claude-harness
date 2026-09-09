@@ -1,6 +1,6 @@
 ## Context
 
-claude-harness は「全セッションに載る文書」そのものを製品にしているリポジトリで、編集した瞬間に全リクエストの固定費になるファイルが複数種類ある。`scripts/sync.sh` は `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.md` を `~/.claude/output-styles/` へ symlink し（どちらも同じ `link_dir` 関数、`README.md` だけ除外。sync.sh:79,108-109）、リポジトリ直下の `CLAUDE.md` はこのリポジトリで作業する全セッションに注入され、`plugins/*/skills/*/SKILL.md`・`plugins/*/agents/*.md`・`plugins/*/commands/*.md` の frontmatter `description` はスキル一覧・エージェント種別一覧として全セッション・全サブエージェントに載る。
+claude-harness は「全セッションに載る文書」そのものを製品にしているリポジトリで、編集した瞬間に全リクエストの固定費になるファイルが複数種類ある。`scripts/sync.sh` は `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.md` を `~/.claude/output-styles/` へ symlink し（どちらも同じ `link_dir` 関数、`README.md` だけ除外。sync.sh:79,108-109）、リポジトリ直下の `CLAUDE.md` はこのリポジトリで作業する全セッションに注入され、`plugins/*/skills/*/SKILL.md`・`plugins/*/agents/*.md`・`plugins/*/commands/*.md`、および `.claude/skills/` 配下の `SKILL.md` と `.claude/commands/` 配下の `*.md` の frontmatter `description` はスキル一覧・エージェント種別一覧として全セッション・全サブエージェントに載る。
 
 現状の実測（バイト、2026-09-09 時点）:
 
@@ -12,7 +12,9 @@ claude-harness は「全セッションに載る文書」そのものを製品�
 | SKILL description | `plugins/*/skills/*/SKILL.md` の frontmatter | 17 | 8,623 |
 | agent description | `plugins/*/agents/*.md` の frontmatter | 10 | 2,956 |
 | command description | `plugins/*/commands/*.md` の frontmatter | 12 | 2,395 |
-| **合計** | | | **49,363** |
+| local SKILL description | `.claude/skills/` 配下の `SKILL.md` の frontmatter | 10 | 1,510 |
+| local command description | `.claude/commands/` 配下の `*.md` の frontmatter | 10 | 640 |
+| **合計** | | | **51,513** |
 
 既存のテストランナー `scripts/test.sh` は `git ls-files '*.bats'` で対象を動的に発見するため、`tests/` に bats を 1 本置くだけで全件実行の経路に乗る。
 
@@ -20,7 +22,7 @@ claude-harness は「全セッションに載る文書」そのものを製品�
 
 **Goals:**
 - 固定分の合計サイズが予算から外れたら `scripts/test.sh` が fail し、「削るか、予算を動かすか」を PR の diff として主の前に出す
-- 失敗時に 6 種の内訳と差分量を出し、どこが動いたかを読めばわかる状態にする
+- 失敗時に 8 種の内訳と差分量を出し、どこが動いたかを読めばわかる状態にする
 - 予算値の変更が単独の diff 行として現れ、かつ機械マージの対象外（聖域）になる
 - エピック #257 の #260（固定分の削減）が、**実注入量を減らさずに測定合計だけ減らす経路を持たない**物差しを得る
 
@@ -28,6 +30,7 @@ claude-harness は「全セッションに載る文書」そのものを製品�
 - 実行時にルールを切り捨てる仕組み（どのルールが落ちたか誰も気づけないので作らない。エピック #257 で確定済みの判断）
 - このリポジトリの PR の diff に現れない固定分の計測。具体的には `~/.claude/projects/*/memory/MEMORY.md`、接続コネクタ 108 個の名前、Claude Code 組み込みのスキル・ツール定義。これらは tracked ファイルではないので編集時ゲートでは原理的に測れない。実行時の監視は #259 の役割
 - トークン数での計測（tokenizer への外部依存が要る。#259 の usage 監査側で扱う）
+- `plugins/*/hooks/` のフックが毎ターン出力するテキスト。`plugins/casting/catalog/injection.md` の分類では「常時」注入の機構に当たるが、出力が条件分岐するので静的には測れない。次に「注入されるものすべて」を数え直す人が同じ検討を繰り返さないよう、対象外だと明記しておく
 - rules の path スコープ frontmatter への対応（#260 で扱う。現状該当ファイルが 0 件なので、使われない分岐を先に書かない）
 - `AGENTS.md`（`CLAUDE.md` の同期複製。Decision 5 参照）と `plugins/*/README.md`・`docs/`（セッションに注入されない）
 
@@ -51,24 +54,25 @@ claude-harness は「全セッションに載る文書」そのものを製品�
 
 改行を数えないことを明示するのは、`description` を 1 行ずつ `wc -c` に流すか連結してから流すかでファイル本数ぶん（現状 39 バイト）値がずれるため。仕様レビューで実際に 17 バイトのずれが観測された。テストのコメントに「値のみ・末尾改行を含めない」と書いて固定する。
 
-### 3. 測定対象は「注入されるものすべて」。`output-styles` と agent / command の description も数える
+### 3. 測定対象は「注入されるものすべて」。`output-styles`、agent / command、`.claude/` 配下の description も数える
 
-**採用**: Context の表の 6 カテゴリ。rules と output-styles の対象判定は `scripts/sync.sh` の `link_dir` と同じ 1 条件（basename が `README.md` でない `*.md`）にする。
+**採用**: Context の表の 8 カテゴリ。rules と output-styles の対象判定は `scripts/sync.sh` の `link_dir` と同じ 1 条件（basename が `README.md` でない `*.md`）にする。`description` を持つ 5 カテゴリは、それぞれのディレクトリ配下を**任意の深さ**で走査して集める（`plugins/x/commands/a/b.md` のように 1 階層深く置いて集計から逃げる経路を残さないため）。
 
-**代替案**: issue #258 が挙げた 3 種（rules / CLAUDE.md / SKILL description）に限る。
+**代替案**: issue #258 が挙げた 3 種（rules / CLAUDE.md / SKILL description）に限る。あるいは `plugins/` 配下だけを見て `.claude/` 配下を除く。
 
 **理由**: 3 種に限ると、実注入量を 1 バイトも減らさずに測定合計だけ減らせる経路が残り、#260 の削減量が信用できなくなる。具体的な経路が 2 本ある。
 
 - `rules/communication-style.md` は自ら「このファイルは短い版。全文は同リポジトリの `output-styles/readable.md`（正本）。両方を直すときは同時に直す」と宣言している。rules から readable.md へ文章を移すのは**承認済みの編集パターン**で、まさに #260 が取る動き。readable.md（6,863 バイト、合計の 14%）を測らないと、この移動が「削減」として計上されてしまう
 - SKILL.md の `description` に書かれている起動トリガー語は、同じプラグインの `commands/*.md` の `description` に移せる。実際 `opsx:*` や `casting:init` の command description はスキル一覧と同じ場所に載っており、移しても注入量は変わらない
+- `.claude/skills/` の 10 本（1,510 バイト）と `.claude/commands/opsx/` の 10 本（640 バイト）も、tracked で PR の diff に現れ、このリポジトリのセッションのスキル一覧に載る。`plugins/*/commands/*.md` を測る理由（description の間で文言を移せる）がそのまま当てはまるので、同じ扱いにする。`scripts/test-auto-merge-workflow.sh:78` が `.claude/skills/cron-triggers/SKILL.md` を聖域の must-match に挙げているとおり、このリポジトリは既に `.claude/` 配下を統治物件として扱っている
 
 「注入されるか」は推測ではなくこのセッション自身のコンテキストで確認した（rules 9 本の全文、skill 一覧に `opsx:ff` 等の command description、エージェント種別一覧に `dev-workflow:decider` 等の agent description が載っている）。`output-styles/readable.md` はメインセッションで Output Style が選択されているときだけ載り、サブエージェントには載らない — この差は内訳表示の注記で足りるので、カテゴリを分けるだけにして重み付けはしない。
 
-issue #258 の受け入れ条件「測定対象 3 種の内訳が fail 時の出力に出る」は、6 種の内訳を出せば満たされる。
+issue #258 の受け入れ条件「測定対象 3 種の内訳が fail 時の出力に出る」は、8 種の内訳を出せば満たされる。
 
 ### 4. 予算は合計 1 本。内訳は失敗時の出力のみ
 
-**採用**: 6 カテゴリを足した合計に対して 1 つの予算。失敗メッセージで内訳を表示する。
+**採用**: 8 カテゴリを足した合計に対して 1 つの予算。失敗メッセージで内訳を表示する。
 
 **代替案**: カテゴリごとに予算を持つ。
 
@@ -90,7 +94,7 @@ issue #258 の受け入れ条件「測定対象 3 種の内訳が fail 時の出
 
 **理由**: 超過側だけだと、#260 が固定分を削っても予算は高いまま残り、削った分がそのまま次の増加の余地になる。削減が「予算の引き下げ」として記録されなければ、この change が #257 に対して果たす役割（増分に気づく物差し）が 1 回の削減で失われる。下振れ側の判定を常駐させると、削減 PR は予算の引き下げを同じ PR で強制され、削減量が diff に残る。
 
-代償は「注入対象を減らす PR が、超過とは逆方向で赤くなる」こと。10% は約 4,900 バイトなので、`rules/*.md` を 1 本消すだけで発火しうる。これは意図した挙動だが、原因のわからない赤にしてはいけないので、下振れ時の失敗メッセージに「実測が予算を大きく下回った」「`tests/injection-budget.txt` を <推奨値＝実測+5%> に下げること」を出すことを要件にする（Decision 4 の内訳表示もそのまま出す）。
+代償は「注入対象を減らす PR が、超過とは逆方向で赤くなる」こと。10% は約 5,150 バイトなので、`rules/*.md` を 1 本消すだけで発火しうる。これは意図した挙動だが、原因のわからない赤にしてはいけないので、下振れ時の失敗メッセージに「実測が予算を大きく下回った」「`tests/injection-budget.txt` を <推奨値＝実測+5%> に下げること」を出すことを要件にする（Decision 4 の内訳表示もそのまま出す）。
 
 この決定の帰結として、issue #258 の受け入れ条件「予算値を上げると pass に戻る」は**実測の 1.1 倍までしか真でない**。仕様の Scenario にこの上限を明記する。
 
@@ -100,7 +104,7 @@ issue #258 の受け入れ条件「測定対象 3 種の内訳が fail 時の出
 
 **代替案**: 足さず、design と spec の「聖域扱い」という語を「規約上の扱い。機械判定はしない」に直す。
 
-**理由**: この change の目的は「削るか予算を上げるかを**主の前に出す**」こと。足さないと、予算値だけを引き上げる PR はどの聖域パスにも触れないため機械マージの対象になり、主の目に触れずに予算が上がる。それでは Decision 1 が独立ファイルを選んだ理由（パスで聖域を表現できる）も空手形になる。追加は正規表現の選択肢 1 個と must-match 一覧の 1 行で、`scripts/test-auto-merge-workflow.sh` が CI で両者のズレを検知する。
+**理由**: この change の目的は「削るか予算を上げるかを**主の前に出す**」こと。足さないと、予算値だけを引き上げる PR はどの聖域パスにも触れないため機械マージの対象になり、主の目に触れずに予算が上がる。それでは Decision 1 が独立ファイルを選んだ理由（パスで聖域を表現できる）も空手形になる。追加は正規表現の選択肢 1 個と must-match 一覧の 1 行で、`scripts/test-auto-merge-workflow.sh` が CI で両者のズレを検知する。なお `SACRED` の抽出（`scripts/test-auto-merge-workflow.sh:70`）は正規表現が 1 行に収まっていることを前提にしているので、読みやすさのために 2 行へ折り返さず 1 行のまま伸ばす。
 
 副作用として、この change 自身の PR は `.github/workflows/` と `CLAUDE.md` に触るため人間マージになる。
 
@@ -119,7 +123,7 @@ issue #258 の受け入れ条件「測定対象 3 種の内訳が fail 時の出
 - **予算を上げるのが簡単すぎて形骸化する** → Decision 7 で予算ファイルを聖域に入れ、値を動かす PR を機械マージの対象外にする。加えて `CLAUDE.md` の規約が PR 本文への理由の明記を求める。テストが機械的にできるのは「値が動いたことを diff と聖域判定に出すこと」までで、動かしてよいかの判断はレビューと主が担う
 - **削減 PR が下振れで赤くなる** → Decision 6 の意図した挙動。失敗メッセージに推奨値（実測+5%）を出して、原因のわからない赤にしない
 - **バイト数はトークン数の代理でしかない**（日本語は 1 トークンあたり 1.5〜3 バイト程度で振れる） → 予算の目的は絶対量の管理ではなく増減の検出。トークン換算での実測は #259 の usage 監査が持つ。エピック #257 の本文は「字」（文字数）で書かれているので、#259 / #260 で数字を並べるときは単位を明示する
-- **`description: >` の折りたたみ記法で予算を回避できる** → 2 行目以降が集計から漏れて description を無制限に増やせるので、「`description:` の次の行が別のトップレベル frontmatter キーか frontmatter の終端であること」を検査するガードを 1 本足す（現状 39 本すべてが単一行なので、これは退行ガード）
+- **`description: >` の折りたたみ記法で予算を回避できる** → 2 行目以降が集計から漏れて description を無制限に増やせるので、「`description:` の次の行が別のトップレベル frontmatter キーか frontmatter の終端であること」を検査するガードを 1 本足す（現状 59 本すべてが単一行なので、これは退行ガード）
 - **予算に入らない固定分が増えても止まらない**（`MEMORY.md`・コネクタ名・組み込みスキル一覧） → 非目標として明記済み。実行時監視 #259 が担当する。編集時ゲートは「このリポジトリの PR で増える分」だけを守る
 - **プラグインが増えると自動で対象が広がる**（`plugins/*/skills/*/SKILL.md` 等の glob） → 意図した挙動。新しい skill / agent / command を足せば固定分が増えるのは事実なので、予算が反応するのが正しい
-- **実装が触るファイルが 6 個になる**（bats・予算ファイル・`CLAUDE.md`・`AGENTS.md`・`auto-merge.yml`・`test-auto-merge-workflow.sh`）→ 規模超過トリップワイヤー（5 個超）に当たる。Decision 7 の 2 ファイルは機械的な 1 行追加で、既存テストが正しさを検証するため分割の価値は低いと考えるが、分割するかは本体の判断に委ねる
+- **実装が触るファイルが多い**（bats・予算ファイル・`CLAUDE.md`・`AGENTS.md`・`auto-merge.yml`・`test-auto-merge-workflow.sh` の 6 個。openspec の artifact を含めると 8 個）→ 規模超過トリップワイヤー（5 個超）に当たる。Decision 7 の 2 ファイルは機械的な 1 行追加で、既存テストが正しさを検証するため分割の価値は低い。**本体は分割しないと判断した**（仕様レビュー 2 周目のレビュアーも同じ見立て）

@@ -2,7 +2,7 @@
 
 ### Requirement: 常時注入される固定分の合計サイズを測る
 
-`scripts/test.sh` の全件実行に、常時注入される固定分の合計サイズを測る bats スイート `tests/injection-budget.bats` が含まれなければならない（MUST）。測定対象は次の 6 種の合計とし、単位はバイト（`wc -c` 相当）とする。ロケールに依存する文字数計測（`wc -m`）を使ってはならない（MUST NOT）。
+`scripts/test.sh` の全件実行に、常時注入される固定分の合計サイズを測る bats スイート `tests/injection-budget.bats` が含まれなければならない（MUST）。測定対象は次の 8 種の合計とし、単位はバイト（`wc -c` 相当）とする。ロケールに依存する文字数計測（`wc -m`）を使ってはならない（MUST NOT）。
 
 1. **rules**: `rules/*.md` のうち basename が `README.md` でないもの
 2. **CLAUDE.md**: リポジトリ直下の `CLAUDE.md`。同期複製である `AGENTS.md` を合計に含めてはならない（MUST NOT）
@@ -10,10 +10,14 @@
 4. **SKILL description**: `plugins/*/skills/*/SKILL.md` の frontmatter `description` の値
 5. **agent description**: `plugins/*/agents/*.md` の frontmatter `description` の値
 6. **command description**: `plugins/*/commands/*.md` の frontmatter `description` の値
+7. **local SKILL description**: `.claude/skills/` 配下の `SKILL.md` の frontmatter `description` の値
+8. **local command description**: `.claude/commands/` 配下の `*.md` の frontmatter `description` の値
 
 1 と 3 の対象判定は、`scripts/sync.sh` が `~/.claude/rules/` および `~/.claude/output-styles/` へ symlink する条件と同一でなければならない（MUST）。テストは独自の除外リストを持ってはならない（MUST NOT）。
 
-4〜6 の `description` は、`description: ` の接頭辞を落とした値の文字列そのもののバイト数を足すものとし、行末の改行を数えてはならない（MUST NOT）。この定義をテストのコメントに明記しなければならない（MUST）。
+4〜8 の対象は、それぞれのディレクトリ配下を任意の深さで走査して集めなければならない（MUST）。1 階層深いディレクトリにファイルを置くことで集計から外れてはならない（MUST NOT）。
+
+4〜8 の `description` は、`description: ` の接頭辞を落とした値の文字列そのもののバイト数を足すものとし、行末の改行を数えてはならない（MUST NOT）。この定義をテストのコメントに明記しなければならない（MUST）。
 
 #### Scenario: 現状の main で予算テストが pass する
 
@@ -89,13 +93,13 @@
 判定が fail したときのテストの出力には、次の 3 つがすべて含まれなければならない（MUST）。
 
 1. 予算値・実測合計・その差分量（バイト）と、超過側と下振れ側のどちらの失敗かの区別
-2. 測定対象 6 種それぞれの実測値の内訳
+2. 測定対象 8 種それぞれの実測値の内訳
 3. 取るべき行動。超過側では「削る」か「`tests/injection-budget.txt` を上げて PR 本文に理由を書く」かの 2 択、下振れ側では「`tests/injection-budget.txt` を推奨値（実測合計 + 約 5%）に下げる」旨と、その推奨値の具体的な数値
 
 #### Scenario: 超過時に差分量と内訳が出る
 
 - **WHEN** 集計ヘルパに余分なファイルを足した一覧を渡して予算超過を作り、失敗出力を読む
-- **THEN** 予算値・合計・超過量の 3 つの数値と、6 種の内訳の行が出力されている
+- **THEN** 予算値・合計・超過量の 3 つの数値と、8 種の内訳の行が出力されている
 
 #### Scenario: 超過時に取りうる 2 つの選択肢が出る
 
@@ -109,7 +113,7 @@
 
 ### Requirement: 折りたたみ記法で description を集計から逃がせない
 
-`plugins/*/skills/*/SKILL.md`・`plugins/*/agents/*.md`・`plugins/*/commands/*.md` の frontmatter において、`description:` の値は単一行でなければならない（MUST）。YAML の折りたたみ・リテラル記法（`description: >`、`description: |` およびその変種）を使ってはならない（MUST NOT）。テストはこれを検査し、違反があれば fail しなければならない（MUST）。
+`plugins/*/skills/*/SKILL.md`・`plugins/*/agents/*.md`・`plugins/*/commands/*.md`、および `.claude/skills/` 配下の `SKILL.md`・`.claude/commands/` 配下の `*.md` の frontmatter において、`description:` の値は単一行でなければならない（MUST）。YAML の折りたたみ・リテラル記法（`description: >`、`description: |` およびその変種）を使ってはならない（MUST NOT）。テストはこれを検査し、違反があれば fail しなければならない（MUST）。
 
 これは 2 行目以降が集計から漏れて `description` を無制限に増やせる抜け道を塞ぐためのガードである。
 
