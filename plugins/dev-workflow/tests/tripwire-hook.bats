@@ -173,6 +173,28 @@ JSON
   rm -rf "$work"
 }
 
+# 注入文はエージェントがファイルを開かずに受け取る唯一の面なので、正本への参照だけでなく
+# 「正本を読むまで手渡さない」のガード 1 行を持たなければならない
+# （spec: dev-workflow-execution-strategy の MUST）。純粋なポインタにすると、失敗の形が
+# 「古い規則を適用する」から「規則を知らないまま即興する」に変わる。2026-09 の二重 spawn
+# 事故の直接原因は即興だった。条件・書式・手順そのものはここに再掲しない
+# （正本: skills/develop/references/decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」）。
+@test "injection: the resident rule text points at the single source and carries the read-first guard" {
+  work="$(mktemp -d)"
+  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/missing.json" \
+      USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
+  [ "$status" -eq 0 ]
+  out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output")"
+  # additionalContext 全体ではなく注入行そのものを見る。全体で見ると、同じ文字列を持つ
+  # トリップワイヤーテンプレートが連結されているため、注入行が旧文言のままでも緑になる
+  line="$(echo "$out" | grep -F 'サブエージェントのコンテキスト上限:')"
+  [ -n "$line" ]
+  echo "$line" | grep -qF "decision-criteria.md"
+  echo "$line" | grep -qF "コンテキスト上限（サブエージェントの手渡し）"
+  echo "$line" | grep -qF "正本を読むまで手渡さない"
+  rm -rf "$work"
+}
+
 @test "derivation: no snapshot → SHARED_BUDGET_MODE ok (fail-open) while the Fable mode stays conserve" {
   work="$(mktemp -d)"
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/missing.json" \
