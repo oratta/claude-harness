@@ -1,6 +1,6 @@
 # サブエージェントの待ち方（dev-workflow の共有契約）
 
-長時間処理（Codex レビュー・フルテスト・ビルド）の完了を、サブエージェントがどう待つかの正本。読み手は develop の W / R1 / G と `skills/pr-review-gate/SKILL.md` を読むサブエージェント。各指示書は禁止そのものを 1 行で持ち、詳しい待ち方が要るときだけこのファイルを開く。
+長時間処理（Codex レビュー・フルテスト・ビルド）の完了を、サブエージェントがどう待つかの正本。読み手は develop の W / R1 / G と `skills/pr-review-gate/SKILL.md` を読むサブエージェント。**各指示書は禁止そのものを 1 行で持つだけで、待ち値・完了シグナル・雛形・上限回数はこのファイルにしか書かない**（2 か所に置くと片方だけ古くなる。実際に 2026-09-09 のレビューで、指示書側に再掲した companion の判定方法が事実と食い違っていた）。待ちが要る作業に入る前に、このファイルを開いて雛形どおりに実行する。
 
 ## 禁止と許可
 
@@ -22,7 +22,7 @@
 Bash ツールの入力はこの形になる:
 
 ```
-command: until grep -q '__CODEX_DONE__' "$out"; do sleep 10; done
+command: until <完了シグナル>; do sleep 10; done
 timeout: 540000
 ```
 
@@ -32,29 +32,47 @@ timeout: 540000
 
 ## 完了シグナル（起動経路ごと）
 
-`codex exec` も `codex-companion.mjs` も出力に完了マーカーを書かないので、マーカーは起動側で付ける。検知方法を自分で発明しない。
+`codex exec` も `codex-companion.mjs` も出力に完了マーカーを書かないので、検知の仕掛けは起動側で用意する。検知方法を自分で発明しない。
 
-**(a) `codex exec` 直叩き** — 起動コマンドにマーカーを書き足し、そのマーカーの出現を終了条件にする。`rc=` の値で成否を判定する。
+**起動と待ちは別々の Bash 呼び出しになるので、シェル変数は引き継がれない。** 出力ファイルのパスと完了マーカーは起動する前に決め、待ちのコマンドには同じ値を literal で書く（起動側で `out=...` を定義しても、待ち側の `$out` は空になる）。
+
+### (a) `codex exec` 直叩き
+
+起動ごとに一意な nonce（`date +%s` の出力など、その場で決めた値なら何でもよい）を自分で決め、出力ファイル名と完了マーカーの両方に埋める。**マーカーを固定文字列にしない** — レビュー対象の文書がその文字列を含んでいると、Codex がそれを出力に書き写した時点でポーリングが誤って成立し、まだ動いているジョブを完了と誤認する（2026-09-09 に実際に発生した。この文書自身がマーカーを含むので、この文書をレビューさせるたびに再現する）。
 
 ```bash
-# 起動（Bash ツールの run_in_background: true）
-{ codex exec -c approval_policy=never -c model_reasoning_effort=medium "<レビュー指示>" ; echo "__CODEX_DONE__ rc=$?" ; } >> "$out" 2>&1
+# 起動: Bash ツールの run_in_background: true
+# <nonce> は自分で決めた一意な値に置き換える（下の 3 か所すべて同じ値にする）
+out="/tmp/codex-review-<nonce>.log"
+: > "$out"
+{ codex exec -c approval_policy=never -c model_reasoning_effort=medium "<レビュー指示>" ; printf '\n__CODEX_DONE_<nonce>__ rc=%s\n' "$?" ; } >> "$out" 2>&1
 ```
 
 ```
-# 待ち（Bash ツールの前景実行）
-command: until grep -q '__CODEX_DONE__' "$out"; do sleep 10; done; tail -n 200 "$out"
+# 完了確認: Bash ツールの前景実行（別の呼び出しなので $out は使えない。パスを literal で書く）
+command: until grep -qE '^__CODEX_DONE_<nonce>__ rc=' /tmp/codex-review-<nonce>.log 2>/dev/null; do sleep 10; done; tail -n 200 /tmp/codex-review-<nonce>.log
 timeout: 540000
 ```
 
-**(b) `codex-companion.mjs` 経由** — `status <job-id> --wait --timeout-ms 540000` の exit code と status 出力を終了条件にする。出力ファイルの中身を推測しない。タイムアウトで返ったのか完了で返ったのかは exit code で区別する。
+照合は**行頭アンカー付きの完全な形**（`^__CODEX_DONE_<nonce>__ rc=`）で行う。nonce と行頭アンカーの二重で、出力中の言及とマーカーそのものを分ける。`rc=` の値で `codex exec` の成否を判定する。
+
+### (b) `codex-companion.mjs` 経由
+
+`task … --effort medium` でジョブを投げ、`status <job-id> --wait --timeout-ms 540000` で待つ。`--timeout-ms` の既定は 4 分しかないので必ず明示する。
+
+**exit code ではタイムアウトと完了を区別できない。** companion の `handleStatus` は結果を出力して return するだけで `process.exitCode` を設定しないため、**タイムアウトでも完了でも 0 で返る**（2026-09-09 に実測。`process.exitCode` を設定するのは `exec` 経路とエラー経路だけ）。区別は **`--json` を付けて出力の `waitTimedOut` を見る**。
 
 ```
-command: node "<companion のパス>" status <job-id> --wait --timeout-ms 540000; echo "rc=$?"
+command: node "<companion のパス>" status <job-id> --wait --timeout-ms 540000 --json
 timeout: 540000
 ```
 
-`--timeout-ms` の既定は 4 分しかないので必ず明示する。
+| 出力のフィールド | 見方 |
+|---|---|
+| `.waitTimedOut` | `true` = まだ動いている（もう一度待つ）。`false` = 決着した |
+| `.job.status` | `completed` / `failed` などの結末。`running` / `queued` のままなら未決着 |
+
+出力ファイルの中身を推測しない。exit code だけを見て「完了した」と判定しない。
 
 ## 総待ちの上限と超過時の分岐
 
@@ -66,4 +84,3 @@ timeout: 540000
 
 - **G**: `needs-reviewer` を return し、根拠に「Codex タイムアウト（27 分）」と書く。**これが `skills/pr-review-gate/SKILL.md` のフォールバック条件「未導入・サブスク切れ・タイムアウト」の「タイムアウト」の定義**で、この上限がフォールバックの発火点になる
 - **W / R1**: 待ちをやめて本体に return する（どこまでやってどこで止まったかを書く）
-

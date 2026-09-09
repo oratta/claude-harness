@@ -31,6 +31,11 @@ setup() {
 # 除外規定はこの検査 1 だけに掛ける。正本（references/subagent-waiting.md）と本テスト自身は
 # 「何が禁止か」を説明するために禁止語をそのまま含むため、禁止語スキャンの対象にしない。
 # 検査 2（待ち値が前景上限未満）は正本にも掛ける — 正本に 900000 を書き戻したら落ちる。
+#
+# 禁止語のブラックリストは既知の言い換えを止めるだけで、意味を保った別の言い回しは素通りする
+# （grep で意味は見られない）。網羅性を担うのは下の構造検査のほうで、ブラックリストはその補助:
+#   - background 起動を書いている文書は前景ポーリングと禁止 1 行と正本参照を必ず併記していること
+#   - 待ちの雛形・待ち値・上限回数は正本にしか現れないこと（再掲を許すと片方だけ古くなる）
 
 @test "no subagent handbook delegates the wait to a completion notification or Monitor" {
   for f in "${SUBAGENT_DOCS[@]}"; do
@@ -51,10 +56,40 @@ setup() {
       echo "hint: ${f} launches a background job but never shows how to wait in the foreground"
       return 1
     }
+    grep -qE 'ターンを終え(ない|てはならない)' "$f" || {
+      echo "hint: ${f} launches a background job but does not ban ending the turn on the wait"
+      return 1
+    }
     grep -qF 'references/subagent-waiting.md' "$f" || {
       echo "hint: ${f} launches a background job but does not point at the canonical waiting contract"
       return 1
     }
+  done
+}
+
+# --- 検査 1b: 待ちの手順を正本以外に再掲していないこと ---
+#
+# 「正本 1 本・各指示書は禁止 1 行」の設計を機械で守る。2026-09-09 のレビューで、
+# gate-runner に再掲していた companion の判定方法（exit code で区別する）が事実と
+# 食い違ったまま残っていたため、再掲そのものを落とす。
+
+@test "the waiting templates and values appear only in the canonical contract" {
+  for f in "${SUBAGENT_DOCS[@]}"; do
+    if grep -qF '__CODEX_DONE' "$f"; then
+      echo "hint: ${f} restates the completion marker template"
+      echo "hint: 待ちの雛形は正本（references/subagent-waiting.md）にだけ置き、指示書からは参照する"
+      return 1
+    fi
+    if grep -qE '(--timeout-ms|timeout:)[[:space:]]*[0-9]+' "$f"; then
+      echo "hint: ${f} restates a concrete wait value"
+      echo "hint: 具体の待ち値は正本にだけ置く（指示書は「正本に従う」と書く）"
+      return 1
+    fi
+    if grep -qE '(27 分|3 回 = )' "$f"; then
+      echo "hint: ${f} restates the total wait cap"
+      echo "hint: 上限の回数と分数は正本にだけ置く"
+      return 1
+    fi
   done
 }
 
@@ -106,10 +141,27 @@ setup() {
 }
 
 @test "the canonical contract defines a completion signal per launch path" {
-  grep -qF '__CODEX_DONE__' "$CANON"
-  grep -qF 'rc=$?' "$CANON"
+  # (a) codex exec 直叩き: マーカーは実行ごとに一意（nonce）で、照合は行頭アンカー付きの完全な形。
+  # 固定文字列＋部分一致だと、レビュー対象の文書がその文字列を含むだけでポーリングが誤成立する。
+  grep -qF '__CODEX_DONE_<nonce>__' "$CANON"
+  grep -qF 'nonce' "$CANON"
+  grep -qF "'^__CODEX_DONE_<nonce>__ rc='" "$CANON"
+  if grep -qE "grep -q[a-zA-Z]* '__CODEX_DONE" "$CANON"; then
+    echo "hint: 完了マーカーの照合が行頭アンカー無しの部分一致になっている"
+    return 1
+  fi
+  # 起動側で出力ファイルを作る手順があること（雛形どおりに実行して未定義変数にならないこと）
+  grep -qF 'out="/tmp/codex-review-<nonce>.log"' "$CANON"
+  grep -qF ': > "$out"' "$CANON"
+
+  # (b) companion 経路: exit code では区別できず、--json の waitTimedOut で判定する。
   grep -qF 'status <job-id> --wait --timeout-ms 540000' "$CANON"
-  grep -q 'exit code' "$CANON"
+  grep -qF 'waitTimedOut' "$CANON"
+  grep -qF 'exit code ではタイムアウトと完了を区別できない' "$CANON"
+  if grep -q 'exit code で区別する' "$CANON"; then
+    echo "hint: companion の status --wait はタイムアウトでも完了でも 0 を返す（2026-09-09 実測）"
+    return 1
+  fi
 }
 
 @test "the canonical contract caps the total wait and defines the fallback trigger" {
@@ -125,11 +177,15 @@ setup() {
 
 # --- 手順書側の書き換え ---
 
-@test "gate-runner shows both codex paths with the completion marker and the wait cap" {
-  grep -qF '__CODEX_DONE__' "$RUNNER"
-  grep -qF -- '--timeout-ms 540000' "$RUNNER"
+@test "gate-runner names both codex launch paths and defers the wait to the canonical contract" {
+  # 起動の事実（どのコマンドをどう呼ぶか）は G の指示書に残す
+  grep -qF 'codex exec -c approval_policy=never -c model_reasoning_effort=medium' "$RUNNER"
+  grep -qF 'codex-companion.mjs' "$RUNNER"
+  # 待ち方は正本に委ね、上限に達したときの G 固有の分岐だけを持つ
+  grep -qF 'references/subagent-waiting.md' "$RUNNER"
+  grep -qE 'ターンを終え(ない|てはならない)' "$RUNNER"
   grep -qF 'needs-reviewer' "$RUNNER"
-  grep -qE '27 分' "$RUNNER"
+  grep -q '総待ちの上限' "$RUNNER"
 }
 
 @test "spec-reviewer notes that the decider path carries no waiting work" {
