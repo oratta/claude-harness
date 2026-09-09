@@ -121,7 +121,9 @@ THIS_CHANGE='openspec/changes/archive/2026-09-08-handoff-requires-completed-retu
 vocab_b_exemptions() {
   printf '%s\n' \
     "openspec/specs/dev-workflow-escalation-tripwires/spec.md	「乗り換え」「成果の引き継ぎ」はトリップワイヤー発火時のモデル / Workflow 乗り換えの話で、W / G の手渡しではない" \
+    "openspec/specs/dev-workflow-subagent-waiting/spec.md	「引き継がれない」はシェル変数が Bash 呼び出しをまたがない話で、エージェントの手渡しではない" \
     "plugins/dev-workflow/references/pr-body-format.md	「引き継ぎ」は PR 本文を読む別セッションの LLM の話で、手渡しの規則ではない" \
+    "plugins/dev-workflow/references/subagent-waiting.md	「引き継がれない」はシェル変数が Bash 呼び出しをまたがない話で、エージェントの手渡しではない" \
     "plugins/dev-workflow/tests/pr-body-format.bats	「引き継ぐ」は spec 名の一部（旧 loops-pr-body-format の reference 要件を引き継ぐ）" \
     "plugins/dev-workflow/scripts/agent-model-guard.sh	「世代交代」はモデル ID の世代交代で、エージェントの交代ではない" \
     "plugins/dev-workflow/scripts/usage-probe.sh	「引き継ぐ」は fail-open で前回の snapshot 値を保持する話"
