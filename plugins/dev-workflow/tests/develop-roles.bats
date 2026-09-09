@@ -236,3 +236,59 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
     false
   fi
 }
+
+# ---------- コンテキスト上限の規則は decision-criteria.md 1 箇所に置く（#261） ----------
+#
+# spec: dev-workflow-develop「コンテキスト上限の規則の本文は decision-criteria.md 1 箇所に置く」
+# 同じ規則を複数の面に言い換えて置くと、次に閾値が変わったときどれかが必ず取り残される
+# （#253 で 3 周続けて言い換え漏れが出た）。数値と環境変数名の在処をテストで固定する。
+
+@test "context cap: the canonical section holds the thresholds, the routes and the return prefixes" {
+  dc="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  # 3 つの環境変数と 2 つの既定値
+  for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000; do
+    grep -q -- "$token" "$dc" || { echo "missing in decision-criteria.md: $token"; return 1; }
+  done
+  # 2 経路・通知時と強制停止時の振る舞い・return の 1 行目の書き分け
+  grep -q '再開前チェック' "$dc"
+  grep -q '途中計測' "$dc"
+  grep -q '工程完了:' "$dc"
+  grep -q '工程中断:' "$dc"
+  grep -q 'pr-review-gate の手順 1〜5 を 1 グループ' "$dc"
+}
+
+@test "context cap: the other five faces point at the canonical section and restate nothing" {
+  faces=(
+    "${PLUGIN_DIR}/skills/develop/SKILL.md"
+    "${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
+    "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+    "${PLUGIN_DIR}/templates/escalation-tripwires.md"
+    "${PLUGIN_DIR}/README.md"
+  )
+  for f in "${faces[@]}"; do
+    [ -f "$f" ] || { echo "missing face: $f"; return 1; }
+    # 正本への参照があること
+    grep -q 'decision-criteria.md' "$f" || { echo "no pointer to decision-criteria.md: $f"; return 1; }
+    grep -q 'コンテキスト上限' "$f" || { echo "no reference to the context cap section: $f"; return 1; }
+    # 閾値の数値・環境変数名の再掲が無いこと
+    for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000 150K; do
+      if grep -q -- "$token" "$f"; then
+        echo "restated in $f: $token（正本は decision-criteria.md「コンテキスト上限」）"
+        return 1
+      fi
+    done
+  done
+}
+
+@test "context cap: worker.md tells the handoff target to look at uncommitted changes first" {
+  grep -q '未コミット差分' "$WORKER"
+  grep -q 'git status' "$WORKER"
+}
+
+@test "context cap: gate-runner returns the review body when the hard stop denies gh" {
+  grep -q '工程中断:' "${ROLES}/gate-runner.md"
+  grep -q 'gh pr comment' "${ROLES}/gate-runner.md"
+  grep -q '代理投稿' "${ROLES}/gate-runner.md"
+  # 本体側にも代理投稿する側の手順がある
+  grep -q '代理投稿' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}

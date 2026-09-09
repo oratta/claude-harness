@@ -146,6 +146,7 @@ hooks.json の登録内容の検査は**新規の `tests/context-tripwire.bats`*
 
 ## Open Questions
 
-- **`additionalContext` が実際にモデルへ届かなかった場合の退避**: 出力スキーマ（`hookEventName: "PostToolUse"` + `additionalContext`）とセッション側の `hook_additional_context`（"Non-error feedback from hookSpecificOutput.additionalContext"）の存在までは配布バイナリ 2.1.266 で確認済みだが、PostToolUse の説明文が明記しているのは exit code の挙動だけなので、モデルに届くことの最終確認は実地確認（tasks 4.3）が担う。**届かなかった場合は exit 2 + stderr に切り替える**（同バイナリの説明文は exit 2 を "show stderr to model immediately" としている）。その場合は「エラー扱いでツール結果の扱いが変わる」（Decision 7 で採らなかった理由）を受け入れることになるので、仕様変更として扱う
+- ~~**`additionalContext` が実際にモデルへ届かなかった場合の退避**~~: **実地確認で解消**。届く。サブエージェントのトランスクリプトに `{"type":"attachment","attachment":{"type":"hook_additional_context","content":["[dev-workflow 途中計測] …"]}}` として現れた（probe-plain: `agent_id=af53e3dee847433f6`）。exit 2 + stderr への切り替えは不要。以下は経緯として残す — 出力スキーマ（`hookEventName: "PostToolUse"` + `additionalContext`）とセッション側の `hook_additional_context`（"Non-error feedback from hookSpecificOutput.additionalContext"）の存在までは配布バイナリ 2.1.266 で確認済みだが、PostToolUse の説明文が明記しているのは exit code の挙動だけなので、モデルに届くことの最終確認は実地確認（tasks 4.3）が担う。**届かなかった場合は exit 2 + stderr に切り替える**（同バイナリの説明文は exit 2 を "show stderr to model immediately" としている）。その場合は「エラー扱いでツール結果の扱いが変わる」（Decision 7 で採らなかった理由）を受け入れることになるので、仕様変更として扱う
 - 強制停止の既定値 220,000 は #257 の案のまま採る。実データでの妥当性は #259 の監視結果を見て見直す
 - 同一起動での通知の重複抑制（1 回だけ出す）が要るかは、#259 の監視で頻度を見てから決める
+- **通知に従うかはモデル任せで、保証されない**（実地確認で判明）。「6 本のファイルを読め」と指示した haiku の general-purpose サブエージェントは、通知が届いた（22,402 tokens）あとも指示を優先して読み続け、80,209 tokens まで伸びた。別の実行では通知を受けて `工程中断:` で正しく締めた。**実際に止めているのは強制停止（PreToolUse の deny）であり、通知は自発的に締めさせるための先行シグナルにすぎない**という Decision 3 の位置づけが実地で裏づけられた形。通知の文面を強くするか、通知と強制停止の差（70,000）を詰めるかは #259 の監視結果を見てから決める
