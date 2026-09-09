@@ -88,37 +88,43 @@ _COND = '(前任|工程完了|工程の終わり|完了宣言|停止確認|直�
 # 文末（述語のうしろに「（MUST）」等が付くのを許す）
 _TAIL = '[^。]{0,15}$'
 
-# 各行は（規則名, 手渡しの文脈, 規範の述語）。文脈は、同じ言い回しを別の規則に使っている面
+# 各行は（規則名, 手渡しの文脈, 話題語, 規範の述語）。文脈は、同じ言い回しを別の規則に使っている面
 # （`仕様化判断:` / `仕様レビュー:` / `仕様宣言` の 1 行目書式など）を巻き込まないための足切りで、
 # 述語だけでは規則を特定できない③にだけ要る。
+#
+# 話題語と述語を別々のパターンに分けているのは、③だけ述語の判定に書式リテラルを取り除いた文を
+# 使うためである（spec: 「③の述語の判定にだけ、書式リテラルを取り除いた文を使う。話題語と足切りの
+# 判定は取り除く前の文に当てる」）。1 本の正規表現にまとめると、除去が話題語の判定にも掛かり、
+# 話題語（`工程完了` / `工程中断`）がリテラルの中にしか無い文 — つまり書式を正しく引用した、実際に
+# 面へ書かれるであろう形 — が③から抜ける。述語の位置が話題語からの相対で決まる①だけは、
+# 話題語と述語を 1 本に持つ（①は除去の対象外なので、分けても分けなくても同じ文に当たる）。
 RESTATEMENT_SENTENCES = (
     # ①上限超過を検知したときの SendMessage の可否
     #   話題語: 上限超過の状況 ＋ 継続の指示 / 述語: 否定・禁止（継続の指示の直後、かつ文末）  handoff-scan: fixture
     ('①再開の禁止', None, re.compile(
         '^(?=[^。]*(上限[^。]{0,6}超|超過|exit 2|over_cap|CONTEXT_CAP|キャップ[^。]{0,6}超))'
-        '(?=[^。]*(再開|続き|続行|継続|作業を続|SendMessage)[^。]{0,15}' + _NEG + _TAIL + ')')),
+        '(?=[^。]*(再開|続き|続行|継続|作業を続|SendMessage)[^。]{0,15}' + _NEG + _TAIL + ')'), None),
     # ②手渡しを行ってよい条件
     #   話題語: 手渡しの行為 ＋ 許可条件になる状態 / 述語: 限定（文末）
     ('②手渡しの許可条件', None, re.compile(
-        '^(?=[^。]*' + _ACT + ')(?=[^。]*' + _COND + ')(?=[^。]*' + _ONLY + _TAIL + ')')),
+        '^(?=[^。]*' + _ACT + ')(?=[^。]*' + _COND + ')(?=[^。]*' + _ONLY + _TAIL + ')'), None),
     # ③return の 1 行目の宣言に関する規定
     #   話題語: 宣言の置き場所 / 述語: 義務（文末）
-    ('③宣言の書式と選び方', re.compile('工程|手渡|return|後任|交代|前任'), re.compile(
-        '^(?=[^。]*(1 行目|一行目|先頭行|先頭の 1 行|冒頭の 1 行|冒頭行|工程完了|工程中断))'
-        '(?=[^。]*' + _MUST + _TAIL + ')')),
+    ('③宣言の書式と選び方', re.compile('工程|手渡|return|後任|交代|前任'),
+     re.compile('^(?=[^。]*(1 行目|一行目|先頭行|先頭の 1 行|冒頭の 1 行|冒頭行|工程完了|工程中断))'),
+     re.compile('^(?=[^。]*' + _MUST + _TAIL + ')')),
     # ④前任が動作中のまま交代させる手順と、その待ち方
     #   話題語: 停止 ＋ その確認 ＋ 手渡しの文脈 / 述語: 手順（〜を受け取ってから／〜する前に）  handoff-scan: fixture
     ('④停止指示と停止確認', None, re.compile(
         '^(?=[^。]*(停止|止ま|止める|止めて|中止))'
         '(?=[^。]*(確認|返事|報告|応答))'
         '(?=[^。]*(受け取|してから|る前に|待ってから|得てから))'
-        '(?=[^。]*(前任|手渡|交代|後任|spawn|新しい))')),
+        '(?=[^。]*(前任|手渡|交代|後任|spawn|新しい))'), None),
 )
 
 # spec が固定している書式リテラル。引用は再掲に当たらないので③の述語判定の前に取り除く
 # （文脈の判定は取り除く前の文に当てる。リテラルを引用しただけの面は述語を持たないので落ちない）。
 LITERALS = ('工程完了: <工程名>', '工程中断: <理由>')
-LITERAL_STRIPPED_RULES = ('③宣言の書式と選び方',)
 
 # この検査を実装している 2 ファイルは、検出したい形をパターンの断片として、また負のコントロールの
 # サンプル文として書かざるを得ない。spec が「正本の断片を grep の引数として引用することは言い換えに
@@ -203,15 +209,19 @@ def restatement_hits(root, paths, source):
             if detector and FIXTURE_MARK in line:
                 continue
             for sentence in re.split('。', re.sub('【[^】]*】', '', line)):
-                for rule, context, pattern in RESTATEMENT_SENTENCES:
+                stripped = sentence
+                for literal in LITERALS:
+                    stripped = stripped.replace(literal, '')
+                for rule, context, topic, predicate in RESTATEMENT_SENTENCES:
+                    # 足切りと話題語は「書式リテラルを取り除く前の文」に当てる
                     if context is not None and not context.search(sentence):
                         continue
-                    target = sentence
-                    if rule in LITERAL_STRIPPED_RULES:
-                        for literal in LITERALS:
-                            target = target.replace(literal, '')
-                    if pattern.search(target):
-                        yield path, num, sentence, rule
+                    if not topic.search(sentence):
+                        continue
+                    # 述語を別に持つ規則（③）だけ、リテラルを取り除いた文で述語を見る
+                    if predicate is not None and not predicate.search(stripped):
+                        continue
+                    yield path, num, sentence, rule
 
 
 def main():

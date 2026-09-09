@@ -78,7 +78,7 @@
    名前付きサブエージェント（develop の W / G）を SendMessage で再開する前に
    `${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <名前>` で測り、
    `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000 tokens）を超えていた（exit 2）
-   → **そのあとの扱いは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本。
+   → **そのあとの扱いは `${CLAUDE_PLUGIN_ROOT}/skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本。
       条件・書式・手順はこのテンプレートには書かない。正本を読むまで手渡さない**
       （モデルは変えない。再開のたびに全履歴を読み直すため、畳まずに続けると 1 本で
       30 万トークン超のリクエストを毎ターン投げることになる。2026-09 監査の実測）

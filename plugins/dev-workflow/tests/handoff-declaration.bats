@@ -25,8 +25,10 @@ setup() {
   CRITERIA_REL="plugins/dev-workflow/skills/develop/references/decision-criteria.md"
 }
 
-# 「## <見出し>」から次の「## 」までを切り出す
-section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
+# 「## <見出し>」から次の見出し（`## ` または `### `）までを切り出す。
+# `## ` だけで止めると、節のあとに続く `### ` 小節まで巻き込む（正本の節では残量モードの 2 小節が
+# 入り、正本の本文がその小節へ移動しても `criteria:` 系が緑のままになる。PR #253 のレビュー指摘）。
+section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^#{2,3} /{f=0} f' "$1"; }
 # decision-criteria.md のコンテキスト上限節（＝正本）
 cap_sec() { section "$CRITERIA" 'コンテキスト上限（サブエージェントの手渡し）'; }
 role_sec() { section "$SKILL" '本体の役割'; }
@@ -71,6 +73,12 @@ role_sec() { section "$SKILL" '本体の役割'; }
   cap_sec | grep -qF '宣言してはならない'
 }
 
+# ③どちらの書式にも当てはまらない return の扱い（この書式を知らない W / G は展開直後に必ず現れる）
+@test "criteria(3): a return matching neither literal is handled like the suspended declaration" {
+  cap_sec | grep -qF 'どちらの書式にも'
+  cap_sec | grep -qE '一致しない.*工程中断|工程中断.*一致しない'
+}
+
 @test "criteria(3): idle while waiting is distinguished from a completed return" {
   cap_sec | grep -qF 'idle'
   cap_sec | grep -qF '工程の終わりではない'
@@ -88,11 +96,36 @@ role_sec() { section "$SKILL" '本体の役割'; }
   cap_sec | grep -qE 'unmanned.*サイクルを終える|サイクルを終える.*unmanned'
 }
 
+# ④停止の指示に応答が返らないままのときの終端（interactive にも上限がある）
+@test "criteria(4): waiting for a stop confirmation ends even in interactive mode" {
+  cap_sec | grep -qF '停止確認が返らないとき'
+  cap_sec | grep -qF 'interactive'
+  cap_sec | grep -qF '無制限には待たない'
+}
+
+# ④の待ちが①②と矛盾しないこと（前任が先に工程完了を返したら通常の手渡しに戻る）
+@test "criteria(4): a process-complete return arriving first falls back to the ordinary handoff" {
+  cap_sec | grep -qF '停止の手順は要らなくなり'
+  cap_sec | grep -qF '通常の手渡しとして扱う'
+}
+
 # 書式リテラル（別エピックの子 issue がこの 2 つを前提にしている。spec が固定している）
 @test "criteria: the two declaration literals are fixed and use the same format family as the spec decision" {
   cap_sec | grep -qF '工程完了: <工程名>'
   cap_sec | grep -qF '工程中断: <理由>'
   cap_sec | grep -qF '仕様化判断: する|しない'
+}
+
+# 節の切り出しが次の見出しで止まること。止まらないと、正本の本文が後続の小節へ移動しても
+# 上の `criteria:` 系が緑のまま通る（PR #253 のレビュー指摘）。
+@test "criteria: the source section stops at the next heading, not at the next level-2 heading" {
+  cap_sec | grep -qF 'コンテキスト上限（サブエージェントの手渡し）'
+  local leaked
+  for leaked in 'の自動導出（usage snapshot 契約）' 'モード不変ルール'; do
+    if cap_sec | grep -qF "$leaked"; then
+      echo "正本の節に後続の小節が混ざっている: $leaked"; return 1
+    fi
+  done
 }
 
 # 同一 worktree の同一役割は 1 人（dev-workflow-develop の別要件）
@@ -132,6 +165,131 @@ vocab_b_exemptions() {
 # 走査本体。マルチバイトの否定文字クラスは locale 次第で壊れて偽陰性になるので python3 で走らせる。
 run_scan() {
   python3 "${BATS_TEST_DIRNAME}/../tests/lib/handoff-scan.py" "$@"
+}
+
+# spec が名指しした参照面と正本。`excluded()` を広げれば任意の面を検査から外せて全テストが緑のまま
+# 通るので（実測: この 7 面 ＋ 2 つの live spec を `excluded()` に足しても 25/25 緑だった。
+# PR #253 のレビュー指摘）、この一覧が現に検査対象に入っていることを固定する。
+# これは「検査する面の一覧」ではなく（面の列挙は `git ls-files` からの機械的な列挙が正）、
+# 除外が spec の定める 3 種を超えて広がっていないことの下限チェックである。
+reference_surfaces() {
+  printf '%s\n' \
+    'plugins/dev-workflow/README.md' \
+    'plugins/dev-workflow/skills/develop/SKILL.md' \
+    'plugins/dev-workflow/skills/develop/references/roles/worker.md' \
+    'plugins/dev-workflow/skills/develop/references/roles/gate-runner.md' \
+    'plugins/dev-workflow/templates/escalation-tripwires.md' \
+    'plugins/dev-workflow/scripts/session-tripwires.sh' \
+    'plugins/dev-workflow/scripts/subagent-context.sh' \
+    'openspec/specs/dev-workflow-execution-strategy/spec.md' \
+    'openspec/specs/dev-workflow-develop/spec.md'
+}
+
+@test "whitelist: every surface the spec names is inspected (widening the exclusions is caught)" {
+  run run_scan --root "$ROOT" --this-change "$THIS_CHANGE" --mode list-inspected
+  [ "$status" -eq 0 ]
+  local path
+  while IFS= read -r path; do
+    echo "$output" | grep -qxF "$path" || {
+      echo "spec が名指しした面が検査対象から外れている: $path"; return 1; }
+  done < <(reference_surfaces)
+  echo "$output" | grep -qxF "$CRITERIA_REL" || {
+    echo "正本が検査対象から外れている: $CRITERIA_REL"; return 1; }
+}
+
+# 参照が正本に辿り着けること。`has_reference()` は文字列を含むかしか見ないので、パスが壊れていても
+# 参照として合格する。参照だけになった面はポインタが壊れると機構ごと失効する（事故の直接原因
+# 「規則を知らないまま即興する」に戻る）ので、書かれたパスが実在することを別に検査する。
+# 解決の基準は、リポジトリルート・その面自身のディレクトリ・プラグインルートの 3 つ
+# （`${CLAUDE_PLUGIN_ROOT}` はプラグインルートに置き換えてから見る）。
+resolves_reference_path() { # $1=面のリポジトリ相対パス $2=書かれたパス
+  local written="${2//\$\{CLAUDE_PLUGIN_ROOT\}/$PLUGIN_DIR}" base
+  case "$written" in
+    /*) [ -f "$written" ] && return 0; return 1 ;;
+  esac
+  for base in "$ROOT" "$(dirname "${ROOT}/$1")" "$PLUGIN_DIR"; do
+    [ -f "${base}/${written}" ] && return 0
+  done
+  return 1
+}
+
+@test "whitelist: every path written toward the source resolves to a real file" {
+  local path written
+  while IFS= read -r path; do
+    [ -f "${ROOT}/${path}" ] || { echo "面が存在しない: $path"; return 1; }
+    while IFS= read -r written; do
+      [ -n "$written" ] || continue
+      case "$written" in */*) ;; *) continue ;; esac
+      resolves_reference_path "$path" "$written" || {
+        echo "正本へのパスが解決しない: ${path} — ${written}"; return 1; }
+    done < <(grep -o '[A-Za-z0-9_${}/.-]*decision-criteria\.md' "${ROOT}/${path}" | sort -u)
+  done < <(reference_surfaces; printf '%s\n' "$CRITERIA_REL")
+}
+
+# ---------------------------------------------------------------------------
+# ホワイトリスト走査の負のコントロール
+#
+# 実リポで 0 件を期待するテストしか無いと、「緑＝違反が無い」のか「緑＝何も見ていない」のかを
+# 区別できない（実測: `has_reference()` を `return True` に、`VOCAB_A` を絶対マッチしない正規表現に
+# 変えても 25/25 緑だった。PR #253 のレビュー指摘）。使い捨てのリポジトリに違反を置いて、
+# 走査が実際に報告することを固定する。
+# ---------------------------------------------------------------------------
+
+@test "whitelist: offenders reports a surface that carries a trigger term without a reference" {
+  local sandbox="${BATS_TEST_TMPDIR}/wl-offenders"
+  mkdir -p "${sandbox}/docs" "${sandbox}/plugins/dev-workflow"
+  printf '%s\n' 'この面は DEV_WORKFLOW_CONTEXT_CAP に触れるが、どこにも正本を指していない。' \
+    > "${sandbox}/docs/no-ref.md"
+  printf '%s\n' '手渡しの規則は decision-criteria.md が正本。' > "${sandbox}/docs/with-ref.md"
+  printf '%s\n' '成果は次の担当に引き継ぐ。' > "${sandbox}/plugins/dev-workflow/vocab-b.md"
+  git -C "$sandbox" init -q
+  git -C "$sandbox" add -A
+
+  run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode offenders
+  echo "$output"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -qF '[語彙A] 正本への参照が無い: docs/no-ref.md'
+  echo "$output" | grep -qF '[語彙B] 正本への参照も除外表の登録も無い: plugins/dev-workflow/vocab-b.md'
+  if echo "$output" | grep -qF 'with-ref.md'; then
+    echo "正本への参照を持つ面が報告された"; return 1
+  fi
+
+  # 語彙 B の面は除外表で消える（語彙 A の面は消えない）
+  run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode offenders \
+    "plugins/dev-workflow/vocab-b.md	手渡しではなく担当替えの話"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  if echo "$output" | grep -qF 'vocab-b.md'; then
+    echo "除外表に載せた語彙 B の面が報告された"; return 1
+  fi
+  echo "$output" | grep -qF 'docs/no-ref.md'
+}
+
+@test "whitelist: an exemption for a surface that no longer trips the general vocabulary is stale" {
+  local sandbox="${BATS_TEST_TMPDIR}/wl-stale"
+  mkdir -p "${sandbox}/plugins/dev-workflow"
+  printf '%s\n' 'この面はトリガー語をひとつも含まない。' > "${sandbox}/plugins/dev-workflow/clean.md"
+  git -C "$sandbox" init -q
+  git -C "$sandbox" add -A
+  run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode stale \
+    "plugins/dev-workflow/clean.md	かつては引き継ぎの話をしていた"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -qF 'stale'
+  echo "$output" | grep -qF 'plugins/dev-workflow/clean.md'
+}
+
+@test "whitelist: a surface firing on handoff-specific vocabulary cannot be put on the exemption list" {
+  local sandbox="${BATS_TEST_TMPDIR}/wl-vocab-a"
+  mkdir -p "${sandbox}/docs"
+  printf '%s\n' 'この面は手渡しに触れる。' > "${sandbox}/docs/a.md"
+  git -C "$sandbox" init -q
+  git -C "$sandbox" add -A
+  run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode vocab-a-exempt \
+    "docs/a.md	載せてはならない面"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -qF 'docs/a.md'
 }
 
 @test "whitelist: every surface caught by a trigger term carries a reference to the single source" {
@@ -305,26 +463,36 @@ restatement_exemptions() {
 # サンプルはこのファイル自身ではなく使い捨てのリポジトリに置く（この bats も走査対象の面であるため。
 # 行末の印で走査から外している ＝ 印の無い行に規則を書けばこのファイルでも検出される）。
 #
-# 書式: <規則名><TAB><サンプル文>
+# 「正本の語をひとつも使わない言い換え」は spec の MUST。実測で 4 本とも正本の語（`前任` /
+# `工程の終わり` / `DEV_WORKFLOW_CONTEXT_CAP` など）を含んでいたため、走査の語彙からその語を
+# 消してもサンプルが別の語で拾われ、全テストが緑のまま通っていた（PR #253 のレビュー指摘）。
+# 言い換えには、正本に現れない語彙（`over_cap` / `後任` / `完了宣言` / `冒頭行` / `中止` など）を使う。
+# 前処理（`【…】` の除去・書式リテラルの除去）が効いていないと検出できない形も 1 本ずつ持つ
+# （どちらも、無効化しても全テストが緑だった）。
+#
+# 書式: <規則名><TAB><サンプル文><TAB><種別: 正本の語 / 言い換え / 前処理>
 restatement_samples() {
   printf '%s\n' \
-    "①再開の禁止	上限超（exit 2）を検知したら、前任の状態にかかわらず作業継続の SendMessage を送らない（再開しない）。 handoff-scan: fixture" \
-    "①再開の禁止	\`DEV_WORKFLOW_CONTEXT_CAP\` を超えたら、前任に続きを依頼してはならない。 handoff-scan: fixture" \
-    "②手渡しの許可条件	手渡しを行ってよいのは、前任が工程完了を宣言したときだけである。 handoff-scan: fixture" \
-    "②手渡しの許可条件	後任を spawn してよいのは、前任が工程の終わりを宣言した場合のみである。 handoff-scan: fixture" \
-    "③宣言の書式と選び方	return の 1 行目は \`工程完了: <工程名>\` か \`工程中断: <理由>\` に完全一致させること。 handoff-scan: fixture" \
-    "③宣言の書式と選び方	return の先頭行は、決められた 2 つの書式のどちらかにすること。 handoff-scan: fixture" \
-    "④停止指示と停止確認	本体は先に前任へ停止を指示し、停止確認を受け取ってから手渡し先を spawn する。 handoff-scan: fixture" \
-    "④停止指示と停止確認	前任がまだ動いているときは、止めるよう伝えて、その報告を受け取ってから新しい実行役を立てる。 handoff-scan: fixture" \
-    "①再開の禁止	正本のとおり、\`DEV_WORKFLOW_CONTEXT_CAP\` を超えたら前任に続きを依頼してはならない。 handoff-scan: fixture" \
-    "④停止指示と停止確認	本体は先に前任へ停止を指示し、停止確認を受け取ってから手渡し先を spawn する（正本は \`references/decision-criteria.md\`）。 handoff-scan: fixture"
+    "①再開の禁止	上限超（exit 2）を検知したら、前任の状態にかかわらず作業継続の SendMessage を送らない（再開しない）。 handoff-scan: fixture	正本の語" \
+    "①再開の禁止	over_cap が立った担当には、作業を続けさせるのを避ける。 handoff-scan: fixture	言い換え" \
+    "①再開の禁止	上限超（exit 2）を検知したら、前任に作業継続の SendMessage を送らない【この注記は走査の前に取り除かれる】。 handoff-scan: fixture	前処理" \
+    "②手渡しの許可条件	手渡しを行ってよいのは、前任が工程完了を宣言したときだけである。 handoff-scan: fixture	正本の語" \
+    "②手渡しの許可条件	後任を立てられるのは、完了宣言があった場合のみである。 handoff-scan: fixture	言い換え" \
+    "③宣言の書式と選び方	return の 1 行目は \`工程完了: <工程名>\` か \`工程中断: <理由>\` に完全一致させること。 handoff-scan: fixture	正本の語" \
+    "③宣言の書式と選び方	後任へ渡す文書の冒頭行は、定められた型に一致させること。 handoff-scan: fixture	言い換え" \
+    "③宣言の書式と選び方	return の 1 行目はどちらかにする（\`工程完了: <工程名>\` / \`工程中断: <理由>\`）。 handoff-scan: fixture	前処理" \
+    "③宣言の書式と選び方	W は return の先頭で \`工程完了: <工程名>\` か \`工程中断: <理由>\` のどちらかを宣言する。 handoff-scan: fixture	前処理" \
+    "④停止指示と停止確認	本体は先に前任へ停止を指示し、停止確認を受け取ってから手渡し先を spawn する。 handoff-scan: fixture	正本の語" \
+    "④停止指示と停止確認	動いている担当には中止を伝え、その返事を得てから後任を立てる。 handoff-scan: fixture	言い換え" \
+    "①再開の禁止	正本のとおり、\`DEV_WORKFLOW_CONTEXT_CAP\` を超えたら前任に続きを依頼してはならない。 handoff-scan: fixture	正本の語" \
+    "④停止指示と停止確認	本体は先に前任へ停止を指示し、停止確認を受け取ってから手渡し先を spawn する（正本は \`skills/develop/references/decision-criteria.md\`）。 handoff-scan: fixture	正本の語"
 }
 
 ALL_RULES='①再開の禁止 ②手渡しの許可条件 ③宣言の書式と選び方 ④停止指示と停止確認'
 
 @test "single source: each rule is detected on its own, without being confused for another rule" {
-  local i=0 rule sample sandbox other
-  while IFS=$'\t' read -r rule sample; do
+  local i=0 rule sample kind sandbox other
+  while IFS=$'\t' read -r rule sample kind; do
     i=$((i + 1))
     sandbox="${BATS_TEST_TMPDIR}/rule-${i}"
     mkdir -p "$sandbox"
@@ -345,7 +513,115 @@ ALL_RULES='①再開の禁止 ②手渡しの許可条件 ③宣言の書式と�
       fi
     done
   done < <(restatement_samples)
-  [ "$i" -eq 10 ] || { echo "サンプル数が想定と違う: $i"; return 1; }
+  [ "$i" -eq 13 ] || { echo "サンプル数が想定と違う: $i"; return 1; }
+}
+
+# spec が列挙する語彙。実装（handoff-scan.py）からコピーせず、spec の一覧をここに写す
+# （実装から取ると、実装が語彙を削ったときにテストも一緒に緩む）。
+# 下の 2 つのテストが使う: ①言い換えサンプルが正本の語を使っていないこと、②列挙した各要素が
+# 現に走査を発火させること。
+vocab_group() {
+  case "$1" in
+    ①状況)   printf '%s\n' '上限を超' '超過' 'exit 2' 'over_cap' 'CONTEXT_CAP' 'キャップを超' ;;  # handoff-scan: fixture
+    ①指示)   printf '%s\n' '再開' '続き' '続行' '継続' '作業を続' 'SendMessage' ;;  # handoff-scan: fixture
+    ①述語)   printf '%s\n' 'ない' '禁止' '禁じ' '不可' 'するな' 'せず' 'やめ' '控え' '避け' ;;  # handoff-scan: fixture
+    ②行為)   printf '%s\n' '手渡' '後任' '交代' 'spawn' '新しい W' '新しい G' '新しいエージェント' \
+                           '新しい担当' '新しい実行役' '新しいゲート役' '新しいサブエージェント' ;;  # handoff-scan: fixture
+    ②状態)   printf '%s\n' '前任' '工程完了' '工程の終わり' '完了宣言' '停止確認' '直近の return' ;;  # handoff-scan: fixture
+    ②述語)   printf '%s\n' 'ときだけ' 'ときのみ' '場合だけ' '場合のみ' 'に限る' 'に限り' 'だけとする' \
+                           'だけである' 'だけ' 'のみ' 'てよい' 'してよい' 'できるのは' 'よいのは' ;;  # handoff-scan: fixture
+    ③文脈)   printf '%s\n' '工程' '手渡' 'return' '後任' '交代' '前任' ;;  # handoff-scan: fixture
+    ③話題)   printf '%s\n' '1 行目' '一行目' '先頭行' '先頭の 1 行' '冒頭の 1 行' '冒頭行' '工程完了' '工程中断' ;;  # handoff-scan: fixture
+    ③述語)   printf '%s\n' '完全一致' 'に一致' 'にする' 'にすること' 'にせよ' 'にしなければ' 'としなければ' \
+                           'でなければ' 'を選ぶ' 'どちらか' '宣言する' '宣言してはならない' '宣言義務' ;;  # handoff-scan: fixture
+    ④停止)   printf '%s\n' '停止' '止ま' '止める' '止めて' '中止' ;;  # handoff-scan: fixture
+    ④確認)   printf '%s\n' '確認' '返事' '報告' '応答' ;;  # handoff-scan: fixture
+    ④述語)   printf '%s\n' '受け取' 'してから' 'る前に' '待ってから' '得てから' ;;  # handoff-scan: fixture
+    ④文脈)   printf '%s\n' '前任' '手渡' '交代' '後任' 'spawn' '新しい' ;;  # handoff-scan: fixture
+    *) echo "unknown vocab group: $1" >&2; return 1 ;;
+  esac
+}
+
+read_vocab() { # $1=グループ名 → 呼び出し側の配列名 $2 に読み込む
+  local t
+  while IFS= read -r t; do eval "$2+=(\"\$t\")"; done < <(vocab_group "$1")
+}
+
+# spec の MUST:「サンプルは各規則につき、正本の語をそのまま使った文と、正本の語をひとつも
+# 使わない言い換えの 2 本を含めなければならない」。言い換えが正本の語を含むと、実装が正本の語を
+# そのまま照合しているだけでも緑になる（実測: 4 本とも正本の語を含んでいた。PR #253 のレビュー指摘）。
+@test "single source: each paraphrase sample uses none of the source's vocabulary" {
+  local rule sample kind token found=0
+  while IFS=$'\t' read -r rule sample kind; do
+    [ "$kind" = '言い換え' ] || continue
+    found=$((found + 1))
+    while IFS= read -r token; do
+      case "$sample" in
+        *"$token"*)
+          if cap_sec | grep -qF -- "$token"; then
+            echo "言い換えサンプル（$rule）が正本の語「$token」を使っている: $sample"
+            return 1
+          fi
+          ;;
+      esac
+    done < <(for g in ①状況 ①指示 ①述語 ②行為 ②状態 ②述語 ③文脈 ③話題 ③述語 ④停止 ④確認 ④述語 ④文脈; do
+               vocab_group "$g"
+             done)
+  done < <(restatement_samples)
+  [ "$found" -eq 4 ] || { echo "言い換えサンプルが 4 本ない: $found"; return 1; }
+}
+
+# 列挙した語彙の各要素が現に走査を発火させること。1 つ消してもサンプルが別の語で拾われて
+# 全テストが緑のまま通る穴を塞ぐ（実測: `工程の終わり` を消しても 25/25 緑だった。PR #253 のレビュー指摘）。
+# 自然文にすると 1 文が複数の規則に掛かりやすいので、語彙をそのまま並べた合成文を使う。
+@test "single source: every listed vocabulary alternative on its own trips its rule" {
+  local -a T1=() T2=() P1=() ACT=() COND=() ONLY=() CTX3=() TOPIC=() PRED3=() STOP=() CONF=() PRED4=() CTX4=()
+  read_vocab ①状況 T1; read_vocab ①指示 T2; read_vocab ①述語 P1
+  read_vocab ②行為 ACT; read_vocab ②状態 COND; read_vocab ②述語 ONLY
+  read_vocab ③文脈 CTX3; read_vocab ③話題 TOPIC; read_vocab ③述語 PRED3
+  read_vocab ④停止 STOP; read_vocab ④確認 CONF; read_vocab ④述語 PRED4; read_vocab ④文脈 CTX4
+
+  local sandbox="${BATS_TEST_TMPDIR}/vocab-coverage"
+  mkdir -p "$sandbox"
+  local -a expect=()
+  local i
+  for ((i = 0; i < ${#P1[@]}; i++)); do
+    printf '%s %s%s\n' "${T1[i % ${#T1[@]}]}" "${T2[i % ${#T2[@]}]}" "${P1[i]}" >> "${sandbox}/restated.md"
+    expect+=('①再開の禁止')
+  done
+  for ((i = 0; i < ${#ONLY[@]}; i++)); do
+    printf '%s %s %s\n' "${ACT[i % ${#ACT[@]}]}" "${COND[i % ${#COND[@]}]}" "${ONLY[i]}" >> "${sandbox}/restated.md"
+    expect+=('②手渡しの許可条件')
+  done
+  for ((i = 0; i < ${#PRED3[@]}; i++)); do
+    printf '%s %s %s\n' "${CTX3[i % ${#CTX3[@]}]}" "${TOPIC[i % ${#TOPIC[@]}]}" "${PRED3[i]}" >> "${sandbox}/restated.md"
+    expect+=('③宣言の書式と選び方')
+  done
+  for ((i = 0; i < ${#CTX4[@]}; i++)); do
+    printf '%s %s %s %s\n' "${STOP[i % ${#STOP[@]}]}" "${CONF[i % ${#CONF[@]}]}" \
+      "${PRED4[i % ${#PRED4[@]}]}" "${CTX4[i]}" >> "${sandbox}/restated.md"
+    expect+=('④停止指示と停止確認')
+  done
+
+  git -C "$sandbox" init -q
+  git -C "$sandbox" add -A
+  run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode restatement-sentences --source "$CRITERIA_REL"
+  echo "$output"
+  [ "$status" -eq 1 ]
+
+  local num reported hits other
+  for ((i = 0; i < ${#expect[@]}; i++)); do
+    num=$((i + 1))
+    reported="$(echo "$output" | grep -F "restated.md:${num}: " || true)"
+    hits="$(printf '%s' "$reported" | grep -c . || true)"
+    [ "$hits" = '1' ] || {
+      echo "合成文 ${num}（期待: ${expect[i]}）の報告が 1 件でない: ${hits} 件"
+      echo "$reported"; return 1; }
+    case "$reported" in
+      *"${expect[i]}"*) ;;
+      *) echo "合成文 ${num} が ${expect[i]} として報告されなかった: $reported"; return 1 ;;
+    esac
+  done
 }
 
 # 検出器の 2 ファイル（この bats と handoff-scan.py）はファイル単位では外れない。
