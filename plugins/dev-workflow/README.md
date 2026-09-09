@@ -36,7 +36,7 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 
 ## references/（他プラグインと共有する契約）
 
-複数プラグインから参照される契約は、スキル配下ではなくプラグイン直下の `references/` に置く（#205 で旧プラグインから移設）。
+複数プラグインから参照される契約と、dev-workflow 内の複数スキル（develop の役割指示書と pr-review-gate）が共通で読む契約は、スキル配下ではなくプラグイン直下の `references/` に置く（#205 で旧プラグインから移設）。
 
 | ファイル | 内容 |
 |---|---|
@@ -44,6 +44,7 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 | `references/pr-body-format.md` | エージェントが書く PR / issue 本文の型（5 セクション・軽量モード・issue の承認判断 2 節）。`.github/PULL_REQUEST_TEMPLATE.md` と W の PR 手順が参照する |
 | `references/model-tiers.md` | Workflow スクリプトの `opts.model` に渡すロール別ティア → エイリアスの対応表と、残量モードによる降格。`rules/subagent-model-selection.md` が正本として指す |
 | `references/workflow-execution.md` | develop の 1 ループに収まらない規模をネイティブ Workflow ツールで回す型（Review → Build → Verify・Build Contract レビュー・verifier のしきい値・`resumeFromRunId`）。スクリプトの書き方は `workflow-authoring` スキルが正本 |
+| `references/subagent-waiting.md` | サブエージェントが長時間処理の完了を待つ方法の契約（完了待ちでターンを終えない・完了シグナルの経路別定義・前景ポーリングの雛形・待ち値と総待ちの上限）。develop の W / R1 / G の指示書と pr-review-gate スキルが参照する |
 
 ## テンプレート
 
