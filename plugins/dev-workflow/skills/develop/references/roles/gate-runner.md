@@ -40,7 +40,7 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 
 ## return の書式
 
-return メッセージの**1 行目**は宣言に使い、1 行空けてから下の本文を続ける。宣言の書式とどちらを選ぶかの義務は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、この gate-runner.md には書かない。**G は return を書く前に正本を読み、そこに書かれた書式で 1 行目を宣言する。**
+return メッセージの**1 行目**は宣言に使い、1 行空けてから下の本文を続ける。宣言の書式とどちらを選ぶかの義務は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、この gate-runner.md には書かない。**G は return を書く前に正本（`references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」）を読み、そこに書かれた書式で宣言する。**
 
 ```markdown
 ## Gate Result

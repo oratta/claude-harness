@@ -14,7 +14,8 @@ spec: dev-workflow-execution-strategy「サブエージェントのコンテキ�
 
 走査は 2 種類ある。ホワイトリスト（`offenders` ほか）はファイル単位で参照の有無を見る。
 参照を書いたうえで規則を言い換えた面はそれでは素通りするので、正本が規定する①〜④それぞれの
-再掲を文単位で拾う走査（`restatement-sentences`）を併せ持つ。
+再掲を文単位で拾う走査（`restatement-sentences`）を併せ持つ。この走査の除外表（面のパス・断片・理由）は
+`restatement-stale` が stale を検査する。
 
 grep を使わないのは、マルチバイトの否定文字クラスが locale 次第で壊れ、偽陰性になるため。
 """
@@ -62,8 +63,15 @@ REFERENCES = ('decision-criteria.md', 'コンテキスト上限（サブエー�
 #                **述語が文末（残り 15 文字以内）に来ること**を求める。名詞句を並べただけの
 #                話題の列挙（「送ってよい／送ってはならない SendMessage、手渡しを行ってよい条件、…」）は
 #                述語で終わらないので、これで規則の再掲と区別できる。
-#   ポインタ  … 同じ文が正本への参照（下の POINTER）を含むなら、規則を述べる文ではなく
-#                正本を指すポインタ文とみなして拾わない（spec が MAY で認めるガード 1 行がこの形）
+#
+# 1 文は「行を `。` で区切ったもの」で、判定の前に `【…】` の注記を取り除く（③の述語の判定にだけ、
+# 書式リテラルを取り除いた文を使う）。この前処理も語彙と同じく spec 側の決定で、実装が勝手に決めない。
+#
+# 同じ文が正本への参照を含んでいても外さない。参照を文末に添えたうえで規則を再掲する形が最も自然な
+# 書き方で（この設計の動機になった PR #253 修正前の SKILL.md がその形だった）、外すと穴が一番当たり
+# やすい所に開く。MAY で認めたガード 1 行は正本を読む義務だけを述べる文なので、話題語と規範の述語が
+# 同じ文に揃わず、この走査には掛からない。手渡しと無関係な文が語彙に掛かった場合は参照への書き換えが
+# できないので、テスト側の除外表（面のパス・断片・理由）で文単位に外す。
 
 # 否定・禁止（①）
 _NEG = '(ない|禁止|禁じ|不可|するな|せず|やめ|控え|避け)'
@@ -79,9 +87,6 @@ _ACT = '(手渡|後任|交代|spawn|新しい ?(W|G|エージェント|担当|�
 _COND = '(前任|工程完了|工程の終わり|完了宣言|停止確認|直近の return)'
 # 文末（述語のうしろに「（MUST）」等が付くのを許す）
 _TAIL = '[^。]{0,15}$'
-
-# 正本を指すポインタ文の印。この語を含む文は規則の再掲とみなさない。
-POINTER = ('正本', 'decision-criteria.md', 'コンテキスト上限（サブエージェントの手渡し）')
 
 # 各行は（規則名, 手渡しの文脈, 規範の述語）。文脈は、同じ言い回しを別の規則に使っている面
 # （`仕様化判断:` / `仕様レビュー:` / `仕様宣言` の 1 行目書式など）を巻き込まないための足切りで、
@@ -172,6 +177,43 @@ def hits(pattern, text):
             for i, line in enumerate(text.splitlines(), 1) if pattern.search(line)]
 
 
+def parse_restatement_exemptions(entries):
+    """再掲の走査の除外表。1 行は〈面のパス〉TAB〈その文に現れる断片〉TAB〈理由〉。
+
+    手渡しと無関係な文が語彙に掛かったときの唯一の逃げ道（spec が定める。面単位では外せない）。
+    """
+    parsed = []
+    for entry in entries:
+        path, _, rest = entry.partition('\t')
+        fragment, _, reason = rest.partition('\t')
+        parsed.append((path.strip(), fragment.strip(), reason.strip()))
+    return parsed
+
+
+def restatement_hits(root, paths, source):
+    """正本以外の面が①〜④を述べている文を（面, 行番号, 文, 規則名）で返す。"""
+    for path in paths:
+        if path == source:
+            continue
+        text = read(root, path)
+        if text is None:
+            continue
+        detector = path in DETECTOR_FILES
+        for num, line in enumerate(text.splitlines(), 1):
+            if detector and FIXTURE_MARK in line:
+                continue
+            for sentence in re.split('。', re.sub('【[^】]*】', '', line)):
+                for rule, context, pattern in RESTATEMENT_SENTENCES:
+                    if context is not None and not context.search(sentence):
+                        continue
+                    target = sentence
+                    if rule in LITERAL_STRIPPED_RULES:
+                        for literal in LITERALS:
+                            target = target.replace(literal, '')
+                    if pattern.search(target):
+                        yield path, num, sentence, rule
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--root', required=True)
@@ -253,31 +295,26 @@ def main():
 
     elif args.mode == 'restatement-sentences':
         source = args.source
-        for path in paths:
-            if path == source:
+        exemptions = parse_restatement_exemptions(args.exemptions)
+        for path, num, sentence, rule in restatement_hits(root, paths, source):
+            if any(p == path and frag and frag in sentence for p, frag, _ in exemptions):
                 continue
-            text = read(root, path)
-            if text is None:
-                continue
-            detector = path in DETECTOR_FILES
-            for num, line in enumerate(text.splitlines(), 1):
-                if detector and FIXTURE_MARK in line:
-                    continue
-                for sentence in re.split('。', re.sub('【[^】]*】', '', line)):
-                    if any(k in sentence for k in POINTER):
-                        continue
-                    for rule, context, pattern in RESTATEMENT_SENTENCES:
-                        if context is not None and not context.search(sentence):
-                            continue
-                        target = sentence
-                        if rule in LITERAL_STRIPPED_RULES:
-                            for literal in LITERALS:
-                                target = target.replace(literal, '')
-                        if pattern.search(target):
-                            bad = 1
-                            print(f'正本以外が{rule}を述べている: {path}:{num}: {sentence.strip()[:160]}')
+            bad = 1
+            print(f'正本以外が{rule}を述べている: {path}:{num}: {sentence.strip()[:160]}')
         if bad:
-            print(f'\n①〜④の本文は {source} にだけ置き、他の面は参照だけを書くこと。')
+            print(f'\n①〜④の本文は {source} にだけ置き、他の面は参照だけを書くこと。'
+                  '\n手渡しと無関係な文が掛かったのなら、面のパス・断片・理由を除外表に載せること。')
+
+    elif args.mode == 'restatement-stale':
+        exemptions = parse_restatement_exemptions(args.exemptions)
+        hit_list = list(restatement_hits(root, paths, args.source))
+        for path, fragment, reason in exemptions:
+            if any(p == path and fragment and fragment in sentence
+                   for p, _, sentence, _ in hit_list):
+                continue
+            bad = 1
+            print('除外表の断片が走査に掛からなくなった（行を消すこと）: '
+                  f'{path} — {fragment} — {reason}')
 
     else:
         print(f'unknown mode: {args.mode}', file=sys.stderr)

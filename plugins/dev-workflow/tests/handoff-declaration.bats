@@ -179,7 +179,9 @@ run_scan() {
   echo "$output" | grep -qF 'plugins/dev-workflow/CHANGELOG.md'
   echo "$output" | grep -qF 'plugins/dev-workflow/.claude-plugin/plugin.json'
   # この change の archive delta は歴史記録ではないので検査対象に残る
-  ! echo "$output" | grep -qF "${THIS_CHANGE}specs/dev-workflow-execution-strategy/spec.md"
+  if echo "$output" | grep -qF "${THIS_CHANGE}specs/dev-workflow-execution-strategy/spec.md"; then
+    echo "この change の archive delta が検査対象から外れている"; return 1
+  fi
 }
 
 # spec が歴史記録として除外したのは dev-workflow の CHANGELOG だけ。`*/CHANGELOG.md` で
@@ -213,10 +215,78 @@ run_scan() {
 # 本文が 1 箇所にあることの保証は上のホワイトリストとレビューが担い、この走査は補助の網である。
 # ---------------------------------------------------------------------------
 
+# ①〜④の答えを述べていないのに走査の語彙に掛かる文。参照への書き換えでは解消できないので、
+# spec の要求により〈面のパス・その文に現れる断片・理由コメント 1 行〉の 3 つ組で文単位に外す
+# （面単位で外すと、その面に規則を書き足しても検出されない穴になる）。
+# 書式: <リポジトリ相対パス><TAB><断片><TAB><理由>
+restatement_exemptions() {
+  printf '%s\n' \
+    "openspec/specs/dev-workflow-execution-strategy/spec.md	節にだけ置かなければならない	①〜④の答えではなく、正本の置き場所を定めるこの要件本文そのもの（話題を名詞句で列挙し、正本にだけ置くと述べている文）" \
+    "openspec/changes/archive/2026-09-08-handoff-requires-completed-return/specs/dev-workflow-execution-strategy/spec.md	節にだけ置かなければならない	上と同じ要件本文の archive delta 側（MODIFIED は要件本文を全文再掲する運用のため同じ文が 2 箇所に出る）"
+}
+
 @test "single source: no surface other than the source states any of the four rules" {
-  run run_scan --root "$ROOT" --this-change "$THIS_CHANGE" --mode restatement-sentences --source "$CRITERIA_REL"
+  local -a exemptions=()
+  while IFS= read -r line; do exemptions+=("$line"); done < <(restatement_exemptions)
+  run run_scan --root "$ROOT" --this-change "$THIS_CHANGE" --mode restatement-sentences --source "$CRITERIA_REL" "${exemptions[@]}"
   echo "$output"
   [ "$status" -eq 0 ]
+}
+
+@test "single source: no restatement exemption is stale (each fragment still trips the scan)" {
+  local -a exemptions=()
+  while IFS= read -r line; do exemptions+=("$line"); done < <(restatement_exemptions)
+  run run_scan --root "$ROOT" --this-change "$THIS_CHANGE" --mode restatement-stale --source "$CRITERIA_REL" "${exemptions[@]}"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "single source: every restatement exemption carries a fragment and a one-line reason" {
+  while IFS= read -r line; do
+    local path fragment reason
+    path="${line%%$'\t'*}"
+    fragment="${line#*$'\t'}"; fragment="${fragment%%$'\t'*}"
+    reason="${line##*$'\t'}"
+    [ -n "$path" ] && [ -n "$fragment" ] && [ -n "$reason" ] || {
+      echo "断片か理由が無い除外行: $line"; return 1; }
+    [ "$fragment" != "$path" ] && [ "$reason" != "$fragment" ] || {
+      echo "3 つ組になっていない除外行: $line"; return 1; }
+  done < <(restatement_exemptions)
+}
+
+# 除外は文単位。同じ面の別の文に規則を書けば、除外表があっても検出される
+# （面単位で外せると、除外表が「その面には何でも書ける」逃げ道になる）。
+@test "single source: a restatement exemption only silences the sentence carrying its fragment" {
+  local sandbox="${BATS_TEST_TMPDIR}/exempt"
+  mkdir -p "${sandbox}/openspec/specs"
+  {
+    printf '%s\n' 'レート上限を超過したら、リトライを継続しない。'  # handoff-scan: fixture
+    printf '%s\n' '上限超（exit 2）を検知したら、前任に作業継続の SendMessage を送らない。'  # handoff-scan: fixture
+  } > "${sandbox}/openspec/specs/sample.md"
+  git -C "$sandbox" init -q
+  git -C "$sandbox" add -A
+  run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode restatement-sentences --source "$CRITERIA_REL" \
+    "openspec/specs/sample.md	リトライを継続しない	手渡しではなくレート上限の話"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  if echo "$output" | grep -qF 'sample.md:1'; then
+    echo "除外表に載せた文が報告された"; return 1
+  fi
+  echo "$output" | grep -qF 'sample.md:2'
+}
+
+# 走査に掛からなくなった除外行は落とす（stale な除外を残さない）
+@test "single source: a restatement exemption whose fragment no longer trips is reported as stale" {
+  local sandbox="${BATS_TEST_TMPDIR}/exempt-stale"
+  mkdir -p "${sandbox}/openspec/specs"
+  printf '%s\n' 'この面は手渡し規則について正本を参照するだけである。' > "${sandbox}/openspec/specs/sample.md"
+  git -C "$sandbox" init -q
+  git -C "$sandbox" add -A
+  run run_scan --root "$sandbox" --this-change "$THIS_CHANGE" --mode restatement-stale --source "$CRITERIA_REL" \
+    "openspec/specs/sample.md	リトライを継続しない	手渡しではなくレート上限の話"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -qF 'リトライを継続しない'
 }
 
 # 上の検査が緑なのは「再掲が無いから」であって「何も見ていないから」ではないことを固定する。
@@ -227,6 +297,9 @@ run_scan() {
 # 1 規則につき 1 回スキャンし、そのサンプルが **その規則だけ** で報告されることを確かめる。
 # サンプルは各規則 2 本ずつ: 正本の旧版から写した文と、正本の語をひとつも使わない言い換え
 # （後者が無いと、実装が正本の語をそのまま照合しているだけでも緑になる）。
+# 末尾の 2 本は、正本への参照を同じ文に含む再掲。参照を含む文を検査から外していた頃は
+# どちらも無検出で、うち 1 本は PR #253 修正前の SKILL.md にあった②の再掲そのものの形
+# （文末に「（正本は …）」を添えた文）である。
 # サンプルはこのファイル自身ではなく使い捨てのリポジトリに置く（この bats も走査対象の面であるため。
 # 行末の印で走査から外している ＝ 印の無い行に規則を書けばこのファイルでも検出される）。
 #
@@ -240,7 +313,9 @@ restatement_samples() {
     "③宣言の書式と選び方	return の 1 行目は \`工程完了: <工程名>\` か \`工程中断: <理由>\` に完全一致させること。 handoff-scan: fixture" \
     "③宣言の書式と選び方	return の先頭行は、決められた 2 つの書式のどちらかにすること。 handoff-scan: fixture" \
     "④停止指示と停止確認	本体は先に前任へ停止を指示し、停止確認を受け取ってから手渡し先を spawn する。 handoff-scan: fixture" \
-    "④停止指示と停止確認	前任がまだ動いているときは、止めるよう伝えて、その報告を受け取ってから新しい実行役を立てる。 handoff-scan: fixture"
+    "④停止指示と停止確認	前任がまだ動いているときは、止めるよう伝えて、その報告を受け取ってから新しい実行役を立てる。 handoff-scan: fixture" \
+    "①再開の禁止	正本のとおり、\`DEV_WORKFLOW_CONTEXT_CAP\` を超えたら前任に続きを依頼してはならない。 handoff-scan: fixture" \
+    "④停止指示と停止確認	本体は先に前任へ停止を指示し、停止確認を受け取ってから手渡し先を spawn する（正本は \`references/decision-criteria.md\`）。 handoff-scan: fixture"
 }
 
 ALL_RULES='①再開の禁止 ②手渡しの許可条件 ③宣言の書式と選び方 ④停止指示と停止確認'
@@ -268,7 +343,7 @@ ALL_RULES='①再開の禁止 ②手渡しの許可条件 ③宣言の書式と�
       fi
     done
   done < <(restatement_samples)
-  [ "$i" -eq 8 ] || { echo "サンプル数が想定と違う: $i"; return 1; }
+  [ "$i" -eq 10 ] || { echo "サンプル数が想定と違う: $i"; return 1; }
 }
 
 # 検出器の 2 ファイル（この bats と handoff-scan.py）はファイル単位では外れない。
@@ -293,7 +368,9 @@ ALL_RULES='①再開の禁止 ②手渡しの許可条件 ③宣言の書式と�
   echo "$output"
   [ "$status" -eq 1 ]
   echo "$output" | grep -qF 'handoff-declaration.bats:2'
-  ! echo "$output" | grep -qF 'handoff-declaration.bats:1'
+  if echo "$output" | grep -qF 'handoff-declaration.bats:1'; then
+    echo "印を持つ行が検出された"; return 1
+  fi
 }
 
 # 書式リテラルは spec が固定していて再掲に当たらないので、引用しただけの面は落とさない
