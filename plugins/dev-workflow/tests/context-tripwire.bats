@@ -288,77 +288,34 @@ PY
   [ -z "$output" ]
 }
 
-# ---------- 2.8 Bash の許可判定 ----------
+# ---------- 2.8 Bash は強制停止中コマンド内容によらず全件拒否 ----------
 #
-# #269 で報告された迂回（git -c で diff.external 等を差し替え、強制停止中でも任意コマンドを
-# 実行できた）を受け、「サブコマンド名の照合」から「受理する文法に照合して読める形だけを通す」
-# 方式へ反転した（決定の正本: PR #269 のレビュー・issue #261）。表に無いオプションは、
-# 危険と分かっていなくても拒否する。
+# #269 で 2 周連続、実機で迂回が再現された。1 周目: 許可した git 5 種のうち `-c` の値を
+# 読み飛ばし `git -c 'diff.external=sh -c "…"' diff` で git 自身に任意コマンドを起動させた。
+# 2 周目: それを塞いだ「受理する文法への正の列挙」方式でも、判定側の shlex（POSIX 文法）と
+# 実行するシェル（zsh）のトークン化がずれ、`git push $'--receive-pack=/tmp/x' origin main`
+# （zsh の ANSI-C クォート）が判定側には「`-` で始まらない 1 オペランド」に見えて通った。
+# 受理する経路が 1 つでも残る限り、検査側と実行側のトークン化のずれで迂回が再発するため、
+# 窓そのものを閉じた（決定の正本: PR #269 の決定・2 回目、issue #261）。強制停止の閾値を
+# 超えたら Bash はコマンド内容を一切見ず常に deny する。後片付け（commit / push）はサブ
+# エージェントではなく本体が行う。
 
-@test "bash allow: allowed forms across all five subcommands pass" {
+@test "bash deny: every Bash command is denied regardless of content (former allow list included)" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
   for cmd in \
     "git status" "git status --porcelain -b" \
-    "git diff --stat" "git diff --stat --cached" "git diff HEAD^ HEAD" \
-    "git add -A" "git add -- path/to/file" \
-    "git -C /path/to/wt commit -m x" "git -C \"/path/with space/wt\" commit -m x" "git commit -m x -m y" \
-    "git push -u origin br"; do
-    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
-    [ "$status" -eq 0 ]
-    [ -z "$output" ]
-  done
-}
-
-@test "bash allow: a commit message with parentheses is not mistaken for a subshell" {
-  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  p="$(payload PreToolUse "$AGENT_ID" Bash 'git commit -m "fix(dev-workflow): a; b | c"')"
-  run bash -c "'$SCRIPT' <<< '$p'"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "bash deny: command substitution is denied with a workaround in the reason" {
-  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  p="$(payload PreToolUse "$AGENT_ID" Bash 'git commit -m "$(printf x)"')"
-  run bash -c "'$SCRIPT' <<< '$p'"
-  [ "$status" -eq 0 ]
-  python3 - "$output" <<'PY'
-import json, sys
-h = json.loads(sys.argv[1])["hookSpecificOutput"]
-assert h["permissionDecision"] == "deny", h
-r = h["permissionDecisionReason"]
-assert "-m" in r and "1 行ずつ" in r, r
-PY
-}
-
-@test "bash deny: compound commands are denied" {
-  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  for cmd in "git status && rm -rf build" "git status | head" "git status; rm x" "npm test" "gh pr comment 1 --body x"; do
+    "git -C /path/to/wt commit -m x" "git push -u origin br" "git add -A" \
+    "git -c user.name=a commit -m y" \
+    "git status && rm -rf build" "git status | head" "git status; rm x" \
+    "npm test" "gh pr comment 1 --body x" \
+    "git reset --hard" "git clean -f" "git -C /wt checkout -- ."; do
     run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
     [ "$status" -eq 0 ]
     echo "$output" | grep -q '"permissionDecision": *"deny"'
   done
 }
 
-@test "bash deny: a git subcommand outside the allowlist is denied" {
-  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  for cmd in "git reset --hard" "git clean -f" "git -C /wt checkout -- ."; do
-    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
-    [ "$status" -eq 0 ]
-    echo "$output" | grep -q '"permissionDecision": *"deny"'
-  done
-}
-
-@test "bash deny: -c is rejected regardless of the key (moved from the allow list)" {
-  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  for cmd in "git -c user.name=a commit -m y" "git -c core.pager=/tmp/x diff" "git -c alias.st=!sh status"; do
-    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
-    [ "$status" -eq 0 ]
-    echo "$output" | grep -q '"permissionDecision": *"deny"'
-  done
-}
-
-@test "bash deny: the reported diff.external bypass is rejected" {
+@test "bash deny: the reported diff.external bypass is rejected (regression, round 1)" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
   # 単一引用符を含む実値なので、外側の '$(...)' 埋め込みを避けてファイル経由で渡す
   cmd='git -c '\''diff.external=sh -c "touch /tmp/pr269-bypass"'\'' diff HEAD^ HEAD'
@@ -368,54 +325,92 @@ PY
   echo "$output" | grep -q '"permissionDecision": *"deny"'
 }
 
-@test "bash deny: the -c rejection reason mentions -c" {
+@test "bash deny: the reported ANSI-C quoting bypass is rejected (regression, round 2)" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  p="$(payload PreToolUse "$AGENT_ID" Bash 'git -c user.name=a commit -m y')"
+  # zsh の $'...' を含む実値。'$(...)' 埋め込みを避けファイル経由で渡す（1 周目と同じ理由）
+  cmd='git push $'\''--receive-pack=/tmp/pr269-bypass2'\'' origin main'
+  payload PreToolUse "$AGENT_ID" Bash "$cmd" > "$WORK/bypass2-payload.json"
+  run bash -c "'$SCRIPT' < '$WORK/bypass2-payload.json'"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"permissionDecision": *"deny"'
+}
+
+@test "bash deny: a brace-expansion variant without \$ is rejected too" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  # $ を一切使わない変種（ゲートの「$ を拒否する」案がこの時点で既に破れていた根拠）
+  cmd='git push {--receive-pack=/tmp/x,origin} main'
+  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"permissionDecision": *"deny"'
+}
+
+@test "bash deny: an empty command string is denied (fail-closed)" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "")'"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"permissionDecision": *"deny"'
+}
+
+@test "bash deny: a missing or non-string command key is denied (fail-closed)" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  # command キー自体が無い tool_input
+  p_missing="$(AID="$AGENT_ID" SESS="$SESS" TP="$TRANSCRIPT_PATH" python3 - <<'PY'
+import json, os
+d = {"hook_event_name": "PreToolUse", "session_id": os.environ["SESS"],
+     "transcript_path": os.environ["TP"], "cwd": "/tmp/x", "tool_name": "Bash",
+     "agent_id": os.environ["AID"], "tool_input": {}}
+print(json.dumps(d))
+PY
+)"
+  run bash -c "'$SCRIPT' <<< '$p_missing'"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"permissionDecision": *"deny"'
+
+  # command が文字列でない tool_input
+  p_nonstr="$(AID="$AGENT_ID" SESS="$SESS" TP="$TRANSCRIPT_PATH" python3 - <<'PY'
+import json, os
+d = {"hook_event_name": "PreToolUse", "session_id": os.environ["SESS"],
+     "transcript_path": os.environ["TP"], "cwd": "/tmp/x", "tool_name": "Bash",
+     "agent_id": os.environ["AID"], "tool_input": {"command": None}}
+print(json.dumps(d))
+PY
+)"
+  run bash -c "'$SCRIPT' <<< '$p_nonstr'"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"permissionDecision": *"deny"'
+}
+
+@test "hard stop: between cap and hard cap Bash still passes" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,180000" >/dev/null
+  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "git status")'"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "bash deny: reason carries cwd, ctx/hard, the no-Bash notice, and the edited-files instruction, and omits -C/-c wording" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  p="$(payload PreToolUse "$AGENT_ID" Bash 'git status')"
   run bash -c "'$SCRIPT' <<< '$p'"
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys
 h = json.loads(sys.argv[1])["hookSpecificOutput"]
 assert h["permissionDecision"] == "deny", h
-assert "-c" in h["permissionDecisionReason"], h["permissionDecisionReason"]
+r = h["permissionDecisionReason"]
+assert "300000" in r and "220000" in r, r
+assert "/tmp/x" in r, r                      # payload() が常に載せる cwd
+assert "Bash" in r and "一切通らない" in r, r
+assert "編集済みファイル" in r and "return" in r, r
+assert "commit は本体が行う" in r, r
+assert "工程中断:" in r, r
+assert "-C" not in r and "-c" not in r and "1 行ずつ" not in r, r
 PY
 }
 
-@test "bash deny: options outside the per-subcommand allowlist are rejected" {
-  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  for cmd in \
-    "git push --receive-pack=/tmp/x origin main" "git push --exec=/tmp/x origin main" \
-    "git diff --ext-diff" "git diff --output=/tmp/x" \
-    "git commit --no-verify -m x" "git push --force" "git commit --amend -m x"; do
-    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
-    [ "$status" -eq 0 ]
-    echo "$output" | grep -q '"permissionDecision": *"deny"'
-  done
-}
-
-@test "bash deny: git's remote helper syntax (::) is rejected" {
-  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  for cmd in "git push ext::sh -c touch origin" 'git push "ext::sh -c touch" main'; do
-    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
-    [ "$status" -eq 0 ]
-    echo "$output" | grep -q '"permissionDecision": *"deny"'
-  done
-}
-
-@test "bash deny: an env-var prefix or a global option other than -C is rejected" {
-  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  for cmd in "GIT_EXTERNAL_DIFF=/tmp/x git diff" "git --exec-path=/tmp status"; do
-    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
-    [ "$status" -eq 0 ]
-    echo "$output" | grep -q '"permissionDecision": *"deny"'
-  done
-}
-
-@test "bash deny: -C without a value is rejected" {
-  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "git -C")'"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q '"permissionDecision": *"deny"'
+@test "implementation: shlex import and GIT_* constants are gone (window fully closed)" {
+  ! grep -q 'import shlex\|, shlex' "$SCRIPT"
+  ! grep -qE '^GIT_[A-Z_]* *=' "$SCRIPT"
+  ! grep -q 'bash_allowed\|scan_command' "$SCRIPT"
 }
 
 # ---------- 2.9 実行コスト ----------

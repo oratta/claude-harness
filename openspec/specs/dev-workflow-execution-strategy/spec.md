@@ -235,84 +235,31 @@ PostToolUse で計測値が `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）を超�
 
 PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を超えていたら、hook は `Edit` / `Write` / `NotebookEdit` を拒否しなければならない（MUST）。読み取り系ツール（Read / Grep / Glob）を拒否してはならない（MUST NOT）。
 
-`Bash` の許可判定は**サブコマンド名の照合ではなく、受理する文法に照合して読める形だけを通す**方式で行う（正の列挙。表に無いオプションは、危険と分かっていなくても拒否する）。文法は次のとおり:
+`Bash` は**コマンド内容によらず拒否しなければならない**（MUST）。コマンド文字列を解析して一部の形だけを通す判定を置いてはならない（MUST NOT）。理由: 判定はこのプロセスの中でコマンド文字列をトークン化するが、実際に実行するのは別プロセスのシェル（zsh または bash）で、両者のトークン化は一致を保証できない。実際に、シェル側にだけ意味を持つ記法（zsh の ANSI-C クォート `$'…'`、シェルのブレース展開 `{a,b}` 等）を判定側が「危険でない 1 トークン」と誤認し、実行側では任意コマンドの引数に展開される迂回が 2 度にわたって実機で再現した（`git -c` の値読み飛ばし、および `git push $'--receive-pack=/tmp/x' origin main`）。受理する経路が 1 つでも残る限り、この種の迂回は形を変えて再発するため、`Bash` は内容を一切見ず全件拒否する構造に閉じる。
 
-```
-git ( -C <path> )* <subcommand> <arg>*
-```
-
-1. Bash の許可判定は、コマンド文字列をこの文法に照合して行わなければならない（MUST）
-2. 先頭トークンは厳密に `git` でなければならない（MUST）。環境変数の前置き（`GIT_EXTERNAL_DIFF=… git diff` など）はこの規則で拒否される。先頭トークンの判定を緩めてはならない（MUST NOT）— 緩めると git の挙動を外から差し替える経路が開くため
-3. サブコマンドより前に受理するのは `-C <path>`（繰り返し可）だけとする（MUST）。`<path>` は `-` で始まらない空でない 1 トークンでなければならない（MUST）。`-c <k=v>` は**値の内容によらず拒否**しなければならない（MUST NOT 受理）— 後片付け（commit と return）に `-c` が要る場面が無く、`diff.external` / `core.pager` / `core.editor` / `alias.*` / hook 系など git が外部コマンドを起動する設定キーを、キーのホワイトリストで将来にわたって網羅し続けることはできないため。`-C` を受理することは必須で（MUST）、worktree 作業では `git -C <worktree のパス> commit` を常用するため、`-C` を拒否すると「commit して return できる状態を残す」という強制停止の目的が達成できない
-4. サブコマンドは `status` / `diff` / `add` / `commit` / `push` のいずれかでなければならない（MUST）
-5. サブコマンド以降のトークンは、(a) そのサブコマンドの許可オプション表にある形、(b) `-m` / `--message` の直後の値（内容自由。commit メッセージは実行経路を持たない）、(c) `-` で始まらず `::`（git のリモートヘルパー記法。`ext::sh -c …` を閉じるため）を含まないオペランド、の 3 通りだけを受理する（MUST）。**表に無いオプションは、危険と判明していなくても拒否する**（MUST）。許可オプション表は次のとおりで、変更は仕様変更として扱う（MUST）:
-
-   | サブコマンド | 許可する形 |
-   |---|---|
-   | 共通 | `--` |
-   | status | `-s` `--short` `-b` `--branch` `--long` `--porcelain` `--porcelain=v1` `--porcelain=v2` `-u` `-uall` `-uno` `-unormal` `--untracked-files` `--untracked-files=all\|no\|normal` |
-   | diff | `--stat` `--shortstat` `--numstat` `--name-only` `--name-status` `--cached` `--staged` `--no-color` |
-   | add | `-A` `--all` `-u` `--update` `-n` `--dry-run` |
-   | commit | `-m`（値）`--message`（値）`--message=<v>` `-a` `--all` `--allow-empty` `-q` `--quiet` |
-   | push | `-u` `--set-upstream` `-q` `--quiet` `-n` `--dry-run` |
-
-   `--no-verify` / `--force` 系 / `--amend` は表に無いので自動的に拒否になる。
-6. それ以外（先頭トークンが `git` でない、`-c` を含む、サブコマンドが許可リストに無い、サブコマンド以降が上記 3 通りのいずれにも当たらない、またはパイプ・`&&`・`;`・サブシェル・コマンド置換 `$(…)` を含んで先頭コマンドを判定できない複合コマンド）は拒否しなければならない（MUST）
-7. 拒否理由には通る形を書かなければならない（MUST）。回避手段を書かない拒否理由は、Claude が次の手を取れず目的を達成できないため許されない（MUST NOT）
-
-拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とする（SHALL）。`permissionDecisionReason` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_HARD_CAP` の値 ／ commit して return せよという指示 ／ **return の 1 行目は `工程中断:` にすること**（強制停止で止まった時点で予定していた作業が残っているため、常に中断とする） ／ **通る形の案内**（Bash が拒否された場合、`git` の許可サブコマンドとオプションの限られた形だけが通ること、`-C <path>` は通り `-c <k=v>` は値によらず拒否されること、コマンド置換を含む Bash を拒否した場合は commit メッセージは `-m` を複数回に分けて 1 行ずつ渡せという回避手段）。回避手段を書かない拒否理由は、Claude が次の手を取れず目的を達成できないため許されない（MUST NOT）。
+拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とする（SHALL）。`permissionDecisionReason` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_HARD_CAP` の値 ／ `Bash` はコマンド内容によらず一切通らないこと ／ payload の `cwd`（＝そのサブエージェントの作業ツリーのパス）／ 編集済みファイルの一覧と、その作業ツリーのパス（`cwd`）を return に書けという指示 ／ commit は本体が行うという指示（サブエージェント自身は commit できないため）／ **return の 1 行目は `工程中断:` にすること**（強制停止で止まった時点で予定していた作業が残っているため、常に中断とする）。`-C <path>` や `-c <k=v>` といった、通る形についての案内を含めてはならない（MUST NOT）— 通る形は存在しないため。
 
 `DEV_WORKFLOW_CONTEXT_HARD_CAP` は `DEV_WORKFLOW_CONTEXT_CAP` より大きくなければならず、小さいか等しい場合は fail-open（何もしない）とする（MUST）。
 
 #### Scenario: 強制停止の閾値超で Edit が拒否される
 
 - **WHEN** 計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP` を超える状態で `tool_name: "Edit"` の PreToolUse payload を渡す
-- **THEN** `permissionDecision: deny` の JSON を出力し、理由に計測値と「commit して return」と `工程中断:` が含まれる
+- **THEN** `permissionDecision: deny` の JSON を出力し、理由に計測値と「commit は本体が行う」と `工程中断:` が含まれる
 
-#### Scenario: worktree 作業の git -C commit は通る
+#### Scenario: Bash はどんな形でも拒否される
 
-- **WHEN** 同じ状態で `tool_name: "Bash"`・`command: "git -C /path/to/worktree commit -m x"` の payload を渡す
-- **THEN** 何も出力せず exit 0 で終わる（許可）
+- **WHEN** 同じ状態で `tool_name: "Bash"` の PreToolUse payload を、`command` に次のいずれかを入れて渡す: 旧設計で許可していた形（`"git status"` / `"git -C /path/to/worktree commit -m x"` / `"git push -u origin br"`）、報告された迂回（`"git -c 'diff.external=sh -c \"touch /tmp/x\"' diff HEAD^ HEAD"`、zsh の ANSI-C クォートを使う `"git push $'--receive-pack=/tmp/x' origin main"`）、`$` を使わないブレース展開の変種（`"git push {--receive-pack=/tmp/x,origin} main"`）、複合コマンド（`"git status && rm -rf build"`）、空文字列・`command` キー欠落・非文字列
+- **THEN** いずれも `permissionDecision: deny` の JSON を出力する（内容を判定してから通す経路が無いことを検査する）
 
-#### Scenario: コマンド置換は拒否され、理由に回避手段が付く
+#### Scenario: 拒否理由に cwd と本体が commit する旨が含まれる
 
-- **WHEN** 同じ状態で `command: "git commit -m \"$(printf 'x')\""` の payload を渡す
-- **THEN** `permissionDecision: deny` の JSON を出力し、理由に「`-m` を複数回に分けて 1 行ずつ渡せ」が含まれる
-
-#### Scenario: 判定できない Bash は拒否側に倒す
-
-- **WHEN** 同じ状態で `command: "git status && rm -rf build"` の payload を渡す
-- **THEN** `permissionDecision: deny` の JSON を出力する
-
-#### Scenario: `-c` は値によらず拒否される
-
-- **WHEN** 同じ状態で `command: "git -c 'diff.external=sh -c \"touch /tmp/x\"' diff HEAD^ HEAD"` または `command: "git -c user.name=a commit -m y"` の payload を渡す
-- **THEN** どちらも `permissionDecision: deny` の JSON を出力する
-
-#### Scenario: 表に無いオプションは拒否される
-
-- **WHEN** 同じ状態で `command: "git push --receive-pack=/tmp/x origin main"` または `command: "git diff --output=/tmp/x"` の payload を渡す
-- **THEN** どちらも `permissionDecision: deny` の JSON を出力する
-
-#### Scenario: リモートヘルパー記法は拒否される
-
-- **WHEN** 同じ状態で `command: "git push ext::sh -c touch main"` の payload を渡す
-- **THEN** `permissionDecision: deny` の JSON を出力する
-
-#### Scenario: 環境変数の前置きは拒否される
-
-- **WHEN** 同じ状態で `command: "GIT_EXTERNAL_DIFF=/tmp/x git diff"` の payload を渡す
-- **THEN** `permissionDecision: deny` の JSON を出力する
-
-#### Scenario: 後片付けに使う形は通る
-
-- **WHEN** 同じ状態で `command: "git status --porcelain"` / `"git add -A"` / `"git diff --stat --cached"` / `"git -C <path> commit -m x"` / `"git push -u origin br"` のいずれかの payload を渡す
-- **THEN** 何も出力せず exit 0 で終わる（許可）
+- **WHEN** 同じ状態で `cwd: "/path/to/worktree"`・`tool_name: "Bash"`・`command: "git status"` の payload を渡す
+- **THEN** 理由に `/path/to/worktree` と「commit は本体が行う」が含まれ、`-C` や `-c` の文言は含まれない
 
 #### Scenario: 通知の閾値と強制停止の閾値の間では拒否しない
 
-- **WHEN** 計測値が `DEV_WORKFLOW_CONTEXT_CAP` 超・`DEV_WORKFLOW_CONTEXT_HARD_CAP` 以内の状態で `tool_name: "Edit"` の PreToolUse payload を渡す
-- **THEN** 何も出力せず exit 0 で終わる（編集は通る）
+- **WHEN** 計測値が `DEV_WORKFLOW_CONTEXT_CAP` 超・`DEV_WORKFLOW_CONTEXT_HARD_CAP` 以内の状態で `tool_name: "Edit"` または `tool_name: "Bash"`（`command: "git status"`）の PreToolUse payload を渡す
+- **THEN** どちらも何も出力せず exit 0 で終わる（編集も Bash も通る）
 
 #### Scenario: 閾値の大小が逆なら何もしない
 

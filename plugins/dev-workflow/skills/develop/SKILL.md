@@ -28,7 +28,7 @@ version: 2.1.0
 
 | 前提 | 使い方 | 無いとき |
 |---|---|---|
-| **Agent ツール** | W / R1 / G の spawn。`model` を必ず明示し、W と G は**名前付き**で spawn する（SendMessage で再開するため）。W は本体が対象専用の worktree にいなければ `isolation: "worktree"` で起こす | 本体になれない。親セッションに return する |
+| **Agent ツール** | W / R1 / G の spawn。`model` を必ず明示し、W と G は**名前付き**で spawn する（SendMessage で再開するため）。W は本体が対象専用の worktree にいなければ `isolation: "worktree"` で起こす。**`isolation: "remote"` で W / G を起こしてはならない**（強制停止に当たった作業を本体が引き取れなくなるため。理由は「worktree の用意」を参照） | 本体になれない。親セッションに return する |
 | **SendMessage** | 名前付きで起こした W / G の再開（コンテキストを引き継いだまま次の工程を指示する）と、G へのレビュー要約の受け渡し | 再開できないので、前任を手渡してよい状態のときだけ新しい W を spawn し、前回の return 全文をプロンプトに渡す。条件は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本で、満たさないなら spawn せず親に返す（前任が動いたまま後任を起こさない） |
 | **`gh`** | 記録先（issue / PR）へのコメントとラベル操作、Draft PR の作成、エピックの子の依存（`gh api repos/<owner>/<repo>/issues/<N>/dependencies/blocked_by`、issue dependencies API） | 記録先を作れないので開始しない（記録なしで実装に進まない） |
 | **opsx コマンドまたは openspec CLI** | 仕様化経路（`/opsx:ff` → R1 → `/opsx:apply` → verify → archive）。CLI だけなら W が直叩きで同じ工程を踏む | 仕様化経路が発生しない（W は `仕様化判断: しない` の理由に「openspec 不在」と書き、コード直行する） |
@@ -61,7 +61,7 @@ version: 2.1.0
 
 ## worktree の用意
 
-worktree は**本体が用意する**。本体が既に対象専用の worktree（1 issue = 1 worktree = 1 ブランチ）にいればそこで W を起こし、そうでなければ W を `isolation: "worktree"` で spawn する。**W は自分で worktree を切らない**（セットアップは worktree プラグインの `WorktreeCreate` / `SessionStart` hooks が担うので、W は判定もしない）。unmanned では憲法側が用意した worktree を使う。
+worktree は**本体が用意する**。本体が既に対象専用の worktree（1 issue = 1 worktree = 1 ブランチ）にいればそこで W を起こし、そうでなければ W を `isolation: "worktree"` で spawn する。**W は自分で worktree を切らない**（セットアップは worktree プラグインの `WorktreeCreate` / `SessionStart` hooks が担うので、W は判定もしない）。unmanned では憲法側が用意した worktree を使う。**`isolation: "remote"` は使わない**（MUST NOT）。強制停止中は `Bash` が全件拒否されるため止まったサブエージェント自身は commit できず、未コミット差分は本体が引き取る設計（下の「工程中断: で返ってきたら」を参照）だが、`remote` 隔離は本体から見えない環境なので、そこで強制停止に当たると作業がそのまま失われる。
 
 ## 1 ループ（W → R1 → W → G）
 
@@ -92,7 +92,7 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
       保留 → needs-approval のまま本体がオーナーに 1 アクション（許容する／しない、動作確認の結果）で依頼する
 ```
 
-W は名前付きで spawn し、SendMessage で再開してコンテキストを引き継ぐ（(1) の判定・(2) の指摘・(3) の実装が同じコンテキストにある）。**ただし再開の前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測る（exit 2 が上限超）。閾値と全解除の環境変数・途中計測 hook を含む 2 経路・上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言・前任が動作中のまま交代させる手順）は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、この SKILL.md には書かない。正本を読むまで手渡さない。** G の再開も同じ。**`工程中断:` で返ってきた return にレビュー結果（`agent-review` の判定やレビュー本文）が含まれていたら、本体がそれを記録先に代理投稿する**（G が途中計測の強制停止に当たると `gh pr comment` も拒否されるため。R1 の仕様レビューを代理投稿するのと同じ形）。W が孫を呼ぶ必要がある工程は存在しない。仕様化する場合で複数 change に割れたときは、interactive では change ごとに (1)〜(3) を回す（change ごとに仕様レビューを行う。並列可能なら W を並列に起こす。change ごとに worktree を分ける）。
+W は名前付きで spawn し、SendMessage で再開してコンテキストを引き継ぐ（(1) の判定・(2) の指摘・(3) の実装が同じコンテキストにある）。**ただし再開の前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測る（exit 2 が上限超）。閾値と全解除の環境変数・途中計測 hook を含む 2 経路・上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言・前任が動作中のまま交代させる手順）は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、この SKILL.md には書かない。正本を読むまで手渡さない。** G の再開も同じ。**`工程中断:` で返ってきた return にレビュー結果（`agent-review` の判定やレビュー本文）が含まれていたら、本体がそれを記録先に代理投稿する**（G が途中計測の強制停止に当たると `gh pr comment` も拒否されるため。R1 の仕様レビューを代理投稿するのと同じ形）。**強制停止中は commit も本体が行う**: `工程中断:` の return を受け取ったとき、および次の手渡し・次の spawn・そのサイクルの終了・worktree の撤去のいずれよりも先に、本体は return に書かれた作業ツリーのパス（強制停止による中断なら hook の `permissionDecisionReason` に含まれる `cwd`）に対して `git -C <path> status --porcelain` を実行して未コミット差分を確認し、残っていれば本体が commit する（MUST。止まったサブエージェント自身は `Bash` が全件拒否されて commit できない。手渡し先が確認するのは**次に起こされた**サブエージェントの差分だけなので、手渡しが発生しない経路や後継が G の場合はこの本体側の確認が無いと作業が失われたまま残る）。W が孫を呼ぶ必要がある工程は存在しない。仕様化する場合で複数 change に割れたときは、interactive では change ごとに (1)〜(3) を回す（change ごとに仕様レビューを行う。並列可能なら W を並列に起こす。change ごとに worktree を分ける）。
 
 ## モデル
 

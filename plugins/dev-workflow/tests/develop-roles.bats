@@ -305,3 +305,28 @@ extract_context_cap_section() {
   # 本体側にも代理投稿する側の手順がある
   grep -q '代理投稿' "${PLUGIN_DIR}/skills/develop/SKILL.md"
 }
+
+# ---------- 窓を閉じる（強制停止中の Bash 全件拒否）後の後片付けは本体が担う（#261, PR #269 2 回目の決定） ----------
+#
+# 強制停止中は Bash がコマンド内容によらず全件拒否されるため、止まったサブエージェント
+# 自身は commit できない。手渡し先が拾うのは「次に起こされた」サブエージェントの
+# git status / git diff だけなので、手渡しが発生しない経路や後継が G の場合は
+# 本体自身が未コミット差分を引き取らないと作業が失われたまま残る（R1-261 の BLOCKER B2/B3）。
+
+@test "SKILL.md: main takes over uncommitted work left by a hard-stopped subagent" {
+  grep -q '本体が commit する\|本体が.*commit' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'git -C .*status --porcelain' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  # 発火条件が 工程中断: の受領だけに縛られていない（手渡し・spawn・サイクル終了・worktree 撤去も含む）
+  grep -q '手渡し' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'spawn' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'worktree の撤去' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
+
+@test "SKILL.md and worker.md forbid isolation: remote for W / G" {
+  grep -q 'isolation: "remote"' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -qE '(remote.*使わない|remote.*起こしてはならない)' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
+
+@test "gate-runner.md: commit is also main's job, not G's" {
+  grep -qE 'commit.*本体が行う|本体が.*commit' "${ROLES}/gate-runner.md"
+}
