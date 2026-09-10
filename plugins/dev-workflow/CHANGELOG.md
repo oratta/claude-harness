@@ -1,8 +1,21 @@
 # Changelog — dev-workflow
 
-## 2.6.3 — 2026-09-03: 自己検証の棚卸しリストを実在する全 17 スキルに揃える（#218）
+## 2.7.1 — 2026-09-03: 自己検証の棚卸しリストを実在する全 17 スキルに揃える（#218）
 
 `references/self-verification.md` の「対象スキル一覧」に載っていなかった 6 スキルを監査した。`push-guard-setup` は成果物（`~/.githooks/pre-push`）を出し既に `## 自己検証` 節を持つため対象に編入（参照 1 行を追記、bats の TARGETS に追加）。`capability-registry`・discord / telegram の `access` / `configure` は理由付きで対象外表に載せた。実在する `plugins/*/skills/*/SKILL.md` の全件がどちらかの表に現れることを `self-verification-sections.bats` の S51 が機械検査する。
+
+## 2.7.0 — 2026-09-09: 起動の途中でコンテキストを測って止める hook
+
+サブエージェントのコンテキスト量は、本体が SendMessage で再開する直前にしか測られなかった。1 回の起動の中でどれだけ膨らんでも誰も止めないため、実測で W が 497,552 トークンに達していた（過去 14 日で上限 150,000 超が W 65%・G 63%）。1 起動の途中で測って止める経路を足した。あわせて、名前 glob が `isolation: "worktree"` のサブエージェントを見つけられない件（#243）を、名前ではなく hook が受け取る `agent_id` から解決する形で統合した。
+
+- `scripts/context-tripwire.sh`（新規）: PostToolUse（全ツール）で `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）超なら `hookSpecificOutput.additionalContext` で「今の工程を締めて成果を列挙して return せよ」を届け、PreToolUse（`Edit|Write|NotebookEdit|Bash`）で `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）超なら編集系を deny する。`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` で全解除
+- 計測対象は payload の `transcript_path` そのものではなく、その親ディレクトリ・`session_id`・`agent_id` から `<親>/<session_id>/subagents/agent-<agent_id>.jsonl` として導出する（`transcript_path` は hook が発火したセッション＝サブエージェントの中でも親のものを指す。着手前実験で確定）。直接パスが無ければ `subagents/` 以下を深さ 3 段まで、エントリ 200 件 / 20ms の上限つきで探す
+- 素の stdout + exit 0 はトランスクリプト表示（ctrl+o）にしか出ずモデルには届かないため、通知は `additionalContext` に固定した
+- 強制停止中の `Bash` は**コマンド内容によらず全件拒否する**（窓を開けない）。当初は「受理する文法に照合して読める形だけを通す」正の列挙方式（`git` の `status`/`diff`/`add`/`commit`/`push` の一部だけを許可オプション表に沿って通す）を実装したが、#269 で 2 周連続の実機迂回が見つかった: 1 周目は `git -c 'diff.external=sh -c "…"' diff` で `-c` の値を読み飛ばして任意コマンドを実行、2 周目はそれを塞いだ後も、判定側の Python `shlex`（POSIX 文法）と実行するシェル（zsh）のトークン化がずれ、`git push $'--receive-pack=/tmp/x' origin main`（zsh の ANSI-C クォート）が判定側には安全な 1 オペランドに見えて通った。受理する経路が 1 つでも残る限り検査側と実行側のトークン化のずれで迂回が再発するため、方式を反転し、`Bash` は内容を一切見ず拒否する構造に閉じた。拒否理由には計測値・`cwd`（作業ツリーのパス）・編集済みファイル一覧を `cwd` と一緒に return に書けという指示を含め、**後片付け（commit）はサブエージェントではなく本体が行う**
+- 読み取り系（Read / Grep / Glob）は拒否しない。PreToolUse の matcher を編集系 + Bash に絞ることで構造的に保証している
+- メインスレッド（`agent_id` 無し）では python3 を起動せず bash 側で exit 0 する。この hook は install 先の全ユーザーの全ツール呼び出しで走るため。読み取りは末尾 256KB だけで、5MB のトランスクリプトでも 1 回 100ms 未満
+- `scripts/subagent-context.sh` に `--file <path>` を追加（#243 の統合）。名前 glob を使わずそのファイルを測る。名前指定の既存挙動は変えない
+- `tests/context-tripwire.bats`（新規）・`tests/subagent-context.bats`（`--file` の追補）
 
 ## 2.6.2 — 2026-09-09: サブエージェントのコンテキスト量を母集団で測る（観測のみ）
 
