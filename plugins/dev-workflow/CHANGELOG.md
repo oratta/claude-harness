@@ -1,6 +1,6 @@
 # Changelog — dev-workflow
 
-## 2.7.1 — 2026-09-03: 自己検証の棚卸しリストを実在する全 17 スキルに揃える（#218）
+## 2.7.3 — 2026-09-03: 自己検証の棚卸しリストを実在する全 17 スキルに揃える（#218）
 
 `references/self-verification.md` の「対象スキル一覧」に載っていなかった 6 スキルを監査した。`push-guard-setup` は成果物（`~/.githooks/pre-push`）を出し既に `## 自己検証` 節を持つため対象に編入（参照 1 行を追記、bats の TARGETS に追加）。`capability-registry`・discord / telegram の `access` / `configure` は理由付きで対象外表に載せた。実在する `plugins/*/skills/*/SKILL.md` の全件がどちらかの表に現れることを `self-verification-sections.bats` の S51 が機械検査する。
 
