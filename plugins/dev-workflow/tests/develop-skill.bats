@@ -143,10 +143,14 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$loop" | grep -q 'needs-approval'
 }
 
-@test "loop: G failed resumes W (fable when implementation quality) then G for a diff re-review" {
+@test "loop: G failed raises only the cause side (never W to fable) then resumes W and G" {
   loop="$(section '1 ループ')"
-  echo "$loop" | grep -qE 'failed.*W を再開'
-  echo "$loop" | grep -qE '実装品質起因.*fable'
+  echo "$loop" | grep -qE 'failed.*原因分類'
+  echo "$loop" | grep -qF '実装品質起因のときだけ'
+  echo "$loop" | grep -qF '一方だけ'
+  echo "$loop" | grep -qF 'dev-workflow:decider'
+  echo "$loop" | grep -qF 'W を fable にはしない'
+  echo "$loop" | grep -qE 'W を再開'
   echo "$loop" | grep -qE 'G を再開'
 }
 
@@ -168,15 +172,21 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 
 # --- モデル ---
 
-@test "model: W/R1/G default opus and escalate to fable by pre-classification / merge conditions" {
+@test "model: W defaults to sonnet and is capped at opus; R1 opus, G sonnet; fable only via the decider type" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE 'W.*既定.*`opus`|W.*`opus`'
-  echo "$m" | grep -qE 'R1.*G.*`opus`|R1 / G.*opus'
+  echo "$m" | grep -qE '^\| W（実行役） \| `sonnet` \|'
+  echo "$m" | grep -qE 'W.*`opus`'
+  echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
+  echo "$m" | grep -qE '^\| G \| `sonnet` \|'
+  ! echo "$m" | grep -qE 'マージ条件・聖域・層間契約'
   echo "$m" | grep -q '事前分類'
   echo "$m" | grep -q 'マージ条件'
   echo "$m" | grep -q '聖域'
   echo "$m" | grep -q '層間契約'
-  echo "$m" | grep -q '`fable`'
+  # W を fable にする行は無く、fable は決める役の種別だけ
+  echo "$m" | grep -qF 'W の上限は `opus`'
+  echo "$m" | grep -qF 'dev-workflow:decider'
+  echo "$m" | grep -qF 'agent-model-guard.sh'
 }
 
 @test "model: reserve only for automatic runs, exhausted caps every path at opus" {
@@ -187,10 +197,36 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$m" | grep -q 'references/decision-criteria.md'
 }
 
-@test "model: escalation tripwire survives as W's resume-time model choice" {
+@test "model: the escalation tripwire survives as a one-side-only ladder" {
   m="$(section 'モデル')"
   echo "$m" | grep -q '2 連続'
-  echo "$m" | grep -qE '再開.*(1 段|一段|昇格)'
+  echo "$m" | grep -qF 'どちらか一方だけ'
+  echo "$m" | grep -qF '両方同時に上げない'
+  echo "$m" | grep -qF 'dev-workflow:decider'
+}
+
+@test "model: shared budget mode sets the floor and abundant no longer lifts W" {
+  m="$(section 'モデル')"
+  echo "$m" | grep -q 'SHARED_BUDGET_MODE'
+  echo "$m" | grep -qE 'throttled.*`sonnet`'
+  echo "$m" | grep -qE 'depleted.*`sonnet`'
+  echo "$m" | grep -q 'どの役割の既定も上げない'
+}
+
+@test "model: G defaults to sonnet and every pre-classification lifts W only to opus" {
+  m="$(section 'モデル')"
+  echo "$m" | grep -qE '^\| G \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
+  echo "$m" | grep -q '聖域パス'
+  echo "$m" | grep -qE 'マージ権限・層間契約・課金/法務'
+}
+
+@test "loop: W and G are measured with subagent-context.sh before every SendMessage resume" {
+  loop="$(section '1 ループ（W → R1 → W → G）')"
+  echo "$loop" | grep -q 'subagent-context.sh'
+  echo "$loop" | grep -q '手渡し'
+  echo "$loop" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
+  echo "$loop" | grep -q 'G の再開も同じ'
 }
 
 @test "model: no execution-strategy branches nor deterministic signal commands anywhere under develop" {
@@ -290,7 +326,17 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 
 # --- 昇格トリップワイヤーのテンプレート（1.6b。hook 出力を検査する tripwire-hook.bats には混ぜない） ---
 
-@test "tripwire template: wire 1 routes to return-to-main split or native Workflow execution, keeps heading and four wires" {
+@test "tripwire template: wire 4 is the context cap handoff and wire 5 is the rate-limit reactive downgrade" {
+  grep -qE '^4\. 【コンテキスト上限 → 手渡し】' "$TRIPWIRES"
+  grep -qE '^5\. 【rate-limit 実エラー → reactive 降格】' "$TRIPWIRES"
+  ! grep -qE '^6\. ' "$TRIPWIRES"
+  w4="$(awk '/^4\. /{f=1} /^5\. /{f=0} f' "$TRIPWIRES")"
+  echo "$w4" | grep -q 'subagent-context.sh'
+  echo "$w4" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
+  echo "$w4" | grep -q 'モデルは変えない'
+}
+
+@test "tripwire template: wire 1 routes to return-to-main split or native Workflow execution, keeps heading and five wires" {
   grep -q '^## 昇格トリップワイヤー' "$TRIPWIRES"
   w1="$(awk '/^1\. /{f=1} /^2\. /{f=0} f' "$TRIPWIRES")"
   echo "$w1" | grep -q '規模超過'

@@ -7,7 +7,17 @@ TBD - created by archiving change dev-workflow-execution-strategy. Update Purpos
 dev-workflow プラグインは、作業役（develop スキルの W、または hook 注入を読む本体自身）が手を止める条件を定義する常駐ルールテンプレートを配布しなければならない（SHALL）。テンプレートは以下のトリップワイヤーを、行為ベースの数えられる条件として定義する:
 
 1. **規模超過 → 分割**: 編集対象ファイルが5個を超えた、または着手前の見積もりから作業項目が2回増えた。W として起動されている場合は本体に return し、本体が change / 子 issue（develop スキルのエピック化）に分割する。それ以外（本体自身が読んでいる場合）は develop のエピック化、またはネイティブ Workflow 実行（型は `plugins/dev-workflow/references/workflow-execution.md`。スクリプトは `workflow-authoring` スキルを読んで書く）に切り替える
-2. **失敗ループ → モデル昇格**: 同じテストが2連続で落ちた、または同じ箇所を2回書き直した（昇格は1段ずつ: Sonnet → Opus → Fable。`FABLE_BUDGET_MODE=reserve` の自動実行、および `exhausted`（全経路）では Opus 上限）
+2. **失敗ループ → 決める役 / 実行役の分離ラダー**: 同じテストが2連続で落ちた、または同じ箇所を2回書き直した。実行役を1段ずつ上げるのではなく、失敗の原因が「決めた内容が間違っていた（判断側）」か「決めたとおりに実行できなかった（実行側）」かで、上げる相手を**一方だけ**決める（両方同時に上げない）。決める役は数ターンで終わるので先に上げ、実行役を上げるのは実行側が原因と分かったときだけとする（SHALL）。ラダーは次のとおり:
+
+   | 段階 | 決める役 | 実行役 |
+   |---|---|---|
+   | 初回 | 仕様化判断と R1 レビューが担う（既存の流れ） | `sonnet` |
+   | 1 回目の失敗 | `dev-workflow:decider` を `model: opus` で spawn（本体が opus 以上ならその場で）し、失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする | `sonnet` で再試行 |
+   | 2 回目の失敗・指示どおりやって結果が違う | `dev-workflow:decider`（`model: opus`） | `opus` |
+   | 2 回目の失敗・指示を解釈できなかった / 指示自体が外れていた | `dev-workflow:decider`（`model: fable`。本体が fable ならその場で） | `sonnet` または `opus` |
+   | fable が決めて opus が実行しても落ちる | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
+
+   決める役を spawn するときは、どの段階でも `subagent_type` を `dev-workflow:decider` に固定し `model` だけを切り替えなければならない（MUST。`general-purpose` に読み替えない）。実行役の上限は `opus` であり、実行役を Fable で spawn してはならない（MUST NOT。強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`）。`FABLE_BUDGET_MODE=reserve` の自動実行、および `exhausted`（全経路）では決める役も `model: opus` 止まりとする（種別は `dev-workflow:decider` のまま）。共有枠モード `SHARED_BUDGET_MODE` の下限が先に効く（`depleted` は昇格なし、`throttled` は Opus 上限）
 3. **仕様の発明検知 → 壁打ち/質問**: ユーザーの指示に書かれていない仕様上の決定を自分で埋めた回数が2回に達した。局所的なら AskUserQuestion、構造に及ぶなら `/opsx:explore` で壁打ちに戻す
 4. **rate-limit 実エラー → reactive 降格**: Fable 実行が rate-limit / weekly-limit の実エラーを返したら、その場で Opus に降格して作業を継続し、usage snapshot を更新する
 
@@ -17,13 +27,25 @@ dev-workflow プラグインは、作業役（develop スキルの W、または
 - **WHEN** 作業中に編集対象ファイルが6個目に達する
 - **THEN** その場で手を止め、W なら本体に return して分割を委ね、本体自身なら develop のエピック化またはネイティブ Workflow 実行（`references/workflow-execution.md`）に切り替える
 
-#### Scenario: 失敗ループでの昇格
-- **WHEN** 同じテストが2連続で落ちる
-- **THEN** 実行役のモデルを1段昇格して続行する
+#### Scenario: 1 回目の失敗では誰も上げない
+- **WHEN** 同じテストが2連続で落ちて 1 回目の失敗として扱う
+- **THEN** 実行役は `sonnet` のまま再試行し、`subagent_type: dev-workflow:decider` を `model: opus` で立てた決める役が失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする
+
+#### Scenario: 実行側が原因なら実行役だけ上げる
+- **WHEN** 2 回目の失敗で、実行役が指示どおりやったのに結果が違うと分類される
+- **THEN** 実行役を `opus` に上げ、決める役は `opus` のままで Fable には上げない
+
+#### Scenario: 判断側が原因なら決める役だけ上げる
+- **WHEN** 2 回目の失敗で、実行役が指示を解釈できなかった、または指示自体が外れていたと分類される
+- **THEN** 決める役を `dev-workflow:decider`（`fable`）に上げ、実行役は `sonnet` または `opus` のままとする
+
+#### Scenario: 実行役は Fable にならない
+- **WHEN** 昇格ラダーのどの段階かにかかわらず実行役のモデルを決める
+- **THEN** 上限は `opus` で、`model: fable` の実行役 spawn は `agent-model-guard.sh` に拒否される
 
 #### Scenario: exhausted では昇格が Opus 上限
 - **WHEN** `FABLE_BUDGET_MODE=exhausted` のセッションで失敗ループのトリップワイヤーを踏む
-- **THEN** interactive / unmanned を問わず昇格は Opus までに留まり、Fable へは昇格しない
+- **THEN** interactive / unmanned を問わず昇格は Opus までに留まり、決める役は `dev-workflow:decider` のまま `model: opus` で立てられる（種別は変えない）
 
 #### Scenario: 仕様の発明での停止
 - **WHEN** ユーザーの指示に無い仕様決定（例:「DB は SQLite でいいだろう」）を自分で埋めた回数が2回に達する
@@ -78,19 +100,96 @@ dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart �
 - **THEN** SessionStart エントリが存在し、matcher が `startup|clear|compact`、command が `${CLAUDE_PLUGIN_ROOT}` 経由でスクリプトを指している
 
 ### Requirement: usage-probe と snapshot 契約
-dev-workflow プラグインは `plugins/dev-workflow/scripts/usage-probe.sh` を配布しなければならない（SHALL）。probe は OAuth usage API（`/api/oauth/usage`）を取得し、`~/.claude/.usage-snapshot`（`USAGE_SNAPSHOT` で上書き可）に少なくとも `fable_weekly_pct` と `fable_active` を含む JSON を書く。snapshot が TTL（既定 300 秒、`USAGE_PROBE_TTL` で上書き可）以内に更新済みなら再フェッチしてはならない（SHALL NOT）。認証取得・通信・パースのいずれが失敗しても exit 0 で終了し、snapshot を書いてはならない（MUST NOT）（fail-open: 既存 snapshot を破壊しない）。
+dev-workflow プラグインは `plugins/dev-workflow/scripts/usage-probe.sh` を配布しなければならない（SHALL）。probe はアカウントレジストリ（`usage-account-registry` capability）の全スロットをループし、スロットごとに導出した Keychain サービス名で認証情報を取得して OAuth usage API（`/api/oauth/usage`）をフェッチし、`~/.claude/.usage-snapshot`（`USAGE_SNAPSHOT` で上書き可）に JSON を書く。
+
+snapshot は **schema 2** であり、次の構造でなければならない（SHALL）。snapshot は生産者（dev-workflow）と消費者（statusline）が別のタイミングで更新されうる層間契約であるため、**キー名を以下に固定する**:
+
+```json
+{
+  "schema": 2,
+  "active": "a",
+  "fetched_at": 1757000000,
+  "fable_weekly_pct": 94,
+  "fable_active": true,
+  "weekly_all_pct": 74,
+  "weekly_resets_at": "2026-09-06T00:00:00Z",
+  "weekly_resets_epoch": 1757116800,
+  "five_hour_pct": 55,
+  "five_hour_resets_at": "2026-09-04T12:00:00Z",
+  "five_hour_resets_epoch": 1756987200,
+  "accounts": {
+    "a": {
+      "label": "A",
+      "securestorage": null,
+      "fetched_at": 1757000000,
+      "five_hour_pct": 55,
+      "five_hour_resets_at": "2026-09-04T12:00:00Z",
+      "five_hour_resets_epoch": 1756987200,
+      "weekly_all_pct": 74,
+      "weekly_resets_at": "2026-09-06T00:00:00Z",
+      "weekly_resets_epoch": 1757116800,
+      "fable_weekly_pct": 94,
+      "fable_active": true
+    }
+  }
+}
+```
+
+- `schema`: `2`
+- `active`: 現在アクティブなスロットの id。判定規則は `usage-account-registry` capability の「active スロットの判定規則」に従う
+- `accounts`: スロット id をキーとするオブジェクト。各スロットの値フィールドのキー名は上記に固定する（`label` / `securestorage` / `fetched_at` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `fable_weekly_pct` / `fable_active`）。値が得られないフィールドは `null` とする
+- スロットの `fetched_at`: **そのスロットの値を実際に取得できた時刻**（epoch 秒）。fail-open で前回値を引き継いだスロットは、前回の `fetched_at` をそのまま保たなければならない（SHALL）。probe の実行時刻を書いてはならない（MUST NOT）
+- トップレベルの `fetched_at` / `fable_weekly_pct` / `fable_active` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch`: **active スロットの同名フィールドをミラーしたもの**でなければならない（SHALL）。既存の読み手（`scripts/session-tripwires.sh` の `FABLE_BUDGET_MODE` 導出、および statusline の Fable 表示と 6 時間鮮度ゲート）を無改修で動かすための後方互換であり、独立に計算してはならない（MUST NOT）。特にトップレベル `fetched_at` は probe の実行時刻ではなく active スロットの取得時刻である（statusline の鮮度ゲートがこの値を読むため、実行時刻を書くと古い数字が新鮮な顔で表示される）
+
+snapshot が TTL（既定 300 秒、`USAGE_PROBE_TTL` で上書き可）以内に更新済みなら再フェッチしてはならない（SHALL NOT）。
+
+**fail-open はスロット単位で行う**（SHALL）。あるスロットの認証取得・通信・パースが失敗した場合、そのスロットの値は既存 snapshot の同スロットの前回値（`fetched_at` を含む）を引き継いで保持し、他スロットの新しい値は書く。
+
+**API のエラーレスポンスは失敗として扱わなければならない**（SHALL）。HTTP 401 / 429 / 5xx でも API は正しい JSON のオブジェクト（`{"type":"error", ...}`）を返すため、JSON として読めたことを成功の判定に使ってはならない（MUST NOT）。使用量の数字（`five_hour` / `seven_day` / モデル別 weekly）が 1 つも取れなかったレスポンスは失敗とし、そのスロットの前回値を全 `null` で上書きしてはならない（MUST NOT）。非 active アカウントは OAuth アクセストークンの期限切れでこの経路に入るのが常態であり、ここを塞がなければスロット単位 fail-open が機能しない。非 active アカウントは OAuth アクセストークンの期限切れでフェッチが落ちるのが常態であるため、1 スロットの失敗が snapshot 全体の更新を止めてはならない（MUST NOT）。今回も取れず前回値も無いスロットは、全フィールドが `null` の欠測スロットとして `accounts` に載せる。
+
+どのスロットからも新しい値が得られなかった場合、または snapshot の組み立て・書き込みが失敗した場合は、exit 0 で終了し snapshot を書いてはならない（MUST NOT）（既存 snapshot を破壊しない）。probe はいかなる失敗でも非 0 で終了してはならない（MUST NOT）。
+
+probe は `refresh_token` を用いたアクセストークンの更新を行ってはならない（MUST NOT）。Claude Code 本体のリフレッシュと競合してトークンを無効化する危険があるため意図的に非対応とし、その理由をコードコメントに残さなければならない（SHALL）。
 
 #### Scenario: snapshot に必須フィールドを書く
 - **WHEN** 有効な usage API レスポンスを与えて probe を実行する
-- **THEN** snapshot は valid JSON で、Fable 週次消費率 `fable_weekly_pct` と `fable_active` を含む
+- **THEN** snapshot は valid JSON で、`schema` が 2、`accounts` にスロットごとの値、`active` に現在のスロット id を含み、トップレベルに Fable 週次消費率 `fable_weekly_pct` と `fable_active` を含む
+
+#### Scenario: 複数スロットをそれぞれフェッチする
+- **WHEN** 2 スロットのレジストリと、スロットごとに異なる usage API レスポンスを与えて probe を実行する
+- **THEN** `accounts` に 2 スロット分の `five_hour_pct` / `weekly_all_pct` / `fable_weekly_pct` が、それぞれのレスポンスの値で入る
+
+#### Scenario: トップレベルは active スロットのミラー
+- **WHEN** 2 スロットのレジストリで、active でない方のスロットの値が active スロットと異なる状態で probe を実行する
+- **THEN** トップレベルの `fetched_at` / `fable_weekly_pct` / `fable_active` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch` は `accounts` の active スロットの同名フィールドと一致する
+
+#### Scenario: fetched_at は取得時刻であって実行時刻ではない
+- **WHEN** active スロットのフェッチが失敗し、既存 snapshot の同スロットに前回の `fetched_at` がある状態で probe を実行する
+- **THEN** そのスロットの `fetched_at` とトップレベルの `fetched_at` はどちらも前回の取得時刻のままであり、probe の実行時刻に更新されない
 
 #### Scenario: 5 分キャッシュ
 - **WHEN** TTL 以内に更新された snapshot が既に存在する状態で probe を実行する
 - **THEN** API を再フェッチせず、既存 snapshot を維持する
 
-#### Scenario: フェッチ失敗時は fail-open
-- **WHEN** 認証取得または API 取得が失敗する
+#### Scenario: スロット単位 fail-open で前回値が残る
+- **WHEN** 2 スロットのうち片方のフェッチが失敗し、既存 snapshot にそのスロットの前回値がある状態で probe を実行する
+- **THEN** 失敗したスロットは前回値と前回の `fetched_at` を保ったまま残り、成功したスロットは新しい値に更新される
+
+#### Scenario: 前回値も無いスロットは欠測として載る
+- **WHEN** あるスロットのフェッチが失敗し、既存 snapshot にもそのスロットの値が無い状態で probe を実行する
+- **THEN** そのスロットは全フィールドが `null` の欠測スロットとして `accounts` に載る
+
+#### Scenario: API エラーレスポンスは失敗として扱う
+- **WHEN** あるスロットの API が `{"type":"error", ...}` のエラーボディを返し、既存 snapshot にそのスロットの前回値がある状態で probe を実行する
+- **THEN** そのスロットは前回値と前回の `fetched_at` を保ち、全 `null` で上書きされない
+
+#### Scenario: 全スロット失敗時は fail-open
+- **WHEN** 全スロットで認証取得または API 取得が失敗する
 - **THEN** exit code 0 で終了し、新しい snapshot を書かない（既存 snapshot があればそのまま残す）
+
+#### Scenario: スロットが 1 つのときは現行と同じ形に落ちる
+- **WHEN** レジストリが存在しない状態で有効な usage API レスポンスを与えて probe を実行する
+- **THEN** `accounts` は既定スロット 1 つだけを持ち、トップレベルの従来キー（`fetched_at` を含む）は変更前と同じ値になる（既存の読み手が無改修で動く）
 
 ### Requirement: SessionStart で残量モードを自動導出注入
 `scripts/session-tripwires.sh` は SessionStart 時に usage-probe を best-effort 実行し、snapshot から導出した残量モードと Fable 残量% を additionalContext に含めなければならない（SHALL）。導出モードのブロックはトリップワイヤー節と併せて注入する。明示 env `FABLE_BUDGET_MODE` があるときはそれを優先し、導出値ではなく明示値を提示する。probe やパースが失敗しても、トリップワイヤー注入自体は従来どおり行われなければならない（SHALL）(probe 失敗が hook 全体を壊さない)。

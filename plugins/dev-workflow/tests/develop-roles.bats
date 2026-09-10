@@ -26,6 +26,12 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 # ===== worker.md =====
 
+@test "worker: does not re-run /opsx:ff when the change already has its artifacts" {
+  grep -qF '`/opsx:ff` を再実行しない' "$WORKER"
+  grep -qF 'そのまま' "$WORKER"
+}
+
+
 @test "worker: records the spec decision with the exact first-line regex via gh, and does not proceed before" {
   grep -qF '^仕様化判断: (する|しない)$' "$WORKER"
   grep -qE 'gh (issue|pr) comment' "$WORKER"
@@ -201,10 +207,32 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q '保留' "$GATE"
 }
 
-@test "gate-runner: reviewer model default opus, fable for merge conditions / sanctuary / cross-layer contracts" {
+@test "gate-runner: G itself defaults to sonnet; the reviewer is opus or the decider type for merge conditions / cross-layer contracts" {
+  grep -q 'G の既定は `sonnet`' "$GATE"
   grep -q '`opus`' "$GATE"
-  grep -q '`fable`' "$GATE"
+  ! grep -q 'マージ条件・聖域・層間契約' "$GATE"
+  ! grep -q '聖域・層間契約による' "$GATE"
+  ! grep -qE '実装品質起因なら.*`model: fable`' "$GATE"
+  # 旧ラダー（実行役を 1 段ずつ上げる）は残さず、決める役の種別で上げる
+  ! grep -q '1 段上' "$GATE"
+  grep -qF 'dev-workflow:decider' "$GATE"
+  grep -qF '一方だけ' "$GATE"
+  grep -qF 'W を `fable` にはしない' "$GATE"
+  grep -qF '`general-purpose` に `model: fable` は付けない' "$GATE"
   grep -q 'マージ条件' "$GATE"
   grep -q '聖域' "$GATE"
   grep -q '層間契約' "$GATE"
+}
+
+# 上のテストは新文言の存在と一部の旧文言の不在しか見ておらず、同じ文書の別の段落
+# （needs-reviewer 節のレビュアー説明・モデル節の優先順位）に「fable に触れれば model: fable」
+# という旧案内が残っていても緑になっていた（PR #252 の agent-review:failed の指摘）。
+# 文書全体を行単位で走査し、Fable に触れる行が決める役の種別を伴うことを要求する。
+@test "gate-runner: every line that mentions Fable also names the decider type" {
+  offenders="$(grep -in 'fable' "$GATE" | grep -iv 'decider' || true)"
+  if [ -n "$offenders" ]; then
+    echo "決める役の種別を伴わない Fable の言及が残っている:"
+    echo "$offenders"
+    false
+  fi
 }
