@@ -1,6 +1,6 @@
 # Changelog — dev-workflow
 
-## 2.8.0 — 2026-09-10: W の工程 (3) を実装＋verify と archive＋PR＋仕様宣言 に分ける
+## 2.10.0 — 2026-09-10: W の工程 (3) を実装＋verify と archive＋PR＋仕様宣言 に分ける
 
 本体がサブエージェントのコンテキスト量を測れるのは W を SendMessage で再開する直前だけなので、return の区切りの数がそのまま計測点の数になる。これまでの (3) は TDD 実装 → verify → archive → PR → 仕様宣言の 5 段階を 1 回の return に束ねており、膨張が最も大きい実装区間を終えた地点に計測点が無かった。エピック #257 の子 #262。
 
@@ -12,6 +12,16 @@
 - **opsx スラッシュコマンドが無く openspec CLI だけある経路も同じ区切りに揃えた**。この経路だけ「実装 → `openspec archive` を直叩き」の一括のまま残っており、(3a) の計測点が作られなかった。(3a) は実装 → `openspec validate <change-name> --strict`（`/opsx:verify` の代わりの検証）まで、`openspec archive` は (3b) とし、(3a) の return には `/opsx:verify` の合否の代わりにこの exit code を載せる
 - 手渡しの手順そのものは変えていない。上限超を検知したあとの扱い・宣言の書式・前任が動作中のときの交代手順は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本のままで、本文は増やしていない（差し替えたのは工程名の例のみ）
 - `tests/develop-skill.bats` / `tests/develop-roles.bats` に 6 本追加。工程の切り出しは**行頭の工程ラベル**（`top_step` / `substep`）で行い、文言の初出位置（`grep -n … | head -1`）には依存させていない。否定アサーションは `!` で書かない — bats（bash の `set -e`）は `!` を先頭に付けたコマンドの失敗をテスト最終行以外で無視するため、`! … | grep -q …` では退行を検出できない（bats 1.13 で実測）
+
+## 2.9.0 — 2026-09-10: 途中計測 hook の早期 exit を JSON 意味論に合わせる
+
+`scripts/context-tripwire.sh` の早期 exit は payload の生文字列 `"agent_id"` の有無だけを見ていた。JSON のキーは Unicode エスケープでも書けるため（`"\u0061gent_id"` は `json.loads` すると `agent_id`）、この判定は JSON 意味論と一致せず、同値な表記の payload が python3 に届かないまま無音で fail-open していた。強制停止の閾値を超えたサブエージェントの `Bash` 呼び出しでも deny されない（#278。PR #269 の 3 周目レビューで Codex CLI が見つけた非 blocking の指摘）。
+
+- 早期 exit の条件を必要条件で切り直した: 生文字列 `"agent_id"` を含む、または 4 文字の並び `\u00` を含む payload は python3 に渡す。それ以外は従来どおり起動せず exit 0。`agent_id` の 8 文字は文字列エスケープでは `\uXXXX` でしか綴れず（他の 8 種が生む文字に英小文字とアンダースコアは無い）、その 8 文字は U+005F〜U+0074 に収まるので `\uXXXX` の上位 2 桁は必ず `00` になる
+- 早期 exit の目的（メインスレッドの通常の payload に python3 の起動コストを課さない）は変えていない。判定を誤ってよいのは「余計に起動して無音で終わる」向きだけで、逆向き（`agent_id` を持つ payload の早期 exit）は spec の MUST NOT
+- `tests/context-tripwire.bats`: エスケープ表記のキーで deny が出ることと、その並びを含むだけの payload が python3 に渡っても無音で終わることの退行テストを追加。既存の早期 exit テストには「その payload がエスケープの前置を含まない」assert を足した
+- 同 bats の payload ヘルパを `ensure_ascii=False` にして実機（ハーネスの Node の `JSON.stringify`）に寄せた。既定の `True` だと `mktemp -d` のパスに非 ASCII があるだけで `transcript_path` がエスケープの並びを含み、早期 exit のテストが環境依存で落ちる
+- 通知・拒否のメッセージ、計測の式、閾値、`hooks.json` の登録は変更なし
 
 ## 2.7.0 — 2026-09-09: 起動の途中でコンテキストを測って止める hook
 
