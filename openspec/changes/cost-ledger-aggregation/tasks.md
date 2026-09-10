@@ -38,14 +38,14 @@
 
 ## 6. 帰属（issue と区間分割）（Red → Green）
 
-- [ ] 6.1 「別リポジトリの同じ issue 番号が合算されない」テストを先に書く（Red）
-- [ ] 6.2 「main 上で `gh issue comment 148` を実行したセッションの区間が、そのリポジトリの issue 148 へ帰属する」テストを先に書く（Red）
-- [ ] 6.3 「`gh issue close` と `gh issue develop` だけのセッションもその issue へ帰属する」テストを先に書く（Red）
-- [ ] 6.4 「`gh pr ready` が区間の境界として扱われる」テストを先に書く（Red）
-- [ ] 6.5 「同じブランチで並行する 2 セッションの区間が混ざらない（`sessionId` ごとに切られる）」テストを先に書く（Red）
-- [ ] 6.6 「区間ごとのコストの合計がブランチの総額と一致する（丸め誤差を除く）」テストを先に書く（Red）
-- [ ] 6.7 「feature ブランチ上で `gh issue view` した行が、ブランチにも issue にも帰属する」テストを先に書く（Red）
-- [ ] 6.8 ツール呼び出しから `gh issue view/comment/edit/close/develop` の番号を拾って（リポジトリ識別子, issue 番号）の組を作り、`sessionId` ごとに `timestamp` 順で `gh pr comment` / `gh issue comment` / `gh pr create` / `gh pr ready` を境界として区間を切り、直近に触った issue へ寄せる実装を、事実の列に対する関数として書く（Green）
+- [x] 6.1 「別リポジトリの同じ issue 番号が合算されない」テストを先に書く（Red）
+- [x] 6.2 「main 上で `gh issue comment 148` を実行したセッションの区間が、そのリポジトリの issue 148 へ帰属する」テストを先に書く（Red）
+- [x] 6.3 「`gh issue close` と `gh issue develop` だけのセッションもその issue へ帰属する」テストを先に書く（Red）
+- [x] 6.4 「`gh pr ready` が区間の境界として扱われる」テストを先に書く（Red）
+- [x] 6.5 「同じブランチで並行する 2 セッションの区間が混ざらない（`sessionId` ごとに切られる）」テストを先に書く（Red）
+- [x] 6.6 「区間ごとのコストの合計がブランチの総額と一致する（丸め誤差を除く）」テストを先に書く（Red）
+- [x] 6.7 「feature ブランチ上で `gh issue view` した行が、ブランチにも issue にも帰属する」テストを先に書く（Red）
+- [x] 6.8 ツール呼び出しから `gh issue view/comment/edit/close/develop` の番号を拾って（リポジトリ識別子, issue 番号）の組を作り、`sessionId` ごとに `timestamp` 順で `gh pr comment` / `gh issue comment` / `gh pr create` / `gh pr ready` を境界として区間を切り、直近に触った issue へ寄せる実装を、事実の列に対する関数として書く（Green）
 
 ## 7. `/cost` コマンド（Red → Green）
 

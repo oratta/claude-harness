@@ -275,6 +275,98 @@ def summarise(facts, pricing: Pricing):
 
 
 # --------------------------------------------------------------------------
+# 区間分割（事実の列だけを入力とする純粋な関数）
+# --------------------------------------------------------------------------
+
+def split_intervals(facts):
+    """事実の列を ``sessionId`` ごとに ``timestamp`` 順で区間に切る。
+
+    会話ログを読み直さずに、抽出済みの事実の列だけから同じ区間分割が再現できる。
+    ブランチ全体を時刻順に並べて切ってはいけない。利用者は複数セッションを並行して
+    走らせるので、そうすると別セッションの行が互いの区間に混ざる。
+
+    区間の帰属先は **(リポジトリ識別子, issue 番号) の組**。issue 番号はリポジトリ内で
+    しか一意でないため、番号だけを鍵にしない。
+    """
+    by_session = defaultdict(list)
+    for fact in facts:
+        by_session[fact["session_id"]].append(fact)
+    result = []
+    for session_id in sorted(by_session):
+        rows = sorted(by_session[session_id],
+                      key=lambda f: (f["timestamp"], f["request_id"]))
+        current = []
+        for fact in rows:
+            current.append(fact)
+            if fact["post_marker"]:
+                result.append(_interval(session_id, current, fact["post_marker"]))
+                current = []
+        if current:
+            # 投稿で閉じていない末尾の区間。落とさずに残す。
+            result.append(_interval(session_id, current, None))
+    return result
+
+
+def _interval(session_id: str, rows: list, closed_by):
+    issue = None
+    repo_id = rows[-1]["repo_id"]
+    for fact in rows:
+        # その区間で直近に触った issue へ寄せる。リポジトリは触った行のものを採る。
+        for number in fact["issues"]:
+            issue = number
+            repo_id = fact["repo_id"]
+    branches = []
+    for fact in rows:
+        if fact["branch"] and fact["branch"] not in branches:
+            branches.append(fact["branch"])
+    return {
+        "session_id": session_id,
+        "issue": issue,
+        "repo_id": repo_id,
+        "branches": branches,
+        "started_at": rows[0]["timestamp"],
+        "ended_at": rows[-1]["timestamp"],
+        "closed_by": closed_by,
+        "request_ids": [f["request_id"] for f in rows],
+        "facts": rows,
+    }
+
+
+def price_intervals(intervals: list, pricing: Pricing) -> list:
+    """区間ごとの金額と件数を足す。単価を知るのはここだけで、区間分割は事実だけを見る。"""
+    for row in intervals:
+        row["usd"] = sum(pricing.cost(fact)[0] for fact in row["facts"])
+        row["messages"] = len(row["facts"])
+    return intervals
+
+
+def interval_payload(row: dict, resolver: RepoResolver) -> dict:
+    """区間を JSON に出せる形にする（事実の実体は落とし、requestId だけを残す）。"""
+    return {
+        "session_id": row["session_id"],
+        "issue": row["issue"],
+        "repo_id": row["repo_id"],
+        "repo_label": resolver.label(row["repo_id"]),
+        "branches": row["branches"],
+        "started_at": row["started_at"],
+        "ended_at": row["ended_at"],
+        "closed_by": row["closed_by"],
+        "messages": row["messages"],
+        "usd": row["usd"],
+        "request_ids": row["request_ids"],
+    }
+
+
+def render_interval(row: dict) -> str:
+    target = "issue #%s" % row["issue"] if row["issue"] else "帰属先なし"
+    boundary = "境界: %s" % row["closed_by"] if row["closed_by"] else "境界なし・末尾"
+    return "    %s %s〜%s %d メッセージ $%s → %s（%s）" % (
+        row["session_id"], row["started_at"], row["ended_at"], row["messages"],
+        format(row["usd"], ",.2f"), target, boundary,
+    )
+
+
+# --------------------------------------------------------------------------
 # 出力
 # --------------------------------------------------------------------------
 
@@ -402,6 +494,77 @@ def cmd_report(args, pricing: Pricing, resolver: RepoResolver) -> int:
     return 0
 
 
+def cmd_intervals(args, pricing: Pricing, resolver: RepoResolver) -> int:
+    """区間分割そのものを見る窓口。ブランチの総額が区間の合計と合うことを確かめられる。"""
+    facts = list(iter_facts(log_root(), resolver, branch=args.branch))
+    rows = price_intervals(split_intervals(facts), pricing)
+    total = sum(row["usd"] for row in rows)
+    if args.json:
+        print(json.dumps({
+            "branch": args.branch,
+            "total_usd": total,
+            "messages": len(facts),
+            "intervals": [interval_payload(row, resolver) for row in rows],
+            "usd_jpy_rate": pricing.jpy_rate,
+        }, ensure_ascii=False, indent=2))
+        return 0
+    target = "ブランチ %s" % args.branch if args.branch else "全履歴"
+    print(headline(total, pricing, target, "区間"))
+    print("  対象: %s（%d 区間 / %d メッセージ）" % (target, len(rows), len(facts)))
+    for row in rows:
+        print(render_interval(row))
+    return 0
+
+
+def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
+    """(リポジトリ識別子, issue 番号) の組に帰属する区間を集める。
+
+    issue 番号はリポジトリ内でしか一意でないので、実行した作業ディレクトリの
+    リポジトリで絞る。リポジトリが不明に落ちた行は、除外も合算もせず別立てで出す。
+    """
+    where = os.path.abspath(args.repo) if args.repo else os.getcwd()
+    repo_id = resolver.repo_id(where)
+    if repo_id == UNKNOWN_REPO:
+        sys.stderr.write(
+            "%s は git リポジトリではないため、issue #%s の帰属先リポジトリが決まりません。\n"
+            % (where, args.issue)
+        )
+        return 2
+    number = str(args.issue)
+    rows = price_intervals(split_intervals(list(iter_facts(log_root(), resolver))), pricing)
+    matched = [r for r in rows if r["issue"] == number and r["repo_id"] == repo_id]
+    unknown = [r for r in rows if r["issue"] == number and r["repo_id"] == UNKNOWN_REPO]
+    total = sum(row["usd"] for row in matched)
+    label = resolver.label(repo_id)
+    payload = {
+        "issue": number,
+        "repo_id": repo_id,
+        "repo_label": label,
+        "total_usd": total,
+        "messages": sum(row["messages"] for row in matched),
+        "intervals": [interval_payload(row, resolver) for row in matched],
+        "unknown_repo_usd": sum(row["usd"] for row in unknown),
+        "unknown_repo_messages": sum(row["messages"] for row in unknown),
+        "usd_jpy_rate": pricing.jpy_rate,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+    print(headline(total, pricing, "issue #%s (%s)" % (number, label), "区間"))
+    print("  対象: issue #%s（%s）— %d 区間 / %d メッセージ"
+          % (number, label, len(matched), payload["messages"]))
+    for row in matched:
+        print(render_interval(row))
+    if not matched:
+        print("  この会話ログにこの issue へ帰属する区間はありません。")
+    if unknown:
+        print("  リポジトリ不明: %d 件 $%s（cwd が削除済みで、どのリポジトリの #%s か絞れない）"
+              % (payload["unknown_repo_messages"],
+                 format(payload["unknown_repo_usd"], ",.2f"), number))
+    print("  ※ issue 単位は区間分割による推定です。区間の内訳で寄せ先を確かめてください。")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cost_ledger.py",
@@ -419,6 +582,18 @@ def build_parser() -> argparse.ArgumentParser:
     branch.add_argument("--target-label", default=None,
                         help="1 行目に出す帰属先の表記を差し替える（PR 経路が使う）")
     branch.set_defaults(func=cmd_branch)
+
+    intervals = subparsers.add_parser("intervals", help="セッションごとに切った区間を出す")
+    intervals.add_argument("--branch", default=None, help="このブランチの行だけを対象にする")
+    intervals.add_argument("--json", action="store_true")
+    intervals.set_defaults(func=cmd_intervals)
+
+    issue = subparsers.add_parser("issue", help="issue に帰属する区間のコストを出す")
+    issue.add_argument("issue")
+    issue.add_argument("--repo", default=None,
+                       help="帰属先リポジトリを決める場所（既定はカレントディレクトリ）")
+    issue.add_argument("--json", action="store_true")
+    issue.set_defaults(func=cmd_issue)
 
     report = subparsers.add_parser("report", help="全履歴を帰属先ごとに畳んだ監査用の出力")
     report.add_argument("--json", action="store_true")

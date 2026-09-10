@@ -70,3 +70,36 @@ cl_fake_gh() {  # $1=script body
   chmod +x "$BATS_TEST_TMPDIR/bin/gh"
   export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
 }
+
+# 標準入力の各行（1 行 1 レコードの JSON）をログ 1 ファイルとして書く。
+# 区間分割の検査で、fixture に無い並びを組み立てるために使う。
+cl_write_log() {  # $1=ログの名前
+  mkdir -p "$CONFIG_DIR/projects/$1"
+  sed -e "s#__REPO_A__#${REPO_A:-/nonexistent/a}#g" \
+      -e "s#__REPO_B__#${REPO_B:-/nonexistent/b}#g" \
+      > "$CONFIG_DIR/projects/$1/$1.jsonl"
+}
+
+# 1 レコードぶんの JSON を組み立てる。モデルは haiku 固定なので
+# input_tokens=1000000 が $1.00 になり、期待値を手で置ける。
+cl_row() {  # $1=sessionId $2=requestId $3=timestamp $4=branch $5=cwd $6=input_tokens $7=Bashコマンド(空可)
+  python3 - "$@" <<'PY'
+import json, sys
+sid, rid, ts, branch, cwd, tokens = sys.argv[1:7]
+command = sys.argv[7] if len(sys.argv) > 7 else ""
+content = []
+if command:
+    content.append({"type": "tool_use", "id": "t-" + rid, "name": "Bash",
+                    "input": {"command": command}})
+print(json.dumps({
+    "type": "assistant", "requestId": rid, "uuid": "u-" + rid, "timestamp": ts,
+    "sessionId": sid, "isSidechain": False, "cwd": cwd, "gitBranch": branch,
+    "message": {"id": "msg-" + rid, "model": "claude-haiku-4-5", "role": "assistant",
+                "content": content,
+                "usage": {"input_tokens": int(tokens), "output_tokens": 0,
+                          "cache_read_input_tokens": 0,
+                          "cache_creation": {"ephemeral_5m_input_tokens": 0,
+                                             "ephemeral_1h_input_tokens": 0}}}},
+    ensure_ascii=False))
+PY
+}
