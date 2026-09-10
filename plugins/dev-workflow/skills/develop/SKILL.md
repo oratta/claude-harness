@@ -84,7 +84,7 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
       (3) は 2 回の return に分かれる:
       (3a) apply（TDD。/opsx:apply または直叩き）→ verify → return「工程完了: 実装＋verify」
            （実行したテストコマンドと exit code、/opsx:verify の合否を載せる）
-           → 本体はここで `scripts/subagent-context.sh <W の名前>` をもう一度実行して測ってから次を指示する
+           → 本体はここで `scripts/subagent-context.sh <W の名前>` をもう一度実行して測ってから (3b) を指示する
       (3b) archive → PR を Ready に（または作成）→ 仕様宣言を PR コメントに書く
            → return「工程完了: archive＋PR＋仕様宣言」（PR #N と仕様宣言のコメント URL を載せる）
       (3) をこれより細かく（tasks の項目単位・実装／verify／archive／PR／仕様宣言 の 5 段など）切らない。
