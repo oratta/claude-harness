@@ -1,5 +1,15 @@
 # Changelog — dev-workflow
 
+## 2.7.1 — 2026-09-10: 途中計測 hook の早期 exit を JSON 意味論に合わせる
+
+`scripts/context-tripwire.sh` の早期 exit は payload の生文字列 `"agent_id"` の有無だけを見ていた。JSON のキーは Unicode エスケープでも書けるため（`"\u0061gent_id"` は `json.loads` すると `agent_id`）、この判定は JSON 意味論と一致せず、同値な表記の payload が python3 に届かないまま無音で fail-open していた。強制停止の閾値を超えたサブエージェントの `Bash` 呼び出しでも deny されない（#278。PR #269 の 3 周目レビューで Codex CLI が見つけた非 blocking の指摘）。
+
+- 早期 exit の条件を必要条件で切り直した: 生文字列 `"agent_id"` を含む、または 4 文字の並び `\u00` を含む payload は python3 に渡す。それ以外は従来どおり起動せず exit 0。`agent_id` の 8 文字は文字列エスケープでは `\uXXXX` でしか綴れず（他の 8 種が生む文字に英小文字とアンダースコアは無い）、その 8 文字は U+005F〜U+0074 に収まるので `\uXXXX` の上位 2 桁は必ず `00` になる
+- 早期 exit の目的（メインスレッドの通常の payload に python3 の起動コストを課さない）は変えていない。判定を誤ってよいのは「余計に起動して無音で終わる」向きだけで、逆向き（`agent_id` を持つ payload の早期 exit）は spec の MUST NOT
+- `tests/context-tripwire.bats`: エスケープ表記のキーで deny が出ることと、その並びを含むだけの payload が python3 に渡っても無音で終わることの退行テストを追加。既存の早期 exit テストには「その payload がエスケープの前置を含まない」assert を足した
+- 同 bats の payload ヘルパを `ensure_ascii=False` にして実機（ハーネスの Node の `JSON.stringify`）に寄せた。既定の `True` だと `mktemp -d` のパスに非 ASCII があるだけで `transcript_path` がエスケープの並びを含み、早期 exit のテストが環境依存で落ちる
+- 通知・拒否のメッセージ、計測の式、閾値、`hooks.json` の登録は変更なし
+
 ## 2.7.0 — 2026-09-09: 起動の途中でコンテキストを測って止める hook
 
 サブエージェントのコンテキスト量は、本体が SendMessage で再開する直前にしか測られなかった。1 回の起動の中でどれだけ膨らんでも誰も止めないため、実測で W が 497,552 トークンに達していた（過去 14 日で上限 150,000 超が W 65%・G 63%）。1 起動の途中で測って止める経路を足した。あわせて、名前 glob が `isolation: "worktree"` のサブエージェントを見つけられない件（#243）を、名前ではなく hook が受け取る `agent_id` から解決する形で統合した。

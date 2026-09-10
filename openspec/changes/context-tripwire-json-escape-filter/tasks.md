@@ -11,10 +11,10 @@
 ## 2. 実装（Green）
 
 - [x] 2.1 `plugins/dev-workflow/scripts/context-tripwire.sh` の `case` にエスケープ前置 4 文字の arm を足し、コメントを「必要条件で切る」根拠（`\uXXXX` 以外のエスケープでは `agent_id` を綴れない・8 文字はすべて上位 2 桁が `00`）に書き換える
-- [ ] 2.2 `context-tripwire.bats` 全件が通ることを確認する（実行は `env -u CLAUDE_SECURESTORAGE_CONFIG_DIR bash scripts/test.sh`、出力は全件ファイルに落として `grep -n '^not ok'` で拾う）
+- [x] 2.2 `context-tripwire.bats` 全件が通ることを確認する（実行は `env -u CLAUDE_SECURESTORAGE_CONFIG_DIR bash scripts/test.sh`、出力は全件ファイルに落として `grep -n '^not ok'` で拾う）
 
 ## 3. 仕上げ
 
-- [ ] 3.1 `plugins/dev-workflow/.claude-plugin/plugin.json` の version を上げ、`plugins/dev-workflow/CHANGELOG.md` に同じバージョンのエントリを足す
+- [x] 3.1 `plugins/dev-workflow/.claude-plugin/plugin.json` の version を上げ、`plugins/dev-workflow/CHANGELOG.md` に同じバージョンのエントリを足す
 - [ ] 3.2 リポジトリ全体のテスト（`env -u CLAUDE_SECURESTORAGE_CONFIG_DIR bash scripts/test.sh`）を実行し、exit code と `not ok` 件数を記録する
 - [ ] 3.3 `openspec archive` まで済ませ、PR を作って本文に `Closes #278` を書く
