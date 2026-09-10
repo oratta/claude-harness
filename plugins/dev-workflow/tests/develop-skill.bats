@@ -170,6 +170,56 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$loop" | grep -q '仕様宣言'
 }
 
+# (3) を (3a) 実装＋verify / (3b) archive＋PR＋仕様宣言 の 2 回の return に分ける（#262）。
+# 本体がコンテキスト量を測れるのは W を再開する直前だけなので、return の区切りの数が計測点の数になる。
+@test "loop: stage 3 splits into (3a) implement+verify and (3b) archive+PR+spec declaration" {
+  loop="$(section '1 ループ')"
+  a="$(echo "$loop" | grep -n '(3a)' | head -1 | cut -d: -f1)"
+  b="$(echo "$loop" | grep -n '(3b)' | head -1 | cut -d: -f1)"
+  s4="$(echo "$loop" | grep -n '(4)' | head -1 | cut -d: -f1)"
+  [ -n "$a" ] || { echo "no (3a) in the loop block"; return 1; }
+  [ -n "$b" ] || { echo "no (3b) in the loop block"; return 1; }
+  [ -n "$s4" ]
+  [ "$a" -lt "$b" ] && [ "$b" -lt "$s4" ]
+  sega="$(echo "$loop" | sed -n "${a},$((b - 1))p")"
+  echo "$sega" | grep -q 'TDD'
+  echo "$sega" | grep -q 'verify'
+  echo "$sega" | grep -qF '工程完了: 実装＋verify'
+  ! echo "$sega" | grep -q 'archive'
+  segb="$(echo "$loop" | sed -n "${b},$((s4 - 1))p")"
+  echo "$segb" | grep -q 'archive'
+  echo "$segb" | grep -q 'Ready'
+  echo "$segb" | grep -q '仕様宣言'
+  echo "$segb" | grep -qF '工程完了: archive＋PR＋仕様宣言'
+}
+
+@test "loop: main measures between (3a) and (3b) and defers the cap handling to decision-criteria.md" {
+  loop="$(section '1 ループ')"
+  s3="$(echo "$loop" | grep -n '(3)' | head -1 | cut -d: -f1)"
+  s4="$(echo "$loop" | grep -n '(4)' | head -1 | cut -d: -f1)"
+  seg="$(echo "$loop" | sed -n "${s3},$((s4 - 1))p")"
+  a="$(echo "$seg" | grep -n '(3a)' | head -1 | cut -d: -f1)"
+  b="$(echo "$seg" | grep -n '(3b)' | head -1 | cut -d: -f1)"
+  [ -n "$a" ] && [ -n "$b" ] && [ "$a" -lt "$b" ]
+  # (3a) の return と (3b) の指示のあいだに計測がある
+  echo "$seg" | sed -n "${a},$((b - 1))p" | grep -q 'subagent-context.sh'
+  # 閾値・環境変数名は再掲せず正本を指す（正本は decision-criteria.md「コンテキスト上限」）
+  echo "$seg" | grep -q 'decision-criteria.md'
+  echo "$seg" | grep -q 'コンテキスト上限'
+  ! echo "$seg" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
+  ! echo "$seg" | grep -qE '150000|150K|220000'
+  # (3a)/(3b) より細かく切らないこと
+  echo "$seg" | grep -q 'これより細かく'
+}
+
+# 旧世代の W（古いキャッシュの worker.md を読んだ W）が (3) を通しで終えて返してきたとき、
+# 本体が (3b) を再指示して PR Ready と仕様宣言を二重に走らせないための工程ルーティング。
+@test "loop: main routes stage 3 by what it instructed, not by matching the stage name string" {
+  loop="$(section '1 ループ')"
+  echo "$loop" | grep -qF '工程名の文字列照合では決めない'
+  echo "$loop" | grep -qF '(3b) を指示せず'
+}
+
 # --- モデル ---
 
 @test "model: W defaults to sonnet and is capped at opus; R1 opus, G sonnet; fable only via the decider type" {

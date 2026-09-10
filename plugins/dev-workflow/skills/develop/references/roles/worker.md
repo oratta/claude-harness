@@ -1,6 +1,6 @@
 # W（作業者）の指示書 — develop スキル
 
-develop の本体（オーケストレータ）から名前付きで spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned）・今回の工程（(1) 仕様化まで／(3) 実装から）。
+develop の本体（オーケストレータ）から名前付きで spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned）・今回の工程（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）。
 
 W は**このファイルだけ**を読んで動く（`SKILL.md` は本体向け）。判定基準の詳細は `skills/develop/references/decision-criteria.md`。
 
@@ -64,7 +64,7 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 判定をやり直したら同じ書式で投稿し直す（照合側は最新 1 件を正とする。契約の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）。**記録する前に分割判定・実装へ進まない。**
 
-仕様化しないと判定した場合は分割判定と `/opsx:ff` を飛ばし、本体に「仕様化しない」と return する（本体は (3) の実装から W を再開する。同じコンテキストなのでそのまま続けてよいと本体が指示することもある）。
+仕様化しないと判定した場合は分割判定と `/opsx:ff` を飛ばし、本体に「仕様化しない」と return する（本体は (3a) の実装から W を再開する。同じコンテキストなのでそのまま続けてよいと本体が指示することもある）。
 
 ## 分割判定（単一 change か複数 change か）
 
@@ -100,15 +100,14 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
   同じく本体に return して**同じ仕様レビュー**（R1）を受ける。APPROVE 後に再開されたら実装 → `openspec archive` を直叩きで行う
 - 仕様レビュー結果は R1 が記録先にコメントする（1 行目 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$`）。W はそのコメントを見て APPROVE を確認してから実装に入る（書式の正本は `references/roles/spec-reviewer.md`）
 
-## 実装（(3)。TDD 徹底）
+## (3a) 実装＋verify（TDD 徹底）
 
-単一 change 1 つ分の実装手順。仕様化する場合と直行する場合で入口が違うだけで、**テストを先に書く**のは共通。
+単一 change 1 つ分の実装手順。仕様化する場合と直行する場合で入口が違うだけで、**テストを先に書く**のは共通。**この節は verify までで終わる**（archive 以降は次の (3b)）。
 
 **仕様化する場合（opsx 利用可能時）**:
 ```
 /opsx:apply <change-name>  # tasks を TDD で実装（各タスクを終えたら tasks.md のチェックボックスを [x] に）
 /opsx:verify <change-name> # 実装が artifact と一致するか検証
-/opsx:archive <change-name># 完了した change をアーカイブ（archive まで W の仕事。PR に archive 済みの状態を含める）
 ```
 
 **コード直行する場合（仕様化不要）**:
@@ -124,11 +123,22 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 - 完了・合格の宣言には必ず証拠（実行コマンドと exit code）を付ける
 - 作業の節目ごとに commit → push（記録先が Draft PR なら PR が逐次更新される）
 
-## PR と仕様宣言（(3) の終わり）
+**(3a) の return に書くこと**（1 行目は `工程完了: 実装＋verify`）:
 
-1. PR を用意する: 記録先が Draft PR ならそれを **Ready for Review** に切り替える（`gh pr ready <PR番号>`）。issue が記録先なら PR を作成する（本文に `Closes #<issue>`。unmanned では `plugins/dev-workflow/references/pr-body-format.md` の型に従い **Draft** のまま `agent-review:pending` を付ける — 憲法 Step 3 の 5〜6 に相当）
-2. **仕様宣言**を PR コメントに書く（書式・`対象 HEAD:` 規約の正本は pr-review-gate スキル手順 3。`仕様: 更新した`＋archive 済み・`仕様レビュー: APPROVE`、または `仕様: 変更なし`＋理由）
-3. return「PR #N（HEAD SHA）。実行したテストコマンドと exit code、仕様宣言のコメント URL、埋めた決定の列挙、昇格トリップワイヤーの発火有無」
+- **実行したテストコマンドと exit code**（フルテスト・lint・ビルド。失敗が残っていればその件数も）
+- **`/opsx:verify` の合否**（仕様化した場合。直行した場合は「仕様化しないため verify なし」と書く）
+- 編集したファイルの一覧・自分で埋めた決定・昇格トリップワイヤーの発火有無・残作業
+
+この 2 つ（テストコマンドと exit code、`/opsx:verify` の合否）を必ず載せるのは、(3b) の担い手が pr-review-gate 手順 5 が照合する動作確認の証拠を書くための唯一の入力になるためである。手渡しが起きると後任は前任の履歴を読めないので、証拠が return に無ければフルテストを回し直すか証拠なしで宣言するかのどちらかになる。
+
+## (3b) archive＋PR＋仕様宣言
+
+(3a) の return を本体が受け取り、コンテキスト量を測ってから再開（または手渡し）されて入る節。実装内容には手を入れず、事務手続きだけを行う。
+
+1. `/opsx:archive <change-name>`（仕様化した場合。完了した change をアーカイブし、archive 済みの状態を PR に含める）
+2. PR を用意する: 記録先が Draft PR ならそれを **Ready for Review** に切り替える（`gh pr ready <PR番号>`）。issue が記録先なら PR を作成する（本文に `Closes #<issue>`。unmanned では `plugins/dev-workflow/references/pr-body-format.md` の型に従い **Draft** のまま `agent-review:pending` を付ける — 憲法 Step 3 の 5〜6 に相当）
+3. **仕様宣言**を PR コメントに書く（書式・`対象 HEAD:` 規約の正本は pr-review-gate スキル手順 3。`仕様: 更新した`＋archive 済み・`仕様レビュー: APPROVE`、または `仕様: 変更なし`＋理由）
+4. return（1 行目は `工程完了: archive＋PR＋仕様宣言`）: **PR #N（HEAD SHA）と仕様宣言のコメント URL**、(3a) から引き継いだテストコマンドと exit code、埋めた決定の列挙、昇格トリップワイヤーの発火有無
 
 ## 重要実装の事前分類（1 周目のモデルを上げる条件）
 
@@ -166,7 +176,8 @@ W は再開のたびに全履歴を読み直すので、履歴は畳まれずに
 
 上限超を検知したあとの扱いも、W が return の 1 行目に置く宣言の書式とどちらを選ぶかの義務も、本体から停止を指示されたときの動き方も、すべて `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本である。この worker.md には書かない（同じ規則の言い換えが複数の面に散らばっていたことが 2026-09 の書き換え漏れと二重 spawn 事故の原因だった）。**W は return を書く前に正本（`skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」）を読み、そこに書かれた書式で宣言する。**
 
-そのうえで、W 自身の動き方は次の 2 つ。
+そのうえで、W 自身の動き方は次の 3 つ。
 
-- **工程の終わりに必ず return する**（(1) 仕様化まで／(3) 実装から、の単位。1 spawn で次の工程に進まない）。return は正本が定める 1 行目の宣言で始め、そのうしろに成果一覧（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を並べる。この成果一覧が手渡しの唯一の入力になる
+- **工程の終わりに必ず return する**（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言、の 3 つの単位。1 spawn で次の工程に進まない）。return は正本が定める 1 行目の宣言で始め、そのうしろに成果一覧（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を並べる。この成果一覧が手渡しの唯一の入力になる
+- **(3) をこれより細かく切らない**（`tasks.md` の項目単位や「実装／verify／archive／PR／仕様宣言」の 5 段にしない）。手渡しが 1 回起きるたびに、後任は指示書と正本の節を読み直し、記録先を取り直し、`git status` / `git diff` でファイルの現状を確認する固定分を払う。この固定分は工程の大きさに依存しないので、区切りを増やすほど 1 区切りあたりの実質作業比が下がる。また区切りが実装の途中に落ちると、後任は Red のまま止まったテストから再出発することになり、前任の設計意図を再発明する危険が最も高い地点で交代することになる
 - **手渡しで起こされたら**（本体から「前任 W の return」が渡されたら）、前任の履歴は読めないし読まない。前任の return と記録先、ファイルの現状（`git status` / `git diff`）から再出発し、前任の埋めた決定を再発明しない。**前任は途中計測の強制停止でツールを拒否されて止まった可能性があるので、再出発の前に必ず `git status` / `git diff` で未コミット差分を確認する**（前任の return の 1 行目が `工程中断:` のときは特に。編集の途中で切られた木が残っていることがある）
