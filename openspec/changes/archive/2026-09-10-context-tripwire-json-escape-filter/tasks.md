@@ -16,5 +16,5 @@
 ## 3. 仕上げ
 
 - [x] 3.1 `plugins/dev-workflow/.claude-plugin/plugin.json` の version を上げ、`plugins/dev-workflow/CHANGELOG.md` に同じバージョンのエントリを足す
-- [ ] 3.2 リポジトリ全体のテスト（`env -u CLAUDE_SECURESTORAGE_CONFIG_DIR bash scripts/test.sh`）を実行し、exit code と `not ok` 件数を記録する
-- [ ] 3.3 `openspec archive` まで済ませ、PR を作って本文に `Closes #278` を書く
+- [x] 3.2 リポジトリ全体のテスト（`env -u CLAUDE_SECURESTORAGE_CONFIG_DIR bash scripts/test.sh`）を実行し、exit code と `not ok` 件数を記録する
+- [x] 3.3 `openspec archive` まで済ませ、PR を作って本文に `Closes #278` を書く
