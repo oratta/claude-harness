@@ -29,12 +29,12 @@
 
 ## 5. 帰属（ブランチとリポジトリ識別子）（Red → Green）
 
-- [ ] 5.1 「`isSidechain: true` の行もブランチの合計に含まれる」テストを先に書く（Red）
-- [ ] 5.2 「`gitBranch` が無い行が黙って消えず未帰属として残る」テストを先に書く（Red）
-- [ ] 5.3 「メイン worktree と副 worktree が同一のリポジトリ識別子に畳まれる」テストを先に書く（Red）
-- [ ] 5.4 「`cwd` が削除済みでも集計が中断せず、リポジトリ識別子が『不明』として記録される」テストを先に書く（Red）
-- [ ] 5.5 「未帰属とリポジトリ不明を含めた合計が、全行のコストの総額と一致する」テストを先に書く（Red）
-- [ ] 5.6 `gitBranch` による帰属と、`cwd` からの `git -C <cwd> rev-parse --path-format=absolute --git-common-dir` によるリポジトリ識別子の導出および worktree の畳み込みを実装する（Green）
+- [x] 5.1 「`isSidechain: true` の行もブランチの合計に含まれる」テストを先に書く（Red）
+- [x] 5.2 「`gitBranch` が無い行が黙って消えず未帰属として残る」テストを先に書く（Red）
+- [x] 5.3 「メイン worktree と副 worktree が同一のリポジトリ識別子に畳まれる」テストを先に書く（Red）
+- [x] 5.4 「`cwd` が削除済みでも集計が中断せず、リポジトリ識別子が『不明』として記録される」テストを先に書く（Red）
+- [x] 5.5 「未帰属とリポジトリ不明を含めた合計が、全行のコストの総額と一致する」テストを先に書く（Red）
+- [x] 5.6 `gitBranch` による帰属と、`cwd` からの `git -C <cwd> rev-parse --path-format=absolute --git-common-dir` によるリポジトリ識別子の導出および worktree の畳み込みを実装する（Green）
 
 ## 6. 帰属（issue と区間分割）（Red → Green）
 
