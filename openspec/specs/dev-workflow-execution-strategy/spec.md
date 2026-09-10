@@ -79,52 +79,27 @@ develop スキルの `plugins/dev-workflow/skills/develop/references/decision-cr
 - **THEN** 共有枠モードは ok（制約なし）に導出され、Fable 残量モードの導出は従来どおり conserve に倒れる
 
 ### Requirement: サブエージェントのコンテキスト上限と手渡し
-`plugins/dev-workflow/scripts/subagent-context.sh <agent-name>` は、名前付きサブエージェントのトランスクリプト（`${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*<name>*.jsonl`。同名が複数あれば最初のレコードの `cwd` が現在のディレクトリと一致するものを優先し、次に更新時刻が新しいもの）の最後の assistant レコードの usage から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を読み、1 行 JSON（`agent` / `file` / `context_tokens` / `calls` / `cap` / `over_cap`）を出力しなければならない（SHALL）。上限は `--cap` または `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）で、上限超なら exit 2、上限以内なら exit 0、トランスクリプトが無い・usage が無い・読めないときは exit 1 とし、exit 1 は作業を止めない（fail-open。SHALL）。
-
-手渡し規則の本文（上限超過を検知したときに送ってよい SendMessage と送ってはならない SendMessage、手渡しを行ってよい条件、W / G の return の 1 行目の宣言、前任が動作中のまま交代させるときの手順）は、`plugins/dev-workflow/skills/develop/references/decision-criteria.md` の「コンテキスト上限（サブエージェントの手渡し）」節にだけ置かなければならない（MUST。以下この節を正本と呼ぶ）。正本は次の 4 点を規定しなければならない（SHALL）: ①上限超過（exit 2）を検知したときに送ってよい SendMessage と送ってはならない SendMessage、②手渡し（前回の return と記録先を渡して同じ役割の新しいエージェントを spawn すること）を行ってよい条件、③W / G の return の 1 行目の宣言書式と、どちらの宣言を選ぶかの義務（固定された 2 つの書式のどちらにも当てはまらない return をどう扱うかを含む）、④前任が動作中のまま交代させる必要があるときの手順と、その待ち方。**この spec は①〜④の答えを再掲してはならない（MUST NOT）**。同じ規則の言い換えが 10 前後の面に散らばっていたことが、2026-09 に 3 周続けて書き換え漏れを出した原因であり、言い回しの多様性そのものを構造的に無くすことがこの要件の目的である。
-
-W / G の return の 1 行目の書式リテラルは `工程完了: <工程名>` と `工程中断: <理由>` の 2 つとし、変更してはならない（MUST NOT）。この 2 つだけは、別エピックの子 issue がこの書式を前提に設計されているため spec が固定する（リテラルの固定であって規則の再掲ではない。どちらを選ぶか・何を伴うかの本文は正本にある）。
-
-次の面は、手渡し規則について正本への参照だけを書かなければならず、条件・書式・手順を自分の言葉で言い換えてはならない（MUST NOT）: `plugins/dev-workflow/README.md`、`plugins/dev-workflow/skills/develop/SKILL.md`、`plugins/dev-workflow/skills/develop/references/roles/worker.md`、`plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`、`plugins/dev-workflow/templates/escalation-tripwires.md`、`plugins/dev-workflow/scripts/session-tripwires.sh` が毎セッション注入する常駐ルール文、`plugins/dev-workflow/scripts/subagent-context.sh` のヘッダコメント、`openspec/specs/dev-workflow-execution-strategy/spec.md`、`openspec/specs/dev-workflow-develop/spec.md`。`plugins/dev-workflow/.claude-plugin/plugin.json` の `description` はこの制約の対象外とし、正本とのズレを許容する（SHALL。配布メタデータでエージェントが読まないため）。
-
-参照だけになった面には、正本を読むまで手渡さない旨のガード 1 行を置いてよい（MAY）。`plugins/dev-workflow/scripts/session-tripwires.sh` が注入する常駐ルール文については、このガード 1 行を置かなければならない（MUST）。この注入文はエージェントがファイルを開かずに受け取る唯一の面であり、純粋なポインタにすると「上限超過に気づいたが条件を知らないまま即興する」状態が生まれる（2026-09 の二重 spawn 事故の直接原因は即興だった）。ガードは規則の内容ではなく正本を読む義務を述べるものなので、言い換えの禁止には抵触しない（SHALL）。
-
-本文が正本 1 箇所にしかないことは規約であり、機械検査の対象外とする（SHALL）。前段の MUST NOT を破った再掲を捕まえるのは仕様レビューである。規則の言い換えを機械で検出する検査は 2026-09 に作りかけて外した: 語彙を増やせば別の言い回しで抜け、除外を書けばそこが穴になり、緑が「違反が無い」のか「検査が何も見ていない」のか区別できない形に 7 周続けて落ちた。原理的に完全にはできない検査であり、成立するかごと follow-up https://github.com/oratta/claude-harness/issues/265 に切り出した。
-
-正本が①〜④のそれぞれを規定していることを検査するテストを、`plugins/dev-workflow/tests/` に維持しなければならない（MUST）。検査は話題語の有無ではなく、規範の**極性**（何が禁じられ何が許され、どちらの宣言を選ぶのか、どちらが先か）を固定しなければならない（MUST。語の有無だけを見ると、①の「送らない」を「送ってよい」に、③の「未完了なら `工程完了:` を宣言してはならない」を `工程完了:` と `工程中断:` を入れ替えた形に、④の「停止確認を受け取ってから spawn」を逆順に書き換えても全テストが緑になる。実測: 5 通りの反転すべてが 13/13 緑だった。PR #253 の Codex レビュー）。このテストが `grep` の引数として正本の断片を引用することは、前段の MUST NOT が禁じる「言い換え」に当たらない（SHALL。テストは規則を述べて読ませる面ではなく、正本の本文が壊れていないことを機械的に検査する面であるため）。この spec は①〜④の答えを再掲しないので、正本の答えが逆に書き換わったときに落ちるのはこのテストだけである（`openspec validate` は索引としての充足しか見ない）。正本の中身を固定するこのアサーションは、他の検査を外すときも一緒に落としてはならない（MUST NOT）。
+`plugins/dev-workflow/scripts/subagent-context.sh` は、対象のトランスクリプトの最後の assistant レコードの usage から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を読み、1 行 JSON（`agent` / `file` / `context_tokens` / `calls` / `cap` / `over_cap`）を出力しなければならない（SHALL）。対象の指定は次の 2 通りとする（SHALL）: `--file <path>` はそのファイルを直接測る（`agent` はファイル名から導く）。`<agent-name>` は名前付きサブエージェントのトランスクリプト（`${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*<name>*.jsonl`。同名が複数あれば最初のレコードの `cwd` が現在のディレクトリと一致するものを優先し、次に更新時刻が新しいもの）を名前 glob で探す fallback 経路とし、`isolation: "worktree"` で起こしたサブエージェントはファイル名に名前を含まないため見つからないことがある（SHALL。この取りこぼしは途中計測 hook が補う）。上限は `--cap` または `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）で、上限超なら exit 2、上限以内なら exit 0、トランスクリプトが無い・usage が無い・読めないときは exit 1 とし、exit 1 は作業を止めない（fail-open。SHALL）。develop の本体は W / G を SendMessage で再開する前に毎回これを実行し、exit 2 なら再開せず、前回の return（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）と記録先を渡して新しい W / G を spawn しなければならない（MUST。モデルは変えない）。W は工程の終わりに必ず return し、手渡しで起こされた W は前任の return と記録先・ファイルの現状から再出発して前任の埋めた決定を再発明してはならない（MUST NOT）。昇格トリップワイヤーの一覧（`templates/escalation-tripwires.md`）は【コンテキスト上限 → 手渡し】を 4 として含み、rate-limit 実エラーの reactive 降格を 5 とする（SHALL）。
 
 #### Scenario: 上限超のサブエージェントは exit 2
 - **WHEN** トランスクリプトの最後の assistant usage の合算が `DEV_WORKFLOW_CONTEXT_CAP` を超える
 - **THEN** `over_cap: true` の JSON を出力して exit 2 で終わる
 
-#### Scenario: 参照だけの面は言い換えを持たない
-- **WHEN** `README.md`・`SKILL.md`・`worker.md`・`gate-runner.md`・`escalation-tripwires.md`・`session-tripwires.sh` の注入文・`subagent-context.sh` のヘッダコメント・2 つの live spec のいずれかで手渡しに言及している箇所を読む
-- **THEN** そこには正本への参照（どのファイルのどの節か）があり、手渡しの条件・宣言の書式の意味・停止確認の手順を自分の言葉で述べた文は無い
-
-#### Scenario: 常駐ルール文は正本を読む義務を持つ
-- **WHEN** `scripts/session-tripwires.sh` が毎セッション注入する常駐ルール文を読む
-- **THEN** 正本への参照と、正本を読むまで手渡さない旨のガード 1 行があり、手渡しの条件・書式・手順を自分の言葉で述べた文は無い
-
-#### Scenario: 配布メタデータのズレは違反ではない
-- **WHEN** `.claude-plugin/plugin.json` の `description` の要約が正本と食い違っている
-- **THEN** それはこの要件の違反ではない（エージェントが読まない配布メタデータであるため）
-
-#### Scenario: 宣言の書式リテラルは変えない
-- **WHEN** W / G の return の 1 行目の書式を変更しようとする
-- **THEN** `工程完了: <工程名>` と `工程中断: <理由>` の 2 つは変更しない（別エピックの子 issue がこの書式を前提にしているため）
-
-#### Scenario: 書式に当てはまらない return の扱いも正本が決める
-- **WHEN** W / G の return の 1 行目が、固定された 2 つの書式のどちらにも当てはまらない
-- **THEN** その扱いは正本が規定しており、この spec も他の面もその答えを書かない（本体が内容から読み替える余地を残さない）
-
-#### Scenario: 正本の中身はテストが固定する
-- **WHEN** 正本の「コンテキスト上限（サブエージェントの手渡し）」節が①〜④のどれかを答えなくなる、または答えが逆に書き換わった状態でテストを実行する
-- **THEN** テストは落ちる（この spec は①〜④の答えを再掲しないため、規範の中身を担保するのはこのテストだけである）
-- **AND** 書き換えが語の入れ替えだけ（①の「送らない」→「送ってよい」、③の `工程完了:` と `工程中断:` の入れ替え、④の停止確認と spawn の順序の逆転）でもテストは落ちる
+#### Scenario: 上限超なら再開せず手渡す
+- **WHEN** 本体が W を SendMessage で再開しようとして `subagent-context.sh` が exit 2 を返す
+- **THEN** 本体は SendMessage を送らず、前回の return と記録先を渡して新しい W を同じモデルで spawn する
 
 #### Scenario: トランスクリプトが無くても作業は止まらない
 - **WHEN** `subagent-context.sh` が対象のトランスクリプトを見つけられない
 - **THEN** `error` を含む JSON を出力して exit 1 で終わり、本体は従来どおり再開してよい（上限判定が効かないだけ）
+
+#### Scenario: --file で直接測る
+- **WHEN** `subagent-context.sh --file <トランスクリプトのパス>` を実行する
+- **THEN** 名前 glob を使わずにそのファイルを測り、上限超なら exit 2・上限以内なら exit 0・読めなければ exit 1 を返す
+
+#### Scenario: 名前指定の既存の挙動は変わらない
+- **WHEN** `subagent-context.sh <agent-name>` を従来どおり実行する
+- **THEN** 出力する JSON のフィールドと exit code は `--file` 追加の前後で変わらない
 
 ### Requirement: model 未指定の Agent spawn は hook が拒否する
 `hooks/hooks.json` は PreToolUse（matcher: `Agent`）に `scripts/agent-model-guard.sh` を登録しなければならない（MUST）。hook は stdin の payload（`tool_name` / `tool_input`）を読み、`tool_name` が `Agent` 以外なら何もしない。`tool_input.subagent_type` が `fork` なら `model` の有無にかかわらず共有枠モード（明示 env `SHARED_BUDGET_MODE`、無ければ usage snapshot の `weekly_all_pct` から導出。90 超は `depleted`、週経過% 超は `throttled`）が `ok` のときだけ許可し、それ以外は拒否する（MUST。fork は model パラメータを無視して親モデルで動くため）。
@@ -172,6 +147,140 @@ Fable 以外の `model` があれば許可し、定義側に model を持つエ�
 #### Scenario: hooks.json に配線されている
 - **WHEN** `hooks/hooks.json` を読む
 - **THEN** `PreToolUse` に matcher `Agent`・command `${CLAUDE_PLUGIN_ROOT}/scripts/agent-model-guard.sh` のエントリがある
+
+### Requirement: コンテキスト量の計測の式は 1 つに定める
+
+サブエージェントのコンテキスト量は、対象のトランスクリプト（JSONL）に現れる**最後の `assistant` レコードの `usage`** から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を合算した値とする（MUST）。`plugins/dev-workflow/scripts/subagent-context.sh` と `plugins/dev-workflow/scripts/context-tripwire.sh` はこの同じ式で計測しなければならない（MUST）。
+
+両者は**計測ロジックを共有ファイルに抽出してはならない**（MUST NOT）。`subagent-context.sh` は全行走査で本体の再開前チェックに使い、`context-tripwire.sh` は末尾固定バイトの読み取りで毎ツール呼び出しに使うため、実装上の制約が異なる。共有するのは式であって実装ではない。
+
+#### Scenario: 2 本のスクリプトが同じトランスクリプトに同じ値を返す
+
+- **WHEN** **末尾 256KB に最後の `assistant` usage が含まれる**トランスクリプトを、`subagent-context.sh --file <path>` と `context-tripwire.sh`（導出先が同じになる payload）の両方で測る
+- **THEN** どちらも同じ `context_tokens` を計測結果として扱う（`context-tripwire.sh` は上限内だと無音なので、比較は `DEV_WORKFLOW_CONTEXT_CAP` を小さくして `additionalContext` 中の計測値を読む形で行う）
+
+### Requirement: 起動の途中でコンテキストを測る hook
+
+`plugins/dev-workflow/hooks/hooks.json` は、PostToolUse（全ツール）と PreToolUse（`Edit|Write|NotebookEdit|Bash`）に途中計測の hook スクリプト（`${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh`）を登録しなければならない（MUST）。hook は stdin の payload から `hook_event_name` / `session_id` / `transcript_path` / `agent_id` / `tool_name` / `tool_input` を読む（SHALL）。
+
+計測対象は payload の `transcript_path` そのものではなく、`transcript_path` の親ディレクトリ・`session_id`・`agent_id` から `<transcript_path の親ディレクトリ>/<session_id>/subagents/agent-<agent_id>.jsonl` として導出しなければならない（MUST）。`transcript_path` は hook が発火したセッションのトランスクリプトを指し、サブエージェントの中で発火した場合も親セッションのものを指すためである。
+
+導出したパスが存在しないときは `<transcript_path の親ディレクトリ>/<session_id>/subagents/` 以下を**深さ 3 段まで**（`subagents/` 直下を 1 段目と数える）`agent-<agent_id>.jsonl` で探してよい（MAY。入れ子のサブエージェント）。この探索は毎ツール呼び出しのコストになるため上限を設けなければならず（MUST）、走査したディレクトリエントリが 200 件を超えるか探索が 20ms を超えたら打ち切って何も出力せず exit 0 とする（SHALL）。
+
+読み取りはファイル末尾の固定 256KB だけを対象とし、そこに現れる最後の `assistant` レコードの usage を合算する（MUST）。この 256KB は環境変数で上書きできる形にしてはならない（MUST NOT。小さすぎる値を与えられると静かに fail-open して途中計測が全体で無効になるため。変更は仕様変更として扱う）。トランスクリプトが 5MB でも hook 1 回の実行時間は 100ms 未満でなければならない（MUST）。
+
+`DEV_WORKFLOW_CONTEXT_TRIPWIRE` が `off` である・`python3` が無い・読み込んだ stdin が文字列 `"agent_id"` を含まない（メインスレッドからの呼び出し）のいずれかは、**python3 を起動する前に判定して** exit 0 しなければならない（MUST）。この hook は install 先の全ユーザーの全ツール呼び出しで走り、大多数がメインスレッドであるため、そこに python3 の起動コストを課してはならない（MUST NOT）。
+
+次のいずれかに当たるときは何も出力せず exit 0 で終わらなければならない（MUST。fail-open）: 上の 3 つ ／ stdin が読めない・JSON でない ／ 導出したトランスクリプトが無い・usage が読めない ／ 探索の上限に達した ／ 閾値の環境変数が正の整数でない ／ 閾値以内。
+
+#### Scenario: agent_id が無い呼び出しは python3 を起動せず無音
+
+- **WHEN** `agent_id` を含まない PostToolUse payload を hook に渡す
+- **THEN** python3 を起動せずに、何も出力せず exit 0 で終わる
+
+#### Scenario: 上限内では無音
+
+- **WHEN** 導出したトランスクリプトの最後の usage 合算が `DEV_WORKFLOW_CONTEXT_CAP` 以内である
+- **THEN** 何も出力せず exit 0 で終わる
+
+#### Scenario: 測れないときは止めない
+
+- **WHEN** 導出したトランスクリプトが存在しない、または usage を持つ assistant レコードが末尾に無い
+- **THEN** 何も出力せず exit 0 で終わる
+
+#### Scenario: 入れ子のサブエージェントは深さ 3 段まで探す
+
+- **WHEN** `<session_id>/subagents/` の 2 段目のサブディレクトリに `agent-<agent_id>.jsonl` が置かれている payload を渡す
+- **THEN** そのファイルを計測対象として特定する
+
+#### Scenario: 探索の上限に達したら打ち切る
+
+- **WHEN** `<session_id>/subagents/` 以下に 200 件を超えるエントリがあり、目的のファイルが見つからない
+- **THEN** 探索を打ち切り、何も出力せず exit 0 で終わる
+
+#### Scenario: 5MB のトランスクリプトでも 100ms 未満
+
+- **WHEN** 5MB のトランスクリプトを対象に hook を 1 回実行する
+- **THEN** 実行時間が 100ms 未満で、出力は閾値判定の結果だけである
+
+#### Scenario: 全解除できる
+
+- **WHEN** `DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` を設定して閾値超の payload を渡す
+- **THEN** 何も出力せず exit 0 で終わる
+
+### Requirement: 上限超は PostToolUse の additionalContext で締めを通知する
+
+PostToolUse で計測値が `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）を超えていたら、hook は `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"…"}}` を stdout に出して exit 0 で終わらなければならない（MUST）。素の文字列を stdout に出して exit 0 とする形にしてはならない（MUST NOT）— PostToolUse の exit 0 の stdout はトランスクリプト表示（ctrl+o）にしか出ずモデルには届かないため、その形では通知が永久に無音になる。
+
+`additionalContext` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_CAP` の値 ／ 今の工程を締め、成果（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を列挙して return せよという指示 ／ **return の 1 行目の書き分け**（そのとき進めていた tasks グループの項目がすべて済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:`）。この通知は役割で出し分けないため、`tasks.md` を持たない受け手にも届く。したがって「tasks グループ」の指すものを本文の中で一意にしなければならない（MUST）: **`tasks.md` が無い場合は本体から渡された作業項目、G は pr-review-gate の手順 1〜5 を 1 グループとみなす**。
+
+役割（W / R1 / G / decider）による出し分けをしてはならない（MUST NOT。全サブエージェント一律）。出力は 1 回あたり数行に抑え、ツールの実行結果を書き換えてはならない（MUST NOT）。
+
+#### Scenario: 上限超で締めの指示が additionalContext に出る
+
+- **WHEN** 計測値が `DEV_WORKFLOW_CONTEXT_CAP` を超える状態で PostToolUse payload を渡す
+- **THEN** stdout が JSON として解析でき、`hookSpecificOutput.hookEventName` が `PostToolUse`、`additionalContext` に締めて return せよという指示と計測値・上限が含まれ、exit 0 で終わる
+
+#### Scenario: 通知は return の 1 行目の書き分けを含む
+
+- **WHEN** 同じ payload で `additionalContext` を読む
+- **THEN** tasks グループが全部済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:` を 1 行目にする旨と、`tasks.md` が無い場合に何を 1 グループとみなすか（本体から渡された作業項目、G は pr-review-gate の手順 1〜5）が含まれる
+
+#### Scenario: 役割で出し分けない
+
+- **WHEN** 同じ計測値で `agent_type` が異なる payload を渡す
+- **THEN** どちらも同じ `additionalContext` が出る
+
+### Requirement: 強制停止の閾値を超えたら PreToolUse が編集を拒否する
+
+PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を超えていたら、hook は `Edit` / `Write` / `NotebookEdit` を拒否しなければならない（MUST）。読み取り系ツール（Read / Grep / Glob）を拒否してはならない（MUST NOT）。
+
+`Bash` は**コマンド内容によらず拒否しなければならない**（MUST）。コマンド文字列を解析して一部の形だけを通す判定を置いてはならない（MUST NOT）。理由: 判定はこのプロセスの中でコマンド文字列をトークン化するが、実際に実行するのは別プロセスのシェル（zsh または bash）で、両者のトークン化は一致を保証できない。実際に、シェル側にだけ意味を持つ記法（zsh の ANSI-C クォート `$'…'`、シェルのブレース展開 `{a,b}` 等）を判定側が「危険でない 1 トークン」と誤認し、実行側では任意コマンドの引数に展開される迂回が 2 度にわたって実機で再現した（`git -c` の値読み飛ばし、および `git push $'--receive-pack=/tmp/x' origin main`）。受理する経路が 1 つでも残る限り、この種の迂回は形を変えて再発するため、`Bash` は内容を一切見ず全件拒否する構造に閉じる。
+
+拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とする（SHALL）。`permissionDecisionReason` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_HARD_CAP` の値 ／ `Bash` はコマンド内容によらず一切通らないこと ／ payload の `cwd`（＝そのサブエージェントの作業ツリーのパス）／ 編集済みファイルの一覧と、その作業ツリーのパス（`cwd`）を return に書けという指示 ／ commit は本体が行うという指示（サブエージェント自身は commit できないため）／ **return の 1 行目は `工程中断:` にすること**（強制停止で止まった時点で予定していた作業が残っているため、常に中断とする）。`-C <path>` や `-c <k=v>` といった、通る形についての案内を含めてはならない（MUST NOT）— 通る形は存在しないため。
+
+`DEV_WORKFLOW_CONTEXT_HARD_CAP` は `DEV_WORKFLOW_CONTEXT_CAP` より大きくなければならず、小さいか等しい場合は fail-open（何もしない）とする（MUST）。
+
+#### Scenario: 強制停止の閾値超で Edit が拒否される
+
+- **WHEN** 計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP` を超える状態で `tool_name: "Edit"` の PreToolUse payload を渡す
+- **THEN** `permissionDecision: deny` の JSON を出力し、理由に計測値と「commit は本体が行う」と `工程中断:` が含まれる
+
+#### Scenario: Bash はどんな形でも拒否される
+
+- **WHEN** 同じ状態で `tool_name: "Bash"` の PreToolUse payload を、`command` に次のいずれかを入れて渡す: 旧設計で許可していた形（`"git status"` / `"git -C /path/to/worktree commit -m x"` / `"git push -u origin br"`）、報告された迂回（`"git -c 'diff.external=sh -c \"touch /tmp/x\"' diff HEAD^ HEAD"`、zsh の ANSI-C クォートを使う `"git push $'--receive-pack=/tmp/x' origin main"`）、`$` を使わないブレース展開の変種（`"git push {--receive-pack=/tmp/x,origin} main"`）、複合コマンド（`"git status && rm -rf build"`）、空文字列・`command` キー欠落・非文字列
+- **THEN** いずれも `permissionDecision: deny` の JSON を出力する（内容を判定してから通す経路が無いことを検査する）
+
+#### Scenario: 拒否理由に cwd と本体が commit する旨が含まれる
+
+- **WHEN** 同じ状態で `cwd: "/path/to/worktree"`・`tool_name: "Bash"`・`command: "git status"` の payload を渡す
+- **THEN** 理由に `/path/to/worktree` と「commit は本体が行う」が含まれ、`-C` や `-c` の文言は含まれない
+
+#### Scenario: 通知の閾値と強制停止の閾値の間では拒否しない
+
+- **WHEN** 計測値が `DEV_WORKFLOW_CONTEXT_CAP` 超・`DEV_WORKFLOW_CONTEXT_HARD_CAP` 以内の状態で `tool_name: "Edit"` または `tool_name: "Bash"`（`command: "git status"`）の PreToolUse payload を渡す
+- **THEN** どちらも何も出力せず exit 0 で終わる（編集も Bash も通る）
+
+#### Scenario: 閾値の大小が逆なら何もしない
+
+- **WHEN** `DEV_WORKFLOW_CONTEXT_HARD_CAP` が `DEV_WORKFLOW_CONTEXT_CAP` 以下に設定されている
+- **THEN** PreToolUse は何も出力せず exit 0 で終わる
+
+### Requirement: worktree 隔離のサブエージェントでも途中計測が効く
+
+`isolation: "worktree"` で起こした名前付きサブエージェントのトランスクリプトは、非隔離のものと同じ `<projects>/<slug>/<親セッション ID>/subagents/` に置かれ、ファイル名だけが名前を含まない（`agent-<agentId>.jsonl`）。途中計測 hook は名前ではなく `agent_id` で対象を決めるため、隔離の有無で挙動が変わってはならない（MUST NOT）。
+
+実セッションでの確認（小さい閾値を与えてサブエージェントを起こし、通知・拒否が出ることをトランスクリプトで見る）は、**worktree 隔離されていないセッションから実行しなければならない**（MUST）。隔離エージェントからは `claude` の起動そのものがガードに拒否されるためである。確認の証拠には、観測した `agent_id` の実値と実ファイル名の対を含めなければならない（MUST）。
+
+#### Scenario: 名前を含まないファイル名でも測れる
+
+- **WHEN** `agent-a<16 桁 hex>.jsonl` という名前のトランスクリプトを対象に、その `agent_id` を含む payload を渡す
+- **THEN** 名前 glob を使わずに対象を特定し、閾値超なら通知・拒否が出る
+
+#### Scenario: 実地確認の証拠に agent_id とファイル名の対が含まれる
+
+- **WHEN** 実セッションでの確認の証拠を読む
+- **THEN** payload で観測した `agent_id` の実値と、それに対応するトランスクリプトの実ファイル名が対で記録されている
 
 ### Requirement: サブエージェントのコンテキスト量の母集団集計
 

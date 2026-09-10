@@ -236,3 +236,97 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
     false
   fi
 }
+
+# ---------- コンテキスト上限の規則は decision-criteria.md 1 箇所に置く（#261） ----------
+#
+# spec: dev-workflow-develop「コンテキスト上限の規則の本文は decision-criteria.md 1 箇所に置く」
+# 同じ規則を複数の面に言い換えて置くと、次に閾値が変わったときどれかが必ず取り残される
+# （#253 で 3 周続けて言い換え漏れが出た）。数値と環境変数名の在処をテストで固定する。
+
+# 節の範囲だけを見るための切り出し。`## コンテキスト上限（サブエージェントの手渡し）` の行から
+# 次の `## ` 見出し（`### ` 小見出しは含む）の直前までを取り出す。全文 grep だと、節の外へ
+# 内容が移っても素通りしてしまう（G のレビュー指摘、#269 で対応）。
+extract_context_cap_section() {
+  awk '
+    /^## コンテキスト上限（サブエージェントの手渡し）$/ { flag=1 }
+    flag && /^## / && !/^## コンテキスト上限（サブエージェントの手渡し）$/ { exit }
+    flag
+  ' "$1"
+}
+
+@test "context cap: the canonical section holds the thresholds, the routes and the return prefixes" {
+  dc="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  section="$(extract_context_cap_section "$dc")"
+  [ -n "$section" ] || { echo "section not found in decision-criteria.md"; return 1; }
+  # 3 つの環境変数と 2 つの既定値
+  for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000; do
+    echo "$section" | grep -q -- "$token" || { echo "missing in the context cap section: $token"; return 1; }
+  done
+  # 2 経路・通知時と強制停止時の振る舞い・return の 1 行目の書き分け
+  echo "$section" | grep -q '再開前チェック'
+  echo "$section" | grep -q '途中計測'
+  echo "$section" | grep -q '工程完了:'
+  echo "$section" | grep -q '工程中断:'
+  echo "$section" | grep -q 'pr-review-gate の手順 1〜5 を 1 グループ'
+}
+
+@test "context cap: the other five faces point at the canonical section and restate nothing" {
+  faces=(
+    "${PLUGIN_DIR}/skills/develop/SKILL.md"
+    "${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
+    "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+    "${PLUGIN_DIR}/templates/escalation-tripwires.md"
+    "${PLUGIN_DIR}/README.md"
+  )
+  for f in "${faces[@]}"; do
+    [ -f "$f" ] || { echo "missing face: $f"; return 1; }
+    # 正本への参照があること
+    grep -q 'decision-criteria.md' "$f" || { echo "no pointer to decision-criteria.md: $f"; return 1; }
+    grep -q 'コンテキスト上限' "$f" || { echo "no reference to the context cap section: $f"; return 1; }
+    # 閾値の数値・環境変数名の再掲が無いこと
+    for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000 150K; do
+      if grep -q -- "$token" "$f"; then
+        echo "restated in ${f}: ${token}（正本は decision-criteria.md「コンテキスト上限」）"
+        return 1
+      fi
+    done
+  done
+}
+
+@test "context cap: worker.md tells the handoff target to look at uncommitted changes first" {
+  grep -q '未コミット差分' "$WORKER"
+  grep -q 'git status' "$WORKER"
+}
+
+@test "context cap: gate-runner returns the review body when the hard stop denies gh" {
+  grep -q '工程中断:' "${ROLES}/gate-runner.md"
+  grep -q 'gh pr comment' "${ROLES}/gate-runner.md"
+  grep -q '代理投稿' "${ROLES}/gate-runner.md"
+  # 本体側にも代理投稿する側の手順がある
+  grep -q '代理投稿' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
+
+# ---------- 窓を閉じる（強制停止中の Bash 全件拒否）後の後片付けは本体が担う（#261, PR #269 2 回目の決定） ----------
+#
+# 強制停止中は Bash がコマンド内容によらず全件拒否されるため、止まったサブエージェント
+# 自身は commit できない。手渡し先が拾うのは「次に起こされた」サブエージェントの
+# git status / git diff だけなので、手渡しが発生しない経路や後継が G の場合は
+# 本体自身が未コミット差分を引き取らないと作業が失われたまま残る（R1-261 の BLOCKER B2/B3）。
+
+@test "SKILL.md: main takes over uncommitted work left by a hard-stopped subagent" {
+  grep -q '本体が commit する\|本体が.*commit' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'git -C .*status --porcelain' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  # 発火条件が 工程中断: の受領だけに縛られていない（手渡し・spawn・サイクル終了・worktree 撤去も含む）
+  grep -q '手渡し' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'spawn' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'worktree の撤去' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
+
+@test "SKILL.md forbids isolation: remote for W / G" {
+  grep -q 'isolation: "remote"' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -qE '(remote.*使わない|remote.*起こしてはならない)' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
+
+@test "gate-runner.md: commit is also main's job, not G's" {
+  grep -qE 'commit.*本体が行う|本体が.*commit' "${ROLES}/gate-runner.md"
+}
