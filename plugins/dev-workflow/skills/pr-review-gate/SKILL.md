@@ -99,15 +99,15 @@ Codex を full の既定にする理由: **実装者と別モデル系列で読�
 **Task サブエージェントのモデルは明示指定する（Agent ツールの `model` パラメータ）**:
 
 - **既定は `opus`。** モデル未指定のサブエージェントは親セッションのモデルを継承するため、親が Fable のセッションではフォールバックのたびに Fable レビューが自動発火し、週次枠を無言で消費する（2026-08-07 に主が明示的に懸念）。レビューの価値の中心は「実装者と別の目」であり、モデルの最高性能ではない。
-- **`fable` に上げてよいのは次の両方を満たすときだけ**: ①変更が壊れると影響の重い部分（マージ条件の判定・レート/使用量制御・エージェントの行動規約）に触れている ② usage snapshot（`~/.claude/.usage-snapshot` の `fable_weekly_pct`）が新鮮で、Fable 週次枠に余裕がある（`FABLE_BUDGET_MODE=exhausted` 相当なら上げない）。判断根拠を PR コメントのレビュー実行者行に添える（例: `レビュー実行者: Task サブエージェント（fable — マージ判定に接触・週次残 40%）`）。
+- **Fable に上げるときは `model` ではなく種別で上げる**: 次の両方を満たすときだけ `subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` は付けない。`scripts/agent-model-guard.sh` が PreToolUse で拒否する）。①変更が壊れると影響の重い部分（マージ条件の判定・レート/使用量制御・エージェントの行動規約）に触れている ② usage snapshot（`~/.claude/.usage-snapshot` の `fable_weekly_pct`）が新鮮で、Fable 週次枠に余裕がある（`FABLE_BUDGET_MODE=exhausted` 相当なら種別はそのままに `model: opus` へ落とす）。判断根拠を PR コメントのレビュー実行者行に添える（例: `レビュー実行者: dev-workflow:decider（fable — マージ判定に接触・週次残 40%）`）。決める役は `Bash` を持たないので、レビュー結果の PR コメント投稿はゲートを回す側が代理で行う。
 
 **Codex の呼び出し規約**（2026-08-07 の調査で確定。守らないと「原因不明のタイムアウト」になる）:
 
-- **フォアグラウンドで完了を待つ呼び方を禁止する。** Claude Code の Bash は1回 **10 分**が上限で、Codex レビューはそれを超えることがある（上の「10 分でタイムアウト」の直接原因はこれ）。`/codex:adversarial-review` は必ず **`--background`** で起動し、待つのは companion に任せる:
-  ```bash
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" status <job-id> --wait --timeout-ms 900000
-  ```
-  `--timeout-ms` の既定は **4 分**しかないので必ず明示する（1回の呼び出しで最長 15 分待てる）。
+- **前景 1 回で起動から完了まで待ち切ろうとする呼び方を禁止する**（前景で待つこと自体の禁止ではない。完了の確認は下のとおり前景ポーリングで行う）。Claude Code の Bash は 1 回 **10 分**が上限で、Codex レビューはそれを超えることがある（上の「10 分でタイムアウト」の直接原因はこれ）。`/codex:adversarial-review` は必ず **`--background`** で起動する。
+- **待ち方は読み手で変わる。** 待ち値・完了シグナル・繰り返し回数・総待ちの上限の正本は `plugins/dev-workflow/references/subagent-waiting.md` で、**ここには再掲しない**（2 か所に置くと片方だけ古くなる）:
+  - **メインセッション（本体）**: 背景タスクの完了で再起動されるので、`--background` 起動 ＋ 完了通知での続行でよい。
+  - **サブエージェント（G など）**: 再起動されないので、完了の確認を**同一ターン内の前景ポーリング**で行う。完了を待つ目的でターンを終えてはならない（2026-09-08 に G が 5 回止まり、合計約 4 時間の停止をオーナーの一言で毎回起こした）。正本を開いて雛形どおりに実行する。
+- **`codex-companion.mjs status --wait` の `--timeout-ms` は必ず明示する。** 既定は **4 分**しかない。値は Bash 前景の上限（600000 ms）未満にする — 従来ここに書いていた上限超えの値は 1 回の呼び出しで完走せず、これが待ちの構造を壊す原因だった。既定値・1 回で終わらなかったときの繰り返し・総待ちの上限に達したときの分岐は正本に従う。上の表のフォールバック条件に挙げた「タイムアウト」は、その総待ちの上限に達したことを指す。
 - **推論の深さを中に落とす。** `config.toml` の既定 `high` はレビューには過剰で、実行時間が 10 分を超える一因。`codex exec` 直叩きなら `-c model_reasoning_effort=medium`、`codex:codex-rescue` サブエージェント（companion の `task`）なら `--effort medium`。**`/codex:adversarial-review` に付けてはいけない** — review 系は `-c` も `--effort` も受け取らず、渡した文字列は黙って**レビューの focus text に混ざる**（`--base` / `--scope` / `--model` のみ有効）。
 - **`--effort minimal` を使わない。** 無効値で **400 エラー**になることを実測済み。companion 側のバリデーションは通ってしまい API で落ちるので、失敗が呼び出し側から見えにくい。API の有効値は `none` / `low` / `medium` / `high` / `xhigh` / `max`（companion の `--effort` が受理する集合とはずれている。実務では `medium` を使う）。
 - **`codex exec` を直叩きするときは `-c approval_policy=never` を必ず付ける。** config の「承認を求める」設定を継承すると、無人実行では誰も承認できずハングする穴がある（companion 経由なら既定で `never` なので不要）。
@@ -130,22 +130,26 @@ Codex を full の既定にする理由: **実装者と別モデル系列で読�
 
 | failed の原因 | 戻し方 |
 |---|---|
-| **実装品質起因**（テスト不足・エッジケース漏れ・既存コードとの不整合・安全機構の穴） | 修正実装を `model: fable` で spawn する |
+| **実装品質起因**（テスト不足・エッジケース漏れ・既存コードとの不整合・安全機構の穴） | 失敗の原因が判断側（指示を解釈できなかった・指示自体が外れていた）か実行側（指示どおりやって結果が違う）かで、**決める役と実行役のどちらか一方だけ**を上げる（両方同時に上げない）。実行側なら実行役を `opus` で spawn し、判断側なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせ、実行役は据え置く（残量モードと共有枠モードの上限内） |
 | **仕様が曖昧**（受け入れ条件から一意に決まらない） | モデル昇格ではなく仕様修正で返す。issue の受け入れ条件を確定させてから修正に入る（unmanned なら `needs-approval` を付けて主に返す） |
 | **レビュアーの誤検出**（指摘が事実と違う） | モデル昇格ではなく反証で返す。該当コード・テスト結果を PR コメントに書いて指摘を閉じる |
 
 **昇格は実装品質起因のときだけ。** 原因が仕様側・レビュアー側にあるのに最強モデルを当てても、同じ往復をもう1周するだけになる。
 
+**実行役の上限は `opus`。** 修正実装を `model: fable` で spawn しない（`scripts/agent-model-guard.sh` が PreToolUse で拒否する）。Fable が消費するのはターン数（会話履歴の cache 読込）で、修正ループは数十〜数百ターン回るため、実行役を Fable にすると週次枠が溶ける。Fable を使うのは決める役（`subagent_type: dev-workflow:decider`。`Bash` を持たないので、その return を PR に書くのは呼び出し側）だけで、決める役はどの段階でも種別を固定して `model`（`opus` → `fable`）だけを切り替える。ラダーの正本は develop スキルの `templates/escalation-tripwires.md`。
+
+**なぜ 1 回目の failed で上げるのか**: G のレビューループは 2 周キャップで**2 周目が最終周**にあたるため、1 回目の failed の時点で原因側を一方だけ上げてキャップ内での収束確率を上げる（昇格トリップワイヤーの「1 回目の失敗では誰も上げない」は同じテストの 2 連続失敗を数える別の発火条件で、こちらとは数え方が違う）。
+
 **収束ルール（2周キャップ）との関係**: 再レビューは既定2周なので**2周目が最終周**にあたる。最終周の修正に最強モデルを当てることで、キャップ内で収束する確率を最大化する（3周目へ持ち越さないための配分）。
 
-**Fable が使えないときのフォールバック**: レート制限・週次枠切れ（`FABLE_BUDGET_MODE=exhausted` 相当）で Fable を使えない場合は従来モデル（既定 `opus`）に戻して修正を進め、その旨を PR コメントに1行残す（レビュー実行者行と同形式。この記録形式がフォールバック記録の正本）:
+**Fable が使えないときのフォールバック**: レート制限・週次枠切れ（`FABLE_BUDGET_MODE=exhausted` 相当）で決める役を Fable で立てられない場合は、種別は `dev-workflow:decider` のまま `model: opus` に落として進め、その旨を PR コメントに1行残す（レビュー実行者行と同形式。この記録形式がフォールバック記録の正本）:
 
 ```bash
 gh api -X POST repos/$R/issues/$N/comments \
-  -f body='修正実装モデル: opus（fable レート制限のためフォールバック）'
+  -f body='決める役モデル: opus（fable レート制限のためフォールバック。subagent_type は dev-workflow:decider のまま）'
 ```
 
-1周目から `model: fable` で spawn する「重要実装」の事前分類（聖域パス・マージ権限・層間契約・課金/法務）は **develop スキルの references/roles/worker.md が正本** — このゲートでは再掲しない。
+1周目からモデルを上げる「重要実装」の事前分類（聖域パス・マージ権限・層間契約・課金/法務。実行役はどの分類でも `opus` 止まりで、読んで判断する役が分類に当たるときは `subagent_type: dev-workflow:decider`）は **develop スキルの references/roles/worker.md が正本** — このゲートでは再掲しない。
 
 ### 3. リスク宣言（positive affirmation・必須）
 
