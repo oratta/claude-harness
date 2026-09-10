@@ -261,6 +261,14 @@ check_frontmatter_shape_z() { # stdin: NUL 区切りの一覧
   while IFS= read -r -d '' f; do
     [ -f "$f" ] || continue
     if ! LC_ALL=C awk -v sq="'" '
+      BEGIN {
+        # 許可しないバイトの集合: C0 制御文字（0x01-0x1F）と DEL（0x7F）。
+        # 「印字可能 ASCII でない」は 0x80 以上と同義ではないので、この集合を index() で
+        # 明示的に除外し、先頭バイトの許可対象を 0x80-0xFF だけに絞る。
+        # sprintf("%c") は ASCII 範囲しか使わない（POSIX awk の範囲。GNU 拡張を使わない）。
+        for (j = 1; j <= 31; j++) ctl = ctl sprintf("%c", j)
+        ctl = ctl sprintf("%c", 127)
+      }
       { lines[NR] = $0 }
       END {
         n = NR
@@ -300,7 +308,7 @@ check_frontmatter_shape_z() { # stdin: NUL 区切りの一覧
                   else if (fb == "/") fb_ok = 1
                   else if (fb == "\"") fb_ok = 1
                   else if (fb == sq) fb_ok = 1
-                  else if (fb !~ /^[ -~]$/) fb_ok = 1   # 0x80 以上のバイト（マルチバイト先頭）
+                  else if (fb !~ /^[ -~]$/ && index(ctl, fb) == 0) fb_ok = 1   # 0x80 以上のバイト（マルチバイト先頭）
                   if (!fb_ok) ok = 0
 
                   if (fb == "\"" || fb == sq) {
@@ -776,6 +784,29 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   run check_frontmatter_shape "$TMPD/backslash-quote.md"
   [ "$status" -ne 0 ]
   [[ "$output" == *"backslash-quote.md"* ]]
+}
+
+@test "a description starting with a C0 control byte (0x01) is detected" {
+  # 受理条件は「先頭 1 バイトが ASCII 英数字 / スラッシュ / 引用符 / 0x80 以上」。
+  # 「印字可能 ASCII でない」で判定すると C0 制御文字が許可集合をすり抜ける。
+  printf -- '---\ndescription: \001payload smuggled behind a control byte\n---\n' > "$TMPD/ctl-01.md"
+  run check_frontmatter_shape "$TMPD/ctl-01.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ctl-01.md"* ]]
+}
+
+@test "a description starting with a C0 control byte (0x07) is detected" {
+  printf -- '---\ndescription: \007payload smuggled behind a control byte\n---\n' > "$TMPD/ctl-07.md"
+  run check_frontmatter_shape "$TMPD/ctl-07.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ctl-07.md"* ]]
+}
+
+@test "a description starting with DEL (0x7F) is detected" {
+  printf -- '---\ndescription: \177payload smuggled behind a control byte\n---\n' > "$TMPD/ctl-7f.md"
+  run check_frontmatter_shape "$TMPD/ctl-7f.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ctl-7f.md"* ]]
 }
 
 @test "a shape violation blocks the budget total instead of being silently summed" {
