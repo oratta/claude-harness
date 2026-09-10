@@ -8,9 +8,9 @@
 
 ## What Changes
 
-- 早期 exit の判定条件を「生文字列 `"agent_id"` を含まない」から「生文字列 `"agent_id"` を含まず、かつ JSON のエスケープ表記の起点（`\u`）も含まない」に変える。`\u` を含む payload は安く判定できないので python3 に渡し、パース後の `agent_id` フィールドの有無で決める（既存の fail-open 経路がそのまま効く）
-- 早期 exit の目的は変えない。メインスレッドの通常の payload（`\u` を含まない）は従来どおり python3 を起動せずに exit 0 する
-- `plugins/dev-workflow/tests/context-tripwire.bats` に、`"\u0061gent_id"` 表記の payload で強制停止が効くこと・`\u` を含まないメインスレッド payload では python3 が起動しないことの退行テストを足す
+- 早期 exit の判定条件を「生文字列 `"agent_id"` を含まない」から「生文字列 `"agent_id"` を含まず、かつ JSON の Unicode エスケープの前置 4 文字（`\u00`）も含まない」に変える。その並びを含む payload は安く判定できないので python3 に渡し、パース後の `agent_id` フィールドの有無で決める（既存の fail-open 経路がそのまま効く）
+- 早期 exit の目的は変えない。メインスレッドの通常の payload（その並びを含まないもの）は従来どおり python3 を起動せずに exit 0 する
+- `plugins/dev-workflow/tests/context-tripwire.bats` に、`"\u0061gent_id"` 表記の payload で強制停止が効くこと・その並びを含まないメインスレッド payload では python3 が起動しないことの退行テストを足す
 
 ## Capabilities
 
@@ -25,6 +25,6 @@
 ## Impact
 
 - `plugins/dev-workflow/scripts/context-tripwire.sh`（bash 側の `case` 判定 3 行とコメント。python 本体は変更なし）
-- `plugins/dev-workflow/tests/context-tripwire.bats`（退行テスト 2 件）
-- `plugins/dev-workflow/.claude-plugin/plugin.json`（version bump）
+- `plugins/dev-workflow/tests/context-tripwire.bats`（退行テストの追加と、payload ヘルパの `ensure_ascii=False` 化）
+- `plugins/dev-workflow/.claude-plugin/plugin.json`（version bump）と `plugins/dev-workflow/CHANGELOG.md`（エントリ追加）
 - 挙動の変更は「今まで無音で抜けていた表記の payload で hook が動く」方向のみ。通知・拒否のメッセージ、計測の式、閾値、hooks.json の登録は変わらない
