@@ -19,7 +19,7 @@
 # frontmatter の書式検査（check_frontmatter_shape_z）は許可リスト方式（PR #268 / 子 issue #258
 # の決める役の裁定）。「既知の悪い書き方を列挙する」形だと、既定の分岐が「通す」になるため
 # 未知の構文が必ず素通りする（YAML anchor/alias による迂回が実際にこの形で 2 周レビューを
-# すり抜けた）。反転して「このゲートが字面のまま読める 7 条件の形以外はすべて違反」にすると、
+# すり抜けた）。反転して「このゲートが字面のまま読める 8 条件の形以外はすべて違反」にすると、
 # 未知の構文は「どの形にも当たらない行」として自動的に落ちる。今後ここに穴が開くのは、誰かが
 # 許可リストを明示的に広げたときだけで、それは diff として見える。
 #
@@ -239,6 +239,8 @@ report() { # <verdict> <budget> <total> <内訳テキスト>
 # 「このゲートが字面のまま読める形」（決める役の裁定、PR #268 / 子 issue #258）以外を
 # すべて違反にする。ひとつでも当たらなければ違反、という既定「拒否」の検査:
 #
+#   0. ファイル全体が NUL バイト（0x00）を含まない。awk 実装で NUL の扱いが違う
+#      （macOS awk は文字列終端、gawk は保持）ため、awk に渡す前にバイト数一致で落とす
 #   1. 1 行目が厳密に `---`。終端も厳密に `---` の行（EOF まで見つからない／`...` 終端は違反）
 #   2. frontmatter 内の各行は次の 5 形のいずれかのみ（それ以外は「読めない行」として違反）:
 #      トップレベルキー `^key:( 値)?$` ／ 2 スペース字下げの入れ子キー（タブ字下げは違反）／
@@ -257,18 +259,15 @@ report() { # <verdict> <budget> <total> <内訳テキスト>
 # 「awk: towc: multibyte conversion failure」で落ちる環境があるため。
 # 違反したファイル名を出力し、1 件でもあれば 1 を返す。
 check_frontmatter_shape_z() { # stdin: NUL 区切りの一覧
-  local f rc=0
+  # 使う awk は差し替え可能にする（CI の gawk と手元の one true awk で判定が割れないことを
+  # 検査するため）。既定は PATH の awk。
+  local f rc=0 awkbin="${INJECTION_BUDGET_AWK:-awk}"
   while IFS= read -r -d '' f; do
     [ -f "$f" ] || continue
-    if ! LC_ALL=C awk -v sq="'" '
-      BEGIN {
-        # 許可しないバイトの集合: C0 制御文字（0x01-0x1F）と DEL（0x7F）。
-        # 「印字可能 ASCII でない」は 0x80 以上と同義ではないので、この集合を index() で
-        # 明示的に除外し、先頭バイトの許可対象を 0x80-0xFF だけに絞る。
-        # sprintf("%c") は ASCII 範囲しか使わない（POSIX awk の範囲。GNU 拡張を使わない）。
-        for (j = 1; j <= 31; j++) ctl = ctl sprintf("%c", j)
-        ctl = ctl sprintf("%c", 127)
-      }
+    # 条件 0: NUL を含むファイルは awk に渡す前に落とす。awk 実装ごとに NUL の扱いが違い
+    # （macOS awk は文字列終端、gawk は保持）、awk の中では両実装で同じ答えにできない。
+    [ "$(LC_ALL=C tr -d '\000' < "$f" | wc -c)" -eq "$(wc -c < "$f")" ] || { printf '%s\n' "$f"; rc=1; continue; }
+    if ! LC_ALL=C "$awkbin" -v sq="'" '
       { lines[NR] = $0 }
       END {
         n = NR
@@ -303,12 +302,14 @@ check_frontmatter_shape_z() { # stdin: NUL 区切りの一覧
                 sub(/^description:[ \t]*/, "", val)
                 if (val != "") {
                   fb = substr(val, 1, 1)
-                  fb_ok = 0
-                  if (fb ~ /^[A-Za-z0-9]$/) fb_ok = 1
-                  else if (fb == "/") fb_ok = 1
-                  else if (fb == "\"") fb_ok = 1
-                  else if (fb == sq) fb_ok = 1
-                  else if (fb !~ /^[ -~]$/ && index(ctl, fb) == 0) fb_ok = 1   # 0x80 以上のバイト（マルチバイト先頭）
+                  # 許可集合を 1 個のブラケット式で書き、拒否リストは持たない。
+                  # 仕様 5 が「この 5 種だけ許可」の肯定形なので実装も肯定形にする
+                  # （拒否側を列挙する書き方は NUL・C0・DEL の取りこぼしを繰り返した）。
+                  # `\200-\377` は POSIX awk の 8 進エスケープで、LC_ALL=C では
+                  # バイト値 0x80-0xFF の範囲指定になる（GNU 拡張ではない）。
+                  # スラッシュと単一引用符は正規表現リテラルに入れると扱いが面倒（awk の
+                  # プログラム全体がシェルの単一引用符の中にある）なので等値比較で並べる。
+                  fb_ok = (fb ~ /^[A-Za-z0-9"\200-\377]$/ || fb == "/" || fb == sq)
                   if (!fb_ok) ok = 0
 
                   if (fb == "\"" || fb == sq) {
@@ -807,6 +808,111 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   run check_frontmatter_shape "$TMPD/ctl-7f.md"
   [ "$status" -ne 0 ]
   [[ "$output" == *"ctl-7f.md"* ]]
+}
+
+# 先頭バイト判定の fixture 一覧。各行は「期待する verdict（1=通る / 0=落ちる） パス」。
+# 落ちる/通るの両方を 1 か所に置き、既定 awk での個別検査と awk 実装間の一致検査の
+# どちらもこの同じ一覧を回す（片方だけ更新されて食い違うのを防ぐ）。
+# 0x09（タブ）は値の取り出しでストリップされるので対象外。
+first_byte_fixtures() {
+  local d="$TMPD/first-byte" oct
+  mkdir -p "$d"
+  # 落ちる先頭バイト: NUL・C0 制御文字・DEL・許可集合に無い ASCII 記号
+  for oct in 000 001 037 177 076 174 055 052 046 041 045 100 140 133 173; do
+    printf -- '---\ndescription: \'"$oct"'x\n---\n' > "$d/bad-$oct.md"
+    printf '0 %s\n' "$d/bad-$oct.md"
+  done
+  # 通る先頭バイト: ASCII 英数字（a / Z / 0）・スラッシュ・0x80・0xFF
+  for oct in 141 132 060 057 200 377; do
+    printf -- '---\ndescription: \'"$oct"'x\n---\n' > "$d/good-$oct.md"
+    printf '1 %s\n' "$d/good-$oct.md"
+  done
+  # 通る: 同じ引用符で終端する引用値と、0xE6 で始まるマルチバイト値
+  printf -- '---\ndescription: "quoted value"\n---\n' > "$d/good-dq.md"
+  printf '1 %s\n' "$d/good-dq.md"
+  printf -- '---\ndescription: %s\n---\n' "'quoted value'" > "$d/good-sq.md"
+  printf '1 %s\n' "$d/good-sq.md"
+  printf -- '---\ndescription: 日本語の説明\n---\n' > "$d/good-ja.md"
+  printf '1 %s\n' "$d/good-ja.md"
+}
+
+# 一覧を配列に読み込む（`while read` の中で run を呼ばないため先に展開する）。
+read_first_byte_fixtures() {
+  local line
+  FIXTURES=()
+  while IFS= read -r line; do FIXTURES+=("$line"); done < <(first_byte_fixtures)
+}
+
+@test "a file containing a NUL byte is rejected without relying on awk" {
+  # awk 実装で NUL の扱いが違う（macOS awk は文字列終端、gawk は保持）ため、
+  # NUL だけは awk に渡す前にバイト数一致で落とす。
+  printf -- '---\ndescription: \000payload smuggled behind a NUL\n---\n' > "$TMPD/nul.md"
+  run check_frontmatter_shape "$TMPD/nul.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"nul.md"* ]]
+}
+
+@test "every first byte outside the allowed set is rejected" {
+  local line expected path
+  read_first_byte_fixtures
+  [ "${#FIXTURES[@]}" -eq 24 ]
+  for line in "${FIXTURES[@]}"; do
+    expected=${line%% *}
+    path=${line#* }
+    [ "$expected" = "0" ] || continue
+    run check_frontmatter_shape "$path"
+    if [ "$status" -eq 0 ]; then
+      echo "expected a violation but the guard passed: $path" >&2
+      false
+    fi
+    [[ "$output" == *"$(basename "$path")"* ]]
+  done
+}
+
+@test "every first byte inside the allowed set passes" {
+  local line expected path
+  read_first_byte_fixtures
+  for line in "${FIXTURES[@]}"; do
+    expected=${line%% *}
+    path=${line#* }
+    [ "$expected" = "1" ] || continue
+    run check_frontmatter_shape "$path"
+    if [ "$status" -ne 0 ]; then
+      echo "expected the guard to pass but it flagged: $path ($output)" >&2
+      false
+    fi
+    [ -z "$output" ]
+  done
+}
+
+@test "every awk implementation on PATH agrees on the first-byte verdicts" {
+  # CI（ubuntu-latest）は gawk、手元（macOS）は one true awk。判定が実装で割れると
+  # 片方だけで素通りする経路ができるので、PATH にある全実装で verdict の並びを揃える。
+  local line path a impl verdicts want=''
+  local -a impls=()
+  read_first_byte_fixtures
+  for line in "${FIXTURES[@]}"; do want+="${line%% *}"; done
+  for a in awk gawk mawk; do
+    command -v "$a" >/dev/null 2>&1 && impls+=("$a")
+  done
+  # 既定の awk は必ず PATH にある（skip でこの検査を黙って無効化しない）。
+  [ "${#impls[@]}" -ge 1 ]
+  printf 'awk implementations under test: %s\n' "${impls[*]}" >&2
+  for impl in "${impls[@]}"; do
+    verdicts=''
+    for line in "${FIXTURES[@]}"; do
+      path=${line#* }
+      if INJECTION_BUDGET_AWK="$impl" check_frontmatter_shape "$path" >/dev/null 2>&1; then
+        verdicts+='1'
+      else
+        verdicts+='0'
+      fi
+    done
+    if [ "$verdicts" != "$want" ]; then
+      echo "awk=$impl verdicts=$verdicts want=$want" >&2
+      false
+    fi
+  done
 }
 
 @test "a shape violation blocks the budget total instead of being silently summed" {
