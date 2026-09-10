@@ -1,6 +1,6 @@
 # Changelog — dev-workflow
 
-## 2.7.1 — 2026-09-10: 途中計測 hook の早期 exit を JSON 意味論に合わせる
+## 2.9.0 — 2026-09-10: 途中計測 hook の早期 exit を JSON 意味論に合わせる
 
 `scripts/context-tripwire.sh` の早期 exit は payload の生文字列 `"agent_id"` の有無だけを見ていた。JSON のキーは Unicode エスケープでも書けるため（`"\u0061gent_id"` は `json.loads` すると `agent_id`）、この判定は JSON 意味論と一致せず、同値な表記の payload が python3 に届かないまま無音で fail-open していた。強制停止の閾値を超えたサブエージェントの `Bash` 呼び出しでも deny されない（#278。PR #269 の 3 周目レビューで Codex CLI が見つけた非 blocking の指摘）。
 
