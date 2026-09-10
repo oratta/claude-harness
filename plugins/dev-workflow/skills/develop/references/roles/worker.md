@@ -97,7 +97,12 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 - R1 が `REQUEST_CHANGES` を返したら、本体が SendMessage で再開する。指摘（BLOCKER / SHOULD_FIX）に従って artifact を直し、直した箇所を列挙して return する（再レビューは差分限定。2 周キャップ）
 - **opsx コマンドが無く openspec CLI だけある場合**は `openspec new change` → 各 artifact を直叩きで生成し、
-  同じく本体に return して**同じ仕様レビュー**（R1）を受ける。APPROVE 後に再開されたら実装 → `openspec archive` を直叩きで行う
+  同じく本体に return して**同じ仕様レビュー**（R1）を受ける。APPROVE 後の実装も工程の区切りは opsx 経路と同じで、
+  スラッシュコマンドが CLI に置き換わるだけ:
+  - (3a) は実装 → `openspec validate <change-name> --strict`（`/opsx:verify` の代わりの検証。あわせて
+    `tasks.md` のチェックボックスが全部 `[x]` になっていることを確認する）まで。ここで return する
+  - (3a) の return では `/opsx:verify` の合否の代わりに、この `openspec validate --strict` の exit code を載せる
+  - `openspec archive <change-name>` は (3b) で行う（(3a) で archive まで進めない）
 - 仕様レビュー結果は R1 が記録先にコメントする（1 行目 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$`）。W はそのコメントを見て APPROVE を確認してから実装に入る（書式の正本は `references/roles/spec-reviewer.md`）
 
 ## (3a) 実装＋verify（TDD 徹底）
@@ -109,6 +114,8 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 /opsx:apply <change-name>  # tasks を TDD で実装（各タスクを終えたら tasks.md のチェックボックスを [x] に）
 /opsx:verify <change-name> # 実装が artifact と一致するか検証
 ```
+
+**仕様化する場合（openspec CLI だけの経路）**: `/opsx:apply` の代わりに `tasks.md` を上から TDD で実装し（各タスクを終えたらチェックボックスを `[x]` に）、`/opsx:verify` の代わりに `openspec validate <change-name> --strict` を実行する。この節が verify までで終わるのは opsx 経路と同じで、`openspec archive` は (3b) で行う。
 
 **コード直行する場合（仕様化不要）**:
 1. 実装前に必ず codebase を grep して既存実装を確認する（二重実装しない）
@@ -126,7 +133,7 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 **(3a) の return に書くこと**（1 行目は `工程完了: 実装＋verify`）:
 
 - **実行したテストコマンドと exit code**（フルテスト・lint・ビルド。失敗が残っていればその件数も）
-- **`/opsx:verify` の合否**（仕様化した場合。直行した場合は「仕様化しないため verify なし」と書く）
+- **`/opsx:verify` の合否**（仕様化した場合。openspec CLI だけの経路では `openspec validate <change-name> --strict` の exit code。直行した場合は「仕様化しないため verify なし」と書く）
 - 編集したファイルの一覧・自分で埋めた決定・昇格トリップワイヤーの発火有無・残作業
 
 この 2 つ（テストコマンドと exit code、`/opsx:verify` の合否）を必ず載せるのは、(3b) の担い手が pr-review-gate 手順 5 が照合する動作確認の証拠を書くための唯一の入力になるためである。手渡しが起きると後任は前任の履歴を読めないので、証拠が return に無ければフルテストを回し直すか証拠なしで宣言するかのどちらかになる。
@@ -135,7 +142,7 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 (3a) の return を本体が受け取り、コンテキスト量を測ってから再開（または手渡し）されて入る節。実装内容には手を入れず、事務手続きだけを行う。
 
-1. `/opsx:archive <change-name>`（仕様化した場合。完了した change をアーカイブし、archive 済みの状態を PR に含める）
+1. `/opsx:archive <change-name>`（仕様化した場合。openspec CLI だけの経路では `openspec archive <change-name>`。完了した change をアーカイブし、archive 済みの状態を PR に含める）
 2. PR を用意する: 記録先が Draft PR ならそれを **Ready for Review** に切り替える（`gh pr ready <PR番号>`）。issue が記録先なら PR を作成する（本文に `Closes #<issue>`。unmanned では `plugins/dev-workflow/references/pr-body-format.md` の型に従い **Draft** のまま `agent-review:pending` を付ける — 憲法 Step 3 の 5〜6 に相当）
 3. **仕様宣言**を PR コメントに書く（書式・`対象 HEAD:` 規約の正本は pr-review-gate スキル手順 3。`仕様: 更新した`＋archive 済み・`仕様レビュー: APPROVE`、または `仕様: 変更なし`＋理由）
 4. return（1 行目は `工程完了: archive＋PR＋仕様宣言`）: **PR #N（HEAD SHA）と仕様宣言のコメント URL**、(3a) から引き継いだテストコマンドと exit code、埋めた決定の列挙、昇格トリップワイヤーの発火有無

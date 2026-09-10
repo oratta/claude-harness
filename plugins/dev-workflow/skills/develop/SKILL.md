@@ -92,7 +92,7 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
            止まったテストから再出発することになるため（理由の正本は references/roles/worker.md「コンテキスト上限と手渡し」）
       本体は次に指示する工程を、自分が (3a) を指示したか (3b) を指示したかで決め、工程名の文字列照合では決めない。
            (3a) の return に PR 番号と仕様宣言のコメント URL が既に揃っていれば（古い世代の W が (3) を
-           通しで終えた場合）、(3b) を指示せず、そのまま G の工程へ進む
+           通しで終えた場合）、(3b) を指示せず、そのまま (4)（G の工程）へ進む
 (4) G を名前付きで spawn（model: 既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は Codex か needs-reviewer のレビュアーが担う）:
       pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer」
       needs-reviewer → 本体がレビュアーを spawn し、要約を SendMessage で G に渡す（gate-runner.md）

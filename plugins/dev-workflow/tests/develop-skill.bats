@@ -19,6 +19,25 @@ setup() {
 section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$SKILL"; }
 frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL"; }
 
+# 「1 ループ」のコードブロックから工程の指示を切り出す。境界は**行頭の工程ラベル**だけで、
+# 説明文の途中に出てくる "(3a)" / "(4)" のような参照では区切らない（本文に無害な行を足しても
+# 切り出し位置がずれないようにするため）。
+#   top_step 3  : 列 0 の "(3) " から次の列 0 の "(N) " の手前まで
+#   substep 3a  : インデントされた "(3a) " から次の "(3a)/(3b)" ラベルか列 0 の "(N) " の手前まで
+top_step() { awk -v s="$1" '$0 ~ "^\\(" s "\\)[[:space:]]" {f=1; print; next} f && /^\([0-9]+\)[[:space:]]/ {f=0} f'; }
+substep() { awk -v s="$1" '$0 ~ "^[[:space:]]+\\(" s "\\)[[:space:]]" {f=1; print; next} f && (/^[[:space:]]+\(3[ab]\)[[:space:]]/ || /^\([0-9]+\)[[:space:]]/) {f=0} f'; }
+
+# 否定アサーション: refute "<本文>" -F|-E '<パターン>'
+# bats（bash の set -e）は `!` を先頭に付けたコマンドの失敗を無視するため、テストの最終行以外に
+# 書いた `! ... | grep -q ...` は退行を検出できない（bats 1.13 で実測）。否定はこの関数で書く。
+refute() {
+  local body="$1"; shift
+  if printf '%s\n' "$body" | grep -q "$@"; then
+    echo "一致してはならないパターンに一致した: $*" >&2
+    return 1
+  fi
+}
+
 # --- 存在・frontmatter ---
 
 @test "skill: develop SKILL.md exists and the old issue-only skill dir is gone" {
@@ -173,51 +192,57 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 # (3) を (3a) 実装＋verify / (3b) archive＋PR＋仕様宣言 の 2 回の return に分ける（#262）。
 # 本体がコンテキスト量を測れるのは W を再開する直前だけなので、return の区切りの数が計測点の数になる。
 @test "loop: stage 3 splits into (3a) implement+verify and (3b) archive+PR+spec declaration" {
-  loop="$(section '1 ループ')"
-  a="$(echo "$loop" | grep -n '(3a)' | head -1 | cut -d: -f1)"
-  b="$(echo "$loop" | grep -n '(3b)' | head -1 | cut -d: -f1)"
-  s4="$(echo "$loop" | grep -n '(4)' | head -1 | cut -d: -f1)"
-  [ -n "$a" ] || { echo "no (3a) in the loop block"; return 1; }
-  [ -n "$b" ] || { echo "no (3b) in the loop block"; return 1; }
-  [ -n "$s4" ]
-  [ "$a" -lt "$b" ] && [ "$b" -lt "$s4" ]
-  sega="$(echo "$loop" | sed -n "${a},$((b - 1))p")"
+  s3="$(section '1 ループ' | top_step 3)"
+  [ -n "$s3" ] || { echo "no (3) step in the loop block"; return 1; }
+  sega="$(echo "$s3" | substep 3a)"
+  segb="$(echo "$s3" | substep 3b)"
+  [ -n "$sega" ] || { echo "no (3a) substep in the (3) block"; return 1; }
+  [ -n "$segb" ] || { echo "no (3b) substep in the (3) block"; return 1; }
+  # 工程ラベルの並び順（実装が archive より先）
+  la="$(echo "$s3" | grep -nE '^[[:space:]]+\(3a\)[[:space:]]' | head -1 | cut -d: -f1)"
+  lb="$(echo "$s3" | grep -nE '^[[:space:]]+\(3b\)[[:space:]]' | head -1 | cut -d: -f1)"
+  [ "$la" -lt "$lb" ]
+  # (3a) は実装と verify を行い、その return で「実装＋verify」の完了を宣言する
   echo "$sega" | grep -q 'TDD'
   echo "$sega" | grep -q 'verify'
-  echo "$sega" | grep -qF '工程完了: 実装＋verify'
-  ! echo "$sega" | grep -q 'archive'
-  segb="$(echo "$loop" | sed -n "${b},$((s4 - 1))p")"
+  echo "$sega" | grep -F '工程完了: 実装＋verify' | grep -q 'return'
+  refute "$sega" -F '工程完了: archive'
+  # (3a) で archive しない。archive に触れてよいのは「archive は (3b)」という参照だけ
+  stray="$(echo "$sega" | grep -F 'archive' | grep -vF '(3b)' || true)"
+  [ -z "$stray" ] || { echo "archive が (3a) の作業として書かれている: $stray"; return 1; }
+  # (3b) は archive・PR Ready・仕様宣言を行い、その return で「archive＋PR＋仕様宣言」の完了を宣言する
   echo "$segb" | grep -q 'archive'
   echo "$segb" | grep -q 'Ready'
   echo "$segb" | grep -q '仕様宣言'
-  echo "$segb" | grep -qF '工程完了: archive＋PR＋仕様宣言'
+  echo "$segb" | grep -F '工程完了: archive＋PR＋仕様宣言' | grep -q 'return'
+  refute "$segb" -F '工程完了: 実装＋verify'
 }
 
 @test "loop: main measures between (3a) and (3b) and defers the cap handling to decision-criteria.md" {
-  loop="$(section '1 ループ')"
-  s3="$(echo "$loop" | grep -n '(3)' | head -1 | cut -d: -f1)"
-  s4="$(echo "$loop" | grep -n '(4)' | head -1 | cut -d: -f1)"
-  seg="$(echo "$loop" | sed -n "${s3},$((s4 - 1))p")"
-  a="$(echo "$seg" | grep -n '(3a)' | head -1 | cut -d: -f1)"
-  b="$(echo "$seg" | grep -n '(3b)' | head -1 | cut -d: -f1)"
-  [ -n "$a" ] && [ -n "$b" ] && [ "$a" -lt "$b" ]
-  # (3a) の return と (3b) の指示のあいだに計測がある
-  echo "$seg" | sed -n "${a},$((b - 1))p" | grep -q 'subagent-context.sh'
+  s3="$(section '1 ループ' | top_step 3)"
+  sega="$(echo "$s3" | substep 3a)"
+  [ -n "$sega" ] || { echo "no (3a) substep in the (3) block"; return 1; }
+  # (3a) の return を受けたあと (3b) を指示する前に、本体がもう一度測る
+  echo "$sega" | grep -F 'subagent-context.sh' | grep -q '測'
+  echo "$sega" | grep -F 'subagent-context.sh' | grep -q '指示'
   # 閾値・環境変数名は再掲せず正本を指す（正本は decision-criteria.md「コンテキスト上限」）
-  echo "$seg" | grep -q 'decision-criteria.md'
-  echo "$seg" | grep -q 'コンテキスト上限'
-  ! echo "$seg" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
-  ! echo "$seg" | grep -qE '150000|150K|220000'
-  # (3a)/(3b) より細かく切らないこと
-  echo "$seg" | grep -q 'これより細かく'
+  echo "$s3" | grep -F 'decision-criteria.md' | grep -q 'コンテキスト上限'
+  echo "$s3" | grep -F 'decision-criteria.md' | grep -q '正本'
+  refute "$s3" -F 'DEV_WORKFLOW_CONTEXT_CAP'
+  refute "$s3" -E '150000|150K|220000'
+  # (3a)/(3b) より細かく切らないこと（禁止であることまで検査する）
+  echo "$s3" | grep -qE '細かく.*切らない'
 }
 
 # 旧世代の W（古いキャッシュの worker.md を読んだ W）が (3) を通しで終えて返してきたとき、
 # 本体が (3b) を再指示して PR Ready と仕様宣言を二重に走らせないための工程ルーティング。
+# 規定は 2 行にまたがるので、改行を空白に潰した上で条件と帰結を順序込みで検査する
+# （「揃っていなければ (3b) を指示せず」のような意味の反転を落とすため）。
 @test "loop: main routes stage 3 by what it instructed, not by matching the stage name string" {
-  loop="$(section '1 ループ')"
-  echo "$loop" | grep -qF '工程名の文字列照合では決めない'
-  echo "$loop" | grep -qF '(3b) を指示せず'
+  flat="$(section '1 ループ' | top_step 3 | tr '\n' ' ')"
+  [ -n "$flat" ]
+  echo "$flat" | grep -qE '自分が \(3a\) を指示したか \(3b\) を指示したかで決め[^。]*工程名の文字列照合では決めない'
+  echo "$flat" | grep -qE '\(3a\) の return に PR 番号と仕様宣言のコメント URL が既に揃っていれば[^。]*\(3b\) を指示せず'
 }
 
 # --- モデル ---

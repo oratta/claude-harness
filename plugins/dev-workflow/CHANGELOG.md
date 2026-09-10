@@ -9,8 +9,9 @@
 - **(3a) の return に、実行したテストコマンドと exit code・`/opsx:verify` の合否を必須にした**。(3b) の担い手が書く動作確認の証拠は pr-review-gate 手順 5 の照合対象で、手渡しが起きると後任はそれを前任の return からしか得られない
 - **タスク単位のさらなる分割は禁止**（`tasks.md` の項目単位・5 段など）。手渡しごとに指示書の読み直しと現状確認の固定分が乗るため、区切りを増やすほど 1 区切りあたりの実質作業比が下がる。実装の途中で切ると後任が Red のまま止まったテストから再出発することになる
 - **本体の工程ルーティングは指示した工程で決める**（工程名の文字列照合では決めない）。古いキャッシュの `worker.md` を読んだ W が (3) を通しで終えて返してきた場合、(3a) の return に PR 番号と仕様宣言のコメント URL が揃っていれば (3b) を指示せず G の工程へ進む（PR Ready の再実行と仕様宣言の二重投稿を防ぐ）
+- **opsx スラッシュコマンドが無く openspec CLI だけある経路も同じ区切りに揃えた**。この経路だけ「実装 → `openspec archive` を直叩き」の一括のまま残っており、(3a) の計測点が作られなかった。(3a) は実装 → `openspec validate <change-name> --strict`（`/opsx:verify` の代わりの検証）まで、`openspec archive` は (3b) とし、(3a) の return には `/opsx:verify` の合否の代わりにこの exit code を載せる
 - 手渡しの手順そのものは変えていない。上限超を検知したあとの扱い・宣言の書式・前任が動作中のときの交代手順は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本のままで、本文は増やしていない（差し替えたのは工程名の例のみ）
-- `tests/develop-skill.bats` / `tests/develop-roles.bats` に 5 本追加
+- `tests/develop-skill.bats` / `tests/develop-roles.bats` に 6 本追加。工程の切り出しは**行頭の工程ラベル**（`top_step` / `substep`）で行い、文言の初出位置（`grep -n … | head -1`）には依存させていない。否定アサーションは `!` で書かない — bats（bash の `set -e`）は `!` を先頭に付けたコマンドの失敗をテスト最終行以外で無視するため、`! … | grep -q …` では退行を検出できない（bats 1.13 で実測）
 
 ## 2.7.0 — 2026-09-09: 起動の途中でコンテキストを測って止める hook
 

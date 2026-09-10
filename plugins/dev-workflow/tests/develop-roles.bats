@@ -114,12 +114,34 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   echo "$a" | grep -q 'exit code'
   echo "$a" | grep -qF '/opsx:apply'
   echo "$a" | grep -qF '/opsx:verify'
-  ! echo "$a" | grep -qF '/opsx:archive'
+  # 否定は `!` で書かない。bats（set -e）は `!` 付きコマンドの失敗を最終行以外で無視するため、
+  # `! ... | grep -q ...` は退行を検出できない（bats 1.13 で実測）。
+  if echo "$a" | grep -qF '/opsx:archive'; then
+    echo "(3a) の節に /opsx:archive が書かれている（archive は (3b)）" >&2
+    return 1
+  fi
   # (3b): archive 以降。PR 番号と仕様宣言のコメント URL を return に載せる
   echo "$b" | grep -qF '工程完了: archive＋PR＋仕様宣言'
   echo "$b" | grep -qF '/opsx:archive'
   echo "$b" | grep -q 'PR #'
   echo "$b" | grep -q '仕様宣言のコメント URL'
+}
+
+# opsx スラッシュコマンドが無く openspec CLI だけある経路も、(3a)/(3b) の区切りは同じでなければ
+# ならない（#262 のゲート指摘。この段落だけ旧来の「実装 → archive」一括のまま残っていた）。
+@test "worker: the openspec-CLI-only path stops at verify in (3a) and archives in (3b)" {
+  s="$(section "$WORKER" '仕様化する場合（(1) の終わり）')"
+  [ -n "$s" ] || { echo "no spec-writing section in worker.md"; return 1; }
+  # フォールバック経路の箇条書き 1 個ぶんを切り出す（次の行頭 "- " まで）
+  fb="$(echo "$s" | awk '/openspec CLI だけある場合/{f=1; print; next} f && /^- /{f=0} f {print}')"
+  [ -n "$fb" ] || { echo "no openspec-CLI-only fallback paragraph in worker.md"; return 1; }
+  flat="$(echo "$fb" | tr '\n' ' ')"
+  # /opsx:verify の代わりの検証手順が名指しされている
+  echo "$flat" | grep -qF 'openspec validate'
+  echo "$flat" | grep -qF -- '--strict'
+  # (3a) は検証まで、archive は (3b)
+  echo "$flat" | grep -qE '\(3a\)[^。]*openspec validate'
+  echo "$flat" | grep -qE 'openspec archive[^。]*\(3b\)'
 }
 
 @test "worker: the context cap section names the three stages and forbids finer splits" {
