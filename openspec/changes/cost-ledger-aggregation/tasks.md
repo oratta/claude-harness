@@ -49,23 +49,23 @@
 
 ## 7. `/cost` コマンド（Red → Green）
 
-- [ ] 7.1 「PR 番号を渡すとそのヘッドブランチのコストが返る」テストを先に書く（Red）
-- [ ] 7.2 「issue 番号を渡すと、実行した作業ディレクトリのリポジトリの行だけから区間の合計が返る」テストを先に書く（Red）
-- [ ] 7.3 「リポジトリ不明の行の件数と金額が別立てで出力される」テストを先に書く（Red）
-- [ ] 7.4 「存在しない番号で 0 円と表示せず、見つからないと伝える」テストを先に書く（Red）
-- [ ] 7.5 「番号なしで呼ぶと現在のブランチのコストが返り、git リポジトリの外ではブランチが決まらないと伝える」テストを先に書く（Red）
-- [ ] 7.6 「出力の 1 行目が固定書式で、金額（USD と円）・換算レート・帰属先・帰属の種別をすべて含む」テストを先に書く（Red）
-- [ ] 7.7 `plugins/cost-ledger/commands/cost.md` を作る（`commands/` 配下は自動発見されるので plugin.json への追記は不要）
-- [ ] 7.8 番号が PR か issue かを GitHub に問い合わせて判別し、対応する集計を呼んで固定書式の 1 行目と内訳を返す実装を書く（Green）
+- [x] 7.1 「PR 番号を渡すとそのヘッドブランチのコストが返る」テストを先に書く（Red）
+- [x] 7.2 「issue 番号を渡すと、実行した作業ディレクトリのリポジトリの行だけから区間の合計が返る」テストを先に書く（Red）
+- [x] 7.3 「リポジトリ不明の行の件数と金額が別立てで出力される」テストを先に書く（Red）
+- [x] 7.4 「存在しない番号で 0 円と表示せず、見つからないと伝える」テストを先に書く（Red）
+- [x] 7.5 「番号なしで呼ぶと現在のブランチのコストが返り、git リポジトリの外ではブランチが決まらないと伝える」テストを先に書く（Red）
+- [x] 7.6 「出力の 1 行目が固定書式で、金額（USD と円）・換算レート・帰属先・帰属の種別をすべて含む」テストを先に書く（Red）
+- [x] 7.7 `plugins/cost-ledger/commands/cost.md` を作る（`commands/` 配下は自動発見されるので plugin.json への追記は不要）
+- [x] 7.8 番号が PR か issue かを GitHub に問い合わせて判別し、対応する集計を呼んで固定書式の 1 行目と内訳を返す実装を書く（Green）
 
 ## 8. 決めた振る舞いを spec に残す
 
-- [ ] 8.1 円換算の固定レート・環境変数での上書き・出力へのレート添付が `specs/cost-ledger-pricing/spec.md` の Requirement と Scenario に残っていることを確認する（実装で変えたなら spec も直す）
-- [ ] 8.2 番号なしで呼んだときの既定動作が `specs/cost-ledger-cost-command/spec.md` の Requirement と Scenario に残っていることを確認する（実装で変えたなら spec も直す）
+- [x] 8.1 円換算の固定レート・環境変数での上書き・出力へのレート添付が `specs/cost-ledger-pricing/spec.md` の Requirement と Scenario に残っていることを確認する（実装で変えたなら spec も直す）
+- [x] 8.2 番号なしで呼んだときの既定動作が `specs/cost-ledger-cost-command/spec.md` の Requirement と Scenario に残っていることを確認する（実装で変えたなら spec も直す）
 
 ## 9. 受け入れ条件の実測
 
-- [ ] 9.1 `/cost` に PR #271 の番号を渡し、**同じ時点で** `python3 plugins/cost-ledger/prototypes/branch-cost.py oratta/token-optimize` を実行して、$1 以内で一致することを両方の実行結果つきで示す（会話ログは 30 日で消えるため絶対値は下がるが、同時に走らせれば一致する）
-- [ ] 9.2 `/cost` に issue 番号を渡し、**同じ時点で** `python3 plugins/cost-ledger/prototypes/per-post-cost.py oratta/token-optimize` を実行して、区間の内訳が整合することを両方の実行結果つきで示す
-- [ ] 9.3 `bash scripts/test.sh` を実行し、全件 green（exit 0）を出力の要約つきで示す
-- [ ] 9.4 全履歴 1 パスの所要時間を `time` で計測し、実測値を記録する
+- [x] 9.1 `/cost` に PR #271 の番号を渡し、**同じ時点で** `python3 plugins/cost-ledger/prototypes/branch-cost.py oratta/token-optimize` を実行して、$1 以内で一致することを両方の実行結果つきで示す（会話ログは 30 日で消えるため絶対値は下がるが、同時に走らせれば一致する）
+- [x] 9.2 `/cost` に issue 番号を渡し、**同じ時点で** `python3 plugins/cost-ledger/prototypes/per-post-cost.py oratta/token-optimize` を実行して、区間の内訳が整合することを両方の実行結果つきで示す
+- [x] 9.3 `bash scripts/test.sh` を実行し、全件 green（exit 0）を出力の要約つきで示す
+- [x] 9.4 全履歴 1 パスの所要時間を `time` で計測し、実測値を記録する
