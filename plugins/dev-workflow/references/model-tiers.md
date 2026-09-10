@@ -30,4 +30,4 @@ Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.mo
 - `reserve` の**自動実行**（unmanned / cron / loop 経由）では、`fable` ティアを `'opus'` として渡す（interactive では降格しない）
 - `exhausted` では **全経路**で `fable` ティアを `'opus'` として渡す（枠が実際に無いため）
 
-`haiku` / `sonnet` / `inherit` は残量モードの影響を受けない。降格したときはスクリプトの return 値や PR コメントに 1 行残す（記録形式の正本は pr-review-gate の「修正実装モデル: opus（fable レート制限のためフォールバック）」）。
+`haiku` / `sonnet` / `inherit` は残量モードの影響を受けない。降格したときはスクリプトの return 値や PR コメントに 1 行残す（記録形式の正本は pr-review-gate の「決める役モデル: opus（fable レート制限のためフォールバック。subagent_type は dev-workflow:decider のまま）」）。
