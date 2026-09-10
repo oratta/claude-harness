@@ -322,7 +322,7 @@ extract_context_cap_section() {
   grep -q 'worktree の撤去' "${PLUGIN_DIR}/skills/develop/SKILL.md"
 }
 
-@test "SKILL.md and worker.md forbid isolation: remote for W / G" {
+@test "SKILL.md forbids isolation: remote for W / G" {
   grep -q 'isolation: "remote"' "${PLUGIN_DIR}/skills/develop/SKILL.md"
   grep -qE '(remote.*使わない|remote.*起こしてはならない)' "${PLUGIN_DIR}/skills/develop/SKILL.md"
 }
