@@ -105,3 +105,68 @@ print(\"ok\")
   run bash -c "python3 '$CL' facts | wc -l | tr -d ' '"
   [ "$output" = "13" ]
 }
+
+@test "facts: issue numbers come only from an executed Bash command" {  # issue 番号は実行された Bash の command からだけ拾い、他ツールの入力に現れた文字列は帰属させない
+  {
+    cl_row_tool S9 req-agent  2026-09-11T00:00:00.000Z main "$REPO_A" 0 Agent \
+      '{"description":"x","prompt":"Read with gh issue view 999"}'
+    cl_row_tool S9 req-edit   2026-09-11T00:00:01.000Z main "$REPO_A" 0 Edit \
+      '{"file_path":"/tmp/x","old_string":"a","new_string":"gh issue comment 998"}'
+    cl_row_tool S9 req-write  2026-09-11T00:00:02.000Z main "$REPO_A" 0 Write \
+      '{"file_path":"/tmp/x","content":"gh issue edit 997"}'
+    cl_row_tool S9 req-send   2026-09-11T00:00:03.000Z main "$REPO_A" 0 SendMessage \
+      '{"to":"w","message":"gh issue close 996"}'
+    cl_row     S9 req-realgh 2026-09-11T00:00:04.000Z main "$REPO_A" 0 "gh issue view 888"
+  } | cl_write_log tooltypes
+
+  # 実行していない文字列は 4 種とも帰属しない
+  for rid in req-agent req-edit req-write req-send; do
+    run fact_of "$rid"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"issues": []'* ]] || return 1
+  done
+
+  # 実行された Bash の command からは拾う
+  run fact_of req-realgh
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"issues": ['*'888'*']'* ]] || return 1
+
+  # 区間の帰属先も 888 だけになる（誤マッチが 1 つでも残れば別の番号に寄る）
+  run bash -c "python3 '$CL' intervals --json | python3 -c '
+import json, sys
+rows = json.load(sys.stdin)[\"intervals\"]
+print(sorted({r[\"issue\"] for r in rows if \"req-agent\" in r[\"request_ids\"] or \"req-realgh\" in r[\"request_ids\"]}, key=str))
+'"
+  [ "$status" -eq 0 ]
+  [ "$output" = "['888']" ]
+}
+
+@test "facts: a structurally broken line is skipped and counted, not fatal" {  # 構造不正な 1 行で集計が落ちず、捨てた件数が出力に出る
+  {
+    cl_row S8 req-ok1 2026-09-11T01:00:00.000Z cost-broken "$REPO_A" 1000000
+    printf '%s\n' '{"type": "assistant", "requestId": "bad-1", "gitBranch": "cost-broken", "message": {"usage": "broken"}}'
+    printf '%s\n' '{"type": "assistant", "requestId": "bad-2", "gitBranch": "cost-broken", "message": [1, 2, 3]}'
+    printf '%s\n' '["assistant", "cost-broken", "not-an-object"]'
+    cl_row S8 req-ok2 2026-09-11T01:00:01.000Z cost-broken "$REPO_A" 1000000
+  } | cl_write_log broken
+
+  # 壊れた行があっても集計は完走し、健全な行は残る
+  run bash -c "python3 '$CL' facts 2>/dev/null | grep -c 'req-ok'"
+  [ "$status" -eq 0 ]
+  [ "$output" = "2" ]
+
+  run python3 "$CL" branch cost-broken
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'$2.00'* ]] || return 1
+  # 黙って捨てず件数を出す
+  [[ "$output" == *"読み取れなかった行: 3 件"* ]] || return 1
+
+  run python3 "$CL" report
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"読み取れなかった行: 3 件"* ]] || return 1
+
+  # 監査用の JSON にも件数が載る
+  run bash -c "python3 '$CL' report --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"unreadable_lines\"])'"
+  [ "$status" -eq 0 ]
+  [ "$output" = "3" ]
+}

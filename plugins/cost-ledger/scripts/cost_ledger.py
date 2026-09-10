@@ -29,8 +29,14 @@ from collections import defaultdict
 # リポジトリ識別子が導けなかった行の印。黙って除外も合算もせず、この名前で別立てにする。
 UNKNOWN_REPO = "不明"
 
-# 第 2 の鍵になる issue 番号を拾うコマンド。設計の根拠になった計測
-# (prototypes/issue-rescue.py) が拾っている集合と一致させる。
+# 期待する形になっていない行の件数。1 行の構造不正で全集計を落とさず、かといって
+# 黙って捨てもしない（リポジトリ不明・未帰属と同じ扱い）。集計の最後に件数だけ出す。
+SCAN_STATS = {"unreadable_lines": 0}
+
+# 第 2 の鍵になる issue 番号を拾うコマンド。拾う 5 つのサブコマンドは設計の根拠になった
+# 計測 (prototypes/issue-rescue.py) と一致させるが、走査する場所は実行された
+# Bash の command だけに限る（プロトタイプはツール入力全体を見ており、実行していない
+# 文字列にも反応する）。
 ISSUE_RE = re.compile(r"gh issue (?:view|comment|edit|close|develop)\s+(\d+)")
 
 # 区間の境界になる投稿。prototypes/per-post-cost.py が境界にしている集合と一致させる。
@@ -201,19 +207,30 @@ def log_root() -> str:
 
 
 def scan_tool_calls(message: dict):
-    """その行のツール呼び出しから、触った issue 番号の列と投稿の印を拾う。"""
+    """その行が**実行した** Bash コマンドから、触った issue 番号の列と投稿の印を拾う。
+
+    見るのは ``Bash`` ツールの ``command`` フィールドだけ。ツール入力全体を文字列に
+    して当てると、サブエージェントへの指示文やファイル編集の中身に書かれた
+    ``gh issue view <番号>`` という**文字列**にも反応し、実行していない issue へ
+    コストが帰属する。実際に実行された ``gh`` は必ずここを通る。
+    """
     issues: list[str] = []
     marker = None
     for block in message.get("content") or []:
         if not isinstance(block, dict) or block.get("type") != "tool_use":
             continue
-        payload = block.get("input") or {}
-        blob = json.dumps(payload, ensure_ascii=False)
-        for number in ISSUE_RE.findall(blob):
+        if block.get("name") != "Bash":
+            continue
+        payload = block.get("input")
+        if not isinstance(payload, dict):
+            continue
+        command = payload.get("command")
+        if not isinstance(command, str):
+            continue
+        for number in ISSUE_RE.findall(command):
             if number not in issues:
                 issues.append(number)
-        if marker is None and block.get("name") == "Bash":
-            command = payload.get("command") or ""
+        if marker is None:
             for pattern in POST_MARKERS:
                 if pattern in command:
                     marker = pattern
@@ -273,6 +290,9 @@ def iter_facts(root: str, resolver: RepoResolver, branch: str | None = None):
                         record = json.loads(line)
                     except ValueError:
                         continue
+                    if not isinstance(record, dict):
+                        SCAN_STATS["unreadable_lines"] += 1
+                        continue
                     if record.get("type") != "assistant":
                         continue
                     if branch is not None and (record.get("gitBranch") or "") != branch:
@@ -280,8 +300,15 @@ def iter_facts(root: str, resolver: RepoResolver, branch: str | None = None):
                     request_id = record.get("requestId") or record.get("uuid")
                     if request_id in seen:
                         continue
+                    try:
+                        fact = build_fact(record, resolver, path)
+                    except (AttributeError, TypeError, ValueError):
+                        # 有効な JSON だが期待する形でない行。ここで落とすと 1 行の不正で
+                        # 全履歴の集計が終わらなくなる（cwd 削除済みの行と同じ方針）。
+                        SCAN_STATS["unreadable_lines"] += 1
+                        continue
                     seen.add(request_id)
-                    yield build_fact(record, resolver, path)
+                    yield fact
 
 
 # --------------------------------------------------------------------------
@@ -554,6 +581,7 @@ def cmd_report(args, pricing: Pricing, resolver: RepoResolver) -> int:
             for key, value in repos.items()
         },
         "unknown_models": summary["unknown_models"],
+        "unreadable_lines": SCAN_STATS["unreadable_lines"],
         "usd_jpy_rate": pricing.jpy_rate,
     }
     if args.json:
@@ -691,11 +719,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def report_unreadable() -> None:
+    """読み取れなかった行があれば件数を出す。JSONL・JSON の出力を汚さないよう stderr へ。"""
+    count = SCAN_STATS["unreadable_lines"]
+    if count:
+        sys.stderr.write(
+            "  読み取れなかった行: %d 件（有効な JSON だが期待する形でないため集計から外した）\n"
+            % count
+        )
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     pricing = Pricing.load(args.pricing)
     resolver = RepoResolver()
-    return args.func(args, pricing, resolver)
+    try:
+        return args.func(args, pricing, resolver)
+    finally:
+        sys.stdout.flush()
+        report_unreadable()
 
 
 if __name__ == "__main__":

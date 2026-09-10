@@ -11,7 +11,9 @@ Claude Code の会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/**/*
 | API 換算の総額 | $9,245 |
 | サブエージェントの行に `gitBranch` が入る件数（直近 30 日） | 238,436 件 |
 
-main 上の作業の割合はリポジトリによって 2% から 100% まで振れる。flatmate では全体の 45%（$2,808）が main 上にあり、そのうち 69%（$1,950）は `gh issue view/comment/edit/close/develop <番号>` を実行したセッションの中にある。issue 番号を第 2 の鍵にすると、宙に浮くのは 45% ではなく 14%（$858）まで下がる。
+main 上の作業の割合はリポジトリによって 2% から 100% まで振れる。flatmate では全体の 38%（$2,784）が main 上にあり、そのうち 65%（$1,809）は `gh issue view/comment/edit/close/develop <番号>` を**実行した**セッションの中にある。issue 番号を第 2 の鍵にすると、宙に浮くのは 38% ではなく 13%（$974）まで下がる。
+
+この 65% は、issue 番号を `Bash` の `command` だけから拾うように狭めたあとの実測値（2026-09-11）。狭める前の `prototypes/issue-rescue.py` はツール呼び出しの入力全体を走査しており、実行していない `gh issue view <番号>` の文字列にも反応して 68% と出ていた。プロトタイプの数字を引き写すときはこの差に注意する。
 
 ### 前提環境
 
@@ -59,7 +61,7 @@ PR の経路はブランチ名だけで引く。PR のヘッドブランチが m
 
 **リポジトリ不明の行は黙って扱わない。** `cwd` が削除済みで `git rev-parse` が失敗した行は、除外しても合算しても数字が静かにずれる。件数と金額を「リポジトリ不明」として出力に別立てで出す。未知モデルを黙って 0 円にしないのと同じ方針。
 
-**issue 番号を拾うコマンドは 5 つ。** `gh issue view` / `comment` / `edit` / `close` / `develop`。設計の根拠になった 14% という数字は `prototypes/issue-rescue.py` が出したもので、その正規表現がこの 5 つを拾っている。仕様を 3 つに絞ると、根拠にした数字と実装が食い違う。
+**issue 番号を拾うコマンドは 5 つ。走査するのは実行された `Bash` の `command` だけ。** `gh issue view` / `comment` / `edit` / `close` / `develop` の 5 つは `prototypes/issue-rescue.py` と揃える。仕様を 3 つに絞ると、根拠にした数字と実装が食い違う。ただし**走査する場所はプロトタイプと揃えない**。プロトタイプはツール呼び出しの入力全体を文字列にして当てているため、サブエージェントへの指示文やファイル編集の中身に書かれた `gh issue view <番号>` という文字列にも反応する。このリポジトリは `gh issue view` を含む文書を日常的に書くので、汚染が systematic に入る。実際に実行された `gh` は必ず `Bash` の `command` を通るため、狭めても取りこぼしは出ない。
 
 **区間の境界は 4 つ。** `gh pr comment` / `gh issue comment` / `gh pr create` / `gh pr ready`。`prototypes/per-post-cost.py` が境界にしている集合と同じ。このリポジトリは Draft PR を作って作業し、終わったら `gh pr ready` で切り替える運用なので、`gh pr ready` を落とすと区間の切れ目がプロトタイプとずれる。
 

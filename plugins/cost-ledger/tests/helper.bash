@@ -103,3 +103,23 @@ print(json.dumps({
     ensure_ascii=False))
 PY
 }
+
+# Bash 以外のツール呼び出しを 1 個持つレコードを組み立てる。
+# issue 番号の検出を「実行された Bash の command」に限る検査で使う。
+cl_row_tool() {  # $1=sessionId $2=requestId $3=timestamp $4=branch $5=cwd $6=input_tokens $7=ツール名 $8=input(JSON)
+  python3 - "$@" <<'PY'
+import json, sys
+sid, rid, ts, branch, cwd, tokens, tool, payload = sys.argv[1:9]
+print(json.dumps({
+    "type": "assistant", "requestId": rid, "uuid": "u-" + rid, "timestamp": ts,
+    "sessionId": sid, "isSidechain": False, "cwd": cwd, "gitBranch": branch,
+    "message": {"id": "msg-" + rid, "model": "claude-haiku-4-5", "role": "assistant",
+                "content": [{"type": "tool_use", "id": "t-" + rid, "name": tool,
+                             "input": json.loads(payload)}],
+                "usage": {"input_tokens": int(tokens), "output_tokens": 0,
+                          "cache_read_input_tokens": 0,
+                          "cache_creation": {"ephemeral_5m_input_tokens": 0,
+                                             "ephemeral_1h_input_tokens": 0}}}},
+    ensure_ascii=False))
+PY
+}

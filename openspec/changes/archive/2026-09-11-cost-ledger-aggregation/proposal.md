@@ -13,7 +13,7 @@ Claude Code の会話ログ（`~/.claude/projects/**/*.jsonl`）は、アシス�
 - **新しいプラグイン `plugins/cost-ledger/` を作る**。`plugins/cost-ledger/.claude-plugin/plugin.json` を新規に置き、リポジトリルートの `.claude-plugin/marketplace.json` にも登録する。statusline に混ぜないのは、statusline が描画のたびに走るため全履歴スキャン（8〜28 秒）を混ぜられないから。dev-workflow に混ぜないのは、dev-workflow が PR 運用のリポでしか効かないのに対し、コストを一番知りたいのが PR を作らない main 上の作業だから
 - **集計エンジンを実装する**。`~/.claude/projects/**/*.jsonl` を読み、帰属の鍵を 2 本立てにする:
   - 第 1 の鍵は `gitBranch`。サブエージェントの行にも入るので、そのまま使える
-  - 第 2 の鍵は **（リポジトリ識別子, issue 番号）の組**。issue 番号は `gh issue view` / `comment` / `edit` / `close` / `develop` に渡された番号をツール呼び出しから拾う。issue 番号はリポジトリ内でしか一意でないので、番号だけを鍵にはしない
+  - 第 2 の鍵は **（リポジトリ識別子, issue 番号）の組**。issue 番号は `gh issue view` / `comment` / `edit` / `close` / `develop` に渡された番号を、実行された `Bash` の `command` から拾う（他のツールの入力に現れた文字列は実行ではないので拾わない）。issue 番号はリポジトリ内でしか一意でないので、番号だけを鍵にはしない
 - **区間分割**: 投稿（`gh pr comment` / `gh issue comment` / `gh pr create` / `gh pr ready`）から投稿までを 1 区間とし、区間ごとに直近に触った issue へ寄せる。区間は `sessionId` ごとに切る。1 セッションが複数 issue を触り、かつ複数セッションが同じブランチで並行するため
 - **`/cost <番号>` コマンドを追加する**。PR 番号ならそのブランチのコスト、issue 番号ならその issue を触った区間のコスト合計を、USD と円で返す。issue の経路は実行した作業ディレクトリのリポジトリで絞る。番号を渡さなければ現在のブランチを見る
 - **出力の 1 行目を固定書式にする**。後続のゲート連携（#276）が 1 行目だけを取って PR に貼れるようにする

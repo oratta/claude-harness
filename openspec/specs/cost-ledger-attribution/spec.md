@@ -38,6 +38,12 @@
 ### Requirement: 会話ログの読み取りと重複排除
 システムは Claude Code の会話ログを読み、アシスタントメッセージの行から事実を抽出 SHALL する。ログのルートは `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects` と SHALL し、リポジトリ内のファイルに固定パスを書いてはなら MUST NOT ない。同一の行が複数のファイルに現れることがあるため、`requestId` を鍵として重複を排除 MUST する。
 
+期待する形になっていない行（有効な JSON だが `message` や `usage` の型が違う行など）で集計を中断してはなら MUST NOT ない。その行は集計から外し、**外した件数を出力に出** SHALL す。黙って捨てると、集計から何がこぼれたのかが誰にも見えなくなる（リポジトリ不明・未帰属と同じ扱い）。
+
+#### Scenario: 構造が壊れた行がログに混ざる
+- **WHEN** 有効な JSON だが `message.usage` が文字列になっている行がログにある
+- **THEN** 集計は中断せず、その行は外され、外した件数が出力に出る
+
 #### Scenario: 同じ requestId が複数ファイルに現れる
 - **WHEN** 同一の `requestId` を持つ行が 2 つ以上のログファイルに存在する
 - **THEN** その行のトークンは 1 回だけ集計される
@@ -79,7 +85,11 @@
 ### Requirement: issue による帰属（第 2 の鍵）
 issue 番号はリポジトリ内でしか一意でないため、システムは第 2 の帰属の鍵を **（リポジトリ識別子, issue 番号）の組** と SHALL する。issue 番号だけを鍵にしてはなら MUST NOT ない。
 
-issue 番号は各行のツール呼び出しの入力から、`gh issue view`・`gh issue comment`・`gh issue edit`・`gh issue close`・`gh issue develop` に渡された番号として拾 SHALL う。この 5 つは設計の根拠になった計測（`plugins/cost-ledger/prototypes/issue-rescue.py`）が拾っている集合と一致させる。
+issue 番号は各行の `Bash` ツールの `command` から、`gh issue view`・`gh issue comment`・`gh issue edit`・`gh issue close`・`gh issue develop` に渡された番号として拾 SHALL う。拾うこの 5 つのサブコマンドは設計の根拠になった計測（`plugins/cost-ledger/prototypes/issue-rescue.py`）と一致させるが、走査する場所は**実行されたコマンド**に限 SHALL る。プロトタイプはツール呼び出しの入力全体を文字列にして当てているため、サブエージェントへの指示文やファイル編集の中身に書かれた `gh issue view <番号>` という文字列にも反応する。実行していないコマンドの文字列を根拠に帰属させてはなら MUST NOT ない。
+
+#### Scenario: 実行していないコマンドの文字列は帰属しない
+- **WHEN** `Agent` の指示文や `Edit`・`Write` の本文に `gh issue view 999` という文字列が含まれるが、そのコマンドは実行されていない
+- **THEN** その行は issue 999 に帰属しない
 
 #### Scenario: 別リポジトリの同じ番号が混ざらない
 - **WHEN** リポジトリ A の issue 108 とリポジトリ B の issue 108 の両方に行が存在する
