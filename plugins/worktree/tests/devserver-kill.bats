@@ -116,8 +116,9 @@ wt_run_kill_snippet() {
   # one ordinary (dies on SIGTERM) and one that ignores SIGTERM.
   local shell="$1" dir="$2"
   local snippet="${BATS_TEST_TMPDIR}/kill-run.sh" driver="${BATS_TEST_TMPDIR}/kill-driver.sh"
-  # kill_devserver_under depends on abs_path (defined in Step -1).
+  # kill_devserver_under depends on abs_path and proc_comm (both defined in Step -1).
   awk '/^abs_path\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >"$snippet"
+  awk '/^proc_comm\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^kill_devserver_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   mkdir -p "$dir"
   cat >"$driver" <<'DRIVER'
@@ -191,15 +192,22 @@ DRIVER
 # タブを SIGKILL していた。除外リストのテストは文字列 grep しか無く、実際にシェルを
 # 立てて除外が効くか一度も検証されていなかったため 3 度目を防げなかった。
 
-wt_comm_block() {
-  # $1 = 関数名。comm 取り出しブロック（`comm=$(ps ...)` から連続する comm 代入）を返す。
-  # 後続ループの `comm="${entry##*|}"` は間にコメント以外の行が挟まるので拾わない。
-  # ⚠️ 行数を固定してはならない（`grep -A2` 等）。正規化が 4 行に増えたとき、両側とも
-  #    4 行目が切り捨てられて「片側だけ変わったのに一致」と誤判定する。
-  awk -v fn="$1() {" 'index($0, fn)==1,/^}$/' "$WT_CLEAN_SKILL" \
-    | awk '/^[[:space:]]+comm=\$\(ps /{on=1}
-           on && /^[[:space:]]+comm=/{print; next}
-           on && !/^[[:space:]]*#/{exit}'
+wt_skill_fn() {
+  # $1 = 関数名。SKILL.md からその関数の定義（`name() {` 〜 行頭 `}`）を丸ごと返す。
+  awk -v fn="$1() {" 'index($0, fn)==1,/^}$/' "$WT_CLEAN_SKILL"
+}
+
+wt_comm_window() {
+  # $1 = 関数名。その関数の中で、comm を取り出す行（`comm=$(proc_comm "$pid")`）から
+  # 除外リストの `case "$comm" in` までの**非コメント行**を返す。この窓の中で comm を
+  # 書き換える行があれば、それは片側だけの正規化（= 2 側が食い違う芽）である。
+  # ⚠️ 「連続する comm= 代入」のような**形状**で切ってはならない（issue #190）。空行を挟んだ
+  #    代入や `case ... comm=...;; esac` の形は形状マッチをすり抜ける。窓の境界を取り出し行と
+  #    使用行に置けば、その間に何が書かれていても検査対象に入る。
+  wt_skill_fn "$1" \
+    | awk '/^[[:space:]]+comm=\$\(proc_comm "\$pid"\)$/{on=1; next}
+           on && /^[[:space:]]+case "\$comm" in$/{exit}
+           on && !/^[[:space:]]*(#|$)/{print}'
 }
 
 @test "skill: comm extraction does not shell out to basename" {
@@ -210,35 +218,65 @@ wt_comm_block() {
 
 @test "skill: comm extraction strips a leading dash before taking the basename" {
   local lines
-  lines=$(wt_comm_block kill_devserver_under)
+  lines=$(wt_skill_fn proc_comm)
   [[ "$lines" == *'comm=${comm#-}'* ]]
   [[ "$lines" == *'comm=${comm##*/}'* ]]
+}
+
+@test "skill: ps -o comm= is called only inside proc_comm" {
+  # 正規化の定義を 1 箇所（Step -1 の proc_comm）に閉じる。他所で ps -o comm= を撃つ行が
+  # 増えた時点で「独自の取り出し」が始まっているので、コメント行を除いた実コードで数える。
+  local total inside
+  total=$(grep -v '^[[:space:]]*#' "$WT_CLEAN_SKILL" | grep -c 'ps -o comm=')
+  inside=$(wt_skill_fn proc_comm | grep -v '^[[:space:]]*#' | grep -c 'ps -o comm=')
+  [ "$inside" = "1" ]
+  [ "$total" = "1" ]
 }
 
 @test "skill: kill and detect sides extract comm identically" {
   # SKILL.md は「検出範囲と除外リストは kill_devserver_under と完全に同一に保つこと」と
   # 定めている。取り出しが片側だけ直ると、また片側だけがシェルを殺す。
-  local detect kill
-  detect=$(wt_comm_block detect_active_procs_under)
-  kill=$(wt_comm_block kill_devserver_under)
-  [ -n "$detect" ]
-  [ "$detect" = "$kill" ]
+  # 両側が同じ関数 proc_comm を 1 回だけ呼び、その結果を除外 case まで**一切加工しない**ことを
+  # 固定する。加工の形（空行を挟む・case 文で書く・comm+= 等）に依存しない（issue #190）。
+  local side body window
+  for side in detect_active_procs_under kill_devserver_under; do
+    body=$(wt_skill_fn "$side" | grep -v '^[[:space:]]*#')
+    [ -n "$body" ]
+    [ "$(printf '%s\n' "$body" | grep -c 'comm=$(proc_comm "$pid")')" = "1" ]
+    # 窓が空なら、取り出し行か case 行のどちらかが見つからなかった = 検査できていない。
+    # detect 側は `[ -n "$comm" ] || continue` が必ず窓に入るので、空は取り出し失敗を意味する。
+    window=$(wt_comm_window "$side")
+    if [ "$side" = "detect_active_procs_under" ]; then
+      [ -n "$window" ]
+    fi
+    # 窓の中で comm へ書き込む行（comm= / comm+= / read comm / printf -v comm / declare comm=）
+    run grep -Eq '(^|[^[:alnum:]_])comm(\+|\[[^]]*\])?=|(^|[[:space:];&|])read([[:space:]]+-[[:alnum:]]+)*[[:space:]]+comm([[:space:]]|$)|-v[[:space:]]+comm([[:space:]]|$)' <<<"$window"
+    [ "$status" -ne 0 ]
+    # 窓の中で ps を呼ぶ行（独自の取り出し）
+    run grep -q 'ps -o comm=' <<<"$window"
+    [ "$status" -ne 0 ]
+  done
+}
+
+@test "skill: kill and detect sides refuse to run without proc_comm (fail-closed)" {
+  # proc_comm 未定義で comm が常に空になると、detect 側は全プロセスを「既に死んでいる」と
+  # 見なして削除許可側に倒れ、kill 側は除外リストに何も一致せずシェルまで停止する。
+  # どちらも「未定義なら何もせず、そう表示する」ことを固定する。
+  local side body
+  for side in detect_active_procs_under kill_devserver_under; do
+    body=$(wt_skill_fn "$side" | grep -v '^[[:space:]]*#')
+    grep -q 'command -v proc_comm' <<<"$body"
+  done
 }
 
 wt_build_comm_normaliser() {
-  # SKILL.md 自身の comm 正規化行から関数を組み立てる（`ps` 呼び出しだけをテスト入力に
+  # SKILL.md 自身の proc_comm から関数を組み立てる（`ps` 呼び出しだけをテスト入力に
   # 差し替える）。ロジックを書き写さないので、SKILL.md が変われば必ずこのテストが追随する。
   local out="${BATS_TEST_TMPDIR}/comm-norm.sh"
-  {
-    echo 'comm_of() {'
-    echo '  local pid="$1" comm'
-    wt_comm_block kill_devserver_under \
-      | sed 's|\$(ps -o comm= -p "\$pid" 2>/dev/null)|"$pid"|'
-    echo '  printf "%s" "$comm"'
-    echo '}'
-  } >"$out"
-  grep -q '^comm_of() {' "$out"
-  # 置換が効いたことを確認する。空振りすると comm_of が本物の `ps -p '-/bin/zsh'` を呼び、
+  wt_skill_fn proc_comm \
+    | sed 's|\$(ps -o comm= -p "\$pid" 2>/dev/null)|"$pid"|' >"$out"
+  grep -q '^proc_comm() {' "$out"
+  # 置換が効いたことを確認する。空振りすると proc_comm が本物の `ps -p '-/bin/zsh'` を呼び、
   # bash も zsh も空文字を返して「一致」になり、テストが常に通ってしまう。
   grep -q 'comm="$pid"' "$out"
   run grep -q 'ps -o comm=' "$out"
@@ -253,15 +291,15 @@ wt_build_comm_normaliser() {
   # これが無いと旧実装で snippet="" になり、空文字同士の比較でテストが常に通る。
   [ -s "$snippet" ]
   grep -q 'comm="$pid"' "$snippet"
-  [ "$(bash -c ". '$snippet'; comm_of '-/bin/zsh'")" = "zsh" ]
-  [ "$(bash -c ". '$snippet'; comm_of '-zsh'")"      = "zsh" ]
-  [ "$(bash -c ". '$snippet'; comm_of '/bin/zsh'")"  = "zsh" ]
-  [ "$(bash -c ". '$snippet'; comm_of '-/bin/bash'")" = "bash" ]
+  [ "$(bash -c ". '$snippet'; proc_comm '-/bin/zsh'")" = "zsh" ]
+  [ "$(bash -c ". '$snippet'; proc_comm '-zsh'")"      = "zsh" ]
+  [ "$(bash -c ". '$snippet'; proc_comm '/bin/zsh'")"  = "zsh" ]
+  [ "$(bash -c ". '$snippet'; proc_comm '-/bin/bash'")" = "bash" ]
   # 非シェルは名前が変わらない（停止対象のまま）
-  [ "$(bash -c ". '$snippet'; comm_of '/usr/bin/perl'")" = "perl" ]
-  [ "$(bash -c ". '$snippet'; comm_of '/opt/homebrew/bin/node'")" = "node" ]
+  [ "$(bash -c ". '$snippet'; proc_comm '/usr/bin/perl'")" = "perl" ]
+  [ "$(bash -c ". '$snippet'; proc_comm '/opt/homebrew/bin/node'")" = "node" ]
   # 取得できなかったケースは空のまま（診断側の「既に死んでいる」判定を壊さない）
-  [ -z "$(bash -c ". '$snippet'; comm_of ''")" ]
+  [ -z "$(bash -c ". '$snippet'; proc_comm ''")" ]
 }
 
 @test "comm extraction: normaliser agrees under bash and zsh" {
@@ -273,7 +311,7 @@ wt_build_comm_normaliser() {
   [ -s "$snippet" ]
   grep -q 'comm="$pid"' "$snippet"
   for v in '-/bin/zsh' '-zsh' '/bin/zsh' '/usr/bin/perl' ''; do
-    [ "$(bash -c ". '$snippet'; comm_of '$v'")" = "$(zsh -c ". '$snippet'; comm_of '$v'")" ]
+    [ "$(bash -c ". '$snippet'; proc_comm '$v'")" = "$(zsh -c ". '$snippet'; proc_comm '$v'")" ]
   done
 }
 
@@ -286,6 +324,7 @@ wt_build_comm_normaliser() {
   local snippet="${BATS_TEST_TMPDIR}/kill-login.sh"
   local dir="${BATS_TEST_TMPDIR}/login-shell"
   awk '/^abs_path\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >"$snippet"
+  awk '/^proc_comm\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^kill_devserver_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   mkdir -p "$dir"
 

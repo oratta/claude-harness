@@ -1,7 +1,7 @@
 ---
 name: wt-clean
 description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある／git worktree lock されている worktree は git がクリーンでも自動削除せず判断バッチに回す。ただし「親セッションが消えて init に引き取られた（PPID=1）」かつ「worktree の更新もセッションログの更新も 24 時間以上前」の両方を満たす居残りプロセスは稼働シグナルから外し、根拠を表示する。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
-version: 3.7.1
+version: 3.7.2
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -181,6 +181,26 @@ abs_path() {
 
   parent_abs=$(abs_path "$parent") || return 1
   printf '%s/%s\n' "${parent_abs%/}" "$leaf"
+}
+
+# pid のコマンド名を、除外リスト（bash|zsh|sh|...）と突き合わせられる形に正規化して返す。
+# macOS の ps -o comm= は argv[0] を返すため、ログインシェルは "-/bin/zsh" のように
+# 先頭が `-` になる。`basename -/bin/zsh` はハイフンをオプションと解釈して失敗し、
+# comm が空文字に潰れる → 除外リストに一致せず、対象 worktree に cd しているだけの
+# ターミナルのタブが停止対象になる（2026-08-27 実例: ログインシェル 2 個を SIGKILL した）。
+# 先頭の `-` を落としてから basename 相当を行う。外部 basename は使わない
+# （最小 PATH の非対話シェルで command not found になる実績あり。classify_dirty と同じ理由）。
+# 引けなければ空文字を返す（検出側の「空文字 = 既に死んでいる」判定がこれに依存する）。
+# ⚠️ 検出側 detect_active_procs_under と停止側 kill_devserver_under は、コマンド名の取り出しを
+#    **必ずこの関数だけで行う**（SHALL）。片側にだけ独自の取り出しや後処理（`.exe` 落とし等）を
+#    書いてはならない（SHALL NOT）—— かつて basename の失敗が片側だけ直り、生きた端末を
+#    「死んだプロセス」と誤認した。正規化を変えるときはここ 1 箇所を変える。
+proc_comm() {
+  local pid="$1" comm
+  comm=$(ps -o comm= -p "$pid" 2>/dev/null)
+  comm=${comm#-}
+  comm=${comm##*/}
+  printf '%s' "$comm"
 }
 ```
 
@@ -397,7 +417,7 @@ echo "[$i/$N] $WT をチェック中…"
 
 **遅延診断**（この対象についてのみ実行）:
 
-> ℹ️ 以下で使う `classify_dirty` / `detect_active_procs_under` / `detect_recent_session_log` は後述の「Step B-共通」節で定義している（`kill_devserver_under` と同じ扱い）。**Pass 1 のループに入る前にまとめて定義しておくこと。**
+> ℹ️ 以下で使う `classify_dirty` / `detect_active_procs_under` / `detect_recent_session_log` は後述の「Step B-共通」節で定義している（`kill_devserver_under` と同じ扱い）。両者が依存する `abs_path` / `proc_comm` は Step -1 で定義済みであること。**Pass 1 のループに入る前にまとめて定義しておくこと。**
 
 ```bash
 # 1. マージ済みか（SHA ベース。普通の merge / ff のみ検出できる）
@@ -654,6 +674,12 @@ detect_active_procs_under() {
     echo "プロセス検査不能: パスを解決できない（安全のため稼働扱い）"
     return 0
   fi
+  # proc_comm（Step -1）が無いと comm が常に空になり、全プロセスを「既に死んでいる」と
+  # 見なして稼働シグナルを取りこぼす（削除許可側に倒れる）。定義されていなければ検査不能扱い。
+  if ! command -v proc_comm >/dev/null 2>&1; then
+    echo "プロセス検査不能: proc_comm 未定義（Step -1 のヘルパ未読込。安全のため稼働扱い）"
+    return 0
+  fi
 
   # 居残り除外の前提（条件 2）。ヘルパが無い・検査不能なら stale_ok=0 のまま（fail-closed）
   if command -v detect_recent_session_log >/dev/null 2>&1; then
@@ -678,21 +704,15 @@ detect_active_procs_under() {
   #    while read + here-string なら bash / zsh のどちらでも行ごとに回る。
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
-    # macOS の ps -o comm= は argv[0] を返すため、ログインシェルは "-/bin/zsh" のように
-    # 先頭が `-` になる。`basename -/bin/zsh` はハイフンをオプションと解釈して失敗し、
-    # comm が空文字に潰れる → 除外リストに一致せず、対象 worktree に cd しているだけの
-    # ターミナルのタブが停止対象になる（2026-08-27 実例: ログインシェル 2 個を SIGKILL した）。
-    # 先頭の `-` を落としてから basename 相当を行う。外部 basename は使わない
-    # （最小 PATH の非対話シェルで command not found になる実績あり。classify_dirty と同じ理由）。
-    comm=$(ps -o comm= -p "$pid" 2>/dev/null)
-    comm=${comm#-}
-    comm=${comm##*/}
+    # コマンド名の取り出しは Step -1 の proc_comm に一本化（kill_devserver_under と同じ関数）。
+    # ここで独自に取り出したり結果を加工してはならない（proc_comm の注記を参照）。
+    comm=$(proc_comm "$pid")
     # comm が引けない = lsof と ps の間に終了した短命プロセス。既に居ないので稼働シグナルにしない。
     # （kill 側にこの分岐は無い。あちらは「消えた PID に空振りの kill を撃つ」だけで無害だが、
     #   こちらで拾うと全 worktree が毎回 Pass 2 送りになり、ガードが形骸化する）
-    # ⚠️ この「空文字 = 既に死んでいる」という前提は、上の comm 取り出しが生きたプロセスに対して
-    #    失敗しないことに依存する。取り出しを変えるときは、両側とも同じ形のまま変えること
-    #    （かつて basename がログインシェルで失敗し、生きた端末を「死んだプロセス」と誤認した）。
+    # ⚠️ この「空文字 = 既に死んでいる」という前提は、proc_comm が生きたプロセスに対して
+    #    失敗しないことに依存する（かつて basename がログインシェルで失敗し、生きた端末を
+    #    「死んだプロセス」と誤認した）。
     [ -n "$comm" ] || continue
     # kill_devserver_under と同じ除外リスト（対話用シェル/エディタは稼働シグナルにしない）
     case "$comm" in
@@ -829,6 +849,14 @@ kill_devserver_under() {
   local abs
   abs=$(abs_path "$target")
 
+  # proc_comm（Step -1）が無いと comm が常に空になり、除外リストに何も一致せず
+  # 対象 worktree に cd しているだけのシェルまで停止する。定義されていなければ停止しない
+  # （dev サーバーの残留 < 生きた端末の SIGKILL。何もしなかったことは表示して残す）。
+  if ! command -v proc_comm >/dev/null 2>&1; then
+    echo "  ⚠️ proc_comm 未定義（Step -1 のヘルパが読み込まれていない）。プロセス停止をスキップします"
+    return 1
+  fi
+
   # 検出: lsof +D は対象パス配下に実際にオープンファイル/cwdを持つプロセスのみを返す
   # （pgrep -f はコマンドライン文字列の部分一致のため誤検出しうる。lsof 不在時のみフォールバック）
   local pids
@@ -853,15 +881,9 @@ kill_devserver_under() {
   #    「1件も止められないのに成功したように見える」状態になる。
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
-    # macOS の ps -o comm= は argv[0] を返すため、ログインシェルは "-/bin/zsh" のように
-    # 先頭が `-` になる。`basename -/bin/zsh` はハイフンをオプションと解釈して失敗し、
-    # comm が空文字に潰れる → 除外リストに一致せず、対象 worktree に cd しているだけの
-    # ターミナルのタブが停止対象になる（2026-08-27 実例: ログインシェル 2 個を SIGKILL した）。
-    # 先頭の `-` を落としてから basename 相当を行う。外部 basename は使わない
-    # （最小 PATH の非対話シェルで command not found になる実績あり。classify_dirty と同じ理由）。
-    comm=$(ps -o comm= -p "$pid" 2>/dev/null)
-    comm=${comm#-}
-    comm=${comm##*/}
+    # コマンド名の取り出しは Step -1 の proc_comm に一本化（detect_active_procs_under と同じ関数）。
+    # ここで独自に取り出したり結果を加工してはならない（proc_comm の注記を参照）。
+    comm=$(proc_comm "$pid")
     # 対話用のシェル/エディタ（対象 worktree に cd しているだけのセッション）は誤 kill を避けるため除外。
     # 除外リストに無いコマンドは全て停止対象にする（false negative より false positive を避ける設計）。
     case "$comm" in

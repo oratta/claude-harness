@@ -32,6 +32,7 @@ teardown() {
 wt_load_orphan_helpers() {
   local snippet="${BATS_TEST_TMPDIR}/orphan-helpers.sh"
   awk '/^abs_path\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >"$snippet"
+  awk '/^proc_comm\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^proc_tree_top\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^worktree_has_recent_activity\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^detect_active_procs_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
@@ -351,6 +352,7 @@ wt_ppid_of() {
   local snippet dir home pid out
   snippet="${BATS_TEST_TMPDIR}/partial-helpers.sh"
   awk '/^abs_path\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >"$snippet"
+  awk '/^proc_comm\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^detect_active_procs_under\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   awk '/^detect_recent_session_log\(\) \{/,/^}$/' "$WT_CLEAN_SKILL" >>"$snippet"
   dir="${BATS_TEST_TMPDIR}/failclosed"
