@@ -1,7 +1,7 @@
 ---
 name: push-guard-setup
 description: マージ済み PR のブランチへの push を全リポジトリで拒否するグローバル pre-push ガードを導入する（`~/.githooks/pre-push` + `git config --global core.hooksPath`）。「push ガードを入れて」「マージ済みブランチへの push を止めたい」「グローバル git フックを設定して」で起動。人間の手打ち push と Claude の push の両方を同じ層で止める。
-version: 1.0.1
+version: 1.0.2
 allowed-tools: Read, Write, Edit, Bash
 ---
 
@@ -178,6 +178,8 @@ ls ~/path/to/repo/.git/hooks | grep -v '\.sample$'
 - 常駐プロセスや cron を作らない（このスキルが作るのはフック 1 ファイルと git 設定 1 行だけ）
 
 ## 自己検証
+
+完了宣言の前に、導入結果の evidence を確認する（原則: `plugins/dev-workflow/references/self-verification.md`）。
 
 導入後、以下がすべて成立することを確認して初めて「導入できた」と報告する:
 

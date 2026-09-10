@@ -1,5 +1,9 @@
 # Changelog — dev-workflow
 
+## 2.7.3 — 2026-09-03: 自己検証の棚卸しリストを実在する全 17 スキルに揃える（#218）
+
+`references/self-verification.md` の「対象スキル一覧」に載っていなかった 6 スキルを監査した。`push-guard-setup` は成果物（`~/.githooks/pre-push`）を出し既に `## 自己検証` 節を持つため対象に編入（参照 1 行を追記、bats の TARGETS に追加）。`capability-registry`・discord / telegram の `access` / `configure` は理由付きで対象外表に載せた。実在する `plugins/*/skills/*/SKILL.md` の全件がどちらかの表に現れることを `self-verification-sections.bats` の S51 が機械検査する。
+
 ## 2.7.0 — 2026-09-09: 起動の途中でコンテキストを測って止める hook
 
 サブエージェントのコンテキスト量は、本体が SendMessage で再開する直前にしか測られなかった。1 回の起動の中でどれだけ膨らんでも誰も止めないため、実測で W が 497,552 トークンに達していた（過去 14 日で上限 150,000 超が W 65%・G 63%）。1 起動の途中で測って止める経路を足した。あわせて、名前 glob が `isolation: "worktree"` のサブエージェントを見つけられない件（#243）を、名前ではなく hook が受け取る `agent_id` から解決する形で統合した。
