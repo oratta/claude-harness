@@ -1,0 +1,438 @@
+#!/usr/bin/env python3
+"""cost-ledger — Claude Code の会話ログから API 換算コストを集計する。
+
+読むのは ``${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects`` 配下の JSONL。
+アシスタントの 1 メッセージが 1 行で、``gitBranch`` / ``cwd`` / ``sessionId`` /
+``timestamp`` / ``isSidechain`` / ``message.model`` / ``message.usage`` /
+``requestId`` / ツール呼び出しの入力を持つ。
+
+設計上の要点:
+
+- **事実の抽出と帰属の導出を分ける。** 1 行から取るのは事実だけで、区間の帰属は
+  事実の列に対する関数として別に導く。区間の帰属は次の投稿が来るまで確定しないので、
+  1 行ずつ追記する経路（後続の台帳）が書けるのは事実の側に限られる。
+- **単価と換算レートはこのファイルに書かない。** 隣の ``pricing.json`` だけが持つ。
+- **速度は 1 行目の文字列判定に依存する。** JSON にパースする前に生の行へ
+  ``"assistant"`` が含まれるかで弾く。パースしてから判定すると桁違いに遅くなる。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from collections import defaultdict
+
+# リポジトリ識別子が導けなかった行の印。黙って除外も合算もせず、この名前で別立てにする。
+UNKNOWN_REPO = "不明"
+
+# 第 2 の鍵になる issue 番号を拾うコマンド。設計の根拠になった計測
+# (prototypes/issue-rescue.py) が拾っている集合と一致させる。
+ISSUE_RE = re.compile(r"gh issue (?:view|comment|edit|close|develop)\s+(\d+)")
+
+# 区間の境界になる投稿。prototypes/per-post-cost.py が境界にしている集合と一致させる。
+POST_MARKERS = ("gh pr comment", "gh issue comment", "gh pr create", "gh pr ready")
+
+# 事実側のトークン 5 種と、料金表側の単価 5 種の対応（順序が対応そのもの）
+TOKEN_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_write_5m_tokens",
+    "cache_write_1h_tokens",
+    "cache_read_tokens",
+)
+PRICE_FIELDS = ("input", "output", "cache_write_5m", "cache_write_1h", "cache_read")
+
+DEFAULT_PRICING = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pricing.json")
+
+
+# --------------------------------------------------------------------------
+# 料金表
+# --------------------------------------------------------------------------
+
+class Pricing:
+    """pricing.json の内容。単価と換算レートを持つ唯一の入口。"""
+
+    def __init__(self, data: dict):
+        self.models = data["models"]
+        self.rate_env = data.get("usd_jpy_rate_env", "COST_LEDGER_USD_JPY")
+        rate = data["usd_jpy_rate"]
+        override = os.environ.get(self.rate_env)
+        if override:
+            try:
+                rate = float(override)
+            except ValueError:
+                raise SystemExit("%s の値が数値ではありません: %r" % (self.rate_env, override))
+        self.jpy_rate = float(rate)
+        # 最長一致の前方一致にするため、鍵を長い順に見る（表の並び順に依存させない）
+        self._keys = sorted(self.models, key=len, reverse=True)
+
+    @classmethod
+    def load(cls, path: str) -> "Pricing":
+        with open(path, encoding="utf-8") as fh:
+            return cls(json.load(fh))
+
+    def find(self, model: str):
+        name = model or ""
+        for key in self._keys:
+            if name.startswith(key):
+                return self.models[key]
+        return None
+
+    def cost(self, fact: dict):
+        """(USD, 単価が引けたか) を返す。引けなければ 0 円だが、呼び出し側が別立てにする。"""
+        price = self.find(fact["model"])
+        if price is None:
+            return 0.0, False
+        total = 0.0
+        for token_field, price_field in zip(TOKEN_FIELDS, PRICE_FIELDS):
+            total += fact[token_field] * float(price[price_field])
+        return total / 1e6, True
+
+    def yen(self, usd: float) -> float:
+        return usd * self.jpy_rate
+
+
+# --------------------------------------------------------------------------
+# リポジトリ識別子
+# --------------------------------------------------------------------------
+
+class RepoResolver:
+    """cwd からリポジトリ識別子（git-common-dir の絶対パス）と表示名を求める。
+
+    識別子に絶対パスを採るのは、ネットワークにも remote の有無にも依存せず、worktree
+    と親リポジトリが同じ値に畳まれるから。``owner/repo`` の表示名は origin の URL から
+    引き、remote が無ければリポジトリのディレクトリ名に落とす（表示のためだけに使う）。
+    """
+
+    def __init__(self):
+        self._ids: dict[str, str] = {}
+        self._labels: dict[str, str] = {}
+
+    def repo_id(self, cwd: str) -> str:
+        if not cwd:
+            return UNKNOWN_REPO
+        if cwd in self._ids:
+            return self._ids[cwd]
+        repo_id = UNKNOWN_REPO
+        if os.path.isdir(cwd):
+            out = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
+            if out:
+                repo_id = os.path.realpath(out)
+        self._ids[cwd] = repo_id
+        return repo_id
+
+    def label(self, repo_id: str) -> str:
+        if repo_id == UNKNOWN_REPO:
+            return UNKNOWN_REPO
+        if repo_id in self._labels:
+            return self._labels[repo_id]
+        root = os.path.dirname(repo_id) if os.path.basename(repo_id) == ".git" else repo_id
+        label = os.path.basename(root) or repo_id
+        url = _git(root, "remote", "get-url", "origin")
+        if url:
+            matched = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?/?$", url)
+            if matched:
+                label = "%s/%s" % (matched.group(1), matched.group(2))
+        self._labels[repo_id] = label
+        return label
+
+
+def _git(cwd: str, *args: str):
+    try:
+        done = subprocess.run(
+            ["git", "-C", cwd, *args], capture_output=True, text=True, timeout=15
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    return done.stdout.strip() or None
+
+
+# --------------------------------------------------------------------------
+# 事実の抽出（1 パス）
+# --------------------------------------------------------------------------
+
+def log_root() -> str:
+    base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    return os.path.join(base, "projects")
+
+
+def scan_tool_calls(message: dict):
+    """その行のツール呼び出しから、触った issue 番号の列と投稿の印を拾う。"""
+    issues: list[str] = []
+    marker = None
+    for block in message.get("content") or []:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        payload = block.get("input") or {}
+        blob = json.dumps(payload, ensure_ascii=False)
+        for number in ISSUE_RE.findall(blob):
+            if number not in issues:
+                issues.append(number)
+        if marker is None and block.get("name") == "Bash":
+            command = payload.get("command") or ""
+            for pattern in POST_MARKERS:
+                if pattern in command:
+                    marker = pattern
+                    break
+    return issues, marker
+
+
+def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
+    message = record.get("message") or {}
+    usage = message.get("usage") or {}
+    created = usage.get("cache_creation") or {}
+    write_5m = created.get("ephemeral_5m_input_tokens") or 0
+    write_1h = created.get("ephemeral_1h_input_tokens") or 0
+    if not (write_5m or write_1h):
+        # 内訳を持たない古い形の行。キャッシュ書込 5m として読む。
+        write_5m = usage.get("cache_creation_input_tokens") or 0
+    issues, marker = scan_tool_calls(message)
+    return {
+        "request_id": record.get("requestId") or record.get("uuid") or "",
+        "timestamp": record.get("timestamp") or "",
+        # sessionId が無い行は区間を切る単位が消える。ファイルパスに落として混ざるのを防ぐ。
+        "session_id": record.get("sessionId") or path,
+        "is_sidechain": bool(record.get("isSidechain")),
+        "repo_id": resolver.repo_id(record.get("cwd") or ""),
+        "branch": record.get("gitBranch") or "",
+        "model": message.get("model") or "",
+        "input_tokens": usage.get("input_tokens") or 0,
+        "output_tokens": usage.get("output_tokens") or 0,
+        "cache_write_5m_tokens": write_5m,
+        "cache_write_1h_tokens": write_1h,
+        "cache_read_tokens": usage.get("cache_read_input_tokens") or 0,
+        "issues": issues,
+        "post_marker": marker,
+    }
+
+
+def iter_facts(root: str, resolver: RepoResolver, branch: str | None = None):
+    """会話ログを 1 パスで読み、requestId で重複を排除しながら事実を返す。"""
+    seen: set[str] = set()
+    for dirpath, _dirs, filenames in os.walk(root):
+        for name in sorted(filenames):
+            if not name.endswith(".jsonl"):
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                handle = open(path, encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            with handle:
+                for line in handle:
+                    # パースの前に生の文字列で弾く（全履歴 1 パスの速度はここに依存する）
+                    if '"assistant"' not in line:
+                        continue
+                    if branch is not None and branch not in line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue
+                    if record.get("type") != "assistant":
+                        continue
+                    if branch is not None and (record.get("gitBranch") or "") != branch:
+                        continue
+                    request_id = record.get("requestId") or record.get("uuid")
+                    if request_id in seen:
+                        continue
+                    seen.add(request_id)
+                    yield build_fact(record, resolver, path)
+
+
+# --------------------------------------------------------------------------
+# 集計
+# --------------------------------------------------------------------------
+
+def summarise(facts, pricing: Pricing):
+    """事実の列をモデル別に畳む。未知モデルは名前と行数を別に数える。"""
+    per_model = {}
+    unknown = defaultdict(int)
+    total = 0.0
+    messages = 0
+    for fact in facts:
+        usd, known = pricing.cost(fact)
+        total += usd
+        messages += 1
+        if not known:
+            unknown[fact["model"] or "(モデル名なし)"] += 1
+            continue
+        row = per_model.setdefault(
+            fact["model"], {"messages": 0, "usd": 0.0, **{f: 0 for f in TOKEN_FIELDS}}
+        )
+        row["messages"] += 1
+        row["usd"] += usd
+        for field in TOKEN_FIELDS:
+            row[field] += fact[field]
+    return {"total_usd": total, "messages": messages, "per_model": per_model,
+            "unknown_models": dict(unknown)}
+
+
+# --------------------------------------------------------------------------
+# 出力
+# --------------------------------------------------------------------------
+
+def format_rate(rate: float) -> str:
+    return ("%f" % rate).rstrip("0").rstrip(".") if rate != int(rate) else "%d" % int(rate)
+
+
+def money(usd: float, pricing: Pricing) -> str:
+    return "$%s / ¥%s @%s" % (
+        format(usd, ",.2f"),
+        format(pricing.yen(usd), ",.0f"),
+        format_rate(pricing.jpy_rate),
+    )
+
+
+def headline(usd: float, pricing: Pricing, target: str, kind: str) -> str:
+    """出力の 1 行目。後続のゲート連携がこの 1 行だけを取って PR に貼る。"""
+    return "コスト: %s — %s 帰属: %s" % (money(usd, pricing), target, kind)
+
+
+def render_breakdown(summary: dict, pricing: Pricing) -> list[str]:
+    lines = []
+    if summary["per_model"]:
+        lines.append("  内訳（モデル別）:")
+        for model, row in sorted(summary["per_model"].items(), key=lambda kv: -kv[1]["usd"]):
+            lines.append(
+                "    %-22s msgs=%5d  in=%s  out=%s  cw=%s  cr=%s  $%s"
+                % (
+                    model,
+                    row["messages"],
+                    format(row["input_tokens"], ","),
+                    format(row["output_tokens"], ","),
+                    format(row["cache_write_5m_tokens"] + row["cache_write_1h_tokens"], ","),
+                    format(row["cache_read_tokens"], ","),
+                    format(row["usd"], ",.2f"),
+                )
+            )
+    for model, count in sorted(summary["unknown_models"].items()):
+        lines.append(
+            "  未知モデル: %s %d 行（料金表に単価が無いため 0 円として扱っている）" % (model, count)
+        )
+    return lines
+
+
+# --------------------------------------------------------------------------
+# サブコマンド
+# --------------------------------------------------------------------------
+
+def branch_label(facts, resolver: RepoResolver):
+    """そのブランチの行が 1 つのリポジトリに収まるならその表示名を返す。"""
+    known = {f["repo_id"] for f in facts if f["repo_id"] != UNKNOWN_REPO}
+    if len(known) == 1:
+        return resolver.label(next(iter(known)))
+    return None
+
+
+def cmd_facts(args, pricing: Pricing, resolver: RepoResolver) -> int:
+    for fact in iter_facts(log_root(), resolver):
+        sys.stdout.write(json.dumps(fact, ensure_ascii=False) + "\n")
+    return 0
+
+
+def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
+    facts = list(iter_facts(log_root(), resolver, branch=args.branch))
+    summary = summarise(facts, pricing)
+    label = branch_label(facts, resolver)
+    target = "ブランチ %s" % args.branch
+    if args.target_label:
+        target = args.target_label
+    elif label:
+        target = "ブランチ %s (%s)" % (args.branch, label)
+    print(headline(summary["total_usd"], pricing, target, "ブランチ"))
+    print("  対象: ブランチ %s（%d メッセージ）" % (args.branch, summary["messages"]))
+    for line in render_breakdown(summary, pricing):
+        print(line)
+    if not facts:
+        print("  この会話ログにそのブランチの行はありません。")
+    return 0
+
+
+def cmd_report(args, pricing: Pricing, resolver: RepoResolver) -> int:
+    """監査用。全行を帰属先ごとに畳み、合計が総額と合うことを見えるようにする。"""
+    facts = list(iter_facts(log_root(), resolver))
+    branches: dict[str, float] = defaultdict(float)
+    repos: dict[str, float] = defaultdict(float)
+    repo_messages: dict[str, int] = defaultdict(int)
+    unattributed = 0.0
+    unattributed_messages = 0
+    summary = summarise(facts, pricing)
+    for fact in facts:
+        usd, _known = pricing.cost(fact)
+        repos[fact["repo_id"]] += usd
+        repo_messages[fact["repo_id"]] += 1
+        if fact["branch"]:
+            branches[fact["branch"]] += usd
+        else:
+            unattributed += usd
+            unattributed_messages += 1
+    payload = {
+        "total_usd": summary["total_usd"],
+        "messages": summary["messages"],
+        "branches": dict(branches),
+        "unattributed_branch_usd": unattributed,
+        "unattributed_branch_messages": unattributed_messages,
+        "repos": {
+            key: {"label": resolver.label(key), "usd": value, "messages": repo_messages[key]}
+            for key, value in repos.items()
+        },
+        "unknown_models": summary["unknown_models"],
+        "usd_jpy_rate": pricing.jpy_rate,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+    print(headline(summary["total_usd"], pricing, "全履歴", "ブランチ"))
+    for branch, usd in sorted(branches.items(), key=lambda kv: -kv[1]):
+        print("  %-40s $%s" % (branch, format(usd, ",.2f")))
+    print("  未帰属（gitBranch なし）: %d 件 $%s"
+          % (unattributed_messages, format(unattributed, ",.2f")))
+    if UNKNOWN_REPO in repos:
+        print("  リポジトリ不明: %d 件 $%s"
+              % (repo_messages[UNKNOWN_REPO], format(repos[UNKNOWN_REPO], ",.2f")))
+    for line in render_breakdown(summary, pricing):
+        print(line)
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="cost_ledger.py",
+        description="Claude Code の会話ログから API 換算コストを集計する",
+    )
+    parser.add_argument("--pricing", default=DEFAULT_PRICING,
+                        help="料金表の場所（既定はプラグイン同梱の pricing.json）")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    facts = subparsers.add_parser("facts", help="行から抽出した事実を JSONL で出す")
+    facts.set_defaults(func=cmd_facts)
+
+    branch = subparsers.add_parser("branch", help="ブランチに帰属するコストを出す")
+    branch.add_argument("branch")
+    branch.add_argument("--target-label", default=None,
+                        help="1 行目に出す帰属先の表記を差し替える（PR 経路が使う）")
+    branch.set_defaults(func=cmd_branch)
+
+    report = subparsers.add_parser("report", help="全履歴を帰属先ごとに畳んだ監査用の出力")
+    report.add_argument("--json", action="store_true")
+    report.set_defaults(func=cmd_report)
+
+    return parser
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+    pricing = Pricing.load(args.pricing)
+    resolver = RepoResolver()
+    return args.func(args, pricing, resolver)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,31 +1,31 @@
 ## 1. プラグインの骨格
 
-- [ ] 1.1 `plugins/cost-ledger/.claude-plugin/plugin.json` を作る（name・version・description・author・license・keywords。他プラグインと同じ形式。python3 を実行時依存にするなら description に明記する）
-- [ ] 1.2 リポジトリルート `.claude-plugin/marketplace.json` に cost-ledger の行を足す（name・description・source・category・version・author・keywords を plugin.json と一致させる）
-- [ ] 1.3 `bash scripts/test.sh` を実行し、S130b と S131（`tests/marketplace-sync.bats`）が green になることを exit code つきで確認する（このブランチは prototypes を先に commit したため、着手前は S130b が fail している。1.1 と 1.2 で解消する）
+- [x] 1.1 `plugins/cost-ledger/.claude-plugin/plugin.json` を作る（name・version・description・author・license・keywords。他プラグインと同じ形式。python3 を実行時依存にするなら description に明記する）
+- [x] 1.2 リポジトリルート `.claude-plugin/marketplace.json` に cost-ledger の行を足す（name・description・source・category・version・author・keywords を plugin.json と一致させる）
+- [x] 1.3 `bash scripts/test.sh` を実行し、S130b と S131（`tests/marketplace-sync.bats`）が green になることを exit code つきで確認する（このブランチは prototypes を先に commit したため、着手前は S130b が fail している。1.1 と 1.2 で解消する）
 
 ## 2. 料金表と単価の適用（Red → Green）
 
-- [ ] 2.1 `plugins/cost-ledger/pricing.json` を作り、プロトタイプ 5 本の `P` から単価（$/MTok の 入力・出力・キャッシュ書込5m・キャッシュ書込1h・キャッシュ読出）と固定の円換算レートを移す
-- [ ] 2.2 「単価を書き換えると `/cost` の出力が変わる」テストを先に書く（Red）
-- [ ] 2.3 「単価が最長一致の前方一致で引かれ、`claude-fable-5-1` が `claude-fable-5` より優先される（表の並び順に依存しない）」テストを先に書く（Red）
-- [ ] 2.4 「日付付きのモデル名 `claude-haiku-4-5-20251001` が `claude-haiku-4-5` の単価で引かれる」テストを先に書く（Red）
-- [ ] 2.5 「どの鍵にも前方一致しないモデルが 0 円で黙って落ちず、名前と行数が出力に出る」テストを先に書く（Red）
-- [ ] 2.6 「円換算が固定レートで、環境変数で上書きでき、出力にレートが添えられる」テストを先に書く（Red）
-- [ ] 2.7 `message.model` で最長一致の前方一致により単価を選び、トークン 5 種に掛けて合計する実装と、固定レートによる円換算を書く（Green）
+- [x] 2.1 `plugins/cost-ledger/pricing.json` を作り、プロトタイプ 5 本の `P` から単価（$/MTok の 入力・出力・キャッシュ書込5m・キャッシュ書込1h・キャッシュ読出）と固定の円換算レートを移す
+- [x] 2.2 「単価を書き換えると `/cost` の出力が変わる」テストを先に書く（Red）
+- [x] 2.3 「単価が最長一致の前方一致で引かれ、`claude-fable-5-1` が `claude-fable-5` より優先される（表の並び順に依存しない）」テストを先に書く（Red）
+- [x] 2.4 「日付付きのモデル名 `claude-haiku-4-5-20251001` が `claude-haiku-4-5` の単価で引かれる」テストを先に書く（Red）
+- [x] 2.5 「どの鍵にも前方一致しないモデルが 0 円で黙って落ちず、名前と行数が出力に出る」テストを先に書く（Red）
+- [x] 2.6 「円換算が固定レートで、環境変数で上書きでき、出力にレートが添えられる」テストを先に書く（Red）
+- [x] 2.7 `message.model` で最長一致の前方一致により単価を選び、トークン 5 種に掛けて合計する実装と、固定レートによる円換算を書く（Green）
 
 ## 3. テスト用 fixture
 
-- [ ] 3.1 PII と秘密を含まない fixture jsonl を `plugins/cost-ledger/tests/fixtures/` に作る。sidechain の行（`isSidechain: true`）・重複した `requestId`・削除済み `cwd`・複数 issue への投稿・キャッシュ書込の内訳が無い古い形の行を含める（前例: `plugins/experience-to-skill/tests/fixtures/sample-session.jsonl`）
-- [ ] 3.2 fixture が PII と秘密を含まないことをアサートするテストを書く（前例: `plugins/experience-to-skill/tests/sanitize.bats` の sanitize-idempotent）
+- [x] 3.1 PII と秘密を含まない fixture jsonl を `plugins/cost-ledger/tests/fixtures/` に作る。sidechain の行（`isSidechain: true`）・重複した `requestId`・削除済み `cwd`・複数 issue への投稿・キャッシュ書込の内訳が無い古い形の行を含める（前例: `plugins/experience-to-skill/tests/fixtures/sample-session.jsonl`）
+- [x] 3.2 fixture が PII と秘密を含まないことをアサートするテストを書く（前例: `plugins/experience-to-skill/tests/sanitize.bats` の sanitize-idempotent）
 
 ## 4. 事実の抽出と重複排除（Red → Green）
 
-- [ ] 4.1 「1 行から抽出される事実に区間の帰属先 issue が含まれない」テストを先に書く（Red）
-- [ ] 4.2 「同一 `requestId` が複数ファイルにあっても 1 回しか集計されない」テストを先に書く（Red）
-- [ ] 4.3 「`cache_creation` が無く `cache_creation_input_tokens` だけがある行が、キャッシュ書込 5m として読まれる」テストを先に書く（Red）
-- [ ] 4.4 「ログのルートが `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects` で解決され、リポジトリ内に固定パスが無い」ことを `grep -rn` で確かめるテストを先に書く（Red）
-- [ ] 4.5 会話ログを 1 パスで読み、`requestId` で重複排除し、行ごとに事実（`requestId`・`timestamp`・`sessionId`・`isSidechain`・リポジトリ識別子・`gitBranch`・モデル・トークン 5 種・触った issue 番号の列・投稿の印）を抽出する実装を書く（Green）
+- [x] 4.1 「1 行から抽出される事実に区間の帰属先 issue が含まれない」テストを先に書く（Red）
+- [x] 4.2 「同一 `requestId` が複数ファイルにあっても 1 回しか集計されない」テストを先に書く（Red）
+- [x] 4.3 「`cache_creation` が無く `cache_creation_input_tokens` だけがある行が、キャッシュ書込 5m として読まれる」テストを先に書く（Red）
+- [x] 4.4 「ログのルートが `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects` で解決され、リポジトリ内に固定パスが無い」ことを `grep -rn` で確かめるテストを先に書く（Red）
+- [x] 4.5 会話ログを 1 パスで読み、`requestId` で重複排除し、行ごとに事実（`requestId`・`timestamp`・`sessionId`・`isSidechain`・リポジトリ識別子・`gitBranch`・モデル・トークン 5 種・触った issue 番号の列・投稿の印）を抽出する実装を書く（Green）
 
 ## 5. 帰属（ブランチとリポジトリ識別子）（Red → Green）
 

@@ -17,7 +17,7 @@ main 上の作業の割合はリポジトリによって 2% から 100% まで�
 
 | 前提 | 内容 |
 |---|---|
-| 実装言語 | プロトタイプは python3。このリポジトリの他プラグインは bash と jq が主で、python はテスト補助 1 本しか無い。python3 を選ぶなら**実行時依存として明記**し、plugin.json の description と README に書く |
+| 実装言語 | **python3 を採る**（実装時に確定）。このリポジトリの他プラグインは bash と jq が主で、python はテスト補助 1 本しか無いため、python3 は**実行時依存として plugin.json の description と README に明記する**。JSONL の 1 パス処理と辞書集計を bash と jq でやり直すのは実装量と速度の両方で不利 |
 | `gh` | 認証済みであること。番号が PR か issue かの判別に使う |
 | ネットワーク | GitHub へ到達できること。到達できないと番号の判別ができない（コスト計算そのものはオフラインで完結する） |
 | `git` | **2.31 以上**。`rev-parse --path-format=absolute --git-common-dir` を使う。無印の `--git-common-dir` はメイン worktree で相対の `.git` を返し、リポジトリ識別子が cwd ごとに割れる |
@@ -64,6 +64,10 @@ PR の経路はブランチ名だけで引く。PR のヘッドブランチが m
 **区間の境界は 4 つ。** `gh pr comment` / `gh issue comment` / `gh pr create` / `gh pr ready`。`prototypes/per-post-cost.py` が境界にしている集合と同じ。このリポジトリは Draft PR を作って作業し、終わったら `gh pr ready` で切り替える運用なので、`gh pr ready` を落とすと区間の切れ目がプロトタイプとずれる。
 
 **区間は `sessionId` ごとに切る。** ブランチ全体を時刻順に並べて切る案は、利用者が複数セッションを並行して走らせるため、別セッションの行が互いの区間に混ざる。`sessionId` ごとに `timestamp` 順で切り、ブランチの総額はセッションの区間の合計を足したものとする。
+
+**リポジトリ識別子は git-common-dir の絶対パスそのものにし、`owner/repo` は表示だけに使う**（実装時に確定）。`git rev-parse --path-format=absolute --git-common-dir` が返す絶対パスを `realpath` で正規化した文字列を識別子とする。`owner/repo` を識別子にする案は、remote を持たないリポジトリと、`cwd` が削除済みで remote を引けない行で識別子が作れなくなるため落ちた。表示名は識別子から origin の URL を引いて `owner/repo` に直し、remote が無ければリポジトリのディレクトリ名に落とす。`/cost` の 1 行目に出るのはこの表示名で、集計の鍵はあくまで絶対パスの側。
+
+**円換算レートの上書きは環境変数 `COST_LEDGER_USD_JPY`**（実装時に確定）。名前は `pricing.json` の `usd_jpy_rate_env` にも書いてあり、後続の台帳（#274）とゲート連携（#276）はそこを読めば同じ名前に揃う。
 
 **worktree は親リポジトリに畳む。** `cwd` から `git -C <cwd> rev-parse --path-format=absolute --git-common-dir` で親を引く。worktree ごとに分けると、同じ作業が worktree の作り直しで分断される。
 
