@@ -7,7 +7,7 @@
 - `scripts/context-tripwire.sh`（新規）: PostToolUse（全ツール）で `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）超なら `hookSpecificOutput.additionalContext` で「今の工程を締めて成果を列挙して return せよ」を届け、PreToolUse（`Edit|Write|NotebookEdit|Bash`）で `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）超なら編集系を deny する。`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` で全解除
 - 計測対象は payload の `transcript_path` そのものではなく、その親ディレクトリ・`session_id`・`agent_id` から `<親>/<session_id>/subagents/agent-<agent_id>.jsonl` として導出する（`transcript_path` は hook が発火したセッション＝サブエージェントの中でも親のものを指す。着手前実験で確定）。直接パスが無ければ `subagents/` 以下を深さ 3 段まで、エントリ 200 件 / 20ms の上限つきで探す
 - 素の stdout + exit 0 はトランスクリプト表示（ctrl+o）にしか出ずモデルには届かないため、通知は `additionalContext` に固定した
-- 強制停止中の `Bash` は「先頭トークンが `git` で、`-C <path>` / `-c <k=v>` を読み飛ばした次が `status` / `diff` / `add` / `commit` / `push`」だけ通す（worktree 作業では `git -C <path> commit` を常用するため）。パイプ・`&&`・`;`・サブシェル・コマンド置換は拒否し、拒否理由に回避手段（`-m` を複数回に分けて 1 行ずつ渡す）を含める
+- 強制停止中の `Bash` は「受理する文法に照合して読める形だけを通す」方式で判定する: 先頭トークンが `git`、`-C <path>`（繰り返し可）のみを前置でき、`-c <k=v>` は値によらず一律拒否。サブコマンドは `status` / `diff` / `add` / `commit` / `push` だけで、以降はそのサブコマンドの許可オプション表にある形・値オプション直後の自由な値・`-` で始まらず `::` を含まないオペランドの 3 通りだけを通す（表に無いオプションは危険と分かっていなくても拒否）。worktree 作業では `git -C <path> commit` を常用するため `-C` は必須で通す。パイプ・`&&`・`;`・サブシェル・コマンド置換は拒否し、拒否理由に回避手段（`-m` を複数回に分けて 1 行ずつ渡す）を含める（#269: `git -c 'diff.external=…'` で強制停止中に任意コマンドを実行できた迂回の修正。`-c` のホワイトリスト化ではなく反転で閉じた）
 - 読み取り系（Read / Grep / Glob）は拒否しない。PreToolUse の matcher を編集系 + Bash に絞ることで構造的に保証している
 - メインスレッド（`agent_id` 無し）では python3 を起動せず bash 側で exit 0 する。この hook は install 先の全ユーザーの全ツール呼び出しで走るため。読み取りは末尾 256KB だけで、5MB のトランスクリプトでも 1 回 100ms 未満
 - `scripts/subagent-context.sh` に `--file <path>` を追加（#243 の統合）。名前 glob を使わずそのファイルを測る。名前指定の既存挙動は変えない

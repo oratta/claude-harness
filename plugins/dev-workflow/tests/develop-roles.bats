@@ -243,18 +243,31 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 # 同じ規則を複数の面に言い換えて置くと、次に閾値が変わったときどれかが必ず取り残される
 # （#253 で 3 周続けて言い換え漏れが出た）。数値と環境変数名の在処をテストで固定する。
 
+# 節の範囲だけを見るための切り出し。`## コンテキスト上限（サブエージェントの手渡し）` の行から
+# 次の `## ` 見出し（`### ` 小見出しは含む）の直前までを取り出す。全文 grep だと、節の外へ
+# 内容が移っても素通りしてしまう（G のレビュー指摘、#269 で対応）。
+extract_context_cap_section() {
+  awk '
+    /^## コンテキスト上限（サブエージェントの手渡し）$/ { flag=1 }
+    flag && /^## / && !/^## コンテキスト上限（サブエージェントの手渡し）$/ { exit }
+    flag
+  ' "$1"
+}
+
 @test "context cap: the canonical section holds the thresholds, the routes and the return prefixes" {
   dc="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  section="$(extract_context_cap_section "$dc")"
+  [ -n "$section" ] || { echo "section not found in decision-criteria.md"; return 1; }
   # 3 つの環境変数と 2 つの既定値
   for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000; do
-    grep -q -- "$token" "$dc" || { echo "missing in decision-criteria.md: $token"; return 1; }
+    echo "$section" | grep -q -- "$token" || { echo "missing in the context cap section: $token"; return 1; }
   done
   # 2 経路・通知時と強制停止時の振る舞い・return の 1 行目の書き分け
-  grep -q '再開前チェック' "$dc"
-  grep -q '途中計測' "$dc"
-  grep -q '工程完了:' "$dc"
-  grep -q '工程中断:' "$dc"
-  grep -q 'pr-review-gate の手順 1〜5 を 1 グループ' "$dc"
+  echo "$section" | grep -q '再開前チェック'
+  echo "$section" | grep -q '途中計測'
+  echo "$section" | grep -q '工程完了:'
+  echo "$section" | grep -q '工程中断:'
+  echo "$section" | grep -q 'pr-review-gate の手順 1〜5 を 1 グループ'
 }
 
 @test "context cap: the other five faces point at the canonical section and restate nothing" {

@@ -289,10 +289,20 @@ PY
 }
 
 # ---------- 2.8 Bash の許可判定 ----------
+#
+# #269 で報告された迂回（git -c で diff.external 等を差し替え、強制停止中でも任意コマンドを
+# 実行できた）を受け、「サブコマンド名の照合」から「受理する文法に照合して読める形だけを通す」
+# 方式へ反転した（決定の正本: PR #269 のレビュー・issue #261）。表に無いオプションは、
+# 危険と分かっていなくても拒否する。
 
-@test "bash allow: git -C <worktree> commit passes" {
+@test "bash allow: allowed forms across all five subcommands pass" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  for cmd in "git status" "git diff --stat" "git add -A" "git -C /path/to/wt commit -m x" "git -c user.name=a commit -m y" "git push -u origin br"; do
+  for cmd in \
+    "git status" "git status --porcelain -b" \
+    "git diff --stat" "git diff --stat --cached" "git diff HEAD^ HEAD" \
+    "git add -A" "git add -- path/to/file" \
+    "git -C /path/to/wt commit -m x" "git -C \"/path/with space/wt\" commit -m x" "git commit -m x -m y" \
+    "git push -u origin br"; do
     run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
     [ "$status" -eq 0 ]
     [ -z "$output" ]
@@ -337,6 +347,75 @@ PY
     [ "$status" -eq 0 ]
     echo "$output" | grep -q '"permissionDecision": *"deny"'
   done
+}
+
+@test "bash deny: -c is rejected regardless of the key (moved from the allow list)" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  for cmd in "git -c user.name=a commit -m y" "git -c core.pager=/tmp/x diff" "git -c alias.st=!sh status"; do
+    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q '"permissionDecision": *"deny"'
+  done
+}
+
+@test "bash deny: the reported diff.external bypass is rejected" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  # 単一引用符を含む実値なので、外側の '$(...)' 埋め込みを避けてファイル経由で渡す
+  cmd='git -c '\''diff.external=sh -c "touch /tmp/pr269-bypass"'\'' diff HEAD^ HEAD'
+  payload PreToolUse "$AGENT_ID" Bash "$cmd" > "$WORK/bypass-payload.json"
+  run bash -c "'$SCRIPT' < '$WORK/bypass-payload.json'"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"permissionDecision": *"deny"'
+}
+
+@test "bash deny: the -c rejection reason mentions -c" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  p="$(payload PreToolUse "$AGENT_ID" Bash 'git -c user.name=a commit -m y')"
+  run bash -c "'$SCRIPT' <<< '$p'"
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+h = json.loads(sys.argv[1])["hookSpecificOutput"]
+assert h["permissionDecision"] == "deny", h
+assert "-c" in h["permissionDecisionReason"], h["permissionDecisionReason"]
+PY
+}
+
+@test "bash deny: options outside the per-subcommand allowlist are rejected" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  for cmd in \
+    "git push --receive-pack=/tmp/x origin main" "git push --exec=/tmp/x origin main" \
+    "git diff --ext-diff" "git diff --output=/tmp/x" \
+    "git commit --no-verify -m x" "git push --force" "git commit --amend -m x"; do
+    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q '"permissionDecision": *"deny"'
+  done
+}
+
+@test "bash deny: git's remote helper syntax (::) is rejected" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  for cmd in "git push ext::sh -c touch origin" 'git push "ext::sh -c touch" main'; do
+    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q '"permissionDecision": *"deny"'
+  done
+}
+
+@test "bash deny: an env-var prefix or a global option other than -C is rejected" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  for cmd in "GIT_EXTERNAL_DIFF=/tmp/x git diff" "git --exec-path=/tmp status"; do
+    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q '"permissionDecision": *"deny"'
+  done
+}
+
+@test "bash deny: -C without a value is rejected" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "git -C")'"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"permissionDecision": *"deny"'
 }
 
 # ---------- 2.9 実行コスト ----------

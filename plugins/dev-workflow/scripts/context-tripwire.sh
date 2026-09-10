@@ -47,6 +47,28 @@ ENTRY_BUDGET = 200       # 探索で走査するディレクトリエントリ�
 SCAN_SEC = 0.020         # 探索に費やす時間の上限
 GIT_OK = {"status", "diff", "add", "commit", "push"}
 
+# サブコマンドごとの許可オプション表（正本は #269 の決定と openspec spec 側の同名の表）。
+# 表に無いオプションは、危険と分かっていなくても拒否する（正の列挙。負の列挙にしない）。
+GIT_COMMON_OPTS = {"--"}
+GIT_ALLOWED_OPTS = {
+    "status": {
+        "-s", "--short", "-b", "--branch", "--long", "--porcelain",
+        "--porcelain=v1", "--porcelain=v2", "-u", "-uall", "-uno", "-unormal",
+        "--untracked-files", "--untracked-files=all", "--untracked-files=no",
+        "--untracked-files=normal",
+    },
+    "diff": {
+        "--stat", "--shortstat", "--numstat", "--name-only", "--name-status",
+        "--cached", "--staged", "--no-color",
+    },
+    "add": {"-A", "--all", "-u", "--update", "-n", "--dry-run"},
+    "commit": {"-a", "--all", "--allow-empty", "-q", "--quiet"},
+    "push": {"-u", "--set-upstream", "-q", "--quiet", "-n", "--dry-run"},
+}
+# 値を取るオプション。直後の 1 トークンは内容自由（commit メッセージは実行経路を持たない）
+GIT_VALUE_OPTS = {"commit": {"-m", "--message"}}
+GIT_VALUE_PREFIXES = {"commit": ("--message=",)}
+
 NOTIFY = (
     "[dev-workflow 途中計測] このサブエージェントのコンテキストは {ctx} tokens で、"
     "上限 DEV_WORKFLOW_CONTEXT_CAP={cap} を超えた。\n"
@@ -66,7 +88,8 @@ STOP = (
 )
 
 BASH_HINT = (
-    " Bash で通るのは git の status / diff / add / commit / push だけ（-C <path> / -c <k=v> は読み飛ばす）。"
+    " Bash で通るのは git の status / diff / add / commit / push で、それぞれ決まった形のオプションだけ"
+    "（作業ディレクトリの指定は -C <path> だけが通り、-c <k=v> は値によらず拒否される）。"
     "commit メッセージは -m を複数回に分けて 1 行ずつ渡せ（$(…) やパイプ・&& を含むコマンドは拒否される）。"
 )
 
@@ -189,8 +212,19 @@ def scan_command(cmd):
     return "unparsable" if state is not None else None
 
 
+def _is_operand(tok):
+    """`-` で始まらず `::`（git のリモートヘルパー記法）を含まない 1 トークンだけを許す。"""
+    return not tok.startswith("-") and "::" not in tok
+
+
 def bash_allowed(cmd):
-    """先頭トークンが git で、-C <path> / -c <k=v> を読み飛ばした次が許可サブコマンドなら True。"""
+    """受理する文法だけを読める形として通す（負の列挙ではなく正の列挙）:
+    git ( -C <path> )* <subcommand> <arg>*
+    - `-c <k=v>` は値によらず一律拒否。`-C` 以外のグローバルオプションも拒否
+    - サブコマンドは status/diff/add/commit/push のみ
+    - それ以降は (a) 許可オプション表にある形 (b) 値オプション直後の自由な値
+      (c) `-` で始まらず `::` を含まないオペランド、の 3 通りだけを許す
+    """
     if scan_command(cmd) is not None:
         return False
     try:
@@ -199,13 +233,40 @@ def bash_allowed(cmd):
         return False
     if not tokens or tokens[0] != "git":
         return False
+    n = len(tokens)
     i = 1
-    while i < len(tokens):
-        if tokens[i] in ("-C", "-c"):
-            i += 2                          # 値を 1 つ読み飛ばす
+    while i < n and tokens[i] == "-C":
+        i += 1
+        if i >= n or not tokens[i] or tokens[i].startswith("-"):
+            return False                    # 値なし・空・`-` 始まりは拒否
+        i += 1
+    if i >= n:
+        return False
+    if tokens[i] == "-c":
+        return False                        # `-c` はキーの値によらず一律拒否
+    sub = tokens[i]
+    if sub not in GIT_OK:
+        return False
+    i += 1
+    allowed = GIT_ALLOWED_OPTS.get(sub, set())
+    value_opts = GIT_VALUE_OPTS.get(sub, set())
+    value_prefixes = GIT_VALUE_PREFIXES.get(sub, ())
+    while i < n:
+        tok = tokens[i]
+        if tok in GIT_COMMON_OPTS or tok in allowed or tok.startswith(value_prefixes):
+            i += 1
             continue
-        return tokens[i] in GIT_OK
-    return False
+        if tok in value_opts:
+            i += 1
+            if i >= n:
+                return False                 # 値が無い
+            i += 1                           # 値の中身は自由
+            continue
+        if _is_operand(tok):
+            i += 1
+            continue
+        return False                         # 表に無いオプションは危険と分かっていなくても拒否
+    return True
 
 
 try:
