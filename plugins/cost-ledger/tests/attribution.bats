@@ -26,11 +26,11 @@ for line in sys.stdin:
         print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 
   run python3 "$CL" branch oratta/sample-feature
   [ "$status" -eq 0 ]
-  [[ "$output" == *'$5.80'* ]]   # sidechain を落とすと $5.10
+  [[ "$output" == *'$5.80'* ]] || return 1   # sidechain を落とすと $5.10
 }
 
 @test "attribution: a line without gitBranch survives as unattributed" {  # gitBranch が無い行が黙って消えず未帰属として残る
@@ -43,13 +43,13 @@ assert abs(d[\"unattributed_branch_usd\"] - 0.50) < 1e-9, d
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 
   # 人が読む出力にも件数と金額が出る
   run python3 "$CL" report
   [ "$status" -eq 0 ]
-  [[ "$output" == *"未帰属"* ]]
-  [[ "$output" == *'1 件 $0.50'* ]]
+  [[ "$output" == *"未帰属"* ]] || return 1
+  [[ "$output" == *'1 件 $0.50'* ]] || return 1
 }
 
 @test "attribution: a worktree folds into its parent repository" {  # メイン worktree と副 worktree が同一のリポジトリ識別子に畳まれる
@@ -64,7 +64,7 @@ assert ids[\"req-001\"] == ids[\"req-007\"], (ids[\"req-001\"], ids[\"req-007\"]
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 
   # --path-format=absolute を省くとメイン worktree で相対の .git が返り、識別子が割れる
   run grep -F -- '--path-format=absolute' "$PLUGIN_DIR/scripts/cost_ledger.py"
@@ -79,7 +79,7 @@ assert \"acme/repo-b\" in labels, labels
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }
 
 @test "attribution: a deleted cwd becomes an unknown repository, not a crash" {  # cwd が削除済みでも集計が中断せず、リポジトリ識別子が「不明」として記録される
@@ -94,12 +94,12 @@ assert abs(unknown[\"usd\"] - 1.00) < 1e-9, unknown
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 
   # 人が読む出力にも別立てで出る
   run python3 "$CL" report
   [ "$status" -eq 0 ]
-  [[ "$output" == *"リポジトリ不明: 1 件 \$1.00"* ]]
+  [[ "$output" == *"リポジトリ不明: 1 件 \$1.00"* ]] || return 1
 }
 
 @test "attribution: unattributed and unknown-repo sums add up to the grand total" {  # 未帰属とリポジトリ不明を含めた合計が全行のコストの総額と一致する
@@ -115,5 +115,5 @@ assert abs(total - 8.80) < 1e-9, total
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }

@@ -27,7 +27,7 @@ setup() {
   cl_mini_log mini claude-opus-5 '{"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":0}'
   run python3 "$CL" branch mini
   [ "$status" -eq 0 ]
-  [[ "$output" == *'$5.00'* ]]
+  [[ "$output" == *'$5.00'* ]] || return 1
 
   python3 - "$PRICING" "$BATS_TEST_TMPDIR/pricing.json" <<'PY'
 import json, sys
@@ -37,7 +37,7 @@ json.dump(d, open(sys.argv[2], "w", encoding="utf-8"))
 PY
   run python3 "$CL" --pricing "$BATS_TEST_TMPDIR/pricing.json" branch mini
   [ "$status" -eq 0 ]
-  [[ "$output" == *'$50.00'* ]]
+  [[ "$output" == *'$50.00'* ]] || return 1
 }
 
 # --- 引き方 ---
@@ -56,23 +56,23 @@ PY
   cl_mini_log mini claude-fable-5-1 '{"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":0}'
   run python3 "$CL" --pricing "$BATS_TEST_TMPDIR/pricing.json" branch mini
   [ "$status" -eq 0 ]
-  [[ "$output" == *'$10.00'* ]]
-  [[ "$output" != *'$1.00'* ]]
+  [[ "$output" == *'$10.00'* ]] || return 1
+  [[ "$output" != *'$1.00'* ]] || return 1
 }
 
 @test "pricing: a dated model name resolves to the undated key" {  # 日付付きのモデル名が日付なしの鍵の単価で引かれる
   cl_mini_log mini claude-haiku-4-5-20251001 '{"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":0}'
   run python3 "$CL" branch mini
   [ "$status" -eq 0 ]
-  [[ "$output" == *'$1.00'* ]]
-  [[ "$output" != *"未知モデル"* ]]
+  [[ "$output" == *'$1.00'* ]] || return 1
+  [[ "$output" != *"未知モデル"* ]] || return 1
 }
 
 @test "pricing: cache read is cheaper than the same tokens at the input rate" {  # キャッシュ読出は同じトークン数を入力単価で計算するより安くなる
   cl_mini_log mini claude-opus-5 '{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":1000000}'
   run python3 "$CL" branch mini
   [ "$status" -eq 0 ]
-  [[ "$output" == *'$0.50'* ]]   # 入力単価なら $5.00
+  [[ "$output" == *'$0.50'* ]] || return 1   # 入力単価なら $5.00
 }
 
 # --- 未知モデル ---
@@ -81,9 +81,9 @@ PY
   cl_mini_log mini claude-nope-9 '{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":0}'
   run python3 "$CL" branch mini
   [ "$status" -eq 0 ]
-  [[ "$output" == *"未知モデル"* ]]
-  [[ "$output" == *"claude-nope-9"* ]]
-  [[ "$output" == *"1 行"* ]]
+  [[ "$output" == *"未知モデル"* ]] || return 1
+  [[ "$output" == *"claude-nope-9"* ]] || return 1
+  [[ "$output" == *"1 行"* ]] || return 1
 }
 
 # --- 円換算 ---
@@ -92,7 +92,7 @@ PY
   cl_mini_log mini claude-opus-5 '{"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":0}'
   run python3 "$CL" branch mini
   [ "$status" -eq 0 ]
-  [[ "$output" == *'¥750 @150'* ]]
+  [[ "$output" == *'¥750 @150'* ]] || return 1
 }
 
 @test "pricing: COST_LEDGER_USD_JPY overrides the rate and the printed rate follows" {  # 換算レートは環境変数 COST_LEDGER_USD_JPY で上書きでき、添えられるレートも変わる
@@ -100,7 +100,7 @@ PY
   export COST_LEDGER_USD_JPY=200
   run python3 "$CL" branch mini
   [ "$status" -eq 0 ]
-  [[ "$output" == *'¥1,000 @200'* ]]
+  [[ "$output" == *'¥1,000 @200'* ]] || return 1
 }
 
 @test "pricing: the override env var name is recorded in pricing.json" {  # 環境変数の名前が pricing.json に書かれている（後続の台帳とゲート連携が同じ名前を読む）

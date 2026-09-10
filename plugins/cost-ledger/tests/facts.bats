@@ -39,7 +39,7 @@ assert got == expected, sorted(got ^ expected)
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 
   # 帰属先を名乗るフィールドがどこにも無い
   run bash -c "python3 '$CL' facts | grep -cE 'attributed|帰属'"
@@ -49,14 +49,14 @@ print(\"ok\")
 @test "facts: touched issue numbers and the post marker are facts of the line" {  # その行が触った issue 番号は事実として残るが、区間の帰属とは別物である
   run fact_of req-003
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"issues": ['*'148'*']'* ]]
-  [[ "$output" == *'"post_marker": "gh issue comment"'* ]]
+  [[ "$output" == *'"issues": ['*'148'*']'* ]] || return 1
+  [[ "$output" == *'"post_marker": "gh issue comment"'* ]] || return 1
 
   # 投稿していない行は境界の印を持たない
   run fact_of req-001
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"post_marker": null'* ]]
-  [[ "$output" == *'"issues": []'* ]]
+  [[ "$output" == *'"post_marker": null'* ]] || return 1
+  [[ "$output" == *'"issues": []'* ]] || return 1
 }
 
 @test "facts: a requestId seen in two files is counted once" {  # 同一 requestId が複数ファイルにあっても 1 回しか集計されない
@@ -69,21 +69,21 @@ print(\"ok\")
 
   run python3 "$CL" branch oratta/sample-feature
   [ "$status" -eq 0 ]
-  [[ "$output" == *'$5.80'* ]]   # 二重計上なら $6.80
+  [[ "$output" == *'$5.80'* ]] || return 1   # 二重計上なら $6.80
 }
 
 @test "facts: legacy cache_creation_input_tokens is read as a 5m cache write" {  # cache_creation が無く cache_creation_input_tokens だけがある行はキャッシュ書込 5m として読まれる
   run fact_of req-006
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"cache_write_5m_tokens": 400000'* ]]
-  [[ "$output" == *'"cache_write_1h_tokens": 0'* ]]
+  [[ "$output" == *'"cache_write_5m_tokens": 400000'* ]] || return 1
+  [[ "$output" == *'"cache_write_1h_tokens": 0'* ]] || return 1
 }
 
 @test "facts: an itemised cache_creation splits into 5m and 1h" {  # キャッシュ書込の内訳がある行は 5m と 1h に分かれて読まれる
   run fact_of req-007
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"cache_write_1h_tokens": 100000'* ]]
-  [[ "$output" == *'"cache_write_5m_tokens": 0'* ]]
+  [[ "$output" == *'"cache_write_1h_tokens": 100000'* ]] || return 1
+  [[ "$output" == *'"cache_write_5m_tokens": 0'* ]] || return 1
 }
 
 @test "facts: non-assistant lines yield no facts" {  # assistant 以外の行は事実にならない

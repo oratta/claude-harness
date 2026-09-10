@@ -23,7 +23,7 @@ assert d[\"repo_label\"] == \"acme/repo-a\", d
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 
   run bash -c "python3 '$CL' issue 148 --repo '$REPO_B' --json | python3 -c '
 import json, sys
@@ -33,7 +33,7 @@ assert d[\"repo_label\"] == \"acme/repo-b\", d
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }
 
 @test "intervals: a session on main that commented on an issue attributes to that issue" {  # main 上で gh issue comment 148 を実行したセッションの区間がそのリポジトリの issue 148 へ帰属する
@@ -48,7 +48,7 @@ assert abs(rows[0][\"usd\"] - 1.00) < 1e-9, rows[0]
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }
 
 @test "intervals: gh issue close alone attributes the session to that issue" {  # gh issue close だけのセッションもその issue へ帰属する
@@ -61,7 +61,7 @@ assert [r[\"session_id\"] for r in d[\"intervals\"]] == [\"S6\"], d[\"intervals\
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }
 
 @test "intervals: gh issue develop alone attributes the session to that issue" {  # gh issue develop だけのセッションもその issue へ帰属する
@@ -76,7 +76,7 @@ assert abs(d[\"total_usd\"] - 1.00) < 1e-9, d[\"total_usd\"]
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }
 
 @test "intervals: gh pr ready closes an interval" {  # gh pr ready が区間の境界として扱われる
@@ -89,7 +89,7 @@ assert rows[0][\"closed_by\"] == \"gh pr ready\", rows[0]
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 
   # 境界のあとに行が続くセッションでは、そこで区間が 2 つに割れる
   rm -rf "$CONFIG_DIR/projects"/*
@@ -108,7 +108,7 @@ assert rows[1][\"issue\"] == \"901\" and abs(rows[1][\"usd\"] - 1.00) < 1e-9, ro
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }
 
 @test "intervals: two concurrent sessions on one branch do not cut each other" {  # 同じブランチで並行する 2 セッションの区間が混ざらない
@@ -125,7 +125,7 @@ assert abs(rows[0][\"usd\"] - 2.20) < 1e-9, rows[0]
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }
 
 @test "intervals: the intervals of a branch add up to the branch total" {  # 区間ごとのコストの合計がブランチの総額と一致する
@@ -137,12 +137,12 @@ assert abs(d[\"total_usd\"] - 5.80) < 1e-9, d[\"total_usd\"]
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 
   # branch サブコマンドが出す総額と同じ値であること
   run python3 "$CL" branch oratta/sample-feature
   [ "$status" -eq 0 ]
-  [[ "$output" == *'$5.80'* ]]
+  [[ "$output" == *'$5.80'* ]] || return 1
 }
 
 @test "intervals: a line on a feature branch that viewed an issue counts in both" {  # feature ブランチ上で gh issue view した行がブランチにも issue にも帰属する
@@ -156,7 +156,7 @@ assert abs(d[\"total_usd\"] - 2.00) < 1e-9, d[\"total_usd\"]
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 
   # 同じ行がブランチの合計にも入っている（両方に帰属するので足し合わせて総額にはならない）
   run bash -c "python3 '$CL' intervals --branch oratta/sample-feature --json | python3 -c '
@@ -167,7 +167,7 @@ assert \"req-004\" in ids, ids
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }
 
 @test "intervals: a session that touched no issue stays unattributed" {  # issue を一度も触っていないセッションはどの issue にも帰属しない
@@ -182,5 +182,5 @@ assert abs(sum(r[\"usd\"] for r in rows if r[\"issue\"] is None) - 2.10) < 1e-9,
 print(\"ok\")
 '"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }
