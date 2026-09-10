@@ -1,5 +1,14 @@
 # Changelog — dev-workflow
 
+## 2.6.2 — 2026-09-09: サブエージェントのコンテキスト量を母集団で測る（観測のみ）
+
+`subagent-context.sh` は 1 体分しか測らないため、起動時固定分が増えたか・上限超で手渡しになる割合が増えたかを追えなかった（2026-08-31 の約 42,000 → 09-08 の約 58,678 トークンという 8 日で約 4 割の増加に、事後の手集計まで誰も気づかなかった）。観測だけを足し、強制は加えない。
+
+- `scripts/subagent-context-audit.sh`（新規）: `<projects>/*/*/subagents/agent-*.jsonl` の 1 経路を mtime で絞って走査し、件数 / 初回・最終コンテキストの中央値と最大 / 上限超割合を 1 行 JSON で出す。隔離の有無は隣の `agent-<id>.meta.json` の `spawnedWithWorktree` で分類し、`sources.isolated` / `sources.non_isolated` として経路別にも出す。全文は読まない（初回は最初の usage で打ち切り、最終は末尾 256 KiB の窓を 4 MiB まで倍加探索）。結果は `${SUBAGENT_CONTEXT_AUDIT_CACHE:-~/.claude/.subagent-context-audit}` に残し、`SUBAGENT_CONTEXT_AUDIT_TTL`（既定 21600 秒）以内は再走査しない
+- `docs/usage-audit.md`（新規）: 監査手順の正本。実行コマンド・出力キーの意味・固定分の増加の読み方・キャッシュの場所
+- **既存スクリプトは 1 本も変更していない**。とくに `session-tripwires.sh`（SessionStart hook）には載せない — SessionStart への注入は全セッションの起動時固定分を増やす側の変更で、固定分の削減という目的に反するため
+- 引数エラー以外はすべて exit 0（fail-open）。閾値による停止・警告は行わない
+
 ## 2.6.1 — 2026-09-09: 手渡し規則を正本 1 箇所に畳む（手渡しは前任の `工程完了:` return が条件）
 
 コンテキスト上限（`DEV_WORKFLOW_CONTEXT_CAP`、既定 150000 tokens）の記述は「上限を超えたら手渡す」という**発火条件**だけを書いており、**手渡してよいタイミング**を規定していなかった。2026-09-08 に、バックグラウンドで `bash scripts/test.sh` の完了を待って一時的に idle になっていただけの W を「工程を終えた」と誤認して手渡し、同じ worktree に新旧 2 人の W が並んだ（PR への重複コメント・共有ブラウザタブでのキー入力混線）。判定材料を本体側の内容判断から W / G 側の宣言に移した。
