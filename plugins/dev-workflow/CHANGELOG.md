@@ -1,5 +1,37 @@
 # Changelog — dev-workflow
 
+## 2.9.0 — 2026-09-10: 途中計測 hook の早期 exit を JSON 意味論に合わせる
+
+`scripts/context-tripwire.sh` の早期 exit は payload の生文字列 `"agent_id"` の有無だけを見ていた。JSON のキーは Unicode エスケープでも書けるため（`"\u0061gent_id"` は `json.loads` すると `agent_id`）、この判定は JSON 意味論と一致せず、同値な表記の payload が python3 に届かないまま無音で fail-open していた。強制停止の閾値を超えたサブエージェントの `Bash` 呼び出しでも deny されない（#278。PR #269 の 3 周目レビューで Codex CLI が見つけた非 blocking の指摘）。
+
+- 早期 exit の条件を必要条件で切り直した: 生文字列 `"agent_id"` を含む、または 4 文字の並び `\u00` を含む payload は python3 に渡す。それ以外は従来どおり起動せず exit 0。`agent_id` の 8 文字は文字列エスケープでは `\uXXXX` でしか綴れず（他の 8 種が生む文字に英小文字とアンダースコアは無い）、その 8 文字は U+005F〜U+0074 に収まるので `\uXXXX` の上位 2 桁は必ず `00` になる
+- 早期 exit の目的（メインスレッドの通常の payload に python3 の起動コストを課さない）は変えていない。判定を誤ってよいのは「余計に起動して無音で終わる」向きだけで、逆向き（`agent_id` を持つ payload の早期 exit）は spec の MUST NOT
+- `tests/context-tripwire.bats`: エスケープ表記のキーで deny が出ることと、その並びを含むだけの payload が python3 に渡っても無音で終わることの退行テストを追加。既存の早期 exit テストには「その payload がエスケープの前置を含まない」assert を足した
+- 同 bats の payload ヘルパを `ensure_ascii=False` にして実機（ハーネスの Node の `JSON.stringify`）に寄せた。既定の `True` だと `mktemp -d` のパスに非 ASCII があるだけで `transcript_path` がエスケープの並びを含み、早期 exit のテストが環境依存で落ちる
+- 通知・拒否のメッセージ、計測の式、閾値、`hooks.json` の登録は変更なし
+
+## 2.7.0 — 2026-09-09: 起動の途中でコンテキストを測って止める hook
+
+サブエージェントのコンテキスト量は、本体が SendMessage で再開する直前にしか測られなかった。1 回の起動の中でどれだけ膨らんでも誰も止めないため、実測で W が 497,552 トークンに達していた（過去 14 日で上限 150,000 超が W 65%・G 63%）。1 起動の途中で測って止める経路を足した。あわせて、名前 glob が `isolation: "worktree"` のサブエージェントを見つけられない件（#243）を、名前ではなく hook が受け取る `agent_id` から解決する形で統合した。
+
+- `scripts/context-tripwire.sh`（新規）: PostToolUse（全ツール）で `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）超なら `hookSpecificOutput.additionalContext` で「今の工程を締めて成果を列挙して return せよ」を届け、PreToolUse（`Edit|Write|NotebookEdit|Bash`）で `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）超なら編集系を deny する。`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` で全解除
+- 計測対象は payload の `transcript_path` そのものではなく、その親ディレクトリ・`session_id`・`agent_id` から `<親>/<session_id>/subagents/agent-<agent_id>.jsonl` として導出する（`transcript_path` は hook が発火したセッション＝サブエージェントの中でも親のものを指す。着手前実験で確定）。直接パスが無ければ `subagents/` 以下を深さ 3 段まで、エントリ 200 件 / 20ms の上限つきで探す
+- 素の stdout + exit 0 はトランスクリプト表示（ctrl+o）にしか出ずモデルには届かないため、通知は `additionalContext` に固定した
+- 強制停止中の `Bash` は**コマンド内容によらず全件拒否する**（窓を開けない）。当初は「受理する文法に照合して読める形だけを通す」正の列挙方式（`git` の `status`/`diff`/`add`/`commit`/`push` の一部だけを許可オプション表に沿って通す）を実装したが、#269 で 2 周連続の実機迂回が見つかった: 1 周目は `git -c 'diff.external=sh -c "…"' diff` で `-c` の値を読み飛ばして任意コマンドを実行、2 周目はそれを塞いだ後も、判定側の Python `shlex`（POSIX 文法）と実行するシェル（zsh）のトークン化がずれ、`git push $'--receive-pack=/tmp/x' origin main`（zsh の ANSI-C クォート）が判定側には安全な 1 オペランドに見えて通った。受理する経路が 1 つでも残る限り検査側と実行側のトークン化のずれで迂回が再発するため、方式を反転し、`Bash` は内容を一切見ず拒否する構造に閉じた。拒否理由には計測値・`cwd`（作業ツリーのパス）・編集済みファイル一覧を `cwd` と一緒に return に書けという指示を含め、**後片付け（commit）はサブエージェントではなく本体が行う**
+- 読み取り系（Read / Grep / Glob）は拒否しない。PreToolUse の matcher を編集系 + Bash に絞ることで構造的に保証している
+- メインスレッド（`agent_id` 無し）では python3 を起動せず bash 側で exit 0 する。この hook は install 先の全ユーザーの全ツール呼び出しで走るため。読み取りは末尾 256KB だけで、5MB のトランスクリプトでも 1 回 100ms 未満
+- `scripts/subagent-context.sh` に `--file <path>` を追加（#243 の統合）。名前 glob を使わずそのファイルを測る。名前指定の既存挙動は変えない
+- `tests/context-tripwire.bats`（新規）・`tests/subagent-context.bats`（`--file` の追補）
+
+## 2.6.2 — 2026-09-09: サブエージェントのコンテキスト量を母集団で測る（観測のみ）
+
+`subagent-context.sh` は 1 体分しか測らないため、起動時固定分が増えたか・上限超で手渡しになる割合が増えたかを追えなかった（2026-08-31 の約 42,000 → 09-08 の約 58,678 トークンという 8 日で約 4 割の増加に、事後の手集計まで誰も気づかなかった）。観測だけを足し、強制は加えない。
+
+- `scripts/subagent-context-audit.sh`（新規）: `<projects>/*/*/subagents/agent-*.jsonl` の 1 経路を mtime で絞って走査し、件数 / 初回・最終コンテキストの中央値と最大 / 上限超割合を 1 行 JSON で出す。隔離の有無は隣の `agent-<id>.meta.json` の `spawnedWithWorktree` で分類し、`sources.isolated` / `sources.non_isolated` として経路別にも出す。全文は読まない（初回は最初の usage で打ち切り、最終は末尾 256 KiB の窓を 4 MiB まで倍加探索）。結果は `${SUBAGENT_CONTEXT_AUDIT_CACHE:-~/.claude/.subagent-context-audit}` に残し、`SUBAGENT_CONTEXT_AUDIT_TTL`（既定 21600 秒）以内は再走査しない
+- `docs/usage-audit.md`（新規）: 監査手順の正本。実行コマンド・出力キーの意味・固定分の増加の読み方・キャッシュの場所
+- **既存スクリプトは 1 本も変更していない**。とくに `session-tripwires.sh`（SessionStart hook）には載せない — SessionStart への注入は全セッションの起動時固定分を増やす側の変更で、固定分の削減という目的に反するため
+- 引数エラー以外はすべて exit 0（fail-open）。閾値による停止・警告は行わない
+
 ## 2.6.1 — 2026-09-09: 手渡し規則を正本 1 箇所に畳む（手渡しは前任の `工程完了:` return が条件）
 
 コンテキスト上限（`DEV_WORKFLOW_CONTEXT_CAP`、既定 150000 tokens）の記述は「上限を超えたら手渡す」という**発火条件**だけを書いており、**手渡してよいタイミング**を規定していなかった。2026-09-08 に、バックグラウンドで `bash scripts/test.sh` の完了を待って一時的に idle になっていただけの W を「工程を終えた」と誤認して手渡し、同じ worktree に新旧 2 人の W が並んだ（PR への重複コメント・共有ブラウザタブでのキー入力混線）。判定材料を本体側の内容判断から W / G 側の宣言に移した。

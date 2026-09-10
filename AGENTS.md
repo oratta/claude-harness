@@ -47,6 +47,10 @@ gh pr create --draft --head <branch> --base main --title "<branch>" --body "<テ
 
 CI を将来追加する場合の設計指針（Draft PR では skip するパターン）は `docs/ci-design.md` を参照。
 
+## 常時注入の予算
+
+常時注入される固定分（`rules/` / `CLAUDE.md` / `output-styles/` / 各種 `description`）の合計は、`tests/injection-budget.bats` が `tests/injection-budget.txt` の予算と突き合わせ、増えすぎても減らしすぎても落ちる。予算ファイルは聖域（機械マージの対象外）なので、値を動かす PR は本文に理由（何を削ろうとして、なぜ超えるままにするか）を書くこと。
+
 ## 適用範囲
 
 この開発場所と PR 運用のルールは **「Claude Code プラグインの配布元リポジトリ（install 先が自動更新される）」** だから必要なものです。
