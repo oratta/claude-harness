@@ -40,11 +40,16 @@ except Exception:
     snap = None
 
 pct = snap.get("fable_weekly_pct") if snap else None
+all_pct = snap.get("weekly_all_pct") if snap else None
 resets_epoch = snap.get("weekly_resets_epoch") if snap else None
 try:
     pct = float(pct) if pct is not None else None
 except Exception:
     pct = None
+try:
+    all_pct = float(all_pct) if all_pct is not None else None
+except Exception:
+    all_pct = None
 
 now = os.environ.get("USAGE_PROBE_NOW")
 now = int(now) if (now and now.lstrip("-").isdigit()) else int(time.time())
@@ -71,13 +76,34 @@ elif elapsed_pct is not None and pct <= elapsed_pct:
 else:
     mode, source = "conserve", "自動導出"
 
+# --- 共有枠モード導出（全モデル共通の週次枠。Fable が尽きても Opus/Sonnet はこの枠で止まる） ---
+# 明示 env > データ無し(ok) > 90% 超(depleted) > 週経過ペースより速い(throttled) > ok
+shared_explicit = (os.environ.get("SHARED_BUDGET_MODE") or "").strip()
+if shared_explicit:
+    shared, shared_source = shared_explicit, "明示 env"
+elif all_pct is None:
+    shared, shared_source = "ok", "既定（usage データなし）"
+elif all_pct > 90:
+    shared, shared_source = "depleted", "自動導出"
+elif elapsed_pct is not None and all_pct > elapsed_pct:
+    shared, shared_source = "throttled", "自動導出"
+else:
+    shared, shared_source = "ok", "自動導出"
+
 EFFECT = {
-    "abundant": "solo の推奨モデルを Fable に倒す。委譲は結果が変わらない機械的な大量仕事かつ self-contained なタスクに限定。",
-    "conserve": "solo=Opus。Fable は verify / checkpoint のみ。",
+    "abundant": "どの役割の既定も上げない（Fable が使われる経路は決める役 subagent_type: dev-workflow:decider だけ）。余った Fable 枠は人間の対話と verify に回す。",
+    "conserve": "役割表の既定どおり（W=sonnet、R1=opus、G=sonnet）。Fable は決める役（subagent_type: dev-workflow:decider）だけで、実行役 W はどの事前分類でも opus 止まり。",
     "reserve":  "conserve に加え、自動実行（unmanned/cron/loop）では Fable を一切使わない。昇格上限 Opus。interactive は conserve と同一。",
     "exhausted":"Fable 週次枠を実質使い切った。interactive/unmanned を問わず Fable を一切使わず、昇格上限 Opus。rate-limit 実エラーは reactive に Opus へ降格。",
 }
 effect = EFFECT.get(mode, "未知のモード指定。conserve 相当（安全側）で扱う。")
+
+SHARED_EFFECT = {
+    "ok":        "制約なし。役割の既定は decision-criteria の役割表どおり（W=sonnet、R1=opus、G=sonnet）。",
+    "throttled": "全モデル枠の消費が週の経過ペースより速い。W/R1/G の既定を sonnet に落とし、昇格上限 opus。abundant の押し上げは無効。",
+    "depleted":  "全モデル枠を実質使い切った。全役割 sonnet 固定・昇格なし。Fable/Opus は事前分類に当たっても使わない。",
+}
+shared_effect = SHARED_EFFECT.get(shared, "未知のモード指定。throttled 相当（安全側）で扱う。")
 
 lines = ["## Fable 残量モード（自動導出）",
          f"- 現在の FABLE_BUDGET_MODE: {mode}（{source}）"]
@@ -88,6 +114,19 @@ if pct is not None:
 else:
     lines.append("- Fable 週次: usage データなし（snapshot 未取得）→ conserve 既定")
 lines.append(f"- {mode} の効果: {effect}")
+lines.append(f"- 共有枠モード SHARED_BUDGET_MODE: {shared}（{shared_source}）")
+if all_pct is not None:
+    lines.append(f"- 全モデル週次: 使用 {round(all_pct)}% / 残 {round(100 - all_pct)}%")
+lines.append(f"- {shared} の効果: {shared_effect}")
+lines.append("- サブエージェントのコンテキスト上限: W / G を SendMessage で再開する前に "
+             "`${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <name>` で測る"
+             f"（上限 {os.environ.get('DEV_WORKFLOW_CONTEXT_CAP', '150000')} tokens。exit 2 が上限超）。"
+             "上限超のあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・"
+             "return の 1 行目の宣言・前任が動作中のまま交代させる手順）の正本は "
+             "`${CLAUDE_PLUGIN_ROOT}/skills/develop/references/decision-criteria.md`"
+             "「コンテキスト上限（サブエージェントの手渡し）」。"
+             "**正本を読むまで手渡さない**（条件をここに再掲しないのは、同じ規則の言い換えが"
+             "複数の面に散らばっていたことが書き換え漏れの原因だったため）")
 budget = "\n".join(lines)
 
 print(json.dumps({"additionalContext": budget + "\n\n" + tripwire}, ensure_ascii=False))
