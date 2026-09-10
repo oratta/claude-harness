@@ -225,7 +225,11 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   loop="$(section '1 ループ（W → R1 → W → G）')"
   echo "$loop" | grep -q 'subagent-context.sh'
   echo "$loop" | grep -q '手渡し'
-  echo "$loop" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
+  # 閾値と環境変数名の正本は decision-criteria.md「コンテキスト上限」1 箇所（#261）。
+  # ここでは再掲ではなく、その正本を指していることを固定する
+  echo "$loop" | grep -q 'decision-criteria.md'
+  echo "$loop" | grep -q 'コンテキスト上限'
+  ! echo "$loop" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
   echo "$loop" | grep -q 'G の再開も同じ'
 }
 
@@ -332,7 +336,10 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   ! grep -qE '^6\. ' "$TRIPWIRES"
   w4="$(awk '/^4\. /{f=1} /^5\. /{f=0} f' "$TRIPWIRES")"
   echo "$w4" | grep -q 'subagent-context.sh'
-  echo "$w4" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
+  # 閾値の再掲ではなく正本を指す（#261）。あわせて途中計測 hook の経路に触れていること
+  echo "$w4" | grep -q 'decision-criteria.md'
+  echo "$w4" | grep -q 'context-tripwire.sh'
+  ! echo "$w4" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
   echo "$w4" | grep -q 'モデルは変えない'
 }
 

@@ -77,8 +77,10 @@
 4. 【コンテキスト上限 → 手渡し】
    名前付きサブエージェント（develop の W / G）を SendMessage で再開する前に
    `${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <名前>` で測り、
-   `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000 tokens）を超えていた（exit 2）
-   → **そのあとの扱いは `${CLAUDE_PLUGIN_ROOT}/skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本。
+   上限を超えていた（exit 2）。あわせて、サブエージェントの**起動の途中**でも hook
+   （`${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh`）が本人を測り、上限超で締めを通知し、
+   さらに越えると編集系ツールを拒否する（本人が途中で工程を締めて return する経路）
+   → **閾値・環境変数・2 経路・通知や強制停止に当たったときの扱いは `${CLAUDE_PLUGIN_ROOT}/skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本。
       条件・書式・手順はこのテンプレートには書かない。正本を読むまで手渡さない**
       （モデルは変えない。再開のたびに全履歴を読み直すため、畳まずに続けると 1 本で
       30 万トークン超のリクエストを毎ターン投げることになる。2026-09 監査の実測）
