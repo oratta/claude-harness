@@ -1,6 +1,6 @@
 # Changelog — dev-workflow
 
-## 2.7.1 — 2026-09-03: staging スモーク + auto-revert と deny 設定を auto-merge テンプレートに移設（#213）
+## 2.7.2 — 2026-09-03: staging スモーク + auto-revert と deny 設定を auto-merge テンプレートに移設（#213）
 
 `agent-owner` → `product-handover` の作り直し（#206 / PR #209）で後継を用意しないまま捨てた 2 ファイルを、
 auto-merge テンプレート（`templates/auto-merge/`）の一部として復元した。両方とも auto-merge の前提
