@@ -249,7 +249,8 @@ report() { # <verdict> <budget> <total> <内訳テキスト>
 #      フロー写像の中の位置解析が不要になる）
 #   4. トップレベルの description: は 0 個か 1 個（2 個以上は違反。集計側の全件加算は残す）
 #   5. description の値の先頭 1 バイトは ASCII 英数字 / `/` / `"` / `'` / 0x80 以上のバイトのみ
-#      （`>` `|` `*` 等の YAML 指示子は許可リストに無いので自動的に落ちる）
+#      （`>` `|` `*` 等の YAML 指示子は許可リストに無いので自動的に落ちる）。
+#      値が空（`description:` だけ・空白のみ）は先頭バイトが無いので違反
 #   6. description の値が `"` か `'` で始まるなら、行の最終バイトが同じ引用符で、かつ
 #      値にバックスラッシュを含まない
 #   7. description: の次の行は、トップレベルキー行か終端の `---` のいずれかであること
@@ -300,7 +301,12 @@ check_frontmatter_shape_z() { # stdin: NUL 区切りの一覧
                 desc_count++
                 val = line
                 sub(/^description:[ \t]*/, "", val)
-                if (val != "") {
+                # 空値（`description:` だけの行、値が空白のみの行）は先頭バイトが
+                # 存在せず条件 5 を満たしようがないので違反にする。ここを
+                # 「空なら検査を飛ばす」にすると、拒否すべきものを見落として通す
+                # 向きの列挙漏れになる。
+                if (val == "") { ok = 0 }
+                else {
                   fb = substr(val, 1, 1)
                   # 許可集合を 1 個のブラケット式で書き、拒否リストは持たない。
                   # 仕様 5 が「この 5 種だけ許可」の肯定形なので実装も肯定形にする
@@ -850,6 +856,24 @@ read_first_byte_fixtures() {
   run check_frontmatter_shape "$TMPD/nul.md"
   [ "$status" -ne 0 ]
   [[ "$output" == *"nul.md"* ]]
+}
+
+@test "a description key with no value at all is rejected" {
+  # 条件 5 は「先頭 1 バイトが許可集合のいずれか」を無条件で要求する。値が空だと
+  # 先頭バイトが存在せず条件を満たしようがないので、空値を例外扱いして検査を
+  # 飛ばしてはならない（飛ばすと「拒否すべきものを見落として通す」列挙漏れになる）。
+  printf -- '---\nname: x\ndescription:\n---\n' > "$TMPD/empty-desc.md"
+  run check_frontmatter_shape "$TMPD/empty-desc.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"empty-desc.md"* ]]
+}
+
+@test "a description value made only of spaces is rejected" {
+  # 値の取り出しで後続の空白がストリップされるため、空白のみの値も空値と同じ扱いになる。
+  printf -- '---\nname: x\ndescription:  \n---\n' > "$TMPD/blank-desc.md"
+  run check_frontmatter_shape "$TMPD/blank-desc.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"blank-desc.md"* ]]
 }
 
 @test "every first byte outside the allowed set is rejected" {
