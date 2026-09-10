@@ -556,16 +556,19 @@ check_version "$PRECEDENTS_MD"
 # （U+3000）を空白と見なさず、全角スペースだけの値が「値あり」に化けるため。
 # かといって全角スペースをバイトで否定すると、先頭バイト 0xe3 を共有する日本語文字まで
 # 巻き込む。そこで空白除去は sed に任せ、残りの有無だけを見る。
-# 行頭を固定しないのは、インデントされた箇条書きも同じ要素として数えるため。
+# ラベル行（経路・5要素とも）の照合は行頭アンカー＋インデント許容（^[[:space:]]*- ラベル:）。
+# 部分文字列一致（.*- ラベル:）だと、別要素の値の中に現れた「- 論点:」などが
+# その要素の行の実在に化けて欠落が素通りする（#186）。インデントされた箇条書きは
+# [[:space:]]* が拾うので、要素として数える従来の挙動は変わらない。
 # 同じラベルが複数行あるときは、どれか1行に値があれば「値あり」とする。
 
 check_consultation_block() {
   # check_consultation_block <block-file> <heading>
   local block="$1" heading="$2" missing="" label
   [ -s "$block" ] || return 0
-  { LC_ALL=C grep -F -- "- 経路:" "$block" || true; } | LC_ALL=C grep -qF -- "相談の上自走した" || return 0
+  { LC_ALL=C grep -E -- "^[[:space:]]*- 経路:" "$block" || true; } | LC_ALL=C grep -qF -- "相談の上自走した" || return 0
   for label in "論点" "各人格の主張" "裁定" "根拠" "判例リンク"; do
-    if ! LC_ALL=C sed -n "s/.*- ${label}:\\(.*\\)\$/\\1/p" "$block" \
+    if ! LC_ALL=C sed -n "s/^[[:space:]]*- ${label}:\\(.*\\)\$/\\1/p" "$block" \
       | LC_ALL=C sed 's/[[:space:]]//g; s/　//g' \
       | LC_ALL=C grep -q .; then
       missing="${missing}${missing:+・}${label}"
@@ -581,7 +584,10 @@ if [ -f "$PRECEDENTS_MD" ]; then
   BLOCK_FILE="${WORK_DIR}/consultation-block"
   : > "$BLOCK_FILE"
   block_heading=""
-  while IFS= read -r line; do
+  # || [ -n "$line" ]: 末尾に改行の無い入力でも最終行を読み落とさない（#186）。
+  # 現状の入力（stripped_copy）は必ず改行で終わるが、その前処理の実装詳細に
+  # 検査の成立を依存させない（最終行が「- 経路:」だと検査ごと無言でスキップになる）
+  while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       "### "*)
         check_consultation_block "$BLOCK_FILE" "$block_heading"
