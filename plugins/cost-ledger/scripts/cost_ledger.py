@@ -141,6 +141,44 @@ class RepoResolver:
         return label
 
 
+def _gh(cwd: str, *args: str):
+    """gh を叩いて標準出力を返す（失敗と空出力は None）。"""
+    try:
+        done = subprocess.run(
+            ["gh", *args], cwd=cwd or None, capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    return done.stdout.strip() or None
+
+
+def resolve_number(where: str, number: str):
+    """番号が PR か issue かを GitHub に問い合わせ、``("pr", ヘッドブランチ)`` /
+    ``("issue", 番号)`` / ``(None, None)`` を返す。
+
+    問い合わせは REST（``gh api``）だけを使う。GraphQL 経路（``gh pr view --json`` 等）は
+    Projects classic の廃止に伴うエラーで落ちるリポジトリがあり、番号の判別という
+    コスト計算の入口がそれで止まるのは割に合わない。
+
+    PR を先に見る。``/issues/<番号>`` は PR も返すため、順序を逆にすると PR 番号が
+    issue と判定されてブランチ経路に入らない。
+    """
+    head = _gh(where, "api", "repos/{owner}/{repo}/pulls/%s" % number, "--jq", ".head.ref")
+    if head:
+        return "pr", head
+    found = _gh(where, "api", "repos/{owner}/{repo}/issues/%s" % number, "--jq", ".number")
+    if found:
+        return "issue", found
+    return None, None
+
+
+def current_branch(where: str):
+    name = _git(where, "rev-parse", "--abbrev-ref", "HEAD")
+    return None if name in (None, "HEAD") else name
+
+
 def _git(cwd: str, *args: str):
     try:
         done = subprocess.run(
@@ -447,6 +485,46 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
     return 0
 
 
+def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
+    """``/cost`` の入口。番号の判別だけを行い、集計は branch / issue の経路に委ねる。
+
+    1 行目を作るのは ``headline()`` だけで、この関数は帰属先の表記を渡すにとどめる。
+    PR 経路が独自の書式を持つと、ゲート連携が貼る 1 行が経路ごとに割れる。
+    """
+    where = os.path.abspath(args.repo) if args.repo else os.getcwd()
+
+    if args.number is None:
+        branch = current_branch(where)
+        if not branch:
+            sys.stderr.write(
+                "%s では現在のブランチが決まりません（git リポジトリの中で実行するか、"
+                "PR か issue の番号を渡してください）。\n" % where
+            )
+            return 2
+        return cmd_branch(
+            argparse.Namespace(branch=branch, target_label=None), pricing, resolver
+        )
+
+    kind, value = resolve_number(where, args.number)
+    if kind == "pr":
+        return cmd_branch(
+            argparse.Namespace(
+                branch=value, target_label="PR #%s (%s)" % (args.number, value)
+            ),
+            pricing,
+            resolver,
+        )
+    if kind == "issue":
+        return cmd_issue(
+            argparse.Namespace(issue=value, repo=where, json=args.json), pricing, resolver
+        )
+    sys.stderr.write(
+        "#%s は PR としても issue としても見つかりません（%s のリポジトリに問い合わせました）。"
+        "コストは 0 ではなく不明です。\n" % (args.number, where)
+    )
+    return 2
+
+
 def cmd_report(args, pricing: Pricing, resolver: RepoResolver) -> int:
     """監査用。全行を帰属先ごとに畳み、合計が総額と合うことを見えるようにする。"""
     facts = list(iter_facts(log_root(), resolver))
@@ -594,6 +672,17 @@ def build_parser() -> argparse.ArgumentParser:
                        help="帰属先リポジトリを決める場所（既定はカレントディレクトリ）")
     issue.add_argument("--json", action="store_true")
     issue.set_defaults(func=cmd_issue)
+
+    cost = subparsers.add_parser(
+        "cost", help="番号が PR か issue かを判別してコストを出す（/cost の実体）"
+    )
+    cost.add_argument("number", nargs="?", default=None,
+                      help="PR か issue の番号（省略すると現在のブランチ）")
+    cost.add_argument("--repo", default=None,
+                      help="問い合わせと絞り込みの基準になる場所（既定はカレントディレクトリ）")
+    cost.add_argument("--json", action="store_true",
+                      help="issue 経路のときだけ JSON で出す")
+    cost.set_defaults(func=cmd_cost)
 
     report = subparsers.add_parser("report", help="全履歴を帰属先ごとに畳んだ監査用の出力")
     report.add_argument("--json", action="store_true")
