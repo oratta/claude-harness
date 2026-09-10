@@ -14,8 +14,18 @@
 # と手元（en_US.UTF-8）で同じ日本語ファイルが違う値になるため使わない。
 #
 # このゲートの目的は「測定合計だけを減らす抜け道を塞ぐ」ことなので、集計を迂回できる経路を
-# 作らないことを最優先にする。具体的には次の 4 点で、それぞれに退行テストがある:
-#   - description は frontmatter 内の**全件**を見る（重複キーで 2 本目に逃がせない）
+# 作らないことを最優先にする。
+#
+# frontmatter の書式検査（check_frontmatter_shape_z）は許可リスト方式（PR #268 / 子 issue #258
+# の決める役の裁定）。「既知の悪い書き方を列挙する」形だと、既定の分岐が「通す」になるため
+# 未知の構文が必ず素通りする（YAML anchor/alias による迂回が実際にこの形で 2 周レビューを
+# すり抜けた）。反転して「このゲートが字面のまま読める 7 条件の形以外はすべて違反」にすると、
+# 未知の構文は「どの形にも当たらない行」として自動的に落ちる。今後ここに穴が開くのは、誰かが
+# 許可リストを明示的に広げたときだけで、それは diff として見える。
+#
+# 集計・判定については次の点にそれぞれ退行テストがある:
+#   - description は frontmatter 内の**全件**を見る（重複キーは書式検査で拒否するが、
+#     集計側の全件加算は二重の守りとして残す）
 #   - 一覧の受け渡しは NUL 区切り（空白や改行を含むファイル名が単語分割で漏れない）
 #   - カテゴリのルートを plugins/<プラグイン>/<カテゴリ> に固定する（入れ子で二重計上しない）
 #   - 予算ファイルは数字だけの 1 行しか受理しない（変更が 1 行の diff として見える）
@@ -225,37 +235,101 @@ report() { # <verdict> <budget> <total> <内訳テキスト>
   fi
 }
 
-# ── 折りたたみ記法のガード ──────────────────────────────────
-# frontmatter の description の値が単一行であることを検査する。YAML の折りたたみ／
-# リテラル記法（> | >- |- >+ |+）を使うと 2 行目以降が集計から漏れ、description を
-# 無制限に増やせてしまう。frontmatter 内の description は**全件**検査する（1 本目だけを
-# 見ると、重複キーの 2 本目を折りたたみ記法にする経路がすり抜ける）。
+# ── frontmatter 書式ガード（許可リスト方式）───────────────────
+# 「このゲートが字面のまま読める形」（決める役の裁定、PR #268 / 子 issue #258）以外を
+# すべて違反にする。ひとつでも当たらなければ違反、という既定「拒否」の検査:
+#
+#   1. 1 行目が厳密に `---`。終端も厳密に `---` の行（EOF まで見つからない／`...` 終端は違反）
+#   2. frontmatter 内の各行は次の 5 形のいずれかのみ（それ以外は「読めない行」として違反）:
+#      トップレベルキー `^key:( 値)?$` ／ 2 スペース字下げの入れ子キー（タブ字下げは違反）／
+#      `  - ` か `    - ` で始まる並び項目 ／ 空行 ／ `#` で始まるコメント行
+#   3. `&` と `<<` をどこにも含まない（アンカー定義の手段を断てばエイリアスは解決先を持たない。
+#      フロー写像の中の位置解析が不要になる）
+#   4. トップレベルの description: は 0 個か 1 個（2 個以上は違反。集計側の全件加算は残す）
+#   5. description の値の先頭 1 バイトは ASCII 英数字 / `/` / `"` / `'` / 0x80 以上のバイトのみ
+#      （`>` `|` `*` 等の YAML 指示子は許可リストに無いので自動的に落ちる）
+#   6. description の値が `"` か `'` で始まるなら、行の最終バイトが同じ引用符で、かつ
+#      値にバックスラッシュを含まない
+#   7. description: の次の行は、トップレベルキー行か終端の `---` のいずれかであること
+#
+# LC_ALL=C で awk を走らせ、判定はバイト単位（substr/length がマルチバイトを 1 文字として
+# 数えない）で書く。ロケール既定のまま日本語を含む値へ文字クラスを当てると
+# 「awk: towc: multibyte conversion failure」で落ちる環境があるため。
 # 違反したファイル名を出力し、1 件でもあれば 1 を返す。
-check_single_line_description_z() { # stdin: NUL 区切りの一覧
-  local f n v next rc=0
+check_frontmatter_shape_z() { # stdin: NUL 区切りの一覧
+  local f rc=0
   while IFS= read -r -d '' f; do
     [ -f "$f" ] || continue
-    while IFS= read -r n; do
-      v=$(sed -n "${n}p" "$f" | sed 's/^description:[[:space:]]*//')
-      case "$v" in
-        '>'*|'|'*) printf '%s\n' "$f"; rc=1; continue ;;
-      esac
-      next=$(sed -n "$((n + 1))p" "$f")
-      case "$next" in
-        '---') continue ;;
-      esac
-      if printf '%s' "$next" | grep -qE '^[A-Za-z_][A-Za-z0-9_-]*:'; then
-        continue
-      fi
+    if ! LC_ALL=C awk -v sq="'" '
+      { lines[NR] = $0 }
+      END {
+        n = NR
+        ok = 1
+        if (n < 1 || lines[1] != "---") { ok = 0 }
+        else {
+          term = 0
+          for (i = 2; i <= n; i++) {
+            if (lines[i] == "---") { term = i; break }
+          }
+          if (term == 0) { ok = 0 }
+          else {
+            desc_count = 0
+            for (i = 2; i < term; i++) {
+              line = lines[i]
+              if (index(line, "&") > 0)  { ok = 0 }
+              if (index(line, "<<") > 0) { ok = 0 }
+
+              is_top     = (line ~ /^[A-Za-z_][A-Za-z0-9_-]*:( .+)?$/)
+              is_nested  = (line ~ /^  [A-Za-z_][A-Za-z0-9_-]*:( .+)?$/)
+              is_list    = (line ~ /^  - /) || (line ~ /^    - /)
+              is_blank   = (line == "")
+              is_comment = (substr(line, 1, 1) == "#")
+
+              if (!(is_top || is_nested || is_list || is_blank || is_comment)) {
+                ok = 0
+              }
+
+              if (is_top && line ~ /^description:/) {
+                desc_count++
+                val = line
+                sub(/^description:[ \t]*/, "", val)
+                if (val != "") {
+                  fb = substr(val, 1, 1)
+                  fb_ok = 0
+                  if (fb ~ /^[A-Za-z0-9]$/) fb_ok = 1
+                  else if (fb == "/") fb_ok = 1
+                  else if (fb == "\"") fb_ok = 1
+                  else if (fb == sq) fb_ok = 1
+                  else if (fb !~ /^[ -~]$/) fb_ok = 1   # 0x80 以上のバイト（マルチバイト先頭）
+                  if (!fb_ok) ok = 0
+
+                  if (fb == "\"" || fb == sq) {
+                    lastb = substr(line, length(line), 1)
+                    if (lastb != fb) ok = 0
+                    if (index(val, "\\") > 0) ok = 0
+                  }
+                }
+                nextline = (i + 1 <= n) ? lines[i + 1] : ""
+                next_is_top  = (nextline ~ /^[A-Za-z_][A-Za-z0-9_-]*:( .+)?$/)
+                next_is_term = (nextline == "---")
+                if (!(next_is_top || next_is_term)) ok = 0
+              }
+            }
+            if (desc_count > 1) ok = 0
+          }
+        }
+        exit (ok ? 0 : 1)
+      }
+    ' "$f"; then
       printf '%s\n' "$f"
       rc=1
-    done < <(frontmatter_descriptions "$f" | cut -f1)
+    fi
   done
   return "$rc"
 }
 
-check_single_line_description() { emit_z "$@" | check_single_line_description_z; }
-check_all_descriptions() { list_all_description_files | check_single_line_description_z; }
+check_frontmatter_shape() { emit_z "$@" | check_frontmatter_shape_z; }
+check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_shape_z; }
 
 # ══ 1. 集計ヘルパ ══════════════════════════════════════════
 
@@ -354,7 +428,7 @@ check_all_descriptions() { list_all_description_files | check_single_line_descri
   printf -- '---\ndescription: 0123456789\n---\n\ntemplate:\n\ndescription: >\n  folded example\n' > "$TMPD/body.md"
   run sum_descriptions "$TMPD/body.md"
   [ "$output" -eq 10 ]
-  run check_single_line_description "$TMPD/body.md"
+  run check_frontmatter_shape "$TMPD/body.md"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -407,7 +481,15 @@ check_all_descriptions() { list_all_description_files | check_single_line_descri
 }
 
 @test "current total stays inside the budget (resident ratchet, both directions)" {
-  local total budget v
+  local total budget v shape_violations
+  # frontmatter が許可リストの書式から外れているファイルがあれば、合計を計算・報告する
+  # 前にここで fail する（読めない frontmatter があるまま「予算内」と言わせない）。
+  shape_violations=$(check_all_frontmatter_shapes || true)
+  if [ -n "$shape_violations" ]; then
+    echo "frontmatter が許可リストの書式から外れている（合計は計算していない）:" >&2
+    printf '%s\n' "$shape_violations" >&2
+    false
+  fi
   total=$(breakdown | sum_breakdown)
   if ! budget=$(read_budget); then
     echo "tests/injection-budget.txt は数字だけの 1 行でなければならない（複数行・空白・コメントは不可）" >&2
@@ -501,7 +583,10 @@ check_all_descriptions() { list_all_description_files | check_single_line_descri
   local lines
   lines=$(breakdown)
   [ "$(printf '%s\n' "$lines" | grep -c 'AGENTS.md')" -eq 0 ]
-  [ "$(printf '%s\n' "$lines" | grep -c '^CLAUDE.md\t')" -eq 1 ]
+  # grep の BRE では '\t' はタブにならず（GNU grep ではリテラルの t として扱われる）、
+  # CLAUDE.md の 1 行だけを取り出す判定に使うと Linux で 0 件になる。タブ区切りの列比較は
+  # 既存の claude_bytes 抽出と同じく awk -F'\t' に揃える。
+  [ "$(printf '%s\n' "$lines" | awk -F'\t' '$1 == "CLAUDE.md"' | wc -l | tr -d '[:space:]')" -eq 1 ]
   # 合計も CLAUDE.md 1 本ぶんしか増えていない（AGENTS.md のバイト数は含まれない）
   local claude_bytes
   claude_bytes=$(printf '%s\n' "$lines" | awk -F'\t' '$1 == "CLAUDE.md" { print $2 }')
@@ -541,10 +626,10 @@ check_all_descriptions() { list_all_description_files | check_single_line_descri
   [ "$(verdict "$budget" "$reduced")" = "under" ]
 }
 
-# ══ 4. 折りたたみ記法のガード ═══════════════════════════════
+# ══ 4. frontmatter 書式ガード（許可リスト方式）═══════════════
 
-@test "every measured description in the repo is written on a single line" {
-  run check_all_descriptions
+@test "every measured frontmatter in the repo is inside the allowed shape" {
+  run check_all_frontmatter_shapes
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -562,36 +647,176 @@ check_all_descriptions() { list_all_description_files | check_single_line_descri
 
 @test "a folded description is detected and its filename is printed" {
   printf -- '---\nname: evil\ndescription: >\n  first line of the folded value\n  second line hidden from the total\n---\nbody\n' > "$TMPD/evil.md"
-  run check_single_line_description "$TMPD/evil.md"
+  run check_frontmatter_shape "$TMPD/evil.md"
   [ "$status" -ne 0 ]
   [[ "$output" == *"evil.md"* ]]
 }
 
 @test "a literal block description is detected" {
   printf -- '---\nname: evil2\ndescription: |\n  hidden\n---\nbody\n' > "$TMPD/evil2.md"
-  run check_single_line_description "$TMPD/evil2.md"
+  run check_frontmatter_shape "$TMPD/evil2.md"
   [ "$status" -ne 0 ]
   [[ "$output" == *"evil2.md"* ]]
 }
 
 @test "a continuation line without a folding marker is detected" {
   printf -- '---\nname: evil3\ndescription: visible part\n  hidden continuation\n---\nbody\n' > "$TMPD/evil3.md"
-  run check_single_line_description "$TMPD/evil3.md"
+  run check_frontmatter_shape "$TMPD/evil3.md"
   [ "$status" -ne 0 ]
   [[ "$output" == *"evil3.md"* ]]
 }
 
 @test "a folded second description key is detected" {
-  # 重複キー。1 本目は単一行なので、1 本目だけを見るガードはこれを見逃す。
+  # 重複キー＋折りたたみ。1 本目は単一行なので、1 本目だけを見るガードはこれを見逃す。
   printf -- '---\nname: evil4\ndescription: short and innocent\ndescription: >\n  the real payload hidden on the second key\n---\nbody\n' > "$TMPD/evil4.md"
-  run check_single_line_description "$TMPD/evil4.md"
+  run check_frontmatter_shape "$TMPD/evil4.md"
   [ "$status" -ne 0 ]
   [[ "$output" == *"evil4.md"* ]]
 }
 
+@test "two single-line top-level description keys are detected even without folding" {
+  # 値が両方とも単一行でも、トップレベル description: が 2 本あれば違反（重複キーの経路）。
+  printf -- '---\nname: dup\ndescription: first\ndescription: second\n---\nbody\n' > "$TMPD/dup-single.md"
+  run check_frontmatter_shape "$TMPD/dup-single.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"dup-single.md"* ]]
+}
+
 @test "a single line description passes the guard" {
   printf -- '---\nname: fine\ndescription: all on one line\nversion: 1.0.0\n---\nbody\n' > "$TMPD/fine.md"
-  run check_single_line_description "$TMPD/fine.md"
+  run check_frontmatter_shape "$TMPD/fine.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "an anchor paired with an alias in the description is detected" {
+  # 今回の迂回そのもの。argument-hint に定義したアンカーの値を description のエイリアスで
+  # 読ませる。& の存在でも、description の値先頭が * であることでも落ちる。
+  printf -- '---\nargument-hint: &payload this description is forty-eight bytes of injected text\ndescription: *payload\n---\n' > "$TMPD/anchor-alias.md"
+  run check_frontmatter_shape "$TMPD/anchor-alias.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"anchor-alias.md"* ]]
+}
+
+@test "a merge key is detected" {
+  printf -- '---\nname: x\n<<: *base\ndescription: hello\n---\n' > "$TMPD/merge-key.md"
+  run check_frontmatter_shape "$TMPD/merge-key.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"merge-key.md"* ]]
+}
+
+@test "a whole-document flow mapping is detected" {
+  # `{name: a, description: <長文>}` は従来 ^description: に当たらず合計 0 バイトで素通りしていた。
+  printf -- '---\n{name: a, description: this text used to be counted as zero bytes}\n---\n' > "$TMPD/flow-map.md"
+  run check_frontmatter_shape "$TMPD/flow-map.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"flow-map.md"* ]]
+}
+
+@test "a quoted key is detected" {
+  # `"description": <長文>` も従来 ^description: に当たらず合計 0 バイトで素通りしていた。
+  printf -- '---\nname: x\n"description": this text used to be counted as zero bytes\n---\n' > "$TMPD/quoted-key.md"
+  run check_frontmatter_shape "$TMPD/quoted-key.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"quoted-key.md"* ]]
+}
+
+@test "a first line that is blank before the opening --- is detected" {
+  printf -- '\n---\nname: x\ndescription: hi\n---\n' > "$TMPD/blank-first.md"
+  run check_frontmatter_shape "$TMPD/blank-first.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"blank-first.md"* ]]
+}
+
+@test "a UTF-8 BOM before the opening --- is detected" {
+  printf '\xEF\xBB\xBF---\nname: x\ndescription: hi\n---\n' > "$TMPD/bom-first.md"
+  run check_frontmatter_shape "$TMPD/bom-first.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"bom-first.md"* ]]
+}
+
+@test "a %YAML directive line before the opening --- is detected" {
+  printf -- '%%YAML 1.2\n---\nname: x\ndescription: hi\n---\n' > "$TMPD/yaml-directive.md"
+  run check_frontmatter_shape "$TMPD/yaml-directive.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"yaml-directive.md"* ]]
+}
+
+@test "a document-end terminator of ... instead of --- is detected" {
+  printf -- '---\nname: x\ndescription: hi\n...\n' > "$TMPD/dots-terminator.md"
+  run check_frontmatter_shape "$TMPD/dots-terminator.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"dots-terminator.md"* ]]
+}
+
+@test "a frontmatter with no closing --- before EOF is detected" {
+  printf -- '---\nname: x\ndescription: hi\nno closing marker\n' > "$TMPD/no-terminator.md"
+  run check_frontmatter_shape "$TMPD/no-terminator.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no-terminator.md"* ]]
+}
+
+@test "a tab-indented nested key is detected" {
+  printf -- '---\nmetadata:\n\tversion: 1\ndescription: hi\n---\n' > "$TMPD/tab-indent.md"
+  run check_frontmatter_shape "$TMPD/tab-indent.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"tab-indent.md"* ]]
+}
+
+@test "an anchor inside a flow sequence is detected" {
+  printf -- '---\ntags: [&p this payload rides inside a flow sequence anchor]\ndescription: hi\n---\n' > "$TMPD/flow-anchor.md"
+  run check_frontmatter_shape "$TMPD/flow-anchor.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"flow-anchor.md"* ]]
+}
+
+@test "a backslash inside a quoted description is detected" {
+  # \L のような U+2028 エスケープは書いた字面より解決後の値が大きくなる。
+  printf -- '---\ndescription: "backslash \\L\\L\\L payload"\n---\n' > "$TMPD/backslash-quote.md"
+  run check_frontmatter_shape "$TMPD/backslash-quote.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"backslash-quote.md"* ]]
+}
+
+@test "a shape violation blocks the budget total instead of being silently summed" {
+  # 常駐テスト「current total stays inside the budget」と同じ経路（先に書式検査、通らなければ
+  # 合計を計算しない）を、実 repo を汚さずに検証する。
+  printf -- '---\nargument-hint: &payload this description is forty-eight bytes of injected text\ndescription: *payload\n---\n' > "$TMPD/gate-check.md"
+  local shape_violations
+  shape_violations=$(check_frontmatter_shape "$TMPD/gate-check.md" || true)
+  [ -n "$shape_violations" ]
+  [[ "$shape_violations" == *"gate-check.md"* ]]
+}
+
+@test "a composite file using every allowed line form passes the guard" {
+  # 5 形すべて（トップレベルキー／入れ子キー／並び項目／空行／コメント）と、値の途中に
+  # * を含む行を 1 ファイルに詰め込んだ合成ファイル。今のリポジトリに実在する形の組み合わせ。
+  printf -- '---\nname: x\n\n# comment line\ndescription: plain text\ntags: [a, b]\nmetadata:\n  version: 1\nallowed-tools:\n  - Bash(mkdir *)\n---\nbody\n' > "$TMPD/composite.md"
+  run check_frontmatter_shape "$TMPD/composite.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "a quoted description without a backslash passes the guard" {
+  # .claude/commands/opsx/explore.md:3 に実在する形。
+  printf -- '---\nname: x\ndescription: "Enter explore mode - think through ideas"\n---\n' > "$TMPD/quoted-ok.md"
+  run check_frontmatter_shape "$TMPD/quoted-ok.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "a description starting with a slash passes the guard" {
+  # plugins/dev-workflow/commands/work-issue.md に実在する形。
+  printf -- '---\nname: x\ndescription: /develop のエイリアス（旧名）\n---\n' > "$TMPD/slash-ok.md"
+  run check_frontmatter_shape "$TMPD/slash-ok.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "a frontmatter with no description key passes the guard" {
+  # description を持たない frontmatter は 0 バイト計上が正直な結果なので違反にしない。
+  printf -- '---\nname: x\nversion: 1.0.0\n---\n' > "$TMPD/no-desc.md"
+  run check_frontmatter_shape "$TMPD/no-desc.md"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
