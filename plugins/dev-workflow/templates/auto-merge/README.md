@@ -14,6 +14,8 @@ pr-review-gate スキル（dev-workflow プラグイン）とセットで使う:
 ```
 .github/workflows/auto-merge.yml     # マージロボット本体
 .github/workflows/revert-pr.yml      # revert PR のワンクリック生成
+.github/workflows/staging-smoke.yml  # staging デプロイ後の外形スモーク + auto-revert（staging を持つリポのみ）
+.claude/settings.json                # LLM に gh pr merge / main 直 push / force push を禁じる deny 設定（既存設定にマージする）
 docs/auto-merge.md                   # 運用ガイド（停止・PAT・巻き戻し・調べ方の正本）
 scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テスト（CI で毎 PR 実行）
 ```
@@ -24,10 +26,13 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
 
    ```sh
    TPL=<このディレクトリへのパス>
-   cp "$TPL"/.github/workflows/*.yml <repo>/.github/workflows/
+   cp "$TPL"/.github/workflows/auto-merge.yml "$TPL"/.github/workflows/revert-pr.yml <repo>/.github/workflows/
    cp "$TPL"/docs/auto-merge.md      <repo>/docs/
    cp "$TPL"/scripts/test-auto-merge-workflow.sh <repo>/scripts/
    ```
+
+   `staging-smoke.yml` は staging デプロイ（`Deploy to Staging` という名前の workflow）を持つリポだけ
+   コピーする（手順 6）。`.claude/settings.json` は cp ではなくマージする（手順 7）。
 
 2. **差し替え必須3点**（テンプレートのままでは動かない/合わない箇所）:
 
@@ -56,6 +61,48 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
 
 5. **動作確認**: PAT 登録前に `workflow_dispatch` で `dry_run` を有効にして実行し、
    判定ログ（スキップ理由・全条件充足）が出ることを確認する。詳細: `docs/auto-merge.md` の dry run 節。
+
+6. **staging スモーク + auto-revert**（staging デプロイを持つリポのみ。無ければ飛ばす）:
+
+   auto-merge が main に入れた変更を staging で外形確認し、壊れていたら revert PR と incident issue を
+   自動起票する（`docs/auto-merge.md` の「staging スモーク」節）。購読側の前提は
+   `Deploy to Staging` という名前の workflow が main push で走ること（infra プラグインの
+   `deploy-staging.yml.template` が生成する workflow がこの名前）。
+
+   ```sh
+   cp "$TPL"/.github/workflows/staging-smoke.yml <repo>/.github/workflows/
+   ```
+
+   | # | 箇所 | やること |
+   |---|---|---|
+   | 1 | `staging-smoke.yml` の `check` 呼び出し（`# >>> smoke-checks` マーカーの間） | 展開先プロダクトの代表的な導線（トップ・料金・利用規約など）のパスと期待文字列に書き換える。既定はパス 3 本・期待文字列なし（200 のみ確認） |
+   | 2 | `vars.STAGING_DOMAIN` | staging の固定ドメインをリポの Actions variables に登録する。**未設定の間はスモークをスキップして警告だけ出す**（revert は起きない） |
+   | 3 | `secrets.VERCEL_AUTOMATION_BYPASS_SECRET` | Vercel の Deployment Protection を staging に掛けている場合のみ。Protection Bypass for Automation の secret を登録する。未登録で保護に弾かれた場合は「検証不能」の警告 issue が立ち、**revert はしない**（誤検知ガード） |
+
+   revert PR の push と作成には手順 2 の `AUTOMERGE_PAT` を共用する（未設定なら自動 revert は失敗し、
+   人間対応のエラーログだけ残る）。誤検知ガード（全チェックが 3xx/401/403 で落ちたときは revert しない）は
+   プラグイン側の bats テストが固定しているので、`# >>> smoke-script` マーカーの間の判定ロジックは変えない。
+
+7. **deny 設定を `.claude/settings.json` にマージする**（auto-merge を配備する全リポで必須）:
+
+   auto-merge は「LLM が `gh pr merge` や main への直接 push を**しない**」ことを前提にした仕組みで、
+   その前提を守るのは Claude Code の permissions deny（ハーネスが実行前にブロックする層）。
+   テンプレートの `.claude/settings.json` にある deny リスト 7 件を、展開先の `.claude/settings.json` に
+   **既存の deny を消さずに**足す:
+
+   ```sh
+   # 展開先に .claude/settings.json が無ければそのままコピー
+   [ -f <repo>/.claude/settings.json ] || cp "$TPL"/.claude/settings.json <repo>/.claude/settings.json
+   # あれば deny 配列を和集合でマージ（既存の deny・他のキーは保持）
+   jq -s '.[0] as $cur | .[1] as $tpl | ($cur * $tpl)
+          | .permissions.deny = (($cur.permissions.deny // []) + ($tpl.permissions.deny // []) | unique)' \
+     <repo>/.claude/settings.json "$TPL"/.claude/settings.json > <repo>/.claude/settings.json.merged \
+     && mv <repo>/.claude/settings.json.merged <repo>/.claude/settings.json
+   ```
+
+   マージ後に `jq '.permissions.deny' <repo>/.claude/settings.json` で `Bash(gh pr merge:*)` と
+   `Bash(git push --force:*)` が入っていることを確認する。`.claude/settings.json` は聖域（既定の `SACRED`
+   に含まれる）なので、この変更を含む PR は human-merge になる。
 
 ## 変えてはいけないもの（安全不変条件）
 

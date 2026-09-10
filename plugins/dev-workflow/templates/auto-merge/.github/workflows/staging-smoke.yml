@@ -1,0 +1,214 @@
+# staging スモーク + auto-revert — auto-merge の「入れたら自分で確かめて、壊れていたら自分で戻す」側
+#
+# auto-merge が main に入れた変更は staging に自動デプロイされる（`Deploy to Staging` という名前の
+# workflow。infra プラグインの deploy-staging.yml.template が生成するものと同名なら何でもよい）。
+# その完了イベントを購読してここが外形スモークを実行し、壊れていたら:
+#   revert PR を自動起票（`agent-review:passed` + 「対象 HEAD:」コメント付き
+#     → 聖域パス非接触なら auto-merge.yml が取り込む。聖域に触れていれば human-merge が付く）
+#   + incident issue を起票（ポストモーテムの様式は展開先リポの運用手順書に従う）。
+#
+# 誤検知ガード（genetta-inc/suimei の初回実戦で学習）: 全チェックが認証系（3xx/401/403）で落ちた場合は
+# 「デプロイ保護で検証不能」であってコード欠陥ではないため、revert せず警告 issue のみ起票する。
+# 1 件でも認証系以外（5xx / 接続失敗 / 期待文字列なし）があれば、それはコード欠陥の証拠なので revert する。
+#
+# 前提（人間セットアップ。展開手順は templates/auto-merge/README.md「staging スモーク」節）:
+#   - vars.STAGING_DOMAIN: staging の固定ドメイン（未設定の間はスモークをスキップして警告のみ）
+#   - secrets.AUTOMERGE_PAT: revert PR の push / PR 作成に使用（auto-merge.yml と共用。
+#     PR は PAT で作らないと CI が走らず auto-merge 不能になる）
+#   - secrets.VERCEL_AUTOMATION_BYPASS_SECRET: Vercel の Protection Bypass for Automation
+#     （Deployment Protection を維持したままスモークを通すためのヘッダー用。未設定なら素の curl）
+#
+# 差し替え必須: チェックする URL パスと期待文字列（smoke-checks マーカーの間）。
+# 展開先プロダクトの代表的な導線（トップ・料金・利用規約など）に合わせて書き換えること。
+#
+# smoke-script マーカーの間はプラグイン側の bats テストがそのまま実行して
+# 誤検知ガードの挙動（401 のみ → revert しない / 500 混在 → revert する）を固定している。
+# マーカーの位置とブロック内の `blocked=` / `failures=` 出力名は変えないこと。
+# （マーカー文字列そのものはこのヘッダーに書かない: 抽出の sed 範囲が誤って先頭から始まるため）
+name: Staging Smoke
+
+on:
+  workflow_run:
+    workflows: ["Deploy to Staging"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      blocked: ${{ steps.checks.outputs.blocked }}
+    steps:
+      - name: Smoke checks
+        id: checks
+        env:
+          STAGING_DOMAIN: ${{ vars.STAGING_DOMAIN }}
+          VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          # >>> smoke-script
+          set -uo pipefail
+          if [ -z "${STAGING_DOMAIN:-}" ]; then
+            echo "::warning::vars.STAGING_DOMAIN 未設定のためスモークをスキップ"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BASE="https://$STAGING_DOMAIN"
+          FAIL=""
+          AUTH_FAIL=0
+          OTHER_FAIL=0
+
+          CURL_ARGS=(-sS -m 20)
+          if [ -n "${VERCEL_BYPASS:-}" ]; then
+            CURL_ARGS+=(-H "x-vercel-protection-bypass: $VERCEL_BYPASS")
+          fi
+
+          check() { # $1=path $2=期待文字列(空なら200のみ)
+            local url="$BASE$1" body code
+            body=$(curl "${CURL_ARGS[@]}" -w '\n%{http_code}' "$url" 2>/dev/null) || { FAIL="$FAIL $1(接続失敗)"; OTHER_FAIL=$((OTHER_FAIL+1)); return; }
+            code=${body##*$'\n'}
+            case "$code" in
+              200) ;;
+              # 認証系: デプロイ保護（Vercel Deployment Protection 等）に弾かれた可能性。単独では revert 根拠にしない
+              301|302|303|307|308|401|403) FAIL="$FAIL $1(HTTP$code:認証系)"; AUTH_FAIL=$((AUTH_FAIL+1)); return ;;
+              *) FAIL="$FAIL $1(HTTP$code)"; OTHER_FAIL=$((OTHER_FAIL+1)); return ;;
+            esac
+            if [ -n "$2" ] && ! printf '%s' "$body" | grep -q "$2"; then FAIL="$FAIL $1(期待文字列なし)"; OTHER_FAIL=$((OTHER_FAIL+1)); fi
+          }
+
+          # >>> smoke-checks
+          # 【展開時に差し替え】プロダクトの代表的な導線を並べる（path, 期待文字列）
+          check "/" ""
+          check "/pricing" ""
+          check "/legal/terms" ""
+          # <<< smoke-checks
+
+          if [ -n "$FAIL" ]; then
+            if [ "$OTHER_FAIL" -eq 0 ] && [ "$AUTH_FAIL" -gt 0 ]; then
+              # 全滅かつ全部が認証系 = デプロイ保護で検証不能（コード欠陥の証拠なし）→ revert しない
+              echo "blocked=true" >> "$GITHUB_OUTPUT"
+              echo "::error::スモーク検証不能（デプロイ保護による認証ブロック）:$FAIL"
+            else
+              echo "::error::スモーク失敗:$FAIL"
+            fi
+            echo "failures=$FAIL" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "スモーク全項目 OK"
+          # <<< smoke-script
+
+  revert-on-failure:
+    needs: smoke
+    if: ${{ failure() && needs.smoke.outputs.blocked != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.AUTOMERGE_PAT }}
+      - name: Create revert PR + incident issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_TOKEN: ${{ secrets.AUTOMERGE_PAT }}
+          REPO: ${{ github.repository }}
+          BAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # >>> smoke-revert-script
+          set -euo pipefail
+          if [ -z "$MERGE_TOKEN" ]; then
+            echo "::error::AUTOMERGE_PAT 未設定のため自動 revert 不可。人間対応が必要"
+            exit 1
+          fi
+          git config user.name "auto-revert-bot"
+          git config user.email "noreply@github.com"
+
+          # incident ラベルの存在保証（冪等）
+          gh label create incident --repo "$REPO" --color B60205 \
+            --description "サービス影響のある障害。ポストモーテム必須" 2>/dev/null || true
+
+          BRANCH="revert-auto-${BAD_SHA:0:12}"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "revert ブランチ既存: 二重起票を防ぐため終了"
+            exit 0
+          fi
+          git checkout -b "$BRANCH"
+          # squash マージ由来の通常コミット想定。マージコミットだった場合は -m 1 で親1（main 側）基準
+          git revert --no-edit "$BAD_SHA" || git revert --no-edit -m 1 "$BAD_SHA"
+          git push -u origin "$BRANCH"
+          REVERT_SHA=$(git rev-parse HEAD)
+
+          # PR 作成は PAT（GITHUB_TOKEN で作った PR には CI が走らず auto-merge 不能になるため）
+          PR_URL=$(GH_TOKEN="$MERGE_TOKEN" gh pr create --repo "$REPO" \
+            --title "revert: staging スモーク失敗による自動巻き戻し (${BAD_SHA:0:12})" \
+            --label "agent-review:passed" --label "incident" \
+            --body "staging スモークテストの失敗を検知したため、直近の main 取り込みを自動 revert します。検知ラン: $RUN_URL — 聖域パスに触れていなければ auto-merge が取り込みます（触れている場合は human-merge が付くので人間がマージしてください）。")
+
+          # auto-merge.yml は「対象 HEAD: <40桁 SHA>」コメントの実在を合格条件にしている
+          # （合格後 push の stale passed 防止）。revert PR は機械生成で HEAD が確定しているので、
+          # ここで同じ規約のコメントを投稿して auto-merge の合格条件を満たす
+          PR_NUM=${PR_URL##*/}
+          COMMENT="対象 HEAD: $REVERT_SHA"$'\n\n'
+          COMMENT+="staging スモーク失敗（$RUN_URL）に対する機械生成の revert PR。対象コミット $BAD_SHA の巻き戻しのみを含む。"
+          gh api -X POST "repos/$REPO/issues/$PR_NUM/comments" -f body="$COMMENT"
+
+          # issue 作成は GITHUB_TOKEN（PAT に Issues 権限を要求しない）
+          BODY="## 事実経過（自動記録）"$'\n'
+          BODY+="- 対象コミット: $BAD_SHA"$'\n'
+          BODY+="- 検知: staging スモークテスト失敗（$RUN_URL）"$'\n'
+          BODY+="- 自動対応: revert PR $PR_URL を起票"$'\n\n'
+          BODY+="## 残タスク"$'\n'
+          BODY+="- [ ] revert 取り込みと staging 復旧の確認"$'\n'
+          BODY+="- [ ] 根本原因の分析（元 PR のどの変更がスモークを壊したか）"$'\n'
+          BODY+="- [ ] 再発防止（スモーク観点の追加 or レビュー観点の追加）"$'\n'
+          BODY+="- [ ] ユーザー影響の有無と補償判断（本番影響がなければ「なし」と明記）"
+          gh issue create --repo "$REPO" \
+            --title "incident: staging スモーク失敗 (${BAD_SHA:0:12})" \
+            --label "incident" \
+            --body "$BODY"
+          # <<< smoke-revert-script
+
+  verification-blocked:
+    needs: smoke
+    if: ${{ failure() && needs.smoke.outputs.blocked == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warning issue (no revert)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh label create incident --repo "$REPO" --color B60205 \
+            --description "サービス影響のある障害。ポストモーテム必須" 2>/dev/null || true
+          # 同種の open issue があれば重複起票しない
+          EXIST=$(gh issue list --repo "$REPO" --state open --search "スモーク検証不能 in:title" --json number --jq 'length')
+          if [ "$EXIST" -gt 0 ]; then echo "既存の検証不能 issue あり: 重複起票しない"; exit 0; fi
+          gh issue create --repo "$REPO" \
+            --title "warn: staging スモーク検証不能（デプロイ保護による認証ブロック）" \
+            --label "incident" \
+            --body "staging への外形チェックが全て認証系（3xx/401/403）で弾かれ、検証できません。コード欠陥の証拠ではないため revert は行っていません。対処: Vercel の Protection Bypass for Automation の secret を発行し \`VERCEL_AUTOMATION_BYPASS_SECRET\` に登録するか、staging の Deployment Protection を無効化してください。検知ラン: $RUN_URL"
+
+  deploy-failed:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Incident issue for deploy failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEPLOY_RUN: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          gh label create incident --repo "$REPO" --color B60205 \
+            --description "サービス影響のある障害。ポストモーテム必須" 2>/dev/null || true
+          gh issue create --repo "$REPO" \
+            --title "incident: staging デプロイ自体が失敗" \
+            --label "incident" \
+            --body "deploy-staging が失敗しました（revert 対象なし。ビルド/インフラ起因の可能性）。対象ラン: $DEPLOY_RUN — 運用手順書のインシデント対応に従ってください。"

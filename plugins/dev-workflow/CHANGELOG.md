@@ -1,5 +1,28 @@
 # Changelog — dev-workflow
 
+## 2.9.1 — 2026-09-03: staging スモーク + auto-revert と deny 設定を auto-merge テンプレートに移設（#213）
+
+旧プラグインから `product-handover` への作り直し（#206 / PR #209、経緯は product-handover 側 CHANGELOG 参照）で後継を用意しないまま捨てた 2 ファイルを、
+auto-merge テンプレート（`templates/auto-merge/`）の一部として復元した。両方とも auto-merge の前提
+（revert PR は `agent-review:passed` で auto-merge が取り込む / LLM は `gh pr merge` をしない）に
+依存する部品なので、配線と同じ場所に置く。
+
+- **`.github/workflows/staging-smoke.yml`**: `Deploy to Staging` の完了イベントを購読して外形スモークを
+  実行し、失敗時に revert PR + incident issue を自動起票する。誤検知ガード（全チェックが 3xx/401/403 で
+  落ちたときは revert しない。genetta-inc/suimei の初回実戦の知見）はそのまま維持し、bats テストが
+  smoke ステップのスクリプトを curl スタブで実際に実行して固定する。旧版からの変更点: revert PR に
+  「対象 HEAD:」コメントを投稿するステップを足した（現行の auto-merge.yml は passed ラベルだけでは
+  マージしないため。旧版のままだと revert PR が永久にマージされない）。既定のチェック導線は
+  期待文字列なし（旧版はプロダクト固有の文字列が残っていた）。
+- **`.claude/settings.json`**: `gh pr merge` / main・master 直 push / force push / `--no-verify` の
+  deny 7 件。README の手順 7 で既存 settings.json に jq で和集合マージする（既存 deny を消さない）。
+  旧 loops の dev-agent-install スキルにだけ残っていた配布経路が #205 で消えたので、これが唯一の経路。
+- README に手順 6（staging スモーク。staging を持つリポのみ）と手順 7（deny マージ。全リポ必須）、
+  docs/auto-merge.md に「LLM 側の防壁」「staging スモーク + auto-revert」の節を追加。
+
+配備済みリポ（`docs/auto-merge-deployments.md`）への伝播はテンプレ本体（auto-merge.yml / revert-pr.yml）
+の改修ではないので必須ではない。deny は各リポの `.claude/settings.json` を確認して足りなければ足す。
+
 ## 2.9.0 — 2026-09-10: 途中計測 hook の早期 exit を JSON 意味論に合わせる
 
 `scripts/context-tripwire.sh` の早期 exit は payload の生文字列 `"agent_id"` の有無だけを見ていた。JSON のキーは Unicode エスケープでも書けるため（`"\u0061gent_id"` は `json.loads` すると `agent_id`）、この判定は JSON 意味論と一致せず、同値な表記の payload が python3 に届かないまま無音で fail-open していた。強制停止の閾値を超えたサブエージェントの `Bash` 呼び出しでも deny されない（#278。PR #269 の 3 周目レビューで Codex CLI が見つけた非 blocking の指摘）。

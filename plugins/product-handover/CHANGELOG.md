@@ -44,15 +44,16 @@
 
 ### 捨てたテンプレート
 
-後継があって捨てたのは `auto-merge.yml` の1件だけで、残り3件は**後継が無いまま捨てている**。
-product-handover の受け入れ条件（claude-harness#206）が中身を法務・窓口・教訓ログの雛形だけに
-限定しているため、ここに残す選択肢が無かった。
+v0.1.0 の時点で後継があったのは `auto-merge.yml` の1件だけで、`staging-smoke.yml` と
+`settings-permissions-deny.json` は後継が無いまま捨てていた（product-handover の受け入れ条件
+（claude-harness#206）が中身を法務・窓口・教訓ログの雛形だけに限定しているため、ここに残す選択肢が
+無かった）。この 2 件は claude-harness#213（dev-workflow 2.2.0）で auto-merge テンプレートに移設済み。
 
 | ファイル | 後継 | 捨てた理由 |
 |---|---|---|
 | `templates/auto-merge.yml` | **あり** — dev-workflow の `templates/auto-merge/.github/workflows/auto-merge.yml` | 移設先は flatmate リポでアドバーサリアルレビュー3周と実運用を通過した版で、攻撃再現テストと運用ガイドも揃っている。二重管理をやめて片方を捨てた |
-| `templates/staging-smoke.yml` | **無し** — 移設先を決める issue: claude-harness#213 | staging の外形スモークと auto-revert。dev-workflow の `revert-pr.yml` は `workflow_dispatch` で人間が PR 番号を手入力する巻き戻しであり、デプロイ完了イベントの購読も自動起票もしないので代替にならない。捨てた時点では「staging にデプロイはするが壊れても誰も気づかない」状態になる |
-| `templates/settings-permissions-deny.json` | **無し** — 同上 claude-harness#213 | `gh pr merge` と force push の deny 設定。auto-merge 配線とセットで入るべきものだが、dev-workflow の auto-merge テンプレートの展開手順は `.claude/settings.json` に触れない。現状の唯一の残存箇所は loops の dev-agent-install スキルで、loops は claude-harness#205 で解散予定 |
+| `templates/staging-smoke.yml` | **あり** — dev-workflow の `templates/auto-merge/.github/workflows/staging-smoke.yml`（claude-harness#213 で移設。展開手順は同 README の手順 6） | staging の外形スモークと auto-revert。revert PR は `agent-review:passed` で auto-merge に取り込ませる部品なので、auto-merge 配線と同じテンプレートに置いた。dev-workflow の `revert-pr.yml`（人間が PR 番号を手入力する巻き戻し）とは別物として併存する |
+| `templates/settings-permissions-deny.json` | **あり** — dev-workflow の `templates/auto-merge/.claude/settings.json`（claude-harness#213 で移設。展開手順は同 README の手順 7） | `gh pr merge` と force push の deny 設定。auto-merge の「LLM が直接マージしない」前提そのものなので、配線と同じテンプレートに置き、展開手順で既存 `.claude/settings.json` へマージする形にした。loops の dev-agent-install スキル（claude-harness#205 で解散）に依存しない |
 | `templates/master-plan-issue.md` | **不要** | 運営責任マスタープラン issue の雛形。6フェーズのオーケストレーターが起票する前提の部品で、オーケストレーターを捨てたため起票する主体がいなくなった。設計判断の記録先としては教訓ログが残る |
 
 旧ファイルは git 履歴から読める（例: `git show 0e38057:plugins/agent-owner/templates/staging-smoke.yml`）。
