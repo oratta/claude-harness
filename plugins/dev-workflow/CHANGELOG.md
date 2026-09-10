@@ -1,5 +1,9 @@
 # Changelog — dev-workflow
 
+## 2.6.3 — 2026-09-10: pr-review-gate 手順 1 の受け入れ条件取得を空本文で fail-closed にする（#220）
+
+手順 1-3 のコマンド例が、記録先（issue → 無ければ PR 自身）の本文を `--jq '.body // ""'` で取り、空・`null`・空白のみなら stderr に `agent-review:failed` を含む失敗メッセージを出して非 0 で終了する（oratta/claude-harness#220、#219 の Codex レビュー指摘の follow-up）。issue 本文経路・PR 本文経路の両方に同じ検査が掛かる。`pr-review-gate-spec-declaration.bats` の偽 gh が `MOCK_ISSUE_BODY` で issue 本文を差し替えられるようになり、jq の `// ""` の挙動（null → 空）を模す。スキル `pr-review-gate` 1.7.0。
+
 ## 2.6.2 — 2026-09-09: サブエージェントのコンテキスト量を母集団で測る（観測のみ）
 
 `subagent-context.sh` は 1 体分しか測らないため、起動時固定分が増えたか・上限超で手渡しになる割合が増えたかを追えなかった（2026-08-31 の約 42,000 → 09-08 の約 58,678 トークンという 8 日で約 4 割の増加に、事後の手集計まで誰も気づかなかった）。観測だけを足し、強制は加えない。
