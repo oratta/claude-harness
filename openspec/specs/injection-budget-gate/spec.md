@@ -116,10 +116,11 @@
 
 ### Requirement: frontmatter は限定した書式だけを受理する
 
-`plugins/*/skills/*/SKILL.md`・`plugins/*/agents/*.md`・`plugins/*/commands/*.md`、および `.claude/skills/` 配下の `SKILL.md`・`.claude/commands/` 配下の `*.md` の frontmatter は、次の 7 条件をすべて満たす書式でなければならない（MUST）。ひとつでも満たさない frontmatter を持つファイルは違反とし、テストは違反があれば fail しなければならない（MUST）。
+`plugins/*/skills/*/SKILL.md`・`plugins/*/agents/*.md`・`plugins/*/commands/*.md`、および `.claude/skills/` 配下の `SKILL.md`・`.claude/commands/` 配下の `*.md` の frontmatter は、次の 8 条件をすべて満たす書式でなければならない（MUST）。ひとつでも満たさない frontmatter を持つファイルは違反とし、テストは違反があれば fail しなければならない（MUST）。
 
-判定は「既知の悪い書き方を列挙して拒否する」のではなく、「この 7 条件の形以外を一律で違反にする」許可リスト方式でなければならない（MUST）。未知の構文（今後 YAML に追加される記法を含む）は、既定で違反として拒否されなければならない（MUST NOT default to accepting an unrecognized line）。
+判定は「既知の悪い書き方を列挙して拒否する」のではなく、「この 8 条件の形以外を一律で違反にする」許可リスト方式でなければならない（MUST）。未知の構文（今後 YAML に追加される記法を含む）は、既定で違反として拒否されなければならない（MUST NOT default to accepting an unrecognized line）。
 
+0. ファイルは NUL バイト（0x00）を含んではならない（MUST NOT）。awk 実装間で NUL の扱いが異なる（macOS の one true awk は文字列終端として扱い、gawk は保持する）ため、この条件だけは awk に依存しない判定（NUL を除いたバイト数が元のバイト数と一致すること）で落とさなければならない（MUST）
 1. frontmatter の 1 行目は厳密に `---` でなければならない（前後の空白・UTF-8 BOM・`%YAML` 行があってはならない）。frontmatter の終端も厳密に `---` の行でなければならず、EOF まで見つからない場合、および終端が `...` である場合は違反とする
 2. frontmatter 内の各行は次の 5 形のいずれかでなければならない。いずれにも当たらない行は違反とする
    - トップレベルキー行: `^[A-Za-z_][A-Za-z0-9_-]*:` の後が行末か、半角空白 1 個以上＋値
@@ -138,7 +139,12 @@
 #### Scenario: 現状の全ファイルが許可された書式の範囲内である
 
 - **WHEN** `scripts/test.sh injection-budget` を実行する
-- **THEN** 書式検査が pass する（測定対象の全ファイルが上記 7 条件を満たす）
+- **THEN** 書式検査が pass する（測定対象の全ファイルが上記 8 条件を満たす）
+
+#### Scenario: NUL バイトを含むファイルを落とす
+
+- **WHEN** 一時ディレクトリに `description` の値の先頭が NUL バイト（0x00）のファイルを置き、検査ヘルパに渡す
+- **THEN** 違反として検出され、該当ファイル名が出力される（判定は awk に渡す前に行うため、awk 実装によらず同じ結果になる）
 
 #### Scenario: 折りたたみ記法を検出して落とす
 
