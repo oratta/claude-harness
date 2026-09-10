@@ -103,6 +103,26 @@ EOF
   [[ "${lines[1]}" == *'区間'* ]] || return 1
 }
 
+@test "cost: the PR route keeps rows whose worktree was deleted" {  # PR の経路は worktree の削除に強い（ヘッドブランチの行が落ちない）
+  fake_gh_pr_271
+  # 既に消えた worktree から同じブランチで走った行（$1.00）を足す
+  cl_row S9 gone-1 2026-09-01T15:00:00.000Z oratta/sample-feature /nonexistent/deleted-worktree 1000000 \
+    | cl_write_log deleted-worktree
+
+  run python3 "$CL" cost 271 --repo "$REPO_A"
+  [ "$status" -eq 0 ]
+  # $5.80 のままなら、リポジトリを引けない行が黙って落ちている
+  [ "${lines[0]}" = 'コスト: $6.80 / ¥1,020 @150 — PR #271 (oratta/sample-feature) 帰属: ブランチ' ]
+}
+
+@test "cost: the issue route says the number is an estimate" {  # issue 単位の数字が区間分割による推定だと分かる
+  fake_gh_pr_271
+  run python3 "$CL" cost 148 --repo "$REPO_A"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'推定'* ]] || return 1
+  [[ "$output" == *'区間'* ]] || return 1
+}
+
 @test "cost: the slash command exists and delegates to the script" {  # /cost コマンドのファイルがあり、集計スクリプトの cost サブコマンドを呼ぶ
   [ -f "$PLUGIN_DIR/commands/cost.md" ]
   run grep -q 'cost_ledger.py' "$PLUGIN_DIR/commands/cost.md"
