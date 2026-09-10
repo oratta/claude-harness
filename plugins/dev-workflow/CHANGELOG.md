@@ -2,7 +2,7 @@
 
 ## 2.7.2 — 2026-09-03: staging スモーク + auto-revert と deny 設定を auto-merge テンプレートに移設（#213）
 
-`agent-owner` → `product-handover` の作り直し（#206 / PR #209）で後継を用意しないまま捨てた 2 ファイルを、
+旧プラグインから `product-handover` への作り直し（#206 / PR #209、経緯は product-handover 側 CHANGELOG 参照）で後継を用意しないまま捨てた 2 ファイルを、
 auto-merge テンプレート（`templates/auto-merge/`）の一部として復元した。両方とも auto-merge の前提
 （revert PR は `agent-review:passed` で auto-merge が取り込む / LLM は `gh pr merge` をしない）に
 依存する部品なので、配線と同じ場所に置く。
