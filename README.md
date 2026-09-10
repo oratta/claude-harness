@@ -85,13 +85,16 @@ Claude Code用スキル・プラグインのマーケットプレイス
 
 ## ローカル開発
 
+開発用の clone は **marketplace dir（`~/.claude/plugins/marketplaces/oratta-claude-harness/`）の外**に置く。marketplace dir は Claude Code が自動更新するインストール成果物なので、そこで feature ブランチを checkout しない（`CLAUDE.md` の「開発場所」を参照）。
+
 ```bash
-# リポジトリをクローン
+# リポジトリをクローン（置き場所は marketplace dir の外なら任意）
 git clone https://github.com/oratta/claude-harness
 cd claude-harness
 
-# Claude Codeでローカルプラグインを追加
-/plugin add ./plugins/dev-workflow
+# マージ前の動作確認は、そのセッションだけこの clone を読み込ませる
+# --plugin-dir はプラグイン 1 個のディレクトリを取る（リポジトリのルートを渡しても何も読み込まれない）
+claude --plugin-dir ./plugins/<変更したプラグイン>
 ```
 
 ### 新しいプラグインを追加

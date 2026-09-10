@@ -35,7 +35,7 @@ pull（ff-only）→ `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.
 | `git-commit-policy.md` | 細かい自律コミット・PR運用/ローカルmain運用の判定・承認が要る操作 |
 | `browser-infra-env-capture.md` | ダッシュボード操作で生成された認証情報の即時 env 保存 |
 | `link-when-requesting-review.md` | 人間に確認を求めるときは必ずクリック可能なフル URL を添える |
-| `plugin-editing.md` | プラグイン編集は marketplace 版のみ・バージョン同期 |
+| `plugin-editing.md` | プラグイン編集は marketplace dir の外の開発用 clone で・ローカルコピー禁止・バージョン bump の規約 |
 | `dev-server.md` | 他プロジェクトのプロセス kill 禁止・ポート運用 |
 | `subagent-model-selection.md` | サブエージェントの model 明示必須・役割ベースのティア選択（最上位モデルの継承漏れ防止） |
 | `perspective-casting.md` | 「観点の配役」フレームワークの返信前チェック5手順（主に上げてよい論点＝主の視線で結論が変わるものだけ） |
