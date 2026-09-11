@@ -36,6 +36,8 @@ LABEL = "agent-review:passed"
 MARKER = "<!-- cost-ledger:gate-report -->"
 UNRESOLVED = "\x00"     # $(...) とバッククォートの跡。値が分からない印
 LITERAL_DOLLAR = "\x01" # シングルクォート内・\$ の $。展開の対象から外し、最後に $ へ戻す
+SUBSHELL_OPEN = "\x02"  # ( ) のサブシェルの出入りを断片の列に残す印
+SUBSHELL_CLOSE = "\x03"
 
 NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 ASSIGN_RE = re.compile(r"(" + NAME + r")=(.*)", re.S)
@@ -55,6 +57,7 @@ class Lexer:
     """コマンド文字列を断片（語のリスト）の列にする。評価も実行もしない。
 
     区切りは ; && || | 改行 & ( ) で、引用符・$(...)・バッククォートの中は区切らない。
+    ( と ) はサブシェルの出入りとして、それだけの断片 [SUBSHELL_OPEN] / [SUBSHELL_CLOSE] も残す。
     リダイレクトとその行き先は語から除き、heredoc の本文は読み飛ばす。行の途中の # から
     行末はコメントとして捨てる。"""
 
@@ -162,11 +165,15 @@ class Lexer:
                 end_seg()
                 if nested:
                     state["depth"] += 1
+                else:
+                    segs.append([SUBSHELL_OPEN])
                 i += 1
             elif c == ")":
                 end_seg()
                 i += 1
-                if nested:
+                if not nested:
+                    segs.append([SUBSHELL_CLOSE])
+                else:
                     if state["depth"] == 0:
                         return segs, i
                     state["depth"] -= 1
@@ -263,7 +270,8 @@ def api_targets(args, env):
             granted = True
         candidates.append(a)
         k += 1
-    if not granted or method.upper() == "DELETE":
+    # -f があるのでメソッド省略時は POST。PUT はラベルの置き換えで、これも付与になる
+    if not granted or method.upper() not in ("", "POST", "PUT"):
         return []
     out = []
     for a in candidates:
@@ -274,9 +282,10 @@ def api_targets(args, env):
     return out
 
 
-def edit_targets(args, env):
+def edit_targets(args, env, gh_repo=None):
     """gh pr edit / gh issue edit の付与から (owner/repo か None, 番号) を取り出す。
-    None は cwd のリポジトリ。番号は最初の位置引数が数字のときだけ使う。"""
+    リポジトリは gh と同じく -R / --repo、無ければ前置きの GH_REPO（gh_repo）、どちらも
+    無ければ None（cwd のリポジトリ）。番号は最初の位置引数が数字のときだけ使う。"""
     repo_word, labels, positional = None, [], None
     k = 2
     while k < len(args):
@@ -302,6 +311,8 @@ def edit_targets(args, env):
         return []
     numbers = [int(v) for v in (expand(positional, env) or []) if NUMBER_RE.fullmatch(v)]
     if repo_word is None:
+        repo_word = gh_repo  # 解決できない値なら下で飛ばす（cwd に倒さない）
+    if repo_word is None:
         return [(None, num) for num in numbers]
     repos = []
     for v in expand(repo_word, env) or []:
@@ -314,8 +325,16 @@ def edit_targets(args, env):
 def grant_targets(command):
     env = {}      # 変数名 -> 値のリスト（解決できないときは None）
     loops = []    # 開いている for の変数名（while / until は None）
+    saved = []    # ( に入ったときの env の控え。サブシェルの中の代入は ) を出たら捨てる
     out = []
     for words in Lexer(command).segments():
+        if words == [SUBSHELL_OPEN]:
+            saved.append(dict(env))
+            continue
+        if words == [SUBSHELL_CLOSE]:
+            if saved:
+                env = saved.pop()
+            continue
         while words and words[0] in ("do", "then"):
             words = words[1:]
         if not words:
@@ -348,7 +367,8 @@ def grant_targets(command):
         if args[0] == "api":
             out.extend(api_targets(args, env))
         elif args[0] in ("pr", "issue") and len(args) >= 2 and args[1] == "edit":
-            out.extend(edit_targets(args, env))
+            prefix = dict(assigns)  # 前置きの代入は gh の環境変数になる（同名は最後が効く）
+            out.extend(edit_targets(args, env, prefix.get("GH_REPO")))
     return out
 
 

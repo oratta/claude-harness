@@ -283,6 +283,50 @@ done"
   no_gh_call
 }
 
+@test "gate-report: assignments inside a ( ) subshell do not leak out of it" {  # ( ) の中の代入は括弧の中でだけ効き、括弧を出たら外の値に戻る
+  run_hook "N=300; (N=5; echo x); gh api -X POST repos/oratta/claude-harness/issues/\$N/labels -f 'labels[]=agent-review:passed'"
+  queried oratta/claude-harness 300
+  ! queried oratta/claude-harness 5 || return 1
+  : > "$GH_LOG"
+  run_hook "N=300
+(N=301; gh pr view \"\$N\" -R acme/project)
+gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
+  queried acme/project 300
+  ! queried acme/project 301 || return 1
+  : > "$GH_LOG"
+  run_hook "N=300; (N=301; gh api -X POST repos/oratta/claude-harness/issues/\$N/labels -f 'labels[]=agent-review:passed')"
+  queried oratta/claude-harness 301
+}
+
+@test "gate-report: a GH_REPO prefix on gh pr edit targets that repository" {  # 前置きの GH_REPO があればそのリポジトリが対象で gh repo view を呼ばない。-R が優先し、解決できない値なら飛ばす
+  run_hook "GH_REPO=oratta/other gh pr edit 300 --add-label agent-review:passed"
+  queried oratta/other 300
+  ! grep -q '^repo ' "$GH_LOG" || return 1
+  : > "$GH_LOG"
+  run_hook "R=oratta/other; GH_REPO=\$R gh issue edit 301 --add-label agent-review:passed"
+  queried oratta/other 301
+  : > "$GH_LOG"
+  run_hook "GH_REPO=oratta/other gh pr edit 302 -R oratta/third --add-label agent-review:passed"
+  queried oratta/third 302
+  ! queried oratta/other 302 || return 1
+  : > "$GH_LOG"
+  run_hook "GH_REPO=\$(cat r) gh pr edit 300 --add-label agent-review:passed"
+  [ "$status" -eq 0 ]
+  no_gh_call
+  run_hook "GH_REPO=\$UNSET gh pr edit 300 --add-label agent-review:passed"
+  no_gh_call
+}
+
+@test "gate-report: an explicit GET on the labels path is not a grant" {  # -X GET / --method GET / -XGET / --method=GET を明示した gh api は付与とみなさない（PUT は付与）
+  for m in "-X GET" "--method GET" "-XGET" "--method=GET"; do
+    run_hook "gh api $m repos/oratta/claude-harness/issues/300/labels -f 'labels[]=agent-review:passed'"
+    [ "$status" -eq 0 ]
+    no_gh_call
+  done
+  run_hook "gh api -X PUT repos/oratta/claude-harness/issues/300/labels -f 'labels[]=agent-review:passed'"
+  queried oratta/claude-harness 300
+}
+
 # --- 付与の実測・数字の取得・投稿 ---
 
 @test "gate-report: no post when the PR does not actually carry the label" {  # 問い合わせた PR に agent-review:passed が無ければ作成も書き換えもしない

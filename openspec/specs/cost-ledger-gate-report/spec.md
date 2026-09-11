@@ -22,9 +22,9 @@ hook は全 Bash 呼び出しで起動するので、スクリプトは stdin �
 - **THEN** `PostToolUse` に matcher `Bash`・`timeout: 60` の hook があり、`async` は指定されていない
 
 ### Requirement: ラベル付与コマンドの判定と対象 PR の取り出し
-システムは `tool_input.command` が `agent-review:passed` の**付与**であるときだけ投稿に進 MUST む。付与とは、パスが `repos/<リポジトリ>/issues/<番号>/labels` の `gh api` 呼び出しで同じ呼び出しに `labels[]=agent-review:passed` があり DELETE でないもの、または `gh pr edit` / `gh issue edit` の `--add-label` の値に `agent-review:passed` を含むものと SHALL する。ラベルを外すコマンドや、文字列として `agent-review:passed` を含むだけのコマンドで投稿してはなら MUST NOT ない。
+システムは `tool_input.command` が `agent-review:passed` の**付与**であるときだけ投稿に進 MUST む。付与とは、パスが `repos/<リポジトリ>/issues/<番号>/labels` の `gh api` 呼び出しで同じ呼び出しに `labels[]=agent-review:passed` があり、メソッドの指定が無い（フィールドがあるので gh の既定は POST）か POST・PUT のもの、または `gh pr edit` / `gh issue edit` の `--add-label` の値に `agent-review:passed` を含むものと SHALL する。ラベルを外すコマンドや、文字列として `agent-review:passed` を含むだけのコマンドで投稿してはなら MUST NOT ない。
 
-対象のリポジトリと番号は、コマンド文字列のリテラルに加えて、同じコマンドの中の単純な代入（`NAME=値`）と `for NAME in <リテラルの並び>; do` から `$NAME` / `${NAME}` を展開して SHALL 求める。`for` の場合は並びの各値を対象とする。`gh pr edit` / `gh issue edit` でリポジトリが書かれていなければ hook の `cwd` のリポジトリと SHALL する。解決できなかった対象は投稿せずに飛ば MUST す。解決のためにコマンドを評価・再実行してはなら MUST NOT ない。
+対象のリポジトリと番号は、コマンド文字列のリテラルに加えて、同じコマンドの中の単純な代入（`NAME=値`）と `for NAME in <リテラルの並び>; do` から `$NAME` / `${NAME}` を展開して SHALL 求める。`for` の場合は並びの各値を対象とする。`( )` のサブシェルの中の代入は、括弧の外の展開に使ってはなら MUST NOT ない。`gh pr edit` / `gh issue edit` のリポジトリは gh と同じ順で、`-R` / `--repo`、無ければその呼び出しの前置きの `GH_REPO=値`、どちらも無ければ hook の `cwd` のリポジトリと SHALL する。解決できなかった対象は投稿せずに飛ば MUST す。解決のためにコマンドを評価・再実行してはなら MUST NOT ない。
 
 #### Scenario: リテラルの付与コマンド
 - **WHEN** `gh api -X POST repos/oratta/claude-harness/issues/300/labels -f 'labels[]=agent-review:passed'` の hook JSON を流す
@@ -42,8 +42,20 @@ hook は全 Bash 呼び出しで起動するので、スクリプトは stdin �
 - **WHEN** `gh pr edit 313 --remove-label agent-review:pending --add-label agent-review:passed` の hook JSON を流す
 - **THEN** `cwd` のリポジトリの #313 が投稿の対象になる
 
+#### Scenario: 前置きの GH_REPO で付与する
+- **WHEN** `GH_REPO=oratta/other gh pr edit 300 --add-label agent-review:passed` の hook JSON を流す
+- **THEN** oratta/other の #300 が投稿の対象になり、`cwd` のリポジトリは問い合わせない。前置きの値が解決できなければ投稿せずに飛ばす
+
+#### Scenario: サブシェルの中の代入は外に効かない
+- **WHEN** `N=300; (N=5; echo x); gh api -X POST repos/oratta/claude-harness/issues/$N/labels -f 'labels[]=agent-review:passed'` の hook JSON を流す
+- **THEN** oratta/claude-harness の #300 が投稿の対象になり、#5 は対象にならない
+
 #### Scenario: ラベルを外すコマンドでは投稿しない
 - **WHEN** `gh api -X DELETE repos/oratta/claude-harness/issues/300/labels/agent-review:passed` だけのコマンドの hook JSON を流す
+- **THEN** コメントの作成も書き換えも行われない
+
+#### Scenario: GET を明示した呼び出しでは投稿しない
+- **WHEN** `gh api -X GET repos/oratta/claude-harness/issues/300/labels -f 'labels[]=agent-review:passed'` の hook JSON を流す
 - **THEN** コメントの作成も書き換えも行われない
 
 #### Scenario: 解決できない変数は飛ばす
