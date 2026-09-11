@@ -39,3 +39,4 @@ pull（ff-only）→ `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.
 | `dev-server.md` | 他プロジェクトのプロセス kill 禁止・ポート運用 |
 | `subagent-model-selection.md` | サブエージェントの model 明示必須・役割ベースのティア選択（最上位モデルの継承漏れ防止） |
 | `perspective-casting.md` | 「観点の配役」フレームワークの返信前チェック5手順（主に上げてよい論点＝主の視線で結論が変わるものだけ） |
+| `one-off-no-script.md` | 一回限りの操作は操作一覧を作って手で実行・スクリプト化とレビュー堅牢化の無限周回を防ぐ |
