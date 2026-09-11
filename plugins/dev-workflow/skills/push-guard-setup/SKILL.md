@@ -1,7 +1,7 @@
 ---
 name: push-guard-setup
 description: マージ済み PR のブランチへの push を全リポジトリで拒否するグローバル pre-push ガードを導入する（`~/.githooks/pre-push` + `git config --global core.hooksPath`）。「push ガードを入れて」「マージ済みブランチへの push を止めたい」「グローバル git フックを設定して」で起動。人間の手打ち push と Claude の push の両方を同じ層で止める。
-version: 1.0.1
+version: 1.0.2
 allowed-tools: Read, Write, Edit, Bash
 ---
 
@@ -20,11 +20,18 @@ allowed-tools: Read, Write, Edit, Bash
 | 層 | 置き場所 | 内容 | 対象 |
 |---|---|---|---|
 | **グローバル**（このスキル） | `~/.githooks/pre-push` + `git config --global core.hooksPath` | マージ済み PR チェックのみ | 全リポジトリ |
-| **リポジトリローカル** | `<repo>/.githooks/pre-push`（loop-dev-agent 導入済み repo。flatmate の `new-resident` が設置） | main/master 直 push 拒否 + マージ済み PR チェック | 自律開発ループ導入 repo |
+| **リポジトリローカル** | `<repo>/.githooks/pre-push`（loop-dev-agent 導入済み repo。flatmate の `new-resident` が設置） | main/master 直 push 拒否。マージ済み PR チェックは、そのフックがグローバルの pre-push を呼ぶか同じチェックを内包したときだけ付く（`new-resident` が設置する既存のフックは main 拒否だけ） | 自律開発ループ導入 repo（ローカル設定が入っている clone だけ） |
 
-**ローカルの `core.hooksPath` はグローバル設定より優先される**（git の設定優先順位）。したがって
-loop-dev-agent を導入済みのリポジトリでは、従来どおり厳しい方（main 拒否込み）のローカル層が
-使われ、このスキルの導入によって緩くなることはない。片方を無効化する仕組みは不要である。
+**ローカルの `core.hooksPath` はグローバル設定より優先される**（git の設定優先順位）。ただしこれは
+**その clone のローカル設定に `core.hooksPath` が入っているときだけ**成り立つ。git がフックを探すのは
+`core.hooksPath` が指す 1 か所だけなので、リポジトリが `<repo>/.githooks/pre-push` を追跡していても、
+ローカル設定の無い clone ではグローバル層だけが走り、ローカル層（main 拒否）は一度も実行されない。
+ローカル設定は clone ごとの設定で、`git clone` では入らない（同じ clone のワークツリー間では共有される）。
+
+したがって loop-dev-agent を導入済みのリポジトリでも、厳しい方（main 拒否込み）のローカル層が使われるのは
+ローカル設定が入っている clone でだけである。入っている clone では、このスキルの導入によって緩くなることは
+ない。設定の入れ方と、入れた clone でグローバル層を失わない書き方は、下の
+「PR 運用リポジトリでリポジトリローカルのフックを有効にする」にある。
 
 **グローバル層に main/master 直 push 拒否を入れない理由**: `~/.claude/rules/git-commit-policy.md` の
 **ローカル main 運用**のリポジトリでは、承認後の `git push origin main` が正常系である。これを全
@@ -142,7 +149,7 @@ git push --dry-run origin HEAD:refs/heads/<新しいブランチ名>
 `.git/hooks/` 直置きフックが無効化される**。git は hooksPath を「どちらか一方」としてしか見ないため。
 
 - husky など、自分で `core.hooksPath` を設定するツールを使っているリポジトリは影響を受けない
-- loop-dev-agent 導入済みのリポジトリも自前の設定を持つため影響を受けない
+- loop-dev-agent 導入済みのリポジトリも、その clone のローカル設定に `core.hooksPath` が入っていれば影響を受けない（入っていなければ `.githooks/` のフックも走らない。下の「PR 運用リポジトリでリポジトリローカルのフックを有効にする」）
 - `.git/hooks/` に手書きのフックがあるリポジトリだけが影響を受ける。そのリポジトリで元に戻すには:
 
   ```bash
@@ -154,6 +161,63 @@ git push --dry-run origin HEAD:refs/heads/<新しいブランチ名>
 ```bash
 # 対象リポジトリで実行し、サンプル以外のフックが無いことを確認する
 ls ~/path/to/repo/.git/hooks | grep -v '\.sample$'
+```
+
+## PR 運用リポジトリでリポジトリローカルのフックを有効にする
+
+`.githooks/pre-push`（main/master への直接 push 拒否など）を追跡している PR 運用のリポジトリでは、
+**各 clone で 1 回**、ローカル設定を入れないとそのフックは走らない（上の「層の構成」）。実例は
+[kg-recruit#126](https://github.com/oratta/kg-recruit/issues/126): ローカル設定が住人の clone にしか無く、
+人間のメインチェックアウトと全ワークツリーで main を守るフックが死んでいた。
+
+```bash
+# 対象リポジトリの clone で 1 回実行する（ワークツリーは clone の設定を共有するので、ワークツリーごとには不要）
+git config --local core.hooksPath .githooks
+
+# 設定の有無を確認する（何も出ずに exit 1 なら未設定で、.githooks/ のフックは走っていない）
+git config --local --get core.hooksPath
+```
+
+worktree プラグインの wt-setup は、`.githooks/` を追跡していてローカル側に値が無いリポジトリでワークツリーを
+作ると、この設定を自動で入れる。ローカル側（`config.worktree` や include 経由を含む）に既存の値があれば
+上書きせず、`.git/hooks/` に `.sample` 以外の既存のフック（Git LFS の pre-push など）があれば切り替えずに
+その旨を知らせる。どちらの場合も、入れるなら上のコマンドで入れる。ワークツリーを一度も作らない clone でも
+入らないので、同じく上のコマンドで入れる。
+
+**有効にすると、その clone ではグローバルのフック（マージ済み PR のブランチへの push 拒否）が走らなくなる**。
+失わないためには、ローカルの pre-push からグローバルの pre-push を呼ぶか、同じチェックを内包する。
+
+### ローカルの pre-push からグローバルの pre-push を呼ぶ例
+
+kg-recruit#127 で使った書き方。git は push 対象の ref を標準入力で 1 回だけ渡すので、変数に保持して、
+自分の判定とグローバルのフックの両方に同じ内容を渡す。グローバルの設定がこのフック自身のディレクトリを
+指しているときに呼ぶと自分自身を呼び続けるので、`pwd -P` で解決して比べ、違うときだけ呼ぶ。
+
+```sh
+#!/bin/sh
+# <repo>/.githooks/pre-push: main/master への直接 push を拒否し、そのあとグローバルの pre-push を呼ぶ
+input=$(cat)
+
+protected="main master"
+while read -r local_ref local_sha remote_ref remote_sha; do
+  for b in $protected; do
+    if [ "$remote_ref" = "refs/heads/$b" ]; then
+      echo "pre-push: $b への直接 push は禁止です。feature ブランチに push して PR を作成してください" >&2
+      exit 1
+    fi
+  done
+done <<EOF
+$input
+EOF
+
+# グローバルのフックへ同じ引数と標準入力を渡す。未設定・自分自身を指す場合は呼ばない
+global_dir=$(git config --global --type=path --get core.hooksPath 2>/dev/null)
+if [ -n "$global_dir" ] && [ -x "$global_dir/pre-push" ] &&
+   [ "$(cd "$global_dir" 2>/dev/null && pwd -P)" != "$(cd "$(dirname "$0")" && pwd -P)" ]; then
+  printf '%s\n' "$input" | "$global_dir/pre-push" "$@"
+  exit $?
+fi
+exit 0
 ```
 
 ## 設計方針

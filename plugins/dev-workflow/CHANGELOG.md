@@ -1,5 +1,17 @@
 # Changelog — dev-workflow
 
+## 2.11.1 — 2026-09-11: push-guard-setup の優先関係の説明に成立条件を足し、ローカルのフックを有効にする手順を書く
+
+git がフックを探すのは `core.hooksPath` が指す 1 か所だけなので、グローバルに `core.hooksPath=~/.githooks` がある PC では、リポジトリが `.githooks/pre-push` を追跡していても clone のローカル設定に `core.hooksPath .githooks` が無ければ一度も走らない。oratta/kg-recruit ではローカル設定が住人の clone にしか無く、人間のメインチェックアウトと全ワークツリーで main を守るフックが死んでいた（kg-recruit#126）。push-guard-setup の「ローカルはグローバルより優先されるので loop-dev-agent 導入済み repo はローカル層が使われる」という説明は、ローカル設定が入っている clone でだけ正しい。
+
+- **層の構成の節**: 優先関係は「その clone のローカル設定に `core.hooksPath` が入っているときだけ」成り立つこと、ローカル設定は clone ごとで `git clone` では入らないことを書いた。副作用の節の「loop-dev-agent 導入済みのリポジトリは影響を受けない」も同じ条件付きに直した
+- **「PR 運用リポジトリでリポジトリローカルのフックを有効にする」の節を追加**: 各 clone で 1 回 `git config --local core.hooksPath .githooks`（ワークツリーは clone の設定を共有）、確認は `git config --local --get core.hooksPath`、worktree プラグインの wt-setup がワークツリー作成時に自動で入れること（worktree 2.13.0）、実例 kg-recruit#126
+- **有効にした clone ではグローバル層（マージ済み PR のブランチへの push 拒否）が走らなくなる**ので、ローカルの pre-push からグローバルの pre-push を呼ぶ例（kg-recruit#127 の書き方）を載せた。標準入力を変数に保持して自分の判定とグローバルの両方に同じ内容を渡し、グローバルの設定が自分自身のディレクトリを指すときは呼ばない
+- `tests/push-guard-setup.bats` に 5 本追加。文言の検査 2 本と、例のローカル pre-push を実際に動かす 3 本（main を拒否してグローバルを呼ばない・グローバルへ同じ引数と標準入力を渡してその終了コードで終わる・グローバルの設定が自分自身を指すときは呼ばずに 0 で終わる）
+- **層の構成の表**: ローカル層の内容を「main/master 直 push 拒否。マージ済み PR チェックはグローバルを呼ぶか内包したときだけ付く」に直した（`new-resident` が設置する既存のフックは main 拒否だけ）。wt-setup の自動設定の説明に、ローカル側に値があるときと `.git/hooks/` に既存のフックがあるときは入れないことを足した
+- 標準入力の引き継ぎのテストを、`$(cat …)` の文字列比較からファイル同士の `cmp` に変えた（末尾改行の差を見逃さない）
+- グローバルのフックのテンプレート本体は変更なし
+
 ## 2.11.0 — 2026-09-11: メモリ索引の肥大と放置を検知し、見直す手順を足す
 
 メモリ（`~/.claude/projects/<project>/memory/`）の索引 MEMORY.md は毎セッション注入されるが、repo の外にあるので `tests/injection-budget.bats` では測れない。書く規約はあっても見直す手順が無く、claude-harness プロジェクトでは 27 件・58,428 バイト（索引 5,410 バイト / 34 行）まで、終わった事実や repo と重複する項目を抱えたまま増えていた。エピック #257 の子 #294（検知）と #295（修復）。
