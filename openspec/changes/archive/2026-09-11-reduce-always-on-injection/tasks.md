@@ -71,5 +71,5 @@
 
 - [x] 8.1 `scripts/test.sh` 全件を実行し、exit code 0 を確認する（`rules-sync` と `agents-md-sync` を含む）
 - [x] 8.2 変更したプラグインの `plugin.json` のバージョンを上げる（merge-base からの bump を S131 が要求する）
-- [ ] 8.3 openspec スキルの二重掲載を本 change の対象外とした理由（repo 内の生成物だが再生成で戻ること、develop がコマンド名に依存すること、`opsx:archive` と `opsx:bulk-archive` がスキル本文を参照していること）を PR 本文に書く
-- [ ] 8.4 着手前の内訳・削減後の内訳・移設対応表・path スコープの採否と証拠を PR 本文に載せる
+- [x] 8.3 openspec スキルの二重掲載を本 change の対象外とした理由（repo 内の生成物だが再生成で戻ること、develop がコマンド名に依存すること、`opsx:archive` と `opsx:bulk-archive` がスキル本文を参照していること）を PR 本文に書く
+- [x] 8.4 着手前の内訳・削減後の内訳・移設対応表・path スコープの採否と証拠を PR 本文に載せる
