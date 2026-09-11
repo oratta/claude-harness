@@ -12,67 +12,98 @@
 | 予算 `tests/injection-budget.txt` | 54,500 |
 | 「30% 以上減」の到達線 | **36,395 以下** |
 
-必要な削減は **15,598 バイト以上**。
+必要な削減は **15,598 バイト以上**。この数値は今回限りの実測なので spec には書かず、design と tasks で持つ（spec 側は「予算を着手前実測の 70% 以下に引き下げた状態でテストが通ること」で表す）。
 
 制約:
 
 - 予算は上下両方向のラチェットで、実測が予算の 1/1.1 を下回っても fail する。削減後は `tests/injection-budget.txt` の引き下げが必須
-- 集計は `rules/*.md` を**全ファイル常時注入として**数える（`list_synced_md` は README だけを除く）。path スコープを採用すると、実態は常時載らないのに合計には載り続ける
-- frontmatter 書式検査（`injection-budget-gate`）の対象は skill / agent / command の frontmatter であって `rules/*.md` ではない。rules に `paths:` を足しても既存の書式検査には当たらない
-- 配布は `scripts/sync.sh` が `rules/*.md` を 1 ファイルずつ `~/.claude/rules/<name>.md` に symlink する形。ファイルの増減・rename は再実行で追随する
+- 既存の `injection-budget-gate` は「1 と 3 の対象判定は `scripts/sync.sh` が symlink する条件と同一。テストは独自の除外リストを持ってはならない」を MUST にしている。`sync.sh` は `paths:` 付きのファイルも symlink するので、path スコープを採るならこの要件自体を書き換える必要がある（ADDED では衝突する）
+- 内訳は 8 行・合計は TAB 区切りの 2 列目の和（`sum_breakdown`）。除外分を TAB 付きで出すと合計に戻る
+- frontmatter 書式検査（`injection-budget-gate`）の対象は skill / agent / command であって `rules/*.md` ではない。rules に `paths:` を足しても既存の書式検査には当たらない
+- 配布は `scripts/sync.sh` が `rules/*.md` を 1 ファイルずつ `~/.claude/rules/<name>.md` に **symlink** する形。rules は全プロジェクトのセッションに載る
+- `tests/injection-budget.bats` 末尾の検査が、`rules/` 配下に `injection-budget` の語があると fail する
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- 常時注入の合計を 36,395 バイト以下にする
-- ルールの内容を失わせない。縮約した分は必ず移設し、移設先を対応表で辿れるようにする
-- path スコープが実際に効くかを、採用の前に手元で確かめる
+- 常時注入の合計を 36,395 バイト以下にし、予算ファイルをそれに合わせて引き下げる
+- ルールの内容を失わせない。縮約した分は必ず移設し、**harness を cwd に持たないセッションからも**移設先に届く形にする
+- path スコープが実際に効くかを、採用の前に**配布形（symlink）**で確かめる
 
 **Non-Goals:**
 
-- openspec スキルの二重掲載（`openspec-*` と `opsx:*` で同じ 10 スキルが載る）の解消。外部プラグイン側の構成で harness からは直せない
+- **`output-styles/readable.md`（6,863）の縮約。** 書き方の正本そのもので、要点に縮めると正本が欠ける（他のルールと違い、詳細を移す先が存在しない）。メインセッションにしか載らず、サブエージェントには載らない点でも優先度が低い
+- **openspec スキルの二重掲載の解消。** `openspec-*` 10 件（`.claude/skills/openspec-*/SKILL.md`、1,510 バイト）と `opsx:*` 10 件（`.claude/commands/opsx/*.md`、640 バイト）はどちらもこの repo に commit された `openspec init` の生成物で、harness 側にある。ただし手編集しても `openspec update` の再生成で戻る。加えて develop の作業者指示書が `/opsx:ff` 等のコマンド名に依存し、`opsx:archive` と `opsx:bulk-archive` はスキル本文を参照していて片方だけ消せない。削るなら `openspec update` の生成対象を絞る別 issue になる
 - 接続コネクタ 108 個の名前一覧（9,163 バイト）。アカウント側の設定
-- `openspec/specs/` の肥大（1 件 45KB 級）。これは該当 capability を触る工程だけが払う変動費で、起動時固定分には 1 バイトも乗っていない。エピック #257 の別の子
+- `openspec/specs/` の肥大（1 件 45KB 級）。該当 capability を触る工程だけが払う変動費で、起動時固定分には乗っていない。エピック #257 の別の子
 
 ## Decisions
 
 ### 決定 1: ルールごとの扱いを「残す / 縮約 + 移設 / path スコープ」の 3 通りで決める
 
-判定条件は **「読むべき瞬間に、skill を呼ぶ判断ができるか」**。
+判定条件は **「読むべき瞬間に、そのルールを読もうと判断できるか」**。
 
-やろうと思った瞬間が読むべき瞬間であるルール（破壊的操作の禁止など）は、そのとき「先にルールを読もう」と思えないからこそルールになっている。これは常時性を手放せない。一方、特定の作業に入ったことが自分で分かるルール（harness を編集する、ダッシュボードを触る）は、作業の入口で読めば足りる。
+やろうと思った瞬間が読むべき瞬間であるルール（破壊的操作の禁止など）は、そのとき「先にルールを読もう」と思えないからこそルールになっている。これは常時性を手放せない。一方、特定の作業に入ったことが自分で分かるルール（harness を編集する）は、作業の入口で読めば足りる。
 
-| ルール | 現在 | 扱い | 移設先 / 理由 |
+同じ条件が path スコープの採否にも掛かる。`paths:` は**対象ファイルを読んで初めて載る**ので、読むべき瞬間にどのファイルも読んでいないルールに付けると事故を防げない。
+
+| ルール | 現在 | 扱い | 移設先（任意の cwd から解決できる形）/ 理由 |
 |---|---|---|---|
 | `destructive-git-guard.md` | 1,199 | **残す**（微縮約のみ） | 破壊的操作を思いついた瞬間が読むべき瞬間で、その時点で skill を呼ぶ判断ができない |
 | `dev-server.md` | 625 | **残す** | 他プロジェクトのプロセスを kill する判断も同じ。すでに 625 バイトで削る余地が小さい |
-| `plugin-editing.md` | 5,376 | **縮約 + 移設**、path スコープ第一候補 | harness を編集するときだけ要る。詳細は `CLAUDE.md` の「開発場所」節と `docs/worktree-recovery.md` に既にあり、rules 側は重複。path スコープは `rules/**`・`plugins/**`・`scripts/sync.sh` に当てる |
-| `communication-style.md` | 4,833 | **縮約** | 全文の正本は `output-styles/readable.md`（6,863、メインのみ）。rules 側はサブエージェント向けの短い版という位置づけなのに、実際は全文に近い。要点だけ残す |
-| `subagent-model-selection.md` | 3,219 | **縮約 + 移設** | ティア対応表と「`model` 必須」は残す。経緯・適用範囲・強制層の説明は `plugins/dev-workflow/references/model-tiers.md` へ |
-| `perspective-casting.md` | 2,710 | **縮約 + 移設** | 5 手順の見出しだけ残し、各手順の説明は `plugins/casting/skills/casting/SKILL.md`（既に正本）へ |
-| `git-commit-policy.md` | 2,383 | **縮約 + 移設** | 「承認なしに実行しない操作の一覧」は残す。PR 運用 / ローカル main 運用の判定手順と pr-review-gate 連携は `plugins/dev-workflow/skills/pr-review-gate/SKILL.md` へ |
-| `browser-infra-env-capture.md` | 2,070 | **縮約 + 移設**、path スコープ候補 | 1Password への昇格手順は `capability-registry` スキルが正本。rules 側は「表示された次のアクションで保存」の 1 点だけ |
-| `link-when-requesting-review.md` | 859 | **縮約** | 書式の注意（裸 URL を括弧で囲まない）は残し、理由の説明を削る |
+| `browser-infra-env-capture.md` | 2,070 | **縮約のみ**（path スコープにしない） | 読むべき瞬間はシークレットが画面に表示された時で、そのときエディタではどのファイルも読んでいない。`.env*` を触って初めて載る形では「保存しようと思わなかった」事故を防げない。1Password への昇格手順だけを `capability-registry:capability-registry` へ移す |
+| `plugin-editing.md` | 5,376 | **縮約 + 移設**、path スコープ**唯一の**候補 | harness を編集するときだけ要る。詳細は `CLAUDE.md` の「開発場所」節と `docs/worktree-recovery.md` に既にあり、rules 側は重複。移設先は `~/.claude/plugins/marketplaces/oratta-claude-harness/docs/worktree-recovery.md` |
+| `communication-style.md` | 4,833 | **縮約** | 全文の正本は `output-styles/readable.md`（据え置き）。rules 側はサブエージェント向けの短い版という位置づけなのに実際は全文に近い。要点だけ残す |
+| `subagent-model-selection.md` | 3,219 | **縮約 + 移設** | ティア対応表と「`model` 必須」を残す。経緯・適用範囲・強制層の説明は `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/model-tiers.md` へ |
+| `perspective-casting.md` | 2,710 | **縮約 + 移設**（正本の反転を伴う） | 5 手順の見出しだけ残し、各手順の説明は `casting:casting` へ移す |
+| `git-commit-policy.md` | 2,383 | **縮約 + 移設** | 「承認なしに実行しない操作の一覧」を残す。PR 運用 / ローカル main 運用の判定手順は `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/commit-and-pr-operations.md`（新規）へ |
+| `link-when-requesting-review.md` | 859 | **縮約** | 書式の注意（裸 URL を括弧で囲まない）を残し、理由の説明を削る |
 
-削減見込み: rules 23,274 → 約 7,000（-16,000 前後）。description 16,124 → 約 10,000（-6,000 前後）。CLAUDE.md 5,732 → 約 4,500（-1,200 前後）。合計で到達線に届く。
+削減見込み: rules 23,274 → 約 7,000（-16,000 前後）。description 16,124 → 約 10,000（-6,000 前後）。CLAUDE.md 5,732 → 約 4,500（-1,200 前後）。output-styles 6,863 は据え置き。合計で到達線に届く。
 
 **代替案（採らない）**: ルールを丸ごと削除する。内容が失われて事故が再発する（各ルールは実事故から生まれている）。
 
-### 決定 2: path スコープは「実機で効くと確認できたときだけ」採用する
+### 決定 1 に伴う正本の反転（移設先に既存の宣言があるもの）
+
+移設先が「正本は rules 側だ」と宣言している箇所は、移設と同時に反転させないと相互参照が循環する。
+
+- **`casting:casting` の SKILL.md**: description と本文（58 行目付近）が「返信前チェック 5 手順の正本は `rules/perspective-casting.md`」と宣言している。5 手順の説明を SKILL.md へ移すのと同時に、この宣言を SKILL.md 側が正本である形に反転する。description も集計対象なので、反転の文言は短くする
+- **`rules/communication-style.md`**: 「両方を直すときは同時に直す」という相互参照の文が、縮約後は成り立たない（rules 側が要点だけになり、全文と 1 対 1 対応しなくなる）。`output-styles/readable.md` 側の対応する文とあわせて同時に直す
+
+### 決定 2: path スコープは「配布形で両方向を確認できたときだけ」採用する
 
 公式仕様では rules frontmatter の `paths:`（glob のリスト）に一致するファイルを読んだときだけ載る。ただしユーザーレベル `~/.claude/rules/` で効かない不具合報告がある（anthropics/claude-code#22170、#17204。手元は 2.1.268）。
 
-手順は「先に 1 件で確かめ、結果によって残りの設計が変わる」。確認は実装タスクの**最初**に置く。
+確認は**配布形**で行う。本番の `~/.claude/rules/<name>.md` は `scripts/sync.sh` が張る symlink で、不具合報告は `~/.claude/rules/` の扱いに固有のものなので、実ファイルを置いて効いても symlink 形で効く証明にならない。確認用も symlink で置く。
 
-- **効いた場合**: `plugin-editing.md` と `browser-infra-env-capture.md` に `paths:` を付ける。あわせて `injection-budget-gate` を変更し、`paths:` を持つルールを合計から外す（外さないと、実態は載らないのに合計に載り続け、予算が実態とずれる）
+確認は**両方向**で行う。対象パスを触ったときに載ることだけでなく、触らないときに載らないことも見る。片方向だけだと、常に載っている状態を「効いた」と誤認する。
+
+**候補の glob**（`plugin-editing.md` のみ）。`plugins/**` や `scripts/**` は無関係なリポジトリにも広く一致するので使わない。リポジトリ名をリテラルのパスセグメントとして含める形にする（予算テストの新しい glob 検査も、リテラルのパスセグメントを 1 つ以上要求する）。
+
+```yaml
+paths:
+  - "**/claude-harness/rules/**"
+  - "**/claude-harness/plugins/**"
+  - "**/claude-harness/scripts/sync.sh"
+  - "**/oratta-claude-harness/**"
+```
+
+**確認に含めるケース**: 別のプロジェクトを cwd とするセッションから `~/.claude/plugins/marketplaces/oratta-claude-harness/` 配下の絶対パスを読んだときに一致するか。`plugin-editing` の主用途が「別プロジェクトで作業中に harness を直したくなった」場面なので、ここで一致しないなら採用の意味がない。
+
+- **効いた場合**: `plugin-editing.md` に `paths:` を付ける。あわせて `injection-budget-gate` の「対象判定は sync.sh と同一」の要件を MODIFIED で書き換え、配布条件（sync.sh と同一）と常時注入の判定（そこから `paths:` 保持ファイルを除く）を分ける。適用後に本番ルール 1 本で両方向を再確認する
 - **効かなかった場合**: `paths:` を使わず、縮約と移設だけで到達線を目指す。決定 1 の見込みは path スコープ無しでも到達する数字なので、この分岐で受け入れ条件は変わらない
 
-**代替案（採らない）**: 確認せずに `paths:` を付ける。効かなければ、ルールが常時載ったまま合計からだけ消えて、予算が実態より小さく見える状態になる（削減を偽装したのと同じ結果になる）。
+**代替案（採らない）**: 確認せずに `paths:` を付ける。効かなければ、ルールが常時載ったまま合計からだけ消えて、予算が実態より小さく見える（削減を偽装したのと同じ結果になる）。同じ理由で、`paths: ["**"]` のような全体一致の glob を予算テストが fail にする。
 
-### 決定 3: 移設は「削除ではない」ことを対応表で機械的に確認できる形にする
+### 決定 3: 移設先は任意の cwd から解決できる形で書く
 
-縮約後の各ルールに、移設先へのパスを 1 行で書く。これで rules を読んだ Claude が詳細の在処を辿れる。PR 本文の対応表は `rules/README.md` のファイル一覧表と同じ内容を持たせ、README 側を正本にする（README は集計対象外なので、ここに書いても固定分は増えない）。
+`rules/*.md` は symlink で全プロジェクトのセッションに載る。移設先をリポジトリ相対パス（`plugins/casting/skills/casting/SKILL.md`）で書くと、harness 以外の cwd では Read できず、移設した瞬間に誰も読めない内容になる。とくに `plugin-editing` は「別プロジェクトで作業中に harness を直したくなった」場面が本題で、まさにその場面で詳細に届かなくなる。
+
+- skill へ移す場合は**スキル名**で書く（`casting:casting`・`capability-registry:capability-registry`）。スキルはどの cwd からでも起動できる
+- `references/` / `docs/` へ移す場合は **`~/.claude/plugins/marketplaces/oratta-claude-harness/<path>`** で書く
+
+PR 本文の対応表は `rules/README.md` のファイル一覧表と同じ内容を持たせ、README 側を正本にする（README は集計対象外なので、ここに書いても固定分は増えない）。
 
 **代替案（採らない）**: 対応表を PR 本文にだけ書く。PR はマージ後に読まれないので、半年後に「この詳細はどこへ行ったか」を追えない。
 
@@ -80,25 +111,35 @@
 
 description は全スキル分が起動時に載り、本文は起動時にだけ読まれる。だから description に手順・背景・禁止事項を書くと、そのスキルを一度も使わないセッションにも全部載る。残すのは発火条件（どんな依頼・どんな語で起動するか）だけで、それ以外は SKILL.md 本文の冒頭へ移す。
 
+**生成物は対象外**: `.claude/skills/openspec-*/SKILL.md` と `.claude/commands/opsx/*.md` は `openspec init` / `openspec update` の生成物で、手で縮約しても再生成で戻る。要件の対象に含めると、次に `openspec update` を回した時点で spec 違反になる。
+
+### 決定 5: 内訳の 8 行は維持し、除外分は TAB を含まない注記行で出す
+
+合計は `sum_breakdown` が内訳の TAB 区切り 2 列目を足して求める。`paths:` で除外したファイルを「別行」として TAB 付きで出すと、除外したはずのバイト数が合計に戻る。除外分は TAB を含まない注記行として出し、内訳は既存の 8 行のまま保つ（`the over-budget report lists all eight categories` テストがそのまま通る）。
+
 ## Risks / Trade-offs
 
-- **縮約しすぎてルールが効かなくなる** → 各ルールに「発火条件」を必ず 1 行目に残す。何をしてはいけないかが 1 行で分かる状態を最低ラインにする。特に `destructive-git-guard.md` と `dev-server.md` は削減対象から外す
-- **path スコープが一見効いたように見えて実は効いていない** → 確認は「対象パスを触ると載る」だけでなく「対象パスを触らないと載らない」の両方向を見る。片方向だけだと、常に載っている状態を「効いた」と誤認する
-- **予算の引き下げ幅を欲張ると、次に 1 行足しただけで fail する** → 予算は実測に対してラチェットの余裕（1.1 倍）を持つ値に置く。削減後の実測 × 1.05 前後を目安にする
+- **縮約しすぎてルールが効かなくなる** → 各ルールに「発火条件」を必ず 1 行目に残す。何をしてはいけないかが 1 行で分かる状態を最低ラインにする。`destructive-git-guard.md`・`dev-server.md`・`browser-infra-env-capture.md` は常時注入から外さない
+- **path スコープが一見効いたように見えて実は効いていない** → 確認は配布形（symlink）で、両方向、かつ別プロジェクトの cwd からのケースを含める。適用後に本番ルールで再確認する
+- **`paths:` が将来 `**` のような広い glob で使われ、削減を偽装する** → 予算テストがリテラルのパスセグメントを 1 つ以上要求し、満たさない glob を fail にする
+- **予算の引き下げ幅を欲張ると、次に 1 行足しただけで fail する** → 削減後の実測 × 1.05 前後を目安にする
 - **description を削って skill が起動しなくなる** → 削るのは手順と背景で、起動語（ユーザーが使う言い回し）は残す。削った skill を 1 件、実際の依頼文で起動できるか確かめる
 - **`CLAUDE.md` と `AGENTS.md` の同期が崩れる** → `tests/agents-md-sync.bats` が同一性を強制するので、片方だけ編集すると test.sh が落ちる。編集は両方に同じ内容を入れる
+- **`CLAUDE.md` の縮約で予算ファイルの変更手続きが消える** → `CLAUDE.md documents how to move the budget file` テストが `injection-budget` と `本文に理由` の両方を要求する。この 1〜2 文は残す
+- **縮約後の rules に予算テストの語が混ざる** → `the budget convention is not placed under rules/` テストが `rules/` 配下の `injection-budget` を fail にする。移設先を書くときにこの語を使わない
 
 ## Migration Plan
 
-1. path スコープの実機確認（両方向）。結果を記録先に残す
-2. rules 9 本を縮約し、詳細を移設先へ移す。移設のたびに `rules/README.md` の表を更新する
-3. description を縮約する（長いものから）
-4. `CLAUDE.md` / `AGENTS.md` を縮約する
-5. 実測を取り、`tests/injection-budget.txt` を引き下げる
-6. `scripts/test.sh` 全件
+1. path スコープの実機確認（配布形・両方向・別プロジェクト cwd から）。結果を記録先に残す
+2. rules 7 本を縮約し、詳細を移設先へ移す。移設のたびに `rules/README.md` の表を更新し、移設先に既存の正本宣言があれば反転させる
+3. `paths:` の適用（1 で採用と判断した場合）と、予算テストの集計変更。適用後に本番ルールで再確認
+4. description を縮約する（長いものから）
+5. `CLAUDE.md` / `AGENTS.md` を縮約する
+6. 実測を取り、`tests/injection-budget.txt` を引き下げる
+7. `scripts/test.sh` 全件
 
 ロールバックは通常の revert で足りる（配布は symlink なので、revert 後に `scripts/sync.sh` を回せば元に戻る）。
 
 ## Open Questions
 
-- path スコープの実機確認の結果（採用可否）。実装タスク 1 で解消する
+- path スコープの実機確認の結果（採用可否と、どの glob が一致するか）。実装タスク 1 で解消する

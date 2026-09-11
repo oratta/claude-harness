@@ -11,16 +11,17 @@
 - **rules/*.md 9 本を「発火条件と要点 1〜3 行」に縮める。** 各ルールの詳細は削除せず、既存の skill か references へ移す。移設先は 1 対 1 の対応表として残す
 - **常時見えていないと事故る種類は縮約の対象から外す。** 破壊的 git 操作の禁止と他プロジェクトの dev server kill 禁止は、読むタイミングが「やろうと思った瞬間」であって、そのときに skill を呼ぶ判断ができるとは限らない
 - **path スコープ（rules frontmatter の `paths:`）の採否を実機確認で決める。** 公式仕様では一致するファイルを読んだときだけ載るが、ユーザーレベル `~/.claude/rules/` で効かない不具合報告がある（anthropics/claude-code#22170、#17204）。採用可否を先に 1 件で確かめ、効かなければ縮約と移設だけで目標に届かせる
+- **`output-styles/readable.md` は据え置く。** 書き方の正本そのもので、要点への縮約は正本の欠落になる（移設先を持たない）。メインセッションにしか載らずサブエージェントには載らない
 - **SKILL.md / agent / command の `description` を発火条件だけに削る。** 手順・背景・経緯は本文へ移す。長いものから順に wt-clean（1,297）、experience-to-skill（1,022）、pr-review-gate（756）、daily-report（756）、develop（712）
 - **`tests/injection-budget.txt` を削減後の実測に合わせて引き下げる。** 予算は上下両方向のラチェットなので、減らしただけでは逆にテストが落ちる
-- openspec スキルの二重掲載（`openspec-*` と `opsx:*`）は外部プラグイン側の構成なので、本 change では**対象外**とし、その判断を記録に残す（別 issue 化は主の判断）
+- openspec スキルの二重掲載（`openspec-*` と `opsx:*` で同じ 10 スキルが載る）は本 change では**対象外**とし、その判断を記録に残す。どちらも `openspec init` がこの repo に生成した commit 済みのファイル（`.claude/skills/openspec-*/SKILL.md` と `.claude/commands/opsx/*.md`、内訳では 1,510 + 640 バイト）で harness 側にあるが、手で削っても `openspec update` の再生成で戻る。加えて develop の作業者指示書が `/opsx:ff` 等のコマンド名に依存し、`opsx:archive` と `opsx:bulk-archive` はスキル本文を参照していて片方だけ消せない。削るなら `openspec update` の生成対象を絞る別 issue になる
 
 **BREAKING なし**（ルールの内容は保存され、読み込まれるタイミングだけが変わる）。
 
 ## Capabilities
 
 ### New Capabilities
-- `always-on-injection-scope`: 常時注入される文書（rules / CLAUDE.md / output-styles / 各 description）に何を置いてよいか、置けないものをどこへ移すかの方針。縮約時に内容を失わせないための移設対応表の義務と、常時性を手放してはいけないルールの判定条件を定める
+- `always-on-injection-scope`: 常時注入される文書（rules / CLAUDE.md / 各 description）に何を置いてよいか、置けないものをどこへ移すかの方針。縮約時に内容を失わせないための移設対応表の義務と、常時性を手放してはいけないルールの判定条件を定める
 
 ### Modified Capabilities
 - `injection-budget-gate`: path スコープを採用した場合、常時注入されないルールを合計から外す（いまの集計は `rules/*.md` 全ファイルを常時注入として数えるため、条件付きのルールを足すと実態より多く見える）。path スコープを採用しない場合はこの capability に変更は入らない
