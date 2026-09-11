@@ -3,7 +3,7 @@
 # statusline.sh — Claude Code の使用量ステータスライン
 #
 #   1行目: カレントディレクトリ / モデル / git ブランチ
-#   2行目: コンテキスト残量 / API 換算の月額ペース
+#   2行目: コンテキスト残量 / API 換算の月額ペース / このセッションの API 換算コスト
 #   3行目: 5h ウィンドウのレートリミット
 #   4行目: 7d ウィンドウ（全体 + Fable）のレートリミット
 #
@@ -19,6 +19,7 @@
 #   STATUSLINE_BAR_WIDTH   バーのセル数（既定 16）
 #   STATUSLINE_BAR_GLYPH   日程線の太さ。細い順に ▁ ▂ ▃ ▄（既定 ▂）
 #   STATUSLINE_API_PACE    0 で API 換算コスト表示を無効化（既定 1）
+#   STATUSLINE_SESSION_COST 0 でセッションコスト表示を無効化（既定 1）
 #   STATUSLINE_CURRENCY    API 換算コストの通貨。USD なら為替変換なし（既定 JPY）
 #   CLAUDE_CONFIG_DIR      Claude Code の設定ディレクトリ（既定 ~/.claude）
 
@@ -35,6 +36,7 @@ five_h_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // em
 five_h_resets=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
 seven_d_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
 seven_d_resets=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+session_cost_usd=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
 
 # ---------------------------------------------------------------------------
 # 可搬性ヘルパー（macOS の BSD 系と Linux の GNU 系の両方で動かす）
@@ -483,6 +485,19 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
     fi
 done
 
+# $1=USD $2=為替レート $3=通貨 → "¥1,240" / "€12"（通貨単位の整数、3 桁区切り）
+fmt_money() {
+    local sym amount
+    case "$3" in
+        JPY) sym='¥' ;;
+        EUR) sym='€' ;;
+        GBP) sym='£' ;;
+        *)   sym="$3 " ;;
+    esac
+    amount=$(echo "$1 $2" | awk '{printf "%d", $1 * $2}')
+    printf '%s%s' "$sym" "$(LC_ALL=en_US.UTF-8 printf "%'d" "$amount" 2>/dev/null || printf '%d' "$amount")"
+}
+
 # API-equivalent monthly cost pace (last 30 days via ccusage; cached, refreshed in background)
 api_pace_info=""
 if [ "${STATUSLINE_API_PACE:-1}" != "0" ]; then
@@ -524,15 +539,7 @@ if [ "${STATUSLINE_API_PACE:-1}" != "0" ]; then
                         fi
                     fi
                     if [ -n "$rate" ]; then
-                        case "$currency" in
-                            JPY) sym='¥' ;;
-                            EUR) sym='€' ;;
-                            GBP) sym='£' ;;
-                            *)   sym="$currency " ;;
-                        esac
-                        amount=$(echo "$total $rate" | awk '{printf "%d", $1 * $2}')
-                        amount_fmt=$(LC_ALL=en_US.UTF-8 printf "%'d" "$amount" 2>/dev/null || printf '%d' "$amount")
-                        printf 'API %s%s/mo' "$sym" "$amount_fmt" > "$cost_cache"
+                        printf 'API %s/mo' "$(fmt_money "$total" "$rate" "$currency")" > "$cost_cache"
                     fi
                 fi
             fi
@@ -541,9 +548,27 @@ if [ "${STATUSLINE_API_PACE:-1}" != "0" ]; then
     fi
 fi
 
+# このセッションの API 換算コスト（メイン + このセッションが立ち上げたサブエージェントの合算）。
+# Claude Code が stdin に渡す cost.total_cost_usd をそのまま使う（ドキュメント上「セッション内の
+# すべての API 呼び出し」の推定値で、定価ベース。/clear で 0 に戻る）。30 日コストは ccusage が
+# ログから計算するので、料金表の違いで多少ずれうる。
+# 為替は 30 日コストの背景更新が書くキャッシュを読むだけにし、描画中にネットワークへ出ない。
+# キャッシュが無ければ USD のまま出す。
+session_cost_info=""
+if [ "${STATUSLINE_SESSION_COST:-1}" != "0" ] && [ -n "$session_cost_usd" ]; then
+    currency="${STATUSLINE_CURRENCY:-JPY}"
+    rate=""
+    [ "$currency" != "USD" ] && rate=$(cat "$CONFIG_DIR/.statusline-fxrate-$currency" 2>/dev/null)
+    if [ -n "$rate" ]; then
+        session_cost_info="${CYAN}Session $(fmt_money "$session_cost_usd" "$rate" "$currency")${RESET}"
+    else
+        session_cost_info="${CYAN}Session \$$(echo "$session_cost_usd" | awk '{printf "%.2f", $1}')${RESET}"
+    fi
+fi
+
 # Build status line
 # Line 1: directory, model, git
-# Line 2: context window, API cost
+# Line 2: context window, API cost, session cost
 # Line 3: 5h bar / Line 4: 7d All + Fable bars
 printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s\n" \
     "$short_pwd" \
@@ -554,13 +579,14 @@ line2=""
 if [ -n "$context_info" ]; then
     line2="$context_info"
 fi
-if [ -n "$api_pace_info" ]; then
+for seg in "$api_pace_info" "$session_cost_info"; do
+    [ -n "$seg" ] || continue
     if [ -n "$line2" ]; then
-        line2="${line2}  ${DIM}│${RESET}  ${api_pace_info}"
+        line2="${line2}  ${DIM}│${RESET}  ${seg}"
     else
-        line2="$api_pace_info"
+        line2="$seg"
     fi
-fi
+done
 if [ -n "$line2" ]; then
     printf "%s\n" "$line2"
 fi
