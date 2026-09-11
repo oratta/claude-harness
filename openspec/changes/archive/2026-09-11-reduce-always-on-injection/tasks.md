@@ -64,7 +64,7 @@
 
 - [x] 7.1 `scripts/test.sh injection-budget` で削減後の実測と内訳を取り、合計が 36,395 バイト以下であることを確認する（この到達線は 9 の見直しで撤回した）
 - [x] 7.2 届いていなければ 2 と 5 に戻って追加で削る（どこを削ったかを記録する）
-  - 記録: main から取り込んだ #289 の新ルール `rules/one-off-no-script.md`（1,626）で合計が 36,980 になり到達線を超えたため、同じ方針で 995 に縮約し、経緯と見分け方を `plugins/dev-workflow/references/one-off-operations.md`（新規）へ移した。縮約後の合計は 36,349
+  - 記録: main から取り込んだ #289 の新ルール `rules/one-off-no-script.md`（1,626）で合計が 36,980 になり到達線を超えたため、同じ方針で 995 に縮約し、経緯と見分け方を `plugins/dev-workflow/references/one-off-operations.md`（新規）へ移した。縮約後の合計は 36,349（見直しで撤回: この追加の縮約は到達線に届かせるためのもので、9.1.5 で戻す一文を外す原因になった）
 - [x] 7.3 `tests/injection-budget.txt` を削減後の実測に対して上下どちらのラチェットにも当たらない値（実測 × 1.05 前後）に引き下げる。予算ファイルは聖域なので、PR 本文に引き下げの理由と着手前後の実測を書く
 
 ## 8. 仕上げ
@@ -85,8 +85,10 @@
   - [ ] 9.1.4 `rules/plugin-editing.md`: 「開発用 clone は自動更新されないので worktree を切る前に fetch する」と「別プロジェクトの worktree で `/wt-setup` を走らせるとそちらのリポジトリに Draft PR が作られる」
   - [ ] 9.1.5 `rules/one-off-no-script.md`: 「この実行では起きない入力への指摘を直し始めたら、汎用ツールを作ろうとしているサイン」
   - [ ] 9.1.6 `rules/subagent-model-selection.md`: 「最上位ティアを使う前に `FABLE_BUDGET_MODE` を確認する」
-- [ ] 9.2 手付かずの無駄を探して削る。候補は `rules/git-commit-policy.md` と `rules/destructive-git-guard.md` で重複している禁止コマンド一覧と、エージェント description（2,956 バイト）。削る場合も文単位の判定（読まれなくても挙動が変わらない 4 種類のどれかに当たるか）を通す。`destructive-git-guard.md` 側の禁止事項は常時注入に残す（spec の要件「常時性を手放してはいけないルールを縮約対象から外す」）
-- [ ] 9.3 `tests/injection-budget.txt` を戻した後の実測に合わせて置き直す（実測 × 1.05 前後。上下どちらのラチェットにも当たらない値）。予算ファイルは聖域なので、PR 本文に理由と着手前後の実測を書く
-- [ ] 9.4 PR 本文の移設表に、外した文ごとの分類（経緯・事故の説明／理由の説明／他の常時注入文書との重複／description の手順説明のどれに当たり、なぜ読まれなくても挙動が変わらないか）を載せる。着手前後の実測と削減率を結果として書く
+- [ ] 9.2 手付かずの無駄を探して削る。候補は `rules/git-commit-policy.md` と `rules/destructive-git-guard.md` で重複している禁止コマンド一覧と、エージェント description（2,956 バイト）。削る場合も文単位の判定（読まれなくても挙動が変わらない 5 種類のどれかに当たるか）を通す。`destructive-git-guard.md` 側の禁止事項は常時注入に残す（spec の要件「常時性を手放してはいけないルールを縮約対象から外す」）。`gh pr merge` などの直接マージは `destructive-git-guard.md` の一覧に無いので、この項目は `git-commit-policy.md` に残す
+- [ ] 9.3 `tests/injection-budget.txt` を戻した後の実測に合わせて置き直す（9.4 で追加に戻す文があればその後に行う）（実測 × 1.05 前後。上下どちらのラチェットにも当たらない値）。予算ファイルは聖域なので、PR 本文に理由と着手前後の実測を書く
+- [ ] 9.4 PR 本文の移設表に、外した文ごとの分類（経緯・事故の説明／理由の説明／同じ範囲で必ず載る文書との重複／description の手順説明／移設先へ誘導される手順・具体例のどれに当たり、なぜ読まれなくても挙動が変わらないか）を載せる。対象は rules・CLAUDE.md・description。同じ段落の文が同じ分類に入るときは段落単位でまとめてよい。どの分類にも当たらない文が見つかったら、9.1 と同じく短い形で常時注入に戻す（6 か所の列挙はすべてを尽くしたものではない。候補: 観点の配役の「回復コストが判定できない操作は回復不能側に倒す」「裁定は実行し、主へは事後報告」、プラグイン編集の「状態がおかしくなったら手動削除しない」）。着手前後の実測と削減率を結果として書く
 - [ ] 9.5 変更したプラグインの `plugin.json` のバージョンを上げる（9.2 でエージェント description を削った場合。merge-base からの bump を S131 が要求する）
-- [ ] 9.6 全件テスト（`env -u CLAUDE_SECURESTORAGE_CONFIG_DIR bash scripts/test.sh`）と `openspec validate --all --strict` を通す
+- [ ] 9.6 9.1 と 9.4 で戻した分を、`rules/README.md` のファイル一覧表の「常時注入に残した要点」列に反映する
+- [ ] 9.7 残すと決めた指示の退行を止めるテストを bats に足す（Red → Green）。9.1 の各項目と 9.4 で戻した文について、目印となる語（`FABLE_BUDGET_MODE`・`fetch`・`/wt-setup` など）が該当ルールの本文にあることを grep で検査する。1 つ消すと fail することを確かめる
+- [ ] 9.8 全件テスト（`env -u CLAUDE_SECURESTORAGE_CONFIG_DIR bash scripts/test.sh`）と `openspec validate --all --strict` を通す
