@@ -61,7 +61,7 @@
 - [x] 7.4 `bash scripts/test.sh` を実行し、全件 green（exit code 0）を確認する
 - [x] 7.5 `openspec validate cost-ledger-gate-report --strict` を実行し、exit code 0 を確認する
 - [x] 7.6 `.claude/casting/precedents.md` に 1 判例を追記する。題は「本文に無い設計判断 6 件を主に上げず仕様レビューに回した（#276）」。観点は技術設計・品質（エージェント担当）、経路は「作業者が design / spec に書き、主に上げず R1 の審査に回した」。6 件は、対象 PR の取り出しで変数と `for` と `gh pr edit` を展開すること、hooks.json の `if` で絞らないこと、貼る前にラベルを API で実測すること、`GH_REPO` を付けて `cost` を呼ぶこと、本文の形（マーカーは最終行・PATCH 失敗で新規作成しない・ローカル時刻）、`cost_ledger.py` をスクリプト自身の位置から引き fd 3 の python3 で判定すること。帰結・還元・根拠・飲んだリスクは **R1 の結果確定後に追記**する。書式はファイル内の既存ブロック（`### 日付 題` のあとに観点・経路・帰結・還元・根拠・飲んだリスク）に合わせる
-- [ ] 7.7 (3b) で archive する（`/opsx:archive cost-ledger-gate-report`。specs の `cost-ledger-pricing`・`cost-ledger-attribution` の MODIFIED と、新 capability `cost-ledger-gate-report` を正本へ同期する）
+- [x] 7.7 (3b) で archive する（`/opsx:archive cost-ledger-gate-report`。specs の `cost-ledger-pricing`・`cost-ledger-attribution` の MODIFIED と、新 capability `cost-ledger-gate-report` を正本へ同期する）
 
 ## 8. 本体が後工程で行うもの（この change の作業者はしない）
 
