@@ -39,6 +39,7 @@ pull（ff-only）→ `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.
 | `git-commit-policy.md` | 細かい自律コミット・承認なしに実行しない操作の一覧 | PR 運用 / ローカル main 運用の判定と自律実行の線引きは `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/commit-and-pr-operations.md`。PR 作成後のゲートは `dev-workflow:pr-review-gate` スキル |
 | `link-when-requesting-review.md` | 人間に確認を求めるときは必ずクリック可能なフル URL を添える・リンクを壊さない書式 | なし（要点のみで完結） |
 | `perspective-casting.md` | 「観点の配役」返信前チェック5手順の見出し | 各手順の中身・配役表の作り方・判例の書き方・相談と仲裁の手順は `casting:casting` スキル |
+| `one-off-no-script.md` | 一回限りの操作は操作一覧を作って手で実行・スクリプトは繰り返すか件数が多いときだけ・前提で起きない指摘は反証して閉じ、レビューは 2 周で打ち切る | 経緯（flatmate#599 / #608）と汎用ツール化の見分け方は `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/one-off-operations.md` |
 | `plugin-editing.md` | プラグイン編集は marketplace dir の外の開発用 clone で・ローカルコピー禁止・`CLAUDE_HARNESS_DEV_DIR` で場所を解決 | `~/.claude/plugins/marketplaces/oratta-claude-harness/docs/worktree-recovery.md` |
 | `subagent-model-selection.md` | サブエージェントの `model` 明示必須・役割ベースのティア対応表 | 経緯・枠残量モード・強制層・適用範囲は `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/model-tiers.md` |
 
