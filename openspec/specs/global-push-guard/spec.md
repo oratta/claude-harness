@@ -1,7 +1,7 @@
 # global-push-guard Specification
 
 ## Purpose
-全リポジトリに効くグローバル pre-push ガード（`~/.githooks/pre-push` + `git config --global core.hooksPath`）の内容と導入手順を定める。マージ済み PR のブランチへの push を、人間の手打ちでもエージェント経由でも同じ層で止めることが目的であり、loop-dev-agent 導入済み repo（flatmate の `new-resident` が設置）のリポジトリローカル層（main 直 push 拒否込み・ローカル設定が優先される）との役割分担もここで規定する。
+全リポジトリに効くグローバル pre-push ガード（`~/.githooks/pre-push` + `git config --global core.hooksPath`）の内容と導入手順を定める。マージ済み PR のブランチへの push を、人間の手打ちでもエージェント経由でも同じ層で止めることが目的であり、loop-dev-agent 導入済み repo（flatmate の `new-resident` が設置）のリポジトリローカル層（main 直 push 拒否込み。その clone のローカル設定に `core.hooksPath` が入っているときだけグローバル設定より優先される）との役割分担もここで規定する。
 ## Requirements
 ### Requirement: グローバル pre-push ガードの導入スキル
 
@@ -62,7 +62,7 @@ SKILL.md は次の 3 点を明記しなければならない (MUST): (1) リポ�
 #### Scenario: 優先関係が説明されている
 
 - **WHEN** SKILL.md を読む
-- **THEN** ローカル設定がグローバルより優先されることと、その帰結（loop-dev-agent 導入済み repo は厳しい方が使われる）が説明され、`loops-dev-agent-install` の文字列は無い
+- **THEN** ローカル設定がグローバルより優先されることと、その帰結（loop-dev-agent 導入済み repo でも、ローカル設定が入っている clone では厳しい方＝ローカル層が使われ、入っていない clone ではグローバル層だけが使われる）が説明され、`loops-dev-agent-install` の文字列は無い
 
 #### Scenario: 優先関係の成立条件がローカル設定の有無として書かれている
 
@@ -99,14 +99,14 @@ SKILL.md は次の 3 点を明記しなければならない (MUST): (1) リポ�
 
 ### Requirement: PR 運用リポジトリでリポジトリローカルのフックを有効にする手順
 
-SKILL.md は、`.githooks/` を追跡している PR 運用のリポジトリでリポジトリローカルのフックを有効にする手順を示さなければならない (MUST)。手順は次を含まなければならない (MUST): (a) 各 clone で `git config --local core.hooksPath .githooks` を実行すること、およびローカル設定は同じ clone のワークツリー間で共有されるので clone ごとに 1 回でよいこと、(b) 有効にするとその clone ではグローバルのフック（マージ済み PR のブランチへの push 拒否）が走らなくなるので、ローカルの pre-push からグローバルの pre-push を呼ぶか、同じチェックを内包すること、(c) 設定の有無を `git config --local --get core.hooksPath` で確認できること、(d) worktree プラグインの wt-setup がワークツリー作成時にこの設定を自動で入れること、(e) 実例として kg-recruit#126 を挙げること。
+SKILL.md は、`.githooks/` を追跡している PR 運用のリポジトリでリポジトリローカルのフックを有効にする手順を示さなければならない (MUST)。手順は次を含まなければならない (MUST): (a) 各 clone で `git config --local core.hooksPath .githooks` を実行すること、およびローカル設定は同じ clone のワークツリー間で共有されるので clone ごとに 1 回でよいこと、(b) 有効にするとその clone ではグローバルのフック（マージ済み PR のブランチへの push 拒否）が走らなくなるので、ローカルの pre-push からグローバルの pre-push を呼ぶか、同じチェックを内包すること、(c) 設定の有無を `git config --local --get core.hooksPath` で確認できること、(d) worktree プラグインの wt-setup がワークツリー作成時にこの設定を自動で入れること（ローカルに値があるとき・`.git/hooks/` に既存のフックがあるときは入れないこと）、(e) ローカル設定が無いために追跡しているフックが走らなかった過去の事故例を 1 件以上挙げること。
 
-グローバルの pre-push を呼ぶ例を示す場合、例は次の条件を満たさなければならない (MUST): 標準入力を変数に保持して自分の判定とグローバルのフックの両方に同じ内容を渡すこと、グローバルのフックの場所を `git config --global --type=path --get core.hooksPath` で引くこと、そのディレクトリが自分自身のディレクトリと（`pwd -P` で解決して）同じときは呼ばないこと、呼んだときはグローバルのフックの終了コードで終わること。
+グローバルの pre-push を呼ぶ例を示す場合、例は次の条件を満たさなければならない (MUST): main/master への直接 push を自分で拒否すること、標準入力を変数に保持して自分の判定とグローバルのフックの両方に同じ内容を渡すこと、グローバルのフックの場所を `git config --global --type=path --get core.hooksPath` で引くこと、そのディレクトリが自分自身のディレクトリと（`pwd -P` で解決して）同じときは呼ばないこと、呼んだときはグローバルのフックの終了コードで終わること。`--type=path` は git 2.18 以上を前提とする。
 
 #### Scenario: 有効化の手順と確認方法が書かれている
 
 - **WHEN** SKILL.md のリポジトリローカルのフックを有効にする節を読む
-- **THEN** `git config --local core.hooksPath .githooks`、clone ごとに 1 回でよいこと、`git config --local --get core.hooksPath` による確認、wt-setup の自動設定、kg-recruit#126 が書かれている
+- **THEN** `git config --local core.hooksPath .githooks`、clone ごとに 1 回でよいこと、`git config --local --get core.hooksPath` による確認、wt-setup の自動設定、過去の事故例が 1 件以上書かれている
 
 #### Scenario: ローカルの pre-push がグローバルのフックへ引き継ぐ
 

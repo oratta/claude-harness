@@ -12,7 +12,7 @@ kg-recruit 側は PR #127 で、`.githooks/pre-push` の末尾からグローバ
 
 ## What Changes
 
-- `plugins/worktree/scripts/wt-setup.sh`: リポジトリが `.githooks/` を git で追跡していて、ローカルの `core.hooksPath` が未設定なら `git config --local core.hooksPath .githooks` を設定し、1 行出力する。ローカルに既に値があれば上書きしない（husky などの設定を壊さない）。`.githooks/` を追跡していなければ何もしない。ワークツリーは clone の設定を共有するので、ワークツリーで 1 回走ればメインチェックアウトにも効く
+- `plugins/worktree/scripts/wt-setup.sh`: リポジトリが `.githooks/` を git で追跡していて、`core.hooksPath` の実効値が未設定かグローバル側（global / system）なら `git config --local core.hooksPath .githooks` を設定し、見出し 1 行と注意を出力する。ローカル側（local / worktree / include 経由）に既に値があれば上書きしない（husky などの設定を壊さない）。`.git/hooks/` に `.sample` 以外のフックがあれば切り替えず、その旨を 1 行出す。SessionStart 経路（wt-setup-guard.sh）はこの注意を残タスクに載せる。`.githooks/` を追跡していなければ何もしない。ワークツリーは clone の設定を共有するので、ワークツリーで 1 回走ればメインチェックアウトにも効く
 - `plugins/worktree/skills/wt-setup/SKILL.md` と plugin.json の description にこの自動設定を追記する
 - `plugins/dev-workflow/skills/push-guard-setup/SKILL.md`: 層の構成の節の優先関係の説明を「ローカル設定が入っている clone でだけ成り立つ」ことが分かる形に直し、PR 運用のリポジトリでリポジトリローカルのフックを有効にする手順（clone ごとに 1 回の設定・グローバルのフックへの引き継ぎ・設定漏れの確認方法・wt-setup の自動設定）を足す
 - 両プラグインの version を上げる（worktree は minor、dev-workflow は patch）
