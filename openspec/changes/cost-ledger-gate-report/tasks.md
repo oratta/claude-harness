@@ -47,11 +47,11 @@
 
 ## 6. prototypes の削除と参照の付け替え
 
-- [ ] 6.1 `plugins/cost-ledger/prototypes/`（スクリプト 5 本と README）を `git rm -r` で消す
-- [ ] 6.2 `plugins/cost-ledger/scripts/cost_ledger.py` の、`prototypes/issue-rescue.py` と `prototypes/per-post-cost.py` を名指しするコメント 2 か所（`ISSUE_RE` と `POST_MARKERS` の直前）を、根拠の計測が archive 済みの change `cost-ledger-aggregation` の design に記録されている旨に書き換える（コマンドと境界の集合そのものは変えない）
-- [ ] 6.3 `plugins/cost-ledger/README.md` の `## prototypes/` の節を消し、ゲート通過時の自動投稿の節（何をきっかけに・何を・どこに貼るか、1 本を書き換えること、`COST_LEDGER_GATE_REPORT=off` での停止、数字はラベル付与のターンより前の分しか含まないこと）を足す
-- [ ] 6.4 pricing spec の置き換え後のシナリオ「手計算と同じ値になる」に対応するテストの有無を確認する。着手前の調査では `plugins/cost-ledger/tests/pricing.bats` に、トークン 5 種すべてが 0 でない行の金額を料金表の単価から手計算した値と突き合わせるテストが無い（既存は入力だけ・キャッシュ読出だけのもの）ので、`pricing.bats` に 1 件足す（実装は変えないので、足した時点で green になるのが正しい）
-- [ ] 6.5 `grep -rn 'prototypes' plugins/cost-ledger/ openspec/changes/cost-ledger-gate-report/specs/` で、削除したディレクトリを実在するものとして名指しする箇所が残っていないことを確かめる（spec の「計測スクリプトは change `cost-ledger-gate-report` で削除した」という記述は残してよい）
+- [x] 6.1 `plugins/cost-ledger/prototypes/`（スクリプト 5 本と README）を `git rm -r` で消す
+- [x] 6.2 `plugins/cost-ledger/scripts/cost_ledger.py` の、`prototypes/issue-rescue.py` と `prototypes/per-post-cost.py` を名指しするコメント 2 か所（`ISSUE_RE` と `POST_MARKERS` の直前）を、根拠の計測が archive 済みの change `cost-ledger-aggregation` の design に記録されている旨に書き換える（コマンドと境界の集合そのものは変えない）
+- [x] 6.3 `plugins/cost-ledger/README.md` の `## prototypes/` の節を消し、ゲート通過時の自動投稿の節（何をきっかけに・何を・どこに貼るか、1 本を書き換えること、`COST_LEDGER_GATE_REPORT=off` での停止、数字はラベル付与のターンより前の分しか含まないこと）を足す
+- [x] 6.4 pricing spec の置き換え後のシナリオ「手計算と同じ値になる」に対応するテストの有無を確認する。着手前の調査では `plugins/cost-ledger/tests/pricing.bats` に、トークン 5 種すべてが 0 でない行の金額を料金表の単価から手計算した値と突き合わせるテストが無い（既存は入力だけ・キャッシュ読出だけのもの）ので、`pricing.bats` に 1 件足す（実装は変えないので、足した時点で green になるのが正しい）
+- [x] 6.5 `grep -rn 'prototypes' plugins/cost-ledger/ openspec/changes/cost-ledger-gate-report/specs/` で、削除したディレクトリを実在するものとして名指しする箇所が残っていないことを確かめる（spec の「計測スクリプトは change `cost-ledger-gate-report` で削除した」という記述は残してよい）
 
 ## 7. バージョンと検証
 
