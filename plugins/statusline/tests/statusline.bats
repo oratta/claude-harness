@@ -12,6 +12,10 @@ setup() {
   export CLAUDE_CONFIG_DIR="$WORK"
   # ccusage の背景フェッチと為替取得を走らせない
   export STATUSLINE_API_PACE=0
+  # 実行環境が既定以外の Claude アカウントのセッション（例: 別アカウント住人）だと
+  # このシェルに CLAUDE_SECURESTORAGE_CONFIG_DIR が漏れ込んでいることがあり、
+  # 「既定アカウント」を想定したテストが誤って落ちる。ここで明示的に外す。
+  unset CLAUDE_SECURESTORAGE_CONFIG_DIR
   NOW="$(date +%s)"
 }
 
@@ -80,6 +84,18 @@ JSON
   [ -f "$WORK/.rate-limit-snapshot" ]
   run jq -r '.five_hour_pct' "$WORK/.rate-limit-snapshot"
   [ "$output" = "3" ]
+}
+
+@test "snapshot: skips write when CLAUDE_SECURESTORAGE_CONFIG_DIR is set (other account)" {  # 別アカウントのセッションでは書かない
+  mk_input 3 25 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$WORK/other-account" bash "$SL" > /dev/null
+  [ ! -f "$WORK/.rate-limit-snapshot" ]
+}
+
+@test "snapshot: does not clobber an existing snapshot from another account session" {  # 既定アカウントが既に書いた内容を別アカウントのセッションで上書きしない
+  mk_input 3 25 14000 172800 | bash "$SL" > /dev/null
+  before="$(cat "$WORK/.rate-limit-snapshot")"
+  mk_input 99 99 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$WORK/other-account" bash "$SL" > /dev/null
+  [ "$(cat "$WORK/.rate-limit-snapshot")" = "$before" ]
 }
 
 @test "render: fail-open draws lines 1-2 without rate limit fields" {  # レートリミット情報が無くても 1〜2 行目は描画する（fail-open）
