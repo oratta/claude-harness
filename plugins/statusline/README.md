@@ -4,7 +4,7 @@
 
 ```
 .../workspaces/flatmate/clone-origin-main-repo-sync  Opus 5 (1M context)  oratta/clone-origin-main-repo-sync
-Context 91%  │  API ¥1446038/mo
+Context 91%  │  API ¥1,446,038/mo  │  Session ¥1,240
 5h       ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    3%  ~4h 13m
 7d All   ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   25%/29%   Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    7%/29%  ~4d 22h
 ```
@@ -12,9 +12,11 @@ Context 91%  │  API ¥1446038/mo
 | 行 | 内容 |
 |---|---|
 | 1 | カレントディレクトリ / モデル / git ブランチ（未コミット変更は `✱`） |
-| 2 | コンテキスト残量 / 直近30日の使用量を API 従量課金に換算した月額ペース |
+| 2 | コンテキスト残量 / 直近30日の使用量を API 従量課金に換算した月額ペース / このセッションの API 換算コスト |
 | 3 | 5時間ウィンドウのレートリミット消化率 |
 | 4 | 7日ウィンドウのレートリミット消化率（全体 + Fable） |
+
+`Session` は、このセッションのメイン会話と、このセッションが立ち上げたサブエージェントを合算した API 換算コスト。Claude Code がステータスラインに渡す `cost.total_cost_usd`（セッション内のすべての API 呼び出しを定価で見積もった値）をそのまま円に換算している。`/clear` で 0 に戻る。30日の数字は ccusage がログから計算したものなので、料金表の違いで両者は多少ずれることがある。為替は30日コストの背景更新が保存したレートを読むだけで、まだ無ければ USD（`Session $1.23`）で出す。
 
 ## バーの読み方
 
@@ -137,7 +139,8 @@ Fable の週次消化率は Claude Code がステータスラインに渡して�
 | `STATUSLINE_BAR_WIDTH` | `16` | バーのセル数 |
 | `STATUSLINE_BAR_GLYPH` | `▂` | 日程線の太さ。細い順に `▁` `▂` `▃` `▄` |
 | `STATUSLINE_API_PACE` | `1` | `0` で API 換算コスト表示を止める |
-| `STATUSLINE_CURRENCY` | `JPY` | API 換算コストの通貨。`USD` なら為替変換なし |
+| `STATUSLINE_SESSION_COST` | `1` | `0` でセッションコスト表示を止める |
+| `STATUSLINE_CURRENCY` | `JPY` | API 換算コスト（30日・セッションとも）の通貨。`USD` なら為替変換なし |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | 設定ディレクトリ |
 
 色を変えたい場合はスクリプト先頭付近の `C_EMPTY_N`（未消化部分）・`C_TRACK_N`（日程線）と `usage_color_num()` の返す色番号（256色パレット）を書き換える。

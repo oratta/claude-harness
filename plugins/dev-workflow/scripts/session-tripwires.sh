@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SessionStart hook: 昇格トリップワイヤーの常駐ルール + Fable 残量モード（自動導出）を
-# セッション文脈に注入する。
+# セッション文脈に注入する。メモリ索引が閾値を超えていれば memory-tripwire.sh の 1 行を先頭に足す。
 # 本文の single source of truth は templates/escalation-tripwires.md（複製を持たない）。
 # テンプレート欠損・節の抽出失敗時は無出力・exit 0（セッション開始をブロックしない）。
 set -uo pipefail
@@ -16,7 +16,10 @@ PROBE="${ROOT}/scripts/usage-probe.sh"
 
 SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
 
-TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" python3 <<'PY'
+# メモリ索引の検知（閾値超のときだけ 1 行。失敗しても無出力で先へ進む）。
+MEMORY_NOTICE="$("${ROOT}/scripts/memory-tripwire.sh" 2>/dev/null)" || MEMORY_NOTICE=""
+
+TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" MEMORY_NOTICE="$MEMORY_NOTICE" python3 <<'PY'
 import json, os, re, time
 
 # --- トリップワイヤー節の抽出（single source of truth） ---
@@ -129,5 +132,8 @@ lines.append("- サブエージェントのコンテキスト上限: W / G を S
              "複数の面に散らばっていたことが書き換え漏れの原因だったため）")
 budget = "\n".join(lines)
 
-print(json.dumps({"additionalContext": budget + "\n\n" + tripwire}, ensure_ascii=False))
+notice = (os.environ.get("MEMORY_NOTICE") or "").strip()
+head = notice + "\n\n" if notice else ""
+
+print(json.dumps({"additionalContext": head + budget + "\n\n" + tripwire}, ensure_ascii=False))
 PY

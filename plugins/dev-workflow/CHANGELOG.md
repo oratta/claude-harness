@@ -1,6 +1,6 @@
 # Changelog — dev-workflow
 
-## 2.10.1 — 2026-09-11: push-guard-setup の優先関係の説明に成立条件を足し、ローカルのフックを有効にする手順を書く
+## 2.11.1 — 2026-09-11: push-guard-setup の優先関係の説明に成立条件を足し、ローカルのフックを有効にする手順を書く
 
 git がフックを探すのは `core.hooksPath` が指す 1 か所だけなので、グローバルに `core.hooksPath=~/.githooks` がある PC では、リポジトリが `.githooks/pre-push` を追跡していても clone のローカル設定に `core.hooksPath .githooks` が無ければ一度も走らない。oratta/kg-recruit ではローカル設定が住人の clone にしか無く、人間のメインチェックアウトと全ワークツリーで main を守るフックが死んでいた（kg-recruit#126）。push-guard-setup の「ローカルはグローバルより優先されるので loop-dev-agent 導入済み repo はローカル層が使われる」という説明は、ローカル設定が入っている clone でだけ正しい。
 
@@ -9,6 +9,16 @@ git がフックを探すのは `core.hooksPath` が指す 1 か所だけなの�
 - **有効にした clone ではグローバル層（マージ済み PR のブランチへの push 拒否）が走らなくなる**ので、ローカルの pre-push からグローバルの pre-push を呼ぶ例（kg-recruit#127 の書き方）を載せた。標準入力を変数に保持して自分の判定とグローバルの両方に同じ内容を渡し、グローバルの設定が自分自身のディレクトリを指すときは呼ばない
 - `tests/push-guard-setup.bats` に 5 本追加。文言の検査 2 本と、例のローカル pre-push を実際に動かす 3 本（main を拒否してグローバルを呼ばない・グローバルへ同じ引数と標準入力を渡してその終了コードで終わる・グローバルの設定が自分自身を指すときは呼ばずに 0 で終わる）
 - グローバルのフックのテンプレート本体は変更なし
+
+## 2.11.0 — 2026-09-11: メモリ索引の肥大と放置を検知し、見直す手順を足す
+
+メモリ（`~/.claude/projects/<project>/memory/`）の索引 MEMORY.md は毎セッション注入されるが、repo の外にあるので `tests/injection-budget.bats` では測れない。書く規約はあっても見直す手順が無く、claude-harness プロジェクトでは 27 件・58,428 バイト（索引 5,410 バイト / 34 行）まで、終わった事実や repo と重複する項目を抱えたまま増えていた。エピック #257 の子 #294（検知）と #295（修復）。
+
+- `scripts/memory-tripwire.sh`（新規）: 索引のバイト数・行数、本文 1 件の最大バイト数、索引の最終更新からの日数を測り、閾値を超えたときだけ `[memory]` の 1 行を出す（条件が複数でも 1 行）。閾値は `DEV_WORKFLOW_MEMORY_INDEX_BYTES`（4000）/ `_INDEX_LINES`（20）/ `_FILE_BYTES`（2500）/ `_STALE_DAYS`（30）で上書きでき、数字でない値は既定に戻す。メモリディレクトリは `CLAUDE_PROJECT_DIR`（無ければ cwd）の git 共通ディレクトリの親から Claude Code と同じ規則で導くので、worktree からでも元リポジトリのメモリを見る。`DEV_WORKFLOW_MEMORY_DIR` で直接指定もできる。解決できない・読めないときは無出力で exit 0。所要時間は 1 回 約 35〜45 ms
+- `scripts/session-tripwires.sh`: 上のスクリプトを呼び、出力があれば `additionalContext` の先頭に足す。止めない・削らない
+- 本文の閾値は issue 本文の案 1,500 ではなく 2,500 にした。初回整理で維持と判断した 12 件のうち 5 件が 1,500 を超えており（最大 2,192）、1,500 のままだと整理直後から毎セッション通知が出る（#294 のコメントに実測）
+- `skills/memory-refresh/SKILL.md` と `commands/memory-refresh.md`（新規）: 全件を読み、1 件ずつ削除・統合・短縮・維持に分類した一覧を主に出し、承認後に控えを取ってから手で適用し、索引とファイルの一致と前後の数字を報告する。スクリプトにはしない。claude-harness プロジェクトの初回整理（27 件 → 12 件）を例として載せた
+- `tests/memory-tripwire.bats`（新規 14 本）と `tests/memory-refresh-skill.bats`（新規）
 
 ## 2.10.0 — 2026-09-10: W の工程 (3) を実装＋verify と archive＋PR＋仕様宣言 に分ける
 
