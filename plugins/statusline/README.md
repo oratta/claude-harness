@@ -66,7 +66,7 @@ Context 91%  │  API ¥1446038/mo
 
 Fable の週次消化率は Claude Code がステータスラインに渡してくれないので、`~/.claude/.usage-snapshot` から読む。このファイルを書いているのは同じ marketplace の **`dev-workflow` プラグイン**（`scripts/usage-probe.sh` を SessionStart フックで実行し、OAuth の usage API を叩く）。
 
-`dev-workflow` を入れていない、あるいは snapshot が6時間以上古い場合は Fable セグメントを黙って省く。逆方向に、このステータスラインは毎回 `~/.claude/.rate-limit-snapshot` を書き出しており、`dev-workflow` のセッション tripwire がそれを読んで残量モードを決めている。
+`dev-workflow` を入れていない、あるいは snapshot が6時間以上古い場合は Fable セグメントを黙って省く。逆方向に、このステータスラインは毎回 `~/.claude/.rate-limit-snapshot` を書き出しており、`dev-workflow` のセッション tripwire がそれを読んで残量モードを決めている。ただし `CLAUDE_SECURESTORAGE_CONFIG_DIR`（下記）で既定以外のアカウントを指しているセッションでは、他のセッションの判定を汚さないためこの書き出しをスキップする。
 
 ## 複数アカウントを並べて表示する
 

@@ -61,7 +61,10 @@ pkg_runner() {
 }
 
 # Snapshot rate limits to a file so external consumers (loop guards etc.) can read them
-if [ -n "$five_h_pct" ]; then
+# レート枠はアカウント単位。CLAUDE_SECURESTORAGE_CONFIG_DIR が非空＝既定以外のアカウントの
+# セッションでここに書くと、同じ PC の他セッションの rate-guard が別アカウントの値を読んで
+# 誤判定する（flatmate#605）。既定アカウントの観測だけを正とし、ここでは書かない。
+if [ -n "$five_h_pct" ] && [ -z "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
     printf '{"ts":%s,"five_hour_pct":%s,"five_hour_resets_at":%s,"seven_day_pct":%s,"seven_day_resets_at":%s}\n' \
         "$(date +%s)" "$five_h_pct" "${five_h_resets:-null}" "${seven_d_pct:-null}" "${seven_d_resets:-null}" \
         > "$CONFIG_DIR/.rate-limit-snapshot" 2>/dev/null
