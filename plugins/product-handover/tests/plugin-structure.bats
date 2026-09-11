@@ -113,9 +113,11 @@ setup() {
   # 許可リストだと .github/ や openspec/ など新しい場所への再混入を捕まえられない。
   # 除外は2つだけ: 移行手順を書く CHANGELOG.md と、旧名を検査語として持つ本テスト自身。
   # _longruns/ は過去の自律実行のアーカイブなので対象外（scripts/test.sh の除外と同じ理由）。
+  # .claude/worktrees/ はサブエージェント用に埋め込まれた別チェックアウトで、.gitignore 済み。
+  # この repo のファイルではないので、そこに残る旧名は「再混入」ではない。
   # 除外は行頭アンカー付きで書く（部分一致だと他所の同名ファイルまで隠れる）。
   # grep -r の出力は実装により './' が付く場合と付かない場合があるので両方を受ける。
-  run bash -c "cd '${REPO_ROOT}' && grep -rn 'agent-owner' . --exclude-dir=.git --exclude-dir=_longruns | grep -vE '^[.]?/?plugins/product-handover/(CHANGELOG[.]md|tests/plugin-structure[.]bats):'"
+  run bash -c "cd '${REPO_ROOT}' && grep -rn 'agent-owner' . --exclude-dir=.git --exclude-dir=_longruns | grep -vE '^[.]?/?([.]claude/worktrees/|plugins/product-handover/(CHANGELOG[.]md|tests/plugin-structure[.]bats):)'"
   [ "$status" -ne 0 ]
 }
 

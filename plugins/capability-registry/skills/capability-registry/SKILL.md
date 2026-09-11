@@ -38,6 +38,14 @@ version: 1.7.0
   （例: suimei のマーケ日報 PR #235 — `PROD_SUPABASE_*` secrets をワークフロー内で同名 env に
   リネームして注入するパターン）
 - 同一サービスで dev/prod を分けるときは suffix（`_DEV` / `_PROD`）で表現する
+
+### ブラウザで捕獲した資格情報を env から昇格させる
+
+ダッシュボード操作（Cloudflare / GCP / Stripe / Supabase / Vercel 等）で生成・表示された資格情報は、まず作業 repo の `.env.local` 等にその場で保存する（手順とタイミングの正本は常時注入される `browser-infra-env-capture` ルール）。**この env 保存は消失防止の仮置きであって、恒久の置き場ではない。** 捕獲した同じターンで次まで進める。
+
+1. エージェントは 1Password に書き込めない場面がある（ro SA は read-only、アイテムの新規登録は rw SA か人間の作業）。rw SA が使えるなら `fmtoken.sh --register <project>--<service>` で自分で登録する。使えないなら **主に `agents` 保管庫への登録を依頼する**（アイテム名 `<project>--<service>` / フィールド `credential`）
+2. ただし **prod の書き込み可能キー**（service_role・live secret key 等）は、原本を **human-only 保管庫**へ、稼働コピーを **GitHub Actions secrets** へ登録依頼する（上の「資格情報の階層」の 2 行目）
+3. 登録が確認できたら、env 側のコメントに「正本: 1Password / Actions secrets」と追記する。env から消すかは主の判断で、無断で消さない
   （例: `shukan--SUPABASE_SERVICE_ROLE_KEY_DEV` は `agents` 保管庫）。suffix の無い既存アイテムもあるため、
   そのキーがどちらの階層かはアイテム名ではなく**どの保管庫にあるか**で判断する
 
