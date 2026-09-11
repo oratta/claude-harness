@@ -44,6 +44,7 @@ communication-style.md	装飾は足さない
 communication-style.md	原則を増減させたときは両方を直す
 git-commit-policy.md	過去 PR あり
 git-commit-policy.md	`gh pr create` まで自律実行してよい
+git-commit-policy.md	作業完了＋archive（`/opsx:archive` / `/wt-clean` 完了 = テスト・lint 済みのシグナル）後
 git-commit-policy.md	feature → main のマージと `git push origin main` は明示承認
 git-commit-policy.md	などの直接マージは、どちらの運用でも明示承認なしに実行しない
 git-commit-policy.md	ゲート通過後に commit を積んだら取り直す
@@ -56,6 +57,8 @@ one-off-no-script.md	汎用ツールを作ろうとしているサイン
 subagent-model-selection.md	FABLE_BUDGET_MODE
 destructive-git-guard.md	例外なく事前承認
 destructive-git-guard.md	`git reset --hard`
+destructive-git-guard.md	`git push <remote> main|master`（remote 名を問わない）
+link-when-requesting-review.md	`）` まで URL に含まれて 404 になる
 dev-server.md	他プロジェクトのプロセスを kill してポートを確保するのは絶対禁止
 browser-infra-env-capture.md	表示された次のアクションで
 EOF
