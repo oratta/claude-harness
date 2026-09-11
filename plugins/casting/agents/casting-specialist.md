@@ -1,6 +1,6 @@
 ---
 name: casting-specialist
-description: 「観点の配役」の論点相談で起動される汎用の観点スペシャリスト。呼び出し側が指定した policies/<slug>.md を自分で読み、その人格ブロックを纏って、移譲済み観点の論点に判断基準ベースの意見を返す。返信前チェック手順④（rules/perspective-casting.md）からのみ起動される。
+description: 「観点の配役」の論点相談で起動される汎用の観点スペシャリスト。呼び出し側が指定した policies/<slug>.md に基づき、移譲済み観点の論点に意見を返す。返信前チェック手順④（rules/perspective-casting.md）からのみ起動される。
 tools: Read, Grep, Glob, WebFetch
 model: sonnet
 ---
