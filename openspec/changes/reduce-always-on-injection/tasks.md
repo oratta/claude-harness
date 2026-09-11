@@ -29,8 +29,8 @@
 
 実機確認の結果、`~/.claude/rules/` に置いた `paths:` 付きルールはどのファイルを読んでも一度も注入されなかった（`**/*.md` という何にでも一致する glob でも載らない）。証拠は https://github.com/oratta/claude-harness/issues/260#issuecomment-5628061387 。`rules/*.md` のいずれにも `paths:` を付けない。
 
-- [x] 3.1 `rules/plugin-editing.md` に `paths:` を付ける（design の候補 glob。リテラルのパスセグメントを含む形）。`browser-infra-env-capture.md` には付けない
-- [x] 3.2 `scripts/sync.sh` を回したあと、本番ルール `plugin-editing.md` 1 本で両方向をもう一度確認し、結果を issue #260 に証拠つきでコメントする（検証用ファイルでの確認だけで完了としない）
+- [x] 3.1 `rules/plugin-editing.md` に `paths:` を付ける（design の候補 glob。リテラルのパスセグメントを含む形）。`browser-infra-env-capture.md` には付けない（不採用のため実施せず。1.5 の判断による）
+- [x] 3.2 `scripts/sync.sh` を回したあと、本番ルール `plugin-editing.md` 1 本で両方向をもう一度確認し、結果を issue #260 に証拠つきでコメントする（検証用ファイルでの確認だけで完了としない）（不採用のため実施せず。1.5 の判断による）
 
 ## 4. 予算テストの集計変更（path スコープの採否にかかわらず実装する）
 
