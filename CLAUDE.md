@@ -17,14 +17,15 @@ Draft PR は早い段階で作る。目的は作業のバックアップでは�
 - 細かい単位で commit → push し、PR を逐次更新する
 - 動作確認まで終わったら **Ready for Review** に切り替えて merge する
 - main への直接 push は禁止（明示承認が必要）
+- PR はマージ前ならクローズしても取り戻せる。Draft 状態は破壊的でない
 
 旧運用（marketplace dir 配下で checkout し worktree を生やす形）からの移行と、marketplace dir に残った worktree の扱いは `docs/worktree-recovery.md` を参照。
 
 ## LLM ログ保存先
 
-**LLM 会話ログはこのリポジトリの配下に置かない**（`./LLM/` を含む。marketplace dir 側・開発用 clone 側とも）。marketplace dir は自動更新で再 clone されると untracked ファイルごと消える。
+**LLM 会話ログはこのリポジトリの配下に置かない**（`./LLM/` を含む。marketplace dir 側・開発用 clone 側とも）。marketplace dir は自動更新で再 clone されると untracked ファイルごと消えるし、開発用 clone でもログは tracked の対象ではない。
 
-- 保存先は環境変数 **`LLM_LOG_DIR`** を参照する。未設定なら **ユーザーに保存先を確認する**（デフォルトパスを勝手に決めて書き込まない）
+- 保存先は環境変数 **`LLM_LOG_DIR`** を参照する。未設定なら **ユーザーに保存先を確認する**（デフォルトパスを勝手に決めて書き込まない。個人のディレクトリ構成を git に残さないため）
 - `daily-report` / `weekly-report` など LLM ログを扱う skill を呼び出すときも、この優先順位でパスを解決する
 
 CI を将来追加する場合の設計指針（Draft PR では skip するパターン）は `docs/ci-design.md` を参照。

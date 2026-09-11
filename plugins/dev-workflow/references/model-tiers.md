@@ -50,6 +50,10 @@ Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.mo
 
 **最上位ティアは決める役の種別（`dev-workflow:decider`）でだけ spawn する**（`general-purpose` / `Explore` / `Plan` / 他種別に `model: fable` を付けない）。強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`（`Agent` の PreToolUse。全解除は `DEV_WORKFLOW_MODEL_GUARD=off`）。
 
+### 対応表の保守
+
+`rules/subagent-model-selection.md` の対応表（2026-08 時点）について: `model` パラメータはエイリアス指定でバージョン非依存のため、モデルが更新されたらこの表だけ直せばよい。原則の節は書き換え不要。
+
 ### 適用範囲
 
 `model` の明示義務は**すべての直接の Agent / Task 呼び出しに共通**で、ワークフロー経由でも免除されない。ワークフローを持つスキルは「どのティアを選ぶか」の決め方の正本を持つだけ:

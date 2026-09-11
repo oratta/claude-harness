@@ -355,7 +355,7 @@ tags:
 
 Step 0 で `WITH_ALBUM=true` だった場合のみ実行する。`WITH_ALBUM=false` ならこの Step をスキップして Step 10 へ。
 
-このスキルは **marketing-harness の `vlog-album` スキル** に diary パスを渡してアルバム画像を生成し、生成物を **diary.md と同じディレクトリ** に配置する。
+このスキルは **marketing-harness の `vlog-album` スキル** に diary パスを渡してアルバム画像を生成し、生成物を **diary.md と同じディレクトリ** に配置する。出力はトイカメラ風 Vlog アルバム画像で、デフォルトは 3 人とも女性版、`--gene male` で男性 Gene を opt-in する。
 
 #### 9a. vlog-album スキルを呼び出す
 
