@@ -1,6 +1,6 @@
 ---
 name: develop
-description: コード・スキル・コマンド・規範文書（openspec / docs / CLAUDE.md 等）を変えるときは必ず通す標準開発ワークフロー。本体はオーケストレータ専任で、作業者 W・仕様レビュアー R1・ゲート実行者 G を model 明示で spawn し、記録先（issue または Draft PR）→ 仕様化判断の記録 → 仕様レビュー → TDD 実装 → pr-review-gate の 1 ループを回す。issue 番号・issue URL・「この issue 対応して」等の自然文、issue の無い会話依頼・cron・エピックの子のいずれからでも起動する。人間依頼（interactive）と loop-dev-agent 無人サイクル（--unmanned）の両対応。
+description: コード・スキル・コマンド・規範文書（openspec / docs / CLAUDE.md 等）を変えるときは必ず通す標準開発ワークフロー。記録先 → 仕様化判断 → 仕様レビュー → TDD 実装 → pr-review-gate を 1 ループで回す。issue 番号・issue URL・「この issue 対応して」等の自然文、issue の無い会話依頼・cron・エピックの子のいずれからでも起動する。人間依頼（interactive）と無人サイクル（`--unmanned`）の両対応。
 version: 2.1.0
 ---
 

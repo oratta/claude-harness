@@ -60,11 +60,15 @@ lint_template_paths() {
 
 @test "rule: perspective-casting.md stays within 30 lines and keeps the 5 steps" {
   RULE="${REPO_ROOT}/rules/perspective-casting.md"
+  SKILL="${PLUGIN_DIR}/skills/casting/SKILL.md"
   [ -f "$RULE" ]
   [ "$(wc -l < "$RULE" | tr -d ' ')" -le 30 ]
   LC_ALL=C grep -qF -- "聖域" "$RULE"
   LC_ALL=C grep -qF -- "判例台帳" "$RULE"
-  LC_ALL=C grep -qF -- "plugins/casting/catalog/catalog.md" "$RULE"
+  # rule はリポジトリ相対パスを書かず skill 名で指す（issue #260）。カタログ本文への
+  # ポインタは skill 側が持つので、そちらで正本の所在を照合する。
+  LC_ALL=C grep -qF -- "casting:casting" "$RULE"
+  LC_ALL=C grep -qF -- "catalog/catalog.md" "$SKILL"
 }
 
 @test "rule: listed in rules/README.md" {

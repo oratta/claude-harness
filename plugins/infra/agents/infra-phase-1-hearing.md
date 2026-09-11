@@ -1,6 +1,6 @@
 ---
 name: infra-phase-1-hearing
-description: infra-setup スキルの Phase 1。プロジェクト情報（名前、ドメイン、メール、リージョン、GitHubリポジトリ、Supabaseセットアップ済み判定）を対話的にヒアリングし、state ファイルに記録する。メール+エイリアス対応確認も実施する。
+description: infra-setup スキルの Phase 1。プロジェクト情報を対話的にヒアリングし、state ファイルに記録する。
 tools: Read, Write, Edit, Bash, Grep, AskUserQuestion
 model: sonnet
 ---

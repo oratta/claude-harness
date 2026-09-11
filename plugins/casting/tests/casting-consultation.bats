@@ -94,7 +94,11 @@ setup() {
 @test "plugin.json: registers both agents and bumps version to at least 0.3.0" {
   LC_ALL=C grep -qF -- '"./agents/casting-specialist.md"' "$PLUGIN_JSON"
   LC_ALL=C grep -qF -- '"./agents/casting-arbiter.md"' "$PLUGIN_JSON"
-  LC_ALL=C grep -qF -- '"version": "0.4.3"' "$PLUGIN_JSON"
+  # 版を literal で固定すると bump のたびにこのテストが落ちる。テスト名どおり下限だけを見る。
+  local ver
+  ver=$(LC_ALL=C sed -n 's/.*"version"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$PLUGIN_JSON" | head -1)
+  [ -n "$ver" ]
+  [ "$(printf '%s\n' "0.3.0" "$ver" | sort -V | head -1)" = "0.3.0" ]
 }
 
 # --- 受け入れ条件3: 事後報告フォーマットの定義と実例1件 ---
@@ -145,9 +149,11 @@ setup() {
   LC_ALL=C grep -qF -- "読み取り不能" "$SPECIALIST"
 }
 
-@test "rule: step 4 escalates out-of-scope replies to the owner" {
-  LC_ALL=C grep -qF -- "範囲外" "$RULE"
-  LC_ALL=C grep -qF -- "policy 不在" "$RULE"
+# 手順の中身は rules/perspective-casting.md から skills/casting/SKILL.md へ移した（issue #260）。
+# rule は 5 手順の見出しと skill へのポインタだけを持つので、中身の照合先は SKILL.md。
+@test "skill: step 4 escalates out-of-scope replies to the owner" {
+  LC_ALL=C grep -qF -- "範囲外" "$SKILL"
+  LC_ALL=C grep -qF -- "policy 不在" "$SKILL"
 }
 
 @test "precedents template: route vocabulary includes consultation" {
@@ -179,16 +185,16 @@ setup() {
 @test "rule: step 4 branches to specialist consultation and arbitration" {
   LC_ALL=C grep -qF -- "観点スペシャリスト" "$RULE"
   LC_ALL=C grep -qF -- "仲裁" "$RULE"
-  LC_ALL=C grep -qF -- "事後報告" "$RULE"
+  LC_ALL=C grep -qF -- "事後報告" "$SKILL"
 }
 
-@test "rule: issues touching an owner-held perspective bypass consultation and go to the owner" {
-  LC_ALL=C grep -qF -- "担い手が主の観点が1つでも" "$RULE"
-  LC_ALL=C grep -qF -- "相談・仲裁に入らない" "$RULE"
+@test "skill: issues touching an owner-held perspective bypass consultation and go to the owner" {
+  LC_ALL=C grep -qF -- "担い手が主の観点が1つでも" "$SKILL"
+  LC_ALL=C grep -qF -- "相談・仲裁に入らない" "$SKILL"
 }
 
-@test "rule: step 5 attributes statements and verdicts by persona name" {
-  LC_ALL=C grep -qF -- "人格名" "$RULE"
+@test "skill: step 5 attributes statements and verdicts by persona name" {
+  LC_ALL=C grep -qF -- "人格名" "$SKILL"
 }
 
 @test "rule: stays within 30 lines after the rewrite" {

@@ -1,6 +1,6 @@
 ---
 name: wt-clean
-description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある／git worktree lock されている worktree は git がクリーンでも自動削除せず判断バッチに回す。ただし「親セッションが消えて init に引き取られた（PPID=1）」かつ「worktree の更新もセッションログの更新も 24 時間以上前」の両方を満たす居残りプロセスは稼働シグナルから外し、根拠を表示する。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
+description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
 version: 3.7.1
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
