@@ -2,7 +2,6 @@
 
 ## Purpose
 会話ログの 1 行から取る事実と、そこから帰属を導く関数の分離。帰属の鍵はブランチ（第 1 の鍵）と（リポジトリ識別子, issue 番号）の組（第 2 の鍵）の 2 本立てで、区間は `sessionId` ごとに投稿を境界にして切る。
-
 ## Requirements
 ### Requirement: 行から抽出する事実
 システムは会話ログの各行から、帰属を導く前の**事実だけ**を抽出する段を持 MUST つ。区間の帰属は投稿が来るまで確定しないため、1 行ずつ追記する経路（後続の台帳）が書けるのは導いた帰属ではなく事実に限られる。抽出する事実は次のとおりと SHALL する。
@@ -85,7 +84,7 @@
 ### Requirement: issue による帰属（第 2 の鍵）
 issue 番号はリポジトリ内でしか一意でないため、システムは第 2 の帰属の鍵を **（リポジトリ識別子, issue 番号）の組** と SHALL する。issue 番号だけを鍵にしてはなら MUST NOT ない。
 
-issue 番号は各行の `Bash` ツールの `command` から、`gh issue view`・`gh issue comment`・`gh issue edit`・`gh issue close`・`gh issue develop` に渡された番号として拾 SHALL う。拾うこの 5 つのサブコマンドは設計の根拠になった計測（`plugins/cost-ledger/prototypes/issue-rescue.py`）と一致させるが、走査する場所は**実行されたコマンド**に限 SHALL る。プロトタイプはツール呼び出しの入力全体を文字列にして当てているため、サブエージェントへの指示文やファイル編集の中身に書かれた `gh issue view <番号>` という文字列にも反応する。実行していないコマンドの文字列を根拠に帰属させてはなら MUST NOT ない。
+issue 番号は各行の `Bash` ツールの `command` から、`gh issue view`・`gh issue comment`・`gh issue edit`・`gh issue close`・`gh issue develop` に渡された番号として拾 SHALL う。拾うこの 5 つのサブコマンドは設計の根拠になった計測（測り方と数字は archive 済みの change `cost-ledger-aggregation` の design に記録。計測スクリプトは change `cost-ledger-gate-report` で削除した）と一致させるが、走査する場所は**実行されたコマンド**に限 SHALL る。その計測はツール呼び出しの入力全体を文字列にして当てていたため、サブエージェントへの指示文やファイル編集の中身に書かれた `gh issue view <番号>` という文字列にも反応した。実行していないコマンドの文字列を根拠に帰属させてはなら MUST NOT ない。
 
 #### Scenario: 実行していないコマンドの文字列は帰属しない
 - **WHEN** `Agent` の指示文や `Edit`・`Write` の本文に `gh issue view 999` という文字列が含まれるが、そのコマンドは実行されていない
@@ -110,7 +109,7 @@ issue 番号は各行の `Bash` ツールの `command` から、`gh issue view`�
 ### Requirement: セッションごとの区間分割
 1 セッションが複数の issue を触るため、システムはコストを区間に分割して帰属させ MUST る。区間は **`sessionId` ごとに `timestamp` 順に並べて**切 MUST る。ブランチ全体を時刻順に並べて切ってはなら MUST NOT ない。利用者は複数セッションを並行して走らせるため、ブランチ単位で並べると別セッションの行が互いの区間に混ざる。
 
-区間の境界は投稿とし、投稿は `gh pr comment`・`gh issue comment`・`gh pr create`・`gh pr ready` の 4 つと SHALL する。この 4 つは設計の根拠になった計測（`plugins/cost-ledger/prototypes/per-post-cost.py`）が境界にしている集合と一致させる。区間ごとに、その区間で直近に触った issue へコストを寄せる。
+区間の境界は投稿とし、投稿は `gh pr comment`・`gh issue comment`・`gh pr create`・`gh pr ready` の 4 つと SHALL する。この 4 つは設計の根拠になった計測（測り方と数字は archive 済みの change `cost-ledger-aggregation` の design に記録）が境界にしていた集合と一致させる。区間ごとに、その区間で直近に触った issue へコストを寄せる。
 
 ブランチの総額は、そのブランチに属する各セッションの区間の合計を足したものと SHALL する。
 
@@ -136,3 +135,4 @@ issue 番号は各行の `Bash` ツールの `command` から、`gh issue view`�
 #### Scenario: feature ブランチ上で issue を触る
 - **WHEN** feature ブランチ上のセッションで `gh issue view 273` が実行されている
 - **THEN** その行のコストはブランチの合計にも issue 273 の合計にも含まれる
+

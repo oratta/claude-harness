@@ -75,6 +75,22 @@ PY
   [[ "$output" == *'$0.50'* ]] || return 1   # 入力単価なら $5.00
 }
 
+@test "pricing: all five token kinds add up to the hand-computed cost" {  # トークン 5 種すべてが 0 でない行の金額が、料金表の単価から手計算した値と一致する
+  # 5 種それぞれが $0.15 以上になる数にして、どれか 1 種を落とせば合計がずれるようにする
+  cl_mini_log mini claude-sonnet-4-6 '{"input_tokens":100000,"output_tokens":20000,"cache_creation_input_tokens":90000,"cache_creation":{"ephemeral_5m_input_tokens":40000,"ephemeral_1h_input_tokens":50000},"cache_read_input_tokens":1000000}'
+  expected="$(python3 - "$PRICING" <<'PY'
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))["models"]["claude-sonnet-4-6"]
+tokens = {"input": 100000, "output": 20000, "cache_write_5m": 40000,
+          "cache_write_1h": 50000, "cache_read": 1000000}
+print("$%.2f" % (sum(n * p[k] for k, n in tokens.items()) / 1e6))
+PY
+)"
+  run python3 "$CL" branch mini
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$expected"* ]] || { echo "want $expected in: $output"; return 1; }
+}
+
 # --- 未知モデル ---
 
 @test "pricing: an unknown model is reported by name and line count, not silently zero" {  # どの鍵にも前方一致しないモデルが 0 円で黙って落ちず、名前と行数が出力に出る
