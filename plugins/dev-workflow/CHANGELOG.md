@@ -1,5 +1,18 @@
 # Changelog — dev-workflow
 
+## 2.10.0 — 2026-09-10: W の工程 (3) を実装＋verify と archive＋PR＋仕様宣言 に分ける
+
+本体がサブエージェントのコンテキスト量を測れるのは W を SendMessage で再開する直前だけなので、return の区切りの数がそのまま計測点の数になる。これまでの (3) は TDD 実装 → verify → archive → PR → 仕様宣言の 5 段階を 1 回の return に束ねており、膨張が最も大きい実装区間を終えた地点に計測点が無かった。エピック #257 の子 #262。
+
+- **(3) を 2 回の return に分けた**: (3a) apply（TDD）・verify まで行って `工程完了: 実装＋verify` で return、本体が計測してから (3b) archive・PR を Ready に（または作成）・仕様宣言まで行って `工程完了: archive＋PR＋仕様宣言` で return する
+- **境界は archive の手前に置き、verify は (3a) 側**にした。verify の失敗は実装への巻き戻しなので、戻る可能性のある区間を 1 人の担い手に閉じ込める。archive 以降は実装内容に手を入れない事務手続きで、テスト結果を受け取れば別の担い手でも完遂できる
+- **(3a) の return に、実行したテストコマンドと exit code・`/opsx:verify` の合否を必須にした**。(3b) の担い手が書く動作確認の証拠は pr-review-gate 手順 5 の照合対象で、手渡しが起きると後任はそれを前任の return からしか得られない
+- **タスク単位のさらなる分割は禁止**（`tasks.md` の項目単位・5 段など）。手渡しごとに指示書の読み直しと現状確認の固定分が乗るため、区切りを増やすほど 1 区切りあたりの実質作業比が下がる。実装の途中で切ると後任が Red のまま止まったテストから再出発することになる
+- **本体の工程ルーティングは指示した工程で決める**（工程名の文字列照合では決めない）。古いキャッシュの `worker.md` を読んだ W が (3) を通しで終えて返してきた場合、(3a) の return に PR 番号と仕様宣言のコメント URL が揃っていれば (3b) を指示せず G の工程へ進む（PR Ready の再実行と仕様宣言の二重投稿を防ぐ）
+- **opsx スラッシュコマンドが無く openspec CLI だけある経路も同じ区切りに揃えた**。この経路だけ「実装 → `openspec archive` を直叩き」の一括のまま残っており、(3a) の計測点が作られなかった。(3a) は実装 → `openspec validate <change-name> --strict`（`/opsx:verify` の代わりの検証）まで、`openspec archive` は (3b) とし、(3a) の return には `/opsx:verify` の合否の代わりにこの exit code を載せる
+- 手渡しの手順そのものは変えていない。上限超を検知したあとの扱い・宣言の書式・前任が動作中のときの交代手順は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本のままで、本文は増やしていない（差し替えたのは工程名の例のみ）
+- `tests/develop-skill.bats` / `tests/develop-roles.bats` に 6 本追加。工程の切り出しは**行頭の工程ラベル**（`top_step` / `substep`）で行い、文言の初出位置（`grep -n … | head -1`）には依存させていない。否定アサーションは `!` で書かない — bats（bash の `set -e`）は `!` を先頭に付けたコマンドの失敗をテスト最終行以外で無視するため、`! … | grep -q …` では退行を検出できない（bats 1.13 で実測）
+
 ## 2.9.0 — 2026-09-10: 途中計測 hook の早期 exit を JSON 意味論に合わせる
 
 `scripts/context-tripwire.sh` の早期 exit は payload の生文字列 `"agent_id"` の有無だけを見ていた。JSON のキーは Unicode エスケープでも書けるため（`"\u0061gent_id"` は `json.loads` すると `agent_id`）、この判定は JSON 意味論と一致せず、同値な表記の payload が python3 に届かないまま無音で fail-open していた。強制停止の閾値を超えたサブエージェントの `Bash` 呼び出しでも deny されない（#278。PR #269 の 3 周目レビューで Codex CLI が見つけた非 blocking の指摘）。

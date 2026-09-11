@@ -80,8 +80,19 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
       （初回＋差分 1 回の 2 周キャップ。超えたら needs-approval を付けて本体がオーナーに 1 アクションで依頼）
       R1 の APPROVE が記録先に記録されるまで W を apply に進めない（再開しない）
 (3) W を SendMessage で再開（再開前に `scripts/subagent-context.sh <W の名前>` で測る。上限超を検知した
-      あとの扱いは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本。正本を読むまで手渡さない）:
-      apply（TDD。/opsx:apply または直叩き）→ verify → archive → PR を Ready に（または作成）→ 仕様宣言を PR コメントに書く → return「PR #N」
+      あとの扱いは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本。正本を読むまで手渡さない）。
+      (3) は 2 回の return に分かれる:
+      (3a) apply（TDD。/opsx:apply または直叩き）→ verify → return「工程完了: 実装＋verify」
+           （実行したテストコマンドと exit code、/opsx:verify の合否を載せる）
+           → 本体はここで `scripts/subagent-context.sh <W の名前>` をもう一度実行して測ってから (3b) を指示する
+      (3b) archive → PR を Ready に（または作成）→ 仕様宣言を PR コメントに書く
+           → return「工程完了: archive＋PR＋仕様宣言」（PR #N と仕様宣言のコメント URL を載せる）
+      (3) をこれより細かく（tasks の項目単位・実装／verify／archive／PR／仕様宣言 の 5 段など）切らない。
+           手渡しごとに指示書の読み直しと現状確認の固定分が乗り、実装の途中で切ると後任が Red のまま
+           止まったテストから再出発することになるため（理由の正本は references/roles/worker.md「コンテキスト上限と手渡し」）
+      本体は次に指示する工程を、自分が (3a) を指示したか (3b) を指示したかで決め、工程名の文字列照合では決めない。
+           (3a) の return に PR 番号と仕様宣言のコメント URL が既に揃っていれば（古い世代の W が (3) を
+           通しで終えた場合）、(3b) を指示せず、そのまま (4)（G の工程）へ進む
 (4) G を名前付きで spawn（model: 既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は Codex か needs-reviewer のレビュアーが担う）:
       pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer」
       needs-reviewer → 本体がレビュアーを spawn し、要約を SendMessage で G に渡す（gate-runner.md）
