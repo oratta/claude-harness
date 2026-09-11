@@ -269,7 +269,10 @@ run_local_hook() {
   run run_local_hook "$refs"
   [ "$status" -eq 7 ]
   [ "$(cat "$GLOBAL_ARGS")" = "$(printf 'origin\ngit@example.com:o/r.git')" ]
-  [ "$(cat "$GLOBAL_STDIN")" = "$refs" ]
+  # compare the bytes (a $(cat) comparison would hide a trailing-newline difference):
+  # git hands the refs as newline-terminated lines, and the global hook must get the same
+  printf '%s\n' "$refs" >"${TMP}/expected-stdin"
+  cmp "${TMP}/expected-stdin" "$GLOBAL_STDIN"
 }
 
 @test "local hook example: does not call itself when the global path is its own directory" {

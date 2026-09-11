@@ -76,11 +76,7 @@ bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/oratta-claude-har
 
 スクリプトの出力を確認し、出力内容に基づいて後続ステップを判断する。
 
-スクリプトは、リポジトリが `.githooks/` を git で追跡していてその clone のローカル設定に `core.hooksPath` が無いとき、`git config --local core.hooksPath .githooks` を設定して `=== git フック: core.hooksPath を .githooks に設定 … ===` を出す（kg-recruit#126）。グローバルに `core.hooksPath`（push-guard-setup の `~/.githooks`）がある PC では、これが無いと追跡している `.githooks/pre-push` が一度も走らないため。
-
-- ローカル設定は clone で共有されるので、ワークツリーで 1 回走ればメインチェックアウトにも効く
-- ローカルに既に値があれば（`.husky/_` や `.git/hooks` など）上書きせず、何も出さない。`.githooks/` を追跡していないリポジトリでも何もしない
-- 設定すると、その clone ではグローバルのフック（マージ済み PR のブランチへの push 拒否）が走らなくなる。この行が出たら、出力の注意もそのまま完了レポートに載せる。グローバルのフックを引き継ぐ書き方は push-guard-setup スキルにある
+出力に `=== git フック:` で始まる行があるときは、その行と、その下に続く注意の行を、そのまま Step 5 の完了レポートに載せる。この clone で走る git フックが変わった（それまでのフックが以後走らない）か、変えるのを見送ったことを知らせる行で、利用者が知らないままだとマージ済みブランチの拒否などが黙って止まるため（kg-recruit#126）。ローカルのフックからグローバルのフックを引き継ぐ書き方と、手で有効にする手順は push-guard-setup スキルにある。
 
 ### Step 2: .worktreeinclude が存在しない場合のみ — 生成
 
@@ -210,7 +206,7 @@ EOF
 ### Step 5: 完了レポート
 
 スクリプトの出力結果を元に、セットアップ結果をまとめてユーザーに報告する。
-`core.hooksPath` を設定した場合は、そのことと注意の行もレポートに含める。
+スクリプトの出力に `=== git フック:` で始まる行があった場合は、その行と注意の行もレポートに含める。
 `.worktreeinclude` を新規生成した場合は、含めたパターンと除外したパターンの一覧もレポートに含める。
 `--with-pr` で Draft PR を作った場合は PR URL もレポートに含める。
 

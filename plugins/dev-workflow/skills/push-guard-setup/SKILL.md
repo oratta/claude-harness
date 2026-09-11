@@ -20,7 +20,7 @@ allowed-tools: Read, Write, Edit, Bash
 | 層 | 置き場所 | 内容 | 対象 |
 |---|---|---|---|
 | **グローバル**（このスキル） | `~/.githooks/pre-push` + `git config --global core.hooksPath` | マージ済み PR チェックのみ | 全リポジトリ |
-| **リポジトリローカル** | `<repo>/.githooks/pre-push`（loop-dev-agent 導入済み repo。flatmate の `new-resident` が設置） | main/master 直 push 拒否 + マージ済み PR チェック | 自律開発ループ導入 repo |
+| **リポジトリローカル** | `<repo>/.githooks/pre-push`（loop-dev-agent 導入済み repo。flatmate の `new-resident` が設置） | main/master 直 push 拒否。マージ済み PR チェックは、そのフックがグローバルの pre-push を呼ぶか同じチェックを内包したときだけ付く（`new-resident` が設置する既存のフックは main 拒否だけ） | 自律開発ループ導入 repo（ローカル設定が入っている clone だけ） |
 
 **ローカルの `core.hooksPath` はグローバル設定より優先される**（git の設定優先順位）。ただしこれは
 **その clone のローカル設定に `core.hooksPath` が入っているときだけ**成り立つ。git がフックを探すのは
@@ -178,9 +178,11 @@ git config --local core.hooksPath .githooks
 git config --local --get core.hooksPath
 ```
 
-worktree プラグインの wt-setup は、`.githooks/` を追跡していてローカル設定が無いリポジトリでワークツリーを
-作ると、この設定を自動で入れる（既存の値は上書きしない）。ワークツリーを一度も作らない clone では入らない
-ので、上のコマンドで入れる。
+worktree プラグインの wt-setup は、`.githooks/` を追跡していてローカル側に値が無いリポジトリでワークツリーを
+作ると、この設定を自動で入れる。ローカル側（`config.worktree` や include 経由を含む）に既存の値があれば
+上書きせず、`.git/hooks/` に `.sample` 以外の既存のフック（Git LFS の pre-push など）があれば切り替えずに
+その旨を知らせる。どちらの場合も、入れるなら上のコマンドで入れる。ワークツリーを一度も作らない clone でも
+入らないので、同じく上のコマンドで入れる。
 
 **有効にすると、その clone ではグローバルのフック（マージ済み PR のブランチへの push 拒否）が走らなくなる**。
 失わないためには、ローカルの pre-push からグローバルの pre-push を呼ぶか、同じチェックを内包する。
