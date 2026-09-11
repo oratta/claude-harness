@@ -52,7 +52,7 @@
 - [x] 5.5 `plugins/dev-workflow/skills/develop/SKILL.md`（712）を同様に縮約する
 - [x] 5.6 `plugins/worktree/commands/wt-clean.md`（691）・`plugins/skill-pack/skills/skill-pack/SKILL.md`（544）・`plugins/dev-workflow/skills/issueify/SKILL.md`（470）・`plugins/dev-workflow/skills/push-guard-setup/SKILL.md`（435）を同様に縮約する（casting の SKILL.md は 2.6 で扱う）
 - [x] 5.7 `.claude/skills/openspec-*/SKILL.md` と `.claude/commands/opsx/*.md` は触らない（`openspec update` の生成物で再生成で戻る）
-- [ ] 5.8 縮約した skill のうち 1 件を、その skill が想定する実際の依頼文で呼び、起動することを確認する（証拠を控える）
+- [x] 5.8 縮約した skill のうち 1 件を、その skill が想定する実際の依頼文で呼び、起動することを確認する（証拠を控える）
 
 ## 6. CLAUDE.md の縮約
 
@@ -68,7 +68,7 @@
 
 ## 8. 仕上げ
 
-- [ ] 8.1 `scripts/test.sh` 全件を実行し、exit code 0 を確認する（`rules-sync` と `agents-md-sync` を含む）
+- [x] 8.1 `scripts/test.sh` 全件を実行し、exit code 0 を確認する（`rules-sync` と `agents-md-sync` を含む）
 - [x] 8.2 変更したプラグインの `plugin.json` のバージョンを上げる（merge-base からの bump を S131 が要求する）
 - [ ] 8.3 openspec スキルの二重掲載を本 change の対象外とした理由（repo 内の生成物だが再生成で戻ること、develop がコマンド名に依存すること、`opsx:archive` と `opsx:bulk-archive` がスキル本文を参照していること）を PR 本文に書く
 - [ ] 8.4 着手前の内訳・削減後の内訳・移設対応表・path スコープの採否と証拠を PR 本文に載せる
