@@ -1,6 +1,6 @@
 ---
 name: experience-to-skill
-description: Claude Code セッションの jsonl ログを素材に、ユーザーからの「スキル化」依頼を受けたときだけ起動して SKILL.md を蒸留する。**起動条件は「スキル化して」「スキルにして」「スキルを作って」「過去の作業からスキルを作って」「振り返ってスキル抽出して」のような明示的なスキル化依頼フレーズに限定する。** 「完了」「commit して」「done」「archive」のような汎用完了フレーズや、コミット完了・archive 系コマンド完了では絶対に起動しない（コンテキスト消費を抑制するため）。起動後は `/e2s:distill` のフローに従い、cwd に対応する `~/.claude/projects/<encoded-cwd>/` 配下の jsonl を探索し、対話で候補を絞り込み、Layer 1 正規表現 + Layer 2 意味判定の二重サニタイズを通して SKILL.md を生成する。frontmatter の `name:` には必ず `e2s-` または `distilled-` prefix を付ける。
+description: Claude Code セッションの jsonl ログを素材に SKILL.md を蒸留する。「スキル化して」「スキルにして」「スキルを作って」「過去の作業からスキルを作って」「振り返ってスキル抽出して」のような明示的なスキル化依頼でだけ起動する。「完了」「commit して」「done」「archive」のような汎用完了フレーズや archive 系コマンドの完了では起動しない。
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 

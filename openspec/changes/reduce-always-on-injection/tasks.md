@@ -45,30 +45,30 @@
 
 ## 5. description の縮約
 
-- [ ] 5.1 `plugins/worktree/skills/wt-clean/SKILL.md`（1,297）の description を発火条件だけに削り、手順と背景を本文冒頭へ移す
-- [ ] 5.2 `plugins/experience-to-skill/skills/experience-to-skill/SKILL.md`（1,022）を同様に縮約する
-- [ ] 5.3 `plugins/dev-workflow/skills/pr-review-gate/SKILL.md`（756）を同様に縮約する
-- [ ] 5.4 `plugins/daily-report/skills/daily-report/SKILL.md`（756）を同様に縮約する
-- [ ] 5.5 `plugins/dev-workflow/skills/develop/SKILL.md`（712）を同様に縮約する
-- [ ] 5.6 `plugins/worktree/commands/wt-clean.md`（691）・`plugins/skill-pack/skills/skill-pack/SKILL.md`（544）・`plugins/dev-workflow/skills/issueify/SKILL.md`（470）・`plugins/dev-workflow/skills/push-guard-setup/SKILL.md`（435）を同様に縮約する（casting の SKILL.md は 2.6 で扱う）
-- [ ] 5.7 `.claude/skills/openspec-*/SKILL.md` と `.claude/commands/opsx/*.md` は触らない（`openspec update` の生成物で再生成で戻る）
+- [x] 5.1 `plugins/worktree/skills/wt-clean/SKILL.md`（1,297）の description を発火条件だけに削り、手順と背景を本文冒頭へ移す
+- [x] 5.2 `plugins/experience-to-skill/skills/experience-to-skill/SKILL.md`（1,022）を同様に縮約する
+- [x] 5.3 `plugins/dev-workflow/skills/pr-review-gate/SKILL.md`（756）を同様に縮約する
+- [x] 5.4 `plugins/daily-report/skills/daily-report/SKILL.md`（756）を同様に縮約する
+- [x] 5.5 `plugins/dev-workflow/skills/develop/SKILL.md`（712）を同様に縮約する
+- [x] 5.6 `plugins/worktree/commands/wt-clean.md`（691）・`plugins/skill-pack/skills/skill-pack/SKILL.md`（544）・`plugins/dev-workflow/skills/issueify/SKILL.md`（470）・`plugins/dev-workflow/skills/push-guard-setup/SKILL.md`（435）を同様に縮約する（casting の SKILL.md は 2.6 で扱う）
+- [x] 5.7 `.claude/skills/openspec-*/SKILL.md` と `.claude/commands/opsx/*.md` は触らない（`openspec update` の生成物で再生成で戻る）
 - [ ] 5.8 縮約した skill のうち 1 件を、その skill が想定する実際の依頼文で呼び、起動することを確認する（証拠を控える）
 
 ## 6. CLAUDE.md の縮約
 
-- [ ] 6.1 `CLAUDE.md`（5,732）を縮約する。開発場所と PR 運用の要点を残し、経緯と長い説明を `docs/` へ移す
-- [ ] 6.2 予算ファイルの変更手続きの文（`injection-budget` と `本文に理由` を含む 1〜2 文）を残す。`CLAUDE.md documents how to move the budget file` テストがこの 2 語を要求する
-- [ ] 6.3 `AGENTS.md` に同じ内容を反映する（`tests/agents-md-sync.bats` が同一性を強制する）
+- [x] 6.1 `CLAUDE.md`（5,732）を縮約する。開発場所と PR 運用の要点を残し、経緯と長い説明を `docs/` へ移す
+- [x] 6.2 予算ファイルの変更手続きの文（`injection-budget` と `本文に理由` を含む 1〜2 文）を残す。`CLAUDE.md documents how to move the budget file` テストがこの 2 語を要求する
+- [x] 6.3 `AGENTS.md` に同じ内容を反映する（`tests/agents-md-sync.bats` が同一性を強制する）
 
 ## 7. 測定と予算の引き下げ
 
-- [ ] 7.1 `scripts/test.sh injection-budget` で削減後の実測と内訳を取り、合計が 36,395 バイト以下であることを確認する
-- [ ] 7.2 届いていなければ 2 と 5 に戻って追加で削る（どこを削ったかを記録する）
-- [ ] 7.3 `tests/injection-budget.txt` を削減後の実測に対して上下どちらのラチェットにも当たらない値（実測 × 1.05 前後）に引き下げる。予算ファイルは聖域なので、PR 本文に引き下げの理由と着手前後の実測を書く
+- [x] 7.1 `scripts/test.sh injection-budget` で削減後の実測と内訳を取り、合計が 36,395 バイト以下であることを確認する
+- [x] 7.2 届いていなければ 2 と 5 に戻って追加で削る（どこを削ったかを記録する）
+- [x] 7.3 `tests/injection-budget.txt` を削減後の実測に対して上下どちらのラチェットにも当たらない値（実測 × 1.05 前後）に引き下げる。予算ファイルは聖域なので、PR 本文に引き下げの理由と着手前後の実測を書く
 
 ## 8. 仕上げ
 
 - [ ] 8.1 `scripts/test.sh` 全件を実行し、exit code 0 を確認する（`rules-sync` と `agents-md-sync` を含む）
-- [ ] 8.2 変更したプラグインの `plugin.json` のバージョンを上げる（merge-base からの bump を S131 が要求する）
+- [x] 8.2 変更したプラグインの `plugin.json` のバージョンを上げる（merge-base からの bump を S131 が要求する）
 - [ ] 8.3 openspec スキルの二重掲載を本 change の対象外とした理由（repo 内の生成物だが再生成で戻ること、develop がコマンド名に依存すること、`opsx:archive` と `opsx:bulk-archive` がスキル本文を参照していること）を PR 本文に書く
 - [ ] 8.4 着手前の内訳・削減後の内訳・移設対応表・path スコープの採否と証拠を PR 本文に載せる
