@@ -39,11 +39,13 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 
 ```bash
 M=<メモリディレクトリ>
-cp -R "$M" "${M}.bak-$(date +%F)"   # scratchpad の外に置く。控えは消さない
-diff -r "$M" "${M}.bak-$(date +%F)" && echo IDENTICAL
+B="${M}.bak-$(date +%Y%m%d-%H%M%S)"   # 時刻まで入れる。scratchpad の外に置き、控えは消さない
+if [ -e "$B" ]; then echo "STOP: $B が既にある"
+elif cp -R "$M" "$B" && diff -r "$M" "$B" >/dev/null; then echo "BACKUP OK: $B"
+else echo "STOP: 控えの作成か照合に失敗した"; fi
 ```
 
-控えの場所を主に報告してから、一覧どおりに手で適用する。
+**`BACKUP OK` が出なければ適用しない**（削除・短縮に進まない）。既にある控えに `cp -R` すると、その中に入れ子でコピーされて照合の相手が前回の控えになるので、控えの場所は毎回新しくする。`BACKUP OK` の行に出た控えの場所を主に報告してから、一覧どおりに手で適用する。
 
 - **削除**: `rm` が `rm -i` の別名になっている環境では非対話で何も消えない。`/bin/rm` で消し、`ls` で消えたことを確かめる
 - **短縮**: 事実 1 つと **Why:** / **How to apply:** に絞り、1,000 バイト以下を目安にする。frontmatter は `name` / `description` / `metadata: type:` の形に揃える

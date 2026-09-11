@@ -35,8 +35,28 @@ PY
 }
 
 @test "skill: takes a whole-directory backup before applying and reports its location" {
-  grep -q 'cp -R "\$M"' "$SKILL"
+  grep -q 'cp -R "\$M" "\$B"' "$SKILL"
   grep -q '控えの場所を主に報告' "$SKILL"
+}
+
+@test "skill: the backup never lands inside an old one, and a failed backup stops the apply" {
+  grep -qF 'B="${M}.bak-$(date +%Y%m%d-%H%M%S)"' "$SKILL"
+  grep -qF 'if [ -e "$B" ]; then echo "STOP:' "$SKILL"
+  grep -qF '`BACKUP OK` が出なければ適用しない' "$SKILL"
+}
+
+@test "skill: the backup snippet refuses an existing path and passes on a fresh one" {
+  work="$(mktemp -d)"
+  mkdir -p "$work/memory" && printf 'x\n' > "$work/memory/a.md"
+  snippet="$(awk '/^B="\$\{M\}\.bak-/{p=1} p{print} /^else echo "STOP/{exit}' "$SKILL")"
+  run bash -c "M='$work/memory'; $snippet"
+  [[ "$output" == "BACKUP OK: $work/memory.bak-"* ]]
+  bak="${output#BACKUP OK: }"
+  [ -f "$bak/a.md" ]
+  run bash -c "M='$work/memory'; date() { printf '%s' '${bak##*.bak-}'; }; $snippet"
+  [[ "$output" == "STOP: "* ]]
+  [ ! -e "$bak/memory" ]
+  rm -rf "$work"
 }
 
 @test "skill: checks that index entries match the files and reports the numbers" {
