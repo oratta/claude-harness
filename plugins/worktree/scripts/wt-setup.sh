@@ -256,7 +256,36 @@ else
   done
 fi
 
-#=== Step 4: 依存チェック ===
+#=== Step 4: 追跡されている .githooks/ をリポジトリローカルのフックとして有効にする ===
+#
+# git がフックを探すのは core.hooksPath が指す 1 か所だけ。グローバルに core.hooksPath
+# （push-guard-setup の ~/.githooks）がある PC では、リポジトリが .githooks/pre-push を
+# 追跡していても、clone のローカル設定に core.hooksPath が無ければ一度も走らない（kg-recruit#126）。
+# - ローカル設定は clone の共通 config（$GIT_COMMON_DIR/config）に入り、同じ clone のワークツリーと
+#   メインチェックアウトで共有される。ワークツリーで 1 回走ればメインチェックアウトにも効く（設定共有）
+# - 値は相対の .githooks。相対の core.hooksPath は各作業ツリーのルートから解決されるので、
+#   各ワークツリーは自分のチェックアウトの .githooks/ を使う
+# - 対象は .githooks/ を git で追跡しているときだけ（未追跡の試作は有効にしない）
+# - ローカルに値があれば .githooks 以外でも上書きしない（husky の .husky/_ や、利用者が意図して
+#   入れた .git/hooks を壊さない）。値あり（0）・未設定（1）以外の終了コードも触らない側に倒す
+# - 失敗しても wt-setup.sh の残りは止めない（WARNING 1 行）
+wt_enable_repo_githooks() {
+  local tracked rc=0
+  tracked=$(git -C "$TOPLEVEL" ls-files -- .githooks 2>/dev/null) || return 0
+  [ -n "$tracked" ] || return 0
+  git -C "$TOPLEVEL" config --local --get core.hooksPath >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || return 0
+  echo ""
+  if git -C "$TOPLEVEL" config --local core.hooksPath .githooks 2>/dev/null; then
+    echo "=== git フック: core.hooksPath を .githooks に設定（この clone の全ワークツリーとメインチェックアウトに効く） ==="
+    echo "  注意: 以後この clone ではグローバルの ~/.githooks は走りません。マージ済みブランチの拒否も要るなら .githooks/pre-push からグローバルを呼んでください（push-guard-setup 参照）"
+  else
+    echo "  WARNING: git config --local core.hooksPath .githooks に失敗しました（.githooks/ のフックは有効になっていません）"
+  fi
+}
+wt_enable_repo_githooks
+
+#=== Step 5: 依存チェック ===
 
 echo ""
 echo "=== 依存状況 ==="

@@ -363,3 +363,84 @@ wt_run_setup_issue320() {
   [ ! -e "$wt/sibling-wt" ]
   [ ! -e "$wt/dest-wt" ]
 }
+
+# --- kg-recruit#126: a tracked .githooks/ becomes the repo-local hooks path ---
+#
+# git runs hooks from the single directory core.hooksPath resolves to. With a
+# global core.hooksPath (push-guard-setup), a repo's tracked .githooks/pre-push
+# never runs in a clone that lacks `core.hooksPath .githooks` in its local
+# config. wt-setup.sh sets it once per clone (worktrees share the clone config),
+# never overwrites an existing local value, and ignores untracked .githooks/.
+
+# $1 = repo name, $2 = "tracked" | "untracked" | "none". Echoes the worktree path.
+wt_make_hooks_repo() {
+  local main
+  main="$(wt_make_repo "$1")"
+  (
+    cd "$main" || exit 1
+    printf 'wt/\n' >.gitignore
+    git add .gitignore
+    if [ "$2" = "tracked" ]; then
+      mkdir -p .githooks
+      printf '#!/bin/sh\nexit 0\n' >.githooks/pre-push
+      git add .githooks/pre-push
+    fi
+    git commit -qm "setup"
+    git worktree add -q -b "wt-$1" wt HEAD
+    if [ "$2" = "untracked" ]; then
+      mkdir -p wt/.githooks
+      printf '#!/bin/sh\nexit 0\n' >wt/.githooks/pre-push
+    fi
+  ) >/dev/null 2>&1
+  echo "$main/wt"
+}
+
+@test "githooks: a tracked .githooks is enabled and visible from the main checkout" {
+  local wt main
+  wt="$(wt_make_hooks_repo hk-set tracked)"
+  main="$(dirname "$wt")"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/hk-set.txt" 2>&1
+  [ "$(git -C "$wt" config --local --get core.hooksPath)" = ".githooks" ]
+  [ "$(git -C "$main" config --local --get core.hooksPath)" = ".githooks" ]
+  grep -q '=== git フック: core.hooksPath を .githooks に設定' "${BATS_TEST_TMPDIR}/hk-set.txt"
+  # the notice that the global hooks stop running in this clone
+  grep -q '~/.githooks' "${BATS_TEST_TMPDIR}/hk-set.txt"
+  grep -q 'push-guard-setup' "${BATS_TEST_TMPDIR}/hk-set.txt"
+}
+
+@test "githooks: an existing .githooks value is left as is without output" {
+  local wt
+  wt="$(wt_make_hooks_repo hk-same tracked)"
+  git -C "$wt" config --local core.hooksPath .githooks
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/hk-same.txt" 2>&1
+  [ "$(git -C "$wt" config --local --get core.hooksPath)" = ".githooks" ]
+  ! grep -q 'core.hooksPath' "${BATS_TEST_TMPDIR}/hk-same.txt"
+}
+
+@test "githooks: a different local value is never overwritten" {
+  local wt
+  wt="$(wt_make_hooks_repo hk-other tracked)"
+  git -C "$wt" config --local core.hooksPath .husky/_
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/hk-other.txt" 2>&1
+  [ "$(git -C "$wt" config --local --get core.hooksPath)" = ".husky/_" ]
+  ! grep -q 'core.hooksPath' "${BATS_TEST_TMPDIR}/hk-other.txt"
+}
+
+@test "githooks: a repo without .githooks is left untouched" {
+  local wt
+  wt="$(wt_make_hooks_repo hk-none none)"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/hk-none.txt" 2>&1
+  run git -C "$wt" config --local --get core.hooksPath
+  [ "$status" -eq 1 ]
+  ! grep -q 'core.hooksPath' "${BATS_TEST_TMPDIR}/hk-none.txt"
+}
+
+@test "githooks: an untracked .githooks alone is not enabled" {
+  local wt
+  wt="$(wt_make_hooks_repo hk-untracked untracked)"
+  [ -f "$wt/.githooks/pre-push" ]
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/hk-untracked.txt" 2>&1
+  run git -C "$wt" config --local --get core.hooksPath
+  [ "$status" -eq 1 ]
+  ! grep -q 'core.hooksPath' "${BATS_TEST_TMPDIR}/hk-untracked.txt"
+}
