@@ -19,13 +19,11 @@ setup() {
 }
 
 teardown() {
-  # 取りこぼした背景プロセスを確実に始末する（孤児は teardown まで生き残る）
-  if [ -n "${WT_SPAWNED_PIDS:-}" ]; then
-    local p
-    for p in $WT_SPAWNED_PIDS; do
-      kill -9 "$p" 2>/dev/null || true
-    done
-  fi
+  # 取りこぼした背景プロセスを確実に始末する（孤児は teardown まで生き残る）。
+  # PID は wt_spawn_orphan が $( ) の中で記録するため、変数ではなくファイル経由
+  # （wt_track_pid）で受け取る。旧実装は変数で受けていて親に届かず、sleep 300 の孤児が
+  # bats の出力パイプを握ったまま最長 5 分残り、全件実行を止めていた（issue #215）。
+  wt_kill_tracked_pids
 }
 
 # SKILL.md から稼働シグナル検出ヘルパ一式を抽出する（実行時と同じ「まとめて定義」の状態）
@@ -53,8 +51,9 @@ wt_make_stale_dir() {
 # 中間シェルを即終了させる二重フォークで init に引き取らせる。
 wt_spawn_orphan() {
   local dir="$1" pid
-  pid=$( cd "$dir" && bash -c 'sleep 300 >/dev/null 2>&1 & echo $!' )
-  WT_SPAWNED_PIDS="${WT_SPAWNED_PIDS:-} $pid"
+  # bats の出力パイプ（fd 3 ほか）を孤児に渡さない（helper.bash の約束事を参照）
+  pid=$( cd "$dir" && wt_close_inherited_fds && bash -c 'sleep 300 >/dev/null 2>&1 & echo $!' )
+  wt_track_pid "$pid"
   sleep 1
   echo "$pid"
 }
@@ -228,9 +227,9 @@ wt_ppid_of() {
   snippet="$(wt_load_orphan_helpers)"
   dir="${BATS_TEST_TMPDIR}/toplive"
   mkdir -p "$dir"
-  ( cd "$dir" && exec sleep 30 ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec sleep 30 ) &
   pid=$!
-  WT_SPAWNED_PIDS="${WT_SPAWNED_PIDS:-} $pid"
+  wt_track_pid "$pid"
   sleep 1
 
   out=$(bash -c ". '$snippet'; proc_tree_top '$pid'")
@@ -294,9 +293,9 @@ wt_ppid_of() {
   wt_make_stale_dir "$dir"
 
   # 親（この bats プロセス）が生きているプロセス = 起動元セッションが存在する
-  ( cd "$dir" && exec sleep 30 ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec sleep 30 ) &
   pid=$!
-  WT_SPAWNED_PIDS="${WT_SPAWNED_PIDS:-} $pid"
+  wt_track_pid "$pid"
   sleep 1
   touch -t 202401010000 "$dir/file.txt" "$dir"
 
