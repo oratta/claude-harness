@@ -22,4 +22,4 @@
 
 - [x] 4.1 `plugin.json` を 2.11.0 に上げてスキルとコマンドを登録し、`marketplace.json` と `CHANGELOG.md` を揃える
 - [x] 4.2 リポジトリ全体のテスト（`bash scripts/test.sh`）を実行し、`not ok` を確認する（main でも落ちる statusline の 2 本以外は通る）
-- [ ] 4.3 仕様レビューの APPROVE を得て `openspec archive` まで済ませる
+- [x] 4.3 仕様レビューの APPROVE を得て `openspec archive` まで済ませる

@@ -4,7 +4,7 @@
 
 ### Requirement: SessionStart でメモリ索引の閾値超過を通知する
 
-`plugins/dev-workflow/scripts/session-tripwires.sh` は SessionStart ごとに `plugins/dev-workflow/scripts/memory-tripwire.sh` を呼び、その出力が空でなければ additionalContext の先頭に足さなければならない（SHALL）。出力が空のときは additionalContext に何も足してはならない（MUST NOT）。
+`plugins/dev-workflow/scripts/session-tripwires.sh` は SessionStart ごとに `plugins/dev-workflow/scripts/memory-tripwire.sh` を呼び、その出力が空でなければ additionalContext の先頭に足さなければならない（SHALL）。出力が空のときは additionalContext に何も足してはならない（MUST NOT）。テンプレートが無い・トリップワイヤー節が抽出できないときは、`dev-workflow-escalation-tripwires` の「SessionStart hook がトリップワイヤーを常駐注入する」要件に従って何も出力せず、通知も出さない（SHALL）。
 
 `memory-tripwire.sh` は対象プロジェクトのメモリディレクトリについて次の 4 つを測る（SHALL）: 索引 `MEMORY.md` のバイト数、索引の行数、`MEMORY.md` 以外の `*.md` 1 件の最大バイト数、索引の最終更新時刻からの経過日数。閾値は環境変数 `DEV_WORKFLOW_MEMORY_INDEX_BYTES` / `DEV_WORKFLOW_MEMORY_INDEX_LINES` / `DEV_WORKFLOW_MEMORY_FILE_BYTES` / `DEV_WORKFLOW_MEMORY_STALE_DAYS` で上書きでき（SHALL）、未設定または非負整数でない値のときは既定値（4000 / 20 / 2500 / 30）を使わなければならない（SHALL）。
 
@@ -55,7 +55,7 @@
 
 `plugins/dev-workflow/skills/memory-refresh/SKILL.md` を見直しの手順の正本とし（SHALL）、`plugins/dev-workflow/commands/memory-refresh.md` はその SKILL.md を読んで実行するだけの薄いラッパーでなければならない（SHALL。手順を複製しない）。
 
-手順は次を含まなければならない（SHALL）: ① 索引と全ファイルを読む ② 1 件ずつ削除・統合・短縮・維持のいずれかに分類し、「ファイル名 / 分類 / 理由」の一覧を主に出して、適用前に 1 回だけ承認を取る ③ 承認後、メモリディレクトリ丸ごとの控えを取り、控えの場所を報告してから適用する ④ 適用後、索引の項目行の数がファイル数（`MEMORY.md` を除く）と一致し、索引が指すファイルと実在するファイルに過不足が無いことを確かめる ⑤ 適用前後の件数・総バイト数・索引のバイト数と行数・本文 1 件の最大バイト数を報告する。
+手順は次を含まなければならない（SHALL）: ① 索引と全ファイルを読む ② 1 件ずつ削除・統合・短縮・維持のいずれかに分類し、「ファイル名 / 分類 / 理由」の一覧を主に出して、適用前に 1 回だけ承認を取る ③ 承認後、メモリディレクトリ丸ごとの控えを毎回新しい場所に取り（既にある場所には取らない）、コピーの成功と元との一致を確かめ、控えの場所を報告してから適用する。控えの作成か照合に失敗したときは適用してはならない（MUST NOT） ④ 適用後、索引の項目行（`- [` で始まる行）の数がファイル数（`MEMORY.md` を除く）と一致し、索引が指すファイルと実在するファイルに過不足が無いことを確かめる ⑤ 適用前後の件数・総バイト数・索引のバイト数と行数・本文 1 件の最大バイト数を報告する。
 
 分類の基準は既存のメモリ規約（1 件 1 事実・repo が記録していることは保存しない・間違いは削除）を使い（SHALL）、「終わった事実か」「repo が持っているか」は issue / PR の状態や repo の記述を確かめてから決めなければならない（SHALL）。適用はスクリプトにせず一覧どおりに手で行う（SHALL）。変更が無かった場合も索引の更新時刻を新しくし、見直した時刻を残さなければならない（SHALL。検知側が最終更新からの日数を見るため）。
 
@@ -69,4 +69,9 @@ SKILL.md は、実際に行った初回整理の一覧を例として載せな�
 #### Scenario: 控えを取ってから適用し、一致と数字を報告する
 
 - **WHEN** 一覧に承認が出る
-- **THEN** 控えを取ってその場所を報告してから適用し、適用後に索引の項目行の数とファイル数の一致・過不足なし・前後の数字が報告される
+- **THEN** 新しい場所に控えを取り、元との一致を確かめてその場所を報告してから適用し、適用後に索引の項目行の数とファイル数の一致・過不足なし・前後の数字が報告される
+
+#### Scenario: 控えが取れなければ適用しない
+
+- **WHEN** 控えの場所が既に存在する、またはコピーか照合に失敗する
+- **THEN** 削除・短縮を適用せずに止まる
