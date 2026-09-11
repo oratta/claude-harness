@@ -56,9 +56,9 @@ issue 本文は「リポジトリと PR 番号がコマンド文字列に含ま�
 
 したがって厳密な判定は次の順で行う。
 
-1. **付与の形かどうか**: `gh api` の呼び出しで、パスが `repos/<A>/issues/<B>/labels`（`<A>` は `owner/repo` か変数）であり、同じ呼び出しに `labels[]=agent-review:passed` があり、`-X DELETE` / `--method DELETE` が無いもの。または `gh pr edit` / `gh issue edit` で `--add-label` の値に `agent-review:passed` を含むもの。`gh api` は `-f` を渡すと既定で POST になるので `-X POST` の有無は問わない。手順 2 の「stale な passed を外す」`gh api -X DELETE repos/$R/issues/$N/labels/agent-review:passed` は付与ではないので当たらない
-2. **変数の解決**: 同じコマンドの中の単純な代入（`NAME=値`。値は引用符付きでもよいが、`$(...)`・バッククォート・他の変数展開を含む値は解決しない）と、`for NAME in <リテラルの並び>; do` を集め、`$NAME` / `${NAME}` を展開する。`for` は並びの各値を対象にする
-3. **リポジトリ**: `gh api` の形は展開後のパスから `owner/repo` を取る。`gh pr edit` の形は `-R` / `--repo` の値、無ければ hook の `cwd` のリポジトリ
+1. **付与の形かどうか**: まずコマンドを `;` `&&` `||` `|` 改行で区切り（引用符・`$(...)`・バッククォートの中の区切りは区切りとみなさない）、各断片から先頭の `do` / `then` と先頭の代入（`NAME=値`）を除いた先頭語が `gh` の断片だけを呼び出しとして扱う。`echo "gh api -X POST repos/o/r/issues/300/labels -f 'labels[]=agent-review:passed'"` のように付与のコマンドを文字列として含むだけの呼び出しは、先頭語が `echo` なので当たらない。そのうえで、`gh api` の呼び出しで、パスが `repos/<A>/issues/<B>/labels`（`<A>` は `owner/repo` か変数）であり、同じ呼び出しに `labels[]=agent-review:passed` があり、`-X DELETE` / `--method DELETE` が無いもの。または `gh pr edit` / `gh issue edit` で `--add-label` の値に `agent-review:passed` を含むもの。`gh api` は `-f` を渡すと既定で POST になるので `-X POST` の有無は問わない。手順 2 の「stale な passed を外す」`gh api -X DELETE repos/$R/issues/$N/labels/agent-review:passed` は付与ではないので当たらない
+2. **変数の解決**: 同じコマンドの中の単純な代入（`NAME=値`。値は引用符付きでもよいが、`$(...)`・バッククォート・他の変数展開を含む値は解決しない）と、`for NAME in <リテラルの並び>; do` を集め、`$NAME` / `${NAME}` を展開する。`for` は並びの各値を対象にする。同じ変数に代入が複数あるときは、使う位置より前にある直近の代入で解決する（直近の代入が解決できない値なら、それより前に解決できる代入があっても解決しない）
+3. **リポジトリ**: `gh api` の形は展開後のパスから `owner/repo` を取る。`gh pr edit` の形は `-R` / `--repo` の値、無ければ hook の `cwd` のリポジトリ。`cwd` のリポジトリは `cwd` で `gh repo view --json nameWithOwner -q .nameWithOwner` を実行して得る。`gh pr edit` 自身が `-R` 無しのときに使う解決と揃えるため（git の remote を自前で読むと、fork や複数 remote のときに `gh` と違うリポジトリを指しうる）
 4. **解決できなかった対象は黙って飛ばす**。コマンドの評価（`eval` やシェルでの再実行）は決してしない。任意のコマンドを 2 回実行することになるから
 
 飛ばした場合に失われるのはコストのコメント 1 本だけで、ゲートの結果には影響しない。再ゲートか手動の `/cost` で取り返せる。
@@ -85,7 +85,7 @@ hook は `python3 <プラグイン>/scripts/cost_ledger.py cost <番号> --repo 
 <!-- cost-ledger:gate-report -->
 ```
 
-時刻は hook を実行したマシンのローカル時刻。既存コメントの検索は `gh api --paginate repos/<owner>/<repo>/issues/<番号>/comments` で本文にマーカーを含む最初の 1 件を取り、あれば `gh api -X PATCH repos/<owner>/<repo>/issues/comments/<id> -f body=...`、無ければ `gh api -X POST repos/<owner>/<repo>/issues/<番号>/comments -f body=...`。PATCH が失敗したときに新規作成へ切り替えない（コメントを増やさないことを優先する）。
+時刻は hook を実行したマシンのローカル時刻。既存コメントの検索は `gh api --paginate repos/<owner>/<repo>/issues/<番号>/comments --jq '.[] | select(.body | contains("<!-- cost-ledger:gate-report -->")) | .id'` でページごとにマーカーを含むコメントの id を出させ、出力の先頭行を取る（`--paginate` の出力をまとめて JSON としてパースすると、複数ページのときに配列が連結されて壊れるため）。検索が失敗したときは、既存のコメントの有無が分からないので貼らない。id があれば `gh api -X PATCH repos/<owner>/<repo>/issues/comments/<id> -f body=...`、無ければ `gh api -X POST repos/<owner>/<repo>/issues/<番号>/comments -f body=...`。PATCH が失敗したときに新規作成へ切り替えない（コメントを増やさないことを優先する）。
 
 このコメントは pr-review-gate が照合するコメント（1 行目が `仕様化判断:` / `仕様レビュー:`、本文に `対象 HEAD:` を含むもの）のどれにも当たらない。
 
@@ -97,11 +97,12 @@ stdout にも stderr にも何も出さず、どの経路でも終了コード�
 
 ### 7. 実装の置き場所と形
 
-`plugins/cost-ledger/hooks/hooks.json` と `plugins/cost-ledger/scripts/gate-report.sh` の 2 ファイル。`gate-report.sh` は bash の fast path のあと、判定と投稿を fd 3 のヒアドキュメントで渡す python3 に任せる（`context-tripwire.sh` / `agent-model-guard.sh` と同じ形）。python3 は cost-ledger の既存の実行時依存なので、依存は増えない。`cost_ledger.py` の場所は `${CLAUDE_PLUGIN_ROOT}` からではなく、スクリプト自身の位置（`$(dirname "$0")`）から引く。hook の起動時に `CLAUDE_PLUGIN_ROOT` が入る保証を bats で再現しにくく、同じディレクトリにあることは配布物の構造で決まっているため。
+`plugins/cost-ledger/hooks/hooks.json` と `plugins/cost-ledger/scripts/gate-report.sh` の 2 ファイル。`gate-report.sh` は bash の fast path のあと、判定と投稿を fd 3 のヒアドキュメントで渡す python3 に任せる（`context-tripwire.sh` / `agent-model-guard.sh` と同じ形）。python3 は cost-ledger の既存の実行時依存なので、依存は増えない。`cost_ledger.py` の場所は `${CLAUDE_PLUGIN_ROOT}` からではなく、スクリプト自身の位置（`$(dirname "$0")`）から引く。hook の起動時に `CLAUDE_PLUGIN_ROOT` が入る保証を bats で再現しにくく、同じディレクトリにあることは配布物の構造で決まっているため。python3 側から見た自分のパス（`sys.argv[0]`）は `/dev/fd/3` になるので、bash 側で解決したスクリプトのディレクトリを環境変数 `COST_LEDGER_SCRIPTS_DIR` で python3 に渡す（payload と違って短い値なので、環境変数に載せても ARG_MAX の問題は起きない）。
 
 ## Risks / Trade-offs
 
 - [変数や `for` の書き方が想定外の形だと取りこぼす] → 取りこぼしはコメントが付かないだけでゲートに影響しない。bats に実ログで見た 4 つの形をそれぞれ入れ、実機確認で実際のゲートの書き方を確かめる
+- [付与を含む Bash が 0 以外で終わると、hook の event は PostToolUse ではなく PostToolUseFailure になり、この hook は起動しない] → 会話ログでは付与 251 件中 5 件がこれに当たった（複合コマンドの後段が失敗した等）。取りこぼしはコメントが付かないだけでゲートに影響せず、再ゲートか手動の `/cost` で取り返せるので、PostToolUseFailure には登録しない（登録すると、付与に失敗した呼び出しでも起動するぶん、決定 3 の実測に頼る場面が増える）
 - [全 Bash 呼び出しで bash が 1 回起動する] → fast path で python3 を起動しない。対象外の呼び出しでの実測（50 ms 未満）を PR に貼る
 - [同じ PR で 2 つのゲートがほぼ同時に通ると、どちらも既存コメントを見つけられず 2 本できる] → 起きるのはゲートの並走時だけで、次の再ゲートは最初の 1 本を書き換える。発生頻度が低く、ロックを持つ費用に見合わないので受け入れる
 - [数字はラベル付与のターンより前の分しか含まない] → issue 本文の決定 7 のとおり許容し、コメントに時点を書く
