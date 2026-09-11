@@ -494,7 +494,8 @@ fmt_money() {
         GBP) sym='£' ;;
         *)   sym="$3 " ;;
     esac
-    amount=$(echo "$1 $2" | awk '{printf "%d", $1 * $2}')
+    # 小数点がカンマのロケール（de_DE 等）では awk が "1.23" を 1 と読むので C 固定
+    amount=$(echo "$1 $2" | LC_ALL=C awk '{printf "%d", $1 * $2}')
     printf '%s%s' "$sym" "$(LC_ALL=en_US.UTF-8 printf "%'d" "$amount" 2>/dev/null || printf '%d' "$amount")"
 }
 
@@ -522,7 +523,7 @@ if [ "${STATUSLINE_API_PACE:-1}" != "0" ]; then
             if [ -n "$total" ]; then
                 currency="${STATUSLINE_CURRENCY:-JPY}"
                 if [ "$currency" = "USD" ]; then
-                    printf 'API $%s/mo' "$(echo "$total" | awk '{printf "%d", $1}')" > "$cost_cache"
+                    printf 'API $%s/mo' "$(echo "$total" | LC_ALL=C awk '{printf "%d", $1}')" > "$cost_cache"
                 else
                     # 為替レートは24hキャッシュ。取得失敗時は前回値 → 既定値の順にフォールバック
                     rate_cache="$CONFIG_DIR/.statusline-fxrate-$currency"
@@ -559,10 +560,11 @@ if [ "${STATUSLINE_SESSION_COST:-1}" != "0" ] && [ -n "$session_cost_usd" ]; the
     currency="${STATUSLINE_CURRENCY:-JPY}"
     rate=""
     [ "$currency" != "USD" ] && rate=$(cat "$CONFIG_DIR/.statusline-fxrate-$currency" 2>/dev/null)
-    if [ -n "$rate" ]; then
+    # 壊れたキャッシュ（空白・非数値）を awk に渡すと 0 扱いで ¥0 になるので、正の数値だけを使う
+    if [[ "$rate" =~ ^[0-9]+(\.[0-9]+)?$ ]] && [[ "$rate" =~ [1-9] ]]; then
         session_cost_info="${CYAN}Session $(fmt_money "$session_cost_usd" "$rate" "$currency")${RESET}"
     else
-        session_cost_info="${CYAN}Session \$$(echo "$session_cost_usd" | awk '{printf "%.2f", $1}')${RESET}"
+        session_cost_info="${CYAN}Session \$$(echo "$session_cost_usd" | LC_ALL=C awk '{printf "%.2f", $1}')${RESET}"
     fi
 fi
 

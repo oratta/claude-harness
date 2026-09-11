@@ -134,6 +134,24 @@ mk_cost_input() {
   strip_ansi < "$WORK/out.txt" | grep -q 'Session \$0.50'
 }
 
+@test "session cost: falls back to USD when the fx cache is not a positive number" {  # 為替キャッシュが壊れていたら ¥0 ではなく USD で出す
+  for bad in garbage '   ' 0; do
+    echo "$bad" > "$WORK/.statusline-fxrate-JPY"
+    mk_cost_input 1.23 | bash "$SL" > "$WORK/out.txt"
+    strip_ansi < "$WORK/out.txt" | grep -q 'Session \$1.23'
+  done
+}
+
+@test "session cost: amounts do not depend on the locale's decimal separator" {  # 小数点がカンマのロケールでも金額が狂わない
+  locale -a 2>/dev/null | grep -qi '^de_DE\.utf-\?8$' || skip "de_DE.UTF-8 ロケールが無い"
+  mk_cost_input 1.23 | LC_ALL=de_DE.UTF-8 bash "$SL" > "$WORK/out.txt"
+  strip_ansi < "$WORK/out.txt" | grep -q 'Session \$1.23'
+  echo 150 > "$WORK/.statusline-fxrate-JPY"
+  mk_cost_input 12.34 | LC_ALL=de_DE.UTF-8 bash "$SL" > "$WORK/out.txt"
+  # 3 桁区切りの記号はロケールに従う（de_DE なら "."）。見るのは金額が 1851 のままであること
+  strip_ansi < "$WORK/out.txt" | grep -q 'Session ¥1[.,]851'
+}
+
 @test "session cost: STATUSLINE_CURRENCY=USD shows dollars" {  # 通貨が USD ならドルで出す
   echo 150 > "$WORK/.statusline-fxrate-JPY"
   mk_cost_input 3.456 | STATUSLINE_CURRENCY=USD bash "$SL" > "$WORK/out.txt"
