@@ -101,7 +101,7 @@ SH
 }
 
 # hook の JSON を組み立てる。コマンド文字列のエスケープは json.dumps に任せる。
-#   HOOK_CWD（既定 $CWD）/ HOOK_TRANSCRIPT（"-" で省く）/ HOOK_STDOUT（tool_response の stdout）
+#   HOOK_CWD（既定 ${CWD}）/ HOOK_TRANSCRIPT（"-" で省く）/ HOOK_STDOUT（tool_response の stdout）
 hook_json() {  # $1=command
   "$REAL_PYTHON" - "$1" "${HOOK_CWD-$CWD}" "${HOOK_TRANSCRIPT-/tmp/claude/projects/p/S1.jsonl}" "${HOOK_STDOUT-}" <<'PY'
 import json, sys
