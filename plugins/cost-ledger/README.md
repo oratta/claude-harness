@@ -47,8 +47,19 @@ COST_LEDGER_USD_JPY=155 python3 scripts/cost_ledger.py branch oratta/issue-cost
 落とさない。同じく、`cwd` が削除済みでリポジトリ識別子が導けなかった行は「リポジトリ不明」として
 件数と金額が別立てで出る。
 
-## prototypes/
+## ゲート通過時の自動投稿
 
-`prototypes/` は設計の根拠になった数字を再現するための計測スクリプトで、プラグインの実装ではない。
-本番実装との突き合わせは**同じ時点で両方を走らせて比べる**（会話ログは既定 30 日で消えるため、
-時点がずれると絶対値も下がる）。
+pr-review-gate が合格ラベル `agent-review:passed` を付けた直後に、その PR へ `/cost <PR番号>` の
+1 行目と同じ行をコメントで貼る。PostToolUse（matcher `Bash`）の hook `scripts/gate-report.sh` が、
+付与のコマンド（`gh api .../issues/<番号>/labels -f 'labels[]=agent-review:passed'`、または
+`gh pr edit` / `gh issue edit` の `--add-label agent-review:passed`）を見て動く。LLM のトークンは使わない。
+
+- **何を**: `scripts/cost_ledger.py cost <PR番号>` の出力の 1 行目と、時点の行（`YYYY-MM-DD HH:MM 時点・ゲート通過時に自動投稿`）。
+  最終行に目印 `<!-- cost-ledger:gate-report -->` を置く
+- **どこに**: ラベルを付けた PR。貼る前にラベルが実際に付いたことを API で確かめ、付いていなければ貼らない
+- **1 本だけ**: 目印付きのコメントが既にあれば、新しく作らずにそれを書き換える。再ゲートでもコメントは増えない
+- **数字の範囲**: ラベルを付けたターンより前の分しか含まない（hook はそのターンの途中で動くため）
+- **止め方**: 環境変数 `COST_LEDGER_GATE_REPORT=off`（settings.json の `env` に置く）
+
+どの失敗でもゲートは止めず、何も出力しない。コメントが付かなかったときは再ゲートか手動の `/cost` で
+取り返せる。規則の正本は openspec の spec `cost-ledger-gate-report`。
