@@ -186,6 +186,36 @@ print('ok')
   [[ "$output" == *".worktreeinclude"* ]]
 }
 
+# wt-setup.sh の Step 4 が git フックを設定したら（その clone ではそれまでのフックが走らなくなる）、
+# 他に残タスクが無くても「残タスクなし。報告不要」にせず、注意を残タスクに載せる。
+@test "wt-setup-guard: a git-hooks notice from wt-setup.sh is carried as remaining work" {
+  local repo wt
+  export GIT_CONFIG_NOSYSTEM=1
+  export GIT_CONFIG_GLOBAL="${BATS_TEST_TMPDIR}/gitconfig-global"
+  : >"$GIT_CONFIG_GLOBAL"
+  repo="$(wt_make_repo guard-githooks)"
+  mkdir -p "${repo}/.githooks"
+  printf '#!/bin/sh\nexit 0\n' >"${repo}/.githooks/pre-push"
+  : >"${repo}/.worktreeinclude"
+  git -C "$repo" add -A
+  git -C "$repo" commit -qm githooks
+  wt="${BATS_TEST_TMPDIR}/guard-githooks-wt"
+  git -C "$repo" worktree add -q "$wt" -b githooks
+
+  run bash -c "cd '${wt}' && echo '{}' | '${WT_SETUP_GUARD_SH}' 2>/dev/null | python3 -c \"
+import json,sys
+c = json.load(sys.stdin)['hookSpecificOutput']['additionalContext']
+notes = c.split('残っている判断:', 1)
+assert len(notes) == 2, c
+assert 'git フック' in notes[1], c
+assert '残タスクなし' not in c, c
+print('ok')
+\""
+  [ "$status" -eq 0 ]
+  [ "$output" = "ok" ]
+  [ "$(git -C "$repo" config --local --get core.hooksPath)" = ".githooks" ]
+}
+
 @test "wt-setup-guard: symlinks .claude subdirectories into the worktree" {
   local repo wt
   repo="$(wt_make_repo guard-symlink)"

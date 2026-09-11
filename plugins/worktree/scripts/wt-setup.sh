@@ -266,19 +266,51 @@ fi
 # - 値は相対の .githooks。相対の core.hooksPath は各作業ツリーのルートから解決されるので、
 #   各ワークツリーは自分のチェックアウトの .githooks/ を使う
 # - 対象は .githooks/ を git で追跡しているときだけ（未追跡の試作は有効にしない）
-# - ローカルに値があれば .githooks 以外でも上書きしない（husky の .husky/_ や、利用者が意図して
-#   入れた .git/hooks を壊さない）。値あり（0）・未設定（1）以外の終了コードも触らない側に倒す
+# - 判定は実効値のスコープ（git config --show-scope、git 2.26 以上）で行い、動くのは未設定（終了
+#   コード 1）か global / system のときだけ。local / worktree（extensions.worktreeConfig の
+#   config.worktree）/ command や include 経由のローカル値は触らない（husky の .husky/_ 等を壊さない）。
+#   読み取りの終了コードが 0 / 1 以外のときも触らない側に倒す
+# - clone の共通フックディレクトリ（$GIT_COMMON_DIR/hooks）に .sample 以外のファイルがあれば
+#   自動では切り替えず、注意を 1 行出すだけにする（Git LFS の pre-push などを黙って止めない）
+# - 注意の行は「=== git フック:」で始める。SessionStart 経路の wt-setup-guard.sh がこの見出しを
+#   拾って残タスクに載せる
 # - 失敗しても wt-setup.sh の残りは止めない（WARNING 1 行）
 wt_enable_repo_githooks() {
-  local tracked rc=0
+  local tracked scoped rc=0 scope prev from_global=false common hooks_dir existing
   tracked=$(git -C "$TOPLEVEL" ls-files -- .githooks 2>/dev/null) || return 0
   [ -n "$tracked" ] || return 0
-  git -C "$TOPLEVEL" config --local --get core.hooksPath >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 1 ] || return 0
+  scoped=$(git -C "$TOPLEVEL" config --show-scope --get core.hooksPath 2>/dev/null) || rc=$?
+  case "$rc" in
+    0)
+      scope=${scoped%%$'\t'*}
+      case "$scope" in
+        global|system) prev=${scoped#*$'\t'}; from_global=true ;;
+        *) return 0 ;;
+      esac
+      ;;
+    1) prev=".git/hooks/" ;;
+    *) return 0 ;;
+  esac
+
+  common=$(git -C "$TOPLEVEL" rev-parse --git-common-dir 2>/dev/null) || return 0
+  case "$common" in /*) ;; *) common="$TOPLEVEL/$common" ;; esac
+  hooks_dir="$common/hooks"
+  if [ -d "$hooks_dir" ]; then
+    existing=$(find "$hooks_dir" -mindepth 1 -maxdepth 1 ! -name '*.sample' 2>/dev/null | head -n 1) || existing=""
+    if [ -n "$existing" ]; then
+      echo ""
+      echo "=== git フック: .githooks を追跡しているが .git/hooks/ に既存のフックがあるため自動では有効化しなかった（有効にするなら push-guard-setup の手順で git config --local core.hooksPath .githooks） ==="
+      return 0
+    fi
+  fi
+
   echo ""
   if git -C "$TOPLEVEL" config --local core.hooksPath .githooks 2>/dev/null; then
     echo "=== git フック: core.hooksPath を .githooks に設定（この clone の全ワークツリーとメインチェックアウトに効く） ==="
-    echo "  注意: 以後この clone ではグローバルの ~/.githooks は走りません。マージ済みブランチの拒否も要るなら .githooks/pre-push からグローバルを呼んでください（push-guard-setup 参照）"
+    echo "  注意: これまで実行されていたフック（${prev}）は以後この clone では走らない"
+    if [ "$from_global" = true ]; then
+      echo "  マージ済みブランチの拒否などグローバル側のチェックも要るなら .githooks/pre-push からグローバルを呼ぶ（push-guard-setup 参照）"
+    fi
   else
     echo "  WARNING: git config --local core.hooksPath .githooks に失敗しました（.githooks/ のフックは有効になっていません）"
   fi

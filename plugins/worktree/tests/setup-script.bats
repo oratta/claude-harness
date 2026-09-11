@@ -372,6 +372,18 @@ wt_run_setup_issue320() {
 # config. wt-setup.sh sets it once per clone (worktrees share the clone config),
 # never overwrites an existing local value, and ignores untracked .githooks/.
 
+# Isolate the tests from this PC's global/system git config (a real global
+# core.hooksPath would change the scope wt-setup.sh sees). $1 (optional) = a
+# global core.hooksPath value to put in the isolated global config.
+wt_isolate_git_config() {
+  export GIT_CONFIG_NOSYSTEM=1
+  export GIT_CONFIG_GLOBAL="${BATS_TEST_TMPDIR}/gitconfig-global"
+  : >"$GIT_CONFIG_GLOBAL"
+  if [ -n "${1:-}" ]; then
+    git config --global core.hooksPath "$1"
+  fi
+}
+
 # $1 = repo name, $2 = "tracked" | "untracked" | "none". Echoes the worktree path.
 wt_make_hooks_repo() {
   local main
@@ -396,20 +408,143 @@ wt_make_hooks_repo() {
 }
 
 @test "githooks: a tracked .githooks is enabled and visible from the main checkout" {
-  local wt main
+  local wt main out
+  wt_isolate_git_config
   wt="$(wt_make_hooks_repo hk-set tracked)"
   main="$(dirname "$wt")"
-  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/hk-set.txt" 2>&1
+  out="${BATS_TEST_TMPDIR}/hk-set.txt"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"$out" 2>&1
   [ "$(git -C "$wt" config --local --get core.hooksPath)" = ".githooks" ]
   [ "$(git -C "$main" config --local --get core.hooksPath)" = ".githooks" ]
-  grep -q '=== git フック: core.hooksPath を .githooks に設定' "${BATS_TEST_TMPDIR}/hk-set.txt"
-  # the notice that the global hooks stop running in this clone
-  grep -q '~/.githooks' "${BATS_TEST_TMPDIR}/hk-set.txt"
-  grep -q 'push-guard-setup' "${BATS_TEST_TMPDIR}/hk-set.txt"
+  grep -q '^=== git フック: core.hooksPath を .githooks に設定' "$out"
+  # no global value: the hooks that stop running are the clone's .git/hooks/
+  grep -q 'これまで実行されていたフック（.git/hooks/）' "$out"
+  ! grep -q '~/.githooks' "$out"
+}
+
+@test "githooks: with a global core.hooksPath, the notice names that value and push-guard-setup" {
+  local wt out
+  wt_isolate_git_config "${BATS_TEST_TMPDIR}/global-hooks-dir"
+  wt="$(wt_make_hooks_repo hk-global tracked)"
+  out="${BATS_TEST_TMPDIR}/hk-global.txt"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"$out" 2>&1
+  [ "$(git -C "$wt" config --local --get core.hooksPath)" = ".githooks" ]
+  grep -q '^=== git フック: core.hooksPath を .githooks に設定' "$out"
+  grep -qF "これまで実行されていたフック（${BATS_TEST_TMPDIR}/global-hooks-dir）" "$out"
+  grep -q 'push-guard-setup' "$out"
+  ! grep -q '~/.githooks' "$out"
+}
+
+@test "githooks: a value in config.worktree (extensions.worktreeConfig) is left as is" {
+  local wt main out
+  wt_isolate_git_config
+  wt="$(wt_make_hooks_repo hk-wtcfg tracked)"
+  main="$(dirname "$wt")"
+  git -C "$main" config extensions.worktreeConfig true
+  git -C "$wt" config --worktree core.hooksPath wt-own-hooks
+  out="${BATS_TEST_TMPDIR}/hk-wtcfg.txt"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"$out" 2>&1
+  # nothing written to the clone's shared config, the worktree value still wins
+  run git -C "$main" config --local --get core.hooksPath
+  [ "$status" -eq 1 ]
+  [ "$(git -C "$wt" config --get core.hooksPath)" = "wt-own-hooks" ]
+  ! grep -q 'git フック' "$out"
+}
+
+@test "githooks: a local value reached through include.path is left as is" {
+  local wt main out
+  wt_isolate_git_config
+  wt="$(wt_make_hooks_repo hk-include tracked)"
+  main="$(dirname "$wt")"
+  printf '[core]\n\thooksPath = included-hooks\n' >"${BATS_TEST_TMPDIR}/included.conf"
+  git -C "$main" config --local include.path "${BATS_TEST_TMPDIR}/included.conf"
+  out="${BATS_TEST_TMPDIR}/hk-include.txt"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"$out" 2>&1
+  [ -z "$(git -C "$main" config --local --no-includes --get-all core.hooksPath)" ]
+  [ "$(git -C "$wt" config --get core.hooksPath)" = "included-hooks" ]
+  ! grep -q 'git フック' "$out"
+}
+
+@test "githooks: existing non-sample hooks in .git/hooks/ block the switch with one notice line" {
+  local wt main out
+  wt_isolate_git_config
+  wt="$(wt_make_hooks_repo hk-direct tracked)"
+  main="$(dirname "$wt")"
+  mkdir -p "$main/.git/hooks"
+  printf '#!/bin/sh\ngit lfs pre-push "$@"\n' >"$main/.git/hooks/pre-push"
+  chmod +x "$main/.git/hooks/pre-push"
+  out="${BATS_TEST_TMPDIR}/hk-direct.txt"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"$out" 2>&1
+  run git -C "$main" config --local --get core.hooksPath
+  [ "$status" -eq 1 ]
+  [ "$(grep -c '^=== git フック:' "$out")" -eq 1 ]
+  grep -q '^=== git フック: .githooks を追跡しているが .git/hooks/ に既存のフックがあるため自動では有効化しなかった' "$out"
+}
+
+@test "githooks: only .sample files in .git/hooks/ do not block the switch" {
+  local wt main
+  wt_isolate_git_config
+  wt="$(wt_make_hooks_repo hk-sample tracked)"
+  main="$(dirname "$wt")"
+  mkdir -p "$main/.git/hooks"
+  : >"$main/.git/hooks/pre-push.sample"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >/dev/null 2>&1
+  [ "$(git -C "$main" config --local --get core.hooksPath)" = ".githooks" ]
+}
+
+# A git stub on PATH that delegates to the real git, except for the call named
+# by $1: "write" fails `config --local core.hooksPath .githooks`, "read" makes
+# `config --show-scope --get core.hooksPath` exit 128.
+wt_git_stub() {
+  local real stubdir
+  real="$(command -v git)"
+  stubdir="${BATS_TEST_TMPDIR}/gitstub"
+  mkdir -p "$stubdir"
+  cat >"$stubdir/git" <<STUB
+#!/bin/bash
+case "\$*" in
+  *"config --local core.hooksPath .githooks"*) [ "$1" = write ] && exit 255 ;;
+  *"config --show-scope --get core.hooksPath"*) [ "$1" = read ] && exit 128 ;;
+esac
+exec "$real" "\$@"
+STUB
+  chmod +x "$stubdir/git"
+  echo "$stubdir"
+}
+
+@test "githooks: a failed write prints one WARNING line and the rest of wt-setup.sh still runs" {
+  local wt main out stubdir
+  wt_isolate_git_config
+  wt="$(wt_make_hooks_repo hk-wfail tracked)"
+  main="$(dirname "$wt")"
+  stubdir="$(wt_git_stub write)"
+  out="${BATS_TEST_TMPDIR}/hk-wfail.txt"
+  ( cd "$wt" && PATH="$stubdir:$PATH" bash "$WT_SETUP_SH" ) >"$out" 2>&1
+  [ "$(grep -c 'WARNING: git config --local core.hooksPath .githooks に失敗' "$out")" -eq 1 ]
+  ! grep -q '^=== git フック:' "$out"
+  grep -q '=== 依存状況 ===' "$out"
+  run git -C "$main" config --local --get core.hooksPath
+  [ "$status" -eq 1 ]
+}
+
+@test "githooks: a read that exits other than 0/1 leaves the config untouched" {
+  local wt main out stubdir
+  wt_isolate_git_config
+  wt="$(wt_make_hooks_repo hk-rfail tracked)"
+  main="$(dirname "$wt")"
+  stubdir="$(wt_git_stub read)"
+  out="${BATS_TEST_TMPDIR}/hk-rfail.txt"
+  ( cd "$wt" && PATH="$stubdir:$PATH" bash "$WT_SETUP_SH" ) >"$out" 2>&1
+  run git -C "$main" config --local --get core.hooksPath
+  [ "$status" -eq 1 ]
+  ! grep -q 'git フック' "$out"
+  ! grep -q 'WARNING: git config --local core.hooksPath' "$out"
+  grep -q '=== 依存状況 ===' "$out"
 }
 
 @test "githooks: an existing .githooks value is left as is without output" {
   local wt
+  wt_isolate_git_config
   wt="$(wt_make_hooks_repo hk-same tracked)"
   git -C "$wt" config --local core.hooksPath .githooks
   ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/hk-same.txt" 2>&1
@@ -419,6 +554,7 @@ wt_make_hooks_repo() {
 
 @test "githooks: a different local value is never overwritten" {
   local wt
+  wt_isolate_git_config
   wt="$(wt_make_hooks_repo hk-other tracked)"
   git -C "$wt" config --local core.hooksPath .husky/_
   ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/hk-other.txt" 2>&1
@@ -428,6 +564,7 @@ wt_make_hooks_repo() {
 
 @test "githooks: a repo without .githooks is left untouched" {
   local wt
+  wt_isolate_git_config
   wt="$(wt_make_hooks_repo hk-none none)"
   ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/hk-none.txt" 2>&1
   run git -C "$wt" config --local --get core.hooksPath
@@ -437,6 +574,7 @@ wt_make_hooks_repo() {
 
 @test "githooks: an untracked .githooks alone is not enabled" {
   local wt
+  wt_isolate_git_config
   wt="$(wt_make_hooks_repo hk-untracked untracked)"
   [ -f "$wt/.githooks/pre-push" ]
   ( cd "$wt" && bash "$WT_SETUP_SH" ) >"${BATS_TEST_TMPDIR}/hk-untracked.txt" 2>&1
