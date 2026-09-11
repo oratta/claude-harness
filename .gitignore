@@ -30,3 +30,6 @@ openspec/config.yaml
 # work-session data under each work repo's data/sessions/ per harvest-usage rule)
 sessions/
 .claude/casting/local.md
+
+# Agent worktrees (embedded checkouts, never tracked)
+.claude/worktrees/

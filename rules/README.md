@@ -26,16 +26,20 @@ pull（ff-only）→ `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.
 - Output Style の有効化（settings の `outputStyle`）は sync.sh では書き換えない。新しい PC では
   一度だけ `/output-style readable` で選ぶ
 
-## ファイル一覧
+## ファイル一覧と移設先
 
-| ファイル | 内容 |
-|---|---|
-| `communication-style.md` | 参照は中身で書く・比喩を作らない・判断依頼は背景から推奨まで・ヒアリングは1問ずつ（全文は同リポジトリ `output-styles/readable.md` が正本） |
-| `destructive-git-guard.md` | 破壊的 git 操作の事前承認必須と「戻すだけ」自己正当化への警戒 |
-| `git-commit-policy.md` | 細かい自律コミット・PR運用/ローカルmain運用の判定・承認が要る操作 |
-| `browser-infra-env-capture.md` | ダッシュボード操作で生成された認証情報の即時 env 保存 |
-| `link-when-requesting-review.md` | 人間に確認を求めるときは必ずクリック可能なフル URL を添える |
-| `plugin-editing.md` | プラグイン編集は marketplace dir の外の開発用 clone で・ローカルコピー禁止・バージョン bump の規約 |
-| `dev-server.md` | 他プロジェクトのプロセス kill 禁止・ポート運用 |
-| `subagent-model-selection.md` | サブエージェントの model 明示必須・役割ベースのティア選択（最上位モデルの継承漏れ防止） |
-| `perspective-casting.md` | 「観点の配役」フレームワークの返信前チェック5手順（主に上げてよい論点＝主の視線で結論が変わるものだけ） |
+常時注入される `rules/*.md` は「発火条件と要点」までに留め、手順・経緯・理由の説明は移設先に置く。移設先は**任意の cwd から解決できる形**（スキル名、または `~/.claude/plugins/marketplaces/oratta-claude-harness/<path>`）で書く。`rules/*.md` は全プロジェクトのセッションに載るので、リポジトリ相対パスで書くと harness 以外の cwd では届かなくなる。この表が移設対応の正本。
+
+| ファイル | 常時注入に残した要点 | 詳細の移設先 |
+|---|---|---|
+| `destructive-git-guard.md` | 破壊的 git 操作の事前承認必須と「戻すだけ」自己正当化への警戒。実行ではなく質問に変換するコマンド一覧 | なし（常時性を手放せないルール。全文を残す） |
+| `dev-server.md` | 他プロジェクトのプロセス kill 禁止・ポート運用 | なし（常時性を手放せないルール。全文を残す） |
+| `browser-infra-env-capture.md` | ダッシュボード操作で生成された認証情報の即時 env 保存・gitignore 確認 | 1Password / Actions secrets への昇格手順は `capability-registry:capability-registry` スキル |
+| `communication-style.md` | 参照は中身で書く・比喩を作らない・判断依頼は背景から推奨まで・ヒアリングは1問ずつ（6原則の見出し） | 全文の正本は `~/.claude/plugins/marketplaces/oratta-claude-harness/output-styles/readable.md`（Output Style `readable`） |
+| `git-commit-policy.md` | 細かい自律コミット・承認なしに実行しない操作の一覧 | PR 運用 / ローカル main 運用の判定と自律実行の線引きは `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/commit-and-pr-operations.md`。PR 作成後のゲートは `dev-workflow:pr-review-gate` スキル |
+| `link-when-requesting-review.md` | 人間に確認を求めるときは必ずクリック可能なフル URL を添える・リンクを壊さない書式 | なし（要点のみで完結） |
+| `perspective-casting.md` | 「観点の配役」返信前チェック5手順の見出し | 各手順の中身・配役表の作り方・判例の書き方・相談と仲裁の手順は `casting:casting` スキル |
+| `plugin-editing.md` | プラグイン編集は marketplace dir の外の開発用 clone で・ローカルコピー禁止・`CLAUDE_HARNESS_DEV_DIR` で場所を解決 | `~/.claude/plugins/marketplaces/oratta-claude-harness/docs/worktree-recovery.md` |
+| `subagent-model-selection.md` | サブエージェントの `model` 明示必須・役割ベースのティア対応表 | 経緯・枠残量モード・強制層・適用範囲は `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/model-tiers.md` |
+
+`README.md` はこのディレクトリで唯一 symlink されず、常時注入の集計にも入らない。だから表が長くなっても固定分は増えない。

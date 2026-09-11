@@ -1,6 +1,6 @@
 # モデルティア → `opts.model` 対応表（Workflow 実行のロール別ティア）
 
-Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.model` を、**ティア名からエイリアスに解決する唯一の対応表**。`rules/subagent-model-selection.md`（Agent ツールで立てるサブエージェントのティアの原則）と対になる、ワークフロー側の正本。解散した自律実行プラグインの対応表から、ロール別ティア・エイリアス規則・残量モードによる降格だけを引き継いだ（#205）。
+Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.model` を、**ティア名からエイリアスに解決する唯一の対応表**。あわせて、Agent / Task ツールで直接立てるサブエージェントのティア選択の詳細（経緯・適用範囲・強制層）もここが持つ。常時注入される `rules/subagent-model-selection.md` は「`model` を必ず明示する」と対応表だけの短い版で、判断に迷ったときはこのファイルを読む。解散した自律実行プラグインの対応表から、ロール別ティア・エイリアス規則・残量モードによる降格だけを引き継いだ（#205）。
 
 ## なぜ 1 箇所に集約するか
 
@@ -31,3 +31,31 @@ Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.mo
 - `exhausted` では **全経路**で `fable` ティアを `'opus'` として渡す（枠が実際に無いため）
 
 `haiku` / `sonnet` / `inherit` は残量モードの影響を受けない。降格したときはスクリプトの return 値や PR コメントに 1 行残す（記録形式の正本は pr-review-gate の「決める役モデル: opus（fable レート制限のためフォールバック。subagent_type は dev-workflow:decider のまま）」）。
+
+## Agent / Task ツールで直接立てるサブエージェント
+
+### なぜ `model` の明示が必須か
+
+モデル未指定のサブエージェントは**親セッションのモデルを継承する**ため、親が最上位モデルのセッションでは調査 1 回ごとに最上位枠を無言で消費する。2026-08 に実際に発生した（pr-review-gate に記録した 2026-08-07 のレビュー自動発火事故と同じメカニズム）。
+
+`subagent_type: "fork"` は仕様として常に親モデルで動き、`model` 指定は無視される。fork を使ってよいのは**役割が最上位ティア相当の仕事のときだけ**（下の枠残量確認も同様に適用）。それ以外は fork ではなく `model` 明示の通常サブエージェントで立てる。
+
+### 原則: モデル名ではなく役割で選ぶ
+
+モデルが世代交代しても変わらない基準。メインセッションの最上位モデルはオーケストレーション・アドバイス・最終判断に温存し、サブエージェントは役割でティアを決める。
+
+- **最安ティア** — 結果がモデルの賢さでほぼ変わらない仕事: ファイル探索・grep 的な調査・機械的編集・fan-out ワーカー・要約
+- **中位ティア** — 通常の実装・複数ファイルにまたがる調査・通常のコードレビュー。**迷ったらここ**
+- **最上位ティア** — 判断が一点に集中する仕事だけ（最終 verify・マージ可否・アーキテクチャ判断）。手を動かす仕事（実装・修正ループ）は聖域パスでも中位ティア止まり。枠残量（`FABLE_BUDGET_MODE`。正本は dev-workflow の `scripts/session-tripwires.sh`、未設定時は `conserve` 扱い）を確認してから使う
+
+**最上位ティアは決める役の種別（`dev-workflow:decider`）でだけ spawn する**（`general-purpose` / `Explore` / `Plan` / 他種別に `model: fable` を付けない）。強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`（`Agent` の PreToolUse。全解除は `DEV_WORKFLOW_MODEL_GUARD=off`）。
+
+### 適用範囲
+
+`model` の明示義務は**すべての直接の Agent / Task 呼び出しに共通**で、ワークフロー経由でも免除されない。ワークフローを持つスキルは「どのティアを選ぶか」の決め方の正本を持つだけ:
+
+- ワークフロー実行のロール別ティア: このファイルの上半分
+- レビュー系の既定ティアと最上位ティアへの昇格条件: `dev-workflow:pr-review-gate`
+- 実装役（W）の事前分類: `plugins/dev-workflow/skills/develop/references/roles/worker.md`
+
+それらの網に無い**アドホックに立てるサブエージェント**（Explore / general-purpose 等）は上の原則で直接決める。

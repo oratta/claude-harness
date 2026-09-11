@@ -11,19 +11,19 @@
 
 移設先はすべて「任意の cwd から解決できる形」で書く。skill はスキル名、references / docs は `~/.claude/plugins/marketplaces/oratta-claude-harness/<path>`。リポジトリ相対パスを書かない。
 
-- [ ] 2.1 `rules/plugin-editing.md`（5,376）を縮約する。開発場所の詳細は `CLAUDE.md` の「開発場所」節と `docs/worktree-recovery.md` が既に持つので、rules 側は発火条件と禁止事項の要点まで削り、移設先を `~/.claude/plugins/marketplaces/oratta-claude-harness/docs/worktree-recovery.md` と書く
-- [ ] 2.2 `rules/communication-style.md`（4,833）を縮約する。サブエージェント向けの要点だけにし、全文の正本 `output-styles/readable.md` へのポインタを残す
-- [ ] 2.3 `output-styles/readable.md` の「両方を直すときは同時に直す」に相当する相互参照の文を、縮約後の関係（rules は要点・readable は全文で 1 対 1 対応しない）に合わせて直す。`rules/communication-style.md` 側の同じ文も同時に直す
-- [ ] 2.4 `rules/subagent-model-selection.md`（3,219）を縮約する。ティア対応表と「`model` 必須」を残し、経緯・適用範囲・強制層の説明を `plugins/dev-workflow/references/model-tiers.md` へ移す
-- [ ] 2.5 `rules/perspective-casting.md`（2,710）を縮約する。5 手順の見出しを残し、各手順の説明を `plugins/casting/skills/casting/SKILL.md` へ移す
-- [ ] 2.6 `plugins/casting/skills/casting/SKILL.md` の正本宣言を反転する。description（3 行目付近）と本文（58 行目付近）の「5 手順の正本は `rules/perspective-casting.md`」を、SKILL.md 側が正本である形に直す。description は集計対象なので反転の文言を短くする
-- [ ] 2.7 `rules/git-commit-policy.md`（2,383）を縮約する。「承認なしに実行しない操作の一覧」を残し、PR 運用 / ローカル main 運用の判定手順を `plugins/dev-workflow/references/commit-and-pr-operations.md`（新規）へ移す。pr-review-gate の SKILL.md へは移さない（そのスキルは PR ができた後に読まれるが、運用の判定は最初の commit 時に要る）
-- [ ] 2.8 `rules/browser-infra-env-capture.md`（2,070）を縮約する。「表示された次のアクションで保存」と gitignore 確認を残し、1Password への昇格手順を `capability-registry:capability-registry` へ移す。`paths:` は付けない
-- [ ] 2.9 `rules/link-when-requesting-review.md`（859）を縮約する。書式の注意（裸 URL を括弧で囲まない）を残し、理由の説明を削る
-- [ ] 2.10 `rules/destructive-git-guard.md` と `rules/dev-server.md` は常時注入に残す。削減対象に入れていないことを確認する
-- [ ] 2.11 縮約した各ルールの本文に移設先を 1 行で書き、その解決先（スキル、または展開後のファイル）が実在することを確認する。リポジトリ相対パスが残っていないことも確認する
-- [ ] 2.12 縮約後の `rules/` 配下に `injection-budget` の語が 1 件も無いことを確認する（`the budget convention is not placed under rules/` テストが fail する）
-- [ ] 2.13 `rules/README.md` のファイル一覧表に、ルールごとの移設先を同じ解決できる形で書き足す
+- [x] 2.1 `rules/plugin-editing.md`（5,376）を縮約する。開発場所の詳細は `CLAUDE.md` の「開発場所」節と `docs/worktree-recovery.md` が既に持つので、rules 側は発火条件と禁止事項の要点まで削り、移設先を `~/.claude/plugins/marketplaces/oratta-claude-harness/docs/worktree-recovery.md` と書く
+- [x] 2.2 `rules/communication-style.md`（4,833）を縮約する。サブエージェント向けの要点だけにし、全文の正本 `output-styles/readable.md` へのポインタを残す
+- [x] 2.3 `output-styles/readable.md` の「両方を直すときは同時に直す」に相当する相互参照の文を、縮約後の関係（rules は要点・readable は全文で 1 対 1 対応しない）に合わせて直す。`rules/communication-style.md` 側の同じ文も同時に直す（readable.md 側には相互参照の文が存在しなかったため、1 文を新規に足して関係を両側で揃えた）
+- [x] 2.4 `rules/subagent-model-selection.md`（3,219）を縮約する。ティア対応表と「`model` 必須」を残し、経緯・適用範囲・強制層の説明を `plugins/dev-workflow/references/model-tiers.md` へ移す
+- [x] 2.5 `rules/perspective-casting.md`（2,710）を縮約する。5 手順の見出しを残し、各手順の説明を `plugins/casting/skills/casting/SKILL.md` へ移す
+- [x] 2.6 `plugins/casting/skills/casting/SKILL.md` の正本宣言を反転する。description（3 行目付近）と本文（58 行目付近）の「5 手順の正本は `rules/perspective-casting.md`」を、SKILL.md 側が正本である形に直す。description は集計対象なので反転の文言を短くする
+- [x] 2.7 `rules/git-commit-policy.md`（2,383）を縮約する。「承認なしに実行しない操作の一覧」を残し、PR 運用 / ローカル main 運用の判定手順を `plugins/dev-workflow/references/commit-and-pr-operations.md`（新規）へ移す。pr-review-gate の SKILL.md へは移さない（そのスキルは PR ができた後に読まれるが、運用の判定は最初の commit 時に要る）
+- [x] 2.8 `rules/browser-infra-env-capture.md`（2,070）を縮約する。「表示された次のアクションで保存」と gitignore 確認を残し、1Password への昇格手順を `capability-registry:capability-registry` へ移す。`paths:` は付けない
+- [x] 2.9 `rules/link-when-requesting-review.md`（859）を縮約する。書式の注意（裸 URL を括弧で囲まない）を残し、理由の説明を削る
+- [x] 2.10 `rules/destructive-git-guard.md` と `rules/dev-server.md` は常時注入に残す。削減対象に入れていないことを確認する
+- [x] 2.11 縮約した各ルールの本文に移設先を 1 行で書き、その解決先（スキル、または展開後のファイル）が実在することを確認する。リポジトリ相対パスが残っていないことも確認する
+- [x] 2.12 縮約後の `rules/` 配下に `injection-budget` の語が 1 件も無いことを確認する（`the budget convention is not placed under rules/` テストが fail する）
+- [x] 2.13 `rules/README.md` のファイル一覧表に、ルールごとの移設先を同じ解決できる形で書き足す
 
 ## 3. path スコープの適用（1 で採用と判断した場合のみ） — **不採用のためスキップ**
 
