@@ -202,7 +202,7 @@ step() { awk -v h="### $1. " 'index($0, h)==1 {f=1; print; next} f && /^### / {f
 # 行の並びを grep するだけでは条件の反転や終了コードの無視を検出できないので、
 # 手順 1 と手順 5 の bash 断片そのものを偽の gh で実行し、呼ばれたコマンドと終了コードで確かめる
 # （pr-review-gate-spec-declaration.bats と同じ手口）。
-# 偽の gh は呼び出しを $GH_LOG に記録し、ラベル一覧に $MOCK_LABELS、.draft に $MOCK_DRAFT を返し、
+# 偽の gh は呼び出しを $GH_LOG に記録し、ラベル一覧に $MOCK_LABELS 、.draft に $MOCK_DRAFT を返し、
 # `gh pr ready`（--undo なし）だけ $MOCK_READY_RC で終わる。
 
 # 手順 $1 の fenced bash ブロックのうち、固定文字列 $2 を含むものを返す
@@ -230,7 +230,7 @@ EOF
   export R="o/r" N="42"
 }
 
-run_block() {  # $1 = 手順番号, $2 = ブロックを特定する文字列。終了コードは $status、出力は $output
+run_block() {  # $1 = 手順番号, $2 = ブロックを特定する文字列。終了コードは $status 、出力は $output
   cmds="$(step_block "$1" "$2")"
   [ -n "$cmds" ] || { echo "手順 $1 に「$2」を含む bash ブロックが無い"; return 1; }
   run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" bash -c "$cmds"
