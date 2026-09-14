@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: ゲート合格まで PR を Draft のまま扱い、合格処理で Ready にする
-手順 5（合格処理）は、PR が Draft（`gh api repos/$R/pulls/$N --jq .draft` が `true`）なら `gh pr ready` を実行してから `agent-review:passed` を付けなければならない（MUST）。順序は Ready 化 → passed 付与でなければならない（MUST）。passed を先に付けると、その labeled イベントは PR が draft のため auto-merge にスキップされ、Ready 化で CI が走らないリポでは次の判定が日次 schedule まで来ないためである。PR が Draft でなければ `gh pr ready` を実行してはならない（MUST NOT。人間が作った非 Draft の PR をそのまま通す）。合格処理の最後の実測確認には、ラベル 3 点に加えて PR の `draft` が `false` であることを含めなければならない（MUST）。
+手順 5（合格処理）は、`needs-approval` が付いていないことを Ready 化より前に確認しなければならない（MUST。付いたまま Ready 化だけ済ませると、保留中の PR が Draft でなくなる）。そのうえで、PR が Draft（`gh api repos/$R/pulls/$N --jq .draft` が `true`）なら `gh pr ready` を実行してから `agent-review:passed` を付けなければならない（MUST）。順序は Ready 化 → passed 付与でなければならない（MUST）。passed を先に付けると、その labeled イベントは PR が draft のため auto-merge にスキップされ、Ready 化で CI が走らないリポでは次の判定が日次 schedule まで来ないためである。PR が Draft でなければ `gh pr ready` を実行してはならない（MUST NOT。人間が作った非 Draft の PR をそのまま通す）。合格処理の最後の実測確認には、ラベル 3 点に加えて PR の `draft` が `false` であることを含めなければならない（MUST）。
 
 手順 1 で stale な `agent-review:passed` を外したとき、PR が Draft でなければ `gh pr ready --undo` で Draft に戻さなければならない（MUST）。passed が付いていなかった場合（初回のゲート・failed からの再レビュー・保留からの再開）は Draft に戻してはならない（MUST NOT）。
 

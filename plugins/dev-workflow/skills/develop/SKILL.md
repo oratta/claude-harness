@@ -85,7 +85,7 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
       (3a) apply（TDD。/opsx:apply または直叩き）→ verify → return「工程完了: 実装＋verify」
            （実行したテストコマンドと exit code、/opsx:verify の合否を載せる）
            → 本体はここで `scripts/subagent-context.sh <W の名前>` をもう一度実行して測ってから (3b) を指示する
-      (3b) archive → PR を Ready に（または作成）→ 仕様宣言を PR コメントに書く
+      (3b) archive → PR を Draft のまま用意（無ければ Draft で作成。Ready 化は (4) の G が pr-review-gate 手順 5 で行う）→ 仕様宣言を PR コメントに書く
            → return「工程完了: archive＋PR＋仕様宣言」（PR #N と仕様宣言のコメント URL を載せる）
       (3) をこれより細かく（tasks の項目単位・実装／verify／archive／PR／仕様宣言 の 5 段など）切らない。
            手渡しごとに指示書の読み直しと現状確認の固定分が乗り、実装の途中で切ると後任が Red のまま
@@ -95,6 +95,7 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
            通しで終えた場合）、(3b) を指示せず、そのまま (4)（G の工程）へ進む
 (4) G を名前付きで spawn（model: 既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は Codex か needs-reviewer のレビュアーが担う）:
       pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer」
+      合格処理（手順 5）では PR が Draft なら Ready にしてから agent-review:passed を付ける（W は Ready にしない）
       needs-reviewer → 本体がレビュアーを spawn し、要約を SendMessage で G に渡す（gate-runner.md）
       failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）で戻し方を決める。モデルを上げるのは実装品質起因のときだけで、
            上げるのは決める役と実行役の一方だけ（実行側が原因なら W を opus に、判断側が原因なら dev-workflow:decider を立てて修正方針を作らせる。

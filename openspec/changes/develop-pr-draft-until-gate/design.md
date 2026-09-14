@@ -1,6 +1,6 @@
 ## Context
 
-develop の 1 ループは W → R1 → W → G で回り、W の (3b) が PR を Ready にしてから G が pr-review-gate の手順 1〜5 を実行する。flatmate は CI を「Draft でない PR だけ」で回す設定にしたので、Ready を G の合格時まで遅らせれば CI はゲート合格後の 1 回だけになる。
+develop の 1 ループは W → R1 → W → G で回り、W の (3b) が PR を Ready にしてから G が pr-review-gate の手順 1〜5 を実行する。flatmate は CI を「Draft でない PR だけ」で回す設定にしたので、Ready を G の合格時まで遅らせれば CI はゲート合格後の 1 回だけになる。Draft で CI を止める設計は flatmate 固有ではなく、harness が配布する `plugins/infra/templates/workflows/ci.yml.template` も同じ形である（`pull_request` の types に `ready_for_review` を含め、Draft 中は job 側の `draft == false` ガードで skip する）。
 
 auto-merge workflow（`templates/auto-merge/` から展開し、harness 自身にも配備済み）は次の 3 つのイベントで PR を判定する。
 
@@ -21,7 +21,7 @@ CI の設定はリポで違う。flatmate は Draft で CI を止め、Ready 化
 - develop 経由の PR はゲート合格まで Draft のまま進み、合格処理で Draft が外れる
 - CI を Draft で止めるリポでも止めないリポでも、合格から auto-merge までの時間が今より延びない
 - 人間が作った非 Draft の PR をゲートに通しても手順が壊れない
-- 合格後に commit を積んでゲートを取り直すあいだも Draft に戻り、CI が周回ごとに走らない
+- 合格後に commit を積んでゲートを取り直すあいだも Draft に戻し、CI を Draft で止めるリポでの取り直し 1 周あたりの CI を、合格後の最初の push で 1 回と合格時の Ready 化で 1 回に収める（Draft に戻すのは G の手順 1 なので、その前の最初の push は非 Draft の PR への synchronize として CI が走る）
 
 **Non-Goals:**
 
@@ -76,6 +76,8 @@ issue 本文が心配した「CI 完了時点で合格ラベルが無く auto-me
 ## Risks / Trade-offs
 
 - [Ready 化と passed 付与のあいだで G が止まると、passed の無い非 Draft の PR が残る] → 次にゲートを回すと手順 1 では passed が無いので Draft に戻らず、取り直しの周回で CI が走る。止まった直後の再開では手順 5 から続けるので実害は CI 1〜数回ぶん
+- [Ready 化と passed 付与のあいだで止まり、passed を付けたあとの判定イベントを取り逃がした] → `docs/auto-merge.md` の手動実行（`workflow_dispatch` の `pr` 入力）で再判定できる
+- [取り直しでは CI が 1 周あたり 2 回走る（合格後の最初の push が非 Draft への synchronize で 1 回、合格時の Ready 化で 1 回）] → Draft に戻すのは push を受けて G が手順 1 を始めたときなので、最初の 1 回は避けられない。戻さなければ取り直しの push のたびに走る
 - [人間が作った非 Draft の PR が合格後の取り直しで保留になると、主の回答待ちの間 Draft に見える] → 保留コメントに Draft に戻した旨が残る。主の回答後に合格すれば Ready に戻る
 - [flatmate の憲法が自分で Ready にしていると、無人ループでは CI が今までどおり走る] → flatmate 側の別 issue で揃える。harness 側の変更だけでは壊れない
 - [Ready 化で CI が走らないリポで、Draft 中の CI が失敗していた場合] → labeled 時点で green でないのでマージされない（今と同じ fail-closed）

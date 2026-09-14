@@ -1,7 +1,7 @@
 ---
 name: pr-review-gate
 description: PR を作成したら必ず通す品質ゲート。「PR を作った」「レビューして」「マージまで進めて」「auto-merge に載せたい」ときに必ず読み込む。保留中の PR の再開（「主の回答が来た」「リスクを許容する/しない」「動作確認の結果を伝える」「保留を進めて」「レビュー指摘を直したので再レビュー」）も必ずこのスキルで復帰手順を確認する。このゲートを通っていない PR は主の承認なしにマージしてはならない。
-version: 1.6.0
+version: 1.7.0
 ---
 
 # PR レビューゲート
@@ -33,10 +33,14 @@ version: 1.6.0
    このとき **`needs-approval` の要否も判断する** — 保留理由が解消しているなら
    `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外し、
    まだ主の許容待ちが残っているなら**付けたまま**にして手順6を続行する。黙って持ち越さない。
-2. **stale な `agent-review:passed` を必ず外す**（理由は冒頭「前提と理由」）。外してからレビューを始める（合格なら手順5で付け直す）:
+2. **stale な `agent-review:passed` を必ず外す**（理由は冒頭「前提と理由」）。外してからレビューを始める（合格なら手順5で付け直す）。
+   passed を外したら、PR が Draft でなければ `gh pr ready --undo` で Draft に戻す（手順5の合格処理で Ready にした PR に commit が積まれた取り直しのあいだ、周回ごとに CI を走らせないため。次の合格で Ready に戻る）。
+   passed が付いていなかったとき（初回のゲート・failed からの再レビュー・保留からの再開）は Draft に戻さない（人間が非 Draft で作った PR を、failed や保留のまま Draft に残さないため）:
    ```bash
    gh api repos/$R/issues/$N --jq '.labels[].name'                          # passed の有無を確認
    gh api -X DELETE repos/$R/issues/$N/labels/agent-review:passed           # 付いていたら外す
+   gh api repos/$R/pulls/$N --jq .draft                                     # passed を外したときだけ見る
+   gh pr ready --undo $N --repo $R                                          # 上が false のときだけ Draft に戻す
    ```
 3. 記録先の**受け入れ条件**を取得する。判定の唯一の根拠はこれ。記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す issue で、**issue 参照が無い PR（Draft PR を記録先にした依頼）では PR 本文そのもの**が受け入れ条件になる（develop スキルの W は受け入れ条件を PR 本文に書く）:
    ```bash
@@ -295,25 +299,40 @@ bash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF /
 | `仕様化判断: しない` | 仕様宣言は「変更なし＋理由」形。PR に `openspec/` 差分が**無い**こと（差分があれば「しない」と矛盾＝合格しない。判断を「する」に取り直すか差分を外す）。`spec-touch-check.sh` が終了コード 2 なら、理由に規範パス接触への言及があること |
 | 記録なし | **合格しない**。今から判断して記録先に `仕様化判断:` を投稿する（「する」なら仕様化・仕様レビューからやり直す）。issue が無い PR に限り PR 自身のコメントに同書式で記録してよい（`gh api -X POST repos/$R/issues/$REC/comments`） |
 
+**`needs-approval` が付いていないことを、Ready 化より前に確認する。** auto-merge は `needs-approval` を
+BLOCKING_LABELS に含むため無審査マージにはならないが、**passed と併存すると
+「合格済みなのに永久にマージされないスタック」**になり、Ready 化だけ済ませると保留中の PR が Draft でなくなる。
+保留理由が解消しているなら `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外してから進む。
+解消していないなら**そもそも合格処理をしない**（手順6に戻る）。
+
+**PR が Draft なら Ready にしてから `agent-review:passed` を付ける**（この順序を入れ替えない）。
+passed を先に付けると、その labeled イベントは PR が draft なので auto-merge workflow にスキップされる。
+Ready 化で CI が走るリポでは CI 完了で拾い直されるが、CI を Draft 中に済ませて Ready 化では走らせないリポでは
+次の判定が日次の schedule まで来ず、合格からマージまで最大 24 時間待つ。
+Draft でない PR（人間が作った PR など）には Ready 化を行わない。
+
 ```bash
+gh api repos/$R/issues/$N --jq '.labels[].name'   # needs-approval が無いことを確認（あれば上のとおり）
+DRAFT=$(gh api repos/$R/pulls/$N --jq .draft)
+if [ "$DRAFT" = true ]; then gh pr ready $N --repo $R; fi   # Draft なら Ready にする
 gh api -X POST repos/$R/issues/$N/labels -f 'labels[]=agent-review:passed'
 gh api -X DELETE repos/$R/issues/$N/labels/agent-review:pending
-gh api repos/$R/issues/$N --jq '.labels[].name'   # 実測確認
+gh api repos/$R/issues/$N --jq '.labels[].name'   # 実測確認（ラベル）
+gh api repos/$R/pulls/$N --jq .draft              # 実測確認（Draft）
 ```
 
-最後の実測確認は次の**3点すべて**を満たすこと（`gh` は静かに失敗することがある）:
+最後の実測確認は次の**4点すべて**を満たすこと（`gh` は静かに失敗することがある）:
 
 | 確認項目 | 期待 |
 |---|---|
 | `agent-review:passed` | **ある** |
 | `agent-review:pending` | **ない** |
 | `needs-approval` | **ない** |
+| PR の `draft` | **`false`** |
 
-`needs-approval` が残っていたら合格処理は未完了。auto-merge は `needs-approval` を
-BLOCKING_LABELS に含むため無審査マージにはならないが、**passed と併存すると
-「合格済みなのに永久にマージされないスタック」**になる。保留理由が解消しているなら
-`gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外す。
-解消していないなら**そもそも合格処理をしない**（手順6に戻る）。
+`needs-approval` が残っていたら合格処理は未完了（上の Ready 化前の確認に戻る）。
+`draft` が `true` のままなら `gh pr ready` をやり直す（draft のまま passed が付いた PR は auto-merge が毎回スキップする）。
+Ready 化と passed 付与のあいだで止まって判定イベントを取り逃がしたときは、`docs/auto-merge.md` の手動実行（`workflow_dispatch` の `pr` 入力）で再判定できる。
 聖域パス（auto-merge workflow の SACRED 定義。例: `.github/workflows/` `CLAUDE.md` `.claude/` 憲法 doc）に
 触れる PR は passed でも auto-merge されず人間マージになる — 判定の正本は auto-merge workflow 側。
 触れている自覚があればコメントに1行書き添える。auto-merge 未配備のリポでは、合格処理の後に

@@ -1,5 +1,18 @@
 # Changelog — dev-workflow
 
+## 2.13.0 — 2026-09-14: develop の PR をゲート合格まで Draft に保ち、合格処理で Ready にする
+
+W が工程 (3b) で PR を Ready にしてから G に渡していたため、CI を「Draft の PR では回さず、Draft を外したときに回す」設定にしたリポ（genetta-inc/flatmate。harness が配布する `plugins/infra/templates/workflows/ci.yml.template` も同じ形）でも、レビューと修正の周回ごとに CI が走っていた。flatmate では 14 日で org の Actions 無料枠を使い切り、CI と auto-merge が全停止した。#304。
+
+- **W の (3b) は PR を Draft のまま G に渡す**（`skills/develop/references/roles/worker.md` と `skills/develop/SKILL.md`）。issue が記録先なら interactive でも `gh pr create --draft` で作る
+- **pr-review-gate 手順 5 の合格処理で、`needs-approval` が無いことを確かめてから、Draft なら `gh pr ready` を実行し、そのあとに `agent-review:passed` を付ける**。実測確認に「PR の `draft` が `false`」を足した（4 点）。人間が作った非 Draft の PR には何もしない
+- **順序は issue 本文の「passed → Ready」ではなく「Ready → passed」にした**。passed を先に付けると、その labeled イベントは PR が draft なので auto-merge workflow にスキップされる。Ready 化で CI が走るリポは CI 完了で拾い直されるが、CI を Draft 中に済ませて Ready 化で走らせないリポ（harness 自身）では次の判定が日次の schedule まで来ず、合格からマージまで最大 24 時間待つ。Ready → passed なら、どちらのリポでも passed 付与の labeled か CI 完了のどちらかで判定される
+- **手順 1 で stale な passed を外したら、非 Draft の PR を `gh pr ready --undo` で Draft に戻す**（passed が無かった初回・failed から・保留からは戻さない）。CI を Draft で止めるリポでの取り直し 1 周あたりの CI は、合格後の最初の push（非 Draft の PR への synchronize）で 1 回と、合格時の Ready 化で 1 回になる。戻さなければ取り直しの push のたびに走る
+- `skills/develop/references/roles/gate-runner.md`: 手順の要約に Ready 化を入れ、passed の return に「Ready 化: 実施した | 対象外（元から非 Draft）」の欄を足した
+- pr-review-gate の frontmatter version を 1.7.0 に上げた
+- 古いキャッシュの worker.md を読んだ W が (3b) で Ready にしても、手順 5 の Ready 化は「Draft なら」なので二重実行にならない
+- `tests/develop-skill.bats` の (3b) の Ready 検査を Draft の検査に反転し、`tests/develop-roles.bats` に 2 本、`tests/pr-review-gate-skill.bats` に 4 本足した
+
 ## 2.11.0 — 2026-09-11: メモリ索引の肥大と放置を検知し、見直す手順を足す
 
 メモリ（`~/.claude/projects/<project>/memory/`）の索引 MEMORY.md は毎セッション注入されるが、repo の外にあるので `tests/injection-budget.bats` では測れない。書く規約はあっても見直す手順が無く、claude-harness プロジェクトでは 27 件・58,428 バイト（索引 5,410 バイト / 34 行）まで、終わった事実や repo と重複する項目を抱えたまま増えていた。エピック #257 の子 #294（検知）と #295（修復）。
