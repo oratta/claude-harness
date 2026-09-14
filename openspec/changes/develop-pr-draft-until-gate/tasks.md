@@ -23,5 +23,5 @@
 
 ## 4. 検証
 
-- [ ] 4.1 `bash scripts/test.sh` を全件実行し、exit code 0 を確認する
+- [x] 4.1 `bash scripts/test.sh` を全件実行し、exit code 0 を確認する
 - [x] 4.2 `openspec validate develop-pr-draft-until-gate --strict` が通ることを確認する
