@@ -193,3 +193,46 @@ setup() {
   highest="$(printf '1.0.0\n%s\n' "$v" | sort -V | tail -1)"
   [ "$highest" = "$v" ]
 }
+
+# --- Requirement: ゲート合格まで PR を Draft のまま扱い、合格処理で Ready にする（#304） ---
+
+# 「### <N>. 」から次の「### 」見出しまでを切り出す（「#### 」の小見出しでは区切らない）
+step() { awk -v h="### $1. " 'index($0, h)==1 {f=1; print; next} f && /^### / {f=0} f' "$SKILL"; }
+# 本文でパターンに最初に一致した行番号（無ければ空）
+first_line() { printf '%s\n' "$1" | grep -nF -- "$2" | head -1 | cut -d: -f1; }
+
+@test "draft: step 5 checks needs-approval, reads .draft, runs gh pr ready, then POSTs passed, in that order" {
+  s5="$(step 5)"
+  [ -n "$s5" ] || { echo "no step 5 section"; return 1; }
+  ln_na="$(printf '%s\n' "$s5" | grep -nF ".labels[].name" | grep -F 'needs-approval' | head -1 | cut -d: -f1)"
+  ln_draft="$(first_line "$s5" '--jq .draft')"
+  ln_ready="$(printf '%s\n' "$s5" | grep -nF 'gh pr ready' | grep -vF -- '--undo' | head -1 | cut -d: -f1)"
+  ln_passed="$(first_line "$s5" "labels[]=agent-review:passed")"
+  for v in ln_na ln_draft ln_ready ln_passed; do
+    [ -n "${!v}" ] || { echo "$v が手順 5 に見つからない"; return 1; }
+  done
+  [ "$ln_na" -lt "$ln_draft" ]
+  [ "$ln_draft" -lt "$ln_ready" ]
+  [ "$ln_ready" -lt "$ln_passed" ]
+}
+
+@test "draft: step 5 runs gh pr ready only when the PR is Draft and states why Ready comes before passed" {
+  s5="$(step 5)"
+  printf '%s\n' "$s5" | grep -F 'gh pr ready' | grep -vF -- '--undo' | grep -qF 'Draft なら'
+  flat="$(printf '%s\n' "$s5" | tr '\n' ' ')"
+  echo "$flat" | grep -qE 'labeled[^。]*draft[^。]*スキップ'
+  echo "$flat" | grep -qE '日次'
+}
+
+@test "draft: step 5 measured table has a draft=false row" {
+  step 5 | grep -qE '^\| PR の `draft` \| \*\*`false`\*\* \|$'
+}
+
+@test "draft: step 1 moves a non-Draft PR back to Draft only when a stale passed was removed" {
+  s1="$(step 1)"
+  [ -n "$s1" ] || { echo "no step 1 section"; return 1; }
+  echo "$s1" | grep -qF 'gh pr ready --undo'
+  flat="$(printf '%s\n' "$s1" | tr '\n' ' ')"
+  echo "$flat" | grep -qE 'passed を外したら[^。]*Draft でなければ[^。]*gh pr ready --undo'
+  echo "$flat" | grep -qE 'passed が付いていなかった[^。]*Draft に戻さない'
+}

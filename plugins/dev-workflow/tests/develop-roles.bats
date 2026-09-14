@@ -127,6 +127,19 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   echo "$b" | grep -q '仕様宣言のコメント URL'
 }
 
+# ゲート合格まで PR を Draft のまま進める（#304）。W は Ready にせず、G が pr-review-gate 手順 5 で行う。
+@test "worker: (3b) keeps the PR as Draft (gh pr create --draft) and leaves Ready to G" {
+  b="$(section "$WORKER" '(3b) archive＋PR＋仕様宣言')"
+  [ -n "$b" ] || { echo "no (3b) section in worker.md"; return 1; }
+  echo "$b" | grep -q 'Draft のまま'
+  echo "$b" | grep -qF 'gh pr create --draft'
+  echo "$b" | grep -F 'Ready 化' | grep -qF '手順 5'
+  if echo "$b" | grep -qE 'gh pr ready|Ready for Review.*切り替え'; then
+    echo "(3b) の節に W が Ready に切り替える記述がある（Ready 化は G の手順 5）" >&2
+    return 1
+  fi
+}
+
 # opsx スラッシュコマンドが無く openspec CLI だけある経路も、(3a)/(3b) の区切りは同じでなければ
 # ならない（#262 のゲート指摘。この段落だけ旧来の「実装 → archive」一括のまま残っていた）。
 @test "worker: the openspec-CLI-only path stops at verify in (3a) and archives in (3b)" {
@@ -251,6 +264,13 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q '実装品質起因' "$GATE"
   grep -q '仕様が曖昧' "$GATE"
   grep -q '誤検出' "$GATE"
+}
+
+@test "gate-runner: step 5 summary includes Ready (only when Draft) and the passed return has a Ready result field" {
+  todo="$(section "$GATE" 'やること')"
+  [ -n "$todo" ] || { echo "no やること section in gate-runner.md"; return 1; }
+  echo "$todo" | grep -F 'agent-review:passed' | grep -qF 'Draft なら Ready'
+  grep -qF 'Ready 化: 実施した | 対象外（元から非 Draft）' "$GATE"
 }
 
 @test "gate-runner: return formats cover passed / failed / on-hold" {
