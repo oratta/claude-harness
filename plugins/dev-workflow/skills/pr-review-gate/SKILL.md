@@ -37,10 +37,10 @@ version: 1.7.0
    passed を外したら、PR が Draft でなければ `gh pr ready --undo` で Draft に戻す（手順5の合格処理で Ready にした PR に commit が積まれた取り直しのあいだ、周回ごとに CI を走らせないため。次の合格で Ready に戻る）。
    passed が付いていなかったとき（初回のゲート・failed からの再レビュー・保留からの再開）は Draft に戻さない（人間が非 Draft で作った PR を、failed や保留のまま Draft に残さないため）:
    ```bash
-   gh api repos/$R/issues/$N --jq '.labels[].name'                          # passed の有無を確認
-   gh api -X DELETE repos/$R/issues/$N/labels/agent-review:passed           # 付いていたら外す
-   gh api repos/$R/pulls/$N --jq .draft                                     # passed を外したときだけ見る
-   gh pr ready --undo $N --repo $R                                          # 上が false のときだけ Draft に戻す
+   if gh api repos/$R/issues/$N --jq '.labels[].name' | grep -qx 'agent-review:passed'; then   # passed が付いていたら
+     gh api -X DELETE repos/$R/issues/$N/labels/agent-review:passed                           # 外して
+     if [ "$(gh api repos/$R/pulls/$N --jq .draft)" = false ]; then gh pr ready --undo $N --repo $R; fi   # 非 Draft なら Draft に戻す
+   fi
    ```
 3. 記録先の**受け入れ条件**を取得する。判定の唯一の根拠はこれ。記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す issue で、**issue 参照が無い PR（Draft PR を記録先にした依頼）では PR 本文そのもの**が受け入れ条件になる（develop スキルの W は受け入れ条件を PR 本文に書く）:
    ```bash
@@ -310,11 +310,17 @@ passed を先に付けると、その labeled イベントは PR が draft な�
 Ready 化で CI が走るリポでは CI 完了で拾い直されるが、CI を Draft 中に済ませて Ready 化では走らせないリポでは
 次の判定が日次の schedule まで来ず、合格からマージまで最大 24 時間待つ。
 Draft でない PR（人間が作った PR など）には Ready 化を行わない。
+**Ready 化に失敗したら passed を付けずに止まる**（下の断片は非 0 で終わる）。draft のまま passed を付けると
+その labeled イベントはスキップされて消費され、あとで Ready 化をやり直しても新しい labeled は起きないため、
+Ready 化で CI が走らないリポでは日次の schedule まで拾われない。`draft` が取れなかったときも同じく止まる。
 
 ```bash
 gh api repos/$R/issues/$N --jq '.labels[].name'   # needs-approval が無いことを確認（あれば上のとおり）
 DRAFT=$(gh api repos/$R/pulls/$N --jq .draft)
-if [ "$DRAFT" = true ]; then gh pr ready $N --repo $R; fi   # Draft なら Ready にする
+case "$DRAFT" in true|false) ;; *) echo "draft を取得できない（$DRAFT）。passed を付けずに中断する" >&2; exit 1 ;; esac
+if [ "$DRAFT" = true ]; then   # Draft なら Ready にする。失敗したら passed を付けずに中断する
+  gh pr ready $N --repo $R || { echo "gh pr ready に失敗。passed を付けずに中断する" >&2; exit 1; }
+fi
 gh api -X POST repos/$R/issues/$N/labels -f 'labels[]=agent-review:passed'
 gh api -X DELETE repos/$R/issues/$N/labels/agent-review:pending
 gh api repos/$R/issues/$N --jq '.labels[].name'   # 実測確認（ラベル）
@@ -331,8 +337,14 @@ gh api repos/$R/pulls/$N --jq .draft              # 実測確認（Draft）
 | PR の `draft` | **`false`** |
 
 `needs-approval` が残っていたら合格処理は未完了（上の Ready 化前の確認に戻る）。
-`draft` が `true` のままなら `gh pr ready` をやり直す（draft のまま passed が付いた PR は auto-merge が毎回スキップする）。
-Ready 化と passed 付与のあいだで止まって判定イベントを取り逃がしたときは、`docs/auto-merge.md` の手動実行（`workflow_dispatch` の `pr` 入力）で再判定できる。
+途中で止まったときは、passed が付いているかで復旧を分ける:
+
+| 止まった状態 | 復旧 |
+|---|---|
+| Ready 化に失敗して止まった（`draft` が `true`、passed なし） | 失敗の原因（権限・ネットワーク等）を記録先に報告し、解消してから手順5の断片を再実行する |
+| Ready 化は済んだが passed を付ける前に止まった（`draft` が `false`、passed なし） | 手順5の断片をそのまま再実行する（Draft でないので Ready 化は飛ばされ、passed の labeled で判定される） |
+| passed は付いたが auto-merge が判定を取り逃がした（`draft` が `false`、passed あり、マージされない） | `docs/auto-merge.md` の手動実行（`workflow_dispatch` の `pr` 入力）で再判定する |
+| `draft` が `true` のまま passed が付いている（旧手順や手動操作の残骸） | passed を外し、`gh pr ready` で Ready にしてから passed を付け直す（付け直しで新しい labeled が起きる） |
 聖域パス（auto-merge workflow の SACRED 定義。例: `.github/workflows/` `CLAUDE.md` `.claude/` 憲法 doc）に
 触れる PR は passed でも auto-merge されず人間マージになる — 判定の正本は auto-merge workflow 側。
 触れている自覚があればコメントに1行書き添える。auto-merge 未配備のリポでは、合格処理の後に

@@ -198,28 +198,96 @@ setup() {
 
 # 「### <N>. 」から次の「### 」見出しまでを切り出す（「#### 」の小見出しでは区切らない）
 step() { awk -v h="### $1. " 'index($0, h)==1 {f=1; print; next} f && /^### / {f=0} f' "$SKILL"; }
-# 本文でパターンに最初に一致した行番号（無ければ空）
-first_line() { printf '%s\n' "$1" | grep -nF -- "$2" | head -1 | cut -d: -f1; }
 
-@test "draft: step 5 checks needs-approval, reads .draft, runs gh pr ready, then POSTs passed, in that order" {
-  s5="$(step 5)"
-  [ -n "$s5" ] || { echo "no step 5 section"; return 1; }
-  ln_na="$(printf '%s\n' "$s5" | grep -nF ".labels[].name" | grep -F 'needs-approval' | head -1 | cut -d: -f1)"
-  ln_draft="$(first_line "$s5" '--jq .draft')"
-  ln_ready="$(printf '%s\n' "$s5" | grep -nF 'gh pr ready' | grep -vF -- '--undo' | head -1 | cut -d: -f1)"
-  ln_passed="$(first_line "$s5" "labels[]=agent-review:passed")"
-  for v in ln_na ln_draft ln_ready ln_passed; do
-    [ -n "${!v}" ] || { echo "$v が手順 5 に見つからない"; return 1; }
-  done
-  [ "$ln_na" -lt "$ln_draft" ]
-  [ "$ln_draft" -lt "$ln_ready" ]
+# 行の並びを grep するだけでは条件の反転や終了コードの無視を検出できないので、
+# 手順 1 と手順 5 の bash 断片そのものを偽の gh で実行し、呼ばれたコマンドと終了コードで確かめる
+# （pr-review-gate-spec-declaration.bats と同じ手口）。
+# 偽の gh は呼び出しを $GH_LOG に記録し、ラベル一覧に $MOCK_LABELS、.draft に $MOCK_DRAFT を返し、
+# `gh pr ready`（--undo なし）だけ $MOCK_READY_RC で終わる。
+
+# 手順 $1 の fenced bash ブロックのうち、固定文字列 $2 を含むものを返す
+step_block() {
+  step "$1" | awk -v m="$2" '/^ *```bash/{f=1; b=""; next} /^ *```/{ if (f && index(b, m)) printf "%s", b; f=0; next } f{ b = b $0 "\n" }'
+}
+
+install_draft_gh() {
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  cat > "$BATS_TEST_TMPDIR/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GH_LOG"
+case " $* " in
+  *" pr ready "*--undo*) exit 0 ;;
+  *" pr ready "*)        exit "${MOCK_READY_RC:-0}" ;;
+  *" -X "*)              exit 0 ;;                               # ラベルの POST / DELETE
+  *"/pulls/"*".draft"*)  printf '%s\n' "$MOCK_DRAFT" ;;
+  *".labels[].name"*)    printf '%s\n' $MOCK_LABELS ;;
+  *) echo "unexpected gh call: $*" >&2; exit 1 ;;
+esac
+EOF
+  chmod +x "$BATS_TEST_TMPDIR/bin/gh"
+  export GH_LOG="$BATS_TEST_TMPDIR/gh.log"
+  : > "$GH_LOG"
+  export R="o/r" N="42"
+}
+
+run_block() {  # $1 = 手順番号, $2 = ブロックを特定する文字列。終了コードは $status、出力は $output
+  cmds="$(step_block "$1" "$2")"
+  [ -n "$cmds" ] || { echo "手順 $1 に「$2」を含む bash ブロックが無い"; return 1; }
+  run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" bash -c "$cmds"
+}
+
+@test "draft: step 5 snippet on a Draft PR runs gh pr ready before POSTing passed" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:pending" MOCK_DRAFT=true run_block 5 '--jq .draft'
+  [ "$status" -eq 0 ]
+  ln_ready="$(grep -nE '^pr ready 42 ' "$GH_LOG" | grep -vF -- '--undo' | head -1 | cut -d: -f1)"
+  ln_passed="$(grep -nF 'labels[]=agent-review:passed' "$GH_LOG" | head -1 | cut -d: -f1)"
+  [ -n "$ln_ready" ] || { cat "$GH_LOG"; echo "gh pr ready が呼ばれていない"; return 1; }
+  [ -n "$ln_passed" ] || { cat "$GH_LOG"; echo "passed が付いていない"; return 1; }
   [ "$ln_ready" -lt "$ln_passed" ]
 }
 
-@test "draft: step 5 runs gh pr ready only when the PR is Draft and states why Ready comes before passed" {
+@test "draft: step 5 snippet on a non-Draft PR does not run gh pr ready but POSTs passed" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:pending" MOCK_DRAFT=false run_block 5 '--jq .draft'
+  [ "$status" -eq 0 ]
+  ! grep -qE '^pr ready' "$GH_LOG"
+  grep -qF 'labels[]=agent-review:passed' "$GH_LOG"
+}
+
+@test "draft: step 5 snippet stops without POSTing passed when gh pr ready fails" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:pending" MOCK_DRAFT=true MOCK_READY_RC=1 run_block 5 '--jq .draft'
+  [ "$status" -ne 0 ]
+  grep -qE '^pr ready 42 ' "$GH_LOG"
+  ! grep -qF 'labels[]=agent-review:passed' "$GH_LOG"
+}
+
+@test "draft: step 1 snippet moves a non-Draft PR back to Draft after removing a stale passed" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:pending agent-review:passed" MOCK_DRAFT=false run_block 1 'gh pr ready --undo'
+  grep -qF -- '-X DELETE repos/o/r/issues/42/labels/agent-review:passed' "$GH_LOG"
+  grep -qE '^pr ready --undo 42 ' "$GH_LOG"
+}
+
+@test "draft: step 1 snippet leaves a Draft PR alone after removing a stale passed" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:passed" MOCK_DRAFT=true run_block 1 'gh pr ready --undo'
+  grep -qF -- '-X DELETE repos/o/r/issues/42/labels/agent-review:passed' "$GH_LOG"
+  ! grep -qE '^pr ready' "$GH_LOG"
+}
+
+@test "draft: step 1 snippet does not undo Ready when no passed label was present" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:pending" MOCK_DRAFT=false run_block 1 'gh pr ready --undo'
+  ! grep -qF 'labels/agent-review:passed' "$GH_LOG"
+  ! grep -qE '^pr ready' "$GH_LOG"
+}
+
+@test "draft: step 5 states why Ready comes before passed and that a failed Ready stops before passed" {
   s5="$(step 5)"
-  printf '%s\n' "$s5" | grep -F 'gh pr ready' | grep -vF -- '--undo' | grep -qF 'Draft なら'
   flat="$(printf '%s\n' "$s5" | tr '\n' ' ')"
+  echo "$flat" | grep -qE 'Ready 化に失敗したら[^。]*passed を付けず'
   echo "$flat" | grep -qE 'labeled[^。]*draft[^。]*スキップ'
   echo "$flat" | grep -qE '日次'
 }

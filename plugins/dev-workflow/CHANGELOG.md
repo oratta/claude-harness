@@ -8,6 +8,7 @@ W が工程 (3b) で PR を Ready にしてから G に渡していたため、C
 - **pr-review-gate 手順 5 の合格処理で、`needs-approval` が無いことを確かめてから、Draft なら `gh pr ready` を実行し、そのあとに `agent-review:passed` を付ける**。実測確認に「PR の `draft` が `false`」を足した（4 点）。人間が作った非 Draft の PR には何もしない
 - **順序は issue 本文の「passed → Ready」ではなく「Ready → passed」にした**。passed を先に付けると、その labeled イベントは PR が draft なので auto-merge workflow にスキップされる。Ready 化で CI が走るリポは CI 完了で拾い直されるが、CI を Draft 中に済ませて Ready 化で走らせないリポ（harness 自身）では次の判定が日次の schedule まで来ず、合格からマージまで最大 24 時間待つ。Ready → passed なら、どちらのリポでも passed 付与の labeled か CI 完了のどちらかで判定される
 - **手順 1 で stale な passed を外したら、非 Draft の PR を `gh pr ready --undo` で Draft に戻す**（passed が無かった初回・failed から・保留からは戻さない）。CI を Draft で止めるリポでの取り直し 1 周あたりの CI は、合格後の最初の push（非 Draft の PR への synchronize）で 1 回と、合格時の Ready 化で 1 回になる。戻さなければ取り直しの push のたびに走る
+- **Ready 化に失敗したら passed を付けずに止まる**（手順 5 の断片が `gh pr ready` の終了コードを見て非 0 で終わる。`draft` を取得できないときも同じ）。draft のまま passed を付けると labeled イベントがスキップで消費され、Ready 化をやり直しても判定が日次まで来ないため。途中で止まったときの復旧は、passed の有無と `draft` の値で 4 通りに分けて書いた。手順 1 の断片も「passed があれば外し、非 Draft なら `--undo`」をそのまま実行できる条件分岐にした
 - `skills/develop/references/roles/gate-runner.md`: 手順の要約に Ready 化を入れ、passed の return に「Ready 化: 実施した | 対象外（元から非 Draft）」の欄を足した
 - pr-review-gate の frontmatter version を 1.7.0 に上げた
 - 古いキャッシュの worker.md を読んだ W が (3b) で Ready にしても、手順 5 の Ready 化は「Draft なら」なので二重実行にならない
