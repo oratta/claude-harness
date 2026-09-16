@@ -91,7 +91,7 @@ setup() {
   LC_ALL=C grep -qF -- "根拠" "$ARBITER"
 }
 
-@test "plugin.json: registers both agents and bumps version to 0.4.4" {
+@test "plugin.json: registers both agents and bumps version to at least 0.3.0" {
   LC_ALL=C grep -qF -- '"./agents/casting-specialist.md"' "$PLUGIN_JSON"
   LC_ALL=C grep -qF -- '"./agents/casting-arbiter.md"' "$PLUGIN_JSON"
   # 版を literal で固定すると bump のたびにこのテストが落ちる。テスト名どおり下限だけを見る。
