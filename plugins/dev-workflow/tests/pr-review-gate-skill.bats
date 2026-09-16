@@ -193,3 +193,114 @@ setup() {
   highest="$(printf '1.0.0\n%s\n' "$v" | sort -V | tail -1)"
   [ "$highest" = "$v" ]
 }
+
+# --- Requirement: ゲート合格まで PR を Draft のまま扱い、合格処理で Ready にする（#304） ---
+
+# 「### <N>. 」から次の「### 」見出しまでを切り出す（「#### 」の小見出しでは区切らない）
+step() { awk -v h="### $1. " 'index($0, h)==1 {f=1; print; next} f && /^### / {f=0} f' "$SKILL"; }
+
+# 行の並びを grep するだけでは条件の反転や終了コードの無視を検出できないので、
+# 手順 1 と手順 5 の bash 断片そのものを偽の gh で実行し、呼ばれたコマンドと終了コードで確かめる
+# （pr-review-gate-spec-declaration.bats と同じ手口）。
+# 偽の gh は呼び出しを $GH_LOG に記録し、ラベル一覧に $MOCK_LABELS 、.draft に $MOCK_DRAFT を返し、
+# `gh pr ready`（--undo なし）だけ $MOCK_READY_RC で終わる。
+
+# 手順 $1 の fenced bash ブロックのうち、固定文字列 $2 を含むものを返す
+step_block() {
+  step "$1" | awk -v m="$2" '/^ *```bash/{f=1; b=""; next} /^ *```/{ if (f && index(b, m)) printf "%s", b; f=0; next } f{ b = b $0 "\n" }'
+}
+
+install_draft_gh() {
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  cat > "$BATS_TEST_TMPDIR/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GH_LOG"
+case " $* " in
+  *" pr ready "*--undo*) exit 0 ;;
+  *" pr ready "*)        exit "${MOCK_READY_RC:-0}" ;;
+  *" -X "*)              exit 0 ;;                               # ラベルの POST / DELETE
+  *"/pulls/"*".draft"*)  printf '%s\n' "$MOCK_DRAFT" ;;
+  *".labels[].name"*)    printf '%s\n' $MOCK_LABELS ;;
+  *) echo "unexpected gh call: $*" >&2; exit 1 ;;
+esac
+EOF
+  chmod +x "$BATS_TEST_TMPDIR/bin/gh"
+  export GH_LOG="$BATS_TEST_TMPDIR/gh.log"
+  : > "$GH_LOG"
+  export R="o/r" N="42"
+}
+
+run_block() {  # $1 = 手順番号, $2 = ブロックを特定する文字列。終了コードは $status 、出力は $output
+  cmds="$(step_block "$1" "$2")"
+  [ -n "$cmds" ] || { echo "手順 $1 に「$2」を含む bash ブロックが無い"; return 1; }
+  run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" bash -c "$cmds"
+}
+
+@test "draft: step 5 snippet on a Draft PR runs gh pr ready before POSTing passed" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:pending" MOCK_DRAFT=true run_block 5 '--jq .draft'
+  [ "$status" -eq 0 ]
+  ln_ready="$(grep -nE '^pr ready 42 ' "$GH_LOG" | grep -vF -- '--undo' | head -1 | cut -d: -f1)"
+  ln_passed="$(grep -nF 'labels[]=agent-review:passed' "$GH_LOG" | head -1 | cut -d: -f1)"
+  [ -n "$ln_ready" ] || { cat "$GH_LOG"; echo "gh pr ready が呼ばれていない"; return 1; }
+  [ -n "$ln_passed" ] || { cat "$GH_LOG"; echo "passed が付いていない"; return 1; }
+  [ "$ln_ready" -lt "$ln_passed" ]
+}
+
+@test "draft: step 5 snippet on a non-Draft PR does not run gh pr ready but POSTs passed" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:pending" MOCK_DRAFT=false run_block 5 '--jq .draft'
+  [ "$status" -eq 0 ]
+  ! grep -qE '^pr ready' "$GH_LOG"
+  grep -qF 'labels[]=agent-review:passed' "$GH_LOG"
+}
+
+@test "draft: step 5 snippet stops without POSTing passed when gh pr ready fails" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:pending" MOCK_DRAFT=true MOCK_READY_RC=1 run_block 5 '--jq .draft'
+  [ "$status" -ne 0 ]
+  grep -qE '^pr ready 42 ' "$GH_LOG"
+  ! grep -qF 'labels[]=agent-review:passed' "$GH_LOG"
+}
+
+@test "draft: step 1 snippet moves a non-Draft PR back to Draft after removing a stale passed" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:pending agent-review:passed" MOCK_DRAFT=false run_block 1 'gh pr ready --undo'
+  grep -qF -- '-X DELETE repos/o/r/issues/42/labels/agent-review:passed' "$GH_LOG"
+  grep -qE '^pr ready --undo 42 ' "$GH_LOG"
+}
+
+@test "draft: step 1 snippet leaves a Draft PR alone after removing a stale passed" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:passed" MOCK_DRAFT=true run_block 1 'gh pr ready --undo'
+  grep -qF -- '-X DELETE repos/o/r/issues/42/labels/agent-review:passed' "$GH_LOG"
+  ! grep -qE '^pr ready' "$GH_LOG"
+}
+
+@test "draft: step 1 snippet does not undo Ready when no passed label was present" {
+  install_draft_gh
+  MOCK_LABELS="agent-review:pending" MOCK_DRAFT=false run_block 1 'gh pr ready --undo'
+  ! grep -qF 'labels/agent-review:passed' "$GH_LOG"
+  ! grep -qE '^pr ready' "$GH_LOG"
+}
+
+@test "draft: step 5 states why Ready comes before passed and that a failed Ready stops before passed" {
+  s5="$(step 5)"
+  flat="$(printf '%s\n' "$s5" | tr '\n' ' ')"
+  echo "$flat" | grep -qE 'Ready 化に失敗したら[^。]*passed を付けず'
+  echo "$flat" | grep -qE 'labeled[^。]*draft[^。]*スキップ'
+  echo "$flat" | grep -qE '日次'
+}
+
+@test "draft: step 5 measured table has a draft=false row" {
+  step 5 | grep -qE '^\| PR の `draft` \| \*\*`false`\*\* \|$'
+}
+
+@test "draft: step 1 moves a non-Draft PR back to Draft only when a stale passed was removed" {
+  s1="$(step 1)"
+  [ -n "$s1" ] || { echo "no step 1 section"; return 1; }
+  echo "$s1" | grep -qF 'gh pr ready --undo'
+  flat="$(printf '%s\n' "$s1" | tr '\n' ' ')"
+  echo "$flat" | grep -qE 'passed を外したら[^。]*Draft でなければ[^。]*gh pr ready --undo'
+  echo "$flat" | grep -qE 'passed が付いていなかった[^。]*Draft に戻さない'
+}

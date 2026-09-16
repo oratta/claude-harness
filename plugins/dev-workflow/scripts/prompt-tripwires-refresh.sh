@@ -6,8 +6,9 @@
 # なぜバージョン変化だけを見るのか:
 #   - compact 後の風化は SessionStart hook の matcher `startup|clear|compact` が
 #     手動 /compact・自動 compact の両方で発火するため既に塞がっている
-#   - 残る穴は「セッション生存中に /plugin update や /reload-plugins でプラグインを
-#     更新しても、SessionStart が再発火しないため新ルールが届かない」だけ
+#   - 残る穴は「セッション生存中に /plugin marketplace update <name> や
+#     /reload-plugins でプラグインを更新しても、SessionStart が再発火しないため
+#     新ルールが届かない」だけ
 #   したがって毎ターンの間引き再注入は過剰で、バージョン変化を唯一のトリガにする。
 #
 # 契約:

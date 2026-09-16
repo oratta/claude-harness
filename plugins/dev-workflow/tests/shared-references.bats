@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# dev-workflow プラグイン直下 references/ に置く共有契約 4 本の構造検証（issue #205）
+# dev-workflow プラグイン直下 references/ に置く共有契約 5 本の構造検証（issue #205 / #254）
 #
 # spec: dev-workflow-shared-references
 #
@@ -15,6 +15,7 @@ setup() {
   PRBODY="${REFS}/pr-body-format.md"
   TIERS="${REFS}/model-tiers.md"
   WFEXEC="${REFS}/workflow-execution.md"
+  WAITING="${REFS}/subagent-waiting.md"
   README="${PLUGIN_DIR}/README.md"
   TRIPWIRES="${PLUGIN_DIR}/templates/escalation-tripwires.md"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
@@ -32,16 +33,17 @@ setup() {
 
 # --- Requirement: 共有契約はプラグイン直下 references/ に置く ---
 
-@test "the four shared contracts exist under plugins/dev-workflow/references" {
+@test "the five shared contracts exist under plugins/dev-workflow/references" {
   [ -f "$SELFV" ]
   [ -f "$PRBODY" ]
   [ -f "$TIERS" ]
   [ -f "$WFEXEC" ]
+  [ -f "$WAITING" ]
 }
 
-@test "plugin README has a references section naming all four files" {
+@test "plugin README has a references section naming all five files" {
   grep -qE '^##+ .*references/' "$README"
-  for f in self-verification.md pr-body-format.md model-tiers.md workflow-execution.md; do
+  for f in self-verification.md pr-body-format.md model-tiers.md workflow-execution.md subagent-waiting.md; do
     grep -q "$f" "$README" || { echo "README does not mention ${f}"; return 1; }
   done
 }

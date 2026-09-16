@@ -117,10 +117,24 @@ mode_sec() { section "$SKILL" '実行モード'; }
 
 # --- Requirement: 仕様レビュアーのモデルは役割で選ぶ ---
 
-@test "review model: explicit model, default opus, fable via worker.md table" {
+@test "review model: explicit model, default opus, decider type instead of model fable" {
   { section "$SKILL" 'モデル'; cat "$REF"; } | grep -q 'model'
   { section "$SKILL" 'モデル'; cat "$REF"; } | grep -q '`opus`'
-  { section "$SKILL" 'モデル'; cat "$REF"; } | grep -qE '事前分類.*fable|fable.*事前分類'
+  { section "$SKILL" 'モデル'; cat "$REF"; } | grep -qF 'dev-workflow:decider'
+  # R1 を general-purpose + model: fable で立てる指示は残さない
+  ! grep -qE '^- \*\*モデルは必ず明示する\*\*.*は `fable`（聖域パスだけでは上げない）' "$REF"
+  grep -qF '`general-purpose` に `model: fable` を付けない' "$REF"
+}
+
+@test "review record: the decider route returns instead of posting and the main agent posts it" {
+  grep -qF 'dev-workflow:decider' "$REF"
+  grep -qF '本体が同じ書式で代理投稿する' "$REF"
+  grep -qF 'レビュアー fable（dev-workflow:decider）・本体が代理投稿' "$REF"
+  # 記録先の本文とコメントは呼び出し側が入力文に貼る
+  grep -qF '入力文に貼り付けて渡す' "$REF"
+  # SKILL.md の 1 ループ (2) と「本体がやること」にも同じ例外がある
+  grep -qF 'その return は本体が同じ書式で代理投稿する' "$SKILL"
+  grep -qF '投稿せず return し、本体が同じ書式で代理投稿する' "$SKILL"
 }
 
 @test "review model: reserve only for automatic runs, exhausted for all paths" {

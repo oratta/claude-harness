@@ -1,7 +1,7 @@
 ---
 name: pr-review-gate
-description: PR を作成したら必ず通す品質ゲート。別コンテキストのレビュー・リスク宣言（リスクなし or 主の許容確認）・動作確認の証拠添付・agent-review:passed の付与までを1本で行う。「PR を作った」「レビューして」「マージまで進めて」「auto-merge に載せたい」ときに必ず読み込む。保留中の PR を再開するとき（「主の回答が来た」「リスクを許容する/しない」「動作確認の結果を伝える」「保留を進めて」「レビュー指摘を直したので再レビュー」）も必ずこのスキルで復帰手順を確認する。このゲートを通っていない PR は主の承認なしにマージしてはならない。
-version: 1.6.0
+description: PR を作成したら必ず通す品質ゲート。「PR を作った」「レビューして」「マージまで進めて」「auto-merge に載せたい」ときに必ず読み込む。保留中の PR の再開（「主の回答が来た」「リスクを許容する/しない」「動作確認の結果を伝える」「保留を進めて」「レビュー指摘を直したので再レビュー」）も必ずこのスキルで復帰手順を確認する。このゲートを通っていない PR は主の承認なしにマージしてはならない。
+version: 1.7.0
 ---
 
 # PR レビューゲート
@@ -33,10 +33,14 @@ version: 1.6.0
    このとき **`needs-approval` の要否も判断する** — 保留理由が解消しているなら
    `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外し、
    まだ主の許容待ちが残っているなら**付けたまま**にして手順6を続行する。黙って持ち越さない。
-2. **stale な `agent-review:passed` を必ず外す**（理由は冒頭「前提と理由」）。外してからレビューを始める（合格なら手順5で付け直す）:
+2. **stale な `agent-review:passed` を必ず外す**（理由は冒頭「前提と理由」）。外してからレビューを始める（合格なら手順5で付け直す）。
+   passed を外したら、PR が Draft でなければ `gh pr ready --undo` で Draft に戻す（手順5の合格処理で Ready にした PR に commit が積まれた取り直しのあいだ、周回ごとに CI を走らせないため。次の合格で Ready に戻る）。
+   passed が付いていなかったとき（初回のゲート・failed からの再レビュー・保留からの再開）は Draft に戻さない（人間が非 Draft で作った PR を、failed や保留のまま Draft に残さないため）:
    ```bash
-   gh api repos/$R/issues/$N --jq '.labels[].name'                          # passed の有無を確認
-   gh api -X DELETE repos/$R/issues/$N/labels/agent-review:passed           # 付いていたら外す
+   if gh api repos/$R/issues/$N --jq '.labels[].name' | grep -qx 'agent-review:passed'; then   # passed が付いていたら
+     gh api -X DELETE repos/$R/issues/$N/labels/agent-review:passed                           # 外して
+     if [ "$(gh api repos/$R/pulls/$N --jq .draft)" = false ]; then gh pr ready --undo $N --repo $R; fi   # 非 Draft なら Draft に戻す
+   fi
    ```
 3. 記録先の**受け入れ条件**を取得する。判定の唯一の根拠はこれ。記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す issue で、**issue 参照が無い PR（Draft PR を記録先にした依頼）では PR 本文そのもの**が受け入れ条件になる（develop スキルの W は受け入れ条件を PR 本文に書く）:
    ```bash
@@ -99,15 +103,15 @@ Codex を full の既定にする理由: **実装者と別モデル系列で読�
 **Task サブエージェントのモデルは明示指定する（Agent ツールの `model` パラメータ）**:
 
 - **既定は `opus`。** モデル未指定のサブエージェントは親セッションのモデルを継承するため、親が Fable のセッションではフォールバックのたびに Fable レビューが自動発火し、週次枠を無言で消費する（2026-08-07 に主が明示的に懸念）。レビューの価値の中心は「実装者と別の目」であり、モデルの最高性能ではない。
-- **`fable` に上げてよいのは次の両方を満たすときだけ**: ①変更が壊れると影響の重い部分（マージ条件の判定・レート/使用量制御・エージェントの行動規約）に触れている ② usage snapshot（`~/.claude/.usage-snapshot` の `fable_weekly_pct`）が新鮮で、Fable 週次枠に余裕がある（`FABLE_BUDGET_MODE=exhausted` 相当なら上げない）。判断根拠を PR コメントのレビュー実行者行に添える（例: `レビュー実行者: Task サブエージェント（fable — マージ判定に接触・週次残 40%）`）。
+- **Fable に上げるときは `model` ではなく種別で上げる**: 次の両方を満たすときだけ `subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` は付けない。`scripts/agent-model-guard.sh` が PreToolUse で拒否する）。①変更が壊れると影響の重い部分（マージ条件の判定・レート/使用量制御・エージェントの行動規約）に触れている ② usage snapshot（`~/.claude/.usage-snapshot` の `fable_weekly_pct`）が新鮮で、Fable 週次枠に余裕がある（`FABLE_BUDGET_MODE=exhausted` 相当なら種別はそのままに `model: opus` へ落とす）。判断根拠を PR コメントのレビュー実行者行に添える（例: `レビュー実行者: dev-workflow:decider（fable — マージ判定に接触・週次残 40%）`）。決める役は `Bash` を持たないので、レビュー結果の PR コメント投稿はゲートを回す側が代理で行う。
 
 **Codex の呼び出し規約**（2026-08-07 の調査で確定。守らないと「原因不明のタイムアウト」になる）:
 
-- **フォアグラウンドで完了を待つ呼び方を禁止する。** Claude Code の Bash は1回 **10 分**が上限で、Codex レビューはそれを超えることがある（上の「10 分でタイムアウト」の直接原因はこれ）。`/codex:adversarial-review` は必ず **`--background`** で起動し、待つのは companion に任せる:
-  ```bash
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" status <job-id> --wait --timeout-ms 900000
-  ```
-  `--timeout-ms` の既定は **4 分**しかないので必ず明示する（1回の呼び出しで最長 15 分待てる）。
+- **前景 1 回で起動から完了まで待ち切ろうとする呼び方を禁止する**（前景で待つこと自体の禁止ではない。完了の確認は下のとおり前景ポーリングで行う）。Claude Code の Bash は 1 回 **10 分**が上限で、Codex レビューはそれを超えることがある（上の「10 分でタイムアウト」の直接原因はこれ）。`/codex:adversarial-review` は必ず **`--background`** で起動する。
+- **待ち方は読み手で変わる。** 待ち値・完了シグナル・繰り返し回数・総待ちの上限の正本は `plugins/dev-workflow/references/subagent-waiting.md` で、**ここには再掲しない**（2 か所に置くと片方だけ古くなる）:
+  - **メインセッション（本体）**: 背景タスクの完了で再起動されるので、`--background` 起動 ＋ 完了通知での続行でよい。
+  - **サブエージェント（G など）**: 再起動されないので、完了の確認を**同一ターン内の前景ポーリング**で行う。完了を待つ目的でターンを終えてはならない（2026-09-08 に G が 5 回止まり、合計約 4 時間の停止をオーナーの一言で毎回起こした）。正本を開いて雛形どおりに実行する。
+- **`codex-companion.mjs status --wait` の `--timeout-ms` は必ず明示する。** 既定は **4 分**しかない。値は Bash 前景の上限（600000 ms）未満にする — 従来ここに書いていた上限超えの値は 1 回の呼び出しで完走せず、これが待ちの構造を壊す原因だった。既定値・1 回で終わらなかったときの繰り返し・総待ちの上限に達したときの分岐は正本に従う。上の表のフォールバック条件に挙げた「タイムアウト」は、その総待ちの上限に達したことを指す。
 - **推論の深さを中に落とす。** `config.toml` の既定 `high` はレビューには過剰で、実行時間が 10 分を超える一因。`codex exec` 直叩きなら `-c model_reasoning_effort=medium`、`codex:codex-rescue` サブエージェント（companion の `task`）なら `--effort medium`。**`/codex:adversarial-review` に付けてはいけない** — review 系は `-c` も `--effort` も受け取らず、渡した文字列は黙って**レビューの focus text に混ざる**（`--base` / `--scope` / `--model` のみ有効）。
 - **`--effort minimal` を使わない。** 無効値で **400 エラー**になることを実測済み。companion 側のバリデーションは通ってしまい API で落ちるので、失敗が呼び出し側から見えにくい。API の有効値は `none` / `low` / `medium` / `high` / `xhigh` / `max`（companion の `--effort` が受理する集合とはずれている。実務では `medium` を使う）。
 - **`codex exec` を直叩きするときは `-c approval_policy=never` を必ず付ける。** config の「承認を求める」設定を継承すると、無人実行では誰も承認できずハングする穴がある（companion 経由なら既定で `never` なので不要）。
@@ -130,22 +134,26 @@ Codex を full の既定にする理由: **実装者と別モデル系列で読�
 
 | failed の原因 | 戻し方 |
 |---|---|
-| **実装品質起因**（テスト不足・エッジケース漏れ・既存コードとの不整合・安全機構の穴） | 修正実装を `model: fable` で spawn する |
+| **実装品質起因**（テスト不足・エッジケース漏れ・既存コードとの不整合・安全機構の穴） | 失敗の原因が判断側（指示を解釈できなかった・指示自体が外れていた）か実行側（指示どおりやって結果が違う）かで、**決める役と実行役のどちらか一方だけ**を上げる（両方同時に上げない）。実行側なら実行役を `opus` で spawn し、判断側なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせ、実行役は据え置く（残量モードと共有枠モードの上限内） |
 | **仕様が曖昧**（受け入れ条件から一意に決まらない） | モデル昇格ではなく仕様修正で返す。issue の受け入れ条件を確定させてから修正に入る（unmanned なら `needs-approval` を付けて主に返す） |
 | **レビュアーの誤検出**（指摘が事実と違う） | モデル昇格ではなく反証で返す。該当コード・テスト結果を PR コメントに書いて指摘を閉じる |
 
 **昇格は実装品質起因のときだけ。** 原因が仕様側・レビュアー側にあるのに最強モデルを当てても、同じ往復をもう1周するだけになる。
 
+**実行役の上限は `opus`。** 修正実装を `model: fable` で spawn しない（`scripts/agent-model-guard.sh` が PreToolUse で拒否する）。Fable が消費するのはターン数（会話履歴の cache 読込）で、修正ループは数十〜数百ターン回るため、実行役を Fable にすると週次枠が溶ける。Fable を使うのは決める役（`subagent_type: dev-workflow:decider`。`Bash` を持たないので、その return を PR に書くのは呼び出し側）だけで、決める役はどの段階でも種別を固定して `model`（`opus` → `fable`）だけを切り替える。ラダーの正本は develop スキルの `templates/escalation-tripwires.md`。
+
+**なぜ 1 回目の failed で上げるのか**: G のレビューループは 2 周キャップで**2 周目が最終周**にあたるため、1 回目の failed の時点で原因側を一方だけ上げてキャップ内での収束確率を上げる（昇格トリップワイヤーの「1 回目の失敗では誰も上げない」は同じテストの 2 連続失敗を数える別の発火条件で、こちらとは数え方が違う）。
+
 **収束ルール（2周キャップ）との関係**: 再レビューは既定2周なので**2周目が最終周**にあたる。最終周の修正に最強モデルを当てることで、キャップ内で収束する確率を最大化する（3周目へ持ち越さないための配分）。
 
-**Fable が使えないときのフォールバック**: レート制限・週次枠切れ（`FABLE_BUDGET_MODE=exhausted` 相当）で Fable を使えない場合は従来モデル（既定 `opus`）に戻して修正を進め、その旨を PR コメントに1行残す（レビュー実行者行と同形式。この記録形式がフォールバック記録の正本）:
+**Fable が使えないときのフォールバック**: レート制限・週次枠切れ（`FABLE_BUDGET_MODE=exhausted` 相当）で決める役を Fable で立てられない場合は、種別は `dev-workflow:decider` のまま `model: opus` に落として進め、その旨を PR コメントに1行残す（レビュー実行者行と同形式。この記録形式がフォールバック記録の正本）:
 
 ```bash
 gh api -X POST repos/$R/issues/$N/comments \
-  -f body='修正実装モデル: opus（fable レート制限のためフォールバック）'
+  -f body='決める役モデル: opus（fable レート制限のためフォールバック。subagent_type は dev-workflow:decider のまま）'
 ```
 
-1周目から `model: fable` で spawn する「重要実装」の事前分類（聖域パス・マージ権限・層間契約・課金/法務）は **develop スキルの references/roles/worker.md が正本** — このゲートでは再掲しない。
+1周目からモデルを上げる「重要実装」の事前分類（聖域パス・マージ権限・層間契約・課金/法務。実行役はどの分類でも `opus` 止まりで、読んで判断する役が分類に当たるときは `subagent_type: dev-workflow:decider`）は **develop スキルの references/roles/worker.md が正本** — このゲートでは再掲しない。
 
 ### 3. リスク宣言（positive affirmation・必須）
 
@@ -291,25 +299,52 @@ bash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF /
 | `仕様化判断: しない` | 仕様宣言は「変更なし＋理由」形。PR に `openspec/` 差分が**無い**こと（差分があれば「しない」と矛盾＝合格しない。判断を「する」に取り直すか差分を外す）。`spec-touch-check.sh` が終了コード 2 なら、理由に規範パス接触への言及があること |
 | 記録なし | **合格しない**。今から判断して記録先に `仕様化判断:` を投稿する（「する」なら仕様化・仕様レビューからやり直す）。issue が無い PR に限り PR 自身のコメントに同書式で記録してよい（`gh api -X POST repos/$R/issues/$REC/comments`） |
 
+**`needs-approval` が付いていないことを、Ready 化より前に確認する。** auto-merge は `needs-approval` を
+BLOCKING_LABELS に含むため無審査マージにはならないが、**passed と併存すると
+「合格済みなのに永久にマージされないスタック」**になり、Ready 化だけ済ませると保留中の PR が Draft でなくなる。
+保留理由が解消しているなら `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外してから進む。
+解消していないなら**そもそも合格処理をしない**（手順6に戻る）。
+
+**PR が Draft なら Ready にしてから `agent-review:passed` を付ける**（この順序を入れ替えない）。
+passed を先に付けると、その labeled イベントは PR が draft なので auto-merge workflow にスキップされる。
+Ready 化で CI が走るリポでは CI 完了で拾い直されるが、CI を Draft 中に済ませて Ready 化では走らせないリポでは
+次の判定が日次の schedule まで来ず、合格からマージまで最大 24 時間待つ。
+Draft でない PR（人間が作った PR など）には Ready 化を行わない。
+**Ready 化に失敗したら passed を付けずに止まる**（下の断片は非 0 で終わる）。draft のまま passed を付けると
+その labeled イベントはスキップされて消費され、あとで Ready 化をやり直しても新しい labeled は起きないため、
+Ready 化で CI が走らないリポでは日次の schedule まで拾われない。`draft` が取れなかったときも同じく止まる。
+
 ```bash
+gh api repos/$R/issues/$N --jq '.labels[].name'   # needs-approval が無いことを確認（あれば上のとおり）
+DRAFT=$(gh api repos/$R/pulls/$N --jq .draft)
+case "$DRAFT" in true|false) ;; *) echo "draft を取得できない（$DRAFT）。passed を付けずに中断する" >&2; exit 1 ;; esac
+if [ "$DRAFT" = true ]; then   # Draft なら Ready にする。失敗したら passed を付けずに中断する
+  gh pr ready $N --repo $R || { echo "gh pr ready に失敗。passed を付けずに中断する" >&2; exit 1; }
+fi
 gh api -X POST repos/$R/issues/$N/labels -f 'labels[]=agent-review:passed'
 gh api -X DELETE repos/$R/issues/$N/labels/agent-review:pending
-gh api repos/$R/issues/$N --jq '.labels[].name'   # 実測確認
+gh api repos/$R/issues/$N --jq '.labels[].name'   # 実測確認（ラベル）
+gh api repos/$R/pulls/$N --jq .draft              # 実測確認（Draft）
 ```
 
-最後の実測確認は次の**3点すべて**を満たすこと（`gh` は静かに失敗することがある）:
+最後の実測確認は次の**4点すべて**を満たすこと（`gh` は静かに失敗することがある）:
 
 | 確認項目 | 期待 |
 |---|---|
 | `agent-review:passed` | **ある** |
 | `agent-review:pending` | **ない** |
 | `needs-approval` | **ない** |
+| PR の `draft` | **`false`** |
 
-`needs-approval` が残っていたら合格処理は未完了。auto-merge は `needs-approval` を
-BLOCKING_LABELS に含むため無審査マージにはならないが、**passed と併存すると
-「合格済みなのに永久にマージされないスタック」**になる。保留理由が解消しているなら
-`gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外す。
-解消していないなら**そもそも合格処理をしない**（手順6に戻る）。
+`needs-approval` が残っていたら合格処理は未完了（上の Ready 化前の確認に戻る）。
+途中で止まったときは、passed が付いているかで復旧を分ける:
+
+| 止まった状態 | 復旧 |
+|---|---|
+| Ready 化に失敗して止まった（`draft` が `true`、passed なし） | 失敗の原因（権限・ネットワーク等）を記録先に報告し、解消してから手順5の断片を再実行する |
+| Ready 化は済んだが passed を付ける前に止まった（`draft` が `false`、passed なし） | 手順5の断片をそのまま再実行する（Draft でないので Ready 化は飛ばされ、passed の labeled で判定される） |
+| passed は付いたが auto-merge が判定を取り逃がした（`draft` が `false`、passed あり、マージされない） | `docs/auto-merge.md` の手動実行（`workflow_dispatch` の `pr` 入力）で再判定する |
+| `draft` が `true` のまま passed が付いている（旧手順や手動操作の残骸） | passed を外し、`gh pr ready` で Ready にしてから passed を付け直す（付け直しで新しい labeled が起きる） |
 聖域パス（auto-merge workflow の SACRED 定義。例: `.github/workflows/` `CLAUDE.md` `.claude/` 憲法 doc）に
 触れる PR は passed でも auto-merge されず人間マージになる — 判定の正本は auto-merge workflow 側。
 触れている自覚があればコメントに1行書き添える。auto-merge 未配備のリポでは、合格処理の後に
