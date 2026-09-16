@@ -102,6 +102,71 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   ! grep -q 'solo' "$WORKER"
 }
 
+# (3) は (3a) 実装＋verify と (3b) archive＋PR＋仕様宣言 の 2 回の return に分かれる（#262）。
+@test "worker: (3a) and (3b) are separate sections that each list their return contents" {
+  a="$(section "$WORKER" '(3a) 実装＋verify')"
+  b="$(section "$WORKER" '(3b) archive＋PR＋仕様宣言')"
+  [ -n "$a" ] || { echo "no (3a) section in worker.md"; return 1; }
+  [ -n "$b" ] || { echo "no (3b) section in worker.md"; return 1; }
+  # (3a): 実装と verify まで。archive には進まない
+  echo "$a" | grep -qF '工程完了: 実装＋verify'
+  echo "$a" | grep -q 'テストコマンド'
+  echo "$a" | grep -q 'exit code'
+  echo "$a" | grep -qF '/opsx:apply'
+  echo "$a" | grep -qF '/opsx:verify'
+  # 否定は `!` で書かない。bats（set -e）は `!` 付きコマンドの失敗を最終行以外で無視するため、
+  # `! ... | grep -q ...` は退行を検出できない（bats 1.13 で実測）。
+  if echo "$a" | grep -qF '/opsx:archive'; then
+    echo "(3a) の節に /opsx:archive が書かれている（archive は (3b)）" >&2
+    return 1
+  fi
+  # (3b): archive 以降。PR 番号と仕様宣言のコメント URL を return に載せる
+  echo "$b" | grep -qF '工程完了: archive＋PR＋仕様宣言'
+  echo "$b" | grep -qF '/opsx:archive'
+  echo "$b" | grep -q 'PR #'
+  echo "$b" | grep -q '仕様宣言のコメント URL'
+}
+
+# ゲート合格まで PR を Draft のまま進める（#304）。W は Ready にせず、G が pr-review-gate 手順 5 で行う。
+@test "worker: (3b) keeps the PR as Draft (gh pr create --draft) and leaves Ready to G" {
+  b="$(section "$WORKER" '(3b) archive＋PR＋仕様宣言')"
+  [ -n "$b" ] || { echo "no (3b) section in worker.md"; return 1; }
+  echo "$b" | grep -q 'Draft のまま'
+  echo "$b" | grep -qF 'gh pr create --draft'
+  echo "$b" | grep -F 'Ready 化' | grep -qF '手順 5'
+  if echo "$b" | grep -qE 'gh pr ready|Ready for Review.*切り替え'; then
+    echo "(3b) の節に W が Ready に切り替える記述がある（Ready 化は G の手順 5）" >&2
+    return 1
+  fi
+}
+
+# opsx スラッシュコマンドが無く openspec CLI だけある経路も、(3a)/(3b) の区切りは同じでなければ
+# ならない（#262 のゲート指摘。この段落だけ旧来の「実装 → archive」一括のまま残っていた）。
+@test "worker: the openspec-CLI-only path stops at verify in (3a) and archives in (3b)" {
+  s="$(section "$WORKER" '仕様化する場合（(1) の終わり）')"
+  [ -n "$s" ] || { echo "no spec-writing section in worker.md"; return 1; }
+  # フォールバック経路の箇条書き 1 個ぶんを切り出す（次の行頭 "- " まで）
+  fb="$(echo "$s" | awk '/openspec CLI だけある場合/{f=1; print; next} f && /^- /{f=0} f {print}')"
+  [ -n "$fb" ] || { echo "no openspec-CLI-only fallback paragraph in worker.md"; return 1; }
+  flat="$(echo "$fb" | tr '\n' ' ')"
+  # /opsx:verify の代わりの検証手順が名指しされている
+  echo "$flat" | grep -qF 'openspec validate'
+  echo "$flat" | grep -qF -- '--strict'
+  # (3a) は検証まで、archive は (3b)
+  echo "$flat" | grep -qE '\(3a\)[^。]*openspec validate'
+  echo "$flat" | grep -qE 'openspec archive[^。]*\(3b\)'
+}
+
+@test "worker: the context cap section names the three stages and forbids finer splits" {
+  s="$(section "$WORKER" 'コンテキスト上限と手渡し')"
+  [ -n "$s" ] || { echo "no context cap section in worker.md"; return 1; }
+  echo "$s" | grep -qF '(1) 仕様化まで'
+  echo "$s" | grep -qF '(3a) 実装＋verify'
+  echo "$s" | grep -qF '(3b) archive＋PR＋仕様宣言'
+  echo "$s" | grep -qF 'これより細かく'
+  echo "$s" | grep -q '固定分'
+}
+
 @test "worker: split judgement is based on the issue text, and unmanned splits into child issues with blocked_by" {
   grep -q 'dependencies/blocked_by' "$WORKER"
   grep -q 'references/decision-criteria.md' "$WORKER"
@@ -201,6 +266,13 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q '誤検出' "$GATE"
 }
 
+@test "gate-runner: step 5 summary includes Ready (only when Draft) and the passed return has a Ready result field" {
+  todo="$(section "$GATE" 'やること')"
+  [ -n "$todo" ] || { echo "no やること section in gate-runner.md"; return 1; }
+  echo "$todo" | grep -F 'agent-review:passed' | grep -qF 'Draft なら Ready'
+  grep -qF 'Ready 化: 実施した | 対象外（元から非 Draft）' "$GATE"
+}
+
 @test "gate-runner: return formats cover passed / failed / on-hold" {
   grep -q 'passed' "$GATE"
   grep -q 'failed' "$GATE"
@@ -235,4 +307,98 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
     echo "$offenders"
     false
   fi
+}
+
+# ---------- コンテキスト上限の規則は decision-criteria.md 1 箇所に置く（#261） ----------
+#
+# spec: dev-workflow-develop「コンテキスト上限の規則の本文は decision-criteria.md 1 箇所に置く」
+# 同じ規則を複数の面に言い換えて置くと、次に閾値が変わったときどれかが必ず取り残される
+# （#253 で 3 周続けて言い換え漏れが出た）。数値と環境変数名の在処をテストで固定する。
+
+# 節の範囲だけを見るための切り出し。`## コンテキスト上限（サブエージェントの手渡し）` の行から
+# 次の `## ` 見出し（`### ` 小見出しは含む）の直前までを取り出す。全文 grep だと、節の外へ
+# 内容が移っても素通りしてしまう（G のレビュー指摘、#269 で対応）。
+extract_context_cap_section() {
+  awk '
+    /^## コンテキスト上限（サブエージェントの手渡し）$/ { flag=1 }
+    flag && /^## / && !/^## コンテキスト上限（サブエージェントの手渡し）$/ { exit }
+    flag
+  ' "$1"
+}
+
+@test "context cap: the canonical section holds the thresholds, the routes and the return prefixes" {
+  dc="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  section="$(extract_context_cap_section "$dc")"
+  [ -n "$section" ] || { echo "section not found in decision-criteria.md"; return 1; }
+  # 3 つの環境変数と 2 つの既定値
+  for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000; do
+    echo "$section" | grep -q -- "$token" || { echo "missing in the context cap section: $token"; return 1; }
+  done
+  # 2 経路・通知時と強制停止時の振る舞い・return の 1 行目の書き分け
+  echo "$section" | grep -q '再開前チェック'
+  echo "$section" | grep -q '途中計測'
+  echo "$section" | grep -q '工程完了:'
+  echo "$section" | grep -q '工程中断:'
+  echo "$section" | grep -q 'pr-review-gate の手順 1〜5 を 1 グループ'
+}
+
+@test "context cap: the other five faces point at the canonical section and restate nothing" {
+  faces=(
+    "${PLUGIN_DIR}/skills/develop/SKILL.md"
+    "${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
+    "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+    "${PLUGIN_DIR}/templates/escalation-tripwires.md"
+    "${PLUGIN_DIR}/README.md"
+  )
+  for f in "${faces[@]}"; do
+    [ -f "$f" ] || { echo "missing face: $f"; return 1; }
+    # 正本への参照があること
+    grep -q 'decision-criteria.md' "$f" || { echo "no pointer to decision-criteria.md: $f"; return 1; }
+    grep -q 'コンテキスト上限' "$f" || { echo "no reference to the context cap section: $f"; return 1; }
+    # 閾値の数値・環境変数名の再掲が無いこと
+    for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000 150K; do
+      if grep -q -- "$token" "$f"; then
+        echo "restated in ${f}: ${token}（正本は decision-criteria.md「コンテキスト上限」）"
+        return 1
+      fi
+    done
+  done
+}
+
+@test "context cap: worker.md tells the handoff target to look at uncommitted changes first" {
+  grep -q '未コミット差分' "$WORKER"
+  grep -q 'git status' "$WORKER"
+}
+
+@test "context cap: gate-runner returns the review body when the hard stop denies gh" {
+  grep -q '工程中断:' "${ROLES}/gate-runner.md"
+  grep -q 'gh pr comment' "${ROLES}/gate-runner.md"
+  grep -q '代理投稿' "${ROLES}/gate-runner.md"
+  # 本体側にも代理投稿する側の手順がある
+  grep -q '代理投稿' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
+
+# ---------- 窓を閉じる（強制停止中の Bash 全件拒否）後の後片付けは本体が担う（#261, PR #269 2 回目の決定） ----------
+#
+# 強制停止中は Bash がコマンド内容によらず全件拒否されるため、止まったサブエージェント
+# 自身は commit できない。手渡し先が拾うのは「次に起こされた」サブエージェントの
+# git status / git diff だけなので、手渡しが発生しない経路や後継が G の場合は
+# 本体自身が未コミット差分を引き取らないと作業が失われたまま残る（R1-261 の BLOCKER B2/B3）。
+
+@test "SKILL.md: main takes over uncommitted work left by a hard-stopped subagent" {
+  grep -q '本体が commit する\|本体が.*commit' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'git -C .*status --porcelain' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  # 発火条件が 工程中断: の受領だけに縛られていない（手渡し・spawn・サイクル終了・worktree 撤去も含む）
+  grep -q '手渡し' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'spawn' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'worktree の撤去' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
+
+@test "SKILL.md forbids isolation: remote for W / G" {
+  grep -q 'isolation: "remote"' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -qE '(remote.*使わない|remote.*起こしてはならない)' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
+
+@test "gate-runner.md: commit is also main's job, not G's" {
+  grep -qE 'commit.*本体が行う|本体が.*commit' "${ROLES}/gate-runner.md"
 }

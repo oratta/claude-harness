@@ -4,7 +4,7 @@ develop の本体から**名前付きで** spawn され、PR を pr-review-gate 
 
 ## やること
 
-1. `pr-review-gate/SKILL.md` を Read し、**手順 1〜5**（前提を揃える → レビュー → リスク宣言・仕様宣言 → 動作確認の証拠 → 照合と `agent-review:passed`）をそのまま実行する。免除される工程は無い
+1. `pr-review-gate/SKILL.md` を Read し、**手順 1〜5**（前提を揃える → レビュー → リスク宣言・仕様宣言 → 動作確認の証拠 → 照合 → Draft なら Ready 化 → `agent-review:passed`）をそのまま実行する。免除される工程は無い。手順 1 で stale な passed を外したら、Draft でない PR は Draft に戻す（正本は pr-review-gate 手順 1）
 2. 手順 2 のレビューは**実装と別コンテキスト**で行う。G 自身は W とは別コンテキストだが、「G が diff を読んで自分で判定する」のは pr-review-gate の言う別コンテキストレビューではない（G はレビュー結果を照合・記録する側）。レビューの実行者は下の規則で決める
 3. 結果を本体に return する（書式は下）。記録先へのコメント・ラベル操作は G が自分で行う（本体は return の要約だけを見る）
 
@@ -58,6 +58,7 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 - 周回: <1|2>
 ### passed のとき
 - 付与ラベル: agent-review:passed（手順 5 の API 実測の結果）
+- Ready 化: 実施した | 対象外（元から非 Draft）（手順 5 で `draft` が `false` になったことを実測した結果）
 - コメント URL: リスク宣言 / 仕様宣言 / 動作確認証拠
 ### failed のとき
 - 原因分類（pr-review-gate 手順 2-2）: 実装品質起因 | 仕様が曖昧 | レビュアーの誤検出
@@ -79,4 +80,4 @@ failed の return には**必ず原因分類**を含める（本体はこれを�
 
 G の既定は `sonnet` で、上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認（照合作業）で、欠陥探索は Codex か `needs-reviewer` で本体が spawn するレビュアー（既定 `opus`。マージ条件・層間契約・課金/法務に触れる PR なら `subagent_type: dev-workflow:decider`）が担う。モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 固定・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類（マージ権限・層間契約・課金/法務）による `dev-workflow:decider`（聖域パスは `opus` 止まり） ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限。このとき種別は `dev-workflow:decider` のまま `model: opus` に落とす）。正本は `skills/develop/references/decision-criteria.md`。 レビュアーは `throttled` では `opus` 止まり、`depleted` では `sonnet`。事前分類表の正本は `references/roles/worker.md`。
 
-G を SendMessage で再開する前に、本体は `scripts/subagent-context.sh <G の名前>` でコンテキスト量を測る（exit 2 が上限超）。上限超を検知したあとの扱いと、G が手順の途中で一時的に止まっているとき（Codex の `run_in_background` 起動やレビュアーの応答待ち）に 1 行目へ何を置くかは `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、この gate-runner.md には書かない。正本を読むまで手渡さない。
+G を SendMessage で再開する前に、本体は `scripts/subagent-context.sh <G の名前>` でコンテキスト量を測る（exit 2 が上限超）。あわせて、G 自身の起動の途中でも hook がコンテキストを測る。**強制停止に当たると `Bash` がコマンド内容によらず全件拒否され `gh pr comment` も拒否されるので、そのときはレビュー結果を return の本文に含めて `工程中断:` で返す**（本体が記録先に代理投稿する。R1 の仕様レビューを本体が代理投稿しているのと同じ経路）。**commit も本体が行う**（G は `Bash` が全件拒否されるため自分で片付けられない。作業ツリーの未コミット差分は本体が `git -C <path> status --porcelain` で確認して commit する）。上限超を検知したあとの扱いと、G が手順の途中で一時的に止まっているとき（Codex の `run_in_background` 起動やレビュアーの応答待ち）に 1 行目へ何を置くかは `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、この gate-runner.md には書かない。正本を読むまで手渡さない。

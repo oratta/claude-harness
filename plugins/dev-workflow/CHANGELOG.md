@@ -1,5 +1,65 @@
 # Changelog — dev-workflow
 
+## 2.13.0 — 2026-09-14: develop の PR をゲート合格まで Draft に保ち、合格処理で Ready にする
+
+W が工程 (3b) で PR を Ready にしてから G に渡していたため、CI を「Draft の PR では回さず、Draft を外したときに回す」設定にしたリポ（genetta-inc/flatmate。harness が配布する `plugins/infra/templates/workflows/ci.yml.template` も同じ形）でも、レビューと修正の周回ごとに CI が走っていた。flatmate では 14 日で org の Actions 無料枠を使い切り、CI と auto-merge が全停止した。#304。
+
+- **W の (3b) は PR を Draft のまま G に渡す**（`skills/develop/references/roles/worker.md` と `skills/develop/SKILL.md`）。issue が記録先なら interactive でも `gh pr create --draft` で作る
+- **pr-review-gate 手順 5 の合格処理で、`needs-approval` が無いことを確かめてから、Draft なら `gh pr ready` を実行し、そのあとに `agent-review:passed` を付ける**。実測確認に「PR の `draft` が `false`」を足した（4 点）。人間が作った非 Draft の PR には何もしない
+- **順序は issue 本文の「passed → Ready」ではなく「Ready → passed」にした**。passed を先に付けると、その labeled イベントは PR が draft なので auto-merge workflow にスキップされる。Ready 化で CI が走るリポは CI 完了で拾い直されるが、CI を Draft 中に済ませて Ready 化で走らせないリポ（harness 自身）では次の判定が日次の schedule まで来ず、合格からマージまで最大 24 時間待つ。Ready → passed なら、どちらのリポでも passed 付与の labeled か CI 完了のどちらかで判定される
+- **手順 1 で stale な passed を外したら、非 Draft の PR を `gh pr ready --undo` で Draft に戻す**（passed が無かった初回・failed から・保留からは戻さない）。CI を Draft で止めるリポでの取り直し 1 周あたりの CI は、合格後の最初の push（非 Draft の PR への synchronize）で 1 回と、合格時の Ready 化で 1 回になる。戻さなければ取り直しの push のたびに走る
+- **Ready 化に失敗したら passed を付けずに止まる**（手順 5 の断片が `gh pr ready` の終了コードを見て非 0 で終わる。`draft` を取得できないときも同じ）。draft のまま passed を付けると labeled イベントがスキップで消費され、Ready 化をやり直しても判定が日次まで来ないため。途中で止まったときの復旧は、passed の有無と `draft` の値で 4 通りに分けて書いた。手順 1 の断片も「passed があれば外し、非 Draft なら `--undo`」をそのまま実行できる条件分岐にした
+- `skills/develop/references/roles/gate-runner.md`: 手順の要約に Ready 化を入れ、passed の return に「Ready 化: 実施した | 対象外（元から非 Draft）」の欄を足した
+- pr-review-gate の frontmatter version を 1.7.0 に上げた
+- 古いキャッシュの worker.md を読んだ W が (3b) で Ready にしても、手順 5 の Ready 化は「Draft なら」なので二重実行にならない
+- `tests/develop-skill.bats` の (3b) の Ready 検査を Draft の検査に反転し、`tests/develop-roles.bats` に 2 本、`tests/pr-review-gate-skill.bats` に 4 本足した
+
+## 2.11.0 — 2026-09-11: メモリ索引の肥大と放置を検知し、見直す手順を足す
+
+メモリ（`~/.claude/projects/<project>/memory/`）の索引 MEMORY.md は毎セッション注入されるが、repo の外にあるので `tests/injection-budget.bats` では測れない。書く規約はあっても見直す手順が無く、claude-harness プロジェクトでは 27 件・58,428 バイト（索引 5,410 バイト / 34 行）まで、終わった事実や repo と重複する項目を抱えたまま増えていた。エピック #257 の子 #294（検知）と #295（修復）。
+
+- `scripts/memory-tripwire.sh`（新規）: 索引のバイト数・行数、本文 1 件の最大バイト数、索引の最終更新からの日数を測り、閾値を超えたときだけ `[memory]` の 1 行を出す（条件が複数でも 1 行）。閾値は `DEV_WORKFLOW_MEMORY_INDEX_BYTES`（4000）/ `_INDEX_LINES`（20）/ `_FILE_BYTES`（2500）/ `_STALE_DAYS`（30）で上書きでき、数字でない値は既定に戻す。メモリディレクトリは `CLAUDE_PROJECT_DIR`（無ければ cwd）の git 共通ディレクトリの親から Claude Code と同じ規則で導くので、worktree からでも元リポジトリのメモリを見る。`DEV_WORKFLOW_MEMORY_DIR` で直接指定もできる。解決できない・読めないときは無出力で exit 0。所要時間は 1 回 約 35〜45 ms
+- `scripts/session-tripwires.sh`: 上のスクリプトを呼び、出力があれば `additionalContext` の先頭に足す。止めない・削らない
+- 本文の閾値は issue 本文の案 1,500 ではなく 2,500 にした。初回整理で維持と判断した 12 件のうち 5 件が 1,500 を超えており（最大 2,192）、1,500 のままだと整理直後から毎セッション通知が出る（#294 のコメントに実測）
+- `skills/memory-refresh/SKILL.md` と `commands/memory-refresh.md`（新規）: 全件を読み、1 件ずつ削除・統合・短縮・維持に分類した一覧を主に出し、承認後に控えを取ってから手で適用し、索引とファイルの一致と前後の数字を報告する。スクリプトにはしない。claude-harness プロジェクトの初回整理（27 件 → 12 件）を例として載せた
+- `tests/memory-tripwire.bats`（新規 14 本）と `tests/memory-refresh-skill.bats`（新規）
+
+## 2.10.0 — 2026-09-10: W の工程 (3) を実装＋verify と archive＋PR＋仕様宣言 に分ける
+
+本体がサブエージェントのコンテキスト量を測れるのは W を SendMessage で再開する直前だけなので、return の区切りの数がそのまま計測点の数になる。これまでの (3) は TDD 実装 → verify → archive → PR → 仕様宣言の 5 段階を 1 回の return に束ねており、膨張が最も大きい実装区間を終えた地点に計測点が無かった。エピック #257 の子 #262。
+
+- **(3) を 2 回の return に分けた**: (3a) apply（TDD）・verify まで行って `工程完了: 実装＋verify` で return、本体が計測してから (3b) archive・PR を Ready に（または作成）・仕様宣言まで行って `工程完了: archive＋PR＋仕様宣言` で return する
+- **境界は archive の手前に置き、verify は (3a) 側**にした。verify の失敗は実装への巻き戻しなので、戻る可能性のある区間を 1 人の担い手に閉じ込める。archive 以降は実装内容に手を入れない事務手続きで、テスト結果を受け取れば別の担い手でも完遂できる
+- **(3a) の return に、実行したテストコマンドと exit code・`/opsx:verify` の合否を必須にした**。(3b) の担い手が書く動作確認の証拠は pr-review-gate 手順 5 の照合対象で、手渡しが起きると後任はそれを前任の return からしか得られない
+- **タスク単位のさらなる分割は禁止**（`tasks.md` の項目単位・5 段など）。手渡しごとに指示書の読み直しと現状確認の固定分が乗るため、区切りを増やすほど 1 区切りあたりの実質作業比が下がる。実装の途中で切ると後任が Red のまま止まったテストから再出発することになる
+- **本体の工程ルーティングは指示した工程で決める**（工程名の文字列照合では決めない）。古いキャッシュの `worker.md` を読んだ W が (3) を通しで終えて返してきた場合、(3a) の return に PR 番号と仕様宣言のコメント URL が揃っていれば (3b) を指示せず G の工程へ進む（PR Ready の再実行と仕様宣言の二重投稿を防ぐ）
+- **opsx スラッシュコマンドが無く openspec CLI だけある経路も同じ区切りに揃えた**。この経路だけ「実装 → `openspec archive` を直叩き」の一括のまま残っており、(3a) の計測点が作られなかった。(3a) は実装 → `openspec validate <change-name> --strict`（`/opsx:verify` の代わりの検証）まで、`openspec archive` は (3b) とし、(3a) の return には `/opsx:verify` の合否の代わりにこの exit code を載せる
+- 手渡しの手順そのものは変えていない。上限超を検知したあとの扱い・宣言の書式・前任が動作中のときの交代手順は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本のままで、本文は増やしていない（差し替えたのは工程名の例のみ）
+- `tests/develop-skill.bats` / `tests/develop-roles.bats` に 6 本追加。工程の切り出しは**行頭の工程ラベル**（`top_step` / `substep`）で行い、文言の初出位置（`grep -n … | head -1`）には依存させていない。否定アサーションは `!` で書かない — bats（bash の `set -e`）は `!` を先頭に付けたコマンドの失敗をテスト最終行以外で無視するため、`! … | grep -q …` では退行を検出できない（bats 1.13 で実測）
+
+## 2.9.0 — 2026-09-10: 途中計測 hook の早期 exit を JSON 意味論に合わせる
+
+`scripts/context-tripwire.sh` の早期 exit は payload の生文字列 `"agent_id"` の有無だけを見ていた。JSON のキーは Unicode エスケープでも書けるため（`"\u0061gent_id"` は `json.loads` すると `agent_id`）、この判定は JSON 意味論と一致せず、同値な表記の payload が python3 に届かないまま無音で fail-open していた。強制停止の閾値を超えたサブエージェントの `Bash` 呼び出しでも deny されない（#278。PR #269 の 3 周目レビューで Codex CLI が見つけた非 blocking の指摘）。
+
+- 早期 exit の条件を必要条件で切り直した: 生文字列 `"agent_id"` を含む、または 4 文字の並び `\u00` を含む payload は python3 に渡す。それ以外は従来どおり起動せず exit 0。`agent_id` の 8 文字は文字列エスケープでは `\uXXXX` でしか綴れず（他の 8 種が生む文字に英小文字とアンダースコアは無い）、その 8 文字は U+005F〜U+0074 に収まるので `\uXXXX` の上位 2 桁は必ず `00` になる
+- 早期 exit の目的（メインスレッドの通常の payload に python3 の起動コストを課さない）は変えていない。判定を誤ってよいのは「余計に起動して無音で終わる」向きだけで、逆向き（`agent_id` を持つ payload の早期 exit）は spec の MUST NOT
+- `tests/context-tripwire.bats`: エスケープ表記のキーで deny が出ることと、その並びを含むだけの payload が python3 に渡っても無音で終わることの退行テストを追加。既存の早期 exit テストには「その payload がエスケープの前置を含まない」assert を足した
+- 同 bats の payload ヘルパを `ensure_ascii=False` にして実機（ハーネスの Node の `JSON.stringify`）に寄せた。既定の `True` だと `mktemp -d` のパスに非 ASCII があるだけで `transcript_path` がエスケープの並びを含み、早期 exit のテストが環境依存で落ちる
+- 通知・拒否のメッセージ、計測の式、閾値、`hooks.json` の登録は変更なし
+
+## 2.7.0 — 2026-09-09: 起動の途中でコンテキストを測って止める hook
+
+サブエージェントのコンテキスト量は、本体が SendMessage で再開する直前にしか測られなかった。1 回の起動の中でどれだけ膨らんでも誰も止めないため、実測で W が 497,552 トークンに達していた（過去 14 日で上限 150,000 超が W 65%・G 63%）。1 起動の途中で測って止める経路を足した。あわせて、名前 glob が `isolation: "worktree"` のサブエージェントを見つけられない件（#243）を、名前ではなく hook が受け取る `agent_id` から解決する形で統合した。
+
+- `scripts/context-tripwire.sh`（新規）: PostToolUse（全ツール）で `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）超なら `hookSpecificOutput.additionalContext` で「今の工程を締めて成果を列挙して return せよ」を届け、PreToolUse（`Edit|Write|NotebookEdit|Bash`）で `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）超なら編集系を deny する。`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` で全解除
+- 計測対象は payload の `transcript_path` そのものではなく、その親ディレクトリ・`session_id`・`agent_id` から `<親>/<session_id>/subagents/agent-<agent_id>.jsonl` として導出する（`transcript_path` は hook が発火したセッション＝サブエージェントの中でも親のものを指す。着手前実験で確定）。直接パスが無ければ `subagents/` 以下を深さ 3 段まで、エントリ 200 件 / 20ms の上限つきで探す
+- 素の stdout + exit 0 はトランスクリプト表示（ctrl+o）にしか出ずモデルには届かないため、通知は `additionalContext` に固定した
+- 強制停止中の `Bash` は**コマンド内容によらず全件拒否する**（窓を開けない）。当初は「受理する文法に照合して読める形だけを通す」正の列挙方式（`git` の `status`/`diff`/`add`/`commit`/`push` の一部だけを許可オプション表に沿って通す）を実装したが、#269 で 2 周連続の実機迂回が見つかった: 1 周目は `git -c 'diff.external=sh -c "…"' diff` で `-c` の値を読み飛ばして任意コマンドを実行、2 周目はそれを塞いだ後も、判定側の Python `shlex`（POSIX 文法）と実行するシェル（zsh）のトークン化がずれ、`git push $'--receive-pack=/tmp/x' origin main`（zsh の ANSI-C クォート）が判定側には安全な 1 オペランドに見えて通った。受理する経路が 1 つでも残る限り検査側と実行側のトークン化のずれで迂回が再発するため、方式を反転し、`Bash` は内容を一切見ず拒否する構造に閉じた。拒否理由には計測値・`cwd`（作業ツリーのパス）・編集済みファイル一覧を `cwd` と一緒に return に書けという指示を含め、**後片付け（commit）はサブエージェントではなく本体が行う**
+- 読み取り系（Read / Grep / Glob）は拒否しない。PreToolUse の matcher を編集系 + Bash に絞ることで構造的に保証している
+- メインスレッド（`agent_id` 無し）では python3 を起動せず bash 側で exit 0 する。この hook は install 先の全ユーザーの全ツール呼び出しで走るため。読み取りは末尾 256KB だけで、5MB のトランスクリプトでも 1 回 100ms 未満
+- `scripts/subagent-context.sh` に `--file <path>` を追加（#243 の統合）。名前 glob を使わずそのファイルを測る。名前指定の既存挙動は変えない
+- `tests/context-tripwire.bats`（新規）・`tests/subagent-context.bats`（`--file` の追補）
+
 ## 2.6.2 — 2026-09-09: サブエージェントのコンテキスト量を母集団で測る（観測のみ）
 
 `subagent-context.sh` は 1 体分しか測らないため、起動時固定分が増えたか・上限超で手渡しになる割合が増えたかを追えなかった（2026-08-31 の約 42,000 → 09-08 の約 58,678 トークンという 8 日で約 4 割の増加に、事後の手集計まで誰も気づかなかった）。観測だけを足し、強制は加えない。

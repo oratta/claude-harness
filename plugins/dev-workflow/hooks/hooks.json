@@ -30,6 +30,25 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/agent-model-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh"
+          }
+        ]
       }
     ]
   }

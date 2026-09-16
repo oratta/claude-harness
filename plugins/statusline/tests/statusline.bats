@@ -12,6 +12,10 @@ setup() {
   export CLAUDE_CONFIG_DIR="$WORK"
   # ccusage の背景フェッチと為替取得を走らせない
   export STATUSLINE_API_PACE=0
+  # 実行環境が既定以外の Claude アカウントのセッション（例: 別アカウント住人）だと
+  # このシェルに CLAUDE_SECURESTORAGE_CONFIG_DIR が漏れ込んでいることがあり、
+  # 「既定アカウント」を想定したテストが誤って落ちる。ここで明示的に外す。
+  unset CLAUDE_SECURESTORAGE_CONFIG_DIR
   NOW="$(date +%s)"
 }
 
@@ -82,12 +86,83 @@ JSON
   [ "$output" = "3" ]
 }
 
+@test "snapshot: skips write when CLAUDE_SECURESTORAGE_CONFIG_DIR is set (other account)" {  # 別アカウントのセッションでは書かない
+  mk_input 3 25 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$WORK/other-account" bash "$SL" > /dev/null
+  [ ! -f "$WORK/.rate-limit-snapshot" ]
+}
+
+@test "snapshot: does not clobber an existing snapshot from another account session" {  # 既定アカウントが既に書いた内容を別アカウントのセッションで上書きしない
+  mk_input 3 25 14000 172800 | bash "$SL" > /dev/null
+  before="$(cat "$WORK/.rate-limit-snapshot")"
+  mk_input 99 99 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$WORK/other-account" bash "$SL" > /dev/null
+  [ "$(cat "$WORK/.rate-limit-snapshot")" = "$before" ]
+}
+
 @test "render: fail-open draws lines 1-2 without rate limit fields" {  # レートリミット情報が無くても 1〜2 行目は描画する（fail-open）
   printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$WORK" \
     | bash "$SL" > "$WORK/out.txt"
   grep -q 'Opus 5' "$WORK/out.txt"
   grep -q 'Context 91%' "$WORK/out.txt"
   ! grep -q '7d All' "$WORK/out.txt"
+}
+
+# $1=cost.total_cost_usd → cost を含む stdin JSON（レートリミットなし）
+mk_cost_input() {
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"cost":{"total_cost_usd":%s}}' \
+    "$WORK" "$1"
+}
+
+@test "session cost: converts cost.total_cost_usd with the cached fx rate" {  # セッションコストを為替キャッシュで円換算して 2 行目に出す
+  echo 150 > "$WORK/.statusline-fxrate-JPY"
+  mk_cost_input 12.34 | bash "$SL" > "$WORK/out.txt"
+  line="$(strip_ansi < "$WORK/out.txt" | grep 'Context')"
+  [[ "$line" == *"Context 91%  │  Session ¥1,851"* ]]
+}
+
+@test "session cost: sits next to the 30-day API pace" {  # 30 日コストの隣に並ぶ
+  echo 150 > "$WORK/.statusline-fxrate-JPY"
+  echo 'API ¥180,000/mo' > "$WORK/.statusline-api-pace"
+  # キャッシュを新しく見せて背景更新を走らせない
+  touch "$WORK/.statusline-api-pace"
+  mk_cost_input 1 | STATUSLINE_API_PACE=1 bash "$SL" > "$WORK/out.txt"
+  line="$(strip_ansi < "$WORK/out.txt" | grep 'Context')"
+  [[ "$line" == *"API ¥180,000/mo  │  Session ¥150"* ]]
+}
+
+@test "session cost: falls back to USD when no fx rate is cached" {  # 為替キャッシュが無ければ USD で出す（描画中に取りに行かない）
+  mk_cost_input 0.5 | bash "$SL" > "$WORK/out.txt"
+  strip_ansi < "$WORK/out.txt" | grep -q 'Session \$0.50'
+}
+
+@test "session cost: falls back to USD when the fx cache is not a positive number" {  # 為替キャッシュが壊れていたら ¥0 ではなく USD で出す
+  for bad in garbage '   ' 0; do
+    echo "$bad" > "$WORK/.statusline-fxrate-JPY"
+    mk_cost_input 1.23 | bash "$SL" > "$WORK/out.txt"
+    strip_ansi < "$WORK/out.txt" | grep -q 'Session \$1.23'
+  done
+}
+
+@test "session cost: amounts do not depend on the locale's decimal separator" {  # 小数点がカンマのロケールでも金額が狂わない
+  locale -a 2>/dev/null | grep -qi '^de_DE\.utf-\?8$' || skip "de_DE.UTF-8 ロケールが無い"
+  mk_cost_input 1.23 | LC_ALL=de_DE.UTF-8 bash "$SL" > "$WORK/out.txt"
+  strip_ansi < "$WORK/out.txt" | grep -q 'Session \$1.23'
+  echo 150 > "$WORK/.statusline-fxrate-JPY"
+  mk_cost_input 12.34 | LC_ALL=de_DE.UTF-8 bash "$SL" > "$WORK/out.txt"
+  # 3 桁区切りの記号はロケールに従う（de_DE なら "."）。見るのは金額が 1851 のままであること
+  strip_ansi < "$WORK/out.txt" | grep -q 'Session ¥1[.,]851'
+}
+
+@test "session cost: STATUSLINE_CURRENCY=USD shows dollars" {  # 通貨が USD ならドルで出す
+  echo 150 > "$WORK/.statusline-fxrate-JPY"
+  mk_cost_input 3.456 | STATUSLINE_CURRENCY=USD bash "$SL" > "$WORK/out.txt"
+  strip_ansi < "$WORK/out.txt" | grep -q 'Session \$3.46'
+}
+
+@test "session cost: hidden when the cost field is absent or disabled" {  # cost が無い／STATUSLINE_SESSION_COST=0 なら出さない
+  mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
+  ! grep -q 'Session' "$WORK/out.txt"
+  mk_cost_input 1 | STATUSLINE_SESSION_COST=0 bash "$SL" > "$WORK/out.txt"
+  ! grep -q 'Session' "$WORK/out.txt"
 }
 
 @test "config: STATUSLINE_BAR_WIDTH changes the bar cell count" {  # STATUSLINE_BAR_WIDTH でバーのセル数が変わる
