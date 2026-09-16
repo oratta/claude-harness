@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# casting-catalog / casting-project-files: casting-check.sh の7検出項目
+# casting-catalog / casting-project-files: casting-check.sh の8検出項目
 # spec: openspec/changes/casting-plugin/specs/casting-project-files/spec.md
 #   Requirement: casting-check.sh の検出項目
 
@@ -27,7 +27,7 @@ setup() {
   [[ "$output" != *"delegation.md"* ]]
 }
 
-# --- Scenario: 7種の検出がそれぞれ報告される（⓪malformed-row はファイル末尾） ---
+# --- Scenario: 8種の検出がそれぞれ報告される（⓪malformed-row はファイル末尾） ---
 
 @test "unknown-vocab fixture: reports the unknown perspective name and exits 1" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/unknown-vocab"
@@ -389,13 +389,34 @@ PRECEDENTS
   [[ "$output" != *"記入例（コメント内なので無効）"* ]]
 }
 
-@test "code-fence-unclosed fixture: a fence left open until EOF does not break the scan" {
+@test "code-fence-unclosed fixture: a fence left open until EOF is reported as unclosed-fence, not unclosed-comment" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/code-fence-unclosed"
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unclosed-fence"* ]]
+  [[ "$output" == *"project.md"* ]]
   [[ "$output" != *"unclosed-comment"* ]]
   run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/code-fence-unclosed"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"| project |"* ]]
+}
+
+# --- 回帰: 閉じ忘れフェンスより後ろの上書き行が黙って落ちる経路を止める（#187） ---
+#
+# フェンス内の行をパースから外す扱いの裏返しで、閉じ忘れたフェンスは以降の行を EOF まで
+# 出力から落とす。担い手を『主』に引き戻す上書き行がそこにあると、検出も無いまま
+# カタログ既定（エージェント）に化けて人間承認が要る論点が自走扱いに倒れる。
+
+@test "code-fence-unclosed-swallow fixture: an override row swallowed by an unclosed fence is reported instead of silently dropped" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/code-fence-unclosed-swallow"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unclosed-fence"* ]]
+  [[ "$output" == *"project.md"* ]]
+}
+
+@test "code-fence-unclosed-swallow fixture: resolve refuses instead of silently dropping the swallowed row" {
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/code-fence-unclosed-swallow"
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"| project |"* ]]
 }
 
 @test "code-fence-example-row fixture: a sample row inside a code fence does not win over the human-written row" {

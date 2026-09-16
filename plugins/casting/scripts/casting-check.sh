@@ -2,12 +2,14 @@
 #
 # casting-check.sh — 「観点の配役」フレームワークの語彙 lint ＋ 起案シグナル検出
 #
-# 対象 repo の .claude/casting/{project.md,local.md,precedents.md} に対して7項目を検査する
+# 対象 repo の .claude/casting/{project.md,local.md,precedents.md} に対して8項目を検査する
 # （検出カテゴリ名は report の第1引数と一対一。項目数の表記は tests/casting-structure.bats が
 #  この report 呼び出しの異なり数と突き合わせる）:
 #   0. 配役表の表行が5列に割れない（5列未満／セル内の | で6列以上に割れる）（malformed-row）
 #   0'. 開いた HTML コメント <!-- が閉じられていない（以降を EOF まで飲み込む）（unclosed-comment）
 #       — Markdown のコードフェンス（``` / ~~~）の中はリテラルとして走査しない
+#   0''. 開いたコードフェンスが閉じられていない（以降を EOF まで飲み込む）（unclosed-fence）
+#       — フェンス内の行はパース対象から外すので、閉じ忘れは 0' と同じく上書き行を全滅させる
 #   1. catalog.md に無い観点語彙（「カタログ外」を除く）（unknown-vocab）
 #   2. 判例台帳の「カタログ外」判例（観点追加の起案シグナル）（catalog-external-precedent）
 #   3. 同一観点で帰結「論点じゃなかった」が2件以上（移譲仕組み化の起案シグナル）（repeated-not-issue）
@@ -20,11 +22,11 @@
 # macOS 実装で壊れる実績があるため使わない）。
 #
 # サブコマンド:
-#   （省略時）      対象 repo の配役表・判例台帳を検査する（上記7項目）
+#   （省略時）      対象 repo の配役表・判例台帳を検査する（上記8項目）
 #   resolve          catalog.md・project.md・local.md を観点（行）単位で合成した
 #                     有効な配役表を、由来（カタログ既定／project／local）付きで出力する。
 #                     出力前に合成の入力（project.md / local.md）へ配役表の検証
-#                     （行形式・コメントの閉じ忘れ・語彙・catalog_version）を通し、失敗時は
+#                     （行形式・コメント/フェンスの閉じ忘れ・語彙・catalog_version）を通し、失敗時は
 #                     合成表を出さずに理由を stderr へ出力して exit 1 する（fail-closed / #117）
 #
 # exit code:
@@ -145,9 +147,12 @@ report() {
   printf '[%s] %s\n' "$1" "$2" >> "$FINDINGS"
 }
 
-# strip_html_comments <file> <out> — HTML コメント（<!-- ... -->）にかかる行を落とした
-# 結果を <out> に書き、開いた <!-- が閉じられないまま EOF に達したら 1 を返す（正常は 0）。
-# 検出0'（unclosed-comment）とパース（stripped_copy）は必ずこの1本の走査を共有する —
+# strip_html_comments <file> <out> — HTML コメント（<!-- ... -->）とコードフェンスにかかる行を
+# 落とした結果を <out> に書き、閉じ忘れを戻り値で知らせる:
+#   0 = 正常 / 1 = <!-- が閉じられないまま EOF / 2 = コードフェンスが閉じられないまま EOF
+# 1 と 2 は同時に立たない（コメントの中ではフェンスを開かず、フェンスの中ではコメントを読まない）。
+# 検出0'（unclosed-comment）・検出0''（unclosed-fence）とパース（stripped_copy）は必ず
+# この1本の走査を共有する —
 # 「開閉の個数」で数えると、対応の無い --> があるだけの正常なファイルを止め（誤検出）、
 # その --> が本物の閉じ忘れ <!-- と釣り合うと検出を落とす（取りこぼし）ため。
 #
@@ -157,12 +162,14 @@ report() {
 #
 # Markdown のコードフェンス（``` / ~~~。字下げは3スペースまで）の中はリテラルなので走査しない（#187）。
 # フェンス内に書いた説明用の <!-- が本物の閉じ忘れと区別されず、正常な配役表を unclosed-comment で
-# 止めていた。開きフェンスと同じ記号が同じ本数以上だけの行（CommonMark の閉じ条件）で閉じ、
-# 閉じられないまま EOF に達しても閉じ忘れとは扱わない（コメントが開いていなければ 0 を返す）。
+# 止めていた。開きフェンスと同じ記号が同じ本数以上だけの行（CommonMark の閉じ条件）で閉じる。
 # コメントの中にあるフェンス記号はコメントの一部で、フェンスを開かない。
 # フェンス内の行は出力からも落とす（コメントと同じ扱い）。書式の説明用に置いた記入例の表行が
 # 実在の配役として table_rows に渡り、同じ観点の先頭行が勝つ規則で人間の指定を上書きしてしまうため
 # （記入例の担い手『エージェント』が実際の指定『主』に優先し、人間承認が要る論点が自走扱いになる）。
+# その裏返しとして、閉じ忘れたフェンスは以降の行を EOF まで出力から落とす。閉じ忘れた <!-- と
+# 同じ失敗モード（フェンスより後ろの上書き行が黙って全滅し、担い手が人間から既定へ化ける）なので、
+# 閉じられないまま EOF に達したフェンスも 2 を返して検出0''（unclosed-fence）で止める。
 strip_html_comments() {
   local file="$1" out="$2"
   local line rest in_comment=0
@@ -216,7 +223,9 @@ strip_html_comments() {
       esac
     done
   done < "$file"
-  [ "$in_comment" -eq 0 ]
+  [ "$in_comment" -eq 0 ] || return 1
+  [ "$in_fence" -eq 0 ] || return 2
+  return 0
 }
 
 # stripped_copy <file> — HTML コメント（<!-- ... -->）の行を除いた作業コピーのパスを返す。
@@ -225,7 +234,8 @@ strip_html_comments() {
 stripped_copy() {
   local file="$1" out
   out="${WORK_DIR}/stripped-$(printf '%s' "$file" | cksum | cut -d' ' -f1)"
-  # 閉じ忘れは check_unclosed_comment が findings に積むので、ここでは戻り値を見ない
+  # 閉じ忘れ（コメント・フェンスとも）は check_unclosed_markers が findings に積むので、
+  # ここでは戻り値を見ない
   strip_html_comments "$file" "$out" || true
   printf '%s\n' "$out"
 }
@@ -418,18 +428,24 @@ check_malformed_rows() {
   done < "$src"
 }
 
-# ---- 検出0': 閉じられていない HTML コメント（以降を EOF まで飲み込む） ----
+# ---- 検出0'/0'': 閉じられていない HTML コメント・コードフェンス（以降を EOF まで飲み込む） ----
 #
 # 閉じ忘れた <!-- はそこから先の行を丸ごとパースから外すため、その配役表の上書き行が
 # 全滅し、しかも何も検出されないまま「全部カタログ既定」に化ける（#139）。
+# 閉じ忘れたコードフェンスもまったく同じ壊れ方をする（#187） — フェンス内の行はパース対象から
+# 外すので、閉じ忘れるとフェンスより後ろの上書き行が EOF まで黙って全滅する。担い手を
+# 『エージェント』から『主』へ引き戻す行が消えると、人間承認が要る論点が自走扱いに倒れるため、
+# 片方だけ検出しない状態にしない。
 # 判定は stripped_copy と同じ strip_html_comments の走査で行い、パースとずれないようにする。
 
-check_unclosed_comment() {
-  local file="$1"
+check_unclosed_markers() {
+  local file="$1" status=0
   [ -f "$file" ] || return 0
-  if ! strip_html_comments "$file" "${WORK_DIR}/balance-$(printf '%s' "$file" | cksum | cut -d' ' -f1)"; then
-    report "unclosed-comment" "${file}: 閉じられていない HTML コメントがある（<!-- に対する --> が無いままファイル末尾に達した）。開いた <!-- 以降の行は丸ごと無視される"
-  fi
+  strip_html_comments "$file" "${WORK_DIR}/balance-$(printf '%s' "$file" | cksum | cut -d' ' -f1)" || status=$?
+  case "$status" in
+    1) report "unclosed-comment" "${file}: 閉じられていない HTML コメントがある（<!-- に対する --> が無いままファイル末尾に達した）。開いた <!-- 以降の行は丸ごと無視される" ;;
+    2) report "unclosed-fence" "${file}: 閉じられていない Markdown のコードフェンスがある（開いた \`\`\` / ~~~ に対する閉じ行が無いままファイル末尾に達した）。開いたフェンス以降の行は丸ごと無視される" ;;
+  esac
 }
 
 # 観点フィールドの値を「、」で分割して1行1観点にする（複数観点の判例に対応）
@@ -477,8 +493,8 @@ check_version() {
 check_layer_files() {
   check_malformed_rows "$PROJECT_MD"
   check_malformed_rows "$LOCAL_MD"
-  check_unclosed_comment "$PROJECT_MD"
-  check_unclosed_comment "$LOCAL_MD"
+  check_unclosed_markers "$PROJECT_MD"
+  check_unclosed_markers "$LOCAL_MD"
   check_unknown_vocab "$PROJECT_MD" "$PROJECT_MD"
   check_unknown_vocab "$LOCAL_MD" "$LOCAL_MD"
   check_version "$PROJECT_MD"
@@ -514,7 +530,7 @@ fi
 
 check_layer_files
 
-check_unclosed_comment "$PRECEDENTS_MD"
+check_unclosed_markers "$PRECEDENTS_MD"
 
 if [ -f "$PRECEDENTS_MD" ]; then
   while IFS= read -r val; do
