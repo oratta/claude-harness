@@ -204,7 +204,7 @@ GITHUB_TOKEN でマージすると、その push が後続ワークフローを�
    - Metadata: Read-only（自動で付く）
 4. 有効期限は任意（切れるとマージだけが止まる＝安全側に倒れる。カレンダーに更新を入れておく）。
    失効しても無言では止まらない — run のログに「マージが認証・認可で失敗（HTTP 401）」の
-   **error** が出る（下の「マージされないときの調べ方」の項目 6）
+   **error** が出る（下の「マージされないときの調べ方」の項目 7）
 5. 生成したトークンを `https://github.com/<owner>/<repo>/settings/secrets/actions` で
    **Name: `AUTOMERGE_PAT`** として登録する
 
