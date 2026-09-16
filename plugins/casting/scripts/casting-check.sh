@@ -163,7 +163,7 @@ report() {
 strip_html_comments() {
   local file="$1" out="$2"
   local line rest in_comment=0
-  local in_fence=0 fence_char= fence_len=0 fence_run
+  local in_fence=0 fence_char='' fence_len=0 fence_run
   local fence_open_re='^[ ]{0,3}(`{3,}|~{3,})'
   : > "$out"
   while IFS= read -r line || [ -n "$line" ]; do
