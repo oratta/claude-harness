@@ -48,6 +48,9 @@ make_transcript() {
 
 # hook の payload を作る: $1=event $2=agent_id（空ならフィールドごと出さない） $3=tool_name $4=command（Bash のとき）
 # agent_id が空のときに文字列 "agent_id" が payload に一切現れないことが、bash 側の早期脱出の前提。
+# ensure_ascii=False は実機（ハーネスの Node の JSON.stringify）に寄せるため。既定の True だと
+# mktemp -d のパスに非 ASCII があるだけで transcript_path が Unicode エスケープの並びを含み、
+# 「早期 exit で python3 を起動しない」テストが環境依存で落ちる。
 payload() {
   EV="$1" AID="$2" TOOL="$3" CMD="${4-}" SESS="$SESS" TP="$TRANSCRIPT_PATH" python3 - <<'PY'
 import json, os
@@ -59,8 +62,24 @@ if os.environ["TOOL"] == "Bash":
     d["tool_input"] = {"command": os.environ["CMD"]}
 elif os.environ["TOOL"]:
     d["tool_input"] = {"file_path": "/tmp/x/a.txt"}
-print(json.dumps(d))
+print(json.dumps(d, ensure_ascii=False))
 PY
+}
+
+# payload() が書いた JSON の "agent_id" キーを Unicode エスケープ表記 "\u0061gent_id" に
+# 書き換える。$1=入力ファイル。json.loads すると同じ agent_id になるが、生文字列 "agent_id" は消える。
+# 4 桁 16 進のエスケープはシェルに直に書くと実文字に潰れるので chr(92) から組み立てる。
+escape_agent_id_key() {
+  python3 - "$1" <<'PY'
+import io, sys
+src = io.open(sys.argv[1], encoding="utf-8").read()
+sys.stdout.write(src.replace('"agent_id"', '"' + chr(92) + 'u0061gent_id"'))
+PY
+}
+
+# 早期 exit の判定に使う 4 文字の並び（バックスラッシュ + u00）を実文字で得る
+escape_prefix() {
+  python3 -c 'print(chr(92) + "u00", end="")'
 }
 
 # ---------- 1. 計測ロジック ----------
@@ -126,6 +145,11 @@ PY
   printf '#!/bin/sh\ntouch "%s/python3-was-called"\nexit 0\n' "$WORK" > "${shim}/python3"
   chmod +x "${shim}/python3"
   p="$(payload PostToolUse "" Read)"
+  # proposal の約束「その並びを含まないメインスレッド payload では python3 が起動しない」を機械で固定する。
+  # 否定の assert は set -e が ! を無視するので run + status で書く。
+  printf '%s' "$p" > "${WORK}/mainthread-payload.json"
+  run grep -qF -- "$(escape_prefix)" "${WORK}/mainthread-payload.json"
+  [ "$status" -ne 0 ]
   run bash -c "PATH=\"${shim}:\$PATH\" '$SCRIPT' <<< '$p'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
@@ -137,6 +161,46 @@ PY
 
 @test "early exit: mainthread payload mentioning agent_id in a command stays silent" {
   run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "" Bash "grep agent_id foo.json")'"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "early exit: a Unicode-escaped agent_id key is not skipped (regression, #278)" {
+  # JSON 意味論では agent_id を持つが、生文字列 "agent_id" は含まない payload。
+  # 早期 exit が生表記だけを見ていると、強制停止の閾値を超えていても無音で素通りする。
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
+  payload PreToolUse "$AGENT_ID" Bash "git status" > "${WORK}/escaped-key-278-raw.json"
+  escape_agent_id_key "${WORK}/escaped-key-278-raw.json" > "${WORK}/escaped-key-278.json"
+  # 生表記は消えている（早期 exit の従来の判定には当たらない）
+  run grep -qF -- '"agent_id"' "${WORK}/escaped-key-278.json"
+  [ "$status" -ne 0 ]
+  # それでも JSON としては同じ agent_id を持つ
+  python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["agent_id"] == sys.argv[2]' \
+    "${WORK}/escaped-key-278.json" "$AGENT_ID"
+  # 期待は生表記の payload と同じ deny
+  run bash -c "'$SCRIPT' < '${WORK}/escaped-key-278.json'"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"permissionDecision": *"deny"'
+}
+
+@test "early exit: a mainthread payload carrying only the escape prefix stays silent" {
+  # 早期 exit を緩めた結果、agent_id を持たない payload でも python3 が起動しうる
+  # （PostToolUse の tool_response にソースの Unicode エスケープ表記や制御文字が入った形）。
+  # 起動してよいが、agent_id フィールドが無いので何も出力せず exit 0 でなければならない（fail-open）。
+  esc="$(python3 -c 'print(chr(92) + "u0061gent_id", end="")')"
+  payload PostToolUse "" Bash "grep -F ${esc} foo.json" > "${WORK}/escape-only-278.json"
+  grep -qF -- "$(escape_prefix)" "${WORK}/escape-only-278.json"
+  run grep -qF -- '"agent_id"' "${WORK}/escape-only-278.json"
+  [ "$status" -ne 0 ]
+  # python3 には渡る（早期 exit しない）ことを、PATH に置いた偽 python3 で確かめる
+  shim="${WORK}/shim-escape"; mkdir -p "$shim"
+  printf '#!/bin/sh\ntouch "%s/python3-escape-called"\nexit 0\n' "$WORK" > "${shim}/python3"
+  chmod +x "${shim}/python3"
+  run bash -c "PATH=\"${shim}:\$PATH\" '$SCRIPT' < '${WORK}/escape-only-278.json'"
+  [ "$status" -eq 0 ]
+  [ -f "${WORK}/python3-escape-called" ]
+  # 実物の python3 に渡しても無音のまま終わる
+  run bash -c "'$SCRIPT' < '${WORK}/escape-only-278.json'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -359,7 +423,7 @@ import json, os
 d = {"hook_event_name": "PreToolUse", "session_id": os.environ["SESS"],
      "transcript_path": os.environ["TP"], "cwd": "/tmp/x", "tool_name": "Bash",
      "agent_id": os.environ["AID"], "tool_input": {}}
-print(json.dumps(d))
+print(json.dumps(d, ensure_ascii=False))
 PY
 )"
   run bash -c "'$SCRIPT' <<< '$p_missing'"
@@ -372,7 +436,7 @@ import json, os
 d = {"hook_event_name": "PreToolUse", "session_id": os.environ["SESS"],
      "transcript_path": os.environ["TP"], "cwd": "/tmp/x", "tool_name": "Bash",
      "agent_id": os.environ["AID"], "tool_input": {"command": None}}
-print(json.dumps(d))
+print(json.dumps(d, ensure_ascii=False))
 PY
 )"
   run bash -c "'$SCRIPT' <<< '$p_nonstr'"

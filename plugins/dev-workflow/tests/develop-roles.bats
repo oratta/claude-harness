@@ -102,6 +102,71 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   ! grep -q 'solo' "$WORKER"
 }
 
+# (3) は (3a) 実装＋verify と (3b) archive＋PR＋仕様宣言 の 2 回の return に分かれる（#262）。
+@test "worker: (3a) and (3b) are separate sections that each list their return contents" {
+  a="$(section "$WORKER" '(3a) 実装＋verify')"
+  b="$(section "$WORKER" '(3b) archive＋PR＋仕様宣言')"
+  [ -n "$a" ] || { echo "no (3a) section in worker.md"; return 1; }
+  [ -n "$b" ] || { echo "no (3b) section in worker.md"; return 1; }
+  # (3a): 実装と verify まで。archive には進まない
+  echo "$a" | grep -qF '工程完了: 実装＋verify'
+  echo "$a" | grep -q 'テストコマンド'
+  echo "$a" | grep -q 'exit code'
+  echo "$a" | grep -qF '/opsx:apply'
+  echo "$a" | grep -qF '/opsx:verify'
+  # 否定は `!` で書かない。bats（set -e）は `!` 付きコマンドの失敗を最終行以外で無視するため、
+  # `! ... | grep -q ...` は退行を検出できない（bats 1.13 で実測）。
+  if echo "$a" | grep -qF '/opsx:archive'; then
+    echo "(3a) の節に /opsx:archive が書かれている（archive は (3b)）" >&2
+    return 1
+  fi
+  # (3b): archive 以降。PR 番号と仕様宣言のコメント URL を return に載せる
+  echo "$b" | grep -qF '工程完了: archive＋PR＋仕様宣言'
+  echo "$b" | grep -qF '/opsx:archive'
+  echo "$b" | grep -q 'PR #'
+  echo "$b" | grep -q '仕様宣言のコメント URL'
+}
+
+# ゲート合格まで PR を Draft のまま進める（#304）。W は Ready にせず、G が pr-review-gate 手順 5 で行う。
+@test "worker: (3b) keeps the PR as Draft (gh pr create --draft) and leaves Ready to G" {
+  b="$(section "$WORKER" '(3b) archive＋PR＋仕様宣言')"
+  [ -n "$b" ] || { echo "no (3b) section in worker.md"; return 1; }
+  echo "$b" | grep -q 'Draft のまま'
+  echo "$b" | grep -qF 'gh pr create --draft'
+  echo "$b" | grep -F 'Ready 化' | grep -qF '手順 5'
+  if echo "$b" | grep -qE 'gh pr ready|Ready for Review.*切り替え'; then
+    echo "(3b) の節に W が Ready に切り替える記述がある（Ready 化は G の手順 5）" >&2
+    return 1
+  fi
+}
+
+# opsx スラッシュコマンドが無く openspec CLI だけある経路も、(3a)/(3b) の区切りは同じでなければ
+# ならない（#262 のゲート指摘。この段落だけ旧来の「実装 → archive」一括のまま残っていた）。
+@test "worker: the openspec-CLI-only path stops at verify in (3a) and archives in (3b)" {
+  s="$(section "$WORKER" '仕様化する場合（(1) の終わり）')"
+  [ -n "$s" ] || { echo "no spec-writing section in worker.md"; return 1; }
+  # フォールバック経路の箇条書き 1 個ぶんを切り出す（次の行頭 "- " まで）
+  fb="$(echo "$s" | awk '/openspec CLI だけある場合/{f=1; print; next} f && /^- /{f=0} f {print}')"
+  [ -n "$fb" ] || { echo "no openspec-CLI-only fallback paragraph in worker.md"; return 1; }
+  flat="$(echo "$fb" | tr '\n' ' ')"
+  # /opsx:verify の代わりの検証手順が名指しされている
+  echo "$flat" | grep -qF 'openspec validate'
+  echo "$flat" | grep -qF -- '--strict'
+  # (3a) は検証まで、archive は (3b)
+  echo "$flat" | grep -qE '\(3a\)[^。]*openspec validate'
+  echo "$flat" | grep -qE 'openspec archive[^。]*\(3b\)'
+}
+
+@test "worker: the context cap section names the three stages and forbids finer splits" {
+  s="$(section "$WORKER" 'コンテキスト上限と手渡し')"
+  [ -n "$s" ] || { echo "no context cap section in worker.md"; return 1; }
+  echo "$s" | grep -qF '(1) 仕様化まで'
+  echo "$s" | grep -qF '(3a) 実装＋verify'
+  echo "$s" | grep -qF '(3b) archive＋PR＋仕様宣言'
+  echo "$s" | grep -qF 'これより細かく'
+  echo "$s" | grep -q '固定分'
+}
+
 @test "worker: split judgement is based on the issue text, and unmanned splits into child issues with blocked_by" {
   grep -q 'dependencies/blocked_by' "$WORKER"
   grep -q 'references/decision-criteria.md' "$WORKER"
@@ -199,6 +264,13 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q '実装品質起因' "$GATE"
   grep -q '仕様が曖昧' "$GATE"
   grep -q '誤検出' "$GATE"
+}
+
+@test "gate-runner: step 5 summary includes Ready (only when Draft) and the passed return has a Ready result field" {
+  todo="$(section "$GATE" 'やること')"
+  [ -n "$todo" ] || { echo "no やること section in gate-runner.md"; return 1; }
+  echo "$todo" | grep -F 'agent-review:passed' | grep -qF 'Draft なら Ready'
+  grep -qF 'Ready 化: 実施した | 対象外（元から非 Draft）' "$GATE"
 }
 
 @test "gate-runner: return formats cover passed / failed / on-hold" {
