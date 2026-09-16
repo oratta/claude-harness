@@ -126,8 +126,11 @@ has() { LC_ALL=C grep -qF -- "$2" "$1"; }
 
 # --- Scenario: rule に許可ツールの確認と正本ポインタがある ---
 
-@test "rule: step 3 checks the tool side too and points to delegation.md" {
-  has "$RULE" "許可ツール"
-  has "$RULE" "plugins/casting/catalog/delegation.md"
+# 手順 3 の中身は rule から SKILL.md へ移した（issue #260）。rule は skill を指すだけなので、
+# 「ツール側も確認する」と正本ポインタの照合先は SKILL.md、薄さの検査だけが rule に残る。
+@test "skill: step 3 checks the tool side too and points to delegation.md" {
+  has "$SKILL" "許可ツール"
+  has "$SKILL" "../../catalog/delegation.md"
+  has "$RULE" "casting:casting"
   [ "$(wc -l < "$RULE" | tr -d ' ')" -le 30 ]
 }

@@ -1,5 +1,5 @@
 {
-  "_comment": "cost-ledger の料金表と円換算レートの唯一の置き場所。集計の実装とコマンドはここだけを読み、単価やレートを自分では持たない。単位は $/MTok（100万トークンあたりの USD）。プロトタイプ 5 本の P から移した値。",
+  "_comment": "cost-ledger の料金表と円換算レートの唯一の置き場所。集計の実装とコマンドはここだけを読み、単価やレートを自分では持たない。単位は $/MTok（100万トークンあたりの USD）。値は計測用スクリプト 5 本（change cost-ledger-gate-report で削除）がそれぞれ持っていた単価から移したもので、経緯は archive 済みの change cost-ledger-aggregation の design に記録。",
   "_units": "USD per 1,000,000 tokens",
   "_rate_env": "レートは環境変数 COST_LEDGER_USD_JPY で上書きできる（例: COST_LEDGER_USD_JPY=155）。後続の台帳（#274）とゲート連携（#276）も同じ名前を読む。",
   "usd_jpy_rate": 150,

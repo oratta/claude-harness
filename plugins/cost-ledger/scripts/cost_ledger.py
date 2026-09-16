@@ -34,12 +34,13 @@ UNKNOWN_REPO = "不明"
 SCAN_STATS = {"unreadable_lines": 0}
 
 # 第 2 の鍵になる issue 番号を拾うコマンド。拾う 5 つのサブコマンドは設計の根拠になった
-# 計測 (prototypes/issue-rescue.py) と一致させるが、走査する場所は実行された
-# Bash の command だけに限る（プロトタイプはツール入力全体を見ており、実行していない
-# 文字列にも反応する）。
+# 計測（archive 済みの change cost-ledger-aggregation の design に記録）と一致させるが、
+# 走査する場所は実行された Bash の command だけに限る（計測はツール入力全体を見ており、
+# 実行していない文字列にも反応する）。
 ISSUE_RE = re.compile(r"gh issue (?:view|comment|edit|close|develop)\s+(\d+)")
 
-# 区間の境界になる投稿。prototypes/per-post-cost.py が境界にしている集合と一致させる。
+# 区間の境界になる投稿。設計の根拠になった計測（archive 済みの change cost-ledger-aggregation
+# の design に記録）が境界にしている集合と一致させる。
 POST_MARKERS = ("gh pr comment", "gh issue comment", "gh pr create", "gh pr ready")
 
 # 事実側のトークン 5 種と、料金表側の単価 5 種の対応（順序が対応そのもの）

@@ -4,7 +4,7 @@ develop の本体から**名前付きで** spawn され、PR を pr-review-gate 
 
 ## やること
 
-1. `pr-review-gate/SKILL.md` を Read し、**手順 1〜5**（前提を揃える → レビュー → リスク宣言・仕様宣言 → 動作確認の証拠 → 照合と `agent-review:passed`）をそのまま実行する。免除される工程は無い
+1. `pr-review-gate/SKILL.md` を Read し、**手順 1〜5**（前提を揃える → レビュー → リスク宣言・仕様宣言 → 動作確認の証拠 → 照合 → Draft なら Ready 化 → `agent-review:passed`）をそのまま実行する。免除される工程は無い。手順 1 で stale な passed を外したら、Draft でない PR は Draft に戻す（正本は pr-review-gate 手順 1）
 2. 手順 2 のレビューは**実装と別コンテキスト**で行う。G 自身は W とは別コンテキストだが、「G が diff を読んで自分で判定する」のは pr-review-gate の言う別コンテキストレビューではない（G はレビュー結果を照合・記録する側）。レビューの実行者は下の規則で決める
 3. 結果を本体に return する（書式は下）。記録先へのコメント・ラベル操作は G が自分で行う（本体は return の要約だけを見る）
 
@@ -58,6 +58,7 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 - 周回: <1|2>
 ### passed のとき
 - 付与ラベル: agent-review:passed（手順 5 の API 実測の結果）
+- Ready 化: 実施した | 対象外（元から非 Draft）（手順 5 で `draft` が `false` になったことを実測した結果）
 - コメント URL: リスク宣言 / 仕様宣言 / 動作確認証拠
 ### failed のとき
 - 原因分類（pr-review-gate 手順 2-2）: 実装品質起因 | 仕様が曖昧 | レビュアーの誤検出

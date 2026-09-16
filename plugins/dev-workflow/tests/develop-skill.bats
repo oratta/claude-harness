@@ -180,13 +180,30 @@ refute() {
   echo "$loop" | grep -q '孫'
 }
 
-@test "loop: W's second run covers apply(TDD), verify, archive, PR Ready and the spec declaration" {
+@test "loop: W's second run covers apply(TDD), verify, archive, the Draft PR and the spec declaration" {
   loop="$(section '1 ループ')"
   echo "$loop" | grep -q 'TDD'
   echo "$loop" | grep -q 'verify'
   echo "$loop" | grep -q 'archive'
-  echo "$loop" | grep -q 'Ready'
+  echo "$loop" | grep -q 'Draft'
   echo "$loop" | grep -q '仕様宣言'
+}
+
+# ゲート合格まで PR を Draft のまま進める（#304）。CI を Draft で止めるリポでは、W が (3b) で Ready にすると
+# レビューと修正の周回ごとに CI が走る。Ready 化は G が pr-review-gate 手順 5 で passed の直前に行う。
+@test "loop: (3b) hands the PR over as Draft and (4) makes it Ready before passed" {
+  s3="$(section '1 ループ' | top_step 3)"
+  segb="$(echo "$s3" | substep 3b)"
+  [ -n "$segb" ] || { echo "no (3b) substep in the (3) block"; return 1; }
+  echo "$segb" | grep -q 'Draft のまま'
+  echo "$segb" | grep -q 'Draft で作成'
+  # W が Ready に切り替える記述が無い（Ready に触れてよいのは G が手順 5 で行うという参照だけ）
+  refute "$segb" -E 'Ready に(（|切り替え|する)'
+  stray="$(echo "$segb" | grep -F 'Ready' | grep -vF '手順 5' || true)"
+  [ -z "$stray" ] || { echo "Ready が (3b) の W の作業として書かれている: $stray"; return 1; }
+  s4="$(section '1 ループ' | top_step 4)"
+  [ -n "$s4" ] || { echo "no (4) step in the loop block"; return 1; }
+  echo "$s4" | tr '\n' ' ' | grep -qE 'Draft なら Ready にしてから[^。]*agent-review:passed'
 }
 
 # (3) を (3a) 実装＋verify / (3b) archive＋PR＋仕様宣言 の 2 回の return に分ける（#262）。
@@ -210,9 +227,9 @@ refute() {
   # (3a) で archive しない。archive に触れてよいのは「archive は (3b)」という参照だけ
   stray="$(echo "$sega" | grep -F 'archive' | grep -vF '(3b)' || true)"
   [ -z "$stray" ] || { echo "archive が (3a) の作業として書かれている: $stray"; return 1; }
-  # (3b) は archive・PR Ready・仕様宣言を行い、その return で「archive＋PR＋仕様宣言」の完了を宣言する
+  # (3b) は archive・PR を Draft のまま用意・仕様宣言を行い、その return で「archive＋PR＋仕様宣言」の完了を宣言する
   echo "$segb" | grep -q 'archive'
-  echo "$segb" | grep -q 'Ready'
+  echo "$segb" | grep -q 'Draft'
   echo "$segb" | grep -q '仕様宣言'
   echo "$segb" | grep -F '工程完了: archive＋PR＋仕様宣言' | grep -q 'return'
   refute "$segb" -F '工程完了: 実装＋verify'
@@ -235,7 +252,7 @@ refute() {
 }
 
 # 旧世代の W（古いキャッシュの worker.md を読んだ W）が (3) を通しで終えて返してきたとき、
-# 本体が (3b) を再指示して PR Ready と仕様宣言を二重に走らせないための工程ルーティング。
+# 本体が (3b) を再指示して PR の作成と仕様宣言を二重に走らせないための工程ルーティング。
 # 規定は 2 行にまたがるので、改行を空白に潰した上で条件と帰結を順序込みで検査する
 # （「揃っていなければ (3b) を指示せず」のような意味の反転を落とすため）。
 @test "loop: main routes stage 3 by what it instructed, not by matching the stage name string" {

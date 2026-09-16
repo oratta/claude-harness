@@ -93,6 +93,132 @@ list_synced_md() {
   done
 }
 
+# ── path スコープ（frontmatter の paths:）─────────────────────
+# 配布（scripts/sync.sh の symlink）と常時注入は別の判定である。sync.sh は paths: の
+# 有無にかかわらず symlink するので、配布対象＝list_synced_md のまま。常時注入対象は
+# そこから paths: 保持ファイルを除いたもの（対象パスのファイルを読んだときだけ載るため）。
+#
+# 2026-09 時点の手元（Claude Code 2.1.268）では ~/.claude/rules/ に置いた paths: 付き
+# ルールは一度も注入されない（issue #260 の実機確認）。いまの rules/*.md に paths: を
+# 持つファイルは 1 本も無いので、この経路は将来 paths: が動くようになったときのための
+# ものである。それでも先に入れてあるのは、paths: ["**"] のような全体一致の glob を付けて
+# 「常時載ったまま合計からだけ消す」削減の偽装を、後から塞げなくなる前に塞ぐため。
+
+# has_paths <file> — frontmatter にトップレベル `paths:` があれば 0。
+has_paths() {
+  [ -f "$1" ] || return 1
+  awk 'NR == 1 { if ($0 != "---") exit; next }
+       /^---[ \t]*$/ { exit }
+       /^paths:/ { found = 1; exit }
+       END { exit (found ? 0 : 1) }' "$1"
+}
+
+# frontmatter_paths_globs <file> — frontmatter の paths: が持つ glob を 1 行 1 件で出力する。
+# ブロック表記（`paths:` の下に `  - "..."`）とフロー表記（`paths: ["...", "..."]`）の
+# 両方を読む。引用符と前後の空白は sed 側で落とす（awk の正規表現に単引用符を書かないため）。
+frontmatter_paths_globs() {
+  awk 'NR == 1 { if ($0 != "---") exit; next }
+       /^---[ \t]*$/ { exit }
+       /^paths:/ {
+         rest = $0
+         sub(/^paths:[ \t]*/, "", rest)
+         if (rest != "") {
+           sub(/^\[/, "", rest); sub(/\][ \t]*$/, "", rest)
+           n = split(rest, items, ",")
+           for (i = 1; i <= n; i++) print items[i]
+           inp = 0
+         } else { inp = 1 }
+         next
+       }
+       inp && /^[ \t]*-[ \t]*/ { line = $0; sub(/^[ \t]*-[ \t]*/, "", line); print line; next }
+       inp && /^[^ \t]/ { inp = 0 }' "$1" \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+          -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/" \
+    | grep -v '^$' || true
+}
+
+# glob_has_literal_segment <glob> — `/` で区切った要素のうち、ワイルドカード文字
+# （* ? [ ] { }）を 1 つも含まず英数字を 1 文字以上含むものが 1 つ以上あれば 0。
+# `**` `*` `**/*` `**/*.md` はこれを満たさない。満たさない glob を許すと、
+# 実際には常時載っているルールを合計からだけ外せてしまう。
+glob_has_literal_segment() {
+  awk -v g="$1" 'BEGIN {
+    wild = "*?[]{}"
+    n = split(g, seg, "/")
+    for (i = 1; i <= n; i++) {
+      s = seg[i]; bad = 0
+      for (j = 1; j <= length(s); j++) { if (index(wild, substr(s, j, 1)) > 0) { bad = 1; break } }
+      if (bad) continue
+      if (s ~ /[A-Za-z0-9]/) exit 0
+    }
+    exit 1
+  }'
+}
+
+# check_paths_globs_z — stdin の NUL 区切り一覧について paths: の glob を検査する。
+# 違反を「ファイル名<TAB>glob」で出力し、1 件でもあれば 1 を返す。
+check_paths_globs_z() {
+  local f g rc=0 found
+  while IFS= read -r -d '' f; do
+    [ -f "$f" ] || continue
+    if ! has_paths "$f"; then continue; fi
+    found=0
+    while IFS= read -r g; do
+      found=1
+      if ! glob_has_literal_segment "$g"; then
+        printf '%s\t%s\n' "$f" "$g"
+        rc=1
+      fi
+    done < <(frontmatter_paths_globs "$f")
+    if [ "$found" -eq 0 ]; then
+      printf '%s\t%s\n' "$f" "(paths: に glob が 1 件も無い)"
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
+check_paths_globs() { emit_z "$@" | check_paths_globs_z; }
+
+check_all_paths_globs() {
+  { list_synced_md "$REPO_ROOT/rules"; list_synced_md "$REPO_ROOT/output-styles"; } | check_paths_globs_z
+}
+
+# list_always_on_md <dir> — 配布対象から paths: 保持ファイルを除いた常時注入対象。
+list_always_on_md() {
+  local f
+  while IFS= read -r -d '' f; do
+    if ! has_paths "$f"; then printf '%s\0' "$f"; fi
+  done < <(list_synced_md "$1")
+  return 0
+}
+
+# list_path_scoped_md <dir> — 配布対象のうち paths: 保持ファイルだけ。
+list_path_scoped_md() {
+  local f
+  while IFS= read -r -d '' f; do
+    if has_paths "$f"; then printf '%s\0' "$f"; fi
+  done < <(list_synced_md "$1")
+  return 0
+}
+
+# path_scoped_notes [<dir>...] — 除外したファイルを示す注記行。引数なしなら rules と
+# output-styles を見る。**TAB 文字を含めてはならない** — 内訳の合計は sum_breakdown が
+# TAB 区切りの 2 列目を足して求めるので、TAB 付きで出すと除外したバイト数が合計に戻る。
+path_scoped_notes() {
+  local dirs dir f n
+  if [ "$#" -gt 0 ]; then dirs=("$@"); else dirs=("$REPO_ROOT/rules" "$REPO_ROOT/output-styles"); fi
+  for dir in "${dirs[@]}"; do
+    [ -d "$dir" ] || continue
+    while IFS= read -r -d '' f; do
+      n=$(wc -c < "$f" | tr -d '[:space:]')
+      printf '（除外）%s は paths: を持つため常時注入の合計に入らない（%s バイト。配布はされる）\n' \
+        "${f#"$REPO_ROOT"/}" "$n"
+    done < <(list_path_scoped_md "$dir")
+  done
+  return 0
+}
+
 # frontmatter_descriptions <file> — frontmatter（1 行目の `---` から次の `---` まで）に
 # 現れる `description:` 行を**全件**、「行番号<TAB>値」で出力する。
 #
@@ -163,10 +289,10 @@ list_all_description_files() {
 # （tests/agents-md-sync.bats が同一性を強制）で、セッションに注入されるのは片方だけ
 # なので測定対象に含めない（含めると同じ文が二重計上される）。
 breakdown() {
-  printf '%s\t%s\n' "rules/*.md"        "$(list_synced_md "$REPO_ROOT/rules" | sum_files_z)"
+  printf '%s\t%s\n' "rules/*.md"        "$(list_always_on_md "$REPO_ROOT/rules" | sum_files_z)"
   printf '%s\t%s\n' "CLAUDE.md"         "$(emit_z "$REPO_ROOT/CLAUDE.md" | sum_files_z)"
   printf '%s\t%s\n' "output-styles/*.md（メインセッションのみ。サブエージェントには載らない）" \
-                                        "$(list_synced_md "$REPO_ROOT/output-styles" | sum_files_z)"
+                                        "$(list_always_on_md "$REPO_ROOT/output-styles" | sum_files_z)"
   printf '%s\t%s\n' "plugins SKILL.md description"   "$(list_plugin_skills | sum_descriptions_z)"
   printf '%s\t%s\n' "plugins agent description"      "$(list_plugin_agents | sum_descriptions_z)"
   printf '%s\t%s\n' "plugins command description"    "$(list_plugin_commands | sum_descriptions_z)"
@@ -224,6 +350,11 @@ report() { # <verdict> <budget> <total> <内訳テキスト>
   printf '%s\n' "$lines" | while IFS=$'\t' read -r name bytes; do
     printf '  %8s バイト  %s\n' "$bytes" "$name"
   done
+  local notes
+  notes=$(path_scoped_notes)
+  if [ -n "$notes" ]; then
+    printf '%s\n' "$notes" | while IFS= read -r note; do printf '  %s\n' "$note"; done
+  fi
   echo "--- 取るべき行動 ---"
   if [ "$v" = "over" ]; then
     echo "  (1) 固定分を削る（内訳の大きい行から、常時注入をやめて必要時読み込みへ移す）"
@@ -362,6 +493,117 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   printf '12345' > "$TMPD/also-kept.md"
   [ "$(list_synced_md "$TMPD" | lines_of | grep -c 'README.md')" -eq 0 ]
   [ "$(list_synced_md "$TMPD" | sum_files_z)" -eq 10 ]
+}
+
+@test "a paths frontmatter leaves the always-on listing but stays in the synced listing" {
+  cat > "$TMPD/scoped.md" <<'EOF'
+---
+paths:
+  - "**/claude-harness/rules/**"
+---
+
+scoped body
+EOF
+  printf '%s' '1234567890' > "$TMPD/plain.md"
+  local scoped plain
+  scoped=$(wc -c < "$TMPD/scoped.md")
+  plain=$(wc -c < "$TMPD/plain.md")
+  # 配布対象（sync.sh が symlink する条件）は paths: の有無で変わらない
+  [ "$(list_synced_md "$TMPD" | sum_files_z)" -eq $((scoped + plain)) ]
+  # 常時注入対象はそこから paths: 保持ファイルを除いたもの
+  [ "$(list_always_on_md "$TMPD" | sum_files_z)" -eq "$plain" ]
+  [ "$(list_path_scoped_md "$TMPD" | sum_files_z)" -eq "$scoped" ]
+}
+
+@test "a paths list of whole-match globs is detected and its filename is printed" {
+  cat > "$TMPD/bad.md" <<'EOF'
+---
+paths:
+  - "**"
+  - "**/*"
+  - "*"
+  - "**/*.md"
+---
+EOF
+  run check_paths_globs "$TMPD/bad.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"bad.md"* ]]
+  [ "$(printf '%s\n' "$output" | grep -c 'bad.md')" -eq 4 ]
+}
+
+@test "a paths glob carrying a literal path segment passes" {
+  cat > "$TMPD/good.md" <<'EOF'
+---
+paths:
+  - "**/claude-harness/rules/**"
+  - "plugins/dev-workflow/**"
+  - "rules/**"
+  - "**/oratta-claude-harness/**"
+---
+EOF
+  run check_paths_globs "$TMPD/good.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "an inline flow list in paths is checked the same way" {
+  cat > "$TMPD/flow.md" <<'EOF'
+---
+paths: ["**/*", "rules/**"]
+---
+EOF
+  run check_paths_globs "$TMPD/flow.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"flow.md"* ]]
+  [ "$(printf '%s\n' "$output" | grep -c 'flow.md')" -eq 1 ]
+}
+
+@test "an empty paths key is a violation" {
+  cat > "$TMPD/empty.md" <<'EOF'
+---
+paths:
+description: x
+---
+EOF
+  run check_paths_globs "$TMPD/empty.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"empty.md"* ]]
+}
+
+@test "exclusion notes carry no tab so sum_breakdown does not add them back" {
+  cat > "$TMPD/scoped.md" <<'EOF'
+---
+paths:
+  - "**/claude-harness/rules/**"
+---
+
+scoped body
+EOF
+  printf '%s' '1234567890' > "$TMPD/plain.md"
+  local notes base combined tab
+  tab=$(printf '\t')
+  notes=$(path_scoped_notes "$TMPD")
+  [ -n "$notes" ]
+  [ "$(printf '%s\n' "$notes" | grep -c "$tab")" -eq 0 ]
+  base=$(breakdown | sum_breakdown)
+  combined=$( { breakdown; printf '%s\n' "$notes"; } | sum_breakdown )
+  [ "$base" -eq "$combined" ]
+}
+
+@test "with no path-scoped rules the rules line is the full total and no note is printed" {
+  local rules_line all_bytes
+  rules_line=$(breakdown | awk -F'\t' '$1 == "rules/*.md" { print $2 }')
+  all_bytes=$(list_synced_md "$REPO_ROOT/rules" | sum_files_z)
+  [ "$rules_line" -eq "$all_bytes" ]
+  [ -z "$(path_scoped_notes)" ]
+  run report over 50000 52000 "$(breakdown)"
+  [ "$(printf '%s\n' "$output" | grep -c '（除外）')" -eq 0 ]
+}
+
+@test "every paths glob in the repo has a literal path segment" {
+  run check_all_paths_globs
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 @test "description totals do not count trailing newlines" {

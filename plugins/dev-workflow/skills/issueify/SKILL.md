@@ -1,6 +1,6 @@
 ---
 name: issueify
-description: タスクメモ・バックログ md・TODO・受け入れ条件の無い issue を、測定可能な受け入れ条件付き GitHub issue に変換する。引数はテキスト・ファイルパス・なし（候補を自動発見）・`--existing`（既存 issue の補筆のみ）。「これをissueにして」「タスクをissue化」「バックログをissueに移行」で起動。`/develop` の issueify フォールバックからも Read で呼ばれる。
+description: タスクメモ・バックログ md・TODO・受け入れ条件の無い issue を、測定可能な受け入れ条件付き GitHub issue に変換する。「これをissueにして」「タスクをissue化」「バックログをissueに移行」で起動。引数はテキスト・ファイルパス・なし・`--existing`。
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
