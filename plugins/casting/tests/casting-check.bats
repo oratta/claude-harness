@@ -288,6 +288,15 @@ PRECEDENTS
   [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
 }
 
+@test "code-fence-example-row fixture: a sample row inside a code fence does not win over the human-written row" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/code-fence-example-row"
+  [ "$status" -eq 0 ]
+  run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/code-fence-example-row"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]]
+  [[ "$output" != *"採用されてはならない"* ]]
+}
+
 @test "code-fence-plus-unclosed fixture: a real unclosed <!-- outside the fence is still reported" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/code-fence-plus-unclosed"
   [ "$status" -eq 1 ]

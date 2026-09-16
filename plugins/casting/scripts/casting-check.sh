@@ -159,7 +159,10 @@ report() {
 # フェンス内に書いた説明用の <!-- が本物の閉じ忘れと区別されず、正常な配役表を unclosed-comment で
 # 止めていた。開きフェンスと同じ記号が同じ本数以上だけの行（CommonMark の閉じ条件）で閉じ、
 # 閉じられないまま EOF に達しても閉じ忘れとは扱わない（コメントが開いていなければ 0 を返す）。
-# コメントの中にあるフェンス記号はコメントの一部で、フェンスを開かない。フェンス内の行はそのまま出す。
+# コメントの中にあるフェンス記号はコメントの一部で、フェンスを開かない。
+# フェンス内の行は出力からも落とす（コメントと同じ扱い）。書式の説明用に置いた記入例の表行が
+# 実在の配役として table_rows に渡り、同じ観点の先頭行が勝つ規則で人間の指定を上書きしてしまうため
+# （記入例の担い手『エージェント』が実際の指定『主』に優先し、人間承認が要る論点が自走扱いになる）。
 strip_html_comments() {
   local file="$1" out="$2"
   local line rest in_comment=0
@@ -168,7 +171,6 @@ strip_html_comments() {
   : > "$out"
   while IFS= read -r line || [ -n "$line" ]; do
     if [ "$in_fence" -eq 1 ]; then
-      printf '%s\n' "$line" >> "$out"
       if [[ "$line" =~ ^[\ ]{0,3}(${fence_char}{3,})[[:space:]]*$ ]] \
         && [ "${#BASH_REMATCH[1]}" -ge "$fence_len" ]; then
         in_fence=0
@@ -194,7 +196,6 @@ strip_html_comments() {
         in_fence=1
         fence_char="${fence_run:0:1}"
         fence_len="${#fence_run}"
-        printf '%s\n' "$line" >> "$out"
         continue
       fi
     fi
