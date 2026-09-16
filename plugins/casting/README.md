@@ -31,7 +31,7 @@ plugins/casting/scripts/casting-check.sh [--catalog <path>] [<repo-root>]       
 plugins/casting/scripts/casting-check.sh resolve [--catalog <path>] [<repo-root>]   # 有効配役表の合成
 ```
 
-`resolve` は出力前に project.md / local.md へ check モードと同じ検証（表行が5列ちょうどに割れるか・HTML コメントの閉じ忘れ・語彙・catalog_version）を通す。検証を通らない配役表では合成表を出力せず、理由を stderr に出して exit 1 する（fail-closed）。サブコマンドとオプションの順序は問わない。
+`resolve` は出力前に project.md / local.md へ check モードと同じ検証（表行が5列ちょうどに割れるか・HTML コメントの閉じ忘れ・コードフェンスの閉じ忘れ・語彙・catalog_version）を通す。検証を通らない配役表では合成表を出力せず、理由を stderr に出して exit 1 する（fail-closed）。サブコマンドとオプションの順序は問わない。
 
 exit code の意味は次のとおり。**呼び出し側は exit 0 以外の出力を担い手解決の根拠に使ってはならない。**
 
