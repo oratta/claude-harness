@@ -1,7 +1,7 @@
 ---
 name: wt-setup
 description: Git worktree の開発環境セットアップ。worktree 作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。引数で後続作業指示を渡せる。`--with-pr` で作業開始と同時に Draft PR を作る（PR 経由のマージを必須にしている repo 向け）。
-version: 1.7.1
+version: 1.8.0
 model: sonnet
 context: fork
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
@@ -75,6 +75,8 @@ bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/oratta-claude-har
 ```
 
 スクリプトの出力を確認し、出力内容に基づいて後続ステップを判断する。
+
+出力に `=== git フック:` で始まる行があるときは、その行と、その下に続く注意の行を、そのまま Step 5 の完了レポートに載せる。この clone で走る git フックが変わった（それまでのフックが以後走らない）か、変えるのを見送ったことを知らせる行で、利用者が知らないままだとマージ済みブランチの拒否などが黙って止まるため（kg-recruit#126）。ローカルのフックからグローバルのフックを引き継ぐ書き方と、手で有効にする手順は push-guard-setup スキルにある。
 
 ### Step 2: .worktreeinclude が存在しない場合のみ — 生成
 
@@ -204,6 +206,7 @@ EOF
 ### Step 5: 完了レポート
 
 スクリプトの出力結果を元に、セットアップ結果をまとめてユーザーに報告する。
+スクリプトの出力に `=== git フック:` で始まる行があった場合は、その行と注意の行もレポートに含める。
 `.worktreeinclude` を新規生成した場合は、含めたパターンと除外したパターンの一覧もレポートに含める。
 `--with-pr` で Draft PR を作った場合は PR URL もレポートに含める。
 

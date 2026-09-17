@@ -191,3 +191,93 @@ entry = next(p for p in mk["plugins"] if p["name"] == "dev-workflow")
 assert entry.get("version") == pj["version"], f'{entry.get("version")} != {pj["version"]}'
 PY
 }
+
+# --- Requirement: 層の優先関係と副作用の明文化（成立条件）/ PR 運用リポジトリでローカルのフックを有効にする手順 ---
+# kg-recruit#126: リポジトリが .githooks/pre-push を追跡していても、clone のローカル設定に
+# core.hooksPath が無ければ git はグローバルの 1 か所しか見ない。
+
+@test "skill: precedence is conditional on the clone's local core.hooksPath" {
+  python3 - "$SKILL" <<'PY'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+start = text.index("## 層の構成")
+section = text[start:text.index("\n## ", start + 1)]
+assert "ローカル設定に `core.hooksPath` が入っているときだけ" in section, "precedence condition missing"
+assert "ローカル設定の無い clone" in section, "the no-local-config case is not described"
+PY
+}
+
+@test "skill: documents enabling repo-local hooks per clone and how to check it" {
+  python3 - "$SKILL" <<'PY'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+start = text.index("## PR 運用リポジトリでリポジトリローカルのフックを有効にする")
+section = text[start:text.index("\n## ", start + 1)]
+for needle in ["git config --local core.hooksPath .githooks",
+               "git config --local --get core.hooksPath",
+               "各 clone で 1 回", "wt-setup", "kg-recruit#126",
+               "グローバルのフック（マージ済み PR のブランチへの push 拒否）が走らなくなる"]:
+    assert needle in section, needle
+PY
+}
+
+# SKILL.md の「ローカルの pre-push からグローバルの pre-push を呼ぶ例」の ```sh ブロックを
+# <repo>/.githooks/pre-push として置き、グローバルの core.hooksPath を GIT_CONFIG_GLOBAL で差し替える。
+setup_local_hook_example() {
+  LREPO="${TMP}/repo"
+  LHOOK="${LREPO}/.githooks/pre-push"
+  GDIR="${TMP}/global-hooks"
+  mkdir -p "${LREPO}/.githooks" "$GDIR"
+  python3 - "$SKILL" "$LHOOK" <<'PY'
+import sys, re
+text = open(sys.argv[1], encoding="utf-8").read()
+i = text.find("### ローカルの pre-push からグローバルの pre-push を呼ぶ例")
+assert i >= 0, "local hook example heading not found"
+m = re.search(r"```sh\n(.*?)```", text[i:], re.S)
+assert m, "sh code block not found under the example heading"
+open(sys.argv[2], "w", encoding="utf-8").write(m.group(1))
+PY
+  chmod +x "$LHOOK"
+  cat > "${GDIR}/pre-push" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$@" > "$GLOBAL_ARGS"
+cat > "$GLOBAL_STDIN"
+exit 7
+STUB
+  chmod +x "${GDIR}/pre-push"
+  GLOBAL_ARGS="${TMP}/global-args"; GLOBAL_STDIN="${TMP}/global-stdin"
+  export GLOBAL_ARGS GLOBAL_STDIN
+  export GIT_CONFIG_GLOBAL="${TMP}/gitconfig-global"
+  git config --global core.hooksPath "$1"
+}
+
+# run_local_hook <stdin>: 自分自身を呼び続けても 5 秒で打ち切る
+run_local_hook() {
+  printf '%s\n' "$1" | perl -e 'alarm 5; exec @ARGV' sh "$LHOOK" origin git@example.com:o/r.git
+}
+
+@test "local hook example: rejects a direct push to main without calling the global hook" {
+  setup_local_hook_example "${TMP}/global-hooks"
+  run run_local_hook "refs/heads/main ${SHA} refs/heads/main ${ZERO}"
+  [ "$status" -eq 1 ]
+  [ ! -e "$GLOBAL_ARGS" ]
+}
+
+@test "local hook example: hands the same args and stdin to the global hook" {
+  setup_local_hook_example "${TMP}/global-hooks"
+  refs="$(printf 'refs/heads/a %s refs/heads/a %s\nrefs/heads/b %s refs/heads/b %s' "$SHA" "$ZERO" "$SHA" "$ZERO")"
+  run run_local_hook "$refs"
+  [ "$status" -eq 7 ]
+  [ "$(cat "$GLOBAL_ARGS")" = "$(printf 'origin\ngit@example.com:o/r.git')" ]
+  # compare the bytes (a $(cat) comparison would hide a trailing-newline difference):
+  # git hands the refs as newline-terminated lines, and the global hook must get the same
+  printf '%s\n' "$refs" >"${TMP}/expected-stdin"
+  cmp "${TMP}/expected-stdin" "$GLOBAL_STDIN"
+}
+
+@test "local hook example: does not call itself when the global path is its own directory" {
+  ln -s "${TMP}/repo/.githooks" "${TMP}/alias-hooks"
+  setup_local_hook_example "${TMP}/alias-hooks"
+  run run_local_hook "refs/heads/a ${SHA} refs/heads/a ${ZERO}"
+  [ "$status" -eq 0 ]
+}
