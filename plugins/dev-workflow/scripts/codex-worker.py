@@ -88,6 +88,40 @@ def get_job(db, job):
     return row
 
 
+def clean_env():
+    # Do not leak unrelated service credentials or Git routing into the child.
+    allowed = {'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'LANG', 'LC_ALL', 'SYSTEMROOT'}
+    return {k: v for k, v in os.environ.items() if k in allowed}
+
+
+def reserve_global(directory, job, account, cwd):
+    root = Path.home() / '.local/state/claude-harness-codex'
+    root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    require(root.stat().st_uid == os.getuid() and root.stat().st_mode & 0o077 == 0, 'ownership_directory_not_private')
+    conn = sqlite3.connect(root / 'ownership.sqlite', isolation_level=None, timeout=10)
+    os.chmod(root / 'ownership.sqlite', 0o600)
+    try:
+        conn.execute('CREATE TABLE IF NOT EXISTS owners(key TEXT PRIMARY KEY, ledger TEXT, job TEXT)')
+        conn.execute('BEGIN IMMEDIATE')
+        keys = ['account:'+account['account_id_hash'], 'cwd:'+digest(cwd.encode())]
+        ledger = str(Path(directory).resolve()/'ledger.sqlite')
+        for key in keys:
+            old = conn.execute('SELECT ledger,job FROM owners WHERE key=?', (key,)).fetchone()
+            if old and old != (ledger, job):
+                require(Path(old[0]).is_file(), 'global_owner_unknown')
+                prior = sqlite3.connect('file:'+old[0]+'?mode=ro', uri=True)
+                try:
+                    row = prior.execute('SELECT status,acked FROM jobs WHERE id=?', (old[1],)).fetchone()
+                    require(row and row[0] in TERMINAL and row[1] == 1, 'global_account_or_cwd_locked')
+                finally:
+                    prior.close()
+            conn.execute('INSERT INTO owners VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET ledger=excluded.ledger,job=excluded.job',
+                         (key, ledger, job))
+        conn.execute('COMMIT')
+    finally:
+        conn.close()
+
+
 def validate_request(payload):
     require(set(payload) <= {'request_id', 'origin', 'account', 'cwd', 'model', 'role', 'prompt'}, 'unknown_request_field')
     for field in ('request_id', 'account', 'cwd', 'model', 'role', 'prompt'):
@@ -98,7 +132,7 @@ def validate_request(payload):
     cwd = Path(payload['cwd']).expanduser().resolve()
     require(cwd.is_dir() and cwd.stat().st_uid == os.getuid(), 'cwd_not_owned')
     def git(*args):
-        return subprocess.check_output(['git', '-C', str(cwd), *args], stderr=subprocess.DEVNULL, text=True).strip()
+        return subprocess.check_output(['git', '-C', str(cwd), *args], stderr=subprocess.DEVNULL, text=True, env=clean_env()).strip()
     require(Path(git('rev-parse', '--show-toplevel')).resolve() == cwd, 'cwd_must_be_repo_root')
     branch = git('branch', '--show-current')
     require(branch and branch not in ('main', 'master'), 'feature_branch_required')
@@ -129,10 +163,7 @@ def quota_available(result):
 
 class Rpc:
     def __init__(self, home, cwd):
-        env = dict(os.environ)
-        for name in list(env):
-            if name in ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_COMPANION_APP_SERVER_ENDPOINT'):
-                env.pop(name)
+        env = clean_env()
         env['CODEX_HOME'] = home
         self.proc = subprocess.Popen(['codex', 'app-server', '-c', 'model_provider="openai"'], cwd=cwd, env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
@@ -197,6 +228,7 @@ class Rpc:
 def worker(directory, job):
     db = db_open(directory)
     rpc = None
+    turn_submitted = False
     try:
         db.execute('BEGIN IMMEDIATE')
         row = get_job(db, job)
@@ -224,7 +256,12 @@ def worker(directory, job):
         if db.execute('SELECT cancel FROM jobs WHERE id=?', (job,)).fetchone()[0]:
             update(db, job, status='interrupted', error_kind='cancelled_before_turn')
             return
+        policy = ({'type': 'readOnly', 'networkAccess': False} if sandbox == 'read-only' else
+                  {'type': 'workspaceWrite', 'networkAccess': False, 'writableRoots': [row['cwd']],
+                   'excludeSlashTmp': True, 'excludeTmpdirEnvVar': True})
+        turn_submitted = True
         turn = rpc.request('turn/start', {'threadId': thread, 'model': payload['model'],
+            'sandboxPolicy': policy, 'approvalPolicy': 'never',
             'input': [{'type': 'text', 'text': payload['prompt']}]})['turn']['id']
         update(db, job, turn_id=turn)
         cancel_sent = False
@@ -272,7 +309,7 @@ def worker(directory, job):
             db.execute('ROLLBACK')
         # Exception text is deliberately not persisted (it may contain credentials).
         kind = str(error) if isinstance(error, Rejected) else type(error).__name__
-        update(db, job, status='unknown', error_kind=kind)
+        update(db, job, status='unknown' if turn_submitted else 'failed', error_kind=kind)
     finally:
         if rpc:
             rpc.close()
@@ -307,6 +344,7 @@ def command(args):
             require(account is not None, 'account_not_registered')
             require(not db.execute('SELECT 1 FROM jobs WHERE acked=0 AND (cwd=? OR account=?)',
                 (payload['cwd'], payload['account'])).fetchone(), 'cwd_or_account_locked')
+            reserve_global(args.state_dir, job, account, payload['cwd'])
             now = time.time()
             db.execute('INSERT INTO jobs(id,payload_hash,payload,account,cwd,status,created,updated) VALUES(?,?,?,?,?,?,?,?)',
                 (job, digest(encoded.encode()), encoded, payload['account'], payload['cwd'], 'queued', now, now))
