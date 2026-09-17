@@ -12,6 +12,8 @@ setup() {
   export CLAUDE_CONFIG_DIR="$WORK"
   # ccusage の背景フェッチと為替取得を走らせない
   export STATUSLINE_API_PACE=0
+  export STATUSLINE_CODEX=0
+  unset CLAUDE_ACCOUNTS_FILE
   # 実行環境が既定以外の Claude アカウントのセッション（例: 別アカウント住人）だと
   # このシェルに CLAUDE_SECURESTORAGE_CONFIG_DIR が漏れ込んでいることがあり、
   # 「既定アカウント」を想定したテストが誤って落ちる。ここで明示的に外す。

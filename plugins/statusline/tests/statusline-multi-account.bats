@@ -15,7 +15,11 @@ setup() {
   SL="${PLUGIN_DIR}/scripts/statusline.sh"
   WORK="$(mktemp -d)"
   export CLAUDE_CONFIG_DIR="$WORK"
+  # #301 / #277: 呼び出し元の別アカウント設定をテストに持ち込まない。
+  unset CLAUDE_SECURESTORAGE_CONFIG_DIR
   export STATUSLINE_API_PACE=0
+  export STATUSLINE_CODEX=0
+  unset CLAUDE_ACCOUNTS_FILE
   ACCOUNTS="${WORK}/accounts.json"
   SNAP="${WORK}/.usage-snapshot"
   SECURE_B="${WORK}/claude-b"
