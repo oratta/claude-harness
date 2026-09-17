@@ -27,3 +27,14 @@ turn開始要求後の切断またはworker喪失はunknownとして保持し、
 #### Scenario: 実行中の追加指示を送る
 - **WHEN** sendを指定する
 - **THEN** unsupportedを返し別turnを暗黙に開始しない
+
+### Requirement: 品質判定へ渡す結果は一意な最終回答に限る
+result.textはphaseがfinal_answerの一意なagentMessageだけから取得しなければならない（MUST）。commentaryを連結してはならない（MUST NOT）。phase欠測・複数final・空finalはfailedとerror_kindで返し、textを空にする（MUST）。error_kind非空のcompletedは品質承認に使ってはならない（MUST NOT）。
+
+#### Scenario: 途中で承認し最終回答で差戻す
+- **WHEN** commentaryにAPPROVE、final_answerにREQUEST_CHANGESがある
+- **THEN** textにはREQUEST_CHANGESの最終回答だけを渡す
+
+#### Scenario: phaseが取得できない
+- **WHEN** legacy providerからphase欠測のagentMessageが返る
+- **THEN** 最終回答を推測せずfailedとresult_phase_unknownを返す

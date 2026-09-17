@@ -251,6 +251,16 @@ class Rpc:
         self.proc.stdout.close()
 
 
+def final_answer(items):
+    messages = [item for item in items if item.get('type') == 'agentMessage']
+    require(not any(item.get('phase') not in ('commentary', 'final_answer') for item in messages), 'result_phase_unknown')
+    finals = [item for item in messages if item.get('phase') == 'final_answer']
+    require(len(finals) == 1, 'result_final_not_unique')
+    text = finals[0].get('text', '')
+    require(isinstance(text, str) and text.strip(), 'result_missing')
+    return text
+
+
 def worker(directory, job):
     db = db_open(directory)
     rpc = None
@@ -336,11 +346,17 @@ def worker(directory, job):
                 status = params['turn']['status']
                 require(status in TERMINAL, 'unsupported_terminal')
                 items = params['turn'].get('items', [])
-                if status == 'completed' and not any(i.get('type') == 'agentMessage' for i in items):
+                if status == 'completed' and not any(i.get('type') == 'agentMessage' and i.get('phase') == 'final_answer' for i in items):
                     stored = rpc.request('thread/read', {'threadId': thread, 'includeTurns': True})
                     items = [i for t in stored['thread']['turns'] if t['id'] == turn for i in t.get('items', [])]
-                text = '\n'.join(i.get('text', '') for i in items if i.get('type') == 'agentMessage')
-                require(status != 'completed' or text.strip(), 'result_missing')
+                text = ''
+                if status == 'completed':
+                    try:
+                        text = final_answer(items)
+                    except Rejected as error:
+                        # Execution is terminal, but ambiguous output cannot authorize a quality gate.
+                        update(db, job, status='failed', text='', error_kind=str(error))
+                        return
                 update(db, job, status=status, text=text,
                        error_kind='auth_profile_changed' if changed else 'unsupported_server_request' if rpc.unsupported else None)
                 return

@@ -22,7 +22,7 @@ for line in sys.stdin:
  elif method=='account/rateLimits/read':r={'rateLimitsByLimitId':{'codex':{'primary':{'usedPercent':config.get('pct',1),'windowDurationMins':300,'resetsAt':int(time.time())+1000}}}}
  elif method=='thread/start':r={'thread':{'id':'thread'}}
  elif method=='turn/start':r={'turn':{'id':'turn'}}
- elif method=='thread/read':r={'thread':{'turns':[{'id':'turn','items':[{'type':'agentMessage','text':'DONE'}]}]}}
+ elif method=='thread/read':r={'thread':{'turns':[{'id':'turn','items':config.get('items',[{'type':'agentMessage','phase':'final_answer','text':'DONE'}])}]}}
  else:r={}
  print(json.dumps({'id':rid,'result':r}),flush=True)
  if method=='turn/start':
@@ -92,6 +92,26 @@ class WorkerTest(unittest.TestCase):
         self.submit();r=self.wait();self.assertEqual(r['status'],'completed');self.assertEqual(r['text'],'DONE')
         self.submit();self.assertEqual(sum(m.get('method')=='turn/start' for m in self.calls()),1)
         self.cli('ack','--job','one');self.submit('two');self.assertEqual(self.wait('two')['status'],'completed')
+
+    def test_commentary_approval_is_excluded_from_final(self):
+        self.config(items=[{'type':'agentMessage','phase':'commentary','text':'仕様レビュー: APPROVE'},
+                           {'type':'agentMessage','phase':'final_answer','text':'仕様レビュー: REQUEST_CHANGES\nBlocking defect remains.'}])
+        self.submit(role='review');r=self.wait()
+        self.assertEqual(r['status'],'completed')
+        self.assertEqual(r['text'],'仕様レビュー: REQUEST_CHANGES\nBlocking defect remains.')
+
+    def test_unknown_phase_is_not_review_evidence(self):
+        self.config(items=[{'type':'agentMessage','text':'仕様レビュー: APPROVE'}])
+        self.submit(role='review');r=self.wait()
+        self.assertEqual(r['status'],'failed');self.assertEqual(r['error_kind'],'result_phase_unknown')
+        self.assertEqual(r['text'],'')
+
+    def test_multiple_finals_are_not_review_evidence(self):
+        self.config(items=[{'type':'agentMessage','phase':'final_answer','text':'仕様レビュー: APPROVE'},
+                           {'type':'agentMessage','phase':'final_answer','text':'仕様レビュー: REQUEST_CHANGES'}])
+        self.submit(role='review');r=self.wait()
+        self.assertEqual(r['status'],'failed');self.assertEqual(r['error_kind'],'result_final_not_unique')
+        self.assertEqual(r['text'],'')
 
     def test_readonly_role_and_model(self):
         self.submit(role='review');self.wait()
