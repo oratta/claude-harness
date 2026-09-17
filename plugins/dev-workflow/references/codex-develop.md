@@ -42,3 +42,5 @@
 仕様レビュー結果は `仕様レビュー: APPROVE`、実装レビュー結果は `レビュー: APPROVE` を独立行で返すよう指示する。result→ackの後、`accept-review` がcompleted・レビューphase・固定HEAD・clean・仕様artifact hashを確認して承認を記録する。仕様の内容が変われば再レビューが必要。`--spec-path` は複数指定可でレビュー対象仕様を漏れなく指定する。実装前は仕様承認必須（初版は仕様省略経路なし）。
 
 実装終了後は成果物をcommitし、`check` でinit時指定のrequired-checkを実行する。実コマンドのexit codeと出力を保存し、現在HEADで成功した証拠がなければfinish/gateを拒否する。required-checkは対象repoの必須検査を本体が選び、例示コマンドを無条件に流用しない。Codex sandboxでcommitできなければ本体が確認してcommitする。
+
+OpenSpec archiveで仕様ディレクトリを移したときは、finishを回収・ackし本体がcommitした後、`relocate-spec --from-path <旧相対path> --to-path <archive相対path>` を実行する。承認した仕様のファイル名/内容が完全一致する移動だけを受理する。内容が変わった場合はspec-reviewをやり直す。archive後のHEADでcheckを再実行してからGへ進める。

@@ -97,6 +97,30 @@ class ManualDevelop(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'HEAD changed'):
             self.call('accept-review')
 
+    def test_archive_move_preserves_only_identical_content(self):
+        self.call('dispatch', '--phase', 'spec-review', '--input', str(self.input))
+        self.call('ack')
+        self.call('accept-review')
+        archive = self.cwd / 'archive'
+        archive.mkdir()
+        (self.cwd / 'spec.md').rename(archive / 'spec.md')
+        subprocess.run(['git', '-C', str(self.cwd), 'add', '-A'], check=True)
+        subprocess.run(['git', '-C', str(self.cwd), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'archive'], check=True)
+        self.call('relocate-spec', '--from-path', 'spec.md', '--to-path', 'archive/spec.md')
+        self.call('dispatch', '--phase', 'implement', '--input', str(self.input))
+
+    def test_failed_required_check_blocks_finish(self):
+        self.call('dispatch', '--phase', 'spec-review', '--input', str(self.input))
+        self.call('ack')
+        self.call('accept-review')
+        path = self.run / 'run.json'
+        state = json.loads(path.read_text())
+        state['required_checks'] = [[sys.executable, '-c', 'raise SystemExit(1)']]
+        path.write_text(json.dumps(state))
+        self.assertEqual(self.call('check')['status'], 'failed')
+        with self.assertRaisesRegex(RuntimeError, 'required checks'):
+            self.call('dispatch', '--phase', 'finish', '--input', str(self.input))
+
     def test_uncertain_submit_reuses_request_id(self):
         with patch.object(m, 'worker', side_effect=RuntimeError('connection lost')):
             with self.assertRaises(RuntimeError):

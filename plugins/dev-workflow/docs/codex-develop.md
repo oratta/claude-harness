@@ -40,3 +40,5 @@ python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 ack
 仕様レビュー結果は `仕様レビュー: APPROVE`、実装レビュー結果は `レビュー: APPROVE` を独立行で返すよう指示する。result→ackの後、`accept-review` がcompleted・レビューphase・固定HEAD・clean・仕様artifact hashを確認して承認を記録する。仕様の内容が変われば再レビューが必要。`--spec-path` は複数指定可でレビュー対象仕様を漏れなく指定する。実装前は仕様承認必須（初版は仕様省略経路なし）。
 
 実装終了後は成果物をcommitし、`check` でinit時指定のrequired-checkを実行する。実コマンドのexit codeと出力を保存し、現在HEADで成功した証拠がなければfinish/gateを拒否する。required-checkは対象repoの必須検査を本体が選び、例示コマンドを無条件に流用しない。Codex sandboxでcommitできなければ本体が確認してcommitする。
+
+archiveで移動した仕様は `relocate-spec --from-path openspec/changes/<change> --to-path openspec/changes/archive/<dated-change>` で承認対象を移せる（finish回収・ack・commit後）。ファイル名と内容のhashが承認時と完全一致する場合だけ受理する。変更が含まれる場合は新しいspec-reviewが必要。archive後は現在HEADでcheckを再実行してGへ進む。

@@ -34,7 +34,8 @@ def git(cwd, *args):
 def spec_digest(state):
     root = Path(state['cwd'])
     digest = hashlib.sha256()
-    for relative in sorted(state['spec_paths']):
+    for slot, relative in enumerate(state['spec_paths']):
+        digest.update(str(slot).encode() + b'\0')
         path = (root / relative).resolve()
         if not path.is_relative_to(root) or path == root:
             raise RuntimeError('spec path must be inside cwd and narrower than repository root')
@@ -43,7 +44,8 @@ def spec_digest(state):
             if item.is_symlink():
                 raise RuntimeError('symlink spec artifact is unsupported')
             if item.is_file():
-                digest.update(str(item.relative_to(root)).encode() + b'\0' + item.read_bytes())
+                name = str(item.relative_to(path)) if path.is_dir() else item.name
+                digest.update(name.encode() + b'\0' + item.read_bytes())
             elif not item.exists():
                 digest.update(str(item.relative_to(root)).encode() + b'\0missing')
     return digest.hexdigest()
@@ -106,6 +108,9 @@ def main():
     init.add_argument('--spec-path', action='append', required=True, help='relative specification file/directory covered by review')
     init.add_argument('--required-check', action='append', default=[], help='JSON argv array; required before finish/gate')
     sub.add_parser('check')
+    relocate = sub.add_parser('relocate-spec')
+    relocate.add_argument('--from-path', required=True)
+    relocate.add_argument('--to-path', required=True)
     dispatch = sub.add_parser('dispatch')
     dispatch.add_argument('--phase', choices=PHASES, required=True)
     dispatch.add_argument('--input', required=True, help='UTF-8 phase instructions prepared by coordinator')
@@ -139,17 +144,30 @@ def main():
             write(path, state)
             return {'status': 'initialized', 'run_dir': str(directory)}
         state = json.loads(path.read_text())
+        if args.command == 'relocate-spec':
+            if state['pending'] or git(state['cwd'], 'status', '--porcelain'):
+                raise RuntimeError('finish job and commit archive before relocation')
+            previous = state.get('approvals', {}).get('spec-review', {}).get('spec_digest')
+            candidate = dict(state, spec_paths=[args.to_path if value == args.from_path else value for value in state['spec_paths']])
+            if args.from_path not in state['spec_paths'] or not previous or spec_digest(candidate) != previous:
+                raise RuntimeError('archive content differs from approved specification; re-review required')
+            state['spec_paths'] = candidate['spec_paths']
+            write(path, state)
+            return {'status': 'relocated', 'spec_paths': state['spec_paths']}
         if args.command == 'check':
             if state['pending']:
                 raise RuntimeError('collect and ack current job before checks')
+            if git(state['cwd'], 'status', '--porcelain'):
+                raise RuntimeError('commit artifacts before checks')
             head = git(state['cwd'], 'rev-parse', 'HEAD')
             evidence = []
             for command in state['required_checks']:
                 result = subprocess.run(command, cwd=state['cwd'], capture_output=True, text=True, env=clean_env())
                 evidence.append(dict(command=command, exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr))
-            state['checks'] = dict(head=head, evidence=evidence)
+            unchanged = git(state['cwd'], 'rev-parse', 'HEAD') == head and not git(state['cwd'], 'status', '--porcelain')
+            state['checks'] = dict(head=head, evidence=evidence, unchanged=unchanged)
             write(path, state)
-            return {'status': 'passed' if all(v['exit_code'] == 0 for v in evidence) else 'failed', 'checks': state['checks']}
+            return {'status': 'passed' if unchanged and all(v['exit_code'] == 0 for v in evidence) else 'failed', 'checks': state['checks']}
         if args.command == 'accept-review':
             if not state['history'] or state['history'][-1]['phase'] not in ('spec-review', 'review'):
                 raise RuntimeError('collect and ack an independent reviewer first')
@@ -169,7 +187,7 @@ def main():
             head = git(state['cwd'], 'rev-parse', 'HEAD')
             if args.phase in ('finish', 'gate'):
                 checks = state.get('checks', {})
-                if checks.get('head') != head or not checks.get('evidence') or any(v['exit_code'] != 0 for v in checks['evidence']):
+                if git(state['cwd'], 'status', '--porcelain') or not checks.get('unchanged') or checks.get('head') != head or not checks.get('evidence') or any(v['exit_code'] != 0 for v in checks['evidence']):
                     raise RuntimeError('required checks must pass on current HEAD')
             if args.phase == 'spec-review' and any(not (Path(state['cwd']) / name).exists() for name in state['spec_paths']):
                 raise RuntimeError('specification artifacts must exist before review')
