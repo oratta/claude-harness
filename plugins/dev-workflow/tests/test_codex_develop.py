@@ -144,6 +144,15 @@ class ManualDevelop(unittest.TestCase):
                     self.call('accept-review')
                 self.assertNotIn('approvals', json.loads(path.read_text()))
 
+    def test_init_defaults_resolve_registered_worker_and_unique_run(self):
+        with patch.object(m.Path, 'home', return_value=self.root):
+            with patch.object(sys, 'argv', [str(SCRIPT), 'init', '--account', 'spare', '--model', 'm', '--cwd', str(self.cwd), '--spec-path', 'spec.md', '--required-check', json.dumps([sys.executable, '-c', 'pass'])]):
+                result = m.main()
+        path = Path(result['run_dir'])
+        self.assertEqual(path.parent, (self.root / '.local/state/claude-harness-codex/runs').resolve())
+        state = json.loads((path / 'run.json').read_text())
+        self.assertEqual(state['worker_state'], str((self.root / '.local/state/claude-harness-codex/jobs').resolve()))
+
     def test_uncertain_submit_reuses_request_id(self):
         with patch.object(m, 'worker', side_effect=RuntimeError('connection lost')):
             with self.assertRaises(RuntimeError):

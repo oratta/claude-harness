@@ -10,7 +10,7 @@ claude --plugin-dir /absolute/path/to/harness-worktree/plugins/dev-workflow
 
 ```sh
 python3 /absolute/path/to/harness-worktree/plugins/dev-workflow/scripts/codex-worker.py \
-  --state-dir /absolute/private/worker register \
+  --state-dir "$HOME/.local/state/claude-harness-codex/jobs" register \
   --account spare --codex-home /absolute/path/to/codex-profile
 ```
 
@@ -22,11 +22,17 @@ Claudeの会話で実行する:
 
 Claudeが既存developの進め方でworktree/記録先を準備し、仕様→独立仕様レビュー→実装/テスト→PR→独立レビュー/ゲートを進める。差戻しもCodexへ委譲する。burnを有効化する必要はない。
 
+## 台帳とrunの場所
+
+`--worker-state DIR` 未指定なら `$HOME/.local/state/claude-harness-codex/jobs`。上のregisterと同じ台帳を参照する。別の台帳で登録した場合は `/develop ... --worker-state /absolute/private/worker` を明示する。
+
+新規開始で `--run-dir` を省略すると、initが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作り、JSONの`run_dir`を返す。Claudeはこの絶対pathを記録先に保存し、dispatch/status/result/ack等に必ず渡す。再開は `/develop ... --run-dir <保存したpath>` で既存runを読み、initを再実行しない。run内のaccount/model/worker_stateが指定と違えば再開せず不一致を報告する。台帳や最新runを探索して勝手に選ばない。
+
 ## 操作の確認例
 
 ```sh
 python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 init \
-  --account spare --model <model> --cwd /absolute/target-worktree --worker-state /absolute/private/worker --spec-path openspec/changes/<change> --required-check '["python3","-m","unittest"]'
+  --account spare --model <model> --cwd /absolute/target-worktree --worker-state "$HOME/.local/state/claude-harness-codex/jobs" --spec-path openspec/changes/<change> --required-check '["python3","-m","unittest"]'
 python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 dispatch --phase spec --input /absolute/request.txt
 python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 status
 python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 result

@@ -103,11 +103,12 @@ REQUEST:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--run-dir', required=True)
+    parser.add_argument('--run-dir', help='init defaults to a new private runs/<UUID>; later commands require it')
     sub = parser.add_subparsers(dest='command', required=True)
     init = sub.add_parser('init')
-    for key in ('account', 'model', 'cwd', 'worker-state'):
+    for key in ('account', 'model', 'cwd'):
         init.add_argument('--' + key, required=True)
+    init.add_argument('--worker-state', default=str(Path.home() / '.local/state/claude-harness-codex/jobs'))
     init.add_argument('--spec-path', action='append', required=True, help='relative specification file/directory covered by review')
     init.add_argument('--required-check', action='append', default=[], help='JSON argv array; required before finish/gate')
     sub.add_parser('check')
@@ -121,7 +122,9 @@ def main():
     for command in ('status', 'result', 'ack', 'cancel'):
         sub.add_parser(command)
     args = parser.parse_args()
-    directory = Path(args.run_dir).expanduser().resolve()
+    if not args.run_dir and args.command != 'init':
+        raise RuntimeError('--run-dir from init output is required to resume')
+    directory = Path(args.run_dir).expanduser().resolve() if args.run_dir else (Path.home() / '.local/state/claude-harness-codex/runs' / uuid.uuid4().hex).resolve()
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     info = directory.stat()
     if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:

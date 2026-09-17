@@ -46,3 +46,5 @@
 OpenSpec archiveで仕様ディレクトリを移したときは、finishを回収・ackし本体がcommitした後、`relocate-spec --from-path <旧相対path> --to-path <archive相対path>` を実行する。承認した仕様のファイル名/内容が完全一致する移動だけを受理する。内容が変わった場合はspec-reviewをやり直す。archive後のHEADでcheckを再実行してからGへ進める。
 
 共通workerはnetwork無効。W/Gが必要とするGitHub情報の取得・コメント/ラベル・Draft PR作成・pushは `needs-coordinator` と具体的な操作/内容を返し、本体が既存の認可範囲で代理実行する。sandboxがgit commitを拒否した場合も本体が差分を確認してcommitする。これは運搬/記録の代理であり、仕様・コードの編集やレビュー判定を本体が代行するものではない。Gへは操作結果の証拠を渡して確認させる。
+
+worker-state既定値は `$HOME/.local/state/claude-harness-codex/jobs`（registerと共通）。`--worker-state DIR` 指定時はその台帳だけを使う。新規run-dir省略時はinitが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作成しJSONで返す。本体がこのpathを記録して全後続操作に渡す。既存`--run-dir`の再開時はinitせずrun.jsonのaccount/model/worker_stateとの一致を確認する。不一致や不明なrunを別accountで継続しない。
