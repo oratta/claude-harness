@@ -44,6 +44,8 @@ class Client:
         self.proc.stdin.flush()
 
     def receive(self, deadline):
+        if time.monotonic() >= deadline:
+            raise TimeoutError('attention_required')
         try:
             msg = self.events.get(timeout=max(0, deadline-time.monotonic()))
         except queue.Empty:
@@ -71,7 +73,10 @@ class Client:
 
     def close(self):
         # Only our newly spawned server is terminated, never a shared broker.
-        self.proc.stdin.close()
+        try:
+            self.proc.stdin.close()
+        except BrokenPipeError:
+            pass
         try:
             self.proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
@@ -115,18 +120,27 @@ def run(args, command=None):
             start_deadline = time.monotonic()+15
             seen = []
             while True:
+                if time.monotonic() >= start_deadline:
+                    raise TimeoutError('attention_required')
                 msg = client.buffer.pop(0) if client.buffer else client.receive(start_deadline)
                 seen.append(msg)
                 params = msg.get('params', {})
                 if params.get('threadId') == thread and params.get('turnId') == turn:
                     break
-                if msg.get('method') == 'turn/completed' and params.get('turn', {}).get('id') == turn:
+                if msg.get('method') == 'turn/completed' and params.get('threadId') == thread and params.get('turn', {}).get('id') == turn:
                     break
             client.buffer = seen + client.buffer
-            client.request('turn/interrupt', {'threadId': thread, 'turnId': turn})
+            if not (msg.get('method') == 'turn/completed' and params.get('threadId') == thread and params.get('turn', {}).get('id') == turn):
+                client.request('turn/interrupt', {'threadId': thread, 'turnId': turn})
         deadline = time.monotonic()+args.timeout
         while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError('attention_required')
             msg = client.buffer.pop(0) if client.buffer else client.receive(deadline)
+            if client.server_request:
+                client.server_request = False
+                result['unsupported_request'] = True
+                client.request('turn/interrupt', {'threadId': thread, 'turnId': turn})
             params = msg.get('params', {})
             if params.get('threadId') != thread:
                 continue
@@ -146,10 +160,6 @@ def run(args, command=None):
                 result['progress_events'] += 1
                 if method == 'thread/tokenUsage/updated':
                     result['usage_observed'] = True
-            if client.server_request:
-                client.request('turn/interrupt', {'threadId': thread, 'turnId': turn})
-                client.server_request = False
-                result['unsupported_request'] = True
     except (TimeoutError, ConnectionError, RuntimeError, ValueError, KeyError, BrokenPipeError) as error:
         result['status'] = 'attention_required' if isinstance(error, TimeoutError) else 'unknown'
         result['error_kind'] = type(error).__name__

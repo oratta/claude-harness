@@ -12,13 +12,13 @@
 - モデル依頼は合計3件。各試験終了後にPoC所有serverだけを終了した。本番resident・共有brokerは操作していない。
 
 ## 自動検証
-`python3 -m unittest discover -s scripts/poc/codex-appserver -v`: 5 tests PASS。interrupted合格、completed競合不合格、failed不合格、アカウント不一致でturn受付前に拒否、terminal通知のitems欠落時のthread/read回収を確認。completeの成功終了にはREADY一致を必須とし、completedだけでは成功扱いしない。
+`python3 -m unittest discover -s scripts/poc/codex-appserver -v`: 10 tests PASS。interrupted合格、completed競合不合格、failed不合格、アカウント不一致でturn受付前に拒否、terminal通知のitems欠落時のthread/read回収を確認。completeの成功終了にはREADY一致を必須とし、completedだけでは成功扱いしない。
 `openspec validate verify-codex-appserver-connection --strict --no-interactive`、`git diff --check`: PASS。
 
 ## 残る検証
 - 現在Claudeが解決するcompanionの版と、今回報告された停止生ログの同定。
 - exec/companion/direct App Serverの同条件比較。今回モデル消費を抑えてdirectだけ実測した。
-- timeout、transport切断、親poller終了、quota/authエラー、未対応server requestの障害fixture試験。
+- 親poller終了後の寿命保証。timeout・transport切断・quota/authエラー・未対応server requestはfake protocol試験済み（実provider障害の再現ではない）。
 - 実際のbroker再利用・account分離・寿命保証の実測。ローカル1.0.6ソースにはbroker/direct経路が存在するが、採用可能と断定していない。
 
 ## #706/#707への引継ぎ
@@ -26,3 +26,10 @@
 - 今回clientは終了時に所有serverも閉じる。親終了後の継続、排他、再起動復旧は#706で必要。先にbrokerの実用上の契約を評価する。
 - 中断受付応答とterminalを分ける。turn受付直後の失敗を実測しており、interruptのタイミング・失敗時状態確認が必要。
 - read-only無害fixtureの結果なので、書込み・レビュー独立性・hooks代替など#707の品質保証は未検証。
+
+## 障害fixtureの追加結果
+fake serverでtimeout、切断、auth/quota相当RPC error、threadIdなしserver request、継続的な他thread通知を注入した。各試験でturn/startは1回のみ、再送・別経路fallbackは0。timeoutはattention_required、切断/RPC errorはunknown＋code（秘密のerror本文は破棄）、未対応要求は拒否後に所有turnを中断しinterruptedを確認。
+
+この試験で発見した欠陥を修正した: threadIdのないserver requestがフィルタで捨てられて中断されない問題、通知が途切れないとdeadlineを越えられる問題。受付直後に自然完了を既に観測した場合の不要interruptも回避した。10テスト成功。追加モデル呼出は0。
+
+これらはclientの分類・制御に関するfixture証拠であり、実providerのquota障害・既存broker寿命・親poller終了の実測を代替しない。

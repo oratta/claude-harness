@@ -13,3 +13,5 @@
 - [x] 2.6 非競合の所有turnでinterruptedを最低1回実測する（Go必須。競合completed/unknownは代替不可）
 
 実測証拠・未検証項目・総合Go保留: [RESULTS.md](RESULTS.md)。2.3は基本接続成功だが障害表未完のため未チェック。
+
+- [x] 2.7 timeout/切断/auth-quota/未対応要求のfake protocol試験を完了し、実測との差を記録する
