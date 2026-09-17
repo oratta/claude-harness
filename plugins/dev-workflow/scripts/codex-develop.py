@@ -177,7 +177,13 @@ def main():
             entry = state['history'][-1]
             head = git(state['cwd'], 'rev-parse', 'HEAD')
             marker = '仕様レビュー: APPROVE' if entry['phase'] == 'spec-review' else 'レビュー: APPROVE'
-            if entry['result'].get('status') != 'completed' or marker not in entry['result'].get('text', '').splitlines() or head != entry['head'] or git(state['cwd'], 'status', '--porcelain') or spec_digest(state) != entry['spec_digest']:
+            result = entry['result']
+            text = result.get('text')
+            verdicts = [line.strip() for line in text.splitlines()
+                        if line.strip().startswith(('仕様レビュー:', 'レビュー:'))] if isinstance(text, str) else []
+            # The worker supplies final-answer text only. Reject legacy aggregated
+            # output, conflicting/duplicate verdicts, and completed-with-error jobs.
+            if result.get('status') != 'completed' or result.get('error_kind') not in (None, '') or verdicts != [marker] or head != entry['head'] or git(state['cwd'], 'status', '--porcelain') or spec_digest(state) != entry['spec_digest']:
                 raise RuntimeError('review not approved or reviewed HEAD changed')
             state.setdefault('approvals', {})[entry['phase']] = dict(head=head, job_id=entry['job_id'], spec_digest=entry['spec_digest'])
             write(path, state)

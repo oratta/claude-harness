@@ -46,7 +46,8 @@ class ManualDevelop(unittest.TestCase):
             req = json.loads(Path(value).read_text())
             self.jobs[req['request_id']] = req
             return {'job_id': req['request_id'], 'status': 'completed'}
-        return {'job_id': value, 'status': 'completed', 'text': '仕様レビュー: APPROVE\nレビュー: APPROVE'}
+        marker = '仕様レビュー: APPROVE' if self.jobs.get(value, {}).get('role') == 'spec-review' else 'レビュー: APPROVE'
+        return {'job_id': value, 'status': 'completed', 'text': marker, 'error_kind': None}
 
     def test_complete_loop_with_revision_and_fixed_account(self):
         phases = ['spec', 'spec-review', 'spec', 'spec-review', 'implement', 'finish', 'gate', 'review', 'decider', 'implement', 'review', 'gate']
@@ -121,6 +122,27 @@ class ManualDevelop(unittest.TestCase):
         self.assertEqual(self.call('check')['status'], 'failed')
         with self.assertRaisesRegex(RuntimeError, 'required checks'):
             self.call('dispatch', '--phase', 'finish', '--input', str(self.input))
+
+    def test_conflicting_duplicate_or_error_verdict_cannot_approve(self):
+        self.call('dispatch', '--phase', 'spec-review', '--input', str(self.input))
+        self.call('ack')
+        path = self.run / 'run.json'
+        for text, error in (
+            ('仕様レビュー: APPROVE\n仕様レビュー: REQUEST_CHANGES\nBlocking defect remains.', None),
+            ('仕様レビュー: REQUEST_CHANGES\n仕様レビュー: APPROVE', None),
+            ('仕様レビュー: APPROVE\n仕様レビュー: APPROVE', None),
+            ('仕様レビュー: APPROVE\nレビュー: APPROVE', None),
+            ('仕様レビュー: APPROVE', 'auth_profile_changed'),
+            ('仕様レビュー: APPROVE', 'unsupported_server_request'),
+            (None, None),
+        ):
+            with self.subTest(text=text, error=error):
+                state = json.loads(path.read_text())
+                state['history'][-1]['result'].update(text=text, error_kind=error)
+                path.write_text(json.dumps(state))
+                with self.assertRaisesRegex(RuntimeError, 'review not approved'):
+                    self.call('accept-review')
+                self.assertNotIn('approvals', json.loads(path.read_text()))
 
     def test_uncertain_submit_reuses_request_id(self):
         with patch.object(m, 'worker', side_effect=RuntimeError('connection lost')):

@@ -35,3 +35,14 @@
 #### Scenario: 検証失敗
 - **WHEN** 必須検証が非zeroで終了する
 - **THEN** finish/gateを拒否し、Codex作業者へ修正を戻す
+
+### Requirement: 最終レビュー判定だけを受理する
+承認はworkerが取得した最終回答の一意なAPPROVE判定に限定しなければならない（MUST）。途中commentary、複数/矛盾判定、error_kindを伴うcompleted結果を承認してはならない（MUST NOT）。
+
+#### Scenario: 途中でAPPROVEして最後に差し戻す
+- **WHEN** commentaryがAPPROVEだが最終回答がREQUEST_CHANGESである
+- **THEN** 仕様承認を記録せず実装へ進めない
+
+#### Scenario: 完了通知に認証変更エラーが残る
+- **WHEN** completedかつAPPROVEでもerror_kindがauth_profile_changedまたはunsupported_server_requestである
+- **THEN** 承認を拒否する
