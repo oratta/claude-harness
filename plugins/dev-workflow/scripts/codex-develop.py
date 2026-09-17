@@ -31,26 +31,6 @@ def git(cwd, *args):
     return subprocess.check_output(['git', '-C', cwd, *args], text=True, env=clean_env()).strip()
 
 
-def spec_digest(state):
-    root = Path(state['cwd'])
-    digest = hashlib.sha256()
-    for slot, relative in enumerate(state['spec_paths']):
-        digest.update(str(slot).encode() + b'\0')
-        path = (root / relative).resolve()
-        if not path.is_relative_to(root) or path == root:
-            raise RuntimeError('spec path must be inside cwd and narrower than repository root')
-        files = sorted(path.rglob('*')) if path.is_dir() else [path]
-        for item in files:
-            if item.is_symlink():
-                raise RuntimeError('symlink spec artifact is unsupported')
-            if item.is_file():
-                name = str(item.relative_to(path)) if path.is_dir() else item.name
-                digest.update(name.encode() + b'\0' + item.read_bytes())
-            elif not item.exists():
-                digest.update(str(item.relative_to(root)).encode() + b'\0missing')
-    return digest.hexdigest()
-
-
 def write(path, value):
     tmp = path.with_suffix('.tmp')
     tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2))
@@ -76,7 +56,11 @@ def prompt(phase, instructions, state):
     if phase in ('gate', 'review'):
         docs.append('skills/pr-review-gate/SKILL.md')
     text = f'''Codex delegated develop phase: {phase}. Role: {role}.
-The Claude coordinator follows the canonical develop workflow; execute ONLY the requested phase.
+The Claude coordinator follows the canonical develop workflow; execute ONLY the requested assignment.
+Phase labels select role instructions, not an alternate workflow or mandatory sequence.
+The spec label includes the canonical decision whether specification is needed: it does not require
+creating a specification. Follow the same decision criteria and return contract as a Claude worker.
+The coordinator alone applies workflow prerequisites, reviews, checks and transitions.
 Account is fixed by the worker. Work only in {state['cwd']}.
 Do not spawn agents, invoke Claude, codex exec, or codex-companion. If an independent role is needed,
 return needs-reviewer/needs-decider with the exact request; the coordinator dispatches a fresh thread.
@@ -109,17 +93,10 @@ def main():
     for key in ('account', 'model', 'cwd'):
         init.add_argument('--' + key, required=True)
     init.add_argument('--worker-state', default=str(Path.home() / '.local/state/claude-harness-codex/jobs'))
-    init.add_argument('--spec-path', action='append', required=True, help='relative specification file/directory covered by review')
-    init.add_argument('--required-check', action='append', default=[], help='JSON argv array; required before finish/gate')
-    sub.add_parser('check')
-    relocate = sub.add_parser('relocate-spec')
-    relocate.add_argument('--from-path', required=True)
-    relocate.add_argument('--to-path', required=True)
     dispatch = sub.add_parser('dispatch')
     dispatch.add_argument('--phase', choices=PHASES, required=True)
     dispatch.add_argument('--input', required=True, help='UTF-8 phase instructions prepared by coordinator')
-    sub.add_parser('accept-review')
-    for command in ('status', 'result', 'ack', 'cancel'):
+    for command in ('status', 'result', 'ack', 'cancel', 'retry'):
         sub.add_parser(command)
     args = parser.parse_args()
     if not args.run_dir and args.command != 'init':
@@ -142,74 +119,25 @@ def main():
             if check.returncode or Path(check.stdout.strip()).resolve() != cwd:
                 raise RuntimeError('cwd must be the repository/worktree root')
             state = dict(account=args.account, model=args.model, cwd=str(cwd),
-                         worker_state=str(Path(args.worker_state).expanduser().resolve()), pending=None, history=[], spec_paths=args.spec_path,
-                         required_checks=[json.loads(v) for v in args.required_check])
-            if not state['required_checks'] or any(not isinstance(v, list) or not v or any(not isinstance(a, str) for a in v) for v in state['required_checks']):
-                raise RuntimeError('at least one --required-check JSON argv array is required')
-            spec_digest(state)
+                         worker_state=str(Path(args.worker_state).expanduser().resolve()), pending=None, history=[])
             write(path, state)
             return {'status': 'initialized', 'run_dir': str(directory)}
         state = json.loads(path.read_text())
-        if args.command == 'relocate-spec':
-            if state['pending'] or git(state['cwd'], 'status', '--porcelain'):
-                raise RuntimeError('finish job and commit archive before relocation')
-            previous = state.get('approvals', {}).get('spec-review', {}).get('spec_digest')
-            candidate = dict(state, spec_paths=[args.to_path if value == args.from_path else value for value in state['spec_paths']])
-            if args.from_path not in state['spec_paths'] or not previous or spec_digest(candidate) != previous:
-                raise RuntimeError('archive content differs from approved specification; re-review required')
-            state['spec_paths'] = candidate['spec_paths']
-            write(path, state)
-            return {'status': 'relocated', 'spec_paths': state['spec_paths']}
-        if args.command == 'check':
-            if state['pending']:
-                raise RuntimeError('collect and ack current job before checks')
-            if git(state['cwd'], 'status', '--porcelain'):
-                raise RuntimeError('commit artifacts before checks')
-            head = git(state['cwd'], 'rev-parse', 'HEAD')
-            evidence = []
-            for command in state['required_checks']:
-                result = subprocess.run(command, cwd=state['cwd'], capture_output=True, text=True, env=clean_env())
-                evidence.append(dict(command=command, exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr))
-            unchanged = git(state['cwd'], 'rev-parse', 'HEAD') == head and not git(state['cwd'], 'status', '--porcelain')
-            state['checks'] = dict(head=head, evidence=evidence, unchanged=unchanged)
-            write(path, state)
-            return {'status': 'passed' if unchanged and all(v['exit_code'] == 0 for v in evidence) else 'failed', 'checks': state['checks']}
-        if args.command == 'accept-review':
-            if not state['history'] or state['history'][-1]['phase'] not in ('spec-review', 'review'):
-                raise RuntimeError('collect and ack an independent reviewer first')
-            entry = state['history'][-1]
-            head = git(state['cwd'], 'rev-parse', 'HEAD')
-            marker = '仕様レビュー: APPROVE' if entry['phase'] == 'spec-review' else 'レビュー: APPROVE'
-            result = entry['result']
-            text = result.get('text')
-            verdicts = [line.strip() for line in text.splitlines()
-                        if line.strip().startswith(('仕様レビュー:', 'レビュー:'))] if isinstance(text, str) else []
-            # The worker supplies final-answer text only. Reject legacy aggregated
-            # output, conflicting/duplicate verdicts, and completed-with-error jobs.
-            if result.get('status') != 'completed' or result.get('error_kind') not in (None, '') or verdicts != [marker] or head != entry['head'] or git(state['cwd'], 'status', '--porcelain') or spec_digest(state) != entry['spec_digest']:
-                raise RuntimeError('review not approved or reviewed HEAD changed')
-            state.setdefault('approvals', {})[entry['phase']] = dict(head=head, job_id=entry['job_id'], spec_digest=entry['spec_digest'])
-            write(path, state)
-            return {'status': 'recorded', 'review': entry['phase'], 'head': head}
+        if args.command == 'retry':
+            # Replay the durable envelope exactly, including prompts from older versions.
+            # submit is idempotent: never allocate a replacement job on uncertain delivery.
+            if not state['pending']:
+                raise RuntimeError('no pending job')
+            request_path = directory / 'request.json'
+            request = json.loads(request_path.read_text())
+            if request.get('request_id') != state['pending'] or any(request.get(k) != state[k] for k in ('account', 'model', 'cwd')):
+                raise RuntimeError('saved request identity differs from pending run')
+            return worker(state, 'submit', '--request', str(request_path))
         if args.command == 'dispatch':
-            if args.phase in ('implement', 'finish', 'gate') and 'spec-review' not in state.get('approvals', {}):
-                raise RuntimeError('independent specification approval required')
-            if args.phase in ('implement', 'finish', 'gate') and state['approvals']['spec-review']['spec_digest'] != spec_digest(state):
-                raise RuntimeError('specification changed; independent re-review required')
             head = git(state['cwd'], 'rev-parse', 'HEAD')
-            if args.phase in ('finish', 'gate'):
-                checks = state.get('checks', {})
-                if git(state['cwd'], 'status', '--porcelain') or not checks.get('unchanged') or checks.get('head') != head or not checks.get('evidence') or any(v['exit_code'] != 0 for v in checks['evidence']):
-                    raise RuntimeError('required checks must pass on current HEAD')
-            if args.phase == 'spec-review' and any(not (Path(state['cwd']) / name).exists() for name in state['spec_paths']):
-                raise RuntimeError('specification artifacts must exist before review')
-            if args.phase in ('spec-review', 'review'):
-                dirty = git(state['cwd'], 'status', '--porcelain')
-                if dirty.strip():
-                    raise RuntimeError('commit review artifacts before independent review')
             instructions = Path(args.input).read_text()
             request = dict(origin='manual', account=state['account'], model=state['model'],
-                           cwd=state['cwd'], role=PHASES[args.phase][0], prompt=prompt(args.phase, 'Target HEAD: ' + head + '\nRequired checks: ' + json.dumps(state['required_checks']) + '\n' + instructions, state))
+                           cwd=state['cwd'], role=PHASES[args.phase][0], prompt=prompt(args.phase, 'Dispatch HEAD: ' + head + '\n' + instructions, state))
             if state['pending']:
                 old = json.loads((directory / 'request.json').read_text())
                 if any(old.get(k) != v for k, v in request.items()):
@@ -221,9 +149,6 @@ def main():
                 state['pending'] = request['request_id']
                 state['phase'] = args.phase
                 state['head'] = head
-                state['spec_digest'] = spec_digest(state)
-                if args.phase == 'spec':
-                    state.pop('approvals', None)
                 write(path, state)  # Persist BEFORE submit: uncertain response keeps same request ID.
             return worker(state, 'submit', '--request', str(directory / 'request.json'))
         if not state['pending']:
@@ -234,7 +159,7 @@ def main():
             if result.get('status') == 'unknown':
                 raise RuntimeError('unknown job cannot be acknowledged or replaced')
             response = worker(state, 'ack', '--job', job)
-            state['history'].append(dict(job_id=job, phase=state['phase'], head=state['head'], spec_digest=state['spec_digest'], result=result))
+            state['history'].append(dict(job_id=job, phase=state['phase'], head=state['head'], result=result))
             state['pending'] = None
             write(path, state)
             return response

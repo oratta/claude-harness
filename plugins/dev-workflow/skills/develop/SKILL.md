@@ -18,7 +18,7 @@ version: 2.1.0
 
 ## Codexを明示した手動実行
 
-`--executor codex --account NAME --model MODEL` のときは `${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこのSKILL.mdから `../../references/codex-develop.md`）を絶対パスに解決してReadし、この正本の工程順・役割・レビュー条件を維持したままspawn/再開のprovider操作を置換する。Claude Agent・Codex execの前提表はこのモードには適用しない。モデルは明示されたCodex ID、全役割をApp Serverへ委譲する。未指定の通常実行は以下の既存規則どおり。
+`--executor codex --account NAME --model MODEL` のときは `${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこのSKILL.mdから `../../references/codex-develop.md`）を絶対パスに解決してReadし、この正本の工程順・役割・レビュー条件を維持したままspawn/再開のprovider操作を置換する。Claude Agent・Codex execの前提表はこのモードには適用しない。モデルは明示されたCodex ID、全役割をApp Serverへ委譲する。仕様化判断・不要時の実装直行・レビュー・検証・順序は以下の同じ正本を使い、provider adapter側に独自ゲートを置かない。未指定の通常実行は以下の既存規則どおり。
 
 ## いつ使うか
 

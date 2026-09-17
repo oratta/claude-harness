@@ -11,7 +11,7 @@
 ## 本体が行う操作
 
 1. develop入口0で記録先を確定し、対象repoのOrca等のルールで専用worktreeを用意する。CLIツール自身はworktreeを作らない。
-2. `codex-develop.py --run-dir <private-run-dir> init --account NAME --model MODEL --cwd <worktree-root> --worker-state <private-worker-dir> --spec-path <仕様の相対path> --required-check '["実際の検証コマンド","引数"]' `。一度開始したrunのaccount/modelを変更しない。秘密情報を依頼ファイルへ入れない。
+2. `codex-develop.py --run-dir <private-run-dir> init --account NAME --model MODEL --cwd <worktree-root> --worker-state <private-worker-dir>`。一度開始したrunのaccount/modelを変更しない。秘密情報を依頼ファイルへ入れない。
 3. 正本が次に呼ぶ役割と工程を決定し、その工程に限定した指示をUTF-8ファイルに書く。依頼・完了条件・記録先URL・対象artifact・固定HEADを渡す。実装者の会話履歴をレビューへ渡さない。
 4. `... dispatch --phase PHASE --input <file>`。戻りのjob_idを記録し、`... status` / `... result` で回収。コマンド待機を終えてもworkerは動き続ける。不明な結果は再実行せず同じrunで照会する。
 5. terminal結果を読み、`... ack` でworkerのcwd lockを解放する。ackは品質承認ではない。正本の判断記録・APPROVE・verify・ゲート条件を確認して次のphaseへ進む。unknownはack不可。cancel後も終了確認する。
@@ -30,21 +30,31 @@
 
 ## 品質とhook差分
 
-- spec-review前にWの仕様commitを確定し、review前に実装commitを確定する。本体がHEADを取得し入力に明示、回収時にも一致確認する。HEADが変われば承認を流用しない。
+- レビュー対象の固定と承認の有効範囲は既存の仕様レビュアー/ゲート正本に従う。本体が対象artifact・HEAD等の必要情報を指示に渡す。adapter自身に別の承認条件を設けない。
 - read-only reviewerはGitHubコメントを書かない。本体が既存正本の書式で結果を代理投稿する。投稿成功前に後続実装/完了扱いしない。
 - Gが通常経路の`codex exec`/companion/Claude reviewerを呼ぶ場面では、実行せず`needs-reviewer`を返す。本体が`review`で新threadを作り、その結果を新しいGへ渡す。ゲート正本の着手確認・同一PR/HEAD重複防止を先に実施する。
-- opsx Skill操作は対象repoのopenspec CLI相当へ変換する。CLIがない/対応不明ならblocked。正本の仕様フォーマットを別テンプレートへ写さない。
+- 仕様化が必要と判断された場合のopsx Skill操作は対象repoのopenspec CLI相当へ変換する。CLI不在時の仕様化判断も既存develop正本に従う。正本の仕様フォーマットを別テンプレートへ写さない。
 - Claude hooksはCodexには自動適用されない。対象repoで必須の検査コマンドを本体が確認し、W/Gの指示と結果へ明記する。実行不能なら合格扱いしない。workerのread-only sandbox以外のhook保証をあるものと推定しない。
-- worker completedは実行完了だけ。仕様APPROVE、テスト証拠、独立レビュー、ゲート合格を省略しない。merge/auto-mergeは禁止。途中停止は成果物とジョブ状態を記録する。
+- worker completedは実行完了だけ。既存developがその経路に要求する仕様承認・テスト証拠・独立レビュー・ゲート条件を省略しない。merge/auto-mergeは禁止。途中停止は成果物とジョブ状態を記録する。
 
 従来モードのexecレビューは維持するが、このモードの全委譲箇所は上表に集約する。burn接続・全account配分・使用量集計は別issue。
 
-仕様レビュー結果は `仕様レビュー: APPROVE`、実装レビュー結果は `レビュー: APPROVE` を独立行で返すよう指示する。result→ackの後、`accept-review` がcompleted・レビューphase・固定HEAD・clean・仕様artifact hashを確認して承認を記録する。仕様の内容が変われば再レビューが必要。`--spec-path` は複数指定可でレビュー対象仕様を漏れなく指定する。実装前は仕様承認必須（初版は仕様省略経路なし）。
+phaseは担当する役割の指示書を選ぶラベルであり、adapterは工程順序や品質承認を制御しない。`spec` は仕様化判断を含む。正本に従いWが「仕様化判断: しない」と理由を返した場合、本体は既存developの実装工程へ進む。Codex指定を理由に仕様を必須化しない。仕様が必要な場合は正本のR1承認条件を適用する。
 
-実装終了後は成果物をcommitし、`check` でinit時指定のrequired-checkを実行する。実コマンドのexit codeと出力を保存し、現在HEADで成功した証拠がなければfinish/gateを拒否する。required-checkは対象repoの必須検査を本体が選び、例示コマンドを無条件に流用しない。Codex sandboxでcommitできなければ本体が確認してcommitする。
-
-OpenSpec archiveで仕様ディレクトリを移したときは、finishを回収・ackし本体がcommitした後、`relocate-spec --from-path <旧相対path> --to-path <archive相対path>` を実行する。承認した仕様のファイル名/内容が完全一致する移動だけを受理する。内容が変わった場合はspec-reviewをやり直す。archive後のHEADでcheckを再実行してからGへ進める。
+仕様要否、レビュー判定、必須検査、archive、差戻し、次工程への進行はすべて既存developとrolesの正本で管理する。adapterに承認記録・検査実行・archive移動の独自コマンドは置かない。run履歴は輸送結果の記録であり、品質台帳ではない。workerの最終回答とerror_kindを本体が確認し、失敗や途中commentaryを承認扱いしない。
 
 共通workerはnetwork無効。W/Gが必要とするGitHub情報の取得・コメント/ラベル・Draft PR作成・pushは `needs-coordinator` と具体的な操作/内容を返し、本体が既存の認可範囲で代理実行する。sandboxがgit commitを拒否した場合も本体が差分を確認してcommitする。これは運搬/記録の代理であり、仕様・コードの編集やレビュー判定を本体が代行するものではない。Gへは操作結果の証拠を渡して確認させる。
 
 worker-state既定値は `$HOME/.local/state/claude-harness-codex/jobs`（registerと共通）。`--worker-state DIR` 指定時はその台帳だけを使う。新規run-dir省略時はinitが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作成しJSONで返す。本体がこのpathを記録して全後続操作に渡す。既存`--run-dir`の再開時はinitせずrun.jsonのaccount/model/worker_stateとの一致を確認する。不一致や不明なrunを別accountで継続しない。
+
+旧版run.jsonの `spec_paths` / `checks` / `approvals` は再開時に品質判断として使わない。旧pendingがあれば新promptで再submitせずresult→ackで受領を終えてから新dispatchする。`completed` でもerror_kindがあれば実行成功ではない。ackは結果受領とownership解放であり、品質承認ではない。
+
+### 送信到達が不明なpendingの復旧
+
+結果が存在するpendingは `status` / `result` で回収し、terminal結果を受領して `ack` する。送信前の失敗や応答切断でworkerへ到達したか不明なら、同じrunに `retry` を実行する。`retry` は保存済みrequest.jsonのrequest_id/account/model/cwdとrunの一致を検証し、**元の依頼を変更せず**workerへidempotent submitする。promptを再生成せず、新しいrequest_idも作らない。不一致やファイル欠損なら拒否し、別account・別依頼へ差し替えない。
+
+```sh
+python3 <plugin>/scripts/codex-develop.py --run-dir <保存したrun-dir> retry
+```
+
+旧版の品質metadataは無視するが、pendingとownershipは引き継ぐ。retryは結果不明の仕事を別ジョブとしてやり直す機能ではなく、同一依頼の送信/照会を復旧するtransport操作である。

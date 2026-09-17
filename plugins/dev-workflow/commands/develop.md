@@ -7,7 +7,7 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 
 ## 実行先オプション
 
-`$ARGUMENTS` に `--executor codex` があれば、同時に `--account <登録名>` と `--model <CodexモデルID>` を必須とする。欠けていれば開始せず指定を求める。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用する。`--executor` 未指定は従来のClaude経路。未知のexecutorは拒否する。Codex指定時にAgent/execへfallbackしない。
+`$ARGUMENTS` に `--executor codex` があれば、同時に `--account <登録名>` と `--model <CodexモデルID>` を必須とする。欠けていれば開始せず指定を求める。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用する。`--executor` 未指定は従来のClaude経路。未知のexecutorは拒否する。Codex指定時にAgent/execへfallbackしない。実行先オプションは委譲transportだけを変え、仕様要否・レビュー・チェック・順序は既存develop正本を使う。Codex指定で仕様を必須にしない。
 
 Codexオプション `--worker-state DIR` は登録済みworker台帳を指定する。省略時は `$HOME/.local/state/claude-harness-codex/jobs`。`--run-dir DIR` は継続するrunを明示するときに指定する。新規で省略するとinitが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作り返す。本体は返された絶対pathを記録先と会話に記録し、以後の全操作で同じpathを使う。これらも依頼本文から除外する。
 

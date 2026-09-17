@@ -47,3 +47,13 @@ Claudeの会話で:
 別worker台帳なら `--worker-state DIR` を指定する。新規runは `$HOME/.local/state/claude-harness-codex/runs/<UUID>` に作られ、本体が返された絶対pathを保存する。再開時は `--run-dir <保存path>` を指定する。詳細なphase/check/accept/差戻し/archive操作は `plugins/dev-workflow/docs/codex-develop.md` が入口。
 
 手動入口を用意し、共通workerを通した主要4工程を実証した段階。Claude slashによる一件の公開PR完走や、全hook保証・全account配分・burn接続まで検証済みとは扱わない。
+
+## 訂正: executor指定による品質ワークフロー分岐を撤去
+
+上記の実測・テストは当時の履歴として残す。旧版ではCodex入口が独自に仕様必須、承認hash/check/archive状態を管理しており、既存developの「仕様化判断: しない」経路を塞いでいた。この挙動は要件に反するため撤去する。`--spec-path` / `--required-check` / `accept-review` / `check` / `relocate-spec` は現行入口に存在しない。
+
+現行adapterは役割の起動・回収・中断・実行先固定とownershipのtransportのみを担当する。仕様要否、レビュー、検証、順序は通常のdevelop正本が一元管理する。旧33テストと旧4工程の記録を、訂正後の独自ゲート存在や現行通し検証の根拠には使わない。workerの最終回答抽出、認証・ownership・read-only・unknownの安全境界は維持する。訂正後のテスト結果は親タスクが追記する。
+
+訂正後は親タスクがworker20件＋adapter10件＝30件の成功を確認。旧runの品質フィールドを無視して再開でき、pendingは受領後のみ次へ進む。仕様不要経路もadapterによる追加条件なしで既存developへ接続する。実モデル4工程の追加再実行はしていない。
+
+追加レビューで旧版pendingの送信前失敗からの復旧経路を補った。`retry` は保存requestのidentity一致を検証し同じrequestを再送する。独自品質metadataは無視する一方、pending/ownershipは維持する。親タスクでworker20＋adapter12＝32件の最終検証が成功（exit 0）。既存Bats177件、OpenSpec strict、diff checkも成功。独立レビューで旧pendingの同一ID・payload再送を再現確認しCLOSED。adapter→実worker→模擬App Serverの仕様なし実装/read-onlyレビュー回収も成功。今回の検証では実モデルを呼んでいない。
