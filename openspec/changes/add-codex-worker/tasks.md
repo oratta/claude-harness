@@ -3,7 +3,7 @@
 - [x] 2. 永続台帳、独立worker、account/cwd排他を実装する
 - [x] 3. App Serverの受付・進捗・結果・取消とunknownを実装する
 - [x] 4. 認証帰属、fresh quota、role sandbox、環境変数制限を実装する
-- [ ] 5. 外部MCP/app無効化の契約を確定する
+- [x] 5. 外部MCP/app設定を継承しないruntimeとproject設定拒否を実装する
 - [ ] 6. 障害fixture・独立レビュー・#707統合を確認する
 
 ## #706に残す機能

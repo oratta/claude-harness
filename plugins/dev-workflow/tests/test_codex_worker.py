@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sqlite3
 import sys
 import tempfile
 import time
@@ -152,6 +153,49 @@ class WorkerTest(unittest.TestCase):
     def test_changed_auth_never_starts_server(self):
         with (self.home/'auth.json').open('a') as f:f.write(' ')
         self.submit();r=self.wait();self.assertEqual(r['error_kind'],'auth_profile_changed');self.assertFalse(self.calls())
+
+    def test_duplicate_worker_cannot_overwrite_active_state(self):
+        self.config(wait=True);self.submit();self.wait(status='running')
+        subprocess.run([sys.executable,str(SCRIPT),'--state-dir',str(self.state),'_worker','--job','one'],
+                       env=self.env,check=True,timeout=10)
+        self.assertEqual(self.cli('status','--job','one')['status'],'running')
+        self.cli('cancel','--job','one');self.assertEqual(self.wait()['status'],'interrupted')
+
+    def test_concurrent_duplicate_starts_one_turn(self):
+        data={'request_id':'one','origin':'manual','account':'test','cwd':str(self.cwd),
+              'model':'fixture-model','role':'implement','prompt':'fixture'}
+        path=self.root/'one.json';path.write_text(json.dumps(data))
+        cmd=[sys.executable,str(SCRIPT),'--state-dir',str(self.state),'submit','--request',str(path)]
+        processes=[subprocess.Popen(cmd,env=self.env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE) for _ in range(3)]
+        for process in processes:
+            out,err=process.communicate(timeout=10)
+            self.assertEqual(process.returncode,0,out+err)
+        self.wait()
+        self.assertEqual(sum(m.get('method')=='turn/start' for m in self.calls()),1)
+
+    def test_unknown_quota_is_not_permission(self):
+        self.config(pct=None);self.submit();r=self.wait()
+        self.assertEqual(r['error_kind'],'quota_unknown')
+        self.assertFalse(any(m.get('method')=='turn/start' for m in self.calls()))
+
+    def test_runtime_auth_link_switch_interrupts(self):
+        self.config(wait=True);self.submit()
+        deadline=time.monotonic()+5
+        while not any(m.get('method')=='turn/start' for m in self.calls()) and time.monotonic()<deadline:time.sleep(.02)
+        runtime=self.state/'runtimes/one/auth.json'
+        other=self.root/'other-auth.json';other.write_text((self.home/'auth.json').read_text())
+        runtime.unlink();runtime.symlink_to(other)
+        r=self.wait();self.assertEqual(r['status'],'interrupted');self.assertEqual(r['error_kind'],'auth_profile_changed')
+
+    def test_external_unknown_does_not_resume(self):
+        self.config(wait=True);self.submit()
+        deadline=time.monotonic()+5
+        while not any(m.get('method')=='turn/start' for m in self.calls()) and time.monotonic()<deadline:time.sleep(.02)
+        # State transition is tested without waiting 30 real seconds.
+        db=sqlite3.connect(self.state/'ledger.sqlite')
+        db.execute("UPDATE jobs SET updated=?,status='unknown' WHERE id='one'",(time.time()-40,));db.commit();db.close()
+        r=self.wait();self.assertEqual(r['status'],'unknown');self.cli('ack','--job','one',code=2)
+        time.sleep(.3)
 
     def test_main_checkout_and_unsupported_origin(self):
         data={'request_id':'one','origin':'manual','account':'test','cwd':str(self.root/'repo'),

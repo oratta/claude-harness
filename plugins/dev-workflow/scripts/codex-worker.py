@@ -256,11 +256,13 @@ def worker(directory, job):
     rpc = None
     turn_submitted = False
     runtime = None
+    claimed = False
     try:
         db.execute('BEGIN IMMEDIATE')
         row = get_job(db, job)
         require(row['status'] == 'queued', 'job_not_queued')
         update(db, job, status='running', pid=os.getpid())
+        claimed = True
         db.execute('COMMIT')
         payload = json.loads(row['payload'])
         account = db.execute('SELECT * FROM accounts WHERE name=?', (row['account'],)).fetchone()
@@ -347,7 +349,8 @@ def worker(directory, job):
             db.execute('ROLLBACK')
         # Exception text is deliberately not persisted (it may contain credentials).
         kind = str(error) if isinstance(error, Rejected) else type(error).__name__
-        update(db, job, status='unknown' if turn_submitted else 'failed', error_kind=kind)
+        if claimed:
+            update(db, job, status='unknown' if turn_submitted else 'failed', error_kind=kind)
     finally:
         if rpc:
             rpc.close()
