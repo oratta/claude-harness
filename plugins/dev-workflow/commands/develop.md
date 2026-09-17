@@ -5,6 +5,10 @@ argument-hint: "[issue番号|issueURL|自然文の依頼]"
 allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 ---
 
+## 実行先オプション
+
+`$ARGUMENTS` に `--executor codex` があれば、同時に `--account <登録名>` と `--model <CodexモデルID>` を必須とする。欠けていれば開始せず指定を求める。これらを依頼本文から分離し、まず `references/codex-develop.md` をReadしてprovider adapterを適用する。`--executor` 未指定は従来のClaude経路。未知のexecutorは拒否する。Codex指定時にAgent/execへfallbackしない。
+
 `develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0・エピックの扱い）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。このコマンドはそれを Read tool で読み込み、その指示に従ってメインセッションで interactive モードのままインライン実行する。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
 
 **Skill tool は使わないこと。** この command は既に「ユーザーが起動した slash command」であり、Read tool で SKILL.md 本文（および必要なら `references/decision-criteria.md`）を読み込み、この command の frontmatter（`allowed-tools`）配下でそのままインライン実行する。
