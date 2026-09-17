@@ -16,6 +16,8 @@
 # 線を追い越していたらリセット前に枯れるペース。
 #
 # 環境変数（すべて任意）:
+#   STATUSLINE_CODEX       0 で Codex アカウント行を無効化（既定 1）
+#   STATUSLINE_CODEX_BIN   Codex CLI のパス（既定 codex）
 #   STATUSLINE_BAR_WIDTH   バーのセル数（既定 16）
 #   STATUSLINE_BAR_GLYPH   日程線の太さ。細い順に ▁ ▂ ▃ ▄（既定 ▂）
 #   STATUSLINE_API_PACE    0 で API 換算コスト表示を無効化（既定 1）
@@ -347,6 +349,15 @@ print("Claude Code-credentials-" + hashlib.sha256(
     [ "$active_idx" -lt 0 ] && active_idx=0
 fi
 
+# Cache reads are local; refresh is detached by the helper.
+codex_rows=""
+if [ "${STATUSLINE_CODEX:-1}" != "0" ]; then
+    codex_helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/statusline-codex.py"
+    if [ -f "$codex_helper" ]; then
+        codex_rows="$(python3 "$codex_helper" --read 2>/dev/null)"
+    fi
+fi
+
 # label 列の幅（複数スロットのときだけ使う）
 # 幅は文字数ではなく表示幅（python 側が 5 列目で渡す）。全角ラベルでも列が揃う。
 label_w=0
@@ -354,6 +365,11 @@ if [ "$multi" -eq 1 ]; then
     for w in "${slot_widths[@]}"; do
         [ "$w" -gt "$label_w" ] && label_w="$w"
     done
+fi
+
+# Codex shares the label column, without changing output when its row is absent.
+if [ -n "$codex_rows" ] && [ "$label_w" -lt 5 ]; then
+    label_w=5
 fi
 
 # ---- snapshot を jq 1 回で読む ----
@@ -472,6 +488,9 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
                 fable_pct=""
             fi
         fi
+        if [ "$multi" -eq 1 ] && [ -z "$five_h_pct" ]; then
+            usage_lines+=("${prefix}${DIM}取得待ち${RESET}")
+        fi
         render_slot "$prefix" "$five_h_pct" "$five_h_resets" "$seven_d_pct" "$seven_d_resets" \
                     "$fable_pct" ""
     else
@@ -485,9 +504,68 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
     fi
 done
 
+# Codex is a separate account; keep all returned windows on one additional row.
+# Only the helper talks to app-server, detached from rendering (180s cache).
+if [ -n "$codex_rows" ]; then
+    codex_pad="$(printf '%*s' "$(( label_w - 5 ))" '')"
+    codex_line="  ${DIM}Codex${codex_pad}${RESET}  "
+    codex_sep=""
+    codex_fetched=""
+    codex_resets=""
+    while IFS=$'\t' read -r c_pct c_minutes c_reset c_fetched; do
+        if [ "$c_pct" = "resets" ]; then
+            codex_fetched="$c_fetched"
+            c_reset_color="$DIM"
+            codex_resets="リセット${c_minutes}回"
+            if [ "$c_minutes" -gt 0 ]; then
+                if [ "$c_reset" -eq 0 ]; then
+                    codex_resets+="・期限不明"
+                else
+                    c_expiry_left=$(( c_reset - now ))
+                    if [ "$c_expiry_left" -le 86400 ]; then c_reset_color="$RED"
+                    elif [ "$c_expiry_left" -le 259200 ]; then c_reset_color="$YELLOW"; fi
+                    if [ "$c_expiry_left" -le 0 ]; then
+                        codex_resets+="・期限経過（更新待ち）"
+                    elif [ "$c_expiry_left" -ge 86400 ]; then
+                        codex_resets+="・最短あと$((c_expiry_left / 86400))日$((c_expiry_left % 86400 / 3600))h"
+                    else
+                        codex_resets+="・最短あと$((c_expiry_left / 3600))h$((c_expiry_left % 3600 / 60))m"
+                    fi
+                fi
+            fi
+            codex_resets="  ${DIM}│${RESET}  ${c_reset_color}${codex_resets}${RESET}"
+            continue
+        fi
+        if [ "$c_pct" = "pending" ]; then
+            codex_line+="${DIM}取得待ち${RESET}"
+            continue
+        fi
+        codex_fetched="$c_fetched"
+        c_seconds=$(( c_minutes * 60 ))
+        c_left=$(( c_reset - now ))
+        c_elapsed=""
+        if [ "$c_left" -ge 0 ] && [ "$c_left" -le "$c_seconds" ]; then
+            c_elapsed=$(( (c_seconds - c_left) * 100 / c_seconds ))
+        fi
+        if [ $(( c_minutes % 1440 )) -eq 0 ]; then
+            c_label="$(( c_minutes / 1440 ))d All"
+        elif [ $(( c_minutes % 60 )) -eq 0 ]; then
+            c_label="$(( c_minutes / 60 ))h"
+        else
+            c_label="${c_minutes}m"
+        fi
+        codex_line+="${codex_sep}$(bar_seg "$c_label" 9 "$c_pct" "$c_elapsed" 1)"
+        [ "$c_left" -gt 0 ] && codex_line+="  ${DIM}$(fmt_left "$c_left")${RESET}"
+        codex_sep="   "
+    done <<< "$codex_rows"
+    [ -n "$codex_fetched" ] && codex_line+="  ${DIM}$(fmt_ago $(( now - codex_fetched )))${RESET}"
+    codex_line+="$codex_resets"
+    usage_lines+=("$codex_line")
+fi
+
 # $1=USD $2=為替レート $3=通貨 → "¥1,240" / "€12"（通貨単位の整数、3 桁区切り）
 fmt_money() {
-    local sym amount
+    local sym amount digits grouped="" sign=""
     case "$3" in
         JPY) sym='¥' ;;
         EUR) sym='€' ;;
@@ -496,7 +574,15 @@ fmt_money() {
     esac
     # 小数点がカンマのロケール（de_DE 等）では awk が "1.23" を 1 と読むので C 固定
     amount=$(echo "$1 $2" | LC_ALL=C awk '{printf "%d", $1 * $2}')
-    printf '%s%s' "$sym" "$(LC_ALL=en_US.UTF-8 printf "%'d" "$amount" 2>/dev/null || printf '%d' "$amount")"
+    # Bash 3.2 builtin printf does not reliably adopt a temporary LC_ALL assignment.
+    # Group the integer explicitly: this also works without en_US.UTF-8 installed.
+    digits="$amount"
+    if [[ "$digits" == -* ]]; then sign="-"; digits="${digits#-}"; fi
+    while [ "${#digits}" -gt 3 ]; do
+        grouped=",${digits: -3}${grouped}"
+        digits="${digits:0:${#digits}-3}"
+    done
+    printf '%s%s%s%s' "$sym" "$sign" "$digits" "$grouped"
 }
 
 # API-equivalent monthly cost pace (last 30 days via ccusage; cached, refreshed in background)

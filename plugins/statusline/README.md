@@ -48,7 +48,7 @@ Context 91%  │  API ¥1,446,038/mo  │  Session ¥1,240
 /statusline:setup
 ```
 
-`scripts/statusline.sh` を `~/.claude/statusline.sh` にコピーし、`~/.claude/settings.json` の `statusLine` をそこに向ける。既存の `statusLine` があれば置き換え前に確認し、`settings.json` はバックアップを取る。
+`scripts/statusline.sh` と `scripts/statusline-codex.py` を `~/.claude/` にコピーし、`~/.claude/settings.json` の `statusLine` をそこに向ける。既存の `statusLine` があれば置き換え前に確認し、`settings.json` はバックアップを取る。
 
 - `/statusline:setup --dry-run` — 何が変わるかだけ表示する
 - `/statusline:setup --uninstall` — `settings.json` から `statusLine` を外す
@@ -83,7 +83,7 @@ Fable の週次消化率は Claude Code がステータスラインに渡して�
 
 行頭の `▸` が**いま使っているアカウント**。その行の label は他の行より明るく描く。
 
-**アカウントレジストリを作らないかぎり、表示も挙動も一切変わらない。** レジストリが無ければ既定アカウント 1 つとして扱われ、出力は 1 バイトも変わらない（左端のラベル列も出ない）。
+**Codex 表示が無効なら、アカウントレジストリを作らないかぎり、Claude の表示も挙動も変わらない。** レジストリが無ければ既定アカウント 1 つとして扱われ、出力は 1 バイトも変わらない（左端のラベル列も出ない）。
 
 ### レジストリの作り方
 
@@ -156,3 +156,31 @@ bats plugins/statusline/tests/statusline.bats plugins/statusline/tests/statuslin
 ```
 
 `statusline.bats` は 1 スロット時の退行ガード、`statusline-multi-account.bats` は複数スロットの描画と `origin/main` 版との出力バイト一致の検証。
+
+## Codex の利用上限
+
+Codex CLI に ChatGPT アカウントでログイン済みなら、Claude アカウントの下に `Codex` を1行追加する。`CODEX_HOME`（既定 `~/.codex`）の `auth.json` を使う CLI アカウントが対象。別のアカウントでログインしているアプリや、Keychain のみの認証・API キーだけの認証は対象外。
+
+```text
+▸ A      5h       …
+▸ A      7d All   …
+  B      5h       …
+  B      7d All   …
+  Codex  7d All   ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂  45%/60%  ~2d 19h  0m前
+```
+
+表示例の値はダミー。バー・色・日程線は Claude と共通で、通常 Codex 枠の返却された期間だけを表示する。週間枠しか無ければ5時間枠は作らない。複数の期間があれば同じ行に並べる。Spark の別枠は含めない。
+
+Python 3 helper が [Codex App Server](https://learn.chatgpt.com/docs/app-server) の `account/rateLimits/read` で取得する。描画は `${CLAUDE_CONFIG_DIR:-~/.claude}/.statusline-codex` のキャッシュを読み、180秒経過後の描画でバックグラウンド更新を開始する。失敗後は60秒待って再試行する。取得できない間は前回値に取得時刻からの経過時間を添え、初回は `取得待ち`。認証ファイルが変わると旧アカウントのキャッシュを無効化する。認証情報や生の応答はキャッシュへ保存しない。
+
+- `STATUSLINE_CODEX=0`: Codex 行・取得を無効化
+- `STATUSLINE_CODEX_BIN`: Codex CLI の実行ファイルを指定（既定 `codex`）
+- `CODEX_HOME`: 表示する CLI の設定・認証ディレクトリ
+
+起動直後に Claude のライブ値がまだ無い場合も、複数アカウントなら使用中のアカウントを `▸ A  取得待ち` のように示す。snapshot の値でライブ値を補完しない。
+
+### リセット権の有効期限
+
+Codex 行の末尾に `リセット3回・最短あと3日21h` のように残数と取得できた権利の最短有効期限を表示する。期限まで3日以内は黄色、24時間以内は赤色。失敗時は前回取得時刻を維持し、キャッシュの期限を過ぎた場合は `期限経過（更新待ち）` と表示する。残数だけ取得できた場合は `期限不明` とし、欠測を0回として扱わない。通常の利用枠のリセット時刻とは別の情報。
+
+権利の使用は行わず、`account/rateLimits/read` の `rateLimitResetCredits` を同じキャッシュに保存して表示する。キャッシュには権利IDを保存しない。
