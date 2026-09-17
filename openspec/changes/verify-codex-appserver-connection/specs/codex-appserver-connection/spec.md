@@ -27,3 +27,10 @@ PoCは所有するturnだけを中断し、応答と終了確認を分けなけ�
 #### Scenario: 仕様だけが完成する
 - **WHEN** 仕様レビュー用Draft PRを作成する
 - **THEN** issueを閉じず、実装未着手・実測未実施・仕様レビュー待ちを明記する
+
+### Requirement: 中断能力を非競合の実測で証明する
+Go判定には非競合の所有turnでinterruptedを最低1回実測しなければならない（MUST）。completed競合またはunknownは分類テストとしてのみ数える（MUST）。
+
+#### Scenario: 中断試験が全てunknownとなる
+- **WHEN** interruptedを実測できていない
+- **THEN** 中断能力は未合格で、Go判定を出さない
