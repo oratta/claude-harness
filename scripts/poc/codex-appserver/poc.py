@@ -135,7 +135,12 @@ def run(args, command=None):
                 result['status'] = params['turn']['status']
                 result['interruption_pass'] = interrupt_pass(result['status'], requested)
                 result['final_items'] = len(params['turn'].get('items', []))
-                result['result_text'] = '\n'.join(item.get('text', '') for item in params['turn'].get('items', []) if item.get('type') == 'agentMessage')
+                items = params['turn'].get('items', [])
+                if not any(i.get('type') == 'agentMessage' for i in items) and args.mode == 'complete':
+                    stored = client.request('thread/read', {'threadId': thread, 'includeTurns': True})
+                    items = [i for t in stored['thread']['turns'] if t['id'] == turn for i in t.get('items', [])]
+                result['result_text'] = '\n'.join(item.get('text', '') for item in items if item.get('type') == 'agentMessage')
+                result['result_verified'] = args.mode == 'complete' and result['result_text'].strip() == 'READY'
                 return result
             if params.get('turnId') == turn:
                 result['progress_events'] += 1
@@ -167,5 +172,7 @@ if __name__ == '__main__':
         parser.error('timeout must be within (0, 60] seconds')
     report = run(options)
     print(json.dumps(report))
-    success = report['status'] in ('identity_observed', 'completed') if options.mode != 'interrupt' else report['interruption_pass']
+    success = (report['status'] == 'identity_observed' if options.mode == 'preflight' else
+               report['status'] == 'completed' and report.get('result_verified', False) if options.mode == 'complete' else
+               report['interruption_pass'])
     raise SystemExit(0 if success else 1)

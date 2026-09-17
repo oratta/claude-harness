@@ -12,7 +12,7 @@
 - モデル依頼は合計3件。各試験終了後にPoC所有serverだけを終了した。本番resident・共有brokerは操作していない。
 
 ## 自動検証
-`python3 -m unittest discover -s scripts/poc/codex-appserver -v`: 4 tests PASS。interrupted合格、completed競合不合格、failed不合格、アカウント不一致でturn受付前に拒否を確認。
+`python3 -m unittest discover -s scripts/poc/codex-appserver -v`: 5 tests PASS。interrupted合格、completed競合不合格、failed不合格、アカウント不一致でturn受付前に拒否、terminal通知のitems欠落時のthread/read回収を確認。completeの成功終了にはREADY一致を必須とし、completedだけでは成功扱いしない。
 `openspec validate verify-codex-appserver-connection --strict --no-interactive`、`git diff --check`: PASS。
 
 ## 残る検証
