@@ -182,6 +182,7 @@ mk_cost_input() {
   [ "$status" -eq 0 ]
   [[ "$output" =~ "dry-run" ]]
   [ ! -f "$WORK/statusline.sh" ]
+  [ ! -f "$WORK/statusline-codex.py" ]
   run jq -r '.statusLine // "none"' "$WORK/settings.json"
   [ "$output" = "none" ]
 }
@@ -191,6 +192,7 @@ mk_cost_input() {
   run bash "$INSTALL"
   [ "$status" -eq 0 ]
   [ -x "$WORK/statusline.sh" ]
+  cmp "$PLUGIN_DIR/scripts/statusline-codex.py" "$WORK/statusline-codex.py"
   run jq -r '.statusLine.command' "$WORK/settings.json"
   [ "$output" = "bash $WORK/statusline.sh" ]
   # 既存キーを壊さない
@@ -221,6 +223,7 @@ mk_cost_input() {
   [ "$status" -ne 0 ]
   [[ "$output" =~ "壊れている" ]]
   [ ! -f "$WORK/statusline.sh" ]
+  [ ! -f "$WORK/statusline-codex.py" ]
 }
 
 @test "install: second run reports up-to-date" {  # 二度目の実行は up-to-date になる
@@ -230,4 +233,17 @@ mk_cost_input() {
   [ "$status" -eq 0 ]
   [[ "$output" =~ "script     : $WORK/statusline.sh (up-to-date)" ]]
   [[ "$output" =~ "statusLine : up-to-date" ]]
+}
+
+@test "install: helper updates are backed up and included in dry-run" {
+  echo '{}' > "$WORK/settings.json"
+  bash "$INSTALL" > /dev/null
+  printf '# old helper\n' > "$WORK/statusline-codex.py"
+  run bash "$INSTALL" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "helper     : $WORK/statusline-codex.py (update)" ]]
+  [ "$(cat "$WORK/statusline-codex.py")" = "# old helper" ]
+  bash "$INSTALL" > /dev/null
+  cmp "$PLUGIN_DIR/scripts/statusline-codex.py" "$WORK/statusline-codex.py"
+  [ "$(cat "$WORK"/statusline-codex.py.bak-*)" = "# old helper" ]
 }

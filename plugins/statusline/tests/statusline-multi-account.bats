@@ -587,7 +587,7 @@ PY
   [ "$(grep -cE '^  A ' "$WORK/out.txt")" = "2" ]
 }
 
-@test "marker: no marked row when the active slot has no values" {
+@test "marker: missing active values retain a marked waiting row" {
   write_two_slot_registry
   # a（active）を欠測にし、b にだけ値を持たせる
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
@@ -604,7 +604,7 @@ PY
   # stdin のライブ値も渡さない（active スロットの値が無い状態）
   printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$WORK" \
     | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  ! grep -qE '^▸ ' "$WORK/out.txt"
+  [ "$(grep -cE '^▸ A +取得待ち$' "$WORK/out.txt")" = "1" ]
   [ "$(grep -cE '^  B ' "$WORK/out.txt")" = "2" ]
 }
 
@@ -641,4 +641,68 @@ JSON
   mk_input 3 25 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   ! grep -qE '^▸' "$WORK/out.txt"
   grep -qE '^5h' "$WORK/out.txt"
+}
+
+# #233: 生の ANSI・空白も比較する（1スロットの schema 1 / schema 2）。
+assert_single_registry_identical() {
+  local schema="$1" old="${WORK}/statusline-old.sh"
+  git -C "$REPO_ROOT" show origin/main:plugins/statusline/scripts/statusline.sh > "$old" 2>/dev/null \
+    || skip "origin/main is not available"
+  printf '{"schema":1,"accounts":[{"id":"a","label":"仕事","securestorage":null}]}' > "$ACCOUNTS"
+  python3 - "$SNAP" "$schema" "$NOW" <<'SNAPSHOT'
+import json, sys
+row = {"fetched_at": int(sys.argv[3]), "fable_weekly_pct": 7, "fable_active": True}
+doc = dict(row, schema=int(sys.argv[2]))
+if doc["schema"] == 2:
+    doc.update(active="a", accounts={"a": row})
+with open(sys.argv[1], "w") as f:
+    json.dump(doc, f)
+SNAPSHOT
+  mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/new.txt"
+  mk_input 3 25 14010 172830 | bash "$old" > "$WORK/old.txt"
+  diff "$WORK/old.txt" "$WORK/new.txt"
+}
+
+@test "single registry: schema 1 output is byte-identical to previous version" {
+  assert_single_registry_identical 1
+}
+
+@test "single registry: schema 2 output is byte-identical to previous version" {
+  assert_single_registry_identical 2
+}
+
+@test "startup: alternate active account retains its marker without live limits" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$NOW" "$((NOW + 172830))"
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$WORK" \
+    | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" | strip_ansi > "$WORK/out.txt"
+  [ "$(grep -cE '^▸ B +取得待ち$' "$WORK/out.txt")" = "1" ]
+  ! grep -qE '^▸ B .*%' "$WORK/out.txt"
+  [ "$(grep -cE '^  A ' "$WORK/out.txt")" = "2" ]
+}
+
+@test "startup: single-slot missing limits remain byte-identical" {
+  old="${WORK}/statusline-old.sh"
+  git -C "$REPO_ROOT" show origin/main:plugins/statusline/scripts/statusline.sh > "$old" 2>/dev/null \
+    || skip "origin/main is not available"
+  for registry in absent present; do
+    if [ "$registry" = present ]; then
+      printf '{"accounts":[{"id":"a","label":"A","securestorage":null}]}' > "$ACCOUNTS"
+    fi
+    printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$WORK" > "$WORK/input.json"
+    bash "$SL" < "$WORK/input.json" > "$WORK/new.txt"
+    bash "$old" < "$WORK/input.json" > "$WORK/old.txt"
+    diff "$WORK/old.txt" "$WORK/new.txt"
+  done
+}
+
+@test "normal: multi-slot live output remains byte-identical" {
+  old="${WORK}/statusline-old.sh"
+  git -C "$REPO_ROOT" show origin/main:plugins/statusline/scripts/statusline.sh > "$old" 2>/dev/null \
+    || skip "origin/main is not available"
+  write_two_slot_registry
+  write_two_slot_snapshot "$((NOW - 30))" "$((NOW - 7230))" "$((NOW + 172830))"
+  mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/new.txt"
+  mk_input 3 25 14010 172830 | bash "$old" > "$WORK/old.txt"
+  diff "$WORK/old.txt" "$WORK/new.txt"
 }
