@@ -12,7 +12,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/codex-worker.py'
 FAKE = r'''#!/usr/bin/env python3
 import json,os,sys,time
 from pathlib import Path
-home=Path(os.environ['CODEX_HOME']); config=json.loads((home/'fixture.json').read_text())
+runtime=Path(os.environ['CODEX_HOME']); home=(runtime/'auth.json').resolve().parent; config=json.loads((home/'fixture.json').read_text())
 for line in sys.stdin:
  m=json.loads(line); method=m.get('method'); rid=m.get('id')
  with (home/'calls.jsonl').open('a') as f:f.write(json.dumps(m)+'\n')
@@ -112,6 +112,20 @@ class WorkerTest(unittest.TestCase):
         (self.root/'two.json').write_text(json.dumps(request))
         r=self.cli('submit','--request',str(self.root/'two.json'),code=2)
         self.assertEqual(r['error'],'cwd_or_account_locked')
+
+    def test_runtime_does_not_inherit_user_mcp(self):
+        (self.home/'config.toml').write_text('[mcp_servers.external]\ncommand="danger"\n')
+        self.submit();self.assertEqual(self.wait()['status'],'completed')
+        runtime=self.state/'runtimes/one'
+        self.assertNotIn('external',(runtime/'config.toml').read_text())
+        deadline=time.monotonic()+3
+        while (runtime/'auth.json').exists() and time.monotonic()<deadline:time.sleep(.02)
+        self.assertFalse((runtime/'auth.json').exists())
+
+    def test_project_config_is_rejected(self):
+        (self.cwd/'.codex').mkdir();(self.cwd/'.codex/config.toml').write_text('[mcp_servers.external]\n')
+        self.submit();r=self.wait();self.assertEqual(r['error_kind'],'unsupported_project_config')
+        self.assertFalse(self.calls())
 
     def test_other_ledger_cannot_bypass_ownership(self):
         self.submit();self.wait()

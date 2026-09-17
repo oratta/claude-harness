@@ -142,6 +142,30 @@ def validate_request(payload):
     return payload
 
 
+def runtime_home(directory, job, source, cwd):
+    # The Git project config layer can re-enable external tools; initial version refuses it.
+    project = Path(cwd)
+    common = subprocess.check_output(['git', '-C', cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                                    env=clean_env(), text=True).strip()
+    roots = {project, Path(common).parent, *project.parents}
+    # The normal user config is intentionally replaced by runtime config, not a project layer.
+    roots.discard(Path.home())
+    require(not any((root/'.codex/config.toml').exists() for root in roots), 'unsupported_project_config')
+    runtime = Path(directory)/'runtimes'/job
+    runtime.mkdir(parents=True, mode=0o700, exist_ok=False)
+    (runtime/'auth.json').symlink_to(Path(source)/'auth.json')
+    (runtime/'config.toml').write_text('cli_auth_credentials_store = "file"\n[features]\napps = false\n')
+    os.chmod(runtime/'config.toml', 0o600)
+    return runtime
+
+
+def runtime_identity_matches(runtime, account):
+    path = runtime/'auth.json'
+    require(path.is_symlink() and path.resolve() == (Path(account['home'])/'auth.json').resolve(), 'runtime_auth_link_changed')
+    actual = auth_info(account['home'])
+    require(all(actual[k] == account[k] for k in actual), 'auth_profile_changed')
+
+
 def quota_available(result):
     # Bucket selection follows statusline-codex.py; unlike display, reject malformed windows.
     buckets = result.get('rateLimitsByLimitId')
@@ -171,6 +195,7 @@ class Rpc:
         self.buffer = []
         self.next_id = 0
         self.unsupported = False
+        self.tick = lambda: None
         threading.Thread(target=self.reader, daemon=True).start()
 
     def reader(self):
@@ -195,6 +220,7 @@ class Rpc:
         return msg
 
     def request(self, method, params):
+        self.tick()
         self.next_id += 1
         rid = self.next_id
         self.send({'id': rid, 'method': method, 'params': params})
@@ -229,6 +255,7 @@ def worker(directory, job):
     db = db_open(directory)
     rpc = None
     turn_submitted = False
+    runtime = None
     try:
         db.execute('BEGIN IMMEDIATE')
         row = get_job(db, job)
@@ -241,13 +268,20 @@ def worker(directory, job):
         require(all(actual[k] == account[k] for k in actual), 'auth_profile_changed')
         # Repeat filesystem/branch checks immediately before execution.
         validate_request(payload)
-        rpc = Rpc(account['home'], row['cwd'])
+        runtime = runtime_home(directory, job, account['home'], row['cwd'])
+        runtime_identity_matches(runtime, account)
+        rpc = Rpc(str(runtime), row['cwd'])
+        def heartbeat():
+            current = db.execute('SELECT status FROM jobs WHERE id=?', (job,)).fetchone()
+            require(current and current['status'] == 'running', 'ledger_no_longer_running')
+            update(db, job)
+        rpc.tick = heartbeat
         rpc.request('initialize', {'clientInfo': {'name': 'harness-worker', 'version': '1'}})
         rpc.send({'method': 'initialized', 'params': {}})
         observed = rpc.request('account/read', {'refreshToken': False}).get('account') or {}
         require(observed.get('type') == 'chatgpt' and observed.get('email') and
                 digest(observed['email'].strip().lower().encode()) == account['identity'], 'server_identity_mismatch')
-        require(auth_info(account['home'])['auth_hash'] == account['auth_hash'], 'auth_profile_changed')
+        runtime_identity_matches(runtime, account)
         quota_available(rpc.request('account/rateLimits/read', {}))
         sandbox = ROLES[payload['role']]
         thread = rpc.request('thread/start', {'cwd': row['cwd'], 'model': payload['model'],
@@ -271,7 +305,11 @@ def worker(directory, job):
             current = db.execute('SELECT status,cancel FROM jobs WHERE id=?', (job,)).fetchone()
             require(current['status'] == 'running', 'ledger_no_longer_running')
             update(db, job)
-            changed = auth_info(account['home'])['auth_hash'] != account['auth_hash']
+            try:
+                runtime_identity_matches(runtime, account)
+                changed = False
+            except Exception:
+                changed = True
             cancel = current['cancel'] or rpc.unsupported or changed
             if cancel and activity and not cancel_sent:
                 rpc.request('turn/interrupt', {'threadId': thread, 'turnId': turn})
@@ -313,6 +351,9 @@ def worker(directory, job):
     finally:
         if rpc:
             rpc.close()
+        if runtime:
+            # An engine refresh may replace the symlink with a credential file; do not retain it.
+            (runtime/'auth.json').unlink(missing_ok=True)
         db.close()
 
 
