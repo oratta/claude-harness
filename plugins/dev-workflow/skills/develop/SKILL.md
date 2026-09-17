@@ -16,6 +16,10 @@ version: 2.1.0
 
 旧スキル（issue 限定の入口で、本体が自分で Step A〜D を実行する手順書だったもの）の後継。反転した理由は 1 つで、Claude Code のサブエージェントは Agent ツールを持たない（孫を spawn できない）ため、本体向けの手順書をサブエージェントに渡すと仕様レビュー・別コンテキストの PR レビュー・fable 昇格がすべて自己レビューに退化するから。別コンテキストを要する工程は**すべて本体が起こす**。
 
+## Codexを明示した手動実行
+
+`--executor codex --account NAME --model MODEL` のときは `${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこのSKILL.mdから `../../references/codex-develop.md`）を絶対パスに解決してReadし、この正本の工程順・役割・レビュー条件を維持したままspawn/再開のprovider操作を置換する。Claude Agent・Codex execの前提表はこのモードには適用しない。モデルは明示されたCodex ID、全役割をApp Serverへ委譲する。仕様化判断・不要時の実装直行・レビュー・検証・順序は以下の同じ正本を使い、provider adapter側に独自ゲートを置かない。未指定の通常実行は以下の既存規則どおり。
+
 ## いつ使うか
 
 ソースコード・スキル・コマンド・規範文書（openspec / docs / CLAUDE.md 等）を変える作業は、依頼の入口を問わず（GitHub issue・会話・cron・エピックの子のいずれでも）このスキルを通す。「issue があるか」は入口 0 で記録先を決める材料にすぎず、スキルを通すかどうかの条件ではない。
