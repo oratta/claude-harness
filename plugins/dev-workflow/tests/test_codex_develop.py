@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+sys.dont_write_bytecode = True
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/codex-develop.py'
 spec = importlib.util.spec_from_file_location('develop', SCRIPT)
 m = importlib.util.module_from_spec(spec)
