@@ -3,4 +3,5 @@
 - [x] App Server worker adapterと手動実行入口
 - [x] 全役割のprovider変換・独立レビュー・差し戻し
 - [x] 導入READMEとfake worker完走テスト
-- [ ] #706との統合実測（親タスク担当）
+- [x] #706との主要4工程の統合実測（親CodexがCLIでcoordinator操作、VERIFICATION.md参照）
+- [ ] Claude slashから公開PRのfinish/Gまで一件完走を実測
