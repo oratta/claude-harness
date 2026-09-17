@@ -44,3 +44,5 @@
 実装終了後は成果物をcommitし、`check` でinit時指定のrequired-checkを実行する。実コマンドのexit codeと出力を保存し、現在HEADで成功した証拠がなければfinish/gateを拒否する。required-checkは対象repoの必須検査を本体が選び、例示コマンドを無条件に流用しない。Codex sandboxでcommitできなければ本体が確認してcommitする。
 
 OpenSpec archiveで仕様ディレクトリを移したときは、finishを回収・ackし本体がcommitした後、`relocate-spec --from-path <旧相対path> --to-path <archive相対path>` を実行する。承認した仕様のファイル名/内容が完全一致する移動だけを受理する。内容が変わった場合はspec-reviewをやり直す。archive後のHEADでcheckを再実行してからGへ進める。
+
+共通workerはnetwork無効。W/Gが必要とするGitHub情報の取得・コメント/ラベル・Draft PR作成・pushは `needs-coordinator` と具体的な操作/内容を返し、本体が既存の認可範囲で代理実行する。sandboxがgit commitを拒否した場合も本体が差分を確認してcommitする。これは運搬/記録の代理であり、仕様・コードの編集やレビュー判定を本体が代行するものではない。Gへは操作結果の証拠を渡して確認させる。

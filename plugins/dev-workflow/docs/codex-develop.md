@@ -42,3 +42,5 @@ python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 ack
 実装終了後は成果物をcommitし、`check` でinit時指定のrequired-checkを実行する。実コマンドのexit codeと出力を保存し、現在HEADで成功した証拠がなければfinish/gateを拒否する。required-checkは対象repoの必須検査を本体が選び、例示コマンドを無条件に流用しない。Codex sandboxでcommitできなければ本体が確認してcommitする。
 
 archiveで移動した仕様は `relocate-spec --from-path openspec/changes/<change> --to-path openspec/changes/archive/<dated-change>` で承認対象を移せる（finish回収・ack・commit後）。ファイル名と内容のhashが承認時と完全一致する場合だけ受理する。変更が含まれる場合は新しいspec-reviewが必要。archive後は現在HEADでcheckを再実行してGへ進む。
+
+workerはnetworkを使わないため、GitHub取得/投稿・push・PR作成はClaude本体が代理する。子から `needs-coordinator` が来たら本体が必要な操作を行い、証拠を次のfresh phaseへ渡す。子のsandboxがcommitを拒否したときも本体がcommitする。

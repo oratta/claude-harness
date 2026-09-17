@@ -83,6 +83,9 @@ return needs-reviewer/needs-decider with the exact request; the coordinator disp
 Claude Agent/SendMessage/Skill/opsx operations in canonical references are provider-specific:
 use repository CLI equivalents for openspec only where available; do not pretend a Claude hook ran.
 If required verification/permissions/tools are unavailable return blocked with evidence.
+The worker has no network access. For GitHub reads/writes, push, PR creation, or unavailable
+commit operations, return needs-coordinator with precise operations/data; do not execute them.
+The coordinator performs authorized transport/recording, then starts a fresh phase with evidence.
 Never merge or enable auto-merge. Do not claim quality success from transport completion.
 Fresh context: do not apply Claude transcript counters or assume usage=0 means empty context.
 References below retain quality criteria; Claude model names/escalation are not Codex model selection.
