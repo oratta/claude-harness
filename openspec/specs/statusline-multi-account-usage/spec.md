@@ -161,3 +161,14 @@ Codex CLI の ChatGPT 認証が利用可能なとき、Claude の全スロット
 #### Scenario: Codex 無効時の互換性
 - **WHEN** `STATUSLINE_CODEX=0` でライブ値がある既存の入力を描く
 - **THEN** Claude の出力は変更前とバイト単位で一致する
+
+### Requirement: Codex リセット権の残数と期限を表示する
+`rateLimitResetCredits.availableCount` が取得できたとき、Codex 行に残数を表示しなければならない（SHALL）。利用可能な権利の `expiresAt` の最短値を残時間に換算し、3日以内は黄色、24時間以内は赤色にする。期限情報が欠ければ期限不明、取得情報の期限を過ぎた場合は更新待ちと示し、推測の残数を表示してはならない（MUST NOT）。表示処理から権利の使用APIを呼んではならない（MUST NOT）。
+
+#### Scenario: 最短期限が近づく
+- **WHEN** 残数3回、取得済みの最短期限が24時間以内である
+- **THEN** Codex 行に残数3回と最短期限までの時間が赤色で表示される
+
+#### Scenario: 残数のみ取得できる
+- **WHEN** 残数は3回だが credits が null である
+- **THEN** リセット3回・期限不明と表示される

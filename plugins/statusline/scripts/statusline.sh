@@ -511,10 +511,34 @@ if [ -n "$codex_rows" ]; then
     codex_line="  ${DIM}Codex${codex_pad}${RESET}  "
     codex_sep=""
     codex_fetched=""
+    codex_resets=""
     while IFS=$'\t' read -r c_pct c_minutes c_reset c_fetched; do
+        if [ "$c_pct" = "resets" ]; then
+            codex_fetched="$c_fetched"
+            c_reset_color="$DIM"
+            codex_resets="リセット${c_minutes}回"
+            if [ "$c_minutes" -gt 0 ]; then
+                if [ "$c_reset" -eq 0 ]; then
+                    codex_resets+="・期限不明"
+                else
+                    c_expiry_left=$(( c_reset - now ))
+                    if [ "$c_expiry_left" -le 86400 ]; then c_reset_color="$RED"
+                    elif [ "$c_expiry_left" -le 259200 ]; then c_reset_color="$YELLOW"; fi
+                    if [ "$c_expiry_left" -le 0 ]; then
+                        codex_resets+="・期限経過（更新待ち）"
+                    elif [ "$c_expiry_left" -ge 86400 ]; then
+                        codex_resets+="・最短あと$((c_expiry_left / 86400))日$((c_expiry_left % 86400 / 3600))h"
+                    else
+                        codex_resets+="・最短あと$((c_expiry_left / 3600))h$((c_expiry_left % 3600 / 60))m"
+                    fi
+                fi
+            fi
+            codex_resets="  ${DIM}│${RESET}  ${c_reset_color}${codex_resets}${RESET}"
+            continue
+        fi
         if [ "$c_pct" = "pending" ]; then
             codex_line+="${DIM}取得待ち${RESET}"
-            break
+            continue
         fi
         codex_fetched="$c_fetched"
         c_seconds=$(( c_minutes * 60 ))
@@ -535,6 +559,7 @@ if [ -n "$codex_rows" ]; then
         codex_sep="   "
     done <<< "$codex_rows"
     [ -n "$codex_fetched" ] && codex_line+="  ${DIM}$(fmt_ago $(( now - codex_fetched )))${RESET}"
+    codex_line+="$codex_resets"
     usage_lines+=("$codex_line")
 fi
 

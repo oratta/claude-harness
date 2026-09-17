@@ -20,6 +20,17 @@ def window(pct=45, minutes=10080, reset=2000000000):
 
 
 class QuotaTests(unittest.TestCase):
+    def test_reset_metadata_validation(self):
+        self.assertIsNone(codex.reset_credits(None))
+        self.assertIsNone(codex.reset_credits({'availableCount': True}))
+        data = codex.reset_credits({'availableCount': 3, 'credits': [
+            {'status': 'used', 'expiresAt': 1, 'id': 'secret'},
+            {'status': 'available', 'expiresAt': 2000000000, 'id': 'secret'},
+            {'status': 'available', 'expiresAt': None}]})
+        self.assertEqual(data['availableCount'], 3)
+        self.assertEqual(len(data['credits']), 1)
+        self.assertNotIn('secret', json.dumps(data))
+
     def test_weekly_only_and_zero(self):
         self.assertEqual(codex.windows({'rateLimits': {'primary': window(0)}}),
                          [{'pct': 0, 'minutes': 10080, 'reset': 2000000000}])
@@ -49,7 +60,7 @@ print(json.dumps({'id':2,'result':{'rateLimitsByLimitId':{'codex':{'secondary':{
 sys.stdin.read()
 ''')
             executable.chmod(0o700)
-            self.assertEqual(codex.fetch(str(executable))[0]['pct'], 45)
+            self.assertEqual(codex.fetch(str(executable))['windows'][0]['pct'], 45)
 
     def test_rpc_timeout(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -81,10 +92,28 @@ sys.stdin.read()
                 codex.refresh(cache, '/missing', other)
                 fetch.assert_not_called()
 
+    def test_refresh_persists_reset_metadata_and_keeps_it_on_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / 'cache'
+            result = {'windows': [], 'resets': {'availableCount': 3, 'credits': [
+                {'status': 'available', 'expiresAt': 2000000000}]}}
+            with patch.object(codex, 'fetch', return_value=result), patch.object(codex, 'identity', return_value='a'):
+                codex.refresh(cache, 'codex', 'a')
+            doc = codex.read_json(cache)
+            self.assertEqual(doc['resets'], result['resets'])
+            fetched = doc['fetched_at']
+            doc['next_attempt'] = 0
+            codex.atomic(cache, doc)
+            with patch.object(codex, 'fetch', side_effect=TimeoutError):
+                codex.refresh(cache, 'codex', 'a')
+            doc = codex.read_json(cache)
+            self.assertEqual(doc['resets'], result['resets'])
+            self.assertEqual(doc['fetched_at'], fetched)
+
     def test_account_switch_during_fetch_cannot_publish_old_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             cache = Path(tmp) / 'cache'
-            with patch.object(codex, 'fetch', return_value=[{'pct': 50}]), patch.object(codex, 'identity', return_value='new'):
+            with patch.object(codex, 'fetch', return_value={'windows': [{'pct': 50}], 'resets': None}), patch.object(codex, 'identity', return_value='new'):
                 codex.refresh(cache, 'codex', 'old')
             self.assertEqual(codex.read_json(cache)['windows'], [])
 
@@ -111,7 +140,7 @@ class RenderTests(unittest.TestCase):
         codex.atomic(self.folder / '.statusline-codex', {'identity': self.key,
                      'next_attempt': self.now + 180, 'fetched_at': self.now, 'windows': data})
 
-    def render(self, enabled=True):
+    def render(self, enabled=True, raw=False):
         env = dict(self.env, STATUSLINE_CODEX='1' if enabled else '0')
         result = subprocess.run(['bash', str(Path(__file__).parents[1] / 'scripts/statusline.sh')],
                                 input=json.dumps({'workspace': {'current_dir': self.tmp.name},
@@ -119,7 +148,32 @@ class RenderTests(unittest.TestCase):
                                 capture_output=True, text=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, '')
-        return re.sub(r'\x1b\[[0-9;]*m', '', result.stdout)
+        return result.stdout if raw else re.sub(r'\x1b\[[0-9;]*m', '', result.stdout)
+
+    def test_reset_count_expiry_and_colors(self):
+        cache = self.folder / '.statusline-codex'
+        for seconds, color in [(4*86400, '\x1b[2m'), (3*86400, '\x1b[33m'),
+                               (86400, '\x1b[31m'), (-1, '\x1b[31m')]:
+            doc = codex.read_json(cache)
+            doc['resets'] = {'availableCount': 3, 'credits': [
+                {'status': 'available', 'expiresAt': self.now + seconds},
+                {'status': 'available', 'expiresAt': self.now + 10*86400}]}
+            codex.atomic(cache, doc)
+            output = self.render(raw=True)
+            self.assertIn(color + 'リセット3回', output)
+            self.assertEqual(output.count('Codex'), 1)
+            self.assertIn('期限経過（更新待ち）' if seconds < 0 else '最短あと', output)
+
+    def test_reset_unknown_and_zero_are_distinct(self):
+        cache = self.folder / '.statusline-codex'
+        for count in (0, 3):
+            doc = codex.read_json(cache)
+            doc.update(windows=[], resets={'availableCount': count, 'credits': None})
+            codex.atomic(cache, doc)
+            out = self.render()
+            self.assertIn('リセット{}回'.format(count), out)
+            self.assertEqual('期限不明' in out, count > 0)
+            self.assertIn('取得待ち', out)
 
     def test_weekly_only_appends_exactly_one_row_and_pending_claude(self):
         lines = self.render().splitlines()
@@ -155,7 +209,7 @@ class RenderTests(unittest.TestCase):
                     codex.main()
                     spawn.assert_called_once()
                     output.assert_called_with('pending')
-            with patch.dict(os.environ, self.env), patch.object(codex, 'fetch', return_value=[]):
+            with patch.dict(os.environ, self.env), patch.object(codex, 'fetch', return_value={'windows': [], 'resets': None}):
                 codex.refresh(self.folder / '.statusline-codex', '/unused', self.key)
             self.assertIsInstance(codex.read_json(self.folder / '.statusline-codex')['next_attempt'], int)
 

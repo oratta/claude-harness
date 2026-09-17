@@ -50,6 +50,26 @@ def windows(result):
     return out
 
 
+def reset_credits(value):
+    """Keep count and expiry only; absent detail is not zero available credits."""
+    if not isinstance(value, dict):
+        return None
+    count = value.get('availableCount')
+    if type(count) is not int or count < 0:
+        return None
+    expiries = []
+    credits = value.get('credits')
+    if isinstance(credits, list):
+        for credit in credits:
+            if not isinstance(credit, dict) or credit.get('status') != 'available':
+                continue
+            expiry = credit.get('expiresAt')
+            if type(expiry) is int and 0 < expiry < 100000000000:
+                expiries.append(expiry)
+    return {'availableCount': count, 'credits': [
+        {'status': 'available', 'expiresAt': expiry} for expiry in expiries]}
+
+
 def read_json(path):
     try:
         d = json.loads(path.read_text())
@@ -108,7 +128,8 @@ def fetch(binary):
                 elif msg.get('id') == 2:
                     if 'error' in msg:
                         raise ValueError('quota unavailable')
-                    return windows(msg['result'])
+                    return {'windows': windows(msg['result']),
+                            'resets': reset_credits(msg['result'].get('rateLimitResetCredits'))}
         raise TimeoutError('quota timeout')
     finally:
         sel.close()
@@ -136,7 +157,7 @@ def refresh(cache, binary, key):
             return
         doc = {'identity': key, 'next_attempt': now + RETRY, 'windows': []}
         if previous.get('identity') == key:
-            doc.update({k: previous[k] for k in ('fetched_at', 'windows') if k in previous})
+            doc.update({k: previous[k] for k in ('fetched_at', 'windows', 'resets') if k in previous})
         # Reserve retry interval before RPC, including crashes/timeouts.
         atomic(cache, doc)
         try:
@@ -144,7 +165,8 @@ def refresh(cache, binary, key):
             if identity() != key:
                 return
             doc = {'identity': key, 'next_attempt': now + TTL,
-                   'fetched_at': int(time.time()), 'windows': data}
+                   'fetched_at': int(time.time()), 'windows': data['windows'],
+                   'resets': data['resets']}
         except (OSError, ValueError, KeyError, TypeError, TimeoutError):
             pass
         atomic(cache, doc)
@@ -182,6 +204,10 @@ def main():
     else:
         for w in valid:
             print('{}\t{}\t{}\t{}'.format(w['pct'], w['minutes'], w['reset'], fetched))
+    resets = reset_credits(doc.get('resets'))
+    if resets is not None and type(fetched) is int and fetched >= 0:
+        expiry = min((c['expiresAt'] for c in resets['credits']), default=0)
+        print('resets\t{}\t{}\t{}'.format(resets['availableCount'], expiry, fetched))
 
 
 if __name__ == '__main__':
