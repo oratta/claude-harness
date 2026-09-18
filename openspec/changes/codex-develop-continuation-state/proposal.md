@@ -4,11 +4,12 @@ Codex executor の初回依頼で確定した executor・account・model・run-d
 
 ## What Changes
 
-- 初回に確定した Codex 委譲設定を issue または Draft PR の機械可読な継続記録として保存する。
+- 初回に確定した Codex 委譲設定を、固定マーカー付き・値を UTF-8 パーセントエンコードした issue または Draft PR の機械可読な継続記録として保存する。記録先は既存 develop が確定した対象（issue を優先し、issue が無い場合は Draft PR）に限定する。
 - 引数なしの追加依頼では記録先から executor・account・model・run-dir（および worker-state）を復元し、同じ run に委譲する。
 - 記録が欠落・不一致・曖昧な場合は Claude 実行へフォールバックせず、指定の再入力を求めて停止する。
 - 追加依頼、レビュー、修正でも既存 develop の工程順・仕様要否・レビュー条件を維持し、Codex 専用ゲートを追加しない。
-- 設定復元、復元不能時の停止、追加依頼の委譲先固定を回帰テストし、追加依頼を含む公開 PR finish/G 完走の実測記録を残す。
+- coordinator と担当者の責務（記録・ログ・GitHub・transport と、調査・修正・レビューの委譲）を固定する。
+- 設定復元、復元不能時の停止、追加依頼の委譲先固定、責務境界を fixture 回帰テストし、追加依頼を含む公開 PR finish/G 完走の実測記録を残す。
 
 ## Capabilities
 
