@@ -177,6 +177,68 @@ class ManualDevelop(unittest.TestCase):
                     self.fake.start()
 
 
+class ContinuationRecord(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.cwd = self.root / 'repo'
+        self.cwd.mkdir()
+        subprocess.run(['git', 'init', '-q', str(self.cwd)], check=True)
+        subprocess.run(['git', '-C', str(self.cwd), '-c', 'user.name=Test',
+                        '-c', 'user.email=test@example.invalid', 'commit',
+                        '--allow-empty', '-qm', 'fixture'], check=True)
+        self.run = self.root / 'run'
+        self.run.mkdir(mode=0o700)
+        m.write(self.run / 'run.json', {
+            'account': 'acct', 'model': 'model', 'cwd': str(self.cwd),
+            'worker_state': str(self.root / 'worker'), 'pending': None,
+            'history': [],
+        })
+
+    def record(self, **overrides):
+        values = {
+            'executor': 'codex', 'account': 'acct', 'model': 'model',
+            'run-dir': str(self.run), 'worker-state': str(self.root / 'worker'),
+            'cwd': str(self.cwd),
+        }
+        values.update(overrides)
+        return m.format_continuation_record(values)
+
+    def test_record_round_trips_utf8_reserved_values(self):
+        values = {
+            'executor': 'codex', 'account': '名前 %=', 'model': 'model/β',
+            'run-dir': str(self.run), 'worker-state': str(self.root / 'worker'),
+            'cwd': str(self.cwd),
+        }
+        self.assertEqual(m.parse_continuation_record(m.format_continuation_record(values)), values)
+        line = m.format_continuation_record(values)
+        self.assertIn('%E5%90%8D%E5%89%8D', line)
+        self.assertNotIn('名前', line)
+
+    def test_latest_candidate_is_selected_and_invalid_latest_stops(self):
+        old = self.record()
+        comments = [{'id': 1, 'body': '<!-- unrelated -->'}, {'id': 4, 'body': old}]
+        self.assertEqual(m.select_continuation_record(comments), m.parse_continuation_record(old))
+        comments.append({'id': 5, 'body': old.replace('executor=codex', 'unknown=x executor=codex')})
+        with self.assertRaisesRegex(m.ContinuationError, 'invalid'):
+            m.select_continuation_record(comments)
+
+    def test_selected_source_and_run_values_must_match(self):
+        record = m.parse_continuation_record(self.record())
+        self.assertEqual(m.validate_continuation(record, self.run), record)
+        with self.assertRaisesRegex(m.ContinuationError, 'mismatch'):
+            m.validate_continuation(dict(record, model='other'), self.run)
+        with self.assertRaisesRegex(m.ContinuationError, 'codex'):
+            m.validate_continuation(dict(record, executor='claude'), self.run)
+
+    def test_missing_or_malformed_record_fails_closed_without_fallback(self):
+        with self.assertRaisesRegex(m.ContinuationError, 'not found'):
+            m.select_continuation_record([])
+        with self.assertRaisesRegex(m.ContinuationError, 'invalid'):
+            m.parse_continuation_record('<!-- codex-develop-continuation:v1 executor=codex account= -->')
+
+
 class TransportIntegration(unittest.TestCase):
     def test_no_spec_assignment_reaches_actual_worker_and_preserves_review_result(self):
         # Fake only the external App Server; exercise both real CLI processes/ledgers.

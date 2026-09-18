@@ -9,6 +9,8 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 
 `$ARGUMENTS` に `--executor codex` があれば、同時に `--account <登録名>` と `--model <CodexモデルID>` を必須とする。欠けていれば開始せず指定を求める。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用する。`--executor` 未指定は従来のClaude経路。未知のexecutorは拒否する。Codex指定時にAgent/execへfallbackしない。実行先オプションは委譲transportだけを変え、仕様要否・レビュー・チェック・順序は既存develop正本を使う。Codex指定で仕様を必須にしない。
 
+引数なしの追加依頼では初回の Codex 設定を再推測しない。既存 develop が選んだ記録先（issue、issue が無い場合は Draft PR）のコメントを本体が取得し、`<!-- codex-develop-continuation:v1 ... -->` の最新候補を検証する。不在・不正・run の固定値との不一致なら Claude や別 run/account へ fallback せず、executor/account/model/run-dir の指定を求めて停止する。形式の生成・解析と run 検証は `scripts/codex-develop.py` の継続記録ヘルパーを使う。
+
 Codexオプション `--worker-state DIR` は登録済みworker台帳を指定する。省略時は `$HOME/.local/state/claude-harness-codex/jobs`。`--run-dir DIR` は継続するrunを明示するときに指定する。新規で省略するとinitが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作り返す。本体は返された絶対pathを記録先と会話に記録し、以後の全操作で同じpathを使う。これらも依頼本文から除外する。
 
 `develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0・エピックの扱い）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。このコマンドはそれを Read tool で読み込み、その指示に従ってメインセッションで interactive モードのままインライン実行する。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
