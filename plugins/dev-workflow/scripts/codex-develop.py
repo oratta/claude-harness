@@ -89,6 +89,17 @@ def select_continuation_record(comments):
         raise ContinuationError(f'invalid latest continuation record: {exc}') from exc
 
 
+def restore_continuation(*, issue_comments=None, draft_pr_comments=None):
+    """Restore coordinator-fetched comments; None means no issue, [] an empty issue.
+
+    Only the selected source is inspected, including when its record is missing
+    or invalid. GitHub access and subsequent dispatch remain coordinator-owned.
+    """
+    comments = issue_comments if issue_comments is not None else draft_pr_comments
+    record = select_continuation_record(comments if comments is not None else [])
+    return validate_continuation(record, record['run-dir'])
+
+
 def validate_continuation(record, run_dir):
     """Validate record values against the fixed private run before reuse."""
     directory = Path(run_dir).expanduser().resolve()

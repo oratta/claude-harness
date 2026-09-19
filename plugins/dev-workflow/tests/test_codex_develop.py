@@ -232,6 +232,85 @@ class ContinuationRecord(unittest.TestCase):
         with self.assertRaisesRegex(m.ContinuationError, 'codex'):
             m.validate_continuation(dict(record, executor='claude'), self.run)
 
+    def test_duplicate_keys_in_latest_record_stop_without_using_older_record(self):
+        valid = self.record()
+        for invalid in (valid.replace('model=model', 'account=model'),
+                        valid.replace('account=acct', 'account=acct account=other')):
+            with self.subTest(record=invalid):
+                with self.assertRaisesRegex(m.ContinuationError, 'invalid latest'):
+                    m.select_continuation_record([
+                        {'id': 9, 'body': invalid}, {'id': 1, 'body': valid},
+                    ])
+
+    def test_restore_uses_only_issue_or_draft_pr_selected_source(self):
+        valid = self.record()
+        selected = [{'id': 8, 'body': valid},
+                    {'id': 2, 'body': self.record(account='old')}]
+        unselected = [{'id': 99, 'body': valid.replace('model=model', 'unknown=x')}]
+        expected = m.parse_continuation_record(valid)
+        self.assertEqual(m.restore_continuation(issue_comments=selected,
+                                               draft_pr_comments=unselected), expected)
+        self.assertEqual(m.restore_continuation(draft_pr_comments=selected), expected)
+        # An existing issue with no usable record must not fall back to the PR.
+        for issue in ([], unselected):
+            with self.subTest(issue=issue):
+                with self.assertRaises(m.ContinuationError):
+                    m.restore_continuation(issue_comments=issue, draft_pr_comments=selected)
+        with self.assertRaises(m.ContinuationError):
+            m.restore_continuation(draft_pr_comments=unselected)
+
+    def dispatch_restored(self, comments, instructions):
+        record = m.restore_continuation(issue_comments=comments)
+        with patch.object(sys, 'argv', [str(SCRIPT), '--run-dir', record['run-dir'],
+                                      'dispatch', '--phase', 'implement',
+                                      '--input', str(instructions)]):
+            return m.main()
+
+    def test_initial_record_restores_same_run_and_dispatch_identity(self):
+        # Exercise init and dispatch, replacing only the external worker transport.
+        self.run = self.root / 'initialized-run'
+        with patch.object(sys, 'argv', [str(SCRIPT), '--run-dir', str(self.run), 'init',
+                                      '--account', 'acct', '--model', 'model',
+                                      '--worker-state', str(self.root / 'worker'),
+                                      '--cwd', str(self.cwd)]):
+            initialized = m.main()
+        comments = [{'id': 1, 'body': self.record()}]
+        instructions = self.root / 'additional-request.txt'
+        instructions.write_text('Additional request: fix the reported defect.')
+        with patch.object(m, 'worker', return_value={'status': 'completed'}) as worker:
+            self.dispatch_restored(comments, instructions)
+        state, command, option, request_path = worker.call_args.args
+        self.assertEqual((command, option), ('submit', '--request'))
+        self.assertEqual(Path(request_path).parent, Path(initialized['run_dir']))
+        request = json.loads(Path(request_path).read_text())
+        self.assertEqual((request['account'], request['model'], request['cwd']),
+                         ('acct', 'model', str(self.cwd)))
+        self.assertEqual(state['worker_state'], str(self.root / 'worker'))
+        self.assertEqual(state['pending'], request['request_id'])
+        self.assertIn(instructions.read_text(), request['prompt'])
+        self.assertEqual(request['role'], 'implement')
+
+    def test_run_json_mismatch_stops_before_delegation(self):
+        comments = [{'id': 1, 'body': self.record()}]
+        path = self.run / 'run.json'
+        original = json.loads(path.read_text())
+        instructions = self.root / 'additional-request.txt'
+        instructions.write_text('Additional request')
+        for key, record_key in [('account', 'account'), ('model', 'model'),
+                                ('worker_state', 'worker-state'), ('cwd', 'cwd')]:
+            with self.subTest(key=key), patch.object(m, 'worker') as worker:
+                m.write(path, dict(original, **{key: 'different'}))
+                with self.assertRaisesRegex(m.ContinuationError, record_key + ' mismatch'):
+                    self.dispatch_restored(comments, instructions)
+                worker.assert_not_called()
+                self.assertFalse((self.run / 'request.json').exists())
+                self.assertIsNone(json.loads(path.read_text())['pending'])
+        path.unlink()
+        with patch.object(m, 'worker') as worker:
+            with self.assertRaisesRegex(m.ContinuationError, 'unavailable'):
+                self.dispatch_restored(comments, instructions)
+            worker.assert_not_called()
+
     def test_missing_or_malformed_record_fails_closed_without_fallback(self):
         with self.assertRaisesRegex(m.ContinuationError, 'not found'):
             m.select_continuation_record([])

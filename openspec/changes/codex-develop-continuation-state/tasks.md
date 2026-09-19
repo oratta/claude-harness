@@ -13,4 +13,4 @@
 ## 3. ドキュメント
 
 - [x] 3.1 develop command と Codex adapter の継続記録・復元不能時の停止契約を更新する
-- [x] 3.2 issue 315 の未了項目と実測結果を既存 `manual-codex-develop` の記録へ反映する
+- [x] 3.2 issue 315 の未了項目と現時点のローカル検証結果を既存 `manual-codex-develop` の記録へ反映する（2.3 の公開 PR 実測結果は未了として明記し、実測後に coordinator が追記）
