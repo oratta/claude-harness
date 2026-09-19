@@ -35,9 +35,17 @@ run_test_sh_isolated() {
   cd "$REPO" && git add -A && TEST_RESIDUAL_GRACE=2 sh scripts/test.sh
 }
 
-@test "fd 3 を握った背景プロセスが残ると test.sh は非 0 で終わり、残留を表示して回収する" {
-  cat >"$REPO/t/leak.bats" <<'BATS'
-@test "leaks a child holding the bats output pipe" {
+# 内側の .bats を stdin から書く。本文では @test を @@TEST と書く。
+# 行頭の @test をこのファイルに書くと、bats 1.10（CI）の前処理はヒアドキュメントの中でも
+# 外側のテストとして数え、実在しない関数を呼んで "unknown test name" で落ちる。
+write_inner_suite() { # <name>
+  sed 's/^@@TEST /@test /' >"$REPO/t/$1.bats"
+}
+
+# fd 3 を握った背景プロセスが残ると test.sh は非 0 で終わり、残留を表示して回収する
+@test "a leftover child holding fd 3 makes test.sh fail, report it and reap it" {
+  write_inner_suite leak <<'BATS'
+@@TEST "leaks a child holding the bats output pipe" {
   sleep 1234 >/dev/null 2>&1 &
 }
 BATS
@@ -53,10 +61,11 @@ BATS
   [ "$status" -ne 0 ]
 }
 
-@test "fd を閉じて teardown で回収する背景プロセスなら test.sh は 0 で終わる" {
-  cat >"$REPO/t/clean.bats" <<'BATS'
+# fd を閉じて teardown で回収する背景プロセスなら test.sh は 0 で終わる
+@test "a child with fds closed and reaped in teardown lets test.sh pass" {
+  write_inner_suite clean <<'BATS'
 teardown() { kill -9 "$(cat "$BATS_TEST_TMPDIR/pid")" 2>/dev/null || true; }
-@test "spawns a child with inherited fds closed" {
+@@TEST "spawns a child with inherited fds closed" {
   ( for f in /dev/fd/*; do f=${f##*/}; [ "$f" -gt 2 ] 2>/dev/null && eval "exec $f>&-" 2>/dev/null; done; exec sleep 1234 ) &
   echo $! >"$BATS_TEST_TMPDIR/pid"
   sleep 1
@@ -69,9 +78,10 @@ BATS
   [[ "$output" != *"残っています"* ]]
 }
 
-@test "fd は閉じていても teardown で回収されなかった背景プロセスは失敗にする" {
-  cat >"$REPO/t/survivor.bats" <<'BATS'
-@test "leaves a child alive after the test" {
+# fd は閉じていても teardown で回収されなかった背景プロセスは失敗にする
+@test "a child with fds closed but not reaped in teardown still fails test.sh" {
+  write_inner_suite survivor <<'BATS'
+@@TEST "leaves a child alive after the test" {
   ( for f in /dev/fd/*; do f=${f##*/}; [ "$f" -gt 2 ] 2>/dev/null && eval "exec $f>&-" 2>/dev/null; done; exec sleep 1234 ) &
 }
 BATS
