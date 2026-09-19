@@ -402,3 +402,21 @@ extract_context_cap_section() {
 @test "gate-runner.md: commit is also main's job, not G's" {
   grep -qE 'commit.*本体が行う|本体が.*commit' "${ROLES}/gate-runner.md"
 }
+
+@test "gate-runner: legacy fallback is measured and App Server mode stays separate" {
+  local doc token
+  doc="$(section "$GATE" 'レビューの実行者')"
+  for token in '従来モード' '実測したバイナリ無し・認証切れ・タイムアウト' 'companion / slash command が無ければ' 'exec を試す' 'companion 導入は任意' 'command -v codex' 'auth.json' '未試行' '引数誤り・権限拒否・通信障害' '暗黙にフォールバックしない'; do
+    echo "$doc" | grep -qF "$token"
+  done
+  echo "$doc" | grep -q '新 Codex モード.*App Server 固定.*適用しない'
+  ! echo "$doc" | grep -q 'サブスク切れ'
+}
+
+@test "gate-runner: full needs-reviewer carries evidence also used in PR comment" {
+  local doc token
+  doc="$(section "$GATE" 'needs-reviewer')"
+  for token in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:' '完了未確認' '架空の終了コード' 'light 判定のため' 'full・実測した Codex 不可' '同じ証拠'; do
+    echo "$doc" | grep -qF "$token"
+  done
+}
