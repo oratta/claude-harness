@@ -109,16 +109,22 @@ echo "----------------------------------------"
 #   3. bats が正常終了したあともグループに生き残りがあれば同様に失敗にする
 #      （fd を閉じていても teardown で回収し忘れた背景プロセスは欠陥）。
 #
-#   TEST_RESIDUAL_GRACE=<秒>   判定の猶予（非負整数。既定 15。テストからの短縮用）
+#   TEST_RESIDUAL_GRACE=<秒>   判定の猶予（6 桁までの非負整数。既定 15。テストからの短縮用）
 # ─────────────────────────────────────────────────────────────
 RESIDUAL_GRACE="${TEST_RESIDUAL_GRACE:-15}"
-# 整数以外は拒否する。[ -ge ] が比較エラーになると猶予超過が永遠に偽になり、
+# 比較できる非負整数以外は拒否する。[ -ge ] が比較エラーになると猶予超過が永遠に偽になり、
 # 残留があっても検査が働かないまま rc=0 で終わる（誤設定を黙って成功にしない）。
+# 桁数の上限は macOS の bash 3.2 の [ ] が 64bit 整数を超える値で
+# 「integer expression expected」になるため（猶予秒に 7 桁＝11 日以上は要らない）。
 case "$RESIDUAL_GRACE" in
   ""|*[!0-9]*)
     echo "TEST_RESIDUAL_GRACE は非負の整数（秒）で指定してください: '$RESIDUAL_GRACE'" >&2
     exit 1 ;;
 esac
+if [ "${#RESIDUAL_GRACE}" -gt 6 ]; then
+  echo "TEST_RESIDUAL_GRACE が大きすぎます（6 桁まで）: '$RESIDUAL_GRACE'" >&2
+  exit 1
+fi
 
 # bats 本体の実行ファイルがある libexec ディレクトリ（symlink を解決した実パス）。
 # bin/bats は自分の実パスの ../libexec/bats-core から bats・bats-exec-*・bats-format-* を

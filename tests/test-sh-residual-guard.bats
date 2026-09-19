@@ -145,15 +145,16 @@ BATS
   ! tracked_alive
 }
 
-# TEST_RESIDUAL_GRACE が非負整数でなければ、検査を黙って無効にせず非 0 で終える
-@test "a non-integer TEST_RESIDUAL_GRACE is rejected with a non-zero exit" {
+# TEST_RESIDUAL_GRACE が比較できる非負整数でなければ（小数・負数・文字・シェルの整数を溢れる桁数）、
+# 検査を黙って無効にせず非 0 で終える
+@test "an uncomparable TEST_RESIDUAL_GRACE is rejected with a non-zero exit" {
   write_inner_suite passing <<'BATS'
 @@TEST "passes" {
   true
 }
 BATS
   local g
-  for g in 0.5 -1 abc; do
+  for g in 0.5 -1 abc 9223372036854775808; do
     INNER_GRACE=$g
     run run_test_sh_isolated
     echo "grace=$g: $output"
