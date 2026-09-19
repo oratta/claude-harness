@@ -22,12 +22,12 @@ workspace-write の writableRoots は cwd と専用領域だけでなければ�
 - **WHEN** review/spec-review/impl-review/decider job が開始される
 - **THEN** readOnly policy と networkAccess=false、approvalPolicy=never を保持し、本変更で追加の書き込み許可を得ない
 
-### Requirement: 一時領域を別ジョブへ公開せず終了時に片付ける
-専用領域を別 job から読める状態にしてはならない（MUST NOT）。0700 だけで同一 UID の隔離を満たしたとみなしてはならない（MUST NOT）。確認済み終了後には ack を待たず削除し、削除失敗を隠してはならない（MUST NOT）。停止未確認の unknown は終了とみなさず、領域を再利用してはならない（MUST NOT）。
+### Requirement: 一時領域を別ジョブへ割り当てず確認済み終了後に片付ける
+専用領域を別 job に割り当てたり再利用したりしてはならない（MUST NOT）。確認済み終了後には ack を待たず削除しなければならず（MUST）、削除失敗を隠してはならない（MUST NOT）。停止未確認の unknown は終了とみなさず、領域の所有を保持しなければならない（MUST）。
 
-#### Scenario: 別ジョブの既知パスを読む
-- **WHEN** 同一 OS ユーザーの別 job が実行中 job の専用領域にある既知パスのファイルを読む
-- **THEN** 読み取りが拒否される。名前を知らないことや書き込み不可だけでは合格にならない
+#### Scenario: 別ジョブに一時領域を割り当てる
+- **WHEN** 同一 run 内を含む別 job に一時領域を割り当てる
+- **THEN** 実行中・停止未確認・終了済みの job の領域を割り当てたり再利用したりせず、新規の専用領域を使う
 
 #### Scenario: 確認済み終了の後を観測する
 - **WHEN** 成功、失敗、確認済み取消、または開始前失敗の worker が cleanup を終える
@@ -38,8 +38,8 @@ workspace-write の writableRoots は cwd と専用領域だけでなければ�
 - **THEN** 停止済みと推測せず既存の unknown 所有・再投入禁止を保ち、削除完了を主張しない
 
 ### Requirement: 実 Codex のテスト完走と拒否の証拠を残す
-実装は fake 回帰試験に加え、実 Codex implement role で scripts/test.sh 全件の成功件数・総件数・exit code と対象 HEAD を記録しなければならない（MUST）。拒否プローブ、ジョブ間読み取り隔離、終了時削除も実環境で確認し、CODEX-WORKER.md に実際の範囲と制約を反映しなければならない（MUST）。
+実装は fake 回帰試験に加え、実 Codex implement role で scripts/test.sh 全件の成功件数・総件数・exit code と対象 HEAD を記録しなければならない（MUST）。書き込み拒否プローブ、終了時削除も実環境で確認し、CODEX-WORKER.md に実際の範囲と制約を反映しなければならない（MUST）。
 
 #### Scenario: 実環境の受け入れ結果を記録する
 - **WHEN** 対象 HEAD の scripts/test.sh と境界プローブが完了する
-- **THEN** 全件成功・exit 0、許可先での成功、許可外での拒否とそのコマンド/出力/exit code、0700、別 job 読み取り拒否、終了後の領域不在を記録する。件数は過去の1465件を固定せず対象 HEAD の実測値を使う
+- **THEN** 全件成功・exit 0、許可先での成功、許可外での拒否とそのコマンド/出力/exit code、0700、終了後の領域不在を記録する。件数は過去の1465件を固定せず対象 HEAD の実測値を使う

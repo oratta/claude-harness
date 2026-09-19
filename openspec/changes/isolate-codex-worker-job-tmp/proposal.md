@@ -5,7 +5,7 @@ Issue #320: Codex worker の書き込み先が cwd のみに制限され、テ�
 ## What Changes
 
 - workspace-write role のジョブに、Git 管理外の専用一時ディレクトリを一つ割り当て、子プロセスの TMPDIR と追加 writableRoot にする。
-- ジョブ単位の 0700、終了時の削除、ジョブ間の非共有を契約にする。
+- ジョブ単位の所有者一致・0700、同一 run 内を含む別ジョブへの割り当て・再利用の禁止、確認済み終了後の ack を待たない削除を契約にする。停止未確認の unknown は所有を保持し、運用回復が未実装のため最終的な自動削除までは保証しない。
 - /tmp 全体・呼び出し元 TMPDIR の追加許可、network、approval、read-only role の緩和は禁止する。
 - fake 回帰試験と実 Codex の全件テスト・境界プローブを分けて記録する。
 
