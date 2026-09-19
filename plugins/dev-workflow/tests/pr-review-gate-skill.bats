@@ -173,7 +173,7 @@ setup() {
 @test "triage: pre-triage and availability fallback are distinguished, fallback kept" {
   # 既存のフォールバック記述（Codex が使えないときの迂回路）が残っている（回帰ガード）
   grep -q 'フォールバック' "$SKILL"
-  grep -q 'サブスク切れ' "$SKILL"
+  grep -q '実測したバイナリ無し・認証切れ・タイムアウト' "$SKILL"
   grep -q 'タイムアウト' "$SKILL"
   # 事前判定と障害時フォールバックの役割が書き分けられている
   grep -q '事前判定' "$SKILL"
@@ -303,4 +303,46 @@ run_block() {  # $1 = 手順番号, $2 = ブロックを特定する文字列。
   flat="$(printf '%s\n' "$s1" | tr '\n' ' ')"
   echo "$flat" | grep -qE 'passed を外したら[^。]*Draft でなければ[^。]*gh pr ready --undo'
   echo "$flat" | grep -qE 'passed が付いていなかった[^。]*Draft に戻さない'
+}
+
+review_execution() {
+  awk '/^#### 2-1[.]/{f=1; next} /^#### 2-2[.]/{f=0} f' "$SKILL"
+}
+
+@test "legacy: default table includes exec and companion with measured fallback" {
+  local doc
+  doc="$(review_execution)"
+  echo "$doc" | grep '^| .*既定' | grep -q 'codex exec'
+  echo "$doc" | grep '^| .*既定' | grep -q 'companion'
+  echo "$doc" | grep '^| フォールバック' | grep -q '実測したバイナリ無し・認証切れ・タイムアウト'
+}
+
+@test "legacy: availability requires measurement and rejects unsupported fallback" {
+  local doc token
+  doc="$(review_execution)"
+  for token in 'companion / slash command が無ければ' 'exec を試す' 'command -v codex' '実際の Codex 呼び出し' '認証切れ' '総待ちの上限' '未試行' 'auth.json' '引数誤り・権限拒否・通信障害' '暗黙にフォールバックしない' '単一回の待ち終了'; do
+    echo "$doc" | grep -qF "$token"
+  done
+}
+
+@test "legacy: PR evidence distinguishes light and full and records actual results" {
+  local doc token
+  doc="$(review_execution)"
+  for token in 'light 判定のため' 'full・実測した Codex 不可' '対象 HEAD:' '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:' '完了未確認' '架空の終了コード'; do
+    echo "$doc" | grep -qF "$token"
+  done
+}
+
+@test "legacy: App Server mode cannot inherit exec or Claude fallback" {
+  review_execution | grep -q '新 Codex モード.*App Server 固定.*適用しない'
+}
+
+@test "legacy: per-PC procedure records completion or unverified without fixed locations" {
+  local doc token
+  doc="$(awk '/^##### 各 PC の確認/{f=1; next} /^##### /{f=0} /^#### /{f=0} f' "$SKILL")"
+  [ -n "$doc" ]
+  for token in 'command -v codex' 'codex --version' 'PC 識別子:' '日時:' 'バイナリのパス・バージョン:' 'companion 有無:' '対象 HEAD・diff 範囲:' '経路・実行コマンド:' '完了状態・結果:' '可否 / 未確認:' '残課題:' '対象 issue' '認証情報' '実レビュー' 'subagent-waiting.md' '未実測は未確認' 'companion 導入は任意'; do
+    echo "$doc" | grep -qF "$token"
+  done
+  ! echo "$doc" | grep -qE 'github.com/|/Users/|#715'
 }
