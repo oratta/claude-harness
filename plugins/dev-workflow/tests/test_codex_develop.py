@@ -224,6 +224,34 @@ class ContinuationRecord(unittest.TestCase):
         with self.assertRaisesRegex(m.ContinuationError, 'invalid'):
             m.select_continuation_record(comments)
 
+    def test_latest_comment_with_multiple_candidates_stops(self):
+        first = self.record()
+        other = self.record(account='other')
+        for second in (other, other.replace('account=', 'unknown=x account='), first):
+            with self.subTest(second=second):
+                with self.assertRaisesRegex(m.ContinuationError, 'multiple'):
+                    m.select_continuation_record([{'id': 10, 'body': first + '\n' + second}])
+
+    def test_latest_broken_marker_stops_without_falling_back(self):
+        old = self.record()
+        latest = self.record(account='other')
+        for separator in ('\n', '\t', '', ':'):
+            with self.subTest(separator=separator):
+                broken = latest.replace(':v1 ', ':v1' + separator)
+                with self.assertRaisesRegex(m.ContinuationError, 'invalid latest'):
+                    m.select_continuation_record([
+                        {'id': 1, 'body': old}, {'id': 10, 'body': broken},
+                    ])
+
+    def test_latest_single_candidate_ignores_older_ambiguity(self):
+        old = self.record()
+        latest = self.record(account='other')
+        self.assertEqual(m.select_continuation_record([
+            {'id': 10, 'body': latest},
+            {'id': 1, 'body': old + '\n' + old},
+            {'id': 11, 'body': 'Unrelated comment'},
+        ]), m.parse_continuation_record(latest))
+
     def test_selected_source_and_run_values_must_match(self):
         record = m.parse_continuation_record(self.record())
         self.assertEqual(m.validate_continuation(record, self.run), record)

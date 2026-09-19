@@ -15,6 +15,7 @@ from urllib.parse import quote, unquote_to_bytes
 
 CONTINUATION_KEYS = ('executor', 'account', 'model', 'run-dir', 'worker-state', 'cwd')
 CONTINUATION_PATH_KEYS = frozenset(('run-dir', 'worker-state', 'cwd'))
+CONTINUATION_MARKER = '<!-- codex-develop-continuation:'
 CONTINUATION_PREFIX = '<!-- codex-develop-continuation:v1 '
 CONTINUATION_RE = r'<!-- codex-develop-continuation:v1 ((?:[A-Za-z0-9._~-]+=(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+ ){5}[A-Za-z0-9._~-]+=(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+) -->'
 
@@ -79,13 +80,17 @@ def select_continuation_record(comments):
     for comment in comments:
         body = comment.get('body', '') if isinstance(comment, dict) else ''
         for line in body.splitlines():
-            if line.startswith(CONTINUATION_PREFIX):
+            # Detect candidates independently of strict version/spacing syntax.
+            if line.lstrip().startswith(CONTINUATION_MARKER):
                 candidates.append((int(comment.get('id', 0)), line))
     if not candidates:
         raise ContinuationError('continuation record not found')
-    _, line = max(candidates, key=lambda item: item[0])
+    latest_id = max(comment_id for comment_id, _ in candidates)
+    latest = [line for comment_id, line in candidates if comment_id == latest_id]
+    if len(latest) != 1:
+        raise ContinuationError('multiple latest continuation records')
     try:
-        return parse_continuation_record(line)
+        return parse_continuation_record(latest[0])
     except ContinuationError as exc:
         raise ContinuationError(f'invalid latest continuation record: {exc}') from exc
 

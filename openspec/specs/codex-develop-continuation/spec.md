@@ -61,4 +61,3 @@ coordinator は記録先の選択、GitHub コメントの取得・保存、LLM 
 #### Scenario: 本体が記録・操作・代理 transport を担う
 - **WHEN** 継続記録、LLM ログ、GitHub コメント、commit、または push の操作が必要になる
 - **THEN** coordinator が許可された範囲で実行または worker の失敗時に代理し、担当者は GitHub やログの操作を実行しない。transport の完了だけでは品質承認・finish/G 合格と扱わない
-
