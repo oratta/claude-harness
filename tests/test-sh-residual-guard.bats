@@ -32,6 +32,13 @@ run_test_sh_isolated() {
     [ "$f" -gt 2 ] 2>/dev/null || continue
     eval "exec $f>&-" 2>/dev/null || true
   done
+  # 外側の bats の実行環境も渡さない。bats は PATH の先頭に自分の libexec を足すので、
+  # そのままだと内側の `bats` は外側の内部実行ファイルになる。それは export された
+  # bash 関数（bats_readlinkf）を前提にしていて、ubuntu の /bin/sh（dash）を通ると
+  # 関数が落ちて起動できない。PATH を bats 起動前に戻し、BATS_* も外してから呼ぶ。
+  local v
+  PATH=${BATS_SAVED_PATH:-$PATH}
+  for v in $(compgen -e | grep '^BATS_'); do unset "$v"; done
   cd "$REPO" && git add -A && TEST_RESIDUAL_GRACE=2 sh scripts/test.sh
 }
 
