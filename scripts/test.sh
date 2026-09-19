@@ -109,21 +109,55 @@ echo "----------------------------------------"
 #   3. bats が正常終了したあともグループに生き残りがあれば同様に失敗にする
 #      （fd を閉じていても teardown で回収し忘れた背景プロセスは欠陥）。
 #
-#   TEST_RESIDUAL_GRACE=<秒>   判定の猶予（既定 15。テストからの短縮用）
+#   TEST_RESIDUAL_GRACE=<秒>   判定の猶予（非負整数。既定 15。テストからの短縮用）
 # ─────────────────────────────────────────────────────────────
 RESIDUAL_GRACE="${TEST_RESIDUAL_GRACE:-15}"
+# 整数以外は拒否する。[ -ge ] が比較エラーになると猶予超過が永遠に偽になり、
+# 残留があっても検査が働かないまま rc=0 で終わる（誤設定を黙って成功にしない）。
+case "$RESIDUAL_GRACE" in
+  ""|*[!0-9]*)
+    echo "TEST_RESIDUAL_GRACE は非負の整数（秒）で指定してください: '$RESIDUAL_GRACE'" >&2
+    exit 1 ;;
+esac
+
+# bats 本体の実行ファイルがある libexec ディレクトリ（symlink を解決した実パス）。
+# bin/bats は自分の実パスの ../libexec/bats-core から bats・bats-exec-*・bats-format-* を
+# 起動するので、ps に出る bats のプロセスはこのディレクトリの実行ファイルになる。
+RESIDUAL_BATS_LIBEXEC=""
+if command -v perl >/dev/null 2>&1; then
+  RESIDUAL_BATS_LIBEXEC=$(perl -MCwd=abs_path -MFile::Basename=dirname \
+    -e '$b = abs_path($ARGV[0]) or exit; $d = abs_path(dirname($b) . "/../libexec/bats-core") or exit; print $d' \
+    "$(command -v bats)" 2>/dev/null)
+fi
+
+# コマンド行（ps -o command=）が bats 本体の実行ファイルか。
+# `bash <libexec>/bats-exec-test ...` のようにインタプリタ経由で見えるので先頭の bash/sh を外し、
+# 実行ファイルが RESIDUAL_BATS_LIBEXEC 直下の bats / bats-* であるときだけ真にし、その名前を name に残す
+# （コマンド文字列に bats-core 等を含むだけのプロセスは bats ではない）。
+is_bats_command() { # <command>
+  script=$1
+  case "${script%% *}" in bash|*/bash|sh|*/sh) script=${script#* } ;; esac
+  case "$script" in "$RESIDUAL_BATS_LIBEXEC"/*) ;; *) return 1 ;; esac
+  name=${script#"$RESIDUAL_BATS_LIBEXEC"/}
+  name=${name%% *}
+  case "$name" in */*) return 1 ;; bats|bats-*) return 0 ;; esac
+  return 1
+}
 
 # グループ内の bats 以外のプロセス（＝テストが起動して残った背景プロセス）の pid を列挙する。
 residual_pids() { # <pgid>
   for p in $(pgrep -g "$1" 2>/dev/null); do
-    cmd=$(ps -o command= -p "$p" 2>/dev/null)
-    case "$cmd" in
-      ""|*bats-core*|*bats-exec*|*bats-format*) continue ;;
-      cat)
-        # bats-format-cat の子 cat は bats 自身の一部
-        pp=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
-        case "$(ps -o command= -p "$pp" 2>/dev/null)" in *bats-format*) continue ;; esac ;;
-    esac
+    cmd=$(ps -ww -o command= -p "$p" 2>/dev/null)
+    [ -n "$cmd" ] || continue
+    is_bats_command "$cmd" && continue
+    if [ "$cmd" = cat ]; then
+      # bats-format-* の子 cat は bats 自身の一部
+      # （テストが起動した cat は親が bats-exec-test なので残留として扱う）
+      pp=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+      if is_bats_command "$(ps -ww -o command= -p "$pp" 2>/dev/null)"; then
+        case "$name" in bats-format-*) continue ;; esac
+      fi
+    fi
     echo "$p"
   done
 }
@@ -157,8 +191,8 @@ guard_interrupt() {
 }
 
 run_bats_guarded() {
-  if ! command -v perl >/dev/null 2>&1; then
-    echo "⚠ perl が無いので残留プロセス検査なしで bats を実行します" >&2
+  if ! command -v perl >/dev/null 2>&1 || [ ! -d "$RESIDUAL_BATS_LIBEXEC" ]; then
+    echo "⚠ perl が無いか bats の libexec（bin/bats の ../libexec/bats-core）が見つからないので残留プロセス検査なしで bats を実行します" >&2
     # shellcheck disable=SC2086
     ( cd "$ROOT" && bats $SUITES )
     return $?

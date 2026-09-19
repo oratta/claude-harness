@@ -16,11 +16,30 @@ setup() {
   mkdir -p "$REPO/scripts" "$REPO/t"
   cp "$ROOT/scripts/test.sh" "$REPO/scripts/test.sh"
   ( cd "$REPO" && git init -q && git config user.email t@example.com && git config user.name t )
+  # 内側のテストが起動した背景プロセスの PID をここに残す（BATS_* ではないので内側まで届く）
+  export RESIDUAL_TEST_PIDS="${BATS_TEST_TMPDIR}/spawned.pids"
+  INNER_GRACE=2
 }
 
 teardown() {
-  # test.sh が回収し損ねても、このテストが立てた sleep をホストに残さない
-  pkill -f "sleep 1234" 2>/dev/null || true
+  # test.sh が回収し損ねても、このテストが立てた背景プロセスをホストに残さない。
+  # 対象は記録した PID だけ（コマンド名で kill すると並列で走る別 worktree のテストを巻き込む）
+  local p
+  [ -s "$RESIDUAL_TEST_PIDS" ] || return 0
+  while read -r p; do
+    [ -n "$p" ] && kill -9 "$p" 2>/dev/null || true
+  done <"$RESIDUAL_TEST_PIDS"
+  return 0
+}
+
+# 記録した PID のうち生きているものがあれば 0
+tracked_alive() {
+  local p
+  [ -s "$RESIDUAL_TEST_PIDS" ] || return 1
+  while read -r p; do
+    [ -n "$p" ] && kill -0 "$p" 2>/dev/null && return 0
+  done <"$RESIDUAL_TEST_PIDS"
+  return 1
 }
 
 # 外側（この bats）の出力パイプを内側の test.sh に渡さない。渡すと内側で漏れた
@@ -39,7 +58,7 @@ run_test_sh_isolated() {
   local v
   PATH=${BATS_SAVED_PATH:-$PATH}
   for v in $(compgen -e | grep '^BATS_'); do unset "$v"; done
-  cd "$REPO" && git add -A && TEST_RESIDUAL_GRACE=2 sh scripts/test.sh
+  cd "$REPO" && git add -A && TEST_RESIDUAL_GRACE="$INNER_GRACE" sh scripts/test.sh
 }
 
 # 内側の .bats を stdin から書く。本文では @test を @@TEST と書く。
@@ -54,6 +73,7 @@ write_inner_suite() { # <name>
   write_inner_suite leak <<'BATS'
 @@TEST "leaks a child holding the bats output pipe" {
   sleep 1234 >/dev/null 2>&1 &
+  echo $! >>"$RESIDUAL_TEST_PIDS"
 }
 BATS
   run run_test_sh_isolated
@@ -65,8 +85,7 @@ BATS
   [[ "$output" == *"bats: 失敗あり"* ]]
   # 残留は test.sh が回収済み
   sleep 1
-  run pgrep -f "sleep 1234"
-  [ "$status" -ne 0 ]
+  ! tracked_alive
 }
 
 # fd を閉じて teardown で回収する背景プロセスなら test.sh は 0 で終わる
@@ -76,6 +95,7 @@ teardown() { kill -9 "$(cat "$BATS_TEST_TMPDIR/pid")" 2>/dev/null || true; }
 @@TEST "spawns a child with inherited fds closed" {
   ( for f in /dev/fd/*; do f=${f##*/}; [ "$f" -gt 2 ] 2>/dev/null && eval "exec $f>&-" 2>/dev/null; done; exec sleep 1234 ) &
   echo $! >"$BATS_TEST_TMPDIR/pid"
+  echo $! >>"$RESIDUAL_TEST_PIDS"
   sleep 1
   kill -0 "$(cat "$BATS_TEST_TMPDIR/pid")"
 }
@@ -92,6 +112,7 @@ BATS
   write_inner_suite survivor <<'BATS'
 @@TEST "leaves a child alive after the test" {
   ( for f in /dev/fd/*; do f=${f##*/}; [ "$f" -gt 2 ] 2>/dev/null && eval "exec $f>&-" 2>/dev/null; done; exec sleep 1234 ) &
+  echo $! >>"$RESIDUAL_TEST_PIDS"
 }
 BATS
   run run_test_sh_isolated
@@ -100,6 +121,44 @@ BATS
   [[ "$output" == *"回収されずに残っています"* ]]
   [[ "$output" == *"sleep 1234"* ]]
   sleep 1
-  run pgrep -f "sleep 1234"
+  ! tracked_alive
+}
+
+# 残留のコマンドにたまたま bats-core / bats-exec / bats-format が含まれていても、
+# bats 本体の実行ファイルでなければ残留として検出する
+@test "a leftover whose command merely mentions bats-core is still detected" {
+  mkdir -p "$BATS_TEST_TMPDIR/bats-core-fixture"
+  ln -s "$(command -v sleep)" "$BATS_TEST_TMPDIR/bats-core-fixture/bats-exec-sleep"
+  export FIXTURE_SLEEP="$BATS_TEST_TMPDIR/bats-core-fixture/bats-exec-sleep"
+  write_inner_suite lookalike <<'BATS'
+@@TEST "leaves a bats-looking child alive after the test" {
+  ( for f in /dev/fd/*; do f=${f##*/}; [ "$f" -gt 2 ] 2>/dev/null && eval "exec $f>&-" 2>/dev/null; done; exec "$FIXTURE_SLEEP" 1234 ) &
+  echo $! >>"$RESIDUAL_TEST_PIDS"
+}
+BATS
+  run run_test_sh_isolated
+  echo "$output"   # 失敗したときだけ bats が表示する（内側の test.sh の出力）
   [ "$status" -ne 0 ]
+  [[ "$output" == *"回収されずに残っています"* ]]
+  [[ "$output" == *"bats-core-fixture/bats-exec-sleep 1234"* ]]
+  sleep 1
+  ! tracked_alive
+}
+
+# TEST_RESIDUAL_GRACE が非負整数でなければ、検査を黙って無効にせず非 0 で終える
+@test "a non-integer TEST_RESIDUAL_GRACE is rejected with a non-zero exit" {
+  write_inner_suite passing <<'BATS'
+@@TEST "passes" {
+  true
+}
+BATS
+  local g
+  for g in 0.5 -1 abc; do
+    INNER_GRACE=$g
+    run run_test_sh_isolated
+    echo "grace=$g: $output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"TEST_RESIDUAL_GRACE"* ]]
+    [[ "$output" != *"bats: 全スイート pass"* ]]
+  done
 }
