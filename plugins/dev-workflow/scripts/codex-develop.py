@@ -14,6 +14,7 @@ from urllib.parse import quote, unquote_to_bytes
 
 
 CONTINUATION_KEYS = ('executor', 'account', 'model', 'run-dir', 'worker-state', 'cwd')
+CONTINUATION_PATH_KEYS = frozenset(('run-dir', 'worker-state', 'cwd'))
 CONTINUATION_PREFIX = '<!-- codex-develop-continuation:v1 '
 CONTINUATION_RE = r'<!-- codex-develop-continuation:v1 ((?:[A-Za-z0-9._~-]+=(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+ ){5}[A-Za-z0-9._~-]+=(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+) -->'
 
@@ -120,7 +121,16 @@ def validate_continuation(record, run_dir):
     if record.get('executor') != 'codex':
         raise ContinuationError('continuation executor mismatch: expected codex')
     for key, value in expected.items():
-        if record.get(key) != value:
+        actual = record.get(key)
+        if key in CONTINUATION_PATH_KEYS:
+            if not all(isinstance(path, str) and path for path in (actual, value)):
+                raise ContinuationError(f'continuation {key} mismatch')
+            try:
+                actual = str(Path(actual).expanduser().resolve())
+                value = str(Path(value).expanduser().resolve())
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise ContinuationError(f'continuation {key} is invalid') from exc
+        if actual != value:
             raise ContinuationError(f'continuation {key} mismatch')
     return record
 

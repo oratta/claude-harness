@@ -232,6 +232,80 @@ class ContinuationRecord(unittest.TestCase):
         with self.assertRaisesRegex(m.ContinuationError, 'codex'):
             m.validate_continuation(dict(record, executor='claude'), self.run)
 
+    def symlink_run(self):
+        alias = self.root / 'alias'
+        alias.symlink_to(self.root, target_is_directory=True)
+        return alias / 'run'
+
+    def test_symlink_run_path_restores_same_private_run(self):
+        alias_run = self.symlink_run()
+        record = m.parse_continuation_record(self.record(**{'run-dir': str(alias_run)}))
+        self.assertNotEqual(str(alias_run), str(self.run.resolve()))
+        self.assertTrue(alias_run.samefile(self.run))
+        for run_dir in (alias_run, self.run.resolve()):
+            with self.subTest(run_dir=run_dir):
+                self.assertEqual(m.validate_continuation(record, run_dir), record)
+        self.assertEqual(m.restore_continuation(issue_comments=[
+            {'id': 1, 'body': self.record(**{'run-dir': str(alias_run)})},
+        ]), record)
+
+    def test_symlink_run_path_to_different_directory_stops(self):
+        other = self.root / 'other-run'
+        other.mkdir(mode=0o700)
+        (other / 'run.json').write_text((self.run / 'run.json').read_text())
+        alias = self.root / 'other-alias'
+        alias.symlink_to(other, target_is_directory=True)
+        record = m.parse_continuation_record(self.record(**{'run-dir': str(alias)}))
+        with self.assertRaisesRegex(m.ContinuationError, 'run-dir mismatch'):
+            m.validate_continuation(record, self.run)
+
+    def test_symlink_run_path_preserves_permissions_and_ownership_checks(self):
+        alias_run = self.symlink_run()
+        comments = [{'id': 1, 'body': self.record(**{'run-dir': str(alias_run)})}]
+        self.run.chmod(0o755)
+        with self.assertRaises(m.ContinuationError):
+            m.restore_continuation(issue_comments=comments)
+        self.run.chmod(0o700)
+        with patch.object(m.os, 'getuid', return_value=self.run.stat().st_uid + 1):
+            with self.assertRaises(m.ContinuationError):
+                m.restore_continuation(issue_comments=comments)
+
+    def test_symlink_worker_state_and_cwd_restore_same_paths(self):
+        (self.root / 'worker').mkdir()
+        alias_root = self.symlink_run().parent
+        state_path = self.run / 'run.json'
+        original = json.loads(state_path.read_text())
+        for key, state_key, name in [('worker-state', 'worker_state', 'worker'),
+                                     ('cwd', 'cwd', 'repo')]:
+            real = str((self.root / name).resolve())
+            alias = str(alias_root / name)
+            self.assertNotEqual(real, alias)
+            self.assertTrue(Path(alias).samefile(real))
+            for recorded, stored in [(alias, real), (real, alias)]:
+                with self.subTest(key=key, recorded=recorded, stored=stored):
+                    m.write(state_path, dict(original, **{state_key: stored}))
+                    line = self.record(**{key: recorded})
+                    self.assertEqual(m.restore_continuation(issue_comments=[
+                        {'id': 1, 'body': line},
+                    ]), m.parse_continuation_record(line))
+
+    def test_symlink_worker_state_and_cwd_to_different_paths_stop(self):
+        other = self.root / 'other'
+        other.mkdir()
+        alias = self.root / 'other-alias'
+        alias.symlink_to(other, target_is_directory=True)
+        state_path = self.run / 'run.json'
+        original = json.loads(state_path.read_text())
+        for key, state_key in [('worker-state', 'worker_state'), ('cwd', 'cwd')]:
+            for recorded, stored in [(str(alias), original[state_key]),
+                                     (original[state_key], str(alias))]:
+                with self.subTest(key=key, recorded=recorded, stored=stored):
+                    m.write(state_path, dict(original, **{state_key: stored}))
+                    with self.assertRaisesRegex(m.ContinuationError, key + ' mismatch'):
+                        m.restore_continuation(issue_comments=[
+                            {'id': 1, 'body': self.record(**{key: recorded})},
+                        ])
+
     def test_duplicate_keys_in_latest_record_stop_without_using_older_record(self):
         valid = self.record()
         for invalid in (valid.replace('model=model', 'account=model'),
@@ -284,8 +358,8 @@ class ContinuationRecord(unittest.TestCase):
         self.assertEqual(Path(request_path).parent, Path(initialized['run_dir']))
         request = json.loads(Path(request_path).read_text())
         self.assertEqual((request['account'], request['model'], request['cwd']),
-                         ('acct', 'model', str(self.cwd)))
-        self.assertEqual(state['worker_state'], str(self.root / 'worker'))
+                         ('acct', 'model', str(self.cwd.resolve())))
+        self.assertEqual(state['worker_state'], str((self.root / 'worker').resolve()))
         self.assertEqual(state['pending'], request['request_id'])
         self.assertIn(instructions.read_text(), request['prompt'])
         self.assertEqual(request['role'], 'implement')
