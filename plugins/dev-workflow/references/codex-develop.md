@@ -8,6 +8,18 @@
 
 既存登録accountを指定する。`docs/codex-develop.md` に導入方法を示す。人間の手動入口専用で、burn窓やcron/tickを要求しない。workerの認証・利用上限・権限拒否はそのまま停止理由とする。Codexが使えないときClaudeで代行しない。
 
+## 継続記録
+
+初回の Codex 設定を確定した coordinator は、既存 develop が選んだ記録先だけに次の固定 1 行を保存する。issue があれば issue を優先し、issue が無い場合だけ Draft PR を使う。別の記録先を横断検索してはならない。
+
+```text
+<!-- codex-develop-continuation:v1 executor=codex account=<value> model=<value> run-dir=<value> worker-state=<value> cwd=<value> -->
+```
+
+値は UTF-8 の RFC 3986 パーセントエンコード（`%HH` は大文字）で、キー順は固定。未知キー、重複キー、空値、改行、`executor` が `codex` 以外の記録は不正とする。コメント ID の降順で候補を調べ、最新候補が不正なら停止し、正しい最新候補だけを採用する。引数なしの追加依頼では、記録の 6 キーと run.json の account/model/worker-state/cwd、および記録された run-dir の所有権・0700 を検証してから同じ run に委譲する。復元できない場合は executor/account/model/run-dir の指定を求めて停止し、Claude・別 Codex・別 run へ fallback しない。
+
+機械処理は `scripts/codex-develop.py` の `format_continuation_record(values)`、`parse_continuation_record(line)`、`select_continuation_record(comments)`、`validate_continuation(record, run_dir)` を使う。これらは GitHub API を呼ばず、コメント取得・保存は coordinator の責務である。記録や run の検証成功は品質承認・verify・finish/G の代替ではない。
+
 ## 本体が行う操作
 
 1. develop入口0で記録先を確定し、対象repoのOrca等のルールで専用worktreeを用意する。CLIツール自身はworktreeを作らない。

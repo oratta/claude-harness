@@ -57,3 +57,28 @@ Claudeの会話で:
 訂正後は親タスクがworker20件＋adapter10件＝30件の成功を確認。旧runの品質フィールドを無視して再開でき、pendingは受領後のみ次へ進む。仕様不要経路もadapterによる追加条件なしで既存developへ接続する。実モデル4工程の追加再実行はしていない。
 
 追加レビューで旧版pendingの送信前失敗からの復旧経路を補った。`retry` は保存requestのidentity一致を検証し同じrequestを再送する。独自品質metadataは無視する一方、pending/ownershipは維持する。親タスクでworker20＋adapter12＝32件の最終検証が成功（exit 0）。既存Bats177件、OpenSpec strict、diff checkも成功。独立レビューで旧pendingの同一ID・payload再送を再現確認しCLOSED。adapter→実worker→模擬App Serverの仕様なし実装/read-onlyレビュー回収も成功。今回の検証では実モデルを呼んでいない。
+
+## 継続設定の復元（issue #315）
+
+2026-09-19、基点 HEAD `cec253f0098b480538802e02618c73965aec5aad` の作業差分で検証した。正本は `openspec/changes/codex-develop-continuation-state/specs/codex-develop-continuation/spec.md`。
+
+`codex-develop.py` の `restore_continuation` は coordinator が取得したコメントを受け取り、issue が存在すればそのコメントだけ、存在しなければ Draft PR のコメントだけを解析し、最新候補を保存済み run と照合する。`issue_comments=None` は issue 不在、空リストは issue にコメントがない状態であり、後者では PR に fallback しない。取得・保存・復元後の dispatch は coordinator の責務のまま。
+
+`plugins/dev-workflow/tests/test_codex_develop.py` に以下の fixture を追加した。
+
+| テスト名 | spec シナリオと確認内容 |
+|---|---|
+| `test_duplicate_keys_in_latest_record_stop_without_using_older_record` | 「記録形式と重複候補を fixture で判定する」: 6 キー内の重複と追加の重複キーを拒否し、古い正常記録へ戻らない |
+| `test_restore_uses_only_issue_or_draft_pr_selected_source` | 同シナリオ: issue 優先、issue 不在なら Draft PR、未選択側の新しい不正記録を無視、選択側が空・不正なら停止。古い正常候補も無視 |
+| `test_initial_record_restores_same_run_and_dispatch_identity` | 「初回設定から追加依頼を復元する」「追加依頼でも担当を変更しない」: 実 init → 記録 → 復元 → 実 dispatch を接続し、run/account/model/worker-state/cwd と追加依頼を確認。外部 worker transport のみ mock |
+| `test_run_json_mismatch_stops_before_delegation` | 「記録が不一致または曖昧」: run.json の account/model/worker-state/cwd 各不一致とファイル不在で停止し、worker 呼び出し・request 作成がないことを確認 |
+
+実行結果:
+
+- Red: `TMPDIR="$PWD/.tmp-bats" python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_develop.py -k ContinuationRecord -v` → exit 1。8 テスト中 3 メソッドで未実装の `restore_continuation` によるエラー（subtest を含む errors=7）。重複キーの拒否は既存実装で成功。
+- 実装後: `TMPDIR="$PWD/.tmp-bats" python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_develop.py -v` → exit 1。20 件中 19 成功、1 失敗。継続テスト 8 件（追加 4 件を含む）は全件成功。
+- 残る失敗は `test_no_spec_assignment_reaches_actual_worker_and_preserves_review_result`。診断で terminal の `error_kind=unsupported_project_config`、`status=failed` を確認した。fixture は HOME を一時ディレクトリに置き換えるが、今回の TMPDIR は実ユーザーのホーム配下にあり、その祖先の `~/.codex/config.toml` を worker が project config として拒否する。前回と同じ分類 (b) の環境依存失敗で、修正対象外。
+- `OPENSPEC_TELEMETRY=0 openspec validate codex-develop-continuation-state --strict` → exit 0。
+- `scripts/test.sh` は coordinator の別環境での結果を後から受領するため、この工程では実行していない。
+
+未了: issue #315 / tasks 2.3 の、追加依頼を含む公開 PR の finish/G までの実測。coordinator が実行コマンド、exit code、対象 HEAD、同一 executor/account/model/run-dir/worker-state/cwd の委譲記録、finish/G 結果と証跡 URL を追記する。上記 fixture と transport の成功は公開 PR 完走・品質承認の証拠ではなく、change 全体の検証完了とは扱わない。

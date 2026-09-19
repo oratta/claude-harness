@@ -10,6 +10,134 @@ import subprocess
 import stat
 import sys
 import uuid
+from urllib.parse import quote, unquote_to_bytes
+
+
+CONTINUATION_KEYS = ('executor', 'account', 'model', 'run-dir', 'worker-state', 'cwd')
+CONTINUATION_PATH_KEYS = frozenset(('run-dir', 'worker-state', 'cwd'))
+CONTINUATION_MARKER = '<!-- codex-develop-continuation:'
+CONTINUATION_PREFIX = '<!-- codex-develop-continuation:v1 '
+CONTINUATION_RE = r'<!-- codex-develop-continuation:v1 ((?:[A-Za-z0-9._~-]+=(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+ ){5}[A-Za-z0-9._~-]+=(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+) -->'
+
+
+class ContinuationError(ValueError):
+    """A continuation record cannot be trusted for fail-closed resumption."""
+
+
+def _continuation_encode(value):
+    if not isinstance(value, str) or not value:
+        raise ContinuationError('continuation values must be non-empty strings')
+    return quote(value, safe='-._~')
+
+
+def _continuation_decode(value):
+    if not value or '%' in value and any(
+            part != '%' and (len(part) < 2 or any(c not in '0123456789ABCDEF' for c in part[:2]))
+            for part in value.split('%')[1:]):
+        raise ContinuationError('invalid percent encoding')
+    try:
+        decoded = unquote_to_bytes(value).decode('utf-8')
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ContinuationError('invalid UTF-8 percent encoding') from exc
+    if not decoded:
+        raise ContinuationError('empty continuation value')
+    return decoded
+
+
+def format_continuation_record(values):
+    """Return the one-line machine-readable record written by the coordinator."""
+    if set(values) != set(CONTINUATION_KEYS):
+        raise ContinuationError('continuation keys must be exactly the required six keys')
+    if values.get('executor') != 'codex':
+        raise ContinuationError('continuation executor must be codex')
+    encoded = ' '.join(f'{key}={_continuation_encode(values[key])}' for key in CONTINUATION_KEYS)
+    return f'{CONTINUATION_PREFIX}{encoded} -->'
+
+
+def parse_continuation_record(line):
+    """Parse one exact continuation line, rejecting unknown and duplicate keys."""
+    import re
+    if not isinstance(line, str) or '\n' in line or '\r' in line or not re.fullmatch(CONTINUATION_RE, line):
+        raise ContinuationError('invalid continuation record')
+    payload = line[len(CONTINUATION_PREFIX):-4]
+    parts = payload.split(' ')
+    if len(parts) != len(CONTINUATION_KEYS):
+        raise ContinuationError('invalid continuation record')
+    values = {}
+    for part, key in zip(parts, CONTINUATION_KEYS):
+        name, separator, encoded = part.partition('=')
+        if separator != '=' or name != key or key in values:
+            raise ContinuationError('invalid continuation keys')
+        values[key] = _continuation_decode(encoded)
+    if values['executor'] != 'codex':
+        raise ContinuationError('continuation executor must be codex')
+    return values
+
+
+def select_continuation_record(comments):
+    """Select the newest candidate from the already-selected GitHub record source."""
+    candidates = []
+    for comment in comments:
+        body = comment.get('body', '') if isinstance(comment, dict) else ''
+        for line in body.splitlines():
+            # Detect candidates independently of strict version/spacing syntax.
+            if line.lstrip().startswith(CONTINUATION_MARKER):
+                candidates.append((int(comment.get('id', 0)), line))
+    if not candidates:
+        raise ContinuationError('continuation record not found')
+    latest_id = max(comment_id for comment_id, _ in candidates)
+    latest = [line for comment_id, line in candidates if comment_id == latest_id]
+    if len(latest) != 1:
+        raise ContinuationError('multiple latest continuation records')
+    try:
+        return parse_continuation_record(latest[0])
+    except ContinuationError as exc:
+        raise ContinuationError(f'invalid latest continuation record: {exc}') from exc
+
+
+def restore_continuation(*, issue_comments=None, draft_pr_comments=None):
+    """Restore coordinator-fetched comments; None means no issue, [] an empty issue.
+
+    Only the selected source is inspected, including when its record is missing
+    or invalid. GitHub access and subsequent dispatch remain coordinator-owned.
+    """
+    comments = issue_comments if issue_comments is not None else draft_pr_comments
+    record = select_continuation_record(comments if comments is not None else [])
+    return validate_continuation(record, record['run-dir'])
+
+
+def validate_continuation(record, run_dir):
+    """Validate record values against the fixed private run before reuse."""
+    directory = Path(run_dir).expanduser().resolve()
+    try:
+        info = directory.stat()
+        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
+            raise ContinuationError('run-dir ownership or permissions mismatch')
+        state = json.loads((directory / 'run.json').read_text())
+    except (OSError, ValueError, KeyError) as exc:
+        raise ContinuationError('run-dir is unavailable or invalid') from exc
+    expected = {
+        'run-dir': str(directory),
+        'account': state.get('account'),
+        'model': state.get('model'),
+        'worker-state': state.get('worker_state'),
+        'cwd': state.get('cwd'),
+    }
+    if record.get('executor') != 'codex':
+        raise ContinuationError('continuation executor mismatch: expected codex')
+    for key, value in expected.items():
+        actual = record.get(key)
+        if key in CONTINUATION_PATH_KEYS:
+            if not all(isinstance(path, str) and path for path in (actual, value)):
+                raise ContinuationError(f'continuation {key} mismatch')
+            try:
+                actual = str(Path(actual).expanduser().resolve())
+                value = str(Path(value).expanduser().resolve())
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise ContinuationError(f'continuation {key} is invalid') from exc
+        if actual != value:
+            raise ContinuationError(f'continuation {key} mismatch')
+    return record
 
 ROOT = Path(__file__).resolve().parents[1]
 PHASES = {

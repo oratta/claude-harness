@@ -177,6 +177,249 @@ class ManualDevelop(unittest.TestCase):
                     self.fake.start()
 
 
+class ContinuationRecord(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.cwd = self.root / 'repo'
+        self.cwd.mkdir()
+        subprocess.run(['git', 'init', '-q', str(self.cwd)], check=True)
+        subprocess.run(['git', '-C', str(self.cwd), '-c', 'user.name=Test',
+                        '-c', 'user.email=test@example.invalid', 'commit',
+                        '--allow-empty', '-qm', 'fixture'], check=True)
+        self.run = self.root / 'run'
+        self.run.mkdir(mode=0o700)
+        m.write(self.run / 'run.json', {
+            'account': 'acct', 'model': 'model', 'cwd': str(self.cwd),
+            'worker_state': str(self.root / 'worker'), 'pending': None,
+            'history': [],
+        })
+
+    def record(self, **overrides):
+        values = {
+            'executor': 'codex', 'account': 'acct', 'model': 'model',
+            'run-dir': str(self.run), 'worker-state': str(self.root / 'worker'),
+            'cwd': str(self.cwd),
+        }
+        values.update(overrides)
+        return m.format_continuation_record(values)
+
+    def test_record_round_trips_utf8_reserved_values(self):
+        values = {
+            'executor': 'codex', 'account': '名前 %=', 'model': 'model/β',
+            'run-dir': str(self.run), 'worker-state': str(self.root / 'worker'),
+            'cwd': str(self.cwd),
+        }
+        self.assertEqual(m.parse_continuation_record(m.format_continuation_record(values)), values)
+        line = m.format_continuation_record(values)
+        self.assertIn('%E5%90%8D%E5%89%8D', line)
+        self.assertNotIn('名前', line)
+
+    def test_latest_candidate_is_selected_and_invalid_latest_stops(self):
+        old = self.record()
+        comments = [{'id': 1, 'body': '<!-- unrelated -->'}, {'id': 4, 'body': old}]
+        self.assertEqual(m.select_continuation_record(comments), m.parse_continuation_record(old))
+        comments.append({'id': 5, 'body': old.replace('executor=codex', 'unknown=x executor=codex')})
+        with self.assertRaisesRegex(m.ContinuationError, 'invalid'):
+            m.select_continuation_record(comments)
+
+    def test_latest_comment_with_multiple_candidates_stops(self):
+        first = self.record()
+        other = self.record(account='other')
+        for second in (other, other.replace('account=', 'unknown=x account='), first):
+            with self.subTest(second=second):
+                with self.assertRaisesRegex(m.ContinuationError, 'multiple'):
+                    m.select_continuation_record([{'id': 10, 'body': first + '\n' + second}])
+
+    def test_latest_broken_marker_stops_without_falling_back(self):
+        old = self.record()
+        latest = self.record(account='other')
+        for separator in ('\n', '\t', '', ':'):
+            with self.subTest(separator=separator):
+                broken = latest.replace(':v1 ', ':v1' + separator)
+                with self.assertRaisesRegex(m.ContinuationError, 'invalid latest'):
+                    m.select_continuation_record([
+                        {'id': 1, 'body': old}, {'id': 10, 'body': broken},
+                    ])
+
+    def test_latest_single_candidate_ignores_older_ambiguity(self):
+        old = self.record()
+        latest = self.record(account='other')
+        self.assertEqual(m.select_continuation_record([
+            {'id': 10, 'body': latest},
+            {'id': 1, 'body': old + '\n' + old},
+            {'id': 11, 'body': 'Unrelated comment'},
+        ]), m.parse_continuation_record(latest))
+
+    def test_selected_source_and_run_values_must_match(self):
+        record = m.parse_continuation_record(self.record())
+        self.assertEqual(m.validate_continuation(record, self.run), record)
+        with self.assertRaisesRegex(m.ContinuationError, 'mismatch'):
+            m.validate_continuation(dict(record, model='other'), self.run)
+        with self.assertRaisesRegex(m.ContinuationError, 'codex'):
+            m.validate_continuation(dict(record, executor='claude'), self.run)
+
+    def symlink_run(self):
+        alias = self.root / 'alias'
+        alias.symlink_to(self.root, target_is_directory=True)
+        return alias / 'run'
+
+    def test_symlink_run_path_restores_same_private_run(self):
+        alias_run = self.symlink_run()
+        record = m.parse_continuation_record(self.record(**{'run-dir': str(alias_run)}))
+        self.assertNotEqual(str(alias_run), str(self.run.resolve()))
+        self.assertTrue(alias_run.samefile(self.run))
+        for run_dir in (alias_run, self.run.resolve()):
+            with self.subTest(run_dir=run_dir):
+                self.assertEqual(m.validate_continuation(record, run_dir), record)
+        self.assertEqual(m.restore_continuation(issue_comments=[
+            {'id': 1, 'body': self.record(**{'run-dir': str(alias_run)})},
+        ]), record)
+
+    def test_symlink_run_path_to_different_directory_stops(self):
+        other = self.root / 'other-run'
+        other.mkdir(mode=0o700)
+        (other / 'run.json').write_text((self.run / 'run.json').read_text())
+        alias = self.root / 'other-alias'
+        alias.symlink_to(other, target_is_directory=True)
+        record = m.parse_continuation_record(self.record(**{'run-dir': str(alias)}))
+        with self.assertRaisesRegex(m.ContinuationError, 'run-dir mismatch'):
+            m.validate_continuation(record, self.run)
+
+    def test_symlink_run_path_preserves_permissions_and_ownership_checks(self):
+        alias_run = self.symlink_run()
+        comments = [{'id': 1, 'body': self.record(**{'run-dir': str(alias_run)})}]
+        self.run.chmod(0o755)
+        with self.assertRaises(m.ContinuationError):
+            m.restore_continuation(issue_comments=comments)
+        self.run.chmod(0o700)
+        with patch.object(m.os, 'getuid', return_value=self.run.stat().st_uid + 1):
+            with self.assertRaises(m.ContinuationError):
+                m.restore_continuation(issue_comments=comments)
+
+    def test_symlink_worker_state_and_cwd_restore_same_paths(self):
+        (self.root / 'worker').mkdir()
+        alias_root = self.symlink_run().parent
+        state_path = self.run / 'run.json'
+        original = json.loads(state_path.read_text())
+        for key, state_key, name in [('worker-state', 'worker_state', 'worker'),
+                                     ('cwd', 'cwd', 'repo')]:
+            real = str((self.root / name).resolve())
+            alias = str(alias_root / name)
+            self.assertNotEqual(real, alias)
+            self.assertTrue(Path(alias).samefile(real))
+            for recorded, stored in [(alias, real), (real, alias)]:
+                with self.subTest(key=key, recorded=recorded, stored=stored):
+                    m.write(state_path, dict(original, **{state_key: stored}))
+                    line = self.record(**{key: recorded})
+                    self.assertEqual(m.restore_continuation(issue_comments=[
+                        {'id': 1, 'body': line},
+                    ]), m.parse_continuation_record(line))
+
+    def test_symlink_worker_state_and_cwd_to_different_paths_stop(self):
+        other = self.root / 'other'
+        other.mkdir()
+        alias = self.root / 'other-alias'
+        alias.symlink_to(other, target_is_directory=True)
+        state_path = self.run / 'run.json'
+        original = json.loads(state_path.read_text())
+        for key, state_key in [('worker-state', 'worker_state'), ('cwd', 'cwd')]:
+            for recorded, stored in [(str(alias), original[state_key]),
+                                     (original[state_key], str(alias))]:
+                with self.subTest(key=key, recorded=recorded, stored=stored):
+                    m.write(state_path, dict(original, **{state_key: stored}))
+                    with self.assertRaisesRegex(m.ContinuationError, key + ' mismatch'):
+                        m.restore_continuation(issue_comments=[
+                            {'id': 1, 'body': self.record(**{key: recorded})},
+                        ])
+
+    def test_duplicate_keys_in_latest_record_stop_without_using_older_record(self):
+        valid = self.record()
+        for invalid in (valid.replace('model=model', 'account=model'),
+                        valid.replace('account=acct', 'account=acct account=other')):
+            with self.subTest(record=invalid):
+                with self.assertRaisesRegex(m.ContinuationError, 'invalid latest'):
+                    m.select_continuation_record([
+                        {'id': 9, 'body': invalid}, {'id': 1, 'body': valid},
+                    ])
+
+    def test_restore_uses_only_issue_or_draft_pr_selected_source(self):
+        valid = self.record()
+        selected = [{'id': 8, 'body': valid},
+                    {'id': 2, 'body': self.record(account='old')}]
+        unselected = [{'id': 99, 'body': valid.replace('model=model', 'unknown=x')}]
+        expected = m.parse_continuation_record(valid)
+        self.assertEqual(m.restore_continuation(issue_comments=selected,
+                                               draft_pr_comments=unselected), expected)
+        self.assertEqual(m.restore_continuation(draft_pr_comments=selected), expected)
+        # An existing issue with no usable record must not fall back to the PR.
+        for issue in ([], unselected):
+            with self.subTest(issue=issue):
+                with self.assertRaises(m.ContinuationError):
+                    m.restore_continuation(issue_comments=issue, draft_pr_comments=selected)
+        with self.assertRaises(m.ContinuationError):
+            m.restore_continuation(draft_pr_comments=unselected)
+
+    def dispatch_restored(self, comments, instructions):
+        record = m.restore_continuation(issue_comments=comments)
+        with patch.object(sys, 'argv', [str(SCRIPT), '--run-dir', record['run-dir'],
+                                      'dispatch', '--phase', 'implement',
+                                      '--input', str(instructions)]):
+            return m.main()
+
+    def test_initial_record_restores_same_run_and_dispatch_identity(self):
+        # Exercise init and dispatch, replacing only the external worker transport.
+        self.run = self.root / 'initialized-run'
+        with patch.object(sys, 'argv', [str(SCRIPT), '--run-dir', str(self.run), 'init',
+                                      '--account', 'acct', '--model', 'model',
+                                      '--worker-state', str(self.root / 'worker'),
+                                      '--cwd', str(self.cwd)]):
+            initialized = m.main()
+        comments = [{'id': 1, 'body': self.record()}]
+        instructions = self.root / 'additional-request.txt'
+        instructions.write_text('Additional request: fix the reported defect.')
+        with patch.object(m, 'worker', return_value={'status': 'completed'}) as worker:
+            self.dispatch_restored(comments, instructions)
+        state, command, option, request_path = worker.call_args.args
+        self.assertEqual((command, option), ('submit', '--request'))
+        self.assertEqual(Path(request_path).parent, Path(initialized['run_dir']))
+        request = json.loads(Path(request_path).read_text())
+        self.assertEqual((request['account'], request['model'], request['cwd']),
+                         ('acct', 'model', str(self.cwd.resolve())))
+        self.assertEqual(state['worker_state'], str((self.root / 'worker').resolve()))
+        self.assertEqual(state['pending'], request['request_id'])
+        self.assertIn(instructions.read_text(), request['prompt'])
+        self.assertEqual(request['role'], 'implement')
+
+    def test_run_json_mismatch_stops_before_delegation(self):
+        comments = [{'id': 1, 'body': self.record()}]
+        path = self.run / 'run.json'
+        original = json.loads(path.read_text())
+        instructions = self.root / 'additional-request.txt'
+        instructions.write_text('Additional request')
+        for key, record_key in [('account', 'account'), ('model', 'model'),
+                                ('worker_state', 'worker-state'), ('cwd', 'cwd')]:
+            with self.subTest(key=key), patch.object(m, 'worker') as worker:
+                m.write(path, dict(original, **{key: 'different'}))
+                with self.assertRaisesRegex(m.ContinuationError, record_key + ' mismatch'):
+                    self.dispatch_restored(comments, instructions)
+                worker.assert_not_called()
+                self.assertFalse((self.run / 'request.json').exists())
+                self.assertIsNone(json.loads(path.read_text())['pending'])
+        path.unlink()
+        with patch.object(m, 'worker') as worker:
+            with self.assertRaisesRegex(m.ContinuationError, 'unavailable'):
+                self.dispatch_restored(comments, instructions)
+            worker.assert_not_called()
+
+    def test_missing_or_malformed_record_fails_closed_without_fallback(self):
+        with self.assertRaisesRegex(m.ContinuationError, 'not found'):
+            m.select_continuation_record([])
+        with self.assertRaisesRegex(m.ContinuationError, 'invalid'):
+            m.parse_continuation_record('<!-- codex-develop-continuation:v1 executor=codex account= -->')
+
+
 class TransportIntegration(unittest.TestCase):
     def test_no_spec_assignment_reaches_actual_worker_and_preserves_review_result(self):
         # Fake only the external App Server; exercise both real CLI processes/ledgers.
