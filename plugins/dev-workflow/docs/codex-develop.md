@@ -26,6 +26,16 @@ Claudeが既存developの進め方でworktree/記録先を準備し、仕様化�
 
 `--worker-state DIR` 未指定なら `$HOME/.local/state/claude-harness-codex/jobs`。上のregisterと同じ台帳を参照する。別の台帳で登録した場合は `/develop ... --worker-state /absolute/private/worker` を明示する。
 
+### 継続依頼の復元
+
+初回確定時、coordinator は既存 develop の記録先（issue 優先、issue が無ければ Draft PR）へ、次の 1 行を保存する。値は UTF-8 RFC 3986 パーセントエンコード、キー順固定である。
+
+```text
+<!-- codex-develop-continuation:v1 executor=codex account=<value> model=<value> run-dir=<value> worker-state=<value> cwd=<value> -->
+```
+
+引数なしの追加依頼では、その記録先だけをコメント ID の降順で調べ、最新候補が正確な形式であることを確認する。記録された 6 キーを run.json と照合し、run-dir の所有者とモード 0700 も検証する。不在・不正・重複/未知キー・不一致・run 不在は停止理由として executor/account/model/run-dir の指定を求める。Claude、別 account、別 run への暗黙 fallback はしない。記録の生成・解析・run 照合は `scripts/codex-develop.py` の継続記録ヘルパーを使い、GitHub コメント取得・保存は coordinator が代理する。
+
 新規開始で `--run-dir` を省略すると、initが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作り、JSONの`run_dir`を返す。Claudeはこの絶対pathを記録先に保存し、dispatch/status/result/ack等に必ず渡す。再開は `/develop ... --run-dir <保存したpath>` で既存runを読み、initを再実行しない。run内のaccount/model/worker_stateが指定と違えば再開せず不一致を報告する。台帳や最新runを探索して勝手に選ばない。
 
 ## 操作の確認例
@@ -42,6 +52,8 @@ python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 ack
 `request.txt` は担当工程の指示。本体は `references/codex-develop.md` の表でphaseを選ぶ。上記は送受信の例で、ackだけで仕様承認にはならない。review verdictと投稿を確認するのはClaude側。コマンド失敗はblockedで終了し、別providerへのfallbackはしない。run-dir/worker-stateには依頼・結果が残るため私有ディレクトリに置く。
 
 初版は全工程fresh thread。read-only reviewerは投稿を本体に返す。実モデルによる一件完走は統合検証の証拠を参照し、fake testsだけで実運用検証済みとは扱わない。
+
+公開 PR の finish/G までの実測は sandbox 外のため未実施である。追加依頼を含む実測時は、実行コマンド、exit code、対象 HEAD、executor/account/model/run-dir/worker-state/cwd、finish/G 結果と証跡 URL をこの記録へ追記する。
 
 phaseは役割指示の選択で、Codex独自の工程順序ではない。`spec` で既存の仕様化判断を依頼でき、仕様不要の結果なら本体は既存developどおり実装へ進む。仕様要否・レビュー・テスト・差戻し・archiveは既存の品質正本が管理し、adapterは起動・状態確認・結果回収・中断と実行先の固定に専念する。
 
