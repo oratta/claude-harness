@@ -1,6 +1,6 @@
 ---
 name: daily-report
-description: Fieldyの音声トランスクリプト（Notion DB_FIELDY）と、Obsidian Vault内の編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブで日次日記を生成する。「日記作って」「昨日の振り返りを作って」「Fieldyから日記を生成」で起動。`--with-album` フラグ付きで実行すると、diary 生成後に marketing-harness の `vlog-album` スキルを呼び出して diary と同じディレクトリにトイカメラ風 Vlog アルバム画像を出力する（デフォルトは 3 人とも女性版、`--gene male` で男性 Gene を opt-in）。`--force-rebuild` フラグで中間ファイル（voice.md / dailyLLM.md）を含めて再生成する。
+description: Fieldy の音声トランスクリプト・Obsidian Vault のノート・LLM ログ・Claude Code セッション jsonl を横断集約して日次日記を生成する。「日記作って」「昨日の振り返りを作って」「Fieldyから日記を生成」で起動。`--with-album`（Vlog アルバム画像も出力）・`--force-rebuild`（中間ファイルから再生成）を取る。
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, Skill
 ---
 
@@ -355,7 +355,7 @@ tags:
 
 Step 0 で `WITH_ALBUM=true` だった場合のみ実行する。`WITH_ALBUM=false` ならこの Step をスキップして Step 10 へ。
 
-このスキルは **marketing-harness の `vlog-album` スキル** に diary パスを渡してアルバム画像を生成し、生成物を **diary.md と同じディレクトリ** に配置する。
+このスキルは **marketing-harness の `vlog-album` スキル** に diary パスを渡してアルバム画像を生成し、生成物を **diary.md と同じディレクトリ** に配置する。出力はトイカメラ風 Vlog アルバム画像で、デフォルトは 3 人とも女性版、`--gene male` で男性 Gene を opt-in する。
 
 #### 9a. vlog-album スキルを呼び出す
 

@@ -162,3 +162,70 @@ SKILL.md は、仕様宣言が `対象 HEAD:` 規約に乗っているため aut
 - **WHEN** SKILL.md の仕様宣言に関する記述を読む
 - **THEN** auto-merge への組み込みは別 issue である旨が書かれている
 
+### Requirement: Codex の待ち方を読み手別に書き分ける
+`skills/pr-review-gate/SKILL.md` の Codex 呼び出し規約は、このスキルをメインセッションとサブエージェント G の両方が読むことを前提に、待ち方を読み手別に書き分けなければならない（MUST）。メインセッションは背景タスクの完了で再起動されるため `--background` 起動 ＋ 完了通知で続行してよい（SHALL）。サブエージェントは再起動されないため、完了確認を同一ターン内の前景ポーリングで行わなければならず（MUST）、完了通知を待つ目的でターンを終えてはならない（MUST NOT）。詳細の正本は `plugins/dev-workflow/references/subagent-waiting.md` を参照する（SHALL）。
+
+既存の「フォアグラウンドで完了を待つ呼び方を禁止する」の見出し文は、**前景 1 回で起動から完了まで待ち切ろうとする呼び方の禁止**と、**前景ポーリングでの完了確認の必須**が区別できる形に書き直さなければならない（MUST）。新方針と字面で衝突したまま残してはならない（MUST NOT）。
+
+#### Scenario: サブエージェントとして読む
+- **WHEN** G が pr-review-gate の Codex 呼び出し規約を読む
+- **THEN** 完了通知に頼らず同一ターン内で前景ポーリングして待つこと、待ちでターンを終えないことが読み取れる
+
+#### Scenario: メインセッションとして読む
+- **WHEN** 本体が pr-review-gate の Codex 呼び出し規約を読む
+- **THEN** `--background` 起動と完了通知での続行が引き続き許可されていることが読み取れる
+
+#### Scenario: 禁止文が新方針と衝突しない
+- **WHEN** Codex 呼び出し規約の冒頭の禁止文を読む
+- **THEN** 禁止されているのが「前景 1 回で完走させようとすること」だと分かり、「前景で待つこと自体が禁止」とは読めない
+
+### Requirement: 待ち値は正本に従い SKILL.md には再掲しない
+`skills/pr-review-gate/SKILL.md` は、`codex-companion.mjs status --wait` の `--timeout-ms` を必ず明示すること（既定は 4 分しかない）と、値が Bash 前景の上限（600000 ms）未満でなければならないことを書かなければならない（MUST）。従来の 900000 は前景上限を超えるため 1 回の呼び出しで完走せず、これが待ちの構造を壊す原因になっていた。
+
+**具体の待ち値・1 回で終わらなかったときの繰り返し・総待ちの上限は正本 `plugins/dev-workflow/references/subagent-waiting.md` に従うものとし、SKILL.md に数値を再掲してはならない（MUST NOT）。** 同じ手順を 2 か所に置くと片方だけ古くなるため。レビュー実行者の表にある「タイムアウト」が正本の定める総待ちの上限に達したことを指す、という定義だけは SKILL.md に残す（SHALL）。「1 回の呼び出しで最長 15 分待てる」のような、数値ガードに掛からない散文で前景上限を超える待ちを示唆する記述を残してはならない（MUST NOT）。
+
+#### Scenario: 待ち値の指定
+- **WHEN** SKILL.md の Codex 呼び出し規約を読む
+- **THEN** `--timeout-ms` を必ず明示すること・値が 600000 ms 未満であることが書かれ、具体の数値は正本に委ねられており、「最長 15 分待てる」の記述も残っていない
+
+#### Scenario: 1 回で終わらない Codex レビュー
+- **WHEN** 1 回の待ちで Codex が完了しない
+- **THEN** 繰り返しと上限の扱いは正本に従う旨が書かれており、待ちのためにターンを終える指示は無い
+
+#### Scenario: フォールバック条件のタイムアウトが定義されている
+- **WHEN** レビュー実行者の表にある「full だが Codex CLI が使えないとき（未導入・サブスク切れ・タイムアウト）」の「タイムアウト」が何を指すかを調べる
+- **THEN** 正本が定める総待ちの上限に達したことだと読み取れる
+
+### Requirement: ゲート合格まで PR を Draft のまま扱い、合格処理で Ready にする
+手順 5（合格処理）は、`needs-approval` が付いていないことを Ready 化より前に確認しなければならない（MUST。付いたまま Ready 化だけ済ませると、保留中の PR が Draft でなくなる）。そのうえで、PR が Draft（`gh api repos/$R/pulls/$N --jq .draft` が `true`）なら `gh pr ready` を実行してから `agent-review:passed` を付けなければならない（MUST）。順序は Ready 化 → passed 付与でなければならない（MUST）。passed を先に付けると、その labeled イベントは PR が draft のため auto-merge にスキップされ、Ready 化で CI が走らないリポでは次の判定が日次 schedule まで来ないためである。PR が Draft でなければ `gh pr ready` を実行してはならない（MUST NOT。人間が作った非 Draft の PR をそのまま通す）。Ready 化に失敗したとき、または `draft` を取得できなかったときは、`agent-review:passed` を付けずに合格処理を中断しなければならない（MUST。draft のまま passed を付けるとその labeled イベントはスキップされて消費され、あとで Ready 化をやり直しても新しい labeled は起きないため）。合格処理の最後の実測確認には、ラベル 3 点に加えて PR の `draft` が `false` であることを含めなければならない（MUST）。
+
+手順 1 で stale な `agent-review:passed` を外したとき、PR が Draft でなければ `gh pr ready --undo` で Draft に戻さなければならない（MUST）。passed が付いていなかった場合（初回のゲート・failed からの再レビュー・保留からの再開）は Draft に戻してはならない（MUST NOT）。
+
+#### Scenario: Draft の PR は Ready にしてから passed を付ける
+- **WHEN** SKILL.md の手順 5 を読む
+- **THEN** PR の `draft` を取得し、`true` のときだけ `gh pr ready` を実行する手順が `agent-review:passed` を付ける API 呼び出しより前に書かれている
+
+#### Scenario: 順序の理由が書かれている
+- **WHEN** SKILL.md の手順 5 の Ready 化の記述を読む
+- **THEN** passed を先に付けると labeled イベントが draft でスキップされ、Ready 化で CI が走らないリポでは日次の判定まで拾われないことが理由として書かれている
+
+#### Scenario: 実測確認に draft が含まれる
+- **WHEN** SKILL.md の手順 5 の最後の実測確認の表を読む
+- **THEN** `agent-review:passed` がある・`agent-review:pending` がない・`needs-approval` がない、に加えて PR の `draft` が `false` である行がある
+
+#### Scenario: Ready 化に失敗したら passed を付けない
+- **WHEN** Draft の PR で手順 5 の断片を実行し、`gh pr ready` が失敗する
+- **THEN** `agent-review:passed` を付ける API は呼ばれず、断片は非 0 で終わり、SKILL.md には passed の有無で分けた復旧手順が書かれている
+
+#### Scenario: 人間が作った非 Draft の PR では Ready 化を行わない
+- **WHEN** Draft でない PR がゲートの手順 5 に来る
+- **THEN** SKILL.md は Ready 化を「Draft なら」の条件付きで書いており、非 Draft の PR には `gh pr ready` を実行しない
+
+#### Scenario: 取り直しで stale passed を外すと Draft に戻す
+- **WHEN** SKILL.md の手順 1 の stale passed を外す記述を読む
+- **THEN** passed を外したときに PR が Draft でなければ `gh pr ready --undo` を実行する手順があり、passed が付いていなかった場合は Draft に戻さないと書かれている
+
+#### Scenario: G の指示書が Ready 化を含む
+- **WHEN** `skills/develop/references/roles/gate-runner.md` のやることと passed の return 書式を読む
+- **THEN** 手順 5 の要約に Ready 化（Draft なら）が入っており、passed の return に Ready 化の結果（実施した／対象外）を書く欄がある
+

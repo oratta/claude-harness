@@ -1,8 +1,8 @@
 # W（作業者）の指示書 — develop スキル
 
-develop の本体（オーケストレータ）から名前付きで spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned）・今回の工程（(1) 仕様化まで／(3) 実装から）。
+develop の本体（オーケストレータ）から名前付きで spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned）・今回の工程（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）。
 
-W は**このファイルだけ**を読んで動く（`SKILL.md` は本体向け）。判定基準の詳細は `references/decision-criteria.md`。
+W は**このファイルだけ**を読んで動く（`SKILL.md` は本体向け）。判定基準の詳細は `skills/develop/references/decision-criteria.md`。
 
 ## W がしないこと
 
@@ -46,14 +46,14 @@ openspec --version 2>/dev/null && echo "OPENSPEC_CLI"        # 2) openspec CLI
 # 3) どちらも無ければ仕様化経路は発生しない（コード直行。理由に「openspec 不在」と書く）
 ```
 
-次に、この依頼を**仕様として残すべきか**を判定する（詳細は `references/decision-criteria.md` Step B）:
+次に、この依頼を**仕様として残すべきか**を判定する（詳細は `skills/develop/references/decision-criteria.md` Step B）:
 
 - **仕様化する**（一次基準: 設計判断・トレードオフを含むか）: 複数案からの選択・採用理由など「なぜこう作ったか」を決定履歴に残す価値のある設計判断を含む／外部から観測可能な振る舞いの変更のうち実装方針に選択肢が残るもの／既存 capability の要件や docs に触れる
 - **仕様化しない（コード直行）**: typo・lint・コメント・フォーマットのみ／振る舞い不変の内部リファクタ・ワンライナー fix・依存バージョン上げのみ／**受け入れ条件が記録先に明記された機械的な振る舞い変更**（設計判断なし。記録先とテストが記録として十分）
 - どの判定でも**テスト作成は必須**（テストはドキュメントであると同時に、昇格トリップワイヤーの信号源）
 - 判定に迷ったら: interactive は return で本体に聞いてもらう（本体が AskUserQuestion）。unmanned は**仕様化する側に倒す**
 
-**判定したら、先に進む前に記録先へ記録する**（interactive / unmanned 共通）。後から「不要と判断した」のか「飛ばした」のかを区別し、pr-review-gate が出口で機械照合できるようにするため。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致させる（太字・全角コロン・末尾句点を付けない）。2 行目以降に理由（`references/decision-criteria.md` のどの条件に当たったか）を書く:
+**判定したら、先に進む前に記録先へ記録する**（interactive / unmanned 共通）。後から「不要と判断した」のか「飛ばした」のかを区別し、pr-review-gate が出口で機械照合できるようにするため。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致させる（太字・全角コロン・末尾句点を付けない）。2 行目以降に理由（`skills/develop/references/decision-criteria.md` のどの条件に当たったか）を書く:
 
 ```bash
 # issue が記録先
@@ -64,11 +64,11 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 判定をやり直したら同じ書式で投稿し直す（照合側は最新 1 件を正とする。契約の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）。**記録する前に分割判定・実装へ進まない。**
 
-仕様化しないと判定した場合は分割判定と `/opsx:ff` を飛ばし、本体に「仕様化しない」と return する（本体は (3) の実装から W を再開する。同じコンテキストなのでそのまま続けてよいと本体が指示することもある）。
+仕様化しないと判定した場合は分割判定と `/opsx:ff` を飛ばし、本体に「仕様化しない」と return する（本体は (3a) の実装から W を再開する。同じコンテキストなのでそのまま続けてよいと本体が指示することもある）。
 
 ## 分割判定（単一 change か複数 change か）
 
-仕様化すると判定した場合、規模を判定する（詳細は `references/decision-criteria.md` Step C）。根拠は**記録先の記述**（受け入れ条件・機能単位）だけで、機械的なシグナル（本文の長さやラベル）は使わない:
+仕様化すると判定した場合、規模を判定する（詳細は `skills/develop/references/decision-criteria.md` Step C）。根拠は**記録先の記述**（受け入れ条件・機能単位）だけで、機械的なシグナル（本文の長さやラベル）は使わない:
 
 - **単一 change で足りる**（すべて満たす）: 単一 capability に閉じる／受け入れ条件が概ね数個で 1 PR で完結／独立した設計判断が 1 つ以内
 - **複数 change に割れる**（いずれか成立）: 複数の独立 capability に跨る／受け入れ条件が多く順序依存のあるサブタスクに割れる／1 実装サイクルで完結しない規模
@@ -87,6 +87,8 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 ## 仕様化する場合（(1) の終わり）
 
+**対象の change が既に存在し artifact（proposal / design / tasks / specs）が揃っているなら、`/opsx:ff` を再実行しない。** 既存の artifact を上書きせず、そのまま「仕様できた: openspec/changes/<change-name>/」と本体に return して仕様レビューへ進む（Fable の対話セッションが `/develop` に入る前に change を作っておく形を禁じていないため、W が来た時点で既にあることがある）。
+
 ```
 /opsx:ff <change-name>     # 全 artifact（proposal / specs / design / tasks）を一括生成
 → 本体に return「仕様できた: openspec/changes/<change-name>/」
@@ -95,19 +97,25 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 - R1 が `REQUEST_CHANGES` を返したら、本体が SendMessage で再開する。指摘（BLOCKER / SHOULD_FIX）に従って artifact を直し、直した箇所を列挙して return する（再レビューは差分限定。2 周キャップ）
 - **opsx コマンドが無く openspec CLI だけある場合**は `openspec new change` → 各 artifact を直叩きで生成し、
-  同じく本体に return して**同じ仕様レビュー**（R1）を受ける。APPROVE 後に再開されたら実装 → `openspec archive` を直叩きで行う
+  同じく本体に return して**同じ仕様レビュー**（R1）を受ける。APPROVE 後の実装も工程の区切りは opsx 経路と同じで、
+  スラッシュコマンドが CLI に置き換わるだけ:
+  - (3a) は実装 → `openspec validate <change-name> --strict`（`/opsx:verify` の代わりの検証。あわせて
+    `tasks.md` のチェックボックスが全部 `[x]` になっていることを確認する）まで。ここで return する
+  - (3a) の return では `/opsx:verify` の合否の代わりに、この `openspec validate --strict` の exit code を載せる
+  - `openspec archive <change-name>` は (3b) で行う（(3a) で archive まで進めない）
 - 仕様レビュー結果は R1 が記録先にコメントする（1 行目 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$`）。W はそのコメントを見て APPROVE を確認してから実装に入る（書式の正本は `references/roles/spec-reviewer.md`）
 
-## 実装（(3)。TDD 徹底）
+## (3a) 実装＋verify（TDD 徹底）
 
-単一 change 1 つ分の実装手順。仕様化する場合と直行する場合で入口が違うだけで、**テストを先に書く**のは共通。
+単一 change 1 つ分の実装手順。仕様化する場合と直行する場合で入口が違うだけで、**テストを先に書く**のは共通。**この節は verify までで終わる**（archive 以降は次の (3b)）。
 
 **仕様化する場合（opsx 利用可能時）**:
 ```
 /opsx:apply <change-name>  # tasks を TDD で実装（各タスクを終えたら tasks.md のチェックボックスを [x] に）
 /opsx:verify <change-name> # 実装が artifact と一致するか検証
-/opsx:archive <change-name># 完了した change をアーカイブ（archive まで W の仕事。PR に archive 済みの状態を含める）
 ```
+
+**仕様化する場合（openspec CLI だけの経路）**: `/opsx:apply` の代わりに `tasks.md` を上から TDD で実装し（各タスクを終えたらチェックボックスを `[x]` に）、`/opsx:verify` の代わりに `openspec validate <change-name> --strict` を実行する。この節が verify までで終わるのは opsx 経路と同じで、`openspec archive` は (3b) で行う。
 
 **コード直行する場合（仕様化不要）**:
 1. 実装前に必ず codebase を grep して既存実装を確認する（二重実装しない）
@@ -117,28 +125,47 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 5. テスト・lint・ビルドを実行し、**exit code と出力の要約をターン内に表示してから**「完了」を宣言する。自己申告のみの完了宣言は禁止
 
 **全経路共通の大原則**:
+- **長時間処理（フルテスト・ビルド）の完了を待つ目的でターンを終えない。** 待ちは同一ターン内の前景ポーリングで行う（正本: `plugins/dev-workflow/references/subagent-waiting.md`。雛形と上限はそこにあり、ここには再掲しない。総待ちの上限に達したら待ちをやめて本体に return する）
 - プレースホルダ・空実装・コンパイルを通すだけの実装で済ませない
 - 完了・合格の宣言には必ず証拠（実行コマンドと exit code）を付ける
 - 作業の節目ごとに commit → push（記録先が Draft PR なら PR が逐次更新される）
 
-## PR と仕様宣言（(3) の終わり）
+**(3a) の return に書くこと**（1 行目は `工程完了: 実装＋verify`）:
 
-1. PR を用意する: 記録先が Draft PR ならそれを **Ready for Review** に切り替える（`gh pr ready <PR番号>`）。issue が記録先なら PR を作成する（本文に `Closes #<issue>`。unmanned では `plugins/dev-workflow/references/pr-body-format.md` の型に従い **Draft** のまま `agent-review:pending` を付ける — 憲法 Step 3 の 5〜6 に相当）
-2. **仕様宣言**を PR コメントに書く（書式・`対象 HEAD:` 規約の正本は pr-review-gate スキル手順 3。`仕様: 更新した`＋archive 済み・`仕様レビュー: APPROVE`、または `仕様: 変更なし`＋理由）
-3. return「PR #N（HEAD SHA）。実行したテストコマンドと exit code、仕様宣言のコメント URL、埋めた決定の列挙、昇格トリップワイヤーの発火有無」
+- **実行したテストコマンドと exit code**（フルテスト・lint・ビルド。失敗が残っていればその件数も）
+- **`/opsx:verify` の合否**（仕様化した場合。openspec CLI だけの経路では `openspec validate <change-name> --strict` の exit code。直行した場合は「仕様化しないため verify なし」と書く）
+- 編集したファイルの一覧・自分で埋めた決定・昇格トリップワイヤーの発火有無・残作業
 
-## 重要実装の事前分類（1 周目から Fable）
+この 2 つ（テストコマンドと exit code、`/opsx:verify` の合否）を必ず載せるのは、(3b) の担い手が pr-review-gate 手順 5 が照合する動作確認の証拠を書くための唯一の入力になるためである。手渡しが起きると後任は前任の履歴を読めないので、証拠が return に無ければフルテストを回し直すか証拠なしで宣言するかのどちらかになる。
 
-本体が W を spawn するときのモデル選択の正本（**この分類表がモデル事前分類の正本**。pr-review-gate スキル・R1・G からも参照される。ここ以外に再掲しない）。次のいずれかに触れる実装は、失敗 1 周のコスト（再実装＋再レビュー＋ゲート往復＋コンテキスト肥大）が Fable の単価差を上回るため、**トリップワイヤーの昇格を待たず最初から W を `model: fable` で spawn する**（Agent ツールの `model` パラメータ。セッション本体のモデル＝`AGENT_MODEL` は変えない）。
+## (3b) archive＋PR＋仕様宣言
 
-| 分類 | 具体 |
-|---|---|
-| 聖域パス | auto-merge の SACRED 定義に含まれるもの（`.github/workflows/` / `CLAUDE.md` / `.claude/` 配下 / 憲法 doc） |
-| マージ権限 | マージ条件・ラベル判定・レビューゲートの通過条件そのもの |
-| 層間契約 | プラグイン間・スキル間で共有する規約（hook 契約・スキーマ・レシピ形式・環境変数の意味） |
-| 課金/法務 | 支払い・レート/使用量制御・ライセンス・個人情報の扱い |
+(3a) の return を本体が受け取り、コンテキスト量を測ってから再開（または手渡し）されて入る節。実装内容には手を入れず、事務手続きだけを行う。
 
-- **残量モードが優先する**: `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では、事前分類に当たっても Fable に上げず Opus を上限とする（`references/decision-criteria.md` の残量モード表がそのまま効く）
+1. `/opsx:archive <change-name>`（仕様化した場合。openspec CLI だけの経路では `openspec archive <change-name>`。完了した change をアーカイブし、archive 済みの状態を PR に含める）
+2. PR を **Draft のまま**用意する: 記録先が Draft PR ならそのまま使う。issue が記録先なら `gh pr create --draft` で作成する（本文に `Closes #<issue>`。unmanned では `plugins/dev-workflow/references/pr-body-format.md` の型に従い `agent-review:pending` を付ける — 憲法 Step 3 の 5〜6 に相当）。W は Draft を外さない（Ready 化は G が pr-review-gate 手順 5 で `agent-review:passed` の直前に行う。CI を Draft で止めるリポで、レビューと修正の周回ごとに CI を走らせないため）
+3. **仕様宣言**を PR コメントに書く（書式・`対象 HEAD:` 規約の正本は pr-review-gate スキル手順 3。`仕様: 更新した`＋archive 済み・`仕様レビュー: APPROVE`、または `仕様: 変更なし`＋理由）
+4. return（1 行目は `工程完了: archive＋PR＋仕様宣言`）: **PR #N（HEAD SHA）と仕様宣言のコメント URL**、(3a) から引き継いだテストコマンドと exit code、埋めた決定の列挙、昇格トリップワイヤーの発火有無
+
+## 重要実装の事前分類（1 周目のモデルを上げる条件）
+
+W の既定モデルは `sonnet`（役割表の正本は `SKILL.md`「モデル」。設計判断を含む記録先は `opus`）。この表に当たる実装だけが 1 周目からモデルを上げる。
+
+本体が W を spawn するときのモデル選択の正本（**この分類表がモデル事前分類の正本**。pr-review-gate スキル・R1・G からも参照される。ここ以外に再掲しない）。次のいずれかに触れる実装は、失敗 1 周のコスト（再実装＋再レビュー＋ゲート往復＋コンテキスト肥大）が単価差を上回るため、**トリップワイヤーの昇格を待たず最初から表の「1 周目」のモデルで spawn する**（4 分類のいずれでも `model: opus`。Agent ツールの `model` パラメータ。セッション本体のモデル＝`AGENT_MODEL` は変えない）。
+
+| 分類 | 具体 | 1 周目 |
+|---|---|---|
+| 聖域パス | auto-merge の SACRED 定義に含まれるもの（`.github/workflows/` / `CLAUDE.md` / `.claude/` 配下 / 憲法 doc） | `opus`（聖域の安全はゲート側の判定が見る。エージェント設定が製品であるリポではほぼ全実装が聖域に当たり、2026-09 の監査で W の Fable の大半がこの行だった） |
+| マージ権限 | マージ条件・ラベル判定・レビューゲートの通過条件そのもの | `opus` |
+| 層間契約 | プラグイン間・スキル間で共有する規約（hook 契約・スキーマ・レシピ形式・環境変数の意味） | `opus` |
+| 課金/法務 | 支払い・レート/使用量制御・ライセンス・個人情報の扱い | `opus` |
+
+**W の上限は `opus`。** 4 分類のどれに当たっても W を `model: fable` で spawn しない（`scripts/agent-model-guard.sh` が PreToolUse で拒否する）。Fable が消費するのはターン数（会話履歴の cache 読込）で、実装・修正ループは 1 件で数十〜数百ターン回るため、実行役を Fable にすると週次枠が溶ける。「層間契約だから判断が要る」ぶんは仕様化判断・R1 レビュー・本体（Fable）の判断で吸収し、**W は確定した内容を落とす作業だけを担う**。
+
+**読んで判断する役は種別で上げる。** R1（仕様レビュー）と G が要求するレビュアーがこの表の分類に当たるときは、`subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` を付けない（ガードが拒否する）。当たらなければ従来どおり `opus`。
+
+- **残量モードが優先する**: `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では、決める役も `dev-workflow:decider` のまま `model: opus` を上限とする（`skills/develop/references/decision-criteria.md` の残量モード表がそのまま効く）。共有枠モード `SHARED_BUDGET_MODE=depleted` では事前分類に当たっても Sonnet 固定
+- `FABLE_BUDGET_MODE=abundant` はどの役割の既定も押し上げない。Fable が使われる経路は決める役（`dev-workflow:decider`）だけ
 - Fable がレート制限等で使えなかったときのフォールバック記録の形式は pr-review-gate スキルの「修正サイクルのモデル昇格」が正本。ここでは再掲しない
 
 ## 昇格トリップワイヤー（W が return で報告する）
@@ -146,6 +173,18 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 詳細は `templates/escalation-tripwires.md`。W は発火したら手を止め、ここまでの成果（編集済みファイル・通ったテスト・判明した事実・埋めた決定）を列挙して本体に return する。乗り換え先は本体が決める:
 
 - **規模超過**（編集対象ファイルが 5 個を超えた、または着手前の見積もりから作業項目が 2 回増えた）→ return。本体が change / 子 issue（エピック化）に分割する
-- **失敗ループ**（同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直した）→ return。本体が W を 1 段昇格したモデル（Sonnet → Opus → Fable）で再開する。`FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では Opus 上限。Opus でも 2 連続失敗が続く場合は記録先に `needs-approval` を付けて経緯をコメントし、unmanned ならサイクルを終了する
+- **失敗ループ**（同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直した）→ return。**return には「指示のどこまでやって、どこで何が起きたか」を必ず書く**（本体が原因を判断側か実行側かに分類する入力になり、決める役の入力契約でもある）。本体は失敗の原因が実行側（指示どおりやって結果が違う）なら W を `opus` で再開し、判断側（指示を解釈できなかった・指示自体が外れていた）なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせる（決める役と実行役の**どちらか一方だけ**を上げる。ラダーの正本は `templates/escalation-tripwires.md`）。**W が `fable` で再開されることはない**（実行役の上限は `opus`。強制層は `scripts/agent-model-guard.sh`）。上限は共有枠モードが先に決める: `SHARED_BUDGET_MODE=depleted` は昇格なし（Sonnet 固定）、`throttled` は Opus 上限。その範囲内で `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では決める役も Opus 上限。Opus が決めて Opus が実行しても 2 連続失敗が続く場合は記録先に `needs-approval` を付けて経緯をコメントし、unmanned ならサイクルを終了する
 - **仕様の発明**（記録先に書かれていない仕様上の決定を自分で埋めた回数が 2 回に達した）→ 埋めた決定を列挙して return。interactive は本体が AskUserQuestion、unmanned は Discord で質問し `needs-approval` を付けてサイクル終了
 - 昇格・乗り換え時は成果を破棄せず引き継ぐ（再開時に前回の return を前提に続ける）
+
+## コンテキスト上限と手渡し（本体が測る。W は工程ごとに return する）
+
+W は再開のたびに全履歴を読み直すので、履歴は畳まれずに伸び続ける。本体は W を SendMessage で再開する前に毎回 `scripts/subagent-context.sh <W の名前>` で測る（exit 2 が上限超）。加えて、W 自身の起動の途中でも hook がコンテキストを測り、上限を超えると締めを通知し、さらに越えると編集系ツールと `Bash` を拒否する（何が拒否されるかは正本）。強制停止中は commit もできないため、未コミット差分の後片付けは本体が行う。閾値と全解除の環境変数・2 経路・通知や強制停止に当たったときの振る舞いは正本にある。
+
+上限超を検知したあとの扱いも、W が return の 1 行目に置く宣言の書式とどちらを選ぶかの義務も、本体から停止を指示されたときの動き方も、すべて `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本である。この worker.md には書かない（同じ規則の言い換えが複数の面に散らばっていたことが 2026-09 の書き換え漏れと二重 spawn 事故の原因だった）。**W は return を書く前に正本（`skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」）を読み、そこに書かれた書式で宣言する。**
+
+そのうえで、W 自身の動き方は次の 3 つ。
+
+- **工程の終わりに必ず return する**（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言、の 3 つの単位。1 spawn で次の工程に進まない）。return は正本が定める 1 行目の宣言で始め、そのうしろに成果一覧（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を並べる。この成果一覧が手渡しの唯一の入力になる
+- **(3) をこれより細かく切らない**（`tasks.md` の項目単位や「実装／verify／archive／PR／仕様宣言」の 5 段にしない）。手渡しが 1 回起きるたびに、後任は指示書と正本の節を読み直し、記録先を取り直し、`git status` / `git diff` でファイルの現状を確認する固定分を払う。この固定分は工程の大きさに依存しないので、区切りを増やすほど 1 区切りあたりの実質作業比が下がる。また区切りが実装の途中に落ちると、後任は Red のまま止まったテストから再出発することになり、前任の設計意図を再発明する危険が最も高い地点で交代することになる
+- **手渡しで起こされたら**（本体から「前任 W の return」が渡されたら）、前任の履歴は読めないし読まない。前任の return と記録先、ファイルの現状（`git status` / `git diff`）から再出発し、前任の埋めた決定を再発明しない。**前任は途中計測の強制停止でツールを拒否されて止まった可能性があるので、再出発の前に必ず `git status` / `git diff` で未コミット差分を確認する**（前任の return の 1 行目が `工程中断:` のときは特に。編集の途中で切られた木が残っていることがある）

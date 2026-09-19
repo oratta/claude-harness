@@ -96,7 +96,8 @@ else
     "plugins/dev-workflow/hooks/hooks.json" \
     "plugins/dev-workflow/skills/pr-review-gate/SKILL.md" \
     "plugins/dev-workflow/templates/auto-merge/.github/workflows/auto-merge.yml" \
-    "plugins/dev-workflow/templates/auto-merge/scripts/test-auto-merge-workflow.sh"; do
+    "plugins/dev-workflow/templates/auto-merge/scripts/test-auto-merge-workflow.sh" \
+    "tests/injection-budget.txt"; do
     if printf '%s\n' "$p" | grep -qE "$SACRED"; then
       ok "聖域と判定される: $p"
     else

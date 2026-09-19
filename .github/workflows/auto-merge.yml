@@ -164,8 +164,9 @@ jobs:
           #   plugins/*/hooks/                          … セッションで自動実行されるフック（自己統治物件）
           #   plugins/dev-workflow/skills/pr-review-gate/ … agent-review:passed を発行するゲートの定義そのもの
           #   plugins/dev-workflow/templates/auto-merge/  … 各リポに展開されるマージロボットの原本
+          #   tests/injection-budget.txt                … 常時注入される固定分の予算値（動かす PR は人間マージ）
           # >>> sacred-paths
-          SACRED='^\.github/workflows/|^\.claude/|(^|/)CLAUDE\.md$|^docs/agent-loop[^/]*(\.md$|/)|^rules/|^plugins/[^/]+/hooks/|^plugins/dev-workflow/skills/pr-review-gate/|^plugins/dev-workflow/templates/auto-merge/'
+          SACRED='^\.github/workflows/|^\.claude/|(^|/)CLAUDE\.md$|^docs/agent-loop[^/]*(\.md$|/)|^rules/|^plugins/[^/]+/hooks/|^plugins/dev-workflow/skills/pr-review-gate/|^plugins/dev-workflow/templates/auto-merge/|^tests/injection-budget\.txt$'
           # <<< sacred-paths
 
           # ── ci.yml の必須チェック（ジョブ名と完全一致させること）──

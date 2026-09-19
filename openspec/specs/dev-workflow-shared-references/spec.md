@@ -4,15 +4,19 @@
 TBD - created by archiving change loops-longrun-retirement. Update Purpose after archive.
 ## Requirements
 ### Requirement: 共有契約はプラグイン直下 references/ に置く
-dev-workflow プラグインは、他プラグインからも参照される契約文書を `plugins/dev-workflow/references/` 直下に置かなければならない（MUST）。本 change で置く契約は `self-verification.md`・`pr-body-format.md`・`model-tiers.md`・`workflow-execution.md` の 4 本である。develop スキル固有の判定表（`skills/develop/references/`）と混ぜてはならない（MUST NOT）。`plugins/dev-workflow/README.md` は「複数プラグインで共有する契約は `references/` に置く」と、4 本それぞれの一言説明を持たなければならない（MUST）。
+dev-workflow プラグインは、他プラグインからも参照される契約文書、および dev-workflow 内の複数スキル（develop の役割指示書と pr-review-gate）が共通で読む契約文書を `plugins/dev-workflow/references/` 直下に置かなければならない（MUST）。ここに置く契約は `self-verification.md`・`pr-body-format.md`・`model-tiers.md`・`workflow-execution.md`・`subagent-waiting.md` の 5 本である。develop スキル固有の判定表（`skills/develop/references/`）と混ぜてはならない（MUST NOT）。`plugins/dev-workflow/README.md` は「複数プラグインで共有する契約は `references/` に置く」と、5 本それぞれの一言説明を持たなければならない（MUST）。
 
-#### Scenario: 4 契約が実在する
+#### Scenario: 5 契約が実在する
 - **WHEN** `plugins/dev-workflow/references/` を一覧する
-- **THEN** `self-verification.md`・`pr-body-format.md`・`model-tiers.md`・`workflow-execution.md` が存在する
+- **THEN** `self-verification.md`・`pr-body-format.md`・`model-tiers.md`・`workflow-execution.md`・`subagent-waiting.md` が存在する
 
-#### Scenario: README が置き場の規約と 4 本を説明している
+#### Scenario: README が置き場の規約と 5 本を説明している
 - **WHEN** `plugins/dev-workflow/README.md` を読む
-- **THEN** `references/` の節があり、4 本のファイル名がそれぞれ 1 行の説明付きで並ぶ
+- **THEN** `references/` の節があり、5 本のファイル名がそれぞれ 1 行の説明付きで並ぶ
+
+#### Scenario: dev-workflow 内の複数スキルが読む契約の置き場
+- **WHEN** develop の役割指示書と pr-review-gate の両方が同じ待ち方の契約を参照する
+- **THEN** その契約は片方のスキル配下ではなく `plugins/dev-workflow/references/` に 1 本だけ置かれている
 
 ### Requirement: 自己検証の共通原則は解散プラグインの記述を除いて引き継ぐ
 `plugins/dev-workflow/references/self-verification.md` は、旧 `plugins/loops/references/self-verification.md` の中核原則（完了は主張であり証明ではない。evidence を提示してから完了を宣言する）・evidence の 4 種別・スキル側への記載ルール（本リファレンスへの 1 行参照 + 固有手順のみ。共通原則の本文をコピーしない）を維持しなければならない（MUST）。「スキル側への記載ルール」の参照パスは新パス `plugins/dev-workflow/references/self-verification.md` を示す。対象スキル一覧は解散プラグインのスキル（`longrun-plan`・`longrun-feedback`・`longrun-mvp-plan`・`loops-design`・`loops-goalify`）の行を持ってはならず（MUST NOT）、対象は `wt-setup`・`wt-clean`・`daily-report`・`weekly-report`・`infra-setup`・`experience-to-skill` の 6 スキルとする。
