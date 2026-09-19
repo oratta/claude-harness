@@ -50,6 +50,7 @@ write_inner_suite() { # <name>
 }
 BATS
   run run_test_sh_isolated
+  echo "$output"   # 失敗したときだけ bats が表示する（内側の test.sh の出力）
   [ "$status" -ne 0 ]
   [[ "$output" == *"ok 1 leaks a child"* ]]            # テスト自体は通っている
   [[ "$output" == *"握ったまま残っています"* ]]
@@ -73,6 +74,7 @@ teardown() { kill -9 "$(cat "$BATS_TEST_TMPDIR/pid")" 2>/dev/null || true; }
 }
 BATS
   run run_test_sh_isolated
+  echo "$output"   # 失敗したときだけ bats が表示する（内側の test.sh の出力）
   [ "$status" -eq 0 ]
   [[ "$output" == *"bats: 全スイート pass"* ]]
   [[ "$output" != *"残っています"* ]]
@@ -86,6 +88,7 @@ BATS
 }
 BATS
   run run_test_sh_isolated
+  echo "$output"   # 失敗したときだけ bats が表示する（内側の test.sh の出力）
   [ "$status" -ne 0 ]
   [[ "$output" == *"回収されずに残っています"* ]]
   [[ "$output" == *"sleep 1234"* ]]
