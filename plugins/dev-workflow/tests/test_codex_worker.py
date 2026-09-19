@@ -191,7 +191,7 @@ class WorkerTest(unittest.TestCase):
                 self.assertEqual(thread['sandbox'], 'workspace-write')
                 self.assertEqual(turn['sandboxPolicy'], {
                     'type':'workspaceWrite', 'networkAccess':False,
-                    'writableRoots':[str(self.cwd), self.tmp_info()['path']],
+                    'writableRoots':[str(self.cwd.resolve()), self.tmp_info()['path']],
                     'excludeSlashTmp':True, 'excludeTmpdirEnvVar':True})
             else:
                 self.assertEqual(thread['sandbox'], 'read-only')
