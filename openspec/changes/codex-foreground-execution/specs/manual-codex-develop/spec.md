@@ -18,7 +18,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: 手動で実行先とアカウントを固定する
-手動Codex開発は旧形式の登録account/model、または名前付きprofileの役割別executor/account/model/effortを固定し、共通App Server workerだけに委譲しなければならない（MUST）。前景実行では固定は委譲ごとの解決として行い、解決した役割別のexecutor/account/model/effortと実行アカウントのCODEX_HOMEを依頼ファイルへ載せなければならない（MUST）。台帳経路では従来どおりinitのsnapshotで固定する（MUST）。profileと旧account/modelの同時指定を拒否し、worker失敗時にexec/Claudeへfallbackしてはならない（MUST NOT）。前景実行はアカウント名からCODEX_HOMEを解決するために台帳を読んではならず（MUST NOT）、どのCODEX_HOMEを使うかは呼び出し側の責任である。
+手動Codex開発は旧形式の登録account/model、または名前付きprofileの役割別executor/account/model/effortを固定し、共通App Server workerだけに委譲しなければならない（MUST）。前景実行では固定は委譲ごとの解決として行い、解決した役割別のexecutor/account/model/effortと実行アカウントのCODEX_HOMEを依頼ファイルへ載せなければならない（MUST）。台帳経路では従来どおりinitのsnapshotで固定する（MUST）。profileと旧account/modelの同時指定を拒否し、worker失敗時にexec/Claudeへfallbackしてはならない（MUST NOT）。前景実行はアカウント名からCODEX_HOMEを解決するために台帳を読んではならない（MUST NOT）。account名からCODEX_HOMEへの対応は呼び出し側の**設定**（`--account-home NAME=PATH` の繰り返し指定、または同じ対応を書いたJSONファイル）で与え、依頼ファイルを組み立てる側が役割のaccount名をその対応から解決して依頼へ載せなければならない（MUST）。対応に無いaccount名は拒否しなければならず（MUST）、既定のCODEX_HOMEや別のCODEX_HOMEへ置き換えてはならない（MUST NOT）。対応表を正しく与えるのが呼び出し側の責任である。
 
 #### Scenario: 旧形式の手動依頼
 - **WHEN** 人間がCodexと単一の登録account/modelを指定する
@@ -30,7 +30,11 @@
 
 #### Scenario: 前景実行で役割別の設定を解決する
 - **WHEN** 前景実行で1件の委譲を組み立てる
-- **THEN** その役割のexecutor/account/model/effortを解決して依頼ファイルへ固定し、実行アカウントのCODEX_HOMEを同じ依頼に載せ、他の役割の設定を持ち込まない
+- **THEN** その役割のexecutor/account/model/effortを解決して依頼ファイルへ固定し、account名を呼び出し側の対応から解決したCODEX_HOMEを同じ依頼に載せ、他の役割の設定を持ち込まない
+
+#### Scenario: 解決できないaccount名を指定する
+- **WHEN** profileの役割が指すaccount名が、呼び出し側が与えた対応に含まれていない
+- **THEN** 依頼ファイルを作らずに拒否し、既定のCODEX_HOMEや別のaccountのCODEX_HOMEへ倒さない
 
 ### Requirement: provider指定で品質ワークフローを分岐させない
 仕様要否・レビュー・検証・工程順序は既存developの正本に一元化しなければならない（MUST）。Codex adapterは起動・停止・結果の受け取りと、台帳経路に限った状態確認・結果回収・実行先とownershipの管理を担当し、独自の仕様必須条件や品質ゲートを設けてはならない（MUST NOT）。前景実行では状態確認・結果回収・ownershipの管理は発生せず、adapterが担うのは起動・停止・結果の受け取りだけである。phaseは役割指示選択ラベルであり工程順序の強制ではない。

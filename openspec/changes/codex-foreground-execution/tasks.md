@@ -9,7 +9,7 @@
 
 - [ ] 2.1 偽 app-server（`test_codex_worker.py` の `FAKE`）を使って前景実行の依頼ファイルを組み立てるヘルパを足す（役割・cwd・model・effort・CODEX_HOME・prompt を載せる）
 - [ ] 2.2 台帳を作らずに完走することを固定するテストを足す（実行後に `ledger.sqlite` と `ownership.sqlite` がどこにも存在しないこと、stdout の 1 行 JSON に最終回答・終了状態・使用量・要求した model / effort・観測した model / effort と観測元・thread / turn の ID が入ること、exit code が 0 であること）
-- [ ] 2.3 親の終了で 30 秒以内に終わることを固定するテストを足す。中間の親プロセスを立てて前景実行を起こさせ、その中間プロセスを終了させてから、前景実行と app-server の両方の PID について `os.kill(pid, 0)` が失敗するまでの時間を測る
+- [ ] 2.3 呼び出し元の消失で 30 秒以内に終わることを固定するテストを足す。実際の起動経路を写した 3 段（テスト → 中間プロセス → `sh -c 'python3 codex-worker.py run …'` → `run`）で組み、`run` の直接の親が shell である状態のまま**中間プロセス**を終了させてから、`run` と app-server の両方の PID について `os.kill(pid, 0)` が失敗するまでの時間を測る
 - [ ] 2.4 SIGTERM で止まることを固定するテストを足す（偽 app-server に `turn/interrupt` が届いた記録が残ること、app-server の子プロセスが残らないこと）
 - [ ] 2.5 ターン開始前の失敗（アカウント照合の不一致・利用枠の使い切り）でも同じ形の JSON が出て exit code が非ゼロになることを固定するテストを足す
 - [ ] 2.6 前景実行が `--state-dir` を受け取らないことを固定するテストを足す（引数エラーで終わる）
@@ -18,13 +18,13 @@
 ## 3. 前景実行の入口を足す（Green）
 
 - [ ] 3.1 `codex-worker.py` にサブコマンド `run` を足す。依頼ファイルを読み、必須項目（role / cwd / model / prompt / codex-home）と任意項目（effort / account / request_id / quota-margin-pct）を検証し、cwd の検査（所有者・repo root・feature branch・linked worktree）は台帳経路と同じものを使う
-- [ ] 3.2 runtime の CODEX_HOME を `run` 自身が作る一時ディレクトリに用意する（`auth.json` の symlink と `config.toml`、0700、project 設定層の拒否は台帳経路と同じ）。終了時に symlink を外してディレクトリごと片付ける
+- [ ] 3.2 runtime の CODEX_HOME を `run` 自身が `TMPDIR` 配下に作る 0700 のディレクトリに用意する（`auth.json` の symlink と `config.toml`、project 設定層の拒否は台帳経路と同じ）。app-server と子に渡す `TMPDIR` / `TMPPREFIX` は変えない。終了時に symlink を外してディレクトリごと片付ける
 - [ ] 3.3 アカウントの照合を自己整合で行う。app-server の `account/read` が返した email が、渡された CODEX_HOME の `auth.json` の email と一致することを確認し、実行中の link の差し替えも同じ home を比較先にして検査する
 - [ ] 3.4 ターン開始前の利用枠確認を残す。同時に走っている件数は 1 固定、余裕率は依頼の `quota-margin-pct`（既定 5）を使い、`occupied_slots` / `reserve_global` を呼ばない
 - [ ] 3.5 停止要求を表すフラグを 1 つ用意し、SIGTERM / SIGINT のハンドラはそのフラグを立てるだけにする（ハンドラから RPC を送らない）
-- [ ] 3.6 起動時に控えた親 PID を 1 秒間隔で見張るスレッドを足し、`os.getppid()` が変わったら停止要求のフラグを立てる
-- [ ] 3.7 ターン待ちのループが停止要求を見て `turn/interrupt` を 1 回送る形にする。前景経路の中断確認の猶予は 10 秒とし、台帳経路の 20 秒は変えない
-- [ ] 3.8 結果を標準出力の 1 行 JSON で出す。最終回答・終了状態・使用量・要求した executor / account / model / effort・観測した model / effort と観測元・thread / turn の ID・`error_kind` を含め、取得できなかった項目は `null` にする。失敗は exit code 2 で終わる
+- [ ] 3.6 起動時に `os.getppid()` から PID 1 まで辿った祖先の連鎖を控え、1 秒間隔で `ps -o ppid= -p <pid>` を使って辿り直すスレッドを足す。控えた連鎖と食い違ったら停止要求のフラグを立てる（直接の親の PID だけを比べない）
+- [ ] 3.7 停止要求を app-server への毎 RPC の入口で確認し、立っていれば要求を送らずに中止として抜ける形にする。ターン待ちのループは停止要求を見て `turn/interrupt` を 1 回送る。前景経路の中断確認の猶予は 10 秒とし、台帳経路の 20 秒は変えない
+- [ ] 3.8 結果を標準出力の 1 行 JSON で出す。キーは `text` / `status` / `usage` / `execution`（`version=1` の `role` / `requested` / `effective` / `evidence`）/ `thread_id` / `turn_id` / `error_kind` とし、取得できなかった項目は `null` にする。失敗は exit code 2 で終わる
 - [ ] 3.9 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py` を実行し、全件通ること（Green）を exit code 付きで確認する
 
 ## 4. `--state-dir` を台帳サブコマンド側へ移す
@@ -38,9 +38,10 @@
 ## 5. 依頼ファイルの組み立てを codex-develop.py から使えるようにする
 
 - [ ] 5.1 `codex-develop.py` に、前景実行の依頼ファイルを書くサブコマンドを足す。`resolve_execution` で役割別の executor / account / model / effort を解決し、`prompt` で指示文を組み立てる
-- [ ] 5.2 そのサブコマンドが run-dir と worker-state を要求しないようにする（前景経路は台帳も run も持たない）。実行アカウントの CODEX_HOME は引数で受け取る
-- [ ] 5.3 profile の読み込みで登録済み account の確認（`registered_accounts`）が台帳を読む点を、前景経路では使わない形にする（profile の値はそのまま使い、CODEX_HOME は引数を正とする）
+- [ ] 5.2 そのサブコマンドが run-dir と worker-state を要求しないようにする（前景経路は台帳も run も持たない）。account 名から CODEX_HOME への対応表を引数で受け取り（`--account-home NAME=PATH` の繰り返し、または同じ対応の JSON ファイル）、役割の account 名をそこから解決して依頼へ載せる
+- [ ] 5.3 profile の読み込みで登録済み account の確認（`registered_accounts`）が台帳を読む点を、前景経路では対応表による確認に置き換える（対応表に載っている account 名だけを受け付け、CODEX_HOME は対応表が解決した値を正とする）
 - [ ] 5.4 組み立てた依頼ファイルがそのまま `run` に通ること（役割・model・effort・CODEX_HOME・prompt が一致すること）を固定するテストを足し、通ることを exit code 付きで確認する
+- [ ] 5.5 対応表に無い account 名を profile が指しているとき、依頼ファイルを作らずに拒否し、既定や別の CODEX_HOME へ倒さないことを固定するテストを足す
 
 ## 6. 手順書とバージョン
 
@@ -55,5 +56,5 @@
 
 - [ ] 7.1 `openspec validate codex-foreground-execution --strict` が通ることを確認する
 - [ ] 7.2 `bash scripts/test.sh` を全件実行し、成功件数・総件数・exit code を記録する
-- [ ] 7.3 実際の Codex アカウントで read-only の役割を 1 件、本体から背景実行で呼び、完了通知で結果の JSON を受け取れたことを、コマンド・出力の要点・exit code・対象 HEAD とともに PR 本文に記録する
+- [ ] 7.3 実際の Codex アカウントで read-only の役割を 1 件、本体の Bash ツールの背景実行で呼び、起動直後に `ps -o ppid=,comm=` で `run` の直接の親が何か（shell の wrapper が挟まっているか）を記録したうえで、完了通知で結果の JSON を受け取れたことを、コマンド・出力の要点・exit code・対象 HEAD とともに PR 本文に記録する
 - [ ] 7.4 `grep -rn "state-dir" plugins/ docs/ 2>/dev/null` で、グローバル位置に `--state-dir` を置いたままの呼び出しが残っていないことを確認する
