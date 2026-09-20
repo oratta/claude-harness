@@ -29,13 +29,15 @@ Claude 側の対応物: 本体が起こすサブエージェントは親の環�
 
 中間案として「専用領域は作り続けるが `TMPDIR` は差し替えない」（残骸の追跡だけ残す）が考えられる。採らない。誰も使わないディレクトリを job ごとに作って消すだけになり、`job-tmp.json` が追跡するのは自分で作った空ディレクトリになる。追跡対象は子が実際に書いた一時ファイルでなければ意味がない。
 
-### 読む役に `TMPDIR` / `TMPPREFIX` を渡さない扱いは残す
+### 読む役にも親の値を渡す。役割別の分岐を新設しない
 
-今回の方針は「Codex 側にだけある制約で、Claude 側に対応物が無いものは外す」である。読む役にこれらを渡さないのは、この方針に反していない。読む役は `readOnly` 砂場で動き、`/tmp` を含むどこにも書けないので、一時領域の指定に意味が無い。値を渡しても渡さなくても子の振る舞いは変わらず、渡さないほうが「この役は書かない」が環境から読める。
+中間案として「読む役には `TMPDIR` / `TMPPREFIX` を渡さない扱いだけ残す」が考えられる。採らない。
 
-ただし現行 spec が書いている理由（「Claude 側の読む役がシェルを持たないことと対応する」）はそのままでは使えない。Claude 側で review / spec-review / impl-review に当たるのは汎用サブエージェントで、シェルを持つ。シェルを持たないのは decider だけである。理由を「読む役は書けないので一時領域の指定に意味が無い」に書き直す。
+理由は 3 つある。第一に、現行コードに「読む役だから落とす」という分岐は無い。`TMPDIR` / `TMPPREFIX` は `DROPPED_ENV` で全 role から一律に落とし、書く役だけ専用領域の値を入れ直している。読む役に届かないのは「worker が自分で決める値」だったことの副産物であって、読む役のために設けた扱いではない。第二に、これを残すには `Rpc` に「読む役か」の引数を新設することになり、役割別の分岐を 1 つ**増やす**。今回の方針（Codex 側にだけある制約で Claude 側に対応物が無いものは外す）と逆向きで、Claude 側の review / spec-review / impl-review は汎用サブエージェントとして親の `TMPDIR` を引き継ぐので対応物が無い。第三に、読む役は `readOnly` 砂場で書けないため、値を渡しても渡さなくても子の振る舞いは変わらない。観測できる効果の無い区別のために MUST NOT・分岐・テストを固定する理由が無い。
 
-実装上は、`DROPPED_ENV`（全 role から一律に落とす名前の組）から `TMPDIR` / `TMPPREFIX` を外し、読む役のときだけ落とす扱いに移す。`Rpc` は `job_tmp` を受け取る代わりに、その job が読む役かどうかを受け取る。
+現行 spec が読む役の扱いに付けていた理由（「Claude 側の読む役がシェルを持たないことと対応する」）も事実として正しくない。Claude 側で review / spec-review / impl-review に当たるのは汎用サブエージェントで、シェルを持つ。シェルを持たないのは decider だけである。理由ごと扱いを取り除く。
+
+実装上は、`DROPPED_ENV`（全 role から一律に落とす名前の組）から `TMPDIR` / `TMPPREFIX` を外すだけにする。`Rpc.__init__` の `job_tmp` 引数は、代わりの引数を増やさずに削除する。
 
 ### 片付けの分岐（#333 の発生源）はテストごと消す
 
@@ -47,7 +49,13 @@ Claude 側の対応物: 本体が起こすサブエージェントは親の環�
 
 `JobTmpTest`（6 件）は `JobTmp` の削除とともに消える。`WorkerTest` 側で消えるのは領域の生成・片付け・親の妥当性に依存する 5 件（`test_job_tmp_is_private_external_and_not_reused` / `test_tmp_cleanup_for_confirmed_outcomes_and_symlink_contents` / `test_unknown_retains_tmp_and_ownership` / `test_replaced_tmp_reports_cleanup_failure_without_following_symlink` / `test_invalid_tmp_parent_rejects_without_fallback`）。
 
-足すのは 1 件、「書く役の子の `TMPDIR` / `TMPPREFIX` が親の値と一致する」。fake App Server は既に子が見た環境を記録しているので（`tmp_info()` / `seen`）、期待値を親の値に変えるだけで固定できる。`test_read_only_child_gets_neither_tmpdir_nor_tmpprefix` と `test_child_inherits_parent_environment_except_the_dropped_names` は残し、後者は `DROPPED_ENV` の縮小に合わせて期待値を直す。
+`test_read_only_child_gets_neither_tmpdir_nor_tmpprefix` も消える。読む役の子にも親の値が届く形に変わるので、このテストが固定していた性質（読む役の子にどちらも現れない）は成立しなくなる。読む役側の期待は `test_all_role_policies_remain_restricted` の中で「親の値と一致する」に反転して見る。
+
+足すのは 2 件、「書く役の子の `TMPDIR` / `TMPPREFIX` が親の値と一致する」と「親にどちらも無いとき子にも現れない」。fake App Server は既に子が見た環境を記録しているので（`tmp_info()` / `seen`）、期待値を親の値に変えるだけで固定できる。後者は macOS の親に launchd が必ず `TMPDIR` を入れるため、テスト側で `pop('TMPDIR')` / `pop('TMPPREFIX')` してから投入しないと再現しない。
+
+`test_child_inherits_parent_environment_except_the_dropped_names` は残し、`DROPPED_ENV` の縮小に合わせて期待値を直す。`test_all_role_policies_remain_restricted` も直す: 書く役の `assertIsNotNone(tmp_info()['path'])` は専用領域が残っている前提のコメント付きなので、書く役・読む役とも「親の `TMPDIR` / `TMPPREFIX` と一致する」を見る形にする。
+
+fake App Server 側では `tmp_symlink` / `replace_tmp` の分岐と、専用領域の `mode` / `uid` / `git` を測る部分を落とす。これらは消すテストだけが使い、特に `replace_tmp` は親の `TMPDIR` そのものを `rmdir` しようとする分岐なので、残すと事故のもとになる。子プロセスが見た `TMPDIR` を測る `child` は残す（「子ツールにも親の値が届く」の確認に使う）。
 
 ### 実環境の証跡の置き換え
 

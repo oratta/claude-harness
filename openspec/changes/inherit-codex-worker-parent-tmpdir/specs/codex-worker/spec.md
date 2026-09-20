@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
-### Requirement: 書く役は親の一時領域をそのまま引き継ぐ
-worker は workspace-write role（implement / spec-write）の job のために一時ディレクトリを新規作成してはならない（MUST NOT）。App Server と子ツールの `TMPDIR` と `TMPPREFIX` は、worker を起動した親プロセスの値をそのまま引き継がなければならない（MUST）。親に値が無ければ子にも現れてはならず（MUST NOT）、worker が既定値を補ってはならない（MUST NOT）。この結果として次の 2 つの性質が失われることを、仕様は明示しなければならない（MUST）: 同時に走る job の一時ファイルが同じ親の一時領域に混ざりうること、job が残した一時ファイルの出どころを worker が記録しないこと。この 2 つの追跡が必要になった場合は、Codex 側だけに仕組みを戻してはならず（MUST NOT）、Claude のサブエージェント側にも同じ仕組みを入れて揃えなければならない（MUST）。
+### Requirement: 一時領域は親の環境をそのまま引き継ぐ
+worker は job のために一時ディレクトリを新規作成してはならない（MUST NOT）。App Server と子ツールの `TMPDIR` と `TMPPREFIX` は、role によらず worker を起動した親プロセスの値をそのまま引き継がなければならない（MUST）。親に値が無ければ子にも現れてはならず（MUST NOT）、worker が既定値を補ってはならない（MUST NOT）。この結果として次の 2 つの性質が失われることを、仕様は明示しなければならない（MUST）: 同時に走る job の一時ファイルが同じ親の一時領域に混ざりうること、job が残した一時ファイルの出どころを worker が記録しないこと。この 2 つの追跡が必要になった場合は、Codex 側だけに仕組みを戻してはならず（MUST NOT）、Claude のサブエージェント側にも同じ仕組みを入れて揃えなければならない（MUST）。
 
 #### Scenario: 書く役の子が一時領域を見る
 - **WHEN** implement job が開始され、子プロセスが `TMPDIR` と `TMPPREFIX` を読む
@@ -24,7 +24,7 @@ worker は workspace-write role（implement / spec-write）の job のために�
 ### Requirement: workspace-write ジョブは専用の Git 管理外一時領域を使う
 **Reason**: この要件が要ったのは、書く役の砂場（`workspace-write` ＋ `excludeSlashTmp` / `excludeTmpdirEnvVar`）が `/tmp` と呼び出し元 `TMPDIR` を塞いでいて、`writableRoots` に載る書ける一時領域を worker が用意しなければ子が一時ファイルを作れなかったためである。書く役は `danger-full-access` になり、砂場の項目そのものを渡さないことが仕様で決まったので（Requirement「書く役は worker の中でネットワークと Git 操作を自分で完了できる」）、塞ぐ主体が無くなった。専用領域は OS の強制を伴わない Codex 側だけの慣習として残っており、Claude のサブエージェントに対応物が無い。
 
-**Migration**: Requirement「書く役は親の一時領域をそのまま引き継ぐ」に置き換える。`codex-worker.py` の `JobTmp` クラス、runtime への `job-tmp.json` の書き出し、`job_tmp_not_private` / `job_tmp_in_cwd` / `job_tmp_in_git` / `job_tmp_parent_not_directory` / `job_tmp_not_normalized` の `error_kind` を削除する。read-only role に `TMPDIR` / `TMPPREFIX` を渡さない扱いは Requirement「子へ渡す環境変数は親を引き継ぎ、渡してはならない変数だけ落とす」が引き続き定める。
+**Migration**: Requirement「一時領域は親の環境をそのまま引き継ぐ」に置き換える。`codex-worker.py` の `JobTmp` クラス、runtime への `job-tmp.json` の書き出し、`job_tmp_not_private` / `job_tmp_in_cwd` / `job_tmp_in_git` / `job_tmp_parent_not_directory` / `job_tmp_not_normalized` の `error_kind` を削除する。role ごとに一時領域の扱いを分ける仕組みは残さず、read-only role の子にも親の値がそのまま届く（Requirement「子へ渡す環境変数は親を引き継ぎ、渡してはならない変数だけ落とす」）。
 
 ### Requirement: 一時領域を別ジョブへ割り当てず確認済み終了後に片付ける
 **Reason**: 片付けの対象（worker が作った専用領域）が無くなる。worker が作らない領域は別 job に割り当てようがなく、削除する責務も生じない。この Requirement の片付け条件（`turn_submitted` が偽か `execution_confirmed` が真のときだけ削除する）は、サーバーが `thread/start` / `turn/start` を id 付きエラーで拒否した job で領域を残す不具合を生んでいた（#333）。条件を直すのではなく、領域そのものを無くすことで発生源を消す。
@@ -36,7 +36,7 @@ worker は workspace-write role（implement / spec-write）の job のために�
 ### Requirement: 書く役は worker の中でネットワークと Git 操作を自分で完了できる
 workspace-write role（implement / spec-write）は OS の砂場なしで実行しなければならない（MUST）: `thread/start` の sandbox は `danger-full-access`、turn の sandboxPolicy は `{'type':'dangerFullAccess'}` とする。approvalPolicy は never を維持しなければならない（MUST）。砂場なしの policy は書き込み範囲とネットワークの項目を持たないので、この role に writableRoots・excludeSlashTmp・excludeTmpdirEnvVar・networkAccess を渡してはならない（MUST NOT）。この role が Claude のサブエージェントと同じく親の環境で cwd の外へも書けることは、Claude 側に対応する隔離が無いことの帰結であり、指示と記録先の証拠で担保する。
 
-一時領域も同じ理由で親の環境を引き継ぐ。詳細は Requirement「書く役は親の一時領域をそのまま引き継ぐ」が定める。
+一時領域も同じ理由で親の環境を引き継ぐ。詳細は Requirement「一時領域は親の環境をそのまま引き継ぐ」が定める。
 
 #### Scenario: ループバックの待ち受けへ繋ぐ
 - **WHEN** implement job の子プロセスが 127.0.0.1 の待ち受けポートへ HTTP する
@@ -47,7 +47,7 @@ workspace-write role（implement / spec-write）は OS の砂場なしで実行�
 - **THEN** `.git` ファイルが指す Git 共通ディレクトリ配下（`worktrees/<この worktree>/` の HEAD.lock / index.lock を含む）への書き込みが拒否されず、branch 作成と commit が成立する
 
 ### Requirement: 子へ渡す環境変数は親を引き継ぎ、渡してはならない変数だけ落とす
-worker は job の子プロセスへ、worker を起動した親プロセスの環境変数を引き継がなければならない（MUST）。ただし次は落とさなければならない（MUST）: worker が自分で決める値（CODEX_HOME）、Codex 自身が認証に読み登録済み account 以外の課金経路へ移し得る値、および子の git 操作を cwd 以外の checkout へ向け得る値（GIT_DIR・GIT_WORK_TREE・GIT_COMMON_DIR・GIT_INDEX_FILE）。read-only role には TMPDIR も TMPPREFIX も渡してはならない（MUST NOT）: read-only role は書き込み許可を持たず一時ファイルを作れないので、一時領域の指定に意味が無く、渡さないことで「この役は書かない」が子の環境から読める。workspace-write role には TMPDIR も TMPPREFIX も親の値のまま渡さなければならない（MUST）。引き継ぎが Codex 側の環境変数ポリシーで絞られる場合は、job ごとの runtime 設定でその絞りを解かなければならない（MUST）。worker 自身の git 呼び出し（依頼の検査・runtime の場所の算出）は、親の環境をそのまま使って行ってはならず（MUST NOT）、固定 allowlist の最小環境で行わなければならない（MUST）。
+worker は job の子プロセスへ、worker を起動した親プロセスの環境変数を引き継がなければならない（MUST）。ただし次は落とさなければならない（MUST）: worker が自分で決める値（CODEX_HOME）、Codex 自身が認証に読み登録済み account 以外の課金経路へ移し得る値、および子の git 操作を cwd 以外の checkout へ向け得る値（GIT_DIR・GIT_WORK_TREE・GIT_COMMON_DIR・GIT_INDEX_FILE）。TMPDIR と TMPPREFIX は落としてはならず（MUST NOT）、role によらず親の値のまま子へ渡さなければならない（MUST）。引き継ぎが Codex 側の環境変数ポリシーで絞られる場合は、job ごとの runtime 設定でその絞りを解かなければならない（MUST）。worker 自身の git 呼び出し（依頼の検査・runtime の場所の算出）は、親の環境をそのまま使って行ってはならず（MUST NOT）、固定 allowlist の最小環境で行わなければならない（MUST）。
 
 #### Scenario: worker の中で GitHub を操作する
 - **WHEN** implement job の子プロセスが gh コマンドで Draft PR を作り issue にコメントする
@@ -57,13 +57,9 @@ worker は job の子プロセスへ、worker を起動した親プロセスの�
 - **WHEN** 親環境に Codex 自身が認証に読む変数（API キー等）が設定された状態で job を開始する
 - **THEN** その変数は子に現れず、account の identity 検査は登録済み account のまま通る
 
-#### Scenario: 読む役に一時領域の指定が漏れない
-- **WHEN** 親環境に TMPDIR / TMPPREFIX がある状態で read-only role の job を開始する
-- **THEN** 子の環境にはどちらも現れない
-
-#### Scenario: 書く役に一時領域の指定が届く
-- **WHEN** 親環境に TMPDIR / TMPPREFIX がある状態で workspace-write role の job を開始する
-- **THEN** 子の環境にはどちらも親と同じ値で現れる
+#### Scenario: どの役にも一時領域の指定が親の値のまま届く
+- **WHEN** 親環境に TMPDIR / TMPPREFIX がある状態で workspace-write role と read-only role の job をそれぞれ開始する
+- **THEN** どちらの子の環境にも両方が親と同じ値で現れる
 
 #### Scenario: 親が Git のパスを指している
 - **WHEN** 親環境に GIT_DIR / GIT_WORK_TREE / GIT_COMMON_DIR / GIT_INDEX_FILE が設定された状態で job を開始する
