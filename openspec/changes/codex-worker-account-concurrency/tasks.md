@@ -11,7 +11,7 @@
 - [ ] 2.3 既存テスト `test_disconnect_unknown_keeps_lock`（`plugins/dev-workflow/tests/test_codex_worker.py:129`）の assert を `cwd_or_account_locked` から `cwd_locked` へ、`test_other_ledger_cannot_bypass_ownership`（同 `:151`）を `global_account_or_cwd_locked` から `global_cwd_locked` へ直す
 - [ ] 2.4 スロットの状態を判定する読み取り専用のヘルパを作る。行が無い／参照先ジョブが TERMINAL かつ受領済み → 空き。queued・running・unknown・TERMINAL かつ未受領・参照先台帳が読めない → 占有中。`reserve_global` と 3 章の占有本数の数え上げの両方がこれを使う
 - [ ] 2.5 `ownership.sqlite` に `account_slots(account_key, slot, ledger, job)`（主キーは `(account_key, slot)`）を作り、`reserve_global` がスロット 0 から順に最初の空きを取るようにする。全部が占有中なら `account_slots_exhausted`
-- [ ] 2.6 参照先の台帳ファイルが無いスロットを「占有中」として飛ばし、他に空きがあれば投入が通ることを確かめるテストを書く（現行の `global_owner_unknown` で投入全体を落とさない。`codex-worker.py:111` の変更点）
+- [ ] 2.6 参照先の台帳ファイルが無いスロットを「占有中」として飛ばし、他に空きがあれば投入が通ることを確かめるテストを書く（現行の `global_owner_unknown` で投入全体を落とさない。`codex-worker.py:111` の変更点）。投入は**別の作業ディレクトリ**から行う。作業ディレクトリ側の `owners` 行は従来どおりで、その参照先の台帳が無ければ `global_owner_unknown` のまま落ちる（この change が扱うのはアカウント側のスロットだけ）
 - [ ] 2.7 `reserve_global` の `BEGIN IMMEDIATE` の中で、`owners` に残っている `account:<hash>` の行をスロット 0 へ写して `owners` から消す移行を入れる。作業ディレクトリ側の `owners` の扱いは変えない
 - [ ] 2.8 移行前の `owners` にアカウント行がある状態から投入して、ロックが引き継がれる（先行ジョブが未受領なら拒否される）ことを確かめるテストを書く
 - [ ] 2.9 台帳内の `submit` の判定を `SELECT 1 FROM jobs WHERE acked=0 AND cwd=?` に変え、拒否理由を `cwd_locked` にする。台帳をまたぐ作業ディレクトリの重複は `global_cwd_locked` にする。アカウント側の判定は `reserve_global` に任せる
@@ -26,9 +26,9 @@
 ## 4. サーバー側の拒否をエラー応答と切断で分ける
 
 - [ ] 4.1 `thread/start` / `turn/start` に対してサーバーがエラー応答（id 付き）を返したとき、`failed` になり `error_kind` にそのエラーコードが含まれるテストを書く（Red）
-- [ ] 4.2 応答が得られないまま切断した場合が従来どおり `unknown` のままであることを確かめるテストを書く（既存の `test_disconnect_unknown_keeps_lock` の振る舞いを壊さない）
+- [ ] 4.2 応答が得られないまま切断した場合が従来どおり `unknown` のままであることを確かめるテストを書く。既存の `test_disconnect_unknown_keeps_lock` の偽サーバーは `turn/start` に応答してから終了するので、spec の Scenario「ターン開始の要求後に切断する」（応答なし）を直接なぞる fixture（例 `disconnect_before_reply`）を 1 本足し、そちらでも `unknown` になることを確かめる
 - [ ] 4.3 `Rpc.request` がエラー応答のときだけ `Rejected` の下位クラス（例 `ServerRejected`）をエラーコード付きで投げるようにする（`codex-worker.py:231-232`）
-- [ ] 4.4 `worker()` の例外処理（`:369`、`turn_submitted` による分岐）で、その下位クラスだけを `failed` + `server_rejected_start_<コード>` にする。それ以外は従来どおり
+- [ ] 4.4 `worker()` の例外処理（`:369`、`turn_submitted` による分岐）を直す。`turn/start` が正常応答を返した時点で立てるフラグ（例 `turn_accepted`）を追加し、except 節では `ServerRejected` **かつ `turn_accepted` が偽**のときだけ `failed` + `server_rejected_start_<コード>` にする。`turn_accepted` が真のあとの `ServerRejected`（受理済みターンに対する `turn/interrupt` や `thread/read` のエラー応答）は従来どおり `unknown`。それ以外の例外も従来どおり
 - [ ] 4.5 同時実行を理由とするエラー応答の判別規則が確認できた場合だけ、`server_rejected_concurrent_turn` に置き換える分岐と、その一致条件を `CODEX-WORKER.md` に書く。確認できなければ規則は入れず、全件をエラーコード付きで残す旨だけ書く
 
 ## 5. 放置されたアカウント側の占有を外す
@@ -41,7 +41,7 @@
 
 - [ ] 6.1 同時 2 件の投入・作業ディレクトリ重複の拒否・残枠が上限に近いときの拒否、の 3 つが独立したテストとして揃っていることを確認する
 - [ ] 6.2 `plugins/dev-workflow/scripts/CODEX-WORKER.md` に次を書く。上限と見込み消費率の設定と、省略時は既定値で上書きされること・未受領ジョブがあると `register` が拒否されるので上限の変更は全件 `ack` の後にしかできないこと。新しい拒否理由（`cwd_locked` / `global_cwd_locked` / `account_slots_exhausted` / `quota_headroom_insufficient` / `server_rejected_start_<コード>`、判別できた場合の `server_rejected_concurrent_turn`）。`reap` の使い方と、外れるのはアカウント側のスロットだけで作業ディレクトリは `ack` で空くこと。古い版との併用を避ける注意
-- [ ] 6.3 `CODEX-WORKER.md` の「参照先喪失はunknownとして拒否する」の一文を、予約では占有中として飛ばす・`reap` では解放しない、という新しい扱いに合わせて直す
+- [ ] 6.3 `CODEX-WORKER.md` の「参照先喪失はunknownとして拒否する」の一文を、アカウント側と作業ディレクトリ側の両方を書く形に直す。アカウント側のスロットは占有中として飛ばし（投入全体は止めない）`reap` でも解放しない。作業ディレクトリ側は従来どおり拒否する
 - [ ] 6.4 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow エントリを 2.13.7 にする
 - [ ] 6.5 `scripts/test.sh` を全件実行し、exit code を記録する
 
