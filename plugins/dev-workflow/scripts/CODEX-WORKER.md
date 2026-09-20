@@ -20,7 +20,7 @@ request_id=job_id。同一ID同一入力は再実行しない。status/result/ca
 
 profileのID token claim/email hashとaccount/readを照合する。これは署名検証ではなく、account/readはworkspace IDを保証しないため完全な複数workspace識別を主張しない。auth.json全体hashまたはruntime symlinkが変わった場合、未開始は拒否、実行中は中断を要求する。通常のtoken refreshでも止まる保守的制約がある。認証切替・設定書換えは行わない。
 
-各台帳はprivate。別state-dirとの競合も `$HOME/.local/state/claude-harness-codex/ownership.sqlite` で防ぐ。同一OSユーザー・同一HOMEを一つの実行領域とする。異なるHOMEで起動する管理者操作や別ホストの分散排他は対象外。共有所有台帳と参照先job台帳を削除してはいけない。参照先を失ったときの扱いは2つに分かれる。作業ディレクトリ側は従来どおり`global_owner_unknown`で投入を拒否する。アカウント側のスロットは占有中として飛ばすだけで（他に空きがあれば投入は通る）、空きとして再利用せず、`reap`でも解放しない。
+各台帳はprivate。別state-dirとの競合も `$HOME/.local/state/claude-harness-codex/ownership.sqlite` で防ぐ。同一OSユーザー・同一HOMEを一つの実行領域とする。異なるHOMEで起動する管理者操作や別ホストの分散排他は対象外。共有所有台帳と参照先job台帳を削除してはいけない。参照先の台帳ファイルが無い、または読めないときの扱いは2つに分かれる。作業ディレクトリ側は従来どおり`global_owner_unknown`で投入を拒否する。アカウント側のスロットは占有中として飛ばすだけで（他に空きがあれば投入は通る）、空きとして再利用せず、`reap`でも解放しない。
 
 同一アカウントの同時実行はスロット数で決まる。`register --max-concurrent N`（既定3、1以上の整数）が同時本数の上限、`--quota-margin-pct P`（既定5、0以上100以下）が1本あたりの見込み消費率。どちらも省略すると既定値で上書きされ、前の値は残らないので、変えた値は再登録のたびに明示する。registerは未受領jobがあると`account_has_unacknowledged_jobs`で拒否されるため、上限の変更は全件ackの後にしか打てない（走行中には下げられない）。別state-dirが別の上限を登録していても整合は取らない。
 

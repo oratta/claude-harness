@@ -123,13 +123,16 @@ def slot_state(ledger, job):
     # Only 'acked' is free. A slot whose ledger cannot be read stays occupied, never reusable.
     if not ledger or not Path(ledger).is_file():
         return 'ledger_missing', None
-    prior = sqlite3.connect('file:'+ledger+'?mode=ro', uri=True, timeout=10)
+    prior = None
     try:
+        # Opening can fail too (unreadable file), so it belongs inside the guard.
+        prior = sqlite3.connect('file:'+ledger+'?mode=ro', uri=True, timeout=10)
         row = prior.execute('SELECT status,acked,updated FROM jobs WHERE id=?', (job,)).fetchone()
     except sqlite3.DatabaseError:
         return 'ledger_missing', None
     finally:
-        prior.close()
+        if prior:
+            prior.close()
     if not row:
         return 'ledger_missing', None
     if row[0] not in TERMINAL:
@@ -163,12 +166,16 @@ def reserve_global(directory, job, account, cwd):
         old = conn.execute('SELECT ledger,job FROM owners WHERE key=?', (cwd_key,)).fetchone()
         if old and tuple(old) != (ledger, job):
             require(Path(old[0]).is_file(), 'global_owner_unknown')
-            prior = sqlite3.connect('file:'+old[0]+'?mode=ro', uri=True)
+            prior = None
             try:
+                prior = sqlite3.connect('file:'+old[0]+'?mode=ro', uri=True)
                 row = prior.execute('SELECT status,acked FROM jobs WHERE id=?', (old[1],)).fetchone()
-                require(row and row[0] in TERMINAL and row[1] == 1, 'global_cwd_locked')
+            except sqlite3.DatabaseError:
+                raise Rejected('global_owner_unknown')
             finally:
-                prior.close()
+                if prior:
+                    prior.close()
+            require(row and row[0] in TERMINAL and row[1] == 1, 'global_cwd_locked')
         conn.execute('INSERT INTO owners VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET ledger=excluded.ledger,job=excluded.job',
                      (cwd_key, ledger, job))
         taken = {row[0]: (row[1], row[2]) for row in
@@ -358,9 +365,11 @@ def worker(directory, job):
         require(observed.get('type') == 'chatgpt' and observed.get('email') and
                 digest(observed['email'].strip().lower().encode()) == account['identity'], 'server_identity_mismatch')
         runtime_identity_matches(runtime, account)
+        limits = rpc.request('account/rateLimits/read', {})
+        # Count after the reply: a slot reserved while the read was in flight must enter this judgment.
         # Legacy jobs predate account_slots, so never count fewer than this job itself.
         inflight = max(occupied_slots(account['account_id_hash']), 1)
-        quota_available(rpc.request('account/rateLimits/read', {}), account['quota_margin_pct'], inflight)
+        quota_available(limits, account['quota_margin_pct'], inflight)
         sandbox = ROLES[payload['role']]
         thread = rpc.request('thread/start', {'cwd': row['cwd'], 'model': payload['model'],
             'sandbox': sandbox, 'approvalPolicy': 'never', 'modelProvider': 'openai'})['thread']['id']

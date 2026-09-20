@@ -20,6 +20,8 @@ for line in sys.stdin:
  for name in ('calls.jsonl','calls-'+job+'.jsonl'):
   with (home/name).open('a') as f:f.write(json.dumps(m)+'\n')
  if rid is None:continue
+ if method=='account/rateLimits/read' and config.get('hold_rate_limits_until'):
+  while not Path(config['hold_rate_limits_until']).exists():time.sleep(.02)
  if method==config.get('disconnect_before'):sys.exit(0)
  if method==config.get('reject'):
   print(json.dumps({'id':rid,'error':{'code':config.get('reject_code',-32000),'message':'rejected'}}),flush=True);continue
@@ -293,6 +295,24 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(slots,{0:'ghost',1:'two'})
         self.assertEqual([s['reason'] for s in self.cli('reap','--older-than','0')['kept']],['ledger_missing'])
 
+    @unittest.skipIf(os.getuid()==0,'file permissions do not restrict root')
+    def test_unreadable_ledger_slot_is_kept_not_fatal(self):
+        # An unreadable ledger is as unobservable as a missing one: hold the slot, never fail everything else.
+        locked=self.root/'locked.sqlite';locked.write_bytes(b'');locked.chmod(0o000)
+        self.submit();self.wait();self.cli('ack','--job','one')
+        db=self.ownership()
+        key=db.execute('SELECT account_key FROM account_slots').fetchone()[0]
+        db.execute('UPDATE account_slots SET ledger=?,job=? WHERE account_key=? AND slot=0',(str(locked),'ghost',key))
+        db.commit();db.close()
+        self.submit('two',cwd=str(self.cwd2));self.assertEqual(self.wait('two')['status'],'completed')
+        r=self.cli('reap','--older-than','0')
+        self.assertEqual([s['reason'] for s in r['kept']],['ledger_missing'])
+        self.assertEqual([(s['job'],s['reason']) for s in r['released']],[('two','stale_unacked')])
+        self.cli('ack','--job','two')
+        db=self.ownership()
+        db.execute("UPDATE owners SET ledger=? WHERE key LIKE 'cwd:%'",(str(locked),));db.commit();db.close()
+        self.assertEqual(self.submit('three',cwd=str(self.cwd2),code=2)['error'],'global_owner_unknown')
+
     def test_legacy_account_owner_row_is_migrated(self):
         self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','1')
         self.config(wait=True);self.submit();self.wait(status='running')
@@ -317,6 +337,23 @@ class WorkerTest(unittest.TestCase):
         self.config(pct=70);self.submit('two',cwd=str(self.cwd2));r=self.wait('two')
         self.assertEqual(r['error_kind'],'quota_headroom_insufficient')
         self.assertFalse(any(m.get('method')=='turn/start' for m in self.calls('two')))
+
+    def test_slot_reserved_during_rate_limit_read_enters_the_headroom_check(self):
+        # A slot taken while the window read was in flight must still be counted by the reader.
+        self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','2','--quota-margin-pct','10')
+        gate=self.root/'release-rate-limit'
+        self.config('one',pct=85,hold_rate_limits_until=str(gate))
+        self.config('two',pct=80,wait=True)
+        self.submit('one')
+        deadline=time.monotonic()+8
+        while not any(m.get('method')=='account/rateLimits/read' for m in self.calls('one')) and time.monotonic()<deadline:
+            time.sleep(.02)
+        self.assertTrue(any(m.get('method')=='account/rateLimits/read' for m in self.calls('one')))
+        self.submit('two',cwd=str(self.cwd2));self.started('two')
+        gate.write_text('')
+        self.assertEqual(self.wait('one')['error_kind'],'quota_headroom_insufficient')
+        self.assertFalse(any(m.get('method')=='turn/start' for m in self.calls('one')))
+        self.cli('cancel','--job','two');self.assertEqual(self.wait('two')['status'],'interrupted')
 
     def test_acknowledged_slots_leave_the_headroom_calculation(self):
         self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','3','--quota-margin-pct','20')
