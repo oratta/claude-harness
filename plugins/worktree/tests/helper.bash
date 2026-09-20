@@ -96,6 +96,19 @@ wt_kill_tracked_pids() {
   return 0
 }
 
+# プロセス一覧を取得できる環境かを、自分自身（$$）を引けるかで確かめ、取れなければ skip する。
+# 対象は実プロセスを立てて ps / pgrep で観測するケース。砂場（Codex worker など）では
+# ps が operation not permitted、pgrep が Cannot get process list になり、検査の前提ごと
+# 成立しない。既存の `command -v lsof || skip` と同じ「必要な道具が無ければ skip」の形。
+wt_require_process_listing() {
+  local pgid
+  pgid=$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')
+  case "$pgid" in
+    ''|*[!0-9]*) skip "process listing unavailable (ps cannot read this process)" ;;
+  esac
+  pgrep -g "$pgid" >/dev/null 2>&1 || skip "process listing unavailable (pgrep)"
+}
+
 # Extract only the YAML frontmatter (between the first two `---` lines).
 wt_frontmatter() {
   awk 'NR==1 && $0=="---"{infm=1; next} infm && $0=="---"{exit} infm{print}' "$1"

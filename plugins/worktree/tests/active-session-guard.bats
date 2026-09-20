@@ -212,6 +212,7 @@ wt_load_detect_helpers() {
 }
 
 @test "detect_active_procs_under: finds a live non-shell process under the path" {
+  wt_require_process_listing
   command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
   local snippet dir pid out
   snippet="$(wt_load_detect_helpers)"
@@ -243,6 +244,7 @@ wt_load_detect_helpers() {
 }
 
 @test "detect_active_procs_under: behaves identically under bash and zsh" {
+  wt_require_process_listing
   command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
   command -v zsh >/dev/null 2>&1 || skip "zsh unavailable"
   local snippet dir pid out_bash out_zsh

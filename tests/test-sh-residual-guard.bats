@@ -32,6 +32,19 @@ teardown() {
   return 0
 }
 
+# test.sh の残留プロセス検査は「自分自身を ps / pgrep で引ける」ことを前提にしている。
+# 砂場のようにプロセス一覧を取れない環境では test.sh が検査を諦めて bats をそのまま流すので、
+# 検査が働くことを確かめるケースは前提ごと成立しない。そこだけ skip する
+# （検査が無効な環境で失敗を求めると、fd 3 を握った残留が消えず内側の bats が終わらない）。
+require_process_listing() {
+  local pgid
+  pgid=$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')
+  case "$pgid" in
+    ''|*[!0-9]*) skip "プロセス一覧を取得できない環境（ps が自分自身を引けない）" ;;
+  esac
+  pgrep -g "$pgid" >/dev/null 2>&1 || skip "プロセス一覧を取得できない環境（pgrep が使えない）"
+}
+
 # 記録した PID のうち生きているものがあれば 0
 tracked_alive() {
   local p
@@ -57,6 +70,8 @@ run_test_sh_isolated() {
   # 関数が落ちて起動できない。PATH を bats 起動前に戻し、BATS_* も外してから呼ぶ。
   local v
   PATH=${BATS_SAVED_PATH:-$PATH}
+  # STUB_BIN が指定されていれば先頭に足す（ps / pgrep を潰す差し替え用）
+  if [ -n "${STUB_BIN:-}" ]; then PATH="$STUB_BIN:$PATH"; fi
   for v in $(compgen -e | grep '^BATS_'); do unset "$v"; done
   cd "$REPO" && git add -A && TEST_RESIDUAL_GRACE="$INNER_GRACE" sh scripts/test.sh
 }
@@ -70,6 +85,7 @@ write_inner_suite() { # <name>
 
 # fd 3 を握った背景プロセスが残ると test.sh は非 0 で終わり、残留を表示して回収する
 @test "a leftover child holding fd 3 makes test.sh fail, report it and reap it" {
+  require_process_listing
   write_inner_suite leak <<'BATS'
 @@TEST "leaks a child holding the bats output pipe" {
   sleep 1234 >/dev/null 2>&1 &
@@ -109,6 +125,7 @@ BATS
 
 # fd は閉じていても teardown で回収されなかった背景プロセスは失敗にする
 @test "a child with fds closed but not reaped in teardown still fails test.sh" {
+  require_process_listing
   write_inner_suite survivor <<'BATS'
 @@TEST "leaves a child alive after the test" {
   ( for f in /dev/fd/*; do f=${f##*/}; [ "$f" -gt 2 ] 2>/dev/null && eval "exec $f>&-" 2>/dev/null; done; exec sleep 1234 ) &
@@ -127,6 +144,7 @@ BATS
 # 残留のコマンドにたまたま bats-core / bats-exec / bats-format が含まれていても、
 # bats 本体の実行ファイルでなければ残留として検出する
 @test "a leftover whose command merely mentions bats-core is still detected" {
+  require_process_listing
   mkdir -p "$BATS_TEST_TMPDIR/bats-core-fixture"
   ln -s "$(command -v sleep)" "$BATS_TEST_TMPDIR/bats-core-fixture/bats-exec-sleep"
   export FIXTURE_SLEEP="$BATS_TEST_TMPDIR/bats-core-fixture/bats-exec-sleep"
@@ -162,4 +180,35 @@ BATS
     [[ "$output" == *"TEST_RESIDUAL_GRACE"* ]]
     [[ "$output" != *"bats: 全スイート pass"* ]]
   done
+}
+
+# 砂場など ps / pgrep がプロセス一覧を取れない環境では、検査を諦めて続行する（issue #320）。
+# 検査を続けると「TAP は終わったのに残留が居る」と誤判定し、全件実行をグループごと SIGKILL する。
+@test "test.sh drops the residual check and keeps going where the process list is unavailable" {
+  STUB_BIN="${BATS_TEST_TMPDIR}/stub-bin"
+  mkdir -p "$STUB_BIN"
+  local c
+  for c in ps pgrep; do
+    cat >"$STUB_BIN/$c" <<'STUB'
+#!/bin/sh
+echo "$(basename "$0"): Cannot get process list" >&2
+exit 1
+STUB
+    chmod +x "$STUB_BIN/$c"
+  done
+  export STUB_BIN
+  # 検査が生きていれば「回収されずに残っています」で失敗するはずの内容を流す
+  write_inner_suite survivor <<'BATS'
+@@TEST "leaves a child alive after the test" {
+  ( for f in /dev/fd/*; do f=${f##*/}; [ "$f" -gt 2 ] 2>/dev/null && eval "exec $f>&-" 2>/dev/null; done; exec sleep 1234 ) &
+  echo $! >>"$RESIDUAL_TEST_PIDS"
+}
+BATS
+  run run_test_sh_isolated
+  echo "$output"   # 失敗したときだけ bats が表示する（内側の test.sh の出力）
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"プロセス一覧を取得できない環境"* ]]
+  [[ "$output" == *"ok 1 leaves a child alive"* ]]
+  [[ "$output" == *"bats: 全スイート pass"* ]]
+  [[ "$output" != *"残っています"* ]]
 }

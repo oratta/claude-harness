@@ -28,7 +28,10 @@ check_sync() {
   if sed -n "$((n + 1))p" "$agents" | grep -q '^[[:space:]]*$'; then
     del="${del};$((n + 1))d"
   fi
-  /usr/bin/diff <(tail -n +2 "$claude") <(sed "$del" "$agents")
+  # プロセス置換の /dev/fd を diff に開かせない（砂場の中では operation not permitted になる）
+  tail -n +2 "$claude" >"$BATS_TEST_TMPDIR/claude-normalized.md"
+  sed "$del" "$agents" >"$BATS_TEST_TMPDIR/agents-normalized.md"
+  /usr/bin/diff "$BATS_TEST_TMPDIR/claude-normalized.md" "$BATS_TEST_TMPDIR/agents-normalized.md"
 }
 
 @test "AGENTS.md is in sync with CLAUDE.md (normalized diff is empty)" {
