@@ -34,6 +34,6 @@ sessions/
 # Agent worktrees (embedded checkouts, never tracked)
 .claude/worktrees/
 
-# Python のバイトコードキャッシュ（テスト実行で生える）
+# Python bytecode cache (pytest/py_compile artifacts next to the scripts)
 __pycache__/
 *.pyc

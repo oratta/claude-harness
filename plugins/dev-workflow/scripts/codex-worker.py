@@ -28,6 +28,13 @@ class Rejected(Exception):
     pass
 
 
+class ServerRejected(Rejected):
+    # An error response is proof the request was refused; a disconnect proves nothing.
+    def __init__(self, code):
+        super().__init__('rpc_error_'+str(code))
+        self.code = code
+
+
 def require(value, reason):
     if not value:
         raise Rejected(reason)
@@ -66,6 +73,11 @@ def db_open(directory):
       status TEXT, acked INTEGER DEFAULT 0, created REAL, updated REAL, pid INTEGER,
       thread_id TEXT, turn_id TEXT, text TEXT, usage TEXT, error_kind TEXT, cancel INTEGER DEFAULT 0);
     ''')
+    columns = {row[1] for row in db.execute('PRAGMA table_info(accounts)')}
+    if 'max_concurrent' not in columns:
+        db.execute('ALTER TABLE accounts ADD COLUMN max_concurrent INTEGER DEFAULT 3')
+    if 'quota_margin_pct' not in columns:
+        db.execute('ALTER TABLE accounts ADD COLUMN quota_margin_pct REAL DEFAULT 5')
     return db
 
 
@@ -168,29 +180,90 @@ class JobTmp:
             os.close(parent_fd)
 
 
-def reserve_global(directory, job, account, cwd):
+def ownership_open():
     root = Path.home() / '.local/state/claude-harness-codex'
     root.mkdir(parents=True, mode=0o700, exist_ok=True)
     require(root.stat().st_uid == os.getuid() and root.stat().st_mode & 0o077 == 0, 'ownership_directory_not_private')
     conn = sqlite3.connect(root / 'ownership.sqlite', isolation_level=None, timeout=10)
     os.chmod(root / 'ownership.sqlite', 0o600)
+    conn.execute('CREATE TABLE IF NOT EXISTS owners(key TEXT PRIMARY KEY, ledger TEXT, job TEXT)')
+    conn.execute('CREATE TABLE IF NOT EXISTS account_slots(account_key TEXT, slot INTEGER, ledger TEXT, job TEXT,'
+                 ' PRIMARY KEY(account_key, slot))')
+    return conn
+
+
+def slot_state(ledger, job):
+    # The referenced ledger is the only evidence; a slot row alone never means the job ended.
+    # Only 'acked' is free. A slot whose ledger cannot be read stays occupied, never reusable.
+    if not ledger or not Path(ledger).is_file():
+        return 'ledger_missing', None
+    prior = None
     try:
-        conn.execute('CREATE TABLE IF NOT EXISTS owners(key TEXT PRIMARY KEY, ledger TEXT, job TEXT)')
+        # Opening can fail too (unreadable file), so it belongs inside the guard.
+        prior = sqlite3.connect('file:'+ledger+'?mode=ro', uri=True, timeout=10)
+        row = prior.execute('SELECT status,acked,updated FROM jobs WHERE id=?', (job,)).fetchone()
+    except sqlite3.DatabaseError:
+        return 'ledger_missing', None
+    finally:
+        if prior:
+            prior.close()
+    if not row:
+        return 'ledger_missing', None
+    if row[0] not in TERMINAL:
+        return ('unknown' if row[0] == 'unknown' else 'active'), row[2]
+    return ('acked' if row[1] == 1 else 'unacked'), row[2]
+
+
+def occupied_slots(account_id_hash):
+    conn = ownership_open()
+    try:
+        rows = conn.execute('SELECT ledger,job FROM account_slots WHERE account_key=?',
+                            ('account:'+account_id_hash,)).fetchall()
+    finally:
+        conn.close()
+    return sum(1 for row in rows if slot_state(row[0], row[1])[0] != 'acked')
+
+
+def reserve_global(directory, job, account, cwd):
+    conn = ownership_open()
+    try:
         conn.execute('BEGIN IMMEDIATE')
-        keys = ['account:'+account['account_id_hash'], 'cwd:'+digest(cwd.encode())]
+        account_key = 'account:'+account['account_id_hash']
+        cwd_key = 'cwd:'+digest(cwd.encode())
         ledger = str(Path(directory).resolve()/'ledger.sqlite')
-        for key in keys:
-            old = conn.execute('SELECT ledger,job FROM owners WHERE key=?', (key,)).fetchone()
-            if old and old != (ledger, job):
-                require(Path(old[0]).is_file(), 'global_owner_unknown')
+        legacy = conn.execute('SELECT ledger,job FROM owners WHERE key=?', (account_key,)).fetchone()
+        if legacy:
+            # Older versions held the account as a single owners row; carry it into slot 0.
+            if not conn.execute('SELECT 1 FROM account_slots WHERE account_key=? AND slot=0', (account_key,)).fetchone():
+                conn.execute('INSERT INTO account_slots VALUES(?,0,?,?)', (account_key, legacy[0], legacy[1]))
+            conn.execute('DELETE FROM owners WHERE key=?', (account_key,))
+        old = conn.execute('SELECT ledger,job FROM owners WHERE key=?', (cwd_key,)).fetchone()
+        if old and tuple(old) != (ledger, job):
+            require(Path(old[0]).is_file(), 'global_owner_unknown')
+            prior = None
+            try:
                 prior = sqlite3.connect('file:'+old[0]+'?mode=ro', uri=True)
-                try:
-                    row = prior.execute('SELECT status,acked FROM jobs WHERE id=?', (old[1],)).fetchone()
-                    require(row and row[0] in TERMINAL and row[1] == 1, 'global_account_or_cwd_locked')
-                finally:
+                row = prior.execute('SELECT status,acked FROM jobs WHERE id=?', (old[1],)).fetchone()
+            except sqlite3.DatabaseError:
+                raise Rejected('global_owner_unknown')
+            finally:
+                if prior:
                     prior.close()
-            conn.execute('INSERT INTO owners VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET ledger=excluded.ledger,job=excluded.job',
-                         (key, ledger, job))
+            require(row and row[0] in TERMINAL and row[1] == 1, 'global_cwd_locked')
+        conn.execute('INSERT INTO owners VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET ledger=excluded.ledger,job=excluded.job',
+                     (cwd_key, ledger, job))
+        taken = {row[0]: (row[1], row[2]) for row in
+                 conn.execute('SELECT slot,ledger,job FROM account_slots WHERE account_key=?', (account_key,))}
+        # The limit counts occupied slots, whatever their number: another state-dir registered with a
+        # larger limit can hold slots at or above this limit's range, and those still spend the account.
+        occupied = sum(1 for slot, ref in taken.items()
+                       if ref != (ledger, job) and slot_state(*ref)[0] != 'acked')
+        require(occupied < account['max_concurrent'], 'account_slots_exhausted')
+        free = next((slot for slot in range(account['max_concurrent'])
+                     if taken.get(slot) in (None, (ledger, job)) or slot_state(*taken[slot])[0] == 'acked'), None)
+        require(free is not None, 'account_slots_exhausted')
+        conn.execute('INSERT INTO account_slots VALUES(?,?,?,?) ON CONFLICT(account_key,slot) DO UPDATE SET ledger=excluded.ledger,job=excluded.job',
+                     (account_key, free, ledger, job))
         conn.execute('COMMIT')
     finally:
         conn.close()
@@ -240,7 +313,7 @@ def runtime_identity_matches(runtime, account):
     require(all(actual[k] == account[k] for k in actual), 'auth_profile_changed')
 
 
-def quota_available(result):
+def quota_available(result, margin, inflight):
     # Bucket selection follows statusline-codex.py; unlike display, reject malformed windows.
     buckets = result.get('rateLimitsByLimitId')
     bucket = buckets.get('codex') if isinstance(buckets, dict) else result.get('rateLimits')
@@ -255,6 +328,8 @@ def quota_available(result):
         require(type(pct) in (int, float) and math.isfinite(pct) and 0 <= pct <= 100 and
                 type(mins) is int and mins > 0 and type(reset) is int and reset > time.time(), 'quota_unknown')
         require(pct < 100, 'quota_exhausted')
+        # Each concurrent slot will spend before the next window read, so reserve for all of them.
+        require(pct + margin*inflight <= 100, 'quota_headroom_insufficient')
         found = True
     require(found, 'quota_unknown')
 
@@ -309,7 +384,7 @@ class Rpc:
             msg = self.receive(max(.001, deadline-time.monotonic()))
             if msg.get('id') == rid and 'method' not in msg:
                 if msg.get('error'):
-                    raise Rejected('rpc_error_'+str(msg['error'].get('code')))
+                    raise ServerRejected(msg['error'].get('code'))
                 return msg.get('result', {})
             self.buffer.append(msg)
         raise Rejected('rpc_timeout')
@@ -345,6 +420,7 @@ def worker(directory, job):
     db = db_open(directory)
     rpc = None
     turn_submitted = False
+    turn_accepted = False
     execution_confirmed = False
     job_tmp = None
     runtime = None
@@ -382,7 +458,11 @@ def worker(directory, job):
         require(observed.get('type') == 'chatgpt' and observed.get('email') and
                 digest(observed['email'].strip().lower().encode()) == account['identity'], 'server_identity_mismatch')
         runtime_identity_matches(runtime, account)
-        quota_available(rpc.request('account/rateLimits/read', {}))
+        limits = rpc.request('account/rateLimits/read', {})
+        # Count after the reply: a slot reserved while the read was in flight must enter this judgment.
+        # Legacy jobs predate account_slots, so never count fewer than this job itself.
+        inflight = max(occupied_slots(account['account_id_hash']), 1)
+        quota_available(limits, account['quota_margin_pct'], inflight)
         thread = rpc.request('thread/start', {'cwd': row['cwd'], 'model': payload['model'],
             'sandbox': sandbox, 'approvalPolicy': 'never', 'modelProvider': 'openai'})['thread']['id']
         update(db, job, thread_id=thread)
@@ -396,6 +476,7 @@ def worker(directory, job):
         turn = rpc.request('turn/start', {'threadId': thread, 'model': payload['model'],
             'sandboxPolicy': policy, 'approvalPolicy': 'never',
             'input': [{'type': 'text', 'text': payload['prompt']}]})['turn']['id']
+        turn_accepted = True
         update(db, job, turn_id=turn)
         cancel_sent = False
         cancel_at = None
@@ -454,7 +535,13 @@ def worker(directory, job):
         # Exception text is deliberately not persisted (it may contain credentials).
         kind = str(error) if isinstance(error, Rejected) else type(error).__name__
         if claimed:
-            update(db, job, status='unknown' if turn_submitted and not execution_confirmed else 'failed', error_kind=kind)
+            if isinstance(error, ServerRejected) and not turn_accepted:
+                # The server answered the start request, so no turn is running; record the code.
+                update(db, job, status='failed', error_kind='server_rejected_start_'+str(error.code))
+            else:
+                # A confirmed terminal turn is not uncertainty, whatever failed afterwards.
+                update(db, job, status='unknown' if turn_submitted and not execution_confirmed else 'failed',
+                       error_kind=kind)
     finally:
         try:
             if rpc:
@@ -479,15 +566,50 @@ def command(args):
     try:
         if args.command == 'register':
             require(re.fullmatch(r'[A-Za-z0-9_-]{1,100}', args.account), 'invalid_account_name')
+            require(args.max_concurrent >= 1, 'invalid_max_concurrent')
+            require(math.isfinite(args.quota_margin_pct) and 0 <= args.quota_margin_pct <= 100, 'invalid_quota_margin_pct')
             home = str(Path(args.codex_home).expanduser().resolve())
             require(Path(home).stat().st_uid == os.getuid(), 'profile_not_owned')
             info = auth_info(home)
             db.execute('BEGIN IMMEDIATE')
             require(not db.execute('SELECT 1 FROM jobs WHERE account=? AND acked=0', (args.account,)).fetchone(), 'account_has_unacknowledged_jobs')
-            db.execute('INSERT INTO accounts VALUES(?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET home=excluded.home, identity=excluded.identity,auth_hash=excluded.auth_hash,account_id_hash=excluded.account_id_hash',
-                       (args.account, home, info['identity'], info['auth_hash'], info['account_id_hash']))
+            # Omitted options restore the defaults: the limit is whatever the latest registration says.
+            db.execute('INSERT INTO accounts(name,home,identity,auth_hash,account_id_hash,max_concurrent,quota_margin_pct)'
+                       ' VALUES(?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET home=excluded.home, identity=excluded.identity,'
+                       'auth_hash=excluded.auth_hash,account_id_hash=excluded.account_id_hash,'
+                       'max_concurrent=excluded.max_concurrent,quota_margin_pct=excluded.quota_margin_pct',
+                       (args.account, home, info['identity'], info['auth_hash'], info['account_id_hash'],
+                        args.max_concurrent, args.quota_margin_pct))
             db.execute('COMMIT')
-            return {'account': args.account, 'registered': True}
+            return {'account': args.account, 'registered': True, 'max_concurrent': args.max_concurrent,
+                    'quota_margin_pct': args.quota_margin_pct}
+        if args.command == 'reap':
+            require(args.older_than >= 0, 'invalid_older_than')
+            rows = db.execute('SELECT name,account_id_hash FROM accounts' + (' WHERE name=?' if args.account else ''),
+                              (args.account,) if args.account else ()).fetchall()
+            require(rows or not args.account, 'account_not_registered')
+            released, kept = [], []
+            conn = ownership_open()
+            try:
+                conn.execute('BEGIN IMMEDIATE')
+                for account in rows:
+                    key = 'account:'+account['account_id_hash']
+                    slots = conn.execute('SELECT slot,ledger,job FROM account_slots WHERE account_key=? ORDER BY slot',
+                                         (key,)).fetchall()
+                    for slot, ledger, job in slots:
+                        state, updated = slot_state(ledger, job)
+                        entry = {'account': account['name'], 'slot': slot, 'job': job}
+                        stale = state == 'unacked' and time.time()-updated > args.older_than
+                        if state == 'acked' or stale:
+                            conn.execute('DELETE FROM account_slots WHERE account_key=? AND slot=?', (key, slot))
+                            released.append(entry | {'reason': 'stale_unacked' if stale else 'acked'})
+                        else:
+                            # unknown and ledger_missing are unobserved endings; never free them.
+                            kept.append(entry | {'reason': 'not_stale' if state == 'unacked' else state})
+                conn.execute('COMMIT')
+            finally:
+                conn.close()
+            return {'released': released, 'kept': kept}
         if args.command == 'submit':
             payload = validate_request(json.loads(Path(args.request).read_text()))
             encoded = json.dumps(payload, sort_keys=True)
@@ -500,8 +622,9 @@ def command(args):
                 return public(get_job(db, job))
             account = db.execute('SELECT * FROM accounts WHERE name=?', (payload['account'],)).fetchone()
             require(account is not None, 'account_not_registered')
-            require(not db.execute('SELECT 1 FROM jobs WHERE acked=0 AND (cwd=? OR account=?)',
-                (payload['cwd'], payload['account'])).fetchone(), 'cwd_or_account_locked')
+            # Account concurrency is decided by the shared slots; here only the working directory.
+            require(not db.execute('SELECT 1 FROM jobs WHERE acked=0 AND cwd=?',
+                (payload['cwd'],)).fetchone(), 'cwd_locked')
             reserve_global(args.state_dir, job, account, payload['cwd'])
             now = time.time()
             db.execute('INSERT INTO jobs(id,payload_hash,payload,account,cwd,status,created,updated) VALUES(?,?,?,?,?,?,?,?)',
@@ -540,8 +663,13 @@ def main():
     register = subs.add_parser('register')
     register.add_argument('--account', required=True)
     register.add_argument('--codex-home', required=True)
+    register.add_argument('--max-concurrent', type=int, default=3)
+    register.add_argument('--quota-margin-pct', type=float, default=5)
     submit = subs.add_parser('submit')
     submit.add_argument('--request', required=True)
+    reap = subs.add_parser('reap')
+    reap.add_argument('--older-than', type=float, default=86400)
+    reap.add_argument('--account')
     for name in ('status', 'result', 'cancel', 'ack', 'send', '_worker'):
         sub = subs.add_parser(name)
         sub.add_argument('--job', required=True)
