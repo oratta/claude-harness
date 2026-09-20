@@ -33,5 +33,5 @@
 - [x] 4.1 `openspec validate inherit-codex-worker-parent-tmpdir --strict` が通ることを確認する
 - [x] 4.2 `bash scripts/test.sh` を全件実行し、成功件数・総件数・exit code を記録する
 - [x] 4.3 `grep -rn "job_tmp\|job-tmp\|JobTmp" plugins/ openspec/specs/` で、archive 済みの change 以外に残骸が無いことを確認する
-- [ ] 4.4 実 Codex の implement role で、子シェルの `TMPDIR` が worker を起動した親の `TMPDIR` と一致することと、`mktemp -d` を使う外部スクリプト（flatmate の `scripts/test-task-store-worker.sh`）が worker の中で完走することを実測し、コマンド・出力・exit code・対象 HEAD を記録先に記録する
-- [ ] 4.5 archive 時に `openspec/specs/codex-worker/spec.md` の Purpose から「Git 管理外の専用一時領域を作り」を外す（delta spec は Requirement しか扱わないので、Purpose は archive の反映で直す）
+- [x] 4.4 実 Codex の implement role で、子シェルの `TMPDIR` が worker を起動した親の `TMPDIR` と一致することと、素の `mktemp -d` を使う外部スクリプトが worker の中で完走することを実測し、コマンド・出力・exit code・対象 HEAD を記録先に記録する（job `verify-338-tmpdir-1` / role implement / 対象 HEAD `f13f1b9` / status completed・error_kind null。子は `CHILD_TMPDIR=[/var/folders/0p/2srxnl3158994v497l4x53dr0000gn/T/]` を返し親の `TMPDIR` と一致、`CHILD_TMPPREFIX=[/tmp/zsh]` も親と一致。`mktemp -d` は `/var/folders/0p/2srxnl3158994v497l4x53dr0000gn/T/tmp.FkcJBYfw52` を返し、スクリプトは `SCRIPT_OK` / `SCRIPT_EXIT=0` で完走。外部スクリプトは flatmate のものを使わず、使い捨て worktree に置いた `tmpdir-probe.sh`（`mktemp -d` だけで一時領域を取る）を使った）
+- [x] 4.5 archive 時に `openspec/specs/codex-worker/spec.md` の Purpose から「Git 管理外の専用一時領域を作り」を外す（delta spec は Requirement しか扱わないので、Purpose は archive の反映で直す）
