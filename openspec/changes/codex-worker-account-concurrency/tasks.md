@@ -47,4 +47,4 @@
 
 ## 7. アーカイブ前の文面の突き合わせ
 
-- [ ] 7.1 この change をアーカイブする直前に `openspec/specs/codex-worker/spec.md` の有無を確認する。存在していれば、要件「アカウントと作業ディレクトリを排他的に所有する」からアカウント側の排他を外す MODIFIED delta をこの change に足してからアーカイブする。存在していなければ、未アーカイブの change `add-codex-worker` の担当への申し送りを issue #326 にコメントする
+- [x] 7.1 この change をアーカイブする直前に `openspec/specs/codex-worker/spec.md` の有無を確認する。存在していれば、要件「アカウントと作業ディレクトリを排他的に所有する」からアカウント側の排他を外す MODIFIED delta をこの change に足してからアーカイブする。存在していなければ、未アーカイブの change `add-codex-worker` の担当への申し送りを issue #326 にコメントする
