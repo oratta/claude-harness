@@ -15,15 +15,15 @@
 
 ## 3. 継続記録と利用入口
 
-- [ ] 3.1 継続記録 v1 の既存6キー、v2 の7キー/順序/encoding、版混在の最新候補、不正最新から旧版へ戻らないこと、profile/版/hash/パス/所有者/0700、v1-v2/run形式不一致、外部設定を読まないことを先にテストする。
-- [ ] 3.2 formatter/parser/restore/validate を v1-v2 対応にする。旧 run は v1、profile run は v2 を生成する。coordinator による取得/記録/代理操作と品質判断の境界を維持する。
-- [ ] 3.3 `commands/develop.md`、`references/codex-develop.md`、`docs/codex-develop.md`、`scripts/CODEX-WORKER.md` に起動例、旧フラグ競合、profile-file の役割別 account 例、retry/pending、二段階検証、v2、未観測の扱いを反映する。`references/model-tiers.md` に既存 roles と Codex の対応表/設定正本への参照を加える。
-- [ ] 3.4 先行 `openspec/changes/manual-codex-develop/specs/manual-codex-develop/spec.md` を本 change の同名 spec と同期し、全委譲同accountは旧形式の契約であると明記する。後日 archive しても契約が戻らないことを照合する。
+- [x] 3.1 継続記録 v1 の既存6キー、v2 の7キー/順序/encoding、版混在の最新候補、不正最新から旧版へ戻らないこと、profile/版/hash/パス/所有者/0700、v1-v2/run形式不一致、外部設定を読まないことを先にテストする。
+- [x] 3.2 formatter/parser/restore/validate を v1-v2 対応にする。旧 run は v1、profile run は v2 を生成する。coordinator による取得/記録/代理操作と品質判断の境界を維持する。
+- [x] 3.3 `commands/develop.md`、`references/codex-develop.md`、`docs/codex-develop.md`、`scripts/CODEX-WORKER.md` に起動例、旧フラグ競合、profile-file の役割別 account 例、retry/pending、二段階検証、v2、未観測の扱いを反映する。`references/model-tiers.md` に既存 roles と Codex の対応表/設定正本への参照を加える。
+- [x] 3.4 先行 `openspec/changes/manual-codex-develop/specs/manual-codex-develop/spec.md` を本 change の同名 spec と同期し、全委譲同accountは旧形式の契約であると明記する。後日 archive しても契約が戻らないことを照合する。
 
 ## 4. 一つの PR の検証と受け入れ証跡
 
-- [ ] 4.1 `plugins/statusline/tests/statusline-codex.bats` を先例に、`test_codex_*.py` 全件を一度呼ぶ薄い bats ラッパーを追加する。`scripts/test.sh` が git tracked の bats を列挙することを踏まえ、coordinator の記録操作後にラッパーが対象に含まれることを確認する。実モデル試験はラッパーに入れない。
-- [ ] 4.2 `plugins/dev-workflow/.claude-plugin/plugin.json` の現行版を確認して 2.13.8 から次版へ bump する。常時注入の description 等を不要に増やさず、`tests/injection-budget.txt` は変更しない。もし予算変更が不可避なら理由付きで coordinator に返す。
-- [ ] 4.3 `python3 -m unittest discover -s plugins/dev-workflow/tests -p 'test_codex_*.py'`、`scripts/test.sh`、`openspec validate codex-develop-role-profiles --strict --no-interactive`、`git diff --check` を実行し、件数・exit code・対象 HEAD を記録する（baseline は coordinator 実測80 tests、約51秒）。
+- [x] 4.1 `plugins/statusline/tests/statusline-codex.bats` を先例に、`test_codex_*.py` 全件を一度呼ぶ薄い bats ラッパーを追加する。`scripts/test.sh` が git tracked の bats を列挙することを踏まえ、coordinator の記録操作後にラッパーが対象に含まれることを確認する。実モデル試験はラッパーに入れない。
+- [x] 4.2 `plugins/dev-workflow/.claude-plugin/plugin.json` の現行版を確認して 2.13.8 から次版へ bump する。常時注入の description 等を不要に増やさず、`tests/injection-budget.txt` は変更しない。もし予算変更が不可避なら理由付きで coordinator に返す。
+- [x] 4.3 `python3 -m unittest discover -s plugins/dev-workflow/tests -p 'test_codex_*.py'`、`scripts/test.sh`、`openspec validate codex-develop-role-profiles --strict --no-interactive`、`git diff --check` を実行し、件数・exit code・対象 HEAD を記録する（baseline は coordinator 実測80 tests、約51秒）。
 - [ ] 4.4 coordinator に両セット各1件の実モデル実行を依頼し、spec→独立spec-review→implement→独立review の要求/実効 model/effort、account、executor、観測元、job/thread/turn ID、HEAD、コマンド/exit code、各工程の品質結果を証跡にする。要求どおりの実効値を確認できない工程は未達のまま報告する。
 - [ ] 4.5 回帰結果と実機証跡を同じ PR の受け入れ条件に対応付けて coordinator に返す。GitHub記録/push、独立レビュー、工程遷移は coordinator の担当とし、worker は merge/auto-merge を行わない。

@@ -17,6 +17,10 @@ Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.mo
 | `fable`   | 判断が一点に集中する場所——checkpoint の再ランク・verify の最終判定・Build Contract レビュー・アーキテクチャ判断 | `'fable'` |
 | `inherit` | 分類に迷うタスクの保守的デフォルト | （**渡さない**。下記） |
 
+## develop role と Codex profile
+
+Codex providerではClaudeのティア別名をCodex modelへ暗黙変換しない。`spec-write`、`spec-review`、`implement`、`impl-review`、`review`、`decider`、`explore`、`summarize` の各roleは、`references/codex-role-profiles.json`（または明示したversion 1のprofile-file）の同名entryにあるexecutor/account/model/effortへ解決する。このJSONがCodex設定の正本であり、本表へ個別Codex model IDを重複記載しない。
+
 重めの実装・レビューを中位ティアで回すときは `'opus'` を渡す（`rules/subagent-model-selection.md` の対応表と同じ）。
 
 ## `inherit` の意味

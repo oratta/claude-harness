@@ -1,15 +1,15 @@
 ---
 name: develop
 description: 標準開発ワークフロー（develop スキル）を起動する。issue があればそれを記録先に、無ければ Draft PR を記録先にして進める（issue を切るのは追跡・キュー・議論が要るときだけ）
-argument-hint: "[--executor codex --account NAME --model MODEL [--worker-state DIR] [--run-dir DIR]] [issue URL | request]"
+argument-hint: "[--executor codex (--profile NAME [--profile-file PATH] | --account NAME --model MODEL) [--worker-state DIR] [--run-dir DIR]] [issue URL | request]"
 allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 ---
 
 ## 実行先オプション
 
-`$ARGUMENTS` に `--executor codex` があれば、同時に `--account <登録名>` と `--model <CodexモデルID>` を必須とする。欠けていれば開始せず指定を求める。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用する。`--executor` 未指定は従来のClaude経路。未知のexecutorは拒否する。Codex指定時にAgent/execへfallbackしない。実行先オプションは委譲transportだけを変え、仕様要否・レビュー・チェック・順序は既存develop正本を使う。Codex指定で仕様を必須にしない。
+`$ARGUMENTS` に `--executor codex` があれば、`--profile <名前> [--profile-file <JSON>]` または旧形式の `--account <登録名> --model <CodexモデルID>` のどちらか一方を必須とする。両形式の併用、`--profile-file` 単独、旧形式の片方欠落は開始前に拒否する。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用する。`--executor` 未指定は従来のClaude経路。未知のexecutorは拒否する。Codex指定時にAgent/execへfallbackしない。実行先オプションは委譲transportだけを変え、仕様要否・レビュー・チェック・順序は既存develop正本を使う。Codex指定で仕様を必須にしない。
 
-引数なしの追加依頼では初回の Codex 設定を再推測しない。既存 develop が選んだ記録先（issue、issue が無い場合は Draft PR）のコメントを本体が取得し、`<!-- codex-develop-continuation:v1 ... -->` の最新候補を検証する。不在・不正・run の固定値との不一致なら Claude や別 run/account へ fallback せず、executor/account/model/run-dir の指定を求めて停止する。形式の生成・解析と run 検証は `scripts/codex-develop.py` の継続記録ヘルパーを使う。
+引数なしの追加依頼では初回の Codex 設定を再推測しない。既存 develop が選んだ記録先（issue、issue が無い場合は Draft PR）のコメントを本体が取得し、旧runの `v1` またはprofile runの `v2` の最新候補を版混在のまま選んで検証する。不正・未知版の最新候補から古いv1へ戻らない。profile/config版/config hashはrun内snapshotだけと照合し、外部profile-fileを再読込しない。不在・不一致なら Claude や別 run/account へ fallbackせず停止する。形式の生成・解析とrun検証は `scripts/codex-develop.py` の継続記録ヘルパーを使う。
 
 Codexオプション `--worker-state DIR` は登録済みworker台帳を指定する。省略時は `$HOME/.local/state/claude-harness-codex/jobs`。`--run-dir DIR` は継続するrunを明示するときに指定する。新規で省略するとinitが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作り返す。本体は返された絶対pathを記録先と会話に記録し、以後の全操作で同じpathを使う。これらも依頼本文から除外する。
 

@@ -416,6 +416,27 @@ class ContinuationRecord(unittest.TestCase):
         values.update(overrides)
         return m.format_continuation_record(values)
 
+    def profile_record(self, **overrides):
+        config = {
+            'version': 1, 'profile': 'custom',
+            'roles': {role: {'executor': 'codex', 'account': 'acct',
+                             'model': 'model', 'effort': 'high'}
+                      for role in m.CANONICAL_ROLES},
+        }
+        state = json.loads((self.run / 'run.json').read_text())
+        state.pop('account', None)
+        state.pop('model', None)
+        state['execution_config'] = config
+        state['execution_config_hash'] = m.execution_config_hash(config)
+        m.write(self.run / 'run.json', state)
+        values = {
+            'executor': 'codex', 'profile': 'custom', 'config-version': '1',
+            'config-hash': state['execution_config_hash'], 'run-dir': str(self.run),
+            'worker-state': str(self.root / 'worker'), 'cwd': str(self.cwd),
+        }
+        values.update(overrides)
+        return m.format_continuation_record(values)
+
     def test_record_round_trips_utf8_reserved_values(self):
         values = {
             'executor': 'codex', 'account': '名前 %=', 'model': 'model/β',
@@ -426,6 +447,53 @@ class ContinuationRecord(unittest.TestCase):
         line = m.format_continuation_record(values)
         self.assertIn('%E5%90%8D%E5%89%8D', line)
         self.assertNotIn('名前', line)
+
+    def test_v2_record_has_exact_order_and_round_trips(self):
+        line = self.profile_record(profile='名前 %=')
+        self.assertRegex(line, r'^<!-- codex-develop-continuation:v2 executor=codex '
+                         r'profile=.* config-version=1 config-hash=[0-9a-f]{64} '
+                         r'run-dir=.* worker-state=.* cwd=.* -->$')
+        self.assertEqual(m.parse_continuation_record(line)['profile'], '名前 %=')
+
+    def test_mixed_versions_select_latest_and_unknown_latest_stops(self):
+        v1 = self.record()
+        v2 = self.profile_record()
+        self.assertEqual(m.select_continuation_record([
+            {'id': 1, 'body': v1}, {'id': 2, 'body': v2},
+        ]), m.parse_continuation_record(v2))
+        with self.assertRaisesRegex(m.ContinuationError, 'invalid latest'):
+            m.select_continuation_record([
+                {'id': 1, 'body': v1},
+                {'id': 3, 'body': v2.replace(':v2 ', ':v3 ')},
+            ])
+
+    def test_v1_v2_must_match_run_format(self):
+        v1 = m.parse_continuation_record(self.record())
+        v2 = m.parse_continuation_record(self.profile_record())
+        with self.assertRaisesRegex(m.ContinuationError, 'format mismatch'):
+            m.validate_continuation(v1, self.run)
+        state = json.loads((self.run / 'run.json').read_text())
+        state.update(account='acct', model='model')
+        state.pop('execution_config')
+        state.pop('execution_config_hash')
+        m.write(self.run / 'run.json', state)
+        with self.assertRaisesRegex(m.ContinuationError, 'format mismatch'):
+            m.validate_continuation(v2, self.run)
+
+    def test_v2_validates_snapshot_profile_version_hash_without_external_file(self):
+        line = self.profile_record()
+        record = m.parse_continuation_record(line)
+        self.assertEqual(m.validate_continuation(record, self.run), record)
+        for key, value in [('profile', 'other'), ('config-version', '2'),
+                           ('config-hash', '0' * 64)]:
+            with self.subTest(key=key), self.assertRaisesRegex(m.ContinuationError, key + ' mismatch'):
+                m.validate_continuation(dict(record, **{key: value}), self.run)
+        state_path = self.run / 'run.json'
+        state = json.loads(state_path.read_text())
+        external = self.root / 'deleted-profile.json'
+        state['profile_file'] = str(external)
+        m.write(state_path, state)
+        self.assertEqual(m.validate_continuation(record, self.run), record)
 
     def test_latest_candidate_is_selected_and_invalid_latest_stops(self):
         old = self.record()

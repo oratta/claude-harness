@@ -9,10 +9,12 @@ python3 plugins/dev-workflow/scripts/codex-worker.py --state-dir "$HOME/.local/s
 
 request.json:
 ```json
-{"request_id":"example-1","origin":"manual","account":"personal","cwd":"/absolute/linked-worktree","model":"explicit-model-id","role":"implement","prompt":"The complete bounded task and acceptance criteria"}
+{"request_id":"example-1","origin":"manual","account":"personal","cwd":"/absolute/linked-worktree","model":"explicit-model-id","effort":"high","role":"implement","prompt":"The complete bounded task and acceptance criteria"}
 ```
 
-request_id=job_id。同一ID同一入力は再実行しない。status/result/cancel/ackには`--job ID`。stdout JSON、拒否exit2。`result.text`は最終出力、usage欠落はnull。完了と品質承認は別。結果回収後にackし、次工程は新IDでsubmitする。unknownはackも新規投入も拒否し、手動で台帳を消して再投入してはいけない。停止証拠を伴う運用回復は未実装。
+`effort`は省略可能な非空文字列。workerはrequestの静的検証後、App Serverのinitializeと全ページの`model/list`を使い、`thread/start`前にmodelと広告されたeffortの組合せを検証する。`thread/start`と`turn/start`の両方へmodelを渡し、effortは`turn/start`だけへ渡す。未知値や一覧取得失敗はturnを開始せずfailedとして残す。
+
+request_id=job_id。同一ID同一入力は再実行しない。status/result/cancel/ackには`--job ID`。stdout JSON、拒否exit2。`result.text`は最終出力、usage欠落はnull。公開`execution`には要求値と、thread/turn通知から観測できた実効model/effort・観測元・job/thread/turn IDを載せる。未観測値はnullであり要求値から補完しない。完了と品質承認は別。結果回収後にackし、次工程は新IDでsubmitする。unknownはackも新規投入も拒否し、手動で台帳を消して再投入してはいけない。停止証拠を伴う運用回復は未実装。
 
 親終了後もworkerは継続し、別プロセスから照会できる。role implement/spec-writeはworkspace-write、review/spec-review/impl-review/deciderはread-only。全roleでnetworkAccess=false、approvalPolicy=neverを維持する。workspace-writeのwritableRootsはcwdとジョブ専用一時領域だけで、excludeSlashTmp/excludeTmpdirEnvVar=true。read-onlyには書き込み許可を追加しない。git metadataの変更（commitなど）はCodex sandboxで拒否されうるため、#707の親処理へ渡す。danger-full-accessへ縮退しない。
 

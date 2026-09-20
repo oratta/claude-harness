@@ -18,6 +18,7 @@ Claudeの会話で実行する:
 
 ```text
 /dev-workflow:develop --executor codex --account spare --model <利用可能なCodexモデルID> <issue URLまたは依頼>
+/dev-workflow:develop --executor codex --profile codex-standard <issue URLまたは依頼>
 ```
 
 Claudeが既存developの進め方でworktree/記録先を準備し、仕様化判断から進める。仕様不要なら理由を記録して実装へ、必要なら仕様と独立仕様レビューを経て実装/テスト・PR・レビュー/ゲートへ進む。実行先をCodexにしてもこの判断と工程は変わらない。差戻しもCodexへ委譲する。burnを有効化する必要はない。
@@ -32,9 +33,10 @@ Claudeが既存developの進め方でworktree/記録先を準備し、仕様化�
 
 ```text
 <!-- codex-develop-continuation:v1 executor=codex account=<value> model=<value> run-dir=<value> worker-state=<value> cwd=<value> -->
+<!-- codex-develop-continuation:v2 executor=codex profile=<value> config-version=1 config-hash=<sha256> run-dir=<value> worker-state=<value> cwd=<value> -->
 ```
 
-引数なしの追加依頼では、その記録先だけをコメント ID の降順で調べ、最新候補が正確な形式であることを確認する。記録された 6 キーを run.json と照合し、run-dir の所有者とモード 0700 も検証する。不在・不正・重複/未知キー・不一致・run 不在は停止理由として executor/account/model/run-dir の指定を求める。Claude、別 account、別 run への暗黙 fallback はしない。記録の生成・解析・run 照合は `scripts/codex-develop.py` の継続記録ヘルパーを使い、GitHub コメント取得・保存は coordinator が代理する。
+v1は旧run、v2はprofile run専用。版混在でも最新候補だけを検証し、不正/未知版なら古いv1へ戻らない。v2はprofile/config-version/config-hashをrun内snapshotと照合し、外部profile-fileを再読込しない。両版ともrun-dirの所有者・0700とパスを検証する。不在・不一致なら停止し、Claude、別account、別runへ暗黙fallbackしない。
 
 新規開始で `--run-dir` を省略すると、initが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作り、JSONの`run_dir`を返す。Claudeはこの絶対pathを記録先に保存し、dispatch/status/result/ack等に必ず渡す。再開は `/develop ... --run-dir <保存したpath>` で既存runを読み、initを再実行しない。run内のaccount/model/worker_stateが指定と違えば再開せず不一致を報告する。台帳や最新runを探索して勝手に選ばない。
 
@@ -43,6 +45,8 @@ Claudeが既存developの進め方でworktree/記録先を準備し、仕様化�
 ```sh
 python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 init \
   --account spare --model <model> --cwd /absolute/target-worktree --worker-state "$HOME/.local/state/claude-harness-codex/jobs"
+python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-2 init \
+  --profile codex-standard --cwd /absolute/target-worktree --worker-state "$HOME/.local/state/claude-harness-codex/jobs"
 python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 dispatch --phase spec --input /absolute/request.txt
 python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 status
 python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 result
@@ -50,6 +54,8 @@ python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 ack
 ```
 
 `request.txt` は担当工程の指示。本体は `references/codex-develop.md` の表でphaseを選ぶ。上記は送受信の例で、ackだけで仕様承認にはならない。review verdictと投稿を確認するのはClaude側。コマンド失敗はblockedで終了し、別providerへのfallbackはしない。run-dir/worker-stateには依頼・結果が残るため私有ディレクトリに置く。
+
+外部profileはversion 1の`profiles.<name>.roles`に全canonical roleを持ち、各entryでexecutor/account/model/effortを指定する。profileと旧`--account/--model`は併用不可。dispatchはrole別設定とpayload hashをsubmit前にpendingへ保存し、retryは保存依頼を変更しない。workerは静的検証と`model/list`広告値による開始前検証を行う。結果の実効model/effortやIDが未観測ならnullであり、成功値を推測しない。
 
 初版は全工程fresh thread。read-only reviewerは投稿を本体に返す。実モデルによる一件完走は統合検証の証拠を参照し、fake testsだけで実運用検証済みとは扱わない。
 

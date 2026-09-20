@@ -14,11 +14,16 @@ import uuid
 from urllib.parse import quote, unquote_to_bytes
 
 
-CONTINUATION_KEYS = ('executor', 'account', 'model', 'run-dir', 'worker-state', 'cwd')
+CONTINUATION_V1_KEYS = ('executor', 'account', 'model', 'run-dir', 'worker-state', 'cwd')
+CONTINUATION_V2_KEYS = ('executor', 'profile', 'config-version', 'config-hash',
+                        'run-dir', 'worker-state', 'cwd')
 CONTINUATION_PATH_KEYS = frozenset(('run-dir', 'worker-state', 'cwd'))
 CONTINUATION_MARKER = '<!-- codex-develop-continuation:'
-CONTINUATION_PREFIX = '<!-- codex-develop-continuation:v1 '
-CONTINUATION_RE = r'<!-- codex-develop-continuation:v1 ((?:[A-Za-z0-9._~-]+=(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+ ){5}[A-Za-z0-9._~-]+=(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+) -->'
+CONTINUATION_PREFIXES = {
+    'v1': '<!-- codex-develop-continuation:v1 ',
+    'v2': '<!-- codex-develop-continuation:v2 ',
+}
+CONTINUATION_VALUE_RE = r'(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+'
 
 
 class ContinuationError(ValueError):
@@ -47,27 +52,38 @@ def _continuation_decode(value):
 
 def format_continuation_record(values):
     """Return the one-line machine-readable record written by the coordinator."""
-    if set(values) != set(CONTINUATION_KEYS):
-        raise ContinuationError('continuation keys must be exactly the required six keys')
+    if set(values) == set(CONTINUATION_V1_KEYS):
+        version, keys = 'v1', CONTINUATION_V1_KEYS
+    elif set(values) == set(CONTINUATION_V2_KEYS):
+        version, keys = 'v2', CONTINUATION_V2_KEYS
+    else:
+        raise ContinuationError('continuation keys must match exactly one supported version')
     if values.get('executor') != 'codex':
         raise ContinuationError('continuation executor must be codex')
-    encoded = ' '.join(f'{key}={_continuation_encode(values[key])}' for key in CONTINUATION_KEYS)
-    return f'{CONTINUATION_PREFIX}{encoded} -->'
+    encoded = ' '.join(f'{key}={_continuation_encode(values[key])}' for key in keys)
+    return f'{CONTINUATION_PREFIXES[version]}{encoded} -->'
 
 
 def parse_continuation_record(line):
     """Parse one exact continuation line, rejecting unknown and duplicate keys."""
     import re
-    if not isinstance(line, str) or '\n' in line or '\r' in line or not re.fullmatch(CONTINUATION_RE, line):
+    if not isinstance(line, str) or '\n' in line or '\r' in line:
         raise ContinuationError('invalid continuation record')
-    payload = line[len(CONTINUATION_PREFIX):-4]
+    version = next((item for item, prefix in CONTINUATION_PREFIXES.items()
+                    if line.startswith(prefix)), None)
+    if version is None or not line.endswith(' -->'):
+        raise ContinuationError('invalid continuation record')
+    keys = CONTINUATION_V1_KEYS if version == 'v1' else CONTINUATION_V2_KEYS
+    prefix = CONTINUATION_PREFIXES[version]
+    payload = line[len(prefix):-4]
     parts = payload.split(' ')
-    if len(parts) != len(CONTINUATION_KEYS):
+    if len(parts) != len(keys):
         raise ContinuationError('invalid continuation record')
     values = {}
-    for part, key in zip(parts, CONTINUATION_KEYS):
+    for part, key in zip(parts, keys):
         name, separator, encoded = part.partition('=')
-        if separator != '=' or name != key or key in values:
+        if (separator != '=' or name != key or key in values or
+                not re.fullmatch(CONTINUATION_VALUE_RE, encoded)):
             raise ContinuationError('invalid continuation keys')
         values[key] = _continuation_decode(encoded)
     if values['executor'] != 'codex':
@@ -117,13 +133,24 @@ def validate_continuation(record, run_dir):
         state = json.loads((directory / 'run.json').read_text())
     except (OSError, ValueError, KeyError) as exc:
         raise ContinuationError('run-dir is unavailable or invalid') from exc
-    expected = {
-        'run-dir': str(directory),
-        'account': state.get('account'),
-        'model': state.get('model'),
-        'worker-state': state.get('worker_state'),
-        'cwd': state.get('cwd'),
-    }
+    is_v2 = set(record) == set(CONTINUATION_V2_KEYS)
+    is_profile = 'execution_config' in state
+    if is_v2 != is_profile:
+        raise ContinuationError('continuation and run format mismatch')
+    expected = {'run-dir': str(directory), 'worker-state': state.get('worker_state'),
+                'cwd': state.get('cwd')}
+    if is_v2:
+        config = state.get('execution_config')
+        if not isinstance(config, dict):
+            raise ContinuationError('continuation and run format mismatch')
+        computed_hash = execution_config_hash(config)
+        if state.get('execution_config_hash') != computed_hash:
+            raise ContinuationError('continuation config-hash mismatch')
+        expected.update(profile=config.get('profile'),
+                        **{'config-version': str(config.get('version')),
+                           'config-hash': computed_hash})
+    else:
+        expected.update(account=state.get('account'), model=state.get('model'))
     if record.get('executor') != 'codex':
         raise ContinuationError('continuation executor mismatch: expected codex')
     for key, value in expected.items():

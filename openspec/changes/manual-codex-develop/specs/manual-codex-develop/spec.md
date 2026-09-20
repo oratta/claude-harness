@@ -1,11 +1,15 @@
 ## ADDED Requirements
 
 ### Requirement: 手動で実行先とアカウントを固定する
-手動Codex開発は登録accountとmodelを明示し、共通App Server workerだけに委譲しなければならない（MUST）。worker失敗時にexec/Claudeへfallbackしてはならない（MUST NOT）。
+手動Codex開発は旧形式の登録account/model、または名前付きprofileの役割別executor/account/model/effortをinitで固定し、共通App Server workerだけに委譲しなければならない（MUST）。profileと旧account/modelの同時指定を拒否し、worker失敗時にexec/Claudeへfallbackしてはならない（MUST NOT）。
 
-#### Scenario: 手動依頼
-- **WHEN** 人間がCodexと登録accountを指定する
-- **THEN** burn窓を要求せず同accountで全委譲を行う
+#### Scenario: 旧形式の手動依頼
+- **WHEN** 人間がCodexと単一の登録account/modelを指定する
+- **THEN** burn窓を要求せず同account/modelで全委譲を行い、effortを後付けしない
+
+#### Scenario: 設定セットの手動依頼
+- **WHEN** 人間がCodexとprofileを指定する
+- **THEN** burn窓を要求せずinitの役割別snapshotを固定し、各委譲は該当役割のaccount/model/effortだけを使う
 
 ### Requirement: 品質工程を維持する
 工程管理はdevelopの正本を使用し、W/R1/G/追加レビュアー/deciderの全役割をCodexへ委譲しなければならない（MUST）。レビューは別threadかつread-onlyでなければならない（MUST）。
@@ -45,16 +49,20 @@ workerのcompletedやackを品質合格として扱ってはならない（MUST 
 - **THEN** 本体は品質承認として記録せず、実行失敗として扱う
 
 ### Requirement: 保存依頼のまま送信を復旧する
-送信到達が不明なpendingは、保存requestのrequest_id/account/model/cwdがrunと一致する場合に限り同じ依頼をidempotent submitできなければならない（MUST）。retry時にpromptを再生成したり新しいrequest_idを割り当ててはならない（MUST NOT）。
+送信到達が不明なpendingは、保存requestのrequest_id/cwd/roleとpendingに固定したexecutor/account/model/effortおよびpayload hashが一致する場合に限り同じ依頼をidempotent submitできなければならない（MUST）。旧run/pendingは単一account/modelとeffort省略を読み取り互換で扱い、既存payload/hashを変更してはならない（MUST NOT）。retry時にpromptを再生成したり新しいrequest_idを割り当ててはならない（MUST NOT）。
 
 #### Scenario: 旧版pendingが送信前に失敗した
-- **WHEN** 保存済みrequestがありworkerに結果が存在するか不明なrunでretryする
-- **THEN** identity情報の一致を確認して元のrequestをそのまま送信し、旧品質metadataを工程条件にしない
+- **WHEN** 保存済みrequestがありworkerに結果が存在するか不明な旧runでretryする
+- **THEN** 旧identity情報の一致を確認して元のrequestをそのまま送信し、effortや設定版を後付けせず旧品質metadataを工程条件にしない
 
 #### Scenario: 結果が既に存在する
 - **WHEN** 同じrequest_idの結果がworkerに保存済みである
-- **THEN** 同一ジョブを回収し、重複実行せず受領後にackできる
+- **THEN** 同一ジョブを回収し、重複実行せず受領後にackできる。ただしunknownのack/置換は禁止する
 
 #### Scenario: 保存依頼のaccountが一致しない
-- **WHEN** 保存requestのaccount/model/cwd/request_idがrunと一致しない
+- **WHEN** 保存requestの固定設定がpendingの当該役割と一致しない（旧runは旧account/model/cwd/request_idの不一致）
 - **THEN** retryを拒否し、依頼を再生成して別ジョブとして送らない
+
+#### Scenario: 役割によって設定が異なる
+- **WHEN** profile run のレビュー役が作業役とは異なるaccount/model/effortを持つ
+- **THEN** retryはレビューpendingの固定値を照合し、run全体の単一account/modelを要求しない
