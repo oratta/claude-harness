@@ -27,7 +27,7 @@ read-only role（review / spec-review / impl-review / decider）は readOnly pol
 - **THEN** readOnly policy・networkAccess=false・approvalPolicy never で動き、書き込み許可も取得経路も得ない
 
 ### Requirement: 子へ渡す環境変数は親を引き継ぎ、渡してはならない変数だけ落とす
-worker は job の子プロセスへ、worker を起動した親プロセスの環境変数を引き継がなければならない（MUST）。ただし次は落とさなければならない（MUST）: worker が自分で決める値（CODEX_HOME・TMPDIR・TMPPREFIX）、Codex 自身が認証に読み登録済み account 以外の課金経路へ移し得る値、および子の git 操作を cwd 以外の checkout へ向け得る値（GIT_DIR・GIT_WORK_TREE・GIT_COMMON_DIR・GIT_INDEX_FILE）。read-only role には TMPDIR も TMPPREFIX も渡してはならない（MUST NOT）。引き継ぎが Codex 側の環境変数ポリシーで絞られる場合は、job ごとの runtime 設定でその絞りを解かなければならない（MUST）。worker 自身の git 呼び出し（依頼の検査・runtime の場所の算出・一時領域の場所の検査）は親から引き継いだ環境で行ってはならない（MUST NOT）。
+worker は job の子プロセスへ、worker を起動した親プロセスの環境変数を引き継がなければならない（MUST）。ただし次は落とさなければならない（MUST）: worker が自分で決める値（CODEX_HOME・TMPDIR・TMPPREFIX）、Codex 自身が認証に読み登録済み account 以外の課金経路へ移し得る値、および子の git 操作を cwd 以外の checkout へ向け得る値（GIT_DIR・GIT_WORK_TREE・GIT_COMMON_DIR・GIT_INDEX_FILE）。read-only role には TMPDIR も TMPPREFIX も渡してはならない（MUST NOT）。引き継ぎが Codex 側の環境変数ポリシーで絞られる場合は、job ごとの runtime 設定でその絞りを解かなければならない（MUST）。worker 自身の git 呼び出し（依頼の検査・runtime の場所の算出・一時領域の場所の検査）は、親の環境をそのまま使って行ってはならず（MUST NOT）、固定 allowlist の最小環境で行わなければならない（MUST）。
 
 #### Scenario: worker の中で GitHub を操作する
 - **WHEN** implement job の子プロセスが gh コマンドで Draft PR を作り issue にコメントする

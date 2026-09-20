@@ -22,6 +22,17 @@ TERMINAL = {'completed', 'failed', 'interrupted'}
 ROLES = {'implement': 'workspace-write', 'spec-write': 'workspace-write',
          'review': 'read-only', 'spec-review': 'read-only',
          'impl-review': 'read-only', 'decider': 'read-only'}
+# Reach matches the Claude subagent each role mirrors: the writers and the reviewers run
+# with a shell and gh, while the decider only has Read/Grep/Glob and fetches nothing.
+NETWORK_ROLES = {'implement', 'spec-write', 'review', 'spec-review', 'impl-review'}
+# The child otherwise inherits the parent, as a Claude subagent does. These are removed:
+# values the worker decides itself, values that would move Codex's authentication or
+# billing to an account the ledger does not know, and values that would point the child's
+# git at a checkout other than cwd.
+DROPPED_ENV = ('CODEX_HOME', 'TMPDIR', 'TMPPREFIX',
+               'OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL', 'CODEX_AUTH_JSON',
+               'OPENAI_ORGANIZATION', 'OPENAI_PROJECT',
+               'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE')
 
 
 class Rejected(Exception):
@@ -103,10 +114,26 @@ def get_job(db, job):
     return row
 
 
-def clean_env():
-    # Do not leak unrelated service credentials or Git routing into the child.
+def git_env():
+    # Fixed minimal allowlist for the worker's own git calls only. The caller's GIT_* must
+    # never redirect the linked-worktree and ownership checks to another checkout, so these
+    # calls do not use the inherited environment that the child job gets.
     allowed = {'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'LANG', 'LC_ALL', 'SYSTEMROOT'}
     return {k: v for k, v in os.environ.items() if k in allowed}
+
+
+def child_env():
+    # The child gets the parent's environment so the same role can finish the same work a
+    # Claude subagent finishes; only DROPPED_ENV is withheld.
+    return {k: v for k, v in os.environ.items() if k not in DROPPED_ENV}
+
+
+def git_common_dir(cwd):
+    # Absolute path of the shared Git directory; for a linked worktree this is elsewhere
+    # than cwd, so both the project-config check and writableRoots need it.
+    return subprocess.check_output(['git', '-C', str(cwd), 'rev-parse',
+                                    '--path-format=absolute', '--git-common-dir'],
+                                   env=git_env(), text=True).strip()
 
 
 class JobTmp:
@@ -122,7 +149,7 @@ class JobTmp:
     def validate_location(path, cwd):
         require(not path.is_relative_to(Path(cwd).resolve()), 'job_tmp_in_cwd')
         probe = subprocess.run(['git', '-C', str(path), 'rev-parse', '--absolute-git-dir'],
-                               env=clean_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                               env=git_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         require(probe.returncode == 128, 'job_tmp_in_git')
 
     @classmethod
@@ -279,7 +306,7 @@ def validate_request(payload):
     cwd = Path(payload['cwd']).expanduser().resolve()
     require(cwd.is_dir() and cwd.stat().st_uid == os.getuid(), 'cwd_not_owned')
     def git(*args):
-        return subprocess.check_output(['git', '-C', str(cwd), *args], stderr=subprocess.DEVNULL, text=True, env=clean_env()).strip()
+        return subprocess.check_output(['git', '-C', str(cwd), *args], stderr=subprocess.DEVNULL, text=True, env=git_env()).strip()
     require(Path(git('rev-parse', '--show-toplevel')).resolve() == cwd, 'cwd_must_be_repo_root')
     branch = git('branch', '--show-current')
     require(branch and branch not in ('main', 'master'), 'feature_branch_required')
@@ -289,11 +316,9 @@ def validate_request(payload):
     return payload
 
 
-def runtime_home(directory, job, source, cwd):
+def runtime_home(directory, job, source, cwd, common):
     # The Git project config layer can re-enable external tools; initial version refuses it.
     project = Path(cwd)
-    common = subprocess.check_output(['git', '-C', cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-                                    env=clean_env(), text=True).strip()
     roots = {project, Path(common).parent, *project.parents}
     # The normal user config is intentionally replaced by runtime config, not a project layer.
     roots.discard(Path.home())
@@ -336,8 +361,7 @@ def quota_available(result, margin, inflight):
 
 class Rpc:
     def __init__(self, home, cwd, job_tmp=None):
-        env = clean_env()
-        env.pop('TMPDIR', None)
+        env = child_env()
         if job_tmp is not None:
             env['TMPDIR'] = str(job_tmp.path)
             # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
@@ -438,7 +462,8 @@ def worker(directory, job):
         require(all(actual[k] == account[k] for k in actual), 'auth_profile_changed')
         # Repeat filesystem/branch checks immediately before execution.
         validate_request(payload)
-        runtime = runtime_home(directory, job, account['home'], row['cwd'])
+        common = git_common_dir(row['cwd'])
+        runtime = runtime_home(directory, job, account['home'], row['cwd'], common)
         runtime_identity_matches(runtime, account)
         sandbox = ROLES[payload['role']]
         if sandbox == 'workspace-write':
@@ -469,8 +494,10 @@ def worker(directory, job):
         if db.execute('SELECT cancel FROM jobs WHERE id=?', (job,)).fetchone()[0]:
             update(db, job, status='interrupted', error_kind='cancelled_before_turn')
             return
-        policy = ({'type': 'readOnly', 'networkAccess': False} if sandbox == 'read-only' else
-                  {'type': 'workspaceWrite', 'networkAccess': False, 'writableRoots': [row['cwd'], str(job_tmp.path)],
+        network = payload['role'] in NETWORK_ROLES
+        policy = ({'type': 'readOnly', 'networkAccess': network} if sandbox == 'read-only' else
+                  {'type': 'workspaceWrite', 'networkAccess': network,
+                   'writableRoots': [row['cwd'], str(job_tmp.path), common],
                    'excludeSlashTmp': True, 'excludeTmpdirEnvVar': True})
         turn_submitted = True
         turn = rpc.request('turn/start', {'threadId': thread, 'model': payload['model'],

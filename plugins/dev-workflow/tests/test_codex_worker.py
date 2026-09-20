@@ -21,7 +21,13 @@ from pathlib import Path
 runtime=Path(os.environ['CODEX_HOME']); job=runtime.name; home=(runtime/'auth.json').resolve().parent
 special=home/('fixture-'+job+'.json'); config=json.loads((special if special.exists() else home/'fixture.json').read_text())
 tmp=os.environ.get('TMPDIR')
-info={'path':tmp,'prefix':os.environ.get('TMPPREFIX')}
+# Names are written out here rather than imported from the worker, so the test observes
+# the actual variables instead of whatever the implementation happens to list.
+watched=['CODEX_HOME','TMPDIR','TMPPREFIX','OPENAI_API_KEY','CODEX_API_KEY','OPENAI_BASE_URL',
+ 'CODEX_AUTH_JSON','OPENAI_ORGANIZATION','OPENAI_PROJECT','GIT_DIR','GIT_WORK_TREE',
+ 'GIT_COMMON_DIR','GIT_INDEX_FILE','GH_TOKEN','GITHUB_TOKEN','HARNESS_FIXTURE_MARK']
+info={'path':tmp,'prefix':os.environ.get('TMPPREFIX'),
+ 'env':{k:os.environ.get(k) for k in watched}}
 if tmp:
  info.update(mode=stat.S_IMODE(Path(tmp).stat().st_mode),uid=Path(tmp).stat().st_uid,
   git=subprocess.run(['git','-C',tmp,'rev-parse','--absolute-git-dir'],capture_output=True).returncode,
@@ -249,6 +255,11 @@ class WorkerTest(unittest.TestCase):
             self.cli('ack','--job',job)
         self.assertNotEqual(*paths)
 
+    def git_common_dir(self):
+        out = subprocess.check_output(['git','-C',str(self.cwd),'rev-parse',
+            '--path-format=absolute','--git-common-dir'],text=True)
+        return out.strip()
+
     def test_all_role_policies_remain_restricted(self):
         for role in ('implement','spec-write','review','spec-review','impl-review','decider'):
             self.submit(role, role=role)
@@ -259,17 +270,60 @@ class WorkerTest(unittest.TestCase):
             self.assertEqual(turn['approvalPolicy'], 'never')
             if role in ('implement','spec-write'):
                 self.assertEqual(thread['sandbox'], 'workspace-write')
+                # The Git common directory is the third root: without it a linked
+                # worktree cannot commit, because .git is a file pointing elsewhere.
                 self.assertEqual(turn['sandboxPolicy'], {
-                    'type':'workspaceWrite', 'networkAccess':False,
-                    'writableRoots':[str(self.cwd.resolve()), self.tmp_info()['path']],
+                    'type':'workspaceWrite', 'networkAccess':True,
+                    'writableRoots':[str(self.cwd.resolve()), self.tmp_info()['path'],
+                                     self.git_common_dir()],
                     'excludeSlashTmp':True, 'excludeTmpdirEnvVar':True})
             else:
                 self.assertEqual(thread['sandbox'], 'read-only')
-                self.assertEqual(turn['sandboxPolicy'], {'type':'readOnly','networkAccess':False})
+                # The reviewers mirror general subagents that read GitHub with gh; the
+                # decider mirrors an agent with no shell, so it gets no reach at all.
+                self.assertEqual(turn['sandboxPolicy'], {
+                    'type':'readOnly', 'networkAccess':role!='decider'})
+                self.assertNotIn('writableRoots', turn['sandboxPolicy'])
                 self.assertIsNone(self.tmp_info()['path'])
                 self.assertIsNone(self.tmp_info()['prefix'])
             self.wait_cleanup(role)
             self.cli('ack','--job',role)
+
+    def test_child_inherits_parent_environment_except_the_dropped_names(self):
+        dropped = ['OPENAI_API_KEY','CODEX_API_KEY','OPENAI_BASE_URL','CODEX_AUTH_JSON',
+                   'OPENAI_ORGANIZATION','OPENAI_PROJECT',
+                   'GIT_DIR','GIT_WORK_TREE','GIT_COMMON_DIR','GIT_INDEX_FILE']
+        for name in dropped:
+            self.env[name] = 'fixture-'+name.lower().replace('_','-')
+        self.env['GIT_DIR'] = str(self.repo/'.git')
+        self.env['GIT_WORK_TREE'] = str(self.repo)
+        # An unrelated variable and the gh credential must reach the child, or the worker
+        # cannot do what a Claude subagent does with the same parent environment.
+        self.env['HARNESS_FIXTURE_MARK'] = 'reached'
+        self.env['GH_TOKEN'] = 'fixture-gh-token'
+        self.env['TMPPREFIX'] = str(self.root/'caller-zsh')
+        self.submit()
+        self.assertEqual(self.wait()['status'], 'completed')
+        seen = self.tmp_info()['env']
+        for name in dropped:
+            self.assertIsNone(seen[name], name+' must not reach the child')
+        self.assertEqual(seen['HARNESS_FIXTURE_MARK'], 'reached')
+        self.assertEqual(seen['GH_TOKEN'], 'fixture-gh-token')
+        self.assertEqual(seen['CODEX_HOME'], str((self.state/'runtimes/one').resolve()))
+        # TMPDIR/TMPPREFIX are the worker's own values, never the caller's.
+        self.assertEqual(seen['TMPDIR'], self.tmp_info()['path'])
+        self.assertEqual(seen['TMPPREFIX'], str(Path(self.tmp_info()['path'])/'zsh'))
+
+    def test_read_only_child_gets_neither_tmpdir_nor_tmpprefix(self):
+        # Regression for the inherit-by-default change: a caller's temp settings must not
+        # ride along into a read-only job, which owns no private area to redirect them to.
+        self.env['TMPDIR'] = str(self.root)
+        self.env['TMPPREFIX'] = str(self.root/'caller-zsh')
+        self.submit(role='review')
+        self.assertEqual(self.wait()['status'], 'completed')
+        seen = self.tmp_info()['env']
+        self.assertIsNone(seen['TMPDIR'])
+        self.assertIsNone(seen['TMPPREFIX'])
 
     def test_tmp_cleanup_for_confirmed_outcomes_and_symlink_contents(self):
         cases = [('success', {}, 'completed'), ('failure', {'status':'failed'}, 'failed'),
@@ -355,7 +409,7 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(p['sandbox'],'read-only');self.assertEqual(p['model'],'fixture-model')
         self.assertEqual(p['approvalPolicy'],'never')
         turn=next(m['params'] for m in self.calls() if m.get('method')=='turn/start')
-        self.assertEqual(turn['sandboxPolicy'],{'type':'readOnly','networkAccess':False})
+        self.assertEqual(turn['sandboxPolicy'],{'type':'readOnly','networkAccess':True})
 
     def test_cancel_after_submit_process_exits(self):
         self.config(wait=True);self.submit()

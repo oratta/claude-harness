@@ -24,8 +24,8 @@
 
 - [ ] 4.1 **先に環境変数の引き継ぎを確認する。** この worktree を cwd にして implement role の job を投げ、worker の中で目印変数・`GH_TOKEN` の有無と、落とすべき変数が落ちていることを出力して確認する。Codex 側のポリシーで絞られていれば runtime `config.toml` に引き継ぎ設定を足し、絞られていなければ足さない。この結果が 4.3〜4.5 の失敗の原因切り分け（砂場の拒否か、環境変数の不達か）の根拠になる
 - [ ] 4.2 worker の中で `python3 -m http.server <空きポート>` 等でループバックに待ち受けを立て、`curl -sS http://127.0.0.1:<port>/` が応答することを実測する。ポートは `lsof -i :<port>` で空きを確認してから選び、使ったポートを記録する（他プロジェクトのプロセスを止めてポートを空けない）。コマンド・出力・exit code を記録する
-- [ ] 4.3 worker の中で `git commit`（空コミットでよい）を実行し、linked worktree で成立することを実測する。失敗したら出力と exit code を記録し、4.1 の結果と照らして原因が砂場の拒否かどうかを判定する
-- [ ] 4.4 worker の中で `git push`・`gh pr create --draft`・`gh issue comment` を実測する。後始末の規則: push 先は `oratta/codex-worker-claude-probe-<日付>` のような使い捨て branch にする（本番の PR が載るこの worktree の branch を使わない）、Draft PR は実測後に `gh pr close` で閉じる、コメント先は記録先の issue に固定する。**remote branch の削除やその他の破壊的 git 操作は行わず、必要になったら実行せず主の承認を得る**。各操作のコマンド・出力・exit code と作成物の URL を記録する
+- [ ] 4.3 worker の中で、**まず使い捨て branch を作ってから** commit する。手順は（a）`git switch -c codex-probe-<日付>`（`switch` は破壊的操作ではない）、（b）`git commit --allow-empty` を実行して linked worktree で成立することを確認する、の順。本番 PR が載る `oratta/codex-worker-claude` にプローブ commit を積まない（積むと `git reset` の承認が要る事態になる）。失敗したら出力と exit code を記録し、4.1 の結果と照らして原因が砂場の拒否かどうかを判定する
+- [ ] 4.4 4.3 で作った使い捨て branch のまま、worker の中で `git push -u origin codex-probe-<日付>`・`gh pr create --draft --head codex-probe-<日付> --base main`（`--head` を明示する。省略すると現在のローカル branch が head になり、本番 PR がある branch では `already exists` で落ちる）・`gh issue comment 334` を実測する。後始末の規則: Draft PR は実測後に `gh pr close` で閉じる、コメント先は記録先の issue に固定する、**最後に `git switch oratta/codex-worker-claude` で元の branch に戻ってから job を終える**。**remote branch の削除やその他の破壊的 git 操作は行わず、必要になったら実行せず主の承認を得る**。各操作のコマンド・出力・exit code と作成物の URL を記録する
 - [ ] 4.5 flatmate のテストスクリプトは**別 job** として、flatmate の linked worktree（`/Users/oratta/orca/workspaces/flatmate/716-run-history`、ブランチ `feat/716-run-history`）を cwd にして submit する（claude-harness を cwd にすると flatmate 側への書き込みが `writableRoots` の外になる）。`scripts/test-task-store-worker.sh` を worker の中で完走させ、成功件数・exit code・対象 HEAD と使ったポートを記録する。**この worktree は別プロジェクトなので、実測で生じた差分を commit せず、破壊的な後片付けもしない**（必要になったら実行せず主に聞く）
 - [ ] 4.6 許可外への書き込みプローブ（`/tmp/<一意名>` と呼び出し元 `TMPDIR/<一意名>`）が拒否されること、専用領域が 0700 で終了後に消えていることを実環境で確認する
 
@@ -38,7 +38,7 @@
 
 ## 6. ドキュメントの整合
 
-- [ ] 6.1 `plugins/dev-workflow/scripts/CODEX-WORKER.md` の砂場と環境変数の記述を実際の範囲に直す（role ごとの段・`networkAccess` の値・`writableRoots` の 3 か所・落とす環境変数・残った代理実行の項目）
+- [ ] 6.1 `plugins/dev-workflow/scripts/CODEX-WORKER.md` の砂場と環境変数の記述を実際の範囲に直す（role ごとの段・`networkAccess` の値・`writableRoots` の 3 か所・落とす環境変数・残った代理実行の項目）。あわせて、実測は implement role で行い `spec-write` は policy が implement と同一なので同じ結果が当てはまる、と一言書く（後で「spec-write は未実測」と読まれないため）
 - [ ] 6.2 `plugins/dev-workflow/references/codex-develop.md` から、ネットワーク無効と commit 拒否を理由にした本体の代理実行の記述を削る。5.4 で残った項目があればその項目だけを残す。**`plugins/dev-workflow/references/codex-develop.md:46` の「read-only reviewerはGitHubコメントを書かない。本体が既存正本の書式で結果を代理投稿する」という記述は削らずに残す**（read-only role は readOnly policy を維持し、レビュー結果の代理投稿は design.md の Risks / Trade-offs で残すと決めた項目。ここを消すと投稿の担い手が不在になる）
 - [ ] 6.3 `plugins/dev-workflow/docs/codex-develop.md` の同趣旨の段落を同じ方針で直す（read-only reviewer のレビュー結果を本体が代理投稿する記述は同様に残す）
 - [ ] 6.4 `openspec/specs/codex-worker/spec.md` の Purpose が `TBD - created by archiving change isolate-codex-worker-job-tmp.` のままなので、archive 時に埋める内容を決めておく。あわせて、`openspec/specs/codex-worker-concurrency/spec.md:14` が参照する Requirement「アカウントと作業ディレクトリを排他的に所有する」が現在の `openspec/specs/codex-worker/spec.md` に存在しない（参照切れ）ことを記録する。**この参照切れを直すのはこの change の対象外**（アカウント排他の要件は今回触らない）が、Purpose を書くときに capability の範囲を見渡すので、そのとき気づけるようにここに残す
