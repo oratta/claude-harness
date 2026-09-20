@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "profiles": {
+    "codex-standard": {
+      "roles": {
+        "spec-write": {"executor": "codex", "account": "current", "model": "gpt-5.6-sol", "effort": "high"},
+        "spec-review": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "implement": {"executor": "codex", "account": "current", "model": "gpt-5.6-sol", "effort": "medium"},
+        "impl-review": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "review": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "decider": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "explore": {"executor": "codex", "account": "current", "model": "gpt-5.6-luna", "effort": "low"},
+        "summarize": {"executor": "codex", "account": "current", "model": "gpt-5.6-luna", "effort": "low"}
+      }
+    },
+    "codex-economy": {
+      "roles": {
+        "spec-write": {"executor": "codex", "account": "current", "model": "gpt-5.6-luna", "effort": "medium"},
+        "spec-review": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "implement": {"executor": "codex", "account": "current", "model": "gpt-5.6-luna", "effort": "medium"},
+        "impl-review": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "review": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "decider": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "explore": {"executor": "codex", "account": "current", "model": "gpt-5.6-luna", "effort": "low"},
+        "summarize": {"executor": "codex", "account": "current", "model": "gpt-5.6-luna", "effort": "low"}
+      }
+    }
+  }
+}

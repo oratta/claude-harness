@@ -7,11 +7,11 @@
 
 ## 2. Develop の設定セットと pending（worker の後）
 
-- [ ] 2.1 `test_codex_develop.py` に両セットの役割対応、旧フラグ併用拒否、外部設定の厳密形式/完全性/登録 account、非codex拒否、init snapshot/hash と外部ファイル変更/削除後の不変性の Red を追加する。
-- [ ] 2.2 `references/codex-role-profiles.json` と共通 loader/resolver、`init --profile NAME [--profile-file PATH]`、version/profile/roles/hash の保存を実装する。旧 init/account/model と旧 run の読み取りを維持する。探索/要約は read-only 補助 role/phase として既存役割に対応させる。
-- [ ] 2.3 role 別 account/model/effort の dispatch と pending_execution/pending_payload_hash の submit 前保存を実装する。retry の全照合対象、snapshot改変、各entry改変、送信応答喪失、既存結果、unknown、旧 prompt の再送と旧 payload hash 不変を先に回帰テストする。
-- [ ] 2.4 公開 execution を ack 時の run history に取り込み、role/executor/account/model/effort と ID の同一性を検証する。metadata 追加が request hash に影響しないことを確認する。
-- [ ] 2.5 旧形式/標準/節約で同じ coordinator fixture を回し、仕様不要/必要、独立レビュー、差戻し、finish/gate、失敗時の判断/順序/上限が変わらないことをテストする。手動とバーン呼出し fixture が同じ init/resolver と snapshot を使う例を残す（バーン接続は実装しない）。
+- [x] 2.1 `test_codex_develop.py` に両セットの役割対応、旧フラグ併用拒否、外部設定の厳密形式/完全性/登録 account、非codex拒否、init snapshot/hash と外部ファイル変更/削除後の不変性の Red を追加する。
+- [x] 2.2 `references/codex-role-profiles.json` と共通 loader/resolver、`init --profile NAME [--profile-file PATH]`、version/profile/roles/hash の保存を実装する。旧 init/account/model と旧 run の読み取りを維持する。探索/要約は read-only 補助 role/phase として既存役割に対応させる。
+- [x] 2.3 role 別 account/model/effort の dispatch と pending_execution/pending_payload_hash の submit 前保存を実装する。retry の全照合対象、snapshot改変、各entry改変、送信応答喪失、既存結果、unknown、旧 prompt の再送と旧 payload hash 不変を先に回帰テストする。
+- [x] 2.4 公開 execution を ack 時の run history に取り込み、role/executor/account/model/effort と ID の同一性を検証する。metadata 追加が request hash に影響しないことを確認する。
+- [x] 2.5 旧形式/標準/節約で同じ coordinator fixture を回し、仕様不要/必要、独立レビュー、差戻し、finish/gate、失敗時の判断/順序/上限が変わらないことをテストする。手動とバーン呼出し fixture が同じ init/resolver と snapshot を使う例を残す（バーン接続は実装しない）。
 
 ## 3. 継続記録と利用入口
 
