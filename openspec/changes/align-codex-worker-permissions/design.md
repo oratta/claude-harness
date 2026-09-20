@@ -34,13 +34,22 @@ Codex 側の制約ではないことは確認済みで、App Server の `Sandbox
 
 **`writableRoots` に Git 共通ディレクトリを足す。** `git rev-parse --path-format=absolute --git-common-dir` を使う。この値は `runtime_home()` が既に取得しているので、算出を 1 か所に寄せて使い回す。代替案は「worktree ではなく通常 clone を使う」だが、`validate_request()` が linked worktree を必須にしており（`linked_worktree_required`。main checkout の誤操作を防ぐ設計）、こちらを崩す方が失うものが大きい。もう一つの代替案「`dangerFullAccess` にする」は、commit だけのために書き込み範囲を全部開けることになるので第 2 段に置く。
 
-**環境変数は「引き継いで、落とすものだけ落とす」に反転させる。** 代替案は allowlist に GH_TOKEN・SSH_AUTH_SOCK 等を足していくことだが、Claude 側は親の環境をそのまま使っており、足りない変数が出るたびに harness を直す運用は「同じにする」という前提に反する。落とすのは worker が自分で決める値（CODEX_HOME・TMPDIR・TMPPREFIX）と、Codex 自身が認証に読み登録済み account 以外の課金経路へ移し得る値に限る。後者を残すと、台帳の account と実際に課金される先が食い違い、枠判定（`quota_available`）が別の窓を見ることになる。
+**環境変数は「引き継いで、落とすものだけ落とす」に反転させる。** 代替案は allowlist に GH_TOKEN・SSH_AUTH_SOCK 等を足していくことだが、Claude 側は親の環境をそのまま使っており、足りない変数が出るたびに harness を直す運用は「同じにする」という前提に反する。落とすのは次の 2 群に限る。
+
+| 群 | 変数 | 落とす理由 |
+|---|---|---|
+| worker が自分で決める値 | `CODEX_HOME`・`TMPDIR`・`TMPPREFIX` | runtime の場所と job 専用一時領域を worker が決めるため。`TMPDIR` / `TMPPREFIX` は read-only role には渡さない |
+| 認証と接続先をすり替える値 | `OPENAI_API_KEY`・`CODEX_API_KEY`・`OPENAI_BASE_URL`・`CODEX_AUTH_JSON`・`OPENAI_ORGANIZATION`・`OPENAI_PROJECT` | 登録済み account 以外の課金経路・接続先へ移し得る。残すと台帳の account と実際に課金される先が食い違い、枠判定（`quota_available`）が別の窓を見る |
+
+一覧の出どころは Codex CLI 0.153.4 の `codex --help` と、同版が読む設定・認証の文書（`config.toml` の `model_provider` / 認証周り）である。実装では 1 つの定数（例: `DROPPED_ENV`）に置き、テストがその定数ではなく実際の変数名で検査できるようにする。`GH_TOKEN` / `GITHUB_TOKEN` は落とさない（`gh` の認証がキーチェーンに無い環境ではこれが唯一の経路になる）。
+
+**`GIT_DIR` / `GIT_WORK_TREE` / `GIT_COMMON_DIR` / `GIT_INDEX_FILE` は落とす。** 引き継ぐと子の `git commit` が cwd ではなく親が指す別の checkout に向き、`validate_request()` が linked worktree を必須にしている設計（`linked_worktree_required`）が意味を失う。`codex-develop.py` 経由では `GIT_*` が落ちてから worker を呼ぶので実害は限定的だが、worker を直接 submit する経路では効く。既存テスト `test_git_environment_cannot_redirect_validation` がこの性質を固定しているので、worker 自身の `git` 呼び出し（`validate_request` / `runtime_home` / `JobTmp.validate_location`）は従来どおり最小環境で実行し続ける。Claude 側との差ではなく、cwd の取り違えを防ぐための落とし方である。
 
 **Codex 側の環境変数ポリシーも開ける。** App Server に渡した環境がそのままモデルの実行するシェルに届くとは限らない（Codex には `shell_environment_policy` があり、既定では核となる変数だけを継承し、名前に KEY / SECRET / TOKEN を含む変数を除く挙動が文書化されている）。job ごとの runtime `config.toml` は worker が生成しているので、そこに引き継ぎ設定を書く。実際に絞られるかは実測で確かめ、絞られていなければ設定を足さない（効かない設定を書かない）。
 
-**読む役は役ごとに分ける。** review / spec-review / impl-review は Claude 側で汎用サブエージェントとして起き、`gh` で PR や issue を読めるので `networkAccess: true` にする。decider は Claude 側が Read / Grep / Glob だけの読み取り専用エージェントで、シェルを持たず取得もしないので `networkAccess: false` のままにする。「read-only は一律で維持」「read-only も一律で開ける」の両方より、Claude 側の実際の手段に合わせる方が「同じにする」という前提に忠実である。
+**読む役は役ごとに分ける。** review / spec-review / impl-review は Claude 側で汎用サブエージェントとして起き、`gh` で PR や issue を読めるので `networkAccess: true` にする。decider は Claude 側が Read / Grep / Glob だけの読み取り専用エージェントで、シェルを持たず取得もしないので `networkAccess: false` のままにする。「read-only は一律で維持」「read-only も一律で開ける」の両方より、Claude 側の実際の手段に合わせる方が「同じにする」という前提に忠実である。ただし Claude 側の仕様レビュー（R1）は、仕様がマージ権限・層間契約・課金/法務に当たるとき `dev-workflow:decider`（Bash もネットワークも持たない）で起きる。Codex の `spec-review` role を `networkAccess: true` にするのは、既定の汎用サブエージェント経路に合わせた選択であり、決める役として起きる場合の Claude 側より広い。
 
-**砂場を外すのは第 2 段に置き、role ごとに決める。** 第 1 段（workspace-write + network + Git 共通ディレクトリ）で足りるかは実測でしか分からない。とくに macOS では `gh` と `git` の認証がキーチェーンに入っている場合があり、Seatbelt の砂場からキーチェーンへ届かない可能性がある。第 1 段で失敗したコマンド・出力・exit code を記録してから、足りない role だけ `dangerFullAccess` に落とす。
+**砂場を外すのは第 2 段に置き、workspace-write role だけを対象に、原因を切り分けてから決める。** 第 1 段（workspace-write + network + Git 共通ディレクトリ）で足りるかは実測でしか分からない。とくに macOS では `gh` と `git` の認証がキーチェーンに入っている場合があり、Seatbelt の砂場からキーチェーンへ届かない可能性がある。ただし `gh` が認証を受け取れない失敗には（a）砂場の拒否と（b）環境変数が子シェルに届いていない、の 2 つの原因があり、（b）を砂場のせいと読み違えると、書き込み範囲を全部開ける不可逆側の決定を誤って選ぶ。そのため実測は「環境変数の引き継ぎが効いているかの確認」→「`gh` / `git` の操作」の順で行い、第 2 段へ進むのは失敗が砂場の拒否によるものだと確認できた場合に限る。read-only role は readOnly policy を維持するので第 2 段の対象にしない。
 
 ## Risks / Trade-offs
 

@@ -24,6 +24,7 @@
 ### Modified Capabilities
 
 - `codex-worker`: 砂場の要件を改める。（a）書く役はネットワークと Git 共通ディレクトリへの書き込みを持ち、worker の中で GitHub 操作と commit / push を自分で完了できる（b）読む役は書き込みを増やさずネットワークだけ揃える（c）子へ渡す環境変数の範囲と、渡してはいけない変数（d）緩める判断は段階的で、各段の採否を実測の証跡とともに記録する（e）実 Codex の受け入れ証跡に localhost・Git・GitHub・外部リポのテストスクリプトを加える
+- `codex-develop-continuation`: Requirement「coordinator と担当者の責務境界を守る」を書き直す。現行は「coordinator が GitHub 操作と worker が実行できない場合の commit/push の代理を担う（MUST）」「担当者は GitHub 操作・ログ取得を行ってはならない（MUST NOT）」で、worker が自分で `gh` を使い push する今回の変更と正面衝突する。coordinator に残すのは記録先の選択・継続記録の生成/解析・GitHub コメントの取得/保存・LLM ログの取得・run の整合性検証とし、GitHub 操作と commit/push は権限を持つ役が自分で行い、代理は「揃えられなかった項目」として記録済みの操作だけに限る。read-only role のレビュー結果を coordinator が代理投稿する経路は残す
 
 ## Impact
 
@@ -32,6 +33,7 @@
 - `plugins/dev-workflow/scripts/CODEX-WORKER.md`: 実際の範囲と制約の記述（現行は「全 role で networkAccess=false」「子環境変数は allowlist だけ」と書いてある）
 - `plugins/dev-workflow/references/codex-develop.md` / `plugins/dev-workflow/docs/codex-develop.md`: 代理実行の記述の削除
 - `openspec/specs/codex-worker/spec.md`: archive 時に反映（Purpose の TBD もこの機会に埋める）
+- `openspec/specs/codex-develop-continuation/spec.md`: Requirement「coordinator と担当者の責務境界を守る」を archive 時に反映（GitHub 操作と commit/push の担い手が変わる）
 - `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json`: dev-workflow のバージョンを 2.13.8 → 2.13.9
 - 受け入れるリスク: 認証情報を持ち外と通信できる子を、途中で誰も止められない（`approvalPolicy: never` は変えない）。これは許可を飛ばす設定で動いている Claude のサブエージェントと同じ水準で、Codex 側だけが増やすリスクではない
 - 触らないもの: `approvalPolicy: never`、切り離して投げて後で拾う作り、`excludeSlashTmp` / `excludeTmpdirEnvVar`、一時領域の所有と片付け、account ごとの同時実行と枠判定（`codex-worker-concurrency`）、Claude の hooks が Codex に効かない点（製品の違いなので対象外）
