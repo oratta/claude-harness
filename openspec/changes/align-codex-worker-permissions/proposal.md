@@ -8,10 +8,10 @@
 
 - **BREAKING（仕様の反転）**: `codex-worker` の Requirement「一時領域の追加許可以外の砂場を維持する」から「networkAccess は false を維持しなければならない」「read-only role の許可を拡大したり danger-full-access に変更したりしてはならない」を取り除き、「Claude のサブエージェントと同じ水準まで開ける」方針に置き換える
 - 書く役（`implement` / `spec-write`）の turn を `networkAccess: true` にし、`writableRoots` に Git 共通ディレクトリ（`git rev-parse --git-common-dir`）を足して、linked worktree でも worker の中で `git commit` が通るようにする
-- 読む役（`review` / `spec-review` / `impl-review` / `decider`）は `readOnly` を保ったまま `networkAccess: true` にして、GitHub の読み取りを Claude 側の同じ役と揃える。書き込み許可は増やさない
+- 読む役は `readOnly` を保ったまま、`networkAccess` を Claude 側の同じ役の取得手段に合わせる。本体が汎用サブエージェントとして起こす `review` / `spec-review` / `impl-review` は `true` にして GitHub の読み取りを揃え、Read / Grep / Glob だけでシェルを持たない `decider` は `false` のまま据え置く。どちらも書き込み許可は増やさない
 - 子へ渡す環境変数を 8 個の allowlist から「親の環境を引き継いで、渡してはいけないものだけ落とす」形に変える。落とすのは worker が自分で決める値（`CODEX_HOME` / `TMPDIR` / `TMPPREFIX`）と、Codex の認証・課金経路を別物にすり替える値（`OPENAI_API_KEY` など Codex 自身が読む認証変数）
 - Codex の `shell_environment_policy` が子シェルへの引き継ぎを絞る場合は、job ごとの runtime `config.toml` で引き継ぎを開く（現在の runtime config は `cli_auth_credentials_store` と `features.apps` だけを書いている）
-- 上の範囲で足りない役が実測で出た場合に限り、その役だけ `dangerFullAccess`（`thread/start` は `danger-full-access`）へ落とせるようにする。判断は実測の失敗出力とともに記録する
+- 上の範囲で足りない役が実測で出た場合に限り、その役だけ `dangerFullAccess`（`thread/start` は `danger-full-access`）へ落とせるようにする。対象は書く役（`implement` / `spec-write`）だけで、読む役は `readOnly` を維持する。判断は実測の失敗出力と、その失敗が砂場の拒否によるものだと確認した根拠とともに記録する
 - 揃えた結果不要になる代理実行の記述を削る: `plugins/dev-workflow/references/codex-develop.md` の「共通 worker は network 無効／sandbox が git commit を拒否した場合も本体が commit する」段落、`plugins/dev-workflow/docs/codex-develop.md` の同趣旨の段落
 - 実 Codex での実測（127.0.0.1 への HTTP・worker 内での `git commit` / `git push` / `gh pr create --draft` / `gh issue comment`・flatmate の `scripts/test-task-store-worker.sh` 完走）と、揃えられなかった項目の記録を証跡として残すことを要件にする
 

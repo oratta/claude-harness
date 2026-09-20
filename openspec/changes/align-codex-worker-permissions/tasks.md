@@ -31,21 +31,24 @@
 
 ## 5. 第 2 段（第 1 段で足りなかった role だけ）
 
-- [ ] 5.1 第 1 段で完了できなかった操作があれば、role ごとに失敗したコマンド・出力・exit code を change の記録先へ記録する（この記録が無い状態で 5.2 に進まない）
-- [ ] 5.2 足りない role だけ `thread/start` の `sandbox` を `danger-full-access`、turn の `sandboxPolicy` を `{'type':'dangerFullAccess'}` にし、その role を第 2 段にした理由を記録する
+- [ ] 5.1 第 1 段で完了できなかった操作があれば、role ごとに（a）失敗したコマンド・出力・exit code と、（b）**その失敗が砂場の拒否によるものだと判定した根拠**を change の記録先へ記録する。（b）は 4.1 の環境変数の引き継ぎ確認の結果と照らして書き、環境変数の不達・テストスクリプト自体の不具合・一時的な通信失敗のどれでもないと言える理由を示す。（a）と（b）が揃わない状態で 5.2 に進まない。原因が砂場の拒否ではなかった場合は 5.2 を飛ばし、その原因を直して第 1 段で再実測する（4.2〜4.5 に戻る）
+- [ ] 5.2 足りない role だけ `thread/start` の `sandbox` を `danger-full-access`、turn の `sandboxPolicy` を `{'type':'dangerFullAccess'}` にし、その role を第 2 段にした理由を記録する。**第 2 段にしてよいのは workspace-write role（implement / spec-write）だけで、read-only role（review / spec-review / impl-review / decider）は readOnly policy を維持する。** 判断は role ごとに独立に行い、ある role の不足を理由に他の role を緩めない
 - [ ] 5.3 第 2 段にした role で 4.1〜4.5 のうち失敗していた操作を再実測し、結果を記録する
 - [ ] 5.4 第 2 段でも完了できない操作が残った場合、項目ごとに「試したこと・失敗の出力・揃えられない理由」を記録先と `plugins/dev-workflow/scripts/CODEX-WORKER.md` に書く
 
 ## 6. ドキュメントの整合
 
 - [ ] 6.1 `plugins/dev-workflow/scripts/CODEX-WORKER.md` の砂場と環境変数の記述を実際の範囲に直す（role ごとの段・`networkAccess` の値・`writableRoots` の 3 か所・落とす環境変数・残った代理実行の項目）
-- [ ] 6.2 `plugins/dev-workflow/references/codex-develop.md` から、ネットワーク無効と commit 拒否を理由にした本体の代理実行の記述を削る。5.4 で残った項目があればその項目だけを残す
-- [ ] 6.3 `plugins/dev-workflow/docs/codex-develop.md` の同趣旨の段落を同じ方針で直す
-- [ ] 6.4 `openspec/specs/codex-worker/spec.md` の Purpose が `TBD` のままなので、archive 時に埋める内容を決めておく
+- [ ] 6.2 `plugins/dev-workflow/references/codex-develop.md` から、ネットワーク無効と commit 拒否を理由にした本体の代理実行の記述を削る。5.4 で残った項目があればその項目だけを残す。**`plugins/dev-workflow/references/codex-develop.md:46` の「read-only reviewerはGitHubコメントを書かない。本体が既存正本の書式で結果を代理投稿する」という記述は削らずに残す**（read-only role は readOnly policy を維持し、レビュー結果の代理投稿は design.md の Risks / Trade-offs で残すと決めた項目。ここを消すと投稿の担い手が不在になる）
+- [ ] 6.3 `plugins/dev-workflow/docs/codex-develop.md` の同趣旨の段落を同じ方針で直す（read-only reviewer のレビュー結果を本体が代理投稿する記述は同様に残す）
+- [ ] 6.4 `openspec/specs/codex-worker/spec.md` の Purpose が `TBD - created by archiving change isolate-codex-worker-job-tmp.` のままなので、archive 時に埋める内容を決めておく。あわせて、`openspec/specs/codex-worker-concurrency/spec.md:14` が参照する Requirement「アカウントと作業ディレクトリを排他的に所有する」が現在の `openspec/specs/codex-worker/spec.md` に存在しない（参照切れ）ことを記録する。**この参照切れを直すのはこの change の対象外**（アカウント排他の要件は今回触らない）が、Purpose を書くときに capability の範囲を見渡すので、そのとき気づけるようにここに残す
+- [ ] 6.5 `openspec/specs/codex-develop-continuation/spec.md` の Requirement「coordinator と担当者の責務境界を守る」が、archive で delta（`openspec/changes/align-codex-worker-permissions/specs/codex-develop-continuation/spec.md`）の全文に置き換わることを確認する。置き換え後の本文が「GitHub 操作と commit/push は workspace-write role の担当者が worker の中で自分で完了する」「代理は揃えられなかった項目として記録済みの操作だけ」「read-only role のレビュー結果は coordinator が代理投稿する」の 3 点を保っており、他の 4 つの Requirement（継続記録の復元・安全停止・品質工程・回帰検証）に手が入っていないことを見る
 
 ## 7. バージョンと全件テスト
 
 - [ ] 7.1 `plugins/dev-workflow/.claude-plugin/plugin.json` の version を 2.13.8 から 2.13.9 に上げる
 - [ ] 7.2 `.claude-plugin/marketplace.json` の dev-workflow エントリの version を 2.13.9 に揃える
-- [ ] 7.3 `bash scripts/test.sh` を実行し、成功件数・総件数・exit code と対象 HEAD を記録する（常時注入分を触っていないので `tests/injection-budget.bats` も含めて通ること）
+- [ ] 7.3 push 前の全件は次の 2 本で、両方の成功件数・総件数・exit code と対象 HEAD を記録する。`scripts/test.sh` は git 追跡下の `*.bats` だけを走らせ、`plugins/dev-workflow/tests/test_codex_worker.py` を拾う bats スイートは無いので、Python 側は別に走らせないと今回の変更の回帰が 1 件も走らない
+  - `bash scripts/test.sh`（常時注入分を触っていないので `tests/injection-budget.bats` も含めて通ること）
+  - `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py`
 - [ ] 7.4 `openspec validate align-codex-worker-permissions --strict` を実行し、exit code を記録する

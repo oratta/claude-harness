@@ -27,7 +27,7 @@ read-only role（review / spec-review / impl-review / decider）は readOnly pol
 - **THEN** readOnly policy・networkAccess=false・approvalPolicy never で動き、書き込み許可も取得経路も得ない
 
 ### Requirement: 子へ渡す環境変数は親を引き継ぎ、渡してはならない変数だけ落とす
-worker は job の子プロセスへ、worker を起動した親プロセスの環境変数を引き継がなければならない（MUST）。ただし次は落とさなければならない（MUST）: worker が自分で決める値（CODEX_HOME・TMPDIR・TMPPREFIX）と、Codex 自身が認証に読み登録済み account 以外の課金経路へ移し得る値。read-only role には TMPDIR も TMPPREFIX も渡してはならない（MUST NOT）。引き継ぎが Codex 側の環境変数ポリシーで絞られる場合は、job ごとの runtime 設定でその絞りを解かなければならない（MUST）。
+worker は job の子プロセスへ、worker を起動した親プロセスの環境変数を引き継がなければならない（MUST）。ただし次は落とさなければならない（MUST）: worker が自分で決める値（CODEX_HOME・TMPDIR・TMPPREFIX）、Codex 自身が認証に読み登録済み account 以外の課金経路へ移し得る値、および子の git 操作を cwd 以外の checkout へ向け得る値（GIT_DIR・GIT_WORK_TREE・GIT_COMMON_DIR・GIT_INDEX_FILE）。read-only role には TMPDIR も TMPPREFIX も渡してはならない（MUST NOT）。引き継ぎが Codex 側の環境変数ポリシーで絞られる場合は、job ごとの runtime 設定でその絞りを解かなければならない（MUST）。worker 自身の git 呼び出し（依頼の検査・runtime の場所の算出・一時領域の場所の検査）は親から引き継いだ環境で行ってはならない（MUST NOT）。
 
 #### Scenario: worker の中で GitHub を操作する
 - **WHEN** implement job の子プロセスが gh コマンドで Draft PR を作り issue にコメントする
@@ -40,6 +40,10 @@ worker は job の子プロセスへ、worker を起動した親プロセスの�
 #### Scenario: 読む役に一時領域の指定が漏れない
 - **WHEN** 親環境に TMPDIR / TMPPREFIX がある状態で read-only role の job を開始する
 - **THEN** 子の環境にはどちらも現れない
+
+#### Scenario: 親が Git のパスを指している
+- **WHEN** 親環境に GIT_DIR / GIT_WORK_TREE / GIT_COMMON_DIR / GIT_INDEX_FILE が設定された状態で job を開始する
+- **THEN** どれも子の環境に現れず、子の git 操作は cwd の linked worktree に向く。worker 自身の linked worktree 必須の検査もこれらの値で曲げられない
 
 ### Requirement: 砂場を緩める判断は段階順で、各段の採否を実測の証跡とともに記録する
 実装は緩める段を順に試さなければならない（MUST）。第 1 段は workspace-write + networkAccess true + Git 共通ディレクトリの追加、第 2 段はその role だけを砂場なし（danger-full-access）にすることである。第 2 段は workspace-write role にしか適用できず、read-only role を砂場なしにしてはならない（MUST NOT）。段の判断は workspace-write role ごとに独立に行わなければならず（MUST）、ある role の不足を理由に他の role を緩めてはならない（MUST NOT）。
