@@ -25,8 +25,10 @@
 - [x] 4.1 `plugins/statusline/tests/statusline-codex.bats` を先例に、`test_codex_*.py` 全件を一度呼ぶ薄い bats ラッパーを追加する。`scripts/test.sh` が git tracked の bats を列挙することを踏まえ、coordinator の記録操作後にラッパーが対象に含まれることを確認する。実モデル試験はラッパーに入れない。
 - [x] 4.2 `plugins/dev-workflow/.claude-plugin/plugin.json` の現行版を確認して 2.13.8 から次版へ bump する。常時注入の description 等を不要に増やさず、`tests/injection-budget.txt` は変更しない。もし予算変更が不可避なら理由付きで coordinator に返す。
 - [x] 4.3 `python3 -m unittest discover -s plugins/dev-workflow/tests -p 'test_codex_*.py'`、`scripts/test.sh`、`openspec validate codex-develop-role-profiles --strict --no-interactive`、`git diff --check` を実行し、件数・exit code・対象 HEAD を記録する（baseline は coordinator 実測80 tests、約51秒）。
-- [ ] 4.4 coordinator に両セット各1件の実モデル実行を依頼し、spec→独立spec-review→implement→独立review の要求/実効 model/effort、account、executor、観測元、job/thread/turn ID、HEAD、コマンド/exit code、各工程の品質結果を証跡にする。要求どおりの実効値を確認できない工程は未達のまま報告する。
-- [ ] 4.5 回帰結果と実機証跡を同じ PR の受け入れ条件に対応付けて coordinator に返す。GitHub記録/push、独立レビュー、工程遷移は coordinator の担当とし、worker は merge/auto-merge を行わない。
+- [x] 4.4 coordinator に両セット各1件の実モデル実行を依頼し、spec→独立spec-review→implement→独立review の要求/実効 model/effort、account、executor、観測元、job/thread/turn ID、HEAD、コマンド/exit code、各工程の品質結果を証跡にする。要求どおりの実効値を確認できない工程は未達のまま報告する。
+- [x] 4.5 回帰結果と実機証跡を同じ PR の受け入れ条件に対応付けて coordinator に返す。GitHub記録/push、独立レビュー、工程遷移は coordinator の担当とし、worker は merge/auto-merge を行わない。
+
+実機受け入れでは要求 model は全8工程で観測できた一方、実効 effort は thread/start / turn/start の応答に無く全8工程で未観測だった。この受け入れ条件は未達として残す。
 
 ## 5. 実装レビュー差戻し
 

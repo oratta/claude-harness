@@ -49,7 +49,7 @@ v1は旧単一設定run、v2はprofile run専用。値とキー順は固定で�
 - read-only reviewerはGitHubコメントを書かない。本体が既存正本の書式で結果を代理投稿する。投稿成功前に後続実装/完了扱いしない。
 - Gが通常経路の`codex exec`/companion/Claude reviewerを呼ぶ場面では、実行せず`needs-reviewer`を返す。本体が`review`で新threadを作り、その結果を新しいGへ渡す。ゲート正本の着手確認・同一PR/HEAD重複防止を先に実施する。
 - 仕様化が必要と判断された場合のopsx Skill操作は対象repoのopenspec CLI相当へ変換する。CLI不在時の仕様化判断も既存develop正本に従う。正本の仕様フォーマットを別テンプレートへ写さない。
-- Claude hooksはCodexには自動適用されない。対象repoで必須の検査コマンドを本体が確認し、W/Gの指示と結果へ明記する。実行不能なら合格扱いしない。workerのread-only sandbox以外のhook保証をあるものと推定しない。
+- Claude hooksはCodexには自動適用されない。対象repoで必須の検査コマンドを本体が確認し、W/Gの指示と結果へ明記する。実行不能なら合格扱いしない。read-only roleのreadOnly policy以外にsandboxによる保証は無い（書込担当は砂場なしで動く）ので、hook相当の保証があるものと推定しない。
 - worker completedは実行完了だけ。既存developがその経路に要求する仕様承認・テスト証拠・独立レビュー・ゲート条件を省略しない。merge/auto-mergeは禁止。途中停止は成果物とジョブ状態を記録する。
 
 従来モードのexecレビューは維持するが、このモードの全委譲箇所は上表に集約する。burn接続・全account配分・使用量集計は別issue。
@@ -58,7 +58,7 @@ phaseは担当する役割の指示書を選ぶラベルであり、adapterは�
 
 仕様要否、レビュー判定、必須検査、archive、差戻し、次工程への進行はすべて既存developとrolesの正本で管理する。adapterに承認記録・検査実行・archive移動の独自コマンドは置かない。run履歴は輸送結果の記録であり、品質台帳ではない。workerの最終回答とerror_kindを本体が確認し、失敗や途中commentaryを承認扱いしない。
 
-共通workerはnetwork無効。W/Gが必要とするGitHub情報の取得・コメント/ラベル・Draft PR作成・pushは `needs-coordinator` と具体的な操作/内容を返し、本体が既存の認可範囲で代理実行する。sandboxがgit commitを拒否した場合も本体が差分を確認してcommitする。これは運搬/記録の代理であり、仕様・コードの編集やレビュー判定を本体が代行するものではない。Gへは操作結果の証拠を渡して確認させる。
+書込担当（implement / spec-write）は砂場なしで親の環境を引き継いで動くため、GitHub情報の取得・コメント・Draft PR作成・push・commitをworkerの中で自分で完了する。これらを `needs-coordinator` で本体へ回さない。本体が担うのは、read-only roleのレビュー結果の代理投稿と、揃えられなかった項目として記録済みの操作だけである。代理は運搬/記録の代理であり、仕様・コードの編集やレビュー判定を本体が代行するものではない。Gへは操作結果の証拠を渡して確認させる。
 
 worker-state既定値は `$HOME/.local/state/claude-harness-codex/jobs`（registerと共通）。`--worker-state DIR` 指定時はその台帳だけを使う。新規run-dir省略時はinitが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作成しJSONで返す。本体がこのpathを記録して全後続操作に渡す。既存`--run-dir`の再開時はinitせずrun.jsonのaccount/model/worker_stateとの一致を確認する。不一致や不明なrunを別accountで継続しない。
 

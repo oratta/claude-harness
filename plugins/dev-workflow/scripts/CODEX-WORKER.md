@@ -16,13 +16,17 @@ request.json:
 
 request_id=job_id。同一ID同一入力は再実行しない。status/result/cancel/ackには`--job ID`。stdout JSON、拒否exit2。`result.text`は最終出力、usage欠落はnull。公開`execution`には要求値と、thread/turn通知から観測できた実効model/effort・観測元・job/thread/turn IDを載せる。未観測値はnullであり要求値から補完しない。完了と品質承認は別。結果回収後にackし、次工程は新IDでsubmitする。unknownはackも新規投入も拒否し、手動で台帳を消して再投入してはいけない。停止証拠を伴う運用回復は未実装。
 
-親終了後もworkerは継続し、別プロセスから照会できる。role implement/spec-writeはworkspace-write、review/spec-review/impl-review/deciderはread-only。全roleでnetworkAccess=false、approvalPolicy=neverを維持する。workspace-writeのwritableRootsはcwdとジョブ専用一時領域だけで、excludeSlashTmp/excludeTmpdirEnvVar=true。read-onlyには書き込み許可を追加しない。git metadataの変更（commitなど）はCodex sandboxで拒否されうるため、#707の親処理へ渡す。danger-full-accessへ縮退しない。
+親終了後もworkerは継続し、別プロセスから照会できる。role implement/spec-writeは砂場なし（`thread/start`のsandbox=`danger-full-access`、turnのsandboxPolicy=`{'type':'dangerFullAccess'}`）、review/spec-review/impl-review/deciderはread-only。approvalPolicy=neverは全roleで維持する。砂場なしのpolicyは項目を持たないため、書く役にwritableRoots・excludeSlashTmp・excludeTmpdirEnvVar・networkAccessは渡らない。read-onlyには書き込み許可を追加せず、networkAccessはroleごとに分ける（review/spec-review/impl-reviewはtrue、deciderはfalse）。
 
-workspace-writeは起動元の非空TMPDIR（未設定・空なら`/tmp`）を親として、Git管理領域・cwdの外に所有者一致・0700の一時ディレクトリを新規作成する。TEMP/TMPは参照せず、不適格な親ならフォールバックせず開始を拒否する。App Serverと子ツールのTMPDIRはこの正規化済み絶対パスに置き換え、元TMPDIRや`/tmp`全体は許可しない。zshのhere-document用一時ファイルはTMPDIRではなく`TMPPREFIX`（既定`/tmp/zsh`）に作られるため、`TMPPREFIX`も専用領域内へ向ける。read-onlyにはどちらも渡さない。同じrun内を含め、別jobへの割り当て・再利用はしない。パスと作成時の識別情報はruntimeの`job-tmp.json`に記録する。
+書く役を砂場なしにしたのは、Claudeのサブエージェントに対応する隔離が無く、workspace-writeではlinked worktreeのcommitが成立しないため。第1段（workspace-write＋networkAccess=true＋writableRootsにGit共通ディレクトリを追加）では`git switch -c`が`HEAD.lock`、`git commit`が`index.lock`の`Operation not permitted`で拒否され、どちらもexit 128だった。境界を1か所ずつ測るとGit共通ディレクトリ直下・`refs/`・`worktrees/`直下には書けるのに、cwdの`.git`が指す`worktrees/<このworktree>/`だけが読み取り専用で、`WorkspaceWriteSandboxPolicy`にこれを解く項目は無い（`writableRoots`/`networkAccess`/`excludeSlashTmp`/`excludeTmpdirEnvVar`の4つだけ、`turn/start`に`permissionProfile`も無い）。環境変数の引き継ぎは同じjobで確認済みなので、原因は砂場の拒否である。
+
+実測はimplement roleで行った。spec-writeはpolicyがimplementと同一なので同じ結果が当てはまる（未実測ではなく、同一policyの帰結）。実測で揃わなかった項目は無い: ループバックへのHTTP（http_code=200）・`git switch -c`・`git commit`・`git push -u`・`gh pr create --draft`→`gh pr close`・`gh issue comment`・外部repoのテストスクリプト完走（PASS=261 FAIL=0、exit 0）がすべてworkerの中でexit 0。`gh`の認証はキーチェーン経由で届き、`GH_TOKEN`は親に無くても`gh`は動く。砂場が無いので`/tmp`と呼び出し元`TMPDIR`への書き込みも通る（第1段では拒否されていた）。
+
+書く役は起動元の非空TMPDIR（未設定・空なら`/tmp`）を親として、Git管理領域・cwdの外に所有者一致・0700の一時ディレクトリを新規作成する。TEMP/TMPは参照せず、不適格な親ならフォールバックせず開始を拒否する。App Serverと子ツールのTMPDIRはこの正規化済み絶対パスに置き換える。zshのhere-document用一時ファイルはTMPDIRではなく`TMPPREFIX`（既定`/tmp/zsh`）に作られるため、`TMPPREFIX`も専用領域内へ向ける。read-onlyにはどちらも渡さない。同じrun内を含め、別jobへの割り当て・再利用はしない。パスと作成時の識別情報はruntimeの`job-tmp.json`に記録する。**砂場が無くなったので、子が専用領域の外へ書くことをOSが止める仕組みは無い**（もともとこの仕組みは砂場が`/tmp`と呼び出し元TMPDIRを塞いでいたことへの対処で、砂場が無くなれば必要性も消える）。撤去は別issueで扱う。
 
 成功・失敗・確認済み取消・turn開始前失敗ではackを待たず専用領域を削除する。親やsymlink参照先は削除せず、領域の置き換えや削除失敗は`error_kind=job_tmp_cleanup_failed`（既存エラーがあれば後置）で残す。terminalの記録だけではcleanup完了を保証しないので、workerの終了後に領域不在とerror_kindを確認する。停止未確認のunknown・worker強制終了では領域を保持し、停止済みと推測して削除・再利用しない。運用回復は未実装であり、最終的な自動削除は保証しない。
 
-認証元profileはtokenをコピーせずパスとhashだけ登録する。各jobは0700の専用runtime CODEX_HOMEを作り、auth.jsonだけ認証元へのsymlinkとし最小configを生成する。元profileのMCP/app/plugin設定・履歴は継承しない。project/ancestorの.codex/config.tomlは初版拒否（通常ユーザーglobal設定はruntimeで置換）。子環境変数はPATH/HOME等のallowlistだけで、GH_TOKEN・OPENAI_API_KEY・Git routing等を渡さない。runtime認証symlinkは終了時に削除し、engine refreshが置き換えたcredential fileも保持しない。
+認証元profileはtokenをコピーせずパスとhashだけ登録する。各jobは0700の専用runtime CODEX_HOMEを作り、auth.jsonだけ認証元へのsymlinkとし最小configを生成する。元profileのMCP/app/plugin設定・履歴は継承しない。project/ancestorの.codex/config.tomlは初版拒否（通常ユーザーglobal設定はruntimeで置換）。子環境変数は親の環境をそのまま引き継ぎ、落とすのは13個だけ: `CODEX_HOME`・`TMPDIR`・`TMPPREFIX`（workerが自分で決める値）、`OPENAI_API_KEY`・`CODEX_API_KEY`・`OPENAI_BASE_URL`・`CODEX_AUTH_JSON`・`OPENAI_ORGANIZATION`・`OPENAI_PROJECT`（認証と接続先をすり替える値）、`GIT_DIR`・`GIT_WORK_TREE`・`GIT_COMMON_DIR`・`GIT_INDEX_FILE`（子のgitをcwd以外のcheckoutへ向ける値）。`GH_TOKEN`は渡る。Codexの`shell_environment_policy`は実測では絞らず、名前にKEY/SECRET/TOKENを含む変数も子に届いたので、runtime `config.toml`に引き継ぎ設定は書かない。read-onlyには`TMPDIR`も`TMPPREFIX`も渡さない。worker自身のgit呼び出し（依頼の検査・runtimeの場所の算出・一時領域の場所の検査）は親の環境を使わず、固定allowlistの最小環境で行う。runtime認証symlinkは終了時に削除し、engine refreshが置き換えたcredential fileも保持しない。
 
 profileのID token claim/email hashとaccount/readを照合する。これは署名検証ではなく、account/readはworkspace IDを保証しないため完全な複数workspace識別を主張しない。auth.json全体hashまたはruntime symlinkが変わった場合、未開始は拒否、実行中は中断を要求する。通常のtoken refreshでも止まる保守的制約がある。認証切替・設定書換えは行わない。
 
@@ -40,7 +44,7 @@ fresh codex quota観測の適用窓が不明・不正・上限到達なら開始
 
 テスト:
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py -v
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p 'test_*.py' -v
 ```
 
 品質判定に渡すtextは一意な`phase=final_answer`のみ。途中のcommentaryは含めない。Codex schema上phaseはnullableなので、欠測を最終回答と推測しない。phase欠測・複数final・空finalはfailed/error_kind＋空text。これは実行terminalを観測した後の結果不適合であり、ack後にfresh担当を起動できる。`error_kind`非空のcompletedも品質承認には使わない（#707側でも拒否する）。

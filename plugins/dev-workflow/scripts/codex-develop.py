@@ -181,6 +181,15 @@ PHASES = {
     'explore': ('explore', 'worker.md'),
     'summarize': ('summarize', 'worker.md'),
 }
+# The writers run with no OS sandbox and inherit the parent environment, exactly like the
+# Claude subagent each one mirrors, so they finish their own GitHub work. Every other role
+# is readOnly and cannot write anywhere, so the coordinator posts its verdict for it.
+WRITER_ROLES = frozenset({'implement', 'spec-write'})
+WRITER_TRANSPORT = '''This worker has network access and the parent environment: perform GitHub reads and writes,
+comments, push, PR creation and commit yourself here, and do not return needs-coordinator for
+them. The coordinator performs only operations already recorded as ones it could not align.'''
+READER_TRANSPORT = '''This worker is read-only: never write to GitHub, push, or commit. Return the review verdict and
+its evidence; the coordinator posts it on your behalf, then starts a fresh phase with it.'''
 
 
 def _unique_object(pairs):
@@ -346,9 +355,7 @@ return needs-reviewer/needs-decider with the exact request; the coordinator disp
 Claude Agent/SendMessage/Skill/opsx operations in canonical references are provider-specific:
 use repository CLI equivalents for openspec only where available; do not pretend a Claude hook ran.
 If required verification/permissions/tools are unavailable return blocked with evidence.
-The worker has no network access. For GitHub reads/writes, push, PR creation, or unavailable
-commit operations, return needs-coordinator with precise operations/data; do not execute them.
-The coordinator performs authorized transport/recording, then starts a fresh phase with evidence.
+{WRITER_TRANSPORT if role in WRITER_ROLES else READER_TRANSPORT}
 Never merge or enable auto-merge. Do not claim quality success from transport completion.
 Fresh context: do not apply Claude transcript counters or assume usage=0 means empty context.
 References below retain quality criteria; Claude model names/escalation are not Codex model selection.

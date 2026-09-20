@@ -20,7 +20,7 @@ worker は optional effort の非空文字列検証、許可キー、未定義 r
 - **THEN** 固定 enum や hidden 属性を理由に拒否せず、指定モデルと effort を使用する
 
 ### Requirement: effort は turn start のみに渡す
-worker は model を thread/start と turn/start の双方へ渡し、明示された effort を turn/start の effort にのみ渡さなければならない（MUST）。旧 request の effort 省略は送信時も省略し、payload を補完してはならない（MUST NOT）。既存 account identity、read-only、砂場、unknown の所有権契約を維持しなければならない（MUST）。
+worker は model を thread/start と turn/start の双方へ渡し、明示された effort を turn/start の effort にのみ渡さなければならない（MUST）。旧 request の effort 省略は送信時も省略し、payload を補完してはならない（MUST NOT）。既存 account identity、role ごとの sandbox・networkAccess、writableRoots を持たない readOnly policy、unknown の所有権契約を維持しなければならない（MUST）。explore / summarize は本体が汎用サブエージェントとして起こす read-only role なので、review 系と同じく networkAccess=true としなければならない（MUST）。
 
 #### Scenario: 明示 effort を送信する
 - **WHEN** sol/high の検証が成功する
