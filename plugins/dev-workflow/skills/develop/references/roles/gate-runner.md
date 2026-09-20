@@ -10,13 +10,15 @@ develop の本体から**名前付きで** spawn され、PR を pr-review-gate 
 
 ## レビューの実行者（G は孫を持てない）
 
-G はサブエージェントなので Agent ツールを持たず、Task サブエージェントを自分では起こせない。pr-review-gate 手順 2-1 の優先順を次のように読み替える:
+G はサブエージェントなので Agent ツールを持たず、Task サブエージェントを自分では起こせない。pr-review-gate 手順 2-1 の従来モードの優先順を次のように読み替える。新 Codex モードは App Server 固定で、以下の exec / Claude fallback は適用しない:
 
 | 判定 | 実行者 | G の動き |
 |---|---|---|
 | **full**（既定） | Codex CLI | G の **Bash から直接**呼ぶ。どちらか: (a) `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` を `run_in_background` で起動する（レビュー指示は引数に埋めず、ファイルに保存して標準入力から渡す。書き方は下の正本）、(b) codex プラグインの `scripts/codex-companion.mjs`（`~/.claude/plugins/marketplaces/*/plugins/codex/scripts/codex-companion.mjs` を path-discovery で特定）に `task … --effort medium` を投げる。**どちらの経路も完了の確認は下の「Codex の起動と完了確認」**（起動しただけで出力ファイルを読んで済ませない）。slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは **G からは使えない**（前者は本体専用の slash command、後者は Agent ツールを要する）。`--effort minimal` は 400 エラーになるので使わない |
-| **full** だが Codex が使えない（未導入・サブスク切れ・タイムアウト＝下記の正本が定める総待ちの上限に達した） | 本体が spawn するレビュアー | `needs-reviewer` を return する（下） |
+| **full** だが Codex が使えない（実測したバイナリ無し・認証切れ・タイムアウト＝下記の正本が定める総待ちの上限に達した） | 本体が spawn するレビュアー | `needs-reviewer` を return する（下） |
 | **light** | 本体が spawn するレビュアー | `needs-reviewer` を return する（下） |
+
+不可判定の正本は pr-review-gate 手順 2-1。companion / slash command が無ければ `command -v codex` 等でバイナリを確認し、あれば exec を試す。companion 導入は任意。不在だけでは不可とせず、バイナリ探索で不在、実際の Codex 呼び出しで認証切れ、または起動後に正本の総待ち上限に到達した実測だけを採用する。未試行・auth.json の有無は証拠にならない。引数誤り・権限拒否・通信障害は三条件に読み替えず、Claude へ暗黙にフォールバックしない。該当しないエラーは証拠付きで本体へ返す。
 
 Codex の出力全文を本体に流さない。構造化された指摘一覧だけを G が読み、本体には要約だけ返す。
 
@@ -38,13 +40,18 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 - 根拠: <2-0 の判定材料（変更ファイル一覧・行数・挙動定義ファイルの有無）、full なら Codex が使えなかった理由>
 - PR 番号: #<N>
 - HEAD SHA: <40 桁フル SHA（手順 1 で固定したもの）>
+- 選んだ経路: <full: exec / companion / バイナリ探索で不在、light: 未実行>
+- 実行コマンド: <full: 実際の探索・起動・待機コマンド>
+- 終了コード: <取得できた値 | 未取得>
+- 出力の要点: <full: 実測した不可条件と応答>
+- 実待ち時間: <タイムアウト時の実測値、完了未確認>
 - 推奨モデル: opus | dev-workflow:decider（種別で指定する。`general-purpose` に `model: fable` は付けない）
 - 推奨モデルの根拠: <マージ条件・層間契約・課金/法務への接触の有無、usage snapshot の残量>
 - 受け入れ条件の所在: <issue #N 本文 | PR #N 本文>
 - レビュアーに渡す範囲: <diff の範囲（`gh pr diff N`）、再レビューなら前回指摘の一覧>
 ```
 
-レビュー要約を SendMessage で受け取った G は、「レビュー実行者:」の PR コメント（`レビュー実行者: Task サブエージェント（light 判定のため）` / `（Codex CLI 未導入のため）`。モデルと根拠を添える）を **G が投稿**し、手順 3 以降を続ける。
+レビュー要約を SendMessage で受け取った G は、「レビュー実行者:」の PR コメント（`レビュー実行者: Task サブエージェント（light 判定のため）` / `（full・実測した Codex 不可: <条件>）`。モデルと根拠を添え、full では対象 HEAD と上の同じ証拠を記録する。終了コードは取得できた場合のみ記し、架空の終了コードを書かない。light は事前判定として記録する）を **G が投稿**し、手順 3 以降を続ける。
 
 ## return の書式
 
