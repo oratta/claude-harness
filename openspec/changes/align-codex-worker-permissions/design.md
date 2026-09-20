@@ -8,7 +8,7 @@
 |---|---|
 | 外部・ループバックへの通信 | turn policy の `networkAccess: False` |
 | GitHub の取得・コメント・Draft PR 作成・push | 通信の遮断と、認証が環境変数の allowlist で落ちること |
-| linked worktree での `git commit` | `.git` がファイルで、参照先の Git 共通ディレクトリ（別の場所）が `writableRoots` に無いこと |
+| linked worktree での `git commit` | 当初は「`.git` がファイルで、参照先の Git 共通ディレクトリ（別の場所）が `writableRoots` に無いこと」と見ていた。実測では共通ディレクトリを足しても足りず、workspace-write の砂場が cwd のリポジトリの `$GIT_DIR`（`worktrees/<この worktree>/`）を `writableRoots` より強く読み取り専用に保つことが原因だった |
 
 Codex 側の制約ではないことは確認済みで、App Server の `SandboxPolicy`（`codex app-server generate-json-schema` の出力）は `readOnly` と `workspaceWrite` の双方に `networkAccess: boolean` を持ち、`dangerFullAccess`（`thread/start` の `sandbox` では `danger-full-access`）も受ける。Codex CLI 0.153.4 で確認した。
 
@@ -49,15 +49,20 @@ Codex 側の制約ではないことは確認済みで、App Server の `Sandbox
 
 **読む役は役ごとに分ける。** review / spec-review / impl-review は Claude 側で汎用サブエージェントとして起き、`gh` で PR や issue を読めるので `networkAccess: true` にする。decider は Claude 側が Read / Grep / Glob だけの読み取り専用エージェントで、シェルを持たず取得もしないので `networkAccess: false` のままにする。「read-only は一律で維持」「read-only も一律で開ける」の両方より、Claude 側の実際の手段に合わせる方が「同じにする」という前提に忠実である。ただし Claude 側の仕様レビュー（R1）は、仕様がマージ権限・層間契約・課金/法務に当たるとき `dev-workflow:decider`（Bash もネットワークも持たない）で起きる。Codex の `spec-review` role を `networkAccess: true` にするのは、既定の汎用サブエージェント経路に合わせた選択であり、決める役として起きる場合の Claude 側より広い。
 
-**砂場を外すのは第 2 段に置き、workspace-write role だけを対象に、原因を切り分けてから決める。** 第 1 段（workspace-write + network + Git 共通ディレクトリ）で足りるかは実測でしか分からない。とくに macOS では `gh` と `git` の認証がキーチェーンに入っている場合があり、Seatbelt の砂場からキーチェーンへ届かない可能性がある。ただし `gh` が認証を受け取れない失敗には（a）砂場の拒否と（b）環境変数が子シェルに届いていない、の 2 つの原因があり、（b）を砂場のせいと読み違えると、書き込み範囲を全部開ける不可逆側の決定を誤って選ぶ。そのため実測は「環境変数の引き継ぎが効いているかの確認」→「`gh` / `git` の操作」の順で行い、第 2 段へ進むのは失敗が砂場の拒否によるものだと確認できた場合に限る。read-only role は readOnly policy を維持するので第 2 段の対象にしない。
+**実測の結果、第 2 段（workspace-write role を砂場なしにする）を採った。** 第 1 段では `git switch -c` と `git commit` が `HEAD.lock` / `index.lock` の `Operation not permitted` で拒否され（どちらも exit 128）、境界を 1 か所ずつ測ると Git 共通ディレクトリ直下・`refs/`・`worktrees/` 直下には書けるのに、cwd の `.git` ファイルが指す `worktrees/<この worktree>/` だけが読み取り専用に保たれていた。`WorkspaceWriteSandboxPolicy` にこれを解く項目は無く（`writableRoots` / `networkAccess` / `excludeSlashTmp` / `excludeTmpdirEnvVar` の 4 つだけで、`turn/start` に `permissionProfile` も無い）、環境変数の引き継ぎは同じ job で確認済みだったので、原因は砂場の拒否だと切り分けられた。Claude のサブエージェントは OS の隔離なしで動くので、対応物の無いこの制約は落とす。read-only role は Claude 側に対応物（decider の Read / Grep / Glob 限定）があるため `readOnly` と role 別の `networkAccess` を維持する。
+
+**ジョブ専用一時領域の仕組みは、砂場を外してもこの change では残す。** 作成・`TMPDIR` / `TMPPREFIX` の差し替え・終了時の削除をそのまま動かす。ただし砂場が無くなった以上、この仕組みに OS レベルの強制は伴わない（子は cwd の外にも書ける）。もともとこの仕組みは、砂場が `/tmp` と呼び出し元 `TMPDIR` を塞いでいたために zsh の here-document が書けなくなったことへの対処として入ったもので、砂場が無くなれば必要性も消える。つまり残っているのは Claude 側に対応物の無い差分であり、撤去は別 issue で扱う（この change の diff を revert すれば元の砂場に戻る関係を保つため、同じ change で 2 つの撤去を混ぜない）。
+
+**段階順に決めた経緯（判断時点の記述）。** 第 1 段（workspace-write + network + Git 共通ディレクトリ）で足りるかは実測でしか分からない。とくに macOS では `gh` と `git` の認証がキーチェーンに入っている場合があり、Seatbelt の砂場からキーチェーンへ届かない可能性がある。ただし `gh` が認証を受け取れない失敗には（a）砂場の拒否と（b）環境変数が子シェルに届いていない、の 2 つの原因があり、（b）を砂場のせいと読み違えると、書き込み範囲を全部開ける不可逆側の決定を誤って選ぶ。そのため実測は「環境変数の引き継ぎが効いているかの確認」→「`gh` / `git` の操作」の順で行い、第 2 段へ進むのは失敗が砂場の拒否によるものだと確認できた場合に限る。read-only role は readOnly policy を維持するので第 2 段の対象にしない。
 
 ## Risks / Trade-offs
 
 - 認証情報を持ち外と通信できる子を、途中で誰も止められない → 受け入れる。`approvalPolicy: never` で動く Claude のサブエージェントと同じ水準で、Codex 側だけが増やすリスクではない（issue の「受け入れるリスク」に明記済み）
 - 読む役に通信を開けると、read-only の役が GitHub へ書き込むことを砂場が止められなくなる → 「read-only reviewer は投稿しない」は指示で守る。Claude 側も同じで、指示による保証しかない。ラベルや承認記録の投稿が本体の担当であることは既存の正本（roles / pr-review-gate）が持つ
 - 親の環境を引き継ぐと、無関係なサービスの認証情報も子に届く → 落とすものを限定した引き換えに受け入れる。Claude 側と同じ水準になるだけで、それ以上の露出ではない
-- `dangerFullAccess` に落ちた role は、cwd の外への書き込みも止められない → role ごとに決め、証跡を残し、CODEX-WORKER.md に「どの role がどの段か」を書く。第 1 段で足りるなら落とさない
-- キーチェーンや SSH エージェントに届かず、第 2 段でも `git push` が通らない可能性 → 揃えられなかった項目として記録し、その操作だけ本体の代理実行を残す（全部を戻さない）
+- 砂場なしにした workspace-write role は、cwd の外への書き込みも止められない → 受け入れる。Claude のサブエージェントも同じで、止めるのは指示と記録先の証拠だけである。どの role が砂場なしかは CODEX-WORKER.md に書く（read-only role は `readOnly` のまま）
+- 専用一時領域が OS では強制されなくなる → 受け入れる。領域の所有・0700・終了時削除は worker 側で続くが、子がそこを使わずに書くことを止める仕組みは無い。砂場が塞いでいた `/tmp` への対処として入った仕組みなので、撤去は別 issue で扱う
+- キーチェーンや SSH エージェントに届かず `git push` が通らない可能性 → 第 1 段の実測で `git push` / `gh` はいずれも通り（`gh auth status` もキーチェーン経由で成功）、この懸念は起きなかった
 
 ## Migration Plan
 
@@ -69,5 +74,5 @@ Codex 側の制約ではないことは確認済みで、App Server の `Sandbox
 
 ## Open Questions
 
-- 第 1 段で `gh` の認証が届くか（キーチェーン格納の場合）は実測待ち。届かなければ第 2 段の判断材料として記録する
-- Codex の `shell_environment_policy` が実際にどこまで絞るかは実測で確認する（設定を足すかどうかがこれで決まる）
+- 第 1 段で `gh` の認証が届くか（キーチェーン格納の場合）→ 解決。届いた。`gh auth status` がキーチェーン経由で成功し、`gh pr create --draft` / `gh pr close` / `gh issue comment` はすべて worker の中で exit 0 だった
+- Codex の `shell_environment_policy` が実際にどこまで絞るか → 解決。名前に KEY / SECRET / TOKEN を含む変数も子に届いたので、runtime `config.toml` に引き継ぎ設定は足さない（効かない設定を書かない）

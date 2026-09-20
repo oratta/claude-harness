@@ -59,7 +59,7 @@ phaseは役割指示の選択で、Codex独自の工程順序ではない。`spe
 
 旧版の `--spec-path` / `--required-check` / `accept-review` / `check` / `relocate-spec` は廃止した。検証コマンドとレビュー記録は、通常のdevelopと同じく担当役割と本体が既存手順で扱う。
 
-workerはnetworkを使わないため、GitHub取得/投稿・push・PR作成はClaude本体が代理する。子から `needs-coordinator` が来たら本体が必要な操作を行い、証拠を次のfresh phaseへ渡す。子のsandboxがcommitを拒否したときも本体がcommitする。
+書込担当（implement / spec-write）は砂場なしで親の環境を引き継ぐため、GitHub取得/投稿・push・PR作成・commitをworkerの中で自分で完了する。本体が代理するのは、read-only roleのレビュー結果の投稿と、揃えられなかった項目として記録済みの操作だけである。子から `needs-coordinator` が来た場合は、その操作が記録済みの項目に当たるかを確認してから本体が行い、証拠を次のfresh phaseへ渡す。
 
 旧版のrunも再開できるが、旧品質フィールドは無視する。pendingが残っている場合はresult→ackを済ませてから次のdispatchへ進み、変更したpromptで旧依頼を再submitしない。completedでもerror_kind付きは実行成功ではなく、ackも品質承認を意味しない。
 

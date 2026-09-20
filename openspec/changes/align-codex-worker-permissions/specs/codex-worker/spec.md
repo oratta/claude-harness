@@ -1,19 +1,21 @@
 ## ADDED Requirements
 
 ### Requirement: 書く役は worker の中でネットワークと Git 操作を自分で完了できる
-workspace-write role（implement / spec-write）の turn では networkAccess を true にしなければならない（MUST）。writableRoots は cwd・当該 job の専用一時領域・cwd の Git 共通ディレクトリ（`git rev-parse --path-format=absolute --git-common-dir` の値）の 3 つだけでなければならず（MUST）、これ以外の場所を追加してはならない（MUST NOT）。excludeSlashTmp と excludeTmpdirEnvVar は true、approvalPolicy は never を維持しなければならない（MUST）。
+workspace-write role（implement / spec-write）は OS の砂場なしで実行しなければならない（MUST）: `thread/start` の sandbox は `danger-full-access`、turn の sandboxPolicy は `{'type':'dangerFullAccess'}` とする。approvalPolicy は never を維持しなければならない（MUST）。砂場なしの policy は書き込み範囲とネットワークの項目を持たないので、この role に writableRoots・excludeSlashTmp・excludeTmpdirEnvVar・networkAccess を渡してはならない（MUST NOT）。この role が Claude のサブエージェントと同じく親の環境で cwd の外へも書けることは、Claude 側に対応する隔離が無いことの帰結であり、指示と記録先の証拠で担保する。
+
+job の専用一時領域の作成・TMPDIR / TMPPREFIX の差し替え・終了時の削除は維持しなければならない（MUST）。砂場が無くなったので OS による強制は伴わず、これは Codex 側だけにある差分として残る。
 
 #### Scenario: ループバックの待ち受けへ繋ぐ
 - **WHEN** implement job の子プロセスが 127.0.0.1 の待ち受けポートへ HTTP する
 - **THEN** 応答を受け取れ、砂場もネットワーク遮断も拒否しない
 
 #### Scenario: linked worktree で commit する
-- **WHEN** implement job が cwd（linked worktree）で git commit を実行する
-- **THEN** `.git` ファイルが指す Git 共通ディレクトリ配下への書き込みが許可され、commit が成立する
+- **WHEN** implement job が cwd（linked worktree）で git switch -c と git commit を実行する
+- **THEN** `.git` ファイルが指す Git 共通ディレクトリ配下（`worktrees/<この worktree>/` の HEAD.lock / index.lock を含む）への書き込みが拒否されず、branch 作成と commit が成立する
 
-#### Scenario: 許可外へ書き込もうとする
-- **WHEN** Codex ツールが cwd・専用領域・Git 共通ディレクトリの外である /tmp/<一意名> および呼び出し元 TMPDIR/<一意名> に書き込む
-- **THEN** どちらも砂場で拒否され、許可された 3 か所への同じ操作だけが成功する
+#### Scenario: 専用一時領域が残る
+- **WHEN** implement job が開始され、子プロセスが TMPDIR を読む
+- **THEN** worker が作った 0700 の専用領域を指しており、job の終了後にその領域は存在しない
 
 ### Requirement: 読む役は書き込みを増やさず取得経路だけ Claude 側の同じ役に揃える
 read-only role（review / spec-review / impl-review / decider）は readOnly policy と approvalPolicy never を維持しなければならない（MUST）。read-only role に writableRoots を与えてはならない（MUST NOT）。networkAccess は Claude 側の対応する役が持つ取得手段に合わせなければならない（MUST）: 本体が汎用サブエージェントとして起こす役（review / spec-review / impl-review）は true、読み取り専用ツールだけを持ちシェルを持たない役（decider）は false とする。
@@ -80,11 +82,11 @@ Claude のサブエージェントと同じ作業を worker の中で完了で�
 ## MODIFIED Requirements
 
 ### Requirement: 実 Codex のテスト完走と拒否の証拠を残す
-実装は fake 回帰試験に加え、実 Codex implement role で scripts/test.sh 全件の成功件数・総件数・exit code と対象 HEAD を記録しなければならない（MUST）。加えて、worker の中から 127.0.0.1 の待ち受けへの HTTP 到達、git commit と feature branch への git push、Draft PR 作成と記録先へのコメント、ローカルサーバーを立てる外部リポのテストスクリプトの完走を実測し、それぞれのコマンド・出力・exit code を記録しなければならない（MUST）。書き込み拒否プローブ、終了時削除も実環境で確認し、CODEX-WORKER.md に実際の範囲と制約を反映しなければならない（MUST）。
+実装は fake 回帰試験に加え、実 Codex implement role で scripts/test.sh 全件の成功件数・総件数・exit code と対象 HEAD を記録しなければならない（MUST）。加えて、worker の中から 127.0.0.1 の待ち受けへの HTTP 到達、git commit と feature branch への git push、Draft PR 作成と記録先へのコメント、ローカルサーバーを立てる外部リポのテストスクリプトの完走を実測し、それぞれのコマンド・出力・exit code を記録しなければならない（MUST）。専用一時領域の 0700 と終了時削除も実環境で確認しなければならない（MUST）。砂場なしにした role では cwd の外への書き込みが OS に止められないことを境界プローブで確かめ、その結果を記録しなければならない（MUST）。CODEX-WORKER.md に実際の範囲と制約を反映しなければならない（MUST）。
 
 #### Scenario: 実環境の受け入れ結果を記録する
 - **WHEN** 対象 HEAD の scripts/test.sh と境界プローブが完了する
-- **THEN** 全件成功・exit 0、許可先での成功、許可外での拒否とそのコマンド/出力/exit code、0700、終了後の領域不在を記録する。件数は過去の1465件を固定せず対象 HEAD の実測値を使う
+- **THEN** 全件成功・exit 0、各操作のコマンド/出力/exit code、砂場なしの role で cwd の外への書き込みが通ること、0700、終了後の領域不在を記録する。件数は過去の1465件を固定せず対象 HEAD の実測値を使う
 
 #### Scenario: 代理実行なしの完走を記録する
 - **WHEN** implement role の worker がループバックへの HTTP・git commit・git push・Draft PR 作成・記録先へのコメント・外部リポのテストスクリプトを自分で実行する
@@ -94,4 +96,4 @@ Claude のサブエージェントと同じ作業を worker の中で完了で�
 
 ### Requirement: 一時領域の追加許可以外の砂場を維持する
 **Reason**: 「networkAccess は false を維持しなければならない」「read-only role の許可を拡大したり danger-full-access に変更したりしてはならない」という禁止が、Codex の worker だけ本体の代理実行を必要にしていた原因である。禁止を残したまま権限を揃えることはできないため、この要件を取り下げて置き換える。
-**Migration**: 残すべき内容は置き換え先の要件へ引き継いでいる。writableRoots の限定・excludeSlashTmp / excludeTmpdirEnvVar=true・approvalPolicy never・許可外への書き込みが拒否されることは「書く役は worker の中でネットワークと Git 操作を自分で完了できる」へ、read-only role に書き込みを追加しないことは「読む役は書き込みを増やさず取得経路だけ Claude 側の同じ役に揃える」へ移した。
+**Migration**: 残すべき内容は置き換え先の要件へ引き継いでいる。approvalPolicy never と専用一時領域の維持は「書く役は worker の中でネットワークと Git 操作を自分で完了できる」へ、read-only role に書き込みを追加しないことは「読む役は書き込みを増やさず取得経路だけ Claude 側の同じ役に揃える」へ移した。writableRoots の限定・excludeSlashTmp / excludeTmpdirEnvVar=true・許可外への書き込みが拒否されることは引き継いでいない: 書く役は砂場なしで動くのでこれらの項目自体が無くなる（Claude のサブエージェントに対応する隔離が無く、linked worktree の `$GIT_DIR` が workspace-write では読み取り専用に保たれて commit が成立しないため）。
