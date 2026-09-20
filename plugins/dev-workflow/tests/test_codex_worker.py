@@ -255,11 +255,6 @@ class WorkerTest(unittest.TestCase):
             self.cli('ack','--job',job)
         self.assertNotEqual(*paths)
 
-    def git_common_dir(self):
-        out = subprocess.check_output(['git','-C',str(self.cwd),'rev-parse',
-            '--path-format=absolute','--git-common-dir'],text=True)
-        return out.strip()
-
     def test_all_role_policies_remain_restricted(self):
         for role in ('implement','spec-write','review','spec-review','impl-review','decider'):
             self.submit(role, role=role)
@@ -269,14 +264,13 @@ class WorkerTest(unittest.TestCase):
             self.assertEqual(thread['approvalPolicy'], 'never')
             self.assertEqual(turn['approvalPolicy'], 'never')
             if role in ('implement','spec-write'):
-                self.assertEqual(thread['sandbox'], 'workspace-write')
-                # The Git common directory is the third root: without it a linked
-                # worktree cannot commit, because .git is a file pointing elsewhere.
-                self.assertEqual(turn['sandboxPolicy'], {
-                    'type':'workspaceWrite', 'networkAccess':True,
-                    'writableRoots':[str(self.cwd.resolve()), self.tmp_info()['path'],
-                                     self.git_common_dir()],
-                    'excludeSlashTmp':True, 'excludeTmpdirEnvVar':True})
+                # A Claude subagent runs with no OS sandbox, so the writers run with none
+                # either; writableRoots and the /tmp exclusions no longer apply to them.
+                self.assertEqual(thread['sandbox'], 'danger-full-access')
+                self.assertEqual(turn['sandboxPolicy'], {'type':'dangerFullAccess'})
+                # The job's own temporary area survives the sandbox removal: the child
+                # still gets it through TMPDIR/TMPPREFIX and the worker still owns it.
+                self.assertIsNotNone(self.tmp_info()['path'])
             else:
                 self.assertEqual(thread['sandbox'], 'read-only')
                 # The reviewers mirror general subagents that read GitHub with gh; the

@@ -19,11 +19,16 @@ import tempfile
 import time
 
 TERMINAL = {'completed', 'failed', 'interrupted'}
-ROLES = {'implement': 'workspace-write', 'spec-write': 'workspace-write',
+# The writers run with no OS sandbox because the Claude subagent each one mirrors runs with
+# none either; a linked worktree's $GIT_DIR stays read-only under workspace-write, so commit
+# and branch creation cannot work there. The readers keep readOnly, which is the one limit
+# Claude also has (the decider holds Read/Grep/Glob and no shell).
+ROLES = {'implement': 'danger-full-access', 'spec-write': 'danger-full-access',
          'review': 'read-only', 'spec-review': 'read-only',
          'impl-review': 'read-only', 'decider': 'read-only'}
 # Reach matches the Claude subagent each role mirrors: the writers and the reviewers run
-# with a shell and gh, while the decider only has Read/Grep/Glob and fetches nothing.
+# with a shell and gh, while the decider only has Read/Grep/Glob and fetches nothing. The
+# writers reach the network by having no sandbox, so this set decides readOnly roles only.
 NETWORK_ROLES = {'implement', 'spec-write', 'review', 'spec-review', 'impl-review'}
 # The child otherwise inherits the parent, as a Claude subagent does. These are removed:
 # values the worker decides itself, values that would move Codex's authentication or
@@ -130,7 +135,7 @@ def child_env():
 
 def git_common_dir(cwd):
     # Absolute path of the shared Git directory; for a linked worktree this is elsewhere
-    # than cwd, so both the project-config check and writableRoots need it.
+    # than cwd, so the project-config check needs it to see the repository's own layer.
     return subprocess.check_output(['git', '-C', str(cwd), 'rev-parse',
                                     '--path-format=absolute', '--git-common-dir'],
                                    env=git_env(), text=True).strip()
@@ -466,7 +471,7 @@ def worker(directory, job):
         runtime = runtime_home(directory, job, account['home'], row['cwd'], common)
         runtime_identity_matches(runtime, account)
         sandbox = ROLES[payload['role']]
-        if sandbox == 'workspace-write':
+        if sandbox != 'read-only':
             job_tmp = JobTmp.create(row['cwd'])
             # Keep ownership evidence for unknown jobs; never use this to allocate/reuse a root.
             (runtime/'job-tmp.json').write_text(json.dumps({
@@ -495,10 +500,10 @@ def worker(directory, job):
             update(db, job, status='interrupted', error_kind='cancelled_before_turn')
             return
         network = payload['role'] in NETWORK_ROLES
-        policy = ({'type': 'readOnly', 'networkAccess': network} if sandbox == 'read-only' else
-                  {'type': 'workspaceWrite', 'networkAccess': network,
-                   'writableRoots': [row['cwd'], str(job_tmp.path), common],
-                   'excludeSlashTmp': True, 'excludeTmpdirEnvVar': True})
+        # dangerFullAccess carries no fields: there is nothing to limit once the sandbox is
+        # gone, so writableRoots and the /tmp exclusions do not appear for the writers.
+        policy = ({'type': 'readOnly', 'networkAccess': network} if sandbox == 'read-only'
+                  else {'type': 'dangerFullAccess'})
         turn_submitted = True
         turn = rpc.request('turn/start', {'threadId': thread, 'model': payload['model'],
             'sandboxPolicy': policy, 'approvalPolicy': 'never',
