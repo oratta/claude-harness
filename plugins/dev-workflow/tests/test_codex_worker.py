@@ -369,4 +369,23 @@ class WorkerTest(unittest.TestCase):
         self.cli('register','--account','test','--codex-home',str(self.home))
         self.assertEqual(self.cli('submit','--request',str(self.root/'one.json'),code=2)['error'],'global_cwd_locked')
 
+    def test_reap_keeps_running_slots(self):
+        self.config(wait=True);self.submit();self.wait(status='running')
+        r=self.cli('reap','--older-than','0')
+        self.assertEqual(r['released'],[])
+        self.assertEqual([(s['job'],s['reason']) for s in r['kept']],[('one','active')])
+        self.cli('cancel','--job','one');self.assertEqual(self.wait()['status'],'interrupted')
+
+    def test_reap_rejects_unknown_account_and_negative_age(self):
+        self.assertEqual(self.cli('reap','--account','absent',code=2)['error'],'account_not_registered')
+        self.assertEqual(self.cli('reap','--older-than','-1',code=2)['error'],'invalid_older_than')
+
+    def test_reaped_slot_is_reused_by_the_next_submission(self):
+        self.submit();self.assertEqual(self.wait()['status'],'completed')
+        self.assertEqual([s['slot'] for s in self.cli('reap','--older-than','0')['released']],[0])
+        self.submit('two',cwd=str(self.cwd2));self.assertEqual(self.wait('two')['status'],'completed')
+        db=self.ownership()
+        slots=dict(db.execute('SELECT slot,job FROM account_slots').fetchall());db.close()
+        self.assertEqual(slots,{0:'two'})
+
 if __name__=='__main__':unittest.main()
