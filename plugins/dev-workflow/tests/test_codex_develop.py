@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -89,7 +90,7 @@ class ManualDevelop(unittest.TestCase):
         self.assertIn('it does not require', first)
 
     WRITER_PHASES = ('spec', 'implement', 'finish', 'gate')
-    READER_PHASES = ('spec-review', 'review', 'decider')
+    READER_PHASES = ('spec-review', 'review', 'decider', 'explore', 'summarize')
 
     def dispatched(self, phase):
         self.call('dispatch', '--phase', phase, '--input', str(self.input))
@@ -211,6 +212,17 @@ class ManualDevelop(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'run exists'):
             self.call('init', '--account', 'other', '--model', 'm', '--cwd', str(self.cwd), '--worker-state', str(self.root))
 
+    def test_dispatch_rejects_legacy_saved_request_id_mismatch(self):
+        self.call('dispatch', '--phase', 'spec', '--input', str(self.input))
+        request_path = self.run / 'request.json'
+        request = json.loads(request_path.read_text())
+        request['request_id'] = 'different-id'
+        request_path.write_text(json.dumps(request))
+        submit_count = len(self.calls)
+        with self.assertRaisesRegex(RuntimeError, 'identity differs'):
+            self.call('dispatch', '--phase', 'spec', '--input', str(self.input))
+        self.assertEqual(len(self.calls), submit_count)
+
     def test_unknown_cannot_ack(self):
         self.call('dispatch', '--phase', 'spec', '--input', str(self.input))
         with patch.object(m, 'worker', return_value={'status': 'unknown'}):
@@ -227,6 +239,256 @@ class ManualDevelop(unittest.TestCase):
                     m.worker({'worker_state': str(self.root)}, 'status', '--job', 'x')
                 finally:
                     self.fake.start()
+
+
+class RoleProfiles(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.cwd = self.root / 'repo'
+        self.cwd.mkdir()
+        subprocess.run(['git', 'init', '-q', str(self.cwd)], check=True)
+        subprocess.run(['git', '-C', str(self.cwd), '-c', 'user.name=Test',
+                        '-c', 'user.email=test@example.invalid', 'commit',
+                        '--allow-empty', '-qm', 'fixture'], check=True)
+        self.run = self.root / 'run'
+        self.worker_state = self.root / 'worker'
+        self.input = self.root / 'input.txt'
+        self.input.write_text('Do only this phase.')
+        self.calls = []
+        self.jobs = {}
+        self.fake = patch.object(m, 'worker', self.worker)
+        self.fake.start()
+        self.addCleanup(self.fake.stop)
+        self.accounts = patch.object(m, 'registered_accounts', return_value={'current', 'reviewer', 'builder'})
+        self.accounts.start()
+        self.addCleanup(self.accounts.stop)
+
+    def call(self, *args):
+        with patch.object(sys, 'argv', [str(SCRIPT), '--run-dir', str(self.run), *args]):
+            return m.main()
+
+    def worker(self, state, command, option, value):
+        self.calls.append((command, value))
+        if command == 'submit':
+            request = json.loads(Path(value).read_text())
+            self.jobs[request['request_id']] = request
+            return {'job_id': request['request_id'], 'status': 'completed'}
+        if command == 'result':
+            request = self.jobs[value]
+            return {'job_id': value, 'status': 'completed', 'text': 'done',
+                    'error_kind': None, 'thread_id': 'thread-' + value,
+                    'turn_id': 'turn-' + value,
+                    'execution': {'version': 1, 'role': request['role'],
+                                  'requested': {'executor': 'codex', 'account': request['account'],
+                                                'model': request['model'],
+                                                'effort': request.get('effort')},
+                                  'effective': {'executor': 'codex', 'account': request['account'],
+                                                'model': request['model'],
+                                                'effort': request.get('effort')},
+                                  'evidence': {'executor': 'transport', 'account': 'account/read',
+                                               'model': 'turn/start', 'effort': 'turn/start'}}}
+        return {'job_id': value, 'status': 'completed'}
+
+    def init(self, name='codex-standard', profile_file=None):
+        args = ['init', '--profile', name, '--cwd', str(self.cwd),
+                '--worker-state', str(self.worker_state)]
+        if profile_file:
+            args += ['--profile-file', str(profile_file)]
+        return self.call(*args)
+
+    def test_builtin_profiles_resolve_all_roles_and_snapshot_hash(self):
+        expected = {
+            'codex-standard': ('gpt-5.6-sol', 'high', 'gpt-5.6-sol', 'medium'),
+            'codex-economy': ('gpt-5.6-luna', 'medium', 'gpt-5.6-luna', 'medium'),
+        }
+        for index, (name, values) in enumerate(expected.items()):
+            with self.subTest(profile=name):
+                self.run = self.root / ('run-' + str(index))
+                self.init(name)
+                state = json.loads((self.run / 'run.json').read_text())
+                config = state['execution_config']
+                self.assertEqual((config['roles']['spec-write']['model'], config['roles']['spec-write']['effort'],
+                                  config['roles']['implement']['model'], config['roles']['implement']['effort']), values)
+                for role in ('spec-review', 'impl-review', 'review', 'decider'):
+                    self.assertEqual((config['roles'][role]['model'], config['roles'][role]['effort']),
+                                     ('gpt-6-astra', 'high'))
+                for role in ('explore', 'summarize'):
+                    self.assertEqual((config['roles'][role]['model'], config['roles'][role]['effort']),
+                                     ('gpt-5.6-luna', 'low'))
+                self.assertTrue(all(v['executor'] == 'codex' and v['account'] == 'current'
+                                    for v in config['roles'].values()))
+                encoded = json.dumps(config, ensure_ascii=False, sort_keys=True,
+                                     separators=(',', ':')).encode()
+                self.assertEqual(state['execution_config_hash'], hashlib.sha256(encoded).hexdigest())
+
+    def test_profile_cli_rejects_legacy_mix_and_profile_file_alone(self):
+        cases = [
+            ('--profile with account', ['--profile', 'codex-standard', '--account', 'current', '--cwd', str(self.cwd)]),
+            ('--profile with model', ['--profile', 'codex-standard', '--model', 'm', '--cwd', str(self.cwd)]),
+            ('file alone', ['--profile-file', str(self.root / 'x.json'), '--cwd', str(self.cwd)]),
+        ]
+        for label, args in cases:
+            with self.subTest(case=label):
+                self.run = self.root / ('invalid-' + label.replace(' ', '-'))
+                with self.assertRaises((RuntimeError, SystemExit)):
+                    self.call('init', *args)
+                self.assertFalse((self.run / 'run.json').exists())
+
+    def test_external_profile_is_strict_complete_and_uses_registered_accounts(self):
+        roles = {}
+        for role in m.CANONICAL_ROLES:
+            roles[role] = {'executor': 'codex', 'account': 'reviewer' if 'review' in role else 'builder',
+                           'model': 'custom-model', 'effort': 'future'}
+        profile = self.root / 'profiles.json'
+        profile.write_text(json.dumps({'version': 1, 'profiles': {'custom': {'roles': roles}}}))
+        self.init('custom', profile)
+        state = json.loads((self.run / 'run.json').read_text())
+        self.assertEqual(state['execution_config']['roles'], roles)
+
+        invalids = [
+            {'version': True, 'profiles': {'custom': {'roles': roles}}},
+            {'version': 2, 'profiles': {'custom': {'roles': roles}}},
+            {'version': 1, 'extra': 1, 'profiles': {'custom': {'roles': roles}}},
+            {'version': 1, 'profiles': {'custom': {'roles': {k: v for k, v in roles.items() if k != 'decider'}}}},
+            {'version': 1, 'profiles': {'custom': {'roles': dict(roles, decider=dict(roles['decider'], executor='claude'))}}},
+            {'version': 1, 'profiles': {'custom': {'roles': dict(roles, decider=dict(roles['decider'], account='absent'))}}},
+        ]
+        duplicate = '{"version":1,"version":1,"profiles":{}}'
+        for index, value in enumerate(invalids + [duplicate]):
+            with self.subTest(invalid=index):
+                self.run = self.root / ('invalid-profile-' + str(index))
+                profile.write_text(value if isinstance(value, str) else json.dumps(value))
+                with self.assertRaises((RuntimeError, ValueError)):
+                    self.init('custom', profile)
+                self.assertFalse((self.run / 'run.json').exists())
+
+    def test_review_must_equal_impl_review_in_profile_and_snapshot(self):
+        roles = {role: {'executor': 'codex', 'account': 'builder',
+                        'model': 'same-model', 'effort': 'high'}
+                 for role in m.CANONICAL_ROLES}
+        roles['review'] = dict(roles['review'], model='different-model')
+        profile = self.root / 'profiles.json'
+        profile.write_text(json.dumps({'version': 1, 'profiles': {'custom': {'roles': roles}}}))
+        with self.assertRaisesRegex(RuntimeError, 'review.*impl-review'):
+            self.init('custom', profile)
+
+        self.init()
+        state_path = self.run / 'run.json'
+        state = json.loads(state_path.read_text())
+        state['execution_config']['version'] = True
+        state['execution_config_hash'] = m.execution_config_hash(state['execution_config'])
+        state_path.write_text(json.dumps(state))
+        with self.assertRaisesRegex(RuntimeError, 'execution config mismatch'):
+            self.call('dispatch', '--phase', 'review', '--input', str(self.input))
+
+        state['execution_config']['version'] = 1
+        state['execution_config']['roles']['review']['model'] = 'different-model'
+        state['execution_config_hash'] = m.execution_config_hash(state['execution_config'])
+        state_path.write_text(json.dumps(state))
+        with self.assertRaisesRegex(RuntimeError, 'review.*impl-review'):
+            self.call('dispatch', '--phase', 'review', '--input', str(self.input))
+
+    def test_dispatch_rejects_profile_saved_request_id_mismatch(self):
+        self.init()
+        self.call('dispatch', '--phase', 'spec', '--input', str(self.input))
+        request_path = self.run / 'request.json'
+        request = json.loads(request_path.read_text())
+        request['request_id'] = 'different-id'
+        request_path.write_text(json.dumps(request))
+        submit_count = len(self.calls)
+        with self.assertRaisesRegex(RuntimeError, 'identity differs'):
+            self.call('dispatch', '--phase', 'spec', '--input', str(self.input))
+        self.assertEqual(len(self.calls), submit_count)
+
+    def test_snapshot_survives_external_file_change_and_dispatches_by_role(self):
+        roles = {role: {'executor': 'codex', 'account': 'reviewer' if role == 'spec-review' else 'builder',
+                        'model': role + '-model', 'effort': role + '-effort'}
+                 for role in m.CANONICAL_ROLES}
+        roles['review'] = dict(roles['impl-review'])
+        profile = self.root / 'profiles.json'
+        profile.write_text(json.dumps({'version': 1, 'profiles': {'custom': {'roles': roles}}}))
+        self.init('custom', profile)
+        profile.unlink()
+        output = self.call('dispatch', '--phase', 'spec-review', '--input', str(self.input))
+        request = self.jobs[output['job_id']]
+        self.assertEqual((request['role'], request['account'], request['model'], request['effort']),
+                         ('spec-review', 'reviewer', 'spec-review-model', 'spec-review-effort'))
+        state = json.loads((self.run / 'run.json').read_text())
+        self.assertEqual(state['pending_execution'], roles['spec-review'] | {'role': 'spec-review'})
+        self.assertEqual(state['pending_payload_hash'],
+                         hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest())
+
+    def test_profile_retry_checks_snapshot_pending_and_preserves_old_prompt(self):
+        self.init()
+        with patch.object(m, 'worker', side_effect=RuntimeError('connection lost')):
+            with self.assertRaises(RuntimeError):
+                self.call('dispatch', '--phase', 'spec', '--input', str(self.input))
+        request_path = self.run / 'request.json'
+        old = json.loads(request_path.read_text())
+        old['prompt'] = 'old profile prompt'
+        request_path.write_text(json.dumps(old))
+        state_path = self.run / 'run.json'
+        state = json.loads(state_path.read_text())
+        state['pending_payload_hash'] = hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
+        state_path.write_text(json.dumps(state))
+        self.call('retry')
+        self.assertEqual(self.jobs[old['request_id']]['prompt'], 'old profile prompt')
+        for key, value in [('pending_payload_hash', 'bad'), ('execution_config_hash', 'bad')]:
+            state = json.loads(state_path.read_text())
+            state[key] = value
+            state_path.write_text(json.dumps(state))
+            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, 'mismatch'):
+                self.call('retry')
+            state[key] = (hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
+                          if key == 'pending_payload_hash' else m.execution_config_hash(state['execution_config']))
+            state_path.write_text(json.dumps(state))
+
+    def test_ack_records_verified_execution_identity_without_changing_payload_hash(self):
+        self.init()
+        output = self.call('dispatch', '--phase', 'implement', '--input', str(self.input))
+        before = json.loads((self.run / 'run.json').read_text())['pending_payload_hash']
+        self.call('ack')
+        state = json.loads((self.run / 'run.json').read_text())
+        item = state['history'][-1]
+        self.assertEqual(item['execution']['role'], 'implement')
+        self.assertEqual((item['job_id'], item['thread_id'], item['turn_id']),
+                         (output['job_id'], 'thread-' + output['job_id'], 'turn-' + output['job_id']))
+        request = json.loads((self.run / 'request.json').read_text())
+        self.assertEqual(before, hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest())
+
+    def test_profiles_preserve_coordinator_phase_order_and_role_mapping(self):
+        phases = ('spec', 'spec-review', 'spec', 'spec-review', 'implement', 'finish',
+                  'gate', 'review', 'decider', 'implement', 'review', 'gate')
+        expected_roles = ('spec-write', 'spec-review', 'spec-write', 'spec-review', 'implement',
+                          'implement', 'implement', 'impl-review', 'decider', 'implement',
+                          'impl-review', 'implement')
+        for index, profile in enumerate(('codex-standard', 'codex-economy')):
+            with self.subTest(profile=profile):
+                self.run = self.root / ('workflow-' + str(index))
+                self.init(profile)
+                actual = []
+                for phase in phases:
+                    output = self.call('dispatch', '--phase', phase, '--input', str(self.input))
+                    actual.append(self.jobs[output['job_id']]['role'])
+                    self.call('ack')
+                self.assertEqual(tuple(actual), expected_roles)
+                state = json.loads((self.run / 'run.json').read_text())
+                self.assertEqual(tuple(item['phase'] for item in state['history']), phases)
+                self.assertNotIn('approved', state)
+
+    def test_common_loader_is_origin_independent_and_finish_gate_use_implement(self):
+        first = m.load_profile('codex-economy', None, str(self.worker_state))
+        second = m.load_profile('codex-economy', None, str(self.worker_state))
+        self.assertEqual(first, second)  # manual and future burn callers share this resolver
+        self.init('codex-economy')
+        for phase in ('finish', 'gate', 'explore', 'summarize'):
+            output = self.call('dispatch', '--phase', phase, '--input', str(self.input))
+            request = self.jobs[output['job_id']]
+            expected = 'implement' if phase in ('finish', 'gate') else phase
+            self.assertEqual(request['role'], expected)
+            self.call('ack')
 
 
 class ContinuationRecord(unittest.TestCase):
@@ -257,6 +519,27 @@ class ContinuationRecord(unittest.TestCase):
         values.update(overrides)
         return m.format_continuation_record(values)
 
+    def profile_record(self, **overrides):
+        config = {
+            'version': 1, 'profile': 'custom',
+            'roles': {role: {'executor': 'codex', 'account': 'acct',
+                             'model': 'model', 'effort': 'high'}
+                      for role in m.CANONICAL_ROLES},
+        }
+        state = json.loads((self.run / 'run.json').read_text())
+        state.pop('account', None)
+        state.pop('model', None)
+        state['execution_config'] = config
+        state['execution_config_hash'] = m.execution_config_hash(config)
+        m.write(self.run / 'run.json', state)
+        values = {
+            'executor': 'codex', 'profile': 'custom', 'config-version': '1',
+            'config-hash': state['execution_config_hash'], 'run-dir': str(self.run),
+            'worker-state': str(self.root / 'worker'), 'cwd': str(self.cwd),
+        }
+        values.update(overrides)
+        return m.format_continuation_record(values)
+
     def test_record_round_trips_utf8_reserved_values(self):
         values = {
             'executor': 'codex', 'account': '名前 %=', 'model': 'model/β',
@@ -267,6 +550,53 @@ class ContinuationRecord(unittest.TestCase):
         line = m.format_continuation_record(values)
         self.assertIn('%E5%90%8D%E5%89%8D', line)
         self.assertNotIn('名前', line)
+
+    def test_v2_record_has_exact_order_and_round_trips(self):
+        line = self.profile_record(profile='名前 %=')
+        self.assertRegex(line, r'^<!-- codex-develop-continuation:v2 executor=codex '
+                         r'profile=.* config-version=1 config-hash=[0-9a-f]{64} '
+                         r'run-dir=.* worker-state=.* cwd=.* -->$')
+        self.assertEqual(m.parse_continuation_record(line)['profile'], '名前 %=')
+
+    def test_mixed_versions_select_latest_and_unknown_latest_stops(self):
+        v1 = self.record()
+        v2 = self.profile_record()
+        self.assertEqual(m.select_continuation_record([
+            {'id': 1, 'body': v1}, {'id': 2, 'body': v2},
+        ]), m.parse_continuation_record(v2))
+        with self.assertRaisesRegex(m.ContinuationError, 'invalid latest'):
+            m.select_continuation_record([
+                {'id': 1, 'body': v1},
+                {'id': 3, 'body': v2.replace(':v2 ', ':v3 ')},
+            ])
+
+    def test_v1_v2_must_match_run_format(self):
+        v1 = m.parse_continuation_record(self.record())
+        v2 = m.parse_continuation_record(self.profile_record())
+        with self.assertRaisesRegex(m.ContinuationError, 'format mismatch'):
+            m.validate_continuation(v1, self.run)
+        state = json.loads((self.run / 'run.json').read_text())
+        state.update(account='acct', model='model')
+        state.pop('execution_config')
+        state.pop('execution_config_hash')
+        m.write(self.run / 'run.json', state)
+        with self.assertRaisesRegex(m.ContinuationError, 'format mismatch'):
+            m.validate_continuation(v2, self.run)
+
+    def test_v2_validates_snapshot_profile_version_hash_without_external_file(self):
+        line = self.profile_record()
+        record = m.parse_continuation_record(line)
+        self.assertEqual(m.validate_continuation(record, self.run), record)
+        for key, value in [('profile', 'other'), ('config-version', '2'),
+                           ('config-hash', '0' * 64)]:
+            with self.subTest(key=key), self.assertRaisesRegex(m.ContinuationError, key + ' mismatch'):
+                m.validate_continuation(dict(record, **{key: value}), self.run)
+        state_path = self.run / 'run.json'
+        state = json.loads(state_path.read_text())
+        external = self.root / 'deleted-profile.json'
+        state['profile_file'] = str(external)
+        m.write(state_path, state)
+        self.assertEqual(m.validate_continuation(record, self.run), record)
 
     def test_latest_candidate_is_selected_and_invalid_latest_stops(self):
         old = self.record()

@@ -1,5 +1,8 @@
-## ADDED Requirements
+# manual-codex-develop Specification
 
+## Purpose
+TBD - created by archiving change codex-develop-role-profiles. Update Purpose after archive.
+## Requirements
 ### Requirement: 手動で実行先とアカウントを固定する
 手動Codex開発は旧形式の登録account/model、または名前付きprofileの役割別executor/account/model/effortをinitで固定し、共通App Server workerだけに委譲しなければならない（MUST）。profileと旧account/modelの同時指定を拒否し、worker失敗時にexec/Claudeへfallbackしてはならない（MUST NOT）。
 

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sqlite3
 import subprocess
 import stat
 import sys
@@ -13,11 +14,16 @@ import uuid
 from urllib.parse import quote, unquote_to_bytes
 
 
-CONTINUATION_KEYS = ('executor', 'account', 'model', 'run-dir', 'worker-state', 'cwd')
+CONTINUATION_V1_KEYS = ('executor', 'account', 'model', 'run-dir', 'worker-state', 'cwd')
+CONTINUATION_V2_KEYS = ('executor', 'profile', 'config-version', 'config-hash',
+                        'run-dir', 'worker-state', 'cwd')
 CONTINUATION_PATH_KEYS = frozenset(('run-dir', 'worker-state', 'cwd'))
 CONTINUATION_MARKER = '<!-- codex-develop-continuation:'
-CONTINUATION_PREFIX = '<!-- codex-develop-continuation:v1 '
-CONTINUATION_RE = r'<!-- codex-develop-continuation:v1 ((?:[A-Za-z0-9._~-]+=(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+ ){5}[A-Za-z0-9._~-]+=(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+) -->'
+CONTINUATION_PREFIXES = {
+    'v1': '<!-- codex-develop-continuation:v1 ',
+    'v2': '<!-- codex-develop-continuation:v2 ',
+}
+CONTINUATION_VALUE_RE = r'(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+'
 
 
 class ContinuationError(ValueError):
@@ -46,27 +52,38 @@ def _continuation_decode(value):
 
 def format_continuation_record(values):
     """Return the one-line machine-readable record written by the coordinator."""
-    if set(values) != set(CONTINUATION_KEYS):
-        raise ContinuationError('continuation keys must be exactly the required six keys')
+    if set(values) == set(CONTINUATION_V1_KEYS):
+        version, keys = 'v1', CONTINUATION_V1_KEYS
+    elif set(values) == set(CONTINUATION_V2_KEYS):
+        version, keys = 'v2', CONTINUATION_V2_KEYS
+    else:
+        raise ContinuationError('continuation keys must match exactly one supported version')
     if values.get('executor') != 'codex':
         raise ContinuationError('continuation executor must be codex')
-    encoded = ' '.join(f'{key}={_continuation_encode(values[key])}' for key in CONTINUATION_KEYS)
-    return f'{CONTINUATION_PREFIX}{encoded} -->'
+    encoded = ' '.join(f'{key}={_continuation_encode(values[key])}' for key in keys)
+    return f'{CONTINUATION_PREFIXES[version]}{encoded} -->'
 
 
 def parse_continuation_record(line):
     """Parse one exact continuation line, rejecting unknown and duplicate keys."""
     import re
-    if not isinstance(line, str) or '\n' in line or '\r' in line or not re.fullmatch(CONTINUATION_RE, line):
+    if not isinstance(line, str) or '\n' in line or '\r' in line:
         raise ContinuationError('invalid continuation record')
-    payload = line[len(CONTINUATION_PREFIX):-4]
+    version = next((item for item, prefix in CONTINUATION_PREFIXES.items()
+                    if line.startswith(prefix)), None)
+    if version is None or not line.endswith(' -->'):
+        raise ContinuationError('invalid continuation record')
+    keys = CONTINUATION_V1_KEYS if version == 'v1' else CONTINUATION_V2_KEYS
+    prefix = CONTINUATION_PREFIXES[version]
+    payload = line[len(prefix):-4]
     parts = payload.split(' ')
-    if len(parts) != len(CONTINUATION_KEYS):
+    if len(parts) != len(keys):
         raise ContinuationError('invalid continuation record')
     values = {}
-    for part, key in zip(parts, CONTINUATION_KEYS):
+    for part, key in zip(parts, keys):
         name, separator, encoded = part.partition('=')
-        if separator != '=' or name != key or key in values:
+        if (separator != '=' or name != key or key in values or
+                not re.fullmatch(CONTINUATION_VALUE_RE, encoded)):
             raise ContinuationError('invalid continuation keys')
         values[key] = _continuation_decode(encoded)
     if values['executor'] != 'codex':
@@ -116,13 +133,24 @@ def validate_continuation(record, run_dir):
         state = json.loads((directory / 'run.json').read_text())
     except (OSError, ValueError, KeyError) as exc:
         raise ContinuationError('run-dir is unavailable or invalid') from exc
-    expected = {
-        'run-dir': str(directory),
-        'account': state.get('account'),
-        'model': state.get('model'),
-        'worker-state': state.get('worker_state'),
-        'cwd': state.get('cwd'),
-    }
+    is_v2 = set(record) == set(CONTINUATION_V2_KEYS)
+    is_profile = 'execution_config' in state
+    if is_v2 != is_profile:
+        raise ContinuationError('continuation and run format mismatch')
+    expected = {'run-dir': str(directory), 'worker-state': state.get('worker_state'),
+                'cwd': state.get('cwd')}
+    if is_v2:
+        config = state.get('execution_config')
+        if not isinstance(config, dict):
+            raise ContinuationError('continuation and run format mismatch')
+        computed_hash = execution_config_hash(config)
+        if state.get('execution_config_hash') != computed_hash:
+            raise ContinuationError('continuation config-hash mismatch')
+        expected.update(profile=config.get('profile'),
+                        **{'config-version': str(config.get('version')),
+                           'config-hash': computed_hash})
+    else:
+        expected.update(account=state.get('account'), model=state.get('model'))
     if record.get('executor') != 'codex':
         raise ContinuationError('continuation executor mismatch: expected codex')
     for key, value in expected.items():
@@ -140,6 +168,8 @@ def validate_continuation(record, run_dir):
     return record
 
 ROOT = Path(__file__).resolve().parents[1]
+CANONICAL_ROLES = ('spec-write', 'spec-review', 'implement', 'impl-review', 'review',
+                   'decider', 'explore', 'summarize')
 PHASES = {
     'spec': ('spec-write', 'worker.md'),
     'spec-review': ('spec-review', 'spec-reviewer.md'),
@@ -148,6 +178,8 @@ PHASES = {
     'gate': ('implement', 'gate-runner.md'),
     'review': ('impl-review', 'spec-reviewer.md'),
     'decider': ('decider', 'spec-reviewer.md'),
+    'explore': ('explore', 'worker.md'),
+    'summarize': ('summarize', 'worker.md'),
 }
 # The writers run with no OS sandbox and inherit the parent environment, exactly like the
 # Claude subagent each one mirrors, so they finish their own GitHub work. Every other role
@@ -158,6 +190,125 @@ comments, push, PR creation and commit yourself here, and do not return needs-co
 them. The coordinator performs only operations already recorded as ones it could not align.'''
 READER_TRANSPORT = '''This worker is read-only: never write to GitHub, push, or commit. Return the review verdict and
 its evidence; the coordinator posts it on your behalf, then starts a fresh phase with it.'''
+
+
+def _unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f'duplicate JSON key: {key}')
+        value[key] = item
+    return value
+
+
+def registered_accounts(worker_state):
+    ledger = Path(worker_state).expanduser().resolve() / 'ledger.sqlite'
+    if not ledger.is_file():
+        return set()
+    try:
+        connection = sqlite3.connect(f'file:{ledger}?mode=ro', uri=True)
+        try:
+            return {row[0] for row in connection.execute('SELECT name FROM accounts')}
+        finally:
+            connection.close()
+    except sqlite3.Error as exc:
+        raise RuntimeError('worker account registry is unavailable') from exc
+
+
+def execution_config_hash(config):
+    encoded = json.dumps(config, ensure_ascii=False, sort_keys=True,
+                         separators=(',', ':')).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def payload_hash(request):
+    return hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
+
+
+def load_profile(name, profile_file, worker_state):
+    source = Path(profile_file).expanduser().resolve() if profile_file else ROOT / 'references/codex-role-profiles.json'
+    try:
+        document = json.loads(source.read_text(), object_pairs_hook=_unique_object)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError('profile file is unavailable or invalid') from exc
+    if (not isinstance(document, dict) or set(document) != {'version', 'profiles'} or
+            type(document['version']) is not int or document['version'] != 1):
+        raise RuntimeError('profile document must have exactly version=1 and profiles')
+    profiles = document['profiles']
+    if not isinstance(profiles, dict) or name not in profiles:
+        raise RuntimeError('profile is not defined')
+    selected = profiles[name]
+    if not isinstance(selected, dict) or set(selected) != {'roles'} or not isinstance(selected['roles'], dict):
+        raise RuntimeError('profile must contain exactly roles')
+    roles = selected['roles']
+    if set(roles) != set(CANONICAL_ROLES):
+        raise RuntimeError('profile roles are incomplete or unknown')
+    accounts = registered_accounts(worker_state)
+    clean = {}
+    for role in CANONICAL_ROLES:
+        entry = roles[role]
+        if not isinstance(entry, dict) or set(entry) != {'executor', 'account', 'model', 'effort'}:
+            raise RuntimeError(f'profile role {role} has invalid fields')
+        if any(not isinstance(entry[key], str) or not entry[key] for key in entry):
+            raise RuntimeError(f'profile role {role} has an empty or non-string value')
+        if entry['executor'] != 'codex':
+            raise RuntimeError(f'profile role {role} executor must be codex')
+        if entry['account'] not in accounts:
+            raise RuntimeError(f'profile role {role} account is not registered')
+        clean[role] = dict(entry)
+    if clean['review'] != clean['impl-review']:
+        raise RuntimeError('profile review must equal impl-review')
+    return {'version': 1, 'profile': name, 'roles': clean}
+
+
+def validate_execution_config(state):
+    config = state.get('execution_config')
+    if config is None:
+        return
+    if (not isinstance(config, dict) or set(config) != {'version', 'profile', 'roles'} or
+            type(config.get('version')) is not int or config.get('version') != 1 or
+            set(config.get('roles', {})) != set(CANONICAL_ROLES)):
+        raise RuntimeError('execution config mismatch')
+    for role, entry in config['roles'].items():
+        if (not isinstance(entry, dict) or set(entry) != {'executor', 'account', 'model', 'effort'} or
+                entry.get('executor') != 'codex' or
+                any(not isinstance(value, str) or not value for value in entry.values())):
+            raise RuntimeError(f'execution config role {role} mismatch')
+    if config['roles']['review'] != config['roles']['impl-review']:
+        raise RuntimeError('execution config review must equal impl-review')
+    if state.get('execution_config_hash') != execution_config_hash(config):
+        raise RuntimeError('execution config hash mismatch')
+
+
+def resolve_execution(state, role):
+    validate_execution_config(state)
+    if 'execution_config' not in state:
+        return {'role': role, 'executor': 'codex', 'account': state['account'],
+                'model': state['model']}
+    return {'role': role} | dict(state['execution_config']['roles'][role])
+
+
+def validate_profile_pending(state, request):
+    validate_execution_config(state)
+    expected = resolve_execution(state, request.get('role'))
+    pending = state.get('pending_execution')
+    if pending != expected:
+        raise RuntimeError('pending execution mismatch')
+    for key in ('account', 'model'):
+        if request.get(key) != expected[key]:
+            raise RuntimeError('saved request identity differs from pending execution')
+    if request.get('effort') != expected.get('effort'):
+        raise RuntimeError('saved request effort differs from pending execution')
+    if request.get('cwd') != state.get('cwd') or request.get('request_id') != state.get('pending'):
+        raise RuntimeError('saved request identity differs from pending run')
+    if state.get('pending_payload_hash') != payload_hash(request):
+        raise RuntimeError('pending payload hash mismatch')
+
+
+def validate_legacy_pending(state, request):
+    if (request.get('request_id') != state.get('pending') or
+            any(request.get(key) != state.get(key) for key in ('account', 'model', 'cwd'))):
+        raise RuntimeError('saved request identity differs from pending run')
 
 
 def clean_env():
@@ -225,8 +376,9 @@ def main():
     parser.add_argument('--run-dir', help='init defaults to a new private runs/<UUID>; later commands require it')
     sub = parser.add_subparsers(dest='command', required=True)
     init = sub.add_parser('init')
-    for key in ('account', 'model', 'cwd'):
-        init.add_argument('--' + key, required=True)
+    for key in ('account', 'model', 'profile', 'profile-file'):
+        init.add_argument('--' + key)
+    init.add_argument('--cwd', required=True)
     init.add_argument('--worker-state', default=str(Path.home() / '.local/state/claude-harness-codex/jobs'))
     dispatch = sub.add_parser('dispatch')
     dispatch.add_argument('--phase', choices=PHASES, required=True)
@@ -247,17 +399,33 @@ def main():
         if args.command == 'init':
             if path.exists():
                 raise RuntimeError('run exists; account/model cannot be changed')
+            legacy = bool(args.account or args.model)
+            profile = bool(args.profile or args.profile_file)
+            if legacy and profile or args.profile_file and not args.profile:
+                raise RuntimeError('profile cannot be combined with account/model; profile-file requires profile')
+            if legacy and not (args.account and args.model):
+                raise RuntimeError('legacy init requires both account and model')
+            if not legacy and not args.profile:
+                raise RuntimeError('init requires account/model or profile')
             cwd = Path(args.cwd).expanduser().resolve()
             if not cwd.is_dir():
                 raise RuntimeError('cwd must be prepared target worktree')
             check = subprocess.run(['git', '-C', str(cwd), 'rev-parse', '--show-toplevel'], capture_output=True, text=True, env=clean_env())
             if check.returncode or Path(check.stdout.strip()).resolve() != cwd:
                 raise RuntimeError('cwd must be the repository/worktree root')
-            state = dict(account=args.account, model=args.model, cwd=str(cwd),
-                         worker_state=str(Path(args.worker_state).expanduser().resolve()), pending=None, history=[])
+            worker_state = str(Path(args.worker_state).expanduser().resolve())
+            state = dict(cwd=str(cwd), worker_state=worker_state, pending=None, history=[])
+            if args.profile:
+                config = load_profile(args.profile, args.profile_file, worker_state)
+                state.update(execution_config=config, execution_config_hash=execution_config_hash(config))
+                if args.profile_file:
+                    state['profile_file'] = str(Path(args.profile_file).expanduser().resolve())
+            else:
+                state.update(account=args.account, model=args.model)
             write(path, state)
             return {'status': 'initialized', 'run_dir': str(directory)}
         state = json.loads(path.read_text())
+        validate_execution_config(state)
         if args.command == 'retry':
             # Replay the durable envelope exactly, including prompts from older versions.
             # submit is idempotent: never allocate a replacement job on uncertain delivery.
@@ -265,25 +433,38 @@ def main():
                 raise RuntimeError('no pending job')
             request_path = directory / 'request.json'
             request = json.loads(request_path.read_text())
-            if request.get('request_id') != state['pending'] or any(request.get(k) != state[k] for k in ('account', 'model', 'cwd')):
-                raise RuntimeError('saved request identity differs from pending run')
+            if 'execution_config' in state:
+                validate_profile_pending(state, request)
+            else:
+                validate_legacy_pending(state, request)
             return worker(state, 'submit', '--request', str(request_path))
         if args.command == 'dispatch':
             head = git(state['cwd'], 'rev-parse', 'HEAD')
             instructions = Path(args.input).read_text()
-            request = dict(origin='manual', account=state['account'], model=state['model'],
-                           cwd=state['cwd'], role=PHASES[args.phase][0], prompt=prompt(args.phase, 'Dispatch HEAD: ' + head + '\n' + instructions, state))
+            role = PHASES[args.phase][0]
+            execution = resolve_execution(state, role)
+            request = dict(origin='manual', account=execution['account'], model=execution['model'],
+                           cwd=state['cwd'], role=role, prompt=prompt(args.phase, 'Dispatch HEAD: ' + head + '\n' + instructions, state))
+            if 'effort' in execution:
+                request['effort'] = execution['effort']
             if state['pending']:
                 old = json.loads((directory / 'request.json').read_text())
                 if any(old.get(k) != v for k, v in request.items()):
                     raise RuntimeError('pending request differs; collect result and ack before next phase')
                 request = old
+                if 'execution_config' in state:
+                    validate_profile_pending(state, request)
+                else:
+                    validate_legacy_pending(state, request)
             else:
                 request['request_id'] = 'develop-' + uuid.uuid4().hex
                 write(directory / 'request.json', request)
                 state['pending'] = request['request_id']
                 state['phase'] = args.phase
                 state['head'] = head
+                if 'execution_config' in state:
+                    state['pending_execution'] = execution
+                    state['pending_payload_hash'] = payload_hash(request)
                 write(path, state)  # Persist BEFORE submit: uncertain response keeps same request ID.
             return worker(state, 'submit', '--request', str(directory / 'request.json'))
         if not state['pending']:
@@ -293,9 +474,24 @@ def main():
             result = worker(state, 'result', '--job', job)
             if result.get('status') == 'unknown':
                 raise RuntimeError('unknown job cannot be acknowledged or replaced')
+            history = dict(job_id=job, phase=state['phase'], head=state['head'], result=result)
+            if 'execution_config' in state:
+                request = json.loads((directory / 'request.json').read_text())
+                validate_profile_pending(state, request)
+                observed = result.get('execution')
+                if (not isinstance(observed, dict) or observed.get('role') != state['pending_execution']['role'] or
+                        observed.get('requested') != {key: state['pending_execution'].get(key)
+                                                       for key in ('executor', 'account', 'model', 'effort')}):
+                    raise RuntimeError('result execution identity mismatch')
+                if result.get('job_id') not in (None, job):
+                    raise RuntimeError('result job identity mismatch')
+                history.update(execution=observed, thread_id=result.get('thread_id'),
+                               turn_id=result.get('turn_id'))
             response = worker(state, 'ack', '--job', job)
-            state['history'].append(dict(job_id=job, phase=state['phase'], head=state['head'], result=result))
             state['pending'] = None
+            state.pop('pending_execution', None)
+            state.pop('pending_payload_hash', None)
+            state['history'].append(history)
             write(path, state)
             return response
         return worker(state, args.command, '--job', job)

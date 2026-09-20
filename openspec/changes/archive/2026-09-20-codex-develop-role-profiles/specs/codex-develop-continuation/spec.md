@@ -1,7 +1,5 @@
-# codex-develop-continuation Specification
-## Purpose
-TBD - created by archiving change codex-develop-continuation-state. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: 継続依頼は初回の Codex 設定を復元する
 Codex executor の初回確定後、coordinator は既存 develop が選択した記録先（issue を優先し、issue が無い場合は Draft PR）に、旧単一設定 run では固定マーカー `<!-- codex-develop-continuation:v1 ... -->` と順序固定の必須キー `executor`、`account`、`model`、`run-dir`、`worker-state`、`cwd` を持つ1行、profile run では `<!-- codex-develop-continuation:v2 ... -->` と順序固定の必須キー `executor`、`profile`、`config-version`、`config-hash`、`run-dir`、`worker-state`、`cwd` を持つ1行の継続記録を保存しなければならない（MUST）。各値は UTF-8 の RFC 3986 パーセントエンコード（`%HH` は大文字）で表し、未知キー・重複キー・空値・改行を含む記録は不正とする。選択した記録先のコメントをコメント ID の降順で調べ、最新候補が不正なら停止、正しい場合は最新候補だけを採用し、古い候補と未選択の記録先は無視しなければならない（MUST）。引数なしの追加依頼では、その記録と run の整合性を検証したうえで同じ Codex executor と run に委譲しなければならない（MUST）。
 
@@ -38,43 +36,13 @@ v2 の config-version は1、config-hash は private run の execution_config �
 - **WHEN** 最新候補の形式不正、run 不在、または account/model/worker-state/cwd または profile/config-version/config-hash の不一致、v1/v2 と run 形式の不一致がある
 - **THEN** coordinator は Codex も Claude も実行せず、検出した不一致を示して指定を求める
 
-### Requirement: 継続復元は既存 develop の品質工程を変えない
-継続設定の復元は transport の選択だけを担い、仕様要否・分割・レビュー・verify・finish/G・差戻しの条件を既存 develop と roles の正本から変更してはならない（MUST NOT）。
-
-#### Scenario: 仕様不要の追加依頼
-- **WHEN** 継続した Codex の W が既存基準に従い `仕様化判断: しない` を返す
-- **THEN** coordinator は既存 develop の実装工程へ進み、Codex adapter の仕様必須や独自承認を要求しない
-
-#### Scenario: 継続した案件のレビュー
-- **WHEN** 追加依頼を含む案件が通常のレビューまたは finish/G に到達する
-- **THEN** coordinator は既存 develop のレビュー・代理操作・ゲート条件を適用し、transport 完了を品質承認として扱わない
-
-### Requirement: 継続復元の回帰を検証する
-実装は設定復元、復元不能時の停止、追加依頼の委譲先固定を自動テストで検証しなければならない（MUST）。また、追加依頼を1回以上含む案件を公開 PR の finish/G まで実測し、その結果を記録しなければならない（MUST）。
-
-#### Scenario: 回帰テストが3つの境界を固定する
-- **WHEN** 継続機能のテストスイートを実行する
-- **THEN** 初回設定の復元、復元不能時の停止、追加依頼の同一委譲先固定がそれぞれ成功し、既存テストも成功する
-
-#### Scenario: 公開 PR 完走を記録する
-- **WHEN** 初回依頼の後に追加依頼を投入した一件を公開 PR の finish/G まで実行する
-- **THEN** 実行コマンド、対象 HEAD、追加依頼が同一設定へ委譲された証拠、finish/G の結果を記録する
-
 ### Requirement: coordinator と担当者の責務境界を守る
-coordinator は記録先の選択、継続記録の生成・解析、GitHub コメントの取得・保存、LLM ログの取得、run の整合性検証を担わなければならない（MUST）。GitHub 操作と commit/push は、その権限を持つ役（workspace-write role の担当者）が worker の中で自分で完了しなければならない（MUST）。coordinator がこれらを代理してよいのは、capability `codex-worker` の「揃えられなかった項目を項目ごとに記録する」で記録された項目に限る（MUST）。担当者は固定された executor/account/model/run-dir（profile run は同一 snapshot の当該役割の executor/account/model/effort）による調査・修正・レビューを行い、結果とテスト証跡を返さなければならない（MUST）。coordinator は担当者の調査・修正・レビューを代行してはならない（MUST NOT）。read-only role の担当者は GitHub へ書き込んではならず（MUST NOT）、そのレビュー結果は coordinator が既存書式で代理投稿しなければならない（MUST）。担当者は LLM ログの取得を行ってはならない（MUST NOT）。この境界は Codex 専用の仕様必須・承認台帳・check/archive ゲートを追加してはならない（MUST NOT）。
+coordinator は記録先の選択、GitHub コメントの取得・保存、LLM ログの取得、run の整合性検証、GitHub 操作、および worker が実行できない場合の commit/push の代理を担わなければならない（MUST）。担当者は固定された executor/account/model/run-dir（profile run は同一 snapshot の当該役割の executor/account/model/effort） による調査・修正・レビューを行い、結果とテスト証跡を返さなければならない（MUST）。coordinator は担当者の調査・修正・レビューを代行してはならず（MUST NOT）、担当者は GitHub 操作・ログ取得を行ってはならない（MUST NOT）。この境界は Codex 専用の仕様必須・承認台帳・check/archive ゲートを追加してはならない（MUST NOT）。
 
 #### Scenario: 担当者への調査・修正・レビュー委譲
 - **WHEN** 初回または追加依頼が調査、修正、レビューを要求する
 - **THEN** coordinator は記録された同じ担当へ依頼し、担当者の返却した判断・変更・テスト証跡を受け取る。coordinator 自身はその調査・修正・レビューを実行しない
 
-#### Scenario: 本体が記録と run の整合性を担う
-- **WHEN** 継続記録の生成・解析、LLM ログの取得、または run の整合性検証が必要になる
-- **THEN** coordinator が許可された範囲で実行する。transport の完了だけでは品質承認・finish/G 合格と扱わない
-
-#### Scenario: 書く役が GitHub 操作と commit/push を自分で行う
-- **WHEN** workspace-write role の担当者が commit、push、Draft PR 作成、または記録先へのコメントを必要とする
-- **THEN** 担当者が worker の中で自分で完了し、coordinator は代理しない。代理が入るのは、揃えられなかった項目として記録済みの操作だけである
-
-#### Scenario: 読む役のレビュー結果を投稿する
-- **WHEN** read-only role の担当者がレビュー結果を返す
-- **THEN** 担当者は GitHub へ書き込まず、coordinator が既存書式で代理投稿する。投稿成功前に後続実装・完了扱いとしない
+#### Scenario: 本体が記録・操作・代理 transport を担う
+- **WHEN** 継続記録、LLM ログ、GitHub コメント、commit、または push の操作が必要になる
+- **THEN** coordinator が許可された範囲で実行または worker の失敗時に代理し、担当者は GitHub やログの操作を実行しない。transport の完了だけでは品質承認・finish/G 合格と扱わない

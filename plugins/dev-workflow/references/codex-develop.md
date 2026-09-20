@@ -4,7 +4,9 @@
 
 ## 起動
 
-`/dev-workflow:develop --executor codex --account NAME --model MODEL <issue URLまたは依頼>`
+`/dev-workflow:develop --executor codex --profile codex-standard <issue URLまたは依頼>`
+
+旧形式は `--account NAME --model MODEL`。profileとは併用しない。外部設定は `--profile NAME --profile-file /absolute/profiles.json` とし、version 1、全canonical role、登録済みaccountを必要とする。たとえば各roleの値は `{"executor":"codex","account":"spare","model":"MODEL","effort":"high"}` で、設定全体はinit時にrunへsnapshotされる。
 
 既存登録accountを指定する。`docs/codex-develop.md` に導入方法を示す。人間の手動入口専用で、burn窓やcron/tickを要求しない。workerの認証・利用上限・権限拒否はそのまま停止理由とする。Codexが使えないときClaudeで代行しない。
 
@@ -14,16 +16,17 @@
 
 ```text
 <!-- codex-develop-continuation:v1 executor=codex account=<value> model=<value> run-dir=<value> worker-state=<value> cwd=<value> -->
+<!-- codex-develop-continuation:v2 executor=codex profile=<value> config-version=1 config-hash=<sha256> run-dir=<value> worker-state=<value> cwd=<value> -->
 ```
 
-値は UTF-8 の RFC 3986 パーセントエンコード（`%HH` は大文字）で、キー順は固定。未知キー、重複キー、空値、改行、`executor` が `codex` 以外の記録は不正とする。コメント ID の降順で候補を調べ、最新候補が不正なら停止し、正しい最新候補だけを採用する。引数なしの追加依頼では、記録の 6 キーと run.json の account/model/worker-state/cwd、および記録された run-dir の所有権・0700 を検証してから同じ run に委譲する。復元できない場合は executor/account/model/run-dir の指定を求めて停止し、Claude・別 Codex・別 run へ fallback しない。
+v1は旧単一設定run、v2はprofile run専用。値とキー順は固定で、版混在でもコメントIDが最新の一意な候補だけを採用する。最新が不正/未知版なら古い記録へ戻らない。v2はprofile、config-version、snapshotのcanonical JSON SHA-256をrun.jsonと照合し、外部設定を再読込しない。両版ともrun-dirの所有権・0700とパスを検証する。復元できない場合は停止し、Claude・別Codex・別runへfallbackしない。
 
 機械処理は `scripts/codex-develop.py` の `format_continuation_record(values)`、`parse_continuation_record(line)`、`select_continuation_record(comments)`、`validate_continuation(record, run_dir)` を使う。これらは GitHub API を呼ばず、コメント取得・保存は coordinator の責務である。記録や run の検証成功は品質承認・verify・finish/G の代替ではない。
 
 ## 本体が行う操作
 
 1. develop入口0で記録先を確定し、対象repoのOrca等のルールで専用worktreeを用意する。CLIツール自身はworktreeを作らない。
-2. `codex-develop.py --run-dir <private-run-dir> init --account NAME --model MODEL --cwd <worktree-root> --worker-state <private-worker-dir>`。一度開始したrunのaccount/modelを変更しない。秘密情報を依頼ファイルへ入れない。
+2. `codex-develop.py --run-dir <private-run-dir> init --profile NAME [--profile-file PATH] --cwd <worktree-root> --worker-state <private-worker-dir>`（または旧 `--account NAME --model MODEL`）。一度開始したsnapshotを変更しない。秘密情報を依頼ファイルへ入れない。
 3. 正本が次に呼ぶ役割と工程を決定し、その工程に限定した指示をUTF-8ファイルに書く。依頼・完了条件・記録先URL・対象artifact・固定HEADを渡す。実装者の会話履歴をレビューへ渡さない。
 4. `... dispatch --phase PHASE --input <file>`。戻りのjob_idを記録し、`... status` / `... result` で回収。コマンド待機を終えてもworkerは動き続ける。不明な結果は再実行せず同じrunで照会する。
 5. terminal結果を読み、`... ack` でworkerのcwd lockを解放する。ackは品質承認ではない。正本の判断記録・APPROVE・verify・ゲート条件を確認して次のphaseへ進む。unknownはack不可。cancel後も終了確認する。
@@ -60,6 +63,8 @@ phaseは担当する役割の指示書を選ぶラベルであり、adapterは�
 worker-state既定値は `$HOME/.local/state/claude-harness-codex/jobs`（registerと共通）。`--worker-state DIR` 指定時はその台帳だけを使う。新規run-dir省略時はinitが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作成しJSONで返す。本体がこのpathを記録して全後続操作に渡す。既存`--run-dir`の再開時はinitせずrun.jsonのaccount/model/worker_stateとの一致を確認する。不一致や不明なrunを別accountで継続しない。
 
 旧版run.jsonの `spec_paths` / `checks` / `approvals` は再開時に品質判断として使わない。旧pendingがあれば新promptで再submitせずresult→ackで受領を終えてから新dispatchする。`completed` でもerror_kindがあれば実行成功ではない。ackは結果受領とownership解放であり、品質承認ではない。
+
+profile dispatchはsubmit前にrole別executor/account/model/effortとpayload hashをpendingへ固定する。retryは保存requestとsnapshotを照合して同じrequestを送り、ack時はworker公開execution（要求値、実効値、観測元、job/thread/turn ID）をhistoryへ取り込む。実効値が未観測ならnullのままであり、要求どおりだったと推測しない。workerは静的検証後、`thread/start`前に`model/list`の広告値でもmodel/effortを検証する。
 
 ### 送信到達が不明なpendingの復旧
 
