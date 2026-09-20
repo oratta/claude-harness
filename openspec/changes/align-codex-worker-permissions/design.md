@@ -30,9 +30,9 @@ Codex 側の制約ではないことは確認済みで、App Server の `Sandbox
 
 ## Decisions
 
-**書く役のネットワークを開ける（`networkAccess: true`）。** 代替案は「ループバックだけ許す」だが、App Server の `SandboxPolicy` に宛先を絞る項目は無く（`networkAccess` は真偽値だけ）、`gh` と `git push` には外部通信が必要なので、部分的に開ける選択肢は実装できない。
+**書く役のネットワークを開ける（`networkAccess: true`）。第 1 段の判断（実測で第 2 段に置き換え。下記）。** 代替案は「ループバックだけ許す」だが、App Server の `SandboxPolicy` に宛先を絞る項目は無く（`networkAccess` は真偽値だけ）、`gh` と `git push` には外部通信が必要なので、部分的に開ける選択肢は実装できない。
 
-**`writableRoots` に Git 共通ディレクトリを足す。** `git rev-parse --path-format=absolute --git-common-dir` を使う。この値は `runtime_home()` が既に取得しているので、算出を 1 か所に寄せて使い回す。代替案は「worktree ではなく通常 clone を使う」だが、`validate_request()` が linked worktree を必須にしており（`linked_worktree_required`。main checkout の誤操作を防ぐ設計）、こちらを崩す方が失うものが大きい。もう一つの代替案「`dangerFullAccess` にする」は、commit だけのために書き込み範囲を全部開けることになるので第 2 段に置く。
+**`writableRoots` に Git 共通ディレクトリを足す。第 1 段の判断（実測で第 2 段に置き換え。下記）。** `git rev-parse --path-format=absolute --git-common-dir` を使う。この値は `runtime_home()` が既に取得しているので、算出を 1 か所に寄せて使い回す。代替案は「worktree ではなく通常 clone を使う」だが、`validate_request()` が linked worktree を必須にしており（`linked_worktree_required`。main checkout の誤操作を防ぐ設計）、こちらを崩す方が失うものが大きい。もう一つの代替案「`dangerFullAccess` にする」は、commit だけのために書き込み範囲を全部開けることになるので第 2 段に置く。
 
 **環境変数は「引き継いで、落とすものだけ落とす」に反転させる。** 代替案は allowlist に GH_TOKEN・SSH_AUTH_SOCK 等を足していくことだが、Claude 側は親の環境をそのまま使っており、足りない変数が出るたびに harness を直す運用は「同じにする」という前提に反する。落とすのは次の 2 群に限る。
 
