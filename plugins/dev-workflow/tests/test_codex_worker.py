@@ -20,7 +20,7 @@ import json,os,sys,time,subprocess,stat
 from pathlib import Path
 runtime=Path(os.environ['CODEX_HOME']); home=(runtime/'auth.json').resolve().parent; config=json.loads((home/'fixture.json').read_text())
 tmp=os.environ.get('TMPDIR')
-info={'path':tmp}
+info={'path':tmp,'prefix':os.environ.get('TMPPREFIX')}
 if tmp:
  info.update(mode=stat.S_IMODE(Path(tmp).stat().st_mode),uid=Path(tmp).stat().st_uid,
   git=subprocess.run(['git','-C',tmp,'rev-parse','--absolute-git-dir'],capture_output=True).returncode,
@@ -172,6 +172,8 @@ class WorkerTest(unittest.TestCase):
             self.assertEqual(info['uid'], os.getuid())
             self.assertNotEqual(info['git'], 0)
             self.assertEqual(info['child'], str(path))
+            # zsh here-documents follow TMPPREFIX, not TMPDIR; it must stay inside the job area.
+            self.assertEqual(info['prefix'], str(path/'zsh'))
             self.assertFalse(path.is_relative_to(self.cwd))
             self.wait_cleanup(job)
             self.assertFalse(path.exists())
@@ -197,6 +199,7 @@ class WorkerTest(unittest.TestCase):
                 self.assertEqual(thread['sandbox'], 'read-only')
                 self.assertEqual(turn['sandboxPolicy'], {'type':'readOnly','networkAccess':False})
                 self.assertIsNone(self.tmp_info()['path'])
+                self.assertIsNone(self.tmp_info()['prefix'])
             self.wait_cleanup(role)
             self.cli('ack','--job',role)
 

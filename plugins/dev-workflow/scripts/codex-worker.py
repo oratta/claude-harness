@@ -240,6 +240,9 @@ class Rpc:
         env.pop('TMPDIR', None)
         if job_tmp is not None:
             env['TMPDIR'] = str(job_tmp.path)
+            # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
+            # which the sandbox denies; TMPDIR alone does not redirect them.
+            env['TMPPREFIX'] = str(job_tmp.path / 'zsh')
         env['CODEX_HOME'] = home
         self.proc = subprocess.Popen(['codex', 'app-server', '-c', 'model_provider="openai"'], cwd=cwd, env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)

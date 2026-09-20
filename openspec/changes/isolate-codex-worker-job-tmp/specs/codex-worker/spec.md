@@ -1,11 +1,15 @@
 ## ADDED Requirements
 
 ### Requirement: workspace-write ジョブは専用の Git 管理外一時領域を使う
-worker は implement/spec-write の job ごとに一つの新規専用ディレクトリを所有者一致・0700 で作り、その正規化済み絶対パスを App Server と子ツールの TMPDIR に渡さなければならない（MUST）。領域は cwd と Git 管理領域の外でなければならず（MUST）、同じ run の別 job と共有してはならない（MUST NOT）。
+worker は implement/spec-write の job ごとに一つの新規専用ディレクトリを所有者一致・0700 で作り、その正規化済み絶対パスを App Server と子ツールの TMPDIR に渡さなければならない（MUST）。TMPDIR を見ない一時ファイル設定も同じ領域へ向けなければならない（MUST）。領域は cwd と Git 管理領域の外でなければならず（MUST）、同じ run の別 job と共有してはならない（MUST NOT）。
 
 #### Scenario: Git 管理外を前提とするテストを実行する
 - **WHEN** implement job が TMPDIR に一時ディレクトリを作る
 - **THEN** 作成に成功し、その場所の git rev-parse --show-toplevel は失敗する。cwd 内への TMPDIR 上書きは不要である
+
+#### Scenario: zsh の here-document を使うテストを実行する
+- **WHEN** implement job の子プロセスが zsh の here-document を使う
+- **THEN** 一時ファイルは専用領域の中に作られ、砂場に拒否されない。read-only role には TMPDIR も TMPPREFIX も渡らない
 
 #### Scenario: 同じ run の次のジョブを開始する
 - **WHEN** fresh job が受け付けられる

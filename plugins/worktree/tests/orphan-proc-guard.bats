@@ -223,6 +223,7 @@ wt_ppid_of() {
 }
 
 @test "proc_tree_top: a process with a live parent resolves above itself" {
+  wt_require_process_listing
   local snippet dir pid out
   snippet="$(wt_load_orphan_helpers)"
   dir="${BATS_TEST_TMPDIR}/toplive"
@@ -284,6 +285,7 @@ wt_ppid_of() {
 # --- 正当な稼働プロセスは引き続き検出される（issue #77 の回帰防止） ---
 
 @test "detect_active_procs_under: a live process keeps its active signal even when the worktree is stale" {
+  wt_require_process_listing
   command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
   local snippet dir home pid out
   snippet="$(wt_load_orphan_helpers)"

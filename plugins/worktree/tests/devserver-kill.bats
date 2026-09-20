@@ -283,6 +283,7 @@ wt_build_comm_normaliser() {
 }
 
 @test "kill_devserver_under: does not kill a login shell under the worktree" {
+  wt_require_process_listing
   command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
   # ⚠️ CI（ubuntu-latest）では必ず skip される。Linux の ps -o comm= は argv[0] ではなく
   #    実行ファイル名を返すため、偽タブの comm が `sleep` になりテストが意味を成さない。
