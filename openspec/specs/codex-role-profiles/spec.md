@@ -69,4 +69,3 @@ profile dispatch は pending_execution の role/executor/account/model/effort �
 #### Scenario: ローカル回帰を実行する
 - **WHEN** scripts/test.sh と test_codex_*.py を実行する
 - **THEN** worker の開始前拒否/両RPC、develop の工程不変/pending固定/旧retry/継続v1-v2を fixture で検証し、薄い bats ラッパー経由でも Python 回帰が全件検出される
-

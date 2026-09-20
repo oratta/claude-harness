@@ -69,4 +69,3 @@ workerのcompletedやackを品質合格として扱ってはならない（MUST 
 #### Scenario: 役割によって設定が異なる
 - **WHEN** profile run のレビュー役が作業役とは異なるaccount/model/effortを持つ
 - **THEN** retryはレビューpendingの固定値を照合し、run全体の単一account/modelを要求しない
-
