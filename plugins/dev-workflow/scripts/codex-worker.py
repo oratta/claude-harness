@@ -134,11 +134,36 @@ class JobTmp:
         require(shutil.rmtree.avoids_symlink_attacks, 'job_tmp_safe_cleanup_unavailable')
         parent_fd = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
+            # Bind the deletion to the inode we created rather than to the name. Checking
+            # the name and then letting rmtree reopen it leaves a window where a directory
+            # swapped in between the two calls is deleted instead; walking an fd we already
+            # hold cannot reach a replacement, whatever happens to the name afterwards.
+            try:
+                target_fd = os.open(self.path.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                    dir_fd=parent_fd)
+            except OSError:
+                # A symlink or a non-directory now holds the name: refuse, never follow it.
+                raise Rejected('job_tmp_identity_changed')
+            try:
+                info = os.fstat(target_fd)
+                require(stat.S_ISDIR(info.st_mode) and
+                        (info.st_dev, info.st_ino, info.st_uid) == self.identity,
+                        'job_tmp_identity_changed')
+                for name in os.listdir(target_fd):
+                    child = os.stat(name, dir_fd=target_fd, follow_symlinks=False)
+                    if stat.S_ISDIR(child.st_mode):
+                        shutil.rmtree(name, dir_fd=target_fd)
+                    else:
+                        os.unlink(name, dir_fd=target_fd)
+            finally:
+                os.close(target_fd)
+            # The directory is empty now, but removing it still goes through the name.
+            # Re-check first; what a last-moment swap can still cost is an empty directory.
             info = os.stat(self.path.name, dir_fd=parent_fd, follow_symlinks=False)
             require(stat.S_ISDIR(info.st_mode) and
                     (info.st_dev, info.st_ino, info.st_uid) == self.identity,
                     'job_tmp_identity_changed')
-            shutil.rmtree(self.path.name, dir_fd=parent_fd)
+            os.rmdir(self.path.name, dir_fd=parent_fd)
         finally:
             os.close(parent_fd)
 

@@ -76,8 +76,47 @@ class JobTmpTest(unittest.TestCase):
             self.assertTrue(moved.is_dir())
             self.assertTrue(path.is_symlink())
 
+    def test_cleanup_refuses_root_replaced_by_a_plain_directory(self):
+        # A swap to a normal directory looks valid to rmtree's own checks; only the
+        # identity recorded at creation distinguishes it from the tree we own.
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            path = root/'owned'; path.mkdir(mode=0o700)
+            owned = worker_module.JobTmp(path)
+            moved = root/'moved'; path.rename(moved)
+            path.mkdir(mode=0o700); (path/'someone-elses').write_text('keep')
+            with self.assertRaisesRegex(worker_module.Rejected, 'job_tmp_identity_changed'):
+                owned.cleanup()
+            self.assertEqual((path/'someone-elses').read_text(), 'keep')
+            self.assertTrue(moved.is_dir())
+
+    def test_cleanup_deletes_through_the_opened_fd_when_the_name_is_swapped(self):
+        # Swap the name after the identity check but before the walk. The deletion must
+        # follow the fd opened on our own inode, and the removal of the name must refuse.
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            path = root/'owned'; path.mkdir(mode=0o700)
+            (path/'ours').write_text('ours')
+            owned = worker_module.JobTmp(path)
+            intruder = root/'intruder'; intruder.mkdir(mode=0o700)
+            (intruder/'theirs').write_text('theirs')
+            # Hook os.stat, which both a name-based and an fd-based cleanup call, so this
+            # stays a regression guard rather than a test of the current call sequence.
+            real_stat, swapped = os.stat, []
+            def swap_then_stat(*args, **kwargs):
+                if not swapped:
+                    swapped.append(True)
+                    path.rename(root/'ours-moved'); intruder.rename(path)
+                return real_stat(*args, **kwargs)
+            with mock.patch.object(worker_module.os, 'stat', side_effect=swap_then_stat):
+                with self.assertRaisesRegex(worker_module.Rejected, 'job_tmp_identity_changed'):
+                    owned.cleanup()
+            self.assertEqual((path/'theirs').read_text(), 'theirs')
+            self.assertFalse((root/'ours-moved'/'ours').exists())
+
     def test_cleanup_error_is_not_silenced(self):
         with tempfile.TemporaryDirectory() as root:
+            (Path(root)/'nested').mkdir()
             owned = worker_module.JobTmp(Path(root))
             with mock.patch.object(worker_module.shutil, 'rmtree', side_effect=PermissionError):
                 with self.assertRaises(PermissionError):
