@@ -16,7 +16,7 @@ spec = importlib.util.spec_from_file_location('codex_worker', SCRIPT)
 worker_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker_module)
 FAKE = r'''#!/usr/bin/env python3
-import json,os,sys,time,subprocess,stat
+import json,os,sys,time,subprocess
 from pathlib import Path
 runtime=Path(os.environ['CODEX_HOME']); job=runtime.name; home=(runtime/'auth.json').resolve().parent
 special=home/('fixture-'+job+'.json'); config=json.loads((special if special.exists() else home/'fixture.json').read_text())
@@ -27,11 +27,8 @@ watched=['CODEX_HOME','TMPDIR','TMPPREFIX','OPENAI_API_KEY','CODEX_API_KEY','OPE
  'CODEX_AUTH_JSON','OPENAI_ORGANIZATION','OPENAI_PROJECT','GIT_DIR','GIT_WORK_TREE',
  'GIT_COMMON_DIR','GIT_INDEX_FILE','GH_TOKEN','GITHUB_TOKEN','HARNESS_FIXTURE_MARK']
 info={'path':tmp,'prefix':os.environ.get('TMPPREFIX'),
- 'env':{k:os.environ.get(k) for k in watched}}
-if tmp:
- info.update(mode=stat.S_IMODE(Path(tmp).stat().st_mode),uid=Path(tmp).stat().st_uid,
-  git=subprocess.run(['git','-C',tmp,'rev-parse','--absolute-git-dir'],capture_output=True).returncode,
-  child=subprocess.check_output([sys.executable,'-c','import os;print(os.environ.get("TMPDIR", ""))'],text=True).strip())
+ 'env':{k:os.environ.get(k) for k in watched},
+ 'child':subprocess.check_output([sys.executable,'-c','import os;print(os.environ.get("TMPDIR", ""))'],text=True).strip()}
 for line in sys.stdin:
  m=json.loads(line); method=m.get('method'); rid=m.get('id')
  m['fixtureTmp']=info
@@ -51,10 +48,6 @@ for line in sys.stdin:
  else:r={}
  print(json.dumps({'id':rid,'result':r}),flush=True)
  if method=='turn/start':
-  if config.get('tmp_symlink'):
-   (Path(tmp)/'link').symlink_to(home, target_is_directory=True)
-  if config.get('replace_tmp'):
-   Path(tmp).rmdir();Path(tmp).symlink_to(home, target_is_directory=True)
   if config.get('disconnect'):sys.exit(0)
   print(json.dumps({'method':'item/started','params':{'threadId':'thread','turnId':'turn'}}),flush=True)
   if config.get('wait'):continue
@@ -62,87 +55,6 @@ for line in sys.stdin:
  if method=='turn/interrupt':
   print(json.dumps({'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'interrupted','items':[]}}}),flush=True)
 '''
-
-class JobTmpTest(unittest.TestCase):
-    def test_cleanup_removes_owned_tree_but_preserves_symlink_target(self):
-        with tempfile.TemporaryDirectory() as root:
-            root = Path(root)
-            target = root/'target'; target.mkdir()
-            (target/'keep').write_text('keep')
-            path = root/'owned'; path.mkdir(mode=0o700)
-            owned = worker_module.JobTmp(path)
-            (path/'link').symlink_to(target, target_is_directory=True)
-            (path/'nested').mkdir(); (path/'nested/file').write_text('temporary')
-            owned.cleanup()
-            self.assertFalse(path.exists())
-            self.assertEqual((target/'keep').read_text(), 'keep')
-
-    def test_cleanup_refuses_replaced_root(self):
-        with tempfile.TemporaryDirectory() as root:
-            root = Path(root)
-            path = root/'owned'; path.mkdir(mode=0o700)
-            owned = worker_module.JobTmp(path)
-            moved = root/'moved'; path.rename(moved)
-            path.symlink_to(moved, target_is_directory=True)
-            with self.assertRaises(worker_module.Rejected):
-                owned.cleanup()
-            self.assertTrue(moved.is_dir())
-            self.assertTrue(path.is_symlink())
-
-    def test_cleanup_refuses_root_replaced_by_a_plain_directory(self):
-        # A swap to a normal directory looks valid to rmtree's own checks; only the
-        # identity recorded at creation distinguishes it from the tree we own.
-        with tempfile.TemporaryDirectory() as root:
-            root = Path(root)
-            path = root/'owned'; path.mkdir(mode=0o700)
-            owned = worker_module.JobTmp(path)
-            moved = root/'moved'; path.rename(moved)
-            path.mkdir(mode=0o700); (path/'someone-elses').write_text('keep')
-            with self.assertRaisesRegex(worker_module.Rejected, 'job_tmp_identity_changed'):
-                owned.cleanup()
-            self.assertEqual((path/'someone-elses').read_text(), 'keep')
-            self.assertTrue(moved.is_dir())
-
-    def test_cleanup_deletes_through_the_opened_fd_when_the_name_is_swapped(self):
-        # Swap the name after the identity check but before the walk. The deletion must
-        # follow the fd opened on our own inode, and the removal of the name must refuse.
-        with tempfile.TemporaryDirectory() as root:
-            root = Path(root)
-            path = root/'owned'; path.mkdir(mode=0o700)
-            (path/'ours').write_text('ours')
-            owned = worker_module.JobTmp(path)
-            intruder = root/'intruder'; intruder.mkdir(mode=0o700)
-            (intruder/'theirs').write_text('theirs')
-            # Hook os.stat, which both a name-based and an fd-based cleanup call, so this
-            # stays a regression guard rather than a test of the current call sequence.
-            real_stat, swapped = os.stat, []
-            def swap_then_stat(*args, **kwargs):
-                if not swapped:
-                    swapped.append(True)
-                    path.rename(root/'ours-moved'); intruder.rename(path)
-                return real_stat(*args, **kwargs)
-            with mock.patch.object(worker_module.os, 'stat', side_effect=swap_then_stat):
-                with self.assertRaisesRegex(worker_module.Rejected, 'job_tmp_identity_changed'):
-                    owned.cleanup()
-            self.assertEqual((path/'theirs').read_text(), 'theirs')
-            self.assertFalse((root/'ours-moved'/'ours').exists())
-
-    def test_cleanup_error_is_not_silenced(self):
-        with tempfile.TemporaryDirectory() as root:
-            (Path(root)/'nested').mkdir()
-            owned = worker_module.JobTmp(Path(root))
-            with mock.patch.object(worker_module.shutil, 'rmtree', side_effect=PermissionError):
-                with self.assertRaises(PermissionError):
-                    owned.cleanup()
-
-    def test_creation_refuses_git_parent(self):
-        with tempfile.TemporaryDirectory() as root:
-            subprocess.run(['git','init','-q',root], check=True)
-            with mock.patch.dict(os.environ, TMPDIR=root):
-                with self.assertRaisesRegex(worker_module.Rejected, 'job_tmp_in_git'):
-                    worker_module.JobTmp.create(Path(root)/'work')
-            self.assertEqual(list(Path(root).glob('codex-worker-*')), [])
-
 
 class WorkerTest(unittest.TestCase):
     def setUp(self):
@@ -233,29 +145,9 @@ class WorkerTest(unittest.TestCase):
         self.assertFalse(auth.is_symlink(), 'worker cleanup did not finish')
         return self.cli('result', '--job', job)
 
-    def test_job_tmp_is_private_external_and_not_reused(self):
-        paths = []
-        for job, role in [('one','implement'), ('two','spec-write')]:
-            self.submit(job, role=role)
-            self.assertEqual(self.wait(job)['status'], 'completed')
-            info = self.tmp_info()
-            path = Path(info['path'])
-            self.assertEqual(str(path.resolve()), str(path))
-            self.assertNotEqual(str(path), os.environ.get('TMPDIR'))
-            self.assertEqual(info['mode'], 0o700)
-            self.assertEqual(info['uid'], os.getuid())
-            self.assertNotEqual(info['git'], 0)
-            self.assertEqual(info['child'], str(path))
-            # zsh here-documents follow TMPPREFIX, not TMPDIR; it must stay inside the job area.
-            self.assertEqual(info['prefix'], str(path/'zsh'))
-            self.assertFalse(path.is_relative_to(self.cwd))
-            self.wait_cleanup(job)
-            self.assertFalse(path.exists())
-            paths.append(path)
-            self.cli('ack','--job',job)
-        self.assertNotEqual(*paths)
-
     def test_all_role_policies_remain_restricted(self):
+        self.env['TMPDIR'] = str(self.root)
+        self.env['TMPPREFIX'] = str(self.root/'caller-zsh')
         for role in ('implement','spec-write','review','spec-review','impl-review','decider'):
             self.submit(role, role=role)
             self.assertEqual(self.wait(role)['status'], 'completed')
@@ -268,9 +160,6 @@ class WorkerTest(unittest.TestCase):
                 # either; writableRoots and the /tmp exclusions no longer apply to them.
                 self.assertEqual(thread['sandbox'], 'danger-full-access')
                 self.assertEqual(turn['sandboxPolicy'], {'type':'dangerFullAccess'})
-                # The job's own temporary area survives the sandbox removal: the child
-                # still gets it through TMPDIR/TMPPREFIX and the worker still owns it.
-                self.assertIsNotNone(self.tmp_info()['path'])
             else:
                 self.assertEqual(thread['sandbox'], 'read-only')
                 # The reviewers mirror general subagents that read GitHub with gh; the
@@ -278,8 +167,10 @@ class WorkerTest(unittest.TestCase):
                 self.assertEqual(turn['sandboxPolicy'], {
                     'type':'readOnly', 'networkAccess':role!='decider'})
                 self.assertNotIn('writableRoots', turn['sandboxPolicy'])
-                self.assertIsNone(self.tmp_info()['path'])
-                self.assertIsNone(self.tmp_info()['prefix'])
+            # The temporary area is the caller's for every role: the worker owns none,
+            # so there is nothing role-specific left to redirect or withhold.
+            self.assertEqual(self.tmp_info()['path'], str(self.root))
+            self.assertEqual(self.tmp_info()['prefix'], str(self.root/'caller-zsh'))
             self.wait_cleanup(role)
             self.cli('ack','--job',role)
 
@@ -304,73 +195,41 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(seen['HARNESS_FIXTURE_MARK'], 'reached')
         self.assertEqual(seen['GH_TOKEN'], 'fixture-gh-token')
         self.assertEqual(seen['CODEX_HOME'], str((self.state/'runtimes/one').resolve()))
-        # TMPDIR/TMPPREFIX are the worker's own values, never the caller's.
-        self.assertEqual(seen['TMPDIR'], self.tmp_info()['path'])
-        self.assertEqual(seen['TMPPREFIX'], str(Path(self.tmp_info()['path'])/'zsh'))
+        # TMPDIR/TMPPREFIX are the caller's own values; the worker no longer decides them.
+        self.assertEqual(seen['TMPDIR'], self.env.get('TMPDIR'))
+        self.assertEqual(seen['TMPPREFIX'], str(self.root/'caller-zsh'))
 
-    def test_read_only_child_gets_neither_tmpdir_nor_tmpprefix(self):
-        # Regression for the inherit-by-default change: a caller's temp settings must not
-        # ride along into a read-only job, which owns no private area to redirect them to.
-        self.env['TMPDIR'] = str(self.root)
-        self.env['TMPPREFIX'] = str(self.root/'caller-zsh')
-        self.submit(role='review')
-        self.assertEqual(self.wait()['status'], 'completed')
-        seen = self.tmp_info()['env']
-        self.assertIsNone(seen['TMPDIR'])
-        self.assertIsNone(seen['TMPPREFIX'])
-
-    def test_tmp_cleanup_for_confirmed_outcomes_and_symlink_contents(self):
-        cases = [('success', {}, 'completed'), ('failure', {'status':'failed'}, 'failed'),
-                 ('cancel', {'wait':True}, 'interrupted'),
-                 ('before', {'pct':100}, 'failed'),
-                 ('badfinal', {'items':[{'type':'agentMessage','text':'ambiguous'}]}, 'failed')]
-        for job, config, expected in cases:
-            self.config(tmp_symlink=True, **config)
-            self.submit(job)
-            if job == 'cancel':
-                self.wait(job, status='running')
-                self.cli('cancel','--job',job)
-            self.assertEqual(self.wait(job)['status'], expected)
-            path = Path(self.tmp_info()['path'])
+    def test_child_gets_the_parent_temporary_area(self):
+        # Two jobs of the same run share the caller's area: the worker creates nothing of
+        # its own, records no job-tmp.json, and leaves no directory of its own behind.
+        parent = self.root/'caller-tmp'; parent.mkdir()
+        self.env['TMPDIR'] = str(parent)
+        self.env['TMPPREFIX'] = str(parent/'zsh')
+        for job, role in [('one','implement'), ('two','spec-write')]:
+            self.submit(job, role=role)
+            self.assertEqual(self.wait(job)['status'], 'completed')
+            info = self.tmp_info()
+            self.assertEqual(info['path'], str(parent))
+            self.assertEqual(info['prefix'], str(parent/'zsh'))
+            # The App Server's own children see it too, which is what a tool running
+            # mktemp -d inside the job actually reads.
+            self.assertEqual(info['child'], str(parent))
             self.wait_cleanup(job)
-            self.assertFalse(path.exists())
-            self.assertTrue(path.parent.is_dir())
-            self.assertTrue(self.cwd.is_dir())
-            self.assertTrue((self.home/'auth.json').is_file())
+            self.assertFalse((self.state/'runtimes'/job/'job-tmp.json').exists())
             self.cli('ack','--job',job)
+        self.assertEqual(list(parent.iterdir()), [])
 
-    def test_unknown_retains_tmp_and_ownership(self):
-        self.config(disconnect=True)
+    def test_absent_parent_temporary_area_is_not_invented(self):
+        # launchd always puts TMPDIR in the parent on macOS, so this case only exists if
+        # the caller's own value is removed first.
+        self.env.pop('TMPDIR', None)
+        self.env.pop('TMPPREFIX', None)
         self.submit()
-        self.assertEqual(self.wait()['status'], 'unknown')
-        path = Path(self.tmp_info()['path'])
-        self.wait_cleanup()
-        self.assertTrue(path.is_dir())
-        self.assertNotEqual(str(path), os.environ.get('TMPDIR'))
-        self.cli('ack','--job','one',code=2)
-        # Only the fake server has exited; this is fixture residue, not a real unknown job.
-        if path.name.startswith('codex-worker-'):
-            path.rmdir()
-
-    def test_replaced_tmp_reports_cleanup_failure_without_following_symlink(self):
-        self.config(replace_tmp=True)
-        self.submit()
-        self.wait()
-        result = self.wait_cleanup()
-        self.assertIn('job_tmp_cleanup_failed', result['error_kind'] or '')
-        path = Path(self.tmp_info()['path'])
-        self.assertTrue(path.is_symlink())
-        self.assertTrue((self.home/'auth.json').is_file())
-        path.unlink()
-
-    def test_invalid_tmp_parent_rejects_without_fallback(self):
-        for name, parent in [('missing',self.root/'absent'), ('file',self.home/'auth.json'),
-                             ('cwd',self.cwd), ('git',self.root/'repo/.git')]:
-            self.env['TMPDIR'] = str(parent)
-            self.submit(name)
-            self.assertEqual(self.wait(name)['status'], 'failed')
-            self.assertFalse(self.calls())
-            self.cli('ack','--job',name)
+        self.assertEqual(self.wait()['status'], 'completed')
+        info = self.tmp_info()
+        self.assertIsNone(info['path'])
+        self.assertIsNone(info['prefix'])
+        self.assertEqual(info['child'], '')
 
     def test_detached_complete_idempotence_and_ack(self):
         self.submit();r=self.wait();self.assertEqual(r['status'],'completed');self.assertEqual(r['text'],'DONE')

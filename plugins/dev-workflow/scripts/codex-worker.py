@@ -9,13 +9,10 @@ import os
 from pathlib import Path
 import queue
 import re
-import shutil
 import sqlite3
-import stat
 import subprocess
 import sys
 import threading
-import tempfile
 import time
 
 TERMINAL = {'completed', 'failed', 'interrupted'}
@@ -31,10 +28,11 @@ ROLES = {'implement': 'danger-full-access', 'spec-write': 'danger-full-access',
 # writers reach the network by having no sandbox, so this set decides readOnly roles only.
 NETWORK_ROLES = {'implement', 'spec-write', 'review', 'spec-review', 'impl-review'}
 # The child otherwise inherits the parent, as a Claude subagent does. These are removed:
-# values the worker decides itself, values that would move Codex's authentication or
-# billing to an account the ledger does not know, and values that would point the child's
-# git at a checkout other than cwd.
-DROPPED_ENV = ('CODEX_HOME', 'TMPDIR', 'TMPPREFIX',
+# the one value the worker decides itself (CODEX_HOME), values that would move Codex's
+# authentication or billing to an account the ledger does not know, and values that would
+# point the child's git at a checkout other than cwd. TMPDIR/TMPPREFIX are not here: every
+# role gets the caller's temporary area, exactly as a Claude subagent does.
+DROPPED_ENV = ('CODEX_HOME',
                'OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL', 'CODEX_AUTH_JSON',
                'OPENAI_ORGANIZATION', 'OPENAI_PROJECT',
                'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE')
@@ -139,77 +137,6 @@ def git_common_dir(cwd):
     return subprocess.check_output(['git', '-C', str(cwd), 'rev-parse',
                                     '--path-format=absolute', '--git-common-dir'],
                                    env=git_env(), text=True).strip()
-
-
-class JobTmp:
-    """A single job's owned directory; never follow a replacement during cleanup."""
-    def __init__(self, path):
-        self.path = Path(path)
-        info = self.path.lstat()
-        require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid() and
-                stat.S_IMODE(info.st_mode) == 0o700, 'job_tmp_not_private')
-        self.identity = (info.st_dev, info.st_ino, info.st_uid)
-
-    @staticmethod
-    def validate_location(path, cwd):
-        require(not path.is_relative_to(Path(cwd).resolve()), 'job_tmp_in_cwd')
-        probe = subprocess.run(['git', '-C', str(path), 'rev-parse', '--absolute-git-dir'],
-                               env=git_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        require(probe.returncode == 128, 'job_tmp_in_git')
-
-    @classmethod
-    def create(cls, cwd):
-        # Pass dir explicitly: tempfile's cached defaults and TEMP/TMP are not inputs.
-        parent = Path(os.environ.get('TMPDIR') or '/tmp').resolve(strict=True)
-        require(parent.is_dir(), 'job_tmp_parent_not_directory')
-        cls.validate_location(parent, cwd)
-        path = Path(tempfile.mkdtemp(prefix='codex-worker-', dir=str(parent)))
-        owned = cls(path)
-        try:
-            require(path.resolve(strict=True) == path, 'job_tmp_not_normalized')
-            cls.validate_location(path, cwd)
-        except Exception:
-            owned.cleanup()
-            raise
-        return owned
-
-    def cleanup(self):
-        # The fd-based rmtree implementation does not traverse symlink contents.
-        require(shutil.rmtree.avoids_symlink_attacks, 'job_tmp_safe_cleanup_unavailable')
-        parent_fd = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            # Bind the deletion to the inode we created rather than to the name. Checking
-            # the name and then letting rmtree reopen it leaves a window where a directory
-            # swapped in between the two calls is deleted instead; walking an fd we already
-            # hold cannot reach a replacement, whatever happens to the name afterwards.
-            try:
-                target_fd = os.open(self.path.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                                    dir_fd=parent_fd)
-            except OSError:
-                # A symlink or a non-directory now holds the name: refuse, never follow it.
-                raise Rejected('job_tmp_identity_changed')
-            try:
-                info = os.fstat(target_fd)
-                require(stat.S_ISDIR(info.st_mode) and
-                        (info.st_dev, info.st_ino, info.st_uid) == self.identity,
-                        'job_tmp_identity_changed')
-                for name in os.listdir(target_fd):
-                    child = os.stat(name, dir_fd=target_fd, follow_symlinks=False)
-                    if stat.S_ISDIR(child.st_mode):
-                        shutil.rmtree(name, dir_fd=target_fd)
-                    else:
-                        os.unlink(name, dir_fd=target_fd)
-            finally:
-                os.close(target_fd)
-            # The directory is empty now, but removing it still goes through the name.
-            # Re-check first; what a last-moment swap can still cost is an empty directory.
-            info = os.stat(self.path.name, dir_fd=parent_fd, follow_symlinks=False)
-            require(stat.S_ISDIR(info.st_mode) and
-                    (info.st_dev, info.st_ino, info.st_uid) == self.identity,
-                    'job_tmp_identity_changed')
-            os.rmdir(self.path.name, dir_fd=parent_fd)
-        finally:
-            os.close(parent_fd)
 
 
 def ownership_open():
@@ -365,13 +292,8 @@ def quota_available(result, margin, inflight):
 
 
 class Rpc:
-    def __init__(self, home, cwd, job_tmp=None):
+    def __init__(self, home, cwd):
         env = child_env()
-        if job_tmp is not None:
-            env['TMPDIR'] = str(job_tmp.path)
-            # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
-            # which the sandbox denies; TMPDIR alone does not redirect them.
-            env['TMPPREFIX'] = str(job_tmp.path / 'zsh')
         env['CODEX_HOME'] = home
         self.proc = subprocess.Popen(['codex', 'app-server', '-c', 'model_provider="openai"'], cwd=cwd, env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
@@ -448,10 +370,13 @@ def final_answer(items):
 def worker(directory, job):
     db = db_open(directory)
     rpc = None
+    # Two different facts, and the job's terminal state depends on which one holds:
+    # turn_submitted means the request went out, so the model may already be running and
+    # a failure afterwards is uncertainty (unknown); turn_accepted means the server
+    # answered with a turn id, so an error before it proves no turn ever started (failed).
     turn_submitted = False
     turn_accepted = False
     execution_confirmed = False
-    job_tmp = None
     runtime = None
     claimed = False
     try:
@@ -471,12 +396,7 @@ def worker(directory, job):
         runtime = runtime_home(directory, job, account['home'], row['cwd'], common)
         runtime_identity_matches(runtime, account)
         sandbox = ROLES[payload['role']]
-        if sandbox != 'read-only':
-            job_tmp = JobTmp.create(row['cwd'])
-            # Keep ownership evidence for unknown jobs; never use this to allocate/reuse a root.
-            (runtime/'job-tmp.json').write_text(json.dumps({
-                'path': str(job_tmp.path), 'identity': job_tmp.identity}))
-        rpc = Rpc(str(runtime), row['cwd'], job_tmp)
+        rpc = Rpc(str(runtime), row['cwd'])
         def heartbeat():
             current = db.execute('SELECT status FROM jobs WHERE id=?', (job,)).fetchone()
             require(current and current['status'] == 'running', 'ledger_no_longer_running')
@@ -579,18 +499,10 @@ def worker(directory, job):
             if rpc:
                 rpc.close()
         finally:
-            try:
-                if job_tmp is not None and (not turn_submitted or execution_confirmed):
-                    try:
-                        job_tmp.cleanup()
-                    except Exception:
-                        prior = db.execute('SELECT error_kind FROM jobs WHERE id=?', (job,)).fetchone()[0]
-                        update(db, job, error_kind='job_tmp_cleanup_failed' + (':'+prior if prior else ''))
-            finally:
-                if runtime:
-                    # This is removed after job TMPDIR cleanup, including failure recording.
-                    (runtime/'auth.json').unlink(missing_ok=True)
-                db.close()
+            if runtime:
+                # The runtime's link to the authentication profile never outlives the job.
+                (runtime/'auth.json').unlink(missing_ok=True)
+            db.close()
 
 
 def command(args):
