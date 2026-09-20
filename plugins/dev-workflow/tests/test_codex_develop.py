@@ -160,6 +160,17 @@ class ManualDevelop(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'run exists'):
             self.call('init', '--account', 'other', '--model', 'm', '--cwd', str(self.cwd), '--worker-state', str(self.root))
 
+    def test_dispatch_rejects_legacy_saved_request_id_mismatch(self):
+        self.call('dispatch', '--phase', 'spec', '--input', str(self.input))
+        request_path = self.run / 'request.json'
+        request = json.loads(request_path.read_text())
+        request['request_id'] = 'different-id'
+        request_path.write_text(json.dumps(request))
+        submit_count = len(self.calls)
+        with self.assertRaisesRegex(RuntimeError, 'identity differs'):
+            self.call('dispatch', '--phase', 'spec', '--input', str(self.input))
+        self.assertEqual(len(self.calls), submit_count)
+
     def test_unknown_cannot_ack(self):
         self.call('dispatch', '--phase', 'spec', '--input', str(self.input))
         with patch.object(m, 'worker', return_value={'status': 'unknown'}):
@@ -285,6 +296,7 @@ class RoleProfiles(unittest.TestCase):
         self.assertEqual(state['execution_config']['roles'], roles)
 
         invalids = [
+            {'version': True, 'profiles': {'custom': {'roles': roles}}},
             {'version': 2, 'profiles': {'custom': {'roles': roles}}},
             {'version': 1, 'extra': 1, 'profiles': {'custom': {'roles': roles}}},
             {'version': 1, 'profiles': {'custom': {'roles': {k: v for k, v in roles.items() if k != 'decider'}}}},
@@ -300,10 +312,49 @@ class RoleProfiles(unittest.TestCase):
                     self.init('custom', profile)
                 self.assertFalse((self.run / 'run.json').exists())
 
+    def test_review_must_equal_impl_review_in_profile_and_snapshot(self):
+        roles = {role: {'executor': 'codex', 'account': 'builder',
+                        'model': 'same-model', 'effort': 'high'}
+                 for role in m.CANONICAL_ROLES}
+        roles['review'] = dict(roles['review'], model='different-model')
+        profile = self.root / 'profiles.json'
+        profile.write_text(json.dumps({'version': 1, 'profiles': {'custom': {'roles': roles}}}))
+        with self.assertRaisesRegex(RuntimeError, 'review.*impl-review'):
+            self.init('custom', profile)
+
+        self.init()
+        state_path = self.run / 'run.json'
+        state = json.loads(state_path.read_text())
+        state['execution_config']['version'] = True
+        state['execution_config_hash'] = m.execution_config_hash(state['execution_config'])
+        state_path.write_text(json.dumps(state))
+        with self.assertRaisesRegex(RuntimeError, 'execution config mismatch'):
+            self.call('dispatch', '--phase', 'review', '--input', str(self.input))
+
+        state['execution_config']['version'] = 1
+        state['execution_config']['roles']['review']['model'] = 'different-model'
+        state['execution_config_hash'] = m.execution_config_hash(state['execution_config'])
+        state_path.write_text(json.dumps(state))
+        with self.assertRaisesRegex(RuntimeError, 'review.*impl-review'):
+            self.call('dispatch', '--phase', 'review', '--input', str(self.input))
+
+    def test_dispatch_rejects_profile_saved_request_id_mismatch(self):
+        self.init()
+        self.call('dispatch', '--phase', 'spec', '--input', str(self.input))
+        request_path = self.run / 'request.json'
+        request = json.loads(request_path.read_text())
+        request['request_id'] = 'different-id'
+        request_path.write_text(json.dumps(request))
+        submit_count = len(self.calls)
+        with self.assertRaisesRegex(RuntimeError, 'identity differs'):
+            self.call('dispatch', '--phase', 'spec', '--input', str(self.input))
+        self.assertEqual(len(self.calls), submit_count)
+
     def test_snapshot_survives_external_file_change_and_dispatches_by_role(self):
         roles = {role: {'executor': 'codex', 'account': 'reviewer' if role == 'spec-review' else 'builder',
                         'model': role + '-model', 'effort': role + '-effort'}
                  for role in m.CANONICAL_ROLES}
+        roles['review'] = dict(roles['impl-review'])
         profile = self.root / 'profiles.json'
         profile.write_text(json.dumps({'version': 1, 'profiles': {'custom': {'roles': roles}}}))
         self.init('custom', profile)

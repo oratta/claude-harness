@@ -21,7 +21,8 @@ import time
 TERMINAL = {'completed', 'failed', 'interrupted'}
 ROLES = {'implement': 'workspace-write', 'spec-write': 'workspace-write',
          'review': 'read-only', 'spec-review': 'read-only',
-         'impl-review': 'read-only', 'decider': 'read-only'}
+         'impl-review': 'read-only', 'decider': 'read-only',
+         'explore': 'read-only', 'summarize': 'read-only'}
 
 
 class Rejected(Exception):
@@ -339,6 +340,10 @@ def advertised_model(rpc, model, effort):
                 break
     except ServerRejected:
         raise Rejected('model_list_unavailable')
+    except Rejected as exc:
+        if str(exc) in ('transport_disconnected', 'rpc_timeout'):
+            raise Rejected('model_list_unavailable')
+        raise
     except (queue.Empty, TimeoutError, BrokenPipeError):
         raise Rejected('model_list_unavailable')
     require(matches, 'model_not_available')

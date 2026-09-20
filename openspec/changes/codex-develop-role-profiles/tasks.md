@@ -27,3 +27,11 @@
 - [x] 4.3 `python3 -m unittest discover -s plugins/dev-workflow/tests -p 'test_codex_*.py'`、`scripts/test.sh`、`openspec validate codex-develop-role-profiles --strict --no-interactive`、`git diff --check` を実行し、件数・exit code・対象 HEAD を記録する（baseline は coordinator 実測80 tests、約51秒）。
 - [ ] 4.4 coordinator に両セット各1件の実モデル実行を依頼し、spec→独立spec-review→implement→独立review の要求/実効 model/effort、account、executor、観測元、job/thread/turn ID、HEAD、コマンド/exit code、各工程の品質結果を証跡にする。要求どおりの実効値を確認できない工程は未達のまま報告する。
 - [ ] 4.5 回帰結果と実機証跡を同じ PR の受け入れ条件に対応付けて coordinator に返す。GitHub記録/push、独立レビュー、工程遷移は coordinator の担当とし、worker は merge/auto-merge を行わない。
+
+## 5. 実装レビュー差戻し
+
+- [x] 5.1 pending dispatch の保存 request 再利用前に profile/旧 run それぞれ retry と同じ request ID・固定設定・payload hash 検証を通し、不一致では submit しない Red を追加する。
+- [x] 5.2 explore / summarize を worker の read-only role として登録し、worker 実行テストを追加する。
+- [x] 5.3 外部 profile と保存 snapshot の双方で review と impl-review の同値を必須にする。
+- [x] 5.4 model/list 中の transport_disconnected / rpc_timeout だけを model_list_unavailable に分類する。
+- [x] 5.5 profile document と保存 snapshot の version が bool ではない整数 1 であることを検証する。

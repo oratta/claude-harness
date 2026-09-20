@@ -222,7 +222,8 @@ def load_profile(name, profile_file, worker_state):
         document = json.loads(source.read_text(), object_pairs_hook=_unique_object)
     except (OSError, ValueError) as exc:
         raise RuntimeError('profile file is unavailable or invalid') from exc
-    if not isinstance(document, dict) or set(document) != {'version', 'profiles'} or document['version'] != 1:
+    if (not isinstance(document, dict) or set(document) != {'version', 'profiles'} or
+            type(document['version']) is not int or document['version'] != 1):
         raise RuntimeError('profile document must have exactly version=1 and profiles')
     profiles = document['profiles']
     if not isinstance(profiles, dict) or name not in profiles:
@@ -246,6 +247,8 @@ def load_profile(name, profile_file, worker_state):
         if entry['account'] not in accounts:
             raise RuntimeError(f'profile role {role} account is not registered')
         clean[role] = dict(entry)
+    if clean['review'] != clean['impl-review']:
+        raise RuntimeError('profile review must equal impl-review')
     return {'version': 1, 'profile': name, 'roles': clean}
 
 
@@ -254,13 +257,16 @@ def validate_execution_config(state):
     if config is None:
         return
     if (not isinstance(config, dict) or set(config) != {'version', 'profile', 'roles'} or
-            config.get('version') != 1 or set(config.get('roles', {})) != set(CANONICAL_ROLES)):
+            type(config.get('version')) is not int or config.get('version') != 1 or
+            set(config.get('roles', {})) != set(CANONICAL_ROLES)):
         raise RuntimeError('execution config mismatch')
     for role, entry in config['roles'].items():
         if (not isinstance(entry, dict) or set(entry) != {'executor', 'account', 'model', 'effort'} or
                 entry.get('executor') != 'codex' or
                 any(not isinstance(value, str) or not value for value in entry.values())):
             raise RuntimeError(f'execution config role {role} mismatch')
+    if config['roles']['review'] != config['roles']['impl-review']:
+        raise RuntimeError('execution config review must equal impl-review')
     if state.get('execution_config_hash') != execution_config_hash(config):
         raise RuntimeError('execution config hash mismatch')
 
@@ -288,6 +294,12 @@ def validate_profile_pending(state, request):
         raise RuntimeError('saved request identity differs from pending run')
     if state.get('pending_payload_hash') != payload_hash(request):
         raise RuntimeError('pending payload hash mismatch')
+
+
+def validate_legacy_pending(state, request):
+    if (request.get('request_id') != state.get('pending') or
+            any(request.get(key) != state.get(key) for key in ('account', 'model', 'cwd'))):
+        raise RuntimeError('saved request identity differs from pending run')
 
 
 def clean_env():
@@ -416,8 +428,8 @@ def main():
             request = json.loads(request_path.read_text())
             if 'execution_config' in state:
                 validate_profile_pending(state, request)
-            elif request.get('request_id') != state['pending'] or any(request.get(k) != state[k] for k in ('account', 'model', 'cwd')):
-                raise RuntimeError('saved request identity differs from pending run')
+            else:
+                validate_legacy_pending(state, request)
             return worker(state, 'submit', '--request', str(request_path))
         if args.command == 'dispatch':
             head = git(state['cwd'], 'rev-parse', 'HEAD')
@@ -433,6 +445,10 @@ def main():
                 if any(old.get(k) != v for k, v in request.items()):
                     raise RuntimeError('pending request differs; collect result and ack before next phase')
                 request = old
+                if 'execution_config' in state:
+                    validate_profile_pending(state, request)
+                else:
+                    validate_legacy_pending(state, request)
             else:
                 request['request_id'] = 'develop-' + uuid.uuid4().hex
                 write(directory / 'request.json', request)

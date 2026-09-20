@@ -245,6 +245,20 @@ class WorkerTest(unittest.TestCase):
             self.assertIsNone(r['thread_id']);self.assertIsNone(r['turn_id'])
             self.assertFalse(any(m.get('method') in ('thread/start','turn/start') for m in self.calls(job)))
 
+    def test_model_list_transport_rejections_are_classified_without_hiding_validation(self):
+        class Rpc:
+            def __init__(self, error):
+                self.error = error
+            def request(self, method, params):
+                raise self.error
+        for reason in ('transport_disconnected', 'rpc_timeout'):
+            with self.subTest(reason=reason), self.assertRaisesRegex(
+                    worker_module.Rejected, '^model_list_unavailable$'):
+                worker_module.advertised_model(Rpc(worker_module.Rejected(reason)), 'model', None)
+        with self.assertRaisesRegex(worker_module.Rejected, '^other_rejection$'):
+            worker_module.advertised_model(
+                Rpc(worker_module.Rejected('other_rejection')), 'model', None)
+
     def test_legacy_request_omits_effort_from_turn(self):
         self.submit();self.assertEqual(self.wait()['status'],'completed')
         turn=next(m['params'] for m in self.calls() if m.get('method')=='turn/start')
@@ -327,7 +341,8 @@ class WorkerTest(unittest.TestCase):
         self.assertNotEqual(*paths)
 
     def test_all_role_policies_remain_restricted(self):
-        for role in ('implement','spec-write','review','spec-review','impl-review','decider'):
+        for role in ('implement','spec-write','review','spec-review','impl-review','decider',
+                     'explore','summarize'):
             self.submit(role, role=role)
             self.assertEqual(self.wait(role)['status'], 'completed')
             thread = [m['params'] for m in self.calls() if m.get('method')=='thread/start'][-1]
