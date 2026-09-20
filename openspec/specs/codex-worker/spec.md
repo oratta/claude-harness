@@ -1,7 +1,12 @@
 # codex-worker Specification
 
 ## Purpose
-TBD - created by archiving change isolate-codex-worker-job-tmp. Update Purpose after archive.
+Codex の job を Claude Code のサブエージェントと同じ担い手として走らせるための実行基盤を定める。1 件の依頼につき専用の runtime CODEX_HOME と Git 管理外の専用一時領域を作り、role（implement / spec-write / review / spec-review / impl-review / decider）ごとに砂場と取得経路を決め、アカウントと作業ディレクトリの排他・認証帰属の照合・結果の受領（ack）までを台帳で管理する。
+
+権限の範囲は「Claude のサブエージェントが自分で完了できる作業を、worker の中の担当者も自分で完了できる」ことを基準に決める。書く役は cwd・専用一時領域・cwd の Git 共通ディレクトリの 3 か所だけを書き込み先として持ち、ネットワークとその 3 か所の範囲で commit・push・GitHub 操作を自分で完了する。読む役は書き込み許可を持たず、取得経路だけを Claude 側の同じ役に揃える。砂場を緩める判断は段階順に行い、緩めなかった段と揃えられなかった項目は実測の証跡とともに記録する。ここで扱うのは実行と隔離であって品質承認ではなく、job の完了は develop 側の仕様承認・テスト証拠・レビューゲートを代替しない。
+
+アカウント単位の同時実行数の決め方は capability `codex-worker-concurrency` が定める。
+
 ## Requirements
 ### Requirement: workspace-write ジョブは専用の Git 管理外一時領域を使う
 worker は implement/spec-write の job ごとに一つの新規専用ディレクトリを所有者一致・0700 で作り、その正規化済み絶対パスを App Server と子ツールの TMPDIR に渡さなければならない（MUST）。TMPDIR を見ない一時ファイル設定も同じ領域へ向けなければならない（MUST）。領域は cwd と Git 管理領域の外でなければならず（MUST）、同じ run の別 job と共有してはならない（MUST NOT）。
