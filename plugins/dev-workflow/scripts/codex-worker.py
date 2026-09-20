@@ -180,6 +180,11 @@ def reserve_global(directory, job, account, cwd):
                      (cwd_key, ledger, job))
         taken = {row[0]: (row[1], row[2]) for row in
                  conn.execute('SELECT slot,ledger,job FROM account_slots WHERE account_key=?', (account_key,))}
+        # The limit counts occupied slots, whatever their number: another state-dir registered with a
+        # larger limit can hold slots at or above this limit's range, and those still spend the account.
+        occupied = sum(1 for slot, ref in taken.items()
+                       if ref != (ledger, job) and slot_state(*ref)[0] != 'acked')
+        require(occupied < account['max_concurrent'], 'account_slots_exhausted')
         free = next((slot for slot in range(account['max_concurrent'])
                      if taken.get(slot) in (None, (ledger, job)) or slot_state(*taken[slot])[0] == 'acked'), None)
         require(free is not None, 'account_slots_exhausted')

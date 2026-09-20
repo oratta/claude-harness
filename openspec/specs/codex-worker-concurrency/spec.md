@@ -9,6 +9,8 @@ TBD - created by archiving change codex-worker-account-concurrency. Update Purpo
 
 スロットが占有されているとは、そのスロットが指すジョブが「終了済み（TERMINAL）かつ受領済み（acked）」以外の状態にあることをいう。queued・running・unknown・終了済みで未受領のスロットは占有されている。参照先の台帳が読めないスロットも占有されているものとして扱わなければならない（MUST）。終了済みかつ受領済みのスロットは空きとして再利用してよい。
 
+占有の数え上げはスロットの番号に関わらず、そのアカウントのすべてのスロット行を対象とし、上限は投入する側の登録値で判定する。
+
 この要件は、capability `codex-worker` の要件「アカウントと作業ディレクトリを排他的に所有する」のうち**アカウント側の排他だけ**を置き換える。作業ディレクトリ側の排他と、認証帰属・実 server account・role sandbox の確認は、そちらの要件のまま変わらない。
 
 #### Scenario: 別々の作業ディレクトリの 2 件を同じアカウントへ投入する
@@ -20,6 +22,11 @@ TBD - created by archiving change codex-worker-account-concurrency. Update Purpo
 
 - **WHEN** 占有されているスロットの数が上限に達しているアカウントへ、新しい作業ディレクトリの依頼を投入する
 - **THEN** `account_slots_exhausted` を理由に拒否し、待ち行列に入れない
+
+#### Scenario: 別の state-dir がより大きい上限で占有している
+
+- **WHEN** 同じアカウントを別の state-dir がより大きい上限で登録して占有している本数が、投入する側の上限以上である
+- **THEN** 投入する側の番号に空きがあっても `account_slots_exhausted` を理由に拒否する
 
 #### Scenario: 参照先の台帳が消えたスロットがある
 

@@ -277,6 +277,23 @@ class WorkerTest(unittest.TestCase):
         for job in ('one','two'):
             self.cli('cancel','--job',job);self.assertEqual(self.wait(job)['status'],'interrupted')
 
+    def test_other_ledger_slots_beyond_range_count_toward_the_limit(self):
+        # The limit is a count of occupied slots, not a search for a free number below it.
+        self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','3')
+        third=self.worktree('feature-3');fourth=self.worktree('feature-4')
+        self.config(wait=True)
+        for job,cwd in (('one',self.cwd),('two',self.cwd2),('three',third)):
+            self.submit(job,cwd=str(cwd));self.wait(job,status='running')
+        self.cli('cancel','--job','one');self.assertEqual(self.wait('one')['status'],'interrupted')
+        self.cli('ack','--job','one')
+        first=self.state
+        self.state=self.root/'other-state';self.state.mkdir(mode=0o700)
+        self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','2')
+        self.assertEqual(self.submit('four',cwd=str(fourth),code=2)['error'],'account_slots_exhausted')
+        self.state=first
+        for job in ('two','three'):
+            self.cli('cancel','--job',job);self.assertEqual(self.wait(job)['status'],'interrupted')
+
     def test_same_worktree_second_job_is_rejected(self):
         self.config(wait=True);self.submit();self.wait(status='running')
         self.assertEqual(self.submit('two',code=2)['error'],'cwd_locked')
