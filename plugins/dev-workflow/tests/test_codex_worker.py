@@ -39,8 +39,12 @@ for line in sys.stdin:
   print(json.dumps({'id':rid,'error':{'code':config.get('reject_code',-32000),'message':'rejected'}}),flush=True);continue
  if method=='account/read':r={'account':{'type':'chatgpt','email':config.get('email','worker@example.invalid')}}
  elif method=='account/rateLimits/read':r={'rateLimitsByLimitId':{'codex':{'primary':{'usedPercent':config.get('pct',1),'windowDurationMins':300,'resetsAt':int(time.time())+1000}}}}
- elif method=='thread/start':r={'thread':{'id':'thread'}}
- elif method=='turn/start':r={'turn':{'id':'turn'}}
+ elif method=='model/list':
+  pages=config.get('model_pages',[[{'id':'fixture-id','model':'fixture-model','hidden':False,'supportedReasoningEfforts':[{'reasoningEffort':'low','description':'Low'},{'reasoningEffort':'high','description':'High'}]}]])
+  page=int(m.get('params',{}).get('cursor','0'));r={'data':pages[page]}
+  if page+1<len(pages):r['nextCursor']=str(page+1)
+ elif method=='thread/start':r={'thread':{'id':'thread',**config.get('thread_observed',{})}}
+ elif method=='turn/start':r={'turn':{'id':'turn',**config.get('turn_observed',{})}}
  elif method=='thread/read':r={'thread':{'turns':[{'id':'turn','items':config.get('items',[{'type':'agentMessage','phase':'final_answer','text':'DONE'}])}]}}
  else:r={}
  print(json.dumps({'id':rid,'result':r}),flush=True)
@@ -194,6 +198,79 @@ class WorkerTest(unittest.TestCase):
         data.update(fields)
         path=self.root/(job+'.json');path.write_text(json.dumps(data))
         return self.cli('submit','--request',str(path),code=code)
+
+    def ledger_job_count(self):
+        db=sqlite3.connect(self.state/'ledger.sqlite')
+        try:return db.execute('SELECT count(*) FROM jobs').fetchone()[0]
+        finally:db.close()
+
+    def test_static_effort_and_identity_validation_creates_no_job(self):
+        for job,fields,error in (
+            ('empty',{'effort':''},'invalid_effort'),
+            ('number',{'effort':3},'invalid_effort'),
+            ('role',{'role':'unknown'},'unsupported_role'),
+            ('account',{'account':'absent'},'account_not_registered')):
+            self.assertEqual(self.submit(job,code=2,**fields)['error'],error)
+            self.assertEqual(self.ledger_job_count(),0)
+        self.assertFalse(self.calls())
+
+    def test_model_list_all_pages_hidden_and_model_not_id(self):
+        self.config(model_pages=[
+            [{'id':'fixture-model','model':'other-model','supportedReasoningEfforts':[]}],
+            [{'id':'different-id','model':'fixture-model','hidden':True,
+              'supportedReasoningEfforts':[{'reasoningEffort':'future','description':'New'}]}]])
+        self.submit(effort='future');r=self.wait()
+        self.assertEqual(r['status'],'completed')
+        calls=[m for m in self.calls() if m.get('method')=='model/list']
+        self.assertEqual([m['params'] for m in calls],[{'includeHidden':True},{'includeHidden':True,'cursor':'1'}])
+        thread=next(m['params'] for m in self.calls() if m.get('method')=='thread/start')
+        turn=next(m['params'] for m in self.calls() if m.get('method')=='turn/start')
+        self.assertNotIn('effort',thread);self.assertNotIn('config',thread)
+        self.assertEqual(turn['effort'],'future')
+
+    def test_model_validation_rejections_leave_failed_job_before_thread(self):
+        self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','10')
+        cases=(
+            ('effort',{'model_pages':[[{'id':'luna','model':'gpt-5.6-luna','supportedReasoningEfforts':[{'reasoningEffort':'medium','description':'Medium'}]}]]},
+             {'model':'gpt-5.6-luna','effort':'ultra'},'unsupported_model_effort'),
+            ('missing',{'model_pages':[[]]},{'model':'missing-model'},'model_not_available'),
+            ('duplicate',{'model_pages':[[{'id':'a','model':'fixture-model','supportedReasoningEfforts':[]},{'id':'b','model':'fixture-model','supportedReasoningEfforts':[]}]]},
+             {},'model_not_unique'),
+            ('malformed',{'model_pages':[[{'id':'a','model':'fixture-model','supportedReasoningEfforts':['high']}]]},
+             {'effort':'high'},'model_list_invalid'),
+            ('failure',{'reject':'model/list'}, {},'model_list_unavailable'))
+        for job,config,fields,error in cases:
+            self.config(job,**config);self.submit(job,cwd=str(self.worktree('case-'+job)),**fields);r=self.wait(job)
+            self.assertEqual((r['status'],r['error_kind']),( 'failed',error))
+            self.assertIsNone(r['thread_id']);self.assertIsNone(r['turn_id'])
+            self.assertFalse(any(m.get('method') in ('thread/start','turn/start') for m in self.calls(job)))
+
+    def test_legacy_request_omits_effort_from_turn(self):
+        self.submit();self.assertEqual(self.wait()['status'],'completed')
+        turn=next(m['params'] for m in self.calls() if m.get('method')=='turn/start')
+        self.assertNotIn('effort',turn)
+
+    def test_execution_metadata_is_public_and_turn_observation_wins(self):
+        self.config(thread_observed={'model':'thread-model','effort':'low'},
+                    turn_observed={'model':'fixture-model','effort':'high'})
+        self.submit(role='review',effort='high');r=self.wait()
+        self.assertEqual(r['execution'],{
+            'version':1,'role':'review',
+            'requested':{'executor':'codex','account':'test','model':'fixture-model','effort':'high'},
+            'effective':{'executor':'codex','account':'test','model':'fixture-model','effort':'high'},
+            'evidence':{'executor':'transport:codex-app-server','account':'account/read:account.email',
+                        'model':'turn/start:result.turn.model','effort':'turn/start:result.turn.effort'}})
+        self.assertEqual((r['job_id'],r['thread_id'],r['turn_id']),('one','thread','turn'))
+
+    def test_execution_metadata_does_not_change_payload_hash_and_legacy_row_is_null(self):
+        self.submit();self.wait()
+        db=sqlite3.connect(self.state/'ledger.sqlite');db.row_factory=sqlite3.Row
+        row=db.execute("SELECT payload,payload_hash FROM jobs WHERE id='one'").fetchone()
+        self.assertEqual(row['payload_hash'],worker_module.digest(row['payload'].encode()))
+        now=time.time()
+        db.execute("INSERT INTO jobs(id,payload_hash,payload,account,cwd,status,created,updated) VALUES(?,?,?,?,?,?,?,?)",
+                   ('legacy','hash','{}','test',str(self.cwd2),'failed',now,now));db.commit();db.close()
+        self.assertIsNone(self.cli('status','--job','legacy')['execution'])
 
     def wait(self,job='one',status=None):
         deadline=time.monotonic()+8

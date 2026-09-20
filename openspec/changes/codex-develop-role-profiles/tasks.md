@@ -1,9 +1,9 @@
 ## 1. Worker の検証と RPC（先に実装）
 
-- [ ] 1.1 `test_codex_worker.py` に Red を追加する: optional effort の型/空値、未知 role/未登録 account、model/list の全ページ/hidden/model と id の違い、luna/ultra 拒否、未知モデル、一覧取得失敗、広告された新 effort を検証する。拒否時は thread/turn が0回、turn_submitted=false、failed で unknown にならないことを assert する。
-- [ ] 1.2 submit の静的検証と initialize 後・thread/start 前のモデル別検証を実装する。model/list の supportedReasoningEfforts のオブジェクト形式を使い、固定 enum と fallback を設けない。
-- [ ] 1.3 両 RPC の model、turn/start だけの effort、旧 request の effort 省略を fake RPC でテストして実装する。account identity、read-only、#320 の一時領域/砂場/cleanup、unknown の所有権を維持する。
-- [ ] 1.4 payload/hash を変更しない nullable execution metadata の DB 拡張と公開 status/result をテストして実装する。requested/effective/evidence、job/thread/turn ID、未観測=null、要求との不一致、旧台帳、thread/turn 観測の優先をカバーする。
+- [x] 1.1 `test_codex_worker.py` に Red を追加する: optional effort の型/空値、未知 role/未登録 account、model/list の全ページ/hidden/model と id の違い、luna/ultra 拒否、未知モデル、一覧取得失敗、広告された新 effort を検証する。submit 時の静的検証（`validate_request` 側）での拒否は job が作られないことを assert する。`initialize` 後・`thread/start` 前のモデル別検証での拒否は thread/turn が0回、turn_submitted=false の failed job が残り、unknown にならないことを assert する。
+- [x] 1.2 submit の静的検証と initialize 後・thread/start 前のモデル別検証を実装する。model/list の supportedReasoningEfforts のオブジェクト形式を使い、固定 enum と fallback を設けない。
+- [x] 1.3 両 RPC の model、turn/start だけの effort、旧 request の effort 省略を fake RPC でテストして実装する。account identity、read-only、#320 の一時領域/砂場/cleanup、unknown の所有権を維持する。
+- [x] 1.4 payload/hash を変更しない nullable execution metadata の DB 拡張と公開 status/result をテストして実装する。requested/effective/evidence、job/thread/turn ID、未観測=null、要求との不一致、旧台帳、thread/turn 観測の優先をカバーする。
 
 ## 2. Develop の設定セットと pending（worker の後）
 

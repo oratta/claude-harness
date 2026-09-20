@@ -71,20 +71,25 @@ def db_open(directory):
     CREATE UNIQUE INDEX IF NOT EXISTS account_identity ON accounts(account_id_hash);
     CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, payload_hash TEXT, payload TEXT, account TEXT, cwd TEXT,
       status TEXT, acked INTEGER DEFAULT 0, created REAL, updated REAL, pid INTEGER,
-      thread_id TEXT, turn_id TEXT, text TEXT, usage TEXT, error_kind TEXT, cancel INTEGER DEFAULT 0);
+      thread_id TEXT, turn_id TEXT, text TEXT, usage TEXT, error_kind TEXT, cancel INTEGER DEFAULT 0,
+      execution TEXT);
     ''')
     columns = {row[1] for row in db.execute('PRAGMA table_info(accounts)')}
     if 'max_concurrent' not in columns:
         db.execute('ALTER TABLE accounts ADD COLUMN max_concurrent INTEGER DEFAULT 3')
     if 'quota_margin_pct' not in columns:
         db.execute('ALTER TABLE accounts ADD COLUMN quota_margin_pct REAL DEFAULT 5')
+    job_columns = {row[1] for row in db.execute('PRAGMA table_info(jobs)')}
+    if 'execution' not in job_columns:
+        db.execute('ALTER TABLE jobs ADD COLUMN execution TEXT')
     return db
 
 
 def public(row):
     return {key: row[key] for key in ('status', 'acked', 'created', 'updated', 'thread_id',
                                      'turn_id', 'text', 'error_kind')} | {'job_id': row['id'],
-        'usage': json.loads(row['usage']) if row['usage'] else None}
+        'usage': json.loads(row['usage']) if row['usage'] else None,
+        'execution': json.loads(row['execution']) if row['execution'] else None}
 
 
 def update(db, job, **values):
@@ -270,12 +275,14 @@ def reserve_global(directory, job, account, cwd):
 
 
 def validate_request(payload):
-    require(set(payload) <= {'request_id', 'origin', 'account', 'cwd', 'model', 'role', 'prompt'}, 'unknown_request_field')
+    require(set(payload) <= {'request_id', 'origin', 'account', 'cwd', 'model', 'role', 'prompt', 'effort'}, 'unknown_request_field')
     for field in ('request_id', 'account', 'cwd', 'model', 'role', 'prompt'):
         require(isinstance(payload.get(field), str) and bool(payload[field].strip()), 'missing_'+field)
     require(re.fullmatch(r'[A-Za-z0-9_-]{1,100}', payload['request_id']), 'invalid_request_id')
     require(payload.get('origin') == 'manual', 'unsupported_origin')
     require(payload['role'] in ROLES, 'unsupported_role')
+    if 'effort' in payload:
+        require(isinstance(payload['effort'], str) and bool(payload['effort'].strip()), 'invalid_effort')
     cwd = Path(payload['cwd']).expanduser().resolve()
     require(cwd.is_dir() and cwd.stat().st_uid == os.getuid(), 'cwd_not_owned')
     def git(*args):
@@ -287,6 +294,59 @@ def validate_request(payload):
     require((cwd / '.git').is_file(), 'linked_worktree_required')
     payload['cwd'] = str(cwd)
     return payload
+
+
+def execution_metadata(payload):
+    requested = {'executor': 'codex', 'account': payload['account'], 'model': payload['model'],
+                 'effort': payload.get('effort')}
+    return {'version': 1, 'role': payload['role'], 'requested': requested,
+            'effective': {'executor': None, 'account': None, 'model': None, 'effort': None},
+            'evidence': {key: 'unavailable' for key in requested}}
+
+
+def observe_execution(db, job, **observations):
+    row = db.execute('SELECT execution FROM jobs WHERE id=?', (job,)).fetchone()
+    if not row or not row[0]:
+        return
+    execution = json.loads(row[0])
+    for key, (value, source) in observations.items():
+        if value is not None:
+            execution['effective'][key] = value
+            execution['evidence'][key] = source
+    update(db, job, execution=json.dumps(execution, sort_keys=True))
+
+
+def advertised_model(rpc, model, effort):
+    matches, cursor = [], None
+    try:
+        while True:
+            params = {'includeHidden': True}
+            if cursor is not None:
+                params['cursor'] = cursor
+            result = rpc.request('model/list', params)
+            data = result.get('data')
+            require(isinstance(data, list), 'model_list_invalid')
+            for item in data:
+                require(isinstance(item, dict) and isinstance(item.get('model'), str), 'model_list_invalid')
+                efforts = item.get('supportedReasoningEfforts')
+                require(isinstance(efforts, list) and all(isinstance(value, dict) and
+                        isinstance(value.get('reasoningEffort'), str) for value in efforts), 'model_list_invalid')
+                if item['model'] == model:
+                    matches.append(item)
+            cursor = result.get('nextCursor')
+            require(cursor is None or isinstance(cursor, str) and cursor, 'model_list_invalid')
+            if cursor is None:
+                break
+    except ServerRejected:
+        raise Rejected('model_list_unavailable')
+    except (queue.Empty, TimeoutError, BrokenPipeError):
+        raise Rejected('model_list_unavailable')
+    require(matches, 'model_not_available')
+    require(len(matches) == 1, 'model_not_unique')
+    if effort is not None:
+        supported = {value['reasoningEffort'] for value in matches[0]['supportedReasoningEfforts']}
+        require(effort in supported, 'unsupported_model_effort')
+    return matches[0]
 
 
 def runtime_home(directory, job, source, cwd):
@@ -457,15 +517,22 @@ def worker(directory, job):
         observed = rpc.request('account/read', {'refreshToken': False}).get('account') or {}
         require(observed.get('type') == 'chatgpt' and observed.get('email') and
                 digest(observed['email'].strip().lower().encode()) == account['identity'], 'server_identity_mismatch')
+        observe_execution(db, job, executor=('codex', 'transport:codex-app-server'),
+                          account=(payload['account'], 'account/read:account.email'))
         runtime_identity_matches(runtime, account)
+        advertised_model(rpc, payload['model'], payload.get('effort'))
         limits = rpc.request('account/rateLimits/read', {})
         # Count after the reply: a slot reserved while the read was in flight must enter this judgment.
         # Legacy jobs predate account_slots, so never count fewer than this job itself.
         inflight = max(occupied_slots(account['account_id_hash']), 1)
         quota_available(limits, account['quota_margin_pct'], inflight)
-        thread = rpc.request('thread/start', {'cwd': row['cwd'], 'model': payload['model'],
-            'sandbox': sandbox, 'approvalPolicy': 'never', 'modelProvider': 'openai'})['thread']['id']
+        thread_result = rpc.request('thread/start', {'cwd': row['cwd'], 'model': payload['model'],
+            'sandbox': sandbox, 'approvalPolicy': 'never', 'modelProvider': 'openai'})['thread']
+        thread = thread_result['id']
         update(db, job, thread_id=thread)
+        observe_execution(db, job,
+                          model=(thread_result.get('model'), 'thread/start:result.thread.model'),
+                          effort=(thread_result.get('effort'), 'thread/start:result.thread.effort'))
         if db.execute('SELECT cancel FROM jobs WHERE id=?', (job,)).fetchone()[0]:
             update(db, job, status='interrupted', error_kind='cancelled_before_turn')
             return
@@ -473,11 +540,18 @@ def worker(directory, job):
                   {'type': 'workspaceWrite', 'networkAccess': False, 'writableRoots': [row['cwd'], str(job_tmp.path)],
                    'excludeSlashTmp': True, 'excludeTmpdirEnvVar': True})
         turn_submitted = True
-        turn = rpc.request('turn/start', {'threadId': thread, 'model': payload['model'],
+        turn_params = {'threadId': thread, 'model': payload['model'],
             'sandboxPolicy': policy, 'approvalPolicy': 'never',
-            'input': [{'type': 'text', 'text': payload['prompt']}]})['turn']['id']
+            'input': [{'type': 'text', 'text': payload['prompt']}]}
+        if 'effort' in payload:
+            turn_params['effort'] = payload['effort']
+        turn_result = rpc.request('turn/start', turn_params)['turn']
+        turn = turn_result['id']
         turn_accepted = True
         update(db, job, turn_id=turn)
+        observe_execution(db, job,
+                          model=(turn_result.get('model'), 'turn/start:result.turn.model'),
+                          effort=(turn_result.get('effort'), 'turn/start:result.turn.effort'))
         cancel_sent = False
         cancel_at = None
         activity = False
@@ -627,8 +701,9 @@ def command(args):
                 (payload['cwd'],)).fetchone(), 'cwd_locked')
             reserve_global(args.state_dir, job, account, payload['cwd'])
             now = time.time()
-            db.execute('INSERT INTO jobs(id,payload_hash,payload,account,cwd,status,created,updated) VALUES(?,?,?,?,?,?,?,?)',
-                (job, digest(encoded.encode()), encoded, payload['account'], payload['cwd'], 'queued', now, now))
+            db.execute('INSERT INTO jobs(id,payload_hash,payload,account,cwd,status,created,updated,execution) VALUES(?,?,?,?,?,?,?,?,?)',
+                (job, digest(encoded.encode()), encoded, payload['account'], payload['cwd'], 'queued', now, now,
+                 json.dumps(execution_metadata(payload), sort_keys=True)))
             db.execute('COMMIT')
             try:
                 subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--state-dir', args.state_dir,
