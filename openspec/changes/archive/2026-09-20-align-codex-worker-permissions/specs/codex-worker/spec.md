@@ -1,52 +1,4 @@
-# codex-worker Specification
-
-## Purpose
-Codex の job を Claude Code のサブエージェントと同じ担い手として走らせるための実行基盤を定める。1 件の依頼につき専用の runtime CODEX_HOME と Git 管理外の専用一時領域を作り、role（implement / spec-write / review / spec-review / impl-review / decider）ごとに砂場と取得経路を決め、アカウントと作業ディレクトリの排他・認証帰属の照合・結果の受領（ack）までを台帳で管理する。
-
-権限の範囲は「Claude のサブエージェントが自分で完了できる作業を、worker の中の担当者も自分で完了できる」ことを基準に決める。書く役は砂場なし（danger-full-access）で動き、Claude のサブエージェントと同じく親の環境で commit・push・GitHub 操作を自分で完了する。読む役は書き込み許可を持たず、取得経路だけを Claude 側の同じ役に揃える。書く役を砂場なしにした根拠と、揃えられなかった項目は実測の証跡とともに記録する。ここで扱うのは実行と隔離であって品質承認ではなく、job の完了は develop 側の仕様承認・テスト証拠・レビューゲートを代替しない。
-
-アカウント単位の同時実行数の決め方は capability `codex-worker-concurrency` が定める。
-## Requirements
-### Requirement: workspace-write ジョブは専用の Git 管理外一時領域を使う
-worker は implement/spec-write の job ごとに一つの新規専用ディレクトリを所有者一致・0700 で作り、その正規化済み絶対パスを App Server と子ツールの TMPDIR に渡さなければならない（MUST）。TMPDIR を見ない一時ファイル設定も同じ領域へ向けなければならない（MUST）。領域は cwd と Git 管理領域の外でなければならず（MUST）、同じ run の別 job と共有してはならない（MUST NOT）。
-
-#### Scenario: Git 管理外を前提とするテストを実行する
-- **WHEN** implement job が TMPDIR に一時ディレクトリを作る
-- **THEN** 作成に成功し、その場所の git rev-parse --show-toplevel は失敗する。cwd 内への TMPDIR 上書きは不要である
-
-#### Scenario: zsh の here-document を使うテストを実行する
-- **WHEN** implement job の子プロセスが zsh の here-document を使う
-- **THEN** 一時ファイルは専用領域の中に作られ、砂場に拒否されない。read-only role には TMPDIR も TMPPREFIX も渡らない
-
-#### Scenario: 同じ run の次のジョブを開始する
-- **WHEN** fresh job が受け付けられる
-- **THEN** 前の job の一時領域を再利用せず、異なる専用領域を使う
-
-### Requirement: 一時領域を別ジョブへ割り当てず確認済み終了後に片付ける
-専用領域を別 job に割り当てたり再利用したりしてはならない（MUST NOT）。確認済み終了後には ack を待たず削除しなければならず（MUST）、削除失敗を隠してはならない（MUST NOT）。停止未確認の unknown は終了とみなさず、領域の所有を保持しなければならない（MUST）。
-
-#### Scenario: 別ジョブに一時領域を割り当てる
-- **WHEN** 同一 run 内を含む別 job に一時領域を割り当てる
-- **THEN** 実行中・停止未確認・終了済みの job の領域を割り当てたり再利用したりせず、新規の専用領域を使う
-
-#### Scenario: 確認済み終了の後を観測する
-- **WHEN** 成功、失敗、確認済み取消、または開始前失敗の worker が cleanup を終える
-- **THEN** 専用領域は存在せず、cwd・認証元・親領域・symlink 参照先は削除されない。削除できなければ失敗が記録される
-
-#### Scenario: 終了を確認できない
-- **WHEN** turn 開始後に切断または worker 喪失で unknown になる
-- **THEN** 停止済みと推測せず既存の unknown 所有・再投入禁止を保ち、削除完了を主張しない
-
-### Requirement: 実 Codex のテスト完走と拒否の証拠を残す
-実装は fake 回帰試験に加え、実 Codex implement role で scripts/test.sh 全件の成功件数・総件数・exit code と対象 HEAD を記録しなければならない（MUST）。加えて、worker の中から 127.0.0.1 の待ち受けへの HTTP 到達、git commit と feature branch への git push、Draft PR 作成と記録先へのコメント、ローカルサーバーを立てる外部リポのテストスクリプトの完走を実測し、それぞれのコマンド・出力・exit code を記録しなければならない（MUST）。専用一時領域の 0700 と終了時削除も実環境で確認しなければならない（MUST）。砂場なしにした role では cwd の外への書き込みが OS に止められないことを境界プローブで確かめ、その結果を記録しなければならない（MUST）。CODEX-WORKER.md に実際の範囲と制約を反映しなければならない（MUST）。
-
-#### Scenario: 実環境の受け入れ結果を記録する
-- **WHEN** 対象 HEAD の scripts/test.sh と境界プローブが完了する
-- **THEN** 全件成功・exit 0、各操作のコマンド/出力/exit code、砂場なしの role で cwd の外への書き込みが通ること、0700、終了後の領域不在を記録する。件数は過去の1465件を固定せず対象 HEAD の実測値を使う
-
-#### Scenario: 代理実行なしの完走を記録する
-- **WHEN** implement role の worker がループバックへの HTTP・git commit・git push・Draft PR 作成・記録先へのコメント・外部リポのテストスクリプトを自分で実行する
-- **THEN** 各操作のコマンド・出力・exit code と対象 HEAD が記録され、本体が代理実行した操作は残っていない
+## ADDED Requirements
 
 ### Requirement: 書く役は worker の中でネットワークと Git 操作を自分で完了できる
 workspace-write role（implement / spec-write）は OS の砂場なしで実行しなければならない（MUST）: `thread/start` の sandbox は `danger-full-access`、turn の sandboxPolicy は `{'type':'dangerFullAccess'}` とする。approvalPolicy は never を維持しなければならない（MUST）。砂場なしの policy は書き込み範囲とネットワークの項目を持たないので、この role に writableRoots・excludeSlashTmp・excludeTmpdirEnvVar・networkAccess を渡してはならない（MUST NOT）。この role が Claude のサブエージェントと同じく親の環境で cwd の外へも書けることは、Claude 側に対応する隔離が無いことの帰結であり、指示と記録先の証拠で担保する。
@@ -113,3 +65,21 @@ Claude のサブエージェントと同じ作業を worker の中で完了で�
 - **WHEN** 砂場なしでも完了できない操作が残る
 - **THEN** その項目ごとに試したこと・失敗の出力・揃えられない理由が記録され、本体の代理実行が必要な操作としてその項目だけが docs に残る
 
+## MODIFIED Requirements
+
+### Requirement: 実 Codex のテスト完走と拒否の証拠を残す
+実装は fake 回帰試験に加え、実 Codex implement role で scripts/test.sh 全件の成功件数・総件数・exit code と対象 HEAD を記録しなければならない（MUST）。加えて、worker の中から 127.0.0.1 の待ち受けへの HTTP 到達、git commit と feature branch への git push、Draft PR 作成と記録先へのコメント、ローカルサーバーを立てる外部リポのテストスクリプトの完走を実測し、それぞれのコマンド・出力・exit code を記録しなければならない（MUST）。専用一時領域の 0700 と終了時削除も実環境で確認しなければならない（MUST）。砂場なしにした role では cwd の外への書き込みが OS に止められないことを境界プローブで確かめ、その結果を記録しなければならない（MUST）。CODEX-WORKER.md に実際の範囲と制約を反映しなければならない（MUST）。
+
+#### Scenario: 実環境の受け入れ結果を記録する
+- **WHEN** 対象 HEAD の scripts/test.sh と境界プローブが完了する
+- **THEN** 全件成功・exit 0、各操作のコマンド/出力/exit code、砂場なしの role で cwd の外への書き込みが通ること、0700、終了後の領域不在を記録する。件数は過去の1465件を固定せず対象 HEAD の実測値を使う
+
+#### Scenario: 代理実行なしの完走を記録する
+- **WHEN** implement role の worker がループバックへの HTTP・git commit・git push・Draft PR 作成・記録先へのコメント・外部リポのテストスクリプトを自分で実行する
+- **THEN** 各操作のコマンド・出力・exit code と対象 HEAD が記録され、本体が代理実行した操作は残っていない
+
+## REMOVED Requirements
+
+### Requirement: 一時領域の追加許可以外の砂場を維持する
+**Reason**: 「networkAccess は false を維持しなければならない」「read-only role の許可を拡大したり danger-full-access に変更したりしてはならない」という禁止が、Codex の worker だけ本体の代理実行を必要にしていた原因である。禁止を残したまま権限を揃えることはできないため、この要件を取り下げて置き換える。
+**Migration**: 残すべき内容は置き換え先の要件へ引き継いでいる。approvalPolicy never と専用一時領域の維持は「書く役は worker の中でネットワークと Git 操作を自分で完了できる」へ、read-only role に書き込みを追加しないことは「読む役は書き込みを増やさず取得経路だけ Claude 側の同じ役に揃える」へ移した。writableRoots の限定・excludeSlashTmp / excludeTmpdirEnvVar=true・許可外への書き込みが拒否されることは引き継いでいない: 書く役は砂場なしで動くのでこれらの項目自体が無くなる（Claude のサブエージェントに対応する隔離が無く、linked worktree の `$GIT_DIR` が workspace-write では読み取り専用に保たれて commit が成立しないため）。
