@@ -12,6 +12,11 @@ SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/codex-develop.py'
 spec = importlib.util.spec_from_file_location('develop', SCRIPT)
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+# The adapter picks the role and codex-worker.py turns that role into a sandbox, so the two
+# halves are only pinned together when one test reads both tables.
+worker_spec = importlib.util.spec_from_file_location('codex_worker_roles', SCRIPT.parent / 'codex-worker.py')
+worker_module = importlib.util.module_from_spec(worker_spec)
+worker_spec.loader.exec_module(worker_module)
 
 
 class ManualDevelop(unittest.TestCase):
@@ -82,6 +87,53 @@ class ManualDevelop(unittest.TestCase):
         first = next(iter(self.jobs.values()))['prompt']
         self.assertIn('仕様化判断', first)
         self.assertIn('it does not require', first)
+
+    WRITER_PHASES = ('spec', 'implement', 'finish', 'gate')
+    READER_PHASES = ('spec-review', 'review', 'decider')
+
+    def dispatched(self, phase):
+        self.call('dispatch', '--phase', phase, '--input', str(self.input))
+        self.call('ack')
+        return list(self.jobs.values())[-1]
+
+    def test_writer_phases_are_told_to_finish_their_own_github_work(self):
+        # The generated assignment is the only text a dispatched writer reads: if it still
+        # sends GitHub work back, the writers stay proxied no matter what the sandbox allows.
+        for phase in self.WRITER_PHASES:
+            with self.subTest(phase=phase):
+                text = self.dispatched(phase)['prompt']
+                self.assertIn('commit yourself here', text)
+                self.assertIn('do not return needs-coordinator for', text)
+                self.assertNotIn('no network access', text)
+                self.assertNotIn('the coordinator posts it on your behalf', text)
+                # Independent roles and the merge ban are unaffected by finishing own work.
+                self.assertIn('needs-reviewer/needs-decider', text)
+                self.assertIn('Never merge or enable auto-merge', text)
+
+    def test_reader_phases_return_the_verdict_for_the_coordinator_to_post(self):
+        for phase in self.READER_PHASES:
+            with self.subTest(phase=phase):
+                text = self.dispatched(phase)['prompt']
+                self.assertIn('never write to GitHub, push, or commit', text)
+                self.assertIn('the coordinator posts it on your behalf', text)
+                self.assertNotIn('commit yourself here', text)
+                self.assertNotIn('no network access', text)
+                self.assertIn('needs-reviewer/needs-decider', text)
+                self.assertIn('Never merge or enable auto-merge', text)
+
+    def test_writer_phases_run_unsandboxed_and_reader_phases_stay_read_only(self):
+        # Writers need no sandbox because a linked worktree's $GIT_DIR is read-only under
+        # workspace-write, so commit and branch creation cannot work there; readers must
+        # stay unable to write anywhere.
+        for phases, sandbox in ((self.WRITER_PHASES, 'danger-full-access'),
+                                (self.READER_PHASES, 'read-only')):
+            for phase in phases:
+                with self.subTest(phase=phase):
+                    self.assertEqual(worker_module.ROLES[self.dispatched(phase)['role']], sandbox)
+        # Every phase is classified, and the roles told to finish their own work are exactly
+        # the ones the worker leaves unsandboxed.
+        self.assertEqual(set(self.WRITER_PHASES) | set(self.READER_PHASES), set(m.PHASES))
+        self.assertEqual({m.PHASES[phase][0] for phase in self.WRITER_PHASES}, set(m.WRITER_ROLES))
 
     def test_dispatch_does_not_invent_prerequisites_or_clean_tree_requirement(self):
         # The coordinator owns quality decisions, even if work is dirty or no spec exists.
@@ -448,7 +500,9 @@ class TransportIntegration(unittest.TestCase):
             self.assertEqual(cli('result')['text'], text)
             cli('ack')
         starts = [call['params'] for call in fixture.calls() if call.get('method') == 'thread/start']
-        self.assertEqual([p['sandbox'] for p in starts], ['workspace-write', 'read-only'])
+        # Through the real CLI the implement phase reaches the worker with no sandbox (it
+        # commits and pushes itself) and the review phase stays readOnly.
+        self.assertEqual([p['sandbox'] for p in starts], ['danger-full-access', 'read-only'])
         state = json.loads((run / 'run.json').read_text())
         self.assertEqual([v['phase'] for v in state['history']], ['implement', 'review'])
         self.assertNotIn('approvals', state)
