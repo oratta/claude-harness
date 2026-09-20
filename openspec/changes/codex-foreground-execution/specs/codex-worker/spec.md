@@ -12,7 +12,7 @@ worker は 1 回のターンを実行して終了する前景実行の入口を�
 - **THEN** すべて従来どおり成功し、job の状態遷移・所有権の予約・cwd の排他は変わらない
 
 ### Requirement: 前景実行はアカウントを依頼された CODEX_HOME で固定する
-前景実行は、依頼に載せられた CODEX_HOME を実行アカウントとして固定しなければならない（MUST）。account 名を CODEX_HOME へ解決するために台帳を読んではならない（MUST NOT）。依頼の account 名は結果の記録に使うラベルであり、照合の材料にしてはならない（MUST NOT）。照合は、app-server が返した実行中アカウントが、渡された CODEX_HOME の認証情報と一致することで行わなければならない（MUST）。前景実行は 1 件ごとに runtime の CODEX_HOME を自分で作り、認証情報への link が実行中に差し替えられていないことを確認し、終了時にその link を外して片付けなければならない（MUST）。この runtime の CODEX_HOME は一時領域（`TMPDIR`）配下の所有者だけが読み書きできるディレクトリに置かなければならず（MUST）、app-server とその子に渡す一時領域の指定（`TMPDIR` / `TMPPREFIX`）を変えてはならない（MUST NOT）。これは job のための一時領域を新規に作らず親の環境を引き継ぐという既存の要件とは別のもので、その要件を緩めるものではない。この結果として、登録済み account だけに実行先を縛る性質は前景経路には無く、どの CODEX_HOME を使うかは呼び出し側の責任になることを仕様は明示しなければならない（MUST）。
+前景実行は、依頼に載せられた CODEX_HOME を実行アカウントとして固定しなければならない（MUST）。account 名を CODEX_HOME へ解決するために台帳を読んではならない（MUST NOT）。依頼の account 名は結果の記録に使うラベルであり、照合の材料にしてはならない（MUST NOT）。照合は、app-server が返した実行中アカウントが、渡された CODEX_HOME の認証情報と一致することで行わなければならない（MUST）。前景実行は 1 件ごとに runtime の CODEX_HOME を自分で作り、認証情報への link が実行中に差し替えられていないことを確認し、終了時にその link を外して片付けなければならない（MUST）。この runtime の CODEX_HOME は一時領域（`TMPDIR`）配下の所有者だけが読み書きできるディレクトリに置かなければならず（MUST）、app-server とその子に渡す一時領域の指定（`TMPDIR` / `TMPPREFIX`）を変えてはならない（MUST NOT）。これは job のための一時領域を新規に作らず親の環境を引き継ぐという既存の要件とは別のもので、その要件を緩めるものではない。結果に載せる実効アカウント（`effective.account`）には、app-server が返した**実行中アカウント**（email かその digest）を入れなければならず（MUST）、依頼の account 名をそのまま写してはならない（MUST NOT）。依頼の account 名は `requested.account` にだけ残さなければならない（MUST）。これは、呼び出し側の対応表が誤っていて名前と CODEX_HOME が食い違う場合に、その食い違いを結果から事後に検知できるようにするためである。この結果として、登録済み account だけに実行先を縛る性質は前景経路には無く、どの CODEX_HOME を使うかは呼び出し側の責任になることを仕様は明示しなければならない（MUST）。
 
 #### Scenario: 渡された認証情報と実行中アカウントが食い違う
 - **WHEN** app-server が返した実行中アカウントが、依頼の CODEX_HOME の認証情報と一致しない
@@ -21,6 +21,10 @@ worker は 1 回のターンを実行して終了する前景実行の入口を�
 #### Scenario: 実行中に認証情報の link が差し替えられる
 - **WHEN** ターンの待機中に runtime の認証情報への link が別の場所を指すようになる
 - **THEN** ターンの中断を要求し、その理由を結果に残す
+
+#### Scenario: 対応表が指す CODEX_HOME が要求名と食い違う
+- **WHEN** 依頼の account 名が指すはずのアカウントとは別のアカウントの CODEX_HOME が依頼に載っており、そのまま完走する
+- **THEN** 結果の実効アカウントには app-server が返した実行中アカウントが入り、依頼の account 名は要求側にだけ残るので、両者を比べると食い違いが分かる
 
 ### Requirement: 前景実行は呼んだプロセスと一緒に終わる
 前景実行は、起動時に控えた**祖先の連鎖のいずれか**が消えたことを検知しなければならない（MUST）。連鎖は起動時の親から辿れる祖先すべてを控え、一定間隔で辿り直して控えと突き合わせなければならない（MUST）。直接の親だけを見て判定してはならない（MUST NOT。呼び出し側と前景実行のあいだに shell の wrapper が挟まるため、直接の親は呼び出し元と一致しない）。検知したら実行中のターンの中断を要求し、app-server の子プロセスを含めて終了しなければならない（MUST）。親の消失から、コマンド自身と app-server の両方が終了するまでは 30 秒以内でなければならない（MUST）。app-server の子プロセスを、コマンドと別のセッションで起こしてはならない（MUST NOT）。中断の確認を待つ猶予は、中断要求そのものの応答待ちと検知と後始末の時間を足しても、この 30 秒に収まる長さでなければならない（MUST）。停止要求は、ターンの待機中だけでなく app-server へのすべての要求の直前に確認しなければならない（MUST）。
@@ -45,7 +49,7 @@ worker は 1 回のターンを実行して終了する前景実行の入口を�
 - **THEN** 中断未確認であることを結果に残し、app-server を段階的に終了させてコマンドを終える
 
 ### Requirement: 前景実行の結果は 1 行の JSON で返す
-前景実行は結果を標準出力の 1 行の JSON で返さなければならない（MUST）。成功と失敗で形を変えてはならない（MUST NOT）。JSON は次のキーを含まなければならない（MUST）: 最終回答のテキスト `text`、ターンの終了状態 `status`、使用量 `usage`、要求設定と実効設定を収めた `execution`（既存の `execution.version=1` 形式の `role` / `requested` / `effective` / `evidence`。`requested` は executor / account / model / effort、`effective` と `evidence` は観測した model / effort とその観測元）、thread の ID `thread_id`、turn の ID `turn_id`、失敗の理由 `error_kind`。取得できなかった項目は `null` とし、要求値や既定値で補完してはならない（MUST NOT）。失敗した実行は非ゼロの終了コードで終わらなければならない（MUST）。最終回答が一意に定まらない場合は、実行が終端に達していても成功として返してはならない（MUST NOT）。
+前景実行は結果を標準出力の 1 行の JSON で返さなければならない（MUST）。成功と失敗で形を変えてはならない（MUST NOT）。JSON は次のキーを含まなければならない（MUST）: 最終回答のテキスト `text`、ターンの終了状態 `status`、使用量 `usage`、要求設定と実効設定を収めた `execution`（既存の `execution.version=1` 形式の `role` / `requested` / `effective` / `evidence`。`requested` は executor / account / model / effort、`effective` と `evidence` は観測した account / model / effort とその観測元。`effective.account` は app-server が返した実行中アカウントであり、`requested.account` の写しであってはならない（MUST NOT））、thread の ID `thread_id`、turn の ID `turn_id`、失敗の理由 `error_kind`。取得できなかった項目は `null` とし、要求値や既定値で補完してはならない（MUST NOT）。失敗した実行は非ゼロの終了コードで終わらなければならない（MUST）。app-server がスレッドまたはターンの開始をエラー応答で拒否した場合は、そのサーバーのエラーコードを含む理由を `error_kind` に入れて非ゼロで終わらなければならず（MUST）、自動で再試行してはならず（MUST NOT）、別のアカウントへ振り替えてはならない（MUST NOT）。応答が得られないまま切断・タイムアウトした場合も、受理されたかどうかを判断できないことを示す理由を `error_kind` に入れて非ゼロで終わらなければならない（MUST）。前景経路は所有権の記録を持たないので、この場合に保持する所有は無い。最終回答が一意に定まらない場合は、実行が終端に達していても成功として返してはならない（MUST NOT）。
 
 #### Scenario: ターンが完走する
 - **WHEN** 前景実行のターンが完了する
@@ -54,6 +58,10 @@ worker は 1 回のターンを実行して終了する前景実行の入口を�
 #### Scenario: ターン開始前に失敗する
 - **WHEN** 利用枠の確認やアカウントの照合で失敗し、ターンが始まらない
 - **THEN** 同じ形の 1 行 JSON に失敗の理由が入り、観測できなかった項目は `null` のままで、終了コードは非ゼロになる
+
+#### Scenario: サーバーが開始をエラー応答で拒否する
+- **WHEN** スレッドまたはターンの開始の要求に対して app-server がエラー応答を返す
+- **THEN** そのエラーコードを含む理由が `error_kind` に入った同じ形の 1 行 JSON を出し、再試行も別アカウントへの振り替えもせずに非ゼロで終わる
 
 ### Requirement: 前景実行は同時実行の枠管理と作業ディレクトリの排他を持たない
 前景実行は account ごとの同時実行上限を判定してはならず（MUST NOT）、作業ディレクトリの排他を取ってはならない（MUST NOT）。ターン開始前の利用枠の確認は行わなければならず（MUST）、同時に走っている件数は 1 として扱い、余裕率は依頼の指定（既定値あり）を使わなければならない（MUST）。この結果として失われる 2 つの性質を仕様は明示しなければならない（MUST）: 同じ account へ同時に投げられる件数を worker が制限しないこと、同じ作業ディレクトリへ同時に投げられることを worker が拒まないこと。この 2 つは呼び出し側が作業ディレクトリを 1 件ずつ割り当てることで担保し、Codex 側だけに仕組みを戻してはならない（MUST NOT）。必要になった場合は Claude のサブエージェント側にも同じ仕組みを入れて揃えなければならない（MUST）。
@@ -67,6 +75,21 @@ worker は 1 回のターンを実行して終了する前景実行の入口を�
 - **THEN** worker はどちらも拒まず、排他の判定を行わない
 
 ## MODIFIED Requirements
+
+### Requirement: 一時領域は親の環境をそのまま引き継ぐ
+worker は job のために一時ディレクトリを新規作成してはならない（MUST NOT）。ただし前景実行が 1 件につき 1 つ作る runtime CODEX_HOME（認証情報への link と `config.toml` だけを置く 0700 のディレクトリ）は、台帳経路が state-dir の下に作っているものの置き場所を変えただけなので、この禁止の対象外とする。App Server と子ツールの `TMPDIR` と `TMPPREFIX` は、role によらず worker を起動した親プロセスの値をそのまま引き継がなければならない（MUST）。親に値が無ければ子にも現れてはならず（MUST NOT）、worker が既定値を補ってはならない（MUST NOT）。前景実行の runtime CODEX_HOME は、親に `TMPDIR` があればその配下に、無ければ実行環境の既定の一時領域に作らなければならない（MUST）。どちらの場合も、その置き場所を理由に子へ渡す `TMPDIR` / `TMPPREFIX` を作ったり書き換えたりしてはならない（MUST NOT）。この結果として次の 2 つの性質が失われることを、仕様は明示しなければならない（MUST）: 同時に走る job の一時ファイルが同じ親の一時領域に混ざりうること、job が残した一時ファイルの出どころを worker が記録しないこと。この 2 つの追跡が必要になった場合は、Codex 側だけに仕組みを戻してはならず（MUST NOT）、Claude のサブエージェント側にも同じ仕組みを入れて揃えなければならない（MUST）。
+
+#### Scenario: 書く役の子が一時領域を見る
+- **WHEN** implement job が開始され、子プロセスが `TMPDIR` と `TMPPREFIX` を読む
+- **THEN** どちらも worker を起動した親プロセスの値と一致し、worker が作った作業用の一時ディレクトリは存在しない（runtime CODEX_HOME は認証情報を置くためのもので、子の一時領域ではない）
+
+#### Scenario: 親に一時領域の指定が無い
+- **WHEN** 親環境に `TMPDIR` も `TMPPREFIX` も無い状態で implement job を開始する
+- **THEN** 子の環境にもどちらも現れず、worker は開始を拒否せず、既定値を補って渡さない
+
+#### Scenario: 親に一時領域の指定が無い状態で前景実行する
+- **WHEN** 親環境に `TMPDIR` が無い状態で前景実行を開始する
+- **THEN** runtime CODEX_HOME は実行環境の既定の一時領域に作られ、子の環境には `TMPDIR` も `TMPPREFIX` も現れない
 
 ### Requirement: 要求設定と実効設定を ID と共に公開する
 worker は design の execution.version=1 形式で role/requested/effective/evidence を payload と別に保持し、実行経路ごとの公開先と job_id/thread_id/turn_id に結び付けなければならない（MUST）。公開先は台帳経路では保存された status/result、前景経路では標準出力の 1 行 JSON とする（MUST）。develop は台帳経路の同じ記録を run history に保持しなければならない（MUST）。前景経路は run history を持たないので、記録の保持先は呼び出し側が受け取った JSON だけであり、worker がそれを保存してはならない（MUST NOT）。要求値や model/list の default を実効値として補完してはならない（MUST NOT）。

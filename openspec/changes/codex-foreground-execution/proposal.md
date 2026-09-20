@@ -22,9 +22,9 @@ Codex に仕事を投げると、その仕事は呼んだセッションから�
 <!-- 無し。前景実行は既存の codex-worker（Codex の job を走らせる実行基盤）の中の実行形態の追加であり、別の機能領域ではない。issue #340 も `openspec/specs/codex-worker/spec.md` への要件追加として書いている -->
 
 ### Modified Capabilities
-- `codex-worker`: 台帳を使わない前景実行の要件を足す（stdout の結果契約・親と一緒に終わる・SIGTERM で止まる・台帳と所有権に触れない）。要求設定と実効設定の公開先を「台帳の status / result」から「実行経路ごとの公開先（台帳経路は status / result、前景経路は stdout）」に広げる
+- `codex-worker`: 台帳を使わない前景実行の要件を足す（stdout の結果契約・親と一緒に終わる・SIGTERM で止まる・台帳と所有権に触れない）。要求設定と実効設定の公開先を「台帳の status / result」から「実行経路ごとの公開先（台帳経路は status / result、前景経路は stdout）」に広げる。一時領域の要件は、前景実行が 1 件につき 1 つ作る runtime CODEX_HOME を「job のための一時ディレクトリを新規作成しない」の対象外とし、`TMPDIR` が無いときの置き場を足す
 - `manual-codex-develop`: adapter の呼び出し手順を、`init` → `dispatch` → `status` / `result` → `ack` の 4 段から前景実行の 3 手順に変える。役割ごとの設定は run への snapshot ではなく呼び出しごとの解決になる。送信到達が不明な pending の復旧（`retry`）は台帳経路だけの要件になる
-- `codex-worker-concurrency`: 同時実行数の上限・作業ディレクトリの排他・残枠判定の 3 要件を台帳経路限定にする（前景実行はどれも持たないため、無条件の MUST のままだと `codex-worker` 側の新要件と衝突する）
+- `codex-worker-concurrency`: 同時実行数の上限・作業ディレクトリの排他・残枠判定・サーバーが開始を拒否したときの記録の 4 要件を台帳経路限定にする（前景実行はどれも持たないため、無条件の MUST のままだと `codex-worker` 側の新要件と衝突する）
 - `codex-develop-continuation`: 継続記録（`<!-- codex-develop-continuation:v1|v2 ... -->` の保存と復元）は台帳経路だけの要件になる。前景経路は run を持たないので記録を作らず、セッションをまたいだ継続の代わりにその工程をやり直す
 
 ## Impact
