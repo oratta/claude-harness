@@ -57,6 +57,8 @@ run_test_sh_isolated() {
   # 関数が落ちて起動できない。PATH を bats 起動前に戻し、BATS_* も外してから呼ぶ。
   local v
   PATH=${BATS_SAVED_PATH:-$PATH}
+  # STUB_BIN が指定されていれば先頭に足す（ps / pgrep を潰す差し替え用）
+  if [ -n "${STUB_BIN:-}" ]; then PATH="$STUB_BIN:$PATH"; fi
   for v in $(compgen -e | grep '^BATS_'); do unset "$v"; done
   cd "$REPO" && git add -A && TEST_RESIDUAL_GRACE="$INNER_GRACE" sh scripts/test.sh
 }
@@ -162,4 +164,35 @@ BATS
     [[ "$output" == *"TEST_RESIDUAL_GRACE"* ]]
     [[ "$output" != *"bats: 全スイート pass"* ]]
   done
+}
+
+# 砂場など ps / pgrep がプロセス一覧を取れない環境では、検査を諦めて続行する（issue #320）。
+# 検査を続けると「TAP は終わったのに残留が居る」と誤判定し、全件実行をグループごと SIGKILL する。
+@test "test.sh drops the residual check and keeps going where the process list is unavailable" {
+  STUB_BIN="${BATS_TEST_TMPDIR}/stub-bin"
+  mkdir -p "$STUB_BIN"
+  local c
+  for c in ps pgrep; do
+    cat >"$STUB_BIN/$c" <<'STUB'
+#!/bin/sh
+echo "$(basename "$0"): Cannot get process list" >&2
+exit 1
+STUB
+    chmod +x "$STUB_BIN/$c"
+  done
+  export STUB_BIN
+  # 検査が生きていれば「回収されずに残っています」で失敗するはずの内容を流す
+  write_inner_suite survivor <<'BATS'
+@@TEST "leaves a child alive after the test" {
+  ( for f in /dev/fd/*; do f=${f##*/}; [ "$f" -gt 2 ] 2>/dev/null && eval "exec $f>&-" 2>/dev/null; done; exec sleep 1234 ) &
+  echo $! >>"$RESIDUAL_TEST_PIDS"
+}
+BATS
+  run run_test_sh_isolated
+  echo "$output"   # 失敗したときだけ bats が表示する（内側の test.sh の出力）
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"プロセス一覧を取得できない環境"* ]]
+  [[ "$output" == *"ok 1 leaves a child alive"* ]]
+  [[ "$output" == *"bats: 全スイート pass"* ]]
+  [[ "$output" != *"残っています"* ]]
 }

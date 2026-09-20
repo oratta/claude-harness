@@ -21,6 +21,8 @@
 #   - bats を 1 回だけ呼び、TAP のサマリと exit code をそのまま成否とする。
 #   - テストが起動した背景プロセスが bats の出力パイプを握って残ると失敗にする
 #     （下の「残留プロセス検査」。TEST_RESIDUAL_GRACE で猶予秒を変えられる）。
+#     プロセス一覧を取得できない環境（砂場など ps / pgrep が拒否される）では、
+#     検査を諦めて bats をそのまま流す（誤検知で全件実行を潰さない）。
 #   - cwd 非依存: $0 の所在から repo ルートを解決する。
 #   - POSIX sh 互換（bashism を使わない）。
 # ─────────────────────────────────────────────────────────────
@@ -109,6 +111,11 @@ echo "----------------------------------------"
 #   3. bats が正常終了したあともグループに生き残りがあれば同様に失敗にする
 #      （fd を閉じていても teardown で回収し忘れた背景プロセスは欠陥）。
 #
+# 前提が崩れる環境（砂場の中など、ps / pgrep がプロセス一覧を取れない）では、
+# 「スイートが終わった」と「残留が居る」を区別できない。そこで検査を始める前に
+# 自分自身を列挙できるか試し、取れなければ検査を諦めて bats をそのまま流す
+# （issue #320。取れないまま続けると全件実行を誤検知で SIGKILL してしまう）。
+#
 #   TEST_RESIDUAL_GRACE=<秒>   判定の猶予（6 桁までの非負整数。既定 15。テストからの短縮用）
 # ─────────────────────────────────────────────────────────────
 RESIDUAL_GRACE="${TEST_RESIDUAL_GRACE:-15}"
@@ -148,6 +155,19 @@ is_bats_command() { # <command>
   name=${name%% *}
   case "$name" in */*) return 1 ;; bats|bats-*) return 0 ;; esac
   return 1
+}
+
+# プロセス一覧を取得できる環境かを、自分自身（$$）を引けるかで判定する。
+# 自分のプロセスは必ず生きているので、ps で pgid が引けて pgrep -g がそれを列挙できれば
+# 残留プロセス検査は成立する。砂場では ps が operation not permitted、
+# pgrep が Cannot get process list になるため、どちらかで偽になる。
+process_listing_works() {
+  self_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ')
+  case "$self_pgid" in
+    ""|*[!0-9]*) return 1 ;;
+  esac
+  pgrep -g "$self_pgid" >/dev/null 2>&1 || return 1
+  return 0
 }
 
 # グループ内の bats 以外のプロセス（＝テストが起動して残った背景プロセス）の pid を列挙する。
@@ -199,6 +219,13 @@ guard_interrupt() {
 run_bats_guarded() {
   if ! command -v perl >/dev/null 2>&1 || [ ! -d "$RESIDUAL_BATS_LIBEXEC" ]; then
     echo "⚠ perl が無いか bats の libexec（bin/bats の ../libexec/bats-core）が見つからないので残留プロセス検査なしで bats を実行します" >&2
+    # shellcheck disable=SC2086
+    ( cd "$ROOT" && bats $SUITES )
+    return $?
+  fi
+
+  if ! process_listing_works; then
+    echo "⚠ プロセス一覧を取得できない環境（ps / pgrep が自分自身も引けない）なので残留プロセス検査なしで bats を実行します" >&2
     # shellcheck disable=SC2086
     ( cd "$ROOT" && bats $SUITES )
     return $?

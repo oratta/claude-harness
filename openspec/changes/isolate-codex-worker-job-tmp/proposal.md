@@ -21,6 +21,6 @@ Issue #320: Codex worker の書き込み先が cwd のみに制限され、テ�
 
 ## Impact
 
-対象は `codex-worker.py`、`test_codex_worker.py`、`CODEX-WORKER.md`、dev-workflow の `plugin.json`。常時注入ファイル・予算は変更しない。既存 `add-codex-worker` の未完タスク、burn、send、unknown 自動復旧は引き取らない。
+対象は `codex-worker.py`、`test_codex_worker.py`、`CODEX-WORKER.md`、dev-workflow の `plugin.json`、および `scripts/test.sh` と `tests/test-sh-residual-guard.bats`（砂場でプロセス一覧が取れないときに残留プロセス検査を諦める変更。全件テスト完走の前提としてオーナー判断で追加）。常時注入ファイル・予算は変更しない。既存 `add-codex-worker` の未完タスク、burn、send、unknown 自動復旧は引き取らない。
 
 Step B は設計判断・観測可能な変更・利用者向け docs 更新に該当する。Step C は単一 change：5 つの受け入れ条件はすべて「専用一時領域の許可と寿命」という一つの設計判断に従属し、独立してマージする機能ではない。記録先は https://github.com/oratta/claude-harness/issues/320 。仕様化判断コメントは coordinator が代理投稿する。
