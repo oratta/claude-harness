@@ -13,11 +13,18 @@ SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/codex-worker.py'
 FAKE = r'''#!/usr/bin/env python3
 import json,os,sys,time
 from pathlib import Path
-runtime=Path(os.environ['CODEX_HOME']); home=(runtime/'auth.json').resolve().parent; config=json.loads((home/'fixture.json').read_text())
+runtime=Path(os.environ['CODEX_HOME']); job=runtime.name; home=(runtime/'auth.json').resolve().parent
+special=home/('fixture-'+job+'.json'); config=json.loads((special if special.exists() else home/'fixture.json').read_text())
 for line in sys.stdin:
  m=json.loads(line); method=m.get('method'); rid=m.get('id')
- with (home/'calls.jsonl').open('a') as f:f.write(json.dumps(m)+'\n')
+ for name in ('calls.jsonl','calls-'+job+'.jsonl'):
+  with (home/name).open('a') as f:f.write(json.dumps(m)+'\n')
  if rid is None:continue
+ if method=='account/rateLimits/read' and config.get('hold_rate_limits_until'):
+  while not Path(config['hold_rate_limits_until']).exists():time.sleep(.02)
+ if method==config.get('disconnect_before'):sys.exit(0)
+ if method==config.get('reject'):
+  print(json.dumps({'id':rid,'error':{'code':config.get('reject_code',-32000),'message':'rejected'}}),flush=True);continue
  if method=='account/read':r={'account':{'type':'chatgpt','email':config.get('email','worker@example.invalid')}}
  elif method=='account/rateLimits/read':r={'rateLimitsByLimitId':{'codex':{'primary':{'usedPercent':config.get('pct',1),'windowDurationMins':300,'resetsAt':int(time.time())+1000}}}}
  elif method=='thread/start':r={'thread':{'id':'thread'}}
@@ -46,12 +53,21 @@ class WorkerTest(unittest.TestCase):
         binary = self.root/'bin';binary.mkdir()
         (binary/'codex').write_text(FAKE);(binary/'codex').chmod(0o700)
         self.env = dict(os.environ, HOME=str(self.root), PATH=str(binary)+os.pathsep+os.environ['PATH'])
-        repo = self.root/'repo';repo.mkdir()
-        self.git(repo,'init','-q','-b','main')
-        self.git(repo,'-c','user.name=Fixture','-c','user.email=f@invalid','commit','--allow-empty','-qm','initial')
-        self.cwd = self.root/'work'
-        self.git(repo,'worktree','add','-qb','feature',str(self.cwd))
+        self.repo = self.root/'repo';self.repo.mkdir()
+        self.git(self.repo,'init','-q','-b','main')
+        self.git(self.repo,'-c','user.name=Fixture','-c','user.email=f@invalid','commit','--allow-empty','-qm','initial')
+        # Two worktrees, because account concurrency is only observable across distinct directories.
+        self.cwd = self.worktree('feature')
+        self.cwd2 = self.worktree('feature-2')
         self.cli('register','--account','test','--codex-home',str(self.home))
+
+    def worktree(self, branch):
+        path = self.root/('work-'+branch)
+        self.git(self.repo,'worktree','add','-qb',branch,str(path))
+        return path
+
+    def ownership(self):
+        return sqlite3.connect(self.root/'.local/state/claude-harness-codex/ownership.sqlite')
 
     def git(self, cwd, *args):
         return subprocess.run(['git','-C',str(cwd),*args],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -66,15 +82,21 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(p.returncode,code,p.stderr+p.stdout)
         return json.loads(p.stdout)
 
-    def config(self,**kwargs):
-        (self.home/'fixture.json').write_text(json.dumps(kwargs))
+    def config(self,job=None,**kwargs):
+        # Concurrent jobs share one authentication home, so per-job settings are keyed by job id.
+        (self.home/(('fixture-'+job+'.json') if job else 'fixture.json')).write_text(json.dumps(kwargs))
 
-    def submit(self,job='one',**fields):
+    def limits(self):
+        db=sqlite3.connect(self.state/'ledger.sqlite')
+        try:return db.execute('SELECT max_concurrent,quota_margin_pct FROM accounts WHERE name=?',('test',)).fetchone()
+        finally:db.close()
+
+    def submit(self,job='one',code=0,**fields):
         data={'request_id':job,'origin':'manual','account':'test','cwd':str(self.cwd),
               'model':'fixture-model','role':'implement','prompt':'fixture'}
         data.update(fields)
         path=self.root/(job+'.json');path.write_text(json.dumps(data))
-        return self.cli('submit','--request',str(path))
+        return self.cli('submit','--request',str(path),code=code)
 
     def wait(self,job='one',status=None):
         deadline=time.monotonic()+8
@@ -84,8 +106,15 @@ class WorkerTest(unittest.TestCase):
             time.sleep(.03)
         self.fail('worker did not settle: '+str(r))
 
-    def calls(self):
-        p=self.home/'calls.jsonl'
+    def started(self,job='one'):
+        deadline=time.monotonic()+8
+        while time.monotonic()<deadline:
+            if any(m.get('method')=='turn/start' for m in self.calls(job)):return
+            time.sleep(.02)
+        self.fail('turn did not start')
+
+    def calls(self,job=None):
+        p=self.home/(('calls-'+job+'.jsonl') if job else 'calls.jsonl')
         return [json.loads(s) for s in p.read_text().splitlines()] if p.exists() else []
 
     def test_detached_complete_idempotence_and_ack(self):
@@ -132,7 +161,7 @@ class WorkerTest(unittest.TestCase):
         request=json.loads((self.root/'one.json').read_text());request['request_id']='two'
         (self.root/'two.json').write_text(json.dumps(request))
         r=self.cli('submit','--request',str(self.root/'two.json'),code=2)
-        self.assertEqual(r['error'],'cwd_or_account_locked')
+        self.assertEqual(r['error'],'cwd_locked')
 
     def test_runtime_does_not_inherit_user_mcp(self):
         (self.home/'config.toml').write_text('[mcp_servers.external]\ncommand="danger"\n')
@@ -153,7 +182,7 @@ class WorkerTest(unittest.TestCase):
         self.state=self.root/'other-state';self.state.mkdir(mode=0o700)
         self.cli('register','--account','test','--codex-home',str(self.home))
         r=self.cli('submit','--request',str(self.root/'one.json'),code=2)
-        self.assertEqual(r['error'],'global_account_or_cwd_locked')
+        self.assertEqual(r['error'],'global_cwd_locked')
 
     def test_git_environment_cannot_redirect_validation(self):
         self.env['GIT_DIR']=str(self.root/'repo/.git')
@@ -224,5 +253,193 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(self.cli('submit','--request',str(path),code=2)['error'],'feature_branch_required')
         data.update(cwd=str(self.cwd),origin='burn');path.write_text(json.dumps(data))
         self.assertEqual(self.cli('submit','--request',str(path),code=2)['error'],'unsupported_origin')
+
+    def test_register_limits_are_validated(self):
+        home=str(self.home)
+        self.assertEqual(self.cli('register','--account','test','--codex-home',home,'--max-concurrent','0',
+                                  code=2)['error'],'invalid_max_concurrent')
+        self.assertEqual(self.cli('register','--account','test','--codex-home',home,'--quota-margin-pct','101',
+                                  code=2)['error'],'invalid_quota_margin_pct')
+
+    def test_register_without_options_restores_defaults(self):
+        self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','7','--quota-margin-pct','12')
+        self.assertEqual(self.limits(),(7,12.0))
+        self.cli('register','--account','test','--codex-home',str(self.home))
+        self.assertEqual(self.limits(),(3,5.0))
+
+    def test_two_worktrees_share_one_account(self):
+        self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','2')
+        self.config(wait=True)
+        self.submit('one');self.submit('two',cwd=str(self.cwd2))
+        self.wait('one',status='running');self.wait('two',status='running')
+        third=self.worktree('feature-3')
+        self.assertEqual(self.submit('three',cwd=str(third),code=2)['error'],'account_slots_exhausted')
+        for job in ('one','two'):
+            self.cli('cancel','--job',job);self.assertEqual(self.wait(job)['status'],'interrupted')
+
+    def test_other_ledger_slots_beyond_range_count_toward_the_limit(self):
+        # The limit is a count of occupied slots, not a search for a free number below it.
+        self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','3')
+        third=self.worktree('feature-3');fourth=self.worktree('feature-4')
+        self.config(wait=True)
+        for job,cwd in (('one',self.cwd),('two',self.cwd2),('three',third)):
+            self.submit(job,cwd=str(cwd));self.wait(job,status='running')
+        self.cli('cancel','--job','one');self.assertEqual(self.wait('one')['status'],'interrupted')
+        self.cli('ack','--job','one')
+        first=self.state
+        self.state=self.root/'other-state';self.state.mkdir(mode=0o700)
+        self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','2')
+        self.assertEqual(self.submit('four',cwd=str(fourth),code=2)['error'],'account_slots_exhausted')
+        self.state=first
+        for job in ('two','three'):
+            self.cli('cancel','--job',job);self.assertEqual(self.wait(job)['status'],'interrupted')
+
+    def test_same_worktree_second_job_is_rejected(self):
+        self.config(wait=True);self.submit();self.wait(status='running')
+        self.assertEqual(self.submit('two',code=2)['error'],'cwd_locked')
+        self.cli('cancel','--job','one');self.assertEqual(self.wait()['status'],'interrupted')
+
+    def test_missing_ledger_slot_is_skipped_not_fatal(self):
+        self.submit();self.wait();self.cli('ack','--job','one')
+        db=self.ownership()
+        key=db.execute('SELECT account_key FROM account_slots').fetchone()[0]
+        db.execute('UPDATE account_slots SET ledger=?,job=? WHERE account_key=? AND slot=0',
+                   (str(self.root/'gone/ledger.sqlite'),'ghost',key))
+        db.commit();db.close()
+        self.submit('two',cwd=str(self.cwd2));self.assertEqual(self.wait('two')['status'],'completed')
+        db=self.ownership()
+        slots=dict(db.execute('SELECT slot,job FROM account_slots WHERE account_key=?',(key,)).fetchall());db.close()
+        self.assertEqual(slots,{0:'ghost',1:'two'})
+        self.assertEqual([s['reason'] for s in self.cli('reap','--older-than','0')['kept']],['ledger_missing'])
+
+    @unittest.skipIf(os.getuid()==0,'file permissions do not restrict root')
+    def test_unreadable_ledger_slot_is_kept_not_fatal(self):
+        # An unreadable ledger is as unobservable as a missing one: hold the slot, never fail everything else.
+        locked=self.root/'locked.sqlite';locked.write_bytes(b'');locked.chmod(0o000)
+        self.submit();self.wait();self.cli('ack','--job','one')
+        db=self.ownership()
+        key=db.execute('SELECT account_key FROM account_slots').fetchone()[0]
+        db.execute('UPDATE account_slots SET ledger=?,job=? WHERE account_key=? AND slot=0',(str(locked),'ghost',key))
+        db.commit();db.close()
+        self.submit('two',cwd=str(self.cwd2));self.assertEqual(self.wait('two')['status'],'completed')
+        r=self.cli('reap','--older-than','0')
+        self.assertEqual([s['reason'] for s in r['kept']],['ledger_missing'])
+        self.assertEqual([(s['job'],s['reason']) for s in r['released']],[('two','stale_unacked')])
+        self.cli('ack','--job','two')
+        db=self.ownership()
+        db.execute("UPDATE owners SET ledger=? WHERE key LIKE 'cwd:%'",(str(locked),));db.commit();db.close()
+        self.assertEqual(self.submit('three',cwd=str(self.cwd2),code=2)['error'],'global_owner_unknown')
+
+    def test_legacy_account_owner_row_is_migrated(self):
+        self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','1')
+        self.config(wait=True);self.submit();self.wait(status='running')
+        db=self.ownership()
+        key,ledger,job=db.execute('SELECT account_key,ledger,job FROM account_slots').fetchone()
+        db.execute('DELETE FROM account_slots')
+        db.execute('INSERT INTO owners VALUES(?,?,?)',(key,ledger,job));db.commit();db.close()
+        self.assertEqual(self.submit('two',cwd=str(self.cwd2),code=2)['error'],'account_slots_exhausted')
+        self.cli('cancel','--job','one');self.wait();self.cli('ack','--job','one')
+        self.config('two');self.submit('two',cwd=str(self.cwd2))
+        self.assertEqual(self.wait('two')['status'],'completed')
+        db=self.ownership()
+        self.assertIsNone(db.execute('SELECT 1 FROM owners WHERE key=?',(key,)).fetchone())
+        self.assertEqual(db.execute('SELECT slot,job FROM account_slots WHERE account_key=?',(key,)).fetchall(),[(0,'two')])
+        db.close()
+
+    def test_quota_headroom_blocks_when_margin_does_not_fit(self):
+        self.cli('register','--account','test','--codex-home',str(self.home),'--quota-margin-pct','40')
+        self.config(pct=55);self.submit('one')
+        self.assertEqual(self.wait('one')['status'],'completed')
+        self.cli('ack','--job','one')
+        self.config(pct=70);self.submit('two',cwd=str(self.cwd2));r=self.wait('two')
+        self.assertEqual(r['error_kind'],'quota_headroom_insufficient')
+        self.assertFalse(any(m.get('method')=='turn/start' for m in self.calls('two')))
+
+    def test_slot_reserved_during_rate_limit_read_enters_the_headroom_check(self):
+        # A slot taken while the window read was in flight must still be counted by the reader.
+        self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','2','--quota-margin-pct','10')
+        gate=self.root/'release-rate-limit'
+        self.config('one',pct=85,hold_rate_limits_until=str(gate))
+        self.config('two',pct=80,wait=True)
+        self.submit('one')
+        deadline=time.monotonic()+8
+        while not any(m.get('method')=='account/rateLimits/read' for m in self.calls('one')) and time.monotonic()<deadline:
+            time.sleep(.02)
+        self.assertTrue(any(m.get('method')=='account/rateLimits/read' for m in self.calls('one')))
+        self.submit('two',cwd=str(self.cwd2));self.started('two')
+        gate.write_text('')
+        self.assertEqual(self.wait('one')['error_kind'],'quota_headroom_insufficient')
+        self.assertFalse(any(m.get('method')=='turn/start' for m in self.calls('one')))
+        self.cli('cancel','--job','two');self.assertEqual(self.wait('two')['status'],'interrupted')
+
+    def test_acknowledged_slots_leave_the_headroom_calculation(self):
+        self.cli('register','--account','test','--codex-home',str(self.home),'--max-concurrent','3','--quota-margin-pct','20')
+        third=self.worktree('feature-3')
+        self.config(pct=10)
+        for job,cwd in (('one',self.cwd),('two',self.cwd2),('three',third)):
+            self.submit(job,cwd=str(cwd));self.assertEqual(self.wait(job)['status'],'completed')
+        for job in ('one','two','three'):self.cli('ack','--job',job)
+        # Three slot rows remain, but only the new job is occupied: 70 + 20*1 fits, 70 + 20*3 would not.
+        self.config(pct=70);self.submit('four')
+        self.assertEqual(self.wait('four')['status'],'completed')
+
+    def test_server_error_response_on_start_is_failed(self):
+        self.config(reject='turn/start',reject_code=-32003);self.submit();r=self.wait()
+        self.assertEqual(r['status'],'failed')
+        self.assertEqual(r['error_kind'],'server_rejected_start_-32003')
+        self.cli('ack','--job','one')
+
+    def test_disconnect_before_reply_is_unknown(self):
+        self.config(disconnect_before='turn/start');self.submit();r=self.wait()
+        self.assertEqual(r['status'],'unknown')
+        self.cli('ack','--job','one',code=2)
+
+    def test_error_response_after_turn_accepted_stays_unknown(self):
+        self.config(wait=True,reject='turn/interrupt');self.submit();self.started()
+        self.cli('cancel','--job','one');r=self.wait()
+        self.assertEqual(r['status'],'unknown')
+        self.assertEqual(r['error_kind'],'rpc_error_-32000')
+        self.cli('ack','--job','one',code=2)
+
+    def test_reap_releases_acknowledged_slots(self):
+        self.submit();self.wait();self.cli('ack','--job','one')
+        r=self.cli('reap','--account','test')
+        self.assertEqual([(s['job'],s['reason']) for s in r['released']],[('one','acked')])
+        self.assertEqual(r['kept'],[])
+
+    def test_reap_keeps_unknown_slots(self):
+        self.config(disconnect=True);self.submit();self.assertEqual(self.wait()['status'],'unknown')
+        r=self.cli('reap','--older-than','0')
+        self.assertEqual(r['released'],[])
+        self.assertEqual([(s['job'],s['reason']) for s in r['kept']],[('one','unknown')])
+
+    def test_reap_frees_stale_unacked_but_not_the_working_directory(self):
+        self.submit();self.assertEqual(self.wait()['status'],'completed')
+        self.assertEqual([s['reason'] for s in self.cli('reap')['kept']],['not_stale'])
+        r=self.cli('reap','--older-than','0')
+        self.assertEqual([(s['job'],s['reason']) for s in r['released']],[('one','stale_unacked')])
+        self.assertEqual(self.submit('two',code=2)['error'],'cwd_locked')
+        self.state=self.root/'other-state';self.state.mkdir(mode=0o700)
+        self.cli('register','--account','test','--codex-home',str(self.home))
+        self.assertEqual(self.cli('submit','--request',str(self.root/'one.json'),code=2)['error'],'global_cwd_locked')
+
+    def test_reap_keeps_running_slots(self):
+        self.config(wait=True);self.submit();self.wait(status='running')
+        r=self.cli('reap','--older-than','0')
+        self.assertEqual(r['released'],[])
+        self.assertEqual([(s['job'],s['reason']) for s in r['kept']],[('one','active')])
+        self.cli('cancel','--job','one');self.assertEqual(self.wait()['status'],'interrupted')
+
+    def test_reap_rejects_unknown_account_and_negative_age(self):
+        self.assertEqual(self.cli('reap','--account','absent',code=2)['error'],'account_not_registered')
+        self.assertEqual(self.cli('reap','--older-than','-1',code=2)['error'],'invalid_older_than')
+
+    def test_reaped_slot_is_reused_by_the_next_submission(self):
+        self.submit();self.assertEqual(self.wait()['status'],'completed')
+        self.assertEqual([s['slot'] for s in self.cli('reap','--older-than','0')['released']],[0])
+        self.submit('two',cwd=str(self.cwd2));self.assertEqual(self.wait('two')['status'],'completed')
+        db=self.ownership()
+        slots=dict(db.execute('SELECT slot,job FROM account_slots').fetchall());db.close()
+        self.assertEqual(slots,{0:'two'})
 
 if __name__=='__main__':unittest.main()
