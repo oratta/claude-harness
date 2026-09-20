@@ -9,7 +9,7 @@
 - **BREAKING（仕様の反転）**: `codex-worker` の Requirement「一時領域の追加許可以外の砂場を維持する」から「networkAccess は false を維持しなければならない」「read-only role の許可を拡大したり danger-full-access に変更したりしてはならない」を取り除き、「Claude のサブエージェントと同じ水準まで開ける」方針に置き換える
 - 書く役（`implement` / `spec-write`）は砂場なし（`danger-full-access`）にする。第 1 段（`networkAccess: true` ＋ `writableRoots` に Git 共通ディレクトリを追加）では linked worktree の `worktrees/<worktree>/`（`.git` ファイルが指す `$GIT_DIR`）だけが読み取り専用のまま残り、`git switch -c` / `git commit` が拒否されたため
 - 読む役は `readOnly` を保ったまま、`networkAccess` を Claude 側の同じ役の取得手段に合わせる。本体が汎用サブエージェントとして起こす `review` / `spec-review` / `impl-review` は `true` にして GitHub の読み取りを揃え、Read / Grep / Glob だけでシェルを持たない `decider` は `false` のまま据え置く。どちらも書き込み許可は増やさない
-- 子へ渡す環境変数を 8 個の allowlist から「親の環境を引き継いで、渡してはいけないものだけ落とす」形に変える。落とすのは worker が自分で決める値（`CODEX_HOME` / `TMPDIR` / `TMPPREFIX`）と、Codex の認証・課金経路を別物にすり替える値（`OPENAI_API_KEY` など Codex 自身が読む認証変数）
+- 子へ渡す環境変数を 8 個の allowlist から「親の環境を引き継いで、渡してはいけないものだけ落とす」形に変える。落とすのは worker が自分で決める値（`CODEX_HOME` / `TMPDIR` / `TMPPREFIX`）、Codex の認証・課金経路を別物にすり替える値（`OPENAI_API_KEY` など Codex 自身が読む認証変数）、子の git 操作を cwd 以外の checkout へ向け得る値（`GIT_DIR` / `GIT_WORK_TREE` / `GIT_COMMON_DIR` / `GIT_INDEX_FILE`）の 3 群
 - Codex の `shell_environment_policy` が子シェルへの引き継ぎを絞る場合は、job ごとの runtime `config.toml` で引き継ぎを開く（現在の runtime config は `cli_auth_credentials_store` と `features.apps` だけを書いている）
 - 上の理由により、結果として書く役（`implement` / `spec-write`）は全部 `dangerFullAccess`（`thread/start` は `danger-full-access`）に落とした。読む役は `readOnly` を維持する。落とした根拠（第 1 段の失敗出力と、その失敗が砂場の拒否によるものだと確認した経緯）は記録する
 - 揃えた結果不要になる代理実行の記述を削る: `plugins/dev-workflow/references/codex-develop.md` の「共通 worker は network 無効／sandbox が git commit を拒否した場合も本体が commit する」段落、`plugins/dev-workflow/docs/codex-develop.md` の同趣旨の段落
@@ -36,4 +36,5 @@
 - `openspec/specs/codex-develop-continuation/spec.md`: Requirement「coordinator と担当者の責務境界を守る」を archive 時に反映（GitHub 操作と commit/push の担い手が変わる）
 - `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json`: dev-workflow のバージョンを 2.13.8 → 2.13.9
 - 受け入れるリスク: 認証情報を持ち外と通信できる子を、途中で誰も止められない（`approvalPolicy: never` は変えない）。これは許可を飛ばす設定で動いている Claude のサブエージェントと同じ水準で、Codex 側だけが増やすリスクではない
-- 触らないもの: `approvalPolicy: never`、切り離して投げて後で拾う作り、一時領域の所有と片付け、account ごとの同時実行と枠判定（`codex-worker-concurrency`）、Claude の hooks が Codex に効かない点（製品の違いなので対象外）。`excludeSlashTmp` / `excludeTmpdirEnvVar` は書く役が砂場なしになったことで policy から消える（渡してはならない、spec 参照）
+- 触らないもの: `approvalPolicy: never`、切り離して投げて後で拾う作り、一時領域の所有と片付け、account ごとの同時実行と枠判定（`codex-worker-concurrency`）、Claude の hooks が Codex に効かない点（製品の違いなので対象外）
+- `excludeSlashTmp` / `excludeTmpdirEnvVar` は「触らないもの」ではない: 書く役が砂場なしになったことで policy から消える（渡してはならない、spec 参照）
