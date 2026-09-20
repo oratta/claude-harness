@@ -48,7 +48,7 @@
 
 - [x] 7.1 `plugins/dev-workflow/.claude-plugin/plugin.json` の version を 2.13.8 から 2.13.9 に上げる
 - [x] 7.2 `.claude-plugin/marketplace.json` の dev-workflow エントリの version を 2.13.9 に揃える
-- [ ] 7.3 push 前の全件は次の 2 本で、両方の成功件数・総件数・exit code と対象 HEAD を記録する。`scripts/test.sh` は git 追跡下の `*.bats` だけを走らせ、`plugins/dev-workflow/tests/test_codex_worker.py` を拾う bats スイートは無いので、Python 側は別に走らせないと今回の変更の回帰が 1 件も走らない
-  - `bash scripts/test.sh`（常時注入分を触っていないので `tests/injection-budget.bats` も含めて通ること）
-  - `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py`
-- [ ] 7.4 `openspec validate align-codex-worker-permissions --strict` を実行し、exit code を記録する
+- [x] 7.3 push 前の全件は次の 2 本で、両方の成功件数・総件数・exit code と対象 HEAD を記録する。`scripts/test.sh` は git 追跡下の `*.bats` だけを走らせ、`plugins/dev-workflow/tests/test_codex_worker.py` を拾う bats スイートは無いので、Python 側は別に走らせないと今回の変更の回帰が 1 件も走らない
+  - `bash scripts/test.sh`（常時注入分を触っていないので `tests/injection-budget.bats` も含めて通ること）。**結果**: 対象 HEAD `4e8e592`、1473/1473 ok（not ok 0、excluded 0）、exit 0
+  - `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py`。**結果**: 対象 HEAD `4e8e592`、54/54 OK、exit 0
+- [x] 7.4 `openspec validate align-codex-worker-permissions --strict` を実行し、exit code を記録する。**結果**: `Change 'align-codex-worker-permissions' is valid`、exit 0
