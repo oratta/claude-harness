@@ -28,7 +28,7 @@ Claudeの会話で実行する:
 
 `--executor codex` は後方互換の別名として上の形式に追加できる。profile の Claude entry は `account=current`、model は `haiku|sonnet|opus|fable` のみとし、`fable` は `decider` role だけに指定できる。
 
-Claudeが既存developの進め方でworktree/記録先を準備し、仕様化判断から進める。仕様不要なら理由を記録して実装へ、必要なら仕様と独立仕様レビューを経て実装/テスト・PR・レビュー/ゲートへ進む。実行先をCodexにしてもこの判断と工程は変わらない。差戻しもCodexへ委譲する。burnを有効化する必要はない。
+Claudeが既存developの進め方でworktree/記録先を準備し、仕様化判断から進める。仕様不要なら理由を記録して実装へ、必要なら仕様と独立仕様レビューを経て実装/テスト・PR・レビュー/ゲートへ進む。profile で実行先を選んでもこの判断と工程は変わらない。差戻しも該当 role の実行先へ委譲する。burnを有効化する必要はない。
 
 ## 前景実行の呼び方
 
