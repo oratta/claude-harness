@@ -1,8 +1,5 @@
-# codex-worker-concurrency Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change codex-worker-account-concurrency. Update Purpose after archive.
-## Requirements
 ### Requirement: アカウント単位の同時実行数は設定で決まる
 
 この要件は台帳経路（`submit` で受け付けるジョブ）にのみ適用する（MUST）。前景実行は capability `codex-worker` の要件「前景実行は同時実行の枠管理と作業ディレクトリの排他を持たない」に従う。
@@ -93,25 +90,3 @@ TBD - created by archiving change codex-worker-account-concurrency. Update Purpo
 
 - **WHEN** 要求への応答が得られないまま接続が切れる
 - **THEN** 従来どおり `unknown` とし、所有を保持する
-
-### Requirement: 放置されたアカウント側の占有を外す手段がある
-
-受領されないまま終わったジョブがアカウント側のスロットを握り続けている場合に、それを外すコマンドを備えなければならない（MUST）。解放したスロットと解放しなかったスロットを、それぞれ理由とともに出力しなければならない（MUST）。実行の終わりを観測できていないスロット（unknown、および参照先の台帳が読めないもの）を外してはならない（MUST NOT）。
-
-このコマンドは作業ディレクトリ側のロックを外してはならない（MUST NOT）。作業ディレクトリは、従来どおり結果を回収して受領（ack）することで空く。
-
-#### Scenario: 終了して長く受領されないジョブの占有を外す
-
-- **WHEN** 終了済みかつ未受領のまま既定の時間を超えたスロットについて外す操作を実行する
-- **THEN** そのスロットを解放し、解放したスロットと理由を出力する
-
-#### Scenario: 実行の終わりを観測できていないジョブの占有
-
-- **WHEN** unknown のジョブ、または参照先の台帳が無いスロットについて外す操作を実行する
-- **THEN** そのスロットは解放せず、解放しなかったスロットとその理由を出力に含める
-
-#### Scenario: 作業ディレクトリのロックは外さない
-
-- **WHEN** アカウント側のスロットを外したあと、同じ作業ディレクトリへ再投入する
-- **THEN** そのジョブが未受領であるかぎり `cwd_locked` を理由に拒否する
-

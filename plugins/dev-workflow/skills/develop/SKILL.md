@@ -18,7 +18,7 @@ version: 2.1.0
 
 ## Codexを明示した手動実行
 
-`--executor codex --account NAME --model MODEL` のときは `${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこのSKILL.mdから `../../references/codex-develop.md`）を絶対パスに解決してReadし、この正本の工程順・役割・レビュー条件を維持したままspawn/再開のprovider操作を置換する。Claude Agent・Codex execの前提表はこのモードには適用しない。モデルは明示されたCodex ID、全役割をApp Serverへ委譲する。仕様化判断・不要時の実装直行・レビュー・検証・順序は以下の同じ正本を使い、provider adapter側に独自ゲートを置かない。未指定の通常実行は以下の既存規則どおり。
+`--executor codex`（`--profile NAME` か旧形式の `--account NAME --model MODEL`）のときは `${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこのSKILL.mdから `../../references/codex-develop.md`）を絶対パスに解決してReadし、この正本の工程順・役割・レビュー条件を維持したままspawn/再開のprovider操作を置換する。置換後の委譲は「担当工程に限定した指示をファイルに書く → `codex-develop.py request` で依頼ファイルを作り `codex-worker.py run` をBashツールの背景実行で起こす → 完了通知で標準出力の1行JSONを読む」の3手順で、Claudeのサブエージェントのspawnに対応する。前景実行は台帳もjob IDも残さないため SendMessage に当たる再開が無く、途切れた工程はその3手順を最初からやり直す。台帳を持つ旧経路（`submit` / `status` / `ack`）も残っているが、1つの委譲を両経路にまたがせない。Claude Agent・Codex execの前提表はこのモードには適用しない。モデルは明示されたCodex ID、全役割をApp Serverへ委譲する。仕様化判断・不要時の実装直行・レビュー・検証・順序は以下の同じ正本を使い、provider adapter側に独自ゲートを置かない。未指定の通常実行は以下の既存規則どおり。
 
 ## いつ使うか
 

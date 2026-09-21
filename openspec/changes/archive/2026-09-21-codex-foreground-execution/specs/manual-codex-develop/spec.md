@@ -1,8 +1,22 @@
-# manual-codex-develop Specification
+## ADDED Requirements
 
-## Purpose
-TBD - created by archiving change codex-develop-role-profiles. Update Purpose after archive.
-## Requirements
+### Requirement: 委譲は前景実行の 3 手順で行う
+手動Codex開発のadapter手順書は、1 回の委譲を「その工程に限定した指示をUTF-8ファイルに書く → 前景実行のコマンドを背景実行で起動する → 完了通知で結果の JSON を読む」の 3 手順として記述しなければならない（MUST）。手順書に受領（`ack`）・送信復旧（`retry`）・run ディレクトリ・worker の台帳ディレクトリ・継続記録の操作を残してはならない（MUST NOT）。停止は起動したコマンドの停止操作で行い、Codex 専用の中断コマンドを手順書の通常経路に置いてはならない（MUST NOT）。委譲ごとに新しいスレッドを使い、前工程の成果物と必要な要約だけを引き継がなければならない（MUST）。
+
+#### Scenario: 手順書から台帳経路の操作が消えている
+- **WHEN** adapter の手順書を機械的に検索する
+- **THEN** 受領・送信復旧・run ディレクトリ・worker の台帳ディレクトリ・継続記録を指す語がいずれも見つからない
+
+#### Scenario: 1 件の委譲を行う
+- **WHEN** 本体が次の役割と工程を決めて委譲する
+- **THEN** 指示をファイルに書き、前景実行を背景で起動し、完了通知で結果の JSON を読む 3 手順で完了し、状態照会と受領の操作を行わない
+
+#### Scenario: 走行中の委譲を止める
+- **WHEN** 本体が走行中の委譲を止める必要がある
+- **THEN** 起動したコマンドを停止させることで止め、Codex 側に別の中断コマンドを要求しない
+
+## MODIFIED Requirements
+
 ### Requirement: 手動で実行先とアカウントを固定する
 手動Codex開発は旧形式の登録account/model、または名前付きprofileの役割別executor/account/model/effortを固定し、共通App Server workerだけに委譲しなければならない（MUST）。前景実行では固定は委譲ごとの解決として行い、解決した役割別のexecutor/account/model/effortと実行アカウントのCODEX_HOMEを依頼ファイルへ載せなければならない（MUST）。台帳経路では従来どおりinitのsnapshotで固定する（MUST）。profileと旧account/modelの同時指定を拒否し、worker失敗時にexec/Claudeへfallbackしてはならない（MUST NOT）。前景実行はアカウント名からCODEX_HOMEを解決するために台帳を読んではならない（MUST NOT）。account名からCODEX_HOMEへの対応は呼び出し側の**設定**（`--account-home NAME=PATH` の繰り返し指定、または同じ対応を書いたJSONファイル）で与え、依頼ファイルを組み立てる側が役割のaccount名をその対応から解決して依頼へ載せなければならない（MUST）。対応に無いaccount名は拒否しなければならず（MUST）、既定のCODEX_HOMEや別のCODEX_HOMEへ置き換えてはならない（MUST NOT）。対応表を正しく与えるのが呼び出し側の責任である。
 
@@ -21,17 +35,6 @@ TBD - created by archiving change codex-develop-role-profiles. Update Purpose af
 #### Scenario: 解決できないaccount名を指定する
 - **WHEN** profileの役割が指すaccount名が、呼び出し側が与えた対応に含まれていない
 - **THEN** 依頼ファイルを作らずに拒否し、既定のCODEX_HOMEや別のaccountのCODEX_HOMEへ倒さない
-
-### Requirement: 品質工程を維持する
-工程管理はdevelopの正本を使用し、W/R1/G/追加レビュアー/deciderの全役割をCodexへ委譲しなければならない（MUST）。レビューは別threadかつread-onlyでなければならない（MUST）。
-
-#### Scenario: 仕様に差し戻し
-- **WHEN** 独立仕様レビューが修正を要求する
-- **THEN** Claudeが正本の回数上限を確認し、Codex作業者へ修正を委譲する
-
-#### Scenario: 既存CLI経路に到達する
-- **WHEN** CodexモードでGが別レビューを要求する
-- **THEN** ClaudeがApp Serverの新しいread-only依頼を作り、codex execやClaude reviewerを呼ばない
 
 ### Requirement: provider指定で品質ワークフローを分岐させない
 仕様要否・レビュー・検証・工程順序は既存developの正本に一元化しなければならない（MUST）。Codex adapterは起動・停止・結果の受け取りと、台帳経路に限った状態確認・結果回収・実行先とownershipの管理を担当し、独自の仕様必須条件や品質ゲートを設けてはならない（MUST NOT）。前景実行では状態確認・結果回収・ownershipの管理は発生せず、adapterが担うのは起動・停止・結果の受け取りだけである。phaseは役割指示選択ラベルであり工程順序の強制ではない。
@@ -85,19 +88,3 @@ workerのcompletedやackを品質合格として扱ってはならない（MUST 
 #### Scenario: 前景実行で送信到達が不明になる
 - **WHEN** 前景実行が結果を返さずに終わり、ターンが始まったかどうかが分からない
 - **THEN** 保存された依頼からの再送は行わず、その工程をやり直す
-
-### Requirement: 委譲は前景実行の 3 手順で行う
-手動Codex開発のadapter手順書は、1 回の委譲を「その工程に限定した指示をUTF-8ファイルに書く → 前景実行のコマンドを背景実行で起動する → 完了通知で結果の JSON を読む」の 3 手順として記述しなければならない（MUST）。手順書に受領（`ack`）・送信復旧（`retry`）・run ディレクトリ・worker の台帳ディレクトリ・継続記録の操作を残してはならない（MUST NOT）。停止は起動したコマンドの停止操作で行い、Codex 専用の中断コマンドを手順書の通常経路に置いてはならない（MUST NOT）。委譲ごとに新しいスレッドを使い、前工程の成果物と必要な要約だけを引き継がなければならない（MUST）。
-
-#### Scenario: 手順書から台帳経路の操作が消えている
-- **WHEN** adapter の手順書を機械的に検索する
-- **THEN** 受領・送信復旧・run ディレクトリ・worker の台帳ディレクトリ・継続記録を指す語がいずれも見つからない
-
-#### Scenario: 1 件の委譲を行う
-- **WHEN** 本体が次の役割と工程を決めて委譲する
-- **THEN** 指示をファイルに書き、前景実行を背景で起動し、完了通知で結果の JSON を読む 3 手順で完了し、状態照会と受領の操作を行わない
-
-#### Scenario: 走行中の委譲を止める
-- **WHEN** 本体が走行中の委譲を止める必要がある
-- **THEN** 起動したコマンドを停止させることで止め、Codex 側に別の中断コマンドを要求しない
-

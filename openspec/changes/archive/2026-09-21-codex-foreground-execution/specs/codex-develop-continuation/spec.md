@@ -1,7 +1,5 @@
-# codex-develop-continuation Specification
-## Purpose
-TBD - created by archiving change codex-develop-continuation-state. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: 継続依頼は初回の Codex 設定を復元する
 この要件は run と worker の台帳を持つ経路にのみ適用する（MUST）。Codex executor の初回確定後、coordinator は既存 develop が選択した記録先（issue を優先し、issue が無い場合は Draft PR）に、旧単一設定 run では固定マーカー `<!-- codex-develop-continuation:v1 ... -->` と順序固定の必須キー `executor`、`account`、`model`、`run-dir`、`worker-state`、`cwd` を持つ1行、profile run では `<!-- codex-develop-continuation:v2 ... -->` と順序固定の必須キー `executor`、`profile`、`config-version`、`config-hash`、`run-dir`、`worker-state`、`cwd` を持つ1行の継続記録を保存しなければならない（MUST）。各値は UTF-8 の RFC 3986 パーセントエンコード（`%HH` は大文字）で表し、未知キー・重複キー・空値・改行を含む記録は不正とする。選択した記録先のコメントをコメント ID の降順で調べ、最新候補が不正なら停止、正しい場合は最新候補だけを採用し、古い候補と未選択の記録先は無視しなければならない（MUST）。引数なしの追加依頼では、その記録と run の整合性を検証したうえで同じ Codex executor と run に委譲しなければならない（MUST）。
 
@@ -48,28 +46,6 @@ v2 の config-version は1、config-hash は private run の execution_config �
 - **WHEN** 前景実行で止まった工程を再開する
 - **THEN** coordinator は継続記録を探さず、同じ役割の設定を解決し直してその工程をやり直し、Claude 実行や別アカウントへ倒さない
 
-### Requirement: 継続復元は既存 develop の品質工程を変えない
-継続設定の復元は transport の選択だけを担い、仕様要否・分割・レビュー・verify・finish/G・差戻しの条件を既存 develop と roles の正本から変更してはならない（MUST NOT）。
-
-#### Scenario: 仕様不要の追加依頼
-- **WHEN** 継続した Codex の W が既存基準に従い `仕様化判断: しない` を返す
-- **THEN** coordinator は既存 develop の実装工程へ進み、Codex adapter の仕様必須や独自承認を要求しない
-
-#### Scenario: 継続した案件のレビュー
-- **WHEN** 追加依頼を含む案件が通常のレビューまたは finish/G に到達する
-- **THEN** coordinator は既存 develop のレビュー・代理操作・ゲート条件を適用し、transport 完了を品質承認として扱わない
-
-### Requirement: 継続復元の回帰を検証する
-実装は設定復元、復元不能時の停止、追加依頼の委譲先固定を自動テストで検証しなければならない（MUST）。また、追加依頼を1回以上含む案件を公開 PR の finish/G まで実測し、その結果を記録しなければならない（MUST）。
-
-#### Scenario: 回帰テストが3つの境界を固定する
-- **WHEN** 継続機能のテストスイートを実行する
-- **THEN** 初回設定の復元、復元不能時の停止、追加依頼の同一委譲先固定がそれぞれ成功し、既存テストも成功する
-
-#### Scenario: 公開 PR 完走を記録する
-- **WHEN** 初回依頼の後に追加依頼を投入した一件を公開 PR の finish/G まで実行する
-- **THEN** 実行コマンド、対象 HEAD、追加依頼が同一設定へ委譲された証拠、finish/G の結果を記録する
-
 ### Requirement: coordinator と担当者の責務境界を守る
 coordinator は記録先の選択、GitHub コメントの取得・保存、LLM ログの取得を担わなければならない（MUST）。継続記録の生成・解析と run の整合性検証は、継続記録を持つ経路でのみ coordinator が担う（MUST）。GitHub 操作と commit/push は、その権限を持つ役（workspace-write role の担当者）が worker の中で自分で完了しなければならない（MUST）。coordinator がこれらを代理してよいのは、capability `codex-worker` の「揃えられなかった項目を項目ごとに記録する」で記録された項目に限る（MUST）。担当者は固定された executor/account/model（台帳経路の run は run-dir、profile run は同一 snapshot の当該役割の executor/account/model/effort、前景実行は依頼ファイルへ固定した当該役割の executor/account/model/effort）による調査・修正・レビューを行い、結果とテスト証跡を返さなければならない（MUST）。coordinator は担当者の調査・修正・レビューを代行してはならない（MUST NOT）。read-only role の担当者は GitHub へ書き込んではならず（MUST NOT）、そのレビュー結果は coordinator が既存書式で代理投稿しなければならない（MUST）。担当者は LLM ログの取得を行ってはならない（MUST NOT）。この境界は Codex 専用の仕様必須・承認台帳・check/archive ゲートを追加してはならない（MUST NOT）。
 
@@ -92,4 +68,3 @@ coordinator は記録先の選択、GitHub コメントの取得・保存、LLM 
 #### Scenario: 前景実行では run の整合性検証が発生しない
 - **WHEN** 前景実行で委譲を行う
 - **THEN** coordinator は継続記録の生成・解析と run の整合性検証を行わず、記録先の選択・コメントの取得と保存・LLM ログの取得は従来どおり担う
-
