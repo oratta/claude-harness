@@ -16,9 +16,11 @@ version: 2.1.0
 
 旧スキル（issue 限定の入口で、本体が自分で Step A〜D を実行する手順書だったもの）の後継。反転した理由は 1 つで、Claude Code のサブエージェントは Agent ツールを持たない（孫を spawn できない）ため、本体向けの手順書をサブエージェントに渡すと仕様レビュー・別コンテキストの PR レビュー・fable 昇格がすべて自己レビューに退化するから。別コンテキストを要する工程は**すべて本体が起こす**。
 
-## Codexを明示した手動実行
+## Role profile を明示した手動実行
 
-`--executor codex`（`--profile NAME` か旧形式の `--account NAME --model MODEL`）のときは `${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこのSKILL.mdから `../../references/codex-develop.md`）を絶対パスに解決してReadし、この正本の工程順・役割・レビュー条件を維持したままspawn/再開のprovider操作を置換する。置換後の委譲は「担当工程に限定した指示をファイルに書く → `codex-develop.py request` で依頼ファイルを作り `codex-worker.py run` をBashツールの背景実行で起こす → 完了通知で標準出力の1行JSONを読む」の3手順で、Claudeのサブエージェントのspawnに対応する。前景実行は台帳もjob IDも残さないため SendMessage に当たる再開が無く、途切れた工程はその3手順を最初からやり直す。台帳を持つ旧経路（`submit` / `status` / `ack`）も残っているが、1つの委譲を両経路にまたがせない。Claude Agent・Codex execの前提表はこのモードには適用しない。モデルは明示されたCodex ID、全役割をApp Serverへ委譲する。仕様化判断・不要時の実装直行・レビュー・検証・順序は以下の同じ正本を使い、provider adapter側に独自ゲートを置かない。未指定の通常実行は以下の既存規則どおり。
+`--profile NAME [--profile-file PATH]` または旧形式の Codex account/model を明示したときは、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこの SKILL.md から `../../references/codex-develop.md`）を絶対パスに解決して Read する。各委譲の直前に adapter から canonical role の per-role execution result を取得し、provider 操作は同 reference の「role 解決直後の一度だけの分岐」に従う。事前分類に当たる R1 または G が要求したレビュアーは、対象 role の entry ではなく profile の `decider` entry（executor/account/model）を使い、`subagent_type: dev-workflow:decider` として起動する。この SKILL.md はその分岐を再掲せず、工程順、role、review 条件、return 契約、次工程の判断だけを正本として維持する。
+
+名前付き profile では profile role ごとに thread と requested tuple / applied model / reason を記録する。同じ Claude profile role を再開する直前に毎回現在の `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` 上限を再確認し、既存 applied model が上限内のときだけ SendMessage する。上限を超える場合は SendMessage せず、既存の工程完了または停止確認条件を満たしてから requested tuple を変えずに capped model の fresh thread へ成果物と必要な要約を手渡す。profile role の境界、独立 review、Codex 委譲も fresh thread とする。以下の spawn / SendMessage 表記は、profile 利用時にはこの規則を適用した provider 操作を意味する。旧台帳経路も互換性のため残るが、1つの委譲を複数 transport にまたがせない。
 
 ## いつ使うか
 

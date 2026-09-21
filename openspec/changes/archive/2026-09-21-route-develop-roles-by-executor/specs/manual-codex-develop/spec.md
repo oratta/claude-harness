@@ -1,8 +1,5 @@
-# manual-codex-develop Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change codex-develop-role-profiles. Update Purpose after archive.
-## Requirements
 ### Requirement: 手動で実行先とアカウントを固定する
 手動開発は旧形式の Codex account/model、または名前付き profile の役割別 executor/account/model/effort を委譲ごとに解決しなければならない（MUST）。role resolver は profile にある要求 tuple を変更せず返さなければならない（MUST）。前景実行では、Claude role は account=current と要求された Claude tier を保持し、既存の残量モードを適用した実効 model で Agent を起動する。Codex role は account 名を呼び出し側の設定から CODEX_HOME へ解決して依頼ファイルへ固定しなければならない（MUST）。profile と旧 account/model の同時指定を拒否し、どちらの executor が失敗しても他方へ fallback してはならない（MUST NOT）。Codex account 名から CODEX_HOME への対応は `--account-home NAME=PATH` の繰り返し指定、または同じ対応を書いた JSON ファイルで与え、対応に無い Codex account は拒否しなければならない（MUST）。
 
@@ -48,44 +45,6 @@ TBD - created by archiving change codex-develop-role-profiles. Update Purpose af
 - **WHEN** 正本が要求する検証で失敗する
 - **THEN** 本体と担当役割は既存 develop の差戻し規則に従い、adapter に別の検証手順や承認台帳を作らない
 
-### Requirement: 輸送結果を品質承認にしない
-workerのcompletedやackを品質合格として扱ってはならない（MUST NOT）。本体は最終回答とerror_kindを確認して既存developのレビュー記録/判断契約へ渡さなければならない（MUST）。workerの認証とread-onlyの強制は経路によらず維持しなければならない（MUST）。ownershipとunknown時再実行禁止は台帳経路の要件として維持しなければならない（MUST）。前景実行はownershipを持たず、結果が不明な委譲はその工程をやり直す（MUST）。
-
-#### Scenario: 途中APPROVEと最終差戻し
-- **WHEN** commentaryにAPPROVEがあり最終回答はREQUEST_CHANGESである
-- **THEN** workerは最終回答を回収し、本体は既存レビュー契約で差戻しを扱う
-
-#### Scenario: 実行エラーを伴う結果
-- **WHEN** 結果に認証変更や未対応要求のerror_kindがある
-- **THEN** 本体は品質承認として記録せず、実行失敗として扱う
-
-#### Scenario: 前景実行の結果が得られないまま終わる
-- **WHEN** 前景実行が結果のJSONを返す前に終了する
-- **THEN** 本体は同じ依頼を再送せず、記録先と作業ディレクトリを見てその工程をやり直す
-
-### Requirement: 保存依頼のまま送信を復旧する
-この要件は台帳経路にのみ適用する（MUST）。送信到達が不明なpendingは、保存requestのrequest_id/cwd/roleとpendingに固定したexecutor/account/model/effortおよびpayload hashが一致する場合に限り同じ依頼をidempotent submitできなければならない（MUST）。旧run/pendingは単一account/modelとeffort省略を読み取り互換で扱い、既存payload/hashを変更してはならない（MUST NOT）。retry時にpromptを再生成したり新しいrequest_idを割り当ててはならない（MUST NOT）。前景実行はpendingを保存しないので、この復旧経路を持ってはならない（MUST NOT）。
-
-#### Scenario: 旧版pendingが送信前に失敗した
-- **WHEN** 保存済みrequestがありworkerに結果が存在するか不明な旧runでretryする
-- **THEN** 旧identity情報の一致を確認して元のrequestをそのまま送信し、effortや設定版を後付けせず旧品質metadataを工程条件にしない
-
-#### Scenario: 結果が既に存在する
-- **WHEN** 同じrequest_idの結果がworkerに保存済みである
-- **THEN** 同一ジョブを回収し、重複実行せず受領後にackできる。ただしunknownのack/置換は禁止する
-
-#### Scenario: 保存依頼のaccountが一致しない
-- **WHEN** 保存requestの固定設定がpendingの当該役割と一致しない（旧runは旧account/model/cwd/request_idの不一致）
-- **THEN** retryを拒否し、依頼を再生成して別ジョブとして送らない
-
-#### Scenario: 役割によって設定が異なる
-- **WHEN** profile run のレビュー役が作業役とは異なるaccount/model/effortを持つ
-- **THEN** retryはレビューpendingの固定値を照合し、run全体の単一account/modelを要求しない
-
-#### Scenario: 前景実行で送信到達が不明になる
-- **WHEN** 前景実行が結果を返さずに終わり、ターンが始まったかどうかが分からない
-- **THEN** 保存された依頼からの再送は行わず、その工程をやり直す
-
 ### Requirement: 委譲は前景実行の 3 手順で行う
 手動 adapter 手順書は、role の設定を解決した直後に executor で一度だけ分岐しなければならない（MUST）。新規の Claude role は canonical role の Agent 呼び出しを使う。Codex role の 1 回の委譲は「その工程に限定した指示を UTF-8 ファイルに書く → `codex-develop.py request` で依頼ファイルを作り `codex-worker.py run` を前景コマンドとして起動する → 完了通知で結果の JSON を読む」の 3 手順で行わなければならない（MUST）。手順書に受領（`ack`）・送信復旧（`retry`）・run ディレクトリ・worker の台帳ディレクトリ・継続記録の操作を通常経路として戻してはならない（MUST NOT）。停止は Claude では起動した Agent、Codex では起動したコマンドの停止操作で行い、旧台帳または Codex 専用の中断コマンドを通常経路に置いてはならない（MUST NOT）。
 
@@ -97,7 +56,7 @@ workerのcompletedやackを品質合格として扱ってはならない（MUST 
 
 #### Scenario: Claude role を委譲する
 - **WHEN** role resolver が executor=claude と account=current、Claude tier、effort を返す
-- **THEN** Codex request を作らず、返された model を要求 model として保持し、残量モード適用後の model で canonical role を Agent に委譲する。`decider` role は `subagent_type: dev-workflow:decider`、他の role は `general-purpose` とし、`exhausted` で適用 model が `opus` に下がっても `decider` の subagent_type は変えない。effort は監査情報として保持するだけで Agent の引数に変換しない
+- **THEN** Codex request を作らず、返された model を要求 model として保持し、残量モード適用後の model で canonical role を Agent に委譲し、effort は監査情報として保持するだけで Agent の引数に変換しない
 
 #### Scenario: Codex role を委譲する
 - **WHEN** role resolver が executor=codex を返す

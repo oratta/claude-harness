@@ -59,7 +59,7 @@ def format_continuation_record(values):
     else:
         raise ContinuationError('continuation keys must match exactly one supported version')
     if values.get('executor') != 'codex':
-        raise ContinuationError('continuation executor must be codex')
+        raise ContinuationError('continuation supports only executor=codex')
     encoded = ' '.join(f'{key}={_continuation_encode(values[key])}' for key in keys)
     return f'{CONTINUATION_PREFIXES[version]}{encoded} -->'
 
@@ -87,7 +87,7 @@ def parse_continuation_record(line):
             raise ContinuationError('invalid continuation keys')
         values[key] = _continuation_decode(encoded)
     if values['executor'] != 'codex':
-        raise ContinuationError('continuation executor must be codex')
+        raise ContinuationError('continuation supports only executor=codex')
     return values
 
 
@@ -255,6 +255,29 @@ def account_homes(pairs, path):
     return clean
 
 
+def validate_role_entry(role, entry, accounts=None, *, source='profile role'):
+    if not isinstance(entry, dict) or set(entry) != {'executor', 'account', 'model', 'effort'}:
+        raise RuntimeError(f'{source} {role} has invalid fields')
+    if any(not isinstance(entry[key], str) or not entry[key] for key in entry):
+        raise RuntimeError(f'{source} {role} has an empty or non-string value')
+    executor = entry['executor']
+    if executor not in {'claude', 'codex'}:
+        raise RuntimeError(f'{source} {role} executor must be claude or codex')
+    if executor == 'codex':
+        if accounts is not None and entry['account'] not in accounts:
+            raise RuntimeError(f'{source} {role} account is not registered')
+    else:
+        if entry['account'] != 'current':
+            raise RuntimeError(
+                f'{source} {role}: different Claude account execution is not supported yet')
+        if entry['model'] not in {'haiku', 'sonnet', 'opus', 'fable'}:
+            raise RuntimeError(
+                f'{source} {role} Claude model must be one of haiku, sonnet, opus, fable')
+        if entry['model'] == 'fable' and role != 'decider':
+            raise RuntimeError(f'{source} {role}: fable is only supported for decider')
+    return dict(entry)
+
+
 def load_profile(name, profile_file, accounts):
     source = Path(profile_file).expanduser().resolve() if profile_file else ROOT / 'references/codex-role-profiles.json'
     try:
@@ -275,16 +298,7 @@ def load_profile(name, profile_file, accounts):
         raise RuntimeError('profile roles are incomplete or unknown')
     clean = {}
     for role in CANONICAL_ROLES:
-        entry = roles[role]
-        if not isinstance(entry, dict) or set(entry) != {'executor', 'account', 'model', 'effort'}:
-            raise RuntimeError(f'profile role {role} has invalid fields')
-        if any(not isinstance(entry[key], str) or not entry[key] for key in entry):
-            raise RuntimeError(f'profile role {role} has an empty or non-string value')
-        if entry['executor'] != 'codex':
-            raise RuntimeError(f'profile role {role} executor must be codex')
-        if entry['account'] not in accounts:
-            raise RuntimeError(f'profile role {role} account is not registered')
-        clean[role] = dict(entry)
+        clean[role] = validate_role_entry(role, roles[role], accounts)
     if clean['review'] != clean['impl-review']:
         raise RuntimeError('profile review must equal impl-review')
     return {'version': 1, 'profile': name, 'roles': clean}
@@ -299,10 +313,10 @@ def validate_execution_config(state):
             set(config.get('roles', {})) != set(CANONICAL_ROLES)):
         raise RuntimeError('execution config mismatch')
     for role, entry in config['roles'].items():
-        if (not isinstance(entry, dict) or set(entry) != {'executor', 'account', 'model', 'effort'} or
-                entry.get('executor') != 'codex' or
-                any(not isinstance(value, str) or not value for value in entry.values())):
-            raise RuntimeError(f'execution config role {role} mismatch')
+        try:
+            validate_role_entry(role, entry, source='execution config role')
+        except RuntimeError as exc:
+            raise RuntimeError(f'execution config role {role} mismatch: {exc}') from exc
     if config['roles']['review'] != config['roles']['impl-review']:
         raise RuntimeError('execution config review must equal impl-review')
     if state.get('execution_config_hash') != execution_config_hash(config):
@@ -434,6 +448,11 @@ def build_request(args):
     role = PHASES[args.phase][0]
     execution = resolve_execution(state, role)
     head = git(str(cwd), 'rev-parse', 'HEAD')
+    if execution['executor'] == 'claude':
+        return {'status': 'agent-required', 'phase': args.phase, 'role': role,
+                'executor': execution['executor'], 'account': execution['account'],
+                'model': execution['model'], 'effort': execution.get('effort'),
+                'head': head}
     request = dict(request_id='develop-' + uuid.uuid4().hex, origin='manual',
                    account=execution['account'], model=execution['model'], cwd=str(cwd), role=role,
                    codex_home=mapping[execution['account']],
@@ -445,7 +464,8 @@ def build_request(args):
     out = Path(args.out).expanduser().resolve()
     write(out, request)
     return {'status': 'request-written', 'request': str(out), 'request_id': request['request_id'],
-            'phase': args.phase, 'role': role, 'account': execution['account'],
+            'phase': args.phase, 'role': role, 'executor': execution['executor'],
+            'account': execution['account'],
             'codex_home': request['codex_home'], 'model': execution['model'],
             'effort': execution.get('effort'), 'head': head}
 
@@ -538,6 +558,9 @@ def main():
             instructions = Path(args.input).read_text()
             role = PHASES[args.phase][0]
             execution = resolve_execution(state, role)
+            if execution['executor'] == 'claude':
+                raise RuntimeError(
+                    'legacy dispatch cannot run Claude roles; use the foreground provider route')
             request = dict(origin='manual', account=execution['account'], model=execution['model'],
                            cwd=state['cwd'], role=role, prompt=prompt(args.phase, 'Dispatch HEAD: ' + head + '\n' + instructions, state))
             if 'effort' in execution:
