@@ -1,9 +1,9 @@
 ## 1. ターン実行を記録先から切り離す（既存経路を壊さない）
 
-- [ ] 1.1 `plugins/dev-workflow/scripts/codex-worker.py` の `worker()` から、app-server と会話してターンを完走させる部分（`initialize` → `account/read` → `advertised_model` → `account/rateLimits/read` → `thread/start` → `turn/start` → 完了待ち）を関数として切り出す
-- [ ] 1.2 切り出した関数が台帳に直接触れないようにする。台帳の読み書きだった 4 種（毎 RPC のハートビートと中止判定、thread / turn の ID の記録、実効設定の観測、usage の更新）を、呼び出し側が渡す記録先オブジェクトのメソッドにする
-- [ ] 1.3 台帳経路の記録先を既存の `db` 操作（`heartbeat` の `ledger_no_longer_running` / `update(db, job, ...)` / `observe_execution(db, job, ...)` / `jobs.cancel` の読み取り）で実装し、`worker()` がそれを渡す形に直す
-- [ ] 1.4 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py` を実行し、既存テストが全件通ること（回帰なし）を exit code 付きで確認する
+- [x] 1.1 `plugins/dev-workflow/scripts/codex-worker.py` の `worker()` から、app-server と会話してターンを完走させる部分（`initialize` → `account/read` → `advertised_model` → `account/rateLimits/read` → `thread/start` → `turn/start` → 完了待ち）を関数として切り出す
+- [x] 1.2 切り出した関数が台帳に直接触れないようにする。台帳の読み書きだった 4 種（毎 RPC のハートビートと中止判定、thread / turn の ID の記録、実効設定の観測、usage の更新）を、呼び出し側が渡す記録先オブジェクトのメソッドにする
+- [x] 1.3 台帳経路の記録先を既存の `db` 操作（`heartbeat` の `ledger_no_longer_running` / `update(db, job, ...)` / `observe_execution(db, job, ...)` / `jobs.cancel` の読み取り）で実装し、`worker()` がそれを渡す形に直す
+- [x] 1.4 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py` を実行し、既存テストが全件通ること（回帰なし）を exit code 付きで確認する
 
 ## 2. 前景実行のテストを先に書く（Red）
 

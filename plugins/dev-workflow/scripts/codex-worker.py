@@ -499,16 +499,178 @@ def final_answer(items):
     return text
 
 
+class TurnState:
+    # Two different facts, and the job's terminal state depends on which one holds:
+    # submitted means the request went out, so the model may already be running and a failure
+    # afterwards is uncertainty (unknown); accepted means the server answered with a turn id,
+    # so an error before it proves no turn ever started (failed).
+    def __init__(self):
+        self.submitted = False
+        self.accepted = False
+        self.confirmed = False
+        self.thread_id = None
+        self.turn_id = None
+        self.usage = None
+
+
+class LedgerRecorder:
+    # The ledger path: every observation lands in the job row, and the deadline for an
+    # interrupt starts once the server has answered it.
+    grace = 20
+    single_deadline = False
+
+    def __init__(self, db, job):
+        self.db = db
+        self.job = job
+
+    def tick(self):
+        current = self.db.execute('SELECT status FROM jobs WHERE id=?', (self.job,)).fetchone()
+        require(current and current['status'] == 'running', 'ledger_no_longer_running')
+        update(self.db, self.job)
+
+    def poll(self):
+        current = self.db.execute('SELECT status,cancel FROM jobs WHERE id=?', (self.job,)).fetchone()
+        require(current and current['status'] == 'running', 'ledger_no_longer_running')
+        update(self.db, self.job)
+        return current['cancel']
+
+    def record_thread(self, thread):
+        update(self.db, self.job, thread_id=thread)
+
+    def record_turn(self, turn):
+        update(self.db, self.job, turn_id=turn)
+
+    def record_usage(self, usage):
+        update(self.db, self.job, usage=json.dumps(usage))
+
+    def observe(self, **observations):
+        observe_execution(self.db, self.job, **observations)
+
+    def inflight(self, account):
+        # Legacy jobs predate account_slots, so never count fewer than this job itself.
+        return max(occupied_slots(account['account_id_hash']), 1)
+
+    def account_effective(self, payload, observed):
+        return payload['account']
+
+    def begin_grace(self, now):
+        pass
+
+    def budget(self):
+        return None
+
+
+def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
+    # One app-server turn, from handshake to terminal status. Everything that used to read or
+    # write the ledger goes through the recorder, so a caller that keeps no records can reuse
+    # this unchanged. Returns (status, text, error_kind); text is None when it must not be set.
+    sandbox = ROLES[payload['role']]
+    rpc.tick = recorder.tick
+    rpc.request('initialize', {'clientInfo': {'name': 'harness-worker', 'version': '1'}})
+    rpc.send({'method': 'initialized', 'params': {}})
+    observed = rpc.request('account/read', {'refreshToken': False}).get('account') or {}
+    require(observed.get('type') == 'chatgpt' and observed.get('email') and
+            digest(observed['email'].strip().lower().encode()) == account['identity'], 'server_identity_mismatch')
+    recorder.observe(executor=('codex', 'transport:codex-app-server'),
+                     account=(recorder.account_effective(payload, observed), 'account/read:account.email'))
+    runtime_identity_matches(runtime, account)
+    advertised_model(rpc, payload['model'], payload.get('effort'))
+    limits = rpc.request('account/rateLimits/read', {})
+    # Count after the reply: a slot reserved while the read was in flight must enter this judgment.
+    inflight = recorder.inflight(account)
+    quota_available(limits, account['quota_margin_pct'], inflight)
+    thread_result = rpc.request('thread/start', {'cwd': cwd, 'model': payload['model'],
+        'sandbox': sandbox, 'approvalPolicy': 'never', 'modelProvider': 'openai'})['thread']
+    thread = thread_result['id']
+    state.thread_id = thread
+    recorder.record_thread(thread)
+    recorder.observe(model=(thread_result.get('model'), 'thread/start:result.thread.model'),
+                     effort=(thread_result.get('effort'), 'thread/start:result.thread.effort'))
+    if recorder.poll():
+        return ('interrupted', None, 'cancelled_before_turn')
+    network = payload['role'] in NETWORK_ROLES
+    # dangerFullAccess carries no fields: there is nothing to limit once the sandbox is
+    # gone, so writableRoots and the /tmp exclusions do not appear for the writers.
+    policy = ({'type': 'readOnly', 'networkAccess': network} if sandbox == 'read-only'
+              else {'type': 'dangerFullAccess'})
+    state.submitted = True
+    turn_params = {'threadId': thread, 'model': payload['model'],
+        'sandboxPolicy': policy, 'approvalPolicy': 'never',
+        'input': [{'type': 'text', 'text': payload['prompt']}]}
+    if 'effort' in payload:
+        turn_params['effort'] = payload['effort']
+    turn_result = rpc.request('turn/start', turn_params)['turn']
+    turn = turn_result['id']
+    state.accepted = True
+    state.turn_id = turn
+    recorder.record_turn(turn)
+    recorder.observe(model=(turn_result.get('model'), 'turn/start:result.turn.model'),
+                     effort=(turn_result.get('effort'), 'turn/start:result.turn.effort'))
+    cancel_sent = False
+    cancel_at = None
+    activity = False
+    while True:
+        cancel = recorder.poll()
+        try:
+            runtime_identity_matches(runtime, account)
+            changed = False
+        except Exception:
+            changed = True
+        cancel = cancel or rpc.unsupported or changed
+        if cancel and cancel_at is None and recorder.single_deadline:
+            # One deadline covering the interrupt and the completion after it, started where the
+            # cancel is first seen, so an interrupt that never answers cannot extend the wait.
+            cancel_at = time.monotonic()
+            recorder.begin_grace(cancel_at)
+        if cancel and activity and not cancel_sent:
+            try:
+                rpc.request('turn/interrupt', {'threadId': thread, 'turnId': turn}, tick=False)
+            except Rejected:
+                # Under one deadline a failed interrupt still ends as interrupt_unconfirmed.
+                if not recorder.single_deadline:
+                    raise
+            cancel_sent = True
+            if cancel_at is None:
+                cancel_at = time.monotonic()
+        if cancel and cancel_at is None:
+            cancel_at = time.monotonic()
+        if cancel_at is not None and time.monotonic()-cancel_at > recorder.grace:
+            raise Rejected('interrupt_unconfirmed')
+        try:
+            msg = rpc.buffer.pop(0) if rpc.buffer else rpc.receive(.25)
+        except queue.Empty:
+            continue
+        params = msg.get('params', {})
+        if params.get('threadId') != thread:
+            continue
+        if params.get('turnId') == turn:
+            activity = True
+            if msg.get('method') == 'thread/tokenUsage/updated':
+                state.usage = params.get('tokenUsage')
+                recorder.record_usage(state.usage)
+        if msg.get('method') == 'turn/completed' and params.get('turn', {}).get('id') == turn:
+            status = params['turn']['status']
+            require(status in TERMINAL, 'unsupported_terminal')
+            state.confirmed = True
+            items = params['turn'].get('items', [])
+            if status == 'completed' and not any(i.get('type') == 'agentMessage' and i.get('phase') == 'final_answer' for i in items):
+                stored = rpc.request('thread/read', {'threadId': thread, 'includeTurns': True})
+                items = [i for t in stored['thread']['turns'] if t['id'] == turn for i in t.get('items', [])]
+            text = ''
+            if status == 'completed':
+                try:
+                    text = final_answer(items)
+                except Rejected as error:
+                    # Execution is terminal, but ambiguous output cannot authorize a quality gate.
+                    return ('failed', '', str(error))
+            return (status, text, 'auth_profile_changed' if changed else
+                    'unsupported_server_request' if rpc.unsupported else None)
+
+
 def worker(directory, job):
     db = db_open(directory)
     rpc = None
-    # Two different facts, and the job's terminal state depends on which one holds:
-    # turn_submitted means the request went out, so the model may already be running and
-    # a failure afterwards is uncertainty (unknown); turn_accepted means the server
-    # answered with a turn id, so an error before it proves no turn ever started (failed).
-    turn_submitted = False
-    turn_accepted = False
-    execution_confirmed = False
+    state = TurnState()
     runtime = None
     claimed = False
     try:
@@ -527,118 +689,26 @@ def worker(directory, job):
         common = git_common_dir(row['cwd'])
         runtime = runtime_home(directory, job, account['home'], row['cwd'], common)
         runtime_identity_matches(runtime, account)
-        sandbox = ROLES[payload['role']]
         rpc = Rpc(str(runtime), row['cwd'])
-        def heartbeat():
-            current = db.execute('SELECT status FROM jobs WHERE id=?', (job,)).fetchone()
-            require(current and current['status'] == 'running', 'ledger_no_longer_running')
-            update(db, job)
-        rpc.tick = heartbeat
-        rpc.request('initialize', {'clientInfo': {'name': 'harness-worker', 'version': '1'}})
-        rpc.send({'method': 'initialized', 'params': {}})
-        observed = rpc.request('account/read', {'refreshToken': False}).get('account') or {}
-        require(observed.get('type') == 'chatgpt' and observed.get('email') and
-                digest(observed['email'].strip().lower().encode()) == account['identity'], 'server_identity_mismatch')
-        observe_execution(db, job, executor=('codex', 'transport:codex-app-server'),
-                          account=(payload['account'], 'account/read:account.email'))
-        runtime_identity_matches(runtime, account)
-        advertised_model(rpc, payload['model'], payload.get('effort'))
-        limits = rpc.request('account/rateLimits/read', {})
-        # Count after the reply: a slot reserved while the read was in flight must enter this judgment.
-        # Legacy jobs predate account_slots, so never count fewer than this job itself.
-        inflight = max(occupied_slots(account['account_id_hash']), 1)
-        quota_available(limits, account['quota_margin_pct'], inflight)
-        thread_result = rpc.request('thread/start', {'cwd': row['cwd'], 'model': payload['model'],
-            'sandbox': sandbox, 'approvalPolicy': 'never', 'modelProvider': 'openai'})['thread']
-        thread = thread_result['id']
-        update(db, job, thread_id=thread)
-        observe_execution(db, job,
-                          model=(thread_result.get('model'), 'thread/start:result.thread.model'),
-                          effort=(thread_result.get('effort'), 'thread/start:result.thread.effort'))
-        if db.execute('SELECT cancel FROM jobs WHERE id=?', (job,)).fetchone()[0]:
-            update(db, job, status='interrupted', error_kind='cancelled_before_turn')
-            return
-        network = payload['role'] in NETWORK_ROLES
-        # dangerFullAccess carries no fields: there is nothing to limit once the sandbox is
-        # gone, so writableRoots and the /tmp exclusions do not appear for the writers.
-        policy = ({'type': 'readOnly', 'networkAccess': network} if sandbox == 'read-only'
-                  else {'type': 'dangerFullAccess'})
-        turn_submitted = True
-        turn_params = {'threadId': thread, 'model': payload['model'],
-            'sandboxPolicy': policy, 'approvalPolicy': 'never',
-            'input': [{'type': 'text', 'text': payload['prompt']}]}
-        if 'effort' in payload:
-            turn_params['effort'] = payload['effort']
-        turn_result = rpc.request('turn/start', turn_params)['turn']
-        turn = turn_result['id']
-        turn_accepted = True
-        update(db, job, turn_id=turn)
-        observe_execution(db, job,
-                          model=(turn_result.get('model'), 'turn/start:result.turn.model'),
-                          effort=(turn_result.get('effort'), 'turn/start:result.turn.effort'))
-        cancel_sent = False
-        cancel_at = None
-        activity = False
-        while True:
-            current = db.execute('SELECT status,cancel FROM jobs WHERE id=?', (job,)).fetchone()
-            require(current['status'] == 'running', 'ledger_no_longer_running')
-            update(db, job)
-            try:
-                runtime_identity_matches(runtime, account)
-                changed = False
-            except Exception:
-                changed = True
-            cancel = current['cancel'] or rpc.unsupported or changed
-            if cancel and activity and not cancel_sent:
-                rpc.request('turn/interrupt', {'threadId': thread, 'turnId': turn})
-                cancel_sent = True
-                cancel_at = time.monotonic()
-            if cancel and cancel_at is None:
-                cancel_at = time.monotonic()
-            if cancel_at and time.monotonic()-cancel_at > 20:
-                raise Rejected('interrupt_unconfirmed')
-            try:
-                msg = rpc.buffer.pop(0) if rpc.buffer else rpc.receive(.25)
-            except queue.Empty:
-                continue
-            params = msg.get('params', {})
-            if params.get('threadId') != thread:
-                continue
-            if params.get('turnId') == turn:
-                activity = True
-                if msg.get('method') == 'thread/tokenUsage/updated':
-                    update(db, job, usage=json.dumps(params.get('tokenUsage')))
-            if msg.get('method') == 'turn/completed' and params.get('turn', {}).get('id') == turn:
-                status = params['turn']['status']
-                require(status in TERMINAL, 'unsupported_terminal')
-                execution_confirmed = True
-                items = params['turn'].get('items', [])
-                if status == 'completed' and not any(i.get('type') == 'agentMessage' and i.get('phase') == 'final_answer' for i in items):
-                    stored = rpc.request('thread/read', {'threadId': thread, 'includeTurns': True})
-                    items = [i for t in stored['thread']['turns'] if t['id'] == turn for i in t.get('items', [])]
-                text = ''
-                if status == 'completed':
-                    try:
-                        text = final_answer(items)
-                    except Rejected as error:
-                        # Execution is terminal, but ambiguous output cannot authorize a quality gate.
-                        update(db, job, status='failed', text='', error_kind=str(error))
-                        return
-                update(db, job, status=status, text=text,
-                       error_kind='auth_profile_changed' if changed else 'unsupported_server_request' if rpc.unsupported else None)
-                return
+        status, text, error_kind = run_turn(rpc, LedgerRecorder(db, job), payload, account,
+                                            runtime, row['cwd'], state)
+        values = {'status': status, 'error_kind': error_kind}
+        if text is not None:
+            values['text'] = text
+        update(db, job, **values)
+        return
     except Exception as error:
         if db.in_transaction:
             db.execute('ROLLBACK')
         # Exception text is deliberately not persisted (it may contain credentials).
         kind = str(error) if isinstance(error, Rejected) else type(error).__name__
         if claimed:
-            if isinstance(error, ServerRejected) and not turn_accepted:
+            if isinstance(error, ServerRejected) and not state.accepted:
                 # The server answered the start request, so no turn is running; record the code.
                 update(db, job, status='failed', error_kind='server_rejected_start_'+str(error.code))
             else:
                 # A confirmed terminal turn is not uncertainty, whatever failed afterwards.
-                update(db, job, status='unknown' if turn_submitted and not execution_confirmed else 'failed',
+                update(db, job, status='unknown' if state.submitted and not state.confirmed else 'failed',
                        error_kind=kind)
     finally:
         try:
@@ -646,10 +716,8 @@ def worker(directory, job):
                 rpc.close()
         finally:
             if runtime:
-                # The runtime's link to the authentication profile never outlives the job.
-                (runtime/'auth.json').unlink(missing_ok=True)
+                discard_runtime(runtime)
             db.close()
-
 
 def command(args):
     db = db_open(args.state_dir)
