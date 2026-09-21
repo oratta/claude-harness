@@ -6,30 +6,25 @@
 
 `/dev-workflow:develop --executor codex --profile codex-standard <issue URLまたは依頼>`
 
-旧形式は `--account NAME --model MODEL`。profileとは併用しない。外部設定は `--profile NAME --profile-file /absolute/profiles.json` とし、version 1、全canonical role、登録済みaccountを必要とする。たとえば各roleの値は `{"executor":"codex","account":"spare","model":"MODEL","effort":"high"}` で、設定全体はinit時にrunへsnapshotされる。
+外部設定は `--profile NAME --profile-file /absolute/profiles.json` とし、version 1、全canonical role、呼び出し側の対応表に載るaccountを必要とする。各roleの値は `{"executor":"codex","account":"spare","model":"MODEL","effort":"high"}` の形で、委譲のたびに解決して依頼ファイルへ固定する（runへのsnapshotは持たない）。
 
-既存登録accountを指定する。`docs/codex-develop.md` に導入方法を示す。人間の手動入口専用で、burn窓やcron/tickを要求しない。workerの認証・利用上限・権限拒否はそのまま停止理由とする。Codexが使えないときClaudeで代行しない。
-
-## 継続記録
-
-初回の Codex 設定を確定した coordinator は、既存 develop が選んだ記録先だけに次の固定 1 行を保存する。issue があれば issue を優先し、issue が無い場合だけ Draft PR を使う。別の記録先を横断検索してはならない。
-
-```text
-<!-- codex-develop-continuation:v1 executor=codex account=<value> model=<value> run-dir=<value> worker-state=<value> cwd=<value> -->
-<!-- codex-develop-continuation:v2 executor=codex profile=<value> config-version=1 config-hash=<sha256> run-dir=<value> worker-state=<value> cwd=<value> -->
-```
-
-v1は旧単一設定run、v2はprofile run専用。値とキー順は固定で、版混在でもコメントIDが最新の一意な候補だけを採用する。最新が不正/未知版なら古い記録へ戻らない。v2はprofile、config-version、snapshotのcanonical JSON SHA-256をrun.jsonと照合し、外部設定を再読込しない。両版ともrun-dirの所有権・0700とパスを検証する。復元できない場合は停止し、Claude・別Codex・別runへfallbackしない。
-
-機械処理は `scripts/codex-develop.py` の `format_continuation_record(values)`、`parse_continuation_record(line)`、`select_continuation_record(comments)`、`validate_continuation(record, run_dir)` を使う。これらは GitHub API を呼ばず、コメント取得・保存は coordinator の責務である。記録や run の検証成功は品質承認・verify・finish/G の代替ではない。
+account名からCODEX_HOMEへの対応は呼び出し側の設定で与える。`--account-home NAME=PATH` の繰り返しか、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを `--account-home-file PATH` で渡す。2つの与え方の併用は拒否し、合成も優先もしない。値が絶対パスでない、またはディレクトリとして存在しないときも拒否する。対応に無いaccount名は依頼ファイルを作らずに拒否し、既定や別のCODEX_HOMEへ倒さない。`docs/codex-develop.md` に導入方法を示す。人間の手動入口専用で、burn窓やcron/tickを要求しない。workerの認証・利用上限・権限拒否はそのまま停止理由とする。Codexが使えないときClaudeで代行しない。
 
 ## 本体が行う操作
 
-1. develop入口0で記録先を確定し、対象repoのOrca等のルールで専用worktreeを用意する。CLIツール自身はworktreeを作らない。
-2. `codex-develop.py --run-dir <private-run-dir> init --profile NAME [--profile-file PATH] --cwd <worktree-root> --worker-state <private-worker-dir>`（または旧 `--account NAME --model MODEL`）。一度開始したsnapshotを変更しない。秘密情報を依頼ファイルへ入れない。
-3. 正本が次に呼ぶ役割と工程を決定し、その工程に限定した指示をUTF-8ファイルに書く。依頼・完了条件・記録先URL・対象artifact・固定HEADを渡す。実装者の会話履歴をレビューへ渡さない。
-4. `... dispatch --phase PHASE --input <file>`。戻りのjob_idを記録し、`... status` / `... result` で回収。コマンド待機を終えてもworkerは動き続ける。不明な結果は再実行せず同じrunで照会する。
-5. terminal結果を読み、`... ack` でworkerのcwd lockを解放する。ackは品質承認ではない。正本の判断記録・APPROVE・verify・ゲート条件を確認して次のphaseへ進む。unknownはack不可。cancel後も終了確認する。
+develop入口0で記録先を確定し、対象repoのOrca等のルールで専用worktreeを用意する。CLIツール自身はworktreeを作らない。そのうえで、Claudeのサブエージェントと同じ3手順で委譲する。
+
+1. **指示をファイルに書く。** 正本が次に呼ぶ役割と工程を決定し、その工程に限定した指示をUTF-8ファイルに書く。依頼・完了条件・記録先URL・対象artifact・固定HEADを渡す。実装者の会話履歴をレビューへ渡さない。秘密情報を依頼ファイルへ入れない。
+2. **前景コマンドを背景実行で起動する。** 役割別のexecutor/account/model/effortとCODEX_HOMEを解決した依頼ファイルを作り、そのファイルを渡してworkerを起こす。2本目をBashツールの背景実行で走らせる。
+
+   ```sh
+   python3 <plugin>/scripts/codex-develop.py request --phase PHASE --input <指示ファイル> \
+     --cwd <worktree-root> --profile NAME [--profile-file /absolute/profiles.json] \
+     --account-home spare=/absolute/codex-home --out <依頼ファイル>
+   python3 <plugin>/scripts/codex-worker.py run --request <依頼ファイル>
+   ```
+
+3. **完了通知で結果を読む。** 標準出力の1行JSON（`text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`）を読む。成功はexit 0、失敗はexit 2。コマンドは1ターンで終わり、呼び出し元が消えれば自分も終わる。台帳もjob IDも残らないので、照会も受領も無い。同じ工程をもう一度やるときは、同じ手順を最初から繰り返す。
 
 | 正本の委譲箇所 | phase | Codex role |
 |---|---|---|
@@ -41,7 +36,7 @@ v1は旧単一設定run、v2はprofile run専用。値とキー順は固定で�
 | Gが必要とする独立PRレビュー | review | impl-review（read-only） |
 | 判断側の修正方針・decider | decider | decider（read-only） |
 
-毎回fresh thread。Claude専用`subagent-context.sh`や150K閾値は使わない。前工程の成果物と必要な要約だけを引き継ぐ。live steering/resumeは初版では使わない。書込担当が終了・ack済みになってから別担当を起こす。
+毎回fresh thread。Claude専用`subagent-context.sh`や150K閾値は使わない。前工程の成果物と必要な要約だけを引き継ぐ。live steering/resumeは初版では使わない。書込担当が終わってから別担当を起こす。セッションをまたいで途中の委譲を引き継ぐ仕組みは持たないので、途切れたらその工程をやり直す。
 
 ## 品質とhook差分
 
@@ -50,28 +45,16 @@ v1は旧単一設定run、v2はprofile run専用。値とキー順は固定で�
 - Gが通常経路の`codex exec`/companion/Claude reviewerを呼ぶ場面では、実行せず`needs-reviewer`を返す。本体が`review`で新threadを作り、その結果を新しいGへ渡す。ゲート正本の着手確認・同一PR/HEAD重複防止を先に実施する。
 - 仕様化が必要と判断された場合のopsx Skill操作は対象repoのopenspec CLI相当へ変換する。CLI不在時の仕様化判断も既存develop正本に従う。正本の仕様フォーマットを別テンプレートへ写さない。
 - Claude hooksはCodexには自動適用されない。対象repoで必須の検査コマンドを本体が確認し、W/Gの指示と結果へ明記する。実行不能なら合格扱いしない。read-only roleのreadOnly policy以外にsandboxによる保証は無い（書込担当は砂場なしで動く）ので、hook相当の保証があるものと推定しない。
-- worker completedは実行完了だけ。既存developがその経路に要求する仕様承認・テスト証拠・独立レビュー・ゲート条件を省略しない。merge/auto-mergeは禁止。途中停止は成果物とジョブ状態を記録する。
+- worker completedは実行完了だけ。既存developがその経路に要求する仕様承認・テスト証拠・独立レビュー・ゲート条件を省略しない。merge/auto-mergeは禁止。途中停止は成果物と結果JSONを記録する。
 
 従来モードのexecレビューは維持するが、このモードの全委譲箇所は上表に集約する。burn接続・全account配分・使用量集計は別issue。
 
 phaseは担当する役割の指示書を選ぶラベルであり、adapterは工程順序や品質承認を制御しない。`spec` は仕様化判断を含む。正本に従いWが「仕様化判断: しない」と理由を返した場合、本体は既存developの実装工程へ進む。Codex指定を理由に仕様を必須化しない。仕様が必要な場合は正本のR1承認条件を適用する。
 
-仕様要否、レビュー判定、必須検査、archive、差戻し、次工程への進行はすべて既存developとrolesの正本で管理する。adapterに承認記録・検査実行・archive移動の独自コマンドは置かない。run履歴は輸送結果の記録であり、品質台帳ではない。workerの最終回答とerror_kindを本体が確認し、失敗や途中commentaryを承認扱いしない。
+仕様要否、レビュー判定、必須検査、archive、差戻し、次工程への進行はすべて既存developとrolesの正本で管理する。adapterに承認記録・検査実行・archive移動の独自コマンドは置かない。結果JSONは輸送結果の記録であり、品質台帳ではない。workerの最終回答とerror_kindを本体が確認し、失敗や途中commentaryを承認扱いしない。`completed` でもerror_kindがあれば実行成功ではない。
 
 書込担当（implement / spec-write）は砂場なしで親の環境を引き継いで動くため、GitHub情報の取得・コメント・Draft PR作成・push・commitをworkerの中で自分で完了する。これらを `needs-coordinator` で本体へ回さない。本体が担うのは、read-only roleのレビュー結果の代理投稿と、揃えられなかった項目として記録済みの操作だけである。代理は運搬/記録の代理であり、仕様・コードの編集やレビュー判定を本体が代行するものではない。Gへは操作結果の証拠を渡して確認させる。
 
-worker-state既定値は `$HOME/.local/state/claude-harness-codex/jobs`（registerと共通）。`--worker-state DIR` 指定時はその台帳だけを使う。新規run-dir省略時はinitが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作成しJSONで返す。本体がこのpathを記録して全後続操作に渡す。既存`--run-dir`の再開時はinitせずrun.jsonのaccount/model/worker_stateとの一致を確認する。不一致や不明なrunを別accountで継続しない。
+依頼ファイルには指示文と固定した実行先が入るため、私有ディレクトリに置く。workerは静的検証後、`thread/start`前に`model/list`の広告値でもmodel/effortを検証する。結果の公開`execution`は要求値と実効値・観測元を分けて載せ、実効値が未観測ならnullのままである（要求どおりだったと推測しない）。
 
-旧版run.jsonの `spec_paths` / `checks` / `approvals` は再開時に品質判断として使わない。旧pendingがあれば新promptで再submitせずresult→ackで受領を終えてから新dispatchする。`completed` でもerror_kindがあれば実行成功ではない。ackは結果受領とownership解放であり、品質承認ではない。
-
-profile dispatchはsubmit前にrole別executor/account/model/effortとpayload hashをpendingへ固定する。retryは保存requestとsnapshotを照合して同じrequestを送り、ack時はworker公開execution（要求値、実効値、観測元、job/thread/turn ID）をhistoryへ取り込む。実効値が未観測ならnullのままであり、要求どおりだったと推測しない。workerは静的検証後、`thread/start`前に`model/list`の広告値でもmodel/effortを検証する。
-
-### 送信到達が不明なpendingの復旧
-
-結果が存在するpendingは `status` / `result` で回収し、terminal結果を受領して `ack` する。送信前の失敗や応答切断でworkerへ到達したか不明なら、同じrunに `retry` を実行する。`retry` は保存済みrequest.jsonのrequest_id/account/model/cwdとrunの一致を検証し、**元の依頼を変更せず**workerへidempotent submitする。promptを再生成せず、新しいrequest_idも作らない。不一致やファイル欠損なら拒否し、別account・別依頼へ差し替えない。
-
-```sh
-python3 <plugin>/scripts/codex-develop.py --run-dir <保存したrun-dir> retry
-```
-
-旧版の品質metadataは無視するが、pendingとownershipは引き継ぐ。retryは結果不明の仕事を別ジョブとしてやり直す機能ではなく、同一依頼の送信/照会を復旧するtransport操作である。
+台帳を持つ旧経路（`submit` / `status` / `result` / `reap`）の運用は `scripts/CODEX-WORKER.md` に残る。前景実行はその台帳を作らず読まないので、同時実行の枠管理も作業ディレクトリの排他も行わない。同じworktreeへ2本同時に投げないのは本体の責任である。

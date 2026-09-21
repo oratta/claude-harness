@@ -13,6 +13,7 @@ import unittest
 from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/codex-worker.py'
+DEVELOP = SCRIPT.parent / 'codex-develop.py'
 spec = importlib.util.spec_from_file_location('codex_worker', SCRIPT)
 worker_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker_module)
@@ -751,6 +752,39 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(execution['evidence']['model'],'turn/start:result.turn.model')
         self.assertEqual(execution['evidence']['effort'],'turn/start:result.turn.effort')
         self.assertEqual(execution['evidence']['executor'],'transport:codex-app-server')
+
+    def develop(self, *args, code=0):
+        p = subprocess.run([sys.executable,str(DEVELOP),*args],env=self.env,text=True,capture_output=True,timeout=60)
+        self.assertEqual(p.returncode,code,p.stdout+p.stderr)
+        return json.loads(p.stdout.splitlines()[-1])
+
+    def test_request_built_by_the_adapter_runs_exactly_as_written(self):
+        roles = {role:{'executor':'codex','account':'personal','model':'fixture-model','effort':'low'}
+                 for role in worker_module.ROLES}
+        profile = self.root/'profiles.json'
+        profile.write_text(json.dumps({'version':1,'profiles':{'custom':{'roles':roles}}}))
+        instructions = self.root/'input.txt';instructions.write_text('Do only this phase.')
+        out = self.root/'request.json'
+        built = self.develop('request','--phase','implement','--input',str(instructions),
+                             '--cwd',str(self.cwd),'--profile','custom','--profile-file',str(profile),
+                             '--account-home','personal='+str(self.home),'--out',str(out))
+        self.assertEqual(built['codex_home'],str(self.home.resolve()))
+        request = json.loads(out.read_text())
+        self.assertEqual([request['role'],request['model'],request['effort'],request['codex_home']],
+                         ['implement','fixture-model','low',str(self.home.resolve())])
+        p = subprocess.run([sys.executable,str(SCRIPT),'run','--request',str(out)],
+                           env=self.env,text=True,capture_output=True,timeout=40)
+        self.assertEqual(p.returncode,0,p.stdout+p.stderr)
+        result = json.loads([s for s in p.stdout.splitlines() if s.strip()][-1])
+        self.assertEqual(self.ledgers(),[])
+        self.assertEqual(result['status'],'completed')
+        self.assertEqual(result['text'],'DONE')
+        self.assertEqual(result['execution']['role'],'implement')
+        self.assertEqual(result['execution']['requested'],
+                         {'executor':'codex','account':'personal','model':'fixture-model','effort':'low'})
+        # The fixture advertises no thread/turn observation, so the effective side stays
+        # unobserved instead of being filled in from the request.
+        self.assertIsNone(result['execution']['effective']['model'])
 
     def test_foreground_result_carries_the_running_account_not_the_requested_name(self):
         # The caller's mapping pointed the name 'test' at another account's CODEX_HOME.

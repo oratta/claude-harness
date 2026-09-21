@@ -38,17 +38,17 @@
 
 ## 5. 依頼ファイルの組み立てを codex-develop.py から使えるようにする
 
-- [ ] 5.1 `codex-develop.py` に、前景実行の依頼ファイルを書くサブコマンドを足す。`resolve_execution` で役割別の executor / account / model / effort を解決し、`prompt` で指示文を組み立てる
-- [ ] 5.2 そのサブコマンドが run-dir と worker-state を要求しないようにする（前景経路は台帳も run も持たない）。account 名から CODEX_HOME への対応表を引数で受け取り（`--account-home NAME=PATH` の繰り返し、または `--account-home-file PATH` の JSON。JSON は名前をキー・CODEX_HOME の絶対パスを値とする平らなオブジェクト 1 つ）、役割の account 名をそこから解決して依頼へ載せる。2 つの与え方の併用は拒否する（合成も優先もしない）
-- [ ] 5.3 profile の読み込みで登録済み account の確認（`registered_accounts`）が台帳を読む点を、前景経路では対応表による確認に置き換える（対応表に載っている account 名だけを受け付け、CODEX_HOME は対応表が解決した値を正とする）
-- [ ] 5.4 組み立てた依頼ファイルがそのまま `run` に通ること（役割・model・effort・CODEX_HOME・prompt が一致すること）を固定するテストを足し、通ることを exit code 付きで確認する
-- [ ] 5.5 対応表に無い account 名を profile が指しているとき、依頼ファイルを作らずに拒否し、既定や別の CODEX_HOME へ倒さないことを固定するテストを足す
-- [ ] 5.6 `--account-home` と JSON ファイルを同時に与えたら依頼ファイルを作らずに拒否することと、JSON の値が絶対パスでない / 存在しないときに拒否することを固定するテストを足す
+- [x] 5.1 `codex-develop.py` に、前景実行の依頼ファイルを書くサブコマンドを足す。`resolve_execution` で役割別の executor / account / model / effort を解決し、`prompt` で指示文を組み立てる
+- [x] 5.2 そのサブコマンドが run-dir と worker-state を要求しないようにする（前景経路は台帳も run も持たない）。account 名から CODEX_HOME への対応表を引数で受け取り（`--account-home NAME=PATH` の繰り返し、または `--account-home-file PATH` の JSON。JSON は名前をキー・CODEX_HOME の絶対パスを値とする平らなオブジェクト 1 つ）、役割の account 名をそこから解決して依頼へ載せる。2 つの与え方の併用は拒否する（合成も優先もしない）
+- [x] 5.3 profile の読み込みで登録済み account の確認（`registered_accounts`）が台帳を読む点を、前景経路では対応表による確認に置き換える（対応表に載っている account 名だけを受け付け、CODEX_HOME は対応表が解決した値を正とする）
+- [x] 5.4 組み立てた依頼ファイルがそのまま `run` に通ること（役割・model・effort・CODEX_HOME・prompt が一致すること）を固定するテストを足し、通ることを exit code 付きで確認する
+- [x] 5.5 対応表に無い account 名を profile が指しているとき、依頼ファイルを作らずに拒否し、既定や別の CODEX_HOME へ倒さないことを固定するテストを足す
+- [x] 5.6 `--account-home` と JSON ファイルを同時に与えたら依頼ファイルを作らずに拒否することと、JSON の値が絶対パスでない / 存在しないときに拒否することを固定するテストを足す
 
 ## 6. 手順書とバージョン
 
-- [ ] 6.1 `plugins/dev-workflow/references/codex-develop.md` の呼び出し手順を「指示をファイルに書く → 前景コマンドを背景実行で起動 → 完了通知で結果を読む」の 3 手順に書き換える。`ack` / `retry` / `run-dir` / `worker-state` と継続記録の節を消す
-- [ ] 6.2 `grep -nwE "ack|retry|run-dir|worker-state" plugins/dev-workflow/references/codex-develop.md` と `grep -n "継続記録" plugins/dev-workflow/references/codex-develop.md` がどちらも 0 件（exit 1）になることを確認する
+- [x] 6.1 `plugins/dev-workflow/references/codex-develop.md` の呼び出し手順を「指示をファイルに書く → 前景コマンドを背景実行で起動 → 完了通知で結果を読む」の 3 手順に書き換える。`ack` / `retry` / `run-dir` / `worker-state` と継続記録の節を消す
+- [x] 6.2 `grep -nwE "ack|retry|run-dir|worker-state" plugins/dev-workflow/references/codex-develop.md` と `grep -n "継続記録" plugins/dev-workflow/references/codex-develop.md` がどちらも 0 件（exit 1）になることを確認する
 - [ ] 6.3 `plugins/dev-workflow/docs/codex-develop.md` の導入手順を、前景実行の呼び方と CODEX_HOME の渡し方に合わせて直す
 - [ ] 6.4 `plugins/dev-workflow/scripts/CODEX-WORKER.md` に前景実行の節（結果の JSON・親と一緒に終わる・SIGTERM・台帳に触れない・同時実行の枠管理と cwd 排他が無いこと）を足し、`--state-dir` の位置の変更を反映する
 - [ ] 6.5 `plugins/dev-workflow/skills/develop/SKILL.md` と `plugins/dev-workflow/commands/develop.md` の Codex 経路の案内を、前景実行の呼び方へ直す

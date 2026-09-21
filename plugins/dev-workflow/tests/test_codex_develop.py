@@ -479,8 +479,9 @@ class RoleProfiles(unittest.TestCase):
                 self.assertNotIn('approved', state)
 
     def test_common_loader_is_origin_independent_and_finish_gate_use_implement(self):
-        first = m.load_profile('codex-economy', None, str(self.worker_state))
-        second = m.load_profile('codex-economy', None, str(self.worker_state))
+        accounts = m.registered_accounts(str(self.worker_state))
+        first = m.load_profile('codex-economy', None, accounts)
+        second = m.load_profile('codex-economy', None, accounts)
         self.assertEqual(first, second)  # manual and future burn callers share this resolver
         self.init('codex-economy')
         for phase in ('finish', 'gate', 'explore', 'summarize'):
@@ -837,6 +838,89 @@ class TransportIntegration(unittest.TestCase):
         self.assertEqual([v['phase'] for v in state['history']], ['implement', 'review'])
         self.assertNotIn('approvals', state)
         self.assertFalse((fixture.cwd / 'openspec').exists())
+
+
+class ForegroundRequest(unittest.TestCase):
+    # The foreground route has no run and no ledger: CODEX_HOME comes from the caller's
+    # table and an account missing from it is refused rather than replaced.
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        # Resolved so the table's absolute paths compare equal to what the adapter records.
+        self.root = Path(self.temp.name).resolve()
+        self.cwd = self.root / 'repo'
+        self.cwd.mkdir()
+        subprocess.run(['git', 'init', '-q', str(self.cwd)], check=True)
+        subprocess.run(['git', '-C', str(self.cwd), '-c', 'user.name=Test',
+                        '-c', 'user.email=test@example.invalid', 'commit',
+                        '--allow-empty', '-qm', 'fixture'], check=True)
+        self.home = self.root / 'codex-home'
+        self.home.mkdir()
+        self.input = self.root / 'input.txt'
+        self.input.write_text('Do only this phase.')
+        self.out = self.root / 'request.json'
+        self.profile_file = self.root / 'profiles.json'
+        self.table = self.root / 'homes.json'
+        self.write_profile('mapped')
+
+    def write_profile(self, account):
+        roles = {role: {'executor': 'codex', 'account': account,
+                        'model': 'fixture-model', 'effort': 'low'}
+                 for role in m.CANONICAL_ROLES}
+        self.profile_file.write_text(json.dumps({'version': 1, 'profiles': {'custom': {'roles': roles}}}))
+
+    def call(self, *extra, phase='implement'):
+        args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
+                '--cwd', str(self.cwd), '--profile', 'custom',
+                '--profile-file', str(self.profile_file), '--out', str(self.out), *extra]
+        with patch.object(sys, 'argv', args):
+            return m.main()
+
+    def test_request_resolves_the_home_without_run_dir_worker_state_or_ledger(self):
+        with patch.object(m, 'registered_accounts', side_effect=AssertionError('ledger read')):
+            result = self.call('--account-home', 'mapped=' + str(self.home))
+        self.assertEqual(result['status'], 'request-written')
+        self.assertEqual(result['codex_home'], str(self.home))
+        request = json.loads(self.out.read_text())
+        self.assertEqual(request['role'], 'implement')
+        self.assertEqual(request['account'], 'mapped')
+        self.assertEqual(request['model'], 'fixture-model')
+        self.assertEqual(request['effort'], 'low')
+        self.assertEqual(request['codex_home'], str(self.home))
+        self.assertEqual(request['origin'], 'manual')
+        self.assertIn('Dispatch HEAD: ', request['prompt'])
+
+    def test_every_phase_role_is_one_the_worker_accepts(self):
+        self.assertLessEqual({role for role, _ in m.PHASES.values()}, set(worker_module.ROLES))
+
+    def test_account_missing_from_the_table_is_refused_without_a_request(self):
+        self.write_profile('absent')
+        with self.assertRaises(RuntimeError):
+            self.call('--account-home', 'mapped=' + str(self.home))
+        self.assertFalse(self.out.exists())
+
+    def test_the_two_ways_of_giving_the_table_are_never_combined(self):
+        self.table.write_text(json.dumps({'mapped': str(self.home)}))
+        with self.assertRaises(RuntimeError):
+            self.call('--account-home', 'mapped=' + str(self.home), '--account-home-file', str(self.table))
+        self.assertFalse(self.out.exists())
+        self.assertEqual(self.call('--account-home-file', str(self.table))['codex_home'], str(self.home))
+
+    def test_table_entries_must_be_existing_absolute_directories_named_once(self):
+        for value in ('codex-home', str(self.root / 'absent'), str(self.input)):
+            with self.subTest(value=value):
+                self.table.write_text(json.dumps({'mapped': value}))
+                with self.assertRaises(RuntimeError):
+                    self.call('--account-home-file', str(self.table))
+                self.assertFalse(self.out.exists())
+        self.table.write_text('{"mapped":"/tmp","mapped":"/tmp"}')
+        with self.assertRaises(RuntimeError):
+            self.call('--account-home-file', str(self.table))
+        for pairs in (['mapped=' + str(self.home), 'mapped=' + str(self.home)], ['mapped']):
+            with self.subTest(pairs=pairs):
+                with self.assertRaises(RuntimeError):
+                    self.call(*[part for name in pairs for part in ('--account-home', name)])
+                self.assertFalse(self.out.exists())
 
 
 if __name__ == '__main__':
