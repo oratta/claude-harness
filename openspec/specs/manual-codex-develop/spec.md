@@ -97,7 +97,7 @@ workerのcompletedやackを品質合格として扱ってはならない（MUST 
 
 #### Scenario: Claude role を委譲する
 - **WHEN** role resolver が executor=claude と account=current、Claude tier、effort を返す
-- **THEN** Codex request を作らず、返された model を要求 model として保持し、残量モード適用後の model で canonical role を Agent に委譲し、effort は監査情報として保持するだけで Agent の引数に変換しない
+- **THEN** Codex request を作らず、返された model を要求 model として保持し、残量モード適用後の model で canonical role を Agent に委譲する。`decider` role は `subagent_type: dev-workflow:decider`、他の role は `general-purpose` とし、`exhausted` で適用 model が `opus` に下がっても `decider` の subagent_type は変えない。effort は監査情報として保持するだけで Agent の引数に変換しない
 
 #### Scenario: Codex role を委譲する
 - **WHEN** role resolver が executor=codex を返す
@@ -128,4 +128,3 @@ workerのcompletedやackを品質合格として扱ってはならない（MUST 
 #### Scenario: 旧台帳 dispatch が Claude role を選ぶ
 - **WHEN** 保存 snapshot の role が executor=claude に解決される
 - **THEN** Codex worker へ送信する前に停止して foreground provider route を案内し、Claude tuple を Codex worker へ渡さない
-

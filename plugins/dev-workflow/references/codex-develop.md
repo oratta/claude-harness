@@ -6,7 +6,7 @@
 
 `/dev-workflow:develop --profile hybrid-standard <issue URL または依頼>`
 
-`request` は `--profile NAME [--profile-file PATH]` か、旧形式の `--account NAME --model MODEL` のどちらか一方を取る。併用、旧形式の片方欠落、profile-file だけの指定は依頼ファイルを作らず拒否する。Version 1 profile は全 canonical role の `executor` / account / model / effort を検証し、role の設定を解決した直後に一度だけ分岐する。`claude` は要求 tuple を保持して既存の残量上限を適用した model で Agent ツールを使い、`codex` は request を作って前景コマンドを使う。
+`request` は `--profile NAME [--profile-file PATH]` か、旧形式の `--account NAME --model MODEL` のどちらか一方を取る。併用、旧形式の片方欠落、profile-file だけの指定は依頼ファイルを作らず拒否する。Version 1 profile は全 canonical role の `executor` / account / model / effort を検証し、role の設定を解決した直後に一度だけ分岐する。`claude` は要求 tuple を保持して既存の残量上限を適用した model で Agent ツールを使い、`codex` は request を作って前景コマンドを使う。事前分類に当たる R1 または G が要求したレビュアーは、対象 role の設定ではなく profile の `decider` entry（投げ先/account/model）で `subagent_type: dev-workflow:decider` として起動する。
 
 組み込み profile は `codex-standard`、`codex-economy`、`hybrid-standard`。外部設定は全 canonical role を含み、Codex role の account は呼び出し側の対応表に存在し、Claude role は account=current、model は `haiku|sonnet|opus|fable`、`fable` は decider だけに指定できる必要がある。effort は両 provider で監査値として保持するが、Claude Agent の option には変換しない。歴史的な `references/codex-role-profiles.json` というファイル名は互換性のため維持するが、中身は provider-neutral な role table である。
 
@@ -18,7 +18,7 @@ account 名から CODEX_HOME への対応の導入方法は `docs/codex-develop.
 
 develop 入口 0 で記録先を確定し、対象 repo のルールで専用 worktree を用意する。CLI 自身は worktree を作らない。各委譲の直前に role を解決し、返された account/model/effort と対象 HEAD を監査情報として保持する。
 
-Claude role の新規起動では、profile の model を requested model として変更せず保持する。Agent 起動直前に既存の `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` を適用し、requested model / applied model / reason を別々に記録する。制限が無ければ applied=requested、reason=unchanged。`FABLE_BUDGET_MODE=exhausted` は requested=fable を applied=opus にし、`SHARED_BUDGET_MODE=depleted` は requested にかかわらず applied=sonnet に固定して前者より優先する。
+Claude role の新規起動では、profile の model を requested model として変更せず保持する。Agent 起動直前に既存の `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` を適用し、requested model / applied model / reason を別々に記録する。`decider` role は `subagent_type: dev-workflow:decider`、他の role は `general-purpose` として起動する。`FABLE_BUDGET_MODE=exhausted` で applied=opus に下がっても `decider` の subagent_type は変えない。制限が無ければ applied=requested、reason=unchanged。`FABLE_BUDGET_MODE=exhausted` は requested=fable を applied=opus にし、`SHARED_BUDGET_MODE=depleted` は requested にかかわらず applied=sonnet に固定して前者より優先する。
 
 同じ Claude profile role を再開する前にも毎回現在の上限を再計算する。既存 thread の applied model が上限内のときだけ requested tuple と applied model を変えず SendMessage する。上限を超えるときは SendMessage せず、既存の工程完了または停止確認条件を満たしてから、requested tuple と成果物・必要な要約を fresh thread へ渡し、上限内の applied model と reason を記録する。たとえば fable thread の再開前に exhausted へ変われば fresh opus、depleted へ変われば fresh sonnet とする。profile role の境界、独立レビュー、Codex 委譲も fresh thread とし、会話履歴全体を渡さない。
 

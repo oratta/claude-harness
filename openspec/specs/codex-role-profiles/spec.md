@@ -56,7 +56,7 @@ profile dispatch は pending_execution の role/executor/account/model/effort �
 役割/ティアは既存 roles と model-tiers を参照し、phase は役割指示の選択に留めなければならない（MUST）。spec/review/finish/gate の既存 role 対応を保持し、explore/summarize は read-only の任意の補助役としなければならない（MUST）。手動とバーンの呼び出し側に同じ版付き設定と CLI resolver を提供し、独自の品質工程を作ってはならない（MUST NOT）。
 
 #### Scenario: セットを切り替えて既存工程を実行する
-- **WHEN** 標準/節約/旧形式で同じ coordinator の仕様不要・仕様必要・レビュー差戻し・gate 失敗の fixture を実行する
+- **WHEN** 標準/節約/混在/旧形式で同じ coordinator の仕様不要・仕様必要・レビュー差戻し・gate 失敗の fixture を実行する
 - **THEN** 仕様要否、独立レビュー条件、工程順、差戻し判断/上限は同じであり、変わるのは設定と観測結果だけである。finish/gate は implement の設定を使う
 
 #### Scenario: 手動とバーンの呼び出し例を解決する
@@ -64,10 +64,10 @@ profile dispatch は pending_execution の role/executor/account/model/effort �
 - **THEN** 同じ snapshot が得られ、手動でバーン窓を要求せず、バーン接続/自動配分を今回新設しない
 
 ### Requirement: 実モデル受け入れと回帰を残す
-実装は両セットそれぞれで仕様作成、独立仕様レビュー、実装、独立実装レビューを実モデルで一件完走し、各役割の要求と取得できた実効 model/effort、account、executor、job/thread/turn ID、対象 HEAD を記録しなければならない（MUST）。未観測の実効設定や失敗を成功と扱ってはならない（MUST NOT）。
+実装は `codex-standard`、`codex-economy`、`hybrid-standard` の各組み込みセットで仕様作成、独立仕様レビュー、実装、独立実装レビューを実モデルで一件完走し、各役割の要求と取得できた実効 model/effort、account、executor、job/thread/turn ID、対象 HEAD を PR gate の動作確認に記録しなければならない（MUST）。未観測の実効設定や失敗を成功と扱ってはならない（MUST NOT）。
 
-#### Scenario: 両セットの実機証拠を検査する
-- **WHEN** coordinator が各セットの実行証跡を回収する
+#### Scenario: 三つの組み込みセットの実機証拠を検査する
+- **WHEN** coordinator が各組み込みセットの実行証跡を回収する
 - **THEN** 別 job/thread の独立レビューと実効設定の観測元を確認でき、実効値が未観測または要求と異なる場合はその受け入れを未達と報告する
 
 #### Scenario: ローカル回帰を実行する

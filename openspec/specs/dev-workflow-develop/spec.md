@@ -280,11 +280,15 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 - **THEN** (3) を (3a)/(3b) より細かく切らないことと、その理由（手渡しごとに払う固定分と、実装の途中で切ると後任が Red のまま止まったテストから再出発すること）が書かれている
 
 ### Requirement: 本体は role profile から executor を選ぶ
-名前付き role profile を使う develop 本体は、新しい profile role を起動する直前に canonical role の executor/account/model/effort を共通 resolver から取得し、executor=claude なら Agent、executor=codex なら foreground request/run 経路を選ばなければならない（MUST）。resolver は profile の model を要求値として変更せず返す。Claude Agent の起動時には既存の `FABLE_BUDGET_MODE` と `SHARED_BUDGET_MODE` の上限を要求 model より優先し、要求 model・実際に Agent へ渡す適用 model・変更理由（変更しない場合は変更なし）を区別して扱わなければならない（MUST）。executor の選択は transport と execution setting だけを変え、仕様化判断、工程順、独立レビュー、差戻し上限、verify、archive、PR gate の条件を変えてはならない（MUST NOT）。
+名前付き role profile を使う develop 本体は、新しい profile role を起動する直前に canonical role の executor/account/model/effort を共通 resolver から取得し、executor=claude なら Agent、executor=codex なら foreground request/run 経路を選ばなければならない（MUST）。事前分類に当たる R1 または G が要求したレビュアーを起動するときは、対象 role の entry ではなく profile の `decider` entry（executor/account/model）を使い、`subagent_type: dev-workflow:decider` として起動しなければならない（MUST）。resolver は profile の model を要求値として変更せず返す。Claude Agent の起動時には既存の `FABLE_BUDGET_MODE` と `SHARED_BUDGET_MODE` の上限を要求 model より優先し、要求 model・実際に Agent へ渡す適用 model・変更理由（変更しない場合は変更なし）を区別して扱わなければならない（MUST）。executor の選択は transport と execution setting だけを変え、仕様化判断、工程順、独立レビュー、差戻し上限、verify、archive、PR gate の条件を変えてはならない（MUST NOT）。
 
 #### Scenario: 1 つの profile で executor が工程間に変わる
 - **WHEN** spec-write=codex、spec-review=claude の profile で仕様化工程を進める
 - **THEN** W は Codex foreground 経路、R1 は Claude Agent 経路で別 thread として動き、R1 の APPROVE が記録されるまで実装へ進まない
+
+#### Scenario: 事前分類に当たる R1 またはレビュアーを起動する
+- **WHEN** R1 または G が要求したレビュアーの対象がマージ条件・層間契約・課金/法務に触れる
+- **THEN** 対象 role の entry ではなく profile の `decider` entry の executor/account/model を使い、`subagent_type: dev-workflow:decider` として起動する
 
 #### Scenario: executor 切替でも canonical role を維持する
 - **WHEN** 同じ role の executor を profile で Claude から Codex または Codex から Claude へ変える
@@ -301,4 +305,3 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 #### Scenario: depleted はすべての要求を Sonnet に固定する
 - **WHEN** Claude role の resolver 結果が requested model=`fable` で、`SHARED_BUDGET_MODE=depleted`
 - **THEN** resolver 結果は `fable` のまま保持し、applied model=`sonnet`、変更理由=`SHARED_BUDGET_MODE=depleted` として Agent を起動する
-
