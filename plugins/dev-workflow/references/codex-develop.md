@@ -34,7 +34,7 @@ Codex role は次の3手順で1回の委譲を行う。
    python3 <plugin>/scripts/codex-worker.py run --request <依頼ファイル>
    ```
 
-3. 標準出力の1行 JSON（`text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`）を読む。成功は exit 0、失敗は exit 2。台帳も job ID も残らないので、照会・受領・live resume は行わない。
+3. 標準出力の1行 JSON（`text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`）を読む。成功は exit 0、失敗は exit 2。transport state は残らないので、照会・受領・live resume は行わない。
 
 書込 role は一度に1つずつ動かし、担当中の role が完了してから次を開始する。Codex への委譲をセッションをまたいで引き継ぐ仕組みはないため、途中で切れた委譲はその工程の最初からやり直し、停止または中断時点の成果物と結果 JSON を記録する。Claude role の再開には上記の上限再計算と fresh thread への手渡し規則を適用する。
 
@@ -54,7 +54,7 @@ Codex role は次の3手順で1回の委譲を行う。
 - read-only reviewer は GitHub に書かず、本体が既存正本の書式で結果を代理投稿する。投稿成功前に後続へ進まない。write role は親環境で GitHub 読み書き、commit、push、Draft PR 作成まで自分で完了する。
 - completed は transport 完了だけを表す。最終回答と error_kind を確認し、仕様承認・テスト証拠・独立 review・gate を省略しない。merge / auto-merge は禁止する。
 - Claude hooks は Codex に自動適用されない。対象 repo の必須検査を指示と結果に明記し、実行不能を合格扱いしない。read-only policy 以外に sandbox 保証を推定しない。
-- 停止は Agent または起動した前景 command を止める。通常経路に旧台帳の ack / retry / run directory / worker ledger / continuation 操作を戻さない。
+- 停止は Agent または起動した前景 command を止める。結果 JSON を受け取れず終了した場合は、記録先と worktree から同じ工程を fresh phase としてやり直す。
 - request は private directory に置く。worker は静的検証後、thread/start 前に model/list でも model/effort を検証する。結果 JSON は要求値と実効値・観測元を分け、未観測値を推測しない。
 - G が通常経路で `codex exec`、companion、または Claude reviewer を呼ぶ場面では、それを実行せず `needs-reviewer` を返す。本体は phase `review` の fresh thread を開始し、その結果を新しい G に渡す。G は返す前に、ゲート自身の着手確認と同一 PR/HEAD の重複防止を実施する。
 - burn 接続、全 account の配分、使用量集計は別 issue の範囲とする。
@@ -62,6 +62,4 @@ Codex role は次の3手順で1回の委譲を行う。
 - 仕様化が必要な場合、opsx Skill 操作は対象 repo の openspec CLI 相当へ変換し、正本の仕様フォーマットを別テンプレートへ写さない。CLI 不在時の判断も既存 develop 正本に従う。
 - G には操作結果の証拠を渡し、照合させる。
 
-旧台帳経路（`submit` / `status` / `result` / `reap`）は `scripts/CODEX-WORKER.md` に残る。混在 snapshot 自体は検証できるが、Claude role を選んだ legacy dispatch は worker submission 前に停止し、この foreground provider route を案内する。
-
-同じ worktree に2本の job を同時に投げてはならない。これは本体の責任である。前景経路は台帳を持たず、同時実行の枠管理も作業ディレクトリの排他も行わない。
+同じ worktree に2本の書込 role を同時に投げてはならない。これは本体の責任である。前景経路は同時実行の枠管理も作業ディレクトリの排他も行わない。
