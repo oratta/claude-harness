@@ -7,11 +7,11 @@
 
 ## 2. Reduce the executable surface
 
-- [ ] 2.1 Remove continuation encoding/parsing/restoration, SQLite account lookup, run snapshot/pending/retry helpers, state writers, worker lifecycle wrapper, and `init`/`dispatch`/`status`/`result`/`ack`/`retry` parsing from `codex-develop.py`, leaving a request-only CLI.
-- [ ] 2.2 Preserve `codex-develop.py request` account-home resolution, profile and legacy account/model validation, role prompt construction, fixed HEAD evidence, private request creation for Codex roles, and unchanged `agent-required` output for Claude roles.
-- [ ] 2.3 Remove SQLite job/account schema, global ownership, slots/locks, ledger recorder, detached worker, heartbeat/staleness, and `register`/`submit`/`status`/`result`/`cancel`/`ack`/`send`/`reap` parsing from `codex-worker.py`, leaving `run --request` as the only command.
-- [ ] 2.4 Preserve the foreground dependency slice and execution order: request validation, CODEX_HOME/runtime auth checks, model/list model-effort validation, role sandbox/read-only policy, rate-limit preflight, thread/turn execution, parent/signal cancellation, runtime cleanup, and one-line JSON output.
-- [ ] 2.5 Run the focused worker/develop tests to Green and confirm the Python scripts no longer import or refer to removed persistence mechanisms.
+- [x] 2.1 Remove continuation encoding/parsing/restoration, SQLite account lookup, run snapshot/pending/retry helpers, state writers, worker lifecycle wrapper, and `init`/`dispatch`/`status`/`result`/`ack`/`retry` parsing from `codex-develop.py`, leaving a request-only CLI.
+- [x] 2.2 Preserve `codex-develop.py request` account-home resolution, profile and legacy account/model validation, role prompt construction, fixed HEAD evidence, private request creation for Codex roles, and unchanged `agent-required` output for Claude roles.
+- [x] 2.3 Remove SQLite job/account schema, global ownership, slots/locks, ledger recorder, detached worker, heartbeat/staleness, and `register`/`submit`/`status`/`result`/`cancel`/`ack`/`send`/`reap` parsing from `codex-worker.py`, leaving `run --request` as the only command.
+- [x] 2.4 Preserve the foreground dependency slice and execution order: request validation, CODEX_HOME/runtime auth checks, model/list model-effort validation, role sandbox/read-only policy, rate-limit preflight, thread/turn execution, parent/signal cancellation, runtime cleanup, and one-line JSON output.
+- [x] 2.5 Run the focused worker/develop tests to Green and confirm the Python scripts no longer import or refer to removed persistence mechanisms.
 
 ## 3. Documentation and release metadata
 
