@@ -21,9 +21,12 @@ python3 /absolute/path/to/harness-worktree/plugins/dev-workflow/scripts/codex-wo
 Claudeの会話で実行する:
 
 ```text
-/dev-workflow:develop --executor codex --account spare --model <利用可能なCodexモデルID> --account-home spare=/absolute/path/to/codex-profile <issue URLまたは依頼>
-/dev-workflow:develop --executor codex --profile codex-standard --account-home-file /absolute/account-homes.json <issue URLまたは依頼>
+/dev-workflow:develop --account spare --model <利用可能なCodexモデルID> --account-home spare=/absolute/path/to/codex-profile <issue URLまたは依頼>
+/dev-workflow:develop --profile codex-standard --account-home-file /absolute/account-homes.json <issue URLまたは依頼>
+/dev-workflow:develop --profile hybrid-standard --account-home current=/absolute/path/to/codex-profile <issue URLまたは依頼>
 ```
+
+`--executor codex` は後方互換の別名として上の形式に追加できる。profile の Claude entry は `account=current`、model は `haiku|sonnet|opus|fable` のみとし、`fable` は `decider` role だけに指定できる。
 
 Claudeが既存developの進め方でworktree/記録先を準備し、仕様化判断から進める。仕様不要なら理由を記録して実装へ、必要なら仕様と独立仕様レビューを経て実装/テスト・PR・レビュー/ゲートへ進む。実行先をCodexにしてもこの判断と工程は変わらない。差戻しもCodexへ委譲する。burnを有効化する必要はない。
 
@@ -37,8 +40,8 @@ Claudeが既存developの進め方でworktree/記録先を準備し、仕様化�
 
 ```sh
 python3 <plugin>/scripts/codex-develop.py request --phase spec --input /absolute/request.txt \
-  --cwd /absolute/target-worktree --profile codex-standard [--profile-file /absolute/profiles.json] \
-  --account-home spare=/absolute/path/to/codex-profile --out /absolute/private/request.json
+  --cwd /absolute/target-worktree --profile hybrid-standard [--profile-file /absolute/profiles.json] \
+  --account-home current=/absolute/path/to/codex-profile --out /absolute/private/request.json
 python3 <plugin>/scripts/codex-worker.py run --request /absolute/private/request.json
 ```
 

@@ -16,11 +16,11 @@ account 名から CODEX_HOME への対応の導入方法は `docs/codex-develop.
 
 ## 本体が行う操作
 
-develop 入口 0 で記録先を確定し、対象 repo のルールで専用 worktree を用意する。CLI 自身は worktree を作らない。各委譲の直前に role を解決し、返された account/model/effort と対象 HEAD を監査情報として保持する。
+develop 入口 0 で記録先を確定し、対象 repo のルールで専用 worktree を用意する。CLI 自身は worktree を作らない。各委譲の直前に role を解決し、返された account/model/effort と対象 HEAD を監査情報として保持する。Claude role でも同じ `request`（`--input` と `--out` は必須だが、Claude role ではどちらも読み書きしない）を呼び、`status: agent-required` を読む。
 
-Claude role の新規起動では、profile の model を requested model として変更せず保持する。Agent 起動直前に既存の `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` を適用し、requested model / applied model / reason を別々に記録する。`decider` role は `subagent_type: dev-workflow:decider`、他の role は `general-purpose` として起動する。`FABLE_BUDGET_MODE=exhausted` で applied=opus に下がっても `decider` の subagent_type は変えない。制限が無ければ applied=requested、reason=unchanged。`FABLE_BUDGET_MODE=exhausted` は requested=fable を applied=opus にし、`SHARED_BUDGET_MODE=depleted` は requested にかかわらず applied=sonnet に固定して前者より優先する。
+Claude role の新規起動では、profile の model を requested model として変更せず保持する。Agent 起動直前に既存の `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` を適用し、requested model / applied model / reason を別々に記録する。`decider` role は `subagent_type: dev-workflow:decider`、他の role は `general-purpose` として起動する。上限の正本は `skills/develop/references/decision-criteria.md` の残量モード表であり、以下は例である。`FABLE_BUDGET_MODE=exhausted` で applied=opus に下がっても `decider` の subagent_type は変えない。`FABLE_BUDGET_MODE=reserve` の自動実行では Fable を使わず、Opus を上限とする。`SHARED_BUDGET_MODE=throttled` は Sonnet 起点、Opus 上限とする。制限が無ければ applied=requested、reason=unchanged。`FABLE_BUDGET_MODE=exhausted` は requested=fable を applied=opus にし、`SHARED_BUDGET_MODE=depleted` は requested にかかわらず applied=sonnet に固定して前者より優先する。
 
-同じ Claude profile role を再開する前にも毎回現在の上限を再計算する。既存 thread の applied model が上限内のときだけ requested tuple と applied model を変えず SendMessage する。上限を超えるときは SendMessage せず、既存の工程完了または停止確認条件を満たしてから、requested tuple と成果物・必要な要約を fresh thread へ渡し、上限内の applied model と reason を記録する。たとえば fable thread の再開前に exhausted へ変われば fresh opus、depleted へ変われば fresh sonnet とする。profile role の境界、独立レビュー、Codex 委譲も fresh thread とし、会話履歴全体を渡さない。
+同じ Claude profile role を再開する前にも毎回現在の上限を再計算する。SendMessage 再開前の `subagent-context.sh` によるコンテキスト上限計測は、profile 経路でも従来どおり適用する。既存 thread の applied model が上限内のときだけ requested tuple と applied model を変えず SendMessage する。上限を超えるときは SendMessage せず、既存の工程完了または停止確認条件を満たしてから、requested tuple と成果物・必要な要約を fresh thread へ渡し、上限内の applied model と reason を記録する。たとえば fable thread の再開前に exhausted へ変われば fresh opus、depleted へ変われば fresh sonnet とする。profile role の境界、独立レビュー、Codex 委譲も fresh thread とし、会話履歴全体を渡さない。
 
 Codex role は次の3手順で1回の委譲を行う。
 
@@ -36,7 +36,7 @@ Codex role は次の3手順で1回の委譲を行う。
 
 3. 標準出力の1行 JSON（`text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`）を読む。成功は exit 0、失敗は exit 2。台帳も job ID も残らないので、照会・受領・live resume は行わない。
 
-書込 role は一度に1つずつ動かし、担当中の role が完了してから次を開始する。Codex への委譲をセッションをまたいで引き継ぐ仕組みはないため、途中で切れた委譲はその工程の最初からやり直す。Claude role の再開には上記の上限再計算と fresh thread への手渡し規則を適用する。
+書込 role は一度に1つずつ動かし、担当中の role が完了してから次を開始する。Codex への委譲をセッションをまたいで引き継ぐ仕組みはないため、途中で切れた委譲はその工程の最初からやり直し、停止または中断時点の成果物と結果 JSON を記録する。Claude role の再開には上記の上限再計算と fresh thread への手渡し規則を適用する。
 
 | 正本の委譲箇所 | phase | role |
 |---|---|---|
@@ -59,6 +59,8 @@ Codex role は次の3手順で1回の委譲を行う。
 - G が通常経路で `codex exec`、companion、または Claude reviewer を呼ぶ場面では、それを実行せず `needs-reviewer` を返す。本体は phase `review` の fresh thread を開始し、その結果を新しい G に渡す。G は返す前に、ゲート自身の着手確認と同一 PR/HEAD の重複防止を実施する。
 - burn 接続、全 account の配分、使用量集計は別 issue の範囲とする。
 - Codex が選ばれたことを理由に仕様を必須化しない。正本どおり W が理由付きで「仕様化判断: しない」を返した場合、本体は実装工程へ進む。仕様が必要な場合は正本の R1 承認条件を適用する。
+- 仕様化が必要な場合、opsx Skill 操作は対象 repo の openspec CLI 相当へ変換し、正本の仕様フォーマットを別テンプレートへ写さない。CLI 不在時の判断も既存 develop 正本に従う。
+- G には操作結果の証拠を渡し、照合させる。
 
 旧台帳経路（`submit` / `status` / `result` / `reap`）は `scripts/CODEX-WORKER.md` に残る。混在 snapshot 自体は検証できるが、Claude role を選んだ legacy dispatch は worker submission 前に停止し、この foreground provider route を案内する。
 
