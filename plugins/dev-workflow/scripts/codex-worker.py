@@ -13,7 +13,6 @@ import select
 import shutil
 import signal
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -245,7 +244,7 @@ def quota_available(result, margin, inflight):
         require(type(pct) in (int, float) and math.isfinite(pct) and 0 <= pct <= 100 and
                 type(mins) is int and mins > 0 and type(reset) is int and reset > time.time(), 'quota_unknown')
         require(pct < 100, 'quota_exhausted')
-        # Each concurrent slot will spend before the next window read, so reserve for all of them.
+        # Reserve margin for every request counted in inflight.
         require(pct + margin*inflight <= 100, 'quota_headroom_insufficient')
         found = True
     require(found, 'quota_unknown')
@@ -369,14 +368,10 @@ def final_answer(items):
 
 
 class TurnState:
-    # Two different facts, and the job's terminal state depends on which one holds:
-    # submitted means the request went out, so the model may already be running and a failure
-    # afterwards is uncertainty (unknown); accepted means the server answered with a turn id,
-    # so an error before it proves no turn ever started (failed).
+    # accepted means the server answered turn/start; a ServerRejected before it is reported
+    # as server_rejected_start_<code>.
     def __init__(self):
-        self.submitted = False
         self.accepted = False
-        self.confirmed = False
         self.thread_id = None
         self.turn_id = None
         self.usage = None
@@ -397,7 +392,7 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
     runtime_identity_matches(runtime, account)
     advertised_model(rpc, payload['model'], payload.get('effort'))
     limits = rpc.request('account/rateLimits/read', {})
-    # Count after the reply: a slot reserved while the read was in flight must enter this judgment.
+    # inflight is read after the reply.
     inflight = recorder.inflight(account)
     quota_available(limits, account['quota_margin_pct'], inflight)
     thread_result = rpc.request('thread/start', {'cwd': cwd, 'model': payload['model'],
@@ -414,7 +409,6 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
     # gone, so writableRoots and the /tmp exclusions do not appear for the writers.
     policy = ({'type': 'readOnly', 'networkAccess': network} if sandbox == 'read-only'
               else {'type': 'dangerFullAccess'})
-    state.submitted = True
     turn_params = {'threadId': thread, 'model': payload['model'],
         'sandboxPolicy': policy, 'approvalPolicy': 'never',
         'input': [{'type': 'text', 'text': payload['prompt']}]}
@@ -437,7 +431,7 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
         except Exception:
             changed = True
         cancel = cancel or rpc.unsupported or changed
-        if cancel and cancel_at is None and recorder.single_deadline:
+        if cancel and cancel_at is None:
             # One deadline covering the interrupt and the completion after it, started where the
             # cancel is first seen, so an interrupt that never answers cannot extend the wait.
             cancel_at = time.monotonic()
@@ -447,8 +441,7 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
                 rpc.request('turn/interrupt', {'threadId': thread, 'turnId': turn}, tick=False)
             except Rejected:
                 # Under one deadline a failed interrupt still ends as interrupt_unconfirmed.
-                if not recorder.single_deadline:
-                    raise
+                pass
             cancel_sent = True
             if cancel_at is None:
                 cancel_at = time.monotonic()
@@ -470,7 +463,6 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
         if msg.get('method') == 'turn/completed' and params.get('turn', {}).get('id') == turn:
             status = params['turn']['status']
             require(status in TERMINAL, 'unsupported_terminal')
-            state.confirmed = True
             items = params['turn'].get('items', [])
             if status == 'completed' and not any(i.get('type') == 'agentMessage' and i.get('phase') == 'final_answer' for i in items):
                 stored = rpc.request('thread/read', {'threadId': thread, 'includeTurns': True})
@@ -489,7 +481,6 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
 class ForegroundRecorder:
     # Nothing is persisted; one stop flag and one deadline cover interruption.
     grace = 10
-    single_deadline = True
 
     def __init__(self, execution, stop):
         self.execution = execution
