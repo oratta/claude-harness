@@ -17,9 +17,11 @@ Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.mo
 | `fable`   | 判断が一点に集中する場所——checkpoint の再ランク・verify の最終判定・Build Contract レビュー・アーキテクチャ判断 | `'fable'` |
 | `inherit` | 分類に迷うタスクの保守的デフォルト | （**渡さない**。下記） |
 
-## develop role と Codex profile
+## develop role の provider-neutral profile
 
-Codex providerではClaudeのティア別名をCodex modelへ暗黙変換しない。`spec-write`、`spec-review`、`implement`、`impl-review`、`review`、`decider`、`explore`、`summarize` の各roleは、`references/codex-role-profiles.json`（または明示したversion 1のprofile-file）の同名entryにあるexecutor/account/model/effortへ解決する。このJSONがCodex設定の正本であり、本表へ個別Codex model IDを重複記載しない。
+`spec-write`、`spec-review`、`implement`、`impl-review`、`review`、`decider`、`explore`、`summarize` の各 role は、`references/codex-role-profiles.json`（または明示した version 1 profile-file）の同名 entry にある executor/account/model/effort へ解決する。歴史的なファイル名は維持するが、version 1 table は Claude と Codex を同じ profile 内で扱う provider-neutral な正本である。本表へ個別 Codex model ID を重複記載せず、Claude の tier alias を Codex model へ暗黙変換しない。
+
+Claude entry は account=`current`、model=`haiku|sonnet|opus|fable`、非空の effort を要求する。`fable` は `decider` role だけに許可する。別 Claude account の実行はまだ対応せず、account 欄自体は allocator の共通出力として保持する。Codex entry は登録済み account と非空の model/effort を要求し、正式な model/effort の対応可否は worker 起動時にも検証する。
 
 重めの実装・レビューを中位ティアで回すときは `'opus'` を渡す（`rules/subagent-model-selection.md` の対応表と同じ）。
 

@@ -1038,5 +1038,32 @@ class ForegroundRequest(unittest.TestCase):
                 self.assertFalse(self.out.exists())
 
 
+class DocumentationContracts(unittest.TestCase):
+    def setUp(self):
+        self.root = SCRIPT.parents[1]
+        self.adapter = (self.root / 'references/codex-develop.md').read_text()
+        self.skill = (self.root / 'skills/develop/SKILL.md').read_text()
+
+    def test_executor_branch_is_documented_on_exactly_one_line(self):
+        executor_lines = [line for line in self.adapter.splitlines() if 'executor' in line]
+        self.assertEqual(len(executor_lines), 1)  # grep -c "executor" ... must print 1
+        branch = executor_lines[0]
+        for value in ('role', 'claude', 'Agent', 'codex', '前景'):
+            self.assertIn(value, branch)
+        self.assertIn('references/codex-develop.md', self.skill)
+        self.assertIn('分岐を再掲せず', self.skill)
+
+    def test_resume_rechecks_caps_and_hands_off_without_changing_requested_tuple(self):
+        for name, document in (('adapter', self.adapter), ('skill', self.skill)):
+            with self.subTest(document=name):
+                for value in ('SendMessage', '上限', 'fresh thread', 'requested tuple',
+                              '工程完了', '停止確認', 'FABLE_BUDGET_MODE',
+                              'SHARED_BUDGET_MODE'):
+                    self.assertIn(value, document)
+        self.assertIn('exhausted', self.adapter)
+        self.assertIn('depleted', self.adapter)
+        self.assertIn('requested model / applied model / reason', self.adapter)
+
+
 if __name__ == '__main__':
     unittest.main()
