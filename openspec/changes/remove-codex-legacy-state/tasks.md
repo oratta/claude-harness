@@ -24,10 +24,10 @@
 
 ## 4. Specification and acceptance verification
 
-- [ ] 4.1 Confirm the delta specs encode a foreground-only `codex-worker` and removal of saved-request recovery from `manual-codex-develop`; confirm the two all-REMOVED capability deltas are absent because main-spec deletion is handled explicitly in 4.7.
-- [ ] 4.2 Run issue #341 conditions 1–4 exactly, run `openspec validate --specs`, and verify every expected zero-match/existence check has the specified exit code.
-- [ ] 4.3 Verify the docs contain manual state cleanup guidance, no code path deletes `~/.local/state/claude-harness-codex/`, and the PR body contains `Closes #341`, `Closes #323`, `Closes #329`, `Closes #331`, and `Closes #336`.
-- [ ] 4.4 Run all focused Python/Bats tests changed by this work and record commands, counts, and exit codes.
-- [ ] 4.5 Check `ps -eo pid,args | grep -E 'scripts/test.sh|bats-exec' | grep -v grep` returns no competing full suite, then run `bash scripts/test.sh` to exit 0; if the known statusline multi-account test fails, rerun it alone before classifying the failure.
-- [ ] 4.6 Inspect the final diff against design.md's per-document deletion inventory and record, for each shrunken document, exactly what was removed and why it belonged to the retired mechanism.
+- [x] 4.1 Confirm the delta specs encode a foreground-only `codex-worker` and removal of saved-request recovery from `manual-codex-develop`; confirm the two all-REMOVED capability deltas are absent because main-spec deletion is handled explicitly in 4.7.
+- [x] 4.2 Run issue #341 conditions 1–4 exactly, run `openspec validate --specs`, and verify every expected zero-match/existence check has the specified exit code.
+- [x] 4.3 Verify the docs contain manual state cleanup guidance, no code path deletes `~/.local/state/claude-harness-codex/`, and the PR body contains `Closes #341`, `Closes #323`, `Closes #329`, `Closes #331`, and `Closes #336`.
+- [x] 4.4 Run all focused Python/Bats tests changed by this work and record commands, counts, and exit codes.
+- [x] 4.5 Check `ps -eo pid,args | grep -E 'scripts/test.sh|bats-exec' | grep -v grep` returns no competing full suite, then run `bash scripts/test.sh` to exit 0; if the known statusline multi-account test fails, rerun it alone before classifying the failure.
+- [x] 4.6 Inspect the final diff against design.md's per-document deletion inventory and record, for each shrunken document, exactly what was removed and why it belonged to the retired mechanism.
 - [ ] 4.7 Immediately before archive, run `git rm -r openspec/specs/codex-worker-concurrency openspec/specs/codex-develop-continuation`, then run `openspec archive remove-codex-legacy-state --yes`. After archive, manually replace the final sentence of `openspec/specs/codex-worker/spec.md` Purpose line 4 with「…ごとに砂場と取得経路を決め、認証帰属の照合を行い、1 回の前景実行の結果を標準出力の 1 行 JSON で返す。永続的な台帳・所有権・受領は持たない。」and delete line 8's `codex-worker-concurrency` reference. Finally run `openspec validate --specs` and require exit 0.
