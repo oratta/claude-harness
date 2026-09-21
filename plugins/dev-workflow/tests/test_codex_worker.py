@@ -53,9 +53,11 @@ for line in sys.stdin:
  elif method=='thread/read':r={'thread':{'turns':[{'id':'turn','items':config.get('items',[{'type':'agentMessage','phase':'final_answer','text':'DONE'}])}]}}
  else:r={}
  print(json.dumps({'id':rid,'result':r}),flush=True)
+ if method==config.get('deafen_after'):
+  while True:time.sleep(60)
  if method=='turn/start':
   if config.get('disconnect'):sys.exit(0)
-  print(json.dumps({'method':'item/started','params':{'threadId':'thread','turnId':'turn'}}),flush=True)
+  if not config.get('quiet'):print(json.dumps({'method':'item/started','params':{'threadId':'thread','turnId':'turn'}}),flush=True)
   if config.get('usage'):print(json.dumps({'method':'thread/tokenUsage/updated','params':{'threadId':'thread','turnId':'turn','tokenUsage':config['usage']}}),flush=True)
   if config.get('wait'):continue
   print(json.dumps({'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':config.get('status','completed'),'items':[]}}}),flush=True)
@@ -879,5 +881,98 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(len(lines),1,out+err)
         self.assertEqual(json.loads(lines[0])['status'],'interrupted')
         self.assertEqual(self.ledgers(), [])
+
+    def test_a_stalled_send_still_stops_on_sigterm(self):
+        # The server answers thread/start and then stops reading, so the next write fills the
+        # pipe and never finishes. A write that cannot be given up on outlives every deadline.
+        self.config(deafen_after='thread/start')
+        process = subprocess.Popen(self.command(prompt='x'*(1<<20)),env=self.env,text=True,
+                                   stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        try:
+            limit = time.monotonic()+20
+            while time.monotonic() < limit and not any(m.get('method')=='thread/start' for m in self.calls()):
+                time.sleep(.05)
+            self.assertTrue(any(m.get('method')=='thread/start' for m in self.calls()),
+                            'thread/start never reached the app-server')
+            servers = self.children(process.pid)
+            self.assertEqual(len(servers),1,'expected one app-server child')
+            time.sleep(1)
+            start = time.monotonic()
+            process.terminate()
+            out,err = process.communicate(timeout=40)
+            elapsed = time.monotonic()-start
+        finally:
+            if process.poll() is None:
+                process.kill();process.communicate(timeout=10)
+        self.assertLess(elapsed,20,'the command outlived the stop deadline')
+        while self.alive(servers[0]) and time.monotonic()-start < 20:
+            time.sleep(.05)
+        self.assertFalse(self.alive(servers[0]),'app-server outlived the command')
+        lines = [s for s in out.splitlines() if s.strip()]
+        self.assertEqual(len(lines),1,out+err)
+        self.assertEqual(json.loads(lines[0])['error_kind'],'stop_requested')
+        self.assertEqual(self.ledgers(), [])
+
+    def test_sigterm_interrupts_a_turn_that_has_said_nothing(self):
+        # No item/started ever arrives, so nothing proves the turn is producing output. The
+        # stop still has to reach the server as turn/interrupt.
+        self.config(wait=True,quiet=True)
+        process = subprocess.Popen(self.command(),env=self.env,text=True,
+                                   stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        try:
+            self.await_turn()
+            servers = self.children(process.pid)
+            self.assertEqual(len(servers),1,'expected one app-server child')
+            process.terminate()
+            out,err = process.communicate(timeout=30)
+        finally:
+            if process.poll() is None:
+                process.kill();process.communicate(timeout=10)
+        self.assertTrue(any(m.get('method')=='turn/interrupt' for m in self.calls()),
+                        'no interrupt reached the app-server')
+        deadline = time.monotonic()+10
+        while self.alive(servers[0]) and time.monotonic() < deadline:
+            time.sleep(.05)
+        self.assertFalse(self.alive(servers[0]),'app-server outlived the command')
+        lines = [s for s in out.splitlines() if s.strip()]
+        self.assertEqual(len(lines),1,out+err)
+        self.assertEqual(json.loads(lines[0])['status'],'interrupted')
+        self.assertEqual(self.ledgers(), [])
+
+    def test_request_accepts_the_legacy_account_and_model_pair(self):
+        # The skill and the command both say either form may be used, so the older pair has to
+        # produce the same request file, minus the per-role effort a profile would carry.
+        instructions = self.root/'legacy-input.txt';instructions.write_text('Do only this phase.')
+        out = self.root/'legacy-request.json'
+        built = self.develop('request','--phase','implement','--input',str(instructions),
+                             '--cwd',str(self.cwd),'--account','personal','--model','fixture-model',
+                             '--account-home','personal='+str(self.home),'--out',str(out))
+        self.assertEqual([built['account'],built['model'],built['effort'],built['role']],
+                         ['personal','fixture-model',None,'implement'])
+        request = json.loads(out.read_text())
+        self.assertEqual([request['account'],request['model'],request['codex_home']],
+                         ['personal','fixture-model',str(self.home.resolve())])
+        self.assertNotIn('effort',request)
+
+    def test_request_refuses_a_missing_half_or_doubled_execution_form(self):
+        instructions = self.root/'form-input.txt';instructions.write_text('Do only this phase.')
+        out = self.root/'form-request.json'
+        base = ['request','--phase','implement','--input',str(instructions),'--cwd',str(self.cwd),
+                '--account-home','personal='+str(self.home),'--out',str(out)]
+        for extra in ([], ['--account','personal'], ['--model','fixture-model'],
+                      ['--profile','codex-standard','--account','personal','--model','fixture-model'],
+                      ['--profile-file',str(self.root/'profiles.json')]):
+            r = self.develop(*base,*extra,code=2)
+            self.assertEqual(r['status'],'blocked',extra)
+            self.assertFalse(out.exists(),extra)
+
+    def test_request_refuses_an_account_the_table_does_not_map(self):
+        instructions = self.root/'unmapped-input.txt';instructions.write_text('Do only this phase.')
+        out = self.root/'unmapped-request.json'
+        r = self.develop('request','--phase','implement','--input',str(instructions),
+                         '--cwd',str(self.cwd),'--account','absent','--model','fixture-model',
+                         '--account-home','personal='+str(self.home),'--out',str(out),code=2)
+        self.assertEqual(r['status'],'blocked')
+        self.assertFalse(out.exists())
 
 if __name__=='__main__':unittest.main()

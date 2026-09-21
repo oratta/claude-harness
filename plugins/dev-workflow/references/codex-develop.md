@@ -6,7 +6,7 @@
 
 `/dev-workflow:develop --executor codex --profile codex-standard <issue URLまたは依頼>`
 
-外部設定は `--profile NAME --profile-file /absolute/profiles.json` とし、version 1、全canonical role、呼び出し側の対応表に載るaccountを必要とする。各roleの値は `{"executor":"codex","account":"spare","model":"MODEL","effort":"high"}` の形で、委譲のたびに解決して依頼ファイルへ固定する（runへのsnapshotは持たない）。
+`request` も入口と同じく `--profile NAME` か旧形式の `--account NAME --model MODEL` のどちらか一方を取り、併用・旧形式の片方欠落・どちらも無しは依頼ファイルを作らずに拒否する。旧形式は role 別の設定を持たないので、effort は依頼ファイルに入らない。外部設定は `--profile NAME --profile-file /absolute/profiles.json` とし、version 1、全canonical role、呼び出し側の対応表に載るaccountを必要とする。各roleの値は `{"executor":"codex","account":"spare","model":"MODEL","effort":"high"}` の形で、委譲のたびに解決して依頼ファイルへ固定する（runへのsnapshotは持たない）。
 
 account名からCODEX_HOMEへの対応は呼び出し側の設定で与える。`--account-home NAME=PATH` の繰り返しか、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを `--account-home-file PATH` で渡す。2つの与え方の併用は拒否し、合成も優先もしない。値が絶対パスでない、またはディレクトリとして存在しないときも拒否する。対応に無いaccount名は依頼ファイルを作らずに拒否し、既定や別のCODEX_HOMEへ倒さない。`docs/codex-develop.md` に導入方法を示す。人間の手動入口専用で、burn窓やcron/tickを要求しない。workerの認証・利用上限・権限拒否はそのまま停止理由とする。Codexが使えないときClaudeで代行しない。
 
@@ -19,7 +19,7 @@ develop入口0で記録先を確定し、対象repoのOrca等のルールで専�
 
    ```sh
    python3 <plugin>/scripts/codex-develop.py request --phase PHASE --input <指示ファイル> \
-     --cwd <worktree-root> --profile NAME [--profile-file /absolute/profiles.json] \
+     --cwd <worktree-root> (--profile NAME [--profile-file /absolute/profiles.json] | --account NAME --model MODEL) \
      --account-home spare=/absolute/codex-home --out <依頼ファイル>
    python3 <plugin>/scripts/codex-worker.py run --request <依頼ファイル>
    ```

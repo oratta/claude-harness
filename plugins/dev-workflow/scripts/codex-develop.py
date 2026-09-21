@@ -404,6 +404,16 @@ REQUEST:
 def build_request(args):
     # The foreground route has no run and no ledger: the role settings are resolved per call
     # and written into the request file, and CODEX_HOME comes from the caller's own table.
+    # Both ways of naming the execution are accepted, exactly as init accepts them, and the
+    # refusals are the same: never both, never half of the legacy pair, never neither.
+    legacy = bool(args.account or args.model)
+    profile = bool(args.profile or args.profile_file)
+    if legacy and profile or args.profile_file and not args.profile:
+        raise RuntimeError('profile cannot be combined with account/model; profile-file requires profile')
+    if legacy and not (args.account and args.model):
+        raise RuntimeError('legacy request requires both account and model')
+    if not legacy and not args.profile:
+        raise RuntimeError('request requires account/model or profile')
     mapping = account_homes(args.account_home, args.account_home_file)
     cwd = Path(args.cwd).expanduser().resolve()
     if not cwd.is_dir():
@@ -411,9 +421,16 @@ def build_request(args):
     check = subprocess.run(['git', '-C', str(cwd), 'rev-parse', '--show-toplevel'], capture_output=True, text=True, env=clean_env())
     if check.returncode or Path(check.stdout.strip()).resolve() != cwd:
         raise RuntimeError('cwd must be the repository/worktree root')
-    config = load_profile(args.profile, args.profile_file, set(mapping))
-    state = {'cwd': str(cwd), 'execution_config': config,
-             'execution_config_hash': execution_config_hash(config)}
+    if args.profile:
+        config = load_profile(args.profile, args.profile_file, set(mapping))
+        state = {'cwd': str(cwd), 'execution_config': config,
+                 'execution_config_hash': execution_config_hash(config)}
+    else:
+        # load_profile refuses an account the table does not map; the legacy pair names one
+        # account directly, so the same refusal has to be made here.
+        if args.account not in mapping:
+            raise RuntimeError('account is not in the account-home table')
+        state = {'cwd': str(cwd), 'account': args.account, 'model': args.model}
     role = PHASES[args.phase][0]
     execution = resolve_execution(state, role)
     head = git(str(cwd), 'rev-parse', 'HEAD')
@@ -449,7 +466,9 @@ def main():
     foreground.add_argument('--phase', choices=PHASES, required=True)
     foreground.add_argument('--input', required=True, help='UTF-8 phase instructions prepared by coordinator')
     foreground.add_argument('--cwd', required=True)
-    foreground.add_argument('--profile', required=True)
+    foreground.add_argument('--account')
+    foreground.add_argument('--model')
+    foreground.add_argument('--profile')
     foreground.add_argument('--profile-file')
     foreground.add_argument('--account-home', action='append', default=[], metavar='NAME=PATH',
                          help='account name to CODEX_HOME; repeatable, not combinable with --account-home-file')

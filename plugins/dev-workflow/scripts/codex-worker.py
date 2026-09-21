@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import queue
 import re
+import select
 import shutil
 import signal
 import sqlite3
@@ -423,6 +424,9 @@ class Rpc:
         self.budget = lambda: None
         self.aborted = lambda: False
         self.poll_wait = None
+        # Writes go out by hand so they can be given up on: a peer that stops reading fills the
+        # pipe, and a blocking write would hold the process past every deadline below.
+        os.set_blocking(self.proc.stdin.fileno(), False)
         threading.Thread(target=self.reader, daemon=True).start()
 
     def reader(self):
@@ -433,9 +437,31 @@ class Rpc:
             pass
         self.events.put({'disconnected': True})
 
+    def deadline(self):
+        # The same budget the replies wait on: under the foreground grace period it is what is
+        # left of it, and otherwise the plain per-request timeout.
+        limit = self.budget()
+        return time.monotonic()+(self.timeout if limit is None else max(0.0, min(self.timeout, limit)))
+
     def send(self, msg):
-        self.proc.stdin.write(json.dumps(msg)+'\n')
-        self.proc.stdin.flush()
+        data = (json.dumps(msg)+'\n').encode()
+        fd = self.proc.stdin.fileno()
+        deadline = self.deadline()
+        while data:
+            if self.aborted():
+                raise Rejected('stop_requested')
+            wait = deadline-time.monotonic()
+            if wait <= 0:
+                raise Rejected('rpc_timeout')
+            if not select.select((), (fd,), (), min(wait, self.poll_wait) if self.poll_wait else wait)[1]:
+                continue
+            try:
+                written = os.write(fd, data)
+            except BlockingIOError:
+                continue
+            except OSError:
+                raise Rejected('transport_disconnected')
+            data = data[written:]
 
     def receive(self, timeout):
         msg = self.events.get(timeout=timeout)
@@ -454,9 +480,7 @@ class Rpc:
         self.next_id += 1
         rid = self.next_id
         self.send({'id': rid, 'method': method, 'params': params})
-        limit = self.budget()
-        limit = self.timeout if limit is None else max(0.0, min(self.timeout, limit))
-        deadline = time.monotonic()+limit
+        deadline = self.deadline()
         while time.monotonic() < deadline:
             wait = max(.001, deadline-time.monotonic())
             try:
@@ -608,7 +632,6 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
                      effort=(turn_result.get('effort'), 'turn/start:result.turn.effort'))
     cancel_sent = False
     cancel_at = None
-    activity = False
     while True:
         cancel = recorder.poll()
         try:
@@ -622,7 +645,7 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
             # cancel is first seen, so an interrupt that never answers cannot extend the wait.
             cancel_at = time.monotonic()
             recorder.begin_grace(cancel_at)
-        if cancel and activity and not cancel_sent:
+        if cancel and not cancel_sent:
             try:
                 rpc.request('turn/interrupt', {'threadId': thread, 'turnId': turn}, tick=False)
             except Rejected:
@@ -644,7 +667,6 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
         if params.get('threadId') != thread:
             continue
         if params.get('turnId') == turn:
-            activity = True
             if msg.get('method') == 'thread/tokenUsage/updated':
                 state.usage = params.get('tokenUsage')
                 recorder.record_usage(state.usage)
