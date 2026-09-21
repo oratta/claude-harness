@@ -12,6 +12,8 @@
 
 account 名から CODEX_HOME への対応は `--account-home NAME=PATH` の繰り返しか、平らな JSON を `--account-home-file PATH` で与える。2方式は併用せず、値は既存の絶対ディレクトリでなければならない。profile 全体を先に検証するため、選択 role が Claude でも profile 内の Codex account はすべて対応表に必要である。対応に無い名前を既定値や別 account へ倒さない。
 
+account 名から CODEX_HOME への対応の導入方法は `docs/codex-develop.md` に示す。この入口は人間が手動で使うためのもので、burn 窓や cron/tick を要求しない。Codex worker の認証失敗、利用上限による拒否、権限拒否は、そのまま停止理由とする。role の投げ先を暗黙に別 provider で代行してはならない。`codex` に解決した role で Codex が失敗しても Claude へ切り替えず、`claude` に解決した role で Claude が失敗しても Codex へ切り替えない。role をどこへ投げるかを決める場所は profile だけである。
+
 ## 本体が行う操作
 
 develop 入口 0 で記録先を確定し、対象 repo のルールで専用 worktree を用意する。CLI 自身は worktree を作らない。各委譲の直前に role を解決し、返された account/model/effort と対象 HEAD を監査情報として保持する。
@@ -34,6 +36,8 @@ Codex role は次の3手順で1回の委譲を行う。
 
 3. 標準出力の1行 JSON（`text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`）を読む。成功は exit 0、失敗は exit 2。台帳も job ID も残らないので、照会・受領・live resume は行わない。
 
+書込 role は一度に1つずつ動かし、担当中の role が完了してから次を開始する。Codex への委譲をセッションをまたいで引き継ぐ仕組みはないため、途中で切れた委譲はその工程の最初からやり直す。Claude role の再開には上記の上限再計算と fresh thread への手渡し規則を適用する。
+
 | 正本の委譲箇所 | phase | role |
 |---|---|---|
 | W: 仕様化判断・仕様作成・仕様差戻し | spec | spec-write |
@@ -52,5 +56,10 @@ Codex role は次の3手順で1回の委譲を行う。
 - Claude hooks は Codex に自動適用されない。対象 repo の必須検査を指示と結果に明記し、実行不能を合格扱いしない。read-only policy 以外に sandbox 保証を推定しない。
 - 停止は Agent または起動した前景 command を止める。通常経路に旧台帳の ack / retry / run directory / worker ledger / continuation 操作を戻さない。
 - request は private directory に置く。worker は静的検証後、thread/start 前に model/list でも model/effort を検証する。結果 JSON は要求値と実効値・観測元を分け、未観測値を推測しない。
+- G が通常経路で `codex exec`、companion、または Claude reviewer を呼ぶ場面では、それを実行せず `needs-reviewer` を返す。本体は phase `review` の fresh thread を開始し、その結果を新しい G に渡す。G は返す前に、ゲート自身の着手確認と同一 PR/HEAD の重複防止を実施する。
+- burn 接続、全 account の配分、使用量集計は別 issue の範囲とする。
+- Codex が選ばれたことを理由に仕様を必須化しない。正本どおり W が理由付きで「仕様化判断: しない」を返した場合、本体は実装工程へ進む。仕様が必要な場合は正本の R1 承認条件を適用する。
 
 旧台帳経路（`submit` / `status` / `result` / `reap`）は `scripts/CODEX-WORKER.md` に残る。混在 snapshot 自体は検証できるが、Claude role を選んだ legacy dispatch は worker submission 前に停止し、この foreground provider route を案内する。
+
+同じ worktree に2本の job を同時に投げてはならない。これは本体の責任である。前景経路は台帳を持たず、同時実行の枠管理も作業ディレクトリの排他も行わない。
