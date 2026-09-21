@@ -7,14 +7,14 @@
 
 ## 2. 前景実行のテストを先に書く（Red）
 
-- [ ] 2.1 偽 app-server（`test_codex_worker.py` の `FAKE`）を使って前景実行の依頼ファイルを組み立てるヘルパを足す（役割・cwd・model・effort・CODEX_HOME・prompt を載せる）
-- [ ] 2.2 台帳を作らずに完走することを固定するテストを足す（実行後に `ledger.sqlite` と `ownership.sqlite` がどこにも存在しないこと、stdout の 1 行 JSON に最終回答・終了状態・使用量・要求した model / effort・観測した model / effort と観測元・thread / turn の ID が入ること、exit code が 0 であること）
-- [ ] 2.3 呼び出し元の消失で 30 秒以内に終わることを固定するテストを足す。実際の起動経路を写した 3 段（テスト → 中間プロセス → `sh -c 'python3 codex-worker.py run …'` → `run`）で組み、`run` の直接の親が shell である状態のまま**中間プロセス**を終了させてから、`run` と app-server の両方の PID について `os.kill(pid, 0)` が失敗するまでの時間を測る
-- [ ] 2.4 SIGTERM で止まることを固定するテストを足す（偽 app-server に `turn/interrupt` が届いた記録が残ること、app-server の子プロセスが残らないこと）
-- [ ] 2.5 ターン開始前の失敗（アカウント照合の不一致・利用枠の使い切り・サーバーが thread / turn の開始をエラー応答で拒否）でも同じ形の JSON が出て、`error_kind` にサーバーのエラーコードを含む理由が入り、exit code が非ゼロになることを固定するテストを足す
-- [ ] 2.6 前景実行が `--state-dir` を受け取らないことを固定するテストを足す（引数エラーで終わる）
-- [ ] 2.8 結果 JSON の `effective.account` に app-server が返した実行中アカウントが入り、依頼の account 名（`requested.account`）と別に扱われることを固定するテストを足す（偽 app-server が要求名と違う email を返す場合に食い違いが JSON から分かる）
-- [ ] 2.7 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py` を実行し、足したテストが落ちること（Red）を出力で確認する
+- [x] 2.1 偽 app-server（`test_codex_worker.py` の `FAKE`）を使って前景実行の依頼ファイルを組み立てるヘルパを足す（役割・cwd・model・effort・CODEX_HOME・prompt を載せる）
+- [x] 2.2 台帳を作らずに完走することを固定するテストを足す（実行後に `ledger.sqlite` と `ownership.sqlite` がどこにも存在しないこと、stdout の 1 行 JSON に最終回答・終了状態・使用量・要求した model / effort・観測した model / effort と観測元・thread / turn の ID が入ること、exit code が 0 であること）
+- [x] 2.3 呼び出し元の消失で 30 秒以内に終わることを固定するテストを足す。実際の起動経路を写した 3 段（テスト → 中間プロセス → `sh -c 'python3 codex-worker.py run …'` → `run`）で組み、`run` の直接の親が shell である状態のまま**中間プロセス**を終了させてから、`run` と app-server の両方の PID について `os.kill(pid, 0)` が失敗するまでの時間を測る
+- [x] 2.4 SIGTERM で止まることを固定するテストを足す（偽 app-server に `turn/interrupt` が届いた記録が残ること、app-server の子プロセスが残らないこと）
+- [x] 2.5 ターン開始前の失敗（アカウント照合の不一致・利用枠の使い切り・サーバーが thread / turn の開始をエラー応答で拒否）でも同じ形の JSON が出て、`error_kind` にサーバーのエラーコードを含む理由が入り、exit code が非ゼロになることを固定するテストを足す
+- [x] 2.6 前景実行が `--state-dir` を受け取らないことを固定するテストを足す（引数エラーで終わる）
+- [x] 2.8 結果 JSON の `effective.account` に app-server が返した実行中アカウントが入り、依頼の account 名（`requested.account`）と別に扱われることを固定するテストを足す（偽 app-server が要求名と違う email を返す場合に食い違いが JSON から分かる）
+- [x] 2.7 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py` を実行し、足したテストが落ちること（Red）を出力で確認する
 
 ## 3. 前景実行の入口を足す（Green）
 
