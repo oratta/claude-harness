@@ -410,10 +410,10 @@ convergence_section() {
 }
 
 @test "convergence (#281): step 6 recovery table has a round-2 cap row covering both answers" {
-  row="$(grep '2周目キャップ' "$SKILL" | grep '|')"
+  row="$(grep -A1 '^| \*\*2周目キャップ\*\*' "$SKILL")"
   [ -n "$row" ]
   echo "$row" | grep -q '続ける'
   echo "$row" | grep -q 'agent-review:failed'
   echo "$row" | grep -q '範囲外として閉じる'
-  echo "$row" | grep -q 'needs-approval を外す'
+  [ "$(echo "$row" | grep -c 'needs-approval.*を外す')" -eq 2 ]
 }
