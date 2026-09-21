@@ -1,6 +1,6 @@
 ## 1. テストを先に書く（TDD）
 
-- [ ] 1.1 `plugins/dev-workflow/tests/pr-review-gate-skill.bats` の収束ルール検査に、新手順の文言（2 周目の結果を受け取った直後に G が違反文を引用する・深刻度ラベルは参考・引用できない指摘は follow-up issue・引用できる指摘が残れば `needs-approval` で停止し 3 周目を自動で開けない・無人運用でも止まる・方式の書き換え後は全体レビューで周回は数え続ける・決める役はキャップ判定に関与しない）の検査を足す
+- [ ] 1.1 `plugins/dev-workflow/tests/pr-review-gate-skill.bats` の収束ルール検査に、新手順の文言（2 周目の結果を受け取った直後に G が違反文を引用する・深刻度ラベルは参考・引用できない指摘は follow-up issue・引用できる指摘が残れば `needs-approval` で停止し 3 周目を自動で開けない・無人運用でも止まる・主の続行指示で開いた周の終了時にも同じ仕分けを適用し引用できる指摘が残れば再び `needs-approval` で止まる・方式の書き換え後は全体レビューで周回は数え続ける・決める役はキャップ判定に関与しない）の検査を足す
 - [ ] 1.2 同 bats に「新規の高深刻度 blocking なら 3 周目に入ってよい」の許可条件が残っていないことの検査を足し、既存の固定文言（「2周」「高深刻度」「差分」「follow-up issue」「マージ後に issue で直せるものは blocking にしない」）は新しい文脈で残す
 - [ ] 1.3 `plugins/dev-workflow/tests/develop-roles.bats` に、gate-runner.md の 2 周目 return の仕分け（引用 / follow-up issue URL）・引用できる指摘が残ったら保留で返し 3 周目を提案しない・`周回:` 欄が 3 周目以降と全体レビューを表せることの検査と、gate-runner.md に「新規の高深刻度 blocking のみ」の 3 周目許可条件が残っていないことの検査を足す
 - [ ] 1.4 追加した検査が現行ファイルで落ちることを確認する

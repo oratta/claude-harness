@@ -273,6 +273,31 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -qF 'Ready 化: 実施した | 対象外（元から非 Draft）' "$GATE"
 }
 
+@test "gate-runner (#281): round-2 return sorts findings by quote or follow-up issue URL" {
+  grep -q '仕分け' "$GATE"
+  grep -q '引用' "$GATE"
+  grep -q 'follow-up issue' "$GATE"
+}
+
+@test "gate-runner (#281): quotable findings at round 2 return as on-hold, not proposing a third round" {
+  grep -q '2周目キャップ' "$GATE"
+  grep -q '3周目を提案しない' "$GATE"
+}
+
+@test "gate-runner (#281): round field covers round 3+ after owner go-ahead and full review line counts" {
+  grep -qE '周回: .*3以降（主の続行指示あり）' "$GATE"
+  grep -q '全体レビュー' "$GATE"
+}
+
+@test "gate-runner (#281): no high-severity-only third round permission remains" {
+  run grep -F '新規の高深刻度 blocking のみ' "$GATE"
+  [ "$status" -ne 0 ]
+}
+
+@test "gate-runner (#281): resume covers the owner's answer to the round-2 cap" {
+  grep -E '保留の解除' "$GATE" | grep -q '2周目キャップ'
+}
+
 @test "gate-runner: return formats cover passed / failed / on-hold" {
   grep -q 'passed' "$GATE"
   grep -q 'failed' "$GATE"

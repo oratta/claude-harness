@@ -346,3 +346,74 @@ review_execution() {
   done
   ! echo "$doc" | grep -qE 'github.com/|/Users/|#715'
 }
+
+# ===== 収束ルールの適用手順（issue #281 PR-A）=====
+
+convergence_section() {
+  awk '/^\*\*収束ルール（レビュー周回のキャップ）\*\*/{f=1} f&&/^#/{exit} f' "$SKILL"
+}
+
+@test "convergence (#281): G quotes the violated sentence right after receiving the round-2 result" {
+  sec="$(convergence_section)"
+  [ -n "$sec" ]
+  echo "$sec" | grep -q '2周目の結果を受け取った直後'
+  echo "$sec" | grep -q 'G'
+  echo "$sec" | grep -q '引用'
+  echo "$sec" | grep -q '受け入れ条件'
+}
+
+@test "convergence (#281): reviewer severity labels are reference only" {
+  convergence_section | grep -q '深刻度ラベルは参考'
+}
+
+@test "convergence (#281): no quotable source means every finding is treated as unquoted" {
+  convergence_section | grep -q '引用元が無い'
+}
+
+@test "convergence (#281): unquotable findings go to follow-up issues and proceed to passed" {
+  sec="$(convergence_section)"
+  echo "$sec" | grep -q '引用できない指摘'
+  echo "$sec" | grep -q 'follow-up issue'
+  echo "$sec" | grep -q 'passed'
+}
+
+@test "convergence (#281): quotable findings stop with needs-approval and a single choice to the owner" {
+  sec="$(convergence_section)"
+  echo "$sec" | grep -q '引用できる指摘'
+  echo "$sec" | grep -q 'needs-approval'
+  echo "$sec" | grep -q '続けるか、範囲外として閉じるか'
+  echo "$sec" | grep -q '3周目を自動で開けない'
+}
+
+@test "convergence (#281): unmanned operation (loop-dev-agent) also stops" {
+  convergence_section | grep -q 'loop-dev-agent'
+}
+
+@test "convergence (#281): rounds opened by the owner's go-ahead apply the same sorting and stop again" {
+  convergence_section | grep -q '主の続行指示で開いた周の終了時にも同じ仕分け'
+}
+
+@test "convergence (#281): rewrite of the approach triggers a full review but rounds keep counting" {
+  sec="$(convergence_section)"
+  echo "$sec" | grep -q '方式の書き換え'
+  echo "$sec" | grep -q '全体レビュー'
+  echo "$sec" | grep -q '周回は数え続ける'
+}
+
+@test "convergence (#281): the decider is not involved in the cap decision" {
+  convergence_section | grep -q '決める役.*関与しない'
+}
+
+@test "convergence (#281): no high-severity permission for a third round remains" {
+  run grep -E '3周目に入ってよいのは.*高深刻度|新規の高深刻度 blocking のみ' "$SKILL"
+  [ "$status" -ne 0 ]
+}
+
+@test "convergence (#281): step 6 recovery table has a round-2 cap row covering both answers" {
+  row="$(grep '2周目キャップ' "$SKILL" | grep '|')"
+  [ -n "$row" ]
+  echo "$row" | grep -q '続ける'
+  echo "$row" | grep -q 'agent-review:failed'
+  echo "$row" | grep -q '範囲外として閉じる'
+  echo "$row" | grep -q 'needs-approval を外す'
+}
