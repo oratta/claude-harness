@@ -370,6 +370,13 @@ convergence_section() {
   convergence_section | grep -q '引用元が無い'
 }
 
+@test "convergence (#281): the defect-means-failed rule yields to the convergence rule from round 2" {
+  line="$(grep -F '欠陥ありなら PR コメントに再現手順と修正点を書き' "$SKILL")"
+  [ -n "$line" ] || { echo "no defect-means-failed line"; return 1; }
+  echo "$line" | grep -q '1周目'
+  echo "$line" | grep -q '収束ルール'
+}
+
 @test "convergence (#281): unquotable findings go to follow-up issues and proceed to passed" {
   sec="$(convergence_section)"
   echo "$sec" | grep -q '引用できない指摘'

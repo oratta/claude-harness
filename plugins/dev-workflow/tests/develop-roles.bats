@@ -298,6 +298,24 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -E '保留の解除' "$GATE" | grep -q '2周目キャップ'
 }
 
+@test "gate-runner (#281): the round-2 sorting field sits above the Status-specific sections" {
+  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
+  [ -n "$common" ] || { echo "no Gate Result block in gate-runner.md"; return 1; }
+  echo "$common" | grep -q '仕分け'
+  echo "$common" | grep -q 'follow-up issue'
+  run sh -c "awk '/^### failed のとき/{f=1;next} /^### /{f=0} f' '$GATE' | grep -F '2周目の終わりにやること'"
+  [ "$status" -ne 0 ]
+}
+
+@test "gate-runner (#281): resuming with the reviewer's summary branches by round when findings remain" {
+  line="$(grep -F 'レビュアーの要約受領' "$GATE")"
+  [ -n "$line" ] || { echo "no reviewer-summary resume line"; return 1; }
+  echo "$line" | grep -q '1周目'
+  echo "$line" | grep -q 'failed'
+  echo "$line" | grep -q '2周目'
+  echo "$line" | grep -q '仕分け'
+}
+
 @test "gate-runner: return formats cover passed / failed / on-hold" {
   grep -q 'passed' "$GATE"
   grep -q 'failed' "$GATE"
