@@ -354,3 +354,20 @@ PY
   # 前景上限を超える待ちを散文で示唆する記述を残さない
   ! grep -qF '最長 15 分' "$GATE"
 }
+
+# --- Codex への指示文に指摘の固定書式を渡す（issue #349） ---
+#
+# 書式の正本は pr-review-gate SKILL.md 手順 2-1 のレビュアー向け指示ブロック。
+# 雛形はそのブロックを貼る指示と全件列挙の 1 文だけを持ち、書式の欄や深刻度の定義表を再掲しない。
+
+@test "codex prompt template (#349): pastes the reviewer block from step 2-1 and asks to enumerate every finding" {
+  grep -qF 'SKILL.md 手順 2-1 のレビュアー向け指示ブロック' "$CANON"
+  grep -qF '該当する指摘を全部列挙するまで止まらない' "$CANON"
+}
+
+@test "codex prompt template (#349): does not restate the finding format or the severity table" {
+  run grep -E '^\| `(blocking|should|nit)` \|' "$CANON"
+  [ "$status" -ne 0 ]
+  run grep -E '`plausible`|`unresolved`|`wontfix`' "$CANON"
+  [ "$status" -ne 0 ]
+}

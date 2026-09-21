@@ -370,11 +370,15 @@ convergence_section() {
   convergence_section | grep -q '引用元が無い'
 }
 
-@test "convergence (#281): the defect-means-failed rule yields to the convergence rule from round 2" {
-  line="$(grep -F '欠陥ありなら PR コメントに再現手順と修正点を書き' "$SKILL")"
-  [ -n "$line" ] || { echo "no defect-means-failed line"; return 1; }
+@test "convergence (#349): the per-round general rule is gone and step 2-1 refers to the all-round verdict" {
+  run grep -F '欠陥ありなら PR コメントに再現手順と修正点を書き' "$SKILL"
+  [ "$status" -ne 0 ]
+  line="$(step21_section | grep -F '止める指摘が残ったら')"
+  [ -n "$line" ] || { echo "no stop-finding branch line in step 2-1"; return 1; }
+  echo "$line" | grep -qF '「マージを止めるかの判定（全周共通）」'
   echo "$line" | grep -q '1周目'
-  echo "$line" | grep -q '収束ルール'
+  echo "$line" | grep -q 'agent-review:failed'
+  echo "$line" | grep -qF '「2周目の終わりにやること」'
 }
 
 @test "convergence (#281): unquotable findings go to follow-up issues and proceed to passed" {
@@ -423,4 +427,117 @@ convergence_section() {
   echo "$row" | grep -q 'agent-review:failed'
   echo "$row" | grep -q '範囲外として閉じる'
   [ "$(echo "$row" | grep -c 'needs-approval.*を外す')" -eq 2 ]
+}
+
+# ===== 指摘の固定書式と全周共通の判定（issue #349）=====
+
+step21_section() {
+  awk '/^#### 2-1\. /{f=1} /^#### 2-2\. /{exit} f' "$SKILL"
+}
+
+reviewer_block() {
+  awk '/^\*\*レビュアー向け指示ブロック/{f=1; next} f&&/^```text$/{g=1; next} g&&/^```$/{exit} g' "$SKILL"
+}
+
+@test "finding format (#349): step 2-1 has a pasteable reviewer block with every field" {
+  blk="$(reviewer_block)"
+  [ -n "$blk" ] || { echo "no reviewer block in step 2-1"; return 1; }
+  for token in '見出し' '深刻度' '検証' '根拠' '場所' '何が起きるか' '直し方'; do
+    echo "$blk" | grep -qF "$token" || { echo "missing field: $token"; return 1; }
+  done
+}
+
+@test "finding format (#349): the block defines severity, verification and re-review status values" {
+  blk="$(reviewer_block)"
+  for token in '`blocking`' '`should`' '`nit`' '`confirmed`' '`plausible`' '`fixed`' '`unresolved`' '`wontfix`'; do
+    echo "$blk" | grep -qF "$token" || { echo "missing value: $token"; return 1; }
+  done
+  echo "$blk" | grep -qE '^\| `blocking` \|'
+  echo "$blk" | grep -qE '^\| `should` \|'
+  echo "$blk" | grep -qE '^\| `nit` \|'
+}
+
+@test "finding format (#349): the block names the three exceptions for unquotable blocking findings" {
+  blk="$(reviewer_block)"
+  echo "$blk" | grep -qF '安全機構の穴'
+  echo "$blk" | grep -qF 'データ破壊'
+  echo "$blk" | grep -qF '無言の機能不全'
+}
+
+@test "finding format (#349): the block asks to enumerate every finding and limits re-reviews" {
+  blk="$(reviewer_block)"
+  echo "$blk" | grep -qF '該当する指摘を全部列挙するまで止まらない'
+  echo "$blk" | grep -qF '新規の指摘を出さない'
+  echo "$blk" | grep -qF '新規に出してよいのは `blocking` だけ'
+  echo "$blk" | grep -qF '直し方」どおりに直した箇所を再指摘しない'
+}
+
+@test "finding format (#349): the format and severity table appear only once in the skill" {
+  [ "$(grep -cE '^\| `blocking` \|' "$SKILL")" -eq 1 ]
+  [ "$(grep -c '^\*\*レビュアー向け指示ブロック' "$SKILL")" -eq 1 ]
+}
+
+@test "verdict (#349): the all-round verdict is written once in step 2-1" {
+  [ "$(grep -c '^\*\*マージを止めるかの判定（全周共通）\*\*' "$SKILL")" -eq 1 ]
+  v="$(step21_section | awk '/^\*\*マージを止めるかの判定（全周共通）\*\*/{f=1; print; next} f&&/^\*\*/{exit} f')"
+  echo "$v" | grep -qF '`blocking`'
+  echo "$v" | grep -qF '`confirmed`'
+  echo "$v" | grep -qF '照合'
+  echo "$v" | grep -qF '安全機構の穴'
+  echo "$v" | grep -qF 'follow-up issue'
+  echo "$v" | grep -qF '深刻度ラベルは参考'
+  echo "$v" | grep -qF '全周'
+}
+
+@test "verdict (#349): no text splits the verdict by round" {
+  run grep -F 'この一般則は1周目に適用する' "$SKILL"
+  [ "$status" -ne 0 ]
+  run grep -E '一般則|収束ルールが優先' "$SKILL"
+  [ "$status" -ne 0 ]
+}
+
+@test "verdict (#349): round-1 failed keeps non-stopping findings as a list and defers follow-up issues to step 3" {
+  s="$(step21_section)"
+  echo "$s" | grep -qF '止めない指摘'
+  echo "$s" | grep -qF 'follow-up issue はまだ切らない'
+  echo "$s" | grep -qF '手順3へ進むとき'
+}
+
+@test "verdict (#349): the round-2 sorting refers to the verdict instead of restating it" {
+  sec="$(convergence_section)"
+  echo "$sec" | grep -qF '「マージを止めるかの判定（全周共通）」'
+  echo "$sec" | grep -qF '止める指摘'
+  run sh -c "awk '/^\\*\\*収束ルール/{f=1} f&&/^#/{exit} f' '$SKILL' | grep -F 'blocking かどうかは引用できるかどうかで決め'"
+  [ "$status" -ne 0 ]
+}
+
+@test "verdict (#349): the decider paragraph ties the cap to the verdict, not to quoting alone" {
+  line="$(grep -F '決める役（`dev-workflow:decider`）はキャップの判定に関与しない' "$SKILL")"
+  [ -n "$line" ]
+  echo "$line" | grep -qF '全周共通の判定で止める指摘が残るかどうかで決まる'
+  run sh -c "grep -F '決める役（\`dev-workflow:decider\`）はキャップの判定に関与しない' '$SKILL' | grep -F '引用の有無で決まる'"
+  [ "$status" -ne 0 ]
+}
+
+@test "verdict (#349): step 5 requires zero stopping findings under the all-round verdict" {
+  s5="$(awk '/^### 5\. /{f=1} /^### 6\. /{exit} f' "$SKILL")"
+  echo "$s5" | grep -qF '全周共通の判定で止まる指摘（`blocking` かつ `confirmed`、G が引用を照合済み'
+  echo "$s5" | grep -qF '0 件'
+}
+
+@test "verdict (#349 gate round 1): step 5 excludes findings the owner closed as out of scope at the round-2 cap" {
+  s5="$(awk '/^### 5\. /{f=1} /^### 6\. /{exit} f' "$SKILL")"
+  echo "$s5" | grep -qF '主が範囲外として閉じて follow-up issue に切ったもの以外が 0 件'
+  spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
+  req="$(awk '/^### Requirement: 合格条件に判定を明記する/{f=1;next} /^### Requirement: /{f=0} f' "$spec")"
+  [ "$(echo "$req" | grep -cF '主が範囲外として閉じて follow-up issue に切ったもの以外が 0 件')" -eq 2 ]
+}
+
+@test "codex rubric (#349): measured as applied, so step 2-1 maps the Codex rubric onto the fixed format" {
+  s="$(step21_section)"
+  echo "$s" | grep -qF '[P0]'
+  echo "$s" | grep -qF '`priority`'
+  echo "$s" | grep -qF '`confidence_score`'
+  echo "$s" | grep -qF '`code_location`'
+  echo "$s" | grep -qF '`confidence_score` を `confirmed` の代わりにしない'
 }
