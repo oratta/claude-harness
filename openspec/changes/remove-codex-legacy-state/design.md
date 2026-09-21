@@ -51,11 +51,11 @@ The trade-off is deliberate: a caller can label one CODEX_HOME with the wrong ac
 
 Implementation must establish tests around the foreground path before deleting code. The retained dependency slice is:
 
-- In `codex-develop.py`: role/phase tables and writer/reader instructions; `_unique_object`; `account_homes`; `validate_role_entry`; `load_profile`; `clean_env`; `git`; `prompt`; `build_request`; and the `request` parser/dispatcher. The Claude branch returning `agent-required`, the full-profile validation, legacy `--account/--model` request form, and account-home validation remain.
+- In `codex-develop.py`: `ROOT` / `CANONICAL_ROLES`; role/phase tables and writer/reader instructions; `_unique_object`; `account_homes`; `validate_role_entry`; `load_profile`; `clean_env`; `git`; `prompt`; `resolve_execution`; `validate_execution_config`; `execution_config_hash`; `write`; `build_request`; and the `request` parser/dispatcher. The Claude branch returning `agent-required`, the full-profile validation, legacy `--account/--model` request form, and account-home validation remain.
 - In `codex-worker.py`: request validation and execution metadata; `auth_info`; child/git environment filtering and linked-worktree/project-config checks; model/effort advertisement validation; foreground runtime creation, identity recheck and cleanup; quota parsing; RPC, final-answer selection and turn state; role sandbox/network policy; `ForegroundRecorder`; caller ancestry/signal monitoring; `run_turn`; and `run`.
 - `run_turn` keeps the order `initialize` → live account verification → `model/list` verification → `account/rateLimits/read` quota preflight → `thread/start` → `turn/start`. It must not regain a dependency on any persistent store.
 
-The deletion slice includes `db_open`, job row CRUD, `ownership_open`, `slot_state`, occupied/reservation logic, `LedgerRecorder`, detached `worker`, all ledger command branches and parsers, continuation encoding/selection/validation, ledger-backed registered-account lookup, execution snapshot hashes used only by runs, pending validators, worker lifecycle wrappers, run JSON writes, and legacy command parsers.
+The deletion slice includes `db_open`, job row CRUD, `ownership_open`, `slot_state`, occupied/reservation logic, `LedgerRecorder`, detached `worker`, all ledger command branches and parsers, continuation encoding/selection/validation, `payload_hash`, `registered_accounts`, the `worker()` wrapper, `validate_profile_pending` / `validate_legacy_pending`, run JSON writes, and legacy command parsers.
 
 ### Keep one-line JSON and failure semantics as the transport contract
 
@@ -68,18 +68,34 @@ The documentation edits have an explicit deletion inventory:
 - `scripts/CODEX-WORKER.md`: remove the entire ledger-path introduction and section, including persistent registration, job IDs, detached lifetime, status/result/cancel/ack/send/reap, unknown recovery, shared ownership DB, account slots, cwd locks, cross-state-dir behavior, heartbeat/staleness, and old-version coexistence. These paragraphs exist only to operate the removed mechanism. Retain and consolidate foreground request schema, role sandbox/read-only policy, environment filtering, auth pinning, model/effort checks, quota preflight, runtime cleanup, caller/signal shutdown, one-line JSON, and final-answer quality boundary.
 - `docs/codex-develop.md`: remove the old registration example and the full “台帳を持つ旧経路” section covering init/dispatch/status/result/ack/retry, worker-state, run-dir, pending, and continuation markers. Retain setup, account-home inputs, profile/legacy request forms, three-step foreground invocation, no-fallback behavior, role responsibilities, and quality workflow. Add manual cleanup conditions and commands for existing state.
 - `references/codex-develop.md`: remove only claims that legacy dispatch, ledger commands, ack/retry/run directory/continuation remain available. Retain role resolution, built-in/mixed profiles, budget application, fresh-thread and handoff rules, foreground three-step invocation, reviewer/write-role boundaries, hooks caveat, quality gates, no fallback, OpenSpec mapping, evidence handoff, and worktree serialization. Preserve exactly one occurrence of `executor` as required by #342.
+- `commands/develop.md`: remove `[--worker-state DIR] [--run-dir DIR]` from the argument hint. Replace the continuation/run-dir paragraph with only「引数なしの追加依頼では初回の Codex 設定を再推測せず、実行先オプションと account-home の対応を明示し直す。」and remove the ledger-route options paragraph. Preserve the `SendMessage` and context-limit wording read by `develop-command.bats` and `test_codex_develop.py`.
+- `skills/develop/SKILL.md`: remove only「旧台帳経路も互換性のため残るが、1つの委譲を複数 transport にまたがせない。」and retain all unrelated canonical workflow rules.
 
 Tests should assert the retained rules and the removed vocabulary so a concise rewrite cannot silently lose unrelated behavior.
 
 ### Retire obsolete capabilities and narrow the two surviving specs
 
-`codex-worker-concurrency` and `codex-develop-continuation` are removed in full because every requirement depends on slots/ownership or run/continuation storage. `codex-worker` remains but becomes foreground-only: requirements are rewritten where they currently compare foreground and ledger routes, and ledger-only compatibility scenarios are removed. `manual-codex-develop` remains for role routing and foreground delegation; its saved-pending requirement and ledger-specific clauses are removed.
+`codex-worker-concurrency` and `codex-develop-continuation` are removed in full because every requirement depends on slots/ownership or run/continuation storage. OpenSpec cannot represent a capability whose delta removes every requirement, so these two capabilities have no delta directories; implementation deletes their main spec directories immediately before archive. `codex-worker` remains but becomes foreground-only: requirements are rewritten where they currently compare foreground and ledger routes, and ledger-only compatibility scenarios are removed. `manual-codex-develop` remains for role routing and foreground delegation; its saved-pending requirement and ledger-specific clauses are removed.
+
+The retired `codex-worker-concurrency` requirements and migrations are summarized here:
+
+- Account concurrency limits, cwd exclusion, and abandoned-slot reap all depend on SQLite ownership plus lifecycle-job occupancy, so they disappear with that store. The canonical coordinator instead assigns one job per worktree and serializes writing roles; any future cross-provider concurrency control must be shared with Claude rather than recreate a Codex-only registry.
+- Quota margin no longer multiplies by occupied slots. The surviving foreground quota preflight checks one request plus `quota_margin_pct` without consulting other jobs.
+- Server-start rejection is reported in the foreground one-line JSON with a nonzero exit and no retry or account fallback; there is no durable failed/unknown job state to preserve.
+- Past state is not reaped by the worker. The user stops the foreground command and may remove the old state directory only after the documented safety checks.
+
+The retired `codex-develop-continuation` requirements and migrations are summarized here:
+
+- v1/v2 continuation restoration and run matching disappear with run directories. A fresh phase starts from the issue or Draft PR and worktree, with profile/account mapping resolved again; missing inputs fail closed without provider or account fallback.
+- Canonical specification, review, verify, archive, finish/G, and role-responsibility boundaries remain provider-neutral in `manual-codex-develop` and the canonical develop workflow; no continuation layer may alter them.
+- v1/v2 fixtures are replaced by foreground request/run, fresh-phase re-delegation, no-fallback, and profile-routing regression coverage.
+- The coordinator continues to own record-target selection, routing, and proxy posting of read-only verdicts; workspace-write roles keep GitHub/commit/push responsibility and do not collect LLM logs.
 
 Archive must result in the two obsolete main spec files no longer existing, while `openspec validate --specs` succeeds.
 
 ### Existing state is inert data and only the user deletes it
 
-The code does not scan, migrate, mutate, or delete `~/.local/state/claude-harness-codex/`. Documentation tells the user to remove it only after confirming no older plugin/process still uses the old transport and after preserving any result they still need. The documented cleanup is an explicit user command against that exact directory, not an automatic startup action or a broad glob.
+The code does not scan, migrate, mutate, or delete `~/.local/state/claude-harness-codex/`, including at startup. Documentation tells the user to remove it only after all three conditions hold: (1) `pgrep -fl 'codex-worker.py'` is empty, (2) every old job whose result must be recovered was recovered with 2.13.14 or judged unnecessary, and (3) no dev-workflow 2.13.14-or-earlier session remains. The documented user-run command is exactly `rm -rf -- "$HOME/.local/state/claude-harness-codex"`; it explains that `runtimes/` contains links to `auth.json`, so deleting those links does not delete the authentication data at their targets. This is an explicit command against the exact directory, not an automatic action or broad glob.
 
 Rollback is a normal code revert. Because the new code never modifies the old state, reverting to 2.13.14 can still read it, subject to whatever state was already present before this change.
 

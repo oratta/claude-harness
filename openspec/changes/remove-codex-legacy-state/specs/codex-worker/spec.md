@@ -1,7 +1,7 @@
 ## RENAMED Requirements
 
-- FROM: `台帳を使わない前景実行の入口を持つ`
-- TO: `前景実行だけを入口にする`
+- FROM: `### Requirement: 台帳を使わない前景実行の入口を持つ`
+- TO: `### Requirement: 前景実行だけを入口にする`
 
 ## MODIFIED Requirements
 
@@ -40,7 +40,7 @@ worker は依頼の子プロセスへ、worker を起動した親プロセスの
 - **THEN** どれも子の環境に現れず、子の git 操作は cwd の linked worktree に向き、worker 自身の linked worktree 必須検査も曲げられない
 
 ### Requirement: effort を二段階で検証してから実行する
-worker は依頼を受け取ったとき、optional effort の非空文字列、許可キー、定義済み role、絶対パスで存在する CODEX_HOME を静的に検証しなければならない（MUST）。モデル名と effort の対応は initialize 後かつ thread/start 前に、指定された CODEX_HOME で起動した account の model/list を使って検証しなければならない（MUST）。固定 enum で対応を推測してはならない（MUST NOT）。
+worker は依頼を受け取ったとき、optional effort の非空文字列、許可キー、定義済み role、`auth.json` を含む CODEX_HOME を静的に検証しなければならない（MUST）。モデル名と effort の対応は initialize 後かつ thread/start 前に、指定された CODEX_HOME で起動した account の model/list を使って検証しなければならない（MUST）。固定 enum で対応を推測してはならない（MUST NOT）。
 
 #### Scenario: 静的に不正な request を渡す
 - **WHEN** effort が空/非文字列、role が未定義、未知フィールドがある、または CODEX_HOME が利用できない
@@ -74,7 +74,7 @@ worker は execution.version=1 形式で role/requested/effective/evidence を p
 
 #### Scenario: 実効設定を観測できる
 - **WHEN** account 照合が成功し、RPC 応答または通知で model/effort を取得する
-- **THEN** executor/account/model/effort の要求値と実効値、観測元を別々に記録し、turn 観測を thread 観測より優先する。差異があれば受け入れ不一致として返し自動再送しない
+- **THEN** executor/account/model/effort の要求値と実効値、観測元を別々に JSON に入れ、turn 観測を thread 観測より優先する。worker は差異を理由に失敗扱い・自動再送をせず、差異の判定は JSON を受け取った本体が行う
 
 #### Scenario: 実効値または ID が取得できない
 - **WHEN** API が effort を返さない、または thread/turn 作成前に失敗する
@@ -96,7 +96,7 @@ worker は依頼ファイルを受け取って 1 回のターンを実行し終�
 - **THEN** 引数解析で拒否し、永続状態を作らず、`run` へ暗黙変換しない
 
 ### Requirement: 前景実行はアカウントを依頼された CODEX_HOME で固定する
-前景実行は、依頼に載せられた CODEX_HOME を実行アカウントとして固定しなければならない（MUST）。account 名を CODEX_HOME へ解決するために永続 registry を読んではならない（MUST NOT）。依頼の account 名は結果の記録に使うラベルであり、照合の材料にしてはならない（MUST NOT）。照合は、app-server が返した実行中アカウントが、渡された CODEX_HOME の認証情報と一致することで行わなければならない（MUST）。前景実行は 1 件ごとに runtime CODEX_HOME を作り、認証情報への link が実行中に差し替えられていないことを確認し、終了時にその link を外して片付けなければならない（MUST）。runtime CODEX_HOME は `TMPDIR` 配下の所有者だけが読み書きできるディレクトリに置かなければならず（MUST）、app-server とその子に渡す `TMPDIR` / `TMPPREFIX` を変えてはならない（MUST NOT）。結果の `effective.account` には app-server が返した実行中アカウントを入れなければならず（MUST）、依頼の account 名をそのまま写してはならない（MUST NOT）。依頼の account 名は `requested.account` にだけ残さなければならない（MUST）。どの CODEX_HOME を使うかは呼び出し側の責任であることを仕様は明示しなければならない（MUST）。
+前景実行は、依頼に載せられた CODEX_HOME を実行アカウントとして固定しなければならない（MUST）。account 名を CODEX_HOME へ解決するために永続 registry を読んではならない（MUST NOT）。依頼の account 名は結果の記録に使うラベルであり、照合の材料にしてはならない（MUST NOT）。照合は、app-server が返した実行中アカウントが、渡された CODEX_HOME の認証情報と一致することで行わなければならない（MUST）。前景実行は 1 件ごとに runtime CODEX_HOME を作り、認証情報への link が実行中に差し替えられていないことを確認し、終了時にその link を外して片付けなければならない（MUST）。runtime CODEX_HOME は、親に `TMPDIR` があればその配下、無ければ実行環境の既定の一時領域にある、所有者だけが読み書きできるディレクトリに置かなければならず（MUST）、app-server とその子に渡す `TMPDIR` / `TMPPREFIX` を変えてはならない（MUST NOT）。結果の `effective.account` には app-server が返した実行中アカウントを入れなければならず（MUST）、依頼の account 名をそのまま写してはならない（MUST NOT）。依頼の account 名は `requested.account` にだけ残さなければならない（MUST）。どの CODEX_HOME を使うかは呼び出し側の責任であることを仕様は明示しなければならない（MUST）。
 
 #### Scenario: 渡された認証情報と実行中アカウントが食い違う
 - **WHEN** app-server が返した実行中アカウントが、依頼の CODEX_HOME の認証情報と一致しない
