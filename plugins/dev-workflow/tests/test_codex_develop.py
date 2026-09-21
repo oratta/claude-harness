@@ -301,6 +301,10 @@ class ForegroundRequest(unittest.TestCase):
                         self.assertEqual(json.loads(target.read_text())['role'], role)
 
     def test_writer_phases_are_told_to_finish_their_own_github_work(self):
+        sources = {'spec':'skills/develop/references/roles/worker.md',
+                   'implement':'skills/develop/references/roles/worker.md',
+                   'finish':'skills/develop/references/roles/worker.md',
+                   'gate':'skills/develop/references/roles/gate-runner.md'}
         for phase in ('spec', 'implement', 'finish', 'gate'):
             with self.subTest(phase=phase):
                 target = self.root/('writer-' + phase + '.json')
@@ -311,9 +315,17 @@ class ForegroundRequest(unittest.TestCase):
                 self.assertNotIn('the coordinator posts it on your behalf', text)
                 self.assertIn('needs-reviewer/needs-decider', text)
                 self.assertIn('Never merge or enable auto-merge', text)
+                self.assertIn('CANONICAL SOURCE ' + sources[phase], text)
                 self.assertIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
+                if phase == 'gate':
+                    self.assertIn('CANONICAL SOURCE skills/pr-review-gate/SKILL.md', text)
 
     def test_reader_phases_return_the_verdict_for_the_coordinator_to_post(self):
+        sources = {'spec-review':'skills/develop/references/roles/spec-reviewer.md',
+                   'review':'skills/develop/references/roles/gate-runner.md',
+                   'decider':'agents/decider.md',
+                   'explore':'skills/develop/references/roles/worker.md',
+                   'summarize':'skills/develop/references/roles/worker.md'}
         for phase in ('spec-review', 'review', 'decider', 'explore', 'summarize'):
             with self.subTest(phase=phase):
                 target = self.root/('reader-' + phase + '.json')
@@ -324,7 +336,10 @@ class ForegroundRequest(unittest.TestCase):
                 self.assertNotIn('commit yourself here', text)
                 self.assertIn('needs-reviewer/needs-decider', text)
                 self.assertIn('Never merge or enable auto-merge', text)
+                self.assertIn('CANONICAL SOURCE ' + sources[phase], text)
                 self.assertIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
+                if phase == 'review':
+                    self.assertIn('CANONICAL SOURCE skills/pr-review-gate/SKILL.md', text)
 
     def test_request_file_mode_is_0600(self):
         self.call('--account-home', 'mapped=' + str(self.home))

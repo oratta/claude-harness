@@ -36,6 +36,8 @@ for line in sys.stdin:
  for name in ('calls.jsonl','calls-'+job+'.jsonl'):
   with (home/name).open('a') as f:f.write(json.dumps(m)+'\n')
  if rid is None:continue
+ if method==config.get('change_auth_at'):
+  with (home/'auth.json').open('a') as f:f.write(' ')
  if method==config.get('reject'):
   print(json.dumps({'id':rid,'error':{'code':config.get('reject_code',-32000),'message':'rejected'}}),flush=True);continue
  if method=='account/read':r={'account':{'type':'chatgpt','email':config.get('email','worker@example.invalid')}}
@@ -177,7 +179,7 @@ class ForegroundTest(unittest.TestCase):
         self.assertFalse(any(m.get('method') in ('thread/start','turn/start')
                              for m in self.calls('unsupported')))
 
-    def test_role_policy_quota_auth_and_runtime_cleanup_remain_foreground(self):
+    def test_all_role_policies_remain_restricted(self):
         temporary = self.root/'t';temporary.mkdir()
         self.env['TMPDIR'] = str(temporary)
         self.env['TMPPREFIX'] = str(temporary/'caller-zsh')
@@ -313,6 +315,13 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(self.run_cli()['status'], 'completed')
         self.assertNotIn('external', self.calls()[0]['runtimeConfig'])
 
+    def test_changed_auth_never_starts_server(self):
+        self.config(change_auth_at='account/read')
+        result = self.run_cli(code=2)
+        self.assertEqual(result['error_kind'], 'auth_profile_changed')
+        self.assertFalse(any(call.get('method') in ('model/list', 'thread/start', 'turn/start')
+                             for call in self.calls()))
+
     def test_source_auth_change_interrupts_the_running_turn(self):
         self.config(wait=True)
         process = subprocess.Popen(self.command(), env=self.env, text=True,
@@ -363,7 +372,7 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(result['error_kind'], 'quota_headroom_insufficient')
         self.assertFalse(any(m.get('method') == 'turn/start' for m in self.calls()))
 
-    def test_model_validation_rejections_stop_before_thread(self):
+    def test_model_validation_rejections_leave_failed_job_before_thread(self):
         cases = (
             ('missing', {'model_pages':[[]]}, 'model_not_available'),
             ('duplicate', {'model_pages':[[
