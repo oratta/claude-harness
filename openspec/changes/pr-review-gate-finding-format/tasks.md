@@ -1,7 +1,7 @@
 ## 1. Codex ルーブリックの実測（結果で 3.2 の中身が分かれる）
 
-- [ ] 1.1 小さな diff（この worktree の任意の 1 ファイルに 1 行足した一時的な変更、または既存コミット 1 つの範囲）と、書式を指定しない短いレビュー指示を用意し、`plugins/dev-workflow/references/subagent-waiting.md` の雛形どおり `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` に標準入力で渡して完了まで待つ（待ち方は同ファイルの正本に従う）。一時的な変更は実測後に自分で消し、コミットしない
-- [ ] 1.2 出力に `[P0]`〜`[P3]` の見出し・`priority`・`confidence_score` のどれかが現れるかを確認し、実行コマンド・終了コード・出力の要点・判定（適用される / されない / どちらとも言えない）を `openspec/changes/pr-review-gate-finding-format/codex-rubric-measurement.md` に書く（(3b) で PR コメントに転記する）。Codex が使えない（バイナリ無し・認証切れ・総待ち上限）ときは実測した不可条件を書き、判定は「未実測」として 3.2 は「適用されない」側で進め、return に明記する
+- [x] 1.1 小さな diff（この worktree の任意の 1 ファイルに 1 行足した一時的な変更、または既存コミット 1 つの範囲）と、書式を指定しない短いレビュー指示を用意し、`plugins/dev-workflow/references/subagent-waiting.md` の雛形どおり `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` に標準入力で渡して完了まで待つ（待ち方は同ファイルの正本に従う）。一時的な変更は実測後に自分で消し、コミットしない
+- [x] 1.2 出力に `[P0]`〜`[P3]` の見出し・`priority`・`confidence_score` のどれかが現れるかを確認し、実行コマンド・終了コード・出力の要点・判定（適用される / されない / どちらとも言えない）を `openspec/changes/pr-review-gate-finding-format/codex-rubric-measurement.md` に書く（(3b) で PR コメントに転記する）。Codex が使えない（バイナリ無し・認証切れ・総待ち上限）ときは実測した不可条件を書き、判定は「未実測」として 3.2 は「適用されない」側で進め、return に明記する
 
 ## 2. テストを先に書く（TDD）
 
