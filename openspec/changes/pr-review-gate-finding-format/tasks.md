@@ -18,19 +18,19 @@
 - [x] 3.3 全周共通の判定を 1 か所（手順 2-1 内の見出し付きの段落）に書き、143 行目の「欠陥ありなら…この一般則は1周目に適用する。2周目…が優先する」を、判定への参照と「止める指摘が残ったら 1 周目は failed、2 周目と続行指示の周は収束ルールの『2周目の終わりにやること』」に置き換える。1 周目で failed にするときの止めない指摘の扱い（一覧で残し、follow-up issue は手順 3 へ進むときに切る）もここに書く
 - [x] 3.4 収束ルール節の「2周目の終わりにやること」手順 1〜3 を、止めるかどうかの基準は判定を参照する形にそろえる（引用元の範囲・記録の義務・引用元が無いときの扱い・`needs-approval` の停止は残す。判定の文を言い換えて再掲しない）。同節の「決める役はキャップの判定に関与しない」段落（現行 158 行目）の「引用の有無で決まる」も「全周共通の判定で止める指摘が残るかどうかで決まる」に揃える
 - [x] 3.5 手順 5 の冒頭に、最後のレビュー結果で全周共通の判定で止まる指摘（`blocking` かつ `confirmed`、G が引用を照合済み）が 0 件であることを合格処理の条件として足す
-- [ ] 3.6 `plugins/dev-workflow` 配下（tests と CHANGELOG を除く）で「一般則」「欠陥ありなら」「収束ルールが優先」を grep し、判定を周で分ける字面が残っていないことを確認する（「1周目」は SKILL.md 149・204 行目や gate-runner.md 再開節に正当な用例があるので grep 対象にしない。手順 2-2 の中身は変えない）
+- [x] 3.6 `plugins/dev-workflow` 配下（tests と CHANGELOG を除く）で「一般則」「欠陥ありなら」「収束ルールが優先」を grep し、判定を周で分ける字面が残っていないことを確認する（「1周目」は SKILL.md 149・204 行目や gate-runner.md 再開節に正当な用例があるので grep 対象にしない。手順 2-2 の中身は変えない）
 
 ## 4. 指示文の雛形と gate-runner.md をそろえる
 
-- [ ] 4.1 `plugins/dev-workflow/references/subagent-waiting.md` 58 行目の `<レビュー指示をそのまま書く…>` を、固定した HEAD・diff 範囲・受け入れ条件に加えて SKILL.md 手順 2-1 のレビュアー向け指示ブロックを貼ること、「該当する指摘を全部列挙するまで止まらない」の 1 文を含む形にする（書式の欄と定義表は再掲しない）
-- [ ] 4.2 `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` の needs-reviewer payload に「レビュアーに渡す指示: SKILL.md 手順 2-1 のレビュアー向け指示ブロック（固定書式）」の行を足す
-- [ ] 4.3 同ファイル needs-reviewer 節 54 行目の「手順 3 以降を続ける」を、「レビュー実行者:」コメントの投稿のあと再開節の「レビュアーの要約受領」の分岐に従う、の参照にする
-- [ ] 4.4 同ファイル再開節の「レビュアーの要約受領」を、全周共通の判定を通してから分岐する形に書き換える（止める指摘なし → follow-up issue に切って手順 3 以降／あり → 1周目は failed、2周目と続行指示の周は仕分けを記録して保留）。#281 の既存検査が見る語（1周目・failed・2周目・仕分け）は残す
-- [ ] 4.5 同ファイルの Gate Result の仕分け欄（現行 66 行目の「引用できる指摘が残っている場合は failed ではなく保留で返す」）と保留節（現行 76 行目の「引用できる指摘が残った」）を、「全周共通の判定で止める指摘が残った」の語に揃える
+- [x] 4.1 `plugins/dev-workflow/references/subagent-waiting.md` 58 行目の `<レビュー指示をそのまま書く…>` を、固定した HEAD・diff 範囲・受け入れ条件に加えて SKILL.md 手順 2-1 のレビュアー向け指示ブロックを貼ること、「該当する指摘を全部列挙するまで止まらない」の 1 文を含む形にする（書式の欄と定義表は再掲しない）
+- [x] 4.2 `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` の needs-reviewer payload に「レビュアーに渡す指示: SKILL.md 手順 2-1 のレビュアー向け指示ブロック（固定書式）」の行を足す
+- [x] 4.3 同ファイル needs-reviewer 節 54 行目の「手順 3 以降を続ける」を、「レビュー実行者:」コメントの投稿のあと再開節の「レビュアーの要約受領」の分岐に従う、の参照にする
+- [x] 4.4 同ファイル再開節の「レビュアーの要約受領」を、全周共通の判定を通してから分岐する形に書き換える（止める指摘なし → follow-up issue に切って手順 3 以降／あり → 1周目は failed、2周目と続行指示の周は仕分けを記録して保留）。#281 の既存検査が見る語（1周目・failed・2周目・仕分け）は残す
+- [x] 4.5 同ファイルの Gate Result の仕分け欄（現行 66 行目の「引用できる指摘が残っている場合は failed ではなく保留で返す」）と保留節（現行 76 行目の「引用できる指摘が残った」）を、「全周共通の判定で止める指摘が残った」の語に揃える
 
 ## 5. 検証と付随作業
 
-- [ ] 5.1 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/develop-roles.bats plugins/dev-workflow/tests/subagent-waiting.bats plugins/dev-workflow/tests/model-escalation-policy.bats` を実行し、文言変更の巻き込みが無いことを確認する（落ちたら追随）
+- [x] 5.1 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/develop-roles.bats plugins/dev-workflow/tests/subagent-waiting.bats plugins/dev-workflow/tests/model-escalation-policy.bats` を実行し、文言変更の巻き込みが無いことを確認する（落ちたら追随）
 - [ ] 5.2 `scripts/test.sh` で全件を実行して通す（`tests/injection-budget.bats` を含む）
 - [ ] 5.3 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow の version を 2.13.16 → 2.13.17 に上げ、`CHANGELOG.md` に記載する（#349 と #352 を併記）
 - [ ] 5.4 `openspec validate pr-review-gate-finding-format --strict` を通す
