@@ -22,7 +22,7 @@
 
 ## 4. Versioning and verification
 
-- [ ] 4.1 Change only the dev-workflow entries in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` from 2.13.13 to 2.13.14.
+- [x] 4.1 Change only the dev-workflow entries in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` from 2.13.13 to 2.13.14.
 - [ ] 4.2 Run `python3 -m unittest plugins/dev-workflow/tests/test_codex_develop.py` and record exit 0.
 - [ ] 4.3 Run `grep -n "executor must be codex" plugins/dev-workflow/scripts/codex-develop.py`; record zero matches and the expected exit 1.
 - [ ] 4.4 Run `openspec validate route-develop-roles-by-executor --strict` and record exit 0.
