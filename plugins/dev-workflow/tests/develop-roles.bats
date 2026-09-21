@@ -463,3 +463,45 @@ extract_context_cap_section() {
     echo "$doc" | grep -qF "$token"
   done
 }
+
+# ===== gate-runner.md: 指摘の固定書式と要約受領の分岐（issue #349・#352） =====
+
+@test "gate-runner (#349): needs-reviewer payload names the step 2-1 reviewer block as the reviewer instruction" {
+  n="$(section "$GATE" 'needs-reviewer')"
+  line="$(echo "$n" | grep -F 'レビュアーに渡す指示:')"
+  [ -n "$line" ] || { echo "no reviewer-instruction line in needs-reviewer"; return 1; }
+  echo "$line" | grep -qF 'SKILL.md 手順 2-1'
+  echo "$line" | grep -qF 'レビュアー向け指示ブロック'
+  run grep -E '^\| `(blocking|should|nit)` \||`plausible`' "$GATE"
+  [ "$status" -ne 0 ]
+}
+
+@test "gate-runner (#352): needs-reviewer does not tell G to continue with step 3 unconditionally" {
+  run grep -n '手順 3 以降を続ける' "$GATE"
+  [ "$status" -ne 0 ]
+  n="$(section "$GATE" 'needs-reviewer')"
+  echo "$n" | grep -qF '「レビュアーの要約受領」'
+}
+
+@test "gate-runner (#349): the reviewer-summary resume branches through the all-round verdict" {
+  line="$(grep -F 'レビュアーの要約受領' "$GATE" | grep -v '「レビュアーの要約受領」')"
+  [ -n "$line" ] || { echo "no reviewer-summary resume line"; return 1; }
+  echo "$line" | grep -qF '全周共通の判定'
+  echo "$line" | grep -qF '止める指摘'
+  echo "$line" | grep -qF 'follow-up issue'
+  echo "$line" | grep -q '1周目'
+  echo "$line" | grep -q 'failed'
+  echo "$line" | grep -q '2周目'
+  echo "$line" | grep -q '仕分け'
+  run sh -c "grep -F 'レビュアーの要約受領' '$GATE' | grep -F '一般則'"
+  [ "$status" -ne 0 ]
+}
+
+@test "gate-runner (#349): the sorting field and on-hold section speak of stopping findings, not quotable ones" {
+  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
+  echo "$common" | grep -qF '全周共通の判定で止める指摘が残'
+  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "$GATE")"
+  echo "$hold" | grep -qF '全周共通の判定で止める指摘が残'
+  run grep -F '引用できる指摘が残' "$GATE"
+  [ "$status" -ne 0 ]
+}

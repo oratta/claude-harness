@@ -5,11 +5,11 @@
 
 ## 2. テストを先に書く（TDD）
 
-- [ ] 2.1 `plugins/dev-workflow/tests/pr-review-gate-skill.bats` に、固定書式の見出し語（深刻度・検証・根拠・場所・何が起きるか・直し方）、深刻度 3 値（`blocking` / `should` / `nit`）、検証 2 値（`confirmed` / `plausible`）、状態 3 値（`fixed` / `unresolved` / `wontfix`）、例外 3 種（安全機構の穴・データ破壊・無言の機能不全）、全件列挙の 1 文、手順 5 の「全周共通の判定で止まる指摘（`blocking` かつ `confirmed`、G が引用を照合済み）が 0 件」の検査を足す
-- [ ] 2.2 同 bats に、「この一般則は1周目に適用する」が SKILL.md に残っていないことの検査と、判定の文が 1 か所にあること（判定の見出し語が 1 回だけ現れ、収束ルールの「2周目の終わりにやること」節がその見出しを参照していること）の検査を足す。既存の固定文言（「マージ後に issue で直せるものは blocking にしない」「高深刻度」「2周」「follow-up issue」）は残す。あわせて同 bats 373〜378 行目の既存テスト「convergence (#281): the defect-means-failed rule yields to the convergence rule from round 2」（旧「欠陥ありなら PR コメントに再現手順と修正点を書き」の行に「1周目」「収束ルール」を要求する）を、その行が無く、手順 2-1 の判定の段落が参照されていることを見る検査に書き換える
-- [ ] 2.3 `plugins/dev-workflow/tests/subagent-waiting.bats` か `pr-review-gate-skill.bats` に、`references/subagent-waiting.md` の指示文雛形が SKILL.md 手順 2-1 のブロックを貼る指示と全件列挙の 1 文を含み、深刻度の定義表を再掲していないことの検査を足す
-- [ ] 2.4 `plugins/dev-workflow/tests/develop-roles.bats` に、gate-runner.md の needs-reviewer payload が SKILL.md 手順 2-1 のブロックを指定する行を持つこと、`grep -n "手順 3 以降を続ける"` が needs-reviewer 節で無条件の継続指示を返さないこと、needs-reviewer 節と再開節の両方が周回別分岐（1周目・failed・2周目・仕分け）を持つか再開節を参照していることの検査を足す（#352 の受け入れ条件）。gate-runner.md の Gate Result の仕分け欄と保留節が「止める指摘」の語で書かれ、「引用できる指摘が残」の字面が残っていないことの検査も足す
-- [ ] 2.5 追加した検査が現行ファイルで落ちることを確認する
+- [x] 2.1 `plugins/dev-workflow/tests/pr-review-gate-skill.bats` に、固定書式の見出し語（深刻度・検証・根拠・場所・何が起きるか・直し方）、深刻度 3 値（`blocking` / `should` / `nit`）、検証 2 値（`confirmed` / `plausible`）、状態 3 値（`fixed` / `unresolved` / `wontfix`）、例外 3 種（安全機構の穴・データ破壊・無言の機能不全）、全件列挙の 1 文、手順 5 の「全周共通の判定で止まる指摘（`blocking` かつ `confirmed`、G が引用を照合済み）が 0 件」の検査を足す
+- [x] 2.2 同 bats に、「この一般則は1周目に適用する」が SKILL.md に残っていないことの検査と、判定の文が 1 か所にあること（判定の見出し語が 1 回だけ現れ、収束ルールの「2周目の終わりにやること」節がその見出しを参照していること）の検査を足す。既存の固定文言（「マージ後に issue で直せるものは blocking にしない」「高深刻度」「2周」「follow-up issue」）は残す。あわせて同 bats 373〜378 行目の既存テスト「convergence (#281): the defect-means-failed rule yields to the convergence rule from round 2」（旧「欠陥ありなら PR コメントに再現手順と修正点を書き」の行に「1周目」「収束ルール」を要求する）を、その行が無く、手順 2-1 の判定の段落が参照されていることを見る検査に書き換える
+- [x] 2.3 `plugins/dev-workflow/tests/subagent-waiting.bats` か `pr-review-gate-skill.bats` に、`references/subagent-waiting.md` の指示文雛形が SKILL.md 手順 2-1 のブロックを貼る指示と全件列挙の 1 文を含み、深刻度の定義表を再掲していないことの検査を足す
+- [x] 2.4 `plugins/dev-workflow/tests/develop-roles.bats` に、gate-runner.md の needs-reviewer payload が SKILL.md 手順 2-1 のブロックを指定する行を持つこと、`grep -n "手順 3 以降を続ける"` が needs-reviewer 節で無条件の継続指示を返さないこと、needs-reviewer 節と再開節の両方が周回別分岐（1周目・failed・2周目・仕分け）を持つか再開節を参照していることの検査を足す（#352 の受け入れ条件）。gate-runner.md の Gate Result の仕分け欄と保留節が「止める指摘」の語で書かれ、「引用できる指摘が残」の字面が残っていないことの検査も足す
+- [x] 2.5 追加した検査が現行ファイルで落ちることを確認する
 
 ## 3. SKILL.md を書き換える
 
