@@ -1,9 +1,9 @@
 ## 1. Profile validation tests (Red)
 
-- [ ] 1.1 Add failing `test_codex_develop.py` coverage for a complete mixed version 1 profile, asserting every canonical role resolves the profile's exact executor/account/model/effort tuple and that the built-in `hybrid-standard` values preserve `review == impl-review`.
-- [ ] 1.2 Add failing table-driven coverage that rejects Claude models outside `haiku|sonnet|opus|fable`, Claude accounts other than `current` with an explicitly unsupported-account error, `fable` on every non-decider role, and executors outside `claude|codex` without creating a request.
-- [ ] 1.3 Add failing foreground-route coverage showing a Claude role returns `agent-required` with the unchanged requested tuple and creates no Codex request even when a budget mode will cap Agent startup, while a Codex role still writes a request with the selected account/model/effort and CODEX_HOME.
-- [ ] 1.4 Add failing legacy-dispatch coverage showing a mixed snapshot validates but a selected Claude role stops before any Codex worker submission.
+- [x] 1.1 Add failing `test_codex_develop.py` coverage for a complete mixed version 1 profile, asserting every canonical role resolves the profile's exact executor/account/model/effort tuple and that the built-in `hybrid-standard` values preserve `review == impl-review`.
+- [x] 1.2 Add failing table-driven coverage that rejects Claude models outside `haiku|sonnet|opus|fable`, Claude accounts other than `current` with an explicitly unsupported-account error, `fable` on every non-decider role, and executors outside `claude|codex` without creating a request.
+- [x] 1.3 Add failing foreground-route coverage showing a Claude role returns `agent-required` with the unchanged requested tuple and creates no Codex request even when a budget mode will cap Agent startup, while a Codex role still writes a request with the selected account/model/effort and CODEX_HOME.
+- [x] 1.4 Add failing legacy-dispatch coverage showing a mixed snapshot validates but a selected Claude role stops before any Codex worker submission.
 
 ## 2. Executor-aware profile resolution (Green)
 
