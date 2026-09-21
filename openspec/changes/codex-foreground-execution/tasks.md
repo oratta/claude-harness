@@ -49,14 +49,14 @@
 
 - [x] 6.1 `plugins/dev-workflow/references/codex-develop.md` の呼び出し手順を「指示をファイルに書く → 前景コマンドを背景実行で起動 → 完了通知で結果を読む」の 3 手順に書き換える。`ack` / `retry` / `run-dir` / `worker-state` と継続記録の節を消す
 - [x] 6.2 `grep -nwE "ack|retry|run-dir|worker-state" plugins/dev-workflow/references/codex-develop.md` と `grep -n "継続記録" plugins/dev-workflow/references/codex-develop.md` がどちらも 0 件（exit 1）になることを確認する
-- [ ] 6.3 `plugins/dev-workflow/docs/codex-develop.md` の導入手順を、前景実行の呼び方と CODEX_HOME の渡し方に合わせて直す
-- [ ] 6.4 `plugins/dev-workflow/scripts/CODEX-WORKER.md` に前景実行の節（結果の JSON・親と一緒に終わる・SIGTERM・台帳に触れない・同時実行の枠管理と cwd 排他が無いこと）を足し、`--state-dir` の位置の変更を反映する
-- [ ] 6.5 `plugins/dev-workflow/skills/develop/SKILL.md` と `plugins/dev-workflow/commands/develop.md` の Codex 経路の案内を、前景実行の呼び方へ直す
-- [ ] 6.6 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow のバージョンを `2.13.13` にする（他プラグインのバージョンは触らない）
+- [x] 6.3 `plugins/dev-workflow/docs/codex-develop.md` の導入手順を、前景実行の呼び方と CODEX_HOME の渡し方に合わせて直す
+- [x] 6.4 `plugins/dev-workflow/scripts/CODEX-WORKER.md` に前景実行の節（結果の JSON・親と一緒に終わる・SIGTERM・台帳に触れない・同時実行の枠管理と cwd 排他が無いこと）を足し、`--state-dir` の位置の変更を反映する
+- [x] 6.5 `plugins/dev-workflow/skills/develop/SKILL.md` と `plugins/dev-workflow/commands/develop.md` の Codex 経路の案内を、前景実行の呼び方へ直す
+- [x] 6.6 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow のバージョンを `2.13.13` にする（他プラグインのバージョンは触らない）
 
 ## 7. 検証
 
-- [ ] 7.1 `openspec validate codex-foreground-execution --strict` が通ることを確認する
+- [x] 7.1 `openspec validate codex-foreground-execution --strict` が通ることを確認する
 - [ ] 7.2 `bash scripts/test.sh` を全件実行し、成功件数・総件数・exit code を記録する
 - [ ] 7.3 実際の Codex アカウントで read-only の役割を 1 件、本体の Bash ツールの背景実行で呼び、起動直後に `ps -o ppid=,comm=` で `run` の直接の親が何か（shell の wrapper が挟まっているか）を記録したうえで、完了通知で結果の JSON を受け取れたことを、コマンド・出力の要点・exit code・対象 HEAD とともに PR 本文に記録する
-- [ ] 7.4 `grep -rn "state-dir" plugins/ docs/ 2>/dev/null` で、グローバル位置に `--state-dir` を置いたままの呼び出しが残っていないことを確認する
+- [x] 7.4 `grep -rn "state-dir" plugins/ docs/ 2>/dev/null` で、グローバル位置に `--state-dir` を置いたままの呼び出しが残っていないことを確認する

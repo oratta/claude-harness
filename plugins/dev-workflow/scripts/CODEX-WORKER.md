@@ -1,10 +1,14 @@
 # Codex手動worker（初版）
 
+経路は2つある。台帳（state-dir）に仕事を積んで別プロセスから照会する**台帳経路**と、台帳を持たず1回の呼び出しで完走する**前景実行**（`run`）。`--state-dir` は台帳を使うサブコマンド（`register` / `submit` / `status` / `result` / `cancel` / `ack` / `send` / `reap`）の引数で、サブコマンドの**後ろ**に置く。
+
+## 台帳経路
+
 ```sh
-python3 plugins/dev-workflow/scripts/codex-worker.py --state-dir "$HOME/.local/state/claude-harness-codex/jobs" register --account personal --codex-home "$HOME/.codex" --max-concurrent 3 --quota-margin-pct 5
-python3 plugins/dev-workflow/scripts/codex-worker.py --state-dir "$HOME/.local/state/claude-harness-codex/jobs" submit --request request.json
-python3 plugins/dev-workflow/scripts/codex-worker.py --state-dir "$HOME/.local/state/claude-harness-codex/jobs" result --job example-1
-python3 plugins/dev-workflow/scripts/codex-worker.py --state-dir "$HOME/.local/state/claude-harness-codex/jobs" reap --account personal
+python3 plugins/dev-workflow/scripts/codex-worker.py register --state-dir "$HOME/.local/state/claude-harness-codex/jobs" --account personal --codex-home "$HOME/.codex" --max-concurrent 3 --quota-margin-pct 5
+python3 plugins/dev-workflow/scripts/codex-worker.py submit --state-dir "$HOME/.local/state/claude-harness-codex/jobs" --request request.json
+python3 plugins/dev-workflow/scripts/codex-worker.py result --state-dir "$HOME/.local/state/claude-harness-codex/jobs" --job example-1
+python3 plugins/dev-workflow/scripts/codex-worker.py reap --state-dir "$HOME/.local/state/claude-harness-codex/jobs" --account personal
 ```
 
 request.json:
@@ -39,6 +43,22 @@ profileのID token claim/email hashとaccount/readを照合する。これは署
 古い版の`codex-worker.py`を同じHOMEで併用しない。新しい版は`account_slots`でアカウント側を排他し、古い版は`owners`の`account:`行しか見ないため、同時に走らせるとアカウント側の排他が壊れる。
 
 fresh codex quota観測の適用窓が不明・不正・上限到達なら開始しない。手動にバーン時間窓を適用せず、チケットは消費しない。初版はmanualのみ。burn、send/steer、unknown自動復旧は明示unsupported/未実装。
+
+## 前景実行（`run`）
+
+台帳を作らず読まない1回きりの実行。依頼ファイルを渡して呼び、結果を標準出力で受け取る。
+
+```sh
+python3 plugins/dev-workflow/scripts/codex-worker.py run --request /absolute/private/request.json
+```
+
+依頼のキーは台帳経路の request.json と同じで、`codex-home`（0700で用意する認証元profileの絶対パス）を必須に加える。account名からCODEX_HOMEへの解決は呼び出し側（`codex-develop.py request`）が済ませる。`run` は `--state-dir` を受け取らず、与えれば引数エラーで終わる。cwdの検査（所有者・repo root・feature branch・linked worktree）・静的検証・`model/list`による開始前検証・runtime CODEX_HOMEの用意と後片付けは台帳経路と同じ。
+
+結果は標準出力の1行JSON（`text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`）で、成功はexit 0、それ以外はexit 2。job IDもackも無いので、後から照会・再取得・受領はできない。同じ工程をやり直すときは依頼ファイルの作成からもう一度行う。完了と品質承認が別であること、`error_kind`非空のcompletedを成功と扱わないことは台帳経路と同じ。
+
+`run` は親終了後も走り続けない。起動時に控えた祖先プロセスの連鎖を1秒間隔で辿り直し、食い違ったら停止要求を立てる（直接の親のPIDだけを見ない）。SIGTERM / SIGINT もハンドラで同じ停止要求を立てるだけで、RPCはハンドラから送らない。停止要求は毎RPCの入口で確認し、ターン待ちのループは `turn/interrupt` を1回送る。**猶予の起点はinterruptを送った時刻**で、前景経路の締切は10秒（台帳経路の猶予20秒・応答後起点とは別）。残り0なら応答を待たずに後始末へ進み、app-serverの子プロセスは残さない。
+
+台帳に触れないため、同時実行のスロット管理（`account_slots` / `account_slots_exhausted`）も作業ディレクトリの排他（`cwd_locked` / `global_cwd_locked`）も行わない。同じアカウント・同じ作業ディレクトリへ2本同時に投げないのは呼び出し側の責任である。ターン開始前の利用枠確認だけは残り、同時に走っている件数は1固定、余裕率は依頼の `quota-margin-pct`（既定5）を使う（`occupied_slots` / `reserve_global` は呼ばない）。アカウントの照合は自己整合で行い、`account/read` が返したemailを渡されたCODEX_HOMEの `auth.json` と突き合わせる。観測した実行中アカウントは `effective.account`、依頼のaccount名は `requested.account` に入り、要求名を `effective` へ写さない。
 
 テスト:
 ```sh
