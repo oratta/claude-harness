@@ -34,4 +34,4 @@
 - [x] 5.2 `scripts/test.sh` で全件を実行して通す（`tests/injection-budget.bats` を含む）
 - [x] 5.3 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow の version を 2.13.16 → 2.13.17 に上げ、`CHANGELOG.md` に記載する（#349 と #352 を併記）
 - [x] 5.4 `openspec validate pr-review-gate-finding-format --strict` を通す
-- [ ] 5.5 (3b) の PR 本文は `Closes #349` を先頭に置き、`Closes #352` を併記する。1.2 の実測結果（実測できなかったときは実測した不可条件）を PR コメントに転記する
+- [x] 5.5 (3b) の PR 本文は `Closes #349` を先頭に置き、`Closes #352` を併記する。1.2 の実測結果（実測できなかったときは実測した不可条件）を PR コメントに転記する
