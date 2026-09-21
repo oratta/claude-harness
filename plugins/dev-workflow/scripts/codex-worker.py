@@ -9,9 +9,12 @@ import os
 from pathlib import Path
 import queue
 import re
+import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -265,15 +268,19 @@ def execution_metadata(payload):
             'evidence': {key: 'unavailable' for key in requested}}
 
 
-def observe_execution(db, job, **observations):
-    row = db.execute('SELECT execution FROM jobs WHERE id=?', (job,)).fetchone()
-    if not row or not row[0]:
-        return
-    execution = json.loads(row[0])
+def apply_observations(execution, observations):
     for key, (value, source) in observations.items():
         if value is not None:
             execution['effective'][key] = value
             execution['evidence'][key] = source
+    return execution
+
+
+def observe_execution(db, job, **observations):
+    row = db.execute('SELECT execution FROM jobs WHERE id=?', (job,)).fetchone()
+    if not row or not row[0]:
+        return
+    execution = apply_observations(json.loads(row[0]), observations)
     update(db, job, execution=json.dumps(execution, sort_keys=True))
 
 
@@ -314,19 +321,60 @@ def advertised_model(rpc, model, effort):
     return matches[0]
 
 
-def runtime_home(directory, job, source, cwd, common):
+def reject_project_config(cwd, common):
     # The Git project config layer can re-enable external tools; initial version refuses it.
     project = Path(cwd)
     roots = {project, Path(common).parent, *project.parents}
     # The normal user config is intentionally replaced by runtime config, not a project layer.
     roots.discard(Path.home())
     require(not any((root/'.codex/config.toml').exists() for root in roots), 'unsupported_project_config')
-    runtime = Path(directory)/'runtimes'/job
-    runtime.mkdir(parents=True, mode=0o700, exist_ok=False)
+
+
+def install_runtime(runtime, source):
     (runtime/'auth.json').symlink_to(Path(source)/'auth.json')
     (runtime/'config.toml').write_text('cli_auth_credentials_store = "file"\n[features]\napps = false\n')
     os.chmod(runtime/'config.toml', 0o600)
     return runtime
+
+
+def runtime_home(directory, job, source, cwd, common):
+    reject_project_config(cwd, common)
+    runtime = Path(directory)/'runtimes'/job
+    runtime.mkdir(parents=True, mode=0o700, exist_ok=False)
+    return install_runtime(runtime, source)
+
+
+def foreground_runtime(job, source, cwd, common):
+    # No state directory exists on this path, so the one runtime CODEX_HOME goes into the
+    # caller's temporary area (TMPDIR when set, the platform default otherwise). What the
+    # App Server and its children receive as TMPDIR/TMPPREFIX is untouched.
+    reject_project_config(cwd, common)
+    base = Path(tempfile.mkdtemp(prefix='codex-run-'))
+    os.chmod(base, 0o700)
+    runtime = base/job
+    runtime.mkdir(mode=0o700)
+    return install_runtime(runtime, source)
+
+
+def discard_runtime(runtime):
+    # The runtime's link to the authentication profile never outlives the job.
+    (runtime/'auth.json').unlink(missing_ok=True)
+
+
+def ancestors(pid):
+    # The direct parent is a shell wrapper whenever the caller starts this in the background,
+    # so the whole chain identifies the caller: if any link disappears the rest is reparented
+    # and the chain no longer matches. A recycled PID cannot fake the entire chain.
+    chain = []
+    while pid > 1 and len(chain) < 64:
+        chain.append(pid)
+        try:
+            pid = int(subprocess.check_output(['ps', '-o', 'ppid=', '-p', str(pid)],
+                                              text=True, stderr=subprocess.DEVNULL).strip())
+        except (subprocess.CalledProcessError, ValueError, OSError):
+            chain.append(-1)
+            break
+    return chain
 
 
 def runtime_identity_matches(runtime, account):
@@ -368,6 +416,13 @@ class Rpc:
         self.next_id = 0
         self.unsupported = False
         self.tick = lambda: None
+        # Hooks the foreground path installs: budget() caps one request at the remaining
+        # interrupt deadline, aborted() ends a wait as soon as a stop is requested, and
+        # poll_wait makes the wait wake often enough to see it.
+        self.timeout = 15
+        self.budget = lambda: None
+        self.aborted = lambda: False
+        self.poll_wait = None
         threading.Thread(target=self.reader, daemon=True).start()
 
     def reader(self):
@@ -391,14 +446,25 @@ class Rpc:
             self.send({'id': msg['id'], 'error': {'code': -32601, 'message': 'Unsupported worker request'}})
         return msg
 
-    def request(self, method, params):
-        self.tick()
+    def request(self, method, params, tick=True):
+        # tick=False is for the interrupt itself: a stop is already requested by then, so the
+        # entry check that refuses new requests must not refuse the one that stops the turn.
+        if tick:
+            self.tick()
         self.next_id += 1
         rid = self.next_id
         self.send({'id': rid, 'method': method, 'params': params})
-        deadline = time.monotonic()+15
+        limit = self.budget()
+        limit = self.timeout if limit is None else max(0.0, min(self.timeout, limit))
+        deadline = time.monotonic()+limit
         while time.monotonic() < deadline:
-            msg = self.receive(max(.001, deadline-time.monotonic()))
+            wait = max(.001, deadline-time.monotonic())
+            try:
+                msg = self.receive(min(wait, self.poll_wait) if self.poll_wait else wait)
+            except queue.Empty:
+                if self.aborted():
+                    raise Rejected('stop_requested')
+                continue
             if msg.get('id') == rid and 'method' not in msg:
                 if msg.get('error'):
                     raise ServerRejected(msg['error'].get('code'))
