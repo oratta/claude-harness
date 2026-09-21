@@ -505,3 +505,10 @@ extract_context_cap_section() {
   run grep -F '引用できる指摘が残' "$GATE"
   [ "$status" -ne 0 ]
 }
+
+@test "gate-runner (#349 gate round 1): the sorting field and the round-2 cap record which of the three exceptions applies" {
+  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
+  echo "$common" | grep -F '仕分け' | grep -qF '例外 3 種のどれか'
+  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "$GATE")"
+  echo "$hold" | grep -F '2周目キャップ' | grep -qF '例外 3 種のどれか'
+}

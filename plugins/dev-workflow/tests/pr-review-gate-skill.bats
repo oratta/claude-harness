@@ -525,6 +525,14 @@ reviewer_block() {
   echo "$s5" | grep -qF '0 件'
 }
 
+@test "verdict (#349 gate round 1): step 5 excludes findings the owner closed as out of scope at the round-2 cap" {
+  s5="$(awk '/^### 5\. /{f=1} /^### 6\. /{exit} f' "$SKILL")"
+  echo "$s5" | grep -qF '主が範囲外として閉じて follow-up issue に切ったもの以外が 0 件'
+  spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
+  req="$(awk '/^### Requirement: 合格条件に判定を明記する/{f=1;next} /^### Requirement: /{f=0} f' "$spec")"
+  [ "$(echo "$req" | grep -cF '主が範囲外として閉じて follow-up issue に切ったもの以外が 0 件')" -eq 2 ]
+}
+
 @test "codex rubric (#349): measured as applied, so step 2-1 maps the Codex rubric onto the fixed format" {
   s="$(step21_section)"
   echo "$s" | grep -qF '[P0]'
