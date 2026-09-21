@@ -25,8 +25,9 @@ PR #268 でレビューと修正の往復が 5 周続き、1 本の PR に約 1.
 
 ## Impact
 
-- `plugins/dev-workflow/skills/pr-review-gate/SKILL.md`: 「収束ルール（レビュー周回のキャップ）」節と、手順 1 の「再レビューの範囲は差分限定」の記述
-- `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`: failed 節、return の `周回:` 欄、保留（`needs-approval`）の return
+- `plugins/dev-workflow/skills/pr-review-gate/SKILL.md`: 「収束ルール（レビュー周回のキャップ）」節、手順 1 の「再レビューの範囲は差分限定」の記述、手順 6 の復帰表（保留種別「2 周目キャップ」の行を足す）
+- `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`: failed 節、return の `周回:` 欄、保留（`needs-approval`）の return、再開節（W の修正後の再レビュー・保留の解除）
+- `plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md`: pr-review-gate の 3 周目規定を説明する括弧書き（82 行目）
 - `openspec/specs/dev-workflow-pr-review-gate/spec.md`（archive 時に delta を反映）
 - テスト: `plugins/dev-workflow/tests/pr-review-gate-skill.bats`（収束ルールの固定文言）、`plugins/dev-workflow/tests/develop-roles.bats`（gate-runner の failed 返却と `周回:` 欄）、`plugins/dev-workflow/tests/model-escalation-policy.bats`（「2 周キャップ」「最終周」。手順 2-2 は触らないので影響しない見込み）
 - `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の version bump、`CHANGELOG.md`
