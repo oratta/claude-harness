@@ -187,9 +187,10 @@ class ForegroundRequest(unittest.TestCase):
                 roles[role].update(updates)
                 profile = self.root/('invalid-executor-' + str(index) + '.json')
                 profile.write_text(json.dumps({'version':1, 'profiles':{'custom':{'roles':roles}}}))
+                target = self.root/('invalid-request-' + str(index) + '.json')
                 with self.assertRaisesRegex(RuntimeError, message):
-                    self.call_profile('custom', profile_file=profile,
-                                      out=self.root/('invalid-request-' + str(index) + '.json'))
+                    self.call_profile('custom', profile_file=profile, out=target)
+                self.assertFalse(target.exists())
 
     def test_external_profile_is_strict_complete_and_uses_registered_accounts(self):
         roles = {role: {'executor':'codex', 'account':'mapped',
@@ -313,6 +314,7 @@ class ForegroundRequest(unittest.TestCase):
                 self.assertIn('commit yourself here', text)
                 self.assertIn('do not return needs-coordinator for', text)
                 self.assertNotIn('the coordinator posts it on your behalf', text)
+                self.assertNotIn('no network access', text)
                 self.assertIn('needs-reviewer/needs-decider', text)
                 self.assertIn('Never merge or enable auto-merge', text)
                 self.assertIn('CANONICAL SOURCE ' + sources[phase], text)
@@ -334,6 +336,7 @@ class ForegroundRequest(unittest.TestCase):
                 self.assertIn('never write to GitHub, push, or commit', text)
                 self.assertIn('the coordinator posts it on your behalf', text)
                 self.assertNotIn('commit yourself here', text)
+                self.assertNotIn('no network access', text)
                 self.assertIn('needs-reviewer/needs-decider', text)
                 self.assertIn('Never merge or enable auto-merge', text)
                 self.assertIn('CANONICAL SOURCE ' + sources[phase], text)

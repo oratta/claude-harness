@@ -217,7 +217,9 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(self.ledgers(), [])
 
     def test_child_inherits_parent_environment_except_the_dropped_names(self):
-        dropped = [name for name in worker_module.DROPPED_ENV if name != 'CODEX_HOME']
+        dropped = ['OPENAI_API_KEY','CODEX_API_KEY','OPENAI_BASE_URL','CODEX_AUTH_JSON',
+                   'OPENAI_ORGANIZATION','OPENAI_PROJECT',
+                   'GIT_DIR','GIT_WORK_TREE','GIT_COMMON_DIR','GIT_INDEX_FILE']
         for name in dropped:
             self.env[name] = 'fixture-' + name.lower().replace('_', '-')
         self.env['GIT_DIR'] = str(self.repo/'.git')
@@ -374,15 +376,18 @@ class ForegroundTest(unittest.TestCase):
 
     def test_model_validation_rejections_leave_failed_job_before_thread(self):
         cases = (
-            ('missing', {'model_pages':[[]]}, 'model_not_available'),
+            ('missing', {'model_pages':[[]]}, {}, 'model_not_available'),
             ('duplicate', {'model_pages':[[
                 {'id':'a','model':'fixture-model','supportedReasoningEfforts':[]},
-                {'id':'b','model':'fixture-model','supportedReasoningEfforts':[]}]]}, 'model_not_unique'),
-            ('failure', {'reject':'model/list'}, 'model_list_unavailable'))
-        for job, config, error in cases:
+                {'id':'b','model':'fixture-model','supportedReasoningEfforts':[]}]]}, {}, 'model_not_unique'),
+            ('malformed', {'model_pages':[[
+                {'id':'a','model':'fixture-model','supportedReasoningEfforts':['high']}]]},
+             {'effort':'high'}, 'model_list_invalid'),
+            ('failure', {'reject':'model/list'}, {}, 'model_list_unavailable'))
+        for job, config, fields, error in cases:
             with self.subTest(job=job):
                 self.config(job, **config)
-                result = self.run_cli(job, code=2)
+                result = self.run_cli(job, code=2, **fields)
                 self.assertEqual(result['error_kind'], error)
                 self.assertIsNone(result['thread_id'])
                 self.assertIsNone(result['turn_id'])
