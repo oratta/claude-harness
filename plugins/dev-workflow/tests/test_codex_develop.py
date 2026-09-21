@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -68,6 +69,17 @@ class ForegroundRequest(unittest.TestCase):
         args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
                 '--cwd', str(self.cwd), '--profile', 'custom',
                 '--profile-file', str(self.profile_file), '--out', str(self.out), *extra]
+        with patch.object(sys, 'argv', args):
+            return m.main()
+
+    def call_profile(self, profile, *, phase='implement', profile_file=None, out=None):
+        target = out or self.out
+        args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
+                '--cwd', str(self.cwd), '--profile', profile,
+                '--account-home', 'current=' + str(self.home),
+                '--account-home', 'mapped=' + str(self.home), '--out', str(target)]
+        if profile_file:
+            args.extend(['--profile-file', str(profile_file)])
         with patch.object(sys, 'argv', args):
             return m.main()
 
@@ -153,6 +165,170 @@ class ForegroundRequest(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     self.call(*[part for name in pairs for part in ('--account-home', name)])
                 self.assertFalse(self.out.exists())
+
+    def test_executor_discriminated_validation_rejects_invalid_entries(self):
+        base = {role: {'executor':'codex', 'account':'mapped',
+                       'model':'fixture-model', 'effort':'low'}
+                for role in m.CANONICAL_ROLES}
+        cases = [
+            ('model', 'Claude model must be one of',
+             ('spec-review', {'executor':'claude', 'account':'current', 'model':'gpt-6-astra'})),
+            ('account', 'different Claude account execution is not supported yet',
+             ('spec-review', {'executor':'claude', 'account':'reviewer', 'model':'opus'})),
+            ('executor', 'executor must be claude or codex',
+             ('implement', {'executor':'local'})),
+        ]
+        for role in (value for value in m.CANONICAL_ROLES if value != 'decider'):
+            cases.append(('fable-' + role, 'fable is only supported for decider',
+                          (role, {'executor':'claude', 'account':'current', 'model':'fable'})))
+        for index, (label, message, (role, updates)) in enumerate(cases):
+            with self.subTest(case=label):
+                roles = {name: dict(entry) for name, entry in base.items()}
+                roles[role].update(updates)
+                profile = self.root/('invalid-executor-' + str(index) + '.json')
+                profile.write_text(json.dumps({'version':1, 'profiles':{'custom':{'roles':roles}}}))
+                with self.assertRaisesRegex(RuntimeError, message):
+                    self.call_profile('custom', profile_file=profile,
+                                      out=self.root/('invalid-request-' + str(index) + '.json'))
+
+    def test_external_profile_is_strict_complete_and_uses_registered_accounts(self):
+        roles = {role: {'executor':'codex', 'account':'mapped',
+                        'model':'custom-model', 'effort':'future'}
+                 for role in m.CANONICAL_ROLES}
+        profile = self.root/'strict-profiles.json'
+        profile.write_text(json.dumps({'version':1, 'profiles':{'custom':{'roles':roles}}}))
+        result = self.call_profile('custom', profile_file=profile)
+        self.assertEqual(result['status'], 'request-written')
+        self.assertEqual(json.loads(self.out.read_text())['account'], 'mapped')
+
+        invalids = [
+            {'version':True, 'profiles':{'custom':{'roles':roles}}},
+            {'version':2, 'profiles':{'custom':{'roles':roles}}},
+            {'version':1, 'extra':1, 'profiles':{'custom':{'roles':roles}}},
+            {'version':1, 'profiles':{'custom':{'roles':{k:v for k,v in roles.items() if k != 'decider'}}}},
+            {'version':1, 'profiles':{'custom':{'roles':dict(roles, decider=dict(roles['decider'], executor='local'))}}},
+            {'version':1, 'profiles':{'custom':{'roles':dict(roles, decider=dict(roles['decider'], account='absent'))}}},
+            '{"version":1,"version":1,"profiles":{}}',
+        ]
+        for index, value in enumerate(invalids):
+            with self.subTest(invalid=index):
+                profile.write_text(value if isinstance(value, str) else json.dumps(value))
+                target = self.root/('strict-invalid-' + str(index) + '.json')
+                with self.assertRaises((RuntimeError, ValueError)):
+                    self.call_profile('custom', profile_file=profile, out=target)
+                self.assertFalse(target.exists())
+
+    def test_review_must_equal_impl_review_in_profile_and_snapshot(self):
+        roles = {role: {'executor':'codex', 'account':'mapped',
+                        'model':'same-model', 'effort':'high'}
+                 for role in m.CANONICAL_ROLES}
+        roles['review'] = dict(roles['review'], model='different-model')
+        profile = self.root/'review-mismatch.json'
+        profile.write_text(json.dumps({'version':1, 'profiles':{'custom':{'roles':roles}}}))
+        with self.assertRaisesRegex(RuntimeError, 'review.*impl-review'):
+            self.call_profile('custom', profile_file=profile)
+
+        config = {'version':1, 'profile':'custom', 'roles':roles}
+        state = {'execution_config':config, 'execution_config_hash':m.execution_config_hash(config)}
+        with self.assertRaisesRegex(RuntimeError, 'review.*impl-review'):
+            m.resolve_execution(state, 'review')
+
+    def test_builtin_profiles_resolve_all_roles_and_snapshot_hash(self):
+        expected = {
+            'codex-standard': ('gpt-5.6-sol', 'high', 'gpt-5.6-sol', 'medium'),
+            'codex-economy': ('gpt-5.6-luna', 'medium', 'gpt-5.6-luna', 'medium'),
+        }
+        for profile, values in expected.items():
+            config = m.load_profile(profile, None, {'current'})
+            self.assertEqual((config['roles']['spec-write']['model'], config['roles']['spec-write']['effort'],
+                              config['roles']['implement']['model'], config['roles']['implement']['effort']), values)
+            for role in m.CANONICAL_ROLES:
+                with self.subTest(profile=profile, role=role):
+                    self.assertEqual(m.resolve_execution({'execution_config': config,
+                        'execution_config_hash': m.execution_config_hash(config)}, role),
+                        {'role': role} | config['roles'][role])
+                    phases = [phase for phase, entry in m.PHASES.items() if entry[0] == role]
+                    if not phases:
+                        continue
+                    target = self.root/(profile + '-' + role + '.json')
+                    result = self.call_profile(profile, phase=phases[0], out=target)
+                    self.assertEqual(result['status'], 'request-written')
+                    request = json.loads(target.read_text())
+                    self.assertEqual((request['role'], request['model'], request['effort']),
+                                     (role, config['roles'][role]['model'], config['roles'][role]['effort']))
+            self.assertEqual(m.execution_config_hash(config), hashlib.sha256(json.dumps(
+                config, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest())
+
+    def test_mixed_profile_resolves_every_role_and_builtin_hybrid_is_exact(self):
+        config = m.load_profile('hybrid-standard', None, {'current'})
+        expected = {
+            'spec-write': ('codex','current','gpt-5.6-sol','high'),
+            'spec-review': ('claude','current','opus','high'),
+            'implement': ('codex','current','gpt-5.6-sol','medium'),
+            'impl-review': ('claude','current','opus','high'),
+            'review': ('claude','current','opus','high'),
+            'decider': ('claude','current','fable','high'),
+            'explore': ('codex','current','gpt-5.6-luna','low'),
+            'summarize': ('codex','current','gpt-5.6-luna','low'),
+        }
+        for role, values in expected.items():
+            self.assertEqual(tuple(config['roles'][role][key]
+                                   for key in ('executor','account','model','effort')), values)
+            self.assertEqual(m.resolve_execution({'execution_config':config,
+                'execution_config_hash':m.execution_config_hash(config)}, role),
+                {'role':role} | config['roles'][role])
+            phases = [phase for phase, entry in m.PHASES.items() if entry[0] == role]
+            if not phases:
+                continue
+            target = self.root/('hybrid-' + role + '.json')
+            result = self.call_profile('hybrid-standard', phase=phases[0], out=target)
+            self.assertEqual((result['role'], result['executor'], result['model'], result['effort']),
+                             (role, values[0], values[2], values[3]))
+            self.assertEqual(target.exists(), values[0] == 'codex')
+        self.assertEqual(config['roles']['review'], config['roles']['impl-review'])
+
+    def test_profiles_preserve_coordinator_phase_order_and_role_mapping(self):
+        expected = {'spec':'spec-write', 'spec-review':'spec-review', 'implement':'implement',
+                    'finish':'implement', 'gate':'implement', 'review':'impl-review',
+                    'decider':'decider', 'explore':'explore', 'summarize':'summarize'}
+        for profile in ('codex-standard', 'codex-economy', 'hybrid-standard'):
+            for phase, role in expected.items():
+                with self.subTest(profile=profile, phase=phase):
+                    target = self.root/(profile + '-' + phase + '-mapping.json')
+                    result = self.call_profile(profile, phase=phase, out=target)
+                    self.assertEqual(result['role'], role)
+                    if result['executor'] == 'codex':
+                        self.assertEqual(json.loads(target.read_text())['role'], role)
+
+    def test_writer_phases_are_told_to_finish_their_own_github_work(self):
+        for phase in ('spec', 'implement', 'finish', 'gate'):
+            with self.subTest(phase=phase):
+                target = self.root/('writer-' + phase + '.json')
+                self.call_profile('codex-standard', phase=phase, out=target)
+                text = json.loads(target.read_text())['prompt']
+                self.assertIn('commit yourself here', text)
+                self.assertIn('do not return needs-coordinator for', text)
+                self.assertNotIn('the coordinator posts it on your behalf', text)
+                self.assertIn('needs-reviewer/needs-decider', text)
+                self.assertIn('Never merge or enable auto-merge', text)
+                self.assertIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
+
+    def test_reader_phases_return_the_verdict_for_the_coordinator_to_post(self):
+        for phase in ('spec-review', 'review', 'decider', 'explore', 'summarize'):
+            with self.subTest(phase=phase):
+                target = self.root/('reader-' + phase + '.json')
+                self.call_profile('codex-standard', phase=phase, out=target)
+                text = json.loads(target.read_text())['prompt']
+                self.assertIn('never write to GitHub, push, or commit', text)
+                self.assertIn('the coordinator posts it on your behalf', text)
+                self.assertNotIn('commit yourself here', text)
+                self.assertIn('needs-reviewer/needs-decider', text)
+                self.assertIn('Never merge or enable auto-merge', text)
+                self.assertIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
+
+    def test_request_file_mode_is_0600(self):
+        self.call('--account-home', 'mapped=' + str(self.home))
+        self.assertEqual(stat.S_IMODE(self.out.stat().st_mode), 0o600)
 
 
 class DocumentationContracts(unittest.TestCase):

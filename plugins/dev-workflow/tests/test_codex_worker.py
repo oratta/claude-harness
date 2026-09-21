@@ -32,12 +32,10 @@ info={'path':tmp,'prefix':os.environ.get('TMPPREFIX'),
 for line in sys.stdin:
  m=json.loads(line); method=m.get('method'); rid=m.get('id')
  m['fixtureTmp']=info
+ m['runtimeConfig']=(runtime/'config.toml').read_text()
  for name in ('calls.jsonl','calls-'+job+'.jsonl'):
   with (home/name).open('a') as f:f.write(json.dumps(m)+'\n')
  if rid is None:continue
- if method=='account/rateLimits/read' and config.get('hold_rate_limits_until'):
-  while not Path(config['hold_rate_limits_until']).exists():time.sleep(.02)
- if method==config.get('disconnect_before'):sys.exit(0)
  if method==config.get('reject'):
   print(json.dumps({'id':rid,'error':{'code':config.get('reject_code',-32000),'message':'rejected'}}),flush=True);continue
  if method=='account/read':r={'account':{'type':'chatgpt','email':config.get('email','worker@example.invalid')}}
@@ -54,11 +52,10 @@ for line in sys.stdin:
  if method==config.get('deafen_after'):
   while True:time.sleep(60)
  if method=='turn/start':
-  if config.get('disconnect'):sys.exit(0)
   if not config.get('quiet'):print(json.dumps({'method':'item/started','params':{'threadId':'thread','turnId':'turn'}}),flush=True)
   if config.get('usage'):print(json.dumps({'method':'thread/tokenUsage/updated','params':{'threadId':'thread','turnId':'turn','tokenUsage':config['usage']}}),flush=True)
   if config.get('wait'):continue
-  print(json.dumps({'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':config.get('status','completed'),'items':[]}}}),flush=True)
+  print(json.dumps({'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'completed','items':[]}}}),flush=True)
  if method=='turn/interrupt':
   print(json.dumps({'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'interrupted','items':[]}}}),flush=True)
 '''
@@ -122,6 +119,9 @@ class ForegroundTest(unittest.TestCase):
         return sorted(str(p.relative_to(self.root)) for name in ('ledger.sqlite','ownership.sqlite')
                       for p in self.root.rglob(name))
 
+    def fixture_info(self, job='one', home=None):
+        return self.calls(job, home)[0]['fixtureTmp']
+
     def await_turn(self, job='one', home=None, deadline=20):
         stop = time.monotonic()+deadline
         while time.monotonic() < stop:
@@ -178,6 +178,9 @@ class ForegroundTest(unittest.TestCase):
                              for m in self.calls('unsupported')))
 
     def test_role_policy_quota_auth_and_runtime_cleanup_remain_foreground(self):
+        temporary = self.root/'t';temporary.mkdir()
+        self.env['TMPDIR'] = str(temporary)
+        self.env['TMPPREFIX'] = str(temporary/'caller-zsh')
         for role in worker_module.ROLES:
             job = 'role-' + role
             result = self.run_cli(job, role=role)
@@ -187,8 +190,18 @@ class ForegroundTest(unittest.TestCase):
             turn = next(m['params'] for m in calls if m.get('method') == 'turn/start')
             expected = 'danger-full-access' if role in ('implement', 'spec-write') else 'read-only'
             self.assertEqual(thread['sandbox'], expected)
+            self.assertEqual(thread['approvalPolicy'], 'never')
+            self.assertEqual(turn['approvalPolicy'], 'never')
             if expected == 'read-only':
+                self.assertEqual(turn['sandboxPolicy'], {
+                    'type': 'readOnly', 'networkAccess': role != 'decider'})
                 self.assertNotIn('writableRoots', turn['sandboxPolicy'])
+            else:
+                self.assertEqual(turn['sandboxPolicy'], {'type': 'dangerFullAccess'})
+            info = self.fixture_info(job)
+            self.assertEqual(info['path'], str(temporary))
+            self.assertEqual(info['prefix'], str(temporary/'caller-zsh'))
+            self.assertEqual(list(temporary.glob('codex-run-*')), [])
 
         self.config('quota', pct=100)
         quota = self.run_cli('quota', code=2)
@@ -200,6 +213,172 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(mismatch['error_kind'], 'server_identity_mismatch')
         self.assertFalse(any(m.get('method') == 'turn/start' for m in self.calls('mismatch')))
         self.assertEqual(self.ledgers(), [])
+
+    def test_child_inherits_parent_environment_except_the_dropped_names(self):
+        dropped = [name for name in worker_module.DROPPED_ENV if name != 'CODEX_HOME']
+        for name in dropped:
+            self.env[name] = 'fixture-' + name.lower().replace('_', '-')
+        self.env['GIT_DIR'] = str(self.repo/'.git')
+        self.env['GIT_WORK_TREE'] = str(self.repo)
+        self.env['HARNESS_FIXTURE_MARK'] = 'reached'
+        self.env['GH_TOKEN'] = 'fixture-gh-token'
+        self.env['TMPPREFIX'] = str(self.root/'caller-zsh')
+        self.assertEqual(self.run_cli()['status'], 'completed')
+        seen = self.fixture_info()['env']
+        for name in dropped:
+            self.assertIsNone(seen[name], name + ' must not reach the child')
+        self.assertEqual(seen['HARNESS_FIXTURE_MARK'], 'reached')
+        self.assertEqual(seen['GH_TOKEN'], 'fixture-gh-token')
+        self.assertRegex(seen['CODEX_HOME'], r'/codex-run-[^/]+/one$')
+        self.assertEqual(seen['TMPDIR'], self.env.get('TMPDIR'))
+        self.assertEqual(seen['TMPPREFIX'], str(self.root/'caller-zsh'))
+
+    def test_child_gets_the_parent_temporary_area(self):
+        parent = self.root/'caller-tmp';parent.mkdir()
+        self.env['TMPDIR'] = str(parent)
+        self.env['TMPPREFIX'] = str(parent/'zsh')
+        for job, role in (('one','implement'), ('two','spec-write')):
+            self.assertEqual(self.run_cli(job, role=role)['status'], 'completed')
+            info = self.fixture_info(job)
+            self.assertEqual(info['path'], str(parent))
+            self.assertEqual(info['prefix'], str(parent/'zsh'))
+            self.assertEqual(info['child'], str(parent))
+            self.assertEqual(list(parent.glob('codex-run-*')), [])
+
+    def test_absent_parent_temporary_area_is_not_invented(self):
+        self.env.pop('TMPDIR', None)
+        self.env.pop('TMPPREFIX', None)
+        self.assertEqual(self.run_cli()['status'], 'completed')
+        info = self.fixture_info()
+        self.assertIsNone(info['path'])
+        self.assertIsNone(info['prefix'])
+        self.assertEqual(info['child'], '')
+
+    def test_commentary_approval_is_excluded_from_final(self):
+        self.config(items=[{'type':'agentMessage','phase':'commentary','text':'仕様レビュー: APPROVE'},
+                           {'type':'agentMessage','phase':'final_answer','text':'仕様レビュー: REQUEST_CHANGES\nBlocking defect remains.'}])
+        result = self.run_cli(role='review')
+        self.assertEqual(result['status'], 'completed')
+        self.assertEqual(result['text'], '仕様レビュー: REQUEST_CHANGES\nBlocking defect remains.')
+
+    def test_unknown_phase_is_not_review_evidence(self):
+        self.config(items=[{'type':'agentMessage','text':'仕様レビュー: APPROVE'}])
+        result = self.run_cli(code=2, role='review')
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['error_kind'], 'result_phase_unknown')
+        self.assertIsNone(result['text'])
+
+    def test_multiple_finals_are_not_review_evidence(self):
+        self.config(items=[{'type':'agentMessage','phase':'final_answer','text':'仕様レビュー: APPROVE'},
+                           {'type':'agentMessage','phase':'final_answer','text':'仕様レビュー: REQUEST_CHANGES'}])
+        result = self.run_cli(code=2, role='review')
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['error_kind'], 'result_final_not_unique')
+        self.assertIsNone(result['text'])
+
+    def test_main_checkout_and_unsupported_origin(self):
+        main = self.run_cli('main-checkout', code=2, cwd=str(self.repo))
+        self.assertEqual(main['error_kind'], 'feature_branch_required')
+        unsupported = self.run_cli('unsupported-origin', code=2, origin='burn')
+        self.assertEqual(unsupported['error_kind'], 'unsupported_origin')
+        self.assertFalse(self.calls('main-checkout'))
+        self.assertFalse(self.calls('unsupported-origin'))
+
+    def test_git_environment_cannot_redirect_validation(self):
+        self.env['GIT_DIR'] = str(self.repo/'.git')
+        self.env['GIT_WORK_TREE'] = str(self.repo)
+        self.assertEqual(self.run_cli()['status'], 'completed')
+
+    def test_project_config_is_rejected(self):
+        (self.cwd/'.codex').mkdir()
+        (self.cwd/'.codex/config.toml').write_text('[mcp_servers.external]\n')
+        result = self.run_cli(code=2)
+        self.assertEqual(result['error_kind'], 'unsupported_project_config')
+        self.assertFalse(self.calls())
+
+    def test_static_effort_and_identity_validation_creates_no_job(self):
+        for job, fields, error in (
+                ('empty', {'effort':''}, 'invalid_effort'),
+                ('number', {'effort':3}, 'invalid_effort'),
+                ('role', {'role':'unknown'}, 'unsupported_role'),
+                ('home', {'codex_home':str(self.root/'absent')}, 'codex_home_not_found')):
+            with self.subTest(job=job):
+                result = self.run_cli(job, code=2, **fields)
+                self.assertEqual(result['error_kind'], error)
+                self.assertFalse(self.calls(job))
+        self.assertEqual(self.ledgers(), [])
+
+    def test_runtime_does_not_inherit_user_mcp(self):
+        (self.home/'config.toml').write_text('[mcp_servers.external]\ncommand="danger"\n')
+        self.assertEqual(self.run_cli()['status'], 'completed')
+        self.assertNotIn('external', self.calls()[0]['runtimeConfig'])
+
+    def test_source_auth_change_interrupts_the_running_turn(self):
+        self.config(wait=True)
+        process = subprocess.Popen(self.command(), env=self.env, text=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            self.await_turn()
+            with (self.home/'auth.json').open('a') as stream:
+                stream.write(' ')
+            out, err = process.communicate(timeout=30)
+        finally:
+            if process.poll() is None:
+                process.kill();process.communicate(timeout=10)
+        self.assertEqual(process.returncode, 2, out + err)
+        result = json.loads([line for line in out.splitlines() if line.strip()][0])
+        self.assertEqual(result['status'], 'interrupted')
+        self.assertEqual(result['error_kind'], 'auth_profile_changed')
+
+    def test_runtime_auth_link_switch_interrupts(self):
+        temporary = self.root/'auth-tmp';temporary.mkdir()
+        self.env['TMPDIR'] = str(temporary)
+        self.config(wait=True)
+        process = subprocess.Popen(self.command(), env=self.env, text=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            self.await_turn()
+            auth = next(temporary.glob('codex-run-*/one/auth.json'))
+            other = self.root/'other-auth.json';other.write_text((self.home/'auth.json').read_text())
+            auth.unlink();auth.symlink_to(other)
+            out, err = process.communicate(timeout=30)
+        finally:
+            if process.poll() is None:
+                process.kill();process.communicate(timeout=10)
+        self.assertEqual(process.returncode, 2, out + err)
+        result = json.loads([line for line in out.splitlines() if line.strip()][0])
+        self.assertEqual(result['status'], 'interrupted')
+        self.assertEqual(result['error_kind'], 'auth_profile_changed')
+        self.assertEqual(list(temporary.glob('codex-run-*')), [])
+
+    def test_unknown_quota_is_not_permission(self):
+        self.config(pct=None)
+        result = self.run_cli(code=2)
+        self.assertEqual(result['error_kind'], 'quota_unknown')
+        self.assertFalse(any(m.get('method') == 'turn/start' for m in self.calls()))
+
+    def test_quota_headroom_blocks_when_margin_does_not_fit(self):
+        self.config(pct=70)
+        result = self.run_cli(code=2, quota_margin_pct=40)
+        self.assertEqual(result['error_kind'], 'quota_headroom_insufficient')
+        self.assertFalse(any(m.get('method') == 'turn/start' for m in self.calls()))
+
+    def test_model_validation_rejections_stop_before_thread(self):
+        cases = (
+            ('missing', {'model_pages':[[]]}, 'model_not_available'),
+            ('duplicate', {'model_pages':[[
+                {'id':'a','model':'fixture-model','supportedReasoningEfforts':[]},
+                {'id':'b','model':'fixture-model','supportedReasoningEfforts':[]}]]}, 'model_not_unique'),
+            ('failure', {'reject':'model/list'}, 'model_list_unavailable'))
+        for job, config, error in cases:
+            with self.subTest(job=job):
+                self.config(job, **config)
+                result = self.run_cli(job, code=2)
+                self.assertEqual(result['error_kind'], error)
+                self.assertIsNone(result['thread_id'])
+                self.assertIsNone(result['turn_id'])
+                self.assertFalse(any(m.get('method') in ('thread/start','turn/start')
+                                     for m in self.calls(job)))
 
     def test_foreground_run_completes_without_a_ledger(self):
         self.config(usage={'inputTokens':12,'outputTokens':3},
