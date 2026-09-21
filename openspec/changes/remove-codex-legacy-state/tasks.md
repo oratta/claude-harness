@@ -1,9 +1,9 @@
 ## 1. Contract tests first
 
-- [ ] 1.1 Update `test_codex_worker.py` before production edits so removed lifecycle commands/imports/storage fail the test, while foreground `run` still covers auth pinning, model/effort validation, role policy, quota preflight, caller/signal shutdown, and one-line JSON results.
-- [ ] 1.2 Update `test_codex_develop.py` before production edits so run-dir/pending/continuation APIs and CLI commands are rejected, while account-home mapping, legacy account/model request input, named profiles, and Claude `status: agent-required` routing remain covered.
-- [ ] 1.3 Add the removed-vocabulary zero-match checks to `plugins/dev-workflow/tests/test_codex_develop.py:1040` の `DocumentationContracts`, where the existing single-`executor` assertion lives, before documentation edits. `handoff-declaration.bats` は Codex・台帳の記述を含まないため、変更不要を確認する。
-- [ ] 1.4 Run the focused changed tests and record the expected Red failures caused by the still-present legacy surface.
+- [x] 1.1 Update `test_codex_worker.py` before production edits so removed lifecycle commands/imports/storage fail the test, while foreground `run` still covers auth pinning, model/effort validation, role policy, quota preflight, caller/signal shutdown, and one-line JSON results.
+- [x] 1.2 Update `test_codex_develop.py` before production edits so run-dir/pending/continuation APIs and CLI commands are rejected, while account-home mapping, legacy account/model request input, named profiles, and Claude `status: agent-required` routing remain covered.
+- [x] 1.3 Add the removed-vocabulary zero-match checks to `plugins/dev-workflow/tests/test_codex_develop.py:1040` の `DocumentationContracts`, where the existing single-`executor` assertion lives, before documentation edits. `handoff-declaration.bats` は Codex・台帳の記述を含まないため、変更不要を確認する。
+- [x] 1.4 Run the focused changed tests and record the expected Red failures caused by the still-present legacy surface.
 
 ## 2. Reduce the executable surface
 
