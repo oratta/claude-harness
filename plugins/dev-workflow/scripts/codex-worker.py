@@ -719,6 +719,128 @@ def worker(directory, job):
                 discard_runtime(runtime)
             db.close()
 
+class ForegroundRecorder:
+    # The foreground path: nothing is written down, the stop flag stands in for the ledger's
+    # cancel column, and one deadline covers the interrupt and the completion after it.
+    grace = 10
+    single_deadline = True
+
+    def __init__(self, execution, stop):
+        self.execution = execution
+        self.stop = stop
+        self.deadline = None
+
+    def tick(self):
+        require(not self.stop.is_set(), 'stop_requested')
+
+    def poll(self):
+        return self.stop.is_set()
+
+    def record_thread(self, thread):
+        pass
+
+    def record_turn(self, turn):
+        pass
+
+    def record_usage(self, usage):
+        pass
+
+    def observe(self, **observations):
+        apply_observations(self.execution, observations)
+
+    def inflight(self, account):
+        # With no ledger there is nothing to count and nothing is claimed: this run alone.
+        return 1
+
+    def account_effective(self, payload, observed):
+        # The running account, not the requested label: a caller whose name-to-CODEX_HOME
+        # mapping is wrong can only notice by comparing the two afterwards.
+        return observed['email'].strip()
+
+    def begin_grace(self, now):
+        self.deadline = now + self.grace
+
+    def budget(self):
+        return None if self.deadline is None else max(0.0, self.deadline-time.monotonic())
+
+    def aborted(self):
+        # Once the grace period has started the interrupt is already out and its completion
+        # is what the wait is for, so only a stop seen before that ends a wait early.
+        return self.deadline is None and self.stop.is_set()
+
+
+def watch_caller(stop, chain, interval=1):
+    while not stop.wait(interval):
+        if ancestors(os.getppid()) != chain:
+            stop.set()
+            return
+
+
+def run(request_path):
+    execution = None
+    state = TurnState()
+    status = text = error_kind = None
+    rpc = runtime = None
+    try:
+        payload = json.loads(Path(request_path).read_text())
+        require(isinstance(payload, dict), 'invalid_request')
+        source = payload.pop('codex_home', None)
+        margin = payload.pop('quota_margin_pct', 5)
+        require(isinstance(source, str) and source.strip(), 'missing_codex_home')
+        require(type(margin) in (int, float) and math.isfinite(margin) and 0 <= margin <= 100,
+                'invalid_quota_margin_pct')
+        payload.setdefault('request_id', 'run-'+digest(os.urandom(16))[:16])
+        # validate_request insists on a label, but the label is only what the result records:
+        # when the caller named no account the requested side stays empty in the result.
+        label = payload.get('account')
+        payload['account'] = label or payload['request_id']
+        validate_request(payload)
+        execution = execution_metadata(payload)
+        execution['requested']['account'] = label or None
+        home = Path(source).expanduser().resolve()
+        require((home/'auth.json').is_file(), 'codex_home_not_found')
+        # Identity comes from the CODEX_HOME the request named, so the match is self-contained:
+        # no ledger row decides which account this is.
+        account = dict(auth_info(str(home)), home=str(home), quota_margin_pct=margin)
+        stop = threading.Event()
+        # The handler only raises the flag; every request to the App Server is sent from the
+        # main flow, which checks it at the entry.
+        for number in (signal.SIGTERM, signal.SIGINT):
+            signal.signal(number, lambda *_: stop.set())
+        threading.Thread(target=watch_caller, args=(stop, ancestors(os.getppid())),
+                         daemon=True).start()
+        recorder = ForegroundRecorder(execution, stop)
+        common = git_common_dir(payload['cwd'])
+        runtime = foreground_runtime(payload['request_id'], str(home), payload['cwd'], common)
+        runtime_identity_matches(runtime, account)
+        rpc = Rpc(str(runtime), payload['cwd'])
+        rpc.budget = recorder.budget
+        rpc.aborted = recorder.aborted
+        rpc.poll_wait = .25
+        status, text, error_kind = run_turn(rpc, recorder, payload, account, runtime,
+                                            payload['cwd'], state)
+    except Exception as error:
+        # Exception text is deliberately not printed (it may contain credentials).
+        status = text = None
+        if isinstance(error, ServerRejected) and not state.accepted:
+            # The server answered the start request, so no turn is running; keep the code.
+            error_kind = 'server_rejected_start_'+str(error.code)
+        else:
+            error_kind = str(error) if isinstance(error, Rejected) else type(error).__name__
+    finally:
+        try:
+            if rpc:
+                rpc.close()
+        finally:
+            if runtime:
+                discard_runtime(runtime)
+                shutil.rmtree(runtime.parent, ignore_errors=True)
+    print(json.dumps({'text': text or None, 'status': status, 'usage': state.usage,
+                      'execution': execution, 'thread_id': state.thread_id,
+                      'turn_id': state.turn_id, 'error_kind': error_kind}))
+    raise SystemExit(0 if status == 'completed' and error_kind is None else 2)
+
+
 def command(args):
     db = db_open(args.state_dir)
     try:
@@ -790,8 +912,9 @@ def command(args):
                  json.dumps(execution_metadata(payload), sort_keys=True)))
             db.execute('COMMIT')
             try:
-                subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--state-dir', args.state_dir,
-                    '_worker', '--job', job], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                subprocess.Popen([sys.executable, str(Path(__file__).resolve()),
+                    '_worker', '--state-dir', args.state_dir, '--job', job],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
             except Exception:
                 update(db, job, status='unknown', error_kind='worker_spawn_failed')
@@ -817,24 +940,36 @@ def command(args):
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--state-dir', required=True)
     subs = parser.add_subparsers(dest='command', required=True)
-    register = subs.add_parser('register')
+
+    def ledger(name):
+        # Only the subcommands that touch the ledger accept its path; the foreground entry
+        # must not be able to take one at all.
+        sub = subs.add_parser(name)
+        sub.add_argument('--state-dir', required=True)
+        return sub
+
+    foreground = subs.add_parser('run')
+    foreground.add_argument('--request', required=True)
+    register = ledger('register')
     register.add_argument('--account', required=True)
     register.add_argument('--codex-home', required=True)
     register.add_argument('--max-concurrent', type=int, default=3)
     register.add_argument('--quota-margin-pct', type=float, default=5)
-    submit = subs.add_parser('submit')
+    submit = ledger('submit')
     submit.add_argument('--request', required=True)
-    reap = subs.add_parser('reap')
+    reap = ledger('reap')
     reap.add_argument('--older-than', type=float, default=86400)
     reap.add_argument('--account')
     for name in ('status', 'result', 'cancel', 'ack', 'send', '_worker'):
-        sub = subs.add_parser(name)
+        sub = ledger(name)
         sub.add_argument('--job', required=True)
         if name == 'send':
             sub.add_argument('--request', required=True)
     args = parser.parse_args()
+    if args.command == 'run':
+        run(args.request)
+        return
     args.state_dir = str(Path(args.state_dir).expanduser().resolve())
     if args.command == '_worker':
         worker(args.state_dir, args.job)

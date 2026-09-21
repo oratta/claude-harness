@@ -98,7 +98,7 @@ class WorkerTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def cli(self,*args,code=0):
-        p = subprocess.run([sys.executable,str(SCRIPT),'--state-dir',str(self.state),*args],
+        p = subprocess.run([sys.executable,str(SCRIPT),args[0],'--state-dir',str(self.state),*args[1:]],
             env=self.env,text=True,capture_output=True,timeout=10)
         self.assertEqual(p.returncode,code,p.stderr+p.stdout)
         return json.loads(p.stdout)
@@ -413,7 +413,7 @@ class WorkerTest(unittest.TestCase):
 
     def test_duplicate_worker_cannot_overwrite_active_state(self):
         self.config(wait=True);self.submit();self.wait(status='running')
-        subprocess.run([sys.executable,str(SCRIPT),'--state-dir',str(self.state),'_worker','--job','one'],
+        subprocess.run([sys.executable,str(SCRIPT),'_worker','--state-dir',str(self.state),'--job','one'],
                        env=self.env,check=True,timeout=10)
         self.assertEqual(self.cli('status','--job','one')['status'],'running')
         self.cli('cancel','--job','one');self.assertEqual(self.wait()['status'],'interrupted')
@@ -422,7 +422,7 @@ class WorkerTest(unittest.TestCase):
         data={'request_id':'one','origin':'manual','account':'test','cwd':str(self.cwd),
               'model':'fixture-model','role':'implement','prompt':'fixture'}
         path=self.root/'one.json';path.write_text(json.dumps(data))
-        cmd=[sys.executable,str(SCRIPT),'--state-dir',str(self.state),'submit','--request',str(path)]
+        cmd=[sys.executable,str(SCRIPT),'submit','--state-dir',str(self.state),'--request',str(path)]
         processes=[subprocess.Popen(cmd,env=self.env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE) for _ in range(3)]
         for process in processes:
             out,err=process.communicate(timeout=10)
@@ -754,7 +754,7 @@ class ForegroundTest(unittest.TestCase):
 
     def test_foreground_result_carries_the_running_account_not_the_requested_name(self):
         # The caller's mapping pointed the name 'test' at another account's CODEX_HOME.
-        self.config(home=self.other)
+        self.config(home=self.other, email='other@example.invalid')
         r = self.run_cli(codex_home=str(self.other))
         self.assertEqual(r['status'],'completed')
         self.assertEqual(r['execution']['requested']['account'],'test')
@@ -767,8 +767,10 @@ class ForegroundTest(unittest.TestCase):
                      ['--state-dir',str(self.root),'run','--request',str(self.request())]):
             p = subprocess.run([sys.executable,str(SCRIPT),*args],env=self.env,text=True,
                                capture_output=True,timeout=20)
+            # argparse must refuse the arguments; nothing may run and no result may appear.
             self.assertEqual(p.returncode,2,p.stdout+p.stderr)
-            self.assertIn('--state-dir',p.stderr)
+            self.assertEqual(p.stdout,'')
+            self.assertIn('usage:',p.stderr)
         self.assertEqual(self.calls(), [])
 
     def test_failures_before_the_turn_keep_the_same_shape(self):

@@ -326,9 +326,10 @@ def write(path, value):
     tmp.replace(path)
 
 
-def worker(state, *args):
+def worker(state, command, *args):
+    # The ledger path is what --state-dir belongs to, and it now sits behind the subcommand.
     script = ROOT / 'scripts/codex-worker.py'
-    result = subprocess.run([sys.executable, str(script), '--state-dir', state['worker_state'], *args],
+    result = subprocess.run([sys.executable, str(script), command, '--state-dir', state['worker_state'], *args],
                             text=True, capture_output=True, env=clean_env())
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or 'worker failed; no fallback')

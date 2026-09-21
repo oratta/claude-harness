@@ -18,23 +18,23 @@
 
 ## 3. 前景実行の入口を足す（Green）
 
-- [ ] 3.1 `codex-worker.py` にサブコマンド `run` を足す。依頼ファイルを読み、必須項目（role / cwd / model / prompt / codex-home）と任意項目（effort / account / request_id / quota-margin-pct）を検証し、cwd の検査（所有者・repo root・feature branch・linked worktree）は台帳経路と同じものを使う
-- [ ] 3.2 runtime の CODEX_HOME を `run` 自身が 0700 のディレクトリに用意する（`auth.json` の symlink と `config.toml`、project 設定層の拒否は台帳経路と同じ）。置き場は親に `TMPDIR` があればその配下、無ければ実行環境の既定の一時領域。app-server と子に渡す `TMPDIR` / `TMPPREFIX` は作りも書き換えもしない。終了時に symlink を外してディレクトリごと片付ける
-- [ ] 3.3 アカウントの照合を自己整合で行う。app-server の `account/read` が返した email が、渡された CODEX_HOME の `auth.json` の email と一致することを確認し、実行中の link の差し替えも同じ home を比較先にして検査する。観測した実行中アカウント（email かその digest）を `effective.account` に入れ、依頼の account 名は `requested.account` に留める（要求名を `effective` へ写さない）
-- [ ] 3.4 ターン開始前の利用枠確認を残す。同時に走っている件数は 1 固定、余裕率は依頼の `quota-margin-pct`（既定 5）を使い、`occupied_slots` / `reserve_global` を呼ばない
-- [ ] 3.5 停止要求を表すフラグを 1 つ用意し、SIGTERM / SIGINT のハンドラはそのフラグを立てるだけにする（ハンドラから RPC を送らない）
-- [ ] 3.6 起動時に `os.getppid()` から PID 1 まで辿った祖先の連鎖を控え、1 秒間隔で `ps -o ppid= -p <pid>` を使って辿り直すスレッドを足す。控えた連鎖と食い違ったら停止要求のフラグを立てる（直接の親の PID だけを比べない）
-- [ ] 3.7 停止要求を app-server への毎 RPC の入口で確認し、立っていれば要求を送らずに中止として抜ける形にする。ターン待ちのループは停止要求を見て `turn/interrupt` を 1 回送る。**猶予の起点は interrupt を送った時刻**にし、interrupt 自身の応答待ちも `turn/completed` の待ちも残り猶予で切り詰めて 1 つの締切に統一する（残り 0 で応答を待たずに後始末へ進む）。前景経路の締切は 10 秒とし、台帳経路の猶予 20 秒と応答後起点は変えない
-- [ ] 3.8 結果を標準出力の 1 行 JSON で出す。キーは `text` / `status` / `usage` / `execution`（`version=1` の `role` / `requested` / `effective` / `evidence`）/ `thread_id` / `turn_id` / `error_kind` とし、取得できなかった項目は `null` にする。失敗は exit code 2 で終わる。thread / turn の開始をサーバーがエラー応答で拒否したら、そのエラーコードを含む理由を `error_kind` に入れて非ゼロで終わる（再試行しない・別アカウントへ振り替えない）
-- [ ] 3.9 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py` を実行し、全件通ること（Green）を exit code 付きで確認する
+- [x] 3.1 `codex-worker.py` にサブコマンド `run` を足す。依頼ファイルを読み、必須項目（role / cwd / model / prompt / codex-home）と任意項目（effort / account / request_id / quota-margin-pct）を検証し、cwd の検査（所有者・repo root・feature branch・linked worktree）は台帳経路と同じものを使う
+- [x] 3.2 runtime の CODEX_HOME を `run` 自身が 0700 のディレクトリに用意する（`auth.json` の symlink と `config.toml`、project 設定層の拒否は台帳経路と同じ）。置き場は親に `TMPDIR` があればその配下、無ければ実行環境の既定の一時領域。app-server と子に渡す `TMPDIR` / `TMPPREFIX` は作りも書き換えもしない。終了時に symlink を外してディレクトリごと片付ける
+- [x] 3.3 アカウントの照合を自己整合で行う。app-server の `account/read` が返した email が、渡された CODEX_HOME の `auth.json` の email と一致することを確認し、実行中の link の差し替えも同じ home を比較先にして検査する。観測した実行中アカウント（email かその digest）を `effective.account` に入れ、依頼の account 名は `requested.account` に留める（要求名を `effective` へ写さない）
+- [x] 3.4 ターン開始前の利用枠確認を残す。同時に走っている件数は 1 固定、余裕率は依頼の `quota-margin-pct`（既定 5）を使い、`occupied_slots` / `reserve_global` を呼ばない
+- [x] 3.5 停止要求を表すフラグを 1 つ用意し、SIGTERM / SIGINT のハンドラはそのフラグを立てるだけにする（ハンドラから RPC を送らない）
+- [x] 3.6 起動時に `os.getppid()` から PID 1 まで辿った祖先の連鎖を控え、1 秒間隔で `ps -o ppid= -p <pid>` を使って辿り直すスレッドを足す。控えた連鎖と食い違ったら停止要求のフラグを立てる（直接の親の PID だけを比べない）
+- [x] 3.7 停止要求を app-server への毎 RPC の入口で確認し、立っていれば要求を送らずに中止として抜ける形にする。ターン待ちのループは停止要求を見て `turn/interrupt` を 1 回送る。**猶予の起点は interrupt を送った時刻**にし、interrupt 自身の応答待ちも `turn/completed` の待ちも残り猶予で切り詰めて 1 つの締切に統一する（残り 0 で応答を待たずに後始末へ進む）。前景経路の締切は 10 秒とし、台帳経路の猶予 20 秒と応答後起点は変えない
+- [x] 3.8 結果を標準出力の 1 行 JSON で出す。キーは `text` / `status` / `usage` / `execution`（`version=1` の `role` / `requested` / `effective` / `evidence`）/ `thread_id` / `turn_id` / `error_kind` とし、取得できなかった項目は `null` にする。失敗は exit code 2 で終わる。thread / turn の開始をサーバーがエラー応答で拒否したら、そのエラーコードを含む理由を `error_kind` に入れて非ゼロで終わる（再試行しない・別アカウントへ振り替えない）
+- [x] 3.9 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py` を実行し、全件通ること（Green）を exit code 付きで確認する
 
 ## 4. `--state-dir` を台帳サブコマンド側へ移す
 
-- [ ] 4.1 `codex-worker.py` の `main()` で `--state-dir` をグローバルから外し、台帳を使うサブコマンド（`register` / `submit` / `status` / `result` / `cancel` / `ack` / `send` / `reap` / `_worker`）の引数にする
-- [ ] 4.2 `submit` が `_worker` を起こす `subprocess.Popen` の引数の並びを、サブコマンドの後に `--state-dir` が来る形へ直す
-- [ ] 4.3 `plugins/dev-workflow/scripts/codex-develop.py` の `worker(state, *args)` が組み立てるコマンドの並びを同じ形へ直す
-- [ ] 4.4 既存テストの中で `--state-dir` をグローバル位置に置いている呼び出しをすべて直す
-- [ ] 4.5 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py` を実行し、全件通ることを exit code 付きで確認する
+- [x] 4.1 `codex-worker.py` の `main()` で `--state-dir` をグローバルから外し、台帳を使うサブコマンド（`register` / `submit` / `status` / `result` / `cancel` / `ack` / `send` / `reap` / `_worker`）の引数にする
+- [x] 4.2 `submit` が `_worker` を起こす `subprocess.Popen` の引数の並びを、サブコマンドの後に `--state-dir` が来る形へ直す
+- [x] 4.3 `plugins/dev-workflow/scripts/codex-develop.py` の `worker(state, *args)` が組み立てるコマンドの並びを同じ形へ直す
+- [x] 4.4 既存テストの中で `--state-dir` をグローバル位置に置いている呼び出しをすべて直す
+- [x] 4.5 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_worker.py` を実行し、全件通ることを exit code 付きで確認する
 
 ## 5. 依頼ファイルの組み立てを codex-develop.py から使えるようにする
 
