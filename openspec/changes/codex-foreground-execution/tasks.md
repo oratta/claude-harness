@@ -58,5 +58,5 @@
 
 - [x] 7.1 `openspec validate codex-foreground-execution --strict` が通ることを確認する
 - [x] 7.2 `bash scripts/test.sh` を全件実行し、成功件数・総件数・exit code を記録する
-- [ ] 7.3 実際の Codex アカウントで read-only の役割を 1 件、本体の Bash ツールの背景実行で呼び、起動直後に `ps -o ppid=,comm=` で `run` の直接の親が何か（shell の wrapper が挟まっているか）を記録したうえで、完了通知で結果の JSON を受け取れたことを、コマンド・出力の要点・exit code・対象 HEAD とともに PR 本文に記録する
+- [x] 7.3 実際の Codex アカウントで read-only の役割を 1 件、本体の Bash ツールの背景実行で呼び、起動直後に `ps -o ppid=,comm=` で `run` の直接の親が何か（shell の wrapper が挟まっているか）を記録したうえで、完了通知で結果の JSON を受け取れたことを、コマンド・出力の要点・exit code・対象 HEAD とともに PR 本文に記録する
 - [x] 7.4 `grep -rn "state-dir" plugins/ docs/ 2>/dev/null` で、グローバル位置に `--state-dir` を置いたままの呼び出しが残っていないことを確認する
