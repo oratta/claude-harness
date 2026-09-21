@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/codex-develop.py'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 spec = importlib.util.spec_from_file_location('develop', SCRIPT)
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
@@ -440,7 +441,7 @@ class RoleProfiles(unittest.TestCase):
             {'version': 2, 'profiles': {'custom': {'roles': roles}}},
             {'version': 1, 'extra': 1, 'profiles': {'custom': {'roles': roles}}},
             {'version': 1, 'profiles': {'custom': {'roles': {k: v for k, v in roles.items() if k != 'decider'}}}},
-            {'version': 1, 'profiles': {'custom': {'roles': dict(roles, decider=dict(roles['decider'], executor='claude'))}}},
+            {'version': 1, 'profiles': {'custom': {'roles': dict(roles, decider=dict(roles['decider'], executor='local'))}}},
             {'version': 1, 'profiles': {'custom': {'roles': dict(roles, decider=dict(roles['decider'], account='absent'))}}},
         ]
         duplicate = '{"version":1,"version":1,"profiles":{}}'

@@ -7,11 +7,11 @@
 
 ## 2. Executor-aware profile resolution (Green)
 
-- [ ] 2.1 Refactor `load_profile` and `validate_execution_config` to share executor-discriminated validation while retaining version 1, complete canonical roles, non-empty four-field entries, registered Codex accounts, and the review/impl-review equality invariant.
-- [ ] 2.2 Make `resolve_execution` return the selected role's unchanged executor/account/model/effort tuple for both providers; remove the legacy `executor must be codex` error text rather than replacing it with a hidden fallback.
-- [ ] 2.3 Update foreground `request` preparation so executor=codex keeps the private request-file path and executor=claude returns `agent-required` with role/executor/account/model/effort/head without writing a Codex request or translating effort.
-- [ ] 2.4 Make the legacy ledger `dispatch` reject a selected Claude executor before `codex-worker.py` submission and point callers to the foreground provider route.
-- [ ] 2.5 Add the built-in `hybrid-standard` profile to `references/codex-role-profiles.json`: Codex standard settings for spec-write/implement/explore/summarize, Claude opus/current for spec-review/impl-review/review, and Claude fable/current for decider.
+- [x] 2.1 Refactor `load_profile` and `validate_execution_config` to share executor-discriminated validation while retaining version 1, complete canonical roles, non-empty four-field entries, registered Codex accounts, and the review/impl-review equality invariant.
+- [x] 2.2 Make `resolve_execution` return the selected role's unchanged executor/account/model/effort tuple for both providers; remove the legacy `executor must be codex` error text rather than replacing it with a hidden fallback.
+- [x] 2.3 Update foreground `request` preparation so executor=codex keeps the private request-file path and executor=claude returns `agent-required` with role/executor/account/model/effort/head without writing a Codex request or translating effort.
+- [x] 2.4 Make the legacy ledger `dispatch` reject a selected Claude executor before `codex-worker.py` submission and point callers to the foreground provider route.
+- [x] 2.5 Add the built-in `hybrid-standard` profile to `references/codex-role-profiles.json`: Codex standard settings for spec-write/implement/explore/summarize, Claude opus/current for spec-review/impl-review/review, and Claude fable/current for decider.
 
 ## 3. Coordinator and documentation contract
 
