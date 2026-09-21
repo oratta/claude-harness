@@ -32,6 +32,6 @@
 
 - [x] 5.1 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/develop-roles.bats plugins/dev-workflow/tests/subagent-waiting.bats plugins/dev-workflow/tests/model-escalation-policy.bats` を実行し、文言変更の巻き込みが無いことを確認する（落ちたら追随）
 - [ ] 5.2 `scripts/test.sh` で全件を実行して通す（`tests/injection-budget.bats` を含む）
-- [ ] 5.3 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow の version を 2.13.16 → 2.13.17 に上げ、`CHANGELOG.md` に記載する（#349 と #352 を併記）
+- [x] 5.3 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow の version を 2.13.16 → 2.13.17 に上げ、`CHANGELOG.md` に記載する（#349 と #352 を併記）
 - [ ] 5.4 `openspec validate pr-review-gate-finding-format --strict` を通す
 - [ ] 5.5 (3b) の PR 本文は `Closes #349` を先頭に置き、`Closes #352` を併記する。1.2 の実測結果（実測できなかったときは実測した不可条件）を PR コメントに転記する
