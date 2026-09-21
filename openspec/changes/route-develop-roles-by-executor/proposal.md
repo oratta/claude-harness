@@ -6,9 +6,9 @@ Role profiles already describe an `executor`, but every entry is currently force
 
 - Accept `claude` as well as `codex` in version 1 role-profile entries and reject every other executor.
 - Validate executor-specific values: Claude entries use `account: current`, a Claude tier alias as `model`, and permit `fable` only for the `decider` role; Codex entries retain registered-account validation and worker-side model/effort validation.
-- Add one built-in mixed profile and return the selected role's executor/account/model/effort so the coordinator can route Claude roles through Agent and Codex roles through the foreground request/run path.
+- Add one built-in mixed profile and return the selected role's unchanged executor/account/model/effort so the coordinator can route Claude roles through Agent and Codex roles through the foreground request/run path; existing budget modes cap the applied Claude model at Agent start without rewriting the requested tuple.
 - Keep the historical `codex-role-profiles.json` filename to avoid breaking documented paths; its contents and documentation become provider-neutral.
-- Keep specification, implementation, review, and gate ordering unchanged. The profile selects transport and execution settings only.
+- Keep specification, implementation, review, and gate ordering unchanged. The profile selects transport and execution settings only; same-role Claude resumes continue via SendMessage, while profile-role boundaries and Codex delegations use fresh threads.
 - Bump the dev-workflow plugin version to 2.13.14 during implementation.
 
 ## Capabilities

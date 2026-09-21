@@ -2,7 +2,7 @@
 
 Version 1 role profiles already carry `executor`, `account`, `model`, and `effort`, but `load_profile` and `validate_execution_config` reject every executor except `codex`. The canonical path added by issue #340 resolves one role, writes a Codex request, and runs it in the foreground; it has no ledger, job id, or acknowledgement. The develop coordinator separately knows how to spawn Claude Agent roles, so a mixed profile needs one validated routing decision without creating a second workflow.
 
-The change must preserve all canonical roles and phase mappings, the `review == impl-review` invariant, independent review boundaries, and the rule that Fable is available only to the `decider` role. Claude Agent cannot select another Claude account per call, so Claude entries can currently name only `current`.
+The change must preserve all canonical roles and phase mappings, the `review == impl-review` invariant, independent review boundaries, and the rule that Fable is available only to the `decider` role. Claude Agent cannot select another Claude account per call, so Claude entries can currently name only `current`. A profile model is the requested model; the existing budget modes still cap the model actually passed to Agent.
 
 ## Goals / Non-Goals
 
@@ -10,7 +10,7 @@ The change must preserve all canonical roles and phase mappings, the `review == 
 
 - Make a version 1 profile the single table that selects executor/account/model/effort for every canonical role.
 - Validate Claude and Codex entries according to their executor and return the selected role's full tuple.
-- Route Claude roles to Agent and Codex roles to the existing foreground request/run path without changing phase order or quality gates.
+- Route Claude roles to Agent and Codex roles to the existing foreground request/run path without changing phase order or quality gates, while preserving the existing budget caps and same-role resume behavior.
 - Keep old all-Codex profiles valid and add measurable rejection cases for invalid mixed profiles.
 
 **Non-Goals:**
@@ -46,9 +46,11 @@ Alternatives considered: rename the file to `role-execution-profiles.json`, or a
 `codex-develop.py request` remains the profile parser and role resolver. Its JSON result always includes `role`, `executor`, `account`, `model`, `effort`, and target `head`.
 
 - If the selected executor is `codex`, behavior stays as today: require the selected account's CODEX_HOME mapping, write the private request file, and return `status: request-written`; the coordinator then runs `codex-worker.py run`.
-- If the selected executor is `claude`, validate the whole profile, do not create a Codex request, and return `status: agent-required`; the coordinator spawns the canonical Claude role with the returned model and the existing role-specific prompt/isolation rules.
+- If the selected executor is `claude`, validate the whole profile, do not create a Codex request, and return `status: agent-required`. The returned model remains the requested model. Immediately before a new Agent spawn, the coordinator applies the existing budget-mode caps, passes the resulting applied model, and retains requested model, applied model, and adjustment reason as distinct audit values. With no applicable cap the applied model equals the requested model and the reason is unchanged; `FABLE_BUDGET_MODE=exhausted` changes a requested `fable` to applied `opus`; `SHARED_BUDGET_MODE=depleted` changes it to applied `sonnet` and wins over the Fable mode.
 
-The `references/codex-develop.md` adapter documents this as one branch immediately after role resolution. `skills/develop/SKILL.md` points to that branch rather than duplicating it. This keeps executor choice in one place while leaving workflow transitions in the develop source of truth.
+Thread lifetime follows the profile role rather than every transport call. A new profile role, an independent review, or any Codex delegation starts a fresh thread and receives only artifacts plus the required summary. When canonical develop resumes the same Claude profile role, the coordinator uses SendMessage on its named thread and retains the requested tuple and applied model fixed at that thread's first spawn. This preserves the existing review/fix resume loops without pretending a running Agent can change model.
+
+The `references/codex-develop.md` adapter documents this as one branch immediately after role resolution, including budget application and the profile-role resume rule. `skills/develop/SKILL.md` points to that branch rather than duplicating the executor branch, while retaining the canonical resume points. This keeps executor choice in one place while leaving workflow transitions in the develop source of truth.
 
 Alternatives considered: add a separate `resolve` subcommand, or make the coordinator parse JSON directly. A second subcommand would read an editable external profile twice before a Codex request, while direct parsing would duplicate validation in prose. Making `request` a route-preparation boundary resolves and acts from one read.
 
@@ -62,6 +64,8 @@ This does not add Claude support to the ledger. It only prevents the shared vali
 
 - [The historical filename still says `codex`] → Document that the file is the provider-neutral built-in role table and keep all executor branching in its consumers.
 - [Claude `effort` is recorded but not effective] → State this explicitly in the adapter and return the value for audit; do not claim it was applied.
+- [A requested Claude model can exceed the current budget-mode cap] → Preserve the resolver output, apply the existing cap only at Agent start, and record requested model, applied model, and the reason separately.
+- [A profile role can be resumed after a return] → Reuse the named Claude thread only for the same profile role; start a fresh thread at a role boundary or for Codex, carrying artifacts and a concise handoff instead of full conversation history.
 - [A full mixed profile requires Codex account mappings even when the selected role is Claude] → Validate the whole profile up front so a later role cannot fail due to a latent bad account. Built-in `current` uses the same mapping already required by all-Codex profiles.
 - [Legacy init can store a mixed snapshot it cannot fully dispatch] → Fail before any worker submission when the selected role is Claude and direct callers to the foreground route.
 - [Documentation can drift into two executor branches] → Put the branch in `references/codex-develop.md` only and add a focused textual regression around the canonical wording/count.

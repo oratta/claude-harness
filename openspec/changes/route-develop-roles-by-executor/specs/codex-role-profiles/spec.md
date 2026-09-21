@@ -28,6 +28,10 @@ Version 1 profile の検証は executor を discriminator として行わなけ�
 - **WHEN** account=current、model=opus、非空 effort の Claude review role を解決する
 - **THEN** executor/account/model/effort を欠落なく返し、Codex model への変換を行わない
 
+#### Scenario: 残量モードは resolver の要求 tuple を変更しない
+- **WHEN** model=fable の Claude decider role を、`FABLE_BUDGET_MODE=exhausted` または `SHARED_BUDGET_MODE=depleted` の環境で解決する
+- **THEN** resolver は model=fable を含む profile の executor/account/model/effort をそのまま返し、Agent 起動時の上限適用を resolver 内で先取りしない
+
 #### Scenario: 未対応の Claude account を拒否する
 - **WHEN** Claude role の account が current 以外である
 - **THEN** 別 Claude account の実行は未対応だと分かるエラーで profile 全体を拒否し、欄そのものを欠落扱いにしない

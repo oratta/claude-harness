@@ -2,7 +2,7 @@
 
 - [ ] 1.1 Add failing `test_codex_develop.py` coverage for a complete mixed version 1 profile, asserting every canonical role resolves the profile's exact executor/account/model/effort tuple and that the built-in `hybrid-standard` values preserve `review == impl-review`.
 - [ ] 1.2 Add failing table-driven coverage that rejects Claude models outside `haiku|sonnet|opus|fable`, Claude accounts other than `current` with an explicitly unsupported-account error, `fable` on every non-decider role, and executors outside `claude|codex` without creating a request.
-- [ ] 1.3 Add failing foreground-route coverage showing a Claude role returns `agent-required` and creates no Codex request, while a Codex role still writes a request with the selected account/model/effort and CODEX_HOME.
+- [ ] 1.3 Add failing foreground-route coverage showing a Claude role returns `agent-required` with the unchanged requested tuple and creates no Codex request even when a budget mode will cap Agent startup, while a Codex role still writes a request with the selected account/model/effort and CODEX_HOME.
 - [ ] 1.4 Add failing legacy-dispatch coverage showing a mixed snapshot validates but a selected Claude role stops before any Codex worker submission.
 
 ## 2. Executor-aware profile resolution (Green)
@@ -15,8 +15,8 @@
 
 ## 3. Coordinator and documentation contract
 
-- [ ] 3.1 Update `references/codex-develop.md` so role resolution is followed by exactly one documented executor branch: Claude uses Agent with the returned model, Codex uses request then foreground run, and Claude effort is recorded but not passed as an Agent option.
-- [ ] 3.2 Update `skills/develop/SKILL.md` to consume the adapter's per-role executor result while leaving canonical phase ordering, review conditions, and provider-neutral transition decisions in the existing source of truth.
+- [ ] 3.1 Update `references/codex-develop.md` so role resolution is followed by exactly one documented executor branch: Claude applies existing budget caps to the requested model at Agent startup and distinguishes requested/applied/reason, Codex uses request then foreground run, and Claude effort is recorded but not passed as an Agent option. Document that the same Claude profile role resumes its named thread, while a profile-role boundary or Codex delegation starts fresh with an artifact/summary handoff.
+- [ ] 3.2 Update `skills/develop/SKILL.md` to consume the adapter's per-role executor result and synchronize its SendMessage resume points with the profile-role rule while leaving canonical phase ordering, review conditions, budget-mode tables, and provider-neutral transition decisions in the existing source of truth.
 - [ ] 3.3 Update `references/model-tiers.md` to define the provider-neutral version 1 table, Claude tier validation, `current` account restriction, and decider-only Fable rule without duplicating Codex model IDs.
 - [ ] 3.4 Add a focused documentation regression that proves the canonical executor branch occurs once in `references/codex-develop.md` and that `SKILL.md` points to it instead of restating it; record the expected `grep -c "executor" plugins/dev-workflow/references/codex-develop.md` count in the test assertion.
 
