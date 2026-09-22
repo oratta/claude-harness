@@ -34,9 +34,9 @@
 
 ## 5. 検証・仕様・版
 
-- [ ] 5.1 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/develop-roles.bats` と照合スクリプト用 bats を実行し、すべて exit 0 を確認する
-- [ ] 5.2 `python3 -m unittest plugins/dev-workflow/tests/test_codex_develop.py` を実行し、exit 0 を確認する
-- [ ] 5.3 `bash scripts/test.sh` を実行し、`tests/injection-budget.bats` を含む全件が exit 0 になることを確認する
-- [ ] 5.4 `openspec validate review-change-inventory --strict` と `openspec validate --specs --strict` を実行し、どちらも exit 0 になることを確認する
+- [x] 5.1 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/develop-roles.bats` と照合スクリプト用 bats を実行し、すべて exit 0 を確認する
+- [x] 5.2 `python3 -m unittest plugins/dev-workflow/tests/test_codex_develop.py` を実行し、exit 0 を確認する
+- [x] 5.3 `bash scripts/test.sh` を実行し、`tests/injection-budget.bats` を含む全件が exit 0 になることを確認する
+- [x] 5.4 `openspec validate review-change-inventory --strict` と `openspec validate --specs --strict` を実行し、どちらも exit 0 になることを確認する
 - [x] 5.5 `origin/main` と open PR の version 変更を確認してから、`plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow version を 1 つ上げ、`plugins/dev-workflow/CHANGELOG.md` に三表・機械照合・四分類を記録する
-- [ ] 5.6 issue #355 の受け入れ条件 8 件が、tasks 2.4・2.5・1.3/3.1・4.3/4.4・5.1・5.3・5.4・3.4/3.5 のいずれかに対応していることを最終確認する
+- [x] 5.6 issue #355 の受け入れ条件 8 件が、tasks 2.4・2.5・1.3/3.1・4.3/4.4・5.1・5.3・5.4・3.4/3.5 のいずれかに対応していることを最終確認する
