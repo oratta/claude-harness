@@ -437,3 +437,75 @@ PRECEDENTS
   [ "$status" -eq 1 ]
   [[ "$output" != *"| project |"* ]]
 }
+
+# --- #307: 閉じフェンス行の末尾判定が CommonMark（スペース・タブのみ）より広い ---
+#
+# CommonMark（§4.5 Fenced code blocks）が閉じフェンス行の末尾に許すのはスペースと
+# タブだけだが、旧実装の [[:space:]]* は POSIX ロケールでもフォームフィード（\f）・
+# 垂直タブ（\v）・キャリッジリターン（\r）を含む。これらを末尾に置いた ``` 行は
+# フェンスを閉じてはならない（GitHub の表示を含む CommonMark パーサとの解釈のずれ
+# を無くす）。制御文字はエディタ・git 双方で消えやすいので、静的フィクスチャではなく
+# printf で都度生成する（no-eol-* と同じ理由）。
+#
+# 各ケースは、フェンス内に「本来なら偽の閉じ行の直後もまだフェンス内」の1行を挟み、
+# その後ろに本物の閉じフェンス（余計な文字なしの ```）を置く。旧実装は偽の閉じ行で
+# 一旦フェンスを抜けてしまい、直後の本物の ``` を「新しい開きフェンス」として誤読
+# する。結果、その後ろの本文（表の見出し・区切り・上書き行）が EOF まで丸ごと
+# 未閉じフェンスに飲み込まれ、unclosed-fence になったうえで人間が書いた上書き行
+# （担い手『主』）が resolve から消える（code-fence-unclosed-swallow と同じ失敗
+# モード）。修正後は偽の閉じ行でフェンスが閉じず、直後の本物の ``` で正しく閉じる
+# ため、検出なし・上書き行が resolve に残る。
+_fence_trailing_ctrl_fixture() { # $1=出力先ディレクトリ $2=行末に置く制御文字
+  local dir="$1" ctrl="$2"
+  mkdir -p "${dir}/.claude/casting"
+  printf -- '---\ncatalog_version: 1\n---\n\n# 配役表（閉じフェンス行の末尾に CommonMark が許さない制御文字がある）\n\n```markdown\n<!-- 記入例（この行はフェンス内にあるべき）\n| 財務・コスト | 記入例（採用されてはならない） | 混合 | 予算方針文 | エージェント |\n-->\n```%s\nまだフェンスの中のはずの行（CommonMark は空白とタブしか閉じフェンスの末尾に許さない）\n```\n\n| 観点 | この観点が要る論点の条件 | 判断基準の出どころ | 移譲に必要な文書 | 既定の担い手 |\n|---|---|---|---|---|\n| 財務・コスト | 実際の指定 | 混合（判断力は内蔵・閾値は注入） | 予算方針文（上限額と裁量範囲） | 主 |\n' \
+    "$ctrl" > "${dir}/.claude/casting/project.md"
+}
+
+@test "closing-fence-trailing-formfeed: a \`\`\` line ending in \\f does not close the fence" {
+  local dir="${BATS_TEST_TMPDIR}/closing-fence-formfeed"
+  _fence_trailing_ctrl_fixture "$dir" $'\f'
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"unclosed-fence"* ]]
+  run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]]
+}
+
+@test "closing-fence-trailing-vtab: a \`\`\` line ending in \\v does not close the fence" {
+  local dir="${BATS_TEST_TMPDIR}/closing-fence-vtab"
+  _fence_trailing_ctrl_fixture "$dir" $'\v'
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"unclosed-fence"* ]]
+  run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]]
+}
+
+@test "closing-fence-trailing-cr: a \`\`\` line ending in \\r does not close the fence" {
+  local dir="${BATS_TEST_TMPDIR}/closing-fence-cr"
+  _fence_trailing_ctrl_fixture "$dir" $'\r'
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"unclosed-fence"* ]]
+  run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]]
+}
+
+# 回帰よけ: CommonMark が実際に許すスペース・タブは、修正後も従来どおり閉じフェンス
+# として扱われる（[[:space:]]* を狭めすぎて空白・タブまで拒否する誤修正を防ぐ）。
+@test "closing-fence-trailing-space-tab: \`\`\` lines ending in a space or a tab still close the fence" {
+  local dir="${BATS_TEST_TMPDIR}/closing-fence-space-tab"
+  mkdir -p "${dir}/.claude/casting"
+  printf -- '---\ncatalog_version: 1\n---\n\n# 配役表\n\n```markdown\n記入例\n``` \n\n~~~\n記入例2\n~~~\t\n\n| 観点 | この観点が要る論点の条件 | 判断基準の出どころ | 移譲に必要な文書 | 既定の担い手 |\n|---|---|---|---|---|\n| 財務・コスト | 実際の指定 | 混合（判断力は内蔵・閾値は注入） | 予算方針文（上限額と裁量範囲） | 主 |\n' \
+    > "${dir}/.claude/casting/project.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"unclosed-fence"* ]]
+  run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]]
+}

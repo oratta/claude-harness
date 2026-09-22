@@ -178,7 +178,12 @@ strip_html_comments() {
   : > "$out"
   while IFS= read -r line || [ -n "$line" ]; do
     if [ "$in_fence" -eq 1 ]; then
-      if [[ "$line" =~ ^[\ ]{0,3}(${fence_char}{3,})[[:space:]]*$ ]] \
+      # 閉じフェンス行の末尾に許すのは CommonMark 同様スペースとタブのみ（#307）。
+      # [[:space:]] は POSIX ロケールでもフォームフィード・垂直タブ・キャリッジ
+      # リターンを含むため使わない。[[:blank:]] はスペースとタブだけを指す
+      # （bracket expression 内では \t がエスケープとして働かないので `[ \t]` とは
+      #  書けない。`[[:blank:]]` が `[ \t]*` 相当の正しい書き方）。
+      if [[ "$line" =~ ^[\ ]{0,3}(${fence_char}{3,})[[:blank:]]*$ ]] \
         && [ "${#BASH_REMATCH[1]}" -ge "$fence_len" ]; then
         in_fence=0
       fi
