@@ -22,8 +22,8 @@
 
 ## 4. 検証と版
 
-- [ ] 4.1 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/develop-roles.bats` が exit 0
-- [ ] 4.2 `origin/main` の `plugins/dev-workflow/.claude-plugin/plugin.json` の version と open PR の version 変更を確認してから、`plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow の version を 1 つ上げ、`plugins/dev-workflow/CHANGELOG.md` に項目を足す
+- [x] 4.1 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/develop-roles.bats` が exit 0
+- [x] 4.2 `origin/main` の `plugins/dev-workflow/.claude-plugin/plugin.json` の version と open PR の version 変更を確認してから、`plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow の version を 1 つ上げ、`plugins/dev-workflow/CHANGELOG.md` に項目を足す
 - [ ] 4.3 `bash scripts/test.sh` が exit 0（`tests/injection-budget.bats` を含む）
 - [ ] 4.4 `openspec validate pr-review-gate-triage-followups --strict` と `openspec validate --specs --strict` が exit 0、`git diff origin/main -- plugins/dev-workflow/agents/decider.md` が空
 
