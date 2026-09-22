@@ -79,5 +79,5 @@ gh pr comment <PR番号> --body "$(printf '仕様レビュー: REQUEST_CHANGES\n
 ## 往復の上限
 
 - **2 周で確定**: 初回 ＋ 修正後の差分再レビュー 1 回。再レビューは 1 周目の指摘が閉じたかと、修正で新たに生じた矛盾だけを見る（新規の気づきは NOTE に留める）
-- 3 周目の例外は設けない（pr-review-gate の「新規の高深刻度 blocking のみ 3 周目可」は PR レビュー側の規定。仕様段階なら人に返す方が安い）
+- 3 周目の例外は設けない（pr-review-gate 側は 2 周目終了時に引用で仕分けて主に上げる。仕様段階でも人に返す方が安い）
 - 2 周目でも BLOCKER が残る場合: 記録先に `needs-approval` を付けて経緯をコメントし、interactive モードでは本体が AskUserQuestion で判断を仰ぎ、unmanned モードではそのサイクルを終了する

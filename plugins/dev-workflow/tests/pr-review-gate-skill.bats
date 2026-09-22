@@ -346,3 +346,338 @@ review_execution() {
   done
   ! echo "$doc" | grep -qE 'github.com/|/Users/|#715'
 }
+
+# ===== 収束ルールの適用手順（issue #281 PR-A）=====
+
+convergence_section() {
+  awk '/^\*\*収束ルール（レビュー周回のキャップ）\*\*/{f=1} f&&/^#/{exit} f' "$SKILL"
+}
+
+@test "convergence (#281): G quotes the violated sentence right after receiving the round-2 result" {
+  sec="$(convergence_section)"
+  [ -n "$sec" ]
+  echo "$sec" | grep -q '2周目の結果を受け取った直後'
+  echo "$sec" | grep -q 'G'
+  echo "$sec" | grep -q '引用'
+  echo "$sec" | grep -q '受け入れ条件'
+}
+
+@test "convergence (#281): reviewer severity labels are reference only" {
+  convergence_section | grep -q '深刻度ラベルは参考'
+}
+
+@test "convergence (#281): no quotable source means every finding is treated as unquoted" {
+  convergence_section | grep -q '引用元が無い'
+}
+
+@test "convergence (#349): the per-round general rule is gone and step 2-1 refers to the all-round verdict" {
+  run grep -F '欠陥ありなら PR コメントに再現手順と修正点を書き' "$SKILL"
+  [ "$status" -ne 0 ]
+  line="$(step21_section | grep -F '止める指摘が残ったら')"
+  [ -n "$line" ] || { echo "no stop-finding branch line in step 2-1"; return 1; }
+  echo "$line" | grep -qF '「マージを止めるかの判定（全周共通）」'
+  echo "$line" | grep -qF '仕分け表'
+  run grep -F '1周目は PR コメントに止める指摘を書き' "$SKILL"
+  [ "$status" -ne 0 ]
+}
+
+@test "convergence (#281): unquotable findings go to follow-up issues and proceed to passed" {
+  sec="$(convergence_section)"
+  echo "$sec" | grep -q '引用できない指摘'
+  echo "$sec" | grep -q 'follow-up issue'
+  echo "$sec" | grep -q 'passed'
+}
+
+@test "convergence (#354): stopping findings at the end of round 2 go to triage rows 5 or 6, not a bare single choice" {
+  sec="$(convergence_section)"
+  echo "$sec" | grep -q '引用できる指摘'
+  echo "$sec" | grep -q '3周目を自動で開けない'
+  echo "$sec" | grep -qF '順 5'
+  echo "$sec" | grep -qF '順 6'
+  echo "$sec" | grep -qF '順 2〜4 を使わない'
+  run grep -F '続けるか、範囲外として閉じるか' "$SKILL"
+  [ "$status" -ne 0 ]
+}
+
+@test "convergence (#281): unmanned operation (loop-dev-agent) also stops" {
+  convergence_section | grep -q 'loop-dev-agent'
+}
+
+@test "convergence (#281): rounds opened by the owner's go-ahead apply the same sorting and stop again" {
+  convergence_section | grep -q '主の回答または決める役の裁定で開いた周の終了時にも同じ仕分け'
+}
+
+@test "convergence (#281): rewrite of the approach triggers a full review but rounds keep counting" {
+  sec="$(convergence_section)"
+  echo "$sec" | grep -q '方式の書き換え'
+  echo "$sec" | grep -q '全体レビュー'
+  echo "$sec" | grep -q '周回は数え続ける'
+}
+
+@test "convergence (#354): the decider rules only on the approach for row 6 and G keeps the stop verdict" {
+  line="$(convergence_section | grep -F '順 6 の方式だけを裁定')"
+  [ -n "$line" ] || { echo "no decider paragraph for row 6"; return 1; }
+  echo "$line" | grep -qF '`dev-workflow:decider`'
+  echo "$line" | grep -qF '止めるかどうかは全周共通の判定で G が決める'
+  run grep -F '関与しない' "$SKILL"
+  [ "$status" -ne 0 ]
+}
+
+@test "convergence (#281): no high-severity permission for a third round remains" {
+  run grep -E '3周目に入ってよいのは.*高深刻度|新規の高深刻度 blocking のみ' "$SKILL"
+  [ "$status" -ne 0 ]
+}
+
+@test "convergence (#354): step 6 recovery table has a split-off confirmation row covering both answers" {
+  row="$(grep -A1 '^| \*\*切り出しの確認\*\*' "$SKILL")"
+  [ -n "$row" ]
+  echo "$row" | grep -q '切り出す'
+  echo "$row" | grep -q 'この PR で直す'
+  echo "$row" | grep -q 'agent-review:failed'
+  [ "$(echo "$row" | grep -c 'needs-approval.*を外す')" -eq 2 ]
+  grep -qE '^### 6\. 保留処理（.*切り出しの確認）' "$SKILL"
+  run grep -F '2周目キャップ' "$SKILL"
+  [ "$status" -ne 0 ]
+}
+
+@test "approval classes (#354): row 1 asks whether to split the defect off, with a recommendation and an estimate" {
+  row="$(grep -E '^\| 1 \| リスク許容の確認 \|' "$SKILL")"
+  echo "$row" | grep -qF '順 5'
+  echo "$row" | grep -qF 'この欠陥を残して切り出すか'
+  echo "$row" | grep -qF '推奨と見積もり'
+}
+
+# ===== 指摘の固定書式と全周共通の判定（issue #349）=====
+
+step21_section() {
+  awk '/^#### 2-1\. /{f=1} /^#### 2-2\. /{exit} f' "$SKILL"
+}
+
+reviewer_block() {
+  awk '/^\*\*レビュアー向け指示ブロック/{f=1; next} f&&/^```text$/{g=1; next} g&&/^```$/{exit} g' "$SKILL"
+}
+
+@test "finding format (#349): step 2-1 has a pasteable reviewer block with every field" {
+  blk="$(reviewer_block)"
+  [ -n "$blk" ] || { echo "no reviewer block in step 2-1"; return 1; }
+  for token in '見出し' '深刻度' '検証' '根拠' '場所' '何が起きるか' '直し方'; do
+    echo "$blk" | grep -qF "$token" || { echo "missing field: $token"; return 1; }
+  done
+}
+
+@test "finding format (#349): the block defines severity, verification and re-review status values" {
+  blk="$(reviewer_block)"
+  for token in '`blocking`' '`should`' '`nit`' '`confirmed`' '`plausible`' '`fixed`' '`unresolved`' '`wontfix`'; do
+    echo "$blk" | grep -qF "$token" || { echo "missing value: $token"; return 1; }
+  done
+  echo "$blk" | grep -qE '^\| `blocking` \|'
+  echo "$blk" | grep -qE '^\| `should` \|'
+  echo "$blk" | grep -qE '^\| `nit` \|'
+}
+
+@test "finding format (#349): the block names the three exceptions for unquotable blocking findings" {
+  blk="$(reviewer_block)"
+  echo "$blk" | grep -qF '安全機構の穴'
+  echo "$blk" | grep -qF 'データ破壊'
+  echo "$blk" | grep -qF '無言の機能不全'
+}
+
+@test "finding format (#349): the block asks to enumerate every finding and limits re-reviews" {
+  blk="$(reviewer_block)"
+  echo "$blk" | grep -qF '該当する指摘を全部列挙するまで止まらない'
+  echo "$blk" | grep -qF '新規の指摘を出さない'
+  echo "$blk" | grep -qF '新規に出してよいのは `blocking` だけ'
+  echo "$blk" | grep -qF '直し方」どおりに直した箇所を再指摘しない'
+}
+
+@test "finding format (#349): the format and severity table appear only once in the skill" {
+  [ "$(grep -cE '^\| `blocking` \|' "$SKILL")" -eq 1 ]
+  [ "$(grep -c '^\*\*レビュアー向け指示ブロック' "$SKILL")" -eq 1 ]
+}
+
+@test "verdict (#349): the all-round verdict is written once in step 2-1" {
+  [ "$(grep -c '^\*\*マージを止めるかの判定（全周共通）\*\*' "$SKILL")" -eq 1 ]
+  v="$(step21_section | awk '/^\*\*マージを止めるかの判定（全周共通）\*\*/{f=1; print; next} f&&/^\*\*/{exit} f')"
+  echo "$v" | grep -qF '`blocking`'
+  echo "$v" | grep -qF '`confirmed`'
+  echo "$v" | grep -qF '照合'
+  echo "$v" | grep -qF '安全機構の穴'
+  echo "$v" | grep -qF 'follow-up issue'
+  echo "$v" | grep -qF '深刻度ラベルは参考'
+  echo "$v" | grep -qF '全周'
+}
+
+@test "verdict (#349): no text splits the verdict by round" {
+  run grep -F 'この一般則は1周目に適用する' "$SKILL"
+  [ "$status" -ne 0 ]
+  run grep -E '一般則|収束ルールが優先' "$SKILL"
+  [ "$status" -ne 0 ]
+}
+
+@test "verdict (#349): round-1 failed keeps non-stopping findings as a list and defers follow-up issues to step 3" {
+  s="$(step21_section)"
+  echo "$s" | grep -qF '止めない指摘'
+  echo "$s" | grep -qF 'follow-up issue はまだ切らない'
+  echo "$s" | grep -qF '手順3へ進むとき'
+}
+
+@test "verdict (#349): the round-2 sorting refers to the verdict instead of restating it" {
+  sec="$(convergence_section)"
+  echo "$sec" | grep -qF '「マージを止めるかの判定（全周共通）」'
+  echo "$sec" | grep -qF '止める指摘'
+  run sh -c "awk '/^\\*\\*収束ルール/{f=1} f&&/^#/{exit} f' '$SKILL' | grep -F 'blocking かどうかは引用できるかどうかで決め'"
+  [ "$status" -ne 0 ]
+}
+
+@test "verdict (#349/#354): the decider paragraph ties the stop decision to the verdict, not to quoting alone" {
+  line="$(grep -F '順 6 の方式だけを裁定' "$SKILL")"
+  [ -n "$line" ]
+  echo "$line" | grep -qF '全周共通の判定'
+  run sh -c "grep -F '順 6 の方式だけを裁定' '$SKILL' | grep -F '引用の有無で決まる'"
+  [ "$status" -ne 0 ]
+}
+
+@test "verdict (#349): step 5 requires zero stopping findings under the all-round verdict" {
+  s5="$(awk '/^### 5\. /{f=1} /^### 6\. /{exit} f' "$SKILL")"
+  echo "$s5" | grep -qF '全周共通の判定で止まる指摘（`blocking` かつ `confirmed`、G が引用を照合済み'
+  echo "$s5" | grep -qF '0 件'
+}
+
+@test "verdict (#354): step 5 excludes findings the owner split off and findings closed by the row-3 set match" {
+  s5="$(awk '/^### 5\. /{f=1} /^### 6\. /{exit} f' "$SKILL")"
+  echo "$s5" | grep -qF '主が切り出すと答えて follow-up issue に切ったものと、G が順 3 の集合一致で閉じたもの（閉じた PR コメント URL を仕分け欄に残す）以外が 0 件'
+  echo "$s5" | grep -qF '「切り出しの確認」行'
+  # archive 前は change の delta spec、archive 後は main spec を読む
+  spec="${PLUGIN_ROOT}/openspec/changes/pr-review-gate-triage-table/specs/dev-workflow-pr-review-gate/spec.md"
+  [ -f "$spec" ] || spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
+  req="$(awk '/^### Requirement: 合格条件に判定を明記する/{f=1;next} /^### Requirement: /{f=0} f' "$spec")"
+  [ "$(echo "$req" | grep -cF '主が切り出すと答えて follow-up issue に切ったもの')" -eq 2 ]
+  [ "$(echo "$req" | grep -cF '順 3 の集合一致で閉じたもの')" -eq 2 ]
+  run grep -F '範囲外として閉じ' "$SKILL"
+  [ "$status" -ne 0 ]
+}
+
+@test "codex rubric (#349): measured as applied, so step 2-1 maps the Codex rubric onto the fixed format" {
+  s="$(step21_section)"
+  echo "$s" | grep -qF '[P0]'
+  echo "$s" | grep -qF '`priority`'
+  echo "$s" | grep -qF '`confidence_score`'
+  echo "$s" | grep -qF '`code_location`'
+  echo "$s" | grep -qF '`confidence_score` を `confirmed` の代わりにしない'
+}
+
+# ===== 指摘の仕分け表（issue #354）=====
+
+triage_section() {
+  awk '/^\*\*止める指摘の仕分け表/{f=1} f&&/^\*\*収束ルール/{exit} f' "$SKILL"
+}
+
+# 仕分け表の中の「**順 N（…）**」段落。次の太字見出しの段落の手前まで
+triage_row_section() {
+  triage_section | awk -v n="$1" '$0 ~ "^\\*\\*順 " n "（"{f=1; print; next} f&&/^\*\*/{exit} f'
+}
+
+@test "triage (#354): the triage table sits right after the all-round verdict, once, with six rows in order" {
+  [ "$(grep -c '^\*\*止める指摘の仕分け表' "$SKILL")" -eq 1 ]
+  next_bold="$(awk '/^\*\*マージを止めるかの判定（全周共通）\*\*/{f=1; next} f&&/^\*\*/{print; exit}' "$SKILL")"
+  echo "$next_bold" | grep -q '^\*\*止める指摘の仕分け表'
+  rows="$(triage_section | grep -E '^\| [1-6] \|' | cut -d'|' -f2 | tr -d ' ' | tr '\n' ' ')"
+  [ "$rows" = "1 2 3 4 5 6 " ] || { echo "rows: $rows"; return 1; }
+  t="$(triage_section)"
+  echo "$t" | grep -E '^\| 1 \|' | grep -qF '止める判定'
+  echo "$t" | grep -E '^\| 2 \|' | grep -qF '受け入れ条件の中'
+  echo "$t" | grep -E '^\| 3 \|' | grep -qF '一覧の一致'
+  echo "$t" | grep -E '^\| 4 \|' | grep -qF '今直す 3 条件'
+  echo "$t" | grep -E '^\| 5 \|' | grep -qF '主に'
+  echo "$t" | grep -E '^\| 6 \|' | grep -qF '決める役'
+}
+
+@test "triage (#354): rows 2 to 4 return to W with agent-review:failed, row 5 holds, row 6 returns needs-decider" {
+  t="$(triage_section)"
+  for n in 2 3 4; do
+    echo "$t" | grep -E "^\| $n \|" | grep -qF 'agent-review:failed' || { echo "row $n lacks failed"; return 1; }
+  done
+  echo "$t" | grep -E '^\| 5 \|' | grep -qF 'needs-approval'
+  echo "$t" | grep -E '^\| 6 \|' | grep -qF 'needs-decider'
+}
+
+@test "triage (#354): at the end of round 2 and later rounds, rows 2 to 4 are not used" {
+  triage_section | grep -qF '2 周目以降の周の終わり'
+  triage_section | grep -qF '順 2〜4 を使わない'
+}
+
+@test "triage (#354): row 5 mixed with rows 2 to 4 holds first and W does not start fixing" {
+  t="$(triage_section)"
+  echo "$t" | grep -qF '保留を先にする'
+  echo "$t" | grep -qF 'W は順 2〜4 の指摘の修正にも着手しない'
+  echo "$t" | grep -qF '`needs-approval` と `agent-review:failed` を同時に付けない'
+}
+
+@test "triage (#354): row 3 closes by set match, with a search command, one send-back and no round consumed" {
+  [ "$(grep -c '一覧の一致\|集合が.*一致' "$SKILL")" -ge 1 ]
+  r="$(triage_row_section 3)"
+  [ -n "$r" ] || { echo "no row-3 section"; return 1; }
+  echo "$r" | grep -qF '検索コマンド'
+  echo "$r" | grep -qF '投稿してから push'
+  echo "$r" | grep -qF '差し戻しは 1 回まで'
+  echo "$r" | grep -qF 'レビューの周に数えない'
+  echo "$r" | grep -qF '周を消費しない'
+  echo "$r" | grep -qF '「該当しない理由」の正否を判定しない'
+  echo "$r" | grep -qF '順 3 に当てない'
+}
+
+@test "triage (#354): row 4 uses the same 30-line threshold as step 2-0 and no other line count" {
+  grep -n '30 行' "$SKILL" | awk -F: -v s="$(grep -n '^#### 2-0\. ' "$SKILL" | cut -d: -f1)" -v e="$(grep -n '^#### 2-1\. ' "$SKILL" | cut -d: -f1)" '$1>s && $1<e {ok=1} END{exit !ok}'
+  r="$(triage_row_section 4)"
+  [ -n "$r" ] || { echo "no row-4 section"; return 1; }
+  echo "$r" | grep -qF '直し方が行レベルで 30 行以内'
+  echo "$r" | grep -qF 'その場で直した累計が 30 行以内'
+  echo "$r" | grep -qF '手順 2-0 と同じ 30 行'
+  echo "$r" | grep -qF '受け入れ条件の外・その場で直した・直し方 N 行'
+  other="$(echo "$r" | grep -oE '[0-9]+ 行' | grep -v '^30 行$' || true)"
+  [ -z "$other" ] || { echo "other thresholds: $other"; return 1; }
+}
+
+@test "triage (#354): row 5 asks the owner in the same round with the four points" {
+  r="$(triage_row_section 5)"
+  [ -n "$r" ] || { echo "no row-5 section"; return 1; }
+  for token in 'マージ後に何を起こすか' '見積もり' '固定費' '推奨' 'その周で聞く' 'needs-approval' '「切り出しの確認」' 'loop-dev-agent'; do
+    echo "$r" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "triage (#354): row 6 fires on recurrence at round 2+ ends or on fall-through from rows 3 and 4" {
+  r="$(triage_row_section 6)"
+  [ -n "$r" ] || { echo "no row-6 section"; return 1; }
+  echo "$r" | grep -qF '2 周目以降の周の終わり'
+  echo "$r" | grep -qF '順 3 の照合が差し戻し後の 2 回目も一致しない'
+  echo "$r" | grep -qF '順 4 で直した指摘が 1 回で閉じない'
+  echo "$r" | grep -qF '周の終わりを待たず'
+}
+
+@test "triage (#354): row 6 is ruled once per PR, counted from PR comments by exact first line over all pages" {
+  r="$(triage_row_section 6)"
+  echo "$r" | grep -qF '`needs-decider`'
+  echo "$r" | grep -qF 'PR ごとに 1 回まで'
+  echo "$r" | grep -qF '^決める役の裁定: (全部列挙してから直す|切り出す)$'
+  echo "$r" | grep -qF -- '--paginate --slurp'
+  echo "$r" | grep -qF '1 回目の裁定が「切り出す」だった場合も'
+  echo "$r" | grep -qF '止めるかどうかの判定は G'
+  echo "$r" | grep -qF '可否と根拠'
+}
+
+@test "reviewer block (#354): the no-new-findings rule has the three-exception proviso" {
+  line="$(reviewer_block | grep -F '新規の指摘を出さない')"
+  [ -n "$line" ]
+  echo "$line" | grep -qF '例外 3 種'
+  echo "$line" | grep -qF '安全機構の穴'
+  echo "$line" | grep -qF '差分限定の周でも出してよい'
+}
+
+@test "convergence (#354): only an owner answer or a decider ruling opens round 3" {
+  sec="$(convergence_section)"
+  echo "$sec" | grep -qF '「この PR で直す」'
+  echo "$sec" | grep -qF '「全部列挙してから直す」'
+  echo "$sec" | grep -qF 'PR ごとに 1 回まで'
+  echo "$sec" | grep -qF '例外 3 種'
+}

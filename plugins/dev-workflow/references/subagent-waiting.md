@@ -55,7 +55,9 @@ base="${dir##*/}"; nonce="${base#codex-}"
 case "$nonce" in ''|*[!A-Za-z0-9]*) printf 'nonce invalid: %s\n' "$nonce" >&2; exit 1 ;; esac
 [ "${#nonce}" -ge 16 ] || { printf 'nonce too short: %s\n' "$nonce" >&2; exit 1; }
 cat > "${dir}/prompt.txt" <<'PROMPT_EOF'
-<レビュー指示をそのまま書く。" ` $(...) を含んでよい（クォート付きヒアドキュメントなので展開されない）>
+<レビュー指示をそのまま書く。" ` $(...) を含んでよい（クォート付きヒアドキュメントなので展開されない）。
+ 固定した HEAD・diff 範囲・受け入れ条件に加え、pr-review-gate の SKILL.md 手順 2-1 のレビュアー向け指示ブロックをそのまま貼る（指摘の書式はそのブロックが正本で、ここには再掲しない）。
+ 「該当する指摘を全部列挙するまで止まらない」の 1 文を必ず含める>
 PROMPT_EOF
 printf 'dir=%s\nnonce=%s\n' "$dir" "$nonce"   # ← この 2 値を手順 2 / 3 に literal で書き写す
 ```
