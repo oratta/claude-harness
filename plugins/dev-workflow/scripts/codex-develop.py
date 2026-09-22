@@ -125,25 +125,36 @@ def _rpc_requests(home, requests, timeout=15):
     env = clean_env() | {'CODEX_HOME': home}
     proc = subprocess.Popen(['codex', 'app-server', '-c', 'model_provider="openai"'],
         env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        text=True, bufsize=1)
+        bufsize=0)
     results = []
+    buffered = b''
     try:
         for number, (method, params) in enumerate(requests, 1):
-            proc.stdin.write(json.dumps({'id': number, 'method': method, 'params': params}) + '\n')
+            proc.stdin.write((json.dumps(
+                {'id': number, 'method': method, 'params': params}) + '\n').encode())
             proc.stdin.flush()
             deadline = time.monotonic() + timeout
             while True:
-                wait = deadline - time.monotonic()
-                if wait <= 0 or not select.select([proc.stdout], [], [], max(0, wait))[0]:
-                    raise RuntimeError('Codex quota RPC timed out')
-                message = json.loads(proc.stdout.readline())
+                while b'\n' not in buffered:
+                    wait = deadline - time.monotonic()
+                    if wait <= 0 or not select.select([proc.stdout], [], [], max(0, wait))[0]:
+                        raise RuntimeError('Codex quota RPC timed out')
+                    chunk = os.read(proc.stdout.fileno(), 65536)
+                    if not chunk:
+                        raise RuntimeError('Codex quota RPC disconnected')
+                    buffered += chunk
+                line, buffered = buffered.split(b'\n', 1)
+                if not line:
+                    continue
+                message = json.loads(line)
                 if message.get('id') != number or 'method' in message:
                     continue
                 if message.get('error'):
                     raise RuntimeError('Codex quota RPC was rejected')
                 results.append(message.get('result') or {})
                 if method == 'initialize':
-                    proc.stdin.write(json.dumps({'method': 'initialized', 'params': {}}) + '\n')
+                    proc.stdin.write((json.dumps(
+                        {'method': 'initialized', 'params': {}}) + '\n').encode())
                     proc.stdin.flush()
                 break
         return results
@@ -160,7 +171,12 @@ def _rpc_requests(home, requests, timeout=15):
 
 def _quota_windows(result):
     buckets = result.get('rateLimitsByLimitId')
-    values = list(buckets.values()) if isinstance(buckets, dict) else [result.get('rateLimits')]
+    if isinstance(buckets, dict):
+        values = [buckets.get('codex')]
+    else:
+        legacy = result.get('rateLimits')
+        values = [legacy] if (isinstance(legacy, dict) and
+                              legacy.get('limitId') in (None, 'codex')) else []
     windows = []
     for bucket in values:
         if not isinstance(bucket, dict):
@@ -212,6 +228,8 @@ def _update_codex_cache(name, home, config_dir, now):
             previous = json.loads(path.read_text())
         except (OSError, ValueError):
             pass
+        if not isinstance(previous, dict):
+            previous = None
         if previous is not None:
             try:
                 if previous.get('identity') != _auth_identity(home):
@@ -229,17 +247,34 @@ def _update_codex_cache(name, home, config_dir, now):
 
 
 def read_codex_usages(mapping, config_dir, now):
+    def update(name, home):
+        try:
+            return _update_codex_cache(name, home, config_dir, now)
+        except Exception:
+            return name, None
+
     with ThreadPoolExecutor(max_workers=max(1, len(mapping))) as pool:
-        futures = [pool.submit(_update_codex_cache, name, home, config_dir, now)
+        futures = [pool.submit(update, name, home)
                    for name, home in mapping.items()]
         values = dict(future.result() for future in futures)
     return {name: values.get(name) for name in mapping}
 
 
+def _run_usage_probe(snapshot_path):
+    env = clean_env() | {'USAGE_SNAPSHOT': str(snapshot_path)}
+    try:
+        subprocess.run([str(ROOT / 'scripts/usage-probe.sh')], env=env,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=20, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
 def automatic_selection(mapping, now=None):
-    now = int(time.time()) if now is None else now
     config_dir = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude'))
     snapshot_path = Path(os.environ.get('USAGE_SNAPSHOT', config_dir / '.usage-snapshot'))
+    _run_usage_probe(snapshot_path)
+    now = int(time.time()) if now is None else now
     try:
         snapshot = json.loads(snapshot_path.read_text())
     except (OSError, ValueError):
@@ -490,7 +525,7 @@ def build_request(args):
         if selected == 'claude-default':
             state = {'cwd': str(cwd), 'automatic_claude_default': True}
         else:
-            config = load_profile(selected, None, set(mapping))
+            config = load_profile(selected, None, None)
             config = bind_codex_account(config, selection['codex']['account'], set(mapping))
             state = {'cwd': str(cwd), 'execution_config': config,
                      'execution_config_hash': execution_config_hash(config)}

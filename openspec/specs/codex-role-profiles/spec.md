@@ -104,6 +104,8 @@ Version 1 profile の検証は executor を discriminator として行わなけ�
 ### Requirement: 明示指定が無い工程では provider の週次余裕から構成を選ぶ
 develop role resolver は、profile と旧 account/model のどちらも明示されない各 canonical phase の開始時に、Claude 起動 account と登録 Codex accounts の週次余裕を評価しなければならない（MUST）。Claude 起動 account は `usage-account-registry` capability の「active スロットの判定規則」で起動環境から解決し、schema 2 snapshot の対応する `accounts` entry を読まなければならない（MUST）。余裕は reset までの週経過率から週次使用率を引いた未丸め値とし、0 以上を余裕あり、負値または欠測を詰まりとして design の選択表を適用しなければならない（MUST）。工程途中の role を切り替えてはならず、次工程で再評価しなければならない（MUST）。
 
+各工程の自動選択は dev-workflow 同梱の `usage-probe.sh` を有限 timeout で best-effort 実行してから Claude snapshot を読み取らなければならない（MUST）。probe と reader は同じ `USAGE_SNAPSHOT` を使い、probe が失敗または timeout した場合も既存 snapshot に対する 300 秒の freshness 検証を維持しなければならない（MUST）。
+
 #### Scenario: 両 provider に余裕がある
 - **WHEN** Claude margin が +20、最良 Codex margin が +10 で profile を明示せず工程を開始する
 - **THEN** `claude-write-codex-review` を選び、書く役と補助役は Claude、レビュー役と decider は Codex gpt-6-astra に解決する
@@ -127,6 +129,10 @@ develop role resolver は、profile と旧 account/model のどちらも明示�
 #### Scenario: 起動 account と snapshot.active が食い違う
 - **WHEN** 起動時の `CLAUDE_SECURESTORAGE_CONFIG_DIR` から導出したサービス名がスロット A に一致し、schema 2 snapshot の `active` とトップレベルのミラーがスロット B を指す
 - **THEN** `usage-account-registry` の優先順位に従ってスロット A の `accounts[A]` から Claude margin を求め、スロット B のトップレベル値へフォールバックしない
+
+#### Scenario: 工程開始時に Claude snapshot を更新する
+- **WHEN** profile を明示せず canonical phase を開始し、既存 Claude snapshot が 301 秒以上古い
+- **THEN** 同梱 probe を有限時間で実行して同じ `USAGE_SNAPSHOT` を再読込し、probe が更新できた値を評価する。probe が更新できなければ古い値を欠測として扱う
 
 ### Requirement: snapshot の鮮度と週次窓を fail-safe に検証する
 自動選択は `fetched_at` が整数で `0 <= now - fetched_at <= 300`、週次使用率が有限の 0..100、reset が現在より後かつ 7 日以内の snapshot だけを fresh としなければならない（MUST）。Codex は `minutes=10080` の有効な window だけを週次比較に使い、5 時間窓や reset credit を代用してはならない（MUST NOT）。不正、未来時刻、301 秒以上古い値、期限切れ reset は欠測として扱わなければならない（MUST）。この freshness 境界は Claude 起動 account 自動選択と同じでなければならない（MUST）。
@@ -176,4 +182,3 @@ resolver は dev-workflow に同梱された実装だけで、登録された各
 #### Scenario: 全体回帰を実行する
 - **WHEN** repository の `scripts/test.sh` を実行する
 - **THEN** 自動選択、明示指定、profile 検証、Codex snapshot 分離を含む回帰が exit 0 になる
-
