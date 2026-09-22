@@ -1,10 +1,10 @@
 ## 1. 選択規則をテストで固定する（Red）
 
-- [ ] 1.1 `plugins/dev-workflow/tests/account-selector.bats` を追加し、2 スロットで `a < b` の週次余裕を与えると `b` の `securestorage` が stdout に出て、stderr の理由 1 行に両方の余裕の数値が出る失敗テストを書く（受け入れ条件 1）。
-- [ ] 1.2 age 299 秒は候補、300 秒は候補外になる境界、片方だけ古い場合、全スロットが古い場合をテストする。全スロットが古い場合は空の既定値、`reason=default-due-to-missing-usage` / `stale`、登録済み既定スロットの実 id が出ること、および既定スロット未登録なら `selected=@unregistered-default` になることを失敗テストで固定する（受け入れ条件 2・5）。
-- [ ] 1.3 `five_hour_pct` が 89.99 のスロットは候補、90 以上のスロットは週次余裕が最大でも候補外になる失敗テストを書く。全スロットが 90 以上なら `reason=default-due-to-five-hour-limit` となり、欠測縮退の理由と区別されることも固定する（受け入れ条件 3）。
-- [ ] 1.4 登録済み id の明示指定が snapshot 不在・不正でも成功し、未登録 id と引数 2 個以上が stdout 無しの exit 2 になる失敗テストを書く。未登録 id を shell function が空の成功値と誤認せず、`claude` を起動しないことも固定する（受け入れ条件 4）。
-- [ ] 1.5 同点の宣言順、必要値の欠測・非数値・未来の `fetched_at`、stdout/stderr 分離、空白を含む `securestorage` を追加テストで固定し、新規 bats が実装前に Red になることを記録する。
+- [x] 1.1 `plugins/dev-workflow/tests/account-selector.bats` を追加し、2 スロットで `a < b` の週次余裕を与えると `b` の `securestorage` が stdout に出て、stderr の理由 1 行に両方の余裕の数値が出る失敗テストを書く（受け入れ条件 1）。
+- [x] 1.2 age 299 秒は候補、300 秒は候補外になる境界、片方だけ古い場合、全スロットが古い場合をテストする。全スロットが古い場合は空の既定値、`reason=default-due-to-missing-usage` / `stale`、登録済み既定スロットの実 id が出ること、および既定スロット未登録なら `selected=@unregistered-default` になることを失敗テストで固定する（受け入れ条件 2・5）。
+- [x] 1.3 `five_hour_pct` が 89.99 のスロットは候補、90 以上のスロットは週次余裕が最大でも候補外になる失敗テストを書く。全スロットが 90 以上なら `reason=default-due-to-five-hour-limit` となり、欠測縮退の理由と区別されることも固定する（受け入れ条件 3）。
+- [x] 1.4 登録済み id の明示指定が snapshot 不在・不正でも成功し、未登録 id と引数 2 個以上が stdout 無しの exit 2 になる失敗テストを書く。未登録 id を shell function が空の成功値と誤認せず、`claude` を起動しないことも固定する（受け入れ条件 4）。
+- [x] 1.5 同点の宣言順、必要値の欠測・非数値・未来の `fetched_at`、stdout/stderr 分離、空白を含む `securestorage` を追加テストで固定し、新規 bats が実装前に Red になることを記録する。
 
 ## 2. アカウント selector を実装する（Green / Refactor）
 
