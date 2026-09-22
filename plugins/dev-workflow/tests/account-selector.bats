@@ -71,7 +71,8 @@ invoke() {
   write_snapshot "$((NOW - 1))" "$((NOW - 300))" 10 10 49 0
   run invoke
   [ "$status" -eq 0 ]
-  [ ! -s "${WORK}/stdout" ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
   grep -qF 'selected=a reason=max-weekly-margin margins=a:1.00,b:stale' "${WORK}/stderr"
 }
 
@@ -80,7 +81,8 @@ invoke() {
   write_snapshot "$((NOW - 300))" "$((NOW - 301))" 10 10 40 20
   run invoke
   [ "$status" -eq 0 ]
-  [ ! -s "${WORK}/stdout" ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
   [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-missing-usage margins=a:stale,b:stale" ]
 }
 
@@ -89,7 +91,8 @@ invoke() {
   write_snapshot "$((NOW - 300))" "$((NOW - 301))" 10 10 40 20
   run invoke
   [ "$status" -eq 0 ]
-  [ ! -s "${WORK}/stdout" ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
   grep -qF 'selected=@unregistered-default reason=default-due-to-missing-usage' "${WORK}/stderr"
 }
 
@@ -98,7 +101,8 @@ invoke() {
   write_snapshot "$NOW" "$NOW" 89.99 90 40 0
   run invoke
   [ "$status" -eq 0 ]
-  [ ! -s "${WORK}/stdout" ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
   [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:10.00,b:five-hour>=90" ]
 }
 
@@ -107,7 +111,8 @@ invoke() {
   write_snapshot "$NOW" "$NOW" 90 100 40 20
   run invoke
   [ "$status" -eq 0 ]
-  [ ! -s "${WORK}/stdout" ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
   [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-five-hour-limit margins=a:five-hour>=90,b:five-hour>=90" ]
   ! grep -qF 'default-due-to-missing-usage' "${WORK}/stderr"
 }
@@ -162,7 +167,8 @@ invoke() {
   write_snapshot "$NOW" "$NOW" 10 10 25 25
   run invoke
   [ "$status" -eq 0 ]
-  [ ! -s "${WORK}/stdout" ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
   grep -qF 'selected=a reason=max-weekly-margin margins=a:25.00,b:25.00' "${WORK}/stderr"
 }
 

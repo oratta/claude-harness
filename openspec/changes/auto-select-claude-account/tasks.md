@@ -8,9 +8,9 @@
 
 ## 2. アカウント selector を実装する（Green / Refactor）
 
-- [ ] 2.1 `plugins/dev-workflow/scripts/select-account.sh` を追加し、既存レジストリ契約と schema 2 snapshot を読み、300 秒の鮮度・5 時間 90% ガード・共有枠モードと同じ週次余裕・宣言順 tie-break を実装する。
-- [ ] 2.2 候補なしでは登録済み既定スロットの実 id（未登録なら `@unregistered-default`）と空の `securestorage` へ縮退し、欠測と短期枠逼迫で理由を分ける。明示 id 経路、未登録 id の exit 2 を実装し、明示 id 経路が snapshot を開かないことをテストで確認する。
-- [ ] 2.3 stdout を `securestorage` 値 1 行、stderr を `selected=... reason=... margins=...` 1 行に分離し、`account-selector.bats` をすべて Green にする。
+- [x] 2.1 `plugins/dev-workflow/scripts/select-account.sh` を追加し、既存レジストリ契約と schema 2 snapshot を読み、300 秒の鮮度・5 時間 90% ガード・共有枠モードと同じ週次余裕・宣言順 tie-break を実装する。
+- [x] 2.2 候補なしでは登録済み既定スロットの実 id（未登録なら `@unregistered-default`）と空の `securestorage` へ縮退し、欠測と短期枠逼迫で理由を分ける。明示 id 経路、未登録 id の exit 2 を実装し、明示 id 経路が snapshot を開かないことをテストで確認する。
+- [x] 2.3 stdout を `securestorage` 値 1 行、stderr を `selected=... reason=... margins=...` 1 行に分離し、`account-selector.bats` をすべて Green にする。
 
 ## 3. 起動手順と仕様を更新する
 
