@@ -1,37 +1,4 @@
-# manual-codex-develop Specification
-
-## Purpose
-TBD - created by archiving change codex-develop-role-profiles. Update Purpose after archive.
-## Requirements
-### Requirement: 手動で実行先とアカウントを固定する
-手動開発は旧形式の Codex account/model、または名前付き profile の役割別 executor/account/model/effort を委譲ごとに解決しなければならない（MUST）。role resolver は profile にある要求 tuple を変更せず返さなければならない（MUST）。前景実行では、Claude role は account=current と要求された Claude tier を保持し、既存の残量モードを適用した実効 model で Agent を起動する。Codex role は account 名を呼び出し側の設定から CODEX_HOME へ解決して依頼ファイルへ固定しなければならない（MUST）。profile と旧 account/model の同時指定を拒否し、どちらの executor が失敗しても他方へ fallback してはならない（MUST NOT）。Codex account 名から CODEX_HOME への対応は `--account-home NAME=PATH` の繰り返し指定、または同じ対応を書いた JSON ファイルで与え、対応に無い Codex account は拒否しなければならない（MUST）。
-
-#### Scenario: 旧形式の手動依頼
-- **WHEN** 人間が Codex の単一 account/model を指定する
-- **THEN** burn 窓を要求せず同 account/model で全 Codex 委譲を行い、effort を後付けしない
-
-#### Scenario: 混在設定セットの手動依頼
-- **WHEN** 人間が混在 profile を指定して複数の role を順に委譲する
-- **THEN** 各委譲は当該 role の executor/account/model/effort だけを解決し、Claude role は Agent、Codex role は前景 request/run を使う
-
-#### Scenario: 前景実行で Codex role の設定を解決する
-- **WHEN** executor=codex の role について前景依頼を組み立てる
-- **THEN** その role の executor/account/model/effort を依頼ファイルへ固定し、account 名を呼び出し側の対応から解決した CODEX_HOME を同じ依頼に載せ、他 role の設定を持ち込まない
-
-#### Scenario: 解決できない Codex account 名を指定する
-- **WHEN** profile の Codex role が指す account 名が、呼び出し側が与えた対応に含まれていない
-- **THEN** 依頼ファイルを作らずに拒否し、既定の CODEX_HOME や別 account の CODEX_HOME へ倒さない
-
-### Requirement: 品質工程を維持する
-工程管理は develop の正本を使用し、W/R1/G/追加レビュアー/decider の各役割を解決済み executor へ委譲しなければならない（MUST）。executor が Claude でも Codex でも、レビューは作業者と別 thread かつ read-only でなければならない（MUST）。
-
-#### Scenario: 仕様に差し戻し
-- **WHEN** 独立仕様レビューが修正を要求する
-- **THEN** 本体が正本の回数上限を確認し、profile の spec-write executor へ修正を委譲する
-
-#### Scenario: 独立レビューへ到達する
-- **WHEN** G が別レビューを要求する
-- **THEN** 本体は profile の impl-review executor で新しい read-only thread を作り、Claude と Codex のどちらを選んでも同じレビュー契約を適用する
+## MODIFIED Requirements
 
 ### Requirement: provider指定で品質ワークフローを分岐させない
 仕様要否・レビュー・検証・工程順序は既存 develop の正本に一元化しなければならない（MUST）。adapter は解決済み executor に応じた起動・停止・結果の受け取りだけを担当し、独自の仕様必須条件、品質 gate、永続 transport state を設けてはならない（MUST NOT）。phase は役割指示選択ラベルであり工程順序の強制ではない。
@@ -101,3 +68,14 @@ worker の completed を品質合格として扱ってはならない（MUST NOT
 #### Scenario: 走行中の委譲を止める
 - **WHEN** 本体が走行中の委譲を止める必要がある
 - **THEN** 解決済み executor で起動した Agent または foreground command を停止し、別の状態操作を要求しない
+
+## REMOVED Requirements
+
+### Requirement: 保存依頼のまま送信を復旧する
+**Reason**: canonical transport は foreground command と fresh phase であり、run/pending/request replay の永続状態を持たないため廃止する。
+
+**Migration**: 結果を得られなかった委譲は、issue または Draft PR と worktree の状態を確認して工程の最初からやり直す。
+
+#### Scenario: 送信到達が不明になる
+- **WHEN** foreground command が結果 JSON を返さずに終了する
+- **THEN** 保存 request を replay せず、同じ role の fresh phase を開始する

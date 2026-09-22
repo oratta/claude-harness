@@ -1,6 +1,6 @@
 # Changelog — dev-workflow
 
-## 2.13.19 — 2026-09-22: 仕分け表の順 3 を修正前 SHA と HEAD の 2 段で照合し、順 5 と順 6 の混在と決める役の入力不足を扱う
+## 2.13.21 — 2026-09-22: 仕分け表の順 3 を修正前 SHA と HEAD の 2 段で照合し、順 5 と順 6 の混在と決める役の入力不足を扱う
 
 2.13.18 の仕分け表には、#356 の Codex レビューで 3 点の穴が見つかった。順 3 は W が直したあとの HEAD で検索すると「直した」行がヒットに現れず、表と集合が一致しなかった（#357）。順 6 の依頼は `agents/decider.md` の入力契約の一部しか渡しておらず、決める役が不足を返したときの扱いが無かった（#358）。順 5 と順 6 が同じ周に残ったときの処理順が無く、主の回答待ちのまま修正に戻るか、順 5 の質問が漏れるおそれがあった（#359）。
 
@@ -11,6 +11,18 @@
 - `skills/develop/SKILL.md` (4) の `needs-decider`: 入力に記録先の本文・関連コメント・W の直近の return を足し、返答の 1 行目を `裁定: 可`／`裁定: 否`／`不足: <足りないもの>` に指定してその 1 行目で分岐する。`不足:`（3 形に一致しない返答も同じ）は 1 回だけ依頼し直し、2 回目も不足なら「裁定なし（入力不足）」を G に渡す。`agents/decider.md` は変えていない
 - `skills/develop/references/roles/gate-runner.md`: 保留節に「順 6・未裁定」、needs-decider 節に主の回答後の経路、再開節の順 3 の照合を 2 段に、「レビュアーの要約受領」を「保留だけを先に返す」に、「保留の解除」と「決める役の裁定受領」に混在の処理順の参照と「裁定なし（入力不足）」を足した
 - `skills/develop/references/roles/worker.md`: 順 3 の一覧に修正前 SHA（修正に着手する直前の HEAD）を記録することを足した（列は再掲しない）
+
+## 2.13.20 — 2026-09-22: Codex の旧台帳・継続機構を撤去し、前景実行だけを唯一の transport にする
+
+#340 で入れた前景実行経路（`codex-develop.py request` → `codex-worker.py run`）が動くようになった後も、SQLite のジョブ／所有権台帳、detached start、submit/status/result/cancel/ack/send/reap の lifecycle CLI、unknown/retry 処理、cwd ロック、account slot、run-dir と `run.json`、継続記録 v1/v2 が残っていた。永続的な進捗の置き場は issue / Draft PR と linked worktree に統一する方針（#341）に対し、使われなくなった transport のコードと文書だけが残っている状態で、`openspec/specs/codex-worker-concurrency` と `openspec/specs/codex-develop-continuation` も廃止済みの契約のままだった。
+
+- **`codex-worker.py`（1007 → 612 行）**: SQLite job/account schema、ownership、slot/lock、detached worker、heartbeat、lifecycle subcommands を削除し、`run --request` の前景実行だけを残した。認証固定・model/effort 検証・reader 向け read-only policy・quota preflight は維持
+- **`codex-develop.py`（623 → 286 行）**: run-dir、pending、retry、continuation v1/v2、旧 lifecycle CLI を削除し、request 作成と Claude role の `agent-required` routing だけを残した
+- `openspec archive remove-codex-legacy-state --yes` を実行し、`openspec/specs/codex-worker-concurrency` と `openspec/specs/codex-develop-continuation` の spec を除去（change は `openspec/changes/archive/2026-09-21-remove-codex-legacy-state/` に archive 済み）
+- `scripts/CODEX-WORKER.md` / `docs/codex-develop.md` / `references/codex-develop.md` / `commands/develop.md` から、廃止した台帳 transport（永続 registration・job ID・status/result/cancel/ack/send/reap・unknown recovery・ownership DB・account slot・cwd lock・heartbeat・`--worker-state` / `--run-dir`・継続記録マーカー）の説明を削除し、前景実行と手動 cleanup 条件だけ残した
+- `docs/codex-develop.md` に既存状態ディレクトリ（`~/.local/state/claude-harness-codex/`）の削除条件と `rm -rf` の手順を明記した。コードからの自動削除は行わない
+- `skills/develop/SKILL.md`: 「旧台帳経路も互換性のため残る」の 1 文を削除（廃止 transport の互換性主張だったため）
+- Closes #341 #323 #329 #331 #336
 
 ## 2.13.18 — 2026-09-22: pr-review-gate に止める指摘の仕分け表を置き、2 周目キャップの 1 択の質問をやめる
 
