@@ -24,7 +24,7 @@ develop の role profile は明示指定しない限り Claude の既定構成�
 
 - `plugins/dev-workflow/references/codex-role-profiles.json`
 - `plugins/dev-workflow/scripts/codex-develop.py` とその Python/bats テスト
-- `plugins/statusline/scripts/statusline-codex.py` の account 別 snapshot 取得入口とテスト
+- `plugins/dev-workflow/scripts/codex-develop.py` の account 別 Codex quota 取得・cache とテスト
 - develop の SKILL/reference/docs、共有枠の余裕定義を持つ decision criteria
 - `openspec/specs/codex-role-profiles/spec.md`
 - dev-workflow plugin version、CHANGELOG、全体回帰

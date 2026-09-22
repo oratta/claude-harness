@@ -26,7 +26,7 @@
 ## ADDED Requirements
 
 ### Requirement: 明示指定が無い工程では provider の週次余裕から構成を選ぶ
-develop role resolver は、profile と旧 account/model のどちらも明示されない各 canonical phase の開始時に、Claude 起動 account と登録 Codex accounts の週次余裕を評価しなければならない（MUST）。余裕は reset までの週経過率から週次使用率を引いた未丸め値とし、0 以上を余裕あり、負値または欠測を詰まりとして design の選択表を適用しなければならない（MUST）。工程途中の role を切り替えてはならず、次工程で再評価しなければならない（MUST）。
+develop role resolver は、profile と旧 account/model のどちらも明示されない各 canonical phase の開始時に、Claude 起動 account と登録 Codex accounts の週次余裕を評価しなければならない（MUST）。Claude 起動 account は `usage-account-registry` capability の「active スロットの判定規則」で起動環境から解決し、schema 2 snapshot の対応する `accounts` entry を読まなければならない（MUST）。余裕は reset までの週経過率から週次使用率を引いた未丸め値とし、0 以上を余裕あり、負値または欠測を詰まりとして design の選択表を適用しなければならない（MUST）。工程途中の role を切り替えてはならず、次工程で再評価しなければならない（MUST）。
 
 #### Scenario: 両 provider に余裕がある
 - **WHEN** Claude margin が +20、最良 Codex margin が +10 で profile を明示せず工程を開始する
@@ -48,6 +48,10 @@ develop role resolver は、profile と旧 account/model のどちらも明示�
 - **WHEN** `--profile NAME` を明示して工程を開始する
 - **THEN** Claude/Codex の snapshot を読み取らず、指定 profile の検証済み role tuple を返す
 
+#### Scenario: 起動 account と snapshot.active が食い違う
+- **WHEN** 起動時の `CLAUDE_SECURESTORAGE_CONFIG_DIR` から導出したサービス名がスロット A に一致し、schema 2 snapshot の `active` とトップレベルのミラーがスロット B を指す
+- **THEN** `usage-account-registry` の優先順位に従ってスロット A の `accounts[A]` から Claude margin を求め、スロット B のトップレベル値へフォールバックしない
+
 ### Requirement: snapshot の鮮度と週次窓を fail-safe に検証する
 自動選択は `fetched_at` が整数で `0 <= now - fetched_at <= 300`、週次使用率が有限の 0..100、reset が現在より後かつ 7 日以内の snapshot だけを fresh としなければならない（MUST）。Codex は `minutes=10080` の有効な window だけを週次比較に使い、5 時間窓や reset credit を代用してはならない（MUST NOT）。不正、未来時刻、301 秒以上古い値、期限切れ reset は欠測として扱わなければならない（MUST）。この freshness 境界は Claude 起動 account 自動選択と同じでなければならない（MUST）。
 
@@ -60,15 +64,27 @@ develop role resolver は、profile と旧 account/model のどちらも明示�
 - **THEN** Codex provider を欠測とし、その使用率を週次 margin に使わない
 
 ### Requirement: 複数 Codex account を分離して観測し代表 account を固定する
-resolver は登録された各 CODEX_HOME の quota snapshot を account ごとの分離 cache へ並行取得し、認証情報、CODEX_HOME path、生 RPC 応答を保存してはならない（MUST NOT）。fresh な 7 日窓を持つ account のうち margin 最大を代表とし、同点は account-home 宣言順で先の account を選ばなければならない（MUST）。一 account の失敗を他 account の欠測に波及させてはならない（MUST NOT）。選択後は当該工程の自動 profile に含まれる全 Codex role を代表 account に束縛し、execution config hash で固定しなければならない（MUST）。
+resolver は dev-workflow に同梱された実装だけで、登録された各 CODEX_HOME の quota snapshot を account ごとの分離 cache へ並行取得し、認証情報、CODEX_HOME path、生 RPC 応答を保存してはならない（MUST NOT）。statusline plugin、設定ディレクトリへコピーされた helper、またはそれらの版を実行時依存にしてはならない（MUST NOT）。取得成功時だけ window と `fetched_at` を更新し、取得失敗時は前回値を保持して freshness 検証後の値を候補にしなければならない（MUST）。fresh な 7 日窓を持つ account のうち margin 最大を代表とし、同点は account-home 宣言順で先の account を選ばなければならない（MUST）。一 account の失敗を他 account の欠測に波及させてはならない（MUST NOT）。選択後は当該工程の自動 profile に含まれる全 Codex role を代表 account に束縛し、execution config hash で固定しなければならない（MUST）。
 
 #### Scenario: 最も余裕がある account を選ぶ
 - **WHEN** 二つの CODEX_HOME に fresh な週次 snapshot があり、宣言順で後の account の margin が大きい
 - **THEN** 後の account を Codex 代表にし、自動 profile の全 Codex role がその account を使う
 
-#### Scenario: 一 account の取得だけが失敗する
-- **WHEN** 複数 CODEX_HOME のうち一つの取得が失敗し、別の一つには fresh な週次 snapshot がある
-- **THEN** 成功した account だけで Codex margin と代表を決め、失敗 account の前回値が 300 秒を超えていれば使わない
+#### Scenario: 取得失敗後も fresh な前回値を使う
+- **WHEN** account A の取得が失敗して前回値 age=200 秒・margin=+30 が保持され、account B の取得が成功して margin=+10 になる
+- **THEN** 取得成否では候補を除外せず、fresh な前回値を持つ account A を Codex 代表にする
+
+#### Scenario: 取得失敗後の freshness 境界を適用する
+- **WHEN** 取得に失敗した account の同じ前回値を age=300 秒と age=301 秒で評価する
+- **THEN** age=300 秒では候補に含め、age=301 秒ではその account だけを欠測にする
+
+#### Scenario: dev-workflow 単独配置で quota を取得する
+- **WHEN** statusline plugin とコピー済み helper が存在しない環境で、dev-workflow の profile 未指定 resolver を実行する
+- **THEN** dev-workflow 同梱実装だけで各 CODEX_HOME の quota を取得し、自動選択を完了する
+
+#### Scenario: 旧 statusline helper を参照しない
+- **WHEN** 設定ディレクトリに機械向け mode を持たない旧版 `statusline-codex.py` が存在する
+- **THEN** resolver はその helper を実行も import もせず、dev-workflow 同梱実装の結果だけを使う
 
 #### Scenario: 同点は宣言順で決める
 - **WHEN** 二つの eligible Codex account の未丸め margin が等しい

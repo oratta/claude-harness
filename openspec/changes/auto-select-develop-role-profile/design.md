@@ -2,7 +2,7 @@
 
 現行の `codex-develop.py request` は `--profile` または旧 `--account/--model` を必須とし、profile の厳密検証、phase から canonical role への対応、CODEX_HOME の解決を一か所で行う。組み込み profile は全 Codex の `codex-standard` / `codex-economy` と、Codex が書き Claude がレビューする `hybrid-standard` である。profile 未指定の通常 develop は coordinator の Claude 既定構成を使う。
 
-Claude 起動 account の `~/.claude/.usage-snapshot` には週次使用率・reset・取得時刻がある。Codex の `.statusline-codex` は一つの `CODEX_HOME` だけを観測するため、複数 account を比較するには cache を分離して全 home を取得する必要がある。姉妹 issue #374 は 2026-09-22 時点で freshness 値を未決定のため、本 change で probe の 5 分 cache に合わせて 300 秒と決め、#374 も同じ境界へ揃える。
+Claude の schema 2 `~/.claude/.usage-snapshot` には account ごとの週次使用率・reset・取得時刻があり、トップレベル値は snapshot 生成時の active account のミラーにすぎない。Codex の `.statusline-codex` は一つの `CODEX_HOME` だけを観測し、さらに statusline plugin の install 時に設定ディレクトリへコピーされるため、dev-workflow からその存在や版を前提にできない。複数 Codex account を比較するには dev-workflow 自身が cache を分離して全 home を取得する必要がある。姉妹 issue #374 は 2026-09-22 時点で freshness 値を未決定のため、本 change で probe の 5 分 cache に合わせて 300 秒と決め、#374 も同じ境界へ揃える。
 
 ## Goals / Non-Goals
 
@@ -58,15 +58,19 @@ provider ごとの未丸め margin を次で計算する。
 
 300 秒は Claude usage probe の 5 分 cache と一致し、取得失敗時に保持された古い値を「余っている」と誤認しない最短の共有境界である。#374 の design/spec は同じ `<= 300` / `> 300` 境界を採用し、両 change が揃った時点で契約テストにより drift を検出する必要がある。
 
+Claude は `usage-account-registry` capability の「active スロットの判定規則」に従い、起動時の `CLAUDE_SECURESTORAGE_CONFIG_DIR` から導出した Keychain サービス名との一致、snapshot の `active`、レジストリ先頭の順で対象スロットを解決し、schema 2 の `accounts[slot-id]` を読む。起動環境と snapshot の `active` が異なる場合は起動環境とのサービス名一致が勝つ。schema 2 で解決したスロットの entry が無い／不正な場合は Claude を欠測とし、別 account から生成された可能性があるトップレベルのミラーへフォールバックしない。
+
 Codex は `minutes=10080` の有効な 7 日窓だけを比較に用いる。5 時間窓や reset credit を週次余裕に代用しない。
 
-### 4. 複数 CODEX_HOME は account 別 cache を並行更新する
+### 4. Codex quota 取得は dev-workflow 内に閉じ、account 別 cache を並行更新する
 
-`statusline-codex.py` に、明示した cache path を同期更新して安全な quota JSON を返す機械向け mode を追加する。通常 statusline の非同期表示 mode と既存 `.statusline-codex` は維持する。`codex-develop.py` は登録順を保った account-home 表の全 home についてこの mode を並行起動し、全体を一つの RPC timeout 程度に抑える。
+`codex-develop.py` が Codex App Server の `account/rateLimits/read` と cache の読み書きを直接所有する。登録順を保った account-home 表の全 home を、各 `CODEX_HOME` を明示した subprocess で並行取得し、全体を一つの RPC timeout 程度に抑える。機械向け quota helper を statusline plugin や設定ディレクトリから解決する契約は設けず、必要な実装版は dev-workflow plugin の配布版そのものとする。statusline plugin が未導入でも動作し、コピー済み `~/.claude/statusline-codex.py` が無い／旧版／新版のいずれでも参照しない。
 
-cache は `${CLAUDE_CONFIG_DIR:-~/.claude}/codex-usage/` 配下に、resolved CODEX_HOME の SHA-256 を名前として分離する。directory は 0700、file/lock は 0600 とし、認証情報・home path・生 RPC 応答を保存しない。account ごとに既存の identity 照合、失敗時の前回値/fetched_at 保持、window 検証を再利用する。
+cache は `${CLAUDE_CONFIG_DIR:-~/.claude}/codex-usage/` 配下に、resolved CODEX_HOME の SHA-256 を名前として分離する。directory は 0700、file/lock は 0600 とし、認証情報・home path・生 RPC 応答を保存しない。account ごとに identity を照合し、取得成功時だけ window と `fetched_at` を更新する。取得失敗時は前回の window と `fetched_at` を保持し、今回の取得成否ではなく保持値の検証結果と age だけで候補資格を決める。
 
-fresh な 7 日窓を持つ account のうち margin 最大を Codex 代表とし、同点は account-home 宣言順で先のものを選ぶ。一部 account の取得失敗はその account だけを欠測にする。全 account が欠測なら Codex provider 全体を欠測とする。単一共有 cache を順に上書きする案は account 切替で前値を失い並行実行にも耐えないため採用しない。
+したがって、取得に失敗した account A の前回値が age=200 秒・margin=+30、取得に成功した account B が margin=+10 なら A を代表にする。失敗後の前回値は age=300 秒まで候補、age=301 秒から欠測である。fresh な 7 日窓を持つ account のうち margin 最大を Codex 代表とし、同点は account-home 宣言順で先のものを選ぶ。全 account が欠測なら Codex provider 全体を欠測とする。
+
+既存 `.statusline-codex` を直接読む案は一 account しか表現できず、statusline の install・更新状態にも左右されるため採用しない。`statusline-codex.py` に機械向け mode を追加して呼ぶ案も、別 plugin の install が helper を設定ディレクトリへコピーし、更新に install の再実行を要するため採用しない。単一共有 cache を順に上書きする案は account 切替で前値を失い並行実行にも耐えないため採用しない。
 
 ### 5. 選択表と記録を固定する
 
@@ -83,7 +87,8 @@ fresh な 7 日窓を持つ account のうち margin 最大を Codex 代表と�
 
 ## Risks / Trade-offs
 
-- [工程開始が quota RPC 待ちで遅くなる] → account probe を並行化し、既存 timeout と fresh cache を使って上限を固定する。
+- [工程開始が quota RPC 待ちで遅くなる] → account probe を並行化し、固定 timeout と fresh cache を使って上限を固定する。
+- [statusline と quota RPC 実装が重複する] → plugin 間のコピー版依存を避けることを優先し、dev-workflow の契約テストで App Server 応答と cache 形式を固定する。将来共有する場合も配布境界を持つ versioned protocol ができるまでは片方を直接 import／実行しない。
 - [#374 と freshness がずれる] → 300 秒を双方の spec に置き、統合後に境界契約テストを追加する。
 - [自動 account 束縛が profile の静的 account と異なる] → 自動選択時だけ解決済み roles に反映し、execution config hash と記録 evidence へ account を残す。明示 profile は不変にする。
 - [欠測時に Codex の空き枠を使えない] → fail-safe として既に動いている Claude coordinator を選び、次工程で再取得する。
@@ -91,11 +96,11 @@ fresh な 7 日窓を持つ account のうち margin 最大を Codex 代表と�
 ## Migration Plan
 
 1. 新 profile と厳密検証テストを追加する。
-2. account 別 Codex quota mode と cache isolation を追加する。
+2. dev-workflow 内に account 別 Codex quota 取得と cache isolation を追加する。
 3. resolver の自動選択と記録 evidence を追加し、明示指定回帰を通す。
 4. docs/spec/version を更新し、手動 `/develop --profile` なしの実機証跡を取る。
 
-ロールバックは自動選択入口を外し、既存の明示 profile と Claude 既定経路へ戻す。既存 profile 名・形式と statusline cache は変更しないためデータ migration は不要である。
+ロールバックは自動選択入口を外し、既存の明示 profile と Claude 既定経路へ戻す。既存 profile 名・形式と statusline helper/cache は変更しないためデータ migration は不要である。
 
 ## Open Questions
 
