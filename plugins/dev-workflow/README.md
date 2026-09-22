@@ -34,6 +34,49 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 
 タスクメモ・バックログ md・TODO・受け入れ条件の無い issue を、測定可能な受け入れ条件付き GitHub issue に変換する（`skills/issueify/SKILL.md`。#205 で旧プラグインから移設）。入力はテキスト・ファイルパス・引数なし（`docs/` の未チェック項目や `TODO`/`FIXME` を自動発見）・`--existing`（既存 issue の補筆のみ）。1 issue = 1 論理タスクに原子化し、受け入れ条件を「実行コマンド + 期待値」に落とし、不足だけをヒアリングして、承認後に `gh issue create` する。`/develop` の issueify フォールバックはこのスキルを同プラグイン内で Read する。
 
+## Claude アカウントの起動時選択
+
+複数アカウントを `accounts.json` に登録済みなら、次の zsh function で週の進行に対する余裕が最大のアカウントを起動時に選べる。marketplace clone の場所は `CLAUDE_HARNESS_SCRIPTS` だけを変えれば差し替えられる。
+
+```zsh
+export CLAUDE_HARNESS_SCRIPTS="${CLAUDE_HARNESS_SCRIPTS:-$HOME/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts}"
+
+cld() {
+  # 取得失敗時は既存 snapshot を selector が安全側に評価する。
+  "$CLAUDE_HARNESS_SCRIPTS/usage-probe.sh" >/dev/null 2>&1 || true
+
+  local selected status
+  selected="$("$CLAUDE_HARNESS_SCRIPTS/select-account.sh")"
+  status=$?
+  (( status == 0 )) || return "$status"
+
+  if [[ -z "$selected" ]]; then
+    env -u CLAUDE_SECURESTORAGE_CONFIG_DIR claude "$@"
+  else
+    env CLAUDE_SECURESTORAGE_CONFIG_DIR="$selected" claude "$@"
+  fi
+}
+
+cld-account() {
+  (( $# >= 1 )) || { print -u2 'usage: cld-account <slot-id> [claude-args...]'; return 2; }
+  local account_id="$1"
+  shift
+
+  local selected status
+  selected="$("$CLAUDE_HARNESS_SCRIPTS/select-account.sh" "$account_id")"
+  status=$?
+  (( status == 0 )) || return "$status"
+
+  if [[ -z "$selected" ]]; then
+    env -u CLAUDE_SECURESTORAGE_CONFIG_DIR claude "$@"
+  else
+    env CLAUDE_SECURESTORAGE_CONFIG_DIR="$selected" claude "$@"
+  fi
+}
+```
+
+`cld` は probe を best-effort で実行してから自動選択し、`cld-account a --resume` のような明示選択では先頭の slot id を除いた引数をそのまま `claude` に渡す。selector の理由行は stderr に残る。空の選択値は既定アカウントを意味するため環境変数を空文字で設定せず `env -u` で解除する。未登録 id などで selector が非 0 なら function も同じ status で終了し、Claude は起動しない。
+
 ## references/（他プラグインと共有する契約）
 
 複数プラグインから参照される契約と、dev-workflow 内の複数スキル（develop の役割指示書と pr-review-gate）が共通で読む契約は、スキル配下ではなくプラグイン直下の `references/` に置く（#205 で旧プラグインから移設）。

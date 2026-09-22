@@ -14,10 +14,10 @@
 
 ## 3. 起動手順と仕様を更新する
 
-- [ ] 3.1 `plugins/dev-workflow/README.md` に marketplace clone の scripts path を変数で保持する `cld` / `cld-account` zsh function を追加し、probe の best-effort 実行、Claude 引数の転送、空値の `env -u` を説明する。selector が非 0 なら function も同じ状態で終了して Claude を起動せず、未登録 id の exit 2 を空の成功値と取り違えない実装にする。
+- [x] 3.1 `plugins/dev-workflow/README.md` に marketplace clone の scripts path を変数で保持する `cld` / `cld-account` zsh function を追加し、probe の best-effort 実行、Claude 引数の転送、空値の `env -u` を説明する。selector が非 0 なら function も同じ状態で終了して Claude を起動せず、未登録 id の exit 2 を空の成功値と取り違えない実装にする。
 - [ ] 3.2 `cld` で実セッションを起動し、通常選択に加えて、任意の id（例: `a`）で登録した既定スロットへ全スロット古い状態から縮退する場合にも、selector の理由行で選ばれた実 id と statusline の active 表示が一致する証拠を Draft PR の動作確認へ添える（受け入れ条件 5）。
-- [ ] 3.3 delta spec を main の `openspec/specs/usage-account-registry/spec.md` に反映できる状態に保ち、実装完了後の archive で選択規則を正本へ統合する。
-- [ ] 3.4 実装工程で `plugins/dev-workflow/.claude-plugin/plugin.json` の version を 1 patch 上げ、`plugins/dev-workflow/CHANGELOG.md` に変更を記録する（仕様工程では変更しない）。
+- [x] 3.3 delta spec を main の `openspec/specs/usage-account-registry/spec.md` に反映できる状態に保ち、実装完了後の archive で選択規則を正本へ統合する。
+- [x] 3.4 実装工程で `plugins/dev-workflow/.claude-plugin/plugin.json` の version を 1 patch 上げ、`plugins/dev-workflow/CHANGELOG.md` に変更を記録する（仕様工程では変更しない）。
 
 ## 4. 全体検証
 

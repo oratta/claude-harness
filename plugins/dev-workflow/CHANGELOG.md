@@ -1,5 +1,12 @@
 # Changelog — dev-workflow
 
+## 2.13.21 — 2026-09-22: 起動時に週次余裕のある Claude アカウントを選ぶ
+
+- `scripts/select-account.sh` を追加した。schema 2 usage snapshot の 300 秒以内の観測から、5 時間枠が 90% 未満で週次余裕が最大のスロットを選ぶ。同点はレジストリの宣言順で決める
+- 古い・欠測した観測と 5 時間枠の逼迫を区別して既定アカウントへ縮退し、stdout の `securestorage` と stderr の選択理由を分離した
+- 登録 id の明示選択を snapshot 非依存で追加し、README に `cld` / `cld-account` zsh function の設定例を載せた
+- `tests/account-selector.bats` で鮮度・短期枠・週次余裕・縮退・明示選択・出力ストリームを固定した
+
 ## 2.13.20 — 2026-09-22: Codex の旧台帳・継続機構を撤去し、前景実行だけを唯一の transport にする
 
 #340 で入れた前景実行経路（`codex-develop.py request` → `codex-worker.py run`）が動くようになった後も、SQLite のジョブ／所有権台帳、detached start、submit/status/result/cancel/ack/send/reap の lifecycle CLI、unknown/retry 処理、cwd ロック、account slot、run-dir と `run.json`、継続記録 v1/v2 が残っていた。永続的な進捗の置き場は issue / Draft PR と linked worktree に統一する方針（#341）に対し、使われなくなった transport のコードと文書だけが残っている状態で、`openspec/specs/codex-worker-concurrency` と `openspec/specs/codex-develop-continuation` も廃止済みの契約のままだった。
