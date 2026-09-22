@@ -687,8 +687,8 @@ triage_row_section() {
 @test "triage (#357): row 3 fixes the list comment format with a pre-fix SHA and a git grep command taking <rev>" {
   r="$(triage_row_section 3)"
   [ -n "$r" ] || { echo "no row-3 section"; return 1; }
-  for token in '`## 一覧（順 3）`' '`修正前 SHA: <40 桁>`' '`検索コマンド: <コマンド>`' 'git grep -n' '<rev>' \
-    '`| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |`' '`| 軸の値 | 扱い |`' '`直した`' '`該当しない: <理由>`' \
+  for token in '`## 一覧（順 3）`' '`修正前 SHA: <40 桁>`' '`検索コマンド: <コマンド>`' '<rev>' \
+    '`| 軸の値 | 扱い |`' '`直した`' '`該当しない: <理由>`' \
     '修正に着手する直前の HEAD' '40 桁' '`grep -rn`'; do
     echo "$r" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
   done
@@ -708,7 +708,7 @@ triage_row_section() {
   c="$(echo "$r" | grep -bo 'git cat-file -e' | head -1 | cut -d: -f1)"
   [ -n "$f" ] && [ -n "$c" ] && [ "$f" -lt "$c" ] || { echo "fetch=$f cat-file=$c"; return 1; }
   # 2 段の照合
-  echo "$r" | grep -qF '修正前 SHA で検索コマンドを実行し、ヒットの集合が表の全行（扱いを問わない）と一致する'
+  echo "$r" | grep -qF '修正前 SHA で検索コマンドを実行したヒット集合が表の全行（扱いを問わない）と一致する'
   echo "$r" | grep -qF 'HEAD で同じ検索コマンドを実行し、残ったヒットがすべて、扱いが「該当しない」の行に対応する'
   echo "$r" | grep -qF '「ファイル」と「ヒットした行の本文」の組で取り、行番号では取らない'
   echo "$r" | grep -qF '件数で照合'

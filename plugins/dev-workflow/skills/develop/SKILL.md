@@ -100,9 +100,12 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
            (3a) の return に PR 番号と仕様宣言のコメント URL が既に揃っていれば（古い世代の W が (3) を
            通しで終えた場合）、(3b) を指示せず、そのまま (4)（G の工程）へ進む
 (4) G を名前付きで spawn（model: 既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は Codex か needs-reviewer のレビュアーが担う）:
-      pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider」
+      pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider / review-incomplete」
       合格処理（手順 5）では PR が Draft なら Ready にしてから agent-review:passed を付ける（W は Ready にしない）
-      needs-reviewer → 本体がレビュアーを spawn し、要約を SendMessage で G に渡す（gate-runner.md）
+      needs-reviewer → 本体がレビュアーを spawn し、要約を SendMessage で G に渡す（gate-runner.md）。Codex 不可・light 判定による通常の初回レビュー依頼は既存どおり。
+           `needs-reviewer` が一周目照合の補足要求である場合に限り、fresh reviewer へ同じレビューの固定 HEAD・元の三表・残差・補足済み回数を
+           payload のまま渡し、不足分だけを補わせる。補足結果は `補足済み回数: 1` として G に渡し、fresh thread でも回数をリセットしない
+      review-incomplete → reviewer を再起動しない。`agent-review:pending` のまま Gate Result の残差を報告して工程を止め、合格処理へ進まない
       failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）で戻し方を決める。モデルを上げるのは実装品質起因のときだけで、
            上げるのは決める役と実行役の一方だけ（実行側が原因なら W を opus に、判断側が原因なら dev-workflow:decider を立てて修正方針を作らせる。
            W を fable にはしない）。仕様が曖昧なら仕様修正、誤検出なら反証で返す（どちらもモデルを上げない）

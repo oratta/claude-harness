@@ -56,7 +56,8 @@ Codex role は次の3手順で1回の委譲を行う。
 - Claude hooks は Codex に自動適用されない。対象 repo の必須検査を指示と結果に明記し、実行不能を合格扱いしない。read-only policy 以外に sandbox 保証を推定しない。
 - 停止は Agent または起動した前景 command を止める。結果 JSON を受け取れず終了した場合は、記録先と worktree から同じ工程を fresh phase としてやり直す。
 - request は private directory に置く。worker は静的検証後、thread/start 前に model/list でも model/effort を検証する。結果 JSON は要求値と実効値・観測元を分け、未観測値を推測しない。
-- G が通常経路で `codex exec`、companion、または Claude reviewer を呼ぶ場面では、それを実行せず `needs-reviewer` を返す。本体は phase `review` の fresh thread を開始し、その結果を新しい G に渡す。G は返す前に、ゲート自身の着手確認と同一 PR/HEAD の重複防止を実施する。
+- G が通常経路で `codex exec`、companion、または Claude reviewer を呼ぶ場面では、それを実行せず `needs-reviewer` を返す。本体は phase `review` の fresh thread を開始し、その結果を新しい G に渡す。review phase は `skills/develop/references/roles/gate-runner.md` と `skills/pr-review-gate/SKILL.md` を正本として request に含めるため、fresh reviewer も手順 2-1 の三表を含むレビュアー向け指示ブロックを参照する。G は返す前に、ゲート自身の着手確認と同一 PR/HEAD の重複防止を実施する。
+- `needs-reviewer` が一周目照合の補足要求である場合、phase `review` の request に固定 HEAD・元の三表・残差・補足済み回数を含める。fresh reviewer は同じレビューの不足分だけを補い、結果を `補足済み回数: 1` として fresh G に渡す。G の Status が terminal `review-incomplete` なら新しい review phase を開始せず、`agent-review:pending` のまま残差を報告して止める。
 - burn 接続、全 account の配分、使用量集計は別 issue の範囲とする。
 - Codex が選ばれたことを理由に仕様を必須化しない。正本どおり W が理由付きで「仕様化判断: しない」を返した場合、本体は実装工程へ進む。仕様が必要な場合は正本の R1 承認条件を適用する。
 - 仕様化が必要な場合、opsx Skill 操作は対象 repo の openspec CLI 相当へ変換し、正本の仕様フォーマットを別テンプレートへ写さない。CLI 不在時の判断も既存 develop 正本に従う。
