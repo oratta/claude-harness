@@ -8,7 +8,7 @@ claude --plugin-dir /absolute/path/to/harness-worktree/plugins/dev-workflow
 
 利用するCodex認証profileは事前にログイン済みであること。認証を複製したり、通常profileを上書きしない。
 
-account名からCODEX_HOMEへの対応は、委譲のたびに引数で渡す。`--account-home NAME=PATH` の繰り返しか、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを `--account-home-file PATH` で渡す。2つの与え方の併用は拒否し、合成も優先もしない。値が絶対パスでない、またはディレクトリとして存在しないときも拒否する。永続的な account registry は使わない。
+account名からCODEX_HOMEへの対応は、委譲のたびに引数で渡す。`--account-home NAME=PATH` の繰り返しか、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを `--account-home-file PATH` で渡す。2つの与え方の併用は拒否し、合成も優先もしない。値が絶対パスでない、またはディレクトリとして存在しないときも拒否する。profile・旧形式・対応表をすべて省略した自動選択だけは、既存の絶対ディレクトリである `CODEX_HOME`（未設定なら `~/.codex`）を `current` として評価する。候補が存在しなければ Codex は欠測になる。明示指定時に対応の無い名前をこの既定値へ倒さない。永続的な account registry は使わない。
 
 Claudeの会話で実行する:
 

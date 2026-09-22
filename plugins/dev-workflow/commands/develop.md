@@ -7,11 +7,11 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 
 ## 実行先オプション
 
-`$ARGUMENTS` に `--profile <名前> [--profile-file <JSON>]` または旧形式の `--account <登録名> --model <CodexモデルID>` があればprovider adapterを適用する。`--executor codex` も後方互換の別名として受理するが、その場合もprofile形式か旧形式のどちらか一方を必須とする。両形式の併用、`--profile-file` 単独、旧形式の片方欠落は開始前に拒否する。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用する。いずれの実行先オプションも無い場合は従来のClaude経路とし、未知のexecutorは拒否する。profile が決めた投げ先を別 provider で代行しない。実行先オプションは委譲transportだけを変え、仕様要否・レビュー・チェック・順序は既存develop正本を使う。adapter の適用を理由に仕様を必須にしない。
+`$ARGUMENTS` に `--profile <名前> [--profile-file <JSON>]` または旧形式の `--account <登録名> --model <CodexモデルID>` があればprovider adapterを適用する。`--executor codex` も後方互換の別名として受理するが、その場合もprofile形式か旧形式のどちらか一方を必須とする。両形式の併用、`--profile-file` 単独、旧形式の片方欠落は開始前に拒否する。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用する。実行先オプションが無ければ同じ `references/codex-develop.md` をReadし、各 phase で profile なしの request を使って自動選択する。未知のexecutorは拒否する。profile が決めた投げ先を別 provider で代行しない。実行先オプションは委譲transportだけを変え、仕様要否・レビュー・チェック・順序は既存develop正本を使う。adapter の適用を理由に仕様を必須にしない。
 
-引数なしの追加依頼では初回の Codex 設定を再推測せず、実行先オプションと account-home の対応を明示し直す。
+引数なしの追加依頼でも各 phase で profile なしの request を使って自動選択する。明示 profile・旧形式を引き継ぐ場合は初回の設定を再推測せず、実行先オプションと account-home の対応の両方を改めて明示する。
 
-前景実行のCodexオプションは、account名からCODEX_HOMEへの対応表である。`--account-home NAME=PATH`（繰り返し可）か、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを指す `--account-home-file PATH` のどちらか一方を渡し、併用は拒否する。本体はこれを依頼本文から分離し、`codex-develop.py request` へそのまま渡す。前景実行は台帳を読まないので、対応に無いaccount名は依頼ファイルを作らずに拒否する。
+前景実行のCodexオプションは、account名からCODEX_HOMEへの対応表である。`--account-home NAME=PATH`（繰り返し可）か、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを指す `--account-home-file PATH` のどちらか一方を渡し、併用は拒否する。本体はこれを依頼本文から分離し、`codex-develop.py request` へそのまま渡す。自動選択で対応表も無指定の場合だけ、既存の絶対ディレクトリである `CODEX_HOME`（未設定なら `~/.codex`）を `current` として評価する。明示 profile・旧形式、または明示した対応表では、対応に無いaccount名をこの既定値へ倒さず依頼ファイルを作る前に拒否する。
 
 `develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0・エピックの扱い）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。このコマンドはそれを Read tool で読み込み、その指示に従ってメインセッションで interactive モードのままインライン実行する。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
 

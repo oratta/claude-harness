@@ -12,7 +12,7 @@
 
 無指定では各 canonical phase の開始時に Claude 起動 account と登録済み Codex accounts を再評価する。freshness は age `<=300` 秒（`>300` は欠測）で、`margin = 週経過率 - 週次使用率`。両 provider が margin 0 以上なら `claude-write-codex-review`、Codex だけなら代表 account に束縛した `codex-standard`、それ以外は Claude 既定構成を選ぶ。開始済み role は途中で切り替えない。返された selection evidence（構成、reason、両 margin / fetched_at、代表 account）を最初の開始コメントと各 dispatch 記録に残し、欠測値は `missing` と書く。
 
-account 名から CODEX_HOME への対応は `--account-home NAME=PATH` の繰り返しか、平らな JSON を `--account-home-file PATH` で与える。2方式は併用せず、値は既存の絶対ディレクトリでなければならない。profile 全体を先に検証するため、選択 role が Claude でも profile 内の Codex account はすべて対応表に必要である。対応に無い名前を既定値や別 account へ倒さない。
+account 名から CODEX_HOME への対応は `--account-home NAME=PATH` の繰り返しか、平らな JSON を `--account-home-file PATH` で与える。2方式は併用せず、値は既存の絶対ディレクトリでなければならない。profile も旧形式も対応表も無い自動選択だけは、`CODEX_HOME`（未設定なら `~/.codex`）が既存の絶対ディレクトリなら `current` の対応として評価し、存在しなければ Codex を欠測のままにする。profile 全体を先に検証するため、選択 role が Claude でも明示 profile 内の Codex account はすべて明示対応表に必要である。明示 profile・旧形式、または明示対応表に無い名前を既定値や別 account へ倒さない。
 
 account 名から CODEX_HOME への対応の導入方法は `docs/codex-develop.md` に示す。この入口は人間が手動で使うためのもので、burn 窓や cron/tick を要求しない。Codex worker の認証失敗、利用上限による拒否、権限拒否は、そのまま停止理由とする。role の投げ先を暗黙に別 provider で代行してはならない。`codex` に解決した role で Codex が失敗しても Claude へ切り替えず、`claude` に解決した role で Claude が失敗しても Codex へ切り替えない。role をどこへ投げるかを決める場所は profile だけである。
 

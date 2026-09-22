@@ -365,6 +365,14 @@ def account_homes(pairs, path):
     return clean
 
 
+def default_automatic_account_home():
+    value = os.environ.get('CODEX_HOME')
+    candidate = Path(value).expanduser() if value is not None else Path.home() / '.codex'
+    if not candidate.is_absolute() or not candidate.is_dir():
+        return {}
+    return {'current': str(candidate.resolve())}
+
+
 def validate_role_entry(role, entry, accounts=None, *, source='profile role'):
     if not isinstance(entry, dict) or set(entry) != {'executor', 'account', 'model', 'effort'}:
         raise RuntimeError(f'{source} {role} has invalid fields')
@@ -499,6 +507,8 @@ def build_request(args):
     if legacy and not (args.account and args.model):
         raise RuntimeError('legacy request requires both account and model')
     mapping = account_homes(args.account_home, args.account_home_file)
+    if not legacy and not profile and not args.account_home and not args.account_home_file:
+        mapping = default_automatic_account_home()
     cwd = Path(args.cwd).expanduser().resolve()
     if not cwd.is_dir():
         raise RuntimeError('cwd must be prepared target worktree')

@@ -148,6 +148,20 @@ develop role resolver は、profile と旧 account/model のどちらも明示�
 ### Requirement: 複数 Codex account を分離して観測し代表 account を固定する
 resolver は dev-workflow に同梱された実装だけで、登録された各 CODEX_HOME の quota snapshot を account ごとの分離 cache へ並行取得し、認証情報、CODEX_HOME path、生 RPC 応答を保存してはならない（MUST NOT）。statusline plugin、設定ディレクトリへコピーされた helper、またはそれらの版を実行時依存にしてはならない（MUST NOT）。取得成功時だけ window と `fetched_at` を更新し、取得失敗時は前回値を保持して freshness 検証後の値を候補にしなければならない（MUST）。fresh な 7 日窓を持つ account のうち margin 最大を代表とし、同点は account-home 宣言順で先の account を選ばなければならない（MUST）。一 account の失敗を他 account の欠測に波及させてはならない（MUST NOT）。選択後は当該工程の自動 profile に含まれる全 Codex role を代表 account に束縛し、execution config hash で固定しなければならない（MUST）。
 
+profile・旧 account/model・account-home 対応表がいずれも未指定の自動選択では、resolver は `CODEX_HOME`、未設定なら `~/.codex` が既存の絶対ディレクトリの場合だけ、それを `current` account の対応として評価しなければならない（MUST）。候補が無ければ Codex は欠測のままにしなければならない（MUST）。明示 profile・旧形式、または明示対応表では、この既定対応を補完に使ってはならない（MUST NOT）。
+
+#### Scenario: 対応表なしの通常起動で current Codex を評価する
+- **WHEN** profile と account-home を付けずに工程を開始し、`CODEX_HOME` が既存の絶対ディレクトリを指す
+- **THEN** そのディレクトリを `current` account として quota 候補に含める
+
+#### Scenario: 既定 Codex home が存在しない
+- **WHEN** `CODEX_HOME` が未設定で `~/.codex` が存在しない
+- **THEN** Codex margin を欠測として扱い、存在しない既定対応を作らない
+
+#### Scenario: 明示指定へ既定対応を補完しない
+- **WHEN** Codex account を含む profile を明示し、account-home 対応表を渡さない
+- **THEN** `CODEX_HOME` や `~/.codex` へ倒さず、対応表不足として拒否する
+
 #### Scenario: 最も余裕がある account を選ぶ
 - **WHEN** 二つの CODEX_HOME に fresh な週次 snapshot があり、宣言順で後の account の margin が大きい
 - **THEN** 後の account を Codex 代表にし、自動 profile の全 Codex role がその account を使う

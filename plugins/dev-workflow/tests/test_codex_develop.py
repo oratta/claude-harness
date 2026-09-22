@@ -359,6 +359,44 @@ class ForegroundRequest(unittest.TestCase):
                     patch.object(m, 'automatic_selection', side_effect=AssertionError('read')):
                 self.assertEqual(m.main()['status'], 'request-written')
 
+    def test_automatic_request_without_table_uses_codex_home_as_current_candidate(self):
+        target = self.root / 'automatic-env-home.json'
+        args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
+                '--cwd', str(self.cwd), '--out', str(target)]
+        selection = {'selection_mode': 'automatic', 'configuration': 'claude-default',
+                     'reason': 'only-claude-has-headroom',
+                     'claude': {'account': 'active', 'margin': 10, 'fetched_at': 2_000_000},
+                     'codex': {'account': None, 'margin': None, 'fetched_at': None}}
+        with patch.dict(os.environ, {'CODEX_HOME': str(self.home)}, clear=False), \
+                patch.object(m, 'automatic_selection', return_value=('claude-default', selection)) as automatic, \
+                patch.object(sys, 'argv', args):
+            m.main()
+        automatic.assert_called_once_with({'current': str(self.home)})
+
+    def test_automatic_request_without_table_leaves_codex_missing_when_default_home_absent(self):
+        absent_home = self.root / 'home-without-codex'
+        absent_home.mkdir()
+        target = self.root / 'automatic-missing-home.json'
+        args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
+                '--cwd', str(self.cwd), '--out', str(target)]
+        selection = {'selection_mode': 'automatic', 'configuration': 'claude-default',
+                     'reason': 'no-provider-has-headroom',
+                     'claude': {'account': None, 'margin': None, 'fetched_at': None},
+                     'codex': {'account': None, 'margin': None, 'fetched_at': None}}
+        with patch.dict(os.environ, {}, clear=True), \
+                patch.object(Path, 'home', return_value=absent_home), \
+                patch.object(m, 'automatic_selection', return_value=('claude-default', selection)) as automatic, \
+                patch.object(sys, 'argv', args):
+            result = m.main()
+        automatic.assert_called_once_with({})
+        self.assertIsNone(result['selection']['codex']['margin'])
+
+    def test_explicit_profile_without_table_does_not_use_default_codex_home(self):
+        with patch.dict(os.environ, {'CODEX_HOME': str(self.home)}, clear=False):
+            with self.assertRaisesRegex(RuntimeError, 'account is not registered'):
+                self.call()
+        self.assertFalse(self.out.exists())
+
     def test_codex_cache_is_per_home_sanitized_and_preserved_on_failure(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve(); config = root/'config'; config.mkdir()
