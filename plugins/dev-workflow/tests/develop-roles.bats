@@ -588,3 +588,54 @@ extract_context_cap_section() {
   echo "$line" | grep -qF '代理投稿する'
   echo "$line" | grep -qF '順 6'
 }
+
+# ===== 仕分け表の追補（issue #357 #358 #359）=====
+
+@test "develop SKILL.md (#358): needs-decider passes the record body, related comments and W's last return, and branches on the first line" {
+  sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$sk")"
+  nd="$(echo "$step4" | awk '/^      needs-decider →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  [ -n "$nd" ] || { echo "no needs-decider line in step (4)"; return 1; }
+  for token in '記録先の本文' '関連コメント' 'W の直近の return' '`裁定: 可`' '`裁定: 否`' '`不足: <足りないもの>`' \
+    '1 行目で分岐' '裁定として扱わず' '1 回だけ依頼し直す' '裁定なし（入力不足）' '3 形のどれにも一致しなければ'; do
+    echo "$nd" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "gate-runner (#359): on-hold lists unprocessed row 6, and needs-decider also covers the return after the owner's answer" {
+  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "$GATE")"
+  echo "$hold" | grep -qF '順 6・未裁定'
+  nd="$(awk '/^### needs-decider のとき/{f=1;next} /^### |^```$/{f=0} f' "$GATE")"
+  echo "$nd" | grep -qF '主の回答のあとに未処理の順 6'
+}
+
+@test "gate-runner (#359): owner-answer and decider-ruling resumes refer to the mixed paragraph and do not go to failed early" {
+  for key in '保留の解除' '決める役の裁定受領'; do
+    line="$(grep -F -- "**$key**" "$GATE")"
+    [ -n "$line" ] || { echo "no line: $key"; return 1; }
+    echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の混在の段落' || { echo "$key lacks mixed ref"; return 1; }
+    echo "$line" | grep -qF 'failed に進まない' || { echo "$key lacks guard"; return 1; }
+  done
+  grep -F '**決める役の裁定受領**' "$GATE" | grep -qF '裁定なし（入力不足）'
+}
+
+@test "gate-runner (#357): the post-fix re-review matches row 3 in two stages, pre-fix SHA and HEAD" {
+  line="$(grep -F '**W の修正後の再レビュー**' "$GATE")"
+  echo "$line" | grep -qF '修正前 SHA と HEAD の 2 段'
+  echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の仕分け表の順 3'
+}
+
+@test "gate-runner (#359): the reviewer-summary resume returns only the hold when row 5 mixes with rows 2-4 or row 6" {
+  line="$(grep -F '**レビュアーの要約受領**' "$GATE")"
+  echo "$line" | grep -qF '順 5 と順 2〜4、または順 5 と順 6 が混ざれば保留だけを先に返す'
+  echo "$line" | grep -qF '保留と `needs-decider` を同じ return で指示しない'
+}
+
+@test "worker (#357): the row-3 list paragraph records the pre-fix SHA and does not restate the columns" {
+  para="$(grep -F '**G から一覧を求められた指摘' "$WORKER")"
+  echo "$para" | grep -qF '修正前 SHA'
+  echo "$para" | grep -qF '修正に着手する直前の HEAD'
+  echo "$para" | grep -qF 'SKILL.md 手順 2-1 の仕分け表の順 3'
+  run grep -F '| ファイル | 行（修正前 SHA） |' "$WORKER"
+  [ "$status" -ne 0 ]
+}
