@@ -4,11 +4,12 @@ jev と開発ワークフローの機械化による効果を、消費量だけ�
 
 ## What Changes
 
-- Claude Code のメイン／サブエージェント履歴を重複排除し、ターン数、1 ターン当たりの読み込み量、API 換算コスト、15 分超の間隔をアイドルとして除外した稼働時間を集計する。
-- サブエージェントを `gate-runner` / `worker` / `decider` / `other` に分類し、役割別指標と起動時モデル比率を出す。
-- gate-runner の PR 単位のターン数・読み込み量・所要時間、GitHub 上の Draft 作成からマージまでのリードタイム、期間内マージ本数、マージ後 7 日以内の bug issue 数を集計する。
-- アカウント別 usage snapshot を日次 JSONL に追記するスクリプトと、launchd 等で利用者が登録するための導入手順を追加する。実装時に利用者環境へジョブを登録しない。
+- Claude Code のメイン／サブエージェント履歴を `message.id` 優先で重複排除して消費を集計する一方、稼働時間は usage の有無を問わず JSONL の全行の timestamp から集計する。既存 `/cost` の `requestId` 基準は変更しない。
+- サブエージェントを起動プロンプト先頭とファイル名の固定一致規則で `gate-runner` / `worker` / `decider` / `other` に分類する。期間前に起動して継続した transcript は期間内の消費・時間へ含めるが、starts と起動時モデル比率には含めない。
+- gate-runner の PR 単位のターン数・読み込み量・所要時間、GitHub 上の Draft 作成からマージまでのリードタイム、期間内マージ本数、マージ後 7 日以内の bug issue 数を集計する。GitHub データは `gh search prs` の 30 件既定や `mergedAt` 欠落に依存せず、REST の全ページから取得する。
+- アカウント別 usage snapshot の観測時刻 `accounts.<id>.fetched_at` を日次 JSONL に追記するスクリプトと、launchd 等で利用者が登録するための導入手順を追加する。同じ観測の再記録や欠測を消費 0 とみなさず、実装時に利用者環境へジョブを登録しない。
 - `weekly-metrics.sh --since YYYY-MM-DD --until YYYY-MM-DD` が上記を 1 行 JSON で返す契約と fixture ベースのテストを追加する。
+- account ごとに十分な日次観測がある reset 窓だけから週次 pace を出す。全 account の有効窓が揃わない期間は `pace.weekly_sum_pct` を常に存在する `null` とし、記録のない 2026-09-01〜09-21 を 0 扱いしない。
 - 3 日分以上の実ログ蓄積と epic #360 への実測ベースライン投稿は、コード差分ではなく実装後の運用 handoff として残す。
 
 ## Capabilities
