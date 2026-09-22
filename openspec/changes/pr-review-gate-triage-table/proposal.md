@@ -11,11 +11,11 @@
 - **今直す 3 条件（順 4）**: 直し方が行レベルで 30 行以内・spec を変えない・この PR でその場で直した累計が 30 行以内。閾値は手順 2-0 の 30 行を使い、新しい数字を足さない。1 回で閉じなければ順 6 に落とす
 - **主への質問の書き方（順 5）**: 欠陥がマージ後に何を起こすか・直す見積もり（行数・触るファイル・spec を変えるか）・別 issue にする固定費・推奨、の 4 点を必ず書く。2 周目の終わりまで待たず、その周で聞く。主の回答は「切り出す」か「この PR で直す」
 - 収束ルール「2周目の終わりにやること」の 3.（1 択の質問）を順 5・6 の文面に置き換え、手順 6 の保留の種類「2周目キャップ」を「切り出しの確認」に置き換える。「主に承認を求めてよい4分類」の 1 行目を更新する
-- **BREAKING**（運用上）: 決める役（`dev-workflow:decider`）が、順 6（同じ型の再発）に限って方式（全部列挙してから直す／切り出す）を裁定する。「決める役はキャップの判定に関与しない」の要件を外す。止めるかどうかの判定は引き続き G が行う
+- **BREAKING**（運用上）: 決める役（`dev-workflow:decider`）が、順 6（同じ型の再発）に限って方式（全部列挙してから直す／切り出す）を裁定する。「決める役はキャップの判定に関与しない」の要件を外す。止めるかどうかの判定は引き続き G が行う。G は Status `needs-decider` で return し、develop の SKILL.md (4) に足す `needs-decider` の行で本体が決める役を起こす。決める役への依頼は `agents/decider.md` の既存の「可否と根拠」の契約で出し、本体が可否を方式に読み替えて G に返す
 - 差分限定の再レビューの周でも、例外 3 種（安全機構の穴・データ破壊・無言の機能不全）に当たる新規の指摘は出してよいと明記する（#241 の型）
 - gate-runner.md の Gate Result の仕分け欄（どの順に当てたか）・保留欄（順 5 の 4 点）・再開節の保留の解除と、worker.md の順 3 の表の書式・順 4 の記録を揃える
 
-範囲外: 1 周目の網羅そのもの（#355）、指摘の書式に「前周と同型か」の欄を足すこと（#355 で扱う）、手順 2-2 の原因分類とモデル昇格の中身、`agents/decider.md` の出力契約。
+範囲外: 1 周目の網羅そのもの（#355）、指摘の書式に「前周と同型か」の欄を足すこと（#355 で扱う）、手順 2-2 の原因分類とモデル昇格の中身、`agents/decider.md` の出力契約（順 6 の依頼は既存の「可否と根拠」の形で出すので変えない）。
 
 ## Capabilities
 
@@ -25,13 +25,15 @@
 
 ### Modified Capabilities
 
-- `dev-workflow-pr-review-gate`: 指摘の仕分け表・一覧の一致で閉じる経路・今直す 3 条件・主への質問の 4 点・順 6 の決める役の裁定を要件に足し、2 周目キャップの 1 択・決める役の不関与・差分限定の周の新規指摘の制限・合格条件の文言をそれに合わせて書き換える
+- `dev-workflow-pr-review-gate`: 指摘の仕分け表・一覧の一致で閉じる経路・今直す 3 条件・主への質問の 4 点・順 6 の決める役の裁定を要件に足し、2 周目キャップの 1 択・決める役の不関与・差分限定の周の新規指摘の制限・合格条件の文言・レビュアーの要約受領の分岐をそれに合わせて書き換える
+- `dev-workflow-develop`: G の `needs-decider` を受けた本体の動き（決める役の起こし方・入力・可否から方式への読み替え・G への返し方）を足す
 
 ## Impact
 
 - `plugins/dev-workflow/skills/pr-review-gate/SKILL.md`: 手順 2-1（仕分け表・レビュアー向け指示ブロックの例外 3 種の但し書き）、収束ルール節、手順 5 の合格条件、手順 6 の保留表、「主に承認を求めてよい4分類」
 - `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`: `## Gate Result` の Status・仕分け欄・保留欄、`## 再開` の再レビューと保留の解除
+- `plugins/dev-workflow/skills/develop/SKILL.md`: (4) の G の return 一覧に `needs-decider` を足し、`needs-decider` を受けた本体の動きの行を足す
 - `plugins/dev-workflow/skills/develop/references/roles/worker.md`: 順 3 の表の書式、順 4 の記録（(3a) の return に書くこと）
-- `openspec/specs/dev-workflow-pr-review-gate/spec.md`（archive 時に delta を反映）
-- テスト: `plugins/dev-workflow/tests/pr-review-gate-skill.bats`、`plugins/dev-workflow/tests/develop-roles.bats`
+- `openspec/specs/dev-workflow-pr-review-gate/spec.md` と `openspec/specs/dev-workflow-develop/spec.md`（archive 時に delta を反映）
+- テスト: `plugins/dev-workflow/tests/pr-review-gate-skill.bats`、`plugins/dev-workflow/tests/develop-roles.bats`（develop の SKILL.md (4) の検査もここに足す）
 - `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の version、`plugins/dev-workflow/CHANGELOG.md`

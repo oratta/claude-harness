@@ -1,10 +1,11 @@
 ## 1. テストを先に書く（TDD）
 
 - [ ] 1.1 `plugins/dev-workflow/tests/pr-review-gate-skill.bats` に、仕分け表の 6 順（止める判定・受け入れ条件の中・一覧の一致・今直す 3 条件・主に聞く・決める役の裁定）が SKILL.md 手順 2-1 の「マージを止めるかの判定（全周共通）」より後に、この順番で現れることの検査を足す
-- [ ] 1.2 同 bats に、`grep -c '一覧の一致\|集合が.*一致'` が SKILL.md で 1 以上、`grep -n '30 行'` のヒットが手順 2-0 と順 4（直し方の上限・累計の上限）にあり、30 以外の行数の閾値が順 4 に無いこと、レビュアー向け指示ブロックの「新規の指摘を出さない」文に例外 3 種の但し書きがあること、順 6 の決める役の裁定が PR ごとに 1 回までと書かれていることの検査を足す
+- [ ] 1.2 同 bats に、`grep -c '一覧の一致\|集合が.*一致'` が SKILL.md で 1 以上、`grep -n '30 行'` のヒットが手順 2-0 と順 4（直し方の上限・累計の上限）にあり、30 以外の行数の閾値が順 4 に無いこと、レビュアー向け指示ブロックの「新規の指摘を出さない」文に例外 3 種の但し書きがあること、順 6 の決める役の裁定が PR ごとに 1 回までで、その回数を `決める役の裁定:` の PR コメントから数えると書かれていること、順 6 の発火条件に「2 周目以降の周の終わり」と順 3・順 4 からの落とし込みの両方があること、順 2〜4 を W に戻すラベルが `agent-review:failed` で、順 3 だけで戻した周は周を消費しないと書かれていること、保留を先にするとき W が修正に着手しないと書かれていることの検査を足す
 - [ ] 1.3 同 bats の既存検査を新しい文面に書き換える: 395 行目付近（`続けるか、範囲外として閉じるか` を要求）→ その文面が無く、順 5・6 を参照していること。415 行目付近と 515〜518 行目付近（「決める役.*関与しない」）→ 決める役が順 6 の方式だけを裁定し、止めるかの判定は G が行うこと。426〜428 行目付近（手順 6 の「2周目キャップ」行の「続ける」「範囲外として閉じる」）→「切り出しの確認」行の「切り出す」「この PR で直す」。530〜533 行目付近 → 「主が切り出すと答えて follow-up issue に切ったもの以外が 0 件」（SKILL.md と spec の両方。spec 側は `openspec/changes/pr-review-gate-triage-table/` があればその delta spec を、無ければ archive 後の `openspec/specs/dev-workflow-pr-review-gate/spec.md` を読むようにし、archive の前後どちらでも通るようにする）
-- [ ] 1.4 `plugins/dev-workflow/tests/develop-roles.bats` に、gate-runner.md の保留欄に順 5 の 4 点（何が起きるか・見積もり・固定費・推奨）があること、Status に `needs-decider` があること、仕分け欄が全周で当てた順を書くこと、`grep -n '続けるか、範囲外として閉じるか'` が gate-runner.md で 0 件であること、worker.md で `grep -c '検索コマンド'` が 1 以上で順 4 の記録（「受け入れ条件の外・その場で直した・直し方 N 行」）があることの検査を足す。既存の「2周目キャップ」「範囲外として閉じる」を要求する検査は新しい文面に書き換える
-- [ ] 1.5 追加・書き換えた検査が現行ファイルで落ちることを確認する（`bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/develop-roles.bats`）
+- [ ] 1.4 `plugins/dev-workflow/tests/develop-roles.bats` に、gate-runner.md の保留欄に順 5 の 4 点（何が起きるか・見積もり・固定費・推奨）があること、Status に `needs-decider` があること、仕分け欄が全周で当てた順を書くこと、`grep -n '続けるか、範囲外として閉じるか'` が gate-runner.md で 0 件であること、gate-runner.md の「レビュアーの要約受領」の分岐が周の数で failed／保留を分けず、順 2〜4 は failed・順 5 は保留・順 6 は `needs-decider` と書かれていること、worker.md で `grep -c '検索コマンド'` が 1 以上で順 4 の記録（「受け入れ条件の外・その場で直した・直し方 N 行」）があることの検査を足す。既存の「2周目キャップ」「範囲外として閉じる」を要求する検査と、「レビュアーの要約受領」の分岐で 1 周目は failed を要求する検査は新しい文面に書き換える
+- [ ] 1.5 同 bats に、develop の SKILL.md (4) の G の return 一覧に `needs-decider` があり、`needs-decider` の行に `dev-workflow:decider`・「可否と根拠」・同じ型の指摘と前の周の指摘・SendMessage で G に返すことが書かれていることの検査を足す。あわせて `git diff origin/main -- plugins/dev-workflow/agents/decider.md` が空であることを 4 の検証で確かめる
+- [ ] 1.6 追加・書き換えた検査が現行ファイルで落ちることを確認する（`bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/develop-roles.bats`）
 
 ## 2. SKILL.md を書き換える
 
@@ -18,8 +19,10 @@
 ## 3. G と W の指示書を揃える
 
 - [ ] 3.1 `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` の `## Gate Result` に Status `needs-decider` を足し、仕分け欄を「指摘を受け取ったすべての周で、指摘ごとに当てた順（順 4 は記録の文面）と PR コメント URL」にし、`### 保留のとき` の 2 周目キャップ行を「切り出しの確認: 順 5 の 4 点」に置き換える。`needs-decider` のときに本体へ渡すもの（同じ型の指摘と前の周の指摘、裁定を返す先）を書く
-- [ ] 3.2 同ファイルの `## 再開` の「W の修正後の再レビュー」の 3 周目の条件を主の回答または決める役の裁定に、「レビュアーの要約受領」の分岐を仕分け表への参照に、「保留の解除」を切り出しの確認への回答（切り出す／この PR で直す）に書き換え、決める役の裁定を受け取ったときの再開の行を足す
+- [ ] 3.2 同ファイルの `## 再開` の「W の修正後の再レビュー」の 3 周目の条件を主の回答または決める役の裁定に、「レビュアーの要約受領」の分岐を仕分け表への参照（周の数に関係なく、順 2〜4 は failed・順 5 は保留・順 6 は `needs-decider`）に、「保留の解除」を切り出しの確認への回答（切り出す／この PR で直す）に書き換え、決める役の裁定を受け取ったときの再開の行（`決める役の裁定:` の PR コメントを残し、回数は再開時に PR コメントから数える）を足す
 - [ ] 3.3 `plugins/dev-workflow/skills/develop/references/roles/worker.md` に、順 3 で W が PR コメントに投稿する表（検索コマンド、全ヒットごとの「直した／該当しない理由」）と、投稿してから push する順序を足す（書式の正本は SKILL.md 順 3 と書いて参照する）。(3a) の return に書くことに、順 4 で直したときの「受け入れ条件の外・その場で直した・直し方 N 行」の記録を足す
+
+- [ ] 3.4 `plugins/dev-workflow/skills/develop/SKILL.md` (4) の G の return 一覧に `needs-decider` を足し、`needs-decider` の行を足す: 本体が `dev-workflow:decider` を残量モードどおりのモデルで起こし、入力に同じ型の指摘と前の周の指摘の原文・対象ファイルのパス・G の仕分け欄を貼り、「可否と根拠」の契約で「この PR の中で同じ型を全部列挙してから直すべきか（可）、切り出すべきか（否）」を問い、可否を方式に読み替えて根拠とともに SendMessage で G に返す。`plugins/dev-workflow/agents/decider.md` は変えない
 
 ## 4. 検証と版
 
@@ -27,7 +30,7 @@
 - [ ] 4.2 issue #354 の受け入れ条件の grep（`続けるか、範囲外として閉じるか` が 0 件、`一覧の一致\|集合が.*一致` が SKILL.md で 1 以上、`検索コマンド` が worker.md で 1 以上、`30 行` の閾値）を実行し、結果を記録する
 - [ ] 4.3 `origin/main` の `plugins/dev-workflow/.claude-plugin/plugin.json` の version を確認してから、`plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow の version を 1 つ上げ、`plugins/dev-workflow/CHANGELOG.md` に項目を足す
 - [ ] 4.4 `bash scripts/test.sh` が exit 0（`tests/injection-budget.bats` を含む。常時注入の予算に触れていないことも確認する）
-- [ ] 4.5 `openspec validate pr-review-gate-triage-table --strict` と `openspec validate --specs --strict` が exit 0
+- [ ] 4.5 `openspec validate pr-review-gate-triage-table --strict` と `openspec validate --specs --strict` が exit 0、`git diff origin/main -- plugins/dev-workflow/agents/decider.md` が空
 
 ## 5. PR とゲート（(3b) 以降）
 
