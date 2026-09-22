@@ -65,7 +65,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 @test "gate-runner (#385): needs-reviewer payload has the adapter full verdict and the adapter not-run value for every evidence field" {
   n="$(section "$GATE" 'needs-reviewer')"
-  echo "$n" | grep -qF '- 判定: light | full（Codex 不可） | full（adapter 経路）'
+  echo "$n" | grep -qF -- '- 判定: light | full（Codex 不可） | full（adapter 経路）'
   for field in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:'; do
     echo "$n" | grep -F -- "- ${field}" | grep -qF '未実行（adapter 経路）' || { echo "missing adapter value in ${field}"; return 1; }
   done

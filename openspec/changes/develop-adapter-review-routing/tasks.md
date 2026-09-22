@@ -9,14 +9,14 @@
 
 ## 2. 指示書の変更（Green）
 
-- [ ] 2.1 `gate-runner.md` に「レビュー経路の判別」の節を足し、レビュー実行者の表の前で adapter 経路の規則を書く（G として起動されたときに限る。用語の 1 文を含む）。needs-reviewer の payload に判定 `full（adapter 経路）` と証拠欄の値 `未実行（adapter 経路）` を足し、「レビュー実行者:」コメントの adapter 経路の形 `<executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` を足す。あわせて `pr-review-gate/SKILL.md` の「レビュー実行者:」の書き分けと PR コメント雛形に同じ 1 形を足す
-- [ ] 2.2 `SKILL.md` の Role profile の選択節に、(4) で G の起動・再開・手渡しの指示へ起動形を問わず常に `レビュー経路: adapter` を書く責任を足す。Codex の G では request の instructions（`--input` の指示ファイル）にも書くことを含める。develop の本体は `レビュー経路: 従来` を書かないことも書く
-- [ ] 2.3 `SKILL.md` の (4) を直す: G の起動指示に常に `レビュー経路: adapter` を書くことを足し、`needs-reviewer` 行を adapter 経路の手順（選び直し → dispatch 記録 → レビュアー起動 → 要約と executor / model・dispatch 記録の URL を G に渡す。渡し方は Claude の G と Codex の G で分けて参照先を書く）に書き換える。develop 本体以外から G を起こす従来経路の手順は gate-runner.md の既存記述のまま残す
-- [ ] 2.4 `codex-develop.md`「品質と transport 差分」の G の項に、本体が G の起動・再開指示（request の instructions を含む）に `レビュー経路: adapter` を書くことを足す
-- [ ] 2.5 bats を実行して Green を確認する
+- [x] 2.1 `gate-runner.md` に「レビュー経路の判別」の節を足し、レビュー実行者の表の前で adapter 経路の規則を書く（G として起動されたときに限る。用語の 1 文を含む）。needs-reviewer の payload に判定 `full（adapter 経路）` と証拠欄の値 `未実行（adapter 経路）` を足し、「レビュー実行者:」コメントの adapter 経路の形 `<executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` を足す。あわせて `pr-review-gate/SKILL.md` の「レビュー実行者:」の書き分けと PR コメント雛形に同じ 1 形を足す
+- [x] 2.2 `SKILL.md` の Role profile の選択節に、(4) で G の起動・再開・手渡しの指示へ起動形を問わず常に `レビュー経路: adapter` を書く責任を足す。Codex の G では request の instructions（`--input` の指示ファイル）にも書くことを含める。develop の本体は `レビュー経路: 従来` を書かないことも書く
+- [x] 2.3 `SKILL.md` の (4) を直す: G の起動指示に常に `レビュー経路: adapter` を書くことを足し、`needs-reviewer` 行を adapter 経路の手順（選び直し → dispatch 記録 → レビュアー起動 → 要約と executor / model・dispatch 記録の URL を G に渡す。渡し方は Claude の G と Codex の G で分けて参照先を書く）に書き換える。develop 本体以外から G を起こす従来経路の手順は gate-runner.md の既存記述のまま残す
+- [x] 2.4 `codex-develop.md`「品質と transport 差分」の G の項に、本体が G の起動・再開指示（request の instructions を含む）に `レビュー経路: adapter` を書くことを足す
+- [x] 2.5 bats を実行して Green を確認する
 
 ## 3. 仕上げ
 
-- [ ] 3.1 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow version を 2.13.23 から上げる
+- [x] 3.1 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow version を 2.13.23 から上げる
 - [ ] 3.2 `bash scripts/test.sh` を全件フォアグラウンドで実行し exit 0 を確認する（常時注入の予算テストを含む）
 - [ ] 3.3 `openspec validate develop-adapter-review-routing --strict` が通る
