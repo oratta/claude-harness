@@ -279,13 +279,15 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q 'follow-up issue' "$GATE"
 }
 
-@test "gate-runner (#281): quotable findings at round 2 return as on-hold, not proposing a third round" {
-  grep -q '2周目キャップ' "$GATE"
+@test "gate-runner (#354): row-5 findings return as on-hold for split-off confirmation, not proposing a third round" {
+  grep -q '切り出しの確認' "$GATE"
   grep -q '3周目を提案しない' "$GATE"
+  run grep -F '2周目キャップ' "$GATE"
+  [ "$status" -ne 0 ]
 }
 
 @test "gate-runner (#281): round field covers round 3+ after owner go-ahead and full review line counts" {
-  grep -qE '周回: .*3以降（主の続行指示あり）' "$GATE"
+  grep -qE '周回: .*3以降（主の回答または決める役の裁定あり）' "$GATE"
   grep -q '全体レビュー' "$GATE"
 }
 
@@ -294,8 +296,11 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   [ "$status" -ne 0 ]
 }
 
-@test "gate-runner (#281): resume covers the owner's answer to the round-2 cap" {
-  grep -E '保留の解除' "$GATE" | grep -q '2周目キャップ'
+@test "gate-runner (#354): resume covers the owner's answer to the split-off confirmation" {
+  line="$(grep -E '保留の解除' "$GATE")"
+  echo "$line" | grep -qF '切り出しの確認'
+  echo "$line" | grep -qF '切り出す'
+  echo "$line" | grep -qF 'この PR で直す'
 }
 
 @test "gate-runner (#281): the round-2 sorting field sits above the Status-specific sections" {
@@ -307,13 +312,16 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   [ "$status" -ne 0 ]
 }
 
-@test "gate-runner (#281): resuming with the reviewer's summary branches by round when findings remain" {
-  line="$(grep -F 'レビュアーの要約受領' "$GATE")"
+@test "gate-runner (#354): resuming with the reviewer's summary branches by triage row, not by round" {
+  line="$(grep -F 'レビュアーの要約受領' "$GATE" | grep -v '「レビュアーの要約受領」')"
   [ -n "$line" ] || { echo "no reviewer-summary resume line"; return 1; }
-  echo "$line" | grep -q '1周目'
-  echo "$line" | grep -q 'failed'
-  echo "$line" | grep -q '2周目'
-  echo "$line" | grep -q '仕分け'
+  echo "$line" | grep -qF '周の数に関係なく'
+  echo "$line" | grep -qF '仕分け表'
+  echo "$line" | grep -qF '順 2〜4 は `agent-review:failed`'
+  echo "$line" | grep -qF '順 5 は保留'
+  echo "$line" | grep -qF '順 6 は `needs-decider`'
+  run sh -c "grep -F 'レビュアーの要約受領' '$GATE' | grep -E '1周目は|2周目と'"
+  [ "$status" -ne 0 ]
 }
 
 @test "gate-runner: return formats cover passed / failed / on-hold" {
@@ -489,9 +497,7 @@ extract_context_cap_section() {
   echo "$line" | grep -qF '全周共通の判定'
   echo "$line" | grep -qF '止める指摘'
   echo "$line" | grep -qF 'follow-up issue'
-  echo "$line" | grep -q '1周目'
   echo "$line" | grep -q 'failed'
-  echo "$line" | grep -q '2周目'
   echo "$line" | grep -q '仕分け'
   run sh -c "grep -F 'レビュアーの要約受領' '$GATE' | grep -F '一般則'"
   [ "$status" -ne 0 ]
@@ -510,5 +516,75 @@ extract_context_cap_section() {
   common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
   echo "$common" | grep -F '仕分け' | grep -qF '例外 3 種のどれか'
   hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "$GATE")"
-  echo "$hold" | grep -F '2周目キャップ' | grep -qF '例外 3 種のどれか'
+  echo "$hold" | grep -F '切り出しの確認' | grep -qF '例外 3 種のどれか'
+}
+
+# ===== 指摘の仕分け表（issue #354）=====
+
+@test "gate-runner (#354): on-hold split-off confirmation carries the four points of row 5" {
+  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "$GATE")"
+  line="$(echo "$hold" | grep -F '切り出しの確認')"
+  [ -n "$line" ] || { echo "no split-off line in on-hold section"; return 1; }
+  for token in 'マージ後に何を起こすか' '見積もり' '固定費' '推奨'; do
+    echo "$line" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  run grep -F '続けるか、範囲外として閉じるか' "$GATE"
+  [ "$status" -ne 0 ]
+}
+
+@test "gate-runner (#354): Status has needs-decider and a section says what the main session receives" {
+  grep -E '^- Status: ' "$GATE" | grep -qF 'needs-decider'
+  nd="$(awk '/^### needs-decider のとき/{f=1;next} /^### |^```$/{f=0} f' "$GATE")"
+  [ -n "$nd" ] || { echo "no needs-decider section"; return 1; }
+  echo "$nd" | grep -qF '同じ型の指摘'
+  echo "$nd" | grep -qF '前の周の指摘'
+  echo "$nd" | grep -qF '対象ファイルのパス'
+  echo "$nd" | grep -qF 'SendMessage'
+}
+
+@test "gate-runner (#354): the sorting field covers every round and records row 3, row 4 and decider rulings" {
+  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
+  line="$(echo "$common" | grep -F '仕分け')"
+  echo "$line" | grep -qF '指摘を受け取ったすべての周'
+  echo "$line" | grep -qF '仕分け表'
+  echo "$line" | grep -qF '受け入れ条件の外・その場で直した・直し方 N 行'
+  echo "$line" | grep -qF '閉じた PR コメント URL'
+  echo "$line" | grep -qF '決める役の裁定:'
+}
+
+@test "gate-runner (#354): resume has a line for the decider ruling that records it and counts from PR comments" {
+  line="$(grep -F '決める役の裁定受領' "$GATE")"
+  [ -n "$line" ] || { echo "no decider-ruling resume line"; return 1; }
+  echo "$line" | grep -qF '決める役の裁定:'
+  echo "$line" | grep -qF 'PR コメント'
+  echo "$line" | grep -qF '全部列挙してから直す'
+  echo "$line" | grep -qF '切り出す'
+  grep -E 'W の修正後の再レビュー' "$GATE" | grep -qF '主の回答または決める役の裁定'
+}
+
+@test "worker (#354): W posts the row-3 table with the search command before pushing, and records row-4 fixes" {
+  [ "$(grep -c '検索コマンド' "$WORKER")" -ge 1 ]
+  grep -qF '投稿してから push' "$WORKER"
+  grep -qF 'SKILL.md 手順 2-1 の仕分け表の順 3' "$WORKER"
+  ret="$(awk '/^\*\*\(3a\) の return に書くこと\*\*/{f=1} f&&/^## /{exit} f' "$WORKER")"
+  echo "$ret" | grep -qF '受け入れ条件の外・その場で直した・直し方 N 行'
+}
+
+@test "develop SKILL.md (#354): step (4) handles needs-decider with the verdict-and-reasons contract" {
+  sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$sk")"
+  [ -n "$step4" ] || { echo "no step (4) block"; return 1; }
+  echo "$step4" | grep -qF 'passed / failed / 保留 / needs-reviewer / needs-decider'
+  nd="$(echo "$step4" | awk '/^      needs-decider →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  [ -n "$nd" ] || { echo "no needs-decider line in step (4)"; return 1; }
+  for token in 'dev-workflow:decider' 'マージ可否と同じ可否と根拠の形で問う' '同じ型の指摘' '前の周の指摘' '対象ファイルのパス' '仕分け欄' '全部列挙してから直す' '切り出す' 'SendMessage' '代理投稿しない'; do
+    echo "$nd" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "develop SKILL.md (#354): the proxy-posting rule for decider returns names the row-6 exception" {
+  sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  line="$(grep -F '本体がやること:' "$sk")"
+  echo "$line" | grep -qF '代理投稿する'
+  echo "$line" | grep -qF '順 6'
 }
