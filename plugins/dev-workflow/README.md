@@ -41,14 +41,16 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 ```zsh
 export CLAUDE_HARNESS_SCRIPTS="${CLAUDE_HARNESS_SCRIPTS:-$HOME/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts}"
 
+unalias cld cld-account 2>/dev/null
+
 cld() {
   # 取得失敗時は既存 snapshot を selector が安全側に評価する。
   "$CLAUDE_HARNESS_SCRIPTS/usage-probe.sh" >/dev/null 2>&1 || true
 
-  local selected status
+  local selected selector_rc
   selected="$("$CLAUDE_HARNESS_SCRIPTS/select-account.sh")"
-  status=$?
-  (( status == 0 )) || return "$status"
+  selector_rc=$?
+  (( selector_rc == 0 )) || return "$selector_rc"
 
   if [[ -z "$selected" ]]; then
     env -u CLAUDE_SECURESTORAGE_CONFIG_DIR claude "$@"
@@ -62,10 +64,10 @@ cld-account() {
   local account_id="$1"
   shift
 
-  local selected status
+  local selected selector_rc
   selected="$("$CLAUDE_HARNESS_SCRIPTS/select-account.sh" "$account_id")"
-  status=$?
-  (( status == 0 )) || return "$status"
+  selector_rc=$?
+  (( selector_rc == 0 )) || return "$selector_rc"
 
   if [[ -z "$selected" ]]; then
     env -u CLAUDE_SECURESTORAGE_CONFIG_DIR claude "$@"
@@ -75,7 +77,7 @@ cld-account() {
 }
 ```
 
-`cld` は probe を best-effort で実行してから自動選択し、`cld-account a --resume` のような明示選択では先頭の slot id を除いた引数をそのまま `claude` に渡す。selector の理由行は stderr に残る。空の選択値は既定アカウントを意味するため環境変数を空文字で設定せず `env -u` で解除する。未登録 id などで selector が非 0 なら function も同じ status で終了し、Claude は起動しない。
+関数定義前の `unalias` は、旧設定の `cld` / `cld-account` alias をこの関数へ置き換えるために必要。`cld` は probe を best-effort で実行してから自動選択し、`cld-account a --resume` のような明示選択では先頭の slot id を除いた引数をそのまま `claude` に渡す。selector の理由行は stderr に残る。空の選択値は既定アカウントを意味するため環境変数を空文字で設定せず `env -u` で解除する。未登録 id などで selector が非 0 なら function も同じ status で終了し、Claude は起動しない。
 
 ## references/（他プラグインと共有する契約）
 

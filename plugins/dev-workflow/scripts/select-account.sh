@@ -130,9 +130,8 @@ for index, (slot_id, secure) in enumerate(slots):
     elapsed = (WEEK_SECONDS - (float(resets) - now)) / WEEK_SECONDS * 100
     elapsed = min(100.0, max(0.0, elapsed))
     margin = elapsed - float(weekly)
-    if abs(margin) < 0.0005:
-        margin = 0.0
-    margins.append((slot_id, f"{margin:.2f}"))
+    display_margin = 0.0 if abs(margin) < 0.0005 else margin
+    margins.append((slot_id, f"{display_margin:.2f}"))
     if best is None or margin > best[0]:
         best = (margin, index, slot_id, secure)
 

@@ -8,6 +8,7 @@
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SELECTOR="${PLUGIN_DIR}/scripts/select-account.sh"
+  README="${PLUGIN_DIR}/README.md"
   WORK="$(mktemp -d)"
   ACCOUNTS="${WORK}/accounts.json"
   SNAP="${WORK}/.usage-snapshot"
@@ -47,6 +48,37 @@ invoke() {
     SELECT_ACCOUNT_NOW="$NOW" "$SELECTOR" "$@" >"${WORK}/stdout" 2>"${WORK}/stderr"
 }
 
+extract_readme_functions() {
+  export README_FUNCTIONS="${WORK}/readme-functions.zsh"
+  awk '
+    /^```zsh$/ { in_zsh = 1; next }
+    in_zsh && /^```$/ { exit }
+    in_zsh { print }
+  ' "$README" > "$README_FUNCTIONS"
+}
+
+write_shell_stubs() {
+  mkdir -p "${WORK}/bin" "${WORK}/scripts"
+  cat > "${WORK}/scripts/usage-probe.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  cat > "${WORK}/scripts/select-account.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${SELECTOR_RC:-0}" -ne 0 ]; then
+  exit "$SELECTOR_RC"
+fi
+printf '%s\n' "${SELECTOR_VALUE:-}"
+SH
+  cat > "${WORK}/bin/claude" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "${CLAUDE_SECURESTORAGE_CONFIG_DIR+x}:${CLAUDE_SECURESTORAGE_CONFIG_DIR-}" > "$CLAUDE_ENV_LOG"
+printf '<%s>\n' "$@" > "$CLAUDE_ARGS_LOG"
+SH
+  chmod +x "${WORK}/scripts/usage-probe.sh" \
+    "${WORK}/scripts/select-account.sh" "${WORK}/bin/claude"
+}
+
 @test "automatic: selects the greatest weekly margin and reports every margin" {
   write_registry
   write_snapshot "$NOW" "$NOW" 10 10 40 20
@@ -55,6 +87,22 @@ invoke() {
   [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
   [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:30.00" ]
   [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
+}
+
+@test "automatic: compares unrounded margins even when both display as zero" {
+  write_registry
+  cat > "$SNAP" <<JSON
+{ "schema": 2, "accounts": {
+  "a": { "fetched_at": $NOW, "five_hour_pct": 10,
+           "weekly_all_pct": 50, "weekly_resets_epoch": $((NOW + 302400)) },
+  "b": { "fetched_at": $NOW, "five_hour_pct": 10,
+           "weekly_all_pct": 50, "weekly_resets_epoch": $((NOW + 302399)) }
+} }
+JSON
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:0.00,b:0.00" ]
 }
 
 @test "freshness: age 299 is eligible and age 300 is stale" {
@@ -160,6 +208,53 @@ invoke() {
   run cld_account missing --dangerously-skip-permissions
   [ "$status" -eq 2 ]
   [ ! -e "$marker" ]
+}
+
+@test "README zsh functions launch with unset account env and preserve quoted arguments" {
+  extract_readme_functions
+  write_shell_stubs
+  export CLAUDE_HARNESS_SCRIPTS="${WORK}/scripts"
+  export CLAUDE_ENV_LOG="${WORK}/claude-env"
+  export CLAUDE_ARGS_LOG="${WORK}/claude-args"
+  export SELECTOR_VALUE=""
+  export SELECTOR_RC=0
+
+  run env PATH="${WORK}/bin:${PATH}" CLAUDE_SECURESTORAGE_CONFIG_DIR=inherited \
+    zsh -fc 'source "$README_FUNCTIONS"; cld "argument with spaces" "*.md"'
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CLAUDE_ENV_LOG")" = ":" ]
+  [ "$(cat "$CLAUDE_ARGS_LOG")" = $'<argument with spaces>\n<*.md>' ]
+}
+
+@test "README zsh functions preserve selector exit 2 and do not launch Claude" {
+  extract_readme_functions
+  write_shell_stubs
+  export CLAUDE_HARNESS_SCRIPTS="${WORK}/scripts"
+  export CLAUDE_ENV_LOG="${WORK}/claude-env"
+  export CLAUDE_ARGS_LOG="${WORK}/claude-args"
+  export SELECTOR_RC=2
+
+  run env PATH="${WORK}/bin:${PATH}" zsh -fc \
+    'source "$README_FUNCTIONS"; cld-account missing "argument with spaces"'
+  [ "$status" -eq 2 ]
+  [ ! -e "$CLAUDE_ENV_LOG" ]
+  [ ! -e "$CLAUDE_ARGS_LOG" ]
+}
+
+@test "README zsh functions replace legacy aliases" {
+  extract_readme_functions
+  write_shell_stubs
+  export CLAUDE_HARNESS_SCRIPTS="${WORK}/scripts"
+  export CLAUDE_ENV_LOG="${WORK}/claude-env"
+  export CLAUDE_ARGS_LOG="${WORK}/claude-args"
+  export SELECTOR_VALUE="${SECURE_B}"
+  export SELECTOR_RC=0
+
+  run env PATH="${WORK}/bin:${PATH}" zsh -fc \
+    'alias cld="claude --dangerously-skip-permissions"; alias cld-account="claude"; source "$README_FUNCTIONS"; cld --resume'
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CLAUDE_ENV_LOG")" = "x:${SECURE_B}" ]
+  [ "$(cat "$CLAUDE_ARGS_LOG")" = '<--resume>' ]
 }
 
 @test "tie break: equal margins keep registry declaration order" {
