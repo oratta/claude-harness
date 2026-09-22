@@ -1,12 +1,12 @@
 ## 1. テストを先に書く（TDD）
 
-- [ ] 1.1 `plugins/dev-workflow/tests/pr-review-gate-skill.bats` に、手順 2-1 の `text` ブロック内で `変更点の一覧` → `照合表` → `ハンク被覆` → 自己点検 → 指摘の順になること、各受け入れ条件への対応・検索語・revision-safe な検索コマンド・全ヒット・ハンクごとの指摘番号または `問題なし` を要求することの検査を足す
-- [ ] 1.2 同 bats に、固定書式の `場所` 欄の「diff と重なる範囲で 10 行以内」と同じ行に、食い違いの指摘は diff 外を含む 2 か所を書ける但し書きがあること、および Codex 優先度出力の読み替え表が三表の欠落を完全な結果として扱わないことの検査を足す
-- [ ] 1.3 照合スクリプト用の bats を追加し、順 3 の grep の語の経路の第 1 段と一周目照合が同じ `修正前 SHA`・repository-wide な `git grep ... <rev> -- .`・4 列の全ヒット表を入力できること、照合表に無いヒットを 1 件含む入力が exit 1 と差分の `file:line` を返すこと、一致する入力が exit 0 になること、検索結果に無い表の行も差分になることを先に書く
-- [ ] 1.4 同 bats に、別ディレクトリの未変更ファイルに同じ語があると missing になるケース、追跡対象パスを除外または検索起点をサブディレクトリへ狭めたコマンドを拒否するケース、順 3 の grep の語の経路と一周目照合で第 4 列の値が違っても同じヒット集合として照合するケース、および順 3 の場合分けの軸の `| 軸の値 | 扱い |` 表には grep の検索コマンド・4 列を要求せず軸の全域との一致だけを検査するケースを足す
-- [ ] 1.5 `plugins/dev-workflow/tests/develop-roles.bats` に、G が受け入れ条件・照合表・ハンク被覆を機械照合すること、初回不足は固定 HEAD・元の三表・残差・`補足済み回数: 0` を持つ `needs-reviewer` になること、fresh reviewer/G に交代しても 1 回補足後の残差は `review-incomplete` になり追加依頼が増えないこと、gate-runner.md の Status 列挙に `review-incomplete` があること、二周目以降の指摘の四分類を Gate Result に記録することの検査を足す。さらに、Codex 不可・light 判定による通常の初回レビュー依頼は既存どおりで、一周目照合の補足要求である `needs-reviewer` だけが固定 HEAD・元の三表・残差・補足済み回数を引き継ぐ分岐を検査する
-- [ ] 1.6 `plugins/dev-workflow/tests/test_codex_develop.py` と必要な既存テストに、review phase が gate-runner.md と pr-review-gate SKILL.md を正本として渡し、従来の Codex 雛形と needs-reviewer payload も同じレビュアー向け指示ブロックを参照すること、および本体が `review-incomplete` では fresh reviewer を起動しない契約の検査を足す
-- [ ] 1.7 追加・変更したテストだけを実行し、現行実装に対して期待どおり Red になることを記録する
+- [x] 1.1 `plugins/dev-workflow/tests/pr-review-gate-skill.bats` に、手順 2-1 の `text` ブロック内で `変更点の一覧` → `照合表` → `ハンク被覆` → 自己点検 → 指摘の順になること、各受け入れ条件への対応・検索語・revision-safe な検索コマンド・全ヒット・ハンクごとの指摘番号または `問題なし` を要求することの検査を足す
+- [x] 1.2 同 bats に、固定書式の `場所` 欄の「diff と重なる範囲で 10 行以内」と同じ行に、食い違いの指摘は diff 外を含む 2 か所を書ける但し書きがあること、および Codex 優先度出力の読み替え表が三表の欠落を完全な結果として扱わないことの検査を足す
+- [x] 1.3 照合スクリプト用の bats を追加し、順 3 の grep の語の経路の第 1 段と一周目照合が同じ `修正前 SHA`・repository-wide な `git grep ... <rev> -- .`・4 列の全ヒット表を入力できること、照合表に無いヒットを 1 件含む入力が exit 1 と差分の `file:line` を返すこと、一致する入力が exit 0 になること、検索結果に無い表の行も差分になることを先に書く
+- [x] 1.4 同 bats に、別ディレクトリの未変更ファイルに同じ語があると missing になるケース、追跡対象パスを除外または検索起点をサブディレクトリへ狭めたコマンドを拒否するケース、順 3 の grep の語の経路と一周目照合で第 4 列の値が違っても同じヒット集合として照合するケース、および順 3 の場合分けの軸の `| 軸の値 | 扱い |` 表には grep の検索コマンド・4 列を要求せず軸の全域との一致だけを検査するケースを足す
+- [x] 1.5 `plugins/dev-workflow/tests/develop-roles.bats` に、G が受け入れ条件・照合表・ハンク被覆を機械照合すること、初回不足は固定 HEAD・元の三表・残差・`補足済み回数: 0` を持つ `needs-reviewer` になること、fresh reviewer/G に交代しても 1 回補足後の残差は `review-incomplete` になり追加依頼が増えないこと、gate-runner.md の Status 列挙に `review-incomplete` があること、二周目以降の指摘の四分類を Gate Result に記録することの検査を足す。さらに、Codex 不可・light 判定による通常の初回レビュー依頼は既存どおりで、一周目照合の補足要求である `needs-reviewer` だけが固定 HEAD・元の三表・残差・補足済み回数を引き継ぐ分岐を検査する
+- [x] 1.6 `plugins/dev-workflow/tests/test_codex_develop.py` と必要な既存テストに、review phase が gate-runner.md と pr-review-gate SKILL.md を正本として渡し、従来の Codex 雛形と needs-reviewer payload も同じレビュアー向け指示ブロックを参照すること、および本体が `review-incomplete` では fresh reviewer を起動しない契約の検査を足す
+- [x] 1.7 追加・変更したテストだけを実行し、現行実装に対して期待どおり Red になることを記録する
 
 ## 2. 一周目レビュアー契約を実装する
 

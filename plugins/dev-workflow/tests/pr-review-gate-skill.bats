@@ -743,3 +743,50 @@ triage_row_section() {
   [ "$(echo "$row" | grep -c '未処理の順 6')" -eq 2 ] || { echo "$row"; return 1; }
   echo "$row" | grep -qF '`agent-review:failed` を付けずに Status `needs-decider` で return'
 }
+
+# ===== 一周目レビューの変更点一覧・照合表・ハンク被覆（issue #355） =====
+
+@test "review inventory (#355): reviewer block emits the three artifacts before self-check and findings" {
+  block="$(reviewer_block)"
+  for token in '変更点の一覧' '照合表' 'ハンク被覆' '自己点検' '指摘'; do
+    echo "$block" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  inventory="$(echo "$block" | grep -n '変更点の一覧' | head -1 | cut -d: -f1)"
+  reconcile="$(echo "$block" | grep -n '照合表' | head -1 | cut -d: -f1)"
+  hunks="$(echo "$block" | grep -n 'ハンク被覆' | head -1 | cut -d: -f1)"
+  selfcheck="$(echo "$block" | grep -n '自己点検' | head -1 | cut -d: -f1)"
+  findings="$(echo "$block" | grep -n '指摘' | tail -1 | cut -d: -f1)"
+  [ "$inventory" -lt "$reconcile" ] && [ "$reconcile" -lt "$hunks" ] && \
+    [ "$hunks" -lt "$selfcheck" ] && [ "$selfcheck" -lt "$findings" ]
+  echo "$block" | grep -qF '受け入れ条件'
+  echo "$block" | grep -qF '検索語'
+  echo "$block" | grep -qF 'git grep -n'
+  echo "$block" | grep -qF '<rev> -- .'
+  echo "$block" | grep -qF '全ヒット'
+  echo "$block" | grep -qF '問題なし'
+}
+
+@test "review inventory (#355): common list contract is repository-wide and differs only in handling" {
+  [ "$(grep -c '^\*\*共通一覧契約' "$SKILL")" -eq 1 ]
+  common="$(awk '/^\*\*共通一覧契約/{f=1} f&&/^\*\*/&&seen{exit} f{seen=1; print}' "$SKILL")"
+  for token in '修正前 SHA: <40 桁>' 'git grep -n' '<rev> -- .' \
+    '| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |' \
+    '追跡対象パスの除外' '検索起点' '一周目' '順 3' '一致' '食い違い:' '直した' '該当しない:'; do
+    echo "$common" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  r="$(triage_row_section 3)"
+  echo "$r" | grep -qF '共通一覧契約'
+  echo "$r" | grep -qF '| 軸の値 | 扱い |'
+  echo "$r" | grep -qF '共通一覧契約の対象外'
+}
+
+@test "review inventory (#355): inconsistency location and priority output fail closed on missing tables" {
+  line="$(reviewer_block | grep -F 'diff と重なる範囲で 10 行以内')"
+  echo "$line" | grep -qF '食い違い'
+  echo "$line" | grep -qF 'diff 外'
+  echo "$line" | grep -qF '2 か所'
+  priority="$(awk '/^\*\*Codex が優先度付きの形で返したときの読み替え\*\*/{f=1} f&&/^\*\*マージを止めるか/{exit} f' "$SKILL")"
+  for token in '変更点の一覧' '照合表' 'ハンク被覆' '不足したレビュアー出力' '完了扱いにしない'; do
+    echo "$priority" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}

@@ -589,6 +589,50 @@ extract_context_cap_section() {
   echo "$line" | grep -qF '順 6'
 }
 
+# ===== 一周目レビューの機械照合と補足上限（issue #355） =====
+
+@test "gate-runner (#355): first-pass tables are mechanically checked before triage" {
+  first="$(section "$GATE" '一周目の三表を機械照合する')"
+  [ -n "$first" ] || { echo 'no first-pass reconciliation section'; return 1; }
+  for token in '受け入れ条件' '変更点 ID' 'review-hit-set.py' '全ヒット集合' '固定した PR diff' '全ハンク' '指摘の仕分け前'; do
+    echo "$first" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "gate-runner (#355): one supplemental pass is payload state and residual is terminal" {
+  n="$(section "$GATE" 'needs-reviewer')"
+  for token in '固定 HEAD' '元の三表' '残差' '補足済み回数: 0' '不足した項目だけ' 'SKILL.md 手順 2-1'; do
+    echo "$n" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
+  echo "$common" | grep -qF 'review-incomplete'
+  residual="$(section "$GATE" '補足レビュー結果の受領')"
+  echo "$residual" | grep -qF '補足済み回数: 1'
+  echo "$residual" | grep -qF 'review-incomplete'
+  echo "$residual" | grep -qF '2 回目の `needs-reviewer` を返さない'
+}
+
+@test "gate-runner (#355): later-round findings carry exactly one measurement category without changing routing" {
+  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
+  for token in '同じ文が複数か所' '場合分けの漏れ' '直したつもりで直っていない' '直しで新しく入った' 'いずれか 1 つ'; do
+    echo "$common" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  echo "$common" | grep -qF '停止判定と仕分け順を変えない'
+}
+
+@test "develop SKILL.md (#355): review-incomplete stops without a fresh reviewer and supplement payload is conditional" {
+  sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$sk")"
+  echo "$step4" | grep -qF 'review-incomplete'
+  echo "$step4" | grep -qF 'reviewer を再起動しない'
+  echo "$step4" | grep -qF 'agent-review:pending'
+  echo "$step4" | grep -qF '通常の初回レビュー依頼'
+  echo "$step4" | grep -qF '一周目照合の補足要求である場合に限り'
+  for token in '固定 HEAD' '元の三表' '残差' '補足済み回数'; do
+    echo "$step4" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
 # ===== 仕分け表の追補（issue #357 #358 #359）=====
 
 @test "develop SKILL.md (#358): needs-decider passes the record body, related comments and W's last return, and branches on the first line" {
