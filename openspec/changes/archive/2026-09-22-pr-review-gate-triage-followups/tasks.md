@@ -29,4 +29,4 @@
 
 ## 5. PR とゲート（(3b) 以降）
 
-- [ ] 5.1 PR 本文に `Closes #357`・`Closes #358`・`Closes #359` を併記する
+- [x] 5.1 PR 本文に `Closes #357`・`Closes #358`・`Closes #359` を併記する
