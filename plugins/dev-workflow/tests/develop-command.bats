@@ -37,6 +37,19 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
   grep -qE 'Skill tool は使わない|Skill ツールは使わない' "$CMD"
 }
 
+@test "command: no executor options use the adapter's automatic profile selection for every phase" {
+  grep -q '実行先オプションが無ければ' "$CMD"
+  grep -q 'references/codex-develop.md' "$CMD"
+  grep -q '各 phase で profile なしの request' "$CMD"
+  ! grep -q 'いずれの実行先オプションも無い場合は従来のClaude経路' "$CMD"
+}
+
+@test "command: no-arg follow-up keeps automatic selection instead of requiring explicit executor options" {
+  grep -q '引数なしの追加依頼' "$CMD"
+  grep -q 'profile なしの request' "$CMD"
+  ! grep -q '実行先オプションと account-home の対応を明示し直す' "$CMD"
+}
+
 # --- 5 分岐 ---
 
 @test "branch 1/3: existing number/URL/natural-language branches remain" {
