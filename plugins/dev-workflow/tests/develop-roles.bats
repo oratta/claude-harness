@@ -3,7 +3,7 @@
 # develop スキルの役割別指示書（W / R1 / G）の構造検証（issue #203）
 #
 #   references/roles/worker.md        W: 仕様化判断の記録・Draft PR 記録先の作成順序・事前分類表・TDD
-#   references/roles/spec-reviewer.md R1: 5 観点・読み取り専用・2 周キャップ・結果書式・判断記録の契約
+#   references/roles/spec-reviewer.md R1: 6 観点（守備範囲を含む）・読み取り専用・2 周キャップ・結果書式・判断記録の契約
 #   references/roles/gate-runner.md   G: pr-review-gate 手順 1〜5・Codex の呼び方・needs-reviewer・failed の原因分類
 #
 # spec: dev-workflow-develop, dev-workflow-spec-review
@@ -174,13 +174,26 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 # ===== spec-reviewer.md =====
 
-@test "reviewer: five review criteria are listed with spec path + requirement name on conflict" {
+@test "reviewer: six review criteria are listed with spec path + requirement name on conflict" {
   grep -q '一意' "$REVIEWER"
   grep -qE '既存.*openspec/specs' "$REVIEWER"
   grep -qE 'config|引数' "$REVIEWER"
   grep -q '前提' "$REVIEWER"
   grep -qE 'proposal.*specs.*design.*tasks' "$REVIEWER"
   grep -qE 'spec.*パス.*要件名|要件名.*パス' "$REVIEWER"
+}
+
+@test "reviewer (#287): coverage criterion is in the review criteria section, limited to input-checking requirements, missing one is REQUEST_CHANGES" {
+  s="$(section "$REVIEWER" 'レビュー観点')"
+  [ -n "$s" ] || { echo "no review criteria section in spec-reviewer.md"; return 1; }
+  echo "$s" | grep -qF '## レビュー観点（6 つ'
+  echo "$s" | grep -q '守備範囲'
+  echo "$s" | grep -qF '入力を検査・判定する要件'
+  echo "$s" | grep -qE '守備範囲.*REQUEST_CHANGES|REQUEST_CHANGES.*守備範囲'
+}
+
+@test "reviewer (#287): coverage criterion is not applied retroactively to existing specs" {
+  section "$REVIEWER" 'レビュー観点' | grep -qF '遡及しない'
 }
 
 @test "reviewer: read-only and grep-first" {
