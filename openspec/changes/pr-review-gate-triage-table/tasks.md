@@ -26,11 +26,11 @@
 
 ## 4. 検証と版
 
-- [ ] 4.1 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/develop-roles.bats` が exit 0
-- [ ] 4.2 issue #354 の受け入れ条件の grep（`続けるか、範囲外として閉じるか` が 0 件、`一覧の一致\|集合が.*一致` が SKILL.md で 1 以上、`検索コマンド` が worker.md で 1 以上、`30 行` の閾値）を実行し、結果を記録する
-- [ ] 4.3 `origin/main` の `plugins/dev-workflow/.claude-plugin/plugin.json` の version を確認してから、`plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow の version を 1 つ上げ、`plugins/dev-workflow/CHANGELOG.md` に項目を足す
-- [ ] 4.4 `bash scripts/test.sh` が exit 0（`tests/injection-budget.bats` を含む。常時注入の予算に触れていないことも確認する）
-- [ ] 4.5 `openspec validate pr-review-gate-triage-table --strict` と `openspec validate --specs --strict` が exit 0、`git diff origin/main -- plugins/dev-workflow/agents/decider.md` が空
+- [x] 4.1 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/develop-roles.bats` が exit 0
+- [x] 4.2 issue #354 の受け入れ条件の grep（`続けるか、範囲外として閉じるか` が 0 件、`一覧の一致\|集合が.*一致` が SKILL.md で 1 以上、`検索コマンド` が worker.md で 1 以上、`30 行` の閾値）を実行し、結果を記録する
+- [x] 4.3 `origin/main` の `plugins/dev-workflow/.claude-plugin/plugin.json` の version を確認してから、`plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow の version を 1 つ上げ、`plugins/dev-workflow/CHANGELOG.md` に項目を足す
+- [x] 4.4 `bash scripts/test.sh` が exit 0（`tests/injection-budget.bats` を含む。常時注入の予算に触れていないことも確認する）
+- [x] 4.5 `openspec validate pr-review-gate-triage-table --strict` と `openspec validate --specs --strict` が exit 0、`git diff origin/main -- plugins/dev-workflow/agents/decider.md` が空
 
 ## 5. PR とゲート（(3b) 以降）
 
