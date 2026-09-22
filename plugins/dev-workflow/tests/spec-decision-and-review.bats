@@ -85,8 +85,9 @@ mode_sec() { section "$SKILL" '実行モード'; }
 
 # --- Requirement: 仕様レビューの観点は既存 spec との整合と受け入れ条件の一意性を含む ---
 
-@test "references: five review criteria are listed" {
+@test "references: six review criteria are listed" {
   grep -q '一意' "$REF"
+  grep -q '守備範囲' "$REF"
   grep -qE '既存.*openspec/specs' "$REF"
   grep -qE 'config|引数' "$REF"
   grep -qE '前提' "$REF"
