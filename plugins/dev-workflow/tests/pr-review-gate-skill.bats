@@ -714,6 +714,10 @@ triage_row_section() {
   echo "$r" | grep -qF '件数で照合'
   echo "$r" | grep -qF '2 段目を行わない'
   echo "$r" | grep -qF '表の出し直しを求めた場合を含む'
+  # 扱いが混在する組は git diff の削除行の件数で裏取りする
+  echo "$r" | grep -qF '扱いが混在する組'
+  echo "$r" | grep -qF 'git diff <修正前 SHA> HEAD -- <ファイル>'
+  echo "$r" | grep -qF '「直した」の件数以上'
 }
 
 @test "triage (#359): the mixed paragraph handles rows 5 and 6 together, hold first, then needs-decider, then one failed" {
