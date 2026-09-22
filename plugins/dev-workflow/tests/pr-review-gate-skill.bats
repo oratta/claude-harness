@@ -751,13 +751,15 @@ triage_row_section() {
   for token in '変更点の一覧' '照合表' 'ハンク被覆' '自己点検' '指摘'; do
     echo "$block" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
-  inventory="$(echo "$block" | grep -n '変更点の一覧' | head -1 | cut -d: -f1)"
-  reconcile="$(echo "$block" | grep -n '照合表' | head -1 | cut -d: -f1)"
-  hunks="$(echo "$block" | grep -n 'ハンク被覆' | head -1 | cut -d: -f1)"
-  selfcheck="$(echo "$block" | grep -n '自己点検' | head -1 | cut -d: -f1)"
-  findings="$(echo "$block" | grep -n '指摘' | tail -1 | cut -d: -f1)"
-  [ "$inventory" -lt "$reconcile" ] && [ "$reconcile" -lt "$hunks" ] && \
-    [ "$hunks" -lt "$selfcheck" ] && [ "$selfcheck" -lt "$findings" ]
+  inventory="$(echo "$block" | grep -n '^1\. `変更点の一覧`:' | cut -d: -f1)"
+  reconcile="$(echo "$block" | grep -n '^2\. `照合表`:' | cut -d: -f1)"
+  hunks="$(echo "$block" | grep -n '^3\. `ハンク被覆`:' | cut -d: -f1)"
+  selfcheck="$(echo "$block" | grep -n '^三表を自己点検してから指摘へ進む' | cut -d: -f1)"
+  findings="$(echo "$block" | grep -n '^- 見出し:' | cut -d: -f1)"
+  [ "$inventory" -lt "$reconcile" ] || return 1
+  [ "$reconcile" -lt "$hunks" ] || return 1
+  [ "$hunks" -lt "$selfcheck" ] || return 1
+  [ "$selfcheck" -lt "$findings" ] || return 1
   echo "$block" | grep -qF '受け入れ条件'
   echo "$block" | grep -qF '検索語'
   echo "$block" | grep -qF 'git grep -n'
@@ -766,11 +768,25 @@ triage_row_section() {
   echo "$block" | grep -qF '問題なし'
 }
 
+@test "review inventory (#355): swapping artifact definition order fails the order assertions" {
+  block="$(reviewer_block)"
+  swapped="$(echo "$block" | awk '
+    /^1\. `変更点の一覧`:/ { first=$0; next }
+    /^2\. `照合表`:/ { print; print first; next }
+    { print }
+  ')"
+  inventory="$(echo "$swapped" | grep -n '^1\. `変更点の一覧`:' | cut -d: -f1)"
+  reconcile="$(echo "$swapped" | grep -n '^2\. `照合表`:' | cut -d: -f1)"
+  run test "$inventory" -lt "$reconcile"
+  [ "$status" -ne 0 ]
+}
+
 @test "review inventory (#355): common list contract is repository-wide and differs only in handling" {
   [ "$(grep -c '^\*\*共通一覧契約' "$SKILL")" -eq 1 ]
   common="$(awk '/^\*\*共通一覧契約/{f=1} f&&/^\*\*/&&seen{exit} f{seen=1; print}' "$SKILL")"
   for token in '修正前 SHA: <40 桁>' 'git grep -n' '<rev> -- .' \
     '| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |' \
+    '本文全体' 'backtick fence' '\\' '\|' 'backtick' \
     '追跡対象パスの除外' '検索起点' '一周目' '順 3' '一致' '食い違い:' '直した' '該当しない:'; do
     echo "$common" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
   done

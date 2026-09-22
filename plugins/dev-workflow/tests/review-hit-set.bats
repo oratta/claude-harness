@@ -11,9 +11,22 @@ setup() {
   printf 'needle one\n' > "$REPO/changed/a.txt"
   printf 'needle two\n' > "$REPO/other/b.txt"
   printf '    needle | three  \n' > "$REPO/other/c.txt"
+  printf '変更点の一覧\\|照合表\\|ハンク被覆\n' > "$REPO/other/escaped.txt"
+  printf 'before `marker` after\n' > "$REPO/other/backtick.txt"
   git -C "$REPO" add .
   git -C "$REPO" commit -qm initial
   SHA="$(git -C "$REPO" rev-parse HEAD)"
+}
+
+write_reversible_table() {
+  {
+    printf '修正前 SHA: %s\n' "$SHA"
+    printf "検索コマンド: git grep -n -E '変更点の一覧|before' <rev> -- .\n"
+    printf '| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |\n'
+    printf '| --- | ---: | :--- | --- |\n'
+    printf '| other/escaped.txt | 1 | `変更点の一覧\\\\\\|照合表\\\\\\|ハンク被覆` | 一致 |\n'
+    printf '| other/backtick.txt | 1 | ``before \\`marker\\` after`` | 一致 |\n'
+  } > "$REPO/reversible.md"
 }
 
 write_table() {
@@ -23,8 +36,8 @@ write_table() {
     printf '検索コマンド: git grep -n needle <rev> -- .\n'
     printf '| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |\n'
     printf '|---|---:|---|---|\n'
-    printf '| changed/a.txt | 1 | needle one | %s |\n' "$handling_a"
-    printf '| other/b.txt | 1 | needle two | %s |\n' "$handling_b"
+    printf '| changed/a.txt | 1 | `needle one` | %s |\n' "$handling_a"
+    printf '| other/b.txt | 1 | `needle two` | %s |\n' "$handling_b"
     printf '| other/c.txt | 1 | `    needle \\| three  ` | 一致 |\n'
   } > "$REPO/table.md"
 }
@@ -48,7 +61,7 @@ write_table() {
 
 @test "review hit set (#355): extra table row exits one with file:line" {
   write_table
-  printf '| ghost.txt | 9 | needle ghost | 一致 |\n' >> "$REPO/table.md"
+  printf '| ghost.txt | 9 | `needle ghost` | 一致 |\n' >> "$REPO/table.md"
   run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
   [ "$status" -eq 1 ]
   [[ "$output" == *'extra: ghost.txt:9'* ]]
@@ -71,6 +84,19 @@ write_table() {
 @test "review hit set (#355): escaped pipes and significant body whitespace are reversible" {
   write_table
   run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "review hit set (#355): spaced alignment separator cells are ignored" {
+  write_table
+  sed -i.bak 's/|---|---:|---|---|/| --- | ---: | :--- | --- |/' "$REPO/table.md"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "review hit set (#355): repository backslash-pipe hit and backtick body round trip" {
+  write_reversible_table
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/reversible.md"
   [ "$status" -eq 0 ]
 }
 

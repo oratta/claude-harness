@@ -599,6 +599,14 @@ extract_context_cap_section() {
   done
 }
 
+@test "gate-runner (#355): a no-findings summary cannot reach passing steps without all three tables" {
+  line="$(grep -F '**レビュアーの要約受領**' "$GATE")"
+  for token in '変更点の一覧' '照合表' 'ハンク被覆' '最初に' '照合が完了したあと' '不足' 'needs-reviewer' 'review-incomplete'; do
+    echo "$line" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  echo "$line" | grep -qF '指摘が無ければ手順 3 以降'
+}
+
 @test "gate-runner (#355): one supplemental pass is payload state and residual is terminal" {
   n="$(section "$GATE" 'needs-reviewer')"
   for token in '固定 HEAD' '元の三表' '残差' '補足済み回数: 0' '不足した項目だけ' 'SKILL.md 手順 2-1'; do

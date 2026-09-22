@@ -52,9 +52,33 @@ def split_markdown_row(line):
 
 def decode_cell(cell, *, preserve=False):
     value = cell.strip()
-    if preserve and len(value) >= 2 and value.startswith("`") and value.endswith("`"):
-        value = value[1:-1]
-    return value.replace("\\|", "|")
+    if not preserve:
+        return value.replace("\\|", "|")
+
+    fence_length = len(value) - len(value.lstrip("`"))
+    fence = "`" * fence_length
+    if not fence or len(value) < fence_length * 2 or not value.endswith(fence):
+        raise ContractError("hit row body must be enclosed by a backtick fence")
+    encoded = value[fence_length:-fence_length]
+    if fence in encoded:
+        raise ContractError("hit row body backtick fence must exceed inner runs")
+
+    decoded = []
+    index = 0
+    while index < len(encoded):
+        char = encoded[index]
+        if char == "`":
+            raise ContractError("backticks in hit row body must be escaped")
+        if char != "\\":
+            decoded.append(char)
+            index += 1
+            continue
+        index += 1
+        if index >= len(encoded) or encoded[index] not in ("\\", "|", "`"):
+            raise ContractError("hit row body has an invalid escape")
+        decoded.append(encoded[index])
+        index += 1
+    return "".join(decoded)
 
 
 def parse_table(lines):
@@ -78,7 +102,7 @@ def parse_table(lines):
         cells = split_markdown_row(line)
         if len(cells) != 4:
             raise ContractError("every hit row must have four columns")
-        if all(re.fullmatch(r":?-+:?", cell) for cell in cells):
+        if all(re.fullmatch(r":?-+:?", cell.strip()) for cell in cells):
             continue
         path = decode_cell(cells[0])
         line_number = decode_cell(cells[1])
