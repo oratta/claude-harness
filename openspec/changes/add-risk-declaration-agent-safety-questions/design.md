@@ -1,6 +1,6 @@
 ## Context
 
-pr-review-gate 手順 3 のリスク宣言は、表（「リスクなし」／「主のリスク許容が必要」の条件と後続）と、2 つのコメント雛形でできている。「主のリスク許容が必要」なら手順 6 で `needs-approval` を付け、auto-merge workflow はこのラベルが付いた PR をマージしない。auto-merge workflow と手順 5 が機械照合するのは、コメント 1 行目の見出し（`## リスク宣言`）と 2 行目の `対象 HEAD: <40 桁フル SHA>` だけで、宣言本文の語句は照合していない（`templates/auto-merge/.github/workflows/auto-merge.yml`、`tests/pr-review-gate-skill.bats` を grep して確認）。
+pr-review-gate 手順 3 のリスク宣言は、表（「リスクなし」／「主のリスク許容が必要」の条件と後続）と、2 つのコメント雛形でできている。「主のリスク許容が必要」なら手順 6 で `needs-approval` を付け、auto-merge workflow はこのラベルが付いた PR をマージしない。auto-merge workflow と手順 5 が機械照合するのは、コメント 1 行目の見出し（`## リスク宣言`）と 2 行目の `対象 HEAD: <40 桁フル SHA>` だけで、宣言本文の語句は照合していない（`plugins/dev-workflow/templates/auto-merge/.github/workflows/auto-merge.yml`、`plugins/dev-workflow/tests/pr-review-gate-skill.bats` を grep して確認）。
 
 ## Goals / Non-Goals
 

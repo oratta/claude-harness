@@ -12,7 +12,7 @@ pr-review-gate のリスク宣言は、いまプロダクトのユーザーへ�
 - 新 3 観点のどれかに当たれば、既存の「主のリスク許容が必要」と同じ経路（手順 6、`needs-approval` を付けて主の許容待ち）に流すことを手順書上で明記する
 - 「主のリスク許容が必要」の雛形に、当たった観点を書く行を足す
 - コメントの 1 行目・2 行目の規約（`## リスク宣言` 見出しと `対象 HEAD: <40 桁>`）は変えない
-- dev-workflow の plugin.json と marketplace.json の該当プラグイン行を 2.13.23 に上げる
+- dev-workflow の plugin.json と marketplace.json の該当プラグイン行を 2.13.23 に上げる（並行 PR #378 が 2.13.22 を使用中のため事前割当）
 
 ## Capabilities
 
@@ -29,5 +29,5 @@ pr-review-gate のリスク宣言は、いまプロダクトのユーザーへ�
 - `plugins/dev-workflow/skills/pr-review-gate/SKILL.md` 手順 3（リスク分類表・「リスクなし」定型文・許容が必要な場合の雛形）
 - `plugins/dev-workflow/tests/pr-review-gate-skill.bats`（新観点と定型文・1 行目規約の維持を確かめるテストを足す）
 - `plugins/dev-workflow/.claude-plugin/plugin.json` / `.claude-plugin/marketplace.json` のバージョン、`plugins/dev-workflow/CHANGELOG.md`
-- auto-merge テンプレート（`templates/auto-merge/`）は `対象 HEAD:` 行とラベルだけを照合し、宣言本文の語句を見ていないので変更しない
+- auto-merge テンプレート（`plugins/dev-workflow/templates/auto-merge/.github/workflows/auto-merge.yml`）は `対象 HEAD:` 行とラベルだけを照合し、宣言本文の語句を見ていないので変更しない
 - harness のように行動ルールそのものが製品のリポでは、新観点に当たる PR が増え、主への確認が増える
