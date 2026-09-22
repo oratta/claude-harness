@@ -30,7 +30,7 @@
 
 ### D2. 鮮度の有効範囲は `0 <= now - fetched_at < 300` 秒とする
 
-`usage-probe.sh` の既定 TTL 300 秒と同じ半開区間を使い、age が 300 秒以上、負値、非数値、または `fetched_at` 欠測なら候補から外す。probe は age が 300 秒に達すると再取得を試みるため、選択側だけ 300 秒以上の値を有効にする理由がない。
+`usage-probe.sh` の既定 TTL 300 秒と同じ半開区間を使い、age が 300 秒以上、負値、非数値、または `fetched_at` 欠測なら候補から外す。ただし、probe と selector が測る age の対象は異なる。probe は snapshot **ファイルの mtime** が 300 秒に達すると再取得を試み、selector は各スロットの **`fetched_at`** を判定する。あるスロットの取得だけが失敗して古い `fetched_at` が保持されても、別スロットの成功で snapshot ファイルの mtime が新しければ、probe はファイル TTL が切れるまで再取得しない。この場合も selector はその古いスロットを候補から外す。
 
 代案の 600 秒は一時的な取得失敗に強いが、probe が失敗時に前回値を保持する契約と組み合わさると最大 2 キャッシュ区間の古い値を「現在の余裕」として選びうるため採らない。
 
@@ -46,19 +46,21 @@
 
 「週次消化率が最小」を使う代案では週の前半と後半を区別できず、共有枠モードの判断と食い違うため採らない。
 
-### D5. 候補が無ければ空の `securestorage` へ縮退する
+### D5. 候補が無ければ空の `securestorage` へ縮退し、原因を区別する
 
-全スロットが欠測・古い・5 時間枠 90% 以上のいずれかで候補外なら、登録の有無にかかわらず既定アカウントを表す空文字を返す。理由は `no-eligible-usage` とし、欠測を原因とする安全側の縮退であることを示す。古い値から見かけ上余っているスロットを選ぶより、従来の `cld` と同じ既定アカウントへ戻る方が予測可能である。
+全スロットが欠測・古い・5 時間枠 90% 以上のいずれかで候補外なら、既定アカウントを表す空文字を返す。レジストリに `securestorage` が `null` または空文字の既定スロットがあれば、宣言順で最初のスロットの id を選択 id とする。これにより、例えば既定スロットの id が `a` なら、環境変数を unset して起動した statusline の active と理由行の `selected=a` が一致する。既定スロットが無ければ、実在する id と混同しない sentinel `@unregistered-default` を選択 id の代わりに表示する（登録 id の規則では `@` を使用できない）。
+
+縮退理由は原因で分ける。1 スロットでも `stale` または `missing` で除外されていれば `default-due-to-missing-usage` とし、「古い・欠測データのため既定へ縮退した」ことを明示する。全スロットが `five-hour>=90` だけで除外された場合は `default-due-to-five-hour-limit` とし、短期枠逼迫による縮退を欠測と区別する。古い値から見かけ上余っているスロットを選ぶより、従来の `cld` と同じ既定アカウントへ戻る方が予測可能である。
 
 ### D6. stdout は値 1 行、stderr は理由 1 行に分離する
 
 成功時の stdout は選んだ `securestorage` の実値だけを 1 行で出す。既定アカウントは空行である。stderr は次の安定した形の 1 行を出す。
 
 ```text
-selected=<id> reason=<max-weekly-margin|explicit|no-eligible-usage> margins=<id>:<数値または除外理由>,...
+selected=<id-or-sentinel> reason=<max-weekly-margin|explicit|default-due-to-missing-usage|default-due-to-five-hour-limit> margins=<id>:<数値または除外理由>,...
 ```
 
-自動選択では全登録スロットを宣言順に `margins` へ載せ、候補には小数点以下 2 桁の margin、候補外には `stale`、`missing`、`five-hour>=90` のいずれかを出す。これにより受け入れ条件の 2 スロットの余裕を 1 行で比較できる。明示指定では `reason=explicit` とし、`margins=-` とする。縮退では `selected=default reason=no-eligible-usage` とする。
+自動選択では全登録スロットを宣言順に `margins` へ載せ、候補には小数点以下 2 桁の margin、候補外には `stale`、`missing`、`five-hour>=90` のいずれかを出す。これにより受け入れ条件の 2 スロットの余裕を 1 行で比較できる。明示指定では `reason=explicit` とし、`margins=-` とする。縮退時の `selected` は D5 のとおり登録済み既定スロットの実 id、未登録なら `@unregistered-default` とし、理由も D5 の原因別の値を使う。
 
 JSON 1 本を stdout に出す代案は shell 側に `jq` と field extraction を要求する。`KEY=value` を同じ stdout に混ぜる代案は、空文字を含む任意の path を command substitution で安全に受け取れないため採らない。
 
@@ -72,6 +74,8 @@ JSON 1 本を stdout に出す代案は shell 側に `jq` と field extraction �
 
 - `cld [claude-args...]`: `usage-probe.sh` を best-effort で実行し、`select-account.sh` の stdout を取得する。空なら `env -u CLAUDE_SECURESTORAGE_CONFIG_DIR claude "$@"`、非空なら `CLAUDE_SECURESTORAGE_CONFIG_DIR="$selected" claude "$@"` で起動する。理由行は stderr を通して端末に残す。
 - `cld-account <slot-id> [claude-args...]`: selector に id を渡し、同じ方法で明示したアカウントを起動する。id を Claude 本体の引数に混ぜない。
+
+どちらの function も command substitution の終了状態を検査し、selector が非 0 ならその状態で function を終了して `claude` を起動しない。特に未登録 id の exit 2 を空の成功値と取り違えて、既定アカウントを起動してはならない。
 
 スクリプト位置は自動更新される marketplace clone の `$HOME/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts` を既定例にし、利用者が変数 1 つで差し替えられる書き方にする。旧 `cldb` は移行後に利用者が削除できるが、リポジトリから `.zshrc` を変更しない。
 
