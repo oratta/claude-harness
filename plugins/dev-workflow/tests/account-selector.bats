@@ -211,6 +211,7 @@ JSON
 }
 
 @test "README zsh functions launch with unset account env and preserve quoted arguments" {
+  command -v zsh >/dev/null 2>&1 || skip "zsh unavailable"
   extract_readme_functions
   write_shell_stubs
   export CLAUDE_HARNESS_SCRIPTS="${WORK}/scripts"
@@ -227,6 +228,7 @@ JSON
 }
 
 @test "README zsh functions preserve selector exit 2 and do not launch Claude" {
+  command -v zsh >/dev/null 2>&1 || skip "zsh unavailable"
   extract_readme_functions
   write_shell_stubs
   export CLAUDE_HARNESS_SCRIPTS="${WORK}/scripts"
@@ -242,6 +244,7 @@ JSON
 }
 
 @test "README zsh functions replace legacy aliases" {
+  command -v zsh >/dev/null 2>&1 || skip "zsh unavailable"
   extract_readme_functions
   write_shell_stubs
   export CLAUDE_HARNESS_SCRIPTS="${WORK}/scripts"

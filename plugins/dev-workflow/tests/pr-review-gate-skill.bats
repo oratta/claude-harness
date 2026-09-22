@@ -681,3 +681,65 @@ triage_row_section() {
   echo "$sec" | grep -qF 'PR ごとに 1 回まで'
   echo "$sec" | grep -qF '例外 3 種'
 }
+
+# ===== 仕分け表の追補（issue #357 #358 #359）=====
+
+@test "triage (#357): row 3 fixes the list comment format with a pre-fix SHA and a git grep command taking <rev>" {
+  r="$(triage_row_section 3)"
+  [ -n "$r" ] || { echo "no row-3 section"; return 1; }
+  for token in '`## 一覧（順 3）`' '`修正前 SHA: <40 桁>`' '`検索コマンド: <コマンド>`' 'git grep -n' '<rev>' \
+    '`| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |`' '`| 軸の値 | 扱い |`' '`直した`' '`該当しない: <理由>`' \
+    '修正に着手する直前の HEAD' '40 桁' '`grep -rn`'; do
+    echo "$r" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  # 軸のときも修正前 SHA を書き、検索コマンドの行に軸とその全域を書く
+  echo "$r" | grep -qF '場合分けの軸のときも `修正前 SHA:` の行は同じく書き'
+  echo "$r" | grep -qF '`検索コマンド:` の行には軸とその全域'
+  # 順 6 の「全部列挙してから直す」の一覧も同じ見出しと書式
+  echo "$r" | grep -qF '順 6 の裁定「全部列挙してから直す」で W が作る一覧も、同じ見出し `## 一覧（順 3）`'
+}
+
+@test "triage (#357): row 3 checks the pre-fix SHA exists after a fetch and matches in two stages by file and line body" {
+  r="$(triage_row_section 3)"
+  echo "$r" | grep -qF 'git cat-file -e <修正前 SHA>^{commit}'
+  echo "$r" | grep -qF '解決できないときだけ'
+  # git fetch を実在確認より前に置く
+  f="$(echo "$r" | grep -bo 'git fetch' | head -1 | cut -d: -f1)"
+  c="$(echo "$r" | grep -bo 'git cat-file -e' | head -1 | cut -d: -f1)"
+  [ -n "$f" ] && [ -n "$c" ] && [ "$f" -lt "$c" ] || { echo "fetch=$f cat-file=$c"; return 1; }
+  # 2 段の照合
+  echo "$r" | grep -qF '修正前 SHA で検索コマンドを実行し、ヒットの集合が表の全行（扱いを問わない）と一致する'
+  echo "$r" | grep -qF 'HEAD で同じ検索コマンドを実行し、残ったヒットがすべて、扱いが「該当しない」の行に対応する'
+  echo "$r" | grep -qF '「ファイル」と「ヒットした行の本文」の組で取り、行番号では取らない'
+  echo "$r" | grep -qF '件数で照合'
+  echo "$r" | grep -qF '2 段目を行わない'
+  echo "$r" | grep -qF '表の出し直しを求めた場合を含む'
+  # 扱いが混在する組は git diff の削除行の件数で裏取りする
+  echo "$r" | grep -qF '扱いが混在する組'
+  echo "$r" | grep -qF 'git diff <修正前 SHA> HEAD -- <ファイル>'
+  echo "$r" | grep -qF '「直した」の件数以上'
+}
+
+@test "triage (#359): the mixed paragraph handles rows 5 and 6 together, hold first, then needs-decider, then one failed" {
+  mix="$(triage_section | awk '/^同じ周に順 5 の指摘と順 6 の指摘が混ざったら/{f=1} f&&/^\*\*/{exit} f')"
+  [ -n "$mix" ] || { echo "no row-5/row-6 mixed paragraph"; return 1; }
+  for token in '順 2〜4 の指摘を含んでもよい' '順 6・未裁定' '順 5 の指摘についてだけ' '未処理の順 6' \
+    '`agent-review:failed` を付けずに Status `needs-decider` で return' '1 回の `agent-review:failed` で W に戻す' \
+    '1 回の保留にまとめる' '主の回答と裁定の両方が済むまで'; do
+    echo "$mix" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "triage (#358 #359): row 6 handles 'no ruling (missing input)' and does not flip to failed while row 5 is unanswered" {
+  r="$(triage_row_section 6)"
+  echo "$r" | grep -qF '裁定なし（入力不足）'
+  echo "$r" | grep -qF '`決める役の裁定:` の PR コメントを残さず'
+  echo "$r" | grep -qF '裁定の回数に数えない'
+  echo "$r" | grep -qF '主がまだ回答していなければ、failed に付け替えずに保留のまま待つ'
+}
+
+@test "convergence (#359): step 6 split-off confirmation row sends unprocessed row 6 to needs-decider" {
+  row="$(grep -A1 '^| \*\*切り出しの確認\*\*' "$SKILL")"
+  [ "$(echo "$row" | grep -c '未処理の順 6')" -eq 2 ] || { echo "$row"; return 1; }
+  echo "$row" | grep -qF '`agent-review:failed` を付けずに Status `needs-decider` で return'
+}
