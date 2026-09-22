@@ -4,7 +4,7 @@
 - [ ] 1.2 同 bats に、固定書式の `場所` 欄の「diff と重なる範囲で 10 行以内」と同じ行に、食い違いの指摘は diff 外を含む 2 か所を書ける但し書きがあること、および Codex 優先度出力の読み替え表が三表の欠落を完全な結果として扱わないことの検査を足す
 - [ ] 1.3 照合スクリプト用の bats を追加し、順 3 の grep の語の経路の第 1 段と一周目照合が同じ `修正前 SHA`・repository-wide な `git grep ... <rev> -- .`・4 列の全ヒット表を入力できること、照合表に無いヒットを 1 件含む入力が exit 1 と差分の `file:line` を返すこと、一致する入力が exit 0 になること、検索結果に無い表の行も差分になることを先に書く
 - [ ] 1.4 同 bats に、別ディレクトリの未変更ファイルに同じ語があると missing になるケース、追跡対象パスを除外または検索起点をサブディレクトリへ狭めたコマンドを拒否するケース、順 3 の grep の語の経路と一周目照合で第 4 列の値が違っても同じヒット集合として照合するケース、および順 3 の場合分けの軸の `| 軸の値 | 扱い |` 表には grep の検索コマンド・4 列を要求せず軸の全域との一致だけを検査するケースを足す
-- [ ] 1.5 `plugins/dev-workflow/tests/develop-roles.bats` に、G が受け入れ条件・照合表・ハンク被覆を機械照合すること、初回不足は固定 HEAD・元の三表・残差・`補足済み回数: 0` を持つ `needs-reviewer` になること、fresh reviewer/G に交代しても 1 回補足後の残差は `review-incomplete` になり追加依頼が増えないこと、gate-runner.md の Status 列挙に `review-incomplete` があること、二周目以降の指摘の四分類を Gate Result に記録することの検査を足す
+- [ ] 1.5 `plugins/dev-workflow/tests/develop-roles.bats` に、G が受け入れ条件・照合表・ハンク被覆を機械照合すること、初回不足は固定 HEAD・元の三表・残差・`補足済み回数: 0` を持つ `needs-reviewer` になること、fresh reviewer/G に交代しても 1 回補足後の残差は `review-incomplete` になり追加依頼が増えないこと、gate-runner.md の Status 列挙に `review-incomplete` があること、二周目以降の指摘の四分類を Gate Result に記録することの検査を足す。さらに、Codex 不可・light 判定による通常の初回レビュー依頼は既存どおりで、一周目照合の補足要求である `needs-reviewer` だけが固定 HEAD・元の三表・残差・補足済み回数を引き継ぐ分岐を検査する
 - [ ] 1.6 `plugins/dev-workflow/tests/test_codex_develop.py` と必要な既存テストに、review phase が gate-runner.md と pr-review-gate SKILL.md を正本として渡し、従来の Codex 雛形と needs-reviewer payload も同じレビュアー向け指示ブロックを参照すること、および本体が `review-incomplete` では fresh reviewer を起動しない契約の検査を足す
 - [ ] 1.7 追加・変更したテストだけを実行し、現行実装に対して期待どおり Red になることを記録する
 
@@ -23,7 +23,7 @@
 - [ ] 3.3 同ファイルに、初回差分は固定 HEAD・元の三表・残差・`補足済み回数: 0` を持つ `needs-reviewer` で不足項目だけを補うよう return し、補足結果では `補足済み回数: 1` を維持し、それでも残れば差分を記録して terminal `review-incomplete` で return する分岐を追加する。Gate Result の Status 列挙にも `review-incomplete` を追加し、どちらも合格処理へ進めない
 - [ ] 3.4 Gate Result の return/PR コメント契約に、二周目以降の各指摘を `同じ文が複数か所`・`場合分けの漏れ`・`直したつもりで直っていない`・`直しで新しく入った` のいずれか 1 つに分類する欄を追加し、この分類が停止判定と仕分け順を変えないことを書く
 - [ ] 3.5 `grep -c '同じ文が複数か所' plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` が 1 以上であることを確認する
-- [ ] 3.6 `plugins/dev-workflow/skills/develop/SKILL.md` の (4) にある G return の Status 列挙と分岐へ `review-incomplete` を追加し、この status では reviewer を再起動せず `agent-review:pending` のまま残差を報告して工程を止める。本体が `needs-reviewer` で fresh reviewer を起こす場合は同じレビューの補足 payload をそのまま渡す
+- [ ] 3.6 `plugins/dev-workflow/skills/develop/SKILL.md` の (4) にある G return の Status 列挙と分岐へ `review-incomplete` を追加し、この status では reviewer を再起動せず `agent-review:pending` のまま残差を報告して工程を止める。Codex 不可・light 判定による通常の初回レビュー依頼は既存どおりとし、`needs-reviewer` が一周目照合の補足要求である場合に限り、fresh reviewer へ同じレビューの固定 HEAD・元の三表・残差・補足済み回数を含む補足 payload をそのまま渡す
 
 ## 4. 全レビュー経路を揃えて実測する
 
