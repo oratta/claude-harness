@@ -106,7 +106,7 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
 (4) G を名前付きで spawn（model: 既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は needs-reviewer で本体が起こすレビュアーが担う）:
       G の起動・再開・手渡しの指示には常に `レビュー経路: adapter` の 1 行を書く（Codex の G では request の instructions にも。
            `レビュー経路: 従来` は書かない。理由は「Role profile の選択」節）
-      pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider」
+      pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider / review-incomplete」
       合格処理（手順 5）では PR が Draft なら Ready にしてから agent-review:passed を付ける（W は Ready にしない）
       needs-reviewer → adapter 経路では G は full でも light でもこれを返す。本体は次の順で進む:
            ① codex-develop.py request --phase review で投げ先を選び直す（実行先オプションはこの develop 開始時と同じ。自動選択なら無指定）
@@ -116,7 +116,10 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
               事前分類に当たれば profile の decider entry で dev-workflow:decider。codex なら request を実行する）
            ④ レビュー要約と、選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。Claude の G は SendMessage で再開して渡す
               （gate-runner.md「needs-reviewer の return」）。Codex の G は新しい phase gate を開始してその入力に渡す（codex-develop.md「品質と transport 差分」）
+           通常の初回レビュー依頼も補足要求も同じ ①〜④ で進める。`needs-reviewer` が一周目照合の補足要求である場合に限り、③ のレビュアーへ
+           同じレビューの固定 HEAD・元の三表・残差・補足済み回数を payload のまま渡し、不足分だけを補わせる。補足結果は `補足済み回数: 1` として G に渡し、fresh thread でも回数をリセットしない
            develop の本体以外から G を起こす従来経路の手順（呼び出し元がレビュアーを起こす）は gate-runner.md のまま
+      review-incomplete → reviewer を再起動しない。`agent-review:pending` のまま Gate Result の残差を報告して工程を止め、合格処理へ進まない
       failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）で戻し方を決める。モデルを上げるのは実装品質起因のときだけで、
            上げるのは決める役と実行役の一方だけ（実行側が原因なら W を opus に、判断側が原因なら dev-workflow:decider を立てて修正方針を作らせる。
            W を fable にはしない）。仕様が曖昧なら仕様修正、誤検出なら反証で返す（どちらもモデルを上げない）

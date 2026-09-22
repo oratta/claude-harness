@@ -687,8 +687,8 @@ triage_row_section() {
 @test "triage (#357): row 3 fixes the list comment format with a pre-fix SHA and a git grep command taking <rev>" {
   r="$(triage_row_section 3)"
   [ -n "$r" ] || { echo "no row-3 section"; return 1; }
-  for token in '`## 一覧（順 3）`' '`修正前 SHA: <40 桁>`' '`検索コマンド: <コマンド>`' 'git grep -n' '<rev>' \
-    '`| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |`' '`| 軸の値 | 扱い |`' '`直した`' '`該当しない: <理由>`' \
+  for token in '`## 一覧（順 3）`' '`修正前 SHA: <40 桁>`' '`検索コマンド: <コマンド>`' '<rev>' \
+    '`| 軸の値 | 扱い |`' '`直した`' '`該当しない: <理由>`' \
     '修正に着手する直前の HEAD' '40 桁' '`grep -rn`'; do
     echo "$r" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
   done
@@ -708,7 +708,7 @@ triage_row_section() {
   c="$(echo "$r" | grep -bo 'git cat-file -e' | head -1 | cut -d: -f1)"
   [ -n "$f" ] && [ -n "$c" ] && [ "$f" -lt "$c" ] || { echo "fetch=$f cat-file=$c"; return 1; }
   # 2 段の照合
-  echo "$r" | grep -qF '修正前 SHA で検索コマンドを実行し、ヒットの集合が表の全行（扱いを問わない）と一致する'
+  echo "$r" | grep -qF '修正前 SHA で検索コマンドを実行したヒット集合が表の全行（扱いを問わない）と一致する'
   echo "$r" | grep -qF 'HEAD で同じ検索コマンドを実行し、残ったヒットがすべて、扱いが「該当しない」の行に対応する'
   echo "$r" | grep -qF '「ファイル」と「ヒットした行の本文」の組で取り、行番号では取らない'
   echo "$r" | grep -qF '件数で照合'
@@ -742,6 +742,69 @@ triage_row_section() {
   row="$(grep -A1 '^| \*\*切り出しの確認\*\*' "$SKILL")"
   [ "$(echo "$row" | grep -c '未処理の順 6')" -eq 2 ] || { echo "$row"; return 1; }
   echo "$row" | grep -qF '`agent-review:failed` を付けずに Status `needs-decider` で return'
+}
+
+# ===== 一周目レビューの変更点一覧・照合表・ハンク被覆（issue #355） =====
+
+@test "review inventory (#355): reviewer block emits the three artifacts before self-check and findings" {
+  block="$(reviewer_block)"
+  for token in '変更点の一覧' '照合表' 'ハンク被覆' '自己点検' '指摘'; do
+    echo "$block" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  inventory="$(echo "$block" | grep -n '^1\. `変更点の一覧`:' | cut -d: -f1)"
+  reconcile="$(echo "$block" | grep -n '^2\. `照合表`:' | cut -d: -f1)"
+  hunks="$(echo "$block" | grep -n '^3\. `ハンク被覆`:' | cut -d: -f1)"
+  selfcheck="$(echo "$block" | grep -n '^三表を自己点検してから指摘へ進む' | cut -d: -f1)"
+  findings="$(echo "$block" | grep -n '^- 見出し:' | cut -d: -f1)"
+  [ "$inventory" -lt "$reconcile" ] || return 1
+  [ "$reconcile" -lt "$hunks" ] || return 1
+  [ "$hunks" -lt "$selfcheck" ] || return 1
+  [ "$selfcheck" -lt "$findings" ] || return 1
+  echo "$block" | grep -qF '受け入れ条件'
+  echo "$block" | grep -qF '検索語'
+  echo "$block" | grep -qF 'git grep -n'
+  echo "$block" | grep -qF '<rev> -- .'
+  echo "$block" | grep -qF '全ヒット'
+  echo "$block" | grep -qF '問題なし'
+}
+
+@test "review inventory (#355): swapping artifact definition order fails the order assertions" {
+  block="$(reviewer_block)"
+  swapped="$(echo "$block" | awk '
+    /^1\. `変更点の一覧`:/ { first=$0; next }
+    /^2\. `照合表`:/ { print; print first; next }
+    { print }
+  ')"
+  inventory="$(echo "$swapped" | grep -n '^1\. `変更点の一覧`:' | cut -d: -f1)"
+  reconcile="$(echo "$swapped" | grep -n '^2\. `照合表`:' | cut -d: -f1)"
+  run test "$inventory" -lt "$reconcile"
+  [ "$status" -ne 0 ]
+}
+
+@test "review inventory (#355): common list contract is repository-wide and differs only in handling" {
+  [ "$(grep -c '^\*\*共通一覧契約' "$SKILL")" -eq 1 ]
+  common="$(awk '/^\*\*共通一覧契約/{f=1} f&&/^\*\*/&&seen{exit} f{seen=1; print}' "$SKILL")"
+  for token in '修正前 SHA: <40 桁>' 'git grep -n' '<rev> -- .' \
+    '| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |' \
+    '本文全体' 'backtick fence' '\\' '\|' 'backtick' \
+    '追跡対象パスの除外' '検索起点' '一周目' '順 3' '一致' '食い違い:' '直した' '該当しない:'; do
+    echo "$common" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  r="$(triage_row_section 3)"
+  echo "$r" | grep -qF '共通一覧契約'
+  echo "$r" | grep -qF '| 軸の値 | 扱い |'
+  echo "$r" | grep -qF '共通一覧契約の対象外'
+}
+
+@test "review inventory (#355): inconsistency location and priority output fail closed on missing tables" {
+  line="$(reviewer_block | grep -F 'diff と重なる範囲で 10 行以内')"
+  echo "$line" | grep -qF '食い違い'
+  echo "$line" | grep -qF 'diff 外'
+  echo "$line" | grep -qF '2 か所'
+  priority="$(awk '/^\*\*Codex が優先度付きの形で返したときの読み替え\*\*/{f=1} f&&/^\*\*マージを止めるか/{exit} f' "$SKILL")"
+  for token in '変更点の一覧' '照合表' 'ハンク被覆' '不足したレビュアー出力' '完了扱いにしない'; do
+    echo "$priority" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
 }
 
 # --- Requirement: リスク宣言は 7 観点で判定し、新 3 観点も主のリスク許容待ちに流す（#373） ---

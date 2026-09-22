@@ -686,6 +686,18 @@ class ForegroundRequest(unittest.TestCase):
                 if phase == 'review':
                     self.assertIn('CANONICAL SOURCE skills/pr-review-gate/SKILL.md', text)
 
+    def test_review_phase_uses_gate_and_reviewer_contract_sources(self):
+        target = self.root/'review-contract.json'
+        self.call_profile('codex-standard', phase='review', out=target)
+        text = json.loads(target.read_text())['prompt']
+        self.assertIn('CANONICAL SOURCE skills/develop/references/roles/gate-runner.md', text)
+        self.assertIn('CANONICAL SOURCE skills/pr-review-gate/SKILL.md', text)
+        self.assertIn('変更点の一覧', text)
+        self.assertIn('照合表', text)
+        self.assertIn('ハンク被覆', text)
+        self.assertIn('補足済み回数', text)
+        self.assertIn('review-incomplete', text)
+
     def test_request_file_mode_is_0600(self):
         self.call('--account-home', 'mapped=' + str(self.home))
         self.assertEqual(stat.S_IMODE(self.out.stat().st_mode), 0o600)
