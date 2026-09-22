@@ -26,7 +26,7 @@ PR #356（#354）で入れた止める指摘の仕分け表に、Codex レビュ
 ## Impact
 
 - `plugins/dev-workflow/skills/pr-review-gate/SKILL.md`: 手順 2-1 の混在の段落、順 3 の節、順 6 の節の裁定受領の文、手順 6 の保留表の「切り出しの確認」行
-- `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`: `### 保留のとき`、`### needs-decider のとき`、`## 再開` の「W の修正後の再レビュー」（順 3 の照合）・「保留の解除」・「決める役の裁定受領」
+- `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`: `### 保留のとき`、`### needs-decider のとき`、`## 再開` の「W の修正後の再レビュー」（順 3 の照合）・「レビュアーの要約受領」（混在で保留だけを先に返す）・「保留の解除」・「決める役の裁定受領」
 - `plugins/dev-workflow/skills/develop/references/roles/worker.md`: 順 3 の一覧の段落（修正前 SHA を記録すること。書式は SKILL.md 順 3 を参照）
 - `plugins/dev-workflow/skills/develop/SKILL.md`: (4) の `needs-decider` の行
 - `openspec/specs/dev-workflow-pr-review-gate/spec.md` と `openspec/specs/dev-workflow-develop/spec.md`（archive 時に delta を反映）
