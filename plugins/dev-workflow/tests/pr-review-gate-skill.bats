@@ -743,3 +743,52 @@ triage_row_section() {
   [ "$(echo "$row" | grep -c '未処理の順 6')" -eq 2 ] || { echo "$row"; return 1; }
   echo "$row" | grep -qF '`agent-review:failed` を付けずに Status `needs-decider` で return'
 }
+
+# --- Requirement: リスク宣言は 7 観点で判定し、新 3 観点も主のリスク許容待ちに流す（#373） ---
+
+# 手順 3 の本文（`### 3. リスク宣言` から `#### 3-b.` の直前まで）
+step3_body() {
+  awk '/^### 3\. リスク宣言/{f=1} /^#### 3-b\./{f=0} f' "$SKILL"
+}
+
+@test "risk (#373): the 'no risk' boilerplate names all 7 viewpoints" {
+  line="$(step3_body | grep '^リスクなし — ')"
+  [ "$(echo "$line" | wc -l | tr -d ' ')" -eq 1 ] || { echo "$line"; return 1; }
+  for w in 'プロダクトのユーザーに及ぶ影響' 'データ喪失' '課金/法務' '外部公開面の変化' \
+           '資格情報' '安全ゲートの弱体化' 'エージェント権限の拡張'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
+  done
+  echo "$line" | grep -qF 'いずれも無い'
+}
+
+@test "risk (#373): the classification table lists the 3 new viewpoints and routes them to step 6" {
+  table="$(step3_body | grep '^| \*\*')"
+  for w in '資格情報' '安全ゲートの弱体化' 'エージェント権限の拡張'; do
+    echo "$table" | grep '^| \*\*リスクなし\*\*' | grep -qF "$w" || { echo "missing in no-risk row: $w"; return 1; }
+  done
+  echo "$table" | grep '^| \*\*主のリスク許容が必要\*\*' | grep -qF '手順6へ'
+  # 新 3 観点も needs-approval の経路に入ることが明記されている
+  step3_body | grep -F '資格情報・安全ゲートの弱体化・エージェント権限の拡張' | grep -qF 'needs-approval'
+}
+
+@test "risk (#373): the 3 new viewpoints are defined with their boundaries" {
+  body="$(step3_body)"
+  echo "$body" | grep -F '**資格情報**' | grep -qF '取得・保管・利用'
+  echo "$body" | grep -F '**安全ゲートの弱体化**' | grep -qF '厳しくする変更は当たらない'
+  def="$(echo "$body" | grep -F '**エージェント権限の拡張**')"
+  echo "$def" | grep -qF '権限'
+  echo "$def" | grep -qF '外部サービス'
+  echo "$def" | grep -qF '書き込み先'
+}
+
+@test "risk (#373): the approval-needed template asks which viewpoint applies" {
+  step3_body | grep -qF -- '- 該当する観点: '
+}
+
+@test "risk (#373): both templates keep line 1 heading and line 2 target HEAD" {
+  blocks="$(step3_body | awk '/^```$/{if(f){f=0; n++} else {f=1; l=0}; next} f{l++; if(l<=2) print n": "l": "$0}')"
+  [ "$(echo "$blocks" | grep -c '^[0-9]*: 1: ## リスク宣言$')" -eq 2 ] || { echo "$blocks"; return 1; }
+  [ "$(echo "$blocks" | grep -c '^[0-9]*: 2: 対象 HEAD: <\$HEAD_SHA 40桁フル>$')" -eq 2 ] || { echo "$blocks"; return 1; }
+  # 雛形の実際の位置に合わせ、必須の説明も 2 行目と書く
+  step3_body | grep -qF '2 行目の `対象 HEAD:` は必須'
+}
