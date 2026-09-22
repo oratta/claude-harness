@@ -10,6 +10,7 @@ setup() {
   mkdir -p "$REPO/changed" "$REPO/other"
   printf 'needle one\n' > "$REPO/changed/a.txt"
   printf 'needle two\n' > "$REPO/other/b.txt"
+  printf '    needle | three  \n' > "$REPO/other/c.txt"
   git -C "$REPO" add .
   git -C "$REPO" commit -qm initial
   SHA="$(git -C "$REPO" rev-parse HEAD)"
@@ -24,6 +25,7 @@ write_table() {
     printf '|---|---:|---|---|\n'
     printf '| changed/a.txt | 1 | needle one | %s |\n' "$handling_a"
     printf '| other/b.txt | 1 | needle two | %s |\n' "$handling_b"
+    printf '| other/c.txt | 1 | `    needle \\| three  ` | 一致 |\n'
   } > "$REPO/table.md"
 }
 
@@ -61,6 +63,33 @@ write_table() {
 
   write_table
   sed -i.bak 's/<rev> -- \./<rev> -- . :(exclude)other/' "$REPO/table.md"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'* ]]
+}
+
+@test "review hit set (#355): escaped pipes and significant body whitespace are reversible" {
+  write_table
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "review hit set (#355): repo must be the repository root" {
+  write_table
+  run python3 "$CHECKER" --repo "$REPO/changed" "$REPO/table.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'*repository*root* ]]
+}
+
+@test "review hit set (#355): grep options that reduce hit scope or count are rejected" {
+  write_table
+  sed -i.bak 's/git grep -n needle/git grep -n --max-count=1 needle/' "$REPO/table.md"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'* ]]
+
+  write_table
+  sed -i.bak 's/git grep -n needle/git grep -n --max-depth=0 needle/' "$REPO/table.md"
   run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
   [ "$status" -eq 1 ]
   [[ "$output" == *'contract:'* ]]

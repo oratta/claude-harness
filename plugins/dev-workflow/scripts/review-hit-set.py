@@ -11,6 +11,10 @@ import sys
 
 SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 HEADER = ("ファイル", "行（修正前 SHA）", "ヒットした行の本文", "扱い")
+SAFE_FLAGS = {"-F", "--fixed-strings", "-E", "--extended-regexp", "-G",
+              "--basic-regexp", "-P", "--perl-regexp", "-i", "--ignore-case",
+              "-w", "--word-regexp", "-I", "--text", "--and", "--or", "--not",
+              "(", ")"}
 
 
 class ContractError(ValueError):
@@ -24,10 +28,41 @@ def field(lines, prefix):
     return matches[0]
 
 
+def split_markdown_row(line):
+    cells = []
+    current = []
+    escaped = False
+    for char in line.strip()[1:-1]:
+        if escaped:
+            current.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+            current.append(char)
+        elif char == "|":
+            cells.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    if escaped:
+        current.append("\\")
+    cells.append("".join(current))
+    return cells
+
+
+def decode_cell(cell, *, preserve=False):
+    value = cell.strip()
+    if preserve and len(value) >= 2 and value.startswith("`") and value.endswith("`"):
+        value = value[1:-1]
+    return value.replace("\\|", "|")
+
+
 def parse_table(lines):
     header_index = None
     for index, line in enumerate(lines):
-        cells = tuple(cell.strip() for cell in line.strip().strip("|").split("|"))
+        if not line.strip().startswith("|") or not line.strip().endswith("|"):
+            continue
+        cells = tuple(decode_cell(cell) for cell in split_markdown_row(line))
         if cells == HEADER:
             header_index = index
             break
@@ -40,12 +75,15 @@ def parse_table(lines):
             if hits:
                 break
             continue
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        cells = split_markdown_row(line)
         if len(cells) != 4:
             raise ContractError("every hit row must have four columns")
         if all(re.fullmatch(r":?-+:?", cell) for cell in cells):
             continue
-        path, line_number, body, _handling = cells
+        path = decode_cell(cells[0])
+        line_number = decode_cell(cells[1])
+        body = decode_cell(cells[2], preserve=True)
+        _handling = decode_cell(cells[3])
         if not path or not line_number.isdigit() or not body:
             raise ContractError("hit rows require path, numeric line, and body")
         hits.add((path, int(line_number), body))
@@ -64,7 +102,36 @@ def parse_command(command, sha):
     search = tokens[3:-3]
     if not search:
         raise ContractError("search term is required")
+    has_pattern = False
+    index = 0
+    while index < len(search):
+        token = search[index]
+        if token in ("-e", "--regexp"):
+            index += 1
+            if index >= len(search) or not search[index]:
+                raise ContractError("-e/--regexp requires a pattern")
+            has_pattern = True
+        elif token in SAFE_FLAGS:
+            pass
+        elif token.startswith("-"):
+            raise ContractError(f"search option is not allowed: {token}")
+        else:
+            has_pattern = True
+        index += 1
+    if not has_pattern:
+        raise ContractError("search term is required")
     return ["git", "grep", "-n", *search, sha, "--", "."]
+
+
+def repository_root(repo):
+    result = subprocess.run(["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
+                            text=True, capture_output=True)
+    if result.returncode:
+        raise ContractError("--repo must be a Git repository root")
+    root = Path(result.stdout.strip()).resolve()
+    if root != repo.resolve():
+        raise ContractError("--repo must be the repository root")
+    return root
 
 
 def actual_hits(repo, command):
@@ -93,7 +160,7 @@ def main():
         raise ContractError("修正前 SHA must be a full 40-digit SHA")
     command = parse_command(field(lines, "検索コマンド:"), sha)
     expected = parse_table(lines)
-    actual = actual_hits(args.repo.resolve(), command)
+    actual = actual_hits(repository_root(args.repo), command)
     for path, number, _body in sorted(actual - expected):
         print(f"missing: {path}:{number}")
     for path, number, _body in sorted(expected - actual):

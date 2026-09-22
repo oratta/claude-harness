@@ -29,7 +29,7 @@
 
 - [x] 4.1 `plugins/dev-workflow/references/subagent-waiting.md` と gate-runner.md の needs-reviewer payload が、三表を含む SKILL.md 手順 2-1 のレビュアー向け指示ブロックを参照することを確認し、足りない参照だけを更新する（表の定義は再掲しない）
 - [x] 4.2 `plugins/dev-workflow/references/codex-develop.md` と `plugins/dev-workflow/scripts/codex-develop.py` の review phase が gate-runner.md と pr-review-gate SKILL.md を fresh reviewer に渡すことを確認する。補足目的では固定 HEAD・元の三表・残差・補足済み回数を渡し、fresh thread でも同じレビューの不足分だけを補い、`review-incomplete` では新しい review phase を開始しない契約を、テストが示す欠落箇所へ追加する
-- [ ] 4.3 待ち方の正本と既存の不可条件に従い、レビュアー向け指示ブロックを渡した `codex exec` を 1 回実測し、三表が出たか、出なければ実際の出力形と欠けた表（実測不能なら実測した不可条件）を記録する
+- [x] 4.3 待ち方の正本と既存の不可条件に従い、レビュアー向け指示ブロックを渡した `codex exec` を 1 回実測し、三表が出たか、出なければ実際の出力形と欠けた表（実測不能なら実測した不可条件）を記録する
 - [ ] 4.4 (3b) で 4.3 の実測結果を PR コメントへ投稿し、そのコメント URL を動作確認証拠に含める
 
 ## 5. 検証・仕様・版
@@ -38,5 +38,5 @@
 - [ ] 5.2 `python3 -m unittest plugins/dev-workflow/tests/test_codex_develop.py` を実行し、exit 0 を確認する
 - [ ] 5.3 `bash scripts/test.sh` を実行し、`tests/injection-budget.bats` を含む全件が exit 0 になることを確認する
 - [ ] 5.4 `openspec validate review-change-inventory --strict` と `openspec validate --specs --strict` を実行し、どちらも exit 0 になることを確認する
-- [ ] 5.5 `origin/main` と open PR の version 変更を確認してから、`plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow version を 1 つ上げ、`plugins/dev-workflow/CHANGELOG.md` に三表・機械照合・四分類を記録する
+- [x] 5.5 `origin/main` と open PR の version 変更を確認してから、`plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow version を 1 つ上げ、`plugins/dev-workflow/CHANGELOG.md` に三表・機械照合・四分類を記録する
 - [ ] 5.6 issue #355 の受け入れ条件 8 件が、tasks 2.4・2.5・1.3/3.1・4.3/4.4・5.1・5.3・5.4・3.4/3.5 のいずれかに対応していることを最終確認する

@@ -618,6 +618,8 @@ extract_context_cap_section() {
     echo "$common" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
   echo "$common" | grep -qF '停止判定と仕分け順を変えない'
+  echo "$common" | grep -qF '仕分けの PR コメントにも記録'
+  echo "$common" | grep -qF 'PR コメント URL'
 }
 
 @test "develop SKILL.md (#355): review-incomplete stops without a fresh reviewer and supplement payload is conditional" {
