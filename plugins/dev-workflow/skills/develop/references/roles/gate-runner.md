@@ -75,7 +75,7 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 ## Gate Result
 - PR: #<N>（HEAD <SHA>）
 - Status: passed | failed | 保留 | needs-reviewer | needs-decider
-- レビュー重量: light | full（実行者: Codex | Task サブエージェント <model>）
+- レビュー重量: light | full（実行者: Codex | Task サブエージェント <model> | <executor>/<model>（adapter 経路））
 - 周回: <1|2|3以降（主の回答または決める役の裁定あり）>（全体レビューにした周は「（全体レビュー: 修正差分 N 行 / 前周指摘 M 行）」を添える）
 - 仕分け（指摘を受け取ったすべての周の return で必須。Status によらず書く）: pr-review-gate 手順 2-1 の仕分け表で指摘ごとに当てた順とその根拠（順 1・2 は違反文の引用・例外 3 種のどれか（安全機構の穴・データ破壊・無言の機能不全）、または follow-up issue の URL。順 3 は集合一致で閉じた PR コメント URL。順 4 は W の記録「受け入れ条件の外・その場で直した・直し方 N 行」。順 6 の裁定を受けたら `決める役の裁定:` の内容）と、その PR コメント URL。全件を follow-up issue に切って passed で返すときもここに書く。全周共通の判定で止める指摘が残り、順 5 に当たる場合は failed ではなく保留で返す（下）
 ### passed のとき

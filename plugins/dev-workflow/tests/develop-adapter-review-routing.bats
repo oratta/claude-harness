@@ -128,3 +128,10 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   # pr-review-gate は書き分けの段落と PR コメント雛形の両方に持つ
   [ "$(grep -cF "$form" "$PRGATE")" -ge 2 ]
 }
+
+@test "develop (#385): prerequisites table Codex CLI row separates the adapter route from the legacy route" {
+  row="$(grep -F '| **Codex CLI** |' "$DEVELOP")"
+  [ -n "$row" ] || { echo "Codex CLI row missing"; return 1; }
+  echo "$row" | grep -qE 'adapter 経路.*`needs-reviewer`.*phase `review` で投げ先を選び直す'
+  echo "$row" | grep -qE '従来経路.*G が full レビューを Bash から'
+}
