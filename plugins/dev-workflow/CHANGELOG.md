@@ -1,5 +1,12 @@
 # Changelog — dev-workflow
 
+## 2.13.22 — 2026-09-22: develop の role profile を週次余裕から自動選択する
+
+- profile 未指定の各工程で Claude 起動 account と登録 Codex accounts の週次 margin を比較し、逆向き hybrid / Codex 標準 / Claude 既定構成を決定論的に選ぶ
+- `claude-write-codex-review` を追加し、Claude に書く役、Codex gpt-6-astra/high にレビューと decider を割り当てる
+- Codex App Server quota を account ごとに並行取得し、秘密・home path・生応答を含まない 0600 cache を dev-workflow 内で管理する
+- freshness 300 秒、代表 account の束縛、selection evidence と明示 profile の snapshot 非読込を契約テストで固定する
+
 ## 2.13.20 — 2026-09-22: Codex の旧台帳・継続機構を撤去し、前景実行だけを唯一の transport にする
 
 #340 で入れた前景実行経路（`codex-develop.py request` → `codex-worker.py run`）が動くようになった後も、SQLite のジョブ／所有権台帳、detached start、submit/status/result/cancel/ack/send/reap の lifecycle CLI、unknown/retry 処理、cwd ロック、account slot、run-dir と `run.json`、継続記録 v1/v2 が残っていた。永続的な進捗の置き場は issue / Draft PR と linked worktree に統一する方針（#341）に対し、使われなくなった transport のコードと文書だけが残っている状態で、`openspec/specs/codex-worker-concurrency` と `openspec/specs/codex-develop-continuation` も廃止済みの契約のままだった。

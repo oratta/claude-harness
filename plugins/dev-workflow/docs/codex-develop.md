@@ -16,9 +16,12 @@ Claudeの会話で実行する:
 /dev-workflow:develop --account spare --model <利用可能なCodexモデルID> --account-home spare=/absolute/path/to/codex-profile <issue URLまたは依頼>
 /dev-workflow:develop --profile codex-standard --account-home-file /absolute/account-homes.json <issue URLまたは依頼>
 /dev-workflow:develop --profile hybrid-standard --account-home current=/absolute/path/to/codex-profile <issue URLまたは依頼>
+/dev-workflow:develop --account-home-file /absolute/account-homes.json <issue URLまたは依頼>
 ```
 
 `--executor codex` は後方互換の別名として上の形式に追加できる。profile の Claude entry は `account=current`、model は `haiku|sonnet|opus|fable` のみとし、`fable` は `decider` role だけに指定できる。
+
+profile/旧 account/model を省略すると、各工程の開始時に fresh（age 300 秒以内）な Claude/Codex 週次使用量から `週経過率 - 使用率` を比較する。両方に余裕があれば Claude が書き Codex が検査する `claude-write-codex-review`、Codex だけに余裕があれば `codex-standard`、それ以外は Claude 既定構成になる。工程途中では切り替えず、次工程で再評価する。標準出力の selection evidence（構成、reason、margin、fetched_at、代表 Codex account）は開始コメントと dispatch 記録へ残す。明示指定時はこの読込を行わない。
 
 Claudeが既存developの進め方でworktree/記録先を準備し、仕様化判断から進める。仕様不要なら理由を記録して実装へ、必要なら仕様と独立仕様レビューを経て実装/テスト・PR・レビュー/ゲートへ進む。profile で実行先を選んでもこの判断と工程は変わらない。差戻しも該当 role の実行先へ委譲する。burnを有効化する必要はない。
 
@@ -37,7 +40,7 @@ python3 <plugin>/scripts/codex-develop.py request --phase spec --input /absolute
 python3 <plugin>/scripts/codex-worker.py run --request /absolute/private/request.json
 ```
 
-`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（どちらか一方だけ。併用・旧形式の片方欠落・どちらも無しは依頼ファイルを作らずに拒否する）。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`request` は標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・解決したrole/account/CODEX_HOME/model/effortを返す。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
+`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（明示形式どうしはどちらか一方だけ。併用・旧形式の片方欠落は拒否する）。どちらも無い場合は自動選択になる。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`request` は標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・解決したrole/account/CODEX_HOME/model/effortと selection evidence を返す。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
 
 `run` の結果JSONは `text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`。実効model/effortやIDが未観測ならnullであり、成功値を推測しない。完了は実行terminalであって品質承認ではなく、`completed` でも `error_kind` が非空なら実行成功として扱わない。review verdictと投稿を確認するのはClaude側。コマンド失敗はそこで停止し、別providerへfallbackしない。
 

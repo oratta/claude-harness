@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """Build one foreground Codex request or route a Claude role to the coordinator."""
 import argparse
+import base64
+from concurrent.futures import ThreadPoolExecutor
+import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
+import select
 import subprocess
 import sys
+import time
+import unicodedata
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +39,250 @@ comments, push, PR creation and commit yourself here, and do not return needs-co
 them. The coordinator performs only operations already recorded as ones it could not align.'''
 READER_TRANSPORT = '''This worker is read-only: never write to GitHub, push, or commit. Return the review verdict and
 its evidence; the coordinator posts it on your behalf, then starts a fresh phase with it.'''
+FRESH_SECONDS = 300
+WEEK_SECONDS = 604800
+
+
+def _service_name(securestorage):
+    if not securestorage:
+        return 'Claude Code-credentials'
+    value = unicodedata.normalize('NFC', securestorage).encode()
+    return 'Claude Code-credentials-' + hashlib.sha256(value).hexdigest()[:8]
+
+
+def usage_margin(snapshot, now, *, codex=False):
+    """Return the unrounded weekly margin, or None for missing/unsafe input."""
+    if not isinstance(snapshot, dict) or type(snapshot.get('fetched_at')) is not int:
+        return None
+    age = now - snapshot['fetched_at']
+    if age < 0 or age > FRESH_SECONDS:
+        return None
+    if codex:
+        windows = snapshot.get('windows')
+        if not isinstance(windows, list):
+            return None
+        weekly = [item for item in windows if isinstance(item, dict) and
+                  item.get('minutes') == 10080]
+        if not weekly:
+            return None
+        value = weekly[0]
+        used, reset = value.get('used_percent'), value.get('reset_at')
+    else:
+        used, reset = snapshot.get('weekly_all_pct'), snapshot.get('weekly_resets_epoch')
+    if (type(used) not in (int, float) or not math.isfinite(used) or not 0 <= used <= 100 or
+            type(reset) is not int or not now < reset <= now + WEEK_SECONDS):
+        return None
+    elapsed = 100 * (1 - (reset - now) / WEEK_SECONDS)
+    return elapsed - used
+
+
+def claude_usage_evidence(snapshot, now):
+    accounts = snapshot.get('accounts') if isinstance(snapshot, dict) else None
+    accounts = accounts if isinstance(accounts, dict) else {}
+    active = None
+    wanted = _service_name(os.environ.get('CLAUDE_SECURESTORAGE_CONFIG_DIR', ''))
+    for name, entry in accounts.items():
+        if isinstance(entry, dict) and _service_name(entry.get('securestorage')) == wanted:
+            active = name
+            break
+    if active is None and isinstance(snapshot, dict) and snapshot.get('active') in accounts:
+        active = snapshot['active']
+    if active is None and accounts:
+        active = next(iter(accounts))
+    entry = accounts.get(active) if active is not None else None
+    margin = usage_margin(entry, now) if entry is not None else None
+    return {'account': active, 'margin': margin,
+            'fetched_at': entry.get('fetched_at') if isinstance(entry, dict) else None}
+
+
+def select_configuration(claude_margin, codex_margin):
+    claude_ok, codex_ok = (claude_margin is not None and claude_margin >= 0,
+                           codex_margin is not None and codex_margin >= 0)
+    if claude_ok and codex_ok:
+        return 'claude-write-codex-review', 'both-providers-have-headroom'
+    if not claude_ok and codex_ok:
+        return 'codex-standard', 'only-codex-has-headroom'
+    if claude_ok:
+        return 'claude-default', 'only-claude-has-headroom'
+    return 'claude-default', 'no-provider-has-headroom'
+
+
+def _auth_identity(home):
+    raw = json.loads((Path(home) / 'auth.json').read_text())
+    tokens = raw.get('tokens') or {}
+    parts = tokens.get('id_token', '').split('.')
+    if len(parts) != 3 or not tokens.get('account_id'):
+        raise RuntimeError('Codex identity is unavailable')
+    claims = json.loads(base64.urlsafe_b64decode(parts[1] + '=' * (-len(parts[1]) % 4)))
+    email = claims.get('email')
+    if not isinstance(email, str) or not email:
+        raise RuntimeError('Codex identity is unavailable')
+    return {'email_hash': hashlib.sha256(email.strip().lower().encode()).hexdigest(),
+            'account_id_hash': hashlib.sha256(tokens['account_id'].encode()).hexdigest()}
+
+
+def _rpc_requests(home, requests, timeout=15):
+    env = clean_env() | {'CODEX_HOME': home}
+    proc = subprocess.Popen(['codex', 'app-server', '-c', 'model_provider="openai"'],
+        env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, bufsize=1)
+    results = []
+    try:
+        for number, (method, params) in enumerate(requests, 1):
+            proc.stdin.write(json.dumps({'id': number, 'method': method, 'params': params}) + '\n')
+            proc.stdin.flush()
+            deadline = time.monotonic() + timeout
+            while True:
+                wait = deadline - time.monotonic()
+                if wait <= 0 or not select.select([proc.stdout], [], [], max(0, wait))[0]:
+                    raise RuntimeError('Codex quota RPC timed out')
+                message = json.loads(proc.stdout.readline())
+                if message.get('id') != number or 'method' in message:
+                    continue
+                if message.get('error'):
+                    raise RuntimeError('Codex quota RPC was rejected')
+                results.append(message.get('result') or {})
+                if method == 'initialize':
+                    proc.stdin.write(json.dumps({'method': 'initialized', 'params': {}}) + '\n')
+                    proc.stdin.flush()
+                break
+        return results
+    finally:
+        try:
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+        try:
+            proc.terminate(); proc.wait(timeout=2)
+        except (OSError, subprocess.TimeoutExpired):
+            proc.kill(); proc.wait()
+
+
+def _quota_windows(result):
+    buckets = result.get('rateLimitsByLimitId')
+    values = list(buckets.values()) if isinstance(buckets, dict) else [result.get('rateLimits')]
+    windows = []
+    for bucket in values:
+        if not isinstance(bucket, dict):
+            continue
+        for name in ('primary', 'secondary'):
+            value = bucket.get(name)
+            if not isinstance(value, dict):
+                continue
+            windows.append({'minutes': value.get('windowDurationMins'),
+                            'used_percent': value.get('usedPercent'),
+                            'reset_at': value.get('resetsAt')})
+    return windows
+
+
+def probe_codex_account(home):
+    identity = _auth_identity(home)
+    initialized, observed, limits = _rpc_requests(home, [
+        ('initialize', {'clientInfo': {'name': 'develop-quota', 'version': '1'}}),
+        ('account/read', {'refreshToken': False}),
+        ('account/rateLimits/read', {}),
+    ])
+    del initialized
+    account = observed.get('account') or {}
+    email = account.get('email')
+    if (account.get('type') != 'chatgpt' or not isinstance(email, str) or
+            hashlib.sha256(email.strip().lower().encode()).hexdigest() != identity['email_hash']):
+        raise RuntimeError('Codex server identity mismatch')
+    windows = _quota_windows(limits)
+    if not windows:
+        raise RuntimeError('Codex weekly quota is unavailable')
+    return {'identity': identity, 'windows': windows}
+
+
+def _cache_path(config_dir, home):
+    digest = hashlib.sha256(str(Path(home).resolve()).encode()).hexdigest()
+    return Path(config_dir) / 'codex-usage' / (digest + '.json')
+
+
+def _update_codex_cache(name, home, config_dir, now):
+    path = _cache_path(config_dir, home)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+    lock_path = path.with_suffix('.lock')
+    lock_path.touch(mode=0o600, exist_ok=True); os.chmod(lock_path, 0o600)
+    with lock_path.open('r+') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        previous = None
+        try:
+            previous = json.loads(path.read_text())
+        except (OSError, ValueError):
+            pass
+        if previous is not None:
+            try:
+                if previous.get('identity') != _auth_identity(home):
+                    previous = None
+            except (OSError, ValueError, RuntimeError, KeyError):
+                previous = None
+        try:
+            result = probe_codex_account(home)
+            value = {'version': 1, 'identity': result['identity'],
+                     'fetched_at': now, 'windows': result['windows']}
+            write(path, value)
+        except Exception:
+            value = previous
+        return name, value
+
+
+def read_codex_usages(mapping, config_dir, now):
+    with ThreadPoolExecutor(max_workers=max(1, len(mapping))) as pool:
+        futures = [pool.submit(_update_codex_cache, name, home, config_dir, now)
+                   for name, home in mapping.items()]
+        values = dict(future.result() for future in futures)
+    return {name: values.get(name) for name in mapping}
+
+
+def automatic_selection(mapping, now=None):
+    now = int(time.time()) if now is None else now
+    config_dir = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude'))
+    snapshot_path = Path(os.environ.get('USAGE_SNAPSHOT', config_dir / '.usage-snapshot'))
+    try:
+        snapshot = json.loads(snapshot_path.read_text())
+    except (OSError, ValueError):
+        snapshot = {}
+    claude = claude_usage_evidence(snapshot, now)
+    usages = read_codex_usages(mapping, str(config_dir), now) if mapping else {}
+    candidates = []
+    for order, (name, value) in enumerate(usages.items()):
+        margin = usage_margin(value, now, codex=True)
+        if margin is not None:
+            candidates.append((margin, -order, name, value))
+    best = max(candidates) if candidates else None
+    codex = {'account': best[2] if best else None, 'margin': best[0] if best else None,
+             'fetched_at': best[3].get('fetched_at') if best else None}
+    selected, reason = select_configuration(claude['margin'], codex['margin'])
+    return selected, {'selection_mode': 'automatic', 'configuration': selected,
+        'reason': reason,
+        'claude': {'account': claude['account'], 'margin': claude['margin'],
+                   'fetched_at': claude['fetched_at']},
+        'codex': {'account': codex['account'], 'margin': codex['margin'],
+                  'fetched_at': codex['fetched_at']}}
+
+
+def bind_codex_account(config, account, accounts):
+    if account is None:
+        return config
+    roles = {}
+    for role, entry in config['roles'].items():
+        roles[role] = dict(entry, account=account) if entry['executor'] == 'codex' else dict(entry)
+        validate_role_entry(role, roles[role], accounts, source='automatic profile role')
+    bound = {'version': 1, 'profile': config['profile'], 'roles': roles}
+    if bound['roles']['review'] != bound['roles']['impl-review']:
+        raise RuntimeError('profile review must equal impl-review')
+    return bound
+
+
+def claude_default(role):
+    model = ('haiku' if role in {'explore', 'summarize'} else
+             'fable' if role == 'decider' else
+             'opus' if role in {'spec-review', 'impl-review', 'review'} else 'sonnet')
+    effort = 'low' if model == 'haiku' else 'high' if model in {'opus', 'fable'} else 'medium'
+    return {'role': role, 'executor': 'claude', 'account': 'current',
+            'model': model, 'effort': effort}
 
 
 def _unique_object(pairs):
@@ -212,8 +463,6 @@ def build_request(args):
         raise RuntimeError('profile cannot be combined with account/model; profile-file requires profile')
     if legacy and not (args.account and args.model):
         raise RuntimeError('legacy request requires both account and model')
-    if not legacy and not args.profile:
-        raise RuntimeError('request requires account/model or profile')
     mapping = account_homes(args.account_home, args.account_home_file)
     cwd = Path(args.cwd).expanduser().resolve()
     if not cwd.is_dir():
@@ -221,24 +470,43 @@ def build_request(args):
     check = subprocess.run(['git', '-C', str(cwd), 'rev-parse', '--show-toplevel'], capture_output=True, text=True, env=clean_env())
     if check.returncode or Path(check.stdout.strip()).resolve() != cwd:
         raise RuntimeError('cwd must be the repository/worktree root')
+    selection = None
     if args.profile:
         config = load_profile(args.profile, args.profile_file, set(mapping))
         state = {'cwd': str(cwd), 'execution_config': config,
                  'execution_config_hash': execution_config_hash(config)}
-    else:
+        selection = {'selection_mode': 'explicit', 'configuration': args.profile,
+                     'reason': 'explicit-profile'}
+    elif legacy:
         # load_profile refuses an account the table does not map; the legacy pair names one
         # account directly, so the same refusal has to be made here.
         if args.account not in mapping:
             raise RuntimeError('account is not in the account-home table')
         state = {'cwd': str(cwd), 'account': args.account, 'model': args.model}
+        selection = {'selection_mode': 'explicit', 'configuration': 'legacy',
+                     'reason': 'explicit-account-model'}
+    else:
+        selected, selection = automatic_selection(mapping)
+        if selected == 'claude-default':
+            state = {'cwd': str(cwd), 'automatic_claude_default': True}
+        else:
+            config = load_profile(selected, None, set(mapping))
+            config = bind_codex_account(config, selection['codex']['account'], set(mapping))
+            state = {'cwd': str(cwd), 'execution_config': config,
+                     'execution_config_hash': execution_config_hash(config)}
     role = PHASES[args.phase][0]
-    execution = resolve_execution(state, role)
+    execution = (claude_default(role) if state.get('automatic_claude_default') else
+                 resolve_execution(state, role))
     head = git(str(cwd), 'rev-parse', 'HEAD')
     if execution['executor'] == 'claude':
-        return {'status': 'agent-required', 'phase': args.phase, 'role': role,
+        result = {'status': 'agent-required', 'phase': args.phase, 'role': role,
                 'executor': execution['executor'], 'account': execution['account'],
                 'model': execution['model'], 'effort': execution.get('effort'),
-                'head': head}
+                'head': head, 'selection': selection}
+        if 'execution_config' in state:
+            result.update(execution_config=state['execution_config'],
+                          execution_config_hash=state['execution_config_hash'])
+        return result
     request = dict(request_id='develop-' + uuid.uuid4().hex, origin='manual',
                    account=execution['account'], model=execution['model'], cwd=str(cwd), role=role,
                    codex_home=mapping[execution['account']],
@@ -249,11 +517,15 @@ def build_request(args):
         request['quota_margin_pct'] = args.quota_margin_pct
     out = Path(args.out).expanduser().resolve()
     write(out, request)
-    return {'status': 'request-written', 'request': str(out), 'request_id': request['request_id'],
+    result = {'status': 'request-written', 'request': str(out), 'request_id': request['request_id'],
             'phase': args.phase, 'role': role, 'executor': execution['executor'],
             'account': execution['account'],
             'codex_home': request['codex_home'], 'model': execution['model'],
-            'effort': execution.get('effort'), 'head': head}
+            'effort': execution.get('effort'), 'head': head, 'selection': selection}
+    if 'execution_config' in state:
+        result.update(execution_config=state['execution_config'],
+                      execution_config_hash=state['execution_config_hash'])
+    return result
 
 
 def main():
