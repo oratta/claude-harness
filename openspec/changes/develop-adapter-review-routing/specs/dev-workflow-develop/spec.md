@@ -47,7 +47,7 @@ develop の本体は、(4) で G を起動する指示・再開する指示・�
 
 本体は選び直しと記録の前にレビュアーを起動してはならない（MUST NOT）。従来経路（`レビュー経路: 従来` または行が無い G）が `needs-reviewer` を返したときに呼び出し元がレビュアーを起こす手順（`gate-runner.md` の既存記述）は変えてはならない（MUST NOT）。
 
-`gate-runner.md` と `pr-review-gate/SKILL.md` は、adapter 経路で要約を受け取った G の「レビュー実行者:」コメントの形 `レビュー実行者: <executor>/<model>（adapter 経路・dispatch 記録: <URL>）` を持たなければならない（MUST）。`pr-review-gate/SKILL.md` の「レビュー実行者:」の書き分けと PR コメント雛形にこの 1 形を足し、gate-runner.md と正本が食い違わないようにしなければならない（MUST）。
+`gate-runner.md` と `pr-review-gate/SKILL.md` は、adapter 経路で要約を受け取った G の「レビュー実行者:」コメントの形 `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` を持たなければならない（MUST）。`<light|full>` には手順 2-0 の判定を書く。`pr-review-gate/SKILL.md` の「レビュー実行者:」の書き分けと PR コメント雛形にこの 1 形を足し、gate-runner.md と正本が食い違わないようにしなければならない（MUST）。
 
 #### Scenario: claude-default が選ばれる
 - **WHEN** adapter 経路（自動選択）で G が `needs-reviewer` を返し、`request --phase review` が構成 `claude-default`・executor `claude`・model `opus` を返す
@@ -59,7 +59,7 @@ develop の本体は、(4) で G を起動する指示・再開する指示・�
 
 #### Scenario: G がレビュー実行者を記録する
 - **WHEN** adapter 経路の G が本体からレビュー要約と executor / model・dispatch 記録の URL を受け取る
-- **THEN** G は `レビュー実行者: <executor>/<model>（adapter 経路・dispatch 記録: <URL>）` の PR コメントを投稿し、その形は `pr-review-gate/SKILL.md` の雛形にもある
+- **THEN** G は `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` の PR コメントを投稿し、その形は `pr-review-gate/SKILL.md` の雛形にもある
 
 #### Scenario: 回帰テスト
 - **WHEN** `bash scripts/test.sh` を実行する

@@ -1,6 +1,6 @@
 ## Context
 
-develop の本体は、実行先を 3 通りで決める: 自動選択（profile も旧形式も無指定）、明示 profile（`--profile NAME [--profile-file PATH]`）、旧形式（`--account NAME --model MODEL`）。どれも adapter（`scripts/codex-develop.py request`）で canonical role の投げ先を解決する。この 3 通りをまとめて「adapter 経路」と呼ぶ。adapter が導入される前の、本体が Agent ツールで各役割を直接起こし G が Codex を直接呼ぶ流れを「従来経路」と呼ぶ。
+develop の本体は、実行先を 3 通りで決める: 自動選択（profile も旧形式も無指定）、明示 profile（`--profile NAME [--profile-file PATH]`）、旧形式（`--account NAME --model MODEL`）。どれも adapter（`scripts/codex-develop.py request`）で canonical role の投げ先を解決する。この 3 通りをまとめて「adapter 経路」と呼ぶ。develop 本体以外の呼び出し元が G を起こす流れ（adapter 導入前の develop と同じ動きで、full は G が Codex を直接呼ぶ）を「従来経路」と呼ぶ。
 
 PR レビューは canonical phase `review`（role `impl-review`）に対応し、adapter 経路では構成ごとに投げ先が違う（例: `claude-default` では executor `claude` / model `opus`、`claude-write-codex-review` では Codex）。しかし G の指示書 `gate-runner.md` は full レビューの実行者を「G の Bash から Codex を直接」と固定しており、adapter 経路の規則（`codex-develop.md`「品質と transport 差分」の G の項）は G の読む範囲に無い。
 
@@ -37,7 +37,7 @@ develop の本体は、(4) で G を起動する指示（spawn 時）・再開�
 
 G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから返す。payload の `判定` に `full（adapter 経路）` を足す。`選んだ経路`・`実行コマンド`・`終了コード`・`出力の要点`・`実待ち時間` はすべて `未実行（adapter 経路）` と書き、Codex の証拠を作らない（既存の bats がこれらの欄名を固定しているので、欄は残して値だけを決める）。Codex 不可の実測（バイナリ探索・起動）は行わない（投げ先を決めるのは本体の選び直しなので、G が Codex を試す意味が無い）。`推奨モデル` は adapter 経路では参考値で、実際の投げ先は本体の選び直しが決める。
 
-「レビュー実行者:」の PR コメントは、要約を受け取った G が今までどおり投稿する。adapter 経路では `レビュー実行者: <executor>/<model>（adapter 経路・dispatch 記録: <URL>）` とし、本体から渡された executor / model と dispatch 記録のコメント URL を写す。gate-runner.md は `pr-review-gate/SKILL.md` を正本と宣言しており、正本の「レビュー実行者:」の書き分け（Task サブエージェントの 2 形）と PR コメント雛形は形を限定しているので、この 1 形を正本側にも足して食い違いを作らない。
+「レビュー実行者:」の PR コメントは、要約を受け取った G が今までどおり投稿する。adapter 経路では `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` とし、本体から渡された executor / model と dispatch 記録のコメント URL を写し、`<light|full>` には手順 2-0 の判定を書く。重量は 2-0 の `レビュー重量:` コメントと二重に残る（片方だけ読んだ読み手のため）。gate-runner.md は `pr-review-gate/SKILL.md` を正本と宣言しており、正本の「レビュー実行者:」の書き分け（Task サブエージェントの 2 形）と PR コメント雛形は形を限定しているので、この 1 形を正本側にも足して食い違いを作らない。
 
 ### 本体の手順（(4) の needs-reviewer）
 
