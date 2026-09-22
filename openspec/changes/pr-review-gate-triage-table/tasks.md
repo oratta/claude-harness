@@ -18,11 +18,11 @@
 
 ## 3. G と W の指示書を揃える
 
-- [ ] 3.1 `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` の `## Gate Result` に Status `needs-decider` を足し、仕分け欄を「指摘を受け取ったすべての周で、指摘ごとに当てた順（順 4 は記録の文面）と PR コメント URL」にし、`### 保留のとき` の 2 周目キャップ行を「切り出しの確認: 順 5 の 4 点」に置き換える。`needs-decider` のときに本体へ渡すもの（同じ型の指摘と前の周の指摘、裁定を返す先）を書く
-- [ ] 3.2 同ファイルの `## 再開` の「W の修正後の再レビュー」の 3 周目の条件を主の回答または決める役の裁定に、「レビュアーの要約受領」の分岐を仕分け表への参照（周の数に関係なく、順 2〜4 は failed・順 5 は保留・順 6 は `needs-decider`）に、「保留の解除」を切り出しの確認への回答（切り出す／この PR で直す）に書き換え、決める役の裁定を受け取ったときの再開の行（`決める役の裁定:` の PR コメントを残し、回数は再開時に PR コメントから数える）を足す
-- [ ] 3.3 `plugins/dev-workflow/skills/develop/references/roles/worker.md` に、順 3 で W が PR コメントに投稿する表（検索コマンド、全ヒットごとの「直した／該当しない理由」）と、投稿してから push する順序を足す（書式の正本は SKILL.md 順 3 と書いて参照する）。(3a) の return に書くことに、順 4 で直したときの「受け入れ条件の外・その場で直した・直し方 N 行」の記録を足す
+- [x] 3.1 `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` の `## Gate Result` に Status `needs-decider` を足し、仕分け欄を「指摘を受け取ったすべての周で、指摘ごとに当てた順（順 4 は記録の文面）と PR コメント URL」にし、`### 保留のとき` の 2 周目キャップ行を「切り出しの確認: 順 5 の 4 点」に置き換える。`needs-decider` のときに本体へ渡すもの（同じ型の指摘と前の周の指摘、裁定を返す先）を書く
+- [x] 3.2 同ファイルの `## 再開` の「W の修正後の再レビュー」の 3 周目の条件を主の回答または決める役の裁定に、「レビュアーの要約受領」の分岐を仕分け表への参照（周の数に関係なく、順 2〜4 は failed・順 5 は保留・順 6 は `needs-decider`）に、「保留の解除」を切り出しの確認への回答（切り出す／この PR で直す）に書き換え、決める役の裁定を受け取ったときの再開の行（`決める役の裁定:` の PR コメントを残し、回数は再開時に PR コメントから数える）を足す
+- [x] 3.3 `plugins/dev-workflow/skills/develop/references/roles/worker.md` に、順 3 で W が PR コメントに投稿する表（検索コマンド、全ヒットごとの「直した／該当しない理由」）と、投稿してから push する順序を足す（書式の正本は SKILL.md 順 3 と書いて参照する）。(3a) の return に書くことに、順 4 で直したときの「受け入れ条件の外・その場で直した・直し方 N 行」の記録を足す
 
-- [ ] 3.4 `plugins/dev-workflow/skills/develop/SKILL.md` (4) の G の return 一覧に `needs-decider` を足し、`needs-decider` の行を足す: 本体が `dev-workflow:decider` を残量モードどおりのモデルで起こし、入力に同じ型の指摘と前の周の指摘の原文・対象ファイルのパス・G の仕分け欄を貼り、「可否と根拠」の契約で「この PR の中で同じ型を全部列挙してから直すべきか（可）、切り出すべきか（否）」を問い、可否を方式に読み替えて根拠とともに SendMessage で G に返す。行に「順 6 の依頼はマージ可否と同じ可否と根拠の形で問う」と書く。本体は裁定を代理投稿しない（G が記録する）ことを書き、本体がやることの節の「decider の return は本体が代理投稿する」一般則にもこの例外を一言足す。`plugins/dev-workflow/agents/decider.md` は変えない
+- [x] 3.4 `plugins/dev-workflow/skills/develop/SKILL.md` (4) の G の return 一覧に `needs-decider` を足し、`needs-decider` の行を足す: 本体が `dev-workflow:decider` を残量モードどおりのモデルで起こし、入力に同じ型の指摘と前の周の指摘の原文・対象ファイルのパス・G の仕分け欄を貼り、「可否と根拠」の契約で「この PR の中で同じ型を全部列挙してから直すべきか（可）、切り出すべきか（否）」を問い、可否を方式に読み替えて根拠とともに SendMessage で G に返す。行に「順 6 の依頼はマージ可否と同じ可否と根拠の形で問う」と書く。本体は裁定を代理投稿しない（G が記録する）ことを書き、本体がやることの節の「decider の return は本体が代理投稿する」一般則にもこの例外を一言足す。`plugins/dev-workflow/agents/decider.md` は変えない
 
 ## 4. 検証と版
 
