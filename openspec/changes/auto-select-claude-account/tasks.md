@@ -21,6 +21,6 @@
 
 ## 4. 全体検証
 
-- [ ] 4.1 `bats plugins/dev-workflow/tests/account-selector.bats` を実行し、exit 0 と受け入れ条件 1〜4 の通過件数を記録する。
-- [ ] 4.2 `openspec validate auto-select-claude-account --strict` を実行して exit 0 を確認する。
-- [ ] 4.3 `bash scripts/test.sh` を実行し、exit 0 を Draft PR に記録する（受け入れ条件 6）。
+- [x] 4.1 `bats plugins/dev-workflow/tests/account-selector.bats` を実行し、exit 0 と受け入れ条件 1〜4 の通過件数を記録する。
+- [x] 4.2 `openspec validate auto-select-claude-account --strict` を実行して exit 0 を確認する。
+- [x] 4.3 `bash scripts/test.sh` を実行し、exit 0 を Draft PR に記録する（受け入れ条件 6）。
