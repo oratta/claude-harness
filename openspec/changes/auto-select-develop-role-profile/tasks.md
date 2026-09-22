@@ -28,4 +28,4 @@
 
 - [x] 5.1 [AC 1-6] statusline plugin/helper を配置しないケースと旧 helper を置くケースを含め、`python3 -m unittest discover -s plugins/dev-workflow/tests -p 'test_codex_*.py'` を実行し、全ケース exit 0 を記録する。
 - [ ] 5.2 [AC 7] `/develop` を `--profile` なしで一件実行し、最初のコメントの構成・margin・fetched_at・account と各 role の実投げ先を対応付ける。
-- [ ] 5.3 [AC 8] `scripts/test.sh`、`openspec validate auto-select-develop-role-profile --strict --no-interactive`、`git diff --check` を実行し、コマンド・件数・exit code・対象 HEAD を記録する。
+- [x] 5.3 [AC 8] `scripts/test.sh`、`openspec validate auto-select-develop-role-profile --strict --no-interactive`、`git diff --check` を実行し、コマンド・件数・exit code・対象 HEAD を記録する。
