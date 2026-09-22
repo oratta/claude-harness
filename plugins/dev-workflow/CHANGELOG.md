@@ -6,6 +6,14 @@
 - 一周目照合と仕分け表の順 3 が、固定 SHA・repository-wide な `git grep ... <rev> -- .`・4 列の全ヒット表を共用するようにした。`review-hit-set.py` がヒット集合を機械照合し、Markdown の pipe と有意な空白を可逆に扱い、検索起点・件数・範囲を狭める入力を拒否する
 - G は三表の不足を 1 回だけ補足し、残差があれば terminal `review-incomplete` で停止する。二周目以降の指摘は `同じ文が複数か所`・`場合分けの漏れ`・`直したつもりで直っていない`・`直しで新しく入った` の四分類を return と PR コメントに記録する
 
+## 2.13.22 — 2026-09-22: develop の role profile を週次余裕から自動選択する
+
+- profile 未指定の各工程で Claude 起動 account と登録 Codex accounts の週次 margin を比較し、逆向き hybrid / Codex 標準 / Claude 既定構成を決定論的に選ぶ
+- `claude-write-codex-review` を追加し、Claude に書く役、Codex gpt-6-astra/high にレビューと decider を割り当てる
+- Codex App Server quota を account ごとに並行取得し、秘密・home path・生応答を含まない 0600 cache を dev-workflow 内で管理する
+- freshness 300 秒、代表 account の束縛、selection evidence と明示 profile の snapshot 非読込を契約テストで固定する
+- `/develop` の実行先オプション無指定を従来 Claude 固定ではなく phase ごとの自動選択入口に揃え、自動選択かつ account-home 無指定時だけ既存の `CODEX_HOME`（未設定なら `~/.codex`）を `current` 候補として評価する
+
 ## 2.13.21 — 2026-09-22: 仕分け表の順 3 を修正前 SHA と HEAD の 2 段で照合し、順 5 と順 6 の混在と決める役の入力不足を扱う
 
 2.13.18 の仕分け表には、#356 の Codex レビューで 3 点の穴が見つかった。順 3 は W が直したあとの HEAD で検索すると「直した」行がヒットに現れず、表と集合が一致しなかった（#357）。順 6 の依頼は `agents/decider.md` の入力契約の一部しか渡しておらず、決める役が不足を返したときの扱いが無かった（#358）。順 5 と順 6 が同じ周に残ったときの処理順が無く、主の回答待ちのまま修正に戻るか、順 5 の質問が漏れるおそれがあった（#359）。

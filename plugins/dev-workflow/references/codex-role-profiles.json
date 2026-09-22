@@ -36,6 +36,18 @@
         "explore": {"executor": "codex", "account": "current", "model": "gpt-5.6-luna", "effort": "low"},
         "summarize": {"executor": "codex", "account": "current", "model": "gpt-5.6-luna", "effort": "low"}
       }
+    },
+    "claude-write-codex-review": {
+      "roles": {
+        "spec-write": {"executor": "claude", "account": "current", "model": "sonnet", "effort": "medium"},
+        "spec-review": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "implement": {"executor": "claude", "account": "current", "model": "sonnet", "effort": "medium"},
+        "impl-review": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "review": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "decider": {"executor": "codex", "account": "current", "model": "gpt-6-astra", "effort": "high"},
+        "explore": {"executor": "claude", "account": "current", "model": "haiku", "effort": "low"},
+        "summarize": {"executor": "claude", "account": "current", "model": "haiku", "effort": "low"}
+      }
     }
   }
 }

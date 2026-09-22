@@ -617,12 +617,12 @@ class ForegroundTest(unittest.TestCase):
                          ['personal','fixture-model',str(self.home.resolve())])
         self.assertNotIn('effort',request)
 
-    def test_request_refuses_a_missing_half_or_doubled_execution_form(self):
+    def test_request_refuses_a_missing_half_or_doubled_explicit_execution_form(self):
         instructions = self.root/'form-input.txt';instructions.write_text('Do only this phase.')
         out = self.root/'form-request.json'
         base = ['request','--phase','implement','--input',str(instructions),'--cwd',str(self.cwd),
                 '--account-home','personal='+str(self.home),'--out',str(out)]
-        for extra in ([], ['--account','personal'], ['--model','fixture-model'],
+        for extra in (['--account','personal'], ['--model','fixture-model'],
                       ['--profile','codex-standard','--account','personal','--model','fixture-model'],
                       ['--profile-file',str(self.root/'profiles.json')]):
             r = self.develop(*base,*extra,code=2)

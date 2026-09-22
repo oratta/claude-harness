@@ -6,11 +6,13 @@
 
 `/dev-workflow:develop --profile hybrid-standard <issue URL または依頼>`
 
-`request` は `--profile NAME [--profile-file PATH]` か、旧形式の `--account NAME --model MODEL` のどちらか一方を取る。併用、旧形式の片方欠落、profile-file だけの指定は依頼ファイルを作らず拒否する。Version 1 profile は全 canonical role の `executor` / account / model / effort を検証し、role の設定を解決した直後に一度だけ分岐する。`claude` は要求 tuple を保持して既存の残量上限を適用した model で Agent ツールを使い、`codex` は request を作って前景コマンドを使う。事前分類に当たる R1 または G が要求したレビュアーは、対象 role の設定ではなく profile の `decider` entry（投げ先/account/model）で `subagent_type: dev-workflow:decider` として起動する。
+`request` は `--profile NAME [--profile-file PATH]`、旧形式の `--account NAME --model MODEL`、または無指定の自動選択を取る。明示 profile と旧形式の併用、旧形式の片方欠落、profile-file だけの指定は依頼ファイルを作らず拒否する。明示指定は自動選択より優先し、usage snapshot を読まない。Version 1 profile は全 canonical role の `executor` / account / model / effort を検証し、role の設定を解決した直後に一度だけ分岐する。`claude` は要求 tuple を保持して既存の残量上限を適用した model で Agent ツールを使い、`codex` は request を作って前景コマンドを使う。事前分類に当たる R1 または G が要求したレビュアーは、対象 role の設定ではなく profile の `decider` entry（投げ先/account/model）で `subagent_type: dev-workflow:decider` として起動する。
 
-組み込み profile は `codex-standard`、`codex-economy`、`hybrid-standard`。外部設定は全 canonical role を含み、Codex role の account は呼び出し側の対応表に存在し、Claude role は account=current、model は `haiku|sonnet|opus|fable`、`fable` は decider だけに指定できる必要がある。effort は両 provider で監査値として保持するが、Claude Agent の option には変換しない。歴史的な `references/codex-role-profiles.json` というファイル名は互換性のため維持するが、中身は provider-neutral な role table である。
+組み込み profile は `codex-standard`、`codex-economy`、`hybrid-standard`、`claude-write-codex-review`。外部設定は全 canonical role を含み、Codex role の account は呼び出し側の対応表に存在し、Claude role は account=current、model は `haiku|sonnet|opus|fable`、`fable` は decider だけに指定できる必要がある。effort は両 provider で監査値として保持するが、Claude Agent の option には変換しない。歴史的な `references/codex-role-profiles.json` というファイル名は互換性のため維持するが、中身は provider-neutral な role table である。
 
-account 名から CODEX_HOME への対応は `--account-home NAME=PATH` の繰り返しか、平らな JSON を `--account-home-file PATH` で与える。2方式は併用せず、値は既存の絶対ディレクトリでなければならない。profile 全体を先に検証するため、選択 role が Claude でも profile 内の Codex account はすべて対応表に必要である。対応に無い名前を既定値や別 account へ倒さない。
+無指定では各 canonical phase の開始時に Claude 起動 account と登録済み Codex accounts を再評価する。freshness は age `<=300` 秒（`>300` は欠測）で、`margin = 週経過率 - 週次使用率`。両 provider が margin 0 以上なら `claude-write-codex-review`、Codex だけなら代表 account に束縛した `codex-standard`、それ以外は Claude 既定構成を選ぶ。開始済み role は途中で切り替えない。返された selection evidence（構成、reason、両 margin / fetched_at、代表 account）を最初の開始コメントと各 dispatch 記録に残し、欠測値は `missing` と書く。
+
+account 名から CODEX_HOME への対応は `--account-home NAME=PATH` の繰り返しか、平らな JSON を `--account-home-file PATH` で与える。2方式は併用せず、値は既存の絶対ディレクトリでなければならない。profile も旧形式も対応表も無い自動選択だけは、`CODEX_HOME`（未設定なら `~/.codex`）が既存の絶対ディレクトリなら `current` の対応として評価し、存在しなければ Codex を欠測のままにする。profile 全体を先に検証するため、選択 role が Claude でも明示 profile 内の Codex account はすべて明示対応表に必要である。明示 profile・旧形式、または明示対応表に無い名前を既定値や別 account へ倒さない。
 
 account 名から CODEX_HOME への対応の導入方法は `docs/codex-develop.md` に示す。この入口は人間が手動で使うためのもので、burn 窓や cron/tick を要求しない。Codex worker の認証失敗、利用上限による拒否、権限拒否は、そのまま停止理由とする。role の投げ先を暗黙に別 provider で代行してはならない。`codex` に解決した role で Codex が失敗しても Claude へ切り替えず、`claude` に解決した role で Claude が失敗しても Codex へ切り替えない。role をどこへ投げるかを決める場所は profile だけである。
 

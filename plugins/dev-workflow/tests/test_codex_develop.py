@@ -1,5 +1,7 @@
 import importlib.util
+import base64
 import hashlib
+import io
 import json
 import os
 import re
@@ -8,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -80,6 +83,17 @@ class ForegroundRequest(unittest.TestCase):
                 '--account-home', 'mapped=' + str(self.home), '--out', str(target)]
         if profile_file:
             args.extend(['--profile-file', str(profile_file)])
+        with patch.object(sys, 'argv', args):
+            return m.main()
+
+    def call_automatic(self, *, phase='implement', accounts=('a', 'b'), out=None):
+        target = out or self.out
+        args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
+                '--cwd', str(self.cwd), '--out', str(target)]
+        for account in accounts:
+            home = self.root / ('codex-' + account)
+            home.mkdir(exist_ok=True)
+            args.extend(['--account-home', account + '=' + str(home)])
         with patch.object(sys, 'argv', args):
             return m.main()
 
@@ -260,6 +274,334 @@ class ForegroundRequest(unittest.TestCase):
             self.assertEqual(m.execution_config_hash(config), hashlib.sha256(json.dumps(
                 config, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest())
 
+    def test_reverse_hybrid_profile_resolves_every_canonical_role(self):
+        config = m.load_profile('claude-write-codex-review', None, {'current'})
+        expected = {
+            'spec-write': ('claude', 'current', 'sonnet', 'medium'),
+            'implement': ('claude', 'current', 'sonnet', 'medium'),
+            'explore': ('claude', 'current', 'haiku', 'low'),
+            'summarize': ('claude', 'current', 'haiku', 'low'),
+            'spec-review': ('codex', 'current', 'gpt-6-astra', 'high'),
+            'impl-review': ('codex', 'current', 'gpt-6-astra', 'high'),
+            'review': ('codex', 'current', 'gpt-6-astra', 'high'),
+            'decider': ('codex', 'current', 'gpt-6-astra', 'high'),
+        }
+        self.assertEqual(set(config['roles']), set(m.CANONICAL_ROLES))
+        for role, values in expected.items():
+            self.assertEqual(tuple(config['roles'][role][key]
+                                   for key in ('executor', 'account', 'model', 'effort')), values)
+
+
+    def snapshot(self, margin, *, now=2_000_000, age=0, minutes=None):
+        reset = now + 302400
+        used = 50 - margin
+        value = {'fetched_at': now - age, 'weekly_all_pct': used,
+                 'weekly_resets_epoch': reset}
+        if minutes is not None:
+            value = {'fetched_at': now - age, 'windows': [
+                {'minutes': minutes, 'used_percent': used, 'reset_at': reset}]}
+        return value
+
+    def test_selection_table_and_zero_boundary(self):
+        cases = [
+            (20, 10, 'claude-write-codex-review'),
+            (20, -5, 'claude-default'),
+            (-5, 30, 'codex-standard'),
+            (-5, -5, 'claude-default'),
+            (0, 0, 'claude-write-codex-review'),
+        ]
+        for claude, codex, expected in cases:
+            with self.subTest(claude=claude, codex=codex):
+                selected, reason = m.select_configuration(claude, codex)
+                self.assertEqual(selected, expected)
+                self.assertIsInstance(reason, str)
+
+    def test_freshness_reset_and_weekly_window_are_fail_safe(self):
+        now = 2_000_000
+        self.assertIsNotNone(m.usage_margin(self.snapshot(10, now=now, age=300), now))
+        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now, age=301), now))
+        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now) |
+                                        {'weekly_resets_epoch': now}, now))
+        self.assertIsNotNone(m.usage_margin(self.snapshot(10, now=now, age=300,
+                                                        minutes=10080), now, codex=True))
+        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now,
+                                                      minutes=300), now, codex=True))
+
+    def test_active_claude_slot_uses_launch_environment_before_snapshot_mirror(self):
+        now = 2_000_000
+        secure = '/tmp/claude-a'
+        snapshot = {'schema': 2, 'active': 'b',
+                    'fetched_at': now, 'weekly_all_pct': 0,
+                    'weekly_resets_epoch': now + 302400,
+                    'accounts': {
+                        'a': {'securestorage': secure} | self.snapshot(-5, now=now),
+                        'b': {'securestorage': None} | self.snapshot(30, now=now),
+                    }}
+        with patch.dict(os.environ, {'CLAUDE_SECURESTORAGE_CONFIG_DIR': secure}, clear=False):
+            evidence = m.claude_usage_evidence(snapshot, now)
+        self.assertEqual(evidence['account'], 'a')
+        self.assertAlmostEqual(evidence['margin'], -5)
+
+    def test_explicit_profile_never_reads_automatic_snapshots(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            cwd, home = root/'repo', root/'home'
+            cwd.mkdir(); home.mkdir()
+            subprocess.run(['git', 'init', '-q', str(cwd)], check=True)
+            subprocess.run(['git', '-C', str(cwd), '-c', 'user.name=T',
+                            '-c', 'user.email=t@example.invalid', 'commit',
+                            '--allow-empty', '-qm', 'fixture'], check=True)
+            inp, out = root/'input', root/'out'; inp.write_text('x')
+            args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(inp),
+                    '--cwd', str(cwd), '--profile', 'codex-standard',
+                    '--account-home', 'current=' + str(home), '--out', str(out)]
+            with patch.object(sys, 'argv', args), \
+                    patch.object(m, 'automatic_selection', side_effect=AssertionError('read')):
+                self.assertEqual(m.main()['status'], 'request-written')
+
+    def test_automatic_request_without_table_uses_codex_home_as_current_candidate(self):
+        target = self.root / 'automatic-env-home.json'
+        args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
+                '--cwd', str(self.cwd), '--out', str(target)]
+        selection = {'selection_mode': 'automatic', 'configuration': 'claude-default',
+                     'reason': 'only-claude-has-headroom',
+                     'claude': {'account': 'active', 'margin': 10, 'fetched_at': 2_000_000},
+                     'codex': {'account': None, 'margin': None, 'fetched_at': None}}
+        with patch.dict(os.environ, {'CODEX_HOME': str(self.home)}, clear=False), \
+                patch.object(m, 'automatic_selection', return_value=('claude-default', selection)) as automatic, \
+                patch.object(sys, 'argv', args):
+            m.main()
+        automatic.assert_called_once_with({'current': str(self.home)})
+
+    def test_automatic_request_without_table_leaves_codex_missing_when_default_home_absent(self):
+        absent_home = self.root / 'home-without-codex'
+        absent_home.mkdir()
+        target = self.root / 'automatic-missing-home.json'
+        args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
+                '--cwd', str(self.cwd), '--out', str(target)]
+        selection = {'selection_mode': 'automatic', 'configuration': 'claude-default',
+                     'reason': 'no-provider-has-headroom',
+                     'claude': {'account': None, 'margin': None, 'fetched_at': None},
+                     'codex': {'account': None, 'margin': None, 'fetched_at': None}}
+        with patch.dict(os.environ, {}, clear=True), \
+                patch.object(Path, 'home', return_value=absent_home), \
+                patch.object(m, 'automatic_selection', return_value=('claude-default', selection)) as automatic, \
+                patch.object(sys, 'argv', args):
+            result = m.main()
+        automatic.assert_called_once_with({})
+        self.assertIsNone(result['selection']['codex']['margin'])
+
+    def test_explicit_profile_without_table_does_not_use_default_codex_home(self):
+        with patch.dict(os.environ, {'CODEX_HOME': str(self.home)}, clear=False):
+            with self.assertRaisesRegex(RuntimeError, 'account is not registered'):
+                self.call()
+        self.assertFalse(self.out.exists())
+
+    def test_codex_cache_is_per_home_sanitized_and_preserved_on_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve(); config = root/'config'; config.mkdir()
+            homes = {'a': str((root/'a').resolve()), 'b': str((root/'b').resolve())}
+            claims = base64.urlsafe_b64encode(json.dumps({'email': 'test@example.invalid'}).encode()).decode().rstrip('=')
+            for home in homes.values():
+                Path(home).mkdir()
+                (Path(home)/'auth.json').write_text(json.dumps(
+                    {'tokens': {'id_token': 'x.' + claims + '.x', 'account_id': 'account'}}))
+            now = int(time.time())
+            result = {'identity': m._auth_identity(next(iter(homes.values()))),
+                      'windows': [{'minutes': 10080, 'used_percent': 10,
+                                   'reset_at': now + 604000}]}
+            with patch.object(m, 'probe_codex_account', return_value=result):
+                values = m.read_codex_usages(homes, str(config), now)
+            self.assertEqual(list(values), ['a', 'b'])
+            cache_files = sorted((config/'codex-usage').glob('*.json'))
+            self.assertEqual(len(cache_files), 2)
+            for path in cache_files:
+                text = path.read_text()
+                self.assertNotIn(str(root), text)
+                self.assertNotIn('raw', text)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            with patch.object(m, 'probe_codex_account', side_effect=RuntimeError('offline')):
+                preserved = m.read_codex_usages(homes, str(config), now + 200)
+            self.assertEqual(preserved['a']['fetched_at'], now)
+            self.assertEqual(preserved['b']['fetched_at'], now)
+
+    def test_automatic_codex_account_is_bound_to_every_codex_role(self):
+        config = m.load_profile('claude-write-codex-review', None, {'a', 'b', 'current'})
+        bound = m.bind_codex_account(config, 'b', {'a', 'b', 'current'})
+        for role, entry in bound['roles'].items():
+            self.assertEqual(entry['account'], 'b' if entry['executor'] == 'codex' else 'current')
+        state = {'execution_config': bound,
+                 'execution_config_hash': m.execution_config_hash(bound)}
+        self.assertEqual(m.resolve_execution(state, 'review')['account'], 'b')
+
+    def test_automatic_profile_is_validated_after_representative_account_binding(self):
+        selection = {'selection_mode': 'automatic', 'configuration': 'codex-standard',
+                     'reason': 'only-codex-has-headroom',
+                     'claude': {'account': None, 'margin': -5, 'fetched_at': None},
+                     'codex': {'account': 'a', 'margin': 30, 'fetched_at': 2_000_000}}
+        with patch.object(m, 'automatic_selection', return_value=('codex-standard', selection)):
+            result = self.call_automatic(accounts=('a',))
+        self.assertEqual((result['status'], result['account'], result['selection']['reason']),
+                         ('request-written', 'a', 'only-codex-has-headroom'))
+        self.assertTrue(all(entry['account'] == 'a'
+                            for entry in result['execution_config']['roles'].values()))
+
+    def test_automatic_selection_refreshes_claude_snapshot_with_the_reader_path(self):
+        now = 2_000_000
+        snapshot_path = self.root / 'selected-snapshot.json'
+        snapshot_path.write_text(json.dumps({'schema': 2, 'active': 'active', 'accounts': {
+            'active': {'securestorage': None} | self.snapshot(20, now=now)}}))
+        with patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.root),
+                                     'USAGE_SNAPSHOT': str(snapshot_path)}, clear=False), \
+                patch.object(m, '_run_usage_probe') as probe, \
+                patch.object(m, 'read_codex_usages', return_value={}):
+            selected, evidence = m.automatic_selection({}, now)
+        probe.assert_called_once_with(snapshot_path)
+        self.assertEqual(selected, 'claude-default')
+        self.assertEqual(evidence['reason'], 'only-claude-has-headroom')
+
+    def test_quota_parser_uses_only_the_standard_codex_bucket(self):
+        now = 2_000_000
+        other = {'secondary': {'windowDurationMins': 10080, 'usedPercent': 0,
+                               'resetsAt': now + 302400}}
+        codex = {'secondary': {'windowDurationMins': 10080, 'usedPercent': 90,
+                               'resetsAt': now + 302400}}
+        windows = m._quota_windows({'rateLimitsByLimitId': {'other': other, 'codex': codex}})
+        self.assertEqual(windows, [{'minutes': 10080, 'used_percent': 90,
+                                    'reset_at': now + 302400}])
+        self.assertEqual(m._quota_windows({'rateLimits': other | {'limitId': 'other'}}), [])
+        self.assertEqual(m._quota_windows({'rateLimits': codex | {'limitId': 'codex'}}),
+                         [{'minutes': 10080, 'used_percent': 90,
+                           'reset_at': now + 302400}])
+
+    def test_rpc_consumes_buffered_complete_lines_before_waiting(self):
+        read_fd, write_fd = os.pipe()
+        messages = [
+            {'method': 'server/ready', 'params': {}},
+            {'id': 1, 'result': {'one': 1}},
+            {'id': 2, 'result': {'two': 2}},
+            {'id': 3, 'result': {'three': 3}},
+        ]
+        os.write(write_fd, b''.join(json.dumps(value).encode() + b'\n' for value in messages))
+
+        class Input(io.BytesIO):
+            def write(self, value):
+                return super().write(value.encode() if isinstance(value, str) else value)
+
+        class Process:
+            def __init__(self):
+                self.stdin = Input()
+                self.stdout = os.fdopen(read_fd, 'rb')
+
+            def terminate(self):
+                os.close(write_fd)
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                pass
+
+        process = Process()
+        self.addCleanup(process.stdout.close)
+        with patch.object(m.subprocess, 'Popen', return_value=process):
+            result = m._rpc_requests('/account', [('initialize', {}), ('account/read', {}),
+                                                   ('account/rateLimits/read', {})], timeout=0.05)
+        self.assertEqual(result, [{'one': 1}, {'two': 2}, {'three': 3}])
+
+    def test_corrupt_cache_isolated_to_its_account(self):
+        now = 2_000_000
+        config = self.root / 'cache-config'
+        config.mkdir()
+        homes = {}
+        claims = base64.urlsafe_b64encode(
+            json.dumps({'email': 'test@example.invalid'}).encode()).decode().rstrip('=')
+        for name in ('a', 'b'):
+            home = self.root / ('isolated-' + name)
+            home.mkdir()
+            (home / 'auth.json').write_text(json.dumps(
+                {'tokens': {'id_token': 'x.' + claims + '.x', 'account_id': 'account'}}))
+            homes[name] = str(home)
+        cache_a = m._cache_path(config, homes['a'])
+        cache_a.parent.mkdir()
+        cache_a.write_text('[]')
+        valid = {'identity': m._auth_identity(homes['b']),
+                 'windows': [{'minutes': 10080, 'used_percent': 10,
+                              'reset_at': now + 302400}]}
+
+        def probe(home):
+            if home == homes['a']:
+                raise RuntimeError('offline')
+            return valid
+
+        with patch.object(m, 'probe_codex_account', side_effect=probe):
+            values = m.read_codex_usages(homes, str(config), now)
+        self.assertIsNone(values['a'])
+        self.assertEqual(values['b']['windows'], valid['windows'])
+
+    def test_acceptance_selection_cases_flow_through_build_request(self):
+        now = 2_000_000
+        snapshot_path = self.root / 'acceptance-snapshot.json'
+        cases = [
+            ('both-headroom', 20, 10, 0, 'claude-write-codex-review',
+             'both-providers-have-headroom', 'claude', 'current'),
+            ('codex-blocked', 20, -5, 0, 'claude-default',
+             'only-claude-has-headroom', 'claude', 'current'),
+            ('claude-blocked', -5, 30, 0, 'codex-standard',
+             'only-codex-has-headroom', 'codex', 'a'),
+            ('both-blocked', -5, -5, 0, 'claude-default',
+             'no-provider-has-headroom', 'claude', 'current'),
+            ('age-300', -5, 30, 300, 'codex-standard',
+             'only-codex-has-headroom', 'codex', 'a'),
+            ('age-301', -5, 30, 301, 'claude-default',
+             'no-provider-has-headroom', 'claude', 'current'),
+            ('missing', None, None, 0, 'claude-default',
+             'no-provider-has-headroom', 'claude', 'current'),
+        ]
+        for label, claude_margin, codex_margin, age, configuration, reason, executor, account in cases:
+            with self.subTest(case=label):
+                if claude_margin is None:
+                    snapshot = {'schema': 2, 'accounts': {}}
+                    usages = {'a': None, 'b': None}
+                else:
+                    snapshot = {'schema': 2, 'active': 'active', 'accounts': {
+                        'active': {'securestorage': None} |
+                                  self.snapshot(claude_margin, now=now, age=age)}}
+                    usages = {'a': self.snapshot(codex_margin, now=now, age=age,
+                                                  minutes=10080), 'b': None}
+                snapshot_path.write_text(json.dumps(snapshot))
+                target = self.root / ('acceptance-' + label + '.json')
+                with patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.root),
+                                             'USAGE_SNAPSHOT': str(snapshot_path)}, clear=False), \
+                        patch.object(m, '_run_usage_probe'), \
+                        patch.object(m.time, 'time', return_value=now), \
+                        patch.object(m, 'read_codex_usages', return_value=usages):
+                    result = self.call_automatic(out=target)
+                self.assertEqual(result['selection']['configuration'], configuration)
+                self.assertEqual(result['selection']['reason'], reason)
+                self.assertEqual(result['executor'], executor)
+                self.assertEqual(result['account'], account)
+                self.assertEqual(target.exists(), executor == 'codex')
+
+    def test_best_codex_account_uses_margin_then_declaration_order(self):
+        now = 2_000_000
+        values = {
+            'a': self.snapshot(30, now=now, minutes=10080),
+            'b': self.snapshot(10, now=now, minutes=10080),
+        }
+        with tempfile.TemporaryDirectory() as td, \
+                patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': td}, clear=False), \
+                patch.object(m, 'read_codex_usages', return_value=values):
+            selected, evidence = m.automatic_selection({'a': '/a', 'b': '/b'}, now)
+        self.assertEqual(selected, 'codex-standard')
+        self.assertEqual(evidence['codex']['account'], 'a')
+        values['b'] = self.snapshot(30, now=now, minutes=10080)
+        with tempfile.TemporaryDirectory() as td, \
+                patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': td}, clear=False), \
+                patch.object(m, 'read_codex_usages', return_value=values):
+            _, evidence = m.automatic_selection({'a': '/a', 'b': '/b'}, now)
+        self.assertEqual(evidence['codex']['account'], 'a')
+
     def test_mixed_profile_resolves_every_role_and_builtin_hybrid_is_exact(self):
         config = m.load_profile('hybrid-standard', None, {'current'})
         expected = {
@@ -378,6 +720,20 @@ class DocumentationContracts(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIsNone(re.search(r'\b(?:ledger|ack|unknown|reap)\b', text))
                 self.assertNotIn('継続記録', text)
+
+    def test_automatic_selection_contracts_are_documented_without_statusline_dependency(self):
+        source = SCRIPT.read_text()
+        self.assertNotIn('statusline-codex', source)
+        self.assertNotIn('.statusline-codex', source)
+        decision = (self.root / 'skills/develop/references/decision-criteria.md').read_text()
+        self.assertIn('<= 300', decision)
+        self.assertIn('> 300', decision)
+        self.assertIn('#374', decision)
+        for text in (self.adapter, self.skill,
+                     (self.root / 'docs/codex-develop.md').read_text()):
+            self.assertIn('claude-write-codex-review', text)
+            self.assertIn('300', text)
+            self.assertIn('margin', text)
 
     def test_executor_branch_is_documented_on_exactly_one_line(self):
         executor_lines = [line for line in self.adapter.splitlines() if 'executor' in line]
