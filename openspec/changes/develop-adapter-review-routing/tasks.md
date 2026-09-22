@@ -18,5 +18,5 @@
 ## 3. 仕上げ
 
 - [x] 3.1 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow version を 2.13.23 から上げる
-- [ ] 3.2 `bash scripts/test.sh` を全件フォアグラウンドで実行し exit 0 を確認する（常時注入の予算テストを含む）
-- [ ] 3.3 `openspec validate develop-adapter-review-routing --strict` が通る
+- [x] 3.2 `bash scripts/test.sh` を全件フォアグラウンドで実行し exit 0 を確認する（常時注入の予算テストを含む）
+- [x] 3.3 `openspec validate develop-adapter-review-routing --strict` が通る
