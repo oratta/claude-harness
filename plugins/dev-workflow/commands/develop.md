@@ -1,7 +1,7 @@
 ---
 name: develop
 description: 標準開発ワークフロー（develop スキル）を起動する。issue があればそれを記録先に、無ければ Draft PR を記録先にして進める（issue を切るのは追跡・キュー・議論が要るときだけ）
-argument-hint: "[(--profile NAME [--profile-file PATH] | --account NAME --model MODEL) (--account-home NAME=PATH… | --account-home-file PATH) [--executor codex] [--worker-state DIR] [--run-dir DIR]] [issue URL | request]"
+argument-hint: "[(--profile NAME [--profile-file PATH] | --account NAME --model MODEL) (--account-home NAME=PATH… | --account-home-file PATH) [--executor codex]] [issue URL | request]"
 allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 ---
 
@@ -9,11 +9,9 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 
 `$ARGUMENTS` に `--profile <名前> [--profile-file <JSON>]` または旧形式の `--account <登録名> --model <CodexモデルID>` があればprovider adapterを適用する。`--executor codex` も後方互換の別名として受理するが、その場合もprofile形式か旧形式のどちらか一方を必須とする。両形式の併用、`--profile-file` 単独、旧形式の片方欠落は開始前に拒否する。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用する。いずれの実行先オプションも無い場合は従来のClaude経路とし、未知のexecutorは拒否する。profile が決めた投げ先を別 provider で代行しない。実行先オプションは委譲transportだけを変え、仕様要否・レビュー・チェック・順序は既存develop正本を使う。adapter の適用を理由に仕様を必須にしない。
 
-引数なしの追加依頼では初回の Codex 設定を再推測しない。前景実行は台帳もrunも持たず継続記録を残さないので、追加依頼では実行先オプション（`--profile` または `--account`＋`--model`、および account名からCODEX_HOMEへの対応）を明示し直す。継続記録から再開できるのは `--run-dir` を使う台帳経路だけで、その場合は既存 develop が選んだ記録先（issue、issue が無い場合は Draft PR）のコメントを本体が取得し、旧runの `v1` またはprofile runの `v2` の最新候補を版混在のまま選んで検証する。不正・未知版の最新候補から古いv1へ戻らない。profile/config版/config hashはrun内snapshotだけと照合し、外部profile-fileを再読込しない。不在・不一致なら Claude や別 run/account へ fallbackせず停止する。形式の生成・解析とrun検証は `scripts/codex-develop.py` の継続記録ヘルパーを使う。
+引数なしの追加依頼では初回の Codex 設定を再推測せず、実行先オプションと account-home の対応を明示し直す。
 
 前景実行のCodexオプションは、account名からCODEX_HOMEへの対応表である。`--account-home NAME=PATH`（繰り返し可）か、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを指す `--account-home-file PATH` のどちらか一方を渡し、併用は拒否する。本体はこれを依頼本文から分離し、`codex-develop.py request` へそのまま渡す。前景実行は台帳を読まないので、対応に無いaccount名は依頼ファイルを作らずに拒否する。
-
-台帳経路のCodexオプション `--worker-state DIR` は登録済みworker台帳を指定する。省略時は `$HOME/.local/state/claude-harness-codex/jobs`。`--run-dir DIR` は継続するrunを明示するときに指定する。新規で省略するとinitが `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作り返す。本体は返された絶対pathを記録先と会話に記録し、以後の全操作で同じpathを使う。これらも依頼本文から除外する。前景実行ではどちらも使わない（`request` はrun-dirもworker-stateも取らない）。
 
 `develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0・エピックの扱い）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。このコマンドはそれを Read tool で読み込み、その指示に従ってメインセッションで interactive モードのままインライン実行する。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
 

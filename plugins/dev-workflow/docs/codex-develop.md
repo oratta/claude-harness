@@ -8,15 +8,7 @@ claude --plugin-dir /absolute/path/to/harness-worktree/plugins/dev-workflow
 
 利用するCodex認証profileは事前にログイン済みであること。認証を複製したり、通常profileを上書きしない。
 
-前景実行は台帳を持たないので登録（`register`）は要らない。account名からCODEX_HOMEへの対応は、委譲のたびに引数で渡す。`--account-home NAME=PATH` の繰り返しか、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを `--account-home-file PATH` で渡す。2つの与え方の併用は拒否し、合成も優先もしない。値が絶対パスでない、またはディレクトリとして存在しないときも拒否する。
-
-台帳を持つ旧経路（`submit` / `status` / `result` / `ack` / `reap`）を使うときだけ、既存のCODEX_HOMEを登録する。`--state-dir` はサブコマンドの後ろに置く。
-
-```sh
-python3 /absolute/path/to/harness-worktree/plugins/dev-workflow/scripts/codex-worker.py \
-  register --state-dir "$HOME/.local/state/claude-harness-codex/jobs" \
-  --account spare --codex-home /absolute/path/to/codex-profile
-```
+account名からCODEX_HOMEへの対応は、委譲のたびに引数で渡す。`--account-home NAME=PATH` の繰り返しか、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを `--account-home-file PATH` で渡す。2つの与え方の併用は拒否し、合成も優先もしない。値が絶対パスでない、またはディレクトリとして存在しないときも拒否する。永続的な account registry は使わない。
 
 Claudeの会話で実行する:
 
@@ -32,7 +24,7 @@ Claudeが既存developの進め方でworktree/記録先を準備し、仕様化�
 
 ## 前景実行の呼び方
 
-本体は委譲のたびに次の3手順を回す。台帳もrun-dirも作らないので、次の委譲へ引き継ぐ状態は残らない。
+本体は委譲のたびに次の3手順を回す。transport の永続状態は作らず、継続状態は記録先と worktree に置く。
 
 1. **指示をファイルに書く。** 担当工程に限定した指示（依頼・完了条件・記録先URL・対象artifact・固定HEAD）をUTF-8ファイルに書く。秘密情報は入れない。
 2. **前景コマンドを背景実行で起動する。** `request` で役割別のexecutor/account/model/effortとCODEX_HOMEを解決した依頼ファイルを作り、そのファイルを渡して `run` をBashツールの背景実行で起こす。
@@ -45,11 +37,11 @@ python3 <plugin>/scripts/codex-develop.py request --phase spec --input /absolute
 python3 <plugin>/scripts/codex-worker.py run --request /absolute/private/request.json
 ```
 
-`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（どちらか一方だけ。併用・旧形式の片方欠落・どちらも無しは依頼ファイルを作らずに拒否する）。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`request` はrun-dirもworker-stateも取らず、標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・解決したrole/account/CODEX_HOME/model/effortを返す。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
+`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（どちらか一方だけ。併用・旧形式の片方欠落・どちらも無しは依頼ファイルを作らずに拒否する）。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`request` は標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・解決したrole/account/CODEX_HOME/model/effortを返す。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
 
 `run` の結果JSONは `text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`。実効model/effortやIDが未観測ならnullであり、成功値を推測しない。完了は実行terminalであって品質承認ではなく、`completed` でも `error_kind` が非空なら実行成功として扱わない。review verdictと投稿を確認するのはClaude側。コマンド失敗はそこで停止し、別providerへfallbackしない。
 
-`run` は呼び出し元のプロセス連鎖が切れれば自分も終わり、SIGTERM / SIGINT でも止まる。job IDも受領（`ack`）も無いので、途中で切れた委譲を後から照会・復旧する手段は無い。同じ工程をやり直すときは、3手順を最初から繰り返す。台帳を読み書きしないため、同時実行の枠管理も作業ディレクトリの排他も行わない。同じworktreeへ2本同時に投げないのは本体の責任である。
+`run` は呼び出し元のプロセス連鎖が切れれば自分も終わり、SIGTERM / SIGINT でも止まる。途中で切れた委譲を後から照会・復旧する手段は無い。同じ工程をやり直すときは、記録先と worktree を確認して3手順を最初から繰り返す。同時実行の枠管理も作業ディレクトリの排他も行わない。同じworktreeへ2本同時に投げないのは本体の責任である。
 
 外部profileはversion 1の`profiles.<name>.roles`に全canonical roleを持ち、各entryでexecutor/account/model/effortを指定する。profileと旧`--account/--model`は併用不可。profileが指すaccount名が `--account-home` / `--account-home-file` の対応表に無ければ、依頼ファイルを作らずに拒否し、既定や別のCODEX_HOMEへ倒さない。workerは静的検証と`model/list`広告値による開始前検証を行う。
 
@@ -63,21 +55,20 @@ phaseは役割指示の選択で、Codex独自の工程順序ではない。`spe
 
 書込担当（implement / spec-write）は砂場なしで親の環境を引き継ぐため、GitHub取得/投稿・push・PR作成・commitをworkerの中で自分で完了する。本体が代理するのは、read-only roleのレビュー結果の投稿と、揃えられなかった項目として記録済みの操作だけである。子から `needs-coordinator` が来た場合は、その操作が記録済みの項目に当たるかを確認してから本体が行い、証拠を次のfresh phaseへ渡す。
 
-## 台帳を持つ旧経路
+## 2.13.14 以前の状態を手動で片付ける
 
-`init` / `dispatch` / `status` / `result` / `ack` / `retry` と run-dir・worker-state を使う経路は残っている。前景実行と混ぜず、どちらか一方で1つの委譲を完結させる。
+既存の `$HOME/.local/state/claude-harness-codex/` は inert data であり、コードは起動時にこのディレクトリを見ない。自動削除もしない。
 
-`--worker-state DIR` 未指定なら `$HOME/.local/state/claude-harness-codex/jobs` で、上のregisterと同じ台帳を参照する。別の台帳で登録した場合は `/develop ... --worker-state /absolute/private/worker` を明示する。`--run-dir` を省略すると `init` が `$HOME/.local/state/claude-harness-codex/runs/<UUID>` を作り、JSONの`run_dir`を返す。
+削除してよいのは、次の3条件をすべて確認した後だけである。
+
+1. `pgrep -fl 'codex-worker.py'` が何も返さない。
+2. 回収が必要だった旧 job の結果を 2.13.14 で回収済み、または不要と判断済みである。
+3. dev-workflow 2.13.14 以前の session が残っていない。
+
+確認後、利用者が次を実行する。
 
 ```sh
-python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 init \
-  --account spare --model <model> --cwd /absolute/target-worktree --worker-state "$HOME/.local/state/claude-harness-codex/jobs"
-python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 dispatch --phase spec --input /absolute/request.txt
-python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 status
-python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 result
-python3 <plugin>/scripts/codex-develop.py --run-dir /absolute/private/run-1 ack
+rm -rf -- "$HOME/.local/state/claude-harness-codex"
 ```
 
-この経路だけが、記録先へ `<!-- codex-develop-continuation:v1 ... -->` / `:v2 ...` の継続記録を残し、送信到達が不明なpendingを同じrunの `retry` で復旧する（元の依頼を変更せずidempotent submitし、promptも request_id も作り直さない）。dispatchはrole別設定とpayload hashをsubmit前にpendingへ保存し、retryは保存依頼を変更しない。pendingが残っている場合はresult→ackを済ませてから次のdispatchへ進む。ackだけで仕様承認にはならない。run-dir/worker-stateには依頼・結果が残るため私有ディレクトリに置く。
-
-台帳・スロット・cwd排他・拒否理由の詳細は `scripts/CODEX-WORKER.md`。継続記録の形式と検証は `commands/develop.md`。前景実行にはこれらのいずれも現れない。
+`runtimes/` 内の `auth.json` は認証元へのリンクである。上のコマンドはリンクを消すだけで、リンク先の認証情報は消えない。
