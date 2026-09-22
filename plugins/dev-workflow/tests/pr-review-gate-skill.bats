@@ -792,3 +792,13 @@ step3_body() {
   # 雛形の実際の位置に合わせ、必須の説明も 2 行目と書く
   step3_body | grep -qF '2 行目の `対象 HEAD:` は必須'
 }
+
+@test "risk (#381): the credential definition covers agent behavior instructions, not only code/config" {
+  def="$(step3_body | grep -F -- '- **資格情報**')"
+  echo "$def" | grep -qF 'エージェントへの行動指示' || { echo "$def"; return 1; }
+  echo "$def" | grep -qF 'SKILL.md'
+  # 安全ゲート・権限の定義も手段（コード・設定・行動指示）を問わない
+  for w in '**安全ゲートの弱体化**' '**エージェント権限の拡張**'; do
+    step3_body | grep -F -- "- $w" | grep -qF 'エージェントへの行動指示' || { echo "missing in: $w"; return 1; }
+  done
+}
