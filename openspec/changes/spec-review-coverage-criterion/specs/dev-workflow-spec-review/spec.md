@@ -21,7 +21,7 @@
 
 #### Scenario: 遡及しないことが書かれている
 - **WHEN** `references/roles/spec-reviewer.md` のレビュー観点の節を読む
-- **THEN** 守備範囲の検査対象が change の追加・改定する要件に限られ、既存 spec に遡って求めないことが書かれている
+- **THEN** 同じ節の中に文字列 `遡及しない` があり、守備範囲の検査対象が change の追加・改定する要件に限られることが書かれている
 
 #### Scenario: 読み取り専用と grep 先行が書かれている
 - **WHEN** `references/roles/spec-reviewer.md` を読む

@@ -25,11 +25,12 @@ pr-review-gate の仕分け手順はすでに「受け入れ条件または仕�
 ### Modified Capabilities
 
 - `dev-workflow-spec-review`: 要件「仕様レビューの観点は既存 spec との整合と受け入れ条件の一意性を含む」を MODIFIED。観点を 6 つにし、守備範囲の対象・欠落時の差し戻し・遡及しない範囲を要件化する
+- `dev-workflow-develop`: 要件「役割の指示書は references/roles/ に分かれている」を MODIFIED。spec-reviewer.md が含む観点を「5 観点」から「6 観点」（守備範囲の明記を追加）に改め、観点の中身の正本は `dev-workflow-spec-review` とする
 
 ## Impact
 
 - **スキル文書**: `plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md`（「レビュー観点（5 つ。すべて検査する）」を 6 つに）
-- **テスト**: `plugins/dev-workflow/tests/develop-roles.bats`（R1 の観点を固定しているテストに 6 観点目を足す）
+- **テスト**: `plugins/dev-workflow/tests/develop-roles.bats`（R1 の観点を固定しているテストに 6 観点目を足す）、`plugins/dev-workflow/tests/spec-decision-and-review.bats`（同じ要件を検査する `five review criteria` テストを 6 観点に合わせる）
 - **配布**: `plugins/dev-workflow/.claude-plugin/plugin.json` のバージョン bump（2.13.24 → 2.13.25）、`plugins/dev-workflow/CHANGELOG.md`
 - **常時注入の予算**: `tests/injection-budget.bats` が数えるのは frontmatter の `description:` 行だけで、spec-reviewer.md 本文の追記は予算に当たらない
 - **前提環境**: dev-workflow プラグインの develop スキル（R1 を spawn する本体）と openspec。新たな CLI・権限は要らない
