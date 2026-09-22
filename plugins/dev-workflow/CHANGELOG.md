@@ -1,5 +1,17 @@
 # Changelog — dev-workflow
 
+## 2.13.20 — 2026-09-22: Codex の旧台帳・継続機構を撤去し、前景実行だけを唯一の transport にする
+
+#340 で入れた前景実行経路（`codex-develop.py request` → `codex-worker.py run`）が動くようになった後も、SQLite のジョブ／所有権台帳、detached start、submit/status/result/cancel/ack/send/reap の lifecycle CLI、unknown/retry 処理、cwd ロック、account slot、run-dir と `run.json`、継続記録 v1/v2 が残っていた。永続的な進捗の置き場は issue / Draft PR と linked worktree に統一する方針（#341）に対し、使われなくなった transport のコードと文書だけが残っている状態で、`openspec/specs/codex-worker-concurrency` と `openspec/specs/codex-develop-continuation` も廃止済みの契約のままだった。
+
+- **`codex-worker.py`（1007 → 621 行）**: SQLite job/account schema、ownership、slot/lock、detached worker、heartbeat、lifecycle subcommands を削除し、`run --request` の前景実行だけを残した。認証固定・model/effort 検証・reader 向け read-only policy・quota preflight は維持
+- **`codex-develop.py`（623 → 286 行）**: run-dir、pending、retry、continuation v1/v2、旧 lifecycle CLI を削除し、request 作成と Claude role の `agent-required` routing だけを残した
+- `openspec archive remove-codex-legacy-state --yes` を実行し、`openspec-specs/codex-worker-concurrency` と `openspec-specs/codex-develop-continuation` の spec を除去（change は `openspec/changes/archive/2026-09-21-remove-codex-legacy-state/` に archive 済み）
+- `scripts/CODEX-WORKER.md` / `docs/codex-develop.md` / `references/codex-develop.md` / `commands/develop.md` から、廃止した台帳 transport（永続 registration・job ID・status/result/cancel/ack/send/reap・unknown recovery・ownership DB・account slot・cwd lock・heartbeat・`--worker-state` / `--run-dir`・継続記録マーカー）の説明を削除し、前景実行と手動 cleanup 条件だけ残した
+- `docs/codex-develop.md` に既存状態ディレクトリ（`~/.local/state/claude-harness-codex/`）の削除条件と `rm -rf` の手順を明記した。コードからの自動削除は行わない
+- `skills/develop/SKILL.md`: 「旧台帳経路も互換性のため残る」の 1 文を削除（廃止 transport の互換性主張だったため）
+- Closes #341 #323 #329 #331 #336
+
 ## 2.13.18 — 2026-09-22: pr-review-gate に止める指摘の仕分け表を置き、2 周目キャップの 1 択の質問をやめる
 
 2.13.17 までは、2 周目の終わりに止める指摘が残ると、G は主に「続けるか、範囲外として閉じるか」の 1 択を判断材料なしで出していた。受け入れ条件の中で直せば済む指摘や、同じ文の書き残しのような一覧で閉じられる指摘まで主に上がり、同じ型の指摘が周ごとに場所を変えて再発しても、方式を決める経路が無かった（#354）。
