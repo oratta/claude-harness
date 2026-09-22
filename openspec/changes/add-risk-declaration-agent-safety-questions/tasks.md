@@ -18,5 +18,5 @@
 
 ## 4. 検証
 
-- [ ] 4.1 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` と `scripts/test.sh` 全件を実行し exit 0 を確認する
-- [ ] 4.2 `openspec validate add-risk-declaration-agent-safety-questions --strict` が通ることを確認する
+- [x] 4.1 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` と `scripts/test.sh` 全件を実行し exit 0 を確認する
+- [x] 4.2 `openspec validate add-risk-declaration-agent-safety-questions --strict` が通ることを確認する
