@@ -44,4 +44,4 @@ ID token の email と `account/read` を照合する。実行中に元 `auth.js
 
 品質判定に渡す `text` は一意な `phase=final_answer` だけ。途中 commentary、phase 欠測、複数 final、空 final を承認証拠にしない。結果 JSON を受け取れず終了した場合は、記録先と worktree を確認し、その工程を fresh phase としてやり直す。
 
-テストは `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p 'test_codex_*.py'` で実行する。
+テストは `scripts/test.sh python-suites` で実行する。`plugins/*/tests/test_*.py` をファイル名で絞らずに全件走らせるので、同じ値を別のファイルで検査しているテストも一緒に走る。`scripts/test.sh dev-workflow` のようにプラグイン名で絞った実行では Python のテストは走らないので、一緒に走らせたいときは `scripts/test.sh dev-workflow python-suites` と並べる。

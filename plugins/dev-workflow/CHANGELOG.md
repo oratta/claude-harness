@@ -1,11 +1,19 @@
 # Changelog — dev-workflow
 
-## 2.13.29 — 2026-09-23: usage-probe が User-Agent に claude-code を名乗る
+## 2.13.30 — 2026-09-23: usage-probe が User-Agent に claude-code を名乗る
 
-使用量 API（`/api/oauth/usage`）は、User-Agent が `claude-code/<版>` でないリクエストを厳しい別枠で数える。見出しなしで叩いていた `usage-probe.sh` は、よく使うアカウントで 429 を返され続け、そのアカウントの値が 97 分前のまま止まっていた。`cld` の自動選択と、毎ターンの枠の残量モードの判定が、古い数字で動いていた。同じトークンで見出しを付けると 200、付けないと 429 になることを 2 回確かめた。
+使用量 API（`/api/oauth/usage`）は、User-Agent が `claude-code/<版>` でないリクエストを厳しい別枠で数える。見出しなしで叩いていた `usage-probe.sh` は、よく使うアカウントで 429 を返され続け、そのアカウントの値が 97 分前のまま止まっていた。`cld` の自動選択と、毎ターンの枠の残量モードの判定が、古い数字で動いていた。同じトークンで見出しを付けると 200、付けないと 429 になることを 2 回確かめた。2.13.29 は先行して main に入った #413 が使用したため、この変更は 2.13.30 とした。
 
 - **usage-probe.sh**: 本番経路の curl に `User-Agent: claude-code/<claude --version の版>` を付けた。版が取れなければ `2.1.0` に落とす。`USAGE_PROBE_USER_AGENT` で上書きできる
 - **テスト**: `usage-probe-multi-account.bats` に、curl と claude を差し替えて送られる見出しを確かめる 3 件を足した
+
+## 2.13.29 — 2026-09-23: Python のテストをファイル名で絞らずに全件実行する
+
+Python のテストはプラグインごとの bats ラッパーが `-p` でファイル名を絞って走らせていたため、新しく足したファイルが拾われず、落ちたときもどのテストが落ちたかが出なかった（#344。2.13.28 は先行して main に入った #391 が使用したため 2.13.29 とした。発端は #334 / PR #343 で絞ったコマンドだけを走らせて別ファイルの失敗を見落としたこと）。
+
+- ルートの `tests/python-suites.bats` が git 追跡下の `plugins/*/tests/test_*.py` を置き場所ごとに `unittest discover -p 'test_*.py'` で走らせる。ディレクトリごとの `Ran N tests` を TAP のコメントに出し、Python が無い・対象が無い・0 件のときは失敗にする
+- `tests/codex-python.bats` を削除した（statusline の `statusline-codex.bats` も同時に削除）
+- `scripts/CODEX-WORKER.md` のテスト実行コマンドを `scripts/test.sh python-suites` に置き換えた
 
 ## 2.13.28 — 2026-09-23: adapter のレビュー経路を同一 G の再開中は保持する
 
