@@ -77,6 +77,8 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
 
 1 issue（または 1 Draft PR）につき次を回す。各工程の担い手と、本体が次に誰を起こすかの判断材料を書く。
 
+下の各工程の spawn・SendMessage による再開・Codex executor への委譲の直前には、毎回「PR トークン上限」の節の計測を行う（exit 2 なら起こさず止まる）。
+
 ```
 (0) 記録先を確定する（入口 0）。worktree を用意する
 (1) W を名前付きで spawn（model: worker.md の事前分類表の「1 周目」列に当たればその値（4 分類のいずれでも opus。W の上限は opus）、それ以外 sonnet。W を fable にはしない。共有枠モードが下限を決める）:
@@ -137,6 +139,37 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
 ```
 
 W は名前付きで spawn し、SendMessage で再開してコンテキストを引き継ぐ（(1) の判定・(2) の指摘・(3) の実装が同じコンテキストにある）。**ただし再開の前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測る（exit 2 が上限超）。閾値と全解除の環境変数・途中計測 hook を含む 2 経路・上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言・前任が動作中のまま交代させる手順）は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、この SKILL.md には書かない。正本を読むまで手渡さない。** G の再開も同じ。**`工程中断:` で返ってきた return にレビュー結果（`agent-review` の判定やレビュー本文）が含まれていたら、本体がそれを記録先に代理投稿する**（G が途中計測の強制停止に当たると `gh pr comment` も拒否されるため。R1 の仕様レビューを代理投稿するのと同じ形）。**強制停止中は commit も本体が行う**: `工程中断:` の return を受け取ったとき、および次の手渡し・次の spawn・そのサイクルの終了・worktree の撤去のいずれよりも先に、本体は return に書かれた作業ツリーのパス（強制停止による中断なら hook の `permissionDecisionReason` に含まれる `cwd`）に対して `git -C <path> status --porcelain` を実行して未コミット差分を確認し、残っていれば本体が commit する（MUST。止まったサブエージェント自身は `Bash` が全件拒否されて commit できない。手渡し先が確認するのは**次に起こされた**サブエージェントの差分だけなので、手渡しが発生しない経路や後継が G の場合はこの本体側の確認が無いと作業が失われたまま残る）。W が孫を呼ぶ必要がある工程は存在しない。仕様化する場合で複数 change に割れたときは、interactive では change ごとに (1)〜(3) を回す（change ごとに仕様レビューを行う。並列可能なら W を並列に起こす。change ごとに worktree を分ける）。
+
+## PR トークン上限（spawn・再開・Codex 委譲の前に毎回測る）
+
+1 つの記録先に使ったトークンの累計に上限を掛ける（#288）。周回数のキャップでは、1 周が重い場合や W の再開が繰り返される場合を止められないため。
+
+**紐付けの規約**: その記録先のためにサブエージェントを spawn するときは、役割を問わない（W / R1 / G / G のレビュアー / 決める役はその例）で Agent ツールの `description` に記録先番号を `#N` の形で入れる（例: `W: impl for #288`。PR 番号も分かっていれば `G: gate for PR #400 (#288)` のように併記してよい）。番号の無い description のサブエージェントは計測から漏れる。
+
+**Codex の消費の記録**: その記録先のために Codex を呼んだら、そのたびに記録先へ 1 行目が `Codex 消費: <thread_id> <tokens>` のコメントを投稿する。executor が `codex` の役割へ委譲したときは codex-worker の結果 JSON の `thread_id` と `usage.total.totalTokens` を書く（`usage` が null か `usage.total.totalTokens` が読めないときは `<tokens>` を `-` と書く）。G が full レビューで Bash から Codex を呼んだときは、G が return に書いた Codex thread の thread_id を使い、`<tokens>` を `-` と書く。結果 JSON を受け取れなかった委譲と、G が thread_id を取れなかった呼び出しは記録できず、上限の外になる。
+
+**計測**: その記録先のためにサブエージェントを spawn する直前、SendMessage で再開する直前、および Codex executor へ委譲する直前に、役割と executor を問わず毎回次を実行する（`subagent-context.sh` を再開前に呼ぶのと同じ位置。こちらは spawn と委譲の前にも呼ぶ）。
+
+```bash
+# 渡すすべての記録先番号のコメントを全ページ取得し、1 行目が ^Codex 消費:  のものだけを集める
+for n in <記録先番号> [PR 番号]; do
+  gh api --paginate --slurp "repos/<owner>/<repo>/issues/$n/comments" \
+    | jq -r '.[][] | .body | split("\n")[0] | select(test("^Codex 消費: ")) | sub("^Codex 消費: "; "")'
+done > "<scratchpad>/codex-records.txt"
+scripts/pr-token-budget.sh <記録先番号> [PR 番号] --codex-records "<scratchpad>/codex-records.txt" \
+  --codex-home <account 対応表の各 CODEX_HOME>... --codex-home "${CODEX_HOME:-$HOME/.codex}" [--cap <新上限>]
+```
+
+`--codex-home` には codex-develop の account と CODEX_HOME の対応表（`--account-home` / `--account-home-file`）にある全パスと、本体の環境の `${CODEX_HOME:-$HOME/.codex}` を渡す。記録先に `PR トークン上限:` のコメントがあれば、最新のものの値を `--cap` に渡す。上限の既定は 30,000,000（Claude 分と Codex 分の合計に対する値。環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP` で変更可）。計測はこの SKILL.md の手順で、adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` には置かない。
+
+**exit 2（上限超）**: spawn / SendMessage / Codex への委譲をしない。記録先に `needs-approval` を付け、主に「続けるか、範囲外として閉じるか」を問う。問いには合計（Claude 分と Codex 分の内訳）・体数・上限・残工程（次に起こそうとした役割と、そのあと残る工程）・推奨（どちらを選ぶかとその理由）を添え、判断材料なしで出さない。unmanned でも同じく止まり、問いを記録先のコメントに書いてサイクルを終える。
+
+- 「続ける」: 記録先に 1 行目が `PR トークン上限: <新上限>` のコメントを投稿し、以後この記録先の計測に `--cap <新上限>` を渡す。新上限は「その時点の合計 ＋ 直前の計測で上限に使った値（`--cap`、無ければ `DEV_WORKFLOW_PR_TOKEN_CAP`、無ければ 30000000）」。後任の本体は記録先の最新の `PR トークン上限:` コメントの値を使う
+- 「範囲外として閉じる」: この記録先について以後サブエージェントを起こさず、Codex にも委譲しない。残作業を記録先にコメントしてサイクルを終える
+
+**exit 1（計測できない。引数エラー・python3 が無い・リポジトリ外）**: 止まらずに進み、計測できなかったことと理由を記録先にコメントする。コメントは同じ記録先・同じ理由について 1 サイクルに 1 回までにする（interactive では本体の 1 セッション、unmanned では loop-dev-agent の 1 サイクル）。
+
+計測に入らないもの: 本体自身の消費、Workflow 経由のサブエージェント。出力の `unresolved`（作業ディレクトリが消えたサブエージェント）と `codex_unresolved`（rollout が見つからない thread）は合計に入らないので、0 でなければ問いに件数を添える。
 
 ## モデル
 
