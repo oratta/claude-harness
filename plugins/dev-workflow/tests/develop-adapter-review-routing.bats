@@ -34,6 +34,18 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   echo "$s" | grep -qE '行が無い.*従来経路'
 }
 
+@test "gate-runner (#391): an adapter-started G keeps the adapter route when the same G resumes without a route line" {
+  s="$(section "$GATE" 'レビュー経路の判別')"
+  echo "$s" | grep -qF '`レビュー経路: adapter` で起動済みの同一 G'
+  echo "$s" | grep -qF '再開指示に `レビュー経路:` 行が無くても adapter 経路を保持する'
+}
+
+@test "gate-runner (#391): a missing route selects legacy only when starting a new G, including a handoff successor" {
+  s="$(section "$GATE" 'レビュー経路の判別')"
+  echo "$s" | grep -qF '新しい G の起動指示（手渡しで起こされた後任 G を含む）'
+  echo "$s" | grep -qF '行が無い場合だけ従来経路'
+}
+
 @test "gate-runner (#385): route-detection section comes before the reviewer table" {
   a="$(grep -n '^## レビュー経路の判別' "$GATE" | cut -d: -f1)"
   b="$(grep -n '^## レビューの実行者' "$GATE" | cut -d: -f1)"
@@ -88,6 +100,14 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   echo "$s" | grep -qF '`レビュー経路: 従来` を書かない'
 }
 
+@test "develop (#391): Role profile section distinguishes a same-G resume from starting a new G when the route line is missing" {
+  s="$(section "$DEVELOP" 'Role profile の選択')"
+  echo "$s" | grep -qF 'adapter で起動済みの同一 G'
+  echo "$s" | grep -qF '行の無い再開でも adapter 経路を保持する'
+  echo "$s" | grep -qF '新しい G の起動指示（手渡しで起こされた後任 G を含む）に行が無い場合だけ従来経路'
+  echo "$s" | grep -qF '行の省略を許可する規則ではない'
+}
+
 @test "develop (#385): step (4) always writes the adapter route line and never writes the legacy value" {
   s="$(step4)"
   [ -n "$s" ] || { echo "no (4) block"; return 1; }
@@ -117,6 +137,14 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   s="$(section "$CODEX_DEVELOP" '品質と transport 差分')"
   line="$(echo "$s" | grep -F 'needs-reviewer')"
   echo "$line" | grep -qF '`レビュー経路: adapter`'
+}
+
+@test "codex-develop (#391): the G rule keeps adapter on same-G resume and defaults only a fresh G without a route line to legacy" {
+  s="$(section "$CODEX_DEVELOP" '品質と transport 差分')"
+  line="$(echo "$s" | grep -F 'needs-reviewer')"
+  echo "$line" | grep -qF 'adapter で起動済みの同一 G'
+  echo "$line" | grep -qF '行の無い再開でも adapter 経路を保持する'
+  echo "$line" | grep -qF 'fresh G の起動指示に行が無い場合だけ従来経路'
 }
 
 # ===== レビュー実行者: の adapter 経路の形（1.5） =====
