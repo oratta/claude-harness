@@ -19,8 +19,8 @@
 
 ## 4. main spec の直接削除と archive
 
-- [ ] 4.1 archive の直前に `git rm -r openspec/specs/discord-reaction-delivery` を行い、移設先 genetta-inc/flatmate#861 を commit メッセージに書いて commit する（全要件 REMOVED の delta は archive が `Spec must have at least one requirement` で中断するため、delta では表現しない）
-- [ ] 4.2 `bats tests/discord-plugin-retirement.bats` と `bats tests/openspec-specs-format.bats` が全件 pass する
-- [ ] 4.3 `openspec archive remove-discord-plugin -y` で archive し、`openspec/specs/discord-plugin-retirement/spec.md` ができることを確認する
-- [ ] 4.4 生成された `openspec/specs/discord-plugin-retirement/spec.md` の `## Purpose` に残る `TBD - created by archiving change ...` を次の文面に書き換える:「harness から Discord 改造版プラグイン（公式プラグインの fork）を撤去した状態を定める。改造版は flatmate に移り flatmate 自身が配っている（genetta-inc/flatmate#851）ので、harness に同じ部品と仕様を残して正本が 2 つになることを防ぐ。」
-- [ ] 4.5 archive 後に `scripts/test.sh` をフォアグラウンドで再実行して exit 0 を確認する（参照掃除の検査が生成された main spec を許容場所として扱うことを含む）
+- [x] 4.1 archive の直前に `git rm -r openspec/specs/discord-reaction-delivery` を行い、移設先 genetta-inc/flatmate#861 を commit メッセージに書いて commit する（全要件 REMOVED の delta は archive が `Spec must have at least one requirement` で中断するため、delta では表現しない）
+- [x] 4.2 `bats tests/discord-plugin-retirement.bats` と `bats tests/openspec-specs-format.bats` が全件 pass する
+- [x] 4.3 `openspec archive remove-discord-plugin -y` で archive し、`openspec/specs/discord-plugin-retirement/spec.md` ができることを確認する
+- [x] 4.4 生成された `openspec/specs/discord-plugin-retirement/spec.md` の `## Purpose` に残る `TBD - created by archiving change ...` を次の文面に書き換える:「harness から Discord 改造版プラグイン（公式プラグインの fork）を撤去した状態を定める。改造版は flatmate に移り flatmate 自身が配っている（genetta-inc/flatmate#851）ので、harness に同じ部品と仕様を残して正本が 2 つになることを防ぐ。」
+- [x] 4.5 archive 後に `scripts/test.sh` をフォアグラウンドで再実行して exit 0 を確認する（参照掃除の検査が生成された main spec を許容場所として扱うことを含む）
