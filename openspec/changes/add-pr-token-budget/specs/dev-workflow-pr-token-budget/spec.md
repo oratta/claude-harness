@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: 記録先とサブエージェントの紐付けは description の番号で行う
-develop の本体は、W / R1 / G / G のレビュアー / 決める役を Agent ツールで spawn するとき、`description` に記録先番号を `#N` の形で MUST 含める（記録先が issue なら issue 番号。PR 番号も分かっていれば併記してよい）。`pr-token-budget.sh` は、各サブエージェントの `agent-<id>.meta.json` の `description` に、引数で渡された番号のいずれかが `#N` として現れるものを、その記録先のサブエージェントと SHALL みなす。`#` の直後の数字列の直後が数字であるものは一致と MUST NOT みなさない（`#2880` は `#288` に一致しない）。
+develop の本体は、その記録先のために Agent ツールでサブエージェントを spawn するとき、役割を問わず（W / R1 / G / G のレビュアー / 決める役はその例で、これに限らない）`description` に記録先番号を `#N` の形で MUST 含める（記録先が issue なら issue 番号。PR 番号も分かっていれば併記してよい）。`pr-token-budget.sh` は、各サブエージェントの `agent-<id>.meta.json` の `description` に、引数で渡された番号のいずれかが `#N` として現れるものを、その記録先のサブエージェントと SHALL みなす。`#` の直後の数字列の直後が数字であるものは一致と MUST NOT みなさない（`#2880` は `#288` に一致しない）。
 
 守備範囲: 想定する入力の出どころは、develop の本体が spawn 時に書く `description` と、Claude Code が書く `agent-<id>.meta.json` / `agent-<id>.jsonl` である。拾いたい誤りは「その記録先のために起こしたサブエージェントの消費が合計から漏れること」と「別リポジトリ・別番号のサブエージェントが混ざること」の 2 つ。通ることを許す入力は、本体が番号を書き忘れた description（そのサブエージェントは数えられず、合計は少なく出る）、本体以外が偶然 `#N` を含む description で起こしたサブエージェント（同じリポジトリの同じ番号なら数えられる）、Codex CLI・Workflow 経由の消費（トランスクリプトの置き場が違うので数えない）である。これらの穴が見つかるたびに照合を強くして塞ぎ切ることを完了条件にしない。上限は「人間が気づくまで消費が続く」状態を終えるための歯止めであり、厳密な会計ではない。
 
@@ -39,6 +39,8 @@ develop の本体は、W / R1 / G / G のレビュアー / 決める役を Agent
 ### Requirement: 全リクエストの usage を重複なく合計する
 `pr-token-budget.sh` は、紐付いた各サブエージェントのトランスクリプトの全 assistant レコードについて、`input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens` を SHALL 合計する。同じリクエストが複数行に分かれて書かれるため、`requestId`（無ければ `message.id`、それも無ければ行の `uuid`）で重複を MUST 排除する。有効な JSON でない行・辞書でない行・`message.usage` が辞書でない行で集計を中断してはならず MUST NOT、読み飛ばした行数を出力の `skipped_lines` に MUST 出す。
 
+守備範囲: 想定する入力の出どころは Claude Code が書く `agent-<id>.jsonl`。拾いたい誤りは、1 つの応答が複数行に分かれて書かれることによる二重計上と、壊れた行で集計が止まって合計が出ないこと。通ることを許す入力は、`requestId` と `message.id` の両方が無く `uuid` だけで区別される行（別リクエストとして数える）、`usage` の各キーが欠けている行（0 として数える）、値が 0 や不自然に大きい行（そのまま数える）。穴が見つかるたびに塞ぎ切ることを完了条件にしない。
+
 #### Scenario: 同じ requestId の行を 1 回だけ数える
 - **WHEN** トランスクリプトに同じ `requestId` と同じ `usage` を持つ assistant 行が 2 行ある
 - **THEN** そのリクエストのトークンは 1 回だけ合計に含まれる
@@ -68,25 +70,43 @@ exit code は、`total_tokens` が上限以下なら 0、上限を超えたら 2
 - **WHEN** 紐付くサブエージェントが 0 体の番号を渡す
 - **THEN** `total_tokens` が 0、`agent_count` が 0 で exit 0
 
+#### Scenario: 環境変数の上限が使われる
+- **WHEN** `--cap` を付けず、環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP` に固定入力の合計より小さい値を設定して実行する
+- **THEN** 出力の `cap` がその値になり、`over_cap` が true で exit 2
+
+#### Scenario: --cap が環境変数より優先される
+- **WHEN** `DEV_WORKFLOW_PR_TOKEN_CAP` に合計より小さい値、`--cap` に合計より大きい値を渡す
+- **THEN** 出力の `cap` は `--cap` の値で、exit 0
+
 #### Scenario: 上限の指定が不正
 - **WHEN** `--cap` に数字でない値を渡す
 - **THEN** exit 1
 
 ### Requirement: 本体は spawn と再開の前に測り、上限超なら止まる
-develop の本体は、W / R1 / G / G のレビュアー / 決める役のいずれかを spawn する直前、および SendMessage で再開する直前に、毎回 `scripts/pr-token-budget.sh <記録先番号> [PR 番号]` を MUST 実行する。exit 2 のときは spawn / SendMessage をしてはならず MUST NOT、記録先に `needs-approval` を付け、現在の合計・体数・上限を添えて主に「続けるか、範囲外として閉じるか」の 1 択を出して止まる（PR-A の問いと同じ形）。unmanned でも同じく止まり、サイクルを終える。この手順は `skills/develop/SKILL.md` に SHALL 書く。
+develop の本体は、その記録先のためにサブエージェントを spawn する直前、SendMessage で再開する直前、および executor が `codex` の役割へ委譲する直前に、役割と executor を問わず毎回 `scripts/pr-token-budget.sh <記録先番号> [PR 番号]` を MUST 実行する。合計に入るのは Claude executor で起こしたサブエージェントの消費だけであり、executor が `codex` の役割の消費はこの上限の外である（Codex CLI の消費は Claude のトランスクリプトに残らないため）。したがって `codex-standard` のように W が Codex の profile では、実装の繰り返しに対する累計の歯止めは無く、この仕組みが止めるのは Claude で起こした役割の合計が上限を超えたときだけである。この点を `skills/develop/SKILL.md` の手順に MUST 明記する。
 
-主が「続ける」を選んだら、本体は記録先に 1 行目が `PR トークン上限: <新上限>`（新上限はその時点の合計＋既定の上限）のコメントを投稿し、以後その記録先の計測に `--cap <新上限>` を MUST 渡す。後任の本体は、記録先の最新の `PR トークン上限:` コメントの値を使う。主が「範囲外として閉じる」を選んだら、本体はその記録先について以後サブエージェントを起こさず、残作業を記録先にコメントしてサイクルを終える。
+exit 2 のときは spawn / SendMessage / Codex への委譲をしてはならず MUST NOT、記録先に `needs-approval` を付けて主に「続けるか、範囲外として閉じるか」の 2 択を出して止まる。2 択そのものは PR-A と同じだが、判断材料なしで出してはならず MUST NOT、問いには現在の合計・体数・上限・残工程（次に起こそうとした役割と、そのあと残る工程）・本体の推奨（どちらを選ぶかとその理由）を MUST 含める。unmanned でも同じく止まり、サイクルを終える。この手順は `skills/develop/SKILL.md` に SHALL 書く。
 
-exit 1 のときは止まらずに進み、計測できなかったことを記録先にコメントする。
+主が「続ける」を選んだら、本体は記録先に 1 行目が `PR トークン上限: <新上限>` のコメントを投稿し、以後その記録先の計測に `--cap <新上限>` を MUST 渡す。新上限は「その時点の合計 ＋ 直前の計測で上限に使った値（`--cap`、無ければ環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP`、無ければ 30000000 の順で決まった値）」とする。後任の本体は、記録先の最新の `PR トークン上限:` コメントの値を使う。主が「範囲外として閉じる」を選んだら、本体はその記録先について以後サブエージェントを起こさず Codex にも委譲せず、残作業を記録先にコメントしてサイクルを終える。
+
+exit 1 のときは止まらずに進み、計測できなかったことを記録先にコメントする。コメントは同じ記録先・同じ理由について 1 サイクルに 1 回までと SHALL する（spawn のたびに同じコメントを増やさない）。
 
 #### Scenario: 上限超で次の役割を起こさない
 - **WHEN** 本体が G を spawn しようとして `pr-token-budget.sh` が exit 2 を返す
-- **THEN** 本体は G を spawn せず、`needs-approval` を付けて主に「続けるか、範囲外として閉じるか」を出す
+- **THEN** 本体は G を spawn せず、`needs-approval` を付け、合計・体数・上限・残工程・推奨を添えて主に「続けるか、範囲外として閉じるか」を出す
+
+#### Scenario: Codex への委譲の前にも測る
+- **WHEN** executor が `codex` の W へ次の工程を委譲しようとして、Claude で起こした役割の合計が上限を超えており `pr-token-budget.sh` が exit 2 を返す
+- **THEN** 本体は委譲せずに止まり、主に上げる
 
 #### Scenario: SKILL.md に手順が書かれている
 - **WHEN** `skills/develop/SKILL.md` を読む
-- **THEN** 「`pr-token-budget.sh` が exit 2 なら spawn / SendMessage せず主に上げる」手順と、description に記録先番号 `#N` を入れる規約が書かれている
+- **THEN** 「`pr-token-budget.sh` が exit 2 なら spawn / SendMessage / Codex への委譲をせず主に上げる」手順、description に記録先番号 `#N` を入れる規約、executor が `codex` の役割の消費は上限の外であることが書かれている
 
 #### Scenario: 続けたあとの計測は引き上げた上限を使う
-- **WHEN** 主が「続ける」を選び、本体が記録先に `PR トークン上限: 60000000` をコメントしたあとで次の spawn をする
-- **THEN** 本体は `--cap 60000000` を付けて計測する
+- **WHEN** 上限 30000000 で止まり、その時点の合計が 30500000 で、主が「続ける」を選ぶ
+- **THEN** 本体は記録先に `PR トークン上限: 60500000` をコメントし、次の spawn の前の計測に `--cap 60500000` を付ける
+
+#### Scenario: 計測できないコメントを重ねない
+- **WHEN** 同じサイクルで 2 回続けて `pr-token-budget.sh` が同じ理由で exit 1 を返す
+- **THEN** 本体が記録先に投稿する「計測できなかった」コメントは 1 件だけ
