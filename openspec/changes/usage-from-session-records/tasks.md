@@ -22,9 +22,9 @@
 
 ## 4. usage-probe を補助に下げる
 
-- [ ] 4.1 `plugins/dev-workflow/tests/usage-probe.bats` / `usage-probe-multi-account.bats` の「5 分キャッシュ」テストを外し、実行条件のシナリオ（記録と snapshot の両方が新しいスロットはフェッチしない・記録は新しいが snapshot の `fetched_at` が古い（または無い）スロットはフェッチする・間隔内は叩かない・全スロット失敗の直後に叩き直さない・429 の倍々の待ち・200 で回数が戻る・ロックが取れなければ何もしない・古いロックは取り直す）をテストにする。HTTP ステータスはテスト用の応答で 429 を返せるようにする（Red）
-- [ ] 4.2 `plugins/dev-workflow/scripts/usage-probe.sh` に実行条件（`USAGE_PROBE_STALE` / `USAGE_PROBE_INTERVAL` / `USAGE_PROBE_STATE` / `USAGE_PROBE_LOCK`）と試行状態の記録・429 の待ち・ロックを実装し、mtime の TTL を外す。snapshot の形とスロット単位 fail-open は変えない（Green）
-- [ ] 4.3 既存の probe テスト（snapshot の形・fail-open・エラーレスポンス・User-Agent）が全件通ることを確かめる。テストが試行状態・ロック・記録ディレクトリを一時ディレクトリに向けていることを確かめる（実環境の `~/.claude` を触らない）
+- [x] 4.1 `plugins/dev-workflow/tests/usage-probe.bats` / `usage-probe-multi-account.bats` の「5 分キャッシュ」テストを外し、実行条件のシナリオ（記録と snapshot の両方が新しいスロットはフェッチしない・記録は新しいが snapshot の `fetched_at` が古い（または無い）スロットはフェッチする・間隔内は叩かない・全スロット失敗の直後に叩き直さない・429 の倍々の待ち・200 で回数が戻る・ロックが取れなければ何もしない・古いロックは取り直す）をテストにする。HTTP ステータスはテスト用の応答で 429 を返せるようにする（Red）
+- [x] 4.2 `plugins/dev-workflow/scripts/usage-probe.sh` に実行条件（`USAGE_PROBE_STALE` / `USAGE_PROBE_INTERVAL` / `USAGE_PROBE_STATE` / `USAGE_PROBE_LOCK`）と試行状態の記録・429 の待ち・ロックを実装し、mtime の TTL を外す。snapshot の形とスロット単位 fail-open は変えない（Green）
+- [x] 4.3 既存の probe テスト（snapshot の形・fail-open・エラーレスポンス・User-Agent）が全件通ることを確かめる。テストが試行状態・ロック・記録ディレクトリを一時ディレクトリに向けていることを確かめる（実環境の `~/.claude` を触らない）
 
 ## 5. 文書・版・全体確認
 
