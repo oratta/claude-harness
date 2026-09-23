@@ -1,13 +1,20 @@
 # Changelog — dev-workflow
 
-## 2.13.27 — 2026-09-23: Codex role の model を系統名で書き、呼ぶ直前に最新版へ解決する
+## 2.13.28 — 2026-09-23: Codex role の model を系統名で書き、呼ぶ直前に最新版へ解決する
 
-役割表 `codex-role-profiles.json` がモデル ID（`gpt-5.6-sol` 等）を直書きしていたため、GPT-6 Sol / Luna が出ても旧世代が呼ばれ、世代が上がるたびに役割表を手で直す必要があった（#397）。Claude 側と同じく系統名だけを書く形にそろえる。
+役割表 `codex-role-profiles.json` がモデル ID（`gpt-5.6-sol` 等）を直書きしていたため、GPT-6 Sol / Luna が出ても旧世代が呼ばれ、世代が上がるたびに役割表を手で直す必要があった（#397）。2.13.27 は並行 PR #376 が使ったため、この版は 2.13.28 とした。Claude 側と同じく系統名だけを書く形にそろえる。
 
 - **codex-role-profiles.json**: 組み込み 4 profile の Codex entry を `sol` / `luna` / `astra` に書き換えた
-- **codex-worker.py**: model が英小文字だけなら系統名として、model/list の hidden でない `gpt-<版>-<系統名>` から版が最も新しい 1 件を選び、thread/start と turn/start に渡す。0 件は `model_not_available`、最新版が 2 件以上は `model_not_unique` で止まり別モデルに倒さない。effort は解決後のモデルで検証する。結果 JSON の `execution.model_resolution` に要求値・種類・解決後の ID を残す。`hidden` が真偽値以外の entry は経路を問わず `model_list_invalid`。完全なモデル ID は従来どおり完全一致で照合する
+- **codex-worker.py**: model が英小文字だけなら系統名として、model/list の hidden でない `gpt-<版>-<系統名>` から版が最も新しい 1 件を選び、thread/start と turn/start に渡す。0 件は `model_not_available`、最新版が 2 件以上は `model_not_unique` で止まり別モデルに倒さない。effort は解決後のモデルで検証する。結果 JSON の `execution.model_resolution` に要求値・種類・解決後の ID を残す。model/list の結果が object でないときと `hidden` が真偽値以外の entry があるときは、経路を問わず `model_list_invalid`。完全なモデル ID は従来どおり完全一致で照合する
 - **codex-develop.md / commands/develop.md**: model に系統名と完全 ID のどちらも書けること、記録先に要求値と解決後の ID を両方書くこと、新しいモデルが一覧に出るには Codex CLI の更新が要ることを書いた
 - **テスト**: `test_codex_worker.py` に系統名の解決・非一意・hidden・版の数値比較・effort・解決結果の記録のテストを、`test_codex_develop.py` に役割表にモデル ID が無いことと系統名/完全 ID がそのまま request に写ることのテストを足した
+
+## 2.13.27 — 2026-09-23: 起動時に週次余裕のある Claude アカウントを選ぶ
+
+- `scripts/select-account.sh` を追加した。schema 2 usage snapshot の 300 秒以内の観測から、5 時間枠が 90% 未満で週次余裕が最大のスロットを選ぶ。同点はレジストリの宣言順で決める
+- 古い・欠測した観測と 5 時間枠の逼迫を区別して既定アカウントへ縮退し、stdout の `securestorage` と stderr の選択理由を分離した
+- 登録 id の明示選択を snapshot 非依存で追加し、README に `cld` / `cld-account` zsh function の設定例を載せた
+- `tests/account-selector.bats` で鮮度・短期枠・週次余裕・縮退・明示選択・出力ストリームを固定し、zsh がない環境では README の zsh functions テストだけを skip するようにした
 
 ## 2.13.26 — 2026-09-23: develop 本体が起こす G のレビューを adapter で振り分ける
 
