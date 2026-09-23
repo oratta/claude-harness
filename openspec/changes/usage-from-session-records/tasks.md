@@ -18,7 +18,7 @@
 - [x] 3.3 `plugins/dev-workflow/tests/tripwire-hook.bats` に「セッション記録から共有枠 `depleted`」「古い snapshot の Fable はリセット時刻で読む」「snapshot も記録も無ければ conserve」と、agent-model-guard の fork 判定が記録を使うテストを足す（Red）
 - [x] 3.4 `plugins/dev-workflow/scripts/session-tripwires.sh` と `plugins/dev-workflow/scripts/agent-model-guard.sh` を active スロットの実効値で導出するよう直す（Green）。導出の式と文言は変えない
 - [x] 3.5 `plugins/dev-workflow/tests/test_codex_develop.py` の Claude 側 300 秒前提のテストを書き換え、「429 が続いてもセッション記録で評価する（証跡の `fetched_at` は記録の `observed_at`）」「Claude の古い値はリセット前なら使う」を足す。Codex 側の 300/301 秒境界のテストは残す（Red）
-- [ ] 3.6 `plugins/dev-workflow/scripts/codex-develop.py` の `claude_usage_evidence` を `usage_view` の実効値から margin を求めるよう直す。Codex 側の `usage_margin(..., codex=True)` は変えない（Green）
+- [x] 3.6 `plugins/dev-workflow/scripts/codex-develop.py` の `claude_usage_evidence` を `usage_view` の実効値から margin を求めるよう直す。Codex 側の `usage_margin(..., codex=True)` は変えない（Green）
 
 ## 4. usage-probe を補助に下げる
 
