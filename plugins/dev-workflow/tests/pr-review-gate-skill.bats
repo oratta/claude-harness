@@ -717,7 +717,29 @@ triage_row_section() {
   # 扱いが混在する組は git diff の削除行の件数で裏取りする
   echo "$r" | grep -qF '扱いが混在する組'
   echo "$r" | grep -qF 'git diff <修正前 SHA> HEAD -- <ファイル>'
-  echo "$r" | grep -qF '「直した」の件数以上'
+  # #377 で必要数は「直した」の件数と補助表に載った「該当しない」の件数の和になった
+  echo "$r" | grep -qF '「直した」の件数と、その組のうち補助表に載った「該当しない」の件数の和以上'
+}
+
+@test "triage (#377): row 3 keeps pre-fix bodies in the main table and puts rewritten not-applicable rows in a separate table" {
+  r="$(triage_row_section 3)"
+  for token in '`### 書き換えた該当しない行`' '`| ファイル | 行（修正前 SHA） | 修正後の本文 |`' \
+    '主表の本文列は常に修正前 SHA での本文' 'ちょうど 1 つ指す' \
+    '同じ `(ファイル, 行（修正前 SHA）)` を補助表に 2 回載せない' '修正後の本文が主表の本文と等しい行' \
+    '補助表はこの段で使わない' \
+    '補助表に載っていれば修正後の本文、載っていなければ主表の本文' \
+    '検索語を含まなくなった「該当しない」行が HEAD に現れないことは不一致としない' \
+    'review-hit-set.py --head <HEAD の 40 桁 SHA>' 'git fetch' \
+    '主表の「該当しない」行を指さない補助表の行'; do
+    echo "$r" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "review inventory (#377): the common list contract points the row-3 second stage at --head" {
+  common="$(awk '/^\*\*共通一覧契約/{f=1} f&&/^\*\*/&&seen{exit} f{seen=1; print}' "$SKILL")"
+  echo "$common" | grep -qF -- '--head'
+  run grep -qF '第 2 段は別に維持する' <<<"$common"
+  [ "$status" -ne 0 ]
 }
 
 @test "triage (#359): the mixed paragraph handles rows 5 and 6 together, hold first, then needs-decider, then one failed" {
