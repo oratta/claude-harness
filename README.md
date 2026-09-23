@@ -60,7 +60,6 @@ Claude Code用スキル・プラグインのマーケットプレイス
 | プラグイン | 説明 |
 |-----------|------|
 | `telegram` | Telegram messaging bridge。公式プラグインの fork で、主のリアクション（👍👀等）をセッションに配送する |
-| `discord` | Discord messaging bridge。公式プラグインの fork で、`fetch_messages` がリアクションを返す |
 | `worktree` | Git worktree のセットアップ（`/wt-setup`。`--with-pr` で Draft PR まで作成）とクリーンアップ（`/wt-clean`） |
 | `weekly-report` | 週次プロジェクト実績レポートを自動生成し、Obsidian 週次ノートに挿入する。cron 非対話実行に対応 |
 | `daily-report` | 音声トランスクリプト・Obsidian ノート・LLM セッションログを横断集約し、日次日記を生成する |
@@ -133,3 +132,9 @@ Oratta
 ### 解散済みプラグイン
 
 ループレシピ集・自律実行ハーネス・その短縮コマンド集の 3 プラグインは 2026-08 に解散した（[#205](https://github.com/oratta/claude-harness/issues/205)）。手順書としての層をやめ、中に埋まっていた契約（自己検証の共通原則・PR / issue 本文の型・issueify・ロール別モデルティア）だけを `dev-workflow` に移した。install 済みの環境での `/plugin uninstall` 手順と新旧パスの対応表は `plugins/dev-workflow/CHANGELOG.md` にある。
+
+Discord 改造版（公式プラグインの fork で、主のリアクションをセッションへ push 配送するもの）は 2026-09 に flatmate へ移し、flatmate 自身が marketplace として配っている（[genetta-inc/flatmate#851](https://github.com/genetta-inc/flatmate/issues/851)）。harness からは外した（[#314](https://github.com/oratta/claude-harness/issues/314)）。`discord@oratta-claude-harness` を入れている環境は次のとおり切り替える。flatmate の marketplace の登録手順は flatmate#851 を正本とする。
+
+1. `claude plugin uninstall discord@oratta-claude-harness` を実行する
+2. `settings.json` の `enabledPlugins` にある `discord@oratta-claude-harness` を `discord@flatmate` に置き換える
+3. 住人の `CHANNEL_PLUGINS` を `plugin:discord@flatmate` にして、住人を再起動する
