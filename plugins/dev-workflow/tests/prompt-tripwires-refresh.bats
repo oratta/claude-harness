@@ -7,6 +7,8 @@
 #
 # 偽プラグインルート（${FAKE}）を組んで検証する。usage-probe.sh は意図的にコピーしない
 # ので、session-tripwires.sh はネットワークに出ず conserve 既定で決定論的に走る。
+# usage_view.py は本番と同じく session-tripwires.sh の隣に置き、レジストリとセッション記録は
+# 空の一時ディレクトリに向ける（実環境の ~/.claude を読まない）。
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -16,6 +18,7 @@ setup() {
   FAKE="$(mktemp -d)"
   mkdir -p "$FAKE/scripts" "$FAKE/templates" "$FAKE/.claude-plugin"
   cp "$PLUGIN_DIR/scripts/session-tripwires.sh" "$FAKE/scripts/"
+  cp "$PLUGIN_DIR/scripts/usage_view.py" "$FAKE/scripts/"
   cp "$SCRIPT" "$FAKE/scripts/"
   cp "$PLUGIN_DIR/templates/escalation-tripwires.md" "$FAKE/templates/"
   STATE_DIR="$FAKE/state"
@@ -32,8 +35,10 @@ set_version() {
 
 # $1 = stdin に流す hook 入力（JSON）
 run_hook() {
-  printf '%s' "$1" | env \
+  printf '%s' "$1" | env -u CLAUDE_SECURESTORAGE_CONFIG_DIR \
     CLAUDE_PLUGIN_ROOT="$FAKE" \
+    CLAUDE_ACCOUNTS_FILE="$FAKE/absent-accounts.json" \
+    USAGE_SESSIONS_DIR="$FAKE/absent-sessions" \
     TRIPWIRE_STATE_DIR="$STATE_DIR" \
     USAGE_SNAPSHOT="$FAKE/absent-snapshot" \
     "$FAKE/scripts/prompt-tripwires-refresh.sh"

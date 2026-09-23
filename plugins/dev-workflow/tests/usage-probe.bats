@@ -17,6 +17,12 @@ setup() {
   # 固定 now と週次リセット（now の 2 日後 = 週経過 ≈ 71.4%）
   NOW=1000000000
   RESETS_EPOCH=$((NOW + 2 * 86400))
+  # 実環境の ~/.claude（レジストリ・セッション記録・試行状態・ロック）を読み書きしない
+  export CLAUDE_ACCOUNTS_FILE="${WORK}/accounts.json"
+  export USAGE_SESSIONS_DIR="${WORK}/sessions"
+  export USAGE_PROBE_STATE="${WORK}/probe-state.json"
+  export USAGE_PROBE_LOCK="${WORK}/probe.lock"
+  unset CLAUDE_SECURESTORAGE_CONFIG_DIR
 }
 
 teardown() {
@@ -50,12 +56,15 @@ write_nofable_resp() {
 JSON
 }
 
-# 指定 pct / resets_epoch の snapshot を直接書く（導出テスト用）
+# 指定 pct / resets_epoch の snapshot を直接書く（導出テスト用）。
+# 読み手（usage_view）は schema 2 の accounts を見る。トップレベルは probe が書くミラー
 write_snapshot() {
   local pct="$1" resets="$2"
-  cat > "$SNAP" <<JSON
-{ "schema": 1, "fetched_at": ${NOW}, "fable_weekly_pct": ${pct}, "fable_active": true,
-  "weekly_all_pct": 55, "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets} }
+  local entry="\"fetched_at\": ${NOW}, \"fable_weekly_pct\": ${pct}, \"fable_active\": true,
+  \"weekly_all_pct\": 55, \"weekly_resets_at\": \"iso\", \"weekly_resets_epoch\": ${resets}"
+  cat >| "$SNAP" <<JSON
+{ "schema": 2, "active": "default", ${entry},
+  "accounts": { "default": { ${entry} } } }
 JSON
 }
 
