@@ -24,7 +24,7 @@ setup() {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/ok"
   [ -f "${FIXTURES}/ok/.claude/casting/delegation.md" ]
   [ "$status" -eq 0 ]
-  [[ "$output" != *"delegation.md"* ]]
+  [[ "$output" != *"delegation.md"* ]] || return 1
 }
 
 # --- Scenario: 8種の検出がそれぞれ報告される（⓪malformed-row はファイル末尾） ---
@@ -32,41 +32,41 @@ setup() {
 @test "unknown-vocab fixture: reports the unknown perspective name and exits 1" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/unknown-vocab"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"謎の観点"* ]]
-  [[ "$output" == *"project.md"* ]]
+  [[ "$output" == *"謎の観点"* ]] || return 1
+  [[ "$output" == *"project.md"* ]] || return 1
 }
 
 @test "catalog-external-precedent fixture: reports the out-of-catalog precedent and exits 1" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/catalog-external-precedent"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"カタログ外"* ]]
-  [[ "$output" == *"precedents.md"* ]]
+  [[ "$output" == *"カタログ外"* ]] || return 1
+  [[ "$output" == *"precedents.md"* ]] || return 1
 }
 
 @test "repeated-not-issue fixture: reports the perspective repeated as not-an-issue and exits 1" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/repeated-not-issue"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"信用・レピュテーション"* ]]
-  [[ "$output" == *"論点じゃなかった"* ]]
+  [[ "$output" == *"信用・レピュテーション"* ]] || return 1
+  [[ "$output" == *"論点じゃなかった"* ]] || return 1
 }
 
 @test "version-mismatch fixture: reports the catalog_version mismatch and exits 1" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/version-mismatch"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"catalog_version"* ]]
-  [[ "$output" == *"project.md"* ]]
+  [[ "$output" == *"catalog_version"* ]] || return 1
+  [[ "$output" == *"project.md"* ]] || return 1
 }
 
 # --- 補足: 未知語彙のフィクスチャは version 不一致など他項目を誤検出しない ---
 
 @test "unknown-vocab fixture: does not also report a version mismatch" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/unknown-vocab"
-  [[ "$output" != *"version-mismatch"* ]]
+  [[ "$output" != *"version-mismatch"* ]] || return 1
 }
 
 @test "ok fixture: catalog_version matches so no version-mismatch finding" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/ok"
-  [[ "$output" != *"version-mismatch"* ]]
+  [[ "$output" != *"version-mismatch"* ]] || return 1
 }
 
 # --- 回帰: 1周目レビューの blocking 指摘（シェル堅牢性） ---
@@ -74,21 +74,21 @@ setup() {
 @test "missing-version fixture: reports the missing catalog_version instead of dying silently" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/missing-version"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"catalog_version が front matter に無い"* ]]
+  [[ "$output" == *"catalog_version が front matter に無い"* ]] || return 1
 }
 
 @test "no-front-matter fixture: treated as missing catalog_version without misparsing the body" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/no-front-matter"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"catalog_version が front matter に無い"* ]]
-  [[ "$output" != *"unknown-vocab"* ]]
+  [[ "$output" == *"catalog_version が front matter に無い"* ]] || return 1
+  [[ "$output" != *"unknown-vocab"* ]] || return 1
 }
 
 @test "tight-pipes fixture: rows without a space after the pipe are still linted" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/tight-pipes"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"謎のタイト観点"* ]]
-  [[ "$output" != *"財務・コスト"* ]]
+  [[ "$output" == *"謎のタイト観点"* ]] || return 1
+  [[ "$output" != *"財務・コスト"* ]] || return 1
 }
 
 @test "trailing-space fixture: trailing spaces do not cause a false unknown-vocab" {
@@ -104,8 +104,8 @@ setup() {
 @test "malformed-row fixture: a row with fewer than 5 columns is reported" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/malformed-row"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"malformed-row"* ]]
-  [[ "$output" == *"5列未満"* ]]
+  [[ "$output" == *"malformed-row"* ]] || return 1
+  [[ "$output" == *"5列未満"* ]] || return 1
 }
 
 # --- 検出5: 相談判例（経路「相談の上自走した」）の事後報告5要素 ---
@@ -113,11 +113,11 @@ setup() {
 @test "consultation-missing-element fixture: reports the missing report elements and exits 1" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/consultation-missing-element"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"consultation-missing-element"* ]]
+  [[ "$output" == *"consultation-missing-element"* ]] || return 1
   # ブロック見出しと、欠けている要素名（各人格の主張・根拠・判例リンク）が列挙される
-  [[ "$output" == *"相談を経たが事後報告が欠けた判例"* ]]
-  [[ "$output" == *"各人格の主張"* ]]
-  [[ "$output" == *"判例リンク"* ]]
+  [[ "$output" == *"相談を経たが事後報告が欠けた判例"* ]] || return 1
+  [[ "$output" == *"各人格の主張"* ]] || return 1
+  [[ "$output" == *"判例リンク"* ]] || return 1
 }
 
 # ラベルの存在だけを見る実装では、値が空のラベルを5つ並べただけのブロックが通ってしまう
@@ -127,14 +127,14 @@ setup() {
 @test "consultation-empty-value fixture: labels present but with empty values are reported and exits 1" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/consultation-empty-value"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"consultation-missing-element"* ]]
-  [[ "$output" == *"5要素のラベルはあるが値が空の判例"* ]]
+  [[ "$output" == *"consultation-missing-element"* ]] || return 1
+  [[ "$output" == *"5要素のラベルはあるが値が空の判例"* ]] || return 1
   # 5要素すべてが欠落として列挙される（半角空白のみの「- 根拠:」と全角スペースのみの「- 裁定:」を含む）
-  [[ "$output" == *"論点"* ]]
-  [[ "$output" == *"各人格の主張"* ]]
-  [[ "$output" == *"裁定"* ]]
-  [[ "$output" == *"根拠"* ]]
-  [[ "$output" == *"判例リンク"* ]]
+  [[ "$output" == *"論点"* ]] || return 1
+  [[ "$output" == *"各人格の主張"* ]] || return 1
+  [[ "$output" == *"裁定"* ]] || return 1
+  [[ "$output" == *"根拠"* ]] || return 1
+  [[ "$output" == *"判例リンク"* ]] || return 1
 }
 
 # 空白除去は「値が空か」の判定にだけ効かせる。値の先頭に全角スペースが混ざっていても、
@@ -163,13 +163,13 @@ catalog_version: 1
 PRECEDENTS
   run "$SCRIPT" --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"consultation-missing-element"* ]]
+  [[ "$output" != *"consultation-missing-element"* ]] || return 1
 }
 
 @test "ok fixture: a compliant consultation block and a note block without a route line pass" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/ok"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"consultation-missing-element"* ]]
+  [[ "$output" != *"consultation-missing-element"* ]] || return 1
 }
 
 # --- 回帰: #186（ラベル照合の部分文字列一致と末尾改行なしで検査が外れる） ---
@@ -200,8 +200,8 @@ catalog_version: 1
 PRECEDENTS
   run "$SCRIPT" --catalog "$CATALOG" "$dir"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"consultation-missing-element"* ]]
-  [[ "$output" == *"（論点）"* ]]
+  [[ "$output" == *"consultation-missing-element"* ]] || return 1
+  [[ "$output" == *"（論点）"* ]] || return 1
 }
 
 # インデントされた箇条書きのラベル行は行頭アンカー化の後も有効な要素として数える
@@ -230,7 +230,7 @@ catalog_version: 1
 PRECEDENTS
   run "$SCRIPT" --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"consultation-missing-element"* ]]
+  [[ "$output" != *"consultation-missing-element"* ]] || return 1
 }
 
 # 経路の照合も同じ部分文字列一致の穴を持つ: 相談していない注記ブロックの値に
@@ -254,7 +254,7 @@ catalog_version: 1
 PRECEDENTS
   run "$SCRIPT" --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"consultation-missing-element"* ]]
+  [[ "$output" != *"consultation-missing-element"* ]] || return 1
 }
 
 # 末尾改行の無いファイルで最終行が「- 判例リンク:」のとき、read ループが最終行を
@@ -266,7 +266,7 @@ PRECEDENTS
     > "${dir}/.claude/casting/precedents.md"
   run "$SCRIPT" --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"consultation-missing-element"* ]]
+  [[ "$output" != *"consultation-missing-element"* ]] || return 1
 }
 
 # 末尾改行の無いファイルで最終行が「- 経路: 相談の上自走した」のとき、最終行が
@@ -278,8 +278,8 @@ PRECEDENTS
     > "${dir}/.claude/casting/precedents.md"
   run "$SCRIPT" --catalog "$CATALOG" "$dir"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"consultation-missing-element"* ]]
-  [[ "$output" == *"論点・各人格の主張・裁定・根拠・判例リンク"* ]]
+  [[ "$output" == *"consultation-missing-element"* ]] || return 1
+  [[ "$output" == *"論点・各人格の主張・裁定・根拠・判例リンク"* ]] || return 1
 }
 
 # --- 回帰: macOS の sort/uniq がロケール照合で異なる日本語観点列を同一視する（LC_ALL=C 強制） ---
@@ -287,7 +287,7 @@ PRECEDENTS
 @test "distinct-not-issue fixture: two different multi-perspective strings are not merged into a repeated-not-issue" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/distinct-not-issue"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"repeated-not-issue"* ]]
+  [[ "$output" != *"repeated-not-issue"* ]] || return 1
 }
 
 # --- 回帰: #139（check モードでも同じ経路を検出する） ---
@@ -295,27 +295,27 @@ PRECEDENTS
 @test "over-column fixture: a row that splits into more than 5 columns is reported" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/over-column"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"malformed-row"* ]]
-  [[ "$output" == *"6列以上"* ]]
+  [[ "$output" == *"malformed-row"* ]] || return 1
+  [[ "$output" == *"6列以上"* ]] || return 1
 }
 
 @test "unclosed-comment fixture: an unbalanced HTML comment is reported" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/unclosed-comment"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"unclosed-comment"* ]]
-  [[ "$output" == *"project.md"* ]]
+  [[ "$output" == *"unclosed-comment"* ]] || return 1
+  [[ "$output" == *"project.md"* ]] || return 1
 }
 
 @test "local-malformed fixture: a broken local.md is reported with its own path" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/local-malformed"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"malformed-row"* ]]
-  [[ "$output" == *"local.md"* ]]
+  [[ "$output" == *"malformed-row"* ]] || return 1
+  [[ "$output" == *"local.md"* ]] || return 1
 }
 
 @test "ok fixture: a balanced HTML comment is not reported as unclosed" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/ok"
-  [[ "$output" != *"unclosed-comment"* ]]
+  [[ "$output" != *"unclosed-comment"* ]] || return 1
 }
 
 @test "template project.md: the commented-out example is balanced and not reported" {
@@ -336,26 +336,26 @@ PRECEDENTS
 @test "stray-close-arrow fixture: a lone --> with no HTML comment is not reported" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/stray-close-arrow"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"unclosed-comment"* ]]
+  [[ "$output" != *"unclosed-comment"* ]] || return 1
 }
 
 @test "stray-close-arrow fixture: resolve keeps the human-written row" {
   run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/stray-close-arrow"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
+  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]] || return 1
 }
 
 @test "stray-close-plus-unclosed fixture: an unclosed <!-- is reported even when a stray --> balances the count" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/stray-close-plus-unclosed"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"unclosed-comment"* ]]
-  [[ "$output" == *"project.md"* ]]
+  [[ "$output" == *"unclosed-comment"* ]] || return 1
+  [[ "$output" == *"project.md"* ]] || return 1
 }
 
 @test "stray-close-plus-unclosed fixture: resolve refuses instead of silently dropping the swallowed row" {
   run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/stray-close-plus-unclosed"
   [ "$status" -eq 1 ]
-  [[ "$output" != *"| project |"* ]]
+  [[ "$output" != *"| project |"* ]] || return 1
 }
 
 @test "inline-comment fixture: a comment closed on its own line does not swallow the rows after it" {
@@ -363,7 +363,7 @@ PRECEDENTS
   [ "$status" -eq 0 ]
   run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/inline-comment"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
+  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]] || return 1
 }
 
 # --- Scenario: コードフェンス内の <!-- は HTML コメントとして走査しない（#187） ---
@@ -371,13 +371,13 @@ PRECEDENTS
 @test "code-fence-comment fixture: a literal <!-- inside a code fence is not reported as unclosed" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/code-fence-comment"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"unclosed-comment"* ]]
+  [[ "$output" != *"unclosed-comment"* ]] || return 1
 }
 
 @test "code-fence-comment fixture: resolve keeps the human-written row after the fences" {
   run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/code-fence-comment"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
+  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]] || return 1
 }
 
 @test "comment-with-fence-marks fixture: fence marks inside an HTML comment do not open a fence, so the comment still closes" {
@@ -385,19 +385,19 @@ PRECEDENTS
   [ "$status" -eq 0 ]
   run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/comment-with-fence-marks"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]]
-  [[ "$output" != *"記入例（コメント内なので無効）"* ]]
+  [[ "$output" == *"| 財務・コスト |"*"| 主 | project |"* ]] || return 1
+  [[ "$output" != *"記入例（コメント内なので無効）"* ]] || return 1
 }
 
 @test "code-fence-unclosed fixture: a fence left open until EOF is reported as unclosed-fence, not unclosed-comment" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/code-fence-unclosed"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"unclosed-fence"* ]]
-  [[ "$output" == *"project.md"* ]]
-  [[ "$output" != *"unclosed-comment"* ]]
+  [[ "$output" == *"unclosed-fence"* ]] || return 1
+  [[ "$output" == *"project.md"* ]] || return 1
+  [[ "$output" != *"unclosed-comment"* ]] || return 1
   run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/code-fence-unclosed"
   [ "$status" -eq 1 ]
-  [[ "$output" != *"| project |"* ]]
+  [[ "$output" != *"| project |"* ]] || return 1
 }
 
 # --- 回帰: 閉じ忘れフェンスより後ろの上書き行が黙って落ちる経路を止める（#187） ---
@@ -409,14 +409,14 @@ PRECEDENTS
 @test "code-fence-unclosed-swallow fixture: an override row swallowed by an unclosed fence is reported instead of silently dropped" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/code-fence-unclosed-swallow"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"unclosed-fence"* ]]
-  [[ "$output" == *"project.md"* ]]
+  [[ "$output" == *"unclosed-fence"* ]] || return 1
+  [[ "$output" == *"project.md"* ]] || return 1
 }
 
 @test "code-fence-unclosed-swallow fixture: resolve refuses instead of silently dropping the swallowed row" {
   run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/code-fence-unclosed-swallow"
   [ "$status" -eq 1 ]
-  [[ "$output" != *"| project |"* ]]
+  [[ "$output" != *"| project |"* ]] || return 1
 }
 
 @test "code-fence-example-row fixture: a sample row inside a code fence does not win over the human-written row" {
@@ -424,18 +424,18 @@ PRECEDENTS
   [ "$status" -eq 0 ]
   run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/code-fence-example-row"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]]
-  [[ "$output" != *"採用されてはならない"* ]]
+  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]] || return 1
+  [[ "$output" != *"採用されてはならない"* ]] || return 1
 }
 
 @test "code-fence-plus-unclosed fixture: a real unclosed <!-- outside the fence is still reported" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/code-fence-plus-unclosed"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"unclosed-comment"* ]]
-  [[ "$output" == *"project.md"* ]]
+  [[ "$output" == *"unclosed-comment"* ]] || return 1
+  [[ "$output" == *"project.md"* ]] || return 1
   run "$SCRIPT" resolve --catalog "$CATALOG" "${FIXTURES}/code-fence-plus-unclosed"
   [ "$status" -eq 1 ]
-  [[ "$output" != *"| project |"* ]]
+  [[ "$output" != *"| project |"* ]] || return 1
 }
 
 # --- #307: 閉じフェンス行の末尾判定が CommonMark（スペース・タブのみ）より広い ---
@@ -467,10 +467,10 @@ _fence_trailing_ctrl_fixture() { # $1=出力先ディレクトリ $2=行末に�
   _fence_trailing_ctrl_fixture "$dir" $'\f'
   run "$SCRIPT" --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"unclosed-fence"* ]]
+  [[ "$output" != *"unclosed-fence"* ]] || return 1
   run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]]
+  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]] || return 1
 }
 
 @test "closing-fence-trailing-vtab: a \`\`\` line ending in \\v does not close the fence" {
@@ -478,10 +478,10 @@ _fence_trailing_ctrl_fixture() { # $1=出力先ディレクトリ $2=行末に�
   _fence_trailing_ctrl_fixture "$dir" $'\v'
   run "$SCRIPT" --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"unclosed-fence"* ]]
+  [[ "$output" != *"unclosed-fence"* ]] || return 1
   run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]]
+  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]] || return 1
 }
 
 @test "closing-fence-trailing-cr: a \`\`\` line ending in \\r does not close the fence" {
@@ -489,10 +489,10 @@ _fence_trailing_ctrl_fixture() { # $1=出力先ディレクトリ $2=行末に�
   _fence_trailing_ctrl_fixture "$dir" $'\r'
   run "$SCRIPT" --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"unclosed-fence"* ]]
+  [[ "$output" != *"unclosed-fence"* ]] || return 1
   run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]]
+  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]] || return 1
 }
 
 # 回帰よけ: CommonMark が実際に許すスペース・タブは、修正後も従来どおり閉じフェンス
@@ -504,8 +504,8 @@ _fence_trailing_ctrl_fixture() { # $1=出力先ディレクトリ $2=行末に�
     > "${dir}/.claude/casting/project.md"
   run "$SCRIPT" --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"unclosed-fence"* ]]
+  [[ "$output" != *"unclosed-fence"* ]] || return 1
   run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]]
+  [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]] || return 1
 }

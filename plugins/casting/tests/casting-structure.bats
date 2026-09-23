@@ -111,41 +111,41 @@ lint_template_paths() {
 @test "path lint: flags a plugin-internal path that is not at the head of the code span" {
   run lint_template_paths "${FIXTURES}/violation-mid-span.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"scripts/casting-check.sh"* ]]
+  [[ "$output" == *"scripts/casting-check.sh"* ]] || return 1
 }
 
 @test "path lint: flags quoted tokens inside a code span" {
   run lint_template_paths "${FIXTURES}/violation-quoted-token.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"scripts/casting-check.sh"* ]]
-  [[ "$output" == *"skills/casting/SKILL.md"* ]]
+  [[ "$output" == *"scripts/casting-check.sh"* ]] || return 1
+  [[ "$output" == *"skills/casting/SKILL.md"* ]] || return 1
 }
 
 @test "path lint: flags a multi-backtick code span" {
   run lint_template_paths "${FIXTURES}/violation-double-backtick.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"scripts/casting-check.sh"* ]]
+  [[ "$output" == *"scripts/casting-check.sh"* ]] || return 1
 }
 
 @test "path lint: flags a plugin-internal path inside a fenced code block" {
   run lint_template_paths "${FIXTURES}/violation-fenced-block.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"plugins/casting/scripts/casting-check.sh"* ]]
+  [[ "$output" == *"plugins/casting/scripts/casting-check.sh"* ]] || return 1
 }
 
 @test "path lint: stays inside the fence when a different fence marker appears" {
   run lint_template_paths "${FIXTURES}/violation-nested-fence.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"plugins/casting/scripts/casting-check.sh"* ]]
+  [[ "$output" == *"plugins/casting/scripts/casting-check.sh"* ]] || return 1
 }
 
 # 検出プレフィックスを1つ削っても全フィクスチャが通ってしまう状態を防ぐ
 @test "path lint: the violation fixtures exercise all three forbidden prefixes" {
   run lint_template_paths "${FIXTURES}"/violation-*.md
   [ "$status" -eq 1 ]
-  [[ "$output" == *": scripts/"* ]]
-  [[ "$output" == *": skills/"* ]]
-  [[ "$output" == *": plugins/casting/"* ]]
+  [[ "$output" == *": scripts/"* ]] || return 1
+  [[ "$output" == *": skills/"* ]] || return 1
+  [[ "$output" == *": plugins/casting/"* ]] || return 1
 }
 
 @test "path lint: passes install-path notation that contains the plugin directory names" {

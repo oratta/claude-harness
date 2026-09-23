@@ -40,7 +40,7 @@ strip_ansi() {
   # 7d の残り 2 日 = 経過 5/7 ≈ 71%
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
   line="$(strip_ansi < "$WORK/out.txt" | grep '7d All')"
-  [[ "$line" =~ 25%/71% ]]
+  [[ "$line" =~ 25%/71% ]] || return 1
 }
 
 @test "render: Fable line shows the same elapsed% denominator" {  # Fable 行にも同じ日程分母が出る
@@ -49,7 +49,7 @@ strip_ansi() {
 JSON
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
   line="$(strip_ansi < "$WORK/out.txt" | grep 'Fable')"
-  [[ "$line" =~ 7%/71% ]]
+  [[ "$line" =~ 7%/71% ]] || return 1
 }
 
 @test "render: stale usage-snapshot (>6h) hides the Fable segment" {  # usage-snapshot が 6h より古いと Fable 行を出さない
@@ -64,22 +64,22 @@ JSON
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
   # 1 行目は current_dir（mktemp -d の乱数パス）で 5h を含み得るので除いてから探す
   line="$(strip_ansi < "$WORK/out.txt" | tail -n +2 | grep '5h')"
-  [[ "$line" =~ 3% ]]
-  [[ "$line" != */* ]]
+  [[ "$line" =~ 3% ]] || return 1
+  [[ "$line" != */* ]] || return 1
 }
 
 @test "render: pace ahead of schedule turns the 7d bar red" {  # 日程より使いすぎていると警告色になる
   # 日程 71% に対して消化 90% → 比 126% → 203（赤）
   mk_input 3 90 14000 172800 | bash "$SL" > "$WORK/out.txt"
   line="$(grep '7d All' "$WORK/out.txt")"
-  [[ "$line" =~ 38\;5\;203m[[:space:]]*90% ]]
+  [[ "$line" =~ 38\;5\;203m[[:space:]]*90% ]] || return 1
 }
 
 @test "render: pace behind schedule keeps the 7d bar green" {  # 日程より余裕があると通常色になる
   # 日程 71% に対して消化 25% → 比 35% → 78（緑）
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
   line="$(grep '7d All' "$WORK/out.txt")"
-  [[ "$line" =~ 38\;5\;78m[[:space:]]*25% ]]
+  [[ "$line" =~ 38\;5\;78m[[:space:]]*25% ]] || return 1
 }
 
 @test "snapshot: writes rate limits to .rate-limit-snapshot" {  # レートリミットを rate-limit-snapshot に書き出す
@@ -119,7 +119,7 @@ mk_cost_input() {
   echo 150 > "$WORK/.statusline-fxrate-JPY"
   mk_cost_input 12.34 | bash "$SL" > "$WORK/out.txt"
   line="$(strip_ansi < "$WORK/out.txt" | grep 'Context')"
-  [[ "$line" == *"Context 91%  │  Session ¥1,851"* ]]
+  [[ "$line" == *"Context 91%  │  Session ¥1,851"* ]] || return 1
 }
 
 @test "session cost: sits next to the 30-day API pace" {  # 30 日コストの隣に並ぶ
@@ -129,7 +129,7 @@ mk_cost_input() {
   touch "$WORK/.statusline-api-pace"
   mk_cost_input 1 | STATUSLINE_API_PACE=1 bash "$SL" > "$WORK/out.txt"
   line="$(strip_ansi < "$WORK/out.txt" | grep 'Context')"
-  [[ "$line" == *"API ¥180,000/mo  │  Session ¥150"* ]]
+  [[ "$line" == *"API ¥180,000/mo  │  Session ¥150"* ]] || return 1
 }
 
 @test "session cost: falls back to USD when no fx rate is cached" {  # 為替キャッシュが無ければ USD で出す（描画中に取りに行かない）
@@ -181,7 +181,7 @@ mk_cost_input() {
   echo '{}' > "$WORK/settings.json"
   run bash "$INSTALL" --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" =~ "dry-run" ]]
+  [[ "$output" =~ "dry-run" ]] || return 1
   [ ! -f "$WORK/statusline.sh" ]
   [ ! -f "$WORK/statusline-codex.py" ]
   run jq -r '.statusLine // "none"' "$WORK/settings.json"
@@ -205,7 +205,7 @@ mk_cost_input() {
   jq -n '{statusLine: {type: "command", command: "bash /other/line.sh"}}' > "$WORK/settings.json"
   run bash "$INSTALL"
   [ "$status" -eq 0 ]
-  [[ "$output" =~ replace ]]
+  [[ "$output" =~ replace ]] || return 1
   ls "$WORK"/settings.json.bak-* > /dev/null
   run jq -r '.statusLine.command' "$WORK/settings.json"
   [ "$output" = "bash $WORK/statusline.sh" ]
@@ -222,7 +222,7 @@ mk_cost_input() {
   echo 'not json {' > "$WORK/settings.json"
   run bash "$INSTALL"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "壊れている" ]]
+  [[ "$output" =~ "壊れている" ]] || return 1
   [ ! -f "$WORK/statusline.sh" ]
   [ ! -f "$WORK/statusline-codex.py" ]
 }
@@ -232,8 +232,8 @@ mk_cost_input() {
   bash "$INSTALL" > /dev/null
   run bash "$INSTALL"
   [ "$status" -eq 0 ]
-  [[ "$output" =~ "script     : $WORK/statusline.sh (up-to-date)" ]]
-  [[ "$output" =~ "statusLine : up-to-date" ]]
+  [[ "$output" =~ "script     : $WORK/statusline.sh (up-to-date)" ]] || return 1
+  [[ "$output" =~ "statusLine : up-to-date" ]] || return 1
 }
 
 @test "install: helper updates are backed up and included in dry-run" {
@@ -242,7 +242,7 @@ mk_cost_input() {
   printf '# old helper\n' > "$WORK/statusline-codex.py"
   run bash "$INSTALL" --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" =~ "helper     : $WORK/statusline-codex.py (update)" ]]
+  [[ "$output" =~ "helper     : $WORK/statusline-codex.py (update)" ]] || return 1
   [ "$(cat "$WORK/statusline-codex.py")" = "# old helper" ]
   bash "$INSTALL" > /dev/null
   cmp "$PLUGIN_DIR/scripts/statusline-codex.py" "$WORK/statusline-codex.py"

@@ -1,13 +1,29 @@
 # Changelog — dev-workflow
 
-## 2.13.31 — 2026-09-23: 記録先単位のトークン累計に上限を掛け、超えたら次を起こす前に止まる
+## 2.13.33 — 2026-09-23: 記録先単位のトークン累計に上限を掛け、超えたら次を起こす前に止まる
 
-PR #268 は 12 体のサブエージェントで 122,955,450 トークンを使ったことが、人間がトランスクリプトを手で合計して初めて分かった（#281）。周回数のキャップでは 1 周が重い場合や W の再開が繰り返される場合を止められないため、記録先ごとの累計で止める（#288）。
+PR #268 は 12 体のサブエージェントで 122,955,450 トークンを使ったことが、人間がトランスクリプトを手で合計して初めて分かった（#281）。周回数のキャップでは 1 周が重い場合や W の再開が繰り返される場合を止められないため、記録先ごとの累計で止める（#288）。2.13.32 は先行して main に入った #397 が使用したため、この変更は 2.13.33 とした。
 
 - **scripts/pr-token-budget.sh**（新規）: 記録先番号を渡すと、Agent ツールの description に `#N` を含むサブエージェント（同じリポジトリのものだけ）の全リクエストの usage と、`--codex-records` で渡した Codex 消費（トークン数が `-` の thread は `$CODEX_HOME/sessions` の rollout から読む）を合計し、Claude 分・Codex 分・合計・体数・上限を 1 行 JSON で出す。合計が上限（既定 30,000,000。`DEV_WORKFLOW_PR_TOKEN_CAP` / `--cap`）を超えたら exit 2
 - **develop SKILL.md**: 「PR トークン上限」の節を足した。spawn・SendMessage による再開・Codex executor への委譲の直前に毎回測り、exit 2 なら起こさずに `needs-approval` を付けて「続けるか、範囲外として閉じるか」を合計・体数・上限・残工程・推奨とともに問う。description に `#N` を入れる規約、Codex を呼んだら `Codex 消費: <thread_id> <tokens>` をコメントする規約、「続ける」ときの `PR トークン上限:` コメントと `--cap` もここに書いた
 - **gate-runner.md**: G が Codex を呼んだら thread_id を return に書く（`Codex thread:` 行）
 - **テスト**: `pr-token-budget.bats`（固定のトランスクリプト・Codex 記録・rollout に対する合計と exit code）を足し、`develop-skill.bats` に手順の文書検査を足した
+
+## 2.13.32 — 2026-09-23: Codex role の model を系統名で書き、呼ぶ直前に最新版へ解決する
+
+役割表 `codex-role-profiles.json` がモデル ID（`gpt-5.6-sol` 等）を直書きしていたため、GPT-6 Sol / Luna が出ても旧世代が呼ばれ、世代が上がるたびに役割表を手で直す必要があった（#397）。2.13.27〜2.13.31 は先に main に入った並行 PR が使ったため、この版は 2.13.32 とした。Claude 側と同じく系統名だけを書く形にそろえる。
+
+- **codex-role-profiles.json**: 組み込み 4 profile の Codex entry を `sol` / `luna` / `astra` に書き換えた
+- **codex-worker.py**: model が英小文字だけなら系統名として、model/list の hidden でない `gpt-<版>-<系統名>` から版が最も新しい 1 件を選び、thread/start と turn/start に渡す。0 件は `model_not_available`、最新版が 2 件以上は `model_not_unique` で止まり別モデルに倒さない。effort は解決後のモデルで検証する。結果 JSON の `execution.model_resolution` に要求値・種類・解決後の ID を残す。model/list の結果が object でないときと `hidden` が真偽値以外の entry があるときは、経路を問わず `model_list_invalid`。完全なモデル ID は従来どおり完全一致で照合する
+- **codex-develop.md / commands/develop.md**: model に系統名と完全 ID のどちらも書けること、記録先に要求値と解決後の ID を両方書くこと、新しいモデルが一覧に出るには Codex CLI の更新が要ることを書いた
+- **テスト**: Codex worker の Python テストに系統名の解決・非一意・hidden・版の数値比較・effort・解決結果の記録のテストを、develop 側の Python テストに役割表にモデル ID が無いことと系統名/完全 ID がそのまま request に写ることのテストを足した
+
+## 2.13.31 — 2026-09-23: 単独文の bats アサーションに `|| return 1` を義務付ける
+
+`[[ ... ]]` や `[ ... ]` を単独文として書くと、bats のヘルパ関数内では失敗しても関数を抜けずに後続行が実行され、アサーションが効かないまま green になっていた（#284）。2.13.30 は先行して main に入った #416 が使用したため、この変更は 2.13.31 とした。
+
+- `tests/bats-assertion-guard.bats` を新設し、ガードの無い単独文 `[[ ]]` / `[ ]` を全プラグイン横断で検出する
+- 対象だった 24 本の単独文アサーションに `|| return 1` を付与（`memory-refresh-skill.bats` / `memory-tripwire.bats` / `push-guard-setup.bats` / `review-hit-set.bats` ほか）
 
 ## 2.13.30 — 2026-09-23: usage-probe が User-Agent に claude-code を名乗る
 
@@ -38,6 +54,7 @@ Python のテストはプラグインごとの bats ラッパーが `-p` でフ�
 - 古い・欠測した観測と 5 時間枠の逼迫を区別して既定アカウントへ縮退し、stdout の `securestorage` と stderr の選択理由を分離した
 - 登録 id の明示選択を snapshot 非依存で追加し、README に `cld` / `cld-account` zsh function の設定例を載せた
 - `tests/account-selector.bats` で鮮度・短期枠・週次余裕・縮退・明示選択・出力ストリームを固定し、zsh がない環境では README の zsh functions テストだけを skip するようにした
+
 ## 2.13.26 — 2026-09-23: develop 本体が起こす G のレビューを adapter で振り分ける
 
 develop 本体から起こした G が full 判定で Codex を直接呼び、adapter の投げ先選択と dispatch 記録を通らずにレビューが走っていた（#385）。2.13.24 と 2.13.25 は並行 PR #384・#388 が使ったため、この版は 2.13.26 とした。

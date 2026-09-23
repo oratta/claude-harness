@@ -250,8 +250,8 @@ class ForegroundRequest(unittest.TestCase):
 
     def test_builtin_profiles_resolve_all_roles_and_snapshot_hash(self):
         expected = {
-            'codex-standard': ('gpt-5.6-sol', 'high', 'gpt-5.6-sol', 'medium'),
-            'codex-economy': ('gpt-5.6-luna', 'medium', 'gpt-5.6-luna', 'medium'),
+            'codex-standard': ('sol', 'high', 'sol', 'medium'),
+            'codex-economy': ('luna', 'medium', 'luna', 'medium'),
         }
         for profile, values in expected.items():
             config = m.load_profile(profile, None, {'current'})
@@ -274,6 +274,43 @@ class ForegroundRequest(unittest.TestCase):
             self.assertEqual(m.execution_config_hash(config), hashlib.sha256(json.dumps(
                 config, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest())
 
+    def test_builtin_codex_entries_name_families_not_model_ids(self):
+        # The families resolve to the newest listed version at dispatch time, so the table
+        # never needs editing when a new generation ships.
+        table = Path(m.__file__).resolve().parents[1]/'references/codex-role-profiles.json'
+        self.assertIsNone(re.search(r'gpt-[0-9]', table.read_text()))
+        for name, values in (('codex-standard', ('sol', 'sol')), ('codex-economy', ('luna', 'luna'))):
+            config = m.load_profile(name, None, {'current'})
+            expected = {'spec-write': values[0], 'implement': values[1], 'explore': 'luna',
+                        'summarize': 'luna', 'spec-review': 'astra', 'impl-review': 'astra',
+                        'review': 'astra', 'decider': 'astra'}
+            self.assertEqual({role: entry['model'] for role, entry in config['roles'].items()}, expected)
+            self.assertTrue(all(entry['executor'] == 'codex' and entry['account'] == 'current'
+                                for entry in config['roles'].values()))
+
+    def test_family_names_and_exact_ids_are_written_to_the_request_unchanged(self):
+        roles = {role: {'executor':'codex', 'account':'mapped', 'model':'sol', 'effort':'high'}
+                 for role in m.CANONICAL_ROLES}
+        roles['spec-write'] = dict(roles['spec-write'], model='gpt-5.6-sol')
+        profile = self.root/'mixed-models.json'
+        profile.write_text(json.dumps({'version':1, 'profiles':{'custom':{'roles':roles}}}))
+        for phase, model in (('implement', 'sol'), ('spec', 'gpt-5.6-sol')):
+            with self.subTest(phase=phase):
+                target = self.root/('mixed-' + phase + '.json')
+                result = self.call_profile('custom', phase=phase, profile_file=profile, out=target)
+                self.assertEqual(result['status'], 'request-written')
+                self.assertEqual(json.loads(target.read_text())['model'], model)
+        for model in ('sol', 'gpt-6-astra'):
+            with self.subTest(legacy=model):
+                target = self.root/('legacy-' + model + '.json')
+                args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
+                        '--cwd', str(self.cwd), '--account', 'mapped', '--model', model,
+                        '--account-home', 'mapped=' + str(self.home), '--out', str(target)]
+                with patch.object(sys, 'argv', args):
+                    result = m.main()
+                self.assertEqual((result['status'], result['model']), ('request-written', model))
+                self.assertEqual(json.loads(target.read_text())['model'], model)
+
     def test_reverse_hybrid_profile_resolves_every_canonical_role(self):
         config = m.load_profile('claude-write-codex-review', None, {'current'})
         expected = {
@@ -281,10 +318,10 @@ class ForegroundRequest(unittest.TestCase):
             'implement': ('claude', 'current', 'sonnet', 'medium'),
             'explore': ('claude', 'current', 'haiku', 'low'),
             'summarize': ('claude', 'current', 'haiku', 'low'),
-            'spec-review': ('codex', 'current', 'gpt-6-astra', 'high'),
-            'impl-review': ('codex', 'current', 'gpt-6-astra', 'high'),
-            'review': ('codex', 'current', 'gpt-6-astra', 'high'),
-            'decider': ('codex', 'current', 'gpt-6-astra', 'high'),
+            'spec-review': ('codex', 'current', 'astra', 'high'),
+            'impl-review': ('codex', 'current', 'astra', 'high'),
+            'review': ('codex', 'current', 'astra', 'high'),
+            'decider': ('codex', 'current', 'astra', 'high'),
         }
         self.assertEqual(set(config['roles']), set(m.CANONICAL_ROLES))
         for role, values in expected.items():
@@ -605,14 +642,14 @@ class ForegroundRequest(unittest.TestCase):
     def test_mixed_profile_resolves_every_role_and_builtin_hybrid_is_exact(self):
         config = m.load_profile('hybrid-standard', None, {'current'})
         expected = {
-            'spec-write': ('codex','current','gpt-5.6-sol','high'),
+            'spec-write': ('codex','current','sol','high'),
             'spec-review': ('claude','current','opus','high'),
-            'implement': ('codex','current','gpt-5.6-sol','medium'),
+            'implement': ('codex','current','sol','medium'),
             'impl-review': ('claude','current','opus','high'),
             'review': ('claude','current','opus','high'),
             'decider': ('claude','current','fable','high'),
-            'explore': ('codex','current','gpt-5.6-luna','low'),
-            'summarize': ('codex','current','gpt-5.6-luna','low'),
+            'explore': ('codex','current','luna','low'),
+            'summarize': ('codex','current','luna','low'),
         }
         for role, values in expected.items():
             self.assertEqual(tuple(config['roles'][role][key]
