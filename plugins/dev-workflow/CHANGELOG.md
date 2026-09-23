@@ -4,7 +4,7 @@
 
 usage API が 429 を返し続けると snapshot が 300 秒の鮮度を満たせず、アカウント選択・残量モード・codex-develop の Claude margin がすべて欠測扱いになっていた（#417）。同時に statusline 0.6.0 が起動アカウント別のセッション記録（`.usage-sessions/<鍵>.json`）を書くようにした。
 
-- **usage_view.py（新規）**: セッション記録と snapshot からスロット・窓ごとの実効値を求める。リセット時刻より前の値は経過時間によらず下限として使い、過ぎた値は 0%、同じ窓は大きい方を取る。`select-account.sh`・`session-tripwires.sh`・`agent-model-guard.sh`・`codex-develop.py`（Claude 側）はこの 1 か所を使う。Codex 側の 300 秒境界は変えない
+- **usage_view.py（新規）**: セッション記録と snapshot からスロット・窓ごとの実効値を求める。リセット時刻より前の値は経過時間によらず下限として使い、過ぎた値は 0%、同じ窓は大きい方を取る。5 時間枠のリセット時刻が null の値は使用率 0 のときだけ使う。`select-account.sh`・`session-tripwires.sh`・`agent-model-guard.sh`・`codex-develop.py`（Claude 側）はこの 1 か所を使う。Codex 側の 300 秒境界は変えない
 - **usage-probe.sh**: snapshot の mtime による 5 分 TTL を外し、記録が無い・記録が 3 時間より古い、または snapshot の `fetched_at` が 3 時間より古い（無い場合を含む）スロットだけを叩く。前回の試行から 3 時間は叩かず、429 が続くスロットは待ちを倍々に延ばす（上限 1 日）。試行状態を `.usage-probe-state` に記録し、`.usage-probe.lock` でマシン全体 1 本に絞る
 - **文書**: decision-criteria の自動導出の節、pr-review-gate の Fable 昇格条件、escalation-tripwires、codex-develop の説明を実効値の規則に合わせた
 - **テスト**: 実効値・probe の実行条件・429 の待ち・ロック・選択と導出のテストを足し、usage-probe を呼ぶテストを実環境の `~/.claude` と実 API から切り離した
