@@ -42,6 +42,7 @@ G の起動・再開・手渡しの指示には、起動形を問わず常に `�
 | **SendMessage** | 名前付きで起こした W / G の再開（コンテキストを引き継いだまま次の工程を指示する）と、G へのレビュー要約の受け渡し | 再開できないので、前任を手渡してよい状態のときだけ新しい W を spawn し、前回の return 全文をプロンプトに渡す。条件は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本で、満たさないなら spawn せず親に返す（前任が動いたまま後任を起こさない） |
 | **`gh`** | 記録先（issue / PR）へのコメントとラベル操作、Draft PR の作成、エピックの子の依存（`gh api repos/<owner>/<repo>/issues/<N>/dependencies/blocked_by`、issue dependencies API） | 記録先を作れないので開始しない（記録なしで実装に進まない） |
 | **opsx コマンドまたは openspec CLI** | 仕様化経路（`/opsx:ff` → R1 → `/opsx:apply` → verify → archive）。CLI だけなら W が直叩きで同じ工程を踏む | 仕様化経路が発生しない（W は `仕様化判断: しない` の理由に「openspec 不在」と書き、コード直行する） |
+| **`orca`** | エピックの子を Orca の子ワークツリーで独立した Claude Code セッションとして起動する（`scripts/epic-dispatch.sh launch`。「エピックの扱い」→「回し方」） | エピックはサブエージェント方式で回す。`orca` はあっても本体が Orca 管理外のワークツリーにいるときも同じ（`route` が `subagent` を返す） |
 | **Codex CLI** | adapter 経路（develop の本体が起こす G）では G は full でも `needs-reviewer` を返し、本体が phase `review` で投げ先を選び直す（Codex が選ばれればそこで使う）。従来経路（develop の本体以外の呼び出し元が起こす G）では G が full レビューを Bash から `codex exec` / `codex-companion.mjs` で実行する | G が `needs-reviewer` を return し、本体が別のレビュアーを spawn して要約を G に渡す（gate-runner.md） |
 
 ## 本体の役割
@@ -186,8 +187,22 @@ unmanned で複数 change に割れた場合は、W が change 単位で子 issu
 
 ### 回し方
 
-- 本体は子 issue の依存グラフ（`gh api repos/<owner>/<repo>/issues/<N>/dependencies/blocked_by`）を読み、blocked されていない子から**上の 1 ループを子ごとに並列**で起こす。worktree は子ごとで、本体が W を `isolation: "worktree"` で spawn して用意する（W は自分で worktree を切らない）
-- 子の PR がマージされたらエピックに 1 行コメント（`子 #N マージ → 残り k 件`）し、依存が解けた子を次に起こす
+**経路の決め方**: 本体は子 issue の依存グラフ（`gh api repos/<owner>/<repo>/issues/<N>/dependencies/blocked_by`）を読み、blocked されていない子の番号を `scripts/epic-dispatch.sh route <子>...` に渡す。blocked されていない子が 2 件以上あり、`orca` が PATH にあり、本体が Orca 管理のワークツリーにいれば `orca`（**Orca 経路**）、それ以外は `subagent`（**サブエージェント方式**）が返る。経路は `/develop <エピック番号>` の最初の開始時に 1 回だけ決めて途中で変えない（Orca 経路では、あとから解けた子は 1 件でも `launch` する）。決めたらエピックに 1 行コメント（`回し方: Orca（並列可能な子 k 件）` または `回し方: サブエージェント（並列可能な子 k 件）`）を残す。別セッションで同じエピックを再開したときは、`回し方:` で始まる最新のコメントから経路を引き継ぎ、`route` をやり直さない（コメントが無いときだけ `route` で決める）。unmanned（`--unmanned`）は `route` を呼ばず、サブエージェント方式で進める（背景で待って起こされる動きが 1 サイクル 1 仕事と合わないため）。
+
+**Orca 経路**: 子は独立した Claude Code セッションとして `/develop #<N>` の 1 ループを丸ごと回し、本体は子の W / R1 / G を起こさない。本体は子セッションに SendMessage できないので、子への指示はすべて起動プロンプト（`--note`）で渡す。子ごとに違う注意書き（「後続の範囲に手を出さない」など）が要るときは子ごとに `launch` を分けて呼ぶ。
+
+1. `scripts/epic-dispatch.sh launch [--note <text>] <エピック番号> <子>...` で子を起動する。出力は子ごとに `launched <N>`・`skipped <N>`（同じ子のワークツリーが既にある＝起動済み。再開時や取り違えでも二重に起動しない）・`failed <N>` の 1 行。再開時も、依存が解けた open の子をそのまま `launch` に渡し、起動済みの子は `skipped` で見分ける
+2. `launched` と `skipped` の子を動いている子として、`scripts/epic-dispatch.sh wait <動いている子>...` を Bash の `run_in_background: true` で起動してターンを終える（背景タスクが終わると本体が起こされる）
+3. `closed <N>...` で起こされたら、閉じた子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state_reason` を読む。`completed` ならエピックへ `子 #N マージ → 残り k 件` とコメントし、依存グラフを読み直して解けた子を件数にかかわらず `launch` する。`completed` 以外（`not_planned` など）ならエピックへ `子 #N 見送り（<state_reason>）→ 残り k 件` とコメントし、その子を前提にしていた子は起動せずにユーザーに報告する（依存 API は前提が閉じれば理由を問わず後続の blocked を外すので、理由を見ないと作業されていない前提の上に後続が起動する）。残りの動いている子があれば 2 に戻る
+4. `timeout <N>...` で起こされたら、その子 issue に `needs-approval` ラベルや止まっている旨のコメントが無いかを見て、あればユーザーに報告する。報告したかどうかにかかわらず、残りの動いている子で再び `wait` する。子セッションは interactive の `/develop` なので、子が自分のタブでユーザーに質問して止まっていてもラベルもコメントも残らず、この確認では検知できない。ユーザーには子のタブも見るよう伝える
+5. `wait` の `error gh ...` と `launch` の `failed <N>` はユーザーに報告して止まる。`failed` の子をサブエージェント方式に自動で振り替えない（Orca 側に途中までできたワークツリーが残っていて二重に起動しうるため）。Orca 経路で始めたエピックを Orca 管理外のワークツリーで再開して `launch` が止まった（exit 1 で子を 1 件も作らない）ときは、報告に「親ワークツリーで開き直す」と書く
+
+子セッションは Orca の起動方式により `--dangerously-skip-permissions` で動き、許可の確認画面は出ない（hooks は効く）。マージを止めているのは確認画面ではなく develop と pr-review-gate の規則と hooks である。子の PR のマージは今までどおり子セッションの中で人の承認で行い、本体は自動でマージしない。
+
+**サブエージェント方式**: blocked されていない子から**上の 1 ループを子ごとに並列**で起こす。worktree は子ごとで、本体が W を `isolation: "worktree"` で spawn して用意する（W は自分で worktree を切らない）。子の PR がマージされたらエピックに 1 行コメント（`子 #N マージ → 残り k 件`）し、依存が解けた子を次に起こす。
+
+**両経路に共通**:
+
 - スタック PR（子 B が子 A のブランチを base にする）は避け、A のマージを待ってから B を main から切る。やむを得ずスタックする場合は、A マージ後に B の base が自動では main に切り替わらないので本体が張り替える
 - 子の実装中に新しい問題が見つかったら、その子の中で直さず**新しい子 issue** を切ってエピックに追加する（子の受け入れ条件を膨らませない）
 
