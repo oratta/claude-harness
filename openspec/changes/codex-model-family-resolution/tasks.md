@@ -16,8 +16,8 @@
 
 ## 3. docs と仕様
 
-- [ ] 3.1 `plugins/dev-workflow/references/codex-develop.md` の委譲手順 3 に、記録先コメントへ `execution.model_resolution.requested` と `resolved`（と観測した `effective.model`）を両方書くことを足す。Codex の model は系統名か完全 ID で書け、系統名は worker が呼ぶ直前に最新版へ解決すること、新しいモデルが一覧に出るには Codex CLI の更新が要ることを一言書く
-- [ ] 3.2 docs は 3.1 の `plugins/dev-workflow/references/codex-develop.md` だけを直す（`docs/codex-develop.md` は存在しないので作らない）。`plugins/dev-workflow/references/model-tiers.md` 等、Codex の model 値の意味を説明している箇所に食い違いが無いか grep で確認し、あれば直す
+- [x] 3.1 `plugins/dev-workflow/references/codex-develop.md` の委譲手順 3 に、記録先コメントへ `execution.model_resolution.requested` と `resolved`（と観測した `effective.model`）を両方書くことを足す。Codex の model は系統名か完全 ID で書け、系統名は worker が呼ぶ直前に最新版へ解決すること、新しいモデルが一覧に出るには Codex CLI の更新が要ることを一言書く
+- [x] 3.2 docs は 3.1 の `plugins/dev-workflow/references/codex-develop.md` だけを直す（`docs/codex-develop.md` は存在しないので作らない）。`plugins/dev-workflow/references/model-tiers.md` 等、Codex の model 値の意味を説明している箇所に食い違いが無いか grep で確認し、あれば直す
 - [ ] 3.3 `openspec validate codex-model-family-resolution --strict` が通ることを確認する（main spec への反映は archive で行う。archive 後に `openspec/specs/codex-worker/spec.md` の `gpt-5.6-sol` の例が消えていること、`openspec/specs/codex-role-profiles/spec.md` に `gpt-6-astra` が残っていないことを確認する）
 
 ## 4. 版と回帰
