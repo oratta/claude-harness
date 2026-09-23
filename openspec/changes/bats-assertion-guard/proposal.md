@@ -17,6 +17,6 @@ bats のテスト本文の途中に置いた `[[ ... ]]` は、bash 4.1 未満�
 
 ## Impact
 
-- 対象: `plugins/*/tests/*.bats`・`tests/*.bats` のうち 24 ファイル（`plugins/cost-ledger/` は対象外）。issue #284 本文にある「26 本」は #273 対応時点の集計で、その後 `tests/injection-budget.bats` 等 3 ファイルが追加されたため、現在の実測（`git ls-files '*.bats' ':(exclude)_longruns/'` のうち行頭 `[[ ` を含み `plugins/cost-ledger/` を除いたもの）では 24 本になる。
+- 対象: `plugins/*/tests/*.bats`・`tests/*.bats` のうち 24 ファイル（`plugins/cost-ledger/` は対象外）。issue #284 本文にある「26 本」との差分は次の実測の内訳による: `git ls-files '*.bats' | xargs grep -lE '^[[:space:]]*\[\[ '`（行頭 `[[ ` を含む bats ファイル）は現在 32 本ある。このうち `_longruns/_archive/` 配下の過去実験の 3 本を除くと 29 本、さらに `plugins/cost-ledger/` の 5 本（#273 で対応済み）を除くと 24 本になる。
 - 新規依存なし。既存の `bash scripts/test.sh` 実行方式・bats のバージョンも変更しない。
 - ガードを付けた結果として現在 green だが実際は壊れていたアサーションが露呈し落ちるテストが出た場合は、それは実装側の欠陥なので別途 issue を切って対応する（本 change の受け入れ条件外）。
