@@ -6,10 +6,10 @@
 
 ## What Changes
 
-- `plugins/dev-workflow/skills/develop/SKILL.md` の「エピックの扱い」→「回し方」に振り分けを足す。blocked されていない子が 2 件以上あり `orca` が PATH にあれば Orca 経路（子ごとに Orca の子ワークツリーで独立セッションとして `/develop #<N>` を丸ごと回し、本体はスクリプトで待つ）、それ以外は今のサブエージェント方式のまま。入口は `/develop <エピック番号>` のままで、新しいコマンド名は作らない
-- 振り分けの判定・子の起動・待ち受けを、LLM を使わないスクリプト `plugins/dev-workflow/scripts/epic-dispatch.sh` にまとめる。サブコマンドは `route <child>...`（経路を 1 語で出す）、`launch [--note <text>] <epic> <child>...`（`git fetch origin main` → 親ワークツリーをエピックに関連付け → 子ごとに `orca worktree create`）、`wait [--interval <sec>] [--timeout <sec>] <child>...`（子 issue のどれかが閉じるか上限時間に達するまで待ち、1 行を出して終わる）
-- 本体は `wait` を背景で起動し、終わって起こされたら依存グラフを読み直して次の子を `launch` し、エピックに `子 #N マージ → 残り k 件` をコメントする
-- SKILL.md の「前提」表に `orca` の行を足す（無ければサブエージェント方式）
+- `plugins/dev-workflow/skills/develop/SKILL.md` の「エピックの扱い」→「回し方」に振り分けを足す。blocked されていない子が 2 件以上あり、`orca` が PATH にあり、本体が Orca 管理のワークツリーにいれば Orca 経路（子ごとに Orca の子ワークツリーで独立セッションとして `/develop #<N>` を丸ごと回し、本体はスクリプトで待つ）、それ以外（unmanned を含む）は今のサブエージェント方式のまま。経路は最初の開始時に決めてエピックにコメントで残し、再開時はそこから引き継ぐ。入口は `/develop <エピック番号>` のままで、新しいコマンド名は作らない
+- 振り分けの判定・子の起動・待ち受けを、LLM を使わないスクリプト `plugins/dev-workflow/scripts/epic-dispatch.sh` にまとめる。サブコマンドは `route <child>...`（経路を 1 語で出す）、`launch [--note <text>] [--base <branch>] <epic> <child>...`（`git fetch origin <base>`（既定 main） → 親ワークツリーをエピックに関連付け → 起動済みの子を skip しつつ子ごとに `orca worktree create`）、`wait [--interval <sec>] [--timeout <sec>] <child>...`（子 issue のどれかが閉じるか上限時間に達するまで待ち、1 行を出して終わる）
+- 本体は `wait` を背景で起動し、終わって起こされたら閉じた子の `state_reason` を見る。`completed` ならエピックに `子 #N マージ → 残り k 件` をコメントして、依存グラフを読み直し次の子を `launch` する。それ以外なら `見送り` とコメントし、後続を起動せずユーザーに報告する
+- SKILL.md の「前提」表に `orca` の行を足す（無い、または本体が Orca 管理外ならサブエージェント方式）
 - bats（`plugins/dev-workflow/tests/epic-dispatch.bats`）で `orca`・`gh`・`git`・`sleep` をスタブにして、引数・呼び出し順・出力・exit code と、`orca` が無い環境でサブエージェント方式に倒れることを確かめる
 
 ## Capabilities
@@ -28,5 +28,6 @@
 - 変更: `plugins/dev-workflow/skills/develop/SKILL.md`（前提表・エピックの回し方）
 - バージョン: `plugins/dev-workflow/.claude-plugin/plugin.json` と `plugins/dev-workflow/CHANGELOG.md`（実装工程で上げる）
 - 既存の bats（`develop-skill.bats` のエピックの検査）は、今のサブエージェント方式の記述（`isolation: "worktree"`・並列・スタック）を残すので変えずに通る
-- `orca` が無い環境（CI の ubuntu を含む）では振る舞いが変わらない
+- `orca` が無い環境（CI の ubuntu を含む）と、本体が Orca 管理外のワークツリーにいる環境では振る舞いが変わらない
+- `launch` は起動済みの子の確認に `jq` を使う
 - やらないこと: Orca 以外のツール（`claude --worktree`、agent view 等）での並列起動、子の PR の自動マージ（マージは今までどおり人の承認）
