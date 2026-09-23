@@ -171,7 +171,7 @@ PY
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   line="$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")"
-  [[ "$line" =~ 40% ]]
+  [[ "$line" =~ 40% ]] || return 1
 }
 
 @test "multi: a non-active slot shows the age of its snapshot values" {
@@ -179,7 +179,7 @@ PY
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
-  [[ "$line" =~ 2h前 ]]
+  [[ "$line" =~ 2h前 ]] || return 1
   # active 側には経過時間を出さない
   ! grep -E '^(▸ |  )A ' "$WORK/out.txt" | grep -q '前'
 }
@@ -210,7 +210,7 @@ PY
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW - 86400))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
-  [[ "$line" =~ 1% ]]
+  [[ "$line" =~ 1% ]] || return 1
   # 分母（%/%）も残り時間（~Nd Nh）も出ない
   ! [[ "$line" =~ %/ ]]
   ! [[ "$line" =~ ~ ]]
@@ -225,8 +225,8 @@ PY
   mk_input 40 82 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" \
     | strip_ansi > "$WORK/out.txt"
   # b がライブ値 40% を使い、a が snapshot 値 + 経過時間になる
-  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 40% ]]
-  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 55% ]]
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 40% ]] || return 1
+  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 55% ]] || return 1
 }
 
 @test "active: an unset env still matches the default slot by service name" {
@@ -242,8 +242,8 @@ d["active"] = "b"
 json.dump(d, open(p, "w"))
 PY
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 40% ]]
-  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 3% ]]
+  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 40% ]] || return 1
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 3% ]] || return 1
 }
 
 @test "active: falls back to the snapshot active when the env is unset" {
@@ -258,8 +258,8 @@ d["active"] = "b"
 json.dump(d, open(p, "w"))
 PY
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 40% ]]
-  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 55% ]]
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 40% ]] || return 1
+  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 55% ]] || return 1
 }
 
 @test "active: an env matching no slot falls back to the snapshot active" {
@@ -274,8 +274,8 @@ json.dump(d, open(p, "w"))
 PY
   mk_input 40 82 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/unknown" bash "$SL" \
     | strip_ansi > "$WORK/out.txt"
-  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 40% ]]
-  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 55% ]]
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 40% ]] || return 1
+  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 55% ]] || return 1
 }
 
 @test "active: an env matching no slot and no snapshot active uses the first slot" {
@@ -290,8 +290,8 @@ json.dump(d, open(p, "w"))
 PY
   mk_input 40 82 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/unknown" bash "$SL" \
     | strip_ansi > "$WORK/out.txt"
-  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 40% ]]
-  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 3% ]]
+  [[ "$(grep -E '^(▸ |  )A +5h' "$WORK/out.txt")" =~ 40% ]] || return 1
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 3% ]] || return 1
 }
 
 @test "ago: a future fetched_at never renders a negative age" {
@@ -301,7 +301,7 @@ PY
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
   ! [[ "$line" =~ -[0-9]+[mhd]前 ]]
-  [[ "$line" =~ 0m前 ]]
+  [[ "$line" =~ 0m前 ]] || return 1
 }
 
 # ---------- 1 スロット時の退行ガード ----------
@@ -524,11 +524,11 @@ PY
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   # active スロット: Fable は snapshot 由来（accounts.a）。読めていなければ消える
   grep -E '^(▸ |  )A ' "$WORK/out.txt" | grep -q 'Fable'
-  [[ "$(grep -E '^(▸ |  )A +7d All' "$WORK/out.txt")" =~ 94% ]]
+  [[ "$(grep -E '^(▸ |  )A +7d All' "$WORK/out.txt")" =~ 94% ]] || return 1
   # 非 active スロット: 5h / 7d / Fable / 経過時間のすべてが snapshot 由来
-  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 3% ]]
-  [[ "$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")" =~ 1% ]]
-  [[ "$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")" =~ 2h前 ]]
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ 3% ]] || return 1
+  [[ "$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")" =~ 1% ]] || return 1
+  [[ "$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")" =~ 2h前 ]] || return 1
 }
 
 @test "label: a hand-written over-long label is clipped by the statusline reader too" {
