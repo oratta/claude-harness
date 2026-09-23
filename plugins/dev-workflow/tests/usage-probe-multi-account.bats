@@ -629,6 +629,17 @@ seed_two_slot_snapshot() {
   [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
 }
 
+@test "condition: an old record with a fresh snapshot fetched_at is fetched" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 4 * 3600))"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "96" ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+}
+
 @test "condition: a fresh record with no snapshot entry is fetched" {
   write_resp "${WORK}/r.json" 55 82 94
   write_record "" "$((NOW - 600))"
