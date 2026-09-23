@@ -16,7 +16,7 @@
 - **THEN** selector は `b` の `securestorage` を出力し、理由行に `a` と `b` の週次余裕を含める
 
 ### Requirement: 古い・欠測・短期枠逼迫のスロットを候補から外す
-自動選択は、取得からの経過時間でスロットを候補から外してはならない（MUST NOT）。古さの扱いは実効値の規則（リセット時刻を過ぎた窓は 0%、過ぎていなければ下限として使う）に従う。実効値の `weekly_all_pct`、`weekly_resets_epoch`、`five_hour_pct` のいずれかが欠測であるスロット、および実効値の `five_hour_pct >= 90` のスロットを候補から外さなければならない（SHALL）。理由行では欠測を `missing`、5 時間枠による除外を `five-hour>=90` と書く。候補が 1 つも無い場合は既定アカウントを表す空の `securestorage` を選ばなければならない（SHALL）。このとき、レジストリに既定スロット（`securestorage` が `null` または空文字）があれば宣言順で最初のスロットの id を `selected` に出し、無ければ登録 id では使用できない `@unregistered-default` を出さなければならない（SHALL）。`missing` による除外が 1 つでもあれば理由を `default-due-to-missing-usage`、全スロットが `five-hour>=90` だけで除外された場合は `default-due-to-five-hour-limit` としなければならない（SHALL）。
+自動選択は、取得からの経過時間でスロットを候補から外してはならない（MUST NOT）。古さの扱いは実効値の規則（リセット時刻を過ぎた窓は 0%、過ぎていなければ下限として使う）に従う。実効値の `weekly_all_pct`、`weekly_resets_epoch`、`five_hour_pct` のいずれかが欠測であるスロット、および実効値の `five_hour_pct >= 90` のスロットを候補から外さなければならない（SHALL）。欠測かどうかの判定は `usage-session-records` の「記録と snapshot から実効値を求める」の規則と守備範囲に従い、この要件で独自の検査を足さない。理由行では欠測を `missing`、5 時間枠による除外を `five-hour>=90` と書く。候補が 1 つも無い場合は既定アカウントを表す空の `securestorage` を選ばなければならない（SHALL）。このとき、レジストリに既定スロット（`securestorage` が `null` または空文字）があれば宣言順で最初のスロットの id を `selected` に出し、無ければ登録 id では使用できない `@unregistered-default` を出さなければならない（SHALL）。`missing` による除外が 1 つでもあれば理由を `default-due-to-missing-usage`、全スロットが `five-hour>=90` だけで除外された場合は `default-due-to-five-hour-limit` としなければならない（SHALL）。
 
 #### Scenario: 古いがリセット前の値で選ぶ
 - **WHEN** 片方のスロットの値が 1 日前に取得され、リセット時刻がまだ来ておらず、もう片方より週次余裕が大きい

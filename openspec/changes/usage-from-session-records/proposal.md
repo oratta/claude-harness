@@ -7,7 +7,7 @@ Claude アカウントの使用量は、今は非公開の使用量 API（`/api/
 - statusline は、stdin の `rate_limits` を**起動アカウント別の記録**（`${CLAUDE_CONFIG_DIR:-~/.claude}/.usage-sessions/<アカウント鍵>.json`）に書く。アカウント鍵は `CLAUDE_SECURESTORAGE_CONFIG_DIR` から Keychain サービス名と同じ導出で決める（未設定は `default`、それ以外は NFC 正規化した値の sha256 先頭 8 桁）。自分の起動環境だけから鍵を決めるので、B のセッションが A の記録を書くことは起きない（flatmate#605 の読み違えの対策を、書かないことから分けて書くことに置き換える）。既存の `~/.claude/.rate-limit-snapshot` は外部の読み手のために今までどおり書く。
 - 読み手は「300 秒より古い値は使えない」をやめ、**リセット時刻で判断する**。リセット時刻を過ぎた窓は 0% とみなし、過ぎていなければ古い値を「少なくともこれだけ使った」下限として使う。セッション記録と usage-probe の snapshot の両方があれば、同じ窓の値は大きい方を取る。
 - 上の判断を dev-workflow 内の 1 か所（`plugins/dev-workflow/scripts/usage_view.py`）に置き、`select-account.sh`・`session-tripwires.sh`（`FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` の導出）・`agent-model-guard.sh`（fork の共有枠判定）・`codex-develop.py`（Claude 側の自動選択）がそこから値を読む。statusline は他プラグインに依存しない規則に従い、同じ規則を自分で実装して非 active 行の表示に使う。
-- **BREAKING（内部契約）**: `usage-probe.sh` を補助に下げる。snapshot の mtime による 300 秒 TTL をやめ、スロットごとに「セッション記録が無い、または 3 時間より古い」ときだけ、前回の試行から 3 時間以上空いていれば取りに行く。マシン全体で 1 本だけ走るようロックを取り、429 が返ったスロットは間隔を倍にして空ける（上限 24 時間）。試行の状態は `~/.claude/.usage-probe-state` に置く。
+- **BREAKING（内部契約）**: `usage-probe.sh` を補助に下げる。snapshot の mtime による 300 秒 TTL をやめ、スロットごとに「セッション記録が無いか 3 時間より古い、または snapshot の同スロットの取得時刻が 3 時間より古い（Fable 週次は記録に入らないため）」ときだけ、前回の試行から 3 時間以上空いていれば取りに行く。マシン全体で 1 本だけ走るようロックを取り、429 が返ったスロットは間隔を倍にして空ける（上限 24 時間）。試行の状態は `~/.claude/.usage-probe-state` に置く。
 - `select-account.sh` の理由行から `stale` がなくなる（値が 1 つも無いスロットだけが `missing`）。
 
 ## Capabilities

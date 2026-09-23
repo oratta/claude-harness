@@ -44,7 +44,7 @@ snapshot は **schema 2** であり、次の構造でなければならない（
 
 **実行条件**: probe はスロットごとに、次のすべてを満たすときだけ API をフェッチしなければならない（SHALL）。満たさないスロットはフェッチせず、スロット単位 fail-open と同じく前回値を保つ。snapshot の mtime による TTL で判定してはならない（MUST NOT）（全スロットが失敗すると mtime が進まず、呼ばれるたびに叩き直すため）。`USAGE_PROBE_TTL` は読まない。
 
-- そのスロットのセッション記録が無い、または記録の `observed_at` が `USAGE_PROBE_STALE` 秒（既定 10800）より古い
+- 次のどちらかに当たる: そのスロットのセッション記録が無い、または記録の `observed_at` が `USAGE_PROBE_STALE` 秒（既定 10800）より古い／snapshot の同スロットの `fetched_at` が `USAGE_PROBE_STALE` 秒より古い（同スロットや `fetched_at` が無い場合を含む）。後者を含めるのは、Fable 週次がセッション記録に入らず probe からしか得られないため（会話中のアカウントでも Fable の値と statusline の 6 時間鮮度ゲートが止まらないようにする）
 - 試行状態ファイル（`USAGE_PROBE_STATE`、既定 `~/.claude/.usage-probe-state`）にあるそのスロットの前回の試行時刻から `USAGE_PROBE_INTERVAL` 秒（既定 10800）以上経っている
 - そのスロットが 429 による待ち時間の中にいない
 
@@ -77,8 +77,12 @@ probe は `refresh_token` を用いたアクセストークンの更新を行っ
 - **THEN** そのスロットの `fetched_at` とトップレベルの `fetched_at` はどちらも前回の取得時刻のままであり、probe の実行時刻に更新されない
 
 #### Scenario: セッション記録が新しいスロットはフェッチしない
-- **WHEN** 2 スロットのうち A の鍵のセッション記録が 10 分前、B の記録が無く、どちらも未試行の状態で probe を実行する
+- **WHEN** 2 スロットのうち A の鍵のセッション記録が 10 分前で A の snapshot の `fetched_at` も 10 分前、B の記録が無く、どちらも未試行の状態で probe を実行する
 - **THEN** B だけをフェッチし、A は API を叩かず前回値を保つ
+
+#### Scenario: 記録は新しいが snapshot が古いスロットはフェッチする
+- **WHEN** A の鍵のセッション記録が 10 分前、A の snapshot の `fetched_at` が 4 時間前（または A が snapshot に無い）で、A が未試行の状態で probe を実行する
+- **THEN** A をフェッチし、snapshot の A の `fable_weekly_pct` と `fetched_at` が新しい値になる
 
 #### Scenario: 間隔内の再実行はフェッチしない
 - **WHEN** 試行状態ファイルに全スロットの試行時刻が 1 時間前と記録された状態で、既定の間隔で probe を実行する
