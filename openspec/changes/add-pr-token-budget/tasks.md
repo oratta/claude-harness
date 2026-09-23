@@ -2,7 +2,7 @@
 
 - [ ] 1.1 `plugins/dev-workflow/tests/pr-token-budget.bats` を作る。setup で一時ディレクトリに `git init` したリポジトリ（と `git worktree add` した副 worktree）、別リポジトリ、`projects/<slug>/<session>/subagents/` の固定の meta.json / jsonl を作る（cwd はテスト時に一時パスを埋める）
 - [ ] 1.2 固定入力: `#288` の名前なし R1（meta に name 無し）、`#288` の worktree 隔離 W（副 worktree・再開分を含む複数リクエスト・同じ requestId の重複行・壊れた行・usage が文字列の行）、`#2880` の 1 体、別リポジトリの `#288` の 1 体、作業ディレクトリが存在しない `#288` の 1 体、`#400 (#288)` の G。Codex 側: `--codex-records` のファイル（トークン数付きの thread・同じ thread の重複行・`-` の thread・どこにも rollout が無い `-` の thread・書式に合わない行）と、`--codex-home` を 2 つ（`sessions/YYYY/MM/DD/rollout-*-<thread_id>.jsonl` に、累計が増える行・同じ累計の繰り返し行・`info` が null の行・`token_count` 以外の行を含む固定の rollout を置く。うち 1 件は 2 つ目の CODEX_HOME にだけ置く）
-- [ ] 1.3 spec の各 Scenario を bats のテストにする（合計・体数の手計算の期待値、`#2880` 不一致、二重計上なし、別リポジトリ除外、`unresolved`、`skipped_lines`、`--cap` 超過で exit 2、0 体で exit 0、不正な `--cap` で exit 1、`DEV_WORKFLOW_PR_TOKEN_CAP` の反映と `--cap` がそれより優先されること、`claude_tokens`・`codex_tokens` の内訳と `total_tokens` がその和であること、Codex 分を足して初めて上限を超える場合の exit 2、同じ thread の二重計上なし、rollout の最大累計の採用、2 つ目の CODEX_HOME の探索、`codex_unresolved`、Codex 記録ファイルの書式違反行の `skipped_lines`）
+- [ ] 1.3 spec の各 Scenario を bats のテストにする（合計・体数の手計算の期待値、`#2880` 不一致、二重計上なし、別リポジトリ除外、`unresolved`、`skipped_lines`、`--cap` 超過で exit 2、0 体で exit 0、不正な `--cap` で exit 1、`DEV_WORKFLOW_PR_TOKEN_CAP` の反映と `--cap` がそれより優先されること、`claude_tokens`・`codex_tokens` の内訳と `total_tokens` がその和であること、Codex 分を足して初めて上限を超える場合の exit 2、同じ thread の二重計上なし、rollout の最大累計の採用、2 つ目の CODEX_HOME の探索、`codex_unresolved`、Codex 記録ファイルの書式違反行の `skipped_lines`、空の記録ファイルで `codex_threads` 0）
 - [ ] 1.4 SKILL.md の手順を検査するテスト（`pr-token-budget.sh`・exit 2 で spawn / SendMessage / Codex への委譲をしない・`続けるか、範囲外として閉じるか`・description の `#N` 規約・`Codex 消費:` コメントの投稿と `--codex-records` / `--codex-home` の受け渡し・`PR トークン上限:` の文字列）を `tests/develop-skill.bats` に足す。`gate-runner.md` に G が Codex の thread_id を return に書く手順があることの検査も足す
 
 ## 2. スクリプトの実装（Green）
@@ -21,5 +21,5 @@
 ## 4. 検証
 
 - [ ] 4.1 `scripts/test.sh` 全件 pass（exit code を記録する）
-- [ ] 4.2 実データで `pr-token-budget.sh 288`（`--codex-records` に実在の rollout の thread_id を `-` で 1 件入れる）を実行し、出力の形と所要時間を確認する
+- [ ] 4.2 実データで `pr-token-budget.sh 288`（`--codex-records` に実在の rollout の thread_id を `-` で 1 件入れる）を実行し、出力の形と所要時間を確認する。あわせて `codex exec` の実出力に `session id:` ヘッダが出ることを実物で確かめ、結果を記録先の PR にコメントする
 - [ ] 4.3 `openspec validate add-pr-token-budget --strict`

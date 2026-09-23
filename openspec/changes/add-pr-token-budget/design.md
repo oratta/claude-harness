@@ -87,10 +87,12 @@ Codex の消費は Claude の meta.json / トランスクリプトに残らな�
 
 D の書式と扱い:
 
-- 1 行目を `Codex 消費: <thread_id> <tokens>` とする。`<tokens>` は codex-worker の結果 JSON の `usage.total.totalTokens`（委譲ごとに新しい thread なので、その thread の累計がその委譲の消費）。G が Bash から直接呼んだ Codex のようにトークン数が手元に無いときは `-` と書く
+- 1 行目を `Codex 消費: <thread_id> <tokens>` とする。`<tokens>` は codex-worker の結果 JSON の `usage.total.totalTokens`（委譲ごとに新しい thread なので、その thread の累計がその委譲の消費）。G が Bash から直接呼んだ Codex のようにトークン数が手元に無いとき、および結果 JSON の `usage` が null か `usage.total.totalTokens` が読めないとき（codex-worker spec は `usage` が null になり得ると定める）は `-` と書く
 - G が full レビューで Codex を呼んだときは、G が return に thread_id を書き、本体が `Codex 消費: <thread_id> -` を記録する（G の Claude トランスクリプトには Codex の消費が入らないため）
-- 本体は計測の直前に、渡すすべての記録先番号のコメントから 1 行目がこの書式のものを集め、`<thread_id> <tokens>` を 1 行ずつ書いたファイルを `--codex-records <file>` で渡す。コメントを集める具体的な手順は SKILL.md に書く
+- 本体は計測の直前に、渡すすべての記録先番号のコメントを全ページ取得し（`gh api --paginate --slurp`）、1 行目が `^Codex 消費: ` に一致するものだけを集め、`<thread_id> <tokens>` を 1 行ずつ書いたファイルを `--codex-records <file>` で渡す。コメントを集める具体的な手順は SKILL.md に書く
 - スクリプトは同じ thread_id を 1 回だけ数える（複数の記録先に同じ thread を記録しても二重に数えない。トークン数が食い違うときは大きい方）。`-` の thread は `--codex-home <dir>`（複数可。無ければ `${CODEX_HOME:-$HOME/.codex}`）の `sessions/*/*/*/rollout-*-<thread_id>.jsonl` を探し、`token_count` イベントの `info.total_token_usage.total_tokens` の最大値を使う（累計なので最大値が thread の合計。同じ累計が続く行と `info` が null の行はこれで自然に無視される）。account ごとに CODEX_HOME が違うので、本体は codex-develop の `--account-home` の対応表にある全パスを `--codex-home` に渡す
+- 記録ファイルが空（または空行だけ）のときはエラーにせず `codex_threads` 0 として扱う
+- G が thread_id を取れなかった Codex の呼び出しは記録できず、上限の外になる
 - トークン数も rollout も見つからない thread は数えず、件数を `codex_unresolved` に出す（`unresolved` と同じく黙って落とさない）
 
 トークンの定義は Claude 分と揃える。Codex の `totalTokens` は `inputTokens + outputTokens` で、キャッシュから読んだ入力（`cachedInputTokens`）は `inputTokens` の内数、推論は `outputTokens` の内数なので、Claude 側の `input + cache_creation + cache_read + output` と同じく「読み込んだ量と出した量の全部」になる。

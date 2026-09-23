@@ -54,9 +54,9 @@ develop の本体は、その記録先のために Agent ツールでサブエ�
 - **THEN** 集計は中断せず、その 2 行は合計から外れ、`skipped_lines` が 2 になる
 
 ### Requirement: Codex の消費を記録から合計する
-`pr-token-budget.sh` は `--codex-records <file>` を受け取ったとき、そのファイルの各行 `<thread_id> <tokens>`（`<tokens>` は 0 以上の整数か `-`）を、その記録先のために使った Codex の thread と SHALL みなし、その消費を `codex_tokens` に合計する。同じ thread_id は、ファイル内に何行あっても 1 回だけ MUST 数える（トークン数が行ごとに違うときは最大値を使う）。`<tokens>` が `-` の thread は、`--codex-home <dir>`（繰り返し指定可。無ければ `${CODEX_HOME:-$HOME/.codex}`）の `sessions/*/*/*/rollout-*-<thread_id>.jsonl` を探し、`type` が `event_msg` で `payload.type` が `token_count` の行の `payload.info.total_token_usage.total_tokens` の最大値を SHALL 使う（`info` が null の行は読み飛ばす）。トークン数が `-` で rollout も見つからない thread は合計に入れず、件数を出力の `codex_unresolved` に MUST 出す。書式に合わない行で集計を中断してはならず MUST NOT、その行数を `skipped_lines` に含める。スクリプトは GitHub を読んではならない（MUST NOT。記録先のコメントを集めてファイルにするのは本体の手順）。
+`pr-token-budget.sh` は `--codex-records <file>` を受け取ったとき、そのファイルの各行 `<thread_id> <tokens>`（`<tokens>` は 0 以上の整数か `-`）を、その記録先のために使った Codex の thread と SHALL みなし、その消費を `codex_tokens` に合計する。同じ thread_id は、ファイル内に何行あっても 1 回だけ MUST 数える（トークン数が行ごとに違うときは最大値を使う）。`<tokens>` が `-` の thread は、`--codex-home <dir>`（繰り返し指定可。無ければ `${CODEX_HOME:-$HOME/.codex}`）の `sessions/*/*/*/rollout-*-<thread_id>.jsonl` を探し、`type` が `event_msg` で `payload.type` が `token_count` の行の `payload.info.total_token_usage.total_tokens` の最大値を SHALL 使う（`info` が null の行は読み飛ばす）。トークン数が `-` で rollout も見つからない thread は合計に入れず、件数を出力の `codex_unresolved` に MUST 出す。書式に合わない行で集計を中断してはならず MUST NOT、その行数を `skipped_lines` に含める。ファイルが空（または空行だけ）のときはエラーにせず、`codex_threads` を 0 として SHALL 扱う。スクリプトは GitHub を読んではならない（MUST NOT。記録先のコメントを集めてファイルにするのは本体の手順）。
 
-守備範囲: 想定する入力の出どころは、本体が記録先の `Codex 消費:` コメントから作るファイルと、Codex CLI が書く rollout ファイルである。拾いたい誤りは「その記録先のために使った Codex の消費が合計から漏れること」と「同じ thread を複数の記録先に記録したことや、rollout で同じ累計が繰り返し書かれることによる二重計上」の 2 つ。通ることを許す入力は、本体が記録を書き忘れた thread（数えられず合計は少なく出る）、結果 JSON を受け取れずに thread_id が分からない委譲（数えられない）、別の作業で使った thread_id が誤って記録された行（そのまま数える）、トークン数が不自然に大きい行（そのまま数える）、rollout が複数の CODEX_HOME に同じ thread_id で見つかる場合（最大値を使う）である。これらの穴が見つかるたびに照合を強くして塞ぎ切ることを完了条件にしない。
+守備範囲: 想定する入力の出どころは、本体が記録先の `Codex 消費:` コメントから作るファイルと、Codex CLI が書く rollout ファイルである。拾いたい誤りは「その記録先のために使った Codex の消費が合計から漏れること」と「同じ thread を複数の記録先に記録したことや、rollout で同じ累計が繰り返し書かれることによる二重計上」の 2 つ。通ることを許す入力は、本体が記録を書き忘れた thread（数えられず合計は少なく出る）、結果 JSON を受け取れずに thread_id が分からない委譲と、G が thread_id を取れなかった Codex の呼び出し（どちらも数えられない）、別の作業で使った thread_id が誤って記録された行（そのまま数える）、トークン数が不自然に大きい行（そのまま数える）、rollout が複数の CODEX_HOME に同じ thread_id で見つかる場合（最大値を使う）である。これらの穴が見つかるたびに照合を強くして塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 記録されたトークン数を合計する
 - **WHEN** `--codex-records` のファイルに `t1 1000` と `t2 500` の 2 行がある
@@ -77,6 +77,10 @@ develop の本体は、その記録先のために Agent ツールでサブエ�
 #### Scenario: どこにも見つからない thread
 - **WHEN** ファイルに `t9 -` があり、どの `--codex-home` にも t9 の rollout が無い
 - **THEN** 合計には入らず、`codex_unresolved` が 1 になり、exit code は合計と上限だけで決まる
+
+#### Scenario: 記録ファイルが空
+- **WHEN** `--codex-records` に空のファイルを渡す
+- **THEN** `codex_threads` が 0、`codex_tokens` が 0 で、exit code は Claude 分の合計と上限だけで決まる
 
 #### Scenario: 書式に合わない行
 - **WHEN** ファイルに `t4 abc` と空白を含まない 1 語だけの行がある
@@ -116,9 +120,9 @@ exit code は、`total_tokens` が上限以下なら 0、上限を超えたら 2
 - **THEN** exit 1
 
 ### Requirement: 本体は spawn と再開の前に測り、上限超なら止まる
-develop の本体は、その記録先のためにサブエージェントを spawn する直前、SendMessage で再開する直前、および executor が `codex` の役割へ委譲する直前に、役割と executor を問わず毎回 `scripts/pr-token-budget.sh <記録先番号> [PR 番号] --codex-records <file> --codex-home <dir>...` を MUST 実行する。`<file>` は、渡すすべての記録先番号のコメントのうち 1 行目が `Codex 消費: <thread_id> <tokens>` のものから `<thread_id> <tokens>` を 1 行ずつ書いたもので、本体が計測の直前に作る。`--codex-home` には codex-develop の account と CODEX_HOME の対応表にある全パスと、本体の環境の `${CODEX_HOME:-$HOME/.codex}` を渡す。計測の手順は `skills/develop/SKILL.md`（本体手順）に置き、adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` には置いてはならない（MUST NOT）。
+develop の本体は、その記録先のためにサブエージェントを spawn する直前、SendMessage で再開する直前、および executor が `codex` の役割へ委譲する直前に、役割と executor を問わず毎回 `scripts/pr-token-budget.sh <記録先番号> [PR 番号] --codex-records <file> --codex-home <dir>...` を MUST 実行する。`<file>` は、渡すすべての記録先番号のコメントを全ページ取得し（`gh api --paginate --slurp`）、1 行目が `^Codex 消費: ` に一致するものだけから `<thread_id> <tokens>` を 1 行ずつ書いたもので、本体が計測の直前に作る。`--codex-home` には codex-develop の account と CODEX_HOME の対応表にある全パスと、本体の環境の `${CODEX_HOME:-$HOME/.codex}` を渡す。計測の手順は `skills/develop/SKILL.md`（本体手順）に置き、adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` には置いてはならない（MUST NOT）。
 
-本体は、その記録先のために Codex を呼んだら、そのたびに記録先へ 1 行目が `Codex 消費: <thread_id> <tokens>` のコメントを MUST 投稿する。executor が `codex` の役割へ委譲したときは codex-worker の結果 JSON の `thread_id` と `usage.total.totalTokens` を書く。G が full レビューで Bash から Codex を呼んだときは、G が return に書いた thread_id（`codex exec` の出力ヘッダの `session id:`、companion の結果の `threadId`）を使い、`<tokens>` を `-` と書く。G は Codex を呼んだら thread_id を return に MUST 書く（`skills/develop/references/roles/gate-runner.md` に書く）。結果 JSON を受け取れず thread_id が分からない委譲は記録できず、この上限の外になる。
+本体は、その記録先のために Codex を呼んだら、そのたびに記録先へ 1 行目が `Codex 消費: <thread_id> <tokens>` のコメントを MUST 投稿する。executor が `codex` の役割へ委譲したときは codex-worker の結果 JSON の `thread_id` と `usage.total.totalTokens` を書く（`usage` が null か `usage.total.totalTokens` が読めないときは `<tokens>` を `-` と書く）。G が full レビューで Bash から Codex を呼んだときは、G が return に書いた thread_id（`codex exec` の出力ヘッダの `session id:`、companion の結果の `threadId`）を使い、`<tokens>` を `-` と書く。G は Codex を呼んだら thread_id を return に MUST 書く（`skills/develop/references/roles/gate-runner.md` に書く）。結果 JSON を受け取れず thread_id が分からない委譲と、G が thread_id を取れなかった Codex の呼び出しは記録できず、この上限の外になる。
 
 exit 2 のときは spawn / SendMessage / Codex への委譲をしてはならず MUST NOT、記録先に `needs-approval` を付けて主に「続けるか、範囲外として閉じるか」の 2 択を出して止まる。2 択そのものは PR-A と同じだが、判断材料なしで出してはならず MUST NOT、問いには現在の合計・体数・上限・残工程（次に起こそうとした役割と、そのあと残る工程）・本体の推奨（どちらを選ぶかとその理由）を MUST 含める。unmanned でも同じく止まり、サイクルを終える。この手順は `skills/develop/SKILL.md` に SHALL 書く。
 
