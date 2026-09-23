@@ -1,5 +1,14 @@
 # Changelog — dev-workflow
 
+## 2.13.31 — 2026-09-23: develop のレビュー経路契約を正本間で統一する
+
+develop 本体・Codex adapter・ゲート実行者 G の間で分散していた adapter / 従来レビュー経路の説明を揃えた（#425、#390、#392〜#396）。
+
+- **gate-runner**: 入力契約へ `レビュー経路:` と adapter 再開時の executor / model・dispatch URL を追加し、`needs-reviewer` 前の同一 PR/HEAD 重複着手確認を明記した
+- **develop / Codex adapter**: レビュアー model の決定元を経路別に書き分け、欠陥探索と行無し従来経路の Claude G / Codex G の動きを統一した
+- **pr-review-gate**: adapter 経路で Codex を実行しない場合、証拠雛形の 5 欄すべてに `未実行（adapter 経路）` を記録できるようにした
+- **テスト**: 6 件の follow-up をそれぞれ固定する回帰テストを `develop-adapter-review-routing.bats` に追加した
+
 ## 2.13.30 — 2026-09-23: usage-probe が User-Agent に claude-code を名乗る
 
 使用量 API（`/api/oauth/usage`）は、User-Agent が `claude-code/<版>` でないリクエストを厳しい別枠で数える。見出しなしで叩いていた `usage-probe.sh` は、よく使うアカウントで 429 を返され続け、そのアカウントの値が 97 分前のまま止まっていた。`cld` の自動選択と、毎ターンの枠の残量モードの判定が、古い数字で動いていた。同じトークンで見出しを付けると 200、付けないと 429 になることを 2 回確かめた。2.13.29 は先行して main に入った #413 が使用したため、この変更は 2.13.30 とした。

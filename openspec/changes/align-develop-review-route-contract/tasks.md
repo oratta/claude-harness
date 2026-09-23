@@ -16,7 +16,7 @@
 
 ## 3. 配布メタデータと検証
 
-- [ ] 3.1 dev-workflow の `plugin.json` と marketplace metadata の version を同じ値へ更新し、CHANGELOG に #425 のレビュー経路契約整合を追記する
+- [x] 3.1 dev-workflow の `plugin.json` と marketplace metadata の version を同じ値へ更新し、CHANGELOG に #425 のレビュー経路契約整合を追記する
 - [ ] 3.2 `bats plugins/dev-workflow/tests/develop-adapter-review-routing.bats` を実行し、6 件の回帰テストを含めて exit 0 を確認する
 - [ ] 3.3 `git grep -n '行が無ければ従来経路として Codex を直接呼ぶ' -- plugins` が 0 件、かつ `未実行（adapter 経路）` が pr-review-gate の雛形 5 欄でヒットすることを確認する
 - [ ] 3.4 `openspec validate align-develop-review-route-contract --strict` と `openspec validate --all --strict --no-interactive` を実行し、どちらも exit 0 を確認する
