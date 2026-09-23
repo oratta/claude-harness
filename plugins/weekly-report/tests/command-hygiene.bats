@@ -14,7 +14,7 @@ setup() {
 # --- S8: 存在しない旧パスへの参照が無い ---
 
 @test "S8: command does not reference nonexistent .claude/skills/weekly-report/SKILL.md" {
-  ! grep -q '\.claude/skills/weekly-report/SKILL\.md' "$COMMAND_FILE"
+  ! grep -q '\.claude/skills/weekly-report/SKILL\.md' "$COMMAND_FILE" || return 1
 }
 
 # --- S9: plugin-relative パスで SKILL.md を参照している ---

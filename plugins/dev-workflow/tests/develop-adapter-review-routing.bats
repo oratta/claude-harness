@@ -181,7 +181,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   old='行が無ければ従来経路として Codex を直接''呼ぶ'
   echo "$line" | grep -qF 'Claude の G は Codex を直接呼ぶ'
   echo "$line" | grep -qF 'Codex の G は prompt の禁止により呼ばない'
-  ! echo "$line" | grep -qF "$old"
+  ! echo "$line" | grep -qF "$old" || return 1
 }
 
 # ===== レビュー実行者: の adapter 経路の形（1.5） =====

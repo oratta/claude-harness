@@ -35,12 +35,12 @@ setup() {
 }
 
 @test "S3: goal description no longer says prod side is commented out" {
-  ! grep -q 'prod 側はコメントアウト状態' "$P5"
+  ! grep -q 'prod 側はコメントアウト状態' "$P5" || return 1
   grep -q '\.env\.production\.local' "$P5"
 }
 
 @test "S4: cautions section reflects two-file scheme" {
-  ! grep -q 'prod系がコメントアウトで保存されている前提' "$P5"
+  ! grep -q 'prod系がコメントアウトで保存されている前提' "$P5" || return 1
   grep -q '\.env\.production\.local.*に prod 値が分離保存されている前提' "$P5"
 }
 
@@ -75,12 +75,12 @@ setup() {
   step11="$(awk '/### Step 11: /{flag=1} /### Step 11\.5:/{flag=0} flag' "$P2")"
   step115="$(awk '/### Step 11\.5:/{flag=1} /### Step 12:/{flag=0} flag' "$P2")"
   echo "$step115" | grep -qi 'service_role'
-  ! echo "$step11" | grep -qi 'service_role'
+  ! echo "$step11" | grep -qi 'service_role' || return 1
 }
 
 @test "S10: state file write step does not record the raw service_role key value" {
   step13="$(awk '/### Step 13: /{flag=1} /### Step 14:/{flag=0} flag' "$P2")"
-  ! echo "$step13" | grep -qiE 'service_role_key: \{|service_role: \{[A-Za-z_]*_KEY\}'
+  ! echo "$step13" | grep -qiE 'service_role_key: \{|service_role: \{[A-Za-z_]*_KEY\}' || return 1
 }
 
 @test "S11: Phase 4 reads PROD_SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY from .env.production.local" {

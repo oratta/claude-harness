@@ -123,7 +123,7 @@ mode_sec() { section "$SKILL" '実行モード'; }
   { section "$SKILL" 'モデル'; cat "$REF"; } | grep -q '`opus`'
   { section "$SKILL" 'モデル'; cat "$REF"; } | grep -qF 'dev-workflow:decider'
   # R1 を general-purpose + model: fable で立てる指示は残さない
-  ! grep -qE '^- \*\*モデルは必ず明示する\*\*.*は `fable`（聖域パスだけでは上げない）' "$REF"
+  ! grep -qE '^- \*\*モデルは必ず明示する\*\*.*は `fable`（聖域パスだけでは上げない）' "$REF" || return 1
   grep -qF '`general-purpose` に `model: fable` を付けない' "$REF"
 }
 
@@ -155,7 +155,7 @@ mode_sec() { section "$SKILL" '実行モード'; }
 @test "manifest: description mentions the spec review step and develop" {
   jq -r '.description' "$MANIFEST" | grep -q '仕様レビュー'
   jq -r '.description' "$MANIFEST" | grep -q 'develop'
-  ! jq -r '.description' "$MANIFEST" | grep -q 'github-''issue'
+  ! jq -r '.description' "$MANIFEST" | grep -q 'github-''issue' || return 1
 }
 
 @test "skill frontmatter: description mentions spec review" {

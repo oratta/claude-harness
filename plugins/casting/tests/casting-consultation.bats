@@ -213,7 +213,7 @@ setup() {
   local section
   section="$(awk '/^## 論点が来たときの判定/{on=1; next} /^## /{on=0} on' "$SKILL")"
   [ -n "$section" ]
-  ! printf '%s' "$section" | LC_ALL=C grep -qF -- "方針文・判断基準に従って自走する"
+  ! printf '%s' "$section" | LC_ALL=C grep -qF -- "方針文・判断基準に従って自走する" || return 1
   printf '%s' "$section" | LC_ALL=C grep -qF -- "「論点相談・仲裁」の手順に入る"
 }
 
@@ -232,6 +232,6 @@ setup() {
 
 @test "plugin.json: description states the claim list, not the retired two-party wording" {
   # 旧仕様「双方の主張」（2者固定）が説明文に残らないこと（Blocking 5）
-  ! LC_ALL=C grep -qF -- "双方の主張" "$PLUGIN_JSON"
+  ! LC_ALL=C grep -qF -- "双方の主張" "$PLUGIN_JSON" || return 1
   LC_ALL=C grep -qF -- "主張リスト" "$PLUGIN_JSON"
 }

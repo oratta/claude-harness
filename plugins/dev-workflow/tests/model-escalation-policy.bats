@@ -36,7 +36,7 @@ setup() {
 @test "pre-classification: the first-round column has no fable (the worker's cap is opus)" {
   tbl="$(awk '/^## 重要実装の事前分類/{f=1} f && /^\| /{print} /^## 昇格トリップワイヤー/{f=0}' "$WORKER")"
   [ -n "$tbl" ]
-  ! echo "$tbl" | grep -qF '`fable`'
+  ! echo "$tbl" | grep -qF '`fable`' || return 1
   echo "$tbl" | grep -qF '`opus`'
   grep -q '最初から' "$WORKER"
   grep -qF 'W の上限は `opus`' "$WORKER"
@@ -99,8 +99,10 @@ setup() {
   echo "$sec" | grep -qF '一方だけ'
   echo "$sec" | grep -qF 'dev-workflow:decider'
   # 旧ラダー（実行役を 1 段ずつ sonnet → opus → fable）は残さない
-  ! echo "$sec" | grep -qF '`sonnet` → `opus` → `fable`'
-  ! echo "$sec" | grep -qF '修正実装を `model: fable` で spawn'
+  ! echo "$sec" | grep -qF '`sonnet` → `opus` → `fable`' || return 1
+  # 旧ラダーの表記「...で spawn する」だけを拒否する。現行文は同じ語順で
+  # 「...で spawn しない」と続くため、"する" まで含めないと現行文自体に誤爆する。
+  ! echo "$sec" | grep -qF '修正実装を `model: fable` で spawn する' || return 1
   grep -qF '昇格は実装品質起因のときだけ' "$GATE_SKILL"
 }
 
@@ -145,7 +147,7 @@ setup() {
   # pr-review-gate は分類名を1行で挙げるだけで、分類表の中身（判定材料）は再掲せず
   # develop の worker.md を正本として参照する
   grep -qF 'develop スキルの references/roles/worker.md が正本' "$GATE_SKILL"
-  ! grep -q 'github-''issue' "$GATE_SKILL"
+  ! grep -q 'github-''issue' "$GATE_SKILL" || return 1
   # 4分類の名前が出るのは正本を指す1行だけ（表として再掲していない）
   [ "$(grep -cF '層間契約' "$GATE_SKILL")" -eq 1 ]
   [ "$(grep -cF '聖域パス・マージ権限' "$GATE_SKILL")" -eq 1 ]

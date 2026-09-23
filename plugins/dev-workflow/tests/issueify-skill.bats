@@ -90,10 +90,10 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 # --- Requirement: 解散プラグインへの依存を持たない ---
 
 @test "skill: no references to retired loops plugin parts" {
-  ! grep -q 'loops' "$SKILL"
-  ! grep -q 'goalify' "$SKILL"
-  ! grep -q 'agent-loop-template' "$SKILL"
-  ! grep -q 'recipes/' "$SKILL"
+  ! grep -q 'loops' "$SKILL" || return 1
+  ! grep -q 'goalify' "$SKILL" || return 1
+  ! grep -q 'agent-loop-template' "$SKILL" || return 1
+  ! grep -q 'recipes/' "$SKILL" || return 1
 }
 
 @test "skill: translation discipline points at the shared pr-body-format" {
@@ -106,6 +106,6 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 @test "develop.md resolves issueify inside dev-workflow and never via loops" {
   grep -q 'skills/issueify/SKILL.md' "$CMD"
   grep -q 'CLAUDE_PLUGIN_ROOT' "$CMD"
-  ! grep -q 'plugins/loops' "$CMD"
-  ! grep -q 'loops-issueify' "$CMD"
+  ! grep -q 'plugins/loops' "$CMD" || return 1
+  ! grep -q 'loops-issueify' "$CMD" || return 1
 }

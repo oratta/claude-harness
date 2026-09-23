@@ -73,9 +73,9 @@ PY
     out="$(ctx_of "$mode")"
     echo "$out" | grep -qF 'dev-workflow:decider'
     # 旧方針の文言（決める役の種別を経由せず Fable を使わせるもの）は注入しない
-    ! echo "$out" | grep -qF '事前分類の fable 行'
-    ! echo "$out" | grep -qF 'Fable は verify / checkpoint のみ'
-    ! echo "$out" | grep -qF 'solo=Opus'
+    ! echo "$out" | grep -qF '事前分類の fable 行' || return 1
+    ! echo "$out" | grep -qF 'Fable は verify / checkpoint のみ' || return 1
+    ! echo "$out" | grep -qF 'solo=Opus' || return 1
   done
   # 実行役の上限が opus であることも conserve の効果文に残す
   echo "$(ctx_of conserve)" | grep -qF 'opus 止まり'
@@ -129,7 +129,9 @@ JSON
   # 30% <= 週経過 71% → abundant。非 active スロットの 95% に引きずられない
   echo "$out1" | grep -q "abundant"
   echo "$out2" | grep -q "abundant"
-  ! echo "$out2" | grep -q "exhausted"
+  # 導出行だけを見る。テンプレ本文（reserve 説明）が語彙として "exhausted" を
+  # 含むため、additionalContext 全体への素朴な grep は常に真になり検査にならない。
+  ! echo "$out2" | grep -q "現在の FABLE_BUDGET_MODE: exhausted" || return 1
   # Fable 残量% も同じ（100 - 30 = 70）
   echo "$out2" | grep -q "70"
   rm -rf "$work"
