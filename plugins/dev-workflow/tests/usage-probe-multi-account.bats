@@ -505,3 +505,66 @@ PY
   [ "$(jq -r '.accounts | length' "$ACCOUNTS")" = "2" ]
   [ -z "$(ls "$WORK"/.accounts-* 2>/dev/null)" ]
 }
+
+# ---------- 本番経路の User-Agent ----------
+# 使用量 API は User-Agent が claude-code/<版> でないリクエストを厳しい別枠で数え、
+# 429 を返し続ける。curl と claude を差し替え、実際に送られる見出しを記録して確かめる。
+
+# $1=claude --version の出力（空なら非 0 で終わる claude を置く）
+setup_production_stubs() {
+  STUB="${WORK}/bin"
+  mkdir -p "$STUB" "${WORK}/claude-x"
+  printf '{"claudeAiOauth":{"accessToken":"dummy-token"}}' > "${WORK}/claude-x/.credentials.json"
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "x", "label": "X", "securestorage": "${WORK}/claude-x" }
+] }
+JSON
+  write_resp "${WORK}/resp.json" 10 20 30
+  cat > "${STUB}/curl" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "${WORK}/curl-args"
+cat > /dev/null
+cat "${WORK}/resp.json"
+printf '\n200'
+SH
+  if [ -n "$1" ]; then
+    printf '#!/usr/bin/env bash\necho "%s"\n' "$1" > "${STUB}/claude"
+  else
+    printf '#!/usr/bin/env bash\nexit 1\n' > "${STUB}/claude"
+  fi
+  chmod +x "${STUB}/curl" "${STUB}/claude"
+}
+
+@test "user-agent: production fetch names the installed claude-code version" {
+  setup_production_stubs "2.1.280 (Claude Code)"
+  run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-code/2.1.280' "${WORK}/curl-args"
+  [ "$(jq -r '.accounts.x.five_hour_pct' "$SNAP")" = "10" ]
+}
+
+@test "user-agent: falls back to a fixed claude-code version when claude is unavailable" {
+  setup_production_stubs ""
+  run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-code/2.1.0' "${WORK}/curl-args"
+}
+
+@test "user-agent: an unexpected claude --version output falls back to the fixed version" {
+  setup_production_stubs "v2.1.280-beta (Claude Code)"
+  run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-code/2.1.0' "${WORK}/curl-args"
+}
+
+@test "user-agent: USAGE_PROBE_USER_AGENT overrides the header" {
+  setup_production_stubs "2.1.280 (Claude Code)"
+  run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" USAGE_PROBE_USER_AGENT="claude-code/9.9.9" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-code/9.9.9' "${WORK}/curl-args"
+}
