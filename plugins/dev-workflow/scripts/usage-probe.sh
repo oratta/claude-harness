@@ -22,8 +22,9 @@
 #   - USAGE_PROBE_RESPONSE_FILE:      全スロット共通で生 API JSON をこのファイルから読む
 #   - USAGE_PROBE_RESPONSE_FILE_<ID>: スロット別（id を大文字化し `-` を `_` に変換）。優先
 #   - USAGE_PROBE_NOW:                現在 epoch を固定する
-#   - USAGE_PROBE_USER_AGENT:         送る User-Agent を固定する（既定は claude-code/<claude --version>）
 #   いずれかが設定されていれば全スロットがテスト経路になり、Keychain / curl は使わない。
+#   - USAGE_PROBE_USER_AGENT:         本番経路で送る User-Agent を固定する（テスト経路には切り替えない。
+#                                     既定は claude-code/<claude --version の版>）
 #
 # サブコマンド:
 #   --print-slots  レジストリを解決して `id<TAB>label<TAB>securestorage<TAB>service` を出力する
@@ -214,10 +215,8 @@ slot_token() {
 user_agent="${USAGE_PROBE_USER_AGENT:-}"
 if [ -z "$user_agent" ]; then
   cc_version="$(claude --version 2>/dev/null | awk 'NR==1{print $1}' || true)"
-  case "$cc_version" in
-    [0-9]*.[0-9]*) ;;
-    *) cc_version="2.1.0" ;;
-  esac
+  # 数字とドットだけの版（例: 2.1.280）以外は、出力の形が変わったとみなして固定値に落とす
+  [[ "$cc_version" =~ ^[0-9]+(\.[0-9]+)+$ ]] || cc_version="2.1.0"
   user_agent="claude-code/${cc_version}"
 fi
 

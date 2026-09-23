@@ -541,7 +541,7 @@ SH
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qx 'User-Agent: claude-code/2.1.280' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-code/2.1.280' "${WORK}/curl-args"
   [ "$(jq -r '.accounts.x.five_hour_pct' "$SNAP")" = "10" ]
 }
 
@@ -550,7 +550,15 @@ SH
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qx 'User-Agent: claude-code/2.1.0' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-code/2.1.0' "${WORK}/curl-args"
+}
+
+@test "user-agent: an unexpected claude --version output falls back to the fixed version" {
+  setup_production_stubs "v2.1.280-beta (Claude Code)"
+  run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-code/2.1.0' "${WORK}/curl-args"
 }
 
 @test "user-agent: USAGE_PROBE_USER_AGENT overrides the header" {
@@ -558,5 +566,5 @@ SH
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" USAGE_PROBE_USER_AGENT="claude-code/9.9.9" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qx 'User-Agent: claude-code/9.9.9' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-code/9.9.9' "${WORK}/curl-args"
 }
