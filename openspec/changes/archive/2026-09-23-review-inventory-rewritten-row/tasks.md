@@ -12,7 +12,7 @@
 - [x] 2.2 `plugins/dev-workflow/skills/pr-review-gate/SKILL.md` 手順 2-1 の順 3 の節に、補助表の書式、主表の本文列は修正前の本文であること、2 段目の本文の選び方、混在する組の削除行の必要数、差分の種類（補助表の不正な行）を足し、2 段目を `review-hit-set.py --head <HEAD>` で回すこと（G が渡すのは W の push を取り込んだあとの HEAD の 40 桁フル SHA）を書く。あわせて手順 2-1 の共通一覧契約の段落（154 行目付近）の「順 3 固有の修正後 HEAD に対する本文・件数・削除行の第 2 段は別に維持する」を、第 2 段が `--head` 付きの同じスクリプトで回ることを指すように直す
 - [x] 2.3 `plugins/dev-workflow/skills/develop/references/roles/worker.md` の順 3 の段落に、書き換えた「該当しない」行を補助表に載せること（主表の本文は修正前のまま）を足す。列は再掲しない
 - [x] 2.4 `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` の順 3 の照合の記述に、2 段目で `review-hit-set.py --head <HEAD>` を使うことへの参照を、渡す値が fetch 後の HEAD の 40 桁 SHA であることとあわせて足す（規則の正本は SKILL.md）
-- [ ] 2.5 PR 本文に、MODIFIED「一覧の一致で閉じる（順 3）」で検索コマンドの形を `-- <パス>` から `-- .` に直したのは既存の共通全ヒット一覧契約との食い違いを揃えただけで、振る舞いの追加ではないことを書く
+- [x] 2.5 PR 本文に、MODIFIED「一覧の一致で閉じる（順 3）」で検索コマンドの形を `-- <パス>` から `-- .` に直したのは既存の共通全ヒット一覧契約との食い違いを揃えただけで、振る舞いの追加ではないことを書く
 - [x] 2.6 `plugins/dev-workflow/.claude-plugin/plugin.json` のバージョンを上げ、`plugins/dev-workflow/CHANGELOG.md` に追記する
 
 ## 3. 検証
