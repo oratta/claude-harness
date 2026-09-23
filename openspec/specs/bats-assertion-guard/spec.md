@@ -1,0 +1,45 @@
+# bats-assertion-guard Specification
+
+## Purpose
+TBD - created by archiving change bats-assertion-guard. Update Purpose after archive.
+## Requirements
+### Requirement: 単独文の `[[ ]]` アサーションはすべてガードされている
+`git ls-files '*.bats' ':(exclude)_longruns/' ':(exclude)plugins/cost-ledger/'` で見つかる bats ファイル（`plugins/cost-ledger/` は #273 で対応済みのため対象外）のうち、単独の文として置かれた `[[ ... ]]` は、テスト本文中の位置を問わず（最後の文も含む）すべて `|| return 1` などのガードを伴わなければならない（SHALL）。
+
+対象の定義: 行頭（空白のみ）から `[[ ` で始まり、行末（末尾にコメント `#...` を許容）が `]]` で終わる行。次は対象外（数えない）:
+- `if`/`while` の条件式として使われる `[[ ]]`（行が `if`/`while` で始まるため、上記の対象定義に一致しない）
+- 同一行で `&&`/`||` により他の `[[ ]]` や実行文と連結された行（`]]` の直後に `&&`/`||` が続く行。例: `[[ -n "$x" ]] && cat <<EOF`）
+- 複数行にまたがる `[[ ]]`（行末が `]]` で終わらないため上記の対象定義に一致しない）
+- 行頭が `!` で始まる否定形 `! [[ ... ]]`（行頭が `[[ ` に一致しないため上記の対象定義に一致しない）。`plugins/statusline/tests/statusline-multi-account.bats:215,216,303` に実在するが、この形の対応は issue #283 の範囲であり、本 change の受け入れ条件には含まない。
+
+対象 24 ファイルを実測した結果、ヒアドキュメント内・複数行にまたがる `[[ ]]` は 0 件、`&&`/`||` 連結は `plugins/infra/tests/infra-fixes.bats:534` の 1 件のみで既にガード済み（対象grepのヒットには影響しない）だった。唯一近い例の `plugins/casting/tests/casting-structure.bats:418` はヒアドキュメント本体内の fixture データであり、上記対象定義そのものに一致しない。
+
+本 change は対象定義に一致するガード漏れを塞ぎ切ることを完了条件とせず、対象外に挙げた書き方（否定形 `! [[ ]]` を含む）へのガード漏れの対応は範囲外とする。
+
+#### Scenario: ガード無しの対象行が 0 件である
+- **WHEN** 次のコマンドを実行する
+  ```
+  git ls-files '*.bats' ':(exclude)_longruns/' ':(exclude)plugins/cost-ledger/' \
+    | xargs grep -nE '^[[:space:]]*\[\[ .*\]\][[:space:]]*(#.*)?$'
+  ```
+- **THEN** 出力が 0 行である（grep がヒット無しで終了する）
+
+#### Scenario: ガード対象の判定に位置を使わない
+- **WHEN** テスト本文の中に単独文の `[[ ... ]]` を追加する
+- **THEN** それがテスト本文の最後の文であっても、途中の文であっても、ガードが必要である（同じ要件が適用される）
+
+### Requirement: ガードの効果を bash のバージョンに関わらず確認できる
+このガード規約が実際に効いていることを確認する常設テストが存在しなければならない（SHALL）。素通りの原因は bash 4.1 未満で `[[ ]]` が `set -e`（errexit）の対象外であることであり、bash 4.1 以降（CI の `ubuntu-latest` が使う bash 5 系を含む）ではガード無しでも途中の偽 `[[ ]]` でテストが落ちるため、実行時の実演テストは bash のバージョンで検証内容を分けなければならない（SHALL）。
+
+#### Scenario: ガード付き fixture はどの bash バージョンでも fail する
+- **WHEN** 途中に偽の `[[ ... ]]` を `|| return 1` 付きで置いた fixture テストを子プロセスの bats で実行する
+- **THEN** 実行した bash のバージョンに関わらずそのテストは fail する（`not ok` として報告される）
+
+#### Scenario: ガード無し fixture は bash 4.1 未満のときだけ素通りする
+- **WHEN** 途中に偽の `[[ ... ]]` をガード無しで置いた fixture テストを子プロセスの bats で実行し、実行環境の `${BASH_VERSINFO[0]}` が 4 未満、または 4 かつ `${BASH_VERSINFO[1]}` が 1 未満である
+- **THEN** そのテストは `ok`（素通り）として報告される
+
+#### Scenario: bash 4.1 以降ではガード無し fixture の素通り確認を検査しない
+- **WHEN** 実行環境の bash が 4.1 以降である
+- **THEN** 「ガード無し fixture が素通りする」ことの確認は `skip` し、この常設テスト自体は green のまま終わる
+
