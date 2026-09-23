@@ -98,7 +98,7 @@ gh api -X POST repos/$R/issues/$N/comments \
 
 Codex を full の既定にする理由: **実装者と別モデル系列で読ませたほうがレビューの独立性が上がる**（同一モデルは同じ盲点を共有する）。加えて**レビューで Claude の 5h/7d 枠を消費しない**ので、枠を実装サイクルに残せる。
 
-**2-0 の事前判定と、この障害時フォールバックは役割が違う** — 前者はレビュー開始前に**変更内容**から重量を決める設計上の選択、後者は full と判定した後に **Codex の可用性**が理由で発生する迂回路。どちらの経路で Task サブエージェントになったかを PR コメントで書き分ける（`レビュー実行者: Task サブエージェント（light 判定のため）` / `レビュー実行者: Task サブエージェント（full・実測した Codex 不可: <条件>）`）。develop の adapter 経路（G が `needs-reviewer` を返し、本体が phase `review` で投げ先を選び直した場合）では `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` と書く（手順は develop の `references/roles/gate-runner.md`「レビュー経路の判別」）。**どちらの経路でも手順3のリスク宣言・手順4の動作確認・fail-closed の判定順序は一切変わらない** — 変わるのはレビューを実行する主体だけで、免除される工程は無い。
+**2-0 の事前判定と、この障害時フォールバックは役割が違う** — 前者はレビュー開始前に**変更内容**から重量を決める設計上の選択、後者は full と判定した後に **Codex の可用性**が理由で発生する迂回路。どちらの経路で Task サブエージェントになったかを PR コメントで書き分ける（`レビュー実行者: Task サブエージェント（light 判定のため）` / `レビュー実行者: Task サブエージェント（full・実測した Codex 不可: <条件>）`）。develop の adapter 経路（G が `needs-reviewer` を返し、本体が phase `review` で投げ先を選び直した場合）では `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` と書く（手順は develop の `references/roles/gate-runner.md`「レビュー経路の判別」）。executor が codex なら、worker 結果の `execution.model_resolution.requested` と `execution.model_resolution.resolved` を使って `<model>` を `<requested>→<resolved>` と書く。resolved が null なら未観測と明示し、要求値や dispatch 時の model で補完しない。executor が claude なら従来の model 値を使う。**どちらの経路でも手順3のリスク宣言・手順4の動作確認・fail-closed の判定順序は一切変わらない** — 変わるのはレビューを実行する主体だけで、免除される工程は無い。
 
 **従来モードの不可判定**: companion / slash command が無ければ、`command -v codex` 等でバイナリを確認し、あれば exec を試す。companion 導入は任意で、不在だけでは Codex 不可にしない。不可と判定できるのは次の実測だけ:
 
