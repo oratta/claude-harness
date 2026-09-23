@@ -1,5 +1,11 @@
 # Changelog — dev-workflow
 
+## 2.13.27 — 2026-09-23: 起動時に週次余裕のある Claude アカウントを選ぶ
+
+- `scripts/select-account.sh` を追加した。schema 2 usage snapshot の 300 秒以内の観測から、5 時間枠が 90% 未満で週次余裕が最大のスロットを選ぶ。同点はレジストリの宣言順で決める
+- 古い・欠測した観測と 5 時間枠の逼迫を区別して既定アカウントへ縮退し、stdout の `securestorage` と stderr の選択理由を分離した
+- 登録 id の明示選択を snapshot 非依存で追加し、README に `cld` / `cld-account` zsh function の設定例を載せた
+- `tests/account-selector.bats` で鮮度・短期枠・週次余裕・縮退・明示選択・出力ストリームを固定し、zsh がない環境では README の zsh functions テストだけを skip するようにした
 ## 2.13.26 — 2026-09-23: develop 本体が起こす G のレビューを adapter で振り分ける
 
 develop 本体から起こした G が full 判定で Codex を直接呼び、adapter の投げ先選択と dispatch 記録を通らずにレビューが走っていた（#385）。2.13.24 と 2.13.25 は並行 PR #384・#388 が使ったため、この版は 2.13.26 とした。
