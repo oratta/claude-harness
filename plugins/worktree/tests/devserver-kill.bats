@@ -152,13 +152,13 @@ DRIVER
   local out
   out="$(wt_run_kill_snippet zsh "${BATS_TEST_TMPDIR}/zsh-kill")"
   # 1. the function returned instead of aborting the shell (issue #66)
-  [[ "$out" == *"REACHED_END"* ]]
-  [[ "$out" != *"bad pattern"* ]]
+  [[ "$out" == *"REACHED_END"* ]] || return 1
+  [[ "$out" != *"bad pattern"* ]] || return 1
   # 2. the SIGKILL fallback was reached for the SIGTERM-ignoring process
-  [[ "$out" == *"SIGKILL で停止しました"* ]]
+  [[ "$out" == *"SIGKILL で停止しました"* ]] || return 1
   # 3. both processes are actually gone
-  [[ "$out" == *"DEAD_NORMAL"* ]]
-  [[ "$out" == *"DEAD_STUBBORN"* ]]
+  [[ "$out" == *"DEAD_NORMAL"* ]] || return 1
+  [[ "$out" == *"DEAD_STUBBORN"* ]] || return 1
   # 4. no stray `comm=...` line from a zsh local re-declaration
   run grep -Eq '^comm=' <<<"$out"
   [ "$status" -ne 0 ]
@@ -216,8 +216,8 @@ wt_comm_block() {
 @test "skill: comm extraction strips a leading dash before taking the basename" {
   local lines
   lines=$(wt_comm_block kill_devserver_under)
-  [[ "$lines" == *'comm=${comm#-}'* ]]
-  [[ "$lines" == *'comm=${comm##*/}'* ]]
+  [[ "$lines" == *'comm=${comm#-}'* ]] || return 1
+  [[ "$lines" == *'comm=${comm##*/}'* ]] || return 1
 }
 
 @test "skill: kill and detect sides extract comm identically" {
@@ -318,9 +318,9 @@ wt_build_comm_normaliser() {
 
   # ログインシェルは生存し、スキップとして報告される
   [ "$shell_alive" = "1" ]
-  [[ "$out" == *"シェル/エディタと判定してスキップ"* ]]
-  [[ "$out" == *"${shell_pid}(zsh)"* ]]
+  [[ "$out" == *"シェル/エディタと判定してスキップ"* ]] || return 1
+  [[ "$out" == *"${shell_pid}(zsh)"* ]] || return 1
   # 非シェルは従来どおり停止される（issue #39 のガードを緩めていない）
   [ "$victim_alive" = "0" ]
-  [[ "$out" == *"${victim_pid}(perl)"* ]]
+  [[ "$out" == *"${victim_pid}(perl)"* ]] || return 1
 }
