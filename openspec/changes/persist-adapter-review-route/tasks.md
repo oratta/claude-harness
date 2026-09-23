@@ -1,8 +1,8 @@
 ## 1. テスト（Red）
 
-- [ ] 1.1 `plugins/dev-workflow/tests/develop-adapter-review-routing.bats` に、`レビュー経路: adapter` で起動済みの同一 G は行の無い再開指示でも adapter 経路を保持することと、行の無い従来経路の既定は新しい G の起動指示（手渡しで起こされた後任を含む）だけに適用することを照合するテストを追加する
-- [ ] 1.2 同じ bats に、`plugins/dev-workflow/skills/develop/SKILL.md` と `plugins/dev-workflow/references/codex-develop.md` の対になる記述が、同一 G の行無し再開と新しい G の行無し起動を区別していることを照合するテストを追加する
-- [ ] 1.3 `bats plugins/dev-workflow/tests/develop-adapter-review-routing.bats` を実行し、新規テストが既存文書に対して失敗する Red を確認する
+- [x] 1.1 `plugins/dev-workflow/tests/develop-adapter-review-routing.bats` に、`レビュー経路: adapter` で起動済みの同一 G は行の無い再開指示でも adapter 経路を保持することと、行の無い従来経路の既定は新しい G の起動指示（手渡しで起こされた後任を含む）だけに適用することを照合するテストを追加する
+- [x] 1.2 同じ bats に、`plugins/dev-workflow/skills/develop/SKILL.md` と `plugins/dev-workflow/references/codex-develop.md` の対になる記述が、同一 G の行無し再開と新しい G の行無し起動を区別していることを照合するテストを追加する
+- [x] 1.3 `bats plugins/dev-workflow/tests/develop-adapter-review-routing.bats` を実行し、新規テストが既存文書に対して失敗する Red を確認する
 
 ## 2. レビュー経路契約の更新（Green）
 
