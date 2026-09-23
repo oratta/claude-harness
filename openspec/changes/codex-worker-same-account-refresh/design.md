@@ -39,6 +39,16 @@ token 更新の書き込みがアトミックでない場合、待機ループ�
 
 runtime symlink の検査（`runtime_auth_link_changed`）は読み取りの前に行い、猶予の対象にしない。symlink の差し替えは token 更新では起きないため。
 
+### 一度決めた中断理由は保持し、中断後と停止の合図の後は照合しない
+
+今の待機ループは `changed` を周ごとに計算し直し、ターン完了時の最後の周の値で `error_kind` を決める。新しい振る舞いでは「読めない状態が 5 秒を超えて中断を決めた後にファイルが読めるようになる」「account/read の不一致で中断を決めた次の周は一致する」といった経路で、中断したのに `error_kind` が `auth_profile_changed` にならなくなる。そこで、一度 `auth_profile_changed` と決めたらその値を保持し、以降の周では照合も account/read も呼ばない。
+
+停止の合図（SIGTERM・呼び出し元の消失）が出た後も account/read を呼ばない。`Rpc.request` は停止の合図が出ていると `stop_requested` で失敗するので、呼ぶと「取得できない」扱いになって中断理由を `auth_profile_changed` と取り違えるため。
+
+ターン開始前の照合（`run_turn` の account/read 直後、codex-worker.py:423 付近）はこの待機ループの規則の対象外で、今までどおり email と account_id を比べ、読めなければ猶予なしで止める。
+
+5 秒の猶予はコードでは名前付き定数にする。
+
 ### 既存テスト 2 件は書き換え内容を「別アカウントへの切り替え」に直す
 
 `test_changed_auth_never_starts_server` と `test_source_auth_change_interrupts_the_running_turn` は、`auth.json` の末尾に空白を 1 つ足して「変わった」ことを作っている。これは識別子の変わらない書き換えなので、新しい振る舞いでは止まらないのが正しい。この 2 件の意図は「別アカウントへの切り替えで止まる」ことなので、書き換え内容を別の email・account_id を持つ認証情報への置き換えに直し、期待値（`auth_profile_changed`、開始前なら model/list 以降を呼ばない、待機中なら `interrupted`）は変えない。末尾に空白を足すケースは、新しく足す「同じアカウントの token 更新では止まらない」テストの側で扱う。

@@ -5,13 +5,16 @@
 - [ ] 1.3 ターン待機中に `auth.json` が一時的に壊れた JSON になり、5 秒以内に同じアカウントの内容へ戻るケースのテストを足し、止まらないことを確かめる
 - [ ] 1.4 壊れた状態が 5 秒を超えて続くケースのテストを足し、`interrupted` と `auth_profile_changed` で止まることを確かめる
 - [ ] 1.5 識別子は同じだが、変化後の `account/read` が別の email を返すケースのテストを足し、`auth_profile_changed` で止まることを確かめる
-- [ ] 1.6 既存の `test_changed_auth_never_starts_server` と `test_source_auth_change_interrupts_the_running_turn` の書き換え内容を、別アカウントの認証情報への置き換えに直す（期待値は変えない）
+- [ ] 1.6 読めない状態が 5 秒を超えて中断を決めた後にファイルが同じアカウントの内容へ戻るケース、account/read の不一致で中断を決めた後に一致する内容へ戻るケースのテストを足し、どちらも `error_kind` が `auth_profile_changed` のままで、中断を決めた後に account/read が呼ばれないことを確かめる
+- [ ] 1.7 停止の合図（SIGTERM）の後に `auth.json` の中身が変わっても account/read が呼ばれず、`error_kind` が `auth_profile_changed` にならないことを確かめる
+- [ ] 1.8 既存の `test_changed_auth_never_starts_server` と `test_source_auth_change_interrupts_the_running_turn` の書き換え内容を、別アカウントの認証情報への置き換えに直す（期待値は変えない）
 
 ## 2. 実装
 
 - [ ] 2.1 `runtime_identity_matches` の比較対象から `auth_hash` を外し、`identity` と `account_id_hash` だけを比べる
 - [ ] 2.2 待機ループで、確認済みの `auth_hash` と違う中身を読んだら `account/read`（`refreshToken: false`）を 1 回呼び、email のハッシュが開始時と同じなら確認済みの値を更新し、違う・取得できないなら `auth_profile_changed` で中断する
-- [ ] 2.3 待機ループで `auth.json` が読めないときは止めずに次の周で読み直し、読めない状態が 5 秒を超えて続いたら `auth_profile_changed` で中断する。runtime symlink の検査とターン開始前の照合は今までどおり厳格にする
+- [ ] 2.3 待機ループで `auth.json` が読めないときは止めずに次の周で読み直し、読めない状態が 5 秒を超えて続いたら `auth_profile_changed` で中断する。5 秒は名前付き定数にする。runtime symlink の検査とターン開始前の照合は今までどおり厳格にする
+- [ ] 2.4 一度 `auth_profile_changed` と決めたら値を保持し、以降の周では照合も account/read も呼ばない。停止の合図が出た後も account/read を呼ばない
 
 ## 3. ドキュメントと仕様
 
