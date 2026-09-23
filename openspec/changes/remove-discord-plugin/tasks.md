@@ -1,6 +1,6 @@
 ## 1. テストを先に書く（Red）
 
-- [ ] 1.1 `tests/discord-plugin-retirement.bats` を作り、spec `discord-plugin-retirement` の各 Scenario を検査する: `plugins/discord` の不在（`git ls-files` 0 件）・marketplace の `plugins[]` と全 `bundles[].plugins[]` に discord が無い・`ci.yml` に `discord` / `setup-bun` が 0 件で issue #138 の SHA 固定方針コメントが残る・`openspec/specs/discord-reaction-delivery` の不在・3 文字列の掃除（許容場所 (a)〜(d) を除いて 0 件。許容はパスの列挙で書く）・README に discord の行が無く切り替え手順の 4 文字列がある。テスト名は ASCII のみ
+- [ ] 1.1 `tests/discord-plugin-retirement.bats` を作り、spec `discord-plugin-retirement` の各 Scenario を検査する: `plugins/discord` の不在（`git ls-files` 0 件）・marketplace の `plugins[]` と全 `bundles[].plugins[]` に discord が無い・`ci.yml` に `discord` / `setup-bun` が 0 件で issue #138 の SHA 固定方針コメントが残る・`openspec/specs/discord-reaction-delivery` の不在・3 文字列の掃除（許容場所を除いて 0 件。許容はパスの列挙で書く: `openspec/changes/archive/`・`_longruns/`・`openspec/changes/remove-discord-plugin/`・`README.md`・`tests/discord-plugin-retirement.bats`・`openspec/specs/discord-plugin-retirement/`）・README に discord の行が無く切り替え手順の 4 文字列がある。テスト名は ASCII のみ
 - [ ] 1.2 `bats tests/discord-plugin-retirement.bats` が撤去前の状態で落ちることを確認する
 
 ## 2. 撤去（Green）
@@ -21,4 +21,6 @@
 
 - [ ] 4.1 archive の直前に `git rm -r openspec/specs/discord-reaction-delivery` を行い、移設先 genetta-inc/flatmate#861 を commit メッセージに書いて commit する（全要件 REMOVED の delta は archive が `Spec must have at least one requirement` で中断するため、delta では表現しない）
 - [ ] 4.2 `bats tests/discord-plugin-retirement.bats` と `bats tests/openspec-specs-format.bats` が全件 pass する
-- [ ] 4.3 `openspec archive remove-discord-plugin -y` で archive し、`openspec/specs/discord-plugin-retirement/spec.md` ができることを確認する。archive 後に `scripts/test.sh` を再実行して exit 0 を確認する
+- [ ] 4.3 `openspec archive remove-discord-plugin -y` で archive し、`openspec/specs/discord-plugin-retirement/spec.md` ができることを確認する
+- [ ] 4.4 生成された `openspec/specs/discord-plugin-retirement/spec.md` の `## Purpose` に残る `TBD - created by archiving change ...` を次の文面に書き換える:「harness から Discord 改造版プラグイン（公式プラグインの fork）を撤去した状態を定める。改造版は flatmate に移り flatmate 自身が配っている（genetta-inc/flatmate#851）ので、harness に同じ部品と仕様を残して正本が 2 つになることを防ぐ。」
+- [ ] 4.5 archive 後に `scripts/test.sh` をフォアグラウンドで再実行して exit 0 を確認する（参照掃除の検査が生成された main spec を許容場所として扱うことを含む）

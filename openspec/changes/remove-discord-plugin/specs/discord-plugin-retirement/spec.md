@@ -46,10 +46,10 @@
 - **THEN** 全件 pass する
 
 ### Requirement: Discord 改造版への参照を掃除する
-`plugins/discord`・`discord@oratta-claude-harness`・`discord-reaction-delivery` の 3 文字列は、次の許容場所を除く git 追跡ファイルに現れてはならない（MUST NOT）。許容場所は (a) 過去の記録である `openspec/changes/archive/` と `_longruns/`、(b) 作業中の change ディレクトリ `openspec/changes/remove-discord-plugin/`、(c) 移設の記録と切り替え手順を書くルート `README.md`、(d) この撤去を検査する bats 自身、とする。ユーザーへの連絡手段としての一般名詞「Discord」（dev-workflow・casting・telegram の文中）は対象外で、書き換えてはならない（MUST NOT）。
+`plugins/discord`・`discord@oratta-claude-harness`・`discord-reaction-delivery` の 3 文字列は、次の許容場所を除く git 追跡ファイルに現れてはならない（MUST NOT）。許容場所は (a) 過去の記録である `openspec/changes/archive/` と `_longruns/`、(b) 作業中の change ディレクトリ `openspec/changes/remove-discord-plugin/`、(c) 移設の記録と切り替え手順を書くルート `README.md`、(d) この撤去を検査する bats 自身、(e) archive で生成されるこの撤去の capability の正本 `openspec/specs/discord-plugin-retirement/`、とする。ユーザーへの連絡手段としての一般名詞「Discord」（dev-workflow・casting・telegram の文中）は対象外で、書き換えてはならない（MUST NOT）。
 
 #### Scenario: 許容場所の外に参照が無い
-- **WHEN** 3 文字列を `git grep` で探し、許容場所 (a)〜(d) の一致を除く
+- **WHEN** 3 文字列を `git grep` で探し、許容場所 (a)〜(e) の一致を除く
 - **THEN** 一致は 0 件である
 
 ### Requirement: 移設の記録と切り替え手順をルート README に書く
