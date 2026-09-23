@@ -228,8 +228,8 @@ wt_load_detect_helpers() {
   out=$(bash -c ". '$snippet'; detect_active_procs_under '$dir'")
   kill "$pid" 2>/dev/null || true
 
-  [[ "$out" == *"$pid"* ]]
-  [[ "$out" == *"(sleep)"* ]]
+  [[ "$out" == *"$pid"* ]] || return 1
+  [[ "$out" == *"(sleep)"* ]] || return 1
 }
 
 @test "detect_active_procs_under: reports nothing for an idle path" {
@@ -269,7 +269,7 @@ wt_load_detect_helpers() {
   [ "$out_bash" = "$out_zsh" ]
   # 2 件とも拾えていること（zsh で 1 件に潰れていない）
   [ "$(printf '%s' "$out_bash" | grep -c '(sleep)')" -eq 1 ]
-  [[ "$out_bash" == *","* ]]
+  [[ "$out_bash" == *","* ]] || return 1
 }
 
 @test "detect_recent_session_log: finds a jsonl updated within 24h under either slug form" {
@@ -285,7 +285,7 @@ wt_load_detect_helpers() {
   echo '{}' >"$fake_home/.claude/projects/$slug/session.jsonl"
 
   out=$(HOME="$fake_home" bash -c ". '$snippet'; detect_recent_session_log '$dir'")
-  [[ "$out" == *"session.jsonl"* ]]
+  [[ "$out" == *"session.jsonl"* ]] || return 1
 }
 
 @test "detect_recent_session_log: ignores logs older than 24h" {

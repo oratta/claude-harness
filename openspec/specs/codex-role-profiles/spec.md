@@ -4,19 +4,23 @@
 TBD - created by archiving change codex-develop-role-profiles. Update Purpose after archive.
 ## Requirements
 ### Requirement: 名前付き設定セットを共通入口で選ぶ
-システムは `/develop --profile NAME [--profile-file PATH]` と対応する develop CLI の role resolver を提供しなければならない（MUST）。組み込み名は `codex-standard`、`codex-economy`、`hybrid-standard`、`claude-write-codex-review` とし、各 entry は executor/account/model/effort を持つ。形式版1の JSON は design の厳密な形式を満たし、全 canonical role を網羅しなければならない（MUST）。各 role の executor は `codex` または `claude` とし、同じ profile 内で混在できなければならない（MUST）。profile と旧 account/model の併用を拒否しなければならない（MUST）。
+システムは `/develop --profile NAME [--profile-file PATH]` と対応する develop CLI の role resolver を提供しなければならない（MUST）。組み込み名は `codex-standard`、`codex-economy`、`hybrid-standard`、`claude-write-codex-review` とし、各 entry は executor/account/model/effort を持つ。形式版1の JSON は design の厳密な形式を満たし、全 canonical role を網羅しなければならない（MUST）。各 role の executor は `codex` または `claude` とし、同じ profile 内で混在できなければならない（MUST）。profile と旧 account/model の併用を拒否しなければならない（MUST）。組み込み profile の Codex entry の model は、モデル ID ではなく系統名（`astra` / `sol` / `luna`）で書かなければならない（MUST）。
 
 #### Scenario: 二つの Codex 組み込みセットを解決する
 - **WHEN** `codex-standard` または `codex-economy` を解決する
-- **THEN** spec-write は順に sol/high または luna/medium、spec-review/impl-review/review/decider は astra/high、implement は sol/medium または luna/medium、explore/summarize は luna/low に解決する。正式モデル名は design の表の値と一致し、全 entry は executor=codex、account=current となる
+- **THEN** spec-write は順に sol/high または luna/medium、spec-review/impl-review/review/decider は astra/high、implement は sol/medium または luna/medium、explore/summarize は luna/low に解決する。model の値は系統名そのもの（`sol` / `luna` / `astra`）で、全 entry は executor=codex、account=current となる
 
 #### Scenario: 既存の混在セットを役割ごとに解決する
 - **WHEN** `hybrid-standard` で書く役、独立レビュー役、decider、補助役を順に解決する
-- **THEN** 各 role は既存 profile に記録された executor/account/model/effort をそのまま返し、Codex が書き Claude が検査する向きを維持する
+- **THEN** 各 role は既存 profile に記録された executor/account/model/effort をそのまま返し、Codex が書き Claude が検査する向きを維持する。Codex role の model は系統名で返る
 
 #### Scenario: Claude が書き Codex が検査する組み込みセットを解決する
 - **WHEN** `claude-write-codex-review` を解決する
-- **THEN** spec-write/implement は claude/current/sonnet/medium、explore/summarize は claude/current/haiku/low、spec-review/impl-review/review/decider は codex/current/gpt-6-astra/high となる
+- **THEN** spec-write/implement は claude/current/sonnet/medium、explore/summarize は claude/current/haiku/low、spec-review/impl-review/review/decider は codex/current/astra/high となる
+
+#### Scenario: 組み込み profile にモデル ID が書かれていない
+- **WHEN** `git grep -nE 'gpt-[0-9]' plugins/dev-workflow/references/codex-role-profiles.json` を実行する
+- **THEN** 0 件である
 
 #### Scenario: 役割ごとに登録 Codex account を選ぶ
 - **WHEN** version=1 の外部 profile-file の Codex 役割に異なる登録 account を指定して解決する
@@ -75,8 +79,8 @@ profile dispatch は pending_execution の role/executor/account/model/effort �
 - **THEN** 別 job/thread の独立レビューと実効設定の観測元を確認でき、実効値が未観測または要求と異なる場合はその受け入れを未達と報告する
 
 #### Scenario: ローカル回帰を実行する
-- **WHEN** scripts/test.sh と test_codex_*.py を実行する
-- **THEN** worker の開始前拒否/両RPC、develop の工程不変/pending固定/旧retry/継続v1-v2を fixture で検証し、薄い bats ラッパー経由でも Python 回帰が全件検出される
+- **WHEN** `scripts/test.sh` を引数なしで実行する
+- **THEN** worker の開始前拒否/両RPC、develop の工程不変/pending固定/旧retry/継続v1-v2を fixture で検証し、Python 回帰はリポジトリ直下の `tests/python-suites.bats` 経由でファイル名を絞らずに全件検出される
 
 ### Requirement: executor ごとの role 設定を検証する
 Version 1 profile の検証は executor を discriminator として行わなければならない（MUST）。`codex` entry は登録済み account を要求し、model/effort を非空文字列として保持する。`claude` entry は account=`current` と model=`haiku|sonnet|opus|fable` を要求し、`fable` は role=`decider` にだけ許可しなければならない（MUST）。Claude entry の effort は必須の非空文字列として解決結果に保持するが Agent 呼び出しへ渡してはならない（MUST NOT）。
@@ -108,7 +112,7 @@ develop role resolver は、profile と旧 account/model のどちらも明示�
 
 #### Scenario: 両 provider に余裕がある
 - **WHEN** Claude margin が +20、最良 Codex margin が +10 で profile を明示せず工程を開始する
-- **THEN** `claude-write-codex-review` を選び、書く役と補助役は Claude、レビュー役と decider は Codex gpt-6-astra に解決する
+- **THEN** `claude-write-codex-review` を選び、書く役と補助役は Claude、レビュー役と decider は Codex の系統名 astra に解決する
 
 #### Scenario: Codex が詰まっている
 - **WHEN** Claude margin が 0 以上で、最良 Codex margin が -5、欠測、または stale のいずれかである
@@ -196,3 +200,19 @@ profile・旧 account/model・account-home 対応表がいずれも未指定の�
 #### Scenario: 全体回帰を実行する
 - **WHEN** repository の `scripts/test.sh` を実行する
 - **THEN** 自動選択、明示指定、profile 検証、Codex snapshot 分離を含む回帰が exit 0 になる
+
+### Requirement: Codex entry の model は系統名か完全なモデル ID で書ける
+Codex entry の model は、系統名（英小文字だけからなる値。例: `astra` / `sol` / `luna`）と完全なモデル ID（それ以外の値。例: `gpt-6-sol`）のどちらでもよく、resolver は値を変換せずにそのまま request の model に写さなければならない（MUST）。外部 profile-file と旧形式 `--model` は、版を固定したい利用者のために完全なモデル ID を従来どおり受け付けなければならない（MUST）。resolver の Codex entry の model に対する静的検証は従来どおり非空文字列であることだけとし、値の形やモデルの実在は検証しない（実在しない値は worker が解決時に止める）。系統名から実際のモデル ID への解決は resolver で行ってはならず（MUST NOT）、Codex worker が委譲の直前に行う（`codex-worker` capability）。develop 本体は Codex 委譲の結果を記録先に書くとき、要求した model の値と worker が返した解決後のモデル ID の両方を書かなければならない（MUST）。
+
+#### Scenario: 外部 profile-file に系統名と完全 ID を混ぜる
+- **WHEN** version=1 の外部 profile-file で、ある Codex role の model を `sol`、別の Codex role の model を `gpt-5.6-sol` として request を作る
+- **THEN** 両方とも検証を通り、各 request の model はそれぞれ `sol` と `gpt-5.6-sol` のまま書かれる
+
+#### Scenario: 旧形式で系統名と完全 ID を指定する
+- **WHEN** 旧形式 `--account NAME --model sol`、または `--account NAME --model gpt-6-astra` で request を作る
+- **THEN** どちらも拒否されず、request の model は指定した値のままになる
+
+#### Scenario: 解決後の ID を記録先に残す
+- **WHEN** model=sol の Codex role を委譲し、worker の結果 JSON の `execution.model_resolution` が requested=sol、resolved=gpt-6-sol を返す
+- **THEN** develop 本体の記録先コメントには要求値 `sol` と解決後の ID `gpt-6-sol` の両方が書かれ、どの ID で走ったかが後から追える
+

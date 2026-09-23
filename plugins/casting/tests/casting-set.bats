@@ -29,9 +29,9 @@ setup() {
   [ "$status" -eq 0 ]
 
   row="$(grep -F '| 財務・コスト |' "$CATALOG")"
-  [[ "$row" == *"エージェント（予算方針文の範囲内）"* ]]
-  [[ "$row" != *"方針文あり: エージェント"* ]]
-  [[ "$row" == *"支出・API 消費・収益に影響するか"* ]]
+  [[ "$row" == *"エージェント（予算方針文の範囲内）"* ]] || return 1
+  [[ "$row" != *"方針文あり: エージェント"* ]] || return 1
+  [[ "$row" == *"支出・API 消費・収益に影響するか"* ]] || return 1
 
   # 他の行は変わっていない
   grep -qF '| 法的・規制 | 契約・規制・知財・プラットフォーム規約に触れるか' "$CATALOG"
@@ -47,7 +47,7 @@ setup() {
 @test "owner errors on an unknown perspective name" {
   run "$SCRIPT" --catalog "$CATALOG" owner "存在しない観点" "主" --why "test"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"観点が見つかりません"* ]]
+  [[ "$output" == *"観点が見つかりません"* ]] || return 1
 }
 
 # --- Scenario: --why 欠落はエラー ---
@@ -55,7 +55,7 @@ setup() {
 @test "owner errors when --why is missing" {
   run "$SCRIPT" --catalog "$CATALOG" owner "財務・コスト" "主"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"--why"* ]]
+  [[ "$output" == *"--why"* ]] || return 1
 }
 
 # --- Scenario: version が増えていない差し替えは拒否される ---
@@ -67,7 +67,7 @@ setup() {
 
   run "$SCRIPT" --catalog "$CATALOG" replace-catalog "$newfile" --why "no-op"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"version"* ]]
+  [[ "$output" == *"version"* ]] || return 1
   [ "$(cat "$CATALOG")" = "$before" ]
 }
 
@@ -100,8 +100,8 @@ EOF
 
   run "$SCRIPT" --catalog "$CATALOG" owner "財務・コスト" "エージェント" --why "test"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"${repo_override}: 上書き中（影響なし）"* ]]
-  [[ "$output" == *"${repo_inherit}: 継承中（影響あり）"* ]]
+  [[ "$output" == *"${repo_override}: 上書き中（影響なし）"* ]] || return 1
+  [[ "$output" == *"${repo_inherit}: 継承中（影響あり）"* ]] || return 1
 }
 
 # --- Scenario: 存在しないパスが台帳にあっても走査が失敗しない ---
@@ -113,9 +113,9 @@ EOF
 
   run "$SCRIPT" --catalog "$CATALOG" owner "財務・コスト" "エージェント" --why "test"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"警告"* ]]
-  [[ "$output" == *"does-not-exist"* ]]
-  [[ "$output" == *"${repo_ok}: 継承中（影響あり）"* ]]
+  [[ "$output" == *"警告"* ]] || return 1
+  [[ "$output" == *"does-not-exist"* ]] || return 1
+  [[ "$output" == *"${repo_ok}: 継承中（影響あり）"* ]] || return 1
 }
 
 # --- 回帰: 2周目レビューの blocking 指摘 ---
@@ -123,14 +123,14 @@ EOF
 @test "owner rejects a new owner value containing a pipe" {
   run "$SCRIPT" --catalog "$CATALOG" owner "財務・コスト" "agent|主" --why "test"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"| は使えません"* ]]
+  [[ "$output" == *"| は使えません"* ]] || return 1
   grep -qF '方針文あり: エージェント' "$CATALOG"
 }
 
 @test "owner rejects a --why containing a pipe" {
   run "$SCRIPT" --catalog "$CATALOG" owner "財務・コスト" "主" --why "a|b"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"| は使えません"* ]]
+  [[ "$output" == *"| は使えません"* ]] || return 1
 }
 
 @test "replace-catalog rejects a structurally empty file even with a higher version" {
@@ -138,7 +138,7 @@ EOF
   printf -- '---\nversion: 3\n---\n\nこれはカタログではない\n' > "$newfile"
   run "$SCRIPT" --catalog "$CATALOG" replace-catalog "$newfile" --why "test"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"必須節がありません"* ]]
+  [[ "$output" == *"必須節がありません"* ]] || return 1
   head -3 "$CATALOG" | grep -qx 'version: 1'
 }
 
@@ -151,8 +151,8 @@ EOF
   sed 's/^version: 1$/version: 2/' "$CATALOG" > "$newfile"
   run "$SCRIPT" --catalog "$CATALOG" replace-catalog "$newfile" --why "v2 rollout"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"影響一覧"* ]]
-  [[ "$output" == *"${repo}: 全観点継承中（影響あり）"* ]]
+  [[ "$output" == *"影響一覧"* ]] || return 1
+  [[ "$output" == *"${repo}: 全観点継承中（影響あり）"* ]] || return 1
 }
 
 @test "registry without a trailing newline: the last repo is still scanned" {
@@ -161,5 +161,5 @@ EOF
   printf '%s' "$repo" > "$REGISTRY"
   run "$SCRIPT" --catalog "$CATALOG" owner "財務・コスト" "主" --why "test"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"${repo}: 継承中（影響あり）"* ]]
+  [[ "$output" == *"${repo}: 継承中（影響あり）"* ]] || return 1
 }

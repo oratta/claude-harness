@@ -304,8 +304,8 @@ wt_ppid_of() {
   out=$(HOME="$home" bash -c ". '$snippet'; detect_active_procs_under '$dir'" 2>/dev/null)
   kill "$pid" 2>/dev/null || true
 
-  [[ "$out" == *"$pid"* ]]
-  [[ "$out" == *"(sleep)"* ]]
+  [[ "$out" == *"$pid"* ]] || return 1
+  [[ "$out" == *"(sleep)"* ]] || return 1
 }
 
 @test "detect_active_procs_under: an orphan still counts while its session log is fresh" {
@@ -325,7 +325,7 @@ wt_ppid_of() {
   echo '{}' >"$home/.claude/projects/$slug/session.jsonl"
 
   out=$(HOME="$home" bash -c ". '$snippet'; detect_active_procs_under '$dir'" 2>/dev/null)
-  [[ "$out" == *"$pid"* ]]
+  [[ "$out" == *"$pid"* ]] || return 1
 }
 
 @test "detect_active_procs_under: an orphan still counts while the worktree was touched within 24h" {
@@ -342,7 +342,7 @@ wt_ppid_of() {
   echo work >"$dir/edited.md"
 
   out=$(HOME="$home" bash -c ". '$snippet'; detect_active_procs_under '$dir'" 2>/dev/null)
-  [[ "$out" == *"$pid"* ]]
+  [[ "$out" == *"$pid"* ]] || return 1
 }
 
 @test "detect_active_procs_under: missing helpers keep the orphan as an active signal (fail-closed)" {
@@ -363,7 +363,7 @@ wt_ppid_of() {
   touch -t 202401010000 "$dir/file.txt" "$dir"
 
   out=$(HOME="$home" bash -c ". '$snippet'; detect_active_procs_under '$dir'" 2>/dev/null)
-  [[ "$out" == *"$pid"* ]]
+  [[ "$out" == *"$pid"* ]] || return 1
 }
 
 # --- version bump (cache invalidation) ---

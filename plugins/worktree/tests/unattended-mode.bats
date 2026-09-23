@@ -22,8 +22,8 @@ setup() {
 @test "skill: frontmatter advertises --unattended and --repo" {
   local fm
   fm="$(wt_frontmatter "$WT_CLEAN_SKILL")"
-  [[ "$fm" == *"--unattended"* ]]
-  [[ "$fm" == *"--repo"* ]]
+  [[ "$fm" == *"--unattended"* ]] || return 1
+  [[ "$fm" == *"--repo"* ]] || return 1
 }
 
 @test "command: wt-clean.md passes --unattended and --repo through to the skill" {
@@ -106,7 +106,7 @@ setup() {
 
   # cwd = repo_a のまま repo_b の worktree が見えること
   out=$(cd "$repo_a" && git -C "$repo_b" worktree list --porcelain | awk '/^worktree /{print $2}')
-  [[ "$out" == *"$(basename "$wt")"* ]]
+  [[ "$out" == *"$(basename "$wt")"* ]] || return 1
 
   # repo_a 側には worktree が無いこと（取り違えの検出）
   local out_a
@@ -241,7 +241,7 @@ wt_load_classify_dirty() {
   printf 'export const x = 1\n' >"$repo/app.ts"
   porcelain=$(git -C "$repo" status --porcelain)
   out=$(bash -c ". '$snippet'; classify_dirty \"\$1\"" _ "$porcelain")
-  [[ "$out" == *"app.ts"* ]]
+  [[ "$out" == *"app.ts"* ]] || return 1
 }
 
 # --- unattended report contents ---
