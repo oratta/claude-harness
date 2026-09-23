@@ -89,8 +89,8 @@ class T(unittest.TestCase):
   put_py plugins/newplug/tests/test_widget.py "$PASSING"
   run run_python_suites "$FIX"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"plugins/alpha/tests: Ran 1 test"* ]]
-  [[ "$output" == *"plugins/newplug/tests: Ran 1 test"* ]]
+  [[ "$output" == *"plugins/alpha/tests: Ran 1 test"* ]] || return 1
+  [[ "$output" == *"plugins/newplug/tests: Ran 1 test"* ]] || return 1
 }
 
 @test "python-suites: untracked files are not picked up" {
@@ -101,7 +101,7 @@ class T(unittest.TestCase):
   printf '%s\n' "$PASSING" >"$FIX/plugins/untracked/tests/test_c.py"
   run run_python_suites "$FIX"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"plugins/untracked/tests"* ]]
+  [[ "$output" != *"plugins/untracked/tests"* ]] || return 1
 }
 
 @test "python-suites: one failing test fails the suite and shows the unittest FAIL line" {
@@ -113,8 +113,8 @@ class T(unittest.TestCase):
         self.assertEqual(1, 2)'
   run run_python_suites "$FIX"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"FAIL: test_broken"* ]]
-  [[ "$output" == *"AssertionError: 1 != 2"* ]]
+  [[ "$output" == *"FAIL: test_broken"* ]] || return 1
+  [[ "$output" == *"AssertionError: 1 != 2"* ]] || return 1
 }
 
 @test "python-suites: a directory that runs 0 tests fails" {
@@ -123,14 +123,14 @@ class T(unittest.TestCase):
   put_py plugins/empty/tests/test_nothing.py 'X = 1'
   run run_python_suites "$FIX"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"plugins/empty/tests: 0 件"* ]]
+  [[ "$output" == *"plugins/empty/tests: 0 件"* ]] || return 1
 }
 
 @test "python-suites: no target files at all fails" {
   new_fixture
   run run_python_suites "$FIX"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"plugins/*/tests/test_*.py"* ]]
+  [[ "$output" == *"plugins/*/tests/test_*.py"* ]] || return 1
 }
 
 @test "python-suites: a missing Python command fails with the looked-up name and an install hint" {
@@ -138,8 +138,8 @@ class T(unittest.TestCase):
   put_py plugins/alpha/tests/test_a.py "$PASSING"
   PYTHON_SUITES_PYTHON=python3-not-installed run run_python_suites "$FIX"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"python3-not-installed"* ]]
-  [[ "$output" == *"brew install python"* ]]
+  [[ "$output" == *"python3-not-installed"* ]] || return 1
+  [[ "$output" == *"brew install python"* ]] || return 1
 }
 
 # ── ファイル名を絞った実行方法を残さない ──

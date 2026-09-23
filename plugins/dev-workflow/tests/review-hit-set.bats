@@ -56,7 +56,7 @@ write_table() {
   sed -i.bak '/other\/b.txt/d' "$REPO/table.md"
   run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'missing: other/b.txt:1'* ]]
+  [[ "$output" == *'missing: other/b.txt:1'* ]] || return 1
 }
 
 @test "review hit set (#355): extra table row exits one with file:line" {
@@ -64,7 +64,7 @@ write_table() {
   printf '| ghost.txt | 9 | `needle ghost` | 一致 |\n' >> "$REPO/table.md"
   run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'extra: ghost.txt:9'* ]]
+  [[ "$output" == *'extra: ghost.txt:9'* ]] || return 1
 }
 
 @test "review hit set (#355): narrowed or excluded tracked paths are rejected" {
@@ -72,13 +72,13 @@ write_table() {
   sed -i.bak 's/-- \.$/-- changed/' "$REPO/table.md"
   run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract:'* ]]
+  [[ "$output" == *'contract:'* ]] || return 1
 
   write_table
   sed -i.bak 's/<rev> -- \./<rev> -- . :(exclude)other/' "$REPO/table.md"
   run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract:'* ]]
+  [[ "$output" == *'contract:'* ]] || return 1
 }
 
 @test "review hit set (#355): escaped pipes and significant body whitespace are reversible" {
@@ -104,7 +104,7 @@ write_table() {
   write_table
   run python3 "$CHECKER" --repo "$REPO/changed" "$REPO/table.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract:'*repository*root* ]]
+  [[ "$output" == *'contract:'*repository*root* ]] || return 1
 }
 
 @test "review hit set (#355): grep options that reduce hit scope or count are rejected" {
@@ -112,13 +112,13 @@ write_table() {
   sed -i.bak 's/git grep -n needle/git grep -n --max-count=1 needle/' "$REPO/table.md"
   run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract:'* ]]
+  [[ "$output" == *'contract:'* ]] || return 1
 
   write_table
   sed -i.bak 's/git grep -n needle/git grep -n --max-depth=0 needle/' "$REPO/table.md"
   run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract:'* ]]
+  [[ "$output" == *'contract:'* ]] || return 1
 }
 
 @test "review hit set (#355): case-axis table is not an input to the grep checker" {
@@ -131,5 +131,5 @@ write_table() {
 EOF
   run python3 "$CHECKER" --repo "$REPO" "$REPO/axis.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract:'* ]]
+  [[ "$output" == *'contract:'* ]] || return 1
 }

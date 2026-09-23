@@ -431,13 +431,13 @@ PY
 @test "init: a value-less --id exits instead of looping forever" {
   run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id
   [ "$status" -eq 2 ]
-  [[ "$output" =~ "requires a value" ]]
+  [[ "$output" =~ "requires a value" ]] || return 1
 }
 
 @test "init: a value-less --label exits instead of looping forever" {
   run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id a --label
   [ "$status" -eq 2 ]
-  [[ "$output" =~ "requires a value" ]]
+  [[ "$output" =~ "requires a value" ]] || return 1
 }
 
 @test "init: a label with a control character is rejected" {

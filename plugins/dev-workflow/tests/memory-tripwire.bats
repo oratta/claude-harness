@@ -44,9 +44,9 @@ line_count() { printf '%s' "$1" | grep -c '' ; }
   run_check
   [ "$status" -eq 0 ]
   [ "$(line_count "$output")" -eq 1 ]
-  [[ "$output" == "[memory] "* ]]
-  [[ "$output" == *"索引"*"閾値 4000 / 20"* ]]
-  [[ "$output" == *"/memory-refresh"* ]]
+  [[ "$output" == "[memory] "* ]] || return 1
+  [[ "$output" == *"索引"*"閾値 4000 / 20"* ]] || return 1
+  [[ "$output" == *"/memory-refresh"* ]] || return 1
 }
 
 @test "index over the line threshold: exactly one line" {
@@ -54,7 +54,7 @@ line_count() { printf '%s' "$1" | grep -c '' ; }
   run_check
   [ "$status" -eq 0 ]
   [ "$(line_count "$output")" -eq 1 ]
-  [[ "$output" == *"28 行"* ]]
+  [[ "$output" == *"28 行"* ]] || return 1
 }
 
 @test "one body file over the threshold: exactly one line naming the file" {
@@ -62,8 +62,8 @@ line_count() { printf '%s' "$1" | grep -c '' ; }
   run_check
   [ "$status" -eq 0 ]
   [ "$(line_count "$output")" -eq 1 ]
-  [[ "$output" == *"本文 b.md が 3000 バイト（閾値 2500）"* ]]
-  [[ "$output" != *"索引 "*"バイト /"* ]]
+  [[ "$output" == *"本文 b.md が 3000 バイト（閾値 2500）"* ]] || return 1
+  [[ "$output" != *"索引 "*"バイト /"* ]] || return 1
 }
 
 @test "index not updated for longer than the threshold: exactly one line" {
@@ -71,7 +71,7 @@ line_count() { printf '%s' "$1" | grep -c '' ; }
   run_check
   [ "$status" -eq 0 ]
   [ "$(line_count "$output")" -eq 1 ]
-  [[ "$output" == *"索引の最終更新から"*"日（閾値 30）"* ]]
+  [[ "$output" == *"索引の最終更新から"*"日（閾値 30）"* ]] || return 1
 }
 
 @test "all three conditions at once: still one line carrying all of them" {
@@ -81,7 +81,7 @@ line_count() { printf '%s' "$1" | grep -c '' ; }
   run_check
   [ "$status" -eq 0 ]
   [ "$(line_count "$output")" -eq 1 ]
-  [[ "$output" == *"索引 "*"本文 b.md"*"最終更新から"* ]]
+  [[ "$output" == *"索引 "*"本文 b.md"*"最終更新から"* ]] || return 1
 }
 
 @test "fail-open: memory directory missing → no output, exit 0" {
@@ -108,11 +108,11 @@ line_count() { printf '%s' "$1" | grep -c '' ; }
 
 @test "env overrides: each threshold can be lowered and raised" {
   run_check DEV_WORKFLOW_MEMORY_INDEX_LINES=1
-  [[ "$output" == *"閾値 4000 / 1"* ]]
+  [[ "$output" == *"閾値 4000 / 1"* ]] || return 1
   run_check DEV_WORKFLOW_MEMORY_INDEX_BYTES=10
-  [[ "$output" == *"閾値 10 / 20"* ]]
+  [[ "$output" == *"閾値 10 / 20"* ]] || return 1
   run_check DEV_WORKFLOW_MEMORY_FILE_BYTES=3
-  [[ "$output" == *"（閾値 3）"* ]]
+  [[ "$output" == *"（閾値 3）"* ]] || return 1
   touch -t 202001010000 "${MEM}/MEMORY.md"
   run_check DEV_WORKFLOW_MEMORY_STALE_DAYS=100000
   [ -z "$output" ]
@@ -134,7 +134,7 @@ line_count() { printf '%s' "$1" | grep -c '' ; }
   touch -t 202001010000 "${WORK}/config/projects/${slug}/memory/MEMORY.md"
   run env -u DEV_WORKFLOW_MEMORY_DIR CLAUDE_CONFIG_DIR="${WORK}/config" CLAUDE_PROJECT_DIR="${WORK}/wt" "$SCRIPT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"最終更新から"* ]]
+  [[ "$output" == *"最終更新から"* ]] || return 1
 }
 
 @test "session-tripwires.sh: puts the notice at the top of additionalContext only when over a threshold" {

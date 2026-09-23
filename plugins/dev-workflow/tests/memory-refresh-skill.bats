@@ -50,11 +50,11 @@ PY
   mkdir -p "$work/memory" && printf 'x\n' > "$work/memory/a.md"
   snippet="$(awk '/^B="\$\{M\}\.bak-/{p=1} p{print} /^else echo "STOP/{exit}' "$SKILL")"
   run bash -c "M='$work/memory'; $snippet"
-  [[ "$output" == "BACKUP OK: $work/memory.bak-"* ]]
+  [[ "$output" == "BACKUP OK: $work/memory.bak-"* ]] || return 1
   bak="${output#BACKUP OK: }"
   [ -f "$bak/a.md" ]
   run bash -c "M='$work/memory'; date() { printf '%s' '${bak##*.bak-}'; }; $snippet"
-  [[ "$output" == "STOP: "* ]]
+  [[ "$output" == "STOP: "* ]] || return 1
   [ ! -e "$bak/memory" ]
   rm -rf "$work"
 }

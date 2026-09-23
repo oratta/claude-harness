@@ -252,7 +252,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"# TODO"* ]]
+  [[ "$output" == *"# TODO"* ]] || return 1
 }
 
 @test "S16a-2: 'uses: actions/' inside a comment does not exempt a third-party action" {
@@ -261,7 +261,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses: evil/action@v1 # mimics uses: actions/cache@v4' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-3: 'uses :' with a space before the colon is still extracted and checked" {
@@ -271,7 +271,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses : evil/action@v1' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-4: a properly pinned third-party action passes (quoted form included)" {
@@ -303,7 +303,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses: evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v1' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"* ]]
+  [[ "$output" == *"evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"* ]] || return 1
 }
 
 @test "S16a-8: comments that only look like a version are rejected" {
@@ -349,7 +349,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO #176 follow-up' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"# TODO #176 follow-up"* ]]
+  [[ "$output" == *"# TODO #176 follow-up"* ]] || return 1
 }
 
 @test "S16a-12: a scan path containing ':' does not let a path fragment satisfy the comment check" {
@@ -373,13 +373,13 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     '"uses": evil/action@v1' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 
   run check_third_party_pins "$(write_uses_fixture \
     "'uses': evil/action@v1" \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-14: a flow-mapping step is still extracted and checked" {
@@ -388,14 +388,14 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     '{ uses: evil/action@v1 }' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 
   # 密着形＋ uses が先頭キーでない形（値の直後に `}` が密着する）
   run check_third_party_pins "$(write_uses_fixture \
     '{name: deploy, uses: evil/action@v1}' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-15: properly pinned quoted-key and flow-mapping forms pass" {
@@ -421,7 +421,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     '{ name: "uses: actions/cache@v4", uses: evil/action@v1 }' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-17: a '#' inside a preceding flow-mapping quoted value does not hide the step" {
@@ -431,7 +431,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     '{ name: "a#b", uses: evil/action@v1 }' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 
   # 同じ形で正しく固定されていれば pass する（`#` を含む引用値がコメント判定を邪魔しない）
   run check_third_party_pins "$(write_uses_fixture \
@@ -452,7 +452,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   printf 'jobs:\n  build:\n    steps:\n      - uses: evil/action@v1\n   bad: [\n' > "$dir/fixture.yml.template"
   run check_third_party_pins "$dir"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not parseable as YAML"* ]]
+  [[ "$output" == *"not parseable as YAML"* ]] || return 1
 }
 
 @test "S16a-19: a newline in a template filename does not skip that file's scan" {
@@ -470,7 +470,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     > "$dir/"$'bad\nname.yml.template'
   run check_third_party_pins "$dir"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-20: an unreadable template fails the scan instead of passing silently" {
@@ -494,7 +494,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   # 合格 0 と抽出 0 件 2 を除外する形にして実装の書き換えに巻き込まれないようにする。
   [ "$status" -ne 0 ]
   [ "$status" -ne 2 ]
-  [[ "$output" == *"secret.yml.template"* ]]
+  [[ "$output" == *"secret.yml.template"* ]] || return 1
 }
 
 @test "S16a-21: a 'uses' in the second YAML document of a template is still checked" {
@@ -508,7 +508,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     > "$dir/fixture.yml.template"
   run check_third_party_pins "$dir"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"fixture.yml.template:9:"*"evil/action@v1"* ]]
+  [[ "$output" == *"fixture.yml.template:9:"*"evil/action@v1"* ]] || return 1
 
   # 2 つ目の document が正しく固定されていれば pass する
   printf 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n---\njobs:\n  b:\n    steps:\n      - %s\n' \
@@ -542,7 +542,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     > "$dir/fixture.yml.template"
   run check_third_party_pins "$dir"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"fixture.yml.template:4:"* ]]
+  [[ "$output" == *"fixture.yml.template:4:"* ]] || return 1
 
   # 同じ形で閉じ括弧の後にバージョンコメントがあれば pass する
   run check_third_party_pins "$(write_uses_fixture \
