@@ -13,4 +13,4 @@
 ## 3. 検証
 
 - [x] 3.1 追加したテストを Green にし、`openspec validate codex-model-resolution-docs-review-followup --strict` を実行する
-- [ ] 3.2 `scripts/test.sh` を実行し、exit code と結果要約を記録する
+- [x] 3.2 `scripts/test.sh` を実行し、exit code と結果要約を記録する
