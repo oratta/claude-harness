@@ -24,6 +24,30 @@ setup() {
   SNAP="${WORK}/.usage-snapshot"
   SECURE_B="${WORK}/claude-b"
   NOW="$(date +%s)"
+  export NOW
+  # #332: byte-identical 系のテストは statusline.sh（new）と origin/main の frozen
+  # コピー（old）を「bash <script>」で 2 回呼び、出力を diff する。両方とも自前で
+  # `date +%s` を呼んで現在時刻を取るため、2 回の呼び出しの間に実時間が経つと
+  # 残り時間の表示（分単位に丸めた値）だけがずれる。old は origin/main の内容その
+  # ものなので env var を読ませる改修を入れられない。そのため new/old の内部実装
+  # に手を入れる方式（statusline.sh に now を渡す環境変数を足す）ではなく、
+  # `date` コマンド自体を bash 関数でシャドウし `export -f` で子プロセスの bash
+  # （old/new とも常に `bash <script>` で起動される）に伝播させ、`+%s` の結果を
+  # この setup() で 1 回だけ取った $NOW に固定する。`+%s` 以外の呼び出し
+  # （$SL の changelog 日付計算など）は実 date にそのまま委譲するので、この
+  # シャドウで時刻に依存しない部分の比較対象を狭めてはいない（diff は全文比較
+  # のまま）。再現・検証: 意図的に old/new の呼び出しの間に 35 秒の遅延を挟むと
+  # （14010 の mk_input が渡す resets_at は 14010 mod 60 = 30 秒の位置で分の桁が
+  # 繰り上がるため）、シャドウ無しでは "~3h 52m" と "~3h 53m" のように再現し、
+  # シャドウ適用後は同じ遅延でも差分が出ないことを確認済み。
+  date() {
+    if [ "$1" = "+%s" ]; then
+      printf '%s\n' "$NOW"
+    else
+      command date "$@"
+    fi
+  }
+  export -f date
 }
 
 teardown() {
