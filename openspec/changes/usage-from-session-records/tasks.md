@@ -1,8 +1,8 @@
 ## 1. 実効値の計算（dev-workflow、テスト先行）
 
-- [ ] 1.1 `plugins/dev-workflow/tests/test_usage_view.py` を新規に作り、`usage-session-records` の「記録と snapshot から実効値を求める」の全シナリオ（B の記録が A として読まれない・リセット時刻を過ぎたら 0% と週次の 7 日繰り上げ／5 時間枠の `null`・リセット前の古い値は下限・同じ窓は大きい方・新しい窓を優先・両方無ければ欠測・使用率が 0..100 の外なら無い扱い・全体の週次のリセット時刻が 1 時間を超えてずれたら記録側（記録がリセット済みなら規則どおり））と、守備範囲で通すと決めた入力（未来の `observed_at`・ファイル内 `key` とファイル名の不一致・7 日より先のリセット時刻）がそのまま通ることと、5 時間枠のリセット時刻が `null` でも使用率が有効なら使うこと・Fable が snapshot だけから求まること、`--json` の出力形（`now` / `active` / `accounts`）をテストにする（Red）
-- [ ] 1.2 `plugins/dev-workflow/scripts/usage_view.py` を作る。レジストリ解決は `select-account.sh` と同じ規則、鍵の導出は Keychain サービス名と同じ導出、active は `usage-account-registry` の判定規則、記録ディレクトリは `USAGE_SESSIONS_DIR` → `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions`、snapshot は `USAGE_SNAPSHOT`、現在時刻は呼び出し側から渡せるようにする（Green）
-- [ ] 1.3 `scripts/test.sh` が `test_usage_view.py` を拾うことを確認する（拾わなければ足す）
+- [x] 1.1 `plugins/dev-workflow/tests/test_usage_view.py` を新規に作り、`usage-session-records` の「記録と snapshot から実効値を求める」の全シナリオ（B の記録が A として読まれない・リセット時刻を過ぎたら 0% と週次の 7 日繰り上げ／5 時間枠の `null`・リセット前の古い値は下限・同じ窓は大きい方・新しい窓を優先・両方無ければ欠測・使用率が 0..100 の外なら無い扱い・全体の週次のリセット時刻が 1 時間を超えてずれたら記録側（記録がリセット済みなら規則どおり））と、守備範囲で通すと決めた入力（未来の `observed_at`・ファイル内 `key` とファイル名の不一致・7 日より先のリセット時刻）がそのまま通ることと、5 時間枠のリセット時刻が `null` でも使用率が有効なら使うこと・Fable が snapshot だけから求まること、`--json` の出力形（`now` / `active` / `accounts`）をテストにする（Red）
+- [x] 1.2 `plugins/dev-workflow/scripts/usage_view.py` を作る。レジストリ解決は `select-account.sh` と同じ規則、鍵の導出は Keychain サービス名と同じ導出、active は `usage-account-registry` の判定規則、記録ディレクトリは `USAGE_SESSIONS_DIR` → `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions`、snapshot は `USAGE_SNAPSHOT`、現在時刻は呼び出し側から渡せるようにする（Green）
+- [x] 1.3 `scripts/test.sh` が `test_usage_view.py` を拾うことを確認する（拾わなければ足す）
 
 ## 2. statusline の書き手と非 active 行
 
