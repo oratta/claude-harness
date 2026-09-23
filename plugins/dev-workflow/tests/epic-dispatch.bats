@@ -3,7 +3,7 @@
 # orca / gh / git / sleep を PATH 上のスタブにして確かめる。あわせて develop の SKILL.md
 # 「エピックの扱い」の回し方と「前提」表に、この経路の記述があることを確かめる。
 #
-# スタブは自分の名前と引数（printf '%q'）を共通のログ（$STUB_LOG）に 1 行ずつ追記する。
+# スタブは自分の名前と引数（printf '%q'）を共通のログ（${STUB_LOG}）に 1 行ずつ追記する。
 # 返り値は $STUB_CFG の設定ファイルで切り替える:
 #   orca: current_exit / current_json / list_exit / list_json / set_exit / create_fail_<N>
 #         （create の --prompt の値は prompt_<N> に書き出す）
