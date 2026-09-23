@@ -21,5 +21,5 @@
 - [x] 4.1 受け入れ条件を手で確かめ、コマンドと exit code を記録する: Python のテストを 1 件わざと落として `bash scripts/test.sh` が非 0／新しい `plugins/<plugin>/tests/test_<name>.py` を足して `scripts/test.sh python-suites` の件数が増える（確認後は両方とも元に戻す）
 - [x] 4.2 `grep -rn "test_codex_worker.py\|test_codex_\*.py\|-p test_codex.py" --include='*.md' plugins scripts docs README.md` と `grep -n -- "-p test_codex" plugins/*/tests/test_*.py` がどちらもヒット 0 件であることを確認する
 - [x] 4.3 `bash scripts/test.sh` を引数なしで全件実行し、exit 0 と `Ran N tests` の行（合計 82 件前後）を記録する。`scripts/lint.sh` も通す
-- [ ] 4.4 PR の CI（job `bats suites`）のログで、手元と同じディレクトリ一覧と件数が出ていることを確認する
-- [ ] 4.5 PR 本文に、受け入れ条件の grep の範囲を issue の文面（リポジトリ全体）から `plugins scripts docs README.md` に絞ったこととその理由（`openspec/changes/` 配下の当時の実行記録・レビュー記録は書き換えない）を書く
+- [x] 4.4 PR の CI（job `bats suites`）のログで、手元と同じディレクトリ一覧と件数が出ていることを確認する
+- [x] 4.5 PR 本文に、受け入れ条件の grep の範囲を issue の文面（リポジトリ全体）から `plugins scripts docs README.md` に絞ったこととその理由（`openspec/changes/` 配下の当時の実行記録・レビュー記録は書き換えない）を書く
