@@ -28,7 +28,7 @@
 - [ ] 4.1 タスク 1.1 のスコープ検査テストが Green（出力 0 行）になったことを確認する
 - [ ] 4.2 タスク 2.1 / 2.2 の実演テストが green になったことを確認する
 - [ ] 4.2a 書き換えた個々の検査が実際に退行を捕まえるかを、代表的な書き方ごとに変形テストで確かめる（issue #283 コメント https://github.com/oratta/claude-harness/issues/283#issuecomment-5624508260 の指摘に対応）。作業ツリーを汚さない形（一時コピー等）で、対象ファイルや出力を一時的に書き換えて否定条件を成り立たせ、ガード付きなら `not ok`・ガードを外すと `ok` になることを確認する。対象:
-  - `plugins/dev-workflow/tests/context-tripwire.bats:411-413`（issue 本文が挙げた `! grep -q` 3行）
+  - `plugins/dev-workflow/tests/context-tripwire.bats` のテスト `implementation: shlex import and GIT_* constants are gone (window fully closed)`（issue 本文が挙げた `! grep -q` 3行。行番号は変わりうるためテスト名で指す）
   - `plugins/statusline/tests/statusline-multi-account.bats:215,216,303`（`! [[ ]]` 形）
   - パイプライン形（`! echo "$x" | grep -Eq '...'` など、対象166行に含まれる例を1件）
   - `for` ループ内の形（`plugins/dev-workflow/tests/tripwire-hook.bats:76-78`、`tests/always-on-injection-scope.bats:134` 付近）
