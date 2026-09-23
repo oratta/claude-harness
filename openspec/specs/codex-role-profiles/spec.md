@@ -79,8 +79,8 @@ profile dispatch は pending_execution の role/executor/account/model/effort �
 - **THEN** 別 job/thread の独立レビューと実効設定の観測元を確認でき、実効値が未観測または要求と異なる場合はその受け入れを未達と報告する
 
 #### Scenario: ローカル回帰を実行する
-- **WHEN** scripts/test.sh と test_codex_*.py を実行する
-- **THEN** worker の開始前拒否/両RPC、develop の工程不変/pending固定/旧retry/継続v1-v2を fixture で検証し、薄い bats ラッパー経由でも Python 回帰が全件検出される
+- **WHEN** `scripts/test.sh` を引数なしで実行する
+- **THEN** worker の開始前拒否/両RPC、develop の工程不変/pending固定/旧retry/継続v1-v2を fixture で検証し、Python 回帰はリポジトリ直下の `tests/python-suites.bats` 経由でファイル名を絞らずに全件検出される
 
 ### Requirement: executor ごとの role 設定を検証する
 Version 1 profile の検証は executor を discriminator として行わなければならない（MUST）。`codex` entry は登録済み account を要求し、model/effort を非空文字列として保持する。`claude` entry は account=`current` と model=`haiku|sonnet|opus|fable` を要求し、`fable` は role=`decider` にだけ許可しなければならない（MUST）。Claude entry の effort は必須の非空文字列として解決結果に保持するが Agent 呼び出しへ渡してはならない（MUST NOT）。

@@ -62,7 +62,8 @@ JSON
 
 @test "render: 5h line has no denominator" {  # 5h 行には分母を出さない
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
-  line="$(strip_ansi < "$WORK/out.txt" | grep '5h')"
+  # 1 行目は current_dir（mktemp -d の乱数パス）で 5h を含み得るので除いてから探す
+  line="$(strip_ansi < "$WORK/out.txt" | tail -n +2 | grep '5h')"
   [[ "$line" =~ 3% ]]
   [[ "$line" != */* ]]
 }
