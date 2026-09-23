@@ -9,10 +9,10 @@
 
 ## 2. レビュー経路契約の文言整合（Green）
 
-- [ ] 2.1 `gate-runner.md` の本体入力一覧へ `レビュー経路:` と adapter 再開情報を追加し、adapter 行へ同一 PR/HEAD の重複着手確認を追加する
-- [ ] 2.2 develop `SKILL.md` の model 表へ経路別の model 決定元を追加し、(4) 冒頭の欠陥探索の説明を従来経路の Codex を含む形へ統一する
-- [ ] 2.3 pr-review-gate `SKILL.md` のコメント雛形にある証拠 5 欄すべてへ `未実行（adapter 経路）` を追加する
-- [ ] 2.4 `codex-develop.md` の行無し従来経路を、Claude G は Codex を直接呼び、Codex G は prompt の禁止により呼ばない形へ書き分ける
+- [x] 2.1 `gate-runner.md` の本体入力一覧へ `レビュー経路:` と adapter 再開情報を追加し、adapter 行へ同一 PR/HEAD の重複着手確認を追加する
+- [x] 2.2 develop `SKILL.md` の model 表へ経路別の model 決定元を追加し、(4) 冒頭の欠陥探索の説明を従来経路の Codex を含む形へ統一する
+- [x] 2.3 pr-review-gate `SKILL.md` のコメント雛形にある証拠 5 欄すべてへ `未実行（adapter 経路）` を追加する
+- [x] 2.4 `codex-develop.md` の行無し従来経路を、Claude G は Codex を直接呼び、Codex G は prompt の禁止により呼ばない形へ書き分ける
 
 ## 3. 配布メタデータと検証
 
