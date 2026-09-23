@@ -17,6 +17,6 @@
 
 ## 3. 検証
 
-- [ ] 3.1 `bats plugins/dev-workflow/tests/review-hit-set.bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` が通る
-- [ ] 3.2 `openspec validate review-inventory-rewritten-row --strict` が通る
-- [ ] 3.3 `scripts/test.sh` 全件が通る（常時注入の予算テストを含む）
+- [x] 3.1 `bats plugins/dev-workflow/tests/review-hit-set.bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` が通る
+- [x] 3.2 `openspec validate review-inventory-rewritten-row --strict` が通る
+- [x] 3.3 `scripts/test.sh` 全件が通る（常時注入の予算テストを含む）
