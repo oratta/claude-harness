@@ -1,5 +1,13 @@
 # Changelog — dev-workflow
 
+## 2.13.29 — 2026-09-23: Python のテストをファイル名で絞らずに全件実行する
+
+Python のテストはプラグインごとの bats ラッパーが `-p` でファイル名を絞って走らせていたため、新しく足したファイルが拾われず、落ちたときもどのテストが落ちたかが出なかった（#344。2.13.28 は先行して main に入った #391 が使用したため 2.13.29 とした。発端は #334 / PR #343 で絞ったコマンドだけを走らせて別ファイルの失敗を見落としたこと）。
+
+- ルートの `tests/python-suites.bats` が git 追跡下の `plugins/*/tests/test_*.py` を置き場所ごとに `unittest discover -p 'test_*.py'` で走らせる。ディレクトリごとの `Ran N tests` を TAP のコメントに出し、Python が無い・対象が無い・0 件のときは失敗にする
+- `tests/codex-python.bats` を削除した（statusline の `statusline-codex.bats` も同時に削除）
+- `scripts/CODEX-WORKER.md` のテスト実行コマンドを `scripts/test.sh python-suites` に置き換えた
+
 ## 2.13.28 — 2026-09-23: adapter のレビュー経路を同一 G の再開中は保持する
 
 `レビュー経路: adapter` で起動された G が、後続の再開指示に同じ行がないだけで従来経路へ切り替わるようにも読めた。2.13.27 は先行して main に入った #374 が使用したため、この変更は 2.13.28 とした。
