@@ -22,6 +22,7 @@
 #   - USAGE_PROBE_RESPONSE_FILE:      全スロット共通で生 API JSON をこのファイルから読む
 #   - USAGE_PROBE_RESPONSE_FILE_<ID>: スロット別（id を大文字化し `-` を `_` に変換）。優先
 #   - USAGE_PROBE_NOW:                現在 epoch を固定する
+#   - USAGE_PROBE_USER_AGENT:         送る User-Agent を固定する（既定は claude-code/<claude --version>）
 #   いずれかが設定されていれば全スロットがテスト経路になり、Keychain / curl は使わない。
 #
 # サブコマンド:
@@ -207,6 +208,19 @@ slot_token() {
   printf '%s' "$token"
 }
 
+# 使用量 API は User-Agent が claude-code/<版> でないリクエストを厳しい別枠で数え、
+# 間隔を空けても 429 を返し続ける（2026-09 実測: 同じトークンで付けないと 429、付けると 200）。
+# 版は照合されないとの報告があるが、実際に入っている版を名乗る。取れなければ固定値に落とす。
+user_agent="${USAGE_PROBE_USER_AGENT:-}"
+if [ -z "$user_agent" ]; then
+  cc_version="$(claude --version 2>/dev/null | awk 'NR==1{print $1}' || true)"
+  case "$cc_version" in
+    [0-9]*.[0-9]*) ;;
+    *) cc_version="2.1.0" ;;
+  esac
+  user_agent="claude-code/${cc_version}"
+fi
+
 any_new=0
 for idx in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
   sid="${slot_ids[$idx]}"; ssecure="${slot_secures[$idx]}"; sservice="${slot_services[$idx]}"
@@ -234,6 +248,7 @@ for idx in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
       resp="$(printf 'header = "Authorization: Bearer %s"\n' "$esc_token" \
         | curl -sS --max-time 10 --config - \
           -H 'anthropic-beta: oauth-2025-04-20' \
+          -H "User-Agent: ${user_agent}" \
           -w '\n%{http_code}' \
           "$ENDPOINT" 2>/dev/null || true)"
       unset esc_token

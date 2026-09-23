@@ -1,5 +1,12 @@
 # Changelog — dev-workflow
 
+## 2.13.29 — 2026-09-23: usage-probe が User-Agent に claude-code を名乗る
+
+使用量 API（`/api/oauth/usage`）は、User-Agent が `claude-code/<版>` でないリクエストを厳しい別枠で数える。見出しなしで叩いていた `usage-probe.sh` は、よく使うアカウントで 429 を返され続け、そのアカウントの値が 97 分前のまま止まっていた。`cld` の自動選択と、毎ターンの枠の残量モードの判定が、古い数字で動いていた。同じトークンで見出しを付けると 200、付けないと 429 になることを 2 回確かめた。
+
+- **usage-probe.sh**: 本番経路の curl に `User-Agent: claude-code/<claude --version の版>` を付けた。版が取れなければ `2.1.0` に落とす。`USAGE_PROBE_USER_AGENT` で上書きできる
+- **テスト**: `usage-probe-multi-account.bats` に、curl と claude を差し替えて送られる見出しを確かめる 3 件を足した
+
 ## 2.13.28 — 2026-09-23: adapter のレビュー経路を同一 G の再開中は保持する
 
 `レビュー経路: adapter` で起動された G が、後続の再開指示に同じ行がないだけで従来経路へ切り替わるようにも読めた。2.13.27 は先行して main に入った #374 が使用したため、この変更は 2.13.28 とした。
