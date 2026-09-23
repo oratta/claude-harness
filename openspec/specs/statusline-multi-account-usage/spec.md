@@ -63,15 +63,31 @@ Codex 表示が無効でスロットが 1 つだけのとき（レジストリ�
 - **THEN** トップレベルのキーから既定スロット 1 つとして現行どおり描画される
 
 ### Requirement: active スロットはライブ値、非 active スロットは snapshot 値と経過時間で描く
-active スロットのレートリミットは stdin の `.rate_limits.*` のライブ値から描画しなければならない（SHALL）。非 active スロットは snapshot の `accounts` の値から描画し、行末にそのスロットの `fetched_at` からの経過時間（例 `2h前`）を併記しなければならない（SHALL）。
+active スロットのレートリミットは stdin の `.rate_limits.*` のライブ値から描画しなければならない（SHALL）。非 active スロットは、そのスロットの鍵のセッション記録（`usage-session-records` capability）と snapshot の `accounts` の値から、`usage-session-records` の「記録と snapshot から実効値を求める」規則の 1 と 4（同じ窓なら大きい方、窓が違えば新しい窓、全体の週次は差が 1 時間を超えたら記録側。ただし記録側のリセット時刻が過去なら、この例外を使わずリセット時刻の後の方を取る）で選んだ値を描画し、行末に採った値の取得時刻（セッション記録は `observed_at`、snapshot は `fetched_at`）からの経過時間（例 `2h前`）を併記しなければならない（SHALL）。statusline は規則の 2（リセット時刻を過ぎた値を 0% とみなし、リセット時刻を 7 日進める）の読み替えを表示には行わない。規則 4 の窓の突き合わせは、読み替える前のリセット時刻どうしで行う。選んだ値のリセット時刻が過去なら、既存の要件「非 active スロットの resets_at が過去のときは分母と残り時間を出さない」に従って描く。Fable バーは snapshot の値から描く。statusline は他プラグインのスクリプトを実行時に読まず、この規則を自分で実装しなければならない（SHALL）。
 
 #### Scenario: active スロットにライブ値を使う
 - **WHEN** stdin の `.rate_limits` と snapshot の active スロットの値が異なる状態で statusline を実行する
 - **THEN** active スロットの行は stdin のライブ値で描画される
 
 #### Scenario: 非 active スロットに経過時間が付く
-- **WHEN** 非 active スロットの `fetched_at` が現在より 2 時間前である snapshot を与えて statusline を実行する
+- **WHEN** 非 active スロットの `fetched_at` が現在より 2 時間前である snapshot を与え、そのスロットのセッション記録が無い状態で statusline を実行する
 - **THEN** その非 active スロットの行末に取得からの経過時間が表示される
+
+#### Scenario: 非 active スロットはセッション記録の新しい値で描く
+- **WHEN** 非 active スロット B の snapshot の値が 5 時間前の週次 40% で、B の鍵のセッション記録が 3 分前の週次 45%（同じリセット時刻）である状態で、A のセッションとして statusline を実行する
+- **THEN** B の行は週次 45% で描かれ、行末の経過時間は記録の `observed_at` からの時間になる
+
+#### Scenario: リセット時刻が過去の値は読み替えずに描く
+- **WHEN** 非 active スロット B の記録だけがあり、その週次が 80%・リセット時刻が現在より 1 時間前である状態で statusline を実行する
+- **THEN** B の週次は 0% ではなく 80% で描かれ、分母と残り時間は出ない
+
+#### Scenario: リセット時刻が 1 時間を超えて違えば記録側で描く
+- **WHEN** 非 active スロット B の記録の週次が 30%・リセット時刻が現在より 2 日後、snapshot の週次が 60%・リセット時刻が現在より 5 日後である状態で statusline を実行する
+- **THEN** B の週次は 30% で描かれ、行末の経過時間は記録の `observed_at` からの時間になる
+
+#### Scenario: 記録側のリセット時刻が過去なら全体の週次の例外を使わない
+- **WHEN** 非 active スロット B の記録の週次が 80%・リセット時刻が現在より 1 時間前、snapshot の週次が 10%・リセット時刻が現在より 7 日後である状態で statusline を実行する
+- **THEN** B の週次は snapshot 側の 10% で描かれ、行末の経過時間は snapshot の `fetched_at` からの時間になる
 
 ### Requirement: 6 時間の鮮度ゲートは active スロットにのみ適用する
 現行の statusline は Fable バーを snapshot の `fetched_at` が 6 時間以内のときだけ描く鮮度ゲートを持つ。このゲートは **active スロットにのみ適用しなければならない**（SHALL）。非 active スロットに適用してはならない（MUST NOT）。
@@ -148,7 +164,6 @@ active スロットの判定には既存の `active_idx`（`usage-account-regist
 - **WHEN** active スロットの値が全て `null`（欠測）で、非 active スロットにだけ値がある snapshot を与えて statusline を実行する
 - **THEN** active の `▸ label  取得待ち` 行が1行出て、非 active スロットの行は半角スペース 2 つで始まる
 
-
 ### Requirement: Codex のアカウント上限を最後に1行追加する
 Codex CLI の ChatGPT 認証が利用可能なとき、Claude の全スロットの下に `Codex` 行を追加しなければならない（SHALL）。通常 Codex バケットの取得できた窓だけを同じバー・色・日程線・リセット残時間で描き、取得からの経過時間を添える。窓は `windowDurationMins` に従い、週次だけでも表示する。Spark 等の別バケットを通常 Codex の上限として扱ってはならない（MUST NOT）。複数の窓は1行に並べる。
 
@@ -172,3 +187,4 @@ Codex CLI の ChatGPT 認証が利用可能なとき、Claude の全スロット
 #### Scenario: 残数のみ取得できる
 - **WHEN** 残数は3回だが credits が null である
 - **THEN** リセット3回・期限不明と表示される
+
