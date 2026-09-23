@@ -6,10 +6,10 @@
 
 ## 2. statusline の書き手と非 active 行
 
-- [ ] 2.1 `plugins/statusline/tests/` に、`usage-session-records` の「ステータスラインが起動アカウント別の記録を書く」の全シナリオ（default に書く・B は B の鍵だけ・未登録でも自分の鍵・rate_limits 無しは書かない・書けなくても出力不変）と、`.rate-limit-snapshot` の既存挙動が変わらないことのテストを足す（Red）
-- [ ] 2.2 `plugins/statusline/scripts/statusline.sh` に記録の書き込みを足す。`CLAUDE_SECURESTORAGE_CONFIG_DIR` が空なら python3 を起動せず `default`、非空のときだけ python3 で鍵を導出する。一時ファイル＋`mv` で書く（Green）
-- [ ] 2.3 `statusline-multi-account.bats` に「非 active スロットはセッション記録の新しい値で描く」「記録が無ければ従来どおり snapshot と経過時間」「リセット時刻が過去の値は読み替えずに描き、分母と残り時間を出さない」「リセット時刻が 1 時間を超えて違えば記録側で描く」「記録側のリセット時刻が過去なら全体の週次の例外を使わない（記録 80%・リセット 1 時間前、snapshot 10%・リセット 7 日後 → snapshot 側を描く）」のテストを足し（Red）、非 active 行の値の選び方を実装する（Green）。1 スロット構成の出力が変わらないことを既存テストで確かめる
-- [ ] 2.4 `plugins/statusline/README.md` の `.rate-limit-snapshot` の説明（「dev-workflow のセッション tripwire がそれを読んで」）を実態に直し、`.usage-sessions/` の記録を説明する
+- [x] 2.1 `plugins/statusline/tests/` に、`usage-session-records` の「ステータスラインが起動アカウント別の記録を書く」の全シナリオ（default に書く・B は B の鍵だけ・未登録でも自分の鍵・rate_limits 無しは書かない・書けなくても出力不変）と、`.rate-limit-snapshot` の既存挙動が変わらないことのテストを足す（Red）
+- [x] 2.2 `plugins/statusline/scripts/statusline.sh` に記録の書き込みを足す。`CLAUDE_SECURESTORAGE_CONFIG_DIR` が空なら python3 を起動せず `default`、非空のときだけ python3 で鍵を導出する。一時ファイル＋`mv` で書く（Green）
+- [x] 2.3 `statusline-multi-account.bats` に「非 active スロットはセッション記録の新しい値で描く」「記録が無ければ従来どおり snapshot と経過時間」「リセット時刻が過去の値は読み替えずに描き、分母と残り時間を出さない」「リセット時刻が 1 時間を超えて違えば記録側で描く」「記録側のリセット時刻が過去なら全体の週次の例外を使わない（記録 80%・リセット 1 時間前、snapshot 10%・リセット 7 日後 → snapshot 側を描く）」のテストを足し（Red）、非 active 行の値の選び方を実装する（Green）。1 スロット構成の出力が変わらないことを既存テストで確かめる
+- [x] 2.4 `plugins/statusline/README.md` の `.rate-limit-snapshot` の説明（「dev-workflow のセッション tripwire がそれを読んで」）を実態に直し、`.usage-sessions/` の記録を説明する
 
 ## 3. dev-workflow の読み手
 

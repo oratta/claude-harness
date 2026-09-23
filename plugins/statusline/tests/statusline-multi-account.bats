@@ -745,13 +745,14 @@ SNAPSHOT
 # spec: statusline-multi-account-usage「active スロットはライブ値、非 active スロットは…」
 #       usage-session-records（記録の形と鍵）
 
-# $1=observed_at $2=週次% $3=週次リセット epoch → B の鍵のセッション記録
+# $1=observed_at $2=週次% $3=週次リセット epoch [$4=5h% $5=5h リセット epoch] → B の鍵のセッション記録
+# （実際の書き手は 5 時間枠がある描画でしか書かないので、5 時間枠を描く検査では $4 $5 を渡す）
 write_b_record() {
   local key
   key="$(python3 -c 'import hashlib,sys,unicodedata;print(hashlib.sha256(unicodedata.normalize("NFC",sys.argv[1]).encode()).hexdigest()[:8])' "$SECURE_B")"
   mkdir -p "${WORK}/.usage-sessions"
-  printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":null,"five_hour_resets_epoch":null,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
-    "$key" "$1" "$2" "$3" > "${WORK}/.usage-sessions/${key}.json"
+  printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":%s,"five_hour_resets_epoch":%s,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
+    "$key" "$1" "${4:-null}" "${5:-null}" "$2" "$3" > "${WORK}/.usage-sessions/${key}.json"
 }
 
 # $1=b の週次% を snapshot に上書きする
@@ -785,7 +786,7 @@ set_b_snapshot_weekly() {
   write_two_slot_registry
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   jq 'del(.accounts.b)' "$SNAP" > "$SNAP.tmp" && mv "$SNAP.tmp" "$SNAP"
-  write_b_record "$((NOW - 7200))" 80 "$((NOW - 3600))"
+  write_b_record "$((NOW - 7200))" 80 "$((NOW - 3600))" 30 "$((NOW - 3600))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
   [[ "$line" =~ 80% ]] || return 1

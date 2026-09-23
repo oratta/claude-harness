@@ -437,6 +437,99 @@ while [ "${#snap_fetched[@]}" -lt "$n_slots" ]; do
     snap_seven_pct+=(""); snap_seven_res+=(""); snap_fable_pct+=("")
 done
 
+# ---- 非 active スロットはセッション記録と突き合わせる（正本: usage-session-records の
+# 「記録と snapshot から実効値を求める」。statusline が使うのは規則 1 と 4 だけで、規則 2 の
+# リセット後の読み替えは表示に行わない）。dev-workflow の usage_view.py と同じ規則だが、
+# プラグインを跨ぐ依存を作らないためここに置く。snapshot は上の jq の値を引数で渡して
+# 再読しない（1 行の中に新旧の snapshot が混ざらないように）。python3 は複数スロットで
+# 記録ディレクトリがあるときだけ起動する（1 スロット構成の出力と起動数を変えない）。
+# 出力は「index, 取得時刻, 5h%, 5h リセット, 週次%, 週次リセット」。取得時刻は週次を採った
+# 側の時刻（週次が無ければ 5 時間枠を採った側）で、行末の経過時間になる。Fable は snapshot のまま。
+if [ "$multi" -eq 1 ] && [ -d "$sessions_dir" ]; then
+    _rec_args=()
+    for i in $(seq 0 $(( n_slots - 1 ))); do
+        [ "$i" -eq "$active_idx" ] && continue
+        _rec_args+=("$i" "${slot_secures[$i]}" "${snap_fetched[$i]}" "${snap_five_pct[$i]}"
+                    "${snap_five_res[$i]}" "${snap_seven_pct[$i]}" "${snap_seven_res[$i]}")
+    done
+    while IFS='' read -r _row; do
+        IFS=$'\x1f' read -r _ri _f _fp _fr _sp _sr <<< "${_row//$'\t'/$'\x1f'}"
+        [[ "$_ri" =~ ^[0-9]+$ ]] && [ "$_ri" -lt "$n_slots" ] || continue
+        snap_fetched[$_ri]="$_f"; snap_five_pct[$_ri]="$_fp"; snap_five_res[$_ri]="$_fr"
+        snap_seven_pct[$_ri]="$_sp"; snap_seven_res[$_ri]="$_sr"
+    done < <(python3 -c '
+import hashlib, json, math, os, sys, unicodedata
+SAME_WINDOW = 3600
+sessions_dir, now, rest = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
+def num(v):
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, str):
+        try:
+            v = float(v)
+        except ValueError:
+            return None
+    if isinstance(v, (int, float)) and math.isfinite(v):
+        return v
+    return None
+def text(v):
+    return v if isinstance(v, str) else json.dumps(v)
+def source(pct, res, stamp, five):
+    # 規則 1: 使用率が 0..100 の数値でなければ無い扱い。リセット時刻は 5 時間枠だけ null を許す
+    p = num(pct)
+    if p is None or not 0 <= p <= 100:
+        return None
+    r = num(res)
+    if r is None and not (five and res in (None, "")):
+        return None
+    return {"pct": p, "raw": text(pct), "res": r, "at": num(stamp)}
+def newer(a, b):
+    return b if (b["at"] if b["at"] is not None else -math.inf) > (a["at"] if a["at"] is not None else -math.inf) else a
+def larger(a, b):
+    if a["pct"] != b["pct"]:
+        return a if a["pct"] > b["pct"] else b
+    return newer(a, b)
+def combine(rec, snap, weekly):
+    # 規則 4。窓の突き合わせは読み替える前のリセット時刻どうしで行う
+    if rec is None or snap is None:
+        return rec or snap
+    if rec["res"] is None or snap["res"] is None:
+        if rec["res"] is None and snap["res"] is None:
+            return larger(rec, snap)
+        return rec if rec["res"] is not None else snap
+    if abs(rec["res"] - snap["res"]) <= SAME_WINDOW:
+        return dict(larger(rec, snap), res=newer(rec, snap)["res"])
+    if weekly and now < rec["res"]:
+        return rec
+    return rec if rec["res"] > snap["res"] else snap
+def key(sec):
+    if not sec:
+        return "default"
+    return hashlib.sha256(unicodedata.normalize("NFC", sec).encode("utf-8")).hexdigest()[:8]
+def cell(v, field):
+    if v is None or v[field] is None:
+        return ""
+    return v["raw"] if field == "raw" else str(int(v[field]))
+for n in range(0, len(rest) - 6, 7):
+    idx, sec, fetched, fp, fr, sp, sr = rest[n:n + 7]
+    try:
+        with open(os.path.join(sessions_dir, key(sec) + ".json"), encoding="utf-8") as fh:
+            rec = json.load(fh)
+    except Exception:
+        rec = None
+    if not isinstance(rec, dict):
+        rec = {}
+    seen = rec.get("observed_at")
+    five = combine(source(rec.get("five_hour_pct"), rec.get("five_hour_resets_epoch"), seen, True)
+                   if rec else None, source(fp, fr, fetched, True), False)
+    week = combine(source(rec.get("weekly_all_pct"), rec.get("weekly_resets_epoch"), seen, False)
+                   if rec else None, source(sp, sr, fetched, False), True)
+    taken = week or five
+    sys.stdout.write("\t".join([idx, cell(taken, "at"), cell(five, "raw"), cell(five, "res"),
+                                cell(week, "raw"), cell(week, "res")]) + "\n")
+' "$sessions_dir" "$now" "${_rec_args[@]}" 2>/dev/null)
+fi
+
 # $1=行頭 label 列 $2=5h消化率 $3=5hリセットepoch $4=7d消化率 $5=7dリセットepoch
 # $6=Fable週次消化率 $7=行末サフィックス（経過時間。空可）
 render_slot() {
