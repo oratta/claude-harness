@@ -105,7 +105,7 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
       本体は次に指示する工程を、自分が (3a) を指示したか (3b) を指示したかで決め、工程名の文字列照合では決めない。
            (3a) の return に PR 番号と仕様宣言のコメント URL が既に揃っていれば（古い世代の W が (3) を
            通しで終えた場合）、(3b) を指示せず、そのまま (4)（G の工程）へ進む
-(4) G を名前付きで spawn（model: 既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は needs-reviewer で本体が起こすレビュアーが担う）:
+(4) G を名前付きで spawn（model: 既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は needs-reviewer で本体が起こすレビュアー（従来経路では Codex）が担う）:
       G の起動・再開・手渡しの指示には常に `レビュー経路: adapter` の 1 行を書く（Codex の G では request の instructions にも。
            `レビュー経路: 従来` は書かない。理由は「Role profile の選択」節）
       pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider / review-incomplete」
@@ -180,7 +180,7 @@ scripts/pr-token-budget.sh <記録先番号> [PR 番号] --codex-records "<scrat
 | W（実行役） | `sonnet` | `opus`: 記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含む、実行側が原因の失敗ループでの昇格、または事前分類の 4 分類（聖域パス・マージ権限・層間契約・課金/法務。正本は `worker.md`、ここに再掲しない）に当たる。**W の上限は `opus` で、`model: fable` の W は `scripts/agent-model-guard.sh` に拒否される** |
 | R1（読んで判断する役） | `opus` | 仕様の対象がマージ条件・層間契約・課金/法務に触れるときは `subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` を付けない。聖域パスだけでは上げない） |
 | G | `sonnet` | 上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う |
-| G が要求するレビュアー（読んで判断する役） | `opus` | レビュー対象がマージ条件・層間契約・課金/法務に触れるときは `subagent_type: dev-workflow:decider`（G の `needs-reviewer` の推奨モデルに従う） |
+| G が要求するレビュアー（読んで判断する役） | `opus` | レビュー対象がマージ条件・層間契約・課金/法務に触れるときは `subagent_type: dev-workflow:decider`（従来経路では G の `needs-reviewer` の推奨モデルに従う。adapter 経路では adapter が返した model に残量上限を適用した値を使い、推奨モデルは参考値。(4) の ③） |
 
 W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 本も無く、昇格ラダーの Sonnet 段が構造的に通っていなかったため。W は事前分類と失敗ループで `opus` まで上がる。W の上限を `opus` にしたのは、Fable が消費するのはターン数（会話履歴の cache 読込）で、実装・修正ループは 1 件で数十〜数百ターン回るため。「層間契約だから判断が要る」ぶんは仕様化判断・R1 レビュー・本体の判断で吸収し、W は確定した内容を落とす作業だけを担う。読んで判断する役（R1・レビュアー）が Fable に当たるときは `dev-workflow:decider` で起こす — Fable を渡せる `subagent_type` はこれだけで、判定は `scripts/agent-model-guard.sh` が行う。
 
