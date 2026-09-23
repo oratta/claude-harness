@@ -203,7 +203,7 @@ write_row3_table() {
   write_row3_table
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'unmatched: r/x.txt:2'* ]]
+  [[ "$output" == *'unmatched: r/x.txt:2'* ]] || return 1
 }
 
 @test "review hit set (#377): a fixed row still present at HEAD is unmatched" {
@@ -212,7 +212,7 @@ write_row3_table() {
   write_row3_table
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'unmatched: r/x.txt:1'* ]]
+  [[ "$output" == *'unmatched: r/x.txt:1'* ]] || return 1
 }
 
 @test "review hit set (#377): rewriting only the not-applicable side of a mixed group reports the fixed row as not removed" {
@@ -222,7 +222,7 @@ write_row3_table() {
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
   [ "$status" -eq 1 ]
   # unmatched: が同時に出うるので、その不在は assert しない
-  [[ "$output" == *'not-removed: r/m.txt:1'* ]]
+  [[ "$output" == *'not-removed: r/m.txt:1'* ]] || return 1
 }
 
 @test "review hit set (#377): a rewritten-rows entry pointing at a fixed row is a contract violation" {
@@ -231,7 +231,7 @@ write_row3_table() {
   write_row3_table '該当しない: example' '| r/x.txt | 1 | `needle fix2` |'
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract:'* ]]
+  [[ "$output" == *'contract:'* ]] || return 1
 }
 
 @test "review hit set (#377): duplicate rewritten-rows entries are a contract violation" {
@@ -240,7 +240,7 @@ write_row3_table() {
   write_row3_table '該当しない: example' '| r/x.txt | 2 | `needle keep fixed` |' '| r/x.txt | 2 | `needle keep fixed` |'
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract:'* ]]
+  [[ "$output" == *'contract:'* ]] || return 1
 }
 
 @test "review hit set (#377): a rewritten-rows entry equal to the main-table body is a contract violation" {
@@ -249,7 +249,7 @@ write_row3_table() {
   write_row3_table '該当しない: example' '| r/x.txt | 2 | `needle keep typo` |'
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract:'* ]]
+  [[ "$output" == *'contract:'* ]] || return 1
 }
 
 @test "review hit set (#377): a handling value other than the two row-3 values is a contract violation with --head" {
@@ -258,7 +258,7 @@ write_row3_table() {
   write_row3_table '一致'
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract:'* ]]
+  [[ "$output" == *'contract:'* ]] || return 1
 }
 
 @test "review hit set (#377): without --head the rewritten-rows table is ignored and the first stage is unchanged" {
