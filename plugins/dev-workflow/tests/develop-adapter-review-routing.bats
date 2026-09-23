@@ -178,9 +178,10 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 @test "codex-develop (#394): missing-route legacy behavior distinguishes Claude G from Codex G" {
   s="$(section "$CODEX_DEVELOP" '品質と transport 差分')"
   line="$(echo "$s" | grep -F 'fresh G の起動指示に行が無い場合だけ従来経路')"
+  old='行が無ければ従来経路として Codex を直接''呼ぶ'
   echo "$line" | grep -qF 'Claude の G は Codex を直接呼ぶ'
   echo "$line" | grep -qF 'Codex の G は prompt の禁止により呼ばない'
-  ! echo "$line" | grep -qF '行が無ければ従来経路として Codex を直接呼ぶ'
+  ! echo "$line" | grep -qF "$old"
 }
 
 # ===== レビュー実行者: の adapter 経路の形（1.5） =====
