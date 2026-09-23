@@ -50,7 +50,13 @@ teardown() {
 
 @test "llm-log-compactor: head -5 restriction is removed (sequential scan documented)" {
   dr_require_file "$AGENT_FILE"
-  ! grep -Eq 'head ?-5' "$AGENT_FILE" || return 1
+  # Scope to the turn-extraction code block only: prose in the same section
+  # legitimately quotes "head -5" while documenting its removal, and
+  # "Files/Commits (top 5)" elsewhere in the file legitimately uses `head -5`
+  # for an unrelated top-5 listing. Neither should trip this check.
+  extraction_code="$(awk '/^#### 2a\./{f=1} /^#### 2b\./{f=0} f' "$AGENT_FILE" \
+    | awk '/^```/{c++; next} c==1')"
+  ! echo "$extraction_code" | grep -Eq 'head ?-5' || return 1
   # Sequential scan documented (Japanese or English keyword)
   grep -Eq '(先頭から順次|順次スキャン|sequential scan|head ?- ?n ?1)' "$AGENT_FILE"
 }

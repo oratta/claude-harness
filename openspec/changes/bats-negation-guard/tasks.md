@@ -33,7 +33,7 @@
   - パイプライン形（`! echo "$x" | grep -Eq '...'` など、対象166行に含まれる例を1件）
   - `for` ループ内の形（`plugins/dev-workflow/tests/tripwire-hook.bats:76-78`、`tests/always-on-injection-scope.bats:134` 付近）
   各例について確認結果（対象ファイル・確認コマンド・ok/not ok の切り替わり）を PR 本文に記録する
-- [ ] 4.3 `bash scripts/test.sh` を実行し、全件 green（exit 0）であることを確認する。ガードを付けた結果として落ちるテストが出たら、この PR 内で実装側の欠陥を直し green にする（別 issue への先送りはしない。理由は proposal.md「Impact」）
+- [x] 4.3 `bash scripts/test.sh` を実行し、全件 green（exit 0）であることを確認する。ガードを付けた結果として落ちるテストが出たら、この PR 内で実装側の欠陥を直し green にする（別 issue への先送りはしない。理由は proposal.md「Impact」）
 
 ## 5. 事務手続き
 

@@ -129,7 +129,9 @@ JSON
   # 30% <= 週経過 71% → abundant。非 active スロットの 95% に引きずられない
   echo "$out1" | grep -q "abundant"
   echo "$out2" | grep -q "abundant"
-  ! echo "$out2" | grep -q "exhausted" || return 1
+  # 導出行だけを見る。テンプレ本文（reserve 説明）が語彙として "exhausted" を
+  # 含むため、additionalContext 全体への素朴な grep は常に真になり検査にならない。
+  ! echo "$out2" | grep -q "現在の FABLE_BUDGET_MODE: exhausted" || return 1
   # Fable 残量% も同じ（100 - 30 = 70）
   echo "$out2" | grep -q "70"
   rm -rf "$work"

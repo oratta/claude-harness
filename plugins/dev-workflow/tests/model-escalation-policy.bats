@@ -100,7 +100,9 @@ setup() {
   echo "$sec" | grep -qF 'dev-workflow:decider'
   # 旧ラダー（実行役を 1 段ずつ sonnet → opus → fable）は残さない
   ! echo "$sec" | grep -qF '`sonnet` → `opus` → `fable`' || return 1
-  ! echo "$sec" | grep -qF '修正実装を `model: fable` で spawn' || return 1
+  # 旧ラダーの表記「...で spawn する」だけを拒否する。現行文は同じ語順で
+  # 「...で spawn しない」と続くため、"する" まで含めないと現行文自体に誤爆する。
+  ! echo "$sec" | grep -qF '修正実装を `model: fable` で spawn する' || return 1
   grep -qF '昇格は実装品質起因のときだけ' "$GATE_SKILL"
 }
 
