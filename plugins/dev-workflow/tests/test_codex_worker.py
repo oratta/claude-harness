@@ -62,6 +62,22 @@ for line in sys.stdin:
   print(json.dumps({'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'interrupted','items':[]}}}),flush=True)
 '''
 
+
+def listed(model, hidden=None, efforts=('low', 'medium', 'high')):
+    entry = {'id': model, 'model': model,
+             'supportedReasoningEfforts': [{'reasoningEffort': e, 'description': e} for e in efforts]}
+    if hidden is not None:
+        entry['hidden'] = hidden
+    return entry
+
+
+# What Codex CLI 0.156.0 listed on 2026-09-23.
+CURRENT_LIST = [listed('gpt-6-astra', False), listed('gpt-6-sol', False), listed('gpt-6-luna', False),
+                listed('gpt-5.6-sol', False), listed('gpt-5.6-terra', False),
+                listed('gpt-5.6-luna', False), listed('gpt-5.5'),
+                listed('gpt-reserve', True), listed('codex-auto-review', True)]
+
+
 class ForegroundTest(unittest.TestCase):
     # The foreground path keeps no ledger, so this fixture registers nothing: any
     # ledger.sqlite or ownership.sqlite appearing under the root is a defect.
@@ -393,6 +409,97 @@ class ForegroundTest(unittest.TestCase):
                 self.assertIsNone(result['turn_id'])
                 self.assertFalse(any(m.get('method') in ('thread/start','turn/start')
                                      for m in self.calls(job)))
+
+    def sent_models(self, job):
+        calls = self.calls(job)
+        return [next(m['params']['model'] for m in calls if m.get('method') == method)
+                for method in ('thread/start', 'turn/start')]
+
+    def test_family_names_resolve_to_the_newest_listed_model(self):
+        for family, resolved in (('sol','gpt-6-sol'), ('luna','gpt-6-luna'), ('astra','gpt-6-astra')):
+            with self.subTest(family=family):
+                self.config(family, model_pages=[CURRENT_LIST[:4], CURRENT_LIST[4:]])
+                result = self.run_cli(family, model=family, effort='high')
+                self.assertEqual(result['status'], 'completed')
+                self.assertEqual(self.sent_models(family), [resolved, resolved])
+                execution = result['execution']
+                self.assertEqual(execution['requested']['model'], family)
+                self.assertEqual(execution['model_resolution'],
+                                 {'requested':family,'kind':'family','resolved':resolved,'source':'model/list'})
+                # Nothing observed the model over RPC, so the resolution does not fill it in.
+                self.assertIsNone(execution['effective']['model'])
+                self.assertEqual(execution['evidence']['model'], 'unavailable')
+
+    def test_family_without_one_newest_model_stops_before_thread(self):
+        cases = (
+            ('absent', [listed('gpt-6-luna', False), listed('gpt-5.5')], 'model_not_available'),
+            ('hidden', [listed('gpt-7-sol', True), listed('gpt-6-luna')], 'model_not_available'),
+            ('twice', [listed('gpt-6-sol'), listed('gpt-6-sol', False), listed('gpt-5.6-sol')],
+             'model_not_unique'),
+            ('zero', [listed('gpt-6-sol'), listed('gpt-6.0-sol'), listed('gpt-5.6-sol')],
+             'model_not_unique'))
+        for job, page, error in cases:
+            with self.subTest(job=job):
+                self.config(job, model_pages=[page])
+                result = self.run_cli(job, code=2, model='sol')
+                self.assertEqual(result['error_kind'], error)
+                self.assertIsNone(result['thread_id'])
+                self.assertFalse(any(m.get('method') in ('thread/start','turn/start')
+                                     for m in self.calls(job)))
+                self.assertEqual(result['execution']['model_resolution'],
+                                 {'requested':'sol','kind':'family','resolved':None,'source':'unavailable'})
+
+    def test_family_versions_compare_as_numbers_and_ignore_suffixed_names(self):
+        self.config(model_pages=[[listed('gpt-5.9-sol'), listed('gpt-5.10-sol'),
+                                  listed('gpt-6-sol-mini'), listed('gpt-6-solar'), listed('sol')]])
+        result = self.run_cli(model='sol')
+        self.assertEqual(result['status'], 'completed')
+        self.assertEqual(self.sent_models('one'), ['gpt-5.10-sol', 'gpt-5.10-sol'])
+        self.assertEqual(result['execution']['model_resolution']['resolved'], 'gpt-5.10-sol')
+
+    def test_a_malformed_hidden_flag_invalidates_the_list_on_either_path(self):
+        page = [listed('gpt-6-sol', False), listed('fixture-model'), listed('gpt-4-other', 'yes')]
+        for job, model in (('family','sol'), ('exact','fixture-model')):
+            with self.subTest(job=job):
+                self.config(job, model_pages=[page])
+                result = self.run_cli(job, code=2, model=model)
+                self.assertEqual(result['error_kind'], 'model_list_invalid')
+                self.assertFalse(any(m.get('method') == 'thread/start' for m in self.calls(job)))
+
+    def test_family_list_failures_use_the_exact_id_reasons(self):
+        self.config('failure', reject='model/list')
+        self.assertEqual(self.run_cli('failure', code=2, model='sol')['error_kind'],
+                         'model_list_unavailable')
+        self.config('malformed', model_pages=[[{'id':'x','model':'gpt-6-sol'}]])
+        self.assertEqual(self.run_cli('malformed', code=2, model='sol')['error_kind'],
+                         'model_list_invalid')
+
+    def test_family_effort_is_checked_against_the_resolved_model(self):
+        self.config(model_pages=[[listed('gpt-6-sol', efforts=('low',)),
+                                  listed('gpt-5.6-sol', efforts=('low', 'high'))]])
+        result = self.run_cli(code=2, model='sol', effort='high')
+        self.assertEqual(result['error_kind'], 'unsupported_model_effort')
+        self.assertFalse(any(m.get('method') in ('thread/start','turn/start') for m in self.calls()))
+        # The family did resolve; it is the resolved model that lacks the effort.
+        self.assertEqual(result['execution']['model_resolution']['resolved'], 'gpt-6-sol')
+
+    def test_exact_ids_are_matched_as_before_and_recorded(self):
+        for job, model in (('pinned','gpt-5.6-sol'), ('hidden','gpt-reserve')):
+            with self.subTest(job=job):
+                self.config(job, model_pages=[CURRENT_LIST])
+                result = self.run_cli(job, model=model)
+                self.assertEqual(result['status'], 'completed')
+                self.assertEqual(self.sent_models(job), [model, model])
+                self.assertEqual(result['execution']['model_resolution'],
+                                 {'requested':model,'kind':'exact','resolved':model,'source':'model/list'})
+
+    def test_failure_before_resolution_leaves_it_unresolved(self):
+        self.config(email='someone@example.invalid')
+        result = self.run_cli(code=2, model='sol')
+        self.assertEqual(result['error_kind'], 'server_identity_mismatch')
+        self.assertEqual(result['execution']['requested']['model'], 'sol')
+        self.assertEqual(result['execution']['model_resolution'],
+                         {'requested':'sol','kind':'family','resolved':None,'source':'unavailable'})
 
     def test_foreground_run_completes_without_a_ledger(self):
         self.config(usage={'inputTokens':12,'outputTokens':3},

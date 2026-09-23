@@ -1,12 +1,12 @@
 ## 1. worker の系統名解決（テスト先行）
 
-- [ ] 1.1 `plugins/dev-workflow/tests/test_codex_worker.py` に、2026-09-23 の一覧（表示: `gpt-6-astra` / `gpt-6-sol` / `gpt-6-luna` / `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` / `gpt-5.5`、hidden: `gpt-reserve` / `codex-auto-review`）のフィクスチャを足し、model=sol/luna/astra がそれぞれ `gpt-6-*` に解決され thread/start・turn/start に解決後の ID が渡るテストを書く（Red）
-- [ ] 1.2 同じファイルに、該当 0 件（hidden の候補だけの場合を含む）で `model_not_available`、同版 2 件（同 slug 重複、`gpt-6-sol` と `gpt-6.0-sol`）で `model_not_unique`、どちらも thread/start を呼ばないテストを書く（Red）
-- [ ] 1.3 `gpt-5.10-sol` > `gpt-5.9-sol`、`gpt-6-sol-mini` を候補にしない、`hidden` が真偽値以外の entry が一覧にあれば系統名・完全 ID のどちらの経路でも `model_list_invalid`、系統名でも一覧取得失敗は `model_list_unavailable`、のテストを書く（Red）
-- [ ] 1.4 effort が解決後のモデルの `supportedReasoningEfforts` で検証されること（旧版だけが対応している effort は `unsupported_model_effort`）のテストを書く（Red）
-- [ ] 1.5 結果 JSON の `execution.model_resolution`（family 成功・exact 成功・解決前の失敗で `resolved: null` / `source: "unavailable"`）と、`requested.model` が系統名のまま・`effective.model` が観測値だけであることのテストを書く（Red）
-- [ ] 1.6 `plugins/dev-workflow/scripts/codex-worker.py` の `advertised_model()` に系統名の解決を足し、`run_turn()` が解決後の ID を thread/start と turn/start に渡し、`execution_metadata()` と recorder が `model_resolution` を持つようにする。payload の model は書き換えない。既存の完全 ID の照合は変えない（Green）
-- [ ] 1.7 既存の worker テストが全件通ることを確認する
+- [x] 1.1 `plugins/dev-workflow/tests/test_codex_worker.py` に、2026-09-23 の一覧（表示: `gpt-6-astra` / `gpt-6-sol` / `gpt-6-luna` / `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` / `gpt-5.5`、hidden: `gpt-reserve` / `codex-auto-review`）のフィクスチャを足し、model=sol/luna/astra がそれぞれ `gpt-6-*` に解決され thread/start・turn/start に解決後の ID が渡るテストを書く（Red）
+- [x] 1.2 同じファイルに、該当 0 件（hidden の候補だけの場合を含む）で `model_not_available`、同版 2 件（同 slug 重複、`gpt-6-sol` と `gpt-6.0-sol`）で `model_not_unique`、どちらも thread/start を呼ばないテストを書く（Red）
+- [x] 1.3 `gpt-5.10-sol` > `gpt-5.9-sol`、`gpt-6-sol-mini` を候補にしない、`hidden` が真偽値以外の entry が一覧にあれば系統名・完全 ID のどちらの経路でも `model_list_invalid`、系統名でも一覧取得失敗は `model_list_unavailable`、のテストを書く（Red）
+- [x] 1.4 effort が解決後のモデルの `supportedReasoningEfforts` で検証されること（旧版だけが対応している effort は `unsupported_model_effort`）のテストを書く（Red）
+- [x] 1.5 結果 JSON の `execution.model_resolution`（family 成功・exact 成功・解決前の失敗で `resolved: null` / `source: "unavailable"`）と、`requested.model` が系統名のまま・`effective.model` が観測値だけであることのテストを書く（Red）
+- [x] 1.6 `plugins/dev-workflow/scripts/codex-worker.py` の `advertised_model()` に系統名の解決を足し、`run_turn()` が解決後の ID を thread/start と turn/start に渡し、`execution_metadata()` と recorder が `model_resolution` を持つようにする。payload の model は書き換えない。既存の完全 ID の照合は変えない（Green）
+- [x] 1.7 既存の worker テストが全件通ることを確認する
 
 ## 2. 役割表と develop 側
 

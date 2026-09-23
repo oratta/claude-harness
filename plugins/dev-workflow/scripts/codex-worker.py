@@ -120,12 +120,20 @@ def validate_request(payload):
     return payload
 
 
+def is_family(model):
+    # A family name ('sol') is resolved against model/list; anything else is an exact ID.
+    return re.fullmatch(r'[a-z]+', model) is not None
+
+
 def execution_metadata(payload):
     requested = {'executor': 'codex', 'account': payload['account'], 'model': payload['model'],
                  'effort': payload.get('effort')}
     return {'version': 1, 'role': payload['role'], 'requested': requested,
             'effective': {'executor': None, 'account': None, 'model': None, 'effort': None},
-            'evidence': {key: 'unavailable' for key in requested}}
+            'evidence': {key: 'unavailable' for key in requested},
+            'model_resolution': {'requested': payload['model'],
+                                 'kind': 'family' if is_family(payload['model']) else 'exact',
+                                 'resolved': None, 'source': 'unavailable'}}
 
 
 def apply_observations(execution, observations):
@@ -136,7 +144,21 @@ def apply_observations(execution, observations):
     return execution
 
 
-def advertised_model(rpc, model, effort):
+def family_version(family, slug):
+    # 'gpt-5.10-sol' -> (5, 10); trailing zeros go so that 6 and 6.0 are the same version.
+    found = re.fullmatch(r'gpt-([0-9]+(?:\.[0-9]+)*)-'+re.escape(family), slug)
+    if found is None:
+        return None
+    version = [int(part) for part in found.group(1).split('.')]
+    while len(version) > 1 and version[-1] == 0:
+        version.pop()
+    return tuple(version)
+
+
+def advertised_model(rpc, model, effort, resolved=lambda item: None):
+    # A family name picks the newest visible gpt-<version>-<family>; an exact ID must match
+    # the model field once, hidden or not. Neither falls back to another model.
+    family = is_family(model)
     matches, cursor = [], None
     try:
         while True:
@@ -151,7 +173,11 @@ def advertised_model(rpc, model, effort):
                 efforts = item.get('supportedReasoningEfforts')
                 require(isinstance(efforts, list) and all(isinstance(value, dict) and
                         isinstance(value.get('reasoningEffort'), str) for value in efforts), 'model_list_invalid')
-                if item['model'] == model:
+                require(isinstance(item.get('hidden', False), bool), 'model_list_invalid')
+                if not family:
+                    if item['model'] == model:
+                        matches.append(item)
+                elif not item.get('hidden', False) and family_version(model, item['model']) is not None:
                     matches.append(item)
             cursor = result.get('nextCursor')
             require(cursor is None or isinstance(cursor, str) and cursor, 'model_list_invalid')
@@ -166,7 +192,11 @@ def advertised_model(rpc, model, effort):
     except (queue.Empty, TimeoutError, BrokenPipeError):
         raise Rejected('model_list_unavailable')
     require(matches, 'model_not_available')
+    if family:
+        newest = max(family_version(model, item['model']) for item in matches)
+        matches = [item for item in matches if family_version(model, item['model']) == newest]
     require(len(matches) == 1, 'model_not_unique')
+    resolved(matches[0])
     if effort is not None:
         supported = {value['reasoningEffort'] for value in matches[0]['supportedReasoningEfforts']}
         require(effort in supported, 'unsupported_model_effort')
@@ -390,12 +420,14 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
     recorder.observe(executor=('codex', 'transport:codex-app-server'),
                      account=(recorder.account_effective(payload, observed), 'account/read:account.email'))
     runtime_identity_matches(runtime, account)
-    advertised_model(rpc, payload['model'], payload.get('effort'))
+    # The payload keeps the requested value; only the two RPCs carry the resolved ID.
+    model = advertised_model(rpc, payload['model'], payload.get('effort'),
+                             recorder.resolve_model)['model']
     limits = rpc.request('account/rateLimits/read', {})
     # inflight is read after the reply.
     inflight = recorder.inflight(account)
     quota_available(limits, account['quota_margin_pct'], inflight)
-    thread_result = rpc.request('thread/start', {'cwd': cwd, 'model': payload['model'],
+    thread_result = rpc.request('thread/start', {'cwd': cwd, 'model': model,
         'sandbox': sandbox, 'approvalPolicy': 'never', 'modelProvider': 'openai'})['thread']
     thread = thread_result['id']
     state.thread_id = thread
@@ -409,7 +441,7 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
     # gone, so writableRoots and the /tmp exclusions do not appear for the writers.
     policy = ({'type': 'readOnly', 'networkAccess': network} if sandbox == 'read-only'
               else {'type': 'dangerFullAccess'})
-    turn_params = {'threadId': thread, 'model': payload['model'],
+    turn_params = {'threadId': thread, 'model': model,
         'sandboxPolicy': policy, 'approvalPolicy': 'never',
         'input': [{'type': 'text', 'text': payload['prompt']}]}
     if 'effort' in payload:
@@ -504,6 +536,9 @@ class ForegroundRecorder:
 
     def observe(self, **observations):
         apply_observations(self.execution, observations)
+
+    def resolve_model(self, item):
+        self.execution['model_resolution'].update(resolved=item['model'], source='model/list')
 
     def inflight(self, account):
         # This foreground process represents the only in-flight request it can observe.
