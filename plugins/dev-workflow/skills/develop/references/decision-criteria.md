@@ -74,7 +74,7 @@ W の指示書（`references/roles/worker.md`）の仕様化判断（Step B）�
 
 ## 残量モード `FABLE_BUDGET_MODE`
 
-サブスクの Fable 枠の残り具合を表す環境変数。役割（W / R1 / G）の既定モデルと昇格上限を決める。**明示設定が最優先**で、未設定時は usage snapshot からの自動導出結果を用いる（後述）。導出もできなければ `conserve` 扱い（安全側）。settings.json の `env` ブロックで明示的に固定することもできる。
+サブスクの Fable 枠の残り具合を表す環境変数。役割（W / R1 / G）の既定モデルと昇格上限を決める。**明示設定が最優先**で、未設定時はセッション記録と usage snapshot の実効値からの自動導出結果を用いる（後述）。導出もできなければ `conserve` 扱い（安全側）。settings.json の `env` ブロックで明示的に固定することもできる。
 
 | 値 | 意味 | 効果 |
 |---|---|---|
@@ -89,7 +89,7 @@ W の指示書（`references/roles/worker.md`）の仕様化判断（Step B）�
 
 ## 共有枠モード `SHARED_BUDGET_MODE`
 
-全モデル共通の週次枠（`weekly_all_pct`）の残り具合。Fable 残量モードと独立に導出され、**役割の既定モデルの下限**を決める。明示 env が最優先、未設定時は usage snapshot から自動導出（`scripts/session-tripwires.sh`）。
+全モデル共通の週次枠（`weekly_all_pct`）の残り具合。Fable 残量モードと独立に導出され、**役割の既定モデルの下限**を決める。明示 env が最優先、未設定時は active スロットの実効値から自動導出（`scripts/session-tripwires.sh`）。
 
 | 値 | 導出 | 効果 |
 |---|---|---|
@@ -99,7 +99,7 @@ W の指示書（`references/roles/worker.md`）の仕様化判断（Step B）�
 
 Fable 残量モードと共有枠モードが食い違うときは**共有枠モードの下限が勝つ**（例: `throttled` なら R1 も Sonnet 起点）。
 
-週次余裕を使う provider / account 選択では、snapshot の freshness を age `<= 300` 秒とし、`> 300` 秒は stale（欠測）とする。この境界は起動 account 選択の follow-up #374 と共通契約であり、#374 側の仕様が反映されるまでは本 change から依存する follow-up として扱う。
+週次余裕を使う provider 選択では、Codex の snapshot の freshness を age `<= 300` 秒とし、`> 300` 秒は stale（欠測）とする（起動 account 選択の follow-up #374 で決めた境界）。Claude 側（起動 account の選択と codex-develop の Claude margin）はこの境界を使わず、後述の実効値（リセット時刻より前の値は取得からの経過時間によらず下限として使う）で判定する。
 
 ## コンテキスト上限（サブエージェントの手渡し）
 
@@ -141,19 +141,21 @@ W / G は名前付き spawn ＋ SendMessage 再開でコンテキストを引き
 
 モードが動かすのは役割の既定モデルと昇格上限だけで、1 ループの構造・トリップワイヤーは変えない。env のためセッション起動後の明示的な変更は次セッションから反映される（モード切替は週単位想定のため許容）。自動導出は SessionStart 毎に更新される。
 
-### `FABLE_BUDGET_MODE` の自動導出（usage snapshot 契約）
+### `FABLE_BUDGET_MODE` の自動導出（セッション記録と usage snapshot 契約）
 
-`scripts/usage-probe.sh` が OAuth usage API（`/api/oauth/usage`）から Fable 週次消費率を取得し、`~/.claude/.usage-snapshot`（`fable_weekly_pct` / `fable_active` / `weekly_resets_epoch` を含む JSON）を書く。5 分キャッシュ・fail-open（取得失敗時は snapshot を書かず既存を保持）。`scripts/session-tripwires.sh` が SessionStart 毎にこの probe を best-effort 実行し、snapshot からモードを導出して残量ブロックを文脈に注入する。
+使用量の主な情報源はステータスラインが描画のたびに書く起動アカウント別のセッション記録（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions/<アカウント鍵>.json`。5 時間枠と全体の週次）で、`scripts/usage-probe.sh` が OAuth usage API（`/api/oauth/usage`）から書く `~/.claude/.usage-snapshot`（schema 2。スロット別に `fable_weekly_pct` / `weekly_resets_epoch` などを含む JSON）は、Fable 週次と記録の無いアカウントを埋める補助である。probe はスロットごとに、記録か snapshot の `fetched_at` が 3 時間（`USAGE_PROBE_STALE`）より古いときだけ叩き、前回の試行から 3 時間（`USAGE_PROBE_INTERVAL`）は叩かない。429 が続くスロットは待ちを倍々に延ばす（上限 1 日）。試行は結果にかかわらず `~/.claude/.usage-probe-state` に記録し、`~/.claude/.usage-probe.lock` でマシン全体 1 本に絞る。fail-open はスロット単位（失敗したスロットは前回値を引き継ぎ、全スロット失敗なら snapshot を書かない）。`scripts/session-tripwires.sh` が SessionStart 毎にこの probe を best-effort 実行し、active スロットの実効値からモードを導出して残量ブロックを文脈に注入する。
+
+実効値は `scripts/usage_view.py` の 1 か所で求める（`select-account.sh`・`agent-model-guard.sh`・`codex-develop.py` も同じ実装を使う）。取得からの経過時間で値を捨てず、リセット時刻より前の値は下限としてそのまま使い、リセット時刻を過ぎた値は 0% とみなす。記録と snapshot の両方にあるときは同じ窓なら大きい方を取る。規則の正本は openspec の `usage-session-records`「記録と snapshot から実効値を求める」。
 
 導出は「Fable の消費ペースが週の経過ペースを上回るか」のバーンレート比較で、次の優先順位に従う:
 
 1. **明示 env `FABLE_BUDGET_MODE` があればそれを使う**（自動導出より優先）
-2. snapshot が無い / `fable_weekly_pct` が読めない → `conserve`（既定・安全側）
+2. active スロットの実効値の `fable_weekly_pct` が求まらない（snapshot に無い・読めない）→ `conserve`（既定・安全側）
 3. `fable_weekly_pct > 90` → `exhausted`
 4. `fable_weekly_pct <= 週経過%`（週次リセット時刻から算出）→ `abundant`
 5. それ以外（消費が週経過を上回る）→ `conserve`
 
-週経過% = `(7日 − (リセット時刻 − 現在)) / 7日 × 100`。probe が失敗しても導出は conserve に倒れ、トリップワイヤー注入自体は従来どおり行われる。
+週経過% = `(7日 − (リセット時刻 − 現在)) / 7日 × 100`。probe が失敗しても導出は手元の記録と前回の snapshot から行い、それも無ければ conserve に倒れ、トリップワイヤー注入自体は従来どおり行われる。
 
 ### モード不変ルール（どのモードでも変えない2本）
 

@@ -404,7 +404,7 @@ fi
 # 取り出すのは数値フィールドだけなので、TSV に載せても区切りは壊れない
 # （label は snapshot 側にもあるがレジストリの値を使うのでここでは読まない）。
 # active スロットに限り、`accounts` がまだ無い snapshot（probe が schema 2 を書く前の
-# 最大 TTL 5 分）ではトップレベルへフォールバックする。
+# 旧形式）ではトップレベルへフォールバックする。
 snap_fetched=(); snap_five_pct=(); snap_five_res=()
 snap_seven_pct=(); snap_seven_res=(); snap_fable_pct=()
 snap_rows=""
