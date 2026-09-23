@@ -21,4 +21,4 @@
 - [x] 3.3 `git grep -n '行が無ければ従来経路として Codex を直接呼ぶ' -- plugins` が 0 件、かつ `未実行（adapter 経路）` が pr-review-gate の雛形 5 欄でヒットすることを確認する
 - [x] 3.4 `openspec validate align-develop-review-route-contract --strict` と `openspec validate --all --strict --no-interactive` を実行し、どちらも exit 0 を確認する
 - [x] 3.5 `bash scripts/test.sh` を実行し exit 0 を確認する。`statusline-multi-account.bats` の単発 1 件だけが失敗した場合は、そのテストを単独で再実行して exit 0 を確認する
-- [ ] 3.6 PR 本文の issue 参照は最初に `Closes #425`、続いて `Closes #390`、`Closes #392`、`Closes #393`、`Closes #394`、`Closes #395`、`Closes #396` を並べ、最初の参照先が #425 であることを確認する
+- [x] 3.6 PR 本文の issue 参照は最初に `Closes #425`、続いて `Closes #390`、`Closes #392`、`Closes #393`、`Closes #394`、`Closes #395`、`Closes #396` を並べ、最初の参照先が #425 であることを確認する
