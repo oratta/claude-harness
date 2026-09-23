@@ -34,12 +34,13 @@ JSON
 }
 
 # $1=a fetched_at $2=b fetched_at $3=a 5h $4=b 5h $5=a weekly $6=b weekly
+# 5 時間枠はリセット時刻を持たせる（リセット時刻 null の値を使うのは使用率 0 のときだけなので）
 write_snapshot() {
   cat > "$SNAP" <<JSON
 { "schema": 2, "accounts": {
-  "a": { "fetched_at": $1, "five_hour_pct": $3,
+  "a": { "fetched_at": $1, "five_hour_pct": $3, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": $5, "weekly_resets_epoch": $((NOW + 302400)) },
-  "b": { "fetched_at": $2, "five_hour_pct": $4,
+  "b": { "fetched_at": $2, "five_hour_pct": $4, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": $6, "weekly_resets_epoch": $((NOW + 302400)) }
 } }
 JSON
@@ -56,8 +57,8 @@ write_record() {
   local key
   key="$(record_key "$1")"
   mkdir -p "$SESSIONS"
-  printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":%s,"five_hour_resets_epoch":null,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
-    "$key" "$2" "$3" "$4" "${5:-$((NOW + 302400))}" > "${SESSIONS}/${key}.json"
+  printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":%s,"five_hour_resets_epoch":%s,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
+    "$key" "$2" "$3" "$((NOW + 9000))" "$4" "${5:-$((NOW + 302400))}" > "${SESSIONS}/${key}.json"
 }
 
 invoke() {
@@ -111,9 +112,9 @@ SH
   write_registry
   cat > "$SNAP" <<JSON
 { "schema": 2, "accounts": {
-  "a": { "fetched_at": $NOW, "five_hour_pct": 10,
+  "a": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": 50, "weekly_resets_epoch": $((NOW + 302400)) },
-  "b": { "fetched_at": $NOW, "five_hour_pct": 10,
+  "b": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": 50, "weekly_resets_epoch": $((NOW + 302399)) }
 } }
 JSON
@@ -136,9 +137,9 @@ JSON
   write_registry
   cat > "$SNAP" <<JSON
 { "schema": 2, "accounts": {
-  "a": { "fetched_at": $((NOW - 604800)), "five_hour_pct": 10,
+  "a": { "fetched_at": $((NOW - 604800)), "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": 95, "weekly_resets_epoch": $((NOW - 10)) },
-  "b": { "fetched_at": $NOW, "five_hour_pct": 10,
+  "b": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": 30, "weekly_resets_epoch": $((NOW + 302400)) }
 } }
 JSON
@@ -334,9 +335,9 @@ JSON
   write_registry
   cat > "$SNAP" <<JSON
 { "schema": 2, "accounts": {
-  "a": { "fetched_at": "not-a-number", "five_hour_pct": 1,
+  "a": { "fetched_at": "not-a-number", "five_hour_pct": 1, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": 1, "weekly_resets_epoch": $((NOW + 302400)) },
-  "b": { "fetched_at": $((NOW + 1)), "five_hour_pct": 1,
+  "b": { "fetched_at": $((NOW + 1)), "five_hour_pct": 1, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": 1, "weekly_resets_epoch": $((NOW + 302400)) }
 } }
 JSON
@@ -351,7 +352,7 @@ JSON
 { "schema": 2, "accounts": {
   "a": { "fetched_at": $NOW, "five_hour_pct": null,
            "weekly_all_pct": 1, "weekly_resets_epoch": $((NOW + 302400)) },
-  "b": { "fetched_at": $NOW, "five_hour_pct": 1,
+  "b": { "fetched_at": $NOW, "five_hour_pct": 1, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": "bad", "weekly_resets_epoch": $((NOW + 302400)) }
 } }
 JSON
