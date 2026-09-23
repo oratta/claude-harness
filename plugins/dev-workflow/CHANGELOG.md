@@ -1,6 +1,6 @@
 # Changelog — dev-workflow
 
-## 2.13.33 — 2026-09-23: develop のレビュー経路契約を正本間で統一する
+## 2.13.34 — 2026-09-23: develop のレビュー経路契約を正本間で統一する
 
 develop 本体・Codex adapter・ゲート実行者 G の間で分散していた adapter / 従来レビュー経路の説明を揃えた（#425、#390、#392〜#396）。
 
@@ -8,6 +8,15 @@ develop 本体・Codex adapter・ゲート実行者 G の間で分散してい�
 - **develop / Codex adapter**: レビュアー model の決定元を経路別に書き分け、欠陥探索と行無し従来経路の Claude G / Codex G の動きを統一した
 - **pr-review-gate**: adapter 経路で Codex を実行しない場合、証拠雛形の 5 欄すべてに `未実行（adapter 経路）` を記録できるようにした
 - **テスト**: 6 件の follow-up をそれぞれ固定する回帰テストを `develop-adapter-review-routing.bats` に追加した
+
+## 2.13.33 — 2026-09-23: 記録先単位のトークン累計に上限を掛け、超えたら次を起こす前に止まる
+
+PR #268 は 12 体のサブエージェントで 122,955,450 トークンを使ったことが、人間がトランスクリプトを手で合計して初めて分かった（#281）。周回数のキャップでは 1 周が重い場合や W の再開が繰り返される場合を止められないため、記録先ごとの累計で止める（#288）。2.13.32 は先行して main に入った #397 が使用したため、この変更は 2.13.33 とした。
+
+- **scripts/pr-token-budget.sh**（新規）: 記録先番号を渡すと、Agent ツールの description に `#N` を含むサブエージェント（同じリポジトリのものだけ）の全リクエストの usage と、`--codex-records` で渡した Codex 消費（トークン数が `-` の thread は `$CODEX_HOME/sessions` の rollout から読む）を合計し、Claude 分・Codex 分・合計・体数・上限を 1 行 JSON で出す。合計が上限（既定 30,000,000。`DEV_WORKFLOW_PR_TOKEN_CAP` / `--cap`）を超えたら exit 2
+- **develop SKILL.md**: 「PR トークン上限」の節を足した。spawn・SendMessage による再開・Codex executor への委譲の直前に毎回測り、exit 2 なら起こさずに `needs-approval` を付けて「続けるか、範囲外として閉じるか」を合計・体数・上限・残工程・推奨とともに問う。description に `#N` を入れる規約、Codex を呼んだら `Codex 消費: <thread_id> <tokens>` をコメントする規約、「続ける」ときの `PR トークン上限:` コメントと `--cap` もここに書いた
+- **gate-runner.md**: G が Codex を呼んだら thread_id を return に書く（`Codex thread:` 行）
+- **テスト**: `pr-token-budget.bats`（固定のトランスクリプト・Codex 記録・rollout に対する合計と exit code）を足し、`develop-skill.bats` に手順の文書検査を足した
 
 ## 2.13.32 — 2026-09-23: Codex role の model を系統名で書き、呼ぶ直前に最新版へ解決する
 
