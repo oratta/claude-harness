@@ -7,7 +7,7 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 
 ## 実行先オプション
 
-`$ARGUMENTS` に `--profile <名前> [--profile-file <JSON>]` または旧形式の `--account <登録名> --model <CodexモデルID>` があればprovider adapterを適用する。`--executor codex` も後方互換の別名として受理するが、その場合もprofile形式か旧形式のどちらか一方を必須とする。両形式の併用、`--profile-file` 単独、旧形式の片方欠落は開始前に拒否する。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用する。実行先オプションが無ければ同じ `references/codex-develop.md` をReadし、各 phase で profile なしの request を使って自動選択する。未知のexecutorは拒否する。profile が決めた投げ先を別 provider で代行しない。実行先オプションは委譲transportだけを変え、仕様要否・レビュー・チェック・順序は既存develop正本を使う。adapter の適用を理由に仕様を必須にしない。
+`$ARGUMENTS` に `--profile <名前> [--profile-file <JSON>]` または旧形式の `--account <登録名> --model <Codex系統名またはモデルID>` があればprovider adapterを適用する。`--executor codex` も後方互換の別名として受理するが、その場合もprofile形式か旧形式のどちらか一方を必須とする。両形式の併用、`--profile-file` 単独、旧形式の片方欠落は開始前に拒否する。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用する。実行先オプションが無ければ同じ `references/codex-develop.md` をReadし、各 phase で profile なしの request を使って自動選択する。未知のexecutorは拒否する。profile が決めた投げ先を別 provider で代行しない。実行先オプションは委譲transportだけを変え、仕様要否・レビュー・チェック・順序は既存develop正本を使う。adapter の適用を理由に仕様を必須にしない。
 
 引数なしの追加依頼でも各 phase で profile なしの request を使って自動選択する。明示 profile・旧形式を引き継ぐ場合は初回の設定を再推測せず、実行先オプションと account-home の対応の両方を改めて明示する。
 
