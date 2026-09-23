@@ -60,6 +60,14 @@ PY
   [[ "$output" != *'$1.00'* ]] || return 1
 }
 
+@test "pricing: claude-opus-5-5 resolves to its own row, not claude-opus-5" {  # claude-opus-5-5 は claude-opus-5 の前方一致に食われず、自分の行の単価で引かれる
+  cl_mini_log mini claude-opus-5-5 '{"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":0}'
+  run python3 "$CL" branch mini
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'$4.00'* ]] || return 1   # claude-opus-5 の単価に食われると $5.00 になる
+  [[ "$output" != *'$5.00'* ]] || return 1
+}
+
 @test "pricing: a dated model name resolves to the undated key" {  # 日付付きのモデル名が日付なしの鍵の単価で引かれる
   cl_mini_log mini claude-haiku-4-5-20251001 '{"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":0}'
   run python3 "$CL" branch mini
