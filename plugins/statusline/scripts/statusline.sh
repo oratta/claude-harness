@@ -74,6 +74,33 @@ if [ -n "$five_h_pct" ] && [ -z "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
         > "$CONFIG_DIR/.rate-limit-snapshot" 2>/dev/null
 fi
 
+# 起動アカウント別のセッション記録（正本: openspec/specs/usage-session-records）。
+# 鍵は起動環境の CLAUDE_SECURESTORAGE_CONFIG_DIR だけから決める（レジストリや snapshot の
+# active から決めると別アカウントの値を別スロットとして書きうる。flatmate#605 と同じ誤り）。
+# 空なら default、非空なら Keychain サービス名の末尾と同じ sha256 先頭 8 桁。
+# python3 を起動するのは非空のときだけ（既定アカウントの 1 スロット構成で起動を増やさない）。
+session_key="default"
+if [ -n "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
+    session_key="$(SECURE="$CLAUDE_SECURESTORAGE_CONFIG_DIR" python3 -c '
+import hashlib, os, unicodedata
+print(hashlib.sha256(unicodedata.normalize("NFC", os.environ["SECURE"]).encode("utf-8")).hexdigest()[:8])
+' 2>/dev/null)"
+fi
+sessions_dir="${USAGE_SESSIONS_DIR:-$CONFIG_DIR/.usage-sessions}"
+if [ -n "$five_h_pct" ] && [ -n "$session_key" ] && mkdir -p "$sessions_dir" 2>/dev/null; then
+    # 一時ファイルに書いてから mv で置き換える（読み手に書きかけを見せない）。失敗は無視する
+    _rec_tmp="$(mktemp "$sessions_dir/.${session_key}.XXXXXX" 2>/dev/null)"
+    if [ -n "$_rec_tmp" ]; then
+        if printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":%s,"five_hour_resets_epoch":%s,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
+            "$session_key" "$(date +%s)" "$five_h_pct" "${five_h_resets:-null}" \
+            "${seven_d_pct:-null}" "${seven_d_resets:-null}" > "$_rec_tmp" 2>/dev/null; then
+            mv -f "$_rec_tmp" "$sessions_dir/${session_key}.json" 2>/dev/null || rm -f "$_rec_tmp" 2>/dev/null
+        else
+            rm -f "$_rec_tmp" 2>/dev/null
+        fi
+    fi
+fi
+
 # ANSI color codes (dimmed for status line)
 BLUE=$(printf '\033[34m')
 GREEN=$(printf '\033[32m')
@@ -321,13 +348,10 @@ if [ "$multi" -eq 1 ]; then
     # 優先順位 1: env から導出した Keychain サービス名と一致するスロット。
     # 素の文字列比較ではなく導出後のサービス名で突き合わせる（本体と同じ同値関係になる）。
     # env 未設定は空文字からの導出＝既定サービス名なので、既定スロットがあればここで一致する。
+    # 導出はセッション記録の鍵と同じなので、上で求めた session_key を使う（python3 を再起動しない）。
     if [ -n "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
-        want_service="$(SECURE="$CLAUDE_SECURESTORAGE_CONFIG_DIR" python3 -c '
-import hashlib, os, unicodedata
-sec = os.environ["SECURE"]
-print("Claude Code-credentials-" + hashlib.sha256(
-    unicodedata.normalize("NFC", sec).encode("utf-8")).hexdigest()[:8])
-' 2>/dev/null)"
+        want_service=""
+        [ -n "$session_key" ] && want_service="Claude Code-credentials-${session_key}"
     else
         want_service="Claude Code-credentials"
     fi
