@@ -35,7 +35,7 @@ run_python_suites() { # <root>
     ran=$(printf '%s\n' "$out" | grep -E '^Ran [0-9]+ tests?' | tail -1)
     case "$ran" in
       ""|"Ran 0 "*)
-        echo "$d: 0 件（テストが 1 件も走っていない。exit $st）"
+        echo "$d: 0 件（テストが 1 件も走っていない。exit ${st}）"
         printf '%s\n' "$out"
         rc=1
         continue ;;
