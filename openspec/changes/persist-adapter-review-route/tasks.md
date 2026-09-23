@@ -13,6 +13,6 @@
 
 ## 3. 仕上げ
 
-- [ ] 3.1 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow version を同じ新しい値へ上げる
-- [ ] 3.2 `bash scripts/test.sh` を全件フォアグラウンドで実行し、常時注入予算を含む全テストが exit 0 であることを確認する
-- [ ] 3.3 `openspec validate persist-adapter-review-route --strict` を実行し、exit 0 を確認する
+- [x] 3.1 `plugins/dev-workflow/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の dev-workflow version を同じ新しい値へ上げる
+- [x] 3.2 `bash scripts/test.sh` を全件フォアグラウンドで実行し、常時注入予算を含む全テストが exit 0 であることを確認する
+- [x] 3.3 `openspec validate persist-adapter-review-route --strict` を実行し、exit 0 を確認する
