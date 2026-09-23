@@ -1,5 +1,13 @@
 # Changelog — dev-workflow
 
+## 2.13.26 — 2026-09-23: develop 本体が起こす G のレビューを adapter で振り分ける
+
+develop 本体から起こした G が full 判定で Codex を直接呼び、adapter の投げ先選択と dispatch 記録を通らずにレビューが走っていた（#385）。2.13.24 と 2.13.25 は並行 PR #384・#388 が使ったため、この版は 2.13.26 とした。
+
+- **develop SKILL.md (4)**: G の起動・再開・手渡しの指示に常に `レビュー経路: adapter` を書く。needs-reviewer を受けたら phase `review` で投げ先を選び直し、dispatch 記録を投稿してからレビュアーを起動し、要約・executor / model・dispatch 記録 URL を G に渡す。#384 の一周目照合の補足要求もこの順で進める
+- **gate-runner.md**: adapter 経路の G は full でも Codex を呼ばず needs-reviewer を返し、証拠欄は `未実行（adapter 経路）` と書く。行が無い・`従来` の従来経路は Codex を直接呼ぶまま
+- **codex-develop.md**: Codex の G でも request の instructions に同じ行を書く
+
 ## 2.13.25 — 2026-09-23: 仕様レビュー R1 に「守備範囲の明記」の観点を足す
 
 PR #268 では、入力の書式検査の仕様に「何から守り何は守らないか」が無かったため、レビューの指摘を範囲外として落とす根拠が無く 6 周続いた（#281）。同じ形の仕様を書くたびに再発しないよう、実装前の仕様レビューで守備範囲を揃える（#287）。

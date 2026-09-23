@@ -8,9 +8,22 @@ develop の本体から**名前付きで** spawn され、PR を pr-review-gate 
 2. 手順 2 のレビューは**実装と別コンテキスト**で行う。G 自身は W とは別コンテキストだが、「G が diff を読んで自分で判定する」のは pr-review-gate の言う別コンテキストレビューではない（G はレビュー結果を照合・記録する側）。レビューの実行者は下の規則で決める
 3. 結果を本体に return する（書式は下）。記録先へのコメント・ラベル操作は G が自分で行う（本体は return の要約だけを見る）
 
+## レビュー経路の判別（G として起動されたときだけ）
+
+この節は G（phase `gate`）として起動されたときの規則で、phase `review` のレビュアーとして起動されたとき（Codex に委譲されたレビュアーがこのファイルを読む場合）には適用しない。レビュアーは自分でレビューを行う。
+
+G は起動・再開の指示にある `レビュー経路:` の 1 行を見て、この行だけで経路を判別する。環境変数・記録先のコメント・自分の起動方法から推測しない。
+
+| 起動指示の行 | 経路 | G の動き |
+|---|---|---|
+| `レビュー経路: adapter` | adapter 経路 | full でも light でも `codex exec`・`codex-companion.mjs`・レビュアーを自分で呼ばず、手順 1 と手順 2-0 まで済ませて `needs-reviewer` を return する（判定は `full（adapter 経路）` または `light`）。Codex 不可の実測（バイナリ探索・起動）は行わない。投げ先は本体が phase `review` で選び直す |
+| `レビュー経路: 従来`、または行が無い | 従来経路 | 下の「レビューの実行者」の表に従う（full は G の Bash から Codex を直接呼ぶ） |
+
+`レビュー経路: adapter` は新 Codex モードを含む adapter 解決の全構成（`claude-default` を含む）を指し、新 Codex モードとは同義ではない。下の従来モードのレビュー実行者の表は、`レビュー経路: 従来` または行が無いときだけ適用する。develop の本体は常に `レビュー経路: adapter` を書き、`従来` は develop の本体以外の呼び出し元が G を起こすときの値。
+
 ## レビューの実行者（G は孫を持てない）
 
-G はサブエージェントなので Agent ツールを持たず、Task サブエージェントを自分では起こせない。pr-review-gate 手順 2-1 の従来モードの優先順を次のように読み替える。新 Codex モードは App Server 固定で、以下の exec / Claude fallback は適用しない:
+G はサブエージェントなので Agent ツールを持たず、Task サブエージェントを自分では起こせない。`レビュー経路: 従来` または行が無いとき、pr-review-gate 手順 2-1 の従来モードの優先順を次のように読み替える。新 Codex モードは App Server 固定で、以下の exec / Claude fallback は適用しない:
 
 | 判定 | 実行者 | G の動き |
 |---|---|---|
@@ -32,19 +45,19 @@ Codex の出力全文を本体に流さない。`変更点の一覧`・`照合�
 
 ## needs-reviewer の return（本体にレビュアーの spawn を委ねる）
 
-G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: general-purpose` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、その要約を SendMessage で G に渡す。Codex 不可または light 判定による通常の初回レビュー依頼は従来どおり下の基本 payload を使う。一周目の三表照合で不足が出た補足要求の場合に限り、同じ payload に固定 HEAD・元の三表・残差・`補足済み回数: 0` を加え、同じレビューの不足した項目だけを補わせる。
+G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: general-purpose` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、その要約を SendMessage で G に渡す。adapter 経路（`レビュー経路: adapter`）では、本体が phase `review` で投げ先を選び直して dispatch 記録に残してからレビュアーを起動し（develop `SKILL.md` の (4)）、要約と選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。adapter 経路の payload では証拠欄 5 つ（選んだ経路・実行コマンド・終了コード・出力の要点・実待ち時間）をすべて `未実行（adapter 経路）` と書き、Codex の証拠を作らない。`推奨モデル` は参考値で、実際の投げ先は本体の選び直しが決める。Codex 不可・light 判定・adapter 経路による通常の初回レビュー依頼は下の基本 payload を使う。一周目の三表照合で不足が出た補足要求の場合に限り、同じ payload に固定 HEAD・元の三表・残差・`補足済み回数: 0` を加え、同じレビューの不足した項目だけを補わせる（adapter 経路では補足要求も本体の選び直しを通る）。
 
 ```markdown
 ## needs-reviewer
-- 判定: light | full（Codex 不可）
+- 判定: light | full（Codex 不可） | full（adapter 経路）
 - 根拠: <2-0 の判定材料（変更ファイル一覧・行数・挙動定義ファイルの有無）、full なら Codex が使えなかった理由>
 - PR 番号: #<N>
 - HEAD SHA: <40 桁フル SHA（手順 1 で固定したもの）>
-- 選んだ経路: <full: exec / companion / バイナリ探索で不在、light: 未実行>
-- 実行コマンド: <full: 実際の探索・起動・待機コマンド>
-- 終了コード: <取得できた値 | 未取得>
-- 出力の要点: <full: 実測した不可条件と応答>
-- 実待ち時間: <タイムアウト時の実測値、完了未確認>
+- 選んだ経路: <full: exec / companion / バイナリ探索で不在、light: 未実行、adapter 経路: 未実行（adapter 経路）>
+- 実行コマンド: <full: 実際の探索・起動・待機コマンド、adapter 経路: 未実行（adapter 経路）>
+- 終了コード: <取得できた値 | 未取得 | 未実行（adapter 経路）>
+- 出力の要点: <full: 実測した不可条件と応答、adapter 経路: 未実行（adapter 経路）>
+- 実待ち時間: <タイムアウト時の実測値、完了未確認、adapter 経路: 未実行（adapter 経路）>
 - 推奨モデル: opus | dev-workflow:decider（種別で指定する。`general-purpose` に `model: fable` は付けない）
 - 推奨モデルの根拠: <マージ条件・層間契約・課金/法務への接触の有無、usage snapshot の残量>
 - 受け入れ条件の所在: <issue #N 本文 | PR #N 本文>
@@ -54,7 +67,7 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 - 補足指示（一周目照合の補足要求の場合だけ）: 元の三表を置き換えず、残差に挙げた不足した項目だけを補う
 ```
 
-レビュー要約を SendMessage で受け取った G は、「レビュー実行者:」の PR コメント（`レビュー実行者: Task サブエージェント（light 判定のため）` / `（full・実測した Codex 不可: <条件>）`。モデルと根拠を添え、full では対象 HEAD と上の同じ証拠を記録する。終了コードは取得できた場合のみ記し、架空の終了コードを書かない。light は事前判定として記録する）を **G が投稿**する。そのあとの分岐は、下の再開節の「レビュアーの要約受領」に従う。
+レビュー要約を SendMessage で受け取った G は、「レビュー実行者:」の PR コメント（`レビュー実行者: Task サブエージェント（light 判定のため）` / `（full・実測した Codex 不可: <条件>）`。adapter 経路では `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` とし、本体から渡された executor / model と dispatch 記録のコメント URL を写し、`<light|full>` には手順 2-0 の判定を書く。モデルと根拠を添え、full では対象 HEAD と上の同じ証拠を記録する。終了コードは取得できた場合のみ記し、架空の終了コードを書かない。light は事前判定として記録する）を **G が投稿**する。そのあとの分岐は、下の再開節の「レビュアーの要約受領」に従う。
 
 ## 一周目の三表を機械照合する
 
@@ -78,7 +91,7 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 ## Gate Result
 - PR: #<N>（HEAD <SHA>）
 - Status: passed | failed | 保留 | needs-reviewer | needs-decider | review-incomplete
-- レビュー重量: light | full（実行者: Codex | Task サブエージェント <model>）
+- レビュー重量: light | full（実行者: Codex | Task サブエージェント <model> | <executor>/<model>（adapter 経路））
 - 周回: <1|2|3以降（主の回答または決める役の裁定あり）>（全体レビューにした周は「（全体レビュー: 修正差分 N 行 / 前周指摘 M 行）」を添える）
 - 仕分け（指摘を受け取ったすべての周の return で必須。Status によらず書く）: pr-review-gate 手順 2-1 の仕分け表で指摘ごとに当てた順とその根拠（順 1・2 は違反文の引用・例外 3 種のどれか（安全機構の穴・データ破壊・無言の機能不全）、または follow-up issue の URL。順 3 は集合一致で閉じた PR コメント URL。順 4 は W の記録「受け入れ条件の外・その場で直した・直し方 N 行」。順 6 の裁定を受けたら `決める役の裁定:` の内容）と、その PR コメント URL。全件を follow-up issue に切って passed で返すときもここに書く。全周共通の判定で止める指摘が残り、順 5 に当たる場合は failed ではなく保留で返す（下）
 - 効果測定（二周目以降に新しく出た、または未解決で残った各指摘に必須）: `同じ文が複数か所` / `場合分けの漏れ` / `直したつもりで直っていない` / `直しで新しく入った` のいずれか 1 つ。同じ指摘 ID と分類を仕分けの PR コメントにも記録し、その PR コメント URL を return に添える。この分類は記録だけに使い、全周共通の停止判定と仕分け順を変えない
