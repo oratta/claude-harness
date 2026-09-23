@@ -10,9 +10,9 @@
 
 ## 2. 役割表と develop 側
 
-- [ ] 2.1 `plugins/dev-workflow/tests/test_codex_develop.py` の組み込み profile の期待値（`gpt-5.6-sol` / `gpt-5.6-luna` / `gpt-6-astra`）を系統名に変え、`codex-role-profiles.json` に `gpt-[0-9]` が無いことを確かめるテストを足す（Red）
-- [ ] 2.2 外部 profile-file に系統名と完全 ID を混ぜた場合、旧形式 `--model sol` と `--model gpt-6-astra` の場合に、request の model が指定値のまま書かれるテストを足す
-- [ ] 2.3 `plugins/dev-workflow/references/codex-role-profiles.json` の Codex role の model を `sol` / `luna` / `astra` に書き換える（Green）。`git grep -nE 'gpt-[0-9]' plugins/dev-workflow/references/codex-role-profiles.json` が 0 件であることを確認する
+- [x] 2.1 `plugins/dev-workflow/tests/test_codex_develop.py` の組み込み profile の期待値（`gpt-5.6-sol` / `gpt-5.6-luna` / `gpt-6-astra`）を系統名に変え、`codex-role-profiles.json` に `gpt-[0-9]` が無いことを確かめるテストを足す（Red）
+- [x] 2.2 外部 profile-file に系統名と完全 ID を混ぜた場合、旧形式 `--model sol` と `--model gpt-6-astra` の場合に、request の model が指定値のまま書かれるテストを足す
+- [x] 2.3 `plugins/dev-workflow/references/codex-role-profiles.json` の Codex role の model を `sol` / `luna` / `astra` に書き換える（Green）。`git grep -nE 'gpt-[0-9]' plugins/dev-workflow/references/codex-role-profiles.json` が 0 件であることを確認する
 
 ## 3. docs と仕様
 
