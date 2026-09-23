@@ -158,6 +158,8 @@ fi
 # ロックの古さは実時刻と mtime で測る（USAGE_PROBE_NOW は導出の決定論化用で、mtime は実時刻のため混ぜない）。
 # GNU の stat（-c）を先に試す。逆順にすると Linux で `stat -f` がファイルシステム情報の表示として
 # 成功してしまい、mtime ではない値が返る。macOS の stat は -c を不正オプションとして非 0 で終わる。
+# 親（既定は ~/.claude）が無い環境でも取れるよう先に作る。試行状態ファイルの既定の置き場所も同じ親
+mkdir -p "$(dirname "$LOCK")" 2>/dev/null
 if ! mkdir "$LOCK" 2>/dev/null; then
   real_now="$(date +%s 2>/dev/null || echo 0)"
   lock_mtime="$(stat -c %Y "$LOCK" 2>/dev/null || stat -f %m "$LOCK" 2>/dev/null || echo "$real_now")"

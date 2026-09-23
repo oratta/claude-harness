@@ -84,6 +84,16 @@ JSON
   [ "$(jq -r '.fable_active' "$SNAP")" = "true" ]
 }
 
+@test "probe: runs even when the default lock's parent (~/.claude) does not exist yet" {
+  write_good_resp
+  local home="${WORK}/fresh-home"
+  run env -u USAGE_PROBE_LOCK -u USAGE_PROBE_STATE HOME="$home" \
+    USAGE_SNAPSHOT="$SNAP" USAGE_PROBE_RESPONSE_FILE="$RESP" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.fable_weekly_pct' "$SNAP")" = "73" ]
+  [ ! -e "${home}/.claude/.usage-probe.lock" ]
+}
+
 @test "probe: valid fetch without Fable scope writes null pct" {
   write_nofable_resp
   run env USAGE_SNAPSHOT="$SNAP" USAGE_PROBE_RESPONSE_FILE="$RESP" USAGE_PROBE_NOW="$NOW" "$PROBE"
