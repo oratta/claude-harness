@@ -13,9 +13,9 @@
 
 ## 3. 検証
 
-- [ ] 3.1 `bats tests/discord-plugin-retirement.bats`（spec 不在の検査を除き pass）・`bats tests/marketplace-sync.bats`・`bats tests/injection-budget.bats` が pass する。注入量の実測が 38,749 バイト前後で予算 40,260 を動かさずに通ることを確認する
-- [ ] 3.2 issue #314 の受け入れ条件のコマンドを実行する: `git ls-files plugins/discord | wc -l` が 0、`jq -e '[.plugins[].name] | index("discord") == null' .claude-plugin/marketplace.json` が exit 0、`grep -n -i discord .github/workflows/ci.yml` が 0 件
-- [ ] 3.3 `scripts/test.sh` をフォアグラウンドで全件実行し exit 0 を確認する
+- [x] 3.1 `bats tests/discord-plugin-retirement.bats`（spec 不在の検査を除き pass）・`bats tests/marketplace-sync.bats`・`bats tests/injection-budget.bats` が pass する。注入量の実測が 38,749 バイト前後で予算 40,260 を動かさずに通ることを確認する
+- [x] 3.2 issue #314 の受け入れ条件のコマンドを実行する: `git ls-files plugins/discord | wc -l` が 0、`jq -e '[.plugins[].name] | index("discord") == null' .claude-plugin/marketplace.json` が exit 0、`grep -n -i discord .github/workflows/ci.yml` が 0 件
+- [x] 3.3 `scripts/test.sh` をフォアグラウンドで全件実行し exit 0 を確認する
 
 ## 4. main spec の直接削除と archive
 
