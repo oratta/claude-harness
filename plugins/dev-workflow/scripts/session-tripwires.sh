@@ -19,8 +19,11 @@ SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
 # メモリ索引の検知（閾値超のときだけ 1 行。失敗しても無出力で先へ進む）。
 MEMORY_NOTICE="$("${ROOT}/scripts/memory-tripwire.sh" 2>/dev/null)" || MEMORY_NOTICE=""
 
-TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" MEMORY_NOTICE="$MEMORY_NOTICE" python3 <<'PY'
-import json, os, re, time
+# 導出は active スロットの実効値（セッション記録と snapshot を突き合わせた値）から行う。
+# 規則の実装は usage_view.py の 1 か所（正本: openspec/specs/usage-session-records）。
+TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" MEMORY_NOTICE="$MEMORY_NOTICE" \
+  USAGE_VIEW_DIR="${ROOT}/scripts" python3 <<'PY'
+import json, os, re, sys, time
 
 # --- トリップワイヤー節の抽出（single source of truth） ---
 try:
@@ -32,39 +35,41 @@ except Exception:
 if not tripwire:
     raise SystemExit(0)  # 節が抽出できなければ fail-soft（無出力）
 
-# --- snapshot 読み取り（fail-open） ---
-snap = None
-try:
-    with open(os.environ["SNAPSHOT"], encoding="utf-8") as f:
-        snap = json.load(f)
-    if not isinstance(snap, dict):
-        snap = None
-except Exception:
-    snap = None
-
-pct = snap.get("fable_weekly_pct") if snap else None
-all_pct = snap.get("weekly_all_pct") if snap else None
-resets_epoch = snap.get("weekly_resets_epoch") if snap else None
-try:
-    pct = float(pct) if pct is not None else None
-except Exception:
-    pct = None
-try:
-    all_pct = float(all_pct) if all_pct is not None else None
-except Exception:
-    all_pct = None
-
 now = os.environ.get("USAGE_PROBE_NOW")
 now = int(now) if (now and now.lstrip("-").isdigit()) else int(time.time())
 
+# --- active スロットの実効値（fail-open: 読めなければデータ無しとして既定に倒す） ---
+slot = {}
+try:
+    sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
+    import usage_view
+    view = usage_view.build_view(snapshot_path=os.environ["SNAPSHOT"], now=now)
+    slot = view["accounts"].get(view["active"]) or {}
+except Exception:
+    slot = {}
+
+def number(value):
+    try:
+        return float(value) if value is not None else None
+    except Exception:
+        return None
+
+pct = number(slot.get("fable_weekly_pct"))
+all_pct = number(slot.get("weekly_all_pct"))
+
 WEEK = 7 * 86400
-elapsed_pct = None
-if resets_epoch:
+def elapsed_of(resets_epoch):
+    if not resets_epoch:
+        return None
     try:
         remaining = int(resets_epoch) - now
-        elapsed_pct = max(0.0, min(100.0, (WEEK - remaining) / WEEK * 100.0))
+        return max(0.0, min(100.0, (WEEK - remaining) / WEEK * 100.0))
     except Exception:
-        elapsed_pct = None
+        return None
+
+# Fable と全体の週次はそれぞれの窓のリセット時刻から週経過を求める
+elapsed_pct = elapsed_of(slot.get("fable_resets_epoch"))
+all_elapsed_pct = elapsed_of(slot.get("weekly_resets_epoch"))
 
 # --- 残量モード導出（明示 env > snapshot 無し > exhausted > バーンレート比較） ---
 explicit = (os.environ.get("FABLE_BUDGET_MODE") or "").strip()
@@ -88,7 +93,7 @@ elif all_pct is None:
     shared, shared_source = "ok", "既定（usage データなし）"
 elif all_pct > 90:
     shared, shared_source = "depleted", "自動導出"
-elif elapsed_pct is not None and all_pct > elapsed_pct:
+elif all_elapsed_pct is not None and all_pct > all_elapsed_pct:
     shared, shared_source = "throttled", "自動導出"
 else:
     shared, shared_source = "ok", "自動導出"
