@@ -28,7 +28,7 @@
 
 ## 5. 文書・版・全体確認
 
-- [ ] 5.1 `plugins/dev-workflow/skills/develop/references/decision-criteria.md` の「`FABLE_BUDGET_MODE` の自動導出（usage snapshot 契約）」と、`usage-probe.sh` の冒頭コメントの契約の説明を、セッション記録が主・probe が補助・実効値の規則に合わせて直す。`plugins/dev-workflow/.claude-plugin/plugin.json` の description の usage-probe の説明（5 分キャッシュの記述があれば）も直す。あわせて `plugins/dev-workflow/skills/pr-review-gate/SKILL.md`（126 行目「usage snapshot…が新鮮で」）・`plugins/dev-workflow/README.md`・`plugins/dev-workflow/templates/escalation-tripwires.md`・`plugins/statusline/commands/setup.md` を `usage-snapshot` / `usage-probe` / `300` / `5 分` / `TTL` で grep し、300 秒・5 分キャッシュ・TTL を前提にした記述を新しい実行条件と実効値の規則に合わせて直す
-- [ ] 5.2 `plugins/dev-workflow/.claude-plugin/plugin.json` と `plugins/statusline/.claude-plugin/plugin.json` の version を上げ、両プラグインの CHANGELOG があれば追記する
+- [x] 5.1 `plugins/dev-workflow/skills/develop/references/decision-criteria.md` の「`FABLE_BUDGET_MODE` の自動導出（usage snapshot 契約）」と、`usage-probe.sh` の冒頭コメントの契約の説明を、セッション記録が主・probe が補助・実効値の規則に合わせて直す。`plugins/dev-workflow/.claude-plugin/plugin.json` の description の usage-probe の説明（5 分キャッシュの記述があれば）も直す。あわせて `plugins/dev-workflow/skills/pr-review-gate/SKILL.md`（126 行目「usage snapshot…が新鮮で」）・`plugins/dev-workflow/README.md`・`plugins/dev-workflow/templates/escalation-tripwires.md`・`plugins/statusline/commands/setup.md` を `usage-snapshot` / `usage-probe` / `300` / `5 分` / `TTL` で grep し、300 秒・5 分キャッシュ・TTL を前提にした記述を新しい実行条件と実効値の規則に合わせて直す
+- [x] 5.2 `plugins/dev-workflow/.claude-plugin/plugin.json` と `plugins/statusline/.claude-plugin/plugin.json` の version を上げ、両プラグインの CHANGELOG があれば追記する
 - [ ] 5.3 `scripts/test.sh` を全件実行し、exit code と失敗件数を記録する（`statusline-multi-account.bats` の単発の失敗は単独再実行で判定する）。`tests/injection-budget.bats` が description の変更で落ちないことを確かめる
 - [ ] 5.4 `openspec validate usage-from-session-records --strict` が通ることを確かめる
