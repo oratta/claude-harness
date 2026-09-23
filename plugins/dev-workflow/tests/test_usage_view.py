@@ -98,7 +98,7 @@ class EffectiveValues(unittest.TestCase):
         self.assertEqual(a['weekly_resets_epoch'], reset)
         self.assertEqual(a['weekly_observed_at'], NOW - 5 * HOUR)
 
-    def test_newer_window_wins(self):
+    def test_weekly_all_reset_mismatch_prefers_the_record(self):
         self.record(None, observed=NOW - 60, weekly=10, weekly_reset=NOW + 6 * DAY)
         self.snap({'a': {'fetched_at': NOW - 2 * DAY, 'weekly_all_pct': 90,
                          'weekly_resets_epoch': NOW - HOUR}})
@@ -128,11 +128,21 @@ class EffectiveValues(unittest.TestCase):
         self.assertEqual(a['five_hour_pct'], 0)
         self.assertIsNone(a['five_hour_resets_epoch'])
 
-    def test_both_five_hour_resets_unknown_takes_larger(self):
+    def test_five_hour_null_reset_with_positive_pct_is_missing(self):
+        # リセット時刻が null の 5 時間枠を使うのは pct 0 のときだけ。pct>0 を使うと 0% に戻る時が来ず
+        # 下限として残り続けるので欠測にする
+        self.record(None, observed=NOW - 6 * HOUR, five=95, five_reset=None)
+        a = self.view()['accounts']['a']
+        self.assertIsNone(a['five_hour_pct'])
+        self.assertIsNone(a['five_hour_observed_at'])
+
+    def test_five_hour_null_reset_positive_pct_does_not_beat_null_zero(self):
         self.record(None, observed=NOW - 60, five=3, five_reset=None)
         self.snap({'a': {'fetched_at': NOW - HOUR, 'five_hour_pct': 0,
                          'five_hour_resets_epoch': None}})
-        self.assertEqual(self.view()['accounts']['a']['five_hour_pct'], 3)
+        a = self.view()['accounts']['a']
+        self.assertEqual(a['five_hour_pct'], 0)
+        self.assertEqual(a['five_hour_observed_at'], NOW - HOUR)
 
     def test_weekly_null_reset_is_missing(self):
         self.record(None, weekly=40, weekly_reset=None)

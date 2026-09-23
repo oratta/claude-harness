@@ -824,3 +824,24 @@ set_b_snapshot_weekly() {
     | strip_ansi > "$WORK/out.txt"
   [[ "$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")" =~ 20% ]] || return 1
 }
+
+# 規則 1 の但し書き: リセット時刻が null の 5 時間枠を使うのは pct 0 のときだけ
+# $1=記録の 5h%（リセット時刻は null）→ snapshot の B は 5 時間枠が欠測
+draw_b_with_null_reset_five_hour_record() {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  jq '.accounts.b.five_hour_pct = null | .accounts.b.five_hour_resets_epoch = null' "$SNAP" > "$SNAP.tmp" \
+    && mv "$SNAP.tmp" "$SNAP"
+  write_b_record "$((NOW - 60))" 45 "$((NOW + 172800))" "$1" null
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+}
+
+@test "records: a five-hour record with a null reset and pct above 0 is missing" {
+  draw_b_with_null_reset_five_hour_record 92
+  ! grep -E '^(▸ |  )B +5h' "$WORK/out.txt" | grep -q '92%'
+}
+
+@test "records: a five-hour record with a null reset and pct 0 is used" {
+  draw_b_with_null_reset_five_hour_record 0
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ \ 0% ]] || return 1
+}

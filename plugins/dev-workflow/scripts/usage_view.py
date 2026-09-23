@@ -111,7 +111,8 @@ def _source(pct, resets, observed, *, five_hour):
     """Rule 1: a (pct, resets, observed) triple, or None when the window is absent."""
     if not finite_number(pct) or not 0 <= pct <= 100:
         return None
-    if resets is None and five_hour:
+    if resets is None and five_hour and pct == 0:
+        # Rule 1 proviso: an unknown five-hour reset is only usable at 0%; above 0 it would never roll
         resets_ok = True
     else:
         resets_ok = finite_number(resets)

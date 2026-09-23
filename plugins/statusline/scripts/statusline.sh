@@ -475,12 +475,12 @@ def num(v):
 def text(v):
     return v if isinstance(v, str) else json.dumps(v)
 def source(pct, res, stamp, five):
-    # 規則 1: 使用率が 0..100 の数値でなければ無い扱い。リセット時刻は 5 時間枠だけ null を許す
+    # 規則 1: 使用率が 0..100 の数値でなければ無い扱い。リセット時刻は 5 時間枠の使用率 0 だけ null を許す
     p = num(pct)
     if p is None or not 0 <= p <= 100:
         return None
     r = num(res)
-    if r is None and not (five and res in (None, "")):
+    if r is None and not (five and p == 0 and res in (None, "")):
         return None
     return {"pct": p, "raw": text(pct), "res": r, "at": num(stamp)}
 def newer(a, b):
