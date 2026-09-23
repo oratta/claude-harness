@@ -25,8 +25,8 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
   tools="$(frontmatter "$CMD" | awk -F': ' '/^allowed-tools:/{print $2; exit}')"
   echo "$tools" | grep -qw 'Agent'
   echo "$tools" | grep -qw 'SendMessage'
-  ! echo "$tools" | grep -qw 'Edit'
-  ! echo "$tools" | grep -qw 'Write'
+  ! echo "$tools" | grep -qw 'Edit' || return 1
+  ! echo "$tools" | grep -qw 'Write' || return 1
 }
 
 @test "command: resolves skills/develop/SKILL.md via path-discovery and runs it inline (no Skill tool)" {
@@ -41,13 +41,13 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
   grep -q '実行先オプションが無ければ' "$CMD"
   grep -q 'references/codex-develop.md' "$CMD"
   grep -q '各 phase で profile なしの request' "$CMD"
-  ! grep -q 'いずれの実行先オプションも無い場合は従来のClaude経路' "$CMD"
+  ! grep -q 'いずれの実行先オプションも無い場合は従来のClaude経路' "$CMD" || return 1
 }
 
 @test "command: no-arg follow-up keeps automatic selection instead of requiring explicit executor options" {
   grep -q '引数なしの追加依頼' "$CMD"
   grep -q 'profile なしの request' "$CMD"
-  ! grep -q '実行先オプションと account-home の対応を明示し直す' "$CMD"
+  ! grep -q '実行先オプションと account-home の対応を明示し直す' "$CMD" || return 1
 }
 
 # --- 5 分岐 ---
@@ -83,8 +83,8 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
 @test "fallback: mentions issueify and resolves the in-plugin issueify skill, never loops" {
   grep -q 'issueify' "$CMD"
   grep -q 'skills/issueify/SKILL.md' "$CMD"
-  ! grep -q 'loops-issueify' "$CMD"
-  ! grep -q 'plugins/loops' "$CMD"
+  ! grep -q 'loops-issueify' "$CMD" || return 1
+  ! grep -q 'plugins/loops' "$CMD" || return 1
 }
 
 @test "fallback: fail-soft degrades to minimal gh issue create" {
@@ -112,10 +112,10 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
   grep -q 'エイリアス' "$ALIAS"
   grep -q 'commands/develop.md' "$ALIAS"
   grep -qF '$ARGUMENTS' "$ALIAS"
-  ! grep -q '数字のみ' "$ALIAS"
-  ! grep -q 'typo' "$ALIAS"
-  ! grep -q 'skills/issueify' "$ALIAS"
-  ! grep -q 'gh issue create' "$ALIAS"
+  ! grep -q '数字のみ' "$ALIAS" || return 1
+  ! grep -q 'typo' "$ALIAS" || return 1
+  ! grep -q 'skills/issueify' "$ALIAS" || return 1
+  ! grep -q 'gh issue create' "$ALIAS" || return 1
 }
 
 # --- manifest ---

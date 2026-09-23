@@ -41,12 +41,12 @@ teardown() {
 }
 
 @test "skill: removes ToolSearch Notion loading from main" {
-  ! grep -Eq 'ToolSearch.*Notion' "$SKILL_FILE"
+  ! grep -Eq 'ToolSearch.*Notion' "$SKILL_FILE" || return 1
 }
 
 @test "skill: does not Read jsonl body directly from main" {
   # The previous head -5 / python3 jsonl parser block must be gone
-  ! grep -Eq "head -5 .*\.jsonl|head -5 \"\\\$f\"" "$SKILL_FILE"
+  ! grep -Eq "head -5 .*\.jsonl|head -5 \"\\\$f\"" "$SKILL_FILE" || return 1
 }
 
 @test "skill: sanity check threshold (<50 lines warning) is documented" {
@@ -91,9 +91,9 @@ teardown() {
 }
 
 @test "STATUS parser: rejects malformed lines" {
-  ! echo "status: ok" | grep -Eq '^STATUS: (ok|partial|fail)\b'
-  ! echo "STATUS ok" | grep -Eq '^STATUS: (ok|partial|fail)\b'
-  ! echo " STATUS: ok" | grep -Eq '^STATUS: (ok|partial|fail)\b'
+  ! echo "status: ok" | grep -Eq '^STATUS: (ok|partial|fail)\b' || return 1
+  ! echo "STATUS ok" | grep -Eq '^STATUS: (ok|partial|fail)\b' || return 1
+  ! echo " STATUS: ok" | grep -Eq '^STATUS: (ok|partial|fail)\b' || return 1
 }
 
 # --- Rule (d): intermediate-file existence check ---
@@ -122,27 +122,27 @@ skip_phase1() {
   mkdir -p "$diary_dir"
   : > "${diary_dir}/voice.md"
   : > "${diary_dir}/dailyLLM.md"
-  ! skip_phase1 "$diary_dir" "true"
+  ! skip_phase1 "$diary_dir" "true" || return 1
 }
 
 @test "phase1 skip: only voice.md exists -> run Phase 1" {
   diary_dir="${DR_TEST_TMPDIR}/dir"
   mkdir -p "$diary_dir"
   : > "${diary_dir}/voice.md"
-  ! skip_phase1 "$diary_dir" "false"
+  ! skip_phase1 "$diary_dir" "false" || return 1
 }
 
 @test "phase1 skip: only dailyLLM.md exists -> run Phase 1" {
   diary_dir="${DR_TEST_TMPDIR}/dir"
   mkdir -p "$diary_dir"
   : > "${diary_dir}/dailyLLM.md"
-  ! skip_phase1 "$diary_dir" "false"
+  ! skip_phase1 "$diary_dir" "false" || return 1
 }
 
 @test "phase1 skip: no intermediates -> run Phase 1" {
   diary_dir="${DR_TEST_TMPDIR}/dir"
   mkdir -p "$diary_dir"
-  ! skip_phase1 "$diary_dir" "false"
+  ! skip_phase1 "$diary_dir" "false" || return 1
 }
 
 # --- Rule (e): Phase 1 sanity check (line count lower bound) ---
@@ -174,12 +174,12 @@ sanity_check_warn() {
 
 @test "sanity check: 50 lines -> ok (no warn)" {
   for i in $(seq 1 50); do echo "line $i"; done > "${DR_TEST_TMPDIR}/voice.md"
-  ! sanity_check_warn "${DR_TEST_TMPDIR}/voice.md"
+  ! sanity_check_warn "${DR_TEST_TMPDIR}/voice.md" || return 1
 }
 
 @test "sanity check: 100 lines -> ok (no warn)" {
   for i in $(seq 1 100); do echo "line $i"; done > "${DR_TEST_TMPDIR}/voice.md"
-  ! sanity_check_warn "${DR_TEST_TMPDIR}/voice.md"
+  ! sanity_check_warn "${DR_TEST_TMPDIR}/voice.md" || return 1
 }
 
 @test "sanity check: missing file -> warn" {
@@ -197,7 +197,7 @@ sanity_check_warn() {
 
 @test "plugin.json: spike agent is removed (post-change-4)" {
   plugin_json="${PLUGIN_DIR}/.claude-plugin/plugin.json"
-  ! grep -q "_spike-notion-mcp" "$plugin_json"
+  ! grep -q "_spike-notion-mcp" "$plugin_json" || return 1
 }
 
 @test "plugin.json: voice-compactor and llm-log-compactor are registered" {

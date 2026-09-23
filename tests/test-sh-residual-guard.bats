@@ -101,7 +101,7 @@ BATS
   [[ "$output" == *"bats: 失敗あり"* ]] || return 1
   # 残留は test.sh が回収済み
   sleep 1
-  ! tracked_alive
+  ! tracked_alive || return 1
 }
 
 # fd を閉じて teardown で回収する背景プロセスなら test.sh は 0 で終わる
@@ -138,7 +138,7 @@ BATS
   [[ "$output" == *"回収されずに残っています"* ]] || return 1
   [[ "$output" == *"sleep 1234"* ]] || return 1
   sleep 1
-  ! tracked_alive
+  ! tracked_alive || return 1
 }
 
 # 残留のコマンドにたまたま bats-core / bats-exec / bats-format が含まれていても、
@@ -160,7 +160,7 @@ BATS
   [[ "$output" == *"回収されずに残っています"* ]] || return 1
   [[ "$output" == *"bats-core-fixture/bats-exec-sleep 1234"* ]] || return 1
   sleep 1
-  ! tracked_alive
+  ! tracked_alive || return 1
 }
 
 # TEST_RESIDUAL_GRACE が比較できる非負整数でなければ（小数・負数・文字・シェルの整数を溢れる桁数）、

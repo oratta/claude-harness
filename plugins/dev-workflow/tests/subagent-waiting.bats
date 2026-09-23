@@ -283,7 +283,7 @@ PY
   chmod +x "${BATS_TEST_TMPDIR}/bin/mktemp"
   PATH="${BATS_TEST_TMPDIR}/bin:${PATH}" TMPDIR="$BATS_TEST_TMPDIR" run sh "$SNIP"
   [ "$status" -ne 0 ]
-  ! printf '%s\n' "$output" | grep -q '^nonce='
+  ! printf '%s\n' "$output" | grep -q '^nonce=' || return 1
 }
 
 @test "step 1 template writes the prompt under the generated directory, not a fixed path" {
@@ -352,7 +352,7 @@ PY
   grep -q '前景' "$GATE"
   grep -qF 'references/subagent-waiting.md' "$GATE"
   # 前景上限を超える待ちを散文で示唆する記述を残さない
-  ! grep -qF '最長 15 分' "$GATE"
+  ! grep -qF '最長 15 分' "$GATE" || return 1
 }
 
 # --- Codex への指示文に指摘の固定書式を渡す（issue #349） ---
