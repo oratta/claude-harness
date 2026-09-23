@@ -89,7 +89,9 @@ class ForegroundTest(unittest.TestCase):
         self.other = self.profile('other', 'other@example.invalid')
         binary = self.root/'bin';binary.mkdir()
         (binary/'codex').write_text(FAKE);(binary/'codex').chmod(0o700)
-        self.env = dict(os.environ, HOME=str(self.root), PATH=str(binary)+os.pathsep+os.environ['PATH'])
+        # USAGE_PROBE_RESPONSE_FILE: codex-develop の自動選択が呼ぶ usage-probe をテスト経路に入れ、実 API を叩かせない
+        self.env = dict(os.environ, HOME=str(self.root), PATH=str(binary)+os.pathsep+os.environ['PATH'],
+                        USAGE_PROBE_RESPONSE_FILE=str(self.root/'nonexistent.json'))
         self.repo = self.root/'repo';self.repo.mkdir()
         self.git(self.repo,'init','-q','-b','main')
         self.git(self.repo,'-c','user.name=Fixture','-c','user.email=f@invalid','commit','--allow-empty','-qm','initial')

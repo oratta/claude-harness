@@ -50,7 +50,14 @@ class ForegroundRequest(unittest.TestCase):
         self.table = self.root / 'homes.json'
         self.write_profile('mapped')
         # Claude の実効値はレジストリとセッション記録も読むので、実環境の ~/.claude から切り離す
-        environ = patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.root)})
+        # usage-probe.sh の試行状態とロックは $HOME/.claude 固定の既定なので明示で向け、
+        # 存在しない応答ファイルでテスト経路に入れて実 API を叩かせない
+        environ = patch.dict(os.environ, {
+            'CLAUDE_CONFIG_DIR': str(self.root),
+            'USAGE_PROBE_STATE': str(self.root / '.usage-probe-state'),
+            'USAGE_PROBE_LOCK': str(self.root / '.usage-probe.lock'),
+            'USAGE_PROBE_RESPONSE_FILE': str(self.root / 'nonexistent.json'),
+        })
         environ.start()
         self.addCleanup(environ.stop)
         for key in ('CLAUDE_ACCOUNTS_FILE', 'USAGE_SESSIONS_DIR', 'CLAUDE_SECURESTORAGE_CONFIG_DIR'):

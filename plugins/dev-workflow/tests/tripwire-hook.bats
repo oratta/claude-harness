@@ -72,7 +72,7 @@ PY
   ctx_of() {  # $1=FABLE_BUDGET_MODE
     run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" FABLE_BUDGET_MODE="$1" \
         USAGE_SNAPSHOT="${TMPDIR_EMPTY}/nonexistent.json" \
-        USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json" "$SCRIPT"
+        USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json" "$SCRIPT"
     [ "$status" -eq 0 ]
     python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
   }
@@ -98,7 +98,7 @@ PY
 
 ctx_at() {  # $1=snapshot $2=now → additionalContext
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="$1" \
-      USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json" \
+      USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json" \
       USAGE_PROBE_NOW="$2" "$SCRIPT"
   [ "$status" -eq 0 ] || return 1
   python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
@@ -174,7 +174,7 @@ JSON
   }
   ctx_of() {
     run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="$1" \
-        USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" \
+        USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" \
         USAGE_PROBE_NOW="$now" "$SCRIPT"
     [ "$status" -eq 0 ]
     python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
@@ -193,7 +193,7 @@ JSON
   echo "$(ctx_of "${work}/c.json")" | grep -q "SHARED_BUDGET_MODE: ok"
   # 明示 env が勝つ
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/c.json" SHARED_BUDGET_MODE=depleted \
-      USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" USAGE_PROBE_NOW="$now" "$SCRIPT"
+      USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" USAGE_PROBE_NOW="$now" "$SCRIPT"
   echo "$output" | grep -q "depleted（明示 env）"
   # コンテキスト上限の案内が載る
   echo "$out" | grep -q "subagent-context.sh"
@@ -209,7 +209,7 @@ JSON
 @test "injection: the resident rule text points at the single source and carries the read-first guard" {
   work="$(mktemp -d)"
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/missing.json" \
-      USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
+      USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
   [ "$status" -eq 0 ]
   out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output")"
   # additionalContext 全体ではなく注入行そのものを見る。全体で見ると、同じ文字列を持つ
@@ -225,7 +225,7 @@ JSON
 @test "derivation: neither snapshot nor record → SHARED_BUDGET_MODE ok (fail-open) while the Fable mode stays conserve" {
   work="$(mktemp -d)"
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/missing.json" \
-      USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
+      USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
   [ "$status" -eq 0 ]
   out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output")"
   echo "$out" | grep -q "FABLE_BUDGET_MODE: conserve"
