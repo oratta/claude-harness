@@ -43,14 +43,21 @@ run_bats_isolated() { # <bats に渡す引数...>
 
 # ガード付き（`[[ ... ]] || return 1`）の fixture を書き出す。この行は `]]` の直後に
 # ` || return 1` が続くため、上のスコープ検査 grep の対象パターンに一致しない。
+#
+# ヒアドキュメントで直書きすると、ソース上に行頭 `@test` の行がもう1つ出現する。
+# bats 1.10（CI）のテスト数の事前カウントは `^@test` の素朴な行頭一致で、ヒアドキュメント
+# の中身かどうかを区別しない（bats 1.13 は区別する）ため、このファイル自身の @test 数
+# を実数（3）より多く（4）数えてしまい、テスト名の対応がずれて後続テストが
+# `bats: unknown test name` で丸ごと巻き添えになる（実演: #284 の CI 失敗）。
+# write_guardless_fixture と同じく echo で組み立て、ソース上に行頭 `@test` を出現させない。
 write_guarded_fixture() { # <path>
-  cat >"$1" <<'BATS'
-@test "guarded assertion mid-body fails when false" {
-  echo before
-  [[ "actual" == "expected-mismatch" ]] || return 1
-  echo after
-}
-BATS
+  {
+    echo '@test "guarded assertion mid-body fails when false" {'
+    echo '  echo before'
+    echo '  [[ "actual" == "expected-mismatch" ]] || return 1'
+    echo '  echo after'
+    echo '}'
+  } >"$1"
 }
 
 # ガード無しの fixture を書き出す。tests/bats-assertion-guard.bats 自身も
