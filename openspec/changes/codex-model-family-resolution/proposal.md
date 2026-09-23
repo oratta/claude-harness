@@ -10,7 +10,7 @@ develop が Codex に仕事を振るときの役割表 `plugins/dev-workflow/ref
 - 既存の effort 検証（`supportedReasoningEfforts`）は解決後のモデルに対して行い、thread/start と turn/start には解決後のモデル ID を渡す。
 - worker の結果 JSON の `execution` に、要求した値・解決の種類・解決後の ID を持つ `model_resolution` を足す。develop の記録先コメントには要求した系統名と解決後の ID の両方を書く。
 - 外部 profile-file と旧形式 `--model` では、従来どおり完全なモデル ID も受け付ける（版を固定したいとき用）。完全 ID は今までと同じ完全一致の照合を行う。
-- docs に「新しいモデルが一覧に出るには Codex CLI の更新が要る」ことを一言書く。
+- `plugins/dev-workflow/references/codex-develop.md` に「新しいモデルが一覧に出るには Codex CLI の更新が要る」ことを一言書く（docs はこのファイルだけ。`docs/codex-develop.md` は作らない）。
 
 ## Capabilities
 

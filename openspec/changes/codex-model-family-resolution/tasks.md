@@ -2,7 +2,7 @@
 
 - [ ] 1.1 `plugins/dev-workflow/tests/test_codex_worker.py` に、2026-09-23 の一覧（表示: `gpt-6-astra` / `gpt-6-sol` / `gpt-6-luna` / `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` / `gpt-5.5`、hidden: `gpt-reserve` / `codex-auto-review`）のフィクスチャを足し、model=sol/luna/astra がそれぞれ `gpt-6-*` に解決され thread/start・turn/start に解決後の ID が渡るテストを書く（Red）
 - [ ] 1.2 同じファイルに、該当 0 件（hidden の候補だけの場合を含む）で `model_not_available`、同版 2 件（同 slug 重複、`gpt-6-sol` と `gpt-6.0-sol`）で `model_not_unique`、どちらも thread/start を呼ばないテストを書く（Red）
-- [ ] 1.3 `gpt-5.10-sol` > `gpt-5.9-sol`、`gpt-6-sol-mini` を候補にしない、`hidden` が真偽値以外なら `model_list_invalid`、のテストを書く（Red）
+- [ ] 1.3 `gpt-5.10-sol` > `gpt-5.9-sol`、`gpt-6-sol-mini` を候補にしない、`hidden` が真偽値以外の entry が一覧にあれば系統名・完全 ID のどちらの経路でも `model_list_invalid`、系統名でも一覧取得失敗は `model_list_unavailable`、のテストを書く（Red）
 - [ ] 1.4 effort が解決後のモデルの `supportedReasoningEfforts` で検証されること（旧版だけが対応している effort は `unsupported_model_effort`）のテストを書く（Red）
 - [ ] 1.5 結果 JSON の `execution.model_resolution`（family 成功・exact 成功・解決前の失敗で `resolved: null` / `source: "unavailable"`）と、`requested.model` が系統名のまま・`effective.model` が観測値だけであることのテストを書く（Red）
 - [ ] 1.6 `plugins/dev-workflow/scripts/codex-worker.py` の `advertised_model()` に系統名の解決を足し、`run_turn()` が解決後の ID を thread/start と turn/start に渡し、`execution_metadata()` と recorder が `model_resolution` を持つようにする。payload の model は書き換えない。既存の完全 ID の照合は変えない（Green）
@@ -17,7 +17,7 @@
 ## 3. docs と仕様
 
 - [ ] 3.1 `plugins/dev-workflow/references/codex-develop.md` の委譲手順 3 に、記録先コメントへ `execution.model_resolution.requested` と `resolved`（と観測した `effective.model`）を両方書くことを足す。Codex の model は系統名か完全 ID で書け、系統名は worker が呼ぶ直前に最新版へ解決すること、新しいモデルが一覧に出るには Codex CLI の更新が要ることを一言書く
-- [ ] 3.2 `plugins/dev-workflow/references/model-tiers.md` 等、Codex の model 値の意味を説明している箇所に食い違いが無いか grep で確認し、あれば直す
+- [ ] 3.2 docs は 3.1 の `plugins/dev-workflow/references/codex-develop.md` だけを直す（`docs/codex-develop.md` は存在しないので作らない）。`plugins/dev-workflow/references/model-tiers.md` 等、Codex の model 値の意味を説明している箇所に食い違いが無いか grep で確認し、あれば直す
 - [ ] 3.3 `openspec validate codex-model-family-resolution --strict` が通ることを確認する（main spec への反映は archive で行う。archive 後に `openspec/specs/codex-worker/spec.md` の `gpt-5.6-sol` の例が消えていること、`openspec/specs/codex-role-profiles/spec.md` に `gpt-6-astra` が残っていないことを確認する）
 
 ## 4. 版と回帰

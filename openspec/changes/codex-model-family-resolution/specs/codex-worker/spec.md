@@ -1,7 +1,9 @@
 ## ADDED Requirements
 
 ### Requirement: 系統名は委譲の直前に model/list から最新版へ解決する
-worker は request の model が正規表現 `^[a-z]+$` に一致するとき、それを系統名として扱い、initialize と account 照合の後かつ thread/start の前に、指定された CODEX_HOME で起動した account の model/list（`includeHidden: true`、全ページ）から実際のモデル ID に解決しなければならない（MUST）。候補は `hidden` が `true` でなく、`model` フィールドが `^gpt-<版>-<系統名>$`（`<版>` は `[0-9]+(\.[0-9]+)*`）に完全一致する entry とし、版を数値の並びとして末尾の 0 を除いて比べ、最も新しい 1 件を選ばなければならない（MUST）。候補が 0 件なら `model_not_available`、最も新しい版の entry が 2 件以上なら `model_not_unique` で止まり、thread/start と turn/start を一度も呼ばず、別モデル・別 account・別 provider に fallback してはならない（MUST NOT）。系統名の固定の列挙を持ってはならない（MUST NOT）。model が `^[a-z]+$` に一致しないときは完全なモデル ID として、従来どおり `model` フィールドの完全一致で照合しなければならない（MUST）。
+worker は request の model が正規表現 `^[a-z]+$` に一致するとき、それを系統名として扱い、initialize と account 照合の後かつ thread/start の前に、指定された CODEX_HOME で起動した account の model/list（`includeHidden: true`、全ページ）から実際のモデル ID に解決しなければならない（MUST）。候補は `hidden` が `true` でなく、`model` フィールドが `^gpt-<版>-<系統名>$`（`<版>` は `[0-9]+(\.[0-9]+)*`）に完全一致する entry とし、版を数値の並びとして末尾の 0 を除いて比べ、最も新しい 1 件を選ばなければならない（MUST）。候補が 0 件なら `model_not_available`、最も新しい版の entry が 2 件以上なら `model_not_unique` で止まり、thread/start と turn/start を一度も呼ばず、別モデル・別 account・別 provider に fallback してはならない（MUST NOT）。系統名の固定の列挙を持ってはならない（MUST NOT）。model が `^[a-z]+$` に一致しないときは完全なモデル ID として、従来どおり `model` フィールドの完全一致で照合しなければならない（MUST）。経路（系統名・完全 ID）を問わず、model/list の全ページに `hidden` が真偽値以外の entry が 1 件でもあれば、その entry が照合対象かどうかにかかわらず `model_list_invalid` で止まらなければならない（MUST）。`hidden` キーが無い entry は表示扱いとする。系統名の経路でも、候補 0 件・非一意以外の失敗（一覧が不正・一覧の取得に失敗）は完全 ID と同じ `model_list_invalid` / `model_list_unavailable` で止まらなければならない（MUST）。
+
+守備範囲: `model` は、組み込み役割表・外部 profile-file・旧形式 `--model` のいずれかから resolver がそのまま写した値で、利用者自身が書く設定である（外部からの信頼できない入力ではない）。この要件が拾いたい誤りは、要求した系統に表示モデルが無いこと、最新版が 1 件に決まらないこと、一覧が不正または取得できないことの 3 つで、いずれも別モデルに倒さず止める。通ることを許す入力は、`sol` / `luna` / `astra`、列挙していない系統名（`terra` 等）、版を固定した完全 ID（`gpt-5.6-sol`）、hidden のモデルの完全 ID 指定（`gpt-reserve`）である。守らないものは次のとおり: 系統名の打ち間違いと提供されていない系統は区別せず、どちらも同じ `model_not_available` とする。OpenAI が `gpt-<版>-<系統名>` の形を変えた場合は、利用者が完全 ID を書くか規則を直して対処する。英小文字だけの完全 ID が将来現れた場合に系統名と誤分類されることは受け入れる。新しく見つかった照合の穴を塞ぎ切ることを、この要件の完了条件にしない。
 
 #### Scenario: 現在の一覧で三つの系統名を解決する
 - **WHEN** model/list が `gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-5.5` を表示し、`gpt-reserve` と `codex-auto-review` を hidden で返すフィクスチャで、model=sol、luna、astra の request をそれぞれ実行する
@@ -41,8 +43,8 @@ worker は依頼を受け取ったとき、optional effort の非空文字列、
 - **THEN** 解決後の `gpt-6-sol` に対して検証し、`unsupported_model_effort` で止まり、旧版の `gpt-5.6-sol` に倒さない
 
 #### Scenario: 一覧に無いモデルまたは一覧取得失敗
-- **WHEN** 完全なモデル ID を要求し、includeHidden=true の全ページに model フィールド完全一致の一意なモデルがない、一覧が不正、または model/list の取得に失敗する
-- **THEN** 開始前に原因を返し、既定モデルや別の実行先へ fallback しない
+- **WHEN** 完全なモデル ID または系統名を要求し、includeHidden=true の全ページに該当する一意なモデルがない（完全 ID は model フィールドの完全一致、系統名は解決規則による）、一覧が不正、または model/list の取得に失敗する
+- **THEN** 開始前に原因を返し、既定モデルや別の実行先へ fallback しない。一覧の不正は `model_list_invalid`、取得失敗は `model_list_unavailable` で、系統名でも完全 ID と同じ理由になる
 
 #### Scenario: 広告された新しい effort または hidden モデル
 - **WHEN** 明示指定した完全なモデル ID が一覧にあり、その supportedReasoningEfforts の reasoningEffort に要求値が含まれる

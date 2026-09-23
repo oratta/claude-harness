@@ -63,7 +63,7 @@ develop role resolver は、profile と旧 account/model のどちらも明示�
 ## ADDED Requirements
 
 ### Requirement: Codex entry の model は系統名か完全なモデル ID で書ける
-Codex entry の model は、系統名（英小文字だけからなる値。例: `astra` / `sol` / `luna`）と完全なモデル ID（それ以外の値。例: `gpt-6-sol`）のどちらでもよく、resolver は値を変換せずにそのまま request の model に写さなければならない（MUST）。外部 profile-file と旧形式 `--model` は、版を固定したい利用者のために完全なモデル ID を従来どおり受け付けなければならない（MUST）。系統名から実際のモデル ID への解決は resolver で行ってはならず（MUST NOT）、Codex worker が委譲の直前に行う（`codex-worker` capability）。develop 本体は Codex 委譲の結果を記録先に書くとき、要求した model の値と worker が返した解決後のモデル ID の両方を書かなければならない（MUST）。
+Codex entry の model は、系統名（英小文字だけからなる値。例: `astra` / `sol` / `luna`）と完全なモデル ID（それ以外の値。例: `gpt-6-sol`）のどちらでもよく、resolver は値を変換せずにそのまま request の model に写さなければならない（MUST）。外部 profile-file と旧形式 `--model` は、版を固定したい利用者のために完全なモデル ID を従来どおり受け付けなければならない（MUST）。resolver の Codex entry の model に対する静的検証は従来どおり非空文字列であることだけとし、値の形やモデルの実在は検証しない（実在しない値は worker が解決時に止める）。系統名から実際のモデル ID への解決は resolver で行ってはならず（MUST NOT）、Codex worker が委譲の直前に行う（`codex-worker` capability）。develop 本体は Codex 委譲の結果を記録先に書くとき、要求した model の値と worker が返した解決後のモデル ID の両方を書かなければならない（MUST）。
 
 #### Scenario: 外部 profile-file に系統名と完全 ID を混ぜる
 - **WHEN** version=1 の外部 profile-file で、ある Codex role の model を `sol`、別の Codex role の model を `gpt-5.6-sol` として request を作る
