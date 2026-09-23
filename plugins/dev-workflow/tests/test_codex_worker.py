@@ -42,6 +42,7 @@ for line in sys.stdin:
   print(json.dumps({'id':rid,'error':{'code':config.get('reject_code',-32000),'message':'rejected'}}),flush=True);continue
  if method=='account/read':r={'account':{'type':'chatgpt','email':config.get('email','worker@example.invalid')}}
  elif method=='account/rateLimits/read':r={'rateLimitsByLimitId':{'codex':{'primary':{'usedPercent':config.get('pct',1),'windowDurationMins':300,'resetsAt':int(time.time())+1000}}}}
+ elif method=='model/list' and 'model_list_result' in config:r=config['model_list_result']
  elif method=='model/list':
   pages=config.get('model_pages',[[{'id':'fixture-id','model':'fixture-model','hidden':False,'supportedReasoningEfforts':[{'reasoningEffort':'low','description':'Low'},{'reasoningEffort':'high','description':'High'}]}]])
   page=int(m.get('params',{}).get('cursor','0'));r={'data':pages[page]}
@@ -465,6 +466,15 @@ class ForegroundTest(unittest.TestCase):
                 result = self.run_cli(job, code=2, model=model)
                 self.assertEqual(result['error_kind'], 'model_list_invalid')
                 self.assertFalse(any(m.get('method') == 'thread/start' for m in self.calls(job)))
+
+    def test_a_non_object_list_result_is_invalid_on_either_path(self):
+        for shape, result in (('null', None), ('array', [])):
+            for job, model in (('family','sol'), ('exact','fixture-model')):
+                with self.subTest(shape=shape, job=job):
+                    self.config(job+shape, model_list_result=result)
+                    outcome = self.run_cli(job+shape, code=2, model=model)
+                    self.assertEqual(outcome['error_kind'], 'model_list_invalid')
+                    self.assertFalse(any(m.get('method') == 'thread/start' for m in self.calls(job+shape)))
 
     def test_family_list_failures_use_the_exact_id_reasons(self):
         self.config('failure', reject='model/list')

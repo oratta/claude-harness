@@ -166,6 +166,7 @@ def advertised_model(rpc, model, effort, resolved=lambda item: None):
             if cursor is not None:
                 params['cursor'] = cursor
             result = rpc.request('model/list', params)
+            require(isinstance(result, dict), 'model_list_invalid')
             data = result.get('data')
             require(isinstance(data, list), 'model_list_invalid')
             for item in data:
