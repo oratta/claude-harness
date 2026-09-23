@@ -1,5 +1,14 @@
 # Changelog — dev-workflow
 
+## 2.13.33 — 2026-09-23: 記録先単位のトークン累計に上限を掛け、超えたら次を起こす前に止まる
+
+PR #268 は 12 体のサブエージェントで 122,955,450 トークンを使ったことが、人間がトランスクリプトを手で合計して初めて分かった（#281）。周回数のキャップでは 1 周が重い場合や W の再開が繰り返される場合を止められないため、記録先ごとの累計で止める（#288）。2.13.32 は先行して main に入った #397 が使用したため、この変更は 2.13.33 とした。
+
+- **scripts/pr-token-budget.sh**（新規）: 記録先番号を渡すと、Agent ツールの description に `#N` を含むサブエージェント（同じリポジトリのものだけ）の全リクエストの usage と、`--codex-records` で渡した Codex 消費（トークン数が `-` の thread は `$CODEX_HOME/sessions` の rollout から読む）を合計し、Claude 分・Codex 分・合計・体数・上限を 1 行 JSON で出す。合計が上限（既定 30,000,000。`DEV_WORKFLOW_PR_TOKEN_CAP` / `--cap`）を超えたら exit 2
+- **develop SKILL.md**: 「PR トークン上限」の節を足した。spawn・SendMessage による再開・Codex executor への委譲の直前に毎回測り、exit 2 なら起こさずに `needs-approval` を付けて「続けるか、範囲外として閉じるか」を合計・体数・上限・残工程・推奨とともに問う。description に `#N` を入れる規約、Codex を呼んだら `Codex 消費: <thread_id> <tokens>` をコメントする規約、「続ける」ときの `PR トークン上限:` コメントと `--cap` もここに書いた
+- **gate-runner.md**: G が Codex を呼んだら thread_id を return に書く（`Codex thread:` 行）
+- **テスト**: `pr-token-budget.bats`（固定のトランスクリプト・Codex 記録・rollout に対する合計と exit code）を足し、`develop-skill.bats` に手順の文書検査を足した
+
 ## 2.13.32 — 2026-09-23: Codex role の model を系統名で書き、呼ぶ直前に最新版へ解決する
 
 役割表 `codex-role-profiles.json` がモデル ID（`gpt-5.6-sol` 等）を直書きしていたため、GPT-6 Sol / Luna が出ても旧世代が呼ばれ、世代が上がるたびに役割表を手で直す必要があった（#397）。2.13.27〜2.13.31 は先に main に入った並行 PR が使ったため、この版は 2.13.32 とした。Claude 側と同じく系統名だけを書く形にそろえる。
