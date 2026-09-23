@@ -8,7 +8,7 @@
 
 `request` は `--profile NAME [--profile-file PATH]`、旧形式の `--account NAME --model MODEL`、または無指定の自動選択を取る。明示 profile と旧形式の併用、旧形式の片方欠落、profile-file だけの指定は依頼ファイルを作らず拒否する。明示指定は自動選択より優先し、usage snapshot を読まない。Version 1 profile は全 canonical role の `executor` / account / model / effort を検証し、role の設定を解決した直後に一度だけ分岐する。`claude` は要求 tuple を保持して既存の残量上限を適用した model で Agent ツールを使い、`codex` は request を作って前景コマンドを使う。事前分類に当たる R1 または G が要求したレビュアーは、対象 role の設定ではなく profile の `decider` entry（投げ先/account/model）で `subagent_type: dev-workflow:decider` として起動する。
 
-組み込み profile は `codex-standard`、`codex-economy`、`hybrid-standard`、`claude-write-codex-review`。外部設定は全 canonical role を含み、Codex role の account は呼び出し側の対応表に存在し、Claude role は account=current、model は `haiku|sonnet|opus|fable`、`fable` は decider だけに指定できる必要がある。effort は両 provider で監査値として保持するが、Claude Agent の option には変換しない。歴史的な `references/codex-role-profiles.json` というファイル名は互換性のため維持するが、中身は provider-neutral な role table である。
+組み込み profile は `codex-standard`、`codex-economy`、`hybrid-standard`、`claude-write-codex-review`。外部設定は全 canonical role を含み、Codex role の account は呼び出し側の対応表に存在し、Claude role は account=current、model は `haiku|sonnet|opus|fable`、`fable` は decider だけに指定できる必要がある。Codex role の model は系統名（英小文字だけの値。組み込み profile は `sol` / `luna` / `astra`）か完全なモデル ID（`gpt-6-sol` 等。版を固定したいとき）で書き、adapter は変換せずに request へ写す。系統名は worker が呼ぶ直前にその account の model/list から最新版へ解決する。新しいモデルが一覧に出るには Codex CLI の更新が要る（CLI が古いと旧世代に解決される）。effort は両 provider で監査値として保持するが、Claude Agent の option には変換しない。歴史的な `references/codex-role-profiles.json` というファイル名は互換性のため維持するが、中身は provider-neutral な role table である。
 
 無指定では各 canonical phase の開始時に Claude 起動 account と登録済み Codex accounts を再評価する。freshness は age `<=300` 秒（`>300` は欠測）で、`margin = 週経過率 - 週次使用率`。両 provider が margin 0 以上なら `claude-write-codex-review`、Codex だけなら代表 account に束縛した `codex-standard`、それ以外は Claude 既定構成を選ぶ。開始済み role は途中で切り替えない。返された selection evidence（構成、reason、両 margin / fetched_at、代表 account）を最初の開始コメントと各 dispatch 記録に残し、欠測値は `missing` と書く。
 
@@ -36,7 +36,7 @@ Codex role は次の3手順で1回の委譲を行う。
    python3 <plugin>/scripts/codex-worker.py run --request <依頼ファイル>
    ```
 
-3. 標準出力の1行 JSON（`text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`）を読む。成功は exit 0、失敗は exit 2。transport state は残らないので、照会・受領・live resume は行わない。
+3. 標準出力の1行 JSON（`text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`）を読む。成功は exit 0、失敗は exit 2。transport state は残らないので、照会・受領・live resume は行わない。記録先に委譲結果を書くときは、要求した model（`execution.model_resolution.requested`）と解決後のモデル ID（`execution.model_resolution.resolved`）を両方書き、観測できた `execution.effective.model` も添える。
 
 書込 role は一度に1つずつ動かし、担当中の role が完了してから次を開始する。Codex への委譲をセッションをまたいで引き継ぐ仕組みはないため、途中で切れた委譲はその工程の最初からやり直し、停止または中断時点の成果物と結果 JSON を記録する。Claude role の再開には上記の上限再計算と fresh thread への手渡し規則を適用する。
 
@@ -57,7 +57,7 @@ Codex role は次の3手順で1回の委譲を行う。
 - completed は transport 完了だけを表す。最終回答と error_kind を確認し、仕様承認・テスト証拠・独立 review・gate を省略しない。merge / auto-merge は禁止する。
 - Claude hooks は Codex に自動適用されない。対象 repo の必須検査を指示と結果に明記し、実行不能を合格扱いしない。read-only policy 以外に sandbox 保証を推定しない。
 - 停止は Agent または起動した前景 command を止める。結果 JSON を受け取れず終了した場合は、記録先と worktree から同じ工程を fresh phase としてやり直す。
-- request は private directory に置く。worker は静的検証後、thread/start 前に model/list でも model/effort を検証する。結果 JSON は要求値と実効値・観測元を分け、未観測値を推測しない。
+- request は private directory に置く。worker は静的検証後、thread/start 前に model/list で系統名を解決するか完全 ID を照合し、そのモデルに対して effort を検証する。結果 JSON は要求値と実効値・観測元を分け、未観測値を推測しない。
 - G が通常経路で `codex exec`、companion、または Claude reviewer を呼ぶ場面では、それを実行せず `needs-reviewer` を返す。本体は phase `review` の fresh thread を開始し、その結果を新しい G に渡す。review phase は `skills/develop/references/roles/gate-runner.md` と `skills/pr-review-gate/SKILL.md` を正本として request に含めるため、fresh reviewer も手順 2-1 の三表を含むレビュアー向け指示ブロックを参照する。G は返す前に、ゲート自身の着手確認と同一 PR/HEAD の重複防止を実施する。本体は G の起動・再開・手渡しの指示（Codex の G では request の instructions）に常に `レビュー経路: adapter` の 1 行を書く。adapter で起動済みの同一 G は行の無い再開でも adapter 経路を保持する。fresh G の起動指示に行が無い場合だけ従来経路として Codex を直接呼ぶ。手渡しで起こされた後任 G は fresh G に含む（`skills/develop/references/roles/gate-runner.md`「レビュー経路の判別」）。
 - `needs-reviewer` が一周目照合の補足要求である場合、phase `review` の request に固定 HEAD・元の三表・残差・補足済み回数を含める。fresh reviewer は同じレビューの不足分だけを補い、結果を `補足済み回数: 1` として fresh G に渡す。G の Status が terminal `review-incomplete` なら新しい review phase を開始せず、`agent-review:pending` のまま残差を報告して止める。
 - burn 接続、全 account の配分、使用量集計は別 issue の範囲とする。

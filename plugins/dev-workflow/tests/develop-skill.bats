@@ -456,3 +456,71 @@ refute() {
   ! grep -q 'loop-dev-agent-tripwires' "$TRIPWIRES" || return 1
   ! grep -q 'loops プラグイン' "$TRIPWIRES" || return 1
 }
+
+# --- PR トークン上限（#288。spec: dev-workflow-pr-token-budget） ---
+
+@test "token budget: SKILL.md has one section that measures before every spawn / SendMessage / Codex delegation" {
+  s="$(section 'PR トークン上限')"
+  [ -n "$s" ] || { echo "no PR トークン上限 section"; return 1; }
+  echo "$s" | grep -qF 'scripts/pr-token-budget.sh'
+  echo "$s" | grep -q 'spawn する直前'
+  echo "$s" | grep -q 'SendMessage で再開する直前'
+  echo "$s" | grep -q 'Codex executor へ委譲する直前'
+  echo "$s" | grep -q '役割と executor を問わず毎回'
+  # 1 ループの工程から参照されている
+  sed -n '/^## 1 ループ/,/^## モデル/p' "$SKILL" | grep -q '「PR トークン上限」'
+}
+
+@test "token budget: exit 2 stops before spawn / SendMessage / Codex and asks continue-or-close with materials" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -q 'exit 2'
+  echo "$s" | grep -q 'spawn / SendMessage / Codex への委譲をしない'
+  echo "$s" | grep -q 'needs-approval'
+  echo "$s" | grep -qF '続けるか、範囲外として閉じるか'
+  echo "$s" | grep -q '合計（Claude 分と Codex 分の内訳）・体数・上限・残工程'
+  echo "$s" | grep -q '・推奨（どちらを選ぶかとその理由）'
+  echo "$s" | grep -q 'unmanned'
+}
+
+@test "token budget: description carries the record number #N regardless of role" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -q 'description'
+  echo "$s" | grep -qF '`#N`'
+  echo "$s" | grep -q '役割を問わない'
+}
+
+@test "token budget: Codex consumption is posted as a comment and gathered into --codex-records" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF 'Codex 消費: <thread_id> <tokens>'
+  echo "$s" | grep -qF 'usage.total.totalTokens'
+  echo "$s" | grep -q '`usage` が null'
+  echo "$s" | grep -qF 'gh api --paginate --slurp'
+  echo "$s" | grep -qF '^Codex 消費: '
+  echo "$s" | grep -qF -- '--codex-records'
+  echo "$s" | grep -qF -- '--codex-home'
+  echo "$s" | grep -qF '${CODEX_HOME:-$HOME/.codex}'
+}
+
+@test "token budget: continue raises the cap via a comment, close stops Codex too, exit 1 comments once per cycle" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF 'PR トークン上限: <'
+  echo "$s" | grep -qF -- '--cap <新上限>'
+  echo "$s" | grep -q '範囲外として閉じる'
+  echo "$s" | grep -q 'Codex にも委譲しない'
+  echo "$s" | grep -q 'exit 1'
+  echo "$s" | grep -q '1 サイクルに 1 回まで'
+}
+
+@test "token budget: measurement is not placed in the Codex adapter reference" {
+  body="$(cat "${PLUGIN_DIR}/references/codex-develop.md")"
+  refute "$body" -F 'pr-token-budget'
+  refute "$(cat "${PLUGIN_DIR}/scripts/codex-worker.py")" -F 'pr-token-budget'
+}
+
+@test "token budget: gate-runner.md tells G to put the Codex thread_id in its return" {
+  g="${SKILL_DIR}/references/roles/gate-runner.md"
+  grep -q 'thread_id' "$g"
+  grep -qF 'session id:' "$g"
+  grep -qF 'threadId' "$g"
+  grep -q 'Codex thread' "$g"
+}
