@@ -115,7 +115,7 @@ PY
 @test "hook: rejection message advertises the bypass" {
   GH_MERGED=1 GH_OPEN=0 run run_hook "refs/heads/feature-a" "$SHA"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"PREPUSH_ALLOW_MERGED=1"* ]]
+  [[ "$output" == *"PREPUSH_ALLOW_MERGED=1"* ]] || return 1
 }
 
 @test "hook: calls gh exactly once per pushed ref" {

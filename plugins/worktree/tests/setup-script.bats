@@ -79,7 +79,7 @@ wt_run_setup_with_include() {
   local wt out
   wt="$(wt_run_setup_with_include)"
   out="$(cat "${BATS_TEST_TMPDIR}/out.txt")"
-  [[ "$out" == *"skipped (tracked): ./.env.local.example"* ]]
+  [[ "$out" == *"skipped (tracked): ./.env.local.example"* ]] || return 1
   # the worktree's tracked file still holds the committed content
   [ "$(cat "$wt/.env.local.example")" = "PUBLIC=committed" ]
 }
@@ -88,7 +88,7 @@ wt_run_setup_with_include() {
   local wt out
   wt="$(wt_run_setup_with_include)"
   out="$(cat "${BATS_TEST_TMPDIR}/out.txt")"
-  [[ "$out" == *"copied: ./.env.local"* ]]
+  [[ "$out" == *"copied: ./.env.local"* ]] || return 1
   [ "$(cat "$wt/.env.local")" = "SECRET=s3cret" ]
 }
 
@@ -144,10 +144,10 @@ wt_run_setup_issue55() {
   local wt out
   wt="$(wt_run_setup_issue55)"
   out="$(cat "${BATS_TEST_TMPDIR}/out55.txt")"
-  [[ "$out" == *"skipped (excluded): ./.env.local.bak-stripe-migration"* ]]
+  [[ "$out" == *"skipped (excluded): ./.env.local.bak-stripe-migration"* ]] || return 1
   [ ! -e "$wt/.env.local.bak-stripe-migration" ]
   # editor/backup residue with other suffixes is excluded too
-  [[ "$out" == *"skipped (excluded): ./.env.local.old"* ]]
+  [[ "$out" == *"skipped (excluded): ./.env.local.old"* ]] || return 1
   [ ! -e "$wt/.env.local.old" ]
 }
 
@@ -174,27 +174,27 @@ wt_run_setup_issue55() {
 
 @test "script: the default .worktreeinclude documents the .vercel opt-in" {
   run bash "$WT_SETUP_SH" --print-default-worktreeinclude
-  [[ "$output" == *".vercel"* ]]
-  [[ "$output" == *"オプトイン"* ]]
+  [[ "$output" == *".vercel"* ]] || return 1
+  [[ "$output" == *"オプトイン"* ]] || return 1
 }
 
 @test "script: production-looking values raise a warning" {
   wt_run_setup_issue55 >/dev/null
   local out
   out="$(cat "${BATS_TEST_TMPDIR}/out55.txt")"
-  [[ "$out" == *"WARNING: 本番値の疑い: ./.env.stripe"* ]]
-  [[ "$out" == *"Stripe"* ]]
+  [[ "$out" == *"WARNING: 本番値の疑い: ./.env.stripe"* ]] || return 1
+  [[ "$out" == *"Stripe"* ]] || return 1
   # a service_role JWT is detected from its base64 payload, not just the var name
-  [[ "$out" == *"WARNING: 本番値の疑い: ./.env.production"* ]]
-  [[ "$out" == *"service_role"* ]]
+  [[ "$out" == *"WARNING: 本番値の疑い: ./.env.production"* ]] || return 1
+  [[ "$out" == *"service_role"* ]] || return 1
 }
 
 @test "script: the warning does not print the detected secret value" {
   wt_run_setup_issue55 >/dev/null
   local out
   out="$(cat "${BATS_TEST_TMPDIR}/out55.txt")"
-  [[ "$out" != *"sk_live_ZYXWVUTS87654321"* ]]
-  [[ "$out" != *"eyJpc3MiOiJzdXBhYmFzZSI"* ]]
+  [[ "$out" != *"sk_live_ZYXWVUTS87654321"* ]] || return 1
+  [[ "$out" != *"eyJpc3MiOiJzdXBhYmFzZSI"* ]] || return 1
 }
 
 @test "script: a warned file is still copied (warn and continue)" {
@@ -242,7 +242,7 @@ wt_run_setup_issue55() {
   # 意図は「バージョンが退行していないこと」なので、semver 形式 + baseline 以上に変更する。
   # baseline 2.2.1 = loops-integration (change-5) の自己検証節追加時点。decisions.md D-5b。
   v="$(jq -r '.version' "$PLUGIN_JSON")"
-  [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+  [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
   run bash -c "printf '%s\n%s\n' '2.2.1' '$v' | sort -V | head -1"
   [ "$output" = "2.2.1" ]
 }
