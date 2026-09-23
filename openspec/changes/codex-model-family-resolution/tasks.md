@@ -22,5 +22,5 @@
 
 ## 4. 版と回帰
 
-- [ ] 4.1 `plugins/dev-workflow/.claude-plugin/plugin.json` の version を上げ、`plugins/dev-workflow/CHANGELOG.md` に項目を足す
+- [x] 4.1 `plugins/dev-workflow/.claude-plugin/plugin.json` の version を上げ、`plugins/dev-workflow/CHANGELOG.md` に項目を足す
 - [ ] 4.2 `scripts/test.sh` を全件実行し、exit code と要約を記録する

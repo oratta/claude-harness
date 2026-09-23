@@ -1,5 +1,14 @@
 # Changelog — dev-workflow
 
+## 2.13.27 — 2026-09-23: Codex role の model を系統名で書き、呼ぶ直前に最新版へ解決する
+
+役割表 `codex-role-profiles.json` がモデル ID（`gpt-5.6-sol` 等）を直書きしていたため、GPT-6 Sol / Luna が出ても旧世代が呼ばれ、世代が上がるたびに役割表を手で直す必要があった（#397）。Claude 側と同じく系統名だけを書く形にそろえる。
+
+- **codex-role-profiles.json**: 組み込み 4 profile の Codex entry を `sol` / `luna` / `astra` に書き換えた
+- **codex-worker.py**: model が英小文字だけなら系統名として、model/list の hidden でない `gpt-<版>-<系統名>` から版が最も新しい 1 件を選び、thread/start と turn/start に渡す。0 件は `model_not_available`、最新版が 2 件以上は `model_not_unique` で止まり別モデルに倒さない。effort は解決後のモデルで検証する。結果 JSON の `execution.model_resolution` に要求値・種類・解決後の ID を残す。`hidden` が真偽値以外の entry は経路を問わず `model_list_invalid`。完全なモデル ID は従来どおり完全一致で照合する
+- **codex-develop.md / commands/develop.md**: model に系統名と完全 ID のどちらも書けること、記録先に要求値と解決後の ID を両方書くこと、新しいモデルが一覧に出るには Codex CLI の更新が要ることを書いた
+- **テスト**: `test_codex_worker.py` に系統名の解決・非一意・hidden・版の数値比較・effort・解決結果の記録のテストを、`test_codex_develop.py` に役割表にモデル ID が無いことと系統名/完全 ID がそのまま request に写ることのテストを足した
+
 ## 2.13.26 — 2026-09-23: develop 本体が起こす G のレビューを adapter で振り分ける
 
 develop 本体から起こした G が full 判定で Codex を直接呼び、adapter の投げ先選択と dispatch 記録を通らずにレビューが走っていた（#385）。2.13.24 と 2.13.25 は並行 PR #384・#388 が使ったため、この版は 2.13.26 とした。
