@@ -16,6 +16,9 @@ setup() {
   export USAGE_SESSIONS_DIR="${TMPDIR_EMPTY}/.usage-sessions"
   export USAGE_PROBE_STATE="${TMPDIR_EMPTY}/.usage-probe-state"
   export USAGE_PROBE_LOCK="${TMPDIR_EMPTY}/.usage-probe.lock"
+  # 個別に上書きしないテストでも実 API を叩かず、実環境の ~/.claude/.usage-snapshot を書かない
+  export USAGE_SNAPSHOT="${TMPDIR_EMPTY}/nonexistent-snapshot.json"
+  export USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json"
   unset CLAUDE_SECURESTORAGE_CONFIG_DIR
 }
 
