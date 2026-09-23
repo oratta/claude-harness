@@ -1,5 +1,14 @@
 # Changelog — dev-workflow
 
+## 2.13.30 — 2026-09-23: 記録先単位のトークン累計に上限を掛け、超えたら次を起こす前に止まる
+
+PR #268 は 12 体のサブエージェントで 122,955,450 トークンを使ったことが、人間がトランスクリプトを手で合計して初めて分かった（#281）。周回数のキャップでは 1 周が重い場合や W の再開が繰り返される場合を止められないため、記録先ごとの累計で止める（#288）。
+
+- **scripts/pr-token-budget.sh**（新規）: 記録先番号を渡すと、Agent ツールの description に `#N` を含むサブエージェント（同じリポジトリのものだけ）の全リクエストの usage と、`--codex-records` で渡した Codex 消費（トークン数が `-` の thread は `$CODEX_HOME/sessions` の rollout から読む）を合計し、Claude 分・Codex 分・合計・体数・上限を 1 行 JSON で出す。合計が上限（既定 30,000,000。`DEV_WORKFLOW_PR_TOKEN_CAP` / `--cap`）を超えたら exit 2
+- **develop SKILL.md**: 「PR トークン上限」の節を足した。spawn・SendMessage による再開・Codex executor への委譲の直前に毎回測り、exit 2 なら起こさずに `needs-approval` を付けて「続けるか、範囲外として閉じるか」を合計・体数・上限・残工程・推奨とともに問う。description に `#N` を入れる規約、Codex を呼んだら `Codex 消費: <thread_id> <tokens>` をコメントする規約、「続ける」ときの `PR トークン上限:` コメントと `--cap` もここに書いた
+- **gate-runner.md**: G が Codex を呼んだら thread_id を return に書く（`Codex thread:` 行）
+- **テスト**: `pr-token-budget.bats`（固定のトランスクリプト・Codex 記録・rollout に対する合計と exit code）を足し、`develop-skill.bats` に手順の文書検査を足した
+
 ## 2.13.29 — 2026-09-23: Python のテストをファイル名で絞らずに全件実行する
 
 Python のテストはプラグインごとの bats ラッパーが `-p` でファイル名を絞って走らせていたため、新しく足したファイルが拾われず、落ちたときもどのテストが落ちたかが出なかった（#344。2.13.28 は先行して main に入った #391 が使用したため 2.13.29 とした。発端は #334 / PR #343 で絞ったコマンドだけを走らせて別ファイルの失敗を見落としたこと）。
