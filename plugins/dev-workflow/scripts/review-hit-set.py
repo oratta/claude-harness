@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Compare a review Markdown hit table with repository-wide git-grep results."""
+"""Compare a review Markdown hit table with repository-wide git-grep results.
+
+With --head, also run the row-3 second stage of pr-review-gate (residual HEAD hits
+vs not-applicable rows, the rewritten not-applicable rows table, mixed groups).
+"""
 
 import argparse
+from collections import Counter
 from pathlib import Path
 import re
 import shlex
@@ -11,6 +16,10 @@ import sys
 
 SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 HEADER = ("ファイル", "行（修正前 SHA）", "ヒットした行の本文", "扱い")
+REWRITTEN_HEADING = "### 書き換えた該当しない行"
+REWRITTEN_HEADER = ("ファイル", "行（修正前 SHA）", "修正後の本文")
+FIXED = "直した"
+NOT_APPLICABLE_RE = re.compile(r"該当しない: \S.*")
 SAFE_FLAGS = {"-F", "--fixed-strings", "-E", "--extended-regexp", "-G",
               "--basic-regexp", "-P", "--perl-regexp", "-i", "--ignore-case",
               "-w", "--word-regexp", "-I", "--text", "--and", "--or", "--not",
@@ -81,37 +90,133 @@ def decode_cell(cell, *, preserve=False):
     return "".join(decoded)
 
 
-def parse_table(lines):
+def table_rows(lines, header, start=0):
+    """Return the raw cells of the rows under the first table whose header is `header`."""
     header_index = None
-    for index, line in enumerate(lines):
+    for index in range(start, len(lines)):
+        line = lines[index]
         if not line.strip().startswith("|") or not line.strip().endswith("|"):
             continue
         cells = tuple(decode_cell(cell) for cell in split_markdown_row(line))
-        if cells == HEADER:
+        if cells == header:
             header_index = index
             break
     if header_index is None:
-        raise ContractError("four-column hit table header is required")
+        return None
 
-    hits = set()
+    rows = []
     for line in lines[header_index + 1:]:
         if not line.lstrip().startswith("|"):
-            if hits:
+            if rows:
                 break
             continue
         cells = split_markdown_row(line)
-        if len(cells) != 4:
-            raise ContractError("every hit row must have four columns")
+        if len(cells) != len(header):
+            raise ContractError(f"every row must have {len(header)} columns")
         if all(re.fullmatch(r":?-+:?", cell.strip()) for cell in cells):
             continue
-        path = decode_cell(cells[0])
-        line_number = decode_cell(cells[1])
+        rows.append(cells)
+    return rows
+
+
+def row_key(cells):
+    path = decode_cell(cells[0])
+    line_number = decode_cell(cells[1])
+    if not path or not line_number.isdigit():
+        raise ContractError("rows require path and numeric line")
+    return path, int(line_number)
+
+
+def parse_table(lines):
+    """Parse the main hit table into (path, line, body, handling) rows."""
+    raw = table_rows(lines, HEADER)
+    if raw is None:
+        raise ContractError("four-column hit table header is required")
+    rows = []
+    for cells in raw:
+        path, line_number = row_key(cells)
         body = decode_cell(cells[2], preserve=True)
-        _handling = decode_cell(cells[3])
-        if not path or not line_number.isdigit() or not body:
+        if not body:
             raise ContractError("hit rows require path, numeric line, and body")
-        hits.add((path, int(line_number), body))
-    return hits
+        rows.append((path, line_number, body, decode_cell(cells[3])))
+    return rows
+
+
+def parse_rewritten(lines, rows):
+    """Parse the rewritten not-applicable rows table into {(path, line): new body}."""
+    start = next((index for index, line in enumerate(lines)
+                  if line.strip() == REWRITTEN_HEADING), None)
+    if start is None:
+        return {}
+    raw = table_rows(lines, REWRITTEN_HEADER, start + 1)
+    if raw is None:
+        raise ContractError("rewritten-rows table header is required under its heading")
+    by_key = {(path, number): (body, handling) for path, number, body, handling in rows}
+    rewritten = {}
+    for cells in raw:
+        key = row_key(cells)
+        new_body = decode_cell(cells[2], preserve=True)
+        if key in rewritten:
+            raise ContractError(f"rewritten row is duplicated: {key[0]}:{key[1]}")
+        if key not in by_key or not NOT_APPLICABLE_RE.fullmatch(by_key[key][1]):
+            raise ContractError(
+                f"rewritten row must point at one not-applicable row: {key[0]}:{key[1]}")
+        if new_body == by_key[key][0]:
+            raise ContractError(f"rewritten row body is unchanged: {key[0]}:{key[1]}")
+        rewritten[key] = new_body
+    return rewritten
+
+
+def deleted_lines(repo, before, after, path):
+    """Count deleted line bodies in `git diff before after -- path`."""
+    result = subprocess.run(
+        ["git", "diff", "--no-color", "--no-ext-diff", "--no-renames", "-U0",
+         before, after, "--", path],
+        cwd=repo, text=True, capture_output=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or "git diff failed")
+    counts = Counter()
+    in_hunk = False
+    for line in result.stdout.splitlines():
+        if line.startswith("@@"):
+            in_hunk = True
+        elif line.startswith("diff --git"):
+            in_hunk = False
+        elif in_hunk and line.startswith("-"):
+            counts[line[1:]] += 1
+    return counts
+
+
+def second_stage(repo, rows, rewritten, head_hits, sha, head):
+    """Row-3 second stage: HEAD residual hits vs not-applicable rows, and mixed groups."""
+    report = []
+    allowed = Counter()
+    for path, number, body, handling in rows:
+        if NOT_APPLICABLE_RE.fullmatch(handling):
+            allowed[(path, rewritten.get((path, number), body))] += 1
+
+    residual = {}
+    for path, number, body in sorted(head_hits):
+        residual.setdefault((path, body), []).append(number)
+    for (path, body), numbers in sorted(residual.items()):
+        for number in numbers[allowed[(path, body)]:]:
+            report.append(f"unmatched: {path}:{number}")
+
+    groups = {}
+    for path, number, body, handling in rows:
+        groups.setdefault((path, body), []).append((number, handling))
+    diffs = {}
+    for (path, body), members in sorted(groups.items()):
+        fixed = [number for number, handling in members if handling == FIXED]
+        not_applicable = [number for number, handling in members if handling != FIXED]
+        if not fixed or not not_applicable:
+            continue
+        required = len(fixed) + sum((path, number) in rewritten for number in not_applicable)
+        if path not in diffs:
+            diffs[path] = deleted_lines(repo, sha, head, path)
+        if diffs[path][body] < required:
+            report.extend(f"not-removed: {path}:{number}" for number in sorted(fixed))
+    return report
 
 
 def parse_command(command, sha):
@@ -177,19 +282,35 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("table", type=Path)
     parser.add_argument("--repo", type=Path, default=Path.cwd())
+    parser.add_argument("--head", help="post-fix HEAD (40-digit SHA); runs the row-3 second stage")
     args = parser.parse_args()
     lines = args.table.read_text().splitlines()
     sha = field(lines, "修正前 SHA:")
     if not SHA_RE.fullmatch(sha):
         raise ContractError("修正前 SHA must be a full 40-digit SHA")
-    command = parse_command(field(lines, "検索コマンド:"), sha)
-    expected = parse_table(lines)
-    actual = actual_hits(repository_root(args.repo), command)
-    for path, number, _body in sorted(actual - expected):
-        print(f"missing: {path}:{number}")
-    for path, number, _body in sorted(expected - actual):
-        print(f"extra: {path}:{number}")
-    return int(actual != expected)
+    if args.head is not None and not SHA_RE.fullmatch(args.head):
+        raise ContractError("--head must be a full 40-digit SHA")
+    search = field(lines, "検索コマンド:")
+    command = parse_command(search, sha)
+    rows = parse_table(lines)
+    rewritten = {}
+    if args.head is not None:
+        for path, number, _body, handling in rows:
+            if handling != FIXED and not NOT_APPLICABLE_RE.fullmatch(handling):
+                raise ContractError(
+                    f"row-3 handling must be 直した or 該当しない: <理由>: {path}:{number}")
+        rewritten = parse_rewritten(lines, rows)
+    expected = {(path, number, body) for path, number, body, _handling in rows}
+    repo = repository_root(args.repo)
+    actual = actual_hits(repo, command)
+    report = [f"missing: {path}:{number}" for path, number, _body in sorted(actual - expected)]
+    report += [f"extra: {path}:{number}" for path, number, _body in sorted(expected - actual)]
+    if args.head is not None:
+        head_hits = actual_hits(repo, parse_command(search, args.head))
+        report += second_stage(repo, rows, rewritten, head_hits, sha, args.head)
+    for line in report:
+        print(line)
+    return int(bool(report))
 
 
 if __name__ == "__main__":

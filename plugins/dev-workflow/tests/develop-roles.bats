@@ -706,3 +706,20 @@ extract_context_cap_section() {
   run grep -F '| ファイル | 行（修正前 SHA） |' "$WORKER"
   [ "$status" -ne 0 ]
 }
+
+@test "worker (#377): the row-3 list paragraph puts rewritten not-applicable rows in the rewritten-rows table without restating its columns" {
+  para="$(grep -F '**G から一覧を求められた指摘' "$WORKER")"
+  echo "$para" | grep -qF '`### 書き換えた該当しない行`'
+  echo "$para" | grep -qF '主表の本文は修正前のまま'
+  echo "$para" | grep -qF '修正後の本文'
+  run grep -F '| 修正後の本文 |' "$WORKER"
+  [ "$status" -ne 0 ]
+}
+
+@test "gate-runner (#377): the row-3 second stage runs review-hit-set.py with --head and the fetched 40-digit HEAD" {
+  line="$(grep -F '**W の修正後の再レビュー**' "$GATE")"
+  echo "$line" | grep -qF 'review-hit-set.py'
+  echo "$line" | grep -qF -- '--head <HEAD の 40 桁 SHA>'
+  echo "$line" | grep -qF 'git fetch'
+  echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の仕分け表の順 3'
+}
