@@ -79,14 +79,14 @@ setup() {
 # --- Requirement: スキルはリポ非依存で、flatmate 固有の仕組みには条件分岐で対応する ---
 
 @test "portability: no hardcoded flatmate repo URL" {
-  ! grep -q 'genetta-inc/flatmate' "$SKILL"
+  ! grep -q 'genetta-inc/flatmate' "$SKILL" || return 1
 }
 
 @test "portability: no reference to flatmate-only machinery" {
-  ! grep -q 'pending-mirror\.sh' "$SKILL"
-  ! grep -q 'pending-owner\.md' "$SKILL"
-  ! grep -q 'channel-reply-policy' "$SKILL"
-  ! grep -q 'agent-loop-steps\.md' "$SKILL"
+  ! grep -q 'pending-mirror\.sh' "$SKILL" || return 1
+  ! grep -q 'pending-owner\.md' "$SKILL" || return 1
+  ! grep -q 'channel-reply-policy' "$SKILL" || return 1
+  ! grep -q 'agent-loop-steps\.md' "$SKILL" || return 1
 }
 
 @test "portability: degraded behavior for repos without auto-merge is specified" {
@@ -251,7 +251,7 @@ run_block() {  # $1 = 手順番号, $2 = ブロックを特定する文字列。
   install_draft_gh
   MOCK_LABELS="agent-review:pending" MOCK_DRAFT=false run_block 5 '--jq .draft'
   [ "$status" -eq 0 ]
-  ! grep -qE '^pr ready' "$GH_LOG"
+  ! grep -qE '^pr ready' "$GH_LOG" || return 1
   grep -qF 'labels[]=agent-review:passed' "$GH_LOG"
 }
 
@@ -260,7 +260,7 @@ run_block() {  # $1 = 手順番号, $2 = ブロックを特定する文字列。
   MOCK_LABELS="agent-review:pending" MOCK_DRAFT=true MOCK_READY_RC=1 run_block 5 '--jq .draft'
   [ "$status" -ne 0 ]
   grep -qE '^pr ready 42 ' "$GH_LOG"
-  ! grep -qF 'labels[]=agent-review:passed' "$GH_LOG"
+  ! grep -qF 'labels[]=agent-review:passed' "$GH_LOG" || return 1
 }
 
 @test "draft: step 1 snippet moves a non-Draft PR back to Draft after removing a stale passed" {
@@ -274,14 +274,14 @@ run_block() {  # $1 = 手順番号, $2 = ブロックを特定する文字列。
   install_draft_gh
   MOCK_LABELS="agent-review:passed" MOCK_DRAFT=true run_block 1 'gh pr ready --undo'
   grep -qF -- '-X DELETE repos/o/r/issues/42/labels/agent-review:passed' "$GH_LOG"
-  ! grep -qE '^pr ready' "$GH_LOG"
+  ! grep -qE '^pr ready' "$GH_LOG" || return 1
 }
 
 @test "draft: step 1 snippet does not undo Ready when no passed label was present" {
   install_draft_gh
   MOCK_LABELS="agent-review:pending" MOCK_DRAFT=false run_block 1 'gh pr ready --undo'
-  ! grep -qF 'labels/agent-review:passed' "$GH_LOG"
-  ! grep -qE '^pr ready' "$GH_LOG"
+  ! grep -qF 'labels/agent-review:passed' "$GH_LOG" || return 1
+  ! grep -qE '^pr ready' "$GH_LOG" || return 1
 }
 
 @test "draft: step 5 states why Ready comes before passed and that a failed Ready stops before passed" {
@@ -344,7 +344,7 @@ review_execution() {
   for token in 'command -v codex' 'codex --version' 'PC 識別子:' '日時:' 'バイナリのパス・バージョン:' 'companion 有無:' '対象 HEAD・diff 範囲:' '経路・実行コマンド:' '完了状態・結果:' '可否 / 未確認:' '残課題:' '対象 issue' '認証情報' '実レビュー' 'subagent-waiting.md' '未実測は未確認' 'companion 導入は任意'; do
     echo "$doc" | grep -qF "$token"
   done
-  ! echo "$doc" | grep -qE 'github.com/|/Users/|#715'
+  ! echo "$doc" | grep -qE 'github.com/|/Users/|#715' || return 1
 }
 
 # ===== 収束ルールの適用手順（issue #281 PR-A）=====

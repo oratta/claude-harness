@@ -58,7 +58,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 @test "worker: never creates a worktree itself (main prepares it)" {
   grep -qE 'worktree.*(切らない|作らない)' "$WORKER"
-  ! grep -q 'git worktree add' "$WORKER"
+  ! grep -q 'git worktree add' "$WORKER" || return 1
 }
 
 @test "worker: pre-classification table names all 4 categories and is the single source" {
@@ -97,9 +97,9 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q 'Red' "$WORKER"
   grep -q 'Green' "$WORKER"
   grep -q 'exit code' "$WORKER"
-  ! grep -q 'delegate+verify' "$WORKER"
-  ! grep -q 'workflow 型' "$WORKER"
-  ! grep -q 'solo' "$WORKER"
+  ! grep -q 'delegate+verify' "$WORKER" || return 1
+  ! grep -q 'workflow 型' "$WORKER" || return 1
+  ! grep -q 'solo' "$WORKER" || return 1
 }
 
 # (3) は (3a) 実装＋verify と (3b) archive＋PR＋仕様宣言 の 2 回の return に分かれる（#262）。
@@ -346,11 +346,11 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 @test "gate-runner: G itself defaults to sonnet; the reviewer is opus or the decider type for merge conditions / cross-layer contracts" {
   grep -q 'G の既定は `sonnet`' "$GATE"
   grep -q '`opus`' "$GATE"
-  ! grep -q 'マージ条件・聖域・層間契約' "$GATE"
-  ! grep -q '聖域・層間契約による' "$GATE"
-  ! grep -qE '実装品質起因なら.*`model: fable`' "$GATE"
+  ! grep -q 'マージ条件・聖域・層間契約' "$GATE" || return 1
+  ! grep -q '聖域・層間契約による' "$GATE" || return 1
+  ! grep -qE '実装品質起因なら.*`model: fable`' "$GATE" || return 1
   # 旧ラダー（実行役を 1 段ずつ上げる）は残さず、決める役の種別で上げる
-  ! grep -q '1 段上' "$GATE"
+  ! grep -q '1 段上' "$GATE" || return 1
   grep -qF 'dev-workflow:decider' "$GATE"
   grep -qF '一方だけ' "$GATE"
   grep -qF 'W を `fable` にはしない' "$GATE"
@@ -474,7 +474,7 @@ extract_context_cap_section() {
     echo "$doc" | grep -qF "$token"
   done
   echo "$doc" | grep -q '新 Codex モード.*App Server 固定.*適用しない'
-  ! echo "$doc" | grep -q 'サブスク切れ'
+  ! echo "$doc" | grep -q 'サブスク切れ' || return 1
 }
 
 @test "gate-runner: full needs-reviewer carries evidence also used in PR comment" {

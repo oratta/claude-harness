@@ -57,7 +57,7 @@ JSON
 {"schema":1,"fetched_at":$((NOW - 25000)),"fable_weekly_pct":7,"fable_active":true}
 JSON
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
-  ! grep -q 'Fable' "$WORK/out.txt"
+  ! grep -q 'Fable' "$WORK/out.txt" || return 1
 }
 
 @test "render: 5h line has no denominator" {  # 5h 行には分母を出さない
@@ -106,7 +106,7 @@ JSON
     | bash "$SL" > "$WORK/out.txt"
   grep -q 'Opus 5' "$WORK/out.txt"
   grep -q 'Context 91%' "$WORK/out.txt"
-  ! grep -q '7d All' "$WORK/out.txt"
+  ! grep -q '7d All' "$WORK/out.txt" || return 1
 }
 
 # $1=cost.total_cost_usd → cost を含む stdin JSON（レートリミットなし）
@@ -163,9 +163,9 @@ mk_cost_input() {
 
 @test "session cost: hidden when the cost field is absent or disabled" {  # cost が無い／STATUSLINE_SESSION_COST=0 なら出さない
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
-  ! grep -q 'Session' "$WORK/out.txt"
+  ! grep -q 'Session' "$WORK/out.txt" || return 1
   mk_cost_input 1 | STATUSLINE_SESSION_COST=0 bash "$SL" > "$WORK/out.txt"
-  ! grep -q 'Session' "$WORK/out.txt"
+  ! grep -q 'Session' "$WORK/out.txt" || return 1
 }
 
 @test "config: STATUSLINE_BAR_WIDTH changes the bar cell count" {  # STATUSLINE_BAR_WIDTH でバーのセル数が変わる

@@ -35,7 +35,7 @@ teardown() {
 
 @test "llm-log-compactor: frontmatter does NOT include Notion MCP tools" {
   dr_require_file "$AGENT_FILE"
-  ! grep -q "mcp__claude_ai_Notion__" "$AGENT_FILE"
+  ! grep -q "mcp__claude_ai_Notion__" "$AGENT_FILE" || return 1
 }
 
 @test "llm-log-compactor: frontmatter tools include Read Write Bash Glob" {
@@ -50,7 +50,7 @@ teardown() {
 
 @test "llm-log-compactor: head -5 restriction is removed (sequential scan documented)" {
   dr_require_file "$AGENT_FILE"
-  ! grep -Eq 'head ?-5' "$AGENT_FILE"
+  ! grep -Eq 'head ?-5' "$AGENT_FILE" || return 1
   # Sequential scan documented (Japanese or English keyword)
   grep -Eq '(先頭から順次|順次スキャン|sequential scan|head ?- ?n ?1)' "$AGENT_FILE"
 }

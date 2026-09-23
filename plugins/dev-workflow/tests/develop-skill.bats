@@ -270,7 +270,7 @@ refute() {
   echo "$m" | grep -qE 'W.*`opus`'
   echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
   echo "$m" | grep -qE '^\| G \| `sonnet` \|'
-  ! echo "$m" | grep -qE 'マージ条件・聖域・層間契約'
+  ! echo "$m" | grep -qE 'マージ条件・聖域・層間契約' || return 1
   echo "$m" | grep -q '事前分類'
   echo "$m" | grep -q 'マージ条件'
   echo "$m" | grep -q '聖域'
@@ -321,18 +321,18 @@ refute() {
   # ここでは再掲ではなく、その正本を指していることを固定する
   echo "$loop" | grep -q 'decision-criteria.md'
   echo "$loop" | grep -q 'コンテキスト上限'
-  ! echo "$loop" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
+  ! echo "$loop" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP' || return 1
   echo "$loop" | grep -q 'G の再開も同じ'
 }
 
 @test "model: no execution-strategy branches nor deterministic signal commands anywhere under develop" {
-  ! grep -rq 'delegate+verify' "$SKILL_DIR"
-  ! grep -rq 'workflow 型' "$SKILL_DIR"
-  ! grep -rqE '4 ?象限' "$SKILL_DIR"
-  ! grep -rq '決定論的シグナル' "$SKILL_DIR"
-  ! grep -rq 'self-contained' "$SKILL_DIR"
-  ! grep -rqF '| length' "$SKILL_DIR"
-  ! grep -rqF "startswith(\"size:\")" "$SKILL_DIR"
+  ! grep -rq 'delegate+verify' "$SKILL_DIR" || return 1
+  ! grep -rq 'workflow 型' "$SKILL_DIR" || return 1
+  ! grep -rqE '4 ?象限' "$SKILL_DIR" || return 1
+  ! grep -rq '決定論的シグナル' "$SKILL_DIR" || return 1
+  ! grep -rq 'self-contained' "$SKILL_DIR" || return 1
+  ! grep -rqF '| length' "$SKILL_DIR" || return 1
+  ! grep -rqF "startswith(\"size:\")" "$SKILL_DIR" || return 1
 }
 
 # --- 実行モード ---
@@ -416,8 +416,8 @@ refute() {
 @test "upstream brainstorming (opsx:explore) is explicitly not called from develop" {
   grep -q '^## 上流の壁打ち' "$SKILL"
   grep -q 'opsx:explore' "$SKILL"
-  ! grep -q 'longrun' "$SKILL"
-  ! grep -qF '/lr:' "$SKILL"
+  ! grep -q 'longrun' "$SKILL" || return 1
+  ! grep -qF '/lr:' "$SKILL" || return 1
 }
 
 # --- 昇格トリップワイヤーのテンプレート（1.6b。hook 出力を検査する tripwire-hook.bats には混ぜない） ---
@@ -425,13 +425,13 @@ refute() {
 @test "tripwire template: wire 4 is the context cap handoff and wire 5 is the rate-limit reactive downgrade" {
   grep -qE '^4\. 【コンテキスト上限 → 手渡し】' "$TRIPWIRES"
   grep -qE '^5\. 【rate-limit 実エラー → reactive 降格】' "$TRIPWIRES"
-  ! grep -qE '^6\. ' "$TRIPWIRES"
+  ! grep -qE '^6\. ' "$TRIPWIRES" || return 1
   w4="$(awk '/^4\. /{f=1} /^5\. /{f=0} f' "$TRIPWIRES")"
   echo "$w4" | grep -q 'subagent-context.sh'
   # 閾値の再掲ではなく正本を指す（#261）。あわせて途中計測 hook の経路に触れていること
   echo "$w4" | grep -q 'decision-criteria.md'
   echo "$w4" | grep -q 'context-tripwire.sh'
-  ! echo "$w4" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
+  ! echo "$w4" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP' || return 1
   echo "$w4" | grep -q 'モデルは変えない'
 }
 
@@ -442,8 +442,8 @@ refute() {
   echo "$w1" | grep -q '本体に return'
   echo "$w1" | grep -q 'エピック化'
   echo "$w1" | grep -q 'workflow-execution.md'
-  ! echo "$w1" | grep -q 'workflow 型へ'
-  ! grep -qF '/lr:' "$TRIPWIRES"
+  ! echo "$w1" | grep -q 'workflow 型へ' || return 1
+  ! grep -qF '/lr:' "$TRIPWIRES" || return 1
   grep -q '失敗ループ' "$TRIPWIRES"
   grep -q '仕様の発明' "$TRIPWIRES"
   w3="$(awk '/^3\. /{f=1} /^4\. /{f=0} f' "$TRIPWIRES")"
@@ -453,6 +453,6 @@ refute() {
 
 @test "tripwire template: unmanned wiring names the flatmate-owned constitution, not a loops template" {
   grep -q 'docs/agent-loop.md' "$TRIPWIRES"
-  ! grep -q 'loop-dev-agent-tripwires' "$TRIPWIRES"
-  ! grep -q 'loops プラグイン' "$TRIPWIRES"
+  ! grep -q 'loop-dev-agent-tripwires' "$TRIPWIRES" || return 1
+  ! grep -q 'loops プラグイン' "$TRIPWIRES" || return 1
 }

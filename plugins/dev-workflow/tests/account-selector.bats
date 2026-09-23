@@ -162,7 +162,7 @@ JSON
   [ -z "$(cat "${WORK}/stdout")" ]
   [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
   [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-five-hour-limit margins=a:five-hour>=90,b:five-hour>=90" ]
-  ! grep -qF 'default-due-to-missing-usage' "${WORK}/stderr"
+  ! grep -qF 'default-due-to-missing-usage' "${WORK}/stderr" || return 1
 }
 
 @test "explicit: registered id succeeds without reading the snapshot" {
@@ -308,5 +308,5 @@ JSON
   [ "$(cat "${WORK}/stdout")" = "$SECURE_A" ]
   [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
   [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
-  ! grep -qF 'selected=' "${WORK}/stdout"
+  ! grep -qF 'selected=' "${WORK}/stdout" || return 1
 }

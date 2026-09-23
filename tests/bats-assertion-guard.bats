@@ -103,3 +103,68 @@ write_guardless_fixture() { # <path>
   [ "$status" -eq 0 ] || return 1
   [[ "$output" != *"not ok"* ]] || return 1
 }
+
+# --- 3. 常設の静的スコープ検査（否定形 ! cmd。バージョン非依存） ---
+#
+# issue #283 / openspec change bats-negation-guard。`!` で反転したコマンドの非ゼロ
+# 終了は errexit の対象外という POSIX/bash の仕様で、バージョンに関わらず常に成立
+# する（上の [[ ]] と違い bash 4.1 以降でも塞がらない）。
+#
+# 対象: git 追跡下の *.bats（_longruns/ を除く）のうち、行頭（空白のみ）から `!` に
+# 続く空白で始まる行（`! [[ ... ]]` を含む）で、末尾（末尾コメント可）が
+# `|| return 1` で終わらないもの。`if`/`while` の条件式・パイプライン途中の
+# `! cmd2` は行頭が `!` にならないため対象定義に自然に一致しない（design.md「採用2」）。
+
+@test "no unguarded standalone ! cmd negation remains in tracked bats files" {
+  cd "$ROOT"
+  run bash -c 'git ls-files "*.bats" ":(exclude)_longruns/" \
+    | xargs grep -nE "^[[:space:]]*! " \
+    | grep -vE "\|\| return 1[[:space:]]*(#.*)?\$"'
+  echo "$output"
+  [ -z "$output" ] || return 1
+}
+
+# --- 4. 実行時の実演（! cmd。バージョン非依存） ---
+
+# `! true` を「常に成功するコマンドを否定して、アサーション違反を模する」検査として使う
+# （design.md「採用4」）。`! false` は否定すると常に成功側に転ぶため不採用。ヒアドキュ
+# メントに行頭 @test を書かず echo/printf で組み立てるのは write_guarded_fixture /
+# write_guardless_fixture と同じ理由（#284 の CI 失敗の再発防止）。
+
+write_guarded_negation_fixture() { # <path>
+  {
+    echo '@test "guarded negation mid-body fails" {'
+    echo '  echo before'
+    printf '  %s true || return 1\n' '!'
+    echo '  echo after'
+    echo '}'
+  } >"$1"
+}
+
+write_guardless_negation_fixture() { # <path>
+  {
+    echo '@test "guardless negation mid-body always slips through" {'
+    echo '  echo before'
+    printf '  %s true\n' '!'
+    echo '  echo after'
+    echo '}'
+  } >"$1"
+}
+
+@test "a guarded ! cmd mid-body fails regardless of bash version" {
+  local fixture="$BATS_TEST_TMPDIR/guarded_negation.bats"
+  write_guarded_negation_fixture "$fixture"
+  run run_bats_isolated "$fixture"
+  echo "$output"
+  [ "$status" -ne 0 ] || return 1
+  [[ "$output" == *"not ok"* ]] || return 1
+}
+
+@test "a guardless ! cmd mid-body always slips through regardless of bash version" {
+  local fixture="$BATS_TEST_TMPDIR/guardless_negation.bats"
+  write_guardless_negation_fixture "$fixture"
+  run run_bats_isolated "$fixture"
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" != *"not ok"* ]] || return 1
+}
