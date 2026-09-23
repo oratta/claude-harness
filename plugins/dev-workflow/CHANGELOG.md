@@ -1,5 +1,13 @@
 # Changelog — dev-workflow
 
+## 2.13.28 — 2026-09-23: Python のテストをファイル名で絞らずに全件実行する
+
+Python のテストはプラグインごとの bats ラッパーが `-p` でファイル名を絞って走らせていたため、新しく足したファイルが拾われず、落ちたときもどのテストが落ちたかが出なかった（#344。発端は #334 / PR #343 で絞ったコマンドだけを走らせて別ファイルの失敗を見落としたこと）。
+
+- ルートの `tests/python-suites.bats` が git 追跡下の `plugins/*/tests/test_*.py` を置き場所ごとに `unittest discover -p 'test_*.py'` で走らせる。ディレクトリごとの `Ran N tests` を TAP のコメントに出し、Python が無い・対象が無い・0 件のときは失敗にする
+- `tests/codex-python.bats` を削除した（statusline の `statusline-codex.bats` も同時に削除）
+- `scripts/CODEX-WORKER.md` のテスト実行コマンドを `scripts/test.sh python-suites` に置き換えた
+
 ## 2.13.27 — 2026-09-23: 起動時に週次余裕のある Claude アカウントを選ぶ
 
 - `scripts/select-account.sh` を追加した。schema 2 usage snapshot の 300 秒以内の観測から、5 時間枠が 90% 未満で週次余裕が最大のスロットを選ぶ。同点はレジストリの宣言順で決める
