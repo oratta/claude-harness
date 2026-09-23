@@ -2,7 +2,8 @@
 # select-account.sh: 起動時に利用可能な Claude アカウントを 1 つ選ぶ。
 #
 # stdout は CLAUDE_SECURESTORAGE_CONFIG_DIR の実値 1 行だけ、stderr は選択理由 1 行だけ。
-# 引数なしは usage snapshot による自動選択、slot id 1 個は snapshot 非依存の明示選択。
+# 引数なしはセッション記録と usage snapshot の実効値による自動選択、slot id 1 個は
+# それらに依存しない明示選択。
 set -uo pipefail
 
 ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json}"
@@ -14,49 +15,20 @@ if [ "$#" -gt 1 ]; then
   exit 2
 fi
 
+# 実効値（セッション記録と snapshot を突き合わせた値）は usage_view.py の 1 か所の実装から得る
+# （正本: openspec/specs/usage-session-records「記録と snapshot から実効値を求める」）。
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 ACCOUNTS_FILE="$ACCOUNTS_FILE" USAGE_SNAPSHOT="$SNAPSHOT" SELECT_ACCOUNT_NOW="$NOW" \
-  python3 - "$@" <<'PY'
-import json
+  USAGE_VIEW_DIR="$SCRIPT_DIR" python3 - "$@" <<'PY'
 import math
 import os
-import re
 import sys
 
-ID_RE = re.compile(r"[A-Za-z0-9-]{1,32}\Z")
-CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
+sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
+import usage_view  # noqa: E402
+
 WEEK_SECONDS = 7 * 24 * 60 * 60
-FRESH_SECONDS = 300
-
-
-def read_registry(path):
-    slots = []
-    try:
-        with open(path, encoding="utf-8") as handle:
-            document = json.load(handle)
-        entries = document.get("accounts") if isinstance(document, dict) else None
-        if isinstance(entries, list):
-            seen = set()
-            for entry in entries:
-                if len(slots) >= 8:
-                    break
-                if not isinstance(entry, dict):
-                    continue
-                slot_id = entry.get("id")
-                if not isinstance(slot_id, str) or not ID_RE.fullmatch(slot_id) or slot_id in seen:
-                    continue
-                label = entry.get("label", slot_id)
-                if not isinstance(label, str) or not label:
-                    label = slot_id
-                secure = entry.get("securestorage")
-                if secure is None:
-                    secure = ""
-                if not isinstance(secure, str) or CTRL_RE.search(label) or CTRL_RE.search(secure):
-                    continue
-                seen.add(slot_id)
-                slots.append((slot_id, secure))
-    except Exception:
-        pass
-    return slots or [("default", "")]
 
 
 def finite_number(value):
@@ -64,19 +36,7 @@ def finite_number(value):
             and math.isfinite(float(value)))
 
 
-def read_snapshot(path):
-    try:
-        with open(path, encoding="utf-8") as handle:
-            document = json.load(handle)
-        if not isinstance(document, dict) or document.get("schema") != 2:
-            return {}
-        accounts = document.get("accounts")
-        return accounts if isinstance(accounts, dict) else {}
-    except Exception:
-        return {}
-
-
-slots = read_registry(os.environ["ACCOUNTS_FILE"])
+slots = usage_view.read_registry(os.environ["ACCOUNTS_FILE"])
 
 if len(sys.argv) == 2:
     requested = sys.argv[1]
@@ -93,35 +53,21 @@ try:
 except (KeyError, TypeError, ValueError):
     now = 0
 
-snapshot_accounts = read_snapshot(os.environ["USAGE_SNAPSHOT"])
+# 取得からの経過時間では外さない。古さは実効値の規則（リセット後は 0%、リセット前は下限）で扱う
+view = usage_view.build_view(accounts_file=os.environ["ACCOUNTS_FILE"],
+                             snapshot_path=os.environ["USAGE_SNAPSHOT"], now=now)
 margins = []
 best = None
-has_missing_or_stale = False
+has_missing = False
 
 for index, (slot_id, secure) in enumerate(slots):
-    observed = snapshot_accounts.get(slot_id)
-    if not isinstance(observed, dict):
-        margins.append((slot_id, "missing"))
-        has_missing_or_stale = True
-        continue
-
-    fetched = observed.get("fetched_at")
-    if not finite_number(fetched):
-        margins.append((slot_id, "missing"))
-        has_missing_or_stale = True
-        continue
-    age = now - float(fetched)
-    if age < 0 or age >= FRESH_SECONDS:
-        margins.append((slot_id, "stale"))
-        has_missing_or_stale = True
-        continue
-
+    observed = view["accounts"].get(slot_id) or {}
     five_hour = observed.get("five_hour_pct")
     weekly = observed.get("weekly_all_pct")
     resets = observed.get("weekly_resets_epoch")
     if not all(finite_number(value) for value in (five_hour, weekly, resets)):
         margins.append((slot_id, "missing"))
-        has_missing_or_stale = True
+        has_missing = True
         continue
     if float(five_hour) >= 90:
         margins.append((slot_id, "five-hour>=90"))
@@ -143,7 +89,7 @@ else:
     secure = ""
     selected = next((slot_id for slot_id, value in slots if value == ""),
                     "@unregistered-default")
-    reason = ("default-due-to-missing-usage" if has_missing_or_stale
+    reason = ("default-due-to-missing-usage" if has_missing
               else "default-due-to-five-hour-limit")
 
 print(secure)
