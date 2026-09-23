@@ -121,8 +121,8 @@ setup() {
   input='今日は道が空いてるな'
   # 上と同じ理由で列挙にする。範囲のままだと grep が終了コード 2（エラー）で落ち、
   # 否定の ! が真になって「マッチしなかった」と区別できず、偶然 pass していた。
-  ! echo "$input" | grep -Eq '([0-9]|[０１２３４５６７８９])+(メートル|m|キロ|km)先、(右|左)?方向'
-  ! echo "$input" | grep -Eq '(まもなく|間もなく).*目的地'
-  ! echo "$input" | grep -Eq 'ルート.*(再検索|検索|更新)'
-  ! echo "$input" | grep -Eq '(次の|この先の)?信号を(右折|左折|直進)'
+  ! echo "$input" | grep -Eq '([0-9]|[０１２３４５６７８９])+(メートル|m|キロ|km)先、(右|左)?方向' || return 1
+  ! echo "$input" | grep -Eq '(まもなく|間もなく).*目的地' || return 1
+  ! echo "$input" | grep -Eq 'ルート.*(再検索|検索|更新)' || return 1
+  ! echo "$input" | grep -Eq '(次の|この先の)?信号を(右折|左折|直進)' || return 1
 }

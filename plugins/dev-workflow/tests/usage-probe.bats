@@ -167,7 +167,7 @@ ctx() { python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalCon
   c="$(ctx "$output")"
   echo "$c" | grep -q "reserve"
   # 明示なので abundant は現在モードとして提示されない
-  ! echo "$c" | grep -qE "現在.*abundant|abundant（導出）"
+  ! echo "$c" | grep -qE "現在.*abundant|abundant（導出）" || return 1
 }
 
 @test "session: no snapshot defaults to conserve but still injects tripwires" {

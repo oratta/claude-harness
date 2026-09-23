@@ -137,7 +137,7 @@ PY
 }
 
 @test "hook: does not depend on the timeout / gtimeout commands" {
-  ! grep -Eq '(^|[^a-zA-Z-])g?timeout ' "$HOOK"
+  ! grep -Eq '(^|[^a-zA-Z-])g?timeout ' "$HOOK" || return 1
 }
 
 @test "hook: runs gh with stdin detached" {

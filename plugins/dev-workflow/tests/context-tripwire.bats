@@ -298,7 +298,7 @@ PY
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,900000" >/dev/null
   run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Write)'"
   [ "$status" -eq 0 ]
-  ! echo "$output" | grep -q permissionDecision
+  ! echo "$output" | grep -q permissionDecision || return 1
 }
 
 # ---------- 2.7 PreToolUse の強制停止 ----------
@@ -472,9 +472,9 @@ PY
 }
 
 @test "implementation: shlex import and GIT_* constants are gone (window fully closed)" {
-  ! grep -q 'import shlex\|, shlex' "$SCRIPT"
-  ! grep -qE '^GIT_[A-Z_]* *=' "$SCRIPT"
-  ! grep -q 'bash_allowed\|scan_command' "$SCRIPT"
+  ! grep -q 'import shlex\|, shlex' "$SCRIPT" || return 1
+  ! grep -qE '^GIT_[A-Z_]* *=' "$SCRIPT" || return 1
+  ! grep -q 'bash_allowed\|scan_command' "$SCRIPT" || return 1
 }
 
 # ---------- 2.9 実行コスト ----------
