@@ -15,6 +15,12 @@ setup() {
   SL="${PLUGIN_DIR}/scripts/statusline.sh"
   WORK="$(mktemp -d)"
   export CLAUDE_CONFIG_DIR="$WORK"
+  # stdin の workspace.current_dir は出力 1 行目にパスの末尾 3 階層として出る。
+  # mktemp の乱数（例: tmp.Ab5hXy）をそのまま渡すと、行頭を固定しない '5h' などの
+  # 検索が 1 行目を拾って確率的に落ちるため、乱数を含まない固定の文字列を渡す。
+  # 存在しないパスで良い（statusline.sh は git -C の失敗を黙って捨てるだけで、
+  # current_dir の実在を前提にするテストは無い）。
+  CWD="/statusline-test/workspace/cwd"
   # #301 / #277: 呼び出し元の別アカウント設定をテストに持ち込まない。
   unset CLAUDE_SECURESTORAGE_CONFIG_DIR
   export STATUSLINE_API_PACE=0
@@ -34,9 +40,9 @@ setup() {
   # `date` コマンド自体を bash 関数でシャドウし `export -f` で子プロセスの bash
   # （old/new とも常に `bash <script>` で起動される）に伝播させ、`+%s` の結果を
   # この setup() で 1 回だけ取った $NOW に固定する。`+%s` 以外の呼び出し
-  # （$SL の changelog 日付計算など）は実 date にそのまま委譲するので、この
-  # シャドウで時刻に依存しない部分の比較対象を狭めてはいない（diff は全文比較
-  # のまま）。再現・検証: 意図的に old/new の呼び出しの間に 35 秒の遅延を挟むと
+  # （$SL の days_ago が ccusage の集計開始日を出す `date -v-30d` など）は実 date
+  # にそのまま委譲するので、このシャドウで時刻に依存しない部分の比較対象を
+  # 狭めてはいない（diff は全文比較のまま）。再現・検証: 意図的に old/new の呼び出しの間に 35 秒の遅延を挟むと
   # （14010 の mk_input が渡す resets_at は 14010 mod 60 = 30 秒の位置で分の桁が
   # 繰り上がるため）、シャドウ無しでは "~3h 52m" と "~3h 53m" のように再現し、
   # シャドウ適用後は同じ遅延でも差分が出ないことを確認済み。
@@ -57,7 +63,7 @@ teardown() {
 # $1=5h消化率 $2=7d消化率 $3=5h残り秒 $4=7d残り秒 → stdin JSON
 mk_input() {
   printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}}' \
-    "$WORK" "$1" "$((NOW + $3))" "$2" "$((NOW + $4))"
+    "$CWD" "$1" "$((NOW + $3))" "$2" "$((NOW + $4))"
 }
 
 strip_ansi() {
@@ -299,7 +305,9 @@ PY
 # ---------- 1 スロット時の退行ガード ----------
 
 # 残り時間の表示は分単位なので、2 回の実行が分の境界を跨ぐと差が出る。
-# 残り秒を 60 で割った余りが 30 になるオフセットを使い、約 30 秒の余裕を作って決定論にする。
+# 決定論にしているのは setup() の date シャドウで、new/old の `date +%s` を同じ $NOW に
+# 固定している（#332）。残り秒を 60 で割った余りが 30 になるオフセットは、シャドウが
+# 効かなくなった場合に分の境界まで約 30 秒の余裕を残す保険。
 @test "single: no registry keeps the output byte-identical to the previous version" {
   old="${WORK}/statusline-old.sh"
   git -C "$REPO_ROOT" show origin/main:plugins/statusline/scripts/statusline.sh > "$old" 2>/dev/null \
@@ -353,7 +361,7 @@ JSON
 
 @test "single: no rate_limits and no snapshot renders no rate limit line" {
   write_two_slot_registry
-  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$WORK" \
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$CWD" \
     | bash "$SL" | strip_ansi > "$WORK/out.txt"
   ! grep -q '5h' "$WORK/out.txt"
   ! grep -q '7d All' "$WORK/out.txt"
@@ -626,7 +634,7 @@ for k in ("fetched_at", "five_hour_pct", "five_hour_resets_at", "five_hour_reset
 json.dump(d, open(p, "w"))
 PY
   # stdin のライブ値も渡さない（active スロットの値が無い状態）
-  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$WORK" \
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$CWD" \
     | bash "$SL" | strip_ansi > "$WORK/out.txt"
   [ "$(grep -cE '^▸ A +取得待ち$' "$WORK/out.txt")" = "1" ]
   [ "$(grep -cE '^  B ' "$WORK/out.txt")" = "2" ]
@@ -698,7 +706,7 @@ SNAPSHOT
 @test "startup: alternate active account retains its marker without live limits" {
   write_two_slot_registry
   write_two_slot_snapshot "$NOW" "$NOW" "$((NOW + 172830))"
-  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$WORK" \
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$CWD" \
     | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" | strip_ansi > "$WORK/out.txt"
   [ "$(grep -cE '^▸ B +取得待ち$' "$WORK/out.txt")" = "1" ]
   ! grep -qE '^▸ B .*%' "$WORK/out.txt"
@@ -713,7 +721,7 @@ SNAPSHOT
     if [ "$registry" = present ]; then
       printf '{"accounts":[{"id":"a","label":"A","securestorage":null}]}' > "$ACCOUNTS"
     fi
-    printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$WORK" > "$WORK/input.json"
+    printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$CWD" > "$WORK/input.json"
     bash "$SL" < "$WORK/input.json" > "$WORK/new.txt"
     bash "$old" < "$WORK/input.json" > "$WORK/old.txt"
     diff "$WORK/old.txt" "$WORK/new.txt"
