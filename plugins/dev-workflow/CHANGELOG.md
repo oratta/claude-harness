@@ -1,12 +1,28 @@
 # Changelog — dev-workflow
 
-## 2.13.31 — 2026-09-23: エピックの子を Orca の独立セッションで回す経路を足す
+## 2.13.33 — 2026-09-23: エピックの子を Orca の独立セッションで回す経路を足す
 
-エピックの子を 1 つの本体がまとめて抱えると、子ごとの W / R1 / G の往復が本体のコンテキストに積もる。実運用では人がタブを分けて子ごとにセッションを起動していたので、これを自動にした（#420。手順はエピック #402 で手動で試したもの。2.13.30 は先行して main に入った #416 が使用したため、この変更は 2.13.31 とした）。
+エピックの子を 1 つの本体がまとめて抱えると、子ごとの W / R1 / G の往復が本体のコンテキストに積もる。実運用では人がタブを分けて子ごとにセッションを起動していたので、これを自動にした（#420。手順はエピック #402 で手動で試したもの。2.13.31・2.13.32 は先行 PR が使用したため、この変更は 2.13.33 とした）。
 
 - **scripts/epic-dispatch.sh**（新規）: `route`（子が 2 件以上・`orca` が PATH にある・Orca 管理のワークツリーにいるときだけ `orca`、それ以外は `subagent`）、`launch`（`git fetch` → 親ワークツリーをエピックに関連付け → 起動済みの子を `skipped` にしつつ子ごとに `orca worktree create`）、`wait`（子 issue のどれかが閉じるか上限時間に達するまで待ち、`closed` / `timeout` / `error gh` の 1 行で終わる）。LLM は使わない
 - **develop SKILL.md**: 「前提」表に `orca` の行を足した。「エピックの扱い」→「回し方」を、経路の決め方（最初の開始時に 1 回決めて `回し方:` のコメントに残し、再開時はそこから引き継ぐ。unmanned はサブエージェント方式）・Orca 経路の本体の手順（`wait` を背景で起動し、`state_reason` でマージと見送りを分ける）・サブエージェント方式・両経路に共通、に書き直した
 - **テスト**: `tests/epic-dispatch.bats` で `orca`・`gh`・`git`・`sleep` をスタブにして、呼び出しの引数と順序・stdout・exit code と、SKILL.md の記述を確かめる
+
+## 2.13.32 — 2026-09-23: Codex role の model を系統名で書き、呼ぶ直前に最新版へ解決する
+
+役割表 `codex-role-profiles.json` がモデル ID（`gpt-5.6-sol` 等）を直書きしていたため、GPT-6 Sol / Luna が出ても旧世代が呼ばれ、世代が上がるたびに役割表を手で直す必要があった（#397）。2.13.27〜2.13.31 は先に main に入った並行 PR が使ったため、この版は 2.13.32 とした。Claude 側と同じく系統名だけを書く形にそろえる。
+
+- **codex-role-profiles.json**: 組み込み 4 profile の Codex entry を `sol` / `luna` / `astra` に書き換えた
+- **codex-worker.py**: model が英小文字だけなら系統名として、model/list の hidden でない `gpt-<版>-<系統名>` から版が最も新しい 1 件を選び、thread/start と turn/start に渡す。0 件は `model_not_available`、最新版が 2 件以上は `model_not_unique` で止まり別モデルに倒さない。effort は解決後のモデルで検証する。結果 JSON の `execution.model_resolution` に要求値・種類・解決後の ID を残す。model/list の結果が object でないときと `hidden` が真偽値以外の entry があるときは、経路を問わず `model_list_invalid`。完全なモデル ID は従来どおり完全一致で照合する
+- **codex-develop.md / commands/develop.md**: model に系統名と完全 ID のどちらも書けること、記録先に要求値と解決後の ID を両方書くこと、新しいモデルが一覧に出るには Codex CLI の更新が要ることを書いた
+- **テスト**: Codex worker の Python テストに系統名の解決・非一意・hidden・版の数値比較・effort・解決結果の記録のテストを、develop 側の Python テストに役割表にモデル ID が無いことと系統名/完全 ID がそのまま request に写ることのテストを足した
+
+## 2.13.31 — 2026-09-23: 単独文の bats アサーションに `|| return 1` を義務付ける
+
+`[[ ... ]]` や `[ ... ]` を単独文として書くと、bats のヘルパ関数内では失敗しても関数を抜けずに後続行が実行され、アサーションが効かないまま green になっていた（#284）。2.13.30 は先行して main に入った #416 が使用したため、この変更は 2.13.31 とした。
+
+- `tests/bats-assertion-guard.bats` を新設し、ガードの無い単独文 `[[ ]]` / `[ ]` を全プラグイン横断で検出する
+- 対象だった 24 本の単独文アサーションに `|| return 1` を付与（`memory-refresh-skill.bats` / `memory-tripwire.bats` / `push-guard-setup.bats` / `review-hit-set.bats` ほか）
 
 ## 2.13.30 — 2026-09-23: usage-probe が User-Agent に claude-code を名乗る
 
@@ -37,6 +53,7 @@ Python のテストはプラグインごとの bats ラッパーが `-p` でフ�
 - 古い・欠測した観測と 5 時間枠の逼迫を区別して既定アカウントへ縮退し、stdout の `securestorage` と stderr の選択理由を分離した
 - 登録 id の明示選択を snapshot 非依存で追加し、README に `cld` / `cld-account` zsh function の設定例を載せた
 - `tests/account-selector.bats` で鮮度・短期枠・週次余裕・縮退・明示選択・出力ストリームを固定し、zsh がない環境では README の zsh functions テストだけを skip するようにした
+
 ## 2.13.26 — 2026-09-23: develop 本体が起こす G のレビューを adapter で振り分ける
 
 develop 本体から起こした G が full 判定で Codex を直接呼び、adapter の投げ先選択と dispatch 記録を通らずにレビューが走っていた（#385）。2.13.24 と 2.13.25 は並行 PR #384・#388 が使ったため、この版は 2.13.26 とした。

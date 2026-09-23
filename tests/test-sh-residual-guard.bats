@@ -95,10 +95,10 @@ BATS
   run run_test_sh_isolated
   echo "$output"   # 失敗したときだけ bats が表示する（内側の test.sh の出力）
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ok 1 leaks a child"* ]]            # テスト自体は通っている
-  [[ "$output" == *"握ったまま残っています"* ]]
-  [[ "$output" == *"sleep 1234"* ]]                    # 残留の実物が表示される
-  [[ "$output" == *"bats: 失敗あり"* ]]
+  [[ "$output" == *"ok 1 leaks a child"* ]] || return 1            # テスト自体は通っている
+  [[ "$output" == *"握ったまま残っています"* ]] || return 1
+  [[ "$output" == *"sleep 1234"* ]] || return 1                    # 残留の実物が表示される
+  [[ "$output" == *"bats: 失敗あり"* ]] || return 1
   # 残留は test.sh が回収済み
   sleep 1
   ! tracked_alive
@@ -119,8 +119,8 @@ BATS
   run run_test_sh_isolated
   echo "$output"   # 失敗したときだけ bats が表示する（内側の test.sh の出力）
   [ "$status" -eq 0 ]
-  [[ "$output" == *"bats: 全スイート pass"* ]]
-  [[ "$output" != *"残っています"* ]]
+  [[ "$output" == *"bats: 全スイート pass"* ]] || return 1
+  [[ "$output" != *"残っています"* ]] || return 1
 }
 
 # fd は閉じていても teardown で回収されなかった背景プロセスは失敗にする
@@ -135,8 +135,8 @@ BATS
   run run_test_sh_isolated
   echo "$output"   # 失敗したときだけ bats が表示する（内側の test.sh の出力）
   [ "$status" -ne 0 ]
-  [[ "$output" == *"回収されずに残っています"* ]]
-  [[ "$output" == *"sleep 1234"* ]]
+  [[ "$output" == *"回収されずに残っています"* ]] || return 1
+  [[ "$output" == *"sleep 1234"* ]] || return 1
   sleep 1
   ! tracked_alive
 }
@@ -157,8 +157,8 @@ BATS
   run run_test_sh_isolated
   echo "$output"   # 失敗したときだけ bats が表示する（内側の test.sh の出力）
   [ "$status" -ne 0 ]
-  [[ "$output" == *"回収されずに残っています"* ]]
-  [[ "$output" == *"bats-core-fixture/bats-exec-sleep 1234"* ]]
+  [[ "$output" == *"回収されずに残っています"* ]] || return 1
+  [[ "$output" == *"bats-core-fixture/bats-exec-sleep 1234"* ]] || return 1
   sleep 1
   ! tracked_alive
 }
@@ -177,8 +177,8 @@ BATS
     run run_test_sh_isolated
     echo "grace=$g: $output"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"TEST_RESIDUAL_GRACE"* ]]
-    [[ "$output" != *"bats: 全スイート pass"* ]]
+    [[ "$output" == *"TEST_RESIDUAL_GRACE"* ]] || return 1
+    [[ "$output" != *"bats: 全スイート pass"* ]] || return 1
   done
 }
 
@@ -207,8 +207,8 @@ BATS
   run run_test_sh_isolated
   echo "$output"   # 失敗したときだけ bats が表示する（内側の test.sh の出力）
   [ "$status" -eq 0 ]
-  [[ "$output" == *"プロセス一覧を取得できない環境"* ]]
-  [[ "$output" == *"ok 1 leaves a child alive"* ]]
-  [[ "$output" == *"bats: 全スイート pass"* ]]
-  [[ "$output" != *"残っています"* ]]
+  [[ "$output" == *"プロセス一覧を取得できない環境"* ]] || return 1
+  [[ "$output" == *"ok 1 leaves a child alive"* ]] || return 1
+  [[ "$output" == *"bats: 全スイート pass"* ]] || return 1
+  [[ "$output" != *"残っています"* ]] || return 1
 }

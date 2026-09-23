@@ -64,8 +64,8 @@ assert 'SessionStart' in d, 'SessionStart missing'
   run bash -c "echo '{\"cwd\":\"${repo}\",\"name\":\"abc\"}' | '${WT_CREATE_HOOK_SH}' 2>/dev/null"
   [ "$status" -eq 0 ]
   run git -C "$repo" worktree list
-  [[ "$output" == *".claude/worktrees/abc"* ]]
-  [[ "$output" == *"worktree-abc"* ]]
+  [[ "$output" == *".claude/worktrees/abc"* ]] || return 1
+  [[ "$output" == *"worktree-abc"* ]] || return 1
 }
 
 @test "wt-create-hook: copies .worktreeinclude targets into the worktree" {
@@ -183,7 +183,7 @@ print('ok')
 
   run bash -c "cd '${wt}' && echo '{}' | '${WT_SETUP_GUARD_SH}' 2>/dev/null"
   [ "$status" -eq 0 ]
-  [[ "$output" == *".worktreeinclude"* ]]
+  [[ "$output" == *".worktreeinclude"* ]] || return 1
 }
 
 @test "wt-setup-guard: symlinks .claude subdirectories into the worktree" {
