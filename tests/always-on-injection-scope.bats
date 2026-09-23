@@ -131,6 +131,6 @@ count_occurrences() {
   for f in destructive-git-guard.md dev-server.md browser-infra-env-capture.md; do
     [ -f "$REPO_ROOT/rules/$f" ]
     [ ! -L "$REPO_ROOT/rules/$f" ]
-    ! grep -q '^paths:' "$REPO_ROOT/rules/$f"
+    ! grep -q '^paths:' "$REPO_ROOT/rules/$f" || return 1
   done
 }

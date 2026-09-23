@@ -54,6 +54,13 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 # ===== gate-runner.md: 経路の判別（1.1） =====
 
+@test "gate-runner (#390): input contract includes the route and adapter resume dispatch details" {
+  intro="$(sed -n '1,3p' "$GATE")"
+  echo "$intro" | grep -qF '`レビュー経路:` の 1 行'
+  echo "$intro" | grep -qF '選ばれた executor / model'
+  echo "$intro" | grep -qF 'dispatch 記録のコメント URL'
+}
+
 @test "gate-runner (#385): has a route-detection section that names both values and treats a missing line as the legacy route" {
   s="$(section "$GATE" 'レビュー経路の判別')"
   [ -n "$s" ] || { echo "no レビュー経路の判別 section"; return 1; }
@@ -99,6 +106,14 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   echo "$s" | grep -qF 'Codex 不可の実測'
 }
 
+@test "gate-runner (#396): adapter route checks for another G on the same PR and HEAD before needs-reviewer" {
+  s="$(section "$GATE" 'レビュー経路の判別')"
+  line="$(echo "$s" | grep -F '| `レビュー経路: adapter` |')"
+  echo "$line" | grep -qF '手順 1 と手順 2-0 まで済ませ'
+  echo "$line" | grep -qF '同一 PR/HEAD で他の G が着手済みでないことを確認してから'
+  echo "$line" | grep -qF '`needs-reviewer`'
+}
+
 @test "gate-runner (#385): the adapter rule is limited to G and excluded for the phase review reviewer" {
   s="$(section "$GATE" 'レビュー経路の判別')"
   echo "$s" | grep -qF 'phase `gate`'
@@ -122,6 +137,19 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 # ===== develop SKILL.md（1.3） =====
+
+@test "develop (#392): reviewer model source differs between legacy and adapter routes" {
+  row="$(grep -F '| G が要求するレビュアー（読んで判断する役） |' "$DEVELOP")"
+  [ -n "$row" ] || { echo "reviewer model row missing"; return 1; }
+  echo "$row" | grep -qF '従来経路では G の `needs-reviewer` の推奨モデルに従う'
+  echo "$row" | grep -qF 'adapter 経路では adapter が返した model に残量上限を適用した値を使い'
+  echo "$row" | grep -qF '推奨モデルは参考値'
+}
+
+@test "develop (#395): defect discovery names the adapter reviewer and legacy Codex" {
+  s="$(step4)"
+  echo "$s" | grep -qF '欠陥探索は needs-reviewer で本体が起こすレビュアー（従来経路では Codex）が担う'
+}
 
 @test "develop (#385): Role profile section always writes the adapter route line and never writes the legacy value" {
   s="$(section "$DEVELOP" 'Role profile の選択')"
@@ -177,6 +205,15 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   echo "$line" | grep -qF 'fresh G の起動指示に行が無い場合だけ従来経路'
 }
 
+@test "codex-develop (#394): missing-route legacy behavior distinguishes Claude G from Codex G" {
+  s="$(section "$CODEX_DEVELOP" '品質と transport 差分')"
+  line="$(echo "$s" | grep -F 'fresh G の起動指示に行が無い場合だけ従来経路')"
+  old='行が無ければ従来経路として Codex を直接''呼ぶ'
+  echo "$line" | grep -qF 'Claude の G は Codex を直接呼ぶ'
+  echo "$line" | grep -qF 'Codex の G は prompt の禁止により呼ばない'
+  ! echo "$line" | grep -qF "$old" || return 1
+}
+
 # ===== レビュー実行者: の adapter 経路の形（1.5） =====
 
 @test "gate-runner and pr-review-gate (#385): both carry the adapter form of the reviewer line" {
@@ -185,6 +222,15 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   grep -qF "$form" "$PRGATE"
   # pr-review-gate は書き分けの段落と PR コメント雛形の両方に持つ
   [ "$(grep -cF "$form" "$PRGATE")" -ge 2 ]
+}
+
+@test "pr-review-gate (#393): all five evidence fields allow the adapter not-run value" {
+  block="$(awk '/^対象 HEAD: <40 桁フル SHA>/{f=1} f{print} f && /^```$/{exit}' "$PRGATE")"
+  [ -n "$block" ] || { echo "review evidence template missing"; return 1; }
+  for field in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:'; do
+    echo "$block" | grep -F -- "$field" | grep -qF '未実行（adapter 経路）' || { echo "missing adapter value in ${field}"; return 1; }
+  done
+  [ "$(echo "$block" | grep -cF '未実行（adapter 経路）')" -eq 5 ]
 }
 
 @test "develop (#385): prerequisites table Codex CLI row separates the adapter route from the legacy route" {

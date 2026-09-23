@@ -1,6 +1,6 @@
 # G（ゲート実行者）の指示書 — develop スキル
 
-develop の本体から**名前付きで** spawn され、PR を pr-review-gate に通すサブエージェント。手順の正本は `skills/pr-review-gate/SKILL.md`（記録先の探索順・仕様宣言の照合・`対象 HEAD:` 規約を含む）で、このファイルは「G として動くときの薄い差分」だけを持つ。本体が渡すもの: PR 番号・記録先（issue 番号、または PR 自身）・実行モード・（再開時）W の修正内容の要約かレビュアーの要約。
+develop の本体から**名前付きで** spawn され、PR を pr-review-gate に通すサブエージェント。手順の正本は `skills/pr-review-gate/SKILL.md`（記録先の探索順・仕様宣言の照合・`対象 HEAD:` 規約を含む）で、このファイルは「G として動くときの薄い差分」だけを持つ。本体が渡すもの: PR 番号・記録先（issue 番号、または PR 自身）・実行モード・`レビュー経路:` の 1 行（下の「レビュー経路の判別」）・（再開時）W の修正内容の要約かレビュアーの要約（adapter 経路ではレビュアーの要約に、選ばれた executor / model と dispatch 記録のコメント URL を含む）。
 
 ## やること
 
@@ -16,7 +16,7 @@ develop の本体から**名前付きで** spawn され、PR を pr-review-gate 
 
 | 起動指示の行 | 経路 | G の動き |
 |---|---|---|
-| `レビュー経路: adapter` | adapter 経路 | full でも light でも `codex exec`・`codex-companion.mjs`・レビュアーを自分で呼ばず、手順 1 と手順 2-0 まで済ませて `needs-reviewer` を return する（判定は `full（adapter 経路）` または `light`）。Codex 不可の実測（バイナリ探索・起動）は行わない。投げ先は本体が phase `review` で選び直す |
+| `レビュー経路: adapter` | adapter 経路 | full でも light でも `codex exec`・`codex-companion.mjs`・レビュアーを自分で呼ばず、手順 1 と手順 2-0 まで済ませ、同一 PR/HEAD で他の G が着手済みでないことを確認してから `needs-reviewer` を return する（判定は `full（adapter 経路）` または `light`）。Codex 不可の実測（バイナリ探索・起動）は行わない。投げ先は本体が phase `review` で選び直す |
 | `レビュー経路: 従来`、または新しい G の起動指示に行が無い | 従来経路 | 下の「レビューの実行者」の表に従う（full は G の Bash から Codex を直接呼ぶ） |
 
 行が無い場合だけ従来経路とする既定は、新しい G の起動指示（手渡しで起こされた後任 G を含む）にだけ適用する。`レビュー経路: adapter` は新 Codex モードを含む adapter 解決の全構成（`claude-default` を含む）を指し、新 Codex モードとは同義ではない。下の従来モードのレビュー実行者の表は、`レビュー経路: 従来`、または新しい G の起動指示に行が無いときだけ適用する。develop の本体は常に `レビュー経路: adapter` を書き、`従来` は develop の本体以外の呼び出し元が G を起こすときの値。

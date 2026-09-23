@@ -39,7 +39,7 @@ setup() {
   # 全 tracked ファイル対象であること
   grep -q 'git -C "$MAIN_REPO" diff "$MAIN_BRANCH" "$BRANCH_NAME" --stat 2>/dev/null' "$WT_CLEAN_SKILL"
   # 言語別フィルタが復活していないこと
-  ! grep -q "diff \"\$MAIN_BRANCH\" \"\$BRANCH_NAME\" --stat -- " "$WT_CLEAN_SKILL"
+  ! grep -q "diff \"\$MAIN_BRANCH\" \"\$BRANCH_NAME\" --stat -- " "$WT_CLEAN_SKILL" || return 1
   grep -q 'パスフィルタを掛けてはならない' "$WT_CLEAN_SKILL"
 }
 
@@ -55,7 +55,7 @@ setup() {
 
 @test "skill: gh is not piped into grep -c (its exit code must be observable)" {
   # `gh ... | grep -c` はパイプ末尾の grep の終了コードになり gh の失敗を隠す
-  ! grep -Eq 'gh pr list[^|]*\| *grep -c' "$WT_CLEAN_SKILL"
+  ! grep -Eq 'gh pr list[^|]*\| *grep -c' "$WT_CLEAN_SKILL" || return 1
 }
 
 @test "skill: a merged PR is only trusted when its headRefOid matches the branch tip" {

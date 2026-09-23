@@ -115,14 +115,14 @@ setup() {
   readme="${PLUGIN_DIR}/README.md"
   grep -q 'docs/agent-loop.md' "$readme"
   grep -q 'flatmate' "$readme"
-  ! grep -q 'agent-loop-template' "$readme"
+  ! grep -q 'agent-loop-template' "$readme" || return 1
 }
 
 @test "root README drops the retired plugin sections and records the retirement" {
-  ! grep -qF '/plugin install longrun@oratta-claude-harness' "$ROOT_README"
-  ! grep -qF '/plugin install loops@oratta-claude-harness' "$ROOT_README"
-  ! grep -qF '`/longrun:plan' "$ROOT_README"
-  ! grep -qF '`/loops:design' "$ROOT_README"
+  ! grep -qF '/plugin install longrun@oratta-claude-harness' "$ROOT_README" || return 1
+  ! grep -qF '/plugin install loops@oratta-claude-harness' "$ROOT_README" || return 1
+  ! grep -qF '`/longrun:plan' "$ROOT_README" || return 1
+  ! grep -qF '`/loops:design' "$ROOT_README" || return 1
   grep -q 'plugins/dev-workflow/CHANGELOG.md' "$ROOT_README"
 }
 
