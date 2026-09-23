@@ -15,12 +15,6 @@ setup() {
   SL="${PLUGIN_DIR}/scripts/statusline.sh"
   WORK="$(mktemp -d)"
   export CLAUDE_CONFIG_DIR="$WORK"
-  # stdin の workspace.current_dir は出力 1 行目にパスの末尾 3 階層として出る。
-  # mktemp の乱数（例: tmp.Ab5hXy）をそのまま渡すと、行頭を固定しない '5h' などの
-  # 検索が 1 行目を拾って確率的に落ちるため、乱数を含まない固定の文字列を渡す。
-  # 存在しないパスで良い（statusline.sh は git -C の失敗を黙って捨てるだけで、
-  # current_dir の実在を前提にするテストは無い）。
-  CWD="/statusline-test/workspace/cwd"
   # #301 / #277: 呼び出し元の別アカウント設定をテストに持ち込まない。
   unset CLAUDE_SECURESTORAGE_CONFIG_DIR
   export STATUSLINE_API_PACE=0
@@ -42,7 +36,8 @@ setup() {
   # この setup() で 1 回だけ取った $NOW に固定する。`+%s` 以外の呼び出し
   # （$SL の days_ago が ccusage の集計開始日を出す `date -v-30d` など）は実 date
   # にそのまま委譲するので、このシャドウで時刻に依存しない部分の比較対象を
-  # 狭めてはいない（diff は全文比較のまま）。再現・検証: 意図的に old/new の呼び出しの間に 35 秒の遅延を挟むと
+  # 狭めてはいない（diff は全文比較のまま）。再現・検証: 意図的に old/new の
+  # 呼び出しの間に 35 秒の遅延を挟むと
   # （14010 の mk_input が渡す resets_at は 14010 mod 60 = 30 秒の位置で分の桁が
   # 繰り上がるため）、シャドウ無しでは "~3h 52m" と "~3h 53m" のように再現し、
   # シャドウ適用後は同じ遅延でも差分が出ないことを確認済み。
@@ -63,11 +58,18 @@ teardown() {
 # $1=5h消化率 $2=7d消化率 $3=5h残り秒 $4=7d残り秒 → stdin JSON
 mk_input() {
   printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}}' \
-    "$CWD" "$1" "$((NOW + $3))" "$2" "$((NOW + $4))"
+    "$WORK" "$1" "$((NOW + $3))" "$2" "$((NOW + $4))"
 }
 
 strip_ansi() {
   sed $'s/\033\\[[0-9;]*m//g'
+}
+
+# 出力 1 行目は current_dir（mktemp -d の乱数パス）の末尾 3 階層で、乱数に 5h が
+# 入ることがある。行頭を固定せずに 5h を探す検索は、この関数で 1 行目を除いてから行う。
+# python で行を読む検査も同じ理由で 1 行目を読み飛ばす（readlines()[1:]）。
+drop_cwd_line() {
+  tail -n +2 "$1"
 }
 
 write_two_slot_registry() {
@@ -117,7 +119,7 @@ JSON
   write_two_slot_registry
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  [ "$(grep -c '5h' "$WORK/out.txt")" = "2" ]
+  [ "$(drop_cwd_line "$WORK/out.txt" | grep -c '5h')" = "2" ]
   [ "$(grep -c '7d All' "$WORK/out.txt")" = "2" ]
   grep -qE '^(▸ |  )A +5h' "$WORK/out.txt"
   grep -qE '^(▸ |  )A +7d All' "$WORK/out.txt"
@@ -144,7 +146,7 @@ JSON
   } }
 JSON
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  [ "$(grep -c '5h' "$WORK/out.txt")" = "1" ]
+  [ "$(drop_cwd_line "$WORK/out.txt" | grep -c '5h')" = "1" ]
   ! grep -qE '^(▸ |  )B ' "$WORK/out.txt"
 }
 
@@ -361,9 +363,9 @@ JSON
 
 @test "single: no rate_limits and no snapshot renders no rate limit line" {
   write_two_slot_registry
-  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$CWD" \
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$WORK" \
     | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  ! grep -q '5h' "$WORK/out.txt"
+  ! drop_cwd_line "$WORK/out.txt" | grep -q '5h'
   ! grep -q '7d All' "$WORK/out.txt"
 }
 
@@ -438,7 +440,7 @@ import re, sys, unicodedata
 def w(s):
     return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
 cols = set()
-for line in open(sys.argv[1], encoding="utf-8"):
+for line in open(sys.argv[1], encoding="utf-8").readlines()[1:]:
     m = re.search(r"(5h|7d All)", line)
     if m and not line.startswith(("5h", "7d")):
         cols.add(w(line[:m.start()]))
@@ -458,7 +460,7 @@ PY
 JSON
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  line="$(grep '5h' "$WORK/out.txt" | head -1)"
+  line="$(drop_cwd_line "$WORK/out.txt" | grep '5h' | head -1)"
   # label 列は表示幅 8 までに収まる（40 桁のパディングにならない）。
   # 先頭の 2 桁は active の目印列なので、その分を足した上限で見る。
   col="$(python3 -c "
@@ -600,7 +602,7 @@ PY
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   python3 - "$WORK/out.txt" <<'PY'
 import sys, unicodedata
-rows = [l for l in open(sys.argv[1], encoding="utf-8") if ("5h" in l or "7d All" in l)]
+rows = [l for l in open(sys.argv[1], encoding="utf-8").readlines()[1:] if ("5h" in l or "7d All" in l)]
 marked = [l for l in rows if not l.startswith("  ")]
 assert marked, "no marked row found"
 glyph = marked[0][0]
@@ -634,7 +636,7 @@ for k in ("fetched_at", "five_hour_pct", "five_hour_resets_at", "five_hour_reset
 json.dump(d, open(p, "w"))
 PY
   # stdin のライブ値も渡さない（active スロットの値が無い状態）
-  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$CWD" \
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$WORK" \
     | bash "$SL" | strip_ansi > "$WORK/out.txt"
   [ "$(grep -cE '^▸ A +取得待ち$' "$WORK/out.txt")" = "1" ]
   [ "$(grep -cE '^  B ' "$WORK/out.txt")" = "2" ]
@@ -654,7 +656,7 @@ import re, sys, unicodedata
 def w(s):
     return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
 cols = set()
-for line in open(sys.argv[1], encoding="utf-8"):
+for line in open(sys.argv[1], encoding="utf-8").readlines()[1:]:
     m = re.search(r"(5h|7d All)", line)
     if m and m.start() > 0:
         cols.add(w(line[: m.start()]))
@@ -706,7 +708,7 @@ SNAPSHOT
 @test "startup: alternate active account retains its marker without live limits" {
   write_two_slot_registry
   write_two_slot_snapshot "$NOW" "$NOW" "$((NOW + 172830))"
-  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$CWD" \
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$WORK" \
     | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" | strip_ansi > "$WORK/out.txt"
   [ "$(grep -cE '^▸ B +取得待ち$' "$WORK/out.txt")" = "1" ]
   ! grep -qE '^▸ B .*%' "$WORK/out.txt"
@@ -721,7 +723,7 @@ SNAPSHOT
     if [ "$registry" = present ]; then
       printf '{"accounts":[{"id":"a","label":"A","securestorage":null}]}' > "$ACCOUNTS"
     fi
-    printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$CWD" > "$WORK/input.json"
+    printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$WORK" > "$WORK/input.json"
     bash "$SL" < "$WORK/input.json" > "$WORK/new.txt"
     bash "$old" < "$WORK/input.json" > "$WORK/old.txt"
     diff "$WORK/old.txt" "$WORK/new.txt"

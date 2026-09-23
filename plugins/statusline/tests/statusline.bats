@@ -10,12 +10,6 @@ setup() {
   INSTALL="${PLUGIN_DIR}/scripts/install.sh"
   WORK="$(mktemp -d)"
   export CLAUDE_CONFIG_DIR="$WORK"
-  # stdin の workspace.current_dir は出力 1 行目にパスの末尾 3 階層として出る。
-  # mktemp の乱数（例: tmp.Ab5hXy）をそのまま渡すと、行頭を固定しない '5h' などの
-  # 検索が 1 行目を拾って確率的に落ちるため、乱数を含まない固定の文字列を渡す。
-  # 存在しないパスで良い（statusline.sh は git -C の失敗を黙って捨てるだけで、
-  # current_dir の実在を前提にするテストは無い）。
-  CWD="/statusline-test/workspace/cwd"
   # ccusage の背景フェッチと為替取得を走らせない
   export STATUSLINE_API_PACE=0
   export STATUSLINE_CODEX=0
@@ -34,7 +28,7 @@ teardown() {
 # $1=5h消化率 $2=7d消化率 $3=5h残り秒 $4=7d残り秒 → stdin JSON
 mk_input() {
   printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}}' \
-    "$CWD" "$1" "$((NOW + $3))" "$2" "$((NOW + $4))"
+    "$WORK" "$1" "$((NOW + $3))" "$2" "$((NOW + $4))"
 }
 
 # ANSI エスケープを剥がす
@@ -68,7 +62,8 @@ JSON
 
 @test "render: 5h line has no denominator" {  # 5h 行には分母を出さない
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
-  line="$(strip_ansi < "$WORK/out.txt" | grep '5h')"
+  # 1 行目は current_dir（mktemp -d の乱数パス）で 5h を含み得るので除いてから探す
+  line="$(strip_ansi < "$WORK/out.txt" | tail -n +2 | grep '5h')"
   [[ "$line" =~ 3% ]]
   [[ "$line" != */* ]]
 }
@@ -107,7 +102,7 @@ JSON
 }
 
 @test "render: fail-open draws lines 1-2 without rate limit fields" {  # レートリミット情報が無くても 1〜2 行目は描画する（fail-open）
-  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$CWD" \
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$WORK" \
     | bash "$SL" > "$WORK/out.txt"
   grep -q 'Opus 5' "$WORK/out.txt"
   grep -q 'Context 91%' "$WORK/out.txt"
@@ -117,7 +112,7 @@ JSON
 # $1=cost.total_cost_usd → cost を含む stdin JSON（レートリミットなし）
 mk_cost_input() {
   printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"cost":{"total_cost_usd":%s}}' \
-    "$CWD" "$1"
+    "$WORK" "$1"
 }
 
 @test "session cost: converts cost.total_cost_usd with the cached fx rate" {  # セッションコストを為替キャッシュで円換算して 2 行目に出す
