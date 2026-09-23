@@ -1,4 +1,4 @@
-"""Run with python3 -m unittest discover -s plugins/statusline/tests -p test_codex.py."""
+"""Run with scripts/test.sh python-suites (runs every plugins/*/tests/test_*.py)."""
 import importlib.util
 import json
 import os

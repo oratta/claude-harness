@@ -1,5 +1,21 @@
 # Changelog — dev-workflow
 
+## 2.13.29 — 2026-09-23: Python のテストをファイル名で絞らずに全件実行する
+
+Python のテストはプラグインごとの bats ラッパーが `-p` でファイル名を絞って走らせていたため、新しく足したファイルが拾われず、落ちたときもどのテストが落ちたかが出なかった（#344。2.13.28 は先行して main に入った #391 が使用したため 2.13.29 とした。発端は #334 / PR #343 で絞ったコマンドだけを走らせて別ファイルの失敗を見落としたこと）。
+
+- ルートの `tests/python-suites.bats` が git 追跡下の `plugins/*/tests/test_*.py` を置き場所ごとに `unittest discover -p 'test_*.py'` で走らせる。ディレクトリごとの `Ran N tests` を TAP のコメントに出し、Python が無い・対象が無い・0 件のときは失敗にする
+- `tests/codex-python.bats` を削除した（statusline の `statusline-codex.bats` も同時に削除）
+- `scripts/CODEX-WORKER.md` のテスト実行コマンドを `scripts/test.sh python-suites` に置き換えた
+
+## 2.13.28 — 2026-09-23: adapter のレビュー経路を同一 G の再開中は保持する
+
+`レビュー経路: adapter` で起動された G が、後続の再開指示に同じ行がないだけで従来経路へ切り替わるようにも読めた。2.13.27 は先行して main に入った #374 が使用したため、この変更は 2.13.28 とした。
+
+- **gate-runner.md**: adapter で起動済みの同一 G は、行のない再開指示でも adapter 経路を保持する。行のない指示を従来経路とする既定は、新しい G の起動指示（手渡しで起こされた後任を含む）だけに適用する
+- **develop SKILL.md / codex-develop.md**: 同一 G の行なし再開と、新しい G の行なし起動の境界を同じ記述へ揃えた。本体が起動・再開・手渡しのすべてに常に `レビュー経路: adapter` を書く責任は維持する
+- **テスト**: `develop-adapter-review-routing.bats` で三面の sticky 規則と後方互換の既定を固定した
+
 ## 2.13.27 — 2026-09-23: 起動時に週次余裕のある Claude アカウントを選ぶ
 
 - `scripts/select-account.sh` を追加した。schema 2 usage snapshot の 300 秒以内の観測から、5 時間枠が 90% 未満で週次余裕が最大のスロットを選ぶ。同点はレジストリの宣言順で決める
