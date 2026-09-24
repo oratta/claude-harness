@@ -494,11 +494,18 @@ refute() {
   echo "$s" | grep -qF 'Codex 消費: <thread_id> <tokens>'
   echo "$s" | grep -qF 'usage.total.totalTokens'
   echo "$s" | grep -q '`usage` が null'
-  echo "$s" | grep -qF 'gh api --paginate --slurp'
-  echo "$s" | grep -qF '^Codex 消費: '
-  echo "$s" | grep -qF -- '--codex-records'
+  echo "$s" | grep -qF 'scripts/codex-records.sh --repo <owner>/<repo> --out "<scratchpad>/codex-records.txt"'
+  echo "$s" | grep -qF -- '--codex-records "<scratchpad>/codex-records.txt"'
   echo "$s" | grep -qF -- '--codex-home'
   echo "$s" | grep -qF '${CODEX_HOME:-$HOME/.codex}'
+}
+
+@test "token budget: a failed comment fetch skips the budget and is handled as exit 1" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF 'if scripts/codex-records.sh'
+  echo "$s" | grep -q 'pr-token-budget.sh` を呼ばず'
+  echo "$s" | grep -q 'Codex 消費コメントを取得できなかった'
+  echo "$s" | grep -q '空の記録や前回のファイルで代えない'
 }
 
 @test "token budget: continue raises the cap via a comment, close stops Codex too, exit 1 comments once per cycle" {

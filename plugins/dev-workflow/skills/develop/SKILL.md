@@ -152,14 +152,15 @@ W は名前付きで spawn し、SendMessage で再開してコンテキスト�
 **計測**: その記録先のためにサブエージェントを spawn する直前、SendMessage で再開する直前、および Codex executor へ委譲する直前に、役割と executor を問わず毎回次を実行する（`subagent-context.sh` を再開前に呼ぶのと同じ位置。こちらは spawn と委譲の前にも呼ぶ）。
 
 ```bash
-# 渡すすべての記録先番号のコメントを全ページ取得し、1 行目が ^Codex 消費:  のものだけを集める
-for n in <記録先番号> [PR 番号]; do
-  gh api --paginate --slurp "repos/<owner>/<repo>/issues/$n/comments" \
-    | jq -r '.[][] | .body | split("\n")[0] | select(test("^Codex 消費: ")) | sub("^Codex 消費: "; "")'
-done > "<scratchpad>/codex-records.txt"
-scripts/pr-token-budget.sh <記録先番号> [PR 番号] --codex-records "<scratchpad>/codex-records.txt" \
-  --codex-home <account 対応表の各 CODEX_HOME>... --codex-home "${CODEX_HOME:-$HOME/.codex}" [--cap <新上限>]
+# 渡すすべての記録先番号のコメントを全ページ取得し、1 行目が ^Codex 消費:  のものだけを集める。
+# 全番号の取得に成功したときだけ exit 0 で記録ファイルを書く
+if scripts/codex-records.sh --repo <owner>/<repo> --out "<scratchpad>/codex-records.txt" <記録先番号> [PR 番号]; then
+  scripts/pr-token-budget.sh <記録先番号> [PR 番号] --codex-records "<scratchpad>/codex-records.txt" \
+    --codex-home <account 対応表の各 CODEX_HOME>... --codex-home "${CODEX_HOME:-$HOME/.codex}" [--cap <新上限>]
+fi
 ```
+
+`codex-records.sh` が exit 0 以外を返したら（通信障害・認証エラー・`gh` か `jq` が無い等）、`pr-token-budget.sh` を呼ばず、下の exit 1（計測できない）と同じ扱いにする。取得に失敗した記録を空の記録や前回のファイルで代えない（Codex 分が抜けた合計を上限以内と読み違えるため）。
 
 `--codex-home` には codex-develop の account と CODEX_HOME の対応表（`--account-home` / `--account-home-file`）にある全パスと、本体の環境の `${CODEX_HOME:-$HOME/.codex}` を渡す。記録先に `PR トークン上限:` のコメントがあれば、最新のものの値を `--cap` に渡す。上限の既定は 30,000,000（Claude 分と Codex 分の合計に対する値。環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP` で変更可）。計測はこの SKILL.md の手順で、adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` には置かない。
 
@@ -168,7 +169,7 @@ scripts/pr-token-budget.sh <記録先番号> [PR 番号] --codex-records "<scrat
 - 「続ける」: 記録先に 1 行目が `PR トークン上限: <新上限>` のコメントを投稿し、以後この記録先の計測に `--cap <新上限>` を渡す。新上限は「その時点の合計 ＋ 直前の計測で上限に使った値（`--cap`、無ければ `DEV_WORKFLOW_PR_TOKEN_CAP`、無ければ 30000000）」。後任の本体は記録先の最新の `PR トークン上限:` コメントの値を使う
 - 「範囲外として閉じる」: この記録先について以後サブエージェントを起こさず、Codex にも委譲しない。残作業を記録先にコメントしてサイクルを終える
 
-**exit 1（計測できない。引数エラー・python3 が無い・リポジトリ外）**: 止まらずに進み、計測できなかったことと理由を記録先にコメントする。コメントは同じ記録先・同じ理由について 1 サイクルに 1 回までにする（interactive では本体の 1 セッション、unmanned では loop-dev-agent の 1 サイクル）。
+**exit 1（計測できない。引数エラー・python3 が無い・リポジトリ外・Codex 消費コメントを取得できなかった）**: 止まらずに進み、計測できなかったことと理由を記録先にコメントする。コメントは同じ記録先・同じ理由について 1 サイクルに 1 回までにする（interactive では本体の 1 セッション、unmanned では loop-dev-agent の 1 サイクル）。
 
 計測に入らないもの: 本体自身の消費、Workflow 経由のサブエージェント。出力の `unresolved`（作業ディレクトリが消えたサブエージェント）と `codex_unresolved`（rollout が見つからない thread）は合計に入らないので、0 でなければ問いに件数を添える。
 
