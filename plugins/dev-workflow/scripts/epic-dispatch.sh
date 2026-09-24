@@ -11,8 +11,12 @@
 # launch: `orca worktree current --json` → `git rev-parse --show-toplevel` → `git fetch origin <base>`
 #   → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` →
 #   子ごとに `orca worktree create`（同じ repoId・同じ linkedIssue・archive されていない
-#   ワークツリーがあれば作らない）。stdout は子ごとに `launched <N>` / `skipped <N>` / `failed <N>`
-#   の 1 行。orca 自身の出力は stderr。<base> の既定は main（EPIC_DISPATCH_BASE、--base が優先）
+#   ワークツリーがあれば作らない。--prompt は渡さない）→ `orca terminal wait --for tui-idle` →
+#   `orca terminal send --text <指示> --enter --wait-submit <秒>`。stdout は子ごとに `launched <N>`
+#   （send の stages に turn_started がある）/ `skipped <N>` / `failed <N>` の 1 行。failed で
+#   ハンドルが取れていれば送り直しのコマンドを stderr に出す。orca 自身の出力は stderr。
+#   <base> の既定は main（EPIC_DISPATCH_BASE、--base が優先）。起動完了待ちの上限（ミリ秒）と
+#   送信の観測時間（秒）の既定は 60000 / 30（EPIC_DISPATCH_READY_TIMEOUT_MS / EPIC_DISPATCH_SUBMIT_WAIT）
 #   exit 0 = failed なし / 1 = failed あり、または orca・jq が無い・current / fetch / set / list の
 #   失敗（このときは子を 1 件も作らない）
 # wait: 子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state` を見るポーリングを繰り返し、
@@ -61,6 +65,21 @@ cmd_route() {
   fi
 }
 
+# シェルに貼れる形の単一引用符で囲む
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# 指示が届かなかった子の送り直しのコマンドを stderr に出す（<handle> <prompt> <submit> [<retry id>]）
+resend_hint() {
+  local cmd
+  cmd="orca terminal send --terminal $1 --text $(shq "$2") --enter --wait-submit $3 --json"
+  [ -n "${4-}" ] && cmd="$cmd --retry-request $4"
+  {
+    echo "the first prompt may not have reached terminal $1."
+    echo "check the input line and whether a turn started before resending: orca terminal read --terminal $1"
+    echo "resend: $cmd"
+  } >&2
+}
+
 cmd_launch() {
   local note="" base="${EPIC_DISPATCH_BASE:-main}"
   while [ "$#" -gt 0 ]; do
@@ -75,6 +94,9 @@ cmd_launch() {
   local epic="$1"; shift
   is_num "$epic" || { echo "not an issue number: $epic" >&2; usage; }
   check_children "$@"
+  local ready="${EPIC_DISPATCH_READY_TIMEOUT_MS:-60000}" submit="${EPIC_DISPATCH_SUBMIT_WAIT:-30}"
+  is_num "$ready" || { echo "EPIC_DISPATCH_READY_TIMEOUT_MS must be a non-negative integer: $ready" >&2; usage; }
+  is_num "$submit" || { echo "EPIC_DISPATCH_SUBMIT_WAIT must be a non-negative integer: $submit" >&2; usage; }
 
   command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
@@ -91,7 +113,7 @@ cmd_launch() {
   printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
     || { echo "orca worktree list --json is not readable" >&2; exit 1; }
 
-  local n prompt failed=0
+  local n prompt out rc handle sent retry failed=0
   for n in "$@"; do
     if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$n" \
       'any(.result.worktrees[]; .repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)' \
@@ -101,12 +123,34 @@ cmd_launch() {
     fi
     prompt="/develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
     [ -n "$note" ] && prompt="$prompt $note"
-    if orca worktree create --name "issue-$n" --issue "$n" --base-branch "origin/$base" \
-      --parent-worktree "path:$parent" --agent claude --prompt "$prompt" --json >&2; then
+    out="$(orca worktree create --name "issue-$n" --issue "$n" --base-branch "origin/$base" \
+      --parent-worktree "path:$parent" --agent claude --json)"
+    rc=$?
+    printf '%s\n' "$out" >&2
+    if [ "$rc" -ne 0 ]; then
+      echo "failed $n"; failed=1; continue
+    fi
+    handle="$(printf '%s' "$out" \
+      | jq -r '.result.agentTerminalHandle // .result.startupTerminal.handle // empty' 2>/dev/null)"
+    if [ -z "$handle" ]; then
+      echo "no terminal handle for #$n in orca worktree create --json" >&2
+      echo "failed $n"; failed=1; continue
+    fi
+    if ! orca terminal wait --terminal "$handle" --for tui-idle --timeout-ms "$ready" --json >&2; then
+      resend_hint "$handle" "$prompt" "$submit"
+      echo "failed $n"; failed=1; continue
+    fi
+    sent="$(orca terminal send --terminal "$handle" --text "$prompt" --enter --wait-submit "$submit" --json)"
+    rc=$?
+    printf '%s\n' "$sent" >&2
+    if [ "$rc" -eq 0 ] && printf '%s' "$sent" \
+      | jq -e '[.. | objects | .stages? | arrays | .[]] | index("turn_started") != null' >/dev/null 2>&1; then
       echo "launched $n"
     else
-      echo "failed $n"
-      failed=1
+      retry="$(printf '%s' "$sent" \
+        | jq -r 'first(.. | objects | (.retryRequestId // .retryRequest) | strings) // empty' 2>/dev/null)"
+      resend_hint "$handle" "$prompt" "$submit" "$retry"
+      echo "failed $n"; failed=1
     fi
   done
   exit "$failed"

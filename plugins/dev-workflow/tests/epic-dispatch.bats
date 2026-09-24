@@ -6,7 +6,10 @@
 # スタブは自分の名前と引数（printf '%q'）を共通のログ（${STUB_LOG}）に 1 行ずつ追記する。
 # 返り値は $STUB_CFG の設定ファイルで切り替える:
 #   orca: current_exit / current_json / list_exit / list_json / set_exit / create_fail_<N>
-#         （create の --prompt の値は prompt_<N> に書き出す）
+#         / create_json_<N>（既定は agentTerminalHandle が term-<N> の JSON）
+#         / wait_exit_<handle> / send_exit_<handle> / send_json_<handle>
+#         （既定は stages に turn_started を含む JSON）。
+#         create に --prompt が渡されたら prompt_<N> に、terminal send の --text は sent_<handle> に書き出す
 #   git : toplevel（rev-parse の出力）/ fetch_exit
 #   gh  : gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
 #         呼び出し回数は ghcount_<N>
@@ -58,10 +61,34 @@ case "$1 $2" in
       esac
       shift
     done
-    printf "%s" "$prompt" > "$STUB_CFG/prompt_$issue"
-    echo "{\"ok\":true}"
+    [ -n "$prompt" ] && printf "%s" "$prompt" > "$STUB_CFG/prompt_$issue"
+    if [ -e "$STUB_CFG/create_json_$issue" ]; then
+      cat "$STUB_CFG/create_json_$issue"
+    else
+      echo "{\"ok\":true,\"result\":{\"agentTerminalHandle\":\"term-$issue\"}}"
+    fi
     [ -e "$STUB_CFG/create_fail_$issue" ] && exit 1
     exit 0 ;;
+  "terminal wait"|"terminal send")
+    sub="$2"; handle=""; text=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --terminal) handle="$2"; shift ;;
+        --text) text="$2"; shift ;;
+      esac
+      shift
+    done
+    if [ "$sub" = wait ]; then
+      echo "{\"ok\":true}"
+      exit "$(cat "$STUB_CFG/wait_exit_$handle" 2>/dev/null || echo 0)"
+    fi
+    printf "%s" "$text" > "$STUB_CFG/sent_$handle"
+    if [ -e "$STUB_CFG/send_json_$handle" ]; then
+      cat "$STUB_CFG/send_json_$handle"
+    else
+      echo "{\"ok\":true,\"result\":{\"stages\":[\"input_accepted\",\"turn_started\"]}}"
+    fi
+    exit "$(cat "$STUB_CFG/send_exit_$handle" 2>/dev/null || echo 0)" ;;
 esac
 exit 0' ;;
     git) body='
@@ -97,7 +124,7 @@ dispatch() { PATH="$STUB_BIN:/usr/bin:/bin" "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/
 gh_seq() { local n="$1"; shift; printf '%s\n' "$@" > "$STUB_CFG/gh_$n"; }
 
 # ログの呼び出し回数（grep -c が 0 件で exit 1 になるのを吸収する）
-calls() { grep -c -- "$1" "$STUB_LOG" || true; }
+calls() { LC_ALL=C grep -c -- "$1" "$STUB_LOG" || true; }
 
 # 前方一致（失敗したら両方を出す）
 starts_with() {
@@ -154,7 +181,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 
 # --- launch ---
 
-@test "launch: call order is current, toplevel, fetch, set, list, then create per child" {
+@test "launch: call order is current, toplevel, fetch, set, list, then create, wait and send per child" {
   make_stub orca
   run dispatch launch 400 11 12
   [ "$status" -eq 0 ]
@@ -163,22 +190,27 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${#lines[@]}" -eq 2 ]
   log=()
   while IFS= read -r l; do log+=("$l"); done < "$STUB_LOG"
-  [ "${#log[@]}" -eq 7 ]
+  [ "${#log[@]}" -eq 11 ]
   [ "${log[0]}" = "orca worktree current --json" ]
   [ "${log[1]}" = "git rev-parse --show-toplevel" ]
   [ "${log[2]}" = "git fetch origin main" ]
   [ "${log[3]}" = "orca worktree set --worktree path:/work/parent --issue 400" ]
   [ "${log[4]}" = "orca worktree list --json" ]
-  starts_with "${log[5]}" "orca worktree create --name issue-11 --issue 11 --base-branch origin/main --parent-worktree path:/work/parent --agent claude --prompt "
-  starts_with "${log[6]}" "orca worktree create --name issue-12 --issue 12 --base-branch origin/main --parent-worktree path:/work/parent --agent claude --prompt "
-  case "${log[5]}" in *' --json') ;; *) echo "create must end with --json" >&2; false ;; esac
+  [ "${log[5]}" = "orca worktree create --name issue-11 --issue 11 --base-branch origin/main --parent-worktree path:/work/parent --agent claude --json" ]
+  [ "${log[6]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
+  starts_with "${log[7]}" "orca terminal send --terminal term-11 --text "
+  case "${log[7]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
+  [ "${log[8]}" = "orca worktree create --name issue-12 --issue 12 --base-branch origin/main --parent-worktree path:/work/parent --agent claude --json" ]
+  [ "${log[9]}" = "orca terminal wait --terminal term-12 --for tui-idle --timeout-ms 60000 --json" ]
+  starts_with "${log[10]}" "orca terminal send --terminal term-12 --text "
+  [ "$(calls '--prompt')" -eq 0 ]
 }
 
 @test "launch: prompt starts with /develop #N and names the epic" {
   make_stub orca
   run dispatch launch 400 11
   [ "$status" -eq 0 ]
-  p="$(cat "$STUB_CFG/prompt_11")"
+  p="$(cat "$STUB_CFG/sent_term-11")"
   starts_with "$p" "/develop #11 "
   printf '%s' "$p" | grep -qF '#400'
   printf '%s' "$p" | grep -qF '/work/parent'
@@ -188,8 +220,8 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   make_stub orca
   run dispatch launch --note "do not touch the follow-up scope" 400 11 12
   [ "$status" -eq 0 ]
-  grep -qF 'do not touch the follow-up scope' "$STUB_CFG/prompt_11"
-  grep -qF 'do not touch the follow-up scope' "$STUB_CFG/prompt_12"
+  grep -qF 'do not touch the follow-up scope' "$STUB_CFG/sent_term-11"
+  grep -qF 'do not touch the follow-up scope' "$STUB_CFG/sent_term-12"
 }
 
 @test "launch: EPIC_DISPATCH_BASE changes the base for fetch and --base-branch" {
@@ -270,6 +302,95 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${lines[0]}" = "failed 11" ]
   [ "${lines[1]}" = "launched 12" ]
   [ "${#lines[@]}" -eq 2 ]
+}
+
+@test "launch: without agentTerminalHandle the startupTerminal handle is used" {
+  make_stub orca
+  printf '%s\n' '{"result":{"startupTerminal":{"handle":"boot-11"}}}' > "$STUB_CFG/create_json_11"
+  run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+  [ "$(calls '^orca terminal wait --terminal boot-11 ')" -eq 1 ]
+  [ "$(calls '^orca terminal send --terminal boot-11 ')" -eq 1 ]
+}
+
+@test "launch: no terminal handle means failed without wait or send" {
+  make_stub orca
+  printf '%s\n' '{"ok":true,"result":{}}' > "$STUB_CFG/create_json_11"
+  run dispatch launch 400 11 12
+  [ "$status" -eq 1 ]
+  [ "${lines[0]}" = "failed 11" ]
+  [ "${lines[1]}" = "launched 12" ]
+  [ "$(calls '^orca terminal wait --terminal term-12 ')" -eq 1 ]
+  [ "$(calls '^orca terminal wait ')" -eq 1 ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+}
+
+@test "launch: a failing send is failed and prints a resend command with a read hint" {
+  make_stub orca
+  echo 1 > "$STUB_CFG/send_exit_term-11"
+  run dispatch launch 400 11 12
+  [ "$status" -eq 1 ]
+  [ "${lines[0]}" = "failed 11" ]
+  [ "${lines[1]}" = "launched 12" ]
+  [ "${#lines[@]}" -eq 2 ]
+  grep -F 'orca terminal send --terminal term-11 --text' "$BATS_TEST_TMPDIR/stderr" | grep -qF '/develop #11'
+  grep -qF 'orca terminal read --terminal term-11' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(grep -c -- '--retry-request' "$BATS_TEST_TMPDIR/stderr" || true)" -eq 0 ]
+}
+
+@test "launch: a retry request id from send is added to the resend command" {
+  make_stub orca
+  echo 1 > "$STUB_CFG/send_exit_term-11"
+  printf '%s\n' '{"ok":false,"result":{"retryRequestId":"rq-1","stages":["input_accepted"]}}' > "$STUB_CFG/send_json_term-11"
+  run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+  grep -F 'orca terminal send --terminal term-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF -- '--retry-request rq-1'
+  grep -qF 'orca terminal read --terminal term-11' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: a send without turn_started is failed" {
+  make_stub orca
+  printf '%s\n' '{"ok":true,"result":{"stages":["input_accepted"]}}' > "$STUB_CFG/send_json_term-11"
+  run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+}
+
+@test "launch: turn_started in a nested stages array counts" {
+  make_stub orca
+  printf '%s\n' '{"ok":true,"result":{"receipt":{"stages":["input_accepted","turn_started"]}}}' > "$STUB_CFG/send_json_term-11"
+  run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+}
+
+@test "launch: a failing tui-idle wait is failed without send" {
+  make_stub orca
+  echo 1 > "$STUB_CFG/wait_exit_term-11"
+  run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "launch: EPIC_DISPATCH_READY_TIMEOUT_MS and EPIC_DISPATCH_SUBMIT_WAIT set the waits" {
+  make_stub orca
+  EPIC_DISPATCH_READY_TIMEOUT_MS=5000 EPIC_DISPATCH_SUBMIT_WAIT=7 run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "$(calls '^orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 5000 --json$')" -eq 1 ]
+  [ "$(calls ' --enter --wait-submit 7 --json$')" -eq 1 ]
+}
+
+@test "launch: a non-numeric wait variable creates nothing" {
+  make_stub orca
+  EPIC_DISPATCH_SUBMIT_WAIT=abc run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ "$(calls 'worktree create')" -eq 0 ]
+  EPIC_DISPATCH_READY_TIMEOUT_MS=1s run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ "$(calls 'worktree create')" -eq 0 ]
 }
 
 @test "launch: without orca on PATH nothing is called" {
