@@ -15,7 +15,7 @@ TBD - created by archiving change loops-longrun-retirement. Update Purpose after
 - **THEN** 3 ディレクトリ配下のファイル削除がコミットとして現れる
 
 ### Requirement: marketplace.json から 3 プラグインを外す
-`.claude-plugin/marketplace.json` の `plugins[]` に `name` が `loops`・`longrun`・`lr` のエントリが存在してはならず（MUST NOT）、`bundles[]` の `all` の `plugins[]` にも 3 名が含まれてはならない（MUST NOT）。残るエントリの `version` と `description` は本 change で意図して更新したもの（dev-workflow と参照を直したプラグイン）以外は変えない。
+`.claude-plugin/marketplace.json` の `plugins[]` に `name` が `loops`・`longrun`・`lr` のエントリが存在してはならず（MUST NOT）、`bundles[]` の `all` の `plugins[]` にも 3 名が含まれてはならない（MUST NOT）。残るエントリの `description` は本 change で意図して更新したもの（dev-workflow と参照を直したプラグイン）以外は変えない（エントリの `version` は issue #447 で撤去済み）。
 
 #### Scenario: plugins[] と bundle から 3 名が消えている
 - **WHEN** `.claude-plugin/marketplace.json` をパースする
@@ -68,15 +68,4 @@ harness は loop-dev-agent の憲法テンプレートを配布せず、各リ�
 #### Scenario: ルート README に解散の記録がある
 - **WHEN** ルート `README.md` を読む
 - **THEN** loops / longrun / lr のインストール手順・コマンド表は無く、「解散済み」の短い記録と `plugins/dev-workflow/CHANGELOG.md` への誘導だけがある
-
-### Requirement: 参照を直したプラグインの version を上げる
-本 change でファイルを変更したプラグイン（dev-workflow、および自己検証の参照パス等を直した casting・experience-to-skill・skill-pack・infra・weekly-report・daily-report・worktree）の `plugin.json` の `version` は変更前より大きくし、`.claude-plugin/marketplace.json` の対応エントリと一致させなければならない（MUST）。dev-workflow は 2.0.0 から 2.1.0 に上げる（新スキル issueify と references の追加は後方互換の機能追加）。
-
-#### Scenario: dev-workflow が 2.1.0 で marketplace と一致する
-- **WHEN** `plugins/dev-workflow/.claude-plugin/plugin.json` と marketplace.json の dev-workflow エントリを読む
-- **THEN** 両者とも `2.1.0` である
-
-#### Scenario: 全プラグインの version が marketplace と一致する
-- **WHEN** `plugins/*/.claude-plugin/plugin.json` の version と marketplace.json の各エントリを機械照合する
-- **THEN** 不一致が 0 件である
 
