@@ -309,6 +309,9 @@ class AuthWatch:
             # A stop that lands during the read is the caller's reason, not an account change.
             if str(error) == 'stop_requested':
                 return False
+            # A server gone mid-read ends the run as a disconnect, as it did before this check.
+            if str(error) == 'transport_disconnected':
+                raise
             return True
         if not server_identity_matches(observed, self.account):
             return True

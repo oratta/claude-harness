@@ -49,6 +49,7 @@ for line in sys.stdin:
   print(json.dumps({'id':rid,'error':{'code':config.get('reject_code',-32000),'message':'rejected'}}),flush=True);continue
  if method=='account/read':
   reads+=1;emails=config.get('emails',[])
+  if reads==config.get('exit_at_read'):os._exit(0)
   r={'account':{'type':'chatgpt','email':emails[reads-1] if reads<=len(emails) else config.get('email','worker@example.invalid')}}
  elif method=='account/rateLimits/read':r={'rateLimitsByLimitId':{'codex':{'primary':{'usedPercent':config.get('pct',1),'windowDurationMins':300,'resetsAt':int(time.time())+1000}}}}
  elif method=='model/list' and 'model_list_result' in config:r=config['model_list_result']
@@ -426,6 +427,21 @@ class ForegroundTest(unittest.TestCase):
         (self.home/'auth.json').write_text(other)
         result = self.finish(process, 2)
         self.assertEqual((result['status'], result['error_kind']), ('interrupted', 'auth_profile_changed'))
+
+    def test_same_email_with_another_account_id_is_a_switch(self):
+        other = self.auth_text('worker@example.invalid', 'other-profile')
+        process = self.start(wait=True)
+        (self.home/'auth.json').write_text(other)
+        result = self.finish(process, 2)
+        self.assertEqual((result['status'], result['error_kind']), ('interrupted', 'auth_profile_changed'))
+
+    def test_server_exit_during_the_account_check_is_a_disconnect(self):
+        process = self.start(wait=True, exit_at_read=2)
+        started = time.monotonic()
+        self.refresh_auth('refreshed')
+        result = self.finish(process, 2)
+        self.assertLess(time.monotonic()-started, 5)
+        self.assertEqual((result['status'], result['error_kind']), (None, 'transport_disconnected'))
 
     def test_a_briefly_unreadable_auth_file_is_read_again(self):
         done = self.root/'done'
