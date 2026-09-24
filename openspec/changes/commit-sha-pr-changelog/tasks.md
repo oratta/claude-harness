@@ -8,15 +8,15 @@
 
 ## 2. 版の撤去
 
-- [ ] 2.1 全 13 本の `plugins/*/.claude-plugin/plugin.json` から `version` を消す（`jq 'del(.version)'` で、キーの順序と他のフィールドを変えない）
-- [ ] 2.2 `.claude-plugin/marketplace.json` の全 `plugins[]` エントリから `version` を消す
-- [ ] 2.3 `jq` で全件 `has("version") == false` を確かめる（受け入れ条件 1）
+- [x] 2.1 全 13 本の `plugins/*/.claude-plugin/plugin.json` から `version` を消す（`jq 'del(.version)'` で、キーの順序と他のフィールドを変えない）
+- [x] 2.2 `.claude-plugin/marketplace.json` の全 `plugins[]` エントリから `version` を消す
+- [x] 2.3 `jq` で全件 `has("version") == false` を確かめる（受け入れ条件 1）
 
 ## 3. 実行時スクリプト
 
-- [ ] 3.1 `plugins/dev-workflow/scripts/prompt-tripwires-refresh.sh` の比較値を `plugin.json` の `version` から `CLAUDE_PLUGIN_ROOT` の値に変える。`version` を抜く処理を消し、冒頭のコメント（「なぜバージョン変化だけを見るのか」と契約）を新しい比較値に合わせて直す。状態ディレクトリの既定名（`.tripwire-versions`）は既存の状態を引き継ぐため変えない
-- [ ] 3.2 `plugins/dev-workflow/templates/escalation-tripwires.md` の「plugin.json のバージョンが前回注入時から変わったとき」の説明を、プラグインの更新（`CLAUDE_PLUGIN_ROOT` の変化）に直す
-- [ ] 3.3 `bats plugins/dev-workflow/tests/prompt-tripwires-refresh.bats` が通る（受け入れ条件 5）
+- [x] 3.1 `plugins/dev-workflow/scripts/prompt-tripwires-refresh.sh` の比較値を `plugin.json` の `version` から `CLAUDE_PLUGIN_ROOT` の値に変える。`version` を抜く処理を消し、冒頭のコメント（「なぜバージョン変化だけを見るのか」と契約）を新しい比較値に合わせて直す。状態ディレクトリの既定名（`.tripwire-versions`）は既存の状態を引き継ぐため変えない
+- [x] 3.2 `plugins/dev-workflow/templates/escalation-tripwires.md` の「plugin.json のバージョンが前回注入時から変わったとき」の説明を、プラグインの更新（`CLAUDE_PLUGIN_ROOT` の変化）に直す
+- [x] 3.3 `bats plugins/dev-workflow/tests/prompt-tripwires-refresh.bats` が通る（受け入れ条件 5）
 
 ## 4. 各プラグインの bats の版の検査を削る
 
