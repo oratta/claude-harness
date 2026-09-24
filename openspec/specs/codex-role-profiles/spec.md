@@ -8,7 +8,7 @@ TBD - created by archiving change codex-develop-role-profiles. Update Purpose af
 
 #### Scenario: 二つの Codex 組み込みセットを解決する
 - **WHEN** `codex-standard` または `codex-economy` を解決する
-- **THEN** spec-write は順に sol/high または luna/medium、spec-review/impl-review/review/decider は astra/high、implement は sol/medium または luna/medium、explore/summarize は luna/low に解決する。model の値は系統名そのもの（`sol` / `luna` / `astra`）で、全 entry は executor=codex、account=current となる
+- **THEN** spec-write は順に sol/high または luna/medium、spec-review/impl-review/review は sol/high、decider は astra/high、implement は sol/medium または luna/medium、explore/summarize は luna/low に解決する。model の値は系統名そのもの（`sol` / `luna` / `astra`）で、全 entry は executor=codex、account=current となる
 
 #### Scenario: 既存の混在セットを役割ごとに解決する
 - **WHEN** `hybrid-standard` で書く役、独立レビュー役、decider、補助役を順に解決する
@@ -16,7 +16,7 @@ TBD - created by archiving change codex-develop-role-profiles. Update Purpose af
 
 #### Scenario: Claude が書き Codex が検査する組み込みセットを解決する
 - **WHEN** `claude-write-codex-review` を解決する
-- **THEN** spec-write/implement は claude/current/sonnet/medium、explore/summarize は claude/current/haiku/low、spec-review/impl-review/review/decider は codex/current/astra/high となる
+- **THEN** spec-write/implement は claude/current/sonnet/medium、explore/summarize は claude/current/haiku/low、spec-review/impl-review/review は codex/current/sol/high、decider は codex/current/astra/high となる
 
 #### Scenario: 組み込み profile にモデル ID が書かれていない
 - **WHEN** `git grep -nE 'gpt-[0-9]' plugins/dev-workflow/references/codex-role-profiles.json` を実行する
@@ -112,7 +112,7 @@ develop role resolver は、profile と旧 account/model のどちらも明示�
 
 #### Scenario: 両 provider に余裕がある
 - **WHEN** Claude margin が +20、最良 Codex margin が +10 で profile を明示せず工程を開始する
-- **THEN** `claude-write-codex-review` を選び、書く役と補助役は Claude、レビュー役と decider は Codex の系統名 astra に解決する
+- **THEN** `claude-write-codex-review` を選び、書く役と補助役は Claude、レビュー役は Codex の系統名 sol、decider は astra に解決する
 
 #### Scenario: Codex が詰まっている
 - **WHEN** Claude margin が 0 以上で、最良 Codex margin が -5、欠測、または stale のいずれかである

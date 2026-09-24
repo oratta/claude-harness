@@ -21,4 +21,4 @@
 
 ## 5. archive（(3b) で行う）
 
-- [ ] 5.1 change を archive し、`git diff` で `openspec/specs/codex-role-profiles/spec.md` の 3 シナリオ（「二つの Codex 組み込みセットを解決する」「Claude が書き Codex が検査する組み込みセットを解決する」「両 provider に余裕がある」）が delta と同じ文面になったことを確認する
+- [x] 5.1 change を archive し、`git diff` で `openspec/specs/codex-role-profiles/spec.md` の 3 シナリオ（「二つの Codex 組み込みセットを解決する」「Claude が書き Codex が検査する組み込みセットを解決する」「両 provider に余裕がある」）が delta と同じ文面になったことを確認する
