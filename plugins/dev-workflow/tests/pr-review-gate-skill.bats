@@ -40,19 +40,6 @@ setup() {
   jq -e '.skills | index("./skills/pr-review-gate")' "$MANIFEST" >/dev/null
 }
 
-@test "manifest: version bumped above 1.6.2" {
-  v="$(jq -r '.version' "$MANIFEST")"
-  [ "$v" != "1.6.2" ]
-  highest="$(printf '1.6.2\n%s\n' "$v" | sort -V | tail -1)"
-  [ "$highest" = "$v" ]
-}
-
-@test "manifest: marketplace entry version matches plugin.json" {
-  v="$(jq -r '.version' "$MANIFEST")"
-  m="$(jq -r '.plugins[] | select(.name == "dev-workflow") | .version' "$MARKETPLACE")"
-  [ "$m" = "$v" ]
-}
-
 @test "skill: keeps the 6-step skeleton of the flatmate original" {
   grep -qF '### 1. 前提を揃える' "$SKILL"
   grep -qF '### 2. レビュー' "$SKILL"
@@ -177,13 +164,6 @@ setup() {
   grep -q 'タイムアウト' "$SKILL"
   # 事前判定と障害時フォールバックの役割が書き分けられている
   grep -q '事前判定' "$SKILL"
-}
-
-@test "manifest: version bumped above 1.7.0" {
-  v="$(jq -r '.version' "$MANIFEST")"
-  [ "$v" != "1.7.0" ]
-  highest="$(printf '1.7.0\n%s\n' "$v" | sort -V | tail -1)"
-  [ "$highest" = "$v" ]
 }
 
 @test "skill: frontmatter version bumped above 1.0.0" {

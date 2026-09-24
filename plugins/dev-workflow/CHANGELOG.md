@@ -1,12 +1,13 @@
 # Changelog — dev-workflow
 
-## 2.13.38 — 2026-09-24: Codex worker を同じアカウントの token 更新で止めない
+以後の変更は `changes/<番号>.md`（記録先の issue 番号、無ければ PR 番号）に 1 PR 1 ファイルで書く。このファイルは issue #447 で凍結し、追記しない。
 
-Codex worker は、ターンの待機中に元 CODEX_HOME の `auth.json` が 1 バイトでも変わると `auth_profile_changed` で止まっていた。app-server 自身の token 更新が runtime の symlink 越しに元ファイルを書き換えるので、長い工程が途中で止まることがあった（#426、エピック #345、PR #348 で 1 回発生）。
+## 2.13.39 — 2026-09-23: Codex モデル指定の docs とレビュー記録を揃える
 
-- **scripts/codex-worker.py**: 実行中の照合を `auth.json` 全体のハッシュから、ID token の email と account_id の比較に改めた。同じアカウントのまま中身だけ変わったときは `account/read` を 1 回呼び、email が同じなら続ける。読めない `auth.json` は 5 秒（`AUTH_UNREADABLE_GRACE`）まで読み直す。一度決めた中断理由は保持し、中断後と停止の合図の後は照合しない。ターン開始前の照合と runtime symlink の検査は今までどおり厳格
-- **scripts/CODEX-WORKER.md**: 「通常の token refresh でも止まる保守的制約」の記述を消し、何を比べて止めるかを書いた
-- **テスト**: codex-worker の unittest に同じアカウントの token 更新・書き換え途中の読み取り・猶予超過・app-server 側の email 不一致・中断理由の保持・停止の合図後の 8 件を足した。既存 2 件は書き換え内容を別アカウントへの置き換えに直した（期待値は不変）
+- **docs/codex-develop.md**: model に系統名か完全 ID を指定でき、系統名は worker が呼ぶ直前に最新版へ解決することを明記
+- **develop / gate-runner / pr-review-gate**: Codex review 結果の要求モデルと解決後 ID を G に渡し、既存のレビュー実行者コメントに `<requested>→<resolved>` として記録する手順を追加
+- **OpenSpec 履歴**: archive 済み tasks の docs と完全 ID の例について事実誤認を訂正
+- **テスト**: adapter レビュー経路の bats に docs とレビュー記録の検証を追加
 
 ## 2.13.37 — 2026-09-23: エピックの子を Orca の独立セッションで回す経路を足す
 

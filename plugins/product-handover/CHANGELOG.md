@@ -1,5 +1,7 @@
 # product-handover Changelog
 
+以後の変更は `changes/<番号>.md`（記録先の issue 番号、無ければ PR 番号）に 1 PR 1 ファイルで書く。このファイルは issue #447 で凍結し、追記しない。
+
 現行版のドキュメントは [README.md](README.md) を参照。本ファイルは版履歴のみを記録する。
 
 ## v0.1.0 — `agent-owner` からの作り直し（claude-harness#206）

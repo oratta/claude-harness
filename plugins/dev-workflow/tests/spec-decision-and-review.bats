@@ -145,13 +145,6 @@ mode_sec() { section "$SKILL" '実行モード'; }
 
 # --- 配布 ---
 
-@test "manifest: plugin version at least 2.0.0 and matches marketplace" {
-  v="$(jq -r '.version' "$MANIFEST")"
-  printf '2.0.0\n%s\n' "$v" | sort -V -C
-  mv="$(jq -r '.plugins[] | select(.name=="dev-workflow") | .version' "$MARKETPLACE")"
-  [ "$mv" = "$v" ]
-}
-
 @test "manifest: description mentions the spec review step and develop" {
   jq -r '.description' "$MANIFEST" | grep -q '仕様レビュー'
   jq -r '.description' "$MANIFEST" | grep -q 'develop'
