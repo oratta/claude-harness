@@ -34,7 +34,7 @@ model は両方の start に渡し、effort は `turn/start` だけへ渡す。e
 
 1 request ごとに 0700 の一時 runtime CODEX_HOME を作る。`auth.json` は指定 profile への symlink、`config.toml` は最小設定とし、元 profile の MCP / app / plugin 設定や履歴を継承しない。project または ancestor の `.codex/config.toml` は拒否する。終了時は認証 symlink と runtime directory を削除するが、指定された profile 本体は変更しない。同時に走る依頼の一時ファイルは同じ親の一時領域に混ざりうり、依頼が残した一時ファイルの出どころを worker は記録しない。この追跡が必要になったら Codex 側だけに戻さず、Claude のサブエージェント側にも同じ仕組みを入れて揃える。
 
-ID token の email と `account/read` を照合する。実行中に元 `auth.json` の内容または runtime symlink が変われば停止を要求する。通常のtoken refreshでも止まる保守的制約がある。認証切替・設定書換えは行わない。これは署名検証や複数 workspace の完全識別を主張するものではない。
+ID token の email と `account/read` を照合する。ターン開始前は元 `auth.json` の email と account_id を比べ、読めなければその場で止める。ターンの待機中は、runtime symlink が差し替えられるか、元 `auth.json` の email か account_id が開始時と違えば `auth_profile_changed` で停止を要求する。email と account_id が同じまま中身だけ変わった（token 更新）ときは、その変化ごとに `account/read` を 1 回呼び、email が同じなら続け、違うか取得できなければ停止を要求する。書き換え途中などで `auth.json` が読めないときは読み直し、読めない状態が 5 秒を超えて続いたら停止を要求する。一度停止を決めた後と停止の合図の後は照合し直さず、理由を保つ。認証切替・設定書換えは行わない。これは署名検証や複数 workspace の完全識別を主張するものではない。
 
 ## 停止と結果
 

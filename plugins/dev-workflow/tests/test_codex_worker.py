@@ -16,7 +16,7 @@ spec = importlib.util.spec_from_file_location('codex_worker', SCRIPT)
 worker_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker_module)
 FAKE = r'''#!/usr/bin/env python3
-import json,os,sys,time,subprocess
+import json,os,sys,time,subprocess,threading
 from pathlib import Path
 runtime=Path(os.environ['CODEX_HOME']); job=runtime.name; home=(runtime/'auth.json').resolve().parent
 special=home/('fixture-'+job+'.json'); config=json.loads((special if special.exists() else home/'fixture.json').read_text())
@@ -26,6 +26,13 @@ tmp=os.environ.get('TMPDIR')
 watched=['CODEX_HOME','TMPDIR','TMPPREFIX','OPENAI_API_KEY','CODEX_API_KEY','OPENAI_BASE_URL',
  'CODEX_AUTH_JSON','OPENAI_ORGANIZATION','OPENAI_PROJECT','GIT_DIR','GIT_WORK_TREE',
  'GIT_COMMON_DIR','GIT_INDEX_FILE','GH_TOKEN','GITHUB_TOKEN','HARNESS_FIXTURE_MARK']
+reads=0
+def later(check,message):
+ # A second writer to stdout; one small os.write per line keeps the lines whole.
+ def run():
+  while not check():time.sleep(.05)
+  os.write(1,(json.dumps(message)+'\n').encode())
+ threading.Thread(target=run,daemon=True).start()
 info={'path':tmp,'prefix':os.environ.get('TMPPREFIX'),
  'env':{k:os.environ.get(k) for k in watched},
  'child':subprocess.check_output([sys.executable,'-c','import os;print(os.environ.get("TMPDIR", ""))'],text=True).strip()}
@@ -37,10 +44,12 @@ for line in sys.stdin:
   with (home/name).open('a') as f:f.write(json.dumps(m)+'\n')
  if rid is None:continue
  if method==config.get('change_auth_at'):
-  with (home/'auth.json').open('a') as f:f.write(' ')
+  (home/'auth.json').write_text(config['change_auth_text'])
  if method==config.get('reject'):
   print(json.dumps({'id':rid,'error':{'code':config.get('reject_code',-32000),'message':'rejected'}}),flush=True);continue
- if method=='account/read':r={'account':{'type':'chatgpt','email':config.get('email','worker@example.invalid')}}
+ if method=='account/read':
+  reads+=1;emails=config.get('emails',[])
+  r={'account':{'type':'chatgpt','email':emails[reads-1] if reads<=len(emails) else config.get('email','worker@example.invalid')}}
  elif method=='account/rateLimits/read':r={'rateLimitsByLimitId':{'codex':{'primary':{'usedPercent':config.get('pct',1),'windowDurationMins':300,'resetsAt':int(time.time())+1000}}}}
  elif method=='model/list' and 'model_list_result' in config:r=config['model_list_result']
  elif method=='model/list':
@@ -57,9 +66,14 @@ for line in sys.stdin:
  if method=='turn/start':
   if not config.get('quiet'):print(json.dumps({'method':'item/started','params':{'threadId':'thread','turnId':'turn'}}),flush=True)
   if config.get('usage'):print(json.dumps({'method':'thread/tokenUsage/updated','params':{'threadId':'thread','turnId':'turn','tokenUsage':config['usage']}}),flush=True)
-  if config.get('wait'):continue
+  if config.get('complete_on'):
+   later(lambda:Path(config['complete_on']).exists(),{'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'completed','items':[{'type':'agentMessage','phase':'final_answer','text':'DONE'}]}}})
+  if config.get('wait') or config.get('complete_on'):continue
   print(json.dumps({'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'completed','items':[]}}}),flush=True)
- if method=='turn/interrupt':
+ if method=='turn/interrupt' and config.get('interrupt_delay'):
+  until=time.monotonic()+config['interrupt_delay']
+  later(lambda:time.monotonic()>until,{'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'interrupted','items':[]}}})
+ elif method=='turn/interrupt':
   print(json.dumps({'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'interrupted','items':[]}}}),flush=True)
 '''
 
@@ -98,10 +112,46 @@ class ForegroundTest(unittest.TestCase):
 
     def profile(self, name, email):
         home = self.root/name;home.mkdir()
-        claim = base64.urlsafe_b64encode(json.dumps({'email':email}).encode()).decode().rstrip('=')
-        (home/'auth.json').write_text(json.dumps({'tokens':{'id_token':'a.'+claim+'.b','account_id':'fixture-'+name}}))
+        (home/'auth.json').write_text(self.auth_text(email, 'fixture-'+name))
         (home/'fixture.json').write_text('{}')
         return home
+
+    def auth_text(self, email, account_id, access='initial'):
+        claim = base64.urlsafe_b64encode(json.dumps({'email':email}).encode()).decode().rstrip('=')
+        return json.dumps({'tokens':{'id_token':'a.'+claim+'.b','account_id':account_id,
+                                     'access_token':access}})
+
+    def refresh_auth(self, access):
+        # What a token refresh leaves behind: new tokens, same email and account_id.
+        (self.home/'auth.json').write_text(self.auth_text('worker@example.invalid', 'fixture-profile', access))
+
+    def account_reads(self):
+        return sum(1 for m in self.calls() if m.get('method') == 'account/read')
+
+    def await_calls(self, predicate, deadline=20):
+        stop = time.monotonic()+deadline
+        while time.monotonic() < stop:
+            if predicate():
+                return
+            time.sleep(.05)
+        self.fail('fixture condition never held')
+
+    def finish(self, process, code):
+        try:
+            out, err = process.communicate(timeout=30)
+        finally:
+            if process.poll() is None:
+                process.kill();process.communicate(timeout=10)
+        self.assertEqual(process.returncode, code, out + err)
+        return json.loads([line for line in out.splitlines() if line.strip()][0])
+
+    def start(self, **fixture):
+        self.config(**fixture)
+        process = subprocess.Popen(self.command(), env=self.env, text=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.addCleanup(lambda: process.poll() is None and (process.kill(), process.communicate(timeout=10)))
+        self.await_turn()
+        return process
 
     def git(self, cwd, *args):
         return subprocess.run(['git','-C',str(cwd),*args],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -335,7 +385,8 @@ class ForegroundTest(unittest.TestCase):
         self.assertNotIn('external', self.calls()[0]['runtimeConfig'])
 
     def test_changed_auth_never_starts_server(self):
-        self.config(change_auth_at='account/read')
+        self.config(change_auth_at='account/read',
+                    change_auth_text=(self.other/'auth.json').read_text())
         result = self.run_cli(code=2)
         self.assertEqual(result['error_kind'], 'auth_profile_changed')
         self.assertFalse(any(call.get('method') in ('model/list', 'thread/start', 'turn/start')
@@ -347,8 +398,7 @@ class ForegroundTest(unittest.TestCase):
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             self.await_turn()
-            with (self.home/'auth.json').open('a') as stream:
-                stream.write(' ')
+            (self.home/'auth.json').write_text((self.other/'auth.json').read_text())
             out, err = process.communicate(timeout=30)
         finally:
             if process.poll() is None:
@@ -357,6 +407,79 @@ class ForegroundTest(unittest.TestCase):
         result = json.loads([line for line in out.splitlines() if line.strip()][0])
         self.assertEqual(result['status'], 'interrupted')
         self.assertEqual(result['error_kind'], 'auth_profile_changed')
+
+    def test_same_account_token_refresh_keeps_the_turn_running(self):
+        done = self.root/'done'
+        process = self.start(complete_on=str(done))
+        self.refresh_auth('refreshed')
+        self.await_calls(lambda: self.account_reads() == 2)
+        time.sleep(.6)
+        done.touch()
+        result = self.finish(process, 0)
+        self.assertEqual(result['status'], 'completed')
+        self.assertIsNone(result['error_kind'])
+        self.assertEqual(self.account_reads(), 2)
+
+    def test_same_account_id_with_another_email_is_a_switch(self):
+        other = self.auth_text('other@example.invalid', 'fixture-profile')
+        process = self.start(wait=True)
+        (self.home/'auth.json').write_text(other)
+        result = self.finish(process, 2)
+        self.assertEqual((result['status'], result['error_kind']), ('interrupted', 'auth_profile_changed'))
+
+    def test_a_briefly_unreadable_auth_file_is_read_again(self):
+        done = self.root/'done'
+        process = self.start(complete_on=str(done))
+        (self.home/'auth.json').write_text('{"tokens": {"id_to')
+        time.sleep(1.5)
+        self.refresh_auth('refreshed')
+        self.await_calls(lambda: self.account_reads() == 2)
+        done.touch()
+        result = self.finish(process, 0)
+        self.assertEqual((result['status'], result['error_kind']), ('completed', None))
+
+    def test_an_auth_file_unreadable_past_the_grace_interrupts(self):
+        process = self.start(wait=True)
+        started = time.monotonic()
+        (self.home/'auth.json').write_text('{"tokens": {"id_to')
+        result = self.finish(process, 2)
+        self.assertGreaterEqual(time.monotonic()-started, worker_module.AUTH_UNREADABLE_GRACE)
+        self.assertEqual((result['status'], result['error_kind']), ('interrupted', 'auth_profile_changed'))
+
+    def test_server_reporting_another_email_after_a_refresh_interrupts(self):
+        process = self.start(wait=True, emails=['worker@example.invalid', 'other@example.invalid'])
+        self.refresh_auth('refreshed')
+        result = self.finish(process, 2)
+        self.assertEqual((result['status'], result['error_kind']), ('interrupted', 'auth_profile_changed'))
+
+    def test_the_interrupt_reason_holds_after_the_file_recovers(self):
+        process = self.start(wait=True, interrupt_delay=2)
+        (self.home/'auth.json').write_text('{"tokens": {"id_to')
+        self.await_calls(lambda: any(m.get('method') == 'turn/interrupt' for m in self.calls()), 30)
+        self.refresh_auth('recovered')
+        result = self.finish(process, 2)
+        self.assertEqual((result['status'], result['error_kind']), ('interrupted', 'auth_profile_changed'))
+        self.assertEqual(self.account_reads(), 1)
+
+    def test_the_interrupt_reason_holds_after_the_server_agrees_again(self):
+        process = self.start(wait=True, interrupt_delay=2,
+                             emails=['worker@example.invalid', 'other@example.invalid'])
+        self.refresh_auth('first')
+        self.await_calls(lambda: any(m.get('method') == 'turn/interrupt' for m in self.calls()))
+        self.refresh_auth('second')
+        result = self.finish(process, 2)
+        self.assertEqual((result['status'], result['error_kind']), ('interrupted', 'auth_profile_changed'))
+        self.assertEqual(self.account_reads(), 2)
+
+    def test_no_account_read_after_a_stop_signal(self):
+        process = self.start(wait=True, interrupt_delay=2)
+        process.terminate()
+        self.await_calls(lambda: any(m.get('method') == 'turn/interrupt' for m in self.calls()))
+        self.refresh_auth('refreshed')
+        result = self.finish(process, 2)
+        self.assertEqual(result['status'], 'interrupted')
+        self.assertNotEqual(result['error_kind'], 'auth_profile_changed')
+        self.assertEqual(self.account_reads(), 1)
 
     def test_runtime_auth_link_switch_interrupts(self):
         temporary = self.root/'auth-tmp';temporary.mkdir()
