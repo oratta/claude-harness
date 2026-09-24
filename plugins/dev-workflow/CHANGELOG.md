@@ -1,13 +1,13 @@
 # Changelog — dev-workflow
 
-## 2.14.0 — 2026-09-23: 使用量をステータスラインのセッション記録から読み、usage-probe を補助に下げる
+以後の変更は `changes/<番号>.md`（記録先の issue 番号、無ければ PR 番号）に 1 PR 1 ファイルで書く。このファイルは issue #447 で凍結し、追記しない。
 
-usage API が 429 を返し続けると snapshot が 300 秒の鮮度を満たせず、アカウント選択・残量モード・codex-develop の Claude margin がすべて欠測扱いになっていた（#417）。同時に statusline 0.6.0 が起動アカウント別のセッション記録（`.usage-sessions/<鍵>.json`）を書くようにした。
+## 2.13.39 — 2026-09-23: Codex モデル指定の docs とレビュー記録を揃える
 
-- **usage_view.py（新規）**: セッション記録と snapshot からスロット・窓ごとの実効値を求める。リセット時刻より前の値は経過時間によらず下限として使い、過ぎた値は 0%、同じ窓は大きい方を取る。5 時間枠のリセット時刻が null の値は使用率 0 のときだけ使う。`select-account.sh`・`session-tripwires.sh`・`agent-model-guard.sh`・`codex-develop.py`（Claude 側）はこの 1 か所を使う。Codex 側の 300 秒境界は変えない
-- **usage-probe.sh**: snapshot の mtime による 5 分 TTL を外し、記録が無い・記録が 3 時間より古い、または snapshot の `fetched_at` が 3 時間より古い（無い場合を含む）スロットだけを叩く。前回の試行から 3 時間は叩かず、429 が続くスロットは待ちを倍々に延ばす（上限 1 日）。試行状態を `.usage-probe-state` に記録し、`.usage-probe.lock` でマシン全体 1 本に絞る
-- **文書**: decision-criteria の自動導出の節、pr-review-gate の Fable 昇格条件、escalation-tripwires、codex-develop の説明を実効値の規則に合わせた
-- **テスト**: 実効値・probe の実行条件・429 の待ち・ロック・選択と導出のテストを足し、usage-probe を呼ぶテストを実環境の `~/.claude` と実 API から切り離した
+- **docs/codex-develop.md**: model に系統名か完全 ID を指定でき、系統名は worker が呼ぶ直前に最新版へ解決することを明記
+- **develop / gate-runner / pr-review-gate**: Codex review 結果の要求モデルと解決後 ID を G に渡し、既存のレビュー実行者コメントに `<requested>→<resolved>` として記録する手順を追加
+- **OpenSpec 履歴**: archive 済み tasks の docs と完全 ID の例について事実誤認を訂正
+- **テスト**: adapter レビュー経路の bats に docs とレビュー記録の検証を追加
 
 ## 2.13.37 — 2026-09-23: エピックの子を Orca の独立セッションで回す経路を足す
 

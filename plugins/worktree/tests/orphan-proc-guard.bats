@@ -368,12 +368,6 @@ wt_ppid_of() {
 
 # --- version bump (cache invalidation) ---
 
-@test "version: worktree plugin.json is bumped to at least 2.12.0" {
-  local v
-  v=$(jq -r .version "$PLUGIN_JSON")
-  printf '%s\n2.12.0\n' "$v" | sort -V | head -1 | grep -qx '2.12.0'
-}
-
 @test "version: wt-clean SKILL.md version is bumped to at least 3.7.0" {
   local v
   v=$(wt_frontmatter "$WT_CLEAN_SKILL" | awk -F': *' '/^version:/{print $2}')

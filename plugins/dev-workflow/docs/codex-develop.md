@@ -13,7 +13,7 @@ account名からCODEX_HOMEへの対応は、委譲のたびに引数で渡す。
 Claudeの会話で実行する:
 
 ```text
-/dev-workflow:develop --account spare --model <利用可能なCodexモデルID> --account-home spare=/absolute/path/to/codex-profile <issue URLまたは依頼>
+/dev-workflow:develop --account spare --model <sol|luna|astra などの系統名、または完全なCodexモデルID> --account-home spare=/absolute/path/to/codex-profile <issue URLまたは依頼>
 /dev-workflow:develop --profile codex-standard --account-home-file /absolute/account-homes.json <issue URLまたは依頼>
 /dev-workflow:develop --profile hybrid-standard --account-home current=/absolute/path/to/codex-profile <issue URLまたは依頼>
 /dev-workflow:develop --account-home-file /absolute/account-homes.json <issue URLまたは依頼>
@@ -40,7 +40,7 @@ python3 <plugin>/scripts/codex-develop.py request --phase spec --input /absolute
 python3 <plugin>/scripts/codex-worker.py run --request /absolute/private/request.json
 ```
 
-`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（明示形式どうしはどちらか一方だけ。併用・旧形式の片方欠落は拒否する）。どちらも無い場合は自動選択になる。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`request` は標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・解決したrole/account/CODEX_HOME/model/effortと selection evidence を返す。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
+`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（明示形式どうしはどちらか一方だけ。併用・旧形式の片方欠落は拒否する）。model は系統名（worker が呼ぶ直前に model/list の最新版へ解決する）か完全なモデル ID のどちらでも書ける。どちらも無い場合は自動選択になる。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`request` は標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・解決したrole/account/CODEX_HOME/model/effortと selection evidence を返す。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
 
 `run` の結果JSONは `text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`。実効model/effortやIDが未観測ならnullであり、成功値を推測しない。完了は実行terminalであって品質承認ではなく、`completed` でも `error_kind` が非空なら実行成功として扱わない。review verdictと投稿を確認するのはClaude側。コマンド失敗はそこで停止し、別providerへfallbackしない。
 

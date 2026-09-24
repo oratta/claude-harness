@@ -5,7 +5,8 @@
 # spec: marketplace-plugin-sync
 #
 # 旧 plugins/loops/tests/integration.bats に同居していた S130 / S130b / S131 / S132 / S133 / S139
-# を、loops の解散（issue #205）に伴いリポジトリ直下へ移したもの。特定プラグインに属さない
+# を、loops の解散（issue #205）に伴いリポジトリ直下へ移したもの。S130 / S131 は issue #447 で
+# 「version を持たない」検査に置き換えた。特定プラグインに属さない
 # 検査なので、どのプラグインを消してもここは残る。
 #
 # Constraints: jq / git / find のみ。他プラグインのテストヘルパに依存しない。
@@ -15,32 +16,29 @@ setup() {
   MARKETPLACE="${REPO_ROOT}/.claude-plugin/marketplace.json"
 }
 
-# Resolve the branch point baseline. Empty when origin/main is unavailable.
-base_ref() {
-  if git -C "$REPO_ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1; then
-    git -C "$REPO_ROOT" merge-base HEAD origin/main 2>/dev/null
+# --- S130: no plugin.json carries a version field (issue #447) ---
+# version を書くとその値が版として固定され、上げない限り利用者に更新が届かない。書かなければ
+# Claude Code が marketplace clone の HEAD の commit SHA を版にする。版を上げていた古い PR が
+# 後からマージされて version が戻る経路を、origin/main を要さず常に走る検査で落とす。
+# 見るのは manifest のトップレベルの version キーの有無だけ（値は問わない）。SKILL.md の
+# frontmatter や package.json の version は版の決定に使われないので見ない。
+@test "S130: no plugin.json has a version field" {
+  bad=""
+  for pj in "${REPO_ROOT}"/plugins/*/.claude-plugin/plugin.json; do
+    if jq -e 'has("version")' "$pj" >/dev/null; then
+      n="$(basename "$(dirname "$(dirname "$pj")")")"
+      bad="${bad}${n}=$(jq -r '.version' "$pj") "
+    fi
+  done
+  if [ -n "$bad" ]; then
+    echo "plugin.json has version (remove it; the commit SHA is the version - issue #447): ${bad}"
+    return 1
   fi
 }
 
-# --- S130: every marketplace entry version == its plugin.json ---
-@test "S130: all marketplace plugins[] versions match their plugin.json" {
-  names="$(jq -r '.plugins[].name' "$MARKETPLACE")"
-  for n in $names; do
-    m="$(jq -r --arg n "$n" '.plugins[] | select(.name==$n) | .version' "$MARKETPLACE")"
-    pj="${REPO_ROOT}/plugins/${n}/.claude-plugin/plugin.json"
-    [ -f "$pj" ] || { echo "no plugin.json for ${n}"; return 1; }
-    p="$(jq -r '.version' "$pj")"
-    if [ "$m" != "$p" ]; then
-      echo "version mismatch for ${n}: marketplace=${m} plugin.json=${p}"
-      return 1
-    fi
-  done
-}
-
 # --- S130b: every plugins/ directory has a marketplace entry (reverse of S130) ---
-# S130 は marketplace entry → plugin.json の一方向しか見ない。プラグインを削除するとき
-# plugin.json だけ消して他のファイルを残すと、S130 も S131 も素通りして「entry の無い
-# プラグインディレクトリ」が残る（claude-harness#206 のレビューで判明）。逆方向を固定する。
+# プラグインを削除するとき plugin.json だけ消して他のファイルを残すと「entry の無い
+# プラグインディレクトリ」が残る（claude-harness#206 のレビューで判明）。両方向を固定する。
 @test "S130b: every plugins/ directory is registered in marketplace.json" {
   registered="$(jq -r '.plugins[].name' "$MARKETPLACE" | sort)"
   present="$(find "${REPO_ROOT}/plugins" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)"
@@ -51,28 +49,15 @@ base_ref() {
   fi
 }
 
-# --- S131: plugins changed since merge-base are bumped ---
-@test "S131: edited plugins have version bumped above merge-base" {
-  base="$(base_ref)"
-  [ -n "$base" ] || skip "origin/main unavailable"
-  changed="$(git -C "$REPO_ROOT" diff "$base" HEAD --name-only | grep '^plugins/' | sed -E 's#(plugins/[^/]+)/.*#\1#' | sort -u)"
-  [ -n "$changed" ] || skip "no plugin changes vs merge-base"
-  for d in $changed; do
-    n="${d#plugins/}"
-    # 削除されたプラグインは bump する version が存在しない（entry ごと消えるので
-    # marketplace 側との齟齬は S130 / S130b が検出する）。削除を「bump 忘れ」と誤検出しない。
-    [ -f "${REPO_ROOT}/${d}/.claude-plugin/plugin.json" ] || continue
-    cur="$(jq -r '.version' "${REPO_ROOT}/${d}/.claude-plugin/plugin.json")"
-    old="$(git -C "$REPO_ROOT" show "${base}:${d}/.claude-plugin/plugin.json" 2>/dev/null | jq -r '.version' 2>/dev/null)"
-    # new plugin (absent at base) needs no bump, only registration
-    [ -z "$old" ] || [ "$old" = "null" ] && continue
-    if [ "$cur" = "$old" ]; then
-      echo "plugin ${n} changed by this run but version not bumped (still ${cur})"
-      return 1
-    fi
-    lowest="$(printf '%s\n%s\n' "$cur" "$old" | sort -V | head -1)"
-    [ "$lowest" = "$old" ] || { echo "${n}: ${cur} is not above ${old}"; return 1; }
-  done
+# --- S131: no marketplace plugins[] entry carries a version field (issue #447) ---
+# plugins[] の version も plugin.json と同じく版を固定するので、両方を見る。
+@test "S131: no marketplace plugins[] entry has a version field" {
+  bad="$(jq -r '.plugins[] | select(has("version")) | "\(.name)=\(.version)"' "$MARKETPLACE")"
+  if [ -n "$bad" ]; then
+    echo "marketplace plugins[] has version (remove it - issue #447):"
+    echo "$bad"
+    return 1
+  fi
 }
 
 # --- S132: marketplace top-level version field is absent (issue #140) ---
@@ -106,17 +91,15 @@ base_ref() {
   last="$(jq -r '.plugins[-1].name' "$MARKETPLACE")"
   [ "$first" != "$last" ]
 
-  bump_entry() { # $1=branch $2=plugin name $3=toplevel version if field exists
+  edit_entry() { # $1=branch $2=plugin name
     git -C "$scratch" checkout -qb "$1" main
-    jq --arg n "$2" --arg tv "$3" \
-      '(.plugins[] | select(.name==$n) | .version) = "999.9.9"
-       | if has("version") then .version = $tv else . end' \
+    jq --arg n "$2" '(.plugins[] | select(.name==$n) | .description) = "edited by \($n)"' \
       "${scratch}/marketplace.json" > "${scratch}/marketplace.json.tmp"
     mv "${scratch}/marketplace.json.tmp" "${scratch}/marketplace.json"
-    git -C "$scratch" commit -qam "bump $2"
+    git -C "$scratch" commit -qam "edit $2"
   }
-  bump_entry pr-a "$first" "999.0.1"
-  bump_entry pr-b "$last"  "999.0.2"
+  edit_entry pr-a "$first"
+  edit_entry pr-b "$last"
 
   git -C "$scratch" checkout -q main
   git -C "$scratch" merge -q --no-edit pr-a
@@ -125,6 +108,6 @@ base_ref() {
     return 1
   fi
   jq empty "${scratch}/marketplace.json"
-  [ "$(jq -r --arg n "$first" '.plugins[] | select(.name==$n) | .version' "${scratch}/marketplace.json")" = "999.9.9" ]
-  [ "$(jq -r --arg n "$last"  '.plugins[] | select(.name==$n) | .version' "${scratch}/marketplace.json")" = "999.9.9" ]
+  [ "$(jq -r --arg n "$first" '.plugins[] | select(.name==$n) | .description' "${scratch}/marketplace.json")" = "edited by ${first}" ]
+  [ "$(jq -r --arg n "$last"  '.plugins[] | select(.name==$n) | .description' "${scratch}/marketplace.json")" = "edited by ${last}" ]
 }

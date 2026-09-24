@@ -27,13 +27,13 @@ setup() {
 
 # --- (b) 新プラグインの構成 ---
 
-@test "plugin.json parses, name is product-handover, version is semver" {
+@test "plugin.json parses, name is product-handover, no version (issue #447)" {
   local pj="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   [ -f "$pj" ]
   run jq . "$pj"
   [ "$status" -eq 0 ]
   [ "$(jq -r .name "$pj")" = "product-handover" ]
-  jq -r .version "$pj" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+  jq -e 'has("version") | not' "$pj" >/dev/null
 }
 
 @test "README.md exists" {

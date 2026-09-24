@@ -15,12 +15,42 @@ setup() {
   DEVELOP="${PLUGIN_DIR}/skills/develop/SKILL.md"
   CODEX_DEVELOP="${PLUGIN_DIR}/references/codex-develop.md"
   PRGATE="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
+  USER_DOC="${PLUGIN_DIR}/docs/codex-develop.md"
+  ARCHIVE_TASKS="${PLUGIN_DIR}/../../openspec/changes/archive/2026-09-23-codex-model-family-resolution/tasks.md"
 }
 
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
 
 # develop SKILL.md の (4) ブロック（「(4) G を」からコードブロックの終わりまで）
 step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
+
+@test "docs (#405): model example and explanation accept families and exact IDs" {
+  grep -qF '<sol|luna|astra などの系統名、または完全なCodexモデルID>' "$USER_DOC"
+  grep -qF '系統名（worker が呼ぶ直前に model/list の最新版へ解決する）か完全なモデル ID' "$USER_DOC"
+}
+
+@test "archive (#405): completed tasks reflect both docs and the intentional exact-ID example" {
+  grep -qF 'docs は `plugins/dev-workflow/references/codex-develop.md` と `plugins/dev-workflow/docs/codex-develop.md` の旧形式の説明を直す' "$ARCHIVE_TASKS"
+  grep -qF '`openspec/specs/codex-role-profiles/spec.md` の `gpt-6-astra` は旧形式で完全 ID を書く例としてだけ残る' "$ARCHIVE_TASKS"
+}
+
+@test "review (#405): Codex result model resolution is passed to G without inferring missing resolved values" {
+  s="$(step4)"
+  echo "$s" | grep -qF 'execution.model_resolution.requested'
+  echo "$s" | grep -qF 'execution.model_resolution.resolved'
+  echo "$s" | grep -qF 'G に渡す'
+  echo "$s" | grep -qF '補完しない'
+}
+
+@test "review (#405): both G instructions record requested to resolved in the existing reviewer line" {
+  for file in "$GATE" "$PRGATE"; do
+    grep -qF 'レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）' "$file"
+    grep -qF 'execution.model_resolution.requested' "$file"
+    grep -qF 'execution.model_resolution.resolved' "$file"
+    grep -qF '<requested>→<resolved>' "$file"
+    grep -qF '補完しない' "$file"
+  done
+}
 
 # ===== gate-runner.md: 経路の判別（1.1） =====
 

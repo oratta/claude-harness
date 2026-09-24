@@ -10,8 +10,8 @@
   同文が2回載るだけで無害。
   セッションを跨がずにプラグインを更新した場合（/plugin marketplace update <name>・/reload-plugins）は
   SessionStart が再発火しないため、UserPromptSubmit hook（scripts/prompt-tripwires-refresh.sh）が
-  「plugin.json のバージョンが前回注入時から変わったとき」だけ同じ本文を再注入する。
-  バージョンが同じ間は毎プロンプト無出力で、文脈を食わない。
+  「プラグインが前回注入時から更新されたとき（CLAUDE_PLUGIN_ROOT が変わったとき）」だけ同じ本文を再注入する。
+  CLAUDE_PLUGIN_ROOT が同じ間は毎プロンプト無出力で、文脈を食わない。
 - unmanned（loop-dev-agent）で使う場合: 各リポに配備済みの憲法ファイル（docs/agent-loop.md。
   flatmate が保守する正本で、harness 側にテンプレートや再生成手順は無い）が同じ条件を
   組み込んでいる。手動コピーは不要。
