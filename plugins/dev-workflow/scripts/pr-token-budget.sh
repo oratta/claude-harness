@@ -20,7 +20,7 @@
 #   無ければトランスクリプトの最初の cwd）が実行時のリポジトリと同じもの（git common dir で比較。
 #   worktree は親に畳む）を数える。識別子が求まらないものは unresolved に数える。
 #   1 リクエスト = input + cache_creation + cache_read + output。requestId → message.id → uuid で重複排除。
-# - Codex 分: 本体が記録先の `Codex 消費: <thread_id> <tokens>` コメントを集めて作ったファイルを
+# - Codex 分: 本体が記録先の `Codex 消費: <thread_id> <tokens>` コメントを scripts/codex-records.sh で集めて作ったファイルを
 #   --codex-records で渡す。同じ thread_id は 1 回（最大値）。`-` は --codex-home（無ければ
 #   ${CODEX_HOME:-~/.codex}）の sessions/*/*/*/rollout-*-<thread_id>.jsonl の token_count の
 #   total_token_usage.total_tokens の最大値を使う。見つからなければ codex_unresolved に数える。
