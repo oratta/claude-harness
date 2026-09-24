@@ -880,8 +880,10 @@ step3c_body() {
 }
 
 @test "carryover (#441): step 3-c sits after 3-b and before step 4" {
-  order="$(grep -nE '^(#### 3-b\.|#### 3-c\.|### 4\. )' "$SKILL" | cut -d: -f2 | cut -c1-8)"
-  [ "$(echo "$order" | tr '\n' '|')" = "#### 3-b|#### 3-c|### 4. 動|" ] || { echo "$order"; return 1; }
+  # 見出し行の ASCII 部分だけを取り出して比較する（cut -c はマルチバイト文字の途中で
+  # 切れてロケール依存になるため、末尾の日本語部分は比較しない）
+  order="$(grep -nE '^(#### 3-b\.|#### 3-c\.|### 4\. )' "$SKILL" | sed -E 's/^[0-9]+:(#### 3-b|#### 3-c|### 4\.).*/\1/')"
+  [ "$(echo "$order" | tr '\n' '|')" = "#### 3-b|#### 3-c|### 4.|" ] || { echo "$order"; return 1; }
 }
 
 @test "carryover (#441): 3-c runs risk-carryover-check.sh and names the 4 conditions" {
