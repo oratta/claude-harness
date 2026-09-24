@@ -2,7 +2,7 @@
 
 - [ ] 1.1 `tests/marketplace-sync.bats` の S130 を「全 `plugins/*/.claude-plugin/plugin.json` に `version` が無い」、S131 を「`marketplace.json` の全 `plugins[]` エントリに `version` が無い」に置き換え、違反したプラグイン名と値を出力して fail させる。`origin/main` を参照しない。使われなくなった merge-base の解決関数を消す
 - [ ] 1.2 同ファイルの S139 を、先頭と末尾のエントリの `description` を別ブランチで書き換えてマージする形に直す
-- [ ] 1.3 `tests/plugin-release-convention.bats` を新規に作る: `plugins/*/changes/*` のファイル名が `^[0-9]+\.md$` で 1 行目が `# ` で始まる／凍結した 2 つの `CHANGELOG.md` のタイトル行の次の非空行が `changes/` を含む／その後の最初の `## ` 見出しが dev-workflow は `## 2.13.37 —`、product-handover は `## v0.1.0 —` で始まる／`plugins/*/CHANGELOG.md` がこの 2 件だけ／規約文書（`rules/plugin-editing.md`・`CLAUDE.md`・`AGENTS.md`・`docs/worktree-recovery.md`）に版上げの指示が無く `changes/` の指示がある／`README.md` の plugin.json の例に `"version"` が無い／`docs/worktree-recovery.md` に「バージョン据え置きでも中身は入る」旨の記述が無い
+- [ ] 1.3 `tests/plugin-release-convention.bats` を新規に作る: `plugins/*/changes/*` のファイル名が `^[0-9]+\.md$` で 1 行目が `# ` で始まる／凍結した 2 つの `CHANGELOG.md` のタイトル行の次の非空行が `changes/` を含む／その後の最初の `## ` 見出しが dev-workflow は `## 2.13.37 —`、product-handover は `## v0.1.0 —` で始まる／`plugins/*/CHANGELOG.md` がこの 2 件だけ／規約文書（`rules/plugin-editing.md`・`CLAUDE.md`・`AGENTS.md`・`docs/worktree-recovery.md`）に版上げの指示が無く `changes/` の指示がある／`README.md` の plugin.json の例に `"version"` が無い／`docs/worktree-recovery.md` に「バージョン据え置きでも中身は入る」（43 行目付近）・「cache はバージョンを上げなくても marketplace dir の HEAD に追随する」（10 行目付近）の旨の記述が無い。凍結点の見出し（`## 2.13.37 —`・`## v0.1.0 —`）は bats の先頭で変数にまとめ、凍結点であることをコメントで示す
 - [ ] 1.4 `plugins/dev-workflow/tests/prompt-tripwires-refresh.bats` を、`version` の無い `plugin.json` と `CLAUDE_PLUGIN_ROOT` の切り替えで (a)〜(g) を確かめる形に書き換え、旧方式の版番号が状態ファイルに残っているセッションで 1 回だけ再注入するケースを足す
 - [ ] 1.5 `bats tests/marketplace-sync.bats tests/plugin-release-convention.bats plugins/dev-workflow/tests/prompt-tripwires-refresh.bats` が期待どおりに落ちることを確かめる
 
@@ -32,12 +32,12 @@
 
 ## 6. 規約と文書
 
-- [ ] 6.1 `rules/plugin-editing.md` の版上げの 1 行を、版は上げない（commit SHA が版になる）・変更の記録は `plugins/<name>/changes/<番号>.md` に書く、に置き換える（聖域。最小限の差分）
+- [ ] 6.1 `rules/plugin-editing.md` の版上げの 1 行を、版は上げない（commit SHA が版になる）・変更の記録は `plugins/<name>/changes/<番号>.md` に書く、に置き換える。`changes/<issue 番号>.md` が main に既にあるとき（同じ issue の 2 本目の PR）は PR 番号を使う旨も書く（聖域。最小限の差分）
 - [ ] 6.2 `CLAUDE.md` と `AGENTS.md` の「`plugin.json` の bump」を外す（聖域。最小限の差分）
-- [ ] 6.3 `docs/worktree-recovery.md` のマージ後の反映と `plugin.json` の bump の節を、版は上げないこと・`version` が無ければ commit SHA が版になり push ごとに更新が届くこと・版が同じ間はキャッシュが更新されないことに書き換える
+- [ ] 6.3 `docs/worktree-recovery.md` の冒頭の cache の説明（10 行目付近の「cache はバージョンを上げなくても marketplace dir の HEAD に追随する」）と、マージ後の反映と `plugin.json` の bump の節（43 行目付近）を、版は上げないこと・`version` が無ければ commit SHA が版になり push ごとに更新が届くこと・版が同じ間はキャッシュが更新されないことに書き換える
 - [ ] 6.4 `.github/workflows/ci.yml` の「バージョン整合ガード（S131）について」のコメントを、S130・S131 が `version` の不在を常時走る決定論的検査として見ている旨に書き換える
 - [ ] 6.5 `README.md` の plugin.json の例から `"version"` を消す
-- [ ] 6.6 `git grep -n -iE "バージョンを上げ|版を上げ|bump|plugin\.json.*version"` を archive・`_longruns` を除いて再実行し、プラグインの版上げを求める記述が残っていないことを確かめる（依存パッケージの版上げなど無関係なものは除く）
+- [ ] 6.6 `git grep -n -iE "バージョンを上げ|版を上げ|bump|plugin\.json.*version"` を archive・`_longruns` を除いて再実行し、プラグインの版上げを求める記述が残っていないことを確かめる（依存パッケージの版上げなど無関係なものは除く。`plugins/dev-workflow/skills/develop/references/roles/worker.md`・`decision-criteria.md`・`pr-body-format.md` に出る「依存バージョン上げのみ」は PR の分類語でプラグインの版上げではないので、無関係として残す）
 
 ## 7. 仕上げ
 
