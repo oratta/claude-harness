@@ -27,8 +27,8 @@
 
 ## 5. 変更記録の方式
 
-- [ ] 5.1 `plugins/dev-workflow/CHANGELOG.md` と `plugins/product-handover/CHANGELOG.md` のタイトル行の直後に、以後は `changes/<番号>.md` に書き、このファイルには追記しない旨の 1 行を足す
-- [ ] 5.2 `plugins/dev-workflow/changes/447.md` と `plugins/product-handover/changes/447.md` に、この移行の記録（版番号の撤去と変更記録の方式の移行）を書く
+- [x] 5.1 `plugins/dev-workflow/CHANGELOG.md` と `plugins/product-handover/CHANGELOG.md` のタイトル行の直後に、以後は `changes/<番号>.md` に書き、このファイルには追記しない旨の 1 行を足す
+- [x] 5.2 `plugins/dev-workflow/changes/447.md` と `plugins/product-handover/changes/447.md` に、この移行の記録（版番号の撤去と変更記録の方式の移行）を書く
 
 ## 6. 規約と文書
 
