@@ -18,6 +18,6 @@
 
 ## 4. 検証
 
-- [ ] 4.1 `scripts/test.sh` を全件流し、exit code を記録する
-- [ ] 4.2 実機: Orca 管理のワークツリーから、本体と決めたダミーの子 2 件以上で `launch` し、`orca terminal read` で両方の子の入力欄に `/develop #<子>` が入り作業が始まっていること、指示が 2 回届いていないことを確かめる。あわせて `orca terminal send --json` の実際の出力の形を記録し、スタブと食い違えば bats を直す
-- [ ] 4.3 `openspec validate epic-launch-send-prompt --strict` が通る
+- [x] 4.1 `scripts/test.sh` を全件流し、exit code を記録する（exit 0、bats 全スイート pass、1763 ok / 0 not ok）
+- [x] 4.2 実機: Orca 管理のワークツリーから、本体と決めたダミーの子 2 件以上で `launch` し、`orca terminal read` で両方の子の入力欄に `/develop #<子>` が入り作業が始まっていること、指示が 2 回届いていないことを確かめる。あわせて `orca terminal send --json` の実際の出力の形を記録し、スタブと食い違えば bats を直す（結果は design.md「実機確認の結果」参照。スタブとの差分は無かった）
+- [x] 4.3 `openspec validate epic-launch-send-prompt --strict` が通る

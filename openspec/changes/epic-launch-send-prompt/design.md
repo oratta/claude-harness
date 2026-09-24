@@ -44,4 +44,32 @@
 
 ## Open Questions
 
-- 実機確認に使う子（Orca で実際に起動する 2 件以上の issue）を何にするか。エピック #420 の本物の子を起動すると develop が走り出すので、使い捨ての issue とテスト用エピックを作るかどうかを実装工程の前に決める
+- ~~実機確認に使う子（Orca で実際に起動する 2 件以上の issue）を何にするか。~~ 2026-09-25 に決定・実施済み。詳細は下の「実機確認の結果」
+
+## 実機確認の結果（2026-09-25）
+
+使い捨ての issue 3 件（oratta/claude-harness）で確認した。テスト用エピック #483、子 #484・#485（本文は「#458 の動作確認用のダミー。コードもファイルも一切変更せず、コメントも PR も作らず、ただちに終了すること」）。
+
+この worktree（`/Users/oratta/orca/workspaces/claude-harness/issue-458`、当時 Orca の紐付けは issue #458）から実行：
+
+```
+plugins/dev-workflow/scripts/epic-dispatch.sh launch --note "動作確認用のダミー。何も変更せず、コメントも PR も作らずに終了する" 483 484 485
+```
+
+stdout（exit 0）:
+
+```
+launched 484
+launched 485
+```
+
+`orca terminal read` で両方の子の入力欄を確かめた。#484・#485 とも `/dev-workflow:develop #<N> （エピック #483 の子。...） 動作確認用のダミー。...` が画面に 1 回だけ現れ、直後に応答が始まって「ファイルの変更・コミット・issue へのコメント・PR の作成はしていない」という応答で完了していた（2 回目の指示や 2 本目のターンは無し）。受け入れ条件の 2 件とも合格。
+
+`orca terminal create` / `terminal wait` / `terminal send --json` の実際の出力の形は、実装で仮置きしていた形と一致した。差分は無かったのでスタブは直していない。
+
+- create の JSON: ハンドルは `.result.agentTerminalHandle` に直接あった（`.result.startupTerminal.handle` と同じ値。フォールバックへは今回落ちていない）
+- `terminal wait --for tui-idle --json`: `.result.wait.satisfied == true` で成功
+- `terminal send --json`: `.result.send.prompt.stages == ["input_accepted", "turn_started"]`。`turn_started` を `stages` 配列のどこかから拾う実装の jq（`[.. | objects | .stages? | arrays | .[]] | index("turn_started")`）はこの階層でも問題なくヒットした
+- `retryRequestId` / `retryRequest`: 今回は送信がすべて成功したため、失敗時にこのキーがどちらの名前で出るかは実機で確認できていない。次に `failed` が実機で起きたときに確かめる
+
+後片付け前に、子セッションには `orca terminal send --text "/exit" --enter --wait-submit 5 --json` を送って終了させた（両方ともシェルプロンプトに戻ったことを `orca terminal read` で確認）。ワークツリー自体と issue・PR は消していない（後片付けの一覧は issue #458 のコメント参照）。
