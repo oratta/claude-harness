@@ -429,6 +429,10 @@ class ForegroundRequest(unittest.TestCase):
         self.assertIsNone(result['selection']['codex']['margin'])
 
     def test_explicit_profile_without_table_does_not_use_default_codex_home(self):
+        # The profile itself requests the 'current' account (not 'mapped'), so a bug that
+        # completes an empty table with CODEX_HOME's default_automatic_account_home() would
+        # make 'current' look registered and silently let this request through.
+        self.write_profile('current')
         with patch.dict(os.environ, {'CODEX_HOME': str(self.home)}, clear=False):
             with self.assertRaisesRegex(RuntimeError, 'account is not registered'):
                 self.call()
