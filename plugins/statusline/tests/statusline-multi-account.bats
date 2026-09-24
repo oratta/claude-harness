@@ -147,7 +147,7 @@ JSON
 JSON
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   [ "$(drop_cwd_line "$WORK/out.txt" | grep -c '5h')" = "1" ]
-  ! grep -qE '^(▸ |  )B ' "$WORK/out.txt"
+  ! grep -qE '^(▸ |  )B ' "$WORK/out.txt" || return 1
 }
 
 @test "multi: a slot with 5h but no 7d renders only the 5h line" {
@@ -162,7 +162,7 @@ json.dump(d, open(p, "w"))
 PY
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   grep -qE '^(▸ |  )B +5h' "$WORK/out.txt"
-  ! grep -qE '^(▸ |  )B +7d All' "$WORK/out.txt"
+  ! grep -qE '^(▸ |  )B +7d All' "$WORK/out.txt" || return 1
 }
 
 @test "multi: the active slot uses live stdin values" {
@@ -181,7 +181,7 @@ PY
   line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
   [[ "$line" =~ 2h前 ]] || return 1
   # active 側には経過時間を出さない
-  ! grep -E '^(▸ |  )A ' "$WORK/out.txt" | grep -q '前'
+  ! grep -E '^(▸ |  )A ' "$WORK/out.txt" | grep -q '前' || return 1
 }
 
 # ---------- 6h 鮮度ゲート ----------
@@ -190,7 +190,7 @@ PY
   write_two_slot_registry
   write_two_slot_snapshot "$((NOW - 25000))" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  ! grep -E '^(▸ |  )A ' "$WORK/out.txt" | grep -q 'Fable'
+  ! grep -E '^(▸ |  )A ' "$WORK/out.txt" | grep -q 'Fable' || return 1
 }
 
 @test "gate: a stale non-active slot keeps its Fable segment" {
@@ -212,8 +212,8 @@ PY
   line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
   [[ "$line" =~ 1% ]] || return 1
   # 分母（%/%）も残り時間（~Nd Nh）も出ない
-  ! [[ "$line" =~ %/ ]]
-  ! [[ "$line" =~ ~ ]]
+  ! [[ "$line" =~ %/ ]] || return 1
+  ! [[ "$line" =~ ~ ]] || return 1
 }
 
 # ---------- active スロットの判定 ----------
@@ -300,7 +300,7 @@ PY
   write_two_slot_snapshot "$NOW" "$((NOW + 600))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
-  ! [[ "$line" =~ -[0-9]+[mhd]前 ]]
+  ! [[ "$line" =~ -[0-9]+[mhd]前 ]] || return 1
   [[ "$line" =~ 0m前 ]] || return 1
 }
 
@@ -350,7 +350,7 @@ JSON
 JSON
   mk_input 3 25 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   grep -qE '^5h' "$WORK/out.txt"
-  ! grep -qE '^(▸ |  )A ' "$WORK/out.txt"
+  ! grep -qE '^(▸ |  )A ' "$WORK/out.txt" || return 1
 }
 
 @test "single: a schema 1 snapshot still renders the Fable segment" {
@@ -365,8 +365,8 @@ JSON
   write_two_slot_registry
   printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$WORK" \
     | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  ! drop_cwd_line "$WORK/out.txt" | grep -q '5h'
-  ! grep -q '7d All' "$WORK/out.txt"
+  ! drop_cwd_line "$WORK/out.txt" | grep -q '5h' || return 1
+  ! grep -q '7d All' "$WORK/out.txt" || return 1
 }
 
 # ---------- レジストリの制御文字 ----------
@@ -381,9 +381,9 @@ json.dump({"schema": 1, "accounts": [
 PY
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  ! grep -q 'pwned' "$WORK/out.txt"
+  ! grep -q 'pwned' "$WORK/out.txt" || return 1
   # 生き残った b だけの 1 スロット構成になるので label 列は出ない
-  ! grep -qE '^(▸ |  )B ' "$WORK/out.txt"
+  ! grep -qE '^(▸ |  )B ' "$WORK/out.txt" || return 1
   grep -qE '^5h' "$WORK/out.txt"
 }
 
@@ -399,7 +399,7 @@ JSON
   mk_input 40 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   grep -E '^(▸ |  )A ' "$WORK/out.txt" | grep -q 'Fable'
   # 非 active スロットはトップレベルを流用しない（b の行は出ない）
-  ! grep -qE '^(▸ |  )B ' "$WORK/out.txt"
+  ! grep -qE '^(▸ |  )B ' "$WORK/out.txt" || return 1
 }
 
 # ---------- snapshot の読み取りが原子的であること ----------
@@ -509,7 +509,7 @@ PY
   diff "$WORK/probe.tsv" "$WORK/sl.tsv"
   # 実際に規則が効いていることも確かめる（id 不正・重複・制御文字・8 個上限）
   [ "$(wc -l < "$WORK/sl.tsv" | tr -d ' ')" = "8" ]
-  ! grep -q 'ghost' "$WORK/sl.tsv"
+  ! grep -q 'ghost' "$WORK/sl.tsv" || return 1
 }
 
 # ---------- snapshot 読み取りが stdin に依存しないこと ----------
@@ -542,7 +542,7 @@ JSON
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   grep -qE '^(▸ |  )01234567 +5h' "$WORK/out.txt"
-  ! grep -q '0123456789abcdefghij' "$WORK/out.txt"
+  ! grep -q '0123456789abcdefghij' "$WORK/out.txt" || return 1
 }
 
 # ---------- active スロットの目印 ----------
@@ -673,7 +673,7 @@ PY
 {"schema":1,"fetched_at":$NOW,"fable_weekly_pct":7,"fable_active":true}
 JSON
   mk_input 3 25 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  ! grep -qE '^▸' "$WORK/out.txt"
+  ! grep -qE '^▸' "$WORK/out.txt" || return 1
   grep -qE '^5h' "$WORK/out.txt"
 }
 
@@ -711,7 +711,7 @@ SNAPSHOT
   printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$WORK" \
     | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" | strip_ansi > "$WORK/out.txt"
   [ "$(grep -cE '^▸ B +取得待ち$' "$WORK/out.txt")" = "1" ]
-  ! grep -qE '^▸ B .*%' "$WORK/out.txt"
+  ! grep -qE '^▸ B .*%' "$WORK/out.txt" || return 1
   [ "$(grep -cE '^  A ' "$WORK/out.txt")" = "2" ]
 }
 

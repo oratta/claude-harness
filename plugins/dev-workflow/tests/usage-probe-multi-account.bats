@@ -411,7 +411,7 @@ PY
   # 壊れたスロットは捨てられ、b だけが残る（幽霊スロットは現れない）
   [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" = "1" ]
   [ "$(printf '%s' "$output" | cut -f1)" = "b" ]
-  ! printf '%s' "$output" | grep -q 'pwned'
+  ! printf '%s' "$output" | grep -q 'pwned' || return 1
 }
 
 @test "registry: a slot whose securestorage contains a tab is dropped" {

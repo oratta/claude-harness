@@ -56,7 +56,7 @@ setup() {
 
 @test "invariant: no bare pull_request trigger (head-side definition must never run)" {
   on_block="$(awk '/^on:/{f=1;next} /^[^ #]/{f=0} f' "$WF")"
-  ! printf '%s\n' "$on_block" | grep -qE '^ *pull_request:'
+  ! printf '%s\n' "$on_block" | grep -qE '^ *pull_request:' || return 1
 }
 
 @test "invariant: pull_request_target restricted to labeled events" {
@@ -67,12 +67,12 @@ setup() {
 }
 
 @test "invariant: auto-merge.yml never checks out or clones PR head" {
-  ! grep -vE '^ *#' "$WF" | grep -qE 'actions/checkout|git +clone|gh pr checkout'
+  ! grep -vE '^ *#' "$WF" | grep -qE 'actions/checkout|git +clone|gh pr checkout' || return 1
 }
 
 @test "invariant: merge is SHA-pinned REST, not gh pr merge" {
   # コメントを除いた実行コードに gh pr merge が無いこと
-  ! sed -n '/# >>> automerge-script/,/# <<< automerge-script/p' "$WF" | sed 's/#.*//' | grep -qF 'gh pr merge'
+  ! sed -n '/# >>> automerge-script/,/# <<< automerge-script/p' "$WF" | sed 's/#.*//' | grep -qF 'gh pr merge' || return 1
   grep -qF -- '-f sha="$HEAD_SHA"' "$WF"
   grep -qF -- '-f merge_method=squash' "$WF"
 }
@@ -104,7 +104,7 @@ setup() {
   grep -qF 'workflow_dispatch' "$RV"
   grep -qF 'git revert' "$RV"
   grep -qF 'gh pr create' "$RV"
-  ! grep -qF 'gh pr merge' "$RV"
+  ! grep -qF 'gh pr merge' "$RV" || return 1
   grep -qF 'labels[]=human-merge' "$RV"
   grep -qF -- '-m 1' "$RV"
 }
@@ -146,7 +146,7 @@ extract_revert_code() {
 # --- Requirement: 運用ガイドはリポ非依存の記述で提供される ---
 
 @test "portability: no hardcoded flatmate repo URL anywhere in the template" {
-  ! grep -r 'genetta-inc/flatmate' "$TPL"
+  ! grep -r 'genetta-inc/flatmate' "$TPL" || return 1
 }
 
 # --- 自己検証: 同梱の攻撃再現テストがテンプレート自身に対して pass する ---
@@ -187,5 +187,5 @@ extract_revert_code() {
   echo "$output"
   [ "$status" -eq 0 ]
   # 1 件も FAIL していないこと（サマリ行の目視相当を機械化）
-  ! printf '%s\n' "$output" | grep -q '^FAIL'
+  ! printf '%s\n' "$output" | grep -q '^FAIL' || return 1
 }

@@ -202,6 +202,6 @@ JSON
 @test "model-unspecified denial no longer advertises fable for the four classifications" {
   call '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}'
   denied
-  ! echo "$output" | grep -q 'fable（最終 verify'
+  ! echo "$output" | grep -q 'fable（最終 verify' || return 1
   echo "$output" | grep -q 'dev-workflow:decider'
 }
