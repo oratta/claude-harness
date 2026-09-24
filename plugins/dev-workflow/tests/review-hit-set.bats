@@ -268,3 +268,66 @@ write_row3_table() {
   run python3 "$CHECKER" --repo "$REPO" "$REPO/row3.md"
   [ "$status" -eq 0 ]
 }
+
+# ===== 順 3 違反の蓄積（issue #406） =====
+
+@test "review hit set (#406): the rewritten-rows table can report two violations at once" {
+  setup_head_repo
+  commit_head 'done fix\nneedle keep typo\n' 'done same\nneedle same\n'
+  write_row3_table '該当しない: example' \
+    '| r/x.txt | 1 | `needle fix2` |' \
+    '| r/m.txt | 2 | `needle same` |'
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract: rewritten row must point at one not-applicable row: r/x.txt:1'* ]] || return 1
+  [[ "$output" == *'contract: rewritten row body is unchanged: r/m.txt:2'* ]] || return 1
+}
+
+@test "review hit set (#406): a main-table handling violation and a rewritten-rows violation are both reported" {
+  setup_head_repo
+  commit_head 'done fix\nneedle keep typo\n' 'done same\nneedle same\n'
+  write_row3_table '一致' \
+    '| r/m.txt | 2 | `needle same different` |' \
+    '| r/m.txt | 2 | `needle same different` |'
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract: row-3 handling must be 直した or 該当しない: <理由>: r/x.txt:2'* ]] || return 1
+  [[ "$output" == *'contract: rewritten row is duplicated: r/m.txt:2'* ]] || return 1
+}
+
+@test "review hit set (#406): a contract violation suppresses the second-stage unmatched/not-removed diff" {
+  setup_head_repo
+  commit_head 'done fix\nneedle keep fixed\n' 'done same\nneedle same\n'
+  write_row3_table '該当しない: example' \
+    '| r/m.txt | 2 | `needle same different` |' \
+    '| r/m.txt | 2 | `needle same different` |'
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract: rewritten row is duplicated: r/m.txt:2'* ]] || return 1
+  [[ "$output" != *'unmatched:'* ]] || return 1
+  [[ "$output" != *'not-removed:'* ]] || return 1
+}
+
+@test "review hit set (#406): missing header or mismatched columns still stop immediately as a structural error" {
+  cat > "$REPO/no-header.md" <<EOF
+修正前 SHA: $SHA
+検索コマンド: git grep -n needle <rev> -- .
+| foo | bar |
+|---|---|
+| changed/a.txt | needle one |
+EOF
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/no-header.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'*'header'* ]] || return 1
+
+  cat > "$REPO/bad-columns.md" <<EOF
+修正前 SHA: $SHA
+検索コマンド: git grep -n needle <rev> -- .
+| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |
+|---|---:|---|---|
+| changed/a.txt | 1 | \`needle one\` |
+EOF
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/bad-columns.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'*'columns'* ]] || return 1
+}

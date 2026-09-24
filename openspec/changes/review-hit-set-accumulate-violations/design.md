@@ -51,7 +51,7 @@
 ## Risks / Trade-offs
 
 - [`report` の行数が増えることで、G が順 3で「差分だけを見る」契約に影響しないか] → 影響しない。G は `gate-runner.md`（再開節「W の修正後の再レビュー」）と pr-review-gate `SKILL.md` 手順 2-1（223 行付近の 2 段照合の規定）で `review-hit-set.py --head` を実行し、その exit code と出力の差分行をそのまま W への差分として使う（集合の一致だけを見る）。今回の変更は差分行の種類（`missing:` / `extra:` / `unmatched:` / `not-removed:` に加え新設の `contract:`）を増やすだけで、G の照合ロジック自体は変えない。決定 2 の対応により、契約違反があるときに偽の `unmatched:` / `not-removed:` が混ざらないため、G が受け取る差分はむしろ正確になる。
-- [既存の bats テストが `contract: <message>` を stderr かつ単一行として期待している場合、壊れる] → 対象の 4 違反（扱い欄の値・補助表の対応先・重複・書き換え無し）のテストケースは出力先と行数の期待を書き換える。構造エラー側のテストケースは変更不要（互換性維持）。
+- [既存の bats テストが `contract: <message>` を stderr かつ単一行として期待している場合、壊れる] → 影響しない。対象の 4 違反（扱い欄の値・補助表の対応先・重複・書き換え無し）の既存単発違反テストは `run` が stdout/stderr を合わせて受け、assert が部分一致（`*contract:*`）であるため、出力先を stdout に変えても期待を書き換えずに pass する。構造エラー側のテストケースも変更不要（互換性維持）。
 
 ## Migration Plan
 
