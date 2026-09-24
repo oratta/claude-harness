@@ -723,3 +723,9 @@ extract_context_cap_section() {
   echo "$line" | grep -qF 'git fetch'
   echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の仕分け表の順 3'
 }
+
+@test "gate-runner (#441): when HEAD moves on an accepted PR, try pr-review-gate step 3-c before asking the owner" {
+  line="$(awk '/^## 再開/{f=1} /^## モデル/{f=0} f' "$GATE" | grep -F '許容済みの PR で HEAD が動いた')"
+  echo "$line" | grep -qF '主に聞く前に'
+  echo "$line" | grep -qF 'pr-review-gate 手順 3-c'
+}
