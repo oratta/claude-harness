@@ -69,7 +69,7 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 - 補足指示（一周目照合の補足要求の場合だけ）: 元の三表を置き換えず、残差に挙げた不足した項目だけを補う
 ```
 
-レビュー要約を SendMessage で受け取った G は、「レビュー実行者:」の PR コメント（`レビュー実行者: Task サブエージェント（light 判定のため）` / `（full・実測した Codex 不可: <条件>）`。adapter 経路では `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` とし、本体から渡された executor / model と dispatch 記録のコメント URL を写し、`<light|full>` には手順 2-0 の判定を書く。モデルと根拠を添え、full では対象 HEAD と上の同じ証拠を記録する。終了コードは取得できた場合のみ記し、架空の終了コードを書かない。light は事前判定として記録する）を **G が投稿**する。そのあとの分岐は、下の再開節の「レビュアーの要約受領」に従う。
+レビュー要約を SendMessage で受け取った G は、「レビュー実行者:」の PR コメント（`レビュー実行者: Task サブエージェント（light 判定のため）` / `（full・実測した Codex 不可: <条件>）`。adapter 経路では `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` とし、本体から渡された executor / model と dispatch 記録のコメント URL を写し、`<light|full>` には手順 2-0 の判定を書く。Codex の `<model>` は worker 結果の `execution.model_resolution.requested` と `execution.model_resolution.resolved` による `<requested>→<resolved>` として書く。resolved が null なら未観測と明示し、要求値や dispatch 時の model から補完しない。Claude の `<model>` は従来の値を使う。モデルと根拠を添え、full では対象 HEAD と上の同じ証拠を記録する。終了コードは取得できた場合のみ記し、架空の終了コードを書かない。light は事前判定として記録する）を **G が投稿**する。そのあとの分岐は、下の再開節の「レビュアーの要約受領」に従う。
 
 ## 一周目の三表を機械照合する
 
