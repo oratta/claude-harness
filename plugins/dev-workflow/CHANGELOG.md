@@ -1,11 +1,19 @@
 # Changelog — dev-workflow
 
-## 2.13.37 — 2026-09-23: Codex モデル指定の docs とレビュー記録を揃える
+## 2.13.39 — 2026-09-23: Codex モデル指定の docs とレビュー記録を揃える
 
 - **docs/codex-develop.md**: model に系統名か完全 ID を指定でき、系統名は worker が呼ぶ直前に最新版へ解決することを明記
 - **develop / gate-runner / pr-review-gate**: Codex review 結果の要求モデルと解決後 ID を G に渡し、既存のレビュー実行者コメントに `<requested>→<resolved>` として記録する手順を追加
 - **OpenSpec 履歴**: archive 済み tasks の docs と完全 ID の例について事実誤認を訂正
 - **テスト**: adapter レビュー経路の bats に docs とレビュー記録の検証を追加
+
+## 2.13.37 — 2026-09-23: エピックの子を Orca の独立セッションで回す経路を足す
+
+エピックの子を 1 つの本体がまとめて抱えると、子ごとの W / R1 / G の往復が本体のコンテキストに積もる。実運用では人がタブを分けて子ごとにセッションを起動していたので、これを自動にした（#420。手順はエピック #402 で手動で試したもの。2.13.31〜2.13.36 は先行 PR が使用したため、この変更は 2.13.37 とした）。
+
+- **scripts/epic-dispatch.sh**（新規）: `route`（子が 2 件以上・`orca` が PATH にある・Orca 管理のワークツリーにいるときだけ `orca`、それ以外は `subagent`）、`launch`（`git fetch` → 親ワークツリーをエピックに関連付け → 起動済みの子を `skipped` にしつつ子ごとに `orca worktree create`）、`wait`（子 issue のどれかが閉じるか上限時間に達するまで待ち、`closed` / `timeout` / `error gh` の 1 行で終わる）。LLM は使わない
+- **develop SKILL.md**: 「前提」表に `orca` の行を足した。「エピックの扱い」→「回し方」を、経路の決め方（最初の開始時に 1 回決めて `回し方:` のコメントに残し、再開時はそこから引き継ぐ。unmanned はサブエージェント方式）・Orca 経路の本体の手順（`wait` を背景で起動し、`state_reason` でマージと見送りを分ける）・サブエージェント方式・両経路に共通、に書き直した
+- **テスト**: `tests/epic-dispatch.bats` で `orca`・`gh`・`git`・`sleep` をスタブにして、呼び出しの引数と順序・stdout・exit code と、SKILL.md の記述を確かめる
 
 ## 2.13.36 — 2026-09-23: develop のレビュー経路契約を正本間で統一する
 
