@@ -143,28 +143,39 @@ def parse_table(lines):
 
 
 def parse_rewritten(lines, rows):
-    """Parse the rewritten not-applicable rows table into {(path, line): new body}."""
+    """Parse the rewritten not-applicable rows table into ({(path, line): new body}, violations).
+
+    Structural errors (missing header) still raise immediately. The three per-row content
+    checks (duplicate key, wrong target, unchanged body) accumulate into `violations` instead
+    so the rest of the table keeps being checked; a violating row is not added to `rewritten`.
+    """
     start = next((index for index, line in enumerate(lines)
                   if line.strip() == REWRITTEN_HEADING), None)
     if start is None:
-        return {}
+        return {}, []
     raw = table_rows(lines, REWRITTEN_HEADER, start + 1)
     if raw is None:
         raise ContractError("rewritten-rows table header is required under its heading")
     by_key = {(path, number): (body, handling) for path, number, body, handling in rows}
     rewritten = {}
+    violations = []
+    seen = set()
     for cells in raw:
         key = row_key(cells)
         new_body = decode_cell(cells[2], preserve=True)
-        if key in rewritten:
-            raise ContractError(f"rewritten row is duplicated: {key[0]}:{key[1]}")
+        if key in seen:
+            violations.append(f"rewritten row is duplicated: {key[0]}:{key[1]}")
+            continue
+        seen.add(key)
         if key not in by_key or not NOT_APPLICABLE_RE.fullmatch(by_key[key][1]):
-            raise ContractError(
+            violations.append(
                 f"rewritten row must point at one not-applicable row: {key[0]}:{key[1]}")
+            continue
         if new_body == by_key[key][0]:
-            raise ContractError(f"rewritten row body is unchanged: {key[0]}:{key[1]}")
+            violations.append(f"rewritten row body is unchanged: {key[0]}:{key[1]}")
+            continue
         rewritten[key] = new_body
-    return rewritten
+    return rewritten, violations
 
 
 def deleted_lines(repo, before, after, path):
@@ -294,20 +305,25 @@ def main():
     command = parse_command(search, sha)
     rows = parse_table(lines)
     rewritten = {}
+    violations = []
     if args.head is not None:
         for path, number, _body, handling in rows:
             if handling != FIXED and not NOT_APPLICABLE_RE.fullmatch(handling):
-                raise ContractError(
+                violations.append(
                     f"row-3 handling must be 直した or 該当しない: <理由>: {path}:{number}")
-        rewritten = parse_rewritten(lines, rows)
+        rewritten, rewritten_violations = parse_rewritten(lines, rows)
+        violations += rewritten_violations
     expected = {(path, number, body) for path, number, body, _handling in rows}
     repo = repository_root(args.repo)
     actual = actual_hits(repo, command)
     report = [f"missing: {path}:{number}" for path, number, _body in sorted(actual - expected)]
     report += [f"extra: {path}:{number}" for path, number, _body in sorted(expected - actual)]
-    if args.head is not None:
+    # A row-level contract violation makes the not-applicable/rewritten bookkeeping
+    # unreliable, so the second stage (unmatched:/not-removed:) only runs when clean.
+    if args.head is not None and not violations:
         head_hits = actual_hits(repo, parse_command(search, args.head))
         report += second_stage(repo, rows, rewritten, head_hits, sha, args.head)
+    report += [f"contract: {message}" for message in violations]
     for line in report:
         print(line)
     return int(bool(report))
