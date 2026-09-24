@@ -22,5 +22,5 @@
 ## 4. 記録と全体確認
 
 - [x] 4.1 `plugins/dev-workflow/changes/441.md` を既存の changes/*.md の形式で書く（版は上げない）
-- [ ] 4.2 `scripts/test.sh` を全件流し、exit code と失敗件数を記録する
-- [ ] 4.3 `openspec validate pr-gate-risk-carryover --strict` が通ることを確認する
+- [x] 4.2 `scripts/test.sh` を全件流し、exit code と失敗件数を記録する
+- [x] 4.3 `openspec validate pr-gate-risk-carryover --strict` が通ることを確認する
