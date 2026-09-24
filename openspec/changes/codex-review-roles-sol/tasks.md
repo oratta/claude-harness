@@ -16,8 +16,8 @@
 
 ## 4. 確認
 
-- [ ] 4.1 `bash scripts/test.sh` を引数なしで全件実行し、exit code を記録する。`scripts/lint.sh` も通す
-- [ ] 4.2 `openspec validate codex-review-roles-sol --strict` が通ることを確認する
+- [x] 4.1 `bash scripts/test.sh` を引数なしで全件実行し、exit code を記録する。`scripts/lint.sh` も通す
+- [x] 4.2 `openspec validate codex-review-roles-sol --strict` が通ることを確認する
 
 ## 5. archive（(3b) で行う）
 
