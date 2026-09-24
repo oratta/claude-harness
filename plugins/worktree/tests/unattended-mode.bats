@@ -288,13 +288,6 @@ wt_load_classify_dirty() {
 
 # --- version bump (cache invalidation) ---
 
-@test "version: worktree plugin.json is bumped to at least 2.8.0" {
-  local v
-  v=$(jq -r .version "$PLUGIN_JSON")
-  run bash -c "printf '%s\n%s\n' '2.8.0' '$v' | sort -V | head -1"
-  [ "$output" = "2.8.0" ]
-}
-
 @test "version: wt-clean SKILL.md version is bumped to at least 3.4.0" {
   local v
   v=$(wt_frontmatter "$WT_CLEAN_SKILL" | awk -F': *' '/^version:/{print $2}')

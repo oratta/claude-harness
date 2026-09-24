@@ -7,7 +7,7 @@
 #   - the find -path glob behaviour is documented with an intent comment
 #   - the settings.local.json symlink rationale is documented
 #   - `bash -n` syntax check passes
-#   - plugin.json version is bumped to 2.2.0 and parses
+#   - plugin.json parses
 
 load "$(dirname "$BATS_TEST_FILENAME")/helper.bash"
 
@@ -234,20 +234,9 @@ wt_run_setup_issue55() {
   grep -q 'skipped (excluded): ./.env.production' "${BATS_TEST_TMPDIR}/out55x.txt"
 }
 
-# --- version sync (task 6.x): plugin.json version is bumped and JSON parses ---
+# --- plugin.json parses ---
 
-@test "version: worktree plugin.json version is semver and not below the 2.2.1 baseline" {
-  # 元は "2.2.1 と等しい" 固定アサーションだったが、plugin.json を上げるたびに落ちる
-  # 陳腐化テストになっていた（実際 2.4.1 の時点で失敗したまま放置されていた）。
-  # 意図は「バージョンが退行していないこと」なので、semver 形式 + baseline 以上に変更する。
-  # baseline 2.2.1 = loops-integration (change-5) の自己検証節追加時点。decisions.md D-5b。
-  v="$(jq -r '.version' "$PLUGIN_JSON")"
-  [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
-  run bash -c "printf '%s\n%s\n' '2.2.1' '$v' | sort -V | head -1"
-  [ "$output" = "2.2.1" ]
-}
-
-@test "version: worktree plugin.json parses (jq)" {
+@test "manifest: worktree plugin.json parses (jq)" {
   jq empty "$PLUGIN_JSON"
 }
 

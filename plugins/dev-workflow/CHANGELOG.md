@@ -1,5 +1,7 @@
 # Changelog — dev-workflow
 
+以後の変更は `changes/<番号>.md`（記録先の issue 番号、無ければ PR 番号）に 1 PR 1 ファイルで書く。このファイルは issue #447 で凍結し、追記しない。
+
 ## 2.13.39 — 2026-09-23: Codex モデル指定の docs とレビュー記録を揃える
 
 - **docs/codex-develop.md**: model に系統名か完全 ID を指定でき、系統名は worker が呼ぶ直前に最新版へ解決することを明記

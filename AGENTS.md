@@ -9,7 +9,7 @@
 
 - 開発用 clone は marketplace dir の外に置く。場所は PC ごとに違うのでパスを文書やスクリプトに固定で書かず、環境変数 **`CLAUDE_HARNESS_DEV_DIR`**（`~/.claude/settings.json` の `env`）で解決する。worktree はその clone から生やす
 - marketplace dir では **feature ブランチを checkout しない・編集しない**。常に main のまま自動更新に任せる（feature ブランチにすると自動更新や `scripts/sync.sh` の pull がそのブランチ上で走り、実行時に読まれる `~/.claude/plugins/cache/` にマージ前の内容が入る）
-- 他のプロジェクトで作業中に harness を直したくなったときの手順、マージ前の `claude --plugin-dir` での動作確認、マージ後の反映、`plugin.json` の bump、状態が壊れたときの復旧は `docs/worktree-recovery.md` を参照
+- 他のプロジェクトで作業中に harness を直したくなったときの手順、マージ前の `claude --plugin-dir` での動作確認、マージ後の反映、変更の記録（`plugins/<name>/changes/`）、状態が壊れたときの復旧は `docs/worktree-recovery.md` を参照
 
 ## PR 運用ルール
 
@@ -40,4 +40,4 @@ CI を将来追加する場合の設計指針（Draft PR では skip するパ�
 
 この開発場所と PR 運用のルールは **「Claude Code プラグインの配布元リポジトリ（install 先が自動更新される）」** だから必要なもので、一般の作業 repo には適用しない。
 
-関連: `~/.claude/rules/git-commit-policy.md`（細かい commit 推奨、main 直 push 禁止）、`~/.claude/rules/plugin-editing.md`（プラグインをどこで編集するか・バージョン運用）。
+関連: `~/.claude/rules/git-commit-policy.md`（細かい commit 推奨、main 直 push 禁止）、`~/.claude/rules/plugin-editing.md`（プラグインをどこで編集するか・変更の記録）。

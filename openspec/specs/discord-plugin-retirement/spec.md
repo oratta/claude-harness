@@ -12,7 +12,7 @@ harness から Discord 改造版プラグイン（公式プラグインの fork�
 - **AND** `plugins/discord` はファイルシステム上にも存在しない
 
 ### Requirement: marketplace.json から discord のエントリを外す
-`.claude-plugin/marketplace.json` の `plugins[]` は `name` が `discord` のエントリを持ってはならない（MUST NOT）。`bundles[]` のどの `plugins[]` にも `discord` を含めてはならない（MUST NOT）。他のプラグインのエントリ（`version`・`description` を含む）は変えてはならない（MUST NOT）。
+`.claude-plugin/marketplace.json` の `plugins[]` は `name` が `discord` のエントリを持ってはならない（MUST NOT）。`bundles[]` のどの `plugins[]` にも `discord` を含めてはならない（MUST NOT）。他のプラグインのエントリ（`description` を含む）は変えてはならない（MUST NOT）。
 
 #### Scenario: plugins[] に discord が無い
 - **WHEN** `jq -e '[.plugins[].name] | index("discord") == null' .claude-plugin/marketplace.json` を実行する
@@ -24,7 +24,7 @@ harness から Discord 改造版プラグイン（公式プラグインの fork�
 
 #### Scenario: 整合テストが通る
 - **WHEN** `bats tests/marketplace-sync.bats` を実行する
-- **THEN** 全件 pass する（削除したプラグインは version bump 検査の対象外）
+- **THEN** 全件 pass する
 
 ### Requirement: CI は Discord のテストのための bun を導入しない
 `.github/workflows/ci.yml` は bun を導入するステップ（`oven-sh/setup-bun`）を持ってはならない（MUST NOT）。bun を使うテストは Discord の動的ハーネスだけだったため、節ごと取り除く。サードパーティ製 action をコミット SHA で固定する方針のコメント（issue #138）は、今後の追加に備えて残さなければならない（MUST）。ただし例示に撤去済みの action 名を使ってはならない（MUST NOT）。
