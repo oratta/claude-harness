@@ -295,8 +295,8 @@ class ForegroundRequest(unittest.TestCase):
         for name, values in (('codex-standard', ('sol', 'sol')), ('codex-economy', ('luna', 'luna'))):
             config = m.load_profile(name, None, {'current'})
             expected = {'spec-write': values[0], 'implement': values[1], 'explore': 'luna',
-                        'summarize': 'luna', 'spec-review': 'astra', 'impl-review': 'astra',
-                        'review': 'astra', 'decider': 'astra'}
+                        'summarize': 'luna', 'spec-review': 'sol', 'impl-review': 'sol',
+                        'review': 'sol', 'decider': 'astra'}
             self.assertEqual({role: entry['model'] for role, entry in config['roles'].items()}, expected)
             self.assertTrue(all(entry['executor'] == 'codex' and entry['account'] == 'current'
                                 for entry in config['roles'].values()))
@@ -331,9 +331,9 @@ class ForegroundRequest(unittest.TestCase):
             'implement': ('claude', 'current', 'sonnet', 'medium'),
             'explore': ('claude', 'current', 'haiku', 'low'),
             'summarize': ('claude', 'current', 'haiku', 'low'),
-            'spec-review': ('codex', 'current', 'astra', 'high'),
-            'impl-review': ('codex', 'current', 'astra', 'high'),
-            'review': ('codex', 'current', 'astra', 'high'),
+            'spec-review': ('codex', 'current', 'sol', 'high'),
+            'impl-review': ('codex', 'current', 'sol', 'high'),
+            'review': ('codex', 'current', 'sol', 'high'),
             'decider': ('codex', 'current', 'astra', 'high'),
         }
         self.assertEqual(set(config['roles']), set(m.CANONICAL_ROLES))

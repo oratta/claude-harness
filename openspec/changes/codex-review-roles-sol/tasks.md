@@ -18,3 +18,7 @@
 
 - [ ] 4.1 `bash scripts/test.sh` を引数なしで全件実行し、exit code を記録する。`scripts/lint.sh` も通す
 - [ ] 4.2 `openspec validate codex-review-roles-sol --strict` が通ることを確認する
+
+## 5. archive（(3b) で行う）
+
+- [ ] 5.1 change を archive し、`git diff` で `openspec/specs/codex-role-profiles/spec.md` の 3 シナリオ（「二つの Codex 組み込みセットを解決する」「Claude が書き Codex が検査する組み込みセットを解決する」「両 provider に余裕がある」）が delta と同じ文面になったことを確認する
