@@ -18,6 +18,9 @@ import threading
 import time
 
 TERMINAL = {'completed', 'failed', 'interrupted'}
+# How long a running turn tolerates an unreadable auth.json: a token refresh may be caught
+# mid-write, while a file that stays unreadable is treated like a switched account.
+AUTH_UNREADABLE_GRACE = 5.0
 # The writers run with no OS sandbox because the Claude subagent each one mirrors runs with
 # none either; a linked worktree's $GIT_DIR stays read-only under workspace-write, so commit
 # and branch creation cannot work there. The readers keep readOnly, which is the one limit
@@ -253,11 +256,67 @@ def ancestors(pid):
     return chain
 
 
-def runtime_identity_matches(runtime, account):
+def runtime_link_matches(runtime, account):
     path = runtime/'auth.json'
     require(path.is_symlink() and path.resolve() == (Path(account['home'])/'auth.json').resolve(), 'runtime_auth_link_changed')
-    actual = auth_info(account['home'])
-    require(all(actual[k] == account[k] for k in actual), 'auth_profile_changed')
+
+
+def same_account(actual, account):
+    # A token refresh rewrites auth.json but keeps these two; the file hash is not compared.
+    return all(actual[k] == account[k] for k in ('identity', 'account_id_hash'))
+
+
+def runtime_identity_matches(runtime, account):
+    runtime_link_matches(runtime, account)
+    require(same_account(auth_info(account['home']), account), 'auth_profile_changed')
+
+
+def server_identity_matches(observed, account):
+    return (observed.get('type') == 'chatgpt' and bool(observed.get('email')) and
+            digest(observed['email'].strip().lower().encode()) == account['identity'])
+
+
+class AuthWatch:
+    # The per-poll check while a turn runs. changed() answers whether the turn must stop
+    # for auth_profile_changed; the caller stops asking once it has said yes.
+    def __init__(self, rpc, runtime, account):
+        self.rpc = rpc
+        self.runtime = runtime
+        self.account = account
+        self.confirmed = account['auth_hash']
+        self.unreadable_since = None
+
+    def changed(self):
+        try:
+            runtime_link_matches(self.runtime, self.account)
+        except Rejected:
+            return True
+        try:
+            actual = auth_info(self.account['home'])
+        except Exception:
+            now = time.monotonic()
+            if self.unreadable_since is None:
+                self.unreadable_since = now
+            return now-self.unreadable_since > AUTH_UNREADABLE_GRACE
+        self.unreadable_since = None
+        if not same_account(actual, self.account):
+            return True
+        if actual['auth_hash'] == self.confirmed:
+            return False
+        try:
+            observed = self.rpc.request('account/read', {'refreshToken': False}).get('account') or {}
+        except Rejected as error:
+            # A stop that lands during the read is the caller's reason, not an account change.
+            if str(error) == 'stop_requested':
+                return False
+            # A server gone mid-read ends the run as a disconnect, as it did before this check.
+            if str(error) == 'transport_disconnected':
+                raise
+            return True
+        if not server_identity_matches(observed, self.account):
+            return True
+        self.confirmed = actual['auth_hash']
+        return False
 
 
 def quota_available(result, margin, inflight):
@@ -416,8 +475,7 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
     rpc.request('initialize', {'clientInfo': {'name': 'harness-worker', 'version': '1'}})
     rpc.send({'method': 'initialized', 'params': {}})
     observed = rpc.request('account/read', {'refreshToken': False}).get('account') or {}
-    require(observed.get('type') == 'chatgpt' and observed.get('email') and
-            digest(observed['email'].strip().lower().encode()) == account['identity'], 'server_identity_mismatch')
+    require(server_identity_matches(observed, account), 'server_identity_mismatch')
     recorder.observe(executor=('codex', 'transport:codex-app-server'),
                      account=(recorder.account_effective(payload, observed), 'account/read:account.email'))
     runtime_identity_matches(runtime, account)
@@ -456,13 +514,13 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
                      effort=(turn_result.get('effort'), 'turn/start:result.turn.effort'))
     cancel_sent = False
     cancel_at = None
+    watch = AuthWatch(rpc, runtime, account)
+    changed = False
     while True:
         cancel = recorder.poll()
-        try:
-            runtime_identity_matches(runtime, account)
-            changed = False
-        except Exception:
-            changed = True
+        # Once a stop is decided, from any source, the reason is kept and nothing is re-read.
+        if not (changed or cancel or cancel_sent or rpc.unsupported):
+            changed = watch.changed()
         cancel = cancel or rpc.unsupported or changed
         if cancel and cancel_at is None:
             # One deadline covering the interrupt and the completion after it, started where the

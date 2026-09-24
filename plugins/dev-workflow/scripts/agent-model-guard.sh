@@ -13,7 +13,7 @@
 #   - model あり → 許可
 #   - subagent_type が定義に model を持つエージェント（plugin:agent 形式や casting-* 等）→ 許可
 #     （Agent ツールは定義側の model を使うため、パラメータ省略が親継承にならない）
-#   - subagent_type が fork → SHARED_BUDGET_MODE（明示 env、無ければ snapshot から導出）が ok のときだけ許可。
+#   - subagent_type が fork → SHARED_BUDGET_MODE（明示 env、無ければ active スロットの実効値から導出）が ok のときだけ許可。
 #     throttled / depleted では拒否（fork は常に親＝Fable で動く）
 #   - それ以外（general-purpose / Explore / Plan / 未指定）で model 無し → 拒否
 #   - DEV_WORKFLOW_MODEL_GUARD=off で全許可（緊急の逃げ道。恒久設定にしない）
@@ -30,7 +30,9 @@ SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
 # Python 本体は fd 3 のヒアドキュメントで渡し、stdin（hook の payload）はそのまま Python に読ませる。
 # payload を環境変数や引数に載せると、長い prompt で ARG_MAX を超えて hook が非 0 で落ち、
 # Claude Code は非 0/非 2 の hook エラーを「続行」と扱うため、判定が素通りになる。
-SNAPSHOT="$SNAPSHOT" python3 /dev/fd/3 3<<'PY'
+# 実効値（セッション記録と snapshot を突き合わせた値）は usage_view.py の 1 か所の実装から得る。
+SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" \
+  python3 /dev/fd/3 3<<'PY'
 import json, os, sys, time
 
 try:
@@ -58,14 +60,17 @@ if stype == "fork":
     if not shared:
         shared = "ok"
         try:
-            snap = json.load(open(os.environ["SNAPSHOT"], encoding="utf-8"))
-            all_pct = float(snap.get("weekly_all_pct"))
+            now_env = os.environ.get("USAGE_PROBE_NOW")
+            now = int(now_env) if now_env and now_env.lstrip("-").isdigit() else int(time.time())
+            sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
+            import usage_view
+            view = usage_view.build_view(snapshot_path=os.environ["SNAPSHOT"], now=now)
+            slot = view["accounts"].get(view["active"]) or {}
+            all_pct = float(slot.get("weekly_all_pct"))
             if all_pct > 90:
-                shared = "depleted"            # リセット時刻が読めなくても 90% 超は depleted
+                shared = "depleted"            # 週経過に関わらず 90% 超は depleted
             else:
-                resets = int(snap.get("weekly_resets_epoch"))
-                now_env = os.environ.get("USAGE_PROBE_NOW")
-                now = int(now_env) if now_env and now_env.lstrip("-").isdigit() else int(time.time())
+                resets = int(slot.get("weekly_resets_epoch"))
                 WEEK = 7 * 86400
                 elapsed = max(0.0, min(100.0, (WEEK - (resets - now)) / WEEK * 100.0))
                 if all_pct > elapsed:

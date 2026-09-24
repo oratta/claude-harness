@@ -1,9 +1,10 @@
 #!/usr/bin/env bats
 #
 # dev-workflow-account-selector:
-#   accounts.json と schema 2 usage snapshot から起動アカウントを選ぶ規則。
+#   accounts.json・セッション記録・schema 2 usage snapshot の実効値から起動アカウントを選ぶ規則。
 #
 # spec: usage-account-registry（起動アカウント選択）
+#       usage-session-records（記録と snapshot から実効値を求める）
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -12,6 +13,7 @@ setup() {
   WORK="$(mktemp -d)"
   ACCOUNTS="${WORK}/accounts.json"
   SNAP="${WORK}/.usage-snapshot"
+  SESSIONS="${WORK}/.usage-sessions"
   NOW=1000000000
   SECURE_A="${WORK}/claude a"
   SECURE_B="${WORK}/claude b"
@@ -32,19 +34,36 @@ JSON
 }
 
 # $1=a fetched_at $2=b fetched_at $3=a 5h $4=b 5h $5=a weekly $6=b weekly
+# 5 時間枠はリセット時刻を持たせる（リセット時刻 null の値を使うのは使用率 0 のときだけなので）
 write_snapshot() {
   cat > "$SNAP" <<JSON
 { "schema": 2, "accounts": {
-  "a": { "fetched_at": $1, "five_hour_pct": $3,
+  "a": { "fetched_at": $1, "five_hour_pct": $3, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": $5, "weekly_resets_epoch": $((NOW + 302400)) },
-  "b": { "fetched_at": $2, "five_hour_pct": $4,
+  "b": { "fetched_at": $2, "five_hour_pct": $4, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": $6, "weekly_resets_epoch": $((NOW + 302400)) }
 } }
 JSON
 }
 
+# $1=securestorage（空なら既定アカウント）→ そのアカウントのセッション記録の鍵
+record_key() {
+  if [ -z "$1" ]; then echo default; return; fi
+  python3 -c 'import hashlib,sys,unicodedata;print(hashlib.sha256(unicodedata.normalize("NFC",sys.argv[1]).encode()).hexdigest()[:8])' "$1"
+}
+
+# $1=securestorage $2=observed_at $3=5h% $4=週次% [$5=週次リセット epoch]
+write_record() {
+  local key
+  key="$(record_key "$1")"
+  mkdir -p "$SESSIONS"
+  printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":%s,"five_hour_resets_epoch":%s,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
+    "$key" "$2" "$3" "$((NOW + 9000))" "$4" "${5:-$((NOW + 302400))}" > "${SESSIONS}/${key}.json"
+}
+
 invoke() {
-  env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_SNAPSHOT="$SNAP" \
+  env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_SNAPSHOT="$SNAP" \
+    USAGE_SESSIONS_DIR="$SESSIONS" \
     SELECT_ACCOUNT_NOW="$NOW" "$SELECTOR" "$@" >"${WORK}/stdout" 2>"${WORK}/stderr"
 }
 
@@ -93,9 +112,9 @@ SH
   write_registry
   cat > "$SNAP" <<JSON
 { "schema": 2, "accounts": {
-  "a": { "fetched_at": $NOW, "five_hour_pct": 10,
+  "a": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": 50, "weekly_resets_epoch": $((NOW + 302400)) },
-  "b": { "fetched_at": $NOW, "five_hour_pct": 10,
+  "b": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": 50, "weekly_resets_epoch": $((NOW + 302399)) }
 } }
 JSON
@@ -105,38 +124,80 @@ JSON
   [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:0.00,b:0.00" ]
 }
 
-@test "freshness: age 299 is eligible and age 300 is stale" {
+@test "age: an old value before its reset still takes part and can win" {
   write_registry
-  write_snapshot "$((NOW - 300))" "$((NOW - 299))" 10 10 0 40
+  write_snapshot "$((NOW - 86400))" "$NOW" 10 10 0 40
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:50.00,b:10.00" ]
+}
+
+@test "age: a value past its weekly reset is compared as 0%" {
+  write_registry
+  cat > "$SNAP" <<JSON
+{ "schema": 2, "accounts": {
+  "a": { "fetched_at": $((NOW - 604800)), "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
+           "weekly_all_pct": 95, "weekly_resets_epoch": $((NOW - 10)) },
+  "b": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
+           "weekly_all_pct": 30, "weekly_resets_epoch": $((NOW + 302400)) }
+} }
+JSON
   run invoke
   [ "$status" -eq 0 ]
   [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
-  grep -qF 'margins=a:stale,b:10.00' "${WORK}/stderr"
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:0.00,b:20.00" ]
 }
 
-@test "freshness: a stale higher-margin slot loses to a fresh slot" {
+@test "records: session records alone select without a snapshot" {
   write_registry
-  write_snapshot "$((NOW - 1))" "$((NOW - 300))" 10 10 49 0
+  write_record "" "$((NOW - 3600))" 10 40
+  write_record "$SECURE_B" "$((NOW - 7200))" 10 20
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:30.00" ]
+}
+
+@test "records: repeated 429s leave the snapshot empty but records still select" {
+  write_registry
+  cat > "$SNAP" <<JSON
+{ "schema": 2, "accounts": {
+  "a": { "fetched_at": null, "five_hour_pct": null,
+           "weekly_all_pct": null, "weekly_resets_epoch": null },
+  "b": { "fetched_at": null, "five_hour_pct": null,
+           "weekly_all_pct": null, "weekly_resets_epoch": null }
+} }
+JSON
+  write_record "" "$((NOW - 60))" 10 45
+  write_record "$SECURE_B" "$((NOW - 60))" 10 25
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
+  ! grep -qF 'missing' "${WORK}/stderr" || return 1
+  grep -qF 'selected=b reason=max-weekly-margin' "${WORK}/stderr"
+}
+
+@test "records: B's record is never read as A's" {
+  write_registry
+  write_record "$SECURE_B" "$NOW" 10 0
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:missing,b:50.00" ]
+}
+
+@test "fallback: all missing slots select the registered default id" {
+  write_registry
   run invoke
   [ "$status" -eq 0 ]
   [ -z "$(cat "${WORK}/stdout")" ]
   [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
-  grep -qF 'selected=a reason=max-weekly-margin margins=a:1.00,b:stale' "${WORK}/stderr"
-}
-
-@test "fallback: all stale slots select the registered default id" {
-  write_registry
-  write_snapshot "$((NOW - 300))" "$((NOW - 301))" 10 10 40 20
-  run invoke
-  [ "$status" -eq 0 ]
-  [ -z "$(cat "${WORK}/stdout")" ]
-  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
-  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-missing-usage margins=a:stale,b:stale" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-missing-usage margins=a:missing,b:missing" ]
 }
 
 @test "fallback: an unregistered default uses the sentinel" {
   write_registry "\"${SECURE_A}\""
-  write_snapshot "$((NOW - 300))" "$((NOW - 301))" 10 10 40 20
   run invoke
   [ "$status" -eq 0 ]
   [ -z "$(cat "${WORK}/stdout")" ]
@@ -270,19 +331,19 @@ JSON
   grep -qF 'selected=a reason=max-weekly-margin margins=a:25.00,b:25.00' "${WORK}/stderr"
 }
 
-@test "invalid selection fields are missing and a future observation is stale" {
+@test "a non-numeric fetched_at and a future observation are passed through" {
   write_registry
   cat > "$SNAP" <<JSON
 { "schema": 2, "accounts": {
-  "a": { "fetched_at": "not-a-number", "five_hour_pct": 1,
+  "a": { "fetched_at": "not-a-number", "five_hour_pct": 1, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": 1, "weekly_resets_epoch": $((NOW + 302400)) },
-  "b": { "fetched_at": $((NOW + 1)), "five_hour_pct": 1,
+  "b": { "fetched_at": $((NOW + 1)), "five_hour_pct": 1, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": 1, "weekly_resets_epoch": $((NOW + 302400)) }
 } }
 JSON
   run invoke
   [ "$status" -eq 0 ]
-  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-missing-usage margins=a:missing,b:stale" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:49.00,b:49.00" ]
 }
 
 @test "missing and non-numeric required values are excluded" {
@@ -291,7 +352,7 @@ JSON
 { "schema": 2, "accounts": {
   "a": { "fetched_at": $NOW, "five_hour_pct": null,
            "weekly_all_pct": 1, "weekly_resets_epoch": $((NOW + 302400)) },
-  "b": { "fetched_at": $NOW, "five_hour_pct": 1,
+  "b": { "fetched_at": $NOW, "five_hour_pct": 1, "five_hour_resets_epoch": $((NOW + 9000)),
            "weekly_all_pct": "bad", "weekly_resets_epoch": $((NOW + 302400)) }
 } }
 JSON

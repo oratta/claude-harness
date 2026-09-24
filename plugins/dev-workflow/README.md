@@ -44,7 +44,7 @@ export CLAUDE_HARNESS_SCRIPTS="${CLAUDE_HARNESS_SCRIPTS:-$HOME/.claude/plugins/m
 unalias cld cld-account 2>/dev/null
 
 cld() {
-  # 取得失敗時は既存 snapshot を selector が安全側に評価する。
+  # probe は補助。実行条件を満たさない・取得に失敗したときも、selector はセッション記録と既存 snapshot の実効値で選ぶ。
   "$CLAUDE_HARNESS_SCRIPTS/usage-probe.sh" >/dev/null 2>&1 || true
 
   local selected selector_rc

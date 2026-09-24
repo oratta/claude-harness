@@ -7,7 +7,14 @@
 #   - アカウントレジストリ: ${CLAUDE_ACCOUNTS_FILE}
 #       （既定 ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json）。
 #     不在・不正なら既定スロット 1 つに縮退し、挙動は従来と変わらない
-#   - snapshot が TTL（$USAGE_PROBE_TTL 秒、既定 300）以内に更新済みなら再フェッチしない
+#   - 使用量の主な出どころはステータスラインのセッション記録で、probe は補助。スロットごとに、
+#     記録が無いか $USAGE_PROBE_STALE 秒（既定 10800）より古い、または snapshot の同スロットの
+#     fetched_at が同じく古い（無い場合を含む）ときだけ叩く。前回の試行から $USAGE_PROBE_INTERVAL 秒
+#     （既定 10800）経っていなければ叩かず、429 が続くスロットは間隔×2^(連続回数-1)（上限 1 日）待つ。
+#     試行は結果にかかわらず ${USAGE_PROBE_STATE}（既定 ~/.claude/.usage-probe-state）に記録する。
+#     snapshot の mtime による TTL は使わない（全スロット失敗で mtime が進まず、叩き直し続けるため）
+#   - マシン全体で 1 本: ${USAGE_PROBE_LOCK}（既定 ~/.claude/.usage-probe.lock）を mkdir で取れなければ
+#     何もしない。120 秒より古いロックは前の probe の異常終了とみなして取り直す
 #   - schema 2: accounts にスロットごとの値、active に現在のスロット id。
 #     トップレベルの従来キーは active スロットの同名フィールドのミラー（既存の読み手用）
 #   - fail-open はスロット単位。あるスロットが失敗しても前回値（fetched_at 込み）を引き継ぐ。
@@ -21,7 +28,8 @@
 # テスト用オーバーライド（本番は未設定）:
 #   - USAGE_PROBE_RESPONSE_FILE:      全スロット共通で生 API JSON をこのファイルから読む
 #   - USAGE_PROBE_RESPONSE_FILE_<ID>: スロット別（id を大文字化し `-` を `_` に変換）。優先
-#   - USAGE_PROBE_NOW:                現在 epoch を固定する
+#   - USAGE_PROBE_STATUS[_<ID>]:      テスト経路の HTTP ステータス（既定は応答ファイルがあれば 200）
+#   - USAGE_PROBE_NOW:                現在 epoch を固定する（実行条件と試行時刻もこの時刻で測る）
 #   いずれかが設定されていれば全スロットがテスト経路になり、Keychain / curl は使わない。
 #   - USAGE_PROBE_USER_AGENT:         本番経路で送る User-Agent を固定する（テスト経路には切り替えない。
 #                                     既定は claude-code/<claude --version の版>）
@@ -33,7 +41,11 @@
 set -uo pipefail
 
 SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
-TTL="${USAGE_PROBE_TTL:-300}"
+STALE="${USAGE_PROBE_STALE:-10800}"
+INTERVAL="${USAGE_PROBE_INTERVAL:-10800}"
+STATE="${USAGE_PROBE_STATE:-$HOME/.claude/.usage-probe-state}"
+LOCK="${USAGE_PROBE_LOCK:-$HOME/.claude/.usage-probe.lock}"
+LOCK_STALE=120
 NOW="${USAGE_PROBE_NOW:-$(date +%s 2>/dev/null || echo 0)}"
 ENDPOINT="${USAGE_PROBE_ENDPOINT:-https://api.anthropic.com/api/oauth/usage}"
 ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json}"
@@ -142,25 +154,79 @@ if [ "${1:-}" = "--print-slots" ]; then
   exit 0
 fi
 
-# ---- 5 分キャッシュ: snapshot が TTL 以内なら何もしない ----
-# age は実時刻で計算する（USAGE_PROBE_NOW は導出の決定論化用であり、mtime は実時刻のため混ぜない）。
-if [ -f "$SNAPSHOT" ]; then
+# ---- マシン全体で 1 本: ロックを取れなければ何もしない ----
+# ロックの古さは実時刻と mtime で測る（USAGE_PROBE_NOW は導出の決定論化用で、mtime は実時刻のため混ぜない）。
+# GNU の stat（-c）を先に試す。逆順にすると Linux で `stat -f` がファイルシステム情報の表示として
+# 成功してしまい、mtime ではない値が返る。macOS の stat は -c を不正オプションとして非 0 で終わる。
+# 親（既定は ~/.claude）が無い環境でも取れるよう先に作る。試行状態ファイルの既定の置き場所も同じ親
+mkdir -p "$(dirname "$LOCK")" 2>/dev/null
+if ! mkdir "$LOCK" 2>/dev/null; then
   real_now="$(date +%s 2>/dev/null || echo 0)"
-  # GNU（-c）を先に試す。逆順にすると Linux で `stat -f` が「ファイルシステム情報の
-  # 表示」として成功してしまい（BSD の -f=フォーマット指定とは別物）、mtime ではない
-  # 値が返って || のフォールバックに落ちない。macOS の stat は -c を不正オプションとして
-  # 非0終了するため、この順序なら両プラットフォームで正しく mtime が取れる。
-  mtime="$(stat -c %Y "$SNAPSHOT" 2>/dev/null || stat -f %m "$SNAPSHOT" 2>/dev/null || echo 0)"
-  age=$(( real_now - mtime ))
-  if [ "$age" -ge 0 ] && [ "$age" -lt "$TTL" ] 2>/dev/null; then
-    exit 0
-  fi
+  lock_mtime="$(stat -c %Y "$LOCK" 2>/dev/null || stat -f %m "$LOCK" 2>/dev/null || echo "$real_now")"
+  [ $(( real_now - lock_mtime )) -gt "$LOCK_STALE" ] 2>/dev/null || exit 0
+  rm -rf "$LOCK" 2>/dev/null
+  mkdir "$LOCK" 2>/dev/null || exit 0
 fi
+raw_dir=""
+cleanup() {
+  [ -n "$raw_dir" ] && rm -rf "$raw_dir"
+  rmdir "$LOCK" 2>/dev/null
+}
+trap cleanup EXIT
+
+# ---- 実行条件: 叩くスロットを選ぶ（ロックを取ってから判定する） ----
+# 出力は叩くスロット id（1 行 1 つ）。判定自体が落ちたら何も叩かない（fail-open）
+slot_pairs=""
+for i in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
+  slot_pairs+="${slot_ids[$i]}"$'\t'"${slot_secures[$i]}"$'\n'
+done
+due="$(SLOT_PAIRS="$slot_pairs" USAGE_NOW="$NOW" STALE="$STALE" INTERVAL="$INTERVAL" \
+  STATE="$STATE" SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(dirname "$0")" python3 - <<'PY' 2>/dev/null
+import json, os, sys
+sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
+import usage_view  # 記録の鍵と置き場所は読み手と同じ規則で求める
+
+now = int(os.environ["USAGE_NOW"])
+stale, interval = int(os.environ["STALE"]), int(os.environ["INTERVAL"])
+
+def load(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            document = json.load(handle)
+        return document if isinstance(document, dict) else {}
+    except Exception:
+        return {}
+
+def count(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+def old(stamp):
+    return not usage_view.finite_number(stamp) or now - stamp > stale
+
+state = load(os.environ["STATE"]).get("slots")
+state = state if isinstance(state, dict) else {}
+entries = usage_view.read_snapshot(os.environ["SNAPSHOT"]).get("accounts")
+entries = entries if isinstance(entries, dict) else {}
+sessions = usage_view.default_paths()["sessions_dir"]
+for line in os.environ["SLOT_PAIRS"].splitlines():
+    slot_id, _, secure = line.partition("\t")
+    record = load(os.path.join(sessions, usage_view.session_key(secure) + ".json"))
+    entry = entries.get(slot_id) if isinstance(entries.get(slot_id), dict) else {}
+    if not (old(record.get("observed_at")) or old(entry.get("fetched_at"))):
+        continue
+    tried = state.get(slot_id) if isinstance(state.get(slot_id), dict) else {}
+    last, streak = tried.get("last_attempt"), min(count(tried.get("consecutive_429")), 32)
+    wait = interval if streak == 0 else min(interval * 2 ** (streak - 1), 86400)
+    if usage_view.finite_number(last) and now - last < wait:
+        continue
+    print(slot_id)
+PY
+)"
+[ -n "$due" ] || exit 0
 
 # ---- スロットごとに生レスポンスを取得する（fail-open: 取れなければそのスロットを飛ばす） ----
 raw_dir="$(mktemp -d 2>/dev/null || true)"
 [ -n "$raw_dir" ] || exit 0
-trap 'rm -rf "$raw_dir"' EXIT
 
 # $1=スロット id → 対応する USAGE_PROBE_RESPONSE_FILE_<ID> の env 変数名
 slot_response_var() {
@@ -229,11 +295,23 @@ for idx in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
     *[!A-Za-z0-9-]*|"") continue ;;
   esac
   [ "${#sid}" -le 32 ] || continue
+  case $'\n'"$due"$'\n' in
+    *$'\n'"$sid"$'\n'*) ;;
+    *) continue ;;
+  esac
   raw=""
+  http_code=0
   if [ "$test_mode" -eq 1 ]; then
     rf="$(slot_response_file "$sid")"
     if [ -n "$rf" ] && [ -s "$rf" ]; then
       raw="$(cat "$rf" 2>/dev/null || true)"
+      http_code=200
+    fi
+    status_key="USAGE_PROBE_STATUS_$(printf '%s' "$sid" | tr 'a-z-' 'A-Z_')"
+    status_val="${!status_key:-${USAGE_PROBE_STATUS:-}}"
+    if [ -n "$status_val" ]; then
+      http_code="$status_val"
+      [ "$http_code" = "200" ] || raw=""
     fi
   else
     token="$(slot_token "$sservice" "$ssecure")"
@@ -259,10 +337,43 @@ for idx in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
       fi
     fi
   fi
+  printf '%s' "$http_code" > "${raw_dir}/${sid}.status" 2>/dev/null
   if [ -n "$raw" ]; then
     printf '%s' "$raw" > "${raw_dir}/${sid}.json" 2>/dev/null && any_new=1
   fi
 done
+
+# ---- 試行状態を記録する（結果にかかわらず。一時ファイルからの置き換えで書く） ----
+DUE="$due" RAW_DIR="$raw_dir" STATE="$STATE" USAGE_NOW="$NOW" python3 - <<'PY' 2>/dev/null
+import json, os, tempfile
+
+now = int(os.environ["USAGE_NOW"])
+path = os.environ["STATE"]
+try:
+    with open(path, encoding="utf-8") as handle:
+        slots = json.load(handle).get("slots")
+except Exception:
+    slots = None
+slots = slots if isinstance(slots, dict) else {}
+for slot_id in os.environ["DUE"].split():
+    try:
+        with open(os.path.join(os.environ["RAW_DIR"], slot_id + ".status")) as handle:
+            code = handle.read().strip()
+    except OSError:
+        continue  # 書式検証で飛ばしたスロットは試していない
+    previous = slots.get(slot_id) if isinstance(slots.get(slot_id), dict) else {}
+    streak = previous.get("consecutive_429")
+    streak = streak if isinstance(streak, int) and not isinstance(streak, bool) and streak > 0 else 0
+    if code == "200":
+        streak = 0
+    elif code == "429":
+        streak += 1
+    slots[slot_id] = {"last_attempt": now, "consecutive_429": streak}
+fd, tmp = tempfile.mkstemp(prefix=".usage-probe-state.", dir=os.path.dirname(path) or ".")
+with os.fdopen(fd, "w") as handle:
+    json.dump({"slots": slots}, handle)
+os.replace(tmp, path)
+PY
 
 # どのスロットからも新しい生レスポンスが取れなかった → fail-open（snapshot を書かない）
 [ "$any_new" -eq 1 ] || exit 0
