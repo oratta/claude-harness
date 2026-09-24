@@ -71,7 +71,7 @@ S130（marketplace と plugin.json の版の一致）は「全 plugin.json に `
 
 ### 過去の CHANGELOG.md の凍結を決定論的に検査する
 
-`plugins/dev-workflow/CHANGELOG.md` と `plugins/product-handover/CHANGELOG.md` のタイトル行の直後に移行の 1 行を書き、その後に最初に現れる `## ` 見出しが移行時点の最新の項目（dev-workflow は `## 2.13.37 —`、product-handover は `## v0.1.0 —`）で始まることをテストで確かめる。先頭に項目を足す PR はこれで落ちる。あわせて `plugins/*/CHANGELOG.md` がこの 2 件だけであることも確かめる。
+`plugins/dev-workflow/CHANGELOG.md` と `plugins/product-handover/CHANGELOG.md` のタイトル行の直後に移行の 1 行を書き、その後に最初に現れる `## ` 見出しが移行時点の最新の項目（dev-workflow は `## 2.13.39 —`、product-handover は `## v0.1.0 —`）で始まることをテストで確かめる。先頭に項目を足す PR はこれで落ちる。あわせて `plugins/*/CHANGELOG.md` がこの 2 件だけであることも確かめる。
 
 代案として「CHANGELOG.md のハッシュをテストに固定する」も考えたが、落ちたときに何が悪いのかが読み取れないので不採用。
 

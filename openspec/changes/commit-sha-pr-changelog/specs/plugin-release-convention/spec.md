@@ -43,7 +43,7 @@
 
 #### Scenario: 凍結した CHANGELOG の先頭に新しい項目が足されたのを検出する
 
-- **WHEN** `plugins/dev-workflow/CHANGELOG.md` の移行の 1 行と `## 2.13.37` の見出しの間に新しい `## ` 見出しが足される
+- **WHEN** `plugins/dev-workflow/CHANGELOG.md` の移行の 1 行と `## 2.13.39` の見出しの間に新しい `## ` 見出しが足される
 - **THEN** テストは足された見出しを出力して fail する
 
 #### Scenario: 移行の 1 行がある

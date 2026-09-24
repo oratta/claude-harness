@@ -15,7 +15,7 @@
 # Constraints: bash / grep / sed / awk / find のみ。
 
 # 凍結点: 移行時点の最新項目の見出しの先頭。凍結した後は動かさない値なので直書きする。
-FROZEN_DEV_WORKFLOW_HEAD='## 2.13.37 —'
+FROZEN_DEV_WORKFLOW_HEAD='## 2.13.39 —'
 FROZEN_PRODUCT_HANDOVER_HEAD='## v0.1.0 —'
 
 setup() {
