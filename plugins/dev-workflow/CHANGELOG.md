@@ -1,5 +1,13 @@
 # Changelog — dev-workflow
 
+## 2.13.38 — 2026-09-24: Codex worker を同じアカウントの token 更新で止めない
+
+Codex worker は、ターンの待機中に元 CODEX_HOME の `auth.json` が 1 バイトでも変わると `auth_profile_changed` で止まっていた。app-server 自身の token 更新が runtime の symlink 越しに元ファイルを書き換えるので、長い工程が途中で止まることがあった（#426、エピック #345、PR #348 で 1 回発生）。
+
+- **scripts/codex-worker.py**: 実行中の照合を `auth.json` 全体のハッシュから、ID token の email と account_id の比較に改めた。同じアカウントのまま中身だけ変わったときは `account/read` を 1 回呼び、email が同じなら続ける。読めない `auth.json` は 5 秒（`AUTH_UNREADABLE_GRACE`）まで読み直す。一度決めた中断理由は保持し、中断後と停止の合図の後は照合しない。ターン開始前の照合と runtime symlink の検査は今までどおり厳格
+- **scripts/CODEX-WORKER.md**: 「通常の token refresh でも止まる保守的制約」の記述を消し、何を比べて止めるかを書いた
+- **テスト**: codex-worker の unittest に同じアカウントの token 更新・書き換え途中の読み取り・猶予超過・app-server 側の email 不一致・中断理由の保持・停止の合図後の 8 件を足した。既存 2 件は書き換え内容を別アカウントへの置き換えに直した（期待値は不変）
+
 ## 2.13.37 — 2026-09-23: エピックの子を Orca の独立セッションで回す経路を足す
 
 エピックの子を 1 つの本体がまとめて抱えると、子ごとの W / R1 / G の往復が本体のコンテキストに積もる。実運用では人がタブを分けて子ごとにセッションを起動していたので、これを自動にした（#420。手順はエピック #402 で手動で試したもの。2.13.31〜2.13.36 は先行 PR が使用したため、この変更は 2.13.37 とした）。

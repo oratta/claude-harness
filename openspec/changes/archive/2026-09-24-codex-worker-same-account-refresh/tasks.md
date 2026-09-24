@@ -19,10 +19,10 @@
 ## 3. ドキュメントと仕様
 
 - [x] 3.1 `CODEX-WORKER.md` の「通常の token refresh でも止まる保守的制約」の記述を消し、email と account_id を比べて止めること、中身の変化では account/read で確かめること、読めない状態の猶予を書く
-- [ ] 3.2 `plugins/dev-workflow` の plugin.json version を上げ、CHANGELOG に追記する（#380 が先にマージされていれば origin/main を取り込んでから次の版を取る）
+- [x] 3.2 `plugins/dev-workflow` の plugin.json version を上げ、CHANGELOG に追記する（#380 が先にマージされていれば origin/main を取り込んでから次の版を取る）
 
 ## 4. 確認
 
-- [ ] 4.1 `python3 -m pytest plugins/dev-workflow/tests/test_codex_worker.py` が exit 0
-- [ ] 4.2 `bash scripts/test.sh` の全件実行が exit 0（別セッションと同時に走って残留プロセス検査だけで落ちたら単独で再実行して判定する）
-- [ ] 4.3 `openspec validate codex-worker-same-account-refresh --strict` が exit 0
+- [x] 4.1 `python3 -m pytest plugins/dev-workflow/tests/test_codex_worker.py` が exit 0（pytest がこの環境に無いため `python3 -m unittest test_codex_worker` で代えた。49 件 OK）
+- [x] 4.2 `bash scripts/test.sh` の全件実行が exit 0（別セッションと同時に走って残留プロセス検査だけで落ちたら単独で再実行して判定する）
+- [x] 4.3 `openspec validate codex-worker-same-account-refresh --strict` が exit 0
