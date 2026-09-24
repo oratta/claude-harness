@@ -10,6 +10,16 @@ setup() {
   SCRIPT="${PLUGIN_DIR}/scripts/session-tripwires.sh"
   TEMPLATE="${PLUGIN_DIR}/templates/escalation-tripwires.md"
   TMPDIR_EMPTY="$(mktemp -d)"
+  # 導出は active スロットの実効値（レジストリ・セッション記録・snapshot）を読み、hook は probe も
+  # 走らせるので、実環境の ~/.claude と実行中セッションのアカウントを読まないよう一時ディレクトリへ向ける
+  export CLAUDE_ACCOUNTS_FILE="${TMPDIR_EMPTY}/accounts.json"
+  export USAGE_SESSIONS_DIR="${TMPDIR_EMPTY}/.usage-sessions"
+  export USAGE_PROBE_STATE="${TMPDIR_EMPTY}/.usage-probe-state"
+  export USAGE_PROBE_LOCK="${TMPDIR_EMPTY}/.usage-probe.lock"
+  # 個別に上書きしないテストでも実 API を叩かず、実環境の ~/.claude/.usage-snapshot を書かない
+  export USAGE_SNAPSHOT="${TMPDIR_EMPTY}/nonexistent-snapshot.json"
+  export USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json"
+  unset CLAUDE_SECURESTORAGE_CONFIG_DIR
 }
 
 teardown() {
@@ -65,7 +75,7 @@ PY
   ctx_of() {  # $1=FABLE_BUDGET_MODE
     run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" FABLE_BUDGET_MODE="$1" \
         USAGE_SNAPSHOT="${TMPDIR_EMPTY}/nonexistent.json" \
-        USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json" "$SCRIPT"
+        USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json" "$SCRIPT"
     [ "$status" -eq 0 ]
     python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
   }
@@ -86,26 +96,30 @@ PY
   grep -Eq 'オプション|プラグイン未導入' "$TEMPLATE"
 }
 
-# ---- schema 2 snapshot に対する FABLE_BUDGET_MODE 導出の退行ガード ----
-# トップレベルの従来キーを active スロットのミラーとして残す唯一の存在理由がこれ。
-# spec: dev-workflow-escalation-tripwires（usage-probe と snapshot 契約 / 自動導出注入）
+# ---- active スロットの実効値からの導出 ----
+# spec: dev-workflow-escalation-tripwires（自動導出注入）/ usage-session-records（実効値の規則）
 
-@test "derivation: a schema 2 snapshot derives the same mode as schema 1" {
+ctx_at() {  # $1=snapshot $2=now → additionalContext
+  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="$1" \
+      USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json" \
+      USAGE_PROBE_NOW="$2" "$SCRIPT"
+  [ "$status" -eq 0 ] || return 1
+  python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
+}
+
+@test "derivation: the active slot's values drive the mode, not the top-level mirror or other slots" {
   work="$(mktemp -d)"
   now=1000000000
   resets=$(( now + 2 * 86400 ))   # 週経過 ≈ 71%
-  s1="${work}/snap1.json"
-  s2="${work}/snap2.json"
-  cat > "$s1" <<JSON
-{ "schema": 1, "fetched_at": ${now}, "fable_weekly_pct": 30, "fable_active": true,
-  "weekly_all_pct": 55, "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets} }
+  cat > "$CLAUDE_ACCOUNTS_FILE" <<JSON
+{ "schema": 1, "accounts": [ { "id": "a", "label": "A", "securestorage": null },
+                             { "id": "b", "label": "B", "securestorage": "/tmp/cb" } ] }
 JSON
-  # 同じ active スロットの値を持つ schema 2（非 active スロットは別の値を持つ）
-  cat > "$s2" <<JSON
+  # トップレベルのミラーと非 active スロットは別の値（95%）を持つ。導出に使えば exhausted になる
+  cat > "${work}/snap.json" <<JSON
 { "schema": 2, "active": "a", "fetched_at": ${now},
-  "fable_weekly_pct": 30, "fable_active": true,
-  "weekly_all_pct": 55, "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets},
-  "five_hour_pct": 55, "five_hour_resets_at": "iso", "five_hour_resets_epoch": ${now},
+  "fable_weekly_pct": 95, "fable_active": true,
+  "weekly_all_pct": 95, "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets},
   "accounts": {
     "a": { "label": "A", "securestorage": null, "fetched_at": ${now},
            "five_hour_pct": 55, "five_hour_resets_at": "iso", "five_hour_resets_epoch": ${now},
@@ -117,24 +131,41 @@ JSON
            "fable_weekly_pct": 95, "fable_active": false }
   } }
 JSON
-  ctx_of() {
-    run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="$1" \
-        USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" \
-        USAGE_PROBE_NOW="$now" "$SCRIPT"
-    [ "$status" -eq 0 ]
-    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
-  }
-  out1="$(ctx_of "$s1")"
-  out2="$(ctx_of "$s2")"
-  # 30% <= 週経過 71% → abundant。非 active スロットの 95% に引きずられない
-  echo "$out1" | grep -q "abundant"
-  echo "$out2" | grep -q "abundant"
-  # 導出行だけを見る。テンプレ本文（reserve 説明）が語彙として "exhausted" を
-  # 含むため、additionalContext 全体への素朴な grep は常に真になり検査にならない。
-  ! echo "$out2" | grep -q "現在の FABLE_BUDGET_MODE: exhausted" || return 1
-  # Fable 残量% も同じ（100 - 30 = 70）
-  echo "$out2" | grep -q "70"
+  out="$(ctx_at "${work}/snap.json" "$now")"
+  # 30% <= 週経過 71% → abundant。トップレベルや非 active スロットの 95% に引きずられない
+  echo "$out" | grep -q "FABLE_BUDGET_MODE: abundant" || return 1
+  # 導出行だけを見る。テンプレ本文（reserve 説明）が語彙として "exhausted" を含むため、
+  # additionalContext 全体への素朴な grep は常に真になり検査にならない
+  ! echo "$out" | grep -q "現在の FABLE_BUDGET_MODE: exhausted" || return 1
+  # Fable 残量% は 100 - 30 = 70
+  echo "$out" | grep -qF "使用 30% / 残 70%" || return 1
+  echo "$out" | grep -q "SHARED_BUDGET_MODE: ok（自動導出）"
   rm -rf "$work"
+}
+
+@test "derivation: a session record alone derives a depleted shared mode" {
+  now=1000000000
+  mkdir -p "$USAGE_SESSIONS_DIR"
+  printf '{"schema":1,"key":"default","observed_at":%s,"five_hour_pct":10,"five_hour_resets_epoch":null,"weekly_all_pct":95,"weekly_resets_epoch":%s}\n' \
+    "$((now - 60))" "$((now + 2 * 86400))" > "${USAGE_SESSIONS_DIR}/default.json"
+  out="$(ctx_at "${TMPDIR_EMPTY}/missing.json" "$now")"
+  echo "$out" | grep -q "SHARED_BUDGET_MODE: depleted（自動導出）" || return 1
+  echo "$out" | grep -q "全モデル週次: 使用 95%"
+}
+
+@test "derivation: an old snapshot's Fable value past its reset reads as 0%" {
+  now=1000000000
+  cat > "${TMPDIR_EMPTY}/snap.json" <<JSON
+{ "schema": 2, "accounts": { "default": { "fetched_at": $(( now - 2 * 86400 )),
+  "weekly_all_pct": 50, "weekly_resets_epoch": $(( now - 3600 )),
+  "fable_weekly_pct": 95, "fable_active": true } } }
+JSON
+  out="$(ctx_at "${TMPDIR_EMPTY}/snap.json" "$now")"
+  # 導出行だけを見る。テンプレ本文（reserve 説明）が語彙として "exhausted" を含むため、
+  # additionalContext 全体への素朴な grep は常に真になり検査にならない
+  ! echo "$out" | grep -q "現在の FABLE_BUDGET_MODE: exhausted" || return 1
+  echo "$out" | grep -q "FABLE_BUDGET_MODE: abundant（自動導出）" || return 1
+  echo "$out" | grep -qF "使用 0% / 残 100%"
 }
 
 @test "derivation: shared budget mode comes from weekly_all_pct and is independent of the Fable mode" {
@@ -143,13 +174,14 @@ JSON
   resets=$(( now + 2 * 86400 ))   # 週経過 ≈ 71%
   mk() {  # $1=file $2=fable_pct $3=all_pct
     cat > "$1" <<JSON
-{ "schema": 1, "fetched_at": ${now}, "fable_weekly_pct": $2, "fable_active": true,
-  "weekly_all_pct": $3, "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets} }
+{ "schema": 2, "accounts": { "default": { "fetched_at": ${now}, "fable_weekly_pct": $2,
+  "fable_active": true, "weekly_all_pct": $3, "weekly_resets_at": "iso",
+  "weekly_resets_epoch": ${resets} } } }
 JSON
   }
   ctx_of() {
     run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="$1" \
-        USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" \
+        USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" \
         USAGE_PROBE_NOW="$now" "$SCRIPT"
     [ "$status" -eq 0 ]
     python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
@@ -168,7 +200,7 @@ JSON
   echo "$(ctx_of "${work}/c.json")" | grep -q "SHARED_BUDGET_MODE: ok"
   # 明示 env が勝つ
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/c.json" SHARED_BUDGET_MODE=depleted \
-      USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" USAGE_PROBE_NOW="$now" "$SCRIPT"
+      USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" USAGE_PROBE_NOW="$now" "$SCRIPT"
   echo "$output" | grep -q "depleted（明示 env）"
   # コンテキスト上限の案内が載る
   echo "$out" | grep -q "subagent-context.sh"
@@ -184,7 +216,7 @@ JSON
 @test "injection: the resident rule text points at the single source and carries the read-first guard" {
   work="$(mktemp -d)"
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/missing.json" \
-      USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
+      USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
   [ "$status" -eq 0 ]
   out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output")"
   # additionalContext 全体ではなく注入行そのものを見る。全体で見ると、同じ文字列を持つ
@@ -197,10 +229,10 @@ JSON
   rm -rf "$work"
 }
 
-@test "derivation: no snapshot → SHARED_BUDGET_MODE ok (fail-open) while the Fable mode stays conserve" {
+@test "derivation: neither snapshot nor record → SHARED_BUDGET_MODE ok (fail-open) while the Fable mode stays conserve" {
   work="$(mktemp -d)"
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/missing.json" \
-      USAGE_PROBE_TTL=100000 USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
+      USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
   [ "$status" -eq 0 ]
   out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output")"
   echo "$out" | grep -q "FABLE_BUDGET_MODE: conserve"

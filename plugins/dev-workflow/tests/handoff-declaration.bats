@@ -121,7 +121,7 @@ role_sec() { section "$SKILL" '本体の役割'; }
 @test "criteria: the source section stops at the next heading, not at the next level-2 heading" {
   cap_sec | grep -qF 'コンテキスト上限（サブエージェントの手渡し）'
   local leaked
-  for leaked in 'の自動導出（usage snapshot 契約）' 'モード不変ルール'; do
+  for leaked in 'の自動導出（セッション記録と usage snapshot 契約）' 'モード不変ルール'; do
     if cap_sec | grep -qF "$leaked"; then
       echo "正本の節に後続の小節が混ざっている: $leaked"; return 1
     fi

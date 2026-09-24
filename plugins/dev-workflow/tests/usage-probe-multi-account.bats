@@ -16,6 +16,10 @@ setup() {
   SNAP="${WORK}/.usage-snapshot"
   ACCOUNTS="${WORK}/accounts.json"
   NOW=1000000000
+  # 実環境の ~/.claude（セッション記録・試行状態・ロック）を読み書きしない
+  export USAGE_SESSIONS_DIR="${WORK}/sessions"
+  export USAGE_PROBE_STATE="${WORK}/probe-state.json"
+  export USAGE_PROBE_LOCK="${WORK}/probe.lock"
 }
 
 teardown() {
@@ -234,7 +238,7 @@ PY
   [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "7" ]
   # 2 回目: b だけ失敗し、a は新しい値に更新される
   write_resp "${WORK}/ra.json" 60 85 96
-  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_TTL=0 \
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_INTERVAL=0 \
       USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/gone.json" \
       USAGE_PROBE_NOW="$((NOW + 7200))" "$PROBE"
   [ "$status" -eq 0 ]
@@ -253,10 +257,10 @@ PY
   write_two_slot_registry
   write_resp "${WORK}/ra.json" 55 82 94
   write_resp "${WORK}/rb.json" 3 1 7
-  env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_TTL=0 \
+  env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_INTERVAL=0 \
       USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
-  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_TTL=0 \
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_INTERVAL=0 \
       USAGE_PROBE_RESPONSE_FILE_A="${WORK}/gone.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
       USAGE_PROBE_NOW="$((NOW + 9999))" "$PROBE"
   [ "$status" -eq 0 ]
@@ -347,7 +351,7 @@ JSON
   [ "$(jq -r '.fable_weekly_pct' "$SNAP")" = "94" ]
   # エラーボディを返す 2 回目: 全スロット失敗と同じ扱いになり snapshot は据え置き
   write_error_resp "${WORK}/err.json"
-  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" USAGE_PROBE_TTL=0 \
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" USAGE_PROBE_INTERVAL=0 \
       USAGE_PROBE_RESPONSE_FILE="${WORK}/err.json" USAGE_PROBE_NOW="$((NOW + 7200))" "$PROBE"
   [ "$status" -eq 0 ]
   [ "$(jq -r '.fable_weekly_pct' "$SNAP")" = "94" ]
@@ -364,7 +368,7 @@ JSON
   # b のトークンが期限切れになり、API が 401 のエラーボディを返す
   write_error_resp "${WORK}/err.json"
   write_resp "${WORK}/ra.json" 60 85 96
-  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_TTL=0 \
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_INTERVAL=0 \
       USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/err.json" \
       USAGE_PROBE_NOW="$((NOW + 7200))" "$PROBE"
   [ "$status" -eq 0 ]
@@ -383,7 +387,7 @@ JSON
       USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   write_error_resp "${WORK}/err.json"
-  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_TTL=0 \
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_INTERVAL=0 \
       USAGE_PROBE_RESPONSE_FILE_A="${WORK}/err.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
       USAGE_PROBE_NOW="$((NOW + 7200))" "$PROBE"
   [ "$status" -eq 0 ]
@@ -567,4 +571,198 @@ SH
       USAGE_PROBE_NOW="$NOW" USAGE_PROBE_USER_AGENT="claude-code/9.9.9" "$PROBE"
   [ "$status" -eq 0 ]
   grep -qxF 'User-Agent: claude-code/9.9.9' "${WORK}/curl-args"
+}
+
+# ---------- 実行条件（セッション記録が主、probe は補助） ----------
+# 叩いたかどうかは、応答の値が snapshot に入ったかと試行状態ファイルで見る。
+
+# $1=securestorage（空なら既定アカウント） $2=observed_at
+write_record() {
+  local key
+  key="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import usage_view; print(usage_view.session_key(sys.argv[2]))' \
+    "${PLUGIN_DIR}/scripts" "$1")"
+  mkdir -p "$USAGE_SESSIONS_DIR"
+  printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":10,"five_hour_resets_epoch":null,"weekly_all_pct":20,"weekly_resets_epoch":%s}\n' \
+    "$key" "$2" "$(( $2 + 86400 ))" >| "${USAGE_SESSIONS_DIR}/${key}.json"
+}
+
+# $1=スロット id → 試行状態ファイルの値（jq の式 $2 を当てる）
+state_of() {
+  jq -r --arg id "$1" ".slots[\$id]${2}" "$USAGE_PROBE_STATE"
+}
+
+# 2 スロットとも取得済みの snapshot を $1 の時刻で作り、試行状態を消して「未試行」に戻す
+seed_two_slot_snapshot() {
+  write_two_slot_registry
+  write_resp "${WORK}/ra.json" 55 82 94
+  write_resp "${WORK}/rb.json" 3 1 7
+  env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$1" "$PROBE"
+  rm -f "$USAGE_PROBE_STATE"
+  write_resp "${WORK}/ra.json" 60 85 96
+  write_resp "${WORK}/rb.json" 4 2 8
+}
+
+@test "condition: a slot whose record and snapshot are both fresh is not fetched" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"   # a（既定アカウント）の記録だけが 10 分前
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "94" ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$((NOW - 600))" ]
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "8" ]
+  [ "$(state_of a '')" = "null" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
+}
+
+@test "condition: a fresh record with an old snapshot fetched_at is fetched" {
+  seed_two_slot_snapshot "$((NOW - 4 * 3600))"
+  write_record "" "$((NOW - 600))"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "96" ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+}
+
+@test "condition: an old record with a fresh snapshot fetched_at is fetched" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 4 * 3600))"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "96" ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+}
+
+@test "condition: a fresh record with no snapshot entry is fetched" {
+  write_resp "${WORK}/r.json" 55 82 94
+  write_record "" "$((NOW - 600))"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.default.fable_weekly_pct' "$SNAP")" = "94" ]
+}
+
+@test "interval: slots attempted an hour ago are not fetched and no snapshot is written" {
+  write_two_slot_registry
+  write_resp "${WORK}/r.json" 55 82 94
+  printf '{"slots":{"a":{"last_attempt":%s,"consecutive_429":0},"b":{"last_attempt":%s,"consecutive_429":0}}}\n' \
+    "$((NOW - 3600))" "$((NOW - 3600))" >| "$USAGE_PROBE_STATE"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ ! -f "$SNAP" ]
+  [ "$(state_of a .last_attempt)" = "$((NOW - 3600))" ]
+}
+
+@test "interval: a run right after every slot failed does not fetch again" {
+  write_two_slot_registry
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/gone.json" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ ! -f "$SNAP" ]
+  [ "$(state_of a .last_attempt)" = "$NOW" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
+  write_resp "${WORK}/r.json" 55 82 94
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" USAGE_PROBE_NOW="$((NOW + 60))" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ ! -f "$SNAP" ]
+}
+
+@test "429: consecutive 429s double the wait before the next attempt" {
+  write_resp "${WORK}/r.json" 55 82 94
+  probe_at() {
+    env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" USAGE_PROBE_INTERVAL=1000 \
+        USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" USAGE_PROBE_STATUS="$2" USAGE_PROBE_NOW="$1" "$PROBE"
+  }
+  probe_at "$NOW" 429
+  [ "$(state_of default .consecutive_429)" = "1" ]
+  probe_at "$((NOW + 1000))" 429
+  [ "$(state_of default .consecutive_429)" = "2" ]
+  [ ! -f "$SNAP" ]
+  # 2 回続けて 429 → 待ちは間隔の 2 倍。1.5 倍では叩かない
+  probe_at "$((NOW + 2500))" 200
+  [ ! -f "$SNAP" ]
+  [ "$(state_of default .last_attempt)" = "$((NOW + 1000))" ]
+  # 2 倍経てば叩く
+  probe_at "$((NOW + 3000))" 200
+  [ "$(jq -r '.fable_weekly_pct' "$SNAP")" = "94" ]
+}
+
+@test "429: the wait is capped at one day" {
+  write_resp "${WORK}/r.json" 55 82 94
+  printf '{"slots":{"default":{"last_attempt":%s,"consecutive_429":20}}}\n' "$((NOW - 86400))" >| "$USAGE_PROBE_STATE"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.fable_weekly_pct' "$SNAP")" = "94" ]
+}
+
+@test "429: a 200 resets the consecutive count" {
+  write_resp "${WORK}/r.json" 55 82 94
+  printf '{"slots":{"default":{"last_attempt":%s,"consecutive_429":3}}}\n' "$((NOW - 10 * 86400))" >| "$USAGE_PROBE_STATE"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(state_of default .consecutive_429)" = "0" ]
+  [ "$(state_of default .last_attempt)" = "$NOW" ]
+}
+
+@test "state: an unreadable state file treats every slot as never attempted" {
+  write_resp "${WORK}/r.json" 55 82 94
+  printf 'not json' >| "$USAGE_PROBE_STATE"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.fable_weekly_pct' "$SNAP")" = "94" ]
+  [ "$(state_of default .last_attempt)" = "$NOW" ]
+}
+
+@test "lock: a fresh lock held by another probe makes this run do nothing" {
+  write_resp "${WORK}/r.json" 55 82 94
+  mkdir "$USAGE_PROBE_LOCK"
+  python3 -c 'import os,sys,time; t=time.time()-60; os.utime(sys.argv[1],(t,t))' "$USAGE_PROBE_LOCK"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ ! -f "$SNAP" ]
+  [ ! -f "$USAGE_PROBE_STATE" ]
+  [ -d "$USAGE_PROBE_LOCK" ]
+}
+
+@test "lock: a stale lock is taken over and released at exit" {
+  write_resp "${WORK}/r.json" 55 82 94
+  mkdir "$USAGE_PROBE_LOCK"
+  python3 -c 'import os,sys,time; t=time.time()-300; os.utime(sys.argv[1],(t,t))' "$USAGE_PROBE_LOCK"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.fable_weekly_pct' "$SNAP")" = "94" ]
+  [ ! -e "$USAGE_PROBE_LOCK" ]
+}
+
+@test "lock: released when no slot meets the condition" {
+  printf '{"slots":{"default":{"last_attempt":%s,"consecutive_429":0}}}\n' "$NOW" >| "$USAGE_PROBE_STATE"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
+      USAGE_PROBE_RESPONSE_FILE="${WORK}/gone.json" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ ! -e "$USAGE_PROBE_LOCK" ]
+}
+
+@test "production: a 429 from the API is counted" {
+  setup_production_stubs "2.1.280 (Claude Code)"
+  perl -pi -e 's/n200/n429/' "${STUB}/curl"
+  grep -q '429' "${STUB}/curl"
+  run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ ! -f "$SNAP" ]
+  [ "$(state_of x .consecutive_429)" = "1" ]
 }

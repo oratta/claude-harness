@@ -14,6 +14,14 @@ setup() {
   printf '# Memory Index\n- [a](a.md) — a\n- [b](b.md) — b\n' > "${MEM}/MEMORY.md"
   printf 'short a\n' > "${MEM}/a.md"
   printf 'short b\n' > "${MEM}/b.md"
+  # session-tripwires.sh が内部で呼ぶ usage-probe を実環境（実 API・~/.claude の試行状態とロック）から切り離す
+  USAGE_ISOLATION=(
+    CLAUDE_ACCOUNTS_FILE="${WORK}/accounts.json"
+    USAGE_SESSIONS_DIR="${WORK}/.usage-sessions"
+    USAGE_PROBE_STATE="${WORK}/.usage-probe-state"
+    USAGE_PROBE_LOCK="${WORK}/.usage-probe.lock"
+    USAGE_PROBE_RESPONSE_FILE="${WORK}/nonexistent.json"
+  )
 }
 
 teardown() {
@@ -139,7 +147,7 @@ line_count() { printf '%s' "$1" | grep -c '' ; }
 
 @test "session-tripwires.sh: puts the notice at the top of additionalContext only when over a threshold" {
   touch -t 202001010000 "${MEM}/MEMORY.md"
-  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${WORK}/missing.json" DEV_WORKFLOW_MEMORY_DIR="$MEM" "$SESSION"
+  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${WORK}/missing.json" "${USAGE_ISOLATION[@]}" DEV_WORKFLOW_MEMORY_DIR="$MEM" "$SESSION"
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys
@@ -148,7 +156,7 @@ assert ctx.startswith("[memory] "), ctx[:80]
 assert "昇格トリップワイヤー" in ctx
 PY
   touch "${MEM}/MEMORY.md"
-  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${WORK}/missing.json" DEV_WORKFLOW_MEMORY_DIR="$MEM" "$SESSION"
+  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${WORK}/missing.json" "${USAGE_ISOLATION[@]}" DEV_WORKFLOW_MEMORY_DIR="$MEM" "$SESSION"
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys

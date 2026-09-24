@@ -21,7 +21,7 @@ Claudeの会話で実行する:
 
 `--executor codex` は後方互換の別名として上の形式に追加できる。profile の Claude entry は `account=current`、model は `haiku|sonnet|opus|fable` のみとし、`fable` は `decider` role だけに指定できる。
 
-profile/旧 account/model を省略すると、各工程の開始時に fresh（age 300 秒以内）な Claude/Codex 週次使用量から `週経過率 - 使用率` を比較する。両方に余裕があれば Claude が書き Codex が検査する `claude-write-codex-review`、Codex だけに余裕があれば `codex-standard`、それ以外は Claude 既定構成になる。工程途中では切り替えず、次工程で再評価する。標準出力の selection evidence（構成、reason、margin、fetched_at、代表 Codex account）は開始コメントと dispatch 記録へ残す。明示指定時はこの読込を行わない。
+profile/旧 account/model を省略すると、各工程の開始時に Codex は fresh（age 300 秒以内）な週次使用量、Claude はセッション記録と snapshot の実効値（リセット前の値は経過時間によらず使う）から `週経過率 - 使用率` を比較する。両方に余裕があれば Claude が書き Codex が検査する `claude-write-codex-review`、Codex だけに余裕があれば `codex-standard`、それ以外は Claude 既定構成になる。工程途中では切り替えず、次工程で再評価する。標準出力の selection evidence（構成、reason、margin、fetched_at、代表 Codex account）は開始コメントと dispatch 記録へ残す。明示指定時はこの読込を行わない。
 
 Claudeが既存developの進め方でworktree/記録先を準備し、仕様化判断から進める。仕様不要なら理由を記録して実装へ、必要なら仕様と独立仕様レビューを経て実装/テスト・PR・レビュー/ゲートへ進む。profile で実行先を選んでもこの判断と工程は変わらない。差戻しも該当 role の実行先へ委譲する。burnを有効化する必要はない。
 

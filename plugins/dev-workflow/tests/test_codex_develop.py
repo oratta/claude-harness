@@ -49,6 +49,19 @@ class ForegroundRequest(unittest.TestCase):
         self.profile_file = self.root / 'profiles.json'
         self.table = self.root / 'homes.json'
         self.write_profile('mapped')
+        # Claude の実効値はレジストリとセッション記録も読むので、実環境の ~/.claude から切り離す
+        # usage-probe.sh の試行状態とロックは $HOME/.claude 固定の既定なので明示で向け、
+        # 存在しない応答ファイルでテスト経路に入れて実 API を叩かせない
+        environ = patch.dict(os.environ, {
+            'CLAUDE_CONFIG_DIR': str(self.root),
+            'USAGE_PROBE_STATE': str(self.root / '.usage-probe-state'),
+            'USAGE_PROBE_LOCK': str(self.root / '.usage-probe.lock'),
+            'USAGE_PROBE_RESPONSE_FILE': str(self.root / 'nonexistent.json'),
+        })
+        environ.start()
+        self.addCleanup(environ.stop)
+        for key in ('CLAUDE_ACCOUNTS_FILE', 'USAGE_SESSIONS_DIR', 'CLAUDE_SECURESTORAGE_CONFIG_DIR'):
+            os.environ.pop(key, None)
 
     def write_profile(self, account):
         roles = {role: {'executor': 'codex', 'account': account,
@@ -353,31 +366,70 @@ class ForegroundRequest(unittest.TestCase):
                 self.assertEqual(selected, expected)
                 self.assertIsInstance(reason, str)
 
+    def write_claude_snapshot(self, accounts, active='default'):
+        path = self.root / 'claude-snapshot.json'
+        path.write_text(json.dumps({'schema': 2, 'active': active, 'accounts': accounts}))
+        return path
+
+    def write_session_record(self, key, *, observed, weekly, reset):
+        sessions = self.root / '.usage-sessions'
+        sessions.mkdir(exist_ok=True)
+        (sessions / (key + '.json')).write_text(json.dumps({
+            'schema': 1, 'key': key, 'observed_at': observed,
+            'five_hour_pct': None, 'five_hour_resets_epoch': None,
+            'weekly_all_pct': weekly, 'weekly_resets_epoch': reset}))
+
     def test_freshness_reset_and_weekly_window_are_fail_safe(self):
         now = 2_000_000
-        self.assertIsNotNone(m.usage_margin(self.snapshot(10, now=now, age=300), now))
-        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now, age=301), now))
-        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now) |
-                                        {'weekly_resets_epoch': now}, now))
         self.assertIsNotNone(m.usage_margin(self.snapshot(10, now=now, age=300,
                                                         minutes=10080), now, codex=True))
+        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now, age=301,
+                                                     minutes=10080), now, codex=True))
         self.assertIsNone(m.usage_margin(self.snapshot(10, now=now,
                                                       minutes=300), now, codex=True))
 
     def test_active_claude_slot_uses_launch_environment_before_snapshot_mirror(self):
         now = 2_000_000
         secure = '/tmp/claude-a'
-        snapshot = {'schema': 2, 'active': 'b',
-                    'fetched_at': now, 'weekly_all_pct': 0,
-                    'weekly_resets_epoch': now + 302400,
-                    'accounts': {
-                        'a': {'securestorage': secure} | self.snapshot(-5, now=now),
-                        'b': {'securestorage': None} | self.snapshot(30, now=now),
-                    }}
+        (self.root / 'accounts.json').write_text(json.dumps({'accounts': [
+            {'id': 'a', 'securestorage': secure}, {'id': 'b', 'securestorage': None}]}))
+        path = self.root / 'mirror-snapshot.json'
+        path.write_text(json.dumps({
+            'schema': 2, 'active': 'b', 'fetched_at': now, 'weekly_all_pct': 0,
+            'weekly_resets_epoch': now + 302400,
+            'accounts': {'a': self.snapshot(-5, now=now), 'b': self.snapshot(30, now=now)}}))
         with patch.dict(os.environ, {'CLAUDE_SECURESTORAGE_CONFIG_DIR': secure}, clear=False):
-            evidence = m.claude_usage_evidence(snapshot, now)
+            evidence = m.claude_usage_evidence(path, now)
         self.assertEqual(evidence['account'], 'a')
         self.assertAlmostEqual(evidence['margin'], -5)
+
+    def test_claude_margin_comes_from_session_record_while_probe_keeps_failing(self):
+        # 429 が続いて snapshot が無いままでも、起動 account の鍵のセッション記録で評価する
+        now = 2_000_000
+        observed = now - 3600
+        self.write_session_record('default', observed=observed, weekly=20, reset=now + 302400)
+        evidence = m.claude_usage_evidence(self.root / 'absent-snapshot.json', now)
+        self.assertEqual(evidence['account'], 'default')
+        self.assertAlmostEqual(evidence['margin'], 30)
+        self.assertEqual(evidence['fetched_at'], observed)
+
+    def test_claude_old_value_is_used_until_its_reset(self):
+        now = 2_000_000
+        path = self.write_claude_snapshot({'default': self.snapshot(10, now=now, age=86400)})
+        evidence = m.claude_usage_evidence(path, now)
+        self.assertAlmostEqual(evidence['margin'], 10)
+        self.assertEqual(evidence['fetched_at'], now - 86400)
+        # リセット時刻を過ぎた値は 0% として読む（週経過は次の週の頭から数える）
+        path = self.write_claude_snapshot({'default': self.snapshot(10, now=now, age=86400) |
+                                           {'weekly_resets_epoch': now}})
+        evidence = m.claude_usage_evidence(path, now)
+        self.assertAlmostEqual(evidence['margin'], 0)
+
+    def test_claude_margin_is_missing_without_any_value(self):
+        now = 2_000_000
+        evidence = m.claude_usage_evidence(self.root / 'absent-snapshot.json', now)
+        self.assertIsNone(evidence['margin'])
+        self.assertIsNone(evidence['fetched_at'])
 
     def test_explicit_profile_never_reads_automatic_snapshots(self):
         with tempfile.TemporaryDirectory() as td:
@@ -490,8 +542,8 @@ class ForegroundRequest(unittest.TestCase):
     def test_automatic_selection_refreshes_claude_snapshot_with_the_reader_path(self):
         now = 2_000_000
         snapshot_path = self.root / 'selected-snapshot.json'
-        snapshot_path.write_text(json.dumps({'schema': 2, 'active': 'active', 'accounts': {
-            'active': {'securestorage': None} | self.snapshot(20, now=now)}}))
+        snapshot_path.write_text(json.dumps({'schema': 2, 'active': 'default', 'accounts': {
+            'default': self.snapshot(20, now=now)}}))
         with patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.root),
                                      'USAGE_SNAPSHOT': str(snapshot_path)}, clear=False), \
                 patch.object(m, '_run_usage_probe') as probe, \
@@ -605,9 +657,8 @@ class ForegroundRequest(unittest.TestCase):
                     snapshot = {'schema': 2, 'accounts': {}}
                     usages = {'a': None, 'b': None}
                 else:
-                    snapshot = {'schema': 2, 'active': 'active', 'accounts': {
-                        'active': {'securestorage': None} |
-                                  self.snapshot(claude_margin, now=now, age=age)}}
+                    snapshot = {'schema': 2, 'active': 'default', 'accounts': {
+                        'default': self.snapshot(claude_margin, now=now, age=age)}}
                     usages = {'a': self.snapshot(codex_margin, now=now, age=age,
                                                   minutes=10080), 'b': None}
                 snapshot_path.write_text(json.dumps(snapshot))

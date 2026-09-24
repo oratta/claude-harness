@@ -740,3 +740,108 @@ SNAPSHOT
   mk_input 3 25 14010 172830 | bash "$old" > "$WORK/old.txt"
   diff "$WORK/old.txt" "$WORK/new.txt"
 }
+
+# ---------- 非 active スロットのセッション記録（#417） ----------
+# spec: statusline-multi-account-usage「active スロットはライブ値、非 active スロットは…」
+#       usage-session-records（記録の形と鍵）
+
+# $1=observed_at $2=週次% $3=週次リセット epoch [$4=5h% $5=5h リセット epoch] → B の鍵のセッション記録
+# （実際の書き手は 5 時間枠がある描画でしか書かないので、5 時間枠を描く検査では $4 $5 を渡す）
+write_b_record() {
+  local key
+  key="$(python3 -c 'import hashlib,sys,unicodedata;print(hashlib.sha256(unicodedata.normalize("NFC",sys.argv[1]).encode()).hexdigest()[:8])' "$SECURE_B")"
+  mkdir -p "${WORK}/.usage-sessions"
+  printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":%s,"five_hour_resets_epoch":%s,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
+    "$key" "$1" "${4:-null}" "${5:-null}" "$2" "$3" > "${WORK}/.usage-sessions/${key}.json"
+}
+
+# $1=b の週次% を snapshot に上書きする
+set_b_snapshot_weekly() {
+  jq --argjson v "$1" '.accounts.b.weekly_all_pct = $v' "$SNAP" > "$SNAP.tmp" && mv "$SNAP.tmp" "$SNAP"
+}
+
+@test "records: a non-active slot is drawn from its newer session record" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 18000))" "$((NOW + 172800))"
+  set_b_snapshot_weekly 40
+  write_b_record "$((NOW - 180))" 45 "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
+  [[ "$line" =~ 45% ]] || return 1
+  [[ "$line" =~ 3m前 ]] || return 1
+}
+
+@test "records: the larger value of the same window wins even when older" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 18000))" "$((NOW + 172800))"
+  set_b_snapshot_weekly 55
+  write_b_record "$((NOW - 180))" 50 "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
+  [[ "$line" =~ 55% ]] || return 1
+  [[ "$line" =~ 5h前 ]] || return 1
+}
+
+@test "records: a record whose reset is past is drawn as is without denominator" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  jq 'del(.accounts.b)' "$SNAP" > "$SNAP.tmp" && mv "$SNAP.tmp" "$SNAP"
+  write_b_record "$((NOW - 7200))" 80 "$((NOW - 3600))" 30 "$((NOW - 3600))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
+  [[ "$line" =~ 80% ]] || return 1
+  ! [[ "$line" =~ %/ ]] || return 1
+  ! [[ "$line" =~ ~ ]] || return 1
+}
+
+@test "records: a weekly reset more than an hour apart takes the record" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 3600))" "$((NOW + 432000))"
+  set_b_snapshot_weekly 60
+  write_b_record "$((NOW - 60))" 30 "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
+  [[ "$line" =~ 30% ]] || return 1
+  [[ "$line" =~ 1m前 ]] || return 1
+}
+
+@test "records: a past record reset does not use the weekly exception" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 604800))"
+  set_b_snapshot_weekly 10
+  write_b_record "$((NOW - 60))" 80 "$((NOW - 3600))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
+  [[ "$line" =~ 10% ]] || return 1
+  [[ "$line" =~ 2h前 ]] || return 1
+}
+
+@test "records: the active slot's own record never replaces its live values" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  write_b_record "$((NOW - 60))" 77 "$((NOW + 172800))"
+  mk_input 40 20 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" \
+    | strip_ansi > "$WORK/out.txt"
+  [[ "$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")" =~ 20% ]] || return 1
+}
+
+# 規則 1 の但し書き: リセット時刻が null の 5 時間枠を使うのは pct 0 のときだけ
+# $1=記録の 5h%（リセット時刻は null）→ snapshot の B は 5 時間枠が欠測
+draw_b_with_null_reset_five_hour_record() {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  jq '.accounts.b.five_hour_pct = null | .accounts.b.five_hour_resets_epoch = null' "$SNAP" > "$SNAP.tmp" \
+    && mv "$SNAP.tmp" "$SNAP"
+  write_b_record "$((NOW - 60))" 45 "$((NOW + 172800))" "$1" null
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+}
+
+@test "records: a five-hour record with a null reset and pct above 0 is missing" {
+  draw_b_with_null_reset_five_hour_record 92
+  ! grep -E '^(▸ |  )B +5h' "$WORK/out.txt" | grep -q '92%' || return 1
+}
+
+@test "records: a five-hour record with a null reset and pct 0 is used" {
+  draw_b_with_null_reset_five_hour_record 0
+  [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ \ 0% ]] || return 1
+}

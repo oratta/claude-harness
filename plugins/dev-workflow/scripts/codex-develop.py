@@ -13,10 +13,12 @@ import select
 import subprocess
 import sys
 import time
-import unicodedata
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+# Claude の実効値の規則は usage_view.py の 1 か所に置く（正本: usage-session-records）
+sys.path.insert(0, str(ROOT / 'scripts'))
+import usage_view  # noqa: E402
 CANONICAL_ROLES = ('spec-write', 'spec-review', 'implement', 'impl-review', 'review',
                    'decider', 'explore', 'summarize')
 PHASES = {
@@ -41,13 +43,6 @@ READER_TRANSPORT = '''This worker is read-only: never write to GitHub, push, or 
 its evidence; the coordinator posts it on your behalf, then starts a fresh phase with it.'''
 FRESH_SECONDS = 300
 WEEK_SECONDS = 604800
-
-
-def _service_name(securestorage):
-    if not securestorage:
-        return 'Claude Code-credentials'
-    value = unicodedata.normalize('NFC', securestorage).encode()
-    return 'Claude Code-credentials-' + hashlib.sha256(value).hexdigest()[:8]
 
 
 def usage_margin(snapshot, now, *, codex=False):
@@ -76,23 +71,23 @@ def usage_margin(snapshot, now, *, codex=False):
     return elapsed - used
 
 
-def claude_usage_evidence(snapshot, now):
-    accounts = snapshot.get('accounts') if isinstance(snapshot, dict) else None
-    accounts = accounts if isinstance(accounts, dict) else {}
-    active = None
-    wanted = _service_name(os.environ.get('CLAUDE_SECURESTORAGE_CONFIG_DIR', ''))
-    for name, entry in accounts.items():
-        if isinstance(entry, dict) and _service_name(entry.get('securestorage')) == wanted:
-            active = name
-            break
-    if active is None and isinstance(snapshot, dict) and snapshot.get('active') in accounts:
-        active = snapshot['active']
-    if active is None and accounts:
-        active = next(iter(accounts))
-    entry = accounts.get(active) if active is not None else None
-    margin = usage_margin(entry, now) if entry is not None else None
-    return {'account': active, 'margin': margin,
-            'fetched_at': entry.get('fetched_at') if isinstance(entry, dict) else None}
+def claude_usage_evidence(snapshot_path, now):
+    """Margin of the launch account from its effective values (usage-session-records).
+
+    The age of the probe's fetch is not checked: past its reset a window reads as 0%, before it the
+    value is a lower bound, so an old value stays usable while the usage API keeps failing.
+    """
+    try:
+        view = usage_view.build_view(snapshot_path=str(snapshot_path), now=now)
+    except Exception:
+        return {'account': None, 'margin': None, 'fetched_at': None}
+    active = view['active']
+    slot = view['accounts'].get(active) or {}
+    used, reset = slot.get('weekly_all_pct'), slot.get('weekly_resets_epoch')
+    margin = None
+    if usage_view.finite_number(used) and 0 <= used <= 100 and usage_view.finite_number(reset):
+        margin = 100 * (1 - (reset - now) / WEEK_SECONDS) - used
+    return {'account': active, 'margin': margin, 'fetched_at': slot.get('observed_at')}
 
 
 def select_configuration(claude_margin, codex_margin):
@@ -275,11 +270,7 @@ def automatic_selection(mapping, now=None):
     snapshot_path = Path(os.environ.get('USAGE_SNAPSHOT', config_dir / '.usage-snapshot'))
     _run_usage_probe(snapshot_path)
     now = int(time.time()) if now is None else now
-    try:
-        snapshot = json.loads(snapshot_path.read_text())
-    except (OSError, ValueError):
-        snapshot = {}
-    claude = claude_usage_evidence(snapshot, now)
+    claude = claude_usage_evidence(snapshot_path, now)
     usages = read_codex_usages(mapping, str(config_dir), now) if mapping else {}
     candidates = []
     for order, (name, value) in enumerate(usages.items()):

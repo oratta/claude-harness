@@ -59,7 +59,7 @@
    `SHARED_BUDGET_MODE=throttled`（全モデル共通の週次枠が週の経過ペースより速く減っている）では
    昇格上限を Opus、`depleted`（同枠 90% 超）では昇格しない。
    `FABLE_BUDGET_MODE=reserve` の自動実行（unmanned / cron / loop）と `exhausted`（Fable 週次枠を
-   実質使い切った。明示宣言または usage snapshot からの自動導出）では、決める役も
+   実質使い切った。明示宣言またはセッション記録と usage snapshot の実効値からの自動導出）では、決める役も
    `dev-workflow:decider` のまま `model: opus` 止まりとする（種別は変えない）。
    Opus が決めて Opus が実行しても2連続失敗が続く場合は issue に needs-approval を付けて
    経緯をコメントし、そのサイクルを終了する
@@ -89,4 +89,5 @@
    Fable 実行が rate-limit / weekly-limit の実エラー（429、weekly limit reached 等）を返した
    → 予測的な閾値判定（トリップワイヤー2）とは別系統の事後対応。その場で Fable を諦め、
    実行役を Opus に降格して同じ作業を続行する（成果は引き継ぐ）。併せて usage-probe を
-   再実行して snapshot を更新し、以降のセッションの残量モード導出に反映させる
+   再実行する（前回の試行から間隔内・429 の待ち中なら叩かないので、snapshot が更新されないこともある）。
+   以降のセッションの残量モード導出は、セッション記録と snapshot の実効値で行われる
