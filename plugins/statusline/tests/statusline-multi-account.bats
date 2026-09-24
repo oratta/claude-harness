@@ -791,7 +791,7 @@ set_b_snapshot_weekly() {
   line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
   [[ "$line" =~ 80% ]] || return 1
   ! [[ "$line" =~ %/ ]] || return 1
-  ! [[ "$line" =~ ~ ]]
+  ! [[ "$line" =~ ~ ]] || return 1
 }
 
 @test "records: a weekly reset more than an hour apart takes the record" {
@@ -838,7 +838,7 @@ draw_b_with_null_reset_five_hour_record() {
 
 @test "records: a five-hour record with a null reset and pct above 0 is missing" {
   draw_b_with_null_reset_five_hour_record 92
-  ! grep -E '^(▸ |  )B +5h' "$WORK/out.txt" | grep -q '92%'
+  ! grep -E '^(▸ |  )B +5h' "$WORK/out.txt" | grep -q '92%' || return 1
 }
 
 @test "records: a five-hour record with a null reset and pct 0 is used" {
