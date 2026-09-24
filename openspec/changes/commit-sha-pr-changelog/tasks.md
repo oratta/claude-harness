@@ -41,6 +41,6 @@
 
 ## 7. 仕上げ
 
-- [ ] 7.1 `tests/injection-budget.bats` が通ることを確かめる。予算を動かす必要が出たら値と理由を PR 本文に書く
-- [ ] 7.2 `bash scripts/test.sh` 全件をフォアグラウンドで流して通す（受け入れ条件 6。`statusline-multi-account.bats` の単発失敗は単独再実行で判定する）
-- [ ] 7.3 `openspec validate commit-sha-pr-changelog --strict` が通る
+- [x] 7.1 `tests/injection-budget.bats` が通ることを確かめる。予算を動かす必要が出たら値と理由を PR 本文に書く
+- [x] 7.2 `bash scripts/test.sh` 全件をフォアグラウンドで流して通す（受け入れ条件 6。`statusline-multi-account.bats` の単発失敗は単独再実行で判定する）
+- [x] 7.3 `openspec validate commit-sha-pr-changelog --strict` が通る
