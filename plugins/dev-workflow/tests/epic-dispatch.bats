@@ -124,7 +124,7 @@ dispatch() { PATH="$STUB_BIN:/usr/bin:/bin" "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/
 gh_seq() { local n="$1"; shift; printf '%s\n' "$@" > "$STUB_CFG/gh_$n"; }
 
 # ログの呼び出し回数（grep -c が 0 件で exit 1 になるのを吸収する）
-calls() { grep -c -- "$1" "$STUB_LOG" || true; }
+calls() { LC_ALL=C grep -c -- "$1" "$STUB_LOG" || true; }
 
 # 前方一致（失敗したら両方を出す）
 starts_with() {
