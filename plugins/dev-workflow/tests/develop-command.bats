@@ -120,10 +120,6 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
 
 # --- manifest ---
 
-@test "manifest: plugin version is at least 2.0.0" {
-  printf '2.0.0\n%s\n' "$(jq -r .version "$MANIFEST")" | sort -V -C
-}
-
 @test "manifest: registers develop skill and both commands, not the old skill" {
   jq -e '.skills | index("./skills/develop")' "$MANIFEST" >/dev/null
   jq -e '.skills | index("./skills/github-" + "issue") == null' "$MANIFEST" >/dev/null

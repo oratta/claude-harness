@@ -637,25 +637,15 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   grep -E 'infra-phase-4-github-actions.*deploy-preview' "$SKILL"
 }
 
-@test "S29: SKILL.md frontmatter version matches plugin.json version" {
-  skill_version="$(grep -m1 '^version:' "$SKILL" | sed 's/^version: *//')"
-  plugin_version="$(grep -m1 '"version"' "$PLUGIN_JSON" | sed -E 's/.*"version": *"([^"]+)".*/\1/')"
-  [ -n "$skill_version" ]
-  [ -n "$plugin_version" ]
-  [ "$skill_version" = "$plugin_version" ]
+# plugin.json は version を持たない（issue #447）。一致させる相手が無いので SKILL.md にも置かない。
+@test "S29: SKILL.md frontmatter has no version" {
+  run grep -n '^version:' "$SKILL"
+  [ "$status" -ne 0 ]
 }
 
 @test "S30: no personal Dropbox path remains" {
   run grep -rn "/Users/oratta" "$PLUGIN_DIR" --exclude-dir=tests
   [ "$status" -ne 0 ]
-}
-
-@test "S31: plugin.json version is bumped above 0.2.0" {
-  plugin_version="$(grep -m1 '"version"' "$PLUGIN_JSON" | sed -E 's/.*"version": *"([^"]+)".*/\1/')"
-  [ "$plugin_version" != "0.2.0" ]
-  # crude semver compare: split into major.minor.patch and compare numerically
-  IFS='.' read -r a b c <<< "$plugin_version"
-  [ "$a" -gt 0 ] || { [ "$a" -eq 0 ] && { [ "$b" -gt 2 ] || { [ "$b" -eq 2 ] && [ "$c" -gt 0 ]; }; }; }
 }
 
 @test "all touched JSON parses (jq)" {

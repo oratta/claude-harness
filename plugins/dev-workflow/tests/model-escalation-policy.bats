@@ -164,17 +164,6 @@ setup() {
 
 # --- バージョン ---
 
-@test "manifest: dev-workflow version is at least 2.0.0" {
-  v="$(jq -r '.version' "$MANIFEST")"
-  printf '2.0.0\n%s\n' "$v" | sort -V -C
-}
-
-@test "manifest: marketplace dev-workflow entry matches plugin.json" {
-  v="$(jq -r '.version' "$MANIFEST")"
-  m="$(jq -r '.plugins[] | select(.name == "dev-workflow") | .version' "$MARKETPLACE")"
-  [ "$m" = "$v" ]
-}
-
 @test "skills: develop SKILL.md is at least 2.0.0 and gate SKILL.md is above 1.4.0" {
   v="$(awk -F': ' '/^version:/{print $2; exit}' "$DEV_SKILL")"
   [ -n "$v" ]

@@ -20,10 +20,10 @@
 
 ## 4. 各プラグインの bats の版の検査を削る
 
-- [ ] 4.1 `git grep -n -E "sort -V|\.version|\"version\"" -- 'plugins/*/tests/*' tests` で全件を確定し、plugin.json / marketplace.json の版を見ている検査を一覧にする（SKILL.md frontmatter の版を見る検査は対象外）
-- [ ] 4.2 casting（`casting-consultation.bats` の版の下限。agents の登録の検査は残す）、dev-workflow（`develop-command.bats`・`model-escalation-policy.bats`・`pr-review-gate-skill.bats`・`pr-review-gate-spec-declaration.bats`・`push-guard-setup.bats`・`retirement.bats`・`spec-decision-and-review.bats`）、worktree（`orphan-proc-guard.bats`・`setup-script.bats`・`unattended-mode.bats` の plugin.json の版）から版の検査を削る。同じテストにある版以外の検査は残す
-- [ ] 4.3 `plugins/product-handover/tests/plugin-structure.bats` の「版が semver 形式」を「`version` が無い」に変える
-- [ ] 4.4 `plugins/infra/skills/infra-setup/SKILL.md` の frontmatter から `version` を消し、`plugins/infra/tests/infra-fixes.bats` の S29 を「SKILL.md に `version:` が無い」に変え、S31 を削る
+- [x] 4.1 `git grep -n -E "sort -V|\.version|\"version\"" -- 'plugins/*/tests/*' tests` で全件を確定し、plugin.json / marketplace.json の版を見ている検査を一覧にする（SKILL.md frontmatter の版を見る検査は対象外）
+- [x] 4.2 casting（`casting-consultation.bats` の版の下限。agents の登録の検査は残す）、dev-workflow（`develop-command.bats`・`model-escalation-policy.bats`・`pr-review-gate-skill.bats`・`pr-review-gate-spec-declaration.bats`・`push-guard-setup.bats`・`retirement.bats`・`spec-decision-and-review.bats`）、worktree（`orphan-proc-guard.bats`・`setup-script.bats`・`unattended-mode.bats` の plugin.json の版）から版の検査を削る。同じテストにある版以外の検査は残す
+- [x] 4.3 `plugins/product-handover/tests/plugin-structure.bats` の「版が semver 形式」を「`version` が無い」に変える
+- [x] 4.4 `plugins/infra/skills/infra-setup/SKILL.md` の frontmatter から `version` を消し、`plugins/infra/tests/infra-fixes.bats` の S29 を「SKILL.md に `version:` が無い」に変え、S31 を削る
 
 ## 5. 変更記録の方式
 

@@ -91,14 +91,9 @@ setup() {
   LC_ALL=C grep -qF -- "根拠" "$ARBITER"
 }
 
-@test "plugin.json: registers both agents and bumps version to at least 0.3.0" {
+@test "plugin.json: registers both agents" {
   LC_ALL=C grep -qF -- '"./agents/casting-specialist.md"' "$PLUGIN_JSON"
   LC_ALL=C grep -qF -- '"./agents/casting-arbiter.md"' "$PLUGIN_JSON"
-  # 版を literal で固定すると bump のたびにこのテストが落ちる。テスト名どおり下限だけを見る。
-  local ver
-  ver=$(LC_ALL=C sed -n 's/.*"version"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$PLUGIN_JSON" | head -1)
-  [ -n "$ver" ]
-  [ "$(printf '%s\n' "0.3.0" "$ver" | sort -V | head -1)" = "0.3.0" ]
 }
 
 # --- 受け入れ条件3: 事後報告フォーマットの定義と実例1件 ---

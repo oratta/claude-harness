@@ -125,12 +125,3 @@ setup() {
   ! grep -qF '`/loops:design' "$ROOT_README" || return 1
   grep -q 'plugins/dev-workflow/CHANGELOG.md' "$ROOT_README"
 }
-
-# --- Requirement: 参照を直したプラグインの version を上げる ---
-
-@test "dev-workflow is 2.1.0 or newer in plugin.json and marketplace agrees" {
-  p="$(jq -r .version "${PLUGIN_DIR}/.claude-plugin/plugin.json")"
-  m="$(jq -r '.plugins[] | select(.name=="dev-workflow") | .version' "$MARKETPLACE")"
-  [ "$p" = "$m" ]
-  printf '2.1.0\n%s\n' "$p" | sort -V -C
-}

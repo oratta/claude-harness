@@ -204,10 +204,7 @@ run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
 
 # --- 配布 ---
 
-@test "manifest: version above 1.12.0, marketplace in sync, description mentions the spec declaration" {
-  v="$(jq -r '.version' "$MANIFEST")"
-  [ "$(printf '1.12.0\n%s\n' "$v" | sort -V | tail -1)" = "$v" ] && [ "$v" != "1.12.0" ]
-  [ "$(jq -r '.plugins[] | select(.name=="dev-workflow") | .version' "$MARKETPLACE")" = "$v" ]
+@test "manifest: description mentions the spec declaration" {
   jq -r '.description' "$MANIFEST" | grep -q '仕様宣言'
 }
 
