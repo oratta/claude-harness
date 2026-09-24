@@ -7,7 +7,7 @@
 - `~/.claude/plugins/marketplaces/...`（marketplace dir）— Claude Code が自動更新するインストール成果物。ここで feature ブランチを checkout すると、自動更新や `scripts/sync.sh` の pull がそのブランチ上で走り、`~/.claude/plugins/cache/` にもマージ前の内容が入る
 - `~/.claude/commands/` や `~/.claude/skills/` へのローカルコピー — marketplace 版より優先されて更新が反映されなくなる事故が過去に繰り返し発生した
 
-Claude Code が実行時に読むのは `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` で、marketplace dir はそのコピー元にすぎない。cache はバージョンを上げなくても marketplace dir の HEAD に追随する。marketplace dir を feature ブランチにしていると、Claude Code の自動更新や `scripts/sync.sh` の `git pull --ff-only` がそのブランチ上で走り、cache にもマージ前の内容が入る。
+Claude Code が実行時に読むのは `~/.claude/plugins/cache/<marketplace>/<plugin>/<版>/` で、marketplace dir はそのコピー元にすぎない。版は `plugin.json`（または `marketplace.json` のエントリ）の `version` で決まり、`version` が無ければ marketplace dir の HEAD の commit SHA が版になる。版が同じ間は cache は更新されないので、`version` を書くとその値を変えない限り push しても利用者に届かない。marketplace dir を feature ブランチにしていると、Claude Code の自動更新や `scripts/sync.sh` の `git pull --ff-only` がそのブランチ上で走り、cache にもマージ前の内容が入る。
 
 `~/.claude/rules/*.md` は marketplace dir 配下のファイルを指す symlink（`scripts/sync.sh` が張る）。ルールを直すときも symlink の実体ではなく開発用 clone 側の `rules/*.md` を編集し、マージしてから **marketplace dir 側の** `scripts/sync.sh`（`~/.claude/plugins/marketplaces/oratta-claude-harness/scripts/sync.sh`）で追随させる。
 
@@ -38,9 +38,10 @@ git -C "$CLAUDE_HARNESS_DEV_DIR" worktree add <worktree のパス> -b <ブラン
 
 元のプロジェクトの作業に戻る前に、harness 側は commit して push する（PR 運用のリポジトリなので Draft PR まで作る）。作業ツリーに置きっぱなしにしない。
 
-## バージョン bump と反映
+## 版と変更の記録、反映
 
-- 変更時は `plugin.json` のバージョンを上げる。反映のためではなく（`~/.claude/plugins/cache/` は marketplace dir の HEAD に追随するのでバージョン据え置きでも中身は入る）、**リリース管理の規約として**。claude-harness のテスト S131（同リポジトリの `tests/marketplace-sync.bats`）が merge-base からの bump を要求する
+- 版は上げない。`plugin.json` と `marketplace.json` に `version` を書かなければ commit SHA が版になり、main に入るたびに利用者へ更新が届く。`version` があるとその値で版が固定されるので、`tests/marketplace-sync.bats` の S130・S131 が `version` の存在を CI で落とす
+- 変更の記録は `plugins/<name>/changes/<番号>.md` に 1 PR 1 ファイルで書く。番号は記録先の issue 番号、無ければ PR 番号（同じ issue の 2 本目の PR は PR 番号）。`CHANGELOG.md` は凍結しているので追記しない
 - `known_marketplaces.json` でリポジトリ URL を確認して commit & push
 - マージ前の動作確認は `claude --plugin-dir <worktree のパス>/plugins/<プラグイン名>` でそのセッションだけ読み込ませる。`--plugin-dir` はプラグイン 1 個のディレクトリ（`.claude-plugin/plugin.json` を持つもの）を取る。リポジトリのルート（`.claude-plugin/marketplace.json` を持つ marketplace）を渡しても警告なしに何も読み込まれない。複数見るなら繰り返し指定する
 - マージ後の反映は `/plugin marketplace update oratta-claude-harness`（または新規セッション起動時の自動更新）→ `/reload-plugins` か新規セッション。`/plugin update` というスラッシュコマンドは存在しない

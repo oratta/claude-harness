@@ -32,12 +32,12 @@
 
 ## 6. 規約と文書
 
-- [ ] 6.1 `rules/plugin-editing.md` の版上げの 1 行を、版は上げない（commit SHA が版になる）・変更の記録は `plugins/<name>/changes/<番号>.md` に書く、に置き換える。`changes/<issue 番号>.md` が main に既にあるとき（同じ issue の 2 本目の PR）は PR 番号を使う旨も書く（聖域。最小限の差分）
-- [ ] 6.2 `CLAUDE.md` と `AGENTS.md` の「`plugin.json` の bump」を外す（聖域。最小限の差分）
-- [ ] 6.3 `docs/worktree-recovery.md` の冒頭の cache の説明（10 行目付近の「cache はバージョンを上げなくても marketplace dir の HEAD に追随する」）と、マージ後の反映と `plugin.json` の bump の節（43 行目付近）を、版は上げないこと・`version` が無ければ commit SHA が版になり push ごとに更新が届くこと・版が同じ間はキャッシュが更新されないことに書き換える
-- [ ] 6.4 `.github/workflows/ci.yml` の「バージョン整合ガード（S131）について」のコメントを、S130・S131 が `version` の不在を常時走る決定論的検査として見ている旨に書き換える
-- [ ] 6.5 `README.md` の plugin.json の例から `"version"` を消す
-- [ ] 6.6 `git grep -n -iE "バージョンを上げ|版を上げ|bump|plugin\.json.*version"` を archive・`_longruns` を除いて再実行し、プラグインの版上げを求める記述が残っていないことを確かめる（依存パッケージの版上げなど無関係なものは除く。`plugins/dev-workflow/skills/develop/references/roles/worker.md`・`decision-criteria.md`・`pr-body-format.md` に出る「依存バージョン上げのみ」は PR の分類語でプラグインの版上げではないので、無関係として残す）
+- [x] 6.1 `rules/plugin-editing.md` の版上げの 1 行を、版は上げない（commit SHA が版になる）・変更の記録は `plugins/<name>/changes/<番号>.md` に書く、に置き換える。`changes/<issue 番号>.md` が main に既にあるとき（同じ issue の 2 本目の PR）は PR 番号を使う旨も書く（聖域。最小限の差分）
+- [x] 6.2 `CLAUDE.md` と `AGENTS.md` の「`plugin.json` の bump」を外す（聖域。最小限の差分）
+- [x] 6.3 `docs/worktree-recovery.md` の冒頭の cache の説明（10 行目付近の「cache はバージョンを上げなくても marketplace dir の HEAD に追随する」）と、マージ後の反映と `plugin.json` の bump の節（43 行目付近）を、版は上げないこと・`version` が無ければ commit SHA が版になり push ごとに更新が届くこと・版が同じ間はキャッシュが更新されないことに書き換える
+- [x] 6.4 `.github/workflows/ci.yml` の「バージョン整合ガード（S131）について」のコメントを、S130・S131 が `version` の不在を常時走る決定論的検査として見ている旨に書き換える
+- [x] 6.5 `README.md` の plugin.json の例から `"version"` を消す
+- [x] 6.6 `git grep -n -iE "バージョンを上げ|版を上げ|bump|plugin\.json.*version"` を archive・`_longruns` を除いて再実行し、プラグインの版上げを求める記述が残っていないことを確かめる（依存パッケージの版上げなど無関係なものは除く。`plugins/dev-workflow/skills/develop/references/roles/worker.md`・`decision-criteria.md`・`pr-body-format.md` に出る「依存バージョン上げのみ」は PR の分類語でプラグインの版上げではないので、無関係として残す）
 
 ## 7. 仕上げ
 

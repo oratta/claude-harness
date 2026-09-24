@@ -106,7 +106,6 @@ mkdir -p plugins/new-plugin/{.claude-plugin,skills,commands}
 cat > plugins/new-plugin/.claude-plugin/plugin.json << 'EOF'
 {
   "name": "new-plugin",
-  "version": "1.0.0",
   "description": "...",
   "skills": [],
   "commands": []

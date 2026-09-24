@@ -7,7 +7,7 @@
 #   - the find -path glob behaviour is documented with an intent comment
 #   - the settings.local.json symlink rationale is documented
 #   - `bash -n` syntax check passes
-#   - plugin.json version is bumped to 2.2.0 and parses
+#   - plugin.json parses
 
 load "$(dirname "$BATS_TEST_FILENAME")/helper.bash"
 
