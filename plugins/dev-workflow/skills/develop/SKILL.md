@@ -231,7 +231,9 @@ unmanned で複数 change に割れた場合は、W が change 単位で子 issu
 4. `timeout <N>...` で起こされたら、その子 issue に `needs-approval` ラベルや止まっている旨のコメントが無いかを見て、あればユーザーに報告する。報告したかどうかにかかわらず、残りの動いている子で再び `wait` する。子セッションは interactive の `/develop` なので、子が自分のタブでユーザーに質問して止まっていてもラベルもコメントも残らず、この確認では検知できない。ユーザーには子のタブも見るよう伝える
 5. `wait` の `error gh ...` と `launch` の `failed <N>` はユーザーに報告して止まる。`failed` の子をサブエージェント方式に自動で振り替えない（Orca 側に途中までできたワークツリーが残っていて二重に起動しうるため）。指示が届かなかった `failed` の子は、報告に stderr の送り直しのコマンドを添え、`orca terminal read` で届いていないことを確かめて送り直し、動き出したのを確かめてから再開する（送らずに再開するとその子は `skipped` になり、`wait` が何もしない子を最長 6 時間待つ）。Orca 経路で始めたエピックを Orca 管理外のワークツリーで再開して `launch` が止まった（exit 1 で子を 1 件も作らない）ときは、報告に「親ワークツリーで開き直す」と書く
 
-子セッションは Orca の起動方式により `--dangerously-skip-permissions` で動き、許可の確認画面は出ない（hooks は効く）。マージを止めているのは確認画面ではなく develop と pr-review-gate の規則と hooks である。子の PR のマージは今までどおり子セッションの中で人の承認で行い、本体は自動でマージしない。
+子セッションのモデルは `launch` が起動時に `claude --model` で指定する。既定は `opus`（子は `/develop` の 1 ループを丸ごと回すオーケストレーターなのでメインセッションと同じ扱い）で、環境変数 `EPIC_DISPATCH_MODEL` で変えられる。Claude Code の既定モデルや Orca の agent 設定（`agentDefaultArgs` など）は子に効かない。端末を作れずに `failed` になった子には、端末の作り直しと最初の指示の送信のコマンドが stderr に出る。
+
+子セッションは `epic-dispatch.sh` が起動コマンドに付ける `--dangerously-skip-permissions` で動き、許可の確認画面は出ない（hooks は効く）。マージを止めているのは確認画面ではなく develop と pr-review-gate の規則と hooks である。子の PR のマージは今までどおり子セッションの中で人の承認で行い、本体は自動でマージしない。
 
 **サブエージェント方式**: blocked されていない子から**上の 1 ループを子ごとに並列**で起こす。worktree は子ごとで、本体が W を `isolation: "worktree"` で spawn して用意する（W は自分で worktree を切らない）。子の PR がマージされたらエピックに 1 行コメント（`子 #N マージ → 残り k 件`）し、依存が解けた子を次に起こす。
 
