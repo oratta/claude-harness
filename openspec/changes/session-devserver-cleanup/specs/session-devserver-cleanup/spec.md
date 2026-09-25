@@ -111,4 +111,4 @@ SessionStart フックは、前回の掃除から 10 分（既定値）以上た
 #### Scenario: 止めたものがログに残る
 
 - **WHEN** 後始末が目印を持つ python3 を TERM で止める
-- **THEN** ログに `TERM pid=<pid> comm=python3 mark=<値> trigger=session-end` を含む行が追記される
+- **THEN** ログに `TERM pid=<pid> comm=<comm> mark=<値> trigger=session-end` を含む行が追記される（`<comm>` は `ps -o comm=` の basename。たとえば Homebrew の python3 では `Python` になる）

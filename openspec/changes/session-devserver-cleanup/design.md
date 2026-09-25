@@ -87,6 +87,7 @@ SessionEnd の持ち時間は 1.5 秒で、TERM → 数秒 → KILL が収まら
 | `SESSION_REAPER_SWEEP_INTERVAL_SECS` | 600 | 掃除の最小間隔 |
 | `SESSION_REAPER_PS_FIXTURE_DIR` | 未設定 | 設定されていれば、`ps` を実行せずこのディレクトリの固定出力を読む |
 | `SESSION_REAPER_LOG_DIR` | 未設定 | ログとスタンプファイルの置き場所を上書きする |
+| `SESSION_REAPER_HOOK_PID` | フック自身の PID | 持ち主の Claude Code を探し始める PID（テストで偽の持ち主を指すため） |
 
 ### 置き場所は worktree プラグイン
 
@@ -112,6 +113,7 @@ bats で次を確かめる。`SESSION_REAPER_PS_FIXTURE_DIR` で `ps` の出力�
 - [SessionEnd が走っても、既定 30 秒以内に Claude Code が終了しないと止まらない] → 次の SessionStart の掃除で拾われる
 - [掃除は次にセッションが始まるまで走らない] → Orca 運用ではセッション開始の頻度が高い。セッションを一切始めない期間は残るが、その間に増えることもない
 - [PID の使い回し] → 目印の値に開始時刻を含め、止める直前に目印（子孫は comm と PPID）を読み直す
+- [TERM を無視する「環境変数が読めない子孫」は、親が先に止まると PPID が 1 に変わり、KILL の直前の読み直し（同じ PPID か）で外れて KILL されない] → 止めない側に倒れる挙動として受け入れる。受け入れ条件「TERM で止まらないプロセスは KILL で止める」の対象は目印を持つプロセスで、その読み直しは目印で行うため KILL まで届く（実プロセスのテストで確認）。読めない子孫はプラットフォームバイナリ（`/bin/sh` 等）で TERM を無視するものは稀で、残っても wt-clean の `kill_devserver_under` が拾う。PPID の代わりに開始時刻で読み直す案は、読み直しの規則（要件の文言）を変えることになるので採らない
 - [目印の配下で `env -i` により環境を空にして起動したものは止まる] → 読めないプロセスと区別できないため。外したいときは `env -i` ではなく目印を空にして起動する書き方を references に書く
 
 ## Open Questions
