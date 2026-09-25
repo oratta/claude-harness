@@ -72,7 +72,7 @@ SessionEnd の持ち時間は 1.5 秒で、TERM → 数秒 → KILL が収まら
 
 ### 停止手順とログ
 
-`kill_devserver_under` と同じ段取り: 対象に TERM → 3 秒（既定値）待つ → `kill -0` で生存確認 → 生きていれば KILL。対象の決定から停止までの各プロセスについて、`<ISO8601 時刻> <TERM|KILL|GONE> pid=<pid> comm=<comm> mark=<値> trigger=<session-end|sweep>` を 1 行ずつログに追記する。何も止めなかったときも `none` の 1 行を残す（無音の実行をしない）。
+`kill_devserver_under` と同じ段取り: 対象に TERM → 3 秒（既定値）待つ → `kill -0` で生存確認 → 生きていれば KILL。送る順は子を親より先にする（親を先に止めると、読めない子は PPID が 1 に変わって直前の読み直しで外れ、止まらずに残る。実機で確認）。対象の決定から停止までの各プロセスについて、`<ISO8601 時刻> <TERM|KILL|GONE> pid=<pid> comm=<comm> mark=<値> trigger=<session-end|sweep>` を 1 行ずつログに追記する。何も止めなかったときも `none` の 1 行を残す（無音の実行をしない）。
 
 ログの場所は `${CLAUDE_PLUGIN_DATA}/session-devserver-cleanup.log`。`CLAUDE_PLUGIN_DATA` が未設定なら `~/.claude/logs/session-devserver-cleanup.log`（ディレクトリは `mkdir -p` で作る）。1MB を超えたら 1 世代だけ `.1` に回す。
 

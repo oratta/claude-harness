@@ -490,6 +490,35 @@ alive() { kill -0 "$1" 2>/dev/null; }
   [ "$status" -ne 0 ]
 }
 
+@test "real: an unreadable child (/bin/sleep) of a marked python3 is stopped, not orphaned by its parent's TERM" {
+  wt_require_process_listing
+  command -v python3 >/dev/null 2>&1 || skip "python3 unavailable"
+  start_fake_owner
+  ( wt_close_inherited_fds && CLAUDE_SESSION_PROC_MARK="$REAL_MARK" \
+      exec python3 -c 'import subprocess, time; subprocess.Popen(["/bin/sleep", "300"]); time.sleep(300)' ) &
+  P1=$!
+  wt_track_pid "$P1"
+  require_env_visible "$P1"
+  local i=0 C1=""
+  while [ -z "$C1" ] && [ "$i" -lt 25 ]; do
+    C1=$(pgrep -P "$P1" sleep | head -1)
+    sleep 0.2
+    i=$((i + 1))
+  done
+  [ -n "$C1" ]
+  wt_track_pid "$C1"
+  kill -KILL "$OWNER_PID"
+  sleep 0.2
+  run env SESSION_REAPER_OWNER_WAIT_SECS=5 SESSION_REAPER_TERM_GRACE_SECS=1 \
+    "$REAPER" --session-end "$REAL_MARK"
+  [ "$status" -eq 0 ]
+  cat "$LOG"
+  sleep 0.3
+  run alive "$P1"; [ "$status" -ne 0 ]
+  run alive "$C1"; [ "$status" -ne 0 ]
+  grep -Eq " TERM pid=${C1} comm=sleep mark=${REAL_MARK} trigger=session-end" "$LOG"
+}
+
 @test "real: session-end hook returns within 1.5s and the detached reaper survives killing the hook's process group" {
   wt_require_process_listing
   command -v python3 >/dev/null 2>&1 || skip "python3 unavailable"

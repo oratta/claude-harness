@@ -151,7 +151,7 @@ srp_env_readable() { # <command+env>
   printf '%s\n' "$1" | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { f = 1; exit } } END { exit(f ? 0 : 1) }'
 }
 
-# 目印 $1 の対象を「pid kind ppid comm」で 1 行ずつ出す（kind は mark か desc）。
+# 目印 $1 の対象を「pid kind ppid comm」で 1 行ずつ出す（kind は mark か desc）。子を親より先の順に出す。
 # $2 は除く PID の空白区切り（自分自身とその祖先）。除いた PID の配下にも降りない。
 srp_select_targets() { # <mark> <exclude_pids>
   local commf envf
@@ -192,9 +192,11 @@ srp_select_targets() { # <mark> <exclude_pids>
           add[c] = "desc"; q[qt++] = c
         }
       }
-      for (k = 0; k < n; k++) {
-        p = order[k]
-        if (p in add) print p, add[p], parent[p], comm[p]
+      # 子を親より先に出す（q の逆順）。親を先に止めると読めない子は PPID が 1 に変わり、
+      # 送る直前の読み直し（同じ PPID か）で外れて止まらずに残る
+      for (k = qt - 1; k >= 0; k--) {
+        p = q[k]
+        print p, add[p], parent[p], comm[p]
       }
     }
   ' "$commf" "$envf"
