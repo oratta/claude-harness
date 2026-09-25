@@ -8,7 +8,7 @@
 
 - [ ] 2.1 `plugins/dev-workflow/scripts/epic-dispatch.sh` の `cmd_launch` の `local n prompt failed=0` を `local n prompt failed=0 seen=" "` にする
 - [ ] 2.2 `for n in "$@"; do` の直後に `case "$seen" in *" $n "*) echo "skipped $n"; continue ;; esac; seen="$seen$n "` を足す
-- [ ] 2.3 `plugins/dev-workflow/tests/epic-dispatch.bats` を実行し、1.1 と 1.2 のテストおよび既存テストが通ることを確認する
+- [ ] 2.3 `plugins/dev-workflow/tests/epic-dispatch.bats` を実行し、1.1・1.2・1.3 のテストおよび既存テストが通ることを確認する
 
 ## 3. 記録・仕上げ
 
