@@ -12,8 +12,9 @@
 #   → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` →
 #   子ごとに `orca worktree create`（同じ repoId・同じ linkedIssue・archive されていない
 #   ワークツリーがあれば作らない。--agent も --prompt も渡さない）→ `orca terminal create
-#   --worktree path:<子> --command "claude --model <model> --dangerously-skip-permissions"`
-#   （<model> の既定は opus、EPIC_DISPATCH_MODEL で変える。空なら使い方を出して exit 1。
+#   --worktree path:<子> --command "<cmd> --model <model>"`
+#   （<cmd> の既定は cld、EPIC_DISPATCH_CLAUDE_CMD で変える。<model> の既定は opus、
+#   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。
 #   作れなければ作り直しと送信のコマンドを stderr に出す）→ `orca terminal wait --for tui-idle` →
 #   `orca terminal send --text <指示> --enter --wait-submit <秒>`。stdout は子ごとに `launched <N>`
 #   （send の stages に turn_started がある）/ `skipped <N>` / `failed <N>` の 1 行。failed で
@@ -112,7 +113,9 @@ cmd_launch() {
   is_num "$submit" || { echo "EPIC_DISPATCH_SUBMIT_WAIT must be a non-negative integer: $submit" >&2; usage; }
   local model="${EPIC_DISPATCH_MODEL-opus}"
   [ -n "$model" ] || { echo "EPIC_DISPATCH_MODEL must not be empty" >&2; usage; }
-  local agent_cmd="claude --model $(shq "$model") --dangerously-skip-permissions"
+  local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-cld}"
+  [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; usage; }
+  local agent_cmd="$claude_cmd --model $(shq "$model")"
 
   command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }

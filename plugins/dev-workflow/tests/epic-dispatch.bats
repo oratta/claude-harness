@@ -218,7 +218,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${log[5]}" = "orca worktree create --name issue-11 --issue 11 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
   starts_with "${log[6]}" "orca terminal create --worktree path:/work/issue-11 --command "
   case "${log[6]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "claude --model 'opus' --dangerously-skip-permissions" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "cld --model 'opus'" ]
   [ "${log[7]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
   starts_with "${log[8]}" "orca terminal send --terminal term-11 --text "
   case "${log[8]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
@@ -230,12 +230,27 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '--agent')" -eq 0 ]
 }
 
-@test "launch: EPIC_DISPATCH_MODEL changes the model passed to claude --model" {
+@test "launch: EPIC_DISPATCH_MODEL changes the model passed to --model" {
   make_stub orca
   EPIC_DISPATCH_MODEL='opus[1m]' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "claude --model 'opus[1m]' --dangerously-skip-permissions" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "cld --model 'opus[1m]'" ]
+}
+
+@test "launch: EPIC_DISPATCH_CLAUDE_CMD replaces the command as is" {
+  make_stub orca
+  EPIC_DISPATCH_CLAUDE_CMD='cld-account b' run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "cld-account b --model 'opus'" ]
+}
+
+@test "launch: an empty EPIC_DISPATCH_CLAUDE_CMD creates nothing" {
+  make_stub orca
+  EPIC_DISPATCH_CLAUDE_CMD= run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ "$(calls 'worktree create')" -eq 0 ]
 }
 
 @test "launch: an empty EPIC_DISPATCH_MODEL creates nothing" {
@@ -255,7 +270,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${#lines[@]}" -eq 2 ]
   [ "$(calls '^orca terminal wait ')" -eq 1 ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
-  grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF 'claude --model'
+  grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF 'cld --model'
   grep -F 'orca terminal send' "$BATS_TEST_TMPDIR/stderr" | grep -qF '/develop #11'
 }
 
@@ -630,7 +645,9 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 
 @test "skill: child sessions skip permissions and the parent never merges" {
   r="$(run_section)"
-  printf '%s\n' "$r" | grep -qF -- '--dangerously-skip-permissions'
+  printf '%s\n' "$r" | grep -F -- '--dangerously-skip-permissions' | grep -qF 'cld'
+  printf '%s\n' "$r" | grep -F 'EPIC_DISPATCH_CLAUDE_CMD' | grep -qF 'cld'
+  printf '%s\n' "$r" | grep -F 'EPIC_DISPATCH_CLAUDE_CMD' | grep -qF '合わせて変える'
   printf '%s\n' "$r" | grep -qF 'EPIC_DISPATCH_MODEL'
   printf '%s\n' "$r" | grep -F 'EPIC_DISPATCH_MODEL' | grep -qF 'opus'
   printf '%s\n' "$r" | grep -qF 'pr-review-gate'
