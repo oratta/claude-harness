@@ -426,9 +426,16 @@ fresh_stamp() {
 # ---------------------------------------------------------------------------
 
 # 偽の持ち主を起動する。macOS の ps -o comm= は argv[0] を返すので、exec -a で comm を claude にする
-# （/bin/sleep を claude の名前で複製すると署名の検査で即 KILL される）。
+# （/bin/sleep を claude の名前で複製すると署名の検査で即 KILL される）。Linux の comm は argv[0] ではなく
+# 実行したファイル名なので、/bin/sleep を claude という名前で複製して起動する。
 start_fake_owner() {
-  ( wt_close_inherited_fds && exec -a "${BATS_TEST_TMPDIR}/bin/claude" /bin/sleep 300 ) &
+  if [ "$(uname -s)" = Darwin ]; then
+    ( wt_close_inherited_fds && exec -a "${BATS_TEST_TMPDIR}/bin/claude" /bin/sleep 300 ) &
+  else
+    mkdir -p "${BATS_TEST_TMPDIR}/bin"
+    cp /bin/sleep "${BATS_TEST_TMPDIR}/bin/claude"
+    ( wt_close_inherited_fds && exec "${BATS_TEST_TMPDIR}/bin/claude" 300 ) &
+  fi
   OWNER_PID=$!
   wt_track_pid "$OWNER_PID"
   sleep 0.3
@@ -573,7 +580,12 @@ alive() { kill -0 "$1" 2>/dev/null; }
     sleep 0.2; i=$((i + 1))
   done
   [ -n "$rp" ]
-  run bash -c "ps -ww -E -o command= -p $rp | grep -q 'CLAUDE_SESSION_PROC_MARK='"
+  # Linux の ps -E では環境変数が読めず、読めないまま「持っていない」と通ってしまうので /proc を読む
+  if [ -r "/proc/$rp/environ" ]; then
+    run bash -c "tr '\\0' '\\n' </proc/$rp/environ | grep -q '^CLAUDE_SESSION_PROC_MARK='"
+  else
+    run bash -c "ps -ww -E -o command= -p $rp | grep -q 'CLAUDE_SESSION_PROC_MARK='"
+  fi
   [ "$status" -ne 0 ]
 }
 
