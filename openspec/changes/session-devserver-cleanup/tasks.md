@@ -23,6 +23,6 @@
 
 ## 4. 確認
 
-- [ ] 4.1 `scripts/test.sh` を全件実行し、exit code を記録する
-- [ ] 4.2 実機で、Bash ツールから `nohup python3 -m http.server` と目印を外したものを起動 → 後始末を走らせ、前者だけが止まり、ログに残ることを確かめる（wrangler / next はこのリポジトリに無いので、node の常駐プロセスで代える）
-- [ ] 4.3 `openspec validate session-devserver-cleanup --strict` が通ることを確かめる
+- [x] 4.1 `scripts/test.sh` を全件実行し、exit code を記録する
+- [x] 4.2 実機で、Bash ツールから `nohup python3 -m http.server` と目印を外したものを起動 → 後始末を走らせ、前者だけが止まり、ログに残ることを確かめる（wrangler / next はこのリポジトリに無いので、node の常駐プロセスで代える）
+- [x] 4.3 `openspec validate session-devserver-cleanup --strict` が通ることを確かめる
