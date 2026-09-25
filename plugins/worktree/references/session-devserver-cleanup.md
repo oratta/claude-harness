@@ -16,7 +16,7 @@ SessionStart フックがここにあるためで、ワークツリー専用と�
 | SessionStart（前回から 10 分以上たっていれば） | 同上 → `session-proc-reaper.sh --sweep` | 持ち主（PID と開始時刻の組）がもういない目印のプロセスを止める。KILL やクラッシュで SessionEnd が走らなかったセッションの分を拾う |
 | SessionEnd | `session-proc-end.sh` → `session-proc-reaper.sh --session-end <mark>` | フックは目印を計算して後始末を切り離して起動し、すぐ戻る（SessionEnd の持ち時間は 1.5 秒で、プラグインの `timeout` では延びない）。後始末は持ち主の Claude Code の終了を最大 30 秒待ち、終了していればその目印のプロセスを止める。`/clear` や `/resume` で同じプロセスが続いていれば止めない |
 
-`start_token` は `LC_ALL=C ps -o lstart=` から英数字以外を除いたもの。`LC_ALL=C` を外すと macOS では曜日や日付の書式がロケールで
+`start_token` は `LC_ALL=C TZ=UTC ps -o lstart=` から英数字以外を除いたもの（`TZ=UTC` は、`lstart` が `TZ` の現地時刻で出て環境ごとにずれるのを防ぐ）。`LC_ALL=C` を外すと macOS では曜日や日付の書式がロケールで
 変わり、目印付けと生存判定が別のロケールで走ったときに、生きている持ち主を「もういない」と判定して動いているセッションの
 dev サーバーを止めてしまう。
 

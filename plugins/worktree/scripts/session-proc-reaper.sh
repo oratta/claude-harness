@@ -98,12 +98,13 @@ srp_basename() {
 
 # 開始時刻から英数字以外を除いたもの。LC_ALL=C を付けないと macOS の lstart はロケールで
 # 書式が変わり、目印付けと生存判定が別ロケールで走ると生きている持ち主を死んだと誤判定する。
+# lstart は TZ の現地時刻で出るので、TZ=UTC も固定する（TZ の違う環境で走っても同じ値になる）。
 # プロセスが無ければ空。
 srp_start_token() { # <pid>
   if [ -n "${SESSION_REAPER_PS_FIXTURE_DIR:-}" ]; then
     srp_fixture_field lstart.txt "$1" | LC_ALL=C tr -cd 'A-Za-z0-9'
   else
-    LC_ALL=C ps -o lstart= -p "$1" 2>/dev/null | LC_ALL=C tr -cd 'A-Za-z0-9'
+    LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null | LC_ALL=C tr -cd 'A-Za-z0-9'
   fi
 }
 
