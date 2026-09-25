@@ -11,7 +11,11 @@
 # launch: `orca worktree current --json` → `git rev-parse --show-toplevel` → `git fetch origin <base>`
 #   → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` →
 #   子ごとに `orca worktree create`（同じ repoId・同じ linkedIssue・archive されていない
-#   ワークツリーがあれば作らない。--prompt は渡さない）→ `orca terminal wait --for tui-idle` →
+#   ワークツリーがあれば作らない。--agent も --prompt も渡さない）→ `orca terminal create
+#   --worktree path:<子> --command "<cmd> --model <model>"`
+#   （<cmd> の既定は cld、EPIC_DISPATCH_CLAUDE_CMD で変える。<model> の既定は opus、
+#   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。
+#   作れなければ作り直しと送信のコマンドを stderr に出す）→ `orca terminal wait --for tui-idle` →
 #   `orca terminal send --text <指示> --enter --wait-submit <秒>`。stdout は子ごとに `launched <N>`
 #   （send の stages に turn_started がある）/ `skipped <N>` / `failed <N>` の 1 行。failed で
 #   ハンドルが取れていれば送り直しのコマンドを stderr に出す。orca 自身の出力は stderr。
@@ -80,6 +84,16 @@ resend_hint() {
   } >&2
 }
 
+# 端末を作れなかった子の、端末の作り直しと最初の指示の送信のコマンドを stderr に出す
+# （<子のパス> <起動コマンド> <prompt> <submit>）
+recreate_hint() {
+  {
+    echo "no agent terminal was started in $1 (relaunching launch skips this child)."
+    echo "create: orca terminal create --worktree path:$1 --command $(shq "$2") --json"
+    echo "then send: orca terminal send --terminal <handle from create> --text $(shq "$3") --enter --wait-submit $4 --json"
+  } >&2
+}
+
 cmd_launch() {
   local note="" base="${EPIC_DISPATCH_BASE:-main}"
   while [ "$#" -gt 0 ]; do
@@ -97,6 +111,12 @@ cmd_launch() {
   local ready="${EPIC_DISPATCH_READY_TIMEOUT_MS:-60000}" submit="${EPIC_DISPATCH_SUBMIT_WAIT:-30}"
   is_num "$ready" || { echo "EPIC_DISPATCH_READY_TIMEOUT_MS must be a non-negative integer: $ready" >&2; usage; }
   is_num "$submit" || { echo "EPIC_DISPATCH_SUBMIT_WAIT must be a non-negative integer: $submit" >&2; usage; }
+  local model="${EPIC_DISPATCH_MODEL-opus}"
+  [ -n "$model" ] || { echo "EPIC_DISPATCH_MODEL must not be empty" >&2; usage; }
+  local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-cld}"
+  [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; usage; }
+  local agent_cmd
+  agent_cmd="$claude_cmd --model $(shq "$model")"
 
   command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
@@ -113,7 +133,7 @@ cmd_launch() {
   printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
     || { echo "orca worktree list --json is not readable" >&2; exit 1; }
 
-  local n prompt out rc handle sent retry failed=0
+  local n prompt out rc child handle sent retry failed=0
   for n in "$@"; do
     if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$n" \
       'any(.result.worktrees[]; .repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)' \
@@ -124,16 +144,25 @@ cmd_launch() {
     prompt="/develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
     [ -n "$note" ] && prompt="$prompt $note"
     out="$(orca worktree create --name "issue-$n" --issue "$n" --base-branch "origin/$base" \
-      --parent-worktree "path:$parent" --agent claude --json)"
+      --parent-worktree "path:$parent" --json)"
     rc=$?
     printf '%s\n' "$out" >&2
     if [ "$rc" -ne 0 ]; then
       echo "failed $n"; failed=1; continue
     fi
-    handle="$(printf '%s' "$out" \
-      | jq -r '.result.agentTerminalHandle // .result.startupTerminal.handle // empty' 2>/dev/null)"
+    child="$(printf '%s' "$out" | jq -r '.result.worktree.path // empty' 2>/dev/null)"
+    if [ -z "$child" ]; then
+      echo "no worktree path for #$n in orca worktree create --json" >&2
+      echo "failed $n"; failed=1; continue
+    fi
+    out="$(orca terminal create --worktree "path:$child" --command "$agent_cmd" --json)"
+    rc=$?
+    printf '%s\n' "$out" >&2
+    handle=""
+    [ "$rc" -eq 0 ] && handle="$(printf '%s' "$out" | jq -r '.result.terminal.handle // empty' 2>/dev/null)"
     if [ -z "$handle" ]; then
-      echo "no terminal handle for #$n in orca worktree create --json" >&2
+      echo "no terminal handle for #$n from orca terminal create --json" >&2
+      recreate_hint "$child" "$agent_cmd" "$prompt" "$submit"
       echo "failed $n"; failed=1; continue
     fi
     if ! orca terminal wait --terminal "$handle" --for tui-idle --timeout-ms "$ready" --json >&2; then
