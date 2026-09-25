@@ -3,12 +3,12 @@
 - [ ] 1.1 `plugins/dev-workflow/tests/epic-dispatch.bats` の orca スタブに `terminal create` を足し（`result.terminal.handle` を返す。子ごとに失敗・ハンドル無しを切り替えられる）、worktree create のスタブが `result.worktree.path` を返すようにする
 - [ ] 1.2 「launch は fetch してから path: で親を渡して子を作る」のテストを、worktree create に `--agent` が無いこと・`terminal create --worktree path:<子> --command "claude --model 'opus' --dangerously-skip-permissions" --json` が wait の前に呼ばれることを確かめる形に直す
 - [ ] 1.3 「agentTerminalHandle が無ければ startupTerminal のハンドルに送る」のテストを消し、「ハンドルが取れなければ送らずに failed」を terminal create の JSON にハンドルが無い形に直す
-- [ ] 1.4 新しいシナリオのテストを足す: `EPIC_DISPATCH_MODEL='opus[1m]'` で `--command` が変わる／`EPIC_DISPATCH_MODEL=` 空で create を呼ばず exit 1／terminal create 失敗で wait・send を呼ばず stderr に端末の作り直しのコマンドを出して `failed`／worktree create の JSON にパスが無いと terminal create を呼ばず `failed`
+- [ ] 1.4 新しいシナリオのテストを足す: `EPIC_DISPATCH_MODEL='opus[1m]'` で `--command` が変わる／`EPIC_DISPATCH_MODEL=` 空で create を呼ばず exit 1／terminal create 失敗で wait・send を呼ばず stderr に端末の作り直しと `/develop #11` の送信のコマンドを出して `failed`／worktree create の JSON にパスが無いと terminal create を呼ばず `failed`
 - [ ] 1.5 `bats plugins/dev-workflow/tests/epic-dispatch.bats` で新しいテストが落ちることを確かめる
 
 ## 2. 実装（Green）
 
-- [ ] 2.1 `plugins/dev-workflow/scripts/epic-dispatch.sh` の `cmd_launch` で `EPIC_DISPATCH_MODEL`（既定 `opus`、空なら使い方を出して exit 1）を読み、worktree create から `--agent claude` を外し、`result.worktree.path` を取って `orca terminal create` で `claude --model <shq した model> --dangerously-skip-permissions` を起動し、`result.terminal.handle` を wait / send に使う。端末を作れなかった子はパスがあれば作り直しのコマンドを stderr に出して `failed`
+- [ ] 2.1 `plugins/dev-workflow/scripts/epic-dispatch.sh` の `cmd_launch` で `EPIC_DISPATCH_MODEL`（既定 `opus`、`${EPIC_DISPATCH_MODEL-opus}` で読み、空なら使い方を出して exit 1）を読み、worktree create から `--agent claude` を外し、`result.worktree.path` を取って `orca terminal create` で `claude --model <shq した model> --dangerously-skip-permissions` を起動し、`result.terminal.handle` を wait / send に使う。端末を作れなかった子はパスがあれば作り直しのコマンドを stderr に出して `failed`
 - [ ] 2.2 同ファイル先頭コメントの launch の説明を新しい呼び出し順と `EPIC_DISPATCH_MODEL` に合わせる
 - [ ] 2.3 `bats plugins/dev-workflow/tests/epic-dispatch.bats` が全件通ることを確かめる
 

@@ -46,7 +46,7 @@ Orca 1.x の CLI（2026-09-25 時点）で確かめた事実:
 
 ### 端末を作れなかった子は `failed` にし、端末を作り直すコマンドを出す
 
-ワークツリーはできたが `terminal create` が失敗した・パスやハンドルが取れなかった子は `failed <N>` にする。ワークツリーが残るので再実行では `skipped` になり端末が作られない。そこで、パスが取れていれば `orca terminal create --worktree path:<子> --command ... --json` のコマンドを stderr に出す（#458 の送り直しのコマンドと同じ扱い）。
+ワークツリーはできたが `terminal create` が失敗した・パスやハンドルが取れなかった子は `failed <N>` にする。ワークツリーが残るので再実行では `skipped` になり端末が作られない。そこで、パスが取れていれば `orca terminal create --worktree path:<子> --command ... --json` のコマンドを stderr に出し、続けて最初の指示を送る `orca terminal send` のコマンド（ハンドルは作り直した端末のもの）も出す（#458 の送り直しのコマンドと同じ扱い。端末だけ作り直しても指示が届かなければ子は動かないため）。
 
 ## Risks / Trade-offs
 
