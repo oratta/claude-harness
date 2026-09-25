@@ -27,3 +27,4 @@
 - `plugins/dev-workflow/skills/develop/SKILL.md`（「エピックの扱い」の回し方と完了条件）
 - `plugins/dev-workflow/changes/460.md`（変更記録）
 - `wait` は変えない（#431 が触るため）
+- 既存 spec の要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の 3 箇所（`<cmd>` の形の MUST、Scenario の `--command` の値 2 件）と `route` の出力の規定が古くなる。ADDED の要件で上書きし、元の要件への畳み込みは並行する子の archive が終わったあとの後続で行う
