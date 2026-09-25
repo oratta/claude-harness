@@ -867,3 +867,85 @@ step3_body() {
     step3_body | grep -F -- "- $w" | grep -qF 'エージェントへの行動指示' || { echo "missing in: $w"; return 1; }
   done
 }
+
+# --- Requirement: 前の HEAD の許容を新しい HEAD に引き継いでよい条件（#441） ---
+
+# 手順 3-c の本文（`#### 3-c.` から `### 4.` の直前まで）
+step3c_body() {
+  awk '/^#### 3-c\./{f=1} /^### 4\. /{f=0} f' "$SKILL"
+}
+
+@test "carryover (#441): the approval-needed template lists evidence files" {
+  step3_body | grep -qF -- '- 根拠ファイル: <パス>, <パス>'
+}
+
+@test "carryover (#441): step 3-c sits after 3-b and before step 4" {
+  # 見出し行の ASCII 部分だけを取り出して比較する（cut -c はマルチバイト文字の途中で
+  # 切れてロケール依存になるため、末尾の日本語部分は比較しない）
+  order="$(grep -nE '^(#### 3-b\.|#### 3-c\.|### 4\. )' "$SKILL" | sed -E 's/^[0-9]+:(#### 3-b|#### 3-c|### 4\.).*/\1/')"
+  [ "$(echo "$order" | tr '\n' '|')" = "#### 3-b|#### 3-c|### 4.|" ] || { echo "$order"; return 1; }
+}
+
+@test "carryover (#441): 3-c runs risk-carryover-check.sh and names the 4 conditions" {
+  body="$(step3c_body)"
+  echo "$body" | grep -qF 'risk-carryover-check.sh'
+  echo "$body" | grep -qF '終了コード 0'
+  echo "$body" | grep -F -- '`- 根拠ファイル:`' | grep -qF '無い宣言からは引き継げない'
+  # 条件④: 対象 HEAD 行を除いて本文が同一。比較は新しい宣言を投稿する前に組み立てた本文で行う
+  line="$(echo "$body" | grep -F '`対象 HEAD:` 行を除いて')"
+  echo "$line" | grep -qF '同一' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '投稿する前'
+}
+
+@test "carryover (#441): 3-c picks the latest declaration that has both an acceptance and an authenticity line" {
+  line="$(step3c_body | grep -F '前の宣言の選び方')"
+  echo "$line" | grep -qF '`主の回答: 許容`'
+  echo "$line" | grep -qF '`真正性確認: 済`'
+  echo "$line" | grep -qF '最新 1 件'
+  echo "$line" | grep -qF '`対象 HEAD:`'
+}
+
+@test "carryover (#441): 3-c states it is the only exception to 'do not reuse previous passes'" {
+  line="$(step3c_body | grep -F '唯一の例外')"
+  echo "$line" | grep -qF '主への質問だけ'
+  echo "$line" | grep -qF '前回の合格部分を流用しない'
+  echo "$line" | grep -qF 'gate-runner.md'
+  for w in '手順 2 のレビュー' '手順 4 の証拠' '仕様宣言'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
+  done
+}
+
+@test "carryover (#441): 3-c has the 3 anti-fabrication conditions" {
+  body="$(step3c_body)"
+  echo "$body" | grep -F '真正性確認: 済' | grep -qF '前の宣言'
+  echo "$body" | grep -F '元の直接の回答' | grep -qF '引き継ぎの記録'
+  echo "$body" | grep -F '引き継ぐたびに' | grep -qF '真正性確認'
+}
+
+@test "carryover (#441): 3-c shows the 4 appended lines and no full declaration example" {
+  # bash の呼び方のブロックを除き、追記行の書式ブロックだけを取り出す
+  block="$(step3c_body | awk '/^```bash/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
+  echo "$block" | grep -q '^主の回答: 許容（引き継ぎ） — <元の直接の回答リンク>'
+  echo "$block" | grep -q '^引き継ぎ元: <前の HEAD の 40 桁フル SHA> の宣言 '
+  echo "$block" | grep -q '^引き継ぎの根拠: risk-carryover-check.sh 終了コード 0 — '
+  echo "$block" | grep -q '^真正性確認: 済 — '
+  [ "$(echo "$block" | wc -l | tr -d ' ')" -eq 4 ] || { echo "$block"; return 1; }
+  ! step3c_body | grep -q '^## リスク宣言$' || return 1
+}
+
+@test "carryover (#441): when carryover fails, 3-c routes to step 6 with the NG lines" {
+  step3c_body | grep -F '`NG:`' | grep -qF '手順6'
+}
+
+@test "carryover (#441): step 5 treats a carried-over declaration as accepted" {
+  step5_tbl="$(awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "$SKILL" | grep '^| ')"
+  row="$(echo "$step5_tbl" | grep -F '引き継ぎ')"
+  echo "$row" | grep -qF '3-c'
+  echo "$row" | grep -qF '| 可 |'
+}
+
+@test "carryover (#441): step 6 resume table points to 3-c when HEAD moved" {
+  row="$(awk '/^### 6\. /{f=1} f' "$SKILL" | grep -F '| **リスク許容待ち**')"
+  echo "$row" | grep -qF '3-c'
+  echo "$row" | grep -qF 'HEAD が動いた'
+}
