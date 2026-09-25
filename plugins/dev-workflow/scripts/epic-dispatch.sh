@@ -8,11 +8,13 @@
 #
 # route: 子が 2 件以上・`orca` が PATH にある・`orca worktree current` が exit 0（今いるのが
 #   Orca 管理のワークツリー）のすべてが成り立てば stdout に `orca`、それ以外は `subagent`。exit 0
+#   EPIC_DISPATCH_PARENT_EPIC が空でなければ（並列起動された子のセッション）、子の番号の検査のあと
+#   orca を呼ばずに `nested`。exit 0
 # launch: `orca worktree current --json` → `git rev-parse --show-toplevel` → `git fetch origin <base>`
 #   → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` →
 #   子ごとに `orca worktree create`（同じ repoId・同じ linkedIssue・archive されていない
 #   ワークツリーがあれば作らない。--agent も --prompt も渡さない）→ `orca terminal create
-#   --worktree path:<子> --command "<cmd> --model <model>"`
+#   --worktree path:<子> --command "EPIC_DISPATCH_PARENT_EPIC=<epic> <cmd> --model <model>"`
 #   （<cmd> の既定は cld、EPIC_DISPATCH_CLAUDE_CMD で変える。<model> の既定は opus、
 #   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。
 #   作れなければ作り直しと送信のコマンドを stderr に出す）→ `orca terminal wait --for tui-idle` →
@@ -23,6 +25,8 @@
 #   送信の観測時間（秒）の既定は 60000 / 30（EPIC_DISPATCH_READY_TIMEOUT_MS / EPIC_DISPATCH_SUBMIT_WAIT）
 #   exit 0 = failed なし / 1 = failed あり、または orca・jq が無い・current / fetch / set / list の
 #   失敗（このときは子を 1 件も作らない）
+#   EPIC_DISPATCH_PARENT_EPIC が空でなければ、引数の検査のあと orca も git も呼ばずに
+#   stderr に理由を出して exit 1（子ワークツリーを作らない）
 # wait: 子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state` を見るポーリングを繰り返し、
 #   stdout にちょうど 1 行を出して終わる。
 #   `closed <N>...`（閉じていた子）exit 0 / `timeout <N>...`（閉じていない子）exit 2 /
@@ -61,6 +65,11 @@ check_children() {
 
 cmd_route() {
   check_children "$@"
+  # 並列起動された子のセッションの中では、エピックをさらに展開しない
+  if [ -n "${EPIC_DISPATCH_PARENT_EPIC-}" ]; then
+    echo nested
+    return 0
+  fi
   if [ "$#" -ge 2 ] && command -v orca >/dev/null 2>&1 \
     && orca worktree current >/dev/null 2>&1; then
     echo orca
@@ -115,8 +124,12 @@ cmd_launch() {
   [ -n "$model" ] || { echo "EPIC_DISPATCH_MODEL must not be empty" >&2; usage; }
   local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-cld}"
   [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; usage; }
+  if [ -n "${EPIC_DISPATCH_PARENT_EPIC-}" ]; then
+    echo "this session is a child of epic #$EPIC_DISPATCH_PARENT_EPIC (EPIC_DISPATCH_PARENT_EPIC); child epics are not expanded here" >&2
+    exit 1
+  fi
   local agent_cmd
-  agent_cmd="$claude_cmd --model $(shq "$model")"
+  agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$epic $claude_cmd --model $(shq "$model")"
 
   command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
