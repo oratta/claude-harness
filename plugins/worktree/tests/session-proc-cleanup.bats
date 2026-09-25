@@ -515,7 +515,7 @@ alive() { kill -0 "$1" 2>/dev/null; }
       exec python3 -c 'import subprocess, time; subprocess.Popen(["/bin/sleep", "300"]); time.sleep(300)' ) &
   P1=$!
   wt_track_pid "$P1"
-  require_env_visible "$P1"
+  # 子の sleep は skip より先に記録する（環境変数が読めず skip すると、teardown で親だけ止まり子が残る）
   local i=0 C1=""
   while [ -z "$C1" ] && [ "$i" -lt 25 ]; do
     C1=$(pgrep -P "$P1" sleep | head -1)
@@ -524,6 +524,7 @@ alive() { kill -0 "$1" 2>/dev/null; }
   done
   [ -n "$C1" ]
   wt_track_pid "$C1"
+  require_env_visible "$P1"
   kill -KILL "$OWNER_PID"
   sleep 0.2
   run env SESSION_REAPER_OWNER_WAIT_SECS=5 SESSION_REAPER_TERM_GRACE_SECS=1 \
