@@ -35,6 +35,8 @@ setup() {
   make_stub gh
   make_stub git
   make_stub sleep
+  # 外の環境（並列起動された子のセッション）の値をテストに漏らさない
+  unset EPIC_DISPATCH_PARENT_EPIC
 }
 
 # 共通の前半（ログへの追記）と、名前ごとの返り値の処理を持つスタブを置く
@@ -198,6 +200,22 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ -z "$output" ]
 }
 
+@test "route: EPIC_DISPATCH_PARENT_EPIC goes to nested without calling orca" {
+  make_stub orca
+  EPIC_DISPATCH_PARENT_EPIC=420 run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "nested" ]
+  [ "$(calls '^orca ')" -eq 0 ]
+}
+
+@test "route: EPIC_DISPATCH_PARENT_EPIC still rejects a non-numeric child" {
+  make_stub orca
+  EPIC_DISPATCH_PARENT_EPIC=420 run dispatch route '#11'
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+}
+
 # --- launch ---
 
 @test "launch: call order is current, toplevel, fetch, set, list, then create, terminal create, wait and send per child" {
@@ -218,7 +236,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${log[5]}" = "orca worktree create --name issue-11 --issue 11 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
   starts_with "${log[6]}" "orca terminal create --worktree path:/work/issue-11 --command "
   case "${log[6]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "cld --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --model 'opus'" ]
   [ "${log[7]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
   starts_with "${log[8]}" "orca terminal send --terminal term-11 --text "
   case "${log[8]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
@@ -235,7 +253,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   EPIC_DISPATCH_MODEL='opus[1m]' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "cld --model 'opus[1m]'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --model 'opus[1m]'" ]
 }
 
 @test "launch: EPIC_DISPATCH_CLAUDE_CMD replaces the command as is" {
@@ -243,7 +261,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   EPIC_DISPATCH_CLAUDE_CMD='cld-account b' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "cld-account b --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --model 'opus'" ]
 }
 
 @test "launch: an empty EPIC_DISPATCH_CLAUDE_CMD creates nothing" {
@@ -272,6 +290,25 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^orca terminal send ')" -eq 1 ]
   grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF 'cld --model'
   grep -F 'orca terminal send' "$BATS_TEST_TMPDIR/stderr" | grep -qF '/develop #11'
+}
+
+@test "launch: the recreate command carries the EPIC_DISPATCH_PARENT_EPIC prefix" {
+  make_stub orca
+  touch "$STUB_CFG/tcreate_fail_11"
+  run dispatch launch 420 11
+  [ "$status" -eq 1 ]
+  grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" \
+    | grep -qF -- "--command 'EPIC_DISPATCH_PARENT_EPIC=420 "
+}
+
+@test "launch: EPIC_DISPATCH_PARENT_EPIC creates nothing and calls neither orca nor git" {
+  make_stub orca
+  EPIC_DISPATCH_PARENT_EPIC=420 run dispatch launch 460 11 12
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$(calls '^orca ')" -eq 0 ]
+  [ "$(calls '^git ')" -eq 0 ]
+  grep -qF '420' "$BATS_TEST_TMPDIR/stderr"
 }
 
 @test "launch: no worktree path in create means failed without terminal create" {
@@ -659,4 +696,18 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ -n "$p" ]
   printf '%s\n' "$p" | grep -qF 'Orca 管理外'
   printf '%s\n' "$p" | grep -qF 'サブエージェント方式'
+}
+
+@test "skill: child epics are held back, nested sessions stop, and the parent reports them" {
+  e="$(section 'エピックの扱い')"
+  printf '%s\n' "$e" | grep -qF 'sub_issues_summary'
+  printf '%s\n' "$e" | grep -qF 'nested'
+  printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -qF '完了報告'
+  printf '%s\n' "$e" | grep -F 'timeout' | grep -F 'closed' | grep -qF '後で別に起動するエピック:'
+  printf '%s\n' "$e" | grep -F 'launch' | grep -F 'nested' | grep -qF '「親ワークツリーで開き直す」とは報告しない'
+}
+
+@test "skill: held-back child epics are recorded also when route is skipped (unmanned, resumed)" {
+  e="$(section 'エピックの扱い' | grep -F 'sub_issues_summary')"
+  printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -F 'でないと確定' | grep -F 'unmanned' | grep -qF '回し方:'
 }
