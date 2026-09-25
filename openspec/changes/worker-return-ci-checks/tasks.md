@@ -1,17 +1,17 @@
 ## 1. worker.md の「全経路共通の大原則」に検査実行の指示を足す
 
-- [ ] 1.1 `plugins/dev-workflow/skills/develop/references/roles/worker.md` の「全経路共通の大原則」節に、対象リポジトリの PR・push で起動する `.github/workflows/*.yml` / `*.yaml` のジョブの `run:` ステップを読み、検査コマンド（lint・test・ビルド等）と環境セットアップ（依存インストール等。除外例として `sudo apt-get install` を明示）を判別し、検査コマンドをすべて実行する指示を追加する。コマンド名をこのリポジトリ固有の値に固定しない。`auto-merge.yml` 等 `pull_request` / `push` 以外で起動する運用系ワークフローは対象外と明記する
-- [ ] 1.2 workflow ファイルが存在しない、または検査コマンドを判別できないときの慣例コマンド（`scripts/test.sh` 等）へのフォールバックを明記する
-- [ ] 1.3 手元にツールが無く実行できない検査は「未導入」として実行結果と区別し、未導入を合格扱いにしないことを明記する
-- [ ] 1.4 (3a)「コード直行する場合」手順 5 の「テスト・lint・ビルドを実行し」は 1.1 の指示への参照に整理し、内容を重複させない
+- [x] 1.1 `plugins/dev-workflow/skills/develop/references/roles/worker.md` の「全経路共通の大原則」節に、対象リポジトリの PR・push で起動する `.github/workflows/*.yml` / `*.yaml` のジョブの `run:` ステップを読み、検査コマンド（lint・test・ビルド等）と環境セットアップ（依存インストール等。除外例として `sudo apt-get install` を明示）を判別し、検査コマンドをすべて実行する指示を追加する。コマンド名をこのリポジトリ固有の値に固定しない。`auto-merge.yml` 等 `pull_request` / `push` 以外で起動する運用系ワークフローは対象外と明記する。守備範囲の段落（入力の出どころ・拾いたい誤り・通ってよい入力・取りこぼしを塞ぎ切ることを完了条件にしない）を worker.md に書く
+- [x] 1.2 workflow ファイルが存在しない、または検査コマンドを判別できないときの慣例コマンド（`scripts/test.sh` 等）へのフォールバックを明記する
+- [x] 1.3 手元にツールが無く実行できない検査は「未導入」として実行結果と区別し、未導入を合格扱いにしないことを明記する
+- [x] 1.4 (3a)「コード直行する場合」手順 5 の「テスト・lint・ビルドを実行し」は 1.1 の指示への参照に整理し、内容を重複させない
 
 ## 2. worker.md の (3a) の return 項目を書き換える
 
-- [ ] 2.1 `plugins/dev-workflow/skills/develop/references/roles/worker.md` の「(3a) の return に書くこと」に、収集した検査コマンドの一覧と各 exit code（未導入があれば未導入と明記）を含める義務を追加する（既存の「実行したテストコマンドと exit code」の記述と整合させる）
+- [x] 2.1 `plugins/dev-workflow/skills/develop/references/roles/worker.md` の「(3a) の return に書くこと」に、収集した検査コマンドの一覧と各 exit code（未導入があれば未導入と明記）を含める義務を追加する（既存の「実行したテストコマンドと exit code」の記述と整合させる）
 
 ## 3. 変更記録
 
-- [ ] 3.1 `plugins/dev-workflow/changes/508.md` を作成し、この change の内容（触ったファイル・要旨）を記録する
+- [x] 3.1 `plugins/dev-workflow/changes/508.md` を作成し、この change の内容（触ったファイル・要旨）を記録する
 
 ## 4. 実機確認
 
