@@ -110,7 +110,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   [ -n "$b" ] || { echo "no (3b) section in worker.md"; return 1; }
   # (3a): 実装と verify まで。archive には進まない
   echo "$a" | grep -qF '工程完了: 実装＋verify'
-  echo "$a" | grep -q 'テストコマンド'
+  echo "$a" | grep -q '検査コマンド'
   echo "$a" | grep -q 'exit code'
   echo "$a" | grep -qF '/opsx:apply'
   echo "$a" | grep -qF '/opsx:verify'
