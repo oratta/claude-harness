@@ -705,6 +705,14 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$r" | grep -qF 'run_in_background'
 }
 
+@test "skill: epic run section's launch line documents --base and EPIC_DISPATCH_BASE" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -qF -- 'epic-dispatch.sh launch [--note <text>] [--base <branch>] <エピック番号> <子>...'
+  printf '%s\n' "$r" | grep -qF -- '起点は `origin/main`'
+  printf '%s\n' "$r" | grep -qF -- '--base <既定ブランチ>'
+  printf '%s\n' "$r" | grep -qF -- 'EPIC_DISPATCH_BASE'
+}
+
 @test "skill: epic run section states the routing conditions and the subagent fallback" {
   r="$(run_section)"
   printf '%s\n' "$r" | grep -qF '2 件以上'

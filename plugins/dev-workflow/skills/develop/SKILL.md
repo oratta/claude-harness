@@ -229,7 +229,7 @@ unmanned で複数 change に割れた場合は、W が change 単位で子 issu
 
 **Orca 経路**: 子は独立した Claude Code セッションとして `/develop #<N>` の 1 ループを丸ごと回し、本体は子の W / R1 / G を起こさない。本体は子セッションに SendMessage できないので、子への指示はすべて起動プロンプト（`--note`）で渡す。子ごとに違う注意書き（「後続の範囲に手を出さない」など）が要るときは子ごとに `launch` を分けて呼ぶ。
 
-1. `scripts/epic-dispatch.sh launch [--note <text>] <エピック番号> <子>...` で子を起動する。出力は子ごとに `launched <N>`（最初の指示を子の入力欄に送り、ターンの開始まで確かめた）・`skipped <N>`（同じ子のワークツリーが既にある＝起動済み。再開時や取り違えでも二重に起動しない）・`failed <N>` の 1 行。再開時も、依存が解けた open の子をそのまま `launch` に渡し、起動済みの子は `skipped` で見分ける
+1. `scripts/epic-dispatch.sh launch [--note <text>] [--base <branch>] <エピック番号> <子>...` で子を起動する。出力は子ごとに `launched <N>`（最初の指示を子の入力欄に送り、ターンの開始まで確かめた）・`skipped <N>`（同じ子のワークツリーが既にある＝起動済み。再開時や取り違えでも二重に起動しない）・`failed <N>` の 1 行。再開時も、依存が解けた open の子をそのまま `launch` に渡し、起動済みの子は `skipped` で見分ける。起点は `origin/main`。既定ブランチが `main` でないリポジトリでは `--base <既定ブランチ>` を付ける（環境変数 `EPIC_DISPATCH_BASE` でも既定を変えられ、`--base` が優先する）
 2. `launched` と `skipped` の子を動いている子として、`scripts/epic-dispatch.sh wait <動いている子>...` を Bash の `run_in_background: true` で起動してターンを終える（背景タスクが終わると本体が起こされる）
 3. `closed <N>...` で起こされたら、閉じた子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state_reason` を読む。`completed` ならエピックへ `子 #N マージ → 残り k 件` とコメントし、依存グラフを読み直して解けた子を件数にかかわらず `launch` する。`completed` 以外（`not_planned` など）ならエピックへ `子 #N 見送り（<state_reason>）→ 残り k 件` とコメントし、その子を前提にしていた子は起動せずにユーザーに報告する（依存 API は前提が閉じれば理由を問わず後続の blocked を外すので、理由を見ないと作業されていない前提の上に後続が起動する）。残りの動いている子があれば 2 に戻る
 4. `timeout <N>...` で起こされたら、その子 issue に `needs-approval` ラベルや止まっている旨のコメントが無いかを見て、あればユーザーに報告する。報告したかどうかにかかわらず、残りの動いている子で再び `wait` する。子セッションは interactive の `/develop` なので、子が自分のタブでユーザーに質問して止まっていてもラベルもコメントも残らず、この確認では検知できない。ユーザーには子のタブも見るよう伝える
