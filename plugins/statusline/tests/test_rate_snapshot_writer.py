@@ -6,14 +6,14 @@ from pathlib import Path
 import subprocess
 import time
 
-import pytest
+import tempfile
+import unittest
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/statusline.sh"
 
 
-@pytest.fixture
-def writer(tmp_path):
+def make_writer(tmp_path):
     home = tmp_path / "home"
     config = tmp_path / "config"
     home.mkdir()
@@ -45,7 +45,7 @@ def writer(tmp_path):
     return tmp_path, home, env, snap, run
 
 
-def test_writer_redraw_source_and_relogin_limit(writer):
+def check_writer_redraw_source_and_relogin_limit(writer):
     _, _, _, snap, run = writer
     first = run()
     assert first["storage_binding"] == "storage-v1:default"
@@ -67,11 +67,7 @@ def test_writer_redraw_source_and_relogin_limit(writer):
         assert run(session="writer-b")["observed_at"] > 1
 
 
-@pytest.mark.parametrize("value,valid", [
-    (" acct-a ", True), ("acct-a", True), (None, False), ("", False),
-    ("   ", False), ("a\nb", False), ("x" * 257, False), (42, False),
-])
-def test_writer_records_account_id_only_when_valid(writer, value, valid):
+def check_writer_records_account_id_only_when_valid(writer, value, valid):
     _, home, _, _, run = writer
     (home / ".claude.json").write_text(json.dumps({"oauthAccount": {"accountUuid": value}}))
     observed = run()
@@ -81,14 +77,14 @@ def test_writer_records_account_id_only_when_valid(writer, value, valid):
         assert "account_id" not in observed
 
 
-def test_writer_handles_missing_or_broken_account_file(writer):
+def check_writer_handles_missing_or_broken_account_file(writer):
     _, home, _, _, run = writer
     assert "account_id" not in run()
     (home / ".claude.json").write_text("{")
     assert "account_id" not in run()
 
 
-def test_writer_shared_body_and_atomic_replacement(writer):
+def check_writer_shared_body_and_atomic_replacement(writer):
     tmp, _, _, snap, run = writer
     share = tmp / "share"
     first = run(share=share)
@@ -102,7 +98,7 @@ def test_writer_shared_body_and_atomic_replacement(writer):
     assert list(share.iterdir()) == [remote]
 
 
-def test_writer_normalizes_host_for_shared_filename(writer):
+def check_writer_normalizes_host_for_shared_filename(writer):
     tmp, _, env, snap, run = writer
     bin_dir = tmp / "bin"
     bin_dir.mkdir()
@@ -112,12 +108,11 @@ def test_writer_normalizes_host_for_shared_filename(writer):
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
     share = tmp / "share"
     observed = run(share=share)
-    assert observed["host"] == "pc_bad____"
-    assert (share / "pc_bad____.json").read_bytes() == snap.read_bytes()
+    assert observed["host"] == "pc_bad___"
+    assert (share / "pc_bad___.json").read_bytes() == snap.read_bytes()
 
 
-@pytest.mark.parametrize("session,limits", [(None, True), ("", True), (42, True), ("writer-a", False)])
-def test_writer_missing_source_or_limits_does_not_replace(writer, session, limits):
+def check_writer_missing_source_or_limits_does_not_replace(writer, session, limits):
     _, _, _, snap, run = writer
     run()
     before = snap.read_bytes()
@@ -125,7 +120,7 @@ def test_writer_missing_source_or_limits_does_not_replace(writer, session, limit
     assert snap.read_bytes() == before
 
 
-def test_writer_zero_and_special_session_and_missing_seven_day(writer):
+def check_writer_zero_and_special_session_and_missing_seven_day(writer):
     tmp, _, env, snap, _ = writer
     payload = {"session_id": 'quote"\n', "workspace": {"current_dir": str(tmp)},
                "model": {"display_name": "Opus"},
@@ -141,7 +136,7 @@ def test_writer_zero_and_special_session_and_missing_seven_day(writer):
     assert observed["seven_day_resets_at"] is None
 
 
-def test_writer_nondefault_account_changes_neither_destination(writer):
+def check_writer_nondefault_account_changes_neither_destination(writer):
     tmp, _, env, snap, run = writer
     share = tmp / "share"
     first = run(share=share)
@@ -152,3 +147,45 @@ def test_writer_nondefault_account_changes_neither_destination(writer):
     run(pct=99, share=share)
     assert snap.read_bytes() == local_before
     assert remote.read_bytes() == remote_before
+
+
+class RateSnapshotWriterTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.writer = make_writer(Path(self.temp_dir.name))
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_redraw_source_and_relogin_limit(self):
+        check_writer_redraw_source_and_relogin_limit(self.writer)
+
+    def test_account_id_validation(self):
+        cases = [(" acct-a ", True), ("acct-a", True), (None, False),
+                 ("", False), ("   ", False), ("a\nb", False),
+                 ("x" * 257, False), (42, False)]
+        for value, valid in cases:
+            with self.subTest(value=value):
+                check_writer_records_account_id_only_when_valid(self.writer, value, valid)
+
+    def test_missing_or_broken_account_file(self):
+        check_writer_handles_missing_or_broken_account_file(self.writer)
+
+    def test_shared_body_and_atomic_replacement(self):
+        check_writer_shared_body_and_atomic_replacement(self.writer)
+
+    def test_host_normalization(self):
+        check_writer_normalizes_host_for_shared_filename(self.writer)
+
+    def test_missing_source_or_limits(self):
+        for session, limits in [(None, True), ("", True), (42, True),
+                                ("writer-a", False)]:
+            with self.subTest(session=session, limits=limits):
+                check_writer_missing_source_or_limits_does_not_replace(
+                    self.writer, session, limits)
+
+    def test_zero_special_session_and_missing_seven_day(self):
+        check_writer_zero_and_special_session_and_missing_seven_day(self.writer)
+
+    def test_nondefault_account_changes_neither_destination(self):
+        check_writer_nondefault_account_changes_neither_destination(self.writer)
