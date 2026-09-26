@@ -72,7 +72,7 @@ LLM: experience-to-skill スキルが起動。/e2s:distill フローに沿って
 - `openspec:archive`（`/opsx:archive`）の完了通知
 - ファイル編集完了の assistant 報告
 
-これは旧 e2s が全コミット境界で起動してコンテキストを浪費した反省を踏まえている。
+この限定を緩めると、汎用完了フレーズやコミット境界のたびに誤起動してコンテキストを浪費する。
 
 ## jsonl ディレクトリ命名規約
 

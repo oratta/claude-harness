@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 # /e2s:distill — 対話完結のスキル蒸留
 
-`~/.claude/projects/<encoded-cwd>/*.jsonl` から、ユーザーが自然言語で示した過去作業を見つけ出し、その成功手順を SKILL.md として蒸留する。**1 コマンドで完結する**（旧 `/e2s:reflect` → `/e2s:distill` の 2 段階分離は廃止）。
+`~/.claude/projects/<encoded-cwd>/*.jsonl` から、ユーザーが自然言語で示した過去作業を見つけ出し、その成功手順を SKILL.md として蒸留する。**1 コマンドで完結する**。
 
 ## $ARGUMENTS
 
@@ -179,7 +179,7 @@ frontmatter name: e2s-<name>
 - `~/.claude/skills/` 直下（`distilled/` サブディレクトリ外）には書き込まない
 - 既存ファイルを黙って上書きしない（必ず確認）
 - jsonl 原文を SKILL.md にそのまま転記しない
-- 旧 e2s が依存していた一時候補ファイル（旧 reflect 系コマンドの中間生成物）には **依存しない**。このコマンドだけで自己完結する
+- 一時候補ファイルなど外部の中間生成物には **依存しない**。このコマンドだけで自己完結する
 - git 操作（add / commit / tag）は一切行わない
 
 ## 関連参照
