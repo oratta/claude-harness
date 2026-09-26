@@ -38,6 +38,7 @@ five_h_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // em
 five_h_resets=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
 seven_d_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
 seven_d_resets=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+session_id=$(printf '%s' "$input" | jq -c '.session_id | select(type == "string" and length > 0)' 2>/dev/null)
 session_cost_usd=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
 
 # ---------------------------------------------------------------------------
@@ -64,14 +65,87 @@ pkg_runner() {
     done
 }
 
-# Snapshot rate limits to a file so external consumers (loop guards etc.) can read them
-# レート枠はアカウント単位。CLAUDE_SECURESTORAGE_CONFIG_DIR が非空＝既定以外のアカウントの
-# セッションでここに書くと、同じ PC の他セッションの rate-guard が別アカウントの値を読んで
-# 誤判定する（flatmate#605）。既定アカウントの観測だけを正とし、ここでは書かない。
-if [ -n "$five_h_pct" ] && [ -z "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
-    printf '{"ts":%s,"five_hour_pct":%s,"five_hour_resets_at":%s,"seven_day_pct":%s,"seven_day_resets_at":%s}\n' \
-        "$(date +%s)" "$five_h_pct" "${five_h_resets:-null}" "${seven_d_pct:-null}" "${seven_d_resets:-null}" \
-        > "$CONFIG_DIR/.rate-limit-snapshot" 2>/dev/null
+# Rate snapshot writer contract: openspec/specs/rate-snapshot.
+# A separate file per host lets the shared copy coexist with other PCs.
+resolve_rate_share_dir() {
+    local dir conf tilde='~'
+    if [ "${FLATMATE_RATE_SHARE_DIR+x}" ]; then
+        dir="$FLATMATE_RATE_SHARE_DIR"
+    else
+        conf="${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"
+        dir=""
+        if [ -f "$conf" ]; then
+            dir=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$conf" 2>/dev/null \
+                | grep -v -e '^$' -e '^#' | head -1)
+        fi
+    fi
+    case "$dir" in
+        "$tilde") dir="$HOME" ;;
+        "$tilde"/*) dir="$HOME/${dir#??}" ;;
+    esac
+    printf '%s' "$dir"
+}
+
+write_rate_snapshot_atomic() {
+    local dest="$1" body="$2" tmp
+    tmp=$(mktemp "$(dirname "$dest")/.rate-snapshot.XXXXXX" 2>/dev/null) || return 1
+    if ! printf '%s\n' "$body" > "$tmp" 2>/dev/null || ! mv -f "$tmp" "$dest" 2>/dev/null; then
+        rm -f "$tmp" 2>/dev/null
+        return 1
+    fi
+}
+
+# The default account alone owns the local and shared rate snapshot.
+if [ -n "$five_h_pct" ] && [ -n "$session_id" ] && [ -z "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
+    snap_local="$CONFIG_DIR/.rate-limit-snapshot"
+    now_epoch=$(date +%s)
+    snap_5r="${five_h_resets:-null}"
+    snap_7p="${seven_d_pct:-null}"
+    snap_7r="${seven_d_resets:-null}"
+    storage_binding="storage-v1:default"
+    obs_sig="${five_h_pct}|${snap_5r}|${snap_7p}|${snap_7r}"
+    observed_at="$now_epoch"
+    if [ -f "$snap_local" ]; then
+        prev_obs=$(jq -r --arg sig "$obs_sig" --arg binding "$storage_binding" \
+            --argjson session "$session_id" \
+            'select(.obs_sig == $sig and .storage_binding == $binding and .session_id == $session) |
+             .observed_at | select(type == "number")' "$snap_local" 2>/dev/null)
+        [ -z "$prev_obs" ] || observed_at="$prev_obs"
+    fi
+
+    snap_host=$(hostname -s 2>/dev/null) || snap_host=""
+    snap_host_key=$(printf '%s' "$snap_host" | jq -Rr 'gsub("[^A-Za-z0-9._-]"; "_")' 2>/dev/null)
+    [ -n "$snap_host_key" ] || snap_host_key="unknown"
+
+    # Only the account UUID field is read; invalid or unavailable IDs are omitted.
+    account_id=""
+    if [ -f "$HOME/.claude.json" ]; then
+        account_id=$(jq -r '
+            .oauthAccount.accountUuid | select(type == "string") |
+            gsub("^[[:space:]]+|[[:space:]]+$"; "") |
+            select(length > 0 and length <= 256 and (contains("\n") | not))
+        ' "$HOME/.claude.json" 2>/dev/null)
+    fi
+    snap_body=$(jq -cn --arg account "$account_id" \
+        --argjson observed "$observed_at" --argjson written "$now_epoch" \
+        --arg sig "$obs_sig" --arg host "$snap_host_key" \
+        --arg binding "$storage_binding" --argjson session "$session_id" \
+        --argjson five_pct "$five_h_pct" --argjson five_resets "$snap_5r" \
+        --argjson seven_pct "$snap_7p" --argjson seven_resets "$snap_7r" \
+        '{ts:$observed,observed_at:$observed,written_at:$written,obs_sig:$sig,
+          host:$host,storage_binding:$binding,session_id:$session,
+          five_hour_pct:$five_pct,five_hour_resets_at:$five_resets,
+          seven_day_pct:$seven_pct,seven_day_resets_at:$seven_resets}
+         + (if $account == "" then {} else {account_id:$account} end)' 2>/dev/null)
+
+    if [ -n "$snap_body" ]; then
+        mkdir -p "$(dirname "$snap_local")" 2>/dev/null
+        write_rate_snapshot_atomic "$snap_local" "$snap_body" || true
+        share_dir=$(resolve_rate_share_dir)
+        if [ -n "$share_dir" ] && mkdir -p "$share_dir" 2>/dev/null; then
+            write_rate_snapshot_atomic "$share_dir/$snap_host_key.json" "$snap_body" || true
+        fi
+    fi
 fi
 
 # 起動アカウント別のセッション記録（正本: openspec/specs/usage-session-records）。
