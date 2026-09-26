@@ -14,7 +14,7 @@
 #         create に --prompt が渡されたら prompt_<N> に、terminal send の --text は sent_<handle> に書き出す
 #   git : toplevel（rev-parse の出力）/ fetch_exit
 #   gh  : gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
-#         呼び出し回数は ghcount_<N>
+#         呼び出し回数は ghcount_<N>。FAIL は stderr に "gh: mock failure for issue <N> (poll <count>)" も出す
 # スクリプトは PATH="<スタブ置き場>:/usr/bin:/bin" で走らせる（jq は実物）。
 # テストの途中に素の [[ ]] を置かない（bash 3.2 では偽でも素通りする）。
 #
@@ -125,7 +125,7 @@ echo "$count" > "$STUB_CFG/ghcount_$n"
 total=$(wc -l < "$STUB_CFG/gh_$n" | tr -d " ")
 [ "$count" -gt "$total" ] && count="$total"
 val=$(sed -n "${count}p" "$STUB_CFG/gh_$n")
-[ "$val" = "FAIL" ] && exit 1
+[ "$val" = "FAIL" ] && { echo "gh: mock failure for issue $n (poll $count)" >&2; exit 1; }
 echo "$val"
 exit 0' ;;
     sleep) body='exit 0' ;;
@@ -615,6 +615,14 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$output" = "error gh 11" ]
   [ "${#lines[@]}" -eq 1 ]
   [ "$(calls '^gh ')" -eq 3 ]
+}
+
+@test "wait: gh's stderr is shown right before the error line" {
+  gh_seq 11 FAIL
+  run dispatch wait --interval 0 --timeout 60 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "error gh 11" ]
+  grep -qF 'gh: mock failure for issue 11' "$BATS_TEST_TMPDIR/stderr"
 }
 
 @test "wait: one child failing while another stays open still ends with error" {
