@@ -14,7 +14,7 @@ CI 待ちの PR が落ちても、待っているセッションは起こされ�
 - `plugins/dev-workflow/scripts/pr-state.sh` を新設する。サブコマンドは 3 つ:
   - `observe [--hints <file>] [--unrelated <check名>]...`: 標準入力の `gh pr view --json mergeable,statusCheckRollup,headRefOid` の JSON を、状態（`conflict` / `ci-fail` / `ready` / `wait`）・HEAD・落ちたチェック名・Actions の run ID・落ちたチェックごとの原因（`runner-lost` / `unrelated` / `real`）・やり直しに当たるか（`retry`）に分類して 1 行の JSON で出す
   - `decide [<前回の状態の JSON>]`: 標準入力の観測と前回の状態から、次の一手（`none` 待つ / `ready` マージ可能 / `rerun` CI をやり直す / `fix` 直しに回す / `escalate` オーナーに上げる）と次の状態を 1 行の JSON で出す
-  - `annotations <owner/repo>`: 標準入力の同じ `gh pr view` の JSON から落ちた Actions のジョブを拾い、`gh api` でジョブの annotation を取って `observe --hints` に渡す形の JSON を出す（ネットワークに出るのはこのサブコマンドだけ）
+  - `annotations <owner/repo>`: 標準入力の同じ `gh pr view` の JSON から落ちた Actions のジョブを拾い、`gh api` でジョブの annotation を取り、ジョブ ID を鍵にして `observe --hints` に渡す形の JSON を出す（ネットワークに出るのはこのサブコマンドだけ。`gh` の認証と checks の読み取り権限が要る）
 - やり直しの条件を変える: 落ちたチェックがすべて「実行マシンの通信切れ（annotation に `The self-hosted runner lost communication with the server`）」か「呼び出し側が PR の変更に関わらないと渡したチェック」で、かつ Actions の run がある場合だけ、同じ HEAD で 1 回やり直す。それ以外は直しに回す
 - 修正回数は PR ごとに累計し、直す判定は 2 回まで、3 回目は `escalate`。やり直しの権利は HEAD ごとに数え直す
 - `wait` の観測は、HEAD が前回と同じなら前回の状態をそのまま残す（flatmate#899 の修正）

@@ -42,6 +42,10 @@ printf '%s' "$view" | pr-state.sh observe --hints "$hints" [--unrelated <check�
 - **`observe` の中で annotation も取る**: 呼び出しは 1 回で済むが、分類のテストに毎回 `gh` の偽物が要り、「入力が同じなら結果が同じ」が崩れる。住人は 1 回の走査で多数の PR を見るので、annotation を取る・取らないを呼び出し側が選べるほうがよい（落ちたチェックが無い PR では取る必要がない）。採らない
 - **annotation の取得をスクリプトに持たず、呼び出し側に任せる**: annotation の URL の組み立てと通信切れの文言の照合を、セッションと住人の 2 か所に書くことになる。共有するために移すという目的に反する。採らない
 
+### annotation の手がかりはジョブ ID を鍵にする
+
+`annotations` の出力と `observe --hints` の入力は `{"annotations_by_job": {"<job>": [...]}}` とし、チェック名では引かない。チェック名はワークフローをまたいで重なることがあり（別ワークフローの同名ジョブ `test` など）、名前を鍵にすると片方の通信切れがもう片方の本当の失敗まで `runner-lost` にする。名前のまま同名の配列をつなぐ案は、この取り違えを守備範囲外として受け入れることになるので採らない。ジョブ ID を持たない失敗は通信切れと判定できないが、その失敗は Actions のジョブではないので annotation もやり直しの対象も無く、損失は無い。
+
 ### やり直すのは「落ちたチェックがすべてやり直しに当たる」ときだけ。手がかりが無ければ直しに回す
 
 落ちたチェックごとに原因を `runner-lost`（annotation の文言に `The self-hosted runner lost communication with the server` を含む）→ `unrelated`（`--unrelated` で渡された名前）→ `real` の順で決める。`retry` は、状態が `ci-fail` で、落ちたチェックが 1 件以上あり、すべてが `real` でなく、すべてに Actions の run ID があるときだけ真。1 件でも `real` があれば直しに回す（やり直しても本当の失敗は残るので、直しを遅らせるだけになる）。
@@ -71,5 +75,6 @@ printf '%s' "$view" | pr-state.sh observe --hints "$hints" [--unrelated <check�
 
 - [Actions のジョブ ID とチェックラン ID が一致しない場合がある] → tasks 1.1 で実物の PR の `detailsUrl` とチェックランの API を突き合わせて確かめる。一致しないと分かったら `annotations` は `gh api repos/{o}/{r}/actions/jobs/{job}` の `check_run_url` を経由する。どちらでも `observe` / `decide` の入出力は変わらない
 - [GitHub が通信切れの annotation の文言を変える] → 文言は定数 1 か所に置く。文言が変わると通信切れが `real` になり、やり直さずに直しに回る（安全側。直す側が失敗を読めば実行マシンの不調と分かる）
+- [`annotations` を呼ぶ環境に `gh` の認証や checks の読み取り権限が無い] → 下の `gh api` の失敗と同じ扱いになり、通信切れも直しに回る。スクリプト冒頭のコメントに要る権限を書く
 - [`annotations` の `gh api` が失敗する] → そのジョブは annotation 無しとして扱い（`real` になり直しに回る）、標準エラーに警告を出して exit 0。1 件の失敗で判定全体を止めない
 - [呼び出し側が PR に関わる失敗を `--unrelated` で渡す] → やり直しは HEAD ごとに 1 回なので、同じ HEAD でもう一度落ちれば直しに回る。損失は CI 1 周分に限られる
