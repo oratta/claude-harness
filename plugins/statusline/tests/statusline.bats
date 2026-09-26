@@ -9,6 +9,9 @@ setup() {
   SL="${PLUGIN_DIR}/scripts/statusline.sh"
   INSTALL="${PLUGIN_DIR}/scripts/install.sh"
   WORK="$(mktemp -d)"
+  export HOME="$WORK/home" FLATMATE_RATE_SHARE_CONF="$WORK/no-share-conf"
+  unset FLATMATE_RATE_SHARE_DIR
+  mkdir -p "$HOME"
   export CLAUDE_CONFIG_DIR="$WORK"
   # ccusage の背景フェッチと為替取得を走らせない
   export STATUSLINE_API_PACE=0
@@ -27,7 +30,7 @@ teardown() {
 
 # $1=5h消化率 $2=7d消化率 $3=5h残り秒 $4=7d残り秒 → stdin JSON
 mk_input() {
-  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}}' \
+  printf '{"session_id":"statusline-test","workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}}' \
     "$WORK" "$1" "$((NOW + $3))" "$2" "$((NOW + $4))"
 }
 

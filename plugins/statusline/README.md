@@ -72,7 +72,11 @@ Fable の週次消化率は Claude Code がステータスラインに渡して�
 
 逆方向に、このステータスラインは描画のたびに受け取った 5 時間枠と全体の週次を、起動アカウント別の記録 `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions/<アカウント鍵>.json`（`USAGE_SESSIONS_DIR` で上書き可）に書き出す。アカウント鍵は `CLAUDE_SECURESTORAGE_CONFIG_DIR`（下記）が未設定なら `default`、設定されていれば Keychain のサービス名の末尾と同じ 8 桁で、レジストリや snapshot の `active` からは決めない（別アカウントの値を取り違えないため）。`dev-workflow` の残量モードの判定・アカウント選択・複数アカウント表示の非 active 行はこの記録を主な情報源にし、usage API の snapshot は Fable 週次と記録の無いアカウントの補助に使う。書けなかったときは黙って諦め、表示は変えない。
 
-あわせて従来どおり `~/.claude/.rate-limit-snapshot` も書き出している。リポジトリ内に読み手は無いが、外部のツールが読んでいる可能性があるので形と条件は変えていない。`CLAUDE_SECURESTORAGE_CONFIG_DIR` で既定以外のアカウントを指しているセッションでは、既定アカウントの値と取り違えられないようこのファイルへの書き出しはスキップする。
+あわせて、5h の使用率と空でない `session_id` がある既定アカウントの描画では、`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.rate-limit-snapshot` に rate snapshot を書く。`CLAUDE_SECURESTORAGE_CONFIG_DIR` が非空のセッションでは書かない。JSON は `ts`、`observed_at`、`written_at`、`obs_sig`、`host`、`storage_binding`、`session_id`、`five_hour_pct`、`five_hour_resets_at`、`seven_day_pct`、`seven_day_resets_at` を持つ。`ts` と `observed_at` は同じ観測時刻で、枠値・`storage_binding`・`session_id` が変わらない再表示では進まない。`written_at` は書込時刻。`session_id` は入力値をそのまま保存し、`host` は `hostname -s` の英数字・`.`・`_`・`-` 以外を文字ごとに `_` に置き換える。`$HOME/.claude.json` の `oauthAccount.accountUuid` が有効な場合だけ `account_id` も含む。欠けた任意の枠値は `null` とする。書込は同じディレクトリの一時ファイルから原子的に置き換える。
+
+共有先を設定すると `<共有先>/<host>.json` にローカルと同じ JSON を書く。`FLATMATE_RATE_SHARE_DIR` が定義されていればその値を使い、空文字なら共有を無効にする。未定義なら `FLATMATE_RATE_SHARE_CONF`（既定 `$HOME/.claude/flatmate-rate-share`）の先頭の非コメント・非空行を使う。設定ファイルのパスは前後空白を除き、先頭の `~` を HOME に展開する。共有先に書けなくてもローカルの保存と表示は続く。
+
+writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合、reader 側の `RATE_GUARD_SNAPSHOT` を同じファイルに合わせる必要がある。共有先の環境変数名と設定ファイル名は flatmate reader と共通。
 
 ## 複数アカウントを並べて表示する
 
@@ -156,10 +160,11 @@ macOS と Linux。`stat` / `date` は BSD 系と GNU 系の両方にフォール
 ## テスト
 
 ```bash
-bats plugins/statusline/tests/statusline.bats plugins/statusline/tests/statusline-multi-account.bats
+bats plugins/statusline/tests/
+python3 -m pytest plugins/statusline/tests/
 ```
 
-`statusline.bats` は 1 スロット時の退行ガード、`statusline-multi-account.bats` は複数スロットの描画と `origin/main` 版との出力バイト一致の検証。
+`statusline.bats` は 1 スロット時の退行ガード、`statusline-multi-account.bats` は複数スロットの描画と `origin/main` 版との出力バイト一致の検証。`statusline-rate-snapshot.bats` と `test_rate_snapshot_writer.py` は writer の保存契約を検証する。
 
 ## Codex の利用上限
 
