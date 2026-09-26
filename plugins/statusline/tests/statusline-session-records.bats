@@ -11,6 +11,9 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SL="${PLUGIN_DIR}/scripts/statusline.sh"
   WORK="$(mktemp -d)"
+  export HOME="$WORK/home" FLATMATE_RATE_SHARE_CONF="$WORK/no-share-conf"
+  unset FLATMATE_RATE_SHARE_DIR
+  mkdir -p "$HOME"
   export CLAUDE_CONFIG_DIR="$WORK"
   export STATUSLINE_API_PACE=0
   export STATUSLINE_CODEX=0
@@ -38,7 +41,7 @@ teardown() {
 
 # $1=5h消化率 $2=7d消化率 $3=5h残り秒 $4=7d残り秒 → stdin JSON
 mk_input() {
-  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}}' \
+  printf '{"session_id":"session-record-test","workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}}' \
     "$WORK" "$1" "$((NOW + $3))" "$2" "$((NOW + $4))"
 }
 
@@ -127,7 +130,7 @@ JSON
 @test "record: .rate-limit-snapshot keeps its shape and its default-only condition" {
   mk_input 3 69 14000 172800 | bash "$SL" > /dev/null
   run jq -r 'keys | join(",")' "$WORK/.rate-limit-snapshot"
-  [ "$output" = "five_hour_pct,five_hour_resets_at,seven_day_pct,seven_day_resets_at,ts" ]
+  [ "$output" = "five_hour_pct,five_hour_resets_at,host,obs_sig,observed_at,session_id,seven_day_pct,seven_day_resets_at,storage_binding,ts,written_at" ]
   rm -f "$WORK/.rate-limit-snapshot"
   mk_input 3 69 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" > /dev/null
   [ ! -e "$WORK/.rate-limit-snapshot" ]
