@@ -7,7 +7,7 @@
 - `decide($prev; $obs)`: 状態は `{state, head, reran_head, fixes, raised}`。`wait` と `ready` を先に返し、前回と同じ状態・同じ HEAD なら何もしない、上げ済みなら何もしない、`ci-fail` で run があり `reran_head` が今の HEAD でなければ再実行（次の状態名は `wait`）、修正回数が 2 以上なら上げる、それ以外は修正依頼
 - 住人側（pr-watch）は、状態ファイルの読み書き・依頼の列・あなた待ちへの項目の追加・`gh run rerun`・住人の `done pushed|failed`（`failed` は `state` と `head` を消して修正回数は残す）を持つ。これらは移さない
 
-GitHub Actions のジョブの annotation は `gh pr view` の `statusCheckRollup` には載らず、`GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations` で取る。`statusCheckRollup` の CheckRun の `detailsUrl` は `https://github.com/<o>/<r>/actions/runs/<run>/job/<job>` の形で、Actions ではジョブ ID とチェックラン ID が同じ値になる（実装時に実物の PR で確かめる。tasks 1.1）。
+GitHub Actions のジョブの annotation は `gh pr view` の `statusCheckRollup` には載らず、`GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations` で取る。`statusCheckRollup` の CheckRun の `detailsUrl` は `https://github.com/<o>/<r>/actions/runs/<run>/job/<job>` の形で、Actions ではジョブ ID とチェックラン ID が同じ値になる（tasks 1.1 で確かめた: oratta/claude-harness の job 107940719281 と genetta-inc/flatmate の job 107971805803 で、`actions/runs/<run>/jobs` の `id`・`check_run_url` の末尾・`check-runs/<id>` の `id` と `details_url` の `/job/<id>` が一致し、`check-runs/<id>/annotations` が取れた）。
 
 ## Goals / Non-Goals
 
