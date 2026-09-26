@@ -21,5 +21,5 @@
 ## 5. 検証
 
 - [x] 5.1 `git grep -n 'workflows' origin/main -- plugins/dev-workflow/skills/develop/references/roles/worker.md` を新しい HEAD に対して実行し、1 件以上ヒットすることを確認する
-- [ ] 5.2 `scripts/test.sh` と `scripts/lint.sh` を実行し、exit code 0 を確認する
+- [x] 5.2 `scripts/test.sh` と `scripts/lint.sh` を実行し、exit code 0 を確認する
 - [x] 5.3 `openspec validate worker-return-ci-checks --strict`（または `/opsx:verify`）を実行する
