@@ -1,24 +1,24 @@
 ## 1. テストを先に書く（Red）
 
-- [ ] 1.1 `plugins/dev-workflow/tests/ci-watch.bats` を新設し、PATH 先頭の `gh` の偽物（呼び出しを記録し、呼ばれた回数ごとに用意した JSON を返す）で `wait` のケースを書く: 実行中のあいだは何も出さず落ちたら settled・決着した回だけ annotation を取る・通信切れの annotation が観測に入る・merged・closed・`--until-merged` は ready でも待つ・timeout・gh の 5 回連続失敗で error・状態ファイルに触れない・引数不足は非 0。間隔と上限は `DEV_WORKFLOW_CI_WATCH_INTERVAL=1` と小さい `DEV_WORKFLOW_CI_WATCH_TIMEOUT` で短くする
-- [ ] 1.2 同じファイルに `next` のケースを書く: 初見で状態ファイルを作る・前回の状態を読んで escalate・`--unrelated` を observe に渡して rerun・状態 `{state:ci-fail, head:h1, fixes:1}` のとき `next --unrelated X --after-fix` は rerun で `fixes` は 1 のまま・gh の失敗で状態を書き換えない・読めない状態ファイルで非 0・`run rerun` を呼ばない。状態ディレクトリは `DEV_WORKFLOW_PR_STATE_DIR` で bats の一時ディレクトリに向ける
-- [ ] 1.3 文書のケースを書く（既存の `plugins/dev-workflow/tests/pr-review-gate-skill.bats` の形に倣うか、`ci-watch.bats` に置く）: `references/ci-watch.md` に spec の語が現れる・待つのは本体だけと `subagent-waiting.md` への参照・`gh pr merge` を叩かない旨・`--unrelated` の守備範囲の段落（入力 3 つ・誤り 2 つ・許す例・完了条件にしない）・`ready` で 4 つのマージを止めるラベル（`human-merge` / `needs-human-merge` / `human-only` / `needs-approval`）を見て待たずに頼む旨と `--until-merged` の `timeout` はマージを頼む旨・`none` で `wait` を起動し直すのは `obs.state` が `wait` のときだけで、それ以外は見張りを終えてオーナーに伝える旨・`CI 見張り開始:` / `CI 見張り終了:` で 1 PR 1 セッションを判定する旨と再開時に `raised` を消す旨と同じセッションが直したあとに始め直すときは開始の判定もコメントもしない旨・直し方の passed の外しとゲートの取り直しが「`agent-review:passed` が付いていた PR のとき」に限られる旨・実装者が関係ない失敗と判断したら `next --unrelated <チェック名> --after-fix` を 1 回だけ使う旨・pr-review-gate SKILL.md の `run_in_background` が手順 5 の実測確認より後で手順 6 の見出しより前・`references/ci-watch.md` への参照とサブエージェントは passed を return する旨・develop SKILL.md の (4) に見張りと fix の流れ・gate-runner.md に G は見張りを始めない旨
-- [ ] 1.4 `bats plugins/dev-workflow/tests/ci-watch.bats`（と追記した bats）で新しいテストが落ちることを確かめる
+- [x] 1.1 `plugins/dev-workflow/tests/ci-watch.bats` を新設し、PATH 先頭の `gh` の偽物（呼び出しを記録し、呼ばれた回数ごとに用意した JSON を返す）で `wait` のケースを書く: 実行中のあいだは何も出さず落ちたら settled・決着した回だけ annotation を取る・通信切れの annotation が観測に入る・merged・closed・`--until-merged` は ready でも待つ・timeout・gh の 5 回連続失敗で error・状態ファイルに触れない・引数不足は非 0。間隔と上限は `DEV_WORKFLOW_CI_WATCH_INTERVAL=1` と小さい `DEV_WORKFLOW_CI_WATCH_TIMEOUT` で短くする
+- [x] 1.2 同じファイルに `next` のケースを書く: 初見で状態ファイルを作る・前回の状態を読んで escalate・`--unrelated` を observe に渡して rerun・状態 `{state:ci-fail, head:h1, fixes:1}` のとき `next --unrelated X --after-fix` は rerun で `fixes` は 1 のまま・gh の失敗で状態を書き換えない・読めない状態ファイルで非 0・`run rerun` を呼ばない。状態ディレクトリは `DEV_WORKFLOW_PR_STATE_DIR` で bats の一時ディレクトリに向ける
+- [x] 1.3 文書のケースを書く（既存の `plugins/dev-workflow/tests/pr-review-gate-skill.bats` の形に倣うか、`ci-watch.bats` に置く）: `references/ci-watch.md` に spec の語が現れる・待つのは本体だけと `subagent-waiting.md` への参照・`gh pr merge` を叩かない旨・`--unrelated` の守備範囲の段落（入力 3 つ・誤り 2 つ・許す例・完了条件にしない）・`ready` で 4 つのマージを止めるラベル（`human-merge` / `needs-human-merge` / `human-only` / `needs-approval`）を見て待たずに頼む旨と `--until-merged` の `timeout` はマージを頼む旨・`none` で `wait` を起動し直すのは `obs.state` が `wait` のときだけで、それ以外は見張りを終えてオーナーに伝える旨・`CI 見張り開始:` / `CI 見張り終了:` で 1 PR 1 セッションを判定する旨と再開時に `raised` を消す旨と同じセッションが直したあとに始め直すときは開始の判定もコメントもしない旨・直し方の passed の外しとゲートの取り直しが「`agent-review:passed` が付いていた PR のとき」に限られる旨・実装者が関係ない失敗と判断したら `next --unrelated <チェック名> --after-fix` を 1 回だけ使う旨・pr-review-gate SKILL.md の `run_in_background` が手順 5 の実測確認より後で手順 6 の見出しより前・`references/ci-watch.md` への参照とサブエージェントは passed を return する旨・develop SKILL.md の (4) に見張りと fix の流れ・gate-runner.md に G は見張りを始めない旨
+- [x] 1.4 `bats plugins/dev-workflow/tests/ci-watch.bats`（と追記した bats）で新しいテストが落ちることを確かめる
 
 ## 2. 実装（Green）
 
-- [ ] 2.1 `plugins/dev-workflow/scripts/ci-watch.sh` を新設する（`wait` / `next`）。`pr-state.sh` は同じディレクトリのものを呼び、作り直さない。先頭コメントに呼び出し方・出力・環境変数・状態ファイルの場所・仕様の正本（openspec の `dev-workflow-ci-watch`）を書く
-- [ ] 2.2 `plugins/dev-workflow/references/ci-watch.md` を新設する（spec の「CI の見張りの手順は共有 reference に 1 本置く」の 1〜8 と `--unrelated` の守備範囲）。直し方は genetta-inc/flatmate の main の `docs/project-modes.md`「止まった人間マージ待ち PR の見張り」の「修正依頼を受けたターンの手順」から移し、住人の依頼の列（`pr-watch tasks` / `done`）・あなた待ち（`pending-mirror.sh decide`）・`sync` / `render` の操作は持ち込まない。#523 の入口がこの reference をそのまま呼べるよう、ゲートや develop に依存する語（G・W）は「呼び出し側」「PR の実装者」と書き、develop での担い手は括弧で添える
-- [ ] 2.3 `plugins/dev-workflow/skills/pr-review-gate/SKILL.md` の手順 5 の末尾（実測確認と復旧の表・聖域パスの注記のあと、手順 6 の見出しの前）に「合格後の CI の見張り」を足す（メインセッションなら `run_in_background` で `ci-watch.sh wait` を起動、サブエージェントなら passed を return して呼び出し側に任せる、中身は `references/ci-watch.md`、直しで commit が積まれたら手順 1 から取り直す）
-- [ ] 2.4 `plugins/dev-workflow/skills/develop/SKILL.md` の (4) の `passed` の扱いを足す（本体が `references/ci-watch.md` で見張る・`fix` なら W に直させて G を取り直し、passed で見張りを始め直す・unmanned は対象外）。`skills/develop/references/roles/gate-runner.md` の passed の return の箇所に、G は見張りを始めないことを 1 行足す
-- [ ] 2.5 `bats plugins/dev-workflow/tests/ci-watch.bats`（と追記した bats）が全件通ることを確かめる
+- [x] 2.1 `plugins/dev-workflow/scripts/ci-watch.sh` を新設する（`wait` / `next`）。`pr-state.sh` は同じディレクトリのものを呼び、作り直さない。先頭コメントに呼び出し方・出力・環境変数・状態ファイルの場所・仕様の正本（openspec の `dev-workflow-ci-watch`）を書く
+- [x] 2.2 `plugins/dev-workflow/references/ci-watch.md` を新設する（spec の「CI の見張りの手順は共有 reference に 1 本置く」の 1〜8 と `--unrelated` の守備範囲）。直し方は genetta-inc/flatmate の main の `docs/project-modes.md`「止まった人間マージ待ち PR の見張り」の「修正依頼を受けたターンの手順」から移し、住人の依頼の列（`pr-watch tasks` / `done`）・あなた待ち（`pending-mirror.sh decide`）・`sync` / `render` の操作は持ち込まない。#523 の入口がこの reference をそのまま呼べるよう、ゲートや develop に依存する語（G・W）は「呼び出し側」「PR の実装者」と書き、develop での担い手は括弧で添える
+- [x] 2.3 `plugins/dev-workflow/skills/pr-review-gate/SKILL.md` の手順 5 の末尾（実測確認と復旧の表・聖域パスの注記のあと、手順 6 の見出しの前）に「合格後の CI の見張り」を足す（メインセッションなら `run_in_background` で `ci-watch.sh wait` を起動、サブエージェントなら passed を return して呼び出し側に任せる、中身は `references/ci-watch.md`、直しで commit が積まれたら手順 1 から取り直す）
+- [x] 2.4 `plugins/dev-workflow/skills/develop/SKILL.md` の (4) の `passed` の扱いを足す（本体が `references/ci-watch.md` で見張る・`fix` なら W に直させて G を取り直し、passed で見張りを始め直す・unmanned は対象外）。`skills/develop/references/roles/gate-runner.md` の passed の return の箇所に、G は見張りを始めないことを 1 行足す
+- [x] 2.5 `bats plugins/dev-workflow/tests/ci-watch.bats`（と追記した bats）が全件通ることを確かめる
 
 ## 3. 記録と全体の確認
 
-- [ ] 3.1 `plugins/dev-workflow/changes/522.md` に変更記録を書く（既存の changes/ の書式。待つのは本体だけ・状態ファイルの場所・`--unrelated` の基準・受け入れたリスクを含める）。版（version）は上げない
-- [ ] 3.2 `scripts/test.sh` を全件フォアグラウンドで流して通ることを確かめる（終了コードはコマンド自身のもの。`statusline-multi-account.bats` の単発失敗は単独再実行で判定）
-- [ ] 3.3 `scripts/lint.sh` が exit 0 になることを確かめる
-- [ ] 3.4 `openspec validate ci-watch-after-gate --strict` が通ることを確かめる
+- [x] 3.1 `plugins/dev-workflow/changes/522.md` に変更記録を書く（既存の changes/ の書式。待つのは本体だけ・状態ファイルの場所・`--unrelated` の基準・受け入れたリスクを含める）。版（version）は上げない
+- [x] 3.2 `scripts/test.sh` を全件フォアグラウンドで流して通ることを確かめる（終了コードはコマンド自身のもの。`statusline-multi-account.bats` の単発失敗は単独再実行で判定）
+- [x] 3.3 `scripts/lint.sh` が exit 0 になることを確かめる
+- [x] 3.4 `openspec validate ci-watch-after-gate --strict` が通ることを確かめる
 
 ## 4. 実機確認（受け入れ条件 3。本体が行い、記録を PR に貼る）
 

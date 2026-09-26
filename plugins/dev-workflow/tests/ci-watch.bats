@@ -249,7 +249,7 @@ pr_view_calls() {
   run --separate-stderr "$SCRIPT" next o/r 5 --unrelated flaky
   [ "$status" -eq 0 ]
   [ "$(jq -r .act <<<"$output")" = rerun ]
-  ! grep -q '^run rerun' "$GH_LOG"
+  ! grep -q '^run rerun' "$GH_LOG" || return 1
 }
 
 @test "next: state directory defaults under XDG_STATE_HOME" {  # 状態ディレクトリの既定
