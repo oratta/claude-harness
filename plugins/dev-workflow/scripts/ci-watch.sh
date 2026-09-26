@@ -72,7 +72,7 @@ cmd_target() {
     case "$arg" in
       --merge) merge=true ;;
       *)
-        [ -z "$pr" ] || die "unknown argument: $arg（マージ依頼は --merge だけで渡す）"
+        [ -z "$pr" ] || die "unknown argument: ${arg}（マージ依頼は --merge だけで渡す）"
         pr="$arg" ;;
     esac
   done

@@ -108,7 +108,7 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
     run --separate-stderr "$SCRIPT" target $a
     [ "$status" -ne 0 ] || { echo "accepted: $a"; return 1; }
     [ -z "$output" ]
-    ! grep -q '^pr view' "$GH_LOG" || { echo "gh pr view called for: $a"; return 1; }
+    if grep -q '^pr view' "$GH_LOG"; then echo "gh pr view called for: $a"; return 1; fi
   done
 }
 
