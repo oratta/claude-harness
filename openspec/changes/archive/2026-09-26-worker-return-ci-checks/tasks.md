@@ -15,8 +15,8 @@
 
 ## 4. 実機確認
 
-- [ ] 4.1 shellcheck に違反する変更を仕込んだ状態で W の (3a) 手順を 1 回動かし、return に `scripts/lint.sh`（または CI 由来の shellcheck 相当コマンド）の非 0 exit code が載ることを確認する
-- [ ] 4.2 確認結果を PR 本文に記録する（issue #508 受け入れ条件 2）
+- [x] 4.1 shellcheck に違反する変更を仕込んだ状態で W の (3a) 手順を 1 回動かし、return に `scripts/lint.sh`（または CI 由来の shellcheck 相当コマンド）の非 0 exit code が載ることを確認する
+- [x] 4.2 確認結果を PR 本文に記録する（issue #508 受け入れ条件 2）
 
 ## 5. 検証
 
