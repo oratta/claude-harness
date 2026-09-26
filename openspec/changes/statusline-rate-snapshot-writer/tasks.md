@@ -11,5 +11,6 @@
 
 ## 3. 説明と検証
 
-- [ ] 3.1 `plugins/statusline/README.md` に writer 形式と共有設定を説明し、`plugins/statusline/changes/517.md` に版を上げず変更記録を残す
-- [ ] 3.2 `bats plugins/statusline/tests/`、`python3 -m pytest plugins/statusline/tests/`、`openspec validate --all` を実行して全て exit 0 を確認し、描画出力の既存テストが通ることを確認する
+- [ ] 3.1 `plugins/statusline/README.md` に writer 形式と共有設定、および非既定の writer 保存先を使う場合は reader 側の `RATE_GUARD_SNAPSHOT` を同じファイルに合わせる必要を説明し、`plugins/statusline/changes/517.md` に版を上げず変更記録を残す
+- [x] 3.2 `usage-session-records` の MODIFIED delta で既存の snapshot 形状固定を `rate-snapshot` の writer 契約への参照に改め、セッション記録と実効値の要件を維持する
+- [ ] 3.3 `bats plugins/statusline/tests/`、`python3 -m pytest plugins/statusline/tests/`、`openspec validate --all` を実行して全て exit 0 を確認し、描画出力の既存テストが通ることを確認する

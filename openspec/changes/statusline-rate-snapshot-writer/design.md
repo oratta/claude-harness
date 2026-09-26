@@ -10,7 +10,7 @@ harness は `CLAUDE_CONFIG_DIR`（既定 `$HOME/.claude`）の `.rate-limit-snap
 
 ## Decisions
 
-1. **ローカル保存先は harness の `CLAUDE_CONFIG_DIR/.rate-limit-snapshot` を維持する。** flatmate writer の `RATE_GUARD_SNAPSHOT` override を移す案は、issue の列挙した移行機能に含まれず、harness の既存設定・テストと異なる保存先を増やすため採らない。通常の既定パスは `$HOME/.claude/.rate-limit-snapshot` のままになる。
+1. **ローカル保存先は harness の `CLAUDE_CONFIG_DIR/.rate-limit-snapshot` を維持する。** flatmate writer の `RATE_GUARD_SNAPSHOT` override を移す案は、issue の列挙した移行機能に含まれず、harness の既存設定・テストと異なる保存先を増やすため採らない。通常の既定パスは `$HOME/.claude/.rate-limit-snapshot` のままになる。既存の両 reader は `RATE_GUARD_SNAPSHOT`、未設定なら `$HOME/.claude/.rate-limit-snapshot` を読み、`CLAUDE_CONFIG_DIR` は参照しない。writer の `CLAUDE_CONFIG_DIR` が非既定で保存先が変わる運用では、reader 側の `RATE_GUARD_SNAPSHOT` をそのファイルに合わせる必要がある。
 2. **同じ観測かどうかは前回ファイルの `obs_sig` と `storage_binding` と `session_id` を併せて判定する。** 数値を前回 JSON から再文字列化すると `12.0` と `12` の表記差で観測時刻を進めるため、flatmate writer と同じく書込予定値から署名を作る。3 条件のいずれかが欠ける・異なるときは新規観測とする。`ts` は `observed_at` に揃える。
 3. **共有先は writer 側で設定解決し、各ホストのファイルに同一 JSON を独立して原子的に書く。** 同一ファイルへの PC 間競合を避ける。環境変数が定義されていれば空文字でも設定ファイルより優先する。共有への失敗は statusline 表示とローカル保存に波及させない。
 4. **帰属は入力 `session_id`、保存先印、`$HOME/.claude.json` の `oauthAccount.accountUuid` のみで表す。** 保存先印とアカウント ID の形式は flatmate の writer 契約を維持する。資格情報や他の個人情報は取得しない。アカウント ID は読めないとき省略するが、session_id が無いときは新規 snapshot を書かない。

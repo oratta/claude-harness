@@ -4,6 +4,8 @@
 
 harness の `plugins/statusline/scripts/statusline.sh` は、stdin JSON の `rate_limits.five_hour.used_percentage` と空でない文字列 `session_id` が得られ、かつ `CLAUDE_SECURESTORAGE_CONFIG_DIR` が未設定または空のときだけ snapshot を書かなければならない（MUST）。条件を満たさない場合は既存のローカル・共有 snapshot を変えず、表示を続けなければならない（MUST）。ローカルの保存先は `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.rate-limit-snapshot` とする。枠が欠けた場合に使用率ゼロを捏造してはならない（MUST NOT）。
 
+**守備範囲**: 判定する入力は Claude Code が statusline に渡す stdin JSON と、起動環境の `CLAUDE_SECURESTORAGE_CONFIG_DIR` である。拾いたい誤りは、5h 使用率または空でない文字列の `session_id` が欠けた描画、非既定アカウントの描画から snapshot を書くことである。5h 使用率が `0` の入力や、`session_id` が `session/a:01` のように記号を含む入力は、この条件を満たせば通す。使用率の意味上の範囲や `session_id` の文字種を網羅的に検査し、未知の穴が見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
+
 #### Scenario: 5h 枠と出所がある
 - **WHEN** 既定アカウントの入力に 5h 使用率と空でない `session_id` がある
 - **THEN** ローカル snapshot を書き、取得できた枠値を保存し、欠けた 7d 値やリセット時刻は `null` とする
@@ -34,6 +36,8 @@ harness の `plugins/statusline/scripts/statusline.sh` は、stdin JSON の `rat
 
 writer はこれから書く 5h 使用率・5h リセット・7d 使用率・7d リセットの値から `obs_sig` を作らなければならない（MUST）。前回ローカル snapshot の `obs_sig`、`storage_binding`、`session_id` が全て今回と同じ場合だけ `observed_at` を継承し、それ以外は現在時刻としなければならない（MUST）。同じ値の再表示では `written_at` だけを進める。旧形式など条件が欠ける前回ファイルから観測時刻を継承してはならない（MUST NOT）。
 
+**守備範囲**: 判定する入力は今回の stdin から作る枠値・`session_id` と、writer が前回書いたローカル snapshot の比較用フィールドである。拾いたい誤りは、枠値や出所が変わったのに古い `observed_at` を引き継ぐことと、比較に必要なフィールドが欠ける旧形式から時刻を引き継ぐことである。`session_id` に引用符や改行があっても、前回と同じ文字列なら比較に通す。session ID の文字種や前回ファイルの追加キーまで検査し、未知の穴が見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
+
 #### Scenario: 同一観測の再表示
 - **WHEN** 同じ枠値・保存先印・`session_id` で再実行する
 - **THEN** `observed_at` と `ts` は前回値のままで、`written_at` は新しい書込時刻になる
@@ -45,6 +49,8 @@ writer はこれから書く 5h 使用率・5h リセット・7d 使用率・7d 
 ### Requirement: 有効なアカウント ID だけを追加する
 
 writer は固定パス `$HOME/.claude.json` の `oauthAccount.accountUuid` だけを読み、文字列の前後空白を除去した値が非空・改行なし・256 文字以下なら `account_id` として記録しなければならない（MUST）。非文字列、空、改行あり、長すぎる値、ファイルの欠損・破損ではキー自体を省き、書込と表示を続けなければならない（MUST）。UUID 書式の追加検証はしてはならない（MUST NOT）。他の個人情報キーや秘密資格情報を取得・出力してはならない（MUST NOT）。この ID を認証の証明と呼んではならない（MUST NOT）。
+
+**守備範囲**: 判定する入力はこのマシンの `$HOME/.claude.json` にある `oauthAccount.accountUuid` だけである。拾いたい誤りは、欠損・破損したファイルや非文字列・空・改行入り・256 文字超の値を `account_id` として出力することである。UUID 形式でない `acct-a` は通してよい。ID の実在性や認証状態を検証し、未知の穴が見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: アカウント ID を取得できる
 - **WHEN** `oauthAccount.accountUuid` に有効な文字列がある

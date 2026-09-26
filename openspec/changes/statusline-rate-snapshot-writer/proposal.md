@@ -16,10 +16,10 @@ harness の statusline は各 PC で動いているが、現在のレート残�
 
 ### Modified Capabilities
 
-なし。
+- `usage-session-records`: 既存の `.rate-limit-snapshot` の形状固定を新しい `rate-snapshot` の writer 契約への参照に改める。セッション記録と実効値の規則は維持する。
 
 ## Impact
 
-- 対象: `plugins/statusline/scripts/statusline.sh`、`plugins/statusline/tests/`、`plugins/statusline/README.md`、harness の `openspec/specs/rate-snapshot/`。
+- 対象: `plugins/statusline/scripts/statusline.sh`、`plugins/statusline/tests/`、`plugins/statusline/README.md`、harness の `openspec/specs/rate-snapshot/` と `openspec/specs/usage-session-records/`。
 - 共有ディレクトリの既存契約 `FLATMATE_RATE_SHARE_DIR` / `FLATMATE_RATE_SHARE_CONF` / `~/.claude/flatmate-rate-share` を維持する。
 - flatmate 側の reader、撤去、spec 更新、実機配線、為替キャッシュは flatmate#936 の範囲とする。
