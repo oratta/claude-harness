@@ -14,6 +14,9 @@ setup() {
   REPO_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   SL="${PLUGIN_DIR}/scripts/statusline.sh"
   WORK="$(mktemp -d)"
+  export HOME="$WORK/home" FLATMATE_RATE_SHARE_CONF="$WORK/no-share-conf"
+  unset FLATMATE_RATE_SHARE_DIR
+  mkdir -p "$HOME"
   export CLAUDE_CONFIG_DIR="$WORK"
   # #301 / #277: 呼び出し元の別アカウント設定をテストに持ち込まない。
   unset CLAUDE_SECURESTORAGE_CONFIG_DIR
