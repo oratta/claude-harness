@@ -991,7 +991,7 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
   LLM: あり（退避済み）
 
 [3] business-idea (idea-x) — 🟡 稼働中の可能性
-  git 上はマージ済み・clean・LLM なし（＝従来なら 🟢 Safe 判定）
+  git 上はマージ済み・clean・LLM なし。ただし稼働シグナルがあるため自動処理を保留
   ⚠️ 稼働中プロセスあり: 48213(claude), 48310(node)
   ⚠️ 直近セッションログ: ~/.claude/projects/-Users-…-business-idea/ab12.jsonl (2026-08-07 14:32)
   → 壁打ち等の進行中セッションの可能性があります。削除するとプロセスも停止されます
