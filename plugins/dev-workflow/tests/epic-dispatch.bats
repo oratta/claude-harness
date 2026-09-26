@@ -537,6 +537,16 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ ! -s "$STUB_LOG" ]
 }
 
+@test "launch: a non-numeric epic or child is rejected before anything is called" {
+  make_stub orca
+  run dispatch launch '#400' 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  run dispatch launch 400 '#11'
+  [ "$status" -eq 1 ]
+  [ ! -s "$STUB_LOG" ]
+}
+
 @test "launch: orca output goes to stderr, stdout has only the per-child lines" {
   make_stub orca
   run dispatch launch 400 11
