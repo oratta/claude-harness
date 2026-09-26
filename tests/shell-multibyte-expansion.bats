@@ -24,40 +24,92 @@
 #   NG 側は文章で説明している（実際にそうなることは確認済み）。
 #
 # 対象:
-#   git 追跡下の *.sh / *.bash / *.bats。_longruns/ は過去実行のアーカイブなので除外。
-#   コメント行も対象に含める（コピペ元になるため）。
+#   git 追跡下の *.sh / *.bash / *.bats（ファイル全体）と *.yml / *.yaml
+#   （`run:` の値＝ workflow YAML に埋め込まれたシェルだけ）。#171 まで YAML が
+#   対象外で、auto-merge.yml の `run:` ブロックだけがガードを素通りしていた。
+#   `.github/workflows/` に限らず全 YAML を見るのは、配布用の workflow
+#   テンプレートが `plugins/agent-owner/templates/*.yml` のように別の場所にも
+#   置かれており、パスで絞ると取りこぼすため。
+#   _longruns/ は過去実行のアーカイブなので除外。コメント行も対象に含める
+#   （コピペ元になるため）。
+#
+#   検出ロジックの本体は tests/lib/scan-multibyte-expansion.py。bats から
+#   切り出してあるのは、ガード自身をフィクスチャで検証できるようにするため。
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  SCANNER="${REPO_ROOT}/tests/lib/scan-multibyte-expansion.py"
 }
 
 @test "no bare variable expansion is directly followed by a non-ASCII character" {
-  run python3 - "$REPO_ROOT" <<'PY'
-import pathlib, re, subprocess, sys
+  cd "$REPO_ROOT"
+  files="$(git ls-files -- '*.sh' '*.bash' '*.bats' '*.yml' '*.yaml' ':(exclude)_longruns/')"
+  [ -n "$files" ]
 
-root = pathlib.Path(sys.argv[1])
-files = subprocess.run(
-    ["git", "-C", str(root), "ls-files", "*.sh", "*.bash", "*.bats"],
-    capture_output=True, text=True, check=True,
-).stdout.split()
-
-# 波括弧なしの $NAME の直後が非 ASCII のものだけを拾う。
-# ${NAME} 形式は $ の次が { なので、この正規表現には一致しない。
-pattern = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*(?=[^\x00-\x7f])")
-
-hits = []
-for rel in files:
-    if rel.startswith("_longruns/"):
-        continue
-    text = (root / rel).read_text(errors="replace")
-    for lineno, line in enumerate(text.splitlines(), 1):
-        for m in pattern.finditer(line):
-            hits.append(f"{rel}:{lineno}: {m.group(0)} -> {line.strip()[:100]}")
-
-for h in hits:
-    print(h)
-sys.exit(1 if hits else 0)
-PY
+  # shellcheck disable=SC2086  # 改行区切りのパス列を意図的に単語分割して渡す
+  run python3 "$SCANNER" $files
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+}
+
+# --- ガード自身の検証（フィクスチャ） ---
+
+@test "guard: detects a bare expansion inside a workflow run: block" {
+  fixture="${BATS_TEST_TMPDIR}/bad.yml"
+  # 全角の閉じ括弧の直前に波括弧なしの展開を置く（このファイル自身が検出されないよう
+  # printf でバイト列を組み立てる）。
+  {
+    echo 'jobs:'
+    echo '  build:'
+    echo '    steps:'
+    echo '      - run: |'
+    printf '          echo "完了（sha=%sHEAD_SHA）"\n' '$'
+  } > "$fixture"
+
+  run python3 "$SCANNER" "$fixture"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HEAD_SHA"* ]]
+  [[ "$output" == *":5:"* ]]
+}
+
+@test "guard: accepts the braced form inside a workflow run: block" {
+  fixture="${BATS_TEST_TMPDIR}/good.yml"
+  {
+    echo 'jobs:'
+    echo '  build:'
+    echo '    steps:'
+    echo '      - run: |'
+    printf '          echo "完了（sha=%s{HEAD_SHA}）"\n' '$'
+  } > "$fixture"
+
+  run python3 "$SCANNER" "$fixture"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "guard: ignores non-shell YAML outside run: (no false positive on job names)" {
+  fixture="${BATS_TEST_TMPDIR}/outside.yml"
+  {
+    echo 'jobs:'
+    echo '  build:'
+    printf '    name: "ビルド %sSTAGE（本番）"\n' '$'
+    echo '    steps:'
+    echo '      - run: echo ok'
+  } > "$fixture"
+
+  run python3 "$SCANNER" "$fixture"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "guard: still scans plain shell files in full (comments included)" {
+  fixture="${BATS_TEST_TMPDIR}/bad.sh"
+  {
+    echo '#!/bin/sh'
+    printf '# 件数: %sCOUNT（件）\n' '$'
+  } > "$fixture"
+
+  run python3 "$SCANNER" "$fixture"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"COUNT"* ]]
 }
