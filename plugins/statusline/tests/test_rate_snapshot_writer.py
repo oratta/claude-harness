@@ -102,6 +102,20 @@ def test_writer_shared_body_and_atomic_replacement(writer):
     assert list(share.iterdir()) == [remote]
 
 
+def test_writer_normalizes_host_for_shared_filename(writer):
+    tmp, _, env, snap, run = writer
+    bin_dir = tmp / "bin"
+    bin_dir.mkdir()
+    hostname = bin_dir / "hostname"
+    hostname.write_text("#!/bin/sh\nprintf 'pc bad/名前\\n'\n")
+    hostname.chmod(0o755)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    share = tmp / "share"
+    observed = run(share=share)
+    assert observed["host"] == "pc_bad____"
+    assert (share / "pc_bad____.json").read_bytes() == snap.read_bytes()
+
+
 @pytest.mark.parametrize("session,limits", [(None, True), ("", True), (42, True), ("writer-a", False)])
 def test_writer_missing_source_or_limits_does_not_replace(writer, session, limits):
     _, _, _, snap, run = writer

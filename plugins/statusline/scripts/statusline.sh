@@ -114,7 +114,7 @@ if [ -n "$five_h_pct" ] && [ -n "$session_id" ] && [ -z "${CLAUDE_SECURESTORAGE_
     fi
 
     snap_host=$(hostname -s 2>/dev/null) || snap_host=""
-    snap_host_key=$(printf '%s' "$snap_host" | tr -c 'A-Za-z0-9._-' '_')
+    snap_host_key=$(printf '%s' "$snap_host" | jq -Rr 'gsub("[^A-Za-z0-9._-]"; "_")' 2>/dev/null)
     [ -n "$snap_host_key" ] || snap_host_key="unknown"
 
     # Only the account UUID field is read; invalid or unavailable IDs are omitted.
