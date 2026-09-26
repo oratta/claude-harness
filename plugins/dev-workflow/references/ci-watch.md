@@ -1,6 +1,6 @@
 # CI の見張り（dev-workflow の共有手順）
 
-ゲートに合格した PR（と、後続の #523 の入口から呼ばれた PR）の CI が決着するまで待ち、落ちたらやり直すか直すかに進むための手順の正本。pr-review-gate と develop の SKILL.md はこの手順を言い換えずに、ここを参照する。
+ゲートに合格した PR（と、`/ci-watch` の入口 `commands/ci-watch.md` で指定された PR）の CI が決着するまで待ち、落ちたらやり直すか直すかに進むための手順の正本。pr-review-gate と develop の SKILL.md はこの手順を言い換えずに、ここを参照する。
 
 部品は `plugins/dev-workflow/scripts/ci-watch.sh` の 2 つのサブコマンドで、分類と一手の判断は同じディレクトリの `pr-state.sh` が持つ。
 
@@ -67,7 +67,7 @@
 
 ### `ready` を受けたあと
 
-`ready` を受けたあとの扱いは呼び出し側が決める。ゲートの合格後に呼んだとき（pr-review-gate・develop）の扱いは次のとおり。
+`ready` を受けたあとの扱いは呼び出し側が決める。`/ci-watch` の入口（見張る PR とマージ依頼の有無は `ci-watch.sh target` が決める）では `commands/ci-watch.md` の「3. `ready` を受けたら」に従い、`--merge` が無ければゲートに進まずに見張りを終え、`--merge` 付きならゲートの合格後に下の 1 から進む。ゲートの合格後に呼んだとき（pr-review-gate・develop）の扱いは次のとおり。
 
 直しで `agent-review:passed` を外した PR（`agent-review:pending` が付いている）は、先にゲートを取り直す。取り直したゲートに合格するまで、下の 1〜3 のマージ待ち・マージ依頼に進まない。取り直したゲートが failed なら、ゲートの通常の周回で指摘を直し、push したら 6 の表の `fix` の行と同じく `wait` から続けて、`ready` になってから再び取り直す。保留になるか 2 周で合格が確定しなければオーナーに上げる。合格したら、同じ見張りの続きとして下の 1 から進む（上の 2 の開始の判定・開始のコメントはしない）。
 
