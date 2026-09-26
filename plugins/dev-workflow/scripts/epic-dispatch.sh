@@ -36,7 +36,8 @@
 #   間隔・上限は秒。既定 300 / 21600（EPIC_DISPATCH_INTERVAL / EPIC_DISPATCH_TIMEOUT、フラグが優先）。
 #   ポーリングのあとで「経過 >= 上限」か「経過 + 間隔 > 上限」なら眠らずに timeout
 #   （--timeout 0 は間隔によらず 1 回だけ確かめる）
-# 引数の誤り（子が 0 件・番号が数字でない・フラグ値の誤り）は stderr に使い方を出して exit 1。
+# 引数の誤り（launch は epic か子が無い、wait は子が 0 件、番号が数字でない、フラグ値の誤り）は
+#   stderr に使い方を出して exit 1。route は子 0 件でも subagent。
 #
 # 設計と守備範囲（引数を渡すのは本体で、人が手で打つことは想定しない）は
 # openspec の dev-workflow-develop spec「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを
@@ -146,8 +147,12 @@ cmd_launch() {
   printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
     || { echo "orca worktree list --json is not readable" >&2; exit 1; }
 
-  local n prompt out rc child handle sent retry failed=0
+  local n prompt out rc child handle sent retry failed=0 seen=" "
   for n in "$@"; do
+    case "$seen" in
+      *" $n "*) echo "skipped $n"; continue ;;
+    esac
+    seen="$seen$n "
     if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$n" \
       'any(.result.worktrees[]; .repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)' \
       >/dev/null 2>&1; then
@@ -214,11 +219,12 @@ cmd_wait() {
   check_children "$@"
 
   local fails=0 n state closed failed
+  local errf; errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
   SECONDS=0
   while :; do
-    closed=""; failed=""
+    closed=""; failed=""; : > "$errf"
     for n in "$@"; do
-      if state="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state 2>/dev/null)"; then
+      if state="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state 2>>"$errf")"; then
         case "$state" in
           closed) closed="$closed $n" ;;
           open) ;;
@@ -235,6 +241,7 @@ cmd_wait() {
     if [ -n "$failed" ]; then
       fails=$((fails + 1))
       if [ "$fails" -ge 3 ]; then
+        cat "$errf" >&2
         echo "error gh${failed}"
         exit 1
       fi
