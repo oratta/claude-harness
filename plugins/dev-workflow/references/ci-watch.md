@@ -23,7 +23,11 @@
 
 - 見張りを始める前に PR のコメントを見る。1 行目が `CI 見張り開始:` のコメントのあとに、1 行目が `CI 見張り終了:` のコメントが無ければ、ほかのセッションが見張り中として始めず、PR の URL を添えてオーナーに伝える
 - 始めるときは、1 行目が `CI 見張り開始:` のコメントを PR に投稿する。本文には何を待っているか（PR の CI の決着を本体が待っていること）を 1 行添える。見張りを終えるときは、1 行目が `CI 見張り終了:` のコメントを投稿する（終えた理由を 1 行添える）
-- オーナーの指示で見張りを再開するとき（前のセッションが閉じて終了のコメントが残らなかった・オーナーに上げたあと続けるよう言われた）は、状態ファイルの `raised` を消してから始める。消し方: `f=<状態ファイル>; jq -c 'del(.raised)' "$f" > "$f.tmp" && mv -f "$f.tmp" "$f"`
+- オーナーの指示で見張りを再開するとき（前のセッションが閉じて終了のコメントが残らなかった・オーナーに上げたあと続けるよう言われた）は、状態ファイルの `raised` を消すだけで済ませない。`decide` は前回と同じ状態・同じ HEAD の決着を `none` にするので、中断した一手を飛ばしたまま見張りが終わってしまう。先に状態ファイル（`state`・`head`・`fixes`・`reran_head`）と PR の記録（直しの依頼・push・`gh run rerun`・ラベル）から、中断した一手が済んでいるかを確かめる
+  - 状態ファイルの `head` が PR の今の HEAD と同じで、`fix` の判定のあと直しの push が無いときは、`next` を呼ばずに、下の 7 の直し方の実装者への修正依頼から再開する（`fixes` は判定のときに数え済みなので書き換えない）
+  - `rerun` の判定のあと、その HEAD で `gh run rerun` が実行されていなければ、6 の表の `rerun` の行の `gh run rerun` から再開する
+  - `escalate` のあとに続けるよう言われたときは、オーナーの具体的な指示（直す・やり直す・関係ない失敗として扱うなど）を先に実行してから、`raised` を消して `wait` から見張りに戻る。指示が具体的でなければ、何をすればよいかをオーナーに聞き返す
+  - `raised` の消し方: `f=<状態ファイル>; jq -c 'del(.raised)' "$f" > "$f.tmp" && mv -f "$f.tmp" "$f"`
 - 同じセッションが `fix` の直しのあとに `wait` から始め直すときは、開始の判定も開始のコメントもしない。直しの担い手に渡すときも、終了のコメントは投稿しない。同じ見張りの続きで、新しい開始として扱うと、自分が投稿した `CI 見張り開始:` に対応する終了が無いので自分で自分を止めてしまう
 
 ## 3. 待ち方
@@ -36,7 +40,7 @@
 
 | `result` | 動き |
 |---|---|
-| `settled` | 下の 5 で `--unrelated` を渡すチェックを決めてから `ci-watch.sh next` を実行し、6 に進む |
+| `settled` | 下の 5 で `--unrelated` を渡すチェックを決めてから `ci-watch.sh next` を実行し、6 に進む。`--until-merged` の `wait` も `ci-fail`・`conflict` では `settled` を返す（`ready` だけを待ち続ける）ので、同じく `next` に進む |
 | `merged` | 見張りを終えてマージを報告する |
 | `closed` | 見張りを終える |
 | `timeout` | `--until-merged` を付けずに起動した `wait` なら、PR の URL を添えて、CI が上限時間内に決着しなかったことをオーナーに 1 アクションで伝える。`--until-merged` を付けて起動した `wait` なら、マージされなかったとして、PR の URL を添えてオーナーにマージを頼む |
@@ -56,7 +60,7 @@
 | `act` | 動き |
 |---|---|
 | `rerun` | `obs.runs` の各 run に `gh run rerun <run> --repo <owner/repo> --failed` を実行してから `wait` を起動し直す。やり直しに失敗したら、その旨を PR にコメントして `wait` を起動し直す（次の観測で `decide` が直しに回す） |
-| `fix` | 下の 7 の直し方で直し、ゲートを取り直して合格したら `wait` から始め直す（同じ見張りの続きなので、上の 2 の開始の判定・開始と終了のコメントはしない） |
+| `fix` | 下の 7 の直し方で直す。push したら、`agent-review:passed` を外したまま同じ状態ファイルで `wait` から始め直し（同じ見張りの続きなので、上の 2 の開始の判定・開始と終了のコメントはしない）、そのあとの `rerun`・`fix` もこの表どおりに処理する。ゲートの取り直しは `ready` になってから行う（下の「`ready` を受けたあと」） |
 | `escalate` | PR に `needs-approval` を付け、落ちたチェック名と PR の URL を添えてオーナーに 1 アクションで頼み、見張りを終える |
 | `ready` | 扱いは呼び出し側が決める（下の「`ready` を受けたあと」） |
 | `none` | `obs.state` が `wait` のときだけ `wait` を起動し直す。それ以外の `none`（前回と同じ状態・同じ HEAD の決着、オーナーに上げ済み）は見張りを終え、PR の URL を添えてオーナーに状況（`obs.state` と、上げ済みならその旨）を伝える |
@@ -64,6 +68,8 @@
 ### `ready` を受けたあと
 
 `ready` を受けたあとの扱いは呼び出し側が決める。ゲートの合格後に呼んだとき（pr-review-gate・develop）の扱いは次のとおり。
+
+直しで `agent-review:passed` を外した PR（`agent-review:pending` が付いている）は、先にゲートを取り直す。取り直したゲートに合格するまで、下の 1〜3 のマージ待ち・マージ依頼に進まない。取り直したゲートが failed なら、ゲートの通常の周回で指摘を直し、push したら 6 の表の `fix` の行と同じく `wait` から続けて、`ready` になってから再び取り直す。保留になるか 2 周で合格が確定しなければオーナーに上げる。合格したら、同じ見張りの続きとして下の 1 から進む（上の 2 の開始の判定・開始のコメントはしない）。
 
 1. まず PR のラベルを見る（`gh api repos/<owner/repo>/issues/<PR番号> --jq '.labels[].name'`）。`human-merge` / `needs-human-merge` / `human-only` / `needs-approval`（`.github/workflows/auto-merge.yml` の `BLOCKING_LABELS`。一覧が変わったらここも直す）のどれかが付いていれば、`--until-merged` で待たずに PR の URL を添えてオーナーにマージを頼み、見張りを終える
 2. どれも付いておらず、自動マージの workflow（`.github/workflows/auto-merge.yml`）が対象リポにあれば、`ci-watch.sh wait <owner/repo> <PR番号> --until-merged` を `run_in_background` で起動して見届ける（結果の扱いは上の 4）
@@ -80,7 +86,7 @@ genetta-inc/flatmate の `docs/project-modes.md`「止まった人間マージ�
 3. `agent-review:passed` が付いていた PR のとき、push の前に `gh api -X DELETE repos/<owner/repo>/issues/<PR番号>/labels/agent-review:passed` で外し、`gh pr view <PR番号> --repo <owner/repo> --json labels` で外れたことを確かめ、PR が Draft でなければ `gh pr ready --undo`（`gh pr ready <PR番号> --repo <owner/repo> --undo`）で Draft に戻し、`agent-review:pending` を付ける
 4. オーナーにマージを頼んだ未解決の依頼があれば、差分が変わったので取り下げると PR にコメントする
 5. commit して push する
-6. `agent-review:passed` が付いていた PR のとき、ゲートを取り直す。合格するまで `agent-review:passed` を付け直さない。取り直したゲートが failed なら、ゲートの通常の周回（指摘を直して取り直す）に従い、保留になるか 2 周で合格が確定しなければオーナーに上げる
+6. `agent-review:passed` を外した PR（この直しで外したか、前の直しで外したまま `agent-review:pending` が付いている PR）は、push のあとすぐにはゲートを取り直さない。呼び出し側が 6 の表の `fix` の行どおり `wait` → `next` を続けて CI のやり直し・再度の直しを済ませ、`ready` になってからゲートを取り直す（「`ready` を受けたあと」）。合格するまで `agent-review:passed` を付け直さない
 7. push の前に直せないと判断したときは、push せずに `escalate` と同じ手順でオーナーに上げる
 
 ## 8. 状態ファイル

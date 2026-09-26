@@ -1112,7 +1112,7 @@ pr-review-gate SKILL.md は、引き継ぎで主の許容を捏造できない�
 - ゲートをメインセッションで回している場合: `plugins/dev-workflow/references/ci-watch.md` の手順で、`scripts/ci-watch.sh wait` を Bash ツールの `run_in_background` で起動して見張りを始める
 - ゲートをサブエージェント（develop の G など）が回している場合: 見張りを始めずに `passed` を return し、呼び出し側の本体に見張りを任せる（サブエージェントは背景タスクの完了で起こされないため）
 
-見張りの中身（待ち方・`--unrelated` の基準・一手ごとの動き・直し方）は reference を参照し、SKILL.md に言い換えて再掲してはならない（MUST NOT）。直し方で PR に commit が積まれたときは、手順 1 からゲートを取り直すことを書く（MUST）。手順 6（保留処理）で合格しなかった PR には見張りを始めない（MUST NOT）。
+見張りの中身（待ち方・`--unrelated` の基準・一手ごとの動き・直し方）は reference を参照し、SKILL.md に言い換えて再掲してはならない（MUST NOT）。直し方で PR に commit が積まれたときは、`agent-review:passed` を外したまま見張りを続けて CI のやり直し・再度の直しを済ませ、`ready` になってから手順 1 からゲートを取り直すこと、取り直したゲートに合格するまでマージ待ち・マージ依頼に進まないことを書く（MUST）。手順 6（保留処理）で合格しなかった PR には見張りを始めない（MUST NOT）。
 
 #### Scenario: 合格処理のあとに run_in_background で見張りを始める
 - **WHEN** `git grep -n 'run_in_background' -- plugins/dev-workflow/skills/pr-review-gate/SKILL.md` を実行する

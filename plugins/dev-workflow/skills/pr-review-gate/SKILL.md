@@ -538,7 +538,7 @@ gh api repos/$R/pulls/$N --jq .draft              # 実測確認（Draft）
 - ゲートをメインセッションで回している場合: `plugins/dev-workflow/references/ci-watch.md` の手順で、`scripts/ci-watch.sh wait` を Bash ツールの `run_in_background` で起動して見張りを始める
 - ゲートをサブエージェント（develop の G など）が回している場合: 見張りを始めずに `passed` を return し、呼び出し側の本体に見張りを任せる（サブエージェントは背景タスクの完了で起こされない）
 
-待ち方・`--unrelated` の基準・一手ごとの動き・直し方は `references/ci-watch.md` が正本で、ここには再掲しない。直しで commit が積まれたら、この PR のゲートは手順 1 から取り直す。
+待ち方・`--unrelated` の基準・一手ごとの動き・直し方は `references/ci-watch.md` が正本で、ここには再掲しない。直しで commit が積まれたら、`agent-review:passed` を外したまま見張りを続けて CI のやり直し・再度の直しを済ませ、`ready` になってから、この PR のゲートを手順 1 から取り直す。取り直したゲートに合格するまでマージ待ち・マージ依頼に進まない。
 
 ### 6. 保留処理（リスク許容待ち / 動作確認依頼 / 切り出しの確認）
 

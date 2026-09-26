@@ -142,6 +142,29 @@ pr_view_calls() {
   [ "$(pr_view_calls)" -eq 2 ]
 }
 
+@test "wait: --until-merged settles on ci-fail after ready without waiting for the timeout" {  # ready のあとの失敗は settled
+  put_view 1 OPEN MERGEABLE "[$(actions_check build SUCCESS 11 77)]" h1
+  put_view 2 OPEN MERGEABLE "[$(actions_check build FAILURE 12 78)]" h1
+  jq -cn --arg m "$LOST" '[{message: $m}]' > "${WORK}/ann/78.json"
+  DEV_WORKFLOW_CI_WATCH_TIMEOUT=10 run --separate-stderr "$SCRIPT" wait o/r 5 --until-merged
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .result <<<"$output")" = settled ]
+  [ "$(jq -r .obs.state <<<"$output")" = ci-fail ]
+  [ "$(jq -r '.obs.checks[0].cause' <<<"$output")" = runner-lost ]
+  [ "$(grep -c 'check-runs/78/annotations' "$GH_LOG")" -eq 1 ]
+  [ "$(pr_view_calls)" -eq 2 ]
+}
+
+@test "wait: --until-merged settles on conflict after ready without waiting for the timeout" {  # ready のあとの競合は settled
+  put_view 1 OPEN MERGEABLE "[$(actions_check build SUCCESS 11 77)]" h1
+  put_view 2 OPEN CONFLICTING "[$(actions_check build SUCCESS 11 77)]" h1
+  DEV_WORKFLOW_CI_WATCH_TIMEOUT=10 run --separate-stderr "$SCRIPT" wait o/r 5 --until-merged
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .result <<<"$output")" = settled ]
+  [ "$(jq -r .obs.state <<<"$output")" = conflict ]
+  [ "$(pr_view_calls)" -eq 2 ]
+}
+
 @test "wait: prints timeout with the last observation when the limit passes" {  # 上限時間を超えたら timeout
   put_view 1 OPEN MERGEABLE "[$(actions_check build '' 11 77)]" h1
   DEV_WORKFLOW_CI_WATCH_TIMEOUT=3 run --separate-stderr "$SCRIPT" wait o/r 5
@@ -306,13 +329,32 @@ pr_view_calls() {
   grep -qF 'CI 見張り開始:' "$REF"
   grep -qF 'CI 見張り終了:' "$REF"
   grep -q 'ほかのセッションが見張り中として始めず' "$REF"
-  grep -q '状態ファイルの `raised` を消してから始める' "$REF"
+  grep -q '`raised` を消すだけで済ませない' "$REF"
   grep -q '同じセッションが `fix` の直しのあとに `wait` から始め直すときは、開始の判定も開始のコメントもしない' "$REF"
   grep -q '直しの担い手に渡すときも、終了のコメントは投稿しない' "$REF"
 }
 
+@test "reference: after a fix push the watch resumes with passed removed and the gate is re-run only at ready" {
+  grep -q '`agent-review:passed` を外したまま同じ状態ファイルで `wait` から始め直し' "$REF"
+  grep -q 'ゲートの取り直しは `ready` になってから行う' "$REF"
+  grep -q 'push のあとすぐにはゲートを取り直さない' "$REF"
+  grep -q '`agent-review:pending` が付いている.*先にゲートを取り直す' "$REF"
+  grep -q '合格するまで.*マージ待ち・マージ依頼.*に進まない' "$REF"
+}
+
+@test "reference: resuming checks the unfinished move and runs the owner's instruction after escalate" {
+  grep -q '中断した一手が済んでいるかを確かめる' "$REF"
+  grep -q '`next` を呼ばずに.*実装者への修正依頼から再開する' "$REF"
+  grep -q '`escalate` のあと.*オーナーの具体的な指示.*を先に実行してから' "$REF"
+}
+
+@test "reference: a --until-merged wait that settles on ci-fail or conflict goes to next" {
+  grep -q '`--until-merged` の `wait` も `ci-fail`・`conflict` では `settled` を返す' "$REF"
+}
+
 @test "reference: passed removal and gate re-run are limited to PRs that had agent-review:passed" {
-  [ "$(grep -c '`agent-review:passed` が付いていた PR のとき' "$REF")" -ge 2 ]
+  grep -q '`agent-review:passed` が付いていた PR のとき' "$REF"
+  grep -q '`agent-review:passed` を外した PR' "$REF"
   grep -q '`ready` を受けたあとの扱いは呼び出し側が決める' "$REF"
 }
 
@@ -337,13 +379,16 @@ pr_view_calls() {
 @test "gate skill: refers to references/ci-watch.md and a subagent returns passed without watching" {
   grep -qF 'references/ci-watch.md' "$GATE_SKILL"
   grep -q 'サブエージェント.*見張りを始めずに `passed` を return' "$GATE_SKILL"
-  grep -q '直しで commit が積まれたら.*手順 1 から' "$GATE_SKILL"
+  grep -q '直しで commit が積まれたら.*`ready`.*手順 1 から' "$GATE_SKILL"
+  grep -q '合格するまでマージ待ち・マージ依頼に進まない' "$GATE_SKILL"
 }
 
 @test "develop skill: (4) hands passed to the main session's watch and loops fix through W and G" {
   grep -qF 'references/ci-watch.md' "$DEVELOP"
   grep -q 'passed → 本体が .*ci-watch.md.*見張りを始める' "$DEVELOP"
-  grep -q '`fix` なら W に直させ.*G を.*取り直' "$DEVELOP"
+  grep -q '`fix` なら W に直させ' "$DEVELOP"
+  grep -q 'W が push したら.*passed を外したまま.*`wait` → `next` を続け' "$DEVELOP"
+  grep -q '`ready` になってから G を.*取り直させ' "$DEVELOP"
 }
 
 @test "gate-runner: G returns passed without starting the CI watch" {

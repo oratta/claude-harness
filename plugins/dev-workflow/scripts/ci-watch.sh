@@ -8,7 +8,7 @@
 #       決着するまで標準出力には何も出さない（本体が run_in_background で起動し、完了通知で読む）。
 #         {"result":"merged","obs":null}   PR がマージされた
 #         {"result":"closed","obs":null}   PR が閉じられた
-#         {"result":"settled","obs":<observe>}  observe の state が wait 以外（--until-merged では決着にしない）
+#         {"result":"settled","obs":<observe>}  observe の state が wait 以外（--until-merged では ready を決着にしない）
 #         {"result":"timeout","obs":<最後の observe か null>}  上限時間を超えた
 #         {"result":"error","obs":null}    gh pr view が 5 回続けて失敗した
 #       annotations は決着した回だけ取る。状態ファイルは読み書きしない
@@ -87,7 +87,9 @@ cmd_wait() {
       esac
       if obs="$(printf '%s' "$view" | "$PR_STATE" observe)"; then
         last="$obs"
-        if [ "$until_merged" -eq 0 ] && [ "$(jq -r .state <<<"$obs")" != wait ]; then
+        # --until-merged は ready だけを待ち続け、ci-fail・conflict は決着として返す
+        if [ "$(jq -r .state <<<"$obs")" != wait ] &&
+           { [ "$until_merged" -eq 0 ] || [ "$(jq -r .state <<<"$obs")" != ready ]; }; then
           # 決着した回だけ annotation を取り、通信切れの判定が済んだ観測を出す
           obs="$(observe_with_hints "$view")" || obs="$last"
           emit settled "$obs"
