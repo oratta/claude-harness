@@ -218,11 +218,12 @@ cmd_wait() {
   check_children "$@"
 
   local fails=0 n state closed failed
+  local errf; errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
   SECONDS=0
   while :; do
-    closed=""; failed=""
+    closed=""; failed=""; : > "$errf"
     for n in "$@"; do
-      if state="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state 2>/dev/null)"; then
+      if state="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state 2>>"$errf")"; then
         case "$state" in
           closed) closed="$closed $n" ;;
           open) ;;
@@ -239,6 +240,7 @@ cmd_wait() {
     if [ -n "$failed" ]; then
       fails=$((fails + 1))
       if [ "$fails" -ge 3 ]; then
+        cat "$errf" >&2
         echo "error gh${failed}"
         exit 1
       fi
