@@ -146,8 +146,12 @@ cmd_launch() {
   printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
     || { echo "orca worktree list --json is not readable" >&2; exit 1; }
 
-  local n prompt out rc child handle sent retry failed=0
+  local n prompt out rc child handle sent retry failed=0 seen=" "
   for n in "$@"; do
+    case "$seen" in
+      *" $n "*) echo "skipped $n"; continue ;;
+    esac
+    seen="$seen$n "
     if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$n" \
       'any(.result.worktrees[]; .repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)' \
       >/dev/null 2>&1; then
