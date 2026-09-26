@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-# ゲート合格後の PR の CI を見張る。待つだけの wait と、一手を取り出して PR ごとの状態を保存する
-# next に分ける。分類と一手の判断は同じディレクトリの pr-state.sh に任せ、一手の実行（gh run rerun・
+# ゲート合格後の PR（と /ci-watch の入口で指定された PR）の CI を見張る。見張る PR を決める target、
+# 待つだけの wait と、一手を取り出して PR ごとの状態を保存する next に分ける。分類と一手の判断は同じディレクトリの pr-state.sh に任せ、一手の実行（gh run rerun・
 # 直し・マージの依頼）は呼び出し側の手順（references/ci-watch.md）が持つ。
 #
+#   ci-watch.sh target <PR の URL | PR番号> [--merge]
+#       /ci-watch の引数から見張る PR とマージ依頼の有無を決め、1 行 JSON を出して exit 0。
+#         {"repo":"<owner/repo>","number":<PR番号>,"url":"<PR の URL>","merge":true|false}
+#       番号は今のリポジトリ（gh repo view）の PR、URL は URL が示すリポジトリの PR として gh pr view で
+#       確かめる。merge は --merge があるときだけ true。PR の形でない入力・解決できない PR・PR が 2 つ・
+#       --merge 以外の引数（自由文を含む）では、標準出力に何も出さずに非 0。状態ファイルは読み書きしない
 #   ci-watch.sh wait <owner/repo> <PR番号> [--until-merged]
 #       最初に 1 間隔待ってから gh pr view を繰り返し、決着したら 1 行 JSON を出して exit 0。
 #       決着するまで標準出力には何も出さない（本体が run_in_background で起動し、完了通知で読む）。
@@ -58,6 +64,33 @@ observe_with_hints() {
   fi
   rm -f "$hints"
   return "$rc"
+}
+
+cmd_target() {
+  local arg pr='' merge=false repo n view
+  for arg in "$@"; do
+    case "$arg" in
+      --merge) merge=true ;;
+      *)
+        [ -z "$pr" ] || die "unknown argument: $arg（マージ依頼は --merge だけで渡す）"
+        pr="$arg" ;;
+    esac
+  done
+  [ -n "$pr" ] || die "usage: ci-watch.sh target <PR の URL | PR番号> [--merge]"
+  if [[ "$pr" =~ ^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)([/?#].*)?$ ]]; then
+    repo="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+    n="${BASH_REMATCH[3]}"
+  elif [[ "$pr" =~ ^[1-9][0-9]*$ ]]; then
+    n="$pr"
+    repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)" && [ -n "$repo" ] \
+      || die "cannot resolve the current repository for PR #$n"
+  else
+    die "not a PR URL or number: $pr"
+  fi
+  view="$(gh pr view "$n" --repo "$repo" --json number,url 2>/dev/null)" || die "cannot resolve PR: ${repo}#${n}"
+  jq -cen --arg r "$repo" --argjson v "$view" --argjson m "$merge" \
+    '{repo: $r, number: $v.number, url: $v.url, merge: $m} | select(.number != null and .url != null)' \
+    || die "cannot resolve PR: ${repo}#${n}"
 }
 
 cmd_wait() {
@@ -151,7 +184,8 @@ cmd_next() {
 }
 
 case "${1-}" in
+  target) shift; cmd_target "$@" ;;
   wait) shift; cmd_wait "$@" ;;
   next) shift; cmd_next "$@" ;;
-  *) die "usage: ci-watch.sh wait OWNER/REPO PR [--until-merged] | next OWNER/REPO PR [--unrelated NAME]... [--after-fix]" ;;
+  *) die "usage: ci-watch.sh target PR [--merge] | wait OWNER/REPO PR [--until-merged] | next OWNER/REPO PR [--unrelated NAME]... [--after-fix]" ;;
 esac
