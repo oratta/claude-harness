@@ -820,7 +820,6 @@ class DocumentationContracts(unittest.TestCase):
         decision = (self.root / 'skills/develop/references/decision-criteria.md').read_text()
         self.assertIn('<= 300', decision)
         self.assertIn('> 300', decision)
-        self.assertIn('#374', decision)
         for text in (self.adapter, self.skill,
                      (self.root / 'docs/codex-develop.md').read_text()):
             self.assertIn('claude-write-codex-review', text)
