@@ -18,7 +18,9 @@
 
 `observed_at` は書き込んだ時刻（epoch 秒）、`five_hour_*` は `rate_limits.five_hour`、`weekly_*` は `rate_limits.seven_day` の `used_percentage` / `resets_at` とする。書き込みは記録ディレクトリ内の一時ファイルに書いてから置き換える形で行い、読み手に書きかけの内容を見せてはならない（MUST NOT）。ディレクトリ作成・書き込みの失敗は無視し、ステータスラインの出力を変えてはならない（MUST NOT）。
 
-既存の `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.rate-limit-snapshot` の書き込み（形と、`CLAUDE_SECURESTORAGE_CONFIG_DIR` が非空なら書かない条件）は変えてはならない（MUST NOT）。
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.rate-limit-snapshot` の形と書込条件は `rate-snapshot` capability の writer 契約に従わなければならない（SHALL）。`CLAUDE_SECURESTORAGE_CONFIG_DIR` が非空なら書かない条件は維持する。
+
+**守備範囲**: セッション記録の判定に使う入力は、このマシンの statusline に渡される stdin JSON の `rate_limits` と、起動環境の `CLAUDE_SECURESTORAGE_CONFIG_DIR` である。拾いたい誤りは、5 時間枠の使用率が無いときに記録を書くことと、別アカウントの鍵で記録することである。レジストリ未登録の非既定アカウントでも、その環境変数から導出した鍵への記録は通す。未知の入力上の穴が見つかるたびに検査を足して塞ぎ切ることは、この要件の完了条件にしない。snapshot の書込条件の守備範囲は `rate-snapshot` の要件に従う。
 
 #### Scenario: 既定アカウントのセッションは default に書く
 - **WHEN** `CLAUDE_SECURESTORAGE_CONFIG_DIR` を未設定にし、`rate_limits` を含む JSON で statusline を実行する
