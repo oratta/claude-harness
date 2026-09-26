@@ -367,6 +367,40 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^orca worktree create --name issue-12 ')" -eq 1 ]
 }
 
+@test "launch: a duplicate child number in the same call is skipped after the first" {
+  make_stub orca
+  run dispatch launch 420 11 11
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "launched 11" ]
+  [ "${lines[1]}" = "skipped 11" ]
+  [ "${#lines[@]}" -eq 2 ]
+  [ "$(calls '^orca worktree create --name issue-11 ')" -eq 1 ]
+}
+
+@test "launch: list-based skipped and same-call duplicate skipped coexist" {
+  make_stub orca
+  printf '%s\n' '{"result":{"worktrees":[{"repoId":"repo-a","path":"/w/issue-12","linkedIssue":12,"isArchived":false}]}}' > "$STUB_CFG/list_json"
+  run dispatch launch 420 11 12 11
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "launched 11" ]
+  [ "${lines[1]}" = "skipped 12" ]
+  [ "${lines[2]}" = "skipped 11" ]
+  [ "${#lines[@]}" -eq 3 ]
+  [ "$(calls '^orca worktree create --name issue-11 ')" -eq 1 ]
+  [ "$(calls '^orca worktree create --name issue-12 ')" -eq 0 ]
+}
+
+@test "launch: a failed first attempt still skips a later duplicate of the same number" {
+  make_stub orca
+  touch "$STUB_CFG/create_fail_11"
+  run dispatch launch 420 11 11
+  [ "$status" -eq 1 ]
+  [ "${lines[0]}" = "failed 11" ]
+  [ "${lines[1]}" = "skipped 11" ]
+  [ "${#lines[@]}" -eq 2 ]
+  [ "$(calls '^orca worktree create --name issue-11 ')" -eq 1 ]
+}
+
 @test "launch: a worktree of another repo or an archived one does not count as launched" {
   make_stub orca
   printf '%s\n' '{"result":{"worktrees":[{"repoId":"repo-b","path":"/w/x","linkedIssue":11,"isArchived":false},{"repoId":"repo-a","path":"/w/y","linkedIssue":12,"isArchived":true}]}}' > "$STUB_CFG/list_json"
