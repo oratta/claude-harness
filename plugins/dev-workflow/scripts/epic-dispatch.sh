@@ -36,7 +36,8 @@
 #   間隔・上限は秒。既定 300 / 21600（EPIC_DISPATCH_INTERVAL / EPIC_DISPATCH_TIMEOUT、フラグが優先）。
 #   ポーリングのあとで「経過 >= 上限」か「経過 + 間隔 > 上限」なら眠らずに timeout
 #   （--timeout 0 は間隔によらず 1 回だけ確かめる）
-# 引数の誤り（子が 0 件・番号が数字でない・フラグ値の誤り）は stderr に使い方を出して exit 1。
+# 引数の誤り（launch は epic か子が無い、wait は子が 0 件、番号が数字でない、フラグ値の誤り）は
+#   stderr に使い方を出して exit 1。route は子 0 件でも subagent。
 #
 # 設計と守備範囲（引数を渡すのは本体で、人が手で打つことは想定しない）は
 # openspec の dev-workflow-develop spec「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを
