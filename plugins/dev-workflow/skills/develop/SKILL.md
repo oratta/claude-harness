@@ -111,6 +111,9 @@ worktree は**本体が用意する**。本体が既に対象専用の worktree�
            `レビュー経路: 従来` は書かない。理由は「Role profile の選択」節）
       pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider / review-incomplete」
       合格処理（手順 5）では PR が Draft なら Ready にしてから agent-review:passed を付ける（W は Ready にしない）
+      passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない。中身は reference が正本）。
+           見張りの一手が `fix` なら W に直させ（再開か手渡しかは (3) と同じく正本に従う）、G を再開か手渡しで起こしてゲートを取り直させ、
+           G が再び passed を返したら見張りを始め直す。unmanned は (4) を回さないので対象外
       needs-reviewer → adapter 経路では G は full でも light でもこれを返す。本体は次の順で進む:
            ① codex-develop.py request --phase review で投げ先を選び直す（実行先オプションはこの develop 開始時と同じ。自動選択なら無指定）
            ② 返った選択（構成・reason・両 provider の margin・各 fetched_at・代表 Codex account。欠測は missing）と解決した executor / model を
