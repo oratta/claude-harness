@@ -32,12 +32,14 @@
 | 合格処理 | `stages/pass.md` | 手順 4・5 |
 | 保留 | `stages/hold.md` | 3-c・手順 6・主に承認を求めてよい 4 分類 |
 
+手順 2-1 は 3 つの段のファイルに分かれるので、見出しを次の 3 つの形にしなければならない（MUST。番号は変えない）: `stages/review-run.md` に `#### 2-1. レビューの実行（レビュー実行者）`、`stages/reviewer-brief.md` に `#### 2-1. レビューの実行（レビュアー向け指示）`、`stages/triage.md` に `#### 2-1. レビューの実行（止める判定と仕分け）`。
+
 `declarations.md` は手順 3（リスク宣言）と 3-b（仕様宣言）を持つ（MUST）。旧 SKILL.md 冒頭の「前提と理由」の各項目は、それを使う段のファイル（HEAD SHA と仕様宣言は `declarations.md`、stale passed は `stages/prepare.md`、auto-merge の配備状況は `stages/pass.md`、リポ固有の仕組みは `stages/hold.md`）に移さなければならない（MUST）。移すときに規則・閾値・雛形・コマンドの中身を変えてはならない（MUST NOT）。
 
 #### Scenario: 手順番号の対応表
 
 - **WHEN** 索引の手順番号の対応表を読む
-- **THEN** 1・2-0・2-1・2-2・3・3-b・3-c・4・5・6 のすべてに行があり（2-1 は段ごとに分けた 3 行）、各行が指すファイルにその手順の見出しがある
+- **THEN** 1・2-0・2-1・2-2・3・3-b・3-c・4・5・6 のすべてに行があり（2-1 は「レビュー実行者」「レビュアー向け指示」「止める判定と仕分け」の 3 行）、各行が指すファイルにその手順の見出しがある（2-1 の 3 行は、それぞれ括弧書きまで一致する見出しがある）
 
 #### Scenario: 段のファイルが揃っている
 
@@ -48,19 +50,28 @@
 
 各手順の見出しは pr-review-gate 配下の 1 ファイルにだけ置かなければならない（MUST）。別の段のファイルがその手順や前提に触れるときは、ファイル名と節名で参照し、中身を言い換えて再掲してはならない（MUST NOT）。各段のファイルは、冒頭に入口の条件を、末尾に出口（次に読むファイル）を書かなければならない（MUST）。
 
+この要件の回帰テスト（`plugins/dev-workflow/tests/pr-review-gate-index.bats`）の守備範囲は次のとおりとする。入力は pr-review-gate 配下の `.md` で、拾うのは手順の見出しの重複・索引の中のコードブロック・段の表が指すファイルの不在である。見出し以外の本文で規則を言い換えて再掲したものはテストを通ってしまうので、PR レビューで見る。この穴をテストで塞ぎ切ることは完了条件にしない。
+
 #### Scenario: 見出しの重複が無い
 
-- **WHEN** pr-review-gate 配下の `.md` から手順の見出し（`### 1.`・`#### 2-0.` など）を集める
-- **THEN** 各見出しはちょうど 1 ファイルにだけ現れる
+- **WHEN** pr-review-gate 配下の `.md` から手順の見出し（`### 1.`・`#### 2-0.` など）を見出し行全体で集める
+- **THEN** 各見出し行はちょうど 1 ファイルにだけ、1 回だけ現れる（2-1 の 3 つの見出しは括弧書きが違うので別の見出しとして数える）
 
-### Requirement: 既存要件の「SKILL.md の手順」は段のファイルを指す
+### Requirement: 既存要件が SKILL.md に置いた内容は段のファイルを指す
 
-`dev-workflow-pr-review-gate`・`dev-workflow-develop`・`dev-workflow-subagent-waiting` の既存要件が「SKILL.md の手順 N」「SKILL.md 手順 2-1 のレビュアー向け指示ブロック」「SKILL.md の〜を読む」「SKILL.md に再掲しない」と書いている箇所は、索引の対応表がその手順を割り当てた段のファイル（宣言は `declarations.md`）を指すものとして読まなければならない（MUST）。「SKILL.md に再掲しない」の類の禁止は、索引・段のファイル・`declarations.md` のすべてに掛かる（MUST）。
+`dev-workflow-pr-review-gate`・`dev-workflow-develop`・`dev-workflow-subagent-waiting` の既存要件が `skills/pr-review-gate/SKILL.md`（「SKILL.md」「移植版 SKILL.md」「スキル」「pr-review-gate/SKILL.md の雛形」と書いたものを含む）に置く・含む・明記する・規定する・読むと定めた内容は、索引の対応表がその手順を割り当てた段のファイル（宣言は `declarations.md`、旧「前提と理由」の項目は移した先の段のファイル）を指すものとして読まなければならない（MUST）。「SKILL.md の手順 N」「SKILL.md 手順 2-1 のレビュアー向け指示ブロック」「SKILL.md の〜を読む」の形の WHEN も同じく読み替える（MUST）。「SKILL.md に再掲しない」の類の禁止は、索引・段のファイル・`declarations.md` のすべてに掛かる（MUST）。
+
+この読み替えは、少なくとも次の既存要件の「SKILL.md は…含む/明記する/規定する/置く」の形の文に掛かる: 「スキルはリポ非依存で、flatmate 固有の仕組みには条件分岐で対応する」「flatmate issue #240 の収束ルールが織り込まれている」「auto-merge への組み込みは範囲外と明記する」「2 周目終了時に残った指摘を違反文の引用で仕分ける」「レビュアーの指摘に固定書式を課す」。既存要件が `gate-runner.md` に置くと定めた内容の読み替えは `dev-workflow-develop` 側の要件「既存要件が gate-runner.md に置いた内容のうち段に移したものは段のファイルを指す」が定める。
 
 #### Scenario: 待ち値の再掲禁止が段のファイルにも掛かる
 
 - **WHEN** `stages/review-run.md` の Codex 呼び出し規約を読む
 - **THEN** 具体の待ち値・繰り返し回数・総待ちの上限は書かれておらず、正本 `plugins/dev-workflow/references/subagent-waiting.md` を参照している
+
+#### Scenario: SKILL.md に置くと定めた内容の所在
+
+- **WHEN** 既存要件「auto-merge への組み込みは範囲外と明記する」が SKILL.md に求める記述を探す
+- **THEN** 旧「前提と理由」の「仕様宣言」項目の移り先である `declarations.md` に、auto-merge への組み込みは別 issue である旨が書かれている
 
 ### Requirement: develop 以外で本体がスキルを直接使うときは索引から段ごとに読む
 

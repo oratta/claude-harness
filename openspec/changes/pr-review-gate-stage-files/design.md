@@ -37,7 +37,7 @@ issue の概要が「当たり」とした 5 段に「レビューの起動」�
 
 | 段 | ファイル | 持つ手順（番号は現行のまま） | 前提と理由から移す項目 | G として動くとき節に移す gate-runner の内容 | 主な読み手 | 見積もり（バイト） |
 |---|---|---|---|---|---|---|
-| 前提確認と重さ判定 | `stages/prepare.md` | 手順 1・手順 2 の冒頭（別コンテキストの原則）・2-0 | stale passed | needs-reviewer の payload と、その前に済ませること | G（毎回）・本体 | 約 12,000 |
+| 前提確認と重さ判定 | `stages/prepare.md` | 手順 1・手順 2 の冒頭（別コンテキストの原則）・2-0 | stale passed | needs-reviewer の payload と、その前に済ませること・レビュー要約を受け取った G が投稿する「レビュー実行者:」PR コメントの段落（いまの gate-runner.md で payload の直後にある段落） | G（毎回）・本体 | 約 12,000 |
 | レビューの起動 | `stages/review-run.md` | 2-1 のうちレビュー実行者の優先順・Codex 呼び出し規約・Task サブエージェントのモデル・各 PC の確認 | なし | 従来経路のレビュー実行者の表・Codex の起動と完了確認 | 従来経路の G・develop 以外の本体 | 約 17,500 |
 | レビュー担当向けの指示 | `stages/reviewer-brief.md` | 2-1 のレビュアー向け指示ブロック・共通一覧契約・Codex の読み替え表 | なし | なし | レビュー担当・レビュアーを起こす本体 | 約 7,500 |
 | 照合と指摘の振り分け | `stages/triage.md` | 2-1 のうちマージを止めるかの判定・仕分け表（順 1〜6 と混在の段落）・収束ルール・2 周目の終わり・決める役・2-2 | なし | failed / needs-decider / review-incomplete の return 書式・再開のうち W の修正後の再レビューと決める役の裁定受領 | 指摘が届いた G・本体 | 約 28,000 |
@@ -59,7 +59,12 @@ develop の SKILL.md・worker.md・references・spec・CHANGELOG は「pr-review
 
 ### 既存 spec の本文は書き換えず、読み替えの要件を足す
 
-`dev-workflow-pr-review-gate` の既存要件は「SKILL.md の手順 5 を読む」のような WHEN を 60 か所近く持つ。これを全部 MODIFIED にすると要件本文を丸ごと写す必要があり、写し間違いで要件が変わるおそれのほうが大きい。代わりに ADDED 要件で「既存要件の『SKILL.md の手順 N』『SKILL.md の〜』は、索引の対応表がその手順を割り当てた段のファイル（宣言は `declarations.md`）を指す」と定める。`dev-workflow-subagent-waiting` の「SKILL.md に待ち値を再掲しない」なども同じ読み替えで段のファイル全体に掛かる。
+`dev-workflow-pr-review-gate` の既存要件は「SKILL.md の手順 5 を読む」のような WHEN を 60 か所近く持つ。これを全部 MODIFIED にすると要件本文を丸ごと写す必要があり、写し間違いで要件が変わるおそれのほうが大きい。代わりに ADDED 要件で読み替えを 2 つ定める。
+
+- (a) `dev-workflow-pr-review-gate` 側: 既存要件が SKILL.md（「移植版 SKILL.md」「スキル」「pr-review-gate/SKILL.md の雛形」と書いたものを含む）に置く・含む・明記する・規定する・読むと定めた内容は、索引の対応表がその手順を割り当てた段のファイル（宣言は `declarations.md`、旧「前提と理由」の項目は移し先）を指す。「SKILL.md の手順 N を読む」の形の WHEN だけでなく、「スキルはリポ非依存で…」「auto-merge への組み込みは範囲外と明記する」のような「SKILL.md は…を含む」の形の文にも掛ける。`dev-workflow-subagent-waiting` の「SKILL.md に待ち値を再掲しない」なども同じ読み替えで段のファイル全体に掛かる。
+- (b) `dev-workflow-develop` 側: 既存要件が gate-runner.md に置くと定めた内容のうち段のファイルの「G として動くとき（develop）」節へ移すもの（needs-reviewer の payload と証拠欄・「レビュー実行者:」コメントの段落・従来経路のレビュー実行者の表と Codex の起動・Status ごとの return 書式と failed 節・仕分け欄・保留欄・needs-decider 節・再開のうち段に固有のもの）は、その節を指す。対象の既存要件 5 つ（develop の「役割の指示書は references/roles/ に分かれている」「adapter 経路の G はレビュアーを自分で呼ばず needs-reviewer を返す」「本体は adapter 経路の needs-reviewer で phase review の投げ先を選び直して記録する」、pr-review-gate の「G の指示書の failed 節と周回欄が収束ルールに揃っている」「Codex 経路と Task サブエージェント経路で同じ書式を渡す」）を名前で列挙する。要件の所在（gate-runner.md は develop の役割の指示書）に合わせて develop 側の delta に置く。
+
+読み替えを置かないと、archive 後に既存要件の「gate-runner.md が持つ（MUST）」と delta の「段のファイルに置かなければならない（MUST）」が直接衝突する。
 
 ### G の段ごとの差分は段のファイルの「G として動くとき」節に置く
 
@@ -69,25 +74,32 @@ gate-runner.md が持つ G だけの規則のうち、特定の段でしか使�
 
 ### G が読む量の見積もり
 
-develop の G（adapter 経路）が指摘の無い 1 周で読むのは、gate-runner.md（移したあと約 12,000）・`stages/prepare.md`（約 12,000）・`declarations.md`（約 7,500）・`stages/pass.md`（約 15,500）の合計約 47,000 バイトで、いまの 111,897 バイトの約 4 割になる。指摘がある周は `stages/triage.md`（約 28,000）が加わる。issue の実例（SKILL.md 83,538 バイトで約 31K トークン）から 1 バイトあたり約 0.37 トークンで換算すると、指摘の無い周で約 17K トークンになり、15K を少し超える見込みである。
+develop の G（adapter 経路）が指摘の無い 1 周で読むのは、gate-runner.md（移したあと約 12,000）・`stages/prepare.md`（約 12,000）・`declarations.md`（約 7,500）・`stages/pass.md`（約 15,500）の合計約 47,000 バイトで、いまの 111,897 バイトの約 4 割になる。指摘がある周は `stages/triage.md`（約 28,000）が加わる。
+
+トークンへの換算は、issue の実測からファイルごとに比を変えて当てる。gate-runner.md は 28,359 バイトで約 14K トークン（1 バイトあたり約 0.49）、SKILL.md は 83,538 バイトで約 31K トークン（約 0.37）である。移したあとの gate-runner.md 約 12,000 バイト × 0.49 ≈ 5.9K、段のファイルと宣言の書式ファイル約 35,000 バイト × 0.37 ≈ 13K で、指摘の無い周で約 19K トークンになる。この値は下限である。`docs_median` は指示書を Read したホップの usage 差分（`scripts/subagent-context-audit.sh` 冒頭のコメントと `docs/usage-audit.md`）なので、Read の結果に付く行番号の接頭辞や、そのホップの思考の分も乗る。
+
+段の割り方を変えても、文言を削らない限り 15K には届かない。adapter 経路の G が指摘の無い周でも必ず読む本文だけで、手順 1（3,175）・2-0（2,648）・手順 3（4,098）・手順 4（1,261）・手順 5（12,699）・needs-reviewer の payload（4,815）・三表の照合と補足の受領（約 2,000）・経路の判別（約 2,500）で約 33K バイト（約 12〜16K トークン）あり、ここに役割と入力・return の共通欄・再開の振り分けなどが加わる。本体向けの段落を移して減らせるのは、gate-runner.md「モデル」節の前半（約 1,300）・needs-reviewer の前文のうち本体向けの部分（約 800）・Gate Result の仕分けと効果測定の欄を triage へ移す分（約 1,400）の合計約 3.5K バイト（約 1.5K トークン）である。
 
 15K を下回らせるために手順の文言を削ることはしない（Non-Goals）。受け入れ条件 3 の実測で 15K を超えたら、実測値と、どのファイルが何トークンだったかを PR 本文に記録し、超過分を減らす手段（gate-runner.md の「モデル」節のうち本体向けの部分を develop の SKILL.md へ移す、など）を follow-up issue に切る。
 
 ### 検査（bats）
 
-- 新規 `plugins/dev-workflow/tests/pr-review-gate-index.bats`: SKILL.md が 10,000 バイト以下／索引の段の表の各行がちょうど 1 つの段のファイルを指し、そのファイルが実在する／索引にコードブロック（```）が無い／索引の手順番号の対応表が 1・2-0・2-1・2-2・3・3-b・3-c・4・5・6 をすべて持ち、指す先のファイルにその手順の見出しがある（2-1 は 3 つの段にまたがるので、対応表では「2-1 レビュー実行者」「2-1 レビュアー向け指示」「2-1 止める判定と仕分け」の 3 行に分け、それぞれの段のファイルに対応する見出しがあることを見る）／各手順の見出しが pr-review-gate 配下の 1 ファイルにだけある（同じ手順を 2 か所に書かない）。
-- 既存 bats（`pr-review-gate-skill.bats`・`pr-review-gate-spec-declaration.bats`・`develop-roles.bats`・`develop-adapter-review-routing.bats`・`model-escalation-policy.bats`・`subagent-waiting.bats`・`ci-watch.bats` ほか、pr-review-gate の文言を検査しているもの）は、各アサーションの参照先を、その文言が移った段のファイルに 1 つずつ付け替える。全段のファイルを連結して検査する方式は採らない。文言が別の段に紛れ込んでもテストが通ってしまい、その段だけを読む G が規則を見落とす事故を検出できないため。
+- 新規 `plugins/dev-workflow/tests/pr-review-gate-index.bats`: SKILL.md が 10,000 バイト以下／索引の段の表の各行がちょうど 1 つの段のファイルを指し、そのファイルが実在する／索引にコードブロック（```）が無い／索引の手順番号の対応表が 1・2-0・2-1・2-2・3・3-b・3-c・4・5・6 をすべて持ち、指す先のファイルにその手順の見出しがある（2-1 は 3 つの段にまたがるので、対応表では「2-1 レビュー実行者」「2-1 レビュアー向け指示」「2-1 止める判定と仕分け」の 3 行に分け、それぞれの段のファイルに対応する見出しがあることを見る）／各手順の見出しが pr-review-gate 配下の 1 ファイルにだけある（同じ手順を 2 か所に書かない）／frontmatter の `description` が、いまの値を bats に固定で持たせた期待値の文字列と一致する（bats は変更前のファイルを参照できないため）。
+- 2-1 の見出しは 3 つの段で `#### 2-1. レビューの実行（レビュー実行者）`（`stages/review-run.md`）・`#### 2-1. レビューの実行（レビュアー向け指示）`（`stages/reviewer-brief.md`）・`#### 2-1. レビューの実行（止める判定と仕分け）`（`stages/triage.md`）にする。番号は変えない。見出しの一意性は見出し行全体で判定するので、この 3 つは別の見出しとして数える。
+- 見出しの一意性の検査が拾うのは、手順の見出しの重複・索引の中のコードブロック・段の表が指すファイルの不在だけである。見出し以外の本文で規則を言い換えて再掲したものは検査を通るので、PR レビューで見る。この穴を検査で塞ぎ切ることは完了条件にしない。
+- 既存 bats（`pr-review-gate-skill.bats`・`pr-review-gate-spec-declaration.bats`・`develop-roles.bats`・`develop-adapter-review-routing.bats`・`model-escalation-policy.bats`・`subagent-waiting.bats`・`ci-watch.bats` ほか、pr-review-gate の文言を検査しているもの）は、各アサーションの参照先を、その文言が移った段のファイルに 1 つずつ付け替える。`pr-review-gate-skill.bats` の `^#### 2-1\. ` から `^#### 2-2\. ` までを範囲として切り出す関数（いまの 289・433・610 行付近）は同じファイルに 2-1 と 2-2 がある前提なので、切り出す範囲を、その文言が移った段のファイルの 2-1 の見出しから次の見出しまで（または段のファイル全体）に直す。全段のファイルを連結して検査する方式は採らない。文言が別の段に紛れ込んでもテストが通ってしまい、その段だけを読む G が規則を見落とす事故を検出できないため。
 - `tests/test_codex_develop.py` の `CANONICAL SOURCE` の期待値を、下の正本一覧に合わせて直す。
 
 ### Codex に渡す正本の一覧
 
-`scripts/codex-develop.py` の `prompt()` は、gate / review phase に `skills/pr-review-gate/SKILL.md` を正本として付けている。gate phase は索引・6 段のファイル・`declarations.md` を付ける（Codex の G は fresh thread で、どの段から始まるかを request 側で決めていないため、中身の総量はいまと同じに保つ）。review phase は gate-runner.md と `stages/reviewer-brief.md` を付ける（レビュー担当に要るのは指示ブロックと三表の契約だけ）。
+`scripts/codex-develop.py` の `prompt()` は、gate / review phase に `skills/pr-review-gate/SKILL.md` を正本として付けている。gate phase は索引・6 段のファイル・`declarations.md` を付ける（Codex の G は fresh thread で、どの段から始まるかを request 側で決めていないため、中身の総量はいまと同程度になる。索引約 10K・段のファイル 6 本で約 92K・`declarations.md` 約 7.5K で、いまの SKILL.md 83.5K より少し増える）。review phase は gate-runner.md と `stages/reviewer-brief.md` を付ける（レビュー担当に要るのは指示ブロックと三表の契約だけ）。
 
 ## Risks / Trade-offs
 
 - [正本が複数ファイルに分かれ、片方だけ直されて食い違う] → 索引は中身を持たず、各手順の見出しが 1 ファイルにだけあることを bats で検査する。段をまたぐ参照はファイル名と節名で書き、中身を言い換えて再掲しない。
 - [G が段の切り替わりで次のファイルを読み忘れる] → gate-runner.md の表に「この時点でこのファイルを読む」を入口の条件付きで書き、各段のファイルの末尾に出口（次に読むファイル）を書く。
-- [指摘の無い周でも G の読み込み量が 15K トークンを少し超える見込み] → 上の見積もりのとおり。実測を PR 本文に記録し、超えたら follow-up issue に切る。文言は削らない。
+- [指摘の無い周でも G の読み込み量が 15K トークンを超える見込み（ファイル別の換算で約 19K、これは下限）] → 上の見積もりのとおり。実測を PR 本文に記録し、超えたら follow-up issue に切る。文言は削らない。
+- [15K に届く構造上の道が、この change の範囲の外にある] → needs-reviewer を返した時点で G を一度終え、レビュー後の再開を新しい G で行えば、個体ごとの `docs_median` は前提確認側で約 10K・合格処理側で約 14K に分かれる。ただし develop の (4) の流れ（G の spawn・再開の単位）を変えることになり Non-Goals に当たるので、この change では採らず、follow-up の候補として残す。
 - [配布済みのキャッシュに古い SKILL.md が残った G が新しい gate-runner.md を読む] → プラグインの更新は SKILL.md・段のファイル・gate-runner.md を同じ commit で入れ替えるので、同じ版の中では食い違わない。古い版を読んだ G は古い手順を通しで実行するだけで、手順の中身は変わっていない。
 
 ## Migration Plan
