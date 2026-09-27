@@ -163,7 +163,7 @@ dev-workflow プラグインは `scripts/subagent-stop-guard.sh` を `hooks/hook
 - **THEN** 守備範囲の「守らないもの」に当たるので、この要件の範囲外として扱い、塞ぐことを完了条件にしない
 
 ### Requirement: 停止の拒否は上限回数までの後詰めにする
-正当な出口は「前景で完了まで待つ」か「TaskStop で停止してから終える」であり、hook の拒否回数の上限は、理由文を無視して停止を繰り返すサブエージェントを無限に止め続けないための後詰めである（SHALL）。hook は同じサブエージェント（`session_id` と `agent_id` の組）への拒否回数を `${TMPDIR:-/tmp}/dev-workflow-stop-guard/<session_id>-<agent_id>.count` に数え、正本 `subagent-waiting.md` の総待ちの上限回数（前景ループの回数）に達した後の停止は通さなければならない（MUST）。上限に達して通した時点でそのカウンタファイルを削除する（SHALL。削除できなくても停止は通す）。拒否の判定に `stop_hook_active` を使ってはならない（MUST NOT）— 1 回拒否した後の継続中は常に真になり、2 回目以降の停止を無条件に通してしまうため。hook が持つ上限回数は 1 か所の定数にし、テストで正本の記述と一致することを検査しなければならない（MUST）。上限を超えて通すときは、その旨を stderr に 1 行出す（SHALL）。
+正当な出口は「前景で完了まで待つ」か「TaskStop で停止してから終える」であり、hook の拒否回数の上限は、理由文を無視して停止を繰り返すサブエージェントを無限に止め続けないための後詰めである（SHALL）。hook は同じサブエージェント（`session_id` と `agent_id` の組）への拒否回数を `${TMPDIR:-/tmp}/dev-workflow-stop-guard/<session_id>-<agent_id>.count` に数え、正本 `subagent-waiting.md` の総待ちの上限回数（前景ループの回数）に達した後の停止は通さなければならない（MUST）。**停止を通す時点（上限到達で通す場合と、未完了の背景タスクが無く通す場合のいずれでも）でそのカウンタファイルを削除する（SHALL。削除できなくても停止は通す）。** 拒否の判定に `stop_hook_active` を使ってはならない（MUST NOT）— 1 回拒否した後の継続中は常に真になり、2 回目以降の停止を無条件に通してしまうため。hook が持つ上限回数は 1 か所の定数にし、テストで正本の記述と一致することを検査しなければならない（MUST）。上限を超えて通すときは、その旨を stderr に 1 行出す（SHALL）。
 
 #### Scenario: 上限回数まで拒否した後にもう一度止まる
 - **WHEN** 同じサブエージェントをすでに上限回数まで拒否しており、未完了の背景タスクを残したままもう一度ターンを終えようとする
@@ -172,6 +172,10 @@ dev-workflow プラグインは `scripts/subagent-stop-guard.sh` を `hooks/hook
 #### Scenario: 正本の上限回数を変えた
 - **WHEN** 正本の総待ちの上限回数を変えたが、hook の定数を直していない
 - **THEN** `scripts/test.sh` が失敗し、hook の定数を正本に合わせるよう示す
+
+#### Scenario: 正しく待ってから停止したのにカウンタが残っている
+- **WHEN** サブエージェントが一度拒否されたあと、理由文どおりに前景で待つ、または TaskStop で背景タスクを停止してから停止し、未完了の背景タスクが無い状態で hook が停止を通す
+- **THEN** hook はその時点でカウンタファイルを削除し、次のターンで同じサブエージェントが再び未完了の背景タスクを残して停止しようとしても拒否回数は 0 から数え直す
 
 ### Requirement: 停止の拒否はサブエージェントに限り、判定できなければ通す
 hook は payload に `agent_id` が無い停止（メインセッション）に対して何も出力してはならない（MUST NOT）。python3 が無い・payload が壊れている・payload に `background_tasks` が無い・対象トランスクリプトが見つからないか読めない・拒否回数のファイルが作れないか読めないときは、stdout に何も出力せず exit 0 で停止を通さなければならない（MUST）。payload に `background_tasks` が無い・対象トランスクリプトが見つからないか読めない・拒否回数のファイルが作れないか読めないときは、stderr に判定を見送った旨を 1 行出す（SHALL）。`agent_id` が無い停止と `DEV_WORKFLOW_STOP_GUARD=off` では stderr にも何も出さない（MUST NOT）。python3 が無い・payload が壊れているときも、サブエージェントの停止かどうかを判定できないので stderr に出さない（SHALL）。環境変数 `DEV_WORKFLOW_STOP_GUARD=off` のときは判定をせずに停止を通す（SHALL）。この hook は install 先の全サブエージェントの停止で走るため、5MB のトランスクリプトで 200ms 未満で終えなければならない（MUST）。測り方は `tests/context-tripwire.bats` の性能テストと同じく複数回（3 回）測って最良値を見る（SHALL）。
