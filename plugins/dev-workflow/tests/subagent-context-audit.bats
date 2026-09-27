@@ -534,6 +534,28 @@ assert d["by_role"]["W"]["docs_median"] == 2500, d["by_role"]["W"]
 PY
 }
 
+@test "docs_median: a G reading pr-review-gate via Skill keeps the hop open across records of the same message.id" {
+  # Claude Code は 1 メッセージを content ブロックごとに別レコードで書き、どれにも同じ
+  # message.id と usage が入る。Skill と Bash が同じ id の別レコードに分かれても、
+  # 2 つ目のレコードでホップを閉じず、id が変わった次のメッセージで閉じる（F1）。
+  fg="$(make_role_agent p1 s1 agent-gate-skill.jsonl general-purpose "G: gate for PR #563 (#552)")"
+  rl_user "2026-09-01T00:00:00Z" >> "$fg"
+  printf '{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":10000,"output_tokens":1},"content":[{"type":"tool_use","name":"Skill","input":{"skill":"dev-workflow:pr-review-gate"}}]}}\n' >> "$fg"
+  printf '{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":10000,"output_tokens":1},"content":[{"type":"tool_use","name":"Bash","input":{"command":"gh pr view 563"}}]}}\n' >> "$fg"
+  printf '{"type":"assistant","message":{"id":"msg_2","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":40000,"output_tokens":1}}}\n' >> "$fg"
+
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+g = d["by_role"]["G"]
+assert g["count"] == 1, g
+# ホップ: 10000 -> 40000（同じ msg_1 の Bash レコードでは閉じない）
+assert g["docs_median"] == 30000, g
+PY
+}
+
 @test "reread_pct: a later W re-reading a basename the earlier W already read" {
   f1="$(make_role_agent p1 s1 agent-w-first.jsonl general-purpose "W: #552 first")"
   rl_user "2026-09-01T00:00:00Z" >> "$f1"

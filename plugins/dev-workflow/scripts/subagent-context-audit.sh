@@ -302,6 +302,7 @@ def scan_full(path):
     docs_total = 0
     pending = False
     hop_start = 0
+    hop_id = None
     reads = set()
     timestamp = None
     try:
@@ -357,12 +358,17 @@ def scan_full(path):
                     if first is None:
                         first = cur
                     last = cur
-                    if pending:
+                    # 1 メッセージは content ブロックごとに別レコードで書かれ、どれも同じ
+                    # message.id と usage を持つ。ホップは id が変わったレコードでだけ閉じる
+                    # （id が無いレコードは従来どおり次のレコードで閉じる）
+                    mid = msg.get("id")
+                    if pending and (hop_id is None or mid != hop_id):
                         diff = cur - hop_start
                         docs_total += diff if diff > 0 else 0
                         pending = False
-                    if trigger:
+                    if trigger and not pending:
                         hop_start = cur
+                        hop_id = mid
                         pending = True
     except Exception:
         pass
