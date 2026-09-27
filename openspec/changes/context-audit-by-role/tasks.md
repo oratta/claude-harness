@@ -4,11 +4,12 @@
 - [ ] 1.2 「`--by-role` を付けない既定呼び出しは出力が変わらない」ケースを追加する（既存の合格しているテストと同じ fixture を使い、`by_role` キーが出力に含まれないことを確認する）
 - [ ] 1.3 「`agentType` が `description` の見た目より優先される」ケース（`agentType: dev-workflow:decider` かつ `description` が `R1:` で始まる fixture）を追加する
 - [ ] 1.4 「担当別の `count` の合計が全体の `count` と一致する」ケースを追加する（`unknown` を含む混在 fixture）
-- [ ] 1.5 `docs_median` 用のケース（指示書パス `plugins/cache/oratta-claude-harness/.../*.md` への `Read` を含むホップ、`Skill` 呼び出しを含むホップ、両方が `usage` 差分として計上されることを確認する fixture）を追加する
-- [ ] 1.6 `reread_pct` 用のケース（同一 `#N` を持つ `W` を 2 体以上、`timestamp` 順に fixture 化し、先行が読んだ `file_path` の一部を後続が読み直す構成にする）を追加する
-- [ ] 1.7 「グループ最初の `W` は `reread_pct` の母数から除かれる」「`#N` が取れない `W` は対象から除かれる」ケースを追加する
-- [ ] 1.8 「既定・`--by-role` でキャッシュファイルが衝突しない」ケース（`--cache` を省略した状態で両方を実行し、既定パスと `.by-role` サフィックス付きパスが別ファイルになることを確認する）を追加する
-- [ ] 1.9 上記全ケースを実行し、実装前は失敗する（Red）ことを確認する
+- [ ] 1.5 `docs_median` 用のケース（個体 A に対象ホップ 2 つ、`usage` 差分がそれぞれ 3000 と 2000（指示書 `Read` のホップと `Skill` 呼び出しのホップを 1 つずつ）、個体 B に対象ホップ 0 の fixture を用意し、個体ごとに合計してから担当内で中央値を取る 2 段階集約により `docs_median` が 2500（個体 A の合計 5000 と個体 B の合計 0 の中央値）になることを確認する。指示書パスは `plugins/cache/oratta-claude-harness/.../*.md` への `Read` とする）
+- [ ] 1.6 `reread_pct` の基本ケース（同一 `#N`（例 `#552`）を持つ `W` を 2 体、`timestamp` 順に fixture 化し、先行が `fileA.md` と `fileB.md` を読み、後続が `fileA.md` だけ読み直す構成で `50.0` になることを確認する）を追加する。あわせて、先行・後続の `file_path` のディレクトリ部分が異なっていても末尾のファイル名（ベースネーム）が一致すれば読み直しとして数えるケース（worktree パスの違いを模した fixture）を追加する
+- [ ] 1.7 `reread_pct` の母数除外・グループ化ケース: 「グループ最初の `W` は母数から除かれる」「`description` に `#N` が無い `W` は対象から除かれる」「`description` に `#N` が複数出現する場合（例 `W: gate for PR #400 (#288)`）は最も左の `#400` がグループ化に使われる」の 3 ケースを追加する
+- [ ] 1.8 `python3` が無い環境で `--by-role` を実行した場合、既存の fail-open 応答（`count: 0` の固定文字列）のまま `by_role` キーが出ないケースと、`python3` はあるが対象トランスクリプトが 0 件の場合に `by_role` の 6 キー全部が `count: 0` / `first_median: null` / `docs_median: null` / `last_median: null` / `over_cap_pct: 0.0` で埋まるケースを追加する
+- [ ] 1.9 「既定・`--by-role` でキャッシュファイルが衝突しない」ケース（`--cache` を省略した状態で両方を実行し、既定パスと `.by-role` サフィックス付きパスが別ファイルになることを確認する）を追加する
+- [ ] 1.10 上記全ケースを実行し、実装前は失敗する（Red）ことを確認する
 
 ## 2. 実装（Green）
 
@@ -42,4 +43,6 @@
 ## 7. 検証
 
 - [ ] 7.1 `openspec validate context-audit-by-role --strict` を実行し、exit 0 を確認する
-- [ ] 7.2 本 tasks.md のチェックボックスが全部 `[x]` になっていることを確認する
+- [ ] 7.2 `./scripts/test.sh` を実行し、exit 0 を確認する（issue #552 受け入れ条件 4）
+- [ ] 7.3 `./scripts/lint.sh` を実行し、exit 0 を確認する（issue #552 受け入れ条件 4）
+- [ ] 7.4 本 tasks.md のチェックボックスが全部 `[x]` になっていることを確認する
