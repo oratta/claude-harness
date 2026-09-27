@@ -53,6 +53,7 @@
 - 代替: payload だけで見る → `background_tasks` は親セッション全体の台帳なので、本体の `ci-watch.sh wait` / `epic-dispatch.sh wait` が動いている間、すべてのサブエージェントの停止を拒否してしまう（probe (f) で本体の shell が入ることを確認）。不採用
 - 代替: トランスクリプトだけで見る（起動と task-notification の差）→ TaskStop の `killed` の通知が書かれない（probe (c)）ので、TaskStop の tool_result を第 3 の未文書の形式として読む必要が出る。通知の記録が遅れたときの 1 回分の余計な拒否も残る。不採用
 - 代替: プロセスの生死を見る → hook からは PID が分からない。出力ファイル（`tasks/<id>.output`）の更新時刻を見る → 出力を出さない長い処理を完了と誤認する。どちらも不採用
+- 所有の判定は `type:"user"` の記録の本文に限って拾う。Read の結果などに同じ文字列が入って余計な ID を拾っても、その ID は payload の `background_tasks` に `running` で入っていない限り積集合に残らないので害は無い（拾い過ぎは通す向きの誤りにしかならない）
 - トランスクリプトは全体を読む必要がある（起動はずっと前の行にありうる）。python3 に渡す前に `Command running in background with ID` を含む行だけに絞り、5MB で 200ms 未満を満たす（測り方は `tests/context-tripwire.bats` の性能テストと同じく 3 回測って最良値を見る。CI 機での揺れを避けるため）
 
 ### Decision 3: 対象トランスクリプトの解決は context-tripwire.sh と同じ規則にする
@@ -88,6 +89,7 @@ stdout に `{"decision":"block","reason":"…"}` を出して exit 0 する。�
 
 - [正しく前景で待った停止が拒否される／TaskStop 後の停止が拒否される／SubagentStop が名前付き background サブエージェントのターン終了で発火しない・block が効かない] → 解消: probe (a)(b)(c) で実測した（Claude Code 2.1.283。(a) 1 回目拒否・2 回目通過、(b)(c) 1 回目通過）
 - [`background_tasks` が文書化された payload 契約かどうか分からず、将来キーが消える・所有者のフィールドが増えるなどの変更がありうる] → キーが無ければ判定を見送って fail-open（stderr に 1 行）。読むのは `id` と `status` だけにし、`type` / `command` には依存しない。実測した版番号を design と `plugins/dev-workflow/changes/264.md` に残し、tasks 5.1 の実セッション再現が壊れたら気づけるようにする
+- [`background_tasks` の契約変更でこの検査が黙って無効になる] → 継続的に検知する仕組みは持たない。検知は tasks 5.1 の実セッション再現を版を上げたときに走らせ直すことと、fixture によるピン留め（形の変化は検知できるが、キーそのものが消える変化は fail-open になるので検知できない）に留まる
 - [`background_tasks` に本体や兄弟の shell が入ることを前提にしているが、将来サブエージェント固有の配列に変わる可能性がある] → 積集合は所有側（自分のトランスクリプト）で絞るので、配列の範囲が変わっても判定式は変わらない
 - [拒否の上限回数と正本の上限回数が食い違う] → hook の定数を bats で正本の記述と突き合わせる。どちらを直すかは正本が先
 - [ハーネスの SubagentStop の payload 形式（`agent_id` / `agent_transcript_path` の有無）が将来変わる] → 取れなければ fail-open で停止を通すので、止まるのは検出だけでサブエージェントの作業は止まらない

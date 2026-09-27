@@ -23,7 +23,7 @@
 - [ ] 2.9 hooks.json の `SubagentStop` に登録されており、既存エントリが変わっていないこと
 - [ ] 2.10 文言検査の素通りと実行時の検査の対: プラグインのディレクトリを `BATS_TEST_TMPDIR` に複製し、複製の `skills/develop/references/roles/worker.md` に禁止語を使わずに言い換えた違反を差し込み、その複製に対して既存の `subagent-waiting.bats` を実際に走らせて exit 0 になることを見る。同じ違反どおりに動いた合成トランスクリプトと payload（背景起動 1 件・同じ ID が `background_tasks` に `running`）では hook が停止を拒否することを並べて検査する。禁止語のリストは新しいスイートに写さない
 - [ ] 2.11 トランスクリプトに起動が無く、`background_tasks` に他の shell（本体の `ci-watch.sh wait` を模した項目）が `running` で入っているときは何も出力しないこと
-- [ ] 2.12 実セッションの probe (a) 1 回目の payload（原本は issue #264 のコメント https://github.com/oratta/claude-harness/issues/264#issuecomment-5851393522 ）を fixture として取り込み、実測した形式のまま block になること（形式のピン留め）
+- [ ] 2.12 実セッションの probe (a) 1 回目の payload（原本は issue #264 のコメント https://github.com/oratta/claude-harness/issues/264#issuecomment-5851393522 ）を fixture として取り込み、実測した形式のまま block になること（形式のピン留め）。payload は原本のまま使い、`agent_transcript_path` と `transcript_path` の 2 つだけを `BATS_TEST_TMPDIR` 配下の合成トランスクリプト（原本の tool_result 本文 1 行を `type:"user"` の記録として持つもの）に差し替える（原本のパスは作業者の機を指すので、そのままだと CI では fail-open で通ってしまう）。ピン留めの対象は `background_tasks` の形と `id` / `status` の読み方
 
 ## 3. 実装（Green）
 

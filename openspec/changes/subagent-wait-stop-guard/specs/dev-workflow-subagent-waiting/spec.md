@@ -83,7 +83,7 @@ dev-workflow プラグインは `scripts/subagent-stop-guard.sh` を `hooks/hook
 - **THEN** `scripts/test.sh` が失敗し、hook の定数を正本に合わせるよう示す
 
 ### Requirement: 停止の拒否はサブエージェントに限り、判定できなければ通す
-hook は payload に `agent_id` が無い停止（メインセッション）に対して何も出力してはならない（MUST NOT）。python3 が無い・payload が壊れている・payload に `background_tasks` が無い・対象トランスクリプトが見つからないか読めない・拒否回数のファイルが作れないか読めないときは、stdout に何も出力せず exit 0 で停止を通さなければならない（MUST）。その場合は stderr に判定を見送った旨を 1 行出してよい（SHALL）。環境変数 `DEV_WORKFLOW_STOP_GUARD=off` のときは判定をせずに停止を通す（SHALL）。この hook は install 先の全サブエージェントの停止で走るため、5MB のトランスクリプトで 200ms 未満で終えなければならない（MUST）。測り方は `tests/context-tripwire.bats` の性能テストと同じく複数回（3 回）測って最良値を見る（SHALL）。
+hook は payload に `agent_id` が無い停止（メインセッション）に対して何も出力してはならない（MUST NOT）。python3 が無い・payload が壊れている・payload に `background_tasks` が無い・対象トランスクリプトが見つからないか読めない・拒否回数のファイルが作れないか読めないときは、stdout に何も出力せず exit 0 で停止を通さなければならない（MUST）。payload に `background_tasks` が無い・対象トランスクリプトが見つからないか読めない・拒否回数のファイルが作れないか読めないときは、stderr に判定を見送った旨を 1 行出す（SHALL）。`agent_id` が無い停止と `DEV_WORKFLOW_STOP_GUARD=off` では stderr にも何も出さない（MUST NOT）。python3 が無い・payload が壊れているときも、サブエージェントの停止かどうかを判定できないので stderr に出さない（SHALL）。環境変数 `DEV_WORKFLOW_STOP_GUARD=off` のときは判定をせずに停止を通す（SHALL）。この hook は install 先の全サブエージェントの停止で走るため、5MB のトランスクリプトで 200ms 未満で終えなければならない（MUST）。測り方は `tests/context-tripwire.bats` の性能テストと同じく複数回（3 回）測って最良値を見る（SHALL）。
 
 #### Scenario: メインセッションが通知待ちで止まる
 - **WHEN** `agent_id` の無い payload で hook が呼ばれる
