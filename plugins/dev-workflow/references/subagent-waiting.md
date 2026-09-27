@@ -128,3 +128,22 @@ timeout: 540000
 
 - **G**: `needs-reviewer` を return し、根拠に「Codex タイムアウト（27 分）」と書く。**これが `skills/pr-review-gate/SKILL.md` 手順 2-1 のタイムアウト条件の定義**で、この上限がフォールバックの発火点になる
 - **W / R1**: 待ちをやめて本体に return する（どこまでやってどこで止まったかを書く）
+
+**待ちをやめて return する前に、その背景タスクを TaskStop ツール（旧名 KillShell）で停止する。** 上限に達したときだけでなく、背景タスクの結果を使わないと決めて放棄するときも同じ。停止したタスクは次に書く実行時の検査で数えられなくなるので、これが上限到達後の正当な出口になる。停止せずに return しようとすると実行時の検査に拒否される。return には停止したタスクと、どこまで待ったかを書く。
+
+## 実行時の検査（SubagentStop hook）
+
+この正本の禁止は、指示書の文言検査（`tests/subagent-waiting.bats`）だけでなく、`scripts/subagent-stop-guard.sh` が `SubagentStop` で実行時にも守らせる。文言検査は禁止語を使わずに言い換えた違反を素通りするが、実行時の検査はターンを終える瞬間そのものを見る。
+
+| | |
+|---|---|
+| 見るもの | 停止しようとしているサブエージェント自身のトランスクリプトにある背景起動の記録（Bash の tool_result 本文 `Command running in background with ID: <id>.`）と、SubagentStop の payload `background_tasks` の `id` と `status` |
+| 止めるもの | 自分が `run_in_background` で起動したタスクが、停止の時点で `background_tasks` に `status: "running"` のまま残っていること、の 1 つだけ。本体や他のサブエージェントの背景タスクは自分の起動記録が無いので数えない |
+| 通すもの | 背景起動が無い停止・起動したタスクが全部 `background_tasks` から消えているか `running` でない停止（TaskStop で停止してから return する停止を含む）・メインセッションの停止・判定できないとき（payload やトランスクリプトが読めない等） |
+| 守らないもの | `run_in_background` を使わず Bash の中で `nohup … &` 等で起こしたプロセス・`codex-companion.mjs` の job・正本と食い違う待ち値や完了シグナル（文言検査が受け持つ） |
+
+止めるときは停止を拒否し、未完了のタスク ID・前景の待ちループで待つこと・上限まで待ったなら TaskStop で停止してから終えること・この正本の場所・拒否の回数を理由として返す。理由が届いたら、前景の待ちループで完了を確認するか、TaskStop で停止してから終える。TaskStop の `killed` 通知はトランスクリプトに書かれないので、判定には使っていない。
+
+拒否の上限回数は総待ちの上限回数と同じで、理由を無視して停止を繰り返すサブエージェントを止め続けないための後詰めにすぎない。上限まで拒否した後の停止は通る。正当な出口は前景で待つか TaskStop で停止するかの 2 つだけである。
+
+全解除は環境変数 `DEV_WORKFLOW_STOP_GUARD=off`。
