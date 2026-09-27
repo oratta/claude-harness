@@ -29,20 +29,20 @@
 
 ## 4. 実機確認
 
-- [ ] 4.1 実機の `~/.claude/projects` に対して `subagent-context-audit.sh --by-role --refresh` を実行し、exit 0 で `by_role` が出ることを確認する
-- [ ] 4.2 `--by-role` を付けない同一実行が、この change の前後で出力が変わらないことを確認する（差分比較）
+- [x] 4.1 実機の `~/.claude/projects` に対して `subagent-context-audit.sh --by-role --refresh` を実行し、exit 0 で `by_role` が出ることを確認する
+- [x] 4.2 `--by-role` を付けない同一実行が、この change の前後で出力が変わらないことを確認する（差分比較）
 
 ## 5. エピック #511 への基準値コメント
 
-- [ ] 5.1 4.1 で得た実データの `by_role` 内訳（担当別 `first_median` / `last_median` / `over_cap_pct`）を、施策前の基準値として https://github.com/oratta/claude-harness/issues/511 にコメントする（この change のタスクであり恒久仕様ではない旨を明記する）
+- [x] 5.1 4.1 で得た実データの `by_role` 内訳（担当別 `first_median` / `last_median` / `over_cap_pct`）を、施策前の基準値として https://github.com/oratta/claude-harness/issues/511 にコメントする（この change のタスクであり恒久仕様ではない旨を明記する）
 
 ## 6. 変更の記録
 
-- [ ] 6.1 `plugins/dev-workflow/changes/552.md` を作成する（`plugins/dev-workflow/changes/522.md` 等の既存形式に合わせ、変更の要点・理由・影響ファイルを書く）
+- [x] 6.1 `plugins/dev-workflow/changes/552.md` を作成する（`plugins/dev-workflow/changes/522.md` 等の既存形式に合わせ、変更の要点・理由・影響ファイルを書く）
 
 ## 7. 検証
 
-- [ ] 7.1 `openspec validate context-audit-by-role --strict` を実行し、exit 0 を確認する
-- [ ] 7.2 `./scripts/test.sh` を実行し、exit 0 を確認する（issue #552 受け入れ条件 4）
-- [ ] 7.3 `./scripts/lint.sh` を実行し、exit 0 を確認する（issue #552 受け入れ条件 4）
-- [ ] 7.4 本 tasks.md のチェックボックスが全部 `[x]` になっていることを確認する
+- [x] 7.1 `openspec validate context-audit-by-role --strict` を実行し、exit 0 を確認する
+- [x] 7.2 `./scripts/test.sh` を実行し、exit 0 を確認する（issue #552 受け入れ条件 4）
+- [x] 7.3 `./scripts/lint.sh` を実行し、exit 0 を確認する（issue #552 受け入れ条件 4）
+- [x] 7.4 本 tasks.md のチェックボックスが全部 `[x]` になっていることを確認する
