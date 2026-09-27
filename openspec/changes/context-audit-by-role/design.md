@@ -36,6 +36,8 @@
 
 **分類できない件を欠番にしない**: `unknown` も `by_role` の合計に含める（母集団の一部として残し、既存の「分類できないことを理由に `count` から落とさない」方針（`サブエージェントのコンテキスト量の母集団集計` Requirement）と一貫させる）。
 
+**`Reviewer` の接頭辞は規約未確定**: develop の紐付け規約（`plugins/dev-workflow/skills/develop/SKILL.md:153`）は `W:` と `G:` の例しか示しておらず、「G のレビュアー」の `description` が `Reviewer:` で始まる保証は無い。実データでは `Reviewer` がほぼ 0 件で「G のレビュアー」が `unknown` に落ちる可能性がある。この change では分類ロジック側に手を入れず、実データ集計（tasks.md のエピック #511 コメント）で偏りが大きければ、紐付け規約側に接頭辞を追加する別 issue を起こす前提を spec に明記する。
+
 ### D2: `docs_median`（指示書の読み込み量の中央値）の計測単位
 
 「1 ホップ」を、`Read`（`file_path` が harness の指示書格納パス `plugins/cache/oratta-claude-harness/.*\.md$` に一致するもの）または `Skill` の `tool_use` を含む assistant ターンから、対応する `tool_result` を経て次の `usage` 付き assistant レコードまでの区間と定義し、その区間の `usage` の差分（次 − 現）を「指示書 1 回分の読み込みコスト」として担当ごとに積み上げ、中央値を出す。
