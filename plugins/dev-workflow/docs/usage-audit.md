@@ -134,7 +134,7 @@ plugins/dev-workflow/scripts/subagent-context-audit.sh --by-role --refresh
 | `W` / `R1` / `G` / `Reviewer` | `agentType` が decider でないとき、`description` の先頭コロン区切りトークンがこれらに完全一致 |
 | `unknown` | どちらにも当たらない（`description` 無し・コロン無し・未知のトークン・meta.json 欠損/壊れ） |
 
-`Reviewer:` の接頭辞は develop の紐付け規約（`skills/develop/SKILL.md` の紐付け規約）に未規定のため、
+`Reviewer:` の接頭辞は develop の紐付け規約（`skills/develop/SKILL.md` の「紐付けの規約」）に未規定のため、
 G のレビュアーは `unknown` に落ちうる（`Reviewer` の件数が少ない・`unknown` に偏るのは想定内の挙動）。
 
 各値は `count` / `first_median` / `docs_median` / `last_median` / `over_cap_pct` を持ち、
