@@ -603,6 +603,6 @@ PY
   run env SUBAGENT_CONTEXT_AUDIT_CACHE="$default_cache" "$SCRIPT" --projects "$PROJECTS" --by-role --refresh
   [ "$status" -eq 0 ]
   [ -f "${default_cache}.by-role" ]
-  ! grep -q '"by_role"' "$default_cache"
+  ! grep -q '"by_role"' "$default_cache" || return 1
   grep -q '"by_role"' "${default_cache}.by-role"
 }
