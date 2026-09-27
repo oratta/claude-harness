@@ -446,7 +446,7 @@ PY
   worker="${copy}/skills/develop/references/roles/worker.md"
   violation='- フルテストは run_in_background で起動し、結果の知らせが届くまでいったん手を止めてこのターンを締める'
   printf '\n%s\n' "$violation" >> "$worker"
-  grep -qF "$violation" "$worker"
+  grep -qF -- "$violation" "$worker"
   run bats "${copy}/tests/subagent-waiting.bats"
   echo "$output" | tail -n 5
   [ "$status" -eq 0 ]

@@ -12,25 +12,25 @@
 
 ## 2. テストを先に書く（Red）
 
-- [ ] 2.1 `plugins/dev-workflow/tests/subagent-stop-guard.bats` を作り、合成トランスクリプトを組む補助関数（背景起動の tool_result 本文 `Command running in background with ID: <id>.` を 1 行ずつ足せる形。context-tripwire.bats の組み方に合わせる）と、合成 payload を組む補助関数（`agent_id` / `agent_transcript_path` / `background_tasks` を差し替えられる）を置く
-- [ ] 2.2 トランスクリプトに起動が 1 件あり、payload の `background_tasks` に同じ ID が `running` で入っていると block が出て、理由にタスク ID・前景の待ちループで待つこと・上限まで待ったなら TaskStop で停止してから終えること・正本のパス・拒否の回数（例 `1/3`）が入ること。待ち値・完了マーカーの雛形が入らないこと
-- [ ] 2.3 起動したすべての ID が `background_tasks` に無い、または `status` が `running` でない、または起動が無いときは何も出力しないこと
-- [ ] 2.4 同じ `session_id`+`agent_id` を上限回数まで拒否した後の停止は通り、stderr に 1 行出てカウンタファイルが消えること。別の `agent_id` は独立に数えること。`stop_hook_active: true` でも回数内なら拒否すること
-- [ ] 2.5 hook の上限回数の定数が正本 `references/subagent-waiting.md` の総待ちの上限回数と一致すること
-- [ ] 2.6 `agent_id` が無い・python3 が無い・payload が壊れている・トランスクリプトが無い・カウンタのディレクトリが作れない・`DEV_WORKFLOW_STOP_GUARD=off` のとき、何も出力せず exit 0 になること。`background_tasks` キーが無い payload では stdout 無し・exit 0・stderr に 1 行出ること
-- [ ] 2.7 `agent_transcript_path` があればそれを使うこと。無ければ `<親>/<session_id>/subagents/agent-<agent_id>.jsonl`、それも無ければ context-tripwire.sh と同じ上限の探索で見つけること
-- [ ] 2.8 5MB の合成トランスクリプトで、3 回測った最良値が 200ms 未満であること（context-tripwire.bats の性能テストと同じ測り方）
-- [ ] 2.9 hooks.json の `SubagentStop` に登録されており、既存エントリが変わっていないこと
-- [ ] 2.10 文言検査の素通りと実行時の検査の対: プラグインのディレクトリを `BATS_TEST_TMPDIR` に複製し、複製の `skills/develop/references/roles/worker.md` に禁止語を使わずに言い換えた違反を差し込み、その複製に対して既存の `subagent-waiting.bats` を実際に走らせて exit 0 になることを見る。同じ違反どおりに動いた合成トランスクリプトと payload（背景起動 1 件・同じ ID が `background_tasks` に `running`）では hook が停止を拒否することを並べて検査する。禁止語のリストは新しいスイートに写さない
-- [ ] 2.11 トランスクリプトに起動が無く、`background_tasks` に他の shell（本体の `ci-watch.sh wait` を模した項目）が `running` で入っているときは何も出力しないこと
-- [ ] 2.12 実セッションの probe (a) 1 回目の payload（原本は issue #264 のコメント https://github.com/oratta/claude-harness/issues/264#issuecomment-5851393522 ）を fixture として取り込み、実測した形式のまま block になること（形式のピン留め）。payload は原本のまま使い、`agent_transcript_path` と `transcript_path` の 2 つだけを `BATS_TEST_TMPDIR` 配下の合成トランスクリプト（原本の tool_result 本文 1 行を `type:"user"` の記録として持つもの）に差し替える（原本のパスは作業者の機を指すので、そのままだと CI では fail-open で通ってしまう）。ピン留めの対象は `background_tasks` の形と `id` / `status` の読み方
+- [x] 2.1 `plugins/dev-workflow/tests/subagent-stop-guard.bats` を作り、合成トランスクリプトを組む補助関数（背景起動の tool_result 本文 `Command running in background with ID: <id>.` を 1 行ずつ足せる形。context-tripwire.bats の組み方に合わせる）と、合成 payload を組む補助関数（`agent_id` / `agent_transcript_path` / `background_tasks` を差し替えられる）を置く
+- [x] 2.2 トランスクリプトに起動が 1 件あり、payload の `background_tasks` に同じ ID が `running` で入っていると block が出て、理由にタスク ID・前景の待ちループで待つこと・上限まで待ったなら TaskStop で停止してから終えること・正本のパス・拒否の回数（例 `1/3`）が入ること。待ち値・完了マーカーの雛形が入らないこと
+- [x] 2.3 起動したすべての ID が `background_tasks` に無い、または `status` が `running` でない、または起動が無いときは何も出力しないこと
+- [x] 2.4 同じ `session_id`+`agent_id` を上限回数まで拒否した後の停止は通り、stderr に 1 行出てカウンタファイルが消えること。別の `agent_id` は独立に数えること。`stop_hook_active: true` でも回数内なら拒否すること
+- [x] 2.5 hook の上限回数の定数が正本 `references/subagent-waiting.md` の総待ちの上限回数と一致すること
+- [x] 2.6 `agent_id` が無い・python3 が無い・payload が壊れている・トランスクリプトが無い・カウンタのディレクトリが作れない・`DEV_WORKFLOW_STOP_GUARD=off` のとき、何も出力せず exit 0 になること。`background_tasks` キーが無い payload では stdout 無し・exit 0・stderr に 1 行出ること
+- [x] 2.7 `agent_transcript_path` があればそれを使うこと。無ければ `<親>/<session_id>/subagents/agent-<agent_id>.jsonl`、それも無ければ context-tripwire.sh と同じ上限の探索で見つけること
+- [x] 2.8 5MB の合成トランスクリプトで、3 回測った最良値が 200ms 未満であること（context-tripwire.bats の性能テストと同じ測り方）
+- [x] 2.9 hooks.json の `SubagentStop` に登録されており、既存エントリが変わっていないこと
+- [x] 2.10 文言検査の素通りと実行時の検査の対: プラグインのディレクトリを `BATS_TEST_TMPDIR` に複製し、複製の `skills/develop/references/roles/worker.md` に禁止語を使わずに言い換えた違反を差し込み、その複製に対して既存の `subagent-waiting.bats` を実際に走らせて exit 0 になることを見る。同じ違反どおりに動いた合成トランスクリプトと payload（背景起動 1 件・同じ ID が `background_tasks` に `running`）では hook が停止を拒否することを並べて検査する。禁止語のリストは新しいスイートに写さない
+- [x] 2.11 トランスクリプトに起動が無く、`background_tasks` に他の shell（本体の `ci-watch.sh wait` を模した項目）が `running` で入っているときは何も出力しないこと
+- [x] 2.12 実セッションの probe (a) 1 回目の payload（原本は issue #264 のコメント https://github.com/oratta/claude-harness/issues/264#issuecomment-5851393522 ）を fixture として取り込み、実測した形式のまま block になること（形式のピン留め）。payload は原本のまま使い、`agent_transcript_path` と `transcript_path` の 2 つだけを `BATS_TEST_TMPDIR` 配下の合成トランスクリプト（原本の tool_result 本文 1 行を `type:"user"` の記録として持つもの）に差し替える（原本のパスは作業者の機を指すので、そのままだと CI では fail-open で通ってしまう）。ピン留めの対象は `background_tasks` の形と `id` / `status` の読み方
 
 ## 3. 実装（Green）
 
-- [ ] 3.1 `plugins/dev-workflow/scripts/subagent-stop-guard.sh` を実装する（bash の前段で全解除と `agent_id` の有無を切り、判定は python3。`Command running in background with ID` を含む行だけに絞ってから JSON を読む。fail-open）
-- [ ] 3.2 対象トランスクリプトの解決を実装する。`agent_transcript_path` の分岐はこの hook 固有、それが無いときの導出と探索の上限は context-tripwire.sh と同じ。共通化する場合は `tests/context-tripwire.bats` を 1 件も変えずに通す
-- [ ] 3.3 `plugins/dev-workflow/hooks/hooks.json` に `SubagentStop` のエントリを追加する
-- [ ] 3.4 2 章のテストがすべて通ることを確かめる
+- [x] 3.1 `plugins/dev-workflow/scripts/subagent-stop-guard.sh` を実装する（bash の前段で全解除と `agent_id` の有無を切り、判定は python3。`Command running in background with ID` を含む行だけに絞ってから JSON を読む。fail-open）
+- [x] 3.2 対象トランスクリプトの解決を実装する。`agent_transcript_path` の分岐はこの hook 固有、それが無いときの導出と探索の上限は context-tripwire.sh と同じ。共通化する場合は `tests/context-tripwire.bats` を 1 件も変えずに通す
+- [x] 3.3 `plugins/dev-workflow/hooks/hooks.json` に `SubagentStop` のエントリを追加する
+- [x] 3.4 2 章のテストがすべて通ることを確かめる
 
 ## 4. 正本と記録
 
