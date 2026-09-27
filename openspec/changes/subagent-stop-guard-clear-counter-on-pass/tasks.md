@@ -22,4 +22,4 @@
 ## 4. 検証
 
 - [x] 4.1 `openspec validate subagent-stop-guard-clear-counter-on-pass --strict` を実行し exit 0 を確認する
-- [ ] 4.2 受け入れ条件（issue #561）の 3 点（カウンタ削除・spec/テスト更新・`scripts/test.sh subagent-stop-guard` の exit 0）を満たしていることを確認する
+- [x] 4.2 受け入れ条件（issue #561）の 3 点（カウンタ削除・spec/テスト更新・`scripts/test.sh subagent-stop-guard` の exit 0）を満たしていることを確認する
