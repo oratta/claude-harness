@@ -91,9 +91,8 @@ PY
 
 # --- 検査 1b: 待ちの手順を正本以外に再掲していないこと ---
 #
-# 「正本 1 本・各指示書は禁止 1 行」の設計を機械で守る。2026-09-09 のレビューで、
-# gate-runner に再掲していた companion の判定方法（exit code で区別する）が事実と
-# 食い違ったまま残っていたため、再掲そのものを落とす。
+# 「正本 1 本・各指示書は禁止 1 行」の設計を機械で守る。古いほうの手順に従うと、
+# 事実と違う判定方法のまま通してしまうため、再掲そのものを落とす。
 
 @test "the waiting templates and values appear only in the canonical contract" {
   for f in "${SUBAGENT_DOCS[@]}"; do

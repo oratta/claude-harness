@@ -27,7 +27,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 - `openspec:archive`（`/opsx:archive`）の完了通知
 - ファイルを編集した直後の assistant 報告
 
-この限定は、旧 e2s が全コミット境界で起動してコンテキストを浪費した反省を踏まえている。
+この限定を緩めると、汎用完了フレーズやコミット境界のたびに誤起動してコンテキストを浪費する。
 
 ## メインフロー
 
