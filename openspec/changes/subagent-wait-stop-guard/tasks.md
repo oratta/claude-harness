@@ -41,5 +41,5 @@
 
 ## 5. 実セッションでの再現と検査
 
-- [ ] 5.1 `claude -p --plugin-dir plugins/dev-workflow` で、サブエージェントに `sleep` を `run_in_background` で起動させ「完了を待つ」とだけ書いてターンを終えさせる。hook の拒否理由が届き、サブエージェントが前景で待ってから終わることを、実行コマンドと出力で issue #264 に添付する
+- [x] 5.1 `claude -p --plugin-dir plugins/dev-workflow` で、サブエージェントに `sleep` を `run_in_background` で起動させ「完了を待つ」とだけ書いてターンを終えさせる。hook の拒否理由が届き、サブエージェントが前景で待ってから終わることを、実行コマンドと出力で issue #264 に添付する
 - [ ] 5.2 `.github/workflows/` の `pull_request` / `push` の検査コマンドをすべて実行し、`scripts/test.sh` が exit 0 であることを確かめる

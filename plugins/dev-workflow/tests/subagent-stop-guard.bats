@@ -36,7 +36,7 @@ setup() {
   unset DEV_WORKFLOW_STOP_GUARD || true
 }
 
-# サブエージェントのトランスクリプトを始める（背景起動は無い）: $1=ファイル（省略時 $TRANSCRIPT）
+# サブエージェントのトランスクリプトを始める（背景起動は無い）: $1=ファイル（省略時 ${TRANSCRIPT}）
 new_transcript() {
   local f="${1:-$TRANSCRIPT}"
   mkdir -p "$(dirname "$f")"
@@ -45,7 +45,7 @@ new_transcript() {
 }
 
 # 背景起動の tool_result を 1 行足す。実測の形（type:"user"・toolUseResult は null・ID は本文だけ）に合わせる。
-# $1=タスク ID  $2=ファイル（省略時 $TRANSCRIPT）  $3=記録の type（省略時 user）
+# $1=タスク ID  $2=ファイル（省略時 ${TRANSCRIPT}）  $3=記録の type（省略時 user）
 add_launch() {
   local id="$1" f="${2:-$TRANSCRIPT}" typ="${3:-user}"
   ID="$id" TYP="$typ" python3 - >> "$f" <<'PY'
