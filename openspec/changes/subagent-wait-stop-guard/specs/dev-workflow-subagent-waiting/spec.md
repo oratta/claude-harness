@@ -16,7 +16,7 @@ dev-workflow のサブエージェント（W / R1 / G）は、長時間処理（
 
 **総待ちには上限を設けなければならない（MUST）。** 既定は前景ループ 3 回（540000 ms × 3 = 27 分）とする。上限に達しても完了しない場合は待ちをやめ、経路ごとの分岐に入らなければならない（MUST）。G は `needs-reviewer` を return し、根拠に「Codex タイムアウト（27 分）」と書く。これは `skills/pr-review-gate/SKILL.md` のフォールバック条件「未導入・サブスク切れ・タイムアウト」の「タイムアウト」の定義であり、この上限がフォールバックの発火点になる（SHALL）。W / R1 は待ちをやめて本体に return する。上限なしに待ち続けてはならない（MUST NOT。ジョブが死んで出力が来ない場合と、単に時間がかかっている場合を区別できなくなるため）。
 
-**待ちをやめて return するとき（上限到達のほか、背景タスクの結果を使わないと決めて放棄するときも含む）は、return する前にその背景タスクを TaskStop ツール（旧名 KillShell）で停止しなければならない（MUST）。** 停止すると終了の通知（`<status>killed</status>`）が記録され、要件「未完了の背景タスクを残したサブエージェントの停止を実行時に拒否する」の hook がその停止を通す。これが上限到達後の正当な出口であり、停止せずに return しようとすると hook に拒否される。return には停止したタスクと、どこまで待ったかを書く（SHALL）。
+**待ちをやめて return するとき（上限到達のほか、背景タスクの結果を使わないと決めて放棄するときも含む）は、return する前にその背景タスクを TaskStop ツール（旧名 KillShell）で停止しなければならない（MUST）。** 停止するとそのタスクは SubagentStop の payload `background_tasks` から消えるので、要件「未完了の背景タスクを残したサブエージェントの停止を実行時に拒否する」の hook がその停止を通す。これが上限到達後の正当な出口であり、停止せずに return しようとすると hook に拒否される。return には停止したタスクと、どこまで待ったかを書く（SHALL）。
 
 #### Scenario: 1 回の待ちで完了しない
 - **WHEN** 前景の待ちループがタイムアウトしても対象の処理が終わっていない
@@ -33,13 +33,13 @@ dev-workflow のサブエージェント（W / R1 / G）は、長時間処理（
 ## ADDED Requirements
 
 ### Requirement: 未完了の背景タスクを残したサブエージェントの停止を実行時に拒否する
-dev-workflow プラグインは `scripts/subagent-stop-guard.sh` を `hooks/hooks.json` の `SubagentStop` に登録しなければならない（MUST）。hook は停止しようとしているサブエージェント自身のトランスクリプトを読み、そのサブエージェントが `run_in_background` で起動した背景タスクのうち終了の記録が無いものを未完了として数えなければならない（MUST）。起動は tool_result の `toolUseResult.backgroundTaskId` で、終了は `<task-notification>` の `<task-id>` と `<status>`（`completed` / `failed` / `killed`）で判定する（SHALL）。出力ファイルの更新時刻やプロセスの有無で完了を推定してはならない（MUST NOT）。
+dev-workflow プラグインは `scripts/subagent-stop-guard.sh` を `hooks/hooks.json` の `SubagentStop` に登録しなければならない（MUST）。hook は、停止しようとしているサブエージェント自身のトランスクリプトから自分が `run_in_background` で起動した背景タスクの ID を集め（所有の判定）、SubagentStop の payload `background_tasks` にその ID が `status:"running"` で残っているものを未完了として数えなければならない（MUST）。起動の ID は Bash ツールの tool_result 本文 `Command running in background with ID: <id>.` から取る（SHALL。サブエージェント側のトランスクリプトでは `toolUseResult` が null で使えない、2026-09-27 の実測）。自分のトランスクリプトに起動の記録が無い ID は、`background_tasks` に `running` で残っていても数えない（MUST NOT。配列は親セッション全体の台帳で、本体や他のサブエージェントの背景タスクも入る）。`status` が `running` 以外の値、および配列に無い ID は終了したものとして通す（SHALL）。出力ファイルの更新時刻やプロセスの有無で完了を推定してはならない（MUST NOT）。
 
 **守備範囲。** この検査は次の範囲だけを受け持つ（SHALL）。
-- 入力の出どころ: 停止しようとしているサブエージェント自身のトランスクリプト（Claude Code が書く JSONL）と、SubagentStop の payload
-- 拾う誤り: Bash ツールの `run_in_background` で起動した背景タスクに終了の記録が無いまま停止すること、の 1 つだけ
-- 通す入力の例: 背景起動が無い停止／起動したすべてのタスクに `completed` / `failed` / `killed` の通知がある停止（上限到達後に TaskStop で停止してから return する停止を含む）／メインセッション（`agent_id` が無い）／python3 が無い・payload が壊れている・トランスクリプトが見つからない／`DEV_WORKFLOW_STOP_GUARD=off`
-- 守らないもの: `run_in_background` を使わず Bash の中で `nohup … &` や `setsid` で起こしたプロセス（`backgroundTaskId` が記録されない）／`codex-companion.mjs` の job／正本と食い違う待ち値・完了シグナル（文言検査が受け持つ）／拒否の上限回数まで理由を無視して停止を繰り返したサブエージェント／完了済みなのに通知がまだ記録されていないことによる 1 回分の余計な拒否
+- 入力の出どころ: 停止しようとしているサブエージェント自身のトランスクリプト（Claude Code が書く JSONL）と、SubagentStop の payload（`background_tasks` の `id` と `status` だけを読む）
+- 拾う誤り: Bash ツールの `run_in_background` で起動した背景タスクが `background_tasks` に `running` で残ったまま停止すること、の 1 つだけ。本体や兄弟のサブエージェントの背景タスクは所有の判定で外れるので、この誤りに含まれない
+- 通す入力の例: 背景起動が無い停止／起動したすべてのタスクが `background_tasks` から消えている、または `status` が `running` でない停止（上限到達後に TaskStop で停止してから return する停止を含む）／メインセッション（`agent_id` が無い）／python3 が無い・payload が壊れている・payload に `background_tasks` が無い・トランスクリプトが見つからない／`DEV_WORKFLOW_STOP_GUARD=off`
+- 守らないもの: `run_in_background` を使わず Bash の中で `nohup … &` や `setsid` で起こしたプロセス（tool_result に `Command running in background with ID:` が記録されない）／`codex-companion.mjs` の job／正本と食い違う待ち値・完了シグナル（文言検査が受け持つ）／拒否の上限回数まで理由を無視して停止を繰り返したサブエージェント／payload に `background_tasks` を持たない版の Claude Code（この版では判定を見送る）
 
 新しい抜け道が見つかっても、この要件の完了条件は「拾う誤り」に挙げた 1 つを止めることであり、抜け道を塞ぎ切ることではない（SHALL）。守らないものに当たる指摘は、この要件の範囲外として扱う。
 
@@ -48,20 +48,24 @@ dev-workflow プラグインは `scripts/subagent-stop-guard.sh` を `hooks/hook
 対象トランスクリプトは、payload に `agent_transcript_path` があればそれを使う（SHALL）。無いときは `transcript_path` の親ディレクトリ・`session_id`・`agent_id` から `<親>/<session_id>/subagents/agent-<agent_id>.jsonl` を導出し、そこに無ければ worktree 隔離のための探索を行う。この導出と探索の上限（深さ・件数・時間）は `scripts/context-tripwire.sh` と同じにする（SHALL）。
 
 #### Scenario: 背景でテストを起動したままターンを終えようとする
-- **WHEN** サブエージェントが `run_in_background` で test.sh を起動し、終了の通知が記録される前にターンを終えようとする
+- **WHEN** サブエージェントが `run_in_background` で test.sh を起動し、そのタスクが `background_tasks` に `running` で残ったままターンを終えようとする
 - **THEN** hook が停止を拒否し、未完了のタスク ID・前景の待ちループで待つこと・上限まで待ったなら TaskStop で停止してから終えること・正本の場所・拒否の回数を理由として返す
 
 #### Scenario: 背景タスクがすべて終わっている
-- **WHEN** サブエージェントが起動した背景タスクすべてに `completed` / `failed` / `killed` の終了通知が記録されている
+- **WHEN** サブエージェントが起動した背景タスクがすべて `background_tasks` に無い、または `status` が `running` でない
 - **THEN** hook は何も出力せず停止を通す
 
 #### Scenario: 上限まで待ってから停止して return する
 - **WHEN** 前景ループを上限回数まで回しても完了せず、サブエージェントが背景タスクを TaskStop で停止してから return する
-- **THEN** `<status>killed</status>` の通知が記録されているので、hook は 1 回目の停止で通す
+- **THEN** TaskStop で停止したタスクは `background_tasks` から消えているので、hook は 1 回目の停止で通す
 
 #### Scenario: 背景タスクを起動していない
-- **WHEN** トランスクリプトに `backgroundTaskId` が 1 件も無い
+- **WHEN** トランスクリプトに `Command running in background with ID:` を含む tool_result が 1 件も無い
 - **THEN** hook は何も出力せず停止を通す
+
+#### Scenario: 本体の背景タスクが動いている
+- **WHEN** 本体が `ci-watch.sh wait` を `run_in_background` で起動しており、背景起動をしていないサブエージェントが停止する（`background_tasks` に本体の shell が `running` で入っている）
+- **THEN** 自分の起動記録が無いので hook は何も出力せず停止を通す
 
 #### Scenario: 範囲外の抜け道を指摘された
 - **WHEN** Bash の中で `nohup … &` で起こしたプロセスを残したまま停止すると hook を通る、と指摘される
@@ -79,7 +83,7 @@ dev-workflow プラグインは `scripts/subagent-stop-guard.sh` を `hooks/hook
 - **THEN** `scripts/test.sh` が失敗し、hook の定数を正本に合わせるよう示す
 
 ### Requirement: 停止の拒否はサブエージェントに限り、判定できなければ通す
-hook は payload に `agent_id` が無い停止（メインセッション）に対して何も出力してはならない（MUST NOT）。python3 が無い・payload が壊れている・対象トランスクリプトが見つからないか読めない・拒否回数のファイルが作れないか読めないときは、何も出力せず exit 0 で停止を通さなければならない（MUST）。環境変数 `DEV_WORKFLOW_STOP_GUARD=off` のときは判定をせずに停止を通す（SHALL）。この hook は install 先の全サブエージェントの停止で走るため、5MB のトランスクリプトで 200ms 未満で終えなければならない（MUST）。測り方は `tests/context-tripwire.bats` の性能テストと同じく複数回（3 回）測って最良値を見る（SHALL）。
+hook は payload に `agent_id` が無い停止（メインセッション）に対して何も出力してはならない（MUST NOT）。python3 が無い・payload が壊れている・payload に `background_tasks` が無い・対象トランスクリプトが見つからないか読めない・拒否回数のファイルが作れないか読めないときは、stdout に何も出力せず exit 0 で停止を通さなければならない（MUST）。その場合は stderr に判定を見送った旨を 1 行出してよい（SHALL）。環境変数 `DEV_WORKFLOW_STOP_GUARD=off` のときは判定をせずに停止を通す（SHALL）。この hook は install 先の全サブエージェントの停止で走るため、5MB のトランスクリプトで 200ms 未満で終えなければならない（MUST）。測り方は `tests/context-tripwire.bats` の性能テストと同じく複数回（3 回）測って最良値を見る（SHALL）。
 
 #### Scenario: メインセッションが通知待ちで止まる
 - **WHEN** `agent_id` の無い payload で hook が呼ばれる
@@ -88,6 +92,10 @@ hook は payload に `agent_id` が無い停止（メインセッション）に
 #### Scenario: トランスクリプトが見つからない
 - **WHEN** 導出したパスにも探索範囲にも対象トランスクリプトが無い
 - **THEN** hook は何も出力せず exit 0 で停止を通す
+
+#### Scenario: payload に background_tasks が無い
+- **WHEN** 旧い・異なる版の Claude Code で payload に `background_tasks` キーが無い
+- **THEN** hook は判定を見送り、stdout に何も出さず exit 0 で通す。stderr に見送った旨を 1 行出す
 
 #### Scenario: 全解除
 - **WHEN** `DEV_WORKFLOW_STOP_GUARD=off` が設定されている
