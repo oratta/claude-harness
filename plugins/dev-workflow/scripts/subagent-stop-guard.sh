@@ -148,10 +148,19 @@ tasks = payload.get("background_tasks")
 if not isinstance(tasks, list):
     skip("payload に background_tasks が無いので判定を見送る（Claude Code の版を確かめる）")
 
+# 拒否回数（後詰め）の置き場。running / pending の判定より前に決めておき、
+# 停止を通すどの分岐でも同じ変数で削除できるようにする（issue #561）。
+counter_dir = os.path.join(os.environ.get("TMPDIR") or "/tmp", "dev-workflow-stop-guard")
+counter = os.path.join(counter_dir, "%s-%s.count" % (session_id, agent_id))
+
 running = {t.get("id") for t in tasks
            if isinstance(t, dict) and t.get("status") == "running" and isinstance(t.get("id"), str)}
 running.discard(agent_id)           # 停止する本人（type:"subagent"）
 if not running:
+    try:
+        os.remove(counter)          # 停止を通す時点でカウンタを消す。無ければ何もしない
+    except OSError:
+        pass
     sys.exit(0)
 
 # 対象トランスクリプト: agent_transcript_path → 導出 → 上限つきの探索（後の 2 つは context-tripwire.sh と同じ）
@@ -174,11 +183,13 @@ except OSError:
 
 pending = [(i, out) for i, out in mine.items() if i in running]
 if not pending:
+    try:
+        os.remove(counter)          # 停止を通す時点でカウンタを消す。無ければ何もしない
+    except OSError:
+        pass
     sys.exit(0)
 
-# 拒否回数（後詰め）。正当な出口は前景で待つか TaskStop で止めることで、ここは理由を無視し続ける場合の上限
-counter_dir = os.path.join(os.environ.get("TMPDIR") or "/tmp", "dev-workflow-stop-guard")
-counter = os.path.join(counter_dir, "%s-%s.count" % (session_id, agent_id))
+# 正当な出口は前景で待つか TaskStop で止めることで、ここから先は理由を無視し続ける場合の上限
 try:
     os.makedirs(counter_dir, exist_ok=True)
 except OSError:
