@@ -126,3 +126,19 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
   jq -e '.commands | index("./commands/develop.md")' "$MANIFEST" >/dev/null
   jq -e '.commands | index("./commands/work-issue.md")' "$MANIFEST" >/dev/null
 }
+
+# commands/ に置いただけでは読み込まれない（#523 で /ci-watch が一覧に出なかった）
+@test "manifest: every commands/*.md is registered in plugin.json commands" {
+  local f rel
+  for f in "$PLUGIN_DIR"/commands/*.md; do
+    rel="./commands/$(basename "$f")"
+    jq -e --arg p "$rel" '.commands | index($p) != null' "$MANIFEST" >/dev/null \
+      || { echo "not registered: $rel"; return 1; }
+  done
+}
+
+# Claude Code がコマンド本文で置き換えるのは ${CLAUDE_PLUGIN_ROOT} の字面だけで、:- の形は置き換わらない（#523）
+@test "commands: no command uses the \${CLAUDE_PLUGIN_ROOT:- form" {
+  run grep -n 'CLAUDE_PLUGIN_ROOT:-' "$PLUGIN_DIR"/commands/*.md
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+}

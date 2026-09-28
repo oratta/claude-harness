@@ -28,6 +28,7 @@
   "commands": [
     "./commands/develop.md",
     "./commands/work-issue.md",
-    "./commands/memory-refresh.md"
+    "./commands/memory-refresh.md",
+    "./commands/ci-watch.md"
   ]
 }
