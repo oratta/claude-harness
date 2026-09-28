@@ -476,7 +476,7 @@ extract_context_cap_section() {
 
 @test "gate-runner: legacy fallback is measured and App Server mode stays separate" {
   local doc token
-  doc="$(section "$GATE" 'レビューの実行者')"
+  doc="$(awk '/^### レビューの実行者/{f=1;print;next} /^##/{f=0} f' "$REVIEW_RUN")"
   for token in '従来モード' '実測したバイナリ無し・認証切れ・タイムアウト' 'companion / slash command が無ければ' 'exec を試す' 'companion 導入は任意' 'command -v codex' 'auth.json' '未試行' '引数誤り・権限拒否・通信障害' '暗黙にフォールバックしない'; do
     echo "$doc" | grep -qF "$token"
   done
@@ -495,13 +495,15 @@ extract_context_cap_section() {
 # ===== gate-runner.md: 指摘の固定書式と要約受領の分岐（issue #349・#352） =====
 
 @test "gate-runner (#349): needs-reviewer payload names the step 2-1 reviewer block as the reviewer instruction" {
-  n="$(section "$GATE" 'needs-reviewer')"
+  n="$(section "$PREPARE" 'needs-reviewer')"
   line="$(echo "$n" | grep -F 'レビュアーに渡す指示:')"
   [ -n "$line" ] || { echo "no reviewer-instruction line in needs-reviewer"; return 1; }
-  echo "$line" | grep -qF 'SKILL.md 手順 2-1'
+  echo "$line" | grep -qF 'stages/reviewer-brief.md` の手順 2-1'
   echo "$line" | grep -qF 'レビュアー向け指示ブロック'
-  run grep -E '^\| `(blocking|should|nit)` \||`plausible`' "$GATE"
-  [ "$status" -ne 0 ]
+  for f in "$GATE" "$PREPARE"; do
+    run grep -E '^\| `(blocking|should|nit)` \||`plausible`' "$f"
+    [ "$status" -ne 0 ]
+  done
 }
 
 @test "gate-runner (#352): needs-reviewer does not tell G to continue with step 3 unconditionally" {
@@ -524,18 +526,20 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#349): the sorting field and on-hold section speak of stopping findings, not quotable ones" {
-  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
+  common="$(awk '/^### return の書式（failed/{f=1;next} f&&/^### failed のとき/{exit} f' "$TRIAGE")"
   echo "$common" | grep -qF '全周共通の判定で止める指摘が残'
-  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "$GATE")"
+  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "$HOLD")"
   echo "$hold" | grep -qF '全周共通の判定で止める指摘が残'
-  run grep -F '引用できる指摘が残' "$GATE"
-  [ "$status" -ne 0 ]
+  for f in "$GATE" "$TRIAGE" "$HOLD"; do
+    run grep -F '引用できる指摘が残' "$f"
+    [ "$status" -ne 0 ]
+  done
 }
 
 @test "gate-runner (#349 gate round 1): the sorting field and the round-2 cap record which of the three exceptions applies" {
-  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
+  common="$(awk '/^### return の書式（failed/{f=1;next} f&&/^### failed のとき/{exit} f' "$TRIAGE")"
   echo "$common" | grep -F '仕分け' | grep -qF '例外 3 種のどれか'
-  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "$GATE")"
+  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "$HOLD")"
   echo "$hold" | grep -F '切り出しの確認' | grep -qF '例外 3 種のどれか'
 }
 
@@ -563,8 +567,8 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#354): the sorting field covers every round and records row 3, row 4 and decider rulings" {
-  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
-  line="$(echo "$common" | grep -F '仕分け')"
+  common="$(awk '/^### return の書式（failed/{f=1;next} f&&/^### failed のとき/{exit} f' "$TRIAGE")"
+  line="$(echo "$common" | grep -F '仕分け（')"
   echo "$line" | grep -qF '指摘を受け取ったすべての周'
   echo "$line" | grep -qF '仕分け表'
   echo "$line" | grep -qF '受け入れ条件の外・その場で直した・直し方 N 行'
@@ -628,8 +632,8 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#355): one supplemental pass is payload state and residual is terminal" {
-  n="$(section "$GATE" 'needs-reviewer')"
-  for token in '固定 HEAD' '元の三表' '残差' '補足済み回数: 0' '不足した項目だけ' 'SKILL.md 手順 2-1'; do
+  n="$(section "$PREPARE" 'needs-reviewer')"
+  for token in '固定 HEAD' '元の三表' '残差' '補足済み回数: 0' '不足した項目だけ' 'reviewer-brief.md` の手順 2-1'; do
     echo "$n" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
   common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
@@ -641,7 +645,7 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#355): later-round findings carry exactly one measurement category without changing routing" {
-  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
+  common="$(awk '/^### return の書式（failed/{f=1;next} f&&/^### failed のとき/{exit} f' "$TRIAGE")"
   for token in '同じ文が複数か所' '場合分けの漏れ' '直したつもりで直っていない' '直しで新しく入った' 'いずれか 1 つ'; do
     echo "$common" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
@@ -685,12 +689,12 @@ extract_context_cap_section() {
 
 @test "gate-runner (#359): owner-answer and decider-ruling resumes refer to the mixed paragraph and do not go to failed early" {
   for key in '保留の解除' '決める役の裁定受領'; do
-    line="$(grep -F -- "**$key**" "$GATE")"
+    line="$(grep -F -- "**$key**" "$HOLD" "$TRIAGE" | cut -d: -f2-)"
     [ -n "$line" ] || { echo "no line: $key"; return 1; }
     echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の混在の段落' || { echo "$key lacks mixed ref"; return 1; }
     echo "$line" | grep -qF 'failed に進まない' || { echo "$key lacks guard"; return 1; }
   done
-  grep -F '**決める役の裁定受領**' "$GATE" | grep -qF '裁定なし（入力不足）'
+  grep -F '**決める役の裁定受領**' "$TRIAGE" | grep -qF '裁定なし（入力不足）'
 }
 
 @test "gate-runner (#357): the post-fix re-review matches row 3 in two stages, pre-fix SHA and HEAD" {
@@ -732,7 +736,7 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#441): when HEAD moves on an accepted PR, try pr-review-gate step 3-c before asking the owner" {
-  line="$(awk '/^## 再開/{f=1} /^## モデル/{f=0} f' "$GATE" | grep -F '許容済みの PR で HEAD が動いた')"
+  line="$(awk '/^### 再開/{f=1;next} /^##/{f=0} f' "$HOLD" | grep -F '許容済みの PR で HEAD が動いた')"
   echo "$line" | grep -qF '主に聞く前に'
   echo "$line" | grep -qF 'pr-review-gate 手順 3-c'
 }
