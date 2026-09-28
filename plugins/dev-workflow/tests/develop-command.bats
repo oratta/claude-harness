@@ -136,3 +136,9 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
       || { echo "not registered: $rel"; return 1; }
   done
 }
+
+# Claude Code がコマンド本文で置き換えるのは ${CLAUDE_PLUGIN_ROOT} の字面だけで、:- の形は置き換わらない（#523）
+@test "commands: no command uses the \${CLAUDE_PLUGIN_ROOT:- form" {
+  run grep -n 'CLAUDE_PLUGIN_ROOT:-' "$PLUGIN_DIR"/commands/*.md
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+}
