@@ -864,3 +864,36 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   echo "$inp" | grep -qF 'follow-up issue'
   echo "$inp" | grep -qF '`次の段: 合格処理`'
 }
+
+@test "gate-runner (#582): after the hold release, pass enters step 5 only when a risk declaration for the current HEAD exists" {
+  inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$PASS_STAGE")"
+  # 照合と振り分けのあとは段で見分け、保留の解除が返す `次の段: 合格処理` と重ならない
+  echo "$inp" | grep -qF '前の Gate Result が `段: 照合と振り分け`'
+  if echo "$inp" | grep -qF '前の Gate Result が `次の段: 合格処理`'; then echo "overlapping entry"; return 1; fi
+  rel="$(echo "$inp" | grep -F '段: 保留の解除')"
+  echo "$rel" | grep -qF '`## リスク宣言`'
+  echo "$rel" | grep -qF '真正性確認'
+  echo "$rel" | grep -qF '`declarations.md` の手順 3'
+  sp="${PLUGIN_DIR}/../../openspec/specs/dev-workflow-develop/spec.md"
+  req="$(grep -F '保留の解除のあとで起こされた合格処理の G' "$sp")"
+  echo "$req" | grep -qF '`## リスク宣言`'
+  echo "$req" | grep -qF '手順 3'
+}
+
+@test "gate-runner (#583): after a row-3-only fix, the triage G fixes the new HEAD via prepare.md step 1 and posts it" {
+  grep -E '^\| 照合と振り分け' "$GATE" | grep -qF '`stages/prepare.md` の手順 1'
+  rr="$(grep -F '**W の修正後の再レビュー**' "$TRIAGE")"
+  echo "$rr" | grep -qF '`stages/prepare.md` の手順 1'
+  echo "$rr" | grep -qF '`固定 HEAD: <新しい HEAD>`'
+  sp="${PLUGIN_DIR}/../../openspec/specs/dev-workflow-develop/spec.md"
+  grep -F '固定 HEAD: <新しい HEAD>' "$sp" | grep -qF 'stages/prepare.md'
+}
+
+@test "gate-runner (#584): the review-tables comment posted before the supplemental needs-reviewer records the count as 1" {
+  s="$(section "$GATE" '一周目の三表を機械照合する')"
+  echo "$s" | grep -F 'レビュー三表:' | grep -qF '`補足済み回数: 1`'
+  line="$(grep -F '**レビュアーの要約受領**' "$TRIAGE")"
+  echo "$line" | grep -qF '`補足済み回数: 1`'
+  if echo "$line" | grep -qF '`補足済み回数: 0` の行を持つ'; then echo "posts 0"; return 1; fi
+  if echo "$line" | grep -qF '記録も同じ形で投稿する'; then echo "second post remains"; return 1; fi
+}
