@@ -87,7 +87,8 @@ step_headings() {
 # --- Requirement: 同じ手順を 2 か所に書かない ---
 
 @test "headings: each step heading appears in exactly one file, once" {
-  dup="$(step_headings | sort | uniq -d)"
+  # macOS の uniq は UTF-8 のロケールで 2-1 の括弧書きの違いを同じ行とみなすので、バイト比較にする
+  dup="$(step_headings | LC_ALL=C sort | LC_ALL=C uniq -d)"
   [ -z "$dup" ] || { echo "duplicated: $dup"; return 1; }
 }
 
