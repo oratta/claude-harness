@@ -75,7 +75,7 @@
         経緯をコメントし、そのサイクルを終了する
 
 4. 【コンテキスト上限 → 手渡し】
-   名前付きサブエージェント（develop の W / G）を SendMessage で再開する前に
+   名前付きサブエージェント（develop の W。G は再開せず段ごとに新しく起こす）を SendMessage で再開する前に
    `${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <名前>` で測り、
    上限を超えていた（exit 2）。あわせて、サブエージェントの**起動の途中**でも hook
    （`${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh`）が本人を測り、上限超で締めを通知し、

@@ -126,7 +126,7 @@ lines.append(f"- 共有枠モード SHARED_BUDGET_MODE: {shared}（{shared_sourc
 if all_pct is not None:
     lines.append(f"- 全モデル週次: 使用 {round(all_pct)}% / 残 {round(100 - all_pct)}%")
 lines.append(f"- {shared} の効果: {shared_effect}")
-lines.append("- サブエージェントのコンテキスト上限: W / G を SendMessage で再開する前に "
+lines.append("- サブエージェントのコンテキスト上限: W を SendMessage で再開する前に "
              "`${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <name>` で測る"
              f"（上限 {os.environ.get('DEV_WORKFLOW_CONTEXT_CAP', '150000')} tokens。exit 2 が上限超）。"
              "上限超のあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・"
