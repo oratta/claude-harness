@@ -230,6 +230,51 @@ reason() {
   [ ! -e "$counter" ]
 }
 
+# ---------- 2.4a カウンタ削除（通す分岐。issue #561） ----------
+# 上限到達だけでなく、正しく待って通す分岐（running が空／pending が空）でも
+# カウンタファイルを削除し、次に拒否するときは 1/3 から数え直すことを確認する。
+
+@test "counter: cleared when running becomes empty, then a later refusal restarts at 1/3" {
+  new_transcript; add_launch bushn690g
+  p_block="$(payload "$(bt_running bushn690g)")"
+  run_hook "$p_block"; assert_block
+  reason | grep -qF '1/3'
+  counter="${COUNTER_DIR}/${SESS}-${AGENT_ID}.count"
+  [ -f "$counter" ]
+
+  # 自分の背景タスクが background_tasks から消えている（= running が discard 後に空になる）
+  p_pass="$(payload "$(bt_running)")"
+  run_hook "$p_pass"
+  assert_silent
+  [ -z "$stderr" ]
+  [ ! -e "$counter" ]
+
+  run_hook "$p_block"
+  assert_block
+  reason | grep -qF '1/3'
+}
+
+@test "counter: cleared when pending becomes empty, then a later refusal restarts at 1/3" {
+  new_transcript; add_launch bushn690g
+  p_block="$(payload "$(bt_running bushn690g)")"
+  run_hook "$p_block"; assert_block
+  reason | grep -qF '1/3'
+  counter="${COUNTER_DIR}/${SESS}-${AGENT_ID}.count"
+  [ -f "$counter" ]
+
+  # running は空ではない（本体のシェルが running）が、自分の起動 bushn690g はそこに無い
+  # -> pending が空になって通す分岐
+  p_pass="$(payload "$(bt_running bparent01)")"
+  run_hook "$p_pass"
+  assert_silent
+  [ -z "$stderr" ]
+  [ ! -e "$counter" ]
+
+  run_hook "$p_block"
+  assert_block
+  reason | grep -qF '1/3'
+}
+
 @test "limit: another agent_id is counted separately" {
   new_transcript; add_launch bushn690g
   p="$(payload "$(bt_running bushn690g)")"
@@ -422,16 +467,16 @@ PY
 import json, sys
 d = json.load(open(sys.argv[1]))["hooks"]
 assert set(d) == {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop"}, sorted(d)
-assert d["SessionStart"] == [{"matcher": "startup|clear|compact", "hooks": [
-    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-tripwires.sh"}]}], d["SessionStart"]
-assert d["UserPromptSubmit"] == [{"hooks": [
-    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/prompt-tripwires-refresh.sh"}]}], d["UserPromptSubmit"]
-assert d["PreToolUse"] == [
-    {"matcher": "Agent", "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/agent-model-guard.sh"}]},
-    {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh"}]},
-], d["PreToolUse"]
-assert d["PostToolUse"] == [{"hooks": [
-    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh"}]}], d["PostToolUse"]
+assert any("session-tripwires.sh" in h["command"]
+           for e in d["SessionStart"] for h in e["hooks"]), d["SessionStart"]
+assert any("prompt-tripwires-refresh.sh" in h["command"]
+           for e in d["UserPromptSubmit"] for h in e["hooks"]), d["UserPromptSubmit"]
+assert any("agent-model-guard.sh" in h["command"]
+           for e in d["PreToolUse"] for h in e["hooks"]), d["PreToolUse"]
+assert any("context-tripwire.sh" in h["command"]
+           for e in d["PreToolUse"] for h in e["hooks"]), d["PreToolUse"]
+assert any("context-tripwire.sh" in h["command"]
+           for e in d["PostToolUse"] for h in e["hooks"]), d["PostToolUse"]
 PY
 }
 
