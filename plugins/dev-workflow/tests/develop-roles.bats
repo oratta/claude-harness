@@ -928,3 +928,9 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -qF 'dev-workflow:worker' "${PLUGIN_DIR}/README.md"
   grep -qF 'dev-workflow:gate-runner' "${PLUGIN_DIR}/README.md"
 }
+
+@test "codex-develop: Claude W and G agent types follow the actual phases" {
+  codex="${PLUGIN_DIR}/references/codex-develop.md"
+  grep -qF 'phase `spec`／`implement`／`finish` は `dev-workflow:worker`' "$codex"
+  grep -qF 'phase `gate` は `dev-workflow:gate-runner`' "$codex"
+}
