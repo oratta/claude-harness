@@ -4,7 +4,7 @@ develop の作業者 W とゲート実行者 G は `general-purpose` で起こ�
 
 ## What Changes
 
-- `plugins/dev-workflow/agents/` に役割ごとの種別を 2 つ足す。作業者用 `dev-workflow:worker`（Read / Edit / Write / Bash / Grep / Glob / TaskStop）と、ゲート実行者用 `dev-workflow:gate-runner`（Read / Bash / Grep / Glob / TaskStop）。`TaskStop` は背景で起こした処理を総待ちの上限で止めてから return するのに要るどちらもブラウザ・デザインツール・ドキュメント連携・ライブラリ文書検索・Skill・Agent を持たない
+- `plugins/dev-workflow/agents/` に役割ごとの種別を 2 つ足す。作業者用 `dev-workflow:worker`（Read / Edit / Write / Bash / Grep / Glob / TaskStop）と、ゲート実行者用 `dev-workflow:gate-runner`（Read / Bash / Grep / Glob / TaskStop）。`TaskStop` は背景で起こした処理を総待ちの上限で止めてから return するのに要る。どちらもブラウザ・デザインツール・ドキュメント連携・ライブラリ文書検索・Skill・Agent を持たない
 - 画面での動作確認は作業者から切り出し、**画面確認役 V** を新しく置く。V は必要なときだけ本体が (3a) と (3b) の間に起こす短命の役で、種別は `general-purpose`（ブラウザの道具を持つ既存の種別）を使う。W の return に `画面確認:` の 1 行を足し、V の結果は (3b) の W に渡して動作確認の証拠にする
 - W は `/opsx:*` スキルを呼ばず、worker.md に既にある openspec CLI 直叩きの経路で仕様化・実装・検証・archive を行う（`Skill` を持たないため）。W の仕様化経路の有無は `openspec --version` だけで決める。既存の要件のうち W に `/opsx:*` を指示しているもの（develop の 1 ループ・前提環境・(3) の 2 分割、仕様レビューの挿入位置）は MODIFIED で書き直し、それを文字列で固定している既存の bats も直す
 - develop/SKILL.md の役割表・(1)〜(4)、worker.md・gate-runner.md・codex-develop.md・dev-workflow の README の spawn 時の種別指定を新種別に替える
