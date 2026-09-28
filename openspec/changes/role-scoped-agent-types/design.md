@@ -43,7 +43,11 @@ V の return の 1 行目は `画面確認結果: (合格|不合格|実行不能
 - `不合格`: 期待と違った観測を書く。本体は W を (3a) で再開して直させる（(3b) には進まない）。同じ画面確認で 2 回続けて `不合格` なら、テストが 2 連続で落ちたのと同じ扱いで昇格トリップワイヤーの失敗ループに当てる。
 - `実行不能`: Chrome 拡張が繋がらない（`list_connected_browsers` が空、または道具の呼び出しが失敗する）、無人実行で拡張が無い、などで観測できなかった理由を書く。本体は (3b) の W に「画面確認は実行不能（理由）」と渡し、W は画面確認の証拠を書かない。そのあと G が pr-review-gate 手順 4 で、自力で検証できない動作確認として pr-review-gate の既存の保留経路（主への動作確認の依頼）に落とす。V の側で待ったり、主に直接頼んだりはしない。
 
-V の指示書は `skills/develop/references/roles/screen-checker.md` に新しく置く（W・R1・G と同じく役割ごとに 1 ファイル）。V の名前は `V-<記録先番号>-<n>`、description は `V: screen check for #N`（役割別集計が description の接頭辞で役を判定するため、先頭の `V:` を残す）。
+V の指示書は `skills/develop/references/roles/screen-checker.md` に新しく置く（W・R1・G と同じく役割ごとに 1 ファイル）。V の名前は `V-<記録先番号>-<n>`、description は `V: screen check for #N`（W / R1 / G と同じく先頭に役の略号を置く形に揃える。`scripts/subagent-context-audit.sh` の役割別集計は今は V を `unknown` に数え、V を集計の役に足すのはこの change の範囲外）。
+
+本体は V に W の `画面確認:` の行と W の worktree のパスを渡し、`isolation` を付けずに起こす（V は W が実装した作業ツリーをそのまま見る）。V が dev server を起動するときは `rules/dev-server.md` に従い、同じプロジェクトのサーバーを二重に起動せず、他のプロジェクトのプロセスを止めない。起動したポートは return に書く。
+
+`不合格` の回数は本体が、同じ `画面確認:` の行（見る点が同じもの）ごとに数える。既存の失敗ループは W の return を信号源にしているが、V の結果を受け取るのは本体なので、数える役も本体に置く。2 回目の `不合格` で失敗ループとして扱い、原因が判断側か実行側かの分類は従来どおり本体が行う。
 
 ### 最初のコンテキストの差と、接頭辞が分かれることによるキャッシュ作成費は、別々に記録する
 
@@ -59,6 +63,8 @@ V の指示書は `skills/develop/references/roles/screen-checker.md` に新し�
 
 受け入れ条件 1 の比較基準と条件 4 の分け方は主に確認中なので、合否はこの記録を見て主が決める。
 
+最後の 2 つ（1 本通したときの合計と、強制停止・手渡しの回数）はこの change の PR の中では測れない。この change の W が (3b) で follow-up issue を作り、マージ後に新種別で最初に develop を 1 本通した本体が、その記録先の PR がマージされたあとに集計して follow-up issue にコメントする。
+
 ### 新種別の定義は `model: sonnet` を書き、ガードは変えない
 
 定義に `model` を書かないか `inherit` にすると、ガードが省略を許したうえで親の Fable を継承する。そこで両方の定義に `model: sonnet` を書く。本体は従来どおり spawn のたびに `model` を明示する（事前分類に当たる W は `opus`）ので、定義の値は明示し忘れたときの下限として働く。
@@ -69,14 +75,20 @@ V の指示書は `skills/develop/references/roles/screen-checker.md` に新し�
 
 | 種別 | tools | 持たないもの |
 |---|---|---|
-| `dev-workflow:worker` | Read, Edit, Write, Bash, Grep, Glob | ブラウザ・デザインツール・ドキュメント連携・ライブラリ文書検索・WebFetch・WebSearch・Skill・Agent・NotebookEdit |
-| `dev-workflow:gate-runner` | Read, Bash, Grep, Glob | 上に加えて Edit・Write |
+| `dev-workflow:worker` | Read, Edit, Write, Bash, Grep, Glob, TaskStop | ブラウザ・デザインツール・ドキュメント連携・ライブラリ文書検索・WebFetch・WebSearch・Skill・Agent・NotebookEdit |
+| `dev-workflow:gate-runner` | Read, Bash, Grep, Glob, TaskStop | 上に加えて Edit・Write |
+
+`TaskStop` は両方に持たせる。`references/subagent-waiting.md` は、総待ちの上限に達したら背景タスクを `TaskStop` で停止してから return することを正当な出口と定め、`scripts/subagent-stop-guard.sh` は種別を問わず全サブエージェントの return を検査する。G は Codex を `run_in_background` で起こし、W も長いテストを背景で走らせうるので、`TaskStop` が無いと上限到達時に return が拒否され続け、背景の処理が走りっぱなしになる。
 
 G は Codex の起動と `gh` の操作を Bash で行い、ファイルを編集しない（修正は W の仕事）。W がサブエージェントを起こさないこと（worker.md「W がしないこと」）と、G がレビュアーを自分で起こさず `needs-reviewer` を返すこと（adapter 経路）は既に決まっているので、Agent を外しても手順は変わらない。G の従来経路（develop の本体以外が起こす G）は Codex を Bash から起こすので、これも Agent に依存しない。
 
 ### W は Skill を使わず openspec CLI で進める
 
 `Skill` を持たないので `/opsx:ff` / `/opsx:apply` / `/opsx:verify` / `/opsx:archive` は呼べない。worker.md には既に「opsx コマンドが無く openspec CLI だけある場合」の経路（`openspec new change` → artifact の直書き、`openspec validate <change> --strict`、`openspec archive <change>`）があるので、新種別の W は常にこの経路を使う。artifact の雛形と書き方の指示は `openspec instructions <artifact> --change <name>` で得る。R1 の仕様レビューと工程の区切りは opsx 経路と同じである。
+
+W の工程に `/opsx:*` を書いている既存の要件（develop の「1 ループは W→R1→W→G の順で回る」「前提環境を明記する」「W の (3) は 2 回の return に分かれる」、仕様レビューの「書いた仕様は実装前に別コンテキストがレビューする」）は、読み替えの要件を足すのではなく MODIFIED で書き直す。読み替えにすると、既存の要件と既存の bats（`develop-roles.bats`・`develop-skill.bats`・`spec-decision-and-review.bats` が `/opsx:ff`・`/opsx:apply`・`/opsx:verify`・`/opsx:archive` の文字列を固定している）が残り、新しい検査と両立しないためである。既存の bats は CLI の文字列（`openspec new change`・`openspec validate`・`openspec archive`）を固定する形に直す。
+
+W の仕様化経路の有無は `openspec --version` だけで決める。worker.md の 3 段の検出（`ls .claude/commands/opsx/` → CLI）は、W がスラッシュコマンドを使えなくなると意味を失い、opsx コマンドはあるが CLI が無い環境で W が仕様化経路に入って止まる。worker.md に `/opsx:` が残ってよいのは、本体や主が対話で change を作っていた場面を述べる行だけで、その行は `本体` か `主` の語を含む。こうしておくと「W が `/opsx:*` を実行する指示が無い」を、`/opsx:` を含む行に `本体` / `主` が無いものが無いか、で機械的に確かめられる。
 
 ### worktree が `.worktreeinclude` を持たないときの `/wt-setup` は本体が行う
 
@@ -92,4 +104,4 @@ agent の description は常時注入の予算に入る。2 つの description �
 - **V は実装の経緯を知らない。** W の `画面確認:` の行が不十分だと V は何を見ればよいか分からない。行の書式に「開く URL か起動手順」と「見る点」の両方を必須にして抑える。
 - **接頭辞の種類が増えることで、1 本の develop の請求額が増える可能性がある。** 上の計測で `cache_creation_input_tokens` を分けて記録し、主が判断する。
 - **Skill を使えないことで、opsx スキルが持つ細かな手順（artifact の依存順の確認など）を W が自分でたどることになる。** `openspec status` と `openspec instructions` で代わりに得る。
-- **既存の要件・文書に `/opsx:*` を W が呼ぶ記述が残る。** develop の仕様に読み替えの要件を足し、worker.md の本文は CLI 経路を既定に書き換える。
+- **既存の要件・文書に `/opsx:*` を W が呼ぶ記述が残る。** 該当する既存の要件を MODIFIED で書き直し、worker.md・SKILL.md・README の本文と既存の bats も CLI の経路に揃える。
