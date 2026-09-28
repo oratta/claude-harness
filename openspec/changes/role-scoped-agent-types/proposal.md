@@ -21,7 +21,7 @@ develop の作業者 W とゲート実行者 G は `general-purpose` で起こ�
 
 ## Impact
 
-- 新規: `plugins/dev-workflow/agents/worker.md`・`plugins/dev-workflow/agents/gate-runner.md`・`plugins/dev-workflow/tests/role-agent-types.bats`
+- 新規: `plugins/dev-workflow/agents/worker.md`・`plugins/dev-workflow/agents/gate-runner.md`・`plugins/dev-workflow/skills/develop/references/roles/screen-checker.md`（画面確認役 V の指示書）・`plugins/dev-workflow/tests/role-agent-types.bats`
 - 変更: `plugins/dev-workflow/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/dev-workflow/skills/develop/SKILL.md`・`plugins/dev-workflow/skills/develop/references/roles/worker.md`・`plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`・`plugins/dev-workflow/references/codex-develop.md`・`plugins/dev-workflow/tests/agent-model-guard.bats`・（必要なら）`tests/injection-budget.txt`・`plugins/dev-workflow/changes/330.md`
 - `agent-model-guard.sh` の判定ロジックは変えない（コメントに新種別の扱いを 1 行足すかは実装時に判断）
 - 仕様レビュー R1（決める役でないとき）と G が要求するレビュアーは `general-purpose` のまま（この change の範囲外。効果を実測したあとで別に扱う）
