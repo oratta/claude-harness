@@ -16,7 +16,7 @@ develop の本体から**名前付きで**、**段ごとに新しい G を起こ
 | 段（起動指示の `段:`） | 読むファイル |
 |---|---|
 | 前提確認と重さ判定（手順 1・2・2-0） | `stages/prepare.md`（adapter 経路はここで `needs-reviewer` を return する。W の修正後の再レビューのときは加えて `stages/triage.md` の収束ルールの節と「W の修正後の再レビュー」の入力） |
-| 照合と振り分け（レビュー要約・補足レビューの結果・決める役の裁定の受領、順 3 だけの修正のあと） | `stages/triage.md` |
+| 照合と振り分け（レビュー要約・補足レビューの結果・決める役の裁定の受領、順 3 だけの修正のあと） | `stages/triage.md`（戻した指摘が順 3 だけの修正のあとは、加えて `stages/prepare.md` の手順 1） |
 | 合格処理（手順 3・3-b・4・5） | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるとき・保留を返すときは加えて `stages/hold.md`） |
 | 保留の解除（主のリスク許容・動作確認・切り出しの確認への回答が届いたとき） | `stages/hold.md` |
 | 一括（従来経路）でレビューを自分で起こすとき | 上の表の全部と、`stages/review-run.md` とレビュアーに渡す `stages/reviewer-brief.md` |
