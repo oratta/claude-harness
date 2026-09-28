@@ -162,7 +162,7 @@ refute() {
   echo "$loop" | grep -q 'needs-approval'
 }
 
-@test "loop: G failed raises only the cause side (never W to fable) then resumes W and G" {
+@test "loop: G failed raises only the cause side (never W to fable) then resumes W and spawns the next-stage G" {
   loop="$(section '1 ループ')"
   echo "$loop" | grep -qE 'failed.*原因分類'
   echo "$loop" | grep -qF '実装品質起因のときだけ'
@@ -170,7 +170,8 @@ refute() {
   echo "$loop" | grep -qF 'dev-workflow:decider'
   echo "$loop" | grep -qF 'W を fable にはしない'
   echo "$loop" | grep -qE 'W を再開'
-  echo "$loop" | grep -qE 'G を再開'
+  # #554: G は再開せず、failed の Gate Result の 次の段: どおりに新しく起こす
+  echo "$loop" | grep -qF '`次の段:` どおりの G を新しく起こして再レビュー'
 }
 
 @test "loop: W is spawned by name, resumed via SendMessage, and never needs grandchildren" {
@@ -313,7 +314,7 @@ refute() {
   echo "$m" | grep -qE 'マージ権限・層間契約・課金/法務'
 }
 
-@test "loop: W and G are measured with subagent-context.sh before every SendMessage resume" {
+@test "loop: W is measured with subagent-context.sh before every SendMessage resume, and G is never resumed" {
   loop="$(section '1 ループ（W → R1 → W → G）')"
   echo "$loop" | grep -q 'subagent-context.sh'
   echo "$loop" | grep -q '手渡し'
@@ -322,7 +323,8 @@ refute() {
   echo "$loop" | grep -q 'decision-criteria.md'
   echo "$loop" | grep -q 'コンテキスト上限'
   ! echo "$loop" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP' || return 1
-  echo "$loop" | grep -q 'G の再開も同じ'
+  # #554: G は段ごとに新しく起こすので、再開前の計測は W だけに掛かる
+  echo "$loop" | grep -qF '再開前の計測は W だけに掛かる'
 }
 
 @test "model: no execution-strategy branches nor deterministic signal commands anywhere under develop" {

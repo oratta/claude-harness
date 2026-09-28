@@ -50,7 +50,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "review (#405): both G instructions record requested to resolved in the existing reviewer line" {
-  for file in "$PREPARE" "$REVIEW_RUN"; do
+  for file in "$TRIAGE" "$REVIEW_RUN"; do
     grep -qF 'レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）' "$file"
     grep -qF 'execution.model_resolution.requested' "$file"
     grep -qF 'execution.model_resolution.resolved' "$file"
@@ -78,10 +78,10 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   echo "$s" | grep -qE '行が無い.*従来経路'
 }
 
-@test "gate-runner (#391): an adapter-started G keeps the adapter route when the same G resumes without a route line" {
+@test "gate-runner (#554): every stage G decides the route from its own launch line, with no same-G sticky rule" {
   s="$(section "$GATE" 'レビュー経路の判別')"
-  echo "$s" | grep -qF '`レビュー経路: adapter` で起動済みの同一 G'
-  echo "$s" | grep -qF '再開指示に `レビュー経路:` 行が無くても adapter 経路を保持する'
+  echo "$s" | grep -qF 'どの段の G も自分の起動指示の行だけで判別する'
+  ! echo "$s" | grep -qF '起動済みの同一 G' || return 1
 }
 
 @test "gate-runner (#391): a missing route selects legacy only when starting a new G, including a handoff successor" {
@@ -166,12 +166,12 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   echo "$s" | grep -qF '`レビュー経路: 従来` を書かない'
 }
 
-@test "develop (#391): Role profile section distinguishes a same-G resume from starting a new G when the route line is missing" {
+@test "develop (#554): Role profile section writes the route line on every stage G and treats a missing line as legacy" {
   s="$(section "$DEVELOP" 'Role profile の選択')"
-  echo "$s" | grep -qF 'adapter で起動済みの同一 G'
-  echo "$s" | grep -qF '行の無い再開でも adapter 経路を保持する'
-  echo "$s" | grep -qF '新しい G の起動指示（手渡しで起こされた後任 G を含む）に行が無い場合だけ従来経路'
-  echo "$s" | grep -qF '行の省略を許可する規則ではない'
+  echo "$s" | grep -qF '段ごとに新しく起こす G と、手渡しで起こす後任 G のすべて'
+  echo "$s" | grep -qF '起動指示に行が無い G は従来経路'
+  echo "$s" | grep -qF 'どの段の起動指示でも行を省略しない'
+  ! echo "$s" | grep -qF '起動済みの同一 G' || return 1
 }
 
 @test "develop (#385): step (4) always writes the adapter route line and never writes the legacy value" {
@@ -188,7 +188,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   echo "$s" | grep -qF 'dispatch 記録'
   echo "$s" | grep -qF '投稿に成功するまでレビュアーを起動しない'
   echo "$s" | grep -qF 'executor / model・dispatch 記録のコメント URL を G に渡す'
-  echo "$s" | grep -qF 'Claude の G は SendMessage で再開'
+  echo "$s" | grep -qF 'Claude の G は照合と振り分けの G を新しく起こし'
   echo "$s" | grep -qF 'Codex の G は新しい phase gate'
   # 順序: 選び直し → 記録 → 起動 → G に渡す
   a="$(echo "$s" | grep -nF 'request --phase review' | head -1 | cut -d: -f1)"
@@ -205,17 +205,17 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   echo "$line" | grep -qF '`レビュー経路: adapter`'
 }
 
-@test "codex-develop (#391): the G rule keeps adapter on same-G resume and defaults only a fresh G without a route line to legacy" {
+@test "codex-develop (#554): the G rule spawns every stage G fresh and defaults a G without a route line to legacy" {
   s="$(section "$CODEX_DEVELOP" '品質と transport 差分')"
   line="$(echo "$s" | grep -F 'needs-reviewer')"
-  echo "$line" | grep -qF 'adapter で起動済みの同一 G'
-  echo "$line" | grep -qF '行の無い再開でも adapter 経路を保持する'
-  echo "$line" | grep -qF 'fresh G の起動指示に行が無い場合だけ従来経路'
+  echo "$line" | grep -qF 'G を段ごとに新しく起こし（Claude の G も再開しない）'
+  echo "$line" | grep -qF '起動指示に行が無い G は従来経路'
+  ! echo "$line" | grep -qF '起動済みの同一 G' || return 1
 }
 
 @test "codex-develop (#394): missing-route legacy behavior distinguishes Claude G from Codex G" {
   s="$(section "$CODEX_DEVELOP" '品質と transport 差分')"
-  line="$(echo "$s" | grep -F 'fresh G の起動指示に行が無い場合だけ従来経路')"
+  line="$(echo "$s" | grep -F '起動指示に行が無い G は従来経路')"
   old='行が無ければ従来経路として Codex を直接''呼ぶ'
   echo "$line" | grep -qF 'Claude の G は Codex を直接呼ぶ'
   echo "$line" | grep -qF 'Codex の G は prompt の禁止により呼ばない'
@@ -226,8 +226,8 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 @test "gate-runner and pr-review-gate (#385): both carry the adapter form of the reviewer line" {
   form='（adapter 経路・<light|full>・dispatch 記録:'
-  grep -qF "$form" "${PREPARE}"
-  grep -qF "$form" "${PREPARE}"
+  grep -qF "$form" "${TRIAGE}"
+  grep -qF "$form" "${TRIAGE}"
   # pr-review-gate は書き分けの段落と PR コメント雛形の両方に持つ
   [ "$(grep -cF "$form" "${REVIEW_RUN}")" -ge 2 ]
 }
