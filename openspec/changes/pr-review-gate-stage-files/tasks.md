@@ -31,5 +31,5 @@
 
 ## 5. 記録
 
-- [ ] 5.1 `plugins/dev-workflow/changes/553.md` に変更記録を書く
+- [x] 5.1 `plugins/dev-workflow/changes/553.md` に変更記録を書く
 - [ ] 5.2 PR 本文に、G の `docs_median`（`scripts/subagent-context-audit.sh --by-role` の値）とファイルごとのバイト数を記録する枠を用意する（実測値は G のゲート通過後に記入。15K トークンを超えたら内訳と follow-up issue の URL を書く）
