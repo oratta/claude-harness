@@ -17,73 +17,12 @@ version: 1.7.0
 
 ## 前提と理由（各手順で繰り返さない。ここが正本）
 
-- **stale passed**: 開始時に残っている `agent-review:passed` は前回 HEAD の遺物（passed 後に積まれたコミットは未レビュー）。auto-merge workflow は「対象 HEAD: <現 HEAD>」コメントの照合で stale passed を機械的に無効化する（未レビュー HEAD はマージされない）が、**手順として開始時に外すことは変わらず必要** — passed が残っている間は人間からもボードからも「合格済み」に見え、再レビューで欠陥・保留に転んだ事実が隠れるため。
 - **auto-merge の配備状況**: auto-merge workflow（dev-workflow プラグインの `templates/auto-merge/` を展開したもの）が配備済みのリポでは、passed 付与でロボットが機械判定してマージする。**未配備のリポでは passed 付与後のマージは人間の操作**になる（ゲートの手順自体は変わらない）。どちらの場合も、LLM が `gh pr merge` や REST の merge API を直接叩いてマージすることは**禁止**（聖域・CI green・SHA ピン・緊急停止の判定を素通りするため）。
 - **リポ固有の仕組み**: このスキルはリポ非依存。保留の主向けミラーや投稿規約などのリポ固有の仕組みは「**存在すればそれに従い、無ければ各手順の縮退手順**」で扱う。
 
 ---
 
 ## 手順
-
-### 1. 前提を揃える
-
-1. PR に `agent-review:pending` が付いていることを確認（無ければ付ける）。**`agent-review:failed` からの再レビューもここが起点** — 修正を push したら `failed` を外して `pending` に戻し（`gh api -X DELETE repos/$R/issues/$N/labels/agent-review:failed` → `-X POST ... -f 'labels[]=agent-review:pending'`）、手順1から全工程をやり直す（前回の合格部分を流用しない。ただし再レビューの範囲は手順2の収束ルールに従い**差分限定**。方式の書き換えの後は全体レビューにし、周回は数え続ける）。
-   このとき **`needs-approval` の要否も判断する** — 保留理由が解消しているなら
-   `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外し、
-   まだ主の許容待ちが残っているなら**付けたまま**にして手順6を続行する。黙って持ち越さない。
-2. **stale な `agent-review:passed` を必ず外す**（理由は冒頭「前提と理由」）。外してからレビューを始める（合格なら手順5で付け直す）。
-   passed を外したら、PR が Draft でなければ `gh pr ready --undo` で Draft に戻す（手順5の合格処理で Ready にした PR に commit が積まれた取り直しのあいだ、周回ごとに CI を走らせないため。次の合格で Ready に戻る）。
-   passed が付いていなかったとき（初回のゲート・failed からの再レビュー・保留からの再開）は Draft に戻さない（人間が非 Draft で作った PR を、failed や保留のまま Draft に残さないため）:
-   ```bash
-   if gh api repos/$R/issues/$N --jq '.labels[].name' | grep -qx 'agent-review:passed'; then   # passed が付いていたら
-     gh api -X DELETE repos/$R/issues/$N/labels/agent-review:passed                           # 外して
-     if [ "$(gh api repos/$R/pulls/$N --jq .draft)" = false ]; then gh pr ready --undo $N --repo $R; fi   # 非 Draft なら Draft に戻す
-   fi
-   ```
-3. 記録先の**受け入れ条件**を取得する。判定の唯一の根拠はこれ。記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す issue で、**issue 参照が無い PR（Draft PR を記録先にした依頼）では PR 本文そのもの**が受け入れ条件になる（develop スキルの W は受け入れ条件を PR 本文に書く）:
-   ```bash
-   ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')
-   if [ -n "$ISSUE" ]; then gh api repos/$R/issues/$ISSUE --jq '.body'; else gh api repos/$R/pulls/$N --jq '.body'; fi
-   ```
-4. `git fetch origin` → `origin/main` をブランチへマージ（rebase + force-push は禁止）。コンフリクトが実装判断を要する規模なら `agent-review:failed` にして終了。
-5. **対象 HEAD を固定する**（main 追従の push を済ませた**後**に取る。マージすると HEAD が動くため）:
-   ```bash
-   HEAD_SHA=$(gh api repos/$R/pulls/$N --jq '.head.sha')
-   ```
-
-### 2. レビュー（実装と別コンテキスト）
-
-**実装したコンテキストで自己レビューしない。** これは light / full のどちらでも変わらない。
-
-#### 2-0. レビュー重量の判定（light / full）
-
-レビューの重さを**変更内容から先に決める**。Codex レビューは重い（実測: 3回中1回は10分でタイムアウト、成功しても14分）。ドキュメントの誤字修正にこの待ち時間を毎回払う価値はない一方、判定を印象で行うと急いでいるときほど軽い側に倒れる。そこで**判定材料を機械的に取る**:
-
-```bash
-gh pr diff $N --name-only                       # 変更ファイル一覧
-gh pr diff $N | grep -c '^[+-][^+-]'            # 変更行数（追加＋削除）
-```
-
-| 重量 | 条件 | レビュー実行者 |
-|---|---|---|
-| **light** | 下の (a) か (b) の**片方をすべて**満たす | Task サブエージェント（Codex を省く） |
-| **full**（**既定**） | それ以外。判定が付かない場合を含む | Codex CLI →（使えなければ）Task サブエージェント |
-
-**light にしてよい条件**:
-
-- **(a) ドキュメントのみ** — 変更ファイルがすべて `*.md` であり、かつ**エージェントの行動を定義するファイルを1つも含まない**（`CLAUDE.md` / `AGENTS.md`、`.claude/` 配下、`.github/workflows/`、スキル・コマンド・エージェント定義、憲法 doc）。これらは読み物ではなく**実行される規約**なので、拡張子が md でも full。
-- **(b) 挙動を変えない微修正** — 合計変更が **30 行以下**、かつ diff を読んだ結果**挙動を変えない**と判断できる（コメント・typo・文言修正・テストデータのみ）。実行される分岐・条件・入出力に1行でも触れていれば full。
-
-**迷ったら full に倒す（fail-closed）。「判断がつかない」は light の理由にならない。** 誤りは片側だけ危険で、full を light にすると重い変更が独立性の低いレビューで auto-merge に乗るのに対し、light を full にした損失は待ち時間だけ。
-
-**light で変わるのはレビュー実行者だけで、免除される工程は無い** — 実装と別コンテキストであること・手順3のリスク宣言・手順4の動作確認証拠・手順5の HEAD SHA 照合と合格前の API 実測・下の収束ルールはすべてそのまま適用する。
-
-判定結果と根拠を PR コメントに1行残す（後から light 判定をサンプリング再判定できるようにするため）:
-
-```bash
-gh api -X POST repos/$R/issues/$N/comments \
-  -f body='レビュー重量: light — docs のみ 12 行（挙動定義ファイルなし）'
-```
 
 #### 2-1. レビューの実行
 

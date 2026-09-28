@@ -45,32 +45,6 @@ Codex の出力全文を本体に流さない。`変更点の一覧`・`照合�
 
 待ちに入る前に、これから最大何分待つかを出力する。総待ちの上限（正本が定める回数）に達したら待ちをやめ、`needs-reviewer` を return して根拠に「Codex タイムアウト（正本の総待ち上限に達した。実際に待った分数を書く）」と書く（上の表のフォールバック行に入る）。
 
-## needs-reviewer の return（本体にレビュアーの spawn を委ねる）
-
-G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: general-purpose` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、その要約を SendMessage で G に渡す。adapter 経路（`レビュー経路: adapter`）では、本体が phase `review` で投げ先を選び直して dispatch 記録に残してからレビュアーを起動し（develop `SKILL.md` の (4)）、要約と選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。adapter 経路の payload では証拠欄 5 つ（選んだ経路・実行コマンド・終了コード・出力の要点・実待ち時間）をすべて `未実行（adapter 経路）` と書き、Codex の証拠を作らない。`推奨モデル` は参考値で、実際の投げ先は本体の選び直しが決める。Codex 不可・light 判定・adapter 経路による通常の初回レビュー依頼は下の基本 payload を使う。一周目の三表照合で不足が出た補足要求の場合に限り、同じ payload に固定 HEAD・元の三表・残差・`補足済み回数: 0` を加え、同じレビューの不足した項目だけを補わせる（adapter 経路では補足要求も本体の選び直しを通る）。
-
-```markdown
-## needs-reviewer
-- 判定: light | full（Codex 不可） | full（adapter 経路）
-- 根拠: <2-0 の判定材料（変更ファイル一覧・行数・挙動定義ファイルの有無）、full なら Codex が使えなかった理由>
-- PR 番号: #<N>
-- HEAD SHA: <40 桁フル SHA（手順 1 で固定したもの）>
-- 選んだ経路: <full: exec / companion / バイナリ探索で不在、light: 未実行、adapter 経路: 未実行（adapter 経路）>
-- 実行コマンド: <full: 実際の探索・起動・待機コマンド、adapter 経路: 未実行（adapter 経路）>
-- 終了コード: <取得できた値 | 未取得 | 未実行（adapter 経路）>
-- 出力の要点: <full: 実測した不可条件と応答、adapter 経路: 未実行（adapter 経路）>
-- 実待ち時間: <タイムアウト時の実測値、完了未確認、adapter 経路: 未実行（adapter 経路）>
-- 推奨モデル: opus | dev-workflow:decider（種別で指定する。`general-purpose` に `model: fable` は付けない）
-- 推奨モデルの根拠: <マージ条件・層間契約・課金/法務への接触の有無、usage snapshot の残量>
-- 受け入れ条件の所在: <issue #N 本文 | PR #N 本文>
-- レビュアーに渡す範囲: <diff の範囲（`gh pr diff N`）、再レビューなら前回指摘の一覧>
-- レビュアーに渡す指示: pr-review-gate SKILL.md 手順 2-1 のレビュアー向け指示ブロック（三表と固定書式）をそのまま貼る
-- 補足 payload（一周目照合の補足要求の場合だけ）: 固定 HEAD: <SHA> / 元の三表: <変更点の一覧・照合表・ハンク被覆> / 残差: <不足項目> / 補足済み回数: 0
-- 補足指示（一周目照合の補足要求の場合だけ）: 元の三表を置き換えず、残差に挙げた不足した項目だけを補う
-```
-
-レビュー要約を SendMessage で受け取った G は、「レビュー実行者:」の PR コメント（`レビュー実行者: Task サブエージェント（light 判定のため）` / `（full・実測した Codex 不可: <条件>）`。adapter 経路では `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` とし、本体から渡された executor / model と dispatch 記録のコメント URL を写し、`<light|full>` には手順 2-0 の判定を書く。Codex の `<model>` は worker 結果の `execution.model_resolution.requested` と `execution.model_resolution.resolved` による `<requested>→<resolved>` として書く。resolved が null なら未観測と明示し、要求値や dispatch 時の model から補完しない。Claude の `<model>` は従来の値を使う。モデルと根拠を添え、full では対象 HEAD と上の同じ証拠を記録する。終了コードは取得できた場合のみ記し、架空の終了コードを書かない。light は事前判定として記録する）を **G が投稿**する。そのあとの分岐は、下の再開節の「レビュアーの要約受領」に従う。
-
 ## 一周目の三表を機械照合する
 
 一周目のレビュー要約を受け取ったら、指摘の仕分け前に次を機械照合する。G はここで変更点の意味や `一致` / `食い違い` の正しさを再レビューしない。
