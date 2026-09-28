@@ -27,9 +27,9 @@
 
 ## 4. 検査を通す
 
-- [ ] 4.1 `.github/workflows/*.yml` の `pull_request` / `push` の `run:` から検査コマンドを集めて全部実行し、exit code を記録する（`./scripts/test.sh` を含む）
-- [ ] 4.2 `tests/injection-budget.bats` が落ちたら、まず新しい description を削る。それでも足りなければ `tests/injection-budget.txt` を動かし、PR 本文に何を削ろうとしてなぜその値にしたかを書く
-- [ ] 4.3 `openspec validate role-scoped-agent-types --strict` が exit 0
+- [x] 4.1 `.github/workflows/*.yml` の `pull_request` / `push` の `run:` から検査コマンドを集めて全部実行し、exit code を記録する（`./scripts/test.sh` を含む）
+- [x] 4.2 `tests/injection-budget.bats` が落ちたら、まず新しい description を削る。それでも足りなければ `tests/injection-budget.txt` を動かし、PR 本文に何を削ろうとしてなぜその値にしたかを書く
+- [x] 4.3 `openspec validate role-scoped-agent-types --strict` が exit 0
 
 ## 5. 計測を記録する（合否の閾値は決め打ちしない）
 
