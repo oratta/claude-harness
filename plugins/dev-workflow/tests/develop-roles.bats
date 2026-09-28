@@ -764,8 +764,8 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   s="$(step4_554)"
   [ -n "$s" ] || { echo "no step (4) block"; return 1; }
   for w in 'SendMessage' 'G を再開'; do
-    ! echo "$s" | grep -qF "$w" || { echo "(4) has: $w"; return 1; }
-    ! grep -qF "$w" "$GATE" || { echo "gate-runner.md has: $w"; return 1; }
+    if echo "$s" | grep -qF "$w"; then echo "(4) has: $w"; return 1; fi
+    if grep -qF "$w" "$GATE"; then echo "gate-runner.md has: $w"; return 1; fi
   done
 }
 
@@ -827,8 +827,8 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   cd_md="${PLUGIN_DIR}/references/codex-develop.md"
   sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
   for f in "$GATE" "$sk" "$cd_md"; do
-    ! grep -qF 'adapter 経路を保持する' "$f" || { echo "sticky rule in $f"; return 1; }
-    ! grep -qF '起動済みの同一 G' "$f" || { echo "same-G rule in $f"; return 1; }
+    if grep -qF 'adapter 経路を保持する' "$f"; then echo "sticky rule in $f"; return 1; fi
+    if grep -qF '起動済みの同一 G' "$f"; then echo "same-G rule in $f"; return 1; fi
   done
   # 常に `レビュー経路: adapter` を書く規則は残す
   grep -qF '常に `レビュー経路: adapter`' "$sk"
@@ -842,8 +842,8 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
 @test "gate-runner (#554): each stage's develop section describes the input for a fresh G of that stage" {
   for f in "$TRIAGE" "$HOLD" "$PASS_STAGE" "$PREPARE"; do
     grep -qE '^### この段で起こされたときの入力' "$f" || { echo "no input subsection in $f"; return 1; }
-    ! grep -qE '^### 再開' "$f" || { echo "resume subsection remains in $f"; return 1; }
-    ! grep -qF 'SendMessage で G に' "$f" || { echo "SendMessage to G in $f"; return 1; }
+    if grep -qE '^### 再開' "$f"; then echo "resume subsection remains in $f"; return 1; fi
+    if grep -qF 'SendMessage で G に' "$f"; then echo "SendMessage to G in $f"; return 1; fi
   done
   # 再レビューの前提確認と重さ判定の G は収束ルールの節を読み、前の周の指摘を仕分けコメントから取る
   inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$PREPARE")"
