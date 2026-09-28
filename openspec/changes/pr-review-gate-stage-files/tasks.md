@@ -17,7 +17,7 @@
 
 ## 3. 読み手側の付け替え
 
-- [ ] 3.1 `gate-runner.md` から SKILL.md を Read する指示を消し（pr-review-gate の手順 1〜5 を実行する義務の文は残す）、時点ごとに読むファイルの表を置く。段に移した節を消し、残す節（役割と入力・経路の判別・三表の照合と補足受領・return の共通部分・再開の振り分け・モデルとコンテキスト上限）の参照先を段のファイルに直す
+- [x] 3.1 `gate-runner.md` から SKILL.md を Read する指示を消し（pr-review-gate の手順 1〜5 を実行する義務の文は残す）、時点ごとに読むファイルの表を置く。段に移した節を消し、残す節（役割と入力・経路の判別・三表の照合と補足受領・return の共通部分・再開の振り分け・モデルとコンテキスト上限）の参照先を段のファイルに直す
 - [ ] 3.2 `worker.md` の (3b) の仕様宣言の参照先を `declarations.md` にする
 - [ ] 3.3 `skills/develop/SKILL.md` と `plugins/dev-workflow/references/*.md` のうち `pr-review-gate/SKILL.md` のパスや「SKILL.md 手順 2-1 のブロック」を直接指している行を、段のファイルのパスに直す（番号だけの参照「pr-review-gate 手順 N」はそのまま）
 - [ ] 3.4 `scripts/codex-develop.py` の正本一覧を、gate phase は索引・6 段・`declarations.md`、review phase は gate-runner.md・`stages/reviewer-brief.md` にする

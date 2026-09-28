@@ -1,12 +1,25 @@
 # G（ゲート実行者）の指示書 — develop スキル
 
-develop の本体から**名前付きで** spawn され、PR を pr-review-gate に通すサブエージェント。手順の正本は `skills/pr-review-gate/SKILL.md`（記録先の探索順・仕様宣言の照合・`対象 HEAD:` 規約を含む）で、このファイルは「G として動くときの薄い差分」だけを持つ。本体が渡すもの: PR 番号・記録先（issue 番号、または PR 自身）・実行モード・`レビュー経路:` の 1 行（下の「レビュー経路の判別」）・（再開時）W の修正内容の要約かレビュアーの要約（adapter 経路ではレビュアーの要約に、選ばれた executor / model と dispatch 記録のコメント URL を含む）。
+develop の本体から**名前付きで** spawn され、PR を pr-review-gate に通すサブエージェント。手順の正本は pr-review-gate の段のファイル（`skills/pr-review-gate/stages/` と `declarations.md`。記録先の探索順・仕様宣言の照合・`対象 HEAD:` 規約を含む）で、このファイルは「G として動くときの薄い差分」だけを持つ。索引 `skills/pr-review-gate/SKILL.md` は読まない（読むファイルは下の「時点ごとに読むファイル」の表で決まる）。本体が渡すもの: PR 番号・記録先（issue 番号、または PR 自身）・実行モード・`レビュー経路:` の 1 行（下の「レビュー経路の判別」）・（再開時）W の修正内容の要約かレビュアーの要約（adapter 経路ではレビュアーの要約に、選ばれた executor / model と dispatch 記録のコメント URL を含む）。
 
 ## やること
 
-1. `pr-review-gate/SKILL.md` を Read し、**手順 1〜5**（前提を揃える → レビュー → リスク宣言・仕様宣言 → 動作確認の証拠 → 照合 → Draft なら Ready 化 → `agent-review:passed`）をそのまま実行する。免除される工程は無い。手順 1 で stale な passed を外したら、Draft でない PR は Draft に戻す（正本は pr-review-gate 手順 1）
-2. 手順 2 のレビューは**実装と別コンテキスト**で行う。G 自身は W とは別コンテキストだが、「G が diff を読んで自分で判定する」のは pr-review-gate の言う別コンテキストレビューではない（G はレビュー結果を照合・記録する側）。レビューの実行者は下の規則で決める
+1. 下の「時点ごとに読むファイル」の表に従って段のファイルを Read し、pr-review-gate の**手順 1〜5**（前提を揃える → レビュー → リスク宣言・仕様宣言 → 動作確認の証拠 → 照合 → Draft なら Ready 化 → `agent-review:passed`）をそのまま実行する。免除される工程は無い。手順 1 で stale な passed を外したら、Draft でない PR は Draft に戻す（正本は pr-review-gate 手順 1）
+2. 手順 2 のレビューは**実装と別コンテキスト**で行う。G 自身は W とは別コンテキストだが、「G が diff を読んで自分で判定する」のは pr-review-gate の言う別コンテキストレビューではない（G はレビュー結果を照合・記録する側）。レビューの実行者は下の「レビュー経路の判別」で決める
 3. 結果を本体に return する（書式は下）。記録先へのコメント・ラベル操作は G が自分で行う（本体は return の要約だけを見る）
+
+## 時点ごとに読むファイル
+
+段のファイルのパスは `skills/pr-review-gate/` から書く。どの時点でも、表にないファイル（索引 `SKILL.md` を含む）は読まない。
+
+| 時点 | 読むファイル |
+|---|---|
+| 起動直後（手順 1・2・2-0） | `stages/prepare.md`（adapter 経路はここで `needs-reviewer` を return する） |
+| 従来経路でレビューを自分で起こすとき | `stages/review-run.md` と、レビュアーに渡す `stages/reviewer-brief.md` |
+| レビュアーの要約を受け取り、三表の照合のあと指摘が残っているとき・W の修正後の再レビュー・決める役の裁定受領 | `stages/triage.md` |
+| 止める指摘が残らなくなったとき（手順 3・3-b） | `declarations.md` |
+| 宣言のあと（手順 4・5） | `stages/pass.md` |
+| 主のリスク許容・動作確認・切り出しの確認が要るとき、保留の解除、許容済みの PR で HEAD が動いたとき | `stages/hold.md` |
 
 ## レビュー経路の判別（G として起動されたときだけ）
 
@@ -17,9 +30,9 @@ develop の本体から**名前付きで** spawn され、PR を pr-review-gate 
 | 起動指示の行 | 経路 | G の動き |
 |---|---|---|
 | `レビュー経路: adapter` | adapter 経路 | full でも light でも `codex exec`・`codex-companion.mjs`・レビュアーを自分で呼ばず、手順 1 と手順 2-0 まで済ませ、同一 PR/HEAD で他の G が着手済みでないことを確認してから `needs-reviewer` を return する（判定は `full（adapter 経路）` または `light`）。Codex 不可の実測（バイナリ探索・起動）は行わない。投げ先は本体が phase `review` で選び直す |
-| `レビュー経路: 従来`、または新しい G の起動指示に行が無い | 従来経路 | 下の「レビューの実行者」の表に従う（full は G の Bash から Codex を直接呼ぶ） |
+| `レビュー経路: 従来`、または新しい G の起動指示に行が無い | 従来経路 | `skills/pr-review-gate/stages/review-run.md` の「G として動くとき（develop）」節の「レビューの実行者」の表に従う（full は G の Bash から Codex を直接呼ぶ） |
 
-行が無い場合だけ従来経路とする既定は、新しい G の起動指示（手渡しで起こされた後任 G を含む）にだけ適用する。`レビュー経路: adapter` は新 Codex モードを含む adapter 解決の全構成（`claude-default` を含む）を指し、新 Codex モードとは同義ではない。下の従来モードのレビュー実行者の表は、`レビュー経路: 従来`、または新しい G の起動指示に行が無いときだけ適用する。develop の本体は常に `レビュー経路: adapter` を書き、`従来` は develop の本体以外の呼び出し元が G を起こすときの値。
+行が無い場合だけ従来経路とする既定は、新しい G の起動指示（手渡しで起こされた後任 G を含む）にだけ適用する。`レビュー経路: adapter` は新 Codex モードを含む adapter 解決の全構成（`claude-default` を含む）を指し、新 Codex モードとは同義ではない。従来モードのレビュー実行者の表（`stages/review-run.md`）は、`レビュー経路: 従来`、または新しい G の起動指示に行が無いときだけ適用する。develop の本体は常に `レビュー経路: adapter` を書き、`従来` は develop の本体以外の呼び出し元が G を起こすときの値。
 
 ## 一周目の三表を機械照合する
 
@@ -48,10 +61,13 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 - 周回: <1|2|3以降（主の回答または決める役の裁定あり）>（全体レビューにした周は「（全体レビュー: 修正差分 N 行 / 前周指摘 M 行）」を添える）
 ```
 
+この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: `needs-reviewer` は `stages/prepare.md`、`failed`・`needs-decider`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・効果測定の欄は `stages/triage.md`、`passed` は `stages/pass.md`、`保留` は `stages/hold.md`。
 
 ## 再開（本体が SendMessage で G を再開する）
 
-- **レビュアーの要約受領**: 上の「レビュー実行者:」コメントを投稿してから、一周目は最初に `変更点の一覧`・`照合表`・`ハンク被覆` を上の同名節どおり機械照合する。不足または差分があれば、`補足済み回数: 0` では Status `needs-reviewer` で不足分だけの補足へ接続し、`補足済み回数: 1` では `review-incomplete` で止める。三表の照合が完了したあとだけ要約に指摘が残っているかで分岐し、指摘が無ければ手順 3 以降。指摘が残っていれば、周の数に関係なく pr-review-gate 手順 2-1 の仕分け表に上から当てる（順 1 は全周共通の判定）。止める指摘が無く順 1 だけなら follow-up issue に切って手順 3 以降。順 2〜4 は `agent-review:failed` に付け替えて failed で返し（止めない指摘は failed の PR コメントに一覧で残す）、順 5 は保留、順 6 は `needs-decider` で返す（2 周目以降の周の終わりには順 2〜4 を使わない。順 5 と順 2〜4、または順 5 と順 6 が混ざれば保留だけを先に返す。保留と `needs-decider` を同じ return で指示しない。処理順は pr-review-gate 手順 2-1 の混在の段落）。仕分けは PR コメントに記録する
+再開の指示ごとに、読む段のファイル（`skills/pr-review-gate/` から）が決まる。W の修正後の再レビューと決める役の裁定受領は `stages/triage.md` の「G として動くとき（develop）」節の「再開（この段に固有のもの）」、保留の解除と許容済みの PR で HEAD が動いたときは `stages/hold.md` の同じ節に従う。残りの 2 つはこのファイルで扱う。
+
+- **レビュアーの要約受領**: `stages/prepare.md` の「G として動くとき（develop）」節にある「レビュー実行者:」コメントを投稿してから、一周目は最初に `変更点の一覧`・`照合表`・`ハンク被覆` を上の同名節どおり機械照合する。不足または差分があれば、`補足済み回数: 0` では Status `needs-reviewer` で不足分だけの補足へ接続し、`補足済み回数: 1` では `review-incomplete` で止める。三表の照合が完了したあとだけ要約に指摘が残っているかで分岐し、指摘が無ければ手順 3 以降。指摘が残っていれば、周の数に関係なく pr-review-gate 手順 2-1 の仕分け表（`stages/triage.md`）に上から当てる（順 1 は全周共通の判定）。止める指摘が無く順 1 だけなら follow-up issue に切って手順 3 以降。順 2〜4 は `agent-review:failed` に付け替えて failed で返し（止めない指摘は failed の PR コメントに一覧で残す）、順 5 は保留、順 6 は `needs-decider` で返す（2 周目以降の周の終わりには順 2〜4 を使わない。順 5 と順 2〜4、または順 5 と順 6 が混ざれば保留だけを先に返す。保留と `needs-decider` を同じ return で指示しない。処理順は pr-review-gate 手順 2-1 の混在の段落）。仕分けは PR コメントに記録する
 - **補足レビュー結果の受領**: 上の同名節どおり `補足済み回数: 1` を維持して三表を再照合する。残差があれば `review-incomplete`、無ければ同じ一周目の指摘仕分けへ進む
 
 ## モデル（本体が spawn 時に決める）
