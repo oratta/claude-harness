@@ -526,8 +526,11 @@ refute() {
 
 @test "token budget: gate-runner.md tells G to put the Codex thread_id in its return" {
   g="${SKILL_DIR}/references/roles/gate-runner.md"
+  # return の共通欄は gate-runner.md、thread_id の取り方は G が Codex を呼ぶ段（stages/review-run.md）にある
+  r="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
   grep -q 'thread_id' "$g"
-  grep -qF 'session id:' "$g"
-  grep -qF 'threadId' "$g"
   grep -q 'Codex thread' "$g"
+  grep -q 'thread_id を return に書く' "$r"
+  grep -qF 'session id:' "$r"
+  grep -qF 'threadId' "$r"
 }
