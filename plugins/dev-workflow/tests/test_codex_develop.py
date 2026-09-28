@@ -754,7 +754,9 @@ class ForegroundRequest(unittest.TestCase):
                 self.assertIn('CANONICAL SOURCE ' + sources[phase], text)
                 self.assertIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
                 if phase == 'gate':
-                    self.assertIn('CANONICAL SOURCE skills/pr-review-gate/SKILL.md', text)
+                    for doc in ('SKILL.md', 'declarations.md', 'stages/prepare.md', 'stages/review-run.md',
+                                'stages/reviewer-brief.md', 'stages/triage.md', 'stages/pass.md', 'stages/hold.md'):
+                        self.assertIn('CANONICAL SOURCE skills/pr-review-gate/' + doc, text)
 
     def test_reader_phases_return_the_verdict_for_the_coordinator_to_post(self):
         sources = {'spec-review':'skills/develop/references/roles/spec-reviewer.md',
@@ -776,14 +778,15 @@ class ForegroundRequest(unittest.TestCase):
                 self.assertIn('CANONICAL SOURCE ' + sources[phase], text)
                 self.assertIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
                 if phase == 'review':
-                    self.assertIn('CANONICAL SOURCE skills/pr-review-gate/SKILL.md', text)
+                    self.assertIn('CANONICAL SOURCE skills/pr-review-gate/stages/reviewer-brief.md', text)
 
     def test_review_phase_uses_gate_and_reviewer_contract_sources(self):
         target = self.root/'review-contract.json'
         self.call_profile('codex-standard', phase='review', out=target)
         text = json.loads(target.read_text())['prompt']
         self.assertIn('CANONICAL SOURCE skills/develop/references/roles/gate-runner.md', text)
-        self.assertIn('CANONICAL SOURCE skills/pr-review-gate/SKILL.md', text)
+        self.assertIn('CANONICAL SOURCE skills/pr-review-gate/stages/reviewer-brief.md', text)
+        self.assertNotIn('CANONICAL SOURCE skills/pr-review-gate/SKILL.md', text)
         self.assertIn('変更点の一覧', text)
         self.assertIn('照合表', text)
         self.assertIn('ハンク被覆', text)

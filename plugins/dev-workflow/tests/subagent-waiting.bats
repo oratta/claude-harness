@@ -9,6 +9,13 @@
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
+  REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
+  REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
+  TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
+  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   CANON="${PLUGIN_DIR}/references/subagent-waiting.md"
   ROLES="${PLUGIN_DIR}/skills/develop/references/roles"
   GATE="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
@@ -19,7 +26,11 @@ setup() {
 
   ROLE_FILES=("$WORKER" "$REVIEWER" "$RUNNER")
   # 禁止語の検査対象＝サブエージェント（W / R1 / G）が手順として読む文書。
-  SUBAGENT_DOCS=("$WORKER" "$REVIEWER" "$RUNNER" "$GATE")
+  # pr-review-gate は索引と段のファイルに分かれているので、1 つの文書として連結して検査する
+  # （背景起動を書いた段と前景ポーリングを書いた段が別でも、スキル全体で併記されていればよい）。
+  GATE_ALL="${BATS_TEST_TMPDIR}/pr-review-gate-all.md"
+  cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" > "$GATE_ALL"
+  SUBAGENT_DOCS=("$WORKER" "$REVIEWER" "$RUNNER" "$GATE_ALL")
 
   # Claude Code の Bash ツールの前景 1 回あたりの上限（ミリ秒）。
   # ハーネス側の上限が変わったら、この 1 行だけを直せば検査 2 全体が追随する。
@@ -331,13 +342,13 @@ PY
 
 @test "gate-runner names both codex launch paths and defers the wait to the canonical contract" {
   # 起動の事実（どのコマンドをどう呼ぶか）は G の指示書に残す
-  grep -qF 'codex exec -c approval_policy=never -c model_reasoning_effort=medium' "$RUNNER"
+  grep -qF 'codex exec -c approval_policy=never -c model_reasoning_effort=medium' "${REVIEW_RUN}"
   grep -qF 'codex-companion.mjs' "$RUNNER"
   # 待ち方は正本に委ね、上限に達したときの G 固有の分岐だけを持つ
-  grep -qF 'references/subagent-waiting.md' "$RUNNER"
-  grep -qE 'ターンを終え(ない|てはならない)' "$RUNNER"
+  grep -qF 'references/subagent-waiting.md' "${REVIEW_RUN}"
+  grep -qE 'ターンを終え(ない|てはならない)' "${REVIEW_RUN}"
   grep -qF 'needs-reviewer' "$RUNNER"
-  grep -q '総待ちの上限' "$RUNNER"
+  grep -q '総待ちの上限' "${REVIEW_RUN}"
 }
 
 @test "spec-reviewer notes that the decider path carries no waiting work" {
@@ -346,21 +357,23 @@ PY
 }
 
 @test "pr-review-gate splits the waiting rule by reader" {
-  grep -q 'メインセッション' "$GATE"
+  grep -q 'メインセッション' "${REVIEW_RUN}"
   grep -q 'サブエージェント' "$GATE"
-  grep -q '前景' "$GATE"
-  grep -qF 'references/subagent-waiting.md' "$GATE"
+  grep -q '前景' "${REVIEW_RUN}"
+  grep -qF 'references/subagent-waiting.md' "${REVIEW_RUN}"
   # 前景上限を超える待ちを散文で示唆する記述を残さない
-  ! grep -qF '最長 15 分' "$GATE" || return 1
+  for f in "$GATE" "$REVIEW_RUN"; do
+    ! grep -qF '最長 15 分' "$f" || return 1
+  done
 }
 
 # --- Codex への指示文に指摘の固定書式を渡す（issue #349） ---
 #
-# 書式の正本は pr-review-gate SKILL.md 手順 2-1 のレビュアー向け指示ブロック。
+# 書式の正本は pr-review-gate の stages/reviewer-brief.md にある手順 2-1 のレビュアー向け指示ブロック。
 # 雛形はそのブロックを貼る指示と全件列挙の 1 文だけを持ち、書式の欄や深刻度の定義表を再掲しない。
 
 @test "codex prompt template (#349): pastes the reviewer block from step 2-1 and asks to enumerate every finding" {
-  grep -qF 'SKILL.md 手順 2-1 のレビュアー向け指示ブロック' "$CANON"
+  grep -qF 'stages/reviewer-brief.md` の手順 2-1 のレビュアー向け指示ブロック' "$CANON"
   grep -qF '該当する指摘を全部列挙するまで止まらない' "$CANON"
 }
 

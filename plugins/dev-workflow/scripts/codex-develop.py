@@ -458,8 +458,11 @@ def write(path, value):
 def prompt(phase, instructions, state):
     role, source = PHASES[phase]
     docs = [('agents/decider.md' if phase == 'decider' else 'skills/develop/references/roles/' + ('gate-runner.md' if phase == 'review' else source)), 'skills/develop/references/decision-criteria.md']
-    if phase in ('gate', 'review'):
-        docs.append('skills/pr-review-gate/SKILL.md')
+    if phase == 'gate':
+        docs += ['skills/pr-review-gate/SKILL.md', 'skills/pr-review-gate/declarations.md'] + [
+            f'skills/pr-review-gate/stages/{s}.md' for s in ('prepare', 'review-run', 'reviewer-brief', 'triage', 'pass', 'hold')]
+    elif phase == 'review':
+        docs.append('skills/pr-review-gate/stages/reviewer-brief.md')
     text = f'''Codex delegated develop phase: {phase}. Role: {role}.
 The Claude coordinator follows the canonical develop workflow; execute ONLY the requested assignment.
 Phase labels select role instructions, not an alternate workflow or mandatory sequence.

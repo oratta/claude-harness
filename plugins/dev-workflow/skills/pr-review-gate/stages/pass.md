@@ -1,0 +1,180 @@
+# 合格処理 — pr-review-gate
+
+以下 `$R` = `<owner>/<repo>`、`$N` = PR 番号。段の一覧と手順番号の対応表は索引 `SKILL.md`（pr-review-gate の直下）にある。
+
+このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/triage.md`（2-1 の止める判定と仕分け・2-2）、`declarations.md`（手順 3・3-b）、`stages/hold.md`（手順 3-c・6）。
+
+## 入口
+
+`declarations.md` の手順 3（リスク宣言）と 3-b（仕様宣言）を投稿したあとに読む。手順 3 で「主のリスク許容が必要」と宣言したときは `stages/hold.md` が先で、許容を得てからこの段に戻る。
+
+## 前提と理由（この段で使うもの）
+
+- **auto-merge の配備状況**: auto-merge workflow（dev-workflow プラグインの `templates/auto-merge/` を展開したもの）が配備済みのリポでは、passed 付与でロボットが機械判定してマージする。**未配備のリポでは passed 付与後のマージは人間の操作**になる（ゲートの手順自体は変わらない）。どちらの場合も、LLM が `gh pr merge` や REST の merge API を直接叩いてマージすることは**禁止**（聖域・CI green・SHA ピン・緊急停止の判定を素通りするため）。
+
+## 手順
+
+### 4. 動作確認
+
+**自力で検証し、証拠（手順＋結果）を PR コメントに添付する。** ブラウザ実機・CLI 実行・スクリプト実行いずれでもよい。受け入れ条件と 1:1 で対応させる。
+
+```
+## 動作確認
+対象 HEAD: <$HEAD_SHA 40桁フル>
+
+| 受け入れ条件 | 実行した手順 | 結果 |
+|---|---|---|
+| <条件> | <再現可能な手順> | ✅ <観測した実際の出力/画面> |
+```
+
+「テストが通った」だけは証拠にならない（テスト自体が変更対象のことがある）。実際に動かした痕跡を書く。
+
+**自力検証が不能なときのみ**、3点セットを揃えて主に依頼し、手順6へ（マージ保留）:
+
+```
+## 動作確認: 主に依頼
+1. 自力検証できなかった理由: <何が足りなかったか。「面倒」「時間」は理由にならない>
+2. 主にやってほしい具体的手順: <URL・クリック順・期待される結果まで書く>
+3. 次回から自力検証できるようにする改善提案: <テスト整備・認証情報の登録・seed データ等。issue 化するならリンク>
+```
+
+3点目は必須。これが無い依頼は主の負担を減らす方向に働かないので出さない。
+
+### 5. 合格処理
+
+前提として、**最後のレビュー結果に、全周共通の判定で止まる指摘（`blocking` かつ `confirmed`、G が引用を照合済みまたは例外 3 種に当たるもの）のうち、主が切り出すと答えて follow-up issue に切ったものと、G が順 3 の集合一致で閉じたもの（閉じた PR コメント URL を仕分け欄に残す）以外が 0 件であること**（判定は手順2-1「マージを止めるかの判定（全周共通）」。切り出す経路は手順6の表の「切り出しの確認」行、集合一致で閉じる経路は手順2-1の仕分け表の順 3）。そのうえで、**手順4の動作確認証拠を投稿済み、かつ手順3のリスク宣言が次のどちらかの状態のときだけ**実行する。
+
+| リスク宣言の状態 | 合格処理 |
+|---|---|
+| 「**リスクなし**」を投稿済み | 可 |
+| 「**主のリスク許容が必要**」を投稿済み ＋ **主の許容回答リンクを同コメントに追記済み**（手順6経由）＋ **下の真正性確認済み** | 可 |
+| 「**主のリスク許容が必要**」を投稿済み ＋ **引き継ぎで許容済み**（手順 3-c の 4 行 `主の回答: 許容（引き継ぎ）`・`引き継ぎ元:`・`引き継ぎの根拠:`・`真正性確認: 済` が同コメントに揃っている） | 可 |
+| 宣言が未投稿 / 許容が必要なのに回答リンクが無い | **不可**（手順6へ） |
+
+**リスク宣言の文言を後から書き換えることを禁じる。** 主が許容しても「リスクなし」に書き換えず、
+「主のリスク許容が必要」のまま残して追記だけする（形式: `主の回答: 許容 — <回答リンク>（<日時>）`）。
+「リスクなし宣言は本当にリスクが無い場合にしか出ない」という前提が崩れると、
+形骸化監査（リスクなし宣言のサンプリング再判定）が本来の抽出対象を取り逃がすため。
+
+**許容リンク経由の合格では、リンクの真正性を確認する。** リンク先を実際に開き、
+①**主のアカウントによる発言**であること ②**許容の意思が読み取れる**こと、の両方を確認し、
+結果を宣言コメントに追記する（形式: `真正性確認: 済 — 確認者 <エージェント名> / <日時>`）。
+リンクが GitHub コメントの場合は author を実測する:
+
+```bash
+gh api repos/$R/issues/comments/<comment_id> --jq '.user.login'   # 主のアカウント名と一致すること
+```
+
+Discord 等の外部サービスのリンクは目視確認でよい（確認記録は同じ形式で残す）。
+リンク先が開けない・主本人の発言と確認できない場合は合格処理をしない（手順6に戻して主に再確認する）。
+
+**「投稿したつもり」を信用しない。** 合格処理の前に、**現在の PR HEAD と一致する SHA を含む宣言コメントと
+証拠コメントが実在すること**を API で実測確認する（投稿失敗・旧 HEAD 向けコメントの流用を両方とも塞ぐ。
+`gh api -X POST .../comments` は静かに失敗しうるので、投稿直後のレスポンスだけを根拠にしない）:
+
+```bash
+HEAD_SHA=$(gh api repos/$R/pulls/$N --jq '.head.sha')
+gh api repos/$R/issues/$N/comments --jq \
+  "[.[] | select(.body | contains(\"$HEAD_SHA\")) | .body | split(\"\n\")[0]]"
+```
+
+出力に**リスク宣言・仕様宣言・動作確認の 3 見出しがすべて**現れることを確認する。
+1 つでも欠けていれば**合格処理をしない**（コメントを出し直してから再確認する）。
+
+**仕様宣言は記録先の記録と突き合わせる。** 記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す元 issue で、**issue 参照が無い PR では PR 自身**（`$REC` を PR 番号に切り替える。PR のコメントも `issues/<番号>/comments` で読める）。そこから最新の `仕様化判断:` コメント（1 行目が `^仕様化判断: (する|しない)$`）を取る。PR コメントへの記録が許されるのは **PR 本文に issue 参照が無い場合に限る**（issue 参照があれば issue 側が正。issue 側に記録が無ければ issue に投稿する）。`$ISSUE` が空のまま `issues/$ISSUE/comments` を叩くと `issues//comments` で 404 になるので、必ず `$REC` を経由する:
+
+```bash
+ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')
+REC=${ISSUE:-$N}   # 記録先の番号: issue 参照があればその issue、無ければ PR 自身
+# jq の ^ $ は行頭・行末に掛からない（文字列全体の先頭・末尾）ので、1 行目を split で切り出してから照合する。
+# コメントは 30 件でページが切れるので --paginate --slurp で全ページを取り（--slurp は --jq と併用不可なので jq へパイプ）、add で 1 配列にしてから「最新 1 件」を選ぶ
+gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body | split("\n")[0]'
+gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様レビュー: (APPROVE|REQUEST_CHANGES)$"))] | last | .body | split("\n")[0]'
+# 2 つ目の出力が「仕様レビュー: APPROVE」ちょうどであること（最新のレビュー結果が正。古い APPROVE の後に REQUEST_CHANGES が出ていれば不合格）
+bash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF / 触れた規範パス。終了コード 2 = 規範パスに触れて openspec 差分なし
+```
+
+| 記録先（issue、無ければ PR 自身）の記録 | 合格に必要な状態 |
+|---|---|
+| `仕様化判断: する` | PR の変更ファイルに `openspec/` が含まれる、**または**宣言が指す change が base で archive 済み（`openspec/changes/archive/*-<change-name>/` の実在を実測。スタック PR で仕様が先行 PR に入っている場合）。**かつ** 記録先の最新の `仕様レビュー:` コメントが `APPROVE`（古い APPROVE の後に REQUEST_CHANGES があれば不可）。仕様宣言は「更新した」形 |
+| `仕様化判断: しない` | 仕様宣言は「変更なし＋理由」形。PR に `openspec/` 差分が**無い**こと（差分があれば「しない」と矛盾＝合格しない。判断を「する」に取り直すか差分を外す）。`spec-touch-check.sh` が終了コード 2 なら、理由に規範パス接触への言及があること |
+| 記録なし | **合格しない**。今から判断して記録先に `仕様化判断:` を投稿する（「する」なら仕様化・仕様レビューからやり直す）。issue が無い PR に限り PR 自身のコメントに同書式で記録してよい（`gh api -X POST repos/$R/issues/$REC/comments`） |
+
+**`needs-approval` が付いていないことを、Ready 化より前に確認する。** auto-merge は `needs-approval` を
+BLOCKING_LABELS に含むため無審査マージにはならないが、**passed と併存すると
+「合格済みなのに永久にマージされないスタック」**になり、Ready 化だけ済ませると保留中の PR が Draft でなくなる。
+保留理由が解消しているなら `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外してから進む。
+解消していないなら**そもそも合格処理をしない**（手順6に戻る）。
+
+**PR が Draft なら Ready にしてから `agent-review:passed` を付ける**（この順序を入れ替えない）。
+passed を先に付けると、その labeled イベントは PR が draft なので auto-merge workflow にスキップされる。
+Ready 化で CI が走るリポでは CI 完了で拾い直されるが、CI を Draft 中に済ませて Ready 化では走らせないリポでは
+次の判定が日次の schedule まで来ず、合格からマージまで最大 24 時間待つ。
+Draft でない PR（人間が作った PR など）には Ready 化を行わない。
+**Ready 化に失敗したら passed を付けずに止まる**（下の断片は非 0 で終わる）。draft のまま passed を付けると
+その labeled イベントはスキップされて消費され、あとで Ready 化をやり直しても新しい labeled は起きないため、
+Ready 化で CI が走らないリポでは日次の schedule まで拾われない。`draft` が取れなかったときも同じく止まる。
+
+```bash
+gh api repos/$R/issues/$N --jq '.labels[].name'   # needs-approval が無いことを確認（あれば上のとおり）
+DRAFT=$(gh api repos/$R/pulls/$N --jq .draft)
+case "$DRAFT" in true|false) ;; *) echo "draft を取得できない（$DRAFT）。passed を付けずに中断する" >&2; exit 1 ;; esac
+if [ "$DRAFT" = true ]; then   # Draft なら Ready にする。失敗したら passed を付けずに中断する
+  gh pr ready $N --repo $R || { echo "gh pr ready に失敗。passed を付けずに中断する" >&2; exit 1; }
+fi
+gh api -X POST repos/$R/issues/$N/labels -f 'labels[]=agent-review:passed'
+gh api -X DELETE repos/$R/issues/$N/labels/agent-review:pending
+gh api repos/$R/issues/$N --jq '.labels[].name'   # 実測確認（ラベル）
+gh api repos/$R/pulls/$N --jq .draft              # 実測確認（Draft）
+```
+
+最後の実測確認は次の**4点すべて**を満たすこと（`gh` は静かに失敗することがある）:
+
+| 確認項目 | 期待 |
+|---|---|
+| `agent-review:passed` | **ある** |
+| `agent-review:pending` | **ない** |
+| `needs-approval` | **ない** |
+| PR の `draft` | **`false`** |
+
+`needs-approval` が残っていたら合格処理は未完了（上の Ready 化前の確認に戻る）。
+途中で止まったときは、passed が付いているかで復旧を分ける:
+
+| 止まった状態 | 復旧 |
+|---|---|
+| Ready 化に失敗して止まった（`draft` が `true`、passed なし） | 失敗の原因（権限・ネットワーク等）を記録先に報告し、解消してから手順5の断片を再実行する |
+| Ready 化は済んだが passed を付ける前に止まった（`draft` が `false`、passed なし） | 手順5の断片をそのまま再実行する（Draft でないので Ready 化は飛ばされ、passed の labeled で判定される） |
+| passed は付いたが auto-merge が判定を取り逃がした（`draft` が `false`、passed あり、マージされない） | `docs/auto-merge.md` の手動実行（`workflow_dispatch` の `pr` 入力）で再判定する |
+| `draft` が `true` のまま passed が付いている（旧手順や手動操作の残骸） | passed を外し、`gh pr ready` で Ready にしてから passed を付け直す（付け直しで新しい labeled が起きる） |
+聖域パス（auto-merge workflow の SACRED 定義。例: `.github/workflows/` `CLAUDE.md` `.claude/` 憲法 doc）に
+触れる PR は passed でも auto-merge されず人間マージになる — 判定の正本は auto-merge workflow 側。
+触れている自覚があればコメントに1行書き添える。auto-merge 未配備のリポでは、合格処理の後に
+「マージは人間の操作待ち」であることを PR コメントに1行残す。
+
+**合格後の CI の見張り**（上の実測確認が済んでから。手順 6 で合格しなかった PR には始めない）:
+
+- ゲートをメインセッションで回している場合: `plugins/dev-workflow/references/ci-watch.md` の手順で、`scripts/ci-watch.sh wait` を Bash ツールの `run_in_background` で起動して見張りを始める
+- ゲートをサブエージェント（develop の G など）が回している場合: 見張りを始めずに `passed` を return し、呼び出し側の本体に見張りを任せる（サブエージェントは背景タスクの完了で起こされない）
+
+待ち方・`--unrelated` の基準・一手ごとの動き・直し方は `references/ci-watch.md` が正本で、ここには再掲しない。直しで commit が積まれたら、`agent-review:passed` を外したまま見張りを続けて CI のやり直し・再度の直しを済ませ、`ready` になってから、この PR のゲートを手順 1 から取り直す。取り直したゲートに合格するまでマージ待ち・マージ依頼に進まない。
+
+## G として動くとき（develop）
+
+この節は develop の G（`skills/develop/references/roles/gate-runner.md` の指示で動くゲート実行者）だけに関係する。develop 以外の読み手は読み飛ばしてよい。
+
+### return の書式（passed）
+
+`gate-runner.md`「return の書式」の共通欄（`## Gate Result` から `周回:` まで）のうしろに続ける。
+
+```markdown
+### passed のとき
+G は CI の見張りを始めずに `passed` を return する（背景タスクの完了で起こされないため。見張りは本体が `references/ci-watch.md` で行う）。
+- 付与ラベル: agent-review:passed（手順 5 の API 実測の結果）
+- Ready 化: 実施した | 対象外（元から非 Draft）（手順 5 で `draft` が `false` になったことを実測した結果）
+- コメント URL: リスク宣言 / 仕様宣言 / 動作確認証拠
+```
+
+## 出口
+
+- 手順 4 で主に動作確認を依頼したとき、手順 5 の照合で主の許容待ちが残ったときは `stages/hold.md`（手順 6）へ進む。
+- 手順 5 で `agent-review:passed` を付けたら、ゲートは終わる（CI の見張りは手順 5 のとおり）。

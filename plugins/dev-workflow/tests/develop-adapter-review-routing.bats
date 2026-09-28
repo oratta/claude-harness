@@ -11,6 +11,13 @@
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
+  REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
+  REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
+  TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
+  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   GATE="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
   DEVELOP="${PLUGIN_DIR}/skills/develop/SKILL.md"
   CODEX_DEVELOP="${PLUGIN_DIR}/references/codex-develop.md"
@@ -43,7 +50,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "review (#405): both G instructions record requested to resolved in the existing reviewer line" {
-  for file in "$GATE" "$PRGATE"; do
+  for file in "$PREPARE" "$REVIEW_RUN"; do
     grep -qF 'レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）' "$file"
     grep -qF 'execution.model_resolution.requested' "$file"
     grep -qF 'execution.model_resolution.resolved' "$file"
@@ -84,16 +91,17 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#385): route-detection section comes before the reviewer table" {
-  a="$(grep -n '^## レビュー経路の判別' "$GATE" | cut -d: -f1)"
-  b="$(grep -n '^## レビューの実行者' "$GATE" | cut -d: -f1)"
-  [ -n "$a" ] && [ -n "$b" ] && [ "$a" -lt "$b" ]
+  # 表は段のファイルへ移ったので、経路の判別の節が表の置き場（review-run.md）を指すことで順序を見る
+  grep -q '^## レビュー経路の判別' "$GATE"
+  grep -q '^### レビューの実行者' "$REVIEW_RUN"
+  section "$GATE" 'レビュー経路の判別' | grep -qF 'stages/review-run.md'
 }
 
 @test "gate-runner (#385): adapter route covers every adapter configuration and the legacy table applies only to the legacy value or no line" {
   s="$(section "$GATE" 'レビュー経路の判別')"
   echo "$s" | grep -qF '新 Codex モードを含む adapter 解決の全構成'
   echo "$s" | grep -qF '`claude-default`'
-  echo "$s" | grep -qE '従来モードのレビュー実行者の表は.*`レビュー経路: 従来`.*行が無い.*ときだけ'
+  echo "$s" | grep -qE '従来モードのレビュー実行者の表.*は.*`レビュー経路: 従来`.*行が無い.*ときだけ'
 }
 
 @test "gate-runner (#385): adapter route never calls Codex/companion/reviewer itself, even for full, and returns needs-reviewer" {
@@ -121,7 +129,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#385): needs-reviewer payload has the adapter full verdict and the adapter not-run value for every evidence field" {
-  n="$(section "$GATE" 'needs-reviewer')"
+  n="$(section "${PREPARE}" 'needs-reviewer')"
   echo "$n" | grep -qF -- '- 判定: light | full（Codex 不可） | full（adapter 経路）'
   for field in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:'; do
     echo "$n" | grep -F -- "- ${field}" | grep -qF '未実行（adapter 経路）' || { echo "missing adapter value in ${field}"; return 1; }
@@ -131,7 +139,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 # ===== gate-runner.md: 従来経路の full を保つ（1.2） =====
 
 @test "gate-runner (#385): legacy full row still calls Codex directly from G's Bash" {
-  row="$(grep -F '| **full**（既定） | Codex CLI |' "$GATE")"
+  row="$(grep -F '| **full**（既定） | Codex CLI |' "${REVIEW_RUN}")"
   [ -n "$row" ] || { echo "legacy full row missing"; return 1; }
   echo "$row" | grep -qF 'G の **Bash から直接**呼ぶ'
 }
@@ -218,14 +226,14 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 @test "gate-runner and pr-review-gate (#385): both carry the adapter form of the reviewer line" {
   form='（adapter 経路・<light|full>・dispatch 記録:'
-  grep -qF "$form" "$GATE"
-  grep -qF "$form" "$PRGATE"
+  grep -qF "$form" "${PREPARE}"
+  grep -qF "$form" "${PREPARE}"
   # pr-review-gate は書き分けの段落と PR コメント雛形の両方に持つ
-  [ "$(grep -cF "$form" "$PRGATE")" -ge 2 ]
+  [ "$(grep -cF "$form" "${REVIEW_RUN}")" -ge 2 ]
 }
 
 @test "pr-review-gate (#393): all five evidence fields allow the adapter not-run value" {
-  block="$(awk '/^対象 HEAD: <40 桁フル SHA>/{f=1} f{print} f && /^```$/{exit}' "$PRGATE")"
+  block="$(awk '/^対象 HEAD: <40 桁フル SHA>/{f=1} f{print} f && /^```$/{exit}' "${REVIEW_RUN}")"
   [ -n "$block" ] || { echo "review evidence template missing"; return 1; }
   for field in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:'; do
     echo "$block" | grep -F -- "$field" | grep -qF '未実行（adapter 経路）' || { echo "missing adapter value in ${field}"; return 1; }

@@ -268,7 +268,7 @@ unmanned で複数 change に割れた場合は、W が change 単位で子 issu
 - 役割の指示書: `references/roles/worker.md`（W）・`references/roles/spec-reviewer.md`（R1）・`references/roles/gate-runner.md`（G）
 - 仕様化要否・change 分割・残量モードの判定基準: `references/decision-criteria.md`
 - 昇格トリップワイヤーの常駐ルールテンプレート: `plugins/dev-workflow/templates/escalation-tripwires.md`
-- G の手順書: `skills/pr-review-gate/SKILL.md`（記録先の探索順・仕様宣言の照合は据え置き）
+- G の手順書: pr-review-gate の段のファイル（`skills/pr-review-gate/stages/` と `declarations.md`。索引は `skills/pr-review-gate/SKILL.md`、G が時点ごとに読むファイルは `references/roles/gate-runner.md` の表。記録先の探索順・仕様宣言の照合は据え置き）
 - 入口の 5 分岐と issueify フォールバック: `commands/develop.md`（`/work-issue` はエイリアス）
 - worktree セットアップの自動化: worktree プラグインの `hooks/hooks.json`（`WorktreeCreate` / `SessionStart`）
 - 棲み分け相手: 各リポに配備された loop-dev-agent の憲法（`docs/agent-loop.md`。flatmate が保守する正本で、harness にテンプレートは無い）。unmanned の外形（ラベル・Draft PR・キュー）は憲法側
