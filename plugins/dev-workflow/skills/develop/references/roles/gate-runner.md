@@ -21,30 +21,6 @@ develop の本体から**名前付きで** spawn され、PR を pr-review-gate 
 
 行が無い場合だけ従来経路とする既定は、新しい G の起動指示（手渡しで起こされた後任 G を含む）にだけ適用する。`レビュー経路: adapter` は新 Codex モードを含む adapter 解決の全構成（`claude-default` を含む）を指し、新 Codex モードとは同義ではない。下の従来モードのレビュー実行者の表は、`レビュー経路: 従来`、または新しい G の起動指示に行が無いときだけ適用する。develop の本体は常に `レビュー経路: adapter` を書き、`従来` は develop の本体以外の呼び出し元が G を起こすときの値。
 
-## レビューの実行者（G は孫を持てない）
-
-G はサブエージェントなので Agent ツールを持たず、Task サブエージェントを自分では起こせない。`レビュー経路: 従来`、または新しい G の起動指示に行が無いとき、pr-review-gate 手順 2-1 の従来モードの優先順を次のように読み替える。新 Codex モードは App Server 固定で、以下の exec / Claude fallback は適用しない:
-
-| 判定 | 実行者 | G の動き |
-|---|---|---|
-| **full**（既定） | Codex CLI | G の **Bash から直接**呼ぶ。どちらか: (a) `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` を `run_in_background` で起動する（レビュー指示は引数に埋めず、ファイルに保存して標準入力から渡す。書き方は下の正本）、(b) codex プラグインの `scripts/codex-companion.mjs`（`~/.claude/plugins/marketplaces/*/plugins/codex/scripts/codex-companion.mjs` を path-discovery で特定）に `task … --effort medium` を投げる。**どちらの経路も完了の確認は下の「Codex の起動と完了確認」**（起動しただけで出力ファイルを読んで済ませない）。slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは **G からは使えない**（前者は本体専用の slash command、後者は Agent ツールを要する）。`--effort minimal` は 400 エラーになるので使わない |
-| **full** だが Codex が使えない（実測したバイナリ無し・認証切れ・タイムアウト＝下記の正本が定める総待ちの上限に達した） | 本体が spawn するレビュアー | `needs-reviewer` を return する（下） |
-| **light** | 本体が spawn するレビュアー | `needs-reviewer` を return する（下） |
-
-不可判定の正本は pr-review-gate 手順 2-1。companion / slash command が無ければ `command -v codex` 等でバイナリを確認し、あれば exec を試す。companion 導入は任意。不在だけでは不可とせず、バイナリ探索で不在、実際の Codex 呼び出しで認証切れ、または起動後に正本の総待ち上限に到達した実測だけを採用する。未試行・auth.json の有無は証拠にならない。引数誤り・権限拒否・通信障害は三条件に読み替えず、Claude へ暗黙にフォールバックしない。該当しないエラーは証拠付きで本体へ返す。
-
-**Codex を呼んだら、その Codex thread の thread_id を return に書く**（`codex exec` は出力ヘッダの `session id:` の値、companion は結果の `threadId`。取れなかったらそう書く）。本体はこれを記録先の `Codex 消費: <thread_id> -` として残し、PR トークン上限の計測に入れる（G の Claude トランスクリプトには Codex の消費が入らないため。手順の正本は `skills/develop/SKILL.md`「PR トークン上限」）。
-
-Codex の出力全文を本体に流さない。`変更点の一覧`・`照合表`・`ハンク被覆` と構造化された指摘一覧だけを G が読み、本体には要約だけ返す。
-
-## Codex の起動と完了確認（待ちでターンを終えない）
-
-**完了通知を当てにしてターンを終えてはならない。** G は名前付きサブエージェントなので、自分が起動した背景タスクの完了では再起動されない。起動は `run_in_background` のままでよく、**完了の確認だけを同一ターン内の前景ポーリングで行う**。
-
-**待ち方の正本は `plugins/dev-workflow/references/subagent-waiting.md`。** 起動と完了確認の雛形（`codex exec` 直叩き経路・companion 経路）・待ち値・完了シグナルの作り方・総待ちの上限はすべてそこにあるので、**Codex を起動する前に開いて雛形どおりに実行する**。ここには再掲しない（同じ手順を 2 か所に置くと片方だけ古くなる。古いほうの手順に従うと、事実と違う判定でゲートを通すことになる）。
-
-待ちに入る前に、これから最大何分待つかを出力する。総待ちの上限（正本が定める回数）に達したら待ちをやめ、`needs-reviewer` を return して根拠に「Codex タイムアウト（正本の総待ち上限に達した。実際に待った分数を書く）」と書く（上の表のフォールバック行に入る）。
-
 ## 一周目の三表を機械照合する
 
 一周目のレビュー要約を受け取ったら、指摘の仕分け前に次を機械照合する。G はここで変更点の意味や `一致` / `食い違い` の正しさを再レビューしない。
