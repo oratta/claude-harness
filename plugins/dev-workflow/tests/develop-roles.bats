@@ -765,7 +765,7 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   done
 }
 
-@test "gate-runner (#554): Gate Result carries 段: / 次の段: and the Status 次の段へ" {
+@test "gate-runner (#554): Gate Result carries the stage and next-stage lines and the Status next-stage" {  # Gate Result に `段:`・`次の段:`・Status `次の段へ`
   common="$(awk '/^## Gate Result/{f=1} f&&/^```$/{exit} f' "$GATE")"
   echo "$common" | grep -E '^- Status: ' | grep -qF '次の段へ'
   echo "$common" | grep -E '^- 段: ' | grep -qF '一括（従来経路）'
@@ -830,7 +830,7 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -qF '常に `レビュー経路: adapter`' "$sk"
 }
 
-@test "gate-runner (#554): the legacy route runs steps 1-5 in one G with 段: 一括（従来経路） and 次の段: なし" {
+@test "gate-runner (#554): the legacy route runs steps 1-5 in one G and says so in the stage lines" {  # 従来経路は `段: 一括（従来経路）` と `次の段: なし`
   grep -qF '`段: 一括（従来経路）`' "$GATE"
   grep -qF '`次の段: なし`' "$GATE"
 }
