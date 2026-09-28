@@ -50,7 +50,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "review (#405): both G instructions record requested to resolved in the existing reviewer line" {
-  for file in "$GATE" "$PRGATE"; do
+  for file in "$PREPARE" "$REVIEW_RUN"; do
     grep -qF 'レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）' "$file"
     grep -qF 'execution.model_resolution.requested' "$file"
     grep -qF 'execution.model_resolution.resolved' "$file"
@@ -91,16 +91,17 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#385): route-detection section comes before the reviewer table" {
-  a="$(grep -n '^## レビュー経路の判別' "$GATE" | cut -d: -f1)"
-  b="$(grep -n '^## レビューの実行者' "$GATE" | cut -d: -f1)"
-  [ -n "$a" ] && [ -n "$b" ] && [ "$a" -lt "$b" ]
+  # 表は段のファイルへ移ったので、経路の判別の節が表の置き場（review-run.md）を指すことで順序を見る
+  grep -q '^## レビュー経路の判別' "$GATE"
+  grep -q '^### レビューの実行者' "$REVIEW_RUN"
+  section "$GATE" 'レビュー経路の判別' | grep -qF 'stages/review-run.md'
 }
 
 @test "gate-runner (#385): adapter route covers every adapter configuration and the legacy table applies only to the legacy value or no line" {
   s="$(section "$GATE" 'レビュー経路の判別')"
   echo "$s" | grep -qF '新 Codex モードを含む adapter 解決の全構成'
   echo "$s" | grep -qF '`claude-default`'
-  echo "$s" | grep -qE '従来モードのレビュー実行者の表は.*`レビュー経路: 従来`.*行が無い.*ときだけ'
+  echo "$s" | grep -qE '従来モードのレビュー実行者の表.*は.*`レビュー経路: 従来`.*行が無い.*ときだけ'
 }
 
 @test "gate-runner (#385): adapter route never calls Codex/companion/reviewer itself, even for full, and returns needs-reviewer" {
