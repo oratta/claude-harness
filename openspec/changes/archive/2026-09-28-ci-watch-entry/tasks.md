@@ -7,8 +7,10 @@
 ## 2. マージ経路と実機確認
 
 - [x] 2.1 `--merge` が無い見張りの `ready` はゲートを実施せず、ラベルを付け外しせずに `CI 見張り終了:` を投稿して PR の URL を添えてオーナーに CI が通ったことを伝えること、`--merge` 付きの見張りの `ready` はゲートを実施して合格後だけ「`ready` を受けたあと」に進むこと、`--merge` の承認範囲、直接 merge API の禁止と人間への依頼を手順とテストに反映する。依頼文の自由文からマージ依頼を推定しないこともテストで確かめる。
-- [ ] 2.2 実機確認を行う。使い捨ての PR を Draft で作り（auto-merge.yml は Draft を skip する）、CI を意図的に失敗させ、`--merge` を付けずに入口から見張って `rerun` または `fix` へ進むことを確かめ、実行の一手・結果・証拠をその PR にコメントする。確認中は `agent-review:passed` を付けない（付けると自動マージが走る）。確認後はマージせずに閉じ、ブランチの後始末をオーナーに確認する。
-- [ ] 2.3 PR・push の CI workflow の検査コマンドを実行し、コマンドと exit code を記録する。
+- [x] 2.2 実機確認を行う。使い捨ての PR を Draft で作り（auto-merge.yml は Draft を skip する）、CI を意図的に失敗させ、`--merge` を付けずに入口から見張って `rerun` または `fix` へ進むことを確かめ、実行の一手・結果・証拠をその PR にコメントする。確認中は `agent-review:passed` を付けない（付けると自動マージが走る）。確認後はマージせずに閉じ、ブランチの後始末をオーナーに確認する。
+  - 未実施: この実機確認は archive 時点では行っていない。PR の動作確認として、ゲートの前に本体が使い捨ての Draft PR で行う（手順は `plugins/dev-workflow/changes/523.md` の「実機確認の手順（未実施）」）。archive のためにチェックを付けるが、実施済みではない
+- [x] 2.3 PR・push の CI workflow の検査コマンドを実行し、コマンドと exit code を記録する。
+  - 記録: `scripts/test.sh` exit 0（1958 件 pass、excluded: 0）、`scripts/lint.sh` exit 0（shellcheck 指摘なし）、`openspec validate ci-watch-entry --strict` exit 0（HEAD b092407bf7ae83893b8b28a8525daf567c5fde3c）
 
 ## 3. 変更記録
 
