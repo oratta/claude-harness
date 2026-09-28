@@ -61,6 +61,20 @@ denied() { echo "$output" | grep -q '"permissionDecision": "deny"'; }
   [ -z "$output" ]
 }
 
+@test "new executor types reject Fable and worker accepts sonnet, opus and omitted model" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:worker","model":"fable","prompt":"x"}}'
+  denied
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:gate-runner","model":"claude-fable-5-1","prompt":"x"}}'
+  denied
+  for payload in '{"model":"sonnet"}' '{"model":"opus"}' '{}'; do
+    model_part="${payload#\{}"; model_part="${model_part%\}}"
+    [ -z "$model_part" ] || model_part=",$model_part"
+    call "{\"tool_name\":\"Agent\",\"tool_input\":{\"subagent_type\":\"dev-workflow:worker\",\"prompt\":\"x\"$model_part}}"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
+}
+
 @test "fork: allowed when the shared budget mode is ok (no snapshot)" {
   call '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
   [ "$status" -eq 0 ]

@@ -145,11 +145,11 @@ refute() {
   echo "$loop" | sed -n "${s4},\$p" | grep -q 'G'
 }
 
-@test "loop: W does spec decision, split judgement and /opsx:ff, then R1 reviews before apply" {
+@test "loop: W does spec decision, split judgement and openspec new change, then R1 reviews before apply" {
   loop="$(section '1 ループ')"
   echo "$loop" | grep -q '仕様化判断'
-  echo "$loop" | grep -q '/opsx:ff'
-  ff="$(echo "$loop" | grep -n '/opsx:ff' | head -1 | cut -d: -f1)"
+  echo "$loop" | grep -q 'openspec new change'
+  ff="$(echo "$loop" | grep -n 'openspec new change' | head -1 | cut -d: -f1)"
   rev="$(echo "$loop" | grep -n '仕様レビュー' | head -1 | cut -d: -f1)"
   apply="$(echo "$loop" | grep -n 'apply' | head -1 | cut -d: -f1)"
   [ "$ff" -lt "$rev" ] && [ "$rev" -lt "$apply" ]

@@ -35,8 +35,8 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 # ===== worker.md =====
 
-@test "worker: does not re-run /opsx:ff when the change already has its artifacts" {
-  grep -qF '`/opsx:ff` を再実行しない' "$WORKER"
+@test "worker: does not re-run openspec new change when artifacts exist" {
+  grep -qF '`openspec new change` を再実行しない' "$WORKER"
   grep -qF 'そのまま' "$WORKER"
 }
 
@@ -92,13 +92,13 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "worker: openspec CLI degraded path returns to main for the same spec review" {
-  grep -A3 'openspec CLI だけある場合' "$WORKER" | grep -q '仕様レビュー'
-  grep -A3 'openspec CLI だけある場合' "$WORKER" | grep -q 'return'
+  grep -A3 'openspec CLI で artifact を作る場合' "$WORKER" | grep -q '仕様レビュー'
+  grep -A3 'openspec CLI で artifact を作る場合' "$WORKER" | grep -q 'return'
 }
 
-@test "worker: spec path returns after /opsx:ff and does not apply before R1 APPROVE" {
-  grep -q '/opsx:ff' "$WORKER"
-  grep -q '/opsx:apply' "$WORKER"
+@test "worker: spec path returns after openspec new change and does not apply before R1 APPROVE" {
+  grep -q 'openspec new change' "$WORKER"
+  grep -q 'openspec validate' "$WORKER"
   grep -qE 'APPROVE.*(まで|前).*(apply|実装).*(進まない|進んではならない|入らない)|(apply|実装).*APPROVE.*(まで|前)' "$WORKER"
 }
 
@@ -121,17 +121,17 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   echo "$a" | grep -qF '工程完了: 実装＋verify'
   echo "$a" | grep -q '検査コマンド'
   echo "$a" | grep -q 'exit code'
-  echo "$a" | grep -qF '/opsx:apply'
-  echo "$a" | grep -qF '/opsx:verify'
+  echo "$a" | grep -qF 'openspec validate'
+  echo "$a" | grep -qF 'openspec validate'
   # 否定は `!` で書かない。bats（set -e）は `!` 付きコマンドの失敗を最終行以外で無視するため、
   # `! ... | grep -q ...` は退行を検出できない（bats 1.13 で実測）。
-  if echo "$a" | grep -qF '/opsx:archive'; then
+  if echo "$a" | grep -qF 'openspec archive'; then
     echo "(3a) の節に /opsx:archive が書かれている（archive は (3b)）" >&2
     return 1
   fi
   # (3b): archive 以降。PR 番号と仕様宣言のコメント URL を return に載せる
   echo "$b" | grep -qF '工程完了: archive＋PR＋仕様宣言'
-  echo "$b" | grep -qF '/opsx:archive'
+  echo "$b" | grep -qF 'openspec archive'
   echo "$b" | grep -q 'PR #'
   echo "$b" | grep -q '仕様宣言のコメント URL'
 }
@@ -151,19 +151,12 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 # opsx スラッシュコマンドが無く openspec CLI だけある経路も、(3a)/(3b) の区切りは同じでなければ
 # ならない（#262 のゲート指摘。この段落だけ旧来の「実装 → archive」一括のまま残っていた）。
-@test "worker: the openspec-CLI-only path stops at verify in (3a) and archives in (3b)" {
+@test "worker: CLI path stops at verify in (3a) and archives in (3b)" {
   s="$(section "$WORKER" '仕様化する場合（(1) の終わり）')"
   [ -n "$s" ] || { echo "no spec-writing section in worker.md"; return 1; }
-  # フォールバック経路の箇条書き 1 個ぶんを切り出す（次の行頭 "- " まで）
-  fb="$(echo "$s" | awk '/openspec CLI だけある場合/{f=1; print; next} f && /^- /{f=0} f {print}')"
-  [ -n "$fb" ] || { echo "no openspec-CLI-only fallback paragraph in worker.md"; return 1; }
-  flat="$(echo "$fb" | tr '\n' ' ')"
-  # /opsx:verify の代わりの検証手順が名指しされている
-  echo "$flat" | grep -qF 'openspec validate'
-  echo "$flat" | grep -qF -- '--strict'
-  # (3a) は検証まで、archive は (3b)
-  echo "$flat" | grep -qE '\(3a\)[^。]*openspec validate'
-  echo "$flat" | grep -qE 'openspec archive[^。]*\(3b\)'
+  section "$WORKER" '(3a) 実装＋verify' | grep -qF 'openspec validate <change-name> --strict'
+  section "$WORKER" '(3b) archive＋PR＋仕様宣言' | grep -qF 'openspec archive <change-name>'
+
 }
 
 @test "worker: the context cap section names the three stages and forbids finer splits" {
@@ -896,4 +889,43 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   echo "$line" | grep -qF '`補足済み回数: 1`'
   if echo "$line" | grep -qF '`補足済み回数: 0` の行を持つ'; then echo "posts 0"; return 1; fi
   if echo "$line" | grep -qF '記録も同じ形で投稿する'; then echo "second post remains"; return 1; fi
+}
+
+@test "role types and screen checker are wired through develop" {
+  skill="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  codex="${PLUGIN_DIR}/references/codex-develop.md"
+  screen="${ROLES}/screen-checker.md"
+  grep -E '^\| 作業者 ' "$skill" | grep -qF 'dev-workflow:worker'
+  grep -E '^\| ゲート実行者 ' "$skill" | grep -qF 'dev-workflow:gate-runner'
+  grep -E '^\| 画面確認' "$skill" | grep -qF '**V**'
+  section "$skill" '1 ループ' | grep -qF 'subagent_type: dev-workflow:worker'
+  section "$skill" '1 ループ' | grep -qF 'subagent_type: dev-workflow:gate-runner'
+  grep -m1 'subagent_type: dev-workflow:worker' "$WORKER"
+  grep -m1 'subagent_type: dev-workflow:gate-runner' "$GATE"
+  ! grep -q 'W が `/wt-setup`' "$WORKER"
+  section "$skill" 'worktree の用意' | grep -qF '/wt-setup'
+  grep -qF 'openspec new change' "$WORKER"
+  grep -qF 'openspec validate' "$WORKER"
+  grep -qF 'openspec archive' "$WORKER"
+  ! section "$WORKER" '(3a) 実装＋verify' | grep -qF '/opsx:'
+  ! section "$WORKER" '(3b) archive＋PR＋仕様宣言' | grep -qF '/opsx:'
+  ! grep '/opsx:' "$WORKER" | grep -v -e 本体 -e 主
+  ! grep -qF 'ls .claude/commands/opsx/' "$WORKER"
+  grep -qF 'openspec --version' "$WORKER"
+  loop="$(section "$skill" '1 ループ')"
+  ! echo "$loop" | grep -qE '/opsx:(ff|apply|verify|archive)'
+  echo "$loop" | grep -qF 'openspec new change'
+  grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:worker'
+  grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:gate-runner'
+  grep -E '^\| \*\*openspec' "$skill" | grep -qF 'openspec --version'
+  grep -E '^\| R1' "$skill" | grep -vqE 'dev-workflow:(worker|gate-runner)'
+  section "$WORKER" '(3a) 実装＋verify' | grep -qF '画面確認:'
+  [ -f "$screen" ]
+  grep -qF '画面確認結果: (合格|不合格|実行不能)' "$screen"
+  grep -qE '編集.*commit.*投稿|編集.*投稿.*commit' "$screen"
+  grep -qF 'dev-workflow:worker' "$codex"
+  grep -qF 'dev-workflow:gate-runner' "$codex"
+  grep -qF 'dev-workflow:decider' "$codex"
+  grep -qF 'dev-workflow:worker' "${PLUGIN_DIR}/README.md"
+  grep -qF 'dev-workflow:gate-runner' "${PLUGIN_DIR}/README.md"
 }

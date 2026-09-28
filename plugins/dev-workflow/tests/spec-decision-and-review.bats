@@ -3,7 +3,7 @@
 # 仕様化判断の記録と、書いた仕様の実装前レビュー（issue #191 → #203 で develop 構造に移行）
 #
 # develop スキルでは、W（references/roles/worker.md）が仕様化判断を固定書式で記録先に記録し、
-# 本体の 1 ループ（SKILL.md）が W の /opsx:ff と W の再開（apply）の間に R1
+# 本体の 1 ループ（SKILL.md）が W の openspec new change と W の再開（apply）の間に R1
 # （references/roles/spec-reviewer.md）の仕様レビューを挟むことを検証する。
 # 既存文（事前分類節・残量モード行）で偽合格しないよう、節を切り出してから grep する。
 #
@@ -59,9 +59,9 @@ mode_sec() { section "$SKILL" '実行モード'; }
 
 # --- Requirement: 書いた仕様は実装前に別コンテキストがレビューする ---
 
-@test "loop: R1 review sits between W's /opsx:ff and W's apply" {
-  loop_sec | grep -q '/opsx:ff'
-  ff="$(loop_sec | grep -n '/opsx:ff' | head -1 | cut -d: -f1)"
+@test "loop: R1 review sits between W's openspec new change and W's apply" {
+  loop_sec | grep -q 'openspec new change'
+  ff="$(loop_sec | grep -n 'openspec new change' | head -1 | cut -d: -f1)"
   rev="$(loop_sec | grep -n '仕様レビュー' | head -1 | cut -d: -f1)"
   apply="$(loop_sec | grep -n 'apply' | head -1 | cut -d: -f1)"
   [ -n "$ff" ] && [ -n "$rev" ] && [ -n "$apply" ]
