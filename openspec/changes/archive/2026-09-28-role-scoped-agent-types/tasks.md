@@ -2,7 +2,7 @@
 
 ## 1. 実機で前提を確かめる
 
-- [ ] 1.1 `plugins/dev-workflow/agents/worker.md` を `tools: Read, Edit, Write, Bash, Grep, Glob, TaskStop`・`model: sonnet` の仮の定義で置き、`claude -p --plugin-dir plugins/dev-workflow` から名前付きで `dev-workflow:worker` を起こして、return が親に届くかを確かめる。届かなければ worker と gate-runner の `tools` に `SendMessage` を足すと決め、結果（Claude Code の版・届いたか）を PR 本文の `## 新種別の計測` に書く
+- [x] 1.1 `plugins/dev-workflow/agents/worker.md` を `tools: Read, Edit, Write, Bash, Grep, Glob, TaskStop`・`model: sonnet` の仮の定義で置き、`claude -p --plugin-dir plugins/dev-workflow` から名前付きで `dev-workflow:worker` を起こして、return が親に届くかを確かめる。届かなければ worker と gate-runner の `tools` に `SendMessage` を足すと決め、結果（Claude Code の版・届いたか）を PR 本文の `## 新種別の計測` に書く
 
 ## 2. 検査を先に書く（Red）
 
@@ -33,7 +33,7 @@
 
 ## 5. 計測を記録する（合否の閾値は決め打ちしない）
 
-- [ ] 5.1 同じ Claude Code の版・同じモデル・同じ短い指示文で、`general-purpose` と `dev-workflow:worker`、`general-purpose` と `dev-workflow:gate-runner` を `claude -p --plugin-dir plugins/dev-workflow` から起こし、各トランスクリプト（`~/.claude/projects/<proj>/<session>/subagents/agent-a*.jsonl`）の最初の `message.usage` の `input_tokens`・`cache_creation_input_tokens`・`cache_read_input_tokens` を分けて PR 本文の `## 新種別の計測` に書く（版の番号も書く）
-- [ ] 5.2 5.1 の新種別の値を、issue #330 本文の 2026-09-20 の実測（W / G の初回 43,208〜50,577）と並べて書く
-- [ ] 5.3 Chrome 拡張が繋がる環境で `general-purpose`・`model: sonnet` の V を起こして 1 ページを開かせ、`mcp__claude-in-chrome__*` が呼べたことと return の 1 行目を記録する。繋がらない環境なら `画面確認結果: 実行不能` が返ることを記録し、主の環境での確認を PR 本文の動作確認ポイントに残す。起動できた V の最初の usage も 3 つに分けて書く
-- [ ] 5.4 (3b) で follow-up issue を作る（中身: マージ後に新種別で最初に develop を 1 本通した記録先で、全エージェント合計の `cache_creation_input_tokens` と `cache_read_input_tokens`、上限による強制停止の回数と手渡しの回数を分けて集計する。担い手はその 1 本を通した本体で、記録先の PR がマージされたあとに行う）。PR 本文の `## 新種別の計測` に、この項目が未計測であることと follow-up issue の URL と測る記録先の決め方を書く（集計そのものはこの change の範囲外）
+- [x] 5.1 同じ Claude Code の版・同じモデル・同じ短い指示文で、`general-purpose` と `dev-workflow:worker`、`general-purpose` と `dev-workflow:gate-runner` を `claude -p --plugin-dir plugins/dev-workflow` から起こし、各トランスクリプト（`~/.claude/projects/<proj>/<session>/subagents/agent-a*.jsonl`）の最初の `message.usage` の `input_tokens`・`cache_creation_input_tokens`・`cache_read_input_tokens` を分けて PR 本文の `## 新種別の計測` に書く（版の番号も書く）
+- [x] 5.2 5.1 の新種別の値を、issue #330 本文の 2026-09-20 の実測（W / G の初回 43,208〜50,577）と並べて書く
+- [x] 5.3 Chrome 拡張が繋がる環境で `general-purpose`・`model: sonnet` の V を起こして 1 ページを開かせ、`mcp__claude-in-chrome__*` が呼べたことと return の 1 行目を記録する。繋がらない環境なら `画面確認結果: 実行不能` が返ることを記録し、主の環境での確認を PR 本文の動作確認ポイントに残す。起動できた V の最初の usage も 3 つに分けて書く
+- [x] 5.4 (3b) で follow-up issue を作る（中身: マージ後に新種別で最初に develop を 1 本通した記録先で、全エージェント合計の `cache_creation_input_tokens` と `cache_read_input_tokens`、上限による強制停止の回数と手渡しの回数を分けて集計する。担い手はその 1 本を通した本体で、記録先の PR がマージされたあとに行う）。PR 本文の `## 新種別の計測` に、この項目が未計測であることと follow-up issue の URL と測る記録先の決め方を書く（集計そのものはこの change の範囲外）

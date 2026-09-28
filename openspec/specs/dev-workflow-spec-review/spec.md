@@ -19,15 +19,15 @@ develop スキルの W の指示書（`references/roles/worker.md`）は、仕�
 - **THEN** 同接頭辞のコメントが複数あるときは最新 1 件を正とする規則と、PR 本文の最初の `Closes` / `Fixes` / `Refs #N` で元 issue を解決し、無ければ PR 自身のコメントを見る規則が書かれている
 
 ### Requirement: 書いた仕様は実装前に別コンテキストがレビューする
-develop スキルは、仕様化経路（opsx 利用時・openspec CLI 直叩き時の両方）で、W が artifact を生成して return した直後・W を再開して `/opsx:apply`（または実装着手）する前に、本体が spawn する R1（`references/roles/spec-reviewer.md` を読む、実装と別コンテキストのサブエージェント）による仕様レビューを挟まなければならない（MUST）。レビューの入力は change ディレクトリの artifact・記録先の受け入れ条件・関連する既存 `openspec/specs/`（`grep` で当たりを付けた範囲）とし（MUST）、観点・出力書式は `references/roles/spec-reviewer.md` を正本とする（SHALL）。R1 が `APPROVE` を返し記録されるまで W を実装に進めてはならない（MUST NOT）。
+develop スキルは、仕様化経路で、W が openspec CLI（`openspec new change` と artifact の直書き）で artifact を生成して return した直後・W を再開して実装に着手する前に、本体が spawn する R1（`references/roles/spec-reviewer.md` を読む、実装と別コンテキストのサブエージェント）による仕様レビューを挟まなければならない（MUST）。本体や主が W の起動前に `/opsx:ff` などで change を作っていた場合も、W がそれを確かめて return したあと同じ仕様レビューを挟む（SHALL）。レビューの入力は change ディレクトリの artifact・記録先の受け入れ条件・関連する既存 `openspec/specs/`（`grep` で当たりを付けた範囲）とし（MUST）、観点・出力書式は `references/roles/spec-reviewer.md` を正本とする（SHALL）。R1 が `APPROVE` を返し記録されるまで W を実装に進めてはならない（MUST NOT）。
 
 #### Scenario: 1 ループにレビューが挟まっている
 - **WHEN** SKILL.md の 1 ループを読む
-- **THEN** W の `/opsx:ff` と W の再開（apply）の間に R1 の仕様レビューがあり、`references/roles/spec-reviewer.md` を参照し、APPROVE の記録まで apply に進まない旨が書かれている
+- **THEN** W の change の作成（`openspec new change`）と W の再開（実装）の間に R1 の仕様レビューがあり、`references/roles/spec-reviewer.md` を参照し、APPROVE の記録まで実装に進まない旨が書かれている
 
-#### Scenario: 縮退経路の記述にもレビューがある
-- **WHEN** `references/roles/worker.md` の「opsx コマンドが無く openspec CLI だけある場合」の記述を読む
-- **THEN** artifact 生成の後に本体へ return して同じ仕様レビューを受けることが書かれている
+#### Scenario: worker.md の仕様化の節にもレビューがある
+- **WHEN** `references/roles/worker.md` の仕様化する場合の節を読む
+- **THEN** `openspec new change` と artifact の直書きの後に本体へ return して仕様レビューを受けることと、R1 の APPROVE が記録されるまで実装に進まないことが書かれている
 
 ### Requirement: 仕様レビューの観点は既存 spec との整合と受け入れ条件の一意性を含む
 `references/roles/spec-reviewer.md` は、レビュアーが検査する観点として少なくとも次の 6 つを含まなければならない（MUST）: ①受け入れ条件（Scenario の WHEN/THEN）が一意に決まりテスト可能か ②既存 `openspec/specs/` の要件と衝突・重複しないか（衝突時は spec パスと要件名を挙げる） ③リポ固有の値（時刻・名前・パス）が config や引数に出されているか ④導入先・前提環境（プラグイン・CLI・権限）が書かれているか ⑤proposal / specs / design / tasks の相互整合 ⑥守備範囲の明記。レビュアーは読み取り専用で仕様ファイルを変更してはならず（MUST NOT）、既存 spec は `grep` で当たりを付けてから該当ファイルだけ読む（SHALL）。
