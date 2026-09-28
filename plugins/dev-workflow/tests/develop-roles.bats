@@ -917,7 +917,8 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:worker'
   grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:gate-runner'
   grep -E '^\| \*\*openspec' "$skill" | grep -qF 'openspec --version'
-  grep -E '^\| R1' "$skill" | grep -vqE 'dev-workflow:(worker|gate-runner)'
+  if grep -E '^\| (仕様レビュアー|R1|G が要求するレビュアー)' "$skill" | grep -qE 'dev-workflow:(worker|gate-runner)'; then return 1; fi
+  if grep -qE '(`worker` role|`gate` role|W の phase|G の phase)[^、。]*general-purpose' "$codex"; then return 1; fi
   section "$WORKER" '(3a) 実装＋verify' | grep -qF '画面確認:'
   [ -f "$screen" ]
   grep -qF '画面確認結果: (合格|不合格|実行不能)' "$screen"
