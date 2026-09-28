@@ -934,3 +934,8 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -qF 'phase `spec`／`implement`／`finish` は `dev-workflow:worker`' "$codex"
   grep -qF 'phase `gate` は `dev-workflow:gate-runner`' "$codex"
 }
+
+@test "codex-develop: explore and summarize keep the general-purpose agent type" {
+  codex="${PLUGIN_DIR}/references/codex-develop.md"
+  grep -qF '`explore`・`summarize` role は `general-purpose`' "$codex"
+}
