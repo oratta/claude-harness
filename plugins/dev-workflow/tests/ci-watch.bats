@@ -17,6 +17,8 @@ setup() {
   SCRIPT="${PLUGIN_DIR}/scripts/ci-watch.sh"
   REF="${PLUGIN_DIR}/references/ci-watch.md"
   GATE_SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
+  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   DEVELOP="${PLUGIN_DIR}/skills/develop/SKILL.md"
   GATE_RUNNER="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
   WORK="$(cd "$(mktemp -d)" && pwd -P)"
@@ -366,10 +368,13 @@ pr_view_calls() {
 
 @test "gate skill: run_in_background sits after the step-5 check and before the step-6 heading" {
   local after before lines l
-  after="$(grep -n '最後の実測確認は次の' "$GATE_SKILL" | head -1 | cut -d: -f1)"
-  before="$(grep -n '^### 6\. 保留処理' "$GATE_SKILL" | head -1 | cut -d: -f1)"
+  # 手順 5 は stages/pass.md、手順 6 は stages/hold.md に分かれた。pass.md の中で手順 5 の実測確認より後、
+  # 手順 5 の後ろの節（G として動くとき）より前にあること、手順 6 の見出しが hold.md にあることで見る
+  grep -q '^### 6\. 保留処理' "$HOLD"
+  after="$(grep -n '最後の実測確認は次の' "$PASS_STAGE" | head -1 | cut -d: -f1)"
+  before="$(grep -n '^## G として動くとき' "$PASS_STAGE" | head -1 | cut -d: -f1)"
   [ -n "$after" ] && [ -n "$before" ]
-  lines="$(grep -n 'run_in_background' "$GATE_SKILL" | cut -d: -f1)"
+  lines="$(grep -n 'run_in_background' "$PASS_STAGE" | cut -d: -f1)"
   [ -n "$lines" ]
   for l in $lines; do
     [ "$l" -gt "$after" ] && [ "$l" -lt "$before" ] || { echo "line $l out of range ($after, $before)"; return 1; }
@@ -377,10 +382,10 @@ pr_view_calls() {
 }
 
 @test "gate skill: refers to references/ci-watch.md and a subagent returns passed without watching" {
-  grep -qF 'references/ci-watch.md' "$GATE_SKILL"
-  grep -q 'サブエージェント.*見張りを始めずに `passed` を return' "$GATE_SKILL"
-  grep -q '直しで commit が積まれたら.*`ready`.*手順 1 から' "$GATE_SKILL"
-  grep -q '合格するまでマージ待ち・マージ依頼に進まない' "$GATE_SKILL"
+  grep -qF 'references/ci-watch.md' "$PASS_STAGE"
+  grep -q 'サブエージェント.*見張りを始めずに `passed` を return' "$PASS_STAGE"
+  grep -q '直しで commit が積まれたら.*`ready`.*手順 1 から' "$PASS_STAGE"
+  grep -q '合格するまでマージ待ち・マージ依頼に進まない' "$PASS_STAGE"
 }
 
 @test "develop skill: (4) hands passed to the main session's watch and loops fix through W and G" {
@@ -392,5 +397,5 @@ pr_view_calls() {
 }
 
 @test "gate-runner: G returns passed without starting the CI watch" {
-  grep -q 'G は CI の見張りを始めずに `passed` を return する' "$GATE_RUNNER"
+  grep -q 'G は CI の見張りを始めずに `passed` を return する' "$PASS_STAGE"
 }
