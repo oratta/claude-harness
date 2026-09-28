@@ -19,7 +19,7 @@ gate-runner.md に残すのは、役割と入力、レビュー経路の判別�
 #### Scenario: 読み込み量の実測
 
 - **WHEN** この変更を develop で PR にし、`scripts/subagent-context-audit.sh --by-role` で G の `docs_median` を測る
-- **THEN** 実測値が PR 本文に記録されている（目標は 15K トークン以下。超えたときは実測値とファイルごとの内訳と follow-up issue の URL が記録されている）
+- **THEN** 実測値とファイルごとの内訳が PR 本文に記録されている（目標は 15K トークン以下。超えたときは加えて follow-up issue の URL が記録されている）
 
 ### Requirement: 既存要件が gate-runner.md に置いた内容のうち段に移したものは段のファイルを指す
 

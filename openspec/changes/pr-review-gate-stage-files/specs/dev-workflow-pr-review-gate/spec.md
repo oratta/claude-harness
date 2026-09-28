@@ -59,7 +59,7 @@
 
 ### Requirement: 既存要件が SKILL.md に置いた内容は段のファイルを指す
 
-`dev-workflow-pr-review-gate`・`dev-workflow-develop`・`dev-workflow-subagent-waiting` の既存要件が `skills/pr-review-gate/SKILL.md`（「SKILL.md」「移植版 SKILL.md」「スキル」「pr-review-gate/SKILL.md の雛形」と書いたものを含む）に置く・含む・明記する・規定する・読むと定めた内容は、索引の対応表がその手順を割り当てた段のファイル（宣言は `declarations.md`、旧「前提と理由」の項目は移した先の段のファイル）を指すものとして読まなければならない（MUST）。「SKILL.md の手順 N」「SKILL.md 手順 2-1 のレビュアー向け指示ブロック」「SKILL.md の〜を読む」の形の WHEN も同じく読み替える（MUST）。「SKILL.md に再掲しない」の類の禁止は、索引・段のファイル・`declarations.md` のすべてに掛かる（MUST）。
+`dev-workflow-pr-review-gate`・`dev-workflow-develop`・`dev-workflow-subagent-waiting` の既存要件が `skills/pr-review-gate/SKILL.md`（「SKILL.md」「移植版 SKILL.md」「スキル」「pr-review-gate/SKILL.md の雛形」と書いたものを含む）に置く・含む・明記する・規定する・渡す・読むと定めた内容は、索引の対応表がその手順を割り当てた段のファイル（宣言は `declarations.md`、旧「前提と理由」の項目は移した先の段のファイル）を指すものとして読まなければならない（MUST）。「SKILL.md の手順 N」「SKILL.md 手順 2-1 のレビュアー向け指示ブロック」「SKILL.md の〜を読む」の形の WHEN も同じく読み替える（MUST）。「SKILL.md に再掲しない」の類の禁止は、索引・段のファイル・`declarations.md` のすべてに掛かる（MUST）。
 
 この読み替えは、少なくとも次の既存要件の「SKILL.md は…含む/明記する/規定する/置く」の形の文に掛かる: 「スキルはリポ非依存で、flatmate 固有の仕組みには条件分岐で対応する」「flatmate issue #240 の収束ルールが織り込まれている」「auto-merge への組み込みは範囲外と明記する」「2 周目終了時に残った指摘を違反文の引用で仕分ける」「レビュアーの指摘に固定書式を課す」。既存要件が `gate-runner.md` に置くと定めた内容の読み替えは `dev-workflow-develop` 側の要件「既存要件が gate-runner.md に置いた内容のうち段に移したものは段のファイルを指す」が定める。
 
