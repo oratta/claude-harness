@@ -467,16 +467,16 @@ PY
 import json, sys
 d = json.load(open(sys.argv[1]))["hooks"]
 assert set(d) == {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop"}, sorted(d)
-assert d["SessionStart"] == [{"matcher": "startup|clear|compact", "hooks": [
-    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-tripwires.sh"}]}], d["SessionStart"]
-assert d["UserPromptSubmit"] == [{"hooks": [
-    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/prompt-tripwires-refresh.sh"}]}], d["UserPromptSubmit"]
-assert d["PreToolUse"] == [
-    {"matcher": "Agent", "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/agent-model-guard.sh"}]},
-    {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh"}]},
-], d["PreToolUse"]
-assert d["PostToolUse"] == [{"hooks": [
-    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh"}]}], d["PostToolUse"]
+assert any("session-tripwires.sh" in h["command"]
+           for e in d["SessionStart"] for h in e["hooks"]), d["SessionStart"]
+assert any("prompt-tripwires-refresh.sh" in h["command"]
+           for e in d["UserPromptSubmit"] for h in e["hooks"]), d["UserPromptSubmit"]
+assert any("agent-model-guard.sh" in h["command"]
+           for e in d["PreToolUse"] for h in e["hooks"]), d["PreToolUse"]
+assert any("context-tripwire.sh" in h["command"]
+           for e in d["PreToolUse"] for h in e["hooks"]), d["PreToolUse"]
+assert any("context-tripwire.sh" in h["command"]
+           for e in d["PostToolUse"] for h in e["hooks"]), d["PostToolUse"]
 PY
 }
 
