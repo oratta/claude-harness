@@ -1,12 +1,12 @@
 # W（作業者）の指示書 — develop スキル
 
-develop の本体（オーケストレータ）から名前付きで spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned）・今回の工程（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）。
+develop の本体（オーケストレータ）から `subagent_type: dev-workflow:worker` で名前付き spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned）・今回の工程（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）。
 
 W は**このファイルだけ**を読んで動く（`SKILL.md` は本体向け）。判定基準の詳細は `skills/develop/references/decision-criteria.md`。
 
 ## W がしないこと
 
-- **worktree を切らない。** worktree は本体が用意済み（本体が対象専用の worktree にいるか、`isolation: "worktree"` で spawn されている）。セットアップ（`.env` コピー等）は worktree プラグインの `WorktreeCreate` / `SessionStart` hooks が担うので、W は判定も `/wt-setup` 実行もしない。例外は context に「`.worktreeinclude` が無い」と載っているときだけ `/wt-setup` を呼ぶ
+- **worktree を切らない。** worktree は本体が用意済み（本体が対象専用の worktree にいるか、`isolation: "worktree"` で spawn されている）。セットアップ（`.env` コピー等）は worktree プラグインの `WorktreeCreate` / `SessionStart` hooks が担うので、W は判定も `/wt-setup` 実行もしない
 - **サブエージェントを spawn しない。** 仕様レビュー（R1）・PR レビュー（G）・レビュアーは本体が起こす。W は artifact を作ったら本体に return し、再開を待つ
 - **本体の判断を先取りしない。** 分割判定・昇格トリップワイヤーの発火は return で報告し、次に何をするかは本体が決める
 
@@ -38,14 +38,11 @@ issue が記録先のときはこの節は不要（PR は (3) で作る）。
 
 ## 仕様化判断（opsx / openspec の要否）と記録
 
-まず opsx / openspec の利用可能性を 3 段フォールバックで検出する:
+まず `openspec --version` で CLI の有無を確認する。opsx コマンドがあっても openspec CLI が無ければ仕様化経路は発生せず、理由に「openspec 不在」と書いてコード直行する。
 
 ```bash
-ls .claude/commands/opsx/ 2>/dev/null && echo "OPSX_CMD"      # 1) opsx スラッシュコマンド
-openspec --version 2>/dev/null && echo "OPENSPEC_CLI"        # 2) openspec CLI
-# 3) どちらも無ければ仕様化経路は発生しない（コード直行。理由に「openspec 不在」と書く）
+openspec --version
 ```
-
 次に、この依頼を**仕様として残すべきか**を判定する（詳細は `skills/develop/references/decision-criteria.md` Step B）:
 
 - **仕様化する**（一次基準: 設計判断・トレードオフを含むか）: 複数案からの選択・採用理由など「なぜこう作ったか」を決定履歴に残す価値のある設計判断を含む／外部から観測可能な振る舞いの変更のうち実装方針に選択肢が残るもの／既存 capability の要件や docs に触れる
@@ -64,7 +61,7 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 判定をやり直したら同じ書式で投稿し直す（照合側は最新 1 件を正とする。契約の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）。**記録する前に分割判定・実装へ進まない。**
 
-仕様化しないと判定した場合は分割判定と `/opsx:ff` を飛ばし、本体に「仕様化しない」と return する（本体は (3a) の実装から W を再開する。同じコンテキストなのでそのまま続けてよいと本体が指示することもある）。
+仕様化しないと判定した場合は分割判定と `openspec new change` を飛ばし、本体に「仕様化しない」と return する（本体は (3a) の実装から W を再開する。同じコンテキストなのでそのまま続けてよいと本体が指示することもある）。
 
 ## 分割判定（単一 change か複数 change か）
 
@@ -87,35 +84,17 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 ## 仕様化する場合（(1) の終わり）
 
-**対象の change が既に存在し artifact（proposal / design / tasks / specs）が揃っているなら、`/opsx:ff` を再実行しない。** 既存の artifact を上書きせず、そのまま「仕様できた: openspec/changes/<change-name>/」と本体に return して仕様レビューへ進む（Fable の対話セッションが `/develop` に入る前に change を作っておく形を禁じていないため、W が来た時点で既にあることがある）。
+**対象の change が既に存在し artifact（proposal / design / tasks / specs）が揃っているなら、`openspec new change` を再実行しない。** 本体や主が `/opsx:ff` で先に作った change もそのまま使い、「仕様できた: openspec/changes/<change-name>/」と本体に return する。
 
-```
-/opsx:ff <change-name>     # 全 artifact（proposal / specs / design / tasks）を一括生成
-→ 本体に return「仕様できた: openspec/changes/<change-name>/」
-   （本体が R1 を起こして仕様レビューを行う。R1 の APPROVE が記録先に記録されるまで /opsx:apply（実装）に進まない）
-```
+openspec CLI で artifact を作る場合は `openspec new change <change-name>` を実行し、`openspec status --change <change-name>` で依存順を確認する。`openspec instructions <artifact> --change <change-name>` で各 artifact の指示を得て、proposal / design / tasks / specs を直書きする。揃ったら本体に return し、同じ仕様レビューを受ける。R1 の APPROVE が記録先に記録されるまで実装に進まない。
 
-- R1 が `REQUEST_CHANGES` を返したら、本体が SendMessage で再開する。指摘（BLOCKER / SHOULD_FIX）に従って artifact を直し、直した箇所を列挙して return する（再レビューは差分限定。2 周キャップ）
-- **opsx コマンドが無く openspec CLI だけある場合**は `openspec new change` → 各 artifact を直叩きで生成し、
-  同じく本体に return して**同じ仕様レビュー**（R1）を受ける。APPROVE 後の実装も工程の区切りは opsx 経路と同じで、
-  スラッシュコマンドが CLI に置き換わるだけ:
-  - (3a) は実装 → `openspec validate <change-name> --strict`（`/opsx:verify` の代わりの検証。あわせて
-    `tasks.md` のチェックボックスが全部 `[x]` になっていることを確認する）まで。ここで return する
-  - (3a) の return では `/opsx:verify` の合否の代わりに、この `openspec validate --strict` の exit code を載せる
-  - `openspec archive <change-name>` は (3b) で行う（(3a) で archive まで進めない）
-- 仕様レビュー結果は R1 が記録先にコメントする（1 行目 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$`）。W はそのコメントを見て APPROVE を確認してから実装に入る（書式の正本は `references/roles/spec-reviewer.md`）
+仕様レビュー結果は R1 が記録先にコメントする（1 行目 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$`）。W はそのコメントを確認してから実装に入る。R1 が `REQUEST_CHANGES` を返したら、本体からの再開指示を受けて artifact を直し、修正箇所を列挙して return する（再レビューは差分限定、2 周キャップ）。
 
 ## (3a) 実装＋verify（TDD 徹底）
 
 単一 change 1 つ分の実装手順。仕様化する場合と直行する場合で入口が違うだけで、**テストを先に書く**のは共通。**この節は verify までで終わる**（archive 以降は次の (3b)）。
 
-**仕様化する場合（opsx 利用可能時）**:
-```
-/opsx:apply <change-name>  # tasks を TDD で実装（各タスクを終えたら tasks.md のチェックボックスを [x] に）
-/opsx:verify <change-name> # 実装が artifact と一致するか検証
-```
-
-**仕様化する場合（openspec CLI だけの経路）**: `/opsx:apply` の代わりに `tasks.md` を上から TDD で実装し（各タスクを終えたらチェックボックスを `[x]` に）、`/opsx:verify` の代わりに `openspec validate <change-name> --strict` を実行する。この節が verify までで終わるのは opsx 経路と同じで、`openspec archive` は (3b) で行う。
+**仕様化する場合**: `tasks.md` を上から TDD で実装し、終えた項目を `[x]` にする。`openspec validate <change-name> --strict` を実行し、担当した項目のチェックボックスを確認する。(3a) は verify までで return し、`openspec archive <change-name>` は (3b) で行う。
 
 **コード直行する場合（仕様化不要）**:
 1. 実装前に必ず codebase を grep して既存実装を確認する（二重実装しない）
@@ -125,6 +104,8 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 5. 下の「全経路共通の大原則」に従って検査を実行し、**exit code と出力の要約をターン内に表示してから**「完了」を宣言する。自己申告のみの完了宣言は禁止
 
 **全経路共通の大原則**:
+
+CLI 経路とコード直行の両方に適用する。
 - 実装後、対象リポジトリの `.github/workflows/*.yml` / `*.yaml` を読み、`pull_request` / `push` で起動するジョブの `run:` ステップから検査コマンド（lint・test・ビルド等）を収集してすべて実行する。環境セットアップ（依存インストール等。例: `sudo apt-get install`）と判別し、検査として実行しない。`pull_request` / `push` 以外で起動する運用系ワークフロー（例: `auto-merge.yml`、`revert-pr.yml`）は対象外。コマンド名をこのリポジトリ固有の値に固定しない。workflow が無い、または検査コマンドを判別できないときは、`scripts/test.sh` 等の慣例コマンドへフォールバックしてよい。手元にツールが無く実行できない検査は「未導入」として実行結果と区別し、合格扱いしない
 - この指示の守備範囲は PR・push で起動する workflow の `run:` ステップ。拾いたい誤りは CI の検査ジョブの取りこぼし（PR #489 の shellcheck）。`matrix` / `services` / `env` / `if:` 条件による CI と手元の再現差、ランナー依存の検査、環境セットアップの `run:` ステップの誤実行はこの要件で止めない。取りこぼしを塞ぎ切ることを完了条件にしない。最後の防波堤は G による CI 結果の確認
 - **長時間処理（フルテスト・ビルド）の完了を待つ目的でターンを終えない。** 待ちは同一ターン内の前景ポーリングで行う（正本: `plugins/dev-workflow/references/subagent-waiting.md`。雛形と上限はそこにあり、ここには再掲しない。総待ちの上限に達したら待ちをやめて本体に return する）
@@ -137,20 +118,22 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 **(3a) の return に書くこと**（1 行目は `工程完了: 実装＋verify`）:
 
 - **収集した検査コマンドの一覧と各 exit code**（フルテスト・lint・ビルドを含む。未導入の検査は「未導入のため未実行」と明記し、合格扱いしない。失敗が残っていればその件数も）
-- **`/opsx:verify` の合否**（仕様化した場合。openspec CLI だけの経路では `openspec validate <change-name> --strict` の exit code。直行した場合は「仕様化しないため verify なし」と書く）
+- **`openspec validate <change-name> --strict` の exit code**（仕様化した場合。直行した場合は「仕様化しないため verify なし」と書く）
 - 編集したファイルの一覧・自分で埋めた決定・昇格トリップワイヤーの発火有無・残作業
+- `画面確認: 不要` または `画面確認: 要る — <開く URL か起動手順> / <見る点>` を 1 行。受け入れ条件または記録先の動作確認ポイントが画面観測を求めるかで決める。要る場合は URL か起動手順と見る点の両方を書く。W 自身は画面で確認しない
 - 仕分け表の順 4（今直す 3 条件）で直した指摘があれば、指摘ごとに「受け入れ条件の外・その場で直した・直し方 N 行」の記録（G が仕分け欄に写す）
 
-この 2 つ（検査コマンドと各 exit code、`/opsx:verify` の合否）を必ず載せるのは、(3b) の担い手が pr-review-gate 手順 5 が照合する動作確認の証拠を書くための唯一の入力になるためである。手渡しが起きると後任は前任の履歴を読めないので、証拠が return に無ければフルテストを回し直すか証拠なしで宣言するかのどちらかになる。
+この 2 つ（検査コマンドと各 exit code、`openspec validate --strict` の exit code）を必ず載せるのは、(3b) の担い手が pr-review-gate 手順 5 が照合する動作確認の証拠を書くための唯一の入力になるためである。手渡しが起きると後任は前任の履歴を読めないので、証拠が return に無ければフルテストを回し直すか証拠なしで宣言するかのどちらかになる。
 
 ## (3b) archive＋PR＋仕様宣言
 
 (3a) の return を本体が受け取り、コンテキスト量を測ってから再開（または手渡し）されて入る節。実装内容には手を入れず、事務手続きだけを行う。
 
-1. `/opsx:archive <change-name>`（仕様化した場合。openspec CLI だけの経路では `openspec archive <change-name>`。完了した change をアーカイブし、archive 済みの状態を PR に含める）
-2. PR を **Draft のまま**用意する: 記録先が Draft PR ならそのまま使う。issue が記録先なら `gh pr create --draft` で作成する（本文に `Closes #<issue>`。unmanned では `plugins/dev-workflow/references/pr-body-format.md` の型に従い `agent-review:pending` を付ける — 憲法 Step 3 の 5〜6 に相当）。W は Draft を外さない（Ready 化は G が pr-review-gate 手順 5 で `agent-review:passed` の直前に行う。CI を Draft で止めるリポで、レビューと修正の周回ごとに CI を走らせないため）
-3. **仕様宣言**を PR コメントに書く（書式・`対象 HEAD:` 規約の正本は `skills/pr-review-gate/declarations.md`（pr-review-gate 手順 3・3-b）。(3b) ではこのファイルだけを読む。`仕様: 更新した`＋archive 済み・`仕様レビュー: APPROVE`、または `仕様: 変更なし`＋理由）
-4. return（1 行目は `工程完了: archive＋PR＋仕様宣言`）: **PR #N（HEAD SHA）と仕様宣言のコメント URL**、(3a) から引き継いだテストコマンドと exit code、埋めた決定の列挙、昇格トリップワイヤーの発火有無
+1. `openspec archive <change-name>`（仕様化した場合。完了した change をアーカイブし、archive 済みの状態を PR に含める）
+2. 本体から V の `画面確認結果: 合格` が渡されたら開いた URL・見た要素・観測値を動作確認証拠の入力にする。`画面確認結果: 実行不能` なら理由を引き継ぎ、画面確認の証拠は書かない。
+3. PR を **Draft のまま**用意する: 記録先が Draft PR ならそのまま使う。issue が記録先なら `gh pr create --draft` で作成する（本文に `Closes #<issue>`。unmanned では `plugins/dev-workflow/references/pr-body-format.md` の型に従い `agent-review:pending` を付ける — 憲法 Step 3 の 5〜6 に相当）。W は Draft を外さない（Ready 化は G が pr-review-gate 手順 5 で `agent-review:passed` の直前に行う。CI を Draft で止めるリポで、レビューと修正の周回ごとに CI を走らせないため）
+4. **仕様宣言**を PR コメントに書く（書式・`対象 HEAD:` 規約の正本は `skills/pr-review-gate/declarations.md`（pr-review-gate 手順 3・3-b）。(3b) ではこのファイルだけを読む。`仕様: 更新した`＋archive 済み・`仕様レビュー: APPROVE`、または `仕様: 変更なし`＋理由）
+5. return（1 行目は `工程完了: archive＋PR＋仕様宣言`）: **PR #N（HEAD SHA）と仕様宣言のコメント URL**、(3a) から引き継いだテストコマンドと exit code、埋めた決定の列挙、昇格トリップワイヤーの発火有無
 
 ## 重要実装の事前分類（1 周目のモデルを上げる条件）
 

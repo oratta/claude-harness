@@ -145,11 +145,11 @@ refute() {
   echo "$loop" | sed -n "${s4},\$p" | grep -q 'G'
 }
 
-@test "loop: W does spec decision, split judgement and /opsx:ff, then R1 reviews before apply" {
+@test "loop: W does spec decision, split judgement and openspec new change, then R1 reviews before apply" {
   loop="$(section '1 ループ')"
   echo "$loop" | grep -q '仕様化判断'
-  echo "$loop" | grep -q '/opsx:ff'
-  ff="$(echo "$loop" | grep -n '/opsx:ff' | head -1 | cut -d: -f1)"
+  echo "$loop" | grep -q 'openspec new change'
+  ff="$(echo "$loop" | grep -n 'openspec new change' | head -1 | cut -d: -f1)"
   rev="$(echo "$loop" | grep -n '仕様レビュー' | head -1 | cut -d: -f1)"
   apply="$(echo "$loop" | grep -n 'apply' | head -1 | cut -d: -f1)"
   [ "$ff" -lt "$rev" ] && [ "$rev" -lt "$apply" ]
@@ -267,10 +267,10 @@ refute() {
 
 @test "model: W defaults to sonnet and is capped at opus; R1 opus, G sonnet; fable only via the decider type" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE '^\| W（実行役） \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| W（実行役。`dev-workflow:worker`） \| `sonnet` \|'
   echo "$m" | grep -qE 'W.*`opus`'
   echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
-  echo "$m" | grep -qE '^\| G \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| `sonnet` \|'
   ! echo "$m" | grep -qE 'マージ条件・聖域・層間契約' || return 1
   echo "$m" | grep -q '事前分類'
   echo "$m" | grep -q 'マージ条件'
@@ -308,7 +308,7 @@ refute() {
 
 @test "model: G defaults to sonnet and every pre-classification lifts W only to opus" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE '^\| G \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| `sonnet` \|'
   echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
   echo "$m" | grep -q '聖域パス'
   echo "$m" | grep -qE 'マージ権限・層間契約・課金/法務'

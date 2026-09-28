@@ -1,6 +1,6 @@
 # R1（仕様レビュアー）の指示書 — develop スキル
 
-`/opsx:ff`（または openspec CLI 直叩き）で W が生成した change の artifact を、**実装に入る前に**実装と別コンテキストで審査する工程の正本。longrun の Build Contract レビュー（plan.md を実装前に審査する工程）を dev-workflow のパイプラインに置き直したもの。仕様レベルの穴（既存規約との整合・config に出すべき固有値・導入先の前提）を実装レビューに持ち込まないための工程で、実装 diff のレビュー（pr-review-gate。G の担当）とは対象が違う。
+W が `openspec new change` と artifact の直書きで作った change（本体や主が `/opsx:ff` で先に作った change を含む）の artifact を、**実装に入る前に**実装と別コンテキストで審査する工程の正本。longrun の Build Contract レビュー（plan.md を実装前に審査する工程）を dev-workflow のパイプラインに置き直したもの。仕様レベルの穴（既存規約との整合・config に出すべき固有値・導入先の前提）を実装レビューに持ち込まないための工程で、実装 diff のレビュー（pr-review-gate。G の担当）とは対象が違う。
 
 R1 は develop の本体が spawn するサブエージェント（W とは別コンテキスト）。R1 が読むのは**このファイル**と、本体から渡される change ディレクトリ・記録先。
 
