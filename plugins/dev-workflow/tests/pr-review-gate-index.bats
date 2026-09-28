@@ -35,7 +35,7 @@ step_headings() {
 }
 
 @test "index: SKILL.md has no code block" {
-  ! grep -q '^[[:space:]]*```' "$SKILL"
+  ! grep -q '^[[:space:]]*```' "$SKILL" || return 1
 }
 
 @test "index: description is unchanged" {
@@ -93,7 +93,7 @@ step_headings() {
 }
 
 @test "headings: SKILL.md has no step heading" {
-  ! grep -qE '^#{3,4} [0-9](-[0-9a-z])?\. ' "$SKILL"
+  ! grep -qE '^#{3,4} [0-9](-[0-9a-z])?\. ' "$SKILL" || return 1
 }
 
 @test "stages: each stage file has an entry condition and an exit" {
