@@ -11,6 +11,13 @@
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
+  REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
+  REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
+  TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
+  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   GATE="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
   DEVELOP="${PLUGIN_DIR}/skills/develop/SKILL.md"
   CODEX_DEVELOP="${PLUGIN_DIR}/references/codex-develop.md"
@@ -121,7 +128,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#385): needs-reviewer payload has the adapter full verdict and the adapter not-run value for every evidence field" {
-  n="$(section "$GATE" 'needs-reviewer')"
+  n="$(section "${PREPARE}" 'needs-reviewer')"
   echo "$n" | grep -qF -- '- 判定: light | full（Codex 不可） | full（adapter 経路）'
   for field in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:'; do
     echo "$n" | grep -F -- "- ${field}" | grep -qF '未実行（adapter 経路）' || { echo "missing adapter value in ${field}"; return 1; }
@@ -131,7 +138,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 # ===== gate-runner.md: 従来経路の full を保つ（1.2） =====
 
 @test "gate-runner (#385): legacy full row still calls Codex directly from G's Bash" {
-  row="$(grep -F '| **full**（既定） | Codex CLI |' "$GATE")"
+  row="$(grep -F '| **full**（既定） | Codex CLI |' "${REVIEW_RUN}")"
   [ -n "$row" ] || { echo "legacy full row missing"; return 1; }
   echo "$row" | grep -qF 'G の **Bash から直接**呼ぶ'
 }
@@ -218,14 +225,14 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 @test "gate-runner and pr-review-gate (#385): both carry the adapter form of the reviewer line" {
   form='（adapter 経路・<light|full>・dispatch 記録:'
-  grep -qF "$form" "$GATE"
-  grep -qF "$form" "$PRGATE"
+  grep -qF "$form" "${PREPARE}"
+  grep -qF "$form" "${PREPARE}"
   # pr-review-gate は書き分けの段落と PR コメント雛形の両方に持つ
-  [ "$(grep -cF "$form" "$PRGATE")" -ge 2 ]
+  [ "$(grep -cF "$form" "${REVIEW_RUN}")" -ge 2 ]
 }
 
 @test "pr-review-gate (#393): all five evidence fields allow the adapter not-run value" {
-  block="$(awk '/^対象 HEAD: <40 桁フル SHA>/{f=1} f{print} f && /^```$/{exit}' "$PRGATE")"
+  block="$(awk '/^対象 HEAD: <40 桁フル SHA>/{f=1} f{print} f && /^```$/{exit}' "${REVIEW_RUN}")"
   [ -n "$block" ] || { echo "review evidence template missing"; return 1; }
   for field in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:'; do
     echo "$block" | grep -F -- "$field" | grep -qF '未実行（adapter 経路）' || { echo "missing adapter value in ${field}"; return 1; }

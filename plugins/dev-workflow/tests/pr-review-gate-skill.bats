@@ -12,6 +12,13 @@
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
+  REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
+  REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
+  TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
+  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
@@ -41,26 +48,26 @@ setup() {
 }
 
 @test "skill: keeps the 6-step skeleton of the flatmate original" {
-  grep -qF '### 1. 前提を揃える' "$SKILL"
-  grep -qF '### 2. レビュー' "$SKILL"
-  grep -qF '### 3. リスク宣言' "$SKILL"
-  grep -qF '### 4. 動作確認' "$SKILL"
-  grep -qF '### 5. 合格処理' "$SKILL"
-  grep -qF '### 6. 保留処理' "$SKILL"
+  grep -qF '### 1. 前提を揃える' "${PREPARE}"
+  grep -qF '### 2. レビュー' "${PREPARE}"
+  grep -qF '### 3. リスク宣言' "${DECLARATIONS}"
+  grep -qF '### 4. 動作確認' "${PASS_STAGE}"
+  grep -qF '### 5. 合格処理' "${PASS_STAGE}"
+  grep -qF '### 6. 保留処理' "${HOLD}"
 }
 
 @test "skill: keeps the label vocabulary" {
   grep -qF 'agent-review:passed' "$SKILL"
-  grep -qF 'agent-review:pending' "$SKILL"
-  grep -qF 'agent-review:failed' "$SKILL"
-  grep -qF 'needs-approval' "$SKILL"
+  grep -qF 'agent-review:pending' "${PREPARE}"
+  grep -qF 'agent-review:failed' "${PREPARE}"
+  grep -qF 'needs-approval' "${DECLARATIONS}"
 }
 
 @test "skill: keeps fail-closed principle with HEAD SHA verification" {
   grep -q 'fail-closed' "$SKILL"
-  grep -qF 'HEAD_SHA' "$SKILL"
+  grep -qF 'HEAD_SHA' "${DECLARATIONS}"
   # 宣言・証拠コメントの実在を API で実測してから passed を付ける規定
-  grep -qF '.head.sha' "$SKILL"
+  grep -qF '.head.sha' "${PREPARE}"
 }
 
 # --- Requirement: スキルはリポ非依存で、flatmate 固有の仕組みには条件分岐で対応する ---
@@ -77,38 +84,38 @@ setup() {
 }
 
 @test "portability: degraded behavior for repos without auto-merge is specified" {
-  grep -q '未配備' "$SKILL"
+  grep -q '未配備' "${PASS_STAGE}"
 }
 
 @test "portability: direct merge by LLM remains forbidden" {
   # gh pr merge / merge API の直叩き禁止が明文化されている
-  grep -q 'gh pr merge' "$SKILL"
-  grep -q '禁止' "$SKILL"
+  grep -q 'gh pr merge' "${PASS_STAGE}"
+  grep -q '禁止' "${DECLARATIONS}"
 }
 
 # --- Requirement: flatmate issue #240 の収束ルールが織り込まれている ---
 
 @test "convergence: two-round cap with high-severity-only third round" {
-  grep -q '2周' "$SKILL"
-  grep -q '高深刻度' "$SKILL"
+  grep -q '2周' "${TRIAGE}"
+  grep -q '高深刻度' "${TRIAGE}"
 }
 
 @test "convergence: re-review is diff-limited, new findings go to follow-up issues" {
-  grep -q '差分' "$SKILL"
-  grep -q 'follow-up issue' "$SKILL"
+  grep -q '差分' "${PREPARE}"
+  grep -q 'follow-up issue' "${TRIAGE}"
 }
 
 @test "convergence: mergeable-after fixes are not blocking" {
-  grep -qF 'マージ後に issue で直せるものは blocking にしない' "$SKILL"
+  grep -qF 'マージ後に issue で直せるものは blocking にしない' "${TRIAGE}"
 }
 
 @test "convergence: risk-acceptance link authenticity check with gh api author probe" {
-  grep -q '真正性' "$SKILL"
-  grep -qF '.user.login' "$SKILL"
+  grep -q '真正性' "${PASS_STAGE}"
+  grep -qF '.user.login' "${PASS_STAGE}"
 }
 
 @test "convergence: verification runs in parallel while awaiting risk acceptance" {
-  grep -q '並行' "$SKILL"
+  grep -q '並行' "${HOLD}"
 }
 
 # --- Requirement: レビュー実行者を変更内容から事前判定する（light / full） ---
@@ -124,46 +131,46 @@ setup() {
 }
 
 @test "triage: decision inputs are mechanical (file list + changed line count)" {
-  grep -qF 'gh pr diff' "$SKILL"
-  grep -qF -- '--name-only' "$SKILL"
-  grep -q '行数' "$SKILL"
+  grep -qF 'gh pr diff' "${PREPARE}"
+  grep -qF -- '--name-only' "${PREPARE}"
+  grep -q '行数' "${PREPARE}"
 }
 
 @test "triage: light condition (a) excludes agent-behavior-defining files" {
   # 「md だけ」では light にならない — エージェントの行動を定義する md は full 側
-  grep -qF 'エージェントの行動を定義するファイル' "$SKILL"
-  grep -qF 'CLAUDE.md' "$SKILL"
-  grep -qF '.github/workflows/' "$SKILL"
+  grep -qF 'エージェントの行動を定義するファイル' "${PREPARE}"
+  grep -qF 'CLAUDE.md' "${PREPARE}"
+  grep -qF '.github/workflows/' "${PREPARE}"
 }
 
 @test "triage: light condition (b) caps at 30 changed lines and requires behavior-neutral" {
-  grep -qF '30 行' "$SKILL"
-  grep -q '挙動を変えない' "$SKILL"
+  grep -qF '30 行' "${PREPARE}"
+  grep -q '挙動を変えない' "${PREPARE}"
 }
 
 @test "triage: full is the default and ties break toward full (fail-closed)" {
-  grep -q '既定.*full\|full.*既定' "$SKILL"
-  grep -qF '迷ったら full' "$SKILL"
-  grep -qF '「判断がつかない」は light の理由にならない' "$SKILL"
+  grep -q '既定.*full\|full.*既定' "${PREPARE}"
+  grep -qF '迷ったら full' "${PREPARE}"
+  grep -qF '「判断がつかない」は light の理由にならない' "${PREPARE}"
 }
 
 @test "triage: light swaps only the reviewer, exempts no gate step" {
   # 免除されない工程が名指しで列挙されている
-  grep -q 'light.*変わるのは.*実行者\|レビュー実行者だけ' "$SKILL"
-  grep -q '免除' "$SKILL"
+  grep -q 'light.*変わるのは.*実行者\|レビュー実行者だけ' "${PREPARE}"
+  grep -q '免除' "${PREPARE}"
 }
 
 @test "triage: decision and reason are recorded as a PR comment" {
-  grep -qF 'レビュー重量: light' "$SKILL"
+  grep -qF 'レビュー重量: light' "${PREPARE}"
 }
 
 @test "triage: pre-triage and availability fallback are distinguished, fallback kept" {
   # 既存のフォールバック記述（Codex が使えないときの迂回路）が残っている（回帰ガード）
-  grep -q 'フォールバック' "$SKILL"
-  grep -q '実測したバイナリ無し・認証切れ・タイムアウト' "$SKILL"
-  grep -q 'タイムアウト' "$SKILL"
+  grep -q 'フォールバック' "${REVIEW_RUN}"
+  grep -q '実測したバイナリ無し・認証切れ・タイムアウト' "${REVIEW_RUN}"
+  grep -q 'タイムアウト' "${PREPARE}"
   # 事前判定と障害時フォールバックの役割が書き分けられている
-  grep -q '事前判定' "$SKILL"
+  grep -q '事前判定' "${PREPARE}"
 }
 
 @test "skill: frontmatter version bumped above 1.0.0" {
@@ -319,7 +326,7 @@ review_execution() {
 
 @test "legacy: per-PC procedure records completion or unverified without fixed locations" {
   local doc token
-  doc="$(awk '/^##### 各 PC の確認/{f=1; next} /^##### /{f=0} /^#### /{f=0} f' "$SKILL")"
+  doc="$(awk '/^##### 各 PC の確認/{f=1; next} /^##### /{f=0} /^#### /{f=0} f' "${REVIEW_RUN}")"
   [ -n "$doc" ]
   for token in 'command -v codex' 'codex --version' 'PC 識別子:' '日時:' 'バイナリのパス・バージョン:' 'companion 有無:' '対象 HEAD・diff 範囲:' '経路・実行コマンド:' '完了状態・結果:' '可否 / 未確認:' '残課題:' '対象 issue' '認証情報' '実レビュー' 'subagent-waiting.md' '未実測は未確認' 'companion 導入は任意'; do
     echo "$doc" | grep -qF "$token"
@@ -409,19 +416,19 @@ convergence_section() {
 }
 
 @test "convergence (#354): step 6 recovery table has a split-off confirmation row covering both answers" {
-  row="$(grep -A1 '^| \*\*切り出しの確認\*\*' "$SKILL")"
+  row="$(grep -A1 '^| \*\*切り出しの確認\*\*' "${HOLD}")"
   [ -n "$row" ]
   echo "$row" | grep -q '切り出す'
   echo "$row" | grep -q 'この PR で直す'
   echo "$row" | grep -q 'agent-review:failed'
   [ "$(echo "$row" | grep -c 'needs-approval.*を外す')" -eq 2 ]
-  grep -qE '^### 6\. 保留処理（.*切り出しの確認）' "$SKILL"
+  grep -qE '^### 6\. 保留処理（.*切り出しの確認）' "${HOLD}"
   run grep -F '2周目キャップ' "$SKILL"
   [ "$status" -ne 0 ]
 }
 
 @test "approval classes (#354): row 1 asks whether to split the defect off, with a recommendation and an estimate" {
-  row="$(grep -E '^\| 1 \| リスク許容の確認 \|' "$SKILL")"
+  row="$(grep -E '^\| 1 \| リスク許容の確認 \|' "${HOLD}")"
   echo "$row" | grep -qF '順 5'
   echo "$row" | grep -qF 'この欠陥を残して切り出すか'
   echo "$row" | grep -qF '推奨と見積もり'
@@ -471,8 +478,8 @@ reviewer_block() {
 }
 
 @test "finding format (#349): the format and severity table appear only once in the skill" {
-  [ "$(grep -cE '^\| `blocking` \|' "$SKILL")" -eq 1 ]
-  [ "$(grep -c '^\*\*レビュアー向け指示ブロック' "$SKILL")" -eq 1 ]
+  [ "$(grep -cE '^\| `blocking` \|' "${REVIEWER_BRIEF}")" -eq 1 ]
+  [ "$(grep -c '^\*\*レビュアー向け指示ブロック' "${REVIEWER_BRIEF}")" -eq 1 ]
 }
 
 @test "verdict (#349): the all-round verdict is written once in step 2-1" {
@@ -510,7 +517,7 @@ reviewer_block() {
 }
 
 @test "verdict (#349/#354): the decider paragraph ties the stop decision to the verdict, not to quoting alone" {
-  line="$(grep -F '順 6 の方式だけを裁定' "$SKILL")"
+  line="$(grep -F '順 6 の方式だけを裁定' "${TRIAGE}")"
   [ -n "$line" ]
   echo "$line" | grep -qF '全周共通の判定'
   run sh -c "grep -F '順 6 の方式だけを裁定' '$SKILL' | grep -F '引用の有無で決まる'"
@@ -518,13 +525,13 @@ reviewer_block() {
 }
 
 @test "verdict (#349): step 5 requires zero stopping findings under the all-round verdict" {
-  s5="$(awk '/^### 5\. /{f=1} /^### 6\. /{exit} f' "$SKILL")"
+  s5="$(awk '/^### 5\. /{f=1} /^### 6\. /{exit} f' "${PASS_STAGE}")"
   echo "$s5" | grep -qF '全周共通の判定で止まる指摘（`blocking` かつ `confirmed`、G が引用を照合済み'
   echo "$s5" | grep -qF '0 件'
 }
 
 @test "verdict (#354): step 5 excludes findings the owner split off and findings closed by the row-3 set match" {
-  s5="$(awk '/^### 5\. /{f=1} /^### 6\. /{exit} f' "$SKILL")"
+  s5="$(awk '/^### 5\. /{f=1} /^### 6\. /{exit} f' "${PASS_STAGE}")"
   echo "$s5" | grep -qF '主が切り出すと答えて follow-up issue に切ったものと、G が順 3 の集合一致で閉じたもの（閉じた PR コメント URL を仕分け欄に残す）以外が 0 件'
   echo "$s5" | grep -qF '「切り出しの確認」行'
   # archive 前は change の delta spec、archive 後は main spec を読む
@@ -716,7 +723,7 @@ triage_row_section() {
 }
 
 @test "review inventory (#377): the common list contract points the row-3 second stage at --head" {
-  common="$(awk '/^\*\*共通一覧契約/{f=1} f&&/^\*\*/&&seen{exit} f{seen=1; print}' "$SKILL")"
+  common="$(awk '/^\*\*共通一覧契約/{f=1} f&&/^\*\*/&&seen{exit} f{seen=1; print}' "${REVIEWER_BRIEF}")"
   echo "$common" | grep -qF -- '--head'
   run grep -qF '第 2 段は別に維持する' <<<"$common"
   [ "$status" -ne 0 ]
@@ -741,7 +748,7 @@ triage_row_section() {
 }
 
 @test "convergence (#359): step 6 split-off confirmation row sends unprocessed row 6 to needs-decider" {
-  row="$(grep -A1 '^| \*\*切り出しの確認\*\*' "$SKILL")"
+  row="$(grep -A1 '^| \*\*切り出しの確認\*\*' "${HOLD}")"
   [ "$(echo "$row" | grep -c '未処理の順 6')" -eq 2 ] || { echo "$row"; return 1; }
   echo "$row" | grep -qF '`agent-review:failed` を付けずに Status `needs-decider` で return'
 }
@@ -938,14 +945,14 @@ step3c_body() {
 }
 
 @test "carryover (#441): step 5 treats a carried-over declaration as accepted" {
-  step5_tbl="$(awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "$SKILL" | grep '^| ')"
+  step5_tbl="$(awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_STAGE}" | grep '^| ')"
   row="$(echo "$step5_tbl" | grep -F '引き継ぎ')"
   echo "$row" | grep -qF '3-c'
   echo "$row" | grep -qF '| 可 |'
 }
 
 @test "carryover (#441): step 6 resume table points to 3-c when HEAD moved" {
-  row="$(awk '/^### 6\. /{f=1} f' "$SKILL" | grep -F '| **リスク許容待ち**')"
+  row="$(awk '/^### 6\. /{f=1} f' "${HOLD}" | grep -F '| **リスク許容待ち**')"
   echo "$row" | grep -qF '3-c'
   echo "$row" | grep -qF 'HEAD が動いた'
 }

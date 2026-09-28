@@ -11,6 +11,13 @@
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
+  REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
+  REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
+  TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
+  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   DEV_SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
@@ -83,16 +90,14 @@ setup() {
 # --- ルール2: エスカレーション（failed → 修正実装）は pr-review-gate にある ---
 
 @test "escalation: fix-cycle model section lives in step 2 of the gate" {
-  grep -qF '修正サイクルのモデル昇格' "$GATE_SKILL"
-  sec="$(grep -n '修正サイクルのモデル昇格' "$GATE_SKILL" | head -1 | cut -d: -f1)"
-  step2="$(grep -n '^### 2\. レビュー' "$GATE_SKILL" | head -1 | cut -d: -f1)"
-  step3="$(grep -n '^### 3\. リスク宣言' "$GATE_SKILL" | head -1 | cut -d: -f1)"
-  [ "$sec" -gt "$step2" ]
-  [ "$sec" -lt "$step3" ]
+  # 手順 2 の中の 2-2 として triage.md にあり、索引の対応表もそこを指す
+  grep -qE '^#### 2-2\. 修正サイクルのモデル昇格' "$TRIAGE"
+  grep -qF '| 2-2 | 2-2. 修正サイクルのモデル昇格' "$GATE_SKILL"
+  grep -F '| 2-2 |' "$GATE_SKILL" | grep -qF 'stages/triage.md'
 }
 
 @test "escalation: implementation-quality failures raise the decider or the executor, never both" {
-  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$GATE_SKILL")"
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
   echo "$sec" | grep -qF '実装品質起因'
   echo "$sec" | grep -qF '決める役'
   echo "$sec" | grep -qF '実行役'
@@ -103,42 +108,42 @@ setup() {
   # 旧ラダーの表記「...で spawn する」だけを拒否する。現行文は同じ語順で
   # 「...で spawn しない」と続くため、"する" まで含めないと現行文自体に誤爆する。
   ! echo "$sec" | grep -qF '修正実装を `model: fable` で spawn する' || return 1
-  grep -qF '昇格は実装品質起因のときだけ' "$GATE_SKILL"
+  grep -qF '昇格は実装品質起因のときだけ' "${TRIAGE}"
 }
 
 @test "escalation: the executor is capped at opus and never spawned as fable" {
-  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$GATE_SKILL")"
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
   echo "$sec" | grep -qF '実行役の上限は `opus`'
   echo "$sec" | grep -qF 'agent-model-guard.sh'
 }
 
 @test "escalation: the two-round cap is given as the reason for raising on the first failed" {
-  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$GATE_SKILL")"
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
   echo "$sec" | grep -qF '2 周キャップ'
   echo "$sec" | grep -qF '最終周'
   echo "$sec" | grep -qF '1 回目の failed'
 }
 
 @test "escalation: ambiguous spec and reviewer false positives are not escalated" {
-  grep -q '仕様が曖昧' "$GATE_SKILL"
-  grep -q '誤検出' "$GATE_SKILL"
-  grep -q '反証' "$GATE_SKILL"
+  grep -q '仕様が曖昧' "${TRIAGE}"
+  grep -q '誤検出' "${TRIAGE}"
+  grep -q '反証' "${TRIAGE}"
 }
 
 # --- ルール3: フォールバック（Fable が使えないとき） ---
 
 @test "fallback: falls back to the previous model and records one PR comment line" {
-  grep -qF 'フォールバック' "$GATE_SKILL"
-  grep -qF '決める役モデル: opus' "$GATE_SKILL"
-  grep -qF 'dev-workflow:decider のまま' "$GATE_SKILL"
-  grep -qF 'レート制限' "$GATE_SKILL"
+  grep -qF 'フォールバック' "${REVIEW_RUN}"
+  grep -qF '決める役モデル: opus' "${TRIAGE}"
+  grep -qF 'dev-workflow:decider のまま' "${TRIAGE}"
+  grep -qF 'レート制限' "${TRIAGE}"
 }
 
 # --- ルール4: 2周キャップ（収束ルール）との関係 ---
 
 @test "convergence: relation to the two-round cap is stated" {
-  grep -qF '2周キャップ' "$GATE_SKILL"
-  grep -qF '最終周' "$GATE_SKILL"
+  grep -qF '2周キャップ' "${TRIAGE}"
+  grep -qF '最終周' "${TRIAGE}"
 }
 
 # --- 重複を作らない: 正本はどちらか一方、他方は参照 ---
@@ -146,11 +151,11 @@ setup() {
 @test "single source: the 4-category table is not duplicated into the gate skill" {
   # pr-review-gate は分類名を1行で挙げるだけで、分類表の中身（判定材料）は再掲せず
   # develop の worker.md を正本として参照する
-  grep -qF 'develop スキルの references/roles/worker.md が正本' "$GATE_SKILL"
+  grep -qF 'develop スキルの references/roles/worker.md が正本' "${TRIAGE}"
   ! grep -q 'github-''issue' "$GATE_SKILL" || return 1
   # 4分類の名前が出るのは正本を指す1行だけ（表として再掲していない）
-  [ "$(grep -cF '層間契約' "$GATE_SKILL")" -eq 1 ]
-  [ "$(grep -cF '聖域パス・マージ権限' "$GATE_SKILL")" -eq 1 ]
+  [ "$(grep -cF '層間契約' "${TRIAGE}")" -eq 1 ]
+  [ "$(grep -cF '聖域パス・マージ権限' "${TRIAGE}")" -eq 1 ]
 }
 
 @test "single source: the fallback record format points back to pr-review-gate" {
