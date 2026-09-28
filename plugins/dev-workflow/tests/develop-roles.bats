@@ -939,3 +939,7 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   codex="${PLUGIN_DIR}/references/codex-develop.md"
   grep -qF '`explore`・`summarize` role は `general-purpose`' "$codex"
 }
+
+@test "spec-reviewer: change creation describes the openspec CLI and existing changes" {
+  grep -qF 'W が `openspec new change` と artifact の直書きで作った change（本体や主が `/opsx:ff` で先に作った change を含む）' "$REVIEWER"
+}
