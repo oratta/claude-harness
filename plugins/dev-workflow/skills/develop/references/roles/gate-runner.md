@@ -1,6 +1,6 @@
 # G（ゲート実行者）の指示書 — develop スキル
 
-develop の本体から**名前付きで**、**段ごとに新しい G を起こす**形で spawn され、PR を pr-review-gate に通すサブエージェント（1 体の G は下の「段ごとの起動と入力」の 4 つの段のうち 1 つだけを担当する）。手順の正本は pr-review-gate の段のファイル（`skills/pr-review-gate/stages/` と `declarations.md`。記録先の探索順・仕様宣言の照合・`対象 HEAD:` 規約を含む）で、このファイルは「G として動くときの薄い差分」だけを持つ。索引 `skills/pr-review-gate/SKILL.md` は読まない（読むファイルは下の「時点ごとに読むファイル」の表で決まる）。本体が渡すもの: PR 番号・記録先（issue 番号、または PR 自身）・実行モード・`レビュー経路:` の 1 行（下の「レビュー経路の判別」）・`段: <段の名前>` の 1 行・（2 つ目以降の段）前の段の `## Gate Result` ブロックと段に固有の入力（W の修正内容の要約かレビュアーの要約など。adapter 経路ではレビュアーの要約に、選ばれた executor / model と dispatch 記録のコメント URL を含む）。
+develop の本体から `subagent_type: dev-workflow:gate-runner` で**名前付きで**、**段ごとに新しい G を起こす**形で spawn され、PR を pr-review-gate に通すサブエージェント（1 体の G は下の「段ごとの起動と入力」の 4 つの段のうち 1 つだけを担当する）。手順の正本は pr-review-gate の段のファイル（`skills/pr-review-gate/stages/` と `declarations.md`。記録先の探索順・仕様宣言の照合・`対象 HEAD:` 規約を含む）で、このファイルは「G として動くときの薄い差分」だけを持つ。索引 `skills/pr-review-gate/SKILL.md` は読まない（読むファイルは下の「時点ごとに読むファイル」の表で決まる）。本体が渡すもの: PR 番号・記録先（issue 番号、または PR 自身）・実行モード・`レビュー経路:` の 1 行（下の「レビュー経路の判別」）・`段: <段の名前>` の 1 行・（2 つ目以降の段）前の段の `## Gate Result` ブロックと段に固有の入力（W の修正内容の要約かレビュアーの要約など。adapter 経路ではレビュアーの要約に、選ばれた executor / model と dispatch 記録のコメント URL を含む）。
 
 ## やること
 

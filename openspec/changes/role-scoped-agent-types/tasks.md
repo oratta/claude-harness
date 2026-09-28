@@ -16,14 +16,14 @@
 
 ## 3. 定義と本文を書く（Green）
 
-- [ ] 3.1 `plugins/dev-workflow/agents/worker.md` と `agents/gate-runner.md` を書く（`decider.md` の形に倣う。description は 1 文。本文は指示書を指すだけで手順を写さない）
-- [ ] 3.2 `plugins/dev-workflow/.claude-plugin/plugin.json` の `agents` 配列と description、`.claude-plugin/marketplace.json` の dev-workflow の description を更新する
-- [ ] 3.3 `skills/develop/references/roles/worker.md`: 冒頭に種別を書く。「W がしないこと」から `/wt-setup` の例外を消す。仕様化判断の 3 段の検出を `openspec --version` だけにし、opsx コマンドがあっても CLI が無ければ理由を「openspec 不在」とすると書く。仕様化・(3a)・(3b) を openspec CLI の経路だけで書き換える（`/opsx:` は、本体や主が先に `/opsx:ff` で change を作っていた場合を述べる行にだけ残し、その行に `本体` か `主` を含める）。(3a) の return に `画面確認:` の行と書式・決め方を足す。(3b) に V の return（合格なら証拠の入力、実行不能なら証拠を書かない）の扱いを足す。「全経路共通の大原則」から opsx 経路の語を除き、CLI 経路と直行の 2 経路にする。(3a) の return の `/opsx:verify` の合否を `openspec validate --strict` の exit code に替える
-- [ ] 3.4 `skills/develop/references/roles/screen-checker.md` を新規に書く: 入力（W の `画面確認:` の行・worktree のパス・起動手順）、`isolation` 無しで W の作業ツリーを見ること、dev server は `rules/dev-server.md` に従い二重起動せず起動したポートを return に書くこと、拡張の接続確認、観測の手順、return の 1 行目の書式と 3 つの値ごとに書くこと、しないこと（編集・commit・投稿・主への直接依頼・待ち）
-- [ ] 3.5 `skills/develop/SKILL.md`: 役割表に W / G の種別と V の行（`general-purpose`・`sonnet`・上げない）を足す。(1)・(3)・(4) の spawn に種別を書く。1 ループの (1)・(3a)・(3b) と工程図から `/opsx:ff`・`/opsx:apply`・`/opsx:verify`・`/opsx:archive` を除き、`openspec new change`・`openspec validate --strict`・`openspec archive` に替える。(3a) と (3b) の間に V の分岐（要る／不要、合格／不合格／実行不能）を足し、V に W の worktree のパスを渡して `isolation` を付けずに起こすこと、同じ `画面確認:` の行の 2 回目の `不合格` を本体が数えて失敗ループとして扱うことを書く。worktree を用意する節に `.worktreeinclude` が無いとき本体が `/wt-setup` を呼ぶことを足す。前提の表の Agent の行に種別を書き、「opsx コマンドまたは openspec CLI」の行を、W は openspec CLI だけで進め経路の有無を `openspec --version` で決める（opsx コマンドは本体や主が対話で使う道具）形に直す。役割表の W の行の `/opsx:ff` を `openspec new change` に替える
-- [ ] 3.6 `skills/develop/references/roles/gate-runner.md` の冒頭と、`references/codex-develop.md` の Claude role の起動（「`decider` role は `dev-workflow:decider`、他の role は `general-purpose`」の文）に種別を書く。`plugins/dev-workflow/README.md` の役割とモデルの説明に種別を書き、1 ループの行の `/opsx:ff` を `openspec new change` に替える
-- [ ] 3.7 `scripts/agent-model-guard.sh` のコメントに新種別の扱い（`DECIDER_TYPES` に入れない・定義に model を持つ）を足すかを決め、足すなら 1 行にする（判定ロジックは変えない）
-- [ ] 3.8 `plugins/dev-workflow/changes/330.md` に変更の記録を書く
+- [x] 3.1 `plugins/dev-workflow/agents/worker.md` と `agents/gate-runner.md` を書く（`decider.md` の形に倣う。description は 1 文。本文は指示書を指すだけで手順を写さない）
+- [x] 3.2 `plugins/dev-workflow/.claude-plugin/plugin.json` の `agents` 配列と description、`.claude-plugin/marketplace.json` の dev-workflow の description を更新する
+- [x] 3.3 `skills/develop/references/roles/worker.md`: 冒頭に種別を書く。「W がしないこと」から `/wt-setup` の例外を消す。仕様化判断の 3 段の検出を `openspec --version` だけにし、opsx コマンドがあっても CLI が無ければ理由を「openspec 不在」とすると書く。仕様化・(3a)・(3b) を openspec CLI の経路だけで書き換える（`/opsx:` は、本体や主が先に `/opsx:ff` で change を作っていた場合を述べる行にだけ残し、その行に `本体` か `主` を含める）。(3a) の return に `画面確認:` の行と書式・決め方を足す。(3b) に V の return（合格なら証拠の入力、実行不能なら証拠を書かない）の扱いを足す。「全経路共通の大原則」から opsx 経路の語を除き、CLI 経路と直行の 2 経路にする。(3a) の return の `/opsx:verify` の合否を `openspec validate --strict` の exit code に替える
+- [x] 3.4 `skills/develop/references/roles/screen-checker.md` を新規に書く: 入力（W の `画面確認:` の行・worktree のパス・起動手順）、`isolation` 無しで W の作業ツリーを見ること、dev server は `rules/dev-server.md` に従い二重起動せず起動したポートを return に書くこと、拡張の接続確認、観測の手順、return の 1 行目の書式と 3 つの値ごとに書くこと、しないこと（編集・commit・投稿・主への直接依頼・待ち）
+- [x] 3.5 `skills/develop/SKILL.md`: 役割表に W / G の種別と V の行（`general-purpose`・`sonnet`・上げない）を足す。(1)・(3)・(4) の spawn に種別を書く。1 ループの (1)・(3a)・(3b) と工程図から `/opsx:ff`・`/opsx:apply`・`/opsx:verify`・`/opsx:archive` を除き、`openspec new change`・`openspec validate --strict`・`openspec archive` に替える。(3a) と (3b) の間に V の分岐（要る／不要、合格／不合格／実行不能）を足し、V に W の worktree のパスを渡して `isolation` を付けずに起こすこと、同じ `画面確認:` の行の 2 回目の `不合格` を本体が数えて失敗ループとして扱うことを書く。worktree を用意する節に `.worktreeinclude` が無いとき本体が `/wt-setup` を呼ぶことを足す。前提の表の Agent の行に種別を書き、「opsx コマンドまたは openspec CLI」の行を、W は openspec CLI だけで進め経路の有無を `openspec --version` で決める（opsx コマンドは本体や主が対話で使う道具）形に直す。役割表の W の行の `/opsx:ff` を `openspec new change` に替える
+- [x] 3.6 `skills/develop/references/roles/gate-runner.md` の冒頭と、`references/codex-develop.md` の Claude role の起動（「`decider` role は `dev-workflow:decider`、他の role は `general-purpose`」の文）に種別を書く。`plugins/dev-workflow/README.md` の役割とモデルの説明に種別を書き、1 ループの行の `/opsx:ff` を `openspec new change` に替える
+- [x] 3.7 `scripts/agent-model-guard.sh` のコメントに新種別の扱い（`DECIDER_TYPES` に入れない・定義に model を持つ）を足すかを決め、足すなら 1 行にする（判定ロジックは変えない）
+- [x] 3.8 `plugins/dev-workflow/changes/330.md` に変更の記録を書く
 
 ## 4. 検査を通す
 

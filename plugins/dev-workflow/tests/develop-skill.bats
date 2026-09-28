@@ -267,10 +267,10 @@ refute() {
 
 @test "model: W defaults to sonnet and is capped at opus; R1 opus, G sonnet; fable only via the decider type" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE '^\| W（実行役） \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| W（実行役。`dev-workflow:worker`） \| `sonnet` \|'
   echo "$m" | grep -qE 'W.*`opus`'
   echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
-  echo "$m" | grep -qE '^\| G \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| `sonnet` \|'
   ! echo "$m" | grep -qE 'マージ条件・聖域・層間契約' || return 1
   echo "$m" | grep -q '事前分類'
   echo "$m" | grep -q 'マージ条件'
@@ -308,7 +308,7 @@ refute() {
 
 @test "model: G defaults to sonnet and every pre-classification lifts W only to opus" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE '^\| G \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| `sonnet` \|'
   echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
   echo "$m" | grep -q '聖域パス'
   echo "$m" | grep -qE 'マージ権限・層間契約・課金/法務'

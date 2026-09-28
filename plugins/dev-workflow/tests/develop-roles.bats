@@ -122,11 +122,10 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   echo "$a" | grep -q '検査コマンド'
   echo "$a" | grep -q 'exit code'
   echo "$a" | grep -qF 'openspec validate'
-  echo "$a" | grep -qF 'openspec validate'
   # 否定は `!` で書かない。bats（set -e）は `!` 付きコマンドの失敗を最終行以外で無視するため、
   # `! ... | grep -q ...` は退行を検出できない（bats 1.13 で実測）。
-  if echo "$a" | grep -qF 'openspec archive'; then
-    echo "(3a) の節に /opsx:archive が書かれている（archive は (3b)）" >&2
+  if echo "$a" | grep -F 'openspec archive' | grep -vF '(3b)' | grep -q .; then
+    echo "(3a) の節に openspec archive の実行指示がある" >&2
     return 1
   fi
   # (3b): archive 以降。PR 番号と仕様宣言のコメント URL を return に載せる

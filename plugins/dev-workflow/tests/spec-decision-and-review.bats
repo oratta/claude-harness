@@ -75,8 +75,8 @@ mode_sec() { section "$SKILL" '実行モード'; }
 }
 
 @test "worker: degraded path (openspec CLI only) also returns for the review" {
-  grep -A3 'openspec CLI だけある場合' "$WORKER" | grep -q '仕様レビュー'
-  grep -A3 'openspec CLI だけある場合' "$WORKER" | grep -q 'return'
+  grep -A3 'openspec CLI で artifact を作る場合' "$WORKER" | grep -q '仕様レビュー'
+  grep -A3 'openspec CLI で artifact を作る場合' "$WORKER" | grep -q 'return'
 }
 
 @test "loop: interactive multi-change handling reviews each change" {
