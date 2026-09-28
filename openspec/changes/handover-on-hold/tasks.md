@@ -1,7 +1,7 @@
 ## 1. テストを先に書く（Red）
 
-- [ ] 1.1 `plugins/dev-workflow/tests/` の develop の役割の bats に、`skills/develop/SKILL.md` が `引き継ぎ: 主の返事待ち` の書式（1 行目の完全一致・項目名 10 個・W の名前を書かない）と新しいセッションでの再開手順 5 項目を持つ検査を足す
-- [ ] 1.2 同じ bats に、3 つの場面（pr-review-gate の保留・PR トークン上限の exit 2・2 周キャップ超え）が同じ書式を指す検査と、`commands/develop.md` の再開分岐の検査を足す
+- [ ] 1.1 `plugins/dev-workflow/tests/` の develop の役割の bats に、`skills/develop/SKILL.md` が `引き継ぎ: 主の返事待ち` の書式（1 行目の完全一致・項目名 11 個（ラベルの付け先を含む）・W の名前を書かない）と新しいセッションでの再開手順 5 項目を持つ検査を足す
+- [ ] 1.2 同じ bats に、前任 W の手渡し可否・ラベルの付け先・実行先の続け方・守備範囲の段落の検査と、3 つの場面（pr-review-gate の保留・PR トークン上限の exit 2・2 周キャップ超え）が同じ書式を指す検査と、`commands/develop.md` の再開分岐の検査を足す
 - [ ] 1.3 pr-review-gate の bats に、`stages/hold.md` 手順 6 の案内があり引き継ぎの項目一覧が無い検査を足す
 
 ## 2. 実装（Green）
