@@ -362,7 +362,9 @@ PY
   grep -q '前景' "${REVIEW_RUN}"
   grep -qF 'references/subagent-waiting.md' "${REVIEW_RUN}"
   # 前景上限を超える待ちを散文で示唆する記述を残さない
-  ! grep -qF '最長 15 分' "$GATE" || return 1
+  for f in "$GATE" "$REVIEW_RUN"; do
+    ! grep -qF '最長 15 分' "$f" || return 1
+  done
 }
 
 # --- Codex への指示文に指摘の固定書式を渡す（issue #349） ---

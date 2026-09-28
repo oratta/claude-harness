@@ -23,6 +23,8 @@ setup() {
   GATE="${ROLES}/gate-runner.md"
 }
 
+# G の否定の検査（その文言が G の読むどこにも無いこと）は gate-runner.md と段のファイル全部で見る
+gate_all() { cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; }
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
 
 @test "roles: all three role files exist" {
@@ -302,8 +304,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 @test "gate-runner (#354): row-5 findings return as on-hold for split-off confirmation, not proposing a third round" {
   grep -q '切り出しの確認' "$GATE"
   grep -q '3周目を提案しない' "${HOLD}"
-  run grep -F '2周目キャップ' "$GATE"
-  [ "$status" -ne 0 ]
+  ! gate_all | grep -qF '2周目キャップ' || return 1
 }
 
 @test "gate-runner (#281): round field covers round 3+ after owner go-ahead and full review line counts" {
@@ -312,8 +313,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "gate-runner (#281): no high-severity-only third round permission remains" {
-  run grep -F '新規の高深刻度 blocking のみ' "$GATE"
-  [ "$status" -ne 0 ]
+  ! gate_all | grep -qF '新規の高深刻度 blocking のみ' || return 1
 }
 
 @test "gate-runner (#354): resume covers the owner's answer to the split-off confirmation" {
@@ -353,11 +353,11 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 @test "gate-runner: G itself defaults to sonnet; the reviewer is opus or the decider type for merge conditions / cross-layer contracts" {
   grep -q 'G の既定は `sonnet`' "$GATE"
   grep -q '`opus`' "$GATE"
-  ! grep -q 'マージ条件・聖域・層間契約' "$GATE" || return 1
-  ! grep -q '聖域・層間契約による' "$GATE" || return 1
-  ! grep -qE '実装品質起因なら.*`model: fable`' "$GATE" || return 1
+  ! gate_all | grep -q 'マージ条件・聖域・層間契約' || return 1
+  ! gate_all | grep -q '聖域・層間契約による' || return 1
+  ! gate_all | grep -qE '実装品質起因なら.*`model: fable`' || return 1
   # 旧ラダー（実行役を 1 段ずつ上げる）は残さず、決める役の種別で上げる
-  ! grep -q '1 段上' "$GATE" || return 1
+  ! gate_all | grep -q '1 段上' || return 1
   grep -qF 'dev-workflow:decider' "$GATE"
   grep -qF '一方だけ' "${TRIAGE}"
   grep -qF 'W を `fable` にはしない' "${TRIAGE}"
@@ -507,8 +507,7 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#352): needs-reviewer does not tell G to continue with step 3 unconditionally" {
-  run grep -n '手順 3 以降を続ける' "$GATE"
-  [ "$status" -ne 0 ]
+  ! gate_all | grep -q '手順 3 以降を続ける' || return 1
   n="$(section "${PREPARE}" 'needs-reviewer')"
   echo "$n" | grep -qF '「レビュアーの要約受領」'
 }
@@ -552,8 +551,7 @@ extract_context_cap_section() {
   for token in 'マージ後に何を起こすか' '見積もり' '固定費' '推奨'; do
     echo "$line" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
-  run grep -F '続けるか、範囲外として閉じるか' "$GATE"
-  [ "$status" -ne 0 ]
+  ! gate_all | grep -qF '続けるか、範囲外として閉じるか' || return 1
 }
 
 @test "gate-runner (#354): Status has needs-decider and a section says what the main session receives" {
