@@ -18,14 +18,14 @@
 ## 3. 読み手側の付け替え
 
 - [x] 3.1 `gate-runner.md` から SKILL.md を Read する指示を消し（pr-review-gate の手順 1〜5 を実行する義務の文は残す）、時点ごとに読むファイルの表を置く。段に移した節を消し、残す節（役割と入力・経路の判別・三表の照合と補足受領・return の共通部分・再開の振り分け・モデルとコンテキスト上限）の参照先を段のファイルに直す
-- [ ] 3.2 `worker.md` の (3b) の仕様宣言の参照先を `declarations.md` にする
-- [ ] 3.3 `skills/develop/SKILL.md` と `plugins/dev-workflow/references/*.md` のうち `pr-review-gate/SKILL.md` のパスや「SKILL.md 手順 2-1 のブロック」を直接指している行を、段のファイルのパスに直す（番号だけの参照「pr-review-gate 手順 N」はそのまま）
-- [ ] 3.4 `scripts/codex-develop.py` の正本一覧を、gate phase は索引・6 段・`declarations.md`、review phase は gate-runner.md・`stages/reviewer-brief.md` にする
+- [x] 3.2 `worker.md` の (3b) の仕様宣言の参照先を `declarations.md` にする
+- [x] 3.3 `skills/develop/SKILL.md` と `plugins/dev-workflow/references/*.md` のうち `pr-review-gate/SKILL.md` のパスや「SKILL.md 手順 2-1 のブロック」を直接指している行を、段のファイルのパスに直す（番号だけの参照「pr-review-gate 手順 N」はそのまま）
+- [x] 3.4 `scripts/codex-develop.py` の正本一覧を、gate phase は索引・6 段・`declarations.md`、review phase は gate-runner.md・`stages/reviewer-brief.md` にする
 
 ## 4. 既存検査の付け替えと確認
 
 - [ ] 4.1 pr-review-gate の文言を検査している bats（`pr-review-gate-skill`・`pr-review-gate-spec-declaration`・`develop-roles`・`develop-adapter-review-routing`・`model-escalation-policy`・`subagent-waiting`・`ci-watch` ほか `git grep -l pr-review-gate -- plugins/dev-workflow/tests` の全件）の各アサーションを、その文言が移った段のファイルに付け替える。`pr-review-gate-skill.bats` の `^#### 2-1\. `〜`^#### 2-2\. ` の範囲切り（いまの 289・433 行付近）と、2-0 と 2-1 の見出しの行番号で範囲を取る検査（いまの 610 行付近）は、同じファイルに両方の見出しがある前提なので、移った段のファイルの中での範囲に直す
-- [ ] 4.2 `tests/test_codex_develop.py` の `CANONICAL SOURCE` の期待値を 3.4 に合わせる
+- [x] 4.2 `tests/test_codex_develop.py` の `CANONICAL SOURCE` の期待値を 3.4 に合わせる
 - [ ] 4.3 `./scripts/test.sh` と `./scripts/lint.sh` が exit 0 であることを確かめる
 - [ ] 4.4 `openspec validate pr-review-gate-stage-files --strict` が通ることを確かめる
 
