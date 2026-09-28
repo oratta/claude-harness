@@ -2,6 +2,8 @@
 
 以下 `$R` = `<owner>/<repo>`、`$N` = PR 番号。段の一覧と手順番号の対応表は索引 `SKILL.md`（pr-review-gate の直下）にある。
 
+このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/pass.md`（手順 4・5）、`stages/hold.md`（手順 3-c・6）。
+
 ## 入口
 
 レビューで止める指摘が残らなかったあと（`stages/triage.md` を通った場合は、止める指摘が無くなったあと）、合格処理（`stages/pass.md`）の前に読む。develop の W は、(3b) で仕様宣言を投稿するときにこのファイルだけを読む。

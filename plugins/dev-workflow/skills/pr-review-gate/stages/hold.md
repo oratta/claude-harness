@@ -2,6 +2,8 @@
 
 以下 `$R` = `<owner>/<repo>`、`$N` = PR 番号。段の一覧と手順番号の対応表は索引 `SKILL.md`（pr-review-gate の直下）にある。
 
+このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/triage.md`（2-1 の止める判定と仕分け・2-2）、`declarations.md`（手順 3・3-b）、`stages/pass.md`（手順 4・5）。
+
 ## 入口
 
 手順 3 で「主のリスク許容が必要」と判定したとき（まず 3-c の引き継ぎを試す）、手順 4 で主に動作確認を依頼したとき、`stages/triage.md` の仕分け表の順 5 に当たったとき、保留中の PR を再開するときに読む。

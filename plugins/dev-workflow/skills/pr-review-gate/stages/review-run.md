@@ -2,6 +2,8 @@
 
 以下 `$R` = `<owner>/<repo>`、`$N` = PR 番号。段の一覧と手順番号の対応表は索引 `SKILL.md`（pr-review-gate の直下）にある。
 
+このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/reviewer-brief.md`（2-1 のレビュアー向け指示）、`stages/triage.md`（2-1 の止める判定と仕分け・2-2）、`declarations.md`（手順 3・3-b）、`stages/pass.md`（手順 4・5）。
+
 ## 入口
 
 `stages/prepare.md` の 2-0 でレビュー重量を判定したあと、レビューを自分で起動する側が読む（develop 以外でゲートを回す本体、`レビュー経路: 従来` の G）。develop の G（`レビュー経路: adapter`）はこの段を読まない（レビュアーは本体が起こす）。

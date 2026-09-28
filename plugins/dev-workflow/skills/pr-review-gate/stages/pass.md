@@ -2,6 +2,8 @@
 
 以下 `$R` = `<owner>/<repo>`、`$N` = PR 番号。段の一覧と手順番号の対応表は索引 `SKILL.md`（pr-review-gate の直下）にある。
 
+このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/triage.md`（2-1 の止める判定と仕分け・2-2）、`declarations.md`（手順 3・3-b）、`stages/hold.md`（手順 3-c・6）。
+
 ## 入口
 
 `declarations.md` の手順 3（リスク宣言）と 3-b（仕様宣言）を投稿したあとに読む。手順 3 で「主のリスク許容が必要」と宣言したときは `stages/hold.md` が先で、許容を得てからこの段に戻る。
