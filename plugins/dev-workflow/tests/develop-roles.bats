@@ -901,18 +901,18 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   section "$skill" '1 ループ' | grep -qF 'subagent_type: dev-workflow:gate-runner'
   grep -m1 'subagent_type: dev-workflow:worker' "$WORKER"
   grep -m1 'subagent_type: dev-workflow:gate-runner' "$GATE"
-  ! grep -q 'W が `/wt-setup`' "$WORKER"
+  ! grep -q 'W が `/wt-setup`' "$WORKER" || return 1
   section "$skill" 'worktree の用意' | grep -qF '/wt-setup'
   grep -qF 'openspec new change' "$WORKER"
   grep -qF 'openspec validate' "$WORKER"
   grep -qF 'openspec archive' "$WORKER"
-  ! section "$WORKER" '(3a) 実装＋verify' | grep -qF '/opsx:'
-  ! section "$WORKER" '(3b) archive＋PR＋仕様宣言' | grep -qF '/opsx:'
-  ! grep '/opsx:' "$WORKER" | grep -v -e 本体 -e 主
-  ! grep -qF 'ls .claude/commands/opsx/' "$WORKER"
+  if section "$WORKER" '(3a) 実装＋verify' | grep -qF '/opsx:'; then return 1; fi
+  if section "$WORKER" '(3b) archive＋PR＋仕様宣言' | grep -qF '/opsx:'; then return 1; fi
+  if grep '/opsx:' "$WORKER" | grep -v -e 本体 -e 主; then return 1; fi
+  ! grep -qF 'ls .claude/commands/opsx/' "$WORKER" || return 1
   grep -qF 'openspec --version' "$WORKER"
   loop="$(section "$skill" '1 ループ')"
-  ! echo "$loop" | grep -qE '/opsx:(ff|apply|verify|archive)'
+  if echo "$loop" | grep -qE '/opsx:(ff|apply|verify|archive)'; then return 1; fi
   echo "$loop" | grep -qF 'openspec new change'
   grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:worker'
   grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:gate-runner'

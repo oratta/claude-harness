@@ -11,11 +11,11 @@ setup() {
     grep -qx "name: $role" "$file"
     grep -qx 'model: sonnet' "$file"
     [ "$(grep '^tools:' "$file")" = "$( [ "$role" = worker ] && echo 'tools: Read, Edit, Write, Bash, Grep, Glob, TaskStop' || echo 'tools: Read, Bash, Grep, Glob, TaskStop' )" ]
-    ! grep -q '^model: inherit$' "$file"
-    ! grep '^tools:' "$file" | grep -qE 'mcp__|WebFetch|WebSearch|Skill|Agent|NotebookEdit'
+    ! grep -q '^model: inherit$' "$file" || return 1
+    if grep '^tools:' "$file" | grep -qE 'mcp__|WebFetch|WebSearch|Skill|Agent|NotebookEdit'; then return 1; fi
     grep -q "skills/develop/references/roles/$role.md" "$file"
   done
-  ! grep '^tools:' "$ROOT/agents/gate-runner.md" | grep -qE 'Edit|Write'
+  if grep '^tools:' "$ROOT/agents/gate-runner.md" | grep -qE 'Edit|Write'; then return 1; fi
 }
 
 @test "plugin manifest registers all three role types" {
