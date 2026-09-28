@@ -172,8 +172,8 @@ setup() {
   grep -q 'フォールバック' "${REVIEW_RUN}"
   grep -q '実測したバイナリ無し・認証切れ・タイムアウト' "${REVIEW_RUN}"
   grep -q 'タイムアウト' "${PREPARE}"
-  # 事前判定と障害時フォールバックの役割が書き分けられている
-  grep -q '事前判定' "${PREPARE}"
+  # 事前判定と障害時フォールバックの役割が書き分けられている（「レビュー実行者:」の段落は照合と振り分けの段、#554）
+  grep -q '事前判定' "${TRIAGE}"
 }
 
 @test "skill: frontmatter version bumped above 1.0.0" {

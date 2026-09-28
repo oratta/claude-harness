@@ -275,11 +275,11 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   echo "$n" | grep -q '受け入れ条件の所在'
 }
 
-@test "gate-runner: spawned by name, resumed with the reviewer summary via SendMessage, and G posts the reviewer line" {
+@test "gate-runner: spawned by name per stage, and the triage G posts the reviewer line (#554)" {
   grep -q '名前付き' "$GATE"
-  grep -q 'SendMessage' "$GATE"
+  grep -qF '段ごとに新しい G を起こす' "$GATE"
   grep -qF 'レビュー実行者:' "$GATE"
-  grep -qE 'レビュー実行者:.*G が|G が.*レビュー実行者:' "${PREPARE}"
+  grep -qE 'レビュー実行者:.*G が|G が.*レビュー実行者:' "${TRIAGE}"
 }
 
 @test "gate-runner: failed return carries the step 2-2 cause classification" {
@@ -487,8 +487,12 @@ extract_context_cap_section() {
 @test "gate-runner: full needs-reviewer carries evidence also used in PR comment" {
   local doc token
   doc="$(section "${PREPARE}" 'needs-reviewer')"
-  for token in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:' '完了未確認' '架空の終了コード' 'light 判定のため' 'full・実測した Codex 不可' '同じ証拠'; do
+  for token in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:' '完了未確認'; do
     echo "$doc" | grep -qF "$token"
+  done
+  # 「レビュー実行者:」コメントの段落は照合と振り分けの段にある（#554）
+  for token in '架空の終了コード' 'light 判定のため' 'full・実測した Codex 不可' '同じ証拠'; do
+    grep -qF "$token" "${TRIAGE}" || { echo "missing in triage.md: $token"; return 1; }
   done
 }
 
@@ -561,7 +565,7 @@ extract_context_cap_section() {
   echo "$nd" | grep -qF '同じ型の指摘'
   echo "$nd" | grep -qF '前の周の指摘'
   echo "$nd" | grep -qF '対象ファイルのパス'
-  echo "$nd" | grep -qF 'SendMessage'
+  echo "$nd" | grep -qF '照合と振り分けの G を新しく起こして渡す'
 }
 
 @test "gate-runner (#354): the sorting field covers every round and records row 3, row 4 and decider rulings" {
@@ -599,7 +603,7 @@ extract_context_cap_section() {
   echo "$step4" | grep -qF 'passed / failed / 保留 / needs-reviewer / needs-decider'
   nd="$(echo "$step4" | awk '/^      needs-decider →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
   [ -n "$nd" ] || { echo "no needs-decider line in step (4)"; return 1; }
-  for token in 'dev-workflow:decider' 'マージ可否と同じ可否と根拠の形で問う' '同じ型の指摘' '前の周の指摘' '対象ファイルのパス' '仕分け欄' '全部列挙してから直す' '切り出す' 'SendMessage' '代理投稿しない'; do
+  for token in 'dev-workflow:decider' 'マージ可否と同じ可否と根拠の形で問う' '同じ型の指摘' '前の周の指摘' '対象ファイルのパス' '仕分け欄' '全部列挙してから直す' '切り出す' '照合と振り分けの G を新しく起こして渡す' '代理投稿しない'; do
     echo "$nd" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
 }
@@ -734,7 +738,7 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#441): when HEAD moves on an accepted PR, try pr-review-gate step 3-c before asking the owner" {
-  line="$(awk '/^### 再開/{f=1;next} /^##/{f=0} f' "$HOLD" | grep -F '許容済みの PR で HEAD が動いた')"
+  line="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$HOLD" | grep -F '許容済みの PR で HEAD が動いた')"
   echo "$line" | grep -qF '主に聞く前に'
   echo "$line" | grep -qF 'pr-review-gate 手順 3-c'
 }

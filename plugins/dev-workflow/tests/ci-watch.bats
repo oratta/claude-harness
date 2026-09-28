@@ -393,7 +393,7 @@ pr_view_calls() {
   grep -q 'passed → 本体が .*ci-watch.md.*見張りを始める' "$DEVELOP"
   grep -q '`fix` なら W に直させ' "$DEVELOP"
   grep -q 'W が push したら.*passed を外したまま.*`wait` → `next` を続け' "$DEVELOP"
-  grep -q '`ready` になってから G を.*取り直させ' "$DEVELOP"
+  grep -q '`ready` になってから前提確認と重さ判定の G を新しく起こして.*取り直させ' "$DEVELOP"
 }
 
 @test "gate-runner: G returns passed without starting the CI watch" {
