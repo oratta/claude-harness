@@ -25,6 +25,6 @@
 ## 5. 記録と検査
 
 - [x] 5.1 変更の記録を書く（何を変えたか、design の決定 1〜8 の要点、受け入れたリスク、受け入れ条件 5 は事後計測で子 issue に移すこと）。触る範囲: plugins/dev-workflow/changes/514.md（新規。書き方は plugins/dev-workflow/changes/555.md に合わせる）
-- [ ] 5.2 `.github/workflows/*.yml` の `pull_request` / `push` のジョブの `run:` から検査コマンドを集めて全部実行する（少なくとも `./scripts/test.sh` と `./scripts/lint.sh` が exit 0。新しい `review-partitions.sh` も shellcheck の対象になる）。触る範囲: .github/workflows/ci.yml（読むだけ）
+- [x] 5.2 `.github/workflows/*.yml` の `pull_request` / `push` のジョブの `run:` から検査コマンドを集めて全部実行する（少なくとも `./scripts/test.sh` と `./scripts/lint.sh` が exit 0。新しい `review-partitions.sh` も shellcheck の対象になる）。触る範囲: .github/workflows/ci.yml（読むだけ）
 - [x] 5.3 `openspec validate reviewer-diff-partitions --strict` が exit 0。触る範囲: なし（実行のみ）
 - [ ] 5.4 受け入れ条件 5（記録だけ）: エピック #511 の下に子 issue を作り、「マージ後に develop で通した PR 5 本で、G とレビュアーのコンテキスト上限による交代の件数と、600 行を超えた PR のレビュアーの最大コンテキストを数え、エピック #511 にコメントする（着手前は差分 600 行超の 1 周目レビュアーの上限超えが 28 体中 20 体・71%。合否に使わず記録する）。数え方は #514 本文の受け入れ条件 5 のとおり」を引き継ぐ。PR 本文の受け入れ条件 5 の行にその URL を書く（チェックは付けない）。PR は `Closes #514`。触る範囲: なし（issue 作成と PR 本文。(3b) で行う）
