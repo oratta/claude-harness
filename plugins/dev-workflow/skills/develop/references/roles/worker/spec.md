@@ -51,7 +51,7 @@ gh issue comment <issue番号> --body "$(printf '仕様化判断: する\n理由
 gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: 受け入れ条件が PR 本文に明記された機械的な振る舞い変更（設計判断なし）')"
 ```
 
-判定をやり直したら同じ書式で投稿し直す（照合側は最新 1 件を正とする。契約の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）。**記録する前に分割判定・実装へ進まない。**
+判定をやり直したら同じ書式で投稿し直す（照合側は最新 1 件を正とする。契約の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）。**記録する前に分割判定へ進まない**（実装へ進まない規則は `worker/common.md`「実装に入る前の確認」）。
 
 仕様化しないと判定した場合は分割判定と `openspec new change` を飛ばし、本体に「仕様化しない」と return する（本体は (3a) の実装から W を再開する。同じコンテキストなのでそのまま続けてよいと本体が指示することもある）。本体が同じコンテキストのまま (3a) へ進むよう指示したら、`worker/implement.md` を読んでから進む。この return には作業項目ごとに `触る範囲: <パス>:<開始行>-<終了行>` を書く（書き方は下の「仕様化する場合（(1) の終わり）」の `tasks.md` と同じ。`tasks.md` が無いので return が置き場になる）。
 
@@ -78,6 +78,6 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 **対象の change が既に存在し artifact（proposal / design / tasks / specs）が揃っているなら、`openspec new change` を再実行しない。** 本体や主が `/opsx:ff` で先に作った change もそのまま使い、「仕様できた: openspec/changes/<change-name>/」と本体に return する。
 
-openspec CLI で artifact を作る場合は `openspec new change <change-name>` を実行し、`openspec status --change <change-name>` で依存順を確認する。`openspec instructions <artifact> --change <change-name>` で各 artifact の指示を得て、proposal / design / tasks / specs を直書きする。`tasks.md` の各タスクの末尾には `触る範囲: <パス>:<開始行>-<終了行>` を書く（複数なら読点で並べる。新しく作るファイルは `<パス>（新規）`。節の見出しや関数名が分かるときは添える）。行番号は仕様づくりの時点の値で、前のタスクの編集でずれうる。実装の担い手はこれを案内にして、編集前に該当範囲を読む。揃ったら本体に return し、同じ仕様レビューを受ける。R1 の APPROVE が記録先に記録されるまで実装に進まない。
+openspec CLI で artifact を作る場合は `openspec new change <change-name>` を実行し、`openspec status --change <change-name>` で依存順を確認する。`openspec instructions <artifact> --change <change-name>` で各 artifact の指示を得て、proposal / design / tasks / specs を直書きする。`tasks.md` の各タスクの末尾には `触る範囲: <パス>:<開始行>-<終了行>` を書く（複数なら読点で並べる。新しく作るファイルは `<パス>（新規）`。節の見出しや関数名が分かるときは添える）。行番号は仕様づくりの時点の値で、前のタスクの編集でずれうる。実装の担い手はこれを案内にして、編集前に該当範囲を読む。揃ったら本体に return し、同じ仕様レビューを受ける。R1 の APPROVE を確認してから実装に入る規則は `worker/common.md`「実装に入る前の確認」。
 
-仕様レビュー結果は R1 が記録先にコメントする（1 行目 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$`）。W はそのコメントを確認してから実装に入る。R1 が `REQUEST_CHANGES` を返したら、本体からの再開指示を受けて artifact を直し、修正箇所を列挙して return する（再レビューは差分限定、2 周キャップ）。
+R1 が記録先にコメントした仕様レビュー結果（書式は `worker/common.md`「実装に入る前の確認」）が `REQUEST_CHANGES` なら、本体からの再開指示を受けて artifact を直し、修正箇所を列挙して return する（再レビューは差分限定、2 周キャップ）。

@@ -19,7 +19,8 @@ W の手順は `worker/` の下のファイルにある。この索引は本体�
 | 記録先の用意（Draft PR を記録先にする場合） | `worker/spec.md` |
 | 仕様化判断（opsx / openspec の要否）と記録 | `worker/spec.md` |
 | 分割判定 | `worker/spec.md` |
-| 仕様化する場合（(1) の終わり） | `worker/spec.md` |
+| 仕様化する場合（(1) の終わり）（R1 の APPROVE を確認してから実装に入る規則と仕様レビュー結果の書式を除く） | `worker/spec.md` |
+| 仕様化判断の「記録する前に実装へ進まない」と、R1 の APPROVE を確認してから実装に入る規則・仕様レビュー結果の書式 | `worker/common.md`「実装に入る前の確認」 |
 | (3a) 実装＋verify | `worker/implement.md` |
 | (3b) archive＋PR＋仕様宣言 | `worker/finish.md` |
 | 重要実装の事前分類 | `../pre-classification.md`（`skills/develop/references/pre-classification.md`） |

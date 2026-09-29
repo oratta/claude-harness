@@ -108,6 +108,16 @@ nchars() {
   printf '%s' "$body" | grep -qF '段:'
 }
 
+@test "common: the implement stage's read set carries the pre-implementation gate (spec decision and R1 APPROVE)" {
+  s="$(cat "${WDIR}/common.md" "${WDIR}/implement.md")"
+  printf '%s' "$s" | grep -qF '記録先に記録される前に実装へ進まない'
+  printf '%s' "$s" | grep -qF 'R1 の APPROVE が記録先に記録されるまで実装に進まない'
+  printf '%s' "$s" | grep -qF 'W はそのコメントを確認してから実装に入る'
+  grep -qF '## 実装に入る前の確認' "${WDIR}/common.md"
+  ! grep -qF '記録されるまで実装に進まない' "${WDIR}/spec.md" || return 1
+  grep -qF '`worker/common.md`「実装に入る前の確認」' "${WDIR}/spec.md"
+}
+
 @test "skill: the handover's next role carries the W 段: value and the new-session resume uses it" {
   grep -F '| 次に起こす役割 |' "$SKILL" | grep -qF '段:'
   grep -F '手渡し: 不要` なら「次に起こす役割」の入力で初回の W を起こす' "$SKILL" | grep -qF '`段:` の行は「次に起こす役割」に書かれた値を使う'

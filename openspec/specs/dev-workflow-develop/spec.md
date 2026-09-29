@@ -1150,12 +1150,12 @@ W の名前は書かない（新しいセッションでは SendMessage でき�
 
 W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 本に置かなければならない（MUST）:
 
-- `common.md`（全段で読む）: 本体が渡すもの（`段:` の行を含む）・W がしないこと・昇格トリップワイヤー・コンテキスト上限と手渡し（「(3) をこれより細かく切らない」の箇条を除く）
+- `common.md`（全段で読む）: 本体が渡すもの（`段:` の行を含む）・W がしないこと・実装に入る前の確認（仕様化判断の記録前に実装へ進まないこと・仕様化した場合に R1 の APPROVE を確認してから実装に入ること・仕様レビュー結果の書式）・昇格トリップワイヤー・コンテキスト上限と手渡し（「(3) をこれより細かく切らない」の箇条を除く）
 - `spec.md`（仕様づくり。(1) と R1 の差し戻しの修正）: 記録先の用意（Draft PR を記録先にする場合）・仕様化判断と記録・分割判定・仕様化する場合
 - `implement.md`（実装と検証。(3a) と、G の failed や CI の見張りの `fix` を受けた修正）: (3a) 実装＋verify
 - `finish.md`（仕上げ。(3b)）: (3b) archive＋PR＋仕様宣言
 
-どの段でも要る規則（W がしないこと・昇格トリップワイヤー・コンテキスト上限と手渡し）は `common.md` に置き、それを使う全部の段から読める位置になければならない（MUST。1 つの段のファイルにだけ置いて、他の段で効かなくしてはならない）。1 回の起動で読む字数に上限は置かない。字数を減らすことを配置の理由にしてはならず（MUST NOT）、節の置き場所は、その節を使う段と読み手（W か本体か）で決める。`worker/` の 4 本・索引・`references/pre-classification.md` の `## ` 見出しは、このうち 1 ファイルにだけなければならない（MUST。同じ節を 2 か所に書かない）。移すときに手順の中身（規則・書式・コマンド・閾値）を変えてはならない（MUST NOT）。段をまたぐ参照はファイル名と節名で書き、中身を言い換えて再掲してはならない（MUST NOT）。
+どの段でも要る規則（W がしないこと・実装に入る前の確認・昇格トリップワイヤー・コンテキスト上限と手渡し）は `common.md` に置き、それを使う全部の段から読める位置になければならない（MUST。1 つの段のファイルにだけ置いて、他の段で効かなくしてはならない）。1 回の起動で読む字数に上限は置かない。字数を減らすことを配置の理由にしてはならず（MUST NOT）、節の置き場所は、その節を使う段と読み手（W か本体か）で決める。`worker/` の 4 本・索引・`references/pre-classification.md` の `## ` 見出しは、このうち 1 ファイルにだけなければならない（MUST。同じ節を 2 か所に書かない）。移すときに手順の中身（規則・書式・コマンド・閾値）を変えてはならない（MUST NOT）。段をまたぐ参照はファイル名と節名で書き、中身を言い換えて再掲してはならない（MUST NOT）。
 
 「(3) をこれより細かく切らない」の箇条（手渡しの固定分と、実装の途中で交代させたときに後任が Red のテストから再出発する理由）は、develop の `SKILL.md` の (3) に置かなければならない（MUST）。SKILL.md はこれを理由の正本として持ち、worker.md を理由の正本として指してはならない（MUST NOT）。
 
@@ -1169,7 +1169,12 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 #### Scenario: どの段でも要る規則が全段から読める
 
 - **WHEN** `worker/common.md` の見出しを読む
-- **THEN** 「W がしないこと」「昇格トリップワイヤー」「コンテキスト上限と手渡し」の節があり、段のファイル（`spec.md` / `implement.md` / `finish.md`）にはこれらの見出しが無い
+- **THEN** 「W がしないこと」「実装に入る前の確認」「昇格トリップワイヤー」「コンテキスト上限と手渡し」の節があり、段のファイル（`spec.md` / `implement.md` / `finish.md`）にはこれらの見出しが無い
+
+#### Scenario: 実装の段から起こされた W も承認の確認を読む
+
+- **WHEN** 手渡しや Codex の新しい phase で `段: implement` の W が起こされ、`worker/common.md` と `worker/implement.md` だけを読む
+- **THEN** 仕様化判断の記録前に実装へ進まないことと、仕様化した場合に R1 の APPROVE のコメントを確認してから実装に入ることが読める
 
 ### Requirement: 段ごとの読み込み字数を分割前と並べて記録する
 
@@ -1264,7 +1269,8 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 | 記録先の用意（Draft PR を記録先にする場合） | `references/roles/worker/spec.md` |
 | 仕様化判断と記録 | `references/roles/worker/spec.md` |
 | 分割判定 | `references/roles/worker/spec.md` |
-| 仕様化する場合（(1) の終わり） | `references/roles/worker/spec.md` |
+| 仕様化する場合（(1) の終わり）（R1 の APPROVE を確認してから実装に入る規則と仕様レビュー結果の書式を除く） | `references/roles/worker/spec.md` |
+| 仕様化判断の「記録する前に実装へ進まない」と、R1 の APPROVE を確認してから実装に入る規則・仕様レビュー結果の書式 | `references/roles/worker/common.md`「実装に入る前の確認」 |
 | (3a) 実装＋verify（全経路共通の大原則・順 3 の一覧の段落・(3a) の return を含む） | `references/roles/worker/implement.md` |
 | 昇格トリップワイヤー | `references/roles/worker/common.md` |
 | (3b) archive＋PR＋仕様宣言 | `references/roles/worker/finish.md` |

@@ -57,7 +57,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "worker: also carries the spec review result format for the record target" {
-  grep -qF '^仕様レビュー: (APPROVE|REQUEST_CHANGES)$' "$W_SPEC"
+  grep -qF '^仕様レビュー: (APPROVE|REQUEST_CHANGES)$' "$W_COMMON"
 }
 
 @test "worker: Draft PR record target is created (empty commit -> push -> draft) before the spec decision" {
