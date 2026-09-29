@@ -55,7 +55,7 @@ nchars() {
   for h in 'W がしないこと' '昇格トリップワイヤー' 'コンテキスト上限と手渡し'; do
     grep -q "^## ${h}" "${WDIR}/common.md" || { echo "not in common.md: $h"; return 1; }
     for stage in spec implement finish; do
-      ! grep -q "^## ${h}" "${WDIR}/${stage}.md" || { echo "in ${stage}.md: $h"; return 1; }
+      if grep -q "^## ${h}" "${WDIR}/${stage}.md"; then echo "in ${stage}.md: $h"; return 1; fi
     done
   done
 }
@@ -84,7 +84,7 @@ nchars() {
   for row in '| 聖域パス |' '| マージ権限 |' '| 層間契約 |' '| 課金/法務 |'; do
     grep -qF "$row" "$PRE" || { echo "not in pre-classification.md: $row"; return 1; }
     for f in "$INDEX" "${WDIR}/common.md" "${WDIR}/spec.md" "${WDIR}/implement.md" "${WDIR}/finish.md"; do
-      ! grep -qF "$row" "$f" || { echo "table row in $f: $row"; return 1; }
+      if grep -qF "$row" "$f"; then echo "table row in $f: $row"; return 1; fi
     done
   done
 }
@@ -94,8 +94,9 @@ nchars() {
            skills/develop/references/decision-criteria.md skills/pr-review-gate/stages/triage.md \
            references/model-tiers.md README.md; do
     grep -qF 'pre-classification.md' "${PLUGIN_DIR}/${f}" || { echo "no pointer: $f"; return 1; }
-    ! grep -n '事前分類' "${PLUGIN_DIR}/${f}" | grep -qE '(roles/)?worker\.md' \
-      || { echo "still points to worker.md for 事前分類: $f"; return 1; }
+    if grep -n '事前分類' "${PLUGIN_DIR}/${f}" | grep -qE '(roles/)?worker\.md'; then
+      echo "still points to worker.md for 事前分類: $f"; return 1
+    fi
   done
 }
 
