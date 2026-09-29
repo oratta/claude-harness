@@ -10,7 +10,7 @@ version: 2.1.0
 
 | 役割 | 名前 | 指示書 | 担当 |
 |---|---|---|---|
-| 作業者 | **W**（`dev-workflow:worker`） | `references/roles/worker.md` | 記録先の用意（Draft PR 経路）・仕様化判断の記録・分割判定・`openspec new change`・TDD 実装・verify・archive・PR・仕様宣言 |
+| 作業者 | **W**（`dev-workflow:worker`） | `references/roles/worker/common.md`＋`段:` が指す `references/roles/worker/<段>.md`（索引は `references/roles/worker.md`） | 記録先の用意（Draft PR 経路）・仕様化判断の記録・分割判定・`openspec new change`・TDD 実装・verify・archive・PR・仕様宣言 |
 | 仕様レビュアー | **R1** | `references/roles/spec-reviewer.md` | 実装前の仕様レビュー（別コンテキスト・読み取り専用） |
 | ゲート実行者 | **G**（`dev-workflow:gate-runner`） | `references/roles/gate-runner.md` | pr-review-gate の手順 1〜5 |
 | 画面確認役 | **V**（`general-purpose`） | `references/roles/screen-checker.md` | 必要な場合だけ画面観測を返す |
@@ -63,7 +63,7 @@ G の起動指示（段ごとに新しく起こす G と、手渡しで起こす
 1 ループの最初の工程。仕様化判断・仕様レビュー結果を置く「記録先」を先に確定する。
 
 - **issue があればそれを記録先にする**（番号・URL・自然文マッチ。`/develop` の 5 分岐は `commands/develop.md`）。エピックの子は子 issue が記録先
-- **無ければ issue を切らない。** 本体が worktree を用意し、W が worktree 直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする（GitHub の "open a draft PR early" の慣行）。この Draft PR は**仕様化判断を記録する前**に存在していなければならない — 記録先が無い状態で判定を先に進めない（手順は `references/roles/worker.md`「記録先の用意」）
+- **無ければ issue を切らない。** 本体が worktree を用意し、W が worktree 直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする（GitHub の "open a draft PR early" の慣行）。この Draft PR は**仕様化判断を記録する前**に存在していなければならない — 記録先が無い状態で判定を先に進めない（手順は `references/roles/worker/spec.md`「記録先の用意」）
 - Draft PR を記録先にする場合、**受け入れ条件は PR 本文**（位置づけ・動作確認ポイント）に書く。issue に書かない分の省略であって、受け入れ条件自体を省くことはできない
 - 記録先を PR にした場合、PR 本文に `Closes #N` / `Fixes #N` / `Refs #N` の issue 参照を**書かない**。書くと pr-review-gate の照合先がその issue に移る（探索順は issue → 無ければ PR 自身のコメント）。エピックの子は子 issue が記録先なので `Closes #子` を書く
 - 仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）
@@ -83,29 +83,30 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
 
 ```
 (0) 記録先を確定する（入口 0）。worktree を用意する
-(1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（model: worker.md の事前分類表の「1 周目」列に当たればその値（4 分類のいずれでも opus。W の上限は opus）、それ以外 sonnet。W を fable にはしない。共有枠モードが下限を決める）:
+(1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（起動指示に `段: spec` の 1 行を書く。model: references/pre-classification.md の事前分類表の「1 周目」列に当たればその値（4 分類のいずれでも opus。W の上限は opus）、それ以外 sonnet。W を fable にはしない。共有枠モードが下限を決める）:
       記録先の用意（Draft PR 経路）→ 仕様化判断の記録 → 分割判定 → openspec new change → return「仕様できた」
       仕様化しない判定なら → (3) へ直行（TDD → PR）
 (2) R1 を spawn（model: 既定 opus。マージ条件・層間契約・課金/法務に触れれば subagent_type: dev-workflow:decider で spawn する。聖域パスだけでは上げない）:
       references/roles/spec-reviewer.md に従って別コンテキストで仕様レビュー → 結果を記録先にコメント → return
       dev-workflow:decider で起こした R1 は gh を実行できないので投稿せず return し、本体が同じ書式で代理投稿する
       （記録先の本文と関連コメントは本体が入力文に貼って渡す）
-      REQUEST_CHANGES → W を SendMessage で再開して artifact を修正 → R1 を再開して差分再レビュー
+      REQUEST_CHANGES → W を SendMessage で再開（再開指示に `段: spec`）して artifact を修正 → R1 を再開して差分再レビュー
       （初回＋差分 1 回の 2 周キャップ。超えたら needs-approval を付けて本体がオーナーに 1 アクションで依頼し、「保留で止まるときの引き継ぎ」の節どおり引き継ぎを残す）
       R1 の APPROVE が記録先に記録されるまで W を apply に進めない（再開しない）
 (3) W を SendMessage で再開（再開前に `scripts/subagent-context.sh <W の名前>` で測る。上限超を検知した
       あとの扱いは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本。正本を読むまで手渡さない）。
       (3) は 2 回の return に分かれる:
-      (3a) apply（TDD。openspec CLI で tasks を実装）→ openspec validate --strict → return「工程完了: 実装＋verify」
+      (3a) 再開指示に `段: implement` を書く。apply（TDD。openspec CLI で tasks を実装）→ openspec validate --strict → return「工程完了: 実装＋verify」
            （実行したテストコマンドと exit code、openspec validate --strict の exit code、画面確認: の行を載せる）
            → 本体はここで `scripts/subagent-context.sh <W の名前>` をもう一度実行して測ってから (3b) を指示する
-      (3b) openspec archive → PR を Draft のまま用意（無ければ Draft で作成。Ready 化は (4) の G が pr-review-gate 手順 5 で行う）→ 仕様宣言を PR コメントに書く
+      (3b) 再開指示に `段: finish` を書く。openspec archive → PR を Draft のまま用意（無ければ Draft で作成。Ready 化は (4) の G が pr-review-gate 手順 5 で行う）→ 仕様宣言を PR コメントに書く
            → return「工程完了: archive＋PR＋仕様宣言」（PR #N と仕様宣言のコメント URL を載せる）
       (3a) の `画面確認: 不要` なら V を起こさず (3b) へ進む。`画面確認: 要る — <開く URL か起動手順> / <見る点>` なら先に V を `subagent_type: general-purpose`・`model: sonnet`、名前 `V-<記録先番号>-<n>`、description `V: screen check for #N` で起こす。V に W の行と worktree パスを渡し、`isolation` は付けない。
            V の合格は観測を (3b) の W に渡す。不合格なら (3a) に戻し、同じ画面確認の 2 回目の不合格は本体が失敗ループと数える。実行不能なら理由を (3b) の W に渡し、画面証拠は書かずゲートの保留経路へ進む。V は再開せず、再確認は新しい V を起こす。
-      (3) をこれより細かく（tasks の項目単位など）切らない。
-           手渡しごとに指示書の読み直しと現状確認の固定分が乗り、実装の途中で切ると後任が Red のまま
-           止まったテストから再出発することになるため（理由の正本は references/roles/worker.md「コンテキスト上限と手渡し」）
+      (3) をこれより細かく切らない（`tasks.md` の項目単位や「実装／verify／archive／PR／仕様宣言」の 5 段にしない）。
+           手渡しが 1 回起きるたびに、後任は指示書と正本の節を読み直し、記録先を取り直し、`git status` / `git diff` でファイルの現状を確認する固定分を払う。
+           この固定分は工程の大きさに依存しないので、区切りを増やすほど 1 区切りあたりの実質作業比が下がる。
+           また区切りが実装の途中に落ちると、後任は Red のまま止まったテストから再出発することになり、前任の設計意図を再発明する危険が最も高い地点で交代することになる
       本体は次に指示する工程を、自分が (3a) を指示したか (3b) を指示したかで決め、工程名の文字列照合では決めない。
            (3a) の return に PR 番号と仕様宣言のコメント URL が既に揃っていれば（古い世代の W が (3) を
            通しで終えた場合）、(3b) を指示せず、そのまま (4)（G の工程）へ進む
@@ -123,7 +124,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            代替案で手順 2 からやり直すときに W の修正が要るなら、W の修正のあとで前提確認と重さ判定の G を起こす）
       合格処理（手順 5）では PR が Draft なら Ready にしてから agent-review:passed を付ける（W は Ready にしない）
       passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない。中身は reference が正本）。
-           見張りの一手が `fix` なら W に直させ（再開か手渡しかは (3) と同じく正本に従う）、
+           見張りの一手が `fix` なら W に直させ（再開指示に `段: implement`。再開か手渡しかは (3) と同じく正本に従う）、
            W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け（CI のやり直し・再度の直しもここで処理する）、
            `ready` になってから前提確認と重さ判定の G を新しく起こしてゲートを取り直させ、
            G が再び passed を返したら見張りの続き（reference の「`ready` を受けたあと」）に進む。合格するまでマージ待ち・マージ依頼に進まない。unmanned は (4) を回さないので対象外
@@ -151,7 +152,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）で戻し方を決める。モデルを上げるのは実装品質起因のときだけで、
            上げるのは決める役と実行役の一方だけ（実行側が原因なら W を opus に、判断側が原因なら dev-workflow:decider を立てて修正方針を作らせる。
            W を fable にはしない）。仕様が曖昧なら仕様修正、誤検出なら反証で返す（どちらもモデルを上げない）
-           → W を再開（再開前に測る。上限超のあとの扱いは (3) と同じく正本に従う）→ W の修正のあと、failed の Gate Result の `次の段:` どおりの G を新しく起こして再レビュー（順 3 だけなら照合と振り分け、それ以外は前提確認と重さ判定。
+           → W を再開（再開指示に `段: implement`。再開前に測る。上限超のあとの扱いは (3) と同じく正本に従う）→ W の修正のあと、failed の Gate Result の `次の段:` どおりの G を新しく起こして再レビュー（順 3 だけなら照合と振り分け、それ以外は前提確認と重さ判定。
            2 周キャップ。範囲と 3 周目の扱いは pr-review-gate の収束ルールに従う）
       保留 → needs-approval のまま本体がオーナーに 1 アクション（許容する／しない、動作確認の結果、切り出しの確認への回答（切り出す／この PR で直す））で依頼する。止まる前に「保留で止まるときの引き継ぎ」の節どおり記録先へ引き継ぎを残し、主に新しいセッションでの再開を案内する。回答が届いたら保留の解除の G を新しく起こし、回答を渡す（新しいセッションなら同節の再開手順から）
       needs-decider → 仕分け表の順 6（同じ型の再発）。本体が subagent_type: dev-workflow:decider を残量モードどおりのモデルで起こし、
@@ -165,7 +166,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            本体は裁定を代理投稿しない（G が `決める役の裁定:` の PR コメントとして記録する）
 ```
 
-W は名前付きで spawn し、SendMessage で再開してコンテキストを引き継ぐ（(1) の判定・(2) の指摘・(3) の実装が同じコンテキストにある）。**ただし再開の前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測る（exit 2 が上限超）。閾値と全解除の環境変数・途中計測 hook を含む 2 経路・上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言・前任が動作中のまま交代させる手順）は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、この SKILL.md には書かない。正本を読むまで手渡さない。** G は再開せず段ごとに新しく起こすので、再開前の計測は W だけに掛かる。**`工程中断:` で返ってきた return にレビュー結果（`agent-review` の判定やレビュー本文）が含まれていたら、本体がそれを記録先に代理投稿する**（G が途中計測の強制停止に当たると `gh pr comment` も拒否されるため。R1 の仕様レビューを代理投稿するのと同じ形）。**強制停止中は commit も本体が行う**: `工程中断:` の return を受け取ったとき、および次の手渡し・次の spawn・そのサイクルの終了・worktree の撤去のいずれよりも先に、本体は return に書かれた作業ツリーのパス（強制停止による中断なら hook の `permissionDecisionReason` に含まれる `cwd`）に対して `git -C <path> status --porcelain` を実行して未コミット差分を確認し、残っていれば本体が commit する（MUST。止まったサブエージェント自身は `Bash` が全件拒否されて commit できない。手渡し先が確認するのは**次に起こされた**サブエージェントの差分だけなので、手渡しが発生しない経路や後継が G の場合はこの本体側の確認が無いと作業が失われたまま残る）。W が孫を呼ぶ必要がある工程は存在しない。仕様化する場合で複数 change に割れたときは、interactive では change ごとに (1)〜(3) を回す（change ごとに仕様レビューを行う。並列可能なら W を並列に起こす。change ごとに worktree を分ける）。
+W は名前付きで spawn し、SendMessage で再開してコンテキストを引き継ぐ（(1) の判定・(2) の指摘・(3) の実装が同じコンテキストにある）。**ただし再開の前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測る（exit 2 が上限超）。閾値と全解除の環境変数・途中計測 hook を含む 2 経路・上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言・前任が動作中のまま交代させる手順）は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、この SKILL.md には書かない。正本を読むまで手渡さない。** G は再開せず段ごとに新しく起こすので、再開前の計測は W だけに掛かる。**W の起動指示・SendMessage による再開指示・手渡しの起動指示には `段: spec` / `段: implement` / `段: finish` の 1 行を必ず書く**（W は `references/roles/worker/common.md` とこの行が指す段のファイルだけを読み、行が無ければ読まずに聞き返す）。値はその起動・再開で本体が指示する工程で決める（上のコードブロックの各工程に書いた値）。手渡しでは、前任が工程の途中で止まり（return の 1 行目が `工程完了:` でない）後任に同じ工程を続けさせるなら前任が担っていた段、前任が `工程完了:` で return したあとに後任へ次の工程を指示するならその工程の段にする（(3a) を終えた前任の後任に (3b) を指示するなら `段: finish`、(1) を終えた前任の後任に R1 の REQUEST_CHANGES の修正を指示するなら `段: spec`）。次の工程は本体が自分の指示した工程から決め、前任の return の工程名の文字列から決めない（新しいセッションで引き継ぎから再開する本体は、引き継ぎの「次に起こす役割」に書かれた `段:` の値を使う）。**`工程中断:` で返ってきた return にレビュー結果（`agent-review` の判定やレビュー本文）が含まれていたら、本体がそれを記録先に代理投稿する**（G が途中計測の強制停止に当たると `gh pr comment` も拒否されるため。R1 の仕様レビューを代理投稿するのと同じ形）。**強制停止中は commit も本体が行う**: `工程中断:` の return を受け取ったとき、および次の手渡し・次の spawn・そのサイクルの終了・worktree の撤去のいずれよりも先に、本体は return に書かれた作業ツリーのパス（強制停止による中断なら hook の `permissionDecisionReason` に含まれる `cwd`）に対して `git -C <path> status --porcelain` を実行して未コミット差分を確認し、残っていれば本体が commit する（MUST。止まったサブエージェント自身は `Bash` が全件拒否されて commit できない。手渡し先が確認するのは**次に起こされた**サブエージェントの差分だけなので、手渡しが発生しない経路や後継が G の場合はこの本体側の確認が無いと作業が失われたまま残る）。W が孫を呼ぶ必要がある工程は存在しない。仕様化する場合で複数 change に割れたときは、interactive では change ごとに (1)〜(3) を回す（change ごとに仕様レビューを行う。並列可能なら W を並列に起こす。change ごとに worktree を分ける）。
 
 ## PR トークン上限（spawn・再開・Codex 委譲の前に毎回測る）
 
@@ -215,7 +216,7 @@ fi
 | ラベルの付け先 | `needs-approval` を付けた先。PR があれば `PR #N`、無ければ記録先（`issue #N`） |
 | 実行モード | interactive / unmanned |
 | 実行先 | 実行先オプションと account-home の対応（明示したときだけ。無ければ `自動選択`）と、開始済みの phase の選択結果のコメント URL。最初の phase は develop 開始コメント、以降は dispatch 記録。両方書く（無ければ `なし`） |
-| 次に起こす役割 | 返事のあとに最初に起こす役割と、渡す入力の在り処 |
+| 次に起こす役割 | 返事のあとに最初に起こす役割と、渡す入力の在り処。役割が W なら起動指示に書く `段:` の値も（`段: spec` / `段: implement` / `段: finish`） |
 | 周回 | 仕様レビューと G の周回の数・W の修正の周回の数 |
 | 前任 W | 直近の return の 1 行目と要約または URL、手渡し可否（次の段落）。W を起こしていなければ `なし` |
 | PR トークン上限 | 最新の値と、止まった時点の合計 |
@@ -234,7 +235,7 @@ W の名前は書かない（新しいセッションでは SendMessage でき�
 1. 記録先の最新の引き継ぎのコメントを読む。
 2. そのコメントより後の主の回答（記録先または対象 PR のコメント、または `/develop` の引数の残り）を探して使う。無ければ、引き継ぎの「主への依頼」を主に見せ直して返事を聞き、返事が来るまで役割を起こさない。
 3. 引き継ぎの「ラベルの付け先」に `needs-approval` があることと、PR の HEAD が引き継ぎの HEAD と同じことを確かめる（ラベルは記録先ではなくこの項目の指す先で見る）。ラベルが無ければ保留は解かれているので、記録先のコメントから今の状態を組み立て直して主に報告する。HEAD が動いていれば差分を主に報告し、続けるかを聞く。
-4. W は SendMessage しない。「前任 W」が `手渡し: 可` なら手渡し（前任の return と記録先を渡して新しい W を起こす）、`手渡し: 不要` なら「次に起こす役割」の入力で初回の W を起こす。`手渡し: 不可` なら W を起こさず、理由を主に報告して指示を聞く。G は従来どおり段ごとに新しく起こす。
+4. W は SendMessage しない。「前任 W」が `手渡し: 可` なら手渡し（前任の return と記録先を渡して新しい W を起こす）、`手渡し: 不要` なら「次に起こす役割」の入力で初回の W を起こす。どちらも起動指示の `段:` の行は「次に起こす役割」に書かれた値を使う。`手渡し: 不可` なら W を起こさず、理由を主に報告して指示を聞く。G は従来どおり段ごとに新しく起こす。
 5. 実行先: 明示の実行先オプションが引き継ぎにあれば再推測せずそのまま使う。自動選択では、次に起こす役割の phase の選択結果が引き継ぎの「実行先」の指すコメント（develop 開始コメントか dispatch 記録）にあればその構成・executor・account・model を続け、選び直さない。どちらにも無い（未開始の）phase だけ、開始時に adapter で自動選択を評価する。
 6. 「PR トークン上限」の計測の `--cap` には、記録先の最新の `PR トークン上限:` コメントの値を使う。
 
@@ -246,7 +247,7 @@ W の名前は書かない（新しいセッションでは SendMessage でき�
 
 | 役割 | 既定 | 上げる条件 |
 |---|---|---|
-| W（実行役。`dev-workflow:worker`） | `sonnet` | `opus`: 記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含む、実行側が原因の失敗ループでの昇格、または事前分類の 4 分類（聖域パス・マージ権限・層間契約・課金/法務。正本は `worker.md`、ここに再掲しない）に当たる。**W の上限は `opus` で、`model: fable` の W は `scripts/agent-model-guard.sh` に拒否される** |
+| W（実行役。`dev-workflow:worker`） | `sonnet` | `opus`: 記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含む、実行側が原因の失敗ループでの昇格、または事前分類の 4 分類（聖域パス・マージ権限・層間契約・課金/法務。正本は `references/pre-classification.md`、ここに再掲しない）に当たる。**W の上限は `opus` で、`model: fable` の W は `scripts/agent-model-guard.sh` に拒否される** |
 | R1（読んで判断する役） | `opus` | 仕様の対象がマージ条件・層間契約・課金/法務に触れるときは `subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` を付けない。聖域パスだけでは上げない） |
 | G（`dev-workflow:gate-runner`） | `sonnet` | 上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う |
 | V（画面確認役。`general-purpose`） | `sonnet` | 上げない |
@@ -265,7 +266,7 @@ W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 �
 | **interactive**（既定） | 人間が `/develop`・`/work-issue`・自然文で依頼 | そのセッション | AskUserQuestion で聞ける | (0)〜(4) 全部。複数 change はその場で change ごとに回す |
 | **unmanned**（`--unmanned`） | loop-dev-agent の憲法 Step 3 から | **憲法のメイン自身**が develop の本体を務め、W / R1 をメインが spawn する | 聞けない（1 サイクル 1 仕事） | (0)〜(3)。worktree は憲法側が用意したものを使う。(3) で W が Draft PR の作成と `agent-review:pending` の付与（憲法 Step 3 の 5〜6 に相当）まで行う。**(4) の G は起こさず**、憲法 Step 1（レビューモード）が次サイクル以降で担う |
 
-unmanned で複数 change に割れた場合は、W が change 単位で子 issue を作って `blocked_by` で順序付けし、元 issue に分割結果をコメントしてそのサイクルを終える（worker.md「分割判定」）。判断がつかないほど曖昧なら Discord で質問し、`needs-approval` を付けてサイクルを終える。
+unmanned で複数 change に割れた場合は、W が change 単位で子 issue を作って `blocked_by` で順序付けし、元 issue に分割結果をコメントしてそのサイクルを終える（`references/roles/worker/spec.md`「分割判定」）。判断がつかないほど曖昧なら Discord で質問し、`needs-approval` を付けてサイクルを終える。
 
 **仕様化判断の記録と仕様レビューは unmanned でも免除しない**（同じ書式で記録先に記録し、R1 の APPROVE まで W を apply に進めない）。
 
@@ -328,7 +329,7 @@ unmanned で複数 change に割れた場合は、W が change 単位で子 issu
 
 ## 参照
 
-- 役割の指示書: `references/roles/worker.md`（W）・`references/roles/spec-reviewer.md`（R1）・`references/roles/gate-runner.md`（G）
+- 役割の指示書: `references/roles/worker/`（W。索引は `references/roles/worker.md`）・`references/roles/spec-reviewer.md`（R1）・`references/roles/gate-runner.md`（G）
 - 仕様化要否・change 分割・残量モードの判定基準: `references/decision-criteria.md`
 - 昇格トリップワイヤーの常駐ルールテンプレート: `plugins/dev-workflow/templates/escalation-tripwires.md`
 - G の手順書: pr-review-gate の段のファイル（`skills/pr-review-gate/stages/` と `declarations.md`。索引は `skills/pr-review-gate/SKILL.md`、G が時点ごとに読むファイルは `references/roles/gate-runner.md` の表。記録先の探索順・仕様宣言の照合は据え置き）

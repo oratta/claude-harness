@@ -2,7 +2,7 @@
 #
 # 仕様化判断の記録と、書いた仕様の実装前レビュー（issue #191 → #203 で develop 構造に移行）
 #
-# develop スキルでは、W（references/roles/worker.md）が仕様化判断を固定書式で記録先に記録し、
+# develop スキルでは、W（references/roles/worker/spec.md）が仕様化判断を固定書式で記録先に記録し、
 # 本体の 1 ループ（SKILL.md）が W の openspec new change と W の再開（apply）の間に R1
 # （references/roles/spec-reviewer.md）の仕様レビューを挟むことを検証する。
 # 既存文（事前分類節・残量モード行）で偽合格しないよう、節を切り出してから grep する。
@@ -13,7 +13,7 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
-  WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
+  WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker/spec.md"
   REF="${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md"
   CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
@@ -21,7 +21,7 @@ setup() {
 }
 
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
-# worker.md の仕様化判断節
+# worker/spec.md の仕様化判断節
 decision_sec() { section "$WORKER" '仕様化判断'; }
 # SKILL.md の 1 ループ節
 loop_sec() { section "$SKILL" '1 ループ'; }

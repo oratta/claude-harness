@@ -23,9 +23,10 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 # 説明文の途中に出てくる "(3a)" / "(4)" のような参照では区切らない（本文に無害な行を足しても
 # 切り出し位置がずれないようにするため）。
 #   top_step 3  : 列 0 の "(3) " から次の列 0 の "(N) " の手前まで
-#   substep 3a  : インデントされた "(3a) " から次の "(3a)/(3b)" ラベルか列 0 の "(N) " の手前まで
+#   substep 3a  : インデントされた "(3a) " から次の "(3a)/(3b)/(3)" ラベルか列 0 の "(N) " の手前まで
+#                 （字下げした "(3) " の行は (3) 全体への注記で、(3a) にも (3b) にも属さない）
 top_step() { awk -v s="$1" '$0 ~ "^\\(" s "\\)[[:space:]]" {f=1; print; next} f && /^\([0-9]+\)[[:space:]]/ {f=0} f'; }
-substep() { awk -v s="$1" '$0 ~ "^[[:space:]]+\\(" s "\\)[[:space:]]" {f=1; print; next} f && (/^[[:space:]]+\(3[ab]\)[[:space:]]/ || /^\([0-9]+\)[[:space:]]/) {f=0} f'; }
+substep() { awk -v s="$1" '$0 ~ "^[[:space:]]+\\(" s "\\)[[:space:]]" {f=1; print; next} f && (/^[[:space:]]+\(3[ab]?\)[[:space:]]/ || /^\([0-9]+\)[[:space:]]/) {f=0} f'; }
 
 # 否定アサーション: refute "<本文>" -F|-E '<パターン>'
 # bats（bash の set -e）は `!` を先頭に付けたコマンドの失敗を無視するため、テストの最終行以外に
@@ -115,7 +116,7 @@ refute() {
   section '入口 0' | grep -qF '仕様化判断: する|しない'
   section '入口 0' | grep -qF '仕様レビュー: APPROVE|REQUEST_CHANGES'
   section '入口 0' | grep -F '仕様化判断: する|しない' | grep -q '記録先のコメント'
-  # 仕様宣言は記録先ではなく PR コメント（issue #212。pr-review-gate 手順 3-b / 5 と worker.md が正）:
+  # 仕様宣言は記録先ではなく PR コメント（issue #212。pr-review-gate 手順 3-b / 5 と worker/finish.md が正）:
   # 節内で仕様宣言に触れる行はすべて 'PR コメント' を含む（冒頭文の「…仕様宣言を置く「記録先」」の再発もここで落ちる）
   section '入口 0' | grep -q '仕様宣言'
   [ -z "$(section '入口 0' | grep '仕様宣言' | grep -v 'PR コメント')" ]
