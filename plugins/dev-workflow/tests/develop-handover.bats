@@ -95,6 +95,10 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 
 @test "hold.md step 6 guides the owner to a new session and lists no handover items" {
   grep -qF '/develop <記録先>' "$HOLD"
-  ! grep -qF '前任 W' "$HOLD"
-  ! grep -qF 'ラベルの付け先' "$HOLD"
+  ! grep -qF '前任 W' "$HOLD" || return 1
+  ! grep -qF 'ラベルの付け先' "$HOLD" || return 1
+}
+
+@test "loop: the token-cap exit 2 puts the label where the handover's label target says (PR if any, else the record)" {
+  awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF 'PR があれば PR、無ければ記録先に `needs-approval` を付け'
 }
