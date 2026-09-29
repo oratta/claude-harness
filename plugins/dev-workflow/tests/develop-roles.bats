@@ -649,6 +649,20 @@ extract_context_cap_section() {
   done
 }
 
+@test "gate-runner (#514): partitioned first pass reconciles union and routes residuals" {
+  first="$(section "$GATE" '一周目の三表を機械照合する')"
+  for token in 'レビュー重量:' '区画の数' '和集合' 'review-hit-set.py' 'P<k>-' '区画 1' '補足済み回数' 'レビュー三表:' '一周目の区画:' '区画に分けなかった'; do
+    echo "$first" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  for token in '足りない区画' 'ハンク' '照合表' '受け入れ条件'; do
+    echo "$first" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  supplement="$(section "$GATE" '補足レビュー結果の受領')"
+  echo "$supplement" | grep -qF '一周目の区画:'
+  echo "$supplement" | grep -qF '和集合'
+  echo "$supplement" | grep -qF '計算し直さない'
+}
+
 @test "gate-runner (#355): a no-findings summary cannot reach passing steps without all three tables" {
   line="$(grep -F '**レビュアーの要約受領**' "$GATE")"
   for token in '変更点の一覧' '照合表' 'ハンク被覆' '最初に' '照合が完了したあと' '不足' 'needs-reviewer' 'review-incomplete'; do

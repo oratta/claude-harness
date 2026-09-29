@@ -17,7 +17,9 @@
 | 順位 | 手段 | 使い方 | 使う条件 |
 |---|---|---|---|
 | **既定** | Codex CLI | `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` 直叩き、または companion 経由（`/codex:adversarial-review --background --base origin/main` / `codex:codex-rescue` サブエージェント） | **full** と判定したとき（full ではまずここから試す） |
-| フォールバック | Task サブエージェント | Agent ツール（`general-purpose`）に受け入れ条件＋diff 範囲＋`stages/reviewer-brief.md` のレビュアー向け指示ブロックを渡す | ① **light** と判定したとき（最初からこれ）② full だが Codex CLI が使えないとき（実測したバイナリ無し・認証切れ・タイムアウト） |
+| フォールバック | Task サブエージェント | Agent ツール（`general-purpose`）に受け入れ条件＋diff 範囲＋`stages/reviewer-brief.md` のレビュアー向け指示ブロックを渡す。差分が 600 行を超えた一周目は `stages/prepare.md` 2-0 の区画ごとに起こす | ① **light** と判定したとき（最初からこれ）② full だが Codex CLI が使えないとき（実測したバイナリ無し・認証切れ・タイムアウト） |
+
+Codex CLI は区画に分けず差分全体を渡す。150,000 トークンの上限は Claude のサブエージェントの hook の上限で Codex には掛からず、三表が欠けた場合は G の機械照合が fail-closed で止める。
 
 Codex を full の既定にする理由: **実装者と別モデル系列で読ませたほうがレビューの独立性が上がる**（同一モデルは同じ盲点を共有する）。加えて**レビューで Claude の 5h/7d 枠を消費しない**ので、枠を実装サイクルに残せる。
 

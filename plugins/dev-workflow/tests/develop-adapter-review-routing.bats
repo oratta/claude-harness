@@ -197,6 +197,13 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   [ "$a" -le "$b" ] && [ "$b" -le "$c" ]
 }
 
+@test "develop (#514): review dispatch preserves first-pass partition layout for supplement" {
+  s="$(step4)"
+  for token in 'executor が claude' '区画ごとに' '並列' 'Reviewer: 区画 <k>/<n> for PR #<N> (#<issue>)' 'executor が codex' '差分全体' '全区画の要約' 'G を 1 体' '残差のある区画だけ' '一周目の区画:' '計算し直さず' 'Reviewer: 補足 区画 <k>/<n> for PR #<N> (#<issue>)' '1 つの request' '接頭辞の無い ID' '元の三表を置き換えず' '補足済み回数'; do
+    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
 # ===== codex-develop.md（1.4） =====
 
 @test "codex-develop (#385): the G rule mentions the explicit adapter route line" {
