@@ -66,6 +66,6 @@ Claude entry は account=`current`、model=`haiku|sonnet|opus|fable`、非空の
 
 - ワークフロー実行のロール別ティア: このファイルの上半分
 - レビュー系の既定ティアと最上位ティアへの昇格条件: `dev-workflow:pr-review-gate`
-- 実装役（W）の事前分類: `plugins/dev-workflow/skills/develop/references/roles/worker.md`
+- 実装役（W）の事前分類: `plugins/dev-workflow/skills/develop/references/pre-classification.md`
 
 それらの網に無い**アドホックに立てるサブエージェント**（Explore / general-purpose 等）は上の原則で直接決める。

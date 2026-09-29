@@ -22,15 +22,15 @@ import usage_view  # noqa: E402
 CANONICAL_ROLES = ('spec-write', 'spec-review', 'implement', 'impl-review', 'review',
                    'decider', 'explore', 'summarize')
 PHASES = {
-    'spec': ('spec-write', 'worker.md'),
+    'spec': ('spec-write', 'worker/spec.md'),
     'spec-review': ('spec-review', 'spec-reviewer.md'),
-    'implement': ('implement', 'worker.md'),
-    'finish': ('implement', 'worker.md'),
+    'implement': ('implement', 'worker/implement.md'),
+    'finish': ('implement', 'worker/finish.md'),
     'gate': ('implement', 'gate-runner.md'),
     'review': ('impl-review', 'spec-reviewer.md'),
     'decider': ('decider', 'spec-reviewer.md'),
-    'explore': ('explore', 'worker.md'),
-    'summarize': ('summarize', 'worker.md'),
+    'explore': ('explore', 'worker/common.md'),
+    'summarize': ('summarize', 'worker/common.md'),
 }
 # The writers run with no OS sandbox and inherit the parent environment, exactly like the
 # Claude subagent each one mirrors, so they finish their own GitHub work. Every other role
@@ -458,6 +458,9 @@ def write(path, value):
 def prompt(phase, instructions, state):
     role, source = PHASES[phase]
     docs = [('agents/decider.md' if phase == 'decider' else 'skills/develop/references/roles/' + ('gate-runner.md' if phase == 'review' else source)), 'skills/develop/references/decision-criteria.md']
+    if source in ('worker/spec.md', 'worker/implement.md', 'worker/finish.md'):
+        # W の phase は全段で読む common.md と段のファイルを正本にする（explore / summarize は common.md だけ）
+        docs.insert(0, 'skills/develop/references/roles/worker/common.md')
     if phase == 'gate':
         docs += ['skills/pr-review-gate/SKILL.md', 'skills/pr-review-gate/declarations.md'] + [
             f'skills/pr-review-gate/stages/{s}.md' for s in ('prepare', 'review-run', 'reviewer-brief', 'triage', 'pass', 'hold')]
