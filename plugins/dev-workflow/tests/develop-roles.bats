@@ -168,6 +168,38 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   echo "$s" | grep -q '固定分'
 }
 
+# W の return に「読んだコードの要点」を載せ、後任は読む場所の案内として使う（#555）
+@test "worker: the context cap section defines the read-code pointers field (W only, file:line, 20 lines) and tells the successor to re-read before editing" {
+  s="$(section "$WORKER" 'コンテキスト上限と手渡し')"
+  [ -n "$s" ] || { echo "no context cap section in worker.md"; return 1; }
+  echo "$s" | grep -qF '読んだコードの要点'
+  echo "$s" | grep -qF 'W の場合のみ必須'
+  echo "$s" | grep -qF '20 行'
+  echo "$s" | grep -qF '<リポジトリ相対パス>:<開始行>-<終了行> — <分かったこと>'
+  # 手渡しで起こされたときの箇条に、要点は案内で編集前に自分で読んで確かめる旨がある
+  echo "$s" | grep -F '手渡しで起こされたら' | grep -qF '案内'
+  echo "$s" | grep -F '手渡しで起こされたら' | grep -qF '編集する前に該当範囲を自分で読んで確かめる'
+}
+
+@test "worker: (3a) return and the escalation tripwire list include the read-code pointers" {
+  a="$(section "$WORKER" '(3a) 実装＋verify')"
+  t="$(section "$WORKER" '昇格トリップワイヤー（W が return で報告する）')"
+  [ -n "$a" ] || { echo "no (3a) section in worker.md"; return 1; }
+  [ -n "$t" ] || { echo "no tripwire section in worker.md"; return 1; }
+  echo "$a" | grep -qF '読んだコードの要点'
+  echo "$t" | grep -qF '読んだコードの要点'
+}
+
+@test "worker: tasks.md and the no-spec return carry the touch range (file:line) that may drift" {
+  s="$(section "$WORKER" '仕様化する場合（(1) の終わり）')"
+  [ -n "$s" ] || { echo "no spec-writing section in worker.md"; return 1; }
+  echo "$s" | grep -qF '触る範囲: <パス>:<開始行>-<終了行>'
+  echo "$s" | grep -qF 'ずれうる'
+  echo "$s" | grep -qF '編集前に該当範囲を読む'
+  section "$WORKER" '仕様化判断（opsx / openspec の要否）と記録' \
+    | grep -F '仕様化しないと判定した場合は' | grep -qF '触る範囲:'
+}
+
 @test "worker: split judgement is based on the issue text, and unmanned splits into child issues with blocked_by" {
   grep -q 'dependencies/blocked_by' "$WORKER"
   grep -q 'references/decision-criteria.md' "$WORKER"
