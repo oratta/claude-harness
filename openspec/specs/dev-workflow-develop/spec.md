@@ -1144,42 +1144,33 @@ W の名前は書かない（新しいセッションでは SendMessage でき�
 - **WHEN** `references/roles/worker.md` の仕様化判断の節の、仕様化しないと判定した場合の段落を読む
 - **THEN** 作業項目ごとの `触る範囲:` を (1) の return に書くことが書かれている
 
-### Requirement: adapter 経路の本体は Claude のレビュアーを区画ごとに起こす
+### Requirement: W の 1 周目モデルの変更は過去 PR の再実行による比較記録に基づく
 
-develop の SKILL.md の (4) の `needs-reviewer` の手順は、phase `review` で選ばれた executor が claude で、G の payload の `区画:` に区画の一覧があるときは、区画ごとにレビュアーを 1 体ずつ並列に起こすことを書かなければならない（MUST）。各レビュアーの Agent の `description` は `Reviewer: 区画 <k>/<n> for PR #<N> (#<issue>)` の形にしなければならない（MUST。`subagent-context-audit.sh --by-role` が先頭トークン `Reviewer` でレビュアーに数えるため）。executor が codex のときは区画を使わず、差分全体を 1 つの request に渡さなければならない（MUST）。
+事前分類表（`references/pre-classification.md`）の「1 周目」列のモデルを変える場合は、変更の前に、過去にマージされた PR のうち issue の対象条件（聖域パス・スキル本文・hooks などに触れる）を満たし、事前分類に当たる W が元のモデルで実装したもの 3 件を、マージ前の base から新しいモデルの W で再実行し、元の実績と比べた記録を `plugins/dev-workflow/changes/<記録先 issue 番号>.md` に残さなければならない（MUST）。記録には対象 3 件の PR 番号、3 件それぞれのテスト結果（exit code）・ゲート指摘件数（severity が `blocking` かつ status が `confirmed` の件数。元 / 新の両方）・トリップワイヤー発火の有無（元 / 新の両方）を並べた表、再実行の W が新しいモデルで動いた証拠（subagent の jsonl の `"model"` 値の検索コマンドと結果）、判定（表を変えるか変えないか）とその根拠を含めなければならない（SHALL）。
 
-本体は全区画の要約が揃ってから、照合と振り分けの G を 1 体だけ新しく起こし、全区画の要約を `区画 <k>/<n>` の見出しを付けてまとめて渡さなければならない（MUST）。区画ごとに G を起こしてはならない（MUST NOT）。
+再実行のゲート指摘件数は、本体が再実行ごとに独立レビュアーを起動し、元のゲートと同じ指摘基準を渡して、指摘一覧をローカルの成果物として返させ、本体はその件数を集計するだけにしなければならない（MUST。本体はレビューを書かない）。
 
-#### Scenario: claude の executor で区画がある
+判定の「同等」は、次の 3 項目がすべて成り立つことを指す（SHALL）。(a) 各 PR で追加・変更されたテストと `bats plugins/dev-workflow/tests` が、再実行でも exit 0 である。(b) severity が `blocking` かつ status が `confirmed` の指摘件数が、元の件数以下である。(c) W のトリップワイヤー（規模超過・失敗ループ・仕様の発明）の発火が、元に無ければ再実行にも無い。3 件とも同等なら変える、1 件でも成り立たなければ変えない。テストの失敗、元のログの欠測、再実行やレビューの実行不能など証拠が足りない項目は同等と判定してはならない（MUST NOT。「変えない」に倒す）。結果を見てから規則を動かしてはならない（MUST NOT）。
 
-- **WHEN** G の `needs-reviewer` の payload に区画が 3 つあり、phase `review` の executor が claude である
-- **THEN** 本体はレビュアーを 3 体並列に起こし、`description` は `Reviewer: 区画 1/3 for PR #N (#issue)` の形で、3 体の要約が揃ってから照合と振り分けの G を 1 体起こして全区画の要約を渡す
+再実行の W は GitHub に書き込んではならない（MUST NOT。push・issue と PR へのコメント・PR 作成・ラベル付けをせず、ローカル commit とテスト実行までに留める）。変える場合でも W の上限は `opus` のままとし、R1・G・決める役のモデルと昇格ラダーは変えてはならない（MUST NOT）。変える場合は、`references/pre-classification.md` の表と `skills/develop/SKILL.md` の事前分類に関する記述、および既存要件（役割の指示書は references/roles/ に分かれている／役割のモデルは事前分類と残量モードで決める／W と G は役割ごとの種別で起こす）を、表を変える前の R1 再レビューで一緒に示さなければならない（MUST）。
 
-#### Scenario: codex の executor では区画を使わない
+この要件の守備範囲: 入力は、本体が集めた再実行の結果（bats の exit code、独立レビュアーの指摘一覧、W の return のトリップワイヤー記録）と、元の PR コメント・issue コメントから取った実績である。拾う誤りは、比べる証拠が足りないまま、または基準を動かしてモデルを下げること。通してよい入力の例は、3 件で指摘件数が元と同じ 0 件、元の Gate Result のコメントに件数が書かれているもの。同じ観点の別表現（例: `should` 1 件を `nit` と数えるレビュアーのぶれ）は、元と同じ指摘基準を渡す範囲で許容する。3 件では、まれにしか起きない失敗や、レビュアーの判断のぶれを見つけきれないが、それを塞ぎ切ることは完了条件にしない。表を変えたあとの品質低下は、W の失敗の return から Opus で再開する既存の昇格で拾う。
 
-- **WHEN** G の `needs-reviewer` の payload に区画があり、phase `review` の executor が codex である
-- **THEN** 本体は区画に分けず、差分全体を 1 つの request で Codex のレビュアーに渡す
+#### Scenario: 記録に 3 件の比較表がある
+- **WHEN** 事前分類表のモデルを変える検証の記録 `plugins/dev-workflow/changes/<記録先 issue 番号>.md` を読む
+- **THEN** 対象 3 件の PR 番号と、各件のテスト結果・ゲート指摘件数・トリップワイヤー発火の有無が元 / 新の別で並んだ表があり、`grep -cE '^\| *#[0-9]+'` が 3 以上を返す
 
-### Requirement: 補足は一周目の区画の構成のまま、選び直した executor で残差だけを補う
+#### Scenario: 新しいモデルで動いた証拠がある
+- **WHEN** 記録の「新しいモデルで動いた証拠」を読む
+- **THEN** 再実行の W の subagent jsonl に対する `grep -o '"model":"<新しいモデルの ID>"'` のコマンドと 1 件以上のヒット結果が書かれている
 
-一周目照合の補足要求（`needs-reviewer` の補足 payload）でも、本体は既存要件「本体は adapter 経路の needs-reviewer で phase review の投げ先を選び直して記録する」のとおり phase `review` の投げ先を選び直す。SKILL.md の (4) は、選び直しで executor が一周目と変わっても変わらなくても、補足を一周目の区画の構成（G が `レビュー三表:` のコメントと補足 payload に書いた `一周目の区画:`）のまま行うことを書かなければならない（MUST）。補足のときに区画を計算し直してはならず、差分全体のレビューを始めてはならない（MUST NOT）。一周目の三表の変更点 ID と finding ID はそのまま残し、補った項目にも一周目と同じ ID の付け方（区画があれば補足先の区画の `P<k>-`、区画が無ければ接頭辞なし）を使わなければならない（MUST）。既存の「元の三表を置き換えず、残差に挙げた不足した項目だけを補う」と「補足は PR 全体で 1 回まで（補足済み回数は PR で 1 つ）」は変えない（MUST）。
+#### Scenario: 証拠が足りない項目は同等にならない
+- **WHEN** 3 件のうち 1 件でテストが失敗した、または元のゲート指摘件数が取れなかった
+- **THEN** 判定は「変えない」で、事前分類表は従来のままである
 
-executor ごとの起こし方は次のとおりとしなければならない（MUST）:
-
-- 一周目に区画があり、補足の executor が claude: 残差のある区画だけに補足のレビュアーを 1 体ずつ起こし、その区画の元の三表と残差を渡す。`description` は `Reviewer: 補足 区画 <k>/<n> for PR #<N> (#<issue>)` とする
-- 一周目に区画があり、補足の executor が codex: 1 つの request に、残差のある区画ごとに区画の番号・その区画のファイル一覧・元の三表・残差を分けて載せ、区画ごとに `P<k>-` の ID で補わせる。差分全体のレビューは頼まない
-- 一周目に区画が無く（一周目が Codex、または `区画: なし`）、補足の executor が claude: 補足のレビュアーを 1 体だけ起こし、1 組の元の三表と残差を渡して接頭辞の無い ID で補わせる。payload の `区画:` に区画の一覧があっても区画ごとに起こさない
-- 一周目に区画が無く、補足の executor が codex: 今までどおり 1 つの request で補わせる
-
-#### Scenario: 区画に分けた Claude の一周目のあと、補足で Codex が選ばれる
-
-- **WHEN** 一周目は claude で 3 区画に分けてレビューし、G が区画 2 と区画 3 に残差を出して `一周目の区画: 3` の補足 payload を返し、補足の選び直しで executor が codex になる
-- **THEN** 本体は 1 つの request に区画 2 と区画 3 の番号・ファイル一覧・元の三表・残差を分けて載せ、`P2-`・`P3-` の ID で不足分だけを補わせ、差分全体のレビューも区画 1 の補足も頼まない。補足済み回数は PR で 1 のまま
-
-#### Scenario: 区画に分けなかった Codex の一周目のあと、補足で Claude が選ばれる
-
-- **WHEN** 一周目は codex で差分全体を 1 体で見て（payload の `区画:` には 3 区画があった）、G が `一周目の区画: なし` の補足 payload を返し、補足の選び直しで executor が claude になる
-- **THEN** 本体は補足のレビュアーを 1 体だけ起こし、1 組の元の三表と残差を渡して接頭辞の無い ID で不足分だけを補わせ、区画ごとに起こさず差分全体のレビューも始めない
+#### Scenario: 独立レビュアーが指摘を数える
+- **WHEN** 再実行のゲート指摘件数を集める手順を読む
+- **THEN** 本体は独立レビュアーを起動して指摘一覧をローカルの成果物で受け取り、件数の集計だけを行う
 
 ### Requirement: W の指示書は索引・共通・段のファイルに分かれている
 
@@ -1350,3 +1341,39 @@ W の指示書の読み込み量は、`plugins/dev-workflow/scripts/subagent-con
 - **WHEN** 計測に使った W が変更後の指示書を `plugins/cache/oratta-claude-harness/` を含まないパス（worktree の中など）から読んでいた
 - **THEN** その個体は値ではなく、測れなかった個体として理由とともに記録されている
 
+### Requirement: adapter 経路の本体は Claude のレビュアーを区画ごとに起こす
+
+develop の SKILL.md の (4) の `needs-reviewer` の手順は、phase `review` で選ばれた executor が claude で、G の payload の `区画:` に区画の一覧があるときは、区画ごとにレビュアーを 1 体ずつ並列に起こすことを書かなければならない（MUST）。各レビュアーの Agent の `description` は `Reviewer: 区画 <k>/<n> for PR #<N> (#<issue>)` の形にしなければならない（MUST。`subagent-context-audit.sh --by-role` が先頭トークン `Reviewer` でレビュアーに数えるため）。executor が codex のときは区画を使わず、差分全体を 1 つの request に渡さなければならない（MUST）。
+
+本体は全区画の要約が揃ってから、照合と振り分けの G を 1 体だけ新しく起こし、全区画の要約を `区画 <k>/<n>` の見出しを付けてまとめて渡さなければならない（MUST）。区画ごとに G を起こしてはならない（MUST NOT）。
+
+#### Scenario: claude の executor で区画がある
+
+- **WHEN** G の `needs-reviewer` の payload に区画が 3 つあり、phase `review` の executor が claude である
+- **THEN** 本体はレビュアーを 3 体並列に起こし、`description` は `Reviewer: 区画 1/3 for PR #N (#issue)` の形で、3 体の要約が揃ってから照合と振り分けの G を 1 体起こして全区画の要約を渡す
+
+#### Scenario: codex の executor では区画を使わない
+
+- **WHEN** G の `needs-reviewer` の payload に区画があり、phase `review` の executor が codex である
+- **THEN** 本体は区画に分けず、差分全体を 1 つの request で Codex のレビュアーに渡す
+
+### Requirement: 補足は一周目の区画の構成のまま、選び直した executor で残差だけを補う
+
+一周目照合の補足要求（`needs-reviewer` の補足 payload）でも、本体は既存要件「本体は adapter 経路の needs-reviewer で phase review の投げ先を選び直して記録する」のとおり phase `review` の投げ先を選び直す。SKILL.md の (4) は、選び直しで executor が一周目と変わっても変わらなくても、補足を一周目の区画の構成（G が `レビュー三表:` のコメントと補足 payload に書いた `一周目の区画:`）のまま行うことを書かなければならない（MUST）。補足のときに区画を計算し直してはならず、差分全体のレビューを始めてはならない（MUST NOT）。一周目の三表の変更点 ID と finding ID はそのまま残し、補った項目にも一周目と同じ ID の付け方（区画があれば補足先の区画の `P<k>-`、区画が無ければ接頭辞なし）を使わなければならない（MUST）。既存の「元の三表を置き換えず、残差に挙げた不足した項目だけを補う」と「補足は PR 全体で 1 回まで（補足済み回数は PR で 1 つ）」は変えない（MUST）。
+
+executor ごとの起こし方は次のとおりとしなければならない（MUST）:
+
+- 一周目に区画があり、補足の executor が claude: 残差のある区画だけに補足のレビュアーを 1 体ずつ起こし、その区画の元の三表と残差を渡す。`description` は `Reviewer: 補足 区画 <k>/<n> for PR #<N> (#<issue>)` とする
+- 一周目に区画があり、補足の executor が codex: 1 つの request に、残差のある区画ごとに区画の番号・その区画のファイル一覧・元の三表・残差を分けて載せ、区画ごとに `P<k>-` の ID で補わせる。差分全体のレビューは頼まない
+- 一周目に区画が無く（一周目が Codex、または `区画: なし`）、補足の executor が claude: 補足のレビュアーを 1 体だけ起こし、1 組の元の三表と残差を渡して接頭辞の無い ID で補わせる。payload の `区画:` に区画の一覧があっても区画ごとに起こさない
+- 一周目に区画が無く、補足の executor が codex: 今までどおり 1 つの request で補わせる
+
+#### Scenario: 区画に分けた Claude の一周目のあと、補足で Codex が選ばれる
+
+- **WHEN** 一周目は claude で 3 区画に分けてレビューし、G が区画 2 と区画 3 に残差を出して `一周目の区画: 3` の補足 payload を返し、補足の選び直しで executor が codex になる
+- **THEN** 本体は 1 つの request に区画 2 と区画 3 の番号・ファイル一覧・元の三表・残差を分けて載せ、`P2-`・`P3-` の ID で不足分だけを補わせ、差分全体のレビューも区画 1 の補足も頼まない。補足済み回数は PR で 1 のまま
+
+#### Scenario: 区画に分けなかった Codex の一周目のあと、補足で Claude が選ばれる
+
+- **WHEN** 一周目は codex で差分全体を 1 体で見て（payload の `区画:` には 3 区画があった）、G が `一周目の区画: なし` の補足 payload を返し、補足の選び直しで executor が claude になる
+- **THEN** 本体は補足のレビュアーを 1 体だけ起こし、1 組の元の三表と残差を渡して接頭辞の無い ID で不足分だけを補わせ、区画ごとに起こさず差分全体のレビューも始めない
