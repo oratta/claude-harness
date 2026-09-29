@@ -16,7 +16,7 @@
   flatmate が保守する正本で、harness 側にテンプレートや再生成手順は無い）が同じ条件を
   組み込んでいる。手動コピーは不要。
 - develop スキルの W（サブエージェント）は hook 注入を受けないため、W の指示書
-  （skills/develop/references/roles/worker.md）が同じ条件を return の契機として持つ。
+  （skills/develop/references/roles/worker/common.md「昇格トリップワイヤー」）が同じ条件を return の契機として持つ。
 - このテンプレートは「いつ手を止めるか」だけを定義する。「どう実行するか」は発火先
   （develop の本体、Workflow 実行の型 references/workflow-execution.md、/opsx:explore 等）が持つ。
   ここに実行手順を書き足さないこと。

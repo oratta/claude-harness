@@ -2,7 +2,8 @@
 #
 # develop スキルの役割別指示書（W / R1 / G）の構造検証（issue #203）
 #
-#   references/roles/worker.md        W: 仕様化判断の記録・Draft PR 記録先の作成順序・事前分類表・TDD
+#   references/roles/worker/*.md      W: 仕様化判断の記録・Draft PR 記録先の作成順序・TDD（索引は references/roles/worker.md、#556）
+#   references/pre-classification.md  事前分類表（#556 で worker.md から移した）
 #   references/roles/spec-reviewer.md R1: 6 観点（守備範囲を含む）・読み取り専用・2 周キャップ・結果書式・判断記録の契約
 #   references/roles/gate-runner.md   G: pr-review-gate 手順 1〜5・Codex の呼び方・needs-reviewer・failed の原因分類
 #
@@ -19,16 +20,24 @@ setup() {
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   ROLES="${PLUGIN_DIR}/skills/develop/references/roles"
   WORKER="${ROLES}/worker.md"
+  W_COMMON="${ROLES}/worker/common.md"
+  W_SPEC="${ROLES}/worker/spec.md"
+  W_IMPL="${ROLES}/worker/implement.md"
+  W_FINISH="${ROLES}/worker/finish.md"
+  PRE="${PLUGIN_DIR}/skills/develop/references/pre-classification.md"
   REVIEWER="${ROLES}/spec-reviewer.md"
   GATE="${ROLES}/gate-runner.md"
 }
 
 # G の否定の検査（その文言が G の読むどこにも無いこと）は gate-runner.md と段のファイル全部で見る
 gate_all() { cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; }
+# W の否定の検査（その文言が W の指示書のどこにも無いこと）は索引・worker/ の 4 本・pre-classification.md の全部で見る（#556）
+worker_all() { cat "$WORKER" "$W_COMMON" "$W_SPEC" "$W_IMPL" "$W_FINISH" "$PRE"; }
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
 
 @test "roles: all three role files exist" {
   [ -f "$WORKER" ]
+  [ -f "$W_COMMON" ] && [ -f "$W_SPEC" ] && [ -f "$W_IMPL" ] && [ -f "$W_FINISH" ]
   [ -f "$REVIEWER" ]
   [ -f "$GATE" ]
 }
@@ -36,87 +45,87 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 # ===== worker.md =====
 
 @test "worker: does not re-run openspec new change when artifacts exist" {
-  grep -qF '`openspec new change` を再実行しない' "$WORKER"
-  grep -qF 'そのまま' "$WORKER"
+  grep -qF '`openspec new change` を再実行しない' "$W_SPEC"
+  grep -qF 'そのまま' "$W_SPEC"
 }
 
 
 @test "worker: records the spec decision with the exact first-line regex via gh, and does not proceed before" {
-  grep -qF '^仕様化判断: (する|しない)$' "$WORKER"
-  grep -qE 'gh (issue|pr) comment' "$WORKER"
-  grep -qE '記録(する|して)(前|まで)|記録せずに.*進(ま|んでは)' "$WORKER"
+  grep -qF '^仕様化判断: (する|しない)$' "$W_SPEC"
+  grep -qE 'gh (issue|pr) comment' "$W_SPEC"
+  grep -qE '記録(する|して)(前|まで)|記録せずに.*進(ま|んでは)' "$W_SPEC"
 }
 
 @test "worker: also carries the spec review result format for the record target" {
-  grep -qF '^仕様レビュー: (APPROVE|REQUEST_CHANGES)$' "$WORKER"
+  grep -qF '^仕様レビュー: (APPROVE|REQUEST_CHANGES)$' "$W_COMMON"
 }
 
 @test "worker: Draft PR record target is created (empty commit -> push -> draft) before the spec decision" {
-  grep -q 'git commit --allow-empty' "$WORKER"
-  grep -q 'git push' "$WORKER"
-  grep -q 'gh pr create --draft' "$WORKER"
-  draft="$(grep -n 'gh pr create --draft' "$WORKER" | head -1 | cut -d: -f1)"
-  decision="$(grep -nF '^仕様化判断: (する|しない)$' "$WORKER" | head -1 | cut -d: -f1)"
+  grep -q 'git commit --allow-empty' "$W_SPEC"
+  grep -q 'git push' "$W_SPEC"
+  grep -q 'gh pr create --draft' "$W_SPEC"
+  draft="$(grep -n 'gh pr create --draft' "$W_SPEC" | head -1 | cut -d: -f1)"
+  decision="$(grep -nF '^仕様化判断: (する|しない)$' "$W_SPEC" | head -1 | cut -d: -f1)"
   [ "$draft" -lt "$decision" ]
 }
 
 @test "worker: PR body carries acceptance criteria and no Closes/Fixes/Refs when the PR is the record target" {
-  grep -qE '受け入れ条件.*PR 本文|PR 本文.*受け入れ条件' "$WORKER"
-  grep -qE '(Closes|Fixes|Refs).*(書かない|書いてはならない)' "$WORKER"
+  grep -qE '受け入れ条件.*PR 本文|PR 本文.*受け入れ条件' "$W_SPEC"
+  grep -qE '(Closes|Fixes|Refs).*(書かない|書いてはならない)' "$W_SPEC"
 }
 
 @test "worker: never creates a worktree itself (main prepares it)" {
-  grep -qE 'worktree.*(切らない|作らない)' "$WORKER"
-  ! grep -q 'git worktree add' "$WORKER" || return 1
+  grep -qE 'worktree.*(切らない|作らない)' "$W_COMMON"
+  ! worker_all | grep -q 'git worktree add' || return 1
 }
 
 @test "worker: pre-classification table names all 4 categories and is the single source" {
-  grep -qF '重要実装の事前分類' "$WORKER"
-  grep -qF '聖域パス' "$WORKER"
-  grep -qF 'マージ権限' "$WORKER"
-  grep -qF '層間契約' "$WORKER"
-  grep -qF '課金/法務' "$WORKER"
-  grep -q '正本' "$WORKER"
+  grep -qF '重要実装の事前分類' "$PRE"
+  grep -qF '聖域パス' "$PRE"
+  grep -qF 'マージ権限' "$PRE"
+  grep -qF '層間契約' "$PRE"
+  grep -qF '課金/法務' "$PRE"
+  grep -q '正本' "$PRE"
 }
 
 @test "worker: fable from the first round, AGENT_MODEL unchanged, budget modes cap escalation" {
-  grep -qF '`model: fable`' "$WORKER"
-  grep -q '最初から' "$WORKER"
-  grep -qF 'AGENT_MODEL' "$WORKER"
-  grep -qF 'FABLE_BUDGET_MODE=reserve' "$WORKER"
-  grep -qF 'exhausted' "$WORKER"
+  grep -qF '`model: fable`' "$PRE"
+  grep -q '最初から' "$PRE"
+  grep -qF 'AGENT_MODEL' "$PRE"
+  grep -qF 'FABLE_BUDGET_MODE=reserve' "$PRE"
+  grep -qF 'exhausted' "$PRE"
 }
 
 @test "worker: fallback record format points back to pr-review-gate" {
-  grep -qF 'pr-review-gate' "$WORKER"
+  grep -qF 'pr-review-gate' "$PRE"
 }
 
 @test "worker: openspec CLI degraded path returns to main for the same spec review" {
-  grep -A3 'openspec CLI で artifact を作る場合' "$WORKER" | grep -q '仕様レビュー'
-  grep -A3 'openspec CLI で artifact を作る場合' "$WORKER" | grep -q 'return'
+  grep -A3 'openspec CLI で artifact を作る場合' "$W_SPEC" | grep -q '仕様レビュー'
+  grep -A3 'openspec CLI で artifact を作る場合' "$W_SPEC" | grep -q 'return'
 }
 
 @test "worker: spec path returns after openspec new change and does not apply before R1 APPROVE" {
-  grep -q 'openspec new change' "$WORKER"
-  grep -q 'openspec validate' "$WORKER"
-  grep -qE 'APPROVE.*(まで|前).*(apply|実装).*(進まない|進んではならない|入らない)|(apply|実装).*APPROVE.*(まで|前)' "$WORKER"
+  grep -q 'openspec new change' "$W_SPEC"
+  grep -q 'openspec validate' "$W_IMPL"
+  grep -qE 'APPROVE.*(まで|前).*(apply|実装).*(進まない|進んではならない|入らない)|(apply|実装).*APPROVE.*(まで|前)' "$W_SPEC"
 }
 
 @test "worker: TDD with evidence-backed completion, no execution-strategy branches" {
-  grep -q 'Red' "$WORKER"
-  grep -q 'Green' "$WORKER"
-  grep -q 'exit code' "$WORKER"
-  ! grep -q 'delegate+verify' "$WORKER" || return 1
-  ! grep -q 'workflow 型' "$WORKER" || return 1
-  ! grep -q 'solo' "$WORKER" || return 1
+  grep -q 'Red' "$W_IMPL"
+  grep -q 'Green' "$W_IMPL"
+  grep -q 'exit code' "$W_IMPL"
+  ! worker_all | grep -q 'delegate+verify' || return 1
+  ! worker_all | grep -q 'workflow 型' || return 1
+  ! worker_all | grep -q 'solo' || return 1
 }
 
 # (3) は (3a) 実装＋verify と (3b) archive＋PR＋仕様宣言 の 2 回の return に分かれる（#262）。
 @test "worker: (3a) and (3b) are separate sections that each list their return contents" {
-  a="$(section "$WORKER" '(3a) 実装＋verify')"
-  b="$(section "$WORKER" '(3b) archive＋PR＋仕様宣言')"
-  [ -n "$a" ] || { echo "no (3a) section in worker.md"; return 1; }
-  [ -n "$b" ] || { echo "no (3b) section in worker.md"; return 1; }
+  a="$(section "$W_IMPL" '(3a) 実装＋verify')"
+  b="$(section "$W_FINISH" '(3b) archive＋PR＋仕様宣言')"
+  [ -n "$a" ] || { echo "no (3a) section in worker/implement.md"; return 1; }
+  [ -n "$b" ] || { echo "no (3b) section in worker/finish.md"; return 1; }
   # (3a): 実装と verify まで。archive には進まない
   echo "$a" | grep -qF '工程完了: 実装＋verify'
   echo "$a" | grep -q '検査コマンド'
@@ -137,8 +146,8 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 # ゲート合格まで PR を Draft のまま進める（#304）。W は Ready にせず、G が pr-review-gate 手順 5 で行う。
 @test "worker: (3b) keeps the PR as Draft (gh pr create --draft) and leaves Ready to G" {
-  b="$(section "$WORKER" '(3b) archive＋PR＋仕様宣言')"
-  [ -n "$b" ] || { echo "no (3b) section in worker.md"; return 1; }
+  b="$(section "$W_FINISH" '(3b) archive＋PR＋仕様宣言')"
+  [ -n "$b" ] || { echo "no (3b) section in worker/finish.md"; return 1; }
   echo "$b" | grep -q 'Draft のまま'
   echo "$b" | grep -qF 'gh pr create --draft'
   echo "$b" | grep -F 'Ready 化' | grep -qF '手順 5'
@@ -151,27 +160,32 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 # opsx スラッシュコマンドが無く openspec CLI だけある経路も、(3a)/(3b) の区切りは同じでなければ
 # ならない（#262 のゲート指摘。この段落だけ旧来の「実装 → archive」一括のまま残っていた）。
 @test "worker: CLI path stops at verify in (3a) and archives in (3b)" {
-  s="$(section "$WORKER" '仕様化する場合（(1) の終わり）')"
-  [ -n "$s" ] || { echo "no spec-writing section in worker.md"; return 1; }
-  section "$WORKER" '(3a) 実装＋verify' | grep -qF 'openspec validate <change-name> --strict'
-  section "$WORKER" '(3b) archive＋PR＋仕様宣言' | grep -qF 'openspec archive <change-name>'
+  s="$(section "$W_SPEC" '仕様化する場合（(1) の終わり）')"
+  [ -n "$s" ] || { echo "no spec-writing section in worker/spec.md"; return 1; }
+  section "$W_IMPL" '(3a) 実装＋verify' | grep -qF 'openspec validate <change-name> --strict'
+  section "$W_FINISH" '(3b) archive＋PR＋仕様宣言' | grep -qF 'openspec archive <change-name>'
 
 }
 
 @test "worker: the context cap section names the three stages and forbids finer splits" {
-  s="$(section "$WORKER" 'コンテキスト上限と手渡し')"
-  [ -n "$s" ] || { echo "no context cap section in worker.md"; return 1; }
+  s="$(section "$W_COMMON" 'コンテキスト上限と手渡し')"
+  [ -n "$s" ] || { echo "no context cap section in worker/common.md"; return 1; }
   echo "$s" | grep -qF '(1) 仕様化まで'
   echo "$s" | grep -qF '(3a) 実装＋verify'
   echo "$s" | grep -qF '(3b) archive＋PR＋仕様宣言'
-  echo "$s" | grep -qF 'これより細かく'
-  echo "$s" | grep -q '固定分'
+  # 「(3) をこれより細かく切らない」の箇条は本体向けの理由なので develop の SKILL.md の (3) に移した（#556）
+  if echo "$s" | grep -qF 'これより細かく'; then echo "common.md に (3) を細かく切らない箇条が残っている" >&2; return 1; fi
+  step3="$(awk '/^\(3\) W を SendMessage で再開/{f=1} f&&/^\(4\) /{exit} f' "${PLUGIN_DIR}/skills/develop/SKILL.md")"
+  echo "$step3" | grep -qF 'これより細かく'
+  echo "$step3" | grep -q '固定分'
+  echo "$step3" | grep -qF 'Red のまま止まったテストから再出発'
+  if echo "$step3" | grep -qF '理由の正本は references/roles/worker.md'; then echo "SKILL.md の (3) が worker.md を理由の正本として指している" >&2; return 1; fi
 }
 
 # W の return に「読んだコードの要点」を載せ、後任は読む場所の案内として使う（#555）
 @test "worker: the context cap section defines the read-code pointers field (W only, file:line, 20 lines) and tells the successor to re-read before editing" {
-  s="$(section "$WORKER" 'コンテキスト上限と手渡し')"
-  [ -n "$s" ] || { echo "no context cap section in worker.md"; return 1; }
+  s="$(section "$W_COMMON" 'コンテキスト上限と手渡し')"
+  [ -n "$s" ] || { echo "no context cap section in worker/common.md"; return 1; }
   echo "$s" | grep -qF '読んだコードの要点'
   echo "$s" | grep -qF 'W の場合のみ必須'
   echo "$s" | grep -qF '20 行'
@@ -182,27 +196,27 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "worker: (3a) return and the escalation tripwire list include the read-code pointers" {
-  a="$(section "$WORKER" '(3a) 実装＋verify')"
-  t="$(section "$WORKER" '昇格トリップワイヤー（W が return で報告する）')"
-  [ -n "$a" ] || { echo "no (3a) section in worker.md"; return 1; }
-  [ -n "$t" ] || { echo "no tripwire section in worker.md"; return 1; }
+  a="$(section "$W_IMPL" '(3a) 実装＋verify')"
+  t="$(section "$W_COMMON" '昇格トリップワイヤー（W が return で報告する）')"
+  [ -n "$a" ] || { echo "no (3a) section in worker/implement.md"; return 1; }
+  [ -n "$t" ] || { echo "no tripwire section in worker/common.md"; return 1; }
   echo "$a" | grep -qF '読んだコードの要点'
   echo "$t" | grep -qF '読んだコードの要点'
 }
 
 @test "worker: tasks.md and the no-spec return carry the touch range (file:line) that may drift" {
-  s="$(section "$WORKER" '仕様化する場合（(1) の終わり）')"
-  [ -n "$s" ] || { echo "no spec-writing section in worker.md"; return 1; }
+  s="$(section "$W_SPEC" '仕様化する場合（(1) の終わり）')"
+  [ -n "$s" ] || { echo "no spec-writing section in worker/spec.md"; return 1; }
   echo "$s" | grep -qF '触る範囲: <パス>:<開始行>-<終了行>'
   echo "$s" | grep -qF 'ずれうる'
   echo "$s" | grep -qF '編集前に該当範囲を読む'
-  section "$WORKER" '仕様化判断（opsx / openspec の要否）と記録' \
+  section "$W_SPEC" '仕様化判断（opsx / openspec の要否）と記録' \
     | grep -F '仕様化しないと判定した場合は' | grep -qF '触る範囲:'
 }
 
 @test "worker: split judgement is based on the issue text, and unmanned splits into child issues with blocked_by" {
-  grep -q 'dependencies/blocked_by' "$WORKER"
-  grep -q 'references/decision-criteria.md' "$WORKER"
+  grep -q 'dependencies/blocked_by' "$W_SPEC"
+  grep -q 'references/decision-criteria.md' "$W_SPEC"
 }
 
 # ===== spec-reviewer.md =====
@@ -255,11 +269,11 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   section "$REVIEWER" '判断記録の契約' | grep -qF '^仕様化判断: (する|しない)$'
 }
 
-@test "reviewer: spawned with explicit model, default opus, fable via worker.md pre-classification" {
+@test "reviewer: spawned with explicit model, default opus, fable via pre-classification.md" {
   grep -q 'model' "$REVIEWER"
   grep -q '`opus`' "$REVIEWER"
   grep -qE '事前分類.*fable|fable.*事前分類' "$REVIEWER"
-  grep -q 'worker.md' "$REVIEWER"
+  grep -q 'pre-classification.md' "$REVIEWER"
 }
 
 @test "reviewer: reserve only for automatic runs, exhausted for all paths" {
@@ -440,7 +454,7 @@ extract_context_cap_section() {
 @test "context cap: the other five faces point at the canonical section and restate nothing" {
   faces=(
     "${PLUGIN_DIR}/skills/develop/SKILL.md"
-    "${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
+    "${PLUGIN_DIR}/skills/develop/references/roles/worker/common.md"
     "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
     "${PLUGIN_DIR}/templates/escalation-tripwires.md"
     "${PLUGIN_DIR}/README.md"
@@ -461,8 +475,8 @@ extract_context_cap_section() {
 }
 
 @test "context cap: worker.md tells the handoff target to look at uncommitted changes first" {
-  grep -q '未コミット差分' "$WORKER"
-  grep -q 'git status' "$WORKER"
+  grep -q '未コミット差分' "$W_COMMON"
+  grep -q 'git status' "$W_COMMON"
 }
 
 @test "context cap: gate-runner returns the review body when the hard stop denies gh" {
@@ -613,10 +627,10 @@ extract_context_cap_section() {
 }
 
 @test "worker (#354): W posts the row-3 table with the search command before pushing, and records row-4 fixes" {
-  [ "$(grep -c '検索コマンド' "$WORKER")" -ge 1 ]
-  grep -qF '投稿してから push' "$WORKER"
-  grep -qF 'SKILL.md 手順 2-1 の仕分け表の順 3' "$WORKER"
-  ret="$(awk '/^\*\*\(3a\) の return に書くこと\*\*/{f=1} f&&/^## /{exit} f' "$WORKER")"
+  [ "$(grep -c '検索コマンド' "$W_IMPL")" -ge 1 ]
+  grep -qF '投稿してから push' "$W_IMPL"
+  grep -qF 'SKILL.md 手順 2-1 の仕分け表の順 3' "$W_IMPL"
+  ret="$(awk '/^\*\*\(3a\) の return に書くこと\*\*/{f=1} f&&/^## /{exit} f' "$W_IMPL")"
   echo "$ret" | grep -qF '受け入れ条件の外・その場で直した・直し方 N 行'
 }
 
@@ -736,20 +750,20 @@ extract_context_cap_section() {
 }
 
 @test "worker (#357): the row-3 list paragraph records the pre-fix SHA and does not restate the columns" {
-  para="$(grep -F '**G から一覧を求められた指摘' "$WORKER")"
+  para="$(grep -F '**G から一覧を求められた指摘' "$W_IMPL")"
   echo "$para" | grep -qF '修正前 SHA'
   echo "$para" | grep -qF '修正に着手する直前の HEAD'
   echo "$para" | grep -qF 'SKILL.md 手順 2-1 の仕分け表の順 3'
-  run grep -F '| ファイル | 行（修正前 SHA） |' "$WORKER"
+  run sh -c "cat \"$WORKER\" \"$W_COMMON\" \"$W_SPEC\" \"$W_IMPL\" \"$W_FINISH\" \"$PRE\" | grep -F '| ファイル | 行（修正前 SHA） |'"
   [ "$status" -ne 0 ]
 }
 
 @test "worker (#377): the row-3 list paragraph puts rewritten not-applicable rows in the rewritten-rows table without restating its columns" {
-  para="$(grep -F '**G から一覧を求められた指摘' "$WORKER")"
+  para="$(grep -F '**G から一覧を求められた指摘' "$W_IMPL")"
   echo "$para" | grep -qF '`### 書き換えた該当しない行`'
   echo "$para" | grep -qF '主表の本文は修正前のまま'
   echo "$para" | grep -qF '修正後の本文'
-  run grep -F '| 修正後の本文 |' "$WORKER"
+  run sh -c "cat \"$WORKER\" \"$W_COMMON\" \"$W_SPEC\" \"$W_IMPL\" \"$W_FINISH\" \"$PRE\" | grep -F '| 修正後の本文 |'"
   [ "$status" -ne 0 ]
 }
 
@@ -931,18 +945,18 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -E '^\| 画面確認' "$skill" | grep -qF '**V**'
   section "$skill" '1 ループ' | grep -qF 'subagent_type: dev-workflow:worker'
   section "$skill" '1 ループ' | grep -qF 'subagent_type: dev-workflow:gate-runner'
-  grep -m1 'subagent_type: dev-workflow:worker' "$WORKER"
+  grep -m1 'subagent_type: dev-workflow:worker' "$W_COMMON"
   grep -m1 'subagent_type: dev-workflow:gate-runner' "$GATE"
-  ! grep -q 'W が `/wt-setup`' "$WORKER" || return 1
+  ! worker_all | grep -q 'W が `/wt-setup`' || return 1
   section "$skill" 'worktree の用意' | grep -qF '/wt-setup'
-  grep -qF 'openspec new change' "$WORKER"
-  grep -qF 'openspec validate' "$WORKER"
-  grep -qF 'openspec archive' "$WORKER"
-  if section "$WORKER" '(3a) 実装＋verify' | grep -qF '/opsx:'; then return 1; fi
-  if section "$WORKER" '(3b) archive＋PR＋仕様宣言' | grep -qF '/opsx:'; then return 1; fi
-  if grep '/opsx:' "$WORKER" | grep -v -e 本体 -e 主; then return 1; fi
-  ! grep -qF 'ls .claude/commands/opsx/' "$WORKER" || return 1
-  grep -qF 'openspec --version' "$WORKER"
+  grep -qF 'openspec new change' "$W_SPEC"
+  grep -qF 'openspec validate' "$W_IMPL"
+  grep -qF 'openspec archive' "$W_FINISH"
+  if section "$W_IMPL" '(3a) 実装＋verify' | grep -qF '/opsx:'; then return 1; fi
+  if section "$W_FINISH" '(3b) archive＋PR＋仕様宣言' | grep -qF '/opsx:'; then return 1; fi
+  if worker_all | grep '/opsx:' | grep -v -e 本体 -e 主; then return 1; fi
+  ! worker_all | grep -qF 'ls .claude/commands/opsx/' || return 1
+  grep -qF 'openspec --version' "$W_SPEC"
   loop="$(section "$skill" '1 ループ')"
   if echo "$loop" | grep -qE '/opsx:(ff|apply|verify|archive)'; then return 1; fi
   echo "$loop" | grep -qF 'openspec new change'
@@ -951,7 +965,7 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -E '^\| \*\*openspec' "$skill" | grep -qF 'openspec --version'
   if grep -E '^\| (仕様レビュアー|R1|G が要求するレビュアー)' "$skill" | grep -qE 'dev-workflow:(worker|gate-runner)'; then return 1; fi
   if grep -qE '(`worker` role|`gate` role|W の phase|G の phase)[^、。]*general-purpose' "$codex"; then return 1; fi
-  section "$WORKER" '(3a) 実装＋verify' | grep -qF '画面確認:'
+  section "$W_IMPL" '(3a) 実装＋verify' | grep -qF '画面確認:'
   [ -f "$screen" ]
   grep -qF '画面確認結果: (合格|不合格|実行不能)' "$screen"
   grep -qE '編集.*commit.*投稿|編集.*投稿.*commit' "$screen"

@@ -19,7 +19,8 @@ setup() {
   CANON="${PLUGIN_DIR}/references/subagent-waiting.md"
   ROLES="${PLUGIN_DIR}/skills/develop/references/roles"
   GATE="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
-  WORKER="${ROLES}/worker.md"
+  # W の指示書は索引と worker/ の段のファイルに分かれている。禁止 1 行と正本への参照は (3a) の段（worker/implement.md）に置く
+  WORKER="${ROLES}/worker/implement.md"
   REVIEWER="${ROLES}/spec-reviewer.md"
   RUNNER="${ROLES}/gate-runner.md"
   README="${PLUGIN_DIR}/README.md"
@@ -30,7 +31,10 @@ setup() {
   # （背景起動を書いた段と前景ポーリングを書いた段が別でも、スキル全体で併記されていればよい）。
   GATE_ALL="${BATS_TEST_TMPDIR}/pr-review-gate-all.md"
   cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" > "$GATE_ALL"
-  SUBAGENT_DOCS=("$WORKER" "$REVIEWER" "$RUNNER" "$GATE_ALL")
+  # W の禁止語の検査は、索引・worker/ の 4 本・事前分類表の全部を連結して見る
+  WORKER_ALL="${BATS_TEST_TMPDIR}/worker-all.md"
+  cat "${ROLES}/worker.md" "${ROLES}/worker/common.md" "${ROLES}/worker/spec.md" "${ROLES}/worker/implement.md" "${ROLES}/worker/finish.md" "${PLUGIN_DIR}/skills/develop/references/pre-classification.md" > "$WORKER_ALL"
+  SUBAGENT_DOCS=("$WORKER_ALL" "$REVIEWER" "$RUNNER" "$GATE_ALL")
 
   # Claude Code の Bash ツールの前景 1 回あたりの上限（ミリ秒）。
   # ハーネス側の上限が変わったら、この 1 行だけを直せば検査 2 全体が追随する。

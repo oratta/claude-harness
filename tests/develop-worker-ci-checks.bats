@@ -3,7 +3,7 @@
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  WORKER="$REPO_ROOT/plugins/dev-workflow/skills/develop/references/roles/worker.md"
+  WORKER="$REPO_ROOT/plugins/dev-workflow/skills/develop/references/roles/worker/implement.md"
 }
 
 common_principles() {

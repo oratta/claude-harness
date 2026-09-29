@@ -71,9 +71,9 @@ setup() {
   [ -z "$output" ] || { echo "$output"; return 1; }
 }
 
-@test "PR template and worker.md point the body format at dev-workflow references" {
+@test "PR template and worker/finish.md point the body format at dev-workflow references" {
   grep -q 'plugins/dev-workflow/references/pr-body-format.md' "${REPO_ROOT}/.github/PULL_REQUEST_TEMPLATE.md"
-  grep -q 'plugins/dev-workflow/references/pr-body-format.md' "${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
+  grep -q 'plugins/dev-workflow/references/pr-body-format.md' "${PLUGIN_DIR}/skills/develop/references/roles/worker/finish.md"
 }
 
 # --- Requirement: アンインストール手順と契約の移設先を CHANGELOG に書く ---
