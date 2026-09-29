@@ -9,6 +9,7 @@ develop の作業担当（W）は、1 回の起動で仕様づくり・実装と
 - 重要実装の事前分類表を、W が読まない独立ファイル `skills/develop/references/pre-classification.md` に移す。事前分類表を使うのは W を起こす本体と R1・G・pr-review-gate で、W 自身はモデルを選ばない。参照元（develop の SKILL.md・spec-reviewer.md・decision-criteria.md・pr-review-gate の `stages/triage.md`・`references/model-tiers.md`・README）のパスを付け替える。
 - 本体は W の起動指示・再開指示・手渡しの起動指示に `段: spec|implement|finish` の 1 行を書く。W のエージェント定義 `agents/worker.md` の本文は、`common.md` と起動指示の `段:` が指す段のファイルを読むことを書く。
 - W が 1 回の起動で読む指示書（`common.md` と段のファイル）の合計を、どの段でも 7,000 字以下にし、bats で検査する。
+- issue の受け入れ条件 2（W の指示書の読み込み量 8K 以下）は変えない。変更後の指示書で動いた develop の 1 本の W を個体ごとに `subagent-context-audit.sh --by-role` で測って PR 本文に記録し、1 個体でも超えるか測れなければ未達として follow-up issue とリスク宣言で主の判断に回す（記録だけで達成扱いにしない）。
 - `worker.md` にあった本体向けの説明のうち「(3) をこれより細かく切らない」理由は、W が読まない develop の `SKILL.md` の (3) に移す。
 - 手順の中身（規則・書式・コマンド）は変えない。同じ手順を 2 か所に書かない。
 - `scripts/codex-develop.py` が Codex の W の phase（spec / implement / finish / explore / summarize）に渡す正本の一覧を、共通と段のファイルに付け替える。

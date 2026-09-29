@@ -15,6 +15,8 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 
 「(3) をこれより細かく切らない」の箇条（手渡しの固定分と、実装の途中で交代させたときに後任が Red のテストから再出発する理由）は、develop の `SKILL.md` の (3) に置かなければならない（MUST）。SKILL.md はこれを理由の正本として持ち、worker.md を理由の正本として指してはならない（MUST NOT）。
 
+この要件の回帰テスト（`plugins/dev-workflow/tests/develop-worker-stages.bats`）の守備範囲は次のとおりとする。入力は索引 `references/roles/worker.md`・`worker/` の 4 本・`references/pre-classification.md` のファイルの中身で、拾うのは、索引の中のコードブロック・段の表が指すファイルの不在・段ごとの字数の合計が 7,000 を超えること・同じ `## ` 見出し行が 2 ファイル以上にあること、である。次はテストを通ってしまい、この要件の回帰テストでは止めない: 見出しを変えて同じ節を別のファイルに書いたもの、見出し以外の本文で規則を言い換えて再掲したもの、移すときに規則・書式・コマンド・閾値の文言を変えたもの、W が段のファイル以外（`decision-criteria.md` の節など）を読む分。これらは PR レビューで見る。この穴をテストで塞ぎ切ることは完了条件にしない。
+
 #### Scenario: 索引が中身を持たない
 
 - **WHEN** `references/roles/worker.md` を読む
@@ -53,7 +55,7 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 
 ### Requirement: 本体は W の起動指示と再開指示に段を書く
 
-本体は W の起動指示・SendMessage による再開指示・手渡しの起動指示に、`段: spec` / `段: implement` / `段: finish` のいずれか 1 行を書かなければならない（MUST）。(1) の spawn と R1 の REQUEST_CHANGES を受けた再開は `spec`、(3a) の再開と G の failed や CI の見張りの `fix` を受けて直させる再開は `implement`、(3b) の再開は `finish`、手渡しは前任が担っていた段とする（MUST）。develop の `SKILL.md` はこの対応を書かなければならない（MUST）。
+本体は W の起動指示・SendMessage による再開指示・手渡しの起動指示に、`段: spec` / `段: implement` / `段: finish` のいずれか 1 行を書かなければならない（MUST）。`段:` の値は、その起動・再開で本体が W に指示する工程で決めなければならない（MUST）: (1) の spawn と R1 の REQUEST_CHANGES を受けた再開は `spec`、(3a) の再開と G の failed や CI の見張りの `fix` を受けて直させる再開は `implement`、(3b) の再開は `finish` とする。手渡しの起動指示も同じ規則で決める: 前任が工程の途中で止まり（前任の return の 1 行目が `工程完了:` でない）、後任に同じ工程を続けさせるときは前任が担っていた段、前任が工程を終えて（1 行目が `工程完了:`）return したあとに交代させるときは、本体が後任に次に指示する工程の段とする（MUST。例: (3a) を終えた前任の後任に (3b) を指示するなら `finish`、(1) を終えた前任の後任に R1 の REQUEST_CHANGES の修正を指示するなら `spec`）。次に指示する工程は、既存要件「W の (3) は 2 回の return に分かれる」のとおり本体が自分の指示した工程から決め、前任の return の工程名の文字列から決めてはならない（MUST NOT）。develop の `SKILL.md` はこの対応を書かなければならない（MUST）。
 
 仕様化しないと判定した W に、本体が同じコンテキストのまま (3a) へ進むよう指示したときは、W は `worker/implement.md` を読んでから進まなければならない（MUST）。`worker/spec.md` はこれを書かなければならない（MUST）。
 
@@ -61,6 +63,16 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 
 - **WHEN** develop の `SKILL.md` の 1 ループを読む
 - **THEN** `段: spec`・`段: implement`・`段: finish` がそれぞれ、対応する W の起動・再開の場面とともに書かれている
+
+#### Scenario: 手渡しで同じ工程を続けさせる
+
+- **WHEN** 本体が (3a) の途中で `工程中断:` を返した前任の後任を起こし、(3a) を続けさせる
+- **THEN** 後任の起動指示の `段:` は `implement` である
+
+#### Scenario: 工程を終えた前任の後任に次の工程を指示する
+
+- **WHEN** 本体が `工程完了: 実装＋verify` を返した前任の代わりに後任を起こし、(3b) を指示する
+- **THEN** 後任の起動指示の `段:` は `finish` で、前任が担っていた `implement` ではない
 
 #### Scenario: 仕様化しない経路でそのまま進むとき
 
@@ -107,7 +119,27 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 - **WHEN** 既存要件が「`worker.md` に W が `/wt-setup` を呼ぶ記述が無い」と定めている
 - **THEN** 索引・`worker/` の 4 本・`pre-classification.md` のどれにもその記述が無いことで判定する
 
-#### Scenario: 読み込み量の実測
+### Requirement: W の指示書の読み込み量は個体ごとに測り、8K を超えたら主の判断に回す
 
-- **WHEN** この変更を develop で PR にし、`scripts/subagent-context-audit.sh --by-role` で W の `docs_median` を測る
-- **THEN** 実測値とファイルごとの内訳が PR 本文に記録されている
+この変更の PR では、W の指示書の読み込み量が W の個体ごとに 8,000 トークン以下であることを、`plugins/dev-workflow/scripts/subagent-context-audit.sh --by-role` で測った値で示さなければならない（MUST。issue #556 の受け入れ条件 2）。受け入れ条件 2 を「記録すれば足りる」に改めてはならない（MUST NOT）。
+
+計測対象は、変更後の指示書（索引・`worker/` の段のファイル）で動いた develop の 1 本に現れた W の全個体（(1) の spawn・SendMessage で再開された個体・手渡しの後任を含む）とする（MUST）。`by_role.W.docs_median` は W の個体ごとの合計の中央値（同スクリプト冒頭のコメント）なので、担当全体の `docs_median` を個体の値の代わりにしてはならない（MUST NOT）。個体の値は、その個体の `agent-<id>.jsonl` と `agent-<id>.meta.json` だけを `<作業用ディレクトリ>/<任意>/<任意>/subagents/` に置き、その作業用ディレクトリを `--projects` に、別の作業用ファイルを `--cache` に渡して `--refresh` 付きで実行し、`by_role.W.count` が 1 であることを確かめてから読んだ `by_role.W.docs_median` とする（MUST）。
+
+計測が有効なのは、その個体が変更後の指示書を、同スクリプトが指示書の Read として数えるパス（`INSTR_RE`。`plugins/cache/oratta-claude-harness/` を含み `.md` で終わる）から読んだ場合だけである。変更前の指示書を読んだ個体（この issue 自身の develop の W など）と、変更後の指示書をこのパスの外から読んだ個体（数えられない分だけ値が小さく出る）は、計測対象の値として使ってはならず（MUST NOT）、未計測として扱わなければならない（MUST）。
+
+計測対象の全個体が 8,000 以下なら受け入れ条件 2 を満たす。1 個体でも 8,000 を超えたとき、または未計測の個体が残るとき（計測を行えなかったときを含む）は受け入れ条件 2 の未達として扱い、PR 本文に個体ごとの値と内訳（その個体が Read した指示書のファイル名と字数）・超過や未計測を解消する手段を切った follow-up issue の URL を書き、G は pr-review-gate のリスク宣言に同じ未達を載せて主の判断に回さなければならない（MUST）。未達の記録を書いたことをもって受け入れ条件 2 を満たしたと扱ってはならない（MUST NOT）。
+
+#### Scenario: 個体ごとの値が PR 本文にある
+
+- **WHEN** この変更の PR 本文の受け入れ条件 2 の節を読む
+- **THEN** 計測対象の W の個体ごとに agent id・担った工程・`by_role.W.count` が 1 だったこと・値・8,000 との比較が並んでおり、担当全体の `docs_median` だけで判定していない
+
+#### Scenario: 1 個体でも超えたとき
+
+- **WHEN** 計測対象の W のうち 1 個体の値が 8,000 を超えた
+- **THEN** PR 本文にその個体の値と内訳と follow-up issue の URL があり、リスク宣言に受け入れ条件 2 の未達が載り、受け入れ条件 2 を満たしたとは書かれていない
+
+#### Scenario: 数えられないパスから読んだ個体
+
+- **WHEN** 計測に使った W が変更後の指示書を `plugins/cache/oratta-claude-harness/` を含まないパス（worktree の中など）から読んでいた
+- **THEN** その個体の値は計測対象に使われず、未計測として受け入れ条件 2 の未達の扱いになっている
