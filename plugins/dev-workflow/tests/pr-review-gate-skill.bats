@@ -786,6 +786,28 @@ triage_row_section() {
   echo "$block" | grep -qF '問題なし'
 }
 
+@test "review partitions (#514): prepare records sections and returns them to develop" {
+  weight="$(awk '/^#### 2-0\./{f=1} f&&/^## G として/{exit} f' "$PREPARE")"
+  for token in '区画' '600' '400' 'review-partitions.sh' 'レビュー重量:'; do
+    echo "$weight" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  grep -qF -- '- 区画: <なし |' "$PREPARE"
+  grep -qF '一周目の区画:' "$PREPARE"
+}
+
+@test "review partitions (#514): reviewer instructions scope every section" {
+  block="$(reviewer_block)"
+  for token in 'P<k>-' '区画の対象外:' '全ハンク' '<rev>' '区画 1' 'テスト・lint'; do
+    echo "$block" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  grep -qF '区画ごとに 1 体' "$REVIEWER_BRIEF"
+}
+
+@test "review partitions (#514): legacy Claude is split and Codex remains whole" {
+  grep -F 'Task サブエージェント' "$REVIEW_RUN" | grep -qF '区画ごと'
+  grep -F 'Codex CLI' "$REVIEW_RUN" | grep -qF '区画に分けず'
+}
+
 @test "review inventory (#355): swapping artifact definition order fails the order assertions" {
   block="$(reviewer_block)"
   swapped="$(echo "$block" | awk '
