@@ -15,7 +15,7 @@
 
 ## 4. 表を変える場合のみ（TDD）
 
-判定が「変えない」ため、4.1〜4.4 は条件不成立で実施しない。
+判定が「変えない」ため、4.1〜4.4 は対象外（条件不成立で実施しない）。チェックボックスは未チェックのまま残し、archive は未完了タスクを承知のうえで進める。
 
 - [ ] 4.1 `model-escalation-policy.bats` の `pre-classification: the first-round column has no fable` を、表に `` `sonnet` `` があり `` `opus` `` が無いと assert する形に直し、先に落ちることを確かめる。触る範囲: plugins/dev-workflow/tests/model-escalation-policy.bats（該当テスト。着手時に grep で位置を確かめる）
 - [ ] 4.2 worker.md の「重要実装の事前分類」表の「1 周目」列を `sonnet` にし、直後の「W の上限は `opus`」段落を、上限は `opus` のまま 1 周目の既定だけ下げる説明にする。触る範囲: plugins/dev-workflow/skills/develop/references/roles/worker.md:138-157（#610 で位置が動いていれば main を取り込んで確かめる）
