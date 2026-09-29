@@ -1169,16 +1169,21 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 
 ### Requirement: W の指示書の読み込み量は個体ごとに測り、分割前と並べて記録する
 
-この変更の PR 本文は、develop を 1 本通したときの W の指示書の読み込み量を、`plugins/dev-workflow/scripts/subagent-context-audit.sh --by-role` で W の個体ごとに測った値として、分割前の値と並べて記録しなければならない（MUST。issue #556 の受け入れ条件 2）。読み込み量に上限は置かず、値の大きさを達成の可否に使ってはならない（MUST NOT）。
+W の指示書の読み込み量は、`plugins/dev-workflow/scripts/subagent-context-audit.sh --by-role` で W の個体ごとに測った値として、分割前と分割後を並べて記録しなければならない（MUST。issue #556 の受け入れ条件 2）。分割前の値はこの変更の PR（#610）の本文に記録する（MUST）。分割後の値は、この変更のマージ後に、最初に変更後の指示書（キャッシュに入った `worker/` の段のファイル）で動いた develop の W を同じ方法で測り、PR #610 とエピック #511 のコメントに追記する（MUST）。この issue の W は変更後の指示書を手順として読んでおらず（編集対象として worktree のパスから開いただけ）、分割後の値を取れないためである（主の承認 2026-09-29、issue #556 のコメント）。読み込み量に上限は置かず、値の大きさを達成の可否に使ってはならない（MUST NOT）。
 
-計測対象は、変更後の指示書（`worker/` の段のファイル）で動いた develop の 1 本に現れた W の全個体（(1) の spawn・SendMessage で再開された個体・手渡しの後任を含む）とする（MUST）。分割前の値は、変更前の worker.md で動いた W の個体（この issue 自身の develop の W など）を同じ方法で測った値とする。`by_role.W.docs_median` は W の個体ごとの合計の中央値（同スクリプト冒頭のコメント）なので、担当全体の `docs_median` だけを記録して個体ごとの値の代わりにしてはならない（MUST NOT）。個体の値は、その個体の `agent-<id>.jsonl` と `agent-<id>.meta.json` だけを `<作業用ディレクトリ>/<任意>/<任意>/subagents/` に置き、その作業用ディレクトリを `--projects` に、別の作業用ファイルを `--cache` に渡して `--refresh` 付きで実行し、`by_role.W.count` が 1 であることを確かめてから読んだ `by_role.W.docs_median` とする（MUST）。
+分割後の計測対象は、マージ後に最初に変更後の指示書で動いた develop の 1 本に現れた W の全個体（(1) の spawn・SendMessage で再開された個体・手渡しの後任を含む）とする（MUST）。分割前の値は、変更前の worker.md で動いた W の個体（この issue 自身の develop の W）を同じ方法で測った値とする。`by_role.W.docs_median` は W の個体ごとの合計の中央値（同スクリプト冒頭のコメント）なので、担当全体の `docs_median` だけを記録して個体ごとの値の代わりにしてはならない（MUST NOT）。個体の値は、その個体の `agent-<id>.jsonl` と `agent-<id>.meta.json` だけを `<作業用ディレクトリ>/<任意>/<任意>/subagents/` に置き、その作業用ディレクトリを `--projects` に、別の作業用ファイルを `--cache` に渡して `--refresh` 付きで実行し、`by_role.W.count` が 1 であることを確かめてから読んだ `by_role.W.docs_median` とする（MUST）。
 
 同スクリプトが指示書の Read として数えるのは、`plugins/cache/oratta-claude-harness/` を含み `.md` で終わるパス（`INSTR_RE`）だけである。この外のパス（worktree の中など）から変更後の指示書を読んだ個体の値は指示書の分が入らず小さく出るので、その値を読み込み量として記録してはならず（MUST NOT）、測れなかった個体として理由とともに記録しなければならない（MUST）。
 
-#### Scenario: 個体ごとの値と分割前の値が PR 本文にある
+#### Scenario: 分割前の個体ごとの値が PR 本文にある
 
 - **WHEN** この変更の PR 本文の受け入れ条件 2 の節を読む
-- **THEN** 変更後の W の個体ごとに agent id・担った工程・`by_role.W.count` が 1 だったこと・値が並び、分割前の W の値が同じ形で並んでおり、担当全体の `docs_median` だけで済ませていない
+- **THEN** 分割前の W の個体ごとに agent id・担った工程・`by_role.W.count` が 1 だったこと・値が並び、担当全体の `docs_median` だけで済ませておらず、分割後の値はマージ後の develop で測って追記することが書かれている
+
+#### Scenario: 分割後の値はマージ後に追記する
+
+- **WHEN** この変更のマージ後、最初に変更後の指示書で動いた develop が終わった
+- **THEN** その develop の W の個体ごとに agent id・担った工程・`by_role.W.count` が 1 だったこと・値が、分割前の値と同じ形で PR #610 とエピック #511 のコメントに追記されている
 
 #### Scenario: 数えられないパスから読んだ個体
 
