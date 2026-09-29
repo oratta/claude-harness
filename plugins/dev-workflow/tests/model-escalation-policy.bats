@@ -4,7 +4,7 @@
 #
 # 「レビュー不合格の修正・重要実装（聖域/マージ権限/層間契約/課金・法務）は Fable 担当」という
 # 運用判断を、セッション内の心がけから dev-workflow の機械的ルールへ昇格させたもの。
-# 事前分類の正本は develop スキルの W の指示書（references/roles/worker.md）にあり、
+# 事前分類の正本は develop スキルの references/pre-classification.md にあり（#556 で W の指示書から移した）、
 # 正本の置き場所が1箇所であること（重複記述を作らないこと）も検証する。
 #
 # spec: dev-workflow-model-escalation-policy, dev-workflow-develop
@@ -20,42 +20,42 @@ setup() {
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   DEV_SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
-  WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
+  PRE="${PLUGIN_DIR}/skills/develop/references/pre-classification.md"
   GATE_SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
 }
 
-# --- ルール1: 事前分類（1周目から Fable）は develop の worker.md にある ---
+# --- ルール1: 事前分類（1周目から Fable）は develop の pre-classification.md にある ---
 
-@test "pre-classification: section lives in develop worker.md" {
-  grep -qF '重要実装の事前分類' "$WORKER"
+@test "pre-classification: section lives in develop pre-classification.md" {
+  grep -qF '重要実装の事前分類' "$PRE"
 }
 
 @test "pre-classification: names all 4 categories" {
-  grep -qF '聖域パス' "$WORKER"
-  grep -qF 'マージ権限' "$WORKER"
-  grep -qF '層間契約' "$WORKER"
-  grep -qF '課金/法務' "$WORKER"
+  grep -qF '聖域パス' "$PRE"
+  grep -qF 'マージ権限' "$PRE"
+  grep -qF '層間契約' "$PRE"
+  grep -qF '課金/法務' "$PRE"
 }
 
 @test "pre-classification: the first-round column has no fable (the worker's cap is opus)" {
-  tbl="$(awk '/^## 重要実装の事前分類/{f=1} f && /^\| /{print} /^## 昇格トリップワイヤー/{f=0}' "$WORKER")"
+  tbl="$(awk '/^## 重要実装の事前分類/{f=1} f && /^\| /{print} /^## 昇格トリップワイヤー/{f=0}' "$PRE")"
   [ -n "$tbl" ]
   ! echo "$tbl" | grep -qF '`fable`' || return 1
   echo "$tbl" | grep -qF '`opus`'
-  grep -q '最初から' "$WORKER"
-  grep -qF 'W の上限は `opus`' "$WORKER"
+  grep -q '最初から' "$PRE"
+  grep -qF 'W の上限は `opus`' "$PRE"
 }
 
 @test "pre-classification: reviewers that hit the table are spawned as dev-workflow:decider" {
-  grep -qF 'dev-workflow:decider' "$WORKER"
-  grep -qF '`general-purpose` に `model: fable` を付けない' "$WORKER"
+  grep -qF 'dev-workflow:decider' "$PRE"
+  grep -qF '`general-purpose` に `model: fable` を付けない' "$PRE"
 }
 
 @test "pre-classification: session model (AGENT_MODEL) is left unchanged" {
-  grep -qF 'AGENT_MODEL' "$WORKER"
+  grep -qF 'AGENT_MODEL' "$PRE"
 }
 
 # 残量モード表の abundant / conserve 行は「事前分類の fable 行」を前提に書かれていて、
@@ -83,8 +83,8 @@ setup() {
 }
 
 @test "pre-classification: budget mode still caps escalation" {
-  grep -qF 'FABLE_BUDGET_MODE=reserve' "$WORKER"
-  grep -qF 'exhausted' "$WORKER"
+  grep -qF 'FABLE_BUDGET_MODE=reserve' "$PRE"
+  grep -qF 'exhausted' "$PRE"
 }
 
 # --- ルール2: エスカレーション（failed → 修正実装）は pr-review-gate にある ---
@@ -150,8 +150,8 @@ setup() {
 
 @test "single source: the 4-category table is not duplicated into the gate skill" {
   # pr-review-gate は分類名を1行で挙げるだけで、分類表の中身（判定材料）は再掲せず
-  # develop の worker.md を正本として参照する
-  grep -qF 'develop スキルの references/roles/worker.md が正本' "${TRIAGE}"
+  # develop の pre-classification.md を正本として参照する
+  grep -qF 'develop スキルの references/pre-classification.md が正本' "${TRIAGE}"
   for f in "$GATE_SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; do
     ! grep -q 'github-''issue' "$f" || return 1
   done
@@ -161,12 +161,12 @@ setup() {
 }
 
 @test "single source: the fallback record format points back to pr-review-gate" {
-  grep -qF 'pr-review-gate' "$WORKER"
-  grep -q '正本' "$WORKER"
+  grep -qF 'pr-review-gate' "$PRE"
+  grep -q '正本' "$PRE"
 }
 
-@test "single source: develop SKILL.md model section defers the table to worker.md" {
-  awk 'index($0,"## モデル")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL" | grep -q 'worker.md'
+@test "single source: develop SKILL.md model section defers the table to pre-classification.md" {
+  awk 'index($0,"## モデル")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL" | grep -q 'pre-classification.md'
 }
 
 # --- バージョン ---

@@ -27,7 +27,7 @@ R1 は develop の本体が spawn するサブエージェント（W とは別�
 
 ## R1 の spawn（本体が行う。R1 は確認だけ）
 
-- **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。既定は `subagent_type: general-purpose` に `model: opus`。仕様が `references/roles/worker.md` の「重要実装の事前分類」表の分類（マージ権限・層間契約・課金/法務。正本はそこ）に当たる場合は、**`subagent_type: dev-workflow:decider` で spawn する**（`general-purpose` に `model: fable` を付けない。`scripts/agent-model-guard.sh` が拒否する）。聖域パスだけでは上げない。ただし共有枠モードが上限を先に決める（次項）
+- **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。既定は `subagent_type: general-purpose` に `model: opus`。仕様が `references/pre-classification.md` の「重要実装の事前分類」表の分類（マージ権限・層間契約・課金/法務。正本はそこ）に当たる場合は、**`subagent_type: dev-workflow:decider` で spawn する**（`general-purpose` に `model: fable` を付けない。`scripts/agent-model-guard.sh` が拒否する）。聖域パスだけでは上げない。ただし共有枠モードが上限を先に決める（次項）
 - モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 固定・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類（マージ権限・層間契約・課金/法務）による `dev-workflow:decider`（聖域パスは `opus` 止まり） ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限。このとき種別は `dev-workflow:decider` のまま `model: opus` に落とす）。正本は `references/decision-criteria.md`。 interactive の `reserve` は `conserve` と同一に扱う（仕様レビューは verify 側の役割なので決める役として立ててよい）。`throttled` では事前分類に当たっても `opus` 止まり、`depleted` では `sonnet`
 - R1 は**読み取り専用**。仕様ファイル・コードを一切変更しない（修正は本体が W を再開して行わせる）
 

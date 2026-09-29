@@ -483,12 +483,12 @@ PY
 # ---------- 2.10 文言検査の素通りと実行時の検査の対 ----------
 
 @test "paired: a paraphrased wait-by-ending-the-turn passes subagent-waiting.bats, and the hook refuses it" {
-  # (1) 文言検査は素通りする: プラグインを丸ごと複製し、複製の worker.md に禁止語を使わずに
+  # (1) 文言検査は素通りする: プラグインを丸ごと複製し、複製の worker/implement.md に禁止語を使わずに
   #     言い換えた違反を差し込んで、複製に対して既存の subagent-waiting.bats を実際に走らせる。
   #     既存の禁止 1 行は消さずに足す（構造検査を満たし続けるため）。禁止語のリストはここに写さない。
   copy="${BATS_TEST_TMPDIR}/plugin-copy"
   cp -R "$PLUGIN_DIR" "$copy"
-  worker="${copy}/skills/develop/references/roles/worker.md"
+  worker="${copy}/skills/develop/references/roles/worker/implement.md"
   violation='- フルテストは run_in_background で起動し、結果の知らせが届くまでいったん手を止めてこのターンを締める'
   printf '\n%s\n' "$violation" >> "$worker"
   grep -qF -- "$violation" "$worker"

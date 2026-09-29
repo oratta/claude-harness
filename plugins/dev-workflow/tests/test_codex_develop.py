@@ -736,10 +736,11 @@ class ForegroundRequest(unittest.TestCase):
                         self.assertEqual(json.loads(target.read_text())['role'], role)
 
     def test_writer_phases_are_told_to_finish_their_own_github_work(self):
-        sources = {'spec':'skills/develop/references/roles/worker.md',
-                   'implement':'skills/develop/references/roles/worker.md',
-                   'finish':'skills/develop/references/roles/worker.md',
-                   'gate':'skills/develop/references/roles/gate-runner.md'}
+        common = 'skills/develop/references/roles/worker/common.md'
+        sources = {'spec':[common, 'skills/develop/references/roles/worker/spec.md'],
+                   'implement':[common, 'skills/develop/references/roles/worker/implement.md'],
+                   'finish':[common, 'skills/develop/references/roles/worker/finish.md'],
+                   'gate':['skills/develop/references/roles/gate-runner.md']}
         for phase in ('spec', 'implement', 'finish', 'gate'):
             with self.subTest(phase=phase):
                 target = self.root/('writer-' + phase + '.json')
@@ -751,7 +752,9 @@ class ForegroundRequest(unittest.TestCase):
                 self.assertNotIn('no network access', text)
                 self.assertIn('needs-reviewer/needs-decider', text)
                 self.assertIn('Never merge or enable auto-merge', text)
-                self.assertIn('CANONICAL SOURCE ' + sources[phase], text)
+                for source in sources[phase]:
+                    self.assertIn('CANONICAL SOURCE ' + source + ' ', text)
+                self.assertNotIn('CANONICAL SOURCE skills/develop/references/roles/worker.md ', text)
                 self.assertIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
                 if phase == 'gate':
                     for doc in ('SKILL.md', 'declarations.md', 'stages/prepare.md', 'stages/review-run.md',
@@ -762,8 +765,8 @@ class ForegroundRequest(unittest.TestCase):
         sources = {'spec-review':'skills/develop/references/roles/spec-reviewer.md',
                    'review':'skills/develop/references/roles/gate-runner.md',
                    'decider':'agents/decider.md',
-                   'explore':'skills/develop/references/roles/worker.md',
-                   'summarize':'skills/develop/references/roles/worker.md'}
+                   'explore':'skills/develop/references/roles/worker/common.md',
+                   'summarize':'skills/develop/references/roles/worker/common.md'}
         for phase in ('spec-review', 'review', 'decider', 'explore', 'summarize'):
             with self.subTest(phase=phase):
                 target = self.root/('reader-' + phase + '.json')
@@ -775,7 +778,11 @@ class ForegroundRequest(unittest.TestCase):
                 self.assertNotIn('no network access', text)
                 self.assertIn('needs-reviewer/needs-decider', text)
                 self.assertIn('Never merge or enable auto-merge', text)
-                self.assertIn('CANONICAL SOURCE ' + sources[phase], text)
+                self.assertIn('CANONICAL SOURCE ' + sources[phase] + ' ', text)
+                self.assertNotIn('CANONICAL SOURCE skills/develop/references/roles/worker.md ', text)
+                if phase in ('explore', 'summarize'):
+                    for stage in ('spec', 'implement', 'finish'):
+                        self.assertNotIn('CANONICAL SOURCE skills/develop/references/roles/worker/' + stage + '.md', text)
                 self.assertIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
                 if phase == 'review':
                     self.assertIn('CANONICAL SOURCE skills/pr-review-gate/stages/reviewer-brief.md', text)
