@@ -108,6 +108,11 @@ nchars() {
   printf '%s' "$body" | grep -qF '段:'
 }
 
+@test "skill: the handover's next role carries the W 段: value and the new-session resume uses it" {
+  grep -F '| 次に起こす役割 |' "$SKILL" | grep -qF '段:'
+  grep -F '手渡し: 不要` なら「次に起こす役割」の入力で初回の W を起こす' "$SKILL" | grep -qF '`段:` の行は「次に起こす役割」に書かれた値を使う'
+}
+
 @test "skill: SKILL.md writes 段: spec / implement / finish" {
   for stage in spec implement finish; do
     grep -qF "段: ${stage}" "$SKILL" || { echo "missing: 段: ${stage}"; return 1; }
