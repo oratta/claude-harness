@@ -48,7 +48,7 @@ dev-workflow プラグインは `templates/auto-merge/` に、展開先リポの
 
 ### Requirement: staging スモーク + auto-revert が auto-merge テンプレートの一部として配布される
 
-テンプレートは `.github/workflows/staging-smoke.yml` を含み、`Deploy to Staging` という名前の workflow の完了イベント（`workflow_run` / `completed`）を購読して staging の外形スモークを実行し、失敗時に revert PR（`agent-review:passed` ラベルと現 HEAD の「対象 HEAD:」コメント付き）と incident issue の両方を自動起票する経路を持たなければならない（MUST）。全チェックが認証系（3xx / 401 / 403）だけで落ちた場合は「デプロイ保護で検証不能」と判定して revert 経路に入らず警告 issue のみ起票する誤検知ガードを持ち（MUST）、その判定は bats テストが smoke ステップのスクリプトを実行して固定する（SHALL）。README は staging を持つリポだけに展開する手順（差し替え箇所・`vars.STAGING_DOMAIN`・bypass secret）を提供する（SHALL）。
+テンプレートは `.github/workflows/staging-smoke.yml` を含み、`Deploy to Staging` という名前の workflow の完了イベント（`workflow_run` / `completed`）を購読して staging の外形スモークを実行し、失敗時に revert PR（`incident` ラベル付き。人間のレビュー待ちであることを本文に書く）と incident issue の両方を起票する経路を持たなければならず（MUST）、機械生成の revert PR に `agent-review:passed` ラベルと「対象 HEAD:」コメントを自己付与してはならない（MUST NOT。ゲートを迂回して auto-merge に乗る経路を作らない。`agent-review:passed` は人間がレビューして付ける）。全チェックが認証系（3xx / 401 / 403）だけで落ちた場合は「デプロイ保護で検証不能」と判定して revert 経路に入らず警告 issue のみ起票する誤検知ガードを持ち（MUST）、その判定は bats テストが smoke ステップのスクリプトを実行して固定する（SHALL）。README は staging を持つリポだけに展開する手順（差し替え箇所・`vars.STAGING_DOMAIN`・bypass secret）を提供する（SHALL）。
 
 #### Scenario: 誤検知ガード（認証系のみで落ちたときは revert しない）
 
@@ -63,7 +63,7 @@ dev-workflow プラグインは `templates/auto-merge/` に、展開先リポの
 #### Scenario: revert 経路と incident 経路の存在
 
 - **WHEN** staging-smoke.yml の revert ステップ（`# >>> smoke-revert-script` マーカーの間）を検査する
-- **THEN** `git revert` / `gh pr create` / `gh issue create` と `agent-review:passed` ラベル付与・「対象 HEAD:」コメント投稿が存在し、`gh pr merge` は存在しない
+- **THEN** `git revert` / `gh pr create` / `gh issue create` と `incident` ラベル付与が存在し、`agent-review:passed` ラベル付与・「対象 HEAD:」コメント投稿・`gh pr merge` は存在しない
 
 #### Scenario: main が検査したコミットから進んでいれば自動 revert せず incident のみ
 

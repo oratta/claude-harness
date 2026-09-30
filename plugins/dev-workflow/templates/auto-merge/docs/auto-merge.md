@@ -284,14 +284,15 @@ workflow）を持つリポだけに展開する（README の手順 6）。
 
 1. `Deploy to Staging` が成功で完了 → `vars.STAGING_DOMAIN` の代表 URL（既定 3 本。展開時に差し替え）を
    curl し、HTTP 200 と期待文字列を確認する
-2. 失敗が 1 件でもあれば（5xx / 接続失敗 / 期待文字列なし）→ **revert PR を自動起票**
-   （`revert-auto-<sha12>` ブランチ、`agent-review:passed` + `incident` ラベル、「対象 HEAD:」コメント付き）
+2. 失敗が 1 件でもあれば（5xx / 接続失敗 / 期待文字列なし）→ **revert PR を起票**
+   （`revert-auto-<sha12>` ブランチ、`incident` ラベルのみ。`agent-review:passed` は付けない）
    + **incident issue を起票**（事実経過と残タスクのチェックリスト）
 3. `Deploy to Staging` 自体が失敗 → revert 対象なしとして incident issue だけ起票
 
 revert PR は auto-merge の合格条件（`agent-review:passed` + 現 HEAD の「対象 HEAD:」コメント）を
-機械的に満たす形で作られるので、**聖域パスに触れていなければ auto-merge が取り込んで staging が戻る**。
-聖域に触れていれば human-merge が付き、人間がマージする。
+**自己付与しない**。機械生成の PR がレビューゲートを迂回して自動マージされる経路は作らない設計で、
+**人間が revert PR の内容をレビューし、`agent-review:passed` を付けて初めて auto-merge の対象になる**
+（聖域パスに触れていれば従来どおり人間がマージする）。staging の巻き戻しは人間のレビュー待ちの分だけ遅れる。
 
 ### 誤検知ガード（revert しないケース）
 
@@ -305,7 +306,7 @@ revert PR は auto-merge の合格条件（`agent-review:passed` + 現 HEAD の�
 ### 前提と止め方
 
 - `vars.STAGING_DOMAIN` 未設定の間はスモークをスキップして警告だけ出す（何も起票しない）
-- revert PR の push / 作成は `AUTOMERGE_PAT` を共用する。未設定なら自動 revert は失敗ログを残して終わる
+- revert PR の push / 作成は `AUTOMERGE_PAT` を共用する。未設定なら revert PR の起票は失敗ログを残して終わる（incident issue は先に起票済み）
 - 同じコミットに対する revert ブランチが既にあれば二重起票しない
 - 止めたいときは `vars.STAGING_DOMAIN` を空にするか、workflow を Actions 画面で disable する
 

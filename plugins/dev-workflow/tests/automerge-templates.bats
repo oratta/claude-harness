@@ -192,16 +192,17 @@ extract_revert_code() {
   printf '%s\n' "$code" | grep -qF 'git revert'
   printf '%s\n' "$code" | grep -qF 'gh pr create'
   printf '%s\n' "$code" | grep -qF 'gh issue create'
-  # revert PR は auto-merge の合格条件（passed ラベル + 対象 HEAD コメント）を機械的に満たす
-  printf '%s\n' "$code" | grep -qF -- '--label "agent-review:passed"'
-  printf '%s\n' "$code" | grep -qF '対象 HEAD: ${REVERT_SHA}'
+  # revert PR は人間レビュー待ち: incident ラベルのみ。passed の自己付与・対象 HEAD コメントの投稿はしない
+  printf '%s\n' "$code" | grep -qF -- '--label "incident"'
+  ! printf '%s\n' "$code" | grep -qF -- '--label "agent-review:passed"' || return 1
+  ! printf '%s\n' "$code" | grep -qF '対象 HEAD' || return 1
   # revert ジョブは「検証不能」判定のときは走らない
   grep -qF "needs.smoke.outputs.blocked != 'true'" "$SMOKE"
   grep -qF "needs.smoke.outputs.blocked == 'true'" "$SMOKE"
   # デプロイ自体の失敗は incident issue の経路がある
   grep -qF "github.event.workflow_run.conclusion == 'failure'" "$SMOKE"
   # 自動 revert は絶対にマージしない
-  ! printf '%s\n' "$code" | grep -qF 'gh pr merge'
+  ! printf '%s\n' "$code" | grep -qF 'gh pr merge' || return 1
 }
 
 @test "smoke: false-positive guard comment (suimei lesson) and marker pairs survive" {
@@ -232,7 +233,7 @@ extract_revert_code() {
 @test "smoke guard: 500 -> failure without blocked (revert path IS taken)" {
   run_smoke_with_code 500 ""
   [ "$status" -eq 1 ]
-  ! grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE"
+  ! grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE" || return 1
   grep -qF 'failures=' "$SMOKE_OUTPUT_FILE"
 }
 
@@ -253,7 +254,7 @@ EOF
   : > "$out"
   run env PATH="$dir:$PATH" MIXED_COUNTER="$BATS_TEST_TMPDIR/mixed.n" STAGING_DOMAIN=staging.example.test VERCEL_BYPASS= GITHUB_OUTPUT="$out" bash "$script"
   [ "$status" -eq 1 ]
-  ! grep -qF 'blocked=true' "$out"
+  ! grep -qF 'blocked=true' "$out" || return 1
   printf '%s\n' "$output" | grep -qF 'HTTP401:認証系'
   printf '%s\n' "$output" | grep -qF 'HTTP500'
 }
@@ -261,7 +262,7 @@ EOF
 @test "smoke guard: all 200 -> success, and unset STAGING_DOMAIN -> skipped" {
   run_smoke_with_code 200 "ok"
   [ "$status" -eq 0 ]
-  ! grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE"
+  ! grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE" || return 1
   script="$BATS_TEST_TMPDIR/smoke-skip.sh"
   extract_smoke_script > "$script"
   out="$BATS_TEST_TMPDIR/output-skip.txt"
@@ -377,13 +378,24 @@ EOF
   [ "$(grep -n '^issue create' "$CALLS" | head -1 | cut -d: -f1)" -lt "$(grep -n '^pr create' "$CALLS" | head -1 | cut -d: -f1)" ]
 }
 
+@test "revert script: the revert PR is created without agent-review:passed and gets no HEAD comment" {
+  command -v git >/dev/null || skip "git not installed"
+  run_revert_script nopassed
+  [ "$status" -eq 0 ]
+  grep -q '^pr create' "$CALLS"
+  grep '^pr create' "$CALLS" | grep -q -- '--label incident'
+  ! grep -q -- '--label agent-review:passed' "$CALLS" || return 1
+  ! grep -q '対象 HEAD' "$CALLS" || return 1
+  ! grep -q '^api .*-X POST' "$CALLS" || return 1
+}
+
 @test "revert script: main already moved past the deployed commit -> incident only, no revert PR" {
   command -v git >/dev/null || skip "git not installed"
   MAIN_ADVANCED=1 run_revert_script advanced
   [ "$status" -eq 0 ]
   grep -q '^issue create' "$CALLS"
-  ! grep -q '^pr create' "$CALLS"
-  ! git -C "$RV_DIR/remote.git" rev-parse --verify -q "refs/heads/revert-auto-${BAD:0:12}" >/dev/null
+  ! grep -q '^pr create' "$CALLS" || return 1
+  ! git -C "$RV_DIR/remote.git" rev-parse --verify -q "refs/heads/revert-auto-${BAD:0:12}" >/dev/null || return 1
 }
 
 @test "revert script: incident exists even when the revert PR cannot be created, and a re-run recovers the PR" {
@@ -398,7 +410,7 @@ EOF
   run env PATH="$RV_DIR/bin:$PATH" GH_TOKEN=x MERGE_TOKEN=y REPO=o/r BAD_SHA="$BAD" RUN_URL=https://example.test/run bash "$RV_DIR/revert.sh"
   [ "$status" -eq 0 ]
   grep -q '^pr create' "$CALLS"
-  ! grep -q '^issue create' "$CALLS"
+  ! grep -q '^issue create' "$CALLS" || return 1
 }
 
 # --- Requirement: 運用ガイドはリポ非依存の記述で提供される ---

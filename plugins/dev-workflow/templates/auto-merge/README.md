@@ -64,8 +64,8 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
 
 6. **staging スモーク + auto-revert**（staging デプロイを持つリポのみ。無ければ飛ばす）:
 
-   auto-merge が main に入れた変更を staging で外形確認し、壊れていたら revert PR と incident issue を
-   自動起票する（`docs/auto-merge.md` の「staging スモーク」節）。購読側の前提は
+   auto-merge が main に入れた変更を staging で外形確認し、壊れていたら revert PR（`agent-review:passed` は付けない。人間がレビューして付ける）と
+   incident issue を起票する（`docs/auto-merge.md` の「staging スモーク」節）。購読側の前提は
    `Deploy to Staging` という名前の workflow が main push で走ること（infra プラグインの
    `deploy-staging.yml.template` が生成する workflow がこの名前）。
 
@@ -79,7 +79,7 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
    | 2 | `vars.STAGING_DOMAIN` | staging の固定ドメインをリポの Actions variables に登録する。**未設定の間はスモークをスキップして警告だけ出す**（revert は起きない） |
    | 3 | `secrets.VERCEL_AUTOMATION_BYPASS_SECRET` | Vercel の Deployment Protection を staging に掛けている場合のみ。Protection Bypass for Automation の secret を登録する。未登録で保護に弾かれた場合は「検証不能」の警告 issue が立ち、**revert はしない**（誤検知ガード） |
 
-   revert PR の push と作成には手順 2 の `AUTOMERGE_PAT` を共用する（未設定なら自動 revert は失敗し、
+   revert PR の push と作成には手順 2 の `AUTOMERGE_PAT` を共用する（未設定なら revert PR の起票は失敗し、
    人間対応のエラーログだけ残る）。誤検知ガード（全チェックが 3xx/401/403 で落ちたときは revert しない）は
    プラグイン側の bats テストが固定しているので、`# >>> smoke-script` マーカーの間の判定ロジックは変えない。
 

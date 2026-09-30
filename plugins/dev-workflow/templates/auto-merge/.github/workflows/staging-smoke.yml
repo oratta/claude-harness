@@ -3,8 +3,9 @@
 # auto-merge が main に入れた変更は staging に自動デプロイされる（`Deploy to Staging` という名前の
 # workflow。infra プラグインの deploy-staging.yml.template が生成するものと同名なら何でもよい）。
 # その完了イベントを購読してここが外形スモークを実行し、壊れていたら:
-#   revert PR を自動起票（`agent-review:passed` + 「対象 HEAD:」コメント付き
-#     → 聖域パス非接触なら auto-merge.yml が取り込む。聖域に触れていれば human-merge が付く）
+#   revert PR を起票（`incident` ラベルのみ。`agent-review:passed` は付けない。
+#     機械生成 PR がゲートを迂回して auto-merge に乗る経路は作らない。人間がレビューして
+#     `agent-review:passed` を付けて初めて auto-merge の対象になる）
 #   + incident issue を起票（ポストモーテムの様式は展開先リポの運用手順書に従う）。
 #
 # 誤検知ガード（genetta-inc/suimei の初回実戦で学習）: 全チェックが認証系（3xx/401/403）で落ちた場合は
@@ -14,7 +15,7 @@
 # 前提（人間セットアップ。展開手順は templates/auto-merge/README.md「staging スモーク」節）:
 #   - vars.STAGING_DOMAIN: staging の固定ドメイン（未設定の間はスモークをスキップして警告のみ）
 #   - secrets.AUTOMERGE_PAT: revert PR の push / PR 作成に使用（auto-merge.yml と共用。
-#     PR は PAT で作らないと CI が走らず auto-merge 不能になる）
+#     PR は PAT で作らないと CI が走らず、人間がレビューしてもマージ判断の材料が揃わない）
 #   - secrets.VERCEL_AUTOMATION_BYPASS_SECRET: Vercel の Protection Bypass for Automation
 #     （Deployment Protection を維持したままスモークを通すためのヘッダー用。未設定なら素の curl）
 #
@@ -184,25 +185,16 @@ jobs:
             fi
             git push -u origin "$BRANCH"
           fi
-          REVERT_SHA=$(git rev-parse HEAD)
 
-          # 4. PR 作成は PAT（GITHUB_TOKEN で作った PR には CI が走らず auto-merge 不能になるため）。既存 PR は再利用
+          # 4. PR 作成は PAT（GITHUB_TOKEN で作った PR には CI が走らないため）。既存 PR は再利用。
+          #    agent-review:passed は付けない（機械生成 PR が auto-merge に自己付与で乗る経路を作らない）。
+          #    人間がレビューして passed を付ける
           PR_URL=$(GH_TOKEN="$MERGE_TOKEN" gh pr list --repo "$REPO" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')
           if [ -z "${PR_URL}" ]; then
             PR_URL=$(GH_TOKEN="$MERGE_TOKEN" gh pr create --repo "$REPO" \
               --title "revert: staging スモーク失敗による自動巻き戻し ($SHORT)" \
-              --label "agent-review:passed" --label "incident" \
-              --body "staging スモークテストの失敗を検知したため、直近の main 取り込みを自動 revert します。検知ラン: ${RUN_URL} — 聖域パスに触れていなければ auto-merge が取り込みます（触れている場合は human-merge が付くので人間がマージしてください）。")
-          fi
-
-          # auto-merge.yml は「対象 HEAD: <40桁 SHA>」コメントの実在を合格条件にしている
-          # （合格後 push の stale passed 防止）。revert PR は機械生成で HEAD が確定しているので、
-          # ここで同じ規約のコメントを投稿して auto-merge の合格条件を満たす（既に有れば再投稿しない）
-          PR_NUM=${PR_URL##*/}
-          if ! gh api "repos/$REPO/issues/$PR_NUM/comments" --paginate --jq '.[].body' | grep -qF "対象 HEAD: ${REVERT_SHA}"; then
-            COMMENT="対象 HEAD: ${REVERT_SHA}"$'\n\n'
-            COMMENT+="staging スモーク失敗（${RUN_URL}）に対する機械生成の revert PR。対象コミット ${BAD_SHA} の巻き戻しのみを含む。"
-            gh api -X POST "repos/$REPO/issues/$PR_NUM/comments" -f body="$COMMENT"
+              --label "incident" \
+              --body "staging スモークテストの失敗を検知したため、直近の main 取り込みを revert する PR を起票しました（対象コミット ${BAD_SHA}）。検知ラン: ${RUN_URL} — 人間のレビュー待ちです。内容を確認し、問題なければレビューして agent-review:passed を付けてください（付くまで auto-merge は取り込みません）。")
           fi
 
           # incident issue に revert PR へのリンクを追記（既にあれば再投稿しない）
