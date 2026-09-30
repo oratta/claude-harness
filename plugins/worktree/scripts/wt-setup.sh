@@ -296,7 +296,9 @@ wt_enable_repo_githooks() {
   case "$common" in /*) ;; *) common="$TOPLEVEL/$common" ;; esac
   hooks_dir="$common/hooks"
   if [ -d "$hooks_dir" ]; then
-    existing=$(find "$hooks_dir" -mindepth 1 -maxdepth 1 ! -name '*.sample' 2>/dev/null | head -n 1) || existing=""
+    # -H: hooks/ 自体が別ディレクトリへの symlink でも中を見る。-print -quit: パイプを使わず最初の 1 件で止める
+    # （head との pipefail 下で find が SIGPIPE になり、検出済みのフックを「無い」に戻すのを避ける）。探索に失敗したら触らない
+    existing=$(find -H "$hooks_dir" -mindepth 1 -maxdepth 1 ! -name '*.sample' -print -quit 2>/dev/null) || return 0
     if [ -n "$existing" ]; then
       echo ""
       echo "=== git フック: .githooks を追跡しているが .git/hooks/ に既存のフックがあるため自動では有効化しなかった（有効にするなら push-guard-setup の手順で git config --local core.hooksPath .githooks） ==="

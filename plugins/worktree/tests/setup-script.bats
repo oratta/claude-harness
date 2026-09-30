@@ -470,6 +470,24 @@ wt_make_hooks_repo() {
   grep -q '^=== git フック: .githooks を追跡しているが .git/hooks/ に既存のフックがあるため自動では有効化しなかった' "$out"
 }
 
+@test "githooks: a .git/hooks that is a symlink to a dir with hooks blocks the switch" {
+  local wt main out
+  wt_isolate_git_config
+  wt="$(wt_make_hooks_repo hk-symlink tracked)"
+  main="$(dirname "$wt")"
+  mkdir -p "${BATS_TEST_TMPDIR}/hk-symlink-shared"
+  printf '#!/bin/sh\ngit lfs pre-push "$@"\n' >"${BATS_TEST_TMPDIR}/hk-symlink-shared/pre-push"
+  chmod +x "${BATS_TEST_TMPDIR}/hk-symlink-shared/pre-push"
+  : "${main:?}"
+  rm -rf "${main}/.git/hooks"
+  ln -s "${BATS_TEST_TMPDIR}/hk-symlink-shared" "$main/.git/hooks"
+  out="${BATS_TEST_TMPDIR}/hk-symlink.txt"
+  ( cd "$wt" && bash "$WT_SETUP_SH" ) >"$out" 2>&1
+  run git -C "$main" config --local --get core.hooksPath
+  [ "$status" -eq 1 ]
+  grep -q '^=== git フック: .githooks を追跡しているが .git/hooks/ に既存のフックがあるため自動では有効化しなかった' "$out"
+}
+
 @test "githooks: only .sample files in .git/hooks/ do not block the switch" {
   local wt main
   wt_isolate_git_config
