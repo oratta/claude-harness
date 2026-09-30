@@ -50,7 +50,8 @@
 
 | 実パス | 判定理由 |
 |--------|----------|
-| `plugins/dev-workflow/skills/develop/SKILL.md`・`skills/pr-review-gate/` 配下（索引 `SKILL.md`・`stages/`・`declarations.md`）・`skills/issueify/SKILL.md` | 対象外。オーケストレータ／ゲート／起票の手順そのもので、成果物の検証（テスト・lint の exit code、宣言コメントの API 実測、承認後の `gh issue create`）が本文の手順に既に組み込まれている。 |
+| `plugins/dev-workflow/skills/develop/SKILL.md`・`plugins/dev-workflow/skills/pr-review-gate/SKILL.md`（と同じ階層の `stages/`・`declarations.md`）・`plugins/dev-workflow/skills/issueify/SKILL.md` | 対象外。オーケストレータ／ゲート／起票の手順そのもので、成果物の検証（テスト・lint の exit code、宣言コメントの API 実測、承認後の `gh issue create`）が本文の手順に既に組み込まれている。 |
+| `plugins/dev-workflow/skills/memory-refresh/SKILL.md` | 対象外。メモリを 1 件ずつ分類して整理する手順で、成果物は auto-memory の編集結果。主の承認と控えの取得が本文の手順に組み込まれており、完了前の確認（控えの実在・承認）を既に含む。 |
 | `plugins/casting/skills/casting/SKILL.md` | 対象外。配役表・判例の書き方の手順で、生成物の lint は `scripts/casting-check.sh` が担い、コマンド側（`/casting:init`）が実行結果を確認する。 |
 | `plugins/skill-pack/skills/skill-pack/SKILL.md` | 対象外。`skillOverrides`/`enabledPlugins` の設定編集のみを行い、成果物は設定ファイルであって、反映確認は Claude Code の設定パースと `/reload-plugins` 後のスキル一覧に委ねる。 |
 | `plugins/capability-registry/skills/capability-registry/SKILL.md` | 対象外。外部サービスの CLI とトークンの在処を引く索引スキルで、成果物を出さない。唯一の書き込み（`fmtoken.sh --register`）は命名規約をスクリプト側が機械検証し、原則 1「索引の記述を信じず verify（認証確認コマンド）を実行して確かめる」が完了前の検証を本文に既に組み込んでいる。 |
