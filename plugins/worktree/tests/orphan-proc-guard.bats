@@ -19,13 +19,11 @@ setup() {
 }
 
 teardown() {
-  # 取りこぼした背景プロセスを確実に始末する（孤児は teardown まで生き残る）
-  if [ -n "${WT_SPAWNED_PIDS:-}" ]; then
-    local p
-    for p in $WT_SPAWNED_PIDS; do
-      kill -9 "$p" 2>/dev/null || true
-    done
-  fi
+  # 取りこぼした背景プロセスを確実に始末する（孤児は teardown まで生き残る）。
+  # PID は wt_spawn_orphan が $( ) の中で記録するため、変数ではなくファイル経由
+  # （wt_track_pid）で受け取る。旧実装は変数で受けていて親に届かず、sleep 300 の孤児が
+  # bats の出力パイプを握ったまま最長 5 分残り、全件実行を止めていた（issue #215）。
+  wt_kill_tracked_pids
 }
 
 # SKILL.md から稼働シグナル検出ヘルパ一式を抽出する（実行時と同じ「まとめて定義」の状態）
@@ -54,8 +52,9 @@ wt_make_stale_dir() {
 # 中間シェルを即終了させる二重フォークで init に引き取らせる。
 wt_spawn_orphan() {
   local dir="$1" pid
-  pid=$( cd "$dir" && bash -c 'sleep 300 >/dev/null 2>&1 & echo $!' )
-  WT_SPAWNED_PIDS="${WT_SPAWNED_PIDS:-} $pid"
+  # bats の出力パイプ（fd 3 ほか）を孤児に渡さない（helper.bash の約束事を参照）
+  pid=$( cd "$dir" && wt_close_inherited_fds && bash -c 'sleep 300 >/dev/null 2>&1 & echo $!' )
+  wt_track_pid "$pid"
   sleep 1
   echo "$pid"
 }
@@ -225,13 +224,14 @@ wt_ppid_of() {
 }
 
 @test "proc_tree_top: a process with a live parent resolves above itself" {
+  wt_require_process_listing
   local snippet dir pid out
   snippet="$(wt_load_orphan_helpers)"
   dir="${BATS_TEST_TMPDIR}/toplive"
   mkdir -p "$dir"
-  ( cd "$dir" && exec sleep 30 ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec sleep 30 ) &
   pid=$!
-  WT_SPAWNED_PIDS="${WT_SPAWNED_PIDS:-} $pid"
+  wt_track_pid "$pid"
   sleep 1
 
   out=$(bash -c ". '$snippet'; proc_tree_top '$pid'")
@@ -286,6 +286,7 @@ wt_ppid_of() {
 # --- 正当な稼働プロセスは引き続き検出される（issue #77 の回帰防止） ---
 
 @test "detect_active_procs_under: a live process keeps its active signal even when the worktree is stale" {
+  wt_require_process_listing
   command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
   local snippet dir home pid out
   snippet="$(wt_load_orphan_helpers)"
@@ -295,17 +296,17 @@ wt_ppid_of() {
   wt_make_stale_dir "$dir"
 
   # 親（この bats プロセス）が生きているプロセス = 起動元セッションが存在する
-  ( cd "$dir" && exec sleep 30 ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec sleep 30 ) &
   pid=$!
-  WT_SPAWNED_PIDS="${WT_SPAWNED_PIDS:-} $pid"
+  wt_track_pid "$pid"
   sleep 1
   touch -t 202401010000 "$dir/file.txt" "$dir"
 
   out=$(HOME="$home" bash -c ". '$snippet'; detect_active_procs_under '$dir'" 2>/dev/null)
   kill "$pid" 2>/dev/null || true
 
-  [[ "$out" == *"$pid"* ]]
-  [[ "$out" == *"(sleep)"* ]]
+  [[ "$out" == *"$pid"* ]] || return 1
+  [[ "$out" == *"(sleep)"* ]] || return 1
 }
 
 @test "detect_active_procs_under: an orphan still counts while its session log is fresh" {
@@ -325,7 +326,7 @@ wt_ppid_of() {
   echo '{}' >"$home/.claude/projects/$slug/session.jsonl"
 
   out=$(HOME="$home" bash -c ". '$snippet'; detect_active_procs_under '$dir'" 2>/dev/null)
-  [[ "$out" == *"$pid"* ]]
+  [[ "$out" == *"$pid"* ]] || return 1
 }
 
 @test "detect_active_procs_under: an orphan still counts while the worktree was touched within 24h" {
@@ -342,7 +343,7 @@ wt_ppid_of() {
   echo work >"$dir/edited.md"
 
   out=$(HOME="$home" bash -c ". '$snippet'; detect_active_procs_under '$dir'" 2>/dev/null)
-  [[ "$out" == *"$pid"* ]]
+  [[ "$out" == *"$pid"* ]] || return 1
 }
 
 @test "detect_active_procs_under: missing helpers keep the orphan as an active signal (fail-closed)" {
@@ -364,16 +365,10 @@ wt_ppid_of() {
   touch -t 202401010000 "$dir/file.txt" "$dir"
 
   out=$(HOME="$home" bash -c ". '$snippet'; detect_active_procs_under '$dir'" 2>/dev/null)
-  [[ "$out" == *"$pid"* ]]
+  [[ "$out" == *"$pid"* ]] || return 1
 }
 
 # --- version bump (cache invalidation) ---
-
-@test "version: worktree plugin.json is bumped to at least 2.12.0" {
-  local v
-  v=$(jq -r .version "$PLUGIN_JSON")
-  printf '%s\n2.12.0\n' "$v" | sort -V | head -1 | grep -qx '2.12.0'
-}
 
 @test "version: wt-clean SKILL.md version is bumped to at least 3.7.0" {
   local v

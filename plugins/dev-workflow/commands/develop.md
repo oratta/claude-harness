@@ -1,9 +1,17 @@
 ---
 name: develop
 description: 標準開発ワークフロー（develop スキル）を起動する。issue があればそれを記録先に、無ければ Draft PR を記録先にして進める（issue を切るのは追跡・キュー・議論が要るときだけ）
-argument-hint: "[issue番号|issueURL|自然文の依頼]"
+argument-hint: "[(--profile NAME [--profile-file PATH] | --account NAME --model MODEL) (--account-home NAME=PATH… | --account-home-file PATH) [--executor codex]] [issue URL | request]"
 allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 ---
+
+## 実行先オプション
+
+`$ARGUMENTS` に `--profile <名前> [--profile-file <JSON>]` または旧形式の `--account <登録名> --model <Codex系統名またはモデルID>` があればprovider adapterを適用する。`--executor codex` も後方互換の別名として受理するが、その場合もprofile形式か旧形式のどちらか一方を必須とする。両形式の併用、`--profile-file` 単独、旧形式の片方欠落は開始前に拒否する。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用する。実行先オプションが無ければ同じ `references/codex-develop.md` をReadし、各 phase で profile なしの request を使って自動選択する。未知のexecutorは拒否する。profile が決めた投げ先を別 provider で代行しない。実行先オプションは委譲transportだけを変え、仕様要否・レビュー・チェック・順序は既存develop正本を使う。adapter の適用を理由に仕様を必須にしない。
+
+引数なしの追加依頼でも各 phase で profile なしの request を使って自動選択する。明示 profile・旧形式を引き継ぐ場合は初回の設定を再推測せず、実行先オプションと account-home の対応の両方を改めて明示する。
+
+前景実行のCodexオプションは、account名からCODEX_HOMEへの対応表である。`--account-home NAME=PATH`（繰り返し可）か、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを指す `--account-home-file PATH` のどちらか一方を渡し、併用は拒否する。本体はこれを依頼本文から分離し、`codex-develop.py request` へそのまま渡す。自動選択で対応表も無指定の場合だけ、既存の絶対ディレクトリである `CODEX_HOME`（未設定なら `~/.codex`）を `current` として評価する。明示 profile・旧形式、または明示した対応表では、対応に無いaccount名をこの既定値へ倒さず依頼ファイルを作る前に拒否する。
 
 `develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0・エピックの扱い）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。このコマンドはそれを Read tool で読み込み、その指示に従ってメインセッションで interactive モードのままインライン実行する。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
 
@@ -31,6 +39,8 @@ done
 - **③ GitHub issue URL、または自然文（例: `issue#12 のログイン不具合を直して`）で既存 issue が特定できる** → URL から owner/repo/番号を抽出、自然文なら番号を推測し `gh issue view <番号>` で存在確認し、その issue を記録先にして develop パイプラインへ（従来どおり）
 - **④ 自然文がどの既存 issue にもマッチしない** → 既定は入口 0（issue を切らず Draft PR を記録先）へ。追跡・キュー・議論が要る（エピック／無人キューに載せたい／判断の経緯を issue に残したい）場合のみ、確認のうえ issueify フォールバックへ
 - **⑤ 引数なし** → `gh issue list --state open` で開いている issue を一覧し、選択肢に「**新しいタスクを説明して着手する（issue は切らない）**」と「**新しいタスクを説明して issue 化する**」を加えて提示する。前者はタスクの説明を聞いて入口 0 へ、後者は issueify フォールバックへ
+
+**引き継ぎのある記録先（①③）**: 特定した記録先に 1 行目が `引き継ぎ: 主の返事待ち` のコメントがあれば、`needs-approval` のラベルの有無によらず、入口 0 に進まず `skills/develop/SKILL.md`「保留で止まるときの引き継ぎ」の「新しいセッションでの再開」に進む（ラベルの確認は再開手順が引き継ぎの「ラベルの付け先」で行い、ラベルが無ければ状態を組み立て直して報告する）。引数の記録先より後ろの文字列は主の返事として本体に渡す（例: `/develop 42 許容する`）。
 
 特定（または起票）した issue 番号、または「Draft PR を記録先にする」の指示を SKILL.md の入口 0 にそのまま渡す。①③の既存分岐の挙動はこの変更で変わっていない。
 

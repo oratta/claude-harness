@@ -2,120 +2,245 @@
 #
 # develop スキルの役割別指示書（W / R1 / G）の構造検証（issue #203）
 #
-#   references/roles/worker.md        W: 仕様化判断の記録・Draft PR 記録先の作成順序・事前分類表・TDD
-#   references/roles/spec-reviewer.md R1: 5 観点・読み取り専用・2 周キャップ・結果書式・判断記録の契約
+#   references/roles/worker/*.md      W: 仕様化判断の記録・Draft PR 記録先の作成順序・TDD（索引は references/roles/worker.md、#556）
+#   references/pre-classification.md  事前分類表（#556 で worker.md から移した）
+#   references/roles/spec-reviewer.md R1: 6 観点（守備範囲を含む）・読み取り専用・2 周キャップ・結果書式・判断記録の契約
 #   references/roles/gate-runner.md   G: pr-review-gate 手順 1〜5・Codex の呼び方・needs-reviewer・failed の原因分類
 #
 # spec: dev-workflow-develop, dev-workflow-spec-review
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
+  REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
+  REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
+  TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
+  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   ROLES="${PLUGIN_DIR}/skills/develop/references/roles"
   WORKER="${ROLES}/worker.md"
+  W_COMMON="${ROLES}/worker/common.md"
+  W_SPEC="${ROLES}/worker/spec.md"
+  W_IMPL="${ROLES}/worker/implement.md"
+  W_FINISH="${ROLES}/worker/finish.md"
+  PRE="${PLUGIN_DIR}/skills/develop/references/pre-classification.md"
   REVIEWER="${ROLES}/spec-reviewer.md"
   GATE="${ROLES}/gate-runner.md"
 }
 
+# G の否定の検査（その文言が G の読むどこにも無いこと）は gate-runner.md と段のファイル全部で見る
+gate_all() { cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; }
+# W の否定の検査（その文言が W の指示書のどこにも無いこと）は索引・worker/ の 4 本・pre-classification.md の全部で見る（#556）
+worker_all() { cat "$WORKER" "$W_COMMON" "$W_SPEC" "$W_IMPL" "$W_FINISH" "$PRE"; }
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
 
 @test "roles: all three role files exist" {
   [ -f "$WORKER" ]
+  [ -f "$W_COMMON" ] && [ -f "$W_SPEC" ] && [ -f "$W_IMPL" ] && [ -f "$W_FINISH" ]
   [ -f "$REVIEWER" ]
   [ -f "$GATE" ]
 }
 
 # ===== worker.md =====
 
-@test "worker: does not re-run /opsx:ff when the change already has its artifacts" {
-  grep -qF '`/opsx:ff` を再実行しない' "$WORKER"
-  grep -qF 'そのまま' "$WORKER"
+@test "worker: does not re-run openspec new change when artifacts exist" {
+  grep -qF '`openspec new change` を再実行しない' "$W_SPEC"
+  grep -qF 'そのまま' "$W_SPEC"
 }
 
 
 @test "worker: records the spec decision with the exact first-line regex via gh, and does not proceed before" {
-  grep -qF '^仕様化判断: (する|しない)$' "$WORKER"
-  grep -qE 'gh (issue|pr) comment' "$WORKER"
-  grep -qE '記録(する|して)(前|まで)|記録せずに.*進(ま|んでは)' "$WORKER"
+  grep -qF '^仕様化判断: (する|しない)$' "$W_SPEC"
+  grep -qE 'gh (issue|pr) comment' "$W_SPEC"
+  grep -qE '記録(する|して)(前|まで)|記録せずに.*進(ま|んでは)' "$W_SPEC"
 }
 
 @test "worker: also carries the spec review result format for the record target" {
-  grep -qF '^仕様レビュー: (APPROVE|REQUEST_CHANGES)$' "$WORKER"
+  grep -qF '^仕様レビュー: (APPROVE|REQUEST_CHANGES)$' "$W_COMMON"
 }
 
 @test "worker: Draft PR record target is created (empty commit -> push -> draft) before the spec decision" {
-  grep -q 'git commit --allow-empty' "$WORKER"
-  grep -q 'git push' "$WORKER"
-  grep -q 'gh pr create --draft' "$WORKER"
-  draft="$(grep -n 'gh pr create --draft' "$WORKER" | head -1 | cut -d: -f1)"
-  decision="$(grep -nF '^仕様化判断: (する|しない)$' "$WORKER" | head -1 | cut -d: -f1)"
+  grep -q 'git commit --allow-empty' "$W_SPEC"
+  grep -q 'git push' "$W_SPEC"
+  grep -q 'gh pr create --draft' "$W_SPEC"
+  draft="$(grep -n 'gh pr create --draft' "$W_SPEC" | head -1 | cut -d: -f1)"
+  decision="$(grep -nF '^仕様化判断: (する|しない)$' "$W_SPEC" | head -1 | cut -d: -f1)"
   [ "$draft" -lt "$decision" ]
 }
 
 @test "worker: PR body carries acceptance criteria and no Closes/Fixes/Refs when the PR is the record target" {
-  grep -qE '受け入れ条件.*PR 本文|PR 本文.*受け入れ条件' "$WORKER"
-  grep -qE '(Closes|Fixes|Refs).*(書かない|書いてはならない)' "$WORKER"
+  grep -qE '受け入れ条件.*PR 本文|PR 本文.*受け入れ条件' "$W_SPEC"
+  grep -qE '(Closes|Fixes|Refs).*(書かない|書いてはならない)' "$W_SPEC"
 }
 
 @test "worker: never creates a worktree itself (main prepares it)" {
-  grep -qE 'worktree.*(切らない|作らない)' "$WORKER"
-  ! grep -q 'git worktree add' "$WORKER"
+  grep -qE 'worktree.*(切らない|作らない)' "$W_COMMON"
+  ! worker_all | grep -q 'git worktree add' || return 1
 }
 
 @test "worker: pre-classification table names all 4 categories and is the single source" {
-  grep -qF '重要実装の事前分類' "$WORKER"
-  grep -qF '聖域パス' "$WORKER"
-  grep -qF 'マージ権限' "$WORKER"
-  grep -qF '層間契約' "$WORKER"
-  grep -qF '課金/法務' "$WORKER"
-  grep -q '正本' "$WORKER"
+  grep -qF '重要実装の事前分類' "$PRE"
+  grep -qF '聖域パス' "$PRE"
+  grep -qF 'マージ権限' "$PRE"
+  grep -qF '層間契約' "$PRE"
+  grep -qF '課金/法務' "$PRE"
+  grep -q '正本' "$PRE"
 }
 
 @test "worker: fable from the first round, AGENT_MODEL unchanged, budget modes cap escalation" {
-  grep -qF '`model: fable`' "$WORKER"
-  grep -q '最初から' "$WORKER"
-  grep -qF 'AGENT_MODEL' "$WORKER"
-  grep -qF 'FABLE_BUDGET_MODE=reserve' "$WORKER"
-  grep -qF 'exhausted' "$WORKER"
+  grep -qF '`model: fable`' "$PRE"
+  grep -q '最初から' "$PRE"
+  grep -qF 'AGENT_MODEL' "$PRE"
+  grep -qF 'FABLE_BUDGET_MODE=reserve' "$PRE"
+  grep -qF 'exhausted' "$PRE"
 }
 
 @test "worker: fallback record format points back to pr-review-gate" {
-  grep -qF 'pr-review-gate' "$WORKER"
+  grep -qF 'pr-review-gate' "$PRE"
 }
 
 @test "worker: openspec CLI degraded path returns to main for the same spec review" {
-  grep -A3 'openspec CLI だけある場合' "$WORKER" | grep -q '仕様レビュー'
-  grep -A3 'openspec CLI だけある場合' "$WORKER" | grep -q 'return'
+  grep -A3 'openspec CLI で artifact を作る場合' "$W_SPEC" | grep -q '仕様レビュー'
+  grep -A3 'openspec CLI で artifact を作る場合' "$W_SPEC" | grep -q 'return'
 }
 
-@test "worker: spec path returns after /opsx:ff and does not apply before R1 APPROVE" {
-  grep -q '/opsx:ff' "$WORKER"
-  grep -q '/opsx:apply' "$WORKER"
-  grep -qE 'APPROVE.*(まで|前).*(apply|実装).*(進まない|進んではならない|入らない)|(apply|実装).*APPROVE.*(まで|前)' "$WORKER"
+@test "worker: spec path returns after openspec new change and does not apply before R1 APPROVE" {
+  grep -q 'openspec new change' "$W_SPEC"
+  grep -q 'openspec validate' "$W_IMPL"
+  grep -qE 'APPROVE.*(まで|前).*(apply|実装).*(進まない|進んではならない|入らない)|(apply|実装).*APPROVE.*(まで|前)' "$W_SPEC"
 }
 
 @test "worker: TDD with evidence-backed completion, no execution-strategy branches" {
-  grep -q 'Red' "$WORKER"
-  grep -q 'Green' "$WORKER"
-  grep -q 'exit code' "$WORKER"
-  ! grep -q 'delegate+verify' "$WORKER"
-  ! grep -q 'workflow 型' "$WORKER"
-  ! grep -q 'solo' "$WORKER"
+  grep -q 'Red' "$W_IMPL"
+  grep -q 'Green' "$W_IMPL"
+  grep -q 'exit code' "$W_IMPL"
+  ! worker_all | grep -q 'delegate+verify' || return 1
+  ! worker_all | grep -q 'workflow 型' || return 1
+  ! worker_all | grep -q 'solo' || return 1
+}
+
+# (3) は (3a) 実装＋verify と (3b) archive＋PR＋仕様宣言 の 2 回の return に分かれる（#262）。
+@test "worker: (3a) and (3b) are separate sections that each list their return contents" {
+  a="$(section "$W_IMPL" '(3a) 実装＋verify')"
+  b="$(section "$W_FINISH" '(3b) archive＋PR＋仕様宣言')"
+  [ -n "$a" ] || { echo "no (3a) section in worker/implement.md"; return 1; }
+  [ -n "$b" ] || { echo "no (3b) section in worker/finish.md"; return 1; }
+  # (3a): 実装と verify まで。archive には進まない
+  echo "$a" | grep -qF '工程完了: 実装＋verify'
+  echo "$a" | grep -q '検査コマンド'
+  echo "$a" | grep -q 'exit code'
+  echo "$a" | grep -qF 'openspec validate'
+  # 否定は `!` で書かない。bats（set -e）は `!` 付きコマンドの失敗を最終行以外で無視するため、
+  # `! ... | grep -q ...` は退行を検出できない（bats 1.13 で実測）。
+  if echo "$a" | grep -F 'openspec archive' | grep -vF '(3b)' | grep -q .; then
+    echo "(3a) の節に openspec archive の実行指示がある" >&2
+    return 1
+  fi
+  # (3b): archive 以降。PR 番号と仕様宣言のコメント URL を return に載せる
+  echo "$b" | grep -qF '工程完了: archive＋PR＋仕様宣言'
+  echo "$b" | grep -qF 'openspec archive'
+  echo "$b" | grep -q 'PR #'
+  echo "$b" | grep -q '仕様宣言のコメント URL'
+}
+
+# ゲート合格まで PR を Draft のまま進める（#304）。W は Ready にせず、G が pr-review-gate 手順 5 で行う。
+@test "worker: (3b) keeps the PR as Draft (gh pr create --draft) and leaves Ready to G" {
+  b="$(section "$W_FINISH" '(3b) archive＋PR＋仕様宣言')"
+  [ -n "$b" ] || { echo "no (3b) section in worker/finish.md"; return 1; }
+  echo "$b" | grep -q 'Draft のまま'
+  echo "$b" | grep -qF 'gh pr create --draft'
+  echo "$b" | grep -F 'Ready 化' | grep -qF '手順 5'
+  if echo "$b" | grep -qE 'gh pr ready|Ready for Review.*切り替え'; then
+    echo "(3b) の節に W が Ready に切り替える記述がある（Ready 化は G の手順 5）" >&2
+    return 1
+  fi
+}
+
+# opsx スラッシュコマンドが無く openspec CLI だけある経路も、(3a)/(3b) の区切りは同じでなければ
+# ならない（#262 のゲート指摘。この段落だけ旧来の「実装 → archive」一括のまま残っていた）。
+@test "worker: CLI path stops at verify in (3a) and archives in (3b)" {
+  s="$(section "$W_SPEC" '仕様化する場合（(1) の終わり）')"
+  [ -n "$s" ] || { echo "no spec-writing section in worker/spec.md"; return 1; }
+  section "$W_IMPL" '(3a) 実装＋verify' | grep -qF 'openspec validate <change-name> --strict'
+  section "$W_FINISH" '(3b) archive＋PR＋仕様宣言' | grep -qF 'openspec archive <change-name>'
+
+}
+
+@test "worker: the context cap section names the three stages and forbids finer splits" {
+  s="$(section "$W_COMMON" 'コンテキスト上限と手渡し')"
+  [ -n "$s" ] || { echo "no context cap section in worker/common.md"; return 1; }
+  echo "$s" | grep -qF '(1) 仕様化まで'
+  echo "$s" | grep -qF '(3a) 実装＋verify'
+  echo "$s" | grep -qF '(3b) archive＋PR＋仕様宣言'
+  # 「(3) をこれより細かく切らない」の箇条は本体向けの理由なので develop の SKILL.md の (3) に移した（#556）
+  if echo "$s" | grep -qF 'これより細かく'; then echo "common.md に (3) を細かく切らない箇条が残っている" >&2; return 1; fi
+  step3="$(awk '/^\(3\) W を SendMessage で再開/{f=1} f&&/^\(4\) /{exit} f' "${PLUGIN_DIR}/skills/develop/SKILL.md")"
+  echo "$step3" | grep -qF 'これより細かく'
+  echo "$step3" | grep -q '固定分'
+  echo "$step3" | grep -qF 'Red のまま止まったテストから再出発'
+  if echo "$step3" | grep -qF '理由の正本は references/roles/worker.md'; then echo "SKILL.md の (3) が worker.md を理由の正本として指している" >&2; return 1; fi
+}
+
+# W の return に「読んだコードの要点」を載せ、後任は読む場所の案内として使う（#555）
+@test "worker: the context cap section defines the read-code pointers field (W only, file:line, 20 lines) and tells the successor to re-read before editing" {
+  s="$(section "$W_COMMON" 'コンテキスト上限と手渡し')"
+  [ -n "$s" ] || { echo "no context cap section in worker/common.md"; return 1; }
+  echo "$s" | grep -qF '読んだコードの要点'
+  echo "$s" | grep -qF 'W の場合のみ必須'
+  echo "$s" | grep -qF '20 行'
+  echo "$s" | grep -qF '<リポジトリ相対パス>:<開始行>-<終了行> — <分かったこと>'
+  # 手渡しで起こされたときの箇条に、要点は案内で編集前に自分で読んで確かめる旨がある
+  echo "$s" | grep -F '手渡しで起こされたら' | grep -qF '案内'
+  echo "$s" | grep -F '手渡しで起こされたら' | grep -qF '編集する前に該当範囲を自分で読んで確かめる'
+}
+
+@test "worker: (3a) return and the escalation tripwire list include the read-code pointers" {
+  a="$(section "$W_IMPL" '(3a) 実装＋verify')"
+  t="$(section "$W_COMMON" '昇格トリップワイヤー（W が return で報告する）')"
+  [ -n "$a" ] || { echo "no (3a) section in worker/implement.md"; return 1; }
+  [ -n "$t" ] || { echo "no tripwire section in worker/common.md"; return 1; }
+  echo "$a" | grep -qF '読んだコードの要点'
+  echo "$t" | grep -qF '読んだコードの要点'
+}
+
+@test "worker: tasks.md and the no-spec return carry the touch range (file:line) that may drift" {
+  s="$(section "$W_SPEC" '仕様化する場合（(1) の終わり）')"
+  [ -n "$s" ] || { echo "no spec-writing section in worker/spec.md"; return 1; }
+  echo "$s" | grep -qF '触る範囲: <パス>:<開始行>-<終了行>'
+  echo "$s" | grep -qF 'ずれうる'
+  echo "$s" | grep -qF '編集前に該当範囲を読む'
+  section "$W_SPEC" '仕様化判断（opsx / openspec の要否）と記録' \
+    | grep -F '仕様化しないと判定した場合は' | grep -qF '触る範囲:'
 }
 
 @test "worker: split judgement is based on the issue text, and unmanned splits into child issues with blocked_by" {
-  grep -q 'dependencies/blocked_by' "$WORKER"
-  grep -q 'references/decision-criteria.md' "$WORKER"
+  grep -q 'dependencies/blocked_by' "$W_SPEC"
+  grep -q 'references/decision-criteria.md' "$W_SPEC"
 }
 
 # ===== spec-reviewer.md =====
 
-@test "reviewer: five review criteria are listed with spec path + requirement name on conflict" {
+@test "reviewer: six review criteria are listed with spec path + requirement name on conflict" {
   grep -q '一意' "$REVIEWER"
   grep -qE '既存.*openspec/specs' "$REVIEWER"
   grep -qE 'config|引数' "$REVIEWER"
   grep -q '前提' "$REVIEWER"
   grep -qE 'proposal.*specs.*design.*tasks' "$REVIEWER"
   grep -qE 'spec.*パス.*要件名|要件名.*パス' "$REVIEWER"
+}
+
+@test "reviewer (#287): coverage criterion is in the review criteria section, limited to input-checking requirements, missing one is REQUEST_CHANGES" {
+  s="$(section "$REVIEWER" 'レビュー観点')"
+  [ -n "$s" ] || { echo "no review criteria section in spec-reviewer.md"; return 1; }
+  echo "$s" | grep -qF '## レビュー観点（6 つ'
+  echo "$s" | grep -q '守備範囲'
+  echo "$s" | grep -qF '入力を検査・判定する要件'
+  echo "$s" | grep -qE '守備範囲.*REQUEST_CHANGES|REQUEST_CHANGES.*守備範囲'
+}
+
+@test "reviewer (#287): coverage criterion is not applied retroactively to existing specs" {
+  section "$REVIEWER" 'レビュー観点' | grep -qF '遡及しない'
 }
 
 @test "reviewer: read-only and grep-first" {
@@ -144,11 +269,11 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   section "$REVIEWER" '判断記録の契約' | grep -qF '^仕様化判断: (する|しない)$'
 }
 
-@test "reviewer: spawned with explicit model, default opus, fable via worker.md pre-classification" {
+@test "reviewer: spawned with explicit model, default opus, fable via pre-classification.md" {
   grep -q 'model' "$REVIEWER"
   grep -q '`opus`' "$REVIEWER"
   grep -qE '事前分類.*fable|fable.*事前分類' "$REVIEWER"
-  grep -q 'worker.md' "$REVIEWER"
+  grep -q 'pre-classification.md' "$REVIEWER"
 }
 
 @test "reviewer: reserve only for automatic runs, exhausted for all paths" {
@@ -170,15 +295,15 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "gate-runner: Codex is invoked from Bash (codex exec with flags or codex-companion.mjs), not via slash/subagent" {
-  grep -qF 'codex exec -c approval_policy=never -c model_reasoning_effort=medium' "$GATE"
+  grep -qF 'codex exec -c approval_policy=never -c model_reasoning_effort=medium' "${REVIEW_RUN}"
   grep -qF 'codex-companion.mjs' "$GATE"
-  grep -q '/codex:adversarial-review' "$GATE"
-  grep -q 'codex:codex-rescue' "$GATE"
+  grep -q '/codex:adversarial-review' "${REVIEW_RUN}"
+  grep -q 'codex:codex-rescue' "${REVIEW_RUN}"
   grep -qE '(使えない|使わない|呼べない)' "$GATE"
 }
 
 @test "gate-runner: needs-reviewer return payload (light/full + reason, PR + HEAD SHA, model + reason, acceptance criteria location)" {
-  n="$(section "$GATE" 'needs-reviewer')"
+  n="$(section "${PREPARE}" 'needs-reviewer')"
   echo "$n" | grep -q 'light'
   echo "$n" | grep -q 'full'
   echo "$n" | grep -q '根拠'
@@ -188,17 +313,73 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   echo "$n" | grep -q '受け入れ条件の所在'
 }
 
-@test "gate-runner: spawned by name, resumed with the reviewer summary via SendMessage, and G posts the reviewer line" {
+@test "gate-runner: spawned by name per stage, and the triage G posts the reviewer line (#554)" {
   grep -q '名前付き' "$GATE"
-  grep -q 'SendMessage' "$GATE"
+  grep -qF '段ごとに新しい G を起こす' "$GATE"
   grep -qF 'レビュー実行者:' "$GATE"
-  grep -qE 'レビュー実行者:.*G が|G が.*レビュー実行者:' "$GATE"
+  grep -qE 'レビュー実行者:.*G が|G が.*レビュー実行者:' "${TRIAGE}"
 }
 
 @test "gate-runner: failed return carries the step 2-2 cause classification" {
-  grep -q '実装品質起因' "$GATE"
-  grep -q '仕様が曖昧' "$GATE"
-  grep -q '誤検出' "$GATE"
+  grep -q '実装品質起因' "${TRIAGE}"
+  grep -q '仕様が曖昧' "${TRIAGE}"
+  grep -q '誤検出' "${TRIAGE}"
+}
+
+@test "gate-runner: step 5 summary includes Ready (only when Draft) and the passed return has a Ready result field" {
+  todo="$(section "$GATE" 'やること')"
+  [ -n "$todo" ] || { echo "no やること section in gate-runner.md"; return 1; }
+  echo "$todo" | grep -F 'agent-review:passed' | grep -qF 'Draft なら Ready'
+  grep -qF 'Ready 化: 実施した | 対象外（元から非 Draft）' "${PASS_STAGE}"
+}
+
+@test "gate-runner (#281): round-2 return sorts findings by quote or follow-up issue URL" {
+  grep -q '仕分け' "$GATE"
+  grep -q '引用' "${REVIEWER_BRIEF}"
+  grep -q 'follow-up issue' "$GATE"
+}
+
+@test "gate-runner (#354): row-5 findings return as on-hold for split-off confirmation, not proposing a third round" {
+  grep -q '切り出しの確認' "$GATE"
+  grep -q '3周目を提案しない' "${HOLD}"
+  ! gate_all | grep -qF '2周目キャップ' || return 1
+}
+
+@test "gate-runner (#281): round field covers round 3+ after owner go-ahead and full review line counts" {
+  grep -qE '周回: .*3以降（主の回答または決める役の裁定あり）' "$GATE"
+  grep -q '全体レビュー' "$GATE"
+}
+
+@test "gate-runner (#281): no high-severity-only third round permission remains" {
+  ! gate_all | grep -qF '新規の高深刻度 blocking のみ' || return 1
+}
+
+@test "gate-runner (#354): resume covers the owner's answer to the split-off confirmation" {
+  line="$(grep -E '保留の解除' "${HOLD}")"
+  echo "$line" | grep -qF '切り出しの確認'
+  echo "$line" | grep -qF '切り出す'
+  echo "$line" | grep -qF 'この PR で直す'
+}
+
+@test "gate-runner (#281): the round-2 sorting field sits above the Status-specific sections" {
+  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
+  [ -n "$common" ] || { echo "no Gate Result block in gate-runner.md"; return 1; }
+  echo "$common" | grep -q '仕分け'
+  echo "$common" | grep -q 'follow-up issue'
+  run sh -c "awk '/^### failed のとき/{f=1;next} /^### /{f=0} f' '$GATE' | grep -F '2周目の終わりにやること'"
+  [ "$status" -ne 0 ]
+}
+
+@test "gate-runner (#354): resuming with the reviewer's summary branches by triage row, not by round" {
+  line="$(grep -F 'レビュアーの要約受領' "$GATE" | grep -v '「レビュアーの要約受領」')"
+  [ -n "$line" ] || { echo "no reviewer-summary resume line"; return 1; }
+  echo "$line" | grep -qF '周の数に関係なく'
+  echo "$line" | grep -qF '仕分け表'
+  echo "$line" | grep -qF '順 2〜4 は `agent-review:failed`'
+  echo "$line" | grep -qF '順 5 は保留'
+  echo "$line" | grep -qF '順 6 は `needs-decider`'
+  run sh -c "grep -F 'レビュアーの要約受領' '$GATE' | grep -E '1周目は|2周目と'"
+  [ "$status" -ne 0 ]
 }
 
 @test "gate-runner: return formats cover passed / failed / on-hold" {
@@ -210,15 +391,15 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 @test "gate-runner: G itself defaults to sonnet; the reviewer is opus or the decider type for merge conditions / cross-layer contracts" {
   grep -q 'G の既定は `sonnet`' "$GATE"
   grep -q '`opus`' "$GATE"
-  ! grep -q 'マージ条件・聖域・層間契約' "$GATE"
-  ! grep -q '聖域・層間契約による' "$GATE"
-  ! grep -qE '実装品質起因なら.*`model: fable`' "$GATE"
+  ! gate_all | grep -q 'マージ条件・聖域・層間契約' || return 1
+  ! gate_all | grep -q '聖域・層間契約による' || return 1
+  ! gate_all | grep -qE '実装品質起因なら.*`model: fable`' || return 1
   # 旧ラダー（実行役を 1 段ずつ上げる）は残さず、決める役の種別で上げる
-  ! grep -q '1 段上' "$GATE"
+  ! gate_all | grep -q '1 段上' || return 1
   grep -qF 'dev-workflow:decider' "$GATE"
-  grep -qF '一方だけ' "$GATE"
-  grep -qF 'W を `fable` にはしない' "$GATE"
-  grep -qF '`general-purpose` に `model: fable` は付けない' "$GATE"
+  grep -qF '一方だけ' "${TRIAGE}"
+  grep -qF 'W を `fable` にはしない' "${TRIAGE}"
+  grep -qF '`general-purpose` に `model: fable` は付けない' "${PREPARE}"
   grep -q 'マージ条件' "$GATE"
   grep -q '聖域' "$GATE"
   grep -q '層間契約' "$GATE"
@@ -235,4 +416,591 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
     echo "$offenders"
     false
   fi
+}
+
+# ---------- コンテキスト上限の規則は decision-criteria.md 1 箇所に置く（#261） ----------
+#
+# spec: dev-workflow-develop「コンテキスト上限の規則の本文は decision-criteria.md 1 箇所に置く」
+# 同じ規則を複数の面に言い換えて置くと、次に閾値が変わったときどれかが必ず取り残される
+# （#253 で 3 周続けて言い換え漏れが出た）。数値と環境変数名の在処をテストで固定する。
+
+# 節の範囲だけを見るための切り出し。`## コンテキスト上限（サブエージェントの手渡し）` の行から
+# 次の `## ` 見出し（`### ` 小見出しは含む）の直前までを取り出す。全文 grep だと、節の外へ
+# 内容が移っても素通りしてしまう（G のレビュー指摘、#269 で対応）。
+extract_context_cap_section() {
+  awk '
+    /^## コンテキスト上限（サブエージェントの手渡し）$/ { flag=1 }
+    flag && /^## / && !/^## コンテキスト上限（サブエージェントの手渡し）$/ { exit }
+    flag
+  ' "$1"
+}
+
+@test "context cap: the canonical section holds the thresholds, the routes and the return prefixes" {
+  dc="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  section="$(extract_context_cap_section "$dc")"
+  [ -n "$section" ] || { echo "section not found in decision-criteria.md"; return 1; }
+  # 3 つの環境変数と 2 つの既定値
+  for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000; do
+    echo "$section" | grep -q -- "$token" || { echo "missing in the context cap section: $token"; return 1; }
+  done
+  # 2 経路・通知時と強制停止時の振る舞い・return の 1 行目の書き分け
+  echo "$section" | grep -q '再開前チェック'
+  echo "$section" | grep -q '途中計測'
+  echo "$section" | grep -q '工程完了:'
+  echo "$section" | grep -q '工程中断:'
+  echo "$section" | grep -q 'pr-review-gate の手順 1〜5 を 1 グループ'
+}
+
+@test "context cap: the other five faces point at the canonical section and restate nothing" {
+  faces=(
+    "${PLUGIN_DIR}/skills/develop/SKILL.md"
+    "${PLUGIN_DIR}/skills/develop/references/roles/worker/common.md"
+    "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+    "${PLUGIN_DIR}/templates/escalation-tripwires.md"
+    "${PLUGIN_DIR}/README.md"
+  )
+  for f in "${faces[@]}"; do
+    [ -f "$f" ] || { echo "missing face: $f"; return 1; }
+    # 正本への参照があること
+    grep -q 'decision-criteria.md' "$f" || { echo "no pointer to decision-criteria.md: $f"; return 1; }
+    grep -q 'コンテキスト上限' "$f" || { echo "no reference to the context cap section: $f"; return 1; }
+    # 閾値の数値・環境変数名の再掲が無いこと
+    for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000 150K; do
+      if grep -q -- "$token" "$f"; then
+        echo "restated in ${f}: ${token}（正本は decision-criteria.md「コンテキスト上限」）"
+        return 1
+      fi
+    done
+  done
+}
+
+@test "context cap: worker.md tells the handoff target to look at uncommitted changes first" {
+  grep -q '未コミット差分' "$W_COMMON"
+  grep -q 'git status' "$W_COMMON"
+}
+
+@test "context cap: gate-runner returns the review body when the hard stop denies gh" {
+  grep -q '工程中断:' "${ROLES}/gate-runner.md"
+  grep -q 'gh pr comment' "${ROLES}/gate-runner.md"
+  grep -q '代理投稿' "${ROLES}/gate-runner.md"
+  # 本体側にも代理投稿する側の手順がある
+  grep -q '代理投稿' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
+
+# ---------- 窓を閉じる（強制停止中の Bash 全件拒否）後の後片付けは本体が担う（#261, PR #269 2 回目の決定） ----------
+#
+# 強制停止中は Bash がコマンド内容によらず全件拒否されるため、止まったサブエージェント
+# 自身は commit できない。手渡し先が拾うのは「次に起こされた」サブエージェントの
+# git status / git diff だけなので、手渡しが発生しない経路や後継が G の場合は
+# 本体自身が未コミット差分を引き取らないと作業が失われたまま残る（R1-261 の BLOCKER B2/B3）。
+
+@test "SKILL.md: main takes over uncommitted work left by a hard-stopped subagent" {
+  grep -q '本体が commit する\|本体が.*commit' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'git -C .*status --porcelain' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  # 発火条件が 工程中断: の受領だけに縛られていない（手渡し・spawn・サイクル終了・worktree 撤去も含む）
+  grep -q '手渡し' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'spawn' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -q 'worktree の撤去' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
+
+@test "SKILL.md forbids isolation: remote for W / G" {
+  grep -q 'isolation: "remote"' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -qE '(remote.*使わない|remote.*起こしてはならない)' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
+
+@test "gate-runner.md: commit is also main's job, not G's" {
+  grep -qE 'commit.*本体が行う|本体が.*commit' "${ROLES}/gate-runner.md"
+}
+
+@test "gate-runner: legacy fallback is measured and App Server mode stays separate" {
+  local doc token
+  doc="$(awk '/^### レビューの実行者/{f=1;print;next} /^##/{f=0} f' "$REVIEW_RUN")"
+  for token in '従来モード' '実測したバイナリ無し・認証切れ・タイムアウト' 'companion / slash command が無ければ' 'exec を試す' 'companion 導入は任意' 'command -v codex' 'auth.json' '未試行' '引数誤り・権限拒否・通信障害' '暗黙にフォールバックしない'; do
+    echo "$doc" | grep -qF "$token"
+  done
+  echo "$doc" | grep -q '新 Codex モード.*App Server 固定.*適用しない'
+  ! echo "$doc" | grep -q 'サブスク切れ' || return 1
+}
+
+@test "gate-runner: full needs-reviewer carries evidence also used in PR comment" {
+  local doc token
+  doc="$(section "${PREPARE}" 'needs-reviewer')"
+  for token in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:' '完了未確認'; do
+    echo "$doc" | grep -qF "$token"
+  done
+  # 「レビュー実行者:」コメントの段落は照合と振り分けの段にある（#554）
+  for token in '架空の終了コード' 'light 判定のため' 'full・実測した Codex 不可' '同じ証拠'; do
+    grep -qF "$token" "${TRIAGE}" || { echo "missing in triage.md: $token"; return 1; }
+  done
+}
+
+# ===== gate-runner.md: 指摘の固定書式と要約受領の分岐（issue #349・#352） =====
+
+@test "gate-runner (#349): needs-reviewer payload names the step 2-1 reviewer block as the reviewer instruction" {
+  n="$(section "$PREPARE" 'needs-reviewer')"
+  line="$(echo "$n" | grep -F 'レビュアーに渡す指示:')"
+  [ -n "$line" ] || { echo "no reviewer-instruction line in needs-reviewer"; return 1; }
+  echo "$line" | grep -qF 'stages/reviewer-brief.md` の手順 2-1'
+  echo "$line" | grep -qF 'レビュアー向け指示ブロック'
+  for f in "$GATE" "$PREPARE"; do
+    run grep -E '^\| `(blocking|should|nit)` \||`plausible`' "$f"
+    [ "$status" -ne 0 ]
+  done
+}
+
+@test "gate-runner (#352): needs-reviewer does not tell G to continue with step 3 unconditionally" {
+  ! gate_all | grep -q '手順 3 以降を続ける' || return 1
+  n="$(section "${PREPARE}" 'needs-reviewer')"
+  echo "$n" | grep -qF '「レビュアーの要約受領」'
+}
+
+@test "gate-runner (#349): the reviewer-summary resume branches through the all-round verdict" {
+  line="$(grep -F 'レビュアーの要約受領' "$GATE" | grep -v '「レビュアーの要約受領」')"
+  [ -n "$line" ] || { echo "no reviewer-summary resume line"; return 1; }
+  echo "$line" | grep -qF '全周共通の判定'
+  echo "$line" | grep -qF '止める指摘'
+  echo "$line" | grep -qF 'follow-up issue'
+  echo "$line" | grep -q 'failed'
+  echo "$line" | grep -q '仕分け'
+  run sh -c "grep -F 'レビュアーの要約受領' '$GATE' | grep -F '一般則'"
+  [ "$status" -ne 0 ]
+}
+
+@test "gate-runner (#349): the sorting field and on-hold section speak of stopping findings, not quotable ones" {
+  common="$(awk '/^### return の書式（failed/{f=1;next} f&&/^### failed のとき/{exit} f' "$TRIAGE")"
+  echo "$common" | grep -qF '全周共通の判定で止める指摘が残'
+  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "$HOLD")"
+  echo "$hold" | grep -qF '全周共通の判定で止める指摘が残'
+  for f in "$GATE" "$TRIAGE" "$HOLD"; do
+    run grep -F '引用できる指摘が残' "$f"
+    [ "$status" -ne 0 ]
+  done
+}
+
+@test "gate-runner (#349 gate round 1): the sorting field and the round-2 cap record which of the three exceptions applies" {
+  common="$(awk '/^### return の書式（failed/{f=1;next} f&&/^### failed のとき/{exit} f' "$TRIAGE")"
+  echo "$common" | grep -F '仕分け' | grep -qF '例外 3 種のどれか'
+  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "$HOLD")"
+  echo "$hold" | grep -F '切り出しの確認' | grep -qF '例外 3 種のどれか'
+}
+
+# ===== 指摘の仕分け表（issue #354）=====
+
+@test "gate-runner (#354): on-hold split-off confirmation carries the four points of row 5" {
+  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "${HOLD}")"
+  line="$(echo "$hold" | grep -F '切り出しの確認')"
+  [ -n "$line" ] || { echo "no split-off line in on-hold section"; return 1; }
+  for token in 'マージ後に何を起こすか' '見積もり' '固定費' '推奨'; do
+    echo "$line" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  ! gate_all | grep -qF '続けるか、範囲外として閉じるか' || return 1
+}
+
+@test "gate-runner (#354): Status has needs-decider and a section says what the main session receives" {
+  grep -E '^- Status: ' "$GATE" | grep -qF 'needs-decider'
+  nd="$(awk '/^### needs-decider のとき/{f=1;next} /^### |^```$/{f=0} f' "${TRIAGE}")"
+  [ -n "$nd" ] || { echo "no needs-decider section"; return 1; }
+  echo "$nd" | grep -qF '同じ型の指摘'
+  echo "$nd" | grep -qF '前の周の指摘'
+  echo "$nd" | grep -qF '対象ファイルのパス'
+  echo "$nd" | grep -qF '照合と振り分けの G を新しく起こして渡す'
+}
+
+@test "gate-runner (#354): the sorting field covers every round and records row 3, row 4 and decider rulings" {
+  common="$(awk '/^### return の書式（failed/{f=1;next} f&&/^### failed のとき/{exit} f' "$TRIAGE")"
+  line="$(echo "$common" | grep -F '仕分け（')"
+  echo "$line" | grep -qF '指摘を受け取ったすべての周'
+  echo "$line" | grep -qF '仕分け表'
+  echo "$line" | grep -qF '受け入れ条件の外・その場で直した・直し方 N 行'
+  echo "$line" | grep -qF '閉じた PR コメント URL'
+  echo "$line" | grep -qF '決める役の裁定:'
+}
+
+@test "gate-runner (#354): resume has a line for the decider ruling that records it and counts from PR comments" {
+  line="$(grep -F '決める役の裁定受領' "${TRIAGE}")"
+  [ -n "$line" ] || { echo "no decider-ruling resume line"; return 1; }
+  echo "$line" | grep -qF '決める役の裁定:'
+  echo "$line" | grep -qF 'PR コメント'
+  echo "$line" | grep -qF '全部列挙してから直す'
+  echo "$line" | grep -qF '切り出す'
+  grep -E 'W の修正後の再レビュー' "${TRIAGE}" | grep -qF '主の回答または決める役の裁定'
+}
+
+@test "worker (#354): W posts the row-3 table with the search command before pushing, and records row-4 fixes" {
+  [ "$(grep -c '検索コマンド' "$W_IMPL")" -ge 1 ]
+  grep -qF '投稿してから push' "$W_IMPL"
+  grep -qF 'SKILL.md 手順 2-1 の仕分け表の順 3' "$W_IMPL"
+  ret="$(awk '/^\*\*\(3a\) の return に書くこと\*\*/{f=1} f&&/^## /{exit} f' "$W_IMPL")"
+  echo "$ret" | grep -qF '受け入れ条件の外・その場で直した・直し方 N 行'
+}
+
+@test "develop SKILL.md (#354): step (4) handles needs-decider with the verdict-and-reasons contract" {
+  sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$sk")"
+  [ -n "$step4" ] || { echo "no step (4) block"; return 1; }
+  echo "$step4" | grep -qF 'passed / failed / 保留 / needs-reviewer / needs-decider'
+  nd="$(echo "$step4" | awk '/^      needs-decider →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  [ -n "$nd" ] || { echo "no needs-decider line in step (4)"; return 1; }
+  for token in 'dev-workflow:decider' 'マージ可否と同じ可否と根拠の形で問う' '同じ型の指摘' '前の周の指摘' '対象ファイルのパス' '仕分け欄' '全部列挙してから直す' '切り出す' '照合と振り分けの G を新しく起こして渡す' '代理投稿しない'; do
+    echo "$nd" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "develop SKILL.md (#354): the proxy-posting rule for decider returns names the row-6 exception" {
+  sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  line="$(grep -F '本体がやること:' "$sk")"
+  echo "$line" | grep -qF '代理投稿する'
+  echo "$line" | grep -qF '順 6'
+}
+
+# ===== 一周目レビューの機械照合と補足上限（issue #355） =====
+
+@test "gate-runner (#355): first-pass tables are mechanically checked before triage" {
+  first="$(section "$GATE" '一周目の三表を機械照合する')"
+  [ -n "$first" ] || { echo 'no first-pass reconciliation section'; return 1; }
+  for token in '受け入れ条件' '変更点 ID' 'review-hit-set.py' '全ヒット集合' '固定した PR diff' '全ハンク' '指摘の仕分け前'; do
+    echo "$first" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "gate-runner (#514): partitioned first pass reconciles union and routes residuals" {
+  first="$(section "$GATE" '一周目の三表を機械照合する')"
+  for token in 'レビュー重量:' '区画の数' '和集合' 'review-hit-set.py' 'P<k>-' '区画 1' '補足済み回数' 'レビュー三表:' '一周目の区画:' '区画に分けなかった'; do
+    echo "$first" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  for token in '足りない区画' 'ハンク' '照合表' '受け入れ条件'; do
+    echo "$first" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  supplement="$(section "$GATE" '補足レビュー結果の受領')"
+  echo "$supplement" | grep -qF '一周目の区画:'
+  echo "$supplement" | grep -qF '和集合'
+  echo "$supplement" | grep -qF '計算し直さない'
+}
+
+@test "gate-runner (#355): a no-findings summary cannot reach passing steps without all three tables" {
+  line="$(grep -F '**レビュアーの要約受領**' "$GATE")"
+  for token in '変更点の一覧' '照合表' 'ハンク被覆' '最初に' '照合が完了したあと' '不足' 'needs-reviewer' 'review-incomplete'; do
+    echo "$line" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  echo "$line" | grep -qF '指摘が無ければ手順 3 以降'
+}
+
+@test "gate-runner (#355): one supplemental pass is payload state and residual is terminal" {
+  n="$(section "$PREPARE" 'needs-reviewer')"
+  for token in '固定 HEAD' '元の三表' '残差' '補足済み回数: 0' '不足した項目だけ' 'reviewer-brief.md` の手順 2-1'; do
+    echo "$n" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
+  echo "$common" | grep -qF 'review-incomplete'
+  residual="$(section "$GATE" '補足レビュー結果の受領')"
+  echo "$residual" | grep -qF '補足済み回数: 1'
+  echo "$residual" | grep -qF 'review-incomplete'
+  echo "$residual" | grep -qF '2 回目の `needs-reviewer` を返さない'
+}
+
+@test "gate-runner (#355): later-round findings carry exactly one measurement category without changing routing" {
+  common="$(awk '/^### return の書式（failed/{f=1;next} f&&/^### failed のとき/{exit} f' "$TRIAGE")"
+  for token in '同じ文が複数か所' '場合分けの漏れ' '直したつもりで直っていない' '直しで新しく入った' 'いずれか 1 つ'; do
+    echo "$common" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  echo "$common" | grep -qF '停止判定と仕分け順を変えない'
+  echo "$common" | grep -qF '仕分けの PR コメントにも記録'
+  echo "$common" | grep -qF 'PR コメント URL'
+}
+
+@test "develop SKILL.md (#355): review-incomplete stops without a fresh reviewer and supplement payload is conditional" {
+  sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$sk")"
+  echo "$step4" | grep -qF 'review-incomplete'
+  echo "$step4" | grep -qF 'reviewer を再起動しない'
+  echo "$step4" | grep -qF 'agent-review:pending'
+  echo "$step4" | grep -qF '通常の初回レビュー依頼'
+  echo "$step4" | grep -qF '一周目照合の補足要求である場合に限り'
+  for token in '固定 HEAD' '元の三表' '残差' '補足済み回数'; do
+    echo "$step4" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+# ===== 仕分け表の追補（issue #357 #358 #359）=====
+
+@test "develop SKILL.md (#358): needs-decider passes the record body, related comments and W's last return, and branches on the first line" {
+  sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$sk")"
+  nd="$(echo "$step4" | awk '/^      needs-decider →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  [ -n "$nd" ] || { echo "no needs-decider line in step (4)"; return 1; }
+  for token in '記録先の本文' '関連コメント' 'W の直近の return' '`裁定: 可`' '`裁定: 否`' '`不足: <足りないもの>`' \
+    '1 行目で分岐' '裁定として扱わず' '1 回だけ依頼し直す' '裁定なし（入力不足）' '3 形のどれにも一致しなければ'; do
+    echo "$nd" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "gate-runner (#359): on-hold lists unprocessed row 6, and needs-decider also covers the return after the owner's answer" {
+  hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "${HOLD}")"
+  echo "$hold" | grep -qF '順 6・未裁定'
+  nd="$(awk '/^### needs-decider のとき/{f=1;next} /^### |^```$/{f=0} f' "${TRIAGE}")"
+  echo "$nd" | grep -qF '主の回答のあとに未処理の順 6'
+}
+
+@test "gate-runner (#359): owner-answer and decider-ruling resumes refer to the mixed paragraph and do not go to failed early" {
+  for key in '保留の解除' '決める役の裁定受領'; do
+    line="$(grep -F -- "**$key**" "$HOLD" "$TRIAGE" | cut -d: -f2-)"
+    [ -n "$line" ] || { echo "no line: $key"; return 1; }
+    echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の混在の段落' || { echo "$key lacks mixed ref"; return 1; }
+    echo "$line" | grep -qF 'failed に進まない' || { echo "$key lacks guard"; return 1; }
+  done
+  grep -F '**決める役の裁定受領**' "$TRIAGE" | grep -qF '裁定なし（入力不足）'
+}
+
+@test "gate-runner (#357): the post-fix re-review matches row 3 in two stages, pre-fix SHA and HEAD" {
+  line="$(grep -F '**W の修正後の再レビュー**' "${TRIAGE}")"
+  echo "$line" | grep -qF '修正前 SHA と HEAD の 2 段'
+  echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の仕分け表の順 3'
+}
+
+@test "gate-runner (#359): the reviewer-summary resume returns only the hold when row 5 mixes with rows 2-4 or row 6" {
+  line="$(grep -F '**レビュアーの要約受領**' "$GATE")"
+  echo "$line" | grep -qF '順 5 と順 2〜4、または順 5 と順 6 が混ざれば保留だけを先に返す'
+  echo "$line" | grep -qF '保留と `needs-decider` を同じ return で指示しない'
+}
+
+@test "worker (#357): the row-3 list paragraph records the pre-fix SHA and does not restate the columns" {
+  para="$(grep -F '**G から一覧を求められた指摘' "$W_IMPL")"
+  echo "$para" | grep -qF '修正前 SHA'
+  echo "$para" | grep -qF '修正に着手する直前の HEAD'
+  echo "$para" | grep -qF 'SKILL.md 手順 2-1 の仕分け表の順 3'
+  run sh -c "cat \"$WORKER\" \"$W_COMMON\" \"$W_SPEC\" \"$W_IMPL\" \"$W_FINISH\" \"$PRE\" | grep -F '| ファイル | 行（修正前 SHA） |'"
+  [ "$status" -ne 0 ]
+}
+
+@test "worker (#377): the row-3 list paragraph puts rewritten not-applicable rows in the rewritten-rows table without restating its columns" {
+  para="$(grep -F '**G から一覧を求められた指摘' "$W_IMPL")"
+  echo "$para" | grep -qF '`### 書き換えた該当しない行`'
+  echo "$para" | grep -qF '主表の本文は修正前のまま'
+  echo "$para" | grep -qF '修正後の本文'
+  run sh -c "cat \"$WORKER\" \"$W_COMMON\" \"$W_SPEC\" \"$W_IMPL\" \"$W_FINISH\" \"$PRE\" | grep -F '| 修正後の本文 |'"
+  [ "$status" -ne 0 ]
+}
+
+@test "gate-runner (#377): the row-3 second stage runs review-hit-set.py with --head and the fetched 40-digit HEAD" {
+  line="$(grep -F '**W の修正後の再レビュー**' "${TRIAGE}")"
+  echo "$line" | grep -qF 'review-hit-set.py'
+  echo "$line" | grep -qF -- '--head <HEAD の 40 桁 SHA>'
+  echo "$line" | grep -qF 'git fetch'
+  echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の仕分け表の順 3'
+}
+
+@test "gate-runner (#441): when HEAD moves on an accepted PR, try pr-review-gate step 3-c before asking the owner" {
+  line="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$HOLD" | grep -F '許容済みの PR で HEAD が動いた')"
+  echo "$line" | grep -qF '主に聞く前に'
+  echo "$line" | grep -qF 'pr-review-gate 手順 3-c'
+}
+
+# ===== 段ごとに新しい G を起こす（#554） =====
+
+# SKILL.md の (4)（「(4) G を」で始まる行から、そのコードブロックの閉じ ``` の行まで）
+step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DIR}/skills/develop/SKILL.md"; }
+
+@test "gate-runner (#554): SKILL.md (4) and gate-runner.md spawn a fresh G per stage with a 段: line" {
+  s="$(step4_554)"
+  [ -n "$s" ] || { echo "no step (4) block"; return 1; }
+  echo "$s" | grep -qF '段ごとに新しい G を起こす'
+  echo "$s" | grep -qF '`段: <段の名前>`'
+  grep -qF '段ごとに新しい G を起こす' "$GATE"
+  grep -qF '`段: <段の名前>`' "$GATE"
+  for st in '前提確認と重さ判定' '照合と振り分け' '合格処理' '保留の解除'; do
+    section "$GATE" '段ごとの起動と入力' | grep -qF "$st" || { echo "missing stage: $st"; return 1; }
+  done
+}
+
+@test "gate-runner (#554): neither SKILL.md (4) nor gate-runner.md resumes G via SendMessage" {
+  s="$(step4_554)"
+  [ -n "$s" ] || { echo "no step (4) block"; return 1; }
+  for w in 'SendMessage' 'G を再開'; do
+    if echo "$s" | grep -qF "$w"; then echo "(4) has: $w"; return 1; fi
+    if grep -qF "$w" "$GATE"; then echo "gate-runner.md has: $w"; return 1; fi
+  done
+}
+
+@test "gate-runner (#554): Gate Result carries the stage and next-stage lines and the Status next-stage" {  # Gate Result に `段:`・`次の段:`・Status `次の段へ`
+  common="$(awk '/^## Gate Result/{f=1} f&&/^```$/{exit} f' "$GATE")"
+  echo "$common" | grep -E '^- Status: ' | grep -qF '次の段へ'
+  echo "$common" | grep -E '^- 段: ' | grep -qF '一括（従来経路）'
+  for st in '前提確認と重さ判定' '照合と振り分け' '合格処理' '保留の解除'; do
+    echo "$common" | grep -E '^- 段: ' | grep -qF "$st" || { echo "段: lacks $st"; return 1; }
+  done
+  echo "$common" | grep -E '^- 次の段: ' | grep -qF 'なし'
+}
+
+@test "gate-runner (#554): the Status-to-next-stage table routes a row-3-only failed back to triage" {
+  row="$(grep -E '^\| failed \|' "$GATE")"
+  [ -n "$row" ] || { echo "no failed row"; return 1; }
+  echo "$row" | grep -qF '順 3 だけなら `照合と振り分け`'
+  echo "$row" | grep -qF '`前提確認と重さ判定`'
+  grep -E '^\| `次の段へ` \|' "$GATE" | grep -qF '`合格処理`'
+  grep -E '^\| 保留 \|' "$GATE" | grep -qF '`保留の解除`'
+  grep -E '^\| passed / review-incomplete \|' "$GATE" | grep -qF '`なし`'
+  grep -E '^\| needs-reviewer / needs-decider \|' "$GATE" | grep -qF '`照合と振り分け`'
+}
+
+@test "gate-runner (#554): G name and description name the stage and keep the G: prefix" {
+  s="$(step4_554)"
+  for f in "$GATE"; do
+    grep -qF 'G-<PR>-<prepare|triage|pass|hold>-<n>' "$f"
+    grep -qF 'G: <段> for PR #N (#issue)' "$f"
+  done
+  echo "$s" | grep -qF 'G-<PR>-<prepare|triage|pass|hold>-<n>'
+  echo "$s" | grep -qF 'G: <段> for PR #N (#issue)'
+}
+
+@test "gate-runner (#554): neither gate-runner.md nor SKILL.md (4) measures G with subagent-context.sh" {
+  ! grep -qF 'subagent-context.sh' "$GATE" || return 1
+  ! step4_554 | grep -qF 'subagent-context.sh' || return 1
+}
+
+@test "gate-runner (#554): the handoff between stages goes through PR comments" {
+  s="$(section "$GATE" '段ごとの起動と入力')"
+  echo "$s" | grep -qF '固定 HEAD: <SHA>'
+  echo "$s" | grep -qF 'レビュー三表:'
+  echo "$s" | grep -qF '補足済み回数:'
+  echo "$s" | grep -qF 'PR コメントを正とする'
+  echo "$s" | grep -qF '`## Gate Result` ブロックを要約し直さずそのまま'
+  grep -qF '`固定 HEAD: <SHA>`' "$PREPARE"
+  grep -qF '`レビュー三表:`' "$TRIAGE"
+  # 固定した HEAD の行は auto-merge が照合する `対象 HEAD:` と別の文字列にする
+  ! grep -F '固定 HEAD: <SHA>' "$PREPARE" | grep -qF '対象 HEAD: <SHA>' || return 1
+}
+
+@test "gate-runner (#554): the reviewer-line paragraph lives only in stages/triage.md" {
+  grep -qF 'レビュー実行者: Task サブエージェント（light 判定のため）' "$TRIAGE"
+  ! grep -qF 'レビュー実行者:' "$PREPARE" || return 1
+}
+
+@test "gate-runner (#554): no adapter-route sticky rule remains in gate-runner.md, SKILL.md or codex-develop.md" {
+  cd_md="${PLUGIN_DIR}/references/codex-develop.md"
+  sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  for f in "$GATE" "$sk" "$cd_md"; do
+    if grep -qF 'adapter 経路を保持する' "$f"; then echo "sticky rule in $f"; return 1; fi
+    if grep -qF '起動済みの同一 G' "$f"; then echo "same-G rule in $f"; return 1; fi
+  done
+  # 常に `レビュー経路: adapter` を書く規則は残す
+  grep -qF '常に `レビュー経路: adapter`' "$sk"
+}
+
+@test "gate-runner (#554): the legacy route runs steps 1-5 in one G and says so in the stage lines" {  # 従来経路は `段: 一括（従来経路）` と `次の段: なし`
+  grep -qF '`段: 一括（従来経路）`' "$GATE"
+  grep -qF '`次の段: なし`' "$GATE"
+}
+
+@test "gate-runner (#554): each stage's develop section describes the input for a fresh G of that stage" {
+  for f in "$TRIAGE" "$HOLD" "$PASS_STAGE" "$PREPARE"; do
+    grep -qE '^### この段で起こされたときの入力' "$f" || { echo "no input subsection in $f"; return 1; }
+    if grep -qE '^### 再開' "$f"; then echo "resume subsection remains in $f"; return 1; fi
+    if grep -qF 'SendMessage で G に' "$f"; then echo "SendMessage to G in $f"; return 1; fi
+  done
+  # 再レビューの前提確認と重さ判定の G は収束ルールの節を読み、前の周の指摘を仕分けコメントから取る
+  inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$PREPARE")"
+  echo "$inp" | grep -qF '収束ルール'
+  echo "$inp" | grep -qF '仕分けコメント'
+  # 合格処理の G は保留の解除のあと手順 5 の真正性確認から入る
+  inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$PASS_STAGE")"
+  echo "$inp" | grep -qF '段: 保留の解除'
+  echo "$inp" | grep -qF '真正性確認'
+  echo "$inp" | grep -qF '3-c'
+  # 保留の解除の G は別の段の作業をせず 次の段へ で返す
+  inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$HOLD")"
+  echo "$inp" | grep -qF '`次の段へ`'
+  echo "$inp" | grep -qF '`次の段: 前提確認と重さ判定`'
+  echo "$inp" | grep -qF '`次の段: 合格処理`'
+  # 照合と振り分けの G は止める指摘が無ければ follow-up issue に切ってから 次の段へ
+  inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$TRIAGE")"
+  echo "$inp" | grep -qF 'follow-up issue'
+  echo "$inp" | grep -qF '`次の段: 合格処理`'
+}
+
+@test "gate-runner (#582): after the hold release, pass enters step 5 only when a risk declaration for the current HEAD exists" {
+  inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$PASS_STAGE")"
+  # 照合と振り分けのあとは段で見分け、保留の解除が返す `次の段: 合格処理` と重ならない
+  echo "$inp" | grep -qF '前の Gate Result が `段: 照合と振り分け`'
+  if echo "$inp" | grep -qF '前の Gate Result が `次の段: 合格処理`'; then echo "overlapping entry"; return 1; fi
+  rel="$(echo "$inp" | grep -F '段: 保留の解除')"
+  echo "$rel" | grep -qF '`## リスク宣言`'
+  echo "$rel" | grep -qF '真正性確認'
+  echo "$rel" | grep -qF '`declarations.md` の手順 3'
+  sp="${PLUGIN_DIR}/../../openspec/specs/dev-workflow-develop/spec.md"
+  req="$(grep -F '保留の解除のあとで起こされた合格処理の G' "$sp")"
+  echo "$req" | grep -qF '`## リスク宣言`'
+  echo "$req" | grep -qF '手順 3'
+}
+
+@test "gate-runner (#583): after a row-3-only fix, the triage G fixes the new HEAD via prepare.md step 1 and posts it" {
+  grep -E '^\| 照合と振り分け' "$GATE" | grep -qF '`stages/prepare.md` の手順 1'
+  rr="$(grep -F '**W の修正後の再レビュー**' "$TRIAGE")"
+  echo "$rr" | grep -qF '`stages/prepare.md` の手順 1'
+  echo "$rr" | grep -qF '`固定 HEAD: <新しい HEAD>`'
+  sp="${PLUGIN_DIR}/../../openspec/specs/dev-workflow-develop/spec.md"
+  grep -F '固定 HEAD: <新しい HEAD>' "$sp" | grep -qF 'stages/prepare.md'
+}
+
+@test "gate-runner (#584): the review-tables comment posted before the supplemental needs-reviewer records the count as 1" {
+  s="$(section "$GATE" '一周目の三表を機械照合する')"
+  echo "$s" | grep -F 'レビュー三表:' | grep -qF '`補足済み回数: 1`'
+  line="$(grep -F '**レビュアーの要約受領**' "$TRIAGE")"
+  echo "$line" | grep -qF '`補足済み回数: 1`'
+  if echo "$line" | grep -qF '`補足済み回数: 0` の行を持つ'; then echo "posts 0"; return 1; fi
+  if echo "$line" | grep -qF '記録も同じ形で投稿する'; then echo "second post remains"; return 1; fi
+}
+
+@test "role types and screen checker are wired through develop" {
+  skill="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  codex="${PLUGIN_DIR}/references/codex-develop.md"
+  screen="${ROLES}/screen-checker.md"
+  grep -E '^\| 作業者 ' "$skill" | grep -qF 'dev-workflow:worker'
+  grep -E '^\| ゲート実行者 ' "$skill" | grep -qF 'dev-workflow:gate-runner'
+  grep -E '^\| 画面確認' "$skill" | grep -qF '**V**'
+  section "$skill" '1 ループ' | grep -qF 'subagent_type: dev-workflow:worker'
+  section "$skill" '1 ループ' | grep -qF 'subagent_type: dev-workflow:gate-runner'
+  grep -m1 'subagent_type: dev-workflow:worker' "$W_COMMON"
+  grep -m1 'subagent_type: dev-workflow:gate-runner' "$GATE"
+  ! worker_all | grep -q 'W が `/wt-setup`' || return 1
+  section "$skill" 'worktree の用意' | grep -qF '/wt-setup'
+  grep -qF 'openspec new change' "$W_SPEC"
+  grep -qF 'openspec validate' "$W_IMPL"
+  grep -qF 'openspec archive' "$W_FINISH"
+  if section "$W_IMPL" '(3a) 実装＋verify' | grep -qF '/opsx:'; then return 1; fi
+  if section "$W_FINISH" '(3b) archive＋PR＋仕様宣言' | grep -qF '/opsx:'; then return 1; fi
+  if worker_all | grep '/opsx:' | grep -v -e 本体 -e 主; then return 1; fi
+  ! worker_all | grep -qF 'ls .claude/commands/opsx/' || return 1
+  grep -qF 'openspec --version' "$W_SPEC"
+  loop="$(section "$skill" '1 ループ')"
+  if echo "$loop" | grep -qE '/opsx:(ff|apply|verify|archive)'; then return 1; fi
+  echo "$loop" | grep -qF 'openspec new change'
+  grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:worker'
+  grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:gate-runner'
+  grep -E '^\| \*\*openspec' "$skill" | grep -qF 'openspec --version'
+  if grep -E '^\| (仕様レビュアー|R1|G が要求するレビュアー)' "$skill" | grep -qE 'dev-workflow:(worker|gate-runner)'; then return 1; fi
+  if grep -qE '(`worker` role|`gate` role|W の phase|G の phase)[^、。]*general-purpose' "$codex"; then return 1; fi
+  section "$W_IMPL" '(3a) 実装＋verify' | grep -qF '画面確認:'
+  [ -f "$screen" ]
+  grep -qF '画面確認結果: (合格|不合格|実行不能)' "$screen"
+  grep -qE '編集.*commit.*投稿|編集.*投稿.*commit' "$screen"
+  grep -qF 'dev-workflow:worker' "$codex"
+  grep -qF 'dev-workflow:gate-runner' "$codex"
+  grep -qF 'dev-workflow:decider' "$codex"
+  grep -qF 'dev-workflow:worker' "${PLUGIN_DIR}/README.md"
+  grep -qF 'dev-workflow:gate-runner' "${PLUGIN_DIR}/README.md"
+}
+
+@test "codex-develop: Claude W and G agent types follow the actual phases" {
+  codex="${PLUGIN_DIR}/references/codex-develop.md"
+  grep -qF 'phase `spec`／`implement`／`finish` は `dev-workflow:worker`' "$codex"
+  grep -qF 'phase `gate` は `dev-workflow:gate-runner`' "$codex"
+}
+
+@test "codex-develop: explore and summarize keep the general-purpose agent type" {
+  codex="${PLUGIN_DIR}/references/codex-develop.md"
+  grep -qF '`explore`・`summarize` role は `general-purpose`' "$codex"
+}
+
+@test "spec-reviewer: change creation describes the openspec CLI and existing changes" {
+  grep -qF 'W が `openspec new change` と artifact の直書きで作った change（本体や主が `/opsx:ff` で先に作った change を含む）' "$REVIEWER"
 }

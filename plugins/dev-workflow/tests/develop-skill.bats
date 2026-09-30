@@ -19,6 +19,26 @@ setup() {
 section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$SKILL"; }
 frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL"; }
 
+# 「1 ループ」のコードブロックから工程の指示を切り出す。境界は**行頭の工程ラベル**だけで、
+# 説明文の途中に出てくる "(3a)" / "(4)" のような参照では区切らない（本文に無害な行を足しても
+# 切り出し位置がずれないようにするため）。
+#   top_step 3  : 列 0 の "(3) " から次の列 0 の "(N) " の手前まで
+#   substep 3a  : インデントされた "(3a) " から次の "(3a)/(3b)/(3)" ラベルか列 0 の "(N) " の手前まで
+#                 （字下げした "(3) " の行は (3) 全体への注記で、(3a) にも (3b) にも属さない）
+top_step() { awk -v s="$1" '$0 ~ "^\\(" s "\\)[[:space:]]" {f=1; print; next} f && /^\([0-9]+\)[[:space:]]/ {f=0} f'; }
+substep() { awk -v s="$1" '$0 ~ "^[[:space:]]+\\(" s "\\)[[:space:]]" {f=1; print; next} f && (/^[[:space:]]+\(3[ab]?\)[[:space:]]/ || /^\([0-9]+\)[[:space:]]/) {f=0} f'; }
+
+# 否定アサーション: refute "<本文>" -F|-E '<パターン>'
+# bats（bash の set -e）は `!` を先頭に付けたコマンドの失敗を無視するため、テストの最終行以外に
+# 書いた `! ... | grep -q ...` は退行を検出できない（bats 1.13 で実測）。否定はこの関数で書く。
+refute() {
+  local body="$1"; shift
+  if printf '%s\n' "$body" | grep -q "$@"; then
+    echo "一致してはならないパターンに一致した: $*" >&2
+    return 1
+  fi
+}
+
 # --- 存在・frontmatter ---
 
 @test "skill: develop SKILL.md exists and the old issue-only skill dir is gone" {
@@ -96,7 +116,7 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   section '入口 0' | grep -qF '仕様化判断: する|しない'
   section '入口 0' | grep -qF '仕様レビュー: APPROVE|REQUEST_CHANGES'
   section '入口 0' | grep -F '仕様化判断: する|しない' | grep -q '記録先のコメント'
-  # 仕様宣言は記録先ではなく PR コメント（issue #212。pr-review-gate 手順 3-b / 5 と worker.md が正）:
+  # 仕様宣言は記録先ではなく PR コメント（issue #212。pr-review-gate 手順 3-b / 5 と worker/finish.md が正）:
   # 節内で仕様宣言に触れる行はすべて 'PR コメント' を含む（冒頭文の「…仕様宣言を置く「記録先」」の再発もここで落ちる）
   section '入口 0' | grep -q '仕様宣言'
   [ -z "$(section '入口 0' | grep '仕様宣言' | grep -v 'PR コメント')" ]
@@ -126,11 +146,11 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$loop" | sed -n "${s4},\$p" | grep -q 'G'
 }
 
-@test "loop: W does spec decision, split judgement and /opsx:ff, then R1 reviews before apply" {
+@test "loop: W does spec decision, split judgement and openspec new change, then R1 reviews before apply" {
   loop="$(section '1 ループ')"
   echo "$loop" | grep -q '仕様化判断'
-  echo "$loop" | grep -q '/opsx:ff'
-  ff="$(echo "$loop" | grep -n '/opsx:ff' | head -1 | cut -d: -f1)"
+  echo "$loop" | grep -q 'openspec new change'
+  ff="$(echo "$loop" | grep -n 'openspec new change' | head -1 | cut -d: -f1)"
   rev="$(echo "$loop" | grep -n '仕様レビュー' | head -1 | cut -d: -f1)"
   apply="$(echo "$loop" | grep -n 'apply' | head -1 | cut -d: -f1)"
   [ "$ff" -lt "$rev" ] && [ "$rev" -lt "$apply" ]
@@ -143,7 +163,7 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$loop" | grep -q 'needs-approval'
 }
 
-@test "loop: G failed raises only the cause side (never W to fable) then resumes W and G" {
+@test "loop: G failed raises only the cause side (never W to fable) then resumes W and spawns the next-stage G" {
   loop="$(section '1 ループ')"
   echo "$loop" | grep -qE 'failed.*原因分類'
   echo "$loop" | grep -qF '実装品質起因のときだけ'
@@ -151,7 +171,8 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$loop" | grep -qF 'dev-workflow:decider'
   echo "$loop" | grep -qF 'W を fable にはしない'
   echo "$loop" | grep -qE 'W を再開'
-  echo "$loop" | grep -qE 'G を再開'
+  # #554: G は再開せず、failed の Gate Result の 次の段: どおりに新しく起こす
+  echo "$loop" | grep -qF '`次の段:` どおりの G を新しく起こして再レビュー'
 }
 
 @test "loop: W is spawned by name, resumed via SendMessage, and never needs grandchildren" {
@@ -161,24 +182,97 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$loop" | grep -q '孫'
 }
 
-@test "loop: W's second run covers apply(TDD), verify, archive, PR Ready and the spec declaration" {
+@test "loop: W's second run covers apply(TDD), verify, archive, the Draft PR and the spec declaration" {
   loop="$(section '1 ループ')"
   echo "$loop" | grep -q 'TDD'
   echo "$loop" | grep -q 'verify'
   echo "$loop" | grep -q 'archive'
-  echo "$loop" | grep -q 'Ready'
+  echo "$loop" | grep -q 'Draft'
   echo "$loop" | grep -q '仕様宣言'
+}
+
+# ゲート合格まで PR を Draft のまま進める（#304）。CI を Draft で止めるリポでは、W が (3b) で Ready にすると
+# レビューと修正の周回ごとに CI が走る。Ready 化は G が pr-review-gate 手順 5 で passed の直前に行う。
+@test "loop: (3b) hands the PR over as Draft and (4) makes it Ready before passed" {
+  s3="$(section '1 ループ' | top_step 3)"
+  segb="$(echo "$s3" | substep 3b)"
+  [ -n "$segb" ] || { echo "no (3b) substep in the (3) block"; return 1; }
+  echo "$segb" | grep -q 'Draft のまま'
+  echo "$segb" | grep -q 'Draft で作成'
+  # W が Ready に切り替える記述が無い（Ready に触れてよいのは G が手順 5 で行うという参照だけ）
+  refute "$segb" -E 'Ready に(（|切り替え|する)'
+  stray="$(echo "$segb" | grep -F 'Ready' | grep -vF '手順 5' || true)"
+  [ -z "$stray" ] || { echo "Ready が (3b) の W の作業として書かれている: $stray"; return 1; }
+  s4="$(section '1 ループ' | top_step 4)"
+  [ -n "$s4" ] || { echo "no (4) step in the loop block"; return 1; }
+  echo "$s4" | tr '\n' ' ' | grep -qE 'Draft なら Ready にしてから[^。]*agent-review:passed'
+}
+
+# (3) を (3a) 実装＋verify / (3b) archive＋PR＋仕様宣言 の 2 回の return に分ける（#262）。
+# 本体がコンテキスト量を測れるのは W を再開する直前だけなので、return の区切りの数が計測点の数になる。
+@test "loop: stage 3 splits into (3a) implement+verify and (3b) archive+PR+spec declaration" {
+  s3="$(section '1 ループ' | top_step 3)"
+  [ -n "$s3" ] || { echo "no (3) step in the loop block"; return 1; }
+  sega="$(echo "$s3" | substep 3a)"
+  segb="$(echo "$s3" | substep 3b)"
+  [ -n "$sega" ] || { echo "no (3a) substep in the (3) block"; return 1; }
+  [ -n "$segb" ] || { echo "no (3b) substep in the (3) block"; return 1; }
+  # 工程ラベルの並び順（実装が archive より先）
+  la="$(echo "$s3" | grep -nE '^[[:space:]]+\(3a\)[[:space:]]' | head -1 | cut -d: -f1)"
+  lb="$(echo "$s3" | grep -nE '^[[:space:]]+\(3b\)[[:space:]]' | head -1 | cut -d: -f1)"
+  [ "$la" -lt "$lb" ]
+  # (3a) は実装と verify を行い、その return で「実装＋verify」の完了を宣言する
+  echo "$sega" | grep -q 'TDD'
+  echo "$sega" | grep -q 'verify'
+  echo "$sega" | grep -F '工程完了: 実装＋verify' | grep -q 'return'
+  refute "$sega" -F '工程完了: archive'
+  # (3a) で archive しない。archive に触れてよいのは「archive は (3b)」という参照だけ
+  stray="$(echo "$sega" | grep -F 'archive' | grep -vF '(3b)' || true)"
+  [ -z "$stray" ] || { echo "archive が (3a) の作業として書かれている: $stray"; return 1; }
+  # (3b) は archive・PR を Draft のまま用意・仕様宣言を行い、その return で「archive＋PR＋仕様宣言」の完了を宣言する
+  echo "$segb" | grep -q 'archive'
+  echo "$segb" | grep -q 'Draft'
+  echo "$segb" | grep -q '仕様宣言'
+  echo "$segb" | grep -F '工程完了: archive＋PR＋仕様宣言' | grep -q 'return'
+  refute "$segb" -F '工程完了: 実装＋verify'
+}
+
+@test "loop: main measures between (3a) and (3b) and defers the cap handling to decision-criteria.md" {
+  s3="$(section '1 ループ' | top_step 3)"
+  sega="$(echo "$s3" | substep 3a)"
+  [ -n "$sega" ] || { echo "no (3a) substep in the (3) block"; return 1; }
+  # (3a) の return を受けたあと (3b) を指示する前に、本体がもう一度測る
+  echo "$sega" | grep -F 'subagent-context.sh' | grep -q '測'
+  echo "$sega" | grep -F 'subagent-context.sh' | grep -q '指示'
+  # 閾値・環境変数名は再掲せず正本を指す（正本は decision-criteria.md「コンテキスト上限」）
+  echo "$s3" | grep -F 'decision-criteria.md' | grep -q 'コンテキスト上限'
+  echo "$s3" | grep -F 'decision-criteria.md' | grep -q '正本'
+  refute "$s3" -F 'DEV_WORKFLOW_CONTEXT_CAP'
+  refute "$s3" -E '150000|150K|220000'
+  # (3a)/(3b) より細かく切らないこと（禁止であることまで検査する）
+  echo "$s3" | grep -qE '細かく.*切らない'
+}
+
+# 旧世代の W（古いキャッシュの worker.md を読んだ W）が (3) を通しで終えて返してきたとき、
+# 本体が (3b) を再指示して PR の作成と仕様宣言を二重に走らせないための工程ルーティング。
+# 規定は 2 行にまたがるので、改行を空白に潰した上で条件と帰結を順序込みで検査する
+# （「揃っていなければ (3b) を指示せず」のような意味の反転を落とすため）。
+@test "loop: main routes stage 3 by what it instructed, not by matching the stage name string" {
+  flat="$(section '1 ループ' | top_step 3 | tr '\n' ' ')"
+  [ -n "$flat" ]
+  echo "$flat" | grep -qE '自分が \(3a\) を指示したか \(3b\) を指示したかで決め[^。]*工程名の文字列照合では決めない'
+  echo "$flat" | grep -qE '\(3a\) の return に PR 番号と仕様宣言のコメント URL が既に揃っていれば[^。]*\(3b\) を指示せず'
 }
 
 # --- モデル ---
 
 @test "model: W defaults to sonnet and is capped at opus; R1 opus, G sonnet; fable only via the decider type" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE '^\| W（実行役） \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| W（実行役。`dev-workflow:worker`） \| `sonnet` \|'
   echo "$m" | grep -qE 'W.*`opus`'
   echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
-  echo "$m" | grep -qE '^\| G \| `sonnet` \|'
-  ! echo "$m" | grep -qE 'マージ条件・聖域・層間契約'
+  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| `sonnet` \|'
+  ! echo "$m" | grep -qE 'マージ条件・聖域・層間契約' || return 1
   echo "$m" | grep -q '事前分類'
   echo "$m" | grep -q 'マージ条件'
   echo "$m" | grep -q '聖域'
@@ -215,28 +309,33 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 
 @test "model: G defaults to sonnet and every pre-classification lifts W only to opus" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE '^\| G \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| `sonnet` \|'
   echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
   echo "$m" | grep -q '聖域パス'
   echo "$m" | grep -qE 'マージ権限・層間契約・課金/法務'
 }
 
-@test "loop: W and G are measured with subagent-context.sh before every SendMessage resume" {
+@test "loop: W is measured with subagent-context.sh before every SendMessage resume, and G is never resumed" {
   loop="$(section '1 ループ（W → R1 → W → G）')"
   echo "$loop" | grep -q 'subagent-context.sh'
   echo "$loop" | grep -q '手渡し'
-  echo "$loop" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
-  echo "$loop" | grep -q 'G の再開も同じ'
+  # 閾値と環境変数名の正本は decision-criteria.md「コンテキスト上限」1 箇所（#261）。
+  # ここでは再掲ではなく、その正本を指していることを固定する
+  echo "$loop" | grep -q 'decision-criteria.md'
+  echo "$loop" | grep -q 'コンテキスト上限'
+  ! echo "$loop" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP' || return 1
+  # #554: G は段ごとに新しく起こすので、再開前の計測は W だけに掛かる
+  echo "$loop" | grep -qF '再開前の計測は W だけに掛かる'
 }
 
 @test "model: no execution-strategy branches nor deterministic signal commands anywhere under develop" {
-  ! grep -rq 'delegate+verify' "$SKILL_DIR"
-  ! grep -rq 'workflow 型' "$SKILL_DIR"
-  ! grep -rqE '4 ?象限' "$SKILL_DIR"
-  ! grep -rq '決定論的シグナル' "$SKILL_DIR"
-  ! grep -rq 'self-contained' "$SKILL_DIR"
-  ! grep -rqF '| length' "$SKILL_DIR"
-  ! grep -rqF "startswith(\"size:\")" "$SKILL_DIR"
+  ! grep -rq 'delegate+verify' "$SKILL_DIR" || return 1
+  ! grep -rq 'workflow 型' "$SKILL_DIR" || return 1
+  ! grep -rqE '4 ?象限' "$SKILL_DIR" || return 1
+  ! grep -rq '決定論的シグナル' "$SKILL_DIR" || return 1
+  ! grep -rq 'self-contained' "$SKILL_DIR" || return 1
+  ! grep -rqF '| length' "$SKILL_DIR" || return 1
+  ! grep -rqF "startswith(\"size:\")" "$SKILL_DIR" || return 1
 }
 
 # --- 実行モード ---
@@ -320,8 +419,8 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 @test "upstream brainstorming (opsx:explore) is explicitly not called from develop" {
   grep -q '^## 上流の壁打ち' "$SKILL"
   grep -q 'opsx:explore' "$SKILL"
-  ! grep -q 'longrun' "$SKILL"
-  ! grep -qF '/lr:' "$SKILL"
+  ! grep -q 'longrun' "$SKILL" || return 1
+  ! grep -qF '/lr:' "$SKILL" || return 1
 }
 
 # --- 昇格トリップワイヤーのテンプレート（1.6b。hook 出力を検査する tripwire-hook.bats には混ぜない） ---
@@ -329,10 +428,13 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 @test "tripwire template: wire 4 is the context cap handoff and wire 5 is the rate-limit reactive downgrade" {
   grep -qE '^4\. 【コンテキスト上限 → 手渡し】' "$TRIPWIRES"
   grep -qE '^5\. 【rate-limit 実エラー → reactive 降格】' "$TRIPWIRES"
-  ! grep -qE '^6\. ' "$TRIPWIRES"
+  ! grep -qE '^6\. ' "$TRIPWIRES" || return 1
   w4="$(awk '/^4\. /{f=1} /^5\. /{f=0} f' "$TRIPWIRES")"
   echo "$w4" | grep -q 'subagent-context.sh'
-  echo "$w4" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP'
+  # 閾値の再掲ではなく正本を指す（#261）。あわせて途中計測 hook の経路に触れていること
+  echo "$w4" | grep -q 'decision-criteria.md'
+  echo "$w4" | grep -q 'context-tripwire.sh'
+  ! echo "$w4" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP' || return 1
   echo "$w4" | grep -q 'モデルは変えない'
 }
 
@@ -343,8 +445,8 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
   echo "$w1" | grep -q '本体に return'
   echo "$w1" | grep -q 'エピック化'
   echo "$w1" | grep -q 'workflow-execution.md'
-  ! echo "$w1" | grep -q 'workflow 型へ'
-  ! grep -qF '/lr:' "$TRIPWIRES"
+  ! echo "$w1" | grep -q 'workflow 型へ' || return 1
+  ! grep -qF '/lr:' "$TRIPWIRES" || return 1
   grep -q '失敗ループ' "$TRIPWIRES"
   grep -q '仕様の発明' "$TRIPWIRES"
   w3="$(awk '/^3\. /{f=1} /^4\. /{f=0} f' "$TRIPWIRES")"
@@ -354,6 +456,84 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL";
 
 @test "tripwire template: unmanned wiring names the flatmate-owned constitution, not a loops template" {
   grep -q 'docs/agent-loop.md' "$TRIPWIRES"
-  ! grep -q 'loop-dev-agent-tripwires' "$TRIPWIRES"
-  ! grep -q 'loops プラグイン' "$TRIPWIRES"
+  ! grep -q 'loop-dev-agent-tripwires' "$TRIPWIRES" || return 1
+  ! grep -q 'loops プラグイン' "$TRIPWIRES" || return 1
+}
+
+# --- PR トークン上限（#288。spec: dev-workflow-pr-token-budget） ---
+
+@test "token budget: SKILL.md has one section that measures before every spawn / SendMessage / Codex delegation" {
+  s="$(section 'PR トークン上限')"
+  [ -n "$s" ] || { echo "no PR トークン上限 section"; return 1; }
+  echo "$s" | grep -qF 'scripts/pr-token-budget.sh'
+  echo "$s" | grep -q 'spawn する直前'
+  echo "$s" | grep -q 'SendMessage で再開する直前'
+  echo "$s" | grep -q 'Codex executor へ委譲する直前'
+  echo "$s" | grep -q '役割と executor を問わず毎回'
+  # 1 ループの工程から参照されている
+  sed -n '/^## 1 ループ/,/^## モデル/p' "$SKILL" | grep -q '「PR トークン上限」'
+}
+
+@test "token budget: exit 2 stops before spawn / SendMessage / Codex and asks continue-or-close with materials" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -q 'exit 2'
+  echo "$s" | grep -q 'spawn / SendMessage / Codex への委譲をしない'
+  echo "$s" | grep -q 'needs-approval'
+  echo "$s" | grep -qF '続けるか、範囲外として閉じるか'
+  echo "$s" | grep -q '合計（Claude 分と Codex 分の内訳）・体数・上限・残工程'
+  echo "$s" | grep -q '・推奨（どちらを選ぶかとその理由）'
+  echo "$s" | grep -q 'unmanned'
+}
+
+@test "token budget: description carries the record number #N regardless of role" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -q 'description'
+  echo "$s" | grep -qF '`#N`'
+  echo "$s" | grep -q '役割を問わない'
+}
+
+@test "token budget: Codex consumption is posted as a comment and gathered into --codex-records" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF 'Codex 消費: <thread_id> <tokens>'
+  echo "$s" | grep -qF 'usage.total.totalTokens'
+  echo "$s" | grep -q '`usage` が null'
+  echo "$s" | grep -qF 'scripts/codex-records.sh --repo <owner>/<repo> --out "<scratchpad>/codex-records.txt"'
+  echo "$s" | grep -qF -- '--codex-records "<scratchpad>/codex-records.txt"'
+  echo "$s" | grep -qF -- '--codex-home'
+  echo "$s" | grep -qF '${CODEX_HOME:-$HOME/.codex}'
+}
+
+@test "token budget: a failed comment fetch skips the budget and is handled as exit 1" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF 'if scripts/codex-records.sh'
+  echo "$s" | grep -q 'pr-token-budget.sh` を呼ばず'
+  echo "$s" | grep -q 'Codex 消費コメントを取得できなかった'
+  echo "$s" | grep -q '空の記録や前回のファイルで代えない'
+}
+
+@test "token budget: continue raises the cap via a comment, close stops Codex too, exit 1 comments once per cycle" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF 'PR トークン上限: <'
+  echo "$s" | grep -qF -- '--cap <新上限>'
+  echo "$s" | grep -q '範囲外として閉じる'
+  echo "$s" | grep -q 'Codex にも委譲しない'
+  echo "$s" | grep -q 'exit 1'
+  echo "$s" | grep -q '1 サイクルに 1 回まで'
+}
+
+@test "token budget: measurement is not placed in the Codex adapter reference" {
+  body="$(cat "${PLUGIN_DIR}/references/codex-develop.md")"
+  refute "$body" -F 'pr-token-budget'
+  refute "$(cat "${PLUGIN_DIR}/scripts/codex-worker.py")" -F 'pr-token-budget'
+}
+
+@test "token budget: gate-runner.md tells G to put the Codex thread_id in its return" {
+  g="${SKILL_DIR}/references/roles/gate-runner.md"
+  # return の共通欄は gate-runner.md、thread_id の取り方は G が Codex を呼ぶ段（stages/review-run.md）にある
+  r="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
+  grep -q 'thread_id' "$g"
+  grep -q 'Codex thread' "$g"
+  grep -q 'thread_id を return に書く' "$r"
+  grep -qF 'session id:' "$r"
+  grep -qF 'threadId' "$r"
 }

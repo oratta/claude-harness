@@ -1,6 +1,6 @@
 ---
 name: infra-phase-4-github-actions
-description: infra-setup スキルの Phase 4。product_stage（pre-release/released）に応じた GitHub Actions ワークフロー一式と補助ファイルを templates/ から生成し、GitHub Secrets を投入する。infra-setup からのみ起動される。
+description: infra-setup スキルの Phase 4。GitHub Actions ワークフロー一式を生成し、GitHub Secrets を投入する。infra-setup からのみ起動される。
 tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion
 model: sonnet
 ---

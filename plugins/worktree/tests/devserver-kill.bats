@@ -14,6 +14,10 @@ setup() {
   wt_setup_paths
 }
 
+teardown() {
+  wt_kill_tracked_pids
+}
+
 # --- detection ---
 
 @test "skill: wt-clean SKILL.md defines the kill_devserver_under helper" {
@@ -138,7 +142,8 @@ kill -0 "$PID_STUBBORN" 2>/dev/null && echo "ALIVE_STUBBORN" || echo "DEAD_STUBB
 kill -KILL "$PID_NORMAL" "$PID_STUBBORN" 2>/dev/null
 exit 0
 DRIVER
-  "$shell" "$driver" "$snippet" "$dir" 2>&1
+  # driver が立てる sleep/perl に bats の出力パイプを渡さない（helper.bash の約束事）
+  ( wt_close_inherited_fds && exec "$shell" "$driver" "$snippet" "$dir" 2>&1 )
 }
 
 @test "kill_devserver_under: runs to completion under zsh when processes are killed" {
@@ -148,13 +153,13 @@ DRIVER
   local out
   out="$(wt_run_kill_snippet zsh "${BATS_TEST_TMPDIR}/zsh-kill")"
   # 1. the function returned instead of aborting the shell (issue #66)
-  [[ "$out" == *"REACHED_END"* ]]
-  [[ "$out" != *"bad pattern"* ]]
+  [[ "$out" == *"REACHED_END"* ]] || return 1
+  [[ "$out" != *"bad pattern"* ]] || return 1
   # 2. the SIGKILL fallback was reached for the SIGTERM-ignoring process
-  [[ "$out" == *"SIGKILL で停止しました"* ]]
+  [[ "$out" == *"SIGKILL で停止しました"* ]] || return 1
   # 3. both processes are actually gone
-  [[ "$out" == *"DEAD_NORMAL"* ]]
-  [[ "$out" == *"DEAD_STUBBORN"* ]]
+  [[ "$out" == *"DEAD_NORMAL"* ]] || return 1
+  [[ "$out" == *"DEAD_STUBBORN"* ]] || return 1
   # 4. no stray `comm=...` line from a zsh local re-declaration
   run grep -Eq '^comm=' <<<"$out"
   [ "$status" -ne 0 ]
@@ -316,6 +321,7 @@ wt_build_comm_normaliser() {
 }
 
 @test "kill_devserver_under: does not kill a login shell under the worktree" {
+  wt_require_process_listing
   command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
   # ⚠️ CI（ubuntu-latest）では必ず skip される。Linux の ps -o comm= は argv[0] ではなく
   #    実行ファイル名を返すため、偽タブの comm が `sleep` になりテストが意味を成さない。
@@ -329,11 +335,13 @@ wt_build_comm_normaliser() {
   mkdir -p "$dir"
 
   # argv[0] をログインシェルの形にした偽タブ。実体は sleep なので rc も読まず終了する。
-  ( cd "$dir" && exec -a "-/bin/zsh" sleep 30 ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec -a "-/bin/zsh" sleep 30 ) &
   local shell_pid=$!
+  wt_track_pid "$shell_pid"
   # 比較用の停止対象（除外リストに無い名前）
-  ( cd "$dir" && exec perl -e 'sleep 30' ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec perl -e 'sleep 30' ) &
   local victim_pid=$!
+  wt_track_pid "$victim_pid"
   sleep 1
 
   local out
@@ -349,9 +357,9 @@ wt_build_comm_normaliser() {
 
   # ログインシェルは生存し、スキップとして報告される
   [ "$shell_alive" = "1" ]
-  [[ "$out" == *"シェル/エディタと判定してスキップ"* ]]
-  [[ "$out" == *"${shell_pid}(zsh)"* ]]
+  [[ "$out" == *"シェル/エディタと判定してスキップ"* ]] || return 1
+  [[ "$out" == *"${shell_pid}(zsh)"* ]] || return 1
   # 非シェルは従来どおり停止される（issue #39 のガードを緩めていない）
   [ "$victim_alive" = "0" ]
-  [[ "$out" == *"${victim_pid}(perl)"* ]]
+  [[ "$out" == *"${victim_pid}(perl)"* ]] || return 1
 }

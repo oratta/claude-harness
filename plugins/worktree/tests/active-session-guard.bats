@@ -15,6 +15,10 @@ setup() {
   wt_setup_paths
 }
 
+teardown() {
+  wt_kill_tracked_pids
+}
+
 # --- the absolute prohibition itself ---
 
 @test "skill: wt-clean SKILL.md declares the active-signal absolute prohibition" {
@@ -209,6 +213,7 @@ wt_load_detect_helpers() {
 }
 
 @test "detect_active_procs_under: finds a live non-shell process under the path" {
+  wt_require_process_listing
   command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
   local snippet dir pid out
   snippet="$(wt_load_detect_helpers)"
@@ -216,15 +221,16 @@ wt_load_detect_helpers() {
   mkdir -p "$dir"
 
   # cwd が $dir の非シェルプロセスを 1 個立てる（lsof +D は cwd も拾う）
-  ( cd "$dir" && exec sleep 30 ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec sleep 30 ) &
   pid=$!
+  wt_track_pid "$pid"
   sleep 1
 
   out=$(bash -c ". '$snippet'; detect_active_procs_under '$dir'")
   kill "$pid" 2>/dev/null || true
 
-  [[ "$out" == *"$pid"* ]]
-  [[ "$out" == *"(sleep)"* ]]
+  [[ "$out" == *"$pid"* ]] || return 1
+  [[ "$out" == *"(sleep)"* ]] || return 1
 }
 
 @test "detect_active_procs_under: reports nothing for an idle path" {
@@ -239,6 +245,7 @@ wt_load_detect_helpers() {
 }
 
 @test "detect_active_procs_under: behaves identically under bash and zsh" {
+  wt_require_process_listing
   command -v lsof >/dev/null 2>&1 || skip "lsof unavailable"
   command -v zsh >/dev/null 2>&1 || skip "zsh unavailable"
   local snippet dir pid out_bash out_zsh
@@ -247,20 +254,23 @@ wt_load_detect_helpers() {
   mkdir -p "$dir"
 
   # 2 プロセス立てる。zsh の単語分割差が出ると片方しか（または 1 件も）検出されない
-  ( cd "$dir" && exec sleep 30 ) &
+  ( cd "$dir" && wt_close_inherited_fds && exec sleep 30 ) &
   pid=$!
-  ( cd "$dir" && exec sleep 30 ) &
+  wt_track_pid "$pid"
+  ( cd "$dir" && wt_close_inherited_fds && exec sleep 30 ) &
+  pid2=$!
+  wt_track_pid "$pid2"
   sleep 1
 
   out_bash=$(bash -c ". '$snippet'; detect_active_procs_under '$dir'")
   out_zsh=$(zsh -c ". '$snippet'; detect_active_procs_under '$dir'")
-  kill "$pid" 2>/dev/null || true
-  pkill -f "sleep 30" 2>/dev/null || true
+  # 自分が立てた 2 つだけを止める（`pkill -f "sleep 30"` はホスト上の他プロセスまで巻き込む）
+  kill "$pid" "$pid2" 2>/dev/null || true
 
   [ "$out_bash" = "$out_zsh" ]
   # 2 件とも拾えていること（zsh で 1 件に潰れていない）
   [ "$(printf '%s' "$out_bash" | grep -c '(sleep)')" -eq 1 ]
-  [[ "$out_bash" == *","* ]]
+  [[ "$out_bash" == *","* ]] || return 1
 }
 
 @test "detect_recent_session_log: finds a jsonl updated within 24h under either slug form" {
@@ -276,7 +286,7 @@ wt_load_detect_helpers() {
   echo '{}' >"$fake_home/.claude/projects/$slug/session.jsonl"
 
   out=$(HOME="$fake_home" bash -c ". '$snippet'; detect_recent_session_log '$dir'")
-  [[ "$out" == *"session.jsonl"* ]]
+  [[ "$out" == *"session.jsonl"* ]] || return 1
 }
 
 @test "detect_recent_session_log: ignores logs older than 24h" {

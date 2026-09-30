@@ -101,8 +101,8 @@ teardown() {
   touch "$dir/bbb.jsonl"
   run e2s_list_jsonl /Users/oratta/foo/bar
   [ "$status" -eq 0 ]
-  [[ "$output" == *"aaa.jsonl"* ]]
-  [[ "$output" == *"bbb.jsonl"* ]]
+  [[ "$output" == *"aaa.jsonl"* ]] || return 1
+  [[ "$output" == *"bbb.jsonl"* ]] || return 1
 }
 
 @test "e2s_list_jsonl: size filter excludes files larger than max" {
@@ -114,8 +114,8 @@ teardown() {
   dd if=/dev/zero of="$dir/large.jsonl" bs=1024 count=200 >/dev/null 2>&1
   E2S_JSONL_MAX_SIZE=$((100 * 1024)) run e2s_list_jsonl /Users/oratta/foo/bar
   [ "$status" -eq 0 ]
-  [[ "$output" == *"small.jsonl"* ]]
-  [[ "$output" != *"large.jsonl"* ]]
+  [[ "$output" == *"small.jsonl"* ]] || return 1
+  [[ "$output" != *"large.jsonl"* ]] || return 1
 }
 
 @test "e2s_list_jsonl: ignores non-jsonl files" {
@@ -125,6 +125,6 @@ teardown() {
   touch "$dir/notes.txt"
   run e2s_list_jsonl /Users/oratta/foo/bar
   [ "$status" -eq 0 ]
-  [[ "$output" == *"aaa.jsonl"* ]]
-  [[ "$output" != *"notes.txt"* ]]
+  [[ "$output" == *"aaa.jsonl"* ]] || return 1
+  [[ "$output" != *"notes.txt"* ]] || return 1
 }

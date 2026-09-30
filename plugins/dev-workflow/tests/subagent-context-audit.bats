@@ -53,6 +53,72 @@ days_ago_stamp() {
   date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%m%d%H%M
 }
 
+# --by-role 検証用: meta.json（agentType / description）だけを持つ空トランスクリプトを作る。
+# 本体の行は呼び出し側が rl_user / rl_asst / rl_asst_tool で追記する。
+#   make_role_agent <slug> <sess> <fname> <agentType> <description>
+make_role_agent() {
+  local slug="$1" sess="$2" fname="$3" agent_type="$4" desc="$5"
+  local dir="${PROJECTS}/${slug}/${sess}/subagents"
+  mkdir -p "$dir"
+  local f="${dir}/${fname}"
+  : > "$f"
+  python3 -c 'import json,sys; print(json.dumps({"agentType": sys.argv[1], "description": sys.argv[2]}))' \
+    "$agent_type" "$desc" > "${dir}/${fname%.jsonl}.meta.json"
+  echo "$f"
+}
+
+# timestamp 付き user レコード 1 行（$1 が空なら timestamp キーを付けない）
+rl_user() {
+  if [ -n "$1" ]; then
+    printf '{"type":"user","timestamp":"%s","message":{"role":"user","content":"hi"}}\n' "$1"
+  else
+    printf '{"type":"user","message":{"role":"user","content":"hi"}}\n'
+  fi
+}
+
+# usage だけを持つ assistant レコード 1 行（コンテキスト量 $1）
+rl_asst() {
+  printf '{"type":"assistant","message":{"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":%s,"output_tokens":1}}}\n' "$1"
+}
+
+# tool_use を 1 つ含む assistant レコード（usage $1、ツール名 $2、file_path $3。$3 省略なら input:{}）
+rl_asst_tool() {
+  local usage="$1" name="$2" fp="${3-}"
+  if [ -n "$fp" ]; then
+    printf '{"type":"assistant","message":{"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":%s,"output_tokens":1},"content":[{"type":"tool_use","name":"%s","input":{"file_path":"%s"}}]}}\n' "$usage" "$name" "$fp"
+  else
+    printf '{"type":"assistant","message":{"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":%s,"output_tokens":1},"content":[{"type":"tool_use","name":"%s","input":{}}]}}\n' "$usage" "$name"
+  fi
+}
+
+# 担当分類（agentType 優先 / description 先頭トークン / unknown）を確かめるための
+# 7 体の混在 fixture（W / R1 / G / Reviewer / decider / unknown x2）を作る。
+seed_role_mix() {
+  local f
+  f="$(make_role_agent p1 s1 agent-w1.jsonl general-purpose "W: #552 impl")"
+  rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
+
+  f="$(make_role_agent p1 s1 agent-r1.jsonl general-purpose "R1: 仕様レビュー #552")"
+  rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
+
+  f="$(make_role_agent p1 s1 agent-g1.jsonl general-purpose "G: gate for #552")"
+  rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
+
+  f="$(make_role_agent p1 s1 agent-reviewer1.jsonl general-purpose "Reviewer: code review for #552")"
+  rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
+
+  # agentType が decider を示せば description が R1 の体裁でも decider に分類される（D1）
+  f="$(make_role_agent p1 s1 agent-decider1.jsonl dev-workflow:decider "R1: 仕様レビュー")"
+  rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
+
+  # コロンはあるが先頭トークンがどれとも一致しない → unknown
+  f="$(make_role_agent p1 s1 agent-unknown-desc.jsonl general-purpose "note: something")"
+  rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
+
+  # meta.json 自体が無い → unknown
+  make_agent p1 s1 agent-unknown-nometa.jsonl none 1000 2000 >/dev/null
+}
+
 @test "script: is executable and prints help without scanning" {
   [ -x "$SCRIPT" ]
   run "$SCRIPT" --help
@@ -375,4 +441,190 @@ SHIM
     [ "$status" -eq 0 ]
     [ "$output" = "$first" ]
   done
+}
+
+# ---- --by-role（openspec/changes/context-audit-by-role） ----
+
+@test "by-role: default invocation (no --by-role) output is unchanged" {
+  make_agent p1 s1 agent-aW-1-1111.jsonl plain 10000 40000 >/dev/null
+  make_agent p1 s1 agent-aW-2-2222.jsonl plain 20000 50000 >/dev/null
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE"
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "by_role" not in d, d'
+}
+
+@test "by-role: agentType decider overrides description, leading token maps roles, rest fall to unknown" {
+  seed_role_mix
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+br = d["by_role"]
+assert br["W"]["count"] == 1, br
+assert br["R1"]["count"] == 1, br
+assert br["G"]["count"] == 1, br
+assert br["Reviewer"]["count"] == 1, br
+# agentType: dev-workflow:decider が description の "R1:" 見た目より優先される
+assert br["decider"]["count"] == 1, br
+assert br["unknown"]["count"] == 2, br  # note: something / meta 無し
+PY
+}
+
+@test "by-role: role counts sum to the overall count and only W carries reread_pct" {
+  seed_role_mix
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+br = d["by_role"]
+roles = ("W", "R1", "G", "Reviewer", "decider", "unknown")
+assert sum(br[r]["count"] for r in roles) == d["count"], (br, d["count"])
+for r in roles:
+    for k in ("count", "first_median", "docs_median", "last_median", "over_cap_pct"):
+        assert k in br[r], (r, k)
+    if r == "W":
+        assert "reread_pct" in br[r], br[r]
+    else:
+        assert "reread_pct" not in br[r], br[r]
+PY
+}
+
+@test "by-role: zero transcripts still fills all 6 roles with null/0.0 (python3 present)" {
+  mkdir -p "$PROJECTS"
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+assert d["count"] == 0, d
+br = d["by_role"]
+for role in ("W", "R1", "G", "Reviewer", "decider", "unknown"):
+    r = br[role]
+    assert r["count"] == 0, (role, r)
+    assert r["first_median"] is None, (role, r)
+    assert r["docs_median"] is None, (role, r)
+    assert r["last_median"] is None, (role, r)
+    assert r["over_cap_pct"] == 0.0, (role, r)
+assert br["W"]["reread_pct"] is None, br["W"]
+PY
+}
+
+@test "docs_median: per-individual hop diffs are summed, then medianed across W individuals" {
+  fa="$(make_role_agent p1 s1 agent-docs-a.jsonl general-purpose "W: docs test A")"
+  rl_user "2026-09-01T00:00:00Z" >> "$fa"
+  rl_asst_tool 10000 Read "plugins/cache/oratta-claude-harness/df824c26439f/skills/develop/references/roles/worker.md" >> "$fa"
+  rl_asst 13000 >> "$fa"                 # ホップ1: 10000 -> 13000 (diff 3000)
+  rl_asst_tool 13000 Skill "" >> "$fa"
+  rl_asst 15000 >> "$fa"                 # ホップ2: 13000 -> 15000 (diff 2000, 合計 5000)
+
+  fb="$(make_role_agent p1 s1 agent-docs-b.jsonl general-purpose "W: docs test B")"
+  rl_user "2026-09-01T00:00:00Z" >> "$fb"
+  rl_asst 5000 >> "$fb"
+  rl_asst 8000 >> "$fb"                  # 対象ホップ無し（合計 0）
+
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+# 個体 A の合計 5000 と個体 B の合計 0 の中央値 = 2500
+assert d["by_role"]["W"]["docs_median"] == 2500, d["by_role"]["W"]
+PY
+}
+
+@test "docs_median: a G reading pr-review-gate via Skill keeps the hop open across records of the same message.id" {
+  # Claude Code は 1 メッセージを content ブロックごとに別レコードで書き、どれにも同じ
+  # message.id と usage が入る。Skill と Bash が同じ id の別レコードに分かれても、
+  # 2 つ目のレコードでホップを閉じず、id が変わった次のメッセージで閉じる（F1）。
+  fg="$(make_role_agent p1 s1 agent-gate-skill.jsonl general-purpose "G: gate for PR #563 (#552)")"
+  rl_user "2026-09-01T00:00:00Z" >> "$fg"
+  printf '{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":10000,"output_tokens":1},"content":[{"type":"tool_use","name":"Skill","input":{"skill":"dev-workflow:pr-review-gate"}}]}}\n' >> "$fg"
+  printf '{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":10000,"output_tokens":1},"content":[{"type":"tool_use","name":"Bash","input":{"command":"gh pr view 563"}}]}}\n' >> "$fg"
+  printf '{"type":"assistant","message":{"id":"msg_2","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":40000,"output_tokens":1}}}\n' >> "$fg"
+
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+g = d["by_role"]["G"]
+assert g["count"] == 1, g
+# ホップ: 10000 -> 40000（同じ msg_1 の Bash レコードでは閉じない）
+assert g["docs_median"] == 30000, g
+PY
+}
+
+@test "reread_pct: a later W re-reading a basename the earlier W already read" {
+  f1="$(make_role_agent p1 s1 agent-w-first.jsonl general-purpose "W: #552 first")"
+  rl_user "2026-09-01T00:00:00Z" >> "$f1"
+  rl_asst_tool 1000 Read "/Users/oratta/wtA/fileA.md" >> "$f1"
+  rl_asst_tool 1000 Read "/Users/oratta/wtA/fileB.md" >> "$f1"
+  rl_asst 2000 >> "$f1"
+
+  # ディレクトリが違っても末尾のファイル名（ベースネーム）が一致すれば読み直しに数える
+  f2="$(make_role_agent p1 s1 agent-w-second.jsonl general-purpose "W: #552 second")"
+  rl_user "2026-09-02T00:00:00Z" >> "$f2"
+  rl_asst_tool 3000 Read "/Users/oratta/wtB/fileA.md" >> "$f2"
+  rl_asst 4000 >> "$f2"
+
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+# 先行が fileA.md/fileB.md、後続が fileA.md のみ -> 1/2 = 50.0
+assert d["by_role"]["W"]["reread_pct"] == 50.0, d["by_role"]["W"]
+PY
+}
+
+@test "reread_pct: group leader and #N-less W are excluded, leftmost #N is used for grouping" {
+  # 自分だけの単独グループ（先行なし）→ 母数から除かれる
+  fL="$(make_role_agent p1 s1 agent-w-leader-only.jsonl general-purpose "W: #700 only")"
+  rl_user "2026-09-01T00:00:00Z" >> "$fL"
+  rl_asst_tool 1000 Read "/tmp/x/onlyfile.md" >> "$fL"
+  rl_asst 2000 >> "$fL"
+
+  # #N が取れない → 対象から除かれる
+  fN="$(make_role_agent p1 s1 agent-w-nonum.jsonl general-purpose "W: 何かをする")"
+  rl_user "2026-09-01T01:00:00Z" >> "$fN"
+  rl_asst_tool 1000 Read "/tmp/x/otherfile.md" >> "$fN"
+  rl_asst 2000 >> "$fN"
+
+  # #400 のグループ最初
+  f1="$(make_role_agent p1 s1 agent-w-400-first.jsonl general-purpose "W: #400 initial")"
+  rl_user "2026-09-01T02:00:00Z" >> "$f1"
+  rl_asst_tool 1000 Read "/tmp/x/fileC.md" >> "$f1"
+  rl_asst 2000 >> "$f1"
+
+  # description に #N が 2 つ（#400, #288）。最も左の #400 でグループ化されれば
+  # #400-first の後続として fileC.md を 100% 読み直したことになる。
+  # #288（最も右）でグループ化されると単独グループ（先行なし）になり母数から消える。
+  f2="$(make_role_agent p1 s1 agent-w-400-second.jsonl general-purpose "W: gate for PR #400 (#288)")"
+  rl_user "2026-09-01T03:00:00Z" >> "$f2"
+  rl_asst_tool 3000 Read "/tmp/x/fileC.md" >> "$f2"
+  rl_asst 4000 >> "$f2"
+
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+assert d["by_role"]["W"]["reread_pct"] == 100.0, d["by_role"]["W"]
+PY
+}
+
+@test "cache: --by-role uses a separate default cache file with a .by-role suffix" {
+  make_agent p1 s1 agent-aW-1-1111.jsonl plain 10000 40000 >/dev/null
+  default_cache="${WORK}/default-cache"
+  run env SUBAGENT_CONTEXT_AUDIT_CACHE="$default_cache" "$SCRIPT" --projects "$PROJECTS"
+  [ "$status" -eq 0 ]
+  [ -f "$default_cache" ]
+  [ ! -f "${default_cache}.by-role" ]
+  run env SUBAGENT_CONTEXT_AUDIT_CACHE="$default_cache" "$SCRIPT" --projects "$PROJECTS" --by-role --refresh
+  [ "$status" -eq 0 ]
+  [ -f "${default_cache}.by-role" ]
+  ! grep -q '"by_role"' "$default_cache" || return 1
+  grep -q '"by_role"' "${default_cache}.by-role"
 }
