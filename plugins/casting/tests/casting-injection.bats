@@ -71,15 +71,20 @@ vocab_rows() {
 
 @test "injection: map rows equal the catalog perspective set (no missing, no extra, no dup)" {
   [ -z "$(map_names | LC_ALL=C sort | LC_ALL=C uniq -d)" ]
-  diff <(catalog_names | LC_ALL=C sort) <(map_names | LC_ALL=C sort)
+  # プロセス置換の /dev/fd を diff に開かせない（砂場の中では operation not permitted になる）
+  catalog_names | LC_ALL=C sort >"$BATS_TEST_TMPDIR/catalog-names.txt"
+  map_names | LC_ALL=C sort >"$BATS_TEST_TMPDIR/map-names.txt"
+  diff "$BATS_TEST_TMPDIR/catalog-names.txt" "$BATS_TEST_TMPDIR/map-names.txt"
 }
 
 # --- Scenario: タイミング語彙の9分類が定義されている ---
 
 @test "injection: vocabulary table rows equal exactly the 9 timings (set match)" {
-  diff <(vocab_rows | cut -d'|' -f2 | sed 's/^ *//; s/ *$//' | LC_ALL=C sort) \
-       <(printf '%s\n' "常時" "毎ターンの配役判定" "論点相談" "PR 時レンズ" "アクション直前ゲート" \
-                        "定期監査" "注入しない" "起票・選定時" "設計時" | LC_ALL=C sort)
+  # プロセス置換の /dev/fd を diff に開かせない（砂場の中では operation not permitted になる）
+  vocab_rows | cut -d'|' -f2 | sed 's/^ *//; s/ *$//' | LC_ALL=C sort >"$BATS_TEST_TMPDIR/vocab-actual.txt"
+  printf '%s\n' "常時" "毎ターンの配役判定" "論点相談" "PR 時レンズ" "アクション直前ゲート" \
+                 "定期監査" "注入しない" "起票・選定時" "設計時" | LC_ALL=C sort >"$BATS_TEST_TMPDIR/vocab-expected.txt"
+  diff "$BATS_TEST_TMPDIR/vocab-actual.txt" "$BATS_TEST_TMPDIR/vocab-expected.txt"
 }
 
 @test "injection: every vocabulary row has non-empty meaning and mechanism cells" {

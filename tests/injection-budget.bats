@@ -527,7 +527,7 @@ paths:
 EOF
   run check_paths_globs "$TMPD/bad.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"bad.md"* ]]
+  [[ "$output" == *"bad.md"* ]] || return 1
   [ "$(printf '%s\n' "$output" | grep -c 'bad.md')" -eq 4 ]
 }
 
@@ -554,7 +554,7 @@ paths: ["**/*", "rules/**"]
 EOF
   run check_paths_globs "$TMPD/flow.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"flow.md"* ]]
+  [[ "$output" == *"flow.md"* ]] || return 1
   [ "$(printf '%s\n' "$output" | grep -c 'flow.md')" -eq 1 ]
 }
 
@@ -567,7 +567,7 @@ description: x
 EOF
   run check_paths_globs "$TMPD/empty.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"empty.md"* ]]
+  [[ "$output" == *"empty.md"* ]] || return 1
 }
 
 @test "exclusion notes carry no tab so sum_breakdown does not add them back" {
@@ -696,7 +696,7 @@ EOF
   [ -f "$BUDGET_FILE" ]
   run read_budget
   [ "$status" -eq 0 ]
-  [[ "$output" =~ ^[0-9]+$ ]]
+  [[ "$output" =~ ^[0-9]+$ ]] || return 1
   [ "$(wc -l < "$BUDGET_FILE" | tr -d '[:space:]')" -eq 1 ]
 }
 
@@ -816,22 +816,22 @@ EOF
 @test "the over-budget report shows budget, total and the overshoot" {
   run report over 50000 52000 "$(breakdown)"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"50000"* ]]
-  [[ "$output" == *"52000"* ]]
-  [[ "$output" == *"2000"* ]]
-  [[ "$output" == *"超過側 fail"* ]]
+  [[ "$output" == *"50000"* ]] || return 1
+  [[ "$output" == *"52000"* ]] || return 1
+  [[ "$output" == *"2000"* ]] || return 1
+  [[ "$output" == *"超過側 fail"* ]] || return 1
 }
 
 @test "the over-budget report lists all eight categories" {
   run report over 50000 52000 "$(breakdown)"
-  [[ "$output" == *"rules/*.md"* ]]
-  [[ "$output" == *"CLAUDE.md"* ]]
-  [[ "$output" == *"output-styles/*.md"* ]]
-  [[ "$output" == *"plugins SKILL.md description"* ]]
-  [[ "$output" == *"plugins agent description"* ]]
-  [[ "$output" == *"plugins command description"* ]]
-  [[ "$output" == *".claude/skills SKILL.md description"* ]]
-  [[ "$output" == *".claude/commands description"* ]]
+  [[ "$output" == *"rules/*.md"* ]] || return 1
+  [[ "$output" == *"CLAUDE.md"* ]] || return 1
+  [[ "$output" == *"output-styles/*.md"* ]] || return 1
+  [[ "$output" == *"plugins SKILL.md description"* ]] || return 1
+  [[ "$output" == *"plugins agent description"* ]] || return 1
+  [[ "$output" == *"plugins command description"* ]] || return 1
+  [[ "$output" == *".claude/skills SKILL.md description"* ]] || return 1
+  [[ "$output" == *".claude/commands description"* ]] || return 1
 }
 
 @test "AGENTS.md is not counted; CLAUDE.md appears exactly once" {
@@ -852,14 +852,14 @@ EOF
 
 @test "the output-styles line carries the main-session-only note" {
   run report over 50000 52000 "$(breakdown)"
-  [[ "$output" == *"メインセッションのみ"* ]]
+  [[ "$output" == *"メインセッションのみ"* ]] || return 1
 }
 
 @test "the over-budget report offers both available actions" {
   run report over 50000 52000 "$(breakdown)"
-  [[ "$output" == *"固定分を削る"* ]]
-  [[ "$output" == *"tests/injection-budget.txt を上げて"* ]]
-  [[ "$output" == *"PR 本文に理由を書く"* ]]
+  [[ "$output" == *"固定分を削る"* ]] || return 1
+  [[ "$output" == *"tests/injection-budget.txt を上げて"* ]] || return 1
+  [[ "$output" == *"PR 本文に理由を書く"* ]] || return 1
 }
 
 @test "the under-budget report names a concrete recommended value" {
@@ -867,11 +867,11 @@ EOF
   [ "$(verdict 52000 40000)" = "under" ]
   run report under 52000 40000 "$(breakdown)"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"下振れ側 fail"* ]]
-  [[ "$output" == *"12000"* ]]
-  [[ "$output" == *"42000"* ]]
-  [[ "$output" == *"tests/injection-budget.txt を推奨値"* ]]
-  [[ "$output" == *"内訳（測定対象 8 種）"* ]]
+  [[ "$output" == *"下振れ側 fail"* ]] || return 1
+  [[ "$output" == *"12000"* ]] || return 1
+  [[ "$output" == *"42000"* ]] || return 1
+  [[ "$output" == *"tests/injection-budget.txt を推奨値"* ]] || return 1
+  [[ "$output" == *"内訳（測定対象 8 種）"* ]] || return 1
 }
 
 @test "removing more than ten percent of the total fails on the under side" {
@@ -906,21 +906,21 @@ EOF
   printf -- '---\nname: evil\ndescription: >\n  first line of the folded value\n  second line hidden from the total\n---\nbody\n' > "$TMPD/evil.md"
   run check_frontmatter_shape "$TMPD/evil.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evil.md"* ]]
+  [[ "$output" == *"evil.md"* ]] || return 1
 }
 
 @test "a literal block description is detected" {
   printf -- '---\nname: evil2\ndescription: |\n  hidden\n---\nbody\n' > "$TMPD/evil2.md"
   run check_frontmatter_shape "$TMPD/evil2.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evil2.md"* ]]
+  [[ "$output" == *"evil2.md"* ]] || return 1
 }
 
 @test "a continuation line without a folding marker is detected" {
   printf -- '---\nname: evil3\ndescription: visible part\n  hidden continuation\n---\nbody\n' > "$TMPD/evil3.md"
   run check_frontmatter_shape "$TMPD/evil3.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evil3.md"* ]]
+  [[ "$output" == *"evil3.md"* ]] || return 1
 }
 
 @test "a folded second description key is detected" {
@@ -928,7 +928,7 @@ EOF
   printf -- '---\nname: evil4\ndescription: short and innocent\ndescription: >\n  the real payload hidden on the second key\n---\nbody\n' > "$TMPD/evil4.md"
   run check_frontmatter_shape "$TMPD/evil4.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evil4.md"* ]]
+  [[ "$output" == *"evil4.md"* ]] || return 1
 }
 
 @test "two single-line top-level description keys are detected even without folding" {
@@ -936,7 +936,7 @@ EOF
   printf -- '---\nname: dup\ndescription: first\ndescription: second\n---\nbody\n' > "$TMPD/dup-single.md"
   run check_frontmatter_shape "$TMPD/dup-single.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"dup-single.md"* ]]
+  [[ "$output" == *"dup-single.md"* ]] || return 1
 }
 
 @test "a single line description passes the guard" {
@@ -952,14 +952,14 @@ EOF
   printf -- '---\nargument-hint: &payload this description is forty-eight bytes of injected text\ndescription: *payload\n---\n' > "$TMPD/anchor-alias.md"
   run check_frontmatter_shape "$TMPD/anchor-alias.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"anchor-alias.md"* ]]
+  [[ "$output" == *"anchor-alias.md"* ]] || return 1
 }
 
 @test "a merge key is detected" {
   printf -- '---\nname: x\n<<: *base\ndescription: hello\n---\n' > "$TMPD/merge-key.md"
   run check_frontmatter_shape "$TMPD/merge-key.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"merge-key.md"* ]]
+  [[ "$output" == *"merge-key.md"* ]] || return 1
 }
 
 @test "a whole-document flow mapping is detected" {
@@ -967,7 +967,7 @@ EOF
   printf -- '---\n{name: a, description: this text used to be counted as zero bytes}\n---\n' > "$TMPD/flow-map.md"
   run check_frontmatter_shape "$TMPD/flow-map.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"flow-map.md"* ]]
+  [[ "$output" == *"flow-map.md"* ]] || return 1
 }
 
 @test "a quoted key is detected" {
@@ -975,56 +975,56 @@ EOF
   printf -- '---\nname: x\n"description": this text used to be counted as zero bytes\n---\n' > "$TMPD/quoted-key.md"
   run check_frontmatter_shape "$TMPD/quoted-key.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"quoted-key.md"* ]]
+  [[ "$output" == *"quoted-key.md"* ]] || return 1
 }
 
 @test "a first line that is blank before the opening --- is detected" {
   printf -- '\n---\nname: x\ndescription: hi\n---\n' > "$TMPD/blank-first.md"
   run check_frontmatter_shape "$TMPD/blank-first.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"blank-first.md"* ]]
+  [[ "$output" == *"blank-first.md"* ]] || return 1
 }
 
 @test "a UTF-8 BOM before the opening --- is detected" {
   printf '\xEF\xBB\xBF---\nname: x\ndescription: hi\n---\n' > "$TMPD/bom-first.md"
   run check_frontmatter_shape "$TMPD/bom-first.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"bom-first.md"* ]]
+  [[ "$output" == *"bom-first.md"* ]] || return 1
 }
 
 @test "a %YAML directive line before the opening --- is detected" {
   printf -- '%%YAML 1.2\n---\nname: x\ndescription: hi\n---\n' > "$TMPD/yaml-directive.md"
   run check_frontmatter_shape "$TMPD/yaml-directive.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"yaml-directive.md"* ]]
+  [[ "$output" == *"yaml-directive.md"* ]] || return 1
 }
 
 @test "a document-end terminator of ... instead of --- is detected" {
   printf -- '---\nname: x\ndescription: hi\n...\n' > "$TMPD/dots-terminator.md"
   run check_frontmatter_shape "$TMPD/dots-terminator.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"dots-terminator.md"* ]]
+  [[ "$output" == *"dots-terminator.md"* ]] || return 1
 }
 
 @test "a frontmatter with no closing --- before EOF is detected" {
   printf -- '---\nname: x\ndescription: hi\nno closing marker\n' > "$TMPD/no-terminator.md"
   run check_frontmatter_shape "$TMPD/no-terminator.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"no-terminator.md"* ]]
+  [[ "$output" == *"no-terminator.md"* ]] || return 1
 }
 
 @test "a tab-indented nested key is detected" {
   printf -- '---\nmetadata:\n\tversion: 1\ndescription: hi\n---\n' > "$TMPD/tab-indent.md"
   run check_frontmatter_shape "$TMPD/tab-indent.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"tab-indent.md"* ]]
+  [[ "$output" == *"tab-indent.md"* ]] || return 1
 }
 
 @test "an anchor inside a flow sequence is detected" {
   printf -- '---\ntags: [&p this payload rides inside a flow sequence anchor]\ndescription: hi\n---\n' > "$TMPD/flow-anchor.md"
   run check_frontmatter_shape "$TMPD/flow-anchor.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"flow-anchor.md"* ]]
+  [[ "$output" == *"flow-anchor.md"* ]] || return 1
 }
 
 @test "a backslash inside a quoted description is detected" {
@@ -1032,7 +1032,7 @@ EOF
   printf -- '---\ndescription: "backslash \\L\\L\\L payload"\n---\n' > "$TMPD/backslash-quote.md"
   run check_frontmatter_shape "$TMPD/backslash-quote.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"backslash-quote.md"* ]]
+  [[ "$output" == *"backslash-quote.md"* ]] || return 1
 }
 
 @test "a description starting with a C0 control byte (0x01) is detected" {
@@ -1041,21 +1041,21 @@ EOF
   printf -- '---\ndescription: \001payload smuggled behind a control byte\n---\n' > "$TMPD/ctl-01.md"
   run check_frontmatter_shape "$TMPD/ctl-01.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ctl-01.md"* ]]
+  [[ "$output" == *"ctl-01.md"* ]] || return 1
 }
 
 @test "a description starting with a C0 control byte (0x07) is detected" {
   printf -- '---\ndescription: \007payload smuggled behind a control byte\n---\n' > "$TMPD/ctl-07.md"
   run check_frontmatter_shape "$TMPD/ctl-07.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ctl-07.md"* ]]
+  [[ "$output" == *"ctl-07.md"* ]] || return 1
 }
 
 @test "a description starting with DEL (0x7F) is detected" {
   printf -- '---\ndescription: \177payload smuggled behind a control byte\n---\n' > "$TMPD/ctl-7f.md"
   run check_frontmatter_shape "$TMPD/ctl-7f.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ctl-7f.md"* ]]
+  [[ "$output" == *"ctl-7f.md"* ]] || return 1
 }
 
 # 先頭バイト判定の fixture 一覧。各行は「期待する verdict（1=通る / 0=落ちる） パス」。
@@ -1097,7 +1097,7 @@ read_first_byte_fixtures() {
   printf -- '---\ndescription: \000payload smuggled behind a NUL\n---\n' > "$TMPD/nul.md"
   run check_frontmatter_shape "$TMPD/nul.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"nul.md"* ]]
+  [[ "$output" == *"nul.md"* ]] || return 1
 }
 
 @test "a description key with no value at all is rejected" {
@@ -1107,7 +1107,7 @@ read_first_byte_fixtures() {
   printf -- '---\nname: x\ndescription:\n---\n' > "$TMPD/empty-desc.md"
   run check_frontmatter_shape "$TMPD/empty-desc.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"empty-desc.md"* ]]
+  [[ "$output" == *"empty-desc.md"* ]] || return 1
 }
 
 @test "a description value made only of spaces is rejected" {
@@ -1115,7 +1115,7 @@ read_first_byte_fixtures() {
   printf -- '---\nname: x\ndescription:  \n---\n' > "$TMPD/blank-desc.md"
   run check_frontmatter_shape "$TMPD/blank-desc.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"blank-desc.md"* ]]
+  [[ "$output" == *"blank-desc.md"* ]] || return 1
 }
 
 @test "every first byte outside the allowed set is rejected" {
@@ -1131,7 +1131,7 @@ read_first_byte_fixtures() {
       echo "expected a violation but the guard passed: $path" >&2
       false
     fi
-    [[ "$output" == *"$(basename "$path")"* ]]
+    [[ "$output" == *"$(basename "$path")"* ]] || return 1
   done
 }
 
@@ -1188,7 +1188,7 @@ read_first_byte_fixtures() {
   local shape_violations
   shape_violations=$(check_frontmatter_shape "$TMPD/gate-check.md" || true)
   [ -n "$shape_violations" ]
-  [[ "$shape_violations" == *"gate-check.md"* ]]
+  [[ "$shape_violations" == *"gate-check.md"* ]] || return 1
 }
 
 @test "a composite file using every allowed line form passes the guard" {

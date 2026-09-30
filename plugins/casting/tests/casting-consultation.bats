@@ -91,14 +91,9 @@ setup() {
   LC_ALL=C grep -qF -- "根拠" "$ARBITER"
 }
 
-@test "plugin.json: registers both agents and bumps version to at least 0.3.0" {
+@test "plugin.json: registers both agents" {
   LC_ALL=C grep -qF -- '"./agents/casting-specialist.md"' "$PLUGIN_JSON"
   LC_ALL=C grep -qF -- '"./agents/casting-arbiter.md"' "$PLUGIN_JSON"
-  # 版を literal で固定すると bump のたびにこのテストが落ちる。テスト名どおり下限だけを見る。
-  local ver
-  ver=$(LC_ALL=C sed -n 's/.*"version"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$PLUGIN_JSON" | head -1)
-  [ -n "$ver" ]
-  [ "$(printf '%s\n' "0.3.0" "$ver" | sort -V | head -1)" = "0.3.0" ]
 }
 
 # --- 受け入れ条件3: 事後報告フォーマットの定義と実例1件 ---
@@ -213,7 +208,7 @@ setup() {
   local section
   section="$(awk '/^## 論点が来たときの判定/{on=1; next} /^## /{on=0} on' "$SKILL")"
   [ -n "$section" ]
-  ! printf '%s' "$section" | LC_ALL=C grep -qF -- "方針文・判断基準に従って自走する"
+  ! printf '%s' "$section" | LC_ALL=C grep -qF -- "方針文・判断基準に従って自走する" || return 1
   printf '%s' "$section" | LC_ALL=C grep -qF -- "「論点相談・仲裁」の手順に入る"
 }
 
@@ -232,6 +227,6 @@ setup() {
 
 @test "plugin.json: description states the claim list, not the retired two-party wording" {
   # 旧仕様「双方の主張」（2者固定）が説明文に残らないこと（Blocking 5）
-  ! LC_ALL=C grep -qF -- "双方の主張" "$PLUGIN_JSON"
+  ! LC_ALL=C grep -qF -- "双方の主張" "$PLUGIN_JSON" || return 1
   LC_ALL=C grep -qF -- "主張リスト" "$PLUGIN_JSON"
 }

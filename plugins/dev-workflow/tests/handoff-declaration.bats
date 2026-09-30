@@ -121,11 +121,28 @@ role_sec() { section "$SKILL" '本体の役割'; }
 @test "criteria: the source section stops at the next heading, not at the next level-2 heading" {
   cap_sec | grep -qF 'コンテキスト上限（サブエージェントの手渡し）'
   local leaked
-  for leaked in 'の自動導出（usage snapshot 契約）' 'モード不変ルール'; do
+  for leaked in 'の自動導出（セッション記録と usage snapshot 契約）' 'モード不変ルール'; do
     if cap_sec | grep -qF "$leaked"; then
       echo "正本の節に後続の小節が混ざっている: $leaked"; return 1
     fi
   done
+}
+
+# 成果一覧（W / G 共通の定義）2 箇所に「読んだコードの要点」が W の場合のみ必須として入り、
+# 書式は worker/common.md を指す。上限行数は worker/common.md にだけ置く（#555）
+@test "criteria: both deliverable lists name the read-code pointers as W-only and defer the format to worker/common.md" {
+  local line
+  for key in '工程完了: <工程名>`（例' '**通知を受けたら**'; do
+    line="$(cap_sec | grep -F "$key")"
+    [ -n "$line" ] || { echo "成果一覧の行が見つからない: $key"; return 1; }
+    echo "$line" | grep -qF '読んだコードの要点' || { echo "欄が無い: $key"; return 1; }
+    echo "$line" | grep -qF 'W の場合のみ必須' || { echo "条件が無い: $key"; return 1; }
+    echo "$line" | grep -qF 'worker/common.md' || { echo "worker/common.md への参照が無い: $key"; return 1; }
+  done
+  if cap_sec | grep -qF '20 行'; then
+    echo "正本の節に上限行数が再掲されている（書式の正本は worker/common.md）" >&2
+    return 1
+  fi
 }
 
 # 同一 worktree の同一役割は 1 人（dev-workflow-develop の別要件）

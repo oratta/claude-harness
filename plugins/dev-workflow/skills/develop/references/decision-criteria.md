@@ -1,6 +1,6 @@
 # 判定基準リファレンス（develop スキル）
 
-W の指示書（`references/roles/worker.md`）の仕様化判断（Step B）・分割判定（Step C）と、本体のモデル選択（`SKILL.md`「モデル」）で使う判定基準の詳細版。
+W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B）・分割判定（Step C）と、本体のモデル選択（`SKILL.md`「モデル」）で使う判定基準の詳細版。
 
 **事前判定は仮決めにすぎない**。誤分類は昇格トリップワイヤー（`plugins/dev-workflow/templates/escalation-tripwires.md`）が実行中に修正するので、入口で精密に当てようとしない。
 
@@ -74,12 +74,12 @@ W の指示書（`references/roles/worker.md`）の仕様化判断（Step B）�
 
 ## 残量モード `FABLE_BUDGET_MODE`
 
-サブスクの Fable 枠の残り具合を表す環境変数。役割（W / R1 / G）の既定モデルと昇格上限を決める。**明示設定が最優先**で、未設定時は usage snapshot からの自動導出結果を用いる（後述）。導出もできなければ `conserve` 扱い（安全側）。settings.json の `env` ブロックで明示的に固定することもできる。
+サブスクの Fable 枠の残り具合を表す環境変数。役割（W / R1 / G）の既定モデルと昇格上限を決める。**明示設定が最優先**で、未設定時はセッション記録と usage snapshot の実効値からの自動導出結果を用いる（後述）。導出もできなければ `conserve` 扱い（安全側）。settings.json の `env` ブロックで明示的に固定することもできる。
 
 | 値 | 意味 | 効果 |
 |---|---|---|
-| `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | **どの役割の既定も上げない**。役割表の既定どおりで、Fable が使われる経路は決める役（`subagent_type: dev-workflow:decider`）だけ。余った Fable 枠は人間の対話と verify に回す（2026-09 の監査で W の 4 割が Fable、翌週は R1 / G が 100% Fable で走っており、abundant の押し上げが例外を既定にしていた） |
-| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | 役割表の既定どおり（W = Sonnet、R1 = Opus、G = Sonnet）。事前分類（`references/roles/worker.md`）に当たる場合、読んで判断する役（R1 / G が要求するレビュアー）だけ `subagent_type: dev-workflow:decider` で Fable。実行役（W）はどの分類でも `opus` 止まり |
+| `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | **どの役割の既定も上げない**。役割表の既定どおりで、Fable が使われる経路は決める役（`subagent_type: dev-workflow:decider`）だけ。余った Fable 枠は人間の対話と verify に回す（abundant を役割の既定引き上げに使うと、消費ペースが遅い週ほど大半の実行が Fable に流れ、温存のつもりが最大消費の経路になる） |
+| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | 役割表の既定どおり（W = Sonnet、R1 = Opus、G = Sonnet）。事前分類（`references/pre-classification.md`）に当たる場合、読んで判断する役（R1 / G が要求するレビュアー）だけ `subagent_type: dev-workflow:decider` で Fable。実行役（W）はどの分類でも `opus` 止まり |
 | `reserve` | Fable 枠を人間用に温存 | conserve に加えて、**自動実行（unmanned / cron / loop 経由）では Fable をいかなる役割でも使わない**。昇格ラダーは Opus 上限。Opus でも2連続失敗が続く問題は `needs-approval` で人間に返す。interactive は conserve と同一 |
 | `exhausted` | Fable 週次枠を実質使い切った（`fable_weekly_pct > 90`、または明示宣言） | **reserve と異なり interactive を含む全経路で Fable を一切使わない**（枠が実際に無いため）。昇格ラダーは Opus 上限。加えて rate-limit 実エラーで reactive に Opus へ降格する（`escalation-tripwires.md` トリップワイヤー5） |
 
@@ -89,7 +89,7 @@ W の指示書（`references/roles/worker.md`）の仕様化判断（Step B）�
 
 ## 共有枠モード `SHARED_BUDGET_MODE`
 
-全モデル共通の週次枠（`weekly_all_pct`）の残り具合。Fable 残量モードと独立に導出され、**役割の既定モデルの下限**を決める。明示 env が最優先、未設定時は usage snapshot から自動導出（`scripts/session-tripwires.sh`）。
+全モデル共通の週次枠（`weekly_all_pct`）の残り具合。Fable 残量モードと独立に導出され、**役割の既定モデルの下限**を決める。明示 env が最優先、未設定時は active スロットの実効値から自動導出（`scripts/session-tripwires.sh`）。
 
 | 値 | 導出 | 効果 |
 |---|---|---|
@@ -99,9 +99,11 @@ W の指示書（`references/roles/worker.md`）の仕様化判断（Step B）�
 
 Fable 残量モードと共有枠モードが食い違うときは**共有枠モードの下限が勝つ**（例: `throttled` なら R1 も Sonnet 起点）。
 
+週次余裕を使う provider 選択では、Codex の snapshot の freshness を age `<= 300` 秒とし、`> 300` 秒は stale（欠測）とする。Claude 側（起動 account の選択と codex-develop の Claude margin）はこの境界を使わず、後述の実効値（リセット時刻より前の値は取得からの経過時間によらず下限として使う）で判定する。
+
 ## コンテキスト上限（サブエージェントの手渡し）
 
-W / G は名前付き spawn ＋ SendMessage 再開でコンテキストを引き継ぐが、再開のたびに全履歴を読み直すため、履歴が畳まれずに伸び続ける。2026-08-31〜09-05 の監査では W の平均コンテキストが 33 万トークン（最大 1 本 745 USD 換算）で、W の消費の 3 分の 2 が 30 万トークン超のリクエストだった。モデルを下げるより先にここを畳む。
+W は名前付き spawn ＋ SendMessage 再開でコンテキストを引き継ぐが（G は再開せず段ごとに新しく起こす。develop SKILL.md の (4)）、再開のたびに全履歴を読み直すため、履歴が畳まれずに伸び続ける。2026-08-31〜09-05 の監査では W の平均コンテキストが 33 万トークン（最大 1 本 745 USD 換算）で、W の消費の 3 分の 2 が 30 万トークン超のリクエストだった。モデルを下げるより先にここを畳む。
 
 計測には 2 経路ある。**本体が再開の前に測る**経路（下の「再開前チェック」）と、**サブエージェントの起動の途中で hook が自分自身を測る**経路（「途中計測」）で、後者は 1 回の起動の中で膨らむぶんを止める。閾値と全解除は次の 3 つの環境変数で、**数値と環境変数名はこの節にだけ置く**（他の面はこの節を指すだけにする。同じ規則を言い換えて複数の面に置くと、次に閾値が変わったときどれかが必ず取り残される）。
 
@@ -113,11 +115,11 @@ W / G は名前付き spawn ＋ SendMessage 再開でコンテキストを引き
 
 **再開前チェック（本体が測る）**
 
-- **測り方**: 本体が W / G を SendMessage で再開する**前に毎回** `scripts/subagent-context.sh <agent-name>` を実行する（トランスクリプトの最後の usage から input + cache_creation + cache_read を読む。exit 2 が上限超）
+- **測り方**: 本体が W を SendMessage で再開する**前に毎回** `scripts/subagent-context.sh <agent-name>` を実行する（トランスクリプトの最後の usage から input + cache_creation + cache_read を読む。exit 2 が上限超）
 - **上限超のとき（再開の禁止は無条件）**: 前任の状態にかかわらず、**作業の継続を指示する SendMessage（＝再開）を送らない**。ただし下記の「前任が動作中に交代させる場合」の**停止を指示する SendMessage は禁止の対象外**（作業の継続ではなく停止の指示なので別扱い）
 - **手渡しの許可（前任の `工程完了:` return か停止確認が条件）**: 手渡し（前回の return と記録先を渡して**同じ役割の新しいエージェント（W なら新しい W、G なら新しい G）を spawn する**こと）を行ってよいのは、①前任の直近の return の 1 行目が `工程完了: <工程名>` に完全一致するとき、②前任へ停止を指示し、停止確認（何を編集したか・何を投稿したかの報告）を受け取ったとき、のいずれかだけ。上限超過（exit 2）は「次に再開するときは手渡しに切り替える」という条件であって、「今すぐ交代させる」条件ではない。手渡し先は前任の return を前提に続け、記録先とファイルの現状から再出発する（前任の履歴は読めないし読まない）
 - **W / G 側の宣言義務**: return の 1 行目を次のどちらかに完全一致させる（太字・全角コロン・末尾句点を付けない。書式は `仕様化判断: する|しない` と同型）:
-  - `工程完了: <工程名>`（例: `工程完了: 仕様化まで`、`工程完了: 実装＋verify`）— 成果一覧（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を伴う、工程の正真正銘の終わり
+  - `工程完了: <工程名>`（例: `工程完了: 仕様化まで`、`工程完了: 実装＋verify`）— 成果一覧（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業。W の場合のみ必須で読んだコードの要点も含む。書式は `references/roles/worker/common.md`「コンテキスト上限と手渡し」）を伴う、工程の正真正銘の終わり
   - `工程中断: <理由>`（例: `工程中断: テスト完了待ち`）— 自分が起動したバックグラウンドコマンド（テスト・ビルド等）の完了待ちなど、工程がまだ終わっていない状態
 
   成果一覧を書いていても、そのバックグラウンドコマンドが完了していなければ `工程完了:` を宣言してはならない（1 行目は `工程中断:` にする）。判定材料を本体側の内容判断（「成果一覧が書かれているか」）だけに置くと、成果一覧と完了待ちが同じ return に併記される通常形で判定が素通りするため、宣言の 1 行目を判定の唯一の材料にする
@@ -131,7 +133,7 @@ W / G は名前付き spawn ＋ SendMessage 再開でコンテキストを引き
 
 再開前チェックは「再開の瞬間」しか見ないので、1 回の起動の中で膨らむぶんは素通りする（実測で W が 497,552 トークンに達した）。`hooks/hooks.json` に配線した `scripts/context-tripwire.sh` が PostToolUse（全ツール）と PreToolUse（`Edit|Write|NotebookEdit|Bash`）で走り、**そのサブエージェント自身の**トランスクリプトを測ってこれを止める。計測対象は hook が受け取る `agent_id` から導出するので、`isolation: "worktree"` で起こしたサブエージェントでも同じように効く。メインスレッド（親セッション）は対象外。
 
-- **通知を受けたら**（上の表の `DEV_WORKFLOW_CONTEXT_CAP` 超）: 次のツールを呼ばずに今の工程を締め、成果一覧（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を並べて return する
+- **通知を受けたら**（上の表の `DEV_WORKFLOW_CONTEXT_CAP` 超）: 次のツールを呼ばずに今の工程を締め、成果一覧（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業。W の場合のみ必須で読んだコードの要点も含む。書式は `references/roles/worker/common.md`「コンテキスト上限と手渡し」）を並べて return する
 - **強制停止に当たったら**（`DEV_WORKFLOW_CONTEXT_HARD_CAP` 超）: `Bash` はコマンド内容によらず全件拒否される（窓を開けない。正本は `openspec/specs/dev-workflow-execution-strategy/spec.md`「強制停止の閾値を超えたら PreToolUse が編集を拒否する」）。#269 で「`git` の一部だけ通す」方式が 2 周連続で実機迂回されたため（判定側のトークン化と実行するシェルのトークン化のずれ）、受理する経路を残さない構造に変えた。commit も含めて Bash が一切使えないため、**後片付け（未コミット差分の commit）はサブエージェントではなく本体が行う**（本体側の手順は `skills/develop/SKILL.md` の該当箇所が正本）。拒否理由には計測値・`cwd`（作業ツリーのパス）・編集済みファイル一覧と `cwd` を return に書けという指示が含まれる。読み取り系（Read / Grep / Glob）は拒否されない
 - **途中停止したときの return の 1 行目**: **強制停止で止まった場合は、成果を書いていても必ず `工程中断:`**（拒否された時点で予定していた作業が残っているため）。**通知を受けて締める場合は、そのとき進めていた tasks グループの項目がすべて済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:`**。判定はこれだけで行い、他の材料を要求しない（`tasks.md` が無い場合は本体から渡された作業項目、G は pr-review-gate の手順 1〜5 を 1 グループとみなす）。この区別が要るのは、`工程完了:` が上の「手渡しの許可」の条件①になっており、手渡し先が未コミット差分と残作業を先に確認しなければならないのは中断のときだけだから
 - **G が強制停止に当たったとき**: `gh pr comment` も拒否されるので、レビュー結果を return の本文に含めて `工程中断:` で返す。**本体はそれを記録先に代理投稿する**（R1 の仕様レビューを本体が代理投稿しているのと同じ経路）
@@ -139,19 +141,21 @@ W / G は名前付き spawn ＋ SendMessage 再開でコンテキストを引き
 
 モードが動かすのは役割の既定モデルと昇格上限だけで、1 ループの構造・トリップワイヤーは変えない。env のためセッション起動後の明示的な変更は次セッションから反映される（モード切替は週単位想定のため許容）。自動導出は SessionStart 毎に更新される。
 
-### `FABLE_BUDGET_MODE` の自動導出（usage snapshot 契約）
+### `FABLE_BUDGET_MODE` の自動導出（セッション記録と usage snapshot 契約）
 
-`scripts/usage-probe.sh` が OAuth usage API（`/api/oauth/usage`）から Fable 週次消費率を取得し、`~/.claude/.usage-snapshot`（`fable_weekly_pct` / `fable_active` / `weekly_resets_epoch` を含む JSON）を書く。5 分キャッシュ・fail-open（取得失敗時は snapshot を書かず既存を保持）。`scripts/session-tripwires.sh` が SessionStart 毎にこの probe を best-effort 実行し、snapshot からモードを導出して残量ブロックを文脈に注入する。
+使用量の主な情報源はステータスラインが描画のたびに書く起動アカウント別のセッション記録（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions/<アカウント鍵>.json`。5 時間枠と全体の週次）で、`scripts/usage-probe.sh` が OAuth usage API（`/api/oauth/usage`）から書く `~/.claude/.usage-snapshot`（schema 2。スロット別に `fable_weekly_pct` / `weekly_resets_epoch` などを含む JSON）は、Fable 週次と記録の無いアカウントを埋める補助である。probe は、記録が無い・記録が 3 時間（`USAGE_PROBE_STALE`）より古い、または snapshot の `fetched_at` が 3 時間より古い（無い場合を含む）スロットだけを叩き、前回の試行から 3 時間（`USAGE_PROBE_INTERVAL`）は叩かない。429 が続くスロットは待ちを倍々に延ばす（上限 1 日）。試行は結果にかかわらず `~/.claude/.usage-probe-state` に記録し、`~/.claude/.usage-probe.lock` でマシン全体 1 本に絞る。fail-open はスロット単位（失敗したスロットは前回値を引き継ぎ、全スロット失敗なら snapshot を書かない）。`scripts/session-tripwires.sh` が SessionStart 毎にこの probe を best-effort 実行し、active スロットの実効値からモードを導出して残量ブロックを文脈に注入する。
+
+実効値は `scripts/usage_view.py` の 1 か所で求める（`select-account.sh`・`agent-model-guard.sh`・`codex-develop.py` も同じ実装を使う）。取得からの経過時間で値を捨てず、リセット時刻より前の値は下限としてそのまま使い、リセット時刻を過ぎた値は 0% とみなす。記録と snapshot の両方にあるときは同じ窓なら大きい方を取る。規則の正本は openspec の `usage-session-records`「記録と snapshot から実効値を求める」。
 
 導出は「Fable の消費ペースが週の経過ペースを上回るか」のバーンレート比較で、次の優先順位に従う:
 
 1. **明示 env `FABLE_BUDGET_MODE` があればそれを使う**（自動導出より優先）
-2. snapshot が無い / `fable_weekly_pct` が読めない → `conserve`（既定・安全側）
+2. active スロットの実効値の `fable_weekly_pct` が求まらない（snapshot に無い・読めない）→ `conserve`（既定・安全側）
 3. `fable_weekly_pct > 90` → `exhausted`
 4. `fable_weekly_pct <= 週経過%`（週次リセット時刻から算出）→ `abundant`
 5. それ以外（消費が週経過を上回る）→ `conserve`
 
-週経過% = `(7日 − (リセット時刻 − 現在)) / 7日 × 100`。probe が失敗しても導出は conserve に倒れ、トリップワイヤー注入自体は従来どおり行われる。
+週経過% = `(7日 − (リセット時刻 − 現在)) / 7日 × 100`。probe が失敗しても導出は手元の記録と前回の snapshot から行い、それも無ければ conserve に倒れ、トリップワイヤー注入自体は従来どおり行われる。
 
 ### モード不変ルール（どのモードでも変えない2本）
 

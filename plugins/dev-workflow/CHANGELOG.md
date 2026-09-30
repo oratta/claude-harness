@@ -1,5 +1,203 @@
 # Changelog — dev-workflow
 
+以後の変更は `changes/<番号>.md`（記録先の issue 番号、無ければ PR 番号）に 1 PR 1 ファイルで書く。このファイルは issue #447 で凍結し、追記しない。
+
+## 2.13.39 — 2026-09-23: Codex モデル指定の docs とレビュー記録を揃える
+
+- **docs/codex-develop.md**: model に系統名か完全 ID を指定でき、系統名は worker が呼ぶ直前に最新版へ解決することを明記
+- **develop / gate-runner / pr-review-gate**: Codex review 結果の要求モデルと解決後 ID を G に渡し、既存のレビュー実行者コメントに `<requested>→<resolved>` として記録する手順を追加
+- **OpenSpec 履歴**: archive 済み tasks の docs と完全 ID の例について事実誤認を訂正
+- **テスト**: adapter レビュー経路の bats に docs とレビュー記録の検証を追加
+
+## 2.13.37 — 2026-09-23: エピックの子を Orca の独立セッションで回す経路を足す
+
+エピックの子を 1 つの本体がまとめて抱えると、子ごとの W / R1 / G の往復が本体のコンテキストに積もる。実運用では人がタブを分けて子ごとにセッションを起動していたので、これを自動にした（#420。手順はエピック #402 で手動で試したもの。2.13.31〜2.13.36 は先行 PR が使用したため、この変更は 2.13.37 とした）。
+
+- **scripts/epic-dispatch.sh**（新規）: `route`（子が 2 件以上・`orca` が PATH にある・Orca 管理のワークツリーにいるときだけ `orca`、それ以外は `subagent`）、`launch`（`git fetch` → 親ワークツリーをエピックに関連付け → 起動済みの子を `skipped` にしつつ子ごとに `orca worktree create`）、`wait`（子 issue のどれかが閉じるか上限時間に達するまで待ち、`closed` / `timeout` / `error gh` の 1 行で終わる）。LLM は使わない
+- **develop SKILL.md**: 「前提」表に `orca` の行を足した。「エピックの扱い」→「回し方」を、経路の決め方（最初の開始時に 1 回決めて `回し方:` のコメントに残し、再開時はそこから引き継ぐ。unmanned はサブエージェント方式）・Orca 経路の本体の手順（`wait` を背景で起動し、`state_reason` でマージと見送りを分ける）・サブエージェント方式・両経路に共通、に書き直した
+- **テスト**: `tests/epic-dispatch.bats` で `orca`・`gh`・`git`・`sleep` をスタブにして、呼び出しの引数と順序・stdout・exit code と、SKILL.md の記述を確かめる
+
+## 2.13.36 — 2026-09-23: develop のレビュー経路契約を正本間で統一する
+
+develop 本体・Codex adapter・ゲート実行者 G の間で分散していた adapter / 従来レビュー経路の説明を揃えた（#425、#390、#392〜#396）。
+
+- **gate-runner**: 入力契約へ `レビュー経路:` と adapter 再開時の executor / model・dispatch URL を追加し、`needs-reviewer` 前の同一 PR/HEAD 重複着手確認を明記した
+- **develop / Codex adapter**: レビュアー model の決定元を経路別に書き分け、欠陥探索と行無し従来経路の Claude G / Codex G の動きを統一した
+- **pr-review-gate**: adapter 経路で Codex を実行しない場合、証拠雛形の 5 欄すべてに `未実行（adapter 経路）` を記録できるようにした
+- **テスト**: 6 件の follow-up をそれぞれ固定する回帰テストを `develop-adapter-review-routing.bats` に追加した
+
+## 2.13.35 — 2026-09-23: 単独文の否定検査 `! cmd` に `|| return 1` を義務付ける
+
+`!` で反転したコマンドの非ゼロ終了は POSIX/bash の `errexit` の対象外で、バージョンに関わらず常に成立する（`[[ ]]` の穴が bash 4.1 で塞がったのと違い、`! cmd` は今も昔もどのバージョンでも素通りする）。テスト本文途中の単独文 `! grep -q ...` のような否定検査は、退行が起きても `not ok` にならず黙って pass していた（#283）。2.13.34 は並行して先に main に入った #377 が使用したため、この変更は 2.13.35 とした。
+
+- `tests/bats-assertion-guard.bats` に否定形 `! cmd`（`! [[ ]]` を含む）用の常設スコープ検査と、バージョン非依存の実演テストを追加する
+- 対象だった 34 ファイル・166 行の単独文 `! cmd` すべてに `|| return 1` を付与
+
+## 2.13.34 — 2026-09-23: 仕分け表の順 3 で書き換えた「該当しない」行を補助表で扱い、2 段目を `review-hit-set.py --head` で回す
+
+順 3 の一覧で「該当しない」とした行の本文を同じ周の別の修正で書き換えると、その行の本文は修正前と HEAD で異なるので、表にどちらの本文を書いても 1 段目（修正前 SHA）か 2 段目（HEAD の残存ヒット）の片方が不一致になり、正しく直した PR が差し戻されていた（#377）。2.13.28〜2.13.33 は並行して先に main に入った PR が使ったため、この版は 2.13.34 とした。
+
+- **pr-review-gate SKILL.md 手順 2-1 の順 3**: 主表の本文列は常に修正前 SHA での本文とし、書き換えた「該当しない」行は主表の下の補助表 `### 書き換えた該当しない行` に修正後の本文とあわせて載せる書式を足した。2 段目で使う本文（補助表に載っていれば修正後の本文）、検索語を含まなくなった行を不一致としないこと、扱いが混在する組の削除行の必要数に補助表の件数を足すこと、補助表の不正な行（主表の「該当しない」行を指さない・重複・書き換えていない）を差分として返すことを書いた。共通一覧契約の段落の「第 2 段は別に維持する」を、第 2 段も同じスクリプトに `--head` を付けて回す文に直した
+- **review-hit-set.py**: `--head <40 桁 SHA>` を足し、2 段目（HEAD での残存ヒットと「該当しない」行の件数照合、補助表の検査、扱いが混在する組の `git diff` の削除行の検査）を機械で回せるようにした。`--head` 無しの経路は変えていない
+- **worker.md / gate-runner.md**: W が補助表に載せること、G が `git fetch` のあと `review-hit-set.py --head <HEAD の 40 桁 SHA>` で 2 段を回すことを、SKILL.md を正本として参照する形で書いた
+- **テスト**: `review-hit-set.bats` に `--head` の照合 10 件、`pr-review-gate-skill.bats` に順 3 の補助表と共通一覧契約の 2 件（既存 1 件の必要数の文言を更新）、`develop-roles.bats` に worker.md と gate-runner.md の 2 件を足した
+
+## 2.13.33 — 2026-09-23: 記録先単位のトークン累計に上限を掛け、超えたら次を起こす前に止まる
+
+PR #268 は 12 体のサブエージェントで 122,955,450 トークンを使ったことが、人間がトランスクリプトを手で合計して初めて分かった（#281）。周回数のキャップでは 1 周が重い場合や W の再開が繰り返される場合を止められないため、記録先ごとの累計で止める（#288）。2.13.32 は先行して main に入った #397 が使用したため、この変更は 2.13.33 とした。
+
+- **scripts/pr-token-budget.sh**（新規）: 記録先番号を渡すと、Agent ツールの description に `#N` を含むサブエージェント（同じリポジトリのものだけ）の全リクエストの usage と、`--codex-records` で渡した Codex 消費（トークン数が `-` の thread は `$CODEX_HOME/sessions` の rollout から読む）を合計し、Claude 分・Codex 分・合計・体数・上限を 1 行 JSON で出す。合計が上限（既定 30,000,000。`DEV_WORKFLOW_PR_TOKEN_CAP` / `--cap`）を超えたら exit 2
+- **develop SKILL.md**: 「PR トークン上限」の節を足した。spawn・SendMessage による再開・Codex executor への委譲の直前に毎回測り、exit 2 なら起こさずに `needs-approval` を付けて「続けるか、範囲外として閉じるか」を合計・体数・上限・残工程・推奨とともに問う。description に `#N` を入れる規約、Codex を呼んだら `Codex 消費: <thread_id> <tokens>` をコメントする規約、「続ける」ときの `PR トークン上限:` コメントと `--cap` もここに書いた
+- **gate-runner.md**: G が Codex を呼んだら thread_id を return に書く（`Codex thread:` 行）
+- **テスト**: `pr-token-budget.bats`（固定のトランスクリプト・Codex 記録・rollout に対する合計と exit code）を足し、`develop-skill.bats` に手順の文書検査を足した
+
+## 2.13.32 — 2026-09-23: Codex role の model を系統名で書き、呼ぶ直前に最新版へ解決する
+
+役割表 `codex-role-profiles.json` がモデル ID（`gpt-5.6-sol` 等）を直書きしていたため、GPT-6 Sol / Luna が出ても旧世代が呼ばれ、世代が上がるたびに役割表を手で直す必要があった（#397）。2.13.27〜2.13.31 は先に main に入った並行 PR が使ったため、この版は 2.13.32 とした。Claude 側と同じく系統名だけを書く形にそろえる。
+
+- **codex-role-profiles.json**: 組み込み 4 profile の Codex entry を `sol` / `luna` / `astra` に書き換えた
+- **codex-worker.py**: model が英小文字だけなら系統名として、model/list の hidden でない `gpt-<版>-<系統名>` から版が最も新しい 1 件を選び、thread/start と turn/start に渡す。0 件は `model_not_available`、最新版が 2 件以上は `model_not_unique` で止まり別モデルに倒さない。effort は解決後のモデルで検証する。結果 JSON の `execution.model_resolution` に要求値・種類・解決後の ID を残す。model/list の結果が object でないときと `hidden` が真偽値以外の entry があるときは、経路を問わず `model_list_invalid`。完全なモデル ID は従来どおり完全一致で照合する
+- **codex-develop.md / commands/develop.md**: model に系統名と完全 ID のどちらも書けること、記録先に要求値と解決後の ID を両方書くこと、新しいモデルが一覧に出るには Codex CLI の更新が要ることを書いた
+- **テスト**: Codex worker の Python テストに系統名の解決・非一意・hidden・版の数値比較・effort・解決結果の記録のテストを、develop 側の Python テストに役割表にモデル ID が無いことと系統名/完全 ID がそのまま request に写ることのテストを足した
+
+## 2.13.31 — 2026-09-23: 単独文の bats アサーションに `|| return 1` を義務付ける
+
+`[[ ... ]]` や `[ ... ]` を単独文として書くと、bats のヘルパ関数内では失敗しても関数を抜けずに後続行が実行され、アサーションが効かないまま green になっていた（#284）。2.13.30 は先行して main に入った #416 が使用したため、この変更は 2.13.31 とした。
+
+- `tests/bats-assertion-guard.bats` を新設し、ガードの無い単独文 `[[ ]]` / `[ ]` を全プラグイン横断で検出する
+- 対象だった 24 本の単独文アサーションに `|| return 1` を付与（`memory-refresh-skill.bats` / `memory-tripwire.bats` / `push-guard-setup.bats` / `review-hit-set.bats` ほか）
+
+## 2.13.30 — 2026-09-23: usage-probe が User-Agent に claude-code を名乗る
+
+使用量 API（`/api/oauth/usage`）は、User-Agent が `claude-code/<版>` でないリクエストを厳しい別枠で数える。見出しなしで叩いていた `usage-probe.sh` は、よく使うアカウントで 429 を返され続け、そのアカウントの値が 97 分前のまま止まっていた。`cld` の自動選択と、毎ターンの枠の残量モードの判定が、古い数字で動いていた。同じトークンで見出しを付けると 200、付けないと 429 になることを 2 回確かめた。2.13.29 は先行して main に入った #413 が使用したため、この変更は 2.13.30 とした。
+
+- **usage-probe.sh**: 本番経路の curl に `User-Agent: claude-code/<claude --version の版>` を付けた。版が取れなければ `2.1.0` に落とす。`USAGE_PROBE_USER_AGENT` で上書きできる
+- **テスト**: `usage-probe-multi-account.bats` に、curl と claude を差し替えて送られる見出しを確かめる 4 件を足した（入っている版を名乗る・claude が無いとき・版の出力が想定外のとき・環境変数で上書き）
+
+## 2.13.29 — 2026-09-23: Python のテストをファイル名で絞らずに全件実行する
+
+Python のテストはプラグインごとの bats ラッパーが `-p` でファイル名を絞って走らせていたため、新しく足したファイルが拾われず、落ちたときもどのテストが落ちたかが出なかった（#344。2.13.28 は先行して main に入った #391 が使用したため 2.13.29 とした。発端は #334 / PR #343 で絞ったコマンドだけを走らせて別ファイルの失敗を見落としたこと）。
+
+- ルートの `tests/python-suites.bats` が git 追跡下の `plugins/*/tests/test_*.py` を置き場所ごとに `unittest discover -p 'test_*.py'` で走らせる。ディレクトリごとの `Ran N tests` を TAP のコメントに出し、Python が無い・対象が無い・0 件のときは失敗にする
+- `tests/codex-python.bats` を削除した（statusline の `statusline-codex.bats` も同時に削除）
+- `scripts/CODEX-WORKER.md` のテスト実行コマンドを `scripts/test.sh python-suites` に置き換えた
+
+## 2.13.28 — 2026-09-23: adapter のレビュー経路を同一 G の再開中は保持する
+
+`レビュー経路: adapter` で起動された G が、後続の再開指示に同じ行がないだけで従来経路へ切り替わるようにも読めた。2.13.27 は先行して main に入った #374 が使用したため、この変更は 2.13.28 とした。
+
+- **gate-runner.md**: adapter で起動済みの同一 G は、行のない再開指示でも adapter 経路を保持する。行のない指示を従来経路とする既定は、新しい G の起動指示（手渡しで起こされた後任を含む）だけに適用する
+- **develop SKILL.md / codex-develop.md**: 同一 G の行なし再開と、新しい G の行なし起動の境界を同じ記述へ揃えた。本体が起動・再開・手渡しのすべてに常に `レビュー経路: adapter` を書く責任は維持する
+- **テスト**: `develop-adapter-review-routing.bats` で三面の sticky 規則と後方互換の既定を固定した
+
+## 2.13.27 — 2026-09-23: 起動時に週次余裕のある Claude アカウントを選ぶ
+
+- `scripts/select-account.sh` を追加した。schema 2 usage snapshot の 300 秒以内の観測から、5 時間枠が 90% 未満で週次余裕が最大のスロットを選ぶ。同点はレジストリの宣言順で決める
+- 古い・欠測した観測と 5 時間枠の逼迫を区別して既定アカウントへ縮退し、stdout の `securestorage` と stderr の選択理由を分離した
+- 登録 id の明示選択を snapshot 非依存で追加し、README に `cld` / `cld-account` zsh function の設定例を載せた
+- `tests/account-selector.bats` で鮮度・短期枠・週次余裕・縮退・明示選択・出力ストリームを固定し、zsh がない環境では README の zsh functions テストだけを skip するようにした
+
+## 2.13.26 — 2026-09-23: develop 本体が起こす G のレビューを adapter で振り分ける
+
+develop 本体から起こした G が full 判定で Codex を直接呼び、adapter の投げ先選択と dispatch 記録を通らずにレビューが走っていた（#385）。2.13.24 と 2.13.25 は並行 PR #384・#388 が使ったため、この版は 2.13.26 とした。
+
+- **develop SKILL.md (4)**: G の起動・再開・手渡しの指示に常に `レビュー経路: adapter` を書く。needs-reviewer を受けたら phase `review` で投げ先を選び直し、dispatch 記録を投稿してからレビュアーを起動し、要約・executor / model・dispatch 記録 URL を G に渡す。#384 の一周目照合の補足要求もこの順で進める
+- **gate-runner.md**: adapter 経路の G は full でも Codex を呼ばず needs-reviewer を返し、証拠欄は `未実行（adapter 経路）` と書く。行が無い・`従来` の従来経路は Codex を直接呼ぶまま
+- **codex-develop.md**: Codex の G でも request の instructions に同じ行を書く
+
+## 2.13.25 — 2026-09-23: 仕様レビュー R1 に「守備範囲の明記」の観点を足す
+
+PR #268 では、入力の書式検査の仕様に「何から守り何は守らないか」が無かったため、レビューの指摘を範囲外として落とす根拠が無く 6 周続いた（#281）。同じ形の仕様を書くたびに再発しないよう、実装前の仕様レビューで守備範囲を揃える（#287）。
+
+- **spec-reviewer.md**: レビュー観点を 6 つにし、6 つ目に「守備範囲の明記」を足した。入力を検査・判定する要件（検査・lint・ゲート・パーサ・バリデータ）に「何から守るか」と「何は守らないか」の両方を書いた段落が無ければ、BLOCKER として `REQUEST_CHANGES` で差し戻す。段落に要る要素（想定する入力の出どころ・拾いたい誤り・通ることを許す入力の具体例・塞ぎ切ることを完了条件にしない）を直書きした。入力の検査を含まない要件には求めず、change が触れない既存 spec には遡及しない
+- **テスト**: `develop-roles.bats` に守備範囲の観点の退行検査 2 件を足し、`spec-decision-and-review.bats` の観点テストを 6 観点に合わせた
+
+## 2.13.24 — 2026-09-22: 一周目レビューに三表と機械照合を追加する
+
+- pr-review-gate の一周目を `変更点の一覧` → `照合表` → `ハンク被覆` → 自己点検 → 指摘の順に固定し、食い違いの指摘では diff 内外の 2 か所を示せるようにした
+- 一周目照合と仕分け表の順 3 が、固定 SHA・repository-wide な `git grep ... <rev> -- .`・4 列の全ヒット表を共用するようにした。`review-hit-set.py` がヒット集合を機械照合し、Markdown の pipe と有意な空白を可逆に扱い、検索起点・件数・範囲を狭める入力を拒否する
+- G は三表の不足を 1 回だけ補足し、残差があれば terminal `review-incomplete` で停止する。二周目以降の指摘は `同じ文が複数か所`・`場合分けの漏れ`・`直したつもりで直っていない`・`直しで新しく入った` の四分類を return と PR コメントに記録する
+
+## 2.13.23 — 2026-09-22: リスク宣言に資格情報・安全ゲートの弱体化・エージェント権限の拡張の 3 観点を足す
+
+行動ルールの変更をエージェントがマージする自走型の運用（genetta-inc/flatmate#837）では、ID や鍵に触れる変更・止め具を緩める変更・エージェントにできることを増やす変更が、既存 4 観点（プロダクトのユーザーへの影響・データ喪失・課金/法務・外部公開面の変化）のどれにも当たらず「リスクなし」で通っていた（#373）。2.13.22 は並行 PR #378 が使うため、この版は 2.13.23 とした。
+
+- **pr-review-gate SKILL.md 手順 3**: リスク分類表の条件を 7 観点にし、新 3 観点の線引き（資格情報は取得・保管・利用・受け渡し、安全ゲートは外す・緩める・迂回する変更で厳しくする変更は当たらない、権限は allow・外部サービス・書き込み先の追加）を書いた。どれかに当たれば既存と同じく手順 6 で `needs-approval` を付ける
+- 「リスクなし — 」の定型文を 7 観点すべてが無いことを述べる文にした。見出し `## リスク宣言` と `対象 HEAD:` の行は変えていない（auto-merge workflow の照合は `対象 HEAD:` の行とラベルだけなので無改修）
+- 「主のリスク許容が必要」の雛形に `- 該当する観点:` の行を足した
+- 「1行目の `対象 HEAD:` は必須」の説明を、雛形の実際の位置に合わせて「2 行目」に直した
+- 資格情報の定義を「コードや設定」から「コード・設定・エージェントへの行動指示（SKILL.md・ルール等）」に広げた。行動ルールの変更で資格情報の取得・再利用のしかたを変える PR が非該当になる抜け道を塞ぐため（#381）。安全ゲートの弱体化・エージェント権限の拡張の定義にも、手段を問わないことを書き足した
+
+## 2.13.22 — 2026-09-22: develop の role profile を週次余裕から自動選択する
+
+- profile 未指定の各工程で Claude 起動 account と登録 Codex accounts の週次 margin を比較し、逆向き hybrid / Codex 標準 / Claude 既定構成を決定論的に選ぶ
+- `claude-write-codex-review` を追加し、Claude に書く役、Codex gpt-6-astra/high にレビューと decider を割り当てる
+- Codex App Server quota を account ごとに並行取得し、秘密・home path・生応答を含まない 0600 cache を dev-workflow 内で管理する
+- freshness 300 秒、代表 account の束縛、selection evidence と明示 profile の snapshot 非読込を契約テストで固定する
+- `/develop` の実行先オプション無指定を従来 Claude 固定ではなく phase ごとの自動選択入口に揃え、自動選択かつ account-home 無指定時だけ既存の `CODEX_HOME`（未設定なら `~/.codex`）を `current` 候補として評価する
+
+## 2.13.21 — 2026-09-22: 仕分け表の順 3 を修正前 SHA と HEAD の 2 段で照合し、順 5 と順 6 の混在と決める役の入力不足を扱う
+
+2.13.18 の仕分け表には、#356 の Codex レビューで 3 点の穴が見つかった。順 3 は W が直したあとの HEAD で検索すると「直した」行がヒットに現れず、表と集合が一致しなかった（#357）。順 6 の依頼は `agents/decider.md` の入力契約の一部しか渡しておらず、決める役が不足を返したときの扱いが無かった（#358）。順 5 と順 6 が同じ周に残ったときの処理順が無く、主の回答待ちのまま修正に戻るか、順 5 の質問が漏れるおそれがあった（#359）。
+
+- **pr-review-gate SKILL.md 手順 2-1 の順 3**: 一覧表の PR コメントの書式をここを正本として固定した（1 行目 `## 一覧（順 3）`、`修正前 SHA: <40 桁>`、`検索コマンド: <コマンド>`、grep の語は `| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |`、場合分けの軸は `| 軸の値 | 扱い |`、扱いは `直した` か `該当しない: <理由>`）。検索コマンドは `git grep -n <語の指定> <rev> -- <パス>` の形で書き、作業ツリーの `grep -rn` は使わない。G は `git fetch` のあと `git cat-file -e <修正前 SHA>^{commit}` で実在を確かめ、修正前 SHA で表の全行、HEAD で「該当しない」の行を照合する（対応はファイルとヒットした行の本文の組で取り、行番号では取らない）。軸のときは 1 段目だけ。表の出し直しも差し戻し 1 回に数える
+- **順 3 の 2 段目（#372）**: 同じファイル・同じ本文の組に「直した」と「該当しない」の両方があるとき（扱いが混在する組）は、件数の一致だけでは直し忘れを見分けられないので、`git diff <修正前 SHA> HEAD -- <ファイル>` の削除行の件数が組の「直した」の件数以上であることをあわせて見る
+- **手順 2-1 の混在の段落**: 順 5 と順 6 が同じ周に混ざったら保留を先にし、主の回答後に未処理の順 6 を `needs-decider` で返し、両方済んでから 1 回の `agent-review:failed` で W に戻す。裁定を使い切った PR では 1 回の保留にまとめる。手順 6 の「切り出しの確認」行にも未処理の順 6 の条件を足した
+- **順 6**: 本体から「裁定なし（入力不足）」が返ったら、`決める役の裁定:` のコメントを残さず（回数に数えない）「切り出す」として順 5 の経路で主に聞く。同じ周の順 5 に主が未回答なら、「全部列挙してから直す」でも failed に付け替えない
+- `skills/develop/SKILL.md` (4) の `needs-decider`: 入力に記録先の本文・関連コメント・W の直近の return を足し、返答の 1 行目を `裁定: 可`／`裁定: 否`／`不足: <足りないもの>` に指定してその 1 行目で分岐する。`不足:`（3 形に一致しない返答も同じ）は 1 回だけ依頼し直し、2 回目も不足なら「裁定なし（入力不足）」を G に渡す。`agents/decider.md` は変えていない
+- `skills/develop/references/roles/gate-runner.md`: 保留節に「順 6・未裁定」、needs-decider 節に主の回答後の経路、再開節の順 3 の照合を 2 段に、「レビュアーの要約受領」を「保留だけを先に返す」に、「保留の解除」と「決める役の裁定受領」に混在の処理順の参照と「裁定なし（入力不足）」を足した
+- `skills/develop/references/roles/worker.md`: 順 3 の一覧に修正前 SHA（修正に着手する直前の HEAD）を記録することを足した（列は再掲しない）
+
+## 2.13.20 — 2026-09-22: Codex の旧台帳・継続機構を撤去し、前景実行だけを唯一の transport にする
+
+#340 で入れた前景実行経路（`codex-develop.py request` → `codex-worker.py run`）が動くようになった後も、SQLite のジョブ／所有権台帳、detached start、submit/status/result/cancel/ack/send/reap の lifecycle CLI、unknown/retry 処理、cwd ロック、account slot、run-dir と `run.json`、継続記録 v1/v2 が残っていた。永続的な進捗の置き場は issue / Draft PR と linked worktree に統一する方針（#341）に対し、使われなくなった transport のコードと文書だけが残っている状態で、`openspec/specs/codex-worker-concurrency` と `openspec/specs/codex-develop-continuation` も廃止済みの契約のままだった。
+
+- **`codex-worker.py`（1007 → 612 行）**: SQLite job/account schema、ownership、slot/lock、detached worker、heartbeat、lifecycle subcommands を削除し、`run --request` の前景実行だけを残した。認証固定・model/effort 検証・reader 向け read-only policy・quota preflight は維持
+- **`codex-develop.py`（623 → 286 行）**: run-dir、pending、retry、continuation v1/v2、旧 lifecycle CLI を削除し、request 作成と Claude role の `agent-required` routing だけを残した
+- `openspec archive remove-codex-legacy-state --yes` を実行し、`openspec/specs/codex-worker-concurrency` と `openspec/specs/codex-develop-continuation` の spec を除去（change は `openspec/changes/archive/2026-09-21-remove-codex-legacy-state/` に archive 済み）
+- `scripts/CODEX-WORKER.md` / `docs/codex-develop.md` / `references/codex-develop.md` / `commands/develop.md` から、廃止した台帳 transport（永続 registration・job ID・status/result/cancel/ack/send/reap・unknown recovery・ownership DB・account slot・cwd lock・heartbeat・`--worker-state` / `--run-dir`・継続記録マーカー）の説明を削除し、前景実行と手動 cleanup 条件だけ残した
+- `docs/codex-develop.md` に既存状態ディレクトリ（`~/.local/state/claude-harness-codex/`）の削除条件と `rm -rf` の手順を明記した。コードからの自動削除は行わない
+- `skills/develop/SKILL.md`: 「旧台帳経路も互換性のため残る」の 1 文を削除（廃止 transport の互換性主張だったため）
+- Closes #341 #323 #329 #331 #336
+
+## 2.13.18 — 2026-09-22: pr-review-gate に止める指摘の仕分け表を置き、2 周目キャップの 1 択の質問をやめる
+
+2.13.17 までは、2 周目の終わりに止める指摘が残ると、G は主に「続けるか、範囲外として閉じるか」の 1 択を判断材料なしで出していた。受け入れ条件の中で直せば済む指摘や、同じ文の書き残しのような一覧で閉じられる指摘まで主に上がり、同じ型の指摘が周ごとに場所を変えて再発しても、方式を決める経路が無かった（#354）。
+
+- **SKILL.md 手順 2-1 の「マージを止めるかの判定（全周共通）」の直後に「止める指摘の仕分け表」（順 1〜6）を置いた**。G は周の数に関係なく、指摘が届くたびに上から当てる: 順 1 止める判定に達しない（follow-up issue）／順 2 受け入れ条件の中（W が直す）／順 3 一覧の一致で閉じる型／順 4 今直す 3 条件／順 5 主に「この欠陥を残して切り出すか」を聞く／順 6 同じ型の再発は決める役が方式を裁定する。順 2〜4 は `agent-review:failed`、順 5 は `needs-approval` の保留、順 6 は Status `needs-decider`。2 周目以降の周の終わりには順 2〜4 を使わない。順 5 と順 2〜4 が同じ周に混ざったら保留を先にし、W は修正に着手しない
+- 順 3: W が検索コマンドと全ヒットの「直した／該当しない理由」の表を PR コメントに投稿してから push し、G は同じ検索の集合一致だけを見る。差し戻しは 1 回まで、照合はレビューの周に数えず、順 3 だけで戻した周は周を消費しない
+- 順 4: 直し方が行レベルで 30 行以内・spec を変えない・その場で直した累計が 30 行以内（手順 2-0 と同じ 30 行）。W は「受け入れ条件の外・その場で直した・直し方 N 行」と記録する
+- 順 5: 主への質問に、マージ後に何を起こすか・直す見積もり・別 issue にする固定費・推奨の 4 点を必ず書き、2 周目を待たずその周で聞く。手順 6 の復帰表の「2周目キャップ」行を「切り出しの確認」行（切り出す／この PR で直す）に置き換え、主に承認を求めてよい 4 分類の 1 行目も順 5 に揃えた
+- 順 6: 決める役は方式（全部列挙してから直す／切り出す）だけを裁定し、止めるかどうかは G が決める。裁定は PR ごとに 1 回までで、回数は 1 行目 `^決める役の裁定: (全部列挙してから直す|切り出す)$` の PR コメントを `--paginate --slurp` で数える（1 回目が「切り出す」でも数える）
+- 収束ルール: 3 周目以降を開けるのは主の「この PR で直す」と決める役の「全部列挙してから直す」だけ。差分限定の再レビューでも例外 3 種の新規指摘は出してよい（レビュアー向け指示ブロックにも但し書きを足した）。手順 5 の合格条件の除外を「主が切り出すと答えて follow-up issue に切ったもの」と「順 3 の集合一致で閉じたもの」にした
+- `skills/develop/references/roles/gate-runner.md`: Status に `needs-decider` と「needs-decider のとき」節、仕分け欄を全周の順の記録に、保留節を切り出しの確認の 4 点に、再開節の「レビュアーの要約受領」を周の数でなく順で分岐する形に、「決める役の裁定受領」の行を足した
+- `skills/develop/references/roles/worker.md`: 順 3 の一覧を投稿してから push する手順と、(3a) の return に順 4 の記録を足した
+- `skills/develop/SKILL.md`: (4) に `needs-decider` の行（本体が `dev-workflow:decider` にマージ可否と同じ可否と根拠の形で問い、裁定を SendMessage で G に返す。代理投稿しない）を足し、decider の return を本体が代理投稿する規則に順 6 の例外を書いた。`agents/decider.md` は変えていない
+
+## 2.13.17 — 2026-09-21: pr-review-gate のレビュー指摘を固定書式にし、マージを止めるかの判定を全周共通にする
+
+レビュアー（Codex・Task サブエージェント）の指摘は書式が決まっておらず、G は深刻度・検証済みか・違反する文を指摘ごとに組み立て直していた。2.13.16 で入れた「欠陥ありなら failed の一般則は 1 周目、2 周目からは収束ルールが優先」は周によって判定が変わり、1 周目は `should` や推測だけの指摘でも周回を開けていた。主の決定（#349 のコメント「判定は全周で同じにする」）に従い、判定を 1 か所にまとめて全周で同じにした。#349 と、同じ G の指示書の要約受領の分岐を直す #352 を同梱。
+
+- **SKILL.md 手順 2-1 にレビュアー向け指示ブロックを置いた**。指摘 1 件ごとに見出し・深刻度（`blocking` / `should` / `nit`）・検証（`confirmed` / `plausible`）・根拠（`blocking` で必須。受け入れ条件か spec の引用、または例外 3 種＝安全機構の穴・データ破壊・無言の機能不全）・場所・何が起きるか・直し方を書かせ、再レビューでは状態（`fixed` / `unresolved` / `wontfix`）を足させる。1 周目は全件列挙まで止まらず、差分限定の再レビューは新規の指摘を出さず、全体レビューに戻った周でも新規は `blocking` だけ
+- **「マージを止めるかの判定（全周共通）」を手順 2-1 に 1 か所だけ書いた**。止めるのは `blocking` かつ `confirmed` で、根拠を G が受け入れ条件または spec と照合できた（または例外 3 種に当たる）指摘だけ。それ以外は follow-up issue。周で変わるのは止める指摘が残ったときの動き方だけ（1 周目は failed、2 周目と主の続行指示の周は `needs-approval`）。1 周目で failed にするとき止めない指摘は PR コメントに一覧で残し、follow-up issue は手順 3 へ進むときに切る
+- 収束ルールの「2周目の終わりにやること」・決める役の段落・手順 5 の合格条件を、この判定の参照にした（手順 5 は止まる指摘のうち、2 周目キャップで主が範囲外として閉じて follow-up issue に切ったもの以外が 0 件であることを前提に置く）
+- **codex exec のルーブリックを実測した**（codex-cli 0.153.4）。書式を指定しない指示で指摘が出ると `[P1]` の優先度見出しが付いた（JSON の `priority` / `confidence_score` は出なかった）。手順 2-1 に Codex の優先度・場所・`confidence_score` から固定書式への読み替え表を置き、`confidence_score` を `confirmed` の代わりにしないと書いた
+- `references/subagent-waiting.md` の Codex 指示文雛形: 手順 2-1 のブロックを貼る指示と全件列挙の 1 文を足した（書式は再掲しない）
+- `skills/develop/references/roles/gate-runner.md`: needs-reviewer の payload に「レビュアーに渡す指示」の行を足し、needs-reviewer 節の無条件の「手順 3 以降を続ける」を再開節「レビュアーの要約受領」の参照にした（#352）。再開節の分岐・Gate Result の仕分け欄・保留節を「全周共通の判定で止める指摘」の語にそろえた。README の要約も直した
+
+## 2.13.16 — 2026-09-21: pr-review-gate の収束ルールを、G が 2 周目の終わりに実行する手順にする
+
+PR #268 でレビューと修正の往復が 5 周続き、1 本の PR に約 1.2 億トークンを使った。収束ルール（既定 2 周・3 周目は新規の高深刻度 blocking のみ・マージ後に直せるものは blocking にしない）はあったが、G がレビュアーの深刻度ラベルをそのまま blocking と扱い、適用しなかった。ルールを足すのではなく、誰がいつ何をするかを手順にした。#281（2026-09-11 に主が承認した PR-A）。
+
+- **2 周目の結果を受け取った直後に、G が残った指摘ごとに違反する文を引用する**。引用元は記録先の受け入れ条件と、PR が触れる openspec の spec に限る。深刻度ラベルは参考にとどめ、引用元が無ければ全件を「引用なし」として扱う
+- **引用できない指摘は follow-up issue に切って `passed` の判定へ進む**
+- **引用できる指摘が 1 件でも残ったら 3 周目に入らず、`needs-approval` を付けて主に「続けるか、範囲外として閉じるか」を出す**。無人運用でも同じく止まる。主の続行指示で開いた周の終わりにも同じ仕分けを適用する。「新規の高深刻度 blocking なら 3 周目に入ってよい」の許可条件は削除した
+- **W の修正が方式の書き換えなら、次の再レビューは全体レビューにする**。判定に使った 2 つの行数を PR コメントに残し、周回は数え続ける
+- 決める役はキャップの判定に関与しない（出力契約は変えない）
+- G の指示書の Gate Result に仕分け結果の欄を Status によらない共通項目として置き、レビュアーの要約を受けて再開したときに指摘が残っていれば 1 周目は failed、2 周目以降は収束ルールの仕分けを通す分岐を書いた（SKILL.md の「欠陥ありなら failed」の一般則にも、2 周目からは収束ルールが優先すると添えた）
+- 手順 6 の復帰表に保留種別「2 周目キャップ」の行を足した（どちらの回答でも `needs-approval` を外す）。「主に承認を求めてよい 4 分類」のリスク許容の確認に 2 周目キャップを含めた
+- `skills/develop/references/roles/gate-runner.md`: return の `周回:` 欄・failed と保留の return・再開節を揃えた。`spec-reviewer.md` の pr-review-gate への言及と README の要約も直した
+
 ## 2.13.0 — 2026-09-14: develop の PR をゲート合格まで Draft に保ち、合格処理で Ready にする
 
 W が工程 (3b) で PR を Ready にしてから G に渡していたため、CI を「Draft の PR では回さず、Draft を外したときに回す」設定にしたリポ（genetta-inc/flatmate。harness が配布する `plugins/infra/templates/workflows/ci.yml.template` も同じ形）でも、レビューと修正の周回ごとに CI が走っていた。flatmate では 14 日で org の Actions 無料枠を使い切り、CI と auto-merge が全停止した。#304。

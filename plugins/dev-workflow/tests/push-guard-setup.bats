@@ -115,7 +115,7 @@ PY
 @test "hook: rejection message advertises the bypass" {
   GH_MERGED=1 GH_OPEN=0 run run_hook "refs/heads/feature-a" "$SHA"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"PREPUSH_ALLOW_MERGED=1"* ]]
+  [[ "$output" == *"PREPUSH_ALLOW_MERGED=1"* ]] || return 1
 }
 
 @test "hook: calls gh exactly once per pushed ref" {
@@ -137,7 +137,7 @@ PY
 }
 
 @test "hook: does not depend on the timeout / gtimeout commands" {
-  ! grep -Eq '(^|[^a-zA-Z-])g?timeout ' "$HOOK"
+  ! grep -Eq '(^|[^a-zA-Z-])g?timeout ' "$HOOK" || return 1
 }
 
 @test "hook: runs gh with stdin detached" {
@@ -169,25 +169,4 @@ PY
 
 @test "skill: states the install is idempotent" {
   grep -q '冪等' "$SKILL"
-}
-
-# --- Requirement: プラグインバージョンの更新 ---
-
-@test "manifest: dev-workflow version is bumped past 1.5.1" {
-  python3 - "$MANIFEST" <<'PY'
-import json, sys
-v = json.load(open(sys.argv[1], encoding="utf-8"))["version"]
-assert tuple(int(p) for p in v.split(".")) > (1, 5, 1), f"version not bumped: {v}"
-PY
-}
-
-@test "marketplace: dev-workflow version matches plugin.json" {
-  python3 - "$PLUGIN_ROOT" <<'PY'
-import json, sys, pathlib
-root = pathlib.Path(sys.argv[1])
-mk = json.loads((root / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
-pj = json.loads((root / "plugins/dev-workflow/.claude-plugin/plugin.json").read_text(encoding="utf-8"))
-entry = next(p for p in mk["plugins"] if p["name"] == "dev-workflow")
-assert entry.get("version") == pj["version"], f'{entry.get("version")} != {pj["version"]}'
-PY
 }

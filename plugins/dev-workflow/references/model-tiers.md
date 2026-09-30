@@ -1,6 +1,6 @@
 # モデルティア → `opts.model` 対応表（Workflow 実行のロール別ティア）
 
-Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.model` を、**ティア名からエイリアスに解決する唯一の対応表**。あわせて、Agent / Task ツールで直接立てるサブエージェントのティア選択の詳細（経緯・適用範囲・強制層）もここが持つ。常時注入される `rules/subagent-model-selection.md` は「`model` を必ず明示する」と対応表だけの短い版で、判断に迷ったときはこのファイルを読む。解散した自律実行プラグインの対応表から、ロール別ティア・エイリアス規則・残量モードによる降格だけを引き継いだ（#205）。
+Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.model` を、**ティア名からエイリアスに解決する唯一の対応表**。あわせて、Agent / Task ツールで直接立てるサブエージェントのティア選択の詳細（経緯・適用範囲・強制層）もここが持つ。常時注入される `rules/subagent-model-selection.md` は「`model` を必ず明示する」と対応表だけの短い版で、判断に迷ったときはこのファイルを読む。
 
 ## なぜ 1 箇所に集約するか
 
@@ -16,6 +16,12 @@ Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.mo
 | `sonnet`  | リサーチ・ブラウザ操作・中規模実装。**builder の出発点** | `'sonnet'` |
 | `fable`   | 判断が一点に集中する場所——checkpoint の再ランク・verify の最終判定・Build Contract レビュー・アーキテクチャ判断 | `'fable'` |
 | `inherit` | 分類に迷うタスクの保守的デフォルト | （**渡さない**。下記） |
+
+## develop role の provider-neutral profile
+
+`spec-write`、`spec-review`、`implement`、`impl-review`、`review`、`decider`、`explore`、`summarize` の各 role は、`references/codex-role-profiles.json`（または明示した version 1 profile-file）の同名 entry にある executor/account/model/effort へ解決する。歴史的なファイル名は維持するが、version 1 table は Claude と Codex を同じ profile 内で扱う provider-neutral な正本である。本表へ個別 Codex model ID を重複記載せず、Claude の tier alias を Codex model へ暗黙変換しない。
+
+Claude entry は account=`current`、model=`haiku|sonnet|opus|fable`、非空の effort を要求する。`fable` は `decider` role だけに許可する。別 Claude account の実行はまだ対応せず、account 欄自体は allocator の共通出力として保持する。Codex entry は登録済み account と非空の model/effort を要求し、正式な model/effort の対応可否は worker 起動時にも検証する。
 
 重めの実装・レビューを中位ティアで回すときは `'opus'` を渡す（`rules/subagent-model-selection.md` の対応表と同じ）。
 
@@ -60,6 +66,6 @@ Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.mo
 
 - ワークフロー実行のロール別ティア: このファイルの上半分
 - レビュー系の既定ティアと最上位ティアへの昇格条件: `dev-workflow:pr-review-gate`
-- 実装役（W）の事前分類: `plugins/dev-workflow/skills/develop/references/roles/worker.md`
+- 実装役（W）の事前分類: `plugins/dev-workflow/skills/develop/references/pre-classification.md`
 
 それらの網に無い**アドホックに立てるサブエージェント**（Explore / general-purpose 等）は上の原則で直接決める。

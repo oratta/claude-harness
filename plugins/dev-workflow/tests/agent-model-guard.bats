@@ -7,6 +7,13 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/agent-model-guard.sh"
   WORK="$(mktemp -d)"
+  # 共有枠の導出は active スロットの実効値（レジストリ・セッション記録・snapshot）を読むので、
+  # 実環境の ~/.claude と実行中セッションのアカウントを読まないよう一時ディレクトリへ向ける
+  export CLAUDE_ACCOUNTS_FILE="${WORK}/accounts.json"
+  export USAGE_SESSIONS_DIR="${WORK}/.usage-sessions"
+  export USAGE_PROBE_STATE="${WORK}/.usage-probe-state"
+  export USAGE_PROBE_LOCK="${WORK}/.usage-probe.lock"
+  unset CLAUDE_SECURESTORAGE_CONFIG_DIR
 }
 
 teardown() {
@@ -54,6 +61,20 @@ denied() { echo "$output" | grep -q '"permissionDecision": "deny"'; }
   [ -z "$output" ]
 }
 
+@test "new executor types reject Fable and worker accepts sonnet, opus and omitted model" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:worker","model":"fable","prompt":"x"}}'
+  denied
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:gate-runner","model":"claude-fable-5-1","prompt":"x"}}'
+  denied
+  for payload in '{"model":"sonnet"}' '{"model":"opus"}' '{}'; do
+    model_part="${payload#\{}"; model_part="${model_part%\}}"
+    [ -z "$model_part" ] || model_part=",$model_part"
+    call "{\"tool_name\":\"Agent\",\"tool_input\":{\"subagent_type\":\"dev-workflow:worker\",\"prompt\":\"x\"$model_part}}"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
+}
+
 @test "fork: allowed when the shared budget mode is ok (no snapshot)" {
   call '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
   [ "$status" -eq 0 ]
@@ -73,9 +94,23 @@ denied() { echo "$output" | grep -q '"permissionDecision": "deny"'; }
   denied
 }
 
-@test "fork: weekly_all_pct above 90 is depleted even without a reset time in the snapshot" {
-  echo '{"weekly_all_pct": 95}' > "${WORK}/snap.json"
-  run env USAGE_SNAPSHOT="${WORK}/snap.json" "$SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+@test "fork: weekly_all_pct above 90 is depleted even at the start of the week" {
+  now=1000000000
+  cat > "${WORK}/snap.json" <<JSON
+{ "schema": 2, "accounts": { "default": { "fetched_at": ${now}, "weekly_all_pct": 95,
+  "weekly_resets_epoch": $(( now + 7 * 86400 - 60 )) } } }
+JSON
+  run env USAGE_SNAPSHOT="${WORK}/snap.json" USAGE_PROBE_NOW="$now" "$SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  denied
+  echo "$output" | grep -q 'depleted'
+}
+
+@test "fork: the shared mode comes from the active slot's session record without a snapshot" {
+  now=1000000000
+  mkdir -p "$USAGE_SESSIONS_DIR"
+  printf '{"schema":1,"key":"default","observed_at":%s,"five_hour_pct":10,"five_hour_resets_epoch":null,"weekly_all_pct":95,"weekly_resets_epoch":%s}\n' \
+    "$((now - 60))" "$((now + 2 * 86400))" > "${USAGE_SESSIONS_DIR}/default.json"
+  run env USAGE_SNAPSHOT="${WORK}/none.json" USAGE_PROBE_NOW="$now" "$SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
   denied
   echo "$output" | grep -q 'depleted'
 }
@@ -92,13 +127,13 @@ denied() { echo "$output" | grep -q '"permissionDecision": "deny"'; }
   now=1000000000
   resets=$(( now + 2 * 86400 ))   # 週経過 ≈ 71%
   cat > "${WORK}/snap.json" <<JSON
-{ "schema": 1, "fetched_at": ${now}, "fable_weekly_pct": 30, "weekly_all_pct": 80,
-  "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets} }
+{ "schema": 2, "accounts": { "default": { "fetched_at": ${now}, "fable_weekly_pct": 30,
+  "weekly_all_pct": 80, "weekly_resets_at": "iso", "weekly_resets_epoch": ${resets} } } }
 JSON
   run env USAGE_SNAPSHOT="${WORK}/snap.json" USAGE_PROBE_NOW="$now" "$SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
   denied
   # 週経過より遅ければ ok
-  sed -i.bak 's/"weekly_all_pct": 80/"weekly_all_pct": 40/' "${WORK}/snap.json"
+  sed -i.bak 's/"weekly_all_pct": 80,/"weekly_all_pct": 40,/' "${WORK}/snap.json"
   run env USAGE_SNAPSHOT="${WORK}/snap.json" USAGE_PROBE_NOW="$now" "$SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
   [ -z "$output" ]
 }
@@ -181,6 +216,6 @@ JSON
 @test "model-unspecified denial no longer advertises fable for the four classifications" {
   call '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}'
   denied
-  ! echo "$output" | grep -q 'fable（最終 verify'
+  ! echo "$output" | grep -q 'fable（最終 verify' || return 1
   echo "$output" | grep -q 'dev-workflow:decider'
 }

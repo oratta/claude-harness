@@ -10,13 +10,13 @@
   同文が2回載るだけで無害。
   セッションを跨がずにプラグインを更新した場合（/plugin marketplace update <name>・/reload-plugins）は
   SessionStart が再発火しないため、UserPromptSubmit hook（scripts/prompt-tripwires-refresh.sh）が
-  「plugin.json のバージョンが前回注入時から変わったとき」だけ同じ本文を再注入する。
-  バージョンが同じ間は毎プロンプト無出力で、文脈を食わない。
+  「プラグインが前回注入時から更新されたとき（CLAUDE_PLUGIN_ROOT が変わったとき）」だけ同じ本文を再注入する。
+  CLAUDE_PLUGIN_ROOT が同じ間は毎プロンプト無出力で、文脈を食わない。
 - unmanned（loop-dev-agent）で使う場合: 各リポに配備済みの憲法ファイル（docs/agent-loop.md。
   flatmate が保守する正本で、harness 側にテンプレートや再生成手順は無い）が同じ条件を
   組み込んでいる。手動コピーは不要。
 - develop スキルの W（サブエージェント）は hook 注入を受けないため、W の指示書
-  （skills/develop/references/roles/worker.md）が同じ条件を return の契機として持つ。
+  （skills/develop/references/roles/worker/common.md「昇格トリップワイヤー」）が同じ条件を return の契機として持つ。
 - このテンプレートは「いつ手を止めるか」だけを定義する。「どう実行するか」は発火先
   （develop の本体、Workflow 実行の型 references/workflow-execution.md、/opsx:explore 等）が持つ。
   ここに実行手順を書き足さないこと。
@@ -59,7 +59,7 @@
    `SHARED_BUDGET_MODE=throttled`（全モデル共通の週次枠が週の経過ペースより速く減っている）では
    昇格上限を Opus、`depleted`（同枠 90% 超）では昇格しない。
    `FABLE_BUDGET_MODE=reserve` の自動実行（unmanned / cron / loop）と `exhausted`（Fable 週次枠を
-   実質使い切った。明示宣言または usage snapshot からの自動導出）では、決める役も
+   実質使い切った。明示宣言またはセッション記録と usage snapshot の実効値からの自動導出）では、決める役も
    `dev-workflow:decider` のまま `model: opus` 止まりとする（種別は変えない）。
    Opus が決めて Opus が実行しても2連続失敗が続く場合は issue に needs-approval を付けて
    経緯をコメントし、そのサイクルを終了する
@@ -75,7 +75,7 @@
         経緯をコメントし、そのサイクルを終了する
 
 4. 【コンテキスト上限 → 手渡し】
-   名前付きサブエージェント（develop の W / G）を SendMessage で再開する前に
+   名前付きサブエージェント（develop の W。G は再開せず段ごとに新しく起こす）を SendMessage で再開する前に
    `${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <名前>` で測り、
    上限を超えていた（exit 2）。あわせて、サブエージェントの**起動の途中**でも hook
    （`${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh`）が本人を測り、上限超で締めを通知し、
@@ -89,4 +89,5 @@
    Fable 実行が rate-limit / weekly-limit の実エラー（429、weekly limit reached 等）を返した
    → 予測的な閾値判定（トリップワイヤー2）とは別系統の事後対応。その場で Fable を諦め、
    実行役を Opus に降格して同じ作業を続行する（成果は引き継ぐ）。併せて usage-probe を
-   再実行して snapshot を更新し、以降のセッションの残量モード導出に反映させる
+   再実行する（前回の試行から間隔内・429 の待ち中なら叩かないので、snapshot が更新されないこともある）。
+   以降のセッションの残量モード導出は、セッション記録と snapshot の実効値で行われる
