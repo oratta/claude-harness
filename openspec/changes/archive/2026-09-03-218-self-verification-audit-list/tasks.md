@@ -7,7 +7,7 @@
 
 - [x] 2.1 `references/self-verification.md`: 冒頭の件数（6 → 7）と監査日（2026-09）を更新
 - [x] 2.2 対象表に `plugins/dev-workflow/skills/push-guard-setup/SKILL.md` を追加
-- [x] 2.3 対象外表に `capability-registry`・`discord/access`・`discord/configure`・`telegram/access`・`telegram/configure` を理由付きで追加
+- [x] 2.3 対象外表に `capability-registry`・`telegram/access`・`telegram/configure`・`memory-refresh` を理由付きで追加（discord プラグインは main に無い）
 
 ## 3. スキル
 
@@ -21,4 +21,4 @@
 
 ## 5. 周辺同期
 
-- [x] 5.1 dev-workflow 2.1.1 → 2.1.2（plugin.json・marketplace.json・CHANGELOG）
+- [x] 5.1 版は上げず、変更を `plugins/dev-workflow/changes/218.md` に記録

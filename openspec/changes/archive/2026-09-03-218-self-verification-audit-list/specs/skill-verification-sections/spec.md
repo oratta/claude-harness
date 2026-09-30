@@ -25,6 +25,8 @@
 
 `plugins/dev-workflow/references/self-verification.md` の「対象スキル一覧」は、リポジトリに実在する `plugins/*/skills/*/SKILL.md` の全件を、対象表か対象外表のどちらかに実パスで載せなければならない (MUST)。対象外表の各行には判定理由を付けなければならない (MUST)。網羅性はテスト（`plugins/dev-workflow/tests/self-verification-sections.bats`）で機械検査し、載っていないスキルがあればテストが落ちる。
 
+**守備範囲**: この検査の入力は、リポジトリに実在する `plugins/*/skills/*/SKILL.md`（`plugins/<plugin>/skills/<skill>/` の 1 階層）と、棚卸しリスト本文である。拾いたい誤りは、スキルを新設したときに棚卸しリストへ載せ忘れることだけである。次の入力は検査を通ってよく、通ることを欠陥として扱わない: (1) 実パスが表の外（冒頭の説明文や理由欄など）にだけ書かれている、(2) 削除済みスキルの行がリストに残っている（逆方向の網羅は見ない）、(3) 対象／対象外の判定そのものが誤っている（どちらの表に載っているかも区別しない）、(4) 1 階層の外に置かれたスキル（`plugins/*/skills/*/*/SKILL.md` や `.claude/skills/`）。これらの穴を塞ぎ切ることをこの要件の完了条件にしない。
+
 #### Scenario: 実在する全 SKILL.md が棚卸しリストに現れる
 
 - **WHEN** ユーザーが `ls plugins/*/skills/*/SKILL.md` の各パスを `plugins/dev-workflow/references/self-verification.md` で grep する
