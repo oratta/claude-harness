@@ -65,6 +65,16 @@ dev-workflow プラグインは `templates/auto-merge/` に、展開先リポの
 - **WHEN** staging-smoke.yml の revert ステップ（`# >>> smoke-revert-script` マーカーの間）を検査する
 - **THEN** `git revert` / `gh pr create` / `gh issue create` と `agent-review:passed` ラベル付与・「対象 HEAD:」コメント投稿が存在し、`gh pr merge` は存在しない
 
+#### Scenario: main が検査したコミットから進んでいれば自動 revert せず incident のみ
+
+- **WHEN** revert ステップのスクリプトを、origin/main の先頭が検知対象のデプロイのコミット（`workflow_run.head_sha`）と異なる状態で、`gh` をスタブにして実行する
+- **THEN** exit code は 0 で incident issue が起票され、revert ブランチの push と `gh pr create` は行われない（後続のデプロイで壊れた staging を理由に、正常な先行コミットを巻き戻さない）
+
+#### Scenario: incident は revert の成否に依存せず起票され、再実行で revert PR が回復する
+
+- **WHEN** revert ステップのスクリプトを、`gh pr create` が失敗するスタブで実行し、その後スタブを成功させて同じスクリプトを再実行する
+- **THEN** 1 回目は revert PR の作成より前に incident issue が起票されたうえで非 0 で終わり、2 回目は push 済みの revert ブランチを再利用して revert PR を作成し、incident issue を重複起票しない
+
 ### Requirement: deny 設定が auto-merge 配線と同じ場所から配布される
 
 テンプレートは `.claude/settings.json` に、LLM による `gh pr merge`・main / master への直接 push・force push（`-f` / `--force` / `--force-with-lease`）・`--no-verify` push を塞ぐ `permissions.deny` 断片を含まなければならない（MUST）。README は展開先の既存 `.claude/settings.json` に既存の deny を消さずにマージする手順を提供し（SHALL）、docs/auto-merge.md は各 deny が塞ぐ経路を説明する（SHALL）。配布経路は他のプラグインに依存しない（SHALL）。

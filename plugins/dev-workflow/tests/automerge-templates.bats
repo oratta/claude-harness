@@ -194,7 +194,7 @@ extract_revert_code() {
   printf '%s\n' "$code" | grep -qF 'gh issue create'
   # revert PR は auto-merge の合格条件（passed ラベル + 対象 HEAD コメント）を機械的に満たす
   printf '%s\n' "$code" | grep -qF -- '--label "agent-review:passed"'
-  printf '%s\n' "$code" | grep -qF '対象 HEAD: $REVERT_SHA'
+  printf '%s\n' "$code" | grep -qF '対象 HEAD: ${REVERT_SHA}'
   # revert ジョブは「検証不能」判定のときは走らない
   grep -qF "needs.smoke.outputs.blocked != 'true'" "$SMOKE"
   grep -qF "needs.smoke.outputs.blocked == 'true'" "$SMOKE"
@@ -364,7 +364,6 @@ EOF
   sed -n '/# >>> smoke-revert-script/,/# <<< smoke-revert-script/p' "$SMOKE" | sed 's/^          //' > "$d/revert.sh"
   cd "$d/work"
   run env PATH="$bin:$PATH" GH_TOKEN=x MERGE_TOKEN=y REPO=o/r BAD_SHA="$BAD" RUN_URL=https://example.test/run bash "$d/revert.sh"
-  echo "OUT: $output" >&3
   CALLS="$d/state/calls.log"
   RV_DIR="$d"
 }
