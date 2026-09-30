@@ -3,7 +3,7 @@
 # statusline.sh — Claude Code の使用量ステータスライン
 #
 #   1行目: カレントディレクトリ / モデル / git ブランチ
-#   2行目: コンテキスト残量 / API 換算の月額ペース
+#   2行目: コンテキスト残量 / API 換算の月額ペース / このセッションの API 換算コスト
 #   3行目: 5h ウィンドウのレートリミット
 #   4行目: 7d ウィンドウ（全体 + Fable）のレートリミット
 #
@@ -16,9 +16,12 @@
 # 線を追い越していたらリセット前に枯れるペース。
 #
 # 環境変数（すべて任意）:
+#   STATUSLINE_CODEX       0 で Codex アカウント行を無効化（既定 1）
+#   STATUSLINE_CODEX_BIN   Codex CLI のパス（既定 codex）
 #   STATUSLINE_BAR_WIDTH   バーのセル数（既定 16）
 #   STATUSLINE_BAR_GLYPH   日程線の太さ。細い順に ▁ ▂ ▃ ▄（既定 ▂）
 #   STATUSLINE_API_PACE    0 で API 換算コスト表示を無効化（既定 1）
+#   STATUSLINE_SESSION_COST 0 でセッションコスト表示を無効化（既定 1）
 #   STATUSLINE_CURRENCY    API 換算コストの通貨。USD なら為替変換なし（既定 JPY）
 #   CLAUDE_CONFIG_DIR      Claude Code の設定ディレクトリ（既定 ~/.claude）
 
@@ -35,6 +38,8 @@ five_h_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // em
 five_h_resets=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
 seven_d_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
 seven_d_resets=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+session_id=$(printf '%s' "$input" | jq -c '.session_id | select(type == "string" and length > 0)' 2>/dev/null)
+session_cost_usd=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
 
 # ---------------------------------------------------------------------------
 # 可搬性ヘルパー（macOS の BSD 系と Linux の GNU 系の両方で動かす）
@@ -60,11 +65,114 @@ pkg_runner() {
     done
 }
 
-# Snapshot rate limits to a file so external consumers (loop guards etc.) can read them
-if [ -n "$five_h_pct" ]; then
-    printf '{"ts":%s,"five_hour_pct":%s,"five_hour_resets_at":%s,"seven_day_pct":%s,"seven_day_resets_at":%s}\n' \
-        "$(date +%s)" "$five_h_pct" "${five_h_resets:-null}" "${seven_d_pct:-null}" "${seven_d_resets:-null}" \
-        > "$CONFIG_DIR/.rate-limit-snapshot" 2>/dev/null
+# Rate snapshot writer contract: openspec/specs/rate-snapshot.
+# A separate file per host lets the shared copy coexist with other PCs.
+resolve_rate_share_dir() {
+    local dir conf tilde='~'
+    if [ "${FLATMATE_RATE_SHARE_DIR+x}" ]; then
+        dir="$FLATMATE_RATE_SHARE_DIR"
+    else
+        conf="${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"
+        dir=""
+        if [ -f "$conf" ]; then
+            dir=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$conf" 2>/dev/null \
+                | grep -v -e '^$' -e '^#' | head -1)
+        fi
+    fi
+    case "$dir" in
+        "$tilde") dir="$HOME" ;;
+        "$tilde"/*) dir="$HOME/${dir#??}" ;;
+    esac
+    printf '%s' "$dir"
+}
+
+write_rate_snapshot_atomic() {
+    local dest="$1" body="$2" tmp
+    tmp=$(mktemp "$(dirname "$dest")/.rate-snapshot.XXXXXX" 2>/dev/null) || return 1
+    if ! printf '%s\n' "$body" > "$tmp" 2>/dev/null || ! mv -f "$tmp" "$dest" 2>/dev/null; then
+        rm -f "$tmp" 2>/dev/null
+        return 1
+    fi
+}
+
+# The default account alone owns the local and shared rate snapshot.
+if [ -n "$five_h_pct" ] && [ -n "$session_id" ] && [ -z "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
+    snap_local="$CONFIG_DIR/.rate-limit-snapshot"
+    now_epoch=$(date +%s)
+    snap_5r="${five_h_resets:-null}"
+    snap_7p="${seven_d_pct:-null}"
+    snap_7r="${seven_d_resets:-null}"
+    storage_binding="storage-v1:default"
+    obs_sig="${five_h_pct}|${snap_5r}|${snap_7p}|${snap_7r}"
+    observed_at="$now_epoch"
+    if [ -f "$snap_local" ]; then
+        prev_obs=$(jq -r --arg sig "$obs_sig" --arg binding "$storage_binding" \
+            --argjson session "$session_id" \
+            'select(.obs_sig == $sig and .storage_binding == $binding and .session_id == $session) |
+             .observed_at | select(type == "number")' "$snap_local" 2>/dev/null)
+        [ -z "$prev_obs" ] || observed_at="$prev_obs"
+    fi
+
+    snap_host=$(hostname -s 2>/dev/null) || snap_host=""
+    snap_host_key=$(printf '%s' "$snap_host" | jq -Rr 'gsub("[^A-Za-z0-9._-]"; "_")' 2>/dev/null)
+    [ -n "$snap_host_key" ] || snap_host_key="unknown"
+
+    # Only the account UUID field is read; invalid or unavailable IDs are omitted.
+    account_id=""
+    if [ -f "$HOME/.claude.json" ]; then
+        account_id=$(jq -r '
+            .oauthAccount.accountUuid | select(type == "string") |
+            gsub("^[[:space:]]+|[[:space:]]+$"; "") |
+            select(length > 0 and length <= 256 and (contains("\n") | not))
+        ' "$HOME/.claude.json" 2>/dev/null)
+    fi
+    snap_body=$(jq -cn --arg account "$account_id" \
+        --argjson observed "$observed_at" --argjson written "$now_epoch" \
+        --arg sig "$obs_sig" --arg host "$snap_host_key" \
+        --arg binding "$storage_binding" --argjson session "$session_id" \
+        --argjson five_pct "$five_h_pct" --argjson five_resets "$snap_5r" \
+        --argjson seven_pct "$snap_7p" --argjson seven_resets "$snap_7r" \
+        '{ts:$observed,observed_at:$observed,written_at:$written,obs_sig:$sig,
+          host:$host,storage_binding:$binding,session_id:$session,
+          five_hour_pct:$five_pct,five_hour_resets_at:$five_resets,
+          seven_day_pct:$seven_pct,seven_day_resets_at:$seven_resets}
+         + (if $account == "" then {} else {account_id:$account} end)' 2>/dev/null)
+
+    if [ -n "$snap_body" ]; then
+        mkdir -p "$(dirname "$snap_local")" 2>/dev/null
+        write_rate_snapshot_atomic "$snap_local" "$snap_body" || true
+        share_dir=$(resolve_rate_share_dir)
+        if [ -n "$share_dir" ] && mkdir -p "$share_dir" 2>/dev/null; then
+            write_rate_snapshot_atomic "$share_dir/$snap_host_key.json" "$snap_body" || true
+        fi
+    fi
+fi
+
+# 起動アカウント別のセッション記録（正本: openspec/specs/usage-session-records）。
+# 鍵は起動環境の CLAUDE_SECURESTORAGE_CONFIG_DIR だけから決める（レジストリや snapshot の
+# active から決めると別アカウントの値を別スロットとして書きうる。flatmate#605 と同じ誤り）。
+# 空なら default、非空なら Keychain サービス名の末尾と同じ sha256 先頭 8 桁。
+# python3 を起動するのは非空のときだけ（既定アカウントの 1 スロット構成で起動を増やさない）。
+session_key="default"
+if [ -n "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
+    session_key="$(SECURE="$CLAUDE_SECURESTORAGE_CONFIG_DIR" python3 -c '
+import hashlib, os, unicodedata
+print(hashlib.sha256(unicodedata.normalize("NFC", os.environ["SECURE"]).encode("utf-8")).hexdigest()[:8])
+' 2>/dev/null)"
+fi
+sessions_dir="${USAGE_SESSIONS_DIR:-$CONFIG_DIR/.usage-sessions}"
+if [ -n "$five_h_pct" ] && [ -n "$session_key" ] && mkdir -p "$sessions_dir" 2>/dev/null; then
+    # 一時ファイルに書いてから mv で置き換える（読み手に書きかけを見せない）。失敗は無視する
+    _rec_tmp="$(mktemp "$sessions_dir/.${session_key}.XXXXXX" 2>/dev/null)"
+    if [ -n "$_rec_tmp" ]; then
+        if printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":%s,"five_hour_resets_epoch":%s,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
+            "$session_key" "$(date +%s)" "$five_h_pct" "${five_h_resets:-null}" \
+            "${seven_d_pct:-null}" "${seven_d_resets:-null}" > "$_rec_tmp" 2>/dev/null; then
+            mv -f "$_rec_tmp" "$sessions_dir/${session_key}.json" 2>/dev/null || rm -f "$_rec_tmp" 2>/dev/null
+        else
+            rm -f "$_rec_tmp" 2>/dev/null
+        fi
+    fi
 fi
 
 # ANSI color codes (dimmed for status line)
@@ -314,13 +422,10 @@ if [ "$multi" -eq 1 ]; then
     # 優先順位 1: env から導出した Keychain サービス名と一致するスロット。
     # 素の文字列比較ではなく導出後のサービス名で突き合わせる（本体と同じ同値関係になる）。
     # env 未設定は空文字からの導出＝既定サービス名なので、既定スロットがあればここで一致する。
+    # 導出はセッション記録の鍵と同じなので、上で求めた session_key を使う（python3 を再起動しない）。
     if [ -n "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
-        want_service="$(SECURE="$CLAUDE_SECURESTORAGE_CONFIG_DIR" python3 -c '
-import hashlib, os, unicodedata
-sec = os.environ["SECURE"]
-print("Claude Code-credentials-" + hashlib.sha256(
-    unicodedata.normalize("NFC", sec).encode("utf-8")).hexdigest()[:8])
-' 2>/dev/null)"
+        want_service=""
+        [ -n "$session_key" ] && want_service="Claude Code-credentials-${session_key}"
     else
         want_service="Claude Code-credentials"
     fi
@@ -342,6 +447,15 @@ print("Claude Code-credentials-" + hashlib.sha256(
     [ "$active_idx" -lt 0 ] && active_idx=0
 fi
 
+# Cache reads are local; refresh is detached by the helper.
+codex_rows=""
+if [ "${STATUSLINE_CODEX:-1}" != "0" ]; then
+    codex_helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/statusline-codex.py"
+    if [ -f "$codex_helper" ]; then
+        codex_rows="$(python3 "$codex_helper" --read 2>/dev/null)"
+    fi
+fi
+
 # label 列の幅（複数スロットのときだけ使う）
 # 幅は文字数ではなく表示幅（python 側が 5 列目で渡す）。全角ラベルでも列が揃う。
 label_w=0
@@ -349,6 +463,11 @@ if [ "$multi" -eq 1 ]; then
     for w in "${slot_widths[@]}"; do
         [ "$w" -gt "$label_w" ] && label_w="$w"
     done
+fi
+
+# Codex shares the label column, without changing output when its row is absent.
+if [ -n "$codex_rows" ] && [ "$label_w" -lt 5 ]; then
+    label_w=5
 fi
 
 # ---- snapshot を jq 1 回で読む ----
@@ -359,7 +478,7 @@ fi
 # 取り出すのは数値フィールドだけなので、TSV に載せても区切りは壊れない
 # （label は snapshot 側にもあるがレジストリの値を使うのでここでは読まない）。
 # active スロットに限り、`accounts` がまだ無い snapshot（probe が schema 2 を書く前の
-# 最大 TTL 5 分）ではトップレベルへフォールバックする。
+# 旧形式）ではトップレベルへフォールバックする。
 snap_fetched=(); snap_five_pct=(); snap_five_res=()
 snap_seven_pct=(); snap_seven_res=(); snap_fable_pct=()
 snap_rows=""
@@ -391,6 +510,99 @@ while [ "${#snap_fetched[@]}" -lt "$n_slots" ]; do
     snap_fetched+=(""); snap_five_pct+=(""); snap_five_res+=("")
     snap_seven_pct+=(""); snap_seven_res+=(""); snap_fable_pct+=("")
 done
+
+# ---- 非 active スロットはセッション記録と突き合わせる（正本: usage-session-records の
+# 「記録と snapshot から実効値を求める」。statusline が使うのは規則 1 と 4 だけで、規則 2 の
+# リセット後の読み替えは表示に行わない）。dev-workflow の usage_view.py と同じ規則だが、
+# プラグインを跨ぐ依存を作らないためここに置く。snapshot は上の jq の値を引数で渡して
+# 再読しない（1 行の中に新旧の snapshot が混ざらないように）。python3 は複数スロットで
+# 記録ディレクトリがあるときだけ起動する（1 スロット構成の出力と起動数を変えない）。
+# 出力は「index, 取得時刻, 5h%, 5h リセット, 週次%, 週次リセット」。取得時刻は週次を採った
+# 側の時刻（週次が無ければ 5 時間枠を採った側）で、行末の経過時間になる。Fable は snapshot のまま。
+if [ "$multi" -eq 1 ] && [ -d "$sessions_dir" ]; then
+    _rec_args=()
+    for i in $(seq 0 $(( n_slots - 1 ))); do
+        [ "$i" -eq "$active_idx" ] && continue
+        _rec_args+=("$i" "${slot_secures[$i]}" "${snap_fetched[$i]}" "${snap_five_pct[$i]}"
+                    "${snap_five_res[$i]}" "${snap_seven_pct[$i]}" "${snap_seven_res[$i]}")
+    done
+    while IFS='' read -r _row; do
+        IFS=$'\x1f' read -r _ri _f _fp _fr _sp _sr <<< "${_row//$'\t'/$'\x1f'}"
+        [[ "$_ri" =~ ^[0-9]+$ ]] && [ "$_ri" -lt "$n_slots" ] || continue
+        snap_fetched[$_ri]="$_f"; snap_five_pct[$_ri]="$_fp"; snap_five_res[$_ri]="$_fr"
+        snap_seven_pct[$_ri]="$_sp"; snap_seven_res[$_ri]="$_sr"
+    done < <(python3 -c '
+import hashlib, json, math, os, sys, unicodedata
+SAME_WINDOW = 3600
+sessions_dir, now, rest = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
+def num(v):
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, str):
+        try:
+            v = float(v)
+        except ValueError:
+            return None
+    if isinstance(v, (int, float)) and math.isfinite(v):
+        return v
+    return None
+def text(v):
+    return v if isinstance(v, str) else json.dumps(v)
+def source(pct, res, stamp, five):
+    # 規則 1: 使用率が 0..100 の数値でなければ無い扱い。リセット時刻は 5 時間枠の使用率 0 だけ null を許す
+    p = num(pct)
+    if p is None or not 0 <= p <= 100:
+        return None
+    r = num(res)
+    if r is None and not (five and p == 0 and res in (None, "")):
+        return None
+    return {"pct": p, "raw": text(pct), "res": r, "at": num(stamp)}
+def newer(a, b):
+    return b if (b["at"] if b["at"] is not None else -math.inf) > (a["at"] if a["at"] is not None else -math.inf) else a
+def larger(a, b):
+    if a["pct"] != b["pct"]:
+        return a if a["pct"] > b["pct"] else b
+    return newer(a, b)
+def combine(rec, snap, weekly):
+    # 規則 4。窓の突き合わせは読み替える前のリセット時刻どうしで行う
+    if rec is None or snap is None:
+        return rec or snap
+    if rec["res"] is None or snap["res"] is None:
+        if rec["res"] is None and snap["res"] is None:
+            return larger(rec, snap)
+        return rec if rec["res"] is not None else snap
+    if abs(rec["res"] - snap["res"]) <= SAME_WINDOW:
+        return dict(larger(rec, snap), res=newer(rec, snap)["res"])
+    if weekly and now < rec["res"]:
+        return rec
+    return rec if rec["res"] > snap["res"] else snap
+def key(sec):
+    if not sec:
+        return "default"
+    return hashlib.sha256(unicodedata.normalize("NFC", sec).encode("utf-8")).hexdigest()[:8]
+def cell(v, field):
+    if v is None or v[field] is None:
+        return ""
+    return v["raw"] if field == "raw" else str(int(v[field]))
+for n in range(0, len(rest) - 6, 7):
+    idx, sec, fetched, fp, fr, sp, sr = rest[n:n + 7]
+    try:
+        with open(os.path.join(sessions_dir, key(sec) + ".json"), encoding="utf-8") as fh:
+            rec = json.load(fh)
+    except Exception:
+        rec = None
+    if not isinstance(rec, dict):
+        rec = {}
+    seen = rec.get("observed_at")
+    five = combine(source(rec.get("five_hour_pct"), rec.get("five_hour_resets_epoch"), seen, True)
+                   if rec else None, source(fp, fr, fetched, True), False)
+    week = combine(source(rec.get("weekly_all_pct"), rec.get("weekly_resets_epoch"), seen, False)
+                   if rec else None, source(sp, sr, fetched, False), True)
+    taken = week or five
+    sys.stdout.write("\t".join([idx, cell(taken, "at"), cell(five, "raw"), cell(five, "res"),
+                                cell(week, "raw"), cell(week, "res")]) + "\n")
+' "$sessions_dir" "$now" "${_rec_args[@]}" 2>/dev/null)
+fi
 
 # $1=行頭 label 列 $2=5h消化率 $3=5hリセットepoch $4=7d消化率 $5=7dリセットepoch
 # $6=Fable週次消化率 $7=行末サフィックス（経過時間。空可）
@@ -467,6 +679,9 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
                 fable_pct=""
             fi
         fi
+        if [ "$multi" -eq 1 ] && [ -z "$five_h_pct" ]; then
+            usage_lines+=("${prefix}${DIM}取得待ち${RESET}")
+        fi
         render_slot "$prefix" "$five_h_pct" "$five_h_resets" "$seven_d_pct" "$seven_d_resets" \
                     "$fable_pct" ""
     else
@@ -479,6 +694,87 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
                     "$fable_pct" "$ago"
     fi
 done
+
+# Codex is a separate account; keep all returned windows on one additional row.
+# Only the helper talks to app-server, detached from rendering (180s cache).
+if [ -n "$codex_rows" ]; then
+    codex_pad="$(printf '%*s' "$(( label_w - 5 ))" '')"
+    codex_line="  ${DIM}Codex${codex_pad}${RESET}  "
+    codex_sep=""
+    codex_fetched=""
+    codex_resets=""
+    while IFS=$'\t' read -r c_pct c_minutes c_reset c_fetched; do
+        if [ "$c_pct" = "resets" ]; then
+            codex_fetched="$c_fetched"
+            c_reset_color="$DIM"
+            codex_resets="リセット${c_minutes}回"
+            if [ "$c_minutes" -gt 0 ]; then
+                if [ "$c_reset" -eq 0 ]; then
+                    codex_resets+="・期限不明"
+                else
+                    c_expiry_left=$(( c_reset - now ))
+                    if [ "$c_expiry_left" -le 86400 ]; then c_reset_color="$RED"
+                    elif [ "$c_expiry_left" -le 259200 ]; then c_reset_color="$YELLOW"; fi
+                    if [ "$c_expiry_left" -le 0 ]; then
+                        codex_resets+="・期限経過（更新待ち）"
+                    elif [ "$c_expiry_left" -ge 86400 ]; then
+                        codex_resets+="・最短あと$((c_expiry_left / 86400))日$((c_expiry_left % 86400 / 3600))h"
+                    else
+                        codex_resets+="・最短あと$((c_expiry_left / 3600))h$((c_expiry_left % 3600 / 60))m"
+                    fi
+                fi
+            fi
+            codex_resets="  ${DIM}│${RESET}  ${c_reset_color}${codex_resets}${RESET}"
+            continue
+        fi
+        if [ "$c_pct" = "pending" ]; then
+            codex_line+="${DIM}取得待ち${RESET}"
+            continue
+        fi
+        codex_fetched="$c_fetched"
+        c_seconds=$(( c_minutes * 60 ))
+        c_left=$(( c_reset - now ))
+        c_elapsed=""
+        if [ "$c_left" -ge 0 ] && [ "$c_left" -le "$c_seconds" ]; then
+            c_elapsed=$(( (c_seconds - c_left) * 100 / c_seconds ))
+        fi
+        if [ $(( c_minutes % 1440 )) -eq 0 ]; then
+            c_label="$(( c_minutes / 1440 ))d All"
+        elif [ $(( c_minutes % 60 )) -eq 0 ]; then
+            c_label="$(( c_minutes / 60 ))h"
+        else
+            c_label="${c_minutes}m"
+        fi
+        codex_line+="${codex_sep}$(bar_seg "$c_label" 9 "$c_pct" "$c_elapsed" 1)"
+        [ "$c_left" -gt 0 ] && codex_line+="  ${DIM}$(fmt_left "$c_left")${RESET}"
+        codex_sep="   "
+    done <<< "$codex_rows"
+    [ -n "$codex_fetched" ] && codex_line+="  ${DIM}$(fmt_ago $(( now - codex_fetched )))${RESET}"
+    codex_line+="$codex_resets"
+    usage_lines+=("$codex_line")
+fi
+
+# $1=USD $2=為替レート $3=通貨 → "¥1,240" / "€12"（通貨単位の整数、3 桁区切り）
+fmt_money() {
+    local sym amount digits grouped="" sign=""
+    case "$3" in
+        JPY) sym='¥' ;;
+        EUR) sym='€' ;;
+        GBP) sym='£' ;;
+        *)   sym="$3 " ;;
+    esac
+    # 小数点がカンマのロケール（de_DE 等）では awk が "1.23" を 1 と読むので C 固定
+    amount=$(echo "$1 $2" | LC_ALL=C awk '{printf "%d", $1 * $2}')
+    # Bash 3.2 builtin printf does not reliably adopt a temporary LC_ALL assignment.
+    # Group the integer explicitly: this also works without en_US.UTF-8 installed.
+    digits="$amount"
+    if [[ "$digits" == -* ]]; then sign="-"; digits="${digits#-}"; fi
+    while [ "${#digits}" -gt 3 ]; do
+        grouped=",${digits: -3}${grouped}"
+        digits="${digits:0:${#digits}-3}"
+    done
+    printf '%s%s%s%s' "$sym" "$sign" "$digits" "$grouped"
+}
 
 # API-equivalent monthly cost pace (last 30 days via ccusage; cached, refreshed in background)
 api_pace_info=""
@@ -504,7 +800,7 @@ if [ "${STATUSLINE_API_PACE:-1}" != "0" ]; then
             if [ -n "$total" ]; then
                 currency="${STATUSLINE_CURRENCY:-JPY}"
                 if [ "$currency" = "USD" ]; then
-                    printf 'API $%s/mo' "$(echo "$total" | awk '{printf "%d", $1}')" > "$cost_cache"
+                    printf 'API $%s/mo' "$(echo "$total" | LC_ALL=C awk '{printf "%d", $1}')" > "$cost_cache"
                 else
                     # 為替レートは24hキャッシュ。取得失敗時は前回値 → 既定値の順にフォールバック
                     rate_cache="$CONFIG_DIR/.statusline-fxrate-$currency"
@@ -521,15 +817,7 @@ if [ "${STATUSLINE_API_PACE:-1}" != "0" ]; then
                         fi
                     fi
                     if [ -n "$rate" ]; then
-                        case "$currency" in
-                            JPY) sym='¥' ;;
-                            EUR) sym='€' ;;
-                            GBP) sym='£' ;;
-                            *)   sym="$currency " ;;
-                        esac
-                        amount=$(echo "$total $rate" | awk '{printf "%d", $1 * $2}')
-                        amount_fmt=$(LC_ALL=en_US.UTF-8 printf "%'d" "$amount" 2>/dev/null || printf '%d' "$amount")
-                        printf 'API %s%s/mo' "$sym" "$amount_fmt" > "$cost_cache"
+                        printf 'API %s/mo' "$(fmt_money "$total" "$rate" "$currency")" > "$cost_cache"
                     fi
                 fi
             fi
@@ -538,9 +826,28 @@ if [ "${STATUSLINE_API_PACE:-1}" != "0" ]; then
     fi
 fi
 
+# このセッションの API 換算コスト（メイン + このセッションが立ち上げたサブエージェントの合算）。
+# Claude Code が stdin に渡す cost.total_cost_usd をそのまま使う（ドキュメント上「セッション内の
+# すべての API 呼び出し」の推定値で、定価ベース。/clear で 0 に戻る）。30 日コストは ccusage が
+# ログから計算するので、料金表の違いで多少ずれうる。
+# 為替は 30 日コストの背景更新が書くキャッシュを読むだけにし、描画中にネットワークへ出ない。
+# キャッシュが無ければ USD のまま出す。
+session_cost_info=""
+if [ "${STATUSLINE_SESSION_COST:-1}" != "0" ] && [ -n "$session_cost_usd" ]; then
+    currency="${STATUSLINE_CURRENCY:-JPY}"
+    rate=""
+    [ "$currency" != "USD" ] && rate=$(cat "$CONFIG_DIR/.statusline-fxrate-$currency" 2>/dev/null)
+    # 壊れたキャッシュ（空白・非数値）を awk に渡すと 0 扱いで ¥0 になるので、正の数値だけを使う
+    if [[ "$rate" =~ ^[0-9]+(\.[0-9]+)?$ ]] && [[ "$rate" =~ [1-9] ]]; then
+        session_cost_info="${CYAN}Session $(fmt_money "$session_cost_usd" "$rate" "$currency")${RESET}"
+    else
+        session_cost_info="${CYAN}Session \$$(echo "$session_cost_usd" | LC_ALL=C awk '{printf "%.2f", $1}')${RESET}"
+    fi
+fi
+
 # Build status line
 # Line 1: directory, model, git
-# Line 2: context window, API cost
+# Line 2: context window, API cost, session cost
 # Line 3: 5h bar / Line 4: 7d All + Fable bars
 printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s\n" \
     "$short_pwd" \
@@ -551,13 +858,14 @@ line2=""
 if [ -n "$context_info" ]; then
     line2="$context_info"
 fi
-if [ -n "$api_pace_info" ]; then
+for seg in "$api_pace_info" "$session_cost_info"; do
+    [ -n "$seg" ] || continue
     if [ -n "$line2" ]; then
-        line2="${line2}  ${DIM}│${RESET}  ${api_pace_info}"
+        line2="${line2}  ${DIM}│${RESET}  ${seg}"
     else
-        line2="$api_pace_info"
+        line2="$seg"
     fi
-fi
+done
 if [ -n "$line2" ]; then
     printf "%s\n" "$line2"
 fi

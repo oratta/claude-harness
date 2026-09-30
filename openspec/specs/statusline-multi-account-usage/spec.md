@@ -1,14 +1,14 @@
 # statusline-multi-account-usage Specification
 
 ## Purpose
-statusline がレートリミットをアカウント（スロット）別に描画する要件を定める。いま使っているアカウントはライブ値で、それ以外は usage snapshot の値と取得からの経過時間で描く。スロットが 1 つのときは従来と 1 バイトも変わらない出力になることを最優先の制約とする。
+statusline がレートリミットをアカウント（スロット）別に描画する要件を定める。いま使っているアカウントはライブ値で、それ以外は usage snapshot の値と取得からの経過時間で描く。Codex 表示が無効でスロットが 1 つのときは従来と 1 バイトも変わらない出力になることを最優先の制約とする。
 ## Requirements
 ### Requirement: 値が得られたスロットごとにレートリミット行を描画する
 `plugins/statusline/scripts/statusline.sh` は、レジストリのスロットのうち**値が得られたものについて**レートリミットを描画しなければならない（SHALL）。行の並びはレジストリの宣言順とする。
 
 各スロットの行の出し方は現行の入れ子条件をスロット単位に適用したものでなければならない（SHALL）:
 
-- 5h 消化率が得られないスロットは、そのスロットの行を 1 行も出してはならない（MUST NOT）
+- 5h 消化率が得られない非 active スロットは行を出さない。複数スロットの active が欠測なら、同じ目印・label 列で `取得待ち` を1行出さなければならない（SHALL）。使用率や snapshot の値をライブ値として補ってはならない（MUST NOT）
 - 5h 消化率が得られたスロットは `5h` 行を出す
 - `5h` 行を出したスロットのうち、7d 消化率も得られたものだけ `7d All`（+ 条件を満たせば `Fable`）行を出す
 
@@ -32,7 +32,7 @@ statusline がレートリミットをアカウント（スロット）別に描
 - **THEN** レートリミット表示はスロットごとに 2 行、計 4 行になり、各行の左端に active の目印とそのスロットの `label` が付く
 
 #### Scenario: 欠測スロットは行を出さない
-- **WHEN** 2 スロットのレジストリで、片方のスロットの値が全て `null`（欠測）である snapshot を与えて statusline を実行する
+- **WHEN** 2 スロットのレジストリで、非 active スロットの値が全て `null`（欠測）である snapshot を与えて statusline を実行する
 - **THEN** 値のあるスロットの 2 行だけが出て、欠測スロットの行は出ない
 
 #### Scenario: 7d が欠ければ 5h 行だけ出す
@@ -41,14 +41,14 @@ statusline がレートリミットをアカウント（スロット）別に描
 
 #### Scenario: rate_limits が来ないときはレートリミット行が 1 行も出ない
 - **WHEN** stdin に `rate_limits` が含まれず、snapshot も存在しない状態で statusline を実行する
-- **THEN** レートリミット行は 1 行も出ない（現行と同じ）
+- **THEN** 数値を含むレートリミット行は出ない。複数スロットの場合のみ active の目印・label と `取得待ち` の行を出す。
 
 #### Scenario: バー描画の意味論が変わらない
 - **WHEN** 複数スロットの statusline 出力を検査する
 - **THEN** バーの塗り・日程線・分母表示は 1 スロット時と同じ関数で生成された形式である
 
 ### Requirement: スロットが 1 つのときは現行と同一の出力にする
-スロットが 1 つだけのとき（レジストリ不在を含む）、statusline のレートリミット表示はこの変更の前と**バイト単位で同一**でなければならない（SHALL）。`label` 列を出してはならない（MUST NOT）。active の目印も出してはならない（MUST NOT）— 目印は「複数あるうちのどれか」を示すためのもので、スロットが 1 つのときには示す対象が無い。
+Codex 表示が無効でスロットが 1 つだけのとき（レジストリ不在を含む）、statusline のレートリミット表示はこの変更の前と**バイト単位で同一**でなければならない（SHALL）。`label` 列を出してはならない（MUST NOT）。active の目印も出してはならない（MUST NOT）— 目印は「複数あるうちのどれか」を示すためのもので、スロットが 1 つのときには示す対象が無い。
 
 #### Scenario: レジストリ不在で現行と同一
 - **WHEN** レジストリファイルが存在しない状態で、変更前と同じ stdin と snapshot を与えて statusline を実行する
@@ -63,15 +63,31 @@ statusline がレートリミットをアカウント（スロット）別に描
 - **THEN** トップレベルのキーから既定スロット 1 つとして現行どおり描画される
 
 ### Requirement: active スロットはライブ値、非 active スロットは snapshot 値と経過時間で描く
-active スロットのレートリミットは stdin の `.rate_limits.*` のライブ値から描画しなければならない（SHALL）。非 active スロットは snapshot の `accounts` の値から描画し、行末にそのスロットの `fetched_at` からの経過時間（例 `2h前`）を併記しなければならない（SHALL）。
+active スロットのレートリミットは stdin の `.rate_limits.*` のライブ値から描画しなければならない（SHALL）。非 active スロットは、そのスロットの鍵のセッション記録（`usage-session-records` capability）と snapshot の `accounts` の値から、`usage-session-records` の「記録と snapshot から実効値を求める」規則の 1 と 4（同じ窓なら大きい方、窓が違えば新しい窓、全体の週次は差が 1 時間を超えたら記録側。ただし記録側のリセット時刻が過去なら、この例外を使わずリセット時刻の後の方を取る）で選んだ値を描画し、行末に採った値の取得時刻（セッション記録は `observed_at`、snapshot は `fetched_at`）からの経過時間（例 `2h前`）を併記しなければならない（SHALL）。statusline は規則の 2（リセット時刻を過ぎた値を 0% とみなし、リセット時刻を 7 日進める）の読み替えを表示には行わない。規則 4 の窓の突き合わせは、読み替える前のリセット時刻どうしで行う。選んだ値のリセット時刻が過去なら、既存の要件「非 active スロットの resets_at が過去のときは分母と残り時間を出さない」に従って描く。Fable バーは snapshot の値から描く。statusline は他プラグインのスクリプトを実行時に読まず、この規則を自分で実装しなければならない（SHALL）。
 
 #### Scenario: active スロットにライブ値を使う
 - **WHEN** stdin の `.rate_limits` と snapshot の active スロットの値が異なる状態で statusline を実行する
 - **THEN** active スロットの行は stdin のライブ値で描画される
 
 #### Scenario: 非 active スロットに経過時間が付く
-- **WHEN** 非 active スロットの `fetched_at` が現在より 2 時間前である snapshot を与えて statusline を実行する
+- **WHEN** 非 active スロットの `fetched_at` が現在より 2 時間前である snapshot を与え、そのスロットのセッション記録が無い状態で statusline を実行する
 - **THEN** その非 active スロットの行末に取得からの経過時間が表示される
+
+#### Scenario: 非 active スロットはセッション記録の新しい値で描く
+- **WHEN** 非 active スロット B の snapshot の値が 5 時間前の週次 40% で、B の鍵のセッション記録が 3 分前の週次 45%（同じリセット時刻）である状態で、A のセッションとして statusline を実行する
+- **THEN** B の行は週次 45% で描かれ、行末の経過時間は記録の `observed_at` からの時間になる
+
+#### Scenario: リセット時刻が過去の値は読み替えずに描く
+- **WHEN** 非 active スロット B の記録だけがあり、その週次が 80%・リセット時刻が現在より 1 時間前である状態で statusline を実行する
+- **THEN** B の週次は 0% ではなく 80% で描かれ、分母と残り時間は出ない
+
+#### Scenario: リセット時刻が 1 時間を超えて違えば記録側で描く
+- **WHEN** 非 active スロット B の記録の週次が 30%・リセット時刻が現在より 2 日後、snapshot の週次が 60%・リセット時刻が現在より 5 日後である状態で statusline を実行する
+- **THEN** B の週次は 30% で描かれ、行末の経過時間は記録の `observed_at` からの時間になる
+
+#### Scenario: 記録側のリセット時刻が過去なら全体の週次の例外を使わない
+- **WHEN** 非 active スロット B の記録の週次が 80%・リセット時刻が現在より 1 時間前、snapshot の週次が 10%・リセット時刻が現在より 7 日後である状態で statusline を実行する
+- **THEN** B の週次は snapshot 側の 10% で描かれ、行末の経過時間は snapshot の `fetched_at` からの時間になる
 
 ### Requirement: 6 時間の鮮度ゲートは active スロットにのみ適用する
 現行の statusline は Fable バーを snapshot の `fetched_at` が 6 時間以内のときだけ描く鮮度ゲートを持つ。このゲートは **active スロットにのみ適用しなければならない**（SHALL）。非 active スロットに適用してはならない（MUST NOT）。
@@ -122,7 +138,7 @@ statusline サブプロセスへの環境変数の伝播が保証されていな
 
 理由: この statusline はバー本体（`BAR_GLYPH` 既定 `▂` U+2582、EAW=Ambiguous）を 1 本につき 16 セル並べており、「端末が曖昧幅を半角として扱う」前提の上に成り立っている。それでもバーが問題にならないのは、バーが**揃えたい列より下流**にあるためである（バーの左端の位置を決めているのは行頭の目印列・label 列・`bar_seg` のラベルフィールドで、すべて ASCII。バーのグリフ幅は左端の位置に効かない）。目印はここが違い、**揃えたい列より上流**、それも行頭にある。記号が出るのは active 行だけで非 active 行は ASCII の半角スペース 2 つになるため、EAW=Ambiguous の記号を使うと、曖昧幅を全角に設定した端末では active 行の行頭が 3 桁・非 active 行が 2 桁になり、その差 1 桁が label 以降のすべての列に伝播する。EAW=Neutral を選ぶことは、既にある前提を新たに広げないという意味でもある。
 
-active スロットの判定には既存の `active_idx`（`usage-account-registry` capability の「active スロットの判定規則」で確定したもの）をそのまま用いなければならない（SHALL）。描画側で判定を作り直してはならない（MUST NOT）。active スロットの値が欠測で行が出ない場合、目印の付いた行は 1 行も出ない（他のスロットへ目印を移してはならない（MUST NOT））。
+active スロットの判定には既存の `active_idx`（`usage-account-registry` capability の「active スロットの判定規則」で確定したもの）をそのまま用いなければならない（SHALL）。描画側で判定を作り直してはならない（MUST NOT）。active スロットの値が欠測の場合も、目印と label に `取得待ち` を添えた行を1行出さなければならない（SHALL）。他のスロットへ目印を移してはならない（MUST NOT）。
 
 #### Scenario: active スロットの行に記号が付く
 - **WHEN** 2 スロットのレジストリと両スロットの値を含む snapshot を与えて statusline を実行する
@@ -144,7 +160,31 @@ active スロットの判定には既存の `active_idx`（`usage-account-regist
 - **WHEN** `CLAUDE_SECURESTORAGE_CONFIG_DIR` を 2 番目のスロットの `securestorage` に向けて statusline を実行する
 - **THEN** `▸ ` は 2 番目のスロットの行に付き、1 番目のスロットの行は半角スペース 2 つで始まる
 
-#### Scenario: active スロットが欠測なら目印の付いた行は出ない
+#### Scenario: active スロットが欠測でも目印を表示する
 - **WHEN** active スロットの値が全て `null`（欠測）で、非 active スロットにだけ値がある snapshot を与えて statusline を実行する
-- **THEN** 出力に `▸ ` で始まる行は無く、非 active スロットの行は半角スペース 2 つで始まる
+- **THEN** active の `▸ label  取得待ち` 行が1行出て、非 active スロットの行は半角スペース 2 つで始まる
+
+### Requirement: Codex のアカウント上限を最後に1行追加する
+Codex CLI の ChatGPT 認証が利用可能なとき、Claude の全スロットの下に `Codex` 行を追加しなければならない（SHALL）。通常 Codex バケットの取得できた窓だけを同じバー・色・日程線・リセット残時間で描き、取得からの経過時間を添える。窓は `windowDurationMins` に従い、週次だけでも表示する。Spark 等の別バケットを通常 Codex の上限として扱ってはならない（MUST NOT）。複数の窓は1行に並べる。
+
+取得は公式 app-server の `account/rateLimits/read` を用い、描画はキャッシュを読む。ネットワーク応答を描画の完了条件にしてはならない（MUST NOT）。取得失敗でも前回の値と実際の取得時刻を維持し、初回欠測は `取得待ち` とする。認証が変わった場合は以前のキャッシュを流用してはならない（MUST NOT）。`STATUSLINE_CODEX=0` で無効化できる。
+
+#### Scenario: 週間枠だけが返る
+- **WHEN** 通常 Codex バケットの primary が10080分、secondary がnullである
+- **THEN** Claude の下に Codex の `7d All` を1行表示し、5h は表示しない
+
+#### Scenario: Codex 無効時の互換性
+- **WHEN** `STATUSLINE_CODEX=0` でライブ値がある既存の入力を描く
+- **THEN** Claude の出力は変更前とバイト単位で一致する
+
+### Requirement: Codex リセット権の残数と期限を表示する
+`rateLimitResetCredits.availableCount` が取得できたとき、Codex 行に残数を表示しなければならない（SHALL）。利用可能な権利の `expiresAt` の最短値を残時間に換算し、3日以内は黄色、24時間以内は赤色にする。期限情報が欠ければ期限不明、取得情報の期限を過ぎた場合は更新待ちと示し、推測の残数を表示してはならない（MUST NOT）。表示処理から権利の使用APIを呼んではならない（MUST NOT）。
+
+#### Scenario: 最短期限が近づく
+- **WHEN** 残数3回、取得済みの最短期限が24時間以内である
+- **THEN** Codex 行に残数3回と最短期限までの時間が赤色で表示される
+
+#### Scenario: 残数のみ取得できる
+- **WHEN** 残数は3回だが credits が null である
+- **THEN** リセット3回・期限不明と表示される
 
