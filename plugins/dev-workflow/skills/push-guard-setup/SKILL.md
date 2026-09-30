@@ -1,7 +1,7 @@
 ---
 name: push-guard-setup
 description: マージ済み PR のブランチへの push を全リポジトリで拒否するグローバル pre-push ガードを導入する。「push ガードを入れて」「マージ済みブランチへの push を止めたい」「グローバル git フックを設定して」で起動。
-version: 1.0.2
+version: 1.0.1
 allowed-tools: Read, Write, Edit, Bash
 ---
 
