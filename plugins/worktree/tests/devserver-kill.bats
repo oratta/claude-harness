@@ -202,17 +202,41 @@ wt_skill_fn() {
   awk -v fn="$1() {" 'index($0, fn)==1,/^}$/' "$WT_CLEAN_SKILL"
 }
 
-wt_comm_window() {
-  # $1 = 関数名。その関数の中で、comm を取り出す行（`comm=$(proc_comm "$pid")`）から
-  # 除外リストの `case "$comm" in` までの**非コメント行**を返す。この窓の中で comm を
-  # 書き換える行があれば、それは片側だけの正規化（= 2 側が食い違う芽）である。
+wt_comm_window_of() {
+  # stdin = 関数本体（コメント行を除いたもの）。comm を取り出す行（`comm=$(proc_comm "$pid")`）から
+  # **除外リストの行**（`bash|zsh|sh|...`）までの非コメント行を返し、最後に終端の目印
+  # `#WINDOW-END` を付ける。この窓の中で comm を書き換える行があれば、それは片側だけの正規化
+  # （= 2 側が食い違う芽）である。
   # ⚠️ 「連続する comm= 代入」のような**形状**で切ってはならない（issue #190）。空行を挟んだ
-  #    代入や `case ... comm=...;; esac` の形は形状マッチをすり抜ける。窓の境界を取り出し行と
-  #    使用行に置けば、その間に何が書かれていても検査対象に入る。
-  wt_skill_fn "$1" \
-    | awk '/^[[:space:]]+comm=\$\(proc_comm "\$pid"\)$/{on=1; next}
-           on && /^[[:space:]]+case "\$comm" in$/{exit}
-           on && !/^[[:space:]]*(#|$)/{print}'
+  #    代入や `case ... comm=...;; esac` の形は形状マッチをすり抜ける。窓の終端を最初の
+  #    `case "$comm" in` に置くと、その前に置かれた正規化用の複数行 case を素通りする。
+  #    終端は除外リストの行そのものに置く。見つからなければ目印が付かず、呼び出し側が落とす。
+  awk '/^[[:space:]]+comm=\$\(proc_comm "\$pid"\)$/{on=1; next}
+       on && /^[[:space:]]+bash\|zsh\|sh\|fish\|/{print "#WINDOW-END"; exit}
+       on && !/^[[:space:]]*(#|$)/{print}'
+}
+
+wt_comm_side_violations() {
+  # stdin = 関数本体（コメント行を除いたもの）。片側だけの正規化の芽があれば理由を出して 1、なければ 0。
+  local body window
+  body=$(cat)
+  # 取り出し行は行全体の完全一致で 1 回だけ（同じ行に別の加工を足す形も落とす）。
+  if [ "$(printf '%s\n' "$body" | grep -Ec '^[[:space:]]+comm=\$\(proc_comm "\$pid"\)$')" != "1" ]; then
+    echo "extraction line is not exactly one bare comm=\$(proc_comm \"\$pid\")"; return 1
+  fi
+  window=$(printf '%s\n' "$body" | wt_comm_window_of)
+  if ! grep -qx '#WINDOW-END' <<<"$window"; then
+    echo "exclusion list line not found after the extraction line"; return 1
+  fi
+  # 窓の中で comm へ書き込む行（comm= / comm+= / read comm / printf -v comm / declare comm=）
+  if grep -Eq '(^|[^[:alnum:]_])comm(\+|\[[^]]*\])?=|(^|[[:space:];&|])read([[:space:]]+-[[:alnum:]]+)*[[:space:]]+comm([[:space:]]|$)|-v[[:space:]]+comm([[:space:]]|$)' <<<"$window"; then
+    echo "comm is rewritten between extraction and the exclusion list"; return 1
+  fi
+  # 窓の中で ps を呼ぶ行（独自の取り出し）
+  if grep -q 'ps -o comm=' <<<"$window"; then
+    echo "ps -o comm= called between extraction and the exclusion list"; return 1
+  fi
+  return 0
 }
 
 @test "skill: comm extraction does not shell out to basename" {
@@ -243,22 +267,49 @@ wt_comm_window() {
   # 定めている。取り出しが片側だけ直ると、また片側だけがシェルを殺す。
   # 両側が同じ関数 proc_comm を 1 回だけ呼び、その結果を除外 case まで**一切加工しない**ことを
   # 固定する。加工の形（空行を挟む・case 文で書く・comm+= 等）に依存しない（issue #190）。
-  local side body window
+  local side body
   for side in detect_active_procs_under kill_devserver_under; do
     body=$(wt_skill_fn "$side" | grep -v '^[[:space:]]*#')
     [ -n "$body" ]
-    [ "$(printf '%s\n' "$body" | grep -c 'comm=$(proc_comm "$pid")')" = "1" ]
-    # 窓が空なら、取り出し行か case 行のどちらかが見つからなかった = 検査できていない。
-    # detect 側は `[ -n "$comm" ] || continue` が必ず窓に入るので、空は取り出し失敗を意味する。
-    window=$(wt_comm_window "$side")
-    if [ "$side" = "detect_active_procs_under" ]; then
-      [ -n "$window" ]
-    fi
-    # 窓の中で comm へ書き込む行（comm= / comm+= / read comm / printf -v comm / declare comm=）
-    run grep -Eq '(^|[^[:alnum:]_])comm(\+|\[[^]]*\])?=|(^|[[:space:];&|])read([[:space:]]+-[[:alnum:]]+)*[[:space:]]+comm([[:space:]]|$)|-v[[:space:]]+comm([[:space:]]|$)' <<<"$window"
+    run wt_comm_side_violations <<<"$body"
+    [ "$status" -eq 0 ]
+  done
+}
+
+@test "skill: the identity check catches one-sided rewrites in any shape (mutations)" {
+  # 検査そのものの見逃しを固定する（issue #190）。SKILL.md の本物の本体に変異を注入し、
+  # 検査が落とすことを確かめる。変異なしは通ること（対照）も確かめる。
+  local side body mutated
+  for side in detect_active_procs_under kill_devserver_under; do
+    body=$(wt_skill_fn "$side" | grep -v '^[[:space:]]*#')
+    run wt_comm_side_violations <<<"$body"
+    [ "$status" -eq 0 ]
+    # 空行を挟んだ代入
+    mutated=$(printf '%s\n' "$body" | sed '/^[[:space:]]*comm=\$(proc_comm "\$pid")$/a\
+\
+    comm=${comm%%.exe}')
+    run wt_comm_side_violations <<<"$mutated"
     [ "$status" -ne 0 ]
-    # 窓の中で ps を呼ぶ行（独自の取り出し）
-    run grep -q 'ps -o comm=' <<<"$window"
+    # 1 行の case
+    mutated=$(printf '%s\n' "$body" | sed '/^[[:space:]]*comm=\$(proc_comm "\$pid")$/a\
+    case "$comm" in *.exe) comm=${comm%%.exe};; esac')
+    run wt_comm_side_violations <<<"$mutated"
+    [ "$status" -ne 0 ]
+    # 複数行の case（最初の case を除外リストと取り違えると素通りする形）
+    mutated=$(printf '%s\n' "$body" | sed '/^[[:space:]]*comm=\$(proc_comm "\$pid")$/a\
+    case "$comm" in\
+      *.exe) comm=${comm%%.exe} ;;\
+    esac')
+    run wt_comm_side_violations <<<"$mutated"
+    [ "$status" -ne 0 ]
+    # 取り出しと同じ行での加工
+    mutated=$(printf '%s\n' "$body" | sed 's/^\([[:space:]]*comm=\$(proc_comm "\$pid")\)$/\1; comm=${comm%%.exe}/')
+    run wt_comm_side_violations <<<"$mutated"
+    [ "$status" -ne 0 ]
+    # 窓の中で ps を撃つ独自の取り出し
+    mutated=$(printf '%s\n' "$body" | sed '/^[[:space:]]*comm=\$(proc_comm "\$pid")$/a\
+    [ -n "$comm" ] || comm=$(ps -o comm= -p "$pid")')
+    run wt_comm_side_violations <<<"$mutated"
     [ "$status" -ne 0 ]
   done
 }
