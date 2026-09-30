@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# dev-workflow プラグイン直下 references/ に置く共有契約 4 本の構造検証（issue #205）
+# dev-workflow プラグイン直下 references/ に置く共有契約 5 本の構造検証（issue #205 / #254）
 #
 # spec: dev-workflow-shared-references
 #
@@ -15,6 +15,7 @@ setup() {
   PRBODY="${REFS}/pr-body-format.md"
   TIERS="${REFS}/model-tiers.md"
   WFEXEC="${REFS}/workflow-execution.md"
+  WAITING="${REFS}/subagent-waiting.md"
   README="${PLUGIN_DIR}/README.md"
   TRIPWIRES="${PLUGIN_DIR}/templates/escalation-tripwires.md"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
@@ -32,16 +33,17 @@ setup() {
 
 # --- Requirement: 共有契約はプラグイン直下 references/ に置く ---
 
-@test "the four shared contracts exist under plugins/dev-workflow/references" {
+@test "the five shared contracts exist under plugins/dev-workflow/references" {
   [ -f "$SELFV" ]
   [ -f "$PRBODY" ]
   [ -f "$TIERS" ]
   [ -f "$WFEXEC" ]
+  [ -f "$WAITING" ]
 }
 
-@test "plugin README has a references section naming all four files" {
+@test "plugin README has a references section naming all five files" {
   grep -qE '^##+ .*references/' "$README"
-  for f in self-verification.md pr-body-format.md model-tiers.md workflow-execution.md; do
+  for f in self-verification.md pr-body-format.md model-tiers.md workflow-execution.md subagent-waiting.md; do
     grep -q "$f" "$README" || { echo "README does not mention ${f}"; return 1; }
   done
 }
@@ -59,8 +61,8 @@ setup() {
 
 @test "self-verification authoring rule points skills at the new path" {
   grep -qF 'plugins/dev-workflow/references/self-verification.md' "$SELFV"
-  ! grep -q 'plugins/loops/' "$SELFV"
-  ! grep -q 'plugins/longrun/' "$SELFV"
+  ! grep -q 'plugins/loops/' "$SELFV" || return 1
+  ! grep -q 'plugins/longrun/' "$SELFV" || return 1
 }
 
 @test "self-verification audit list has the six live skills and no retired ones" {
@@ -74,7 +76,7 @@ setup() {
     "plugins/experience-to-skill/skills/experience-to-skill/SKILL.md"; do
     grep -qF "$p" "$SELFV" || { echo "missing ${p}"; return 1; }
   done
-  ! grep -q 'longrun-plan\|loops-design\|loops-goalify\|longrun-feedback\|longrun-mvp' "$SELFV"
+  ! grep -q 'longrun-plan\|loops-design\|loops-goalify\|longrun-feedback\|longrun-mvp' "$SELFV" || return 1
 }
 
 @test "all seven consumers reference the new self-verification path and none the old" {
@@ -90,7 +92,7 @@ setup() {
 
 @test "pr-body-format names issueify's new path as the generation source and no retired paths" {
   grep -qF 'plugins/dev-workflow/skills/issueify/SKILL.md' "$PRBODY"
-  ! grep -q 'loops-issueify\|loops-dev-agent-install\|agent-loop-template' "$PRBODY"
+  ! grep -q 'loops-issueify\|loops-dev-agent-install\|agent-loop-template' "$PRBODY" || return 1
 }
 
 # --- Requirement: モデルティアはロール別の対応表と降格規則だけを引き継ぐ ---
@@ -116,14 +118,14 @@ setup() {
 }
 
 @test "model-tiers carries no longrun-specific machinery" {
-  ! grep -q 'LONGRUN' "$TIERS"
-  ! grep -q 'resolve-model-allocation' "$TIERS"
-  ! grep -q 'plan.md\|plan-template' "$TIERS"
+  ! grep -q 'LONGRUN' "$TIERS" || return 1
+  ! grep -q 'resolve-model-allocation' "$TIERS" || return 1
+  ! grep -q 'plan.md\|plan-template' "$TIERS" || return 1
 }
 
 @test "rules/subagent-model-selection points at model-tiers in one line without growing" {
   grep -qF 'plugins/dev-workflow/references/model-tiers.md' "$RULE"
-  ! grep -q 'plugins/longrun/' "$RULE"
+  ! grep -q 'plugins/longrun/' "$RULE" || return 1
   [ "$(grep -cF 'plugins/dev-workflow/references/model-tiers.md' "$RULE")" = "1" ]
   [ "$(wc -l < "$RULE" | tr -d ' ')" -le 43 ]
 }
@@ -152,15 +154,15 @@ setup() {
 }
 
 @test "workflow-execution has no longrun exec or plan.md leftovers" {
-  ! grep -qF '/lr:e' "$WFEXEC"
-  ! grep -q 'longrun:exec' "$WFEXEC"
-  ! grep -q 'plan.md' "$WFEXEC"
+  ! grep -qF '/lr:e' "$WFEXEC" || return 1
+  ! grep -q 'longrun:exec' "$WFEXEC" || return 1
+  ! grep -q 'plan.md' "$WFEXEC" || return 1
 }
 
 @test "tripwires and develop SKILL.md route large work to workflow-execution instead of /lr:e" {
   grep -q 'workflow-execution.md' "$TRIPWIRES"
   grep -q 'workflow-execution.md' "$SKILL"
-  ! grep -qF '/lr:' "$TRIPWIRES"
-  ! grep -qF '/lr:' "$SKILL"
-  ! grep -q 'longrun' "$SKILL"
+  ! grep -qF '/lr:' "$TRIPWIRES" || return 1
+  ! grep -qF '/lr:' "$SKILL" || return 1
+  ! grep -q 'longrun' "$SKILL" || return 1
 }

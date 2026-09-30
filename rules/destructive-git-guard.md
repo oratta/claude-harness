@@ -13,7 +13,7 @@
 - `git checkout -- <path>` / `git restore <path>`（作業破棄）
 - `git reset --hard` / `git clean -f`
 - `git commit --amend`（push 済み）/ `git rebase -i`
-- `git push origin main|master` / `git push --force[-with-lease]`
+- `git push <remote> main|master`（remote 名を問わない） / `git push --force[-with-lease]`
 - `git branch -D`
 - `--no-verify` / `--no-gpg-sign`
 

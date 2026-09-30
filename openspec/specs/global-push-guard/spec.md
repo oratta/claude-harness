@@ -83,12 +83,3 @@ SKILL.md は次の 3 点を明記しなければならない (MUST): (1) リポ�
 - **WHEN** SKILL.md の導入手順を読む
 - **THEN** フックファイルの上書きと設定の再設定のみで完結し、冪等である旨が示されている
 
-### Requirement: プラグインバージョンの更新
-
-`plugins/dev-workflow/.claude-plugin/plugin.json` の `version` は本変更に伴い更新前より大きい値へ上げ、`.claude-plugin/marketplace.json` の対応するエントリと一致させなければならない (MUST)。（旧 loops プラグインは解散したため対象外）
-
-#### Scenario: バージョンが上がり marketplace と一致する
-
-- **WHEN** dev-workflow の plugin.json と marketplace.json の該当エントリを比較する
-- **THEN** 変更前より大きい値であり、marketplace.json の値と一致している
-

@@ -8,11 +8,11 @@
 
 コード・スキル・コマンド・規範文書（openspec / docs / CLAUDE.md 等）を変えるときに、入口（issue 番号・URL・自然文・会話・cron・エピックの子）を問わず通す標準ワークフロー。旧スキル（issue 限定の入口だったもの）の後継。
 
-- **本体はオーケストレータ専任**: Edit でコードを書かず、レビューを代行しない。作業者 W・仕様レビュアー R1・ゲート実行者 G を `model` 明示で spawn し、return の要約と記録先のコメント・ラベルだけを見て次に誰を起こすかを決める（役割の指示書は `skills/develop/references/roles/`）
+- **本体はオーケストレータ専任**: Edit でコードを書かず、レビューを代行しない。作業者 W（dev-workflow:worker）・仕様レビュアー R1・ゲート実行者 G（dev-workflow:gate-runner） を `model` 明示で spawn し、return の要約と記録先のコメント・ラベルだけを見て次に誰を起こすかを決める（役割の指示書は `skills/develop/references/roles/`）
 - **入口 0（記録先の決定）**: issue があればそれ、無ければ issue を切らず、worktree 直後の空 commit → push → Draft PR を記録先にする（受け入れ条件は PR 本文。PR 本文に issue 参照を書かない）
-- **1 ループ**: W（仕様化判断の記録 → 分割判定 → `/opsx:ff`）→ R1（別コンテキストの仕様レビュー・2 周キャップ）→ W 再開（TDD 実装 → verify → archive → PR → 仕様宣言）→ G（pr-review-gate 手順 1〜5・2 周キャップ）
-- **モデル**: W / R1 / G は既定 `opus`。`worker.md` の「重要実装の事前分類」（聖域パス・マージ権限・層間契約・課金/法務）やマージ条件・聖域・層間契約に触れれば `fable`。残量モード（`FABLE_BUDGET_MODE`）は `references/decision-criteria.md`
-- **エピック**: 条件・作り方・回し方・完了条件を SKILL.md に規定。子 issue ごとに 1 ループを `isolation: "worktree"` で並列に回し、子が全部マージされただけでは閉じない
+- **1 ループ**: W（仕様化判断の記録 → 分割判定 → `openspec new change`）→ R1（別コンテキストの仕様レビュー・2 周キャップ）→ W 再開（(3a) TDD 実装 → verify で return。本体が計測してから (3b) archive → PR → 仕様宣言）→ G（pr-review-gate 手順 1〜5・2 周キャップ）
+- **モデル**: W（dev-workflow:worker）と G（dev-workflow:gate-runner）は既定 `sonnet`、R1 は既定 `opus`。**W（実行役）の上限は `opus`** で、`skills/develop/references/pre-classification.md` の事前分類（聖域パス・マージ権限・層間契約・課金/法務）に当たってもそこ止まり。Fable を使うのは読んで判断する役（R1・G が要求するレビュアー）が事前分類に当たるときだけで、`subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` は付けない。判定は `scripts/agent-model-guard.sh`）。共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）が `throttled` / `depleted` なら全役割 `sonnet` 起点。W / G の SendMessage 再開は毎回 `scripts/subagent-context.sh` で測る。上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言・前任が動作中のまま交代させる手順）は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、正本を読むまで手渡さない。残量モード（`FABLE_BUDGET_MODE`）は `skills/develop/references/decision-criteria.md`
+- **エピック**: 条件・作り方・回し方・完了条件を SKILL.md に規定。子 issue ごとに 1 ループを並列に回し（並列可能な子が 2 件以上で `orca` があり本体が Orca 管理のワークツリーにいれば Orca の子ワークツリーの独立セッション、それ以外は `isolation: "worktree"` のサブエージェント。`scripts/epic-dispatch.sh`）、子が全部マージされただけでは閉じない。Orca 経路の前提は、`orca` CLI があり本体が Orca 管理のワークツリーにいること。子セッションは既定で `cld --model '<model>'` で起動するので、ログイン zsh で `cld` が定義されている必要がある（定義は下の「Claude アカウントの起動時選択」）。Orca 側の Claude の起動コマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変える
 
 人間が `/develop` で直接依頼した場合でも、loop-dev-agent（各リポの憲法 `docs/agent-loop.md`）が無人サイクルの中から呼ぶ場合でも同じループを回す（`--unmanned` では憲法のメインが本体を務め、G は憲法 Step 1 に委ねる）。
 
@@ -23,7 +23,7 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 - 実装と**別コンテキスト**（既定 Codex CLI、フォールバック Task サブエージェント）でレビューする
 - **リスク宣言の positive affirmation**: 「リスクなし」か「主のリスク許容が必要」のどちらかを必ず PR コメントに残す（書かないは選べない・fail-closed）
 - 動作確認の**証拠**（HEAD SHA 付き）を添付し、API で実在を実測してから `agent-review:passed` を付ける
-- 収束ルール: レビューは既定2周キャップ・再レビューは差分限定・マージ後に直せるものは blocking にしない
+- 収束ルール: レビューは既定2周キャップ・再レビューは差分限定（方式の書き換え後は全体レビュー）・マージ後に直せるものは blocking にしない・マージを止めるのは全周共通で `blocking` かつ `confirmed` かつ違反文の引用（または例外 3 種）を G が照合できた指摘だけで、それ以外は follow-up issue・2周目の終わりに止める指摘が残れば `needs-approval` で主に上げる（3周目を自動で開けない）。レビュアーには手順 2-1 の固定書式（深刻度・検証・根拠・場所・何が起きるか・直し方）で指摘を書かせる
 - auto-merge workflow 配備済みリポでは passed 付与で機械マージ、未配備リポではマージは人間操作（ゲート手順は同一）
 
 ### push-guard-setup
@@ -34,9 +34,54 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 
 タスクメモ・バックログ md・TODO・受け入れ条件の無い issue を、測定可能な受け入れ条件付き GitHub issue に変換する（`skills/issueify/SKILL.md`。#205 で旧プラグインから移設）。入力はテキスト・ファイルパス・引数なし（`docs/` の未チェック項目や `TODO`/`FIXME` を自動発見）・`--existing`（既存 issue の補筆のみ）。1 issue = 1 論理タスクに原子化し、受け入れ条件を「実行コマンド + 期待値」に落とし、不足だけをヒアリングして、承認後に `gh issue create` する。`/develop` の issueify フォールバックはこのスキルを同プラグイン内で Read する。
 
+## Claude アカウントの起動時選択
+
+複数アカウントを `accounts.json` に登録済みなら、次の zsh function で週の進行に対する余裕が最大のアカウントを起動時に選べる。marketplace clone の場所は `CLAUDE_HARNESS_SCRIPTS` だけを変えれば差し替えられる。
+
+```zsh
+export CLAUDE_HARNESS_SCRIPTS="${CLAUDE_HARNESS_SCRIPTS:-$HOME/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts}"
+
+unalias cld cld-account 2>/dev/null
+
+cld() {
+  # probe は補助。実行条件を満たさない・取得に失敗したときも、selector はセッション記録と既存 snapshot の実効値で選ぶ。
+  "$CLAUDE_HARNESS_SCRIPTS/usage-probe.sh" >/dev/null 2>&1 || true
+
+  local selected selector_rc
+  selected="$("$CLAUDE_HARNESS_SCRIPTS/select-account.sh")"
+  selector_rc=$?
+  (( selector_rc == 0 )) || return "$selector_rc"
+
+  if [[ -z "$selected" ]]; then
+    env -u CLAUDE_SECURESTORAGE_CONFIG_DIR claude "$@"
+  else
+    env CLAUDE_SECURESTORAGE_CONFIG_DIR="$selected" claude "$@"
+  fi
+}
+
+cld-account() {
+  (( $# >= 1 )) || { print -u2 'usage: cld-account <slot-id> [claude-args...]'; return 2; }
+  local account_id="$1"
+  shift
+
+  local selected selector_rc
+  selected="$("$CLAUDE_HARNESS_SCRIPTS/select-account.sh" "$account_id")"
+  selector_rc=$?
+  (( selector_rc == 0 )) || return "$selector_rc"
+
+  if [[ -z "$selected" ]]; then
+    env -u CLAUDE_SECURESTORAGE_CONFIG_DIR claude "$@"
+  else
+    env CLAUDE_SECURESTORAGE_CONFIG_DIR="$selected" claude "$@"
+  fi
+}
+```
+
+関数定義前の `unalias` は、旧設定の `cld` / `cld-account` alias をこの関数へ置き換えるために必要。`cld` は probe を best-effort で実行してから自動選択し、`cld-account a --resume` のような明示選択では先頭の slot id を除いた引数をそのまま `claude` に渡す。selector の理由行は stderr に残る。空の選択値は既定アカウントを意味するため環境変数を空文字で設定せず `env -u` で解除する。未登録 id などで selector が非 0 なら function も同じ status で終了し、Claude は起動しない。
+
 ## references/（他プラグインと共有する契約）
 
-複数プラグインから参照される契約は、スキル配下ではなくプラグイン直下の `references/` に置く（#205 で旧プラグインから移設）。
+複数プラグインから参照される契約と、dev-workflow 内の複数スキル（develop の役割指示書と pr-review-gate）が共通で読む契約は、スキル配下ではなくプラグイン直下の `references/` に置く（#205 で旧プラグインから移設）。
 
 | ファイル | 内容 |
 |---|---|
@@ -44,6 +89,7 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 | `references/pr-body-format.md` | エージェントが書く PR / issue 本文の型（5 セクション・軽量モード・issue の承認判断 2 節）。`.github/PULL_REQUEST_TEMPLATE.md` と W の PR 手順が参照する |
 | `references/model-tiers.md` | Workflow スクリプトの `opts.model` に渡すロール別ティア → エイリアスの対応表と、残量モードによる降格。`rules/subagent-model-selection.md` が正本として指す |
 | `references/workflow-execution.md` | develop の 1 ループに収まらない規模をネイティブ Workflow ツールで回す型（Review → Build → Verify・Build Contract レビュー・verifier のしきい値・`resumeFromRunId`）。スクリプトの書き方は `workflow-authoring` スキルが正本 |
+| `references/subagent-waiting.md` | サブエージェントが長時間処理の完了を待つ方法の契約（完了待ちでターンを終えない・完了シグナルの経路別定義・前景ポーリングの雛形・待ち値と総待ちの上限）。develop の W / R1 / G の指示書と pr-review-gate スキルが参照する |
 
 ## テンプレート
 

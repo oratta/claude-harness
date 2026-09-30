@@ -1,8 +1,10 @@
 # R1（仕様レビュアー）の指示書 — develop スキル
 
-`/opsx:ff`（または openspec CLI 直叩き）で W が生成した change の artifact を、**実装に入る前に**実装と別コンテキストで審査する工程の正本。longrun の Build Contract レビュー（plan.md を実装前に審査する工程）を dev-workflow のパイプラインに置き直したもの。仕様レベルの穴（既存規約との整合・config に出すべき固有値・導入先の前提）を実装レビューに持ち込まないための工程で、実装 diff のレビュー（pr-review-gate。G の担当）とは対象が違う。
+W が `openspec new change` と artifact の直書きで作った change（本体や主が `/opsx:ff` で先に作った change を含む）の artifact を、**実装に入る前に**実装と別コンテキストで審査する工程の正本。longrun の Build Contract レビュー（plan.md を実装前に審査する工程）を dev-workflow のパイプラインに置き直したもの。仕様レベルの穴（既存規約との整合・config に出すべき固有値・導入先の前提）を実装レビューに持ち込まないための工程で、実装 diff のレビュー（pr-review-gate。G の担当）とは対象が違う。
 
 R1 は develop の本体が spawn するサブエージェント（W とは別コンテキスト）。R1 が読むのは**このファイル**と、本体から渡される change ディレクトリ・記録先。
+
+**長い処理の完了を待つ目的でターンを終えない**（`subagent_type: dev-workflow:decider` で起こされた R1 は `Bash` を持たず、待ちを伴う作業自体を持たない）。待ちが要る役割の待ち方の正本は `plugins/dev-workflow/references/subagent-waiting.md`。
 
 ## 前提
 
@@ -25,24 +27,25 @@ R1 は develop の本体が spawn するサブエージェント（W とは別�
 
 ## R1 の spawn（本体が行う。R1 は確認だけ）
 
-- **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。既定は中位ティア `opus`。仕様が `references/roles/worker.md` の「重要実装の事前分類」表（聖域パス等。正本はそこ）に当たる場合、またはマージ条件・聖域・層間契約に触れる場合は `fable`
-- 残量モード（`FABLE_BUDGET_MODE`）は `references/decision-criteria.md` の規定どおり: `reserve` は**自動実行（unmanned / cron / loop 経由）のみ** `opus` 上限、`exhausted` は**全経路**で `opus` 上限。interactive の `reserve` は `conserve` と同一に扱う（仕様レビューは verify 側の役割なので `fable` 可）
+- **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。既定は `subagent_type: general-purpose` に `model: opus`。仕様が `references/pre-classification.md` の「重要実装の事前分類」表の分類（マージ権限・層間契約・課金/法務。正本はそこ）に当たる場合は、**`subagent_type: dev-workflow:decider` で spawn する**（`general-purpose` に `model: fable` を付けない。`scripts/agent-model-guard.sh` が拒否する）。聖域パスだけでは上げない。ただし共有枠モードが上限を先に決める（次項）
+- モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 固定・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類（マージ権限・層間契約・課金/法務）による `dev-workflow:decider`（聖域パスは `opus` 止まり） ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限。このとき種別は `dev-workflow:decider` のまま `model: opus` に落とす）。正本は `references/decision-criteria.md`。 interactive の `reserve` は `conserve` と同一に扱う（仕様レビューは verify 側の役割なので決める役として立ててよい）。`throttled` では事前分類に当たっても `opus` 止まり、`depleted` では `sonnet`
 - R1 は**読み取り専用**。仕様ファイル・コードを一切変更しない（修正は本体が W を再開して行わせる）
 
 ## レビュアーへの入力
 
 1. change ディレクトリ `openspec/changes/<name>/` の artifact（proposal / specs / design / tasks）を全部
-2. 記録先の受け入れ条件（issue 本文、または Draft PR 本文）とコメント
+2. 記録先の受け入れ条件（issue 本文、または Draft PR 本文）とコメント。**`dev-workflow:decider` で起こす経路では、R1 は `Bash` を持たず `gh` で記録先を取りに行けないので、本体が本文と関連コメント（受け入れ条件・`仕様化判断:` の記録・前周の指摘）を入力文に貼り付けて渡す**
 3. 関連する既存 `openspec/specs/`。**全読みしない** — `grep -rn` で当たりを付けてから該当 spec だけ Read する（コンテキスト溢れ防止）
 4. 触る予定のスキル・スクリプトの該当箇所
 
-## レビュー観点（5 つ。すべて検査する）
+## レビュー観点（6 つ。すべて検査する）
 
 1. **受け入れ条件の一意性**: Scenario の WHEN/THEN が一意に決まりテスト可能か（bats 等で検証できる粒度か）
 2. **既存 spec との整合**: 既存 `openspec/specs/` の MUST/SHALL と衝突・重複しないか。衝突があれば **spec のパスと要件名**を挙げる
 3. **固有値の直書き**: リポ固有の値（時刻・製品名・パス）が要件に直書きされていないか。config や引数に出す修正案を出す
 4. **前提の明記**: 導入先・前提環境（プラグイン・CLI・権限）が書かれているか
 5. **相互整合**: proposal ↔ specs ↔ design ↔ tasks が整合しているか（Capabilities と spec ファイル、design の決定と要件、tasks の網羅）
+6. **守備範囲の明記**: 入力を検査・判定する要件（検査・lint・ゲート・パーサ・バリデータのように、入力を受け取って通す／落とす／分類する振る舞いを定める要件）に、「何から守るか」と「何は守らないか」の両方を書いた段落があるか。段落に要る要素は ①想定する入力の出どころ ②拾いたい誤り ③通ることを許す入力の具体例 ④穴が見つかるたびに塞ぎ切ることを完了条件にしない、の 4 つ。守備範囲が無い、または片方しか無ければ、その欠落を BLOCKER とし `REQUEST_CHANGES` で差し戻す（PR レビューで「この入力も通る」と指摘されたとき、範囲外と判定する根拠が仕様側に無いと周回が止まらないため）。入力の検査を含まない要件には求めない。検査するのはこの change の delta spec が追加（ADDED）・改定（MODIFIED）する要件だけで、change が触れない既存 `openspec/specs/` の要件には遡及しない
 
 ## 出力書式（R1 が本体に return する）
 
@@ -59,7 +62,9 @@ R1 は develop の本体が spawn するサブエージェント（W とは別�
 
 判定基準: BLOCKER 0 件なら APPROVE。過剰品質は求めず「実装に支障がないか」を基準にする。
 
-## 結果を記録先に記録する（R1 が投稿する）
+## 結果を記録先に記録する（R1 が投稿する。decider 経路は本体が代理投稿する）
+
+**`subagent_type: dev-workflow:decider` で起こされた R1 は投稿しない。** 決める役は `Bash` を持たず `gh` を実行できないので、下の書式の本文を return し、本体が同じ書式で代理投稿する（コメントの 2 行目に「レビュアー fable（dev-workflow:decider）・本体が代理投稿」と書く）。`general-purpose` + `model` で起こされた R1 は従来どおり自分で投稿する。
 
 return する前に、結果を記録先のコメントとして記録する。1 行目は正規表現 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$` に完全一致、2 行目以降に周回数（何周目で確定したか）・レビュアーのモデル・残課題を書く:
 
@@ -75,5 +80,5 @@ gh pr comment <PR番号> --body "$(printf '仕様レビュー: REQUEST_CHANGES\n
 ## 往復の上限
 
 - **2 周で確定**: 初回 ＋ 修正後の差分再レビュー 1 回。再レビューは 1 周目の指摘が閉じたかと、修正で新たに生じた矛盾だけを見る（新規の気づきは NOTE に留める）
-- 3 周目の例外は設けない（pr-review-gate の「新規の高深刻度 blocking のみ 3 周目可」は PR レビュー側の規定。仕様段階なら人に返す方が安い）
+- 3 周目の例外は設けない（pr-review-gate 側は 2 周目終了時に引用で仕分けて主に上げる。仕様段階でも人に返す方が安い）
 - 2 周目でも BLOCKER が残る場合: 記録先に `needs-approval` を付けて経緯をコメントし、interactive モードでは本体が AskUserQuestion で判断を仰ぎ、unmanned モードではそのサイクルを終了する
