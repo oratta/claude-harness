@@ -423,6 +423,38 @@ SH
   [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-split-assign after-split-plus-assign " ]
 }
 
+# 上の修正（#244）に対する PR #635 レビュー指摘 F1 の退行ガード。代入語として読むのは
+# コマンド位置（`if` `{` の直後を含む）か前置き代入の連なり（`x=1 a[…]=3 cmd`）の中だけで、
+# `: foo[bar <<EOF ]=3` のようなコマンドの引数は代入語ではない。引数の `foo[` を添字と
+# して開くと本物の `<<EOF` を読み飛ばし、本文の偽の report を数え、本文のアポストロフィ
+# で以降の本物の呼び出しを数え落とす。行継続で `]` と `=` を分けた形も同じ。
+@test "check: a bracket in a command argument is not an assignment subscript" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-arg-subscript.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+: foo[bar <<EOF ]=3
+don't report "in-heredoc-arg" "x"
+EOF
+report "after-arg-heredoc" "a"
+: foo[bar <<EOF ]\
+=3
+don't report "in-heredoc-split-arg" "x"
+EOF
+report "after-split-arg-heredoc" "b"
+x=1 a[1<<2]=3 true
+report "after-prefix-assign" "c"
+if b[1<<2]=3; then { c[1<<2]=4; }; fi
+report "after-reserved-word-assign" "d"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "4" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "4" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-arg-heredoc after-prefix-assign after-reserved-word-assign after-split-arg-heredoc " ]
+}
+
 # 添字判定を bash の位置規則に揃えた副作用で、添字でない `[` の扱いが変わっていないことの
 # 確認。test コマンド `[ -f x ]`・`[[ … ]]`・連想配列の `${m[key]}` `${#m[@]}` `${!m[@]}`・
 # glob の文字クラス `file[a-z].txt` のどれも、直後のヒアドキュメント本文を本文のまま扱い、
