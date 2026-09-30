@@ -1,0 +1,57 @@
+## ADDED Requirements
+
+### Requirement: 本体は role profile から executor を選ぶ
+名前付き role profile を使う develop 本体は、新しい profile role を起動する直前に canonical role の executor/account/model/effort を共通 resolver から取得し、executor=claude なら Agent、executor=codex なら foreground request/run 経路を選ばなければならない（MUST）。resolver は profile の model を要求値として変更せず返す。Claude Agent の起動時には既存の `FABLE_BUDGET_MODE` と `SHARED_BUDGET_MODE` の上限を要求 model より優先し、要求 model・実際に Agent へ渡す適用 model・変更理由（変更しない場合は変更なし）を区別して扱わなければならない（MUST）。executor の選択は transport と execution setting だけを変え、仕様化判断、工程順、独立レビュー、差戻し上限、verify、archive、PR gate の条件を変えてはならない（MUST NOT）。
+
+#### Scenario: 1 つの profile で executor が工程間に変わる
+- **WHEN** spec-write=codex、spec-review=claude の profile で仕様化工程を進める
+- **THEN** W は Codex foreground 経路、R1 は Claude Agent 経路で別 thread として動き、R1 の APPROVE が記録されるまで実装へ進まない
+
+#### Scenario: executor 切替でも canonical role を維持する
+- **WHEN** 同じ role の executor を profile で Claude から Codex または Codex から Claude へ変える
+- **THEN** role の指示書、read-only/write 権限、return 契約、記録先、次工程の判定は変わらず、provider 固有の起動操作だけが変わる
+
+#### Scenario: 通常モードでは要求 model をそのまま適用する
+- **WHEN** decider の resolver 結果が requested model=`fable` で、Fable と共有枠の残量モードがその model を制限しない
+- **THEN** applied model=`fable`、変更理由=変更なしとして Agent を起動する
+
+#### Scenario: exhausted は Fable 要求を Opus に制限する
+- **WHEN** decider の resolver 結果が requested model=`fable` で、`FABLE_BUDGET_MODE=exhausted` かつ共有枠が depleted ではない
+- **THEN** resolver 結果は `fable` のまま保持し、applied model=`opus`、変更理由=`FABLE_BUDGET_MODE=exhausted` として Agent を起動する
+
+#### Scenario: depleted はすべての要求を Sonnet に固定する
+- **WHEN** Claude role の resolver 結果が requested model=`fable` で、`SHARED_BUDGET_MODE=depleted`
+- **THEN** resolver 結果は `fable` のまま保持し、applied model=`sonnet`、変更理由=`SHARED_BUDGET_MODE=depleted` として Agent を起動する
+
+## MODIFIED Requirements
+
+### Requirement: 本体はオーケストレータ専任でコードもレビューも書かない
+SKILL.md は本体（メインセッション）の役割を「役割 W / R1 / G を model 明示で spawn し、return の要約と記録先（issue または Draft PR）のコメント・ラベルだけを見て次に誰を起こすかを決める」と規定しなければならない（MUST）。禁止事項として、本体が Edit でコードを書かないこと、本体がレビュー（仕様レビュー・PR レビュー）を代行しないことを明記しなければならない（MUST）。並列可能な役割は並列に起こしてよい（MAY）。ただし、1 つの作業ディレクトリ（worktree）で同時に動く同一役割のサブエージェントは常に 1 人でなければならない（MUST）。並列に起こしてよいのは、別々の worktree を持つ役割（エピックの子どうし、独立した change の W どうし）に限る（SHALL）。複数 change に割れた場合の change ごとの W 並列も、change ごとに worktree を分けて起こすものとする（MUST）。
+
+名前付き profile を使わない Claude 経路では、W は名前付きで spawn する（SHALL）。名前付き profile を使う場合は profile role ごとに thread と起動時の要求 tuple / 適用 model を記録する。canonical develop が同じ Claude role を再開する前には毎回、現在有効な残量モードの上限を確認し、既存 thread の適用 model が上限内である場合に限って SendMessage で再開しなければならない（MUST）。適用 model が現在の上限を超える場合は SendMessage で再開せず、既存の工程完了または停止確認の条件を満たしてから、要求 tuple を変更せず、上限内の適用 model で同じ role の fresh thread へ手渡しし、要求値・適用値・変更理由を記録しなければならない（MUST）。profile role が変わる場合、または executor=codex の場合も fresh thread に成果物と必要な要約を渡す（SHALL）。どの経路でも、別コンテキストを要する工程はすべて本体が起こし、W が孫を呼ぶ必要がある工程を設けてはならない（MUST NOT）。
+
+#### Scenario: 禁止事項が明記されている
+- **WHEN** SKILL.md の「本体の役割」節を読む
+- **THEN** 本体が Edit でコードを書かないこと、レビューを代行しないこと、役割を model 明示で spawn することが書かれている
+
+#### Scenario: W の再開は profile role と executor に従う
+- **WHEN** SKILL.md の 1 ループと profile 経路の記述を読む
+- **THEN** profile 無しと同じ profile role の Claude W は再開前に現在の上限を確認し、適用 model が上限内のときだけ名前付き thread を SendMessage で再開すること、上限超過・profile role の変更・Codex W の場合は fresh thread に成果物と必要な要約を渡すこと、W が孫を呼ぶ工程が無いことが書かれている
+
+#### Scenario: 再開前に exhausted へ変わった
+- **GIVEN** requested model=`fable`、applied model=`fable` で起動した同じ Claude role の名前付き thread がある
+- **WHEN** 再開前に `FABLE_BUDGET_MODE=exhausted` へ変わり、共有枠は depleted でない
+- **THEN** SendMessage で再開せず、工程完了または停止確認後に requested model=`fable` を保持した fresh thread へ applied model=`opus` で手渡しし、変更理由=`FABLE_BUDGET_MODE=exhausted` を記録する
+
+#### Scenario: 再開前に depleted へ変わった
+- **GIVEN** requested model=`fable`、applied model=`fable` で起動した同じ Claude role の名前付き thread がある
+- **WHEN** 再開前に `SHARED_BUDGET_MODE=depleted` へ変わる
+- **THEN** SendMessage で再開せず、工程完了または停止確認後に requested model=`fable` を保持した fresh thread へ applied model=`sonnet` で手渡しし、変更理由=`SHARED_BUDGET_MODE=depleted` を記録する
+
+#### Scenario: 同一 worktree に同一役割を二重に spawn しない
+- **WHEN** ある worktree で W が稼働中である（手渡し待ち・停止指示待ちを含む）
+- **THEN** 本体はその worktree に対して別の W をもう 1 人 spawn しない（手渡し・再開のいずれであっても。いつ手渡してよいかは `plugins/dev-workflow/skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本）
+
+#### Scenario: 別 worktree の並列はこの制約の対象外
+- **GIVEN** エピックの子どうし、または独立した change の W どうしが、それぞれ別の worktree で動いている
+- **THEN** 本体はこれらを並列に起こしてよく、同一 worktree 制約には抵触しない

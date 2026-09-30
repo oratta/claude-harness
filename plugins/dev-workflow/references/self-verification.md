@@ -49,6 +49,6 @@
 
 | 実パス | 判定理由 |
 |--------|----------|
-| `plugins/dev-workflow/skills/develop/SKILL.md`・`skills/pr-review-gate/SKILL.md`・`skills/issueify/SKILL.md` | 対象外。オーケストレータ／ゲート／起票の手順そのもので、成果物の検証（テスト・lint の exit code、宣言コメントの API 実測、承認後の `gh issue create`）が本文の手順に既に組み込まれている。 |
+| `plugins/dev-workflow/skills/develop/SKILL.md`・`skills/pr-review-gate/` 配下（索引 `SKILL.md`・`stages/`・`declarations.md`）・`skills/issueify/SKILL.md` | 対象外。オーケストレータ／ゲート／起票の手順そのもので、成果物の検証（テスト・lint の exit code、宣言コメントの API 実測、承認後の `gh issue create`）が本文の手順に既に組み込まれている。 |
 | `plugins/casting/skills/casting/SKILL.md` | 対象外。配役表・判例の書き方の手順で、生成物の lint は `scripts/casting-check.sh` が担い、コマンド側（`/casting:init`）が実行結果を確認する。 |
 | `plugins/skill-pack/skills/skill-pack/SKILL.md` | 対象外。`skillOverrides`/`enabledPlugins` の設定編集のみを行い、成果物は設定ファイルであって、反映確認は Claude Code の設定パースと `/reload-plugins` 後のスキル一覧に委ねる。 |

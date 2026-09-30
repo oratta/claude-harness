@@ -19,7 +19,7 @@ setup() {
   printf '%s\n' "$output" | grep -qx 'SPEC_TOUCH=yes'
   printf '%s\n' "$output" | grep -qx 'OPENSPEC_DIFF=no'
   printf '%s\n' "$output" | grep -qx 'docs/foo.md'
-  ! printf '%s\n' "$output" | grep -qx 'lib/a.ts'
+  ! printf '%s\n' "$output" | grep -qx 'lib/a.ts' || return 1
 }
 
 @test "openspec diff present -> exit 0" {
@@ -49,7 +49,7 @@ setup() {
   [ "$status" -eq 2 ]
   printf '%s\n' "$output" | grep -qx 'SPEC_TOUCH=yes'
   printf '%s\n' "$output" | grep -qx 'handbook/a.md'
-  ! printf '%s\n' "$output" | grep -qx 'docs/foo.md'
+  ! printf '%s\n' "$output" | grep -qx 'docs/foo.md' || return 1
 }
 
 @test "missing arguments -> exit 1" {

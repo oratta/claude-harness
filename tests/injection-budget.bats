@@ -93,6 +93,132 @@ list_synced_md() {
   done
 }
 
+# ── path スコープ（frontmatter の paths:）─────────────────────
+# 配布（scripts/sync.sh の symlink）と常時注入は別の判定である。sync.sh は paths: の
+# 有無にかかわらず symlink するので、配布対象＝list_synced_md のまま。常時注入対象は
+# そこから paths: 保持ファイルを除いたもの（対象パスのファイルを読んだときだけ載るため）。
+#
+# 2026-09 時点の手元（Claude Code 2.1.268）では ~/.claude/rules/ に置いた paths: 付き
+# ルールは一度も注入されない（issue #260 の実機確認）。いまの rules/*.md に paths: を
+# 持つファイルは 1 本も無いので、この経路は将来 paths: が動くようになったときのための
+# ものである。それでも先に入れてあるのは、paths: ["**"] のような全体一致の glob を付けて
+# 「常時載ったまま合計からだけ消す」削減の偽装を、後から塞げなくなる前に塞ぐため。
+
+# has_paths <file> — frontmatter にトップレベル `paths:` があれば 0。
+has_paths() {
+  [ -f "$1" ] || return 1
+  awk 'NR == 1 { if ($0 != "---") exit; next }
+       /^---[ \t]*$/ { exit }
+       /^paths:/ { found = 1; exit }
+       END { exit (found ? 0 : 1) }' "$1"
+}
+
+# frontmatter_paths_globs <file> — frontmatter の paths: が持つ glob を 1 行 1 件で出力する。
+# ブロック表記（`paths:` の下に `  - "..."`）とフロー表記（`paths: ["...", "..."]`）の
+# 両方を読む。引用符と前後の空白は sed 側で落とす（awk の正規表現に単引用符を書かないため）。
+frontmatter_paths_globs() {
+  awk 'NR == 1 { if ($0 != "---") exit; next }
+       /^---[ \t]*$/ { exit }
+       /^paths:/ {
+         rest = $0
+         sub(/^paths:[ \t]*/, "", rest)
+         if (rest != "") {
+           sub(/^\[/, "", rest); sub(/\][ \t]*$/, "", rest)
+           n = split(rest, items, ",")
+           for (i = 1; i <= n; i++) print items[i]
+           inp = 0
+         } else { inp = 1 }
+         next
+       }
+       inp && /^[ \t]*-[ \t]*/ { line = $0; sub(/^[ \t]*-[ \t]*/, "", line); print line; next }
+       inp && /^[^ \t]/ { inp = 0 }' "$1" \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+          -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/" \
+    | grep -v '^$' || true
+}
+
+# glob_has_literal_segment <glob> — `/` で区切った要素のうち、ワイルドカード文字
+# （* ? [ ] { }）を 1 つも含まず英数字を 1 文字以上含むものが 1 つ以上あれば 0。
+# `**` `*` `**/*` `**/*.md` はこれを満たさない。満たさない glob を許すと、
+# 実際には常時載っているルールを合計からだけ外せてしまう。
+glob_has_literal_segment() {
+  awk -v g="$1" 'BEGIN {
+    wild = "*?[]{}"
+    n = split(g, seg, "/")
+    for (i = 1; i <= n; i++) {
+      s = seg[i]; bad = 0
+      for (j = 1; j <= length(s); j++) { if (index(wild, substr(s, j, 1)) > 0) { bad = 1; break } }
+      if (bad) continue
+      if (s ~ /[A-Za-z0-9]/) exit 0
+    }
+    exit 1
+  }'
+}
+
+# check_paths_globs_z — stdin の NUL 区切り一覧について paths: の glob を検査する。
+# 違反を「ファイル名<TAB>glob」で出力し、1 件でもあれば 1 を返す。
+check_paths_globs_z() {
+  local f g rc=0 found
+  while IFS= read -r -d '' f; do
+    [ -f "$f" ] || continue
+    if ! has_paths "$f"; then continue; fi
+    found=0
+    while IFS= read -r g; do
+      found=1
+      if ! glob_has_literal_segment "$g"; then
+        printf '%s\t%s\n' "$f" "$g"
+        rc=1
+      fi
+    done < <(frontmatter_paths_globs "$f")
+    if [ "$found" -eq 0 ]; then
+      printf '%s\t%s\n' "$f" "(paths: に glob が 1 件も無い)"
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
+check_paths_globs() { emit_z "$@" | check_paths_globs_z; }
+
+check_all_paths_globs() {
+  { list_synced_md "$REPO_ROOT/rules"; list_synced_md "$REPO_ROOT/output-styles"; } | check_paths_globs_z
+}
+
+# list_always_on_md <dir> — 配布対象から paths: 保持ファイルを除いた常時注入対象。
+list_always_on_md() {
+  local f
+  while IFS= read -r -d '' f; do
+    if ! has_paths "$f"; then printf '%s\0' "$f"; fi
+  done < <(list_synced_md "$1")
+  return 0
+}
+
+# list_path_scoped_md <dir> — 配布対象のうち paths: 保持ファイルだけ。
+list_path_scoped_md() {
+  local f
+  while IFS= read -r -d '' f; do
+    if has_paths "$f"; then printf '%s\0' "$f"; fi
+  done < <(list_synced_md "$1")
+  return 0
+}
+
+# path_scoped_notes [<dir>...] — 除外したファイルを示す注記行。引数なしなら rules と
+# output-styles を見る。**TAB 文字を含めてはならない** — 内訳の合計は sum_breakdown が
+# TAB 区切りの 2 列目を足して求めるので、TAB 付きで出すと除外したバイト数が合計に戻る。
+path_scoped_notes() {
+  local dirs dir f n
+  if [ "$#" -gt 0 ]; then dirs=("$@"); else dirs=("$REPO_ROOT/rules" "$REPO_ROOT/output-styles"); fi
+  for dir in "${dirs[@]}"; do
+    [ -d "$dir" ] || continue
+    while IFS= read -r -d '' f; do
+      n=$(wc -c < "$f" | tr -d '[:space:]')
+      printf '（除外）%s は paths: を持つため常時注入の合計に入らない（%s バイト。配布はされる）\n' \
+        "${f#"$REPO_ROOT"/}" "$n"
+    done < <(list_path_scoped_md "$dir")
+  done
+  return 0
+}
+
 # frontmatter_descriptions <file> — frontmatter（1 行目の `---` から次の `---` まで）に
 # 現れる `description:` 行を**全件**、「行番号<TAB>値」で出力する。
 #
@@ -163,10 +289,10 @@ list_all_description_files() {
 # （tests/agents-md-sync.bats が同一性を強制）で、セッションに注入されるのは片方だけ
 # なので測定対象に含めない（含めると同じ文が二重計上される）。
 breakdown() {
-  printf '%s\t%s\n' "rules/*.md"        "$(list_synced_md "$REPO_ROOT/rules" | sum_files_z)"
+  printf '%s\t%s\n' "rules/*.md"        "$(list_always_on_md "$REPO_ROOT/rules" | sum_files_z)"
   printf '%s\t%s\n' "CLAUDE.md"         "$(emit_z "$REPO_ROOT/CLAUDE.md" | sum_files_z)"
   printf '%s\t%s\n' "output-styles/*.md（メインセッションのみ。サブエージェントには載らない）" \
-                                        "$(list_synced_md "$REPO_ROOT/output-styles" | sum_files_z)"
+                                        "$(list_always_on_md "$REPO_ROOT/output-styles" | sum_files_z)"
   printf '%s\t%s\n' "plugins SKILL.md description"   "$(list_plugin_skills | sum_descriptions_z)"
   printf '%s\t%s\n' "plugins agent description"      "$(list_plugin_agents | sum_descriptions_z)"
   printf '%s\t%s\n' "plugins command description"    "$(list_plugin_commands | sum_descriptions_z)"
@@ -224,6 +350,11 @@ report() { # <verdict> <budget> <total> <内訳テキスト>
   printf '%s\n' "$lines" | while IFS=$'\t' read -r name bytes; do
     printf '  %8s バイト  %s\n' "$bytes" "$name"
   done
+  local notes
+  notes=$(path_scoped_notes)
+  if [ -n "$notes" ]; then
+    printf '%s\n' "$notes" | while IFS= read -r note; do printf '  %s\n' "$note"; done
+  fi
   echo "--- 取るべき行動 ---"
   if [ "$v" = "over" ]; then
     echo "  (1) 固定分を削る（内訳の大きい行から、常時注入をやめて必要時読み込みへ移す）"
@@ -364,6 +495,117 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   [ "$(list_synced_md "$TMPD" | sum_files_z)" -eq 10 ]
 }
 
+@test "a paths frontmatter leaves the always-on listing but stays in the synced listing" {
+  cat > "$TMPD/scoped.md" <<'EOF'
+---
+paths:
+  - "**/claude-harness/rules/**"
+---
+
+scoped body
+EOF
+  printf '%s' '1234567890' > "$TMPD/plain.md"
+  local scoped plain
+  scoped=$(wc -c < "$TMPD/scoped.md")
+  plain=$(wc -c < "$TMPD/plain.md")
+  # 配布対象（sync.sh が symlink する条件）は paths: の有無で変わらない
+  [ "$(list_synced_md "$TMPD" | sum_files_z)" -eq $((scoped + plain)) ]
+  # 常時注入対象はそこから paths: 保持ファイルを除いたもの
+  [ "$(list_always_on_md "$TMPD" | sum_files_z)" -eq "$plain" ]
+  [ "$(list_path_scoped_md "$TMPD" | sum_files_z)" -eq "$scoped" ]
+}
+
+@test "a paths list of whole-match globs is detected and its filename is printed" {
+  cat > "$TMPD/bad.md" <<'EOF'
+---
+paths:
+  - "**"
+  - "**/*"
+  - "*"
+  - "**/*.md"
+---
+EOF
+  run check_paths_globs "$TMPD/bad.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"bad.md"* ]] || return 1
+  [ "$(printf '%s\n' "$output" | grep -c 'bad.md')" -eq 4 ]
+}
+
+@test "a paths glob carrying a literal path segment passes" {
+  cat > "$TMPD/good.md" <<'EOF'
+---
+paths:
+  - "**/claude-harness/rules/**"
+  - "plugins/dev-workflow/**"
+  - "rules/**"
+  - "**/oratta-claude-harness/**"
+---
+EOF
+  run check_paths_globs "$TMPD/good.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "an inline flow list in paths is checked the same way" {
+  cat > "$TMPD/flow.md" <<'EOF'
+---
+paths: ["**/*", "rules/**"]
+---
+EOF
+  run check_paths_globs "$TMPD/flow.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"flow.md"* ]] || return 1
+  [ "$(printf '%s\n' "$output" | grep -c 'flow.md')" -eq 1 ]
+}
+
+@test "an empty paths key is a violation" {
+  cat > "$TMPD/empty.md" <<'EOF'
+---
+paths:
+description: x
+---
+EOF
+  run check_paths_globs "$TMPD/empty.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"empty.md"* ]] || return 1
+}
+
+@test "exclusion notes carry no tab so sum_breakdown does not add them back" {
+  cat > "$TMPD/scoped.md" <<'EOF'
+---
+paths:
+  - "**/claude-harness/rules/**"
+---
+
+scoped body
+EOF
+  printf '%s' '1234567890' > "$TMPD/plain.md"
+  local notes base combined tab
+  tab=$(printf '\t')
+  notes=$(path_scoped_notes "$TMPD")
+  [ -n "$notes" ]
+  [ "$(printf '%s\n' "$notes" | grep -c "$tab")" -eq 0 ]
+  base=$(breakdown | sum_breakdown)
+  combined=$( { breakdown; printf '%s\n' "$notes"; } | sum_breakdown )
+  [ "$base" -eq "$combined" ]
+}
+
+@test "with no path-scoped rules the rules line is the full total and no note is printed" {
+  local rules_line all_bytes
+  rules_line=$(breakdown | awk -F'\t' '$1 == "rules/*.md" { print $2 }')
+  all_bytes=$(list_synced_md "$REPO_ROOT/rules" | sum_files_z)
+  [ "$rules_line" -eq "$all_bytes" ]
+  [ -z "$(path_scoped_notes)" ]
+  run report over 50000 52000 "$(breakdown)"
+  [ "$(printf '%s\n' "$output" | grep -c '（除外）')" -eq 0 ]
+}
+
+@test "every paths glob in the repo has a literal path segment" {
+  run check_all_paths_globs
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 @test "description totals do not count trailing newlines" {
   # 値が 12 バイト（"012345678901"）の description を 3 本。合計はちょうど 36。
   # 1 行ずつ改行込みで wc -c に流すと 39 になる（ファイル本数ぶんのずれ）。
@@ -454,7 +696,7 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   [ -f "$BUDGET_FILE" ]
   run read_budget
   [ "$status" -eq 0 ]
-  [[ "$output" =~ ^[0-9]+$ ]]
+  [[ "$output" =~ ^[0-9]+$ ]] || return 1
   [ "$(wc -l < "$BUDGET_FILE" | tr -d '[:space:]')" -eq 1 ]
 }
 
@@ -574,22 +816,22 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
 @test "the over-budget report shows budget, total and the overshoot" {
   run report over 50000 52000 "$(breakdown)"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"50000"* ]]
-  [[ "$output" == *"52000"* ]]
-  [[ "$output" == *"2000"* ]]
-  [[ "$output" == *"超過側 fail"* ]]
+  [[ "$output" == *"50000"* ]] || return 1
+  [[ "$output" == *"52000"* ]] || return 1
+  [[ "$output" == *"2000"* ]] || return 1
+  [[ "$output" == *"超過側 fail"* ]] || return 1
 }
 
 @test "the over-budget report lists all eight categories" {
   run report over 50000 52000 "$(breakdown)"
-  [[ "$output" == *"rules/*.md"* ]]
-  [[ "$output" == *"CLAUDE.md"* ]]
-  [[ "$output" == *"output-styles/*.md"* ]]
-  [[ "$output" == *"plugins SKILL.md description"* ]]
-  [[ "$output" == *"plugins agent description"* ]]
-  [[ "$output" == *"plugins command description"* ]]
-  [[ "$output" == *".claude/skills SKILL.md description"* ]]
-  [[ "$output" == *".claude/commands description"* ]]
+  [[ "$output" == *"rules/*.md"* ]] || return 1
+  [[ "$output" == *"CLAUDE.md"* ]] || return 1
+  [[ "$output" == *"output-styles/*.md"* ]] || return 1
+  [[ "$output" == *"plugins SKILL.md description"* ]] || return 1
+  [[ "$output" == *"plugins agent description"* ]] || return 1
+  [[ "$output" == *"plugins command description"* ]] || return 1
+  [[ "$output" == *".claude/skills SKILL.md description"* ]] || return 1
+  [[ "$output" == *".claude/commands description"* ]] || return 1
 }
 
 @test "AGENTS.md is not counted; CLAUDE.md appears exactly once" {
@@ -610,14 +852,14 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
 
 @test "the output-styles line carries the main-session-only note" {
   run report over 50000 52000 "$(breakdown)"
-  [[ "$output" == *"メインセッションのみ"* ]]
+  [[ "$output" == *"メインセッションのみ"* ]] || return 1
 }
 
 @test "the over-budget report offers both available actions" {
   run report over 50000 52000 "$(breakdown)"
-  [[ "$output" == *"固定分を削る"* ]]
-  [[ "$output" == *"tests/injection-budget.txt を上げて"* ]]
-  [[ "$output" == *"PR 本文に理由を書く"* ]]
+  [[ "$output" == *"固定分を削る"* ]] || return 1
+  [[ "$output" == *"tests/injection-budget.txt を上げて"* ]] || return 1
+  [[ "$output" == *"PR 本文に理由を書く"* ]] || return 1
 }
 
 @test "the under-budget report names a concrete recommended value" {
@@ -625,11 +867,11 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   [ "$(verdict 52000 40000)" = "under" ]
   run report under 52000 40000 "$(breakdown)"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"下振れ側 fail"* ]]
-  [[ "$output" == *"12000"* ]]
-  [[ "$output" == *"42000"* ]]
-  [[ "$output" == *"tests/injection-budget.txt を推奨値"* ]]
-  [[ "$output" == *"内訳（測定対象 8 種）"* ]]
+  [[ "$output" == *"下振れ側 fail"* ]] || return 1
+  [[ "$output" == *"12000"* ]] || return 1
+  [[ "$output" == *"42000"* ]] || return 1
+  [[ "$output" == *"tests/injection-budget.txt を推奨値"* ]] || return 1
+  [[ "$output" == *"内訳（測定対象 8 種）"* ]] || return 1
 }
 
 @test "removing more than ten percent of the total fails on the under side" {
@@ -664,21 +906,21 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   printf -- '---\nname: evil\ndescription: >\n  first line of the folded value\n  second line hidden from the total\n---\nbody\n' > "$TMPD/evil.md"
   run check_frontmatter_shape "$TMPD/evil.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evil.md"* ]]
+  [[ "$output" == *"evil.md"* ]] || return 1
 }
 
 @test "a literal block description is detected" {
   printf -- '---\nname: evil2\ndescription: |\n  hidden\n---\nbody\n' > "$TMPD/evil2.md"
   run check_frontmatter_shape "$TMPD/evil2.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evil2.md"* ]]
+  [[ "$output" == *"evil2.md"* ]] || return 1
 }
 
 @test "a continuation line without a folding marker is detected" {
   printf -- '---\nname: evil3\ndescription: visible part\n  hidden continuation\n---\nbody\n' > "$TMPD/evil3.md"
   run check_frontmatter_shape "$TMPD/evil3.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evil3.md"* ]]
+  [[ "$output" == *"evil3.md"* ]] || return 1
 }
 
 @test "a folded second description key is detected" {
@@ -686,7 +928,7 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   printf -- '---\nname: evil4\ndescription: short and innocent\ndescription: >\n  the real payload hidden on the second key\n---\nbody\n' > "$TMPD/evil4.md"
   run check_frontmatter_shape "$TMPD/evil4.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evil4.md"* ]]
+  [[ "$output" == *"evil4.md"* ]] || return 1
 }
 
 @test "two single-line top-level description keys are detected even without folding" {
@@ -694,7 +936,7 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   printf -- '---\nname: dup\ndescription: first\ndescription: second\n---\nbody\n' > "$TMPD/dup-single.md"
   run check_frontmatter_shape "$TMPD/dup-single.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"dup-single.md"* ]]
+  [[ "$output" == *"dup-single.md"* ]] || return 1
 }
 
 @test "a single line description passes the guard" {
@@ -710,14 +952,14 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   printf -- '---\nargument-hint: &payload this description is forty-eight bytes of injected text\ndescription: *payload\n---\n' > "$TMPD/anchor-alias.md"
   run check_frontmatter_shape "$TMPD/anchor-alias.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"anchor-alias.md"* ]]
+  [[ "$output" == *"anchor-alias.md"* ]] || return 1
 }
 
 @test "a merge key is detected" {
   printf -- '---\nname: x\n<<: *base\ndescription: hello\n---\n' > "$TMPD/merge-key.md"
   run check_frontmatter_shape "$TMPD/merge-key.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"merge-key.md"* ]]
+  [[ "$output" == *"merge-key.md"* ]] || return 1
 }
 
 @test "a whole-document flow mapping is detected" {
@@ -725,7 +967,7 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   printf -- '---\n{name: a, description: this text used to be counted as zero bytes}\n---\n' > "$TMPD/flow-map.md"
   run check_frontmatter_shape "$TMPD/flow-map.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"flow-map.md"* ]]
+  [[ "$output" == *"flow-map.md"* ]] || return 1
 }
 
 @test "a quoted key is detected" {
@@ -733,56 +975,56 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   printf -- '---\nname: x\n"description": this text used to be counted as zero bytes\n---\n' > "$TMPD/quoted-key.md"
   run check_frontmatter_shape "$TMPD/quoted-key.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"quoted-key.md"* ]]
+  [[ "$output" == *"quoted-key.md"* ]] || return 1
 }
 
 @test "a first line that is blank before the opening --- is detected" {
   printf -- '\n---\nname: x\ndescription: hi\n---\n' > "$TMPD/blank-first.md"
   run check_frontmatter_shape "$TMPD/blank-first.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"blank-first.md"* ]]
+  [[ "$output" == *"blank-first.md"* ]] || return 1
 }
 
 @test "a UTF-8 BOM before the opening --- is detected" {
   printf '\xEF\xBB\xBF---\nname: x\ndescription: hi\n---\n' > "$TMPD/bom-first.md"
   run check_frontmatter_shape "$TMPD/bom-first.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"bom-first.md"* ]]
+  [[ "$output" == *"bom-first.md"* ]] || return 1
 }
 
 @test "a %YAML directive line before the opening --- is detected" {
   printf -- '%%YAML 1.2\n---\nname: x\ndescription: hi\n---\n' > "$TMPD/yaml-directive.md"
   run check_frontmatter_shape "$TMPD/yaml-directive.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"yaml-directive.md"* ]]
+  [[ "$output" == *"yaml-directive.md"* ]] || return 1
 }
 
 @test "a document-end terminator of ... instead of --- is detected" {
   printf -- '---\nname: x\ndescription: hi\n...\n' > "$TMPD/dots-terminator.md"
   run check_frontmatter_shape "$TMPD/dots-terminator.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"dots-terminator.md"* ]]
+  [[ "$output" == *"dots-terminator.md"* ]] || return 1
 }
 
 @test "a frontmatter with no closing --- before EOF is detected" {
   printf -- '---\nname: x\ndescription: hi\nno closing marker\n' > "$TMPD/no-terminator.md"
   run check_frontmatter_shape "$TMPD/no-terminator.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"no-terminator.md"* ]]
+  [[ "$output" == *"no-terminator.md"* ]] || return 1
 }
 
 @test "a tab-indented nested key is detected" {
   printf -- '---\nmetadata:\n\tversion: 1\ndescription: hi\n---\n' > "$TMPD/tab-indent.md"
   run check_frontmatter_shape "$TMPD/tab-indent.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"tab-indent.md"* ]]
+  [[ "$output" == *"tab-indent.md"* ]] || return 1
 }
 
 @test "an anchor inside a flow sequence is detected" {
   printf -- '---\ntags: [&p this payload rides inside a flow sequence anchor]\ndescription: hi\n---\n' > "$TMPD/flow-anchor.md"
   run check_frontmatter_shape "$TMPD/flow-anchor.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"flow-anchor.md"* ]]
+  [[ "$output" == *"flow-anchor.md"* ]] || return 1
 }
 
 @test "a backslash inside a quoted description is detected" {
@@ -790,7 +1032,7 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   printf -- '---\ndescription: "backslash \\L\\L\\L payload"\n---\n' > "$TMPD/backslash-quote.md"
   run check_frontmatter_shape "$TMPD/backslash-quote.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"backslash-quote.md"* ]]
+  [[ "$output" == *"backslash-quote.md"* ]] || return 1
 }
 
 @test "a description starting with a C0 control byte (0x01) is detected" {
@@ -799,21 +1041,21 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
   printf -- '---\ndescription: \001payload smuggled behind a control byte\n---\n' > "$TMPD/ctl-01.md"
   run check_frontmatter_shape "$TMPD/ctl-01.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ctl-01.md"* ]]
+  [[ "$output" == *"ctl-01.md"* ]] || return 1
 }
 
 @test "a description starting with a C0 control byte (0x07) is detected" {
   printf -- '---\ndescription: \007payload smuggled behind a control byte\n---\n' > "$TMPD/ctl-07.md"
   run check_frontmatter_shape "$TMPD/ctl-07.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ctl-07.md"* ]]
+  [[ "$output" == *"ctl-07.md"* ]] || return 1
 }
 
 @test "a description starting with DEL (0x7F) is detected" {
   printf -- '---\ndescription: \177payload smuggled behind a control byte\n---\n' > "$TMPD/ctl-7f.md"
   run check_frontmatter_shape "$TMPD/ctl-7f.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ctl-7f.md"* ]]
+  [[ "$output" == *"ctl-7f.md"* ]] || return 1
 }
 
 # 先頭バイト判定の fixture 一覧。各行は「期待する verdict（1=通る / 0=落ちる） パス」。
@@ -855,7 +1097,7 @@ read_first_byte_fixtures() {
   printf -- '---\ndescription: \000payload smuggled behind a NUL\n---\n' > "$TMPD/nul.md"
   run check_frontmatter_shape "$TMPD/nul.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"nul.md"* ]]
+  [[ "$output" == *"nul.md"* ]] || return 1
 }
 
 @test "a description key with no value at all is rejected" {
@@ -865,7 +1107,7 @@ read_first_byte_fixtures() {
   printf -- '---\nname: x\ndescription:\n---\n' > "$TMPD/empty-desc.md"
   run check_frontmatter_shape "$TMPD/empty-desc.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"empty-desc.md"* ]]
+  [[ "$output" == *"empty-desc.md"* ]] || return 1
 }
 
 @test "a description value made only of spaces is rejected" {
@@ -873,7 +1115,7 @@ read_first_byte_fixtures() {
   printf -- '---\nname: x\ndescription:  \n---\n' > "$TMPD/blank-desc.md"
   run check_frontmatter_shape "$TMPD/blank-desc.md"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"blank-desc.md"* ]]
+  [[ "$output" == *"blank-desc.md"* ]] || return 1
 }
 
 @test "every first byte outside the allowed set is rejected" {
@@ -889,7 +1131,7 @@ read_first_byte_fixtures() {
       echo "expected a violation but the guard passed: $path" >&2
       false
     fi
-    [[ "$output" == *"$(basename "$path")"* ]]
+    [[ "$output" == *"$(basename "$path")"* ]] || return 1
   done
 }
 
@@ -946,7 +1188,7 @@ read_first_byte_fixtures() {
   local shape_violations
   shape_violations=$(check_frontmatter_shape "$TMPD/gate-check.md" || true)
   [ -n "$shape_violations" ]
-  [[ "$shape_violations" == *"gate-check.md"* ]]
+  [[ "$shape_violations" == *"gate-check.md"* ]] || return 1
 }
 
 @test "a composite file using every allowed line form passes the guard" {

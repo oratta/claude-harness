@@ -61,24 +61,15 @@ TBD - created by archiving change infra-fixes. Update Purpose after archive.
 
 ### Requirement: SKILL.md version frontmatter and personal path references MUST be removed/synced
 
-`skills/infra-setup/SKILL.md` の frontmatter `version` は `plugins/infra/.claude-plugin/plugin.json` の値と一致しなければならず、個人環境固有のディレクトリパス（`/Users/oratta/Dropbox/...`）への参照を含んではならない。This requirement MUST be satisfied.
+`skills/infra-setup/SKILL.md` の frontmatter は `version` を持ってはならない（issue #447 で `plugins/infra/.claude-plugin/plugin.json` から `version` を撤去したため、写す元の値が無い）。また個人環境固有のディレクトリパス（`/Users/oratta/Dropbox/...`）への参照を含んではならない。This requirement MUST be satisfied.
 
-#### Scenario: SKILL.md version matches plugin.json
+#### Scenario: SKILL.md has no version frontmatter
 
-- **WHEN** `skills/infra-setup/SKILL.md` の frontmatter `version` と `plugins/infra/.claude-plugin/plugin.json` の `version` を比較する
-- **THEN** 両者は同一の値でなければならない
+- **WHEN** `skills/infra-setup/SKILL.md` の frontmatter を読む
+- **THEN** `version:` の行が無い
 
 #### Scenario: No personal Dropbox path remains
 
 - **WHEN** `grep -rn "/Users/oratta" plugins/infra/` を実行する
 - **THEN** 一致件数は 0 件でなければならない
-
-### Requirement: infra plugin.json version MUST be bumped for this change
-
-`plugins/infra/.claude-plugin/plugin.json` の `version` は、本 change 適用前の値より大きくなければならない（`~/.claude/rules/plugin-editing.md` 準拠。marketplace.json への同期は change-7 が担当するため本 capability の対象外）。This requirement MUST be satisfied.
-
-#### Scenario: plugin.json version is bumped
-
-- **WHEN** 本 change 適用前後で `plugins/infra/.claude-plugin/plugin.json` の `version` フィールドを比較する
-- **THEN** 適用後の値が適用前の値より大きい（semver 上位）
 

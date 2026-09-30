@@ -181,17 +181,3 @@ TBD - created by archiving change experience-to-skill-jsonl-refocus. Update Purp
 - **WHEN** fixture を `scripts/sanitize.sh` に通す
 - **THEN** 入力と出力が同一である（既にサニタイズ済み）
 
-### Requirement: plugin.json and marketplace.json versions MUST be bumped consistently
-
-`plugins/experience-to-skill/.claude-plugin/plugin.json` の `version` SHALL be bumped from `0.1.0` to at least `0.2.0` (minor bump), and `.claude-plugin/marketplace.json` の `experience-to-skill` エントリの `version` MUST be synchronized to the same value.
-
-#### Scenario: plugin.json version bumped
-
-- **WHEN** `jq -r '.version' plugins/experience-to-skill/.claude-plugin/plugin.json` を実行する
-- **THEN** 戻り値が `0.2.0` 以上（最低 minor bump）
-
-#### Scenario: marketplace.json version synced
-
-- **WHEN** `jq -r '.plugins[] | select(.name == "experience-to-skill") | .version' .claude-plugin/marketplace.json` を実行する
-- **THEN** plugin.json と同じ値を返す
-
