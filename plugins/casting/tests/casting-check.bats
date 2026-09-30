@@ -91,6 +91,25 @@ setup() {
   [ "$status" -eq 1 ]
 }
 
+@test "repo path containing a newline: signals only exit 0 (4 with --strict), plus a defect exits 1" {
+  # 報告本文の継続行（改行入りパス）を欠陥と数えない（#148 レビュー）
+  local repo fx
+  for fx in catalog-external-precedent repeated-not-issue; do
+    repo="${BATS_TEST_TMPDIR}/${fx}"$'\n'"nl"
+    mkdir -p "${repo}/.claude"
+    cp -R "${FIXTURES}/${fx}/.claude/casting" "${repo}/.claude/casting"
+    run "$SCRIPT" --catalog "$CATALOG" "$repo"
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"[${fx}]"* ]] || return 1
+    run "$SCRIPT" --strict --catalog "$CATALOG" "$repo"
+    [ "$status" -eq 4 ] || return 1
+  done
+  LC_ALL=C sed 's/^catalog_version: 1$/catalog_version: 999/' \
+    "${FIXTURES}/repeated-not-issue/.claude/casting/project.md" > "${repo}/.claude/casting/project.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$repo"
+  [ "$status" -eq 1 ]
+}
+
 @test "--strict with resolve is a usage error (exit 2) and prints no table" {
   run --separate-stderr "$SCRIPT" resolve --strict --catalog "$CATALOG" "${FIXTURES}/ok"
   [ "$status" -eq 2 ]

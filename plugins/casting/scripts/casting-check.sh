@@ -162,10 +162,18 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 FINDINGS="${WORK_DIR}/findings"
 : > "$FINDINGS"
+# 欠陥（起案シグナル以外）を1件でも報告したら印を残す。終了コードはこの印で決め、報告本文は
+# 読み直さない — 本文（repo パス等）に改行が入ると継続行がカテゴリ接頭辞を持たず、
+# 本文の行で判定すると欠陥と誤認するため（#148 レビュー）。サブシェルから呼んでも残るようファイルにする
+DEFECT_MARK="${WORK_DIR}/defect"
 
 report() {
   # report <category> <message>
   printf '[%s] %s\n' "$1" "$2" >> "$FINDINGS"
+  case "$1" in
+    catalog-external-precedent|repeated-not-issue) ;;
+    *) : > "$DEFECT_MARK" ;;
+  esac
 }
 
 # strip_html_comments <file> <out> — HTML コメント（<!-- ... -->）とコードフェンスにかかる行を
@@ -679,14 +687,12 @@ fi
 # 起案シグナル（catalog-external-precedent / repeated-not-issue）と欠陥（それ以外の全カテゴリ）を
 # 分けて終了コードを決める（#148）。出力は従来どおり全件を [カテゴリ] 付きで stdout に出すので、
 # 呼び出し側はカテゴリ名でもシグナルと欠陥を見分けられる。
-# 欠陥の判定は「シグナルの2カテゴリ以外が1行でもあるか」で行う（新しい検出カテゴリを足したときに
-# 既定で欠陥側＝止める側に倒れるよう、欠陥側を列挙しない）。
+# 欠陥の判定は report() が残す印（シグナルの2カテゴリ以外を1件でも報告したか）で行う（新しい検出
+# カテゴリを足したときに既定で欠陥側＝止める側に倒れるよう、欠陥側を列挙しない）。
 
 if [ -s "$FINDINGS" ]; then
   cat "$FINDINGS"
-  # パイプで grep -q に繋がない: pipefail 下で grep -q の早期終了が上流を SIGPIPE にし、
-  # 欠陥があるのに判定が偽へ倒れうるため。grep -v -q は「シグナル以外の行が1行でもあるか」を直接返す
-  if LC_ALL=C grep -q -v -e '^\[catalog-external-precedent\] ' -e '^\[repeated-not-issue\] ' "$FINDINGS"; then
+  if [ -e "$DEFECT_MARK" ]; then
     exit 1
   fi
   if [ "$STRICT" -eq 1 ]; then
