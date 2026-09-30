@@ -60,11 +60,15 @@ lint_template_paths() {
 
 @test "rule: perspective-casting.md stays within 30 lines and keeps the 5 steps" {
   RULE="${REPO_ROOT}/rules/perspective-casting.md"
+  SKILL="${PLUGIN_DIR}/skills/casting/SKILL.md"
   [ -f "$RULE" ]
   [ "$(wc -l < "$RULE" | tr -d ' ')" -le 30 ]
   LC_ALL=C grep -qF -- "聖域" "$RULE"
   LC_ALL=C grep -qF -- "判例台帳" "$RULE"
-  LC_ALL=C grep -qF -- "plugins/casting/catalog/catalog.md" "$RULE"
+  # rule はリポジトリ相対パスを書かず skill 名で指す（issue #260）。カタログ本文への
+  # ポインタは skill 側が持つので、そちらで正本の所在を照合する。
+  LC_ALL=C grep -qF -- "casting:casting" "$RULE"
+  LC_ALL=C grep -qF -- "catalog/catalog.md" "$SKILL"
 }
 
 @test "rule: listed in rules/README.md" {
@@ -107,41 +111,41 @@ lint_template_paths() {
 @test "path lint: flags a plugin-internal path that is not at the head of the code span" {
   run lint_template_paths "${FIXTURES}/violation-mid-span.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"scripts/casting-check.sh"* ]]
+  [[ "$output" == *"scripts/casting-check.sh"* ]] || return 1
 }
 
 @test "path lint: flags quoted tokens inside a code span" {
   run lint_template_paths "${FIXTURES}/violation-quoted-token.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"scripts/casting-check.sh"* ]]
-  [[ "$output" == *"skills/casting/SKILL.md"* ]]
+  [[ "$output" == *"scripts/casting-check.sh"* ]] || return 1
+  [[ "$output" == *"skills/casting/SKILL.md"* ]] || return 1
 }
 
 @test "path lint: flags a multi-backtick code span" {
   run lint_template_paths "${FIXTURES}/violation-double-backtick.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"scripts/casting-check.sh"* ]]
+  [[ "$output" == *"scripts/casting-check.sh"* ]] || return 1
 }
 
 @test "path lint: flags a plugin-internal path inside a fenced code block" {
   run lint_template_paths "${FIXTURES}/violation-fenced-block.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"plugins/casting/scripts/casting-check.sh"* ]]
+  [[ "$output" == *"plugins/casting/scripts/casting-check.sh"* ]] || return 1
 }
 
 @test "path lint: stays inside the fence when a different fence marker appears" {
   run lint_template_paths "${FIXTURES}/violation-nested-fence.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"plugins/casting/scripts/casting-check.sh"* ]]
+  [[ "$output" == *"plugins/casting/scripts/casting-check.sh"* ]] || return 1
 }
 
 # 検出プレフィックスを1つ削っても全フィクスチャが通ってしまう状態を防ぐ
 @test "path lint: the violation fixtures exercise all three forbidden prefixes" {
   run lint_template_paths "${FIXTURES}"/violation-*.md
   [ "$status" -eq 1 ]
-  [[ "$output" == *": scripts/"* ]]
-  [[ "$output" == *": skills/"* ]]
-  [[ "$output" == *": plugins/casting/"* ]]
+  [[ "$output" == *": scripts/"* ]] || return 1
+  [[ "$output" == *": skills/"* ]] || return 1
+  [[ "$output" == *": plugins/casting/"* ]] || return 1
 }
 
 @test "path lint: passes install-path notation that contains the plugin directory names" {
@@ -457,9 +461,9 @@ SH
   [ "$(count_literal_report_calls "$synthetic")" = "0" ]
 }
 
-@test "check: detection categories in casting-check.sh are the documented seven" {
+@test "check: detection categories in casting-check.sh are the documented eight" {
   local expected actual
-  expected="catalog-external-precedent consultation-missing-element malformed-row repeated-not-issue unclosed-comment unknown-vocab version-mismatch"
+  expected="catalog-external-precedent consultation-missing-element malformed-row repeated-not-issue unclosed-comment unclosed-fence unknown-vocab version-mismatch"
   actual="$(detection_categories | tr '\n' ' ')"
   actual="${actual% }"
   if [ "$actual" != "$expected" ]; then

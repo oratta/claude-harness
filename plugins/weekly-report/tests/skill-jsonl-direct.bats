@@ -14,7 +14,7 @@ setup() {
 # --- S1: Step 3b が LLM/*.md への参照を持たない ---
 
 @test "S1: SKILL.md does not reference {source_path}/LLM" {
-  ! grep -q '{source_path}/LLM' "$SKILL_FILE"
+  ! grep -q '{source_path}/LLM' "$SKILL_FILE" || return 1
 }
 
 # --- S2: Step 3b が native jsonl を参照する ---
@@ -36,7 +36,7 @@ setup() {
 # --- S4: 個人パスのハードコードが無い ---
 
 @test "S4: SKILL.md does not hardcode /Users/oratta/Dropbox/WorkSpace" {
-  ! grep -q '/Users/oratta/Dropbox/WorkSpace' "$SKILL_FILE"
+  ! grep -q '/Users/oratta/Dropbox/WorkSpace' "$SKILL_FILE" || return 1
 }
 
 # --- S5: 環境変数未設定時にフェイルソフトする ---
@@ -50,7 +50,7 @@ setup() {
 # --- S6: 1h-cooking 言及が残っていない ---
 
 @test "S6: SKILL.md has no 1h-cooking mention (case-insensitive)" {
-  ! grep -iq '1h-cooking' "$SKILL_FILE"
+  ! grep -iq '1h-cooking' "$SKILL_FILE" || return 1
 }
 
 # --- S7: harvest の実態に沿った検索パターンが記載されている ---

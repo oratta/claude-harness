@@ -122,8 +122,8 @@ PY
 
 @test "reference: issue body type names issueify's new path as the generation source" {
   grep -qF 'plugins/dev-workflow/skills/issueify/SKILL.md' "$REF"
-  ! grep -q 'loops-issueify' "$REF"
-  ! grep -q 'loops-dev-agent-install' "$REF"
+  ! grep -q 'loops-issueify' "$REF" || return 1
+  ! grep -q 'loops-dev-agent-install' "$REF" || return 1
 }
 
 @test "issueify: draft structure gains the 2 approval sections before existing 4" {

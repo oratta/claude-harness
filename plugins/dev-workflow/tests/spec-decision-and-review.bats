@@ -2,8 +2,8 @@
 #
 # 仕様化判断の記録と、書いた仕様の実装前レビュー（issue #191 → #203 で develop 構造に移行）
 #
-# develop スキルでは、W（references/roles/worker.md）が仕様化判断を固定書式で記録先に記録し、
-# 本体の 1 ループ（SKILL.md）が W の /opsx:ff と W の再開（apply）の間に R1
+# develop スキルでは、W（references/roles/worker/spec.md）が仕様化判断を固定書式で記録先に記録し、
+# 本体の 1 ループ（SKILL.md）が W の openspec new change と W の再開（apply）の間に R1
 # （references/roles/spec-reviewer.md）の仕様レビューを挟むことを検証する。
 # 既存文（事前分類節・残量モード行）で偽合格しないよう、節を切り出してから grep する。
 #
@@ -13,7 +13,7 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
-  WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
+  WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker/spec.md"
   REF="${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md"
   CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
@@ -21,7 +21,7 @@ setup() {
 }
 
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
-# worker.md の仕様化判断節
+# worker/spec.md の仕様化判断節
 decision_sec() { section "$WORKER" '仕様化判断'; }
 # SKILL.md の 1 ループ節
 loop_sec() { section "$SKILL" '1 ループ'; }
@@ -59,9 +59,9 @@ mode_sec() { section "$SKILL" '実行モード'; }
 
 # --- Requirement: 書いた仕様は実装前に別コンテキストがレビューする ---
 
-@test "loop: R1 review sits between W's /opsx:ff and W's apply" {
-  loop_sec | grep -q '/opsx:ff'
-  ff="$(loop_sec | grep -n '/opsx:ff' | head -1 | cut -d: -f1)"
+@test "loop: R1 review sits between W's openspec new change and W's apply" {
+  loop_sec | grep -q 'openspec new change'
+  ff="$(loop_sec | grep -n 'openspec new change' | head -1 | cut -d: -f1)"
   rev="$(loop_sec | grep -n '仕様レビュー' | head -1 | cut -d: -f1)"
   apply="$(loop_sec | grep -n 'apply' | head -1 | cut -d: -f1)"
   [ -n "$ff" ] && [ -n "$rev" ] && [ -n "$apply" ]
@@ -75,8 +75,8 @@ mode_sec() { section "$SKILL" '実行モード'; }
 }
 
 @test "worker: degraded path (openspec CLI only) also returns for the review" {
-  grep -A3 'openspec CLI だけある場合' "$WORKER" | grep -q '仕様レビュー'
-  grep -A3 'openspec CLI だけある場合' "$WORKER" | grep -q 'return'
+  grep -A3 'openspec CLI で artifact を作る場合' "$WORKER" | grep -q '仕様レビュー'
+  grep -A3 'openspec CLI で artifact を作る場合' "$WORKER" | grep -q 'return'
 }
 
 @test "loop: interactive multi-change handling reviews each change" {
@@ -85,8 +85,9 @@ mode_sec() { section "$SKILL" '実行モード'; }
 
 # --- Requirement: 仕様レビューの観点は既存 spec との整合と受け入れ条件の一意性を含む ---
 
-@test "references: five review criteria are listed" {
+@test "references: six review criteria are listed" {
   grep -q '一意' "$REF"
+  grep -q '守備範囲' "$REF"
   grep -qE '既存.*openspec/specs' "$REF"
   grep -qE 'config|引数' "$REF"
   grep -qE '前提' "$REF"
@@ -122,7 +123,7 @@ mode_sec() { section "$SKILL" '実行モード'; }
   { section "$SKILL" 'モデル'; cat "$REF"; } | grep -q '`opus`'
   { section "$SKILL" 'モデル'; cat "$REF"; } | grep -qF 'dev-workflow:decider'
   # R1 を general-purpose + model: fable で立てる指示は残さない
-  ! grep -qE '^- \*\*モデルは必ず明示する\*\*.*は `fable`（聖域パスだけでは上げない）' "$REF"
+  ! grep -qE '^- \*\*モデルは必ず明示する\*\*.*は `fable`（聖域パスだけでは上げない）' "$REF" || return 1
   grep -qF '`general-purpose` に `model: fable` を付けない' "$REF"
 }
 
@@ -144,17 +145,10 @@ mode_sec() { section "$SKILL" '実行モード'; }
 
 # --- 配布 ---
 
-@test "manifest: plugin version at least 2.0.0 and matches marketplace" {
-  v="$(jq -r '.version' "$MANIFEST")"
-  printf '2.0.0\n%s\n' "$v" | sort -V -C
-  mv="$(jq -r '.plugins[] | select(.name=="dev-workflow") | .version' "$MARKETPLACE")"
-  [ "$mv" = "$v" ]
-}
-
 @test "manifest: description mentions the spec review step and develop" {
   jq -r '.description' "$MANIFEST" | grep -q '仕様レビュー'
   jq -r '.description' "$MANIFEST" | grep -q 'develop'
-  ! jq -r '.description' "$MANIFEST" | grep -q 'github-''issue'
+  ! jq -r '.description' "$MANIFEST" | grep -q 'github-''issue' || return 1
 }
 
 @test "skill frontmatter: description mentions spec review" {

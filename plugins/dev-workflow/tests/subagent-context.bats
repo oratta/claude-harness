@@ -159,6 +159,6 @@ PY
 @test "--help: the last line of the header is not the shebang-adjacent set line" {
   run "$SCRIPT" --help
   [ "$status" -eq 0 ]
-  ! echo "$output" | grep -q 'set -uo pipefail'
+  ! echo "$output" | grep -q 'set -uo pipefail' || return 1
   echo "$output" | grep -q -- '--file'
 }

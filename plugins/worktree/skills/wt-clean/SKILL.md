@@ -1,6 +1,6 @@
 ---
 name: wt-clean
-description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある／git worktree lock されている worktree は git がクリーンでも自動削除せず判断バッチに回す。ただし「親セッションが消えて init に引き取られた（PPID=1）」かつ「worktree の更新もセッションログの更新も 24 時間以上前」の両方を満たす居残りプロセスは稼働シグナルから外し、根拠を表示する。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
+description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
 version: 3.7.1
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
@@ -342,7 +342,7 @@ resolve_token() {
 
 #### Step A-2: 位置引数なし → 全 worktree を確認なしで TARGETS に
 
-位置引数がない場合（`--keep` / `--no-sync` のみ、または完全無指定）は、**対象選択の質問をせず全 worktree を `TARGETS` にする**。以前は「全て/個別/キャンセル」を AskUserQuestion で聞いていたが、これは廃止した（対象選択で処理が止まる／途中で終わる事故を防ぐため）。対象を絞りたいときは位置引数 `<path|branch>` を渡す。
+位置引数がない場合（`--keep` / `--no-sync` のみ、または完全無指定）は、**対象選択の質問をせず全 worktree を `TARGETS` にする**。対象選択で質問すると、そこで処理が止まる／途中で終わる。対象を絞りたいときは位置引数 `<path|branch>` を渡す。
 
 > ℹ️ ここで対象選択のために `AskUserQuestion` を呼んではならない（SHALL NOT）。破壊判断が必要な 🔴 / dirty は Pass 2 で確認されるため、全件を対象にしても🟢/🟡 の安全な自動処理と 🔴/dirty の Pass 2 対話に正しく振り分けられる。
 
@@ -524,7 +524,7 @@ if [ "$AHEAD_COUNT" != "0" ]; then
 fi
 ```
 
-判定規則（**「どれか 1 つでもマージ済みを示せば squash 済み」という旧規則は廃止した**）。上から順に評価し、最初に当たったものを採る:
+判定規則。上から順に評価し、最初に当たったものを採る:
 
 | 順 | 状況 | 判定 | 根拠 |
 |---|---|---|---|
@@ -991,7 +991,7 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
   LLM: あり（退避済み）
 
 [3] business-idea (idea-x) — 🟡 稼働中の可能性
-  git 上はマージ済み・clean・LLM なし（＝従来なら 🟢 Safe 判定）
+  git 上はマージ済み・clean・LLM なし。ただし稼働シグナルがあるため自動処理を保留
   ⚠️ 稼働中プロセスあり: 48213(claude), 48310(node)
   ⚠️ 直近セッションログ: ~/.claude/projects/-Users-…-business-idea/ab12.jsonl (2026-08-07 14:32)
   → 壁打ち等の進行中セッションの可能性があります。削除するとプロセスも停止されます

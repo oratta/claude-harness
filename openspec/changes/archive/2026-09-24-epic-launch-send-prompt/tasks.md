@@ -1,0 +1,23 @@
+## 1. テスト（Red）
+
+- [x] 1.1 `plugins/dev-workflow/tests/epic-dispatch.bats` の `orca` スタブに `worktree create` の JSON 出力（ハンドルの有無を切り替えられる）、`terminal wait`（exit を切り替えられる）、`terminal send`（exit と `stages` を切り替えられる）を足し、呼び出しの記録に残す
+- [x] 1.2 既存シナリオ「launch は fetch してから path: で親を渡して子を作る」を、create に `--prompt` が無く、子ごとに create → `terminal wait --for tui-idle` → `terminal send --text "/develop #<N> ..." --enter --wait-submit 30 --json` の順になる形に書き換える
+- [x] 1.3 delta spec の追加シナリオ（startupTerminal へのフォールバック、ハンドル無しで failed、送信失敗で failed と送り直しコマンド、送り直し用の ID を付ける、`turn_started` 無しで failed、起動完了待ちの失敗で failed、環境変数で時間を変える、環境変数が整数でなければ子を作らない）を bats に足し、今の実装で落ちることを確かめる
+
+## 2. 実装（Green）
+
+- [x] 2.1 `plugins/dev-workflow/scripts/epic-dispatch.sh` の `cmd_launch` で create から `--prompt` を外し、JSON 出力を stderr に流しつつ変数に取り、ハンドルを取り出す
+- [x] 2.2 `orca terminal wait` → `orca terminal send` を呼び、`stages` に `turn_started` があるときだけ `launched`、それ以外は `failed` と、送り直しコマンド（送り直し用の ID があれば `--retry-request <id>` 付き）と「送る前に `orca terminal read` で入力欄とターンの状態を確かめる」案内を stderr に出す。`EPIC_DISPATCH_READY_TIMEOUT_MS`（既定 60000）と `EPIC_DISPATCH_SUBMIT_WAIT`（既定 30）を読み、非負の整数でなければ子を作らずに exit 1
+- [x] 2.3 `bats plugins/dev-workflow/tests/epic-dispatch.bats` が全件通る
+
+## 3. 文書と記録
+
+- [x] 3.1 `plugins/dev-workflow/skills/develop/SKILL.md` の Orca 経路の `launch` の説明で、`launched` が「最初の指示を送りターンの開始まで確かめた」こと、`failed` のときは stderr の送り直しコマンドをユーザーに示すこと、`failed` の子は送り直して動き出したのを確かめてから再開すること（送らずに再開すると `skipped` になり `wait` が最長 6 時間待つ）を最小限書き足す（関係ない箇所は触らない）
+- [x] 3.2 SKILL.md の検査 bats（`develop-skill.bats` など）が通ることを確かめる
+- [x] 3.3 `plugins/dev-workflow/changes/458.md` に変更の記録を書く（版は上げない）
+
+## 4. 検証
+
+- [x] 4.1 `scripts/test.sh` を全件流し、exit code を記録する（exit 0、bats 全スイート pass、1763 ok / 0 not ok）
+- [x] 4.2 実機: Orca 管理のワークツリーから、本体と決めたダミーの子 2 件以上で `launch` し、`orca terminal read` で両方の子の入力欄に `/develop #<子>` が入り作業が始まっていること、指示が 2 回届いていないことを確かめる。あわせて `orca terminal send --json` の実際の出力の形を記録し、スタブと食い違えば bats を直す（結果は design.md「実機確認の結果」参照。スタブとの差分は無かった）
+- [x] 4.3 `openspec validate epic-launch-send-prompt --strict` が通る
