@@ -91,6 +91,8 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
    **既存の deny を消さずに**足す:
 
    ```sh
+   # 展開先に .claude/ が無くても動くよう先に作る
+   mkdir -p <repo>/.claude
    # 展開先に .claude/settings.json が無ければそのままコピー
    [ -f <repo>/.claude/settings.json ] || cp "$TPL"/.claude/settings.json <repo>/.claude/settings.json
    # あれば deny 配列を和集合でマージ（既存の deny・他のキーは保持）

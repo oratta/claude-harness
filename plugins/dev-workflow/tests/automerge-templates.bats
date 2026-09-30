@@ -318,6 +318,90 @@ EOF
   [ "$(jq '[.permissions.deny[] | select(. == "Bash(gh pr merge:*)")] | length' "$cur.merged")" -eq 1 ]
 }
 
+@test "deny: README step 7 works on a repo that has no .claude directory yet" {
+  command -v jq >/dev/null || skip "jq not installed"
+  repo="$BATS_TEST_TMPDIR/fresh-repo"
+  mkdir -p "$repo/.github/workflows"
+  # README 手順 7 のコードブロックを <repo> / $TPL だけ置換してそのまま実行する
+  block="$(sed -n '/^   # 展開先に .claude\/ が無くても/,/&& mv /p' "$README" | sed 's/^   //' | sed "s#<repo>#$repo#g")"
+  [ -n "$block" ]
+  run env TPL="$TPL" bash -c "$block"
+  [ "$status" -eq 0 ]
+  jq -e '.permissions.deny | index("Bash(gh pr merge:*)") != null' "$repo/.claude/settings.json" >/dev/null
+}
+
+# staging-smoke.yml の revert ステップを、実 git（bare remote）と記録用 gh スタブで実行する。
+# $1=シナリオ名、環境変数 MAIN_ADVANCED=1 で main を BAD_SHA から進める、FAIL_PR=1 で gh pr create を失敗させる
+run_revert_script() {
+  local d="$BATS_TEST_TMPDIR/rv-$1" bin
+  bin="$d/bin"; mkdir -p "$bin" "$d/state"
+  git init -q --bare "$d/remote.git"
+  git init -q -b main "$d/work"
+  git -C "$d/work" config user.email t@example.test; git -C "$d/work" config user.name t
+  git -C "$d/work" remote add origin "$d/remote.git"
+  printf 'a\n' > "$d/work/f.txt"; git -C "$d/work" add f.txt; git -C "$d/work" commit -qm base
+  printf 'b\n' > "$d/work/f.txt"; git -C "$d/work" commit -qam bad
+  BAD="$(git -C "$d/work" rev-parse HEAD)"
+  if [ "${MAIN_ADVANCED:-0}" = 1 ]; then printf 'c\n' > "$d/work/f.txt"; git -C "$d/work" commit -qam later; fi
+  git -C "$d/work" push -q origin main
+  cat > "$bin/gh" <<EOF
+#!/bin/bash
+S="$d/state"
+echo "\$*" >> "\$S/calls.log"
+case "\$1 \$2" in
+  "label create") exit 0 ;;
+  "issue list") [ -f "\$S/issue" ] && echo "https://example.test/o/r/issues/1" ; exit 0 ;;
+  "issue create") touch "\$S/issue"; echo "https://example.test/o/r/issues/1" ;;
+  "issue view") exit 0 ;;
+  "issue comment") exit 0 ;;
+  "pr list") [ -f "\$S/pr" ] && echo "https://example.test/o/r/pull/7" ; exit 0 ;;
+  "pr create") [ "\${FAIL_PR:-0}" = 1 ] && exit 1; touch "\$S/pr"; echo "https://example.test/o/r/pull/7" ;;
+  "api "*) exit 0 ;;
+esac
+exit 0
+EOF
+  chmod +x "$bin/gh"
+  sed -n '/# >>> smoke-revert-script/,/# <<< smoke-revert-script/p' "$SMOKE" | sed 's/^          //' > "$d/revert.sh"
+  cd "$d/work"
+  run env PATH="$bin:$PATH" GH_TOKEN=x MERGE_TOKEN=y REPO=o/r BAD_SHA="$BAD" RUN_URL=https://example.test/run bash "$d/revert.sh"
+  echo "OUT: $output" >&3
+  CALLS="$d/state/calls.log"
+  RV_DIR="$d"
+}
+
+@test "revert script: normal failure creates the incident issue first, then the revert PR" {
+  command -v git >/dev/null || skip "git not installed"
+  run_revert_script normal
+  [ "$status" -eq 0 ]
+  grep -q '^issue create' "$CALLS"
+  grep -q '^pr create' "$CALLS"
+  [ "$(grep -n '^issue create' "$CALLS" | head -1 | cut -d: -f1)" -lt "$(grep -n '^pr create' "$CALLS" | head -1 | cut -d: -f1)" ]
+}
+
+@test "revert script: main already moved past the deployed commit -> incident only, no revert PR" {
+  command -v git >/dev/null || skip "git not installed"
+  MAIN_ADVANCED=1 run_revert_script advanced
+  [ "$status" -eq 0 ]
+  grep -q '^issue create' "$CALLS"
+  ! grep -q '^pr create' "$CALLS"
+  ! git -C "$RV_DIR/remote.git" rev-parse --verify -q "refs/heads/revert-auto-${BAD:0:12}" >/dev/null
+}
+
+@test "revert script: incident exists even when the revert PR cannot be created, and a re-run recovers the PR" {
+  command -v git >/dev/null || skip "git not installed"
+  FAIL_PR=1 run_revert_script partial
+  [ "$status" -ne 0 ]
+  grep -q '^issue create' "$CALLS"
+  git -C "$RV_DIR/remote.git" rev-parse --verify -q "refs/heads/revert-auto-${BAD:0:12}" >/dev/null
+  # 再実行: ブランチは push 済み。PR が無ければ作り直し、incident は重複起票しない
+  : > "$CALLS"
+  cd "$RV_DIR/work"
+  run env PATH="$RV_DIR/bin:$PATH" GH_TOKEN=x MERGE_TOKEN=y REPO=o/r BAD_SHA="$BAD" RUN_URL=https://example.test/run bash "$RV_DIR/revert.sh"
+  [ "$status" -eq 0 ]
+  grep -q '^pr create' "$CALLS"
+  ! grep -q '^issue create' "$CALLS"
+}
+
 # --- Requirement: 運用ガイドはリポ非依存の記述で提供される ---
 
 @test "portability: no hardcoded flatmate repo URL anywhere in the template" {

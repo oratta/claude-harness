@@ -132,45 +132,83 @@ jobs:
           gh label create incident --repo "$REPO" --color B60205 \
             --description "サービス影響のある障害。ポストモーテム必須" 2>/dev/null || true
 
-          BRANCH="revert-auto-${BAD_SHA:0:12}"
-          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-            echo "revert ブランチ既存: 二重起票を防ぐため終了"
+          SHORT="${BAD_SHA:0:12}"
+          TITLE="incident: staging スモーク失敗 ($SHORT)"
+
+          # 1. incident issue を最初に起票する（検知した事実は revert の成否に依存させない。
+          #    再実行では同名の open issue を再利用する）。issue 作成は GITHUB_TOKEN（PAT に Issues 権限を要求しない）
+          ISSUE_URL=$(gh issue list --repo "$REPO" --state open --label incident --json title,url \
+            --jq "[.[] | select(.title == \"$TITLE\")][0].url // empty")
+          if [ -z "$ISSUE_URL" ]; then
+            BODY="## 事実経過（自動記録）"$'\n'
+            BODY+="- 対象コミット: $BAD_SHA"$'\n'
+            BODY+="- 検知: staging スモークテスト失敗（$RUN_URL）"$'\n'
+            BODY+="- 自動対応: revert PR の起票を試みる（結果はこの issue のコメントに追記する）"$'\n\n'
+            BODY+="## 残タスク"$'\n'
+            BODY+="- [ ] revert 取り込みと staging 復旧の確認"$'\n'
+            BODY+="- [ ] 根本原因の分析（元 PR のどの変更がスモークを壊したか）"$'\n'
+            BODY+="- [ ] 再発防止（スモーク観点の追加 or レビュー観点の追加）"$'\n'
+            BODY+="- [ ] ユーザー影響の有無と補償判断（本番影響がなければ「なし」と明記）"
+            ISSUE_URL=$(gh issue create --repo "$REPO" --title "$TITLE" --label "incident" --body "$BODY")
+          fi
+
+          # 2. main が検査したデプロイのコミットから進んでいたら自動 revert しない。
+          #    スモークは固定ドメインの「今の」staging を見るので、後続のデプロイが壊れていても
+          #    その原因は BAD_SHA とは限らない（正常な先行コミットの巻き戻しを防ぐ）。後続側は自身の
+          #    スモークが扱う
+          git fetch origin main
+          MAIN_HEAD=$(git rev-parse origin/main)
+          if [ "$MAIN_HEAD" != "$BAD_SHA" ]; then
+            gh issue comment "$ISSUE_URL" --repo "$REPO" \
+              --body "main が $BAD_SHA から進んでいる（現在 $MAIN_HEAD）ため自動 revert は行っていません。人間が原因コミットを判断してください。"
+            echo "main は BAD_SHA から進んでいる: 自動 revert せず incident のみ"
             exit 0
           fi
-          git checkout -b "$BRANCH"
-          # squash マージ由来の通常コミット想定。マージコミットだった場合は -m 1 で親1（main 側）基準
-          git revert --no-edit "$BAD_SHA" || git revert --no-edit -m 1 "$BAD_SHA"
-          git push -u origin "$BRANCH"
+
+          # 3. revert ブランチ。既存ならそれを再利用して残工程（PR・コメント・issue 追記）だけ続行する
+          BRANCH="revert-auto-$SHORT"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$BRANCH"
+            git checkout -B "$BRANCH" FETCH_HEAD
+          else
+            git checkout -b "$BRANCH"
+            # squash マージ由来の通常コミット想定。マージコミットだった場合は -m 1 で親1（main 側）基準
+            if ! git revert --no-edit "$BAD_SHA"; then
+              git revert --abort 2>/dev/null || true
+              if ! git revert --no-edit -m 1 "$BAD_SHA"; then
+                git revert --abort 2>/dev/null || true
+                gh issue comment "$ISSUE_URL" --repo "$REPO" \
+                  --body "自動 revert に失敗しました（競合の可能性）。人間が手動で巻き戻してください。検知ラン: $RUN_URL"
+                exit 1
+              fi
+            fi
+            git push -u origin "$BRANCH"
+          fi
           REVERT_SHA=$(git rev-parse HEAD)
 
-          # PR 作成は PAT（GITHUB_TOKEN で作った PR には CI が走らず auto-merge 不能になるため）
-          PR_URL=$(GH_TOKEN="$MERGE_TOKEN" gh pr create --repo "$REPO" \
-            --title "revert: staging スモーク失敗による自動巻き戻し (${BAD_SHA:0:12})" \
-            --label "agent-review:passed" --label "incident" \
-            --body "staging スモークテストの失敗を検知したため、直近の main 取り込みを自動 revert します。検知ラン: $RUN_URL — 聖域パスに触れていなければ auto-merge が取り込みます（触れている場合は human-merge が付くので人間がマージしてください）。")
+          # 4. PR 作成は PAT（GITHUB_TOKEN で作った PR には CI が走らず auto-merge 不能になるため）。既存 PR は再利用
+          PR_URL=$(GH_TOKEN="$MERGE_TOKEN" gh pr list --repo "$REPO" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')
+          if [ -z "$PR_URL" ]; then
+            PR_URL=$(GH_TOKEN="$MERGE_TOKEN" gh pr create --repo "$REPO" \
+              --title "revert: staging スモーク失敗による自動巻き戻し ($SHORT)" \
+              --label "agent-review:passed" --label "incident" \
+              --body "staging スモークテストの失敗を検知したため、直近の main 取り込みを自動 revert します。検知ラン: $RUN_URL — 聖域パスに触れていなければ auto-merge が取り込みます（触れている場合は human-merge が付くので人間がマージしてください）。")
+          fi
 
           # auto-merge.yml は「対象 HEAD: <40桁 SHA>」コメントの実在を合格条件にしている
           # （合格後 push の stale passed 防止）。revert PR は機械生成で HEAD が確定しているので、
-          # ここで同じ規約のコメントを投稿して auto-merge の合格条件を満たす
+          # ここで同じ規約のコメントを投稿して auto-merge の合格条件を満たす（既に有れば再投稿しない）
           PR_NUM=${PR_URL##*/}
-          COMMENT="対象 HEAD: $REVERT_SHA"$'\n\n'
-          COMMENT+="staging スモーク失敗（$RUN_URL）に対する機械生成の revert PR。対象コミット $BAD_SHA の巻き戻しのみを含む。"
-          gh api -X POST "repos/$REPO/issues/$PR_NUM/comments" -f body="$COMMENT"
+          if ! gh api "repos/$REPO/issues/$PR_NUM/comments" --paginate --jq '.[].body' | grep -qF "対象 HEAD: $REVERT_SHA"; then
+            COMMENT="対象 HEAD: $REVERT_SHA"$'\n\n'
+            COMMENT+="staging スモーク失敗（$RUN_URL）に対する機械生成の revert PR。対象コミット $BAD_SHA の巻き戻しのみを含む。"
+            gh api -X POST "repos/$REPO/issues/$PR_NUM/comments" -f body="$COMMENT"
+          fi
 
-          # issue 作成は GITHUB_TOKEN（PAT に Issues 権限を要求しない）
-          BODY="## 事実経過（自動記録）"$'\n'
-          BODY+="- 対象コミット: $BAD_SHA"$'\n'
-          BODY+="- 検知: staging スモークテスト失敗（$RUN_URL）"$'\n'
-          BODY+="- 自動対応: revert PR $PR_URL を起票"$'\n\n'
-          BODY+="## 残タスク"$'\n'
-          BODY+="- [ ] revert 取り込みと staging 復旧の確認"$'\n'
-          BODY+="- [ ] 根本原因の分析（元 PR のどの変更がスモークを壊したか）"$'\n'
-          BODY+="- [ ] 再発防止（スモーク観点の追加 or レビュー観点の追加）"$'\n'
-          BODY+="- [ ] ユーザー影響の有無と補償判断（本番影響がなければ「なし」と明記）"
-          gh issue create --repo "$REPO" \
-            --title "incident: staging スモーク失敗 (${BAD_SHA:0:12})" \
-            --label "incident" \
-            --body "$BODY"
+          # incident issue に revert PR へのリンクを追記（既にあれば再投稿しない）
+          if ! gh issue view "$ISSUE_URL" --repo "$REPO" --json comments --jq '.comments[].body' | grep -qF "$PR_URL"; then
+            gh issue comment "$ISSUE_URL" --repo "$REPO" --body "自動対応: revert PR $PR_URL を起票しました。"
+          fi
           # <<< smoke-revert-script
 
   verification-blocked:
