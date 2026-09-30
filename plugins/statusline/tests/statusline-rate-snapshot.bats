@@ -14,9 +14,12 @@ setup() {
 
 teardown() { rm -rf "$WORK"; }
 
+# resets_at は分の切れ目から 30 秒ずらす。ちょうど 9000 秒後にすると、NOW を取った秒と同じ秒に
+# 描いた行は「~2h 30m」、1 秒でも後に描いた行は「~2h 29m」になり、2 回描いて cmp する
+# writer G が秒の切れ目をまたいだ回だけ落ちていた（#641）。30 秒あればテスト 1 件の間は表示が変わらない。
 payload() {
   jq -cn --arg cwd "$WORK" --argjson five "$1" --argjson seven "$2" --argjson now "$NOW" \
-    '{session_id:"writer-a",workspace:{current_dir:$cwd},model:{display_name:"Opus"},context_window:{remaining_percentage:80},rate_limits:{five_hour:{used_percentage:$five,resets_at:($now+9000)},seven_day:{used_percentage:$seven,resets_at:($now+302400)}}}'
+    '{session_id:"writer-a",workspace:{current_dir:$cwd},model:{display_name:"Opus"},context_window:{remaining_percentage:80},rate_limits:{five_hour:{used_percentage:$five,resets_at:($now+9030)},seven_day:{used_percentage:$seven,resets_at:($now+302430)}}}'
 }
 
 render() { printf '%s' "$1" | bash "$SL"; }

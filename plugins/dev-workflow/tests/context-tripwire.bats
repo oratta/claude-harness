@@ -492,17 +492,30 @@ with open(sys.argv[1], "w") as fh:
 PY
   [ "$(wc -c < "$f")" -gt 5000000 ]
   p="$(payload PostToolUse "$AGENT_ID" Read)"
-  # 3 回のうち最良を採る。hook は毎ツール呼び出しで走るのでファイルは温まっている前提。
-  best=99999
-  for _ in 1 2 3; do
-    t0="$(python3 -c 'import time;print(int(time.time()*1000))')"
-    bash -c "'$SCRIPT' <<< '$p'" >/dev/null
-    t1="$(python3 -c 'import time;print(int(time.time()*1000))')"
-    d=$(( t1 - t0 ))
-    if [ "$d" -lt "$best" ]; then best=$d; fi
-  done
-  echo "elapsed(best of 3) = ${best}ms"
-  [ "$best" -lt 100 ]
+  # 計時は 1 つの python3 の中で perf_counter を使い、hook の起動から終了までだけを測る。
+  # 以前は `python3 -c time.time()` を hook の前後で起動していたため、計時用 python3 の起動
+  # と `bash -c` の起動が計測値に混ざり、CPU が混んでいると 100ms を超えていた
+  # （#641: 論理 CPU 数の 2 倍の busy loop を並走させると旧方式の best of 3 は 105〜142ms、
+  # この方式の最小値は 54ms）。
+  # 閾値 100ms は spec の MUST なので動かさない。負荷は遅くする向きにしか働かないので、
+  # 最大 10 回走らせた最小値で判定する（100ms を切った時点で打ち切る）。hook が本当に
+  # 遅くなった場合（末尾 256KB でなく全行を JSON パースする等）は 10 回とも超えて落ちる。
+  run python3 - "$SCRIPT" "$p" <<'PY'
+import subprocess, sys, time
+script, payload = sys.argv[1], sys.argv[2].encode()
+best = None
+for i in range(10):
+    t0 = time.perf_counter()
+    subprocess.run([script], input=payload, stdout=subprocess.DEVNULL, check=False)
+    d = (time.perf_counter() - t0) * 1000
+    best = d if best is None else min(best, d)
+    if best < 100:
+        break
+print("elapsed(best of %d) = %.1fms" % (i + 1, best))
+sys.exit(0 if best < 100 else 1)
+PY
+  echo "$output"
+  [ "$status" -eq 0 ]
 }
 
 # ---------- 3. hooks.json の登録 ----------
