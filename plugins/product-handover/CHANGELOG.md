@@ -54,7 +54,7 @@ v0.1.0 の時点で後継があったのは `auto-merge.yml` の1件だけで、
 | ファイル | 後継 | 捨てた理由 |
 |---|---|---|
 | `templates/auto-merge.yml` | **あり** — dev-workflow の `templates/auto-merge/.github/workflows/auto-merge.yml` | 移設先は flatmate リポでアドバーサリアルレビュー3周と実運用を通過した版で、攻撃再現テストと運用ガイドも揃っている。二重管理をやめて片方を捨てた |
-| `templates/staging-smoke.yml` | **あり** — dev-workflow の `templates/auto-merge/.github/workflows/staging-smoke.yml`（claude-harness#213 で移設。展開手順は同 README の手順 6） | staging の外形スモークと auto-revert。revert PR は `agent-review:passed` で auto-merge に取り込ませる部品なので、auto-merge 配線と同じテンプレートに置いた。dev-workflow の `revert-pr.yml`（人間が PR 番号を手入力する巻き戻し）とは別物として併存する |
+| `templates/staging-smoke.yml` | **あり** — dev-workflow の `templates/auto-merge/.github/workflows/staging-smoke.yml`（claude-harness#213 で移設。展開手順は同 README の手順 6） | staging の外形スモークと auto-revert。auto-merge の PAT・ラベル体系を前提にする部品なので、auto-merge 配線と同じテンプレートに置いた（revert PR は `agent-review:passed` を自己付与せず、人間がレビューして付ける）。dev-workflow の `revert-pr.yml`（人間が PR 番号を手入力する巻き戻し）とは別物として併存する |
 | `templates/settings-permissions-deny.json` | **あり** — dev-workflow の `templates/auto-merge/.claude/settings.json`（claude-harness#213 で移設。展開手順は同 README の手順 7） | `gh pr merge` と force push の deny 設定。auto-merge の「LLM が直接マージしない」前提そのものなので、配線と同じテンプレートに置き、展開手順で既存 `.claude/settings.json` へマージする形にした。loops の dev-agent-install スキル（claude-harness#205 で解散）に依存しない |
 | `templates/master-plan-issue.md` | **不要** | 運営責任マスタープラン issue の雛形。6フェーズのオーケストレーターが起票する前提の部品で、オーケストレーターを捨てたため起票する主体がいなくなった。設計判断の記録先としては教訓ログが残る |
 
