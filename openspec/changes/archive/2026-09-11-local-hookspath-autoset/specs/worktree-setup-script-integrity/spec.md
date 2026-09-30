@@ -14,12 +14,12 @@ SessionStart の自動実行（`plugins/worktree/scripts/wt-setup-guard.sh`）�
 
 #### Scenario: 追跡されている .githooks が有効になりメインチェックアウトからも見える
 
-- **WHEN** `.githooks/pre-push` を追跡し `core.hooksPath` がどのスコープにも無いリポジトリのワークツリーで wt-setup.sh を実行する
+- **WHEN** `.githooks/pre-push` を追跡し、`core.hooksPath` がどのスコープにも無く、clone の `.git/hooks/` に `.sample` 以外のファイルが無いリポジトリのワークツリーで wt-setup.sh を実行する
 - **THEN** ワークツリーとメインチェックアウトの両方で `git config --local --get core.hooksPath` が `.githooks` を返し、`=== git フック:` の見出しと、それまでのフックが `.git/hooks/` であった旨の注意が出力される
 
 #### Scenario: グローバルの値があれば注意がその値と push-guard-setup を示す
 
-- **WHEN** グローバル設定の `core.hooksPath` に値があり、ローカル側に値の無いリポジトリのワークツリーで wt-setup.sh を実行する
+- **WHEN** `.githooks/pre-push` を追跡し、グローバル設定の `core.hooksPath` に値があり、ローカル側に値が無く、clone の `.git/hooks/` に `.sample` 以外のファイルが無いリポジトリのワークツリーで wt-setup.sh を実行する
 - **THEN** ローカルの `core.hooksPath` が `.githooks` になり、注意にそのグローバルの値と push-guard-setup が含まれ、`~/.githooks` の固定文字列は含まれない
 
 #### Scenario: 既に .githooks が入っていれば何も出さない
@@ -49,7 +49,7 @@ SessionStart の自動実行（`plugins/worktree/scripts/wt-setup-guard.sh`）�
 
 #### Scenario: .git/hooks に .sample しか無ければ切り替える
 
-- **WHEN** clone の `.git/hooks/` に `.sample` のファイルだけがあるリポジトリのワークツリーで wt-setup.sh を実行する
+- **WHEN** `.githooks/pre-push` を追跡し、`core.hooksPath` がどのスコープにも無く、clone の `.git/hooks/` に `.sample` のファイルだけがあるリポジトリのワークツリーで wt-setup.sh を実行する
 - **THEN** ローカルの `core.hooksPath` が `.githooks` になる
 
 #### Scenario: 設定の失敗は WARNING 1 行で続行する
