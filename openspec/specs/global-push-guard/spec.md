@@ -88,15 +88,6 @@ SKILL.md は次の 3 点を明記しなければならない (MUST): (1) リポ�
 - **WHEN** SKILL.md の導入手順を読む
 - **THEN** フックファイルの上書きと設定の再設定のみで完結し、冪等である旨が示されている
 
-### Requirement: プラグインバージョンの更新
-
-`plugins/dev-workflow/.claude-plugin/plugin.json` の `version` は本変更に伴い更新前より大きい値へ上げ、`.claude-plugin/marketplace.json` の対応するエントリと一致させなければならない (MUST)。（旧 loops プラグインは解散したため対象外）
-
-#### Scenario: バージョンが上がり marketplace と一致する
-
-- **WHEN** dev-workflow の plugin.json と marketplace.json の該当エントリを比較する
-- **THEN** 変更前より大きい値であり、marketplace.json の値と一致している
-
 ### Requirement: PR 運用リポジトリでリポジトリローカルのフックを有効にする手順
 
 SKILL.md は、`.githooks/` を追跡している PR 運用のリポジトリでリポジトリローカルのフックを有効にする手順を示さなければならない (MUST)。手順は次を含まなければならない (MUST): (a) 各 clone で `git config --local core.hooksPath .githooks` を実行すること、およびローカル設定は同じ clone のワークツリー間で共有されるので clone ごとに 1 回でよいこと、(b) 有効にするとその clone ではグローバルのフック（マージ済み PR のブランチへの push 拒否）が走らなくなるので、ローカルの pre-push からグローバルの pre-push を呼ぶか、同じチェックを内包すること、(c) 設定の有無を `git config --local --get core.hooksPath` で確認できること、(d) worktree プラグインの wt-setup がワークツリー作成時にこの設定を自動で入れること（ローカルに値があるとき・`.git/hooks/` に既存のフックがあるときは入れないこと）、(e) ローカル設定が無いために追跡しているフックが走らなかった過去の事故例を 1 件以上挙げること。

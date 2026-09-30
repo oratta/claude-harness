@@ -33,3 +33,7 @@ sessions/
 
 # Agent worktrees (embedded checkouts, never tracked)
 .claude/worktrees/
+
+# Python bytecode cache (pytest/py_compile artifacts next to the scripts)
+__pycache__/
+*.pyc

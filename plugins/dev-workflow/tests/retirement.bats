@@ -71,9 +71,9 @@ setup() {
   [ -z "$output" ] || { echo "$output"; return 1; }
 }
 
-@test "PR template and worker.md point the body format at dev-workflow references" {
+@test "PR template and worker/finish.md point the body format at dev-workflow references" {
   grep -q 'plugins/dev-workflow/references/pr-body-format.md' "${REPO_ROOT}/.github/PULL_REQUEST_TEMPLATE.md"
-  grep -q 'plugins/dev-workflow/references/pr-body-format.md' "${PLUGIN_DIR}/skills/develop/references/roles/worker.md"
+  grep -q 'plugins/dev-workflow/references/pr-body-format.md' "${PLUGIN_DIR}/skills/develop/references/roles/worker/finish.md"
 }
 
 # --- Requirement: アンインストール手順と契約の移設先を CHANGELOG に書く ---
@@ -115,22 +115,13 @@ setup() {
   readme="${PLUGIN_DIR}/README.md"
   grep -q 'docs/agent-loop.md' "$readme"
   grep -q 'flatmate' "$readme"
-  ! grep -q 'agent-loop-template' "$readme"
+  ! grep -q 'agent-loop-template' "$readme" || return 1
 }
 
 @test "root README drops the retired plugin sections and records the retirement" {
-  ! grep -qF '/plugin install longrun@oratta-claude-harness' "$ROOT_README"
-  ! grep -qF '/plugin install loops@oratta-claude-harness' "$ROOT_README"
-  ! grep -qF '`/longrun:plan' "$ROOT_README"
-  ! grep -qF '`/loops:design' "$ROOT_README"
+  ! grep -qF '/plugin install longrun@oratta-claude-harness' "$ROOT_README" || return 1
+  ! grep -qF '/plugin install loops@oratta-claude-harness' "$ROOT_README" || return 1
+  ! grep -qF '`/longrun:plan' "$ROOT_README" || return 1
+  ! grep -qF '`/loops:design' "$ROOT_README" || return 1
   grep -q 'plugins/dev-workflow/CHANGELOG.md' "$ROOT_README"
-}
-
-# --- Requirement: 参照を直したプラグインの version を上げる ---
-
-@test "dev-workflow is 2.1.0 or newer in plugin.json and marketplace agrees" {
-  p="$(jq -r .version "${PLUGIN_DIR}/.claude-plugin/plugin.json")"
-  m="$(jq -r '.plugins[] | select(.name=="dev-workflow") | .version' "$MARKETPLACE")"
-  [ "$p" = "$m" ]
-  printf '2.1.0\n%s\n' "$p" | sort -V -C
 }
