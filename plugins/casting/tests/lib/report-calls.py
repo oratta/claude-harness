@@ -122,10 +122,13 @@ _LEADING_RESERVED = frozenset(("!", "time", "if", "then", "else", "elif", "do", 
 class _Frame:
     """走査中の文脈（引用・コマンド置換・算術式・ヒアドキュメント本文）1つ分。"""
 
-    __slots__ = ("kind", "depth", "delim", "strip_tabs")
+    __slots__ = ("kind", "depth", "delim", "strip_tabs", "origin")
 
-    def __init__(self, kind, delim="", strip_tabs=False):
+    def __init__(self, kind, delim="", strip_tabs=False, origin=None):
         self.kind = kind
+        # コード領域フレーム（`$(` `` ` `` `((`）の中身が始まる (物理行 index, 位置)。
+        # 代入語の位置判定で、このフレームの中の単語だけを読むのに使う。
+        self.origin = origin
         self.depth = 0          # コード領域フレーム内の丸括弧の入れ子（`$(…)` の終端判定用）
         self.delim = delim      # ヒアドキュメントの区切り語
         self.strip_tabs = strip_tabs  # `<<-` の先頭タブ除去
@@ -219,9 +222,10 @@ class _Scanner:
                     continue
                 if ch == "$" and line.startswith("$(", i):
                     i = self._open_substitution(line, i, mask)
+                    self.stack[-1].origin = (index, i)
                     continue
                 if ch == "`":
-                    self.stack.append(_Frame("backtick"))
+                    self.stack.append(_Frame("backtick", origin=(index, i + 1)))
                     mask[i] = True
                     i += 1
                     continue
@@ -247,6 +251,7 @@ class _Scanner:
 
             if ch == "$" and line.startswith("$(", i):
                 i = self._open_substitution(line, i, mask)
+                self.stack[-1].origin = (index, i)
                 continue
 
             if ch in "'\"":
@@ -258,7 +263,7 @@ class _Scanner:
                 if kind == "backtick":
                     self.stack.pop()
                 else:
-                    self.stack.append(_Frame("backtick"))
+                    self.stack.append(_Frame("backtick", origin=(index, i + 1)))
                 mask[i] = True
                 i += 1
                 continue
@@ -274,7 +279,7 @@ class _Scanner:
 
             if line.startswith("((", i):
                 # `((` / `$((` の中では `<<` は左シフト演算子。ヒアドキュメントと誤認しない。
-                self.stack.append(_Frame("arith"))
+                self.stack.append(_Frame("arith", origin=(index, i + 2)))
                 mask[i] = mask[i + 1] = True
                 i += 2
                 continue
@@ -373,12 +378,22 @@ class _Scanner:
         先頭の予約語（`if` `{` `!` など）を除いてすべて代入語なら真。複合代入 `=( … )`
         の中も真。リダイレクト（`<` `>`）が前にあれば偽（bash もその後ろを代入語として
         読まない）。完全なシェルパーサではなく、この物理行より前で開いた引用は追わない。
+        いま居るコード領域フレーム（`$(` `` ` `` `((`）がこの論理行の中で開いていれば、
+        その開きの直後から読む（`echo "$(a[…]=3)"` の `$(` の中はコマンド位置）。
         """
-        text = self.lines[index][:start]
-        row = index
-        while row > 0 and _ends_with_continuation(self.lines[row - 1]):
-            row -= 1
-            text = self.lines[row][:-1] + text
+        first = index
+        while first > 0 and _ends_with_continuation(self.lines[first - 1]):
+            first -= 1
+        row, col = first, 0
+        origin = self.stack[-1].origin
+        if origin is not None and first <= origin[0] <= index:
+            row, col = origin
+        parts = []
+        while row < index:
+            parts.append(self.lines[row][col:-1])  # 行末の継続 `\\` を除く
+            row, col = row + 1, 0
+        parts.append(self.lines[index][col:start])
+        text = "".join(parts)
 
         words = []      # 直近のコマンド区切りの後ろに並ぶ単語
         cur = None      # 読みかけの単語
@@ -443,8 +458,13 @@ class _Scanner:
         if parens and parens[-1][0] == "compound":
             return True
         k = 0
-        while k < len(words) and words[k] in _LEADING_RESERVED:
-            k += 1
+        while k < len(words):
+            if words[k] in _LEADING_RESERVED:
+                k += 1
+            elif words[k] == "function" and k + 2 < len(words) and words[k + 2] == "{":
+                k += 3  # `function name {` の本体の先頭もコマンド位置
+            else:
+                break
         return all(_ASSIGNMENT_WORD.match(w) for w in words[k:])
 
     def _find_subscript_end(self, index, i):
