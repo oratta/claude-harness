@@ -141,7 +141,7 @@ check_third_party_pins() {
   local lister="$PLUGIN_DIR/tests/list-uses.rb"
   local total=0
   local unpinned=""
-  local file start_line end_line comment value body listed
+  local file start_line end_line comment body value listed
 
   # ファイル列挙は NUL 区切り（-print0 / read -d ''）。改行区切りだと改行を含む
   # ファイル名が 2 つの実在しないパスに行分断され、そのファイルの中身が一度も
@@ -158,11 +158,12 @@ check_third_party_pins() {
       unpinned="${unpinned}${file}: not parseable as YAML: ${listed}"$'\n'
       continue
     fi
-    while IFS=$'\t' read -r start_line end_line comment value; do
+    while IFS=$'\t' read -r start_line end_line comment body value; do
       # `uses` を 1 件も持たないファイルは here-string が空行 1 本になるので読み飛ばす
       [ -n "$start_line" ] || continue
       total=$((total + 1))
-      body="$(sed -n "${start_line}p" "$file")"
+      # 違反行の本文は list-uses.rb が libyaml と同じ改行判定で引いた列を使う（`sed -n` は LF 基準で
+      # bare CR を含むと別の物理行を指す。#247）。
 
       # actions/* は GitHub 公式所有なので #138 の方針どおり対象外。
       # 判定はパーサが返した `uses` の値そのものに対して行う（#176 その2 / #198 その1）。
@@ -549,6 +550,62 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: x#v9 } # v2.1.1' \
     '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: "a\"# TODO " } # v2.1.1')"
   [ "$status" -eq 0 ]
+}
+
+@test "S16a-23: a 'uses' key referenced through a YAML alias is still checked" {
+  # `anchors: { k: &u uses }` の後の `- *u: evil/action@v1` は、YAML の意味論では `uses` キーで
+  # GitHub Actions が実行する。キーを Scalar でしか拾わない実装は 1 行も出力せず、走査対象に
+  # 正例が 1 件でもあれば rc=0 で合格していた（#246）。
+  local dir="$BATS_TEST_TMPDIR/alias"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'anchors:\n  k: &u uses\njobs:\n  b:\n    steps:\n      - *u: evil/action@v1\n      - %s\n' \
+    "$PINNED_OK" > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:6:"*"evil/action@v1"* ]] || return 1
+
+  # alias キーでも正しく固定されていれば pass する
+  printf 'anchors:\n  k: &u uses\njobs:\n  b:\n    steps:\n      - *u: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 0 ]
+
+  # `uses` 以外を指す alias キーは対象にならない
+  printf 'anchors:\n  k: &n name\njobs:\n  b:\n    steps:\n      - *n: evil/action@v1\n        uses: actions/checkout@v4\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-24: a bare CR does not shift the line used for the version comment or the reported body" {
+  # libyaml は bare CR も改行として数えるが、`String#lines` と `sed -n` は LF でしか切らない。
+  # 行番号がずれて、別の物理行の `# v9` をバージョンコメントに採用して合格し、違反行の本文も
+  # 空になっていた（#247）。本当のコメントは `# TODO`。
+  local dir="$BATS_TEST_TMPDIR/barecr"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\r  build:\r    steps:\r      - uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO\nx: 1\ny: 2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: 1 # v9\n' \
+    > "$dir/fixture.yml.template"
+  run ruby "$PLUGIN_DIR/tests/list-uses.rb" "$dir/fixture.yml.template"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'\t# TODO\t'* ]] || return 1
+  [[ "$output" != *"# v9"* ]] || return 1
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:4:"*"# TODO"* ]] || return 1
+
+  # 本当のコメントがバージョンなら pass する（bare CR があっても）
+  printf 'jobs:\r  build:\r    steps:\r      - uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1\ny: 1 # TODO\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 0 ]
+
+  # bare CR の中に隠した未固定の uses も捕まり、違反行の本文が出る
+  printf 'jobs:\r  build:\r    steps:\r      - uses: evil/action@v1\r' > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:4:"*"evil/action@v1"* ]] || return 1
 }
 
 @test "S17: all five workflow templates parse as YAML" {
