@@ -343,7 +343,12 @@ class _Scanner:
             return False
         if not in_assignment:
             return True
-        after = self.lines[end[0]][end[1] + 1:]
+        # `]` と `=` の間に行末 `\` の行継続が挟まっても、bash は継続を除いてから
+        # 読むので代入語（#244）。`]` の直後が `\` だけで行が終わる間は次の物理行へ進む。
+        row, col = end[0], end[1] + 1
+        while self.lines[row][col:] == "\\" and row + 1 < len(self.lines):
+            row, col = row + 1, 0
+        after = self.lines[row][col:]
         return after.startswith("=") or after.startswith("+=")
 
     def _find_subscript_end(self, index, i):

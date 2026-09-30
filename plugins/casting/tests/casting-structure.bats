@@ -400,6 +400,29 @@ SH
   [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-continued-subscript after-plus-assign " ]
 }
 
+# `]` と `=` の間に行継続 `\` が挟まる代入語（#244）。bash は継続を除いてから読むので
+# `a[1<<2]\` + `=3` は添字つき代入だが、`]` の直後の文字だけを見ると添字として開かず、
+# `<<` がヒアドキュメント開始と誤認されて以降の呼び出しが全消滅していた（無言経路）。
+@test "check: array assignment split between bracket and equals stays arithmetic" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-split-assign.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+a[1<<2]\
+=3
+report "after-split-assign" "m"
+b[1<<2]\
++=4
+report "after-split-plus-assign" "n"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "2" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "2" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-split-assign after-split-plus-assign " ]
+}
+
 # 添字判定を bash の位置規則に揃えた副作用で、添字でない `[` の扱いが変わっていないことの
 # 確認。test コマンド `[ -f x ]`・`[[ … ]]`・連想配列の `${m[key]}` `${#m[@]}` `${!m[@]}`・
 # glob の文字クラス `file[a-z].txt` のどれも、直後のヒアドキュメント本文を本文のまま扱い、
