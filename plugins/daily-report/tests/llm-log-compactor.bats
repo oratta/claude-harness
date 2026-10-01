@@ -7,6 +7,7 @@
 load "$(dirname "$BATS_TEST_FILENAME")/helper.bash"
 
 setup() {
+  export LC_ALL=C.UTF-8
   dr_setup_paths
   dr_make_tmpdir
   AGENT_FILE="${PLUGIN_DIR}/agents/llm-log-compactor.md"
@@ -56,6 +57,8 @@ teardown() {
   # for an unrelated top-5 listing. Neither should trip this check.
   extraction_code="$(awk '/^#### 2a\./{f=1} /^#### 2b\./{f=0} f' "$AGENT_FILE" \
     | awk '/^```/{c++; next} c==1')"
+  # 見出し表記の変更やコードブロックの消失で空になると、下の否定検査が黙って通る
+  [ -n "$extraction_code" ] || return 1
   ! echo "$extraction_code" | grep -Eq 'head ?-5' || return 1
   # Sequential scan documented (Japanese or English keyword)
   grep -Eq '(先頭から順次|順次スキャン|sequential scan|head ?- ?n ?1)' "$AGENT_FILE"
