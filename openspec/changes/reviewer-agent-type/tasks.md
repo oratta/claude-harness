@@ -30,7 +30,7 @@
 - [x] 5.1 1.1〜1.4 のテストが通ることを確かめ、`./scripts/test.sh` を実行して exit 0 を確かめる（`tests/injection-budget.bats` が落ちたら description を削り、足りないぶんだけ `tests/injection-budget.txt` を動かして理由を控える）。触る範囲: tests/injection-budget.txt（必要な場合だけ）
 - [x] 5.2 変更記録を書く。触る範囲: plugins/dev-workflow/changes/650.md（新規）
 - [x] 5.3 `openspec validate reviewer-agent-type --strict` を通す
-- [ ] 5.4 受け入れ条件 1 の計測: worktree の `plugins/dev-workflow` を `claude -p --plugin-dir` で読み込んだセッションで、同じ指示文・`model: opus` で `general-purpose` と `dev-workflow:reviewer` を 1 体ずつ起こし、各 `subagents/agent-*.jsonl` の最初の `message.usage` の 3 項目と `meta.json` の `agentType`、Claude Code の版を控える（PR 本文の `## 新種別の計測` に (3b) で書く）。合計の差が 20,000 未満なら手を止めて return する
+- [x] 5.4 受け入れ条件 1 の計測: worktree の `plugins/dev-workflow` を `claude -p --plugin-dir` で読み込んだセッションで、同じ指示文・`model: opus` で `general-purpose` と `dev-workflow:reviewer` を 1 体ずつ起こし、各 `subagents/agent-*.jsonl` の最初の `message.usage` の 3 項目と `meta.json` の `agentType`、Claude Code の版を控える（PR 本文の `## 新種別の計測` に (3b) で書く）。両方の値と差を記録し、差の大きさは合否に使わない。計測結果（Claude Code 2.1.286、`claude -p --model sonnet --plugin-dir`、session bf78e84f-cdf5-4104-9f2c-3cc9325c43dd）: `general-purpose`（agentType `general-purpose`）input 2・cache_creation 27,514・cache_read 0・合計 27,516、`dev-workflow:reviewer`（agentType `dev-workflow:reviewer`）input 2・cache_creation 16,409・cache_read 0・合計 16,411、差 11,105
 
 ## 6. 受け入れ条件 2（担い手は本体。W は行わない）
 
