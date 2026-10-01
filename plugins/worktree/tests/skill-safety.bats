@@ -11,6 +11,9 @@
 load "$(dirname "$BATS_TEST_FILENAME")/helper.bash"
 
 setup() {
+  # 文面検査の正規表現（[^。]* など）は多バイトを 1 文字として数える UTF-8 ロケールが前提。
+  # LANG 未設定（C ロケール）だと [^。] が日本語の文字を構成するバイトを除外して空振りする（#662）
+  export LC_ALL=C.UTF-8
   wt_setup_paths
 }
 
