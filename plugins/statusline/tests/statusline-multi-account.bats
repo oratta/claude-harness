@@ -863,7 +863,7 @@ set_b_snapshot_weekly() {
   line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
   [[ "$line" =~ 20% ]] || return 1
   ! [[ "$line" =~ 77 ]] || return 1
-  ! drop_cwd_line "$WORK/out.txt" | grep -q '77%'
+  ! drop_cwd_line "$WORK/out.txt" | grep -q '77%' || return 1
 }
 
 # 規則 1 の但し書き: リセット時刻が null の 5 時間枠を使うのは pct 0 のときだけ
