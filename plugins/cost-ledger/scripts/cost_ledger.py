@@ -496,9 +496,24 @@ def cmd_facts(args, pricing: Pricing, resolver: RepoResolver) -> int:
 
 
 def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
-    facts = list(iter_facts(log_root(), resolver, branch=args.branch))
+    """ブランチに帰属する行を集計する。
+
+    ``args.scope_repo_id`` があるときは、そのリポジトリの行だけを合計する。``main`` や
+    ``develop`` のように別リポジトリにも同名で存在するブランチを、番号なしの ``/cost`` で
+    引いたときに他リポジトリの行を足さないため。リポジトリが不明に落ちた行は除外も合算も
+    せず、件数と金額を別立てで出す。PR 経路は絞らない（ヘッドブランチが main になることは
+    なく、削除済み worktree の行を落とさないため）。
+    """
+    scope = getattr(args, "scope_repo_id", None)
+    all_facts = list(iter_facts(log_root(), resolver, branch=args.branch))
+    unknown = []
+    if scope is None:
+        facts = all_facts
+    else:
+        facts = [f for f in all_facts if f["repo_id"] == scope]
+        unknown = [f for f in all_facts if f["repo_id"] == UNKNOWN_REPO]
     summary = summarise(facts, pricing)
-    label = branch_label(facts, resolver)
+    label = resolver.label(scope) if scope is not None else branch_label(facts, resolver)
     target = "ブランチ %s" % args.branch
     if args.target_label:
         target = args.target_label
@@ -510,6 +525,10 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print(line)
     if not facts:
         print("  この会話ログにそのブランチの行はありません。")
+    if unknown:
+        unknown_usd = summarise(unknown, pricing)["total_usd"]
+        print("  リポジトリ不明: %d 件 $%s（cwd が削除済みで、どのリポジトリの %s か絞れない）"
+              % (len(unknown), format(unknown_usd, ",.2f"), args.branch))
     return 0
 
 
@@ -529,8 +548,13 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
                 "PR か issue の番号を渡してください）。\n" % where
             )
             return 2
+        # 番号なしは現在のリポジトリのブランチを見るので、同名の別リポジトリの行は足さない
         return cmd_branch(
-            argparse.Namespace(branch=branch, target_label=None), pricing, resolver
+            argparse.Namespace(
+                branch=branch, target_label=None, scope_repo_id=resolver.repo_id(where)
+            ),
+            pricing,
+            resolver,
         )
 
     kind, value = resolve_number(where, args.number)
