@@ -251,7 +251,7 @@ W の名前は書かない（新しいセッションでは SendMessage でき�
 | R1（読んで判断する役） | `opus` | 仕様の対象がマージ条件・層間契約・課金/法務に触れるときは `subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` を付けない。聖域パスだけでは上げない） |
 | G（`dev-workflow:gate-runner`） | `sonnet` | 上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う |
 | V（画面確認役。`general-purpose`） | `sonnet` | 上げない |
-| G が要求するレビュアー（読んで判断する役。既定の種別は `dev-workflow:reviewer`） | `opus` | レビュー対象がマージ条件・層間契約・課金/法務に触れるときは `subagent_type: dev-workflow:decider`（従来経路では G の `needs-reviewer` の推奨モデルに従う。adapter 経路では adapter が返した model に残量上限を適用した値を使い、推奨モデルは参考値。(4) の ③） |
+| G が要求するレビュアー（読んで判断する役） | `opus` | 既定の種別は `dev-workflow:reviewer`。レビュー対象がマージ条件・層間契約・課金/法務に触れるときは `subagent_type: dev-workflow:decider`（従来経路では G の `needs-reviewer` の推奨モデルに従う。adapter 経路では adapter が返した model に残量上限を適用した値を使い、推奨モデルは参考値。(4) の ③） |
 
 W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 本も無く、昇格ラダーの Sonnet 段が構造的に通っていなかったため。W は事前分類と失敗ループで `opus` まで上がる。W の上限を `opus` にしたのは、Fable が消費するのはターン数（会話履歴の cache 読込）で、実装・修正ループは 1 件で数十〜数百ターン回るため。「層間契約だから判断が要る」ぶんは仕様化判断・R1 レビュー・本体の判断で吸収し、W は確定した内容を落とす作業だけを担う。読んで判断する役（R1・レビュアー）が Fable に当たるときは `dev-workflow:decider` で起こす — Fable を渡せる `subagent_type` はこれだけで、判定は `scripts/agent-model-guard.sh` が行う。
 
