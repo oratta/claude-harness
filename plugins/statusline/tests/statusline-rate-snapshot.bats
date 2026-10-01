@@ -6,20 +6,29 @@ setup() {
   WORK="$(mktemp -d)"
   export HOME="$WORK/home" CLAUDE_CONFIG_DIR="$WORK/config"
   export FLATMATE_RATE_SHARE_CONF="$WORK/no-conf" STATUSLINE_API_PACE=0 STATUSLINE_CODEX=0
-  unset FLATMATE_RATE_SHARE_DIR CLAUDE_SECURESTORAGE_CONFIG_DIR
+  unset FLATMATE_RATE_SHARE_DIR CLAUDE_SECURESTORAGE_CONFIG_DIR USAGE_SESSIONS_DIR CLAUDE_ACCOUNTS_FILE
   mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR"
   SNAP="$CLAUDE_CONFIG_DIR/.rate-limit-snapshot"
   NOW="$(date +%s)"
+  export NOW
+  # `date +%s` を NOW に固定する。2 回描いて cmp する writer G が、実時計の秒の切れ目をまたぐと
+  # 残り時間の分の桁（~2h 30m と ~2h 29m）がずれて落ちていた（#641）。
+  # statusline-session-records.bats と同じ方式。statusline.sh は子プロセスの bash なので export -f で渡す。
+  date() {
+    if [ "$1" = "+%s" ]; then
+      printf '%s\n' "$NOW"
+    else
+      command date "$@"
+    fi
+  }
+  export -f date
 }
 
 teardown() { rm -rf "$WORK"; }
 
-# resets_at は分の切れ目から 30 秒ずらす。ちょうど 9000 秒後にすると、NOW を取った秒と同じ秒に
-# 描いた行は「~2h 30m」、1 秒でも後に描いた行は「~2h 29m」になり、2 回描いて cmp する
-# writer G が秒の切れ目をまたいだ回だけ落ちていた（#641）。30 秒あればテスト 1 件の間は表示が変わらない。
 payload() {
   jq -cn --arg cwd "$WORK" --argjson five "$1" --argjson seven "$2" --argjson now "$NOW" \
-    '{session_id:"writer-a",workspace:{current_dir:$cwd},model:{display_name:"Opus"},context_window:{remaining_percentage:80},rate_limits:{five_hour:{used_percentage:$five,resets_at:($now+9030)},seven_day:{used_percentage:$seven,resets_at:($now+302430)}}}'
+    '{session_id:"writer-a",workspace:{current_dir:$cwd},model:{display_name:"Opus"},context_window:{remaining_percentage:80},rate_limits:{five_hour:{used_percentage:$five,resets_at:($now+9000)},seven_day:{used_percentage:$seven,resets_at:($now+302400)}}}'
 }
 
 render() { printf '%s' "$1" | bash "$SL"; }
