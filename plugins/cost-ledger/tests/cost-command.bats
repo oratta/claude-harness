@@ -128,3 +128,52 @@ EOF
   run grep -q 'cost_ledger.py' "$PLUGIN_DIR/commands/cost.md"
   [ "$status" -eq 0 ]
 }
+
+# 2 つのリポジトリと、削除済み worktree に、同じ名前のブランチ "shared-name" の行を置く
+shared_branch_rows() {
+  {
+    cl_row SH1 sh-a 2026-09-02T10:00:00.000Z shared-name "$REPO_A" 1000000
+    cl_row SH2 sh-b 2026-09-02T11:00:00.000Z shared-name "$REPO_B" 2000000
+    cl_row SH3 sh-u 2026-09-02T12:00:00.000Z shared-name /nonexistent/gone 4000000
+  } | cl_write_log shared-name
+}
+
+@test "cost: without a number, a same-named branch in another repository is not added" {  # 番号なしの /cost は、別リポジトリの同名ブランチの金額を合算しない
+  fake_gh_nothing
+  shared_branch_rows
+  git -C "$REPO_A" checkout -q -b shared-name
+  git -C "$REPO_B" checkout -q -b shared-name
+
+  run python3 "$CL" cost --repo "$REPO_A"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = 'コスト: $1.00 / ¥150 @150 — ブランチ shared-name (acme/repo-a) 帰属: ブランチ' ]
+
+  run python3 "$CL" cost --repo "$REPO_B"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = 'コスト: $2.00 / ¥300 @150 — ブランチ shared-name (acme/repo-b) 帰属: ブランチ' ]
+}
+
+@test "cost: without a number, unknown-repository rows are neither dropped nor added" {  # 番号なしの /cost は、リポジトリ不明の行を除外も合算もせず件数と金額で別立てにする
+  fake_gh_nothing
+  shared_branch_rows
+  git -C "$REPO_A" checkout -q -b shared-name
+
+  run python3 "$CL" cost --repo "$REPO_A"
+  [ "$status" -eq 0 ]
+  # 合計に不明ぶん（$4.00）が入っていない
+  [[ "${lines[0]}" == 'コスト: $1.00 /'* ]] || return 1
+  [[ "$output" == *'リポジトリ不明: 1 件 $4.00'* ]] || return 1
+}
+
+@test "cost: the PR route still adds every repository's rows of the head branch" {  # PR の経路は従来どおりブランチ名だけで引く（リポジトリで絞らない）
+  fake_gh_nothing
+  shared_branch_rows
+  cl_fake_gh <<'GH'
+if [[ "$*" == *"pulls/55"* ]]; then echo shared-name; exit 0; fi
+exit 1
+GH
+
+  run python3 "$CL" cost 55 --repo "$REPO_A"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = 'コスト: $7.00 / ¥1,050 @150 — PR #55 (shared-name) 帰属: ブランチ' ]
+}
