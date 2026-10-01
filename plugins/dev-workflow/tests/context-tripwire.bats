@@ -505,18 +505,21 @@ PY
   # 大小 2 つのトランスクリプトを交互に最大 10 回ずつ走らせ、それぞれの最小値で判定する
   # （大が 100ms を切った時点で打ち切る）。
   #   1. 大の最小値 < 100ms なら合格（通常の判定。spec のとおり）
-  #   2. 超えた場合でも、小（起動コストだけ）の最小値が 50ms 以上なら、マシンが混みすぎて
-  #      絶対値では判定できない（load average 約 17 で小が 100ms 超になる実測あり）。
-  #      このときだけ「大 <= 小 x 2」で判定する。hook の仕事量がトランスクリプトの大きさに
-  #      よらない（末尾 256KB だけ読む）ことが spec の本旨なので、意味は保たれる。
-  #      末尾でなく全行を JSON パースする回帰は大が小の数倍になり、この条件でも落ちる。
+  #   2. 超えた場合でも、hook と無関係な基準（`python3 -c pass` の起動、平常 20ms 前後）の
+  #      最小値が 40ms 以上なら、マシンが混みすぎて絶対値では判定できない。
+  #      このときだけ「大 <= 小 x 2」かつ「小 <= 基準 x 3」で判定する。前者は末尾でなく全行を
+  #      JSON パースする回帰（大が小の数倍）を、後者は hook 全体が一様に遅くなる回帰（基準は
+  #      hook に依存しないので、小だけが基準から離れる）を落とす。
   run python3 - "$SCRIPT" "$p" "$ps_" <<'PY'
 import subprocess, sys, time
 script, big, small = sys.argv[1], sys.argv[2].encode(), sys.argv[3].encode()
-best = {"big": None, "small": None}
+best = {"big": None, "small": None, "ref": None}
 def run(kind, payload):
     t0 = time.perf_counter()
-    r = subprocess.run([script], input=payload, stdout=subprocess.DEVNULL, check=False)
+    if kind == "ref":
+        r = subprocess.run(["python3", "-c", "pass"], stdout=subprocess.DEVNULL, check=False)
+    else:
+        r = subprocess.run([script], input=payload, stdout=subprocess.DEVNULL, check=False)
     d = (time.perf_counter() - t0) * 1000
     if r.returncode != 0:
         print("hook exited with %d (%s)" % (r.returncode, kind))
@@ -525,13 +528,14 @@ def run(kind, payload):
 for i in range(10):
     run("big", big)
     run("small", small)
+    run("ref", b"")
     if best["big"] < 100:
         break
-b, s = best["big"], best["small"]
-print("rounds=%d big=%.1fms small=%.1fms" % (i + 1, b, s))
+b, s, ref = best["big"], best["small"], best["ref"]
+print("rounds=%d big=%.1fms small=%.1fms ref=%.1fms" % (i + 1, b, s, ref))
 if b < 100:
     sys.exit(0)
-if s >= 50 and b <= s * 2:
+if ref >= 40 and b <= s * 2 and s <= ref * 3:
     print("overloaded host: absolute 100ms not judgeable, relative check passed")
     sys.exit(0)
 sys.exit(1)
