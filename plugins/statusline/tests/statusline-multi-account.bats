@@ -10,6 +10,7 @@
 # 既存の statusline.bats は 1 スロット時の退行ガードとして無改変で残す。
 
 setup() {
+  export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   REPO_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   SL="${PLUGIN_DIR}/scripts/statusline.sh"
@@ -55,6 +56,8 @@ setup() {
 }
 
 teardown() {
+  # 記録ディレクトリを書き込み不可にしたテストの後始末（権限を戻さないと rm -rf が失敗する）
+  chmod -R u+w "$WORK" 2>/dev/null || true
   rm -rf "$WORK"
 }
 
@@ -845,9 +848,22 @@ set_b_snapshot_weekly() {
   write_two_slot_registry
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   write_b_record "$((NOW - 60))" 77 "$((NOW + 172800))"
+  # statusline は描画の前に自分の記録を stdin の値で上書きする。そのままでは事前に置いた 77 が
+  # 読まれる前に消え、active 行が記録を読む実装になっても通ってしまう（#442 の 2 つ目）。
+  # 記録ディレクトリを書き込み不可にして上書きを止め、77 が残ったまま描画させる。
+  chmod a-w "${WORK}/.usage-sessions"
+  if ( : > "${WORK}/.usage-sessions/.probe" ) 2>/dev/null; then
+    rm -f "${WORK}/.usage-sessions/.probe"
+    skip "書き込み不可にできない環境（root 等）では上書き防止が効かない"
+  fi
   mk_input 40 20 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" \
     | strip_ansi > "$WORK/out.txt"
-  [[ "$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")" =~ 20% ]] || return 1
+  # 上書きが止まっていること（これが崩れるとこのテストは再び回帰を検出できない）
+  grep -q '"weekly_all_pct":77' "${WORK}"/.usage-sessions/*.json
+  line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
+  [[ "$line" =~ 20% ]] || return 1
+  ! [[ "$line" =~ 77 ]] || return 1
+  ! drop_cwd_line "$WORK/out.txt" | grep -q '77%' || return 1
 }
 
 # 規則 1 の但し書き: リセット時刻が null の 5 時間枠を使うのは pct 0 のときだけ
