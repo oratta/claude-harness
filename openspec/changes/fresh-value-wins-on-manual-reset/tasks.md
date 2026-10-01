@@ -12,5 +12,5 @@
 
 ## 3. 仕上げ
 
-- [ ] 3.1 `LC_ALL=en_US.UTF-8 bash scripts/test.sh` が exit 0
+- [x] 3.1 `LC_ALL=en_US.UTF-8 bash scripts/test.sh` が exit 0
 - [ ] 3.2 spec delta を archive で本 spec に反映する
