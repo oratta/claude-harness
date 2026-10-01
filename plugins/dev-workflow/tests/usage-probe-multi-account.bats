@@ -748,6 +748,41 @@ seed_two_slot_snapshot() {
   [ ! -e "$USAGE_PROBE_LOCK" ]
 }
 
+@test "lock: concurrent takeover of one stale lock lets exactly one probe hit the API" {
+  setup_production_stubs "2.1.280 (Claude Code)"
+  # curl の呼び出し回数を数え、1 秒かけて返す（先の 1 本の実行中に後の本数が重なるようにする）
+  cat > "${STUB}/curl" <<SH
+#!/usr/bin/env bash
+printf 'hit\n' >> "${WORK}/curl-hits"
+cat > /dev/null
+sleep 1
+cat "${WORK}/resp.json"
+printf '\n200'
+SH
+  # 古さの判定（stat）の直後に少し待たせ、全本が「古い」と判定してから取り直しに進むようにする
+  # （競合を決定的に起こすための足場。実コマンドへの委譲は絶対パスで行う）
+  cat > "${STUB}/stat" <<'SH'
+#!/usr/bin/env bash
+if [ -x /usr/bin/stat ]; then /usr/bin/stat "$@"; rc=$?; else /bin/stat "$@"; rc=$?; fi
+sleep 0.5
+exit $rc
+SH
+  chmod +x "${STUB}/curl" "${STUB}/stat"
+  mkdir "$USAGE_PROBE_LOCK"
+  python3 -c 'import os,sys,time; t=time.time()-300; os.utime(sys.argv[1],(t,t))' "$USAGE_PROBE_LOCK"
+  pids=()
+  for _ in 1 2 3 4; do
+    env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+        USAGE_PROBE_NOW="$NOW" "$PROBE" >/dev/null 2>&1 &
+    pids+=($!)
+  done
+  for pid in "${pids[@]}"; do wait "$pid"; done
+  [ "$(wc -l < "${WORK}/curl-hits" | tr -d ' ')" = "1" ]
+  [ ! -e "$USAGE_PROBE_LOCK" ]
+  # 取り直しの途中で作る退避ディレクトリが残らない
+  [ -z "$(ls -d "${USAGE_PROBE_LOCK}".* 2>/dev/null)" ]
+}
+
 @test "lock: released when no slot meets the condition" {
   printf '{"slots":{"default":{"last_attempt":%s,"consecutive_429":0}}}\n' "$NOW" >| "$USAGE_PROBE_STATE"
   run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
