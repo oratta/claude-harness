@@ -55,6 +55,20 @@ setup() {
   echo "$output" | grep -qF "COPY plugins/dev-workflow/skills/develop/SKILL.md"
 }
 
+# #### 以下の小見出しは節の中として走査を続ける（レビュー指摘: 4 階層の見出しで走査が打ち切られていた）
+@test "single source: a level-4 heading inside the section does not end the scan" {
+  d="$(mktemp -d)"
+  mkdir -p "$d/$(dirname "$CANON_REL")"
+  {
+    printf '## コンテキスト上限（サブエージェントの手渡し）\n\n#### 小見出し\n\n'
+    printf 'これは四階層の見出しより後ろにある、四十文字を超える長さの正本の一文であるものとする。\n\n## 次の節\n'
+  } > "$d/${CANON_REL}"
+  printf 'これは四階層の見出しより後ろにある、四十文字を超える長さの正本の一文であるものとする。\n' > "$d/other.md"
+  run python3 "$SCAN" "$d"
+  rm -rf "$d"
+  [ "$status" -eq 1 ]
+}
+
 # 限界の明示: 言い換えは捕まえない（これが落ちるようになったら spec とコメントを書き換えること）
 @test "single source: a paraphrase is not detected (documented limitation)" {
   d="$(mktemp -d)"

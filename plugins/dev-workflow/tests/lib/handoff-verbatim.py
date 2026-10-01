@@ -28,8 +28,8 @@ def canonical_sentences(root):
         if line == HEADING:
             inside = True
             continue
-        # 次の見出し（## も ###）で節は終わる。小節は別の話題なので含めない
-        if inside and line.startswith("#"):
+        # 次の ## / ### 見出しで節は終わる（#### 以下の小見出しは節の中）。### の小節は別の話題なので含めない
+        if inside and re.match(r"^#{2,3}(?:\s|$)", line):
             break
         if inside:
             body.append(line)
