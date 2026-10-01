@@ -169,6 +169,11 @@ TBD - created by archiving change casting-plugin. Update Purpose after archive.
 - **WHEN** `--catalog <path> resolve <repo-root>` の順で実行する
 - **THEN** 合成表が出力され（壊れた配役表なら fail-closed で exit 1 になり）、check モードへ黙って落ちない
 
+#### Scenario: resolve に --strict を付けると使い方エラーになる
+
+- **WHEN** 検証を通る配役表を持つ repo に対して `resolve --strict` を実行する
+- **THEN** stdout には何も出力されず（合成表のヘッダ行も含む）、stderr に `--strict` が check モード専用である旨と usage が出て、exit code が 2 になる
+
 #### Scenario: 起案シグナルだけの repo は合成できる
 
 - **WHEN** 有効な project.md があり、precedents.md に「カタログ外」判例（または同一観点の「論点じゃなかった」2件以上）がある repo に対して resolve を実行する
