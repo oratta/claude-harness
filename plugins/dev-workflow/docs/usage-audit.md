@@ -131,11 +131,13 @@ plugins/dev-workflow/scripts/subagent-context-audit.sh --by-role --refresh
 | 担当 | 分類規則 |
 |---|---|
 | `decider` | `agent-<id>.meta.json` の `agentType` が `dev-workflow:decider`（`description` の見た目より優先） |
-| `W` / `R1` / `G` / `Reviewer` | `agentType` が decider でないとき、`description` の先頭コロン区切りトークンがこれらに完全一致 |
-| `unknown` | どちらにも当たらない（`description` 無し・コロン無し・未知のトークン・meta.json 欠損/壊れ） |
+| `Reviewer`（種別） | `agentType` が `dev-workflow:reviewer`（decider の次に見る。`description` の見た目より優先） |
+| `W` / `R1` / `G` / `Reviewer` | `agentType` が上の 2 つでないとき、`description` の先頭コロン区切りトークンがこれらに完全一致 |
+| `unknown` | どれにも当たらない（`description` 無し・コロン無し・未知のトークン・meta.json 欠損/壊れ） |
 
-`Reviewer:` の接頭辞は develop の紐付け規約（`skills/develop/SKILL.md` の「紐付けの規約」）に未規定のため、
-G のレビュアーは `unknown` に落ちうる（`Reviewer` の件数が少ない・`unknown` に偏るのは想定内の挙動）。
+G が要求するレビュアーは `dev-workflow:reviewer` で起こすので、`description` が `Reviewer:` で始まっていなくても
+`agentType` で `Reviewer` に数えられる。種別を替える前（`general-purpose` で起こしていた時期）の個体は
+`description` の接頭辞だけが頼りで、書き忘れたものは `unknown` に落ちる。
 
 各値は `count` / `first_median` / `docs_median` / `last_median` / `over_cap_pct` を持ち、
 `W` のみ追加で `reread_pct` を持つ。`count` が 0 の担当は `first_median` / `docs_median` /

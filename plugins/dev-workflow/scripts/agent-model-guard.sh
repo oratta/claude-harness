@@ -10,7 +10,7 @@
 #   - tool_name が Agent 以外 → 何もしない（exit 0・無出力）
 #   - model が Fable（エイリアス fable / 完全 ID claude-fable-*）→ subagent_type が決める役
 #     （dev-workflow:decider）のときだけ許可。それ以外は拒否（実行役の上限は opus）
-#   - worker / gate-runner は DECIDER_TYPES に入れず、定義の model: sonnet を使う
+#   - worker / gate-runner / reviewer は DECIDER_TYPES に入れず、定義の model（worker / gate-runner は sonnet、reviewer は opus）を使う
 #   - model あり → 許可
 #   - subagent_type が定義に model を持つエージェント（plugin:agent 形式や casting-* 等）→ 許可
 #     （Agent ツールは定義側の model を使うため、パラメータ省略が親継承にならない）

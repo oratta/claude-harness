@@ -1001,6 +1001,38 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -qF '`explore`・`summarize` role は `general-purpose`' "$codex"
 }
 
+@test "reviewer spawn: every reviewer spawn instruction names dev-workflow:reviewer, not general-purpose (#650)" {
+  review_run="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
+  skill="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  codex="${PLUGIN_DIR}/references/codex-develop.md"
+  # prepare.md: needs-reviewer の段落と推奨モデルの行
+  para="$(grep -F '本体はこれを読んでレビュアー' "$PREPARE")"
+  [ -n "$para" ]
+  echo "$para" | grep -qF 'subagent_type: dev-workflow:reviewer'
+  if echo "$para" | grep -qF 'subagent_type: general-purpose'; then return 1; fi
+  echo "$para" | grep -qF '`general-purpose` に `model: fable` は付けない'
+  rec="$(grep -E '^- 推奨モデル:' "$PREPARE")"
+  echo "$rec" | grep -qF 'dev-workflow:reviewer'
+  echo "$rec" | grep -qF 'dev-workflow:decider'
+  # review-run.md 2-1 のフォールバック行
+  fb="$(grep -E '^\| フォールバック \|' "$review_run")"
+  [ -n "$fb" ]
+  echo "$fb" | grep -qF 'dev-workflow:reviewer'
+  if echo "$fb" | grep -qF 'Agent ツール（`general-purpose`）'; then return 1; fi
+  if grep -qF 'Agent ツール（`general-purpose`）' "$review_run"; then return 1; fi
+  # develop SKILL.md: Agent ツールの行・(4) の ③・モデル表のレビュアー行
+  grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:reviewer'
+  grep -F 'executor が claude なら Agent ツールで' "$skill" | grep -qF 'dev-workflow:reviewer'
+  row="$(grep -E '^\| G が要求するレビュアー' "$skill")"
+  echo "$row" | grep -qF 'dev-workflow:reviewer'
+  if echo "$row" | grep -qF 'subagent_type: general-purpose'; then return 1; fi
+  # codex-develop.md: レビュアーと R1 を分ける
+  grep -qF 'レビュアーは `dev-workflow:reviewer`' "$codex"
+  grep -qF 'R1 は `general-purpose`' "$codex"
+  if grep -qF 'R1 とレビュアーは `general-purpose`' "$codex"; then return 1; fi
+  grep -qF 'dev-workflow:reviewer' "${PLUGIN_DIR}/README.md"
+}
+
 @test "spec-reviewer: change creation describes the openspec CLI and existing changes" {
   grep -qF 'W が `openspec new change` と artifact の直書きで作った change（本体や主が `/opsx:ff` で先に作った change を含む）' "$REVIEWER"
 }

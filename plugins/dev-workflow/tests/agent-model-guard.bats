@@ -75,6 +75,16 @@ denied() { echo "$output" | grep -q '"permissionDecision": "deny"'; }
   done
 }
 
+@test "reviewer type rejects Fable and accepts sonnet, opus and omitted model" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:reviewer","model":"fable","prompt":"x"}}'
+  denied
+  for model_part in ',"model":"sonnet"' ',"model":"opus"' ''; do
+    call "{\"tool_name\":\"Agent\",\"tool_input\":{\"subagent_type\":\"dev-workflow:reviewer\",\"prompt\":\"x\"$model_part}}"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
+}
+
 @test "fork: allowed when the shared budget mode is ok (no snapshot)" {
   call '{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
   [ "$status" -eq 0 ]

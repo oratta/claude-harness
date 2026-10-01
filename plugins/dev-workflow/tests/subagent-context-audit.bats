@@ -92,7 +92,7 @@ rl_asst_tool() {
 }
 
 # 担当分類（agentType 優先 / description 先頭トークン / unknown）を確かめるための
-# 7 体の混在 fixture（W / R1 / G / Reviewer / decider / unknown x2）を作る。
+# 8 体の混在 fixture（W / R1 / G / Reviewer x2 / decider / unknown x2）を作る。
 seed_role_mix() {
   local f
   f="$(make_role_agent p1 s1 agent-w1.jsonl general-purpose "W: #552 impl")"
@@ -105,6 +105,10 @@ seed_role_mix() {
   rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
 
   f="$(make_role_agent p1 s1 agent-reviewer1.jsonl general-purpose "Reviewer: code review for #552")"
+  rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
+
+  # agentType が dev-workflow:reviewer なら description が Reviewer: で始まらなくても Reviewer に分類される
+  f="$(make_role_agent p1 s1 agent-reviewer2.jsonl dev-workflow:reviewer "code review for #552")"
   rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
 
   # agentType が decider を示せば description が R1 の体裁でも decider に分類される（D1）
@@ -453,7 +457,7 @@ SHIM
   echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "by_role" not in d, d'
 }
 
-@test "by-role: agentType decider overrides description, leading token maps roles, rest fall to unknown" {
+@test "by-role: agentType decider/reviewer override description, leading token maps roles, rest fall to unknown" {
   seed_role_mix
   run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
   [ "$status" -eq 0 ]
@@ -464,7 +468,7 @@ br = d["by_role"]
 assert br["W"]["count"] == 1, br
 assert br["R1"]["count"] == 1, br
 assert br["G"]["count"] == 1, br
-assert br["Reviewer"]["count"] == 1, br
+assert br["Reviewer"]["count"] == 2, br  # description 先頭 Reviewer: と agentType dev-workflow:reviewer
 # agentType: dev-workflow:decider が description の "R1:" 見た目より優先される
 assert br["decider"]["count"] == 1, br
 assert br["unknown"]["count"] == 2, br  # note: something / meta 無し

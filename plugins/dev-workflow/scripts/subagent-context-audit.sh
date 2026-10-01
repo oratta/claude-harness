@@ -46,8 +46,9 @@
 #                "R1": {...}, "G": {...}, "Reviewer": {...}, "decider": {...}, "unknown": {...}}}
 # 担当分類は隣の agent-<id>.meta.json を次の優先順位で見る:
 #   1. agentType が dev-workflow:decider なら常に decider
-#   2. でなければ description の先頭コロン区切りトークンが W/R1/G/Reviewer に完全一致すればそれ
-#   3. どちらにも当たらなければ unknown（母集団の count からは落とさない）
+#   2. でなければ agentType が dev-workflow:reviewer なら Reviewer
+#   3. でなければ description の先頭コロン区切りトークンが W/R1/G/Reviewer に完全一致すればそれ
+#   4. どれにも当たらなければ unknown（母集団の count からは落とさない）
 # docs_median は指示書 Read（file_path が plugins/cache/oratta-claude-harness/*.md）または
 # Skill 呼び出しを含むホップの usage 差分を個体ごとに合計し、担当内で中央値を取ったもの。
 # reread_pct は W だけに付き、description の #N（最も左のもの）でグループ化した同一記録先の
@@ -267,12 +268,15 @@ def load_meta(path):
 
 
 def classify_role(meta):
-    """D1: agentType が dev-workflow:decider を最優先。次に description 先頭コロン区切り
-    トークンが W/R1/G/Reviewer に完全一致すればそれ。どちらにも当たらなければ unknown。"""
+    """D1: agentType が dev-workflow:decider を最優先。次に agentType が dev-workflow:reviewer
+    なら Reviewer。次に description 先頭コロン区切りトークンが W/R1/G/Reviewer に完全一致
+    すればそれ。どれにも当たらなければ unknown。"""
     if not isinstance(meta, dict):
         meta = {}
     if meta.get("agentType") == "dev-workflow:decider":
         return "decider"
+    if meta.get("agentType") == "dev-workflow:reviewer":
+        return "Reviewer"
     desc = meta.get("description")
     if isinstance(desc, str):
         token = desc.split(":", 1)[0].strip()

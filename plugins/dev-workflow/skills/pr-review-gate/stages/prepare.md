@@ -84,7 +84,7 @@ gh api -X POST repos/$R/issues/$N/comments \
 
 ### needs-reviewer の return（本体にレビュアーの spawn を委ねる）
 
-G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: general-purpose` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、照合と振り分けの G を新しく起こしてその要約を渡す。adapter 経路（`レビュー経路: adapter`）では、本体が phase `review` で投げ先を選び直して dispatch 記録に残してからレビュアーを起動し（develop `SKILL.md` の (4)）、要約と選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。adapter 経路の payload では証拠欄 5 つ（選んだ経路・実行コマンド・終了コード・出力の要点・実待ち時間）をすべて `未実行（adapter 経路）` と書き、Codex の証拠を作らない。`推奨モデル` は参考値で、実際の投げ先は本体の選び直しが決める。Codex 不可・light 判定・adapter 経路による通常の初回レビュー依頼は下の基本 payload を使う。一周目の三表照合で不足が出た補足要求の場合に限り、同じ payload に固定 HEAD・元の三表・残差・`補足済み回数: 0` を加え、同じレビューの不足した項目だけを補わせる（adapter 経路では補足要求も本体の選び直しを通る）。
+G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: dev-workflow:reviewer` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、照合と振り分けの G を新しく起こしてその要約を渡す。adapter 経路（`レビュー経路: adapter`）では、本体が phase `review` で投げ先を選び直して dispatch 記録に残してからレビュアーを起動し（develop `SKILL.md` の (4)）、要約と選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。adapter 経路の payload では証拠欄 5 つ（選んだ経路・実行コマンド・終了コード・出力の要点・実待ち時間）をすべて `未実行（adapter 経路）` と書き、Codex の証拠を作らない。`推奨モデル` は参考値で、実際の投げ先は本体の選び直しが決める。Codex 不可・light 判定・adapter 経路による通常の初回レビュー依頼は下の基本 payload を使う。一周目の三表照合で不足が出た補足要求の場合に限り、同じ payload に固定 HEAD・元の三表・残差・`補足済み回数: 0` を加え、同じレビューの不足した項目だけを補わせる（adapter 経路では補足要求も本体の選び直しを通る）。
 
 ```markdown
 ## needs-reviewer
@@ -98,7 +98,7 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 - 終了コード: <取得できた値 | 未取得 | 未実行（adapter 経路）>
 - 出力の要点: <full: 実測した不可条件と応答、adapter 経路: 未実行（adapter 経路）>
 - 実待ち時間: <タイムアウト時の実測値、完了未確認、adapter 経路: 未実行（adapter 経路）>
-- 推奨モデル: opus | dev-workflow:decider（種別で指定する。`general-purpose` に `model: fable` は付けない）
+- 推奨モデル: opus（種別は dev-workflow:reviewer） | dev-workflow:decider（種別で指定する。`general-purpose` に `model: fable` は付けない）
 - 推奨モデルの根拠: <マージ条件・層間契約・課金/法務への接触の有無、usage snapshot の残量>
 - 受け入れ条件の所在: <issue #N 本文 | PR #N 本文>
 - レビュアーに渡す範囲: <diff の範囲（`gh pr diff N`）、再レビューなら前回指摘の一覧>
