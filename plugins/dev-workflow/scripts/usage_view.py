@@ -144,22 +144,25 @@ def _combine(record, snapshot, *, weekly_all):
         return record or snapshot
     if record["resets"] is None or snapshot["resets"] is None:
         if record["resets"] is None and snapshot["resets"] is None:
-            return _larger(record, snapshot, resets=None)
+            return _larger(record, snapshot)
         return record if record["resets"] is not None else snapshot
     gap = abs(record["resets"] - snapshot["resets"])
     if gap <= SAME_WINDOW_SECONDS:
-        return _larger(record, snapshot, resets=_newer(record, snapshot)["resets"])
+        # A manual reset lowers the value within the same window, so the newer observation wins.
+        if (record["observed"] is not None and snapshot["observed"] is not None
+                and record["observed"] != snapshot["observed"]):
+            return _newer(record, snapshot)
+        return _larger(record, snapshot)
     if weekly_all and not record["rolled"]:
         return record
     return record if record["resets"] > snapshot["resets"] else snapshot
 
 
-def _larger(first, second, *, resets):
+def _larger(first, second):
+    """Tie-break: the larger value with its own reset and observed time (then newer, then first)."""
     if first["pct"] != second["pct"]:
-        taken = first if first["pct"] > second["pct"] else second
-    else:
-        taken = _newer(first, second)
-    return dict(taken, resets=resets)
+        return first if first["pct"] > second["pct"] else second
+    return _newer(first, second)
 
 
 def _window(record, snapshot, now, *, five_hour=False, weekly_all=False):

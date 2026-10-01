@@ -5,10 +5,10 @@
 
 ## 2. 読み手の規則（同じ窓は取得時刻が新しいほう）
 
-- [ ] 2.1 先にテストを書く（Red）: snapshot 週 100%・同じリセット時刻・新しい記録 0% で実効値が 0。記録が新しく値も大きいとき従来どおり大きい値。取得時刻が等しければ大きいほう。既存の `test_same_window_takes_the_larger_value`（記録 50%・NOW-60、snapshot 55%・NOW-5h で 55 を期待）は新規則と逆なので、期待値を 50、`weekly_observed_at == NOW-60`、`weekly_resets_epoch` は記録側に書き換える。触る範囲: `plugins/dev-workflow/tests/test_usage_view.py:90`
-- [ ] 2.2 `usage_view.py` の `_combine` / `_larger` を直す。触る範囲: `plugins/dev-workflow/scripts/usage_view.py:137-163`
-- [ ] 2.3 `select-account.sh` が snapshot 100%・新しい記録 0% のアカウントを週 0% として扱うテストを足す（コード変更が要らないことの確認）。触る範囲: `plugins/dev-workflow/tests/account-selector.bats`、`plugins/dev-workflow/scripts/select-account.sh:57`
-- [ ] 2.4 `statusline.sh` 内の `combine` / `larger` を同じ規則に直し、他アカウント行が 0% を出すテストを足す。既存の「larger value of the same window wins even when older」（新規則と逆）を書き換える。触る範囲: `plugins/statusline/scripts/statusline.sh:555-580`、`plugins/statusline/tests/statusline-multi-account.bats:777`
+- [x] 2.1 先にテストを書く（Red）: snapshot 週 100%・同じリセット時刻・新しい記録 0% で実効値が 0。記録が新しく値も大きいとき従来どおり大きい値。取得時刻が等しければ大きいほう。既存の `test_same_window_takes_the_larger_value`（記録 50%・NOW-60、snapshot 55%・NOW-5h で 55 を期待）は新規則と逆なので、期待値を 50、`weekly_observed_at == NOW-60`、`weekly_resets_epoch` は記録側に書き換える。触る範囲: `plugins/dev-workflow/tests/test_usage_view.py:90`
+- [x] 2.2 `usage_view.py` の `_combine` / `_larger` を直す。触る範囲: `plugins/dev-workflow/scripts/usage_view.py:137-163`
+- [x] 2.3 `select-account.sh` が snapshot 100%・新しい記録 0% のアカウントを週 0% として扱うテストを足す（コード変更が要らないことの確認）。触る範囲: `plugins/dev-workflow/tests/account-selector.bats`、`plugins/dev-workflow/scripts/select-account.sh:57`
+- [x] 2.4 `statusline.sh` 内の `combine` / `larger` を同じ規則に直し、他アカウント行が 0% を出すテストを足す。既存の「larger value of the same window wins even when older」（新規則と逆）を書き換える。触る範囲: `plugins/statusline/scripts/statusline.sh:555-580`、`plugins/statusline/tests/statusline-multi-account.bats:777`
 
 ## 3. 仕上げ
 

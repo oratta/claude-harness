@@ -572,7 +572,10 @@ def combine(rec, snap, weekly):
             return larger(rec, snap)
         return rec if rec["res"] is not None else snap
     if abs(rec["res"] - snap["res"]) <= SAME_WINDOW:
-        return dict(larger(rec, snap), res=newer(rec, snap)["res"])
+        # 同じ窓は取得時刻の新しい方（手動リセットで使用率は下がりうる）。等しい・片方無しなら大きい方
+        if rec["at"] is not None and snap["at"] is not None and rec["at"] != snap["at"]:
+            return newer(rec, snap)
+        return larger(rec, snap)
     if weekly and now < rec["res"]:
         return rec
     return rec if rec["res"] > snap["res"] else snap

@@ -774,15 +774,37 @@ set_b_snapshot_weekly() {
   [[ "$line" =~ 3m前 ]] || return 1
 }
 
-@test "records: the larger value of the same window wins even when older" {
+@test "records: the newer value of the same window wins even when smaller" {
   write_two_slot_registry
   write_two_slot_snapshot "$NOW" "$((NOW - 18000))" "$((NOW + 172800))"
   set_b_snapshot_weekly 55
   write_b_record "$((NOW - 180))" 50 "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
+  [[ "$line" =~ 50% ]] || return 1
+  [[ "$line" =~ 3m前 ]] || return 1
+}
+
+@test "records: a newer 0% record after a manual reset beats an older 100% snapshot" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  set_b_snapshot_weekly 100
+  write_b_record "$((NOW - 180))" 0 "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
+  [[ "$line" =~ " 0%" ]] || return 1
+  ! [[ "$line" =~ 100% ]] || return 1
+  [[ "$line" =~ 3m前 ]] || return 1
+}
+
+@test "records: equal observed times in the same window take the larger value" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 180))" "$((NOW + 172800))"
+  set_b_snapshot_weekly 55
+  write_b_record "$((NOW - 180))" 50 "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  line="$(grep -E '^(▸ |  )B +7d All' "$WORK/out.txt")"
   [[ "$line" =~ 55% ]] || return 1
-  [[ "$line" =~ 5h前 ]] || return 1
 }
 
 @test "records: a record whose reset is past is drawn as is without denominator" {
