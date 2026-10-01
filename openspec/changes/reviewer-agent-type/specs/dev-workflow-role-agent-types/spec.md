@@ -16,15 +16,15 @@ dev-workflow プラグインは PR レビュアーのエージェント定義 `a
 - **THEN** `skills/pr-review-gate/stages/reviewer-brief.md` を指し、ファイルを編集しないこと・サブエージェントを起こさないこと・コメントを投稿せず起こした側に返すことが書かれている
 
 ### Requirement: レビュアーの種別の効果を記録する
-この change の PR 本文の見出し `## 新種別の計測` に次を書かなければならない（MUST）。
+issue #650 の PR（`Closes #650` を本文に持つ PR）の本文の見出し `## 新種別の計測` に次を書かなければならない（MUST）。この要件は、#330 の change の PR を対象にした「新種別の効果を分けて記録する」とは別の要件で、対象の PR も記録する項目も違う。
 
 1. 同じ Claude Code の版・`model: opus`・同じ指示文で `general-purpose` と `dev-workflow:reviewer` を 1 体ずつ起こしたときの、それぞれの最初の `message.usage` の `input_tokens`・`cache_creation_input_tokens`・`cache_read_input_tokens` を分けた値と、3 つの合計、版の番号
 2. 1 の合計の差。`dev-workflow:reviewer` の合計が `general-purpose` より 20,000 以上少ないことを合格の条件とする（SHALL。issue #650 の受け入れ条件 1）
 3. 1 で起こした 2 体の `meta.json` の `agentType`（マージ前の版を `--plugin-dir` で読み込んだ定義が使われたことの裏付け）
-4. `dev-workflow:reviewer` で起こしたレビュアーが、この PR のゲートで `stages/reviewer-brief.md` の三表（変更点の一覧・照合表・ハンク被覆）と指摘を返し、照合と振り分けの G が受け取ったことの記録（そのレビュアーの description と、G の照合結果の PR コメントの URL）
+4. `dev-workflow:reviewer` で起こしたレビュアー（change `reviewer-agent-type` の design.md「この PR のゲートでレビュアーを起こす手順」で起こしたもの）が、この PR のゲートで `stages/reviewer-brief.md` の三表（変更点の一覧・照合表・ハンク被覆）と指摘を返し、照合と振り分けの G が受け取ったことの記録（そのレビュアーの description と `meta.json` の `agentType`、G の照合結果の PR コメントの URL）。review phase の自動選択が codex を選び、加えて Claude レビュアーを起こせなかった場合は、受け入れ条件 2 を満たせなかったことと理由を書く
 
 #### Scenario: PR 本文に計測の見出しがある
-- **WHEN** この change の PR 本文を読む
+- **WHEN** issue #650 の PR の本文を読む
 - **THEN** `## 新種別の計測` の見出しの下に、上の 1〜4 が数値・URL つきで書かれ、2 の差が 20,000 以上である
 
 ## MODIFIED Requirements

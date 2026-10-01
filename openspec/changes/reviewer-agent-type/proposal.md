@@ -20,7 +20,7 @@ pr-review-gate で Claude のレビュアーを `general-purpose` + `model: opus
 
 ### Modified Capabilities
 
-- `dev-workflow-role-agent-types`: レビュアーの種別 `dev-workflow:reviewer` の要件を足し、プラグインの宣言・Fable 拒否・効果の記録の要件を新種別込みに改める
+- `dev-workflow-role-agent-types`: レビュアーの種別 `dev-workflow:reviewer` の要件と、issue #650 の PR 本文に効果を記録する要件を別の要件として足し、プラグインの宣言と Fable 拒否の要件を新種別込みに改める（#330 の PR を対象にした「新種別の効果を分けて記録する」は変えない）
 - `dev-workflow-develop`: 「W と G は役割ごとの種別で起こす」の「G が要求するレビュアーの種別は変えない（`general-purpose`）」を、`dev-workflow:reviewer` で起こす規定に改める
 - `dev-workflow-execution-strategy`: 「担当分類の優先順位」に、`agentType` が `dev-workflow:reviewer` の個体を description に頼らず `Reviewer` に数える規則を足す
 - `manual-codex-develop`: 「委譲は前景実行の 3 手順で行う」の Claude role の種別の対応で、G が必要とする独立 PR レビューを `general-purpose` から `dev-workflow:reviewer` に改める
@@ -31,4 +31,4 @@ pr-review-gate で Claude のレビュアーを `general-purpose` + `model: opus
 - 変更: `plugins/dev-workflow/.claude-plugin/plugin.json`、`.claude-plugin/marketplace.json`、`plugins/dev-workflow/skills/pr-review-gate/stages/prepare.md`・`stages/review-run.md`、`plugins/dev-workflow/skills/develop/SKILL.md`、`plugins/dev-workflow/references/codex-develop.md`、`plugins/dev-workflow/README.md`、`plugins/dev-workflow/scripts/agent-model-guard.sh`（コメント）、`plugins/dev-workflow/scripts/subagent-context-audit.sh`、`plugins/dev-workflow/docs/usage-audit.md`
 - テスト: `plugins/dev-workflow/tests/role-agent-types.bats`・`agent-model-guard.bats`・`subagent-context-audit.bats`・`develop-roles.bats`、必要なら `tests/injection-budget.txt`
 - 変更記録: `plugins/dev-workflow/changes/650.md`
-- マージ前は配布版のキャッシュに新種別が無いので、新種別を起こす実機確認は `claude --plugin-dir` で行う
+- マージ前は配布版のキャッシュに新種別が無いので、新種別を起こす実機確認と、この PR 自身のゲートのレビュアーは `claude -p --plugin-dir` のセッションの中で起こす（手順は design.md）

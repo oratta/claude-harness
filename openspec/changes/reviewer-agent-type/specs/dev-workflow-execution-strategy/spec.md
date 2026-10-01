@@ -13,7 +13,7 @@
 
 この分類は `agent-<id>.meta.json` の `agentType` / `description` という自由記述を解釈する要件であり、次の 4 点を守備範囲とする。①入力の出どころ: `description` は develop 本体が `plugins/dev-workflow/skills/develop/SKILL.md` の紐付け規約（役割を問わず記録先番号を `#N` の形で入れる。例: `W: impl for #288`、`G: gate for PR #400 (#288)`）に沿って書く。`agentType` は Agent 呼び出しの `subagent_type` がそのまま入る。②拾いたい誤り: develop の担当を別の担当に数えること、分類できない件が母集団の合計から落ちること。③通ることを許す入力の具体例: develop 以外の経路で起こした `G: ...` のような `description` も先頭トークン一致で `G` に数えてよい。`w:`（小文字）や `Reviewer1:` のような接頭辞の変形は `unknown` に落ちてよい（規約外の書式まで拾い切ることを目的にしない）。`general-purpose` で起こした古いレビュアーは `description` の先頭トークンだけで判定し、`Reviewer:` で始まらなければ `unknown` に落ちてよい。④新しい書き方が見つかるたびに規則を足して塞ぎ切ることを完了条件にしない。
 
-`Reviewer` は「G のレビュアー」に割り当てる担当名である。`dev-workflow:reviewer` で起こしたレビュアーは `agentType` で `Reviewer` に数えられる。`general-purpose` で起こしたレビュアー（新種別より前の記録と、事前分類で `dev-workflow:decider` に替えた件を除く）は `description` の先頭トークンに頼るので、`unknown` に落ちうる（想定内の挙動とする）。
+`Reviewer` は「G のレビュアー」に割り当てる担当名である。`dev-workflow:reviewer` で起こしたレビュアーは `agentType` で `Reviewer` に数えられる。新種別より前に `general-purpose` で起こしたレビュアーは `description` の先頭トークンで判定し、`Reviewer:` で始まらなければ `unknown` に落ちうる（想定内の挙動とする）。事前分類で `dev-workflow:decider` で起こしたレビュアーは、1 の規則で `decider` に数える。
 
 #### Scenario: `agentType` が `description` の見た目より優先される
 

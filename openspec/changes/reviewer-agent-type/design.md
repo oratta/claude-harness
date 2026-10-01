@@ -64,7 +64,17 @@ worker.md / gate-runner.md と同じく、手順を写さず「起動指示に�
 マージ前は配布版のキャッシュ（`~/.claude/plugins/cache/`）に新種別が無いので、本体のセッションからは `dev-workflow:reviewer` を起こせない。計測は worktree の `plugins/dev-workflow` を `claude --plugin-dir` で読み込んだセッションで行う。
 
 - 受け入れ条件 1: 同じ Claude Code の版・`model: opus`・同じ指示文（このPRの reviewer-brief のレビュアー向け指示ブロックと固定した差分範囲）で、`general-purpose` と `dev-workflow:reviewer` を 1 体ずつ起こし、各 `subagents/agent-*.jsonl` の最初の assistant 行の `message.usage` を読む。`input_tokens`・`cache_creation_input_tokens`・`cache_read_input_tokens` を分けて書き、合計の差を出し、版の番号と一緒に PR 本文の `## 新種別の計測` に書く
-- 受け入れ条件 2: この PR 自身のゲートで、レビュアーを `dev-workflow:reviewer` で起こし、三表（変更点の一覧・照合表・ハンク被覆）と指摘を返して照合と振り分けの G が受け取るところまでを通す。起こす経路（本体のセッションを `--plugin-dir` 付きで起動し直すか、`claude -p --plugin-dir` の別セッションでレビュアーだけを起こしてその return を G に渡すか）は本体が決める
+- 受け入れ条件 2: この PR 自身のゲートの Claude レビュアーを、次の手順で `dev-workflow:reviewer` として起こす（本体の決定）
+
+#### この PR のゲートでレビュアーを起こす手順（受け入れ条件 2）
+
+マージ前の版でしか新種別を起こせないので、この change の PR のゲートに限り、レビュアーは本体の Agent ツールではなく次の手順で起こす。この手順で起こしたレビュアーは、develop の「本体が `dev-workflow:reviewer` で spawn する」規定を満たしたものとして扱う。
+
+1. 本体は worktree を cwd にして `claude -p --model sonnet --plugin-dir <worktree>/plugins/dev-workflow` を起動する。`-p` セッションのメインは中継だけを担うので `sonnet` で足りる
+2. そのセッションの中で、Agent ツールを `subagent_type: dev-workflow:reviewer`・`model: opus`・description `Reviewer: ... for PR #<N> (#650)` で呼び、G の `needs-reviewer` の payload（固定 HEAD・受け入れ条件・diff の範囲・reviewer-brief.md のレビュアー向け指示ブロック）をそのまま渡す。区画があれば区画ごとに 1 体ずつ（description は `Reviewer: 区画 <k>/<n> for PR #<N> (#650)`）、補足の回も同じ方法で起こす
+3. `-p` のプロンプトで、レビュアーの return を要約・加工せずにそのまま出力するよう指示する
+4. 本体は `-p` の出力を正にしない。そのセッションの `subagents/agent-*.jsonl` の最後の assistant の return を三表と指摘の原文とし、隣の `meta.json` の `agentType`（`dev-workflow:reviewer` であること）と description を添えて、照合と振り分けの G に渡す
+5. adapter 経路の G は full でも light でも `needs-reviewer` を返すので、G が Codex を自分で走らせる経路はこの PR では起きない。review phase の自動選択が codex を選んだ場合は、Codex のレビューに加えて 1〜4 の方法で Claude レビュアーを 1 体起こし、その結果も G に渡す。それができなければ、PR 本文の `## 新種別の計測` に「受け入れ条件 2 は満たせなかった」と理由とともに書く
 
 ## Risks / Trade-offs
 
@@ -79,4 +89,4 @@ worker.md / gate-runner.md と同じく、手順を写さず「起動指示に�
 
 ## Open Questions
 
-- 受け入れ条件 2 で、この PR のゲートのレビュアーをどの経路で `dev-workflow:reviewer` として起こすか（本体の判断。上の「計測」の節の 2 案）
+（なし。受け入れ条件 2 でレビュアーを起こす経路は、本体の決定として「計測」の節の手順に書いた）
