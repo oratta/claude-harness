@@ -19,5 +19,6 @@
 ## Impact
 
 - コード: `plugins/statusline/scripts/statusline.sh`、`plugins/dev-workflow/scripts/usage_view.py`
-- テスト: `plugins/statusline/tests/statusline-session-records.bats`、`plugins/statusline/tests/statusline-multi-account.bats`（777 行目「larger value ... wins even when older」は新規則と逆なので書き換え）、`plugins/dev-workflow/tests/test_usage_view.py`、`plugins/dev-workflow/tests/account-selector.bats`
+- テスト: `plugins/statusline/tests/statusline-session-records.bats`、`plugins/statusline/tests/statusline-multi-account.bats`（777 行目「larger value ... wins even when older」は新規則と逆なので書き換え）、`plugins/dev-workflow/tests/test_usage_view.py:90` の `test_same_window_takes_the_larger_value`（同上。期待値を 50 に）、`plugins/dev-workflow/tests/test_usage_view.py`、`plugins/dev-workflow/tests/account-selector.bats`
+- 挙動への影響: 記録の `observed_at` の意味が「書いた時刻」から「値が変わった時刻」になるため、usage-probe（`openspec/specs/dev-workflow-escalation-tripwires/spec.md:146`、記録の `observed_at` が `USAGE_PROBE_STALE` 以内なら API を呼ばない）が API を呼ぶ頻度は上がる。
 - 範囲外: #442（Codex 側の古い値の読み方、active 行が記録を読まないことを確かめるテスト）。この change には含めない。実装中に #442 のそのテストの前提が変わったら #442 に書く。

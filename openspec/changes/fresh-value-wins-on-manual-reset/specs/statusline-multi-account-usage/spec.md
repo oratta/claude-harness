@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: active スロットはライブ値、非 active スロットは snapshot 値と経過時間で描く
-active スロットのレートリミットは stdin の `.rate_limits.*` のライブ値から描画しなければならない（SHALL）。非 active スロットは、そのスロットの鍵のセッション記録（`usage-session-records` capability）と snapshot の `accounts` の値から、`usage-session-records` の「記録と snapshot から実効値を求める」規則の 1 と 4（同じ窓なら取得時刻が新しい方、取得時刻が等しいまたは無ければ大きい方、窓が違えば新しい窓、全体の週次は差が 1 時間を超えたら記録側。ただし記録側のリセット時刻が過去なら、この例外を使わずリセット時刻の後の方を取る）で選んだ値を描画し、行末に採った値の取得時刻（セッション記録は `observed_at`、snapshot は `fetched_at`）からの経過時間（例 `2h前`）を併記しなければならない（SHALL）。statusline は規則の 2（リセット時刻を過ぎた値を 0% とみなし、リセット時刻を 7 日進める）の読み替えを表示には行わない。規則 4 の窓の突き合わせは、読み替える前のリセット時刻どうしで行う。選んだ値のリセット時刻が過去なら、既存の要件「非 active スロットの resets_at が過去のときは分母と残り時間を出さない」に従って描く。Fable バーは snapshot の値から描く。statusline は他プラグインのスクリプトを実行時に読まず、この規則を自分で実装しなければならない（SHALL）。
+active スロットのレートリミットは stdin の `.rate_limits.*` のライブ値から描画しなければならない（SHALL）。非 active スロットは、そのスロットの鍵のセッション記録（`usage-session-records` capability）と snapshot の `accounts` の値から、`usage-session-records` の「記録と snapshot から実効値を求める」規則の 1 と 4（同じ窓なら取得時刻が新しい方、取得時刻が等しいまたは無ければ大きい方（リセット時刻と取得時刻も大きい方の情報源のもの）、窓が違えば新しい窓、全体の週次は差が 1 時間を超えたら記録側。ただし記録側のリセット時刻が過去なら、この例外を使わずリセット時刻の後の方を取る）で選んだ値を描画し、行末に採った値の取得時刻（セッション記録は `observed_at`、snapshot は `fetched_at`）からの経過時間（例 `2h前`）を併記しなければならない（SHALL）。statusline は規則の 2（リセット時刻を過ぎた値を 0% とみなし、リセット時刻を 7 日進める）の読み替えを表示には行わない。規則 4 の窓の突き合わせは、読み替える前のリセット時刻どうしで行う。選んだ値のリセット時刻が過去なら、既存の要件「非 active スロットの resets_at が過去のときは分母と残り時間を出さない」に従って描く。Fable バーは snapshot の値から描く。statusline は他プラグインのスクリプトを実行時に読まず、この規則を自分で実装しなければならない（SHALL）。
 
 #### Scenario: active スロットにライブ値を使う
 - **WHEN** stdin の `.rate_limits` と snapshot の active スロットの値が異なる状態で statusline を実行する
