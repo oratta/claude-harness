@@ -28,8 +28,8 @@ setup() {
 
 @test "single source: the canonical section yields enough sentences to scan" {
   run python3 "$SCAN" "$REPO_ROOT"
-  [[ "${lines[0]}" =~ ^SENTENCES\ ([0-9]+)$ ]]
-  [ "${BASH_REMATCH[1]}" -ge 20 ]
+  [ "${lines[0]%% *}" = "SENTENCES" ]
+  [ "${lines[0]##* }" -ge 20 ]
 }
 
 @test "single source: no sentence of the canonical section is pasted verbatim elsewhere" {
@@ -52,7 +52,7 @@ setup() {
   run python3 "$SCAN" "$d"
   rm -rf "$d"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"COPY plugins/dev-workflow/skills/develop/SKILL.md"* ]]
+  echo "$output" | grep -qF "COPY plugins/dev-workflow/skills/develop/SKILL.md"
 }
 
 # 限界の明示: 言い換えは捕まえない（これが落ちるようになったら spec とコメントを書き換えること）
