@@ -99,7 +99,7 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 
 Fable 残量モードと共有枠モードが食い違うときは**共有枠モードの下限が勝つ**（例: `throttled` なら R1 も Sonnet 起点）。
 
-週次余裕を使う provider 選択では、Codex の snapshot の freshness を age `<= 300` 秒とし、`> 300` 秒は stale（欠測）とする。Claude 側（起動 account の選択と codex-develop の Claude margin）はこの境界を使わず、後述の実効値（リセット時刻より前の値は取得からの経過時間によらず下限として使う）で判定する。
+週次余裕を使う provider 選択では、Codex の週次 snapshot も Claude 側（起動 account の選択と codex-develop の Claude margin）も、取得からの経過時間では捨てない。どちらも後述の実効値（リセット時刻より前の値は取得からの経過時間によらず下限として使い、リセット時刻を過ぎた窓は 0% として読む）で判定する。Codex の snapshot は 7 日より先のリセット時刻も欠測にしない（余裕が負になるだけ）。
 
 ## コンテキスト上限（サブエージェントの手渡し）
 
