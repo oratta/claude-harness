@@ -1,8 +1,5 @@
-# usage-session-records Specification
+## MODIFIED Requirements
 
-## Purpose
-セッションのステータスラインが起動アカウント別に書く使用量の記録（置き場所・形式・アカウント鍵の導出・原子的な書き込み）と、その記録と usage-probe の snapshot から「いま使ってよい値」を求める規則（リセット時刻を過ぎた窓の 0% 扱い・古い値を下限として使うこと・2 つの情報源の合わせ方）を定める。
-## Requirements
 ### Requirement: ステータスラインが起動アカウント別の記録を書く
 `plugins/statusline/scripts/statusline.sh` は、stdin の `rate_limits.five_hour.used_percentage` があるとき、その描画で受け取った `rate_limits` を起動アカウント別の記録 `<記録ディレクトリ>/<アカウント鍵>.json` に書かなければならない（SHALL）。記録ディレクトリは `USAGE_SESSIONS_DIR`、未設定なら `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions` とする。
 
@@ -120,4 +117,3 @@ dev-workflow の読み手（`select-account.sh`・`session-tripwires.sh`・`agen
 #### Scenario: 情報源がどちらも無ければ欠測
 - **WHEN** 記録も snapshot の値も無いスロットの実効値を求める
 - **THEN** 全項目が `null` で、0 にはならない
-
