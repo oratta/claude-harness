@@ -198,3 +198,7 @@ exit 1 のとき（`codex-records.sh` が失敗して集計を呼ばなかった
 - **WHEN** PATH に `gh` が無い状態で実行する
 - **THEN** exit 1 で、`<file>` は存在しない
 
+#### Scenario: jq が無い
+- **WHEN** PATH に `jq` が無い状態で実行する
+- **THEN** exit 1 で、`<file>` は存在しない
+

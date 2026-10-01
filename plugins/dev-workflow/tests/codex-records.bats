@@ -7,6 +7,7 @@
 # spec: openspec/changes/codex-records-fetch-failure（dev-workflow-pr-token-budget）
 
 setup() {
+  export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/codex-records.sh"
   BUDGET="${PLUGIN_DIR}/scripts/pr-token-budget.sh"
@@ -108,18 +109,70 @@ teardown() {
   [ ! -e "$OUT" ]
   run "$SCRIPT" --repo o/r 419
   [ "$status" -eq 1 ]
+  printf 't0 5\n' > "$OUT"
   run "$SCRIPT" --repo o/r --out "$OUT" abc
   [ "$status" -eq 1 ]
   [ ! -e "$OUT" ]
 }
 
-@test "gh is not on PATH: exit 1 and no file" {
-  mkdir -p "${WORK}/nogh"
-  ln -s "$(command -v jq)" "${WORK}/nogh/jq"
+# bash と rm だけを置いた PATH を作る（/usr/bin に gh や jq があっても結果が変わらないように）
+minimal_path() {
+  mkdir -p "${WORK}/min"
+  ln -sf "$(command -v bash)" "${WORK}/min/bash"
+  ln -sf "$(command -v rm)" "${WORK}/min/rm"
+}
+
+@test "gh is not on PATH: exit 1, gh-not-found message and no file" {
+  minimal_path
+  ln -sf "$(command -v jq)" "${WORK}/min/jq"
   printf 't0 5\n' > "$OUT"
-  PATH="${WORK}/nogh:/usr/bin:/bin" run "$SCRIPT" --repo o/r --out "$OUT" 419
+  PATH="${WORK}/min" run "$SCRIPT" --repo o/r --out "$OUT" 419
   [ "$status" -eq 1 ]
+  echo "$output" | grep -qF 'gh not found'
   [ ! -e "$OUT" ]
+}
+
+@test "jq is not on PATH: exit 1, jq-not-found message and no file" {
+  minimal_path
+  ln -sf "${WORK}/bin/gh" "${WORK}/min/gh"
+  printf 't0 5\n' > "$OUT"
+  PATH="${WORK}/min" run "$SCRIPT" --repo o/r --out "$OUT" 419
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -qF 'jq not found'
+  [ ! -e "$OUT" ]
+}
+
+@test "SIGTERM during the fetch removes the temporary directory" {
+  # macOS の mktemp -d は TMPDIR を見ないので、作った場所を記録する mktemp のスタブを PATH に置く
+  REAL_MKTEMP="$(command -v mktemp)"
+  cat > "${WORK}/bin/mktemp" <<SH
+#!/usr/bin/env bash
+d="\$("$REAL_MKTEMP" "\$@")" || exit 1
+echo "\$d" > "${WORK}/made-dir"
+echo "\$d"
+SH
+  chmod +x "${WORK}/bin/mktemp"
+  cat > "${WORK}/bin/gh" <<'SH'
+#!/usr/bin/env bash
+: > "${GH_STUB_DIR}/started"
+sleep 1
+echo '[[]]'
+SH
+  "$SCRIPT" --repo o/r --out "$OUT" 419 > /dev/null 2>&1 &
+  pid=$!
+  for _ in $(seq 1 50); do [ -e "${STUB}/started" ] && break; sleep 0.1; done
+  [ -e "${STUB}/started" ]
+  made="$(cat "${WORK}/made-dir")"
+  [ -d "$made" ]
+  kill -TERM "$pid"
+  wait "$pid" || true
+  [ ! -e "$made" ]
+}
+
+@test "--help does not print the set line" {
+  run "$SCRIPT" --help
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -q '^set '
 }
 
 @test "collect && budget: a fetch failure never yields a within-cap JSON" {

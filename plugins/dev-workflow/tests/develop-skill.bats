@@ -508,9 +508,9 @@ refute() {
 
 @test "token budget: a failed comment fetch skips the budget and is handled as exit 1" {
   s="$(section 'PR トークン上限')"
-  echo "$s" | grep -qF 'if scripts/codex-records.sh'
+  echo "$s" | grep -q '&& scripts/pr-token-budget.sh'
   echo "$s" | grep -q 'pr-token-budget.sh` を呼ばず'
-  echo "$s" | grep -q 'Codex 消費コメントを取得できなかった'
+  echo "$s" | grep -q '^\*\*exit 1（.*Codex 消費コメントを取得できなかった）\*\*'
   echo "$s" | grep -q '空の記録や前回のファイルで代えない'
 }
 
