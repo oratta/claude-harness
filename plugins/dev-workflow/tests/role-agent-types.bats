@@ -23,11 +23,24 @@ setup() {
   if grep '^tools:' "$ROOT/agents/gate-runner.md" | grep -qE 'Edit|Write'; then return 1; fi
 }
 
-@test "plugin manifest registers all three role types" {
+@test "reviewer has read-only restricted frontmatter and points to reviewer-brief" {
+  file="$ROOT/agents/reviewer.md"
+  [ -f "$file" ]
+  grep -qx 'name: reviewer' "$file"
+  grep -qx 'model: opus' "$file"
+  [ "$(grep '^tools:' "$file")" = 'tools: Read, Bash, Grep, Glob, TaskStop' ]
+  if grep '^tools:' "$file" | grep -qE 'Edit|Write|NotebookEdit|mcp__|WebFetch|WebSearch|Skill|Agent'; then return 1; fi
+  grep -qF 'skills/pr-review-gate/stages/reviewer-brief.md' "$file"
+  grep -qF 'ファイルは編集しない' "$file"
+  grep -qF 'サブエージェントを起こさない' "$file"
+  grep -qF 'コメントを投稿せず' "$file"
+}
+
+@test "plugin manifest registers all four role types" {
   run python3 - "$ROOT/.claude-plugin/plugin.json" <<'PY'
 import json, sys
 agents = json.load(open(sys.argv[1]))['agents']
-assert agents == ['./agents/decider.md', './agents/worker.md', './agents/gate-runner.md']
+assert agents == ['./agents/decider.md', './agents/worker.md', './agents/gate-runner.md', './agents/reviewer.md']
 PY
   [ "$status" -eq 0 ]
 }
