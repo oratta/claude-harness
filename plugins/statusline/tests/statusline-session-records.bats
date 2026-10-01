@@ -21,6 +21,7 @@ setup() {
   SESSIONS="${WORK}/.usage-sessions"
   SECURE_B="${WORK}/claude-b"
   NOW="$(date +%s)"
+  BASE="$NOW"
   export NOW
   # 出力の比較で残り時間の分の桁がずれないよう、`date +%s` を固定する
   # （statusline-multi-account.bats と同じ方式）。
@@ -39,10 +40,25 @@ teardown() {
   rm -rf "$WORK"
 }
 
-# $1=5h消化率 $2=7d消化率 $3=5h残り秒 $4=7d残り秒 → stdin JSON
+# $1=5h消化率 $2=7d消化率 $3=5h残り秒 $4=7d残り秒 [$5=session_id（既定 session-record-test、空なら付けない）]
+# → stdin JSON。リセット時刻は setup の時刻（BASE）から数えるので、描画の時刻（NOW）を
+# 進めても同じ引数なら同じ値になる。
 mk_input() {
-  printf '{"session_id":"session-record-test","workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}}' \
-    "$WORK" "$1" "$((NOW + $3))" "$2" "$((NOW + $4))"
+  local sid="${5-session-record-test}" sid_field=""
+  [ -z "$sid" ] || sid_field="\"session_id\":\"${sid}\","
+  printf '{%s"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}}' \
+    "$sid_field" "$WORK" "$1" "$((BASE + $3))" "$2" "$((BASE + $4))"
+}
+
+# $1=秒 → statusline が見る現在時刻（date +%s）を進める
+advance() {
+  NOW=$((NOW + $1))
+  export NOW
+}
+
+# → default.json の「週次% 取得時刻」
+weekly_and_observed() {
+  jq -r '"\(.weekly_all_pct) \(.observed_at)"' "$SESSIONS/default.json"
 }
 
 key_of() {
@@ -113,7 +129,8 @@ JSON
   mk_input 3 69 14000 172800 | bash "$SL" > /dev/null
   [ -f "${WORK}/elsewhere/default.json" ]
   [ ! -e "$SESSIONS" ]
-  [ "$(ls -A "${WORK}/elsewhere")" = "default.json" ]
+  [ "$(ls -A "${WORK}/elsewhere" | grep -vx '.sessions')" = "default.json" ]
+  [ "$(ls -A "${WORK}/elsewhere/.sessions" | wc -l | tr -d ' ')" = "1" ]
 }
 
 @test "record: an unwritable directory keeps exit 0 and the same output" {
@@ -134,4 +151,81 @@ JSON
   rm -f "$WORK/.rate-limit-snapshot"
   mk_input 3 69 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" > /dev/null
   [ ! -e "$WORK/.rate-limit-snapshot" ]
+}
+
+# ---------- セッションごとの前回値（#643） ----------
+# spec: usage-session-records「ステータスラインが起動アカウント別の記録を書く」の前回値の判定
+
+@test "previous value: a stale session redrawing its old value keeps the newer session's record" {
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  advance 10
+  mk_input 3 60 14000 172800 session-y | bash "$SL" > /dev/null
+  y_time="$NOW"
+  advance 10
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  [ "$(weekly_and_observed)" = "60 $y_time" ]
+}
+
+@test "previous value: the session writes again once it receives a new value" {
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  advance 10
+  mk_input 3 60 14000 172800 session-y | bash "$SL" > /dev/null
+  advance 10
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  advance 10
+  mk_input 3 45 14000 172800 session-x | bash "$SL" > /dev/null
+  [ "$(weekly_and_observed)" = "45 $NOW" ]
+}
+
+@test "previous value: the same session redrawing the same value keeps observed_at" {
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  first="$NOW"
+  advance 30
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  [ "$(weekly_and_observed)" = "40 $first" ]
+}
+
+@test "previous value: a render without session_id writes every time" {
+  mk_input 3 40 14000 172800 "" | bash "$SL" > /dev/null
+  advance 30
+  mk_input 3 40 14000 172800 "" | bash "$SL" > /dev/null
+  [ "$(weekly_and_observed)" = "40 $NOW" ]
+  [ ! -e "$SESSIONS/.sessions" ] || [ -z "$(ls -A "$SESSIONS/.sessions")" ]
+}
+
+@test "previous value: the file is named by the sha256 of the quoted session_id" {
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  name="$(printf '%s' '"session-x"' | shasum -a 256 | cut -c1-16)"
+  [ "$(cat "$SESSIONS/.sessions/$name")" = "3|$((BASE + 14000))|40|$((BASE + 172800))" ]
+}
+
+@test "previous value: an unreadable or malformed previous value is treated as none" {
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  name="$(printf '%s' '"session-x"' | shasum -a 256 | cut -c1-16)"
+  printf 'garbage\n' >| "$SESSIONS/.sessions/$name"
+  advance 30
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  [ "$(weekly_and_observed)" = "40 $NOW" ]
+}
+
+@test "previous value: an unwritable previous-value place keeps the record and the output" {
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > "$WORK/normal.txt"
+  rm -rf "$SESSIONS"
+  mkdir -p "$SESSIONS"
+  : > "$SESSIONS/.sessions"
+  run bash -c "bash '$SL' > '$WORK/blocked.txt'" < <(mk_input 3 40 14000 172800 session-x)
+  [ "$status" -eq 0 ]
+  diff "$WORK/normal.txt" "$WORK/blocked.txt"
+  [ "$(weekly_and_observed)" = "40 $NOW" ]
+}
+
+@test "previous value: files older than 7 days are removed on write and fresh ones stay" {
+  mkdir -p "$SESSIONS/.sessions"
+  : > "$SESSIONS/.sessions/0000000000000000"
+  : > "$SESSIONS/.sessions/1111111111111111"
+  touch -t "$(command date -v-10d +%Y%m%d%H%M 2>/dev/null || command date -d '10 days ago' +%Y%m%d%H%M)" \
+    "$SESSIONS/.sessions/0000000000000000"
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  [ ! -e "$SESSIONS/.sessions/0000000000000000" ]
+  [ -e "$SESSIONS/.sessions/1111111111111111" ]
 }

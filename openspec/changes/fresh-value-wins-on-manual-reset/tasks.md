@@ -1,7 +1,7 @@
 ## 1. 書き手（セッションごとの前回値）
 
-- [ ] 1.1 先にテストを書く（Red）: 同じアカウントのセッション X（週次 40%）→ Y（60%）→ X が 40% のまま描き直し、で記録が 60% のまま・`observed_at` が Y の時刻のまま。X が 45% を受け取れば書く。セッション ID 無しは毎回書く。覚えのファイルが書けなくても出力不変。`mk_input`（同 bats:44）は session_id 固定なので、X と Y を分けるために session_id を引数化する。触る範囲: `plugins/statusline/tests/statusline-session-records.bats`
-- [ ] 1.2 `statusline.sh` の記録の書き込みに、セッション ID ごとの署名ファイルの比較・保存と、7 日超の削除を足す。触る範囲: `plugins/statusline/scripts/statusline.sh:150-175`実装メモ: `session_id` は `jq -c` の JSON 文字列（引用符付き）なので、ハッシュ対象は引用符付きの表現のままに固定する。ハッシュは既定アカウント経路で python3 を起動しないため `shasum -a 256` か `sha256sum` で取る。「7 日より古い」は mtime 基準（`find -mtime +7`）。（「起動アカウント別のセッション記録」節。`session_id` は 41 行目、署名の先例は 99-113 行目）
+- [x] 1.1 先にテストを書く（Red）: 同じアカウントのセッション X（週次 40%）→ Y（60%）→ X が 40% のまま描き直し、で記録が 60% のまま・`observed_at` が Y の時刻のまま。X が 45% を受け取れば書く。セッション ID 無しは毎回書く。覚えのファイルが書けなくても出力不変。`mk_input`（同 bats:44）は session_id 固定なので、X と Y を分けるために session_id を引数化する。触る範囲: `plugins/statusline/tests/statusline-session-records.bats`
+- [x] 1.2 `statusline.sh` の記録の書き込みに、セッション ID ごとの署名ファイルの比較・保存と、7 日超の削除を足す。触る範囲: `plugins/statusline/scripts/statusline.sh:150-175`実装メモ: `session_id` は `jq -c` の JSON 文字列（引用符付き）なので、ハッシュ対象は引用符付きの表現のままに固定する。ハッシュは既定アカウント経路で python3 を起動しないため `shasum -a 256` か `sha256sum` で取る。「7 日より古い」は mtime 基準（`find -mtime +7`）。（「起動アカウント別のセッション記録」節。`session_id` は 41 行目、署名の先例は 99-113 行目）
 
 ## 2. 読み手の規則（同じ窓は取得時刻が新しいほう）
 
