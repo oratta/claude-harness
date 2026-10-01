@@ -115,7 +115,7 @@ develop role resolver は、profile と旧 account/model のどちらも明示�
 - **THEN** `claude-write-codex-review` を選び、書く役と補助役は Claude、レビュー役は Codex の系統名 sol、decider は astra に解決する
 
 #### Scenario: Codex が詰まっている
-- **WHEN** Claude margin が 0 以上で、最良 Codex margin が -5、欠測、または stale のいずれかである
+- **WHEN** Claude margin が 0 以上で、最良 Codex margin が負値または欠測である
 - **THEN** coordinator の全役割 Claude 既定構成を選ぶ
 
 #### Scenario: Claude だけが詰まっている
