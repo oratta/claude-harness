@@ -10,6 +10,7 @@
 # spec: dev-workflow-develop, dev-workflow-spec-review
 
 setup() {
+  export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
   PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
@@ -236,7 +237,11 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   echo "$s" | grep -qF '## レビュー観点（6 つ'
   echo "$s" | grep -q '守備範囲'
   echo "$s" | grep -qF '入力を検査・判定する要件'
-  echo "$s" | grep -qE '守備範囲.*REQUEST_CHANGES|REQUEST_CHANGES.*守備範囲'
+  # 段落に改行が入っても節内の共起として検査できるよう、節を 1 行に潰してから grep する（#389）
+  flat="$(echo "$s" | tr '\n' ' ')"
+  echo "$flat" | grep -qE '守備範囲.*REQUEST_CHANGES|REQUEST_CHANGES.*守備範囲'
+  # ①②か③の欠落は BLOCKER、④だけの欠落は SHOULD_FIX（#389）
+  echo "$flat" | grep -qE '（①②）.*（③）.*BLOCKER.*④だけが無いとき.*SHOULD_FIX'
 }
 
 @test "reviewer (#287): coverage criterion is not applied retroactively to existing specs" {
