@@ -579,6 +579,80 @@ assert d["by_role"]["W"]["reread_pct"] == 50.0, d["by_role"]["W"]
 PY
 }
 
+# Bash の command を持つ assistant レコード（#651）。JSON のエスケープは python に任せる
+rl_asst_bash() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+print(json.dumps({"type": "assistant", "message": {"usage": {"input_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": int(sys.argv[1]), "output_tokens": 1}, "content": [{"type": "tool_use", "name": "Bash", "input": {"command": sys.argv[2]}}]}}))
+PY
+}
+
+# 先行が fileA.md を Read、後続が $1 の Bash command で読んだときの reread_pct を出す
+reread_via_bash() {
+  f1="$(make_role_agent p1 s1 agent-w-first.jsonl general-purpose "W: #651 first")"
+  rl_user "2026-09-01T00:00:00Z" >> "$f1"
+  rl_asst_tool 1000 Read "/Users/oratta/wtA/fileA.md" >> "$f1"
+  rl_asst 2000 >> "$f1"
+  f2="$(make_role_agent p1 s1 agent-w-second.jsonl general-purpose "W: #651 second")"
+  rl_user "2026-09-02T00:00:00Z" >> "$f2"
+  rl_asst_bash 3000 "$1" >> "$f2"
+  rl_asst 4000 >> "$f2"
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+print(json.loads(sys.argv[1])["by_role"]["W"]["reread_pct"])
+PY
+}
+
+@test "reread_pct: Bash sed -n by the later W counts as re-reading a file the earlier W Read" {
+  run reread_via_bash "sed -n '10,20p' /Users/oratta/wtB/fileA.md"
+  [ "$output" = "100.0" ]
+}
+
+@test "reread_pct: Bash cat / head / tail of the same file are counted too" {
+  for c in "cat /x/fileA.md" "head -n 5 /x/fileA.md" "tail -n 5 /x/fileA.md" "cd /x && cat fileA.md | head -3"; do
+    run reread_via_bash "$c"
+    [ "$output" = "100.0" ] || { echo "not counted: $c -> $output"; return 1; }
+  done
+}
+
+@test "reread_pct: Bash sed script, option values, redirects and echo args are not counted as files" {
+  # 数えるのは fileA.md だけ。他を数えると後続の集合が増えて 100 にならない側ではなく、
+  # 先行に無い名前なので比率は変わらない。そこで先行側（Bash で読んだ前任）で検証する。
+  f1="$(make_role_agent p1 s1 agent-w-first.jsonl general-purpose "W: #651 first")"
+  rl_user "2026-09-01T00:00:00Z" >> "$f1"
+  rl_asst_bash 1000 "sed -n '10,20p' fileA.md; head -n 20 fileB.md; cat fileC.md > out.txt; cat fileD.md 2>/dev/null; echo fileE.md" >> "$f1"
+  rl_asst 2000 >> "$f1"
+  f2="$(make_role_agent p1 s1 agent-w-second.jsonl general-purpose "W: #651 second")"
+  rl_user "2026-09-02T00:00:00Z" >> "$f2"
+  for n in fileA.md fileB.md fileC.md fileD.md 10,20p 20 out.txt fileE.md; do
+    rl_asst_tool 3000 Read "/x/$n" >> "$f2"
+  done
+  rl_asst 4000 >> "$f2"
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+# 先行の集合は {fileA, fileB, fileC, fileD}。後続が読んだ 8 個のうち一致は 4 個。
+# 先行の集合に対する割合は 4/4 = 100.0。余計な語（10,20p 20 out.txt fileE.md）が
+# 先行の集合に入っていれば分母が 8 になり 50.0 になる。
+assert json.loads(sys.argv[1])["by_role"]["W"]["reread_pct"] == 100.0, sys.argv[1]
+PY
+}
+
+@test "reread_pct: sed -ne, globs and variables are passed over (not counted)" {
+  for c in "sed -ne 1p /x/fileA.md" 'cat $F' "cat /x/*.md"; do
+    run reread_via_bash "$c"
+    [ "$output" = "0.0" ] || { echo "unexpectedly counted: $c -> $output"; return 1; }
+  done
+}
+
+@test "reread_pct: Read-only transcripts keep the same value (Bash commands that read nothing change nothing)" {
+  run reread_via_bash "git status && ls -la"
+  [ "$output" = "0.0" ]
+}
+
 @test "reread_pct: group leader and #N-less W are excluded, leftmost #N is used for grouping" {
   # 自分だけの単独グループ（先行なし）→ 母数から除かれる
   fL="$(make_role_agent p1 s1 agent-w-leader-only.jsonl general-purpose "W: #700 only")"
