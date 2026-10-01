@@ -141,6 +141,30 @@ ledger_lines() {
   [ "$(ledger_lines)" -eq 4 ] || { cat "$LEDGER"; return 1; }
 }
 
+@test "ledger: syncing another log root keeps this root's read positions" {  # 別の置き場所で同期しても、次は増えた分だけ読む
+  write_rows a r1 r2
+  export COST_LEDGER_PATH="$LEDGER"
+  python3 "$CL" ledger-sync --quiet
+  # CLAUDE_CONFIG_DIR の違う別アカウントが同じ台帳へ同期する（置き場所は空）
+  local other="$BATS_TEST_TMPDIR/claude-other"
+  mkdir -p "$other/projects"
+  CLAUDE_CONFIG_DIR="$other" python3 "$CL" ledger-sync --quiet
+  # 読み終えた部分を同じ長さ・同じ inode のまま書き換える。読み終え位置が残っていれば
+  # 先頭から読み直さないので、書き換えた r9 は台帳に入らない
+  python3 - "$CONFIG_DIR/projects/a/a.jsonl" <<'PY'
+import sys
+with open(sys.argv[1], "r+b") as fh:
+    data = fh.read()
+    fh.seek(0)
+    fh.write(data.replace(b'"r1"', b'"r9"'))
+PY
+  append_row a r3
+  run python3 "$CL" ledger-sync
+  [[ "$output" == *"1 行追記"* ]] || { echo "$output"; cat "$LEDGER"; return 1; }
+  [ "$(grep -c '"request_id": "r9"' "$LEDGER")" -eq 0 ] || return 1
+  [ "$(grep -c '"request_id": "r3"' "$LEDGER")" -eq 1 ] || return 1
+}
+
 @test "ledger: hooks.json registers ledger-hook.sh on Stop" {  # Stop に ledger-hook.sh が登録されている
   [ -x "$HOOK" ] || return 1
   run python3 - "$PLUGIN_DIR/hooks/hooks.json" <<'PY'

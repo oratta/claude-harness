@@ -538,10 +538,14 @@ def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver) -> int:
                 fh.write(prefix + "\n".join(lines_out) + "\n")
                 fh.flush()
                 os.fsync(fh.fileno())
-        # 追記した分を索引に足してから、読み終え位置を差し替える
+        # 追記した分を索引に足してから、読み終え位置を差し替える。差し替えるのは今回読んだ
+        # 置き場所（root）の配下だけ。CLAUDE_CONFIG_DIR の違うアカウントが同じ台帳を共有しても、
+        # 他の置き場所の読み終え位置を消さない（消すと次の hook が全件を読み直す）
         index.catch_up(ledger)
-        index.db.execute("DELETE FROM files")
-        index.db.executemany("INSERT INTO files (path, offset, ino) VALUES (?, ?, ?)", new_offsets)
+        root_prefix = os.path.join(root, "")
+        gone = [(p,) for p in previous if p.startswith(root_prefix)]
+        index.db.executemany("DELETE FROM files WHERE path = ?", gone)
+        index.db.executemany("INSERT OR REPLACE INTO files (path, offset, ino) VALUES (?, ?, ?)", new_offsets)
         index.db.commit()
         return len(lines_out)
     finally:
