@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 setup() {
+  export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   CHECKER="${PLUGIN_DIR}/scripts/review-hit-set.py"
   REPO="$(mktemp -d "${BATS_TEST_TMPDIR}/repo.XXXXXX")"
@@ -330,4 +331,82 @@ EOF
   run python3 "$CHECKER" --repo "$REPO" "$REPO/bad-columns.md"
   [ "$status" -eq 1 ]
   [[ "$output" == *'contract:'*'columns'* ]] || return 1
+}
+
+# ===== 補助表の見出し表記ゆれ・主表の重複・エラー文言（issue #407, #408, #409） =====
+
+# 補助表を、指定した見出し行つきで主表の後ろに足した表を作る（見出しが正しければ exit 0 になる内容）
+write_row3_table_with_heading() {
+  write_row3_table
+  {
+    printf '\n%s\n' "$1"
+    printf '| ファイル | 行（修正前 SHA） | 修正後の本文 |\n'
+    printf '|---|---:|---|\n'
+    printf '| r/x.txt | 2 | `needle keep fixed` |\n'
+  } >> "$REPO/row3.md"
+}
+
+@test "review hit set (#407): a rewritten-rows table under a quoted heading is a contract error naming the correct heading" {
+  setup_head_repo
+  commit_head 'done fix\nneedle keep fixed\n' 'done same\nneedle same\n'
+  write_row3_table_with_heading '### 書き換えた「該当しない」行'
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'* ]] || return 1
+  [[ "$output" == *'### 書き換えた該当しない行'* ]] || return 1
+  [[ "$output" != *'unmatched:'* ]] || return 1
+}
+
+@test "review hit set (#407): a rewritten-rows table under a wrong heading level is a contract error naming the correct heading" {
+  setup_head_repo
+  commit_head 'done fix\nneedle keep fixed\n' 'done same\nneedle same\n'
+  write_row3_table_with_heading '## 書き換えた該当しない行'
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'* ]] || return 1
+  [[ "$output" == *'### 書き換えた該当しない行'* ]] || return 1
+}
+
+@test "review hit set (#407): with no rewritten-rows table at all the result is still the unmatched report" {
+  setup_head_repo
+  commit_head 'done fix\nneedle keep fixed\n' 'done same\nneedle same\n'
+  write_row3_table
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'unmatched: r/x.txt:2'* ]] || return 1
+  [[ "$output" != *'contract:'* ]] || return 1
+}
+
+@test "review hit set (#408): a duplicated (file, line) in the main table is a contract error with --head" {
+  setup_head_repo
+  commit_head 'done fix\nneedle keep typo\n' 'done same\nneedle same\n'
+  write_row3_table
+  printf '| r/x.txt | 2 | `needle keep typo` | 該当しない: example |\n' >> "$REPO/row3.md"
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract: main table row is duplicated: r/x.txt:2'* ]] || return 1
+}
+
+@test "review hit set (#409): contract error wording without --head is the pre-#377 wording" {
+  cat > "$REPO/bad-columns.md" <<EOF
+修正前 SHA: $SHA
+検索コマンド: git grep -n needle <rev> -- .
+| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |
+|---|---:|---|---|
+| changed/a.txt | 1 | \`needle one\` |
+EOF
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/bad-columns.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'every hit row must have four columns'* ]] || return 1
+
+  cat > "$REPO/bad-row.md" <<EOF
+修正前 SHA: $SHA
+検索コマンド: git grep -n needle <rev> -- .
+| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |
+|---|---:|---|---|
+| changed/a.txt | x | \`needle one\` | 一致 |
+EOF
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/bad-row.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'hit rows require path, numeric line, and body'* ]] || return 1
 }
