@@ -162,3 +162,28 @@ PY
   ! echo "$output" | grep -q 'set -uo pipefail' || return 1
   echo "$output" | grep -q -- '--file'
 }
+
+# --stop-since: 停止確認が返らないときの終端（#266）。経過時間と無更新時間の 2 条件がそろったときだけ exit 3
+@test "stop-since: terminal (exit 3) only when both elapsed-since-stop and transcript-idle reach thresholds" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 1,1,1)"
+  now="$(date +%s)"
+  python3 -c 'import os,sys; t=int(sys.argv[2]); os.utime(sys.argv[1],(t,t))' "$f" $((now-1000))
+  # 両方超過
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run "$SCRIPT" --file "$f" --stop-since $((now-500))
+  [ "$status" -eq 3 ]
+  echo "$output" | grep -q '"unconfirmed_terminal": true'
+  # 経過時間だけ超過（停止指示が直近）
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run "$SCRIPT" --file "$f" --stop-since $((now-5))
+  [ "$status" -eq 0 ]
+  # 無更新だけ不足（トランスクリプトが今更新された）
+  touch "$f"
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run "$SCRIPT" --file "$f" --stop-since $((now-500))
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"unconfirmed_terminal": false'
+}
+
+@test "stop-since: non-numeric env threshold is rejected" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 1,1,1)"
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=abc run "$SCRIPT" --file "$f" --stop-since 1
+  [ "$status" -eq 1 ]
+}
