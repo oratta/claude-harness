@@ -131,11 +131,13 @@ plugins/dev-workflow/scripts/subagent-context-audit.sh --by-role --refresh
 | 担当 | 分類規則 |
 |---|---|
 | `decider` | `agent-<id>.meta.json` の `agentType` が `dev-workflow:decider`（`description` の見た目より優先） |
-| `W` / `R1` / `G` / `Reviewer` | `agentType` が decider でないとき、`description` の先頭コロン区切りトークンがこれらに完全一致 |
-| `unknown` | どちらにも当たらない（`description` 無し・コロン無し・未知のトークン・meta.json 欠損/壊れ） |
+| `Reviewer`（種別） | `agentType` が `dev-workflow:reviewer`（decider の次に見る。`description` の見た目より優先） |
+| `W` / `R1` / `G` / `Reviewer` | `agentType` が上の 2 つでないとき、`description` の先頭コロン区切りトークンがこれらに完全一致 |
+| `unknown` | どれにも当たらない（`description` 無し・コロン無し・未知のトークン・meta.json 欠損/壊れ） |
 
-`Reviewer:` の接頭辞は develop の紐付け規約（`skills/develop/SKILL.md` の「紐付けの規約」）に未規定のため、
-G のレビュアーは `unknown` に落ちうる（`Reviewer` の件数が少ない・`unknown` に偏るのは想定内の挙動）。
+G が要求するレビュアーは `dev-workflow:reviewer` で起こすので、`description` が `Reviewer:` で始まっていなくても
+`agentType` で `Reviewer` に数えられる。種別を替える前（`general-purpose` で起こしていた時期）の個体は
+`description` の接頭辞だけが頼りで、書き忘れたものは `unknown` に落ちる。
 
 各値は `count` / `first_median` / `docs_median` / `last_median` / `over_cap_pct` を持ち、
 `W` のみ追加で `reread_pct` を持つ。`count` が 0 の担当は `first_median` / `docs_median` /
@@ -149,8 +151,12 @@ G のレビュアーは `unknown` に落ちうる（`Reviewer` の件数が少�
   使う）で同じ記録先の `W` を時系列でグループ化し、各グループの 2 番目以降について
   「先行する全 `W` が読んだファイルのうち自分が読み直した割合」を担当内の中央値として
   出す。**ファイル一致はベースネーム一致**（フルパス一致ではない。worktree ごとに
-  絶対パスの先頭が変わるため）。各グループの最初の `W`（先行がいない個体）と `#N` が
+  絶対パスの先頭が変わるため）。「読んだファイル」は `Read` の `file_path` に加え、`Bash` の `sed -n` / `cat` /
+  `head` / `tail` の引数のファイル（近似: スクリプト・オプション値・リダイレクト先は数えず、
+  変数・グロブ・`sed -ne`・`xargs cat`・`grep` / `awk` / `less` は数え漏れる）。各グループの最初の `W`（先行がいない個体）と `#N` が
   取れない `W` はこの中央値の母数から除く。対象が 1 件も無ければ `null`
+
+過去の計測を測り直すときは、キャッシュ（TTL 内）が古い算出を返すので `--refresh` を付ける。
 
 `--cache` を省略した場合、`--by-role` は既定のキャッシュパスに `.by-role` サフィックスを
 足した別ファイルを使う（既定呼び出しと結果が混ざらないようにするため）。`--cache` を

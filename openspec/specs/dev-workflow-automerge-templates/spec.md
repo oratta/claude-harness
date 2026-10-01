@@ -10,7 +10,7 @@ dev-workflow プラグインは `templates/auto-merge/` に、展開先リポの
 #### Scenario: テンプレートファイル群の存在
 
 - **WHEN** `plugins/dev-workflow/templates/auto-merge/` を確認する
-- **THEN** README.md と、展開先ツリーを鏡写しにした `.github/workflows/auto-merge.yml` / `.github/workflows/revert-pr.yml` / `docs/auto-merge.md` / `scripts/test-auto-merge-workflow.sh` の計 5 ファイルが存在する
+- **THEN** README.md と、展開先ツリーを鏡写しにした `.github/workflows/auto-merge.yml` / `.github/workflows/revert-pr.yml` / `.github/workflows/staging-smoke.yml` / `.claude/settings.json` / `docs/auto-merge.md` / `scripts/test-auto-merge-workflow.sh` の計 7 ファイルが存在する
 
 #### Scenario: 差し替え箇所のマーカーが揃っている
 
@@ -45,6 +45,49 @@ dev-workflow プラグインは `templates/auto-merge/` に、展開先リポの
 
 - **WHEN** CI（automerge-templates.bats と test-auto-merge-workflow.sh）が revert-pr.yml の実行コード（コメント除去済みの revert-script ブロック）を検査する
 - **THEN** `.base.ref` の取得と `$BASE_BRANCH` 不一致の拒否・`merge-base --is-ancestor` が revert / push より前にあること・`ls-remote` / `gh pr list` による既存状態の発見が push / `gh pr create` より前にあることが機械検証され、破れていればテストが落ちる
+
+### Requirement: staging スモーク + auto-revert が auto-merge テンプレートの一部として配布される
+
+テンプレートは `.github/workflows/staging-smoke.yml` を含み、`Deploy to Staging` という名前の workflow の完了イベント（`workflow_run` / `completed`）を購読して staging の外形スモークを実行し、失敗時に revert PR（`incident` ラベル付き。人間のレビュー待ちであることを本文に書く）と incident issue の両方を起票する経路を持たなければならず（MUST）、機械生成の revert PR に `agent-review:passed` ラベルと「対象 HEAD:」コメントを自己付与してはならない（MUST NOT。ゲートを迂回して auto-merge に乗る経路を作らない。`agent-review:passed` は人間がレビューして付ける）。全チェックが認証系（3xx / 401 / 403）だけで落ちた場合は「デプロイ保護で検証不能」と判定して revert 経路に入らず警告 issue のみ起票する誤検知ガードを持ち（MUST）、その判定は bats テストが smoke ステップのスクリプトを実行して固定する（SHALL）。README は staging を持つリポだけに展開する手順（差し替え箇所・`vars.STAGING_DOMAIN`・bypass secret）を提供する（SHALL）。
+
+#### Scenario: 誤検知ガード（認証系のみで落ちたときは revert しない）
+
+- **WHEN** smoke ステップのスクリプト（`# >>> smoke-script` マーカーの間）を、全チェックが HTTP 401 を返す curl スタブで実行する
+- **THEN** exit code は 1 で `GITHUB_OUTPUT` に `blocked=true` が出力され、revert ジョブの条件 `needs.smoke.outputs.blocked != 'true'` を満たさない
+
+#### Scenario: 認証系以外の失敗が 1 件でもあれば revert する
+
+- **WHEN** 同スクリプトを、1 件が 401・残りが 500 を返すスタブで実行する
+- **THEN** exit code は 1 で `blocked=true` は出力されず、revert ジョブの条件を満たす
+
+#### Scenario: revert 経路と incident 経路の存在
+
+- **WHEN** staging-smoke.yml の revert ステップ（`# >>> smoke-revert-script` マーカーの間）を検査する
+- **THEN** `git revert` / `gh pr create` / `gh issue create` と `incident` ラベル付与が存在し、`agent-review:passed` ラベル付与・「対象 HEAD:」コメント投稿・`gh pr merge` は存在しない
+
+#### Scenario: main が検査したコミットから進んでいれば自動 revert せず incident のみ
+
+- **WHEN** revert ステップのスクリプトを、origin/main の先頭が検知対象のデプロイのコミット（`workflow_run.head_sha`）と異なる状態で、`gh` をスタブにして実行する
+- **THEN** exit code は 0 で incident issue が起票され、revert ブランチの push と `gh pr create` は行われない（後続のデプロイで壊れた staging を理由に、正常な先行コミットを巻き戻さない）
+
+#### Scenario: incident は revert の成否に依存せず起票され、再実行で revert PR が回復する
+
+- **WHEN** revert ステップのスクリプトを、`gh pr create` が失敗するスタブで実行し、その後スタブを成功させて同じスクリプトを再実行する
+- **THEN** 1 回目は revert PR の作成より前に incident issue が起票されたうえで非 0 で終わり、2 回目は push 済みの revert ブランチを再利用して revert PR を作成し、incident issue を重複起票しない
+
+### Requirement: deny 設定が auto-merge 配線と同じ場所から配布される
+
+テンプレートは `.claude/settings.json` に、LLM による `gh pr merge`・main / master への直接 push・force push（`-f` / `--force` / `--force-with-lease`）・`--no-verify` push を塞ぐ `permissions.deny` 断片を含まなければならない（MUST）。README は展開先の既存 `.claude/settings.json` に既存の deny を消さずにマージする手順を提供し（SHALL）、docs/auto-merge.md は各 deny が塞ぐ経路を説明する（SHALL）。配布経路は他のプラグインに依存しない（SHALL）。
+
+#### Scenario: deny 断片の内容
+
+- **WHEN** `templates/auto-merge/.claude/settings.json` を jq で検査する
+- **THEN** `permissions.deny` に `Bash(gh pr merge:*)` / `Bash(git push origin main:*)` / `Bash(git push origin master:*)` / `Bash(git push -f:*)` / `Bash(git push --force:*)` / `Bash(git push --force-with-lease:*)` / `Bash(git push --no-verify:*)` の 7 件が含まれる
+
+#### Scenario: 既存 settings.json へのマージで既存 deny が残る
+
+- **WHEN** README のマージコマンド（jq 式）を、既存の deny と他キー（allow / env）を持つ settings.json とテンプレートの断片に対して実行する
+- **THEN** 既存 deny・allow・env が保持され、テンプレートの deny が和集合で足され、重複は 1 件に畳まれる
 
 ### Requirement: 運用ガイドはリポ非依存の記述で提供される
 

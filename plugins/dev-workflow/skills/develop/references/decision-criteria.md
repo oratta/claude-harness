@@ -145,7 +145,7 @@ W は名前付き spawn ＋ SendMessage 再開でコンテキストを引き継�
 
 使用量の主な情報源はステータスラインが描画のたびに書く起動アカウント別のセッション記録（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions/<アカウント鍵>.json`。5 時間枠と全体の週次）で、`scripts/usage-probe.sh` が OAuth usage API（`/api/oauth/usage`）から書く `~/.claude/.usage-snapshot`（schema 2。スロット別に `fable_weekly_pct` / `weekly_resets_epoch` などを含む JSON）は、Fable 週次と記録の無いアカウントを埋める補助である。probe は、記録が無い・記録が 3 時間（`USAGE_PROBE_STALE`）より古い、または snapshot の `fetched_at` が 3 時間より古い（無い場合を含む）スロットだけを叩き、前回の試行から 3 時間（`USAGE_PROBE_INTERVAL`）は叩かない。429 が続くスロットは待ちを倍々に延ばす（上限 1 日）。試行は結果にかかわらず `~/.claude/.usage-probe-state` に記録し、`~/.claude/.usage-probe.lock` でマシン全体 1 本に絞る。fail-open はスロット単位（失敗したスロットは前回値を引き継ぎ、全スロット失敗なら snapshot を書かない）。`scripts/session-tripwires.sh` が SessionStart 毎にこの probe を best-effort 実行し、active スロットの実効値からモードを導出して残量ブロックを文脈に注入する。
 
-実効値は `scripts/usage_view.py` の 1 か所で求める（`select-account.sh`・`agent-model-guard.sh`・`codex-develop.py` も同じ実装を使う）。取得からの経過時間で値を捨てず、リセット時刻より前の値は下限としてそのまま使い、リセット時刻を過ぎた値は 0% とみなす。記録と snapshot の両方にあるときは同じ窓なら大きい方を取る。規則の正本は openspec の `usage-session-records`「記録と snapshot から実効値を求める」。
+実効値は `scripts/usage_view.py` の 1 か所で求める（`select-account.sh`・`agent-model-guard.sh`・`codex-develop.py` も同じ実装を使う）。取得からの経過時間で値を捨てず、リセット時刻より前の値は下限としてそのまま使い、リセット時刻を過ぎた値は 0% とみなす。記録と snapshot の両方にあるときは、同じ窓なら取得時刻の新しい方を取る（手動リセットで使用率は同じ窓のまま下がりうるため。取得時刻が等しい・片方無しなら大きい方）。規則の正本は openspec の `usage-session-records`「記録と snapshot から実効値を求める」。
 
 導出は「Fable の消費ペースが週の経過ペースを上回るか」のバーンレート比較で、次の優先順位に従う:
 
