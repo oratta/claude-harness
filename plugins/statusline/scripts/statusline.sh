@@ -161,17 +161,46 @@ print(hashlib.sha256(unicodedata.normalize("NFC", os.environ["SECURE"]).encode("
 ' 2>/dev/null)"
 fi
 sessions_dir="${USAGE_SESSIONS_DIR:-$CONFIG_DIR/.usage-sessions}"
-if [ -n "$five_h_pct" ] && [ -n "$session_key" ] && mkdir -p "$sessions_dir" 2>/dev/null; then
+# observed_at は「そのセッションが値を新しく受け取った時刻」（#643）。Claude Code は API 応答以外
+# （モード切り替え・キャッシュ期限切れ等）でも描き直し、そのときの rate_limits は前に受け取った値の
+# ままなので、セッションごとに前回書いた値の署名を .sessions/<session_id の sha256 先頭 16 桁> に
+# 覚え、同じなら書かない。記録ファイルの中身とは比べない（他セッションが上書きした新しい値を、
+# 止まっていたセッションの古い値で潰さないため。.rate-limit-snapshot の obs_sig と同じ考え方）。
+# session_id が無い・ハッシュが取れないときは覚える先が無いので毎回書く。
+_rec_sig="${five_h_pct}|${five_h_resets:-null}|${seven_d_pct:-null}|${seven_d_resets:-null}"
+_rec_memo=""
+if [ -n "$session_id" ]; then
+    # ハッシュ対象は jq -c の引用符付き JSON 文字列のまま。python3 を起動しない
+    _rec_sid_hash="$( { printf '%s' "$session_id" | shasum -a 256 2>/dev/null \
+        || printf '%s' "$session_id" | sha256sum 2>/dev/null; } | cut -c1-16)"
+    [[ "$_rec_sid_hash" =~ ^[0-9a-f]{16}$ ]] && _rec_memo="$sessions_dir/.sessions/$_rec_sid_hash"
+fi
+_rec_unchanged=""
+if [ -n "$_rec_memo" ] && [ -f "$_rec_memo" ] && [ "$(cat "$_rec_memo" 2>/dev/null)" = "$_rec_sig" ]; then
+    _rec_unchanged=1
+fi
+if [ -n "$five_h_pct" ] && [ -n "$session_key" ] && [ -z "$_rec_unchanged" ] && mkdir -p "$sessions_dir" 2>/dev/null; then
     # 一時ファイルに書いてから mv で置き換える（読み手に書きかけを見せない）。失敗は無視する
     _rec_tmp="$(mktemp "$sessions_dir/.${session_key}.XXXXXX" 2>/dev/null)"
+    _rec_written=""
     if [ -n "$_rec_tmp" ]; then
         if printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":%s,"five_hour_resets_epoch":%s,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
             "$session_key" "$(date +%s)" "$five_h_pct" "${five_h_resets:-null}" \
-            "${seven_d_pct:-null}" "${seven_d_resets:-null}" > "$_rec_tmp" 2>/dev/null; then
-            mv -f "$_rec_tmp" "$sessions_dir/${session_key}.json" 2>/dev/null || rm -f "$_rec_tmp" 2>/dev/null
+            "${seven_d_pct:-null}" "${seven_d_resets:-null}" > "$_rec_tmp" 2>/dev/null \
+            && mv -f "$_rec_tmp" "$sessions_dir/${session_key}.json" 2>/dev/null; then
+            _rec_written=1
         else
             rm -f "$_rec_tmp" 2>/dev/null
         fi
+    fi
+    # 書けたら署名を覚え直す。覚える側の失敗は無視する（出力を変えない）。7 日より古い覚えは消す
+    if [ -n "$_rec_written" ] && [ -n "$_rec_memo" ] && mkdir -p "${_rec_memo%/*}" 2>/dev/null; then
+        _memo_tmp="$(mktemp "${_rec_memo%/*}/.tmp.XXXXXX" 2>/dev/null)"
+        if [ -n "$_memo_tmp" ]; then
+            { printf '%s\n' "$_rec_sig" > "$_memo_tmp" && mv -f "$_memo_tmp" "$_rec_memo"; } 2>/dev/null \
+                || rm -f "$_memo_tmp" 2>/dev/null
+        fi
+        find "${_rec_memo%/*}" -type f -mtime +7 -delete 2>/dev/null
     fi
 fi
 
@@ -572,7 +601,10 @@ def combine(rec, snap, weekly):
             return larger(rec, snap)
         return rec if rec["res"] is not None else snap
     if abs(rec["res"] - snap["res"]) <= SAME_WINDOW:
-        return dict(larger(rec, snap), res=newer(rec, snap)["res"])
+        # 同じ窓は取得時刻の新しい方（手動リセットで使用率は下がりうる）。等しい・片方無しなら大きい方
+        if rec["at"] is not None and snap["at"] is not None and rec["at"] != snap["at"]:
+            return newer(rec, snap)
+        return larger(rec, snap)
     if weekly and now < rec["res"]:
         return rec
     return rec if rec["res"] > snap["res"] else snap

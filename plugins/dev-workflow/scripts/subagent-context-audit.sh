@@ -46,12 +46,14 @@
 #                "R1": {...}, "G": {...}, "Reviewer": {...}, "decider": {...}, "unknown": {...}}}
 # 担当分類は隣の agent-<id>.meta.json を次の優先順位で見る:
 #   1. agentType が dev-workflow:decider なら常に decider
-#   2. でなければ description の先頭コロン区切りトークンが W/R1/G/Reviewer に完全一致すればそれ
-#   3. どちらにも当たらなければ unknown（母集団の count からは落とさない）
+#   2. でなければ agentType が dev-workflow:reviewer なら Reviewer
+#   3. でなければ description の先頭コロン区切りトークンが W/R1/G/Reviewer に完全一致すればそれ
+#   4. どれにも当たらなければ unknown（母集団の count からは落とさない）
 # docs_median は指示書 Read（file_path が plugins/cache/oratta-claude-harness/*.md）または
 # Skill 呼び出しを含むホップの usage 差分を個体ごとに合計し、担当内で中央値を取ったもの。
 # reread_pct は W だけに付き、description の #N（最も左のもの）でグループ化した同一記録先の
-# W のうち、先行者が読んだ Read の file_path（ベースネーム一致）を後続がどれだけ読み直したかの
+# W のうち、先行者が読んだファイル（Read の file_path と、Bash の sed -n / cat / head / tail の
+# 引数。ベースネーム一致）を後続がどれだけ読み直したかの
 # 中央値（グループ最初と #N が取れない個体は母数から除く）。
 set -uo pipefail
 
@@ -120,7 +122,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 CAP="$cap" DAYS="$days" PROJECTS="$projects" CACHE="$cache" BY_ROLE="$by_role" python3 <<'PY'
-import datetime, json, os, re, sys, time
+import datetime, json, os, re, shlex, sys, time
 
 cap = int(os.environ["CAP"])
 days = int(os.environ["DAYS"])
@@ -266,12 +268,15 @@ def load_meta(path):
 
 
 def classify_role(meta):
-    """D1: agentType が dev-workflow:decider を最優先。次に description 先頭コロン区切り
-    トークンが W/R1/G/Reviewer に完全一致すればそれ。どちらにも当たらなければ unknown。"""
+    """D1: agentType が dev-workflow:decider を最優先。次に agentType が dev-workflow:reviewer
+    なら Reviewer。次に description 先頭コロン区切りトークンが W/R1/G/Reviewer に完全一致
+    すればそれ。どれにも当たらなければ unknown。"""
     if not isinstance(meta, dict):
         meta = {}
     if meta.get("agentType") == "dev-workflow:decider":
         return "decider"
+    if meta.get("agentType") == "dev-workflow:reviewer":
+        return "Reviewer"
     desc = meta.get("description")
     if isinstance(desc, str):
         token = desc.split(":", 1)[0].strip()
@@ -288,11 +293,60 @@ def leftmost_number(description):
     return m.group(1) if m else None
 
 
+SEG_SPLIT_RE = re.compile(r"\|\||&&|[|;\n]")
+BASH_READERS = ("sed", "cat", "head", "tail")
+
+
+def bash_read_files(command):
+    """#651: Bash の command 文字列から sed -n / cat / head / tail が読むファイルの
+    ベースネームを返す（近似。spec「reread_pct」の守備範囲に従い、変数・グロブ・
+    sed -ne のまとめ書き・字句分割できない区間は数えずに通す）。"""
+    out = []
+    if not isinstance(command, str):
+        return out
+    for seg in SEG_SPLIT_RE.split(command):
+        try:
+            words = shlex.split(seg)
+        except Exception:
+            continue
+        if not words or words[0] not in BASH_READERS:
+            continue
+        cmd, args = words[0], words[1:]
+        if cmd == "sed" and "-n" not in args:
+            continue
+        files = []
+        skip_next = False
+        script_pending = cmd == "sed" and "-e" not in args and "-f" not in args
+        for w in args:
+            if skip_next:
+                skip_next = False
+                continue
+            if ">" in w or "<" in w:
+                # 記号だけの語（> や >>）は直後の語（リダイレクト先）も数えない
+                if re.fullmatch(r"\d*(>>?|<)", w):
+                    skip_next = True
+                continue
+            if w == "-":
+                continue
+            if w.startswith("-"):
+                if (cmd in ("head", "tail") and w in ("-n", "-c")) or (cmd == "sed" and w in ("-e", "-f")):
+                    skip_next = True
+                continue
+            if script_pending:
+                script_pending = False
+                continue
+            if any(c in w for c in "*?[$"):
+                continue
+            files.append(w)
+        out.extend(os.path.basename(f) for f in files)
+    return out
+
+
 def scan_full(path):
     """--by-role 専用: トランスクリプト全文を前方から 1 回だけ走査する。
 
     既定呼び出しの first_ctx/last_ctx（部分読み）とは別経路。ここでしか使わない値
-    （docs_median 用のホップ合計・reread_pct 用の Read file_path 集合・最初のレコードの
+    （docs_median 用のホップ合計・reread_pct 用の Read file_path と Bash 読みの集合・最初のレコードの
     timestamp）をまとめて集める。first/last の定義自体は ctx_of と同一（D4 の全体
     first_median/last_median も --by-role のときはこの結果から組み立てる）。
 
@@ -352,6 +406,12 @@ def scan_full(path):
                                 reads.add(os.path.basename(fp))
                                 if INSTR_RE.search(fp):
                                     trigger = True
+                        elif name == "Bash":
+                            inp = block.get("input")
+                            cmd = inp.get("command") if isinstance(inp, dict) else None
+                            for b in bash_read_files(cmd):
+                                if b:
+                                    reads.add(b)
                         elif name == "Skill":
                             trigger = True
                 if cur is not None:
