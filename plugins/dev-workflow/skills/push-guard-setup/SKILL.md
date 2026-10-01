@@ -179,6 +179,8 @@ ls ~/path/to/repo/.git/hooks | grep -v '\.sample$'
 
 ## 自己検証
 
+完了宣言の前に、導入結果の evidence を確認する（原則: `plugins/dev-workflow/references/self-verification.md`）。
+
 導入後、以下がすべて成立することを確認して初めて「導入できた」と報告する:
 
 1. `git config --global --get core.hooksPath` が `~/.githooks` を返す

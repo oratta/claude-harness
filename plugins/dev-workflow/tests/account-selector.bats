@@ -187,6 +187,16 @@ JSON
   [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:missing,b:50.00" ]
 }
 
+@test "records: a newer 0% record after a manual reset beats an older 100% snapshot" {
+  write_registry
+  write_snapshot "$NOW" "$((NOW - 7200))" 10 10 30 100
+  write_record "$SECURE_B" "$((NOW - 60))" 10 0
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:20.00,b:50.00" ]
+}
+
 @test "fallback: all missing slots select the registered default id" {
   write_registry
   run invoke
