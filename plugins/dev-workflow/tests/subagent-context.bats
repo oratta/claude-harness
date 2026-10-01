@@ -167,7 +167,7 @@ PY
 @test "stop-since: terminal (exit 3) only when both elapsed-since-stop and transcript-idle reach thresholds" {
   f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 1,1,1)"
   now="$(date +%s)"
-  touch -t "$(date -r $((now-1000)) +%Y%m%d%H%M.%S)" "$f"
+  python3 -c 'import os,sys; t=int(sys.argv[2]); os.utime(sys.argv[1],(t,t))' "$f" $((now-1000))
   # 両方超過
   DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run "$SCRIPT" --file "$f" --stop-since $((now-500))
   [ "$status" -eq 3 ]
