@@ -748,38 +748,50 @@ seed_two_slot_snapshot() {
   [ ! -e "$USAGE_PROBE_LOCK" ]
 }
 
-@test "lock: concurrent takeover of one stale lock lets exactly one probe hit the API" {
+# 古いロックを置き、probe を $2 秒おきに $1 本起動する。stat（古さの判定）の直後に $3 秒待たせ、
+# 競合の窓を決定的に開く足場にする。curl は 1 秒かけて返し、呼び出しごとに 1 行 curl-hits に足す
+run_probes_on_stale_lock() {
   setup_production_stubs "2.1.280 (Claude Code)"
-  # curl の呼び出し回数を数え、1 秒かけて返す（先の 1 本の実行中に後の本数が重なるようにする）
   cat > "${STUB}/curl" <<SH
 #!/usr/bin/env bash
-printf 'hit\n' >> "${WORK}/curl-hits"
+printf 'hit\\n' >> "${WORK}/curl-hits"
 cat > /dev/null
 sleep 1
 cat "${WORK}/resp.json"
-printf '\n200'
+printf '\\n200'
 SH
-  # 古さの判定（stat）の直後に少し待たせ、全本が「古い」と判定してから取り直しに進むようにする
-  # （競合を決定的に起こすための足場。実コマンドへの委譲は絶対パスで行う）
-  cat > "${STUB}/stat" <<'SH'
+  cat > "${STUB}/stat" <<SH
 #!/usr/bin/env bash
-if [ -x /usr/bin/stat ]; then /usr/bin/stat "$@"; rc=$?; else /bin/stat "$@"; rc=$?; fi
-sleep 0.5
-exit $rc
+if [ -x /usr/bin/stat ]; then /usr/bin/stat "\$@"; rc=\$?; else /bin/stat "\$@"; rc=\$?; fi
+sleep $3
+exit \$rc
 SH
   chmod +x "${STUB}/curl" "${STUB}/stat"
   mkdir "$USAGE_PROBE_LOCK"
   python3 -c 'import os,sys,time; t=time.time()-300; os.utime(sys.argv[1],(t,t))' "$USAGE_PROBE_LOCK"
-  pids=()
-  for _ in 1 2 3 4; do
+  local pids=() n
+  for n in $(seq 1 "$1"); do
     env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
         USAGE_PROBE_NOW="$NOW" "$PROBE" >/dev/null 2>&1 &
     pids+=($!)
+    [ "$n" -lt "$1" ] && sleep "$2"
   done
   for pid in "${pids[@]}"; do wait "$pid"; done
+}
+
+@test "lock: concurrent takeover of one stale lock lets exactly one probe hit the API" {
+  run_probes_on_stale_lock 4 0 0.5
   [ "$(wc -l < "${WORK}/curl-hits" | tr -d ' ')" = "1" ]
   [ ! -e "$USAGE_PROBE_LOCK" ]
-  # 取り直しの途中で作る退避ディレクトリが残らない
+  # 取り直しの途中で作る排他ディレクトリが残らない
+  [ -z "$(ls -d "${USAGE_PROBE_LOCK}".* 2>/dev/null)" ]
+}
+
+@test "lock: a probe that judged the lock stale does not remove a lock another probe has just retaken" {
+  # 2 本目は 1 本目より後に起動し、古さの判定の結果（古い）を持ったまま、1 本目が取り直して実行中のロックに行き当たる
+  run_probes_on_stale_lock 2 0.3 1
+  [ "$(wc -l < "${WORK}/curl-hits" | tr -d ' ')" = "1" ]
+  [ ! -e "$USAGE_PROBE_LOCK" ]
   [ -z "$(ls -d "${USAGE_PROBE_LOCK}".* 2>/dev/null)" ]
 }
 

@@ -164,19 +164,24 @@ if ! mkdir "$LOCK" 2>/dev/null; then
   real_now="$(date +%s 2>/dev/null || echo 0)"
   lock_mtime="$(stat -c %Y "$LOCK" 2>/dev/null || stat -f %m "$LOCK" 2>/dev/null || echo "$real_now")"
   [ $(( real_now - lock_mtime )) -gt "$LOCK_STALE" ] 2>/dev/null || exit 0
-  # 古いロックは消さずにまず自分の名前へ移す（mv は 1 本だけが成功する）。直接 rm すると、
-  # 先に取り直した別の probe のロックまで消して 2 本が同時に走る。移したものの mtime を測り直し、
-  # 他の probe が取り直した新しいロックだったら元に戻して手を引く
-  claimed="${LOCK}.$$"
-  mv "$LOCK" "$claimed" 2>/dev/null || exit 0
-  moved_mtime="$(stat -c %Y "$claimed" 2>/dev/null || stat -f %m "$claimed" 2>/dev/null || echo "$real_now")"
-  if ! [ $(( real_now - moved_mtime )) -gt "$LOCK_STALE" ] 2>/dev/null; then
-    # 戻し先に既に別のロックがあれば、移した側は捨てる（mv が既存ディレクトリの中へ入れる事故を避ける）
-    if [ -e "$LOCK" ]; then rmdir "$claimed" 2>/dev/null; else mv "$claimed" "$LOCK" 2>/dev/null || rmdir "$claimed" 2>/dev/null; fi
+  # 古いロックの取り直しは、別の排他（${LOCK}.takeover）を取った 1 本だけが行う。ロックを直接 rm すると、
+  # 先に取り直した別の probe の新しいロックまで消して 2 本が同時に走る。fresh なロックは移しも消しもしない
+  # （移すと正規のパスが一瞬空き、その隙に別の probe が mkdir に成功する）。
+  # 排他を取れなければ他の probe が取り直し中なので何もしない。排他自体が古く残っていたら外して今回は引く
+  takeover="${LOCK}.takeover"
+  if ! mkdir "$takeover" 2>/dev/null; then
+    tk_mtime="$(stat -c %Y "$takeover" 2>/dev/null || stat -f %m "$takeover" 2>/dev/null || echo "$real_now")"
+    [ $(( real_now - tk_mtime )) -gt "$LOCK_STALE" ] 2>/dev/null && rmdir "$takeover" 2>/dev/null
     exit 0
   fi
-  rmdir "$claimed" 2>/dev/null || rm -rf "$claimed" 2>/dev/null
-  mkdir "$LOCK" 2>/dev/null || exit 0
+  # 排他の中で測り直す。ロックが消えていれば取り直し不要、新しくなっていれば（別の probe が取った）手を引く
+  lock_mtime="$(stat -c %Y "$LOCK" 2>/dev/null || stat -f %m "$LOCK" 2>/dev/null || echo "")"
+  if [ -n "$lock_mtime" ] && ! [ $(( real_now - lock_mtime )) -gt "$LOCK_STALE" ] 2>/dev/null; then
+    rmdir "$takeover" 2>/dev/null
+    exit 0
+  fi
+  rm -rf "$LOCK" 2>/dev/null
+  if mkdir "$LOCK" 2>/dev/null; then rmdir "$takeover" 2>/dev/null; else rmdir "$takeover" 2>/dev/null; exit 0; fi
 fi
 raw_dir=""
 cleanup() {
