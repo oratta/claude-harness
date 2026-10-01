@@ -27,7 +27,7 @@
 対象 repo で `/casting:init` を実行すると `.claude/casting/project.md`・`.claude/casting/precedents.md`・`.claude/casting/delegation.md`（委任宣言）が生成され、`.gitignore` に `.claude/casting/local.md` が追記される。観点の判断基準は `/casting:policy-interview <観点>` で主と 1 問ずつやり取りして `.claude/casting/policies/<slug>.md` に作る。以降の判断手順・判例の書き方は `skills/casting/SKILL.md` を参照。
 
 ```sh
-plugins/casting/scripts/casting-check.sh [--catalog <path>] [<repo-root>]           # 検査（8項目）
+plugins/casting/scripts/casting-check.sh [--strict] [--catalog <path>] [<repo-root>]  # 検査（8項目）
 plugins/casting/scripts/casting-check.sh resolve [--catalog <path>] [<repo-root>]   # 有効配役表の合成
 ```
 
@@ -37,10 +37,13 @@ exit code の意味は次のとおり。**呼び出し側は exit 0 以外の出
 
 | code | 意味 |
 |---|---|
-| 0 | 検出なし（`resolve` は合成表を出力した） |
-| 1 | 検出あり（`resolve` は合成表を出力していない） |
+| 0 | 欠陥なし（起案シグナルは一覧に出ていることがある。`resolve` は合成表を出力した） |
+| 1 | 欠陥あり（`resolve` は合成表を出力していない） |
 | 2 | 使い方エラー（catalog 不在・対象 repo ルート不在・引数過多・不明オプション） |
 | 3 | `resolve` のみ: 配役表（project.md / local.md）が1枚も無いため解決していない |
+| 4 | check の `--strict` のみ: 欠陥は無く、起案シグナルだけがある |
+
+検査の8項目のうち「カタログ外」判例（`catalog-external-precedent`）と同一観点の「論点じゃなかった」2件以上（`repeated-not-issue`）は**起案シグナル**で、残りは**欠陥**。起案シグナルは一覧に出すが、既定では exit code に数えない。判例を正しく積んだだけで、exit 0 を前提にする呼び出し側（burn の論点ゲート等）がその repo の自走を止めないため。CI などでシグナルも止めたいときは `--strict` を付ける（`--strict` は resolve には付けられない。付けると exit 2）。
 
 ## テスト
 

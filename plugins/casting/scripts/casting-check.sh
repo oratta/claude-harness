@@ -13,6 +13,10 @@
 #   1. catalog.md に無い観点語彙（「カタログ外」を除く）（unknown-vocab）
 #   2. 判例台帳の「カタログ外」判例（観点追加の起案シグナル）（catalog-external-precedent）
 #   3. 同一観点で帰結「論点じゃなかった」が2件以上（移譲仕組み化の起案シグナル）（repeated-not-issue）
+#   ※ 2・3 は「起案シグナル」で、それ以外（0〜1・4・5）は「欠陥」。起案シグナルは報告するが
+#     既定では exit code に数えない（#148）。判例を正しく積んだだけで、exit 0 を前提にする
+#     呼び出し側（burn の論点ゲート等）がその repo の自走を全面停止させないため。
+#     CI 等でシグナルも止めたいときは --strict を付ける（シグナルだけなら exit 4）
 #   4. 各ファイルの catalog_version が catalog.md の version と不一致（version-mismatch）
 #   5. 相談判例（経路「相談の上自走した」）に事後報告5要素（論点・各人格の主張・裁定・
 #      根拠・判例リンク）の欠落（consultation-missing-element）。規約に反する形の相談実例が
@@ -30,14 +34,15 @@
 #                     合成表を出さずに理由を stderr へ出力して exit 1 する（fail-closed / #117）
 #
 # exit code:
-#   0  検出なし（resolve は合成表を出力した）
-#   1  検出あり（resolve は合成表を出力していない）
+#   0  欠陥なし（起案シグナルは出力されていることがある。resolve は合成表を出力した）
+#   1  欠陥あり（起案シグナルも併せて出力する。resolve は合成表を出力していない）
 #   2  使い方エラー（catalog 不在・対象 repo ルート不在・引数過多・不明オプション）
 #   3  resolve のみ: 配役表（project.md / local.md）が1枚も無いため解決していない（#139）
+#   4  check の --strict のみ: 欠陥は無く、起案シグナルだけがある（#148）
 # `-h` / `--help` は usage を stdout に出して 0 で終わる（検査していないので「検出なし」とは別物。
 # 呼び出し側が両者を区別する必要があるなら、-h を渡さないか stdout の usage で見分ける）。
 #
-# usage: casting-check.sh [resolve] [--catalog <path>] [--] [<target-repo-root>]
+# usage: casting-check.sh [resolve] [--strict] [--catalog <path>] [--] [<target-repo-root>]
 # 対象 repo ルートが `resolve` という名前のディレクトリのときは `--` の後ろに置く
 #   （例: casting-check.sh -- resolve）。`--` 以降は必ず positional として扱う
 
@@ -47,17 +52,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CATALOG="${SCRIPT_DIR}/../catalog/catalog.md"
 TARGET=""
 SUBCOMMAND="check"
+STRICT=0
 
 usage() {
   cat <<'USAGE'
-usage: casting-check.sh [resolve] [--catalog <path>] [--] [<target-repo-root>]
+usage: casting-check.sh [resolve] [--strict] [--catalog <path>] [--] [<target-repo-root>]
 
   （省略時）  対象 repo の配役表・判例台帳を検査する
   resolve     有効な配役表を合成して出力する（検証を通らなければ出力しない）
 
+  --strict      check のみ: 起案シグナル（catalog-external-precedent / repeated-not-issue）
+                だけでも exit 4 で止める（既定は報告だけして exit 0）
   --            以降は必ず対象 repo ルートとして扱う（`resolve` という名前の dir を渡すとき）
 
-exit code: 0=検出なし / 1=検出あり / 2=使い方エラー / 3=配役表が1枚も無い（resolve）
+exit code: 0=欠陥なし（起案シグナルは出力のみ） / 1=欠陥あり / 2=使い方エラー
+           3=配役表が1枚も無い（resolve） / 4=起案シグナルだけ（--strict のとき）
            -h / --help はこの usage を出して 0
 USAGE
 }
@@ -97,6 +106,10 @@ while [ $# -gt 0 ]; do
       CATALOG="$2"
       shift 2
       ;;
+    --strict)
+      STRICT=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -114,6 +127,14 @@ while [ $# -gt 0 ]; do
 done
 
 TARGET="${TARGET:-.}"
+
+# --strict は起案シグナルの扱いを変えるだけなので、シグナルを検査しない resolve では意味を持たない。
+# 黙って無視すると「厳格に検証した合成表」と誤読されるので使い方エラーにする
+if [ "$SUBCOMMAND" = "resolve" ] && [ "$STRICT" -eq 1 ]; then
+  echo "casting-check: --strict は check モード専用です（resolve は起案シグナルを検査しない）" >&2
+  usage >&2
+  exit 2
+fi
 
 if [ ! -f "$CATALOG" ]; then
   echo "casting-check: catalog not found: $CATALOG" >&2
@@ -141,10 +162,18 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 FINDINGS="${WORK_DIR}/findings"
 : > "$FINDINGS"
+# 欠陥（起案シグナル以外）を1件でも報告したら印を残す。終了コードはこの印で決め、報告本文は
+# 読み直さない — 本文（repo パス等）に改行が入ると継続行がカテゴリ接頭辞を持たず、
+# 本文の行で判定すると欠陥と誤認するため（#148 レビュー）。サブシェルから呼んでも残るようファイルにする
+DEFECT_MARK="${WORK_DIR}/defect"
 
 report() {
   # report <category> <message>
   printf '[%s] %s\n' "$1" "$2" >> "$FINDINGS"
+  case "$1" in
+    catalog-external-precedent|repeated-not-issue) ;;
+    *) : > "$DEFECT_MARK" ;;
+  esac
 }
 
 # strip_html_comments <file> <out> — HTML コメント（<!-- ... -->）とコードフェンスにかかる行を
@@ -654,10 +683,21 @@ if [ -f "$PRECEDENTS_MD" ]; then
 fi
 
 # ---- 結果 ----
+#
+# 起案シグナル（catalog-external-precedent / repeated-not-issue）と欠陥（それ以外の全カテゴリ）を
+# 分けて終了コードを決める（#148）。出力は従来どおり全件を [カテゴリ] 付きで stdout に出すので、
+# 呼び出し側はカテゴリ名でもシグナルと欠陥を見分けられる。
+# 欠陥の判定は report() が残す印（シグナルの2カテゴリ以外を1件でも報告したか）で行う（新しい検出
+# カテゴリを足したときに既定で欠陥側＝止める側に倒れるよう、欠陥側を列挙しない）。
 
 if [ -s "$FINDINGS" ]; then
   cat "$FINDINGS"
-  exit 1
+  if [ -e "$DEFECT_MARK" ]; then
+    exit 1
+  fi
+  if [ "$STRICT" -eq 1 ]; then
+    exit 4
+  fi
 fi
 
 exit 0

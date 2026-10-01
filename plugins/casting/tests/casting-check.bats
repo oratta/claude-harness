@@ -4,6 +4,8 @@
 # spec: openspec/changes/casting-plugin/specs/casting-project-files/spec.md
 #   Requirement: casting-check.sh の検出項目
 
+bats_require_minimum_version 1.5.0
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/casting-check.sh"
@@ -36,18 +38,83 @@ setup() {
   [[ "$output" == *"project.md"* ]] || return 1
 }
 
-@test "catalog-external-precedent fixture: reports the out-of-catalog precedent and exits 1" {
+# 起案シグナル（②③）は報告するが既定では exit 0（#148）。欠陥（①④ 等）とは終了コードで分ける
+
+@test "catalog-external-precedent fixture: reports the out-of-catalog precedent as a signal and exits 0" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/catalog-external-precedent"
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[catalog-external-precedent]"* ]] || return 1
   [[ "$output" == *"カタログ外"* ]] || return 1
   [[ "$output" == *"precedents.md"* ]] || return 1
 }
 
-@test "repeated-not-issue fixture: reports the perspective repeated as not-an-issue and exits 1" {
+@test "repeated-not-issue fixture: reports the perspective repeated as not-an-issue as a signal and exits 0" {
   run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/repeated-not-issue"
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[repeated-not-issue]"* ]] || return 1
   [[ "$output" == *"信用・レピュテーション"* ]] || return 1
   [[ "$output" == *"論点じゃなかった"* ]] || return 1
+}
+
+# --- Scenario: 起案シグナルと欠陥を終了コードで区別する（#148） ---
+
+@test "--strict: a repo with only signals exits 4 (catalog-external-precedent)" {
+  run "$SCRIPT" --strict --catalog "$CATALOG" "${FIXTURES}/catalog-external-precedent"
+  [ "$status" -eq 4 ]
+  [[ "$output" == *"[catalog-external-precedent]"* ]] || return 1
+}
+
+@test "--strict: a repo with only signals exits 4 (repeated-not-issue, option after the repo root)" {
+  run "$SCRIPT" --catalog "$CATALOG" "${FIXTURES}/repeated-not-issue" --strict
+  [ "$status" -eq 4 ]
+  [[ "$output" == *"[repeated-not-issue]"* ]] || return 1
+}
+
+@test "--strict: a repo without findings still exits 0" {
+  run "$SCRIPT" --strict --catalog "$CATALOG" "${FIXTURES}/ok"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "signal plus defect: exits 1 with and without --strict, and reports both categories" {
+  local repo="${BATS_TEST_TMPDIR}/signal-plus-defect"
+  mkdir -p "${repo}/.claude"
+  cp -R "${FIXTURES}/repeated-not-issue/.claude/casting" "${repo}/.claude/casting"
+  # 欠陥（version-mismatch）を1件足す
+  LC_ALL=C sed 's/^catalog_version: 1$/catalog_version: 999/' \
+    "${FIXTURES}/repeated-not-issue/.claude/casting/project.md" > "${repo}/.claude/casting/project.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$repo"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[repeated-not-issue]"* ]] || return 1
+  [[ "$output" == *"[version-mismatch]"* ]] || return 1
+  run "$SCRIPT" --strict --catalog "$CATALOG" "$repo"
+  [ "$status" -eq 1 ]
+}
+
+@test "repo path containing a newline: signals only exit 0 (4 with --strict), plus a defect exits 1" {
+  # 報告本文の継続行（改行入りパス）を欠陥と数えない（#148 レビュー）
+  local repo fx
+  for fx in catalog-external-precedent repeated-not-issue; do
+    repo="${BATS_TEST_TMPDIR}/${fx}"$'\n'"nl"
+    mkdir -p "${repo}/.claude"
+    cp -R "${FIXTURES}/${fx}/.claude/casting" "${repo}/.claude/casting"
+    run "$SCRIPT" --catalog "$CATALOG" "$repo"
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"[${fx}]"* ]] || return 1
+    run "$SCRIPT" --strict --catalog "$CATALOG" "$repo"
+    [ "$status" -eq 4 ] || return 1
+  done
+  LC_ALL=C sed 's/^catalog_version: 1$/catalog_version: 999/' \
+    "${FIXTURES}/repeated-not-issue/.claude/casting/project.md" > "${repo}/.claude/casting/project.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$repo"
+  [ "$status" -eq 1 ]
+}
+
+@test "--strict with resolve is a usage error (exit 2) and prints no table" {
+  run --separate-stderr "$SCRIPT" resolve --strict --catalog "$CATALOG" "${FIXTURES}/ok"
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"--strict"* ]] || return 1
 }
 
 @test "version-mismatch fixture: reports the catalog_version mismatch and exits 1" {
