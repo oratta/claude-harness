@@ -62,6 +62,11 @@ grep だけで数えていた頃は、行頭コメント行しか落とせず、
   - 代入語の添字             name[…]=v / name[…]+=v / 複合代入の中の [i]=v
                              `[` が単語の先頭（またはその直後の識別子の先頭が単語の
                              先頭）にあり、対応する `]` の直後が `=` か `+=` のもの
+                             （`]` と `=` の間の行継続 `\\` は越えて読む。#244）。
+                             さらにその単語がコマンド位置（先頭の予約語 `if` `{` `!`
+                             などの直後を含む）か前置き代入の連なり（`x=1 a[…]=3 cmd`）
+                             か複合代入 `=( … )` の中にあるもの。`: foo[bar <<EOF ]=3`
+                             のようなコマンドの引数は代入語ではない（PR #635 指摘）
 
   どちらも、対応する `]` が論理行（行末 `\\` の行継続でつないだ物理行）の中に実在する
   ことを先読みで確かめてから開く。見つからなければ添字ではない（bash も添字を閉じ損ねる
@@ -108,15 +113,22 @@ _IDENT_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567
 _PARAM_BEFORE = ("${", "${#", "${!")
 # 中身は非コードだが `$(…)` `` `…` `` だけはコードとして再走査するフレーム。
 _EXPANDING_KINDS = ("dquote", "heredoc")
+# 代入語（前置き代入）の形。`name=` / `name+=` / `name[…]=` / `name[…]+=`。
+_ASSIGNMENT_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\[.*\])?\+?=")
+# コマンドの先頭に置けて、その後ろもまだコマンド位置のままになる予約語。
+_LEADING_RESERVED = frozenset(("!", "time", "if", "then", "else", "elif", "do", "while", "until", "{"))
 
 
 class _Frame:
     """走査中の文脈（引用・コマンド置換・算術式・ヒアドキュメント本文）1つ分。"""
 
-    __slots__ = ("kind", "depth", "delim", "strip_tabs")
+    __slots__ = ("kind", "depth", "delim", "strip_tabs", "origin")
 
-    def __init__(self, kind, delim="", strip_tabs=False):
+    def __init__(self, kind, delim="", strip_tabs=False, origin=None):
         self.kind = kind
+        # コード領域フレーム（`$(` `` ` `` `((`）の中身が始まる (物理行 index, 位置)。
+        # 代入語の位置判定で、このフレームの中の単語だけを読むのに使う。
+        self.origin = origin
         self.depth = 0          # コード領域フレーム内の丸括弧の入れ子（`$(…)` の終端判定用）
         self.delim = delim      # ヒアドキュメントの区切り語
         self.strip_tabs = strip_tabs  # `<<-` の先頭タブ除去
@@ -210,9 +222,10 @@ class _Scanner:
                     continue
                 if ch == "$" and line.startswith("$(", i):
                     i = self._open_substitution(line, i, mask)
+                    self.stack[-1].origin = (index, i)
                     continue
                 if ch == "`":
-                    self.stack.append(_Frame("backtick"))
+                    self.stack.append(_Frame("backtick", origin=(index, i + 1)))
                     mask[i] = True
                     i += 1
                     continue
@@ -238,6 +251,7 @@ class _Scanner:
 
             if ch == "$" and line.startswith("$(", i):
                 i = self._open_substitution(line, i, mask)
+                self.stack[-1].origin = (index, i)
                 continue
 
             if ch in "'\"":
@@ -249,7 +263,7 @@ class _Scanner:
                 if kind == "backtick":
                     self.stack.pop()
                 else:
-                    self.stack.append(_Frame("backtick"))
+                    self.stack.append(_Frame("backtick", origin=(index, i + 1)))
                 mask[i] = True
                 i += 1
                 continue
@@ -265,7 +279,7 @@ class _Scanner:
 
             if line.startswith("((", i):
                 # `((` / `$((` の中では `<<` は左シフト演算子。ヒアドキュメントと誤認しない。
-                self.stack.append(_Frame("arith"))
+                self.stack.append(_Frame("arith", origin=(index, i + 2)))
                 mask[i] = mask[i + 1] = True
                 i += 2
                 continue
@@ -343,8 +357,115 @@ class _Scanner:
             return False
         if not in_assignment:
             return True
-        after = self.lines[end[0]][end[1] + 1:]
-        return after.startswith("=") or after.startswith("+=")
+        # `]` と `=` の間に行末 `\` の行継続が挟まっても、bash は継続を除いてから
+        # 読むので代入語（#244）。`]` の直後が `\` だけで行が終わる間は次の物理行へ進む。
+        row, col = end[0], end[1] + 1
+        while self.lines[row][col:] == "\\" and row + 1 < len(self.lines):
+            row, col = row + 1, 0
+        after = self.lines[row][col:]
+        if not (after.startswith("=") or after.startswith("+=")):
+            return False
+        # `name[…]=` の形でも、代入語になるのはコマンド位置か前置き代入の連なりの中か
+        # 複合代入 `=( … )` の中だけ。`: foo[bar <<EOF ]=3` の `foo[bar` はコマンドの
+        # 引数で、開くと本物のヒアドキュメント開始を読み飛ばす（PR #635 レビュー指摘 F1）。
+        return self._at_assignment_position(index, start)
+
+    def _at_assignment_position(self, index, start):
+        """物理行 index の位置 start から始まる単語が、bash が代入語として読む位置にあるか。
+
+        論理行（行末 `\\` でつないだ前の物理行を含む）の start より前を単語に切り、
+        直近のコマンド区切り（`;` `&` `|` 改行・`(` `)`・`` ` ``）の後ろに並ぶ単語が、
+        先頭の予約語（`if` `{` `!` など）を除いてすべて代入語なら真。複合代入 `=( … )`
+        の中も真。リダイレクト（`<` `>`）が前にあれば偽（bash もその後ろを代入語として
+        読まない）。完全なシェルパーサではなく、この物理行より前で開いた引用は追わない。
+        いま居るコード領域フレーム（`$(` `` ` `` `((`）がこの論理行の中で開いていれば、
+        その開きの直後から読む（`echo "$(a[…]=3)"` の `$(` の中はコマンド位置）。
+        """
+        first = index
+        while first > 0 and _ends_with_continuation(self.lines[first - 1]):
+            first -= 1
+        row, col = first, 0
+        origin = self.stack[-1].origin
+        if origin is not None and first <= origin[0] <= index:
+            row, col = origin
+        parts = []
+        while row < index:
+            parts.append(self.lines[row][col:-1])  # 行末の継続 `\\` を除く
+            row, col = row + 1, 0
+        parts.append(self.lines[index][col:start])
+        text = "".join(parts)
+
+        words = []      # 直近のコマンド区切りの後ろに並ぶ単語
+        cur = None      # 読みかけの単語
+        parens = []     # 開いた丸括弧ごとの (種類, 開く前の words)
+        i, n = 0, len(text)
+        while i < n:
+            ch = text[i]
+            if ch == "\\":
+                cur = (cur or "") + text[i:i + 2]
+                i += 2
+                continue
+            if ch == "'":
+                j = text.find("'", i + 1)
+                j = n if j < 0 else j + 1
+                cur = (cur or "") + text[i:j]
+                i = j
+                continue
+            if ch == '"':
+                j = self._skip_dquote(text, i + 1)
+                j = n if j < 0 else j
+                cur = (cur or "") + text[i:j]
+                i = j
+                continue
+            if ch in " \t":
+                if cur is not None:
+                    words.append(cur)
+                    cur = None
+                i += 1
+                continue
+            if ch == "(":
+                if cur is not None and cur.endswith("="):
+                    parens.append(("compound", words + [cur]))
+                else:
+                    parens.append(("group", words + ([cur] if cur is not None else [])))
+                words, cur = [], None
+                i += 1
+                continue
+            if ch == ")":
+                if parens and parens[-1][0] == "compound":
+                    words = parens.pop()[1]
+                else:
+                    if parens:
+                        parens.pop()
+                    words = []  # サブシェル・コマンド置換の閉じ、または case の型の閉じ
+                cur = None
+                i += 1
+                continue
+            if ch in ";&|`\n":
+                words, cur = [], None
+                i += 1
+                continue
+            if ch in "<>":
+                words.append(ch)  # リダイレクトの後ろはもう代入語の位置ではない
+                cur = None
+                i += 1
+                continue
+            cur = (cur or "") + ch
+            i += 1
+        if cur is not None:
+            words.append(cur)
+
+        if parens and parens[-1][0] == "compound":
+            return True
+        k = 0
+        while k < len(words):
+            if words[k] in _LEADING_RESERVED:
+                k += 1
+            elif words[k] == "function" and k + 2 < len(words) and words[k + 2] == "{":
+                k += 3  # `function name {` の本体の先頭もコマンド位置
+            else:
+                break
+        return all(_ASSIGNMENT_WORD.match(w) for w in words[k:])
 
     def _find_subscript_end(self, index, i):
         """物理行 index の位置 i の `[` に対応する `]` を論理行の中で探す。
@@ -446,6 +567,12 @@ class _Scanner:
         if delim:
             self.pending_heredocs.append((delim, strip_tabs, expand))
         return i
+
+
+def _ends_with_continuation(line):
+    """物理行が行末 `\\` の行継続で次の行へ続くか（末尾の `\\` が奇数個）。"""
+    stripped = line.rstrip("\\")
+    return (len(line) - len(stripped)) % 2 == 1
 
 
 def report_calls(text):
