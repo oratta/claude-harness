@@ -163,7 +163,7 @@ fi
 sessions_dir="${USAGE_SESSIONS_DIR:-$CONFIG_DIR/.usage-sessions}"
 # observed_at は「そのセッションが値を新しく受け取った時刻」（#643）。Claude Code は API 応答以外
 # （モード切り替え・キャッシュ期限切れ等）でも描き直し、そのときの rate_limits は前に受け取った値の
-# ままなので、セッションごとに前回書いた値の署名を .sessions/<session_id の sha256 先頭 16 桁> に
+# ままなので、セッションごとに前回書いた値の署名を .sessions/<session_id を JSON 文字列として引用符付きのまま sha256 した先頭 16 桁> に
 # 覚え、同じなら書かない。記録ファイルの中身とは比べない（他セッションが上書きした新しい値を、
 # 止まっていたセッションの古い値で潰さないため。.rate-limit-snapshot の obs_sig と同じ考え方）。
 # session_id が無い・ハッシュが取れないときは覚える先が無いので毎回書く。
