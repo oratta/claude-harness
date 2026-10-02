@@ -32,7 +32,7 @@ pull（ff-only）→ `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.
 
 | ファイル | 常時注入に残した要点 | 詳細の移設先 |
 |---|---|---|
-| `destructive-git-guard.md` | 破壊的 git 操作の事前承認必須と「戻すだけ」自己正当化への警戒。実行ではなく質問に変換するコマンド一覧（`git-commit-policy.md` から外した禁止一覧を項目単位で覆う。main/master への直接 push は remote 名を問わない） | なし（常時性を手放せないルール。全文を残す） |
+| `destructive-git-guard.md` | 破壊的 git 操作の事前承認必須と「戻すだけ」自己正当化への警戒。実行ではなく質問に変換するコマンド一覧（`git-commit-policy.md` から外した禁止一覧を項目単位で覆う。main/master への直接 push は remote 名を問わない）。GitHub の投稿者名を承認の根拠にしないことと、エージェントが主の判断を記録するときの表記の正本 | なし（常時性を手放せないルール。全文を残す） |
 | `dev-server.md` | 他プロジェクトのプロセス kill 禁止・ポート運用 | なし（常時性を手放せないルール。全文を残す） |
 | `browser-infra-env-capture.md` | ダッシュボード操作で生成された認証情報の即時 env 保存・gitignore 確認 | 1Password / Actions secrets への昇格手順は `capability-registry:capability-registry` スキル |
 | `communication-style.md` | 参照は中身で書く・比喩を作らない・判断依頼は背景から推奨まで・ヒアリングは1問ずつ（6原則の見出し）と、サブエージェントが書く場面で要る ✅/❌ 例・専門用語の言い換え・判断依頼の形式の見本・質問してよい例外 | 全文の正本は `~/.claude/plugins/marketplaces/oratta-claude-harness/output-styles/readable.md`（Output Style `readable`）。`~/.claude/output-styles/` への配布（sync.sh の symlink・flatmate の boot での毎世代実行）はこの README の「導入・更新」節 |
