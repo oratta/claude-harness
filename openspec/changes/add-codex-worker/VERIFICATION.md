@@ -9,7 +9,7 @@ OpenSpec strict、git diff --checkも実施。fake結果は実モデルのsandbo
 
 ## 未検証・未実装
 - 実モデル・#707を通した手動一件完走は親の統合確認担当。
-- token refresh時も保守的停止する制約、メール照合が完全なworkspace IDを保証しない制約。
+- メール照合が完全なworkspace IDを保証しない制約。（当時はtoken refresh時も保守的に停止する制約も挙げていたが、現在は同一アカウントのtoken更新（email同一）では停止せず、`account/read`で照合し直して続行する。現行の挙動の正本は `plugins/dev-workflow/scripts/CODEX-WORKER.md`。この記録の他の項目は当時の検証時点のもの。）
 - burn起動、send/steer、unknown運用回復、既存broker再利用。
 - 別ホスト／HOMEを分ける管理者起動での分散排他。
 
