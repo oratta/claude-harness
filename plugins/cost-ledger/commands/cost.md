@@ -4,7 +4,7 @@ description: そのブランチ・PR・issue にかかった API 換算コスト
 allowed-tools: Bash
 ---
 
-会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/**/*.jsonl`）を 1 パスで読み、API 換算のコストを集計する。集計・判別・書式のすべては `scripts/cost_ledger.py` の `cost` サブコマンドが持つ。**このコマンドは単価も換算レートも出力書式も自分では持たない**（単価と換算レートの正本は `pricing.json`、1 行目の書式の正本は `headline()`）。
+会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/**/*.jsonl`）を 1 パスで読み、API 換算のコストを集計する。環境変数 `COST_LEDGER_PATH` が設定されていれば、会話ログの増えた分を台帳に追記してから台帳を読む（下の「台帳」）。集計・判別・書式のすべては `scripts/cost_ledger.py` の `cost` サブコマンドが持つ。**このコマンドは単価も換算レートも出力書式も自分では持たない**（単価と換算レートの正本は `pricing.json`、1 行目の書式の正本は `headline()`）。
 
 ## 実行
 
@@ -29,6 +29,13 @@ python3 "$CL" cost $ARGUMENTS
 | `/cost <issue番号>` | その issue を触った区間のコスト合計（作業ディレクトリのリポジトリの行だけ） |
 
 番号が PR か issue かは `gh api` で GitHub に問い合わせて判別する。**認証済みの `gh` と GitHub への到達性が要る**（コスト計算そのものはオフラインで完結するが、判別だけはネットワークに依存する）。どちらでもない番号は 0 円と表示せず、見つからないと伝えて終了コード 2 で終わる。
+
+## 台帳
+
+会話ログは既定 30 日で消える。消えたあとも同じ値を返すために、`COST_LEDGER_PATH` が指すリポジトリ外の append-only の JSONL 台帳へ、応答が終わるたびに `Stop` hook が増えた分を焼き付ける。
+
+- **`COST_LEDGER_PATH` が未設定なら**、会話ログを直接読んで答えたうえで、台帳ファイルをどこに置くかを利用者に聞く（既定の場所は決めない。このリポジトリの配下は不可）。決まったら `~/.claude/settings.json` の `env` に `COST_LEDGER_PATH` を書くよう案内し、初回の取り込みとして `python3 "$CL" ledger-sync` を実行する
+- 台帳がリポジトリ配下を指していると、スクリプトは終了コード 2 で終わる。その旨を利用者に伝えて場所を聞き直す
 
 ## 出力の扱い
 

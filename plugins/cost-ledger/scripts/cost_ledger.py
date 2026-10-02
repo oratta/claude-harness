@@ -10,7 +10,10 @@
 
 - **事実の抽出と帰属の導出を分ける。** 1 行から取るのは事実だけで、区間の帰属は
   事実の列に対する関数として別に導く。区間の帰属は次の投稿が来るまで確定しないので、
-  1 行ずつ追記する経路（後続の台帳）が書けるのは事実の側に限られる。
+  1 行ずつ追記する経路（台帳）が書けるのは事実の側に限られる。
+- **会話ログは既定 30 日で消える。** 環境変数 ``COST_LEDGER_PATH`` が設定されていれば、
+  事実をリポジトリ外の append-only の台帳へ焼き付け（``ledger-sync``・Stop hook）、
+  集計は台帳から読む。未設定なら会話ログを直接読む。
 - **単価と換算レートはこのファイルに書かない。** 隣の ``pricing.json`` だけが持つ。
 - **速度は 1 行目の文字列判定に依存する。** JSON にパースする前に生の行へ
   ``"assistant"`` が含まれるかで弾く。パースしてから判定すると桁違いに遅くなる。
@@ -19,9 +22,11 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 from collections import defaultdict
@@ -268,48 +273,334 @@ def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
     }
 
 
+def log_files(root: str):
+    """会話ログのファイルを決まった順で返す（ディレクトリ内はファイル名順）。"""
+    for dirpath, dirs, filenames in os.walk(root):
+        dirs.sort()
+        for name in sorted(filenames):
+            if name.endswith(".jsonl"):
+                yield os.path.join(dirpath, name)
+
+
+def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str | None = None):
+    """会話ログの行の列から事実を返す。``seen`` に入っている requestId は飛ばし、採った分を足す。
+
+    ``seen`` は ``in`` と ``add`` を持てばよい（台帳の索引もこの形で渡す）。requestId も uuid も
+    無い行は空文字を鍵にする。
+    """
+    for line in lines:
+        # パースの前に生の文字列で弾く（全履歴 1 パスの速度はここに依存する）
+        if '"assistant"' not in line:
+            continue
+        if branch is not None and branch not in line:
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(record, dict):
+            SCAN_STATS["unreadable_lines"] += 1
+            continue
+        if record.get("type") != "assistant":
+            continue
+        if branch is not None and (record.get("gitBranch") or "") != branch:
+            continue
+        request_id = record.get("requestId") or record.get("uuid") or ""
+        if not isinstance(request_id, str):
+            SCAN_STATS["unreadable_lines"] += 1
+            continue
+        if request_id in seen:
+            continue
+        try:
+            fact = build_fact(record, resolver, path)
+        except (AttributeError, TypeError, ValueError):
+            # 有効な JSON だが期待する形でない行。ここで落とすと 1 行の不正で
+            # 全履歴の集計が終わらなくなる（cwd 削除済みの行と同じ方針）。
+            SCAN_STATS["unreadable_lines"] += 1
+            continue
+        seen.add(request_id)
+        yield fact
+
+
 def iter_facts(root: str, resolver: RepoResolver, branch: str | None = None):
     """会話ログを 1 パスで読み、requestId で重複を排除しながら事実を返す。"""
     seen: set[str] = set()
-    for dirpath, _dirs, filenames in os.walk(root):
-        for name in sorted(filenames):
-            if not name.endswith(".jsonl"):
-                continue
-            path = os.path.join(dirpath, name)
+    for path in log_files(root):
+        try:
+            handle = open(path, encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with handle:
+            yield from facts_from_lines(handle, path, resolver, seen, branch)
+
+
+# --------------------------------------------------------------------------
+# 台帳（会話ログが消えたあとも残す append-only の JSONL）
+# --------------------------------------------------------------------------
+
+# 台帳の場所を決める唯一の入口。既定のパスは持たない（個人のディレクトリ構成を
+# リポジトリに残さないため。LLM_LOG_DIR と同じ扱い）。
+LEDGER_ENV = "COST_LEDGER_PATH"
+
+# 台帳の 1 行は build_fact の辞書をそのまま dumps したもので、先頭の鍵が request_id。
+# 索引を作るとき、この接頭辞なら JSON をパースせずに requestId を取り出せる。
+LEDGER_ID_PREFIX = '{"request_id": "'
+
+
+class LedgerError(Exception):
+    """台帳を使えない（場所が不正・読み書きできない）。終了コード 2 で利用者に伝える。"""
+
+
+def ledger_path():
+    return os.environ.get(LEDGER_ENV) or None
+
+
+def protected_root() -> str:
+    """台帳を置いてはいけない場所。このスクリプトを含むリポジトリ（無ければプラグイン）。"""
+    plugin_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    top = _git(plugin_root, "rev-parse", "--show-toplevel")
+    return os.path.realpath(top or plugin_root)
+
+
+def resolve_ledger(path: str) -> str:
+    """台帳の実パスを返す。リポジトリ配下を指していれば LedgerError。"""
+    real = os.path.realpath(os.path.abspath(os.path.expanduser(path)))
+    root = protected_root()
+    if real == root or real.startswith(root + os.sep):
+        raise LedgerError(
+            "%s が指す台帳 %s はプラグインのリポジトリ（%s）の配下です。"
+            "自動更新や再 clone で消えるので、リポジトリの外を指してください。"
+            % (LEDGER_ENV, real, root)
+        )
+    return real
+
+
+def _ledger_id(line: str):
+    """台帳の 1 行から requestId を取り出す（取れなければ None）。"""
+    if line.startswith(LEDGER_ID_PREFIX):
+        rest = line[len(LEDGER_ID_PREFIX):]
+        end = rest.find('"')
+        if end >= 0 and "\\" not in rest[:end]:
+            return rest[:end]
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return None
+    if isinstance(record, dict) and isinstance(record.get("request_id"), str):
+        return record["request_id"]
+    return None
+
+
+class LedgerIndex:
+    """台帳に書いた requestId の索引と、会話ログごとの読み終え位置（控え）。
+
+    索引は台帳の先頭からの写しで、``covered``（台帳の何バイト目まで反映したか）を持つ。
+    台帳が伸びていれば差分だけを足し、縮んでいれば作り直す。控えが壊れていれば捨てて
+    作り直す。正しさは台帳が持ち、ここは速さのためだけにある。
+    """
+
+    def __init__(self, path: str):
+        self.path = path
+        try:
+            self.db = self._open()
+        except sqlite3.DatabaseError:
+            for suffix in ("", "-journal", "-wal", "-shm"):
+                try:
+                    os.remove(path + suffix)
+                except OSError:
+                    pass
+            self.db = self._open()
+
+    def _open(self):
+        db = sqlite3.connect(self.path)
+        db.execute("CREATE TABLE IF NOT EXISTS ids (id TEXT PRIMARY KEY)")
+        db.execute("CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, offset INTEGER, ino INTEGER)")
+        db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER)")
+        db.execute("SELECT count(*) FROM meta").fetchone()
+        return db
+
+    def covered(self) -> int:
+        row = self.db.execute("SELECT value FROM meta WHERE key = 'covered'").fetchone()
+        return int(row[0]) if row else 0
+
+    def set_covered(self, size: int) -> None:
+        self.db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('covered', ?)", (size,))
+
+    def catch_up(self, ledger: str) -> None:
+        """台帳の伸びた分を索引に取り込む（台帳が縮んでいれば作り直す）。"""
+        try:
+            size = os.path.getsize(ledger)
+        except OSError:
+            size = 0
+        start = self.covered()
+        if start > size:
+            self.db.execute("DELETE FROM ids")
+            self.db.execute("DELETE FROM files")
+            start = 0
+        if start < size:
+            with open(ledger, "rb") as fh:
+                fh.seek(start)
+                data = fh.read(size - start)
+            ids = []
+            for raw in data.split(b"\n"):
+                if not raw.strip():
+                    continue
+                request_id = _ledger_id(raw.decode("utf-8", errors="replace"))
+                if request_id is not None:
+                    ids.append((request_id,))
+            self.db.executemany("INSERT OR IGNORE INTO ids (id) VALUES (?)", ids)
+        self.set_covered(size)
+        self.db.commit()
+
+    def __contains__(self, request_id) -> bool:
+        return self.db.execute("SELECT 1 FROM ids WHERE id = ?", (request_id,)).fetchone() is not None
+
+    def offsets(self) -> dict:
+        return {p: (o, i) for p, o, i in self.db.execute("SELECT path, offset, ino FROM files")}
+
+
+class _Seen:
+    """索引とこの回に採った分を合わせた requestId の集合。"""
+
+    def __init__(self, index: LedgerIndex):
+        self.index = index
+        self.local: set[str] = set()
+
+    def __contains__(self, request_id) -> bool:
+        return request_id in self.local or request_id in self.index
+
+    def add(self, request_id) -> None:
+        self.local.add(request_id)
+
+
+def ledger_sync(ledger: str, root: str, resolver: RepoResolver) -> int:
+    """会話ログの増えた分を台帳に追記し、追記した行数を返す。
+
+    台帳の隣のロックファイルに排他ロックを取ってから読み書きする（複数セッションの
+    Stop hook が同時に走るため）。台帳へ追記してから控えを更新する。
+    """
+    directory = os.path.dirname(ledger)
+    try:
+        os.makedirs(directory, exist_ok=True)
+        lock = open(ledger + ".lock", "a")
+    except OSError as error:
+        raise LedgerError("台帳の場所 %s を用意できません: %s" % (ledger, error))
+    with lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            return _ledger_sync_locked(ledger, root, resolver)
+        except (OSError, sqlite3.Error) as error:
+            raise LedgerError("台帳 %s へ追記できません: %s" % (ledger, error))
+
+
+def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver) -> int:
+    index = LedgerIndex(ledger + ".state.sqlite")
+    try:
+        index.catch_up(ledger)
+        previous = index.offsets()
+        seen = _Seen(index)
+        lines_out: list[str] = []
+        new_offsets = []
+        # 控えのキーは置き場所を実パスに直した形で持つ（シンボリックリンク経由で同じ置き場所を
+        # 指しても、同じ会話ログを別のキーで先頭から読み直さないため）。os.walk は root の
+        # 表記のまま返すので、root からの相対パスを実パスの root に付け直す
+        real_root = os.path.realpath(root)
+        for path in log_files(root):
+            key = os.path.join(real_root, os.path.relpath(path, root))
             try:
-                handle = open(path, encoding="utf-8", errors="replace")
+                stat = os.stat(path)
             except OSError:
                 continue
-            with handle:
-                for line in handle:
-                    # パースの前に生の文字列で弾く（全履歴 1 パスの速度はここに依存する）
-                    if '"assistant"' not in line:
-                        continue
-                    if branch is not None and branch not in line:
-                        continue
-                    try:
-                        record = json.loads(line)
-                    except ValueError:
-                        continue
-                    if not isinstance(record, dict):
-                        SCAN_STATS["unreadable_lines"] += 1
-                        continue
-                    if record.get("type") != "assistant":
-                        continue
-                    if branch is not None and (record.get("gitBranch") or "") != branch:
-                        continue
-                    request_id = record.get("requestId") or record.get("uuid")
-                    if request_id in seen:
-                        continue
-                    try:
-                        fact = build_fact(record, resolver, path)
-                    except (AttributeError, TypeError, ValueError):
-                        # 有効な JSON だが期待する形でない行。ここで落とすと 1 行の不正で
-                        # 全履歴の集計が終わらなくなる（cwd 削除済みの行と同じ方針）。
-                        SCAN_STATS["unreadable_lines"] += 1
-                        continue
-                    seen.add(request_id)
-                    yield fact
+            offset, ino = previous.get(key, (0, None))
+            if ino != stat.st_ino or not (0 <= offset <= stat.st_size):
+                offset = 0
+            if offset == stat.st_size:
+                new_offsets.append((key, offset, stat.st_ino))
+                continue
+            try:
+                with open(path, "rb") as fh:
+                    fh.seek(offset)
+                    data = fh.read(stat.st_size - offset)
+            except OSError:
+                continue
+            end = data.rfind(b"\n")
+            if end < 0:
+                # 書きかけの 1 行だけ。次回に回す
+                new_offsets.append((key, offset, stat.st_ino))
+                continue
+            lines = (raw.decode("utf-8", errors="replace") for raw in data[:end].split(b"\n"))
+            for fact in facts_from_lines(lines, path, resolver, seen):
+                lines_out.append(json.dumps(fact, ensure_ascii=False))
+            new_offsets.append((key, offset + end + 1, stat.st_ino))
+        if lines_out:
+            prefix = ""
+            if os.path.exists(ledger) and os.path.getsize(ledger) > 0:
+                with open(ledger, "rb") as fh:
+                    fh.seek(-1, os.SEEK_END)
+                    if fh.read(1) != b"\n":
+                        prefix = "\n"
+            with open(ledger, "a", encoding="utf-8") as fh:
+                fh.write(prefix + "\n".join(lines_out) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+        # 追記した分を索引に足してから、読み終え位置を差し替える。差し替えるのは今回読んだ
+        # 置き場所（root）の配下だけ。CLAUDE_CONFIG_DIR の違うアカウントが同じ台帳を共有しても、
+        # 他の置き場所の読み終え位置を消さない（消すと次の hook が全件を読み直す）
+        index.catch_up(ledger)
+        root_prefix = os.path.join(real_root, "")
+        gone = [(p,) for p in previous if p.startswith(root_prefix)]
+        index.db.executemany("DELETE FROM files WHERE path = ?", gone)
+        index.db.executemany("INSERT OR REPLACE INTO files (path, offset, ino) VALUES (?, ?, ?)", new_offsets)
+        index.db.commit()
+        return len(lines_out)
+    finally:
+        index.db.close()
+
+
+def iter_ledger_facts(ledger: str, branch: str | None = None):
+    """台帳から事実を返す。重複排除とブランチの絞り込みは会話ログ直読みと同じ規則。"""
+    seen: set[str] = set()
+    try:
+        handle = open(ledger, encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise LedgerError("台帳 %s を読めません: %s" % (ledger, error))
+    with handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            if branch is not None and branch not in line:
+                continue
+            try:
+                fact = json.loads(line)
+            except ValueError:
+                SCAN_STATS["unreadable_lines"] += 1
+                continue
+            if not isinstance(fact, dict) or not isinstance(fact.get("request_id"), str):
+                SCAN_STATS["unreadable_lines"] += 1
+                continue
+            if branch is not None and fact.get("branch") != branch:
+                continue
+            if fact["request_id"] in seen:
+                continue
+            seen.add(fact["request_id"])
+            yield fact
+
+
+def load_facts(resolver: RepoResolver, branch: str | None = None):
+    """集計系サブコマンドの事実の入口。
+
+    台帳が設定されていれば、会話ログの増えた分を追記してから台帳だけを読む（読む時点で
+    台帳は会話ログの上位集合になるので、会話ログ直読みと同じ値になる）。未設定なら
+    会話ログを直接読む。
+    """
+    configured = ledger_path()
+    if configured is None:
+        return iter_facts(log_root(), resolver, branch=branch)
+    ledger = resolve_ledger(configured)
+    ledger_sync(ledger, log_root(), resolver)
+    return iter_ledger_facts(ledger, branch=branch)
 
 
 # --------------------------------------------------------------------------
@@ -490,7 +781,7 @@ def branch_label(facts, resolver: RepoResolver):
 
 
 def cmd_facts(args, pricing: Pricing, resolver: RepoResolver) -> int:
-    for fact in iter_facts(log_root(), resolver):
+    for fact in load_facts(resolver):
         sys.stdout.write(json.dumps(fact, ensure_ascii=False) + "\n")
     return 0
 
@@ -505,7 +796,7 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
     なく、削除済み worktree の行を落とさないため）。
     """
     scope = getattr(args, "scope_repo_id", None)
-    all_facts = list(iter_facts(log_root(), resolver, branch=args.branch))
+    all_facts = list(load_facts(resolver, branch=args.branch))
     unknown = []
     if scope is None:
         facts = all_facts
@@ -579,7 +870,7 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
 
 def cmd_report(args, pricing: Pricing, resolver: RepoResolver) -> int:
     """監査用。全行を帰属先ごとに畳み、合計が総額と合うことを見えるようにする。"""
-    facts = list(iter_facts(log_root(), resolver))
+    facts = list(load_facts(resolver))
     branches: dict[str, float] = defaultdict(float)
     repos: dict[str, float] = defaultdict(float)
     repo_messages: dict[str, int] = defaultdict(int)
@@ -627,7 +918,7 @@ def cmd_report(args, pricing: Pricing, resolver: RepoResolver) -> int:
 
 def cmd_intervals(args, pricing: Pricing, resolver: RepoResolver) -> int:
     """区間分割そのものを見る窓口。ブランチの総額が区間の合計と合うことを確かめられる。"""
-    facts = list(iter_facts(log_root(), resolver, branch=args.branch))
+    facts = list(load_facts(resolver, branch=args.branch))
     rows = price_intervals(split_intervals(facts), pricing)
     total = sum(row["usd"] for row in rows)
     if args.json:
@@ -662,7 +953,7 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         )
         return 2
     number = str(args.issue)
-    rows = price_intervals(split_intervals(list(iter_facts(log_root(), resolver))), pricing)
+    rows = price_intervals(split_intervals(list(load_facts(resolver))), pricing)
     matched = [r for r in rows if r["issue"] == number and r["repo_id"] == repo_id]
     unknown = [r for r in rows if r["issue"] == number and r["repo_id"] == UNKNOWN_REPO]
     total = sum(row["usd"] for row in matched)
@@ -693,6 +984,22 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
               % (payload["unknown_repo_messages"],
                  format(payload["unknown_repo_usd"], ",.2f"), number))
     print("  ※ issue 単位は区間分割による推定です。区間の内訳で寄せ先を確かめてください。")
+    return 0
+
+
+def cmd_ledger_sync(args, pricing: Pricing, resolver: RepoResolver) -> int:
+    """会話ログの増えた分を台帳に追記する（Stop hook と手動の取り込みの共通入口）。"""
+    configured = ledger_path()
+    if configured is None:
+        sys.stderr.write(
+            "%s が未設定です。台帳ファイルの場所（このリポジトリの外）を設定してください。\n"
+            % LEDGER_ENV
+        )
+        return 2
+    ledger = resolve_ledger(configured)
+    added = ledger_sync(ledger, log_root(), resolver)
+    if not args.quiet:
+        print("台帳 %s に %d 行追記しました。" % (ledger, added))
     return 0
 
 
@@ -741,6 +1048,12 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--json", action="store_true")
     report.set_defaults(func=cmd_report)
 
+    ledger = subparsers.add_parser(
+        "ledger-sync", help="会話ログの増えた分を台帳（%s）に追記する" % LEDGER_ENV
+    )
+    ledger.add_argument("--quiet", action="store_true", help="追記した行数を出さない")
+    ledger.set_defaults(func=cmd_ledger_sync)
+
     return parser
 
 
@@ -760,6 +1073,9 @@ def main(argv=None) -> int:
     resolver = RepoResolver()
     try:
         return args.func(args, pricing, resolver)
+    except LedgerError as error:
+        sys.stderr.write("%s\n" % error)
+        return 2
     finally:
         sys.stdout.flush()
         report_unreadable()
