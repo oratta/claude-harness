@@ -2,15 +2,16 @@
 
 ## Purpose
 ゲート通過（合格ラベル `agent-review:passed` の付与）を PostToolUse の hook で捕まえ、対象 PR のコストを LLM のトークンを使わずにコメントで 1 行貼る。数字は `/cost` と同じ入口（`cost_ledger.py cost`）から取り、hook は集計・単価・書式を自分で持たない。
-
 ## Requirements
 ### Requirement: ゲート通過を PostToolUse の hook で捕まえる
-システムは `plugins/cost-ledger/hooks/hooks.json` に `PostToolUse`・matcher `Bash` の hook を 1 つ持ち、`plugins/cost-ledger/scripts/gate-report.sh` を呼 MUST ぶ。ゲート通過は合格ラベル `agent-review:passed` を付けるコマンドとして Bash の呼び出しに現れ、そのコマンド文字列から対象の PR が分かるため。`Stop` のように PR と結びつかない event を使ってはなら MUST NOT ない。
+システムは `plugins/cost-ledger/hooks/hooks.json` に `PostToolUse`・matcher `Bash` の hook を 1 つ持ち、`plugins/cost-ledger/scripts/gate-report.sh` を呼 MUST ぶ。ゲート通過は合格ラベル `agent-review:passed` を付けるコマンドとして Bash の呼び出しに現れ、そのコマンド文字列から対象の PR が分かるため。`Stop` のように PR と結びつかない event を使ってはなら MUST NOT ない。同じ hook が、`cost-ledger-timeline` の定めるきっかけ（PR / issue へのコメントと状態の変更）も捕まえる。
 
-hook は全 Bash 呼び出しで起動するので、スクリプトは stdin に文字列 `agent-review:passed` が含まれなければ、JSON のパースも jq・python3 の起動もせずに即 `exit 0` MUST する。
+hook は全 Bash 呼び出しで起動するので、スクリプトは stdin に次のどの文字列も含まれなければ、JSON のパースも jq・python3 の起動もせずに即 `exit 0` MUST する: `agent-review:passed`・`gh pr comment`・`gh pr ready`・`gh pr close`・`gh pr merge`・`gh issue comment`・`gh issue close`・`gh issue reopen`。
+
+守備範囲: この fast path が受け取る入力は、Claude Code が hook の stdin に渡す PostToolUse の JSON 全体（`tool_input.command` に加えて、コマンドの出力である `tool_response` も入る）に限る。拾いたい誤りは、きっかけになる Bash 呼び出しを fast path で落として行を積み損ねることと、きっかけにならない大多数の Bash 呼び出しで `python3` を起動してセッションを遅くすることの 2 つ。次の入力は誤ったまま通ることを許す: 上の文字列がコマンドの出力や `echo` の引数に現れただけの呼び出しは fast path を通って `python3` が起動する（その先の判定で落ち、何も書かれない）／`gh  pr  comment` のように語のあいだの空白が 1 つでないもの、行継続で語が分かれたもの、`gh -R x pr comment` のように `gh` と `pr` のあいだにオプションを置いたもの、`$GH pr comment` のように `gh` を変数で呼んだものは fast path で落ち、行が積まれない／合格ラベルの名前を変数や文字列の連結で組み立てた付与は fast path で落ち、行が積まれない。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
 
 #### Scenario: 対象外の Bash では何も起動しない
-- **WHEN** `agent-review:passed` を含まない Bash 呼び出しの hook JSON を stdin に流す
+- **WHEN** 上の文字列をどれも含まない Bash 呼び出し（`gh pr view 300` を含む）の hook JSON を stdin に流す
 - **THEN** `gh` と `python3` は一度も呼ばれず、stdout は空で、終了コードは 0
 
 #### Scenario: 対象外の Bash での実行時間
@@ -69,43 +70,16 @@ hook は全 Bash 呼び出しで起動するので、スクリプトは stdin �
 - **WHEN** 付与コマンドの hook JSON を流すが、問い合わせた PR のラベルに `agent-review:passed` が無い
 - **THEN** コメントの作成も書き換えも行われない
 
-### Requirement: 貼る数字は `/cost` と同じ入口から取る
-システムは貼る数字を `cost_ledger.py cost <番号>`（`/cost` と同じ入口）の出力の 1 行目から SHALL 取る。hook が集計・単価・書式を自分で持ってはなら MUST NOT ない。番号の判別が付与コマンドのリポジトリに問い合わせるよう、そのリポジトリを `GH_REPO` として渡 SHALL す。`transcript_path` は使ってはなら MUST NOT ない。貼るのは PR 全体（そのブランチの全セッション合計）であり、自セッションのログ 1 本から出る区間コストではないため。
-
-子2（台帳）が `/cost` の読み取り元を台帳に切り替えたとき、hook は変更なしでその値を貼ることになる。
-
-#### Scenario: 1 行目が `/cost` と一致する
-- **WHEN** ゲート通過で hook がコメントを貼り、同じ時点で `/cost <その PR 番号>` を実行する
-- **THEN** コメントの 1 行目と `/cost` の出力の 1 行目が一致する
-
-#### Scenario: サブエージェントの中で付与しても動く
-- **WHEN** `transcript_path` を含まない（またはサブエージェントのトランスクリプトを指す）hook JSON で付与コマンドを流す
-- **THEN** 同じようにコメントが貼られる
-
-### Requirement: 貼る形はマーカー付きのコメント 1 本
-システムは PR 1 本につき、隠しマーカー `<!-- cost-ledger:gate-report -->` を持つコメントを 1 本だけ SHALL 保つ。マーカー付きのコメントが既にあれば `gh api -X PATCH` でその本文を書き換え、無ければ新規作成 MUST する。本文の 1 行目は `cost` の出力の 1 行目そのもの、2 行目は `YYYY-MM-DD HH:MM 時点・ゲート通過時に自動投稿`、マーカーは最終行と SHALL する。書き換えに失敗したときに新規作成へ切り替えてはなら MUST NOT ない。
-
-#### Scenario: 初回のゲート通過
-- **WHEN** マーカー付きのコメントが無い PR に付与コマンドの hook JSON を流す
-- **THEN** マーカー付きのコメントが 1 本新規作成され、1 行目がコストの行、2 行目が時点の行になっている
-
-#### Scenario: 再ゲート
-- **WHEN** マーカー付きのコメントが既にある PR に付与コマンドの hook JSON を流す
-- **THEN** そのコメントが PATCH で書き換えられ、新しいコメントは作成されない
-
-### Requirement: 投稿するのはゲート通過のときだけ
-システムはラベル付与のときだけ投稿 MUST する。PR へのコメント投稿や Ready への切り替えなど、他の操作に相乗りして投稿してはなら MUST NOT ない。子2 の hook（台帳への焼き付け）と役割を混ぜないため。数字はラベル付与のターンより前の分しか含まないが、これを許容し、コメントに時点を書くことで示 SHALL す。
-
-#### Scenario: PR へのコメント投稿では貼らない
-- **WHEN** `gh pr comment 300 --body "..."` の hook JSON を流す
-- **THEN** `gh` は一度も呼ばれない
-
 ### Requirement: 有効・無効の設定を持たず、緊急停止だけを持つ
-システムは有効・無効を切り替える設定項目を持ってはなら MUST NOT ない。発火条件がラベル付与コマンドそのものなので、pr-review-gate を使うリポジトリでしか動かない。緊急停止用に、環境変数 `COST_LEDGER_GATE_REPORT=off` のときは何もせず `exit 0` MUST する。
+システムは有効・無効を切り替える設定項目を持ってはなら MUST NOT ない。緊急停止用に、環境変数 `COST_LEDGER_GATE_REPORT=off` のときは何もせず `exit 0` MUST する。この停止は、ゲート通過の行だけでなく、`cost-ledger-timeline` の定めるすべてのきっかけに効 MUST く。
 
 #### Scenario: 緊急停止
 - **WHEN** `COST_LEDGER_GATE_REPORT=off` を付けて付与コマンドの hook JSON を流す
 - **THEN** `gh` は一度も呼ばれず、stdout は空で、終了コードは 0
+
+#### Scenario: 緊急停止はコメントのきっかけにも効く
+- **WHEN** `COST_LEDGER_GATE_REPORT=off` を付けて `gh pr comment 300 --body x` の hook JSON を流す
+- **THEN** `gh` と `python3` は一度も呼ばれず、stdout は空で、終了コードは 0
 
 ### Requirement: どの失敗でも無出力で抜ける
 システムは次のどれに当たっても、stdout と stderr に何も出さず終了コード 0 で終わ MUST る: コマンドが対象外 / `gh` か `python3` が無い / `cost_ledger.py` が失敗する / GitHub に届かない・`gh` が失敗する。終了コード 2 を返してはなら MUST NOT ない。hook の失敗でゲートを止めず、文脈にも何も入れないため。
@@ -114,7 +88,7 @@ hook は全 Bash 呼び出しで起動するので、スクリプトは stdin �
 - **WHEN** `gh` がすべて失敗する環境で付与コマンドの hook JSON を流す
 - **THEN** stdout は空で、終了コードは 0
 
-#### Scenario: cost の集計が失敗する
-- **WHEN** `cost_ledger.py cost` が 0 以外で終わる状況で付与コマンドの hook JSON を流す
+#### Scenario: 集計が失敗する
+- **WHEN** `cost_ledger.py timeline` が 0 以外で終わる状況で付与コマンドの hook JSON を流す
 - **THEN** コメントの作成も書き換えも行われず、stdout は空で、終了コードは 0
 
