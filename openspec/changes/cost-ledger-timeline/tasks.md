@@ -36,7 +36,7 @@
 
 ## 4. 文書
 
-- [ ] 4.1 `README.md` の「ゲート通過時の自動投稿」の節を、節目ごとに 1 行積む形に書き直す。載せること: きっかけの一覧、コメントの例（1 行目・表・最終行）、3 項目の読み方（累計と増分、issue の累計は減ることがある）、裏で動くので行が付くまで数秒かかること、緊急停止 `COST_LEDGER_GATE_REPORT=off` が全部を止めること、古い形のコメントは残ること、やらないこと（auto-merge・自動クローズ・`gh api` の直叩き）。触る範囲: plugins/cost-ledger/README.md:51-66
+- [x] 4.1 `README.md` の「ゲート通過時の自動投稿」の節を、節目ごとに 1 行積む形に書き直す。載せること: きっかけの一覧、コメントの例（1 行目・表・最終行）、3 項目の読み方（累計と増分、issue の累計は減ることがある）、裏で動くので行が付くまで数秒かかること、緊急停止 `COST_LEDGER_GATE_REPORT=off` が全部を止めること、古い形のコメントは残ること、やらないこと（auto-merge・自動クローズ・`gh api` の直叩き）。触る範囲: plugins/cost-ledger/README.md:51-66
 - [ ] 4.2 `plugins/cost-ledger/changes/303.md` を作る（何を変えたか、コメントの形が変わること、spec とテストの場所、反映に `/reload-plugins` が要らないこと（`hooks.json` を変えていない））。書式は `changes/274.md` に合わせる。触る範囲: plugins/cost-ledger/changes/303.md（新規）、plugins/cost-ledger/changes/274.md:1-12（書式。読むだけ）
 
 ## 5. 実測と確認（結果は PR 本文に書く）

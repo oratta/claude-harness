@@ -48,22 +48,59 @@ COST_LEDGER_USD_JPY=155 python3 scripts/cost_ledger.py branch oratta/issue-cost
 落とさない。同じく、`cwd` が削除済みでリポジトリ識別子が導けなかった行は「リポジトリ不明」として
 件数と金額が別立てで出る。
 
-## ゲート通過時の自動投稿
+## 節目ごとの自動投稿（ここまでのコスト）
 
-pr-review-gate が合格ラベル `agent-review:passed` を付けた直後に、その PR へ `/cost <PR番号>` の
-1 行目と同じ行をコメントで貼る。PostToolUse（matcher `Bash`）の hook `scripts/gate-report.sh` が、
-付与のコマンド（`gh api .../issues/<番号>/labels -f 'labels[]=agent-review:passed'`、または
-`gh pr edit` / `gh issue edit` の `--add-label agent-review:passed`）を見て動く。LLM のトークンは使わない。
+PR / issue へのコメント・状態の変更・ゲート通過のたびに、その PR / issue の 1 本のコメントへ
+「ここまでのコスト」を 1 行積む。PostToolUse（matcher `Bash`）の hook `scripts/gate-report.sh` が
+Bash のコマンド文字列からきっかけを見つけ、裏のプロセス `scripts/gate_report.py` が `gh` で読み書きする。
+数字と書式は `scripts/cost_ledger.py timeline` が作る。LLM のトークンは使わない。
 
-- **何を**: `scripts/cost_ledger.py cost <PR番号>` の出力の 1 行目と、時点の行（`YYYY-MM-DD HH:MM 時点・ゲート通過時に自動投稿`）。
-  最終行に目印 `<!-- cost-ledger:gate-report -->` を置く
-- **どこに**: ラベルを付けた PR。貼る前にラベルが実際に付いたことを API で確かめ、付いていなければ貼らない
-- **1 本だけ**: 目印付きのコメントが既にあれば、新しく作らずにそれを書き換える。再ゲートでもコメントは増えない
-- **数字の範囲**: ラベルを付けたターンより前の分しか含まない（hook はそのターンの途中で動くため）
-- **止め方**: 環境変数 `COST_LEDGER_GATE_REPORT=off`（settings.json の `env` に置く）
+| コマンド | 行の「きっかけ」 |
+|---|---|
+| `gh pr comment` | `PR コメント` |
+| `gh issue comment` | `issue コメント` |
+| `gh pr ready`（`--undo` を除く） | `Ready` |
+| `gh pr close` | `PR クローズ` |
+| `gh pr merge` | `マージ` |
+| `gh issue close` | `issue クローズ` |
+| `gh issue reopen` | `issue 再オープン` |
+| 合格ラベル `agent-review:passed` の付与（`gh api .../issues/<番号>/labels`、`gh pr edit` / `gh issue edit` の `--add-label`） | `ゲート通過` |
 
-どの失敗でもゲートは止めず、何も出力しない。コメントが付かなかったときは再ゲートか手動の `/cost` で
-取り返せる。規則の正本は openspec の spec `cost-ledger-gate-report`。
+状態を変えるきっかけは、積む前に GitHub に問い合わせて、その状態になっていること（マージ済み・closed・
+ラベルが付いている、など）を確かめる。なっていなければ積まない。ゲート通過の対象は PR だけで、
+PR でない issue に合格ラベルを付けても積まない。
+
+コメントの例:
+
+```
+コスト: $39.62 / ¥5,943 @150 — PR #300 (feat/t) 帰属: ブランチ
+
+| 時刻 | きっかけ | 金額 | 入出力 | キャッシュ |
+|---|---|---|---|---|
+| 10/06 14:02 | PR コメント | $16.60 (+16.60) | 900K (+900K) | 33M (+33M) |
+| 10/06 18:40 | ゲート通過 | $39.62 (+23.02) | 2.1M (+1.2M) | 81M (+48M) |
+
+<!-- cost-ledger:timeline v1 1791262920.000:16.600000:900000:33000000 1791279600.000:39.620000:2100000:81000000 -->
+```
+
+- **1 行目**: いちばん新しい行の累計。その時刻に `/cost <番号>` を実行したときの 1 行目と同じ形で、節目のたびに差し替わる
+- **表**: 節目 1 つにつき 1 行。時刻はコマンドを実行したマシンのローカル時刻。既存の行は書き換えない
+- **3 項目の読み方**: 金額・入出力トークン（入力＋出力）・キャッシュトークン（書き込み＋読み出し）を、どれも
+  `累計 (前の行からの増分)` で書く。累計はきっかけの時刻までの分だけを数える。前の値が読めなかった行の増分は `(?)`
+- **issue の累計は減ることがある**: issue の数字は区間分割による推定で、末尾の区間は次に別の issue を触ると
+  寄せ先が変わる。減ったときの増分は `(-1.20)` のように負で書く
+- **最終行**: 行ごとの丸める前の値の記録。次の行の増分はここから計算する（手元のファイルには何も保存しない）
+- **行が付くまで数秒かかる**: hook はきっかけを見つけたら裏のプロセスを起こしてすぐ終わる。裏の処理が失敗した
+  節目には行が付かず、次の行の増分がその分を含む
+- **1 本だけ**: 目印 `<!-- cost-ledger:timeline` の行を持つコメントが既にあれば、新しく作らずにそれへ積む
+- **止め方**: 環境変数 `COST_LEDGER_GATE_REPORT=off`（settings.json の `env` に置く）。ゲート通過を含む全部のきっかけが止まる
+- **古い形のコメントは残る**: 以前の目印 `<!-- cost-ledger:gate-report -->` のコメントは、書き換えも削除もしない
+- **やらないこと**: auto-merge によるマージと、PR の `Closes` による issue の自動クローズには行を積まない
+  （手元でコマンドが走らないので hook から見えない。`gh pr merge --auto` は実行した時点でマージされていなければ積まない）。
+  `gh api` の直叩きでの投稿・状態変更、`gh pr create`、`gh pr reopen` でも積まない（合格ラベルの付与だけは `gh api` も見る）
+
+どの失敗でも元のコマンドは止めず、何も出力しない。規則の正本は openspec の spec `cost-ledger-timeline` と
+`cost-ledger-gate-report`。
 
 ## 台帳（会話ログが消えたあとも残す）
 
