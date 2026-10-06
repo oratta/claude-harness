@@ -4,13 +4,13 @@
 
 ## 1. テスト（Red）: statusline が記録を書く
 
-- [ ] 1.1 `plugins/statusline/tests/statusline-session-cost-record.bats` を作る。setup は `statusline-session-records.bats` と同じ形（`CLAUDE_CONFIG_DIR` を一時ディレクトリへ、`STATUSLINE_API_PACE=0`、`STATUSLINE_CODEX=0`、`date +%s` を固定）。このリポジトリの bats は途中に置いた `[[ ]]` が偽でも素通りするので、アサーションには `|| return 1` を付ける（`tests/bats-assertion-guard.bats` が検査する）。触る範囲: `plugins/statusline/tests/statusline-session-cost-record.bats`（新規）、手本は `plugins/statusline/tests/statusline-session-records.bats:1-60`
-- [ ] 1.2 `specs/session-cost-record/spec.md` の Scenario ごとに 1 件ずつ書く（最初の描画・値が増えた・値が同じで書き換えない・表記だけが違う同じ値（`1.5` と `1.50`）で書き換えない・値が下がった・壊れた記録・ファイル名に使えない session_id・本体の値が無い・`STATUSLINE_SESSION_COST=0` でも書く・書ける/書けないで標準出力が同じ・一時ファイルが残らない・古い記録を消すのは新しい記録を作るときだけ・値が同じ描画では古い記録に触らない）。「書き換えない」は inode か更新時刻が変わらないことで見る。触る範囲: `plugins/statusline/tests/statusline-session-cost-record.bats`（新規）
+- [x] 1.1 `plugins/statusline/tests/statusline-session-cost-record.bats` を作る。setup は `statusline-session-records.bats` と同じ形（`CLAUDE_CONFIG_DIR` を一時ディレクトリへ、`STATUSLINE_API_PACE=0`、`STATUSLINE_CODEX=0`、`date +%s` を固定）。このリポジトリの bats は途中に置いた `[[ ]]` が偽でも素通りするので、アサーションには `|| return 1` を付ける（`tests/bats-assertion-guard.bats` が検査する）。触る範囲: `plugins/statusline/tests/statusline-session-cost-record.bats`（新規）、手本は `plugins/statusline/tests/statusline-session-records.bats:1-60`
+- [x] 1.2 `specs/session-cost-record/spec.md` の Scenario ごとに 1 件ずつ書く（最初の描画・値が増えた・値が同じで書き換えない・表記だけが違う同じ値（`1.5` と `1.50`）で書き換えない・値が下がった・壊れた記録・ファイル名に使えない session_id・本体の値が無い・`STATUSLINE_SESSION_COST=0` でも書く・書ける/書けないで標準出力が同じ・一時ファイルが残らない・古い記録を消すのは新しい記録を作るときだけ・値が同じ描画では古い記録に触らない）。「書き換えない」は inode か更新時刻が変わらないことで見る。触る範囲: `plugins/statusline/tests/statusline-session-cost-record.bats`（新規）
 
 ## 2. 実装（Green）: statusline が記録を書く
 
-- [ ] 2.1 `statusline.sh` に記録の書き込みを足す。置く場所は `now` が定義された後（セッションコストの表示の直前）。流れ: `session_id` の引用符を外して文字種と長さを検査 → 本体の値が数値かを検査 → 記録を組み込みの `read` で読む → 最後の観測値と文字列で同じなら抜ける（外部コマンドを起動しない） → 違えば `awk` を 1 回だけ起動して数として比べ、「等しい・小さい・大きい」の 3 通りを受け取る → 等しければ書かずに抜ける → 小さい・大きいなら一時ファイル＋`mv` で書く → 新しい記録を作ったときは必ず 400 日より古い記録を消す（それ以外の描画では消さない。400 日は固定で、設定は足さない）。どの失敗でも標準出力・標準エラー・終了コードを変えない。冒頭のコメントにある行の説明と環境変数の一覧は、表示が変わらないので足さない。触る範囲: `plugins/statusline/scripts/statusline.sh:861-878`（セッションコストの表示。この直前に足す）、`plugins/statusline/scripts/statusline.sh:41-42`（`session_id` と `session_cost_usd` の取り出し。読むだけ）、`plugins/statusline/scripts/statusline.sh:356`（`now`。読むだけ）、`plugins/statusline/scripts/statusline.sh:182-205`（一時ファイル＋`mv` の手本。読むだけ）
-- [ ] 2.2 `bats plugins/statusline/tests/` が通ることを確かめる（既存の出力バイト一致のテストを含む）。1 件だけ落ちたら単独で再実行して判定する（複数アカウントのテストは単発で落ちることがある）。触る範囲: なし（実行のみ）
+- [x] 2.1 `statusline.sh` に記録の書き込みを足す。置く場所は `now` が定義された後（セッションコストの表示の直前）。流れ: `session_id` の引用符を外して文字種と長さを検査 → 本体の値が数値かを検査 → 記録を組み込みの `read` で読む → 最後の観測値と文字列で同じなら抜ける（外部コマンドを起動しない） → 違えば `awk` を 1 回だけ起動して数として比べ、「等しい・小さい・大きい」の 3 通りを受け取る → 等しければ書かずに抜ける → 小さい・大きいなら一時ファイル＋`mv` で書く → 新しい記録を作ったときは必ず 400 日より古い記録を消す（それ以外の描画では消さない。400 日は固定で、設定は足さない）。どの失敗でも標準出力・標準エラー・終了コードを変えない。冒頭のコメントにある行の説明と環境変数の一覧は、表示が変わらないので足さない。触る範囲: `plugins/statusline/scripts/statusline.sh:861-878`（セッションコストの表示。この直前に足す）、`plugins/statusline/scripts/statusline.sh:41-42`（`session_id` と `session_cost_usd` の取り出し。読むだけ）、`plugins/statusline/scripts/statusline.sh:356`（`now`。読むだけ）、`plugins/statusline/scripts/statusline.sh:182-205`（一時ファイル＋`mv` の手本。読むだけ）
+- [x] 2.2 `bats plugins/statusline/tests/` が通ることを確かめる（既存の出力バイト一致のテストを含む）。1 件だけ落ちたら単独で再実行して判定する（複数アカウントのテストは単発で落ちることがある）。触る範囲: なし（実行のみ）
 
 ## 3. テスト（Red）: cost-ledger が突き合わせて警告する
 
