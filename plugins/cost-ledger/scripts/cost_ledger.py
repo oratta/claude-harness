@@ -22,8 +22,10 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import fcntl
 import json
+import math
 import os
 import re
 import sqlite3
@@ -557,6 +559,80 @@ def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver) -> int:
         index.db.close()
 
 
+LEDGER_NO_ISSUES = '"issues": []'
+LEDGER_SESSION_RE = re.compile(r'"session_id": "([^"\\]*)"')
+
+
+def _open_ledger(ledger: str):
+    try:
+        return open(ledger, encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise LedgerError("台帳 %s を読めません: %s" % (ledger, error))
+
+
+def _ledger_session(line: str):
+    """台帳の 1 行から session_id を取り出す（取れなければ None）。"""
+    matched = LEDGER_SESSION_RE.search(line)
+    if matched:
+        return matched.group(1)
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return None
+    return record.get("session_id") if isinstance(record, dict) else None
+
+
+def iter_ledger_issue_facts(ledger: str, issue: str):
+    """台帳のうち、その issue 番号を触った行を持つセッションの事実だけを返す。
+
+    区間は ``session_id`` ごとに切るので、その issue を触った行が 1 つも無いセッションは
+    issue の集計に関係しない。1 回目の走査で、issue 番号を持つ行（``"issues": []`` でない行）
+    だけを JSON として読んでセッションを集め、2 回目でそのセッションの行だけを JSON として
+    読む。重複排除（requestId）は全行を読んだ場合と同じ結果にするため、絞る前の全行で行う。
+    """
+    handle = _open_ledger(ledger)
+    if handle is None:
+        return
+    sessions: set[str] = set()
+    with handle:
+        for line in handle:
+            if LEDGER_NO_ISSUES in line or not line.strip():
+                continue
+            try:
+                fact = json.loads(line)
+            except ValueError:
+                continue
+            if (isinstance(fact, dict) and isinstance(fact.get("issues"), list)
+                    and issue in fact["issues"] and isinstance(fact.get("session_id"), str)):
+                sessions.add(fact["session_id"])
+    handle = _open_ledger(ledger)
+    if handle is None:
+        return
+    seen: set[str] = set()
+    with handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            request_id = _ledger_id(line)
+            if request_id is None:
+                SCAN_STATS["unreadable_lines"] += 1
+                continue
+            if request_id in seen:
+                continue
+            seen.add(request_id)
+            if not sessions or _ledger_session(line) not in sessions:
+                continue
+            try:
+                fact = json.loads(line)
+            except ValueError:
+                SCAN_STATS["unreadable_lines"] += 1
+                continue
+            if isinstance(fact, dict) and isinstance(fact.get("request_id"), str):
+                yield fact
+
+
 def iter_ledger_facts(ledger: str, branch: str | None = None):
     """台帳から事実を返す。重複排除とブランチの絞り込みは会話ログ直読みと同じ規則。"""
     seen: set[str] = set()
@@ -588,18 +664,23 @@ def iter_ledger_facts(ledger: str, branch: str | None = None):
             yield fact
 
 
-def load_facts(resolver: RepoResolver, branch: str | None = None):
+def load_facts(resolver: RepoResolver, branch: str | None = None, issue: str | None = None):
     """集計系サブコマンドの事実の入口。
 
     台帳が設定されていれば、会話ログの増えた分を追記してから台帳だけを読む（読む時点で
     台帳は会話ログの上位集合になるので、会話ログ直読みと同じ値になる）。未設定なら
     会話ログを直接読む。
+
+    ``issue`` を渡すと、台帳からはその issue を触ったセッションの行だけを読む（区間に
+    切った結果は全行を読んだ場合と同じ）。会話ログの直読みでは絞らない。
     """
     configured = ledger_path()
     if configured is None:
         return iter_facts(log_root(), resolver, branch=branch)
     ledger = resolve_ledger(configured)
     ledger_sync(ledger, log_root(), resolver)
+    if issue is not None and branch is None:
+        return iter_ledger_issue_facts(ledger, issue)
     return iter_ledger_facts(ledger, branch=branch)
 
 
@@ -629,6 +710,47 @@ def summarise(facts, pricing: Pricing):
             row[field] += fact[field]
     return {"total_usd": total, "messages": messages, "per_model": per_model,
             "unknown_models": dict(unknown)}
+
+
+def token_totals(facts) -> tuple[int, int]:
+    """(入出力トークン, キャッシュトークン) の合計。
+
+    単価が引けないモデルの行も数える（量は単価と無関係に事実だから。``summarise()`` の
+    モデル別の内訳は未知モデルの行のトークンを数えないので、ここでは使わない）。
+    """
+    io = cache = 0
+    for fact in facts:
+        io += (fact.get("input_tokens") or 0) + (fact.get("output_tokens") or 0)
+        cache += ((fact.get("cache_write_5m_tokens") or 0) + (fact.get("cache_write_1h_tokens") or 0)
+                  + (fact.get("cache_read_tokens") or 0))
+    return io, cache
+
+
+_EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+
+
+def timestamp_ms(text):
+    """ISO 8601 の ``timestamp`` を epoch ミリ秒の整数にする（読めなければ None）。"""
+    if not isinstance(text, str) or not text:
+        return None
+    try:
+        moment = datetime.datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=datetime.timezone.utc)
+    delta = moment - _EPOCH
+    return (delta.days * 86400 + delta.seconds) * 1000 + delta.microseconds // 1000
+
+
+def facts_until(facts, at_ms: int) -> list:
+    """``timestamp`` が ``at_ms`` 以前の事実だけを残す。読めない ``timestamp`` の行は残す。"""
+    kept = []
+    for fact in facts:
+        stamp = timestamp_ms(fact.get("timestamp"))
+        if stamp is None or stamp <= at_ms:
+            kept.append(fact)
+    return kept
 
 
 # --------------------------------------------------------------------------
@@ -742,6 +864,167 @@ def money(usd: float, pricing: Pricing) -> str:
 def headline(usd: float, pricing: Pricing, target: str, kind: str) -> str:
     """出力の 1 行目。後続のゲート連携がこの 1 行だけを取って PR に貼る。"""
     return "コスト: %s — %s 帰属: %s" % (money(usd, pricing), target, kind)
+
+
+# --------------------------------------------------------------------------
+# 節目ごとの行（PR / issue のコメントに積む表）
+# --------------------------------------------------------------------------
+
+TIMELINE_MARK = "<!-- cost-ledger:timeline v1"
+TIMELINE_HEADER = "| 時刻 | きっかけ | 金額 | 入出力 | キャッシュ |"
+TIMELINE_SEPARATOR = "|---|---|---|---|---|"
+TIMELINE_UNKNOWN = "(?)"
+_INCREMENT_RE = re.compile(r"\([^()]*\)(\s*)$")
+
+
+def format_tokens(count: int) -> str:
+    """トークン数を短く書く（``999``・``900K``・``2.1M``・``81M``・``1.2B``）。
+
+    四捨五入は整数演算で行い、結果が次の単位に届くときは次の単位で書く
+    （999,999 は ``1.0M``、9,999,999 は ``10M``、999,999,999 は ``1.0B``）。
+    """
+    if count < 1000:
+        return "%d" % count
+    thousands = (count + 500) // 1000
+    if thousands < 1000:
+        return "%dK" % thousands
+    tenths = (count + 50_000) // 100_000
+    if tenths < 100:
+        return "%d.%dM" % divmod(tenths, 10)
+    millions = (count + 500_000) // 1_000_000
+    if millions < 1000:
+        return "%dM" % millions
+    return "%d.%dB" % divmod((count + 50_000_000) // 100_000_000, 10)
+
+
+def _signed(text: str, negative: bool, zero: str) -> str:
+    # 表示が 0 になる差は、元の値が負でも + と書く（-0.00 を出さない）
+    return ("-" if negative and text != zero else "+") + text
+
+
+def timeline_increments(current, previous) -> tuple[str, str, str]:
+    """増分 3 項目（金額・入出力・キャッシュ）の ``(...)`` を作る。
+
+    ``current`` / ``previous`` は (金額のマイクロドル, 入出力, キャッシュ)。前の値が
+    読めなかったときは ``previous`` に ``TIMELINE_UNKNOWN`` を渡す。前の行が無いときは
+    ``None`` を渡す（増分は累計と同じ値になる）。
+    """
+    if previous == TIMELINE_UNKNOWN:
+        return (TIMELINE_UNKNOWN,) * 3
+    base = previous or (0, 0, 0)
+    usd = current[0] - base[0]
+    parts = ["(%s)" % _signed(format(abs(usd) / 1e6, ",.2f"), usd < 0, "0.00")]
+    for now, before in zip(current[1:], base[1:]):
+        parts.append("(%s)" % _signed(format_tokens(abs(now - before)), now < before, "0"))
+    return tuple(parts)
+
+
+def timeline_row(at_ms: int, trigger: str, current, previous) -> str:
+    """表の 1 行。この書式を持つのはここだけ（合算・後追いの行もここを通す）。"""
+    stamp = datetime.datetime.fromtimestamp(at_ms / 1000).strftime("%m/%d %H:%M")
+    usd, io, cache = timeline_increments(current, previous)
+    return "| %s | %s | $%s %s | %s %s | %s %s |" % (
+        stamp, trigger, format(current[0] / 1e6, ",.2f"), usd,
+        format_tokens(current[1]), io, format_tokens(current[2]), cache,
+    )
+
+
+def timeline_rewrite_increments(row: str, current, previous) -> str:
+    """既存の行の増分 3 項目だけを書き直す。時刻・きっかけ・累計の表示は元の文字列のまま。"""
+    cells = row.split("|")
+    if len(cells) < 7:
+        return row
+    for index, text in zip((3, 4, 5), timeline_increments(current, previous)):
+        cells[index] = _INCREMENT_RE.sub(lambda m, text=text: text + m.group(1), cells[index], count=1)
+    return "|".join(cells)
+
+
+def _timeline_record(text: str):
+    """記録 ``<時刻>:<金額>:<入出力>:<キャッシュ>`` を (ミリ秒, (マイクロドル, 入出力, キャッシュ)) にする。"""
+    parts = text.split(":")
+    if len(parts) != 4:
+        raise ValueError(text)
+    at, usd = float(parts[0]), float(parts[1])
+    if not (math.isfinite(at) and math.isfinite(usd)):
+        raise ValueError(text)
+    return int(round(at * 1000)), (int(round(usd * 1e6)), int(parts[2]), int(parts[3]))
+
+
+def _timeline_record_text(at_ms: int, values) -> str:
+    sign = "-" if values[0] < 0 else ""
+    return "%d.%03d:%s%d.%06d:%d:%d" % (
+        *divmod(at_ms, 1000), sign, *divmod(abs(values[0]), 1_000_000), values[1], values[2])
+
+
+def parse_timeline(body: str):
+    """既存の本文から (表の行, 記録) を取り出す。記録が読めなければ記録は None。"""
+    rows, records, marked = [], [], False
+    for line in body.split("\n"):
+        line = line.rstrip("\r")
+        if line.startswith(TIMELINE_MARK):
+            marked = True
+            tail = line[len(TIMELINE_MARK):].strip()
+            try:
+                if not tail.endswith("-->"):
+                    raise ValueError(line)
+                records = [_timeline_record(part) for part in tail[:-3].split()]
+            except ValueError:
+                records = None
+        elif (line.startswith("|") and not line.startswith(TIMELINE_HEADER[:5])
+              and not line.startswith("|--")):
+            rows.append(line)
+    if not body.strip():
+        return [], []
+    if not marked or not records:
+        return rows, None
+    return rows, records
+
+
+def _row_trigger(row: str) -> str:
+    cells = row.split("|")
+    return cells[2].strip() if len(cells) > 2 else ""
+
+
+def build_timeline(body: str, at_ms: int, trigger: str, current, first_line) -> str:
+    """既存の本文に 1 行足した新しい本文を返す（design の決定 3）。
+
+    ``current`` は (マイクロドル, 入出力, キャッシュ)。``first_line`` はマイクロドルから
+    1 行目を作る関数。同じ節目（時刻・きっかけ・累計が同じ）が既にあれば ``body`` を返す。
+    """
+    rows, records = parse_timeline(body)
+    if records is None:
+        # 記録なし: 既存の行をそのまま残し、増分は (?)。0 から全額増えたとは書かない
+        kept, entries = rows, []
+        new_row = timeline_row(at_ms, trigger, current, TIMELINE_UNKNOWN)
+        position = 0
+    else:
+        # 行数が記録より多い分は、記録の無い先頭の行としてそのまま残す
+        records = records[max(0, len(records) - len(rows)):]
+        extra = len(rows) - len(records)
+        kept = rows[:extra]
+        entries = [[at, _row_trigger(row), values, row]
+                   for (at, values), row in zip(records, rows[extra:])]
+        key = (at_ms, trigger.encode("utf-8"), current)
+        keys = [(at, name.encode("utf-8"), values) for at, name, values, _row in entries]
+        if key in keys:
+            return body
+        position = sum(1 for other in keys if other < key)
+        if position > 0:
+            previous = entries[position - 1][2]
+        else:
+            previous = TIMELINE_UNKNOWN if kept else None
+        new_row = timeline_row(at_ms, trigger, current, previous)
+        if position < len(entries):
+            following = entries[position]
+            following[3] = timeline_rewrite_increments(following[3], following[2], current)
+    entries.insert(position, [at_ms, trigger, current, new_row])
+    lines = [first_line(entries[-1][2][0]), "", TIMELINE_HEADER, TIMELINE_SEPARATOR]
+    lines.extend(kept)
+    lines.extend(entry[3] for entry in entries)
+    lines.append("")
+    lines.append("%s %s -->" % (
+        TIMELINE_MARK, " ".join(_timeline_record_text(e[0], e[2]) for e in entries)))
+    return "\n".join(lines) + "\n"
 
 
 def render_breakdown(summary: dict, pricing: Pricing) -> list[str]:
@@ -938,6 +1221,75 @@ def cmd_intervals(args, pricing: Pricing, resolver: RepoResolver) -> int:
     return 0
 
 
+def issue_intervals(number: str, repo_id: str, pricing: Pricing, resolver: RepoResolver,
+                    at_ms: int | None = None):
+    """(リポジトリ識別子, issue 番号) に帰属する区間と、リポジトリ不明に落ちた区間を返す。
+
+    ``cost <issue番号>``・``issue``・``timeline --issue`` の共通の入口。``at_ms`` を渡すと、
+    その時刻以前の事実だけに絞ってから区間に切る。
+    """
+    facts = list(load_facts(resolver, issue=number))
+    if at_ms is not None:
+        facts = facts_until(facts, at_ms)
+    rows = price_intervals(split_intervals(facts), pricing)
+    matched = [r for r in rows if r["issue"] == number and r["repo_id"] == repo_id]
+    unknown = [r for r in rows if r["issue"] == number and r["repo_id"] == UNKNOWN_REPO]
+    return matched, unknown
+
+
+def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
+    """PR / issue のコメントに積む本文を作る（hook ``gate_report.py`` が呼ぶ）。
+
+    標準入力で既存のコメント本文（無ければ空）を受け、行を 1 行足した本文を標準出力に返す。
+    PR か issue かは呼ぶ側が判別して渡すので、ここでは ``gh`` を呼ばない。1 行目の対象の
+    表記と帰属の種別は ``cmd_cost`` が同じ番号に対して作るものと同じ。積むものが無いときは
+    何も出さずに終了コード 3。
+    """
+    try:
+        at = float(args.at)
+    except ValueError:
+        at = float("nan")
+    if not math.isfinite(at):
+        sys.stderr.write("--at は epoch 秒で渡してください: %s\n" % args.at)
+        return 2
+    at_ms = int(round(at * 1000))
+    body = sys.stdin.read()
+    where = os.path.abspath(args.repo) if args.repo else os.getcwd()
+    if args.issue is not None:
+        number = str(args.issue)
+        repo_id = resolver.repo_id(where)
+        label = resolver.label(repo_id)
+        if args.target_repo is not None and args.target_repo != label:
+            # issue の集計は where のリポジトリで絞る。別リポジトリの issue に貼る数字ではない
+            return 3
+        if repo_id == UNKNOWN_REPO:
+            sys.stderr.write(
+                "%s は git リポジトリではないため、issue #%s の帰属先リポジトリが決まりません。\n"
+                % (where, number)
+            )
+            return 2
+        matched, _unknown = issue_intervals(number, repo_id, pricing, resolver, at_ms=at_ms)
+        facts = [fact for row in matched for fact in row["facts"]]
+        total = sum(row["usd"] for row in matched)
+        target, kind = "issue #%s (%s)" % (number, label), "区間"
+    else:
+        if not args.branch:
+            # ブランチ無しで読むと全履歴の合計になる。PR の数字として返さない
+            sys.stderr.write("--pr には --branch（ヘッドブランチ）を一緒に渡してください。\n")
+            return 2
+        facts = facts_until(load_facts(resolver, branch=args.branch), at_ms)
+        total = summarise(facts, pricing)["total_usd"]
+        target, kind = "PR #%s (%s)" % (args.pr, args.branch), "ブランチ"
+    current = (int(round(total * 1e6)),) + token_totals(facts)
+    if current == (0, 0, 0) and not body.strip():
+        return 3
+    sys.stdout.write(build_timeline(
+        body, at_ms, args.trigger, current,
+        lambda micro: headline(micro / 1e6, pricing, target, kind),
+    ))
+    return 0
+
+
 def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
     """(リポジトリ識別子, issue 番号) の組に帰属する区間を集める。
 
@@ -953,9 +1305,7 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         )
         return 2
     number = str(args.issue)
-    rows = price_intervals(split_intervals(list(load_facts(resolver))), pricing)
-    matched = [r for r in rows if r["issue"] == number and r["repo_id"] == repo_id]
-    unknown = [r for r in rows if r["issue"] == number and r["repo_id"] == UNKNOWN_REPO]
+    matched, unknown = issue_intervals(number, repo_id, pricing, resolver)
     total = sum(row["usd"] for row in matched)
     label = resolver.label(repo_id)
     payload = {
@@ -1043,6 +1393,22 @@ def build_parser() -> argparse.ArgumentParser:
     cost.add_argument("--json", action="store_true",
                       help="issue 経路のときだけ JSON で出す")
     cost.set_defaults(func=cmd_cost)
+
+    timeline = subparsers.add_parser(
+        "timeline", help="PR / issue のコメントに積む本文を作る（標準入力は既存の本文）"
+    )
+    target = timeline.add_mutually_exclusive_group(required=True)
+    target.add_argument("--pr", default=None, help="PR の番号（--branch と一緒に渡す）")
+    target.add_argument("--issue", default=None, help="issue の番号")
+    timeline.add_argument("--branch", default=None, help="PR のヘッドブランチ")
+    timeline.add_argument("--trigger", required=True, help="行の「きっかけ」の欄に書く呼び名")
+    timeline.add_argument("--at", required=True,
+                          help="きっかけの時刻（小数つきの epoch 秒）。累計はこの時刻で切る")
+    timeline.add_argument("--repo", default=None,
+                          help="issue の帰属先リポジトリを決める場所（既定はカレントディレクトリ）")
+    timeline.add_argument("--target-repo", default=None,
+                          help="書き込み先の owner/repo。issue で --repo のリポジトリと違えば積まない")
+    timeline.set_defaults(func=cmd_timeline)
 
     report = subparsers.add_parser("report", help="全履歴を帰属先ごとに畳んだ監査用の出力")
     report.add_argument("--json", action="store_true")
