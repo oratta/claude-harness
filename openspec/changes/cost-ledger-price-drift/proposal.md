@@ -8,6 +8,7 @@ Claude Code 本体は、セッションごとのコストを自分の単価で�
 
 - statusline のスクリプトが、描画のたびに受け取る本体のコスト値を、セッション ID ごとの小さな記録ファイルに書き残す。値が前回と同じ描画では何も書かない。statusline の表示は変えない
 - cost-ledger の `/cost`（`cost_ledger.py` の `cost`・`branch`・`issue`）が、答えに含まれるセッションのうち記録があるものについて、本体の値の増分と自前の計算を比べる。差が閾値（差額 $0.50 超 かつ 大きい方の額の 10% 超）を超えたセッション、または単価の無いモデルの行を含むセッションがあれば、出力の 2 行目以降に警告行を出す。該当が無ければ何も出さない
+- 突き合わせのために会話ログや台帳をもう一度読む処理は、既定 1 秒で打ち切る（エピック #272 の「セッションを 1 秒以上止める処理」にしない）。打ち切ったときは判定せず、`単価表のずれ: 未確認` で始まる行を 1 行出して、確かめられなかったことを示す。上限は環境変数 `COST_LEDGER_DRIFT_BUDGET_SECONDS` で変えられる
 - 出力の 1 行目（`headline()` が作る行）は変えない。pr-review-gate 通過時に PR へ貼る hook は 1 行目しか使わないので、突き合わせを省く引数 `--no-drift-check` を付けて呼ぶ（hook の所要時間を増やさない）
 - 突き合わせは `/clear` などで本体の値が 0 に戻る区間ごとに行う（記録が「値が下がったら区間を始め直す」形を持つ）
 
@@ -19,12 +20,12 @@ Claude Code 本体は、セッションごとのコストを自分の単価で�
 
 ### Modified Capabilities
 
-- `cost-ledger-pricing`: 本体のコスト値と自前の計算を突き合わせ、ずれを警告する要件を足す（閾値、突き合わせる範囲、警告の出し方、単価の無いモデルを含むときの扱い）
+- `cost-ledger-pricing`: 本体のコスト値と自前の計算を突き合わせ、ずれを警告する要件を足す（閾値、突き合わせる範囲、警告の出し方、単価の無いモデルを含むときの扱い、読み直しを打ち切る上限の時間）
 
 ## Impact
 
 - `plugins/statusline/scripts/statusline.sh`: 記録を書く処理を足す（表示は不変）
-- `plugins/cost-ledger/scripts/cost_ledger.py`: 記録の読み取り、突き合わせ、警告行、`cost` サブコマンドの `--no-drift-check`
+- `plugins/cost-ledger/scripts/cost_ledger.py`: 記録の読み取り、突き合わせ、警告行、読み直しの上限の時間（環境変数 `COST_LEDGER_DRIFT_BUDGET_SECONDS`）、`cost` サブコマンドの `--no-drift-check`
 - `plugins/cost-ledger/scripts/gate-report.sh`: `cost` の呼び出しに `--no-drift-check` を付ける（1 か所）
 - テスト: `plugins/cost-ledger/tests/drift.bats`（新規）、`plugins/statusline/tests/statusline-session-cost-record.bats`（新規）、`plugins/cost-ledger/tests/gate-report.bats`（引数の確認を 1 件追加）
 - 文書: `plugins/cost-ledger/README.md`、`plugins/statusline/README.md`、`plugins/cost-ledger/changes/692.md`、`plugins/statusline/changes/692.md`
