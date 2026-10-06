@@ -696,7 +696,7 @@ PY
   run_hook "$GRANT_LITERAL"
   [ "$status" -eq 0 ] || return 1
   grep -q '^args=' "$COST_LOG" || return 1
-  ! grep -v '^args=timeline ' "$COST_LOG" | grep -q '^args=' || { cat "$COST_LOG"; return 1; }
+  [ "$(grep '^args=' "$COST_LOG" | grep -cv '^args=timeline ')" -eq 0 ] || { cat "$COST_LOG"; return 1; }
 }
 
 @test "gate-report: works without transcript_path and from a subagent transcript" {  # transcript_path が無くても、サブエージェントのトランスクリプトを指していても積む
