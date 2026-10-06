@@ -48,9 +48,11 @@ TBD - created by archiving change cost-ledger-timeline. Update Purpose after arc
 
 こうして求めた対象のリポジトリが hook の `cwd`（作業中）のリポジトリと違うとき、システムは PR でも issue でも行を積んではなら MUST NOT ない（対象の確認までは行い、書き込まない。判定は「数字と書式は `timeline` サブコマンドから取る」の終了コード 3）。`cwd` のリポジトリが判別できないとき（git リポジトリでない、など）も同じく積まない。
 
+行を積む対象は github.com の PR / issue だけである。照合はホストを含めて SHALL 行う: `cwd` のリポジトリの origin の URL（`https://github.com/o/r.git`・`git@github.com:o/r.git`・`ssh://git@github.com/o/r.git` の 3 つの形）から読んだホストが github.com で、かつ `owner/repo` が対象のリポジトリと一致するときだけ積む。origin のホストが github.com でないとき、または origin が無い・読めないときは積んではなら MUST NOT ない（終了コード 3）。`gh` の書き込み先は github.com（`gh` の既定）とし、コマンドに `--hostname`、その呼び出しの前置きの `GH_HOST=値`、hook が引き継いだ環境変数 `GH_HOST`、`-R` / `--repo` の `HOST/OWNER/REPO` のいずれかがあり、その値が github.com でないときは、そのきっかけでは積んではなら MUST NOT ない（対象の確認も行わない）。
+
 `gh issue comment` などの issue 向けのコマンドに渡された番号が PR だったとき、システムはそれを PR として扱 SHALL う。きっかけの呼び名は、`issue コメント` を `PR コメント`、`issue クローズ` を `PR クローズ` に読み替える（状態の確認も PR の側で行う）。`issue 再オープン` は読み替えず、積まない（PR の再オープンはきっかけの表に無い）。
 
-守備範囲: この解決が受け取る入力は、`tool_input.command` の文字列、hook の `cwd`、対象の確認で GitHub が返す応答の 3 つに限る。拾いたい誤りは、コマンドが指したのとは別の PR / issue に行を積むことと、解決のためにコマンドを評価・再実行して副作用を起こすことの 2 つ。次の入力は誤ったまま通ることを許す: コマンド置換や、そのコマンドの外で設定された変数（`$PR`・`export` 済みの `GH_REPO`）で渡された番号やリポジトリは解決できず、行が積まれない（`GH_REPO` の場合は `cwd` のリポジトリとして扱われる）／`cd ../other && gh pr comment --body x` のようにコマンドの中で作業ディレクトリを変えた呼び出しは、hook の `cwd` のリポジトリとブランチで解決される／`github.com` 以外のホストの URL は対象にならない／番号を省いたときに同じヘッドブランチの PR が複数あれば、GitHub が返す一覧の先頭が対象になる／ブランチ名や `owner:branch` の位置引数は対象にならない。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
+守備範囲: この解決が受け取る入力は、`tool_input.command` の文字列、hook の `cwd`、対象の確認で GitHub が返す応答の 3 つに限る。拾いたい誤りは、コマンドが指したのとは別の PR / issue に行を積むことと、解決のためにコマンドを評価・再実行して副作用を起こすことの 2 つ。次の入力は誤ったまま通ることを許す: コマンド置換や、そのコマンドの外で設定された変数（`$PR`・`export` 済みの `GH_REPO`）で渡された番号やリポジトリは解決できず、行が積まれない（`GH_REPO` の場合は `cwd` のリポジトリとして扱われる）／`cd ../other && gh pr comment --body x` のようにコマンドの中で作業ディレクトリを変えた呼び出しは、hook の `cwd` のリポジトリとブランチで解決される／`github.com` 以外のホストの URL は対象にならない／`www.github.com` のような github.com の別名の origin や、ホストを変数で渡した `--hostname` / `GH_HOST` は github.com と見なさず、積まない／番号を省いたときに同じヘッドブランチの PR が複数あれば、GitHub が返す一覧の先頭が対象になる／ブランチ名や `owner:branch` の位置引数は対象にならない。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
 
 対象のリポジトリが作業中のリポジトリと違えば積まない、という守りが守るのは「作業中のリポジトリのコストを、別のリポジトリの PR / issue へ書き出すこと」である（fork の clone から upstream の PR にコメントしても行は付かず、別のディレクトリから `-R` で自分のリポジトリの PR を指したときも行は付かない）。守らないのは「手元の別のリポジトリにある同名のブランチのコストが、作業中のリポジトリの PR の累計に合算されること」で、これは PR の累計をブランチ名だけで引く `/cost <PR番号>` と共通の既存の性質である。
 
@@ -73,6 +75,14 @@ TBD - created by archiving change cost-ledger-timeline. Update Purpose after arc
 #### Scenario: -R で作業中のリポジトリ自身を指す
 - **WHEN** `cwd` が acme/repo-a のリポジトリで、`gh pr comment 300 -R acme/repo-a --body x` の hook JSON を流す
 - **THEN** acme/repo-a の #300 に行が 1 行積まれる
+
+#### Scenario: 別ホストの同名のリポジトリ
+- **WHEN** `cwd` のリポジトリの origin が `https://unrelated.example/acme/repo-a.git` で、`gh pr comment 300 -R acme/repo-a --body x` の hook JSON を流す
+- **THEN** github.com の acme/repo-a の #300 にコメントの作成も書き換えも行われない（`timeline` の終了コード 3）
+
+#### Scenario: github.com 以外への書き込み
+- **WHEN** `GH_HOST=ghe.example gh pr comment 300 --body x`、または `gh api --hostname ghe.example -X POST repos/acme/repo-a/issues/300/labels -f 'labels[]=agent-review:passed'` の hook JSON を流す
+- **THEN** 対象の確認もコメントの作成も書き換えも行われない
 
 #### Scenario: 解決できない番号は飛ばす
 - **WHEN** `gh pr comment "$(gh pr view --json number -q .number)" --body x` の hook JSON を流す
