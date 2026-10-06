@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import fcntl
 import json
 import os
@@ -29,6 +30,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import time
 from collections import defaultdict
 
 # リポジトリ識別子が導けなかった行の印。黙って除外も合算もせず、この名前で別立てにする。
@@ -59,6 +61,28 @@ TOKEN_FIELDS = (
 PRICE_FIELDS = ("input", "output", "cache_write_5m", "cache_write_1h", "cache_read")
 
 DEFAULT_PRICING = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pricing.json")
+
+# 単価表のずれの警告。Claude Code 本体が出すセッションコスト（statusline が
+# <設定ディレクトリ>/.session-cost/<セッション ID> に書き残した値）と自前の計算の差が、
+# 下の差額と割合の**両方**を超えたセッションを「ずれあり」とする。閾値はここにだけ置き、
+# 警告の文面もこの値から作る。
+DRIFT_MIN_USD = 0.50      # 差額（USD）
+DRIFT_MIN_RATIO = 0.10    # 割合（本体の値と自前の計算の大きい方に対して）
+# 浮動小数の誤差の分。差額がちょうど閾値のとき（$10.00 と $9.50）に「超えた」にしない。
+DRIFT_EPSILON = 1e-9
+
+# 突き合わせのためだけに会話ログ（または台帳）を読み直す時間の上限。答えを出したあとに
+# 足される待ち時間なので、既定は 1 秒で打ち切る。環境変数で 0 以上の秒数か inf に変えられる。
+DRIFT_BUDGET_SECONDS = 1.0
+DRIFT_BUDGET_ENV = "COST_LEDGER_DRIFT_BUDGET_SECONDS"
+# 1 つのファイルの中で、生の行をこの数だけ読むごとに経過時間を確かめる
+# （台帳は 1 つの大きなファイルなので、ファイルの切れ目だけでは打ち切れない）。
+DRIFT_CHECK_EVERY_LINES = 5000
+
+# 記録のファイル名に使われるセッション ID の形（statusline が書くときの検査と同じ）。
+# 会話ログに sessionId が無い行は session_id がファイルパスになるので、ここで弾く。
+SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")
+RECORD_NUMBER_RE = re.compile(r"[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?")
 
 
 # --------------------------------------------------------------------------
@@ -210,6 +234,55 @@ def _git(cwd: str, *args: str):
 def log_root() -> str:
     base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
     return os.path.join(base, "projects")
+
+
+def session_cost_dir() -> str:
+    """statusline が本体のセッションコストを書き残す場所（会話ログと同じ設定ディレクトリ）。"""
+    return os.path.join(os.path.dirname(log_root()), ".session-cost")
+
+
+def read_session_cost(session_id: str):
+    """1 セッション分の記録を (t0, v0, t1, v1) で返す。突き合わせの対象外なら None。
+
+    記録は ``1 <t0> <v0> <t1> <v1>`` の 1 行（t は epoch 秒、v は本体の値）。形が違う・
+    読めない・観測が 1 回だけ（t1 が t0 と同じで増分を持たない）は対象外にする。
+    """
+    if not isinstance(session_id, str) or not SESSION_ID_RE.fullmatch(session_id):
+        return None
+    try:
+        with open(os.path.join(session_cost_dir(), session_id), encoding="utf-8") as handle:
+            text = handle.read(4096)
+    except (OSError, ValueError):
+        return None
+    fields = text.split()
+    if len(fields) != 5 or fields[0] != "1":
+        return None
+    if not (fields[1].isascii() and fields[1].isdigit() and fields[3].isascii() and fields[3].isdigit()):
+        return None
+    if not (RECORD_NUMBER_RE.fullmatch(fields[2]) and RECORD_NUMBER_RE.fullmatch(fields[4])):
+        return None
+    try:
+        t0, t1 = int(fields[1]), int(fields[3])
+        v0, v1 = float(fields[2]), float(fields[4])
+    except (ValueError, OverflowError):
+        return None
+    if t1 == t0:
+        return None
+    return t0, v0, t1, v1
+
+
+def drift_budget() -> float:
+    """読み直しの上限の秒数。未設定・数として読めない値・負の値は既定に倒す。"""
+    raw = os.environ.get(DRIFT_BUDGET_ENV)
+    if raw is None:
+        return DRIFT_BUDGET_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        return DRIFT_BUDGET_SECONDS
+    if value != value or value < 0:
+        return DRIFT_BUDGET_SECONDS
+    return value
 
 
 def scan_tool_calls(message: dict):
@@ -603,6 +676,94 @@ def load_facts(resolver: RepoResolver, branch: str | None = None):
     return iter_ledger_facts(ledger, branch=branch)
 
 
+class _DriftCutOff(Exception):
+    """突き合わせのための読み直しが上限の時間に達した。"""
+
+
+class _NoRepo:
+    """読み直しではリポジトリを引かない（突き合わせに使わず、git の起動を増やさないため）。"""
+
+    def repo_id(self, cwd: str) -> str:
+        return UNKNOWN_REPO
+
+
+def _drift_lines(handle, mentions, expired):
+    """対象のセッション ID を含む生の行だけを返す。一定の行数ごとに上限を確かめる。"""
+    for count, line in enumerate(handle, 1):
+        if count % DRIFT_CHECK_EVERY_LINES == 0 and expired():
+            raise _DriftCutOff()
+        if mentions(line):
+            yield line
+
+
+def session_facts(session_ids, earliest: int, budget: float):
+    """対象のセッション ID を持つ行を、ブランチやリポジトリで絞らずに集める（読み直し）。
+
+    本体の値はセッション全体の値で、1 つのセッションがサブエージェントの worktree など
+    別のブランチの行を持つので、答えのためにブランチで絞って読んだ行では比べられない。
+    台帳が設定されていれば台帳だけを読む（取り込みは答えを出すときに済んでいる）。
+    未設定なら会話ログを読み、更新時刻が ``earliest``（記録の t0 の最小値）より前の
+    ファイルは区間の行を持ちえないので開かない。
+
+    始めてからの経過時間が ``budget`` 秒に達したら読むのをやめて None を返す（読めた分の
+    行は返さない。読み切っていない行の合計で比べると、単価表が正しくても差が出るため）。
+    読み取れなかった行の件数は、答えのための読みで数え済みなので増やさない。
+    """
+    started = time.monotonic()
+
+    def expired() -> bool:
+        return time.monotonic() - started >= budget
+
+    wanted = set(session_ids)
+    mentions = re.compile("|".join(re.escape(s) for s in sorted(wanted))).search
+    unreadable = SCAN_STATS["unreadable_lines"]
+    facts = []
+    seen: set[str] = set()
+    try:
+        configured = ledger_path()
+        if configured is not None:
+            if expired():
+                return None
+            try:
+                handle = open(resolve_ledger(configured), encoding="utf-8", errors="replace")
+            except OSError:
+                return facts
+            with handle:
+                for line in _drift_lines(handle, mentions, expired):
+                    try:
+                        fact = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(fact, dict) or fact.get("session_id") not in wanted:
+                        continue
+                    request_id = fact.get("request_id")
+                    if not isinstance(request_id, str) or request_id in seen:
+                        continue
+                    seen.add(request_id)
+                    facts.append(fact)
+            return facts
+        resolver = _NoRepo()
+        for path in log_files(log_root()):
+            if expired():
+                return None
+            try:
+                if os.stat(path).st_mtime < earliest:
+                    continue
+                handle = open(path, encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            with handle:
+                lines = _drift_lines(handle, mentions, expired)
+                for fact in facts_from_lines(lines, path, resolver, seen):
+                    if fact["session_id"] in wanted:
+                        facts.append(fact)
+        return facts
+    except _DriftCutOff:
+        return None
+    finally:
+        SCAN_STATS["unreadable_lines"] = unreadable
+
+
 # --------------------------------------------------------------------------
 # 集計
 # --------------------------------------------------------------------------
@@ -629,6 +790,96 @@ def summarise(facts, pricing: Pricing):
             row[field] += fact[field]
     return {"total_usd": total, "messages": messages, "per_model": per_model,
             "unknown_models": dict(unknown)}
+
+
+def fact_epoch(fact: dict):
+    """行の時刻（ISO 形式・末尾 Z）を epoch 秒にする。読めなければ None（区間の外として扱う）。"""
+    stamp = fact.get("timestamp")
+    if not isinstance(stamp, str) or not stamp:
+        return None
+    if stamp.endswith("Z"):
+        stamp = stamp[:-1] + "+00:00"
+    try:
+        moment = datetime.datetime.fromisoformat(stamp)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=datetime.timezone.utc)
+    return moment.timestamp()
+
+
+def compare_sessions(records: dict, facts, pricing: Pricing) -> dict:
+    """記録のあるセッションごとに、本体の値と自前の計算を突き合わせる。
+
+    ``records`` は セッション ID → (t0, v0, t1, v1)。本体の値は ``v1 - v0``、自前の計算は
+    そのセッションの行のうち時刻が ``[t0 + 1, t1 + 1)`` のものの合計。statusline は応答の
+    あとに描画されるので、t0 と同じ秒の行は最初の観測値に含まれ、t1 と同じ秒の行は最後の
+    観測値に含まれる。
+    """
+    own = {sid: 0.0 for sid in records}
+    unpriced = {sid: set() for sid in records}
+    for fact in facts:
+        record = records.get(fact.get("session_id"))
+        if record is None:
+            continue
+        moment = fact_epoch(fact)
+        if moment is None or not (record[0] + 1 <= moment < record[2] + 1):
+            continue
+        usd, known = pricing.cost(fact)
+        own[fact["session_id"]] += usd
+        # トークンの無い行（<synthetic> など API 呼び出しを伴わない行）は 0 円で正しい
+        if not known and any(fact[field] >= 1 for field in TOKEN_FIELDS):
+            unpriced[fact["session_id"]].add(fact["model"] or "(モデル名なし)")
+    drifted = 0
+    worst = None
+    missing = {"sessions": 0, "models": set(), "official_usd": 0.0, "own_usd": 0.0}
+    for sid in sorted(records):
+        t0, v0, t1, v1 = records[sid]
+        official = v1 - v0
+        diff = abs(official - own[sid])
+        larger = max(official, own[sid])
+        if diff > DRIFT_MIN_USD + DRIFT_EPSILON and diff > larger * DRIFT_MIN_RATIO + DRIFT_EPSILON:
+            drifted += 1
+            if worst is None or diff > worst["diff_usd"]:
+                worst = {"session_id": sid, "official_usd": official, "own_usd": own[sid],
+                         "diff_usd": diff, "ratio": diff / larger if larger > 0 else 0.0}
+        if unpriced[sid]:
+            missing["sessions"] += 1
+            missing["models"] |= unpriced[sid]
+            missing["official_usd"] += official
+            missing["own_usd"] += own[sid]
+    return {
+        "checked": len(records),
+        "drifted": drifted,
+        "worst": worst,
+        "unpriced": dict(missing, models=sorted(missing["models"])) if missing["sessions"] else None,
+        "cut_off": False,
+    }
+
+
+def price_drift(session_ids, pricing: Pricing, facts=None):
+    """答えに含まれるセッションの突き合わせの結果を返す。知らせることが無ければ None。
+
+    ``facts`` に対象のセッションの全行（ブランチで絞っていないもの）を渡せば読み直さない。
+    渡さなければ読み直し、上限の時間で打ち切られたら ``cut_off`` を立てて返す。
+    """
+    records = {}
+    for sid in set(session_ids):
+        record = read_session_cost(sid)
+        if record is not None:
+            records[sid] = record
+    if not records:
+        return None
+    if facts is None:
+        budget = drift_budget()
+        facts = session_facts(records, min(r[0] for r in records.values()), budget)
+        if facts is None:
+            return {"checked": len(records), "drifted": 0, "worst": None, "unpriced": None,
+                    "cut_off": True, "budget_seconds": budget}
+    result = compare_sessions(records, facts, pricing)
+    if not result["drifted"] and result["unpriced"] is None:
+        return None
+    return result
 
 
 # --------------------------------------------------------------------------
@@ -768,6 +1019,40 @@ def render_breakdown(summary: dict, pricing: Pricing) -> list[str]:
     return lines
 
 
+def render_price_drift(result) -> list[str]:
+    """単価表のずれの警告行。1 行目のあと、内訳と既存の注記のうしろに出す。"""
+    if result is None:
+        return []
+    if result["cut_off"]:
+        return [
+            "  単価表のずれ: 未確認（本体の値の記録がある %d セッションを突き合わせるための"
+            "読み直しが上限の %g 秒に達したので、途中で打ち切った。%s=inf を付けて実行すると"
+            "最後まで突き合わせる）" % (result["checked"], result["budget_seconds"], DRIFT_BUDGET_ENV)
+        ]
+    lines = []
+    worst = result["worst"]
+    if worst is not None:
+        lines.append(
+            "  単価表のずれ: 突き合わせた %d セッションのうち %d セッションで、Claude Code 本体の"
+            "値と自前の計算の差が閾値（$%s かつ %d%%）を超えた。差が最大のセッション %s は"
+            "本体 $%s・自前 $%s（差 $%s、%d%%）。pricing.json の単価を確かめてください。"
+            % (result["checked"], result["drifted"], format(DRIFT_MIN_USD, ",.2f"),
+               round(DRIFT_MIN_RATIO * 100), worst["session_id"],
+               format(worst["official_usd"], ",.2f"), format(worst["own_usd"], ",.2f"),
+               format(worst["diff_usd"], ",.2f"), round(worst["ratio"] * 100))
+        )
+    unpriced = result["unpriced"]
+    if unpriced is not None:
+        lines.append(
+            "  単価表のずれ: 料金表に単価の無いモデル（%s）の行が %d セッションにあり、その分を"
+            "0 円として計算している。それらのセッションの合計は本体 $%s・自前 $%s。"
+            "pricing.json に単価を足してください。"
+            % ("、".join(unpriced["models"]), unpriced["sessions"],
+               format(unpriced["official_usd"], ",.2f"), format(unpriced["own_usd"], ",.2f"))
+        )
+    return lines
+
+
 # --------------------------------------------------------------------------
 # サブコマンド
 # --------------------------------------------------------------------------
@@ -820,6 +1105,9 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
         unknown_usd = summarise(unknown, pricing)["total_usd"]
         print("  リポジトリ不明: %d 件 $%s（cwd が削除済みで、どのリポジトリの %s か絞れない）"
               % (len(unknown), format(unknown_usd, ",.2f"), args.branch))
+    if not getattr(args, "no_drift_check", False):
+        for line in render_price_drift(price_drift({f["session_id"] for f in facts}, pricing)):
+            print(line)
     return 0
 
 
@@ -842,7 +1130,8 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
         # 番号なしは現在のリポジトリのブランチを見るので、同名の別リポジトリの行は足さない
         return cmd_branch(
             argparse.Namespace(
-                branch=branch, target_label=None, scope_repo_id=resolver.repo_id(where)
+                branch=branch, target_label=None, scope_repo_id=resolver.repo_id(where),
+                no_drift_check=args.no_drift_check,
             ),
             pricing,
             resolver,
@@ -852,14 +1141,18 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
     if kind == "pr":
         return cmd_branch(
             argparse.Namespace(
-                branch=value, target_label="PR #%s (%s)" % (args.number, value)
+                branch=value, target_label="PR #%s (%s)" % (args.number, value),
+                no_drift_check=args.no_drift_check,
             ),
             pricing,
             resolver,
         )
     if kind == "issue":
         return cmd_issue(
-            argparse.Namespace(issue=value, repo=where, json=args.json), pricing, resolver
+            argparse.Namespace(issue=value, repo=where, json=args.json,
+                               no_drift_check=args.no_drift_check),
+            pricing,
+            resolver,
         )
     sys.stderr.write(
         "#%s は PR としても issue としても見つかりません（%s のリポジトリに問い合わせました）。"
@@ -953,7 +1246,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         )
         return 2
     number = str(args.issue)
-    rows = price_intervals(split_intervals(list(load_facts(resolver))), pricing)
+    all_facts = list(load_facts(resolver))
+    rows = price_intervals(split_intervals(all_facts), pricing)
     matched = [r for r in rows if r["issue"] == number and r["repo_id"] == repo_id]
     unknown = [r for r in rows if r["issue"] == number and r["repo_id"] == UNKNOWN_REPO]
     total = sum(row["usd"] for row in matched)
@@ -969,6 +1263,13 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         "unknown_repo_messages": sum(row["messages"] for row in unknown),
         "usd_jpy_rate": pricing.jpy_rate,
     }
+    drift = None
+    if not getattr(args, "no_drift_check", False):
+        # ここでは最初から全行を読んでいるので、突き合わせのために読み直さない
+        sessions = {row["session_id"] for row in matched}
+        drift = price_drift(sessions, pricing,
+                            facts=[f for f in all_facts if f["session_id"] in sessions])
+    payload["price_drift"] = drift
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
@@ -984,6 +1285,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
               % (payload["unknown_repo_messages"],
                  format(payload["unknown_repo_usd"], ",.2f"), number))
     print("  ※ issue 単位は区間分割による推定です。区間の内訳で寄せ先を確かめてください。")
+    for line in render_price_drift(drift):
+        print(line)
     return 0
 
 
@@ -1042,6 +1345,8 @@ def build_parser() -> argparse.ArgumentParser:
                       help="問い合わせと絞り込みの基準になる場所（既定はカレントディレクトリ）")
     cost.add_argument("--json", action="store_true",
                       help="issue 経路のときだけ JSON で出す")
+    cost.add_argument("--no-drift-check", action="store_true",
+                      help="単価表のずれの突き合わせ（本体のセッションコストとの比較）を行わない")
     cost.set_defaults(func=cmd_cost)
 
     report = subparsers.add_parser("report", help="全履歴を帰属先ごとに畳んだ監査用の出力")

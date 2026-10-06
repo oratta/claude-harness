@@ -384,10 +384,16 @@ PY
 
 @test "gate-report: cost is asked with GH_REPO set to the labelled repository" {  # cost <N> --repo <cwd> を GH_REPO=付与先で呼ぶ。cwd のリポジトリと違っても付与先になる
   run_hook "$GRANT_LITERAL"
-  grep -qxF "args=cost 300 --repo $CWD GH_REPO=oratta/claude-harness" "$COST_LOG"
+  grep -qxF "args=cost 300 --no-drift-check --repo $CWD GH_REPO=oratta/claude-harness" "$COST_LOG"
   : > "$COST_LOG"
   run_hook "gh pr edit 313 -R oratta/other --add-label agent-review:passed"
-  grep -qxF "args=cost 313 --repo $CWD GH_REPO=oratta/other" "$COST_LOG"
+  grep -qxF "args=cost 313 --no-drift-check --repo $CWD GH_REPO=oratta/other" "$COST_LOG"
+}
+
+@test "gate-report: cost is asked without the price drift check" {  # hook は 1 行目しか使わないので、単価表のずれの突き合わせを省いて呼ぶ
+  run_hook "$GRANT_LITERAL"
+  [ "$status" -eq 0 ] || return 1
+  grep -q -- '^args=cost 300 .*--no-drift-check' "$COST_LOG" || { cat "$COST_LOG"; return 1; }
 }
 
 @test "gate-report: works without transcript_path and from a subagent transcript" {  # transcript_path が無くても、サブエージェントのトランスクリプトを指していても貼る
