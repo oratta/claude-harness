@@ -13,7 +13,7 @@ PR / issue へのコメント・状態の変更・ゲート通過（agent-review
 
 どの経路でも stdout・stderr に何も出さず終了コード 0。コマンドは評価も再実行もしない。
 """
-import fcntl, json, os, re, subprocess, sys, time
+import fcntl, json, os, re, stat, subprocess, sys, time
 
 LABEL = "agent-review:passed"
 MARKER = "<!-- cost-ledger:timeline"  # この文字列で始まる行を持つコメントが積み先
@@ -576,6 +576,10 @@ def lock(repo, number):
     try:
         folder = os.path.join(os.environ.get("TMPDIR") or "/tmp", "cost-ledger-timeline")
         os.makedirs(folder, mode=0o700, exist_ok=True)
+        # 共有の /tmp に他人が先に作った場所（シンボリックリンク・他人の持ち物・他人が書ける）は使わない
+        st = os.lstat(folder)
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
+            return None
         path = os.path.join(folder, "%s__%d.lock" % (repo.replace("/", "__"), number))
         fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
         fcntl.flock(fd, fcntl.LOCK_EX)

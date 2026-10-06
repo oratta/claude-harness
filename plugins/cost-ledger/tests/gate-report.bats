@@ -1055,3 +1055,31 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
   posted_to acme/cwd-repo 12
   posted_to acme/cwd-repo 300
 }
+
+# --- ロックの置き場（共有の /tmp に他人が先に作った場所へ書かない） ---
+
+@test "timeline-hook: nothing is written when the lock directory is a symlink" {  # ロックの置き場がシンボリックリンクなら、たどらずに書かない（リンク先にロックファイルを作らない）
+  mkdir -p "$WORK/elsewhere"
+  ln -s "$WORK/elsewhere" "$TMPDIR/cost-ledger-timeline"
+  run_hook "gh pr comment 300 --body x"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ "$(posts)" -eq 0 ]
+  [ "$(patches)" -eq 0 ]
+  [ -z "$(ls -A "$WORK/elsewhere")" ]
+}
+
+@test "timeline-hook: nothing is written when others can write to the lock directory" {  # ロックの置き場に自分以外が書ける（group / other に書き込み権限がある）なら書かない
+  mkdir -p "$TMPDIR/cost-ledger-timeline"
+  chmod 777 "$TMPDIR/cost-ledger-timeline"
+  run_hook "gh pr comment 300 --body x"
+  [ "$status" -eq 0 ]
+  [ "$(posts)" -eq 0 ]
+  [ "$(patches)" -eq 0 ]
+}
+
+@test "timeline-hook: the lock directory is created for the owner only" {  # ロックの置き場は自分だけが読み書きできる権限（700）で作り、そこを使って積む
+  run_hook "gh pr comment 300 --body x"
+  [ "$(posts)" -eq 1 ]
+  [ "$(stat -f '%Lp' "$TMPDIR/cost-ledger-timeline" 2>/dev/null || stat -c '%a' "$TMPDIR/cost-ledger-timeline")" = "700" ]
+}
