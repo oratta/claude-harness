@@ -301,6 +301,12 @@ no_write() {
 posted_to() {  # $1=owner/repo $2=番号
   grep -qF -- "-X POST repos/$1/issues/$2/comments" "$GH_LOG"
 }
+# stub の timeline が、その対象（--target-repo）と作業中の場所（--repo）で呼ばれたか。別リポジトリの
+# 対象に書かないことは timeline が決める（終了コード 3）ので、stub を使うテストでは渡した引数を見る
+asked_timeline() {  # $1=owner/repo $2=pr|issue $3=番号
+  grep -qE -- "^args=timeline --$2 $3 .*--repo $CWD --target-repo $1\$" "$COST_LOG"
+}
+
 posts() { [ -f "$GH_LOG" ] || { echo 0; return 0; }; grep -cE -- '-X POST repos/[^ ]+/issues/[0-9]+/comments' "$GH_LOG" || true; }
 patches() { [ -f "$GH_LOG" ] || { echo 0; return 0; }; grep -cE -- '-X PATCH repos/[^ ]+/issues/comments/' "$GH_LOG" || true; }
 
@@ -402,8 +408,8 @@ PY
   run_hook "$GRANT_LITERAL"
   [ "$status" -eq 0 ]
   queried oratta/claude-harness 300
-  posted_to oratta/claude-harness 300
-  [ "$(body_trigger 1)" = "ゲート通過" ]
+  asked_timeline oratta/claude-harness pr 300
+  grep -qE -- '^args=timeline .*--trigger ゲート通過 ' "$COST_LOG"
 }
 
 @test "gate-report: variables assigned in the same command are expanded" {  # 同じコマンドで代入した R・N を展開して #300 が対象になる
@@ -438,11 +444,13 @@ done"
   posted_to acme/cwd-repo 313
 }
 
-@test "gate-report: gh pr edit with -R / --repo targets that repository" {  # -R / --repo があればそのリポジトリが対象になり、gh repo view は呼ばない
+@test "gate-report: gh pr edit with -R / --repo targets that repository" {  # -R / --repo があればそのリポジトリが対象になり（timeline の --target-repo に渡る）、gh repo view は呼ばない
   run_hook "gh pr edit 313 -R oratta/other --add-label agent-review:passed"
   queried oratta/other 313
+  asked_timeline oratta/other pr 313
   run_hook "gh issue edit 314 --add-label agent-review:passed,foo --repo oratta/other"
   queried oratta/other 314
+  asked_timeline oratta/other pr 314
   ! grep -q '^repo ' "$GH_LOG" || return 1
 }
 
@@ -513,6 +521,7 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
 @test "gate-report: a GH_REPO prefix on gh pr edit targets that repository" {  # 前置きの GH_REPO があればそのリポジトリが対象で gh repo view を呼ばない。-R が優先し、解決できない値なら飛ばす
   run_hook "GH_REPO=oratta/other gh pr edit 300 --add-label agent-review:passed"
   queried oratta/other 300
+  asked_timeline oratta/other pr 300
   ! grep -q '^repo ' "$GH_LOG" || return 1
   : > "$GH_LOG"
   run_hook "R=oratta/other; GH_REPO=\$R gh issue edit 301 --add-label agent-review:passed"
@@ -781,15 +790,15 @@ PY
   posted_to acme/cwd-repo 300
 }
 
-@test "timeline-hook: a URL targets that repository and number" {  # issue の URL を渡すと acme/other の #12 が対象になる
+@test "timeline-hook: a URL targets that repository and number" {  # issue の URL を渡すと acme/other の #12 が対象になる（timeline の --target-repo に渡る）
   touch "$FIX/nopull.12"
   run_hook "gh issue comment https://github.com/acme/other/issues/12 --body x"
   queried acme/other 12
-  posted_to acme/other 12
+  asked_timeline acme/other issue 12
   : > "$GH_LOG"
   run_hook "gh pr comment https://github.com/acme/other/pull/301 --body x"
   queried acme/other 301
-  posted_to acme/other 301
+  asked_timeline acme/other pr 301
   : > "$GH_LOG"
   run_hook "gh pr comment https://example.com/acme/other/pull/302 --body x"
   no_gh_call
@@ -817,16 +826,54 @@ PY
   no_gh_call
 }
 
-@test "timeline-hook: -R points at another repository" {  # gh pr comment 300 -R acme/other は acme/other の #300 が対象になる
-  run_hook "gh pr comment 300 -R acme/other --body x"
+# cwd を acme/repo-a の git リポジトリにして、本物の cost_ledger.py を使う
+use_real_repo_a() {
+  use_real_cost_ledger
+  RA="$WORK/ra"
+  cl_init_repo "$RA" acme/repo-a
+  export FAKE_CWD_REPO=acme/repo-a
+}
+
+@test "timeline-hook: -R points at another repository" {  # gh pr comment 300 -R acme/other は acme/other の #300 を対象として確かめるが、作業中のリポジトリではないので書かない
+  use_real_repo_a
+  HOOK_CWD="$RA" run_hook "gh pr comment 300 -R acme/other --body x"
+  [ "$status" -eq 0 ]
   queried acme/other 300
-  posted_to acme/other 300
+  no_write
   : > "$GH_LOG"
-  run_hook "GH_REPO=acme/third gh pr comment 301 --body x"
-  posted_to acme/third 301
+  HOOK_CWD="$RA" run_hook "GH_REPO=acme/third gh pr comment 301 --body x"
+  queried acme/third 301
+  no_write
   : > "$GH_LOG"
-  run_hook "gh pr comment --repo=acme/fourth 302 --body x"
-  posted_to acme/fourth 302
+  HOOK_CWD="$RA" run_hook "gh pr comment --repo=acme/fourth 302 --body x"
+  queried acme/fourth 302
+  no_write
+}
+
+@test "timeline-hook: a PR in another repository gets nothing" {  # cwd が acme/repo-a で、別リポジトリの PR の URL・ゲート通過の付与は書かない（cwd のリポジトリの PR には書く）
+  use_real_repo_a
+  HOOK_CWD="$RA" run_hook "gh pr comment https://github.com/acme/repo-b/pull/300 --body x"
+  [ "$status" -eq 0 ]
+  queried acme/repo-b 300
+  no_write
+  : > "$GH_LOG"
+  HOOK_CWD="$RA" run_hook "gh pr edit 300 -R acme/repo-b --add-label agent-review:passed"
+  queried acme/repo-b 300
+  no_write
+  : > "$GH_LOG"
+  HOOK_CWD="$RA" run_hook "gh pr comment 300 --body x"
+  posted_to acme/repo-a 300
+  head -n 1 "$GH_LOG.body" | grep -qF 'コスト: $1.00 / ¥150 @150 — PR #300 (oratta/sample) 帰属: ブランチ'
+}
+
+@test "timeline-hook: -R naming the cwd repository itself still adds a row" {  # gh pr comment 300 -R acme/repo-a を acme/repo-a の中で実行したら、今までどおり積む
+  use_real_repo_a
+  HOOK_CWD="$RA" run_hook "gh pr comment 300 -R acme/repo-a --body x"
+  [ "$status" -eq 0 ]
+  queried acme/repo-a 300
+  posted_to acme/repo-a 300
+  head -n 1 "$GH_LOG.body" | grep -qF 'コスト: $1.00 / ¥150 @150 — PR #300 (oratta/sample) 帰属: ブランチ'
+  [ "$(body_nrows)" -eq 1 ]
 }
 
 @test "timeline-hook: a number that cannot be resolved is skipped" {  # コマンド置換・未定義の変数・ブランチ名の位置引数は積まずに飛ばす
@@ -861,8 +908,8 @@ PY
   posted_to acme/cwd-repo 300
   : > "$GH_LOG"
   run_hook "for N in 96 97; do gh pr comment \$N -R oratta/kg-recruit --body x; done"
-  posted_to oratta/kg-recruit 96
-  posted_to oratta/kg-recruit 97
+  asked_timeline oratta/kg-recruit pr 96
+  asked_timeline oratta/kg-recruit pr 97
 }
 
 @test "timeline-hook: an issue command given a PR number is treated as a PR" {  # gh issue comment 300 の番号が PR なら PR として扱う（きっかけは PR コメント、gh は 4 回）
@@ -1003,6 +1050,7 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
 
 @test "timeline-hook: two triggers at once end up as one comment with two rows" {  # きっかけの違う 2 つを同時に流すと、コメントは 1 本で表は 2 行
   use_real_cost_ledger
+  cl_init_repo "$CWD" acme/cwd-repo        # 対象（acme/cwd-repo）が作業中のリポジトリでなければ積まれない
   export FAKE_GH_DELAY=0.2
   hook_json "gh pr comment 300 --body x" > "$WORK/p1.json"
   hook_json "gh pr ready 300" > "$WORK/p2.json"
@@ -1017,6 +1065,7 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
 
 @test "timeline-hook: a trigger whose check was slow still lands above the later one" {  # 先に流した方の「対象の確認」だけが遅れて後の方が先に書いても、両方が終わると先に流したきっかけの行が上にある
   use_real_cost_ledger
+  cl_init_repo "$CWD" acme/cwd-repo        # 対象（acme/cwd-repo）が作業中のリポジトリでなければ積まれない
   hook_json "gh pr comment 300 --body x" > "$WORK/p1.json"
   hook_json "gh pr ready 300" > "$WORK/p2.json"
   FAKE_GH_CONFIRM_DELAY=3 bash "$SCRIPT" < "$WORK/p1.json" &

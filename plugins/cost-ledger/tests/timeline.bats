@@ -360,6 +360,50 @@ EOF
   printf '%s\n' "$output" | sed -n 1p | grep -qF 'コスト: $1.00 / ¥150 @150 — issue #12 (acme/ra) 帰属: 区間'
 }
 
+@test "timeline: a PR in another repository prints nothing and exits 3" {  # --target-repo が --repo の場所のリポジトリと違う PR → そのブランチにコストがあっても出力は空で終了コード 3
+  RA="$BATS_TEST_TMPDIR/ra"
+  cl_init_repo "$RA" acme/ra
+  add_row r1 10 1000000
+  run tl "${PR_ARGS[@]}" --trigger "PR コメント" --at "$FAR" --repo "$RA" --target-repo acme/other < "$IN"
+  [ "$status" -eq 3 ]
+  [ -z "$output" ]
+  # 既にコメントがあっても積まない
+  printf '%s\n' '| 09/01 00:00 | PR コメント | $1.00 (+1.00) | 1.0M (+1.0M) | 0 (+0) |' \
+    | body 'コスト: $1.00' "<!-- cost-ledger:timeline v1 $((B+5)).000:1.000000:1000000:0 -->" > "$IN"
+  run tl "${PR_ARGS[@]}" --trigger Ready --at "$FAR" --repo "$RA" --target-repo acme/other < "$IN"
+  [ "$status" -eq 3 ]
+  [ -z "$output" ]
+}
+
+@test "timeline: a PR in the same repository is stacked" {  # --target-repo が --repo の場所のリポジトリと同じ PR → 積む
+  RA="$BATS_TEST_TMPDIR/ra"
+  cl_init_repo "$RA" acme/ra
+  add_row r1 10 1000000
+  run tl "${PR_ARGS[@]}" --trigger "PR コメント" --at "$FAR" --repo "$RA" --target-repo acme/ra < "$IN"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | sed -n 1p | grep -qF 'コスト: $1.00 / ¥150 @150 — PR #300 (feat/t) 帰属: ブランチ'
+}
+
+@test "timeline: a PR without --target-repo is stacked without the comparison" {  # --target-repo を渡さない PR → 照合せずに積む（--repo が git リポジトリでなくても同じ）
+  RA="$BATS_TEST_TMPDIR/ra"
+  cl_init_repo "$RA" acme/ra
+  add_row r1 10 1000000
+  run tl "${PR_ARGS[@]}" --trigger "PR コメント" --at "$FAR" --repo "$RA" < "$IN"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | sed -n 1p | grep -qF 'コスト: $1.00 / ¥150 @150 — PR #300 (feat/t) 帰属: ブランチ'
+  mkdir -p "$BATS_TEST_TMPDIR/plain"
+  run tl "${PR_ARGS[@]}" --trigger "PR コメント" --at "$FAR" --repo "$BATS_TEST_TMPDIR/plain" < "$IN"
+  [ "$status" -eq 0 ]
+}
+
+@test "timeline: a PR whose working repository is unknown is not stacked" {  # --repo が git リポジトリでなく --target-repo がある PR → 作業中のリポジトリと照合できないので出力は空で終了コード 3
+  mkdir -p "$BATS_TEST_TMPDIR/plain"
+  add_row r1 10 1000000
+  run tl "${PR_ARGS[@]}" --trigger "PR コメント" --at "$FAR" --repo "$BATS_TEST_TMPDIR/plain" --target-repo acme/ra < "$IN"
+  [ "$status" -eq 3 ]
+  [ -z "$output" ]
+}
+
 # --- issue の集計は関係するセッションだけを読む ---
 
 issue_json_digest() {  # issue <番号> --json の total_usd・messages・intervals を 1 つの文字列にする

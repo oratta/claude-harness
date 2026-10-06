@@ -43,9 +43,13 @@
 
 リポジトリは gh と同じ順で、`-R` / `--repo`、無ければその呼び出しの前置きの `GH_REPO=値`、どちらも無ければ hook の `cwd` のリポジトリと SHALL する。
 
+こうして求めた対象のリポジトリが hook の `cwd`（作業中）のリポジトリと違うとき、システムは PR でも issue でも行を積んではなら MUST NOT ない（対象の確認までは行い、書き込まない。判定は「数字と書式は `timeline` サブコマンドから取る」の終了コード 3）。`cwd` のリポジトリが判別できないとき（git リポジトリでない、など）も同じく積まない。
+
 `gh issue comment` などの issue 向けのコマンドに渡された番号が PR だったとき、システムはそれを PR として扱 SHALL う。きっかけの呼び名は、`issue コメント` を `PR コメント`、`issue クローズ` を `PR クローズ` に読み替える（状態の確認も PR の側で行う）。`issue 再オープン` は読み替えず、積まない（PR の再オープンはきっかけの表に無い）。
 
 守備範囲: この解決が受け取る入力は、`tool_input.command` の文字列、hook の `cwd`、対象の確認で GitHub が返す応答の 3 つに限る。拾いたい誤りは、コマンドが指したのとは別の PR / issue に行を積むことと、解決のためにコマンドを評価・再実行して副作用を起こすことの 2 つ。次の入力は誤ったまま通ることを許す: コマンド置換や、そのコマンドの外で設定された変数（`$PR`・`export` 済みの `GH_REPO`）で渡された番号やリポジトリは解決できず、行が積まれない（`GH_REPO` の場合は `cwd` のリポジトリとして扱われる）／`cd ../other && gh pr comment --body x` のようにコマンドの中で作業ディレクトリを変えた呼び出しは、hook の `cwd` のリポジトリとブランチで解決される／`github.com` 以外のホストの URL は対象にならない／番号を省いたときに同じヘッドブランチの PR が複数あれば、GitHub が返す一覧の先頭が対象になる／ブランチ名や `owner:branch` の位置引数は対象にならない。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
+
+対象のリポジトリが作業中のリポジトリと違えば積まない、という守りが守るのは「作業中のリポジトリのコストを、別のリポジトリの PR / issue へ書き出すこと」である（fork の clone から upstream の PR にコメントしても行は付かず、別のディレクトリから `-R` で自分のリポジトリの PR を指したときも行は付かない）。守らないのは「手元の別のリポジトリにある同名のブランチのコストが、作業中のリポジトリの PR の累計に合算されること」で、これは PR の累計をブランチ名だけで引く `/cost <PR番号>` と共通の既存の性質である。
 
 #### Scenario: 番号を渡す
 - **WHEN** `gh pr comment 300 --body x` の hook JSON を流す
@@ -53,15 +57,19 @@
 
 #### Scenario: URL を渡す
 - **WHEN** `gh issue comment https://github.com/acme/other/issues/12 --body x` の hook JSON を流す
-- **THEN** acme/other の #12 が対象になる
+- **THEN** 対象の確認は acme/other の #12 に対して行われる（`cwd` のリポジトリが acme/other でなければ、行は積まれない）
 
 #### Scenario: 番号を省く
 - **WHEN** `cwd` のブランチをヘッドに持つ PR #300 がある状態で `gh pr ready` の hook JSON を流す
 - **THEN** #300 が対象になる
 
 #### Scenario: -R で別のリポジトリを指す
-- **WHEN** `gh pr comment 300 -R acme/other --body x` の hook JSON を流す
-- **THEN** acme/other の #300 が対象になる
+- **WHEN** `cwd` が acme/repo-a のリポジトリで、`gh pr comment 300 -R acme/other --body x` の hook JSON を流す
+- **THEN** 対象の確認は acme/other の #300 に対して行われ、コメントの作成も書き換えも行われない
+
+#### Scenario: -R で作業中のリポジトリ自身を指す
+- **WHEN** `cwd` が acme/repo-a のリポジトリで、`gh pr comment 300 -R acme/repo-a --body x` の hook JSON を流す
+- **THEN** acme/repo-a の #300 に行が 1 行積まれる
 
 #### Scenario: 解決できない番号は飛ばす
 - **WHEN** `gh pr comment "$(gh pr view --json number -q .number)" --body x` の hook JSON を流す
@@ -216,7 +224,9 @@
 次のときは何も出力せず終了コード 3 を返し、hook は何も書いてはなら MUST NOT ない。
 
 - 累計の金額・入出力トークン・キャッシュトークンがすべて 0 で、既存のコメント本文が空（金額が 0 でもトークンがあれば積む）
-- issue が対象で、対象のリポジトリ（`--target-repo`）が `--repo` の場所のリポジトリと一致しない
+- issue でも PR でも、対象のリポジトリ（`--target-repo`）が `--repo` の場所のリポジトリと一致しない（`--repo` の場所のリポジトリが判別できないときを含む。既存のコメント本文があっても積まない）
+
+`--target-repo` を渡さない呼び出し（手で実行する場合）では、この照合を行わない。hook は常に `--target-repo` を渡 MUST す。
 
 #### Scenario: 1 行目が `/cost` と一致する
 - **WHEN** 同じ会話ログで、どの応答よりも後の時刻を `--at` に渡した `cost_ledger.py timeline --pr 300 --branch <ブランチ> ...` と `cost_ledger.py cost 300` を実行する
@@ -237,6 +247,18 @@
 #### Scenario: 別リポジトリの issue
 - **WHEN** `cwd` が acme/repo-a のリポジトリで、`gh issue comment 12 -R acme/repo-b --body x` の hook JSON を流す
 - **THEN** コメントの作成も書き換えも行われない
+
+#### Scenario: 別リポジトリの PR
+- **WHEN** `cwd` が acme/repo-a のリポジトリで、ヘッドブランチと同じ名前のブランチにコストがある状態で `gh pr comment https://github.com/acme/repo-b/pull/300 --body x` の hook JSON を流す
+- **THEN** コメントの作成も書き換えも行われない
+
+#### Scenario: `--target-repo` が違う PR
+- **WHEN** そのブランチにコストがある状態で、`--repo` に acme/ra のリポジトリの場所、`--target-repo` に `acme/other` を渡して `timeline --pr 300 --branch <ブランチ>` を実行する
+- **THEN** 出力は空で、終了コードは 3
+
+#### Scenario: `--target-repo` を渡さない PR
+- **WHEN** そのブランチにコストがある状態で、`--target-repo` を渡さずに `timeline --pr 300 --branch <ブランチ>` を実行する
+- **THEN** 終了コードは 0 で、行が 1 行積まれた本文が出力される
 
 ### Requirement: issue の集計は関係するセッションだけを読む
 `COST_LEDGER_PATH` があるとき、システムは issue の累計を、台帳のうちその issue 番号を触った行を持つセッションの行だけを読んで SHALL 求める。結果は台帳の全行を読んで区間に切った場合と同じで MUST ある。`cost_ledger.py cost <issue番号>` と `cost_ledger.py issue <番号>` も同じ読み方を SHALL 使う。

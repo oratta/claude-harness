@@ -1242,7 +1242,8 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
 
     標準入力で既存のコメント本文（無ければ空）を受け、行を 1 行足した本文を標準出力に返す。
     PR か issue かは呼ぶ側が判別して渡すので、ここでは ``gh`` を呼ばない。1 行目の対象の
-    表記と帰属の種別は ``cmd_cost`` が同じ番号に対して作るものと同じ。積むものが無いときは
+    表記と帰属の種別は ``cmd_cost`` が同じ番号に対して作るものと同じ。積むものが無いとき、
+    ``--target-repo`` が ``--repo`` の場所のリポジトリと違うとき（PR でも issue でも）は、
     何も出さずに終了コード 3。
     """
     try:
@@ -1255,13 +1256,14 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
     at_ms = int(round(at * 1000))
     body = sys.stdin.read()
     where = os.path.abspath(args.repo) if args.repo else os.getcwd()
+    repo_id = resolver.repo_id(where)
+    label = resolver.label(repo_id)
+    if args.target_repo is not None and args.target_repo != label:
+        # where（作業中）のリポジトリのコストを、別のリポジトリの PR / issue に書き出さない。
+        # where のリポジトリが判別できないときも一致しないので、ここで止まる
+        return 3
     if args.issue is not None:
         number = str(args.issue)
-        repo_id = resolver.repo_id(where)
-        label = resolver.label(repo_id)
-        if args.target_repo is not None and args.target_repo != label:
-            # issue の集計は where のリポジトリで絞る。別リポジトリの issue に貼る数字ではない
-            return 3
         if repo_id == UNKNOWN_REPO:
             sys.stderr.write(
                 "%s は git リポジトリではないため、issue #%s の帰属先リポジトリが決まりません。\n"
@@ -1405,9 +1407,10 @@ def build_parser() -> argparse.ArgumentParser:
     timeline.add_argument("--at", required=True,
                           help="きっかけの時刻（小数つきの epoch 秒）。累計はこの時刻で切る")
     timeline.add_argument("--repo", default=None,
-                          help="issue の帰属先リポジトリを決める場所（既定はカレントディレクトリ）")
+                          help="作業中のリポジトリの場所。issue の帰属先と --target-repo の照合に使う"
+                               "（既定はカレントディレクトリ）")
     timeline.add_argument("--target-repo", default=None,
-                          help="書き込み先の owner/repo。issue で --repo のリポジトリと違えば積まない")
+                          help="書き込み先の owner/repo。--repo のリポジトリと違えば積まない")
     timeline.set_defaults(func=cmd_timeline)
 
     report = subparsers.add_parser("report", help="全履歴を帰属先ごとに畳んだ監査用の出力")
