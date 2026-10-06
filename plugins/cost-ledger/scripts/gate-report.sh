@@ -398,7 +398,9 @@ def report(repo, number, cwd, scripts_dir):
     p = run(["gh", "api", "repos/%s/issues/%d" % (repo, number), "--jq", ".labels[].name"])
     if p is None or p.returncode != 0 or LABEL not in p.stdout.splitlines():
         return
-    cost = [sys.executable, os.path.join(scripts_dir, "cost_ledger.py"), "cost", str(number)]
+    # 使うのは 1 行目だけなので、単価表のずれの突き合わせ（会話ログの読み直し）は省かせる
+    cost = [sys.executable, os.path.join(scripts_dir, "cost_ledger.py"), "cost", str(number),
+            "--no-drift-check"]
     if cwd:
         cost += ["--repo", cwd]
     p = run(cost, env=dict(os.environ, GH_REPO=repo, PYTHONIOENCODING="utf-8"),
