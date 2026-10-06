@@ -1174,5 +1174,5 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
 @test "timeline-hook: the lock directory is created for the owner only" {  # ロックの置き場は自分だけが読み書きできる権限（700）で作り、そこを使って積む
   run_hook "gh pr comment 300 --body x"
   [ "$(posts)" -eq 1 ]
-  [ "$(stat -f '%Lp' "$TMPDIR/cost-ledger-timeline" 2>/dev/null || stat -c '%a' "$TMPDIR/cost-ledger-timeline")" = "700" ]
+  [ "$(python3 -B -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode))[2:])' "$TMPDIR/cost-ledger-timeline")" = "700" ]
 }
