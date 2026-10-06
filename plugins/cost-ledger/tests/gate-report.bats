@@ -538,6 +538,26 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
   no_gh_call
 }
 
+@test "gate-report: a command aimed at another host never stacks" {  # --hostname（github.com 以外）・前置きの GH_HOST（github.com 以外）・-R の HOST/OWNER/REPO（github.com 以外）のコマンドは gh を呼ばず無出力で 0。github.com を明示した形は積む
+  run_hook "gh api --hostname ghe.example -X POST repos/oratta/claude-harness/issues/300/labels -f 'labels[]=agent-review:passed'"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+  run_hook "gh api --hostname=ghe.example -X POST repos/oratta/claude-harness/issues/300/labels -f 'labels[]=agent-review:passed'"
+  no_gh_call
+  run_hook "GH_HOST=ghe.example gh pr comment 300 --body x"
+  [ "$status" -eq 0 ]
+  no_gh_call
+  run_hook "GH_HOST=ghe.example gh issue close 12"
+  no_gh_call
+  run_hook "gh pr comment 300 -R ghe.example/acme/cwd-repo --body x"
+  no_gh_call
+  GH_HOST=ghe.example run_hook "gh pr comment 300 --body x"
+  no_gh_call
+  run_hook "GH_HOST=github.com gh pr comment 300 --body x"
+  posted_to acme/cwd-repo 300
+}
+
 @test "gate-report: an explicit GET on the labels path is not a grant" {  # -X GET / --method GET / -XGET / --method=GET を明示した gh api は付与とみなさない（PUT は付与）
   for m in "-X GET" "--method GET" "-XGET" "--method=GET"; do
     run_hook "gh api $m repos/oratta/claude-harness/issues/300/labels -f 'labels[]=agent-review:passed'"

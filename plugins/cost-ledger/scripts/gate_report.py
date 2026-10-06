@@ -326,6 +326,8 @@ def repo_values(repo_word, gh_repo, env):
     repos = []
     for v in expand(repo_word, env) or []:
         parts = v.rstrip("/").split("/")
+        if len(parts) >= 3 and parts[-3].lower() != "github.com":
+            continue  # HOST/OWNER/REPO の HOST が github.com 以外。行を積む対象は github.com だけ
         if len(parts) >= 2 and all(PART_RE.fullmatch(p) for p in parts[-2:]):
             repos.append(parts[-2] + "/" + parts[-1])
     return repos
@@ -374,6 +376,18 @@ def trigger_targets(args, env, gh_repo=None):
     return out
 
 
+def github_com(args, gh_host=None):
+    """gh の書き込み先が github.com と言えるか。--hostname か前置きの GH_HOST があればその値を
+    書き込み先として見て、リテラルの github.com のときだけ True。行を積む対象は github.com だけ。"""
+    hosts = [] if gh_host is None else [gh_host]
+    for k, a in enumerate(args):
+        if a == "--hostname":
+            hosts.append(args[k + 1] if k + 1 < len(args) else "")
+        elif a.startswith("--hostname="):
+            hosts.append(a[len("--hostname="):])
+    return all(h.lower() == "github.com" for h in hosts)
+
+
 def find_triggers(command):
     """コマンド文字列から (種別, owner/repo か None, 番号か None, きっかけ) を実行順に取り出す。"""
     env = {}      # 変数名 -> 値のリスト（解決できないときは None）
@@ -418,6 +432,8 @@ def find_triggers(command):
             continue
         args = words[1:]
         prefix = dict(assigns)  # 前置きの代入は gh の環境変数になる（同名は最後が効く）
+        if not github_com(args, prefix.get("GH_HOST")):
+            continue
         if args[0] == "api":
             out.extend(("pr", r, num, GATE) for r, num in api_targets(args, env))
         elif args[0] in ("pr", "issue") and len(args) >= 2 and args[1] == "edit":
@@ -443,6 +459,8 @@ def build_job(payload):
     command = (payload.get("tool_input") or {}).get("command")
     if not isinstance(command, str):
         return None
+    if os.environ.get("GH_HOST", "").lower() not in ("", "github.com"):
+        return None  # 引き継いだ GH_HOST で gh の書き込み先が github.com 以外。積む対象は github.com だけ
     at = "%.3f" % time.time()  # 行の時刻・累計を切る時刻・並び順は、コマンドを実行したこの時刻で決める
     targets = {}                # (種別, リポジトリの指定, 番号) -> きっかけ（実行順）
     for kind, repo, number, name in find_triggers(command):

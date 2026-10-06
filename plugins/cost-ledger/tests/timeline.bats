@@ -321,6 +321,22 @@ EOF
   [ ! -s "$BATS_TEST_TMPDIR/gh-called" ]
 }
 
+@test "timeline: the first line matches cost at the sixth-digit rounding boundary" {  # claude-opus-5-5 のキャッシュ読み出し 24,998 トークン（$0.0049996）など境界の値でも、1 行目は cost 271 の 1 行目と一致する
+  cl_fake_gh <<'EOF'
+for arg in "$@"; do case "$arg" in */pulls/271) echo "feat/m"; exit 0 ;; esac; done
+exit 1
+EOF
+  mkdir -p "$BATS_TEST_TMPDIR/plain"
+  for case in "24998:\$0.01 / ¥1" "24997:\$0.00 / ¥1" "25000:\$0.01 / ¥1" "24975:\$0.00 / ¥1"; do
+    tokens="${case%%:*}" shown="${case#*:}"
+    cl_mini_log feat/m claude-opus-5-5 "{\"input_tokens\": 0, \"output_tokens\": 0, \"cache_read_input_tokens\": $tokens}"
+    python3 "$CL" cost 271 --repo "$BATS_TEST_TMPDIR/plain" > "$OUT.cost"
+    tl --pr 271 --branch feat/m --trigger "PR コメント" --at "$FAR" < "$IN" > "$OUT"
+    [ "$(sed -n 1p "$OUT")" = "$(sed -n 1p "$OUT.cost")" ]
+    sed -n 1p "$OUT" | grep -qF "コスト: $shown @150 — PR #271 (feat/m) 帰属: ブランチ"
+  done
+}
+
 @test "timeline: responses added after the last ledger-sync are included" {  # ledger-sync のあとに増えた応答も、Stop hook を待たずに累計に含まれる
   export COST_LEDGER_PATH="$BATS_TEST_TMPDIR/ledger-home/cost-ledger.jsonl"
   add_row r1 10 1000000
@@ -382,6 +398,45 @@ EOF
   run tl "${PR_ARGS[@]}" --trigger "PR コメント" --at "$FAR" --repo "$RA" --target-repo acme/ra < "$IN"
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | sed -n 1p | grep -qF 'コスト: $1.00 / ¥150 @150 — PR #300 (feat/t) 帰属: ブランチ'
+}
+
+@test "timeline: a same-named repository on another host is not stacked" {  # 作業中のリポジトリの origin が github.com 以外のホストの acme/ra → --target-repo acme/ra の PR でも issue でも出力は空で終了コード 3
+  RA="$BATS_TEST_TMPDIR/ra"
+  cl_init_repo "$RA" acme/ra
+  add_row r1 10 1000000
+  cl_row S1 r2 2026-09-01T00:00:10.000Z main "$RA" 1000000 "gh issue view 12" >> "$CONFIG_DIR/projects/t/t.jsonl"
+  for url in https://unrelated.example/acme/ra.git git@unrelated.example:acme/ra.git \
+             ssh://git@unrelated.example/acme/ra.git; do
+    git -C "$RA" remote set-url origin "$url"
+    run tl "${PR_ARGS[@]}" --trigger "PR コメント" --at "$FAR" --repo "$RA" --target-repo acme/ra < "$IN"
+    [ "$status" -eq 3 ]
+    [ -z "$output" ]
+    run tl --issue 12 --trigger "issue コメント" --at "$FAR" --repo "$RA" --target-repo acme/ra < "$IN"
+    [ "$status" -eq 3 ]
+    [ -z "$output" ]
+  done
+}
+
+@test "timeline: an ssh origin on github.com is stacked" {  # origin が git@github.com:acme/ra.git と ssh://git@github.com/acme/ra.git → --target-repo acme/ra の PR を積む
+  RA="$BATS_TEST_TMPDIR/ra"
+  cl_init_repo "$RA" acme/ra
+  add_row r1 10 1000000
+  for url in git@github.com:acme/ra.git ssh://git@github.com/acme/ra.git; do
+    git -C "$RA" remote set-url origin "$url"
+    run tl "${PR_ARGS[@]}" --trigger "PR コメント" --at "$FAR" --repo "$RA" --target-repo acme/ra < "$IN"
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | sed -n 1p | grep -qF 'コスト: $1.00 / ¥150 @150 — PR #300 (feat/t) 帰属: ブランチ'
+  done
+}
+
+@test "timeline: a working repository without origin is not stacked" {  # origin の無い git リポジトリ → ホストを判別できないので --target-repo があれば出力は空で終了コード 3
+  RA="$BATS_TEST_TMPDIR/ra"
+  cl_init_repo "$RA" acme/ra
+  git -C "$RA" remote remove origin
+  add_row r1 10 1000000
+  run tl "${PR_ARGS[@]}" --trigger "PR コメント" --at "$FAR" --repo "$RA" --target-repo ra < "$IN"
+  [ "$status" -eq 3 ]
+  [ -z "$output" ]
 }
 
 @test "timeline: a PR without --target-repo is stacked without the comparison" {  # --target-repo を渡さない PR → 照合せずに積む（--repo が git リポジトリでなくても同じ）

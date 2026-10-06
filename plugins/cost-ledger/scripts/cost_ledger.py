@@ -154,6 +154,24 @@ class RepoResolver:
         self._labels[repo_id] = label
         return label
 
+    def origin(self, repo_id: str):
+        """origin の URL を ``(ホスト, "owner/repo")`` にする。読めなければ None。
+
+        ``label()`` は表示用にホストを捨てるので、書き込み先との照合にはこちらを使う。
+        扱う形は ``https://host/o/r(.git)``・``git@host:o/r(.git)``・``ssh://git@host[:port]/o/r(.git)``。
+        """
+        if repo_id == UNKNOWN_REPO:
+            return None
+        root = os.path.dirname(repo_id) if os.path.basename(repo_id) == ".git" else repo_id
+        url = _git(root, "remote", "get-url", "origin") or ""
+        matched = (
+            re.fullmatch(r"(?:https?|ssh)://(?:[^@/]+@)?([^/:]+)(?::[0-9]+)?/([^/]+)/([^/]+?)(?:\.git)?/?", url)
+            or re.fullmatch(r"[^@/:]+@([^/:]+):/?([^/]+)/([^/]+?)(?:\.git)?/?", url)
+        )
+        if not matched:
+            return None
+        return matched.group(1).lower(), "%s/%s" % (matched.group(2), matched.group(3))
+
 
 def _gh(cwd: str, *args: str):
     """gh を叩いて標準出力を返す（失敗と空出力は None）。"""
@@ -854,6 +872,9 @@ def format_rate(rate: float) -> str:
 
 
 def money(usd: float, pricing: Pricing) -> str:
+    # 先に 6 桁（マイクロドル）に揃える。timeline は隠し行の 6 桁の記録から 1 行目を作るので、
+    # /cost も同じ値から丸めないと、6 桁目の丸めで 1 セント動く境界の値で表示が割れる
+    usd = round(usd * 1e6) / 1e6
     return "$%s / ¥%s @%s" % (
         format(usd, ",.2f"),
         format(pricing.yen(usd), ",.0f"),
@@ -1258,9 +1279,10 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
     where = os.path.abspath(args.repo) if args.repo else os.getcwd()
     repo_id = resolver.repo_id(where)
     label = resolver.label(repo_id)
-    if args.target_repo is not None and args.target_repo != label:
+    if args.target_repo is not None and resolver.origin(repo_id) != ("github.com", args.target_repo):
         # where（作業中）のリポジトリのコストを、別のリポジトリの PR / issue に書き出さない。
-        # where のリポジトリが判別できないときも一致しないので、ここで止まる
+        # 書き込み先は github.com なので、origin のホストも github.com であることまで確かめる。
+        # where のリポジトリや origin のホストが判別できないときも一致しないので、ここで止まる
         return 3
     if args.issue is not None:
         number = str(args.issue)
