@@ -106,6 +106,9 @@ def note(path, line):
     os.close(fd)
 
 note(LOG, " ".join(args))
+note(LOG + ".env", " ".join("%s=%s" % (k, os.environ[k]) for k in
+                            ("GH_HOST", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN")
+                            if k in os.environ) or "-")
 if env("FAKE_GH_DELAY"):
     time.sleep(float(env("FAKE_GH_DELAY")))
 if env("FAKE_GH_FAIL") == "1":
@@ -130,6 +133,8 @@ while i < len(args):
         i += 2
     elif a == "--paginate":
         i += 1
+    elif a == "--hostname":
+        i += 2
     else:
         path = a; i += 1
 body = json.loads(sys.stdin.read())["body"] if source == "-" else None
@@ -556,6 +561,25 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
   no_gh_call
   run_hook "GH_HOST=github.com gh pr comment 300 --body x"
   posted_to acme/cwd-repo 300
+}
+
+@test "gate-report: every gh api call of the background work is pinned to github.com" {  # 対象の確認・番号省略の PR の検索・コメント一覧・POST・PATCH のすべての gh api に --hostname github.com が付く
+  run_hook 'gh pr comment 300 --body x'
+  posted_to acme/cwd-repo 300
+  seed_timeline_comment 555
+  FAKE_HEAD_PR=300 run_hook 'gh pr comment --body y'
+  grep -qF -- "-X PATCH repos/acme/cwd-repo/issues/comments/555" "$GH_LOG"
+  [ "$(grep -c '^api ' "$GH_LOG")" -ge 6 ]
+  ! grep '^api ' "$GH_LOG" | grep -vqE -- '--hostname github\.com( |$)' || return 1
+}
+
+@test "gate-report: the background work drops GH_HOST and enterprise tokens from gh's environment" {  # 環境に GH_HOST=ghe.example・GH_ENTERPRISE_TOKEN・GITHUB_ENTERPRISE_TOKEN がある状態で裏の処理を流すと、gh が受け取る環境にはどれも無い
+  JOB='{"cwd": "'"$CWD"'", "at": "1900000000.000", "targets": [{"kind": "pr", "repo": null, "number": 300, "triggers": ["PR コメント"]}]}'
+  GH_HOST=ghe.example GH_ENTERPRISE_TOKEN=t1 GITHUB_ENTERPRISE_TOKEN=t2 \
+    "$REAL_PYTHON" "$WORK/scripts/gate_report.py" --work "$JOB"
+  posted_to acme/cwd-repo 300
+  [ -s "$GH_LOG.env" ]
+  ! grep -vqx -- '-' "$GH_LOG.env" || return 1
 }
 
 @test "gate-report: an explicit GET on the labels path is not a grant" {  # -X GET / --method GET / -XGET / --method=GET を明示した gh api は付与とみなさない（PUT は付与）

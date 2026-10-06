@@ -97,7 +97,7 @@ PR でない issue に合格ラベルを付けても積まない。
   なければ積まない（手元のコストを別のリポジトリへ書き出さない）。fork の clone から upstream の PR にコメントしても
   行は付かず、別のディレクトリから `-R` で自分のリポジトリの PR を指したときも行は付かない。積むのは github.com の
   PR / issue だけで、origin のホストが github.com でない・origin が無いリポジトリと、`--hostname` / `GH_HOST` で
-  別のホストを指したコマンドでは積まない
+  別のホストを指したコマンドでは積まない。裏の処理の問い合わせと書き込みは、`gh` の既定ホストや `GH_HOST` によらず github.com に固定している
 - **止め方**: 環境変数 `COST_LEDGER_GATE_REPORT=off`（settings.json の `env` に置く）。ゲート通過を含む全部のきっかけが止まる
 - **古い形のコメントは残る**: 以前の目印 `<!-- cost-ledger:gate-report -->` のコメントは、書き換えも削除もしない
 - **やらないこと**: auto-merge によるマージと、PR の `Closes` による issue の自動クローズには行を積まない

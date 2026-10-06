@@ -507,11 +507,25 @@ def run(cmd, stdin_text=None, timeout=GH_TIMEOUT, **kw):
         return None
 
 
+# gh の既定ホストや環境変数で github.com 以外へ向かないよう、裏の処理の gh から外す変数
+GH_HOST_VARS = ("GH_HOST", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN")
+
+
+def gh_api(args, stdin_text=None, cwd=None):
+    """gh api を 1 回呼ぶ。問い合わせ先と書き込み先は常に github.com（--hostname で固定し、
+    GH_HOST と Enterprise 用のトークンは環境から外す）。--hostname は既存の語順を崩さない末尾に置く。"""
+    env = {k: v for k, v in os.environ.items() if k not in GH_HOST_VARS}
+    kw = {"env": env}
+    if cwd and os.path.isdir(cwd):
+        kw.update(cwd=cwd)
+        env["PWD"] = cwd
+    return run(["gh", "api", *args, "--hostname", "github.com"], stdin_text=stdin_text, **kw)
+
+
 def gh_json(path, cwd):
     """gh api の GET を 1 回呼んで JSON を返す（失敗は None）。パスの {owner}/{repo}/{branch}
     は gh 自身が cwd のリポジトリで埋めるので、cwd で実行する。"""
-    kw = {"cwd": cwd, "env": dict(os.environ, PWD=cwd)} if cwd and os.path.isdir(cwd) else {}
-    p = run(["gh", "api", path], **kw)
+    p = gh_api([path], cwd=cwd)
     if p is None or p.returncode != 0:
         return None
     try:
@@ -609,8 +623,8 @@ def lock(repo, number):
 def existing_comment(repo, number):
     """目印の行を持つコメントの (id, 本文)。無ければ (None, "")。分からなければ None。"""
     # --paginate の出力は複数ページだと配列が連結されるので、ページごとに jq で 1 件 1 行にする
-    p = run(["gh", "api", "--paginate", "repos/%s/issues/%d/comments?per_page=100" % (repo, number),
-             "--jq", COMMENTS_JQ])
+    p = gh_api(["--paginate", "repos/%s/issues/%d/comments?per_page=100" % (repo, number),
+                "--jq", COMMENTS_JQ])
     if p is None or p.returncode != 0:
         return None
     for line in p.stdout.splitlines():
@@ -648,12 +662,12 @@ def stack(kind, repo, number, branch, names, at, cwd, scripts_dir):
         return
     data = json.dumps({"body": body})
     if comment_id is None:
-        run(["gh", "api", "-X", "POST", "repos/%s/issues/%d/comments" % (repo, number),
-             "--input", "-"], stdin_text=data)
+        gh_api(["-X", "POST", "repos/%s/issues/%d/comments" % (repo, number), "--input", "-"],
+               stdin_text=data)
     else:
         # PATCH が失敗しても新規作成に切り替えない（コメントを増やさないことを優先する）
-        run(["gh", "api", "-X", "PATCH", "repos/%s/issues/comments/%d" % (repo, comment_id),
-             "--input", "-"], stdin_text=data)
+        gh_api(["-X", "PATCH", "repos/%s/issues/comments/%d" % (repo, comment_id), "--input", "-"],
+               stdin_text=data)
 
 
 def work(job):
