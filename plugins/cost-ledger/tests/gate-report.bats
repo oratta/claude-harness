@@ -692,6 +692,13 @@ PY
   grep -qE "^args=timeline --issue 12 --trigger issue コメント --at [0-9]+\.[0-9]{3} --repo $CWD --target-repo acme/cwd-repo\$" "$COST_LOG"
 }
 
+@test "gate-report: cost_ledger.py is asked only for timeline, which has no price drift check" {  # hook は突き合わせを行わない timeline だけを呼び、突き合わせのある cost は呼ばない
+  run_hook "$GRANT_LITERAL"
+  [ "$status" -eq 0 ] || return 1
+  grep -q '^args=' "$COST_LOG" || return 1
+  ! grep -v '^args=timeline ' "$COST_LOG" | grep -q '^args=' || { cat "$COST_LOG"; return 1; }
+}
+
 @test "gate-report: works without transcript_path and from a subagent transcript" {  # transcript_path が無くても、サブエージェントのトランスクリプトを指していても積む
   HOOK_TRANSCRIPT=- run_hook "$GRANT_LITERAL"
   [ "$status" -eq 0 ]

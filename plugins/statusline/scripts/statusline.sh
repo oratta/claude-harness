@@ -858,6 +858,53 @@ if [ "${STATUSLINE_API_PACE:-1}" != "0" ]; then
     fi
 fi
 
+# 本体のセッションコストをセッションごとに書き残す（正本: openspec/specs/session-cost-record）。
+# 読み手は cost-ledger で、自前の単価表で計算した額と比べて単価表のずれを見つける。
+# 記録は <設定ディレクトリ>/.session-cost/<session_id> に 1 行 `1 <t0> <v0> <t1> <v1>`
+# （区間の最初の観測時刻と値、最後に値が変わった観測時刻と値）。値が下がったら区間を始め直す。
+# 値が前回と同じ描画は組み込みの read 1 回だけで終える（外部コマンドを起動しない）。
+# 表示の設定（STATUSLINE_SESSION_COST）には左右されない。どの失敗でも出力を変えない。
+_sc_sid="${session_id#\"}"
+_sc_sid="${_sc_sid%\"}"
+if [[ "$_sc_sid" =~ ^[A-Za-z0-9_-]{1,128}$ ]] \
+    && [[ "$session_cost_usd" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]]; then
+    _sc_dir="$CONFIG_DIR/.session-cost"
+    _sc_file="$_sc_dir/$_sc_sid"
+    _sc_ver="" _sc_t0="" _sc_v0="" _sc_t1="" _sc_v1="" _sc_rest=""
+    _sc_new=""
+    if [ -f "$_sc_file" ]; then
+        { read -r _sc_ver _sc_t0 _sc_v0 _sc_t1 _sc_v1 _sc_rest < "$_sc_file"; } 2>/dev/null
+    else
+        _sc_new=1
+    fi
+    _sc_line=""
+    if [ "$_sc_ver" = "1" ] && [ -z "$_sc_rest" ] \
+        && [[ "$_sc_t0" =~ ^[0-9]+$ ]] && [[ "$_sc_t1" =~ ^[0-9]+$ ]] \
+        && [[ "$_sc_v0" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]] \
+        && [[ "$_sc_v1" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]]; then
+        # 文字列の一致は速い経路。一致しないときだけ awk を 1 回起動して数として比べる
+        if [ "$_sc_v1" != "$session_cost_usd" ]; then
+            case "$(LC_ALL=C awk -v a="$session_cost_usd" -v b="$_sc_v1" \
+                'BEGIN { if (a + 0 == b + 0) print "eq"; else if (a + 0 < b + 0) print "lt"; else print "gt" }' 2>/dev/null)" in
+                gt) _sc_line="1 $_sc_t0 $_sc_v0 $now $session_cost_usd" ;;
+                lt) _sc_line="1 $now $session_cost_usd $now $session_cost_usd" ;;
+            esac
+        fi
+    else
+        _sc_line="1 $now $session_cost_usd $now $session_cost_usd"
+    fi
+    if [ -n "$_sc_line" ] && mkdir -p "$_sc_dir" 2>/dev/null; then
+        # 一時ファイルに書いてから mv で置き換える（読み手に書きかけを見せない）。失敗は無視する
+        _sc_tmp="$(mktemp "$_sc_dir/.tmp.XXXXXX" 2>/dev/null)"
+        if [ -n "$_sc_tmp" ]; then
+            { printf '%s\n' "$_sc_line" > "$_sc_tmp" && mv -f "$_sc_tmp" "$_sc_file"; } 2>/dev/null \
+                || rm -f "$_sc_tmp" 2>/dev/null
+        fi
+        # 400 日より古い記録は、新しい記録ファイルを作る描画でだけ消す（1 セッションに 1 回）
+        [ -n "$_sc_new" ] && find "$_sc_dir" -type f -mtime +400 -delete 2>/dev/null
+    fi
+fi
+
 # このセッションの API 換算コスト（メイン + このセッションが立ち上げたサブエージェントの合算）。
 # Claude Code が stdin に渡す cost.total_cost_usd をそのまま使う（ドキュメント上「セッション内の
 # すべての API 呼び出し」の推定値で、定価ベース。/clear で 0 に戻る）。30 日コストは ccusage が

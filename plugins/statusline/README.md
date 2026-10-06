@@ -55,6 +55,13 @@ Context 91%  │  API ¥1,446,038/mo  │  Session ¥1,240
 
 プラグイン本体を直接指さずコピーを配るのは、marketplace dir がプラグイン自動更新で再 clone されるため。そこを settings.json から指すと、更新のたびに色や幅の調整が消える。プラグインを更新したら `/statusline:setup` を再実行する。
 
+### 本体のセッションコストの記録
+
+描画のたびに、Claude Code 本体が渡すセッションコスト（`cost.total_cost_usd`）を
+`${CLAUDE_CONFIG_DIR:-~/.claude}/.session-cost/<セッション ID>` に書き残す（1 セッション 1 ファイル・1 行で、最初の観測と最後に値が変わった観測の時刻と値を持つ）。値が前回と同じ描画では書かない。表示は変わらず、`STATUSLINE_SESSION_COST=0` で表示を消していても記録は書く。400 日より古い記録は、新しい記録ファイルを作る描画で消す。
+
+この記録は cost-ledger プラグインが読み、自前の単価表で計算した額と比べて、単価表のずれを `/cost` の出力で知らせるのに使う。記録はコピー先のスクリプトが書くので、プラグインを更新したあと `/statusline:setup` を再実行すると記録が始まる。
+
 ### 前提
 
 | | 必須 | 無い場合 |
@@ -164,7 +171,7 @@ bats plugins/statusline/tests/
 python3 -m pytest plugins/statusline/tests/
 ```
 
-`statusline.bats` は 1 スロット時の退行ガード、`statusline-multi-account.bats` は複数スロットの描画と `origin/main` 版との出力バイト一致の検証。`statusline-rate-snapshot.bats` と `test_rate_snapshot_writer.py` は writer の保存契約を検証する。
+`statusline.bats` は 1 スロット時の退行ガード、`statusline-multi-account.bats` は複数スロットの描画と `origin/main` 版との出力バイト一致の検証。`statusline-rate-snapshot.bats` と `test_rate_snapshot_writer.py` は writer の保存契約を検証する。`statusline-session-cost-record.bats` は本体のセッションコストの記録（書く条件・書かない条件・表示を変えないこと）を検証する。
 
 ## Codex の利用上限
 
