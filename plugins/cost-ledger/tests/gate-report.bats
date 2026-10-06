@@ -873,6 +873,27 @@ PY
   [ "$(gh_calls)" -eq 4 ]
 }
 
+@test "timeline-hook: gh issue close on a PR number is a PR close" {  # gh issue close 300 の番号が PR なら PR クローズとして、PR の state を確かめてから積む
+  run_hook "gh issue close 300"
+  no_write
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  : > "$GH_LOG"
+  run_hook "gh issue close 300"
+  posted_to acme/cwd-repo 300
+  [ "$(body_trigger 1)" = "PR クローズ" ]
+  grep -qE "^args=timeline --pr 300 --branch oratta/sample " "$COST_LOG"
+}
+
+@test "timeline-hook: gh issue reopen on a PR number adds nothing" {  # gh issue reopen 300 の番号が PR なら積まない（PR の再オープンはきっかけの表に無い）
+  run_hook "gh issue reopen 300"
+  [ "$status" -eq 0 ]
+  no_write
+  [ ! -e "$COST_LOG" ]
+  run_hook "gh issue comment 300 --body x; gh issue reopen 300"
+  [ "$(body_nrows)" -eq 1 ]
+  [ "$(body_trigger 1)" = "PR コメント" ]
+}
+
 # --- 状態の変更は実測してから積む ---
 
 @test "timeline-hook: no row when the PR is not merged" {  # gh pr merge 300 --auto でマージ済みでなければ積まない

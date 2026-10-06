@@ -88,7 +88,7 @@ PR_ARGS=(--pr 300 --branch feat/t)
   [ "$(cell "$OUT" 1 4)" = '1K (+1K)' ]
 }
 
-@test "timeline: token units switch at the documented boundaries" {  # 999・1,000・999,999・1,000,000・9,999,999・10,000,000・1,000,000,000 の表示
+@test "timeline: token units switch at the documented boundaries" {  # 999・1,000・999,999・1,000,000・9,999,999・10,000,000・1,000,000,000 の表示。四捨五入で次の単位に届く値（999,999 → 1.0M、9,999,999 → 10M）は次の単位で書く
   while read -r tokens shown; do
     cl_mini_log feat/t mystery-model-1 "{\"input_tokens\":$tokens,\"output_tokens\":0}"
     tl "${PR_ARGS[@]}" --trigger x --at "$FAR" < "$IN" > "$OUT"
@@ -96,12 +96,14 @@ PR_ARGS=(--pr 300 --branch feat/t)
   done <<'EOF'
 999 999
 1000 1K
-999999 1000K
+999499 999K
+999999 1.0M
 1000000 1.0M
 2100000 2.1M
-9999999 10.0M
+9999999 10M
 10000000 10M
 81000000 81M
+999999999 1.0B
 1000000000 1.0B
 1200000000 1.2B
 EOF
