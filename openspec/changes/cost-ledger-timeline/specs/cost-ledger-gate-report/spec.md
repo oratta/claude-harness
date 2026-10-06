@@ -5,6 +5,8 @@
 
 hook は全 Bash 呼び出しで起動するので、スクリプトは stdin に次のどの文字列も含まれなければ、JSON のパースも jq・python3 の起動もせずに即 `exit 0` MUST する: `agent-review:passed`・`gh pr comment`・`gh pr ready`・`gh pr close`・`gh pr merge`・`gh issue comment`・`gh issue close`・`gh issue reopen`。
 
+守備範囲: この fast path が受け取る入力は、Claude Code が hook の stdin に渡す PostToolUse の JSON 全体（`tool_input.command` に加えて、コマンドの出力である `tool_response` も入る）に限る。拾いたい誤りは、きっかけになる Bash 呼び出しを fast path で落として行を積み損ねることと、きっかけにならない大多数の Bash 呼び出しで `python3` を起動してセッションを遅くすることの 2 つ。次の入力は誤ったまま通ることを許す: 上の文字列がコマンドの出力や `echo` の引数に現れただけの呼び出しは fast path を通って `python3` が起動する（その先の判定で落ち、何も書かれない）／`gh  pr  comment` のように語のあいだの空白が 1 つでないもの、行継続で語が分かれたもの、`gh -R x pr comment` のように `gh` と `pr` のあいだにオプションを置いたもの、`$GH pr comment` のように `gh` を変数で呼んだものは fast path で落ち、行が積まれない／合格ラベルの名前を変数や文字列の連結で組み立てた付与は fast path で落ち、行が積まれない。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
+
 #### Scenario: 対象外の Bash では何も起動しない
 - **WHEN** 上の文字列をどれも含まない Bash 呼び出し（`gh pr view 300` を含む）の hook JSON を stdin に流す
 - **THEN** `gh` と `python3` は一度も呼ばれず、stdout は空で、終了コードは 0
