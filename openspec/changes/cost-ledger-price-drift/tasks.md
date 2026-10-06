@@ -31,10 +31,10 @@
 
 ## 5. 文書
 
-- [ ] 5.1 `plugins/cost-ledger/README.md` の「料金表と円換算」の未知モデルの説明のうしろに、ずれの警告（何と何を比べるか、閾値、statusline の記録が要ること、警告が出たら `pricing.json` を直すこと、読み直しは既定 1 秒で打ち切られて `未確認` の行が出ること、`COST_LEDGER_DRIFT_BUDGET_SECONDS` で上限を変えられること）を書く。触る範囲: `plugins/cost-ledger/README.md:32-50`（「料金表と円換算」の節）
-- [ ] 5.2 `plugins/statusline/README.md` に、本体のセッションコストを `.session-cost/` に書き残すこと、cost-ledger が読むこと、`/statusline:setup` を再実行すると記録が始まることを書く。触る範囲: `plugins/statusline/README.md:48-56`（`/statusline:setup` の説明）、テストの一覧 `plugins/statusline/README.md:163-167`
-- [ ] 5.3 変更の記録を 2 つ書く。版は上げない。触る範囲: `plugins/cost-ledger/changes/692.md`（新規）、`plugins/statusline/changes/692.md`（新規）、書式の手本は `plugins/cost-ledger/changes/285.md:1-7`
-- [ ] 5.4 `commands/cost.md`・`plugin.json` の `description`・`rules/`・`CLAUDE.md` を変えていないことを `git diff --stat origin/main` で確かめる（常時注入の予算を動かさない）。触る範囲: なし（確認のみ）
+- [x] 5.1 `plugins/cost-ledger/README.md` の「料金表と円換算」の未知モデルの説明のうしろに、ずれの警告（何と何を比べるか、閾値、statusline の記録が要ること、警告が出たら `pricing.json` を直すこと、読み直しは既定 1 秒で打ち切られて `未確認` の行が出ること、`COST_LEDGER_DRIFT_BUDGET_SECONDS` で上限を変えられること）を書く。触る範囲: `plugins/cost-ledger/README.md:32-50`（「料金表と円換算」の節）
+- [x] 5.2 `plugins/statusline/README.md` に、本体のセッションコストを `.session-cost/` に書き残すこと、cost-ledger が読むこと、`/statusline:setup` を再実行すると記録が始まることを書く。触る範囲: `plugins/statusline/README.md:48-56`（`/statusline:setup` の説明）、テストの一覧 `plugins/statusline/README.md:163-167`
+- [x] 5.3 変更の記録を 2 つ書く。版は上げない。触る範囲: `plugins/cost-ledger/changes/692.md`（新規）、`plugins/statusline/changes/692.md`（新規）、書式の手本は `plugins/cost-ledger/changes/285.md:1-7`
+- [x] 5.4 `commands/cost.md`・`plugin.json` の `description`・`rules/`・`CLAUDE.md` を変えていないことを `git diff --stat origin/main` で確かめる（常時注入の予算を動かさない）。触る範囲: なし（確認のみ）
 
 ## 6. 実測（PR に書く）
 
