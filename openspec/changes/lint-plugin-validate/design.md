@@ -27,6 +27,7 @@ hooks.json の command は現在 `"${CLAUDE_PLUGIN_ROOT}/scripts/<name>.sh"`（J
 - version 未記載と、telegram の author 未記載の警告を消すこと
 - hooks.json の引用符以外の変更（整形、並べ替え、exec 形式への書き換え、timeout や matcher の見直し）
 - `.github/workflows/ci.yml` のジョブ名やステップ名（`shellcheck`）の変更
+- `agent-model-guard.sh` の動作を変えること（仕様の記述を実装に合わせるだけ。決定 8）
 
 ## Decisions
 
@@ -75,6 +76,16 @@ lint.sh は「最初の指摘で止めない」方針（一括適用）なので
 `tests/lint-plugin-validate.bats` は、一時ディレクトリに git リポジトリを作って `scripts/lint.sh` を複製し、PATH の先頭に偽の `claude`（受け取った引数を記録し、指定された対象で非 0 を返すシェルスクリプト）を置いて走らせる。本物の `claude` を使わないのは、CI のランナーに無いことと、版によって検証の中身が変わるとテストが揺れることによる。本物での確認（`name` を `claude-x` にすると落ちる、引用符の警告が 0 件）は verify の手順で行い、結果を記録先に残す。
 
 lint.sh は `$0` の位置からリポジトリの根を決めるので、複製を一時リポジトリの `scripts/` に置けば、本物のリポジトリに触らずに試せる。
+
+### 8. hook の要件の記述は、hook ではなく仕様の側を実装に合わせる
+
+仕様レビューで、要件「model 未指定の Agent spawn は hook が拒否する」に守備範囲の段落を足したところ、本番の仕様から写した本文（「共有枠モードは usage snapshot から導出」「snapshot が読めないときは fail-open」）が実装と食い違っていることが分かった。実装（`agent-model-guard.sh:59-85`）は fork のときだけ `usage_view.py` でセッション記録と snapshot を突き合わせた実効値を読み、値が求まらなければ `ok` とみなす。fork 以外の判定はどちらも読まない。
+
+| 案 | 捨てた理由 / 選んだ理由 |
+|---|---|
+| hook の要件をこの change から外す | 主の判断（仕様と実物の乖離は不可）に反する。食い違いが本番の仕様に残る |
+| hook を仕様の記述に合わせて変える | セッション記録を読む動きは別の仕様（usage-session-records）が決めたもので、この issue の範囲（lint.sh と引用符）を超える |
+| 仕様の本文と Scenario を実装に合わせる（採用） | 動作は変わらず、既存のテスト（`agent-model-guard.bats`）がそのまま裏付けになる |
 
 ## Risks / Trade-offs
 
