@@ -12,4 +12,4 @@
 - [x] 3.1 変更の記録 `plugins/dev-workflow/changes/711.md` を書く（直近の `662.md` の書式に倣う）。触る範囲: plugins/dev-workflow/changes/711.md（新規）
 - [x] 3.2 `plugins/dev-workflow/tests/agent-effort.bats`（新規）を足す。4 つの agent 定義の frontmatter 内の `effort:` が 1 行であることと役ごとの値（worker / gate-runner = medium、reviewer / decider = high）を検査する。frontmatter の取り出しは `decider-agent.bats` の `frontmatter` / `fm_value` に倣う。触る範囲: plugins/dev-workflow/tests/agent-effort.bats（新規）、plugins/dev-workflow/tests/decider-agent.bats:19-23（書き方の参照）
 - [x] 3.3 受け入れ条件を確かめる: `grep -c '^effort:' plugins/dev-workflow/agents/*.md` が 4 ファイルとも 1、`grep -n 'effort' plugins/dev-workflow/references/model-tiers.md` が 1 件以上、`scripts/test.sh` が exit 0。
-- [ ] 3.4 変更前後で develop を 1 本ずつ回し、`/cost` の値を PR に貼る（合否には使わない）
+- [x] 3.4 変更前後で develop を 1 本ずつ回し、`/cost` の値を PR に貼る（合否には使わない）。扱い: 変更前はこの develop の 1 本そのもの（実行中のプラグインは effort を持たない版）の値を PR 本文に貼る。変更後はマージしてプラグインが更新されたあとにしか測れないので、マージ後に最初に回した develop の `/cost` を issue #711 にコメントする
