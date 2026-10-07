@@ -6,7 +6,7 @@ Stop の hook（`scripts/ledger-hook.sh`）は、解決した値を `COST_LEDGER
 
 台帳の実パスが `cost_ledger.py` を含むリポジトリ（git 管理外ならプラグインのディレクトリ）の配下を指すとき、システムは台帳に書かずに終了コード 2 で終わ MUST る。
 
-守備範囲: 判定の入力は、利用者が `/config` や `~/.claude/settings.json` の `env` などで設定する値である。この判定が拾いたい誤りは、台帳がプラグインのリポジトリ（開発用 clone や自動更新される marketplace の clone）の配下に置かれ、再 clone で消えたり commit に紛れたりすることである。相対パス・`~`・シンボリックリンクを経由してリポジトリ配下を指す場合も、実パスで比べて拾う。通ることを許す入力は、リポジトリ外であれば、別の git リポジトリの配下や同期フォルダの配下を含むどのパスでもよい（書き込めないパスはこの判定では通し、書き込みの失敗として扱う）。ハードリンクや、判定のあとでパスの途中のシンボリックリンクを差し替える競合は拾わない。新しく見つかった判定の穴を塞ぎ切ることを、この要件の完了条件にしない。`/cost` のコマンド本文の Bash 実行には `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` が渡らない（実機で確認済み）ので、`/cost` は本文の `${user_config.LEDGER_PATH}` の置換値を環境変数として `cost_ledger.py` に渡す（規則は `cost-ledger-cost-command`）。
+守備範囲: 判定の入力は、利用者が `/config` や `~/.claude/settings.json` の `env` などで設定する値である。この判定が拾いたい誤りは、台帳がプラグインのリポジトリ（開発用 clone や自動更新される marketplace の clone）の配下に置かれ、再 clone で消えたり commit に紛れたりすることである。相対パス・`~`・シンボリックリンクを経由してリポジトリ配下を指す場合も、実パスで比べて拾う。通ることを許す入力は、リポジトリ外であれば、別の git リポジトリの配下や同期フォルダの配下を含むどのパスでもよい（ただし `${user_config.` で始まる値は、パスではなく置換されなかったプレースホルダとして未設定と同じに扱い、台帳のパスとは見ない）（書き込めないパスはこの判定では通し、書き込みの失敗として扱う）。ハードリンクや、判定のあとでパスの途中のシンボリックリンクを差し替える競合は拾わない。新しく見つかった判定の穴を塞ぎ切ることを、この要件の完了条件にしない。`/cost` のコマンド本文の Bash 実行には `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` が渡らない（実機で確認済み）ので、`/cost` は本文の `${user_config.LEDGER_PATH}` の置換値を環境変数として `cost_ledger.py` に渡す（規則は `cost-ledger-cost-command`）。
 
 #### Scenario: 環境変数が未設定
 - **WHEN** `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` と `COST_LEDGER_PATH` の両方が未設定のまま `cost_ledger.py cost` を実行する

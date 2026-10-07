@@ -129,6 +129,21 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "cost: the command passes the userConfig value to the script" {  # 本文が userConfig の値を環境変数で渡す
+  run grep -F "CLAUDE_PLUGIN_OPTION_LEDGER_PATH='\${user_config.LEDGER_PATH}' python3" "$PLUGIN_DIR/commands/cost.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "cost: the unset-ledger guidance names /config before settings" {  # 未設定時の案内は /config が先
+  run python3 -c '
+import sys
+t = open(sys.argv[1], encoding="utf-8").read()
+line = [l for l in t.splitlines() if "settings" in l][0]
+sys.exit(0 if "/config" in line and line.index("/config") < line.index("settings") else 1)
+' "$PLUGIN_DIR/commands/cost.md"
+  [ "$status" -eq 0 ]
+}
+
 # 2 つのリポジトリと、削除済み worktree に、同じ名前のブランチ "shared-name" の行を置く
 shared_branch_rows() {
   {
