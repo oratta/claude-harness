@@ -139,6 +139,10 @@ class Pricing:
 # リポジトリ識別子
 # --------------------------------------------------------------------------
 
+# Claude Code が作業ツリーを置く場所。この並びの下にあるのは、手前のリポジトリの作業ツリー
+WORKTREES_MARK = "/.claude/worktrees/"
+
+
 class RepoResolver:
     """cwd からリポジトリ識別子（git-common-dir の絶対パス）と表示名を求める。
 
@@ -150,19 +154,132 @@ class RepoResolver:
     def __init__(self):
         self._ids: dict[str, str] = {}
         self._labels: dict[str, str] = {}
+        self._inferred: set[str] = set()   # 削除済みで、パスからの推定で決めた cwd
+        self._places: dict[str, str] = {}  # 置き場ごとの判定結果
 
     def repo_id(self, cwd: str) -> str:
         if not cwd:
             return UNKNOWN_REPO
         if cwd in self._ids:
             return self._ids[cwd]
-        repo_id = UNKNOWN_REPO
         if os.path.isdir(cwd):
-            out = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
-            if out:
-                repo_id = os.path.realpath(out)
+            # 存在するのに git が失敗する cwd は推定しない（不明のまま）
+            repo_id = self._git_id(cwd)
+        else:
+            repo_id = self._infer(cwd)
+            if repo_id != UNKNOWN_REPO:
+                self._inferred.add(cwd)
         self._ids[cwd] = repo_id
         return repo_id
+
+    def inferred(self, cwd: str) -> bool:
+        """``repo_id(cwd)`` が、削除済みの cwd の文字列からの推定で決めた値か。"""
+        return cwd in self._inferred
+
+    @staticmethod
+    def _git_id(where: str) -> str:
+        out = _git(where, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        return os.path.realpath(out) if out else UNKNOWN_REPO
+
+    @staticmethod
+    def _linked_id(child: str) -> str:
+        """リンクされた作業ツリー ``child`` の識別子を、git を起動せず ``.git`` ファイルから読む。
+
+        ``.git`` ファイルの ``gitdir: <パス>`` が指すディレクトリに ``commondir`` があれば、それを
+        ``<パス>`` からの相対として解決したものが、無ければ ``<パス>`` そのものが共通の git
+        ディレクトリで、``_git_id()`` が ``git rev-parse --git-common-dir`` から決める値と同じ
+        文字列になる。置き場の子の数だけ git を起動すると Stop hook が 1 秒を超えうるので
+        （実測）、ここでは起動しない。読めない・``gitdir:`` の行が無い・指す先が無いときは不明。
+        """
+        try:
+            with open(os.path.join(child, ".git"), encoding="utf-8", errors="replace") as fh:
+                head = fh.read(4096)
+        except OSError:
+            return UNKNOWN_REPO
+        gitdir = ""
+        for line in head.splitlines():
+            if line.startswith("gitdir:"):
+                gitdir = line[len("gitdir:"):].strip()
+                break
+        if not gitdir:
+            return UNKNOWN_REPO
+        gitdir = os.path.join(child, gitdir)  # 相対なら作業ツリーから。絶対ならそのまま
+        if not os.path.isdir(gitdir):
+            return UNKNOWN_REPO
+        common = gitdir
+        try:
+            with open(os.path.join(gitdir, "commondir"), encoding="utf-8", errors="replace") as fh:
+                rel = fh.read(4096).strip()
+            if rel:
+                common = os.path.join(gitdir, rel)
+        except OSError:
+            pass
+        if not os.path.isdir(common):
+            return UNKNOWN_REPO
+        return os.path.realpath(common)
+
+    def _infer(self, cwd: str) -> str:
+        """ディレクトリとして存在しない cwd の文字列からリポジトリを推定する（決まらなければ不明）。
+
+        (1) ``/.claude/worktrees/`` を含むなら、最後のその並びの手前を持ち主とする。その下に
+        置かれるのは手前のリポジトリの作業ツリーだと決まっているので、持ち主の識別子をそのまま
+        使う（持ち主も削除済みなら、持ち主のパスを同じ手順で推定する）。(2) それ以外は、現存する
+        最も近い祖先を置き場として ``_place_id()`` で決める。
+        """
+        if not os.path.isabs(cwd):
+            return UNKNOWN_REPO
+        at = cwd.rfind(WORKTREES_MARK)
+        if at >= 0:
+            # 持ち主は cwd より必ず短いので、持ち主も削除済みで推定を繰り返しても止まる
+            return self.repo_id(cwd[:at])
+        place = os.path.dirname(cwd.rstrip(os.sep))
+        while place and not os.path.isdir(place):
+            parent = os.path.dirname(place)
+            if parent == place:
+                return UNKNOWN_REPO
+            place = parent
+        if not place:
+            return UNKNOWN_REPO
+        if place not in self._places:
+            self._places[place] = self._place_id(place)
+        return self._places[place]
+
+    def _place_id(self, place: str) -> str:
+        """置き場（削除済みの cwd の、現存する最も近い祖先）の直下の作業ツリーからリポジトリを決める。
+
+        決めるのは、直下のリンクされた作業ツリー（``.git`` がファイルのディレクトリ）の識別子
+        （``_linked_id()`` がファイルから読む。読めない子は除く）がちょうど 1 種類で、置き場の名前がそのリポジトリのメインの作業ツリーのディレクトリ名
+        （bare なら識別子のパスの末尾の名前）か origin のリポジトリ名と一致するときだけ。
+        名前の一致を求めるのは、複数のリポジトリの作業ツリーを混ぜて置くディレクトリで、たまたま
+        残っている 1 つに寄せないため。置き場が git リポジトリの中のときは決めない（消えたのが
+        入れ子の別リポジトリだった場合に、外側のリポジトリへ寄せないため）。
+        """
+        if os.path.dirname(place) == place or self._git_id(place) != UNKNOWN_REPO:
+            return UNKNOWN_REPO
+        try:
+            names = sorted(os.listdir(place))
+        except OSError:
+            return UNKNOWN_REPO
+        found = None
+        for name in names:
+            child = os.path.join(place, name)
+            if not os.path.isfile(os.path.join(child, ".git")):
+                continue
+            # 子ごとに git を起動しない。.git ファイルを解決できない子（指す先の無い残骸など）は
+            # 数えず、残りの子で判定する
+            repo_id = self._linked_id(child)
+            if repo_id == UNKNOWN_REPO:
+                continue
+            if found is not None and repo_id != found:
+                return UNKNOWN_REPO
+            found = repo_id
+        if found is None:
+            return UNKNOWN_REPO
+        root = os.path.dirname(found) if os.path.basename(found) == ".git" else found
+        # label() は origin が読めれば owner/repo、読めなければディレクトリ名を返す
+        if os.path.basename(place) in (os.path.basename(root), self.label(found).rsplit("/", 1)[-1]):
+            return found
+        return UNKNOWN_REPO
 
     def label(self, repo_id: str) -> str:
         if repo_id == UNKNOWN_REPO:
@@ -496,7 +613,8 @@ def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
         # 内訳を持たない古い形の行。キャッシュ書込 5m として読む。
         write_5m = usage.get("cache_creation_input_tokens") or 0
     issues, marker = scan_tool_calls(message)
-    return {
+    cwd = record.get("cwd") or ""
+    fact = {
         "request_id": record.get("requestId") or record.get("uuid") or "",
         # 先頭の行の uuid。複製された会話ログの先頭の行と、真の後続行を区別する鍵
         "uuid": record["uuid"] if isinstance(record.get("uuid"), str) else "",
@@ -504,7 +622,7 @@ def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
         # sessionId が無い行は区間を切る単位が消える。ファイルパスに落として混ざるのを防ぐ。
         "session_id": record.get("sessionId") or path,
         "is_sidechain": bool(record.get("isSidechain")),
-        "repo_id": resolver.repo_id(record.get("cwd") or ""),
+        "repo_id": resolver.repo_id(cwd),
         "branch": record.get("gitBranch") or "",
         "model": message.get("model") or "",
         "input_tokens": usage.get("input_tokens") or 0,
@@ -515,6 +633,11 @@ def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
         "issues": issues,
         "post_marker": marker,
     }
+    if resolver.inferred(cwd):
+        # 削除済みの cwd の文字列から推定した識別子。偽のときは欄そのものを書かない
+        # （git で決まった行と、この欄ができる前に書かれた行の形を変えないため）
+        fact["repo_inferred"] = True
+    return fact
 
 
 def log_files(root: str):
@@ -992,6 +1115,99 @@ def ledger_sync(ledger: str, root: str, resolver: RepoResolver, rescan: bool = F
             raise LedgerError("台帳 %s へ追記できません: %s" % (ledger, error))
 
 
+REPO_FIX_PREFIX = "repo-fix#"
+LEDGER_UNKNOWN_REPO = '"repo_id": "%s"' % UNKNOWN_REPO
+
+
+def _unknown_groups(ledger: str) -> dict:
+    """台帳の識別子が不明の行（補正行を除く）を持つ (session_id, branch) と、その組の最も早い timestamp。"""
+    groups: dict = {}
+    if not os.path.exists(ledger):
+        return groups
+    with open(ledger, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if LEDGER_UNKNOWN_REPO not in line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(row, dict) or row.get("repo_id") != UNKNOWN_REPO or row.get("repo_fix"):
+                continue
+            session, branch = row.get("session_id") or "", row.get("branch") or ""
+            if not (isinstance(session, str) and isinstance(branch, str)):
+                continue
+            stamp = row.get("timestamp") if isinstance(row.get("timestamp"), str) else ""
+            key = (session, branch)
+            if key not in groups or (stamp and (not groups[key] or stamp < groups[key])):
+                groups[key] = stamp
+    return groups
+
+
+def _collect_group_cwds(data: bytes, path: str, groups: dict, cwds: dict, no_cwd: set) -> None:
+    """会話ログのバイト列の応答の行から、groups の組ごとの cwd と「cwd の無い行がある」ことを集める。
+
+    組の鍵は build_fact と同じ（sessionId が無ければファイルのパス, gitBranch）。
+    """
+    for raw in data.split(b"\n"):
+        if b'"assistant"' not in raw:
+            continue
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(record, dict) or record.get("type") != "assistant":
+            continue
+        session, branch = record.get("sessionId") or path, record.get("gitBranch") or ""
+        if not (isinstance(session, str) and isinstance(branch, str)):
+            continue
+        key = (session, branch)
+        if key not in groups:
+            continue
+        cwd = record.get("cwd")
+        if isinstance(cwd, str) and cwd:
+            cwds.setdefault(key, set()).add(cwd)
+        else:
+            no_cwd.add(key)
+
+
+def _repo_fix_rows(groups: dict, cwds: dict, no_cwd: set, resolver: RepoResolver, seen) -> list[str]:
+    """全 cwd が同じ 1 リポジトリに決まり、cwd の無い応答の行を含まない組の補正行（索引に無いものだけ）。"""
+    rows: list[str] = []
+    for key in sorted(groups):
+        if key in no_cwd or not cwds.get(key):
+            continue
+        repos = {resolver.repo_id(cwd) for cwd in sorted(cwds[key])}
+        if len(repos) != 1 or UNKNOWN_REPO in repos:
+            continue
+        repo = repos.pop()
+        session, branch = key
+        request_id = "%s%s#%s#%s" % (REPO_FIX_PREFIX, session, branch, repo)
+        if request_id in seen:
+            continue
+        seen.add(request_id)
+        # 補足の事実の形に寄せる（古い版の読み手には、トークン 0・issue なし・印なしの補足に見える）
+        rows.append(json.dumps({
+            "request_id": request_id,
+            "timestamp": groups[key],
+            "session_id": session,
+            "is_sidechain": False,
+            "repo_id": repo,
+            "branch": branch,
+            "model": "",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_write_5m_tokens": 0,
+            "cache_write_1h_tokens": 0,
+            "cache_read_tokens": 0,
+            "issues": [],
+            "post_marker": None,
+            "continuation": True,
+            "repo_fix": True,
+        }, ensure_ascii=False))
+    return rows
+
+
 def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver, rescan: bool = False) -> int:
     index = LedgerIndex(ledger + ".state.sqlite")
     try:
@@ -1004,6 +1220,10 @@ def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver, rescan: 
         # 指しても、同じ会話ログを別のキーで先頭から読み直さないため）。os.walk は root の
         # 表記のまま返すので、root からの相対パスを実パスの root に付け直す
         real_root = os.path.realpath(root)
+        # --rescan のときだけ、台帳の「不明」の行の組と、その組の cwd を集めて補正行を書く
+        groups = _unknown_groups(ledger) if rescan else {}
+        group_cwds: dict = {}
+        no_cwd: set = set()
         for path in log_files(root):
             key = os.path.join(real_root, os.path.relpath(path, root))
             try:
@@ -1031,7 +1251,11 @@ def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver, rescan: 
             for fact in facts_from_lines(lines, path, resolver, seen, from_start=(offset == 0),
                                          offset_of=lambda: lines.position):
                 lines_out.append(json.dumps(fact, ensure_ascii=False))
+            if groups:
+                _collect_group_cwds(data[:end + 1], path, groups, group_cwds, no_cwd)
             new_offsets.append((key, offset + end + 1, stat.st_ino))
+        if groups:
+            lines_out.extend(_repo_fix_rows(groups, group_cwds, no_cwd, resolver, seen))
         if lines_out:
             prefix = ""
             if os.path.exists(ledger) and os.path.getsize(ledger) > 0:
@@ -1167,6 +1391,51 @@ def iter_ledger_facts(ledger: str, branch: str | None = None):
             yield fact
 
 
+LEDGER_REPO_FIX = '"repo_fix": true'
+
+
+def _group_key(row: dict):
+    """補正の組の鍵 (session_id, branch)。形が崩れていれば None。"""
+    session, branch = row.get("session_id"), row.get("branch") or ""
+    if isinstance(session, str) and isinstance(branch, str):
+        return session, branch
+    return None
+
+
+def ledger_repo_fixes(ledger: str) -> dict:
+    """台帳の補正行を 1 回の走査で集め、組ごとの repo_id の集合を返す。"""
+    fixes: dict = {}
+    handle = _open_ledger(ledger)
+    if handle is None:
+        return fixes
+    with handle:
+        for line in handle:
+            if LEDGER_REPO_FIX not in line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(row, dict) or row.get("repo_fix") is not True:
+                continue
+            key, repo = _group_key(row), row.get("repo_id")
+            if key is not None and isinstance(repo, str) and repo:
+                fixes.setdefault(key, set()).add(repo)
+    return fixes
+
+
+def apply_repo_fixes(facts, fixes: dict):
+    """事実の列から補正行を取り除き、補正の repo_id がちょうど 1 種類の組の不明の事実を置き換える。"""
+    for fact in facts:
+        if fact.get("repo_fix"):
+            continue
+        if fixes and fact.get("repo_id") == UNKNOWN_REPO:
+            repos = fixes.get(_group_key(fact))
+            if repos is not None and len(repos) == 1:
+                fact = dict(fact, repo_id=next(iter(repos)), repo_inferred=True)
+        yield fact
+
+
 def load_facts(resolver: RepoResolver, branch: str | None = None, issue: str | None = None):
     """集計系サブコマンドの事実の入口。
 
@@ -1183,9 +1452,10 @@ def load_facts(resolver: RepoResolver, branch: str | None = None, issue: str | N
         return iter_facts(log_root(), resolver, branch=branch)
     ledger = resolve_ledger(configured)
     ledger_sync(ledger, log_root(), resolver)
+    fixes = ledger_repo_fixes(ledger)
     if issue is not None and branch is None:
-        return iter_ledger_issue_facts(ledger, issue)
-    return iter_ledger_facts(ledger, branch=branch)
+        return apply_repo_fixes(iter_ledger_issue_facts(ledger, issue), fixes)
+    return apply_repo_fixes(iter_ledger_facts(ledger, branch=branch), fixes)
 
 
 def load_branches_facts(resolver: RepoResolver, branches) -> dict:
@@ -1251,6 +1521,9 @@ class _NoRepo:
 
     def repo_id(self, cwd: str) -> str:
         return UNKNOWN_REPO
+
+    def inferred(self, cwd: str) -> bool:
+        return False
 
 
 def _drift_lines(handle, mentions, expired):
@@ -1590,6 +1863,27 @@ def _interval(session_id: str, rows: list, closed_by):
         "request_ids": [f["request_id"] for f in rows],
         "facts": rows,
     }
+
+
+INFERRED_LINE = "  推定で数えた行: %d 件 $%s（cwd が削除済みで、パスからリポジトリを推定した。合計に入れている）"
+
+
+def inferred_totals(facts, pricing: Pricing) -> tuple[float, int]:
+    """事実の列のうち、識別子を推定で決めた行（repo_inferred が真）の額と件数（補足は件数に数えない）。"""
+    usd, messages = 0.0, 0
+    for fact in facts:
+        if fact.get("repo_inferred"):
+            usd += pricing.cost(fact)[0]
+            if not is_continuation(fact):
+                messages += 1
+    return usd, messages
+
+
+def render_inferred(usd: float, messages: int) -> list[str]:
+    """「推定で数えた行」の表示。件数が 0 なら出さない。"""
+    if not messages:
+        return []
+    return [INFERRED_LINE % (messages, format(usd, ",.2f"))]
 
 
 def price_intervals(intervals: list, pricing: Pricing) -> list:
@@ -1964,6 +2258,9 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
         unknown_usd = summarise(unknown, pricing)["total_usd"]
         print("  リポジトリ不明: %d 件 $%s（cwd が削除済みで、どのリポジトリの %s か絞れない）"
               % (len(unknown), format(unknown_usd, ",.2f"), args.branch))
+    if scope is not None:
+        for line in render_inferred(*inferred_totals(facts, pricing)):
+            print(line)
     if not getattr(args, "no_drift_check", False):
         for line in render_price_drift(price_drift({f["session_id"] for f in facts}, pricing)):
             print(line)
@@ -2213,7 +2510,7 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
     branch_micro = {branch: _micro(branch_facts.get(branch, []), pricing) for branch in owner}
     counted = [fact for branch in owner for fact in branch_facts.get(branch, [])]
 
-    result, own, usd = [], {}, {}
+    result, own, usd, inferred = [], {}, {}, []
     for row in issues:
         number = row["number"]
         by_branch = defaultdict(list)
@@ -2227,6 +2524,8 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
             if branch not in owner:
                 assigned += micro
                 counted.extend(facts)
+                # 区間で割り当てた行のうち推定で決めた行（ヘッドブランチの経路の行は含めない）
+                inferred.extend(fact for fact in facts if fact.get("repo_inferred"))
             if branch not in heads:
                 standalone += micro
         own[number] = usd[number] = assigned
@@ -2256,6 +2555,8 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
         "unknown_repo_usd": _micro(unknown, pricing) / 1e6,
         # 同じ応答の 2 行目以降の事実はメッセージ数に数えない（``summarise()`` と同じ）
         "unknown_repo_messages": sum(1 for fact in unknown if not is_continuation(fact)),
+        "inferred_repo_usd": _micro(inferred, pricing) / 1e6,
+        "inferred_repo_messages": sum(1 for fact in inferred if not is_continuation(fact)),
         "sessions": {fact["session_id"] for fact in counted},
     }
 
@@ -2366,6 +2667,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
     else:
         combined = {"prs": [], "outside_usd": total, "total_usd": total}
     label = resolver.label(repo_id)
+    inferred_usd, inferred_messages = inferred_totals(
+        (fact for row in matched for fact in row["facts"]), pricing)
     payload = {
         "issue": number,
         "repo_id": repo_id,
@@ -2375,6 +2678,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         "intervals": [interval_payload(row, resolver) for row in matched],
         "unknown_repo_usd": sum(row["usd"] for row in unknown),
         "unknown_repo_messages": sum(row["messages"] for row in unknown),
+        "inferred_repo_usd": inferred_usd,
+        "inferred_repo_messages": inferred_messages,
         "usd_jpy_rate": pricing.jpy_rate,
         "closing_prs": combined["prs"],
         "outside_pr_usd": combined["outside_usd"],
@@ -2406,6 +2711,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print("  リポジトリ不明: %d 件 $%s（cwd が削除済みで、どのリポジトリの #%s か絞れない）"
               % (payload["unknown_repo_messages"],
                  format(payload["unknown_repo_usd"], ",.2f"), number))
+    for line in render_inferred(inferred_usd, inferred_messages):
+        print(line)
     print("  ※ issue 単位は区間分割による推定です。区間の内訳で寄せ先を確かめてください。")
     for line in render_price_drift(drift):
         print(line)
@@ -2494,6 +2801,8 @@ def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
             "skipped": skipped,
             "unknown_repo_usd": result["unknown_repo_usd"],
             "unknown_repo_messages": result["unknown_repo_messages"],
+            "inferred_repo_usd": result["inferred_repo_usd"],
+            "inferred_repo_messages": result["inferred_repo_messages"],
         }, ensure_ascii=False, indent=2))
         return 0
     print(headline(result["total_usd"], pricing, "issue #%d (%s)" % (number, label), "子 issue 込み"))
@@ -2511,6 +2820,8 @@ def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print("  リポジトリ不明: %d 件 %s（cwd が削除済みで、どのリポジトリの issue か絞れない。"
               "合計には入れていない）"
               % (result["unknown_repo_messages"], _dollars(result["unknown_repo_usd"])))
+    for line in render_inferred(result["inferred_repo_usd"], result["inferred_repo_messages"]):
+        print(line)
     print("  ※ 額は区間分割による推定です。issue ごとの区間の内訳は /cost <その issue の番号> で"
           "見られます（区間だけの額なので、閉じた PR の分を含むこの内訳の額とは一致しません）。")
     for line in render_price_drift(drift):
