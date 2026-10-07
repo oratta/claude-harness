@@ -1071,6 +1071,99 @@ def ledger_sync(ledger: str, root: str, resolver: RepoResolver, rescan: bool = F
             raise LedgerError("台帳 %s へ追記できません: %s" % (ledger, error))
 
 
+REPO_FIX_PREFIX = "repo-fix#"
+LEDGER_UNKNOWN_REPO = '"repo_id": "%s"' % UNKNOWN_REPO
+
+
+def _unknown_groups(ledger: str) -> dict:
+    """台帳の識別子が不明の行（補正行を除く）を持つ (session_id, branch) と、その組の最も早い timestamp。"""
+    groups: dict = {}
+    if not os.path.exists(ledger):
+        return groups
+    with open(ledger, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if LEDGER_UNKNOWN_REPO not in line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(row, dict) or row.get("repo_id") != UNKNOWN_REPO or row.get("repo_fix"):
+                continue
+            session, branch = row.get("session_id") or "", row.get("branch") or ""
+            if not (isinstance(session, str) and isinstance(branch, str)):
+                continue
+            stamp = row.get("timestamp") if isinstance(row.get("timestamp"), str) else ""
+            key = (session, branch)
+            if key not in groups or (stamp and (not groups[key] or stamp < groups[key])):
+                groups[key] = stamp
+    return groups
+
+
+def _collect_group_cwds(data: bytes, path: str, groups: dict, cwds: dict, no_cwd: set) -> None:
+    """会話ログのバイト列の応答の行から、groups の組ごとの cwd と「cwd の無い行がある」ことを集める。
+
+    組の鍵は build_fact と同じ（sessionId が無ければファイルのパス, gitBranch）。
+    """
+    for raw in data.split(b"\n"):
+        if b'"assistant"' not in raw:
+            continue
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(record, dict) or record.get("type") != "assistant":
+            continue
+        session, branch = record.get("sessionId") or path, record.get("gitBranch") or ""
+        if not (isinstance(session, str) and isinstance(branch, str)):
+            continue
+        key = (session, branch)
+        if key not in groups:
+            continue
+        cwd = record.get("cwd")
+        if isinstance(cwd, str) and cwd:
+            cwds.setdefault(key, set()).add(cwd)
+        else:
+            no_cwd.add(key)
+
+
+def _repo_fix_rows(groups: dict, cwds: dict, no_cwd: set, resolver: RepoResolver, seen) -> list[str]:
+    """全 cwd が同じ 1 リポジトリに決まり、cwd の無い応答の行を含まない組の補正行（索引に無いものだけ）。"""
+    rows: list[str] = []
+    for key in sorted(groups):
+        if key in no_cwd or not cwds.get(key):
+            continue
+        repos = {resolver.repo_id(cwd) for cwd in sorted(cwds[key])}
+        if len(repos) != 1 or UNKNOWN_REPO in repos:
+            continue
+        repo = repos.pop()
+        session, branch = key
+        request_id = "%s%s#%s#%s" % (REPO_FIX_PREFIX, session, branch, repo)
+        if request_id in seen:
+            continue
+        seen.add(request_id)
+        # 補足の事実の形に寄せる（古い版の読み手には、トークン 0・issue なし・印なしの補足に見える）
+        rows.append(json.dumps({
+            "request_id": request_id,
+            "timestamp": groups[key],
+            "session_id": session,
+            "is_sidechain": False,
+            "repo_id": repo,
+            "branch": branch,
+            "model": "",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_write_5m_tokens": 0,
+            "cache_write_1h_tokens": 0,
+            "cache_read_tokens": 0,
+            "issues": [],
+            "post_marker": None,
+            "continuation": True,
+            "repo_fix": True,
+        }, ensure_ascii=False))
+    return rows
+
+
 def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver, rescan: bool = False) -> int:
     index = LedgerIndex(ledger + ".state.sqlite")
     try:
@@ -1083,6 +1176,10 @@ def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver, rescan: 
         # 指しても、同じ会話ログを別のキーで先頭から読み直さないため）。os.walk は root の
         # 表記のまま返すので、root からの相対パスを実パスの root に付け直す
         real_root = os.path.realpath(root)
+        # --rescan のときだけ、台帳の「不明」の行の組と、その組の cwd を集めて補正行を書く
+        groups = _unknown_groups(ledger) if rescan else {}
+        group_cwds: dict = {}
+        no_cwd: set = set()
         for path in log_files(root):
             key = os.path.join(real_root, os.path.relpath(path, root))
             try:
@@ -1110,7 +1207,11 @@ def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver, rescan: 
             for fact in facts_from_lines(lines, path, resolver, seen, from_start=(offset == 0),
                                          offset_of=lambda: lines.position):
                 lines_out.append(json.dumps(fact, ensure_ascii=False))
+            if groups:
+                _collect_group_cwds(data[:end + 1], path, groups, group_cwds, no_cwd)
             new_offsets.append((key, offset + end + 1, stat.st_ino))
+        if groups:
+            lines_out.extend(_repo_fix_rows(groups, group_cwds, no_cwd, resolver, seen))
         if lines_out:
             prefix = ""
             if os.path.exists(ledger) and os.path.getsize(ledger) > 0:

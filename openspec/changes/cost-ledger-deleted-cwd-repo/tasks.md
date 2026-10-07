@@ -20,9 +20,9 @@
 
 ## 4. 補正行の追記（`ledger-sync --rescan`）
 
-- [ ] 4.1 `--rescan` のときだけ、読み込んだ会話ログのバイト列から（`session_id`, `gitBranch`）ごとの `cwd` を集める（ファイルを開く回数を増やさない。`facts_from_lines` は変えない）。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:990-1052`（`_ledger_sync_locked`）
-- [ ] 4.2 台帳の「不明」の行の組を集め、`cwd` の無い応答の行を 1 つも含まず、全 `cwd` が同じ 1 リポジトリに決まる組の補正行を、索引に無いものだけ追記する新しい関数を足して `_ledger_sync_locked` から呼ぶ。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:990-1052`（`_ledger_sync_locked` と、その直前か直後に置く新しい関数）
-- [ ] 4.3 2.3 のうち追記のテストが通ることを確かめる。触る範囲: なし
+- [x] 4.1 `--rescan` のときだけ、読み込んだ会話ログのバイト列から（`session_id`, `gitBranch`）ごとの `cwd` を集める（ファイルを開く回数を増やさない。`facts_from_lines` は変えない）。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:990-1052`（`_ledger_sync_locked`）
+- [x] 4.2 台帳の「不明」の行の組を集め、`cwd` の無い応答の行を 1 つも含まず、全 `cwd` が同じ 1 リポジトリに決まる組の補正行を、索引に無いものだけ追記する新しい関数を足して `_ledger_sync_locked` から呼ぶ。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:990-1052`（`_ledger_sync_locked` と、その直前か直後に置く新しい関数）
+- [x] 4.3 2.3 のうち追記のテストが通ることを確かめる。触る範囲: なし
 
 ## 5. 読むときの補正の適用
 
