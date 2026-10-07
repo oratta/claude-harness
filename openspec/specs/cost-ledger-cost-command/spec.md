@@ -96,6 +96,8 @@ PR の経路はブランチ名だけで引いて SHALL よい。PR のヘッド�
 ### Requirement: `/cost` はプラグイン設定の台帳パスを使う
 `/cost` のコマンド本文は、userConfig の `LEDGER_PATH` の設定値を、集計スクリプトの呼び出しに環境変数 `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` として渡 MUST す。コマンド本文の Bash 実行にはこの環境変数が自動では渡らない（実機で確認済み）ので、本文の `${user_config.LEDGER_PATH}` が読み込み時に置換されることを使う。台帳パスの解決と優先順位は `cost-ledger-persistence` の規則のままで、`/cost` 側に別の解決を持ってはなら MUST NOT ない。
 
+集計スクリプトの探索は、コマンド本文の置換で絶対パスになる作業中のプラグインのルートを先頭の候補にし MUST、インストール済みのコピーは後ろの候補にとどめる（Bash の実行環境にはプラグインのルートの環境変数が渡らないので、環境変数の形で先頭に置くと、版の違う旧コピーが選ばれる）。
+
 台帳が未設定のときの案内は、`/config` でのプラグイン設定「台帳ファイルのパス」を先に示 SHALL し、従来の方法（`~/.claude/settings.json` の `env` の `COST_LEDGER_PATH`）は次に示す。
 
 #### Scenario: プラグイン設定だけが設定されている

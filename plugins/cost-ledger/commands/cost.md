@@ -12,13 +12,15 @@ allowed-tools: Bash
 
 ```bash
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/scripts}" \
+  "${CLAUDE_PLUGIN_ROOT}/scripts" \
   ~/.claude/plugins/marketplaces/*/plugins/cost-ledger/scripts \
   ~/.claude/plugins/installed/*/cost-ledger/scripts; do
   [ -n "$dir" ] && [ -f "$dir/cost_ledger.py" ] && CL="$dir/cost_ledger.py" && break
 done
 CLAUDE_PLUGIN_OPTION_LEDGER_PATH='${user_config.LEDGER_PATH}' python3 "$CL" cost $ARGUMENTS
 ```
+
+探索の先頭候補は、コマンド本文の読み込み時に絶対パスへ置換される形で書く（Bash の実行環境にはプラグインのルートの環境変数が渡らないため、環境変数の形だと先頭が空になり、版の違うインストール済みの旧コピーが選ばれる）。
 
 引数の解釈はスクリプト側が行う。
 
