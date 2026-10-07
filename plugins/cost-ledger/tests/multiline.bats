@@ -172,7 +172,8 @@ assert len(iv) == 1 and iv[0]["closed_by"], iv
 # 補足を足す前の形の台帳（先頭の行だけ。uuid 欄なし）を作る
 legacy_ledger() {
   mkdir -p "$(dirname "$LEDGER")"
-  python3 "$CL" facts | head -n 1 | python3 -c '
+  # facts は COST_LEDGER_PATH があると台帳へ追記するので、台帳を作る間は外す
+  env -u COST_LEDGER_PATH python3 "$CL" facts | head -n 1 | python3 -c '
 import json, sys
 for l in sys.stdin:
     d = json.loads(l); d.pop("uuid", None)
@@ -219,8 +220,9 @@ for l in sys.stdin:
   } | cl_write_log b
   python3 "$CL" ledger-sync --rescan --quiet
   [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "1" ]
-  # 旧形式の台帳でも同じ
+  # 旧形式の台帳でも同じ（旧形式の台帳に今の控えは付いていない）
   legacy_ledger
+  rm -f "$LEDGER".state.sqlite*
   python3 "$CL" ledger-sync --rescan --quiet
   [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "1" ]
 }
