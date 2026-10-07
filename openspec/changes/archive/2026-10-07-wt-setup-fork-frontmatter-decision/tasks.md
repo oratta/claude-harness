@@ -5,6 +5,6 @@
 
 ## 2. 検証と記録
 
-- [x] 2.1 `bats plugins/worktree/tests/skill-safety.bats` と `scripts/test.sh` が exit 0 になることを確認する。触る範囲: plugins/worktree/tests/skill-safety.bats:131-150（変更なし、確認のみ）
+- [x] 2.1 `bats plugins/worktree/tests/skill-safety.bats` と `scripts/test.sh` が exit 0 になることを確認する。触る範囲: plugins/worktree/tests/skill-safety.bats:131-164（#732 の検査 2 件を末尾に追加）
 - [x] 2.2 変更の記録 `plugins/worktree/changes/732.md` を書く（実機確認のコマンドと出力の要点・公式ドキュメントとの食い違い・残す理由）。触る範囲: plugins/worktree/changes/732.md（新規）
 - [x] 2.3 PR 本文に実機確認のコマンドと出力を貼る
