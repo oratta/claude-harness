@@ -18,7 +18,7 @@
 - [x] 4.1 `rules/destructive-git-guard.md` に hook との分担を足す（一覧の操作は hook が実行前に止める。止まったら言い換えて再実行せず主に聞き、拒否されたセッションでは承認後も主が自分で実行する／hook で止まらないもの: push 済みの `--amend`、`rebase -i`、ブランチ名を書かない push、スクリプト経由）。既存の文は 1 つも外さず、目印「例外なく事前承認」を含む文は変えない 触る範囲: rules/destructive-git-guard.md:1-21
 - [x] 4.2 `rules/README.md` の destructive-git-guard の行を分担に合わせて直す 触る範囲: rules/README.md:35
 - [x] 4.3 `plugins/worktree/skills/wt-clean/SKILL.md` に案内を 2 か所足す。①squash 済みのブランチ削除に `git branch -D` を使う規則の段落の直後に、dev-workflow の hook に `git branch -D` を拒否されたら（どの Step でも）言い換えて再実行せず、worktree の削除までで止めてブランチを `HELD` に入れ、完了レポートに主が打つコマンド（`git -C <メインリポ> branch -D <ブランチ>`）を載せること。②cron への載せ方の節に、ジョブの環境に `DEV_WORKFLOW_GIT_GUARD=off` を入れること（入れなければ squash 済みブランチの削除が拒否され、完了レポートの保留に載る）と、このジョブでは hook が全部外れるので、wt-clean の禁則（worktree 内で `git reset --hard` / `git clean -fd` を実行しない）が唯一の歯止めになること。`plugins/worktree/tests/skill-safety.bats` に両方の文面の検査を足す 触る範囲: plugins/worktree/skills/wt-clean/SKILL.md:550（squash 済みの扱い）、plugins/worktree/skills/wt-clean/SKILL.md:1268-1274（cron への載せ方）、plugins/worktree/tests/skill-safety.bats（末尾に追加）
-- [x] 4.4 `bats tests/injection-budget.bats` で実測を見て、`tests/injection-budget.txt` を実測に合わせて上げる。PR 本文に増分と理由（hook との分担を書かないと、拒否されたときの言い換え再実行か、hook の穴を知らずに安心するかが起きる。既存の文は移設の手間に見合わないので外していない）を書く 触る範囲: tests/injection-budget.txt:1（実測は変更前 39,291 → 変更後 39,908 バイトで予算 40,260 の内に収まったため、予算ファイルは動かしていない）
+- [x] 4.4 `bats tests/injection-budget.bats` で実測を見て、`tests/injection-budget.txt` を実測に合わせて上げる。PR 本文に増分と理由（hook との分担を書かないと、拒否されたときの言い換え再実行か、hook の穴を知らずに安心するかが起きる。既存の文は移設の手間に見合わないので外していない）を書く 触る範囲: tests/injection-budget.txt:1（実測は変更前 39,291 → 変更後 40,010 バイトで予算 40,260 の内に収まったため、予算ファイルは動かしていない）
 
 ## 5. 記録と全体テスト
 
