@@ -416,6 +416,33 @@ def _closing_refs(refs, repo: str, number: int):
     return sorted((pr, head) for head, pr in by_branch.items())
 
 
+# ある issue を閉じた PR だけを取る（子 issue は辿らない）。変数は問い合わせの文字列に埋め込まない
+CLOSING_ONLY_QUERY = (
+    "query($owner: String!, $name: String!, $number: Int!) {"
+    " repository(owner: $owner, name: $name) { nameWithOwner issue(number: $number) { "
+    + _CLOSING_FIELDS + " } } }"
+)
+
+
+def fetch_closing_prs(where: str, number: int):
+    """issue を閉じた PR のうち数えるものの ``[(番号, ヘッドブランチ)]``。``gh api graphql`` を 1 回呼ぶ。
+
+    読めなかった（失敗・JSON でない・形の崩れ・100 件超）ときは None。0 件は空の配列。
+    """
+    raw = _gh(where, "api", "graphql", "-f", "query=" + CLOSING_ONLY_QUERY,
+              "-F", "owner={owner}", "-F", "name={repo}", "-F", "number=%d" % number)
+    if raw is None:
+        return None
+    try:
+        repository = json.loads(raw)["data"]["repository"]
+        repo, issue = repository["nameWithOwner"], repository["issue"]
+        if not isinstance(repo, str) or not repo:
+            return None
+        return _closing_refs(issue["closedByPullRequestsReferences"], repo, number)
+    except (ValueError, KeyError, TypeError, EpicError):
+        return None
+
+
 def _issue_fields(node, number: int):
     """応答の issue 1 件から ``(番号, 題名, 状態)`` を取り出す（状態は ``open`` / ``closed``）。"""
     if not isinstance(node, dict):
@@ -2312,9 +2339,13 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
             resolver,
         )
     if kind == "issue":
+        # 子を持たない issue だけ、閉じた PR を 1 回問い合わせて合計に重ねる
+        found = fetch_closing_prs(where, int(value)) if re.fullmatch(r"[0-9]+", value) else []
         return cmd_issue(
             argparse.Namespace(issue=value, repo=where, json=args.json,
-                               no_drift_check=args.no_drift_check),
+                               no_drift_check=args.no_drift_check,
+                               closing_pr=["%d:%s" % pair for pair in found or []],
+                               closing_prs_error=found is None),
             pricing,
             resolver,
         )
@@ -2684,6 +2715,7 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         "closing_prs": combined["prs"],
         "outside_pr_usd": combined["outside_usd"],
         "combined_total_usd": combined["total_usd"],
+        "closing_prs_error": bool(getattr(args, "closing_prs_error", False)),
     }
     drift = None
     if not getattr(args, "no_drift_check", False):
@@ -2703,6 +2735,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
                        + ["PR 外 %s" % _dollars(combined["outside_usd"])])))
     print("  対象: issue #%s（%s）— %d 区間 / %d メッセージ"
           % (number, label, len(matched), payload["messages"]))
+    if payload["closing_prs_error"]:
+        print("  閉じた PR を読めなかったため、PR の分は合計に入っていません。")
     for row in matched:
         print(render_interval(row))
     if not matched:
