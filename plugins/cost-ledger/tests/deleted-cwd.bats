@@ -217,6 +217,59 @@ INFERRED_ONE='  推定で数えた行: 1 件 $1.00（cwd が削除済みで、�
   [ "$(wc -l < "$BATS_TEST_TMPDIR/git.log" | tr -d ' ')" = "$once" ]
 }
 
+# 置き場の子の識別子を .git ファイルから読んだ値（git を起動しない）
+linked_id_of() {  # $1=リンクされた作業ツリー
+  python3 -c 'import os, sys
+sys.path.insert(0, os.path.dirname(sys.argv[1]))
+import cost_ledger
+print(cost_ledger.RepoResolver._linked_id(sys.argv[2]))' "$CL" "$1"
+}
+
+@test "deleted-cwd: the identifier read from a worktree's .git file equals the one git rev-parse gives" {  # リンクされた作業ツリー 2 つ（片方は gitdir を相対パスに書き換える）で、ファイルから読んだ識別子が git rev-parse の識別子と同じ文字列
+  place_a
+  add_worktree "$MAIN_A" "$PLACE_A/wt-b"
+  [ "$(linked_id_of "$PLACE_A/wt1")" = "$A_ID" ]
+  [ "$(linked_id_of "$PLACE_A/wt1")" = "$(repo_id_of "$PLACE_A/wt1")" ]
+  local rel; rel="$(python3 -c 'import os, sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$MAIN_A/.git/worktrees/wt-b" "$PLACE_A/wt-b")"
+  printf 'gitdir: %s\n' "$rel" > "$PLACE_A/wt-b/.git"
+  [ "$(linked_id_of "$PLACE_A/wt-b")" = "$(repo_id_of "$PLACE_A/wt-b")" ]
+  [ "$(linked_id_of "$PLACE_A/wt-b")" = "$A_ID" ]
+}
+
+@test "deleted-cwd: the children of a location are identified without starting git for each of them" {  # 子が 2 つでも 6 つでも git の起動回数は同じ
+  place_a
+  mkdir -p "$BATS_TEST_TMPDIR/gitbin"
+  local real; real="$(command -v git)"
+  printf '#!/bin/sh\necho x >> "%s"\nexec "%s" "$@"\n' "$BATS_TEST_TMPDIR/git.log" "$real" > "$BATS_TEST_TMPDIR/gitbin/git"
+  chmod +x "$BATS_TEST_TMPDIR/gitbin/git"
+  add_worktree "$MAIN_A" "$PLACE_A/wt-b"
+  cl_row S1 r1 2026-09-01T00:00:01.000Z feat/x "$PLACE_A/gone1" 1000000 | cl_write_log a
+  : > "$BATS_TEST_TMPDIR/git.log"
+  PATH="$BATS_TEST_TMPDIR/gitbin:$PATH" facts
+  local two; two=$(wc -l < "$BATS_TEST_TMPDIR/git.log" | tr -d ' ')
+  check_rows 'by["r1"]["repo_id"] == argv[0]' "$A_ID"
+  local n; for n in c d e f; do add_worktree "$MAIN_A" "$PLACE_A/wt-$n"; done
+  : > "$BATS_TEST_TMPDIR/git.log"
+  PATH="$BATS_TEST_TMPDIR/gitbin:$PATH" facts
+  check_rows 'by["r1"]["repo_id"] == argv[0]' "$A_ID"
+  [ "$(wc -l < "$BATS_TEST_TMPDIR/git.log" | tr -d ' ')" = "$two" ]
+}
+
+@test "deleted-cwd: a location with a child whose .git file cannot be resolved stays unknown" {  # gitdir の指す先が無い子・gitdir の行が無い子が 1 つでもあれば、残りが A だけでも不明（git の起動には戻さない）
+  place_a
+  cl_row S1 r1 2026-09-01T00:00:01.000Z feat/x "$PLACE_A/gone1" 1000000 | cl_write_log a
+  mkdir -p "$PLACE_A/stale"
+  printf 'gitdir: %s\n' "$BATS_TEST_TMPDIR/no-such/.git/worktrees/stale" > "$PLACE_A/stale/.git"
+  facts
+  check_rows 'by["r1"]["repo_id"] == "不明" and "repo_inferred" not in by["r1"]'
+  printf 'not a gitdir line\n' > "$PLACE_A/stale/.git"
+  facts
+  check_rows 'by["r1"]["repo_id"] == "不明" and "repo_inferred" not in by["r1"]'
+  rm -rf "$PLACE_A/stale"
+  facts
+  check_rows 'by["r1"]["repo_id"] == argv[0] and by["r1"]["repo_inferred"] is True' "$A_ID"
+}
+
 # ---- cost-ledger-cost-command: issue の合計と「推定で数えた行」 --------------
 
 @test "deleted-cwd: acceptance: a row whose cwd was gone before the ledger saw it is counted for the issue" {  # 直す対象。合計 $1.00 に入り、推定で数えた行が 1 件 $1.00、リポジトリ不明は出ない

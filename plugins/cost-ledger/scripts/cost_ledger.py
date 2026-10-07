@@ -181,6 +181,43 @@ class RepoResolver:
         out = _git(where, "rev-parse", "--path-format=absolute", "--git-common-dir")
         return os.path.realpath(out) if out else UNKNOWN_REPO
 
+    @staticmethod
+    def _linked_id(child: str) -> str:
+        """リンクされた作業ツリー ``child`` の識別子を、git を起動せず ``.git`` ファイルから読む。
+
+        ``.git`` ファイルの ``gitdir: <パス>`` が指すディレクトリに ``commondir`` があれば、それを
+        ``<パス>`` からの相対として解決したものが、無ければ ``<パス>`` そのものが共通の git
+        ディレクトリで、``_git_id()`` が ``git rev-parse --git-common-dir`` から決める値と同じ
+        文字列になる。置き場の子の数だけ git を起動すると Stop hook が 1 秒を超えうるので
+        （実測）、ここでは起動しない。読めない・``gitdir:`` の行が無い・指す先が無いときは不明。
+        """
+        try:
+            with open(os.path.join(child, ".git"), encoding="utf-8", errors="replace") as fh:
+                head = fh.read(4096)
+        except OSError:
+            return UNKNOWN_REPO
+        gitdir = ""
+        for line in head.splitlines():
+            if line.startswith("gitdir:"):
+                gitdir = line[len("gitdir:"):].strip()
+                break
+        if not gitdir:
+            return UNKNOWN_REPO
+        gitdir = os.path.join(child, gitdir)  # 相対なら作業ツリーから。絶対ならそのまま
+        if not os.path.isdir(gitdir):
+            return UNKNOWN_REPO
+        common = gitdir
+        try:
+            with open(os.path.join(gitdir, "commondir"), encoding="utf-8", errors="replace") as fh:
+                rel = fh.read(4096).strip()
+            if rel:
+                common = os.path.join(gitdir, rel)
+        except OSError:
+            pass
+        if not os.path.isdir(common):
+            return UNKNOWN_REPO
+        return os.path.realpath(common)
+
     def _infer(self, cwd: str) -> str:
         """ディレクトリとして存在しない cwd の文字列からリポジトリを推定する（決まらなければ不明）。
 
@@ -210,8 +247,8 @@ class RepoResolver:
     def _place_id(self, place: str) -> str:
         """置き場（削除済みの cwd の、現存する最も近い祖先）の直下の作業ツリーからリポジトリを決める。
 
-        決めるのは、直下のリンクされた作業ツリー（``.git`` がファイルのディレクトリ）の識別子が
-        ちょうど 1 種類で、置き場の名前がそのリポジトリのメインの作業ツリーのディレクトリ名
+        決めるのは、直下のリンクされた作業ツリー（``.git`` がファイルのディレクトリ）の識別子
+        （``_linked_id()`` がファイルから読む）がどれも読めてちょうど 1 種類で、置き場の名前がそのリポジトリのメインの作業ツリーのディレクトリ名
         （bare なら識別子のパスの末尾の名前）か origin のリポジトリ名と一致するときだけ。
         名前の一致を求めるのは、複数のリポジトリの作業ツリーを混ぜて置くディレクトリで、たまたま
         残っている 1 つに寄せないため。置き場が git リポジトリの中のときは決めない（消えたのが
@@ -228,10 +265,10 @@ class RepoResolver:
             child = os.path.join(place, name)
             if not os.path.isfile(os.path.join(child, ".git")):
                 continue
-            repo_id = self.repo_id(child)
-            if repo_id == UNKNOWN_REPO:
-                continue
-            if found is not None and repo_id != found:
+            # 子ごとに git を起動しない。.git ファイルが壊れた子は「リポジトリの分からない
+            # 作業ツリー」なので、残りが 1 種類でも置き場ごと不明にする
+            repo_id = self._linked_id(child)
+            if repo_id == UNKNOWN_REPO or (found is not None and repo_id != found):
                 return UNKNOWN_REPO
             found = repo_id
         if found is None:
