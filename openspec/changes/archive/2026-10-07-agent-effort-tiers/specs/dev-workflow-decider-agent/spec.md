@@ -30,4 +30,3 @@ verify・マージ可否で呼ばれたときは可否と根拠を返す（SHALL
 #### Scenario: Opus の決める役も同じ種別で立てる
 - **WHEN** 残量モードにより決める役を Opus に落として spawn する
 - **THEN** `subagent_type` は `dev-workflow:decider` のままで `model: opus` を渡し、`general-purpose` には読み替えない
-

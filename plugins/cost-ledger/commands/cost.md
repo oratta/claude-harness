@@ -4,7 +4,7 @@ description: そのブランチ・PR・issue にかかった API 換算コスト
 allowed-tools: Bash
 ---
 
-会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/**/*.jsonl`）を 1 パスで読み、API 換算のコストを集計する。環境変数 `COST_LEDGER_PATH` が設定されていれば、会話ログの増えた分を台帳に追記してから台帳を読む（下の「台帳」）。集計・判別・書式のすべては `scripts/cost_ledger.py` の `cost` サブコマンドが持つ。**このコマンドは単価も換算レートも出力書式も自分では持たない**（単価と換算レートの正本は `pricing.json`、1 行目の書式の正本は `headline()`）。
+会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/**/*.jsonl`）を 1 パスで読み、API 換算のコストを集計する。プラグイン設定「台帳ファイルのパス」または環境変数 `COST_LEDGER_PATH` が設定されていれば、会話ログの増えた分を台帳に追記してから台帳を読む（下の「台帳」）。集計・判別・書式のすべては `scripts/cost_ledger.py` の `cost` サブコマンドが持つ。**このコマンドは単価も換算レートも出力書式も自分では持たない**（単価と換算レートの正本は `pricing.json`、1 行目の書式の正本は `headline()`）。
 
 ## 実行
 
@@ -12,13 +12,15 @@ allowed-tools: Bash
 
 ```bash
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/scripts}" \
+  "${CLAUDE_PLUGIN_ROOT}/scripts" \
   ~/.claude/plugins/marketplaces/*/plugins/cost-ledger/scripts \
   ~/.claude/plugins/installed/*/cost-ledger/scripts; do
   [ -n "$dir" ] && [ -f "$dir/cost_ledger.py" ] && CL="$dir/cost_ledger.py" && break
 done
-python3 "$CL" cost $ARGUMENTS
+CLAUDE_PLUGIN_OPTION_LEDGER_PATH='${user_config.LEDGER_PATH}' python3 "$CL" cost $ARGUMENTS
 ```
+
+探索の先頭候補は、コマンド本文の読み込み時に絶対パスへ置換される形で書く（Bash の実行環境にはプラグインのルートの環境変数が渡らないため、環境変数の形だと先頭が空になり、版の違うインストール済みの旧コピーが選ばれる）。
 
 引数の解釈はスクリプト側が行う。
 
@@ -33,9 +35,9 @@ python3 "$CL" cost $ARGUMENTS
 
 ## 台帳
 
-会話ログは既定 30 日で消える。消えたあとも同じ値を返すために、`COST_LEDGER_PATH` が指すリポジトリ外の append-only の JSONL 台帳へ、応答が終わるたびに `Stop` hook が増えた分を焼き付ける。
+会話ログは既定 30 日で消える。消えたあとも同じ値を返すために、プラグイン設定「台帳ファイルのパス」（なければ `COST_LEDGER_PATH`）が指すリポジトリ外の append-only の JSONL 台帳へ、応答が終わるたびに `Stop` hook が増えた分を焼き付ける。
 
-- **`COST_LEDGER_PATH` が未設定なら**、会話ログを直接読んで答えたうえで、台帳ファイルをどこに置くかを利用者に聞く（既定の場所は決めない。このリポジトリの配下は不可）。決まったら `~/.claude/settings.json` の `env` に `COST_LEDGER_PATH` を書くよう案内し、初回の取り込みとして `python3 "$CL" ledger-sync` を実行する
+- **台帳が未設定なら**（プラグイン設定「台帳ファイルのパス」も `COST_LEDGER_PATH` も空）、会話ログを直接読んで答えたうえで、台帳ファイルをどこに置くかを利用者に聞く（既定の場所は決めない。このリポジトリの配下は不可。パスにシングルクォート `'` を含めない）。決まったら、`/config` でプラグイン設定「台帳ファイルのパス」に設定するよう先に案内し、従来の方法として `~/.claude/settings.json` の `env` に `COST_LEDGER_PATH` を書くこともできると添える。設定が効いたあと（新しいセッションから）の最初の `/cost` が会話ログの増えた分を台帳に取り込む。すぐ取り込むなら `COST_LEDGER_PATH=<決めたパス> python3 "$CL" ledger-sync` を実行する
 - 台帳がリポジトリ配下を指していると、スクリプトは終了コード 2 で終わる。その旨を利用者に伝えて場所を聞き直す
 
 ## 出力の扱い
