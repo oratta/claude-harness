@@ -1183,7 +1183,8 @@ PY
   queried acme/other 301
 }
 
-@test "timeline-hook: a gh api endpoint names the repository and number" {  # repos/acme/cwd-repo/... と repos/{owner}/{repo}/... はどちらも cwd のリポジトリの #300。先頭の / は有っても無くてもよい。前置きの GH_REPO は {owner}/{repo} にだけ効く
+@test "timeline-hook: a gh api endpoint names the repository and number" {
+  # repos/acme/cwd-repo/... と repos/{owner}/{repo}/... はどちらも cwd のリポジトリの #300。先頭の / は有っても無くてもよい。前置きの GH_REPO は {owner}/{repo} にだけ効く
   touch "$FIX/nopull.12"
   run_hook "gh api repos/acme/cwd-repo/issues/12/comments -f body=x"
   queried acme/cwd-repo 12
@@ -1429,7 +1430,7 @@ use_real_repo_a() {
   [ ! -e "$COST_LOG" ]
 }
 
-@test "timeline-hook: an existing PR gets no PR 作成 row" {  # cwd のブランチの PR の created_at が 1 時間前（gh pr create が「既にある」で失敗した場合）なら積まない。閉じた PR・created_at が無い・読めない応答でも積まない。300 秒以内なら積む
+@test "timeline-hook: an existing PR gets no PR-created row" {  # cwd のブランチの PR の created_at が 1 時間前（gh pr create が「既にある」で失敗した場合）なら積まない。閉じた PR・created_at が無い・読めない応答でも積まない。300 秒以内なら積む
   export FAKE_HEAD_PR=300
   ago() { "$REAL_PYTHON" -c 'import sys, time; print(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - int(sys.argv[1]))))' "$1"; }
   echo "{\"created_at\":\"$(ago 3600)\"}" > "$FIX/pull.300.json"
