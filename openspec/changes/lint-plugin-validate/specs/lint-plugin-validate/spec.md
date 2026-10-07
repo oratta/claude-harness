@@ -5,6 +5,8 @@
 
 どれか 1 つの対象で `claude plugin validate` が非 0 で終わったら、残りの対象も検証したうえで、`scripts/lint.sh` は非 0 で終わらなければならない（MUST）。shellcheck が指摘を出したときも検証は走らせ、shellcheck と検証のどちらかが失敗していれば非 0 で終わる（SHALL）。検証が通った対象は対象名を 1 行で出し、落ちた対象は `claude plugin validate` の出力をそのまま出す（SHALL）。
 
+守備範囲: この要件が受け取る入力は、このリポジトリで git が追跡している設定ファイル（直下の `.claude-plugin/marketplace.json`、各プラグインの `.claude-plugin/plugin.json` と `hooks/hooks.json` など、`claude plugin validate` が読むもの）と、`scripts/lint.sh` を走らせる環境に入っている `claude` コマンドの 2 つに限る。設定ファイルを書くのはこのリポジトリの開発者（人とエージェント）である。拾いたい誤りは、`claude plugin validate` がエラーとして非 0 で返すもの（予約名を真似たプラグイン名、宣言していない `${user_config.*}`、壊れたパスなど）が、気づかれないまま PR に入ることである。次の入力は通ることを許す: 警告だけの状態（例: plugin.json に `version` が無い、`author` が無い）は終了コード 0 として通す／何をエラーにするかは走らせた `claude` の版が決めるので、古い版では新しい検査（2.1.281 で増えた `${user_config.*}` の宣言漏れなど）が効かないまま通る／追跡されていない作業中のプラグインのディレクトリは検証の対象に入らない／`claude` が無い環境（CI）では検証そのものが走らない（次の要件）／`claude plugin validate` が検査しない誤り（例: hook のスクリプトが実行時に失敗する）はこの要件では拾わない。これらの穴を見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
+
 #### Scenario: すべて通れば exit 0
 - **WHEN** shellcheck の指摘が無く、すべての対象で `claude plugin validate` が 0 を返す状態で `scripts/lint.sh` を引数なしで走らせる
 - **THEN** リポジトリ直下と各プラグインのディレクトリのそれぞれについて `claude plugin validate <対象>` が `--strict` なしで 1 回ずつ呼ばれ、終了コードは 0 である
