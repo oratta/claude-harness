@@ -39,8 +39,8 @@ hook は stdout・stderr に何も出さない（SessionStart の hook の stdou
 
 ## 5. hook の登録
 
-- [ ] 5.1 `hooks.json` に `SessionStart` を足す。matcher は `startup|resume`、コマンドは `${CLAUDE_PLUGIN_ROOT}/scripts/backfill.sh`、`timeout` は 10。既存の PostToolUse と Stop は変えない。触る範囲: plugins/cost-ledger/hooks/hooks.json:1-27
-- [ ] 5.2 `bats plugins/cost-ledger/tests/backfill.bats` が全部通ることを確かめる。触る範囲: なし（実行だけ）
+- [x] 5.1 `hooks.json` に `SessionStart` を足す。matcher は `startup|resume`、コマンドは `${CLAUDE_PLUGIN_ROOT}/scripts/backfill.sh`、`timeout` は 10。既存の PostToolUse と Stop は変えない。触る範囲: plugins/cost-ledger/hooks/hooks.json:1-27
+- [x] 5.2 `bats plugins/cost-ledger/tests/backfill.bats` が全部通ることを確かめる。触る範囲: なし（実行だけ）
 
 ## 6. 文書
 
