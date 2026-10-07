@@ -24,16 +24,16 @@
 
 ## 5. develop の手順書
 
-- [ ] 5.1 SKILL.md の記述を確かめるテストを書く（「ループの終わり」の節があり片付けを聞かないこと・`mark` の呼び方と `done` / `waiting` の使い分けが書かれていること、Orca 経路に `--watch-done`・`reap`・`子 #N のワークツリーを残した`・`not-done`・再開時の `reap` が書かれていること、`grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` が 0 行、`grep -rlw orca plugins/dev-workflow --include='*.sh'` が `epic-dispatch.sh` の 1 行だけ）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:697-773（`# --- SKILL.md ---` の節の末尾に足す）
-- [ ] 5.2 SKILL.md に「ループの終わり」の節を足す（delta spec「develop のループの終わりは片付けを聞かず、ワークスペースに印を付ける」のとおり）。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:169-171（「1 ループ」の節の末尾と「PR トークン上限」の間に新規）
-- [ ] 5.3 SKILL.md「エピックの扱い」の Orca 経路を直す（delta spec「Orca 経路の本体は印が付いた子のワークスペースを片付ける」のとおり）。あわせて `orca terminal read` を「stderr に出た確認のコマンド」に言い換える。既存の SKILL.md のテスト（`# --- SKILL.md ---` の節）が通ることを確かめる。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:303-311（Orca 経路の手順 1〜5 とそのうしろの段落）
-- [ ] 5.4 #459 に、質問の出どころを調べた結果をコメントする（検索したコマンドと、該当する指示が手順書・`commands/develop.md`・pr-review-gate・worktree プラグインの hooks に無かったこと、直した箇所のファイル:行）。触る範囲: なし（issue へのコメント）
+- [x] 5.1 SKILL.md の記述を確かめるテストを書く（「ループの終わり」の節があり片付けを聞かないこと・`mark` の呼び方と `done` / `waiting` の使い分けが書かれていること、Orca 経路に `--watch-done`・`reap`・`子 #N のワークツリーを残した`・`not-done`・再開時の `reap` が書かれていること、`grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` が 0 行、`grep -rlw orca plugins/dev-workflow --include='*.sh'` が `epic-dispatch.sh` の 1 行だけ）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:697-773（`# --- SKILL.md ---` の節の末尾に足す）
+- [x] 5.2 SKILL.md に「ループの終わり」の節を足す（delta spec「develop のループの終わりは片付けを聞かず、ワークスペースに印を付ける」のとおり）。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:169-171（「1 ループ」の節の末尾と「PR トークン上限」の間に新規）
+- [x] 5.3 SKILL.md「エピックの扱い」の Orca 経路を直す（delta spec「Orca 経路の本体は印が付いた子のワークスペースを片付ける」のとおり）。あわせて `orca terminal read` を「stderr に出た確認のコマンド」に言い換える。既存の SKILL.md のテスト（`# --- SKILL.md ---` の節）が通ることを確かめる。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:303-311（Orca 経路の手順 1〜5 とそのうしろの段落）
+- [x] 5.4 #459 に、質問の出どころを調べた結果をコメントする（検索したコマンドと、該当する指示が手順書・`commands/develop.md`・pr-review-gate・worktree プラグインの hooks に無かったこと、直した箇所のファイル:行）。触る範囲: なし（issue へのコメント）
 
 ## 6. README と変更の記録
 
-- [ ] 6.1 ルートの README のエピックの行で、「それ以外は」を「それ以外と unmanned は」に置き換え（#472）、`scripts/epic-dispatch.sh` を `plugins/dev-workflow/scripts/epic-dispatch.sh` に置き換える（#473）。Orca 経路では子が完了の印を付けたワークツリーを親が片付けることを 1 文で足す。触る範囲: README.md:28
-- [ ] 6.2 dev-workflow の README のエピックの行で、「それ以外は」を「それ以外と unmanned は」に置き換え（#472）、片付けの動きを 1 文で足す。触る範囲: plugins/dev-workflow/README.md:15
-- [ ] 6.3 変更の記録を書く（版は上げない）。触る範囲: plugins/dev-workflow/changes/805.md（新規）
+- [x] 6.1 ルートの README のエピックの行で、「それ以外は」を「それ以外と unmanned は」に置き換え（#472）、`scripts/epic-dispatch.sh` を `plugins/dev-workflow/scripts/epic-dispatch.sh` に置き換える（#473）。Orca 経路では子が完了の印を付けたワークツリーを親が片付けることを 1 文で足す。触る範囲: README.md:28
+- [x] 6.2 dev-workflow の README のエピックの行で、「それ以外は」を「それ以外と unmanned は」に置き換え（#472）、片付けの動きを 1 文で足す。触る範囲: plugins/dev-workflow/README.md:15
+- [x] 6.3 変更の記録を書く（版は上げない）。触る範囲: plugins/dev-workflow/changes/805.md（新規）
 
 ## 7. 確認
 

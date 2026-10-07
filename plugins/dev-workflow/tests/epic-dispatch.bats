@@ -1222,3 +1222,40 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   e="$(section 'エピックの扱い' | grep -F 'sub_issues_summary')"
   printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -F 'でないと確定' | grep -F 'unmanned' | grep -qF '回し方:'
 }
+
+@test "skill: the end of a loop never asks about worktree cleanup and marks the workspace last" {
+  e="$(section 'ループの終わり')"
+  [ -n "$e" ]
+  printf '%s\n' "$e" | grep -F 'worktree の片付けを提案も質問もしない' | grep -qF '完了報告'
+  printf '%s\n' "$e" | grep -qF '/wt-clean'
+  printf '%s\n' "$e" | grep -qF '親セッション'
+  printf '%s\n' "$e" | grep -F 'epic-dispatch.sh mark <done|waiting>' | grep -qF '最後のツール呼び出し'
+  printf '%s\n' "$e" | grep -F '`waiting`' | grep -qF '動作確認'
+  printf '%s\n' "$e" | grep -F '`done` で呼び直す' | grep -qF '済んだ'
+  printf '%s\n' "$e" | grep -F '呼ばない' | grep -F 'マージされていない' | grep -qF 'Draft PR'
+  printf '%s\n' "$e" | grep -qF '端末を閉じて'
+  grep -n "worktree" "$SKILL" | grep -qF 'worktree の片付けを提案も質問もしない'
+}
+
+@test "skill: Orca route watches for done marks and reaps marked children" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -qF -- '--watch-done'
+  printf '%s\n' "$r" | grep -qF 'epic-dispatch.sh reap <N>...'
+  printf '%s\n' "$r" | grep -qF '子 #N のワークツリーを残した（<理由>）'
+  printf '%s\n' "$r" | grep -qF '子 #N のローカルブランチを残した'
+  printf '%s\n' "$r" | grep -F 'not-done' | grep -qF '待ちを続ける'
+  printf '%s\n' "$r" | grep -F '手で消し直さない' | grep -qF 'wt-clean は呼ばず'
+  printf '%s\n' "$r" | grep -F '開いている子が無くなったら' | grep -qF '待ちをやめる'
+  printf '%s\n' "$r" | grep -F '再開したら' | grep -qF '`launch` の前に'
+  printf '%s\n' "$r" | grep -qF 'error workspaces'
+  printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF '親ワークツリーで開き直す'
+}
+
+@test "skill: develop's docs run no orca subcommand and only epic-dispatch.sh calls orca" {
+  run grep -rnE 'orca [a-z]+' "$PLUGIN_DIR/skills/develop"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  run grep -rlw orca "$PLUGIN_DIR" --include='*.sh'
+  [ "$status" -eq 0 ]
+  [ "$output" = "$PLUGIN_DIR/scripts/epic-dispatch.sh" ]
+}
