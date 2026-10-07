@@ -1347,6 +1347,51 @@ def iter_ledger_facts(ledger: str, branch: str | None = None):
             yield fact
 
 
+LEDGER_REPO_FIX = '"repo_fix": true'
+
+
+def _group_key(row: dict):
+    """補正の組の鍵 (session_id, branch)。形が崩れていれば None。"""
+    session, branch = row.get("session_id"), row.get("branch") or ""
+    if isinstance(session, str) and isinstance(branch, str):
+        return session, branch
+    return None
+
+
+def ledger_repo_fixes(ledger: str) -> dict:
+    """台帳の補正行を 1 回の走査で集め、組ごとの repo_id の集合を返す。"""
+    fixes: dict = {}
+    handle = _open_ledger(ledger)
+    if handle is None:
+        return fixes
+    with handle:
+        for line in handle:
+            if LEDGER_REPO_FIX not in line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(row, dict) or row.get("repo_fix") is not True:
+                continue
+            key, repo = _group_key(row), row.get("repo_id")
+            if key is not None and isinstance(repo, str) and repo:
+                fixes.setdefault(key, set()).add(repo)
+    return fixes
+
+
+def apply_repo_fixes(facts, fixes: dict):
+    """事実の列から補正行を取り除き、補正の repo_id がちょうど 1 種類の組の不明の事実を置き換える。"""
+    for fact in facts:
+        if fact.get("repo_fix"):
+            continue
+        if fixes and fact.get("repo_id") == UNKNOWN_REPO:
+            repos = fixes.get(_group_key(fact))
+            if repos is not None and len(repos) == 1:
+                fact = dict(fact, repo_id=next(iter(repos)), repo_inferred=True)
+        yield fact
+
+
 def load_facts(resolver: RepoResolver, branch: str | None = None, issue: str | None = None):
     """集計系サブコマンドの事実の入口。
 
@@ -1363,9 +1408,10 @@ def load_facts(resolver: RepoResolver, branch: str | None = None, issue: str | N
         return iter_facts(log_root(), resolver, branch=branch)
     ledger = resolve_ledger(configured)
     ledger_sync(ledger, log_root(), resolver)
+    fixes = ledger_repo_fixes(ledger)
     if issue is not None and branch is None:
-        return iter_ledger_issue_facts(ledger, issue)
-    return iter_ledger_facts(ledger, branch=branch)
+        return apply_repo_fixes(iter_ledger_issue_facts(ledger, issue), fixes)
+    return apply_repo_fixes(iter_ledger_facts(ledger, branch=branch), fixes)
 
 
 def load_branches_facts(resolver: RepoResolver, branches) -> dict:

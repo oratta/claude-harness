@@ -26,7 +26,7 @@
 
 ## 5. 読むときの補正の適用
 
-- [ ] 5.1 台帳から補正行を集める関数（`"repo_fix": true` を含む行だけを JSON として読む 1 回の走査）と、事実の列から補正行を取り除いて「不明」の事実を置き換える包みを足し、`load_facts` の台帳の経路 2 つ（issue で絞る経路とそれ以外）に当てる。`iter_ledger_issue_facts`・`iter_ledger_facts`・`load_branches_facts` は変えない。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:1165-1183`（`load_facts` と、その直前に置く新しい関数）
+- [x] 5.1 台帳から補正行を集める関数（`"repo_fix": true` を含む行だけを JSON として読む 1 回の走査）と、事実の列から補正行を取り除いて「不明」の事実を置き換える包みを足し、`load_facts` の台帳の経路 2 つ（issue で絞る経路とそれ以外）に当てる。`iter_ledger_issue_facts`・`iter_ledger_facts`・`load_branches_facts` は変えない。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:1165-1183`（`load_facts` と、その直前に置く新しい関数）
 - [ ] 5.2 2.2 と 2.3 の読む側のテストが通ることを確かめる。触る範囲: なし
 
 ## 6. 表示と `--json`
