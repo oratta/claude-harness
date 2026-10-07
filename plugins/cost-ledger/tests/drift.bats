@@ -365,3 +365,64 @@ EOF
   [ "$status" -eq 0 ] || return 1
   [[ "$output" == *'読み取れなかった行: 1 件'* ]] || { echo "$output"; return 1; }
 }
+
+# 読み直しの時計を呼び出し回数で差し替えて price_drift() を呼ぶ（#701）。
+# session_facts() が time.monotonic() を呼ぶ順は、開始（1 回目）→ ファイルを開く前の確認
+# （1 ファイルにつき 1 回）→ 行数ごとの確認。最初の 2 回は 0 秒、3 回目以降は 2 秒を返し、
+# 「開く前の確認では期限内で、読んでいる間に上限（1 秒）を超えた」状態を作る。
+# $1=確認の間隔（行数。空なら既定のまま）。出力は "cut_off drifted"
+dr_late_clock() {
+  python3 - "$CL" "$PRICING" "${1:-}" <<'PY'
+import importlib.util, sys
+sys.dont_write_bytecode = True   # scripts/__pycache__ を残さない（facts.bats が拾って落ちる既知の別件を増やさない）
+spec = importlib.util.spec_from_file_location("cl", sys.argv[1])
+cl = importlib.util.module_from_spec(spec)
+sys.modules["cl"] = cl
+spec.loader.exec_module(cl)
+if sys.argv[3]:
+    cl.DRIFT_CHECK_EVERY_LINES = int(sys.argv[3])
+calls = []
+def clock():
+    calls.append(1)
+    return 0.0 if len(calls) <= 2 else 2.0
+cl.time.monotonic = clock
+import os
+os.environ["COST_LEDGER_DRIFT_BUDGET_SECONDS"] = "1"
+result = cl.price_drift(["S1"], cl.Pricing.load(sys.argv[2]))
+print(bool(result.get("cut_off")), result.get("drifted"))
+PY
+}
+
+@test "drift: a short last file read past the budget still uses the finished result" {  # 最後のファイルの読み込み中に上限を超えても、読み終えた結果は使う
+  dr_simple 6000000 10
+  run dr_late_clock
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "False 1" ] || { echo "$output"; return 1; }
+}
+
+@test "drift: the in-file check still cuts off when it sees the budget passed" {  # 行数ごとの確認が期限超過を見れば打ち切る
+  dr_simple 6000000 10
+  run dr_late_clock 1
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "True 0" ] || { echo "$output"; return 1; }
+}
+
+@test "drift: the ledger path also uses the finished result past the budget" {  # 台帳の経路でも読み終えた結果は使う
+  dr_simple 6000000 10
+  export COST_LEDGER_PATH="$BATS_TEST_TMPDIR/ledger/ledger.jsonl"
+  COST_LEDGER_DRIFT_BUDGET_SECONDS=inf run python3 "$CL" branch feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run dr_late_clock
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "False 1" ] || { echo "$output"; return 1; }
+}
+
+@test "drift: the ledger path still cuts off at the in-file check" {  # 台帳の経路でも行数ごとの確認は打ち切る
+  dr_simple 6000000 10
+  export COST_LEDGER_PATH="$BATS_TEST_TMPDIR/ledger/ledger.jsonl"
+  COST_LEDGER_DRIFT_BUDGET_SECONDS=inf run python3 "$CL" branch feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run dr_late_clock 1
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "True 0" ] || { echo "$output"; return 1; }
+}
