@@ -21,8 +21,8 @@ frontmatter の `model: sonnet` / `context: fork` / `background: false` は、**
 
 | 呼び方 | 同名の commands あり | 同名の commands なし |
 | --- | --- | --- |
-| `/probe:foo` | commands 側の本文が実行された | （対照）スキル本文が実行された |
-| Skill ツール | commands 側の本文が返り、fork の表示なし | `completed (forked execution)` と出て fork で実行された |
+| `/probe:foo`（対照は `/probe:bar`） | commands 側の本文が実行された | （対照）スキル本文が実行された |
+| Skill ツール（`probe:foo` / 対照 `probe:bar`） | commands 側の本文が返り、fork の表示なし | `completed (forked execution)` と出て fork で実行された |
 
 つまり `/wt-setup` も Skill ツールの `worktree:wt-setup` も `commands/wt-setup.md`（この SKILL.md を Read してインライン実行するラッパー）に解決され、この frontmatter は読まれない。公式ドキュメント（https://code.claude.com/docs/en/skills ）は「skill と `.claude/commands/` のファイルでは skill が勝つ」とするが、プラグインの `commands/` と `skills/` が同名の場合は実機で commands が勝った。観測していない経路・版では分からない。
 
