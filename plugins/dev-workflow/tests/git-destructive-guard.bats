@@ -158,6 +158,8 @@ expect_silent() {
   expect_silent $'cat <<EOF > note.txt\ngit push --force origin main\nEOF'
   expect_silent $'git commit -m "first line\ngit branch -D x を止める"'
   expect_silent $'gh issue comment 1 --body "$(printf \'git reset --hard\\n\')"'
+  expect_silent 'git push -o main origin feature-x'
+  expect_silent 'git commit --author n -m x'
 }
 
 @test "heredoc: commands after the heredoc are still judged" {

@@ -26,7 +26,7 @@ hooks.json は `matcher: "Bash"` だけにし、どのコマンドが対象か�
 
 - 採らなかった案: `if: "Bash(git reset --hard*)"` のような権限ルール構文で hook の起動を絞る（issue 概要 2 の案）
 - 理由: (1) `if` の判定は Claude Code の中で行われるので bats から検査できず、受け入れ条件の「9 種を hook に通すと ask か deny」を検査しても、実運用で hook が起動するかは別の層の問題として残る。(2) 一覧が hooks.json の `if` とスクリプトの 2 か所に分かれ、片方だけ直す事故が起きる。(3) `git -C x reset --hard` や `git -c k=v push --force` のように git の大域オプションが前に来る形を前方一致では拾えない
-- 代償は Bash 呼び出しごとのプロセス起動。`context-tripwire.sh` の早期 exit と同じ形で、stdin の payload 全体に `git` の文字列が無ければシェルの文字列検査だけで exit 0 し、python3 は起動しない（payload の別の欄に `git` があれば余計に起動するだけで、判定は変わらない）。既存の `context-tripwire.sh` も Bash ごとに走っており、桁は変わらない
+- 代償は Bash 呼び出しごとのプロセス起動。`context-tripwire.sh` の早期 exit と同じ形で、stdin の payload 全体に `git` の文字列も `\u00` も無ければシェルの文字列検査だけで exit 0 し、python3 は起動しない（payload の別の欄に `git` があれば余計に起動するだけで、判定は変わらない）。既存の `context-tripwire.sh` も Bash ごとに走っており、桁は変わらない
 - 新しいエントリは PreToolUse 配列の末尾に足す。`plugins/dev-workflow/tests/tripwire-hook.bats` が `PreToolUse[0]` を Agent のエントリと前提にしているため
 
 ### `ask` と `deny` は payload の `permission_mode` で切り替える
@@ -42,6 +42,19 @@ hooks.json は `matcher: "Bash"` だけにし、どのコマンドが対象か�
   - 同じ手順を `--dangerously-skip-permissions` 無し（`permission_mode: default`）でも行い、`-p` で `ask` が実行を止めることを確かめる。書き換えが消えていたら、`-p` では `ask` が効かないことになるので、全モードで `deny` に切り替える
   - 結果（対照実験を含む各回の出力と、書き換えが残ったか）は PR 本文に貼る（issue の受け入れ条件「両方の結果を PR に貼る」）
   - 結果で対応が変わるときは、スクリプトと bats に加えて spec.md と design.md も同じ commit で直す
+- 実機確認の結果（2026-10-07、`claude -p --model sonnet --plugin-dir plugins/dev-workflow`、使い捨てリポジトリで `git reset --hard` を頼む）:
+
+  | 起動の仕方 | hook の設定 | 返した値 | 書き換え |
+  |---|---|---|---|
+  | `--dangerously-skip-permissions` | off（対照実験） | なし | 消えた（実行された） |
+  | `--permission-mode default --allowedTools "Bash"` | off（対照実験） | なし | 消えた（実行された） |
+  | `--dangerously-skip-permissions` | `FORCE=ask` | ask | 残った（止まった） |
+  | `--allowedTools "Bash"`（実際の mode は auto） | `FORCE=ask` | ask | 残った |
+  | `--dangerously-skip-permissions` | 既定 | deny | 残った |
+  | `--allowedTools "Bash"`（実際の mode は auto） | 既定 | deny | 残った |
+  | `--permission-mode default --allowedTools "Bash"` | 既定 | ask | 残った |
+
+  `-p` の `default` で `ask` は実行を止めたので、`default` / `acceptEdits` / `plan` は `ask` のまま確定する。bypassPermissions で `ask` を返しても `-p` では止まったが、対話セッションで確認画面が出るかは観測できないので、`deny` のまま確定する。`--permission-mode` を付けない起動は、settings.json の `defaultMode`（主の環境では `auto`）が使われ、payload の `permission_mode` も `auto` になる（同じ設定でも `--model haiku` では `default` になった）。`auto` は確認画面を出す保証が無いので、仕様どおり `deny` にする。手順の「付けない側」は、`--permission-mode default` を明示して走らせる
 - `DEV_WORKFLOW_GIT_GUARD_FORCE=ask|deny` は上の確認と bats のための上書きで、恒久設定にしない。ルール本文には書かない
 
 ### 承認済みの操作は主が自分で実行する
@@ -80,6 +93,9 @@ python3 の `shlex`（`punctuation_chars=True`）で字句に分け、次の単�
 - 単純コマンドの先頭の環境変数代入（`FOO=1`）と `command` / `env` / `sudo` / `nohup` / `time` を読み飛ばし、`git`（パスの末尾が `git` のものを含む）を探す
 - git の大域オプション（`-C <path>` `-c <k=v>` `--git-dir[=]` `--work-tree[=]` `--namespace[=]` `--no-pager` `-P` など）を読み飛ばしてサブコマンドを決める
 - `shlex` が引用符の不整合で失敗したら、空白で割った字句に同じ判定をかける（判定を諦めて素通りにしない）
+- 字句に分ける前に、引用符の外の改行を `;` に置き換え、ヒアドキュメントの本文（`<<EOF` の次の行から終わりの行まで）を取り除く。引用符の中の改行はそのまま残すので、複数行の `-m "..."` の 2 行目以降は 1 つの字句の中に入り、コマンドとして読まれない。理由: commit メッセージや issue コメントの本文に「git reset --hard を止める」のような行を書くたびに止まると、この change 自体の作業も止まる。シェルはこれらの行を実行しないので、読まなくても取りこぼしにならない
+- 引数を取るオプション（`git push` の `-o` / `--push-option` / `--repo` / `--receive-pack` / `--exec`、`git commit` の `-m` `-F` `-c` `-C` `-t` と `--message` `--author` `--fixup` など）の次の字句は値として読み飛ばす。`git push -o main origin x` の `main` を送り先と誤読しないため、`git commit --author n` を `-n` と誤読しないため
+- シェル側の早期 exit は、payload に `git` の文字列も `\u00` も無いときだけ行う。JSON では `g` を `\u0067` と書けるので、`git` の文字列検査だけだとエスケープ表記の payload を取りこぼす（`context-tripwire.sh` と同じ理由）。`g` `i` `t` は U+0067〜U+0074 なので、エスケープ表記なら必ず `\u00` が現れる
 
 ## Risks / Trade-offs
 
