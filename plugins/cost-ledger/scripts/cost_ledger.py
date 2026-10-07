@@ -1672,7 +1672,8 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
 
 
 def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
-    """``/cost`` の入口。番号の判別だけを行い、集計は branch / issue の経路に委ねる。
+    """``/cost`` の入口。番号の判別だけを行い、集計は branch / issue / epic の経路に委ねる。
+    issue のうち子 issue を持つもの（判別の応答の子の数が 1 以上）は ``cmd_epic`` へ渡す。
 
     1 行目を作るのは ``headline()`` だけで、この関数は帰属先の表記を渡すにとどめる。
     PR 経路が独自の書式を持つと、ゲート連携が貼る 1 行が経路ごとに割れる。
@@ -1704,6 +1705,13 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
                 branch=value, target_label="PR #%s (%s)" % (args.number, value),
                 no_drift_check=args.no_drift_check,
             ),
+            pricing,
+            resolver,
+        )
+    if kind == "issue" and children >= 1 and re.fullmatch(r"[0-9]+", value):
+        return cmd_epic(
+            argparse.Namespace(issue=value, repo=where, json=args.json,
+                               no_drift_check=args.no_drift_check),
             pricing,
             resolver,
         )
@@ -2101,6 +2109,96 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
     return 0
 
 
+EPIC_TITLE_WIDTH = 40
+
+
+def _epic_line(row: dict, has_children: bool) -> str:
+    """内訳の 1 行。額はその issue と下の issue すべての和で、段ごとに空白を 2 つ足す。"""
+    title = row["title"]
+    if len(title) > EPIC_TITLE_WIDTH:
+        title = title[:EPIC_TITLE_WIDTH - 1] + "…"
+    line = "%s#%d %s %s" % ("  " * (row["depth"] + 1), row["number"], row["state"],
+                            _dollars(row["usd"]))
+    if has_children:
+        line += "（自身 %s）" % _dollars(row["own_usd"])
+    line += " — %s" % title
+    if round(row["own_usd"] * 1e6) != round(row["standalone_usd"] * 1e6):
+        line += "（単独 %s%s）" % (
+            _dollars(row["standalone_usd"]),
+            "".join("、PR #%d は #%d に計上" % (pr["number"], pr["counted_in"])
+                    for pr in row["closing_prs"] if pr["counted_in"] != row["number"]))
+    return line
+
+
+def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
+    """子 issue を持つ issue の、子 issue ごとの内訳と合計を出す（``cost`` から呼ばれる）。
+
+    合計は、エピック自身と子孫の issue が数える行を 1 回ずつ足した額。木を読み切れなければ、
+    標準出力に何も書かずに終了コード 2 を返す（一部の子だけの額を合計として見せない）。
+    """
+    where = os.path.abspath(args.repo) if args.repo else os.getcwd()
+    repo_id = resolver.repo_id(where)
+    if repo_id == UNKNOWN_REPO:
+        sys.stderr.write(
+            "%s は git リポジトリではないため、issue #%s の帰属先リポジトリが決まりません。\n"
+            % (where, args.issue)
+        )
+        return 2
+    number = int(args.issue)
+    try:
+        issues, skipped = fetch_epic_tree(where, number)
+    except EpicError as error:
+        sys.stderr.write(
+            "%s。issue #%d の合計は出しません（一部の子 issue しか読めていない額を合計にしないため）。\n"
+            % (error, number)
+        )
+        return 2
+    heads = [branch for row in issues for _pr, branch in row["prs"]]
+    interval_facts, unknown, branch_facts = epic_rows(
+        [row["number"] for row in issues], repo_id, heads, resolver)
+    result = assign_epic_rows(issues, interval_facts, branch_facts, unknown, pricing)
+    label = resolver.label(repo_id)
+    drift = None
+    if not getattr(args, "no_drift_check", False):
+        # 対象のセッションが多いので、上限つきの読み直しに任せる（facts を渡さない）
+        drift = price_drift(result["sessions"], pricing)
+    if args.json:
+        print(json.dumps({
+            "issue": str(number),
+            "repo_id": repo_id,
+            "repo_label": label,
+            "usd_jpy_rate": pricing.jpy_rate,
+            "price_drift": drift,
+            "total_usd": result["total_usd"],
+            "children_usd": result["children_usd"],
+            "self_usd": result["self_usd"],
+            "issues": result["issues"],
+            "skipped": skipped,
+            "unknown_repo_usd": result["unknown_repo_usd"],
+            "unknown_repo_messages": result["unknown_repo_messages"],
+        }, ensure_ascii=False, indent=2))
+        return 0
+    print(headline(result["total_usd"], pricing, "issue #%d (%s)" % (number, label), "子 issue 込み"))
+    print("  対象: issue #%d（%s）と子孫の issue %d 件" % (number, label, len(issues) - 1))
+    print("  子 issue の合計: %s" % _dollars(result["children_usd"]))
+    print("  issue #%d 自身: %s" % (number, _dollars(result["self_usd"])))
+    parents = {row["parent"] for row in result["issues"]}
+    for row in result["issues"]:
+        print(_epic_line(row, row["number"] in parents))
+    if skipped:
+        print("  数えていない子 issue: %s（別のリポジトリ）"
+              % "、".join("%s#%d" % (row["repo"], row["number"]) for row in skipped))
+    if result["unknown_repo_messages"]:
+        print("  リポジトリ不明: %d 件 %s（cwd が削除済みで、どのリポジトリの issue か絞れない。"
+              "合計には入れていない）"
+              % (result["unknown_repo_messages"], _dollars(result["unknown_repo_usd"])))
+    print("  ※ 額は区間分割による推定です。issue ごとの区間の内訳は /cost <その issue の番号> で"
+          "見られます（区間だけの額なので、閉じた PR の分を含むこの内訳の額とは一致しません）。")
+    for line in render_price_drift(drift):
+        print(line)
+    return 0
+
+
 def cmd_ledger_sync(args, pricing: Pricing, resolver: RepoResolver) -> int:
     """会話ログの増えた分を台帳に追記する（Stop hook と手動の取り込みの共通入口）。"""
     configured = ledger_path()
@@ -2158,7 +2256,8 @@ def build_parser() -> argparse.ArgumentParser:
     cost.add_argument("--repo", default=None,
                       help="問い合わせと絞り込みの基準になる場所（既定はカレントディレクトリ）")
     cost.add_argument("--json", action="store_true",
-                      help="issue 経路のときだけ JSON で出す")
+                      help="issue 経路のときだけ JSON で出す（子 issue を持つ issue では、"
+                           "子 issue ごとの内訳つきの JSON になる）")
     cost.add_argument("--no-drift-check", action="store_true",
                       help="単価表のずれの突き合わせ（本体のセッションコストとの比較）を行わない")
     cost.set_defaults(func=cmd_cost)
