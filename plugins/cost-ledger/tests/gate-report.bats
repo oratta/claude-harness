@@ -163,7 +163,9 @@ if path == "graphql":
         sys.exit(0)
     refs = {"nodes": json.loads(env("FAKE_CLOSING_PRS", "[]")),
             "pageInfo": {"hasNextPage": env("FAKE_CLOSING_NEXT") == "1"}}
-    emit(json.dumps({"data": {"repository": {"issue": {"closedByPullRequestsReferences": refs}}}}))
+    # emit() はこの下で定義されるので、ここでは使わない（問い合わせは --jq を付けない）
+    sys.stdout.write(json.dumps(
+        {"data": {"repository": {"issue": {"closedByPullRequestsReferences": refs}}}}) + "\n")
     sys.exit(0)
 path, _, query = path.partition("?")
 m = re.fullmatch(r"repos/([^/]+/[^/]+)/(.*)", path)
