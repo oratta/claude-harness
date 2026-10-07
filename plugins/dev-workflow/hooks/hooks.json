@@ -9,6 +9,15 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/session-tripwires.sh\""
           }
         ]
+      },
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/team-mode-warning.sh\""
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [

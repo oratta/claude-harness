@@ -6,7 +6,7 @@
 
 - `context: fork` / `background: false` / `model: sonnet` は**残す**。frontmatter 内に先頭 12 行へ収まる短い YAML コメント（効かない旨と、詳細は本文を見よという指示）を書き、SKILL.md 本文に節「frontmatter の fork 指定について」を足して、実機観測（同名 commands ラッパーが勝つこと・版・確かめ方）と残す理由を書く
 - `skill-execution-isolation` の「隔離されたコンテキストで実行する」要件に、ラッパーが同名で存在する間は frontmatter が効かないこと、効くのはスキル本体が直接実行される経路に限ることを明記する
-- `commands/wt-setup.md` と bats（`skill-safety.bats`）は変えない
+- `commands/wt-setup.md` は変えない。`skill-safety.bats` には先頭 12 行のコメントと本文の節を検査するテストを 2 件足す
 
 ## Capabilities
 

@@ -12,7 +12,7 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 
 ```bash
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/memory-refresh}" \
+  "${CLAUDE_PLUGIN_ROOT}/skills/memory-refresh" \
   ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/memory-refresh \
   ~/.claude/plugins/installed/*/dev-workflow/skills/memory-refresh; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break

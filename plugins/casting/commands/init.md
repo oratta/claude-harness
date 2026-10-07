@@ -16,7 +16,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
    ```bash
    for dir in \
-     "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/templates}" \
+     "${CLAUDE_PLUGIN_ROOT}/templates" \
      ~/.claude/plugins/marketplaces/*/plugins/casting/templates \
      ~/.claude/plugins/installed/*/casting/templates; do
      [ -n "$dir" ] && [ -f "$dir/project.md" ] && echo "$dir" && break
