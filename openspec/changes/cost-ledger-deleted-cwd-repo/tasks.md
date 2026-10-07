@@ -14,9 +14,9 @@
 
 ## 3. 削除済みの cwd からの推定
 
-- [ ] 3.1 `RepoResolver.repo_id` に、`cwd` がディレクトリとして存在しないときの推定（`.claude/worktrees/` の規則と置き場の規則）を足し、置き場ごとの判定結果を覚える。推定で決めた `cwd` かどうかを返す口を足す。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:142-165`（`RepoResolver`）
-- [ ] 3.2 `build_fact` が、推定で決めたときだけ `repo_inferred: true` を事実に入れる。`_NoRepo` に常に偽を返す同じ口を足す。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:489-517`（`build_fact`）、`plugins/cost-ledger/scripts/cost_ledger.py:1244-1248`（`_NoRepo`）
-- [ ] 3.3 2.1 のテストと既存の bats 全部が通ることを確かめる（既存の fixture の削除済み `cwd` は置き場の名前が一致せず、不明のままになる見込み。変わるテストがあれば原因を調べ、fixture を合わせる前に本体へ報告する）。触る範囲: なし
+- [x] 3.1 `RepoResolver.repo_id` に、`cwd` がディレクトリとして存在しないときの推定（`.claude/worktrees/` の規則と置き場の規則）を足し、置き場ごとの判定結果を覚える。推定で決めた `cwd` かどうかを返す口を足す。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:142-165`（`RepoResolver`）
+- [x] 3.2 `build_fact` が、推定で決めたときだけ `repo_inferred: true` を事実に入れる。`_NoRepo` に常に偽を返す同じ口を足す。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:489-517`（`build_fact`）、`plugins/cost-ledger/scripts/cost_ledger.py:1244-1248`（`_NoRepo`）
+- [x] 3.3 2.1 のテストと既存の bats 全部が通ることを確かめる（既存の fixture の削除済み `cwd` は置き場の名前が一致せず、不明のままになる見込み。変わるテストがあれば原因を調べ、fixture を合わせる前に本体へ報告する）。触る範囲: なし
 
 ## 4. 補正行の追記（`ledger-sync --rescan`）
 
