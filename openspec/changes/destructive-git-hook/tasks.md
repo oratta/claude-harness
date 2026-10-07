@@ -23,4 +23,4 @@
 ## 5. 記録と全体テスト
 
 - [x] 5.1 `plugins/dev-workflow/changes/710.md` に変更の記録を書く（何を足したか、ask / deny の確定結果、ルールの文を外さなかった理由、wt-clean をこの change で扱った理由）。`plugins/worktree/changes/710.md` に wt-clean の案内を足したことを書く 触る範囲: plugins/dev-workflow/changes/710.md（新規）、plugins/worktree/changes/710.md（新規）
-- [ ] 5.2 `scripts/test.sh` が exit 0（injection-budget・always-on-injection-scope・tripwire-hook・skill-safety を含む）。`openspec validate destructive-git-hook --strict` が通る 触る範囲: なし（実行のみ）
+- [x] 5.2 `scripts/test.sh` が exit 0（injection-budget・always-on-injection-scope・tripwire-hook・skill-safety を含む）。`openspec validate destructive-git-hook --strict` が通る 触る範囲: なし（実行のみ）
