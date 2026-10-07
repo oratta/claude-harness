@@ -433,6 +433,9 @@ def iter_facts(root: str, resolver: RepoResolver, branch: str | None = None):
 # 台帳の場所を決める唯一の入口。既定のパスは持たない（個人のディレクトリ構成を
 # リポジトリに残さないため。LLM_LOG_DIR と同じ扱い）。
 LEDGER_ENV = "COST_LEDGER_PATH"
+# plugin.json の userConfig（LEDGER_PATH）の値。プラグインを有効にするときと /config で設定され、
+# hook のプロセスにこの名前の環境変数で渡る。設定されていれば LEDGER_ENV より優先する。
+LEDGER_OPTION_ENV = "CLAUDE_PLUGIN_OPTION_LEDGER_PATH"
 
 # 台帳の 1 行は build_fact の辞書をそのまま dumps したもので、先頭の鍵が request_id。
 # 索引を作るとき、この接頭辞なら JSON をパースせずに requestId を取り出せる。
@@ -444,7 +447,7 @@ class LedgerError(Exception):
 
 
 def ledger_path():
-    return os.environ.get(LEDGER_ENV) or None
+    return os.environ.get(LEDGER_OPTION_ENV) or os.environ.get(LEDGER_ENV) or None
 
 
 def protected_root() -> str:
@@ -1858,8 +1861,8 @@ def cmd_ledger_sync(args, pricing: Pricing, resolver: RepoResolver) -> int:
     configured = ledger_path()
     if configured is None:
         sys.stderr.write(
-            "%s が未設定です。台帳ファイルの場所（このリポジトリの外）を設定してください。\n"
-            % LEDGER_ENV
+            "%s（または userConfig の LEDGER_PATH）が未設定です。台帳ファイルの場所"
+            "（このリポジトリの外）を設定してください。\n" % LEDGER_ENV
         )
         return 2
     ledger = resolve_ledger(configured)
