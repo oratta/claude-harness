@@ -458,7 +458,7 @@ entries = d["SubagentStop"]
 hit = [h for e in entries for h in e["hooks"] if "subagent-stop-guard.sh" in h["command"]]
 assert len(hit) == 1, entries
 assert hit[0]["type"] == "command"
-assert hit[0]["command"] == "${CLAUDE_PLUGIN_ROOT}/scripts/subagent-stop-guard.sh", hit[0]
+assert hit[0]["command"] == '"${CLAUDE_PLUGIN_ROOT}/scripts/subagent-stop-guard.sh"', hit[0]
 PY
 }
 

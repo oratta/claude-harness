@@ -387,7 +387,7 @@ import json, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 entries = [e for e in d["hooks"]["PostToolUse"] if e.get("matcher") == "Bash"]
 handlers = [h for e in entries for h in e["hooks"]
-            if h.get("command") == "${CLAUDE_PLUGIN_ROOT}/scripts/gate-report.sh"]
+            if h.get("command") == '"${CLAUDE_PLUGIN_ROOT}/scripts/gate-report.sh"']
 assert len(handlers) == 1, handlers
 h = handlers[0]
 assert h.get("type") == "command", h

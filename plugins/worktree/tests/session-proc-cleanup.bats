@@ -600,8 +600,8 @@ import json
 d = json.load(open('${HOOKS_JSON}'))['hooks']
 start = [h['command'] for g in d['SessionStart'] for h in g['hooks']]
 end = [h['command'] for g in d['SessionEnd'] for h in g['hooks']]
-assert any(c == '\${CLAUDE_PLUGIN_ROOT}/scripts/session-proc-mark.sh' for c in start), start
-assert any(c == '\${CLAUDE_PLUGIN_ROOT}/scripts/session-proc-end.sh' for c in end), end
+assert any(c == '\"\${CLAUDE_PLUGIN_ROOT}/scripts/session-proc-mark.sh\"' for c in start), start
+assert any(c == '\"\${CLAUDE_PLUGIN_ROOT}/scripts/session-proc-end.sh\"' for c in end), end
 assert all(g.get('matcher') == 'startup|resume|clear' for g in d['SessionStart']), d['SessionStart']
 "
   echo "$output"
