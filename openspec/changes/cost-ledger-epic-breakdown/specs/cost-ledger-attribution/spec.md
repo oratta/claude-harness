@@ -7,10 +7,6 @@
 - **WHEN** feature ブランチ上のセッションで `gh issue view 273` が実行されている
 - **THEN** その行のコストはブランチの合計にも issue 273 の合計にも含まれる
 
-#### Scenario: 単純な和は issue の合計と一致しない
-- **WHEN** issue #12 に帰属する区間の行が 3 行（各 $1.00）あり、そのうち 1 行がブランチ `feat/a` の行で、ブランチ `feat/a` の行が全部で 3 行（各 $1.00）ある会話ログで、`cost_ledger.py issue 12 --closing-pr 300:feat/a --json` を実行する
-- **THEN** `combined_total_usd` は 5.0 で、`total_usd`（3.0）と PR の分（3.0）の和 6.0 より、重なった 1 行の $1.00 だけ小さい
-
 ## ADDED Requirements
 
 ### Requirement: エピックの合計は、エピック自身と子孫の issue が数える行を 1 回ずつ足した額である

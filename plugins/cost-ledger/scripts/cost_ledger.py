@@ -2148,7 +2148,8 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
         "children_usd": (total - own[epic]) / 1e6,
         "self_usd": own[epic] / 1e6,
         "unknown_repo_usd": _micro(unknown, pricing) / 1e6,
-        "unknown_repo_messages": len(unknown),
+        # 同じ応答の 2 行目以降の事実はメッセージ数に数えない（``summarise()`` と同じ）
+        "unknown_repo_messages": sum(1 for fact in unknown if not is_continuation(fact)),
         "sessions": {fact["session_id"] for fact in counted},
     }
 

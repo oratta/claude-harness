@@ -390,6 +390,20 @@ PY
   cost_json 10 | check 'd["skipped"][0]["repo"] == "acme/o\x1b[2Kt\nher"'
 }
 
+@test "epic: a continuation line of a response is not counted as an unknown-repository message" {  # cwd が消えたセッションで、応答の 2 行目にだけ gh issue view 11 → リポジトリ不明は 2 件 $2.00（後続行は件数に数えない。issue 11 の表示と同じ件数）
+  logs
+  tree
+  {
+    cl_row SU rU 2026-09-01T00:02:00.000Z main /nonexistent/gone 1000000
+    cl_row SU rU 2026-09-01T00:02:01.000Z main /nonexistent/gone 1000000 "gh issue view 11" | sed 's/"u-rU"/"u-rU-2"/'
+    cl_row SU rV 2026-09-01T00:02:10.000Z main /nonexistent/gone 1000000
+  } | cl_write_log su
+  cost_json 10 | check 'd["unknown_repo_messages"] == 2 and near(d["unknown_repo_usd"], 2.0) and near(d["total_usd"], 4.0)'
+  python3 "$CL" issue 11 --repo "$RA" --json | check 'd["unknown_repo_messages"] == 2 and near(d["unknown_repo_usd"], 2.0)'
+  run cost 10
+  [[ "$output" == *'  リポジトリ不明: 2 件 $2.00'* ]] || { echo "$output"; return 1; }
+}
+
 @test "epic: a PR from a fork is not counted" {  # isCrossRepository が真の PR だけ → closing_prs は空、own_usd は 2.0
   logs
   tree "$(pr 300 feat/a true)" ""
