@@ -348,6 +348,8 @@ def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
     issues, marker = scan_tool_calls(message)
     return {
         "request_id": record.get("requestId") or record.get("uuid") or "",
+        # 先頭の行の uuid。複製された会話ログの先頭の行と、真の後続行を区別する鍵
+        "uuid": record["uuid"] if isinstance(record.get("uuid"), str) else "",
         "timestamp": record.get("timestamp") or "",
         # sessionId が無い行は区間を切る単位が消える。ファイルパスに落として混ざるのを防ぐ。
         "session_id": record.get("sessionId") or path,
@@ -374,12 +376,58 @@ def log_files(root: str):
                 yield os.path.join(dirpath, name)
 
 
-def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str | None = None):
-    """会話ログの行の列から事実を返す。``seen`` に入っている requestId は飛ばし、採った分を足す。
+TOKEN_KEYS = ("input_tokens", "output_tokens", "cache_write_5m_tokens",
+              "cache_write_1h_tokens", "cache_read_tokens")
 
-    ``seen`` は ``in`` と ``add`` を持てばよい（台帳の索引もこの形で渡す）。requestId も uuid も
-    無い行は空文字を鍵にする。
+
+class SeenSet:
+    """読んだ requestId の集合と、その応答の先頭の行の uuid（会話ログの直読み用）。"""
+
+    def __init__(self):
+        self.ids: set[str] = set()
+        self.heads: dict[str, str] = {}
+
+    def __contains__(self, request_id) -> bool:
+        return request_id in self.ids
+
+    def add(self, request_id) -> None:
+        self.ids.add(request_id)
+
+    def add_head(self, request_id, uuid: str) -> None:
+        self.ids.add(request_id)
+        self.heads[request_id] = uuid
+
+    def head_uuid(self, request_id):
+        return self.heads.get(request_id)
+
+
+def _head_uuid(seen, request_id):
+    lookup = getattr(seen, "head_uuid", None)
+    return lookup(request_id) if lookup else None
+
+
+def _add_head(seen, request_id, uuid: str) -> None:
+    add_head = getattr(seen, "add_head", None)
+    if add_head:
+        add_head(request_id, uuid)
+    else:
+        seen.add(request_id)
+
+
+def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str | None = None,
+                     from_start: bool = True):
+    """会話ログの行の列から事実を返す。``seen`` に入っている requestId は先頭の行として扱わない。
+
+    ``seen`` は ``in`` と ``add`` を持てばよい（台帳の索引もこの形で渡す）。先頭の行の uuid を
+    持てる ``seen``（``add_head`` / ``head_uuid``）なら、複製された先頭の行を後続行と取り違えない。
+    requestId も uuid も無い行は空文字を鍵にする。
+
+    1 つの応答が複数の行に分かれるとき、そのファイルで最初に現れる行が先頭の行で、通常の事実を
+    1 つ出す。それ以降の行（後続行）は、実行した Bash が issue 番号か投稿の印を持つときだけ、
+    トークン 0 の補足の事実を ``<requestId>#<uuid>`` の鍵で出す。``from_start`` は、この呼び出しが
+    ファイルの先頭から読んでいるか（uuid を持たない古い台帳の行の先頭の行を見分けるのに使う）。
     """
+    first_seen: dict[str, str] = {}  # この呼び出しで最初に見た行の uuid（先頭の行の uuid）
     for line in lines:
         # パースの前に生の文字列で弾く（全履歴 1 パスの速度はここに依存する）
         if '"assistant"' not in line:
@@ -401,22 +449,57 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
         if not isinstance(request_id, str):
             SCAN_STATS["unreadable_lines"] += 1
             continue
-        if request_id in seen:
+        uuid = record["uuid"] if isinstance(record.get("uuid"), str) else ""
+        if request_id not in first_seen and request_id not in seen:
+            try:
+                fact = build_fact(record, resolver, path)
+            except (AttributeError, TypeError, ValueError):
+                # 有効な JSON だが期待する形でない行。ここで落とすと 1 行の不正で
+                # 全履歴の集計が終わらなくなる（cwd 削除済みの行と同じ方針）。
+                SCAN_STATS["unreadable_lines"] += 1
+                continue
+            first_seen[request_id] = uuid
+            _add_head(seen, request_id, uuid)
+            yield fact
+            continue
+        if request_id not in first_seen:
+            # 前の回・別のファイルで先頭の行を読んだ応答の、この呼び出しで最初の行
+            head = _head_uuid(seen, request_id)
+            if head is None:
+                if not from_start:
+                    continue  # 先頭の行の uuid を知らない古い行。--rescan 以外では扱わない
+                first_seen[request_id] = uuid  # このファイルで最初の行を先頭の行として捨てる
+                continue
+            first_seen[request_id] = head
+        if uuid == first_seen[request_id] or not uuid or '"Bash"' not in line:
+            continue
+        key = "%s#%s" % (request_id, uuid)
+        if key in seen:
             continue
         try:
+            issues, marker = scan_tool_calls(record.get("message") or {})
+            if not issues and marker is None:
+                continue
             fact = build_fact(record, resolver, path)
         except (AttributeError, TypeError, ValueError):
-            # 有効な JSON だが期待する形でない行。ここで落とすと 1 行の不正で
-            # 全履歴の集計が終わらなくなる（cwd 削除済みの行と同じ方針）。
             SCAN_STATS["unreadable_lines"] += 1
             continue
-        seen.add(request_id)
+        fact["request_id"] = key
+        for field in TOKEN_KEYS:
+            fact[field] = 0
+        fact["continuation"] = True
+        seen.add(key)
         yield fact
+
+
+def is_continuation(fact: dict) -> bool:
+    """同じ応答の後続行から出した補足の事実か（トークン 0・メッセージ数に数えない）。"""
+    return bool(fact.get("continuation"))
 
 
 def iter_facts(root: str, resolver: RepoResolver, branch: str | None = None):
     """会話ログを 1 パスで読み、requestId で重複を排除しながら事実を返す。"""
-    seen: set[str] = set()
+    seen = SeenSet()
     for path in log_files(root):
         try:
             handle = open(path, encoding="utf-8", errors="replace")
@@ -437,6 +520,33 @@ LEDGER_ENV = "COST_LEDGER_PATH"
 # 台帳の 1 行は build_fact の辞書をそのまま dumps したもので、先頭の鍵が request_id。
 # 索引を作るとき、この接頭辞なら JSON をパースせずに requestId を取り出せる。
 LEDGER_ID_PREFIX = '{"request_id": "'
+
+
+LEDGER_UUID_PREFIX = '", "uuid": "'
+
+
+def _ledger_id_uuid(line: str):
+    """台帳の 1 行から (requestId, 先頭の行の uuid) を取り出す。uuid の欄が無ければ uuid は None。"""
+    if line.startswith(LEDGER_ID_PREFIX):
+        rest = line[len(LEDGER_ID_PREFIX):]
+        end = rest.find('"')
+        if end >= 0 and "\\" not in rest[:end]:
+            tail = rest[end:]
+            if tail.startswith(LEDGER_UUID_PREFIX):
+                body = tail[len(LEDGER_UUID_PREFIX):]
+                stop = body.find('"')
+                if stop >= 0 and "\\" not in body[:stop]:
+                    return rest[:end], body[:stop]
+            elif not tail.startswith('", "uuid"'):
+                return rest[:end], None
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return None, None
+    if isinstance(record, dict) and isinstance(record.get("request_id"), str):
+        uuid = record.get("uuid")
+        return record["request_id"], uuid if isinstance(uuid, str) else None
+    return None, None
 
 
 class LedgerError(Exception):
@@ -506,6 +616,7 @@ class LedgerIndex:
     def _open(self):
         db = sqlite3.connect(self.path)
         db.execute("CREATE TABLE IF NOT EXISTS ids (id TEXT PRIMARY KEY)")
+        db.execute("CREATE TABLE IF NOT EXISTS heads (id TEXT PRIMARY KEY, uuid TEXT)")
         db.execute("CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, offset INTEGER, ino INTEGER)")
         db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER)")
         db.execute("SELECT count(*) FROM meta").fetchone()
@@ -527,6 +638,7 @@ class LedgerIndex:
         start = self.covered()
         if start > size:
             self.db.execute("DELETE FROM ids")
+            self.db.execute("DELETE FROM heads")
             self.db.execute("DELETE FROM files")
             start = 0
         if start < size:
@@ -534,18 +646,26 @@ class LedgerIndex:
                 fh.seek(start)
                 data = fh.read(size - start)
             ids = []
+            heads = []
             for raw in data.split(b"\n"):
                 if not raw.strip():
                     continue
-                request_id = _ledger_id(raw.decode("utf-8", errors="replace"))
+                request_id, uuid = _ledger_id_uuid(raw.decode("utf-8", errors="replace"))
                 if request_id is not None:
                     ids.append((request_id,))
+                    if uuid is not None:
+                        heads.append((request_id, uuid))
             self.db.executemany("INSERT OR IGNORE INTO ids (id) VALUES (?)", ids)
+            self.db.executemany("INSERT OR IGNORE INTO heads (id, uuid) VALUES (?, ?)", heads)
         self.set_covered(size)
         self.db.commit()
 
     def __contains__(self, request_id) -> bool:
         return self.db.execute("SELECT 1 FROM ids WHERE id = ?", (request_id,)).fetchone() is not None
+
+    def head_uuid(self, request_id):
+        row = self.db.execute("SELECT uuid FROM heads WHERE id = ?", (request_id,)).fetchone()
+        return row[0] if row else None
 
     def offsets(self) -> dict:
         return {p: (o, i) for p, o, i in self.db.execute("SELECT path, offset, ino FROM files")}
@@ -557,6 +677,7 @@ class _Seen:
     def __init__(self, index: LedgerIndex):
         self.index = index
         self.local: set[str] = set()
+        self.heads: dict[str, str] = {}
 
     def __contains__(self, request_id) -> bool:
         return request_id in self.local or request_id in self.index
@@ -564,8 +685,17 @@ class _Seen:
     def add(self, request_id) -> None:
         self.local.add(request_id)
 
+    def add_head(self, request_id, uuid: str) -> None:
+        self.local.add(request_id)
+        self.heads[request_id] = uuid
 
-def ledger_sync(ledger: str, root: str, resolver: RepoResolver) -> int:
+    def head_uuid(self, request_id):
+        if request_id in self.heads:
+            return self.heads[request_id]
+        return self.index.head_uuid(request_id)
+
+
+def ledger_sync(ledger: str, root: str, resolver: RepoResolver, rescan: bool = False) -> int:
     """会話ログの増えた分を台帳に追記し、追記した行数を返す。
 
     台帳の隣のロックファイルに排他ロックを取ってから読み書きする（複数セッションの
@@ -580,12 +710,12 @@ def ledger_sync(ledger: str, root: str, resolver: RepoResolver) -> int:
     with lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:
-            return _ledger_sync_locked(ledger, root, resolver)
+            return _ledger_sync_locked(ledger, root, resolver, rescan)
         except (OSError, sqlite3.Error) as error:
             raise LedgerError("台帳 %s へ追記できません: %s" % (ledger, error))
 
 
-def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver) -> int:
+def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver, rescan: bool = False) -> int:
     index = LedgerIndex(ledger + ".state.sqlite")
     try:
         index.catch_up(ledger)
@@ -604,9 +734,9 @@ def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver) -> int:
             except OSError:
                 continue
             offset, ino = previous.get(key, (0, None))
-            if ino != stat.st_ino or not (0 <= offset <= stat.st_size):
+            if rescan or ino != stat.st_ino or not (0 <= offset <= stat.st_size):
                 offset = 0
-            if offset == stat.st_size:
+            if offset == stat.st_size and not rescan:
                 new_offsets.append((key, offset, stat.st_ino))
                 continue
             try:
@@ -621,7 +751,7 @@ def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver) -> int:
                 new_offsets.append((key, offset, stat.st_ino))
                 continue
             lines = (raw.decode("utf-8", errors="replace") for raw in data[:end].split(b"\n"))
-            for fact in facts_from_lines(lines, path, resolver, seen):
+            for fact in facts_from_lines(lines, path, resolver, seen, from_start=(offset == 0)):
                 lines_out.append(json.dumps(fact, ensure_ascii=False))
             new_offsets.append((key, offset + end + 1, stat.st_ino))
         if lines_out:
@@ -875,6 +1005,8 @@ def summarise(facts, pricing: Pricing):
     for fact in facts:
         usd, known = pricing.cost(fact)
         total += usd
+        if is_continuation(fact):
+            continue
         messages += 1
         if not known:
             unknown[fact["model"] or "(モデル名なし)"] += 1
@@ -1083,7 +1215,7 @@ def price_intervals(intervals: list, pricing: Pricing) -> list:
     """区間ごとの金額と件数を足す。単価を知るのはここだけで、区間分割は事実だけを見る。"""
     for row in intervals:
         row["usd"] = sum(pricing.cost(fact)[0] for fact in row["facts"])
-        row["messages"] = len(row["facts"])
+        row["messages"] = sum(1 for fact in row["facts"] if not is_continuation(fact))
     return intervals
 
 
@@ -1476,12 +1608,14 @@ def cmd_report(args, pricing: Pricing, resolver: RepoResolver) -> int:
     for fact in facts:
         usd, _known = pricing.cost(fact)
         repos[fact["repo_id"]] += usd
-        repo_messages[fact["repo_id"]] += 1
+        if not is_continuation(fact):
+            repo_messages[fact["repo_id"]] += 1
         if fact["branch"]:
             branches[fact["branch"]] += usd
         else:
             unattributed += usd
-            unattributed_messages += 1
+            if not is_continuation(fact):
+                unattributed_messages += 1
     payload = {
         "total_usd": summary["total_usd"],
         "messages": summary["messages"],
@@ -1521,14 +1655,15 @@ def cmd_intervals(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print(json.dumps({
             "branch": args.branch,
             "total_usd": total,
-            "messages": len(facts),
+            "messages": sum(1 for fact in facts if not is_continuation(fact)),
             "intervals": [interval_payload(row, resolver) for row in rows],
             "usd_jpy_rate": pricing.jpy_rate,
         }, ensure_ascii=False, indent=2))
         return 0
     target = "ブランチ %s" % args.branch if args.branch else "全履歴"
     print(headline(total, pricing, target, "区間"))
-    print("  対象: %s（%d 区間 / %d メッセージ）" % (target, len(rows), len(facts)))
+    print("  対象: %s（%d 区間 / %d メッセージ）" % (
+        target, len(rows), sum(1 for fact in facts if not is_continuation(fact))))
     for row in rows:
         print(render_interval(row))
     return 0
@@ -1675,7 +1810,7 @@ def cmd_ledger_sync(args, pricing: Pricing, resolver: RepoResolver) -> int:
         )
         return 2
     ledger = resolve_ledger(configured)
-    added = ledger_sync(ledger, log_root(), resolver)
+    added = ledger_sync(ledger, log_root(), resolver, rescan=args.rescan)
     if not args.quiet:
         print("台帳 %s に %d 行追記しました。" % (ledger, added))
     return 0
@@ -1749,6 +1884,9 @@ def build_parser() -> argparse.ArgumentParser:
         "ledger-sync", help="会話ログの増えた分を台帳（%s）に追記する" % LEDGER_ENV
     )
     ledger.add_argument("--quiet", action="store_true", help="追記した行数を出さない")
+    ledger.add_argument("--rescan", action="store_true",
+                        help="読み終え位置を使わず会話ログを先頭から読み直し、足りない補足の事実だけを追記する"
+                             "（手動で 1 回。実行前に台帳の控えを取る）")
     ledger.set_defaults(func=cmd_ledger_sync)
 
     return parser
