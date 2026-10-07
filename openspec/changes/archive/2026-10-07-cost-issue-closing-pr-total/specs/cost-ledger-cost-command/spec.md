@@ -50,3 +50,19 @@
 #### Scenario: 存在しない番号を渡す
 - **WHEN** 渡された番号の PR も issue も存在しない
 - **THEN** コストを 0 と表示せず、番号が見つからないことを利用者に伝える。閉じた PR の問い合わせは行わない
+
+### Requirement: エピックの集計で呼ぶ `gh` は子を持つ issue ごとに 1 回で、台帳の読み取りは issue の数に比例しない
+システムが `cost_ledger.py cost <エピックの番号>` 1 回で呼ぶ `gh` は、番号の判別の 2 回（PR の問い合わせと issue の問い合わせ）に、子を持つ対象の issue の数（エピック自身を含む）を足した回数で MUST ある。GraphQL の呼び出しは子を持つ対象の issue 1 件につき 1 回で、子を持たない子 issue の数と、issue を閉じた PR の数では増えてはなら MUST NOT ない（子が 1 件ずつ入れ子になった鎖では、子を持つ issue の数が段の数だけあるので、その数だけ呼ぶ）。`COST_LEDGER_PATH` があるとき、台帳への差分の追記は 1 回の呼び出しで 1 回だけと SHALL し、台帳を読み通す回数は子 issue の数にも PR の数にも比例してはなら MUST NOT ない（区間の行は対象の issue すべての分を、PR の分はヘッドブランチすべての分を、それぞれまとめて読む）。
+
+#### Scenario: 子が 2 件で孫が無い
+- **WHEN** 子 issue を 2 件持ち、それぞれに閉じた PR が 1 件ずつある issue #10 に `cost_ledger.py cost 10` を実行する
+- **THEN** `gh` が呼ばれた回数は 3 回（うち GraphQL は 1 回）
+
+#### Scenario: 子の 1 件が孫を持つ
+- **WHEN** 「孫を辿る」の状態で `cost_ledger.py cost 10` を実行する
+- **THEN** `gh` が呼ばれた回数は 4 回（うち GraphQL は 2 回）
+
+#### Scenario: 子を持たない issue と PR の回数
+- **WHEN** 子 issue を持たない issue #12 と、PR #300 に、それぞれ `cost_ledger.py cost <番号>` を実行する
+- **THEN** `gh` が呼ばれた回数は issue が 3 回（うち GraphQL は閉じた PR の問い合わせの 1 回）、PR が 1 回で PR の GraphQL は 0 回
+

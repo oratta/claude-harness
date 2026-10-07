@@ -456,7 +456,7 @@ PY
   [ "$(gql_calls)" -eq 2 ]
 }
 
-@test "epic: an issue without sub-issues and a PR are unchanged" {  # issue は gh 3 回（うち GraphQL は閉じた PR の 1 回）、PR は 1 回、GraphQL は 0 回。issue の出力は issue 12 と同じ
+@test "epic: gh call counts for an issue without sub-issues and a PR" {  # issue は gh 3 回（うち GraphQL は閉じた PR の 1 回）、PR は 1 回、GraphQL は 0 回。issue の出力は issue 12 と同じ
   logs
   no_closing_prs 12
   run cost 12

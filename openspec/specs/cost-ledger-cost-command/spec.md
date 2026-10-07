@@ -300,7 +300,7 @@ PR の経路はブランチ名だけで引いて SHALL よい。PR のヘッド�
 - **WHEN** 「孫を辿る」の状態で `cost_ledger.py cost 10` を実行する
 - **THEN** `gh` が呼ばれた回数は 4 回（うち GraphQL は 2 回）
 
-#### Scenario: 子を持たない issue と PR は今までどおり
+#### Scenario: 子を持たない issue と PR の回数
 - **WHEN** 子 issue を持たない issue #12 と、PR #300 に、それぞれ `cost_ledger.py cost <番号>` を実行する
-- **THEN** `gh` が呼ばれた回数は issue が 2 回、PR が 1 回で、GraphQL の呼び出しは 0 回
+- **THEN** `gh` が呼ばれた回数は issue が 3 回（うち GraphQL は閉じた PR の問い合わせの 1 回）、PR が 1 回で PR の GraphQL は 0 回
 
