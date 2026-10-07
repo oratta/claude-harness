@@ -20,7 +20,7 @@
 
 ## 4. 変更の記録
 
-- [ ] 4.1 hooks.json を変えた 4 プラグインに変更の記録を置く（何を変えたか、なぜか、issue 番号）。書式は同じディレクトリの既存の記録に合わせる。`version` は足さない。触る範囲: plugins/capability-registry/changes/716.md（新規）、plugins/cost-ledger/changes/716.md（新規）、plugins/dev-workflow/changes/716.md（新規）、plugins/worktree/changes/716.md（新規）
+- [x] 4.1 hooks.json を変えた 4 プラグインに変更の記録を置く（何を変えたか、なぜか、issue 番号）。書式は同じディレクトリの既存の記録に合わせる。`version` は足さない。触る範囲: plugins/capability-registry/changes/716.md（新規）、plugins/cost-ledger/changes/716.md（新規）、plugins/dev-workflow/changes/716.md（新規）、plugins/worktree/changes/716.md（新規）
 
 ## 5. 確認
 
