@@ -31,4 +31,4 @@
 - `plugins/worktree/skills/wt-clean/SKILL.md`（案内 2 か所）、`plugins/worktree/tests/skill-safety.bats`（文面の検査を足す）
 - `plugins/dev-workflow/changes/710.md`、`plugins/worktree/changes/710.md`（変更の記録）
 - 範囲外: #629（auto-merge テンプレの deny）、#364（同じ破壊的コマンド一覧。epic #360 保留中）、`scripts/test-auto-merge-workflow.sh` の聖域一覧
-- 影響: dev-workflow を有効にした全プロジェクトの Bash 呼び出しで python3 が 1 回起動する（コマンドに `git` の文字列を含むときだけ。含まなければシェルだけで抜ける）
+- 影響: dev-workflow を有効にした全プロジェクトの Bash 呼び出しで python3 が 1 回起動する（payload に `git` の文字列を含むときだけ。payload に `git` の文字列が無ければシェルだけで抜ける）
