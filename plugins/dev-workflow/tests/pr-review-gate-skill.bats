@@ -386,13 +386,20 @@ convergence_section() {
   echo "$sec" | grep -q 'passed'
 }
 
-@test "convergence (#354): stopping findings at the end of round 2 go to triage rows 5 or 6, not a bare single choice" {
+@test "convergence (#354/#722): stopping findings at the end of round 2 go to row 6, the fix-check or row 5, not a bare single choice" {
   sec="$(convergence_section)"
   echo "$sec" | grep -q '引用できる指摘'
-  echo "$sec" | grep -q '3周目を自動で開けない'
+  # 3 周目以降を開けるのは 3 条件だけ（#722）
+  line="$(echo "$sec" | grep -F '3周目以降の周を開けるのは')"
+  [ -n "$line" ] || { echo "no line on opening round 3"; return 1; }
+  echo "$line" | grep -qF '直し方の判定'
+  echo "$line" | grep -qF 'PR トークン上限の内側'
+  echo "$line" | grep -qF '「この PR で直す」'
+  echo "$line" | grep -qF '「全部列挙してから直す」'
   echo "$sec" | grep -qF '順 5'
   echo "$sec" | grep -qF '順 6'
-  echo "$sec" | grep -qF '順 2〜4 を使わない'
+  echo "$sec" | grep -qF '`needs-fix-check`'
+  echo "$sec" | grep -qF '順 2〜4 をそのまま使わない'
   ! gate_all | grep -qF '続けるか、範囲外として閉じるか' || return 1
 }
 
@@ -401,7 +408,7 @@ convergence_section() {
 }
 
 @test "convergence (#281): rounds opened by the owner's go-ahead apply the same sorting and stop again" {
-  convergence_section | grep -q '主の回答または決める役の裁定で開いた周の終了時にも同じ仕分け'
+  convergence_section | grep -q '直し方の判定・主の回答・決める役の裁定で開いた周の終了時にも同じ仕分け'
 }
 
 @test "convergence (#281): rewrite of the approach triggers a full review but rounds keep counting" {
@@ -411,8 +418,8 @@ convergence_section() {
   echo "$sec" | grep -q '周回は数え続ける'
 }
 
-@test "convergence (#354): the decider rules only on the approach for row 6 and G keeps the stop verdict" {
-  line="$(convergence_section | grep -F '順 6 の方式だけを裁定')"
+@test "convergence (#354/#722): the decider rules only on the approach for row 6 and the fix-check, and G keeps the stop verdict" {
+  line="$(convergence_section | grep -F '順 6 の方式と直し方の判定の 2 つだけを裁定')"
   [ -n "$line" ] || { echo "no decider paragraph for row 6"; return 1; }
   echo "$line" | grep -qF '`dev-workflow:decider`'
   echo "$line" | grep -qF '止めるかどうかは全周共通の判定で G が決める'
@@ -524,10 +531,10 @@ reviewer_block() {
 }
 
 @test "verdict (#349/#354): the decider paragraph ties the stop decision to the verdict, not to quoting alone" {
-  line="$(grep -F '順 6 の方式だけを裁定' "${TRIAGE}")"
+  line="$(grep -F '順 6 の方式と直し方の判定の 2 つだけを裁定' "${TRIAGE}")"
   [ -n "$line" ]
   echo "$line" | grep -qF '全周共通の判定'
-  run sh -c "grep -F '順 6 の方式だけを裁定' '$SKILL' | grep -F '引用の有無で決まる'"
+  run sh -c "grep -F '裁定する' '$SKILL' | grep -F '引用の有無で決まる'"
   [ "$status" -ne 0 ]
 }
 
@@ -598,7 +605,7 @@ triage_row_section() {
 
 @test "triage (#354): at the end of round 2 and later rounds, rows 2 to 4 are not used" {
   triage_section | grep -qF '2 周目以降の周の終わり'
-  triage_section | grep -qF '順 2〜4 を使わない'
+  triage_section | grep -qF '順 2〜4 をそのまま使わない'
 }
 
 @test "triage (#354): row 5 mixed with rows 2 to 4 holds first and W does not start fixing" {
@@ -993,4 +1000,66 @@ step3c_body() {
   row="$(awk '/^### 6\. /{f=1} f' "${HOLD}" | grep -F '| **リスク許容待ち**')"
   echo "$row" | grep -qF '3-c'
   echo "$row" | grep -qF 'HEAD が動いた'
+}
+
+# ===== 周の終わりに残った指摘を直し方の判定に回す（issue #722）=====
+
+@test "fix-check (#722): the end-of-round paragraph sends rows 2-4-only leftovers to the fix-check" {
+  p="$(triage_section | grep -F '2 周目以降の周の終わり')"
+  [ -n "$p" ] || { echo "no end-of-round paragraph"; return 1; }
+  echo "$p" | grep -qF '順 6 を除いた全件が 1 周目なら順 2〜4'
+  echo "$p" | grep -qF '`needs-fix-check`'
+  echo "$p" | grep -qF '順 5'
+}
+
+@test "fix-check (#722): the triage table keeps exactly six rows" {
+  n="$(triage_section | grep -cE '^\| [0-9]+ \|')"
+  [ "$n" -eq 6 ] || { echo "rows: $n"; return 1; }
+  ! triage_section | grep -E '^\| [0-9]+ \|' | grep -qF 'needs-fix-check' || return 1
+}
+
+@test "fix-check (#722): mixed with row 6, count rulings first; if used up, everything goes to one row-5 hold" {
+  p="$(grep -F '直し方の判定に回す指摘と順 6 の指摘' "$TRIAGE")"
+  [ -n "$p" ] || { echo "no mixed paragraph for fix-check and row 6"; return 1; }
+  echo "$p" | grep -qF '^決める役の裁定:'
+  echo "$p" | grep -qF '1 件以上なら'
+  echo "$p" | grep -qF '1 回の保留にまとめる'
+  echo "$p" | grep -qF '直し方の判定を先にする'
+  echo "$p" | grep -qF '`needs-decider`'
+}
+
+@test "fix-check (#722): the fix-check is not counted as a row-6 ruling and leaves no ruling comment" {
+  line="$(grep -F '直し方の判定は順 6 の回数に数えず' "$TRIAGE")"
+  [ -n "$line" ] || { echo "no not-counted sentence"; return 1; }
+  echo "$line" | grep -qF '`決める役の裁定:` のコメントも残さない'
+}
+
+@test "fix-check (#722): G as develop has a needs-fix-check section and a return heading for it" {
+  nf="$(awk '/^### needs-fix-check のとき/{f=1;next} /^### |^```$/{f=0} f' "$TRIAGE")"
+  [ -n "$nf" ] || { echo "no needs-fix-check section"; return 1; }
+  echo "$nf" | grep -qF '仮の順'
+  echo "$nf" | grep -qF '仕分けの PR コメント URL'
+  echo "$nf" | grep -qF '順 6・未裁定'
+  grep -E '^### return の書式' "$TRIAGE" | grep -qF 'needs-fix-check'
+  # 判定を受け取った照合と振り分けの G の入力
+  line="$(grep -F '直し方の判定の受領' "$TRIAGE")"
+  [ -n "$line" ] || { echo "no fix-check receipt line"; return 1; }
+  echo "$line" | grep -qF '仕分け欄'
+  echo "$line" | grep -qF '仮の順'
+  echo "$line" | grep -qF '`needs-decider`'
+  echo "$line" | grep -qF '順 5'
+}
+
+@test "fix-check (#722): the re-review line opens round 3 only under the three conditions" {
+  line="$(grep -F 'W の修正後の再レビュー' "$TRIAGE" | grep -F '3 周目に入るのは')"
+  [ -n "$line" ]
+  echo "$line" | grep -qF '直し方の判定・主の回答・決める役の裁定のどれか'
+}
+
+@test "fix-check (#722): triage.md points at the develop SKILL.md section and does not define the formats" {
+  grep -qF 'レビューの周を主に聞かずに続ける（直し方の判定）' "$TRIAGE"
+  run grep -qF '^直し方の判定:' "$TRIAGE"
+  [ "$status" -ne 0 ]
+  run grep -qF '^主に聞かずに回した周:' "$TRIAGE"
+  [ "$status" -ne 0 ]
 }
