@@ -38,4 +38,3 @@
 #### Scenario: decider として起こした R1 には記録先の本文が入力で渡る
 - **WHEN** `references/roles/spec-reviewer.md` の「レビュアーへの入力」を読む
 - **THEN** decider 経路では記録先の本文と関連コメントを呼び出し側が入力文に貼ること、`gh` で自分で取りに行かないことが書かれている
-

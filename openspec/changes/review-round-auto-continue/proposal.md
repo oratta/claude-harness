@@ -27,8 +27,9 @@
 
 - `plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md`（往復の上限）
 - `plugins/dev-workflow/skills/develop/SKILL.md`（1 ループの (2) と (4)、新しい節「レビューの周を主に聞かずに続ける（直し方の判定）」、保留で止まるときの引き継ぎの場面の一覧）
-- `plugins/dev-workflow/skills/pr-review-gate/stages/triage.md`（周の終わりの段落・混在の段落・収束ルール・`needs-fix-check` のとき）
-- `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`（Status・`次の段:` の表・段ごとの表・周回欄）
-- テスト: `plugins/dev-workflow/tests/spec-decision-and-review.bats`・`develop-skill.bats`・`pr-review-gate-skill.bats`（文言の変更に追従が要れば `develop-roles.bats`）
+- `plugins/dev-workflow/skills/pr-review-gate/stages/triage.md`（周の終わりの段落・混在の段落・収束ルール・手順 2-2 の「2 周目が最終周」の理由・`needs-fix-check` のとき）
+- `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`（Status・`次の段:` の表・段ごとの表・周回欄・レビュアーの要約受領の分岐）
+- テスト: `plugins/dev-workflow/tests/spec-decision-and-review.bats`・`develop-skill.bats`・`pr-review-gate-skill.bats`・`develop-roles.bats`・`model-escalation-policy.bats`
+- `plugins/dev-workflow/agents/decider.md` は変えない（直し方の判定は順 6 と同じ「可否と根拠」の契約で依頼する）
 - 変更の記録: `plugins/dev-workflow/changes/722.md`
 - 受け入れるリスク（主が 2026-10-07 に認めた）: 主が見ないまま 3 周目以降の修正が進む。止めるのはトークン上限と、方針の選び直しの判定だけになる。
