@@ -789,7 +789,13 @@ class _NoRepo:
 
 
 def _drift_lines(handle, mentions, expired):
-    """対象のセッション ID を含む生の行だけを返す。一定の行数ごとに上限を確かめる。"""
+    """対象のセッション ID を含む生の行だけを返す。一定の行数ごとに上限を確かめる。
+
+    確かめるのは「まだ読んでいない行が残っている」ときの打ち切りのため。読み終えたあとに
+    確認を足さない（読み終えた結果は上限を超えていても使う。待った時間は結果を捨てても
+    戻らず、全行を読んだ結果は正しい比較のため。openspec の change drift-final-read-result、
+    issue #701）。
+    """
     for count, line in enumerate(handle, 1):
         if count % DRIFT_CHECK_EVERY_LINES == 0 and expired():
             raise _DriftCutOff()
@@ -808,6 +814,7 @@ def session_facts(session_ids, earliest: int, budget: float):
 
     始めてからの経過時間が ``budget`` 秒に達したら読むのをやめて None を返す（読めた分の
     行は返さない。読み切っていない行の合計で比べると、単価表が正しくても差が出るため）。
+    ただし最後まで読み終えた結果は、その時点で上限を超えていても返す（issue #701）。
     読み取れなかった行の件数は、答えのための読みで数え済みなので増やさない。
     """
     started = time.monotonic()
