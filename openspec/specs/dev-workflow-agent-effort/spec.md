@@ -39,4 +39,3 @@ TBD - created by archiving change agent-effort-tiers. Update Purpose after archi
 #### Scenario: 値が違うと落ちる
 - **WHEN** worker の `effort:` を `high` に変えてテストを実行する
 - **THEN** テストが失敗する
-

@@ -33,6 +33,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import unicodedata
 from collections import defaultdict
 
 # リポジトリ識別子が導けなかった行の印。黙って除外も合算もせず、この名前で別立てにする。
@@ -210,9 +211,17 @@ def _gh(cwd: str, *args: str):
     return done.stdout.strip() or None
 
 
+# issue の問い合わせから番号と子 issue の数を 1 回で取り出す（値が無い・読めないときは 0）
+ISSUE_JQ = r'"\(.number) \((.sub_issues_summary.total)? // 0)"'
+
+
 def resolve_number(where: str, number: str):
-    """番号が PR か issue かを GitHub に問い合わせ、``("pr", ヘッドブランチ)`` /
-    ``("issue", 番号)`` / ``(None, None)`` を返す。
+    """番号が PR か issue かを GitHub に問い合わせ、``("pr", ヘッドブランチ, 0)`` /
+    ``("issue", 番号, 子 issue の数)`` / ``(None, None, 0)`` を返す。
+
+    子 issue の数は、issue の問い合わせの応答の ``sub_issues_summary.total``（同じ呼び出しの
+    jq で番号と一緒に取り出すので、``gh`` の回数は増えない）。応答に無い・整数として読めない
+    ときは 0（子を持たない issue として扱う）。
 
     問い合わせは REST（``gh api``）だけを使う。GraphQL 経路（``gh pr view --json`` 等）は
     Projects classic の廃止に伴うエラーで落ちるリポジトリがあり、番号の判別という
@@ -223,11 +232,151 @@ def resolve_number(where: str, number: str):
     """
     head = _gh(where, "api", "repos/{owner}/{repo}/pulls/%s" % number, "--jq", ".head.ref")
     if head:
-        return "pr", head
-    found = _gh(where, "api", "repos/{owner}/{repo}/issues/%s" % number, "--jq", ".number")
-    if found:
-        return "issue", found
-    return None, None
+        return "pr", head, 0
+    found = _gh(where, "api", "repos/{owner}/{repo}/issues/%s" % number, "--jq", ISSUE_JQ)
+    parts = (found or "").split()
+    if parts:
+        children = 0
+        if len(parts) == 2 and re.fullmatch(r"[0-9]+", parts[1]):
+            children = int(parts[1])
+        return "issue", parts[0], children
+    return None, None, 0
+
+
+class EpicError(Exception):
+    """子 issue の木を読み切れなかった（一部しか読めていない額を合計にしないために止める）。"""
+
+
+# 子 issue を辿る深さの上限（エピックから数えた段数。GitHub が許す入れ子の上限と同じ）
+EPIC_MAX_DEPTH = 8
+
+_CLOSING_FIELDS = (
+    "closedByPullRequestsReferences(first: 100) {"
+    " nodes { number headRefName isCrossRepository baseRepository { nameWithOwner } }"
+    " pageInfo { hasNextPage } }"
+)
+# ある issue の子と、子ごとの閉じた PR を 1 回で取る。owner・name・number は変数で渡し、
+# 問い合わせの文字列に埋め込まない
+SUB_ISSUES_QUERY = (
+    "query($owner: String!, $name: String!, $number: Int!) {"
+    " repository(owner: $owner, name: $name) { nameWithOwner issue(number: $number) {"
+    " number title state " + _CLOSING_FIELDS +
+    " subIssues(first: 100) {"
+    " nodes { number title state repository { nameWithOwner } subIssuesSummary { total } "
+    + _CLOSING_FIELDS + " }"
+    " pageInfo { hasNextPage } } } } }"
+)
+
+
+def _closing_refs(refs, repo: str, number: int):
+    """``closedByPullRequestsReferences`` から、数える PR の ``[(番号, ヘッドブランチ)]`` を作る。
+
+    数えるのは、ベースが対象のリポジトリ（大文字と小文字は区別しない）で ``isCrossRepository``
+    が偽の PR だけ（``gate_report.py`` の ``closing_prs()`` と同じ絞り方）。同じヘッドブランチが
+    複数あれば番号のいちばん小さいものだけを残し、番号の昇順に並べる。
+    """
+    if not isinstance(refs, dict) or not isinstance(refs.get("pageInfo"), dict):
+        raise EpicError("issue #%d を閉じた PR の一覧が期待する形ではありません" % number)
+    if refs["pageInfo"].get("hasNextPage") is not False:
+        raise EpicError("issue #%d を閉じた PR が 100 件を超えています" % number)
+    nodes = refs.get("nodes")
+    if not isinstance(nodes, list):
+        raise EpicError("issue #%d を閉じた PR の一覧が期待する形ではありません" % number)
+    by_branch = {}
+    for node in nodes:
+        base = node.get("baseRepository") if isinstance(node, dict) else None
+        base = base.get("nameWithOwner") if isinstance(base, dict) else None
+        pr = node.get("number") if isinstance(node, dict) else None
+        head = node.get("headRefName") if isinstance(node, dict) else None
+        cross = node.get("isCrossRepository") if isinstance(node, dict) else None
+        if (type(pr) is not int or pr < 1 or not isinstance(head, str) or not head
+                or not isinstance(cross, bool) or not isinstance(base, str)):
+            raise EpicError("issue #%d を閉じた PR の応答に、形の崩れた項目があります" % number)
+        if cross or base.lower() != repo.lower():
+            continue
+        if head not in by_branch or pr < by_branch[head]:
+            by_branch[head] = pr
+    return sorted((pr, head) for head, pr in by_branch.items())
+
+
+def _issue_fields(node, number: int):
+    """応答の issue 1 件から ``(番号, 題名, 状態)`` を取り出す（状態は ``open`` / ``closed``）。"""
+    if not isinstance(node, dict):
+        raise EpicError("issue #%d の子 issue の応答に、形の崩れた項目があります" % number)
+    found, title, state = node.get("number"), node.get("title"), node.get("state")
+    if (type(found) is not int or found < 1 or not isinstance(title, str)
+            or state not in ("OPEN", "CLOSED")):
+        raise EpicError("issue #%d の子 issue の応答に、形の崩れた項目があります" % number)
+    return found, title, state.lower()
+
+
+def fetch_epic_tree(where: str, number: int):
+    """エピックと子孫の issue を辿り、``(対象の issue の一覧, 数えなかった子の一覧)`` を返す。
+
+    対象の issue は表示の順（エピック自身、あとは GitHub が返した子の順で、子を持つ issue の
+    直後にその子）。1 件は ``number``・``parent``・``depth``・``title``・``state``・``prs``
+    （数える PR の ``[(番号, ヘッドブランチ)]``）。``gh api graphql`` は、子を持つ issue 1 件に
+    つき 1 回だけ呼ぶ。一度出た番号と別のリポジトリの子は数えず辿らない。読み切れなければ
+    EpicError（呼ぶ側が標準出力に何も書かずに終了コード 2 を返す）。
+    """
+    issues, skipped, seen = [], [], {number}
+    state = {"repo": None}
+
+    def query(target: int):
+        raw = _gh(where, "api", "graphql", "-f", "query=" + SUB_ISSUES_QUERY,
+                  "-F", "owner={owner}", "-F", "name={repo}", "-F", "number=%d" % target)
+        if raw is None:
+            raise EpicError("issue #%d の子 issue の問い合わせ（gh api graphql）が失敗しました" % target)
+        try:
+            repository = json.loads(raw)["data"]["repository"]
+            repo, issue = repository["nameWithOwner"], repository["issue"]
+            subs = issue["subIssues"]
+            nodes, more = subs["nodes"], subs["pageInfo"]["hasNextPage"]
+        except (ValueError, KeyError, TypeError):
+            raise EpicError("issue #%d の子 issue の応答が期待する形ではありません" % target)
+        if not isinstance(repo, str) or not repo or not isinstance(nodes, list):
+            raise EpicError("issue #%d の子 issue の応答が期待する形ではありません" % target)
+        if more is not False:
+            raise EpicError("issue #%d の子 issue が 100 件を超えています" % target)
+        if state["repo"] is None:
+            state["repo"] = repo
+        return issue, nodes
+
+    def walk(target: int, depth: int, known):
+        issue, nodes = query(target)
+        if known is None:
+            _found, title, status = _issue_fields(issue, target)
+            issues.append({"number": target, "parent": None, "depth": 0, "title": title,
+                           "state": status,
+                           "prs": _closing_refs(issue.get("closedByPullRequestsReferences"),
+                                                state["repo"], target)})
+        for node in nodes:
+            child, title, status = _issue_fields(node, target)
+            owner = node.get("repository")
+            owner = owner.get("nameWithOwner") if isinstance(owner, dict) else None
+            summary = node.get("subIssuesSummary")
+            total = summary.get("total") if isinstance(summary, dict) else None
+            if not isinstance(owner, str) or not owner or type(total) is not int or total < 0:
+                raise EpicError("issue #%d の子 issue #%d の応答が期待する形ではありません"
+                                % (target, child))
+            if owner.lower() != state["repo"].lower():
+                skipped.append({"repo": owner, "number": child, "parent": target})
+                continue
+            if child in seen:
+                continue
+            seen.add(child)
+            issues.append({"number": child, "parent": target, "depth": depth + 1, "title": title,
+                           "state": status,
+                           "prs": _closing_refs(node.get("closedByPullRequestsReferences"),
+                                                state["repo"], child)})
+            if total > 0:
+                if depth + 1 >= EPIC_MAX_DEPTH:
+                    raise EpicError("issue #%d は %d 段より深い子 issue を持っています"
+                                    % (child, EPIC_MAX_DEPTH))
+                walk(child, depth + 1, True)
+
+    walk(number, 0, None)
+    return issues, skipped
 
 
 def current_branch(where: str):
@@ -933,8 +1082,11 @@ def _ledger_session(line: str):
     return record.get("session_id") if isinstance(record, dict) else None
 
 
-def iter_ledger_issue_facts(ledger: str, issue: str):
+def iter_ledger_issue_facts(ledger: str, issue):
     """台帳のうち、その issue 番号を触った行を持つセッションの事実だけを返す。
+
+    ``issue`` は番号 1 件（文字列）か、番号の集合（エピックの集計が、対象の issue すべての分を
+    台帳の同じ 2 回の走査でまとめて読むために渡す。どれかを触ったセッションを返す）。
 
     区間は ``session_id`` ごとに切るので、その issue を触った行が 1 つも無いセッションは
     issue の集計に関係しない。1 回目の走査で、issue 番号を持つ行（``"issues": []`` でない行）
@@ -944,6 +1096,7 @@ def iter_ledger_issue_facts(ledger: str, issue: str):
     handle = _open_ledger(ledger)
     if handle is None:
         return
+    wanted = {issue} if isinstance(issue, str) else set(issue)
     sessions: set[str] = set()
     with handle:
         for line in handle:
@@ -954,7 +1107,8 @@ def iter_ledger_issue_facts(ledger: str, issue: str):
             except ValueError:
                 continue
             if (isinstance(fact, dict) and isinstance(fact.get("issues"), list)
-                    and issue in fact["issues"] and isinstance(fact.get("session_id"), str)):
+                    and not wanted.isdisjoint(n for n in fact["issues"] if isinstance(n, str))
+                    and isinstance(fact.get("session_id"), str)):
                 sessions.add(fact["session_id"])
     handle = _open_ledger(ledger)
     if handle is None:
@@ -1021,7 +1175,8 @@ def load_facts(resolver: RepoResolver, branch: str | None = None, issue: str | N
     会話ログを直接読む。
 
     ``issue`` を渡すと、台帳からはその issue を触ったセッションの行だけを読む（区間に
-    切った結果は全行を読んだ場合と同じ）。会話ログの直読みでは絞らない。
+    切った結果は全行を読んだ場合と同じ）。番号の集合を渡せば、どれかを触ったセッションの行を
+    まとめて読む。会話ログの直読みでは絞らない。
     """
     configured = ledger_path()
     if configured is None:
@@ -1816,7 +1971,8 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
 
 
 def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
-    """``/cost`` の入口。番号の判別だけを行い、集計は branch / issue の経路に委ねる。
+    """``/cost`` の入口。番号の判別だけを行い、集計は branch / issue / epic の経路に委ねる。
+    issue のうち子 issue を持つもの（判別の応答の子の数が 1 以上）は ``cmd_epic`` へ渡す。
 
     1 行目を作るのは ``headline()`` だけで、この関数は帰属先の表記を渡すにとどめる。
     PR 経路が独自の書式を持つと、ゲート連携が貼る 1 行が経路ごとに割れる。
@@ -1841,13 +1997,20 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
             resolver,
         )
 
-    kind, value = resolve_number(where, args.number)
+    kind, value, children = resolve_number(where, args.number)
     if kind == "pr":
         return cmd_branch(
             argparse.Namespace(
                 branch=value, target_label="PR #%s (%s)" % (args.number, value),
                 no_drift_check=args.no_drift_check,
             ),
+            pricing,
+            resolver,
+        )
+    if kind == "issue" and children >= 1 and re.fullmatch(r"[0-9]+", value):
+        return cmd_epic(
+            argparse.Namespace(issue=value, repo=where, json=args.json,
+                               no_drift_check=args.no_drift_check),
             pricing,
             resolver,
         )
@@ -2002,6 +2165,101 @@ def issue_combined_total(matched, closing_prs, pricing: Pricing, resolver: RepoR
             "current": (int(round(total * 1e6)),) + token_totals(all_facts)}
 
 
+def epic_rows(numbers, repo_id: str, heads, resolver: RepoResolver):
+    """対象の issue すべての区間の行と、ヘッドブランチすべての行をまとめて読む。
+
+    返すのは ``({issue の番号: 区間の行}, リポジトリ不明の区間の行, {ヘッドブランチ: 行})``。
+    台帳への差分の追記は ``load_facts()`` の 1 回だけで、台帳を読み通す回数は issue の数にも
+    PR の数にも比例しない（区間は番号の集合で 1 度に、PR の分は全ブランチを 1 度に読む）。
+    """
+    wanted = {str(number) for number in numbers}
+    facts = list(load_facts(resolver, issue=wanted))
+    interval_facts, unknown = defaultdict(list), []
+    for row in split_intervals(facts):
+        if row["issue"] not in wanted:
+            continue
+        if row["repo_id"] == repo_id:
+            interval_facts[int(row["issue"])].extend(row["facts"])
+        elif row["repo_id"] == UNKNOWN_REPO:
+            unknown.extend(row["facts"])
+    return interval_facts, unknown, load_branches_facts(resolver, heads)
+
+
+def _micro(facts, pricing: Pricing) -> int:
+    """事実の列の金額をマイクロドルの整数にする（``money()`` と同じ 6 桁への丸め）。"""
+    return int(round(sum(pricing.cost(fact)[0] for fact in facts) * 1e6))
+
+
+def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricing: Pricing) -> dict:
+    """エピックの合計（spec cost-ledger-attribution）を出す。``gh`` も台帳も読まない。
+
+    ``issues`` は ``fetch_epic_tree()`` の対象の issue の一覧（先頭がエピック自身）、
+    ``interval_facts`` は ``{issue の番号: その issue に帰属した区間の行}``、``branch_facts`` は
+    ``{ヘッドブランチ: そのブランチの行}``、``unknown_facts`` はリポジトリ識別子が不明の区間の行。
+
+    行は次の順で 1 つの issue に割り当てる。(1) ブランチ名がどれかのヘッドブランチと一致する行は、
+    そのブランチの PR が閉じた対象の issue のうち番号がいちばん小さい issue へ。(2) それ以外の
+    区間の行は、その区間の issue へ。1 つの行のブランチは 1 つで、区間は 1 つの issue にしか帰属
+    しないので、割り当てた額の和は「行ごとに 1 回だけ足した額」になる。
+
+    金額は、ブランチごと・(issue, ブランチ) ごとにマイクロドルの整数へ丸めてから足し、ドルへの
+    変換は最後に行う（割り当てた額の和と合計が、浮動小数の誤差なしで一致するように）。
+    """
+    owner = {}
+    for row in issues:
+        for _pr, branch in row["prs"]:
+            if branch not in owner or row["number"] < owner[branch]:
+                owner[branch] = row["number"]
+    branch_micro = {branch: _micro(branch_facts.get(branch, []), pricing) for branch in owner}
+    counted = [fact for branch in owner for fact in branch_facts.get(branch, [])]
+
+    result, own, usd = [], {}, {}
+    for row in issues:
+        number = row["number"]
+        by_branch = defaultdict(list)
+        for fact in interval_facts.get(number, []):
+            by_branch[fact.get("branch")].append(fact)
+        heads = {branch for _pr, branch in row["prs"]}
+        assigned = sum(branch_micro[branch] for branch in heads if owner[branch] == number)
+        standalone = sum(branch_micro[branch] for branch in heads)
+        for branch, facts in by_branch.items():
+            micro = _micro(facts, pricing)
+            if branch not in owner:
+                assigned += micro
+                counted.extend(facts)
+            if branch not in heads:
+                standalone += micro
+        own[number] = usd[number] = assigned
+        result.append({
+            "number": number, "parent": row["parent"], "depth": row["depth"],
+            "title": row["title"], "state": row["state"],
+            "own_micro": assigned, "standalone_micro": standalone,
+            "closing_prs": [{"number": pr, "branch": branch, "usd": branch_micro[branch] / 1e6,
+                             "counted_in": owner[branch]} for pr, branch in row["prs"]],
+        })
+    # 子は必ず親より後ろに並ぶので、後ろから親へ足し上げる
+    for row in reversed(result):
+        if row["parent"] is not None:
+            usd[row["parent"]] += usd[row["number"]]
+    for row in result:
+        row["usd"] = usd[row["number"]] / 1e6
+        row["own_usd"] = row.pop("own_micro") / 1e6
+        row["standalone_usd"] = row.pop("standalone_micro") / 1e6
+    epic = issues[0]["number"]
+    total = sum(own.values())
+    unknown = [fact for fact in unknown_facts if fact.get("branch") not in owner]
+    return {
+        "issues": result,
+        "total_usd": total / 1e6,
+        "children_usd": (total - own[epic]) / 1e6,
+        "self_usd": own[epic] / 1e6,
+        "unknown_repo_usd": _micro(unknown, pricing) / 1e6,
+        # 同じ応答の 2 行目以降の事実はメッセージ数に数えない（``summarise()`` と同じ）
+        "unknown_repo_messages": sum(1 for fact in unknown if not is_continuation(fact)),
+        "sessions": {fact["session_id"] for fact in counted},
+    }
+
+
 def _dollars(usd: float) -> str:
     """内訳の額。``$`` と小数 2 桁、3 桁区切り（``money()`` と同じく先に 6 桁に揃える）。"""
     return "$" + format(round(usd * 1e6) / 1e6, ",.2f")
@@ -2154,6 +2412,112 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
     return 0
 
 
+EPIC_TITLE_WIDTH = 40
+
+# 表示の前に空白へ置き換える文字の一般カテゴリ（制御文字・書式文字・行と段落の区切り）
+_UNPRINTABLE_CATEGORIES = frozenset(("Cc", "Cf", "Zl", "Zp"))
+
+
+def _display_text(text: str) -> str:
+    """GitHub から取った文字列を、端末に出せる形にする（``--json`` には使わない）。
+
+    制御文字（改行・タブ・ESC・双方向制御文字など）を空白 1 つに置き換え、続いた空白を 1 つに
+    畳み、前後の空白を落とす。題名で内訳の行を割ったり、端末の表示を書き換えたりできないように
+    するためで、文としての内容は見ない。
+    """
+    cleaned = "".join(" " if unicodedata.category(char) in _UNPRINTABLE_CATEGORIES else char
+                      for char in text)
+    return re.sub(" {2,}", " ", cleaned).strip(" ")
+
+
+def _epic_line(row: dict, has_children: bool) -> str:
+    """内訳の 1 行。額はその issue と下の issue すべての和で、段ごとに空白を 2 つ足す。"""
+    title = _display_text(row["title"])
+    if len(title) > EPIC_TITLE_WIDTH:
+        title = title[:EPIC_TITLE_WIDTH - 1] + "…"
+    line = "%s#%d %s %s" % ("  " * (row["depth"] + 1), row["number"], row["state"],
+                            _dollars(row["usd"]))
+    if has_children:
+        line += "（自身 %s）" % _dollars(row["own_usd"])
+    line += " — %s" % title
+    if round(row["own_usd"] * 1e6) != round(row["standalone_usd"] * 1e6):
+        line += "（単独 %s%s）" % (
+            _dollars(row["standalone_usd"]),
+            "".join("、PR #%d は #%d に計上" % (pr["number"], pr["counted_in"])
+                    for pr in row["closing_prs"] if pr["counted_in"] != row["number"]))
+    return line
+
+
+def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
+    """子 issue を持つ issue の、子 issue ごとの内訳と合計を出す（``cost`` から呼ばれる）。
+
+    合計は、エピック自身と子孫の issue が数える行を 1 回ずつ足した額。木を読み切れなければ、
+    標準出力に何も書かずに終了コード 2 を返す（一部の子だけの額を合計として見せない）。
+    """
+    where = os.path.abspath(args.repo) if args.repo else os.getcwd()
+    repo_id = resolver.repo_id(where)
+    if repo_id == UNKNOWN_REPO:
+        sys.stderr.write(
+            "%s は git リポジトリではないため、issue #%s の帰属先リポジトリが決まりません。\n"
+            % (where, args.issue)
+        )
+        return 2
+    number = int(args.issue)
+    try:
+        issues, skipped = fetch_epic_tree(where, number)
+    except EpicError as error:
+        sys.stderr.write(
+            "%s。issue #%d の合計は出しません（一部の子 issue しか読めていない額を合計にしないため）。\n"
+            % (error, number)
+        )
+        return 2
+    heads = [branch for row in issues for _pr, branch in row["prs"]]
+    interval_facts, unknown, branch_facts = epic_rows(
+        [row["number"] for row in issues], repo_id, heads, resolver)
+    result = assign_epic_rows(issues, interval_facts, branch_facts, unknown, pricing)
+    label = resolver.label(repo_id)
+    drift = None
+    if not getattr(args, "no_drift_check", False):
+        # 対象のセッションが多いので、上限つきの読み直しに任せる（facts を渡さない）
+        drift = price_drift(result["sessions"], pricing)
+    if args.json:
+        print(json.dumps({
+            "issue": str(number),
+            "repo_id": repo_id,
+            "repo_label": label,
+            "usd_jpy_rate": pricing.jpy_rate,
+            "price_drift": drift,
+            "total_usd": result["total_usd"],
+            "children_usd": result["children_usd"],
+            "self_usd": result["self_usd"],
+            "issues": result["issues"],
+            "skipped": skipped,
+            "unknown_repo_usd": result["unknown_repo_usd"],
+            "unknown_repo_messages": result["unknown_repo_messages"],
+        }, ensure_ascii=False, indent=2))
+        return 0
+    print(headline(result["total_usd"], pricing, "issue #%d (%s)" % (number, label), "子 issue 込み"))
+    print("  対象: issue #%d（%s）と子孫の issue %d 件" % (number, label, len(issues) - 1))
+    print("  子 issue の合計: %s" % _dollars(result["children_usd"]))
+    print("  issue #%d 自身: %s" % (number, _dollars(result["self_usd"])))
+    parents = {row["parent"] for row in result["issues"]}
+    for row in result["issues"]:
+        print(_epic_line(row, row["number"] in parents))
+    if skipped:
+        print("  数えていない子 issue: %s（別のリポジトリ）"
+              % "、".join("%s#%d" % (_display_text(row["repo"]), row["number"])
+                             for row in skipped))
+    if result["unknown_repo_messages"]:
+        print("  リポジトリ不明: %d 件 %s（cwd が削除済みで、どのリポジトリの issue か絞れない。"
+              "合計には入れていない）"
+              % (result["unknown_repo_messages"], _dollars(result["unknown_repo_usd"])))
+    print("  ※ 額は区間分割による推定です。issue ごとの区間の内訳は /cost <その issue の番号> で"
+          "見られます（区間だけの額なので、閉じた PR の分を含むこの内訳の額とは一致しません）。")
+    for line in render_price_drift(drift):
+        print(line)
+    return 0
+
+
 def cmd_ledger_sync(args, pricing: Pricing, resolver: RepoResolver) -> int:
     """会話ログの増えた分を台帳に追記する（Stop hook と手動の取り込みの共通入口）。"""
     configured = ledger_path()
@@ -2211,7 +2575,8 @@ def build_parser() -> argparse.ArgumentParser:
     cost.add_argument("--repo", default=None,
                       help="問い合わせと絞り込みの基準になる場所（既定はカレントディレクトリ）")
     cost.add_argument("--json", action="store_true",
-                      help="issue 経路のときだけ JSON で出す")
+                      help="issue 経路のときだけ JSON で出す（子 issue を持つ issue では、"
+                           "子 issue ごとの内訳つきの JSON になる）")
     cost.add_argument("--no-drift-check", action="store_true",
                       help="単価表のずれの突き合わせ（本体のセッションコストとの比較）を行わない")
     cost.set_defaults(func=cmd_cost)

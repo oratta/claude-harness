@@ -29,6 +29,7 @@ CLAUDE_PLUGIN_OPTION_LEDGER_PATH='${user_config.LEDGER_PATH}' python3 "$CL" cost
 | `/cost` | 作業ディレクトリの現在のブランチに帰属するコスト |
 | `/cost <PR番号>` | その PR のヘッドブランチに帰属するコスト |
 | `/cost <issue番号>` | その issue を触った区間のコスト合計（作業ディレクトリのリポジトリの行だけ） |
+| `/cost <子 issue を持つ issue の番号>` | 子 issue ごとの内訳と、エピック自身と子孫の issue の合計（同じ PR の分は 1 回だけ数える） |
 
 番号が PR か issue かは `gh api` で GitHub に問い合わせて判別する。**認証済みの `gh` と GitHub への到達性が要る**（コスト計算そのものはオフラインで完結するが、判別だけはネットワークに依存する）。どちらでもない番号は 0 円と表示せず、見つからないと伝えて終了コード 2 で終わる。
 
