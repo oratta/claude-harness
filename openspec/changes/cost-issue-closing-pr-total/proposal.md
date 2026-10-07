@@ -22,6 +22,6 @@
 ## Impact
 
 - `plugins/cost-ledger/scripts/cost_ledger.py`（`cmd_cost` の issue 分岐、閉じた PR の問い合わせの関数を足す）
-- `plugins/cost-ledger/commands/cost.md`（呼び方の表）、`plugins/cost-ledger/README.md`（該当があれば）
+- `plugins/cost-ledger/commands/cost.md`（呼び方の表）、`plugins/cost-ledger/README.md`（`/cost <子の番号>` は区間だけという説明）
 - `plugins/cost-ledger/tests/`（cost-command.bats ほか、偽の `gh` で検証）
 - 実行時間と `gh` の回数: `/cost <issue番号>` 1 回あたり GraphQL が 1 回増える（0 → 1）。変更前後を実測して PR に書く。
