@@ -36,5 +36,5 @@
 ## 5. 記録と全体テスト
 
 - [x] 5.1 変更の記録 `plugins/dev-workflow/changes/694.md` を書く（何を変えたか・終了コード 3 の意味・#478/#480 を含めた理由・BREAKING の読み方）。触る範囲: plugins/dev-workflow/changes/694.md（新規）
-- [ ] 5.2 `bash scripts/test.sh` が exit 0（#478・#480 の受け入れ条件 3）
+- [x] 5.2 `bash scripts/test.sh` が exit 0（#478・#480 の受け入れ条件 3）
 - [x] 5.3 `openspec validate risk-carryover-rereviewed-resolution --strict` が valid
