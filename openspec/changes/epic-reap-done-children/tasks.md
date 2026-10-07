@@ -37,6 +37,6 @@
 
 ## 7. 確認
 
-- [ ] 7.1 `bats plugins/dev-workflow/tests/epic-dispatch.bats` と `bash scripts/test.sh` が exit 0（常時注入の予算テスト `tests/injection-budget.bats` を含む）。`openspec validate epic-reap-done-children --strict` が exit 0。触る範囲: なし
-- [ ] 7.2 PR 本文に貼る検索の結果を取る: `grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop`（0 行）と `grep -rnw orca plugins/dev-workflow --include='*.sh'`（`epic-dispatch.sh` だけ）。触る範囲: なし
+- [x] 7.1 `bats plugins/dev-workflow/tests/epic-dispatch.bats` と `bash scripts/test.sh` が exit 0（常時注入の予算テスト `tests/injection-budget.bats` を含む）。`openspec validate epic-reap-done-children --strict` が exit 0。触る範囲: なし
+- [x] 7.2 PR 本文に貼る検索の結果を取る: `grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop`（0 行）と `grep -rnw orca plugins/dev-workflow --include='*.sh'`（`epic-dispatch.sh` だけ）。触る範囲: なし
 - [ ] 7.3 実機の確認（Orca 経路のエピックで、子が完了の印を付けたワークツリーが Orca の UI・`git worktree list`・`git branch` から消えること、確認待ちの印の子が残ること）は、マージ前の `claude --plugin-dir` か、マージ後の最初の Orca 経路のエピックで行い、結果を PR に貼る。この工程のワークツリーはサブエージェント方式で動いているので、W は実機で流せない。W は (3a) の return にその旨を書き、誰がいつ行うかは本体が決める。触る範囲: なし
