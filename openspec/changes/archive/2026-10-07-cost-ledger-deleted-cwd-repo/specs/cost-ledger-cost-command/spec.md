@@ -1,32 +1,4 @@
-# cost-ledger-cost-command Specification
-
-## Purpose
-`/cost` の入力解釈と出力の契約。番号が PR か issue かを GitHub に問い合わせて振り分け、issue の経路は実行した作業ディレクトリのリポジトリで絞る。出力の 1 行目は後続のゲート連携がそのまま PR に貼れる固定書式にする。
-## Requirements
-### Requirement: `/cost <番号>` の入力解釈
-システムは `/cost <番号>` を受け取り、その番号が PR か issue かを GitHub に問い合わせて判別 SHALL する。PR ならその PR のヘッドブランチのコストを、子 issue を持たない issue ならその issue を触った区間のコスト合計を、子 issue を持つ issue なら「子 issue を持つ issue では、子 issue ごとの内訳と合計を返す」が定める合計と内訳を返 MUST す。子 issue を持つかどうかは、番号の判別に使う issue の問い合わせ（REST の `repos/{owner}/{repo}/issues/<番号>`）の応答の `sub_issues_summary.total` が 1 以上かどうかで決め SHALL、判別のための `gh` の呼び出しを増やしてはなら MUST NOT ない。この値が応答に無いか整数として読めないときは、子 issue を持たない issue として扱 MUST う。
-
-守備範囲: この判別が受け取る入力は、利用者が `/cost` に渡した番号と、その番号について `gh` が返す GitHub の応答（PR の問い合わせと issue の問い合わせ）に限る。拾いたい誤りは、PR を issue として・issue を PR として集計すること、存在しない番号を 0 と表示すること、子 issue を持つ issue を区間だけの額（ほぼ 0）で返すことの 3 つ。次のことは誤ったまま通ることを許す: issue の問い合わせの応答に `sub_issues_summary` が無い・`total` が整数でない（古い応答の形、テスト用の偽の `gh` など）ときは、実際に子 issue があっても子を持たない issue として区間の合計を返す／GitHub の子 issue の仕組みに登録されていない issue（本文の表に書いてあるだけ）は子として見ない／判別のあとで子 issue が足された・外されたことは、その実行には反映されない。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
-
-#### Scenario: PR 番号を渡す
-- **WHEN** 利用者が既存の PR の番号を `/cost` に渡す
-- **THEN** その PR のヘッドブランチに帰属するコストが返る
-
-#### Scenario: issue 番号を渡す
-- **WHEN** 利用者が、子 issue を持たない既存の issue の番号を `/cost` に渡す
-- **THEN** その issue を触った区間のコスト合計が返る
-
-#### Scenario: 子 issue を持つ issue の番号を渡す
-- **WHEN** issue の問い合わせの応答の `sub_issues_summary.total` が 2 である issue #10 の番号を `/cost` に渡す
-- **THEN** 1 行目の帰属の種別は `子 issue 込み` で、2 行目以降に子 issue ごとの行がある
-
-#### Scenario: 子 issue の数が応答に無い
-- **WHEN** issue の問い合わせが番号だけを返す（`sub_issues_summary` が無い）issue #12 の番号を `/cost` に渡す
-- **THEN** 出力は `cost_ledger.py issue 12` と同じで、GraphQL の呼び出しは 0 回
-
-#### Scenario: 存在しない番号を渡す
-- **WHEN** 渡された番号の PR も issue も存在しない
-- **THEN** コストを 0 と表示せず、番号が見つからないことを利用者に伝える
+## MODIFIED Requirements
 
 ### Requirement: issue の経路はリポジトリで絞る
 issue 番号はリポジトリ内でしか一意でないため、`/cost <issue番号>` は**実行した作業ディレクトリのリポジトリ識別子と一致する行だけ**に絞 MUST る。全リポジトリの同じ番号を合算してはなら MUST NOT ない。
@@ -94,60 +66,6 @@ PR の経路はブランチ名だけで引いて SHALL よい。PR のヘッド�
 #### Scenario: git リポジトリの外で呼ぶ
 - **WHEN** git リポジトリでないディレクトリで `/cost` を番号なしで実行する
 - **THEN** ブランチが決まらないことを利用者に伝える
-
-### Requirement: 出力の 1 行目は固定書式
-後続の pr-review-gate 連携が出力をそのまま PR へ貼れるよう、システムは出力の**1 行目を固定書式**と MUST する。1 行目だけを取れば貼れる形にし、2 行目以降に内訳を置く。1 行目には金額（USD と円）、用いた換算レート、帰属先（PR 番号または issue 番号とリポジトリ）、帰属の種別（`ブランチ`・`区間`・`子 issue 込み` のいずれか）を含め MUST る。
-
-書式の例:
-
-```
-コスト: $108.23 / ¥16,235 @150 — PR #271 (oratta/token-optimize) 帰属: ブランチ
-```
-
-#### Scenario: 1 行目だけで貼れる
-- **WHEN** `/cost` の出力から 1 行目だけを取り出す
-- **THEN** 金額・換算レート・帰属先・帰属の種別がすべてその 1 行に含まれる
-
-#### Scenario: 内訳は 2 行目以降にある
-- **WHEN** 子 issue を持たない issue の番号を渡してコストが返る
-- **THEN** 区間ごとの内訳は 2 行目以降にあり、1 行目の書式は変わらない
-
-### Requirement: 出力の形式
-`/cost` の出力は API 換算コストを USD と円の両方で SHALL 示す。数字が推定であることを利用者が読み取れるよう、帰属の内訳（ブランチ単位か区間単位か）も示 MUST す。
-
-#### Scenario: USD と円が両方出る
-- **WHEN** `/cost` が値を返す
-- **THEN** 出力には USD の金額と円の金額が両方含まれる
-
-#### Scenario: issue 単位は推定であることが分かる
-- **WHEN** issue 番号を渡してコストが返る
-- **THEN** 出力には区間ごとの内訳が含まれ、その数字が区間分割による推定であることが分かる
-
-### Requirement: プラグインの登録
-`cost-ledger` は独立したプラグインとして `plugins/cost-ledger/.claude-plugin/plugin.json` を持ち、リポジトリルートの `.claude-plugin/marketplace.json` にも登録 MUST される。
-
-#### Scenario: 両方に登録されている
-- **WHEN** `bash scripts/test.sh` を実行する
-- **THEN** plugin.json と marketplace.json の整合を検査する S131（`tests/marketplace-sync.bats`）を含めて全件 green（exit 0）になる
-
-### Requirement: `/cost` はプラグイン設定の台帳パスを使う
-`/cost` のコマンド本文は、userConfig の `LEDGER_PATH` の設定値を、集計スクリプトの呼び出しに環境変数 `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` として渡 MUST す。コマンド本文の Bash 実行にはこの環境変数が自動では渡らない（実機で確認済み）ので、本文の `${user_config.LEDGER_PATH}` が読み込み時に置換されることを使う。台帳パスの解決と優先順位は `cost-ledger-persistence` の規則のままで、`/cost` 側に別の解決を持ってはなら MUST NOT ない。
-
-集計スクリプトの探索は、コマンド本文の置換で絶対パスになる作業中のプラグインのルートを先頭の候補にし MUST、インストール済みのコピーは後ろの候補にとどめる（Bash の実行環境にはプラグインのルートの環境変数が渡らないので、環境変数の形で先頭に置くと、版の違う旧コピーが選ばれる）。
-
-台帳が未設定のときの案内は、`/config` でのプラグイン設定「台帳ファイルのパス」を先に示 SHALL し、従来の方法（`~/.claude/settings.json` の `env` の `COST_LEDGER_PATH`）は次に示す。
-
-#### Scenario: プラグイン設定だけが設定されている
-- **WHEN** `COST_LEDGER_PATH` を設定せず userConfig の `LEDGER_PATH` だけを設定して `/cost` を実行する
-- **THEN** `/cost` は台帳から読み、会話ログを直接読む動きにならない
-
-#### Scenario: コマンド本文が値を渡している
-- **WHEN** `commands/cost.md` の集計呼び出しを調べる
-- **THEN** `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` に `${user_config.LEDGER_PATH}` を渡す形になっている
-
-#### Scenario: どちらも未設定
-- **WHEN** プラグイン設定も `COST_LEDGER_PATH` も未設定で `/cost` を実行する
-- **THEN** 会話ログを直接読んだ値が返り、台帳の置き場所を聞く案内は `/config` を先に示す
 
 ### Requirement: 子 issue を持つ issue では、子 issue ごとの内訳と合計を返す
 システムは、`cost_ledger.py cost <番号>` に子 issue を持つ issue（以下「エピック」）の番号が渡されたとき、エピック自身と子孫の issue ごとの額と、その合計を返 MUST す。合計と issue ごとの額の定義は spec `cost-ledger-attribution` の「エピックの合計は、エピック自身と子孫の issue が数える行を 1 回ずつ足した額である」に従 SHALL う。子 issue を持たない issue と PR の番号を渡したときの出力と `gh` の呼び出しは、変えてはなら MUST NOT ない。`cost_ledger.py issue`・`cost_ledger.py timeline` は子 issue を調べてはなら MUST NOT ない。
@@ -262,19 +180,4 @@ PR の経路はブランチ名だけで引いて SHALL よい。PR のヘッド�
 #### Scenario: fork の PR は数えない
 - **WHEN** 共通のデータで、#11 を閉じた PR として #300（`feat/a`、`isCrossRepository` が真）だけを返す状態で `cost_ledger.py cost 10 --json` を実行する
 - **THEN** #11 の `closing_prs` は空の配列で、`own_usd` は 2.0
-
-### Requirement: エピックの集計で呼ぶ `gh` は子を持つ issue ごとに 1 回で、台帳の読み取りは issue の数に比例しない
-システムが `cost_ledger.py cost <エピックの番号>` 1 回で呼ぶ `gh` は、番号の判別の 2 回（PR の問い合わせと issue の問い合わせ）に、子を持つ対象の issue の数（エピック自身を含む）を足した回数で MUST ある。GraphQL の呼び出しは子を持つ対象の issue 1 件につき 1 回で、子を持たない子 issue の数と、issue を閉じた PR の数では増えてはなら MUST NOT ない（子が 1 件ずつ入れ子になった鎖では、子を持つ issue の数が段の数だけあるので、その数だけ呼ぶ）。`COST_LEDGER_PATH` があるとき、台帳への差分の追記は 1 回の呼び出しで 1 回だけと SHALL し、台帳を読み通す回数は子 issue の数にも PR の数にも比例してはなら MUST NOT ない（区間の行は対象の issue すべての分を、PR の分はヘッドブランチすべての分を、それぞれまとめて読む）。
-
-#### Scenario: 子が 2 件で孫が無い
-- **WHEN** 子 issue を 2 件持ち、それぞれに閉じた PR が 1 件ずつある issue #10 に `cost_ledger.py cost 10` を実行する
-- **THEN** `gh` が呼ばれた回数は 3 回（うち GraphQL は 1 回）
-
-#### Scenario: 子の 1 件が孫を持つ
-- **WHEN** 「孫を辿る」の状態で `cost_ledger.py cost 10` を実行する
-- **THEN** `gh` が呼ばれた回数は 4 回（うち GraphQL は 2 回）
-
-#### Scenario: 子を持たない issue と PR は今までどおり
-- **WHEN** 子 issue を持たない issue #12 と、PR #300 に、それぞれ `cost_ledger.py cost <番号>` を実行する
-- **THEN** `gh` が呼ばれた回数は issue が 2 回、PR が 1 回で、GraphQL の呼び出しは 0 回
 
