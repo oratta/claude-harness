@@ -3,6 +3,7 @@ name: wt-setup
 description: Git worktree の開発環境セットアップ。worktree 作成後に実行する。「worktreeセットアップ」「ワークツリー初期化」で起動。引数で後続作業指示を渡せる。`--with-pr` で作業開始と同時に Draft PR を作る（PR 経由のマージを必須にしている repo 向け）。
 version: 1.7.1
 model: sonnet
+# 次の 2 行（context / background）は、いまの呼び出し経路では効かない（同名の commands ラッパーが勝つ）。理由は本文の「frontmatter の fork 指定について」
 context: fork
 background: false
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
@@ -11,6 +12,21 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 # wt-setup — Worktree セットアップスキル
 
 Git worktree作成後に実行し、開発に必要なファイル・設定を整えるスキル。
+
+## frontmatter の fork 指定について
+
+frontmatter の `context: fork` / `background: false` は、**現行の呼び出し経路では効かない**。残してある。
+
+**実機観測**（Claude Code 2.1.292、`claude -p --plugin-dir`、使い捨てリポジトリ、2026-10-07）: このプラグインと同じ構成（`commands/foo.md` と、同名で `context: fork` / `background: false` を持つ `skills/foo/SKILL.md`）の probe プラグインを作り、各本文に別々の合言葉を返させて比べた。
+
+| 呼び方 | 同名の commands あり | 同名の commands なし |
+| --- | --- | --- |
+| `/probe:foo` | commands 側の本文が実行された | （対照）スキル本文が実行された |
+| Skill ツール | commands 側の本文が返り、fork の表示なし | `completed (forked execution)` と出て fork で実行された |
+
+つまり `/wt-setup` も Skill ツールの `worktree:wt-setup` も `commands/wt-setup.md`（この SKILL.md を Read してインライン実行するラッパー）に解決され、この frontmatter は読まれない。公式ドキュメント（https://code.claude.com/docs/en/skills ）は「skill と `.claude/commands/` のファイルでは skill が勝つ」とするが、プラグインの `commands/` と `skills/` が同名の場合は実機で commands が勝った。観測していない経路・版では分からない。
+
+**残す理由**: (1) `openspec/specs/skill-execution-isolation` が `context: fork` を要件にしている (2) ラッパーを外す・改名する、あるいは解決順が変わると、fork と完了待ち（`background: false`）が最初から効く (3) 残すコストは frontmatter の数行だけ。現行経路で `background: false` の効果は確かめられない静的な保険である。
 
 ## 自動実行との関係（このスキルを手で呼ぶ必要がある場面）
 
