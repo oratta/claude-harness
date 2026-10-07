@@ -1208,7 +1208,7 @@ issue_approved_section() { awk '/^#### issue で承認済み/{f=1} /^#### 3-b\./
   line="$(step5_body | grep -F '事後報告' | grep -F '1 回')"
   echo "$line" | grep -qF '宣言コメントの URL' || { echo "$line"; return 1; }
   echo "$line" | grep -qF '引用'
-  ret="$(awk '/^### return の書式（passed）/{f=1; next} /^### /{f=0} f' "$PASS_STAGE")"
+  ret="$(awk '/^### return の書式（passed）/{f=1; next} /^### この段で/{f=0} f' "$PASS_STAGE")"
   echo "$ret" | grep -q '^- issue で承認済み: '
 }
 
