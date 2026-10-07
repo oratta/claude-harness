@@ -39,9 +39,11 @@ pr-review-gate SKILL.md 手順 3 のリスク宣言は、プロダクトのユ�
 
 1. 記録先の issue の本文が、当たった分類の効果をその issue の目的として書いている。該当の文を宣言に引用する
 2. 主がその issue を承認した証拠が会話ログにあり、`plugins/dev-workflow/scripts/owner-reply-check.sh` の終了コード 0 で確かめられる。証拠は、主が起票を承認した発言（起票したセッションで issue の URL が最初に現れる行より前の、主の最後の発言で、全文から起票の承認が読めるもの）か、主が自分で打った `/develop <番号>`（`MATCH:` の全文で `<command-args>` の直後が `<番号>` または `#<番号>` で、その後ろが空白か `</command-args>`）のどちらかとする。issue 本文の `lastEditedAt` は null か、証拠の発言の timestamp より前でなければならない
+
+起票したセッション S は、issue の URL を含む会話ログのうち、URL の初出行がその直前の tool_use（`gh issue create` または `gh api -X POST repos/<R>/issues`）に対応する tool_result であるものだけとしなければならない（MUST）。初出行がそれ以外（`gh issue view` の出力・主の発言・`/develop` の引数など）のログを S にしてはならない（MUST NOT）。S の候補が 0 件なら起票の承認の証拠は使わず、手順 6 で主に聞かなければならない（MUST）。起票の承認の発言に `<command-name>` を含む行（スラッシュコマンド）を使ってはならない（MUST NOT。`/develop` は `/develop <番号>` の証拠としてだけ扱い、その除外を通す）。主がエピックの起票を承認した発言は、同じセッションでそのあと続けて起票された子の起票の承認の証拠になる（SHALL）。別のセッションでエピックの親が自動で起こした子の証拠にはならない（MUST NOT）。
 3. 実装中に発覚した影響ではない（宣言の `- 検知時点:` が `issue 記載済み`）
 
-次の issue と証拠には当ててはならない（MUST NOT）: `agent-proposed` ラベルが付いた issue、主の承認の記録が無いままエージェントが起こした issue（エピックの親が自動で起こした子を含む）、`EPIC_DISPATCH_PARENT_EPIC` が空でないセッション（Orca の親が子に打ち込んだもの）の `/develop`、`<command-args>` に `--unmanned` を含む `/develop`、全文が保留や却下（「あとで見る」など）と読める発言。
+次の issue と証拠には当ててはならない（MUST NOT）: `agent-proposed` ラベルが付いた issue、主の承認の記録が無いままエージェントが起こした issue（エピックの親が自動で起こした子を含む）、`EPIC_DISPATCH_PARENT_EPIC` が空でないセッション（Orca の親が子に打ち込んだもの）の `/develop`、`<command-args>` に `--unmanned` を含む `/develop`、全文が保留や却下（「あとで見る」など）と読める発言。unmanned のゲート（develop の `--unmanned`）では、条件を満たしても「issue で承認済み」を当ててはならず、従来どおり手順 6 で保留にしなければならない（MUST。主との会話が無く事後報告の載せ先が無いため）。
 
 当てたときは、宣言の本文（行頭 `主のリスク許容が必要。`）を書き換えず、末尾に次の 3 行を追記して `needs-approval` を付けずに手順 4・5 へ進まなければならない（SHALL）:
 
@@ -80,9 +82,24 @@ issue で承認済み — issue #<N> の目的: 「<本文からの引用>」
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC` が空でないセッションで、そのセッションの `/develop <番号>` だけを証拠にしようとする
 - **THEN** 手順書に従えば証拠として数えず、起票の承認の証拠が無ければ手順 6 で主に聞く
 
+#### Scenario: 起票コマンドの出力が初出でないログは起票したセッションにしない
+
+- **WHEN** issue の URL を含む会話ログを探し、見つかったログの URL の初出行が `gh issue create` / `gh api -X POST repos/<R>/issues` の tool_result でない（`gh issue view` の出力・主の発言・`/develop` の引数など）
+- **THEN** 手順書に従えばそのログを起票の承認の証拠にせず、ほかに候補が無ければ手順 6 で主に聞く
+
+#### Scenario: 同じセッションで続けて起票されたエピックの子は通る
+
+- **WHEN** 主がエピックの起票を承認し、同じセッションでそのあと子の issue が `gh issue create` で起票されている
+- **THEN** 子の URL の初出行より前の主の最後の発言（エピックの起票の承認）が、子の起票の承認の証拠になる
+
+#### Scenario: unmanned では当てない
+
+- **WHEN** develop の `--unmanned` のゲートで、「issue で承認済み」の条件をすべて満たす宣言を判定する
+- **THEN** 手順書に従えば当てず、手順 6 で `needs-approval` を付けて保留にする
+
 ### Requirement: 合格条件は issue で承認済みの宣言を受け付け、合格後に主へ事後報告する
 
-`skills/pr-review-gate/stages/pass.md` の手順 5 の合格条件の表は、「主のリスク許容が必要」を投稿済みで、同じコメントに「issue で承認済み」の 3 行（目的の引用・承認の証拠・真正性確認）が揃っている宣言を合格可として扱わなければならない（SHALL）。G は追記を読むだけで通してはならず、合格処理の前に `owner-reply-check.sh` を回し直し、引用が issue 本文にあること・`agent-proposed` が無いこと・`lastEditedAt` の条件・`EPIC_DISPATCH_PARENT_EPIC` と `--unmanned` の除外を確かめ直さなければならない（MUST）。どれかを満たさなければ合格させず、手順 6 で主に聞かなければならない（MUST）。
+`skills/pr-review-gate/stages/pass.md` の手順 5 の合格条件の表は、「主のリスク許容が必要」を投稿済みで、同じコメントに「issue で承認済み」の 3 行（目的の引用・承認の証拠・真正性確認）が揃っている宣言を合格可として扱わなければならない（SHALL）。G は追記を読むだけで通してはならず、合格処理の前に `owner-reply-check.sh` を回し直し、引用が issue 本文にあること・`agent-proposed` が無いこと・`lastEditedAt` の条件・`EPIC_DISPATCH_PARENT_EPIC` と `--unmanned` の除外・起票したセッション S の決め方・unmanned のゲートでないことを確かめ直さなければならない（MUST）。どれかを満たさなければ合格させず、手順 6 で主に聞かなければならない（MUST）。確かめ直したら、同じ宣言コメントに `確かめ直し: 済 — 確認者 <エージェント名> / <日時>（手順 5）` を 1 行追記しなければならない（SHALL）。このとき `真正性確認: 済` の行を足してはならない（MUST NOT）。
 
 合格したら、主に 1 回だけ事後報告しなければならない（SHALL）。報告には宣言コメントの URL と、引用した issue の文と、当たった分類を含める。develop の G は passed の return に `issue で承認済み:` の行（宣言 URL・分類・引用）を足し、本体が主に伝える（SHALL）。
 
@@ -103,7 +120,12 @@ issue で承認済み — issue #<N> の目的: 「<本文からの引用>」
 
 ### Requirement: issue で承認済みの宣言は保留に入らず、引き継ぎの元にしない
 
-`skills/pr-review-gate/stages/hold.md` は、「issue で承認済み」を当てた宣言が手順 6 に入らないこと（`needs-approval` を付けない）を書かなければならない（SHALL）。手順 3-c は「issue で承認済み」の宣言を引き継ぎの元にしてはならず（MUST NOT）、HEAD が動いたら新しい HEAD で手順 3 を回して同じ条件で判定し直さなければならない（SHALL）。条件を満たさずに手順 6 へ進むときは、主への依頼に満たさなかった条件を添えなければならない（SHALL）。
+`skills/pr-review-gate/stages/hold.md` は、「issue で承認済み」を当てた宣言が手順 6 に入らないこと（`needs-approval` を付けない）を書かなければならない（SHALL）。手順 3-c は「issue で承認済み」の宣言を引き継ぎの元にしてはならず（MUST NOT）、HEAD が動いたら新しい HEAD で手順 3 を回して同じ条件で判定し直さなければならない（SHALL）。条件を満たさずに手順 6 へ進むときは、主への依頼に満たさなかった条件を添えなければならない（SHALL）。`declarations.md` の出口は、「主のリスク許容が必要」と判定したときに試す順を書かなければならない（SHALL）: 前の HEAD に主の直接の許容があればまず 3-c の引き継ぎ、引き継げなければ「issue で承認済み」、どちらも当たらなければ手順 6。先に当たったほうだけを追記し、両方を書き込んではならない（MUST NOT）。
+
+#### Scenario: 試す順が出口に書かれている
+
+- **WHEN** `declarations.md` の出口を読む
+- **THEN** 3-c の引き継ぎ → 「issue で承認済み」 → 手順 6 の順に試すことが書いてある
 
 #### Scenario: HEAD が動いたら判定し直す
 
