@@ -328,6 +328,65 @@ print(json.load(open(sys.argv[1]))["env"]["COST_LEDGER_WRITE_REPOS_FILE"])' "$CW
   [ ! -e "$WORK/.git" ] && [ ! -e "$WORK/plain/.git" ]
 }
 
+@test "write-allow: a list inside the main repository does not count from a linked worktree" {  # git の worktree の中で作業していても、親のリポジトリ本体の中の一覧は空
+  cl_init_repo "$WORK/main" "$OTHER"
+  git -C "$WORK/main" worktree add -q -b wt "$WORK/linked" >/dev/null 2>&1
+  [ -f "$WORK/linked/.git" ]                                   # worktree の .git はファイル
+  mkdir -p "$WORK/main/conf" "$WORK/linked/sub"
+  LIST="$WORK/main/conf/write-repos"
+  allow "$OTHER"
+  export COST_LEDGER_WRITE_REPOS_FILE="$LIST"
+  ! judge "$OTHER" "$WORK/linked" || return 1
+  ! judge "$OTHER" "$WORK/linked/sub" || return 1
+  ! CLAUDE_PROJECT_DIR="$WORK/linked" judge "$OTHER" "$CWD" || return 1
+  STUB_CWD_REPO="$OTHER" hook "gh pr comment 300 --body x" "$WORK/linked"
+  silent
+  [ "$(gh_calls)" -eq 0 ]
+  judge "$OTHER" "$CWD"                                        # 別のリポジトリから見れば、ただの外のファイル
+}
+
+@test "write-allow: a list inside the outer repository does not count from a nested repository" {  # リポジトリの中に置いた別の clone や submodule の中で作業していても、外側のリポジトリの中の一覧は空
+  cl_init_repo "$WORK/outer" "$OTHER"
+  cl_init_repo "$WORK/outer/vendor/inner" "$OTHER"
+  mkdir -p "$WORK/outer/conf" "$WORK/outer/vendor/inner/sub"
+  LIST="$WORK/outer/conf/write-repos"
+  allow "$OTHER"
+  export COST_LEDGER_WRITE_REPOS_FILE="$LIST"
+  ! judge "$OTHER" "$WORK/outer/vendor/inner" || return 1
+  ! judge "$OTHER" "$WORK/outer/vendor/inner/sub" || return 1
+  STUB_CWD_REPO="$OTHER" hook "gh pr comment 300 --body x" "$WORK/outer/vendor/inner"
+  silent
+  [ "$(gh_calls)" -eq 0 ]
+  # submodule の形（.git が外側の .git/modules/... を指すファイル）でも同じ
+  mkdir -p "$WORK/outer/.git/modules/sm" "$WORK/outer/sm"
+  printf 'gitdir: ../.git/modules/sm\n' > "$WORK/outer/sm/.git"
+  ! judge "$OTHER" "$WORK/outer/sm" || return 1
+  judge "$OTHER" "$CWD"                                        # 別のリポジトリから見れば、ただの外のファイル
+}
+
+@test "write-allow: a .git file that cannot be followed makes the list empty" {  # .git がファイルで gitdir: の先を読めない・解釈できないときは、確かめられないので空
+  mkdir -p "$WORK/odd1" "$WORK/odd2"
+  printf 'not a gitdir line\n' > "$WORK/odd1/.git"
+  printf 'gitdir: %s\n' "$WORK/nowhere/.git/worktrees/x" > "$WORK/odd2/.git"
+  allow "$SELF"
+  judge "$SELF" "$CWD"                                         # 一覧そのものは有効
+  ! judge "$SELF" "$WORK/odd1" || return 1
+  ! judge "$SELF" "$WORK/odd2" || return 1
+}
+
+@test "write-allow: a list inside a repository whose git directory is kept elsewhere does not count" {  # worktree が指す先が bare なリポジトリでも、その中の一覧は空
+  git init -q --bare "$WORK/bare.git"
+  git -C "$WORK/bare.git" -c user.email=t@example.com -c user.name=t commit-tree -m init \
+    "$(git -C "$WORK/bare.git" hash-object -t tree -w /dev/null)" > "$WORK/commit"
+  git -C "$WORK/bare.git" worktree add -q "$WORK/from-bare" "$(cat "$WORK/commit")" >/dev/null 2>&1
+  [ -f "$WORK/from-bare/.git" ]
+  LIST="$WORK/bare.git/write-repos"
+  allow "$SELF"
+  export COST_LEDGER_WRITE_REPOS_FILE="$LIST"
+  ! judge "$SELF" "$WORK/from-bare" || return 1
+  judge "$SELF" "$CWD"
+}
+
 # --- 一覧に無いリポジトリでは gh を呼ばない ---
 
 @test "write-allow: an empty list file does not start python3" {  # 大きさ 0 の一覧では gh も python3 も 0 回

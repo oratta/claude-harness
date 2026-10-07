@@ -13,7 +13,9 @@ GitHub に書き込む経路（`gate_report.py` の裏の処理と、後から�
 - 環境変数の値そのものは一覧にしない。作業中のリポジトリの `.claude/settings.json` の `env` から
   設定できるため
 - 一覧のファイルの実体（シンボリックリンクを解決したもの）が、`cwd` か `CLAUDE_PROJECT_DIR` の
-  リポジトリの中にあれば、一覧は空。clone しただけのリポジトリが自分を許可できないようにする
+  リポジトリの中にあれば、一覧は空。clone しただけのリポジトリが自分を許可できないようにする。
+  「リポジトリの中」は、そこから根までの親のうち `.git` を持つディレクトリのすべてと、`.git` が
+  ファイル（worktree・submodule）のときにそれが指すリポジトリ本体。たどれないときも一覧は空
 - 実体が通常のファイルでない・持ち主が自分でない・自分以外が書ける・読めないときも、一覧は空
 
 既定（一覧が無い）は「書いてはいけない」。何も出力せず、確かめられないことは「書いてはいけない」に
@@ -25,6 +27,7 @@ DEFAULT_LIST = os.path.join(".config", "cost-ledger", "write-repos")
 REPO_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 MAX_BYTES = 1 << 20  # 一覧のファイルとして読む上限。これを超えるものは一覧として扱わない
 GIT_TIMEOUT = 15
+GIT_FILE_BYTES = 4096  # .git のファイルと commondir として読む上限
 
 # origin の URL の読み方は cost_ledger.py の RepoResolver.origin() と同じ 3 つの形
 # （write-allow.bats が両者の答えの一致を固定している）
@@ -44,17 +47,60 @@ def list_path():
     return path if os.path.isabs(path) else None
 
 
-def _boundary(start):
-    """start から親へたどって最初に .git（ディレクトリでもファイルでも）を持つディレクトリ。
-    見つからなければ start そのもの。git は起動しない。"""
+def _git_file_dirs(repo_dir):
+    """.git がファイル（worktree・submodule・git ディレクトリを別の場所に置いたリポジトリ）の
+    repo_dir について、その先にあるリポジトリ本体のディレクトリを返す。`gitdir:` の先と、そこに
+    `commondir` があればその先（worktree の親の git ディレクトリ）を範囲に入れ、名前が `.git` なら
+    その親（リポジトリ本体の作業ツリー）も入れる。git は起動せずファイルを読むだけ。
+    読めない・解釈できないときは None（呼び出し側は「確かめられない」として一覧を空にする）。"""
+    try:
+        with open(os.path.join(repo_dir, ".git"), "rb") as f:
+            head = f.read(GIT_FILE_BYTES + 1)
+        if len(head) > GIT_FILE_BYTES:
+            return None
+        line = head.decode("utf-8").split("\n", 1)[0].rstrip("\r")
+        if not line.startswith("gitdir:") or not line[len("gitdir:"):].strip():
+            return None
+        gitdir = os.path.realpath(os.path.join(repo_dir, line[len("gitdir:"):].strip()))
+        if not os.path.isdir(gitdir):
+            return None
+        found = [gitdir]
+        common_file = os.path.join(gitdir, "commondir")
+        if os.path.lexists(common_file):
+            with open(common_file, "rb") as f:
+                text = f.read(GIT_FILE_BYTES + 1)
+            if len(text) > GIT_FILE_BYTES or not text.strip():
+                return None
+            common = os.path.realpath(os.path.join(gitdir, text.decode("utf-8").strip()))
+            if not os.path.isdir(common):
+                return None
+            found.append(common)
+        return found + [os.path.dirname(d) for d in found if os.path.basename(d) == ".git"]
+    except (OSError, ValueError):
+        return None
+
+
+def _boundaries(start):
+    """start が属するリポジトリの範囲（ディレクトリの一覧）。start から根まで親をたどり、.git を持つ
+    ディレクトリをすべて入れる（入れ子のリポジトリの中にいても、外側のリポジトリが範囲に入る）。
+    .git がファイルなら、その先のリポジトリ本体も入れる（worktree の中にいても、親のリポジトリ本体が
+    範囲に入る）。.git が 1 つも無ければ start そのもの。確かめられないときは None。
+    兄弟の worktree（同じリポジトリ本体から切った別の worktree）までは追わない。"""
     start = os.path.realpath(start)
+    found = []
     here = start
     while True:
-        if os.path.lexists(os.path.join(here, ".git")):
-            return here
+        dot_git = os.path.join(here, ".git")
+        if os.path.lexists(dot_git):
+            found.append(here)
+            if not os.path.isdir(dot_git):
+                more = _git_file_dirs(here)
+                if more is None:
+                    return None
+                found.extend(more)
         parent = os.path.dirname(here)
         if parent == here:
-            return start
+            return found or [start]
         here = parent
 
 
@@ -87,8 +133,10 @@ def _entries(cwd):
     starts = [cwd]
     if os.environ.get("CLAUDE_PROJECT_DIR"):
         starts.append(os.environ["CLAUDE_PROJECT_DIR"])
-    if any(_inside(real, _boundary(start)) for start in starts):
-        return frozenset()
+    for start in starts:
+        folders = _boundaries(start)
+        if folders is None or any(_inside(real, folder) for folder in folders):
+            return frozenset()
     with open(real, "rb") as f:
         st = os.fstat(f.fileno())  # 開いたファイルそのものを見る（リンクの先＝実体）
         if (not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022
