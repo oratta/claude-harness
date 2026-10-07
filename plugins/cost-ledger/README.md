@@ -152,6 +152,9 @@ PR / issue へのコメント・状態の変更・ゲート通過のたびに、
 Bash のコマンド文字列からきっかけを見つけ、裏のプロセス `scripts/gate_report.py` が `gh` で読み書きする。
 数字と書式は `scripts/cost_ledger.py timeline` が作る。LLM のトークンは使わない。
 
+**積むのは、許可の一覧 `write-repos` に載っているリポジトリだけ**（下の「書き込みを許可するリポジトリ」）。
+一覧が無ければどのリポジトリにも書かない。この変更より前から使っている場合、一覧を作るまで行は付かない。
+
 | コマンド | 行の「きっかけ」 |
 |---|---|
 | `gh pr comment` | `PR コメント` |
@@ -195,11 +198,57 @@ PR でない issue に合格ラベルを付けても積まない。
   行は付かず、別のディレクトリから `-R` で自分のリポジトリの PR を指したときも行は付かない。積むのは github.com の
   PR / issue だけで、origin のホストが github.com でない・origin が無いリポジトリと、`--hostname` / `GH_HOST` で
   別のホストを指したコマンドでは積まない。裏の処理の問い合わせと書き込みは、`gh` の既定ホストや `GH_HOST` によらず github.com に固定している
-- **止め方**: 環境変数 `COST_LEDGER_GATE_REPORT=off`（settings.json の `env` に置く）。ゲート通過を含む全部のきっかけが止まる
+- **止め方**: 環境変数 `COST_LEDGER_GATE_REPORT=off`（settings.json の `env` に置く）。ゲート通過を含む全部のきっかけが止まる。
+  一覧に何を書いていても off が勝つ
 - **古い形のコメントは残る**: 以前の目印 `<!-- cost-ledger:gate-report -->` のコメントは、書き換えも削除もしない
 - **やらないこと**: auto-merge によるマージと、PR の `Closes` による issue の自動クローズには行を積まない
   （手元でコマンドが走らないので hook から見えない。`gh pr merge --auto` は実行した時点でマージされていなければ積まない）。
   `gh api` の直叩きでの投稿・状態変更、`gh pr create`、`gh pr reopen` でも積まない（合格ラベルの付与だけは `gh api` も見る）
+
+### 書き込みを許可するリポジトリ（write-repos）
+
+コストの行は、金額・トークン量・ブランチ名を PR / issue に書き出す。公開リポジトリや他人のリポジトリに
+誤って書かないよう、書いてよいリポジトリを手元のファイルに列挙する。
+
+```sh
+mkdir -p "$HOME/.config/cost-ledger"
+printf '%s\n' 'oratta/claude-harness' >> "$HOME/.config/cost-ledger/write-repos"
+chmod 600 "$HOME/.config/cost-ledger/write-repos"
+```
+
+- **場所**: 既定は `$HOME/.config/cost-ledger/write-repos`。環境変数 `COST_LEDGER_WRITE_REPOS_FILE` を空でない値に
+  すると、そのファイルを読む。値は**絶対パス**で書く（相対パスは無視され、一覧が無いのと同じになる）
+- **書式**: 1 行に `owner/repo` を 1 つ（github.com のリポジトリ）。空行と `#` で始まる行は読み飛ばす。
+  大文字と小文字は区別しない。`github.com/owner/repo`・`owner/*`・URL・末尾にコメントを付けた行・1 行に 2 つ並べた行は、
+  その行だけが無視される（警告は出ない）
+- **一覧として扱わないファイル**: 作業中のリポジトリの中にあるもの（`cwd` と `CLAUDE_PROJECT_DIR` から上の、`.git` を
+  持つディレクトリのどれか、または worktree・submodule の元のリポジトリの中。シンボリックリンクは実体の場所で見る）・
+  グループやほかの利用者が書ける（`chmod 600` か `644` にしておけば当たらない）・持ち主が自分でない・通常のファイルでない・1 MiB を超える・UTF-8 でない。
+  どれも一覧が無いのと同じになる。clone しただけのリポジトリが、自分の設定ファイルで自分を許可できないようにするため。
+  dotfiles のリポジトリで一覧を管理していたり、`$HOME` そのものが git のリポジトリだったりすると、既定の場所の一覧は
+  効かない。その場合はリポジトリの外のファイルを作って `COST_LEDGER_WRITE_REPOS_FILE` で指す
+- **環境変数に名前を書いても効かない**: 一覧はファイルからだけ読む（作業中のリポジトリの `.claude/settings.json` の
+  `env` から設定できてしまうため）
+- **行が付かないときに確かめること**: `COST_LEDGER_GATE_REPORT` が off でないか・一覧の行の書き方・ファイルの権限・
+  コマンドを実行したディレクトリの origin が一覧の名前と一致しているか
+
+### 既に付いた行を消す
+
+リポジトリを公開する前などに、既に付いたコストのコメントを消す手順。削除は取り消せない。通知メールで届いた分は消えない。
+
+1. 自分が書いたコストのコメント（目印 `<!-- cost-ledger:timeline` と、以前の `<!-- cost-ledger:gate-report -->`）を一覧する。
+   `<owner>/<repo>` は対象のリポジトリに置き換える
+
+   ```sh
+   export me="$(gh api user --jq .login)"
+   gh api --paginate "repos/<owner>/<repo>/issues/comments?per_page=100" --jq '.[] | select(.user.login == env.me) | select((.body // "") | test("<!-- cost-ledger:(timeline|gate-report)")) | "\(.id)\t\(.html_url)"'
+   ```
+
+2. 出てきた URL を開いて中身を確かめ、消すものの id を 1 つずつ指定して消す
+
+   ```sh
+   gh api -X DELETE repos/<owner>/<repo>/issues/comments/<id>
+   ```
 
 ### issue を閉じたときの合計の行
 
