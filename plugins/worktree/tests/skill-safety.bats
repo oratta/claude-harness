@@ -164,7 +164,8 @@ fm_comment_says_ineffective() {
 @test "skill: the frontmatter check ignores a body heading that matches (#787)" {
   f="$BATS_TEST_TMPDIR/skill.md"
   printf -- '---\nname: x\n---\n# 効かない設定は本文を見よ\n' > "$f"
-  ! fm_comment_says_ineffective "$f"
+  run fm_comment_says_ineffective "$f"
+  [ "$status" -ne 0 ]
 }
 
 @test "skill: wt-setup body documents the observation and why the fork setting stays (#732)" {
