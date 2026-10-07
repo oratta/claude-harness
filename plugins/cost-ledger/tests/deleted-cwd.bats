@@ -255,19 +255,31 @@ print(cost_ledger.RepoResolver._linked_id(sys.argv[2]))' "$CL" "$1"
   [ "$(wc -l < "$BATS_TEST_TMPDIR/git.log" | tr -d ' ')" = "$two" ]
 }
 
-@test "deleted-cwd: a location with a child whose .git file cannot be resolved stays unknown" {  # gitdir の指す先が無い子・gitdir の行が無い子が 1 つでもあれば、残りが A だけでも不明（git の起動には戻さない）
+@test "deleted-cwd: a child whose .git file cannot be resolved is left out and the rest decide" {  # gitdir の指す先が無い子・gitdir の行が無い子は数えず、残りが A だけなら A。残りが 0 件なら不明
   place_a
   cl_row S1 r1 2026-09-01T00:00:01.000Z feat/x "$PLACE_A/gone1" 1000000 | cl_write_log a
   mkdir -p "$PLACE_A/stale"
   printf 'gitdir: %s\n' "$BATS_TEST_TMPDIR/no-such/.git/worktrees/stale" > "$PLACE_A/stale/.git"
   facts
-  check_rows 'by["r1"]["repo_id"] == "不明" and "repo_inferred" not in by["r1"]'
+  check_rows 'by["r1"]["repo_id"] == argv[0] and by["r1"]["repo_inferred"] is True' "$A_ID"
   printf 'not a gitdir line\n' > "$PLACE_A/stale/.git"
   facts
-  check_rows 'by["r1"]["repo_id"] == "不明" and "repo_inferred" not in by["r1"]'
-  rm -rf "$PLACE_A/stale"
-  facts
   check_rows 'by["r1"]["repo_id"] == argv[0] and by["r1"]["repo_inferred"] is True' "$A_ID"
+  mkdir -p "$BATS_TEST_TMPDIR/ws-stale/ra/stale"
+  printf 'gitdir: %s\n' "$BATS_TEST_TMPDIR/no-such/.git/worktrees/stale" > "$BATS_TEST_TMPDIR/ws-stale/ra/stale/.git"
+  cl_row S1 r1 2026-09-01T00:00:01.000Z feat/x "$BATS_TEST_TMPDIR/ws-stale/ra/gone1" 1000000 | cl_write_log a
+  facts
+  check_rows 'by["r1"]["repo_id"] == "不明" and "repo_inferred" not in by["r1"]'
+}
+
+@test "deleted-cwd: with an unresolvable child left out, the rest in two repositories stay unknown" {  # 残骸の子 1 つと、A と B の作業ツリーが 1 つずつ → 不明
+  place_a
+  add_worktree "$MAIN_B" "$PLACE_A/wt-b"
+  mkdir -p "$PLACE_A/stale"
+  printf 'gitdir: %s\n' "$BATS_TEST_TMPDIR/no-such/.git/worktrees/stale" > "$PLACE_A/stale/.git"
+  cl_row S1 r1 2026-09-01T00:00:01.000Z feat/x "$PLACE_A/gone1" 1000000 | cl_write_log a
+  facts
+  check_rows 'by["r1"]["repo_id"] == "不明" and "repo_inferred" not in by["r1"]'
 }
 
 # ---- cost-ledger-cost-command: issue の合計と「推定で数えた行」 --------------

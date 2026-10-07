@@ -248,7 +248,7 @@ class RepoResolver:
         """置き場（削除済みの cwd の、現存する最も近い祖先）の直下の作業ツリーからリポジトリを決める。
 
         決めるのは、直下のリンクされた作業ツリー（``.git`` がファイルのディレクトリ）の識別子
-        （``_linked_id()`` がファイルから読む）がどれも読めてちょうど 1 種類で、置き場の名前がそのリポジトリのメインの作業ツリーのディレクトリ名
+        （``_linked_id()`` がファイルから読む。読めない子は除く）がちょうど 1 種類で、置き場の名前がそのリポジトリのメインの作業ツリーのディレクトリ名
         （bare なら識別子のパスの末尾の名前）か origin のリポジトリ名と一致するときだけ。
         名前の一致を求めるのは、複数のリポジトリの作業ツリーを混ぜて置くディレクトリで、たまたま
         残っている 1 つに寄せないため。置き場が git リポジトリの中のときは決めない（消えたのが
@@ -265,10 +265,12 @@ class RepoResolver:
             child = os.path.join(place, name)
             if not os.path.isfile(os.path.join(child, ".git")):
                 continue
-            # 子ごとに git を起動しない。.git ファイルが壊れた子は「リポジトリの分からない
-            # 作業ツリー」なので、残りが 1 種類でも置き場ごと不明にする
+            # 子ごとに git を起動しない。.git ファイルを解決できない子（指す先の無い残骸など）は
+            # 数えず、残りの子で判定する
             repo_id = self._linked_id(child)
-            if repo_id == UNKNOWN_REPO or (found is not None and repo_id != found):
+            if repo_id == UNKNOWN_REPO:
+                continue
+            if found is not None and repo_id != found:
                 return UNKNOWN_REPO
             found = repo_id
         if found is None:
