@@ -53,7 +53,7 @@ place_b() { add_worktree "$MAIN_B" "$PLACE_B/wt1"; }
 # 会話ログ直読みの事実を $OUT に書く
 facts() { env -u COST_LEDGER_PATH python3 "$CL" facts > "$OUT"; }
 
-# $OUT（JSONL）に python の式を当て、偽なら落とす。rows が全行、by が request_id から引く辞書。
+# ${OUT}（JSONL）に python の式を当て、偽なら落とす。rows が全行、by が request_id から引く辞書。
 # eval に渡す式は、このファイルの各テストに書いた固定の文字列だけ（外から来る入力は渡さない）
 check_rows() {  # $1=式 $2..=式から argv で見える値
   python3 - "$OUT" "$@" <<'PY'
