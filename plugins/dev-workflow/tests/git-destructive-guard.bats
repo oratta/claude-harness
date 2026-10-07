@@ -162,6 +162,46 @@ expect_silent() {
   expect_silent 'git commit --author n -m x'
 }
 
+# --- 引数を取るオプションの値（PR #794 ゲート一周目 F2・F11・F12） ---
+
+@test "option values: a -n that is an option value does not make push or clean a dry-run" {
+  expect_stopped 'git push -o -n origin main'
+  expect_stopped 'git push -on origin main'
+  expect_stopped 'git push -o -n --force origin feature-x'
+  expect_stopped 'git push --push-option=x -o -n origin main'
+  expect_stopped 'git clean -f -- -n'
+  expect_stopped 'git clean -f -e -n'
+  # 実オプションの -n / --dry-run は従来どおり dry-run
+  expect_silent 'git push -o x -n origin main'
+  expect_silent 'git push -no x origin main'
+  expect_silent 'git push --dry-run -o x --force origin feature-x'
+  expect_silent 'git clean -f -n -- a'
+}
+
+@test "option values: commit -n before an argument-taking short option is stopped" {
+  expect_stopped 'git commit -nmfix123'
+  expect_stopped 'git commit -anm"fix: typo"'
+  expect_stopped 'git commit -nF msg.txt'
+  # 引数を取る短いオプションより後ろはその値
+  expect_silent 'git commit -mn'
+  expect_silent 'git commit -m n'
+  expect_silent 'git commit -am"no n here"'
+  expect_silent 'git commit -m x -- -n'
+}
+
+@test "option values: --no-verify / --no-gpg-sign as an option value are not matched" {
+  expect_silent "git commit -m '--no-verify'"
+  expect_silent "git commit -m '--no-gpg-sign'"
+  expect_silent 'git commit --message=--no-verify'
+  expect_silent 'git commit -m--no-gpg-sign'
+  expect_silent 'git push -o --no-verify origin feature-x'
+  expect_silent 'git commit -m x -- --no-verify'
+  # 実オプションとして別に付けたものは止まる
+  expect_stopped "git commit -m '--no-verify' --no-verify"
+  expect_stopped "git commit --no-gpg-sign -m '--no-gpg-sign'"
+  expect_stopped 'git push -o x --no-verify origin feature-x'
+}
+
 @test "heredoc: commands after the heredoc are still judged" {
   expect_stopped $'cat <<EOF > note.txt\nbody\nEOF\ngit reset --hard'
 }

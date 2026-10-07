@@ -241,6 +241,48 @@ def judge_simple(cmd, depth):
     return set()
 
 
+# 引数を取るオプション（サブコマンドごと）。ここに無いオプションは値を取らないものとして読む。
+# 値を取るオプションの次の字句（短いオプションは同じ字句の残り）はその値として読み飛ばし、判定に使わない。
+ARG_OPTS = {
+    "commit": (set("mFcCt"),
+               {"--message", "--file", "--reuse-message", "--reedit-message", "--template",
+                "--author", "--date", "--fixup", "--squash", "--cleanup", "--trailer"}),
+    "push": (set("o"), {"--push-option", "--repo", "--receive-pack", "--exec"}),
+    "clean": (set("e"), {"--exclude"}),
+}
+
+
+def parse_opts(sub, rest):
+    """サブコマンドの引数を構文解析し、(長いオプション名の集合, 短いオプションの文字の集合, 位置引数) を返す。
+    オプションの値と `--` より後ろの字句は位置引数としてだけ扱い、オプションとして判定しない。"""
+    short_arg, long_arg = ARG_OPTS.get(sub, (set(), set()))
+    longs, short_set, positional = set(), set(), []
+    k = 0
+    while k < len(rest):
+        a = rest[k]
+        k += 1
+        if a == "--":
+            positional.extend(rest[k:])
+            break
+        if a.startswith("--"):
+            name = a.split("=", 1)[0]
+            longs.add(name)
+            if name in long_arg and "=" not in a:
+                k += 1  # 次の字句がこのオプションの値
+            continue
+        if a.startswith("-") and len(a) > 1:
+            body = a[1:]
+            for j, ch in enumerate(body):
+                short_set.add(ch)
+                if ch in short_arg:
+                    if j == len(body) - 1:
+                        k += 1  # 次の字句がこのオプションの値
+                    break  # 同じ字句の残りはこのオプションの値
+            continue
+        positional.append(a)
+    return longs, short_set, positional
+
+
 def judge_git(args):
     i = 0
     while i < len(args) and args[i].startswith("-"):
@@ -248,10 +290,11 @@ def judge_git(args):
     if i >= len(args):
         return set()
     sub, rest = args[i], args[i + 1:]
+    longs, short_set, positional = parse_opts(sub, rest)
     kinds = set()
-    if "--no-verify" in rest:
+    if "--no-verify" in longs:
         kinds.add("no-verify")
-    if "--no-gpg-sign" in rest:
+    if "--no-gpg-sign" in longs:
         kinds.add("no-gpg")
 
     if sub == "checkout":
@@ -268,49 +311,29 @@ def judge_git(args):
         if "--hard" in rest:
             kinds.add("reset")
     elif sub == "clean":
-        force = "--force" in rest or has_short(rest, "f")
-        dry = "--dry-run" in rest or has_short(rest, "n")
+        force = "--force" in longs or "f" in short_set
+        dry = "--dry-run" in longs or "n" in short_set
         if force and not dry:
             kinds.add("clean")
     elif sub == "push":
-        kinds |= judge_push(rest)
+        kinds |= judge_push(longs, short_set, positional)
     elif sub == "branch":
         delete = "--delete" in rest or has_short(rest, "d")
         force = "--force" in rest or has_short(rest, "f")
         if has_short(rest, "D") or (delete and force):
             kinds.add("branch")
     elif sub == "commit":
-        if commit_short_n(rest):
+        if "n" in short_set:
             kinds.add("no-verify")
     return kinds
 
 
-def judge_push(rest):
-    dry = "--dry-run" in rest or has_short(rest, "n")
-    if dry:
+def judge_push(longs, short_set, positional):
+    if "--dry-run" in longs or "n" in short_set:
         return set()
     kinds = set()
-    positional, k, after_dd = [], 0, False
-    while k < len(rest):
-        a = rest[k]
-        if after_dd:
-            positional.append(a)
-        elif a == "--":
-            after_dd = True
-        elif a in ("--force",) or a.startswith("--force-with-lease"):
-            kinds.add("push-force")
-        elif a in ("-o", "--push-option", "--repo", "--receive-pack", "--exec"):
-            k += 1
-        elif SHORT.match(a):
-            if "f" in a[1:]:
-                kinds.add("push-force")
-            if a[1:].endswith("o"):
-                k += 1
-        elif a.startswith("-"):
-            pass
-        else:
-            positional.append(a)
-        k += 1
+    if "--force" in longs or "--force-with-lease" in longs or "f" in short_set:
+        kinds.add("push-force")
     for ref in positional[1:]:
         if ref.startswith("+"):
             kinds.add("push-force")
@@ -319,33 +342,6 @@ def judge_push(rest):
         if dst in MAIN_REFS:
             kinds.add("push-main")
     return kinds
-
-
-COMMIT_ARG_SHORT = set("mFcCt")
-COMMIT_ARG_LONG = {"--message", "--file", "--reuse-message", "--reedit-message", "--template",
-                   "--author", "--date", "--fixup", "--squash", "--cleanup", "--trailer"}
-
-
-def commit_short_n(rest):
-    k = 0
-    while k < len(rest):
-        a = rest[k]
-        if a == "--":
-            return False
-        if a in COMMIT_ARG_LONG:
-            k += 2
-            continue
-        if SHORT.match(a):
-            body = a[1:]
-            for j, ch in enumerate(body):
-                if ch in COMMIT_ARG_SHORT:
-                    if j == len(body) - 1:
-                        k += 1  # 次の字句がこのオプションの引数
-                    break
-                if ch == "n":
-                    return True
-        k += 1
-    return False
 
 
 kinds = judge(command)
