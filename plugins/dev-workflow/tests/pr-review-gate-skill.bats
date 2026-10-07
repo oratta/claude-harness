@@ -1053,3 +1053,8 @@ step5_body() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_STAGE}"; }
   cond3="$(step3c_body | grep '^3\. ')"
   echo "$cond3" | grep -F '最初の宣言' | grep -qF 'より後'
 }
+
+@test "conversation reply (#721): step 5 table does not fail a declaration only because the answer link is missing" {
+  ! step5_body | grep '^| ' | grep -qF '回答リンクが無い' || return 1
+  step5_body | grep '^| ' | grep -F '不可' | grep -qF 'いずれの許容済み条件も満たさない'
+}

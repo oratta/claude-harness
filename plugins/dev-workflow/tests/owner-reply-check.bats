@@ -167,3 +167,33 @@ run_check() { run bash "$SCRIPT" "$@"; }
   run_check "11111111-2222-4333-8444-555555555555" "許容する"
   [ "$status" -eq 2 ]
 }
+
+# ---- ゲート 1 周目の指摘（F1〜F3）
+
+@test "owner-reply: origin null is not treated as a missing origin (exit 1)" {
+  add '{"type":"user","isSidechain":false,"origin":null,"timestamp":"2026-10-07T01:00:00.000Z","message":{"role":"user","content":"許容する"}}'
+  run_check "$SID" "許容する"
+  [ "$status" -eq 1 ]
+}
+
+@test "owner-reply: bash-input without origin still matches after the origin null fix" {
+  add '{"type":"user","isSidechain":false,"timestamp":"2026-10-07T03:00:00.000Z","message":{"role":"user","content":"<bash-input> gh pr comment 868 --body \"許容する\"</bash-input>"}}'
+  run_check "$SID" "許容する"
+  [ "$status" -eq 0 ]
+}
+
+@test "owner-reply: an excerpt that normalizes to empty (U+0085 only) gives exit 2" {
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"timestamp":"2026-10-07T01:00:00.000Z","message":{"role":"user","content":"許容しない"}}'
+  run_check "$SID" "$(printf '\302\205')"
+  [ "$status" -eq 2 ]
+  [[ "$output" != *"MATCH:"* ]] || return 1
+}
+
+@test "owner-reply: an unreadable log gives exit 2, not exit 1" {
+  [ "$(id -u)" -ne 0 ] || skip "root reads files regardless of mode"
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"timestamp":"2026-10-07T01:00:00.000Z","message":{"role":"user","content":"許容する"}}'
+  chmod 000 "$LOG"
+  run_check "$SID" "許容する"
+  chmod 600 "$LOG"
+  [ "$status" -eq 2 ]
+}
