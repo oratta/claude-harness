@@ -152,8 +152,19 @@ wt_setup_frontmatter() {
 # --- #732: context: fork / background は同名の commands ラッパーが勝つ現行経路では効かない。
 # 先頭 12 行でそれが読め、本文で観測（版・経路）と残す理由が読めること。
 
+# frontmatter 内のコメント行だけを見る（本文の Markdown 見出しに当たらないようにする。#787）
+fm_comment_says_ineffective() {
+  head -n 12 "$1" | awk 'NR==1 && $0=="---" {f=1; next} f && $0=="---" {exit} f {print}' | grep -E '^#.*効かない' | grep -q '本文'
+}
+
 @test "skill: wt-setup first 12 lines say the fork setting is ineffective and point to the body (#732)" {
-  head -n 12 "$WT_SETUP_SKILL" | grep -E '^#.*効かない' | grep -q '本文'
+  fm_comment_says_ineffective "$WT_SETUP_SKILL"
+}
+
+@test "skill: the frontmatter check ignores a body heading that matches (#787)" {
+  f="$BATS_TEST_TMPDIR/skill.md"
+  printf -- '---\nname: x\n---\n# 効かない設定は本文を見よ\n' > "$f"
+  ! fm_comment_says_ineffective "$f"
 }
 
 @test "skill: wt-setup body documents the observation and why the fork setting stays (#732)" {
