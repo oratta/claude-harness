@@ -12,10 +12,15 @@ PR / issue へのコメント・状態の変更・ゲート通過（agent-review
   対象 1 件あたり 3 回、閉じた PR を問い合わせるときだけ 4 回。数字と書式は `cost_ledger.py`
   だけが持ち、ここは gh の読み書きだけを持つ
 - `COST_LEDGER_HOOK_FOREGROUND=1` のときは切り離さず、その場で最後まで実行する（テストと実測）
+- 書くのは許可の一覧に載っているリポジトリだけ（spec `cost-ledger-write-allowlist`）。裏の処理は
+  `write_allow.allowed()` を、最初の gh の前（cwd の origin と、コマンドが名指ししたリポジトリ）と、
+  対象の確認のあと（GitHub が返した名前）に通す。一覧に無ければ、そこから先の gh は呼ばない
 
 どの経路でも stdout・stderr に何も出さず終了コード 0。コマンドは評価も再実行もしない。
 """
 import fcntl, json, os, re, stat, subprocess, sys, time
+
+import write_allow
 
 LABEL = "agent-review:passed"
 MARKER = "<!-- cost-ledger:timeline"  # この文字列で始まる行を持つコメントが積み先
@@ -724,8 +729,14 @@ def stack(kind, repo, number, branch, names, at, cwd, scripts_dir):
 def work(job):
     cwd, at = job.get("cwd") or "", job["at"]
     scripts_dir = os.path.dirname(os.path.abspath(__file__))
+    # 書くのは cwd の origin のリポジトリのものだけなので、origin が許可の一覧に無ければ、どの対象にも
+    # 書かないことが決まっている。gh を 1 回も呼ばずに終わる
+    if not write_allow.allowed(write_allow.origin_repo(cwd), cwd):
+        return
     resolved = {}  # (owner/repo, 番号) -> [種別, ヘッドブランチ, きっかけ]。別の書き方で同じ対象を指した分をまとめる
     for target in job["targets"]:
+        if target["repo"] is not None and not write_allow.allowed(target["repo"], cwd):
+            continue  # コマンドが名指ししたリポジトリが一覧に無い。対象の確認の gh も呼ばない
         try:
             found = resolve(target, cwd)
         except Exception:
@@ -733,6 +744,8 @@ def work(job):
         if found is None:
             continue
         kind, repo, number, branch, names = found
+        if not write_allow.allowed(repo, cwd):
+            continue  # GitHub が返した名前が一覧に無い（改名・移管で別の名前へ転送された）。ここから先の gh は呼ばない
         entry = resolved.setdefault((repo, number), [kind, branch, []])
         for name in names:
             add_name(entry[2], name)
