@@ -284,6 +284,33 @@ EOF
   [[ "$output" != *未確認* ]] || { echo "$output"; return 1; }
 }
 
+@test "drift: the issue path from the ledger gives the same warning" {  # 台帳から issue を触ったセッションだけを読んでも、そのセッションの全行で比べる
+  REPO="$BATS_TEST_TMPDIR/repo"
+  cl_init_repo "$REPO" "acme/repo"
+  git -C "$REPO" checkout -q -b feat
+  { dr_row S1 r1 100 feat 6000000 '' "$REPO" "gh issue view 148"
+    dr_row S1 r2 120 other 1000000 '' "$REPO"; } | cl_write_log s1
+  dr_rec S1 0 0 200 10
+  run python3 "$CL" issue 148 --repo "$REPO"
+  direct="$(printf '%s\n' "$output" | grep '単価表のずれ:')"
+  [[ "$direct" == *'$7.00'* ]] || { echo "$output"; return 1; }
+  COST_LEDGER_PATH="$BATS_TEST_TMPDIR/ledger/ledger.jsonl" run python3 "$CL" issue 148 --repo "$REPO"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | grep '単価表のずれ:')" = "$direct" ] || { echo "$output"; return 1; }
+}
+
+@test "drift: timeline does not compare" {  # 行を積む hook が呼ぶ timeline は突き合わせを行わない
+  dr_repo_case "gh issue view 148"
+  run python3 "$CL" timeline --pr 1 --branch feat --trigger x --at "$((B + 300))" --repo "$REPO" < /dev/null
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "${lines[0]}" == "コスト: "* ]] || { echo "$output"; return 1; }
+  [ "$(drift_lines)" = "0" ] || { echo "$output"; return 1; }
+  run python3 "$CL" timeline --issue 148 --trigger x --at "$((B + 300))" --repo "$REPO" < /dev/null
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "${lines[0]}" == "コスト: "* ]] || { echo "$output"; return 1; }
+  [ "$(drift_lines)" = "0" ] || { echo "$output"; return 1; }
+}
+
 @test "drift: a zero budget cuts the re-read off and says so" {  # 上限に達したら未確認の行を出す
   dr_simple 6000000 10
   rm -f "$REC_DIR/S1"

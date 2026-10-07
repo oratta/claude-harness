@@ -195,7 +195,7 @@ API 換算コストの単価表と円換算レートの置き場所と引き方�
 
 `issue` の経路を JSON で出すとき、システムは突き合わせの結果を `price_drift` という鍵に入 SHALL れる。警告が無ければ値は `null` とする。
 
-`cost` サブコマンドは、突き合わせそのものを行わない引数 `--no-drift-check` を受け付け SHALL る。pr-review-gate 通過時に PR へコストを貼る hook は、この引数を付けて `cost` を呼ば MUST なければならない（hook は 1 行目しか使わず、突き合わせのための読み直しは所要時間を増やすだけなので）。
+`cost` サブコマンドは、突き合わせそのものを行わない引数 `--no-drift-check` を受け付け SHALL る。PR / issue へ「ここまでのコスト」を積む hook（spec `cost-ledger-timeline`）が呼ぶ `timeline` サブコマンドは、突き合わせを行ってはなら MUST NOT ない（積む行は警告を使わず、突き合わせのための読み直しは所要時間を増やすだけなので）。hook は `cost_ledger.py` を `timeline` でだけ呼 MUST ぶ。
 
 #### Scenario: 警告があっても 1 行目は同じ
 - **WHEN** 「ずれあり」のセッションがある状態と、同じ会話ログで記録を消した状態でコストを求める
@@ -205,9 +205,13 @@ API 換算コストの単価表と円換算レートの置き場所と引き方�
 - **WHEN** 「ずれあり」のセッションがある状態で、`cost` を `--no-drift-check` 付きで実行する
 - **THEN** `単価表のずれ:` を含む行は出ず、1 行目は引数を付けないときと同じである
 
-#### Scenario: ゲート連携の hook は突き合わせを省いて呼ぶ
+#### Scenario: コストを積む hook は突き合わせの無い経路で呼ぶ
 - **WHEN** 合格ラベルの付与を捕まえた hook が `cost_ledger.py` を呼ぶ
-- **THEN** その呼び出しの引数に `--no-drift-check` が含まれている
+- **THEN** その呼び出しのサブコマンドは `timeline` だけである
+
+#### Scenario: timeline は突き合わせない
+- **WHEN** 「ずれあり」のセッションがある状態で、`timeline` を `--pr` と `--issue` のそれぞれで実行する
+- **THEN** 出力に `単価表のずれ:` を含む行は無い
 
 #### Scenario: JSON の出力に結果が入る
 - **WHEN** 「ずれあり」のセッションがある状態で、`issue` の経路を JSON で出す
