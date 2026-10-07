@@ -102,3 +102,13 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 @test "loop: the token-cap exit 2 puts the label where the handover's label target says (PR if any, else the record)" {
   awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF 'PR があれば PR、無ければ記録先に `needs-approval` を付け'
 }
+
+@test "handover (#721): guidance accepts a conversation reply or /develop args without a PR comment" {
+  s="$(handover_section)"
+  printf '%s' "$s" | grep -qF '/develop <記録先> 許容する'
+  printf '%s' "$s" | grep -qF 'PR へのコメントは要らない'
+}
+
+@test "handover (#721): resume step 2 passes session id, timestamp and text to the G" {
+  handover_section | grep '^2\. ' | grep -qF 'CLAUDE_CODE_SESSION_ID'
+}

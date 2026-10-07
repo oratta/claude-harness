@@ -994,3 +994,51 @@ step3c_body() {
   echo "$row" | grep -qF '3-c'
   echo "$row" | grep -qF 'HEAD が動いた'
 }
+
+# --- Requirement: 合格条件は会話で受けた許容を正式な回答として受け付ける（#721） ---
+
+step5_body() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_STAGE}"; }
+
+@test "conversation reply (#721): step 5 has the conversation record format and the script check" {
+  body="$(step5_body)"
+  echo "$body" | grep -qF '主の回答: 許容 — 会話で受領（セッション <セッション ID> / <日時>）原文: <原文>'
+  echo "$body" | grep -qF 'owner-reply-check.sh <セッション ID> <原文>'
+  echo "$body" | grep -qF '真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh 終了コード 0）'
+}
+
+@test "conversation reply (#721): step 5 table treats a conversation record as accepted" {
+  row="$(step5_body | grep '^| ' | grep -F '会話で受領')"
+  echo "$row" | grep -qF '| 可 |'
+}
+
+@test "conversation reply (#721): step 5 reads intent from the full text with the same timestamp, not the excerpt" {
+  body="$(step5_body)"
+  echo "$body" | grep -F '同じ timestamp' | grep -qF '全文'
+  echo "$body" | grep -F '終了コード 0 でも' | grep -qF '合格させない'
+  echo "$body" | grep -qF '`許容しない`'
+}
+
+@test "conversation reply (#721): exit 2 routes to a PR comment or /develop on the same PC" {
+  step5_body | grep -F 'exit 2' | grep -qF '/develop <記録先> 許容する'
+}
+
+@test "conversation reply (#721): hold.md does not ask the owner for a PR comment after a conversation reply" {
+  grep -qF '会話で返事を受けたときは、主に PR へのコメントを求めない' "$HOLD"
+}
+
+@test "conversation reply (#721): step 6 resume row for risk acceptance handles a conversation record" {
+  row="$(awk '/^### 6\. /{f=1} f' "${HOLD}" | grep -F '| **リスク許容待ち**' | head -1)"
+  echo "$row" | grep -qF '会話で受領'
+}
+
+@test "conversation reply (#721): 3-c condition 3 accepts a conversation reply and rechecks with the script" {
+  cond3="$(step3c_body | grep '^3\. ')"
+  echo "$cond3" | grep -qF '会話で受領'
+  echo "$cond3" | grep -qF 'owner-reply-check.sh'
+  echo "$cond3" | grep -F '終了コード 0 でも' | grep -qF '同じ timestamp'
+  echo "$cond3" | grep -qF '`許容しない`'
+}
+
+@test "conversation reply (#721): 3-c keeps the 4-line block and allows the conversation form on line 1" {
+  step3c_body | grep -F '1 行目' | grep -qF '会話で受領（セッション'
+}
