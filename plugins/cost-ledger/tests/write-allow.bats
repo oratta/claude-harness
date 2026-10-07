@@ -348,6 +348,31 @@ print(json.load(open(sys.argv[1]))["env"]["COST_LEDGER_WRITE_REPOS_FILE"])' "$CW
   judge "$OTHER" "$CWD"                                        # 別のリポジトリから見れば、ただの外のファイル
 }
 
+@test "write-allow: a .git reference spelled in another case still covers the main working tree" {  # worktree の gitdir: と commondir の先が .GIT と綴られていても、元の作業ツリーの中の一覧は空
+  # 手で組んだ形（大文字小文字を区別するファイルシステムでも .GIT という名前のディレクトリとして再現する）
+  mkdir -p "$WORK/main/.GIT/worktrees/wt" "$WORK/main/conf" "$WORK/linked"
+  printf '../..\n' > "$WORK/main/.GIT/worktrees/wt/commondir"
+  printf 'gitdir: ../main/.GIT/worktrees/wt\n' > "$WORK/linked/.git"
+  LIST="$WORK/main/conf/write-repos"
+  allow "$OTHER"
+  export COST_LEDGER_WRITE_REPOS_FILE="$LIST"
+  judge "$OTHER" "$CWD"                                        # 別のリポジトリから見れば、ただの外のファイル
+  ! judge "$OTHER" "$WORK/linked" || return 1
+  ! CLAUDE_PROJECT_DIR="$WORK/linked" judge "$OTHER" "$CWD" || return 1
+  # git が作った worktree の参照を .GIT と綴り直した形（大文字小文字を区別しないファイルシステムだけで成り立つ）
+  cl_init_repo "$WORK/real" "$OTHER"
+  git -C "$WORK/real" worktree add -q -b wt "$WORK/real-linked" >/dev/null 2>&1
+  if [ -d "$WORK/real/.GIT" ]; then
+    printf 'gitdir: %s\n' "$WORK/real/.GIT/worktrees/real-linked" > "$WORK/real-linked/.git"
+    mkdir -p "$WORK/real/conf"
+    LIST="$WORK/real/conf/write-repos"
+    allow "$OTHER"
+    export COST_LEDGER_WRITE_REPOS_FILE="$LIST"
+    judge "$OTHER" "$CWD"
+    ! judge "$OTHER" "$WORK/real-linked" || return 1
+  fi
+}
+
 @test "write-allow: a list inside the outer repository does not count from a nested repository" {  # リポジトリの中に置いた別の clone や submodule の中で作業していても、外側のリポジトリの中の一覧は空
   cl_init_repo "$WORK/outer" "$OTHER"
   cl_init_repo "$WORK/outer/vendor/inner" "$OTHER"
@@ -475,6 +500,35 @@ print(json.load(open(sys.argv[1]))["env"]["COST_LEDGER_WRITE_REPOS_FILE"])' "$CW
   COST_LEDGER_GATE_REPORT=off hook "gh api -X POST repos/$SELF/issues/300/labels -f 'labels[]=agent-review:passed'"
   silent
   [ "$(py_calls)" -eq 0 ]
+  [ "$(gh_calls)" -eq 0 ]
+}
+
+@test "write-allow: COST_LEDGER_GATE_REPORT=off stops the background work started on its own before the list" {  # 裏の処理（--work）を直接起こしても、off なら一覧のファイルを開かず、gh も呼ばない
+  allow "$SELF"
+  job='{"cwd": "'"$CWD"'", "at": "1900000000.000", "targets": [{"kind": "pr", "repo": null, "number": 300, "triggers": ["PR コメント"]}]}'
+  # 一覧のファイルを開いた回数を、Python の監査フックで $WORK/log/opens.log に 1 回 1 行で数える
+  work_counting_opens() {
+    "$REAL_PYTHON" -c 'import os, runpy, sys
+target, log = os.path.realpath(sys.argv[1]), sys.argv[2]
+def hook(event, args):
+    if event == "open" and isinstance(args[0], str) and os.path.realpath(args[0]) == target:
+        fd = os.open(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        os.write(fd, b"open\n")
+        os.close(fd)
+sys.addaudithook(hook)
+sys.argv = [sys.argv[3], "--work", sys.argv[4]]
+sys.path.insert(0, os.path.dirname(sys.argv[0]))
+runpy.run_path(sys.argv[0], run_name="__main__")' "$LIST" "$WORK/log/opens.log" "$SCRIPTS/gate_report.py" "$job"
+  }
+  opens() { if [ -f "$WORK/log/opens.log" ]; then wc -l < "$WORK/log/opens.log" | tr -d ' '; else echo 0; fi; }
+  run work_counting_opens                                      # off でなければ一覧を開き、行を積む（数え方そのものの確認）
+  silent
+  [ "$(opens)" -gt 0 ]
+  written_to "$SELF" 300
+  reset_logs; rm -f "$WORK/log/opens.log"
+  COST_LEDGER_GATE_REPORT=off run work_counting_opens
+  silent
+  [ "$(opens)" -eq 0 ]
   [ "$(gh_calls)" -eq 0 ]
 }
 

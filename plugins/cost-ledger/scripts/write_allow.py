@@ -75,9 +75,23 @@ def _git_file_dirs(repo_dir):
             if not os.path.isdir(common):
                 return None
             found.append(common)
-        return found + [os.path.dirname(d) for d in found if os.path.basename(d) == ".git"]
+        return found + [os.path.dirname(d) for d in found if _is_dot_git(d)]
     except (OSError, ValueError):
         return None
+
+
+def _is_dot_git(folder):
+    """folder がその親の `.git` か。`.GIT` のような別の綴りで参照されていても当てる。名前を大文字と
+    小文字を区別せずに比べるのに加え、親の `.git` と同じディレクトリ（デバイスと inode）かでも見る
+    （_inside と同じ見方。大文字と小文字を区別しないファイルシステムで、名前の比べ方に頼らない）。
+    どちらかに当たれば親を範囲に入れる（範囲が広がる側に倒す）。"""
+    if os.path.basename(folder).casefold() == ".git":
+        return True
+    try:
+        return os.path.samestat(os.stat(os.path.join(os.path.dirname(folder), ".git")),
+                                os.stat(folder))
+    except OSError:
+        return False
 
 
 def _boundaries(start):

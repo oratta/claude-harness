@@ -168,4 +168,3 @@ cost-ledger が GitHub の PR / issue にコストの行（金額・トークン
 #### Scenario: README に手順がある
 - **WHEN** `plugins/cost-ledger/README.md` を読む
 - **THEN** `write-repos`、`COST_LEDGER_WRITE_REPOS_FILE`、目印 `<!-- cost-ledger:timeline` を持つコメントを一覧するコマンド、`-X DELETE` で消すコマンドの記述がある
-

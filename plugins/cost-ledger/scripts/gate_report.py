@@ -853,6 +853,10 @@ def stack(kind, repo, number, branch, names, at, cwd, scripts_dir):
 
 
 def work(job):
+    # 全体停止は一覧より先に効く。gate-report.sh を通らずに直接起動されても、一覧を読まず gh も呼ばない
+    # （読み方は gate-report.sh の `${COST_LEDGER_GATE_REPORT:-on}" = "off"` と同じ: 値が off のときだけ）
+    if os.environ.get("COST_LEDGER_GATE_REPORT") == "off":
+        return
     cwd, at = job.get("cwd") or "", job["at"]
     scripts_dir = os.path.dirname(os.path.abspath(__file__))
     # 書くのは cwd の origin のリポジトリのものだけなので、origin が許可の一覧に無ければ、どの対象にも
