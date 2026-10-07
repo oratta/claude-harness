@@ -18,12 +18,47 @@ Claude Code が既に書いている会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.
 帰属の鍵は 2 本立てで、互いに独立している。同じ行が両方に帰属することがあるので、
 `/cost <PR番号>` と `/cost <issue番号>` の値を足して総額としては**ならない**。
 
-出せる合計は 1 つだけある。**issue の合計** =「その issue を閉じた PR のブランチの分」+「issue に帰属した
+出せる合計は 2 つある。1 つ目は **issue の合計** =「その issue を閉じた PR のブランチの分」+「issue に帰属した
 区間のうち、どの PR のブランチ上にも無い分」。両方に帰属する行は区間の側から除くので二重に数えない。
 `cost_ledger.py issue <N> --closing-pr <PR番号>:<ヘッドブランチ>`（PR の数だけ繰り返す）で、1 行目の下に
 `  合計（閉じた PR 込み）: $5.00 — PR #300 $3.00 + PR 外 $2.00` が出る（`--json` では `closing_prs`・
 `outside_pr_usd`・`combined_total_usd`）。`--closing-pr` を付けなければ今までと同じ出力になる。
 `gh issue close` では hook がこの合計を自動で積む（下の「issue を閉じたときの合計の行」）。
+
+2 つ目は**エピックの合計**で、GitHub の子 issue を持つ issue（エピック）に `/cost <番号>` を打つと出る。
+エピック自身と子孫の issue のそれぞれが数える行（上の issue の合計の行）を、**行ごとに 1 回だけ**足した額。
+
+```
+コスト: $7.00 / ¥1,050 @150 — issue #10 (acme/ra) 帰属: 子 issue 込み
+  対象: issue #10（acme/ra）と子孫の issue 2 件
+  子 issue の合計: $6.00
+  issue #10 自身: $1.00
+  #10 open $7.00（自身 $1.00） — epic
+    #11 closed $4.00 — child a
+    #12 open $2.00 — child b（単独 $3.00、PR #300 は #11 に計上）
+```
+
+- 1 行目の合計は「子 issue の合計」にエピック自身の額（エピックの番号を触った区間の分）を足した値。
+  「子 issue の合計」はエピックの直下の子の行の額の和と一致する
+- 内訳の額は、行を 1 つの issue に割り当てた額（子を持つ issue はその下の issue の分も含み、`（自身 …）` が
+  その issue だけの分）。割り当てた額の和が合計と一致する
+- 複数の issue を閉じた PR（同じヘッドブランチの PR を含む）の分は、番号がいちばん小さい issue に全額が入る。
+  ほかの issue の行には `（単独 <その issue だけを見た合計>、PR #N は #M に計上）` が付く。ある issue の区間の行が
+  別の issue の PR のブランチ上にあるときも、PR の側に数える（`（単独 …）` だけが付く）
+- `gh` の回数は、番号の判別の 2 回に、子を持つ issue の数（エピック自身を含む）を足した回数
+  （`gh api graphql` を子を持つ issue 1 件につき 1 回）。孫が無ければ 3 回で、鎖状の入れ子では段の数だけ増える
+- 合計を出さずに終了コード 2 で終わる場合: GraphQL の失敗・応答の形の崩れ・子 issue か 1 件の issue を閉じた PR が
+  100 件を超える・エピックから 8 段より深い。一部の子だけの額を合計として見せないため
+- 数えないもの: GitHub の子 issue として登録されていない issue（本文の表に書いてあるだけの issue）・別のリポジトリの
+  子 issue（`数えていない子 issue:` の行に出る）・fork からの PR・`Closes` などで結び付いていない PR。open の子も数え、
+  結び付いている open の PR のブランチも入る（作業の途中の額）
+- 内訳の行の題名と `数えていない子 issue:` の行のリポジトリ名は、制御文字（改行・タブ・ESC・双方向制御文字など）を
+  空白 1 つに置き換えてから出す（題名で行を割ったり端末の表示を書き換えたりできないように）。`--json` の `title` と
+  `repo` は取った値のまま
+- `/cost <子の番号>` は今までどおりその issue を触った区間だけの額なので、内訳のその子の額（閉じた PR の分を含む）と
+  一致しない
+- エピックのコメントに hook が積む行は今までどおり、エピックの番号を触った区間だけの累計（帰属: `区間`）で、
+  子 issue の分を含まない。`/cost <エピックの番号>` の 1 行目（帰属: `子 issue 込み`）とは一致しない
 
 1. **ブランチ**（`gitBranch`）。サブエージェント（`isSidechain: true`）の行にも入るので、
    サブエージェントの消費も同じブランチへ寄る。
@@ -37,9 +72,24 @@ issue への帰属は、投稿（`gh pr comment` / `gh issue comment` / `gh pr c
 **issue 単位の数字は区間分割による推定**で、PR 単位の数字ほど確かではない。
 
 1 回の応答が会話ログで複数の行に分かれることがある（同じ `requestId` が複数行に現れる）。
-トークン数と金額は先頭の行の 1 回分だけを数えるが、**2 行目以降の `gh issue ...` と投稿の印も拾う**。
-拾った分は補足の事実（`continuation: true`、トークン 0、鍵は `<requestId>#<行の uuid>`）として別に出し、
+入力・キャッシュのトークンは先頭の行の 1 回分だけを数える。**2 行目以降の `gh issue ...` と投稿の印も拾う**。
+拾った分は補足の事実（`continuation: true`、鍵は `<requestId>#<行の uuid>`）として別に出し、
 メッセージ数には数えない。実行されていない `gh issue view` の文字列（`Edit` の本文など）は拾わない。
+
+出力トークンは、応答の確定行（`stop_reason` が空でない文字列で付いた行）の値で数える。会話ログの
+`usage.output_tokens` は、その行を書いた時点の値で、サブエージェントの応答では先頭の行が途中の値
+（2〜8 など）のままになる。確定行の値が、その応答についてすでに数えた出力（先頭の事実の出力と補足の事実の
+出力の合計）より大きいとき、補足の事実が**差分**を出力トークンに持つ（入力・キャッシュは 0）。
+差分が 0 以下なら何も足さないので、複製された会話ログ（resume・fork）や、最初から確定値の
+メイン側の応答では増えない。
+
+**確定値が会話ログに無い応答は直せない。** 同じ `requestId` のどの行にも `stop_reason` が付かない応答は、
+確定値が親セッションのログにもサブエージェントのログにも無い（親の `toolUseResult.usage` は最後の 1 回分で
+ほとんど無く、`cost-state` はセッション合計で 1 応答に割れない）。推定で埋めず、先頭の行の値のままにする。
+規模は 2026-10-07 の実測で、サブエージェント側の応答の 7〜19%（haiku は 34/486）。本体の出力トークン合計に対する
+cost-ledger の割合は、直す前 fable 26%・opus 48%・sonnet 23%・haiku 3% から、直したあと fable 88%・opus 94%・
+sonnet 95%・haiku 35% になる。残りは確定値の無い応答と、会話ログに行を持たない呼び出し（分類器など）の分。
+そのため `/cost` の「単価表のずれ」（#692）で本体の値との差が残ることがある。
 
 ## 料金表と円換算
 
@@ -97,25 +147,43 @@ COST_LEDGER_DRIFT_BUDGET_SECONDS=inf python3 scripts/cost_ledger.py cost
 
 ## 節目ごとの自動投稿（ここまでのコスト）
 
-PR / issue へのコメント・状態の変更・ゲート通過のたびに、その PR / issue の 1 本のコメントへ
+PR の作成・PR / issue へのコメント・状態の変更・ゲート通過のたびに、その PR / issue の 1 本のコメントへ
 「ここまでのコスト」を 1 行積む。PostToolUse（matcher `Bash`）の hook `scripts/gate-report.sh` が
 Bash のコマンド文字列からきっかけを見つけ、裏のプロセス `scripts/gate_report.py` が `gh` で読み書きする。
 数字と書式は `scripts/cost_ledger.py timeline` が作る。LLM のトークンは使わない。
 
+**積むのは、許可の一覧 `write-repos` に載っているリポジトリだけ**（下の「書き込みを許可するリポジトリ」）。
+一覧が無ければどのリポジトリにも書かない。この変更より前から使っている場合、一覧を作るまで行は付かない。
+
 | コマンド | 行の「きっかけ」 |
 |---|---|
+| `gh pr create`（`--dry-run`・`--web` を除く） | `PR 作成` |
 | `gh pr comment` | `PR コメント` |
 | `gh issue comment` | `issue コメント` |
 | `gh pr ready`（`--undo` を除く） | `Ready` |
 | `gh pr close` | `PR クローズ` |
+| `gh pr reopen` | `PR 再オープン` |
 | `gh pr merge` | `マージ` |
 | `gh issue close` | `issue クローズ` |
 | `gh issue reopen` | `issue 再オープン` |
+| `gh api repos/<owner>/<repo>/issues/<番号>/comments` への POST | `issue コメント`（番号が PR なら `PR コメント`） |
+| `gh api -X PATCH repos/<owner>/<repo>/pulls/<番号>` でフィールドが `state=closed` / `state=open` | `PR クローズ` / `PR 再オープン` |
+| `gh api -X PATCH repos/<owner>/<repo>/issues/<番号>` でフィールドが `state=closed` / `state=open` | `issue クローズ` / `issue 再オープン`（番号が PR なら `PR クローズ` / `PR 再オープン`） |
+| `gh api -X PUT repos/<owner>/<repo>/pulls/<番号>/merge` | `マージ` |
 | 合格ラベル `agent-review:passed` の付与（`gh api .../issues/<番号>/labels`、`gh pr edit` / `gh issue edit` の `--add-label`） | `ゲート通過` |
 
 状態を変えるきっかけは、積む前に GitHub に問い合わせて、その状態になっていること（マージ済み・closed・
 ラベルが付いている、など）を確かめる。なっていなければ積まない。ゲート通過の対象は PR だけで、
 PR でない issue に合格ラベルを付けても積まない。
+
+`gh pr create` は、コマンドを実行したディレクトリのブランチ（`-H` / `--head` があればそのブランチ）をヘッドに持つ
+PR を探し、open で、作成時刻がコマンドの実行時刻の前後 300 秒以内のときだけ積む（「このブランチの PR は既にある」で
+失敗したときに、作っていない PR へ積まないため）。`--head owner:branch` の形では積まない。
+
+`gh api` は endpoint（位置引数）とメソッドを `gh` と同じ規則で読む。メソッドは `-X` / `--method`、無ければ
+フィールド（`-f` / `-F` / `--raw-field` / `--field`）か `--input` があれば POST、どちらも無ければ GET。
+endpoint の `{owner}/{repo}` は、前置きの `GH_REPO`、無ければコマンドを実行したディレクトリのリポジトリとして読む。
+読み取り（GET）では hook は `python3` を起動せずに抜ける。
 
 コメントの例:
 
@@ -145,11 +213,63 @@ PR でない issue に合格ラベルを付けても積まない。
   行は付かず、別のディレクトリから `-R` で自分のリポジトリの PR を指したときも行は付かない。積むのは github.com の
   PR / issue だけで、origin のホストが github.com でない・origin が無いリポジトリと、`--hostname` / `GH_HOST` で
   別のホストを指したコマンドでは積まない。裏の処理の問い合わせと書き込みは、`gh` の既定ホストや `GH_HOST` によらず github.com に固定している
-- **止め方**: 環境変数 `COST_LEDGER_GATE_REPORT=off`（settings.json の `env` に置く）。ゲート通過を含む全部のきっかけが止まる
+- **止め方**: 環境変数 `COST_LEDGER_GATE_REPORT=off`（settings.json の `env` に置く）。ゲート通過を含む全部のきっかけが止まる。
+  一覧に何を書いていても off が勝つ
 - **古い形のコメントは残る**: 以前の目印 `<!-- cost-ledger:gate-report -->` のコメントは、書き換えも削除もしない
 - **やらないこと**: auto-merge によるマージと、PR の `Closes` による issue の自動クローズには行を積まない
   （手元でコマンドが走らないので hook から見えない。`gh pr merge --auto` は実行した時点でマージされていなければ積まない）。
-  `gh api` の直叩きでの投稿・状態変更、`gh pr create`、`gh pr reopen` でも積まない（合格ラベルの付与だけは `gh api` も見る）
+  `gh api` の直叩きのうち、`gh api graphql` の mutation、`--input` で渡した JSON の中の `state`（`--input` の PATCH）、
+  完全な URL（`https://api.github.com/...`）や問い合わせ文字列付きで書いた endpoint、コメントの編集
+  （`issues/comments/<id>` への PATCH）、`state` を変えない PATCH でも積まない
+- **PR でない issue を `gh api` で操作したときの累計**: `gh api .../issues/<番号>/...` でのコメント投稿・クローズ・
+  再オープンは、行は積まれるが、その行の累計が 0 か実際より小さく出ることがある。issue への帰属は
+  `gh issue view/comment/edit/close/develop <番号>` の文字列で決まり、`gh api` の endpoint は帰属の鍵にならないため。
+  PR の行はブランチで帰属するので影響しない
+
+### 書き込みを許可するリポジトリ（write-repos）
+
+コストの行は、金額・トークン量・ブランチ名を PR / issue に書き出す。公開リポジトリや他人のリポジトリに
+誤って書かないよう、書いてよいリポジトリを手元のファイルに列挙する。
+
+```sh
+mkdir -p "$HOME/.config/cost-ledger"
+printf '%s\n' 'oratta/claude-harness' >> "$HOME/.config/cost-ledger/write-repos"
+chmod 600 "$HOME/.config/cost-ledger/write-repos"
+```
+
+- **場所**: 既定は `$HOME/.config/cost-ledger/write-repos`。環境変数 `COST_LEDGER_WRITE_REPOS_FILE` を空でない値に
+  すると、そのファイルを読む。値は**絶対パス**で書く（相対パスは無視され、一覧が無いのと同じになる）
+- **書式**: 1 行に `owner/repo` を 1 つ（github.com のリポジトリ）。空行と `#` で始まる行は読み飛ばす。
+  大文字と小文字は区別しない。`github.com/owner/repo`・`owner/*`・URL・末尾にコメントを付けた行・1 行に 2 つ並べた行は、
+  その行だけが無視される（警告は出ない）
+- **一覧として扱わないファイル**: 作業中のリポジトリの中にあるもの（`cwd` と `CLAUDE_PROJECT_DIR` から上の、`.git` を
+  持つディレクトリのどれか、または worktree・submodule の元のリポジトリの中。シンボリックリンクは実体の場所で見る）・
+  グループやほかの利用者が書ける（`chmod 600` か `644` にしておけば当たらない）・持ち主が自分でない・通常のファイルでない・1 MiB を超える・UTF-8 でない。
+  どれも一覧が無いのと同じになる。clone しただけのリポジトリが、自分の設定ファイルで自分を許可できないようにするため。
+  dotfiles のリポジトリで一覧を管理していたり、`$HOME` そのものが git のリポジトリだったりすると、既定の場所の一覧は
+  効かない。その場合はリポジトリの外のファイルを作って `COST_LEDGER_WRITE_REPOS_FILE` で指す
+- **環境変数に名前を書いても効かない**: 一覧はファイルからだけ読む（作業中のリポジトリの `.claude/settings.json` の
+  `env` から設定できてしまうため）
+- **行が付かないときに確かめること**: `COST_LEDGER_GATE_REPORT` が off でないか・一覧の行の書き方・ファイルの権限・
+  コマンドを実行したディレクトリの origin が一覧の名前と一致しているか
+
+### 既に付いた行を消す
+
+リポジトリを公開する前などに、既に付いたコストのコメントを消す手順。削除は取り消せない。通知メールで届いた分は消えない。
+
+1. 自分が書いたコストのコメント（目印 `<!-- cost-ledger:timeline` と、以前の `<!-- cost-ledger:gate-report -->`）を一覧する。
+   `<owner>/<repo>` は対象のリポジトリに置き換える
+
+   ```sh
+   export me="$(gh api user --jq .login)"
+   gh api --paginate "repos/<owner>/<repo>/issues/comments?per_page=100" --jq '.[] | select(.user.login == env.me) | select((.body // "") | test("<!-- cost-ledger:(timeline|gate-report)")) | "\(.id)\t\(.html_url)"'
+   ```
+
+2. 出てきた URL を開いて中身を確かめ、消すものの id を 1 つずつ指定して消す
+
+   ```sh
+   gh api -X DELETE repos/<owner>/<repo>/issues/comments/<id>
+   ```
 
 ### issue を閉じたときの合計の行
 
@@ -195,9 +315,10 @@ PR の数では増えない）。
   hook には環境変数 `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` で渡る
 - **環境変数 `COST_LEDGER_PATH`**（`~/.claude/settings.json` の `env`）: 従来の方法で、そのまま使える
 - 両方設定されていれば、プラグイン設定が優先する（空文字は未設定として扱う）
-- 既知の制限: `/cost` のコマンド本文の Bash 実行にプラグイン設定の環境変数が渡るかは未確認。渡らない環境では、
-  `/config` だけで設定すると Stop hook は追記するが `/cost` は台帳を読まず会話ログを直接読む
-  （その場合は `COST_LEDGER_PATH` も設定する）
+- `/cost` への渡し方: コマンド本文の Bash 実行には `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` が自動では渡らない
+  （実機で確認済み）。そこで `commands/cost.md` が、本文の中でプラグイン設定の値に置換される記法を使って、
+  この環境変数を集計スクリプトの呼び出しに渡す。プラグイン設定が未設定のときは置換されない文字列が渡るが、
+  スクリプトは未設定として扱う。パスにシングルクォート `'` を含めないこと
 
 - **`Stop` の hook**（`scripts/ledger-hook.sh`）が、応答が終わるたびに会話ログの増えた分を台帳へ追記する
 - **集計**（`/cost` と `cost_ledger.py` の集計系サブコマンド）は、読む前に同じ追記を 1 回行ってから台帳だけを読む。
@@ -214,12 +335,73 @@ PR の数では増えない）。
   索引を持つ。速さのためだけのもので、消しても壊れても台帳から作り直して同じ結果になる。
   `<台帳>.lock` は同時に動く hook を直列にするためのロック
 - **手動の取り込み**: `python3 scripts/cost_ledger.py ledger-sync`（初回は全履歴を読むので数十秒かかる）
-- **補足の行**: 応答が複数行に分かれ、2 行目以降に issue や投稿の印があるとき、その行を補足の事実
-  （`continuation: true`・トークン 0）として台帳に追記する。先頭の行の事実は `uuid` の欄を持つ
+- **補足の行**: 応答が複数行に分かれ、2 行目以降に issue や投稿の印があるか、確定行の出力が数えた出力を
+  上回るとき、その行を補足の事実（`continuation: true`・出力トークンは確定行との差分、ほかのトークンは 0）
+  として台帳に追記する。先頭の行の事実は `uuid` の欄を持つ
   （複製された履歴の先頭の行を補足と取り違えないため。`uuid` の無い古い行も読める）
-- **補足を足す前に書いた台帳を直す**: `python3 scripts/cost_ledger.py ledger-sync --rescan` を **1 回だけ**流す。
-  控えの読み終え位置を使わず、今ある会話ログを先頭から読み直して、補足の行だけを追記する（既存の行は
+- **応答ごとの数えた出力**: 控えは `counted` 表（requestId → 数えた出力）も持つ。古い形の控え（`counted` が無い）は
+  初回の同期で捨てて台帳から作り直す（1 回だけ）
+- **補足を足す前・確定行の差分を足す前に書いた台帳を直す**: `python3 scripts/cost_ledger.py ledger-sync --rescan` を **1 回だけ**流す。
+  控えの読み終え位置を使わず、今ある会話ログを先頭から読み直して、補足の行（issue・印、出力の差分）だけを追記する（既存の行は
   1 バイトも変えない。2 回目は 0 行）。実行前に台帳の控え（`cp`）を取る。**会話ログが既に消えた期間の補足は補えない**。
   通常の `ledger-sync` と hook は `--rescan` を暗黙に行わない（全履歴を読むため）
+
+### 削除済みの作業ディレクトリの行（リポジトリの推定と補正行）
+
+作業ツリーを消したあとに取り込んだ行は、`cwd` に `git rev-parse` が効かず、リポジトリが「不明」になる。
+そこで `cwd` がディレクトリとして存在しないときだけ、パスからリポジトリを推定する。
+
+- `cwd` が `/.claude/worktrees/` を含むなら、最後のその並びの手前のディレクトリのリポジトリにする
+- それ以外は、現存する最も近い祖先のディレクトリ（置き場）の直下に残る作業ツリーがすべて同じ 1 リポジトリで、
+  置き場の名前がそのリポジトリのディレクトリ名か origin のリポジトリ名と一致するときだけ、そのリポジトリにする。
+  置き場が git リポジトリの中なら推定しない
+- 推定で決めた行は事実に `repo_inferred: true` が付く。`/cost <番号>`・エピックの `/cost`・番号なしの `/cost` は、
+  その行を合計に入れたうえで `推定で数えた行: <件数> 件 <額>` を「リポジトリ不明」の行の直後に出す
+  （`--json` では `inferred_repo_usd`・`inferred_repo_messages`）。推定は外れうるので、額が大きければ区間の内訳で確かめる
+
+**過去の「不明」の行を直す**（`--rescan` を手で 1 回。hook からは走らない）:
+
+```bash
+cp -p "$COST_LEDGER_PATH" "$COST_LEDGER_PATH.bak-$(date +%Y%m%d)"
+python3 scripts/cost_ledger.py ledger-sync --rescan
+```
+
+- 台帳の既存の行は書き換えず、「不明」の行を持つ（`session_id`, `branch`）の組ごとに、補正行（`repo_fix: true`・
+  トークン 0 の補足の事実）を 1 行追記する。書くのは、その組の会話ログの全 `cwd` が同じ 1 リポジトリに決まり、
+  `cwd` の無い応答の行が無い組だけ。集計は台帳を読むときに補正行を取り除き、その組の不明の行をそのリポジトリの行
+  （`repo_inferred: true`）として数える。後から同じ組に追記された不明の行（`cwd` の無い行を含む）にも補正が当たる
+- 2 回目は 0 行。会話ログが消えた組は直らず、「リポジトリ不明」のまま残る
+- まだ `--rescan` を流したことのない台帳では、補正行のほかに、足りない補足の行（上の「補足を足す前に書いた台帳を直す」）も
+  同時に追記されるので、`/cost` の額が補正の分とは別に変わりうる
+- **実行前の状態へ戻す**: 上の `cp -p` で取った台帳の写しを台帳に戻し、控え（`<台帳>.state.sqlite`）を消して
+  `ledger-sync` を 1 回流す。写しを取ったあとに hook が追記した行は台帳からいったん消えるが、会話ログが残っていれば
+  この `ledger-sync` で取り込み直される
+
+  ```bash
+  cp -p "$COST_LEDGER_PATH.bak-<日付>" "$COST_LEDGER_PATH"
+  rm -f "$COST_LEDGER_PATH.state.sqlite"
+  python3 scripts/cost_ledger.py ledger-sync
+  ```
+
+- **誤った補正を取り消す**: 同じ組に `repo_id` の違う補正行を 1 行足すと、その組は「不明」に戻る（台帳の行は消さない）。
+  `<session_id>` と `<branch>` は `grep '"repo_fix": true' "$COST_LEDGER_PATH"` で見つけた補正行の値。
+  動いている hook の追記と競合しないよう、`<台帳>.lock` を取って追記する
+
+  ```bash
+  python3 - "$COST_LEDGER_PATH" '<session_id>' '<branch>' <<'PY'
+  import fcntl, json, sys
+  ledger, session, branch = sys.argv[1:4]
+  with open(ledger + ".lock", "a") as lock:
+      fcntl.flock(lock, fcntl.LOCK_EX)
+      with open(ledger, encoding="utf-8") as fh:
+          fixes = [r for r in map(json.loads, (l for l in fh if '"repo_fix": true' in l))
+                   if r["session_id"] == session and r["branch"] == branch]
+      if not fixes:
+          sys.exit("この組の補正行がありません")
+      row = dict(fixes[0], repo_id="revert", request_id="repo-fix#%s#%s#revert" % (session, branch))
+      with open(ledger, "a", encoding="utf-8") as fh:
+          fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+  PY
+  ```
 
 規則の正本は openspec の spec `cost-ledger-persistence`。

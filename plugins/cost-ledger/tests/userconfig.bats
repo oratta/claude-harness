@@ -66,3 +66,21 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "${lines[0]}" == *'$1.00'* ]] || { echo "$output"; return 1; }
 }
+
+@test "userconfig: an unsubstituted placeholder falls back to COST_LEDGER_PATH" {  # プレースホルダ
+  mkdir -p "$BATS_TEST_TMPDIR/cwd"
+  cd "$BATS_TEST_TMPDIR/cwd"
+  CLAUDE_PLUGIN_OPTION_LEDGER_PATH='${user_config.LEDGER_PATH}' COST_LEDGER_PATH="$OLD_LEDGER" run python3 "$CL" ledger-sync
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -s "$OLD_LEDGER" ]
+  [ ! -e "$BATS_TEST_TMPDIR/cwd/\${user_config.LEDGER_PATH}" ]
+}
+
+@test "userconfig: an unsubstituted placeholder alone means no ledger" {  # プレースホルダだけ
+  mkdir -p "$BATS_TEST_TMPDIR/cwd"
+  cd "$BATS_TEST_TMPDIR/cwd"
+  CLAUDE_PLUGIN_OPTION_LEDGER_PATH='${user_config.LEDGER_PATH}' run python3 "$CL" branch feat/x
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "${lines[0]}" == *'$1.00'* ]] || { echo "$output"; return 1; }
+  [ -z "$(ls -A "$BATS_TEST_TMPDIR/cwd")" ]
+}

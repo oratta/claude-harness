@@ -103,6 +103,16 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
   awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF 'PR があれば PR、無ければ記録先に `needs-approval` を付け'
 }
 
+@test "handover (#721): guidance accepts a conversation reply or /develop args without a PR comment" {
+  s="$(handover_section)"
+  printf '%s' "$s" | grep -qF '/develop <記録先> 許容する'
+  printf '%s' "$s" | grep -qF 'PR へのコメントは要らない'
+}
+
+@test "handover (#721): resume step 2 passes session id, timestamp and text to the G" {
+  handover_section | grep '^2\. ' | grep -qF 'CLAUDE_CODE_SESSION_ID'
+}
+
 # 保留の依頼の出し直し（issue #724）
 @test "resend: with no new information a repeated notice does not rewrite the request" {
   handover_section | grep -qF '**依頼の出し直し**'

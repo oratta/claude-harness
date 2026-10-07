@@ -19,6 +19,9 @@ cl_setup() {
   # 残すと合成ログの行が利用者の台帳へ追記され、テスト間で requestId が重複扱いになる。
   # 台帳を使うテスト（ledger.bats）は自分の一時ファイルを明示して渡す
   unset COST_LEDGER_PATH CLAUDE_PLUGIN_OPTION_LEDGER_PATH
+  # 利用者の許可の一覧（GitHub に書いてよいリポジトリ）の場所を引き継がない。hook を流すテストは
+  # 自分の一時ディレクトリの中のファイルを COST_LEDGER_WRITE_REPOS_FILE に明示して渡す
+  unset COST_LEDGER_WRITE_REPOS_FILE
 }
 
 # 実在の git リポジトリを 1 つ作る（リポジトリ識別子の導出に本物の git が要る）

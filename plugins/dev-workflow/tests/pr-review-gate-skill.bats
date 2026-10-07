@@ -979,10 +979,44 @@ step3c_body() {
   block="$(step3c_body | awk '/^```bash/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
   echo "$block" | grep -q '^主の回答: 許容（引き継ぎ） — <元の直接の回答リンク>'
   echo "$block" | grep -q '^引き継ぎ元: <前の HEAD の 40 桁フル SHA> の宣言 '
-  echo "$block" | grep -q '^引き継ぎの根拠: risk-carryover-check.sh 終了コード 0 — '
+  echo "$block" | grep -q '^引き継ぎの根拠: risk-carryover-check.sh 終了コード '
   echo "$block" | grep -q '^真正性確認: 済 — '
   [ "$(echo "$block" | wc -l | tr -d ' ')" -eq 4 ] || { echo "$block"; return 1; }
   ! step3c_body | grep -q '^## リスク宣言$' || return 1
+}
+
+@test "carryover (#694): exit 3 is accepted only after a whole-PR re-review at the new HEAD" {
+  body="$(step3c_body)"
+  cond1="$(echo "$body" | awk '/^1\. スクリプトが終了コード 0/{f=1} /^2\. /{f=0} f')"
+  [ -n "$cond1" ] || { echo "condition 1 not found"; return 1; }
+  echo "$cond1" | grep -qF '終了コード 3'
+  echo "$cond1" | grep -qF 'PR 全体を見た'
+  echo "$cond1" | grep -F '`固定 HEAD:`' | grep -qF '新しい HEAD'
+  echo "$cond1" | grep -qF '差分限定の再レビュー'
+  # HEAD 一致・重量 full・仕分けコメントの不在だけからは推定しない（#694 の仕様レビュー SHOULD_FIX）
+  line="$(echo "$cond1" | grep -F '推定しない')"
+  for w in 'HEAD の一致' 'レビュー重量: full' '仕分けコメントが無い'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
+  done
+}
+
+@test "carryover (#694): the script call block documents exit 3 and RESOLVED_OUTSIDE_ALLOWLIST" {
+  call="$(step3c_body | awk '/^```bash/{f=1; next} f&&/^```$/{f=0} f')"
+  echo "$call" | grep -qF 'RESOLVED_OUTSIDE_ALLOWLIST='
+  echo "$call" | grep -qF 'if-rereviewed'
+  echo "$call" | grep -qF '3 = '
+}
+
+@test "carryover (#694): the evidence line records the outside-allowlist files and the re-review fixed HEAD" {
+  block="$(step3c_body | awk '/^```bash/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
+  line="$(echo "$block" | grep '^引き継ぎの根拠: ')"
+  for w in '終了コード <0 または 3>' '許可リスト外' '取り直しのレビュー' '固定 HEAD <40 桁フル SHA>' '終了コード 0 のとき: 不要'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
+  done
+}
+
+@test "carryover (#694): when exit 3 cannot be backed by a whole review, step 6 gets the RESOLVED_OUTSIDE_ALLOWLIST lines" {
+  step3c_body | grep -F '手順6で主に聞く' | grep -qF 'RESOLVED_OUTSIDE_ALLOWLIST='
 }
 
 @test "carryover (#441): when carryover fails, 3-c routes to step 6 with the NG lines" {
@@ -1062,4 +1096,68 @@ step3c_body() {
   [ "$status" -ne 0 ]
   run grep -qF '^主に聞かずに回した周:' "$TRIAGE"
   [ "$status" -ne 0 ]
+}
+
+# --- Requirement: 合格条件は会話で受けた許容を正式な回答として受け付ける（#721） ---
+
+step5_body() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_STAGE}"; }
+
+@test "conversation reply (#721): step 5 has the conversation record format and the script check" {
+  body="$(step5_body)"
+  echo "$body" | grep -qF '主の回答: 許容 — 会話で受領（セッション <セッション ID> / <日時>）原文: <原文>'
+  echo "$body" | grep -qF 'owner-reply-check.sh <セッション ID> <原文>'
+  echo "$body" | grep -qF '真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh 終了コード 0）'
+}
+
+@test "conversation reply (#721): step 5 table treats a conversation record as accepted" {
+  row="$(step5_body | grep '^| ' | grep -F '会話で受領')"
+  echo "$row" | grep -qF '| 可 |'
+}
+
+@test "conversation reply (#721): step 5 reads intent from the full text with the same timestamp, not the excerpt" {
+  body="$(step5_body)"
+  echo "$body" | grep -F '同じ timestamp' | grep -qF '全文'
+  echo "$body" | grep -F '終了コード 0 でも' | grep -qF '合格させない'
+  echo "$body" | grep -qF '`許容しない`'
+}
+
+@test "conversation reply (#721): exit 2 routes to a PR comment or /develop on the same PC" {
+  step5_body | grep -F 'exit 2' | grep -qF '/develop <記録先> 許容する'
+}
+
+@test "conversation reply (#721): hold.md does not ask the owner for a PR comment after a conversation reply" {
+  grep -qF '会話で返事を受けたときは、主に PR へのコメントを求めない' "$HOLD"
+}
+
+@test "conversation reply (#721): step 6 resume row for risk acceptance handles a conversation record" {
+  row="$(awk '/^### 6\. /{f=1} f' "${HOLD}" | grep -F '| **リスク許容待ち**' | head -1)"
+  echo "$row" | grep -qF '会話で受領'
+}
+
+@test "conversation reply (#721): 3-c condition 3 accepts a conversation reply and rechecks with the script" {
+  cond3="$(step3c_body | grep '^3\. ')"
+  echo "$cond3" | grep -qF '会話で受領'
+  echo "$cond3" | grep -qF 'owner-reply-check.sh'
+  echo "$cond3" | grep -F '終了コード 0 でも' | grep -qF '同じ timestamp'
+  echo "$cond3" | grep -qF '`許容しない`'
+}
+
+@test "conversation reply (#721): 3-c keeps the 4-line block and allows the conversation form on line 1" {
+  step3c_body | grep -F '1 行目' | grep -qF '会話で受領（セッション'
+}
+
+@test "conversation reply (#721): step 5 binds the matched reply to this declaration (later than it, not about another PR)" {
+  body="$(step5_body)"
+  echo "$body" | grep -F '宣言コメントの作成日時' | grep -qF 'より後'
+  echo "$body" | grep -F '別の PR' | grep -qF '合格させない'
+}
+
+@test "conversation reply (#721): 3-c condition 3 rechecks the binding against the first declaration" {
+  cond3="$(step3c_body | grep '^3\. ')"
+  echo "$cond3" | grep -F '最初の宣言' | grep -qF 'より後'
+}
+
+@test "conversation reply (#721): step 5 table does not fail a declaration only because the answer link is missing" {
+  ! step5_body | grep '^| ' | grep -qF '回答リンクが無い' || return 1
+  step5_body | grep '^| ' | grep -F '不可' | grep -qF 'いずれの許容済み条件も満たさない'
 }

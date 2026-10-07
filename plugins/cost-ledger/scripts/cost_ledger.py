@@ -33,6 +33,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import unicodedata
 from collections import defaultdict
 
 # リポジトリ識別子が導けなかった行の印。黙って除外も合算もせず、この名前で別立てにする。
@@ -138,6 +139,10 @@ class Pricing:
 # リポジトリ識別子
 # --------------------------------------------------------------------------
 
+# Claude Code が作業ツリーを置く場所。この並びの下にあるのは、手前のリポジトリの作業ツリー
+WORKTREES_MARK = "/.claude/worktrees/"
+
+
 class RepoResolver:
     """cwd からリポジトリ識別子（git-common-dir の絶対パス）と表示名を求める。
 
@@ -149,19 +154,132 @@ class RepoResolver:
     def __init__(self):
         self._ids: dict[str, str] = {}
         self._labels: dict[str, str] = {}
+        self._inferred: set[str] = set()   # 削除済みで、パスからの推定で決めた cwd
+        self._places: dict[str, str] = {}  # 置き場ごとの判定結果
 
     def repo_id(self, cwd: str) -> str:
         if not cwd:
             return UNKNOWN_REPO
         if cwd in self._ids:
             return self._ids[cwd]
-        repo_id = UNKNOWN_REPO
         if os.path.isdir(cwd):
-            out = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
-            if out:
-                repo_id = os.path.realpath(out)
+            # 存在するのに git が失敗する cwd は推定しない（不明のまま）
+            repo_id = self._git_id(cwd)
+        else:
+            repo_id = self._infer(cwd)
+            if repo_id != UNKNOWN_REPO:
+                self._inferred.add(cwd)
         self._ids[cwd] = repo_id
         return repo_id
+
+    def inferred(self, cwd: str) -> bool:
+        """``repo_id(cwd)`` が、削除済みの cwd の文字列からの推定で決めた値か。"""
+        return cwd in self._inferred
+
+    @staticmethod
+    def _git_id(where: str) -> str:
+        out = _git(where, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        return os.path.realpath(out) if out else UNKNOWN_REPO
+
+    @staticmethod
+    def _linked_id(child: str) -> str:
+        """リンクされた作業ツリー ``child`` の識別子を、git を起動せず ``.git`` ファイルから読む。
+
+        ``.git`` ファイルの ``gitdir: <パス>`` が指すディレクトリに ``commondir`` があれば、それを
+        ``<パス>`` からの相対として解決したものが、無ければ ``<パス>`` そのものが共通の git
+        ディレクトリで、``_git_id()`` が ``git rev-parse --git-common-dir`` から決める値と同じ
+        文字列になる。置き場の子の数だけ git を起動すると Stop hook が 1 秒を超えうるので
+        （実測）、ここでは起動しない。読めない・``gitdir:`` の行が無い・指す先が無いときは不明。
+        """
+        try:
+            with open(os.path.join(child, ".git"), encoding="utf-8", errors="replace") as fh:
+                head = fh.read(4096)
+        except OSError:
+            return UNKNOWN_REPO
+        gitdir = ""
+        for line in head.splitlines():
+            if line.startswith("gitdir:"):
+                gitdir = line[len("gitdir:"):].strip()
+                break
+        if not gitdir:
+            return UNKNOWN_REPO
+        gitdir = os.path.join(child, gitdir)  # 相対なら作業ツリーから。絶対ならそのまま
+        if not os.path.isdir(gitdir):
+            return UNKNOWN_REPO
+        common = gitdir
+        try:
+            with open(os.path.join(gitdir, "commondir"), encoding="utf-8", errors="replace") as fh:
+                rel = fh.read(4096).strip()
+            if rel:
+                common = os.path.join(gitdir, rel)
+        except OSError:
+            pass
+        if not os.path.isdir(common):
+            return UNKNOWN_REPO
+        return os.path.realpath(common)
+
+    def _infer(self, cwd: str) -> str:
+        """ディレクトリとして存在しない cwd の文字列からリポジトリを推定する（決まらなければ不明）。
+
+        (1) ``/.claude/worktrees/`` を含むなら、最後のその並びの手前を持ち主とする。その下に
+        置かれるのは手前のリポジトリの作業ツリーだと決まっているので、持ち主の識別子をそのまま
+        使う（持ち主も削除済みなら、持ち主のパスを同じ手順で推定する）。(2) それ以外は、現存する
+        最も近い祖先を置き場として ``_place_id()`` で決める。
+        """
+        if not os.path.isabs(cwd):
+            return UNKNOWN_REPO
+        at = cwd.rfind(WORKTREES_MARK)
+        if at >= 0:
+            # 持ち主は cwd より必ず短いので、持ち主も削除済みで推定を繰り返しても止まる
+            return self.repo_id(cwd[:at])
+        place = os.path.dirname(cwd.rstrip(os.sep))
+        while place and not os.path.isdir(place):
+            parent = os.path.dirname(place)
+            if parent == place:
+                return UNKNOWN_REPO
+            place = parent
+        if not place:
+            return UNKNOWN_REPO
+        if place not in self._places:
+            self._places[place] = self._place_id(place)
+        return self._places[place]
+
+    def _place_id(self, place: str) -> str:
+        """置き場（削除済みの cwd の、現存する最も近い祖先）の直下の作業ツリーからリポジトリを決める。
+
+        決めるのは、直下のリンクされた作業ツリー（``.git`` がファイルのディレクトリ）の識別子
+        （``_linked_id()`` がファイルから読む。読めない子は除く）がちょうど 1 種類で、置き場の名前がそのリポジトリのメインの作業ツリーのディレクトリ名
+        （bare なら識別子のパスの末尾の名前）か origin のリポジトリ名と一致するときだけ。
+        名前の一致を求めるのは、複数のリポジトリの作業ツリーを混ぜて置くディレクトリで、たまたま
+        残っている 1 つに寄せないため。置き場が git リポジトリの中のときは決めない（消えたのが
+        入れ子の別リポジトリだった場合に、外側のリポジトリへ寄せないため）。
+        """
+        if os.path.dirname(place) == place or self._git_id(place) != UNKNOWN_REPO:
+            return UNKNOWN_REPO
+        try:
+            names = sorted(os.listdir(place))
+        except OSError:
+            return UNKNOWN_REPO
+        found = None
+        for name in names:
+            child = os.path.join(place, name)
+            if not os.path.isfile(os.path.join(child, ".git")):
+                continue
+            # 子ごとに git を起動しない。.git ファイルを解決できない子（指す先の無い残骸など）は
+            # 数えず、残りの子で判定する
+            repo_id = self._linked_id(child)
+            if repo_id == UNKNOWN_REPO:
+                continue
+            if found is not None and repo_id != found:
+                return UNKNOWN_REPO
+            found = repo_id
+        if found is None:
+            return UNKNOWN_REPO
+        root = os.path.dirname(found) if os.path.basename(found) == ".git" else found
+        # label() は origin が読めれば owner/repo、読めなければディレクトリ名を返す
+        if os.path.basename(place) in (os.path.basename(root), self.label(found).rsplit("/", 1)[-1]):
+            return found
+        return UNKNOWN_REPO
 
     def label(self, repo_id: str) -> str:
         if repo_id == UNKNOWN_REPO:
@@ -210,9 +328,17 @@ def _gh(cwd: str, *args: str):
     return done.stdout.strip() or None
 
 
+# issue の問い合わせから番号と子 issue の数を 1 回で取り出す（値が無い・読めないときは 0）
+ISSUE_JQ = r'"\(.number) \((.sub_issues_summary.total)? // 0)"'
+
+
 def resolve_number(where: str, number: str):
-    """番号が PR か issue かを GitHub に問い合わせ、``("pr", ヘッドブランチ)`` /
-    ``("issue", 番号)`` / ``(None, None)`` を返す。
+    """番号が PR か issue かを GitHub に問い合わせ、``("pr", ヘッドブランチ, 0)`` /
+    ``("issue", 番号, 子 issue の数)`` / ``(None, None, 0)`` を返す。
+
+    子 issue の数は、issue の問い合わせの応答の ``sub_issues_summary.total``（同じ呼び出しの
+    jq で番号と一緒に取り出すので、``gh`` の回数は増えない）。応答に無い・整数として読めない
+    ときは 0（子を持たない issue として扱う）。
 
     問い合わせは REST（``gh api``）だけを使う。GraphQL 経路（``gh pr view --json`` 等）は
     Projects classic の廃止に伴うエラーで落ちるリポジトリがあり、番号の判別という
@@ -223,11 +349,151 @@ def resolve_number(where: str, number: str):
     """
     head = _gh(where, "api", "repos/{owner}/{repo}/pulls/%s" % number, "--jq", ".head.ref")
     if head:
-        return "pr", head
-    found = _gh(where, "api", "repos/{owner}/{repo}/issues/%s" % number, "--jq", ".number")
-    if found:
-        return "issue", found
-    return None, None
+        return "pr", head, 0
+    found = _gh(where, "api", "repos/{owner}/{repo}/issues/%s" % number, "--jq", ISSUE_JQ)
+    parts = (found or "").split()
+    if parts:
+        children = 0
+        if len(parts) == 2 and re.fullmatch(r"[0-9]+", parts[1]):
+            children = int(parts[1])
+        return "issue", parts[0], children
+    return None, None, 0
+
+
+class EpicError(Exception):
+    """子 issue の木を読み切れなかった（一部しか読めていない額を合計にしないために止める）。"""
+
+
+# 子 issue を辿る深さの上限（エピックから数えた段数。GitHub が許す入れ子の上限と同じ）
+EPIC_MAX_DEPTH = 8
+
+_CLOSING_FIELDS = (
+    "closedByPullRequestsReferences(first: 100) {"
+    " nodes { number headRefName isCrossRepository baseRepository { nameWithOwner } }"
+    " pageInfo { hasNextPage } }"
+)
+# ある issue の子と、子ごとの閉じた PR を 1 回で取る。owner・name・number は変数で渡し、
+# 問い合わせの文字列に埋め込まない
+SUB_ISSUES_QUERY = (
+    "query($owner: String!, $name: String!, $number: Int!) {"
+    " repository(owner: $owner, name: $name) { nameWithOwner issue(number: $number) {"
+    " number title state " + _CLOSING_FIELDS +
+    " subIssues(first: 100) {"
+    " nodes { number title state repository { nameWithOwner } subIssuesSummary { total } "
+    + _CLOSING_FIELDS + " }"
+    " pageInfo { hasNextPage } } } } }"
+)
+
+
+def _closing_refs(refs, repo: str, number: int):
+    """``closedByPullRequestsReferences`` から、数える PR の ``[(番号, ヘッドブランチ)]`` を作る。
+
+    数えるのは、ベースが対象のリポジトリ（大文字と小文字は区別しない）で ``isCrossRepository``
+    が偽の PR だけ（``gate_report.py`` の ``closing_prs()`` と同じ絞り方）。同じヘッドブランチが
+    複数あれば番号のいちばん小さいものだけを残し、番号の昇順に並べる。
+    """
+    if not isinstance(refs, dict) or not isinstance(refs.get("pageInfo"), dict):
+        raise EpicError("issue #%d を閉じた PR の一覧が期待する形ではありません" % number)
+    if refs["pageInfo"].get("hasNextPage") is not False:
+        raise EpicError("issue #%d を閉じた PR が 100 件を超えています" % number)
+    nodes = refs.get("nodes")
+    if not isinstance(nodes, list):
+        raise EpicError("issue #%d を閉じた PR の一覧が期待する形ではありません" % number)
+    by_branch = {}
+    for node in nodes:
+        base = node.get("baseRepository") if isinstance(node, dict) else None
+        base = base.get("nameWithOwner") if isinstance(base, dict) else None
+        pr = node.get("number") if isinstance(node, dict) else None
+        head = node.get("headRefName") if isinstance(node, dict) else None
+        cross = node.get("isCrossRepository") if isinstance(node, dict) else None
+        if (type(pr) is not int or pr < 1 or not isinstance(head, str) or not head
+                or not isinstance(cross, bool) or not isinstance(base, str)):
+            raise EpicError("issue #%d を閉じた PR の応答に、形の崩れた項目があります" % number)
+        if cross or base.lower() != repo.lower():
+            continue
+        if head not in by_branch or pr < by_branch[head]:
+            by_branch[head] = pr
+    return sorted((pr, head) for head, pr in by_branch.items())
+
+
+def _issue_fields(node, number: int):
+    """応答の issue 1 件から ``(番号, 題名, 状態)`` を取り出す（状態は ``open`` / ``closed``）。"""
+    if not isinstance(node, dict):
+        raise EpicError("issue #%d の子 issue の応答に、形の崩れた項目があります" % number)
+    found, title, state = node.get("number"), node.get("title"), node.get("state")
+    if (type(found) is not int or found < 1 or not isinstance(title, str)
+            or state not in ("OPEN", "CLOSED")):
+        raise EpicError("issue #%d の子 issue の応答に、形の崩れた項目があります" % number)
+    return found, title, state.lower()
+
+
+def fetch_epic_tree(where: str, number: int):
+    """エピックと子孫の issue を辿り、``(対象の issue の一覧, 数えなかった子の一覧)`` を返す。
+
+    対象の issue は表示の順（エピック自身、あとは GitHub が返した子の順で、子を持つ issue の
+    直後にその子）。1 件は ``number``・``parent``・``depth``・``title``・``state``・``prs``
+    （数える PR の ``[(番号, ヘッドブランチ)]``）。``gh api graphql`` は、子を持つ issue 1 件に
+    つき 1 回だけ呼ぶ。一度出た番号と別のリポジトリの子は数えず辿らない。読み切れなければ
+    EpicError（呼ぶ側が標準出力に何も書かずに終了コード 2 を返す）。
+    """
+    issues, skipped, seen = [], [], {number}
+    state = {"repo": None}
+
+    def query(target: int):
+        raw = _gh(where, "api", "graphql", "-f", "query=" + SUB_ISSUES_QUERY,
+                  "-F", "owner={owner}", "-F", "name={repo}", "-F", "number=%d" % target)
+        if raw is None:
+            raise EpicError("issue #%d の子 issue の問い合わせ（gh api graphql）が失敗しました" % target)
+        try:
+            repository = json.loads(raw)["data"]["repository"]
+            repo, issue = repository["nameWithOwner"], repository["issue"]
+            subs = issue["subIssues"]
+            nodes, more = subs["nodes"], subs["pageInfo"]["hasNextPage"]
+        except (ValueError, KeyError, TypeError):
+            raise EpicError("issue #%d の子 issue の応答が期待する形ではありません" % target)
+        if not isinstance(repo, str) or not repo or not isinstance(nodes, list):
+            raise EpicError("issue #%d の子 issue の応答が期待する形ではありません" % target)
+        if more is not False:
+            raise EpicError("issue #%d の子 issue が 100 件を超えています" % target)
+        if state["repo"] is None:
+            state["repo"] = repo
+        return issue, nodes
+
+    def walk(target: int, depth: int, known):
+        issue, nodes = query(target)
+        if known is None:
+            _found, title, status = _issue_fields(issue, target)
+            issues.append({"number": target, "parent": None, "depth": 0, "title": title,
+                           "state": status,
+                           "prs": _closing_refs(issue.get("closedByPullRequestsReferences"),
+                                                state["repo"], target)})
+        for node in nodes:
+            child, title, status = _issue_fields(node, target)
+            owner = node.get("repository")
+            owner = owner.get("nameWithOwner") if isinstance(owner, dict) else None
+            summary = node.get("subIssuesSummary")
+            total = summary.get("total") if isinstance(summary, dict) else None
+            if not isinstance(owner, str) or not owner or type(total) is not int or total < 0:
+                raise EpicError("issue #%d の子 issue #%d の応答が期待する形ではありません"
+                                % (target, child))
+            if owner.lower() != state["repo"].lower():
+                skipped.append({"repo": owner, "number": child, "parent": target})
+                continue
+            if child in seen:
+                continue
+            seen.add(child)
+            issues.append({"number": child, "parent": target, "depth": depth + 1, "title": title,
+                           "state": status,
+                           "prs": _closing_refs(node.get("closedByPullRequestsReferences"),
+                                                state["repo"], child)})
+            if total > 0:
+                if depth + 1 >= EPIC_MAX_DEPTH:
+                    raise EpicError("issue #%d は %d 段より深い子 issue を持っています"
+                                    % (child, EPIC_MAX_DEPTH))
+                walk(child, depth + 1, True)
+
+    walk(number, 0, None)
+    return issues, skipped
 
 
 def current_branch(where: str):
@@ -347,7 +613,8 @@ def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
         # 内訳を持たない古い形の行。キャッシュ書込 5m として読む。
         write_5m = usage.get("cache_creation_input_tokens") or 0
     issues, marker = scan_tool_calls(message)
-    return {
+    cwd = record.get("cwd") or ""
+    fact = {
         "request_id": record.get("requestId") or record.get("uuid") or "",
         # 先頭の行の uuid。複製された会話ログの先頭の行と、真の後続行を区別する鍵
         "uuid": record["uuid"] if isinstance(record.get("uuid"), str) else "",
@@ -355,7 +622,7 @@ def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
         # sessionId が無い行は区間を切る単位が消える。ファイルパスに落として混ざるのを防ぐ。
         "session_id": record.get("sessionId") or path,
         "is_sidechain": bool(record.get("isSidechain")),
-        "repo_id": resolver.repo_id(record.get("cwd") or ""),
+        "repo_id": resolver.repo_id(cwd),
         "branch": record.get("gitBranch") or "",
         "model": message.get("model") or "",
         "input_tokens": usage.get("input_tokens") or 0,
@@ -366,6 +633,11 @@ def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
         "issues": issues,
         "post_marker": marker,
     }
+    if resolver.inferred(cwd):
+        # 削除済みの cwd の文字列から推定した識別子。偽のときは欄そのものを書かない
+        # （git で決まった行と、この欄ができる前に書かれた行の形を変えないため）
+        fact["repo_inferred"] = True
+    return fact
 
 
 def log_files(root: str):
@@ -387,6 +659,7 @@ class SeenSet:
     def __init__(self):
         self.ids: set[str] = set()
         self.heads: dict[str, str] = {}
+        self.counts: dict[str, int] = {}
 
     def __contains__(self, request_id) -> bool:
         return request_id in self.ids
@@ -394,12 +667,19 @@ class SeenSet:
     def add(self, request_id) -> None:
         self.ids.add(request_id)
 
-    def add_head(self, request_id, uuid: str) -> None:
+    def add_head(self, request_id, uuid: str, output: int = 0) -> None:
         self.ids.add(request_id)
         self.heads[request_id] = uuid
+        self.counts[request_id] = output
 
     def head_uuid(self, request_id):
         return self.heads.get(request_id)
+
+    def counted_output(self, request_id) -> int:
+        return self.counts.get(request_id, 0)
+
+    def bump_output(self, request_id, delta: int) -> None:
+        self.counts[request_id] = self.counts.get(request_id, 0) + delta
 
 
 def _head_uuid(seen, request_id):
@@ -407,12 +687,35 @@ def _head_uuid(seen, request_id):
     return lookup(request_id) if lookup else None
 
 
-def _add_head(seen, request_id, uuid: str) -> None:
+def _add_head(seen, request_id, uuid: str, output: int = 0) -> None:
     add_head = getattr(seen, "add_head", None)
     if add_head:
-        add_head(request_id, uuid)
+        add_head(request_id, uuid, output)
     else:
         seen.add(request_id)
+
+
+def _counted_output(seen, request_id) -> int:
+    """この応答について、台帳（または同じ読み取りの中）に既に数えた出力トークン。"""
+    lookup = getattr(seen, "counted_output", None)
+    return lookup(request_id) if lookup else 0
+
+
+def _bump_output(seen, request_id, delta: int) -> None:
+    bump = getattr(seen, "bump_output", None)
+    if bump and delta:
+        bump(request_id, delta)
+
+
+def final_output(message: dict):
+    """確定行（``stop_reason`` が空でない文字列の行）なら出力トークン、そうでなければ None。"""
+    stop = message.get("stop_reason")
+    if not isinstance(stop, str) or not stop:
+        return None
+    out = (message.get("usage") or {}).get("output_tokens")
+    if isinstance(out, bool) or not isinstance(out, int):
+        return None
+    return out
 
 
 class PositionedLines:
@@ -440,13 +743,17 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
                      from_start: bool = True, offset_of=None):
     """会話ログの行の列から事実を返す。``seen`` に入っている requestId は先頭の行として扱わない。
 
-    ``seen`` は ``in`` と ``add`` を持てばよい（台帳の索引もこの形で渡す）。先頭の行の uuid を
-    持てる ``seen``（``add_head`` / ``head_uuid``）なら、複製された先頭の行を後続行と取り違えない。
-    requestId も uuid も無い行は空文字を鍵にする。
+    ``seen`` は ``SeenSet`` か、同じメソッドを持つもの（台帳の索引を包んだ ``_Seen``）を渡す。
+    先頭の行の uuid を持てる ``seen``（``add_head`` / ``head_uuid``）なら、複製された先頭の行を
+    後続行と取り違えない。確定行の出力の差分を正しく出すには、数えた出力を覚える
+    ``counted_output`` / ``bump_output`` が要る（素の ``set`` を渡すと数えた出力が常に 0 になり、
+    確定行の値がそのまま足されて二重に数える）。requestId も uuid も無い行は空文字を鍵にする。
 
     1 つの応答が複数の行に分かれるとき、そのファイルで最初に現れる行が先頭の行で、通常の事実を
-    1 つ出す。それ以降の行（後続行）は、実行した Bash が issue 番号か投稿の印を持つときだけ、
-    トークン 0 の補足の事実を ``<requestId>#<uuid>`` の鍵で出す。``from_start`` は、この呼び出しが
+    1 つ出す。それ以降の行（後続行）は、実行した Bash が issue 番号か投稿の印を持つとき、または
+    確定行（``stop_reason`` が付く行）の出力がそれまでに数えた出力より大きいときだけ、入力・
+    キャッシュ 0 で出力がその差分（差分が無ければ 0）の補足の事実を ``<requestId>#<uuid>`` の
+    鍵で出す。``from_start`` は、この呼び出しが
     ファイルの先頭から読んでいるか（uuid を持たない古い台帳の行の先頭の行を見分けるのに使う）。
     ``offset_of`` は、いま読んでいる行の元ログ内の行頭バイト位置を返す関数（``PositionedLines.position``
     を返す形）。渡されたとき、補足の事実に ``source_offset`` として保存し、同時刻の後続行の
@@ -484,7 +791,7 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
                 SCAN_STATS["unreadable_lines"] += 1
                 continue
             first_seen[request_id] = uuid
-            _add_head(seen, request_id, uuid)
+            _add_head(seen, request_id, uuid, fact["output_tokens"])
             yield fact
             continue
         if request_id not in first_seen:
@@ -496,14 +803,19 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
                 first_seen[request_id] = uuid  # このファイルで最初の行を先頭の行として捨てる
                 continue
             first_seen[request_id] = head
-        if uuid == first_seen[request_id] or not uuid or '"Bash"' not in line:
+        if uuid == first_seen[request_id] or not uuid:
+            continue
+        if '"Bash"' not in line and '"stop_reason":"' not in line and '"stop_reason": "' not in line:
             continue
         key = "%s#%s" % (request_id, uuid)
         if key in seen:
             continue
         try:
-            issues, marker = scan_tool_calls(record.get("message") or {})
-            if not issues and marker is None:
+            message = record.get("message") or {}
+            issues, marker = scan_tool_calls(message)
+            final = final_output(message)
+            delta = max(0, final - _counted_output(seen, request_id)) if final is not None else 0
+            if not issues and marker is None and not delta:
                 continue
             fact = build_fact(record, resolver, path)
         except (AttributeError, TypeError, ValueError):
@@ -512,6 +824,8 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
         fact["request_id"] = key
         for field in TOKEN_KEYS:
             fact[field] = 0
+        fact["output_tokens"] = delta
+        _bump_output(seen, request_id, delta)
         fact["continuation"] = True
         if offset_of is not None:
             fact["source_offset"] = offset_of()
@@ -520,7 +834,7 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
 
 
 def is_continuation(fact: dict) -> bool:
-    """同じ応答の後続行から出した補足の事実か（トークン 0・メッセージ数に数えない）。"""
+    """同じ応答の後続行から出した補足の事実か（入力・キャッシュは 0、出力は確定値との差分。メッセージ数に数えない）。"""
     return bool(fact.get("continuation"))
 
 
@@ -581,12 +895,37 @@ def _ledger_id_uuid(line: str):
     return None, None
 
 
+OUTPUT_KEY = '"output_tokens": '
+
+
+def _ledger_output(line: str, request_id: str) -> int:
+    """台帳の 1 行の出力トークン。値の前の欄は文字列のエスケープ済みの値だけなので、最初の一致が欄そのもの。"""
+    at = line.find(OUTPUT_KEY)
+    if at >= 0:
+        digits = line[at + len(OUTPUT_KEY):at + len(OUTPUT_KEY) + 20]
+        end = 0
+        while end < len(digits) and digits[end].isdigit():
+            end += 1
+        if end:
+            return int(digits[:end])
+    try:
+        value = json.loads(line).get("output_tokens")
+    except (ValueError, AttributeError):
+        return 0
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 class LedgerError(Exception):
     """台帳を使えない（場所が不正・読み書きできない）。終了コード 2 で利用者に伝える。"""
 
 
 def ledger_path():
-    return os.environ.get(LEDGER_OPTION_ENV) or os.environ.get(LEDGER_ENV) or None
+    option = os.environ.get(LEDGER_OPTION_ENV, "")
+    # userConfig が未設定のとき、/cost の本文は置換されなかった文字列 ${user_config.LEDGER_PATH}
+    # をそのまま渡してくる。空文字と同じ未設定として扱い、COST_LEDGER_PATH に落とす。
+    if option.startswith("${user_config."):
+        option = ""
+    return option or os.environ.get(LEDGER_ENV) or None
 
 
 def protected_root() -> str:
@@ -649,9 +988,16 @@ class LedgerIndex:
         db = sqlite3.connect(self.path)
         db.execute("CREATE TABLE IF NOT EXISTS ids (id TEXT PRIMARY KEY)")
         db.execute("CREATE TABLE IF NOT EXISTS heads (id TEXT PRIMARY KEY, uuid TEXT)")
+        old_form = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='counted'").fetchone() is None
+        db.execute("CREATE TABLE IF NOT EXISTS counted (id TEXT PRIMARY KEY, out INTEGER)")
         db.execute("CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, offset INTEGER, ino INTEGER)")
         db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER)")
         db.execute("SELECT count(*) FROM meta").fetchone()
+        if old_form:
+            # 応答ごとの出力を持たない古い形の控え。台帳を先頭から読み直して作り直す。
+            db.execute("DELETE FROM counted")
+            db.execute("DELETE FROM meta WHERE key = 'covered'")
+            db.commit()
         return db
 
     def covered(self) -> int:
@@ -671,6 +1017,7 @@ class LedgerIndex:
         if start > size:
             self.db.execute("DELETE FROM ids")
             self.db.execute("DELETE FROM heads")
+            self.db.execute("DELETE FROM counted")
             self.db.execute("DELETE FROM files")
             start = 0
         if start < size:
@@ -679,14 +1026,21 @@ class LedgerIndex:
                 data = fh.read(size - start)
             ids = []
             heads = []
+            counts: dict[str, int] = {}
             for raw in data.split(b"\n"):
                 if not raw.strip():
                     continue
-                request_id, uuid = _ledger_id_uuid(raw.decode("utf-8", errors="replace"))
+                text = raw.decode("utf-8", errors="replace")
+                request_id, uuid = _ledger_id_uuid(text)
                 if request_id is not None:
                     ids.append((request_id,))
                     if uuid is not None:
                         heads.append((request_id, uuid))
+                    base = request_id.split("#", 1)[0]
+                    counts[base] = counts.get(base, 0) + _ledger_output(text, request_id)
+            self.db.executemany(
+                "INSERT INTO counted (id, out) VALUES (?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET out = out + excluded.out", list(counts.items()))
             self.db.executemany("INSERT OR IGNORE INTO ids (id) VALUES (?)", ids)
             self.db.executemany("INSERT OR IGNORE INTO heads (id, uuid) VALUES (?, ?)", heads)
         self.set_covered(size)
@@ -699,6 +1053,10 @@ class LedgerIndex:
         row = self.db.execute("SELECT uuid FROM heads WHERE id = ?", (request_id,)).fetchone()
         return row[0] if row else None
 
+    def counted_output(self, request_id) -> int:
+        row = self.db.execute("SELECT out FROM counted WHERE id = ?", (request_id,)).fetchone()
+        return row[0] if row else 0
+
     def offsets(self) -> dict:
         return {p: (o, i) for p, o, i in self.db.execute("SELECT path, offset, ino FROM files")}
 
@@ -710,6 +1068,7 @@ class _Seen:
         self.index = index
         self.local: set[str] = set()
         self.heads: dict[str, str] = {}
+        self.counts: dict[str, int] = {}
 
     def __contains__(self, request_id) -> bool:
         return request_id in self.local or request_id in self.index
@@ -717,14 +1076,23 @@ class _Seen:
     def add(self, request_id) -> None:
         self.local.add(request_id)
 
-    def add_head(self, request_id, uuid: str) -> None:
+    def add_head(self, request_id, uuid: str, output: int = 0) -> None:
         self.local.add(request_id)
         self.heads[request_id] = uuid
+        self.counts[request_id] = output
 
     def head_uuid(self, request_id):
         if request_id in self.heads:
             return self.heads[request_id]
         return self.index.head_uuid(request_id)
+
+    def counted_output(self, request_id) -> int:
+        if request_id in self.counts:
+            return self.counts[request_id]
+        return self.index.counted_output(request_id)
+
+    def bump_output(self, request_id, delta: int) -> None:
+        self.counts[request_id] = self.counted_output(request_id) + delta
 
 
 def ledger_sync(ledger: str, root: str, resolver: RepoResolver, rescan: bool = False) -> int:
@@ -747,6 +1115,99 @@ def ledger_sync(ledger: str, root: str, resolver: RepoResolver, rescan: bool = F
             raise LedgerError("台帳 %s へ追記できません: %s" % (ledger, error))
 
 
+REPO_FIX_PREFIX = "repo-fix#"
+LEDGER_UNKNOWN_REPO = '"repo_id": "%s"' % UNKNOWN_REPO
+
+
+def _unknown_groups(ledger: str) -> dict:
+    """台帳の識別子が不明の行（補正行を除く）を持つ (session_id, branch) と、その組の最も早い timestamp。"""
+    groups: dict = {}
+    if not os.path.exists(ledger):
+        return groups
+    with open(ledger, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if LEDGER_UNKNOWN_REPO not in line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(row, dict) or row.get("repo_id") != UNKNOWN_REPO or row.get("repo_fix"):
+                continue
+            session, branch = row.get("session_id") or "", row.get("branch") or ""
+            if not (isinstance(session, str) and isinstance(branch, str)):
+                continue
+            stamp = row.get("timestamp") if isinstance(row.get("timestamp"), str) else ""
+            key = (session, branch)
+            if key not in groups or (stamp and (not groups[key] or stamp < groups[key])):
+                groups[key] = stamp
+    return groups
+
+
+def _collect_group_cwds(data: bytes, path: str, groups: dict, cwds: dict, no_cwd: set) -> None:
+    """会話ログのバイト列の応答の行から、groups の組ごとの cwd と「cwd の無い行がある」ことを集める。
+
+    組の鍵は build_fact と同じ（sessionId が無ければファイルのパス, gitBranch）。
+    """
+    for raw in data.split(b"\n"):
+        if b'"assistant"' not in raw:
+            continue
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(record, dict) or record.get("type") != "assistant":
+            continue
+        session, branch = record.get("sessionId") or path, record.get("gitBranch") or ""
+        if not (isinstance(session, str) and isinstance(branch, str)):
+            continue
+        key = (session, branch)
+        if key not in groups:
+            continue
+        cwd = record.get("cwd")
+        if isinstance(cwd, str) and cwd:
+            cwds.setdefault(key, set()).add(cwd)
+        else:
+            no_cwd.add(key)
+
+
+def _repo_fix_rows(groups: dict, cwds: dict, no_cwd: set, resolver: RepoResolver, seen) -> list[str]:
+    """全 cwd が同じ 1 リポジトリに決まり、cwd の無い応答の行を含まない組の補正行（索引に無いものだけ）。"""
+    rows: list[str] = []
+    for key in sorted(groups):
+        if key in no_cwd or not cwds.get(key):
+            continue
+        repos = {resolver.repo_id(cwd) for cwd in sorted(cwds[key])}
+        if len(repos) != 1 or UNKNOWN_REPO in repos:
+            continue
+        repo = repos.pop()
+        session, branch = key
+        request_id = "%s%s#%s#%s" % (REPO_FIX_PREFIX, session, branch, repo)
+        if request_id in seen:
+            continue
+        seen.add(request_id)
+        # 補足の事実の形に寄せる（古い版の読み手には、トークン 0・issue なし・印なしの補足に見える）
+        rows.append(json.dumps({
+            "request_id": request_id,
+            "timestamp": groups[key],
+            "session_id": session,
+            "is_sidechain": False,
+            "repo_id": repo,
+            "branch": branch,
+            "model": "",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_write_5m_tokens": 0,
+            "cache_write_1h_tokens": 0,
+            "cache_read_tokens": 0,
+            "issues": [],
+            "post_marker": None,
+            "continuation": True,
+            "repo_fix": True,
+        }, ensure_ascii=False))
+    return rows
+
+
 def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver, rescan: bool = False) -> int:
     index = LedgerIndex(ledger + ".state.sqlite")
     try:
@@ -759,6 +1220,10 @@ def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver, rescan: 
         # 指しても、同じ会話ログを別のキーで先頭から読み直さないため）。os.walk は root の
         # 表記のまま返すので、root からの相対パスを実パスの root に付け直す
         real_root = os.path.realpath(root)
+        # --rescan のときだけ、台帳の「不明」の行の組と、その組の cwd を集めて補正行を書く
+        groups = _unknown_groups(ledger) if rescan else {}
+        group_cwds: dict = {}
+        no_cwd: set = set()
         for path in log_files(root):
             key = os.path.join(real_root, os.path.relpath(path, root))
             try:
@@ -786,7 +1251,11 @@ def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver, rescan: 
             for fact in facts_from_lines(lines, path, resolver, seen, from_start=(offset == 0),
                                          offset_of=lambda: lines.position):
                 lines_out.append(json.dumps(fact, ensure_ascii=False))
+            if groups:
+                _collect_group_cwds(data[:end + 1], path, groups, group_cwds, no_cwd)
             new_offsets.append((key, offset + end + 1, stat.st_ino))
+        if groups:
+            lines_out.extend(_repo_fix_rows(groups, group_cwds, no_cwd, resolver, seen))
         if lines_out:
             prefix = ""
             if os.path.exists(ledger) and os.path.getsize(ledger) > 0:
@@ -837,8 +1306,11 @@ def _ledger_session(line: str):
     return record.get("session_id") if isinstance(record, dict) else None
 
 
-def iter_ledger_issue_facts(ledger: str, issue: str):
+def iter_ledger_issue_facts(ledger: str, issue):
     """台帳のうち、その issue 番号を触った行を持つセッションの事実だけを返す。
+
+    ``issue`` は番号 1 件（文字列）か、番号の集合（エピックの集計が、対象の issue すべての分を
+    台帳の同じ 2 回の走査でまとめて読むために渡す。どれかを触ったセッションを返す）。
 
     区間は ``session_id`` ごとに切るので、その issue を触った行が 1 つも無いセッションは
     issue の集計に関係しない。1 回目の走査で、issue 番号を持つ行（``"issues": []`` でない行）
@@ -848,6 +1320,7 @@ def iter_ledger_issue_facts(ledger: str, issue: str):
     handle = _open_ledger(ledger)
     if handle is None:
         return
+    wanted = {issue} if isinstance(issue, str) else set(issue)
     sessions: set[str] = set()
     with handle:
         for line in handle:
@@ -858,7 +1331,8 @@ def iter_ledger_issue_facts(ledger: str, issue: str):
             except ValueError:
                 continue
             if (isinstance(fact, dict) and isinstance(fact.get("issues"), list)
-                    and issue in fact["issues"] and isinstance(fact.get("session_id"), str)):
+                    and not wanted.isdisjoint(n for n in fact["issues"] if isinstance(n, str))
+                    and isinstance(fact.get("session_id"), str)):
                 sessions.add(fact["session_id"])
     handle = _open_ledger(ledger)
     if handle is None:
@@ -917,6 +1391,51 @@ def iter_ledger_facts(ledger: str, branch: str | None = None):
             yield fact
 
 
+LEDGER_REPO_FIX = '"repo_fix": true'
+
+
+def _group_key(row: dict):
+    """補正の組の鍵 (session_id, branch)。形が崩れていれば None。"""
+    session, branch = row.get("session_id"), row.get("branch") or ""
+    if isinstance(session, str) and isinstance(branch, str):
+        return session, branch
+    return None
+
+
+def ledger_repo_fixes(ledger: str) -> dict:
+    """台帳の補正行を 1 回の走査で集め、組ごとの repo_id の集合を返す。"""
+    fixes: dict = {}
+    handle = _open_ledger(ledger)
+    if handle is None:
+        return fixes
+    with handle:
+        for line in handle:
+            if LEDGER_REPO_FIX not in line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(row, dict) or row.get("repo_fix") is not True:
+                continue
+            key, repo = _group_key(row), row.get("repo_id")
+            if key is not None and isinstance(repo, str) and repo:
+                fixes.setdefault(key, set()).add(repo)
+    return fixes
+
+
+def apply_repo_fixes(facts, fixes: dict):
+    """事実の列から補正行を取り除き、補正の repo_id がちょうど 1 種類の組の不明の事実を置き換える。"""
+    for fact in facts:
+        if fact.get("repo_fix"):
+            continue
+        if fixes and fact.get("repo_id") == UNKNOWN_REPO:
+            repos = fixes.get(_group_key(fact))
+            if repos is not None and len(repos) == 1:
+                fact = dict(fact, repo_id=next(iter(repos)), repo_inferred=True)
+        yield fact
+
+
 def load_facts(resolver: RepoResolver, branch: str | None = None, issue: str | None = None):
     """集計系サブコマンドの事実の入口。
 
@@ -925,16 +1444,18 @@ def load_facts(resolver: RepoResolver, branch: str | None = None, issue: str | N
     会話ログを直接読む。
 
     ``issue`` を渡すと、台帳からはその issue を触ったセッションの行だけを読む（区間に
-    切った結果は全行を読んだ場合と同じ）。会話ログの直読みでは絞らない。
+    切った結果は全行を読んだ場合と同じ）。番号の集合を渡せば、どれかを触ったセッションの行を
+    まとめて読む。会話ログの直読みでは絞らない。
     """
     configured = ledger_path()
     if configured is None:
         return iter_facts(log_root(), resolver, branch=branch)
     ledger = resolve_ledger(configured)
     ledger_sync(ledger, log_root(), resolver)
+    fixes = ledger_repo_fixes(ledger)
     if issue is not None and branch is None:
-        return iter_ledger_issue_facts(ledger, issue)
-    return iter_ledger_facts(ledger, branch=branch)
+        return apply_repo_fixes(iter_ledger_issue_facts(ledger, issue), fixes)
+    return apply_repo_fixes(iter_ledger_facts(ledger, branch=branch), fixes)
 
 
 def load_branches_facts(resolver: RepoResolver, branches) -> dict:
@@ -950,7 +1471,8 @@ def load_branches_facts(resolver: RepoResolver, branches) -> dict:
         return found
     configured = ledger_path()
     if configured is None:
-        seen = {branch: set() for branch in wanted}
+        # 素の set を渡すと数えた出力が常に 0 になり、確定行の値がそのまま足される
+        seen = {branch: SeenSet() for branch in wanted}
         for path in log_files(log_root()):
             try:
                 handle = open(path, encoding="utf-8", errors="replace")
@@ -1000,6 +1522,9 @@ class _NoRepo:
     def repo_id(self, cwd: str) -> str:
         return UNKNOWN_REPO
 
+    def inferred(self, cwd: str) -> bool:
+        return False
+
 
 def _drift_lines(handle, mentions, expired):
     """対象のセッション ID を含む生の行だけを返す。一定の行数ごとに上限を確かめる。
@@ -1039,10 +1564,10 @@ def session_facts(session_ids, earliest: int, budget: float):
     mentions = re.compile("|".join(re.escape(s) for s in sorted(wanted))).search
     unreadable = SCAN_STATS["unreadable_lines"]
     facts = []
-    seen: set[str] = set()
     try:
         configured = ledger_path()
         if configured is not None:
+            seen: set[str] = set()  # 台帳の行の request_id の重複排除だけに使う
             if expired():
                 return None
             try:
@@ -1064,6 +1589,7 @@ def session_facts(session_ids, earliest: int, budget: float):
                     facts.append(fact)
             return facts
         resolver = _NoRepo()
+        heads = SeenSet()  # 数えた出力を覚える（素の set だと確定行の値がそのまま足される）
         for path in log_files(log_root()):
             if expired():
                 return None
@@ -1076,7 +1602,7 @@ def session_facts(session_ids, earliest: int, budget: float):
             with handle:
                 positioned = PositionedLines(handle)
                 lines = _drift_lines(positioned, mentions, expired)
-                for fact in facts_from_lines(lines, path, resolver, seen,
+                for fact in facts_from_lines(lines, path, resolver, heads,
                                              offset_of=lambda: positioned.position):
                     if fact["session_id"] in wanted:
                         facts.append(fact)
@@ -1101,6 +1627,14 @@ def summarise(facts, pricing: Pricing):
         usd, known = pricing.cost(fact)
         total += usd
         if is_continuation(fact):
+            # 補足の事実はメッセージ数に数えないが、確定行の出力の差分と金額は内訳にも足す
+            # （足さないと 1 行目の額とモデル別の内訳の合計が合わない）
+            if known and fact.get("output_tokens"):
+                row = per_model.setdefault(
+                    fact["model"], {"messages": 0, "usd": 0.0, **{f: 0 for f in TOKEN_FIELDS}}
+                )
+                row["usd"] += usd
+                row["output_tokens"] += fact["output_tokens"]
             continue
         messages += 1
         if not known:
@@ -1329,6 +1863,27 @@ def _interval(session_id: str, rows: list, closed_by):
         "request_ids": [f["request_id"] for f in rows],
         "facts": rows,
     }
+
+
+INFERRED_LINE = "  推定で数えた行: %d 件 $%s（cwd が削除済みで、パスからリポジトリを推定した。合計に入れている）"
+
+
+def inferred_totals(facts, pricing: Pricing) -> tuple[float, int]:
+    """事実の列のうち、識別子を推定で決めた行（repo_inferred が真）の額と件数（補足は件数に数えない）。"""
+    usd, messages = 0.0, 0
+    for fact in facts:
+        if fact.get("repo_inferred"):
+            usd += pricing.cost(fact)[0]
+            if not is_continuation(fact):
+                messages += 1
+    return usd, messages
+
+
+def render_inferred(usd: float, messages: int) -> list[str]:
+    """「推定で数えた行」の表示。件数が 0 なら出さない。"""
+    if not messages:
+        return []
+    return [INFERRED_LINE % (messages, format(usd, ",.2f"))]
 
 
 def price_intervals(intervals: list, pricing: Pricing) -> list:
@@ -1703,6 +2258,9 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
         unknown_usd = summarise(unknown, pricing)["total_usd"]
         print("  リポジトリ不明: %d 件 $%s（cwd が削除済みで、どのリポジトリの %s か絞れない）"
               % (len(unknown), format(unknown_usd, ",.2f"), args.branch))
+    if scope is not None:
+        for line in render_inferred(*inferred_totals(facts, pricing)):
+            print(line)
     if not getattr(args, "no_drift_check", False):
         for line in render_price_drift(price_drift({f["session_id"] for f in facts}, pricing)):
             print(line)
@@ -1710,7 +2268,8 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
 
 
 def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
-    """``/cost`` の入口。番号の判別だけを行い、集計は branch / issue の経路に委ねる。
+    """``/cost`` の入口。番号の判別だけを行い、集計は branch / issue / epic の経路に委ねる。
+    issue のうち子 issue を持つもの（判別の応答の子の数が 1 以上）は ``cmd_epic`` へ渡す。
 
     1 行目を作るのは ``headline()`` だけで、この関数は帰属先の表記を渡すにとどめる。
     PR 経路が独自の書式を持つと、ゲート連携が貼る 1 行が経路ごとに割れる。
@@ -1735,13 +2294,20 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
             resolver,
         )
 
-    kind, value = resolve_number(where, args.number)
+    kind, value, children = resolve_number(where, args.number)
     if kind == "pr":
         return cmd_branch(
             argparse.Namespace(
                 branch=value, target_label="PR #%s (%s)" % (args.number, value),
                 no_drift_check=args.no_drift_check,
             ),
+            pricing,
+            resolver,
+        )
+    if kind == "issue" and children >= 1 and re.fullmatch(r"[0-9]+", value):
+        return cmd_epic(
+            argparse.Namespace(issue=value, repo=where, json=args.json,
+                               no_drift_check=args.no_drift_check),
             pricing,
             resolver,
         )
@@ -1896,6 +2462,105 @@ def issue_combined_total(matched, closing_prs, pricing: Pricing, resolver: RepoR
             "current": (int(round(total * 1e6)),) + token_totals(all_facts)}
 
 
+def epic_rows(numbers, repo_id: str, heads, resolver: RepoResolver):
+    """対象の issue すべての区間の行と、ヘッドブランチすべての行をまとめて読む。
+
+    返すのは ``({issue の番号: 区間の行}, リポジトリ不明の区間の行, {ヘッドブランチ: 行})``。
+    台帳への差分の追記は ``load_facts()`` の 1 回だけで、台帳を読み通す回数は issue の数にも
+    PR の数にも比例しない（区間は番号の集合で 1 度に、PR の分は全ブランチを 1 度に読む）。
+    """
+    wanted = {str(number) for number in numbers}
+    facts = list(load_facts(resolver, issue=wanted))
+    interval_facts, unknown = defaultdict(list), []
+    for row in split_intervals(facts):
+        if row["issue"] not in wanted:
+            continue
+        if row["repo_id"] == repo_id:
+            interval_facts[int(row["issue"])].extend(row["facts"])
+        elif row["repo_id"] == UNKNOWN_REPO:
+            unknown.extend(row["facts"])
+    return interval_facts, unknown, load_branches_facts(resolver, heads)
+
+
+def _micro(facts, pricing: Pricing) -> int:
+    """事実の列の金額をマイクロドルの整数にする（``money()`` と同じ 6 桁への丸め）。"""
+    return int(round(sum(pricing.cost(fact)[0] for fact in facts) * 1e6))
+
+
+def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricing: Pricing) -> dict:
+    """エピックの合計（spec cost-ledger-attribution）を出す。``gh`` も台帳も読まない。
+
+    ``issues`` は ``fetch_epic_tree()`` の対象の issue の一覧（先頭がエピック自身）、
+    ``interval_facts`` は ``{issue の番号: その issue に帰属した区間の行}``、``branch_facts`` は
+    ``{ヘッドブランチ: そのブランチの行}``、``unknown_facts`` はリポジトリ識別子が不明の区間の行。
+
+    行は次の順で 1 つの issue に割り当てる。(1) ブランチ名がどれかのヘッドブランチと一致する行は、
+    そのブランチの PR が閉じた対象の issue のうち番号がいちばん小さい issue へ。(2) それ以外の
+    区間の行は、その区間の issue へ。1 つの行のブランチは 1 つで、区間は 1 つの issue にしか帰属
+    しないので、割り当てた額の和は「行ごとに 1 回だけ足した額」になる。
+
+    金額は、ブランチごと・(issue, ブランチ) ごとにマイクロドルの整数へ丸めてから足し、ドルへの
+    変換は最後に行う（割り当てた額の和と合計が、浮動小数の誤差なしで一致するように）。
+    """
+    owner = {}
+    for row in issues:
+        for _pr, branch in row["prs"]:
+            if branch not in owner or row["number"] < owner[branch]:
+                owner[branch] = row["number"]
+    branch_micro = {branch: _micro(branch_facts.get(branch, []), pricing) for branch in owner}
+    counted = [fact for branch in owner for fact in branch_facts.get(branch, [])]
+
+    result, own, usd, inferred = [], {}, {}, []
+    for row in issues:
+        number = row["number"]
+        by_branch = defaultdict(list)
+        for fact in interval_facts.get(number, []):
+            by_branch[fact.get("branch")].append(fact)
+        heads = {branch for _pr, branch in row["prs"]}
+        assigned = sum(branch_micro[branch] for branch in heads if owner[branch] == number)
+        standalone = sum(branch_micro[branch] for branch in heads)
+        for branch, facts in by_branch.items():
+            micro = _micro(facts, pricing)
+            if branch not in owner:
+                assigned += micro
+                counted.extend(facts)
+                # 区間で割り当てた行のうち推定で決めた行（ヘッドブランチの経路の行は含めない）
+                inferred.extend(fact for fact in facts if fact.get("repo_inferred"))
+            if branch not in heads:
+                standalone += micro
+        own[number] = usd[number] = assigned
+        result.append({
+            "number": number, "parent": row["parent"], "depth": row["depth"],
+            "title": row["title"], "state": row["state"],
+            "own_micro": assigned, "standalone_micro": standalone,
+            "closing_prs": [{"number": pr, "branch": branch, "usd": branch_micro[branch] / 1e6,
+                             "counted_in": owner[branch]} for pr, branch in row["prs"]],
+        })
+    # 子は必ず親より後ろに並ぶので、後ろから親へ足し上げる
+    for row in reversed(result):
+        if row["parent"] is not None:
+            usd[row["parent"]] += usd[row["number"]]
+    for row in result:
+        row["usd"] = usd[row["number"]] / 1e6
+        row["own_usd"] = row.pop("own_micro") / 1e6
+        row["standalone_usd"] = row.pop("standalone_micro") / 1e6
+    epic = issues[0]["number"]
+    total = sum(own.values())
+    unknown = [fact for fact in unknown_facts if fact.get("branch") not in owner]
+    return {
+        "issues": result,
+        "total_usd": total / 1e6,
+        "children_usd": (total - own[epic]) / 1e6,
+        "self_usd": own[epic] / 1e6,
+        "unknown_repo_usd": _micro(unknown, pricing) / 1e6,
+        # 同じ応答の 2 行目以降の事実はメッセージ数に数えない（``summarise()`` と同じ）
+        "unknown_repo_messages": sum(1 for fact in unknown if not is_continuation(fact)),
+        "inferred_repo_usd": _micro(inferred, pricing) / 1e6,
+        "inferred_repo_messages": sum(1 for fact in inferred if not is_continuation(fact)),
+        "sessions": {fact["session_id"] for fact in counted},
+    }
+
+
 def _dollars(usd: float) -> str:
     """内訳の額。``$`` と小数 2 桁、3 桁区切り（``money()`` と同じく先に 6 桁に揃える）。"""
     return "$" + format(round(usd * 1e6) / 1e6, ",.2f")
@@ -2002,6 +2667,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
     else:
         combined = {"prs": [], "outside_usd": total, "total_usd": total}
     label = resolver.label(repo_id)
+    inferred_usd, inferred_messages = inferred_totals(
+        (fact for row in matched for fact in row["facts"]), pricing)
     payload = {
         "issue": number,
         "repo_id": repo_id,
@@ -2011,6 +2678,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         "intervals": [interval_payload(row, resolver) for row in matched],
         "unknown_repo_usd": sum(row["usd"] for row in unknown),
         "unknown_repo_messages": sum(row["messages"] for row in unknown),
+        "inferred_repo_usd": inferred_usd,
+        "inferred_repo_messages": inferred_messages,
         "usd_jpy_rate": pricing.jpy_rate,
         "closing_prs": combined["prs"],
         "outside_pr_usd": combined["outside_usd"],
@@ -2042,7 +2711,119 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print("  リポジトリ不明: %d 件 $%s（cwd が削除済みで、どのリポジトリの #%s か絞れない）"
               % (payload["unknown_repo_messages"],
                  format(payload["unknown_repo_usd"], ",.2f"), number))
+    for line in render_inferred(inferred_usd, inferred_messages):
+        print(line)
     print("  ※ issue 単位は区間分割による推定です。区間の内訳で寄せ先を確かめてください。")
+    for line in render_price_drift(drift):
+        print(line)
+    return 0
+
+
+EPIC_TITLE_WIDTH = 40
+
+# 表示の前に空白へ置き換える文字の一般カテゴリ（制御文字・書式文字・行と段落の区切り）
+_UNPRINTABLE_CATEGORIES = frozenset(("Cc", "Cf", "Zl", "Zp"))
+
+
+def _display_text(text: str) -> str:
+    """GitHub から取った文字列を、端末に出せる形にする（``--json`` には使わない）。
+
+    制御文字（改行・タブ・ESC・双方向制御文字など）を空白 1 つに置き換え、続いた空白を 1 つに
+    畳み、前後の空白を落とす。題名で内訳の行を割ったり、端末の表示を書き換えたりできないように
+    するためで、文としての内容は見ない。
+    """
+    cleaned = "".join(" " if unicodedata.category(char) in _UNPRINTABLE_CATEGORIES else char
+                      for char in text)
+    return re.sub(" {2,}", " ", cleaned).strip(" ")
+
+
+def _epic_line(row: dict, has_children: bool) -> str:
+    """内訳の 1 行。額はその issue と下の issue すべての和で、段ごとに空白を 2 つ足す。"""
+    title = _display_text(row["title"])
+    if len(title) > EPIC_TITLE_WIDTH:
+        title = title[:EPIC_TITLE_WIDTH - 1] + "…"
+    line = "%s#%d %s %s" % ("  " * (row["depth"] + 1), row["number"], row["state"],
+                            _dollars(row["usd"]))
+    if has_children:
+        line += "（自身 %s）" % _dollars(row["own_usd"])
+    line += " — %s" % title
+    if round(row["own_usd"] * 1e6) != round(row["standalone_usd"] * 1e6):
+        line += "（単独 %s%s）" % (
+            _dollars(row["standalone_usd"]),
+            "".join("、PR #%d は #%d に計上" % (pr["number"], pr["counted_in"])
+                    for pr in row["closing_prs"] if pr["counted_in"] != row["number"]))
+    return line
+
+
+def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
+    """子 issue を持つ issue の、子 issue ごとの内訳と合計を出す（``cost`` から呼ばれる）。
+
+    合計は、エピック自身と子孫の issue が数える行を 1 回ずつ足した額。木を読み切れなければ、
+    標準出力に何も書かずに終了コード 2 を返す（一部の子だけの額を合計として見せない）。
+    """
+    where = os.path.abspath(args.repo) if args.repo else os.getcwd()
+    repo_id = resolver.repo_id(where)
+    if repo_id == UNKNOWN_REPO:
+        sys.stderr.write(
+            "%s は git リポジトリではないため、issue #%s の帰属先リポジトリが決まりません。\n"
+            % (where, args.issue)
+        )
+        return 2
+    number = int(args.issue)
+    try:
+        issues, skipped = fetch_epic_tree(where, number)
+    except EpicError as error:
+        sys.stderr.write(
+            "%s。issue #%d の合計は出しません（一部の子 issue しか読めていない額を合計にしないため）。\n"
+            % (error, number)
+        )
+        return 2
+    heads = [branch for row in issues for _pr, branch in row["prs"]]
+    interval_facts, unknown, branch_facts = epic_rows(
+        [row["number"] for row in issues], repo_id, heads, resolver)
+    result = assign_epic_rows(issues, interval_facts, branch_facts, unknown, pricing)
+    label = resolver.label(repo_id)
+    drift = None
+    if not getattr(args, "no_drift_check", False):
+        # 対象のセッションが多いので、上限つきの読み直しに任せる（facts を渡さない）
+        drift = price_drift(result["sessions"], pricing)
+    if args.json:
+        print(json.dumps({
+            "issue": str(number),
+            "repo_id": repo_id,
+            "repo_label": label,
+            "usd_jpy_rate": pricing.jpy_rate,
+            "price_drift": drift,
+            "total_usd": result["total_usd"],
+            "children_usd": result["children_usd"],
+            "self_usd": result["self_usd"],
+            "issues": result["issues"],
+            "skipped": skipped,
+            "unknown_repo_usd": result["unknown_repo_usd"],
+            "unknown_repo_messages": result["unknown_repo_messages"],
+            "inferred_repo_usd": result["inferred_repo_usd"],
+            "inferred_repo_messages": result["inferred_repo_messages"],
+        }, ensure_ascii=False, indent=2))
+        return 0
+    print(headline(result["total_usd"], pricing, "issue #%d (%s)" % (number, label), "子 issue 込み"))
+    print("  対象: issue #%d（%s）と子孫の issue %d 件" % (number, label, len(issues) - 1))
+    print("  子 issue の合計: %s" % _dollars(result["children_usd"]))
+    print("  issue #%d 自身: %s" % (number, _dollars(result["self_usd"])))
+    parents = {row["parent"] for row in result["issues"]}
+    for row in result["issues"]:
+        print(_epic_line(row, row["number"] in parents))
+    if skipped:
+        print("  数えていない子 issue: %s（別のリポジトリ）"
+              % "、".join("%s#%d" % (_display_text(row["repo"]), row["number"])
+                             for row in skipped))
+    if result["unknown_repo_messages"]:
+        print("  リポジトリ不明: %d 件 %s（cwd が削除済みで、どのリポジトリの issue か絞れない。"
+              "合計には入れていない）"
+              % (result["unknown_repo_messages"], _dollars(result["unknown_repo_usd"])))
+    for line in render_inferred(result["inferred_repo_usd"], result["inferred_repo_messages"]):
+        print(line)
+    print("  ※ 額は区間分割による推定です。issue ごとの区間の内訳は /cost <その issue の番号> で"
+          "見られます（区間だけの額なので、閉じた PR の分を含むこの内訳の額とは一致しません）。")
     for line in render_price_drift(drift):
         print(line)
     return 0
@@ -2105,7 +2886,8 @@ def build_parser() -> argparse.ArgumentParser:
     cost.add_argument("--repo", default=None,
                       help="問い合わせと絞り込みの基準になる場所（既定はカレントディレクトリ）")
     cost.add_argument("--json", action="store_true",
-                      help="issue 経路のときだけ JSON で出す")
+                      help="issue 経路のときだけ JSON で出す（子 issue を持つ issue では、"
+                           "子 issue ごとの内訳つきの JSON になる）")
     cost.add_argument("--no-drift-check", action="store_true",
                       help="単価表のずれの突き合わせ（本体のセッションコストとの比較）を行わない")
     cost.set_defaults(func=cmd_cost)

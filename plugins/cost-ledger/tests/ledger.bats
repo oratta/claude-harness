@@ -196,7 +196,7 @@ PY
 import json, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 handlers = [h for e in d["hooks"]["Stop"] for h in e["hooks"]
-            if h.get("command") == "${CLAUDE_PLUGIN_ROOT}/scripts/ledger-hook.sh"]
+            if h.get("command") == '"${CLAUDE_PLUGIN_ROOT}/scripts/ledger-hook.sh"']
 assert len(handlers) == 1, handlers
 assert handlers[0].get("type") == "command", handlers
 assert handlers[0].get("timeout") == 120, handlers
