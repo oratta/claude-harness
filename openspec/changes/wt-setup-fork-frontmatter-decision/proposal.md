@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- `context: fork` / `background: false` / `model: sonnet` は**残す**。frontmatter 内の YAML コメントで「いまの経路ではラッパーが勝つので効かない。ラッパーを外したときに効く保険であり、その場合 fork でも完了を待つ」と理由を書く
+- `context: fork` / `background: false` / `model: sonnet` は**残す**。frontmatter 内に先頭 12 行へ収まる短い YAML コメント（効かない旨と、詳細は本文を見よという指示）を書き、SKILL.md 本文に節「frontmatter の fork 指定について」を足して、実機観測（同名 commands ラッパーが勝つこと・版・確かめ方）と残す理由を書く
 - `skill-execution-isolation` の「隔離されたコンテキストで実行する」要件に、ラッパーが同名で存在する間は frontmatter が効かないこと、効くのはスキル本体が直接実行される経路に限ることを明記する
 - `commands/wt-setup.md` と bats（`skill-safety.bats`）は変えない
 
@@ -15,4 +15,4 @@
 
 ## Impact
 
-`plugins/worktree/skills/wt-setup/SKILL.md`（frontmatter のコメントのみ）、`openspec/specs/skill-execution-isolation/spec.md`（archive 時に反映）。振る舞いは変わらない。
+`plugins/worktree/skills/wt-setup/SKILL.md`（frontmatter のコメントと本文の 1 節）、`openspec/specs/skill-execution-isolation/spec.md`（archive 時に反映）。振る舞いは変わらない。

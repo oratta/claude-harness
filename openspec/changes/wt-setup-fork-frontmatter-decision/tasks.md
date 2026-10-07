@@ -1,6 +1,7 @@
 ## 1. SKILL.md
 
-- [ ] 1.1 `plugins/worktree/skills/wt-setup/SKILL.md` の frontmatter に、`context: fork` / `background: false` が現行経路（commands ラッパー）で効かないことと、残す理由を YAML コメントで書く。先頭 12 行に収める。触る範囲: plugins/worktree/skills/wt-setup/SKILL.md:1-10（frontmatter）
+- [ ] 1.1 `plugins/worktree/skills/wt-setup/SKILL.md` の frontmatter に、`context: fork` / `background: false` が現行経路で効かないことと本文参照の旨を短い YAML コメントで書く。先頭 12 行に収める。触る範囲: plugins/worktree/skills/wt-setup/SKILL.md:1-10（frontmatter）
+- [ ] 1.2 同 SKILL.md の本文に節「frontmatter の fork 指定について」を足し、実機観測（版 2.1.292、`claude -p --plugin-dir`、`/wt-setup` と Skill ツール経由が同名 commands ラッパーに解決されたこと、確かめ方）と、設定を残す理由を書く。触る範囲: plugins/worktree/skills/wt-setup/SKILL.md:12-30（「自動実行との関係」節の前後）
 
 ## 2. 検証と記録
 

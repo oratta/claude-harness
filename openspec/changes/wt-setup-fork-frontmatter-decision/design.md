@@ -19,7 +19,7 @@
 
 ### D2: 理由の置き場
 
-frontmatter 内の YAML コメント（`sed -n '1,12p'` に収まる）。bats は `^context: fork$` / `^background: false$` の行 grep なので、コメント行を足しても通る。
+2 か所に置く。(a) frontmatter 内の短い YAML コメント 1〜2 行（先頭 12 行に収め、「現行経路では効かない・理由は本文参照」と書く）。(b) SKILL.md 本文の節に、観測した版（Claude Code 2.1.292）・経路（`claude -p --plugin-dir`、`/wt-setup` と Skill ツール）・確かめ方（同名ペアの probe プラグインで合言葉を返させる）・残す理由（D1）を書く。bats は `^context: fork$` / `^background: false$` の行 grep なので、コメント行を足しても通る。
 
 ## Risks / Trade-offs
 
