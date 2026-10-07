@@ -24,10 +24,10 @@
 
 ## 5. 確認
 
-- [ ] 5.1 `scripts/lint.sh` が exit 0 であること。触る範囲: なし（実行のみ）
-- [ ] 5.2 どれか 1 つのプラグイン（例: `plugins/casting/.claude-plugin/plugin.json`）の `name` を手で `claude-x` に変えて `scripts/lint.sh casting` が 0 以外で終わり、手で元の値に書き戻して exit 0 になること。書き戻しは編集で行い、`git checkout --` / `git restore` を使わない（破壊的操作にあたる）。書き戻したあと `git diff --stat plugins/casting` が空であることを確かめる。触る範囲: plugins/casting/.claude-plugin/plugin.json（一時的。差分を残さない）
-- [ ] 5.3 4 プラグイン（capability-registry / cost-ledger / dev-workflow / worktree）で `claude plugin validate plugins/<name> 2>&1 | grep -c 'without quotes'` が 0 であること。触る範囲: なし（実行のみ）
-- [ ] 5.4 引用符付きの hooks.json で hook が実際に起動することを、`claude -p --plugin-dir plugins/dev-workflow` で確かめる（SessionStart の `session-tripwires.sh` の注入が出ること）。起動しなければ引用符の変更を取り下げず、そのままの状態で本体に return する。触る範囲: なし（実行のみ）
-- [ ] 5.5 `scripts/test.sh` が exit 0 であること（statusline のテストが 1 件だけ落ちたら単独で走らせ直して判定する）。触る範囲: なし（実行のみ）
-- [ ] 5.6 `openspec validate lint-plugin-validate --strict` が通ること。触る範囲: なし（実行のみ）
-- [ ] 5.7 仕様 `dev-workflow-execution-strategy` で書き直した記述と足した Scenario を、既存のテストで確かめる。テストは足さない（hook の動作を変えないため、既存のテストで足りる）。対応は次のとおり: 「fork は…セッション記録も snapshot も無ければ許可される」→ `fork: allowed when the shared budget mode is ok (no snapshot)`（setup がセッション記録の置き場所を空の一時ディレクトリに向け、`call` が存在しない snapshot を渡す）／「snapshot が無くてもセッション記録から fork を止める」→ `fork: the shared mode comes from the active slot's session record without a snapshot`／「snapshot もセッション記録も無くても model 無しは拒否される」→ `Agent without model (general-purpose): denied with a reason naming the rule`（同じ setup と `call`）。`bats plugins/dev-workflow/tests/agent-model-guard.bats` が exit 0 であることを確かめる。触る範囲: なし（実行のみ。参照先 plugins/dev-workflow/tests/agent-model-guard.bats:6-25,44-50,88-92,118-125）
+- [x] 5.1 `scripts/lint.sh` が exit 0 であること。触る範囲: なし（実行のみ）
+- [x] 5.2 どれか 1 つのプラグイン（例: `plugins/casting/.claude-plugin/plugin.json`）の `name` を手で `claude-x` に変えて `scripts/lint.sh casting` が 0 以外で終わり、手で元の値に書き戻して exit 0 になること。書き戻しは編集で行い、`git checkout --` / `git restore` を使わない（破壊的操作にあたる）。書き戻したあと `git diff --stat plugins/casting` が空であることを確かめる。触る範囲: plugins/casting/.claude-plugin/plugin.json（一時的。差分を残さない）
+- [x] 5.3 4 プラグイン（capability-registry / cost-ledger / dev-workflow / worktree）で `claude plugin validate plugins/<name> 2>&1 | grep -c 'without quotes'` が 0 であること。触る範囲: なし（実行のみ）
+- [x] 5.4 引用符付きの hooks.json で hook が実際に起動することを、`claude -p --plugin-dir plugins/dev-workflow` で確かめる（SessionStart の `session-tripwires.sh` の注入が出ること）。起動しなければ引用符の変更を取り下げず、そのままの状態で本体に return する。触る範囲: なし（実行のみ）
+- [x] 5.5 `scripts/test.sh` が exit 0 であること（statusline のテストが 1 件だけ落ちたら単独で走らせ直して判定する）。触る範囲: なし（実行のみ）
+- [x] 5.6 `openspec validate lint-plugin-validate --strict` が通ること。触る範囲: なし（実行のみ）
+- [x] 5.7 仕様 `dev-workflow-execution-strategy` で書き直した記述と足した Scenario を、既存のテストで確かめる。テストは足さない（hook の動作を変えないため、既存のテストで足りる）。対応は次のとおり: 「fork は…セッション記録も snapshot も無ければ許可される」→ `fork: allowed when the shared budget mode is ok (no snapshot)`（setup がセッション記録の置き場所を空の一時ディレクトリに向け、`call` が存在しない snapshot を渡す）／「snapshot が無くてもセッション記録から fork を止める」→ `fork: the shared mode comes from the active slot's session record without a snapshot`／「snapshot もセッション記録も無くても model 無しは拒否される」→ `Agent without model (general-purpose): denied with a reason naming the rule`（同じ setup と `call`）。`bats plugins/dev-workflow/tests/agent-model-guard.bats` が exit 0 であることを確かめる。触る範囲: なし（実行のみ。参照先 plugins/dev-workflow/tests/agent-model-guard.bats:6-25,44-50,88-92,118-125）
