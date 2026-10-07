@@ -1,0 +1,15 @@
+## 1. テスト（先に書く）
+
+- [ ] 1.1 `pr-review-gate-skill.bats` の末尾に `issue approved (#723):` の接頭辞でテストを足す。固定するもの: `declarations.md` に「issue で承認済み」が 1 行以上あり、当てられるのが資格情報への接触・安全ゲートの弱体化・エージェント権限の拡張の 3 分類だけと書いてある／外部公開面の変化・データ喪失・課金/法務・プロダクトのユーザーに及ぶ影響は issue に書いてあっても主に聞く文がある／3 条件（本文の引用・`owner-reply-check.sh` の会話ログの証拠で起票の承認か `/develop <番号>`・実装中に発覚した影響ではない）がある／`agent-proposed` と主の承認の記録が無い issue に当てない文がある／`EPIC_DISPATCH_PARENT_EPIC` と `--unmanned` の除外がある／追記の 3 行の書式ブロックがあり行頭が `主の回答: 許容` でない／`pass.md` の合格条件の表に「issue で承認済み」の行があり、事後報告（宣言のリンクと引用を 1 回で伝える）と G の return の `issue で承認済み:` の行がある／`hold.md` に「issue で承認済み」の宣言を 3-c の引き継ぎの元にしない文がある。既存の「リスクなし」定型文と 1 行目・2 行目の規約のテストが落ちないこと。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:13-26（setup の変数。追加不要なら触らない）、plugins/dev-workflow/tests/pr-review-gate-skill.bats:1091-1094（末尾の #721 のテストの後ろに足す）
+
+## 2. pr-review-gate の文書
+
+- [ ] 2.1 手順 3 に「issue で承認済み」の節を足す: 当てられる 3 分類と、issue に書いてあっても聞く 4 分類／1 つでも外れたら宣言全体を手順 6 で聞くこと／3 条件と証拠 2 形（起票の承認・`/develop <番号>`）の確かめ方（`owner-reply-check.sh` の呼び方、`MATCH:` の全文で読むこと、`<command-args>` の番号の境界、`gh api graphql` の `lastEditedAt`、起票したセッションを `grep -l` で探すこと）／除外（`agent-proposed`・承認の記録の無いエージェント起票・`EPIC_DISPATCH_PARENT_EPIC`・`--unmanned`・保留や却下と読める発言）／追記の 3 行の書式（宣言本文は書き換えない）／守備範囲。手順 3 の表の「主のリスク許容が必要」の後続に「issue で承認済みなら手順 4 へ」を足し、「出口」に分岐を足す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/declarations.md:18-35（手順 3 の表と 3 分類の線引き）、plugins/dev-workflow/skills/pr-review-gate/declarations.md:47-63（許容が必要な雛形と根拠ファイルの段落の後ろに節を足す）、plugins/dev-workflow/skills/pr-review-gate/declarations.md:89-93（出口）
+- [ ] 2.2 手順 5 の合格条件の表に「issue で承認済み」の行を足し、確かめ直しの段落（`owner-reply-check.sh` の再実行・引用が本文にあること・ラベル・`lastEditedAt`・除外の確認、外れたら手順 6）と事後報告の段落（宣言 URL・引用・分類を 1 回で伝える。メインセッションならその場で、G なら return で）を足す。G の return（passed）に `issue で承認済み:` の行を足す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:45-53（合格条件の表）、plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:86-93（会話で受領の確認の段落の後ろ）、plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:193-199（return の書式（passed））
+- [ ] 2.3 `hold.md` の入口に「issue で承認済み」を当てた宣言はこの段に来ないことを、3-c に「issue で承認済み」の宣言を引き継ぎの元にせず新しい HEAD で判定し直すことを、手順 6 の依頼に満たさなかった条件を 1 行添えることを足す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:7-9（入口）、plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:17-21（3-c の冒頭と前の宣言の選び方）、plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:59（手順 6 の項目 3）
+- [ ] 2.4 `scripts/test.sh pr-review-gate-skill` が exit 0 になるまで 2.1〜2.3 を直す。触る範囲: なし（確認だけ）
+
+## 3. 仕上げ
+
+- [ ] 3.1 変更の記録を書く（何を変えたか・なぜ・当てられる 3 分類と聞き続ける 4 分類・証拠の 2 形と除外・別の PC で起票した issue には当たらないこと・この PR 自体が安全ゲートの弱体化に当たり、主が受け入れたリスク）。触る範囲: plugins/dev-workflow/changes/723.md（新規）、書き方の手本は plugins/dev-workflow/changes/721.md
+- [ ] 3.2 `scripts/test.sh pr-review-gate-skill`・`scripts/test.sh dev-workflow` がそれぞれ exit 0、`grep -n "issue で承認済み" plugins/dev-workflow/skills/pr-review-gate/declarations.md` が 1 行以上、`openspec validate pr-review-gate-issue-approved-risk` が通ることを確かめる。常時注入の予算（`tests/injection-budget.bats`）に触れていないことも確かめる。触る範囲: なし（確認だけ）
