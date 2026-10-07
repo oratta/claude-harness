@@ -30,9 +30,9 @@
 
 ## 5. 文書
 
-- [ ] 5.1 `commands/cost.md` の呼び方の表に、子 issue を持つ issue では子 issue ごとの内訳と合計が出ることを 1 行足す。frontmatter の `description` は変えない（常時注入の予算の対象）。本文にモデルへの追加の手順は足さない（集計はスクリプトだけで行う）。触る範囲: plugins/cost-ledger/commands/cost.md:25-29（呼び方の表）
-- [ ] 5.2 `README.md` の「帰属の考え方」にエピックの合計を足す: 定義（エピック自身と子孫の issue が数える行を 1 回ずつ足す）、出力の例（1 行目・「子 issue の合計」と「自身」の行・内訳の行）、1 行目の合計は子 issue の合計にエピック自身の額を足した値であること、内訳の額は割り当てた額で和が合計と一致すること、複数の issue を閉じた PR の分は番号がいちばん小さい issue に全額が入り、ほかの issue の行に `（単独 …、PR #N は #M に計上）` が付くこと、`gh` の回数（番号の判別の 2 回 + 子を持つ issue の数。鎖状の入れ子では段の数だけ増える）、合計を出さずに終了コード 2 になる場合（GraphQL の失敗・応答の形の崩れ・100 件超・8 段より深い）、数えないもの（GitHub の子 issue として登録されていない issue・別のリポジトリの子・fork からの PR・`Closes` で結び付いていない PR）、`/cost <子の番号>` は区間だけの額なので内訳のその子の額と一致しないこと、エピックのコメントに hook が積む行は今までどおりエピックの番号を触った区間だけの累計であること。触る範囲: plugins/cost-ledger/README.md:16-38（帰属の考え方）
-- [ ] 5.3 `plugins/cost-ledger/changes/690.md` を作る（何を変えたか、子を持つ issue の `/cost` の 1 行目と `gh` の回数が変わること、子を持たない issue と PR は変わらないこと、spec とテストの場所、反映に `/reload-plugins` が要らないこと）。書式は `changes/689.md` に合わせる。触る範囲: plugins/cost-ledger/changes/690.md（新規）、plugins/cost-ledger/changes/689.md:1-12（書式。読むだけ）
+- [x] 5.1 `commands/cost.md` の呼び方の表に、子 issue を持つ issue では子 issue ごとの内訳と合計が出ることを 1 行足す。frontmatter の `description` は変えない（常時注入の予算の対象）。本文にモデルへの追加の手順は足さない（集計はスクリプトだけで行う）。触る範囲: plugins/cost-ledger/commands/cost.md:25-29（呼び方の表）
+- [x] 5.2 `README.md` の「帰属の考え方」にエピックの合計を足す: 定義（エピック自身と子孫の issue が数える行を 1 回ずつ足す）、出力の例（1 行目・「子 issue の合計」と「自身」の行・内訳の行）、1 行目の合計は子 issue の合計にエピック自身の額を足した値であること、内訳の額は割り当てた額で和が合計と一致すること、複数の issue を閉じた PR の分は番号がいちばん小さい issue に全額が入り、ほかの issue の行に `（単独 …、PR #N は #M に計上）` が付くこと、`gh` の回数（番号の判別の 2 回 + 子を持つ issue の数。鎖状の入れ子では段の数だけ増える）、合計を出さずに終了コード 2 になる場合（GraphQL の失敗・応答の形の崩れ・100 件超・8 段より深い）、数えないもの（GitHub の子 issue として登録されていない issue・別のリポジトリの子・fork からの PR・`Closes` で結び付いていない PR）、`/cost <子の番号>` は区間だけの額なので内訳のその子の額と一致しないこと、エピックのコメントに hook が積む行は今までどおりエピックの番号を触った区間だけの累計であること。触る範囲: plugins/cost-ledger/README.md:16-38（帰属の考え方）
+- [x] 5.3 `plugins/cost-ledger/changes/690.md` を作る（何を変えたか、子を持つ issue の `/cost` の 1 行目と `gh` の回数が変わること、子を持たない issue と PR は変わらないこと、spec とテストの場所、反映に `/reload-plugins` が要らないこと）。書式は `changes/689.md` に合わせる。触る範囲: plugins/cost-ledger/changes/690.md（新規）、plugins/cost-ledger/changes/689.md:1-12（書式。読むだけ）
 
 ## 6. 実測と確認（結果は PR 本文に書く）
 
