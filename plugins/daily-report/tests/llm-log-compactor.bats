@@ -49,6 +49,11 @@ teardown() {
   grep -q "^model: opus" "$AGENT_FILE"
 }
 
+@test "llm-log-compactor: frontmatter has no permissionMode (ignored for plugin agents)" {
+  dr_require_file "$AGENT_FILE"
+  ! grep -q "^permissionMode:" "$AGENT_FILE" || return 1
+}
+
 @test "llm-log-compactor: head -5 restriction is removed (sequential scan documented)" {
   dr_require_file "$AGENT_FILE"
   # Scope to the turn-extraction code block only: prose in the same section
