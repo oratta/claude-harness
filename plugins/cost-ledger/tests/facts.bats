@@ -30,7 +30,7 @@ else:
   run bash -c "python3 '$CL' facts | head -1 | python3 -c '
 import json, sys
 d = json.loads(sys.stdin.read())
-expected = {\"request_id\", \"timestamp\", \"session_id\", \"is_sidechain\", \"repo_id\",
+expected = {\"request_id\", \"uuid\", \"timestamp\", \"session_id\", \"is_sidechain\", \"repo_id\",
             \"branch\", \"model\", \"input_tokens\", \"output_tokens\",
             \"cache_write_5m_tokens\", \"cache_write_1h_tokens\", \"cache_read_tokens\",
             \"issues\", \"post_marker\"}
