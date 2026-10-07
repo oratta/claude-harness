@@ -147,25 +147,40 @@ COST_LEDGER_DRIFT_BUDGET_SECONDS=inf python3 scripts/cost_ledger.py cost
 
 ## 節目ごとの自動投稿（ここまでのコスト）
 
-PR / issue へのコメント・状態の変更・ゲート通過のたびに、その PR / issue の 1 本のコメントへ
+PR の作成・PR / issue へのコメント・状態の変更・ゲート通過のたびに、その PR / issue の 1 本のコメントへ
 「ここまでのコスト」を 1 行積む。PostToolUse（matcher `Bash`）の hook `scripts/gate-report.sh` が
 Bash のコマンド文字列からきっかけを見つけ、裏のプロセス `scripts/gate_report.py` が `gh` で読み書きする。
 数字と書式は `scripts/cost_ledger.py timeline` が作る。LLM のトークンは使わない。
 
 | コマンド | 行の「きっかけ」 |
 |---|---|
+| `gh pr create`（`--dry-run`・`--web` を除く） | `PR 作成` |
 | `gh pr comment` | `PR コメント` |
 | `gh issue comment` | `issue コメント` |
 | `gh pr ready`（`--undo` を除く） | `Ready` |
 | `gh pr close` | `PR クローズ` |
+| `gh pr reopen` | `PR 再オープン` |
 | `gh pr merge` | `マージ` |
 | `gh issue close` | `issue クローズ` |
 | `gh issue reopen` | `issue 再オープン` |
+| `gh api repos/<owner>/<repo>/issues/<番号>/comments` への POST | `issue コメント`（番号が PR なら `PR コメント`） |
+| `gh api -X PATCH repos/<owner>/<repo>/pulls/<番号>` でフィールドが `state=closed` / `state=open` | `PR クローズ` / `PR 再オープン` |
+| `gh api -X PATCH repos/<owner>/<repo>/issues/<番号>` でフィールドが `state=closed` / `state=open` | `issue クローズ` / `issue 再オープン`（番号が PR なら `PR クローズ` / `PR 再オープン`） |
+| `gh api -X PUT repos/<owner>/<repo>/pulls/<番号>/merge` | `マージ` |
 | 合格ラベル `agent-review:passed` の付与（`gh api .../issues/<番号>/labels`、`gh pr edit` / `gh issue edit` の `--add-label`） | `ゲート通過` |
 
 状態を変えるきっかけは、積む前に GitHub に問い合わせて、その状態になっていること（マージ済み・closed・
 ラベルが付いている、など）を確かめる。なっていなければ積まない。ゲート通過の対象は PR だけで、
 PR でない issue に合格ラベルを付けても積まない。
+
+`gh pr create` は、コマンドを実行したディレクトリのブランチ（`-H` / `--head` があればそのブランチ）をヘッドに持つ
+PR を探し、open で、作成時刻がコマンドの実行時刻の前後 300 秒以内のときだけ積む（「このブランチの PR は既にある」で
+失敗したときに、作っていない PR へ積まないため）。`--head owner:branch` の形では積まない。
+
+`gh api` は endpoint（位置引数）とメソッドを `gh` と同じ規則で読む。メソッドは `-X` / `--method`、無ければ
+フィールド（`-f` / `-F` / `--raw-field` / `--field`）か `--input` があれば POST、どちらも無ければ GET。
+endpoint の `{owner}/{repo}` は、前置きの `GH_REPO`、無ければコマンドを実行したディレクトリのリポジトリとして読む。
+読み取り（GET）では hook は `python3` を起動せずに抜ける。
 
 コメントの例:
 
@@ -199,7 +214,13 @@ PR でない issue に合格ラベルを付けても積まない。
 - **古い形のコメントは残る**: 以前の目印 `<!-- cost-ledger:gate-report -->` のコメントは、書き換えも削除もしない
 - **やらないこと**: auto-merge によるマージと、PR の `Closes` による issue の自動クローズには行を積まない
   （手元でコマンドが走らないので hook から見えない。`gh pr merge --auto` は実行した時点でマージされていなければ積まない）。
-  `gh api` の直叩きでの投稿・状態変更、`gh pr create`、`gh pr reopen` でも積まない（合格ラベルの付与だけは `gh api` も見る）
+  `gh api` の直叩きのうち、`gh api graphql` の mutation、`--input` で渡した JSON の中の `state`（`--input` の PATCH）、
+  完全な URL（`https://api.github.com/...`）や問い合わせ文字列付きで書いた endpoint、コメントの編集
+  （`issues/comments/<id>` への PATCH）、`state` を変えない PATCH でも積まない
+- **PR でない issue を `gh api` で操作したときの累計**: `gh api .../issues/<番号>/...` でのコメント投稿・クローズ・
+  再オープンは、行は積まれるが、その行の累計が 0 か実際より小さく出ることがある。issue への帰属は
+  `gh issue view/comment/edit/close/develop <番号>` の文字列で決まり、`gh api` の endpoint は帰属の鍵にならないため。
+  PR の行はブランチで帰属するので影響しない
 
 ### issue を閉じたときの合計の行
 
@@ -245,9 +266,10 @@ PR の数では増えない）。
   hook には環境変数 `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` で渡る
 - **環境変数 `COST_LEDGER_PATH`**（`~/.claude/settings.json` の `env`）: 従来の方法で、そのまま使える
 - 両方設定されていれば、プラグイン設定が優先する（空文字は未設定として扱う）
-- 既知の制限: `/cost` のコマンド本文の Bash 実行にプラグイン設定の環境変数が渡るかは未確認。渡らない環境では、
-  `/config` だけで設定すると Stop hook は追記するが `/cost` は台帳を読まず会話ログを直接読む
-  （その場合は `COST_LEDGER_PATH` も設定する）
+- `/cost` への渡し方: コマンド本文の Bash 実行には `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` が自動では渡らない
+  （実機で確認済み）。そこで `commands/cost.md` が、本文の中でプラグイン設定の値に置換される記法を使って、
+  この環境変数を集計スクリプトの呼び出しに渡す。プラグイン設定が未設定のときは置換されない文字列が渡るが、
+  スクリプトは未設定として扱う。パスにシングルクォート `'` を含めないこと
 
 - **`Stop` の hook**（`scripts/ledger-hook.sh`）が、応答が終わるたびに会話ログの増えた分を台帳へ追記する
 - **集計**（`/cost` と `cost_ledger.py` の集計系サブコマンド）は、読む前に同じ追記を 1 回行ってから台帳だけを読む。
@@ -274,5 +296,63 @@ PR の数では増えない）。
   控えの読み終え位置を使わず、今ある会話ログを先頭から読み直して、補足の行（issue・印、出力の差分）だけを追記する（既存の行は
   1 バイトも変えない。2 回目は 0 行）。実行前に台帳の控え（`cp`）を取る。**会話ログが既に消えた期間の補足は補えない**。
   通常の `ledger-sync` と hook は `--rescan` を暗黙に行わない（全履歴を読むため）
+
+### 削除済みの作業ディレクトリの行（リポジトリの推定と補正行）
+
+作業ツリーを消したあとに取り込んだ行は、`cwd` に `git rev-parse` が効かず、リポジトリが「不明」になる。
+そこで `cwd` がディレクトリとして存在しないときだけ、パスからリポジトリを推定する。
+
+- `cwd` が `/.claude/worktrees/` を含むなら、最後のその並びの手前のディレクトリのリポジトリにする
+- それ以外は、現存する最も近い祖先のディレクトリ（置き場）の直下に残る作業ツリーがすべて同じ 1 リポジトリで、
+  置き場の名前がそのリポジトリのディレクトリ名か origin のリポジトリ名と一致するときだけ、そのリポジトリにする。
+  置き場が git リポジトリの中なら推定しない
+- 推定で決めた行は事実に `repo_inferred: true` が付く。`/cost <番号>`・エピックの `/cost`・番号なしの `/cost` は、
+  その行を合計に入れたうえで `推定で数えた行: <件数> 件 <額>` を「リポジトリ不明」の行の直後に出す
+  （`--json` では `inferred_repo_usd`・`inferred_repo_messages`）。推定は外れうるので、額が大きければ区間の内訳で確かめる
+
+**過去の「不明」の行を直す**（`--rescan` を手で 1 回。hook からは走らない）:
+
+```bash
+cp -p "$COST_LEDGER_PATH" "$COST_LEDGER_PATH.bak-$(date +%Y%m%d)"
+python3 scripts/cost_ledger.py ledger-sync --rescan
+```
+
+- 台帳の既存の行は書き換えず、「不明」の行を持つ（`session_id`, `branch`）の組ごとに、補正行（`repo_fix: true`・
+  トークン 0 の補足の事実）を 1 行追記する。書くのは、その組の会話ログの全 `cwd` が同じ 1 リポジトリに決まり、
+  `cwd` の無い応答の行が無い組だけ。集計は台帳を読むときに補正行を取り除き、その組の不明の行をそのリポジトリの行
+  （`repo_inferred: true`）として数える。後から同じ組に追記された不明の行（`cwd` の無い行を含む）にも補正が当たる
+- 2 回目は 0 行。会話ログが消えた組は直らず、「リポジトリ不明」のまま残る
+- まだ `--rescan` を流したことのない台帳では、補正行のほかに、足りない補足の行（上の「補足を足す前に書いた台帳を直す」）も
+  同時に追記されるので、`/cost` の額が補正の分とは別に変わりうる
+- **実行前の状態へ戻す**: 上の `cp -p` で取った台帳の写しを台帳に戻し、控え（`<台帳>.state.sqlite`）を消して
+  `ledger-sync` を 1 回流す。写しを取ったあとに hook が追記した行は台帳からいったん消えるが、会話ログが残っていれば
+  この `ledger-sync` で取り込み直される
+
+  ```bash
+  cp -p "$COST_LEDGER_PATH.bak-<日付>" "$COST_LEDGER_PATH"
+  rm -f "$COST_LEDGER_PATH.state.sqlite"
+  python3 scripts/cost_ledger.py ledger-sync
+  ```
+
+- **誤った補正を取り消す**: 同じ組に `repo_id` の違う補正行を 1 行足すと、その組は「不明」に戻る（台帳の行は消さない）。
+  `<session_id>` と `<branch>` は `grep '"repo_fix": true' "$COST_LEDGER_PATH"` で見つけた補正行の値。
+  動いている hook の追記と競合しないよう、`<台帳>.lock` を取って追記する
+
+  ```bash
+  python3 - "$COST_LEDGER_PATH" '<session_id>' '<branch>' <<'PY'
+  import fcntl, json, sys
+  ledger, session, branch = sys.argv[1:4]
+  with open(ledger + ".lock", "a") as lock:
+      fcntl.flock(lock, fcntl.LOCK_EX)
+      with open(ledger, encoding="utf-8") as fh:
+          fixes = [r for r in map(json.loads, (l for l in fh if '"repo_fix": true' in l))
+                   if r["session_id"] == session and r["branch"] == branch]
+      if not fixes:
+          sys.exit("この組の補正行がありません")
+      row = dict(fixes[0], repo_id="revert", request_id="repo-fix#%s#%s#revert" % (session, branch))
+      with open(ledger, "a", encoding="utf-8") as fh:
+          fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+  PY
+  ```
 
 規則の正本は openspec の spec `cost-ledger-persistence`。
