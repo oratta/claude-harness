@@ -29,6 +29,7 @@ setup() {
   export COST_LEDGER_HOOK_FOREGROUND=1
   unset COST_LEDGER_GATE_REPORT GH_REPO FAKE_GH_FAIL FAKE_PATCH_FAIL FAKE_COST_RC FAKE_COST_LINE
   unset FAKE_GH_DELAY FAKE_GH_CONFIRM_DELAY FAKE_COMMENTS_FAIL FAKE_HEAD_PR FAKE_CWD_BRANCH
+  unset FAKE_CLOSING_PRS FAKE_CLOSING_NEXT FAKE_GRAPHQL_FAIL FAKE_GRAPHQL_RAW
   write_stub_cost_ledger
   write_stub_gh
   export PATH="$WORK/bin:$PATH"
@@ -91,6 +92,11 @@ use_real_cost_ledger() {
 #                  PATCH はその id のコメントを書き換える（続けて流すテストで次の取得に現れる）
 #   遅延と失敗:    FAKE_GH_DELAY（全部の呼び出し）・FAKE_GH_CONFIRM_DELAY（対象の確認だけ）・
 #                  FAKE_GH_FAIL・FAKE_PATCH_FAIL・FAKE_COMMENTS_FAIL
+#   閉じた PR:     api graphql は closedByPullRequestsReferences の応答を返す。nodes は FAKE_CLOSING_PRS
+#                  （JSON の配列。既定は 0 件）、pageInfo.hasNextPage は FAKE_CLOSING_NEXT=1 で真。
+#                  FAKE_GRAPHQL_FAIL=1 は GraphQL だけ失敗、FAKE_GRAPHQL_RAW は応答をその文字列にする。
+#                  呼び出しは $GH_LOG にも入り、GraphQL の分だけ $GH_LOG.graphql に 1 回 1 行で書く
+#                  （-f / -F の値は $GH_LOG.graphql.fields に 1 個 1 行）
 write_stub_gh() {
   printf '#!%s\n' "$REAL_PYTHON" > "$WORK/bin/gh"
   cat >> "$WORK/bin/gh" <<'PY'
@@ -119,7 +125,7 @@ if not args or args[0] != "api":
         print(env("FAKE_CWD_REPO", ""))
     sys.exit(0)
 
-method, path, jqf, source = None, "", None, None
+method, path, jqf, source, fields = None, "", None, None, []
 i = 1
 while i < len(args):
     a = args[i]
@@ -130,7 +136,7 @@ while i < len(args):
     elif a == "--input":
         source = args[i + 1]; i += 2
     elif a in ("-f", "-F", "--raw-field", "--field"):
-        i += 2
+        fields.append(args[i + 1]); i += 2
     elif a == "--paginate":
         i += 1
     elif a == "--hostname":
@@ -145,6 +151,20 @@ if "{" in path:
     owner, name = env("FAKE_CWD_REPO", "acme/cwd-repo").split("/")
     path = (path.replace("{owner}", owner).replace("{repo}", name)
                 .replace("{branch}", env("FAKE_CWD_BRANCH", "feat/here")))
+if path == "graphql":
+    note(LOG + ".graphql", "graphql")
+    for field in fields:
+        note(LOG + ".graphql.fields", field)
+    if env("FAKE_GRAPHQL_FAIL") == "1":
+        sys.stderr.write("gh: graphql boom\n")
+        sys.exit(1)
+    if env("FAKE_GRAPHQL_RAW") is not None:
+        sys.stdout.write(env("FAKE_GRAPHQL_RAW") + "\n")
+        sys.exit(0)
+    refs = {"nodes": json.loads(env("FAKE_CLOSING_PRS", "[]")),
+            "pageInfo": {"hasNextPage": env("FAKE_CLOSING_NEXT") == "1"}}
+    emit(json.dumps({"data": {"repository": {"issue": {"closedByPullRequestsReferences": refs}}}}))
+    sys.exit(0)
 path, _, query = path.partition("?")
 m = re.fullmatch(r"repos/([^/]+/[^/]+)/(.*)", path)
 if not m:
@@ -296,6 +316,27 @@ queried() {  # $1=owner/repo $2=番号
 
 no_gh_call() { [ ! -s "$GH_LOG" ]; }
 gh_calls() { if [ -f "$GH_LOG" ]; then wc -l < "$GH_LOG" | tr -d ' '; else echo 0; fi; }
+
+# GraphQL（閉じた PR の問い合わせ）が呼ばれた回数
+graphql_calls() { if [ -f "$GH_LOG.graphql" ]; then wc -l < "$GH_LOG.graphql" | tr -d ' '; else echo 0; fi; }
+
+# closedByPullRequestsReferences の nodes の 1 件
+closing_node() {  # $1=番号 $2=ヘッドブランチ $3=ベースの owner/repo（既定 acme/cwd-repo） $4=isCrossRepository（既定 false）
+  printf '{"number":%s,"headRefName":"%s","isCrossRepository":%s,"baseRepository":{"nameWithOwner":"%s"}}' \
+    "$1" "$2" "${4:-false}" "${3:-acme/cwd-repo}"
+}
+
+# #12 を「クローズ済みの、PR でない issue」にする
+closed_issue_12() {
+  touch "$FIX/nopull.12"
+  echo '{"state":"closed"}' > "$FIX/issue.12.json"
+}
+
+# stub の timeline が受け取った --closing-pr の値を、渡された順に空白で区切って返す（無ければ空）
+closing_args() {
+  [ -f "$COST_LOG" ] || return 0
+  tail -n 1 "$COST_LOG" | grep -oE -- '--closing-pr [^ ]+' | sed 's/^--closing-pr //' | tr '\n' ' ' | sed 's/ $//'
+}
 
 # コメントの作成も書き換えも無い
 no_write() {
@@ -1156,6 +1197,19 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
   posted_to acme/cwd-repo 300
 }
 
+@test "timeline-hook: closing an issue costs four gh calls whatever the number of PRs" {  # closedByPullRequestsReferences が PR を 3 件返す issue #12 に gh issue close 12 → gh は 4 回（対象の確認・閉じた PR の問い合わせ・既存コメントの取得・書き込み）。0 件でも 4 回
+  closed_issue_12
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x),$(closing_node 705 feat/y),$(closing_node 706 feat/z)]"
+  run_hook "gh issue close 12"
+  [ "$(gh_calls)" -eq 4 ]
+  [ "$(graphql_calls)" -eq 1 ]
+  [ "$(closing_args)" = "704:feat/x 705:feat/y 706:feat/z" ]
+  : > "$GH_LOG"
+  unset FAKE_CLOSING_PRS
+  run_hook "gh issue close 12"
+  [ "$(gh_calls)" -eq 4 ]
+}
+
 # --- ロックの置き場（共有の /tmp に他人が先に作った場所へ書かない） ---
 
 @test "timeline-hook: nothing is written when the lock directory is a symlink" {  # ロックの置き場がシンボリックリンクなら、たどらずに書かない（リンク先にロックファイルを作らない）
@@ -1182,4 +1236,149 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
   run_hook "gh pr comment 300 --body x"
   [ "$(posts)" -eq 1 ]
   [ "$(python3 -B -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode))[2:])' "$TMPDIR/cost-ledger-timeline")" = "700" ]
+}
+
+# --- issue クローズでの、閉じた PR の問い合わせ（合計の行） ---
+
+@test "timeline-hook: closing an issue passes its closing PRs to timeline" {  # PR #704（feat/x、同じリポジトリ）を返す issue #12 に gh issue close 12 → timeline は --issue 12 と --closing-pr 704:feat/x を受け取り、コメントが 1 本書き込まれる
+  closed_issue_12
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]"
+  run_hook "gh issue close 12"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  asked_timeline acme/cwd-repo issue 12
+  [ "$(closing_args)" = "704:feat/x" ]
+  [ "$(posts)" -eq 1 ]
+  [ "$(graphql_calls)" -eq 1 ]
+  # 問い合わせは github.com に固定し、owner・name・number は変数で渡す（問い合わせの文字列に埋め込まない）
+  grep -qE -- '^api graphql .*--hostname github\.com$' "$GH_LOG"
+  grep -qxF 'owner=acme' "$GH_LOG.graphql.fields"
+  grep -qxF 'name=cwd-repo' "$GH_LOG.graphql.fields"
+  grep -qxF 'number=12' "$GH_LOG.graphql.fields"
+  grep '^query=' "$GH_LOG.graphql.fields" | grep -qF 'closedByPullRequestsReferences(first: 100)'
+  ! grep '^query=' "$GH_LOG.graphql.fields" | grep -qE 'acme|cwd-repo' || return 1
+}
+
+@test "timeline-hook: no --closing-pr when no PR closed the issue" {  # 0 件を返す issue #12 → --closing-pr は渡らず、コメントは 1 本書き込まれる
+  closed_issue_12
+  run_hook "gh issue close 12"
+  asked_timeline acme/cwd-repo issue 12
+  [ -z "$(closing_args)" ]
+  [ "$(graphql_calls)" -eq 1 ]
+  [ "$(posts)" -eq 1 ]
+  [ "$(body_trigger 1)" = "issue クローズ" ]
+}
+
+@test "timeline-hook: the close row is still stacked when the closing-PR query fails" {  # GraphQL だけが失敗する → --closing-pr は渡らず、コメントは 1 本書き込まれる。応答が JSON でない場合も同じ
+  closed_issue_12
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]" FAKE_GRAPHQL_FAIL=1
+  run_hook "gh issue close 12"
+  [ "$(graphql_calls)" -eq 1 ]
+  [ -z "$(closing_args)" ]
+  [ "$(posts)" -eq 1 ]
+  unset FAKE_GRAPHQL_FAIL
+  for raw in 'not json' '[]' '{"data":{"repository":{"issue":null}}}' '{"data":{"repository":{"issue":{"closedByPullRequestsReferences":{"nodes":[{"number":704,"headRefName":"feat/x","isCrossRepository":false,"baseRepository":{"nameWithOwner":"acme/cwd-repo"}}]}}}}}'; do
+    : > "$COST_LOG"
+    FAKE_GRAPHQL_RAW="$raw" run_hook "gh issue close 12"
+    [ -z "$(closing_args)" ] || { echo "$raw"; return 1; }
+    grep -q '^args=timeline --issue 12 ' "$COST_LOG" || { echo "$raw"; return 1; }
+  done
+}
+
+@test "timeline-hook: PRs of another repository and PRs from a fork are not counted" {  # #704（同じリポジトリ）・#9（ベースが別のリポジトリ）・#705（isCrossRepository が真）→ --closing-pr は 704:feat/x だけ
+  closed_issue_12
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x),$(closing_node 9 main acme/other),$(closing_node 705 main acme/cwd-repo true)]"
+  run_hook "gh issue close 12"
+  [ "$(closing_args)" = "704:feat/x" ]
+  [ "$(posts)" -eq 1 ]
+  # ベースのリポジトリの大文字と小文字は区別しない
+  : > "$COST_LOG"
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x Acme/CWD-Repo)]"
+  run_hook "gh issue close 12"
+  [ "$(closing_args)" = "704:feat/x" ]
+  # 全部外れたら --closing-pr は渡らない
+  : > "$COST_LOG"
+  export FAKE_CLOSING_PRS="[$(closing_node 9 main acme/other)]"
+  run_hook "gh issue close 12"
+  [ -z "$(closing_args)" ]
+  grep -q '^args=timeline --issue 12 ' "$COST_LOG"
+}
+
+@test "timeline-hook: more than 100 closing PRs add no total" {  # pageInfo.hasNextPage が真 → --closing-pr は渡らず、コメントは 1 本書き込まれる
+  closed_issue_12
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]" FAKE_CLOSING_NEXT=1
+  run_hook "gh issue close 12"
+  [ -z "$(closing_args)" ]
+  [ "$(posts)" -eq 1 ]
+}
+
+@test "timeline-hook: a malformed closing PR drops them all" {  # number が文字列・headRefName が空・真偽値でない isCrossRepository など、1 件でも形が崩れていれば --closing-pr を渡さず、節目の行は積む
+  closed_issue_12
+  good="$(closing_node 704 feat/x)"
+  for bad in '{"number":"705","headRefName":"feat/y","isCrossRepository":false,"baseRepository":{"nameWithOwner":"acme/cwd-repo"}}' \
+             '{"number":705,"headRefName":"","isCrossRepository":false,"baseRepository":{"nameWithOwner":"acme/cwd-repo"}}' \
+             '{"number":705,"headRefName":"feat/y","isCrossRepository":"no","baseRepository":{"nameWithOwner":"acme/cwd-repo"}}' \
+             '{"number":705,"headRefName":"feat/y","isCrossRepository":false,"baseRepository":null}' \
+             '{"number":0,"headRefName":"feat/y","isCrossRepository":false,"baseRepository":{"nameWithOwner":"acme/cwd-repo"}}' \
+             '{"number":true,"headRefName":"feat/y","isCrossRepository":false,"baseRepository":{"nameWithOwner":"acme/cwd-repo"}}' \
+             'null'; do
+    : > "$COST_LOG"
+    rm -f "$FIX"/comments.12.*.json
+    FAKE_CLOSING_PRS="[$good,$bad]" run_hook "gh issue close 12"
+    [ -z "$(closing_args)" ] || { echo "$bad"; return 1; }
+    [ "$(body_trigger 1)" = "issue クローズ" ] || { echo "$bad"; return 1; }
+  done
+}
+
+@test "timeline-hook: triggers other than an issue close do not query closing PRs" {  # gh issue comment 12・gh issue reopen 12・PR 向けのきっかけでは GraphQL は 0 回
+  touch "$FIX/nopull.12"
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]"
+  run_hook "gh issue comment 12 --body x"
+  [ "$(posts)" -eq 1 ]
+  run_hook "gh issue reopen 12"
+  run_hook "gh pr comment 300 --body x"
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  run_hook "gh pr close 300"
+  [ "$(graphql_calls)" -eq 0 ]
+  ! grep -qF -- '--closing-pr' "$COST_LOG" || return 1
+}
+
+@test "timeline-hook: gh issue close on a PR number does not query closing PRs" {  # PR である #300 に gh issue close 300 → GraphQL は 0 回で、行のきっかけは PR クローズ
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]"
+  run_hook "gh issue close 300"
+  [ "$(posts)" -eq 1 ]
+  [ "$(body_trigger 1)" = "PR クローズ" ]
+  [ "$(graphql_calls)" -eq 0 ]
+  ! grep -qF -- '--closing-pr' "$COST_LOG" || return 1
+}
+
+@test "timeline-hook: a comment and a close in one command still query closing PRs" {  # gh issue comment 12 --body x && gh issue close 12（きっかけは issue コメント+issue クローズ）でも問い合わせる
+  closed_issue_12
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]"
+  run_hook "gh issue comment 12 --body x && gh issue close 12"
+  [ "$(body_trigger 1)" = "issue コメント+issue クローズ" ]
+  [ "$(graphql_calls)" -eq 1 ]
+  [ "$(closing_args)" = "704:feat/x" ]
+  [ "$(gh_calls)" -eq 4 ]
+}
+
+@test "timeline-hook: nothing is queried or written when the comment lookup fails" {  # 既存コメントの取得が失敗したら、閉じた PR があっても書かない
+  closed_issue_12
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]" FAKE_COMMENTS_FAIL=1
+  run_hook "gh issue close 12"
+  no_write
+  [ ! -s "$COST_LOG" ]
+}
+
+@test "timeline-hook: the real timeline stacks the close row and the total row" {  # 本物の cost_ledger.py で、gh issue close 12 が issue クローズの行と合計の行の 2 行を 1 回の書き込みで積む
+  use_real_repo_a
+  closed_issue_12
+  export FAKE_CLOSING_PRS="[$(closing_node 704 oratta/sample acme/repo-a)]"
+  HOOK_CWD="$RA" run_hook "gh issue close 12"
+  [ "$(posts)" -eq 1 ]
+  [ "$(body_nrows)" -eq 2 ]
+  [ "$(body_trigger 1)" = "issue クローズ" ]
+  [ "$(body_trigger 2)" = '合計（#704 $1.00 + PR 外 $0.00）' ]
+  head -n 1 "$GH_LOG.body" | grep -qF '帰属: 区間+閉じた PR'
 }
