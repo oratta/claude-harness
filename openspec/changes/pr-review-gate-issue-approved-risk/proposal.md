@@ -9,7 +9,9 @@ pr-review-gate の手順 3（`skills/pr-review-gate/declarations.md`）は、7 �
 - `agent-proposed` のままの issue と、主の承認の記録が無いままエージェントが起こした issue（エピックの親が自動で起こした子など）には当てない。Orca の親セッションが子に打ち込んだ `/develop` と、無人ループの `/develop --unmanned` は主の打ち込みとして数えない
 - 宣言の書式は「主のリスク許容が必要。」のまま残し（リスクなしに書き換えない）、末尾に「issue で承認済み」の 3 行（目的の引用・承認の証拠・真正性確認）を追記する。保留（`needs-approval`）にせず手順 4・5 へ進む
 - 手順 5 の合格条件の表に「issue で承認済み」の行を足し、合格のあと主に事後報告する（宣言のリンクと引用を 1 回で伝える）
-- 手順 6・3-c（`stages/hold.md`）に、この状態の宣言は保留に入らないこと、引き継ぎの元にはせず新しい HEAD で判定し直すことを書く
+- 手順 6・3-c（`stages/hold.md`）に、この状態の宣言は保留に入らないこと、引き継ぎの元にはせず新しい HEAD で判定し直すことを書く。試す順は 3-c の引き継ぎ → 「issue で承認済み」 → 手順 6 とする
+- unmanned（develop の `--unmanned`）のゲートでは「issue で承認済み」を当てない（事後報告の載せ先が無いため）
+- develop の本体は、G の passed の return に `issue で承認済み:` の行があれば、CI の見張りを始める前に主へ 1 回伝える
 
 ## Capabilities
 
@@ -20,10 +22,11 @@ pr-review-gate の手順 3（`skills/pr-review-gate/declarations.md`）は、7 �
 ### Modified Capabilities
 
 - `dev-workflow-pr-review-gate`: 手順 3 のリスク宣言に「issue で承認済み」の状態と当てる条件・書式を足し（既存要件「リスク宣言は 7 観点で判定し、新 3 観点も主のリスク許容待ちに流す」を変える）、手順 5 の合格条件と事後報告、手順 6・3-c との関係を足す
+- `dev-workflow-develop`: 要件「G が passed を返したら本体が CI を見張る」に、return の `issue で承認済み:` の行を見張りの前に主へ伝えることを足す
 
 ## Impact
 
-- 変更: `plugins/dev-workflow/skills/pr-review-gate/declarations.md`（手順 3）、`plugins/dev-workflow/skills/pr-review-gate/stages/pass.md`（手順 5 の表・確認の段落・G の return）、`plugins/dev-workflow/skills/pr-review-gate/stages/hold.md`（入口・3-c・手順 6）、`plugins/dev-workflow/tests/pr-review-gate-skill.bats`
+- 変更: `plugins/dev-workflow/skills/pr-review-gate/declarations.md`（手順 3）、`plugins/dev-workflow/skills/pr-review-gate/stages/pass.md`（手順 5 の表・確認の段落・G の return）、`plugins/dev-workflow/skills/pr-review-gate/stages/hold.md`（入口・3-c・手順 6）、`plugins/dev-workflow/skills/develop/SKILL.md`（(4) の passed の行）、`plugins/dev-workflow/tests/pr-review-gate-skill.bats`、必要なら develop の SKILL.md の文言を固定している bats
 - 新規: `plugins/dev-workflow/changes/723.md`
 - 依存: #721 で入った `plugins/dev-workflow/scripts/owner-reply-check.sh`（変更しない）。issue 本文の最終編集日時は `gh api graphql` の `lastEditedAt` で取る
 - 安全面: 合格条件を緩める変更なので、この PR 自体が「安全ゲートの弱体化」に当たり主の許容で保留になる見込み。受け入れるリスク（主が 2026-10-07 の会話で認めた）: 主が一度も見ないまま、権限を広げる変更が main に入る機会が増える。事後報告で気づけるが、事前には止まらない
