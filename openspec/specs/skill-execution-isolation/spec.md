@@ -13,7 +13,7 @@ TBD - created by archiving change wt-setup-model-and-fork. Update Purpose after 
 
 ### Requirement: スキルは隔離されたコンテキストで実行する
 
-スクリプト実行を含むスキルは、frontmatterで `context: fork` を指定し、会話コンテキストから隔離して実行するものとする（SHALL）。`context: fork` を指定するスキルは `background: false` も指定し、呼び出し側が完了を待つものとする（SHALL）。同名の `commands/<name>.md` があるスキルでは、frontmatter が効かない経路が観測されている場合、その観測（Claude Code の版・経路・確かめ方）と frontmatter を残す理由を SKILL.md の本文に書くものとする（SHALL）。観測していない経路や版については、効く・効かないを要件にしない。
+スクリプト実行を含むスキルは、frontmatterで `context: fork` を指定するものとする（SHALL）。スキル本体が直接実行される経路では、これにより会話コンテキストから隔離して実行される。`context: fork` を指定するスキルは `background: false` も指定し、呼び出し側が完了を待つものとする（SHALL）。同名の `commands/<name>.md` があるスキルでは、frontmatter が効かない経路が観測されている場合、その観測（Claude Code の版・経路・確かめ方）と frontmatter を残す理由を SKILL.md の本文に書くものとする（SHALL）。観測していない経路や版については、効く・効かないを要件にしない。
 
 #### Scenario: wt-setup SKILL.mdにcontext: forkが指定されている
 - **WHEN** wt-setup SKILL.md の frontmatter を読む
