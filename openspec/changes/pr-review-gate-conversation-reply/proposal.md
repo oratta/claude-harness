@@ -25,6 +25,6 @@ pr-review-gate の合格条件は主のリスク許容を「回答リンク」�
 
 - 新規: `plugins/dev-workflow/scripts/owner-reply-check.sh`、`plugins/dev-workflow/tests/owner-reply-check.bats`、`plugins/dev-workflow/changes/721.md`
 - 変更: `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md`（手順 5）、`plugins/dev-workflow/skills/pr-review-gate/stages/hold.md`（手順 3-c・手順 6）、`plugins/dev-workflow/skills/develop/SKILL.md`（保留で止まるときの引き継ぎ）、`plugins/dev-workflow/tests/pr-review-gate-skill.bats`、必要なら `plugins/dev-workflow/tests/develop-handover.bats`
-- 依存: スクリプトは `jq` か `python3` で JSONL を読む（どちらもこのリポジトリの既存スクリプトが使っている）
+- 依存: スクリプトは埋め込みの `python3` で JSONL を読む（`context-tripwire.sh` など既存スクリプトと同じ）
 - 安全面: ゲートの合格条件を変えるので、この PR 自体が「安全ゲートの弱体化」に当たり、主の許容で保留になる見込み（epic #725 で主が方向を認めている）
 - 後続: epic #725 の子 #723 がこのスクリプトを使う
