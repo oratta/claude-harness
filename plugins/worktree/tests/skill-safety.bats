@@ -149,6 +149,21 @@ wt_setup_frontmatter() {
   wt_setup_frontmatter | grep -q '^background: false$'
 }
 
+# --- dev-workflow の git-destructive-guard に git branch -D を拒否されたときの扱い（#710）
+
+@test "skill: wt-clean holds the branch when the hook denies git branch -D (#710)" {
+  grep -Eq 'git branch -D` が dev-workflow の hook に止められたら' "$WT_CLEAN_SKILL"
+  grep -Eq '言い換えて再実行しない' "$WT_CLEAN_SKILL"
+  grep -Eq 'HELD\+=\("\$BRANCH_NAME \(ブランチ削除は hook に拒否' "$WT_CLEAN_SKILL"
+  grep -Fq 'git -C <メインリポ> branch -D <ブランチ>' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: wt-clean cron section sets DEV_WORKFLOW_GIT_GUARD=off (#710)" {
+  section="$(awk '/^### cron への載せ方/ {on=1; next} on && /^##/ {exit} on {print}' "$WT_CLEAN_SKILL")"
+  printf '%s\n' "$section" | grep -Fq 'DEV_WORKFLOW_GIT_GUARD=off'
+  printf '%s\n' "$section" | grep -Fq '唯一の歯止め'
+}
+
 # --- #732: context: fork / background は同名の commands ラッパーが勝つ現行経路では効かない。
 # 先頭 12 行でそれが読め、本文で観測（版・経路）と残す理由が読めること。
 
