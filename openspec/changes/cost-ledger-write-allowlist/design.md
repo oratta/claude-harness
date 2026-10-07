@@ -11,7 +11,7 @@ cost-ledger の PostToolUse hook（`scripts/gate-report.sh` → `scripts/gate_re
 
 - エピック #272 の「全体の制約」: LLM のトークンを使わない、hook は無出力、hook の所要時間と `gh` の回数を実測して PR に書く
 - 同時に #691（`backfill.py` を足す）と #697（`gate_report.py` のきっかけの検出を触る）が動いている。`gate_report.py` の検出部分（`Lexer`・`find_triggers`・`build_job`）は触らない
-- Claude Code は、作業中のリポジトリの `.claude/settings.json` の `env` に書かれた環境変数を、そのセッションの hook に渡す。プラグインの userConfig の値も `CLAUDE_PLUGIN_OPTION_<名前>` という環境変数で hook に渡る
+- Claude Code は、作業中のリポジトリの `.claude/settings.json` の `env` に書かれた環境変数を、そのセッションの hook に渡す（実機では確かめていない未検証の前提。偽であっても設計は変わらない: 渡らないなら環境変数に一覧を書く案でも安全になるが、ファイルに置く案はどちらの場合でも安全で、issue の受け入れ条件がこの経路を名指ししているため、渡る前提で決める）。プラグインの userConfig の値も `CLAUDE_PLUGIN_OPTION_<名前>` という環境変数で hook に渡る
 
 ## Goals / Non-Goals
 
@@ -76,7 +76,7 @@ origin の URL の読み方は `cost_ledger.py` の `RepoResolver.origin()` と�
 
 | 場所 | 何を見るか | 一覧に無いとき |
 |---|---|---|
-| `gate-report.sh` の先頭（全体停止の次、標準入力を読む前） | 一覧のファイルが無い・空か（`[ -s ]`） | 標準入力を読まず、`python3` を起動せずに抜ける |
+| `gate-report.sh` の先頭（全体停止の次、標準入力を読む前） | 一覧のファイルが無い・大きさ 0 か（`[ -s ]`。シンボリックリンクはたどる） | 標準入力を読まず、`python3` を起動せずに抜ける |
 | `gate_report.py` の `work()` の先頭（`gh` を呼ぶ前） | `cwd` の origin のリポジトリが一覧にあるか。コマンドが名指ししたリポジトリ（`-R`、`GH_REPO=` の前置き、URL、`gh api` のパス）が一覧にあるか | origin が無ければ仕事全体を、名指しが無ければその対象を捨てる。`gh` は呼ばない |
 | `work()` の対象の確認のあと（ロックと既存コメントの取得の前） | GitHub が返したリポジトリ名が一覧にあるか | その対象を捨てる。これ以降の `gh` は呼ばない |
 
