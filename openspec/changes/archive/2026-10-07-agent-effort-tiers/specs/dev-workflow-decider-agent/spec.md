@@ -1,8 +1,5 @@
-# dev-workflow-decider-agent Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change fable-decider-only. Update Purpose after archive.
-## Requirements
 ### Requirement: 決める役の種別 dev-workflow:decider
 dev-workflow プラグインは決める役のエージェント定義 `agents/decider.md` を配布しなければならない（MUST）。frontmatter は `name: decider`・`description`・`model: fable`・`effort: high`・`tools: Read, Grep, Glob` を持ち、`tools` に Edit / Write / NotebookEdit / Bash を含めてはならない（MUST NOT。編集できないことが「Fable は実行役にならない」の機械的な保証であり、この定義は `plugins/casting/agents/casting-arbiter.md` の書式に倣う）。
 
@@ -33,15 +30,4 @@ verify・マージ可否で呼ばれたときは可否と根拠を返す（SHALL
 #### Scenario: Opus の決める役も同じ種別で立てる
 - **WHEN** 残量モードにより決める役を Opus に落として spawn する
 - **THEN** `subagent_type` は `dev-workflow:decider` のままで `model: opus` を渡し、`general-purpose` には読み替えない
-
-### Requirement: Fable を既定モデルに持つエージェント定義は読み取り専用
-リポジトリ内の `plugins/*/agents/*.md` のうち frontmatter の `model` が Fable（`fable`、または `claude-fable-*` の完全 ID）を指す定義は、`tools` に Edit / Write / NotebookEdit / Bash を含めてはならない（MUST NOT）。この規約は bats テストで検証されなければならない（MUST）。検証対象は dev-workflow の決める役に限らず、`casting-arbiter` / `casting-specialist` を含むすべてのプラグインのエージェント定義とする（SHALL）。
-
-#### Scenario: 編集系ツールを持つ Fable 定義は検出される
-- **WHEN** `model: fable` かつ `tools` に `Write` を含むエージェント定義がリポジトリに存在する状態でテストを実行する
-- **THEN** テストが失敗し、どの定義が違反しているかが出力される
-
-#### Scenario: 現在の定義はすべて規約を満たす
-- **WHEN** 現在のリポジトリでこのテストを実行する
-- **THEN** `dev-workflow:decider`・`casting-arbiter`・`casting-specialist` を含めて違反が無く、テストは緑になる
 
