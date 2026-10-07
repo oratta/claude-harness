@@ -31,6 +31,8 @@
 - 採らなかった案: 今までどおり全引数からパスを探す。`--input repos/.../issues/300/labels` のように値がパスの形をしていると、コマンドが触れていない番号を対象にする（#697 のコメントの指摘）。きっかけを増やすと当たる形も増えるので、ここで直す
 - 表は `gh` 2.67.0 の `gh api --help` から取った。`gh` に値を取るオプションが増えると、その値を endpoint と取り違えうる。取り違えても endpoint の形（`repos/<owner>/<repo>/...`）に一致しなければ積まない
 
+合格ラベルの付与（`issues/<番号>/labels`）の endpoint も、きっかけの endpoint と同じ読み方にそろえる。`repos/{owner}/{repo}/issues/300/labels` は、前置きの `GH_REPO`、無ければ `cwd` のリポジトリの #300 への付与と見る（今の `LABELS_PATH_RE` は `{owner}` に一致せず、積んでいない）。採らなかった案は「付与だけは `{owner}/{repo}` を積まないままにする」で、同じ `gh api` の endpoint なのに、コメントの投稿では積まれて付与では積まれないという食い違いを残すので採らない。`api_targets()` をどのみち作り直すので、読み方を 1 つにする方が実装も小さい。
+
 ### 2. メソッドは gh と同じ規則で決める
 
 `-X` / `--method` があればその値（複数あれば最後）。無ければ、フィールド（`-f` / `-F` / `--raw-field` / `--field`）か `--input` があれば POST、どちらも無ければ GET。値が解決できないメソッド（`-X "$M"` で `M` が分からない）は積まない。
@@ -103,6 +105,8 @@ hook の新規作成と同じ形のコマンド（`issues/<番号>/comments` へ
 - [`issues/<番号>/comments` への POST は、番号が PR のとき `gh` を 4 回呼ぶ（issue として確かめてから PR として取り直す）] → 既存の「issue 向けのコマンドに渡された番号が PR だったときの 1 回」と同じ扱いで、裏のプロセスで動くのでセッションは待たない。このリポジトリでは PR へのコメントを `gh api` で投稿することが多いので、回数を実測して PR に書く
 - [手元の時計が GitHub より 300 秒を超えてずれていると `PR 作成` の行が積まれない] → 次の節目の行の増分がその分を含む（裏の処理が失敗した節目と同じ）
 - [`gh pr reopen` を既に open の PR に実行しても `PR 再オープン` の行が積まれる] → 既存の `Ready`（既に Ready の PR への `gh pr ready`）と同じ性質で、数字は正しい
+- [PR を作ってから 300 秒以内に `gh pr create` をもう一度実行して「既にある」で失敗すると `PR 作成` の行がもう 1 行積まれる／`gh pr create ... && <5 分を超える処理>` では `PR 作成` の行が積まれない] → どちらも直さない。前者は数字が正しく、後者は次の節目の行の増分に含まれる。「状態の変更は実測してから積む」の守備範囲に書く
+- [PR でない issue への `gh api` のコメント投稿・クローズ・再オープンは、行は積まれるが、その行の累計が 0 か実際より小さく出ることがある] → issue への帰属は `cost_ledger.py` の `ISSUE_RE`（`gh issue view|comment|edit|close|develop <番号>` の文字列。`plugins/cost-ledger/scripts/cost_ledger.py`:50）で決まり、`gh api repos/.../issues/<番号>/...` は帰属の鍵にならないため。確かめたのはこの正規表現までで、累計 0 の行が実際に積まれるかは走らせていない。このリポジトリでは `gh issue view` が GraphQL エラーになり issue を `gh api` で読み書きすることが多いので、この change の主な使い道のひとつで起きる。PR の行はブランチで帰属するので影響しない。この change では直さない（帰属は別の capability `cost-ledger-attribution` で、`cost_ledger.py` は #750 と #744 の範囲なので触らない）。`changes/697.md` と PR の本文に書き、帰属の側を広げる作業は新しい子 issue の候補として本体に伝える
 - [#744 と spec・README の同じ文に触る] → 上の表のとおり、archive と実装の前に origin/main を確かめる
 
 ## Migration Plan

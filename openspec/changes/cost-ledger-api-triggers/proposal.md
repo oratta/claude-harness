@@ -26,7 +26,7 @@
 ### Modified Capabilities
 
 - `cost-ledger-timeline`: 「行を積むきっかけ」「対象の解決」「状態の変更は実測してから積む」「`gh` の呼び出し回数」を改め、「`gh api` の呼び出しの読み方」を足す
-- `cost-ledger-gate-report`: 「ゲート通過を PostToolUse の hook で捕まえる」（fast path の文字列）と「ラベル付与コマンドの判定と対象 PR の取り出し」（endpoint だけを読む）を改める
+- `cost-ledger-gate-report`: 「ゲート通過を PostToolUse の hook で捕まえる」（fast path の文字列）と「ラベル付与コマンドの判定と対象 PR の取り出し」（endpoint だけを読む。`{owner}/{repo}` の endpoint での付与も対象にする。守備範囲を書く）を改める
 
 ## Impact
 
