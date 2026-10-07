@@ -2,15 +2,15 @@
 
 ## 1. lint.sh のテストを先に書く
 
-- [ ] 1.1 `tests/lint-plugin-validate.bats` を新しく作る。一時ディレクトリに git リポジトリを作り、`scripts/lint.sh` の複製・指摘の出ない `*.sh` 1 本・`plugins/alpha/.claude-plugin/plugin.json`・`plugins/beta/.claude-plugin/plugin.json` を置いて `git add` し、PATH の先頭に偽の `claude`（受け取った引数を 1 行ずつファイルに記録し、環境変数で指定された対象のときだけ 1 を返す）を置く。shellcheck が無い環境では `skip` する。テスト名は ASCII のみ。書く前に `tests/bats-assertion-guard.bats` を読み、アサーションの書き方の制約に合わせる。触る範囲: tests/lint-plugin-validate.bats（新規）
-- [ ] 1.2 次の場合を 1 件ずつテストにする: すべて通れば exit 0 で、直下と 2 プラグインに 1 回ずつ `plugin validate <対象>` が呼ばれ `--strict` が付かない／1 つ目のプラグインが 1 を返すと 2 つ目も呼ばれ、終了コードが 0 以外で、偽の `claude` の出力が表示される／PATH に `claude` が無いと exit 0 で、飛ばしたことと理由が出力にある（PATH は shellcheck と git へのリンクを置いたディレクトリと `/usr/bin:/bin` で組む）／`lint.sh alpha` で `plugins/alpha` だけが呼ばれる／どのプラグインにも一致しないフィルタで 1 回も呼ばれず exit 0／shellcheck が指摘を出しても検証は呼ばれ、終了コードが 0 以外。触る範囲: tests/lint-plugin-validate.bats（新規）
-- [ ] 1.3 `bats tests/lint-plugin-validate.bats` を走らせ、検証を足す前なので落ちることを確かめる。触る範囲: なし（実行のみ）
+- [x] 1.1 `tests/lint-plugin-validate.bats` を新しく作る。一時ディレクトリに git リポジトリを作り、`scripts/lint.sh` の複製・指摘の出ない `*.sh` 1 本・`plugins/alpha/.claude-plugin/plugin.json`・`plugins/beta/.claude-plugin/plugin.json` を置いて `git add` し、PATH の先頭に偽の `claude`（受け取った引数を 1 行ずつファイルに記録し、環境変数で指定された対象のときだけ 1 を返す）を置く。shellcheck が無い環境では `skip` する。テスト名は ASCII のみ。書く前に `tests/bats-assertion-guard.bats` を読み、アサーションの書き方の制約に合わせる。触る範囲: tests/lint-plugin-validate.bats（新規）
+- [x] 1.2 次の場合を 1 件ずつテストにする: すべて通れば exit 0 で、直下と 2 プラグインに 1 回ずつ `plugin validate <対象>` が呼ばれ `--strict` が付かない／1 つ目のプラグインが 1 を返すと 2 つ目も呼ばれ、終了コードが 0 以外で、偽の `claude` の出力が表示される／PATH に `claude` が無いと exit 0 で、飛ばしたことと理由が出力にある（PATH は shellcheck と git へのリンクを置いたディレクトリと `/usr/bin:/bin` で組む）／`lint.sh alpha` で `plugins/alpha` だけが呼ばれる／どのプラグインにも一致しないフィルタで 1 回も呼ばれず exit 0／shellcheck が指摘を出しても検証は呼ばれ、終了コードが 0 以外。触る範囲: tests/lint-plugin-validate.bats（新規）
+- [x] 1.3 `bats tests/lint-plugin-validate.bats` を走らせ、検証を足す前なので落ちることを確かめる。触る範囲: なし（実行のみ）
 
 ## 2. lint.sh に検証を足す
 
-- [ ] 2.1 `scripts/lint.sh` の末尾を、shellcheck の終了コードを控えてから検証へ進む形に変える。対象は `git -C "$ROOT" ls-files -- 'plugins/*/.claude-plugin/plugin.json'` から `plugins/<name>` を取り出し、フィルタ引数があれば `plugins/<name>/` への部分一致（OR）で絞る。フィルタ無しのときだけリポジトリ直下（`.`）を先頭に加える。`command -v claude` が失敗したら飛ばしたことと理由を標準エラーに出す。各対象は `( cd "$ROOT" && claude plugin validate <対象> )` の出力を控え、0 なら対象名を 1 行、非 0 なら控えた出力を出す。最後に shellcheck と検証のどちらかが非 0 なら 1 で終わる。POSIX sh のまま書く（配列を使わない）。触る範囲: scripts/lint.sh:76-88（shellcheck の実行と終了処理）
-- [ ] 2.2 冒頭の説明コメントを合わせる（1 行目の説明、使い方、設計の箇条書きに、公式の検証・`--strict` を付けない理由・`claude` が無いときの扱い・フィルタの効き方を足す）。触る範囲: scripts/lint.sh:1-26（冒頭コメント）
-- [ ] 2.3 `bats tests/lint-plugin-validate.bats` が通り、`shellcheck --severity=warning scripts/lint.sh` に指摘が無いことを確かめる。触る範囲: なし（実行のみ）
+- [x] 2.1 `scripts/lint.sh` の末尾を、shellcheck の終了コードを控えてから検証へ進む形に変える。対象は `git -C "$ROOT" ls-files -- 'plugins/*/.claude-plugin/plugin.json'` から `plugins/<name>` を取り出し、フィルタ引数があれば `plugins/<name>/` への部分一致（OR）で絞る。フィルタ無しのときだけリポジトリ直下（`.`）を先頭に加える。`command -v claude` が失敗したら飛ばしたことと理由を標準エラーに出す。各対象は `( cd "$ROOT" && claude plugin validate <対象> )` の出力を控え、0 なら対象名を 1 行、非 0 なら控えた出力を出す。最後に shellcheck と検証のどちらかが非 0 なら 1 で終わる。POSIX sh のまま書く（配列を使わない）。触る範囲: scripts/lint.sh:76-88（shellcheck の実行と終了処理）
+- [x] 2.2 冒頭の説明コメントを合わせる（1 行目の説明、使い方、設計の箇条書きに、公式の検証・`--strict` を付けない理由・`claude` が無いときの扱い・フィルタの効き方を足す）。触る範囲: scripts/lint.sh:1-26（冒頭コメント）
+- [x] 2.3 `bats tests/lint-plugin-validate.bats` が通り、`shellcheck --severity=warning scripts/lint.sh` に指摘が無いことを確かめる。触る範囲: なし（実行のみ）
 
 ## 3. hooks.json の command を引用符で囲む
 
