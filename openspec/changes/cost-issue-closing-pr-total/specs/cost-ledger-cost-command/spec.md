@@ -5,7 +5,7 @@
 
 **子 issue を持たない issue の閉じた PR。** システムは、子 issue を持たない issue と判別したときに限り、その issue を閉じた PR を `gh api graphql` の 1 回の問い合わせ（`closedByPullRequestsReferences(first: 100)` の番号・ヘッドブランチ・`isCrossRepository`・`baseRepository.nameWithOwner`。`nameWithOwner` はその応答のリポジトリ名）で SHALL 取る。owner・name・番号は変数で渡し、問い合わせの文字列に埋め込んではなら MUST NOT ない。数える PR は、ベースが作業ディレクトリのリポジトリで `isCrossRepository` が偽のものだけで、同じヘッドブランチが複数あれば番号の小さい方だけを数える（`cost_ledger.py issue` の `--closing-pr` と同じ入力にして `cmd_issue` に渡す）。この問い合わせを、PR 番号・子 issue を持つ issue・番号なしの `/cost` で行ってはなら MUST NOT ない。
 
-**1 行目は変えない。** 閉じた PR があっても、1 行目（`headline()`）の金額・帰属先・種別（`区間`）は、閉じた PR を数えない場合と同じ SHALL。合計と内訳（PR ごとの額と PR の外の額）は、spec `cost-ledger-attribution` の「閉じた PR の分を合わせた issue の合計」が定める 2 行目以降の 1 行で出る。閉じた PR が 0 件のときの出力は、この要件を足す前と同じ MUST。
+**1 行目は変えない。** 閉じた PR があっても、1 行目（`headline()`）の金額・帰属先・種別（`区間`）は、閉じた PR を数えない場合と同じ SHALL。合計と内訳（PR ごとの額と PR の外の額）は、spec `cost-ledger-attribution` の「issue の合計は、閉じた PR の分と、PR のブランチ上に無い区間の分の和である」が定める 2 行目以降の 1 行で出る。閉じた PR が 0 件のときの出力は、この要件を足す前と同じ MUST。
 
 **読み切れないとき。** 閉じた PR の問い合わせが失敗した・応答が JSON でない・期待する形でない（1 件でも形が崩れている）・`pageInfo.hasNextPage` が真のときは、終了コード 0 のまま閉じた PR を数えない出力を返し、標準出力に `  閉じた PR を読めなかったため、PR の分は合計に入っていません。` の行を 1 行 SHALL 足す。この行は、合計の行（`合計（閉じた PR 込み）:`）を出さないときだけ出す。`--json` では `closing_prs` が空の配列で、`closing_prs_error` が `true`（読めたときは `false`）。区間の分が読めているのに、PR の分が読めないことで区間の額まで返さなくなってはなら MUST NOT ない。
 
