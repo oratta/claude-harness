@@ -115,6 +115,7 @@ SessionStart の hook の stdout は会話の文脈に入るので、同期部�
 
 `backfill.py` は `gate_report.py` を import して、次の順で処理する。
 
+- `GH_HOST`: hook が引き継いだ環境変数 `GH_HOST` が空でも github.com でもないときは、同期部分で何もせずに終わる（裏のプロセスを起こさず、`gh` を 1 回も呼ばない）。`gate_report.py` の `build_job` と同じ扱いで、積む対象は github.com だけ。`gh_api()` は `--hostname github.com` に固定して `GH_HOST` を環境から外すので、ここで止めないと、別のホストに向けたセッションから github.com へ書くことになる
 - リポジトリ: `cwd` の origin を `cost_ledger.py` の `RepoResolver.origin()` で読む。ホストが github.com でない・origin が無い・git リポジトリでないときは `gh` を 1 回も呼ばない
 - PR の候補: `gh_json("repos/<repo>/pulls/<番号>")` でマージ済みであること・ヘッドブランチ・ベースとヘッドのリポジトリを確かめる。ヘッドが別のリポジトリ（fork）の PR は積まない。後追いは他人の PR も自動で拾うので、fork の `main` や `patch-1` のようなブランチ名で手元の同じ名前のブランチのコストを引き込まないため（#689 の「閉じた PR」と同じ絞り方）
 - issue の候補: 一覧が `state: closed` を返しているので、対象の確認の問い合わせは足さない。issue を閉じた PR は `stack()` の中の `closing_prs()` が問い合わせる
