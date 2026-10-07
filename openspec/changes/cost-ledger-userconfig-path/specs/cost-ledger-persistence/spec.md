@@ -40,3 +40,45 @@ Stop の hook（`scripts/ledger-hook.sh`）は、解決した値を `COST_LEDGER
 #### Scenario: plugin.json が項目を宣言している
 - **WHEN** `jq '.userConfig | keys' plugins/cost-ledger/.claude-plugin/plugin.json` を実行する
 - **THEN** `LEDGER_PATH` が含まれ、その `type` は `file`、`default` は無い
+
+### Requirement: Stop hook で差分を追記する
+システムは `plugins/cost-ledger/hooks/hooks.json` の `Stop` に `plugins/cost-ledger/scripts/ledger-hook.sh` を MUST 登録する。hook は差分追記を行い、どの失敗でも無出力で終了コード 0 を返 MUST す（応答を止めない）。`CLAUDE_PLUGIN_OPTION_LEDGER_PATH` と `COST_LEDGER_PATH` がどちらも未設定（空文字を含む）のときだけ、python3 を起動せずに抜け MUST る。どちらかが設定されていれば、「台帳の場所は環境変数で解決する」の優先順位で台帳を決めて追記する。複数の hook が同時に動いても台帳の行が重複も欠落もしないよう、システムは台帳の隣のロックファイルに排他ロックを取ってから読み書き SHALL する。
+
+#### Scenario: 未設定なら何もしない
+- **WHEN** `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` と `COST_LEDGER_PATH` の両方を未設定（または空文字）にして hook を実行する
+- **THEN** python3 は起動されず、出力は空で、終了コードは 0
+
+#### Scenario: hook が追記する
+- **WHEN** `COST_LEDGER_PATH` を一時ディレクトリのファイルに向けて hook を実行する
+- **THEN** 台帳に会話ログの事実が追記され、出力は空で、終了コードは 0
+
+#### Scenario: userConfig の値だけでも hook が追記する
+- **WHEN** `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` だけを一時ディレクトリのファイルに向けて hook を実行する
+- **THEN** 台帳に会話ログの事実が追記され、出力は空で、終了コードは 0
+
+#### Scenario: 失敗しても止めない
+- **WHEN** 台帳の場所がリポジトリ配下を指した状態で hook を実行する
+- **THEN** 出力は空で、終了コードは 0
+
+#### Scenario: 差分の追記は 1 秒未満で終わる
+- **WHEN** 他に負荷の無い状態で、台帳と控えが最新のあと会話ログに応答を 1 行追記してから hook を実行する
+- **THEN** hook は 1 秒未満で終わる
+
+#### Scenario: 同時に動く
+- **WHEN** 2 つの hook を同時に実行する
+- **THEN** 台帳の各 `requestId` は 1 行ずつで、行数は会話ログの応答数と一致する
+
+### Requirement: /cost は台帳から読む
+台帳の場所が（「台帳の場所は環境変数で解決する」の優先順位で）解決できているとき、システムは集計系のサブコマンド（`facts` / `branch` / `intervals` / `issue` / `cost` / `report`）で、読む前に差分追記を 1 回行い、そのあと台帳だけから事実を MUST 読む。会話ログが消えたあとも、消える前と同じ値を返さなければならない。
+
+#### Scenario: 会話ログを退避したあと
+- **WHEN** `ledger-sync` のあとで会話ログを退避し、`cost_ledger.py cost <PR番号>` を実行する
+- **THEN** 1 行目は退避前と同じ
+
+#### Scenario: 最後の追記以降の行も含む
+- **WHEN** `ledger-sync` のあとで会話ログに応答が増え、hook を待たずに `cost_ledger.py branch <ブランチ>` を実行する
+- **THEN** 増えた応答も合計に含まれる
+
+#### Scenario: userConfig の値だけでも台帳から読む
+- **WHEN** `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` だけを設定して `ledger-sync` のあと会話ログを退避し、`cost_ledger.py cost <PR番号>` を実行する
+- **THEN** 1 行目は退避前と同じ

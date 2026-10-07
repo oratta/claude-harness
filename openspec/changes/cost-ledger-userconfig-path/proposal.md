@@ -17,7 +17,7 @@
 なし
 
 ### Modified Capabilities
-- `cost-ledger-persistence`: 「台帳の場所は環境変数 `COST_LEDGER_PATH` だけから解決する」を、「userConfig 由来の環境変数を優先し、`COST_LEDGER_PATH` も受ける」に変える
+- `cost-ledger-persistence`: 「台帳の場所は環境変数 `COST_LEDGER_PATH` だけから解決する」を「userConfig 由来の環境変数を優先し、`COST_LEDGER_PATH` も受ける」に変え、それに連動する「Stop hook で差分を追記する」（両方未設定のときだけ python3 を起動しない）と「/cost は台帳から読む」の要件も改める。Purpose の文言は delta で変えられないので archive 後に直す（tasks 4.3）
 
 ## Impact
 
