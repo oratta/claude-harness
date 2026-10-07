@@ -39,6 +39,15 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/git-destructive-guard.sh\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
