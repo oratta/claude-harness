@@ -27,8 +27,8 @@ run_check() { run bash "$SCRIPT" "$@"; }
   add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"timestamp":"2026-10-07T01:00:00.000Z","message":{"role":"user","content":"許容する。進めて"}}'
   run_check "$SID" "許容する"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"MATCH: 2026-10-07T01:00:00.000Z 許容する。進めて"* ]]
-  [[ "$output" == *"MATCHES=1"* ]]
+  [[ "$output" == *"MATCH: 2026-10-07T01:00:00.000Z 許容する。進めて"* ]] || return 1
+  [[ "$output" == *"MATCHES=1"* ]] || return 1
 }
 
 @test "owner-reply: /develop command args match" {
@@ -60,8 +60,8 @@ run_check() { run bash "$SCRIPT" "$@"; }
   add '{"type":"user","origin":{"kind":"human"},"timestamp":"2026-10-07T06:05:00.000Z","message":{"content":"やっぱり許容しない"}}'
   run_check "$SID" "許容"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"MATCH: 2026-10-07T06:05:00.000Z やっぱり許容しない"* ]]
-  [[ "$output" == *"MATCHES=2"* ]]
+  [[ "$output" == *"MATCH: 2026-10-07T06:05:00.000Z やっぱり許容しない"* ]] || return 1
+  [[ "$output" == *"MATCHES=2"* ]] || return 1
 }
 
 @test "owner-reply: broken JSON lines are skipped" {
@@ -77,7 +77,7 @@ run_check() { run bash "$SCRIPT" "$@"; }
   add '{"type":"assistant","isSidechain":false,"timestamp":"2026-10-07T01:00:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"許容する"}]}}'
   run_check "$SID" "許容する"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"MATCHES=0"* ]]
+  [[ "$output" == *"MATCHES=0"* ]] || return 1
 }
 
 @test "owner-reply: sidechain user message does not match" {
@@ -139,7 +139,7 @@ run_check() { run bash "$SCRIPT" "$@"; }
   add '{"type":"user","origin":{"kind":"human"},"timestamp":"2026-10-07T01:00:00.000Z","message":{"content":"ちょっと待って"}}'
   run_check "$SID" "許容する"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"MATCHES=0"* ]]
+  [[ "$output" == *"MATCHES=0"* ]] || return 1
 }
 
 # ---- 確かめられない（exit 2）
