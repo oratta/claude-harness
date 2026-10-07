@@ -139,6 +139,10 @@ class Pricing:
 # リポジトリ識別子
 # --------------------------------------------------------------------------
 
+# Claude Code が作業ツリーを置く場所。この並びの下にあるのは、手前のリポジトリの作業ツリー
+WORKTREES_MARK = "/.claude/worktrees/"
+
+
 class RepoResolver:
     """cwd からリポジトリ識別子（git-common-dir の絶対パス）と表示名を求める。
 
@@ -150,19 +154,93 @@ class RepoResolver:
     def __init__(self):
         self._ids: dict[str, str] = {}
         self._labels: dict[str, str] = {}
+        self._inferred: set[str] = set()   # 削除済みで、パスからの推定で決めた cwd
+        self._places: dict[str, str] = {}  # 置き場ごとの判定結果
 
     def repo_id(self, cwd: str) -> str:
         if not cwd:
             return UNKNOWN_REPO
         if cwd in self._ids:
             return self._ids[cwd]
-        repo_id = UNKNOWN_REPO
         if os.path.isdir(cwd):
-            out = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
-            if out:
-                repo_id = os.path.realpath(out)
+            # 存在するのに git が失敗する cwd は推定しない（不明のまま）
+            repo_id = self._git_id(cwd)
+        else:
+            repo_id = self._infer(cwd)
+            if repo_id != UNKNOWN_REPO:
+                self._inferred.add(cwd)
         self._ids[cwd] = repo_id
         return repo_id
+
+    def inferred(self, cwd: str) -> bool:
+        """``repo_id(cwd)`` が、削除済みの cwd の文字列からの推定で決めた値か。"""
+        return cwd in self._inferred
+
+    @staticmethod
+    def _git_id(where: str) -> str:
+        out = _git(where, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        return os.path.realpath(out) if out else UNKNOWN_REPO
+
+    def _infer(self, cwd: str) -> str:
+        """ディレクトリとして存在しない cwd の文字列からリポジトリを推定する（決まらなければ不明）。
+
+        (1) ``/.claude/worktrees/`` を含むなら、最後のその並びの手前を持ち主とする。その下に
+        置かれるのは手前のリポジトリの作業ツリーだと決まっているので、持ち主の識別子をそのまま
+        使う（持ち主も削除済みなら、持ち主のパスを同じ手順で推定する）。(2) それ以外は、現存する
+        最も近い祖先を置き場として ``_place_id()`` で決める。
+        """
+        if not os.path.isabs(cwd):
+            return UNKNOWN_REPO
+        at = cwd.rfind(WORKTREES_MARK)
+        if at >= 0:
+            # 持ち主は cwd より必ず短いので、持ち主も削除済みで推定を繰り返しても止まる
+            return self.repo_id(cwd[:at])
+        place = os.path.dirname(cwd.rstrip(os.sep))
+        while place and not os.path.isdir(place):
+            parent = os.path.dirname(place)
+            if parent == place:
+                return UNKNOWN_REPO
+            place = parent
+        if not place:
+            return UNKNOWN_REPO
+        if place not in self._places:
+            self._places[place] = self._place_id(place)
+        return self._places[place]
+
+    def _place_id(self, place: str) -> str:
+        """置き場（削除済みの cwd の、現存する最も近い祖先）の直下の作業ツリーからリポジトリを決める。
+
+        決めるのは、直下のリンクされた作業ツリー（``.git`` がファイルのディレクトリ）の識別子が
+        ちょうど 1 種類で、置き場の名前がそのリポジトリのメインの作業ツリーのディレクトリ名
+        （bare なら識別子のパスの末尾の名前）か origin のリポジトリ名と一致するときだけ。
+        名前の一致を求めるのは、複数のリポジトリの作業ツリーを混ぜて置くディレクトリで、たまたま
+        残っている 1 つに寄せないため。置き場が git リポジトリの中のときは決めない（消えたのが
+        入れ子の別リポジトリだった場合に、外側のリポジトリへ寄せないため）。
+        """
+        if os.path.dirname(place) == place or self._git_id(place) != UNKNOWN_REPO:
+            return UNKNOWN_REPO
+        try:
+            names = sorted(os.listdir(place))
+        except OSError:
+            return UNKNOWN_REPO
+        found = None
+        for name in names:
+            child = os.path.join(place, name)
+            if not os.path.isfile(os.path.join(child, ".git")):
+                continue
+            repo_id = self.repo_id(child)
+            if repo_id == UNKNOWN_REPO:
+                continue
+            if found is not None and repo_id != found:
+                return UNKNOWN_REPO
+            found = repo_id
+        if found is None:
+            return UNKNOWN_REPO
+        root = os.path.dirname(found) if os.path.basename(found) == ".git" else found
+        # label() は origin が読めれば owner/repo、読めなければディレクトリ名を返す
+        if os.path.basename(place) in (os.path.basename(root), self.label(found).rsplit("/", 1)[-1]):
+            return found
+        return UNKNOWN_REPO
 
     def label(self, repo_id: str) -> str:
         if repo_id == UNKNOWN_REPO:
@@ -496,7 +574,8 @@ def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
         # 内訳を持たない古い形の行。キャッシュ書込 5m として読む。
         write_5m = usage.get("cache_creation_input_tokens") or 0
     issues, marker = scan_tool_calls(message)
-    return {
+    cwd = record.get("cwd") or ""
+    fact = {
         "request_id": record.get("requestId") or record.get("uuid") or "",
         # 先頭の行の uuid。複製された会話ログの先頭の行と、真の後続行を区別する鍵
         "uuid": record["uuid"] if isinstance(record.get("uuid"), str) else "",
@@ -504,7 +583,7 @@ def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
         # sessionId が無い行は区間を切る単位が消える。ファイルパスに落として混ざるのを防ぐ。
         "session_id": record.get("sessionId") or path,
         "is_sidechain": bool(record.get("isSidechain")),
-        "repo_id": resolver.repo_id(record.get("cwd") or ""),
+        "repo_id": resolver.repo_id(cwd),
         "branch": record.get("gitBranch") or "",
         "model": message.get("model") or "",
         "input_tokens": usage.get("input_tokens") or 0,
@@ -515,6 +594,11 @@ def build_fact(record: dict, resolver: RepoResolver, path: str) -> dict:
         "issues": issues,
         "post_marker": marker,
     }
+    if resolver.inferred(cwd):
+        # 削除済みの cwd の文字列から推定した識別子。偽のときは欄そのものを書かない
+        # （git で決まった行と、この欄ができる前に書かれた行の形を変えないため）
+        fact["repo_inferred"] = True
+    return fact
 
 
 def log_files(root: str):
@@ -1246,6 +1330,9 @@ class _NoRepo:
 
     def repo_id(self, cwd: str) -> str:
         return UNKNOWN_REPO
+
+    def inferred(self, cwd: str) -> bool:
+        return False
 
 
 def _drift_lines(handle, mentions, expired):
