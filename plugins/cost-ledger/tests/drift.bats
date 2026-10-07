@@ -374,6 +374,7 @@ EOF
 dr_late_clock() {
   python3 - "$CL" "$PRICING" "${1:-}" <<'PY'
 import importlib.util, sys
+sys.dont_write_bytecode = True   # scripts/__pycache__ を残さない（facts.bats が拾って落ちる既知の別件を増やさない）
 spec = importlib.util.spec_from_file_location("cl", sys.argv[1])
 cl = importlib.util.module_from_spec(spec)
 sys.modules["cl"] = cl
