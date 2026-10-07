@@ -29,7 +29,7 @@ issue の番号でコストを引くとき、`cwd` が削除済みの行はリ�
 
 ### Modified Capabilities
 
-- `cost-ledger-attribution`: 「リポジトリ識別子と worktree の畳み込み」に、削除済みの `cwd` からの推定と `repo_inferred` の印を足す
+- `cost-ledger-attribution`: 「リポジトリ識別子と worktree の畳み込み」に、削除済みの `cwd` からの推定と `repo_inferred` の印を足し、「行から抽出する事実」の事実の一覧に `repo_inferred` を足す
 - `cost-ledger-persistence`: 「台帳は事実の append-only JSONL」に補正行（3 つ目の行の種類）を足し、「既存の取りこぼしは追記で補う」に `--rescan` が補正行を追記することを足す。台帳を読むときの補正の適用を新しい要件として足す
 - `cost-ledger-cost-command`: issue・エピック・番号なしの出力に、推定で数えた件数と額の表示を足す
 
