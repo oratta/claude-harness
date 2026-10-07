@@ -212,7 +212,7 @@ expect_silent() {
   echo "$r" | grep -qF '主に承認を求め'
   echo "$r" | grep -qF '主が自分で実行'
   echo "$r" | grep -qF '言い換え'
-  ! echo "$r" | grep -qF 'DEV_WORKFLOW_GIT_GUARD'
+  [[ "$r" != *DEV_WORKFLOW_GIT_GUARD* ]] || return 1
 }
 
 @test "reason: lists every matched kind" {
