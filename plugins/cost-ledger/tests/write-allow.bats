@@ -134,12 +134,15 @@ sys.exit(0 if write_allow.allowed(sys.argv[2], sys.argv[3]) is True else 1)' "$S
   [ "$(gh_calls)" -eq 0 ]
 }
 
-@test "write-allow: without a list no trigger calls gh or python3" {  # 一覧のファイルが無いと、きっかけ 8 種のどれでも gh も python3 も 0 回で、無出力・終了コード 0
+@test "write-allow: without a list no trigger calls gh or python3" {  # 一覧のファイルが無いと、きっかけのどれ（#697 で足した gh pr create・gh pr reopen・gh api の直叩きを含む）でも gh も python3 も 0 回で、無出力・終了コード 0
   [ ! -e "$LIST" ]
   for command in \
     "gh pr comment 300 --body x" "gh pr ready 300" "gh pr close 300" "gh pr merge 300" \
     "gh issue comment 12 --body x" "gh issue close 12" "gh issue reopen 12" \
-    "gh api -X POST repos/$SELF/issues/300/labels -f 'labels[]=agent-review:passed'"; do
+    "gh api -X POST repos/$SELF/issues/300/labels -f 'labels[]=agent-review:passed'" \
+    "gh pr create --title t --body b" "gh pr reopen 300" \
+    "gh api -X POST repos/$SELF/issues/300/comments -f body=x" \
+    "gh api -X PATCH repos/$SELF/pulls/300 -f state=closed"; do
     hook "$command"
     silent || { echo "not silent: $command"; return 1; }
     [ "$(gh_calls)" -eq 0 ] || { echo "gh called: $command"; return 1; }
