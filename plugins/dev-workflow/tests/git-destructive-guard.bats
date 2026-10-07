@@ -168,8 +168,10 @@ expect_silent() {
 
 # --- ask / deny ---
 
-@test "mode: default acceptEdits plan return ask" {
+@test "mode: default acceptEdits plan bypassPermissions return ask" {
   call 'git reset --hard' default
+  [ "$(decision)" = "ask" ]
+  call 'git reset --hard' bypassPermissions
   [ "$(decision)" = "ask" ]
   call 'git reset --hard' acceptEdits
   [ "$(decision)" = "ask" ]
@@ -177,9 +179,7 @@ expect_silent() {
   [ "$(decision)" = "ask" ]
 }
 
-@test "mode: bypassPermissions, missing and unknown return deny" {
-  call 'git reset --hard' bypassPermissions
-  [ "$(decision)" = "deny" ]
+@test "mode: missing, unknown, dontAsk and auto return deny" {
   call 'git reset --hard' -
   [ "$(decision)" = "deny" ]
   call 'git reset --hard' somethingNew
@@ -192,7 +192,7 @@ expect_silent() {
 
 @test "force env: overrides the mode" {
   local json
-  json="$(payload 'git reset --hard' bypassPermissions)"
+  json="$(payload 'git reset --hard' auto)"
   run env DEV_WORKFLOW_GIT_GUARD_FORCE=ask "$SCRIPT" <<<"$json"
   [ "$(decision)" = "ask" ]
   json="$(payload 'git reset --hard' default)"
@@ -203,12 +203,26 @@ expect_silent() {
 # --- 拒否理由 ---
 
 @test "reason: deny explains how to get approval" {
-  call 'git push origin main' bypassPermissions
+  call 'git push origin main' auto
   [ "$(decision)" = "deny" ]
   local r
   r="$(reason)"
   echo "$r" | grep -qF 'main / master'
   echo "$r" | grep -qF 'rules/destructive-git-guard.md'
+  echo "$r" | grep -qF '主に承認を求め'
+  echo "$r" | grep -qF '主が自分で実行'
+  echo "$r" | grep -qF '言い換え'
+  [[ "$r" != *DEV_WORKFLOW_GIT_GUARD* ]] || return 1
+}
+
+@test "reason: ask explains the confirmation and the no-screen case" {
+  call 'git push origin main' bypassPermissions
+  [ "$(decision)" = "ask" ]
+  local r
+  r="$(reason)"
+  echo "$r" | grep -qF 'main / master'
+  echo "$r" | grep -qF 'rules/destructive-git-guard.md'
+  echo "$r" | grep -qF '確認画面'
   echo "$r" | grep -qF '主に承認を求め'
   echo "$r" | grep -qF '主が自分で実行'
   echo "$r" | grep -qF '言い換え'

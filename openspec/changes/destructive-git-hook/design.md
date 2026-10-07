@@ -31,9 +31,9 @@ hooks.json は `matcher: "Bash"` だけにし、どのコマンドが対象か�
 
 ### `ask` と `deny` は payload の `permission_mode` で切り替える
 
-- 既定: `permission_mode` が `default` / `acceptEdits` / `plan` のときは `ask`（確認画面が出て、主がその場で承認できる）
-- それ以外（`bypassPermissions`・`dontAsk`・`auto`・未知の値・欠落）は `deny`。確認画面が出るか分からないモードで `ask` を返すと、確認なしで実行される恐れがあるので、分からないものは止める側に倒す
-- 実装の最初に実機で確かめ、bypassPermissions の扱いを確定する。判定条件:
+- 確定した対応: `permission_mode` が `default` / `acceptEdits` / `plan` / `bypassPermissions` のときは `ask`（対話セッションでは確認画面が出て、主がその場で承認できる。`claude -p` では確認できないので実行されない）
+- それ以外（`dontAsk`・`auto`・未知の値・欠落）は `deny`。確認画面が出るか分からないモードで `ask` を返すと、確認なしで実行される恐れがあるので、分からないものは止める側に倒す
+- 当初は bypassPermissions も `deny` にしておき、実装の最初に実機で確かめて扱いを確定した。判定条件:
   - 手順: 使い捨ての git リポジトリ（scratchpad 配下）に追跡ファイルを 1 つ commit し、作業ツリーで書き換える。`DEV_WORKFLOW_GIT_GUARD_FORCE=ask`（検査専用。下記）を付けて `claude -p --plugin-dir plugins/dev-workflow --dangerously-skip-permissions` を起動し、`git reset --hard` を実行するよう頼む。終了後に書き換えが残っているかを見る
   - 対照実験（先に行う）: 同じ手順を `DEV_WORKFLOW_GIT_GUARD=off` で走らせ、書き換えが消える（Claude が実際に `git reset --hard` を打つ）ことを確かめる。消えなければ、Claude が頼みを断ったのか権限システムが止めたのかが区別できないので、hook についての結論を出さない（頼み方を変えてやり直す）
   - `--dangerously-skip-permissions` を付けない側（`permission_mode: default`）は `--allowedTools "Bash"` を付け、権限システムが hook より先に止めない状態で走らせる。対照実験もこの条件で行う
@@ -53,16 +53,25 @@ hooks.json は `matcher: "Bash"` だけにし、どのコマンドが対象か�
   | `--dangerously-skip-permissions` | 既定 | deny | 残った |
   | `--allowedTools "Bash"`（実際の mode は auto） | 既定 | deny | 残った |
   | `--permission-mode default --allowedTools "Bash"` | 既定 | ask | 残った |
+  | `--dangerously-skip-permissions` | 既定（bypassPermissions を ask に移したあと） | ask | 残った |
 
-  `-p` の `default` で `ask` は実行を止めたので、`default` / `acceptEdits` / `plan` は `ask` のまま確定する。bypassPermissions で `ask` を返しても `-p` では止まったが、対話セッションで確認画面が出るかは観測できないので、`deny` のまま確定する。`--permission-mode` を付けない起動は、settings.json の `defaultMode`（主の環境では `auto`）が使われ、payload の `permission_mode` も `auto` になる（同じ設定でも `--model haiku` では `default` になった）。`auto` は確認画面を出す保証が無いので、仕様どおり `deny` にする。手順の「付けない側」は、`--permission-mode default` を明示して走らせる
+  対話セッションでの確認（主に頼んだ画面確認。`--dangerously-skip-permissions` で起動）:
+
+  | 操作 | hook の設定 | 結果 |
+  |---|---|---|
+  | Claude に `git reset --hard` を頼む | `FORCE=ask` | 「Hook PreToolUse:Bash requires confirmation for this command: [dev-workflow git-destructive-guard] …」と「Do you want to proceed? 1. Yes 2. No」の確認画面が出た。No で実行されず、書き換えが残った |
+  | Claude に `git reset --hard` を頼む | 既定（このときは deny） | 確認画面は出ず、Claude は実行せずに差分を見せて主に返信を求めた |
+  | 主が入力欄で `! git reset --hard` と打つ | 既定 | hook に止められずに実行され、書き換えが消えた（`!` の入力は PreToolUse hook を通らない） |
+
+  `-p` の `default` で `ask` は実行を止めたので、`default` / `acceptEdits` / `plan` は `ask` で確定した。bypassPermissions は、`-p` では `ask` でも実行が止まり、対話セッションでは主が承認できる確認画面が出たので、判定条件を満たし `ask` に移した。この hook の目的は主に確認を回すことで、確認画面はそれを直接満たす。`-p` の bypassPermissions（cron や epic-dispatch の子セッション）でも `ask` は実行を止めるので、無人側の安全は `deny` と変わらない。`--permission-mode` を付けない起動は、settings.json の `defaultMode`（主の環境では `auto`）が使われ、payload の `permission_mode` も `auto` になる（同じ設定でも `--model haiku` では `default` になった）。`auto` は確認画面を出す保証が無いので、仕様どおり `deny` にする。手順の「付けない側」は、`--permission-mode default` を明示して走らせる
 - `DEV_WORKFLOW_GIT_GUARD_FORCE=ask|deny` は上の確認と bats のための上書きで、恒久設定にしない。ルール本文には書かない
 
 ### 承認済みの操作は主が自分で実行する
 
-`deny` は Claude からは越えられない。承認済みの操作（ローカル main 運用の `git push origin main` など）は、拒否理由の中で「主に承認を求め、承認されたら主が自分で実行する（Claude Code の入力欄で `!` を付けるか、自分の端末で）」と案内する。
+`deny` と、確認画面が出ないセッションでの `ask` は、Claude からは越えられない。承認済みの操作（ローカル main 運用の `git push origin main` など）は、理由の中で「主に承認を求め、承認されたら主が自分で実行する（Claude Code の入力欄で `!` を付けるか、自分の端末で）」と案内する。`ask` の理由は、確認画面を出していることと、確認画面が出ないセッションではこの案内に従うことを書く。
 
 - 採らなかった案: コマンドに付ける目印（`GIT_GUARD_APPROVED=1 git push ...`）で通す。Claude が自分で付けられるので、ルールを読み飛ばす Claude を止めるという目的が崩れる
-- `!` 入力が PreToolUse hook を通らないことは実機で確かめる。通る（止められる）なら、案内から `!` を外して「自分の端末で」だけにする
+- `!` 入力が PreToolUse hook を通らないことは実機で確かめた（対話セッションで `! git reset --hard` が止められずに実行された）ので、案内に `!` を残す
 - セッション全体で止めたいときは `DEV_WORKFLOW_GIT_GUARD=off` を起動時の環境に入れる。hook の環境変数は Claude Code のプロセスから来るので、コマンド文字列の先頭に書いても効かない
 
 ### ルール本文は外さず足すだけにする（issue 概要 3 からの変更）
@@ -76,12 +85,12 @@ issue 概要 3 は「ルール本文を、なぜ止めるかと hook で拾え�
 
 ### wt-clean のブランチ削除は、この change の中で SKILL.md の案内を足して扱う
 
-`plugins/worktree/skills/wt-clean/SKILL.md` は Claude に `git -C "$MAIN_REPO" branch -D "$BRANCH_NAME"` を直接打たせる（squash 済みの 🟢/🟡 の自動削除と、🔴 の破棄削除）。主の `cld` セッションも `--unattended` の cron も bypassPermissions なので、何もしなければマージした時点で wt-clean のブランチ削除が毎回 deny になる。
+`plugins/worktree/skills/wt-clean/SKILL.md` は Claude に `git -C "$MAIN_REPO" branch -D "$BRANCH_NAME"` を直接打たせる（squash 済みの 🟢/🟡 の自動削除と、🔴 の破棄削除）。主の `cld` セッションも `--unattended` の cron も bypassPermissions で、この hook は `ask` を返す。主の対話セッションでは確認画面が出て主が承認すれば削除されるが、確認画面で断られたときと、cron の `claude -p` では止まる。何もしなければ、止まったときに wt-clean が言い換えて再実行するか、黙って止まる。
 
 - 選んだ案: この change の中で wt-clean の SKILL.md に案内を 2 か所足す。①`git branch -D` を使う規則の節（squash 済みの扱い）に、hook に拒否されたら言い換えて再実行せず、worktree の削除までで止めてブランチを `HELD` に入れ、完了レポートに主が打つコマンドを載せること。②cron への載せ方の節に、無人運用のジョブの環境に `DEV_WORKFLOW_GIT_GUARD=off` を入れること（入れなければ squash 済みブランチの削除が拒否され、完了レポートの保留に載る）
 - 選んだ理由: 選ぶ基準は「マージした時点で wt-clean が黙って壊れた状態にならないこと」。直しは同じファイルへの案内 2 か所で済み、拒否されたブランチは保留として完了レポートに出るので黙っては壊れない。別の子 issue に切ると、#710 のマージから子のマージまでの間、wt-clean が拒否のたびにどう振る舞うか決まっていない状態になる
 - 採らなかった案: ①hook で wt-clean の `git branch -D` だけを通す（hook はマージ済みかを判定できず、ブランチ名や呼び出し元で通すと Claude が同じ形を使えば通ってしまう）。②wt-clean のブランチ削除をスクリプトファイルに移して hook の守備範囲外にする（hook の穴を設計に組み込むことになり、変更も大きい）
-- 代償: 主の対話セッションでは、squash 済みブランチの削除が毎回主の手作業（`!` で打つ）になる。worktree の削除は今までどおり自動で、残るのはブランチ名だけなので、作業の取り違えは起きない
+- 代償: 主の対話セッションでは、squash 済みブランチの削除のたびに確認画面が出て、主が承認する手間が増える（承認すればそのまま削除され、`!` で打ち直す必要は無い）。断ったときは worktree の削除までで止まり、残るのはブランチ名だけなので、作業の取り違えは起きない
 - 既存の cron ジョブは各住人の `cron-jobs.md` にあり、このリポジトリの外にある。環境変数を足すまでの間は、ブランチ削除が保留として完了レポート（ログに残す成果物）に出る
 
 ### コマンド文字列の分解
@@ -101,7 +110,8 @@ python3 の `shlex`（`punctuation_chars=True`）で字句に分け、次の単�
 
 - [判定の取りこぼし] 変数で組み立てたコマンドやスクリプト経由は止まらない → Non-Goals に明記し、ルール本文に hook で拾えないものとして書く
 - [誤検知] `git commit -m "--no-verify を外す"` のように、引用符の中の文字列は 1 つの字句になるので当たらない。`echo git reset --hard` のように git が単純コマンドの先頭でなければ当たらない。それでも当たったら主が自分で実行すれば済み、取り返しのつかない損失にはならない
-- [主のセッションで毎回拒否される] 主の `cld` セッションは bypassPermissions なので `deny` になり、承認済みの操作も主が自分で打つ必要がある。一覧の多くは頻度の低い操作だが、wt-clean の squash 済みブランチの削除だけは掃除のたびに起き、その都度主の手作業になる（節「wt-clean のブランチ削除は、この change の中で SKILL.md の案内を足して扱う」の代償）。worktree の削除は自動のまま残り、主が打つのは完了レポートに並んだコマンドだけなので、この手間を受け入れる。bypassPermissions で確認画面が出ると確かめられたら `ask` に移す
+- [主のセッションで確認画面が増える] 主の `cld` セッションは bypassPermissions で `ask` になり、一覧の操作のたびに確認画面が出る。一覧の多くは頻度の低い操作だが、wt-clean の squash 済みブランチの削除だけは掃除のたびに起きる（節「wt-clean のブランチ削除は、この change の中で SKILL.md の案内を足して扱う」の代償）。承認すればそのまま実行されるので、この手間を受け入れる
+- [auto のセッションでは毎回拒否される] settings.json の `defaultMode` が `auto` のとき、`--permission-mode` を付けずに起動したセッションは `auto` になり `deny` が返る。承認済みの操作も主が自分で打つ必要がある。`auto` で確認画面が出ると確かめられたら `ask` に移せる
 - [hook の障害] python3 が無い・payload が読めないときは fail-open（何も出さない）。止める仕組みが黙って外れるが、既存の hook と同じ扱いで、ルール本文が残っている
 
 ## Migration Plan

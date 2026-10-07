@@ -52,33 +52,38 @@ dev-workflow は PreToolUse の command hook `scripts/git-destructive-guard.sh` 
 
 ### Requirement: 確認画面が出るモードでだけ ask を返す
 
-`permissionDecision` は payload の `permission_mode` で決めなければならない（MUST）: `default` / `acceptEdits` / `plan` は `ask`、それ以外（`bypassPermissions`・`dontAsk`・`auto`・未知の値・欠落）は `deny`。この対応は実装の最初の実機確認（design.md「`ask` と `deny` は payload の `permission_mode` で切り替える」の判定条件。対照実験を含む）の結果で確定し、`-p` の `default` で `ask` が実行を止めないと分かった場合は全モードを `deny` にしなければならない（MUST）。bypassPermissions を `ask` に移してよいのは、対話セッションで確認画面が出ることを確かめたときだけである（MUST）。
+`permissionDecision` は payload の `permission_mode` で決めなければならない（MUST）: `default` / `acceptEdits` / `plan` / `bypassPermissions` は `ask`、それ以外（`dontAsk`・`auto`・未知の値・欠落）は `deny`。この対応は実機確認（design.md「`ask` と `deny` は payload の `permission_mode` で切り替える」の判定条件。対照実験を含む）で確定した: `-p` では `default` と `bypassPermissions` のどちらでも `ask` が実行を止め、対話セッションの `bypassPermissions` では `ask` で主が承認できる確認画面が出た。`ask` が `-p` で実行を止めない、または対話セッションで確認画面を出さないと分かったモードは、`deny` に戻さなければならない（MUST）。
 
 環境変数 `DEV_WORKFLOW_GIT_GUARD_FORCE` が `ask` か `deny` のときは、`permission_mode` によらずその値を返さなければならない（MUST。実機確認と bats のための上書き）。
 
 #### Scenario: 確認画面が出るモードでは ask
 
-- **WHEN** `permission_mode` が `default` の payload で `git reset --hard` を渡す
-- **THEN** `permissionDecision` が `ask` になる
+- **WHEN** `permission_mode` が `default` の payload、`permission_mode` が `bypassPermissions` の payload で `git reset --hard` を渡す
+- **THEN** どれも `permissionDecision` が `ask` になる
 
-#### Scenario: bypassPermissions と不明なモードでは deny
+#### Scenario: auto と不明なモードでは deny
 
-- **WHEN** `permission_mode` が `bypassPermissions` の payload、`permission_mode` が無い payload、`permission_mode` が `somethingNew` の payload で `git reset --hard` を渡す
+- **WHEN** `permission_mode` が `auto` の payload、`permission_mode` が `dontAsk` の payload、`permission_mode` が無い payload、`permission_mode` が `somethingNew` の payload で `git reset --hard` を渡す
 - **THEN** どれも `permissionDecision` が `deny` になる
 
 #### Scenario: 上書きの環境変数が効く
 
-- **WHEN** `DEV_WORKFLOW_GIT_GUARD_FORCE=ask` を付けて、`permission_mode` が `bypassPermissions` の payload で `git reset --hard` を渡す
+- **WHEN** `DEV_WORKFLOW_GIT_GUARD_FORCE=ask` を付けて、`permission_mode` が `auto` の payload で `git reset --hard` を渡す
 - **THEN** `permissionDecision` が `ask` になる
 
 ### Requirement: 拒否理由は承認の取り方を案内する
 
-`permissionDecisionReason` は次をすべて含まなければならない（MUST）: 当たった操作の種類（9 種のどれか。複数当たればすべて）／規範の正本が `rules/destructive-git-guard.md` であること／実行せず主に承認を求めること／`deny` のときは、承認されたら主が自分で実行すること（Claude Code の入力欄で `!` を付けるか、自分の端末で）／言い換えたコマンドで再実行して hook を避けないこと。実機確認で `!` の入力も PreToolUse hook に止められると分かった場合は、`!` の案内を外さなければならない（MUST）。コマンドに付けて hook を通す目印（環境変数の前置など）を案内してはならない（MUST NOT）。
+`permissionDecisionReason` は次をすべて含まなければならない（MUST）: 当たった操作の種類（9 種のどれか。複数当たればすべて）／規範の正本が `rules/destructive-git-guard.md` であること／実行せず主に承認を求めること／承認されたら主が自分で実行すること（Claude Code の入力欄で `!` を付けるか、自分の端末で。`ask` のときは、確認画面が出ないセッション（`claude -p` など）ではそうすること）／`ask` のときは、確認画面を出していること／言い換えたコマンドで再実行して hook を避けないこと。`!` の入力は PreToolUse hook を通らない（対話セッションで `! git reset --hard` が止められずに実行されることを確かめた）ので、`!` の案内を残す。コマンドに付けて hook を通す目印（環境変数の前置など）を案内してはならない（MUST NOT）。
 
 #### Scenario: deny の理由に承認の取り方が書かれている
 
-- **WHEN** `permission_mode` が `bypassPermissions` の payload で `git push origin main` を渡す
+- **WHEN** `permission_mode` が `auto` の payload で `git push origin main` を渡す
 - **THEN** `permissionDecisionReason` に、main / master への push に当たったこと、`rules/destructive-git-guard.md`、主に承認を求めること、主が自分で実行することが含まれ、`DEV_WORKFLOW_GIT_GUARD` の文字列は含まれない
+
+#### Scenario: ask の理由に確認画面と、画面が出ないときの取り方が書かれている
+
+- **WHEN** `permission_mode` が `bypassPermissions` の payload で `git push origin main` を渡す
+- **THEN** `permissionDecision` が `ask` で、`permissionDecisionReason` に、main / master への push に当たったこと、`rules/destructive-git-guard.md`、確認画面を出していること、主に承認を求めること、主が自分で実行することが含まれ、`DEV_WORKFLOW_GIT_GUARD` の文字列は含まれない
 
 ### Requirement: 逃げ道と fail-open
 
@@ -117,7 +122,7 @@ dev-workflow は PreToolUse の command hook `scripts/git-destructive-guard.sh` 
 
 ### Requirement: wt-clean のブランチ削除が拒否されても黙って壊れない
 
-worktree プラグインの `skills/wt-clean/SKILL.md` は、`git branch -D`（squash 済みの 🟢/🟡 の削除と 🔴 の破棄削除）がこの hook に拒否されたときの扱いを書かなければならない（MUST）: 言い換えて再実行せず、worktree の削除までで止めてそのブランチを `HELD` に入れ、完了レポートに主が打つコマンド（`git -C <メインリポ> branch -D <ブランチ>`）を載せる。cron への載せ方の節には、無人運用のジョブの環境に `DEV_WORKFLOW_GIT_GUARD=off` を入れること（入れなければ squash 済みブランチの削除が拒否され、完了レポートの保留に載る）を書かなければならない（MUST）。
+worktree プラグインの `skills/wt-clean/SKILL.md` は、`git branch -D`（squash 済みの 🟢/🟡 の削除と 🔴 の破棄削除）がこの hook に止められたときの扱いを書かなければならない（MUST）。主の対話セッション（`cld` を含む）では確認画面が出て、主が承認すれば削除される。確認画面で断られたとき、または確認画面が出ないセッション（cron の `claude -p` など）で止まったときは: 言い換えて再実行せず、worktree の削除までで止めてそのブランチを `HELD` に入れ、完了レポートに主が打つコマンド（`git -C <メインリポ> branch -D <ブランチ>`）を載せる。cron への載せ方の節には、無人運用のジョブの環境に `DEV_WORKFLOW_GIT_GUARD=off` を入れること（入れなければ squash 済みブランチの削除が拒否され、完了レポートの保留に載る）を書かなければならない（MUST）。
 
 #### Scenario: wt-clean に拒否時の扱いがある
 

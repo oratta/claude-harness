@@ -152,7 +152,7 @@ wt_setup_frontmatter() {
 # --- dev-workflow の git-destructive-guard に git branch -D を拒否されたときの扱い（#710）
 
 @test "skill: wt-clean holds the branch when the hook denies git branch -D (#710)" {
-  grep -Eq 'git branch -D` が dev-workflow の hook に拒否されたら' "$WT_CLEAN_SKILL"
+  grep -Eq 'git branch -D` が dev-workflow の hook に止められたら' "$WT_CLEAN_SKILL"
   grep -Eq '言い換えて再実行しない' "$WT_CLEAN_SKILL"
   grep -Eq 'HELD\+=\("\$BRANCH_NAME \(ブランチ削除は hook に拒否' "$WT_CLEAN_SKILL"
   grep -Fq 'git -C <メインリポ> branch -D <ブランチ>' "$WT_CLEAN_SKILL"

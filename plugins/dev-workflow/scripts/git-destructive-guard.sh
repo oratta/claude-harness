@@ -14,8 +14,9 @@
 #   git reset --hard ・git clean -f（dry-run を除く）・main / master への git push（dry-run を除く）・
 #   git push --force 系（dry-run を除く）・git branch -D ・--no-verify / git commit -n ・--no-gpg-sign
 #
-# 返す値: permission_mode が default / acceptEdits / plan なら ask（確認画面が出る）、それ以外
-#   （bypassPermissions・dontAsk・auto・未知・欠落）は deny。DEV_WORKFLOW_GIT_GUARD_FORCE=ask|deny は
+# 返す値: permission_mode が default / acceptEdits / plan / bypassPermissions なら ask（対話セッションでは
+#   確認画面が出て主が承認できる。claude -p では確認できず実行されない。どちらも実機で確認済み）、それ以外
+#   （dontAsk・auto・未知・欠落）は deny。DEV_WORKFLOW_GIT_GUARD_FORCE=ask|deny は
 #   実機確認と bats のための上書き（恒久設定にしない）。
 # DEV_WORKFLOW_GIT_GUARD=off で全許可（セッションの起動時の環境に入れる。コマンドの前置きでは効かない）。
 #
@@ -355,7 +356,7 @@ forced = (os.environ.get("DEV_WORKFLOW_GIT_GUARD_FORCE") or "").strip()
 if forced in ("ask", "deny"):
     decision = forced
 else:
-    decision = "ask" if payload.get("permission_mode") in ("default", "acceptEdits", "plan") else "deny"
+    decision = "ask" if payload.get("permission_mode") in ("default", "acceptEdits", "plan", "bypassPermissions") else "deny"
 
 found = "、".join(LABELS[k] for k in ORDER if k in kinds)
 head = ("[dev-workflow git-destructive-guard] 破壊的 git 操作を検出した: " + found + "。"
@@ -364,7 +365,9 @@ if decision == "deny":
     body = ("このコマンドは実行していない。何を・なぜ・いつ実行するかを示して主に承認を求め、承認されたら"
             "主が自分で実行する（Claude Code の入力欄で ! を付けて打つか、自分の端末で）。")
 else:
-    body = ("主の確認画面を出している。承認されなければ実行せず、何を・なぜ実行するかを示して主に承認を求めること。")
+    body = ("主の確認画面を出している。承認されなければ実行せず、何を・なぜ実行するかを示して主に承認を求めること。"
+            "確認画面が出ないセッション（claude -p など）ではこのコマンドは実行されないので、主に承認を求め、"
+            "承認されたら主が自分で実行する（Claude Code の入力欄で ! を付けて打つか、自分の端末で）。")
 tail = "言い換えたコマンドや別の書き方で再実行して、この確認を避けてはならない。"
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
                                           "permissionDecision": decision,

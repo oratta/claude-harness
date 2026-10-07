@@ -5,10 +5,10 @@
 ## What Changes
 
 - dev-workflow に PreToolUse（matcher: `Bash`）の command hook `scripts/git-destructive-guard.sh` を足す。Bash のコマンド文字列を分解し（`&&` / `;` / `|` の連結、`$()` とバッククォートの中、`bash -c` の引数を含む）、ルールの一覧に当たる git 操作を見つけたら `permissionDecision` に `ask` か `deny` と理由を返す。当たらなければ何も出さない
-- `ask` と `deny` の使い分けは payload の `permission_mode` で決める。確認画面が出るモードでだけ `ask`、それ以外（bypassPermissions など）は `deny`。bypassPermissions で `ask` が確認画面を出すかは実装の最初に実機で確かめ、結果で bypassPermissions の扱いを確定する（判定条件は design.md）
+- `ask` と `deny` の使い分けは payload の `permission_mode` で決める。確認画面が出るモードでだけ `ask`、それ以外は `deny`。実機確認の結果、bypassPermissions は `ask`（対話セッションで確認画面が出る）、`auto` などは `deny` で確定した。当初は bypassPermissions を `deny` にしておき、実装の最初に実機で確かめて確定した（判定条件と結果は design.md）
 - `DEV_WORKFLOW_GIT_GUARD=off` で hook 全体を止められるようにする（既存の `DEV_WORKFLOW_MODEL_GUARD=off` と同じ形の逃げ道）
 - `rules/destructive-git-guard.md` に「一覧の操作は hook が実行前に止める（拒否されたら承認後も主が実行する）」ことと「hook が見るのはコマンド文字列だけなので、スクリプト経由・push 済みの `--amend`・`rebase -i`・ブランチ名を書かない `git push` は止まらない」ことを足す。既存の文は外さない。issue 概要 3 の「hook で拾えない項目だけに縮める」は、縮約を削除ではなく移設とする既存要件（`always-on-injection-scope`）と hook の穴（文字列しか見ない）のため採らない（理由は design.md）
-- `plugins/worktree/skills/wt-clean/SKILL.md` に、`git branch -D` が hook に拒否されたときの扱い（保留にして完了レポートに主が打つコマンドを載せる）と、無人運用のジョブの環境に `DEV_WORKFLOW_GIT_GUARD=off` を入れることを足す。何もしないと、主の `cld` セッションと cron（どちらも bypassPermissions）で squash 済みブランチの削除が毎回拒否される
+- `plugins/worktree/skills/wt-clean/SKILL.md` に、`git branch -D` が hook に拒否されたときの扱い（保留にして完了レポートに主が打つコマンドを載せる）と、無人運用のジョブの環境に `DEV_WORKFLOW_GIT_GUARD=off` を入れることを足す。何もしないと、確認画面で断られたときと cron の `claude -p` で squash 済みブランチの削除が止まり、wt-clean が言い換えて再実行するか黙って止まる
 - 予算ファイル `tests/injection-budget.txt` を実測に合わせて上げる（増分と理由を PR 本文に書く）
 
 ## Capabilities
