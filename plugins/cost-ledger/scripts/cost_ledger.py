@@ -471,13 +471,17 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
                      from_start: bool = True, offset_of=None):
     """会話ログの行の列から事実を返す。``seen`` に入っている requestId は先頭の行として扱わない。
 
-    ``seen`` は ``in`` と ``add`` を持てばよい（台帳の索引もこの形で渡す）。先頭の行の uuid を
-    持てる ``seen``（``add_head`` / ``head_uuid``）なら、複製された先頭の行を後続行と取り違えない。
-    requestId も uuid も無い行は空文字を鍵にする。
+    ``seen`` は ``SeenSet`` か、同じメソッドを持つもの（台帳の索引を包んだ ``_Seen``）を渡す。
+    先頭の行の uuid を持てる ``seen``（``add_head`` / ``head_uuid``）なら、複製された先頭の行を
+    後続行と取り違えない。確定行の出力の差分を正しく出すには、数えた出力を覚える
+    ``counted_output`` / ``bump_output`` が要る（素の ``set`` を渡すと数えた出力が常に 0 になり、
+    確定行の値がそのまま足されて二重に数える）。requestId も uuid も無い行は空文字を鍵にする。
 
     1 つの応答が複数の行に分かれるとき、そのファイルで最初に現れる行が先頭の行で、通常の事実を
-    1 つ出す。それ以降の行（後続行）は、実行した Bash が issue 番号か投稿の印を持つときだけ、
-    トークン 0 の補足の事実を ``<requestId>#<uuid>`` の鍵で出す。``from_start`` は、この呼び出しが
+    1 つ出す。それ以降の行（後続行）は、実行した Bash が issue 番号か投稿の印を持つとき、または
+    確定行（``stop_reason`` が付く行）の出力がそれまでに数えた出力より大きいときだけ、入力・
+    キャッシュ 0 で出力がその差分（差分が無ければ 0）の補足の事実を ``<requestId>#<uuid>`` の
+    鍵で出す。``from_start`` は、この呼び出しが
     ファイルの先頭から読んでいるか（uuid を持たない古い台帳の行の先頭の行を見分けるのに使う）。
     ``offset_of`` は、いま読んでいる行の元ログ内の行頭バイト位置を返す関数（``PositionedLines.position``
     を返す形）。渡されたとき、補足の事実に ``source_offset`` として保存し、同時刻の後続行の
@@ -1037,7 +1041,8 @@ def load_branches_facts(resolver: RepoResolver, branches) -> dict:
         return found
     configured = ledger_path()
     if configured is None:
-        seen = {branch: set() for branch in wanted}
+        # 素の set を渡すと数えた出力が常に 0 になり、確定行の値がそのまま足される
+        seen = {branch: SeenSet() for branch in wanted}
         for path in log_files(log_root()):
             try:
                 handle = open(path, encoding="utf-8", errors="replace")
@@ -1126,10 +1131,10 @@ def session_facts(session_ids, earliest: int, budget: float):
     mentions = re.compile("|".join(re.escape(s) for s in sorted(wanted))).search
     unreadable = SCAN_STATS["unreadable_lines"]
     facts = []
-    seen: set[str] = set()
     try:
         configured = ledger_path()
         if configured is not None:
+            seen: set[str] = set()  # 台帳の行の request_id の重複排除だけに使う
             if expired():
                 return None
             try:
@@ -1151,6 +1156,7 @@ def session_facts(session_ids, earliest: int, budget: float):
                     facts.append(fact)
             return facts
         resolver = _NoRepo()
+        heads = SeenSet()  # 数えた出力を覚える（素の set だと確定行の値がそのまま足される）
         for path in log_files(log_root()):
             if expired():
                 return None
@@ -1163,7 +1169,7 @@ def session_facts(session_ids, earliest: int, budget: float):
             with handle:
                 positioned = PositionedLines(handle)
                 lines = _drift_lines(positioned, mentions, expired)
-                for fact in facts_from_lines(lines, path, resolver, seen,
+                for fact in facts_from_lines(lines, path, resolver, heads,
                                              offset_of=lambda: positioned.position):
                     if fact["session_id"] in wanted:
                         facts.append(fact)
@@ -1188,6 +1194,14 @@ def summarise(facts, pricing: Pricing):
         usd, known = pricing.cost(fact)
         total += usd
         if is_continuation(fact):
+            # 補足の事実はメッセージ数に数えないが、確定行の出力の差分と金額は内訳にも足す
+            # （足さないと 1 行目の額とモデル別の内訳の合計が合わない）
+            if known and fact.get("output_tokens"):
+                row = per_model.setdefault(
+                    fact["model"], {"messages": 0, "usd": 0.0, **{f: 0 for f in TOKEN_FIELDS}}
+                )
+                row["usd"] += usd
+                row["output_tokens"] += fact["output_tokens"]
             continue
         messages += 1
         if not known:

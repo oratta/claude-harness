@@ -17,6 +17,7 @@ setup() {
 }
 
 # 1 行ぶんの assistant レコード。モデルは haiku（出力 $5/MTok）。
+# 実ログと同じ空白なしの JSON で書く（確定行を生の文字列 "stop_reason":" で見分ける分岐を通すため）。
 # $1=requestId $2=uuid $3=timestamp $4=output_tokens $5=stop_reason（無しなら none）$6=Bash の command（省略可）
 fo_row() {
   python3 - "$@" <<'PY'
@@ -32,7 +33,7 @@ msg = {"id": "m-" + rid, "model": "claude-haiku-4-5", "role": "assistant", "cont
                  "cache_creation": {"ephemeral_5m_input_tokens": 30, "ephemeral_1h_input_tokens": 40}}}
 print(json.dumps({"type": "assistant", "requestId": rid, "uuid": uuid, "timestamp": ts,
                   "sessionId": "S1", "isSidechain": True, "cwd": "/nonexistent/x",
-                  "gitBranch": "feat/x", "message": msg}, ensure_ascii=False))
+                  "gitBranch": "feat/x", "message": msg}, ensure_ascii=False, separators=(",", ":")))
 PY
 }
 
@@ -123,6 +124,48 @@ assert len(rows)==1 and rows[0]["output_tokens"]==300, rows'
   # 入力 100 ×$1 + 出力 1,000,000 ×$5 + キャッシュ分 = 約 $5.00
   [[ "$output" == *'$5.0'* ]] || { echo "$output"; return 1; }
   [[ "$output" == *"1 メッセージ"* ]] || { echo "$output"; return 1; }
+  # モデル別の内訳の行も確定値（合計の額と内訳が合う）
+  [[ "$output" == *'out=1,000,000'* ]] || { echo "$output"; return 1; }
+}
+
+# メイン側の応答 m1（3 行とも出力 400）とサブエージェント側の応答 s1（出力 8 → 251）。
+# 出力の合計は 400 + 251 = 651。確定行の値をそのまま足すと 400 × 3 + 8 + 251 = 1,459 になる。
+write_main_and_sub() {
+  {
+    fo_row m1 a1 2026-09-01T00:00:01.000Z 400 tool_use
+    fo_row m1 a2 2026-09-01T00:00:02.000Z 400 tool_use
+    fo_row m1 a3 2026-09-01T00:00:03.000Z 400 end_turn
+    fo_row s1 b1 2026-09-01T00:00:04.000Z 8 none
+    fo_row s1 b2 2026-09-01T00:00:05.000Z 251 tool_use
+  } | cl_write_log a
+}
+
+@test "finaloutput: without a ledger, the closing PR part of issue counts the output once (651)" {
+  write_main_and_sub
+  cl_init_repo "$BATS_TEST_TMPDIR/ra" acme/ra
+  run env -u COST_LEDGER_PATH python3 "$CL" issue 12 --repo "$BATS_TEST_TMPDIR/ra" --closing-pr 300:feat/x --json
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  # 先頭の行 2 つの入力・キャッシュ分（1 つ $0.0002195）+ 出力 651 × $5/MTok = $0.003694
+  python3 -c '
+import json, sys
+d = json.loads(sys.argv[1])
+usd = d["closing_prs"][0]["usd"]
+out = round((usd - 2 * (100 * 1.0 + 20 * 0.1 + 30 * 1.25 + 40 * 2.0) / 1e6) / 5e-6)
+assert out == 651, (out, d)
+' "$output"
+}
+
+@test "finaloutput: without a ledger, the re-read for the price drift check counts the output once (651)" {
+  write_main_and_sub
+  run env -u COST_LEDGER_PATH python3 - "$PLUGIN_DIR/scripts" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+import cost_ledger
+facts = cost_ledger.session_facts(["S1"], 0, 60.0)
+print(sum(f["output_tokens"] for f in facts))
+PY
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "651" ] || { echo "$output"; return 1; }
 }
 
 @test "finaloutput: ledger-sync writes the supplement and matches the direct read" {
@@ -180,16 +223,22 @@ legacy_ledger() {
 }
 
 @test "finaloutput: an old-format state file is rebuilt from the ledger without double counting" {
-  write_two a
+  # 台帳に先頭の行（出力 8）だけがある状態で、counted の表を持たない古い形の控えにする
+  fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none | cl_write_log a
   export COST_LEDGER_PATH="$LEDGER"
   python3 "$CL" ledger-sync --quiet
-  # counted の表を持たない古い形の控えにする（表を落とす）
   python3 - "$LEDGER.state.sqlite" <<'PY'
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1]); db.execute("DROP TABLE IF EXISTS counted"); db.commit()
 PY
-  python3 "$CL" ledger-sync --rescan --quiet
-  [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "2" ]
+  # 確定行を --rescan なしで取り込む。控えを台帳から作り直していなければ差分が 251 になる
+  write_two a
+  python3 "$CL" ledger-sync --quiet
+  python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+assert [r["output_tokens"] for r in rows] == [8, 243], rows
+PY
 }
 
 @test "finaloutput: --rescan after the conversation log is gone appends nothing and exits 0" {
