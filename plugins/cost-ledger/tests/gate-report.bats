@@ -19,9 +19,9 @@ setup() {
   CWD="$WORK/cwd"
   mkdir -p "$WORK/scripts" "$WORK/bin" "$WORK/log" "$WORK/tmp" "$FIX" "$CWD"
   cp "$PLUGIN_DIR/scripts/gate-report.sh" "$WORK/scripts/gate-report.sh"
-  if [ -f "$PLUGIN_DIR/scripts/gate_report.py" ]; then
-    cp "$PLUGIN_DIR/scripts/gate_report.py" "$WORK/scripts/gate_report.py"
-  fi
+  for f in gate_report.py write_allow.py; do
+    if [ -f "$PLUGIN_DIR/scripts/$f" ]; then cp "$PLUGIN_DIR/scripts/$f" "$WORK/scripts/$f"; fi
+  done
   SCRIPT="$WORK/scripts/gate-report.sh"
   export GH_LOG="$WORK/log/gh.log" COST_LOG="$WORK/log/cost.log" GH_FIX="$FIX"
   export FAKE_CWD_REPO="acme/cwd-repo"
@@ -33,6 +33,27 @@ setup() {
   write_stub_cost_ledger
   write_stub_gh
   export PATH="$WORK/bin:$PATH"
+  # GitHub に書くのは許可の一覧に載っているリポジトリだけ（spec cost-ledger-write-allowlist）。
+  # このファイルのテストは「一覧に載っている」前提の動きを固定するので、cwd を origin が
+  # acme/cwd-repo の git リポジトリにし、テストが名指しするリポジトリを全部載せた一覧を cwd の外に置く。
+  # 一覧に無いときの動きは write-allow.bats が固定する
+  cl_init_repo "$CWD" acme/cwd-repo
+  export HOME="$WORK/home"                  # 利用者の $HOME/.config/cost-ledger/write-repos を読まない
+  export COST_LEDGER_WRITE_REPOS_FILE="$WORK/write-repos"
+  write_allow_list
+}
+
+# 許可の一覧を作る。cwd のリポジトリ（acme/cwd-repo）と、このファイルのコマンドが名指しする
+# リポジトリ（-R / --repo / GH_REPO= / シェル変数 R= / gh api のパス / github.com の URL）を、
+# このファイル自身から拾って全部載せる。「対象の確認までは行い、書かない」ことを確かめるテストが
+# 名指しする名前も入る。手で並べないのは、テストを足したときに載せ忘れないようにするため
+write_allow_list() {
+  {
+    echo "acme/cwd-repo"
+    grep -oE -- '(-R |--repo[ =]|GH_REPO=|R=|repos/|github\.com/)[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+' \
+      "$BATS_TEST_FILENAME" | sed -E 's/^(-R |--repo[ =]|GH_REPO=|R=|repos\/|github\.com\/)//' | sort -u
+  } > "$COST_LEDGER_WRITE_REPOS_FILE"
+  chmod 600 "$COST_LEDGER_WRITE_REPOS_FILE"
 }
 
 # timeline を受け、引数と標準入力（既存の本文）を記録して、既存の行に 1 行足した固定の本文を返す
@@ -1563,7 +1584,6 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
 
 @test "timeline-hook: two triggers at once end up as one comment with two rows" {  # きっかけの違う 2 つを同時に流すと、コメントは 1 本で表は 2 行
   use_real_cost_ledger
-  cl_init_repo "$CWD" acme/cwd-repo        # 対象（acme/cwd-repo）が作業中のリポジトリでなければ積まれない
   export FAKE_GH_DELAY=0.2
   hook_json "gh pr comment 300 --body x" > "$WORK/p1.json"
   hook_json "gh pr ready 300" > "$WORK/p2.json"
@@ -1578,7 +1598,6 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
 
 @test "timeline-hook: a trigger whose check was slow still lands above the later one" {  # 先に流した方の「対象の確認」だけが遅れて後の方が先に書いても、両方が終わると先に流したきっかけの行が上にある
   use_real_cost_ledger
-  cl_init_repo "$CWD" acme/cwd-repo        # 対象（acme/cwd-repo）が作業中のリポジトリでなければ積まれない
   hook_json "gh pr comment 300 --body x" > "$WORK/p1.json"
   hook_json "gh pr ready 300" > "$WORK/p2.json"
   FAKE_GH_CONFIRM_DELAY=3 bash "$SCRIPT" < "$WORK/p1.json" &
