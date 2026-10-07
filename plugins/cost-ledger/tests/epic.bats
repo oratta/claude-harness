@@ -357,6 +357,39 @@ PY
   cost_json 10 | check 'i[11]["title"] == "12345678901234567890123456789012345678901234567890"'
 }
 
+@test "epic: control characters in a title are shown as spaces" {  # ESC・改行・U+202E は空白 1 つになり、内訳の行は増えない。--json の title は取った値のまま
+  logs
+  # 題名の中身（JSON の書き方）: x ESC [2Ky 改行 空白 4 つ #99 closed $9.00 — fake U+202E z
+  gql 10 epic OPEN "$(prs)" "$(child 11 'x\u001b[2Ky\n    #99 closed $9.00 — fake‮z' CLOSED 0)"
+  run cost 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" != *$'\x1b'* ]] || { echo "ESC が残っている"; return 1; }
+  [[ "$output" != *$'\xe2\x80\xae'* ]] || { echo "U+202E が残っている"; return 1; }
+  printf '%s\n' "$output" | grep -qxF '    #11 closed $2.00 — x [2Ky #99 closed $9.00 — fake z' || { echo "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | grep -cE '^ +#[0-9]+ (open|closed) ')" -eq 2 ] || { echo "$output"; return 1; }
+  cost_json 10 | check 'i[11]["title"] == "x\x1b[2Ky\n    #99 closed $9.00 — fake‮z"'
+}
+
+@test "epic: a title is cut after control characters are removed" {  # 先頭のタブ 3 つと 40 文字 → 取り除いたあとは 40 文字なので切らない
+  logs
+  gql 10 epic OPEN "$(prs)" "$(child 11 '\t\t\t1234567890123456789012345678901234567890' CLOSED 0)"
+  run cost 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qxF '    #11 closed $2.00 — 1234567890123456789012345678901234567890' || { echo "$output"; return 1; }
+}
+
+@test "epic: control characters in a skipped repository name are shown as spaces" {  # 数えていない子 issue の行のリポジトリ名も同じ規則。--json の repo は取った値のまま
+  logs
+  gql 10 epic OPEN "$(prs)" \
+    "$(child 11 'child a' CLOSED 0)" \
+    "$(child 5 elsewhere OPEN 0 "$(prs)" 'acme/o\u001b[2Kt\nher')"
+  run cost 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" != *$'\x1b'* ]] || { echo "ESC が残っている"; return 1; }
+  printf '%s\n' "$output" | grep -qxF '  数えていない子 issue: acme/o [2Kt her#5（別のリポジトリ）' || { echo "$output"; return 1; }
+  cost_json 10 | check 'd["skipped"][0]["repo"] == "acme/o\x1b[2Kt\nher"'
+}
+
 @test "epic: a PR from a fork is not counted" {  # isCrossRepository が真の PR だけ → closing_prs は空、own_usd は 2.0
   logs
   tree "$(pr 300 feat/a true)" ""

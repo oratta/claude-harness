@@ -32,6 +32,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import unicodedata
 from collections import defaultdict
 
 # リポジトリ識別子が導けなかった行の印。黙って除外も合算もせず、この名前で別立てにする。
@@ -2111,10 +2112,25 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
 
 EPIC_TITLE_WIDTH = 40
 
+# 表示の前に空白へ置き換える文字の一般カテゴリ（制御文字・書式文字・行と段落の区切り）
+_UNPRINTABLE_CATEGORIES = frozenset(("Cc", "Cf", "Zl", "Zp"))
+
+
+def _display_text(text: str) -> str:
+    """GitHub から取った文字列を、端末に出せる形にする（``--json`` には使わない）。
+
+    制御文字（改行・タブ・ESC・双方向制御文字など）を空白 1 つに置き換え、続いた空白を 1 つに
+    畳み、前後の空白を落とす。題名で内訳の行を割ったり、端末の表示を書き換えたりできないように
+    するためで、文としての内容は見ない。
+    """
+    cleaned = "".join(" " if unicodedata.category(char) in _UNPRINTABLE_CATEGORIES else char
+                      for char in text)
+    return re.sub(" {2,}", " ", cleaned).strip(" ")
+
 
 def _epic_line(row: dict, has_children: bool) -> str:
     """内訳の 1 行。額はその issue と下の issue すべての和で、段ごとに空白を 2 つ足す。"""
-    title = row["title"]
+    title = _display_text(row["title"])
     if len(title) > EPIC_TITLE_WIDTH:
         title = title[:EPIC_TITLE_WIDTH - 1] + "…"
     line = "%s#%d %s %s" % ("  " * (row["depth"] + 1), row["number"], row["state"],
@@ -2187,7 +2203,8 @@ def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print(_epic_line(row, row["number"] in parents))
     if skipped:
         print("  数えていない子 issue: %s（別のリポジトリ）"
-              % "、".join("%s#%d" % (row["repo"], row["number"]) for row in skipped))
+              % "、".join("%s#%d" % (_display_text(row["repo"]), row["number"])
+                             for row in skipped))
     if result["unknown_repo_messages"]:
         print("  リポジトリ不明: %d 件 %s（cwd が削除済みで、どのリポジトリの issue か絞れない。"
               "合計には入れていない）"
