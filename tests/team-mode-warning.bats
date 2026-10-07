@@ -26,7 +26,7 @@ assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart"
 @test "value true also warns" {
   CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=true run "$SCRIPT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *systemMessage* ]]
+  [[ "$output" == *systemMessage* ]] || return 1
 }
 
 @test "unset prints nothing" {
