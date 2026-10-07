@@ -35,4 +35,4 @@
 
 ## 7. archive のあと
 
-- [ ] 7.1 `openspec/specs/cost-ledger-gate-report/spec.md` の Purpose（delta では変えられない）に、書き込むのは許可の一覧に載っているリポジトリだけであることを 1 文足す。新しい `openspec/specs/cost-ledger-write-allowlist/spec.md` の Purpose を書く。触る範囲: openspec/specs/cost-ledger-gate-report/spec.md:3-4、openspec/specs/cost-ledger-write-allowlist/spec.md（archive で作られる）
+- [x] 7.1 `openspec/specs/cost-ledger-gate-report/spec.md` の Purpose（delta では変えられない）に、書き込むのは許可の一覧に載っているリポジトリだけであることを 1 文足す。新しい `openspec/specs/cost-ledger-write-allowlist/spec.md` の Purpose を書く。触る範囲: openspec/specs/cost-ledger-gate-report/spec.md:3-4、openspec/specs/cost-ledger-write-allowlist/spec.md（archive で作られる）

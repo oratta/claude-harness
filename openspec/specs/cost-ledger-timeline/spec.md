@@ -444,6 +444,8 @@ hook 自身の書き込み（コストのコメントの作成と書き換え）
 ### Requirement: `gh` の呼び出し回数
 システムが 1 行積むために呼ぶ `gh` は、対象 1 件あたり 3 回（対象の確認・既存コメントの取得・書き込み）以下で MUST ある。ただし、PR でない issue にきっかけ `issue クローズ` を含む行を積むときは、閉じた PR の問い合わせ 1 回を足した 4 回以下で MUST ある。既存コメントの取得がコメント 100 件ごとに 1 ページ増える分と、issue 向けのコマンドや `gh api` の issue 向けの endpoint（`issues/<番号>/comments`・`issues/<番号>`）に渡された番号が PR だったときの 1 回は、この数に含めない。回数は、その PR / issue に既に積まれている行の数にも、その issue を閉じた PR の数にも比例してはなら MUST NOT ない。きっかけが `gh api`・`gh pr create`・`gh pr reopen` でも、この回数は変わってはなら MUST NOT ない。
 
+許可の一覧（`cost-ledger-write-allowlist`）が空のとき、および hook の `cwd` の origin のリポジトリかコマンドが名指ししたリポジトリが一覧に無いとき、その対象について呼ぶ `gh` は 0 回で MUST ある。一覧の判定のために `gh` を呼んではなら MUST NOT ない。
+
 #### Scenario: PR へのコメント
 - **WHEN** `gh pr comment 300 --body x` の hook JSON を流す（コメントは 100 件未満）
 - **THEN** `gh` が呼ばれた回数は 3 回
@@ -467,6 +469,10 @@ hook 自身の書き込み（コストのコメントの作成と書き換え）
 #### Scenario: `gh api` での issue のクローズ
 - **WHEN** PR でない issue #12 に `gh api -X PATCH repos/o/r/issues/12 -f state=closed` の hook JSON を流す
 - **THEN** `gh` が呼ばれた回数は 4 回（閉じた PR の問い合わせを含む）
+
+#### Scenario: 一覧に無いリポジトリ
+- **WHEN** 許可の一覧に `cwd` の origin のリポジトリが無い状態で `gh pr comment 300 --body x` の hook JSON を流す
+- **THEN** `gh` が呼ばれた回数は 0 回
 
 ### Requirement: `issue クローズ` では、閉じた PR を合わせた合計の行を積む
 システムは、PR でない issue に、きっかけに `issue クローズ` を含む行を積むとき、その issue を閉じた PR を GitHub に 1 回だけ問い合わせ MUST る。問い合わせは裏のプロセスが GraphQL の `closedByPullRequestsReferences`（既定の引数、先頭 100 件）で行い、ホストは他の呼び出しと同じく github.com に固定 SHALL する。それ以外のきっかけと、対象が PR のときは、問い合わせてはなら MUST NOT ない。
