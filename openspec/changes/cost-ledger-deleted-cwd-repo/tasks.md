@@ -27,14 +27,14 @@
 ## 5. 読むときの補正の適用
 
 - [x] 5.1 台帳から補正行を集める関数（`"repo_fix": true` を含む行だけを JSON として読む 1 回の走査）と、事実の列から補正行を取り除いて「不明」の事実を置き換える包みを足し、`load_facts` の台帳の経路 2 つ（issue で絞る経路とそれ以外）に当てる。`iter_ledger_issue_facts`・`iter_ledger_facts`・`load_branches_facts` は変えない。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:1165-1183`（`load_facts` と、その直前に置く新しい関数）
-- [ ] 5.2 2.2 と 2.3 の読む側のテストが通ることを確かめる。触る範囲: なし
+- [x] 5.2 2.2 と 2.3 の読む側のテストが通ることを確かめる。触る範囲: なし
 
 ## 6. 表示と `--json`
 
-- [ ] 6.1 `cmd_issue` に、数えた区間の行のうち `repo_inferred` が真の行の件数と額を足す（`--json` の `inferred_repo_usd`・`inferred_repo_messages` と、「リポジトリ不明」の行の直後の `推定で数えた行:`）。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:2336-2407`（`cmd_issue`）
-- [ ] 6.2 `assign_epic_rows` が、ヘッドブランチの一致でなく区間で割り当てた行のうち `repo_inferred` が真の行の件数と額を返し、`cmd_epic` が表示と `--json` に出す。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:2188-2255`（`assign_epic_rows`）、`plugins/cost-ledger/scripts/cost_ledger.py:2446-2513`（`cmd_epic`）
-- [ ] 6.3 `cmd_branch` の番号なしの経路（`scope_repo_id` があるとき）に `推定で数えた行:` を足す。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:1928-1965`（`cmd_branch`）
-- [ ] 6.4 2.2 と 2.4 のテストと、既存の bats 全部（`bats plugins/cost-ledger/tests`）が通ることを確かめる。触る範囲: なし
+- [x] 6.1 `cmd_issue` に、数えた区間の行のうち `repo_inferred` が真の行の件数と額を足す（`--json` の `inferred_repo_usd`・`inferred_repo_messages` と、「リポジトリ不明」の行の直後の `推定で数えた行:`）。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:2336-2407`（`cmd_issue`）
+- [x] 6.2 `assign_epic_rows` が、ヘッドブランチの一致でなく区間で割り当てた行のうち `repo_inferred` が真の行の件数と額を返し、`cmd_epic` が表示と `--json` に出す。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:2188-2255`（`assign_epic_rows`）、`plugins/cost-ledger/scripts/cost_ledger.py:2446-2513`（`cmd_epic`）
+- [x] 6.3 `cmd_branch` の番号なしの経路（`scope_repo_id` があるとき）に `推定で数えた行:` を足す。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:1928-1965`（`cmd_branch`）
+- [x] 6.4 2.2 と 2.4 のテストと、既存の bats 全部（`bats plugins/cost-ledger/tests`）が通ることを確かめる。触る範囲: なし
 
 ## 7. 文書
 

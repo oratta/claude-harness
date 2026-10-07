@@ -1821,6 +1821,27 @@ def _interval(session_id: str, rows: list, closed_by):
     }
 
 
+INFERRED_LINE = "  推定で数えた行: %d 件 $%s（cwd が削除済みで、パスからリポジトリを推定した。合計に入れている）"
+
+
+def inferred_totals(facts, pricing: Pricing) -> tuple[float, int]:
+    """事実の列のうち、識別子を推定で決めた行（repo_inferred が真）の額と件数（補足は件数に数えない）。"""
+    usd, messages = 0.0, 0
+    for fact in facts:
+        if fact.get("repo_inferred"):
+            usd += pricing.cost(fact)[0]
+            if not is_continuation(fact):
+                messages += 1
+    return usd, messages
+
+
+def render_inferred(usd: float, messages: int) -> list[str]:
+    """「推定で数えた行」の表示。件数が 0 なら出さない。"""
+    if not messages:
+        return []
+    return [INFERRED_LINE % (messages, format(usd, ",.2f"))]
+
+
 def price_intervals(intervals: list, pricing: Pricing) -> list:
     """区間ごとの金額と件数を足す。単価を知るのはここだけで、区間分割は事実だけを見る。"""
     for row in intervals:
@@ -2193,6 +2214,9 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
         unknown_usd = summarise(unknown, pricing)["total_usd"]
         print("  リポジトリ不明: %d 件 $%s（cwd が削除済みで、どのリポジトリの %s か絞れない）"
               % (len(unknown), format(unknown_usd, ",.2f"), args.branch))
+    if scope is not None:
+        for line in render_inferred(*inferred_totals(facts, pricing)):
+            print(line)
     if not getattr(args, "no_drift_check", False):
         for line in render_price_drift(price_drift({f["session_id"] for f in facts}, pricing)):
             print(line)
@@ -2442,7 +2466,7 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
     branch_micro = {branch: _micro(branch_facts.get(branch, []), pricing) for branch in owner}
     counted = [fact for branch in owner for fact in branch_facts.get(branch, [])]
 
-    result, own, usd = [], {}, {}
+    result, own, usd, inferred = [], {}, {}, []
     for row in issues:
         number = row["number"]
         by_branch = defaultdict(list)
@@ -2456,6 +2480,8 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
             if branch not in owner:
                 assigned += micro
                 counted.extend(facts)
+                # 区間で割り当てた行のうち推定で決めた行（ヘッドブランチの経路の行は含めない）
+                inferred.extend(fact for fact in facts if fact.get("repo_inferred"))
             if branch not in heads:
                 standalone += micro
         own[number] = usd[number] = assigned
@@ -2485,6 +2511,8 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
         "unknown_repo_usd": _micro(unknown, pricing) / 1e6,
         # 同じ応答の 2 行目以降の事実はメッセージ数に数えない（``summarise()`` と同じ）
         "unknown_repo_messages": sum(1 for fact in unknown if not is_continuation(fact)),
+        "inferred_repo_usd": _micro(inferred, pricing) / 1e6,
+        "inferred_repo_messages": sum(1 for fact in inferred if not is_continuation(fact)),
         "sessions": {fact["session_id"] for fact in counted},
     }
 
@@ -2595,6 +2623,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
     else:
         combined = {"prs": [], "outside_usd": total, "total_usd": total}
     label = resolver.label(repo_id)
+    inferred_usd, inferred_messages = inferred_totals(
+        (fact for row in matched for fact in row["facts"]), pricing)
     payload = {
         "issue": number,
         "repo_id": repo_id,
@@ -2604,6 +2634,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         "intervals": [interval_payload(row, resolver) for row in matched],
         "unknown_repo_usd": sum(row["usd"] for row in unknown),
         "unknown_repo_messages": sum(row["messages"] for row in unknown),
+        "inferred_repo_usd": inferred_usd,
+        "inferred_repo_messages": inferred_messages,
         "usd_jpy_rate": pricing.jpy_rate,
         "closing_prs": combined["prs"],
         "outside_pr_usd": combined["outside_usd"],
@@ -2635,6 +2667,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print("  リポジトリ不明: %d 件 $%s（cwd が削除済みで、どのリポジトリの #%s か絞れない）"
               % (payload["unknown_repo_messages"],
                  format(payload["unknown_repo_usd"], ",.2f"), number))
+    for line in render_inferred(inferred_usd, inferred_messages):
+        print(line)
     print("  ※ issue 単位は区間分割による推定です。区間の内訳で寄せ先を確かめてください。")
     for line in render_price_drift(drift):
         print(line)
@@ -2723,6 +2757,8 @@ def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
             "skipped": skipped,
             "unknown_repo_usd": result["unknown_repo_usd"],
             "unknown_repo_messages": result["unknown_repo_messages"],
+            "inferred_repo_usd": result["inferred_repo_usd"],
+            "inferred_repo_messages": result["inferred_repo_messages"],
         }, ensure_ascii=False, indent=2))
         return 0
     print(headline(result["total_usd"], pricing, "issue #%d (%s)" % (number, label), "子 issue 込み"))
@@ -2740,6 +2776,8 @@ def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print("  リポジトリ不明: %d 件 %s（cwd が削除済みで、どのリポジトリの issue か絞れない。"
               "合計には入れていない）"
               % (result["unknown_repo_messages"], _dollars(result["unknown_repo_usd"])))
+    for line in render_inferred(result["inferred_repo_usd"], result["inferred_repo_messages"]):
+        print(line)
     print("  ※ 額は区間分割による推定です。issue ごとの区間の内訳は /cost <その issue の番号> で"
           "見られます（区間だけの額なので、閉じた PR の分を含むこの内訳の額とは一致しません）。")
     for line in render_price_drift(drift):
