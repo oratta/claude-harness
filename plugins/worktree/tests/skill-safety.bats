@@ -163,3 +163,17 @@ wt_setup_frontmatter() {
   printf '%s\n' "$section" | grep -Fq 'DEV_WORKFLOW_GIT_GUARD=off'
   printf '%s\n' "$section" | grep -Fq '唯一の歯止め'
 }
+
+# --- #732: context: fork / background は同名の commands ラッパーが勝つ現行経路では効かない。
+# 先頭 12 行でそれが読め、本文で観測（版・経路）と残す理由が読めること。
+
+@test "skill: wt-setup first 12 lines say the fork setting is ineffective and point to the body (#732)" {
+  head -n 12 "$WT_SETUP_SKILL" | grep -E '^#.*効かない' | grep -q '本文'
+}
+
+@test "skill: wt-setup body documents the observation and why the fork setting stays (#732)" {
+  grep -q '^## frontmatter の fork 指定について' "$WT_SETUP_SKILL"
+  grep -q '2\.1\.292' "$WT_SETUP_SKILL"
+  grep -q 'claude -p --plugin-dir' "$WT_SETUP_SKILL"
+  grep -q '残す理由' "$WT_SETUP_SKILL"
+}
