@@ -40,7 +40,7 @@ setup() {
   export PATH="$WORK/bin:$PATH"
 }
 
-# gh: 引数を 1 呼び出し 1 行で $GH_LOG に書く。repos/{owner}/{repo}/... は STUB_CWD_REPO（既定 $SELF）で
+# gh: 引数を 1 呼び出し 1 行で $GH_LOG に書く。repos/{owner}/{repo}/... は STUB_CWD_REPO（既定 ${SELF}）で
 #     埋め、対象の確認には「問い合わせたリポジトリ」を返す。STUB_RETURNS があればその名前を返す
 #     （改名・移管で別の名前へ転送された場合の再現）
 # cost_ledger.py: timeline の代わりに固定の本文を返す
@@ -91,7 +91,7 @@ allow() {  # 引数を 1 行ずつ一覧のファイルに書く（権限 600）
   chmod 600 "$LIST"
 }
 
-hook() {  # $1=コマンド $2=cwd（既定 $CWD）。hook JSON を標準入力から流す
+hook() {  # $1=コマンド $2=cwd（既定 ${CWD}）。hook JSON を標準入力から流す
   "$REAL_PYTHON" -c 'import json, sys
 print(json.dumps({"session_id": "S1", "hook_event_name": "PostToolUse", "tool_name": "Bash",
                   "tool_input": {"command": sys.argv[1]},
@@ -110,7 +110,7 @@ no_write() { [ ! -f "$GH_LOG" ] || ! grep -qE -- '-X (POST|PATCH) ' "$GH_LOG"; }
 reset_logs() { rm -f "$GH_LOG" "$PY_LOG"; }
 
 # write_allow.allowed(repo, cwd) を直接呼ぶ。書いてよければ終了コード 0
-judge() {  # $1=owner/repo $2=cwd（既定 $CWD）
+judge() {  # $1=owner/repo $2=cwd（既定 ${CWD}）
   "$REAL_PYTHON" -c 'import sys
 sys.path.insert(0, sys.argv[1])
 import write_allow
