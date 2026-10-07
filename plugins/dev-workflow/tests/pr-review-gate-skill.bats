@@ -1042,3 +1042,14 @@ step5_body() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_STAGE}"; }
 @test "conversation reply (#721): 3-c keeps the 4-line block and allows the conversation form on line 1" {
   step3c_body | grep -F '1 行目' | grep -qF '会話で受領（セッション'
 }
+
+@test "conversation reply (#721): step 5 binds the matched reply to this declaration (later than it, not about another PR)" {
+  body="$(step5_body)"
+  echo "$body" | grep -F '宣言コメントの作成日時' | grep -qF 'より後'
+  echo "$body" | grep -F '別の PR' | grep -qF '合格させない'
+}
+
+@test "conversation reply (#721): 3-c condition 3 rechecks the binding against the first declaration" {
+  cond3="$(step3c_body | grep '^3\. ')"
+  echo "$cond3" | grep -F '最初の宣言' | grep -qF 'より後'
+}
