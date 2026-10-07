@@ -545,6 +545,9 @@ def iter_facts(root: str, resolver: RepoResolver, branch: str | None = None):
 # 台帳の場所を決める唯一の入口。既定のパスは持たない（個人のディレクトリ構成を
 # リポジトリに残さないため。LLM_LOG_DIR と同じ扱い）。
 LEDGER_ENV = "COST_LEDGER_PATH"
+# plugin.json の userConfig（LEDGER_PATH）の値。プラグインを有効にするときと /config で設定され、
+# hook のプロセスにこの名前の環境変数で渡る。設定されていれば LEDGER_ENV より優先する。
+LEDGER_OPTION_ENV = "CLAUDE_PLUGIN_OPTION_LEDGER_PATH"
 
 # 台帳の 1 行は build_fact の辞書をそのまま dumps したもので、先頭の鍵が request_id。
 # 索引を作るとき、この接頭辞なら JSON をパースせずに requestId を取り出せる。
@@ -583,7 +586,7 @@ class LedgerError(Exception):
 
 
 def ledger_path():
-    return os.environ.get(LEDGER_ENV) or None
+    return os.environ.get(LEDGER_OPTION_ENV) or os.environ.get(LEDGER_ENV) or None
 
 
 def protected_root() -> str:
@@ -932,6 +935,59 @@ def load_facts(resolver: RepoResolver, branch: str | None = None, issue: str | N
     if issue is not None and branch is None:
         return iter_ledger_issue_facts(ledger, issue)
     return iter_ledger_facts(ledger, branch=branch)
+
+
+def load_branches_facts(resolver: RepoResolver, branches) -> dict:
+    """ブランチごとの事実の列を ``{ブランチ: [事実]}`` で返す（issue の合計の PR の分）。
+
+    各ブランチの列は ``load_facts(resolver, branch=<ブランチ>)`` と同じ行になる（重複排除も
+    ブランチごと）。台帳への差分追記は行わない（呼ぶ側が直前に ``load_facts()`` で 1 回追記
+    している前提）。台帳も会話ログも 1 回だけ走査し、ブランチの数に比例させない。
+    """
+    wanted = list(dict.fromkeys(branches))
+    found = {branch: [] for branch in wanted}
+    if not wanted:
+        return found
+    configured = ledger_path()
+    if configured is None:
+        seen = {branch: set() for branch in wanted}
+        for path in log_files(log_root()):
+            try:
+                handle = open(path, encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            with handle:
+                lines = [line for line in handle
+                         if '"assistant"' in line and any(branch in line for branch in wanted)]
+            for branch in wanted:
+                found[branch].extend(facts_from_lines(lines, path, resolver, seen[branch], branch))
+        return found
+    ledger = resolve_ledger(configured)
+    seen = set()
+    try:
+        handle = open(ledger, encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return found
+    except OSError as error:
+        raise LedgerError("台帳 %s を読めません: %s" % (ledger, error))
+    with handle:
+        for line in handle:
+            if not line.strip() or not any(branch in line for branch in wanted):
+                continue
+            try:
+                fact = json.loads(line)
+            except ValueError:
+                SCAN_STATS["unreadable_lines"] += 1
+                continue
+            if not isinstance(fact, dict) or not isinstance(fact.get("request_id"), str):
+                SCAN_STATS["unreadable_lines"] += 1
+                continue
+            branch = fact.get("branch")
+            if branch not in found or (branch, fact["request_id"]) in seen:
+                continue
+            seen.add((branch, fact["request_id"]))
+            found[branch].append(fact)
+    return found
 
 
 class _DriftCutOff(Exception):
@@ -1396,6 +1452,23 @@ def timeline_row(at_ms: int, trigger: str, current, previous) -> str:
     )
 
 
+TIMELINE_TOTAL_PREFIX = "合計（"
+
+
+def timeline_total_trigger(prs, outside_usd: float) -> str:
+    """合計の行の「きっかけ」の欄。``合計（#300 $3.00 + PR 外 $2.00）``。
+
+    PR は件数によらず全部を ``#<番号> $<額>`` で番号の昇順に書く（まとめない）。
+    """
+    parts = ["#%d %s" % (pr["number"], _dollars(pr["usd"])) for pr in sorted(prs, key=lambda p: p["number"])]
+    parts.append("PR 外 %s" % _dollars(outside_usd))
+    return "%s%s）" % (TIMELINE_TOTAL_PREFIX, " + ".join(parts))
+
+
+def _is_total_trigger(trigger: str) -> bool:
+    return trigger.startswith(TIMELINE_TOTAL_PREFIX)
+
+
 def timeline_rewrite_increments(row: str, current, previous) -> str:
     """既存の行の増分 3 項目だけを書き直す。時刻・きっかけ・累計の表示は元の文字列のまま。"""
     cells = row.split("|")
@@ -1452,18 +1525,52 @@ def _row_trigger(row: str) -> str:
     return cells[2].strip() if len(cells) > 2 else ""
 
 
-def build_timeline(body: str, at_ms: int, trigger: str, current, first_line) -> str:
-    """既存の本文に 1 行足した新しい本文を返す（design の決定 3）。
+def _timeline_insert(entries: list, at_ms: int, trigger: str, values, kept, base=None) -> bool:
+    """``entries``（``[時刻, きっかけ, 累計, 行]`` の列）の鍵の位置に 1 行入れる。同じ鍵が既に
+    あれば入れずに False。
 
-    ``current`` は (マイクロドル, 入出力, キャッシュ)。``first_line`` はマイクロドルから
-    1 行目を作る関数。同じ節目（時刻・きっかけ・累計が同じ）が既にあれば ``body`` を返す。
+    ``base`` を渡すと合計の行として扱い、増分はその値との差で、ほかの行を書き直さない。渡さない
+    ときは、前にある合計でない、いちばん近い行を増分の基準にし、後ろにある合計でない最初の
+    1 行の増分を新しい行の累計との差に書き直す。
+    """
+    key = (at_ms, trigger.encode("utf-8"), values)
+    keys = [(at, name.encode("utf-8"), other) for at, name, other, _row in entries]
+    if key in keys:
+        return False
+    position = sum(1 for other in keys if other < key)
+    if base is not None:
+        previous = base
+    else:
+        before = [entry for entry in entries[:position] if not _is_total_trigger(entry[1])]
+        if before:
+            previous = before[-1][2]
+        else:
+            previous = TIMELINE_UNKNOWN if kept else None
+        for following in entries[position:]:
+            if not _is_total_trigger(following[1]):
+                following[3] = timeline_rewrite_increments(following[3], following[2], values)
+                break
+    entries.insert(position, [at_ms, trigger, values, timeline_row(at_ms, trigger, values, previous)])
+    return True
+
+
+def build_timeline(body: str, at_ms: int, trigger: str, current, first_line, total=None) -> str:
+    """既存の本文に節目の行（と合計の行）を足した新しい本文を返す（#303 の design の決定 3、
+    #689 の design の決定 4〜6）。
+
+    ``current`` は (マイクロドル, 入出力, キャッシュ)。``first_line`` はマイクロドルと「最後の行が
+    合計の行か」から 1 行目を作る関数。``total`` は合計の行の ``(きっかけ, 累計)``（無ければ None）。
+    合計の行の増分は ``current`` との差で、既存の行を書き直さない。合計でない行の増分は、前にある
+    合計でない、いちばん近い行との差。節目の行と合計の行は別々に二重実行を判定し、どちらも既に
+    あれば ``body`` を返す。
     """
     rows, records = parse_timeline(body)
     if records is None:
         # 記録なし: 既存の行をそのまま残し、増分は (?)。0 から全額増えたとは書かない
         kept, entries = rows, []
-        new_row = timeline_row(at_ms, trigger, current, TIMELINE_UNKNOWN)
-        position = 0
+        entries.append([at_ms, trigger, current, timeline_row(at_ms, trigger, current, TIMELINE_UNKNOWN)])
+        if total is not None:
+            entries.append([at_ms, total[0], total[1], timeline_row(at_ms, total[0], total[1], current)])
     else:
         # 行数が記録より多い分は、記録の無い先頭の行としてそのまま残す
         records = records[max(0, len(records) - len(rows)):]
@@ -1471,21 +1578,13 @@ def build_timeline(body: str, at_ms: int, trigger: str, current, first_line) -> 
         kept = rows[:extra]
         entries = [[at, _row_trigger(row), values, row]
                    for (at, values), row in zip(records, rows[extra:])]
-        key = (at_ms, trigger.encode("utf-8"), current)
-        keys = [(at, name.encode("utf-8"), values) for at, name, values, _row in entries]
-        if key in keys:
+        added = _timeline_insert(entries, at_ms, trigger, current, kept)
+        if total is not None:
+            added = _timeline_insert(entries, at_ms, total[0], total[1], kept, base=current) or added
+        if not added:
             return body
-        position = sum(1 for other in keys if other < key)
-        if position > 0:
-            previous = entries[position - 1][2]
-        else:
-            previous = TIMELINE_UNKNOWN if kept else None
-        new_row = timeline_row(at_ms, trigger, current, previous)
-        if position < len(entries):
-            following = entries[position]
-            following[3] = timeline_rewrite_increments(following[3], following[2], current)
-    entries.insert(position, [at_ms, trigger, current, new_row])
-    lines = [first_line(entries[-1][2][0]), "", TIMELINE_HEADER, TIMELINE_SEPARATOR]
+    last = entries[-1]
+    lines = [first_line(last[2][0], _is_total_trigger(last[1])), "", TIMELINE_HEADER, TIMELINE_SEPARATOR]
     lines.extend(kept)
     lines.extend(entry[3] for entry in entries)
     lines.append("")
@@ -1752,15 +1851,74 @@ def issue_intervals(number: str, repo_id: str, pricing: Pricing, resolver: RepoR
     return matched, unknown, facts
 
 
+def parse_closing_prs(values):
+    """``--closing-pr <番号>:<ヘッドブランチ>`` の値の列を ``[(番号, ブランチ)]`` にする。
+
+    最初の ``:`` で分け、前が 1 以上の整数、後ろが空でない文字列のときだけ受ける（崩れていれば
+    ValueError）。同じヘッドブランチが複数あれば番号のいちばん小さいものだけを残し、番号の昇順に
+    並べる（同じブランチの行を 2 回足さない）。
+    """
+    by_branch = {}
+    for value in values or []:
+        head, sep, branch = value.partition(":")
+        if not sep or not re.fullmatch(r"[0-9]+", head) or int(head) < 1 or not branch:
+            raise ValueError("--closing-pr は <PR番号>:<ヘッドブランチ> の形で渡してください: %s" % value)
+        number = int(head)
+        if branch not in by_branch or number < by_branch[branch]:
+            by_branch[branch] = number
+    return sorted((number, branch) for branch, number in by_branch.items())
+
+
+def issue_combined_total(matched, closing_prs, pricing: Pricing, resolver: RepoResolver,
+                         at_ms: int | None = None) -> dict:
+    """issue の合計（spec cost-ledger-attribution）を出す。
+
+    PR の分は、閉じた PR のヘッドブランチごとにそのブランチの行の合計（``/cost <PR番号>`` と
+    同じ引き方）。PR の外の分は、区間に帰属した行（``matched`` の各区間の ``facts``）のうち、
+    どのヘッドブランチとも一致しない行の合計。1 つの行のブランチは 1 つなので重ならない。
+    ``at_ms`` を渡すと PR の分もその時刻以前の行だけを数える（区間の行は呼ぶ側が切ってある）。
+    台帳への差分追記はしない（``issue_intervals()`` が 1 回行っている）。
+    """
+    by_branch = load_branches_facts(resolver, [branch for _number, branch in closing_prs])
+    prs, all_facts, total = [], [], 0.0
+    for number, branch in closing_prs:
+        facts = by_branch[branch] if at_ms is None else facts_until(by_branch[branch], at_ms)
+        usd = summarise(facts, pricing)["total_usd"]
+        prs.append({"number": number, "branch": branch, "usd": usd})
+        all_facts.extend(facts)
+        total += usd
+    heads = {branch for _number, branch in closing_prs}
+    outside = [fact for row in matched for fact in row["facts"] if fact.get("branch") not in heads]
+    outside_usd = summarise(outside, pricing)["total_usd"]
+    all_facts.extend(outside)
+    total += outside_usd
+    return {"prs": prs, "outside_usd": outside_usd, "total_usd": total,
+            "current": (int(round(total * 1e6)),) + token_totals(all_facts)}
+
+
+def _dollars(usd: float) -> str:
+    """内訳の額。``$`` と小数 2 桁、3 桁区切り（``money()`` と同じく先に 6 桁に揃える）。"""
+    return "$" + format(round(usd * 1e6) / 1e6, ",.2f")
+
+
 def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
     """PR / issue のコメントに積む本文を作る（hook ``gate_report.py`` が呼ぶ）。
 
-    標準入力で既存のコメント本文（無ければ空）を受け、行を 1 行足した本文を標準出力に返す。
-    PR か issue かは呼ぶ側が判別して渡すので、ここでは ``gh`` を呼ばない。1 行目の対象の
-    表記と帰属の種別は ``cmd_cost`` が同じ番号に対して作るものと同じ。積むものが無いとき、
-    ``--target-repo`` が ``--repo`` の場所のリポジトリと違うとき（PR でも issue でも）は、
-    何も出さずに終了コード 3。
+    標準入力で既存のコメント本文（無ければ空）を受け、節目の行を 1 行足した本文を標準出力に
+    返す。``--issue`` に ``--closing-pr`` が 1 つ以上あれば、続けて issue の合計の行を 1 行足す。
+    PR か issue か、issue を閉じた PR はどれかは呼ぶ側が調べて渡すので、ここでは ``gh`` を
+    呼ばない。1 行目の対象の表記と帰属の種別は、最後の行が合計の行でなければ ``cmd_cost`` が
+    同じ番号に対して作るものと同じ。積むものが無いとき、``--target-repo`` が ``--repo`` の
+    場所のリポジトリと違うとき（PR でも issue でも）は、何も出さずに終了コード 3。
     """
+    if args.closing_pr and args.issue is None:
+        sys.stderr.write("--closing-pr は --issue と一緒にだけ渡せます。\n")
+        return 2
+    try:
+        closing_prs = parse_closing_prs(args.closing_pr)
+    except ValueError as error:
+        sys.stderr.write("%s\n" % error)
+        return 2
     try:
         at = float(args.at)
     except ValueError:
@@ -1778,6 +1936,7 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
         # 書き込み先は github.com なので、origin のホストも github.com であることまで確かめる。
         # where のリポジトリや origin のホストが判別できないときも一致しないので、ここで止まる
         return 3
+    total_row = None  # 合計の行の (きっかけ, 累計)。--issue に --closing-pr があるときだけ作る
     if args.issue is not None:
         number = str(args.issue)
         if repo_id == UNKNOWN_REPO:
@@ -1790,6 +1949,10 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
         facts = [fact for row in matched for fact in row["facts"]]
         total = sum(row["usd"] for row in matched)
         target, kind = "issue #%s (%s)" % (number, label), "区間"
+        if closing_prs:
+            combined = issue_combined_total(matched, closing_prs, pricing, resolver, at_ms=at_ms)
+            total_row = (timeline_total_trigger(combined["prs"], combined["outside_usd"]),
+                         combined["current"])
     else:
         if not args.branch:
             # ブランチ無しで読むと全履歴の合計になる。PR の数字として返さない
@@ -1799,11 +1962,14 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
         total = summarise(facts, pricing)["total_usd"]
         target, kind = "PR #%s (%s)" % (args.pr, args.branch), "ブランチ"
     current = (int(round(total * 1e6)),) + token_totals(facts)
-    if current == (0, 0, 0) and not body.strip():
+    if (current == (0, 0, 0) and not body.strip()
+            and (total_row is None or total_row[1] == (0, 0, 0))):
         return 3
     sys.stdout.write(build_timeline(
         body, at_ms, args.trigger, current,
-        lambda micro: headline(micro / 1e6, pricing, target, kind),
+        lambda micro, is_total: headline(micro / 1e6, pricing, target,
+                                         "区間+閉じた PR" if is_total else kind),
+        total=total_row,
     ))
     return 0
 
@@ -1813,7 +1979,13 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
 
     issue 番号はリポジトリ内でしか一意でないので、実行した作業ディレクトリの
     リポジトリで絞る。リポジトリが不明に落ちた行は、除外も合算もせず別立てで出す。
+    ``--closing-pr`` を渡すと、閉じた PR の分を重ねずに合わせた issue の合計も出す。
     """
+    try:
+        closing_prs = parse_closing_prs(getattr(args, "closing_pr", None))
+    except ValueError as error:
+        sys.stderr.write("%s\n" % error)
+        return 2
     where = os.path.abspath(args.repo) if args.repo else os.getcwd()
     repo_id = resolver.repo_id(where)
     if repo_id == UNKNOWN_REPO:
@@ -1825,6 +1997,10 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
     number = str(args.issue)
     matched, unknown, all_facts = issue_intervals(number, repo_id, pricing, resolver)
     total = sum(row["usd"] for row in matched)
+    if closing_prs:
+        combined = issue_combined_total(matched, closing_prs, pricing, resolver)
+    else:
+        combined = {"prs": [], "outside_usd": total, "total_usd": total}
     label = resolver.label(repo_id)
     payload = {
         "issue": number,
@@ -1836,6 +2012,9 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         "unknown_repo_usd": sum(row["usd"] for row in unknown),
         "unknown_repo_messages": sum(row["messages"] for row in unknown),
         "usd_jpy_rate": pricing.jpy_rate,
+        "closing_prs": combined["prs"],
+        "outside_pr_usd": combined["outside_usd"],
+        "combined_total_usd": combined["total_usd"],
     }
     drift = None
     if not getattr(args, "no_drift_check", False):
@@ -1848,6 +2027,11 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
     print(headline(total, pricing, "issue #%s (%s)" % (number, label), "区間"))
+    if closing_prs:
+        print("  合計（閉じた PR 込み）: %s — %s" % (
+            _dollars(combined["total_usd"]),
+            " + ".join(["PR #%d %s" % (pr["number"], _dollars(pr["usd"])) for pr in combined["prs"]]
+                       + ["PR 外 %s" % _dollars(combined["outside_usd"])])))
     print("  対象: issue #%s（%s）— %d 区間 / %d メッセージ"
           % (number, label, len(matched), payload["messages"]))
     for row in matched:
@@ -1869,8 +2053,8 @@ def cmd_ledger_sync(args, pricing: Pricing, resolver: RepoResolver) -> int:
     configured = ledger_path()
     if configured is None:
         sys.stderr.write(
-            "%s が未設定です。台帳ファイルの場所（このリポジトリの外）を設定してください。\n"
-            % LEDGER_ENV
+            "%s（または userConfig の LEDGER_PATH）が未設定です。台帳ファイルの場所"
+            "（このリポジトリの外）を設定してください。\n" % LEDGER_ENV
         )
         return 2
     ledger = resolve_ledger(configured)
@@ -1908,6 +2092,9 @@ def build_parser() -> argparse.ArgumentParser:
     issue.add_argument("--repo", default=None,
                        help="帰属先リポジトリを決める場所（既定はカレントディレクトリ）")
     issue.add_argument("--json", action="store_true")
+    issue.add_argument("--closing-pr", action="append", default=None,
+                       help="issue を閉じた PR を <PR番号>:<ヘッドブランチ> で渡す（繰り返し可）。"
+                            "渡すと、重なる行を除いて PR の分を合わせた issue の合計も出す")
     issue.set_defaults(func=cmd_issue)
 
     cost = subparsers.add_parser(
@@ -1938,6 +2125,9 @@ def build_parser() -> argparse.ArgumentParser:
                                "（既定はカレントディレクトリ）")
     timeline.add_argument("--target-repo", default=None,
                           help="書き込み先の owner/repo。--repo のリポジトリと違えば積まない")
+    timeline.add_argument("--closing-pr", action="append", default=None,
+                          help="issue を閉じた PR を <PR番号>:<ヘッドブランチ> で渡す（繰り返し可。"
+                               "--issue と一緒にだけ）。節目の行に続けて issue の合計の行を積む")
     timeline.set_defaults(func=cmd_timeline)
 
     report = subparsers.add_parser("report", help="全履歴を帰属先ごとに畳んだ監査用の出力")

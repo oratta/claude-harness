@@ -4,6 +4,14 @@
   "author": {
     "name": "Oratta"
   },
+  "userConfig": {
+    "LEDGER_PATH": {
+      "type": "file",
+      "title": "台帳ファイルのパス",
+      "description": "コストの台帳（append-only の JSONL）を置くファイルのパス。リポジトリ（プラグインの clone）の外を指すこと。空なら台帳を使わず、会話ログを直接読む。従来の環境変数 COST_LEDGER_PATH も使えるが、こちらが設定されていればこちらを優先する。",
+      "required": false
+    }
+  },
   "license": "MIT",
   "keywords": [
     "cost",
