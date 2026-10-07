@@ -4,7 +4,7 @@
 
 ## 1. テスト（固定）
 
-- [ ] 1.1 `drift.bats` に、最後のファイルの読み込み中に時計が上限を超えても読み終えた結果が使われることを見る 1 件を足す。bats の中で `python3` から `cost_ledger` を読み込み、`time.monotonic` を差し替えて 0 秒始まり・2 秒進みにし（読み直しの開始時の呼び出しは 0、その後は 2 を返す）、`DRIFT_CHECK_EVERY_LINES` より短い 1 ファイルで `price_drift()` を呼ぶ。予算 1 秒、公式 $10・自前 $6 のセッション。期待は `cut_off` が立たず `drifted` が 1。同じ状態で、行数ごとの確認が働く長さ（`DRIFT_CHECK_EVERY_LINES` を 1 に差し替える）なら `cut_off` が立つことも 1 件で見る（確認が働けば打ち切る側は変わっていないことの固定）。台帳から読む経路でも 1 件。アサーションには `|| return 1` を付ける。触る範囲: `plugins/cost-ledger/tests/drift.bats:314-360`（打ち切りのテスト群。この後ろに足す）、`plugins/cost-ledger/tests/drift.bats:19-58`（setup と行を作る関数。読むだけ）
+- [ ] 1.1 `drift.bats` に、最後のファイルの読み込み中に時計が上限を超えても読み終えた結果が使われることを見る 1 件を足す。bats の中で `python3` から `cost_ledger` を読み込み、`time.monotonic` を呼び出し回数で差し替える。`session_facts()` が呼ぶ順は、開始時刻の取得（1 回目）→ ファイルを開く前の確認（ファイル 1 つにつき 1 回）→ 5,000 行ごとの確認、なので、最初の 2 回（開始と、1 ファイルしか無い状態の開く前の確認）は 0 秒を返して開く前の確認では期限超過にしない。3 回目以降は 2 秒を返す（読み込み中に時計が進んだ状態）。対象は台帳または会話ログの 1 ファイルだけにして、`DRIFT_CHECK_EVERY_LINES` より短くする（行数ごとの確認が 1 度も働かず、3 回目の呼び出しも起きない）。予算 1 秒、公式 $10・自前 $6 のセッションで `price_drift()` を呼び、期待は `cut_off` が立たず `drifted` が 1。続けて同じ状態で `DRIFT_CHECK_EVERY_LINES` を 1 に差し替え、行数ごとの確認（3 回目の呼び出し）で初めて 2 秒を観測して `cut_off` が立つことも 1 件で見る（確認が働けば打ち切る側は変わっていないことの固定）。この 2 件は台帳の経路と会話ログの経路の両方で書く。アサーションには `|| return 1` を付ける。触る範囲: `plugins/cost-ledger/tests/drift.bats:314-360`（打ち切りのテスト群。この後ろに足す）、`plugins/cost-ledger/tests/drift.bats:19-58`（setup と行を作る関数。読むだけ）、`plugins/cost-ledger/scripts/cost_ledger.py:810-860`（`session_facts` の確認位置。読むだけ）
 
 ## 2. コメント
 
@@ -14,3 +14,4 @@
 
 - [ ] 3.1 `bats plugins/cost-ledger/tests/drift.bats` が通ることを確かめる。触る範囲: なし（実行のみ）
 - [ ] 3.2 `plugins/cost-ledger/changes/701.md` を書く（決定と理由、LLM トークンを使わないこと、突き合わせ 1 回の所要時間の前後と `gh` の呼び出し回数の実測）。触る範囲: `plugins/cost-ledger/changes/701.md`（新規）
+- [ ] 3.3 エピック #272 の制約として、突き合わせ 1 回の所要時間の変更前後の実測値と `gh` の呼び出し回数（0 回のまま）を、PR 本文にも書く（変更の記録ファイルだけにしない）。変更前は `git archive origin/main` で取り出したスクリプトで測る。触る範囲: PR 本文（`gh api` の REST で作成・更新する）
