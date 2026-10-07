@@ -63,6 +63,11 @@ exit 1
 EOF
 }
 
+# 子を持たない issue <N> を閉じた PR が 0 件、という GraphQL の応答を置く
+no_closing_prs() {  # $1=issue 番号
+  printf '{"data":{"repository":{"nameWithOwner":"acme/ra","issue":{"closedByPullRequestsReferences":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}' > "$EPIC_GQL_DIR/$1.json"
+}
+
 gh_calls() { wc -l < "$EPIC_GH_LOG" | tr -d ' '; }
 gql_calls() { grep -c '^api graphql' "$EPIC_GH_LOG" || true; }
 
@@ -422,13 +427,14 @@ PY
   printf '%s\n' "$output" | tail -n +2 | grep -q '^    #12 '
 }
 
-@test "epic: no sub-issue count in the response falls back to the interval total" {  # 番号だけの応答 → 出力は issue 12 と同じ、GraphQL は 0 回
+@test "epic: no sub-issue count in the response falls back to the interval total" {  # 番号だけの応答 → 出力は issue 12 と同じ、GraphQL は閉じた PR の問い合わせの 1 回だけ
   logs
+  no_closing_prs 12
   export EPIC_BARE=1
   run cost 12
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$output" = "$(python3 "$CL" issue 12 --repo "$RA")" ] || { echo "$output"; return 1; }
-  [ "$(gql_calls)" -eq 0 ]
+  [ "$(gql_calls)" -eq 1 ]
 }
 
 # ---- cost-ledger-cost-command: gh と台帳の読み取りの回数 --------------------
@@ -450,12 +456,13 @@ PY
   [ "$(gql_calls)" -eq 2 ]
 }
 
-@test "epic: an issue without sub-issues and a PR are unchanged" {  # issue は gh 2 回、PR は 1 回、GraphQL は 0 回。issue の出力は issue 12 と同じ
+@test "epic: an issue without sub-issues and a PR are unchanged" {  # issue は gh 3 回（うち GraphQL は閉じた PR の 1 回）、PR は 1 回、GraphQL は 0 回。issue の出力は issue 12 と同じ
   logs
+  no_closing_prs 12
   run cost 12
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$output" = "$(python3 "$CL" issue 12 --repo "$RA")" ] || { echo "$output"; return 1; }
-  [ "$(gh_calls)" -eq 2 ] || { cat "$EPIC_GH_LOG"; return 1; }
+  [ "$(gh_calls)" -eq 3 ] || { cat "$EPIC_GH_LOG"; return 1; }
   : > "$EPIC_GH_LOG"
   export EPIC_PR=300 EPIC_PR_HEAD=feat/a
   run cost 300
