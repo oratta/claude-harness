@@ -34,6 +34,10 @@
 
 有効・無効を切り替える設定項目を持ってはなら MUST NOT ない（上の 2 つの環境変数は緊急停止）。
 
+SessionStart の JSON の `source` が `clear` または `compact` のとき（matcher を通らずに直接流された場合）と、JSON が読めない・`cwd` が文字列でないときも、システムは `gh` を呼ばず、控えファイルを書かずに終わ MUST る。
+
+守備範囲: この判定が受け取る入力は、Claude Code が SessionStart の hook に渡す JSON（`source`・`cwd`）、hook のプロセスが引き継いだ環境変数（`COST_LEDGER_GATE_REPORT`・`COST_LEDGER_BACKFILL`・`COST_LEDGER_PATH`・`GH_HOST`・`PATH`）、`cwd` の git リポジトリの origin の URL に限る。どれも手元の利用者とそのセッションが決める値で、外部の第三者が書き込む入力は無い。拾いたい誤りは、止めたはずの後追いが `gh` を呼ぶこと・github.com 以外に向けたセッションやリポジトリから github.com へ書き込むこと・控えの置き場所が決まらないまま既定の場所やリポジトリの配下に書くことの 3 つ。次の入力は誤ったまま通ることを許す: 緊急停止の値は `off` との完全一致だけを見るので、`OFF`・`0`・`false` では止まらない（`cost-ledger-gate-report` の緊急停止と同じ）／`GH_HOST` は hook のプロセスが引き継いだ値だけを見るので、`gh` の設定ファイルで既定のホストを変えている環境は検知しない（問い合わせ先は `--hostname github.com` で固定するので、書き込み先が変わることはない）／origin 以外の remote（`upstream` など）は見ないので、origin が github.com でなく別の remote が github.com のリポジトリでは動かない／origin の URL が github.com を指していても、`insteadOf` などの git の設定で実際の接続先を書き換えている環境は検知しない／`cwd` が worktree やサブディレクトリでも、その場所から見える origin をそのまま使う／`source` の値が `startup`・`resume`・`clear`・`compact` のどれでもない（将来の Claude Code が足した値・値が無い）ときは、matcher を通った以上は起動として扱い、動く。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
+
 #### Scenario: 後追いだけを止める
 - **WHEN** `COST_LEDGER_BACKFILL=off` を付けて SessionStart の hook JSON を流す
 - **THEN** `gh` と `python3` は一度も呼ばれず、stdout は空で、終了コードは 0
@@ -50,12 +54,20 @@
 - **WHEN** `cwd` のリポジトリの origin が `https://unrelated.example/acme/repo-a.git` の状態で SessionStart の hook JSON を流す
 - **THEN** `gh` は一度も呼ばれず、控えファイルは作られない
 
+#### Scenario: 引き継いだ `GH_HOST` が github.com でない
+- **WHEN** `GH_HOST=ghe.example.com` を付けて、origin が github.com のリポジトリを `cwd` にした SessionStart の hook JSON を流す
+- **THEN** `gh` は一度も呼ばれず、控えファイルは作られない
+
+#### Scenario: `clear` と `compact` では動かない
+- **WHEN** `source` が `clear` または `compact` の SessionStart の hook JSON を `backfill.sh` に直接流す
+- **THEN** `gh` は一度も呼ばれず、控えファイルは作られない
+
 #### Scenario: git リポジトリでない場所
 - **WHEN** `cwd` が git リポジトリでないディレクトリの SessionStart の hook JSON を流す
 - **THEN** `gh` は一度も呼ばれない
 
 ### Requirement: 候補は前回見た時刻以降の分だけを一覧 1 回で探す
-システムは候補を、`cwd` のリポジトリ（origin の `owner/repo`）に対する `gh api` の一覧 1 回（`repos/<owner>/<repo>/issues`、`state=closed`、`since=<前回見た時刻>`、更新時刻の昇順、`per_page=100`、`--paginate`）で SHALL 探す。問い合わせ先は他の呼び出しと同じく github.com に固定 MUST する。
+システムは候補を、`cwd` のリポジトリ（origin の `owner/repo`）に対する `gh api` の一覧 1 回（`repos/<owner>/<repo>/issues`、`state=closed`、`since=<前回見た時刻>`、更新時刻の昇順、`per_page=100`、`--paginate`）で SHALL 探す。問い合わせ先は他の呼び出しと同じく github.com に固定 MUST する。一覧が 100 件を超えて複数ページになるとき、システムはすべてのページの要素を SHALL 読む（`gh api --paginate` の出力はページごとの配列が連結されたもので、1 つの JSON 配列ではない。`--jq` で要素を 1 件 1 行にして読む。`cost-ledger-timeline` の既存コメントの取得と同じ読み方）。1 行でも読めない行があれば、一覧が失敗したものとして SHALL 扱う。
 
 一覧に現れたもののうち、候補にするのは次のどちらかで、出来事の時刻が前回見た時刻より後のものだけと MUST する。
 
@@ -89,6 +101,10 @@
 #### Scenario: 一覧が失敗する
 - **WHEN** 一覧の呼び出しが失敗する環境で SessionStart の hook JSON を流す
 - **THEN** コメントの作成も書き換えも行われず、控えファイルの内容は実行前と同じ
+
+#### Scenario: 一覧が 2 ページにわたる
+- **WHEN** 一覧が 2 ページ（1 ページ目は更新されただけのもの 100 件、2 ページ目に前回見た時刻より後にマージされた PR #300 が 1 件）を返す状態で SessionStart の hook JSON を流す
+- **THEN** #300 に `マージ` の行が積まれ、控えファイルの `seen_until` は 2 ページ目まで含めた更新時刻の最大値で、一覧の `gh api` の呼び出しは 1 回
 
 #### Scenario: 1 回の実行は 20 件まで
 - **WHEN** 出来事の時刻がすべて違う候補の issue が 25 件ある状態で SessionStart の hook JSON を流す

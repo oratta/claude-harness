@@ -29,7 +29,7 @@
 
 ### 決定 1: きっかけは SessionStart の `startup` と `resume`。同期部分は切り離すだけ
 
-`hooks.json` に `SessionStart`・matcher `startup|resume`・`timeout: 10` の hook を足し、`scripts/backfill.sh` を呼ぶ。`clear` と `compact` は同じセッションの続きなので対象にしない（issue の言う「次にセッションが始まったとき」に当たらない）。サブエージェントの起動は SessionStart を起こさない。
+`hooks.json` に `SessionStart`・matcher `startup|resume`・`timeout: 10` の hook を足し、`scripts/backfill.sh` を呼ぶ。`clear` と `compact` は同じセッションの続きなので対象にしない（issue の言う「次にセッションが始まったとき」に当たらない）。サブエージェントの起動は SessionStart を起こさない。matcher に加えて、`backfill.py` の同期部分も JSON の `source` を見て、`clear` と `compact` なら何もせずに終わる（matcher を通らずに直接流された場合と、`hooks.json` の matcher が書き換えられた場合の二重の確認）。`source` がそれ以外の値・値が無いときは、matcher を通った以上は起動として扱う。
 
 `backfill.sh` は緊急停止と `COST_LEDGER_PATH` の有無を見て、`python3` と `gh` があれば `backfill.py` に標準入力を渡す。`backfill.py` の同期部分は hook の JSON から `cwd` を読み、自分自身を `--work` で切り離して起こし、すぐ終わる（`gate_report.py` の `main()` と同じ形。`start_new_session=True` で hook のプロセスグループから外す）。`COST_LEDGER_HOOK_FOREGROUND=1` のときは切り離さずその場で最後まで実行する（テストと実測）。
 
@@ -40,6 +40,10 @@ SessionStart の hook の stdout は会話の文脈に入るので、同期部�
 ### 決定 2: 候補は issues の一覧 1 回で探す
 
 `gh api --paginate "repos/<owner>/<repo>/issues?state=closed&since=<前回見た時刻>&sort=updated&direction=asc&per_page=100"` を 1 回呼ぶ。この一覧は issue と PR の両方を返し、PR は `pull_request.merged_at` を持つ。`since` は更新時刻で絞るので、前回見た時刻より後にクローズ・マージされたものは必ず入る（クローズすると更新時刻も進む）。
+
+`gh api --paginate` の出力は、複数ページだとページごとの JSON 配列が連結されたもので、全体を 1 つの JSON として読むと 2 ページ目がある時点で失敗する。`gate_report.py` の `existing_comment()` と同じく `--jq` を付け、ページごとに要素を 1 件 1 行の JSON にして読む（`.[] | {number, state, updated_at, closed_at, is_pr: has("pull_request"), merged_at: (.pull_request.merged_at // null)} | tojson`）。使う項目だけを取り出すので、本文などの大きい項目を読み込まない。空でない行が 1 行でも JSON として読めない・形が崩れている（`number` が整数でない、`updated_at` が時刻として読めない）ときは、一覧が失敗したものとして扱う（何も積まず、控えも変えない）。途中のページまでで `seen_until` を進めると、読めなかったページの出来事を見ないまま先へ進むため。ページが増えても `gh` の起動は 1 回のまま（決定 8）。
+
+採らなかった読み方: `--slurp` で全ページを 1 つの配列の配列にまとめてから平坦化する。`--slurp` は `--jq` と一緒に使えず、応答の全項目（issue の本文を含む）を読み込むことになり、`gh` の版も新しいものが要る。既存コメントの取得と同じ読み方に揃えた。
 
 一覧のうち候補にするのは次の 2 つで、どちらも「出来事の時刻」が前回見た時刻より後のものだけ。
 

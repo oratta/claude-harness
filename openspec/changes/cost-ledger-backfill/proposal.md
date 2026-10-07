@@ -30,7 +30,7 @@ GitHub Actions では作れない。コストの元データ（会話ログと�
 
 ### Modified Capabilities
 
-- `cost-ledger-timeline`: `timeline --backfill` の振る舞いを足す（ADDED）。「行を積むきっかけ」の守備範囲の記述を、auto-merge などで積まれない分のうちマージと issue のクローズは後追いが積む、という形に改める（MODIFIED。PostToolUse の hook の振る舞いは変えない）
+- `cost-ledger-timeline`: `timeline --backfill` の振る舞いを足す（ADDED）。「行を積むきっかけ」の守備範囲の記述を、auto-merge などで積まれない分のうちマージと issue のクローズは後追いが積む、という形に改める（MODIFIED。PostToolUse の hook の振る舞いは変えない）。「1 本のコメントに行を積む」の「行を足さない場合」に、`--backfill` の判定が加わることを 1 文で書く（MODIFIED。`--backfill` を付けない呼び出しの振る舞いは変えない）
 
 ## Impact
 
