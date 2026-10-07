@@ -549,6 +549,8 @@ fi
 
 **squash 済み（`SQUASHED` が非空）の worktree は 🟢/🟡 として扱う**。`AHEAD_COUNT > 0` でも 🔴 にしない。ブランチ削除は元 SHA が main の祖先にならないため `git branch -D`（大文字）を使う。
 
+**`git branch -D` が dev-workflow の hook に拒否されたら**（どの Step でも。squash 済みの 🟢/🟡 の削除と 🔴 の破棄削除のどちらも当たる）: 言い換えて再実行しない（`-d -f` や `--delete --force` に書き換える、スクリプトに書いて実行する、などで hook を避けない）。worktree の削除までで止め、そのブランチを `HELD+=("$BRANCH_NAME (ブランチ削除は hook に拒否: 主が実行)")` に入れて次の対象へ進む。完了レポートには、主が打つコマンド `git -C <メインリポ> branch -D <ブランチ>` を実際のパスとブランチ名で載せる。dev-workflow の hook は、主が確認画面を見られないセッション（`--dangerously-skip-permissions` など）では `git branch -D` を拒否するので、主の対話セッションでも掃除のたびにここに当たる。
+
 Pass 1 では、カテゴリに応じて以下へ分岐する:
 
 - 🟢 Safe → **Step B-🟢**（確認なしで自動削除／`--keep` 時は自動再利用化）
@@ -1272,6 +1274,7 @@ wt-clean 完了（無人モード）:
 
 - `--repo` を必ず指定する（住人の作業ディレクトリと対象リポジトリを分離するため）
 - 出力は破棄せずログに残す。残件一覧は人間が後で読む前提の成果物である
+- ジョブの環境に `DEV_WORKFLOW_GIT_GUARD=off` を入れる。入れなければ squash 済みブランチの削除が dev-workflow の hook に拒否され、完了レポートの保留（`HELD`）に載る。このジョブでは hook が全部外れるので、この SKILL.md の禁則（worktree 内で `git reset --hard` / `git clean -fd` を実行しない）が唯一の歯止めになる
 
 ## 🔴 Active worktree の強制破棄（破棄削除選択時）
 
