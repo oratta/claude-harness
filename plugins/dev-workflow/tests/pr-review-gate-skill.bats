@@ -1153,6 +1153,60 @@ issue_approved_section() { awk '/^#### issue で承認済み/{f=1} /^#### 3-b\./
   echo "$line" | grep -qF '証拠にならない'
 }
 
+# --- #802（PR #801 のゲート指摘 F1）: 起票承認の返事を、返事が答えた起票の提案と issue の目的・効果に結び付ける ---
+
+# 「起票の承認」の箇条（`- **起票の承認**` から次の `当てない issue` の段落の直前まで）
+filing_approval_block() { issue_approved_section | awk '/^- \*\*起票の承認\*\*/{f=1} /^当てない issue/{f=0} f'; }
+
+@test "issue approved (#802): the last owner message is only a candidate; the answered proposal must contain the purpose and each quoted effect" {
+  blk="$(filing_approval_block)"
+  [ -n "$blk" ] || { echo "block not found"; return 1; }
+  echo "$blk" | grep -F '主の発言のうち、最後のもの' | grep -qF '候補' || { echo "$blk"; return 1; }
+  line="$(echo "$blk" | grep -F '返事が答えた起票の提案')"
+  for w in '会話から特定' 'issue の目的' '引用した各効果' '特定できない' '証拠にせず手順6で主に聞く'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; echo "$line"; return 1; }
+  done
+}
+
+@test "issue approved (#802): negative example - an OK to another proposal before the target issue was filed is not evidence" {
+  line="$(filing_approval_block | grep -F '負例')"
+  echo "$line" | grep -qF 'README の誤字修正' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '安全ゲートを撤去する issue'
+  echo "$line" | grep -qF '起票の承認の証拠にならない'
+}
+
+@test "issue approved (#802): positive example - an OK to the target proposal is evidence" {
+  line="$(filing_approval_block | grep -F '正例')"
+  echo "$line" | grep -qF '安全ゲート X を撤去する issue を起票しますか' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '引用した効果を含む'
+  echo "$line" | grep -qF '起票の承認の証拠になる'
+  ! echo "$line" | grep -qF '証拠にならない' || return 1
+}
+
+@test "issue approved (#802): an epic's child counts only within the approved proposal" {
+  line="$(issue_approved_section | grep -F 'エピックの起票の承認')"
+  echo "$line" | grep -qF '承認された提案の範囲内' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '範囲外なら証拠にせず手順6'
+}
+
+@test "issue approved (#802): pass.md step 5 rechecks the answered proposal against the issue" {
+  rc="$(step5_body | grep -F '確かめ直す' | grep -F 'issue で承認済み')"
+  for w in '返事が答えた起票の提案' '引用した各効果' '承認された提案の範囲内'; do
+    echo "$rc" | grep -qF "$w" || { echo "recheck missing: $w"; return 1; }
+  done
+}
+
+@test "issue approved (#802): the main spec states the proposal check and fixes both examples as scenarios" {
+  spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
+  req="$(awk '/^### Requirement: issue が目的として書いた効果は/{f=1; print; next} /^### Requirement:/{f=0} f' "$spec")"
+  echo "$req" | grep -F '返事が答えた起票の提案' | grep -F '引用した各効果' | grep -qF '手順 6' || { echo "proposal check missing"; return 1; }
+  echo "$req" | grep -F 'エピックの起票を承認' | grep -qF '承認された提案の範囲内'
+  echo "$req" | grep -qF '#### Scenario: 別の提案への承認のあとに起票された issue には当てない'
+  echo "$req" | grep -qF '#### Scenario: 対象の提案への承認は起票の承認の証拠になる'
+  pass_req="$(awk '/^### Requirement: 合格条件は issue で承認済みの宣言を受け付け/{f=1; print; next} /^### Requirement:/{f=0} f' "$spec")"
+  echo "$pass_req" | grep -qF '返事が答えた起票の提案' || { echo "pass requirement missing"; return 1; }
+}
+
 @test "issue approved (#723): exclusions name agent-proposed, unapproved agent issues, EPIC_DISPATCH_PARENT_EPIC and --unmanned" {
   sec="$(issue_approved_section)"
   echo "$sec" | grep -F '`agent-proposed`' | grep -qF '主の承認の記録が無い'
