@@ -50,4 +50,3 @@ TBD - created by archiving change lint-plugin-validate. Update Purpose after arc
 #### Scenario: command の値が引用符で始まり引用符で終わる
 - **WHEN** 追跡されているすべての `plugins/*/hooks/hooks.json` を読み、`${CLAUDE_PLUGIN_ROOT}` を含む command の値を集める
 - **THEN** どの値も `"${CLAUDE_PLUGIN_ROOT}/` で始まり `"` で終わる
-
