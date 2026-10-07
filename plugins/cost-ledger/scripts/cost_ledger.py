@@ -387,6 +387,7 @@ class SeenSet:
     def __init__(self):
         self.ids: set[str] = set()
         self.heads: dict[str, str] = {}
+        self.counts: dict[str, int] = {}
 
     def __contains__(self, request_id) -> bool:
         return request_id in self.ids
@@ -394,12 +395,19 @@ class SeenSet:
     def add(self, request_id) -> None:
         self.ids.add(request_id)
 
-    def add_head(self, request_id, uuid: str) -> None:
+    def add_head(self, request_id, uuid: str, output: int = 0) -> None:
         self.ids.add(request_id)
         self.heads[request_id] = uuid
+        self.counts[request_id] = output
 
     def head_uuid(self, request_id):
         return self.heads.get(request_id)
+
+    def counted_output(self, request_id) -> int:
+        return self.counts.get(request_id, 0)
+
+    def bump_output(self, request_id, delta: int) -> None:
+        self.counts[request_id] = self.counts.get(request_id, 0) + delta
 
 
 def _head_uuid(seen, request_id):
@@ -407,12 +415,35 @@ def _head_uuid(seen, request_id):
     return lookup(request_id) if lookup else None
 
 
-def _add_head(seen, request_id, uuid: str) -> None:
+def _add_head(seen, request_id, uuid: str, output: int = 0) -> None:
     add_head = getattr(seen, "add_head", None)
     if add_head:
-        add_head(request_id, uuid)
+        add_head(request_id, uuid, output)
     else:
         seen.add(request_id)
+
+
+def _counted_output(seen, request_id) -> int:
+    """この応答について、台帳（または同じ読み取りの中）に既に数えた出力トークン。"""
+    lookup = getattr(seen, "counted_output", None)
+    return lookup(request_id) if lookup else 0
+
+
+def _bump_output(seen, request_id, delta: int) -> None:
+    bump = getattr(seen, "bump_output", None)
+    if bump and delta:
+        bump(request_id, delta)
+
+
+def final_output(message: dict):
+    """確定行（``stop_reason`` が空でない文字列の行）なら出力トークン、そうでなければ None。"""
+    stop = message.get("stop_reason")
+    if not isinstance(stop, str) or not stop:
+        return None
+    out = (message.get("usage") or {}).get("output_tokens")
+    if isinstance(out, bool) or not isinstance(out, int):
+        return None
+    return out
 
 
 class PositionedLines:
@@ -484,7 +515,7 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
                 SCAN_STATS["unreadable_lines"] += 1
                 continue
             first_seen[request_id] = uuid
-            _add_head(seen, request_id, uuid)
+            _add_head(seen, request_id, uuid, fact["output_tokens"])
             yield fact
             continue
         if request_id not in first_seen:
@@ -496,14 +527,19 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
                 first_seen[request_id] = uuid  # このファイルで最初の行を先頭の行として捨てる
                 continue
             first_seen[request_id] = head
-        if uuid == first_seen[request_id] or not uuid or '"Bash"' not in line:
+        if uuid == first_seen[request_id] or not uuid:
+            continue
+        if '"Bash"' not in line and '"stop_reason":"' not in line and '"stop_reason": "' not in line:
             continue
         key = "%s#%s" % (request_id, uuid)
         if key in seen:
             continue
         try:
-            issues, marker = scan_tool_calls(record.get("message") or {})
-            if not issues and marker is None:
+            message = record.get("message") or {}
+            issues, marker = scan_tool_calls(message)
+            final = final_output(message)
+            delta = max(0, final - _counted_output(seen, request_id)) if final is not None else 0
+            if not issues and marker is None and not delta:
                 continue
             fact = build_fact(record, resolver, path)
         except (AttributeError, TypeError, ValueError):
@@ -512,6 +548,8 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
         fact["request_id"] = key
         for field in TOKEN_KEYS:
             fact[field] = 0
+        fact["output_tokens"] = delta
+        _bump_output(seen, request_id, delta)
         fact["continuation"] = True
         if offset_of is not None:
             fact["source_offset"] = offset_of()
@@ -520,7 +558,7 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
 
 
 def is_continuation(fact: dict) -> bool:
-    """同じ応答の後続行から出した補足の事実か（トークン 0・メッセージ数に数えない）。"""
+    """同じ応答の後続行から出した補足の事実か（入力・キャッシュは 0、出力は確定値との差分。メッセージ数に数えない）。"""
     return bool(fact.get("continuation"))
 
 
@@ -579,6 +617,26 @@ def _ledger_id_uuid(line: str):
         uuid = record.get("uuid")
         return record["request_id"], uuid if isinstance(uuid, str) else None
     return None, None
+
+
+OUTPUT_KEY = '"output_tokens": '
+
+
+def _ledger_output(line: str, request_id: str) -> int:
+    """台帳の 1 行の出力トークン。値の前の欄は文字列のエスケープ済みの値だけなので、最初の一致が欄そのもの。"""
+    at = line.find(OUTPUT_KEY)
+    if at >= 0:
+        digits = line[at + len(OUTPUT_KEY):at + len(OUTPUT_KEY) + 20]
+        end = 0
+        while end < len(digits) and digits[end].isdigit():
+            end += 1
+        if end:
+            return int(digits[:end])
+    try:
+        value = json.loads(line).get("output_tokens")
+    except (ValueError, AttributeError):
+        return 0
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 class LedgerError(Exception):
@@ -649,9 +707,16 @@ class LedgerIndex:
         db = sqlite3.connect(self.path)
         db.execute("CREATE TABLE IF NOT EXISTS ids (id TEXT PRIMARY KEY)")
         db.execute("CREATE TABLE IF NOT EXISTS heads (id TEXT PRIMARY KEY, uuid TEXT)")
+        old_form = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='counted'").fetchone() is None
+        db.execute("CREATE TABLE IF NOT EXISTS counted (id TEXT PRIMARY KEY, out INTEGER)")
         db.execute("CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, offset INTEGER, ino INTEGER)")
         db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER)")
         db.execute("SELECT count(*) FROM meta").fetchone()
+        if old_form:
+            # 応答ごとの出力を持たない古い形の控え。台帳を先頭から読み直して作り直す。
+            db.execute("DELETE FROM counted")
+            db.execute("DELETE FROM meta WHERE key = 'covered'")
+            db.commit()
         return db
 
     def covered(self) -> int:
@@ -671,6 +736,7 @@ class LedgerIndex:
         if start > size:
             self.db.execute("DELETE FROM ids")
             self.db.execute("DELETE FROM heads")
+            self.db.execute("DELETE FROM counted")
             self.db.execute("DELETE FROM files")
             start = 0
         if start < size:
@@ -679,14 +745,21 @@ class LedgerIndex:
                 data = fh.read(size - start)
             ids = []
             heads = []
+            counts: dict[str, int] = {}
             for raw in data.split(b"\n"):
                 if not raw.strip():
                     continue
-                request_id, uuid = _ledger_id_uuid(raw.decode("utf-8", errors="replace"))
+                text = raw.decode("utf-8", errors="replace")
+                request_id, uuid = _ledger_id_uuid(text)
                 if request_id is not None:
                     ids.append((request_id,))
                     if uuid is not None:
                         heads.append((request_id, uuid))
+                    base = request_id.split("#", 1)[0]
+                    counts[base] = counts.get(base, 0) + _ledger_output(text, request_id)
+            self.db.executemany(
+                "INSERT INTO counted (id, out) VALUES (?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET out = out + excluded.out", list(counts.items()))
             self.db.executemany("INSERT OR IGNORE INTO ids (id) VALUES (?)", ids)
             self.db.executemany("INSERT OR IGNORE INTO heads (id, uuid) VALUES (?, ?)", heads)
         self.set_covered(size)
@@ -699,6 +772,10 @@ class LedgerIndex:
         row = self.db.execute("SELECT uuid FROM heads WHERE id = ?", (request_id,)).fetchone()
         return row[0] if row else None
 
+    def counted_output(self, request_id) -> int:
+        row = self.db.execute("SELECT out FROM counted WHERE id = ?", (request_id,)).fetchone()
+        return row[0] if row else 0
+
     def offsets(self) -> dict:
         return {p: (o, i) for p, o, i in self.db.execute("SELECT path, offset, ino FROM files")}
 
@@ -710,6 +787,7 @@ class _Seen:
         self.index = index
         self.local: set[str] = set()
         self.heads: dict[str, str] = {}
+        self.counts: dict[str, int] = {}
 
     def __contains__(self, request_id) -> bool:
         return request_id in self.local or request_id in self.index
@@ -717,14 +795,23 @@ class _Seen:
     def add(self, request_id) -> None:
         self.local.add(request_id)
 
-    def add_head(self, request_id, uuid: str) -> None:
+    def add_head(self, request_id, uuid: str, output: int = 0) -> None:
         self.local.add(request_id)
         self.heads[request_id] = uuid
+        self.counts[request_id] = output
 
     def head_uuid(self, request_id):
         if request_id in self.heads:
             return self.heads[request_id]
         return self.index.head_uuid(request_id)
+
+    def counted_output(self, request_id) -> int:
+        if request_id in self.counts:
+            return self.counts[request_id]
+        return self.index.counted_output(request_id)
+
+    def bump_output(self, request_id, delta: int) -> None:
+        self.counts[request_id] = self.counted_output(request_id) + delta
 
 
 def ledger_sync(ledger: str, root: str, resolver: RepoResolver, rescan: bool = False) -> int:
