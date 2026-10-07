@@ -4,6 +4,7 @@ description: Git worktree の開発環境セットアップ。worktree 作成後
 version: 1.7.1
 model: sonnet
 context: fork
+background: false
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 

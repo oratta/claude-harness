@@ -127,3 +127,24 @@ setup() {
 @test "skill: wt-setup SKILL.md keeps the Draft PR bootstrap" {
   grep -q 'gh pr create' "$WT_SETUP_SKILL"
 }
+
+# --- wt-setup の frontmatter: context: fork のスキルは Claude Code 2.1.218 から
+# 既定でバックグラウンド実行になる。wt-setup は完了後に後続作業へ進む直列の手順なので、
+# background の指定が無いと呼び出し側が完了を待たずに進みうる（#707）。
+
+# SKILL.md の先頭 frontmatter（最初の --- から次の --- まで）だけを出す
+wt_setup_frontmatter() {
+  awk 'NR==1 && $0=="---" {in_fm=1; next} in_fm && $0=="---" {exit} in_fm {print}' "$WT_SETUP_SKILL"
+}
+
+@test "skill: wt-setup frontmatter specifies background when context is fork (#707)" {
+  fm="$(wt_setup_frontmatter)"
+  [ -n "$fm" ]
+  if printf '%s\n' "$fm" | grep -q '^context: fork$'; then
+    printf '%s\n' "$fm" | grep -Eq '^background: (true|false)$'
+  fi
+}
+
+@test "skill: wt-setup frontmatter sets background false because callers wait for completion (#707)" {
+  wt_setup_frontmatter | grep -q '^background: false$'
+}

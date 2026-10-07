@@ -7,8 +7,10 @@ PR / issue へのコメント・状態の変更・ゲート通過（agent-review
 
 - 同期部分（引数なし）: 標準入力の hook JSON からきっかけを取り出すだけ。gh も台帳も会話ログも
   触らない。対象があれば自分自身を `--work <JSON>` で切り離して起こし、すぐ終わる
-- 裏の処理（`--work`）: 対象の確認 → ロック → 既存コメントの取得 → `cost_ledger.py timeline`
-  → 書き込み。数字と書式は `cost_ledger.py` だけが持ち、ここは gh の読み書きだけを持つ
+- 裏の処理（`--work`）: 対象の確認 → ロック → 既存コメントの取得 →（PR でない issue の
+  `issue クローズ` だけ）閉じた PR の問い合わせ → `cost_ledger.py timeline` → 書き込み。gh は
+  対象 1 件あたり 3 回、閉じた PR を問い合わせるときだけ 4 回。数字と書式は `cost_ledger.py`
+  だけが持ち、ここは gh の読み書きだけを持つ
 - `COST_LEDGER_HOOK_FOREGROUND=1` のときは切り離さず、その場で最後まで実行する（テストと実測）
 
 どの経路でも stdout・stderr に何も出さず終了コード 0。コマンドは評価も再実行もしない。
@@ -640,8 +642,53 @@ def existing_comment(repo, number):
     return None, ""
 
 
+# issue を閉じた PR（既定の引数なのでクローズ済みで未マージの PR は含まれない）。owner・name・number
+# は変数で渡し、問い合わせの文字列に埋め込まない
+CLOSING_QUERY = (
+    "query($owner: String!, $name: String!, $number: Int!) {"
+    " repository(owner: $owner, name: $name) { issue(number: $number) {"
+    " closedByPullRequestsReferences(first: 100) {"
+    " nodes { number headRefName isCrossRepository baseRepository { nameWithOwner } }"
+    " pageInfo { hasNextPage } } } } }"
+)
+
+
+def closing_prs(repo, number):
+    """issue を閉じた PR のうち数えるものの [(番号, ヘッドブランチ)]。gh api graphql を 1 回呼ぶ。
+
+    ベースが対象のリポジトリ（大文字と小文字は区別しない）で、ヘッドブランチも同じリポジトリに
+    ある PR だけを残す。失敗・JSON でない・100 件を超える・1 件でも形が崩れているときは空
+    （一部しか読めていない結果で合計を作らない）。"""
+    owner, _, name = repo.partition("/")
+    p = gh_api(["graphql", "-f", "query=" + CLOSING_QUERY, "-f", "owner=" + owner,
+                "-f", "name=" + name, "-F", "number=%d" % number])
+    if p is None or p.returncode != 0:
+        return []
+    try:
+        refs = json.loads(p.stdout)["data"]["repository"]["issue"]["closedByPullRequestsReferences"]
+        nodes, more = refs["nodes"], refs["pageInfo"]["hasNextPage"]
+    except (ValueError, KeyError, TypeError):
+        return []
+    if more is not False or not isinstance(nodes, list):
+        return []
+    found = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            return []
+        pr, head, cross = node.get("number"), node.get("headRefName"), node.get("isCrossRepository")
+        base = (node.get("baseRepository") or {}).get("nameWithOwner") \
+            if isinstance(node.get("baseRepository"), dict) else None
+        if (type(pr) is not int or pr < 1 or not isinstance(head, str) or not head
+                or not isinstance(cross, bool) or not isinstance(base, str)):
+            return []
+        if not cross and base.lower() == repo.lower():
+            found.append((pr, head))
+    return found
+
+
 def stack(kind, repo, number, branch, names, at, cwd, scripts_dir):
-    """1 行積む。ロックを持ったまま、読み取り・timeline・書き込みを行う。"""
+    """1 行積む。ロックを持ったまま、読み取り・（issue のクローズなら閉じた PR の問い合わせ）・
+    timeline・書き込みを行う。"""
     found = existing_comment(repo, number)
     if found is None:  # 既存コメントの有無が分からないので書かない
         return
@@ -649,6 +696,10 @@ def stack(kind, repo, number, branch, names, at, cwd, scripts_dir):
     cmd = [sys.executable, os.path.join(scripts_dir, "cost_ledger.py"), "timeline"]
     cmd += ["--pr", str(number), "--branch", branch] if kind == "pr" else ["--issue", str(number)]
     cmd += ["--trigger", "+".join(names), "--at", at]
+    if kind == "issue" and "issue クローズ" in names:
+        # 問い合わせが失敗・0 件なら --closing-pr を付けず、issue クローズの行だけを積む
+        for pr, head in closing_prs(repo, number):
+            cmd += ["--closing-pr", "%d:%s" % (pr, head)]
     if cwd:
         cmd += ["--repo", cwd]
     cmd += ["--target-repo", repo]
