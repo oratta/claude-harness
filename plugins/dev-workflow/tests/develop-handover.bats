@@ -106,7 +106,7 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 # 保留の依頼の出し直し（issue #724）
 @test "resend: with no new information a repeated notice does not rewrite the request" {
   handover_section | grep -qF '**依頼の出し直し**'
-  handover_section | grep -qF '新しい情報が無い'
+  handover_section | grep -qF '新しい情報が無ければ'
   handover_section | grep -qF '書き直さない'
   handover_section | grep -qF '「変化なし」の 1 行'
   # 具体例（何を新しい情報とみなすか）
