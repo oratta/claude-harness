@@ -387,6 +387,7 @@ class SeenSet:
     def __init__(self):
         self.ids: set[str] = set()
         self.heads: dict[str, str] = {}
+        self.counts: dict[str, int] = {}
 
     def __contains__(self, request_id) -> bool:
         return request_id in self.ids
@@ -394,12 +395,19 @@ class SeenSet:
     def add(self, request_id) -> None:
         self.ids.add(request_id)
 
-    def add_head(self, request_id, uuid: str) -> None:
+    def add_head(self, request_id, uuid: str, output: int = 0) -> None:
         self.ids.add(request_id)
         self.heads[request_id] = uuid
+        self.counts[request_id] = output
 
     def head_uuid(self, request_id):
         return self.heads.get(request_id)
+
+    def counted_output(self, request_id) -> int:
+        return self.counts.get(request_id, 0)
+
+    def bump_output(self, request_id, delta: int) -> None:
+        self.counts[request_id] = self.counts.get(request_id, 0) + delta
 
 
 def _head_uuid(seen, request_id):
@@ -407,12 +415,35 @@ def _head_uuid(seen, request_id):
     return lookup(request_id) if lookup else None
 
 
-def _add_head(seen, request_id, uuid: str) -> None:
+def _add_head(seen, request_id, uuid: str, output: int = 0) -> None:
     add_head = getattr(seen, "add_head", None)
     if add_head:
-        add_head(request_id, uuid)
+        add_head(request_id, uuid, output)
     else:
         seen.add(request_id)
+
+
+def _counted_output(seen, request_id) -> int:
+    """この応答について、台帳（または同じ読み取りの中）に既に数えた出力トークン。"""
+    lookup = getattr(seen, "counted_output", None)
+    return lookup(request_id) if lookup else 0
+
+
+def _bump_output(seen, request_id, delta: int) -> None:
+    bump = getattr(seen, "bump_output", None)
+    if bump and delta:
+        bump(request_id, delta)
+
+
+def final_output(message: dict):
+    """確定行（``stop_reason`` が空でない文字列の行）なら出力トークン、そうでなければ None。"""
+    stop = message.get("stop_reason")
+    if not isinstance(stop, str) or not stop:
+        return None
+    out = (message.get("usage") or {}).get("output_tokens")
+    if isinstance(out, bool) or not isinstance(out, int):
+        return None
+    return out
 
 
 class PositionedLines:
@@ -440,13 +471,17 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
                      from_start: bool = True, offset_of=None):
     """会話ログの行の列から事実を返す。``seen`` に入っている requestId は先頭の行として扱わない。
 
-    ``seen`` は ``in`` と ``add`` を持てばよい（台帳の索引もこの形で渡す）。先頭の行の uuid を
-    持てる ``seen``（``add_head`` / ``head_uuid``）なら、複製された先頭の行を後続行と取り違えない。
-    requestId も uuid も無い行は空文字を鍵にする。
+    ``seen`` は ``SeenSet`` か、同じメソッドを持つもの（台帳の索引を包んだ ``_Seen``）を渡す。
+    先頭の行の uuid を持てる ``seen``（``add_head`` / ``head_uuid``）なら、複製された先頭の行を
+    後続行と取り違えない。確定行の出力の差分を正しく出すには、数えた出力を覚える
+    ``counted_output`` / ``bump_output`` が要る（素の ``set`` を渡すと数えた出力が常に 0 になり、
+    確定行の値がそのまま足されて二重に数える）。requestId も uuid も無い行は空文字を鍵にする。
 
     1 つの応答が複数の行に分かれるとき、そのファイルで最初に現れる行が先頭の行で、通常の事実を
-    1 つ出す。それ以降の行（後続行）は、実行した Bash が issue 番号か投稿の印を持つときだけ、
-    トークン 0 の補足の事実を ``<requestId>#<uuid>`` の鍵で出す。``from_start`` は、この呼び出しが
+    1 つ出す。それ以降の行（後続行）は、実行した Bash が issue 番号か投稿の印を持つとき、または
+    確定行（``stop_reason`` が付く行）の出力がそれまでに数えた出力より大きいときだけ、入力・
+    キャッシュ 0 で出力がその差分（差分が無ければ 0）の補足の事実を ``<requestId>#<uuid>`` の
+    鍵で出す。``from_start`` は、この呼び出しが
     ファイルの先頭から読んでいるか（uuid を持たない古い台帳の行の先頭の行を見分けるのに使う）。
     ``offset_of`` は、いま読んでいる行の元ログ内の行頭バイト位置を返す関数（``PositionedLines.position``
     を返す形）。渡されたとき、補足の事実に ``source_offset`` として保存し、同時刻の後続行の
@@ -484,7 +519,7 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
                 SCAN_STATS["unreadable_lines"] += 1
                 continue
             first_seen[request_id] = uuid
-            _add_head(seen, request_id, uuid)
+            _add_head(seen, request_id, uuid, fact["output_tokens"])
             yield fact
             continue
         if request_id not in first_seen:
@@ -496,14 +531,19 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
                 first_seen[request_id] = uuid  # このファイルで最初の行を先頭の行として捨てる
                 continue
             first_seen[request_id] = head
-        if uuid == first_seen[request_id] or not uuid or '"Bash"' not in line:
+        if uuid == first_seen[request_id] or not uuid:
+            continue
+        if '"Bash"' not in line and '"stop_reason":"' not in line and '"stop_reason": "' not in line:
             continue
         key = "%s#%s" % (request_id, uuid)
         if key in seen:
             continue
         try:
-            issues, marker = scan_tool_calls(record.get("message") or {})
-            if not issues and marker is None:
+            message = record.get("message") or {}
+            issues, marker = scan_tool_calls(message)
+            final = final_output(message)
+            delta = max(0, final - _counted_output(seen, request_id)) if final is not None else 0
+            if not issues and marker is None and not delta:
                 continue
             fact = build_fact(record, resolver, path)
         except (AttributeError, TypeError, ValueError):
@@ -512,6 +552,8 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
         fact["request_id"] = key
         for field in TOKEN_KEYS:
             fact[field] = 0
+        fact["output_tokens"] = delta
+        _bump_output(seen, request_id, delta)
         fact["continuation"] = True
         if offset_of is not None:
             fact["source_offset"] = offset_of()
@@ -520,7 +562,7 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
 
 
 def is_continuation(fact: dict) -> bool:
-    """同じ応答の後続行から出した補足の事実か（トークン 0・メッセージ数に数えない）。"""
+    """同じ応答の後続行から出した補足の事実か（入力・キャッシュは 0、出力は確定値との差分。メッセージ数に数えない）。"""
     return bool(fact.get("continuation"))
 
 
@@ -579,6 +621,26 @@ def _ledger_id_uuid(line: str):
         uuid = record.get("uuid")
         return record["request_id"], uuid if isinstance(uuid, str) else None
     return None, None
+
+
+OUTPUT_KEY = '"output_tokens": '
+
+
+def _ledger_output(line: str, request_id: str) -> int:
+    """台帳の 1 行の出力トークン。値の前の欄は文字列のエスケープ済みの値だけなので、最初の一致が欄そのもの。"""
+    at = line.find(OUTPUT_KEY)
+    if at >= 0:
+        digits = line[at + len(OUTPUT_KEY):at + len(OUTPUT_KEY) + 20]
+        end = 0
+        while end < len(digits) and digits[end].isdigit():
+            end += 1
+        if end:
+            return int(digits[:end])
+    try:
+        value = json.loads(line).get("output_tokens")
+    except (ValueError, AttributeError):
+        return 0
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 class LedgerError(Exception):
@@ -649,9 +711,16 @@ class LedgerIndex:
         db = sqlite3.connect(self.path)
         db.execute("CREATE TABLE IF NOT EXISTS ids (id TEXT PRIMARY KEY)")
         db.execute("CREATE TABLE IF NOT EXISTS heads (id TEXT PRIMARY KEY, uuid TEXT)")
+        old_form = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='counted'").fetchone() is None
+        db.execute("CREATE TABLE IF NOT EXISTS counted (id TEXT PRIMARY KEY, out INTEGER)")
         db.execute("CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, offset INTEGER, ino INTEGER)")
         db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER)")
         db.execute("SELECT count(*) FROM meta").fetchone()
+        if old_form:
+            # 応答ごとの出力を持たない古い形の控え。台帳を先頭から読み直して作り直す。
+            db.execute("DELETE FROM counted")
+            db.execute("DELETE FROM meta WHERE key = 'covered'")
+            db.commit()
         return db
 
     def covered(self) -> int:
@@ -671,6 +740,7 @@ class LedgerIndex:
         if start > size:
             self.db.execute("DELETE FROM ids")
             self.db.execute("DELETE FROM heads")
+            self.db.execute("DELETE FROM counted")
             self.db.execute("DELETE FROM files")
             start = 0
         if start < size:
@@ -679,14 +749,21 @@ class LedgerIndex:
                 data = fh.read(size - start)
             ids = []
             heads = []
+            counts: dict[str, int] = {}
             for raw in data.split(b"\n"):
                 if not raw.strip():
                     continue
-                request_id, uuid = _ledger_id_uuid(raw.decode("utf-8", errors="replace"))
+                text = raw.decode("utf-8", errors="replace")
+                request_id, uuid = _ledger_id_uuid(text)
                 if request_id is not None:
                     ids.append((request_id,))
                     if uuid is not None:
                         heads.append((request_id, uuid))
+                    base = request_id.split("#", 1)[0]
+                    counts[base] = counts.get(base, 0) + _ledger_output(text, request_id)
+            self.db.executemany(
+                "INSERT INTO counted (id, out) VALUES (?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET out = out + excluded.out", list(counts.items()))
             self.db.executemany("INSERT OR IGNORE INTO ids (id) VALUES (?)", ids)
             self.db.executemany("INSERT OR IGNORE INTO heads (id, uuid) VALUES (?, ?)", heads)
         self.set_covered(size)
@@ -699,6 +776,10 @@ class LedgerIndex:
         row = self.db.execute("SELECT uuid FROM heads WHERE id = ?", (request_id,)).fetchone()
         return row[0] if row else None
 
+    def counted_output(self, request_id) -> int:
+        row = self.db.execute("SELECT out FROM counted WHERE id = ?", (request_id,)).fetchone()
+        return row[0] if row else 0
+
     def offsets(self) -> dict:
         return {p: (o, i) for p, o, i in self.db.execute("SELECT path, offset, ino FROM files")}
 
@@ -710,6 +791,7 @@ class _Seen:
         self.index = index
         self.local: set[str] = set()
         self.heads: dict[str, str] = {}
+        self.counts: dict[str, int] = {}
 
     def __contains__(self, request_id) -> bool:
         return request_id in self.local or request_id in self.index
@@ -717,14 +799,23 @@ class _Seen:
     def add(self, request_id) -> None:
         self.local.add(request_id)
 
-    def add_head(self, request_id, uuid: str) -> None:
+    def add_head(self, request_id, uuid: str, output: int = 0) -> None:
         self.local.add(request_id)
         self.heads[request_id] = uuid
+        self.counts[request_id] = output
 
     def head_uuid(self, request_id):
         if request_id in self.heads:
             return self.heads[request_id]
         return self.index.head_uuid(request_id)
+
+    def counted_output(self, request_id) -> int:
+        if request_id in self.counts:
+            return self.counts[request_id]
+        return self.index.counted_output(request_id)
+
+    def bump_output(self, request_id, delta: int) -> None:
+        self.counts[request_id] = self.counted_output(request_id) + delta
 
 
 def ledger_sync(ledger: str, root: str, resolver: RepoResolver, rescan: bool = False) -> int:
@@ -950,7 +1041,8 @@ def load_branches_facts(resolver: RepoResolver, branches) -> dict:
         return found
     configured = ledger_path()
     if configured is None:
-        seen = {branch: set() for branch in wanted}
+        # 素の set を渡すと数えた出力が常に 0 になり、確定行の値がそのまま足される
+        seen = {branch: SeenSet() for branch in wanted}
         for path in log_files(log_root()):
             try:
                 handle = open(path, encoding="utf-8", errors="replace")
@@ -1039,10 +1131,10 @@ def session_facts(session_ids, earliest: int, budget: float):
     mentions = re.compile("|".join(re.escape(s) for s in sorted(wanted))).search
     unreadable = SCAN_STATS["unreadable_lines"]
     facts = []
-    seen: set[str] = set()
     try:
         configured = ledger_path()
         if configured is not None:
+            seen: set[str] = set()  # 台帳の行の request_id の重複排除だけに使う
             if expired():
                 return None
             try:
@@ -1064,6 +1156,7 @@ def session_facts(session_ids, earliest: int, budget: float):
                     facts.append(fact)
             return facts
         resolver = _NoRepo()
+        heads = SeenSet()  # 数えた出力を覚える（素の set だと確定行の値がそのまま足される）
         for path in log_files(log_root()):
             if expired():
                 return None
@@ -1076,7 +1169,7 @@ def session_facts(session_ids, earliest: int, budget: float):
             with handle:
                 positioned = PositionedLines(handle)
                 lines = _drift_lines(positioned, mentions, expired)
-                for fact in facts_from_lines(lines, path, resolver, seen,
+                for fact in facts_from_lines(lines, path, resolver, heads,
                                              offset_of=lambda: positioned.position):
                     if fact["session_id"] in wanted:
                         facts.append(fact)
@@ -1101,6 +1194,14 @@ def summarise(facts, pricing: Pricing):
         usd, known = pricing.cost(fact)
         total += usd
         if is_continuation(fact):
+            # 補足の事実はメッセージ数に数えないが、確定行の出力の差分と金額は内訳にも足す
+            # （足さないと 1 行目の額とモデル別の内訳の合計が合わない）
+            if known and fact.get("output_tokens"):
+                row = per_model.setdefault(
+                    fact["model"], {"messages": 0, "usd": 0.0, **{f: 0 for f in TOKEN_FIELDS}}
+                )
+                row["usd"] += usd
+                row["output_tokens"] += fact["output_tokens"]
             continue
         messages += 1
         if not known:
