@@ -21,7 +21,7 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 
 ```bash
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/develop}" \
+  "${CLAUDE_PLUGIN_ROOT}/skills/develop" \
   ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/develop \
   ~/.claude/plugins/installed/*/dev-workflow/skills/develop; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
@@ -52,7 +52,7 @@ done
 
    ```bash
    for dir in \
-     "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/issueify}" \
+     "${CLAUDE_PLUGIN_ROOT}/skills/issueify" \
      ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/issueify \
      ~/.claude/plugins/installed/*/dev-workflow/skills/issueify; do
      [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
