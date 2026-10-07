@@ -93,7 +93,9 @@ print(\"ok\")
 
 @test "facts: the log root comes from CLAUDE_CONFIG_DIR with no hardcoded path" {  # ログのルートは CLAUDE_CONFIG_DIR から解決され、リポジトリ内に固定パスが無い
   # 実装とコマンド定義に、利用者のホームを焼き込んだ絶対パスが無い
-  run grep -rnE '/Users/[a-z]|/home/[a-z]' "$PLUGIN_DIR/scripts" "$PLUGIN_DIR/commands"
+  # gitignore 済みの __pycache__ / *.pyc にはコンパイル時のソース絶対パスが入るので、検査の対象から外す
+  # （追跡の有無や拡張子では絞らない。未追跡の新規ファイルも見る）
+  run grep -rnE --exclude-dir=__pycache__ --exclude='*.pyc' '/Users/[a-z]|/home/[a-z]' "$PLUGIN_DIR/scripts" "$PLUGIN_DIR/commands"
   [ "$status" -ne 0 ]
   # ~/.claude を直書きせず CLAUDE_CONFIG_DIR を読む
   run grep -rn 'CLAUDE_CONFIG_DIR' "$PLUGIN_DIR/scripts"
