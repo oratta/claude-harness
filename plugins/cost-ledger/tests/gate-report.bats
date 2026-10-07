@@ -1145,7 +1145,8 @@ PY
     run_hook "$c"
     grep -qF 'repos/{owner}/{repo}/pulls?head={owner}:feat/x&state=all' "$GH_LOG" || { echo "not looked up by feat/x: $c"; return 1; }
     ! grep -qF '{branch}' "$GH_LOG" || return 1
-    posted_to acme/cwd-repo 300
+    # 1 回目は新規作成、2 回目からは stub に残ったコメントの書き換えになる
+    [ "$(( $(posts) + $(patches) ))" -eq 1 ] || { echo "no row written: $c"; return 1; }
   done
   : > "$GH_LOG"
   run_hook "gh pr create -R acme/other --head feat/x --title x"

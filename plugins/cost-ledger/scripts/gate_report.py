@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 """PostToolUse（matcher Bash）hook の本体。`gate-report.sh` から起動される。
 
-PR / issue へのコメント・状態の変更・ゲート通過（agent-review:passed の付与）を Bash の
-コマンド文字列から見つけ、その PR / issue の 1 本のコメントに「ここまでのコスト」を 1 行積む。
-規範の正本は openspec の spec `cost-ledger-timeline` と `cost-ledger-gate-report`。
+PR の作成・PR / issue へのコメント・状態の変更・ゲート通過（agent-review:passed の付与）を
+Bash のコマンド文字列から見つけ、その PR / issue の 1 本のコメントに「ここまでのコスト」を
+1 行積む。規範の正本は openspec の spec `cost-ledger-timeline` と `cost-ledger-gate-report`。
+
+きっかけにするコマンド:
+- `gh pr create` / `gh pr comment` / `gh pr ready` / `gh pr close` / `gh pr reopen` /
+  `gh pr merge` / `gh issue comment` / `gh issue close` / `gh issue reopen`
+- `gh api` の REST の直叩き: `issues/<番号>/comments` への POST、`pulls/<番号>` と
+  `issues/<番号>` への PATCH でフィールドが `state=closed` / `state=open` のもの、
+  `pulls/<番号>/merge` への PUT。`gh api graphql`・`--input` の JSON の中の `state`・
+  完全な URL の endpoint は見ない
+- 合格ラベルの付与: `gh pr edit` / `gh issue edit` の `--add-label` と、`gh api` の
+  `issues/<番号>/labels` へのフィールド `labels[]=agent-review:passed`
 
 - 同期部分（引数なし）: 標準入力の hook JSON からきっかけを取り出すだけ。gh も台帳も会話ログも
   触らない。対象があれば自分自身を `--work <JSON>` で切り離して起こし、すぐ終わる
@@ -15,7 +25,7 @@ PR / issue へのコメント・状態の変更・ゲート通過（agent-review
 
 どの経路でも stdout・stderr に何も出さず終了コード 0。コマンドは評価も再実行もしない。
 """
-import fcntl, json, os, re, stat, subprocess, sys, time
+import calendar, fcntl, json, os, re, stat, subprocess, sys, time
 
 LABEL = "agent-review:passed"
 MARKER = "<!-- cost-ledger:timeline"  # この文字列で始まる行を持つコメントが積み先
@@ -27,7 +37,18 @@ SUBSHELL_CLOSE = "\x03"
 NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 ASSIGN_RE = re.compile(r"(" + NAME + r")=(.*)", re.S)
 VAR_RE = re.compile(r"\$(?:\{(" + NAME + r")\}|(" + NAME + r"))")
-LABELS_PATH_RE = re.compile(r"/?repos/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/issues/([0-9]+)/labels")
+# gh api の endpoint。きっかけと付与で読むのはこの形だけ（完全な URL・問い合わせ文字列付き・
+# :owner/:repo は一致しない）。{owner}/{repo} は両方そろったときだけ置き換えの対象にする
+ENDPOINT_RE = re.compile(r"/?repos/(\{owner\}/\{repo\}|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)"
+                         r"/(issues|pulls)/([0-9]+)(?:/(comments|merge|labels))?")
+BRANCH_RE = re.compile(r"[A-Za-z0-9._/-]+")
+# gh api で値を取るオプション（gh 2.67.0 の gh api --help）。endpoint を見分けるために値ごと飛ばす
+API_VALUE_FLAGS = {
+    "-X", "--method", "-f", "--raw-field", "-F", "--field", "-H", "--header", "--input",
+    "-q", "--jq", "-t", "--template", "-p", "--preview", "--hostname", "--cache",
+}
+API_METHOD_FLAGS = {"-X", "--method"}
+API_FIELD_FLAGS = {"-f", "--raw-field", "-F", "--field"}
 PART_RE = re.compile(r"[A-Za-z0-9_.-]+")
 NUMBER_RE = re.compile(r"[0-9]+")
 # gh pr edit / gh issue edit で値を取るフラグ（最初の位置引数を見分けるために飛ばす）
@@ -42,10 +63,21 @@ GATE = "ゲート通過"
 REPO_FLAGS = {"-R", "--repo"}
 BODY_FLAGS = REPO_FLAGS | {"-b", "--body", "-F", "--body-file"}
 CLOSE_FLAGS = REPO_FLAGS | {"-c", "--comment"}
+CREATED = "PR 作成"
+CREATED_WINDOW = 300  # PR 作成と見る created_at ときっかけの時刻の差（秒）。手元と GitHub の時計のずれの見込み
+# gh pr create で値を取るオプション（gh 2.67.0 の gh pr create --help）
+CREATE_FLAGS = REPO_FLAGS | {
+    "-a", "--assignee", "-B", "--base", "-b", "--body", "-F", "--body-file", "-H", "--head",
+    "-l", "--label", "-m", "--milestone", "-p", "--project", "--recover", "-r", "--reviewer",
+    "-T", "--template", "-t", "--title",
+}
+NO_CREATE_FLAGS = {"--dry-run", "-w", "--web"}  # PR を作らない gh pr create
 TRIGGERS = {
+    ("pr", "create"): (CREATED, CREATE_FLAGS, True),
     ("pr", "comment"): ("PR コメント", BODY_FLAGS, True),
     ("pr", "ready"): ("Ready", REPO_FLAGS, True),
     ("pr", "close"): ("PR クローズ", CLOSE_FLAGS, False),
+    ("pr", "reopen"): ("PR 再オープン", CLOSE_FLAGS, False),
     # gh pr merge の -m / -r / -s / -d は値を取らない（--merge / --rebase / --squash / --delete-branch）
     ("pr", "merge"): ("マージ", BODY_FLAGS | {"-t", "--subject", "-A", "--author-email",
                                              "--match-head-commit"}, True),
@@ -54,7 +86,8 @@ TRIGGERS = {
     ("issue", "reopen"): ("issue 再オープン", CLOSE_FLAGS, False),
 }
 # issue 向けのコマンドに渡された番号が PR だったときの読み替え。無いものは積まない
-AS_PR = {"issue コメント": "PR コメント", "issue クローズ": "PR クローズ"}
+AS_PR = {"issue コメント": "PR コメント", "issue クローズ": "PR クローズ",
+         "issue 再オープン": "PR 再オープン"}
 URL_RE = re.compile(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/(?:pull|issues)/([0-9]+)")
 
 
@@ -257,33 +290,92 @@ def expand(word, env):
     return [r.replace(LITERAL_DOLLAR, "$") for r in results]
 
 
-def api_targets(args, env):
-    """gh api の付与から (owner/repo, 番号) を取り出す。"""
-    method, granted, candidates = "", False, []
-    k = 0
+def api_call(args, env):
+    """gh api の語の並び（args[0] が api）を (endpoint の語, メソッド, フィールドの語, --input の有無)
+    に分ける。位置引数は endpoint 1 つだけなので、値を取るオプションの値を飛ばして最初に残った語を
+    endpoint とする。メソッドは gh と同じ規則: -X / --method があればその値（最後が効く）、無ければ
+    フィールドか --input があれば POST、どちらも無ければ GET。メソッドの値が 1 つに決まらなければ None。"""
+    endpoint, method, fields, has_input = None, None, [], False
+    k = 1
     while k < len(args):
         a = args[k]
-        if a in ("-X", "--method") and k + 1 < len(args):
-            method = args[k + 1]
+        if a.startswith("--") and "=" in a:
+            flag, _, val = a.partition("=")
+            k += 1
+        elif a in API_VALUE_FLAGS and k + 1 < len(args):
+            flag, val = a, args[k + 1]
             k += 2
+        elif len(a) > 2 and a[:2] in API_VALUE_FLAGS:  # -XPATCH・-fstate=closed
+            flag, val = a[:2], a[2:]
+            k += 1
+        else:
+            if not a.startswith("-") and endpoint is None:
+                endpoint = a
+            k += 1
             continue
-        if a.startswith("--method="):
-            method = a[len("--method="):]
-        elif a.startswith("-X"):
-            method = a[2:]
-        if a.replace(LITERAL_DOLLAR, "$").endswith("labels[]=" + LABEL):
-            granted = True
-        candidates.append(a)
-        k += 1
-    # -f があるのでメソッド省略時は POST。PUT はラベルの置き換えで、これも付与になる
-    if not granted or method.upper() not in ("", "POST", "PUT"):
+        if flag in API_METHOD_FLAGS:
+            method = val
+        elif flag in API_FIELD_FLAGS:
+            fields.append(val)
+        elif flag == "--input":
+            has_input = True
+    if method is None:
+        return endpoint, ("POST" if fields or has_input else "GET"), fields, has_input
+    values = expand(method, env) or []
+    if len(values) != 1:
+        return None
+    return endpoint, values[0].upper(), fields, has_input
+
+
+def field_state(fields, env):
+    """フィールドの state の値（最後の state= が効く）。無ければ ""、1 つに決まらなければ None。"""
+    state = ""
+    for f in fields:
+        key, eq, val = f.partition("=")
+        if eq and key == "state":
+            values = expand(val, env) or []
+            state = values[0] if len(values) == 1 else None
+    return state
+
+
+def api_targets(args, env, gh_repo=None):
+    """gh api の REST の直叩きから (種別, owner/repo か None, 番号, きっかけ, None) を取り出す。
+    endpoint の {owner}/{repo} は前置きの GH_REPO（gh_repo）、無ければ None（cwd のリポジトリ）。
+    リテラルの owner/repo には GH_REPO は効かない。"""
+    call = api_call(args, env)
+    if call is None or call[0] is None:
         return []
+    endpoint, method, fields, has_input = call
     out = []
-    for a in candidates:
-        for v in expand(a, env) or []:
-            m = LABELS_PATH_RE.fullmatch(v)
-            if m:
-                out.append((m.group(1) + "/" + m.group(2), int(m.group(3))))
+    for v in expand(endpoint, env) or []:
+        m = ENDPOINT_RE.fullmatch(v)
+        if not m:
+            continue
+        where, family, number, tail = m.group(1), m.group(2), int(m.group(3)), m.group(4)
+        names = []
+        if family == "issues" and tail == "comments":
+            if method == "POST":
+                names.append(("issue", "issue コメント"))
+        elif family == "issues" and tail == "labels":
+            # フィールドがあるのでメソッド省略時は POST。PUT はラベルの置き換えで、これも付与になる
+            granted = any(f.replace(LITERAL_DOLLAR, "$") == "labels[]=" + LABEL for f in fields)
+            if granted and method in ("POST", "PUT"):
+                names.append(("pr", GATE))
+        elif family == "pulls" and tail == "merge":
+            if method == "PUT":
+                names.append(("pr", "マージ"))
+        elif tail is None and method == "PATCH" and not has_input:
+            # --input の JSON は読まないので、state を変えたか分からない PATCH は積まない
+            state = field_state(fields, env)
+            kind = "pr" if family == "pulls" else "issue"
+            if state == "closed":
+                names.append((kind, "PR クローズ" if kind == "pr" else "issue クローズ"))
+            elif state == "open":
+                names.append((kind, "PR 再オープン" if kind == "pr" else "issue 再オープン"))
+        if not names:
+            continue
+        repos = repo_values(None, gh_repo, env) if where == "{owner}/{repo}" else [where]
+        out.extend((kind, r, number, name, None) for kind, name in names for r in repos)
     return out
 
 
@@ -336,15 +428,17 @@ def repo_values(repo_word, gh_repo, env):
 
 
 def trigger_targets(args, env, gh_repo=None):
-    """gh pr comment|ready|close|merge と gh issue comment|close|reopen から
-    (種別, owner/repo か None, 番号か None, きっかけ) を取り出す。番号 None は省略
-    （cwd のブランチの PR）。位置引数は最初の 1 つだけを見て、数字と github.com の URL
-    以外（ブランチ名・解決できない変数）は飛ばす。"""
+    """gh pr create|comment|ready|close|reopen|merge と gh issue comment|close|reopen から
+    (種別, owner/repo か None, 番号か None, きっかけ, ヘッドブランチか None) を取り出す。
+    番号 None は省略（ヘッドブランチがあればそのブランチ、無ければ cwd のブランチの PR）。
+    位置引数は最初の 1 つだけを見て、数字と github.com の URL 以外（ブランチ名・解決できない
+    変数）は飛ばす。gh pr create は位置引数を取らないので見ない。"""
     spec = TRIGGERS.get((args[0], args[1])) if len(args) >= 2 else None
     if spec is None:
         return []
     name, value_flags, may_omit = spec
-    repo_word, positional = None, None
+    create = name == CREATED
+    repo_word, positional, head_word = None, None, None
     k = 2
     while k < len(args):
         a = args[k]
@@ -354,8 +448,13 @@ def trigger_targets(args, env, gh_repo=None):
         elif a in value_flags and k + 1 < len(args):
             flag, val = a, args[k + 1]
             k += 2
+        elif create and a.startswith("-H") and len(a) > 2:  # -Hfeat/x
+            flag, val = "-H", a[2:]
+            k += 1
         else:
             if a == "--undo":  # gh pr ready --undo は Draft へ戻す操作で、きっかけではない
+                return []
+            if create and a in NO_CREATE_FLAGS:  # --dry-run と --web は PR を作らない
                 return []
             if not a.startswith("-") and positional is None:
                 positional = a
@@ -365,16 +464,28 @@ def trigger_targets(args, env, gh_repo=None):
             repo_word = val
         elif flag == "--undo" and val != "false":
             return []
+        elif create and flag in NO_CREATE_FLAGS and val != "false":
+            return []
+        elif create and flag in ("-H", "--head"):
+            head_word = val
     repos = repo_values(repo_word, gh_repo, env)
+    if create:
+        if head_word is None:
+            return [(args[0], r, None, name, None) for r in repos]
+        # owner:branch の形と、問い合わせの URL にそのまま入れられない名前は積まない
+        heads = expand(head_word, env) or []
+        if not heads or not all(BRANCH_RE.fullmatch(h) for h in heads):
+            return []
+        return [(args[0], r, None, name, h) for r in repos for h in heads]
     if positional is None:
-        return [(args[0], r, None, name) for r in repos] if may_omit else []
+        return [(args[0], r, None, name, None) for r in repos] if may_omit else []
     out = []
     for v in expand(positional, env) or []:
         m = URL_RE.fullmatch(v)
         if m:
-            out.append((args[0], m.group(1) + "/" + m.group(2), int(m.group(3)), name))
+            out.append((args[0], m.group(1) + "/" + m.group(2), int(m.group(3)), name, None))
         elif NUMBER_RE.fullmatch(v):
-            out.extend((args[0], r, int(v), name) for r in repos)
+            out.extend((args[0], r, int(v), name, None) for r in repos)
     return out
 
 
@@ -391,7 +502,8 @@ def github_com(args, gh_host=None):
 
 
 def find_triggers(command):
-    """コマンド文字列から (種別, owner/repo か None, 番号か None, きっかけ) を実行順に取り出す。"""
+    """コマンド文字列から (種別, owner/repo か None, 番号か None, きっかけ, ヘッドブランチか None)
+    を実行順に取り出す。"""
     env = {}      # 変数名 -> 値のリスト（解決できないときは None）
     loops = []    # 開いている for の変数名（while / until は None）
     saved = []    # ( に入ったときの env の控え。サブシェルの中の代入は ) を出たら捨てる
@@ -437,10 +549,10 @@ def find_triggers(command):
         if not github_com(args, prefix.get("GH_HOST")):
             continue
         if args[0] == "api":
-            out.extend(("pr", r, num, GATE) for r, num in api_targets(args, env))
+            out.extend(api_targets(args, env, prefix.get("GH_REPO")))
         elif args[0] in ("pr", "issue") and len(args) >= 2 and args[1] == "edit":
             # ゲート通過の対象は PR だけ。issue の番号なら対象の確認（pulls/<番号>）で落ちる
-            out.extend(("pr", r, num, GATE)
+            out.extend(("pr", r, num, GATE, None)
                        for r, num in edit_targets(args, env, prefix.get("GH_REPO")))
         else:
             out.extend(trigger_targets(args, env, prefix.get("GH_REPO")))
@@ -464,15 +576,15 @@ def build_job(payload):
     if os.environ.get("GH_HOST", "").lower() not in ("", "github.com"):
         return None  # 引き継いだ GH_HOST で gh の書き込み先が github.com 以外。積む対象は github.com だけ
     at = "%.3f" % time.time()  # 行の時刻・累計を切る時刻・並び順は、コマンドを実行したこの時刻で決める
-    targets = {}                # (種別, リポジトリの指定, 番号) -> きっかけ（実行順）
-    for kind, repo, number, name in find_triggers(command):
-        add_name(targets.setdefault((kind, repo, number), []), name)
+    targets = {}                # (種別, リポジトリの指定, 番号, ヘッドブランチ) -> きっかけ（実行順）
+    for kind, repo, number, name, head in find_triggers(command):
+        add_name(targets.setdefault((kind, repo, number, head), []), name)
     if not targets:
         return None
     cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else ""
     return {"cwd": cwd, "at": at,
-            "targets": [{"kind": k, "repo": r, "number": n, "triggers": names}
-                        for (k, r, n), names in targets.items()]}
+            "targets": [{"kind": k, "repo": r, "number": n, "head": h, "triggers": names}
+                        for (k, r, n, h), names in targets.items()]}
 
 
 def main():
@@ -547,11 +659,23 @@ def label_names(data):
     return [x.get("name") for x in data.get("labels") or [] if isinstance(x, dict)]
 
 
-def pr_checks(data):
+def created_near(data, at):
+    """PR の created_at が、きっかけの時刻（at）の前後 CREATED_WINDOW 秒以内か。読めなければ False。"""
+    try:
+        created = calendar.timegm(time.strptime(data.get("created_at"), "%Y-%m-%dT%H:%M:%SZ"))
+        return abs(created - float(at)) <= CREATED_WINDOW
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def pr_checks(data, at):
     return {
+        # 既にあった PR（gh pr create が「既にある」で失敗した場合）には積まない
+        CREATED: data.get("state") == "open" and created_near(data, at),
         "PR コメント": True,
         "Ready": data.get("draft") is False,
         "PR クローズ": data.get("state") == "closed",
+        "PR 再オープン": data.get("state") == "open",
         "マージ": data.get("merged") is True or bool(data.get("merged_at")),
         GATE: LABEL in label_names(data),
     }
@@ -565,9 +689,9 @@ def issue_checks(data):
     }
 
 
-def resolve(target, cwd):
+def resolve(target, cwd, at):
     """対象を GitHub に確かめ、(種別, owner/repo, 番号, ヘッドブランチ, 残ったきっかけ) を返す。
-    存在しない・状態が合わない・解決できないときは None。"""
+    存在しない・状態が合わない・解決できないときは None。at はきっかけの時刻（PR 作成の確認に使う）。"""
     kind, spec, number, names = (target["kind"], target["repo"], target["number"],
                                  list(target["triggers"]))
     where = spec or "{owner}/{repo}"
@@ -589,7 +713,9 @@ def resolve(target, cwd):
         data = gh_json("repos/%s/pulls/%d" % (repo, number), cwd)
     elif number is None:
         owner = spec.split("/")[0] if spec else "{owner}"
-        data = gh_json("repos/%s/pulls?head=%s:{branch}&state=all" % (where, owner), cwd)
+        # gh pr create --head <ブランチ> はそのブランチ、無ければ cwd のブランチ（gh が埋める）
+        head = target.get("head") or "{branch}"
+        data = gh_json("repos/%s/pulls?head=%s:%s&state=all" % (where, owner, head), cwd)
         data = data[0] if isinstance(data, list) and data else None
     else:
         data = gh_json("repos/%s/pulls/%d" % (where, number), cwd)
@@ -600,7 +726,7 @@ def resolve(target, cwd):
     number = data.get("number") if number is None else number
     if repo is None or not isinstance(branch, str) or not branch or not isinstance(number, int):
         return None
-    checks = pr_checks(data)
+    checks = pr_checks(data, at)
     names = [n for n in names if checks.get(n)]
     return ("pr", repo, number, branch, names) if names else None
 
@@ -727,7 +853,7 @@ def work(job):
     resolved = {}  # (owner/repo, 番号) -> [種別, ヘッドブランチ, きっかけ]。別の書き方で同じ対象を指した分をまとめる
     for target in job["targets"]:
         try:
-            found = resolve(target, cwd)
+            found = resolve(target, cwd, at)
         except Exception:
             found = None
         if found is None:
