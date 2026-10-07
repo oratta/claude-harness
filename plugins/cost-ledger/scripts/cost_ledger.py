@@ -209,9 +209,17 @@ def _gh(cwd: str, *args: str):
     return done.stdout.strip() or None
 
 
+# issue の問い合わせから番号と子 issue の数を 1 回で取り出す（値が無い・読めないときは 0）
+ISSUE_JQ = r'"\(.number) \((.sub_issues_summary.total)? // 0)"'
+
+
 def resolve_number(where: str, number: str):
-    """番号が PR か issue かを GitHub に問い合わせ、``("pr", ヘッドブランチ)`` /
-    ``("issue", 番号)`` / ``(None, None)`` を返す。
+    """番号が PR か issue かを GitHub に問い合わせ、``("pr", ヘッドブランチ, 0)`` /
+    ``("issue", 番号, 子 issue の数)`` / ``(None, None, 0)`` を返す。
+
+    子 issue の数は、issue の問い合わせの応答の ``sub_issues_summary.total``（同じ呼び出しの
+    jq で番号と一緒に取り出すので、``gh`` の回数は増えない）。応答に無い・整数として読めない
+    ときは 0（子を持たない issue として扱う）。
 
     問い合わせは REST（``gh api``）だけを使う。GraphQL 経路（``gh pr view --json`` 等）は
     Projects classic の廃止に伴うエラーで落ちるリポジトリがあり、番号の判別という
@@ -222,11 +230,151 @@ def resolve_number(where: str, number: str):
     """
     head = _gh(where, "api", "repos/{owner}/{repo}/pulls/%s" % number, "--jq", ".head.ref")
     if head:
-        return "pr", head
-    found = _gh(where, "api", "repos/{owner}/{repo}/issues/%s" % number, "--jq", ".number")
-    if found:
-        return "issue", found
-    return None, None
+        return "pr", head, 0
+    found = _gh(where, "api", "repos/{owner}/{repo}/issues/%s" % number, "--jq", ISSUE_JQ)
+    parts = (found or "").split()
+    if parts:
+        children = 0
+        if len(parts) == 2 and re.fullmatch(r"[0-9]+", parts[1]):
+            children = int(parts[1])
+        return "issue", parts[0], children
+    return None, None, 0
+
+
+class EpicError(Exception):
+    """子 issue の木を読み切れなかった（一部しか読めていない額を合計にしないために止める）。"""
+
+
+# 子 issue を辿る深さの上限（エピックから数えた段数。GitHub が許す入れ子の上限と同じ）
+EPIC_MAX_DEPTH = 8
+
+_CLOSING_FIELDS = (
+    "closedByPullRequestsReferences(first: 100) {"
+    " nodes { number headRefName isCrossRepository baseRepository { nameWithOwner } }"
+    " pageInfo { hasNextPage } }"
+)
+# ある issue の子と、子ごとの閉じた PR を 1 回で取る。owner・name・number は変数で渡し、
+# 問い合わせの文字列に埋め込まない
+SUB_ISSUES_QUERY = (
+    "query($owner: String!, $name: String!, $number: Int!) {"
+    " repository(owner: $owner, name: $name) { nameWithOwner issue(number: $number) {"
+    " number title state " + _CLOSING_FIELDS +
+    " subIssues(first: 100) {"
+    " nodes { number title state repository { nameWithOwner } subIssuesSummary { total } "
+    + _CLOSING_FIELDS + " }"
+    " pageInfo { hasNextPage } } } } }"
+)
+
+
+def _closing_refs(refs, repo: str, number: int):
+    """``closedByPullRequestsReferences`` から、数える PR の ``[(番号, ヘッドブランチ)]`` を作る。
+
+    数えるのは、ベースが対象のリポジトリ（大文字と小文字は区別しない）で ``isCrossRepository``
+    が偽の PR だけ（``gate_report.py`` の ``closing_prs()`` と同じ絞り方）。同じヘッドブランチが
+    複数あれば番号のいちばん小さいものだけを残し、番号の昇順に並べる。
+    """
+    if not isinstance(refs, dict) or not isinstance(refs.get("pageInfo"), dict):
+        raise EpicError("issue #%d を閉じた PR の一覧が期待する形ではありません" % number)
+    if refs["pageInfo"].get("hasNextPage") is not False:
+        raise EpicError("issue #%d を閉じた PR が 100 件を超えています" % number)
+    nodes = refs.get("nodes")
+    if not isinstance(nodes, list):
+        raise EpicError("issue #%d を閉じた PR の一覧が期待する形ではありません" % number)
+    by_branch = {}
+    for node in nodes:
+        base = node.get("baseRepository") if isinstance(node, dict) else None
+        base = base.get("nameWithOwner") if isinstance(base, dict) else None
+        pr = node.get("number") if isinstance(node, dict) else None
+        head = node.get("headRefName") if isinstance(node, dict) else None
+        cross = node.get("isCrossRepository") if isinstance(node, dict) else None
+        if (type(pr) is not int or pr < 1 or not isinstance(head, str) or not head
+                or not isinstance(cross, bool) or not isinstance(base, str)):
+            raise EpicError("issue #%d を閉じた PR の応答に、形の崩れた項目があります" % number)
+        if cross or base.lower() != repo.lower():
+            continue
+        if head not in by_branch or pr < by_branch[head]:
+            by_branch[head] = pr
+    return sorted((pr, head) for head, pr in by_branch.items())
+
+
+def _issue_fields(node, number: int):
+    """応答の issue 1 件から ``(番号, 題名, 状態)`` を取り出す（状態は ``open`` / ``closed``）。"""
+    if not isinstance(node, dict):
+        raise EpicError("issue #%d の子 issue の応答に、形の崩れた項目があります" % number)
+    found, title, state = node.get("number"), node.get("title"), node.get("state")
+    if (type(found) is not int or found < 1 or not isinstance(title, str)
+            or state not in ("OPEN", "CLOSED")):
+        raise EpicError("issue #%d の子 issue の応答に、形の崩れた項目があります" % number)
+    return found, title, state.lower()
+
+
+def fetch_epic_tree(where: str, number: int):
+    """エピックと子孫の issue を辿り、``(対象の issue の一覧, 数えなかった子の一覧)`` を返す。
+
+    対象の issue は表示の順（エピック自身、あとは GitHub が返した子の順で、子を持つ issue の
+    直後にその子）。1 件は ``number``・``parent``・``depth``・``title``・``state``・``prs``
+    （数える PR の ``[(番号, ヘッドブランチ)]``）。``gh api graphql`` は、子を持つ issue 1 件に
+    つき 1 回だけ呼ぶ。一度出た番号と別のリポジトリの子は数えず辿らない。読み切れなければ
+    EpicError（呼ぶ側が標準出力に何も書かずに終了コード 2 を返す）。
+    """
+    issues, skipped, seen = [], [], {number}
+    state = {"repo": None}
+
+    def query(target: int):
+        raw = _gh(where, "api", "graphql", "-f", "query=" + SUB_ISSUES_QUERY,
+                  "-F", "owner={owner}", "-F", "name={repo}", "-F", "number=%d" % target)
+        if raw is None:
+            raise EpicError("issue #%d の子 issue の問い合わせ（gh api graphql）が失敗しました" % target)
+        try:
+            repository = json.loads(raw)["data"]["repository"]
+            repo, issue = repository["nameWithOwner"], repository["issue"]
+            subs = issue["subIssues"]
+            nodes, more = subs["nodes"], subs["pageInfo"]["hasNextPage"]
+        except (ValueError, KeyError, TypeError):
+            raise EpicError("issue #%d の子 issue の応答が期待する形ではありません" % target)
+        if not isinstance(repo, str) or not repo or not isinstance(nodes, list):
+            raise EpicError("issue #%d の子 issue の応答が期待する形ではありません" % target)
+        if more is not False:
+            raise EpicError("issue #%d の子 issue が 100 件を超えています" % target)
+        if state["repo"] is None:
+            state["repo"] = repo
+        return issue, nodes
+
+    def walk(target: int, depth: int, known):
+        issue, nodes = query(target)
+        if known is None:
+            _found, title, status = _issue_fields(issue, target)
+            issues.append({"number": target, "parent": None, "depth": 0, "title": title,
+                           "state": status,
+                           "prs": _closing_refs(issue.get("closedByPullRequestsReferences"),
+                                                state["repo"], target)})
+        for node in nodes:
+            child, title, status = _issue_fields(node, target)
+            owner = node.get("repository")
+            owner = owner.get("nameWithOwner") if isinstance(owner, dict) else None
+            summary = node.get("subIssuesSummary")
+            total = summary.get("total") if isinstance(summary, dict) else None
+            if not isinstance(owner, str) or not owner or type(total) is not int or total < 0:
+                raise EpicError("issue #%d の子 issue #%d の応答が期待する形ではありません"
+                                % (target, child))
+            if owner.lower() != state["repo"].lower():
+                skipped.append({"repo": owner, "number": child, "parent": target})
+                continue
+            if child in seen:
+                continue
+            seen.add(child)
+            issues.append({"number": child, "parent": target, "depth": depth + 1, "title": title,
+                           "state": status,
+                           "prs": _closing_refs(node.get("closedByPullRequestsReferences"),
+                                                state["repo"], child)})
+            if total > 0:
+                if depth + 1 >= EPIC_MAX_DEPTH:
+                    raise EpicError("issue #%d は %d 段より深い子 issue を持っています"
+                                    % (child, EPIC_MAX_DEPTH))
+                walk(child, depth + 1, True)
+
+    walk(number, 0, None)
+    return issues, skipped
 
 
 def current_branch(where: str):
@@ -1543,7 +1691,7 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
             resolver,
         )
 
-    kind, value = resolve_number(where, args.number)
+    kind, value, children = resolve_number(where, args.number)
     if kind == "pr":
         return cmd_branch(
             argparse.Namespace(
