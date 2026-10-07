@@ -104,7 +104,9 @@ use_real_cost_ledger() {
 
 # 呼ばれた引数を 1 呼び出し 1 行でログに書く gh（$GH_LOG の行数が呼び出し回数）。
 #   対象の確認:    repos/<A>/pulls/<N>・repos/<A>/issues/<N>・repos/<A>/pulls?head=...
-#                  既定は「open・draft でない・未マージ・合格ラベル付き・ヘッド oratta/sample の PR」。
+#                  既定は「open・draft でない・未マージ・合格ラベル付き・ヘッド oratta/sample・
+#                  いま作られた（created_at が現在の時刻）PR」。pulls?head=... の問い合わせ文字列は
+#                  $GH_LOG.query に書く（どのブランチで探したかを確かめる）。
 #                  $GH_FIX/pull.<N>.json / issue.<N>.json があれば既定に上書きする。
 #                  $GH_FIX/nopull.<N> があれば PR ではない（issue）、missing.<N> があれば存在しない
 #   パス:          repos/{owner}/{repo}/... は FAKE_CWD_REPO で埋め、実行した cwd を $GH_LOG.cwd に書く
@@ -208,6 +210,7 @@ def override(base, name):
 def pull(n):
     return override({"number": n, "state": "open", "draft": False, "merged": False,
                      "merged_at": None, "labels": list(LABELS),
+                     "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                      "head": {"ref": "oratta/sample"},
                      "base": {"repo": {"full_name": repo}}}, "pull.%d.json" % n)
 
@@ -419,10 +422,10 @@ PY
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
-@test "gate-report: a Bash call with none of the trigger strings starts neither gh nor python3" {  # 8 つの文字列のどれも含まない Bash（gh pr view 300 を含む）では gh も python3 も起動せず、無出力で 0
+@test "gate-report: a Bash call with none of the trigger strings starts neither gh nor python3" {  # 10 個の文字列のどれも含まず、gh api の書き込みの形でもない Bash（gh pr view 300 を含む）では gh も python3 も起動せず、無出力で 0
   use_stub_python
-  for c in "ls -la && git status" "gh pr view 300" "gh issue view 12 --comments" "gh pr create --title x" \
-           "gh pr reopen 300" "gh pr list" "gh issue edit 12 --add-label bug"; do
+  for c in "ls -la && git status" "gh pr view 300" "gh issue view 12 --comments" \
+           "gh pr list" "gh issue edit 12 --add-label bug"; do
     run_hook "$c"
     [ "$status" -eq 0 ]
     [ -z "$output" ]
@@ -431,10 +434,43 @@ PY
   done
 }
 
-@test "gate-report: each of the eight trigger strings passes the fast path" {  # 8 つの文字列のどれかを含めば python3 が起動する
+@test "gate-report: a gh api read starts neither gh nor python3" {  # gh api の読み取り（書き込みを示すオプションが無い）3 形では gh も python3 も起動しない
   use_stub_python
-  for c in "echo agent-review:passed" "gh pr comment 1" "gh pr ready 1" "gh pr close 1" "gh pr merge 1" \
-           "gh issue comment 1" "gh issue close 1" "gh issue reopen 1"; do
+  for c in "gh api repos/o/r/issues/300/comments" "gh api repos/o/r/pulls/300 --jq .state" \
+           "gh api --paginate repos/o/r/issues/300/comments --jq '.[].body'"; do
+    run_hook "$c"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    no_gh_call
+    [ ! -e "$WORK/log/python.log" ] || { echo "python3 started for: $c"; return 1; }
+  done
+}
+
+@test "gate-report: a gh api write outside /issues/ and /pulls/ starts neither gh nor python3" {  # /issues/ も /pulls/ も含まない gh api の書き込みでは python3 が起動しない
+  use_stub_python
+  run_hook "gh api -X POST repos/o/r/releases -f tag_name=v1"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+  [ ! -e "$WORK/log/python.log" ]
+}
+
+@test "gate-report: each of the ten trigger strings passes the fast path" {  # 10 個の文字列のどれかを含めば python3 が起動する
+  use_stub_python
+  for c in "echo agent-review:passed" "gh pr create --title x" "gh pr comment 1" "gh pr ready 1" "gh pr close 1" \
+           "gh pr reopen 300" "gh pr merge 1" "gh issue comment 1" "gh issue close 1" "gh issue reopen 1"; do
+    command rm -f "$WORK/log/python.log"
+    run_hook "$c"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ -e "$WORK/log/python.log" ] || { echo "python3 not started for: $c"; return 1; }
+  done
+}
+
+@test "gate-report: a gh api write under /issues/ or /pulls/ passes the fast path" {  # gh api の書き込み 4 形（フィールド・-X PATCH・-X PUT・--input）では python3 が起動する
+  use_stub_python
+  for c in "gh api repos/o/r/issues/300/comments -f body=x" "gh api -X PATCH repos/o/r/pulls/300 -f state=closed" \
+           "gh api -X PUT repos/o/r/pulls/300/merge" "gh api repos/o/r/issues/300/comments --input body.json"; do
     command rm -f "$WORK/log/python.log"
     run_hook "$c"
     [ "$status" -eq 0 ]
@@ -656,6 +692,100 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
   queried oratta/claude-harness 300
 }
 
+# --- gh api の呼び出しの読み方（spec: cost-ledger-timeline） ---
+
+@test "gh-api: a call with a field or --input and no method is a POST" {  # メソッド省略＋フィールドは POST、--input だけでも POST（どちらもコメントの投稿として積む）
+  run_hook "gh api repos/acme/cwd-repo/issues/300/comments -f body=x"
+  posted_to acme/cwd-repo 300
+  [ "$(body_trigger 1)" = "PR コメント" ]
+  touch "$FIX/nopull.12"
+  run_hook "gh api repos/acme/cwd-repo/issues/12/comments --input body.json"
+  posted_to acme/cwd-repo 12
+  [ "$(body_trigger 1)" = "issue コメント" ]
+}
+
+@test "gh-api: the value of --input is not read as the endpoint" {  # --input の値がラベルのパスの形でも拾わない（#5 だけが対象で #300 は問い合わせない）
+  run_hook "gh api repos/acme/repo-a/issues/5/labels -X POST --input repos/acme/repo-a/issues/300/labels -f 'labels[]=agent-review:passed'"
+  [ "$status" -eq 0 ]
+  queried acme/repo-a 5
+  ! queried acme/repo-a 300 || return 1
+  ! grep -q 'issues/300' "$GH_LOG" || return 1
+}
+
+@test "gh-api: the values of --jq and -H are not read as the endpoint" {  # --jq・-H の値が endpoint の形でも、対象は最初の位置引数の #7 だけ
+  echo '{"state":"closed","merged":true}' > "$FIX/pull.7.json"
+  run_hook "gh api --jq repos/o/r/issues/300/comments -H repos/o/r/pulls/300/merge -X PUT repos/o/r/pulls/7/merge"
+  [ "$status" -eq 0 ]
+  queried o/r 7
+  ! grep -q '/300' "$GH_LOG" || return 1
+}
+
+@test "gh-api: attached option values are read as one word" {  # -XPATCH・-fstate=closed・--method=PATCH・--raw-field=state=closed
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  run_hook "gh api -XPATCH repos/acme/cwd-repo/pulls/300 -fstate=closed"
+  posted_to acme/cwd-repo 300
+  [ "$(body_nrows)" -eq 1 ]
+  [ "$(body_trigger 1)" = "PR クローズ" ]
+  run_hook "gh api --method=PATCH repos/acme/cwd-repo/pulls/300 --raw-field=state=closed"
+  [ "$(body_nrows)" -eq 2 ]
+  [ "$(body_trigger 2)" = "PR クローズ" ]
+}
+
+@test "gh-api: state=closed inside another value is not a state change" {  # -f body='state=closed' と --jq state=closed は積まない
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/pulls/300 -f body='state=closed'"
+  [ "$status" -eq 0 ]
+  no_gh_call
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/pulls/300 -f title=x --jq state=closed"
+  no_gh_call
+}
+
+@test "gh-api: the last state field wins" {  # state のフィールドが複数あれば最後のものを使う
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/pulls/300 -f state=closed -f state=open"
+  posted_to acme/cwd-repo 300
+  [ "$(body_trigger 1)" = "PR 再オープン" ]
+}
+
+@test "gh-api: assignments in the same command are expanded" {  # R=...; N=... のあとの gh api -X PUT repos/\$R/pulls/\$N/merge
+  echo '{"state":"closed","merged":true}' > "$FIX/pull.300.json"
+  run_hook "R=acme/cwd-repo; N=300; gh api -X PUT repos/\$R/pulls/\$N/merge"
+  posted_to acme/cwd-repo 300
+  [ "$(body_trigger 1)" = "マージ" ]
+}
+
+@test "gh-api: a label name outside a field is not a grant" {  # --jq 'labels[]=agent-review:passed' は付与と見ない
+  run_hook "gh api -X POST repos/acme/repo-a/issues/300/labels --jq 'labels[]=agent-review:passed'"
+  [ "$status" -eq 0 ]
+  no_gh_call
+  run_hook "gh api -X POST repos/acme/repo-a/issues/300/labels -f 'x=labels[]=agent-review:passed'"
+  no_gh_call
+}
+
+@test "gh-api: a grant on a {owner}/{repo} endpoint targets the cwd repository" {  # repos/{owner}/{repo}/issues/300/labels は cwd のリポジトリの #300 への付与。前置きの GH_REPO があればそのリポジトリ。解決できなければ飛ばす
+  run_hook "gh api repos/{owner}/{repo}/issues/300/labels -f 'labels[]=agent-review:passed'"
+  queried '\{owner\}/\{repo\}' 300
+  posted_to acme/cwd-repo 300
+  [ "$(body_trigger 1)" = "ゲート通過" ]
+  : > "$GH_LOG"
+  run_hook "GH_REPO=oratta/other gh api repos/{owner}/{repo}/issues/300/labels -f 'labels[]=agent-review:passed'"
+  queried oratta/other 300
+  asked_timeline oratta/other pr 300
+  : > "$GH_LOG"
+  run_hook "GH_REPO=\$(cat r) gh api repos/{owner}/{repo}/issues/300/labels -f 'labels[]=agent-review:passed'"
+  [ "$status" -eq 0 ]
+  no_gh_call
+}
+
+@test "gh-api: a method that cannot be resolved is skipped" {  # -X \"\$M\"（M の代入がコマンドに無い）の呼び出しは飛ばし、gh を呼ばない。代入があれば解決する
+  run_hook 'gh api -X "$M" repos/acme/cwd-repo/issues/300/comments -f body=x'
+  [ "$status" -eq 0 ]
+  no_gh_call
+  run_hook "gh api -X \"\$M\" repos/acme/cwd-repo/issues/300/labels -f 'labels[]=agent-review:passed'"
+  no_gh_call
+  run_hook 'M=post; gh api -X "$M" repos/acme/cwd-repo/issues/300/comments -f body=x'
+  posted_to acme/cwd-repo 300
+}
+
 # --- 付与の実測・数字の取得・コメントの形 ---
 
 @test "gate-report: no post when the PR does not actually carry the label" {  # 問い合わせた PR に agent-review:passed が無ければ作成も書き換えもせず、timeline も呼ばない
@@ -863,11 +993,88 @@ PY
   [ "$(patches)" -eq 5 ]
 }
 
-@test "timeline-hook: gh commands outside the table add nothing" {  # gh pr view・gh pr create・gh pr reopen・gh issue view では積まない
-  for c in "gh pr view 300" "gh pr create --title x --body 'gh pr comment 300'" "gh pr reopen 300" "gh issue view 12"; do
+@test "timeline-hook: gh api calls, gh pr create and gh pr reopen each add one row to the same comment" {  # gh pr create・gh api のコメント投稿・gh api の PATCH state=closed・gh pr reopen・gh api の PUT merge を順に流すと、POST は最初の 1 回だけで、流すたびに行が 1 行ずつ増える
+  export FAKE_HEAD_PR=300
+  run_hook "gh pr create --title x --body y"
+  [ "$(body_nrows)" -eq 1 ]
+  run_hook "gh api repos/acme/cwd-repo/issues/300/comments -f body=x"
+  [ "$(body_nrows)" -eq 2 ]
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/pulls/300 -f state=closed"
+  [ "$(body_nrows)" -eq 3 ]
+  echo '{"state":"open"}' > "$FIX/pull.300.json"
+  run_hook "gh pr reopen 300"
+  [ "$(body_nrows)" -eq 4 ]
+  echo '{"state":"closed","merged":true}' > "$FIX/pull.300.json"
+  run_hook "gh api -X PUT repos/acme/cwd-repo/pulls/300/merge"
+  [ "$(body_nrows)" -eq 5 ]
+  [ "$(body_rows | awk -F'|' '{v=$3; sub(/^ /,"",v); sub(/ $/,"",v); printf "%s,", v}')" = "PR 作成,PR コメント,PR クローズ,PR 再オープン,マージ," ]
+  [ "$(grep -cF -- '-X POST repos/acme/cwd-repo/issues/300/comments' "$GH_LOG")" -eq 1 ]
+  [ "$(patches)" -eq 4 ]
+}
+
+@test "timeline-hook: gh api calls on an issue each add one row" {  # PR でない issue #12 への gh api のコメント投稿・state=closed・state=open で、きっかけは issue コメント・issue クローズ・issue 再オープン
+  touch "$FIX/nopull.12"
+  run_hook "gh api repos/acme/cwd-repo/issues/12/comments -f body=x"
+  [ "$(body_nrows)" -eq 1 ]
+  echo '{"state":"closed"}' > "$FIX/issue.12.json"
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/issues/12 -f state=closed"
+  [ "$(body_nrows)" -eq 2 ]
+  echo '{"state":"open"}' > "$FIX/issue.12.json"
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/issues/12 -f state=open"
+  [ "$(body_nrows)" -eq 3 ]
+  [ "$(body_rows | awk -F'|' '{v=$3; sub(/^ /,"",v); sub(/ $/,"",v); printf "%s,", v}')" = "issue コメント,issue クローズ,issue 再オープン," ]
+  [ "$(grep -cF -- '-X POST repos/acme/cwd-repo/issues/12/comments' "$GH_LOG")" -eq 1 ]
+  [ "$(patches)" -eq 2 ]
+}
+
+@test "timeline-hook: gh commands outside the table add nothing" {  # gh pr view・gh issue view・gh pr list・gh api graphql では積まない
+  for c in "gh pr view 300" "gh issue view 12" "gh pr list --search 'gh pr comment 300'" \
+           "gh api graphql -f query='mutation { closePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }' -f path=/pulls/300"; do
     run_hook "$c"
     [ "$status" -eq 0 ]
     no_gh_call
+  done
+}
+
+@test "timeline-hook: one gh api trigger makes exactly one write" {  # 目印付きのコメントが無い PR #300 に gh api のコメント投稿を 1 回流すと、新規作成 1 回・書き換え 0 回・表の行 1 行（hook の書き込みを受けてもう 1 回動かない）
+  run_hook "gh api repos/acme/cwd-repo/issues/300/comments -f body=x"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ "$(posts)" -eq 1 ]
+  [ "$(patches)" -eq 0 ]
+  [ "$(body_nrows)" -eq 1 ]
+  [ "$(gh_calls)" -eq 4 ]
+}
+
+@test "timeline-hook: a command shaped like the hook's own PATCH adds nothing" {  # hook の書き換えと同じ形（issues/comments/<id> への PATCH）を Bash で流しても gh は 1 回も呼ばれない
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/issues/comments/900 --input -"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+}
+
+@test "timeline-hook: gh api reads add nothing" {  # gh api の GET（メソッド省略で書き込みのオプション無し・-X GET にフィールド）では gh が 1 回も呼ばれない
+  for c in "gh api repos/acme/cwd-repo/issues/300/comments" "gh api repos/acme/cwd-repo/pulls/300 --jq .state" \
+           "gh api --paginate repos/acme/cwd-repo/issues/300/comments --jq '.[].body'" \
+           "gh api -X GET repos/acme/cwd-repo/issues/300/comments -f per_page=100" \
+           "gh api --method get repos/acme/cwd-repo/pulls/300 -f state=closed"; do
+    run_hook "$c"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    no_gh_call || { echo "gh called for: $c"; return 1; }
+  done
+}
+
+@test "timeline-hook: a PATCH that does not change state adds nothing" {  # state のフィールドが無い PATCH（タイトルの編集・--input で本文を渡したもの）では gh が 1 回も呼ばれない
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  for c in "gh api -X PATCH repos/acme/cwd-repo/pulls/300 -f title=x" \
+           "gh api -X PATCH repos/acme/cwd-repo/issues/12 --input body.json" \
+           "gh api -X PATCH repos/acme/cwd-repo/pulls/300 --input body.json" \
+           "gh api -X PATCH repos/acme/cwd-repo/pulls/300 -f state=merged"; do
+    run_hook "$c"
+    [ "$status" -eq 0 ]
+    no_gh_call || { echo "gh called for: $c"; return 1; }
   done
 }
 
@@ -941,6 +1148,114 @@ PY
   no_gh_call
 }
 
+@test "timeline-hook: gh pr create targets the PR of the cwd branch" {  # gh pr create は cwd のブランチをヘッドに持つ、作られたばかりの PR #300 が対象になる（きっかけは PR 作成）
+  export FAKE_HEAD_PR=300
+  run_hook "gh pr create --draft --title x --body y"
+  grep -qF 'repos/{owner}/{repo}/pulls?head={owner}:{branch}&state=all' "$GH_LOG"
+  posted_to acme/cwd-repo 300
+  [ "$(body_nrows)" -eq 1 ]
+  [ "$(body_trigger 1)" = "PR 作成" ]
+  grep -qE "^args=timeline --pr 300 --branch oratta/sample " "$COST_LOG"
+}
+
+@test "timeline-hook: gh pr create --head looks up that branch" {  # --head feat/x・--head=feat/x・-H feat/x・-Hfeat/x は、cwd のブランチではなく feat/x で問い合わせる。-R があればそのリポジトリ
+  export FAKE_HEAD_PR=300
+  for c in "gh pr create --draft --head feat/x --base main --title x --body y" "gh pr create --head=feat/x --title x" \
+           "gh pr create -H feat/x --title x" "gh pr create -Hfeat/x --title x"; do
+    : > "$GH_LOG"
+    run_hook "$c"
+    grep -qF 'repos/{owner}/{repo}/pulls?head={owner}:feat/x&state=all' "$GH_LOG" || { echo "not looked up by feat/x: $c"; return 1; }
+    ! grep -qF '{branch}' "$GH_LOG" || return 1
+    # 1 回目は新規作成、2 回目からは stub に残ったコメントの書き換えになる
+    [ "$(( $(posts) + $(patches) ))" -eq 1 ] || { echo "no row written: $c"; return 1; }
+  done
+  : > "$GH_LOG"
+  run_hook "gh pr create -R acme/other --head feat/x --title x"
+  grep -qF 'repos/acme/other/pulls?head=acme:feat/x&state=all' "$GH_LOG"
+}
+
+@test "timeline-hook: gh pr create that makes no PR, or names another owner's branch, is skipped" {  # --head owner:branch・解決できない --head・ブランチ名に使えない文字・--dry-run・-w / --web は gh を呼ばない
+  export FAKE_HEAD_PR=300
+  for c in "gh pr create --head someone:feat/x --title x --body y" 'gh pr create --head "$(git branch --show-current)" --title x' \
+           'gh pr create --head "$B" --title x' "gh pr create --head 'feat/x&state=open' --title x" \
+           "gh pr create --dry-run --title x" "gh pr create --web" "gh pr create -w" "gh pr create --title x --web=true"; do
+    run_hook "$c"
+    [ "$status" -eq 0 ]
+    no_gh_call || { echo "gh called for: $c"; return 1; }
+  done
+}
+
+@test "timeline-hook: option values of gh pr create are not mistaken for flags" {  # --title・--body・-l などの値が --dry-run や --web でも、PR を作るコマンドとして積む
+  export FAKE_HEAD_PR=300
+  run_hook "gh pr create --title --dry-run --body --web -l -w"
+  posted_to acme/cwd-repo 300
+  [ "$(body_trigger 1)" = "PR 作成" ]
+}
+
+@test "timeline-hook: gh pr reopen needs a number or a URL" {  # gh pr reopen は番号か URL が要り、位置引数が無いときは積まない
+  export FAKE_HEAD_PR=300
+  run_hook "gh pr reopen"
+  no_gh_call
+  run_hook "gh pr reopen 300 -c 999"
+  posted_to acme/cwd-repo 300
+  [ "$(body_trigger 1)" = "PR 再オープン" ]
+  ! queried '\{owner\}/\{repo\}' 999 || return 1
+  : > "$GH_LOG"
+  run_hook "gh pr reopen https://github.com/acme/other/pull/301"
+  queried acme/other 301
+}
+
+@test "timeline-hook: a gh api endpoint names the repository and number" {
+  # repos/acme/cwd-repo/... と repos/{owner}/{repo}/... はどちらも cwd のリポジトリの #300。先頭の / は有っても無くてもよい。前置きの GH_REPO は {owner}/{repo} にだけ効く
+  touch "$FIX/nopull.12"
+  run_hook "gh api repos/acme/cwd-repo/issues/12/comments -f body=x"
+  queried acme/cwd-repo 12
+  posted_to acme/cwd-repo 12
+  : > "$GH_LOG"
+  run_hook "gh api repos/{owner}/{repo}/issues/12/comments -f body=x"
+  queried '\{owner\}/\{repo\}' 12
+  grep -qxF "$(cd "$CWD" && pwd -P)" "$GH_LOG.cwd"
+  [ "$(patches)" -eq 1 ]
+  : > "$GH_LOG"
+  run_hook "gh api /repos/acme/cwd-repo/issues/12/comments -f body=x"
+  queried acme/cwd-repo 12
+  : > "$GH_LOG"
+  run_hook "GH_REPO=acme/third gh api repos/{owner}/{repo}/issues/12/comments -f body=x"
+  queried acme/third 12
+  : > "$GH_LOG"
+  run_hook "GH_REPO=acme/third gh api repos/acme/fourth/issues/12/comments -f body=x"
+  queried acme/fourth 12
+  ! queried acme/third 12 || return 1
+}
+
+@test "timeline-hook: a gh api endpoint that does not fit the shape is skipped" {  # 完全な URL・問い合わせ文字列付き・:owner/:repo・コマンド置換や未定義の変数を含む endpoint・片方だけ置き換え記法の endpoint は gh を呼ばない
+  for c in "gh api https://api.github.com/repos/acme/cwd-repo/issues/300/comments -f body=x" \
+           'gh api "repos/acme/cwd-repo/issues/$(echo 300)/comments" -f body=x' \
+           'gh api repos/acme/cwd-repo/issues/$N/comments -f body=x' \
+           "gh api 'repos/acme/cwd-repo/issues/300/comments?per_page=1' -f body=x" \
+           "gh api repos/:owner/:repo/issues/300/comments -f body=x" \
+           "gh api repos/{owner}/cwd-repo/issues/300/comments -f body=x" \
+           "gh api repos/acme/cwd-repo/issues/300/comments/1 -f body=x" \
+           "gh api repos/acme/cwd-repo/pulls/300/comments -f body=x" \
+           "gh api -X PUT repos/acme/cwd-repo/issues/300/merge" \
+           "gh api -X DELETE repos/acme/cwd-repo/issues/300/comments -f body=x" \
+           "gh api -X POST repos/acme/cwd-repo/pulls/300/merge"; do
+    run_hook "$c"
+    [ "$status" -eq 0 ]
+    no_gh_call || { echo "gh called for: $c"; return 1; }
+  done
+}
+
+@test "timeline-hook: a gh api call aimed at another host never stacks" {  # --hostname ghe.example の gh api のコメント投稿は gh を呼ばない（前置きの GH_HOST も同じ）
+  run_hook "gh api --hostname ghe.example repos/acme/cwd-repo/issues/300/comments -f body=x"
+  [ "$status" -eq 0 ]
+  no_gh_call
+  run_hook "GH_HOST=ghe.example gh api -X PUT repos/acme/cwd-repo/pulls/300/merge"
+  no_gh_call
+  run_hook "GH_HOST=ghe.example gh pr create --title x"
+  no_gh_call
+}
+
 # cwd を acme/repo-a の git リポジトリにして、本物の cost_ledger.py を使う
 use_real_repo_a() {
   use_real_cost_ledger
@@ -977,6 +1292,18 @@ use_real_repo_a() {
   no_write
   : > "$GH_LOG"
   HOOK_CWD="$RA" run_hook "gh pr comment 300 --body x"
+  posted_to acme/repo-a 300
+  head -n 1 "$GH_LOG.body" | grep -qF 'コスト: $1.00 / ¥150 @150 — PR #300 (oratta/sample) 帰属: ブランチ'
+}
+
+@test "timeline-hook: a gh api endpoint in another repository gets nothing" {  # cwd が acme/repo-a で、gh api の endpoint が acme/other を指すときは対象を確かめるが書かない（cwd のリポジトリの endpoint には書く）
+  use_real_repo_a
+  HOOK_CWD="$RA" run_hook "gh api repos/acme/other/issues/300/comments -f body=x"
+  [ "$status" -eq 0 ]
+  queried acme/other 300
+  no_write
+  : > "$GH_LOG"
+  HOOK_CWD="$RA" run_hook "gh api repos/acme/repo-a/issues/300/comments -f body=x"
   posted_to acme/repo-a 300
   head -n 1 "$GH_LOG.body" | grep -qF 'コスト: $1.00 / ¥150 @150 — PR #300 (oratta/sample) 帰属: ブランチ'
 }
@@ -1046,14 +1373,33 @@ use_real_repo_a() {
   grep -qE "^args=timeline --pr 300 --branch oratta/sample " "$COST_LOG"
 }
 
-@test "timeline-hook: gh issue reopen on a PR number adds nothing" {  # gh issue reopen 300 の番号が PR なら積まない（PR の再オープンはきっかけの表に無い）
+@test "timeline-hook: gh issue reopen on a PR number is a PR reopen" {  # gh issue reopen 300 の番号が PR なら PR 再オープンとして、PR の state を確かめてから積む
   run_hook "gh issue reopen 300"
   [ "$status" -eq 0 ]
-  no_write
-  [ ! -e "$COST_LOG" ]
-  run_hook "gh issue comment 300 --body x; gh issue reopen 300"
+  posted_to acme/cwd-repo 300
   [ "$(body_nrows)" -eq 1 ]
+  [ "$(body_trigger 1)" = "PR 再オープン" ]
+  grep -qE "^args=timeline --pr 300 --branch oratta/sample " "$COST_LOG"
+  run_hook "gh issue comment 300 --body x; gh issue reopen 300"
+  [ "$(body_nrows)" -eq 2 ]
+  [ "$(body_trigger 2)" = "PR コメント+PR 再オープン" ]
+  echo '{"state":"closed"}' > "$FIX/pull.301.json"
+  : > "$GH_LOG"
+  run_hook "gh issue reopen 301"
+  no_write
+}
+
+@test "timeline-hook: a gh api issue endpoint given a PR number is treated as a PR" {  # issues/300/comments・issues/300 の state=closed・state=open の番号が PR なら、きっかけは PR コメント・PR クローズ・PR 再オープン
+  run_hook "gh api repos/acme/cwd-repo/issues/300/comments -f body=x"
   [ "$(body_trigger 1)" = "PR コメント" ]
+  grep -qE "^args=timeline --pr 300 --branch oratta/sample " "$COST_LOG"
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/issues/300 -f state=closed"
+  [ "$(body_trigger 2)" = "PR クローズ" ]
+  echo '{"state":"open"}' > "$FIX/pull.300.json"
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/issues/300 -f state=open"
+  [ "$(body_nrows)" -eq 3 ]
+  [ "$(body_trigger 3)" = "PR 再オープン" ]
 }
 
 # --- 状態の変更は実測してから積む ---
@@ -1078,6 +1424,79 @@ use_real_repo_a() {
   echo '{"state":"closed"}' > "$FIX/issue.12.json"
   run_hook "gh issue reopen 12"
   no_write
+}
+
+@test "timeline-hook: no row when a gh api merge or close did not happen" {  # gh api の PUT merge でマージ済みでない・PATCH state=closed で state が open のまま・state=open で closed のままなら積まない
+  run_hook "gh api -X PUT repos/acme/cwd-repo/pulls/300/merge"
+  [ "$status" -eq 0 ]
+  queried acme/cwd-repo 300
+  no_write
+  [ ! -e "$COST_LOG" ]
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/pulls/300 -f state=closed"
+  no_write
+  touch "$FIX/nopull.12"
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/issues/12 -f state=closed"
+  no_write
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/pulls/300 -f state=open"
+  no_write
+  [ ! -e "$COST_LOG" ]
+}
+
+@test "timeline-hook: no row when the reopen did not happen" {  # gh pr reopen 300 で state が closed のままなら積まない
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  run_hook "gh pr reopen 300"
+  [ "$status" -eq 0 ]
+  queried '\{owner\}/\{repo\}' 300
+  no_write
+  [ ! -e "$COST_LOG" ]
+}
+
+@test "timeline-hook: an existing PR gets no PR-created row" {  # cwd のブランチの PR の created_at が 1 時間前（gh pr create が「既にある」で失敗した場合）なら積まない。閉じた PR・created_at が無い・読めない応答でも積まない。300 秒以内なら積む
+  export FAKE_HEAD_PR=300
+  ago() { "$REAL_PYTHON" -c 'import sys, time; print(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - int(sys.argv[1]))))' "$1"; }
+  echo "{\"created_at\":\"$(ago 3600)\"}" > "$FIX/pull.300.json"
+  run_hook "gh pr create --title x --body y"
+  [ "$status" -eq 0 ]
+  [ "$(gh_calls)" -eq 1 ]
+  no_write
+  [ ! -e "$COST_LOG" ]
+  echo "{\"created_at\":\"$(ago -3600)\"}" > "$FIX/pull.300.json"
+  run_hook "gh pr create --title x --body y"
+  no_write
+  echo '{"created_at":null}' > "$FIX/pull.300.json"
+  run_hook "gh pr create --title x --body y"
+  no_write
+  echo '{"created_at":"yesterday"}' > "$FIX/pull.300.json"
+  run_hook "gh pr create --title x --body y"
+  no_write
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  run_hook "gh pr create --title x --body y"
+  no_write
+  echo "{\"created_at\":\"$(ago 200)\"}" > "$FIX/pull.300.json"
+  run_hook "gh pr create --title x --body y"
+  posted_to acme/cwd-repo 300
+  [ "$(body_trigger 1)" = "PR 作成" ]
+}
+
+@test "timeline-hook: gh pr create with no PR for the branch adds nothing" {  # gh pr create が失敗して、cwd のブランチをヘッドに持つ PR が無ければ積まない
+  run_hook "gh pr create --title x --body y"
+  [ "$status" -eq 0 ]
+  [ "$(gh_calls)" -eq 1 ]
+  no_write
+}
+
+@test "timeline-hook: gh pr create and a comment on the same PR make one row" {  # gh pr create && gh pr comment（番号なし）は同じ対象で、行は 1 行。前からある PR なら PR コメントだけが残る
+  export FAKE_HEAD_PR=300
+  run_hook "gh pr create --title x --body y && gh pr comment --body z"
+  [ "$(posts)" -eq 1 ]
+  [ "$(body_nrows)" -eq 1 ]
+  [ "$(body_trigger 1)" = "PR 作成+PR コメント" ]
+  [ "$(gh_calls)" -eq 3 ]
+  echo '{"created_at":"2020-01-01T00:00:00Z"}' > "$FIX/pull.300.json"
+  run_hook "gh pr create --title x --body y && gh pr comment --body z"
+  [ "$(body_nrows)" -eq 2 ]
+  [ "$(body_trigger 2)" = "PR コメント" ]
 }
 
 @test "timeline-hook: no row for a number that does not exist" {  # gh pr comment 999 で #999 の問い合わせが失敗したら積まない
@@ -1229,6 +1648,44 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
   unset FAKE_CLOSING_PRS
   run_hook "gh issue close 12"
   [ "$(gh_calls)" -eq 4 ]
+}
+
+@test "timeline-hook: gh pr create, gh pr reopen and PR-side gh api calls cost three gh calls" {  # gh pr create・gh pr reopen 300・gh api の PATCH state=closed（pulls）・gh api の PUT merge は、どれも gh が 3 回
+  export FAKE_HEAD_PR=300
+  run_hook "gh pr create --title x --body y"
+  [ "$(gh_calls)" -eq 3 ]
+  : > "$GH_LOG"
+  run_hook "gh pr reopen 300"
+  [ "$(gh_calls)" -eq 3 ]
+  : > "$GH_LOG"
+  echo '{"state":"closed"}' > "$FIX/pull.300.json"
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/pulls/300 -f state=closed"
+  [ "$(gh_calls)" -eq 3 ]
+  : > "$GH_LOG"
+  echo '{"state":"closed","merged":true}' > "$FIX/pull.300.json"
+  run_hook "gh api -X PUT repos/acme/cwd-repo/pulls/300/merge"
+  [ "$(gh_calls)" -eq 3 ]
+  [ "$(posts)" -eq 0 ]
+  [ "$(patches)" -eq 1 ]
+}
+
+@test "timeline-hook: a gh api comment costs three gh calls on an issue and four on a PR" {  # gh api のコメント投稿は、PR でない issue #12 では 3 回、PR #300 では 4 回（issue として確かめてから PR として取り直す 1 回）
+  touch "$FIX/nopull.12"
+  run_hook "gh api repos/acme/cwd-repo/issues/12/comments -f body=x"
+  [ "$(gh_calls)" -eq 3 ]
+  [ "$(graphql_calls)" -eq 0 ]
+  : > "$GH_LOG"
+  run_hook "gh api repos/acme/cwd-repo/issues/300/comments -f body=x"
+  [ "$(gh_calls)" -eq 4 ]
+}
+
+@test "timeline-hook: closing an issue through gh api costs four gh calls" {  # PR でない issue #12 への gh api の PATCH state=closed は 4 回（閉じた PR の問い合わせを含む）
+  closed_issue_12
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]"
+  run_hook "gh api -X PATCH repos/acme/cwd-repo/issues/12 -f state=closed"
+  [ "$(gh_calls)" -eq 4 ]
+  [ "$(graphql_calls)" -eq 1 ]
+  [ "$(closing_args)" = "704:feat/x" ]
 }
 
 # --- ロックの置き場（共有の /tmp に他人が先に作った場所へ書かない） ---

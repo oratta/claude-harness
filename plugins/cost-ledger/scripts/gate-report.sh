@@ -3,8 +3,11 @@
 # その PR / issue の 1 本のコメントへ「ここまでのコスト」を 1 行積む。LLM のトークンは使わない。
 # 規範の正本は openspec の spec `cost-ledger-gate-report` と `cost-ledger-timeline`。
 #
-#   きっかけ: gh pr comment / gh pr ready / gh pr close / gh pr merge /
-#             gh issue comment / gh issue close / gh issue reopen / agent-review:passed の付与
+#   きっかけ: gh pr create / gh pr comment / gh pr ready / gh pr close / gh pr reopen /
+#             gh pr merge / gh issue comment / gh issue close / gh issue reopen /
+#             gh api の REST の直叩き（issues/<番号>/comments への POST・pulls/<番号> と
+#             issues/<番号> への state の PATCH・pulls/<番号>/merge への PUT）/
+#             agent-review:passed の付与
 #   緊急停止 COST_LEDGER_GATE_REPORT=off（上のきっかけすべてを止める）
 #
 # 既定では GitHub に何も書かない。書くのは、利用者がリポジトリの外に置いた許可の一覧
@@ -19,6 +22,8 @@
 # JSON のパースも jq・python3 の起動もせずに抜ける（fast path）。判定対象が payload 全体なのは
 # tool_response（コマンドの出力）も入るためで、文字列を表示しただけの呼び出しも通るが、
 # その先の厳密な判定（gate_report.py）で落ちて無音で終わるだけになる。
+# gh api は読み取りが頻繁に走るので、文字列 3 つ（gh api・/issues/ か /pulls/・空白に続く
+# 書き込みのオプション）がそろったときだけ通す。読み取り（GET）では python3 を起動しない。
 #
 # ここと gate_report.py の同期部分が行うのはコマンド文字列の判定だけ。GitHub への問い合わせ・
 # 集計・書き込みは、gate_report.py が自分を切り離して起こした裏のプロセスで行う（セッションを
@@ -37,7 +42,17 @@ payload="$(cat)" || exit 0
 case "$payload" in
   *agent-review:passed*) ;;
   *"gh pr comment"*|*"gh pr ready"*|*"gh pr close"*|*"gh pr merge"*) ;;
+  *"gh pr create"*|*"gh pr reopen"*) ;;
   *"gh issue comment"*|*"gh issue close"*|*"gh issue reopen"*) ;;
+  *"gh api"*)
+    case "$payload" in
+      *"/issues/"*|*"/pulls/"*) ;;
+      *) exit 0 ;;
+    esac
+    case "$payload" in
+      *" -X"*|*" --method"*|*" -f"*|*" -F"*|*" --field"*|*" --raw-field"*|*" --input"*) ;;
+      *) exit 0 ;;
+    esac ;;
   *) exit 0 ;;
 esac
 

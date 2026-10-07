@@ -1,8 +1,5 @@
-# cost-ledger-gate-report Specification
+## MODIFIED Requirements
 
-## Purpose
-ゲート通過（合格ラベル `agent-review:passed` の付与）を PostToolUse の hook で捕まえ、対象 PR のコストを LLM のトークンを使わずにコメントで 1 行貼る。数字は `/cost` と同じ入口（`cost_ledger.py cost`）から取り、hook は集計・単価・書式を自分で持たない。
-## Requirements
 ### Requirement: ゲート通過を PostToolUse の hook で捕まえる
 システムは `plugins/cost-ledger/hooks/hooks.json` に `PostToolUse`・matcher `Bash` の hook を 1 つ持ち、`plugins/cost-ledger/scripts/gate-report.sh` を呼 MUST ぶ。ゲート通過は合格ラベル `agent-review:passed` を付けるコマンドとして Bash の呼び出しに現れ、そのコマンド文字列から対象の PR が分かるため。`Stop` のように PR と結びつかない event を使ってはなら MUST NOT ない。同じ hook が、`cost-ledger-timeline` の定めるきっかけ（PR / issue へのコメントと状態の変更）も捕まえる。
 
@@ -97,33 +94,3 @@ hook は全 Bash 呼び出しで起動するので、スクリプトは stdin �
 #### Scenario: フィールドでない引数のラベル名は付与と見ない
 - **WHEN** `gh api -X POST repos/acme/repo-a/issues/300/labels --jq 'labels[]=agent-review:passed'` の hook JSON を流す
 - **THEN** コメントの作成も書き換えも行われない
-
-### Requirement: 付与を実測してから貼る
-システムは対象ごとに、その PR に `agent-review:passed` が実際に付いていることを GitHub に問い合わせて確かめてから投稿 MUST する。付いていなければ投稿してはなら MUST NOT ない。PostToolUse はツールが終わったことしか伝えず、複合コマンドの中の付与が成功したかは分からないため。
-
-#### Scenario: 付与に失敗していた
-- **WHEN** 付与コマンドの hook JSON を流すが、問い合わせた PR のラベルに `agent-review:passed` が無い
-- **THEN** コメントの作成も書き換えも行われない
-
-### Requirement: 有効・無効の設定を持たず、緊急停止だけを持つ
-システムは有効・無効を切り替える設定項目を持ってはなら MUST NOT ない。緊急停止用に、環境変数 `COST_LEDGER_GATE_REPORT=off` のときは何もせず `exit 0` MUST する。この停止は、ゲート通過の行だけでなく、`cost-ledger-timeline` の定めるすべてのきっかけに効 MUST く。
-
-#### Scenario: 緊急停止
-- **WHEN** `COST_LEDGER_GATE_REPORT=off` を付けて付与コマンドの hook JSON を流す
-- **THEN** `gh` は一度も呼ばれず、stdout は空で、終了コードは 0
-
-#### Scenario: 緊急停止はコメントのきっかけにも効く
-- **WHEN** `COST_LEDGER_GATE_REPORT=off` を付けて `gh pr comment 300 --body x` の hook JSON を流す
-- **THEN** `gh` と `python3` は一度も呼ばれず、stdout は空で、終了コードは 0
-
-### Requirement: どの失敗でも無出力で抜ける
-システムは次のどれに当たっても、stdout と stderr に何も出さず終了コード 0 で終わ MUST る: コマンドが対象外 / `gh` か `python3` が無い / `cost_ledger.py` が失敗する / GitHub に届かない・`gh` が失敗する。終了コード 2 を返してはなら MUST NOT ない。hook の失敗でゲートを止めず、文脈にも何も入れないため。
-
-#### Scenario: `gh` が失敗する
-- **WHEN** `gh` がすべて失敗する環境で付与コマンドの hook JSON を流す
-- **THEN** stdout は空で、終了コードは 0
-
-#### Scenario: 集計が失敗する
-- **WHEN** `cost_ledger.py timeline` が 0 以外で終わる状況で付与コマンドの hook JSON を流す
-- **THEN** コメントの作成も書き換えも行われず、stdout は空で、終了コードは 0
-
