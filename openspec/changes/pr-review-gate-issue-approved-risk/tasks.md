@@ -13,4 +13,4 @@
 ## 3. 仕上げ
 
 - [x] 3.1 変更の記録を書く（何を変えたか・なぜ・当てられる 3 分類と聞き続ける 4 分類・証拠の 2 形と除外・起票したセッションの決め方・別の PC で起票した issue には当たらないこと・無人運用（loop-dev-agent）と事後報告の届け先が無い経路では当てないこと・`/develop` のあとに issue 本文が編集されると `lastEditedAt` の条件で `/develop` の証拠が使えなくなり、着手時に W が受け入れ条件を直す運用では主に聞く側に倒れやすいこと・この PR 自体が安全ゲートの弱体化に当たり、主が受け入れたリスク）。触る範囲: plugins/dev-workflow/changes/723.md（新規）、書き方の手本は plugins/dev-workflow/changes/721.md
-- [ ] 3.2 `scripts/test.sh pr-review-gate-skill`・`scripts/test.sh dev-workflow` がそれぞれ exit 0、`grep -n "issue で承認済み" plugins/dev-workflow/skills/pr-review-gate/declarations.md` が 1 行以上、`openspec validate pr-review-gate-issue-approved-risk --strict` が通ることを確かめる。常時注入の予算（`tests/injection-budget.bats`）に触れていないことも確かめる。触る範囲: なし（確認だけ）
+- [x] 3.2 `scripts/test.sh pr-review-gate-skill`・`scripts/test.sh dev-workflow` がそれぞれ exit 0、`grep -n "issue で承認済み" plugins/dev-workflow/skills/pr-review-gate/declarations.md` が 1 行以上、`openspec validate pr-review-gate-issue-approved-risk --strict` が通ることを確かめる。常時注入の予算（`tests/injection-budget.bats`）に触れていないことも確かめる。触る範囲: なし（確認だけ）
