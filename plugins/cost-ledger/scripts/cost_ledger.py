@@ -822,8 +822,11 @@ def _ledger_session(line: str):
     return record.get("session_id") if isinstance(record, dict) else None
 
 
-def iter_ledger_issue_facts(ledger: str, issue: str):
+def iter_ledger_issue_facts(ledger: str, issue):
     """台帳のうち、その issue 番号を触った行を持つセッションの事実だけを返す。
+
+    ``issue`` は番号 1 件（文字列）か、番号の集合（エピックの集計が、対象の issue すべての分を
+    台帳の同じ 2 回の走査でまとめて読むために渡す。どれかを触ったセッションを返す）。
 
     区間は ``session_id`` ごとに切るので、その issue を触った行が 1 つも無いセッションは
     issue の集計に関係しない。1 回目の走査で、issue 番号を持つ行（``"issues": []`` でない行）
@@ -833,6 +836,7 @@ def iter_ledger_issue_facts(ledger: str, issue: str):
     handle = _open_ledger(ledger)
     if handle is None:
         return
+    wanted = {issue} if isinstance(issue, str) else set(issue)
     sessions: set[str] = set()
     with handle:
         for line in handle:
@@ -843,7 +847,8 @@ def iter_ledger_issue_facts(ledger: str, issue: str):
             except ValueError:
                 continue
             if (isinstance(fact, dict) and isinstance(fact.get("issues"), list)
-                    and issue in fact["issues"] and isinstance(fact.get("session_id"), str)):
+                    and not wanted.isdisjoint(n for n in fact["issues"] if isinstance(n, str))
+                    and isinstance(fact.get("session_id"), str)):
                 sessions.add(fact["session_id"])
     handle = _open_ledger(ledger)
     if handle is None:
@@ -910,7 +915,8 @@ def load_facts(resolver: RepoResolver, branch: str | None = None, issue: str | N
     会話ログを直接読む。
 
     ``issue`` を渡すと、台帳からはその issue を触ったセッションの行だけを読む（区間に
-    切った結果は全行を読んだ場合と同じ）。会話ログの直読みでは絞らない。
+    切った結果は全行を読んだ場合と同じ）。番号の集合を渡せば、どれかを触ったセッションの行を
+    まとめて読む。会話ログの直読みでは絞らない。
     """
     configured = ledger_path()
     if configured is None:
@@ -1847,6 +1853,100 @@ def issue_combined_total(matched, closing_prs, pricing: Pricing, resolver: RepoR
     total += outside_usd
     return {"prs": prs, "outside_usd": outside_usd, "total_usd": total,
             "current": (int(round(total * 1e6)),) + token_totals(all_facts)}
+
+
+def epic_rows(numbers, repo_id: str, heads, resolver: RepoResolver):
+    """対象の issue すべての区間の行と、ヘッドブランチすべての行をまとめて読む。
+
+    返すのは ``({issue の番号: 区間の行}, リポジトリ不明の区間の行, {ヘッドブランチ: 行})``。
+    台帳への差分の追記は ``load_facts()`` の 1 回だけで、台帳を読み通す回数は issue の数にも
+    PR の数にも比例しない（区間は番号の集合で 1 度に、PR の分は全ブランチを 1 度に読む）。
+    """
+    wanted = {str(number) for number in numbers}
+    facts = list(load_facts(resolver, issue=wanted))
+    interval_facts, unknown = defaultdict(list), []
+    for row in split_intervals(facts):
+        if row["issue"] not in wanted:
+            continue
+        if row["repo_id"] == repo_id:
+            interval_facts[int(row["issue"])].extend(row["facts"])
+        elif row["repo_id"] == UNKNOWN_REPO:
+            unknown.extend(row["facts"])
+    return interval_facts, unknown, load_branches_facts(resolver, heads)
+
+
+def _micro(facts, pricing: Pricing) -> int:
+    """事実の列の金額をマイクロドルの整数にする（``money()`` と同じ 6 桁への丸め）。"""
+    return int(round(sum(pricing.cost(fact)[0] for fact in facts) * 1e6))
+
+
+def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricing: Pricing) -> dict:
+    """エピックの合計（spec cost-ledger-attribution）を出す。``gh`` も台帳も読まない。
+
+    ``issues`` は ``fetch_epic_tree()`` の対象の issue の一覧（先頭がエピック自身）、
+    ``interval_facts`` は ``{issue の番号: その issue に帰属した区間の行}``、``branch_facts`` は
+    ``{ヘッドブランチ: そのブランチの行}``、``unknown_facts`` はリポジトリ識別子が不明の区間の行。
+
+    行は次の順で 1 つの issue に割り当てる。(1) ブランチ名がどれかのヘッドブランチと一致する行は、
+    そのブランチの PR が閉じた対象の issue のうち番号がいちばん小さい issue へ。(2) それ以外の
+    区間の行は、その区間の issue へ。1 つの行のブランチは 1 つで、区間は 1 つの issue にしか帰属
+    しないので、割り当てた額の和は「行ごとに 1 回だけ足した額」になる。
+
+    金額は、ブランチごと・(issue, ブランチ) ごとにマイクロドルの整数へ丸めてから足し、ドルへの
+    変換は最後に行う（割り当てた額の和と合計が、浮動小数の誤差なしで一致するように）。
+    """
+    owner = {}
+    for row in issues:
+        for _pr, branch in row["prs"]:
+            if branch not in owner or row["number"] < owner[branch]:
+                owner[branch] = row["number"]
+    branch_micro = {branch: _micro(branch_facts.get(branch, []), pricing) for branch in owner}
+    counted = [fact for branch in owner for fact in branch_facts.get(branch, [])]
+
+    result, own, usd = [], {}, {}
+    for row in issues:
+        number = row["number"]
+        by_branch = defaultdict(list)
+        for fact in interval_facts.get(number, []):
+            by_branch[fact.get("branch")].append(fact)
+        heads = {branch for _pr, branch in row["prs"]}
+        assigned = sum(branch_micro[branch] for branch in heads if owner[branch] == number)
+        standalone = sum(branch_micro[branch] for branch in heads)
+        for branch, facts in by_branch.items():
+            micro = _micro(facts, pricing)
+            if branch not in owner:
+                assigned += micro
+                counted.extend(facts)
+            if branch not in heads:
+                standalone += micro
+        own[number] = usd[number] = assigned
+        result.append({
+            "number": number, "parent": row["parent"], "depth": row["depth"],
+            "title": row["title"], "state": row["state"],
+            "own_micro": assigned, "standalone_micro": standalone,
+            "closing_prs": [{"number": pr, "branch": branch, "usd": branch_micro[branch] / 1e6,
+                             "counted_in": owner[branch]} for pr, branch in row["prs"]],
+        })
+    # 子は必ず親より後ろに並ぶので、後ろから親へ足し上げる
+    for row in reversed(result):
+        if row["parent"] is not None:
+            usd[row["parent"]] += usd[row["number"]]
+    for row in result:
+        row["usd"] = usd[row["number"]] / 1e6
+        row["own_usd"] = row.pop("own_micro") / 1e6
+        row["standalone_usd"] = row.pop("standalone_micro") / 1e6
+    epic = issues[0]["number"]
+    total = sum(own.values())
+    unknown = [fact for fact in unknown_facts if fact.get("branch") not in owner]
+    return {
+        "issues": result,
+        "total_usd": total / 1e6,
+        "children_usd": (total - own[epic]) / 1e6,
+        "self_usd": own[epic] / 1e6,
+        "unknown_repo_usd": _micro(unknown, pricing) / 1e6,
+        "unknown_repo_messages": len(unknown),
+        "sessions": {fact["session_id"] for fact in counted},
+    }
 
 
 def _dollars(usd: float) -> str:
