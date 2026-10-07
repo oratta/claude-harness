@@ -14,9 +14,9 @@
 
 ## 3. hooks.json の command を引用符で囲む
 
-- [ ] 3.1 4 本の hooks.json の command を `"${CLAUDE_PLUGIN_ROOT}/scripts/<name>.sh"` から `"\"${CLAUDE_PLUGIN_ROOT}/scripts/<name>.sh\""` に変える（13 箇所）。変えるのは引用符だけで、インデント・キーの並び・末尾のカンマ・他の値に触らない。変えたあと `git diff --stat` で 4 ファイル・13 行の追加と 13 行の削除であることを確かめる。触る範囲: plugins/capability-registry/hooks/hooks.json:9、plugins/cost-ledger/hooks/hooks.json:9,20、plugins/dev-workflow/hooks/hooks.json:9,19,30,39,49,59、plugins/worktree/hooks/hooks.json:8,20,25,36
-- [ ] 3.2 command を完全一致で検査している既存テストの期待値を、引用符付きの値に合わせる。Python の文字列の中なので、引用符のエスケープを各テストの書き方（heredoc か `python3 -c "..."` か）に合わせる。触る範囲: plugins/dev-workflow/tests/subagent-stop-guard.bats:461、plugins/worktree/tests/session-proc-cleanup.bats:603-604、plugins/cost-ledger/tests/gate-report.bats:347、plugins/cost-ledger/tests/ledger.bats:199
-- [ ] 3.3 `tests/lint-plugin-validate.bats` に、追跡されているすべての `plugins/*/hooks/hooks.json` について「`${CLAUDE_PLUGIN_ROOT}` を含む command の値が `"${CLAUDE_PLUGIN_ROOT}/` で始まり `"` で終わる」ことを確かめるテストを足す（`claude` を使わないので CI でも走る）。触る範囲: tests/lint-plugin-validate.bats（新規）
+- [x] 3.1 4 本の hooks.json の command を `"${CLAUDE_PLUGIN_ROOT}/scripts/<name>.sh"` から `"\"${CLAUDE_PLUGIN_ROOT}/scripts/<name>.sh\""` に変える（13 箇所）。変えるのは引用符だけで、インデント・キーの並び・末尾のカンマ・他の値に触らない。変えたあと `git diff --stat` で 4 ファイル・13 行の追加と 13 行の削除であることを確かめる。触る範囲: plugins/capability-registry/hooks/hooks.json:9、plugins/cost-ledger/hooks/hooks.json:9,20、plugins/dev-workflow/hooks/hooks.json:9,19,30,39,49,59、plugins/worktree/hooks/hooks.json:8,20,25,36
+- [x] 3.2 command を完全一致で検査している既存テストの期待値を、引用符付きの値に合わせる。Python の文字列の中なので、引用符のエスケープを各テストの書き方（heredoc か `python3 -c "..."` か）に合わせる。触る範囲: plugins/dev-workflow/tests/subagent-stop-guard.bats:461、plugins/worktree/tests/session-proc-cleanup.bats:603-604、plugins/cost-ledger/tests/gate-report.bats:347、plugins/cost-ledger/tests/ledger.bats:199
+- [x] 3.3 `tests/lint-plugin-validate.bats` に、追跡されているすべての `plugins/*/hooks/hooks.json` について「`${CLAUDE_PLUGIN_ROOT}` を含む command の値が `"${CLAUDE_PLUGIN_ROOT}/` で始まり `"` で終わる」ことを確かめるテストを足す（`claude` を使わないので CI でも走る）。触る範囲: tests/lint-plugin-validate.bats（新規）
 
 ## 4. 変更の記録
 
