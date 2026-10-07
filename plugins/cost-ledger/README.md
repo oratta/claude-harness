@@ -147,25 +147,40 @@ COST_LEDGER_DRIFT_BUDGET_SECONDS=inf python3 scripts/cost_ledger.py cost
 
 ## 節目ごとの自動投稿（ここまでのコスト）
 
-PR / issue へのコメント・状態の変更・ゲート通過のたびに、その PR / issue の 1 本のコメントへ
+PR の作成・PR / issue へのコメント・状態の変更・ゲート通過のたびに、その PR / issue の 1 本のコメントへ
 「ここまでのコスト」を 1 行積む。PostToolUse（matcher `Bash`）の hook `scripts/gate-report.sh` が
 Bash のコマンド文字列からきっかけを見つけ、裏のプロセス `scripts/gate_report.py` が `gh` で読み書きする。
 数字と書式は `scripts/cost_ledger.py timeline` が作る。LLM のトークンは使わない。
 
 | コマンド | 行の「きっかけ」 |
 |---|---|
+| `gh pr create`（`--dry-run`・`--web` を除く） | `PR 作成` |
 | `gh pr comment` | `PR コメント` |
 | `gh issue comment` | `issue コメント` |
 | `gh pr ready`（`--undo` を除く） | `Ready` |
 | `gh pr close` | `PR クローズ` |
+| `gh pr reopen` | `PR 再オープン` |
 | `gh pr merge` | `マージ` |
 | `gh issue close` | `issue クローズ` |
 | `gh issue reopen` | `issue 再オープン` |
+| `gh api repos/<owner>/<repo>/issues/<番号>/comments` への POST | `issue コメント`（番号が PR なら `PR コメント`） |
+| `gh api -X PATCH repos/<owner>/<repo>/pulls/<番号>` でフィールドが `state=closed` / `state=open` | `PR クローズ` / `PR 再オープン` |
+| `gh api -X PATCH repos/<owner>/<repo>/issues/<番号>` でフィールドが `state=closed` / `state=open` | `issue クローズ` / `issue 再オープン`（番号が PR なら `PR クローズ` / `PR 再オープン`） |
+| `gh api -X PUT repos/<owner>/<repo>/pulls/<番号>/merge` | `マージ` |
 | 合格ラベル `agent-review:passed` の付与（`gh api .../issues/<番号>/labels`、`gh pr edit` / `gh issue edit` の `--add-label`） | `ゲート通過` |
 
 状態を変えるきっかけは、積む前に GitHub に問い合わせて、その状態になっていること（マージ済み・closed・
 ラベルが付いている、など）を確かめる。なっていなければ積まない。ゲート通過の対象は PR だけで、
 PR でない issue に合格ラベルを付けても積まない。
+
+`gh pr create` は、コマンドを実行したディレクトリのブランチ（`-H` / `--head` があればそのブランチ）をヘッドに持つ
+PR を探し、open で、作成時刻がコマンドの実行時刻の前後 300 秒以内のときだけ積む（「このブランチの PR は既にある」で
+失敗したときに、作っていない PR へ積まないため）。`--head owner:branch` の形では積まない。
+
+`gh api` は endpoint（位置引数）とメソッドを `gh` と同じ規則で読む。メソッドは `-X` / `--method`、無ければ
+フィールド（`-f` / `-F` / `--raw-field` / `--field`）か `--input` があれば POST、どちらも無ければ GET。
+endpoint の `{owner}/{repo}` は、前置きの `GH_REPO`、無ければコマンドを実行したディレクトリのリポジトリとして読む。
+読み取り（GET）では hook は `python3` を起動せずに抜ける。
 
 コメントの例:
 
@@ -199,7 +214,13 @@ PR でない issue に合格ラベルを付けても積まない。
 - **古い形のコメントは残る**: 以前の目印 `<!-- cost-ledger:gate-report -->` のコメントは、書き換えも削除もしない
 - **やらないこと**: auto-merge によるマージと、PR の `Closes` による issue の自動クローズには行を積まない
   （手元でコマンドが走らないので hook から見えない。`gh pr merge --auto` は実行した時点でマージされていなければ積まない）。
-  `gh api` の直叩きでの投稿・状態変更、`gh pr create`、`gh pr reopen` でも積まない（合格ラベルの付与だけは `gh api` も見る）
+  `gh api` の直叩きのうち、`gh api graphql` の mutation、`--input` で渡した JSON の中の `state`（`--input` の PATCH）、
+  完全な URL（`https://api.github.com/...`）や問い合わせ文字列付きで書いた endpoint、コメントの編集
+  （`issues/comments/<id>` への PATCH）、`state` を変えない PATCH でも積まない
+- **PR でない issue を `gh api` で操作したときの累計**: `gh api .../issues/<番号>/...` でのコメント投稿・クローズ・
+  再オープンは、行は積まれるが、その行の累計が 0 か実際より小さく出ることがある。issue への帰属は
+  `gh issue view/comment/edit/close/develop <番号>` の文字列で決まり、`gh api` の endpoint は帰属の鍵にならないため。
+  PR の行はブランチで帰属するので影響しない
 
 ### issue を閉じたときの合計の行
 
