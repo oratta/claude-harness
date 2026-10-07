@@ -28,6 +28,10 @@
 # ─────────────────────────────────────────────────────────────
 set -u
 
+# テストが起動する Python（hook 経由を含む）に .pyc を作らせない。gitignore 済みの __pycache__ が
+# 手元に残ると、ソースの絶対パスを拾って固定パス検査が落ちる（#699 / #702）。
+export PYTHONDONTWRITEBYTECODE=1
+
 # 未導入なら即エラー（bats が無いのに無言で成功扱いにしない）。
 if ! command -v bats >/dev/null 2>&1; then
   echo "bats が見つかりません。次のコマンドで導入してください:" >&2
