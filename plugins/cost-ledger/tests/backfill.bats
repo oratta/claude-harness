@@ -10,7 +10,7 @@
 # 台帳（COST_LEDGER_PATH）と控えは一時ディレクトリに置く。hook は COST_LEDGER_HOOK_FOREGROUND=1 で
 # その場で最後まで実行させる（切り離しそのものを見るテストを除く）。
 #
-# 台帳は複製したスクリプトの親（$WORK）の外に置く。cost_ledger.py は自分を含むディレクトリの配下の
+# 台帳は複製したスクリプトの親（${WORK}）の外に置く。cost_ledger.py は自分を含むディレクトリの配下の
 # 台帳を断るため（その検査だけ $WORK の中を指す）。
 
 load helper
@@ -212,7 +212,7 @@ SH
 }
 no_python() { [ ! -e "$WORK/log/python.log" ]; }
 
-# SessionStart の hook の JSON。HOOK_CWD（既定 $CWD）
+# SessionStart の hook の JSON。HOOK_CWD（既定 ${CWD}）
 session_json() {  # $1=source（既定 startup。"-" で省く）
   "$REAL_PYTHON" - "${1-startup}" "${HOOK_CWD-$CWD}" <<'PY'
 import json, sys
@@ -614,7 +614,7 @@ PY
   [ "$(comment_reads)" -eq 20 ]
   [ "$(seen)" = "2026-09-02T00:00:20Z" ]
   grep -qF "issues/120/comments" "$GH_LOG"
-  ! grep -qF "issues/121/comments" "$GH_LOG"
+  ! grep -qF "issues/121/comments" "$GH_LOG" || return 1
   run_backfill
   [ "$(comment_reads)" -eq 25 ]
   [ "$(seen)" = "2026-09-02T01:00:00Z" ]
@@ -646,7 +646,7 @@ assert abs(at - (time.time() - 86400)) <= 60, since
 PY
   queried_pull 300
   [ "$(posts)" -eq 1 ]
-  ! grep -qF "issues/12/comments" "$GH_LOG"
+  ! grep -qF "issues/12/comments" "$GH_LOG" || return 1
   [ -n "$(seen)" ]
   python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["version"] == 1 and list(d["repos"]) == ["acme/cwd-repo"], d' "$STATE"
 }
@@ -783,7 +783,7 @@ PY
   [ "$(body_nrows)" -eq 2 ]
   [ "$(body_trigger 1)" = "issue クローズ" ]
   [[ "$(body_trigger 2)" == "合計（"* ]]
-  ! grep -qE "repos/acme/cwd-repo/issues/12( |\$)" "$GH_LOG"   # 対象の確認の問い合わせを足さない
+  ! grep -qE "repos/acme/cwd-repo/issues/12( |\$)" "$GH_LOG" || return 1   # 対象の確認の問い合わせを足さない
 }
 
 @test "backfill: a pull request from a fork is not stacked" {  # ヘッドのリポジトリがベースと違う PR では、既存コメントの取得も書き込みもしない
