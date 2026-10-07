@@ -15,7 +15,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 ```bash
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/wt-setup}" \
+  "${CLAUDE_PLUGIN_ROOT}/skills/wt-setup" \
   ~/.claude/plugins/marketplaces/*/plugins/worktree/skills/wt-setup \
   ~/.claude/plugins/installed/*/worktree/skills/wt-setup; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
