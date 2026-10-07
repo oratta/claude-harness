@@ -16,4 +16,4 @@
 
 - [x] 4.1 README の「台帳」の節に、有効化時の入力と `/config` で設定できること（`/config` の行は Claude Code v2.1.269 以降が前提。それ未満は有効化時の入力と env 手書きのみ）、`COST_LEDGER_PATH` が後方互換で残ること、優先順位、`/cost` に値が渡らない環境での既知の制限を書く。触る範囲: plugins/cost-ledger/README.md:3-8、plugins/cost-ledger/README.md:145-152
 - [x] 4.2 変更の記録を `plugins/cost-ledger/changes/713.md` に置く（`version` は上げない）。触る範囲: plugins/cost-ledger/changes/713.md（新規）
-- [ ] 4.3 archive 後に `openspec/specs/cost-ledger-persistence/spec.md` の Purpose（delta では変えられない）の「場所は `COST_LEDGER_PATH` だけで決める」を、「場所は userConfig の `LEDGER_PATH`（`CLAUDE_PLUGIN_OPTION_LEDGER_PATH`）と `COST_LEDGER_PATH` で決める」に直す。触る範囲: openspec/specs/cost-ledger-persistence/spec.md:3-4
+- [x] 4.3 archive 後に `openspec/specs/cost-ledger-persistence/spec.md` の Purpose（delta では変えられない）の「場所は `COST_LEDGER_PATH` だけで決める」を、「場所は userConfig の `LEDGER_PATH`（`CLAUDE_PLUGIN_OPTION_LEDGER_PATH`）と `COST_LEDGER_PATH` で決める」に直す。触る範囲: openspec/specs/cost-ledger-persistence/spec.md:3-4
