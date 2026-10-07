@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import fcntl
+import io
 import json
 import math
 import os
@@ -414,8 +415,29 @@ def _add_head(seen, request_id, uuid: str) -> None:
         seen.add(request_id)
 
 
+class PositionedLines:
+    """バイト列の行を文字列にして返しつつ、いま返した行の行頭のバイト位置を ``position`` に持つ。
+
+    位置はデコード・行の絞り込みより前の生バイトから数える（日本語・不正な UTF-8・CRLF でも
+    ずれない）。行は ``\\n`` だけで区切る。``base`` は最初の行の位置（途中から読むとき用）。
+    間に ``_drift_lines`` のような絞り込みを挟んでも、行を返した直後の ``position`` はその行の位置。
+    """
+
+    def __init__(self, raw_lines, base: int = 0):
+        self._raw = raw_lines
+        self._base = base
+        self.position = base
+
+    def __iter__(self):
+        position = self._base
+        for raw in self._raw:
+            self.position = position
+            position += len(raw)
+            yield raw.decode("utf-8", errors="replace")
+
+
 def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str | None = None,
-                     from_start: bool = True):
+                     from_start: bool = True, offset_of=None):
     """会話ログの行の列から事実を返す。``seen`` に入っている requestId は先頭の行として扱わない。
 
     ``seen`` は ``in`` と ``add`` を持てばよい（台帳の索引もこの形で渡す）。先頭の行の uuid を
@@ -426,6 +448,9 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
     1 つ出す。それ以降の行（後続行）は、実行した Bash が issue 番号か投稿の印を持つときだけ、
     トークン 0 の補足の事実を ``<requestId>#<uuid>`` の鍵で出す。``from_start`` は、この呼び出しが
     ファイルの先頭から読んでいるか（uuid を持たない古い台帳の行の先頭の行を見分けるのに使う）。
+    ``offset_of`` は、いま読んでいる行の元ログ内の行頭バイト位置を返す関数（``PositionedLines.position``
+    を返す形）。渡されたとき、補足の事実に ``source_offset`` として保存し、同時刻の後続行の
+    順序に使う。
     """
     first_seen: dict[str, str] = {}  # この呼び出しで最初に見た行の uuid（先頭の行の uuid）
     for line in lines:
@@ -488,6 +513,8 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
         for field in TOKEN_KEYS:
             fact[field] = 0
         fact["continuation"] = True
+        if offset_of is not None:
+            fact["source_offset"] = offset_of()
         seen.add(key)
         yield fact
 
@@ -502,11 +529,13 @@ def iter_facts(root: str, resolver: RepoResolver, branch: str | None = None):
     seen = SeenSet()
     for path in log_files(root):
         try:
-            handle = open(path, encoding="utf-8", errors="replace")
+            handle = open(path, "rb")
         except OSError:
             continue
         with handle:
-            yield from facts_from_lines(handle, path, resolver, seen, branch)
+            lines = PositionedLines(handle)
+            yield from facts_from_lines(lines, path, resolver, seen, branch,
+                                        offset_of=lambda: lines.position)
 
 
 # --------------------------------------------------------------------------
@@ -750,8 +779,9 @@ def _ledger_sync_locked(ledger: str, root: str, resolver: RepoResolver, rescan: 
                 # 書きかけの 1 行だけ。次回に回す
                 new_offsets.append((key, offset, stat.st_ino))
                 continue
-            lines = (raw.decode("utf-8", errors="replace") for raw in data[:end].split(b"\n"))
-            for fact in facts_from_lines(lines, path, resolver, seen, from_start=(offset == 0)):
+            lines = PositionedLines(io.BytesIO(data[:end + 1]), base=offset)
+            for fact in facts_from_lines(lines, path, resolver, seen, from_start=(offset == 0),
+                                         offset_of=lambda: lines.position):
                 lines_out.append(json.dumps(fact, ensure_ascii=False))
             new_offsets.append((key, offset + end + 1, stat.st_ino))
         if lines_out:
@@ -984,12 +1014,14 @@ def session_facts(session_ids, earliest: int, budget: float):
             try:
                 if os.stat(path).st_mtime < earliest:
                     continue
-                handle = open(path, encoding="utf-8", errors="replace")
+                handle = open(path, "rb")
             except OSError:
                 continue
             with handle:
-                lines = _drift_lines(handle, mentions, expired)
-                for fact in facts_from_lines(lines, path, resolver, seen):
+                positioned = PositionedLines(handle)
+                lines = _drift_lines(positioned, mentions, expired)
+                for fact in facts_from_lines(lines, path, resolver, seen,
+                                             offset_of=lambda: positioned.position):
                     if fact["session_id"] in wanted:
                         facts.append(fact)
         return facts
@@ -1164,6 +1196,32 @@ def price_drift(session_ids, pricing: Pricing, facts=None):
 # 区間分割（事実の列だけを入力とする純粋な関数）
 # --------------------------------------------------------------------------
 
+def _origin_request_id(fact: dict) -> str:
+    """補足の事実の ``<requestId>#<uuid>`` から元の requestId を返す（通常の事実はそのまま）。"""
+    request_id = fact["request_id"]
+    return request_id.rsplit("#", 1)[0] if is_continuation(fact) else request_id
+
+
+def _ordered(rows: list) -> list:
+    """同じセッションの事実を、timestamp → 元の requestId → 通常の事実が先 → 補足は元ログの位置順に並べる。
+
+    補足の事実は ``source_offset``（元ログの行頭バイト位置）の数値順、同値なら ``request_id`` 順。
+    ``source_offset`` を持たない補足（位置を保存する前の版が書いたもの）が混ざる同時刻・同一
+    requestId のグループは、順序を復元できないので従来の ``request_id`` 順に戻す。
+    """
+    legacy = {(f["timestamp"], _origin_request_id(f)) for f in rows
+              if is_continuation(f) and not isinstance(f.get("source_offset"), int)}
+
+    def key(fact):
+        group = (fact["timestamp"], _origin_request_id(fact))
+        if not is_continuation(fact):
+            return group + (0, 0, fact["request_id"])
+        offset = 0 if group in legacy else fact["source_offset"]
+        return group + (1, offset, fact["request_id"])
+
+    return sorted(rows, key=key)
+
+
 def split_intervals(facts):
     """事実の列を ``sessionId`` ごとに ``timestamp`` 順で区間に切る。
 
@@ -1179,8 +1237,7 @@ def split_intervals(facts):
         by_session[fact["session_id"]].append(fact)
     result = []
     for session_id in sorted(by_session):
-        rows = sorted(by_session[session_id],
-                      key=lambda f: (f["timestamp"], f["request_id"]))
+        rows = _ordered(by_session[session_id])
         current = []
         for fact in rows:
             current.append(fact)
