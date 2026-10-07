@@ -797,7 +797,12 @@ class LedgerError(Exception):
 
 
 def ledger_path():
-    return os.environ.get(LEDGER_OPTION_ENV) or os.environ.get(LEDGER_ENV) or None
+    option = os.environ.get(LEDGER_OPTION_ENV, "")
+    # userConfig が未設定のとき、/cost の本文は置換されなかった文字列 ${user_config.LEDGER_PATH}
+    # をそのまま渡してくる。空文字と同じ未設定として扱い、COST_LEDGER_PATH に落とす。
+    if option.startswith("${user_config."):
+        option = ""
+    return option or os.environ.get(LEDGER_ENV) or None
 
 
 def protected_root() -> str:
