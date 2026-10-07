@@ -7,7 +7,7 @@
 
 ## 2. mark
 
-- [ ] 2.1 `mark` のテストを書く（delta spec の Scenario 6 件: 完了の印・確認待ちの印・別の issue・Orca 管理外と `orca` なし・`set` の失敗・引数の誤り）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:556-558（`# --- wait ---` の前に `# --- mark ---` の節を足す）
+- [ ] 2.1 `mark` のテストを書く（delta spec の Scenario 7 件: 完了の印・確認待ちの印・別の issue・Orca 管理外と `orca` なし・`EPIC_DISPATCH_PARENT_EPIC` 付き・`set` の失敗・引数の誤り）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:556-558（`# --- wait ---` の前に `# --- mark ---` の節を足す）
 - [ ] 2.2 `cmd_mark` を実装し、`usage` と末尾の振り分けに足す。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:47-55（`usage`）、plugins/dev-workflow/scripts/epic-dispatch.sh:204-206（`cmd_launch` のうしろに新規）、plugins/dev-workflow/scripts/epic-dispatch.sh:261-268（振り分け）
 
 ## 3. wait の拡張
@@ -24,7 +24,7 @@
 
 ## 5. develop の手順書
 
-- [ ] 5.1 SKILL.md の記述を確かめるテストを書く（「ループの終わり」の節があり片付けを聞かないこと・`mark` の呼び方と `done` / `waiting` の使い分けが書かれていること、Orca 経路に `--watch-done`・`reap`・`子 #N のワークツリーを残した`・`not-done`・再開時の `reap` が書かれていること、`grep -rnE 'orca (worktree|terminal)' plugins/dev-workflow/skills/develop` が 0 行、`grep -rlw orca plugins/dev-workflow --include='*.sh'` が `epic-dispatch.sh` の 1 行だけ）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:697-773（`# --- SKILL.md ---` の節の末尾に足す）
+- [ ] 5.1 SKILL.md の記述を確かめるテストを書く（「ループの終わり」の節があり片付けを聞かないこと・`mark` の呼び方と `done` / `waiting` の使い分けが書かれていること、Orca 経路に `--watch-done`・`reap`・`子 #N のワークツリーを残した`・`not-done`・再開時の `reap` が書かれていること、`grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` が 0 行、`grep -rlw orca plugins/dev-workflow --include='*.sh'` が `epic-dispatch.sh` の 1 行だけ）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:697-773（`# --- SKILL.md ---` の節の末尾に足す）
 - [ ] 5.2 SKILL.md に「ループの終わり」の節を足す（delta spec「develop のループの終わりは片付けを聞かず、ワークスペースに印を付ける」のとおり）。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:169-171（「1 ループ」の節の末尾と「PR トークン上限」の間に新規）
 - [ ] 5.3 SKILL.md「エピックの扱い」の Orca 経路を直す（delta spec「Orca 経路の本体は印が付いた子のワークスペースを片付ける」のとおり）。あわせて `orca terminal read` を「stderr に出た確認のコマンド」に言い換える。既存の SKILL.md のテスト（`# --- SKILL.md ---` の節）が通ることを確かめる。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:303-311（Orca 経路の手順 1〜5 とそのうしろの段落）
 - [ ] 5.4 #459 に、質問の出どころを調べた結果をコメントする（検索したコマンドと、該当する指示が手順書・`commands/develop.md`・pr-review-gate・worktree プラグインの hooks に無かったこと、直した箇所のファイル:行）。触る範囲: なし（issue へのコメント）
@@ -38,5 +38,5 @@
 ## 7. 確認
 
 - [ ] 7.1 `bats plugins/dev-workflow/tests/epic-dispatch.bats` と `bash scripts/test.sh` が exit 0（常時注入の予算テスト `tests/injection-budget.bats` を含む）。`openspec validate epic-reap-done-children --strict` が exit 0。触る範囲: なし
-- [ ] 7.2 PR 本文に貼る検索の結果を取る: `grep -rnE 'orca (worktree|terminal)' plugins/dev-workflow/skills/develop`（0 行）と `grep -rnw orca plugins/dev-workflow --include='*.sh'`（`epic-dispatch.sh` だけ）。触る範囲: なし
+- [ ] 7.2 PR 本文に貼る検索の結果を取る: `grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop`（0 行）と `grep -rnw orca plugins/dev-workflow --include='*.sh'`（`epic-dispatch.sh` だけ）。触る範囲: なし
 - [ ] 7.3 実機の確認（Orca 経路のエピックで、子が完了の印を付けたワークツリーが Orca の UI・`git worktree list`・`git branch` から消えること、確認待ちの印の子が残ること）は、マージ前の `claude --plugin-dir` か、マージ後の最初の Orca 経路のエピックで行い、結果を PR に貼る。この工程のワークツリーはサブエージェント方式で動いているので、W は実機で流せない。W は (3a) の return にその旨を書き、誰がいつ行うかは本体が決める。触る範囲: なし

@@ -1,7 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける
-`plugins/dev-workflow/scripts/epic-dispatch.sh` は、サブコマンド `route`・`launch`・`wait` に加えて `mark` と `reap` を持たなければならない（MUST）。どちらも LLM を呼んではならない（MUST NOT）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち、サブコマンドを `route`・`launch`・`wait` とする規定、`wait` が stdout にちょうど 1 行を出す規定、`wait` の子が 0 件なら使い方を出す規定に優先する。
+`plugins/dev-workflow/scripts/epic-dispatch.sh` は、サブコマンド `route`・`launch`・`wait` に加えて `mark` と `reap` を持たなければならない（MUST）。どちらも LLM を呼んではならない（MUST NOT）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち、次の 5 点に優先する。サブコマンドを `route`・`launch`・`wait` とする規定／`wait` が stdout にちょうど 1 行を出す規定／`wait` の子が 0 件なら使い方を出す規定／「失敗したポーリング」の定義（`--watch-done` が 1 つ以上あるときは、一覧の取得の失敗も失敗したポーリングに数える）／`wait` の終わり方の列挙（`closed`・`timeout`・`error gh` に、`done` と `error workspaces` が加わる）。
+
+`mark` と `reap` は、環境変数 `EPIC_DISPATCH_PARENT_EPIC` の有無によらず同じに動かなければならない（MUST。並列起動された子のセッションは `EPIC_DISPATCH_PARENT_EPIC` を持ったまま自分のループを終えて `mark` を呼び、`reap` を呼ぶのは親セッションなので、どちらもこの変数の影響を受けない）。
+
+この要件で `<ブランチ>` は、一覧の `branch` から先頭の `refs/heads/` を外した名前を言う。
 
 **`mark <done|waiting> <issue>`** は、今いるワークスペースに印を付ける。`done` は Orca のボードの列 `completed`、`waiting` は `in-review` に対応させる（MUST）。次の順で動かなければならない（MUST）。
 
@@ -31,7 +35,7 @@
 
 1〜7 をすべて通った子に限り、`orca terminal close --worktree path:<子のパス> --all`、`orca worktree rm --worktree path:<子のパス>` をこの順に 1 回ずつ呼ばなければならない（MUST）。`orca worktree rm` に `--force` を付けてはならない（MUST NOT）。close が非 0 なら rm を呼ばずに `kept <N> close-failed`、rm が非 0 なら `kept <N> rm-failed` を出す（MUST）。rm が exit 0 のあと、`git rev-parse --verify --quiet refs/heads/<ブランチ>` が exit 0 で、その出力が 7 で一致した HEAD と同じときだけ `git branch -D <ブランチ>` を呼ぶ（MUST）。ブランチが無いか、`git branch -D` が exit 0 なら `reaped <N>`、先端が違うか `git branch -D` が非 0 なら `reaped <N> branch-kept` を出す（MUST）。1〜7 のどれかで外れた子、close か rm が失敗した子について、`git branch -D` を呼んではならない（MUST NOT）。stdout には子ごとに 1 行だけを出し、`orca`・`git`・`gh` 自身の出力は stderr に流す（SHALL）。子ごとの行を出し終えたら、`kept` があっても exit 0 で終わる（MUST）。
 
-この要件の守備範囲で入力として扱うのは、develop の本体が SKILL.md の手順どおりに渡す番号と、`orca worktree current --json`・`orca worktree list --json` の出力（2026-10-08、Orca 1.4.222 で確かめた `id`・`repoId`・`path`・`branch`・`linkedIssue`・`isArchived`・`isMainWorktree`・`workspaceStatus`・`parentWorktreeId`）である。拾いたい誤りは、印が付いていない子・親の `launch` が作っていないワークツリー・push していないコミットや未コミットの変更や `LLM/` を持つワークツリーを消すことである。次は通してよく、この要件では止めない: Orca の出力の形が変わったときの検知（読めなければ `gone` か `kept` になり、消す側には倒れない）／フォークの同名ブランチのマージ済み PR（HEAD の一致で落ちる）／オーナーがボードで手で `completed` に動かした子（子が付けた印と同じに扱う）／確認から削除までの間に子が積んだコミット（`--force` を付けない rm と、ブランチの先端の比較で残る）。すり抜ける入力が見つかるたびに確認を足すことは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、develop の本体が SKILL.md の手順どおりに渡す番号と、`orca worktree current --json`・`orca worktree list --json` の出力（2026-10-08、Orca 1.4.222 で確かめた `id`・`repoId`・`path`・`branch`・`linkedIssue`・`isArchived`・`isMainWorktree`・`workspaceStatus`・`parentWorktreeId`）である。拾いたい誤りは、印が付いていない子・親の `launch` が作っていないワークツリー・push していないコミットや未コミットの変更や `LLM/` を持つワークツリーを消すことである。次は通してよく、この要件では止めない: Orca の出力の形が変わったときの検知（読めなければ `gone` か `kept` になり、消す側には倒れない）／フォークの同名ブランチのマージ済み PR（HEAD の一致で落ちる）／オーナーがボードで手で `completed` に動かした子（子が付けた印と同じに扱う）／確認から削除までの間に子が積んだコミット（`--force` を付けない rm と、ブランチの先端の比較で残る）。`mark` は `<issue>` の PR がマージ済みかを検査しない（手順書の条件に頼る。誤って付いた印は `reap` の `no-merged-pr`・`head-mismatch` で止まる）。`.gitignore` の対象のうち `LLM/` 以外は守らない（`git status --porcelain` に出ないので、ワークツリーと一緒に消える）。すり抜ける入力が見つかるたびに確認を足すことは、この要件の完了条件としない。
 
 `plugins/dev-workflow/tests/epic-dispatch.bats` は、`orca`・`gh`・`git`・`sleep` を PATH 上のスタブにして、下の Scenario を確かめなければならない（MUST）。
 
@@ -50,6 +54,10 @@
 #### Scenario: Orca 管理外と orca が無い環境では何もしない
 - **WHEN** `orca worktree current` が exit 1 を返すスタブ環境、および `orca` が PATH に無い環境で `epic-dispatch.sh mark done 11` を実行する
 - **THEN** どちらも `orca worktree set` は呼ばれず、stdout は `skipped 11 no-workspace` で exit 0
+
+#### Scenario: 並列起動された子のセッションでも印を付ける
+- **WHEN** `EPIC_DISPATCH_PARENT_EPIC=400` を付け、`linkedIssue` が 11 のスタブ環境で `epic-dispatch.sh mark done 11` を実行する
+- **THEN** `orca worktree set --worktree current --workspace-status completed` が呼ばれ、stdout は `marked 11 done` で exit 0
 
 #### Scenario: 印を付けられなければ failed
 - **WHEN** `orca worktree set` が非 0 で終わるスタブ環境で `epic-dispatch.sh mark done 11` を実行する
@@ -156,23 +164,24 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 - `done <N>...` で起こされたら、本体は `epic-dispatch.sh reap <N>...` を Bash で 1 回呼ぶ（MUST）。wt-clean を呼んではならない（MUST NOT）。子ごとの確認をオーナーに取ってはならない（MUST NOT。子が印を付けたことを承認として扱う）
 - `reaped <N>` と `gone <N>` は何もしない。`reaped <N> branch-kept` はエピックに `子 #N のローカルブランチを残した` と 1 行コメントする。`kept <N> <理由>`（理由が `not-done` 以外）はエピックに `子 #N のワークツリーを残した（<理由>）` と 1 行コメントし、オーナーの判断に残す（MUST）。本体が手で消し直してはならない（MUST NOT）。`kept <N> not-done` は待ちを続ける
 - `closed` と `done` の 2 行で起こされたら、両方を処理する（MUST）
-- 開いている子が無くなったら `reap` を 1 回呼び、`kept <N> not-done` の子だけを `--watch-done` に渡して（位置引数の子なしで）待ちを続ける。エピックの完了条件の確認と報告を、この待ちを理由に遅らせない（SHALL）。この待ちが `timeout` で終わったら、残っている子の番号をユーザーに報告して待ちをやめる（SHALL）
-- `回し方: Orca` を引き継いで再開したら、`launch` の前に子（閉じた子を含む）で `reap` を 1 回呼ぶ（SHALL）
+- 開いている子が無くなったら、`--watch-done` に渡す子と同じ集合（`launch` に渡したことのある子から、エピックに `子 #N のワークツリーを残した` で始まる行がある子を除いたもの）で `reap` を 1 回呼び、`kept <N> not-done` の子だけを `--watch-done` に渡して（位置引数の子なしで）待ちを続ける。エピックの完了条件の確認と報告を、この待ちを理由に遅らせない（SHALL）。この待ちが `timeout` で終わったら、残っている子の番号をユーザーに報告して待ちをやめる（SHALL）
+- `回し方: Orca` を引き継いで再開したら、`launch` の前に、`launch` に渡したことのある子（閉じた子を含む。`子 #N のワークツリーを残した` の行がある子も除かない）で `reap` を 1 回呼ぶ（SHALL）
 - `wait` の `error workspaces` は `error gh ...` と同じく、ユーザーに報告して止まる（MUST）
+- `--watch-done` 付きの `wait` が stdout に何も出さず exit 1 で終わったら（今のワークツリーを Orca から読めない）、`launch` の exit 1 と同じく、Orca の親ワークツリーで開き直すようユーザーに報告して止まる（MUST）
 
 #### Scenario: Orca 経路に片付けの手順が書かれている
 - **WHEN** SKILL.md の「エピックの扱い」の「回し方」を読む
 - **THEN** `wait` に `--watch-done` を付けること、`done` で起こされたら `reap` を 1 回呼ぶこと、`kept` の子はエピックに `子 #N のワークツリーを残した（<理由>）` とコメントしてオーナーの判断に残し手で消し直さないこと、`not-done` は待ちを続けること、開いている子が無くなったあとは確認待ちの子だけを待ち `timeout` で待ちをやめること、再開時に `reap` を 1 回呼ぶことが書かれている
 
 ### Requirement: develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする
-`plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...`）を含んではならない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
+`plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
 
 `plugins/dev-workflow/` 配下のシェルスクリプト（`*.sh`）のうち、`orca` の語を含むのは `scripts/epic-dispatch.sh` だけでなければならない（MUST）。`epic-dispatch.sh` の中では `orca` のコマンドをそのまま呼び、Orca の機能を自前で作り直してはならない（MUST NOT）。Orca が無い環境のための代わりの実装を持ってはならない（MUST NOT。`route` の `subagent` と `mark` の `skipped` のように、何もしないで終わる分岐は代わりの実装に数えない）。
 
-`plugins/dev-workflow/tests/epic-dispatch.bats` は、この 2 つの検索の結果を確かめなければならない（MUST）。
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、この 2 つの検索の結果を確かめなければならない（MUST）。この 2 つの検索で拾いたい誤りは、手順書に `orca` のサブコマンドを書き足すことと、`epic-dispatch.sh` 以外のシェルスクリプトに `orca` の呼び出しを足すことである。変数やコマンド置換を介した呼び出し、`orca` の語を含まない別名など、検索をすり抜ける書き方が見つかるたびに塞ぐことは、この要件の完了条件としない。
 
 #### Scenario: 手順書に orca を実行する書き方が無い
-- **WHEN** `grep -rnE 'orca (worktree|terminal)' plugins/dev-workflow/skills/develop` を実行する
+- **WHEN** `grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` を実行する
 - **THEN** 出力は 0 行である
 
 #### Scenario: orca を呼ぶスクリプトは 1 本だけ
