@@ -1527,6 +1527,16 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF '親ワークツリーで開き直す'
 }
 
+@test "skill: Orca route drops reaped and gone children from the done-watch set" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -F '片付け待ちの子は' | grep -F '`reaped <N>`' | grep -F '`gone <N>`' | grep -qF '除いた'
+  printf '%s\n' "$r" | grep -F '片付け待ちの子は' | grep -F 'branch-kept' | grep -qF '`launched <N>`'
+  printf '%s\n' "$r" | grep -F '`reaped <N>` と `gone <N>`' | grep -qF '片付け待ちから外す'
+  printf '%s\n' "$r" | grep -F '開いている子が無くなったら' | grep -F '0 件' | grep -qF '`wait` を呼ばず'
+  printf '%s\n' "$r" | grep -F '開いている子が無くなったら' | grep -F '`kept <N> not-done` の子だけ' | grep -qF -- '--watch-done'
+  printf '%s\n' "$r" | grep -F '再開したら' | grep -qF '片付け待ちから外す'
+}
+
 @test "skill: develop's docs run no orca subcommand and only epic-dispatch.sh calls orca" {
   run grep -rnE 'orca [a-z]+' "$PLUGIN_DIR/skills/develop"
   [ "$status" -eq 1 ]
