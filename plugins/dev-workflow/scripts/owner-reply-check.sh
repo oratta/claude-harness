@@ -11,6 +11,7 @@
 #   5. message.content が文字列、または type:"text" の要素だけの配列（tool_result を含む配列は数えない）
 #   6. 本文が "Another Claude session sent a message" で始まらず、"<teammate-message" を含まない
 #   7. 本文が <bash-stdout> / <bash-stderr> / <local-command-stdout> / <local-command-stderr> で始まらない
+#   8. isCompactSummary が true でない（会話の圧縮後にモデルが書いた要約の行。本文の書き出しでは判定しない）
 #   <command-args>（スラッシュコマンドの引数）と <bash-input>（主が ! で打った入力）はタグごと本文として比べる。
 # 出力: 一致した発言ごとに "MATCH: <timestamp> <空白をまとめた本文の全文>"、最後に "MATCHES=<件数>"
 # 終了コード: 0 = 1 件以上一致 / 1 = 一致なし / 2 = 引数の不備・UUID でない ID・空の原文・会話ログなし・python3 なし・空白をまとめると空になる原文・会話ログを読めない
@@ -73,6 +74,8 @@ def owner_text(rec):
     if not isinstance(rec, dict) or rec.get("type") != "user":
         return None
     if rec.get("isSidechain") is True or rec.get("isMeta") is True:
+        return None
+    if rec.get("isCompactSummary") is True:  # 会話の圧縮後にモデルが書いた要約（issue #756）
         return None
     if "origin" in rec:
         origin = rec.get("origin")
