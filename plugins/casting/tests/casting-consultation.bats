@@ -81,6 +81,10 @@ setup() {
   [ "$(LC_ALL=C grep -c '^tools:' "$ARBITER" | tr -d ' ')" -eq 1 ]
 }
 
+@test "arbiter: frontmatter omits CLAUDE.md" {
+  [ "$(LC_ALL=C grep -c '^omitClaudeMd: true' "$ARBITER" | tr -d ' ')" -eq 1 ]
+}
+
 @test "arbiter: opening referenced paths is a contract violation that aborts the verdict" {
   LC_ALL=C grep -qF -- "入力契約違反" "$ARBITER"
   LC_ALL=C grep -qF -- "裁定を拒否" "$ARBITER"
