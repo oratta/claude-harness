@@ -88,5 +88,6 @@ setup() {
 }
 
 @test "no CI workflow runs plugin eval" {
-  ! grep -rq 'plugin eval' "${ROOT}/.github/workflows"
+  run grep -rq 'plugin eval' "${ROOT}/.github/workflows"
+  [ "$status" -ne 0 ]
 }
