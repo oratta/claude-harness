@@ -207,7 +207,7 @@ PY
   chmod +x "$WORK/bin/gh"
 }
 
-# 許可の一覧を書く。引数 1 つが 1 行（引数なしなら大きさ 0 のファイル）。$LIST_FILE（既定は
+# 許可の一覧を書く。引数 1 つが 1 行（引数なしなら大きさ 0 のファイル）。${LIST_FILE}（既定は
 # COST_LEDGER_WRITE_REPOS_FILE の場所）に置く
 write_allow_list() {
   local file="${LIST_FILE-$COST_LEDGER_WRITE_REPOS_FILE}"
