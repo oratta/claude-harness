@@ -7,7 +7,7 @@
 - `plugins/dev-workflow/evals/` に、develop・pr-review-gate の発火と destructive-git-guard の止まりを測るお題を 5 件以上、新規に置く
 - `plugins/casting/evals/` に、返信前チェックで主へ上げるべき論点を上げるかを測るお題を 1 件以上、新規に置く
 - 実行方法・費用の目安・結果の読み方を `docs/` に書く
-- 初回実行（完全なコマンドは design の Decision 1。`--max-cost-usd 10`、`--ablation with-without`）の結果（スコア・ablation の差・費用）を PR 本文に記録する
+- 初回実行（完全なコマンドは design の Decision 2。`--max-cost-usd 10`、`--ablation with-without`）の結果（スコア・ablation の差・費用）を PR 本文に記録する
 - CI は落とさない（閾値でのゲートはしない）。スコアと ablation の差を記録する用途から始める
 
 ## Capabilities

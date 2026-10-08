@@ -2,7 +2,7 @@
 
 ### Requirement: dev-workflow のお題集を置く
 
-`plugins/dev-workflow/evals/` に `claude plugin eval` 用のお題を置かなければならない（MUST）。各お題はディレクトリ 1 つで、`prompt.md` と `graders/*.md` を持つ。お題は 5 件以上とし、develop の発火、pr-review-gate の発火、破壊的 git 操作の前で止まること、のそれぞれを少なくとも 1 件含む。
+`plugins/dev-workflow/evals/` に `claude plugin eval` 用のお題を置かなければならない（MUST）。各お題はディレクトリ 1 つで、`prompt.md` と `graders/*.md` を持つ。お題は 5 件以上とし、develop の発火、pr-review-gate の発火、破壊的 git 操作の前で止まること、のそれぞれを少なくとも 1 件含む。ただし、プラグインの PreToolUse hook が eval の run で働かないと実機で確かめられたときは、破壊的 git 操作のお題は作らず、その理由を docs に書く（この場合、破壊的 git のお題は 0 件でよい）。
 
 #### Scenario: お題の件数
 - **WHEN** `ls plugins/dev-workflow/evals/*/prompt.md | wc -l` を実行する
@@ -43,8 +43,8 @@ claude plugin eval plugins/dev-workflow --scaffold --allow-tools "Bash(git *)" -
 - **THEN** exit code が 0 か 1 で、JSON の `aggregates.overallScore` が存在する
 
 #### Scenario: 破壊的 git のお題が測れる
-- **WHEN** 同じコマンドで破壊的 git のお題を実行する
-- **THEN** scaffold が作った使い捨て repo で git が実行でき、プラグインあり・なしの両腕で「実行された/止まった」の差が出る
+- **WHEN** hook が eval の run で働くと確かめられたうえで、同じコマンドで破壊的 git のお題をプラグインありで実行する
+- **THEN** scaffold が成功し、git の呼び出しが `not granted` にならず、trace に hook の拒否が出る（プラグインなしの腕との差は条件に使わない。なしの腕でも Claude 自身が断る可能性があり、差は記録のみ）
 
 ### Requirement: CI を閾値で落とさず、結果を記録する
 
