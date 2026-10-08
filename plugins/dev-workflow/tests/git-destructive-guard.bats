@@ -266,6 +266,7 @@ expect_silent() {
     expect_stopped "echo ${open}git reset --hard"
     expect_stopped "echo ${open}true${close}; git reset --hard"
     expect_stopped "bash -c \"\$(echo ${open}git reset --hard${close})\""
+    expect_stopped "echo ${open}bash -c 'git reset --hard'${close}"
     # 深い入れ子があっても、単一引用符の中の文字列は読まない
     expect_silent "echo ${open}true${close}; echo 'git reset --hard'"
   done
