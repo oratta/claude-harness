@@ -18,7 +18,9 @@ command -v python3 >/dev/null 2>&1 || exit 0
 
 # Python 本体は fd 3 のヒアドキュメントで渡し、payload は stdin のまま読ませる
 # （環境変数や引数に載せない）。
-python3 /dev/fd/3 3<<'PY' 2>/dev/null || true
+# -I（隔離モード）で起動し、PYTHONPATH などの PYTHON* の環境変数・ユーザー site・スクリプトの
+# ディレクトリを検索パスに使わない（hook を起動した環境に置かれた json.py などを読み込まない）。
+python3 -I /dev/fd/3 3<<'PY' 2>/dev/null || true
 import json, math, sys
 
 

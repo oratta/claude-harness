@@ -104,6 +104,12 @@ PreModelSwitch hook の入出力は公式ドキュメント（https://code.claud
 
 理由: dev-workflow の他の hook と同じ形で、JSON の組み立てと数値の型判定（真偽値を数値とみなさない、NaN・無限大を弾く）を `python3` に任せられる。`python3` が無ければ `|| true` と `exit 0` で無出力になる。
 
+### 8. `python3` は隔離モード（`-I`）で起動する
+
+`python3 -I /dev/fd/3` の形で起動する。`-I` は `PYTHONPATH` などの `PYTHON*` の環境変数・ユーザー site・スクリプトのディレクトリを検索パスに使わない。
+
+理由: hook は使う人のシェルの環境をそのまま引き継いで起動される。`PYTHONPATH` が指す場所に `json.py` や `math.py` があると、標準ライブラリより先に読み込まれ、モデル切替のたびにそのコードが動く（commit の自動セキュリティレビューの指摘）。このスクリプトは標準ライブラリしか使わないので、隔離しても失うものは無い。既存の hook スクリプトの同じ起動の形は、この change では直さない（別 issue）。
+
 ## Risks / Trade-offs
 
 - [`systemMessage` が確認画面の前後どちらに出るか未確認] → 文言を順序に依存させない（Context）。実際の見え方は実機の画面で確かめる（tasks。W は画面で確認せず、return の `画面確認:` 行で本体に伝える）

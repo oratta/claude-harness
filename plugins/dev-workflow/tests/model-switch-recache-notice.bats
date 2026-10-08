@@ -285,6 +285,21 @@ assert "claude[31m-opus-5" in m, m
   [ -z "$output" ]
 }
 
+@test "isolation: a json.py on PYTHONPATH is not loaded and the notice is unchanged" {
+  mk
+  run_hook
+  M="$(msg_of)"
+  expected="$output"
+  planted="${BATS_TEST_TMPDIR}/planted"
+  mark="${BATS_TEST_TMPDIR}/planted-json-was-loaded"
+  mkdir -p "$planted"
+  printf 'import os\nwith open(os.environ["PLANTED_MARK"], "w") as f:\n    f.write("loaded")\n' > "${planted}/json.py"
+  run --separate-stderr env PYTHONPATH="$planted" PLANTED_MARK="$mark" bash -c "'$SCRIPT' < '$PAYLOAD'"
+  [ ! -e "$mark" ]
+  M="$(msg_of)"
+  [ "$output" = "$expected" ]
+}
+
 # ---------- 5. hooks.json と権限 ----------
 
 @test "script: is executable" {
