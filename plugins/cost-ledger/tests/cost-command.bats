@@ -129,6 +129,29 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "cost: the command passes the userConfig value to the script" {  # 本文が userConfig の値を環境変数で渡す
+  run grep -F "CLAUDE_PLUGIN_OPTION_LEDGER_PATH='\${user_config.LEDGER_PATH}' python3" "$PLUGIN_DIR/commands/cost.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "cost: the unset-ledger guidance names /config before settings" {  # 未設定時の案内は /config が先
+  run python3 -c '
+import sys
+t = open(sys.argv[1], encoding="utf-8").read()
+line = [l for l in t.splitlines() if "settings" in l][0]
+sys.exit(0 if "/config" in line and line.index("/config") < line.index("settings") else 1)
+' "$PLUGIN_DIR/commands/cost.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "cost: the script lookup tries the substituted plugin root first" {  # 探索の先頭候補は本文置換される絶対パスから作る
+  local first
+  grep -q '^plugin_root="${CLAUDE_PLUGIN_ROOT}"$' "$PLUGIN_DIR/commands/cost.md" || return 1
+  first="$(grep -n -A2 '^for dir in' "$PLUGIN_DIR/commands/cost.md" | sed -n 2p)"
+  [[ "$first" == *'"${plugin_root:+$plugin_root/scripts}"'* ]] || return 1
+  [[ "$first" != *'CLAUDE_PLUGIN_ROOT:+'* ]] || return 1
+}
+
 # 2 つのリポジトリと、削除済み worktree に、同じ名前のブランチ "shared-name" の行を置く
 shared_branch_rows() {
   {
@@ -176,4 +199,112 @@ GH
   run python3 "$CL" cost 55 --repo "$REPO_A"
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = 'コスト: $7.00 / ¥1,050 @150 — PR #55 (shared-name) 帰属: ブランチ' ]
+}
+
+# --- issue の合計（閉じた PR の分）---
+# 呼び出し 1 回につき 1 行を $GH_LOG に控える gh。pulls/* は PR ではない、issues/148 は番号だけ、
+# api graphql は $GQL_BODY の中身（無ければ失敗）を返す。
+fake_gh_closing() {
+  export GH_LOG="$BATS_TEST_TMPDIR/gh.log" GQL_BODY="$BATS_TEST_TMPDIR/gql.json"
+  : > "$GH_LOG"
+  cl_fake_gh <<'EOF2'
+printf '%s\n' "$*" >> "$GH_LOG"
+if [ "$1" = api ] && [ "$2" = graphql ]; then
+  [ -f "$GQL_BODY" ] || exit 1
+  cat "$GQL_BODY"; exit 0
+fi
+for arg in "$@"; do
+  case "$arg" in
+    */pulls/*) exit 1 ;;
+    */issues/148) echo "148"; exit 0 ;;
+  esac
+done
+exit 1
+EOF2
+}
+
+# 閉じた PR の応答。$1=ノードの JSON の配列、$2=hasNextPage
+closing_body() {
+  printf '{"data":{"repository":{"nameWithOwner":"acme/repo-a","issue":{"closedByPullRequestsReferences":{"nodes":%s,"pageInfo":{"hasNextPage":%s}}}}}}' "$1" "${2:-false}" > "$GQL_BODY"
+}
+PR300='{"number":300,"headRefName":"oratta/sample-feature","isCrossRepository":false,"baseRepository":{"nameWithOwner":"acme/repo-a"}}'
+gql_count() { grep -c '^api graphql' "$GH_LOG" || true; }
+
+@test "cost: an issue closed by a PR shows the combined total under an unchanged first line" {  # 閉じた PR がある issue は、1 行目そのまま、合計と内訳が出る
+  fake_gh_closing
+  closing_body "[$PR300]"
+  run python3 "$CL" cost 148 --repo "$REPO_A"
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == 'コスト: $2.20 / ¥330 @150 — issue #148 (acme/repo-a) 帰属: 区間' ]] || return 1
+  [[ "$output" == *'合計（閉じた PR 込み）:'*'PR #300 $'*'PR 外 $'* ]] || return 1
+  [ "$(gql_count)" -eq 1 ]
+}
+
+@test "cost: an issue with no closing PR prints exactly what cost_ledger issue prints" {  # 閉じた PR が 0 件なら通常出力は issue の経路と同一
+  fake_gh_closing
+  closing_body "[]"
+  run python3 "$CL" cost 148 --repo "$REPO_A"
+  [ "$status" -eq 0 ]
+  expected="$output"
+  run python3 "$CL" issue 148 --repo "$REPO_A"
+  [ "$output" = "$expected" ]
+  [[ "$expected" != *'読めなかった'* ]] || return 1
+  [ "$(gql_count)" -eq 1 ]
+}
+
+@test "cost: a failed closing-PR query keeps the interval output and says so" {  # 問い合わせが失敗したら区間の分のまま、読めなかった旨を 1 行
+  fake_gh_closing
+  rm -f "$GQL_BODY"
+  run python3 "$CL" cost 148 --repo "$REPO_A"
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == 'コスト: $2.20 / ¥330 @150 — issue #148 (acme/repo-a) 帰属: 区間' ]] || return 1
+  [[ "$output" == *'閉じた PR を読めなかったため、PR の分は合計に入っていません。'* ]] || return 1
+  [[ "$output" != *'合計（閉じた PR 込み）:'* ]] || return 1
+}
+
+@test "cost: a malformed or truncated closing-PR response counts as unreadable" {  # 形の崩れ・100 件超は読めなかった扱い
+  fake_gh_closing
+  closing_body '[{"number":"x"}]'
+  run python3 "$CL" cost 148 --repo "$REPO_A"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'閉じた PR を読めなかった'* ]] || return 1
+  closing_body "[$PR300]" true
+  run python3 "$CL" cost 148 --repo "$REPO_A"
+  [[ "$output" == *'閉じた PR を読めなかった'* ]] || return 1
+  [[ "$output" != *'合計（閉じた PR 込み）:'* ]] || return 1
+}
+
+@test "cost: --json stays pure JSON and reports closing_prs_error" {  # --json は JSON のまま。エラーは鍵で表す
+  fake_gh_closing
+  rm -f "$GQL_BODY"
+  run python3 "$CL" cost 148 --repo "$REPO_A" --json
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["closing_prs_error"] is True and d["closing_prs"]==[]'
+  closing_body "[]"
+  run python3 "$CL" cost 148 --repo "$REPO_A" --json
+  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["closing_prs_error"] is False and d["closing_prs"]==[]'
+  closing_body "[$PR300]"
+  run python3 "$CL" cost 148 --repo "$REPO_A" --json
+  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["closing_prs_error"] is False and d["closing_prs"][0]["number"]==300'
+}
+
+@test "cost: cross-repository and other-base PRs are not counted" {  # フォーク・別ベースの PR は数えない
+  fake_gh_closing
+  closing_body "[{\"number\":301,\"headRefName\":\"fork/x\",\"isCrossRepository\":true,\"baseRepository\":{\"nameWithOwner\":\"acme/repo-a\"}},{\"number\":302,\"headRefName\":\"oratta/sample-feature\",\"isCrossRepository\":false,\"baseRepository\":{\"nameWithOwner\":\"acme/other\"}}]"
+  run python3 "$CL" cost 148 --repo "$REPO_A"
+  [[ "$output" != *'PR #301'* && "$output" != *'PR #302'* ]] || return 1
+  [[ "$output" != *'合計（閉じた PR 込み）:'* ]] || return 1
+}
+
+@test "cost: the PR route and the numberless route never ask for closing PRs" {  # PR 番号・番号なしでは閉じた PR を問い合わせない
+  fake_gh_closing
+  cl_fake_gh <<'EOF2'
+printf '%s\n' "$*" >> "$GH_LOG"
+case "$*" in *pulls/271*) echo "oratta/sample-feature"; exit 0 ;; esac
+exit 1
+EOF2
+  run python3 "$CL" cost 271 --repo "$REPO_A"
+  [ "$status" -eq 0 ]
+  run python3 "$CL" cost --repo "$REPO_A"
+  [ "$(gql_count)" -eq 0 ]
 }

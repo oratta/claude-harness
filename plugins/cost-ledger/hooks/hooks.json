@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/gate-report.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/gate-report.sh\"",
             "timeout": 60
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/ledger-hook.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/ledger-hook.sh\"",
             "timeout": 120
           }
         ]

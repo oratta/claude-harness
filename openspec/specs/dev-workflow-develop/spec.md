@@ -61,11 +61,11 @@ SKILL.md は 1 ループの最初の工程「入口 0」として記録先の決
 - **THEN** 仕様化判断・仕様レビュー結果は記録先のコメントに置くと書かれ、仕様宣言は記録先が issue でも PR コメントに置くと書かれており、記録先のコメントに置くものの列挙に仕様宣言が含まれていない
 
 ### Requirement: 1 ループは W→R1→W→G の順で回る
-SKILL.md は 1 issue（または 1 Draft PR）の 1 ループを次の順で規定しなければならない（MUST）: (0) 記録先の確定 → (1) W が仕様化判断の記録・分割判定・openspec CLI による change の作成（`openspec new change` と artifact の直書き）まで行い return（仕様化しない判定なら (3) へ直行）→ (2) R1 が別コンテキストで仕様レビューし、結果を記録先にコメントして return（R1 を `subagent_type: dev-workflow:decider` で起こした場合は R1 が投稿できないため、本体が return を同じ書式で代理投稿する）。REQUEST_CHANGES なら W を SendMessage で再開して修正し R1 を再開して差分再レビュー（2 周キャップ。超えたら `needs-approval`）→ **(3) W を再開して実装以降を回す。(3) は 2 段に分かれ、(3a) 実装（`tasks.md` を TDD で。直行なら TDD）・verify（`openspec validate --strict`）まで行って return、本体が計測し、W の return の `画面確認:` の行が `要る` なら画面確認役 V を起こしてから（下の「画面確認役 V は (3a) と (3b) の間に本体が必要時だけ起こす」Requirement）、(3b) `openspec archive`・PR を Draft のまま用意（無ければ Draft で作成）・仕様宣言まで行って return する（下の「W の (3) は 2 回の return に分かれる」Requirement）** → (4) G が pr-review-gate の手順 1〜5 を実行し `passed` / `failed` / `保留` / `needs-reviewer` / `needs-decider` / `review-incomplete` のいずれかを return。PR の Ready 化は G が手順 5 の合格処理で行い（Draft なら Ready にしてから `agent-review:passed` を付ける）、W は行ってはならない（MUST NOT）。
+SKILL.md は 1 issue（または 1 Draft PR）の 1 ループを次の順で規定しなければならない（MUST）: (0) 記録先の確定 → (1) W が仕様化判断の記録・分割判定・openspec CLI による change の作成（`openspec new change` と artifact の直書き）まで行い return（仕様化しない判定なら (3) へ直行）→ (2) R1 が別コンテキストで仕様レビューし、結果を記録先にコメントして return（R1 を `subagent_type: dev-workflow:decider` で起こした場合は R1 が投稿できないため、本体が return を同じ書式で代理投稿する）。REQUEST_CHANGES なら W を SendMessage で再開して修正し R1 を再開して差分再レビュー（既定 2 周。2 周目以降の周の終わりに BLOCKER が残れば、下の「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement の直し方の判定を通し、「決まっている」で PR トークン上限の内側なら主に聞かず次の周を回し、そうでなければ `needs-approval`）→ **(3) W を再開して実装以降を回す。(3) は 2 段に分かれ、(3a) 実装（`tasks.md` を TDD で。直行なら TDD）・verify（`openspec validate --strict`）まで行って return、本体が計測し、W の return の `画面確認:` の行が `要る` なら画面確認役 V を起こしてから（下の「画面確認役 V は (3a) と (3b) の間に本体が必要時だけ起こす」Requirement）、(3b) `openspec archive`・PR を Draft のまま用意（無ければ Draft で作成）・仕様宣言まで行って return する（下の「W の (3) は 2 回の return に分かれる」Requirement）** → (4) G が pr-review-gate の手順 1〜5 を実行し `passed` / `failed` / `保留` / `needs-reviewer` / `needs-decider` / `needs-fix-check` / `review-incomplete` のいずれかを return。PR の Ready 化は G が手順 5 の合格処理で行い（Draft なら Ready にしてから `agent-review:passed` を付ける）、W は行ってはならない（MUST NOT）。
 
 G が `review-incomplete` を return したとき、本体は新しい reviewer を起動せず、`agent-review:pending` のまま残差を報告して工程を止めなければならない（MUST）。`needs-reviewer` が一周目照合の補足要求である場合、本体は fresh reviewer に固定 HEAD・元の三表・残差・補足済み回数を渡し、同じレビューの不足分だけを補わせなければならず（MUST）、レビューを最初からやり直させてはならない（MUST NOT）。
 
-failed のときは、G の原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）で戻し方を決めなければならない（MUST）。モデルを上げるのは**実装品質起因のときだけ**で、そのとき上げるのは**決める役と実行役のどちらか一方だけ**である（MUST）: 実行側が原因（指示どおり実装して結果が違う）なら実行役を `opus` に上げ、判断側が原因（指示を解釈できなかった・指示自体が外れていた）なら決める役を `subagent_type: dev-workflow:decider` で立てて修正方針を作らせ、実行役は据え置く。**W を `fable` で再開してはならない**（MUST NOT。実行役の上限は `opus`）。仕様が曖昧なら仕様修正で返し、レビュアーの誤検出なら反証で返す。どちらもモデルを上げてはならない（MUST NOT。pr-review-gate 手順 2-2 の基線をこの change は変えない）。修正後は G を再開して差分再レビュー（2 周）。保留なら `needs-approval` のまま本体がオーナーに 1 アクションで依頼する。
+failed のときは、G の原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）で戻し方を決めなければならない（MUST）。モデルを上げるのは**実装品質起因のときだけ**で、そのとき上げるのは**決める役と実行役のどちらか一方だけ**である（MUST）: 実行側が原因（指示どおり実装して結果が違う）なら実行役を `opus` に上げ、判断側が原因（指示を解釈できなかった・指示自体が外れていた）なら決める役を `subagent_type: dev-workflow:decider` で立てて修正方針を作らせ、実行役は据え置く。**W を `fable` で再開してはならない**（MUST NOT。実行役の上限は `opus`）。仕様が曖昧なら仕様修正で返し、レビュアーの誤検出なら反証で返す。どちらもモデルを上げてはならない（MUST NOT。pr-review-gate 手順 2-2 の基線をこの change は変えない）。修正後は G を再開して差分再レビュー（既定 2 周。2 周目以降の周の終わりの扱いは pr-review-gate の収束ルールと、下の「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement に従う）。保留なら `needs-approval` のまま本体がオーナーに 1 アクションで依頼する。
 
 worktree は本体が用意する（SHALL）: 本体が既に対象専用の worktree にいればそこで W を起こし、そうでなければ W を `isolation: "worktree"` で spawn する。W は自分で worktree を切らない（MUST NOT。セットアップは worktree プラグインの hooks が担い、`.worktreeinclude` が無いときの `/wt-setup` は本体が行う）。**W / G を `isolation: "remote"` で起こしてはならない**（MUST NOT）。強制停止に当たったサブエージェントの未コミット差分は本体が確認して commit する設計（下の「強制停止で止まった作業ツリーは本体が引き取る」Requirement）だが、`remote` 隔離は本体から見えない環境で動くため、そこで強制停止に当たると作業がそのまま失われる。
 
@@ -73,7 +73,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 
 #### Scenario: ループの順序が書かれている
 - **WHEN** SKILL.md の 1 ループの記述を読む
-- **THEN** 0〜4 の工程が W→R1→W→G の順で並び、(1) の W の工程に `openspec new change` があり、仕様化しない判定は (3) へ直行し、R1 と G にそれぞれ 2 周キャップがある
+- **THEN** 0〜4 の工程が W→R1→W→G の順で並び、(1) の W の工程に `openspec new change` があり、仕様化しない判定は (3) へ直行し、R1 と G にそれぞれ既定 2 周と、2 周目以降の周の終わりに直し方の判定を通す続行がある
 
 #### Scenario: (3) は 2 段に分かれて書かれている
 - **WHEN** SKILL.md の 1 ループの (3) を読む
@@ -106,7 +106,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 ### Requirement: 役割の指示書は references/roles/ に分かれている
 `skills/develop/references/roles/` に `worker.md`（W）・`spec-reviewer.md`（R1）・`gate-runner.md`（G）が存在しなければならない（MUST）。`worker.md` は仕様化判断の記録書式（1 行目 `^仕様化判断: (する|しない)$`）・仕様レビュー結果の記録書式・「重要実装の事前分類」表（聖域パス・マージ権限・層間契約・課金/法務）を含み（MUST）、この表がモデル事前分類の正本である（SHALL）。事前分類表の「1 周目」列は**実行役（W）の上限を `opus` とし、`fable` 行を持ってはならない**（MUST NOT。4 分類のいずれに当たっても W は `opus` 止まりで、聖域パスの `opus` は据え置き）。表には、読んで判断する役（R1・G が要求するレビュアー）が `fable` 相当の分類に当たるときは `subagent_type: dev-workflow:decider` で spawn し、`general-purpose` に `model: fable` を付けないことを明記しなければならない（MUST）。「層間契約だから判断が要る」ぶんは仕様化判断・R1 レビュー・本体の判断で吸収し、W は確定した内容を落とす作業だけを担うことを書く（SHALL）。`worker.md` の return には「指示のどこまでやって、どこで何が起きたか」を含める義務を書かなければならない（MUST。決める役の入力契約になるため）。
 
-`spec-reviewer.md` は 6 観点（受け入れ条件の一意性・既存 spec との整合・固有値の直書き・前提の明記・相互整合・守備範囲の明記）と 2 周キャップを含む（MUST）。観点の中身の正本は `dev-workflow-spec-review` とする（SHALL）。`gate-runner.md` は pr-review-gate スキルを読んで手順 1〜5 を実行する指示と、G が孫を持てないための別コンテキストレビューの扱いを含む（MUST）: Codex は Bash から `codex exec -c approval_policy=never -c model_reasoning_effort=medium` または `codex-companion.mjs` を直接呼ぶ（slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは G からは使えない）。Codex が使えない／light 判定のときは G が `needs-reviewer` を return し、本体が別のレビュアー（既定 `opus`。マージ条件・層間契約・課金/法務に触れれば `dev-workflow:decider`。聖域パスだけでは上げない）を spawn してその要約を G に SendMessage で渡す。このため G も名前付きで spawn する（MUST）。`needs-reviewer` の return には light/full の判定と根拠・対象 PR 番号と HEAD SHA・レビュアーの推奨モデル（または `dev-workflow:decider` 指定）と根拠・受け入れ条件の所在を含め（MUST）、レビュー要約を受け取った G が「レビュー実行者:」の PR コメントを投稿して手順 3 以降を続ける（SHALL）。G の failed の return には pr-review-gate 手順 2-2 の原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）を含めなければならない（MUST。本体が決める役 / 実行役のどちらを上げるかを決めるため）。
+`spec-reviewer.md` は 6 観点（受け入れ条件の一意性・既存 spec との整合・固有値の直書き・前提の明記・相互整合・守備範囲の明記）と、既定 2 周と 2 周目以降の周の終わりに直し方の判定を通して続ける規則を含む（MUST。判定役・入力・書式の正本は SKILL.md で、`spec-reviewer.md` は規則を書いて正本を指す）。観点の中身の正本は `dev-workflow-spec-review` とする（SHALL）。`gate-runner.md` は pr-review-gate スキルを読んで手順 1〜5 を実行する指示と、G が孫を持てないための別コンテキストレビューの扱いを含む（MUST）: Codex は Bash から `codex exec -c approval_policy=never -c model_reasoning_effort=medium` または `codex-companion.mjs` を直接呼ぶ（slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは G からは使えない）。Codex が使えない／light 判定のときは G が `needs-reviewer` を return し、本体が別のレビュアー（既定 `opus`。マージ条件・層間契約・課金/法務に触れれば `dev-workflow:decider`。聖域パスだけでは上げない）を spawn してその要約を G に SendMessage で渡す。このため G も名前付きで spawn する（MUST）。`needs-reviewer` の return には light/full の判定と根拠・対象 PR 番号と HEAD SHA・レビュアーの推奨モデル（または `dev-workflow:decider` 指定）と根拠・受け入れ条件の所在を含め（MUST）、レビュー要約を受け取った G が「レビュー実行者:」の PR コメントを投稿して手順 3 以降を続ける（SHALL）。G の failed の return には pr-review-gate 手順 2-2 の原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）を含めなければならない（MUST。本体が決める役 / 実行役のどちらを上げるかを決めるため）。
 
 `worker.md`・`spec-reviewer.md`・`gate-runner.md` の 3 つはいずれも、長時間処理の完了通知を待つためにターンを終えてはならない旨を明記しなければならない（MUST）。待ち方の詳細の正本は `plugins/dev-workflow/references/subagent-waiting.md` とし、各指示書はそこを参照する（SHALL）。`spec-reviewer.md` の 1 行は、decider 経路で spawn される R1 が `Bash` を持たず待ちループ自体を実行できないため、「長い処理の完了を待つ目的でターンを終えない（decider 経路の R1 は待ちを伴う作業を持たない）」の形で書く（SHALL。読んだ R1 が実行できない手順を探しに行かないようにするため）。
 
@@ -116,9 +116,9 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 - **WHEN** `references/roles/worker.md` を読む
 - **THEN** `^仕様化判断: (する|しない)$` の書式、`gh` で記録先にコメントする手順、4 分類の事前分類表（「1 周目」列がすべて `opus` で `fable` 行が無い）、レビュアーの fable は `dev-workflow:decider` 経由であること、return に「指示のどこまでやって、どこで何が起きたか」を書く義務が書かれている
 
-#### Scenario: spec-reviewer.md に 6 観点と 2 周キャップがある
+#### Scenario: spec-reviewer.md に 6 観点と周回の規則がある
 - **WHEN** `references/roles/spec-reviewer.md` を読む
-- **THEN** 6 観点がすべて列挙され、2 周で確定し 3 周目の例外を設けないことが書かれている
+- **THEN** 6 観点がすべて列挙され、既定 2 周・2 周目以降の周の終わりに BLOCKER が残れば直し方の判定を通し、すべて直し方の決まったもので PR トークン上限の内側なら主に聞かず次の周を回すことが書かれ、「3 周目の例外は設けない」の文は無い
 
 #### Scenario: gate-runner.md は pr-review-gate を手順書として参照する
 - **WHEN** `references/roles/gate-runner.md` を読む
@@ -655,7 +655,7 @@ develop の SKILL.md「エピックの扱い」は次を規定しなければな
 - **THEN** stdout は `failed 11` と `skipped 11` の2行、`orca worktree create` は子 11 について 1 回だけ呼ばれ、`failed` が 1 件あるため exit code は 1
 
 ### Requirement: G が passed を返したら本体が CI を見張る
-`skills/develop/SKILL.md` の (4) は、G が `passed` を return したあと、本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始めることを書かなければならない（MUST）。見張りの一手が `fix` のときは、本体が W に直させ（W の再開か手渡しかは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」に従う）、W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け（CI のやり直し・再度の直しもここで処理する）、`ready` になってから G を起こしてゲートを取り直させ、G が再び `passed` を返したら見張りの続き（reference の「`ready` を受けたあと」）に進むこと、合格するまでマージ待ち・マージ依頼に進まないことを書く（MUST）。見張りの中身は reference を参照し、SKILL.md に言い換えて再掲してはならない（MUST NOT）。
+`skills/develop/SKILL.md` の (4) は、G が `passed` を return したあと、本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始めることを書かなければならない（MUST）。G の `passed` の return に `issue で承認済み:` の行があれば、本体は見張りを始める前に、主へその行（宣言コメントの URL・当たった分類・引用した issue の文）を 1 回伝えなければならない（MUST。pr-review-gate 手順 5 の事後報告。auto-merge 配備リポではマージまで主との会話が起きないため、本体の手順に置かないと報告が起きない）。見張りの一手が `fix` のときは、本体が W に直させ（W の再開か手渡しかは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」に従う）、W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け（CI のやり直し・再度の直しもここで処理する）、`ready` になってから G を起こしてゲートを取り直させ、G が再び `passed` を返したら見張りの続き（reference の「`ready` を受けたあと」）に進むこと、合格するまでマージ待ち・マージ依頼に進まないことを書く（MUST）。見張りの中身は reference を参照し、SKILL.md に言い換えて再掲してはならない（MUST NOT）。
 
 G の指示書 `skills/develop/references/roles/gate-runner.md` は、G が CI の見張りを始めずに `passed` を return することを書かなければならない（MUST）。unmanned モードは (4) を回さないので、この見張りの対象外とする。
 
@@ -666,6 +666,10 @@ G の指示書 `skills/develop/references/roles/gate-runner.md` は、G が CI �
 #### Scenario: G は見張りを始めない
 - **WHEN** `skills/develop/references/roles/gate-runner.md` を読む
 - **THEN** G が CI の見張りを始めずに `passed` を return することが書かれている
+
+#### Scenario: issue で承認済みの passed は見張りの前に主へ伝える
+- **WHEN** `skills/develop/SKILL.md` の (4) の passed の行を読む
+- **THEN** return に `issue で承認済み:` の行があれば、CI の見張りを始める前に主へその行（宣言 URL・分類・引用）を 1 回伝えることが書かれている
 
 ### Requirement: G は段ごとに要るファイルだけを読む
 
@@ -756,7 +760,7 @@ gate-runner.md の needs-reviewer の payload（`stages/prepare.md` に移った
 | 段 | 本体が起こす時点 | G が読むファイル（`skills/pr-review-gate/` から） | 返しうる Status |
 |---|---|---|---|
 | 前提確認と重さ判定 | ゲートの開始、W の修正後の再レビュー（failed の `次の段: 前提確認と重さ判定`）、保留の解除が `次の段: 前提確認と重さ判定` を返したとき、CI の見張りで `ready` になったあとの取り直し | `stages/prepare.md`（W の修正後の再レビューのときは加えて `stages/triage.md` の収束ルールの節と「W の修正後の再レビュー」の入力） | `needs-reviewer` / 保留 |
-| 照合と振り分け | レビュー要約・補足レビューの結果・決める役の裁定を受け取ったとき、戻した指摘が順 3 だけの修正のあと（failed の `次の段: 照合と振り分け`） | `stages/triage.md` | `次の段へ` / failed / 保留 / `needs-reviewer`（補足） / `needs-decider` / `review-incomplete` |
+| 照合と振り分け | レビュー要約・補足レビューの結果・決める役の裁定・直し方の判定を受け取ったとき、戻した指摘が順 3 だけの修正のあと（failed の `次の段: 照合と振り分け`） | `stages/triage.md` | `次の段へ` / failed / 保留 / `needs-reviewer`（補足） / `needs-decider` / `needs-fix-check` / `review-incomplete` |
 | 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるとき・保留を返すときは加えて `stages/hold.md`） | passed / 保留 |
 | 保留の解除 | 主の回答が届いたとき | `stages/hold.md` | 復帰手順の表どおりに `次の段へ`（`次の段:` は合格処理か前提確認と重さ判定） / failed / needs-decider / 保留 |
 
@@ -795,15 +799,20 @@ W の修正後の再レビューで起こされた前提確認と重さ判定の
 - **WHEN** CI の見張りが `ready` になり、本体がゲートを取り直す
 - **THEN** 本体は前提確認と重さ判定の G を新しく起こし、前の G を再開しない
 
+#### Scenario: 段の表に needs-fix-check がある
+
+- **WHEN** SKILL.md の (4) と `gate-runner.md` の段ごとの表を読む
+- **THEN** 照合と振り分けの行の起こす時点に「直し方の判定を受け取ったとき」があり、返しうる Status に `needs-fix-check` がある
+
 ### Requirement: Gate Result は段と次の段を持つ
 
-`gate-runner.md` の Gate Result の共通欄は、`段: <前提確認と重さ判定|照合と振り分け|合格処理|保留の解除|一括（従来経路）>` と `次の段: <段の名前|なし>` を持たなければならない（MUST）。Status には `次の段へ` を足す（MUST）。`次の段:` の値は G が次の表どおりに決めて書く（MUST）。
+`gate-runner.md` の Gate Result の共通欄は、`段: <前提確認と重さ判定|照合と振り分け|合格処理|保留の解除|一括（従来経路）>` と `次の段: <段の名前|なし>` を持たなければならない（MUST）。Status には `次の段へ` と `needs-fix-check`（直し方の判定の依頼）を足す（MUST）。`次の段:` の値は G が次の表どおりに決めて書く（MUST）。
 
 | Status | `次の段:` |
 |---|---|
 | `次の段へ` | 照合と振り分けの G は `合格処理`。保留の解除の G は `合格処理` か `前提確認と重さ判定` |
 | failed | 戻した指摘が順 3 だけなら `照合と振り分け`、それ以外は `前提確認と重さ判定` |
-| needs-reviewer / needs-decider | `照合と振り分け` |
+| needs-reviewer / needs-decider / needs-fix-check | `照合と振り分け` |
 | 保留 | `保留の解除` |
 | passed / review-incomplete | `なし` |
 
@@ -819,6 +828,11 @@ W の修正後の再レビューで起こされた前提確認と重さ判定の
 - **WHEN** 照合と振り分けの G が止める指摘なしで終わる
 - **THEN** G は Status `次の段へ`、`次の段: 合格処理` で返し、本体は合格処理の G を新しく起こす
 
+#### Scenario: needs-fix-check の次の段
+
+- **WHEN** 照合と振り分けの G が Status `needs-fix-check` で返す
+- **THEN** Gate Result は `次の段: 照合と振り分け` を持ち、本体は直し方の判定のあと照合と振り分けの G を新しく起こす
+
 ### Requirement: 段と段の間の受け渡しは PR コメントを正とする
 
 G は前の段の会話を持たない前提で動かなければならない（MUST）。段と段の間で渡すものは次の PR コメントに置く（MUST）。
@@ -833,7 +847,7 @@ G は前の段の会話を持たない前提で動かなければならない（
 
 固定した HEAD の行を `対象 HEAD:` と書いてはならない（MUST NOT。auto-merge workflow がこの文字列を宣言の照合に使うため）。
 
-本体は次の G の起動指示に、前の段の `## Gate Result` ブロックを要約し直さずそのまま貼り、段に固有の入力（レビュー要約・補足レビューの結果・決める役の裁定・主の回答・W の修正の要約）を足さなければならない（MUST）。起動指示と PR コメントが食い違ったら、G は PR コメントを正としなければならない（MUST）。
+本体は次の G の起動指示に、前の段の `## Gate Result` ブロックを要約し直さずそのまま貼り、段に固有の入力（レビュー要約・補足レビューの結果・決める役の裁定・直し方の判定とその記録の URL・主の回答・W の修正の要約）を足さなければならない（MUST）。起動指示と PR コメントが食い違ったら、G は PR コメントを正としなければならない（MUST）。
 
 `gate-runner.md` の「再開」節は、段ごとの起動と入力（その段が読む PR コメントと、本体が渡すもの）を定める節に書き換えなければならない（MUST）。段の各ファイルの「G として動くとき（develop）」節にある再開の小節は、その段で起こされたときの入力として書き換える（MUST）。
 
@@ -1395,4 +1409,270 @@ executor ごとの起こし方は次のとおりとしなければならない�
 #### Scenario: 片方の条件だけ満たす
 - **WHEN** 経過時間は閾値以上だが前任のトランスクリプトが直近に更新されている
 - **THEN** 終端とみなさず、停止確認を待つ手順を続ける
+
+### Requirement: レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける
+
+`skills/develop/SKILL.md` は、節「レビューの周を主に聞かずに続ける（直し方の判定）」を 1 か所だけ持ち、仕様レビュー（R1）と PR のレビュー（G）の両方について、2 周目以降の周の終わりに止める指摘が残ったときの本体の手順の正本としなければならない（MUST）。`references/roles/spec-reviewer.md` と `skills/pr-review-gate/stages/triage.md` は規則を短く書いてこの節を指し、判定の記録と事後報告の書式を再掲してはならない（MUST NOT）。
+
+**規則**: 2 周目以降の周の終わりに残った止める指摘（仕様レビューは R1 の `REQUEST_CHANGES` の BLOCKER、PR のレビューは G が `needs-fix-check` で渡した指摘）がすべて直し方の決まったもので、PR トークン上限の計測が exit 2 でなければ、本体は主に聞かず次の周を回し、記録先に事後報告を残す（MUST）。主に聞くのは、直し方の判定が「選び直しが要る」とき（入力不足で判定が出なかったときを含む）と、PR トークン上限の計測が exit 2 のときの 2 つだけとする（MUST）。interactive と unmanned で同じに扱う（MUST）。主に聞かずに回す周の回数に上限を置かない（MUST NOT。止めるのは PR トークン上限、直し方の判定、PR 側の順 6 の「PR ごとに 1 回まで」）。
+
+**判定役**: 本体が決める役を `subagent_type: dev-workflow:decider` で起こす（MUST）。モデルは仕分け表の順 6 の決める役と同じく残量モードどおりとし、`model` を明示する（MUST）。description には記録先番号 `#N` を入れる（MUST。PR トークン上限の計測に含めるため）。起こす前に PR トークン上限を計測し、exit 2 なら起こさずに exit 2 の手順で止まる（MUST）。G・本体・レビュアーの申告を判定の代わりにしてはならない（MUST NOT）。
+
+**「直し方が決まっている」の定義**: 指摘ごとに、①直し方が 1 つに決まる（設計の選択肢から選ぶ必要が無い）②記録先の範囲（受け入れ条件・issue の範囲）を変えない ③前の周で「決まっている」と判定した直し方を当てたのに閉じなかった指摘ではない、の 3 つをすべて満たすとき「決まっている」とする（MUST）。1 件でも満たさなければ、その周の判定は「選び直しが要る」とする（MUST）。
+
+**入力**: 決める役は `Bash` を持たないので、本体が次を入力文に貼る（MUST）: 記録先の本文と関連コメント（受け入れ条件・`仕様化判断:` の記録・それまでの `直し方の判定:` の記録）、残った指摘の原文（仕様レビューは最新の `仕様レビュー: REQUEST_CHANGES` のコメント、PR のレビューは G の仕分けの PR コメントとレビュアーの要約）、前の周の指摘の原文、対象ファイルのパス（change の artifact、または PR の変更ファイル）、W の直近の return。
+
+**依頼の契約**: 依頼は、順 6 の裁定とマージ可否を問うときと同じ `agents/decider.md` の既存の「可否と根拠」の出力契約で出し、問いを「残った指摘はすべて直し方が決まっているか（可）、1 件でも選び直しが要るか（否）」の 1 つにする（MUST）。決める役が通常の 3 点（原因の分類・直す箇所と方法・次の実行役のモデル）で返す取り違えを防ぐため、依頼文に「3 点ではなく可否と根拠で返す」ことを書く（MUST）。`agents/decider.md` の入力契約と出力契約は変えない（MUST NOT。「G の needs-decider を受けた本体の動き」Requirement と同じ扱い）。
+
+**返答の 1 行目**: 依頼文で返答の 1 行目を `裁定: 可`（すべて決まっている）・`裁定: 否`（1 件でも選び直しが要る）・`不足: <足りないもの>` のどれかちょうどに指定し、2 行目以降に指摘ごとの直し方（1 行）か選び直しが要る理由（選択肢、または変わる範囲）を書かせる（MUST）。本体は 1 行目だけで分岐する（MUST。本文の読み取りで分岐しない）。1 行目が `不足:` か 3 形のどれにも一致しなければ、足りないものを補って同じ問いで 1 回だけ依頼し直し、2 回目も同じなら「選び直しが要る」として扱う（MUST）。
+
+**判定の記録**: 本体は返答を受け取ったら、記録先に判定の記録のコメントを投稿する（MUST。決める役は投稿できないので代理投稿する。PR のレビューでも G ではなく本体が投稿する）。1 行目は正規表現 `^直し方の判定: (決まっている|選び直しが要る)$` に完全一致させ（MUST。太字・全角コロン・末尾句点を付けない）、2 行目以降に次を `項目名: 値` で書く（MUST）: `対象:`（`仕様レビュー` または `PR レビュー（PR #N）`）、`周:`（何周目の終わりか）、`判定役:`（`dev-workflow:decider`・モデル・本体が代理投稿）、`指摘ごとの判定:`（続く行に 1 行 1 件で、指摘の要約と原文の URL、直し方か選び直しの理由）、`入力不足:`（`なし`、または 2 回目も不足で「選び直しが要る」とした場合の足りなかったもの）。
+
+**続行と事後報告**: 判定が「決まっている」なら、本体は仕様レビューでは W を `段: spec` で再開して artifact を直させ R1 に次の周の差分再レビューをさせ、PR のレビューでは判定の記録の URL と裁定を渡して照合と振り分けの G を新しく起こす（MUST）。各 spawn・再開の前の PR トークン上限の計測は省かない（MUST）。主に聞かずに回した周の結果を本体が受け取ったら（仕様レビューは R1 の結果、PR のレビューはその周の照合と振り分けの G の return）、記録先に事後報告のコメントを投稿する（MUST）。1 行目は正規表現 `^主に聞かずに回した周: [0-9]+ 周目$` に完全一致させ（MUST）、2 行目以降に `対象:`・`残っていた指摘:`（前の周の終わりに残った指摘の要約を 1 行 1 件、またはそれを載せたコメントの URL）・`判定の根拠:`（判定の記録のコメント URL）・`使ったトークン:`（周の前の合計 → 周のあとの合計、その差、上限）・`周の結果:`（その周のレビュー結果）を書く（MUST）。`使ったトークン:` の 2 つの値は、本体が spawn・再開の前に毎回とる PR トークン上限の計測の値を使う（周の前は直し方の判定の決める役を起こす前の計測、周のあとは周の結果を受け取ったあと最初の計測。MUST。新しい計測の仕組みを足さない）。
+
+**主に聞くとき**: 判定が「選び直しが要る」なら、仕様レビューでは `needs-approval` を付けて主に聞き（`dev-workflow-spec-review` の「仕様レビューは 2 周で確定し結果を issue に記録する」Requirement）、PR のレビューでは判定の記録の URL と裁定を渡して照合と振り分けの G を新しく起こし、G が順 5 に当てる（MUST）。仕様レビューで主に聞くときの引き継ぎのコメントは「保留で止まるときは記録先に引き継ぎのコメントを 1 種類の書式で残す」Requirement の場面「レビューの 2 周キャップ超え」として書き、待ち理由は `2 周キャップ超え` とする（MUST）。
+
+この判定の守備範囲は、レビューの 2 周目以降の周の終わりに残った指摘（仕様レビューの R1 の BLOCKER、PR のレビューで G が `needs-fix-check` で渡した指摘）について、主の判断が要る指摘を主に聞かずに進めてしまうことを防ぐことである。拾いたいのは、設計の選択肢から選ぶ必要がある指摘・記録先の範囲を変える指摘・前の周で決まっているとした直し方で閉じなかった指摘で、これらは主に上げる。直し方が 1 つに決まる指摘（例: 受け入れ条件の文と artifact の 1 文が食い違い、artifact 側を受け入れ条件に合わせれば閉じる BLOCKER。同じ文言が別の場所に残っている指摘）は主に聞かずに通す。判定が「決まっている」とした直し方が外れることは防がない（次の周の終わりの判定の ③ で拾う）ので、判定の誤りが 1 件も無いことをこの手順の完了条件にしない。
+
+#### Scenario: 正本の節が 1 か所にある
+- **WHEN** `skills/develop/SKILL.md`・`references/roles/spec-reviewer.md`・`skills/pr-review-gate/stages/triage.md` を読む
+- **THEN** 判定役・定義・入力・返答の 1 行目・判定の記録と事後報告の書式は SKILL.md の節「レビューの周を主に聞かずに続ける（直し方の判定）」にだけあり、ほかの 2 つはその節を指している
+
+#### Scenario: 主に聞く条件が 2 つだけ書かれている
+- **WHEN** SKILL.md の節「レビューの周を主に聞かずに続ける（直し方の判定）」を読む
+- **THEN** 主に聞くのは「方針の選び直しが要る」と「PR トークン上限を超える（`pr-token-budget.sh` が exit 2）」の 2 つだけと書かれている
+
+#### Scenario: 判定は可否と根拠の契約で依頼する
+- **WHEN** SKILL.md の節「レビューの周を主に聞かずに続ける（直し方の判定）」を読み、この change の前後で `plugins/dev-workflow/agents/decider.md` を比べる
+- **THEN** 節には依頼を `agents/decider.md` の「可否と根拠」の契約で出し、3 点ではなく可否と根拠で返すよう依頼文に書くことが書かれ、`agents/decider.md` には差分が無い
+
+#### Scenario: 判定の入力が固定されている
+- **WHEN** SKILL.md の節「レビューの周を主に聞かずに続ける（直し方の判定）」を読む
+- **THEN** 入力として、記録先の本文と関連コメント・残った指摘の原文・前の周の指摘の原文・対象ファイルのパス・W の直近の return の 5 つが書かれている
+
+#### Scenario: 1 回目の入力不足は補って依頼し直す
+- **WHEN** 決める役の返答の 1 行目が 1 回目だけ `不足: <足りないもの>` で、依頼し直した 2 回目が `裁定: 可`
+- **THEN** 本体は 1 回目を判定として扱わず、足りないものを補って同じ問いで 1 回だけ依頼し直し、2 回目の `裁定: 可` で判定の記録（`入力不足: なし`）を投稿して続行する。3 回目の依頼はしない
+
+#### Scenario: 2 回とも入力不足
+- **WHEN** 決める役の返答の 1 行目が 2 回続けて `不足:` で始まる
+- **THEN** 本体は「選び直しが要る」として判定の記録を投稿し（`入力不足:` に足りなかったものを書く）、主に聞く経路に進む
+
+#### Scenario: 前の周で決まっているとした直し方で閉じなかった
+- **WHEN** 3 周目の終わりに、2 周目の終わりの判定で「決まっている」とされた BLOCKER が閉じずに残る
+- **THEN** 決める役はその指摘を「選び直しが要る」とし、本体は主に聞く
+
+#### Scenario: 主に聞かずに回した周の事後報告
+- **WHEN** 直し方の判定で開いた 3 周目の R1 の結果を本体が受け取る
+- **THEN** 本体は 1 行目 `主に聞かずに回した周: 3 周目` のコメントを記録先に投稿し、残っていた指摘・判定の記録の URL・周の前とあとのトークンの合計とその差と上限・周の結果を書く
+
+### Requirement: G の needs-fix-check を受けた本体の動き
+
+`skills/develop/SKILL.md` の 1 ループの (4) は、G の Status `needs-fix-check` を受けた本体の動きを書かなければならない（MUST）: 本体は「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement の手順で決める役を起こして判定を受け取り、判定の記録を記録先に投稿し、判定（「決まっている」または「選び直しが要る」）と判定の記録の URL を渡して照合と振り分けの G を新しく起こす（MUST）。本体は判定を受けて自分で `agent-review:failed` を付けたり W を再開したりしてはならない（MUST NOT。ラベルの付け替えと W に戻す指摘の一覧は G が決める）。
+
+#### Scenario: needs-fix-check で返った
+- **WHEN** G が Status `needs-fix-check`・`次の段: 照合と振り分け` で return する
+- **THEN** 本体は PR トークン上限を測ってから決める役を起こし、判定の記録を記録先に投稿し、判定とその URL を渡して照合と振り分けの G を新しく起こす
+
+### Requirement: 保留の許容は会話の返事で受け、PR へのコメントを求めない
+
+`skills/develop/SKILL.md` の「保留で止まるときの引き継ぎ」の主への案内は、リスク許容の返事について「このセッションの会話で返すか、新しいセッションで `/develop <記録先> 許容する` と打てばよく、PR へのコメントは要らない」と書かなければならない（MUST）。本体は会話で許容の返事を受けたら、主に PR へのコメントを求めてはならず（MUST NOT）、保留の解除の G に、自分のセッション ID（`$CLAUDE_CODE_SESSION_ID`）・その発言の日時（会話ログの timestamp）・原文を渡さなければならない（MUST）。新しいセッションでの再開手順は、`/develop` の引数の残り（`許容する` など）を会話で受けた回答として扱い、その新しいセッションのセッション ID・日時・原文を同じく G に渡さなければならない（MUST）。記録の書式と真正性確認は pr-review-gate の手順 5 が正本で、SKILL.md には書式を再掲しない（MUST NOT）。
+
+#### Scenario: 案内に会話の返事と /develop の引数がある
+
+- **WHEN** `skills/develop/SKILL.md` の「保留で止まるときの引き継ぎ」の主への案内を読む
+- **THEN** 会話で返すか `/develop <記録先> 許容する` と打てばよく、PR へのコメントは要らないことが書かれている
+
+#### Scenario: 新しいセッションで引数に許容を添えて再開する
+
+- **WHEN** 主が新しいセッションで `/develop 721 許容する` と打ち、記録先に引き継ぎのコメントがある
+- **THEN** 本体は `許容する` を会話で受けた回答として、新しいセッションのセッション ID・日時・原文を保留の解除の G に渡し、主に PR へのコメントを求めない
+
+### Requirement: epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける
+`plugins/dev-workflow/scripts/epic-dispatch.sh` は、サブコマンド `route`・`launch`・`wait` に加えて `mark` と `reap` を持たなければならない（MUST）。どちらも LLM を呼んではならない（MUST NOT）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち、次の 5 点に優先する。サブコマンドを `route`・`launch`・`wait` とする規定／`wait` が stdout にちょうど 1 行を出す規定／`wait` の子が 0 件なら使い方を出す規定／「失敗したポーリング」の定義（`--watch-done` が 1 つ以上あるときは、一覧の取得の失敗も失敗したポーリングに数える）／`wait` の終わり方の列挙（`closed`・`timeout`・`error gh` に、`done` と `error workspaces` が加わる）。
+
+`mark` と `reap` は、環境変数 `EPIC_DISPATCH_PARENT_EPIC` の有無によらず同じに動かなければならない（MUST。並列起動された子のセッションは `EPIC_DISPATCH_PARENT_EPIC` を持ったまま自分のループを終えて `mark` を呼び、`reap` を呼ぶのは親セッションなので、どちらもこの変数の影響を受けない）。
+
+この要件で `<ブランチ>` は、一覧の `branch` から先頭の `refs/heads/` を外した名前を言う。
+
+**`mark <done|waiting> <issue>`** は、今いるワークスペースに印を付ける。`done` は Orca のボードの列 `completed`、`waiting` は `in-review` に対応させる（MUST）。次の順で動かなければならない（MUST）。
+
+- 1 つ目の引数が `done` / `waiting` のどちらでもない、`<issue>` が数字でない、引数の数が 2 でないときは、stderr に使い方を出して exit 1 で終わる
+- `orca` が PATH に無いか、`orca worktree current --json` が非 0 で終わるときは、stdout に `skipped <issue> no-workspace` の 1 行を出して exit 0 で終わる。ほかの `orca` のコマンドを呼んではならない（MUST NOT）。印の代わりになるもの（ファイルなど）を作ってはならない（MUST NOT）
+- `orca worktree current --json` の `.result.worktree.linkedIssue` が `<issue>` と一致しないとき（null を含む）は、`orca worktree set` を呼ばず、stdout に `skipped <issue> not-linked` の 1 行を出して exit 0 で終わる
+- 一致するときは `orca worktree set --worktree current --workspace-status <completed|in-review>` を 1 回呼び、exit 0 なら stdout に `marked <issue> <done|waiting>` の 1 行を出して exit 0、非 0 なら `failed <issue>` の 1 行を出して exit 1 で終わる。`orca` 自身の出力は stderr に流す（SHALL）
+
+**`wait [--interval <sec>] [--timeout <sec>] [--watch-done <N>]... [<child>...]`** は、`--watch-done` が 1 つも無いときは今までどおりに動き、`orca` を呼んではならない（MUST NOT）。`--watch-done` が 1 つ以上あるときは次のとおり動かなければならない（MUST）。
+
+- 位置引数の子が 0 件でも受け付ける。`--watch-done` の値が数字でなければ stderr に使い方を出して exit 1 で終わる
+- ポーリングを始める前に `orca worktree current --json` で今の repo の `repoId` を得る。`orca` か `jq` が PATH に無い、このコマンドが非 0 で終わる、`repoId` が取れないときは、stderr に理由を出し、stdout に何も出さず exit 1 で終わる
+- ポーリングごとに、位置引数の子の `gh` の確認（今までどおり）のあと、`orca worktree list --json` を 1 回だけ呼ぶ。`--watch-done` の子 `<N>` は、一覧に `repoId` が同じ・`linkedIssue` が `<N>`・`isArchived` が true でない・`workspaceStatus` が `completed` のワークツリーがあれば「印が付いた」とする。子の数によらず、ポーリング 1 回あたりの `gh` の呼び出しは位置引数の子の数と同じでなければならない（MUST）
+- 閉じた子か印が付いた子が 1 件以上あれば、閉じた子がいるとき `closed <N>...`、印が付いた子がいるとき `done <N>...` を、この順で出して exit 0 で終わる（1 行か 2 行）
+- 一覧の取得が非 0 で終わるか、`.result.worktrees` が配列でないポーリングは、閉じた子も印が付いた子も無ければ「失敗したポーリング」に数える。失敗したポーリングが 3 回続いたとき、`gh` で失敗した子がいれば `error gh <N>...`、いなければ `error workspaces` の 1 行を出して exit 1 で終わる
+- 上限時間に達したら `timeout` に続けて閉じていない位置引数の子の番号を出して exit 2 で終わる。位置引数が 0 件なら `timeout` だけの 1 行とする
+
+**`reap <child>...`** は、印が付いた子のワークスペースを片付ける。子が 0 件か番号が数字でなければ stderr に使い方を出して exit 1 で終わる（SHALL）。`orca` か `jq` が PATH に無い、`orca worktree current --json` が非 0 で終わるか `repoId`・`id` が取れない、`orca worktree list --json` が非 0 で終わるか `.result.worktrees` が配列でないときは、何も消さず、stdout に何も出さず exit 1 で終わらなければならない（MUST）。一覧は 1 回だけ取る（SHALL）。子ごとに次の順で確かめ、外れた時点でその子についてはそれ以上何も呼ばず、対応する 1 行を出して次の子へ進まなければならない（MUST）。同じ呼び出しの中で 2 回目以降に現れた番号は何もせず行も出さない（SHALL）。
+
+1. 一覧のうち、`repoId` が今のワークツリーと同じ・`linkedIssue` が `<N>`・`isArchived` が true でないワークツリーを子の候補とする。0 件なら `gone <N>`、2 件以上なら `kept <N> ambiguous`
+2. 候補の `isMainWorktree` が true、または `parentWorktreeId` が今のワークツリーの `id` と一致しなければ `kept <N> not-child`
+3. 候補の `workspaceStatus` が `completed` でなければ `kept <N> not-done`
+4. `git -C <子のパス> status --porcelain` が非 0 なら `kept <N> git-failed`、出力が空でなければ `kept <N> dirty`
+5. `<子のパス>/LLM` が存在すれば `kept <N> llm-logs`
+6. 候補の `branch` が `refs/heads/` で始まらなければ `kept <N> no-branch`
+7. `gh pr list --head <ブランチ> --state merged --json headRefOid --jq '.[].headRefOid'` が非 0 なら `kept <N> pr-lookup-failed`、出力が空なら `kept <N> no-merged-pr`、出力のどの行も `git -C <子のパス> rev-parse HEAD` の出力と一致しなければ `kept <N> head-mismatch`
+
+1〜7 をすべて通った子に限り、`orca terminal close --worktree path:<子のパス> --all`、`orca worktree rm --worktree path:<子のパス>` をこの順に 1 回ずつ呼ばなければならない（MUST）。`orca worktree rm` に `--force` を付けてはならない（MUST NOT）。close が非 0 なら rm を呼ばずに `kept <N> close-failed`、rm が非 0 なら `kept <N> rm-failed` を出す（MUST）。rm が exit 0 のあと、`git rev-parse --verify --quiet refs/heads/<ブランチ>` が exit 0 で、その出力が 7 で一致した HEAD と同じときだけ `git branch -D <ブランチ>` を呼ぶ（MUST）。ブランチが無いか、`git branch -D` が exit 0 なら `reaped <N>`、先端が違うか `git branch -D` が非 0 なら `reaped <N> branch-kept` を出す（MUST）。1〜7 のどれかで外れた子、close か rm が失敗した子について、`git branch -D` を呼んではならない（MUST NOT）。stdout には子ごとに 1 行だけを出し、`orca`・`git`・`gh` 自身の出力は stderr に流す（SHALL）。子ごとの行を出し終えたら、`kept` があっても exit 0 で終わる（MUST）。
+
+この要件の守備範囲で入力として扱うのは、develop の本体が SKILL.md の手順どおりに渡す番号と、`orca worktree current --json`・`orca worktree list --json` の出力（2026-10-08、Orca 1.4.222 で確かめた `id`・`repoId`・`path`・`branch`・`linkedIssue`・`isArchived`・`isMainWorktree`・`workspaceStatus`・`parentWorktreeId`）である。拾いたい誤りは、印が付いていない子・親の `launch` が作っていないワークツリー・push していないコミットや未コミットの変更や `LLM/` を持つワークツリーを消すことである。次は通してよく、この要件では止めない: Orca の出力の形が変わったときの検知（読めなければ `gone` か `kept` になり、消す側には倒れない）／フォークの同名ブランチのマージ済み PR（HEAD の一致で落ちる）／オーナーがボードで手で `completed` に動かした子（子が付けた印と同じに扱う）／確認から削除までの間に子が積んだコミット（`--force` を付けない rm と、ブランチの先端の比較で残る）。`mark` は `<issue>` の PR がマージ済みかを検査しない（手順書の条件に頼る。誤って付いた印は `reap` の `no-merged-pr`・`head-mismatch` で止まる）。`.gitignore` の対象のうち `LLM/` 以外は守らない（`git status --porcelain` に出ないので、ワークツリーと一緒に消える）。すり抜ける入力が見つかるたびに確認を足すことは、この要件の完了条件としない。
+
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、`orca`・`gh`・`git`・`sleep` を PATH 上のスタブにして、下の Scenario を確かめなければならない（MUST）。
+
+#### Scenario: 自分の issue のワークスペースに完了の印を付ける
+- **WHEN** `orca worktree current --json` の `linkedIssue` が 11 のスタブ環境で `epic-dispatch.sh mark done 11` を実行する
+- **THEN** `orca worktree set --worktree current --workspace-status completed` が 1 回呼ばれ、stdout は `marked 11 done` の 1 行で exit 0
+
+#### Scenario: 確認待ちの印は in-review になる
+- **WHEN** `linkedIssue` が 11 のスタブ環境で `epic-dispatch.sh mark waiting 11` を実行する
+- **THEN** `orca worktree set` は `--workspace-status in-review` で呼ばれ、stdout は `marked 11 waiting` で exit 0
+
+#### Scenario: 別の issue のワークスペースには印を付けない
+- **WHEN** `linkedIssue` が 400（エピックの番号）のスタブ環境で `epic-dispatch.sh mark done 11` を実行する
+- **THEN** `orca worktree set` は呼ばれず、stdout は `skipped 11 not-linked` で exit 0
+
+#### Scenario: Orca 管理外と orca が無い環境では何もしない
+- **WHEN** `orca worktree current` が exit 1 を返すスタブ環境、および `orca` が PATH に無い環境で `epic-dispatch.sh mark done 11` を実行する
+- **THEN** どちらも `orca worktree set` は呼ばれず、stdout は `skipped 11 no-workspace` で exit 0
+
+#### Scenario: 並列起動された子のセッションでも印を付ける
+- **WHEN** `EPIC_DISPATCH_PARENT_EPIC=400` を付け、`linkedIssue` が 11 のスタブ環境で `epic-dispatch.sh mark done 11` を実行する
+- **THEN** `orca worktree set --worktree current --workspace-status completed` が呼ばれ、stdout は `marked 11 done` で exit 0
+
+#### Scenario: 印を付けられなければ failed
+- **WHEN** `orca worktree set` が非 0 で終わるスタブ環境で `epic-dispatch.sh mark done 11` を実行する
+- **THEN** stdout は `failed 11` で exit 1
+
+#### Scenario: mark の引数の誤りは使い方を出す
+- **WHEN** `epic-dispatch.sh mark completed 11`、`epic-dispatch.sh mark done`、`epic-dispatch.sh mark done '#11'` を実行する
+- **THEN** どれも `orca` を呼ばず、stderr に使い方が出て exit 1
+
+#### Scenario: issue が open のままでも印が付いた子を検知して終わる
+- **WHEN** 子 11 の `gh` が常に `open` を返し、一覧の子 11 のワークツリーが 2 回目のポーリングから `workspaceStatus: completed` になるスタブ環境で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-done 11 11` を実行する
+- **THEN** stdout は `done 11` の 1 行で exit 0、`gh` の呼び出しは 2 回
+
+#### Scenario: 閉じた子と印が付いた子が同じポーリングにいれば 2 行を出す
+- **WHEN** 子 12 の `gh` が `closed` を返し、一覧の子 11 のワークツリーが `completed` のスタブ環境で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-done 11 --watch-done 12 12` を実行する
+- **THEN** stdout は `closed 12`、`done 11` の順の 2 行で exit 0
+
+#### Scenario: 位置引数が無くても印だけを待てる
+- **WHEN** 一覧の子 11 のワークツリーが `in-review` のままのスタブ環境で `epic-dispatch.sh wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** `gh` は呼ばれず、stdout は `timeout` の 1 行で exit 2
+
+#### Scenario: --watch-done が無ければ orca を呼ばない
+- **WHEN** 子 11 の `gh` が `closed` を返すスタブ環境で `epic-dispatch.sh wait --interval 0 --timeout 60 11` を実行する
+- **THEN** stdout は `closed 11` の 1 行で exit 0、`orca` は 1 回も呼ばれない
+
+#### Scenario: 別の repo や archive されたワークツリーの印は数えない
+- **WHEN** 一覧に、`repoId` が違う `linkedIssue` 11 の `completed` のワークツリーと、`isArchived` が true の `linkedIssue` 11 の `completed` のワークツリーだけがあるスタブ環境で `epic-dispatch.sh wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout` で exit 2
+
+#### Scenario: 一覧を取れないポーリングが 3 回続いたら error で終わる
+- **WHEN** `orca worktree list` が常に非 0 で終わるスタブ環境で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-done 11` を実行する
+- **THEN** 3 回のポーリングのあと stdout は `error workspaces` の 1 行で exit 1
+
+#### Scenario: 条件をすべて満たす子は端末を閉じてからワークツリーを消す
+- **WHEN** 一覧の子 11 のワークツリーが、同じ `repoId`・`parentWorktreeId` が今のワークツリーの `id`・`isMainWorktree` が false・`workspaceStatus` が `completed`・`branch` が `refs/heads/oratta/issue-11` で、`git status --porcelain` が空、`LLM/` が無く、マージ済み PR の `headRefOid` がワークツリーの HEAD と同じスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `orca terminal close --worktree path:<子> --all` と `orca worktree rm --worktree path:<子>` がこの順に 1 回ずつ呼ばれ、どの `orca` の呼び出しにも `--force` が無く、stdout は `reaped 11` の 1 行で exit 0
+
+#### Scenario: 条件を外れた子は消さずに理由を出す
+- **WHEN** 上の Scenario から 1 点だけを変えたスタブ環境（`workspaceStatus` が `in-review`／ワークツリーの HEAD が PR の `headRefOid` と違う／`git status --porcelain` に出力がある／`<子>/LLM` がある／`parentWorktreeId` が別のワークツリー）それぞれで `epic-dispatch.sh reap 11` を実行する
+- **THEN** どの場合も `orca terminal close`・`orca worktree rm`・`git branch -D` は 1 回も呼ばれず、stdout は順に `kept 11 not-done`・`kept 11 head-mismatch`・`kept 11 dirty`・`kept 11 llm-logs`・`kept 11 not-child` の 1 行で exit 0
+
+#### Scenario: マージ済みの PR が無い子と、PR を調べられない子は消さない
+- **WHEN** `gh pr list` の出力が空のスタブ環境、および `gh pr list` が非 0 で終わるスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `orca worktree rm` は呼ばれず、stdout は順に `kept 11 no-merged-pr`・`kept 11 pr-lookup-failed` で exit 0
+
+#### Scenario: ワークツリーが既に無い子は gone
+- **WHEN** 一覧に `linkedIssue` が 11 のワークツリーが無いスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `git` も `gh` も呼ばれず、stdout は `gone 11` で exit 0
+
+#### Scenario: 残ったブランチは先端が PR の最終コミットと同じときだけ消す
+- **WHEN** `orca worktree rm` のあともローカルブランチ `oratta/issue-11` が残り、その先端が PR の `headRefOid` と同じスタブ環境、および先端が違うスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** 前者は `git branch -D oratta/issue-11` が 1 回呼ばれて stdout は `reaped 11`、後者は `git branch -D` が呼ばれず stdout は `reaped 11 branch-kept`、どちらも exit 0
+
+#### Scenario: ブランチが残っていなければ git branch -D を呼ばない
+- **WHEN** `orca worktree rm` のあと `git rev-parse --verify --quiet refs/heads/oratta/issue-11` が非 0 で終わるスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `git branch -D` は呼ばれず、stdout は `reaped 11` で exit 0
+
+#### Scenario: 端末を閉じられなければワークツリーを消さない
+- **WHEN** `orca terminal close` が非 0 で終わるスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `orca worktree rm` と `git branch -D` は呼ばれず、stdout は `kept 11 close-failed` で exit 0
+
+#### Scenario: 複数の子は 1 件ずつ判定する
+- **WHEN** 子 11 は条件をすべて満たし、子 12 は `workspaceStatus` が `in-review` のスタブ環境で `epic-dispatch.sh reap 11 12` を実行する
+- **THEN** stdout は `reaped 11` と `kept 12 not-done` の 2 行で、`orca worktree rm` は子 11 のパスに 1 回だけ呼ばれ、exit 0
+
+#### Scenario: 一覧を取れなければ何も消さない
+- **WHEN** `orca worktree list` が非 0 で終わるスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `orca terminal close` も `orca worktree rm` も呼ばれず、stdout は空で exit 1
+
+### Requirement: wait のテストはポーリングごとの stderr の空化を固定する
+`plugins/dev-workflow/tests/epic-dispatch.bats` の「`gh` の stderr はエラー行の直前に出る」テストは、`error` で終わったときに本体の stderr に出るのが最後（3 回目）のポーリングの `gh` の stderr だけであることを確かめなければならない（MUST）。`gh` のスタブは失敗のたびに `gh: mock failure for issue <N> (poll <回数>)` を stderr に出すので、stderr に `(poll 3)` が含まれることと、`mock failure` を含む行がちょうど 1 行であることを確かめる（MUST）。
+
+#### Scenario: 3 回目のポーリングの stderr だけが出る
+- **WHEN** `gh` が常に失敗するスタブ環境で `epic-dispatch.sh wait --interval 0 --timeout 60 11` を実行する
+- **THEN** stderr は `(poll 3)` を含み、`mock failure` を含む行はちょうど 1 行である
+
+#### Scenario: 空にする処理を消すとテストが落ちる
+- **WHEN** `epic-dispatch.sh` の `wait` から、ポーリングごとに stderr の置き場を空にする処理を消して同じテストを実行する
+- **THEN** `mock failure` を含む行が 3 行になり、テストは失敗する
+
+### Requirement: develop のループの終わりは片付けを聞かず、ワークスペースに印を付ける
+develop の SKILL.md は「ループの終わり」の節を持ち、次を規定しなければならない（MUST）。
+
+- 本体は、完了報告でも途中でも、worktree の片付けを提案も質問もしてはならない（MUST NOT）。片付けは、Orca 経路のエピックの子なら親セッションが行い、それ以外はオーナーが別のセッションで `/wt-clean` を使う
+- 記録先が issue で PR がマージ済みのとき、本体はそのループの最後のツール呼び出しとして `scripts/epic-dispatch.sh mark <done|waiting> <記録先の issue 番号>` を 1 回呼ぶ（MUST）。オーナーに頼むことが残っていなければ `done`、完了報告にマージ後の依頼（動作確認など）を書いたなら `waiting` とし、オーナーが済んだと返事をしたら `done` で呼び直す（MUST）
+- PR がマージされていないとき（保留・マージ待ち・unmanned）と、記録先が Draft PR のときは呼ばない（MUST NOT）
+- 出力が `marked` / `skipped` なら何もせず、`failed` なら完了報告に 1 行書く。どの出力でも止まらない（SHALL）
+- 印を最後に置く理由（印が付くと親セッションがそのワークスペースの端末を閉じること）を書く（SHALL）
+
+この規定は SKILL.md に置き、`launch --note` で子に渡す指示に頼ってはならない（MUST NOT。起動し直したセッションにも効かせるため）。
+
+#### Scenario: SKILL.md にループの終わりの節がある
+- **WHEN** SKILL.md の「ループの終わり」の節を読む
+- **THEN** worktree の片付けを提案も質問もしないこと、片付けは親セッションか別セッションの `/wt-clean` が担うこと、記録先が issue で PR がマージ済みのときに最後のツール呼び出しとして `epic-dispatch.sh mark` を呼ぶこと、`done` と `waiting` の使い分け、オーナーの返事のあとに `done` で呼び直すこと、マージされていないときと記録先が Draft PR のときは呼ばないことが書かれている
+
+#### Scenario: 片付けの記述を grep で確かめられる
+- **WHEN** `grep -rn "worktree" plugins/dev-workflow/skills/develop/SKILL.md` を実行する
+- **THEN** 「worktree の片付けを提案も質問もしない」に当たる行が出る
+
+### Requirement: Orca 経路の本体は印が付いた子のワークスペースを片付ける
+develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定しなければならない（MUST）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の Orca 経路の規定に加わる。
+
+- 本体は `epic-dispatch.sh wait` に、`launch` に渡したことのある子（閉じた子を含む）を `--watch-done <N>` で渡す（MUST）。エピックに `子 #N のワークツリーを残した` で始まる行がある子は渡さない（MUST NOT）
+- `done <N>...` で起こされたら、本体は `epic-dispatch.sh reap <N>...` を Bash で 1 回呼ぶ（MUST）。wt-clean を呼んではならない（MUST NOT）。子ごとの確認をオーナーに取ってはならない（MUST NOT。子が印を付けたことを承認として扱う）
+- `reaped <N>` と `gone <N>` は何もしない。`reaped <N> branch-kept` はエピックに `子 #N のローカルブランチを残した` と 1 行コメントする。`kept <N> <理由>`（理由が `not-done` 以外）はエピックに `子 #N のワークツリーを残した（<理由>）` と 1 行コメントし、オーナーの判断に残す（MUST）。本体が手で消し直してはならない（MUST NOT）。`kept <N> not-done` は待ちを続ける
+- `closed` と `done` の 2 行で起こされたら、両方を処理する（MUST）
+- 開いている子が無くなったら、`--watch-done` に渡す子と同じ集合（`launch` に渡したことのある子から、エピックに `子 #N のワークツリーを残した` で始まる行がある子を除いたもの）で `reap` を 1 回呼び、`kept <N> not-done` の子だけを `--watch-done` に渡して（位置引数の子なしで）待ちを続ける。エピックの完了条件の確認と報告を、この待ちを理由に遅らせない（SHALL）。この待ちが `timeout` で終わったら、残っている子の番号をユーザーに報告して待ちをやめる（SHALL）
+- `回し方: Orca` を引き継いで再開したら、`launch` の前に、`launch` に渡したことのある子（閉じた子を含む。`子 #N のワークツリーを残した` の行がある子も除かない）で `reap` を 1 回呼ぶ（SHALL）
+- `wait` の `error workspaces` は `error gh ...` と同じく、ユーザーに報告して止まる（MUST）
+- `--watch-done` 付きの `wait` が stdout に何も出さず exit 1 で終わったら（今のワークツリーを Orca から読めない）、`launch` の exit 1 と同じく、Orca の親ワークツリーで開き直すようユーザーに報告して止まる（MUST）
+
+#### Scenario: Orca 経路に片付けの手順が書かれている
+- **WHEN** SKILL.md の「エピックの扱い」の「回し方」を読む
+- **THEN** `wait` に `--watch-done` を付けること、`done` で起こされたら `reap` を 1 回呼ぶこと、`kept` の子はエピックに `子 #N のワークツリーを残した（<理由>）` とコメントしてオーナーの判断に残し手で消し直さないこと、`not-done` は待ちを続けること、開いている子が無くなったあとは確認待ちの子だけを待ち `timeout` で待ちをやめること、再開時に `reap` を 1 回呼ぶことが書かれている
+
+### Requirement: develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする
+`plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
+
+`plugins/dev-workflow/` 配下のシェルスクリプト（`*.sh`）のうち、`orca` の語を含むのは `scripts/epic-dispatch.sh` だけでなければならない（MUST）。`epic-dispatch.sh` の中では `orca` のコマンドをそのまま呼び、Orca の機能を自前で作り直してはならない（MUST NOT）。Orca が無い環境のための代わりの実装を持ってはならない（MUST NOT。`route` の `subagent` と `mark` の `skipped` のように、何もしないで終わる分岐は代わりの実装に数えない）。
+
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、この 2 つの検索の結果を確かめなければならない（MUST）。この 2 つの検索で拾いたい誤りは、手順書に `orca` のサブコマンドを書き足すことと、`epic-dispatch.sh` 以外のシェルスクリプトに `orca` の呼び出しを足すことである。変数やコマンド置換を介した呼び出し、`orca` の語を含まない別名など、検索をすり抜ける書き方が見つかるたびに塞ぐことは、この要件の完了条件としない。
+
+#### Scenario: 手順書に orca を実行する書き方が無い
+- **WHEN** `grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` を実行する
+- **THEN** 出力は 0 行である
+
+#### Scenario: orca を呼ぶスクリプトは 1 本だけ
+- **WHEN** `grep -rlw orca plugins/dev-workflow --include='*.sh'` を実行する
+- **THEN** 出力は `plugins/dev-workflow/scripts/epic-dispatch.sh` の 1 行だけである
 
