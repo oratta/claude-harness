@@ -144,11 +144,12 @@ sys.exit(0 if "/config" in line and line.index("/config") < line.index("settings
   [ "$status" -eq 0 ]
 }
 
-@test "cost: the script lookup tries the substituted plugin root first" {  # 探索の先頭候補は本文置換される絶対パス
+@test "cost: the script lookup tries the substituted plugin root first" {  # 探索の先頭候補は本文置換される絶対パスから作る
   local first
+  grep -q '^plugin_root="${CLAUDE_PLUGIN_ROOT}"$' "$PLUGIN_DIR/commands/cost.md" || return 1
   first="$(grep -n -A2 '^for dir in' "$PLUGIN_DIR/commands/cost.md" | sed -n 2p)"
-  [[ "$first" == *'"${CLAUDE_PLUGIN_ROOT}/scripts"'* ]] || return 1
-  [[ "$first" != *':+'* ]] || return 1
+  [[ "$first" == *'"${plugin_root:+$plugin_root/scripts}"'* ]] || return 1
+  [[ "$first" != *'CLAUDE_PLUGIN_ROOT:+'* ]] || return 1
 }
 
 # 2 つのリポジトリと、削除済み worktree に、同じ名前のブランチ "shared-name" の行を置く
