@@ -102,12 +102,30 @@ mode_sec() { section "$SKILL" '実行モード'; }
 
 # --- Requirement: 仕様レビューは 2 周で確定し結果を issue に記録する ---
 
-@test "review cap: 2 rounds, no third-round exception, needs-approval afterwards" {
+@test "review cap: default 2 rounds, needs-approval only when the approach must be re-chosen" {
   { loop_sec; cat "$REF"; } | grep -qE '2 ?周'
   { loop_sec; cat "$REF"; } | grep -q 'needs-approval'
   { loop_sec; cat "$REF"; } | grep -q 'AskUserQuestion'
   { loop_sec; cat "$REF"; } | grep -qE 'unmanned.*(サイクル|終了)'
-  grep -qE '3 ?周目.*(例外|設けない)' "$REF"
+  # 3 周目の禁止は直し方の判定を通す続行に置き換わった（#722）
+  run grep -qE '3 ?周目.*(例外|設けない)' "$REF"
+  [ "$status" -ne 0 ]
+}
+
+@test "review cap (#722): spec-reviewer.md and SKILL.md (2) continue without asking when the fix is settled" {
+  # SKILL.md の 1 ループの (2)（列 0 の "(2) " から列 0 の "(3) " の手前まで）
+  step2="$(loop_sec | awk '/^\(2\) /{f=1} /^\(3\) /{f=0} f')"
+  [ -n "$step2" ] || { echo "no step (2)"; return 1; }
+  for token in '直し方が決まっている' '主に聞かず次の周を回す' '方針の選び直し' '`pr-token-budget.sh` が exit 2'; do
+    grep -qF "$token" "$REF" || { echo "spec-reviewer.md lacks: $token"; return 1; }
+    echo "$step2" | grep -qF "$token" || { echo "SKILL.md (2) lacks: $token"; return 1; }
+  done
+  # 判定と書式の正本は SKILL.md の節で、spec-reviewer.md は書式を再掲しない
+  grep -qF 'レビューの周を主に聞かずに続ける（直し方の判定）' "$REF"
+  run grep -qF '^直し方の判定:' "$REF"
+  [ "$status" -ne 0 ]
+  run grep -qF '^主に聞かずに回した周:' "$REF"
+  [ "$status" -ne 0 ]
 }
 
 @test "references: result comment format and posting steps live in spec-reviewer.md" {
