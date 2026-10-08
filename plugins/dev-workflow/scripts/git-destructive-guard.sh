@@ -10,6 +10,11 @@
 # bats から検査できず、一覧が 2 か所に分かれ、`git -C x reset --hard` のように大域オプションが前に来る形を
 # 前方一致で拾えないため。
 #
+# コマンド文字列は引用状態を保ったまま 1 回で読む（spec の要件「コマンド文字列をシェルと同じ単位で読む」）。
+# 扱う構文: 演算子と改行での区切り・行継続・コメント・リダイレクト・ヒアドキュメント・here-string・
+# $(...) とバッククォート。扱わない構文: 算術式 $((...)) の中身・${...} の中の置換・プロセス置換の中身・
+# case の ) ・予約語や記号が先頭に来る形（do / then / { / !）。扱わない形は通ることがある。
+#
 # 対象（spec の 9 種）: git checkout -- <path> / git checkout . ・git restore（--staged だけのものを除く）・
 #   git reset --hard ・git clean -f（dry-run を除く）・main / master への git push（dry-run を除く）・
 #   git push --force 系（dry-run を除く）・git branch -D ・--no-verify / git commit -n ・--no-gpg-sign
