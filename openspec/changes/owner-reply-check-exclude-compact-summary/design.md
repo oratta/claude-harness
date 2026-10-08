@@ -1,6 +1,6 @@
 ## Context
 
-`owner-reply-check.sh` の `owner_text()` は、会話ログ（`~/.claude/projects/*/<セッション ID>.jsonl`）の各行を 7 条件で絞り、主の発言の本文だけを返す。PR #748 の 2 周目レビューで、会話の圧縮後にモデルが書いた要約の行がこの 7 条件を通りうると分かった。直近 14 日の実ログで `isCompactSummary: true` の行を見ると、いずれも `type: "user"`・`isMeta` なし・`origin` なし・`isVisibleInTranscriptOnly: true` だった。本文は多くが `This session is being continued from a previous conversation` で始まるが、`isVisibleInTranscriptOnly: true` の行を数えた別の調査（3 件、すべて `isCompactSummary: true`）では 1 件が `<artifact-content-authored-by-others/>` で始まっていた。
+`owner-reply-check.sh` の `owner_text()` は、会話ログ（`~/.claude/projects/*/<セッション ID>.jsonl`）の各行を 7 条件で絞り、主の発言の本文だけを返す。PR #748 の 2 周目レビューで、会話の圧縮後にモデルが書いた要約の行がこの 7 条件を通りうると分かった。直近 14 日の実ログで `isCompactSummary: true` の行を見ると、いずれも `type: "user"`・`isMeta` なし・`origin` なし・`isVisibleInTranscriptOnly: true` だった。本文は要約 3 件のうち 2 件が `This session is being continued from a previous conversation` で始まり、1 件が `<artifact-content-authored-by-others/>` で始まる。
 
 現状の緩和として、ゲート実行者は同じ timestamp の `MATCH:` の全文を読むので要約文は区別できる。ただし要約は過去の発言の言い換えで「許容する」という語が入りうるため、スクリプトの段で落としておく。
 
