@@ -16,7 +16,7 @@
 
 - [x] 4.1 `bats plugins/dev-workflow/tests/git-destructive-guard.bats` が全件 ok（既存の @test を含む）
 - [x] 4.2 1.1 で控えた書き換え前のスクリプトと書き換え後のスクリプトに、既存 bats の全入力と #820 の入力を同じ payload で流し、結果（ask / deny / 無出力）が変わったのが #820 の入力だけであることを一覧にして確かめる（使い捨ての比較で、リポジトリには置かない）
-- [ ] 4.3 `shellcheck plugins/dev-workflow/scripts/git-destructive-guard.sh` と `scripts/test.sh` が exit 0
+- [x] 4.3 `shellcheck plugins/dev-workflow/scripts/git-destructive-guard.sh` と `scripts/test.sh` が exit 0
 
 ## 5. 記録
 
