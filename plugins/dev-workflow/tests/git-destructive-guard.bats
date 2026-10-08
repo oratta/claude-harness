@@ -312,17 +312,18 @@ expect_silent() {
 # raw_command <JSON 文字列の中身> — \uXXXX を含む生の JSON を payload に埋めて実行する。
 # payload() は json.dumps が非 ASCII を \u に直す程度で、エスケープの生入力にならないため使わない。
 raw_command() {
+  case "$1" in *'\u'*) ;; *) echo "no \u escape in: $1"; return 1 ;; esac
   run "$SCRIPT" <<<'{"tool_name":"Bash","permission_mode":"default","tool_input":{"command":"'"$1"'"}}'
   [ "$status" -eq 0 ] || { echo "status=$status for: $1"; return 1; }
 }
 
 @test "unicode escape: escaped hyphens in --hard are decoded and stopped" {
-  raw_command 'git reset --hard'
+  raw_command 'git reset \u002d\u002dhard'
   [ "$(decision)" = "ask" ]
 }
 
 @test "unicode escape: escaped letter in git is decoded and stopped" {
-  raw_command 'git reset --hard'
+  raw_command '\u0067it reset --hard'
   [ "$(decision)" = "ask" ]
 }
 
@@ -332,13 +333,12 @@ raw_command() {
 }
 
 @test "unicode escape: surrogate pair before && does not hide the command" {
-  raw_command 'echo 😀 && git reset --hard'
+  raw_command 'echo \ud83d\ude00 && git reset --hard'
   [ "$(decision)" = "ask" ]
 }
 
 @test "unicode escape: escaped text inside quotes stays silent" {
-  raw_command 'git commit -m "日本語 git reset --hard"'
-  [ "$status" -eq 0 ]
+  raw_command 'git commit -m \"\u65e5\u672c\u8a9e git reset --hard\"'
   [ -z "$output" ]
 }
 
