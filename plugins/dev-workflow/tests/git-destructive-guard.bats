@@ -272,6 +272,20 @@ expect_silent() {
   done
 }
 
+@test "shell syntax: quoted -c / eval arguments are kept at any nesting depth" {
+  # 字句読みに置き換える前から止めていた形（PR #852 ゲート一周目 R-1）。入れ子が深くても、
+  # bash -c / eval に渡した引用つきのコマンド文字列を空白で割って失わない
+  local open close
+  open="$(printf '$(%.0s' $(seq 6000))"
+  close="$(printf ')%.0s' $(seq 6000))"
+  expect_stopped "echo ${open}bash -c 'git reset --hard'${close}"
+  expect_stopped "echo ${open}eval 'git reset --hard'${close}"
+  expect_stopped "echo ${open}sh -c \"git reset --hard\"${close}"
+  expect_stopped "echo ${open}eval \"git reset --hard\"${close}"
+  # 深さによらず、単一引用符の中の文字列は読まない
+  expect_silent "echo ${open}echo 'git reset --hard'${close}"
+}
+
 # --- 引数を取るオプションの値（PR #794 ゲート一周目 F2・F11・F12） ---
 
 @test "option values: a -n that is an option value does not make push or clean a dry-run" {
