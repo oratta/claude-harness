@@ -309,9 +309,37 @@ expect_silent() {
   expect_stopped 'git reset --hard && echo "oops'
 }
 
-@test "unicode-escaped payload: still judged" {
-  run "$SCRIPT" <<<'{"tool_name":"Bash","permission_mode":"default","tool_input":{"command":"git reset --hard"}}'
+# raw_command <JSON 文字列の中身> — \uXXXX を含む生の JSON を payload に埋めて実行する。
+# payload() は json.dumps が非 ASCII を \u に直す程度で、エスケープの生入力にならないため使わない。
+raw_command() {
+  run "$SCRIPT" <<<'{"tool_name":"Bash","permission_mode":"default","tool_input":{"command":"'"$1"'"}}'
+  [ "$status" -eq 0 ] || { echo "status=$status for: $1"; return 1; }
+}
+
+@test "unicode escape: escaped hyphens in --hard are decoded and stopped" {
+  raw_command 'git reset --hard'
   [ "$(decision)" = "ask" ]
+}
+
+@test "unicode escape: escaped letter in git is decoded and stopped" {
+  raw_command 'git reset --hard'
+  [ "$(decision)" = "ask" ]
+}
+
+@test "unicode escape: escaped newline separates lines and the second is stopped" {
+  raw_command 'ls\u000agit reset --hard'
+  [ "$(decision)" = "ask" ]
+}
+
+@test "unicode escape: surrogate pair before && does not hide the command" {
+  raw_command 'echo 😀 && git reset --hard'
+  [ "$(decision)" = "ask" ]
+}
+
+@test "unicode escape: escaped text inside quotes stays silent" {
+  raw_command 'git commit -m "日本語 git reset --hard"'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 # --- hooks.json ---
