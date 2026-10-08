@@ -1527,6 +1527,30 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF '親ワークツリーで開き直す'
 }
 
+@test "skill: Orca route drops reaped and gone children from the done-watch set" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -F '片付け待ちの子は' | grep -F '`reaped <N>`' | grep -F '`gone <N>`' | grep -qF '除いた'
+  printf '%s\n' "$r" | grep -F '片付け待ちの子は' | grep -F 'branch-kept' | grep -qF '`launched <N>`'
+  printf '%s\n' "$r" | grep -F '`reaped <N>` と `gone <N>`' | grep -qF '片付け待ちから外す'
+  printf '%s\n' "$r" | grep -F '開いている子が無くなったら' | grep -F '0 件' | grep -qF '`wait` を呼ばず'
+  printf '%s\n' "$r" | grep -F '開いている子が無くなったら' | grep -F '`kept <N> not-done` の子だけ' | grep -qF -- '--watch-done'
+  printf '%s\n' "$r" | grep -F '再開したら' | grep -qF '片付け待ちから外す'
+}
+
+# 全 issue が閉じたあと `kept <N> not-done` を待っている間に最後の done が来ると、
+# 読まれるのは手順 3（done で起こされた行）だけで、手順 4 の「0 件なら」は読まれない。
+# だから 0 件で終える分岐を、手順 3 の行そのものと、再開時の手順 7 の行で確かめる。
+@test "skill: Orca route ends the wait without calling wait when the last done leaves no child" {
+  r="$(run_section)"
+  s3="$(printf '%s\n' "$r" | grep -F '`done <N>...` で起こされたら')"
+  [ "$(printf '%s\n' "$s3" | grep -c .)" -eq 1 ]
+  printf '%s\n' "$s3" | grep -qF '動いている子か片付け待ちの子があれば 2 に戻る'
+  printf '%s\n' "$s3" | grep -F 'どちらも 0 件なら' | grep -F '`wait` を呼ばず' | grep -qF '完了条件の確認と報告がまだなら行う'
+  s7="$(printf '%s\n' "$r" | grep -F '再開したら')"
+  [ "$(printf '%s\n' "$s7" | grep -c .)" -eq 1 ]
+  printf '%s\n' "$s7" | grep -F 'どちらも 0 件なら' | grep -F '`wait` を呼ばず' | grep -qF '完了条件の確認と報告がまだなら行う'
+}
+
 @test "skill: develop's docs run no orca subcommand and only epic-dispatch.sh calls orca" {
   run grep -rnE 'orca [a-z]+' "$PLUGIN_DIR/skills/develop"
   [ "$status" -eq 1 ]
