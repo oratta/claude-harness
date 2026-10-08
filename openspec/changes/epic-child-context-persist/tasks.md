@@ -1,7 +1,7 @@
 ## 1. テスト（先に書いて落ちることを確かめる）
 
 - [ ] 1.1 bats の `gh` スタブに `issue comment` の分岐を足す（`gh issue comment <N> --body <本文>` の本文を `$STUB_CFG/comment_<N>` に追記し、`comment_exit` で終了コードを切り替える。今は `${2##*/}` が `comment` になり `gh_comment` を読みに行く）。冒頭のスタブの説明にも足す。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:1-23（冒頭の説明）、plugins/dev-workflow/tests/epic-dispatch.bats:148-162（gh スタブ）
-- [ ] 1.2 注意書きのコメントの bats を足す（spec の Scenario「--note があれば子ごとに 1 回注意書きをコメントする」「--note が無ければコメントしない」「skipped の子と worktree create に失敗した子にはコメントしない」「端末を作れなかった子にもコメントは残る」「コメントに失敗しても起動の結果は変えない」。順序は `$STUB_LOG` の行番号で比べる）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:390-396（既存の --note のテストの直後）
+- [ ] 1.2 注意書きのコメントの bats を足す（spec の Scenario「--note があれば子ごとに 1 回注意書きをコメントする」「--note が無ければコメントしない」「skipped の子と worktree create に失敗した子にはコメントしない」「端末を作れなかった子にもコメントは残る」「コメントに失敗しても起動の結果は変えない」「worktree create の JSON に path が無い子にもコメントは残る」。順序は `$STUB_LOG` の行番号で比べる）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:390-396（既存の --note のテストの直後）
 - [ ] 1.3 親子関係の判定の bats を足す（spec の Scenario「環境変数が無くても、親ワークツリーに issue があれば nested」「子が 1 件でも…」「親ワークツリーに issue が無ければ今までどおり」「親も環境変数も無ければ今までどおりで一覧を読まない」「一覧を読めなければ子ではないとして扱う」「環境変数があるときは nested の stderr に環境変数の番号を出す」「親ワークツリーに issue があれば launch は子ワークツリーを作らない」）。`current_json` に `id`・`parentWorktreeId` を持たせ、`list_json` に親の 1 件を置く。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:224-275（route）、plugins/dev-workflow/tests/epic-dispatch.bats:352-370（launch の EPIC_DISPATCH_PARENT_EPIC のテストの近く）
 - [ ] 1.4 案内の bats を足す（spec の Scenario「作り直しの案内の前に既存端末の確認を出す」「送り直しの案内のハンドルは引用符で囲まれる」）。既存の送り直しのテストが `--terminal term-11` を引用符なしで照合していれば、引用符付きに直す（`grep -n 'terminal term-' plugins/dev-workflow/tests/epic-dispatch.bats` で探す）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats（送り直し・作り直しのテスト。行は grep で特定）
 - [ ] 1.5 SKILL.md の記述の bats を足す（spec の Scenario「SKILL.md に注意書きのコメントと起動し直したセッションの扱いが書かれている」「SKILL.md に端末を作れなかった子の再開手順が書かれている」。既存の `section 'エピックの扱い'` を使う）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:1212-1240（skill のテスト群）
@@ -28,4 +28,4 @@
 - [ ] 4.1 変更の記録を書く（形式は既存の `plugins/dev-workflow/changes/805.md` に合わせる。#532・#487・#498・#499 を合わせて閉じたことも書く。版は上げない）。触る範囲: plugins/dev-workflow/changes/809.md（新規）
 - [ ] 4.2 `bash scripts/test.sh` が exit 0（常時注入の予算テストを含む。`description` と rules は増やさない）
 - [ ] 4.3 `openspec validate epic-child-context-persist --strict` が exit 0
-- [ ] 4.4 実機: Orca 経路で `launch --note` で起動した子のセッションを閉じ、同じワークツリーで `/develop #N` だけで起動し直したとき、本体が `親エピックからの注意書き:` のコメントを読み、`route` が `nested`（stderr に `parent epic: #<エピック>`）を返すことを確かめ、結果を PR に貼る（W のサブエージェントでは流せない。本体かオーナーが行う）
+- [ ] 4.4 実機: Orca 経路で `launch --note` で起動した子のセッションを閉じ、同じワークツリーで `/develop #N` だけで起動し直したとき、本体が `親エピックからの注意書き:` のコメントを読み、`route` が `nested`（stderr に `parent epic: #<エピック>`）を返すことを確かめ、結果を PR に貼る（W のサブエージェントでは流せない。本体かオーナーが行う）。子が葉の issue なら本体は `route` を呼ばないので、子ワークツリーで `scripts/epic-dispatch.sh route 1 2` を手で打つか sub-issue を持つ子で確かめる。注意書きが読まれた証拠は、起動し直した子の開始コメントか会話ログの記録を貼る
