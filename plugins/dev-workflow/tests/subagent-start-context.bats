@@ -125,6 +125,36 @@ default_of() {
   [[ "$ctx" == *"DEV_WORKFLOW_CONTEXT_TRIPWIRE=off"* ]] || return 1
 }
 
+@test "thresholds: HARD_CAP <= CAP is reported as forced stop not working" {
+  # context-tripwire.sh は hard <= cap のとき PreToolUse（強制停止）を何もせず終える
+  export DEV_WORKFLOW_CONTEXT_CAP=220000 DEV_WORKFLOW_CONTEXT_HARD_CAP=150000
+  run_hook "dev-workflow:worker"
+  [ "$status" -eq 0 ]
+  ctx="$(ctx_of)"
+  [[ "$ctx" == *"強制停止は働かない"* ]] || return 1
+
+  export DEV_WORKFLOW_CONTEXT_CAP=150000 DEV_WORKFLOW_CONTEXT_HARD_CAP=150000
+  run_hook "dev-workflow:worker"
+  ctx="$(ctx_of)"
+  [[ "$ctx" == *"強制停止は働かない"* ]] || return 1
+
+  # 大小が正しければ注記は出ない
+  export DEV_WORKFLOW_CONTEXT_CAP=90000 DEV_WORKFLOW_CONTEXT_HARD_CAP=150000
+  run_hook "dev-workflow:worker"
+  ctx="$(ctx_of)"
+  [[ "$ctx" != *"働かない"* ]] || return 1
+}
+
+@test "thresholds: DEV_WORKFLOW_CONTEXT_TRIPWIRE with surrounding spaces is not treated as off" {
+  # context-tripwire.sh は "off" との厳密比較なので、" off" では途中計測は働いたまま
+  export DEV_WORKFLOW_CONTEXT_TRIPWIRE=" off"
+  run_hook "dev-workflow:reviewer"
+  [ "$status" -eq 0 ]
+  ctx="$(ctx_of)"
+  [[ "$ctx" != *"全解除"* ]] || return 1
+  [[ "$ctx" == *"DEV_WORKFLOW_CONTEXT_CAP="* ]] || return 1
+}
+
 @test "broken input: non-JSON or missing agent_type exits 0 with no output" {
   printf 'not json' > "${TMPD}/bad.txt"
   run bash -c "'$SCRIPT' < '${TMPD}/bad.txt'"
@@ -137,9 +167,8 @@ default_of() {
 }
 
 @test "budget block failure still emits the threshold lines" {
-  # scripts/ に session-tripwires.sh が無い構成（残量ブロックが作れない）
+  # CLAUDE_PLUGIN_ROOT 配下に session-tripwires.sh が無い構成（残量ブロックが作れない）
   mkdir -p "${TMPD}/root/scripts"
-  cp "$SCRIPT" "${TMPD}/root/scripts/"
   export CLAUDE_PLUGIN_ROOT="${TMPD}/root"
   run_hook "dev-workflow:worker"
   [ "$status" -eq 0 ]
@@ -161,6 +190,23 @@ default_of() {
   # probe の実行痕が無い
   [ ! -e "$USAGE_PROBE_STATE" ]
   [ ! -e "$USAGE_SNAPSHOT" ]
+}
+
+@test "session-tripwires subagent-budget: no probe even when the template exists" {
+  # テンプレートありの構成。session の経路ならここで usage-probe が走り、試行が記録される
+  [ -f "${CLAUDE_PLUGIN_ROOT}/templates/escalation-tripwires.md" ]
+  run env TRIPWIRES_SCOPE=subagent-budget "$TRIPWIRES"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "## Fable 残量モード"* ]] || return 1
+  [ ! -e "$USAGE_PROBE_STATE" ]
+  [ ! -e "$USAGE_SNAPSHOT" ]
+}
+
+@test "session-tripwires: session scope does run the probe (control for the test above)" {
+  # 上のテストの assert が probe の実行を見分けられることの対照
+  run env "$TRIPWIRES"
+  [ "$status" -eq 0 ]
+  [ -e "$USAGE_PROBE_STATE" ]
 }
 
 @test "session-tripwires: unknown TRIPWIRES_SCOPE keeps the legacy JSON output" {

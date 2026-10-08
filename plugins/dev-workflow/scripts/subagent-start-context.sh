@@ -45,21 +45,29 @@ fi
 BUDGET="$budget" python3 <<'PY' 2>/dev/null || exit 0
 import json, os
 
-def shown(name, default):
+def eff(name, default):
+    """(実効値 or None, 表示)。値の解釈は context-tripwire.sh の env_int に合わせる。"""
     v = (os.environ.get(name) or "").strip()
     if v == "":
-        return f"{name}={default}（既定）"
+        return default, f"{name}={default}（既定）"
     if v.isdigit() and int(v) > 0:
-        return f"{name}={v}（env）"
-    return f"{name}={v!r}（不正な値。途中計測は働かない）"
+        return int(v), f"{name}={v}（env）"
+    return None, f"{name}={v!r}（不正な値。途中計測は働かない）"
 
-tripwire = (os.environ.get("DEV_WORKFLOW_CONTEXT_TRIPWIRE") or "on").strip()
+# off の判定は context-tripwire.sh と同じ厳密比較（前後の空白を落とさない）
+tripwire = os.environ.get("DEV_WORKFLOW_CONTEXT_TRIPWIRE") or "on"
 lines = ["## 途中計測（このサブエージェント自身のコンテキスト）"]
 if tripwire == "off":
     lines.append("- DEV_WORKFLOW_CONTEXT_TRIPWIRE=off（途中計測は全解除されている）")
 else:
-    lines.append(f"- {shown('DEV_WORKFLOW_CONTEXT_CAP', 150000)} / "
-                 f"{shown('DEV_WORKFLOW_CONTEXT_HARD_CAP', 220000)}")
+    cap, cap_s = eff("DEV_WORKFLOW_CONTEXT_CAP", 150000)
+    hard, hard_s = eff("DEV_WORKFLOW_CONTEXT_HARD_CAP", 220000)
+    # context-tripwire.sh は hard <= cap のとき PreToolUse（強制停止）だけを何もせず終える。
+    # PostToolUse の通知は CAP 超で出るので「途中計測は働かない」とは書かない。
+    note = ""
+    if cap is not None and hard is not None and hard <= cap:
+        note = "（上限の大小が逆。強制停止は働かない。通知は DEV_WORKFLOW_CONTEXT_CAP 超で出る）"
+    lines.append(f"- {cap_s} / {hard_s}{note}")
 # サブエージェントは ${CLAUDE_PLUGIN_ROOT} を展開できないので、解決済みのパスで案内する
 root = os.environ.get("CLAUDE_PLUGIN_ROOT") or "${CLAUDE_PLUGIN_ROOT}"
 lines.append("- 通知や強制停止に当たったときの扱いと return の 1 行目の書式の正本は "
