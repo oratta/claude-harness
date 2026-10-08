@@ -11,8 +11,9 @@ allowed-tools: Bash
 集計スクリプトの絶対パスを特定して、そのまま呼ぶ。
 
 ```bash
+plugin_root="${CLAUDE_PLUGIN_ROOT}"
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT}/scripts" \
+  "${plugin_root:+$plugin_root/scripts}" \
   ~/.claude/plugins/marketplaces/*/plugins/cost-ledger/scripts \
   ~/.claude/plugins/installed/*/cost-ledger/scripts; do
   [ -n "$dir" ] && [ -f "$dir/cost_ledger.py" ] && CL="$dir/cost_ledger.py" && break
@@ -20,7 +21,7 @@ done
 CLAUDE_PLUGIN_OPTION_LEDGER_PATH='${user_config.LEDGER_PATH}' python3 "$CL" cost $ARGUMENTS
 ```
 
-探索の先頭候補は、コマンド本文の読み込み時に絶対パスへ置換される形で書く（Bash の実行環境にはプラグインのルートの環境変数が渡らないため、環境変数の形だと先頭が空になり、版の違うインストール済みの旧コピーが選ばれる）。
+探索の先頭候補は、コマンド本文の読み込み時に絶対パスへ置換される `plugin_root="${CLAUDE_PLUGIN_ROOT}"` から作る（Bash の実行環境にはプラグインのルートの環境変数が渡らないため、環境変数の形だと先頭が空になり、版の違うインストール済みの旧コピーが選ばれる）。置換されないときは `plugin_root` が空になり、先頭候補は空文字列として飛ばされて、後続の候補へ進む。
 
 引数の解釈はスクリプト側が行う。
 
