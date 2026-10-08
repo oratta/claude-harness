@@ -16,4 +16,4 @@
 
 - [x] 3.1 `bats plugins/dev-workflow/tests/git-destructive-guard.bats` が全件通る
 - [x] 3.2 `openspec validate git-guard-option-parsing --strict` が通る
-- [ ] 3.3 `bats tests/` の中で hook・注入予算に関わるもの（`tests/injection-budget.bats` を含む）が変更前と同じ結果になる
+- [x] 3.3 `bats tests/` の中で hook・注入予算に関わるもの（`tests/injection-budget.bats` を含む）が変更前と同じ結果になる
