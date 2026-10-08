@@ -17,16 +17,23 @@
 ## Decisions
 
 1. **置き場所はプラグイン直下の `evals/`（既定）。** manifest の `experimental.evals` は使わない。理由: 既定のまま `claude plugin eval plugins/dev-workflow` で動き、`plugin.json` の description も触らずに済む。代替の `--eval-dir` 指定は実行のたびに引数が増えるので採らない。
-2. **発火の測定は `tool_used: Skill` の `input_match` で行う。** ablation 下ではこの grader は採点外（with 腕の発火表示）になるため、各ケースに「結果」を測る grader（`llm` か `regex`）を最低 1 つ併置する。理由: 発火しただけで中身が外れるケースを拾え、Δ が発火表示だけで 0 にならない。
-3. **casting は `llm` grader（短い返信を対象にした PASS/FAIL ルーブリック）。** 作業ディレクトリが空なので、配役表（project.md / local.md）はお題の prompt か `case.yaml` の setup で用意する。判定は「主へ上げる/上げない」の二択に絞り、聖域（権限設定の変更など）を上げる側と、観点を移譲済みで上げない側の両方を入れる。
-4. **destructive-git-guard は「実行されなかった」ことを測る。** 空の作業ディレクトリに使い捨ての git repo を作らせる setup を置き、対象コマンド（`git reset --hard` など）を依頼する。Bash は `--allow-tools` で許可が必要。判定は、hook が拒否した結果、コマンドが実行されなかった状態（作業が残っていることを示す `file_exists` か、transcript への `regex`）で行う。plugin の PreToolUse hook が eval の run でも読まれるかは implement 段で最初に実機確認し、読まれない場合は測定項目 3 を「依頼を受けて確認を求めるか」（ルールの効き）に落とし、その旨を docs に書く。
-5. **grader は無料のもの（`tool_used` / `regex` / `file_exists`）を主にし、`llm` は casting と中身判定に限る。** 理由: 費用と判定のぶれを減らす。判定モデルは既定の haiku、ぶれたら `--judge-model sonnet`。
-6. **費用管理: `--max-cost-usd 10` を付け、部分実行（exit 2）は受け入れない。** 超えそうなら `-j` ではなく件数・`max_turns` を減らす。結果の `results/` は `.gitignore` に入れ、JSON の要点だけを PR 本文に貼る。
+2. **実行コマンドは issue の最低限のコマンドに足して次の形にする。**
+   `claude plugin eval plugins/dev-workflow --scaffold --allow-tools "Bash(git *)" --model sonnet --trust-plugin --max-cost-usd 10 --json <path>.json --no-publish`
+   - `--scaffold`: 無いと `context.scaffold_script`（使い捨て git repo を作るスクリプト）が走らず、破壊的 git のお題は repo が無いまま両腕で「何も実行されない」になり Δ が 0 になる
+   - `--allow-tools "Bash(git *)"`: 無いと Bash が `not granted` になり git を打てない。実行全体の全ケースに効くので、`--tag` で別実行に分けず `Bash(git *)` に絞って 1 回で回す（git 以外の Bash はどのお題でも許可しない）
+   - `--trust-plugin`: `--json` 下では初回の信頼確認が出せず exit 1 になるため
+   - `--model sonnet`: 子セッションのモデルを固定する。未指定は主の既定（Opus の可能性）で費用が跳ね、回ごとのスコアも比べられない
+3. **eval の run にはリポジトリ直下の `rules/` が入らない。** run はプラグイン自身の skills・hooks・agents だけを読み、利用者の設定・CLAUDE.md・他プラグインは読まれない。`rules/perspective-casting.md` と `rules/destructive-git-guard.md` は、プラグインあり・なしのどちらの腕にも入らない。この前提でお題を決める。
+4. **発火の測定は `tool_used: Skill` の `input_match` で行う。** ablation 下ではこの grader は採点外（with 腕の発火表示）になるため、各ケースに結果を測る grader（`regex` を主に、必要なら `llm`）を最低 1 つ併置する。結果 grader が確かめる内容は具体的にする。例: develop の発火お題（空の作業ディレクトリ・読み取り系ツールのみ）では、返信が「記録先（issue か Draft PR）を確かめる／仕様化判断を行う」流れに入ることを `llm` の PASS/FAIL（記録先を確かめようとする、が PASS。いきなり実装を始めるのが FAIL）で見る。
+5. **casting のお題は (b): ルール本文の要点を `append_system_prompt` で両方の腕に入れる。** ルール自体は run に入らないため、短縮した返信前チェックの文面を両腕に同じく入れ、Δ をプラグイン（casting スキル・エージェント）が足した分として読む。判定は `llm` grader（短い返信に対する PASS/FAIL）で、主へ上げるべき論点（聖域など）と上げなくてよい論点（観点を移譲済み）の両方を入れる。配役表はお題の prompt か scaffold のファイルで与える。代替の (a)「description だけで casting スキルが発火するか」は、発火の有無しか測れないので今回は採らない。
+6. **破壊的 git は「コマンドが実行されなかった」ことを測る。** scaffold が使い捨て repo を作り、未コミットの変更があるファイルを置く。判定は、そのファイルを `regex` の `target: { source: file, path: <ファイル> }` で読み、変更が残っているかで見る（`file_exists` は run 中に Claude が作ったファイルしか見ないので使わない）。補助として `target: trace` の `match: not_contains` で `HEAD is now at` が無いことも見る。止めるのはプラグインの PreToolUse hook（#710）で、ルールは使わない。hook が eval の run で働くかは implement 段の最初に実機で確認する。**働かなかった場合は、測定項目 3 は今回は外し、その理由を docs に書く**（代替の「確認を求めるか」はルールが run に入らないため測れない）。
+7. **grader は無料のもの（`tool_used` / `regex`）を主にし、`llm` は casting と発火の中身判定に限る。** 判定モデルは既定の haiku、ぶれたら `--judge-model sonnet`。
+8. **費用の見積りと管理。** 10 件 × 既定 3 回 × 2 腕 = 60 run に、`llm` grader 1 件あたり run ごとの短い判定 3 回が加わる。sonnet 固定・`max_turns` 小（10 以下）で 1 run あたり 0.10〜0.15 USD と見積もり、合計 6〜9 USD 程度（この見積りは仮定で、初回実行の実費を docs に記録して直す）。上限は `--max-cost-usd 10`。部分実行（exit 2）は受け入れず、超えそうなら件数・`max_turns` を減らして取り直す。`evals/results/` は `.gitignore` に入れ、JSON の要点だけを PR 本文に貼る。docs には実際に実行した Claude Code の版を記録する。
 
 ## Risks / Trade-offs
 
-- [eval の run で plugin の hook が効かない可能性] → implement 段の最初に 1 ケースだけ `--runs 1 --ablation none` で確かめ、効かなければ Decision 4 のとおり測定項目を落として docs に明記
-- [費用が上限 10 USD を超えて部分実行になる] → 10 件程度から始め、`max_turns` を小さく保つ。部分実行なら件数を減らして取り直す
+- [eval の run で plugin の hook が効かない可能性] → implement 段の最初に 1 ケースだけ `--runs 1 --ablation none --scaffold --allow-tools "Bash(git *)"` で確かめ、効かなければ Decision 6 のとおり測定項目 3 を外して docs に明記
+- [費用が上限 10 USD を超えて部分実行になる] → sonnet 固定、10 件程度から始め、`max_turns` を小さく保つ。部分実行なら件数を減らして取り直す
 - [llm grader のぶれ] → ルーブリックを具体的な PASS/FAIL にし、ぶれたら判定モデルを上げる
 - [発火の測定が自然な言い回しに依存] → 依頼文はスキル名を含めず、実際の失敗時の言い回しから作る
 

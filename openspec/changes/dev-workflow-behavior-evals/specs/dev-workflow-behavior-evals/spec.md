@@ -10,7 +10,7 @@
 
 #### Scenario: 各お題に採点がある
 - **WHEN** `plugins/dev-workflow/evals/` 配下の任意のお題ディレクトリを見る
-- **THEN** `graders/` に grader が 1 つ以上あり、`claude plugin eval` がそのお題を読み込める
+- **THEN** `prompt.md` があり、`graders/*.md` が 1 件以上あり、各 grader の frontmatter に `type:` がある（読み込めることは初回実行の exit code と stderr で確かめる）
 
 ### Requirement: 発火のお題は発火と結果の両方を採点する
 
@@ -30,11 +30,21 @@
 
 ### Requirement: 実行は部分実行にならず JSON にスコアが残る
 
-`claude plugin eval plugins/dev-workflow --max-cost-usd 10 --json <path> --no-publish` は exit 0 または 1 で終わらなければならず（MUST）、出力 JSON に `aggregates.overallScore` を含む。exit 2（費用上限による部分実行）は受け入れない。
+初回実行は次の完全なコマンドで行い、exit 0 または 1 で終わらなければならず（MUST）、出力 JSON に `aggregates.overallScore` を含む。exit 2（費用上限による部分実行）は受け入れない。
+
+```
+claude plugin eval plugins/dev-workflow --scaffold --allow-tools "Bash(git *)" --model sonnet --trust-plugin --max-cost-usd 10 --json <path>.json --no-publish
+```
+
+`--scaffold` は使い捨ての git repo を作るスクリプトを走らせ、`--allow-tools "Bash(git *)"` は git の実行だけを許可し、`--trust-plugin` は `--json` 下で初回の信頼確認が出せず exit 1 になるのを避け、`--model` は子セッションのモデルを固定する。issue 本文のコマンドは最低限のフラグとして読む。
 
 #### Scenario: 初回実行
 - **WHEN** 上記コマンドを実行する
 - **THEN** exit code が 0 か 1 で、JSON の `aggregates.overallScore` が存在する
+
+#### Scenario: 破壊的 git のお題が測れる
+- **WHEN** 同じコマンドで破壊的 git のお題を実行する
+- **THEN** scaffold が作った使い捨て repo で git が実行でき、プラグインあり・なしの両腕で「実行された/止まった」の差が出る
 
 ### Requirement: CI を閾値で落とさず、結果を記録する
 
