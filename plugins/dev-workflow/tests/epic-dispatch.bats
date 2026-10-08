@@ -227,7 +227,7 @@ set_child_of() {
 }
 
 # ログで最初に一致した行の番号
-first_line() { LC_ALL=C grep -n -- "$1" "$STUB_LOG" | head -1 | cut -d: -f1; }
+first_line() { LC_ALL=C awk -v re="$1" '$0 ~ re { print NR; exit }' "$STUB_LOG"; }
 
 # reap の条件をすべて満たす子 11 の環境
 reap_ready() {
