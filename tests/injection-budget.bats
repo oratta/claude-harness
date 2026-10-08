@@ -680,8 +680,8 @@ EOF
 }
 
 @test "a description written in the body is measured neither in the total nor by the guard" {
-  # 本文にテンプレートとして `description:` を書いてあるファイルが実在する
-  # （plugins/experience-to-skill 配下）。frontmatter の外は注入されないので対象外。
+  # 本文にテンプレートとして `description:` を書くファイルがありうる（過去に実在した）。
+  # frontmatter の外は注入されないので対象外。
   printf -- '---\ndescription: 0123456789\n---\n\ntemplate:\n\ndescription: >\n  folded example\n' > "$TMPD/body.md"
   run sum_descriptions "$TMPD/body.md"
   [ "$output" -eq 10 ]
