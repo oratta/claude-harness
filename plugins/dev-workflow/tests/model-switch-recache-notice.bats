@@ -133,6 +133,9 @@ assert isinstance(d["systemMessage"], str) and d["systemMessage"].strip(), d
   has "$M" 'claude-sonnet-5'
   has "$M" 'claude-opus-5'
   has "$M" '使えなくなります'
+  has "$M" '切替前のモデルのキャッシュ'
+  lacks "$M" '今のモデル'
+  lacks "$M" 'まだ有効'
 }
 
 @test "content: without a usable cost only the tokens are shown" {

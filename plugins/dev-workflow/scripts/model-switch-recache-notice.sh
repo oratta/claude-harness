@@ -80,7 +80,7 @@ def build(d):
             amount += f"（{note}）"
         parts.append(f"キャッシュ書き込みの推定費用は {amount}。")
     if warm is True:
-        parts.append("今のモデルのキャッシュはまだ有効で、切り替えると使えなくなります。")
+        parts.append("切替前のモデルのキャッシュは、切り替えると使えなくなります。")
     return head + ": " + "".join(parts)
 
 

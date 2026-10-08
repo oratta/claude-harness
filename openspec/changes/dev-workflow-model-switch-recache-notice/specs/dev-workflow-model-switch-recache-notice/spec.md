@@ -21,7 +21,7 @@
 
 ### Requirement: 通知は systemMessage だけで返し、切替の可否に関わる項目を返さない
 
-`model-switch-recache-notice.sh` は、通知を出すとき、標準出力に JSON オブジェクトを 1 つだけ書き、そのキーは `systemMessage` の 1 つだけでなければならない (MUST)。`decision`・`hookSpecificOutput`・`permissionDecision`・`continue` を返してはならない (MUST NOT)（切替を止めず、本体の確認画面を飛ばさない）。`systemMessage` は空でない文字列でなければならない (MUST)。文言は、本体の確認画面が前後どちらに出ても意味が通るように、確認や選択を求める表現を含んではならない (MUST NOT)（`systemMessage` が確認画面の前後どちらに表示されるかは未確認のため）。
+`model-switch-recache-notice.sh` は、通知を出すとき、標準出力に JSON オブジェクトを 1 つだけ書き、そのキーは `systemMessage` の 1 つだけでなければならない (MUST)。`decision`・`hookSpecificOutput`・`permissionDecision`・`continue` を返してはならない (MUST NOT)（切替を止めず、本体の確認画面を飛ばさない）。`systemMessage` は空でない文字列でなければならない (MUST)。文言は、本体の確認画面が前後どちらに出ても意味が通るように、確認や選択を求める表現を含んではならない (MUST NOT)（Claude Code 2.1.294 の実機では `systemMessage` は確認画面を承認したあとに表示されたが、この順序はドキュメントに書かれておらず、版によって変わりうるため）。
 
 この spec の Scenario で「基準の入力」と書いたものは、公式ドキュメントの入力例にあたる次の JSON を指す。各 Scenario は、WHEN に書いた項目だけを基準の入力から変え、ほかの項目は変えない。
 
@@ -50,12 +50,12 @@
 
 `systemMessage` は、入力の `context_tokens` が 0 より大きい有限の数値のとき、その値を整数に丸めて 3 桁区切りにした文字列を含まなければならない (MUST)。入力の `estimated_cache_write_usd` が 0 以上の有限の数値のとき、`$` に続けて小数 2 桁で表した金額を含まなければならない (MUST)。ただし 0 より大きく 0.01 未満のときは `$0.01 未満` と表す (MUST)。真偽値は数値とみなしてはならない (MUST NOT)。Requirement「伝えることが無い切替では何も出さない」の条件に当たらない入力で、どちらか一方しか条件を満たさないときは、満たした方だけを含む通知を返さなければならない (MUST)。出さない条件はこの要件より先に効く（たとえば `context_tokens` が `0` なら、推定費用が条件を満たしていても何も出さない）。
 
-`pricing` が `catalog` のときは「定価」、`configured` のときは「組織の設定単価」、`default` のときは「既定の単価」を含む注記を金額に添えなければならない (MUST)。それ以外の値・キー無しのときは注記を付けてはならない (MUST NOT)。`from_model` と `to_model` がどちらも空でない文字列のときは、制御文字を除いた両方の値を含めなければならない (MUST)。`prompt_cache_warm` が `true` のときは、今のモデルのキャッシュが有効で切り替えると使えなくなることを述べる文を含めなければならず (MUST)、`true` でないときはその文を含めてはならない (MUST NOT)。
+`pricing` が `catalog` のときは「定価」、`configured` のときは「組織の設定単価」、`default` のときは「既定の単価」を含む注記を金額に添えなければならない (MUST)。それ以外の値・キー無しのときは注記を付けてはならない (MUST NOT)。`from_model` と `to_model` がどちらも空でない文字列のときは、制御文字を除いた両方の値を含めなければならない (MUST)。`prompt_cache_warm` が `true` のときは、切替前のモデルのキャッシュが切り替えると使えなくなることを述べる文を含めなければならず (MUST)。この文は、切替の前後どちらに表示されても正しい言い方にし、「今のモデル」「まだ有効」のように表示の時点に依存する表現を含んではならない (MUST NOT)、`true` でないときはその文を含めてはならない (MUST NOT)。
 
 #### Scenario: トークン数と推定費用の両方が出る
 
 - **WHEN** 基準の入力（`context_tokens` が `182340`、`estimated_cache_write_usd` が `1.1396`、`pricing` が `catalog`、`prompt_cache_warm` が `true`、`from_model` が `claude-sonnet-5`、`to_model` が `claude-opus-5`）を渡す
-- **THEN** `systemMessage` は `182,340`・`$1.14`・`定価`・`claude-sonnet-5`・`claude-opus-5`・「使えなくなります」をすべて含む
+- **THEN** `systemMessage` は `182,340`・`$1.14`・`定価`・`claude-sonnet-5`・`claude-opus-5`・「切替前のモデルのキャッシュ」・「使えなくなります」をすべて含み、「今のモデル」と「まだ有効」を含まない
 
 #### Scenario: 推定費用が無ければトークン数だけ出す
 
