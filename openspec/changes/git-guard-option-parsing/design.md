@@ -16,7 +16,7 @@ spec の守備範囲は「穴を見つかるたびに塞ぎ切ることは完了
 **Non-Goals:**
 
 - `env` 以外の wrapper（`sudo -u root git ...` など）の値を取るオプション。同じ種類の穴だが issue の列挙外で、並行作業との衝突を増やす
-- `env -S '<コマンド>'` の値の中のコマンドを判定すること（値は読み飛ばすだけ）
+- 1 字句にクォートした `env -S 'git reset --hard'` を判定すること。現状どおり素通しになる（`-S` を値を取るオプションとして読まないので、クォートしない `env -S git reset --hard` は `-S` を wrapper のオプションとして飛ばした後ろの `git` から判定され、現状どおり止まる）
 - 値を取らないオプションの省略形（`git reset --har`、`git clean --forc` など）。git では効くので穴は残るが、列挙外。dry-run 側の省略形（`--dry`）を dry-run と読まないのも従来どおりで、こちらは止めすぎる向きにしか起きない
 - `--no-force`・`--verify` など、`--no-dry-run` 以外の打ち消し
 - `git checkout` の `--` の判定（`rest` を直接見ている箇所）に `--end-of-options` を足すこと
@@ -49,8 +49,9 @@ spec の守備範囲は「穴を見つかるたびに塞ぎ切ることは完了
 
 ### `env` の値を取るオプションは wrapper の読み飛ばしの中で値ごと飛ばす
 
-`judge_simple` の wrapper の読み飛ばしで、`env` のときだけ、値を取る短いオプション（`u` `C` `S` `P` `a`）と長いオプション（`--unset` `--chdir` `--split-string` `--argv0`。`=` 付きは 1 字句）の値を次の字句ごと飛ばす。短いオプションは `parse_opts` と同じく、まとめた形（`-iu FOO`）の最後の文字なら次の字句が値、途中なら同じ字句の残り（`-uFOO`）が値。GNU と BSD（macOS）の `env` の和集合を取る。
+`judge_simple` の wrapper の読み飛ばしで、`env` のときだけ、値を取る短いオプション（`u` `C` `P` `a`）と長いオプション（`--unset` `--chdir` `--argv0`。`=` 付きは 1 字句）の値を次の字句ごと飛ばす。短いオプションは `parse_opts` と同じく、まとめた形（`-iu FOO`）の最後の文字なら次の字句が値、途中なら同じ字句の残り（`-uFOO`）が値。GNU と BSD（macOS）の `env` の和集合を取る。
 
+- `-S` / `--split-string` は値を取るオプションとして扱わない。`-S` は後ろの字句を分割してコマンドとして実行する（macOS と GNU のどちらでも `env -S echo hello world` が `hello world` を出す）。値として読み飛ばすと、現在 ask で止まっている `env -S git reset --hard` が素通りになる
 - 採らなかった案: wrapper の後ろの最初の非オプション字句が `git` を含むかで探す（`env -u FOO git` の `FOO` を飛ばして `git` を見つける）。値が `git` という名前の変数（`env -u git ls`）で誤検知し、読み方の規則としても説明しにくい
 
 ## Risks / Trade-offs
