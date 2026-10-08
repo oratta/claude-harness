@@ -252,6 +252,25 @@ expect_silent() {
   expect_silent 'echo '"'"'$(git reset --hard)'"'"' "x'
 }
 
+@test "shell syntax: deeply nested substitutions are still judged" {
+  # 字句読みに置き換える前から止めていた形。置換の入れ子の深さで判定を諦めない
+  # （9 は bash -c / eval の再帰の上限を超える深さ、500 以上は字句読みの再帰が尽きる深さ）
+  local n k open close quoted
+  for n in 9 50 500 2000; do
+    open="$(printf '$(%.0s' $(seq "$n"))"
+    close="$(printf ')%.0s' $(seq "$n"))"
+    quoted='git reset --hard'
+    for k in $(seq "$n"); do quoted="echo \"\$(${quoted})\""; done
+    expect_stopped "echo ${open}git reset --hard${close}"
+    expect_stopped "${quoted}"
+    expect_stopped "echo ${open}git reset --hard"
+    expect_stopped "echo ${open}true${close}; git reset --hard"
+    expect_stopped "bash -c \"\$(echo ${open}git reset --hard${close})\""
+    # 深い入れ子があっても、単一引用符の中の文字列は読まない
+    expect_silent "echo ${open}true${close}; echo 'git reset --hard'"
+  done
+}
+
 # --- 引数を取るオプションの値（PR #794 ゲート一周目 F2・F11・F12） ---
 
 @test "option values: a -n that is an option value does not make push or clean a dry-run" {
