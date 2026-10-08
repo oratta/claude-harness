@@ -242,6 +242,16 @@ expect_silent() {
   expect_silent '! git reset --hard'
 }
 
+@test "shell syntax: unclosed quotes still split on newlines and judge substitutions" {
+  # 字句読みに置き換える前から止めていた形。閉じていない引用符で判定を諦めない
+  expect_stopped $'ls\ngit reset --hard "x'
+  expect_stopped 'echo "$(git reset --hard)'
+  expect_stopped 'echo `git reset --hard` "x'
+  # 閉じていない引用符の中の改行より後ろと、単一引用符の中の置換は読まない
+  expect_silent $'git commit -m "a\ngit reset --hard'
+  expect_silent 'echo '"'"'$(git reset --hard)'"'"' "x'
+}
+
 # --- 引数を取るオプションの値（PR #794 ゲート一周目 F2・F11・F12） ---
 
 @test "option values: a -n that is an option value does not make push or clean a dry-run" {

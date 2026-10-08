@@ -280,9 +280,48 @@ def lex(s, i=0, in_subst=False):
 
 
 def split_fallback(s):
-    """引用符が閉じていないとき: 空白と改行で割った字句を、演算子だけの字句で単純コマンドに分ける。"""
+    """引用符が閉じていないとき: (単純コマンドの並び, 置換の中身の並び)。
+    空白で割った字句を、演算子だけの字句と引用符の外の改行で単純コマンドに分ける。引用符は開閉を数えるだけで、
+    閉じていない引用符の中の改行より後ろは読まない。置換は単一引用符の外のものを取り出す。"""
+    out, subs, quote, i, n, open_subst = [], [], None, 0, len(s), False
+    while i < n:
+        ch = s[i]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+        elif ch == "\\" and i + 1 < n:
+            out.append(s[i:i + 2])
+            i += 2
+            continue
+        elif ch == "$" and s.startswith("$(", i) and not open_subst:
+            try:
+                _, _, end, closed = lex(s, i + 2, in_subst=True)
+            except (Unclosed, RecursionError):
+                end, closed = n, False
+            if closed:
+                subs.append(s[i + 2:end - 1])
+                out.append(s[i:end])
+                i = end
+                continue
+            # 閉じていない置換は残り全部を中身として 1 回だけ判定する（その中の置換は再帰の側で読む）
+            subs.append(s[i + 2:])
+            open_subst = True
+        elif ch == "`":
+            inner, end = backquote(s, i)
+            subs.append(inner)
+            out.append(s[i:end])
+            i = end
+            continue
+        elif ch in "'\"" and quote is None:
+            quote = ch
+        elif ch == '"' and quote == '"':
+            quote = None
+        elif ch == "\n" and quote is None:
+            ch = " ; "
+        out.append(ch)
+        i += 1
     cmds, cur = [], []
-    for t in re.split(r"\s+", s):
+    for t in re.split(r"\s+", "".join(out)):
         if not t:
             continue
         if set(t) <= set("();|&"):
@@ -293,7 +332,7 @@ def split_fallback(s):
         cur.append(t)
     if cur:
         cmds.append(cur)
-    return cmds
+    return cmds, subs
 
 
 def shorts(args):
@@ -310,8 +349,8 @@ def judge(s, depth=0):
         return kinds
     try:
         cmds, subs, _, _ = lex(s)
-    except Unclosed:
-        cmds, subs = split_fallback(s), []
+    except (Unclosed, RecursionError):  # 置換の入れ子が深すぎて読めないときも、判定を諦めない
+        cmds, subs = split_fallback(s)
     for inner in subs:
         kinds |= judge(inner, depth + 1)
     for cmd in cmds:
