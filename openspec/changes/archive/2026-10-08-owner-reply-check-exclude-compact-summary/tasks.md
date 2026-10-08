@@ -12,4 +12,4 @@
 ## 3. 記録
 
 - [x] 3.1 変更の記録を書く（何を足したか・なぜ・接頭辞でなく属性で判定した理由） 触る範囲: plugins/dev-workflow/changes/756.md（新規）
-- [ ] 3.2 spec の条件の数（①〜⑧、守備範囲の「8 条件」）は archive で `openspec/specs/dev-workflow-owner-reply-check/spec.md` に反映されることを確かめる（archive 後に `grep -n '7 条件' openspec/specs/dev-workflow-owner-reply-check/spec.md` が 0 件） 触る範囲: openspec/specs/dev-workflow-owner-reply-check/spec.md:54-56
+- [x] 3.2 spec の条件の数（①〜⑧、守備範囲の「8 条件」）は archive で `openspec/specs/dev-workflow-owner-reply-check/spec.md` に反映されることを確かめる（archive 後に `grep -n '7 条件' openspec/specs/dev-workflow-owner-reply-check/spec.md` が 0 件） 触る範囲: openspec/specs/dev-workflow-owner-reply-check/spec.md:54-56
