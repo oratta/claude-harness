@@ -21,7 +21,7 @@
 
 #### Scenario: Context と Session のあいだに並ぶ
 
-- **WHEN** `context_window.remaining_percentage` が `91`、`prompt_cache.hit_ratio` が `0.82`、`cost.total_cost_usd` が `1.5` の JSON を、`STATUSLINE_CURRENCY=USD` で渡す
+- **WHEN** `context_window.remaining_percentage` が `91`、`prompt_cache.hit_ratio` が `0.82`、`cost.total_cost_usd` が `1.5` の JSON を、`STATUSLINE_CURRENCY=USD` と、API 換算コストの区画が出ない条件（`STATUSLINE_API_PACE=0`）で渡す
 - **THEN** ANSI エスケープを除いた 2 行目は `Context 91%  │  Cache 82%  │  Session $1.50` である
 
 #### Scenario: Context が無ければ先頭に出る
@@ -37,6 +37,8 @@
 ### Requirement: ヒット率を出せない入力では従来と同じ出力にする
 
 `statusline.sh` は、次のどの場合もキャッシュの区画を出してはならず (MUST NOT)、標準出力は `prompt_cache` を含まない同じ入力を渡したときと 1 バイトも違ってはならない (MUST): `prompt_cache` が無い、`prompt_cache` がオブジェクトでない、`hit_ratio` が `null`、`hit_ratio` のキーが無い、`hit_ratio` が数値でない、`hit_ratio` が 0 未満または 1 より大きい。このとき `last_miss_cause` に値があっても区画を出してはならない (MUST NOT)。どの場合も標準エラーには何も出さず、終了コードを変えてはならない (MUST NOT)。
+
+対象の定義: ①想定する入力の出どころは、Claude Code 本体が statusline に渡す stdin の JSON である（形の根拠は公式ドキュメント https://code.claude.com/docs/en/statusline の Prompt cache fields）。悪意のある入力を作る第三者は想定しない。②拾いたい誤りは、`prompt_cache` を渡さない版や `hit_ratio` が `null` の描画で区画が出てしまうことと、ドキュメントと違う型の値が来たときに 2 行目や終了コードが壊れることである。③通ることを許す入力は次のとおり: 四捨五入の結果 `hit_ratio` が `0.996` なら `Cache 100%`、`0.004` なら `Cache 0%` と出る／`warm`・`caching_observed` など `hit_ratio` 以外の項目と矛盾した値でも `hit_ratio` だけで判定する（`caching_observed` が `false` で `hit_ratio` が `0` なら `Cache 0%` と出る）／`prompt_cache` の中のこの要件が挙げていないキーは見ない。④入力の形の穴が見つかるたびに塞ぎ切ることを、この要件の完了条件にしない。
 
 #### Scenario: prompt_cache が無い JSON では区画が出ない
 
@@ -61,6 +63,8 @@
 
 `tools_added`・`tools_removed`・`system_char_delta` など `causes` 以外の項目は出してはならない (MUST NOT)。
 
+対象の定義: ①想定する入力の出どころは、Claude Code 本体が statusline に渡す stdin の JSON である（形の根拠は公式ドキュメントの Last miss cause）。悪意のある入力を作る第三者は想定しない。②拾いたい誤りは、ドキュメントと違う型の `last_miss_cause` や `causes` が来たときにヒット率の表示・2 行目・終了コードが壊れることと、原因名に含まれた制御文字が端末にそのまま書かれることである。③通ることを許す入力は次のとおり: `causes` の 2 件目以降の中身は見ない（文字列でなくても件数に数える）／件数の上限は設けない（13 件なら `+12` と出る）／ドキュメントに無い原因名は、英数字と `_` だけなら 16 文字までそのまま出す／同じ原因名が重複していても別々に数える。④入力の形の穴が見つかるたびに塞ぎ切ることを、この要件の完了条件にしない。
+
 #### Scenario: 対応表にある原因は短い名前で出る
 
 - **WHEN** `hit_ratio` が `0.82` で、`last_miss_cause.causes` がそれぞれ `["tools_changed"]`・`["system_prompt_changed"]`・`["ttl_expired_5m"]`・`["likely_server_side"]` の JSON を渡す
@@ -68,12 +72,12 @@
 
 #### Scenario: 原因が複数なら先頭と残りの件数を出す
 
-- **WHEN** `last_miss_cause.causes` が `["tools_changed","system_prompt_changed"]` の JSON を渡す
+- **WHEN** `hit_ratio` が `0.82` で、`last_miss_cause.causes` が `["tools_changed","system_prompt_changed"]` の JSON を渡す
 - **THEN** 2 行目に `miss:tools+1` が含まれ、`system` は含まれない
 
 #### Scenario: 対応表に無い原因はそのまま出し、16 文字で切る
 
-- **WHEN** `last_miss_cause.causes` が `["model_changed"]` の JSON と `["some_future_cause_name_x"]` の JSON をそれぞれ渡す
+- **WHEN** `hit_ratio` が `0.82` で、`last_miss_cause.causes` が `["model_changed"]` の JSON と `["some_future_cause_name_x"]` の JSON をそれぞれ渡す
 - **THEN** 2 行目にそれぞれ `miss:model_changed` と `miss:some_future_caus` が含まれ、後者に `some_future_cause` は含まれない
 
 #### Scenario: last_miss_cause が null でもキー無しでも原因を出さない
@@ -88,8 +92,8 @@
 
 #### Scenario: 付随する数値は出さない
 
-- **WHEN** `last_miss_cause` が `{"causes":["tools_changed"],"tools_added":7,"tools_removed":9}` の JSON を渡す
-- **THEN** 2 行目のキャッシュの区画は `Cache 82% miss:tools` で、`7` も `9` も含まない
+- **WHEN** `hit_ratio` が `0.82` で、`last_miss_cause` が `{"causes":["tools_changed"],"tools_added":7,"tools_removed":9}` の JSON を渡す
+- **THEN** ANSI エスケープを除いた 2 行目を `│` で区切ったうちのキャッシュの区画は、前後の空白を除くと `Cache 82% miss:tools` に完全一致する（`7` も `9` も含まない）
 
 ### Requirement: 環境変数でキャッシュの区画を消せる
 

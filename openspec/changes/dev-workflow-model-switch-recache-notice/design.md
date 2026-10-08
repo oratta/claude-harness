@@ -37,6 +37,7 @@ PreModelSwitch hook の入出力は公式ドキュメント（https://code.claud
 - 円換算（為替を取りに行くと外部通信になる。statusline の為替キャッシュは別プラグインの内部ファイルなので読まない）
 - effort の変更や 5 分以上の放置でキャッシュが切れることの表示（PreModelSwitch の対象外）
 - PostModelSwitch での記録、cost-ledger への記録（issue の備考で別検討）
+- 入力の形の穴を塞ぎ切ること。入力の出どころは Claude Code 本体で、悪意のある入力は想定しない。何を拾い、何を通すかは spec の「対象の定義」に書く
 
 ## Decisions
 
