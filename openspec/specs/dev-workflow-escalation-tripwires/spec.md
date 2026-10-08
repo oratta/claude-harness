@@ -337,4 +337,3 @@ python3 が無い・入力が JSON でない・`agent_type` が無い・残量�
 #### Scenario: hooks.json の SubagentStart エントリ
 - **WHEN** `plugins/dev-workflow/hooks/hooks.json` をパースする
 - **THEN** SubagentStart エントリが存在し、matcher が `^dev-workflow:(worker|reviewer|gate-runner)$`、command が `${CLAUDE_PLUGIN_ROOT}` 経由で `scripts/subagent-start-context.sh` を指している
-
