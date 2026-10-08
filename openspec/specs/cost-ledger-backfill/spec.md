@@ -31,15 +31,35 @@ TBD - created by archiving change cost-ledger-backfill. Update Purpose after arc
 
 - 環境変数 `COST_LEDGER_GATE_REPORT=off` または `COST_LEDGER_BACKFILL=off`（このときは `python3` も起動しない）
 - `COST_LEDGER_PATH` が未設定（このときは `python3` も起動しない）、または台帳の場所が `cost-ledger-persistence` の定めで書けない場所（プラグインのリポジトリの配下）
+- 許可の一覧（`cost-ledger-write-allowlist`）のファイルが無い、または大きさが 0（このときは `python3` も起動しない。場所は `COST_LEDGER_WRITE_REPOS_FILE`、無ければ `$HOME/.config/cost-ledger/write-repos`）
 - `python3` か `gh` が無い
 - hook の `cwd` が git リポジトリでない、origin が無い・読めない、または origin のホストが github.com でない
+- `cwd` のリポジトリ（origin の `owner/repo`）が許可の一覧に載っていない（判定は `cost-ledger-write-allowlist` の定める `write_allow.py` の関数が行う。一覧のファイルが作業中のリポジトリの中にある・持ち主や権限が合わない・有効な行が無いときも、載っていないのと同じ）
 - hook が引き継いだ環境変数 `GH_HOST` が github.com 以外
 
 有効・無効を切り替える設定項目を持ってはなら MUST NOT ない（上の 2 つの環境変数は緊急停止）。
 
+後追いが `gh` を呼ぶ相手（候補の一覧の取得、対象の確認、既存コメントの取得、閉じた PR の問い合わせ、書き込み）は `cwd` のリポジトリだけなので、許可の一覧の判定は最初の `gh` の前に 1 回 SHALL 行う。一覧に載っていないリポジトリでは、書き込みだけでなく候補の一覧の取得も行ってはなら MUST NOT ない。`backfill.sh` がファイルの有無と大きさだけを見て抜ける近道は、`gate-report.sh` の近道と同じ扱いで、判定の代わりにしてはなら MUST NOT ない（`backfill.py` を直接起動しても、同じ判定を通る）。
+
 SessionStart の JSON の `source` が `clear` または `compact` のとき（matcher を通らずに直接流された場合）と、JSON が読めない・`cwd` が文字列でないときも、システムは `gh` を呼ばず、控えファイルを書かずに終わ MUST る。
 
-守備範囲: この判定が受け取る入力は、Claude Code が SessionStart の hook に渡す JSON（`source`・`cwd`）、hook のプロセスが引き継いだ環境変数（`COST_LEDGER_GATE_REPORT`・`COST_LEDGER_BACKFILL`・`COST_LEDGER_PATH`・`GH_HOST`・`PATH`）、`cwd` の git リポジトリの origin の URL に限る。どれも手元の利用者とそのセッションが決める値で、外部の第三者が書き込む入力は無い。拾いたい誤りは、止めたはずの後追いが `gh` を呼ぶこと・github.com 以外に向けたセッションやリポジトリから github.com へ書き込むこと・控えの置き場所が決まらないまま既定の場所やリポジトリの配下に書くことの 3 つ。次の入力は誤ったまま通ることを許す: 緊急停止の値は `off` との完全一致だけを見るので、`OFF`・`0`・`false` では止まらない（`cost-ledger-gate-report` の緊急停止と同じ）／`GH_HOST` は hook のプロセスが引き継いだ値だけを見るので、`gh` の設定ファイルで既定のホストを変えている環境は検知しない（問い合わせ先は `--hostname github.com` で固定するので、書き込み先が変わることはない）／origin 以外の remote（`upstream` など）は見ないので、origin が github.com でなく別の remote が github.com のリポジトリでは動かない／origin の URL が github.com を指していても、`insteadOf` などの git の設定で実際の接続先を書き換えている環境は検知しない／`cwd` が worktree やサブディレクトリでも、その場所から見える origin をそのまま使う／`source` の値が `startup`・`resume`・`clear`・`compact` のどれでもない（将来の Claude Code が足した値・値が無い）ときは、matcher を通った以上は起動として扱い、動く。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
+守備範囲: この判定が受け取る入力は、Claude Code が SessionStart の hook に渡す JSON（`source`・`cwd`）、hook のプロセスが引き継いだ環境変数（`COST_LEDGER_GATE_REPORT`・`COST_LEDGER_BACKFILL`・`COST_LEDGER_PATH`・`COST_LEDGER_WRITE_REPOS_FILE`・`HOME`・`GH_HOST`・`PATH`）、`cwd` の git リポジトリの origin の URL、許可の一覧のファイルに限る（一覧のファイルの読み方と、その入力の守備範囲は `cost-ledger-write-allowlist` が定める）。どれも手元の利用者とそのセッションが決める値で、外部の第三者が書き込む入力は無い。拾いたい誤りは、止めたはずの後追いが `gh` を呼ぶこと・github.com 以外に向けたセッションやリポジトリから github.com へ書き込むこと・控えの置き場所が決まらないまま既定の場所やリポジトリの配下に書くこと・利用者が許可していないリポジトリ（clone しただけの他人の公開リポジトリなど）の PR / issue にコストのコメントを書くことの 4 つ。次の入力は誤ったまま通ることを許す: 緊急停止の値は `off` との完全一致だけを見るので、`OFF`・`0`・`false` では止まらない（`cost-ledger-gate-report` の緊急停止と同じ）／`GH_HOST` は hook のプロセスが引き継いだ値だけを見るので、`gh` の設定ファイルで既定のホストを変えている環境は検知しない（問い合わせ先は `--hostname github.com` で固定するので、書き込み先が変わることはない）／origin 以外の remote（`upstream` など）は見ないので、origin が github.com でなく別の remote が github.com のリポジトリでは動かない／origin の URL が github.com を指していても、`insteadOf` などの git の設定で実際の接続先を書き換えている環境は検知しない／`cwd` が worktree やサブディレクトリでも、その場所から見える origin をそのまま使う／`source` の値が `startup`・`resume`・`clear`・`compact` のどれでもない（将来の Claude Code が足した値・値が無い）ときは、matcher を通った以上は起動として扱い、動く／許可の一覧は origin の `owner/repo` の名前で照合するので、リポジトリが改名・移管されて GitHub が別の名前へ転送する場合、issue の候補では転送先の名前を確かめずに積む（PR の候補は、対象の確認で返ったベースのリポジトリ名が origin と違えば積まない）／許可の一覧に載っているリポジトリの中では、別のリポジトリの同名ブランチのコストが混ざること・セッションが見ただけの issue にコメントが付くことを、この判定では防がない。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
+
+#### Scenario: 一覧に無いリポジトリには書かない
+- **WHEN** 許可の一覧に `cwd` のリポジトリが載っておらず（別のリポジトリだけが載っている）、候補が 1 件ある状態で SessionStart の hook JSON を流す
+- **THEN** `gh` は一度も呼ばれず（候補の一覧の取得も行われない）、控えファイルは変わらない
+
+#### Scenario: 一覧が無ければどこにも書かない
+- **WHEN** 許可の一覧のファイルが無い状態と、大きさが 0 の状態のそれぞれで、候補が 1 件ある SessionStart の hook JSON を流す
+- **THEN** どちらも `gh` と `python3` は一度も呼ばれない
+
+#### Scenario: 作業中のリポジトリの中の一覧は効かない
+- **WHEN** `COST_LEDGER_WRITE_REPOS_FILE` が `cwd` のリポジトリの中のファイル（`cwd` のリポジトリを載せてある）を指す状態で、候補が 1 件ある SessionStart の hook JSON を流す
+- **THEN** `gh` は一度も呼ばれない
+
+#### Scenario: `backfill.py` を直接起動しても一覧に従う
+- **WHEN** 許可の一覧のファイルが無い状態と、`cwd` のリポジトリが載っていない状態のそれぞれで、`backfill.sh` を通さずに `backfill.py` へ SessionStart の hook JSON を流す
+- **THEN** どちらも `gh` は一度も呼ばれない
 
 #### Scenario: 後追いだけを止める
 - **WHEN** `COST_LEDGER_BACKFILL=off` を付けて SessionStart の hook JSON を流す
