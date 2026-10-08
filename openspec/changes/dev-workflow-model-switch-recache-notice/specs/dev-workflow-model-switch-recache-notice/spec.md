@@ -17,7 +17,7 @@
 #### Scenario: 既存のエントリはそのまま残る
 
 - **WHEN** `hooks.json` のイベント名の集合を調べる
-- **THEN** `SessionStart`・`UserPromptSubmit`・`PreToolUse`・`PostToolUse`・`SubagentStart`・`SubagentStop`・`PreModelSwitch` の 7 つに完全一致する
+- **THEN** 既存の 6 つのイベント名（`SessionStart`・`UserPromptSubmit`・`PreToolUse`・`PostToolUse`・`SubagentStart`・`SubagentStop`）がすべて残り、`PreModelSwitch` がある
 
 ### Requirement: 通知は systemMessage だけで返し、切替の可否に関わる項目を返さない
 
@@ -48,7 +48,7 @@
 
 ### Requirement: 通知は読み直すトークン数と推定費用を示す
 
-`systemMessage` は、入力の `context_tokens` が 0 より大きい有限の数値のとき、その値を整数に丸めて 3 桁区切りにした文字列を含まなければならない (MUST)。入力の `estimated_cache_write_usd` が 0 以上の有限の数値のとき、`$` に続けて小数 2 桁で表した金額を含まなければならない (MUST)。ただし 0 より大きく 0.01 未満のときは `$0.01 未満` と表す (MUST)。真偽値は数値とみなしてはならない (MUST NOT)。どちらか一方しか条件を満たさないときは、満たした方だけを含む通知を返さなければならない (MUST)。
+`systemMessage` は、入力の `context_tokens` が 0 より大きい有限の数値のとき、その値を整数に丸めて 3 桁区切りにした文字列を含まなければならない (MUST)。入力の `estimated_cache_write_usd` が 0 以上の有限の数値のとき、`$` に続けて小数 2 桁で表した金額を含まなければならない (MUST)。ただし 0 より大きく 0.01 未満のときは `$0.01 未満` と表す (MUST)。真偽値は数値とみなしてはならない (MUST NOT)。Requirement「伝えることが無い切替では何も出さない」の条件に当たらない入力で、どちらか一方しか条件を満たさないときは、満たした方だけを含む通知を返さなければならない (MUST)。出さない条件はこの要件より先に効く（たとえば `context_tokens` が `0` なら、推定費用が条件を満たしていても何も出さない）。
 
 `pricing` が `catalog` のときは「定価」、`configured` のときは「組織の設定単価」、`default` のときは「既定の単価」を含む注記を金額に添えなければならない (MUST)。それ以外の値・キー無しのときは注記を付けてはならない (MUST NOT)。`from_model` と `to_model` がどちらも空でない文字列のときは、制御文字を除いた両方の値を含めなければならない (MUST)。`prompt_cache_warm` が `true` のときは、今のモデルのキャッシュが有効で切り替えると使えなくなることを述べる文を含めなければならず (MUST)、`true` でないときはその文を含めてはならない (MUST NOT)。
 
