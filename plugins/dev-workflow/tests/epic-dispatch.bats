@@ -16,7 +16,8 @@
 #   git : toplevel（rev-parse --show-toplevel の出力）/ fetch_exit / status_exit / status_out
 #         （-C <パス> status --porcelain）/ head（-C <パス> rev-parse HEAD。既定 aaa111）/ branch_tip
 #         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（branch -D）
-#   gh  : pr list は pr_out を出して pr_exit で終わる（既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
+#   gh  : issue comment <N> --body <本文> は本文を comment_<N> に追記し（1 件ごとに "---" の行で区切る）、
+#         comment_exit で終わる（既定 0）。pr list は pr_out を出して pr_exit で終わる（既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
 #         呼び出し回数は ghcount_<N>。FAIL は stderr に "gh: mock failure for issue <N> (poll <count>)" も出す
 # スクリプトは PATH="<スタブ置き場>:/usr/bin:/bin" で走らせる（jq は実物）。
 # テストの途中に素の [[ ]] を置かない（bash 3.2 では偽でも素通りする）。
@@ -146,6 +147,10 @@ case "$1" in
 esac
 exit 0' ;;
     gh) body='
+if [ "$1 $2" = "issue comment" ]; then
+  printf "%s\n---\n" "$5" >> "$STUB_CFG/comment_$3"
+  exit "$(cat "$STUB_CFG/comment_exit" 2>/dev/null || echo 0)"
+fi
 if [ "$1 $2" = "pr list" ]; then
   cat "$STUB_CFG/pr_out" 2>/dev/null
   exit "$(cat "$STUB_CFG/pr_exit" 2>/dev/null || echo 0)"
@@ -172,6 +177,15 @@ exit 0' ;;
 
 # stdout だけを $output に取る（stderr は別ファイル）
 dispatch() { PATH="$STUB_BIN:/usr/bin:/bin" "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/stderr"; }
+
+# jq の無い PATH で走らせる（スタブのほかは bash と cat だけ）
+dispatch_nojq() {
+  local d="$BATS_TEST_TMPDIR/nojq"
+  mkdir -p "$d"
+  ln -sf "$(command -v bash)" "$d/bash"
+  ln -sf "$(command -v cat)" "$d/cat"
+  PATH="$STUB_BIN:$d" "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/stderr"
+}
 
 # 子 N の gh の返り値の並びを置く（1 引数 1 呼び出し）
 gh_seq() { local n="$1"; shift; printf '%s\n' "$@" > "$STUB_CFG/gh_$n"; }
@@ -205,6 +219,15 @@ set_list() { local f="$1"; shift; local IFS=,; printf '{"result":{"worktrees":[%
 set_current() {
   printf '{"result":{"worktree":{"id":"repo-a::/work/parent","repoId":"repo-a","path":"/work/parent","linkedIssue":%s}}}\n' "$1" > "$STUB_CFG/current_json"
 }
+
+# 今のワークツリーを、親ワークツリー（linkedIssue が <1>。null も可）を持つ子にする
+set_child_of() {
+  printf '%s\n' '{"result":{"worktree":{"id":"repo-a::/work/issue-460","repoId":"repo-a","path":"/work/issue-460","linkedIssue":460,"parentWorktreeId":"repo-a::/work/parent"}}}' > "$STUB_CFG/current_json"
+  printf '{"result":{"worktrees":[{"id":"repo-a::/work/parent","repoId":"repo-a","path":"/work/parent","linkedIssue":%s,"isArchived":false,"parentWorktreeId":null}]}}\n' "$1" > "$STUB_CFG/list_json"
+}
+
+# ログで最初に一致した行の番号
+first_line() { LC_ALL=C awk -v re="$1" '$0 ~ re { print NR; exit }' "$STUB_LOG"; }
 
 # reap の条件をすべて満たす子 11 の環境
 reap_ready() {
@@ -271,6 +294,96 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$status" -eq 1 ]
   [ -z "$output" ]
   grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "route: EPIC_DISPATCH_PARENT_EPIC prints the parent epic on stderr" {
+  make_stub orca
+  EPIC_DISPATCH_PARENT_EPIC=420 run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "nested" ]
+  grep -qxF 'parent epic: #420' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca ')" -eq 0 ]
+}
+
+@test "route: a parent worktree with a linked issue goes to nested without the variable" {
+  make_stub orca
+  set_child_of 420
+  run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "nested" ]
+  grep -qxF 'parent epic: #420' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca worktree current')" -eq 1 ]
+}
+
+@test "route: one child or none is nested too when the parent worktree has a linked issue" {
+  make_stub orca
+  set_child_of 420
+  run dispatch route 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "nested" ]
+  run dispatch route
+  [ "$status" -eq 0 ]
+  [ "$output" = "nested" ]
+}
+
+@test "route: a parent worktree without a linked issue routes as before" {
+  make_stub orca
+  set_child_of null
+  run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "orca" ]
+  [ "$(grep -c 'parent epic' "$BATS_TEST_TMPDIR/stderr" || true)" -eq 0 ]
+}
+
+@test "route: a parent worktree missing from the list routes as before" {
+  make_stub orca
+  set_child_of 420
+  printf '%s\n' '{"result":{"worktrees":[]}}' > "$STUB_CFG/list_json"
+  run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "orca" ]
+}
+
+@test "route: no parent worktree and no variable routes as before without reading the list" {
+  make_stub orca
+  run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "orca" ]
+  [ "$(calls '^orca worktree current')" -eq 1 ]
+  run dispatch route 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "subagent" ]
+  [ "$(calls '^orca worktree current')" -eq 2 ]
+  printf '%s\n' '{"result":{"worktree":{"id":"repo-a::/work/parent","repoId":"repo-a","path":"/work/parent","parentWorktreeId":null}}}' > "$STUB_CFG/current_json"
+  run dispatch route 11 12
+  [ "$output" = "orca" ]
+  [ "$(calls '^orca worktree list')" -eq 0 ]
+}
+
+@test "route: an unreadable list means not a child, with a warning" {
+  make_stub orca
+  set_child_of 420
+  echo 1 > "$STUB_CFG/list_exit"
+  run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "orca" ]
+  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
+  rm "$STUB_CFG/list_exit"
+  printf '%s\n' '{"result":{}}' > "$STUB_CFG/list_json"
+  run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "orca" ]
+  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "route: without jq the parent is not read and the route is as before, with a warning" {
+  make_stub orca
+  set_child_of 420
+  run dispatch_nojq route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "orca" ]
+  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca worktree list')" -eq 0 ]
 }
 
 # --- launch ---
@@ -347,6 +460,19 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^orca terminal send ')" -eq 1 ]
   grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF 'cld --model'
   grep -F 'orca terminal send' "$BATS_TEST_TMPDIR/stderr" | grep -qF '/develop #11'
+  grep -qF -- '--terminal <handle from create>' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: the recreate hint first tells to check for a terminal already running there" {
+  make_stub orca
+  touch "$STUB_CFG/tcreate_fail_11"
+  run dispatch launch 420 11
+  [ "$status" -eq 1 ]
+  chk="$(grep -nF 'orca terminal list --worktree path:/work/issue-11 --json' "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1)"
+  mk="$(grep -nF 'create: orca terminal create --worktree' "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1)"
+  [ -n "$chk" ]
+  [ -n "$mk" ]
+  [ "$chk" -lt "$mk" ]
 }
 
 @test "launch: the recreate command carries the EPIC_DISPATCH_PARENT_EPIC prefix" {
@@ -366,6 +492,62 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^orca ')" -eq 0 ]
   [ "$(calls '^git ')" -eq 0 ]
   grep -qF '420' "$BATS_TEST_TMPDIR/stderr"
+  grep -qF 'child epics are not expanded here' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: a parent worktree with a linked issue creates nothing, before git and set" {
+  make_stub orca
+  set_child_of 420
+  run dispatch launch 460 11 12
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$(calls '^git ')" -eq 0 ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  grep -F '420' "$BATS_TEST_TMPDIR/stderr" | grep -qF 'child epics are not expanded here'
+}
+
+@test "launch: an unreadable list under a parent worktree stops before git and set" {
+  make_stub orca
+  set_child_of 420
+  echo 1 > "$STUB_CFG/list_exit"
+  run dispatch launch 460 11 12
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$(calls '^git ')" -eq 0 ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  [ "$(calls '^orca worktree list')" -eq 1 ]
+  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
+  rm "$STUB_CFG/list_exit"
+  : > "$STUB_LOG"
+  printf '%s\n' '{"result":{}}' > "$STUB_CFG/list_json"
+  run dispatch launch 460 11 12
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$(calls '^git ')" -eq 0 ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: without a parent worktree a failing list still comes after fetch and set" {
+  make_stub orca
+  echo 1 > "$STUB_CFG/list_exit"
+  run dispatch launch 400 11 12
+  [ "$status" -eq 1 ]
+  [ "$(calls '^git fetch ')" -eq 1 ]
+  [ "$(calls '^orca worktree set')" -eq 1 ]
+  [ "$(calls '^orca worktree list')" -eq 1 ]
+  [ "$(first_line '^orca worktree set')" -lt "$(first_line '^orca worktree list')" ]
+}
+
+@test "launch: a parent worktree without a linked issue launches as before" {
+  make_stub orca
+  set_child_of null
+  run dispatch launch 460 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
 }
 
 @test "launch: no worktree path in create means failed without terminal create" {
@@ -393,6 +575,74 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$status" -eq 0 ]
   grep -qF 'do not touch the follow-up scope' "$STUB_CFG/sent_term-11"
   grep -qF 'do not touch the follow-up scope' "$STUB_CFG/sent_term-12"
+}
+
+@test "launch: --note is posted once per child as an issue comment, before the terminal is created" {
+  make_stub orca
+  run dispatch launch --note "後続の範囲に手を出さない" 400 11 12
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "launched 11" ]
+  [ "${lines[1]}" = "launched 12" ]
+  [ "$(calls '^gh issue comment 11 --body ')" -eq 1 ]
+  [ "$(calls '^gh issue comment 12 --body ')" -eq 1 ]
+  [ "$(calls '^gh issue comment ')" -eq 2 ]
+  for n in 11 12; do
+    [ "$(sed -n 1p "$STUB_CFG/comment_$n")" = "親エピックからの注意書き: #400" ]
+    [ -z "$(sed -n 2p "$STUB_CFG/comment_$n")" ]
+    [ "$(sed -n 3p "$STUB_CFG/comment_$n")" = "後続の範囲に手を出さない" ]
+    [ "$(first_line "^gh issue comment $n ")" -lt "$(first_line "^orca terminal create --worktree path:/work/issue-$n ")" ]
+    [ "$(first_line "^gh issue comment $n ")" -gt "$(first_line "^orca worktree create --name issue-$n ")" ]
+  done
+}
+
+@test "launch: without --note no comment is posted" {
+  make_stub orca
+  run dispatch launch 400 11 12
+  [ "$status" -eq 0 ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "launch: skipped children and children whose worktree create failed get no comment" {
+  make_stub orca
+  printf '%s\n' '{"result":{"worktrees":[{"repoId":"repo-a","linkedIssue":11,"isArchived":false}]}}' > "$STUB_CFG/list_json"
+  touch "$STUB_CFG/create_fail_12"
+  run dispatch launch --note "x" 400 11 12 13 13
+  [ "$status" -eq 1 ]
+  [ "${lines[0]}" = "skipped 11" ]
+  [ "${lines[1]}" = "failed 12" ]
+  [ "${lines[2]}" = "launched 13" ]
+  [ "${lines[3]}" = "skipped 13" ]
+  [ "$(calls '^gh issue comment ')" -eq 1 ]
+  [ "$(calls '^gh issue comment 13 ')" -eq 1 ]
+}
+
+@test "launch: a child whose terminal could not be created still gets the comment" {
+  make_stub orca
+  touch "$STUB_CFG/tcreate_fail_11"
+  run dispatch launch --note "x" 400 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+  [ "$(calls '^gh issue comment 11 ')" -eq 1 ]
+}
+
+@test "launch: a child with no worktree path in create still gets the comment" {
+  make_stub orca
+  printf '%s\n' '{"ok":true,"result":{}}' > "$STUB_CFG/create_json_11"
+  run dispatch launch --note "x" 400 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+  [ "$(calls '^gh issue comment 11 ')" -eq 1 ]
+}
+
+@test "launch: a failing comment does not change the result and prints the command to post it" {
+  make_stub orca
+  echo 1 > "$STUB_CFG/comment_exit"
+  run dispatch launch --note "don't touch" 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+  grep -qF 'note not posted to #11' "$BATS_TEST_TMPDIR/stderr"
+  grep -qF "gh issue comment 11 --body '親エピックからの注意書き: #400" "$BATS_TEST_TMPDIR/stderr"
+  grep -qF "don'\\''t touch'" "$BATS_TEST_TMPDIR/stderr"
 }
 
 @test "launch: EPIC_DISPATCH_BASE changes the base for fetch and --base-branch" {
@@ -529,8 +779,8 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${lines[0]}" = "failed 11" ]
   [ "${lines[1]}" = "launched 12" ]
   [ "${#lines[@]}" -eq 2 ]
-  grep -F 'orca terminal send --terminal term-11 --text' "$BATS_TEST_TMPDIR/stderr" | grep -qF '/develop #11'
-  grep -qF 'orca terminal read --terminal term-11' "$BATS_TEST_TMPDIR/stderr"
+  grep -F "orca terminal send --terminal 'term-11' --text" "$BATS_TEST_TMPDIR/stderr" | grep -qF '/develop #11'
+  grep -qF "orca terminal read --terminal 'term-11'" "$BATS_TEST_TMPDIR/stderr"
   [ "$(grep -c -- '--retry-request' "$BATS_TEST_TMPDIR/stderr" || true)" -eq 0 ]
 }
 
@@ -541,8 +791,8 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   run dispatch launch 400 11
   [ "$status" -eq 1 ]
   [ "$output" = "failed 11" ]
-  grep -F 'orca terminal send --terminal term-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF -- '--retry-request rq-1'
-  grep -qF 'orca terminal read --terminal term-11' "$BATS_TEST_TMPDIR/stderr"
+  grep -F "orca terminal send --terminal 'term-11'" "$BATS_TEST_TMPDIR/stderr" | grep -qF -- '--retry-request rq-1'
+  grep -qF "orca terminal read --terminal 'term-11'" "$BATS_TEST_TMPDIR/stderr"
 }
 
 @test "launch: a send without turn_started is failed" {
@@ -1216,6 +1466,32 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -qF '完了報告'
   printf '%s\n' "$e" | grep -F 'timeout' | grep -F 'closed' | grep -qF '後で別に起動するエピック:'
   printf '%s\n' "$e" | grep -F 'launch' | grep -F 'nested' | grep -qF '「親ワークツリーで開き直す」とは報告しない'
+}
+
+@test "skill: the parent's note is a comment every restarted child session follows and hands on" {
+  e="$(section 'エピックの扱い')"
+  printf '%s\n' "$e" | grep -F '親エピックからの注意書き:' | grep -F '起動し直したセッション' | grep -qF 'W・R1・G'
+  printf '%s\n' "$e" | grep -F 'note not posted to' | grep -qF '投稿'
+}
+
+@test "skill: the parent's note is followed only when its author is an owner, member or collaborator" {
+  l="$(section 'エピックの扱い' | grep -F '親エピックからの注意書き:' | grep -F 'author_association')"
+  [ -n "$l" ]
+  printf '%s\n' "$l" | grep -F 'OWNER' | grep -F 'MEMBER' | grep -qF 'COLLABORATOR'
+  printf '%s\n' "$l" | grep -F 'それ以外' | grep -F '従わず' | grep -F '渡さず' | grep -qF 'ユーザーに報告'
+}
+
+@test "skill: a restarted child session is nested and reads the parent epic from stderr" {
+  e="$(section 'エピックの扱い')"
+  printf '%s\n' "$e" | grep -F '起動し直したセッション' | grep -qF 'nested'
+  printf '%s\n' "$e" | grep -qF 'parent epic: #'
+  printf '%s\n' "$e" | grep -qF 'child epics are not expanded here'
+  printf '%s\n' "$e" | grep -F 'parent epic:' | grep -F 'EPIC_DISPATCH_PARENT_EPIC' | grep -qF '親を持たないワークツリー'
+}
+
+@test "skill: a child whose terminal was not created is checked, recreated and sent before resuming" {
+  e="$(section 'エピックの扱い')"
+  printf '%s\n' "$e" | grep -F '端末を作れなかった' | grep -F '既存の端末が無いこと' | grep -F '作り直し' | grep -qF '動き出したのを確かめてから再開'
 }
 
 @test "skill: held-back child epics are recorded also when route is skipped (unmanned, resumed)" {
