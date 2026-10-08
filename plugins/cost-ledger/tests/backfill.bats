@@ -544,6 +544,14 @@ PY
   [ ! -e "$STATE" ]
 }
 
+@test "backfill: a cwd that no longer exists is skipped even under a listed repository" {  # 削除済みの worktree の cwd は、パスから持ち主を推定せず gh を呼ばない（spec「後追いが動かない条件」）
+  set_list "pr,300,$(iso_ago 3600)"
+  HOOK_CWD="$CWD/.claude/worktrees/gone" run_backfill
+  [ "$status" -eq 0 ]
+  no_gh_call
+  [ ! -e "$STATE" ]
+}
+
 # --- 許可の一覧に従う（spec cost-ledger-write-allowlist。後追いもこの一覧に無いリポジトリには書かない） ---
 
 @test "backfill: a repository that is not on the list gets no gh call at all" {  # cwd のリポジトリが一覧に無ければ、一覧の取得も書き込みもせず、控えも変えない

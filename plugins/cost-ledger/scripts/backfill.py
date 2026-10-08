@@ -202,12 +202,12 @@ def stack_one(gate_report, repo, cwd, scripts_dir, at, number, kind):
         os.close(fd)  # 閉じるとロックも外れる
 
 
-def sweep(cost_ledger, gate_report, ledger, cwd, scripts_dir):
-    resolver = cost_ledger.RepoResolver()
-    origin = resolver.origin(resolver.repo_id(cwd))
-    if origin is None or origin[0] != "github.com":
-        return  # git リポジトリでない・origin が無い・github.com でない
-    repo = origin[1]
+def sweep(gate_report, ledger, cwd, scripts_dir):
+    # origin の読み方は gate_report.work() と同じ（存在しない cwd は write_allow が None にする。
+    # cost_ledger.RepoResolver の削除済み cwd からの推定は、ここでは使わない）
+    repo = write_allow.origin_repo(cwd)
+    if repo is None:
+        return  # git リポジトリでない・存在しない・origin が無い・読めない・github.com でない
     if gate_report.full_name(repo) != repo:
         return  # gh api のパスに置けない名前
     # 一覧の取得も書き込みも、相手は origin のこのリポジトリだけ。許可の一覧に無ければ、どの候補にも
@@ -259,7 +259,7 @@ def work(job):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             return  # 別の後追いが実行中。待たずに終わる
-        sweep(cost_ledger, gate_report, ledger, cwd, scripts_dir)
+        sweep(gate_report, ledger, cwd, scripts_dir)
     finally:
         os.close(fd)
 
