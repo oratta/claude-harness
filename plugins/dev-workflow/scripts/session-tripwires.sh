@@ -3,37 +3,53 @@
 # セッション文脈に注入する。メモリ索引が閾値を超えていれば memory-tripwire.sh の 1 行を先頭に足す。
 # 本文の single source of truth は templates/escalation-tripwires.md（複製を持たない）。
 # テンプレート欠損・節の抽出失敗時は無出力・exit 0（セッション開始をブロックしない）。
+#
+# TRIPWIRES_SCOPE=subagent-budget（subagent-start-context.sh が使う）のときは、残量モードの
+# ブロック（「## Fable 残量モード（自動導出）」から共有枠モードの効果の行まで）だけを JSON でなく
+# 本文テキストで出す。この範囲では usage-probe・メモリ索引の検知・トリップワイヤー節の抽出を
+# 行わず、親向けの「W を再開する前に測る」行も出さない。テンプレートが無くても出す。
+# 未設定・それ以外の値のときは従来どおり。導出式はこのファイルの 1 か所だけに置く。
 set -uo pipefail
 
 ROOT="${CLAUDE_PLUGIN_ROOT:-}"
 TEMPLATE="${ROOT}/templates/escalation-tripwires.md"
-# テンプレートが無ければ従来どおり fail-soft（残量ブロックも出さない）。
-[ -f "$TEMPLATE" ] || exit 0
-
-# usage-probe を best-effort 実行（失敗しても snapshot は壊れず、導出は conserve 既定に倒れる）。
-PROBE="${ROOT}/scripts/usage-probe.sh"
-[ -x "$PROBE" ] && "$PROBE" >/dev/null 2>&1 || true
+SCOPE="${TRIPWIRES_SCOPE:-}"
+[ "$SCOPE" = "subagent-budget" ] || SCOPE="session"
 
 SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
+MEMORY_NOTICE=""
 
-# メモリ索引の検知（閾値超のときだけ 1 行。失敗しても無出力で先へ進む）。
-MEMORY_NOTICE="$("${ROOT}/scripts/memory-tripwire.sh" 2>/dev/null)" || MEMORY_NOTICE=""
+if [ "$SCOPE" = "session" ]; then
+  # テンプレートが無ければ従来どおり fail-soft（残量ブロックも出さない）。
+  [ -f "$TEMPLATE" ] || exit 0
+
+  # usage-probe を best-effort 実行（失敗しても snapshot は壊れず、導出は conserve 既定に倒れる）。
+  PROBE="${ROOT}/scripts/usage-probe.sh"
+  [ -x "$PROBE" ] && "$PROBE" >/dev/null 2>&1 || true
+
+  # メモリ索引の検知（閾値超のときだけ 1 行。失敗しても無出力で先へ進む）。
+  MEMORY_NOTICE="$("${ROOT}/scripts/memory-tripwire.sh" 2>/dev/null)" || MEMORY_NOTICE=""
+fi
 
 # 導出は active スロットの実効値（セッション記録と snapshot を突き合わせた値）から行う。
 # 規則の実装は usage_view.py の 1 か所（正本: openspec/specs/usage-session-records）。
-TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" MEMORY_NOTICE="$MEMORY_NOTICE" \
+TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" MEMORY_NOTICE="$MEMORY_NOTICE" SCOPE="$SCOPE" \
   USAGE_VIEW_DIR="${ROOT}/scripts" python3 <<'PY'
 import json, os, re, sys, time
 
+SCOPE = os.environ.get("SCOPE", "session")
+
 # --- トリップワイヤー節の抽出（single source of truth） ---
-try:
-    text = open(os.environ["TEMPLATE"], encoding="utf-8").read()
-    m = re.search(r"^## 昇格トリップワイヤー.*", text, flags=re.S | re.M)
-    tripwire = m.group(0).strip() if m else ""
-except Exception:
-    tripwire = ""
-if not tripwire:
-    raise SystemExit(0)  # 節が抽出できなければ fail-soft（無出力）
+tripwire = ""
+if SCOPE == "session":
+    try:
+        text = open(os.environ["TEMPLATE"], encoding="utf-8").read()
+        m = re.search(r"^## 昇格トリップワイヤー.*", text, flags=re.S | re.M)
+        tripwire = m.group(0).strip() if m else ""
+    except Exception:
+        tripwire = ""
+    if not tripwire:
+        raise SystemExit(0)  # 節が抽出できなければ fail-soft（無出力）
 
 now = os.environ.get("USAGE_PROBE_NOW")
 now = int(now) if (now and now.lstrip("-").isdigit()) else int(time.time())
@@ -126,6 +142,10 @@ lines.append(f"- 共有枠モード SHARED_BUDGET_MODE: {shared}（{shared_sourc
 if all_pct is not None:
     lines.append(f"- 全モデル週次: 使用 {round(all_pct)}% / 残 {round(100 - all_pct)}%")
 lines.append(f"- {shared} の効果: {shared_effect}")
+if SCOPE == "subagent-budget":
+    # サブエージェント向け: 残量ブロックだけを本文テキストで出す（包む JSON は呼び出し側が作る）
+    print("\n".join(lines))
+    raise SystemExit(0)
 lines.append("- サブエージェントのコンテキスト上限: W を SendMessage で再開する前に "
              "`${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <name>` で測る"
              f"（上限 {os.environ.get('DEV_WORKFLOW_CONTEXT_CAP', '150000')} tokens。exit 2 が上限超）。"
