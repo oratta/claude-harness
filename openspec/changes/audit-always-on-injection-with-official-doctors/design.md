@@ -60,7 +60,9 @@ issue #712 は 3 つのことを求めている。診断 3 コマンドを実行
 
 ### 言い回しのテストは「思考の深さを文で指示する句」に絞る
 
-`必ず` や `絶対` を禁止語にはしない。診断は、これらの大半が破壊的操作・データ消失・認証情報の扱いに付いていて理由が書かれているので残す、と判定した。テストで禁じるのは `よく考え` と `Think deeply`・`think hard`・`think carefully`・`think step by step`（大文字小文字を区別しない）だけにする。対象は `rules/`・`CLAUDE.md`・`output-styles/`・`.claude/commands/`・`.claude/skills/`。`plugins/` は対象にしない（スキルやリファレンスが、禁じる例としてこれらの句を引用することがあるため）。
+`必ず` や `絶対` を禁止語にはしない。診断は、これらの大半が破壊的操作・データ消失・認証情報の扱いに付いていて理由が書かれているので残す、と判定した。テストで禁じるのは `よく考え` と `Think deeply`・`think hard`・`think carefully`・`think step by step`（大文字小文字を区別しない）だけにする。対象は `rules/`・`CLAUDE.md`・`output-styles/`・`plugins/*/skills/*/SKILL.md`・`.claude/commands/`・`.claude/skills/`。issue の概要 2 が名指ししているのは「rules とスキル」なので、プラグインの SKILL.md は本文ごと対象に入れる（仕様づくりの時点で 0 件。追加の編集は要らない）。スキルの `references/` などそれ以外の `plugins/` 配下は対象にしない。
+
+拾うのは 5 つの句が 1 行にそのまま現れた場合だけで、言い換えや改行またぎは通り、`think hard-coded` のような無関係な英文には当たりうる。これを塞ぎ切ることは目標にしない。言い換えを見つけるのは `/doctor prompt-audit` の役目で、テストは一度消した句が戻るのを止めるだけにする。
 
 ### 手順の文書に書く内容
 

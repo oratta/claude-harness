@@ -8,7 +8,7 @@
 - 予算値を見直すときの手順（3 コマンドの実行方法、出力の読み方、結果の記録先）を `docs/injection-budget-review.md` に新しく書く
 - `tests/injection-budget.bats` の失敗時の出力（超過側・下振れ側の両方）に、その手順のパスを 1 行足す。`CLAUDE.md` は書き換えない
 - 診断が挙げた旧モデル向けの言い回しのうち、思考の深さを文で指示している「Think deeply.」を `.claude/commands/opsx/explore.md` と `.claude/skills/openspec-explore/SKILL.md` から削る。`rules/` と `plugins/*/skills/*/SKILL.md` には該当が無かったので、そこは削るものが無い
-- 旧モデル向けの言い回しが `rules/`・`CLAUDE.md`・`output-styles/`・`.claude/` に戻ってきたら落ちるテストを足す
+- 旧モデル向けの言い回しが `rules/`・`CLAUDE.md`・`output-styles/`・`plugins/*/skills/*/SKILL.md`・`.claude/` に戻ってきたら落ちるテストを足す
 - `tests/injection-budget.txt` の値は動かさない（測定対象のバイト数がこの change で変わらないため）
 
 ## Capabilities
