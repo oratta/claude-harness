@@ -420,6 +420,21 @@ PY
   no_gh_call
 }
 
+@test "backfill: prints nothing when dirname is not on PATH" {  # PATH に gh と python3 しか無く dirname が見つからなくても、stdout と stderr は空で終了コード 0
+  one_pr_candidate
+  real_bash="$(command -v bash)"
+  mkdir -p "$WORK/onlybin"
+  cp "$WORK/bin/gh" "$WORK/onlybin/gh"
+  printf '#!%s\necho "python3 started" >> "%s"\nexit 3\n' "$real_bash" "$WORK/log/python.log" > "$WORK/onlybin/python3"
+  chmod +x "$WORK/onlybin/python3"
+  session_json startup > "$WORK/payload.json"
+  run env PATH="$WORK/onlybin" "$real_bash" "$SCRIPT" < "$WORK/payload.json"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+  no_python
+}
+
 @test "backfill: with COST_LEDGER_HOOK_FOREGROUND=1 the comment is written before the hook ends" {  # その場で実行すると、hook が終わった時点でコメントの作成が済んでいる
   one_pr_candidate
   run_backfill

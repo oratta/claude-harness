@@ -22,6 +22,7 @@
 # どの経路でも stdout・stderr に何も出さず終了コード 0。SessionStart の hook の stdout は会話の
 # 文脈に入るので、1 文字でも出すと毎セッションのトークンになる。
 set -u
+exec >/dev/null 2>&1
 
 [ "${COST_LEDGER_GATE_REPORT:-on}" = "off" ] && exit 0
 [ "${COST_LEDGER_BACKFILL:-on}" = "off" ] && exit 0
