@@ -25,7 +25,7 @@ setup() {
   LEDGER="$BATS_TEST_TMPDIR/ledger/ledger.jsonl"
   STATE="$LEDGER.backfill.json"
   mkdir -p "$WORK/scripts" "$WORK/bin" "$WORK/log" "$WORK/tmp" "$FIX" "$BATS_TEST_TMPDIR/ledger"
-  for f in backfill.sh backfill.py gate_report.py cost_ledger.py; do
+  for f in backfill.sh backfill.py gate_report.py cost_ledger.py write_allow.py; do
     if [ -f "$PLUGIN_DIR/scripts/$f" ]; then cp "$PLUGIN_DIR/scripts/$f" "$WORK/scripts/$f"; fi
   done
   cp "$PLUGIN_DIR/pricing.json" "$WORK/pricing.json"
@@ -40,6 +40,14 @@ setup() {
   unset FAKE_LIST FAKE_LIST_FAIL FAKE_LIST_RAW_TAIL FAKE_HEAD_REPO FAKE_CLOSING_PRS
   write_stub_gh
   export PATH="$WORK/bin:$PATH"
+  # GitHub に書くのは許可の一覧に載っているリポジトリだけ（spec cost-ledger-write-allowlist）。
+  # このファイルのテストの大半は「一覧に載っている」前提の動きを固定するので、cwd のリポジトリ
+  # （acme/cwd-repo）を載せた一覧を cwd の外に置く。一覧に無い・一覧が無いときの動きは
+  # 「許可の一覧に従う」の節が固定する
+  export HOME="$WORK/home"                  # 利用者の $HOME/.config/cost-ledger/write-repos を読まない
+  export COST_LEDGER_WRITE_REPOS_FILE="$WORK/write-repos"
+  unset CLAUDE_PROJECT_DIR                  # 一覧の置き場所の検査に、実行環境の作業ディレクトリを混ぜない
+  write_allow_list acme/cwd-repo
   # timeline の直接呼び出しで使う値
   B=1788220800                      # 2026-09-01T00:00:00Z の epoch 秒
   T=$((B + 3600))                   # 2026-09-01T01:00:00Z。後追いが渡す出来事の時刻
@@ -197,6 +205,15 @@ else:
     print("{}")
 PY
   chmod +x "$WORK/bin/gh"
+}
+
+# 許可の一覧を書く。引数 1 つが 1 行（引数なしなら大きさ 0 のファイル）。$LIST_FILE（既定は
+# COST_LEDGER_WRITE_REPOS_FILE の場所）に置く
+write_allow_list() {
+  local file="${LIST_FILE-$COST_LEDGER_WRITE_REPOS_FILE}"
+  mkdir -p "$(dirname "$file")"
+  if [ "$#" -eq 0 ]; then : >| "$file"; else printf '%s\n' "$@" >| "$file"; fi
+  chmod 600 "$file"
 }
 
 # 起動されたらログに書いて 0 以外で終わる python3（python3 を起動しない経路の検査のときだけ置く）
@@ -359,11 +376,11 @@ assert sorted(hooks) == ["PostToolUse", "SessionStart", "Stop"], sorted(hooks)
 (entry,) = hooks["SessionStart"]
 assert entry["matcher"] == "startup|resume", entry
 (hook,) = entry["hooks"]
-assert hook == {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/backfill.sh", "timeout": 10}, hook
+assert hook == {"type": "command", "command": '"${CLAUDE_PLUGIN_ROOT}/scripts/backfill.sh"', "timeout": 10}, hook
 assert hooks["PostToolUse"] == [{"matcher": "Bash", "hooks": [
-    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/gate-report.sh", "timeout": 60}]}]
+    {"type": "command", "command": '"${CLAUDE_PLUGIN_ROOT}/scripts/gate-report.sh"', "timeout": 60}]}]
 assert hooks["Stop"] == [{"hooks": [
-    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/ledger-hook.sh", "timeout": 120}]}]
+    {"type": "command", "command": '"${CLAUDE_PLUGIN_ROOT}/scripts/ledger-hook.sh"', "timeout": 120}]}]
 PY
 }
 
@@ -510,6 +527,98 @@ PY
   [ "$status" -eq 0 ]
   no_gh_call
   [ ! -e "$STATE" ]
+}
+
+# --- 許可の一覧に従う（spec cost-ledger-write-allowlist。後追いもこの一覧に無いリポジトリには書かない） ---
+
+@test "backfill: a repository that is not on the list gets no gh call at all" {  # cwd のリポジトリが一覧に無ければ、一覧の取得も書き込みもせず、控えも変えない
+  one_pr_candidate
+  write_allow_list acme/other
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+  [ "$(seen)" = "$SEEN0" ]
+}
+
+@test "backfill: without a list file neither gh nor python3 starts" {  # 一覧のファイルが無ければどこにも書かない。python3 も起動しない
+  one_pr_candidate
+  use_stub_python
+  command rm -f "$COST_LEDGER_WRITE_REPOS_FILE"
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+  no_python
+  [ "$(seen)" = "$SEEN0" ]
+}
+
+@test "backfill: an empty list file starts neither gh nor python3" {  # 大きさ 0 の一覧は、無いのと同じ
+  one_pr_candidate
+  use_stub_python
+  write_allow_list
+  run_backfill
+  [ "$status" -eq 0 ]
+  no_gh_call
+  no_python
+}
+
+@test "backfill: a list with no valid line writes nowhere" {  # コメントと書式に合わない行だけの一覧では、python3 は起動するが gh を呼ばない
+  one_pr_candidate
+  write_allow_list '# acme/cwd-repo' 'github.com/acme/cwd-repo' 'acme/*'
+  run_backfill
+  [ "$status" -eq 0 ]
+  no_gh_call
+  [ "$(seen)" = "$SEEN0" ]
+}
+
+@test "backfill: the default list under HOME is read when the variable is unset" {  # COST_LEDGER_WRITE_REPOS_FILE が無ければ $HOME/.config/cost-ledger/write-repos を読む。そこにも無ければ書かない
+  one_pr_candidate
+  command rm -f "$COST_LEDGER_WRITE_REPOS_FILE"
+  unset COST_LEDGER_WRITE_REPOS_FILE
+  run_backfill
+  no_gh_call
+  LIST_FILE="$HOME/.config/cost-ledger/write-repos" write_allow_list acme/cwd-repo
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ "$(list_calls)" -eq 1 ]
+  [ "$(posts)" -eq 1 ]
+}
+
+@test "backfill: a list file inside the working repository is not a list" {  # cwd のリポジトリの中に置いた一覧では自分を許可できない
+  one_pr_candidate
+  export COST_LEDGER_WRITE_REPOS_FILE="$CWD/write-repos"
+  write_allow_list acme/cwd-repo
+  run_backfill
+  [ "$status" -eq 0 ]
+  no_gh_call
+  [ "$(seen)" = "$SEEN0" ]
+}
+
+@test "backfill: backfill.py started directly still obeys the list" {  # backfill.sh を通らずに起動されても、一覧が無い・一覧に無いリポジトリでは gh を呼ばない
+  one_pr_candidate
+  session_json > "$WORK/payload.json"
+  command rm -f "$COST_LEDGER_WRITE_REPOS_FILE"
+  run "$REAL_PYTHON" "$WORK/scripts/backfill.py" < "$WORK/payload.json"
+  [ "$status" -eq 0 ]
+  no_gh_call
+  write_allow_list acme/other
+  run "$REAL_PYTHON" "$WORK/scripts/backfill.py" < "$WORK/payload.json"
+  no_gh_call
+  [ "$(seen)" = "$SEEN0" ]
+  write_allow_list acme/other acme/cwd-repo
+  COST_LEDGER_BACKFILL=off run "$REAL_PYTHON" "$WORK/scripts/backfill.py" < "$WORK/payload.json"
+  no_gh_call
+  COST_LEDGER_GATE_REPORT=off run "$REAL_PYTHON" "$WORK/scripts/backfill.py" < "$WORK/payload.json"
+  no_gh_call
+  run "$REAL_PYTHON" "$WORK/scripts/backfill.py" < "$WORK/payload.json"
+  [ "$(posts)" -eq 1 ]
+}
+
+@test "backfill: backfill.py imports write_allow and asks allowed() before the first gh" {  # 判定は write_allow.py の allowed() に任せ、一覧の読み方を書き写さない
+  grep -qE '^import .*\bwrite_allow\b' "$PLUGIN_DIR/scripts/backfill.py"
+  grep -qF 'write_allow.allowed(' "$PLUGIN_DIR/scripts/backfill.py"
+  if grep -qE 'write-repos|COST_LEDGER_WRITE_REPOS_FILE' "$PLUGIN_DIR/scripts/backfill.py"; then return 1; fi
 }
 
 # --- 候補は前回見た時刻以降の分だけを一覧 1 回で探す ---

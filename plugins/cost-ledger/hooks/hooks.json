@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/backfill.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/backfill.sh\"",
             "timeout": 10
           }
         ]

@@ -7,19 +7,23 @@
 
 - 同期部分（引数なし）: 標準入力の hook JSON から `cwd` と `source` を読むだけ。gh も git も台帳も
   会話ログも控えも触らない。自分自身を `--work <JSON>` で切り離して起こし、すぐ終わる
-- 裏の処理（`--work`）: 台帳の場所の確認 → 後追い全体のロック → `cwd` の origin → 控えの
+- 裏の処理（`--work`）: 台帳の場所の確認 → 後追い全体のロック → `cwd` の origin → 許可の一覧
+  （`write_allow.allowed()`。origin のリポジトリが載っていなければ gh を 1 回も呼ばずに終わる）→ 控えの
   「前回見た時刻」→ クローズ済みの issue / PR の一覧 1 回 → 候補ごとに（PR は対象の確認）・
   対象ごとのロック・`gate_report.stack()` → 控えの更新。gh は一覧の 1 回に、候補 1 件あたり 3 回
 - `COST_LEDGER_HOOK_FOREGROUND=1` のときは切り離さず、その場で最後まで実行する（テストと実測）
 
 行の有無の判定（同じ出来事の行が既にある・手元にコストが無い）は `cost_ledger.py timeline
 --backfill` が持ち、読み取りから書き込みまでは `gate_report.stack()` をそのまま使う。ここが持つのは
-候補の探し方と「どこまで見たか」の控えだけ。
+候補の探し方と「どこまで見たか」の控えだけ。GitHub に書いてよいリポジトリかの判定は
+`write_allow.py` が持ち（spec `cost-ledger-write-allowlist`）、ここには一覧の読み方を書き写さない。
 
 どの経路でも stdout・stderr に何も出さず終了コード 0（SessionStart の hook の stdout は会話の
 文脈に入る）。
 """
 import calendar, fcntl, json, os, subprocess, sys, tempfile, time
+
+import write_allow
 
 FIRST_LOOKBACK = 24 * 3600  # 控えにそのリポジトリの値が無いとき、さかのぼる長さ（秒）
 MAX_CANDIDATES = 20         # 1 回の実行で処理する候補の数（同じ秒の候補は超えても分けない）
@@ -161,12 +165,12 @@ def take(found):
     return found[:cut], found[cut:]
 
 
-def merged_head(gate_report, repo, number, cwd):
+def merged_head(gate_report, repo, number, cwd, at):
     """候補の PR を確かめ、積んでよければヘッドブランチを返す（1 回問い合わせる）。マージ済み・
     ベースが一覧のリポジトリ・ヘッドも同じリポジトリ（fork でない）・ヘッドブランチが空でない、の
     どれかが欠ければ None。"""
     data = gate_report.gh_json("repos/%s/pulls/%d" % (repo, number), cwd)
-    if not isinstance(data, dict) or not gate_report.pr_checks(data)["マージ"]:
+    if not isinstance(data, dict) or not gate_report.pr_checks(data, at)["マージ"]:
         return None
     base = ((data.get("base") or {}).get("repo") or {}).get("full_name")
     head = data.get("head") or {}
@@ -181,7 +185,7 @@ def merged_head(gate_report, repo, number, cwd):
 
 def stack_one(gate_report, repo, cwd, scripts_dir, at, number, kind):
     if kind == "pr":
-        branch, names = merged_head(gate_report, repo, number, cwd), ["マージ"]
+        branch, names = merged_head(gate_report, repo, number, cwd, at), ["マージ"]
         if branch is None:
             return
     else:
@@ -206,6 +210,10 @@ def sweep(cost_ledger, gate_report, ledger, cwd, scripts_dir):
     repo = origin[1]
     if gate_report.full_name(repo) != repo:
         return  # gh api のパスに置けない名前
+    # 一覧の取得も書き込みも、相手は origin のこのリポジトリだけ。許可の一覧に無ければ、どの候補にも
+    # 書かないことが決まっているので、gh を 1 回も呼ばず、控えも読み書きせずに終わる
+    if not write_allow.allowed(repo, cwd):
+        return
     key, state_path = repo.lower(), ledger + ".backfill.json"
     since = seen_until(read_state(state_path), key)
     if since is None:
@@ -233,6 +241,10 @@ def work(job):
     scripts_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, scripts_dir)
     import cost_ledger, gate_report
+    # 全体停止は一覧より先に効く。backfill.sh を通らずに直接起動されても gh を呼ばない
+    # （読み方は backfill.sh と同じ: 値が off のときだけ）
+    if "off" in (os.environ.get("COST_LEDGER_GATE_REPORT"), os.environ.get("COST_LEDGER_BACKFILL")):
+        return
     configured = cost_ledger.ledger_path()
     if configured is None:
         return
