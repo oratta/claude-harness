@@ -162,6 +162,86 @@ expect_silent() {
   expect_silent 'git commit --author n -m x'
 }
 
+# --- シェル構文の読み（#820 F1・F4〜F10） ---
+# spec destructive-git-hook の要件「コマンド文字列をシェルと同じ単位で読む」。止まる入力と、同じ構文で通す入力を対にする。
+
+@test "shell syntax: git inside an argument with newlines is judged (F1)" {
+  expect_stopped $'bash -c \'\ngit reset --hard\n\''
+  expect_stopped $'git -c core.x=\'first\nsecond\' reset --hard'
+  expect_stopped $'eval "ls\ngit reset --hard"'
+  # -c / eval の引数にならない引用文字列の改行より後ろは、引き続き読まない
+  expect_silent $'git commit -m "1 行目\ngit branch -D x を止める"'
+  expect_silent $'echo "a\ngit reset --hard"'
+}
+
+@test "shell syntax: a quoted ) inside \$(...) does not end the substitution (F4)" {
+  expect_stopped 'echo "$(printf '"')'"'; git reset --hard)"'
+  expect_stopped 'echo "$(echo "$(git reset --hard)")"'
+  expect_stopped 'echo $(printf "(" ; git reset --hard)'
+}
+
+@test "shell syntax: quotes inside a comment do not hide the next line (F5)" {
+  expect_stopped $'# It\'s cleanup\ngit reset --hard'
+  expect_stopped $'ls # it\'s fine\ngit reset --hard'
+  # コメントの中の git と、引用符の中・語の途中の # はコメントにしない
+  expect_silent 'ls # git reset --hard'
+  expect_silent 'echo "#"; git status'
+  expect_silent 'echo a#b git reset --hard'
+}
+
+@test "shell syntax: a redirection does not split the simple command (F6)" {
+  expect_stopped 'git reset >/dev/null --hard'
+  expect_stopped 'git reset 2>&1 --hard'
+  expect_stopped '>/dev/null git reset --hard'
+  expect_stopped 'git reset --hard >/dev/null'
+  expect_stopped 'git reset &>/dev/null --hard'
+  expect_silent 'git status >/dev/null 2>&1'
+}
+
+@test "shell syntax: line continuations are joined (F7)" {
+  expect_stopped $'git \\\nreset --hard'
+  expect_stopped $'git reset \\\n  --hard'
+  expect_stopped $'bash -c "git \\\nreset --hard"'
+  # 単一引用符の中のバックスラッシュと改行は行継続にしない
+  expect_silent $'echo \'a \\\ngit reset --hard\''
+}
+
+@test "shell syntax: quoted operators do not separate commands (F8)" {
+  expect_silent "echo ';' git reset --hard"
+  expect_silent 'echo "|" git reset --hard'
+  expect_silent 'echo \& git reset --hard'
+  expect_silent "echo '&&' git reset --hard"
+  # 引用されていない演算子では引き続き区切る
+  expect_stopped 'echo x; git reset --hard'
+  expect_stopped 'echo x | git reset --hard'
+  expect_stopped 'echo x & git reset --hard'
+}
+
+@test "shell syntax: whole heredoc delimiters and here-strings (F9)" {
+  expect_stopped $'cat <<END-TAG\nbody\nEND-TAG\ngit reset --hard'
+  expect_stopped $'cat <<-\'EOF\'\n\tbody\n\tEOF\ngit reset --hard'
+  expect_stopped $'cat <<< EOF\ngit reset --hard'
+  expect_stopped $'cat <<<"$(git reset --hard)"'
+  # 区切り語の前半だけの行では本文を終わらせない
+  expect_silent $'cat <<END-TAG\nEND\ngit reset --hard\nEND-TAG'
+}
+
+@test "shell syntax: substitutions in a quoted heredoc body are not judged (F10)" {
+  expect_silent $'cat <<\'EOF\'\n$(git reset --hard)\nEOF'
+  expect_silent $'cat <<"EOF"\n`git reset --hard`\nEOF'
+  expect_silent $'cat <<\\EOF\n$(git reset --hard)\nEOF'
+  # 引用されていない本文の置換はシェルが実行するので判定する
+  expect_stopped $'cat <<EOF\n$(git reset --hard)\nEOF'
+}
+
+@test "shell syntax: reserved words at the head are still out of scope" {
+  # spec の守備範囲で通ることを許す形。変更の後も止めない
+  expect_silent 'for f in *; do git checkout -- "$f"; done'
+  expect_silent 'if true; then git reset --hard; fi'
+  expect_silent '{ git reset --hard; }'
+  expect_silent '! git reset --hard'
+}
+
 # --- 引数を取るオプションの値（PR #794 ゲート一周目 F2・F11・F12） ---
 
 @test "option values: a -n that is an option value does not make push or clean a dry-run" {
