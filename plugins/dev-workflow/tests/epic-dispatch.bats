@@ -258,11 +258,41 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$output" = "subagent" ]
 }
 
-@test "route: one child under Orca goes to subagent" {
+@test "route: one child under Orca goes to orca" {
   make_stub orca
   run dispatch route 11
   [ "$status" -eq 0 ]
+  [ "$output" = "orca" ]
+  [ "$(calls '^orca worktree current')" -eq 1 ]
+}
+
+@test "route: one child without orca on PATH goes to subagent" {
+  run dispatch route 11
+  [ "$status" -eq 0 ]
   [ "$output" = "subagent" ]
+}
+
+@test "route: one child outside an Orca-managed worktree goes to subagent" {
+  make_stub orca
+  echo 1 > "$STUB_CFG/current_exit"
+  run dispatch route 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "subagent" ]
+}
+
+@test "route: no children under Orca still goes to subagent" {
+  make_stub orca
+  run dispatch route
+  [ "$status" -eq 0 ]
+  [ "$output" = "subagent" ]
+}
+
+@test "route: EPIC_DISPATCH_PARENT_EPIC with one child is nested without calling orca" {
+  make_stub orca
+  EPIC_DISPATCH_PARENT_EPIC=420 run dispatch route 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "nested" ]
+  [ "$(calls '^orca')" -eq 0 ]
 }
 
 @test "route: two children under Orca go to orca" {
@@ -352,7 +382,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^orca worktree current')" -eq 1 ]
   run dispatch route 11
   [ "$status" -eq 0 ]
-  [ "$output" = "subagent" ]
+  [ "$output" = "orca" ]
   [ "$(calls '^orca worktree current')" -eq 2 ]
   printf '%s\n' '{"result":{"worktree":{"id":"repo-a::/work/parent","repoId":"repo-a","path":"/work/parent","parentWorktreeId":null}}}' > "$STUB_CFG/current_json"
   run dispatch route 11 12
@@ -1416,7 +1446,9 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 
 @test "skill: epic run section states the routing conditions and the subagent fallback" {
   r="$(run_section)"
-  printf '%s\n' "$r" | grep -qF '2 件以上'
+  p="$(printf '%s\n' "$r" | awk '/^\*\*経路の決め方\*\*/{f=1; print; next} /^$/{f=0} f')"
+  [ -n "$p" ]
+  if printf '%s\n' "$p" | grep -qF '2 件以上'; then false; fi
   printf '%s\n' "$r" | grep -qF '`orca`'
   printf '%s\n' "$r" | grep -qF 'Orca 管理のワークツリー'
   printf '%s\n' "$r" | grep -qF 'サブエージェント方式'

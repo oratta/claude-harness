@@ -15,8 +15,8 @@
 #   そのワークツリーに linkedIssue があれば（子のワークツリーで起動し直したセッション）`nested`。
 #   `nested` のときは stderr に `parent epic: #<N>`（環境変数の値か、親の linkedIssue）。
 #   jq が無い・一覧を読めないときは子ではないとして進み、stderr に `could not read the parent worktree`。
-#   子でなければ、子が 2 件以上・`orca worktree current --json` が exit 0（今いるのが Orca 管理の
-#   ワークツリー）なら stdout に `orca`、それ以外は `subagent`。どれも exit 0。current は 1 回だけ呼ぶ
+#   子でなければ、子が 1 件以上・`orca worktree current --json` が exit 0（今いるのが Orca 管理の
+#   ワークツリー）なら stdout に `orca`、それ以外（子 0 件を含む）は `subagent`。どれも exit 0。current は 1 回だけ呼ぶ
 # launch: `orca worktree current --json` → `git rev-parse --show-toplevel` → `git fetch origin <base>`
 #   → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` →
 #   子ごとに `orca worktree create`（同じ repoId・同じ linkedIssue・archive されていない
@@ -131,7 +131,7 @@ cmd_route() {
     echo nested
     return 0
   fi
-  if [ "$#" -ge 2 ] && [ "$managed" -eq 1 ]; then
+  if [ "$#" -ge 1 ] && [ "$managed" -eq 1 ]; then
     echo orca
   else
     echo subagent
