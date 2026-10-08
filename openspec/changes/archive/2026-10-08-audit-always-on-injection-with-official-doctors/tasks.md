@@ -18,4 +18,4 @@
 - [x] 3.1 `grep -rn 'よく考え' rules/` が 0 件であることを確かめる。触る範囲: なし（確認のみ）
 - [x] 3.2 `scripts/test.sh injection-budget` と `scripts/test.sh agents-md-sync` が exit 0 であることを確かめる。`tests/injection-budget.txt`・`CLAUDE.md`・`AGENTS.md` に差分が無いことを `git status` で確かめる。触る範囲: なし（確認のみ）
 - [x] 3.3 `scripts/test.sh` を引数なしで実行して exit 0 を確かめる。statusline のテストが 1 件だけ落ちたときは単独で再実行して判定する。触る範囲: なし（確認のみ）
-- [ ] 3.4 PR 本文に、予算値を動かしていないこと（測定対象のバイト数がこの change で変わらないため）と、診断の指摘のうち範囲外にした 3 件（`CLAUDE.md` の CI の記述、`CLAUDE.md` のマージ手順、issueify の質問の仕方）を書く。あわせて、診断が旧モデル向けの言い回しに分類した強調語（`IMPORTANT`・`MUST`・`NEVER`、18 ファイル 34 箇所）を残した理由（openspec CLI の生成物で、再生成のたびに 34 箇所を直し直すことになる）を PR 本文と issue #712 のコメントに書く。範囲外の 3 件も issue #712 のコメントに残す。触る範囲: なし（PR 本文と issue コメント）
+- [x] 3.4 PR 本文に、予算値を動かしていないこと（測定対象のバイト数がこの change で変わらないため）と、診断の指摘のうち範囲外にした 3 件（`CLAUDE.md` の CI の記述、`CLAUDE.md` のマージ手順、issueify の質問の仕方）を書く。あわせて、診断が旧モデル向けの言い回しに分類した強調語（`IMPORTANT`・`MUST`・`NEVER`、18 ファイル 34 箇所）を残した理由（openspec CLI の生成物で、再生成のたびに 34 箇所を直し直すことになる）を PR 本文と issue #712 のコメントに書く。範囲外の 3 件も issue #712 のコメントに残す。触る範囲: なし（PR 本文と issue コメント）
