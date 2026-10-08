@@ -157,7 +157,7 @@ SKILL.md は役割ごとのモデルを次のとおり規定しなければな�
 ### Requirement: エピックの条件・作り方・回し方・完了条件を規定する
 SKILL.md は次を規定しなければならない（MUST）。**条件**（いずれか）: 1 つのユーザーストーリーの原因が複数あり独立してマージできる PR が 2 本以上に割れる／複数の capability（openspec の spec）にまたがる／子の間に順序依存があり 1 サイクルで終わらない。**作り方**: エピック issue にユーザーストーリー・完了条件・子 issue の一覧と依存順を書き、エピック自身にコードを紐づけない（PR の `Closes` は子に向ける）。子 issue はそれ単体で実装可能な記述と測定可能な受け入れ条件を持ち、依存は `gh api .../dependencies/blocked_by` で張る。洗い出しと解決はセッションを分け、解決セッションの入口は `/develop <エピック番号>`。
 
-**回し方（経路の決め方）**: interactive の本体は子の依存グラフを読み、blocked されていない子の番号を `plugins/dev-workflow/scripts/epic-dispatch.sh route` に渡して経路を決める（MUST）。`route` が `orca` を返したとき（blocked されていない子が 2 件以上あり、`orca` コマンドが PATH にあり、本体が Orca 管理のワークツリーにいる）は **Orca 経路**、`subagent` を返したときは **サブエージェント方式**で進める（MUST）。経路は `/develop <エピック番号>` の最初の開始時に 1 回決め、途中で変えてはならず（MUST NOT）、決めた経路をエピックに `回し方:` で始まる 1 行コメントで残す（MUST）。別セッションで同じエピックを再開したときは、`回し方:` で始まる最新のコメントを読んで経路を引き継ぎ、`route` をやり直してはならない（MUST NOT）。unmanned（`--unmanned`）では `route` を呼ばず、サブエージェント方式で進める（MUST。背景で待って起こされる動きが 1 サイクル 1 仕事と合わないため）。
+**回し方（経路の決め方）**: interactive の本体は子の依存グラフを読み、blocked されていない子の番号を `plugins/dev-workflow/scripts/epic-dispatch.sh route` に渡して経路を決める（MUST）。`route` が `orca` を返したとき（`orca` コマンドが PATH にあり、本体が Orca 管理のワークツリーにいる）は **Orca 経路**、`subagent` を返したときは **サブエージェント方式**で進める（MUST）。経路は `/develop <エピック番号>` の最初の開始時に 1 回決め、途中で変えてはならず（MUST NOT）、決めた経路をエピックに `回し方:` で始まる 1 行コメントで残す（MUST）。別セッションで同じエピックを再開したときは、`回し方:` で始まる最新のコメントを読んで経路を引き継ぎ、`route` をやり直してはならない（MUST NOT）。unmanned（`--unmanned`）では `route` を呼ばず、サブエージェント方式で進める（MUST。背景で待って起こされる動きが 1 サイクル 1 仕事と合わないため）。
 
 **回し方（Orca 経路）**: 本体は `epic-dispatch.sh launch` で子ごとに Orca の子ワークツリーを作り、子は独立した Claude Code セッションとして `/develop #<N>` の 1 ループを丸ごと回す（本体は子の W / R1 / G を起こさない）。再開時も、依存が解けた open の子を `launch` に渡し、起動済みの子は `launch` の `skipped` で見分ける（同じ子を二重に起動しない）。本体は `launch` が `launched` / `skipped` を出した子を動いている子とし、`epic-dispatch.sh wait` を Bash の `run_in_background: true` で起動して待ち、終わって起こされたら出力の 1 行で次を決める。`closed` なら閉じた子ごとに `state_reason` を読み、`completed` ならエピックへ `子 #N マージ → 残り k 件` とコメントして依存グラフを読み直し、解けた子を件数にかかわらず `launch` する。`completed` 以外ならエピックへ `子 #N 見送り（<state_reason>）→ 残り k 件` とコメントし、その子を前提にしていた子を起動してはならず（MUST NOT）、ユーザーに報告する。そのあと残りの動いている子で再び `wait` する。`timeout` なら待っている子に `needs-approval` などの停止の兆候が無いかを見て、あればユーザーに報告し、報告したかどうかにかかわらず残りの動いている子で再び `wait` する。子が自分のタブでユーザーに質問して止まっている場合はこの確認では気づけないことを書く（SHALL）。`wait` の `error` と `launch` の `failed` はユーザーに報告して止まる。`launch` に失敗した子をサブエージェント方式に自動で振り替えてはならない（MUST NOT）。子セッションのモデルは `epic-dispatch.sh launch` が起動時に `cld --model` で指定し、既定は `opus` で環境変数 `EPIC_DISPATCH_MODEL` で変えられること（Claude Code の既定モデルは子に効かないこと）、コマンド部分（既定 `cld`）は環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で差し替えられ、Orca に設定したコマンドはハーネスから読めないので Orca 側のコマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変えることを書く（SHALL）。子セッションは `cld` が付ける `--dangerously-skip-permissions` で動き許可の確認画面が出ないこと（`epic-dispatch.sh` が足すのは `--model` だけであること）、マージを止めているのは develop と pr-review-gate の規則と hooks であることを書く（SHALL）。子の PR のマージは今までどおり子セッションの中で人の承認で行い、本体が自動でマージしてはならない（MUST NOT）。
 
@@ -175,7 +175,7 @@ SKILL.md は次を規定しなければならない（MUST）。**条件**（い
 
 #### Scenario: 回し方に 2 経路の振り分け条件が書かれている
 - **WHEN** エピックの回し方を読む
-- **THEN** `epic-dispatch.sh route` の出力で経路を決めること、`orca` になる条件（blocked されていない子が 2 件以上・`orca` が PATH にある・本体が Orca 管理のワークツリーにいる）、それ以外はサブエージェント方式で進むこと、経路を最初の開始時に 1 回決めて途中で変えないこと、再開時は `回し方:` のコメントから経路を引き継ぐこと、unmanned はサブエージェント方式のままであることが書かれている
+- **THEN** `epic-dispatch.sh route` の出力で経路を決めること、`orca` になる条件（`orca` が PATH にある・本体が Orca 管理のワークツリーにいる）、それ以外はサブエージェント方式で進むこと、経路を最初の開始時に 1 回決めて途中で変えないこと、再開時は `回し方:` のコメントから経路を引き継ぐこと、unmanned はサブエージェント方式のままであることが書かれている
 
 #### Scenario: Orca 経路の本体は wait の出力で次を決める
 - **WHEN** Orca 経路の本体の手順を読む
@@ -473,7 +473,7 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 ### Requirement: epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う
 `plugins/dev-workflow/scripts/epic-dispatch.sh` は、サブコマンド `route`・`launch`・`wait` を持たなければならない（MUST）。どのサブコマンドも LLM を呼んではならない（MUST NOT）。
 
-`route <child>...` は、引数の子が 2 件以上あり、`orca` コマンドが PATH にあり、かつ `orca worktree current` が exit 0 で終わる（今いるディレクトリが Orca 管理のワークツリー）ときだけ stdout に `orca` の 1 行を出し、それ以外は `subagent` の 1 行を出して exit 0 で終わらなければならない（MUST）。子の番号が数字でなければ stderr に使い方を出して exit 1 で終わる（SHALL）。
+`route <child>...` は、引数の子が 1 件以上あり、`orca` コマンドが PATH にあり、かつ `orca worktree current` が exit 0 で終わる（今いるディレクトリが Orca 管理のワークツリー）ときだけ stdout に `orca` の 1 行を出し、それ以外は `subagent` の 1 行を出して exit 0 で終わらなければならない（MUST）。子の番号が数字でなければ stderr に使い方を出して exit 1 で終わる（SHALL）。
 
 `launch [--note <text>] [--base <branch>] <epic> <child>...` は、次の順で呼び出さなければならない（MUST）: `orca worktree current --json`（今の repo の `repoId` を得る）→ `git rev-parse --show-toplevel` → `git fetch origin <base>` → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` → 子ごとに `orca worktree create --name issue-<N> --issue <N> --base-branch origin/<base> --parent-worktree path:<親> --json` → `orca terminal create --worktree path:<子> --command <cmd> --json` → `orca terminal wait --terminal <handle> --for tui-idle --timeout-ms <ready> --json` → `orca terminal send --terminal <handle> --text <prompt> --enter --wait-submit <submit> --json`。worktree create に `--agent` と `--prompt` を渡してはならない（MUST NOT。`--agent` で起動すると子セッションのモデルを指定できず Claude Code の既定モデルで動くため。`--prompt` は Orca 1.4.209 では指示が子の入力欄に届かず、送信と併用すると指示が 2 回届くおそれがあるため）。`<子>` は worktree create の JSON 出力の `result.worktree.path` とする（MUST）。`<cmd>` は `<claude-cmd> --model <model>` で（`--dangerously-skip-permissions` などの許可に関わる引数は付けてはならない（MUST NOT）。付けるのは `<claude-cmd>` 側に任せる）、`<claude-cmd>` の既定は `cld` で環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で変えられ、クォートせずそのまま置く（MUST。`--command` の文字列は Orca が開いたログインシェルに打ち込まれるのでシェル関数も解決され、`cld-account b` のような引数付きも書けるため）。`<model>` はシェルに打ち込まれても 1 語のまま渡るよう単一引用符で囲む（MUST。`opus[1m]` のような値がグロブとして解釈されないため）。`<model>` の既定は `opus` で、環境変数 `EPIC_DISPATCH_MODEL` で変えられる（MUST）。`<handle>` は terminal create の JSON 出力の `result.terminal.handle` とする（MUST）。`<ready>` の既定は 60000（ミリ秒）で環境変数 `EPIC_DISPATCH_READY_TIMEOUT_MS` で、`<submit>` の既定は 30（秒）で環境変数 `EPIC_DISPATCH_SUBMIT_WAIT` で変えられる（SHALL）。`<親>` は `git rev-parse --show-toplevel` で求めた親ワークツリーの絶対パスで、親の指定は create と set の両方で `path:` を使わなければならない（MUST。`worktree:<id>` は set で `selector_not_found` になるため）。`<base>` の既定は `main` で、環境変数 `EPIC_DISPATCH_BASE` で既定を変えられ、`--base` が環境変数より優先する（MUST）。`<prompt>` は `/develop #<N>` で始まり、エピック番号を含み、`--note` があればその文を含む（SHALL）。子を `launched <N>` とするのは、worktree create が exit 0 で終わり、子のワークツリーのパスが取れ、terminal create が exit 0 で終わり、ハンドルが取れ、`terminal wait` が exit 0 で終わり、`terminal send` が exit 0 で終わってその JSON 出力のどこかの `stages` 配列に `turn_started` が含まれるときだけでなければならない（MUST）。どれか 1 つでも満たさなければ `failed <N>` とし（MUST）、子のワークツリーのパスが取れていてハンドルが取れていなければ（terminal create の失敗を含む）、端末を手で起動し直すための `orca terminal create --worktree path:<子> --command <cmd> --json` を stderr に出すに続けて、最初の指示を送るための `orca terminal send --terminal <作り直した端末のハンドル> --text <prompt> --enter --wait-submit <submit> --json` を stderr に出す（SHALL。ワークツリーは残るので、再実行ではその子は `skipped <N>` になり端末が作られないため）。ハンドルが取れていれば、指示を手で送り直すための `orca terminal send --terminal <handle> --text <prompt> --enter --wait-submit <submit> --json` を stderr に出し、あわせて「送る前に `orca terminal read --terminal <handle>` で入力欄とターンの状態を確かめる」旨の案内を出す（SHALL。送信が非 0 やターン未観測で終わっても指示が届いていることがあり、確かめずに送ると 2 回届くため）。`terminal send` の JSON 出力に送り直し用の ID（キー `retryRequestId` または `retryRequest` の文字列値）があれば、送り直しのコマンドに `--retry-request <id>` を付ける（SHALL）。ワークツリーは残すので、再実行ではその子は `skipped <N>` になり、指示を送り直さない（SHALL）。一覧に、同じ `repoId` で `linkedIssue` が `<N>` の archive されていないワークツリーがある子には create を呼ばず `skipped <N>` を出さなければならない（MUST。再開時や取り違えで同じ子を二重に起動しないため）。`orca` が PATH に無いときは何も呼ばずに exit 1 で終わり、`orca worktree current`・`git fetch`・`orca worktree set`・`orca worktree list` のどれかが失敗したとき（`jq` が無くて一覧を読めないときを含む）は子を 1 件も作らずに exit 1 で終わらなければならない（MUST）。stdout には子ごとに `launched <N>`・`skipped <N>`・`failed <N>` のどれか 1 行だけを出し、`orca` 自身の出力は stderr に流す（SHALL）。1 件の失敗で残りの子の起動を止めず、`failed` が 0 件なら exit 0、1 件でもあれば exit 1 で終わる（MUST）。
 
@@ -491,11 +491,7 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 - **WHEN** `orca` が PATH にあり `orca worktree current` が exit 1 を返す環境で `epic-dispatch.sh route 11 12` を実行する
 - **THEN** stdout は `subagent` の 1 行で exit 0
 
-#### Scenario: 並列にできる子が 1 件ならサブエージェント方式になる
-- **WHEN** `orca` が PATH にあり Orca 管理のワークツリーにいる環境で `epic-dispatch.sh route 11` を実行する
-- **THEN** stdout は `subagent` の 1 行で exit 0
-
-#### Scenario: 並列にできる子が 2 件以上で Orca 管理下なら Orca 経路になる
+#### Scenario: 並列にできる子が 2 件でも Orca 管理下なら Orca 経路になる
 - **WHEN** `orca` が PATH にあり Orca 管理のワークツリーにいる環境で `epic-dispatch.sh route 11 12` を実行する
 - **THEN** stdout は `orca` の 1 行で exit 0
 
@@ -1704,7 +1700,7 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 
 `orca worktree list --json` は、`parentWorktreeId` が空でも `null` でもないときだけ呼ぶ（MUST）。`jq` が無い、`orca worktree list --json` が非 0 で終わる、出力の `.result.worktrees` が配列でないときは、2 は成り立たないとして扱う（MUST）。ただし `launch` は、`parentWorktreeId` が空でも `null` でもないのに一覧を読めなかったとき（非 0 で終わる、または `.result.worktrees` が配列でない）、子かどうかを決められないので先へ進まずに止まる（下の `launch` の規定）。
 
-**`route`**: 子の番号の検査のあと、子の件数によらず最初にエピックの子の判定を行い、エピックの子なら stdout に `nested` の 1 行、stderr に `parent epic: #<親エピックの番号>` の 1 行を出して exit 0 で終わらなければならない（MUST）。エピックの子でなければ、子が 2 件以上で `orca worktree current --json` が exit 0 なら `orca`、それ以外は `subagent` を出す（MUST）。`orca worktree current` は 1 回の `route` で 1 回だけ呼ぶ（SHALL）。2 の判定の途中で一覧を読めなかったとき、および `orca worktree current --json` が exit 0 で `jq` が PATH に無いとき（`parentWorktreeId` を読めない）は、stderr に `could not read the parent worktree` を出す（SHALL）。
+**`route`**: 子の番号の検査のあと、子の件数によらず最初にエピックの子の判定を行い、エピックの子なら stdout に `nested` の 1 行、stderr に `parent epic: #<親エピックの番号>` の 1 行を出して exit 0 で終わらなければならない（MUST）。エピックの子でなければ、子が 1 件以上で `orca worktree current --json` が exit 0 なら `orca`、それ以外は `subagent` を出す（MUST）。`orca worktree current` は 1 回の `route` で 1 回だけ呼ぶ（SHALL）。2 の判定の途中で一覧を読めなかったとき、および `orca worktree current --json` が exit 0 で `jq` が PATH に無いとき（`parentWorktreeId` を読めない）は、stderr に `could not read the parent worktree` を出す（SHALL）。
 
 **`launch`**: 引数の検査のあと、1 が成り立てば今までどおり `orca` も `git` も呼ばずに stderr に理由を出して exit 1 で終わる（MUST）。1 が成り立たなければ、`orca worktree current --json` の直後、`git rev-parse --show-toplevel` より前に 2 を判定し、成り立てば `git`・`orca worktree set`・`orca worktree create` を 1 つも呼ばず、stdout には何も出さず、stderr に親エピックの番号と `child epics are not expanded here` を含む理由を出して exit 1 で終わらなければならない（MUST）。1 による拒否の stderr も `child epics are not expanded here` を含む（SHALL）。1 が成り立たず、`parentWorktreeId` が空でも `null` でもないのに 2 の判定の途中で一覧を読めなかったときは、`git`・`orca worktree set`・`orca worktree create` を 1 つも呼ばず、stdout には何も出さず、stderr に `could not read the parent worktree` を出して exit 1 で終わらなければならない（MUST。先へ進むと、子のワークツリーの `linkedIssue` をエピック番号で書き換えてから止まるため）。親ワークツリーを持たないワークツリーでは、呼び出しの順序を変えてはならない（MUST NOT）。
 
@@ -1755,7 +1751,7 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 
 #### Scenario: 親も環境変数も無ければ今までどおりで一覧を読まない
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC` が無く、`orca worktree current --json` に `parentWorktreeId` が無いスタブ環境で `epic-dispatch.sh route 11 12` と `epic-dispatch.sh route 11` を実行する
-- **THEN** stdout はそれぞれ `orca` と `subagent` の 1 行で exit 0、`orca worktree list` は呼ばれず、`orca worktree current` はそれぞれ 1 回呼ばれる
+- **THEN** stdout はどちらも `orca` の 1 行で exit 0、`orca worktree list` は呼ばれず、`orca worktree current` はそれぞれ 1 回呼ばれる
 
 #### Scenario: 一覧を読めなければ子ではないとして扱う
 - **WHEN** `parentWorktreeId` があり、`orca worktree list --json` が非 0 で終わるスタブ環境で `epic-dispatch.sh route 11 12` を実行する
@@ -1802,4 +1798,35 @@ develop の SKILL.md「エピックの扱い」は、端末を作れなかった
 #### Scenario: SKILL.md に端末を作れなかった子の再開手順が書かれている
 - **WHEN** SKILL.md の「エピックの扱い」を読む
 - **THEN** 端末を作れなかった `failed` の子について、既存の端末が無いことを確かめ、作り直して送り、動き出したのを確かめてから再開することが書かれている
+
+### Requirement: 着手できる子が 1 件でも Orca 経路で回す
+`plugins/dev-workflow/scripts/epic-dispatch.sh` の `route` は、エピックの子のセッションでなく（`nested` でなく）、子の番号が 1 件以上あり、`orca` コマンドが PATH にあり、かつ `orca worktree current --json` が exit 0 で終わる（今いるディレクトリが Orca 管理のワークツリー）ときは、子の件数が何件でも stdout に `orca` の 1 行を出さなければならない（MUST）。子が 0 件のときは `subagent`、`orca` が PATH に無いときと Orca 管理外のときは `subagent` を出す。`nested` の判定が先に行われること、`orca worktree current` を 1 回の `route` で 1 回だけ呼ぶこと、子の番号が数字でなければ exit 1 で終わることは変えない。develop の SKILL.md「エピックの扱い」の「経路の決め方」は、件数の条件を書いてはならない（MUST NOT）。
+
+経路は `/develop <エピック番号>` の最初の開始時に 1 回決めて途中で変えず、再開時は `回し方:` で始まる最新のコメントから引き継ぎ、すでに `回し方: サブエージェント` と記録したエピックを途中で Orca 経路に切り替える規則は置かない（SHALL。進行中のサブエージェント方式の子と Orca の子ワークツリーの子が混在する状態を扱う規則が無く、Orca 経路の手順の規定は別の変更が扱うため）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の `route` が `orca` を返す条件の規定、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の `route` の判定の規定、要件「エピックの子への注意書きと…引き継ぐ」の `route` の段落のうち、子の件数の条件に関わる部分に優先する。
+
+この要件の守備範囲で入力として扱うのは、本体が依存グラフから求めた子の番号の並びと、`orca` の有無・`orca worktree current` の終了コードである。この要件で新しく拾う誤りは無く、引数の検査（数字でない番号を exit 1 で止めること）は既存の要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」が受け持つ。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。次は通してよく、この要件では止めない: 存在しない・重複した・blocked されている子の番号は `route` では検証しない（既存の規定どおり）／この変更より前に `回し方: サブエージェント` と記録した進行中のエピックは、そのエピックが終わるまでサブエージェント方式のまま進む。
+
+#### Scenario: Orca 管理のワークツリーで子が 1 件なら orca を返す
+- **WHEN** `orca` が PATH にあり Orca 管理のワークツリーにいる環境で `epic-dispatch.sh route 11` を実行する
+- **THEN** stdout は `orca` の 1 行で exit 0
+
+#### Scenario: 子が 2 件でも今までどおり orca を返す
+- **WHEN** `orca` が PATH にあり Orca 管理のワークツリーにいる環境で `epic-dispatch.sh route 11 12` を実行する
+- **THEN** stdout は `orca` の 1 行で exit 0
+
+#### Scenario: 子が 1 件でも orca が無い・Orca 管理外ならサブエージェント方式になる
+- **WHEN** `orca` が PATH に無い環境と、`orca` が PATH にあり `orca worktree current` が exit 1 を返す環境のそれぞれで `epic-dispatch.sh route 11` を実行する
+- **THEN** どちらも stdout は `subagent` の 1 行で exit 0
+
+#### Scenario: 子が 0 件なら Orca 管理下でも subagent を返す
+- **WHEN** `orca` が PATH にあり Orca 管理のワークツリーにいる環境で `epic-dispatch.sh route` を子なしで実行する
+- **THEN** stdout は `subagent` の 1 行で exit 0
+
+#### Scenario: nested の判定は子が 1 件でも先に行われる
+- **WHEN** `EPIC_DISPATCH_PARENT_EPIC=420` の環境で `orca` が PATH にあり Orca 管理のワークツリーにいるとき、`epic-dispatch.sh route 11` を実行する
+- **THEN** stdout は `nested` の 1 行で exit 0、`orca` は呼ばれない
+
+#### Scenario: SKILL.md の経路の決め方に件数の条件が書かれていない
+- **WHEN** `skills/develop/SKILL.md` の「エピックの扱い」の「経路の決め方」を読む
+- **THEN** `orca` になる条件が「`orca` が PATH にあり、本体が Orca 管理のワークツリーにいる」だけで書かれ、blocked されていない子の件数の下限の条件が無く、経路は最初の開始時に 1 回だけ決めて途中で変えないこと、再開時は `回し方:` のコメントから引き継ぐことは残っている
 
