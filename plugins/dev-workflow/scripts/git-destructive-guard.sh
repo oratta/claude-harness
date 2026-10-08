@@ -13,6 +13,7 @@
 # 対象（spec の 9 種）: git checkout -- <path> / git checkout . ・git restore（--staged だけのものを除く）・
 #   git reset --hard ・git clean -f（dry-run を除く）・main / master への git push（dry-run を除く）・
 #   git push --force 系（dry-run を除く）・git branch -D ・--no-verify / git commit -n ・--no-gpg-sign
+#   dry-run は、後ろの --no-dry-run で打ち消されていないものだけを指す。
 #
 # 返す値: permission_mode が default / acceptEdits / plan / bypassPermissions なら ask（対話セッションでは
 #   確認画面が出て主が承認できる。claude -p では確認できず実行されない。どちらも実機で確認済み）、それ以外
@@ -67,6 +68,10 @@ ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 SHORT = re.compile(r"^-[A-Za-z]+$")
 OP_CHARS = set("();<>|&")
 WRAPPERS = {"command", "env", "sudo", "nohup", "time", "exec", "builtin"}
+# env の値を取るオプション（GNU と BSD の和集合）。-S / --split-string は入れない: 後ろの字句が
+# コマンドとして実行されるので、値として読み飛ばすと `env -S git reset --hard` が素通りになる。
+ENV_SHORT_ARG = set("uCPa")
+ENV_LONG_ARG = {"--unset", "--chdir", "--argv0"}
 SHELLS = {"bash", "sh", "zsh"}
 GIT_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
                      "--super-prefix", "--config-env", "--exec-path"}
@@ -211,6 +216,17 @@ def judge(s, depth=0):
     return kinds
 
 
+def env_opt_takes_next(opt):
+    """env のオプションの字句が、次の字句を値として取るか。`--unset=FOO` と `-uFOO` は 1 字句で完結する。"""
+    if opt.startswith("--"):
+        return opt in ENV_LONG_ARG
+    body = opt[1:]
+    for j, ch in enumerate(body):
+        if ch in ENV_SHORT_ARG:
+            return j == len(body) - 1  # 途中なら同じ字句の残りが値
+    return False
+
+
 def judge_simple(cmd, depth):
     i = 0
     while i < len(cmd):
@@ -221,6 +237,8 @@ def judge_simple(cmd, depth):
         if t in WRAPPERS:
             i += 1
             while i < len(cmd) and cmd[i].startswith("-"):
+                if t == "env" and env_opt_takes_next(cmd[i]):
+                    i += 1  # 次の字句はこのオプションの値で、コマンド名ではない
                 i += 1
             continue
         break
@@ -250,23 +268,37 @@ ARG_OPTS = {
     "push": (set("o"), {"--push-option", "--repo", "--receive-pack", "--exec"}),
     "clean": (set("e"), {"--exclude"}),
 }
+# 短い -n が --dry-run を意味するサブコマンド。--no-dry-run はここに限って -n も打ち消す
+# （commit の -n は --no-verify なので打ち消さない）。
+DRY_RUN_SHORT_N = {"push", "clean"}
 
 
 def parse_opts(sub, rest):
     """サブコマンドの引数を構文解析し、(長いオプション名の集合, 短いオプションの文字の集合, 位置引数) を返す。
-    オプションの値と `--` より後ろの字句は位置引数としてだけ扱い、オプションとして判定しない。"""
+    オプションの値と `--` / `--end-of-options` より後ろの字句は位置引数としてだけ扱い、オプションとして判定しない。
+    dry-run は左から読んだ最後の状態で残す: `--no-dry-run`（とその省略形）は、それまでの `--dry-run` と
+    push / clean の `-n` を集合から外す。"""
     short_arg, long_arg = ARG_OPTS.get(sub, (set(), set()))
     longs, short_set, positional = set(), set(), []
     k = 0
     while k < len(rest):
         a = rest[k]
         k += 1
-        if a == "--":
+        if a in ("--", "--end-of-options"):
             positional.extend(rest[k:])
             break
         if a.startswith("--"):
             name = a.split("=", 1)[0]
+            if "=" not in a and name not in long_arg:
+                # git は一意な省略形を受け付ける（--push-opt は --push-option）。一覧の中で一意なら同じに読む
+                full = [o for o in long_arg if o.startswith(name)]
+                if len(full) == 1:
+                    name = full[0]
             longs.add(name)
+            if len(name) >= len("--no-d") and "--no-dry-run".startswith(name):
+                longs.discard("--dry-run")
+                if sub in DRY_RUN_SHORT_N:
+                    short_set.discard("n")
             if name in long_arg and "=" not in a:
                 k += 1  # 次の字句がこのオプションの値
             continue
