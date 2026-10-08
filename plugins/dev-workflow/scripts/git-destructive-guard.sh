@@ -37,7 +37,7 @@ case "$payload" in
 esac
 
 printf '%s' "$payload" | python3 /dev/fd/3 3<<'PY'
-import json, os, re, shlex, sys
+import json, os, re, sys
 
 try:
     payload = json.load(sys.stdin)
@@ -65,124 +65,230 @@ ORDER = list(LABELS)
 
 ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 SHORT = re.compile(r"^-[A-Za-z]+$")
-OP_CHARS = set("();<>|&")
 WRAPPERS = {"command", "env", "sudo", "nohup", "time", "exec", "builtin"}
 SHELLS = {"bash", "sh", "zsh"}
 GIT_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
                      "--super-prefix", "--config-env", "--exec-path"}
 MAIN_REFS = {"main", "master", "refs/heads/main", "refs/heads/master"}
-HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 
 
-def substitutions(s):
-    """$(...) とバッククォートの中身を取り出す（単一引用符の中は展開されないので見ない）。"""
-    out, i, n, quote = [], 0, len(s), None
+class Unclosed(Exception):
+    """引用符が閉じていない。呼び出し側は空白で割った字句に同じ判定をかける。"""
+
+
+# 字句読み（spec destructive-git-hook「コマンド文字列をシェルと同じ単位で読む」）。
+# 引用状態と「演算子か語か」を保ったまま 1 回で読み、単純コマンド（語の並び）の並びと、
+# 中を判定すべき置換（$(...) とバッククォート）の中身の並びを返す。扱うのは演算子・行継続・
+# コメント・リダイレクト・ヒアドキュメント（区切り語の全体、<<-、引用された区切り語）・here-string・
+# 置換の中の引用。算術式・${...}・プロセス置換の中身・case の ) は扱わない（守備範囲の外）。
+def backquote(s, i):
+    """s[i] の ` から、エスケープされていない次の ` までを読む。(中身, 次の位置)。閉じていなければ末尾まで。"""
+    out, j, n = [], i + 1, len(s)
+    while j < n:
+        if s[j] == "\\" and j + 1 < n:
+            out.append(s[j + 1] if s[j + 1] in "`\\$" else s[j:j + 2])
+            j += 2
+            continue
+        if s[j] == "`":
+            return "".join(out), j + 1
+        out.append(s[j])
+        j += 1
+    return "".join(out), n
+
+
+def subst(s, i, subs):
+    """s[i:i+2] の $( を、対応する ) まで読む（中の引用・入れ子・コメント・ヒアドキュメントを追う）。
+    中身を subs に足し、次の位置を返す。閉じていなければ末尾まで。"""
+    _, _, end, closed = lex(s, i + 2, in_subst=True)
+    subs.append(s[i + 2:end - 1] if closed else s[i + 2:end])
+    return end
+
+
+def double_quoted(s, i, subs, term='"'):
+    """二重引用符の中（term=None ならヒアドキュメントの引用されていない本文）を読む。(文字列, 次の位置)。"""
+    out, n = [], len(s)
     while i < n:
         ch = s[i]
-        if quote == "'":
-            if ch == "'":
-                quote = None
-            i += 1
-            continue
-        if ch == "\\":
-            i += 2
-            continue
-        if ch == "'" and quote is None:
-            quote = "'"
-            i += 1
-            continue
-        if ch == '"':
-            quote = None if quote == '"' else '"'
-            i += 1
-            continue
-        if ch == "$" and i + 1 < n and s[i + 1] == "(":
-            depth, j = 1, i + 2
-            while j < n and depth:
-                if s[j] == "(":
-                    depth += 1
-                elif s[j] == ")":
-                    depth -= 1
-                j += 1
-            out.append(s[i + 2:j - 1] if depth == 0 else s[i + 2:])
-            i = j
+        if term is not None and ch == term:
+            return "".join(out), i + 1
+        if ch == "\\" and i + 1 < n:
+            nxt = s[i + 1]
+            if nxt == "\n":  # 行継続
+                i += 2
+                continue
+            if nxt in '$`"\\':
+                out.append(nxt)
+                i += 2
+                continue
+        if ch == "$" and s.startswith("$(", i):
+            end = subst(s, i, subs)
+            out.append(s[i:end])
+            i = end
             continue
         if ch == "`":
-            j = s.find("`", i + 1)
-            out.append(s[i + 1:] if j < 0 else s[i + 1:j])
-            i = n if j < 0 else j + 1
-            continue
-        i += 1
-    return out
-
-
-def normalize(s):
-    """引用符の外の改行を ; に置き換え、ヒアドキュメントの本文（commit メッセージ等）を取り除く。
-    引用符の中の改行（複数行の -m "..."）はそのまま残すので、メッセージの行をコマンドと誤読しない。"""
-    out, i, n, quote, pending = [], 0, len(s), None, []
-    while i < n:
-        ch = s[i]
-        if quote == "'":
-            out.append(ch)
-            if ch == "'":
-                quote = None
-            i += 1
-            continue
-        if ch == "\\" and i + 1 < n:
-            out.append(s[i:i + 2])
-            i += 2
-            continue
-        if ch in "'\"" and quote is None:
-            quote = ch
-        elif ch == '"' and quote == '"':
-            quote = None
-        elif quote is None and s.startswith("<<", i):
-            m = HEREDOC.match(s, i)
-            if m:
-                pending.append(m.group(2))
-        if ch == "\n" and quote is None:
-            out.append(" ; ")
-            i += 1
-            while pending:
-                end = pending.pop(0)
-                while i < n:
-                    j = s.find("\n", i)
-                    line = s[i:] if j < 0 else s[i:j]
-                    i = n if j < 0 else j + 1
-                    if line.strip() == end:
-                        break
+            inner, end = backquote(s, i)
+            subs.append(inner)
+            out.append(s[i:end])
+            i = end
             continue
         out.append(ch)
         i += 1
-    return "".join(out)
+    if term is not None:
+        raise Unclosed()
+    return "".join(out), n
 
 
-def tokenize(s):
-    try:
-        lex = shlex.shlex(s, posix=True, punctuation_chars=True)
-        lex.whitespace_split = True
-        lex.commenters = ""
-        return list(lex), True
-    except ValueError:
-        # 引用符が閉じていない: 判定を諦めず、空白と改行で割った字句に同じ判定をかける
-        return [t for t in re.split(r"\s+", s) if t], False
+def read_heredocs(s, i, pending, subs, in_subst):
+    """改行の次の位置 i から、読み残しのヒアドキュメントの本文を読み飛ばす。本文の後ろの位置を返す。"""
+    n = len(s)
+    for delim, strip_tabs, quoted in pending:
+        start, body_end = i, n
+        while i < n:
+            j = s.find("\n", i)
+            line = s[i:] if j < 0 else s[i:j]
+            nxt = n if j < 0 else j + 1
+            cmp = line.lstrip("\t") if strip_tabs else line
+            if cmp == delim:
+                body_end, i = i, nxt
+                break
+            # $(cat <<'EOF' ... EOF) のように、置換の中で区切り語の直後に ) が来る形
+            if in_subst and cmp.startswith(delim) and cmp[len(delim):].lstrip().startswith(")"):
+                body_end, i = i, i + (len(line) - len(cmp)) + len(delim)
+                break
+            i = nxt
+        else:
+            i = n
+        if not quoted:
+            double_quoted(s[start:body_end], 0, subs, term=None)
+    pending.clear()
+    return i
 
 
-def simple_commands(tokens):
-    cmds, cur, skip_next = [], [], False
-    for t in tokens:
-        if skip_next:
-            skip_next = False
+def lex(s, i=0, in_subst=False):
+    """(単純コマンドの並び, 置換の中身の並び, 終わりの位置, 閉じたか)。
+    in_subst は $( の中で、対応する ) で止まる（閉じたかは in_subst のときだけ意味を持つ）。"""
+    cmds, cur, subs, pending = [], [], [], []
+    word, st = [], {"has": False, "quoted": False, "redirect": False, "delim": None}
+    paren, n = 0, len(s)
+
+    def end_word():
+        if not st["has"]:
+            return
+        w = "".join(word)
+        word.clear()
+        if st["delim"] is not None:
+            pending.append((w, st["delim"], st["quoted"]))
+            st["delim"] = None
+        elif st["redirect"]:
+            st["redirect"] = False  # リダイレクトの対象は引数にしない
+        else:
+            cur.append(w)
+        st["has"] = st["quoted"] = False
+
+    def end_cmd():
+        end_word()
+        if cur:
+            cmds.append(list(cur))
+        cur.clear()
+        st["redirect"] = False
+
+    def add(text, quoted=False):
+        word.append(text)
+        st["has"] = True
+        st["quoted"] = st["quoted"] or quoted
+
+    while i < n:
+        ch = s[i]
+        if ch == "\\":
+            if i + 1 < n and s[i + 1] == "\n":  # 行継続
+                i += 2
+                continue
+            add(s[i + 1] if i + 1 < n else "\\", quoted=True)
+            i += 2
             continue
-        if t and set(t) <= OP_CHARS:
-            if set(t) & set("<>") and not (set(t) & set("|;")):
-                skip_next = True  # リダイレクトの直後はファイル名
-                if t.endswith("&"):
-                    skip_next = True
+        if ch == "'" or (ch == "$" and s.startswith("$'", i)):
+            j = i + 1 if ch == "'" else i + 2
+            k = s.find("'", j)
+            if k < 0:
+                raise Unclosed()
+            add(s[j:k], quoted=True)
+            i = k + 1
+            continue
+        if ch == '"':
+            text, i = double_quoted(s, i + 1, subs)
+            add(text, quoted=True)
+            continue
+        if ch == "$" and s.startswith("$(", i):
+            end = subst(s, i, subs)
+            add(s[i:end])
+            i = end
+            continue
+        if ch == "`":
+            inner, end = backquote(s, i)
+            subs.append(inner)
+            add(s[i:end])
+            i = end
+            continue
+        if ch == "#" and not st["has"]:  # コメント（改行は残す）
+            j = s.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if ch in " \t":
+            end_word()
+            i += 1
+            continue
+        if ch == "\n":
+            end_cmd()
+            i = read_heredocs(s, i + 1, pending, subs, in_subst) if pending else i + 1
+            continue
+        if ch in "<>" or (ch == "&" and s.startswith("&>", i)):
+            # 直前に接した数字だけの語は fd（2>、2>&1）
+            if st["has"] and not st["quoted"] and "".join(word).isdigit():
+                word.clear()
+                st["has"] = False
+            else:
+                end_word()
+            if s.startswith("<<<", i):
+                st["redirect"], i = True, i + 3
+            elif s.startswith("<<", i):
+                strip = s.startswith("<<-", i)
+                st["delim"], i = strip, i + (3 if strip else 2)
+            else:
+                m = re.match(r"&>>|&>|>>|>\||>&|<&|<>|<|>", s[i:])
+                st["redirect"], i = True, i + len(m.group(0))
+            continue
+        if ch in ";&|":
+            end_cmd()
+            i += 2 if s[i:i + 2] in ("&&", "||", ";;", "|&") else 1
+            continue
+        if ch == "(":
+            end_cmd()
+            paren += 1
+            i += 1
+            continue
+        if ch == ")":
+            end_cmd()
+            i += 1
+            if in_subst and paren == 0:
+                return cmds, subs, i, True
+            paren = max(0, paren - 1)
+            continue
+        add(ch)
+        i += 1
+    end_cmd()
+    return cmds, subs, n, False
+
+
+def split_fallback(s):
+    """引用符が閉じていないとき: 空白と改行で割った字句を、演算子だけの字句で単純コマンドに分ける。"""
+    cmds, cur = [], []
+    for t in re.split(r"\s+", s):
+        if not t:
+            continue
+        if set(t) <= set("();|&"):
             if cur:
                 cmds.append(cur)
             cur = []
-            continue
-        if "\n" in t:
             continue
         cur.append(t)
     if cur:
@@ -202,11 +308,13 @@ def judge(s, depth=0):
     kinds = set()
     if depth > 8:
         return kinds
-    for inner in substitutions(s):
+    try:
+        cmds, subs, _, _ = lex(s)
+    except Unclosed:
+        cmds, subs = split_fallback(s), []
+    for inner in subs:
         kinds |= judge(inner, depth + 1)
-    toks, _ = tokenize(normalize(s))
-    tokens = toks
-    for cmd in simple_commands(tokens):
+    for cmd in cmds:
         kinds |= judge_simple(cmd, depth)
     return kinds
 
