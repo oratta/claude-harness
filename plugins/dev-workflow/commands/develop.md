@@ -20,8 +20,9 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 ## ファイル特定
 
 ```bash
+plugin_root="${CLAUDE_PLUGIN_ROOT}"
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT}/skills/develop" \
+  "${plugin_root:+$plugin_root/skills/develop}" \
   ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/develop \
   ~/.claude/plugins/installed/*/dev-workflow/skills/develop; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
@@ -51,8 +52,9 @@ done
 1. **同じプラグイン内の issueify スキルを解決する**（develop 本体の特定と同じパターン。他プラグインへは探索しない）:
 
    ```bash
+   plugin_root="${CLAUDE_PLUGIN_ROOT}"
    for dir in \
-     "${CLAUDE_PLUGIN_ROOT}/skills/issueify" \
+     "${plugin_root:+$plugin_root/skills/issueify}" \
      ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/issueify \
      ~/.claude/plugins/installed/*/dev-workflow/skills/issueify; do
      [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break

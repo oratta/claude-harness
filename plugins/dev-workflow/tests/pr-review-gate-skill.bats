@@ -21,6 +21,7 @@ setup() {
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
+  DEVELOP_SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
 }
@@ -386,13 +387,20 @@ convergence_section() {
   echo "$sec" | grep -q 'passed'
 }
 
-@test "convergence (#354): stopping findings at the end of round 2 go to triage rows 5 or 6, not a bare single choice" {
+@test "convergence (#354/#722): stopping findings at the end of round 2 go to row 6, the fix-check or row 5, not a bare single choice" {
   sec="$(convergence_section)"
   echo "$sec" | grep -q '引用できる指摘'
-  echo "$sec" | grep -q '3周目を自動で開けない'
+  # 3 周目以降を開けるのは 3 条件だけ（#722）
+  line="$(echo "$sec" | grep -F '3周目以降の周を開けるのは')"
+  [ -n "$line" ] || { echo "no line on opening round 3"; return 1; }
+  echo "$line" | grep -qF '直し方の判定'
+  echo "$line" | grep -qF 'PR トークン上限の内側'
+  echo "$line" | grep -qF '「この PR で直す」'
+  echo "$line" | grep -qF '「全部列挙してから直す」'
   echo "$sec" | grep -qF '順 5'
   echo "$sec" | grep -qF '順 6'
-  echo "$sec" | grep -qF '順 2〜4 を使わない'
+  echo "$sec" | grep -qF '`needs-fix-check`'
+  echo "$sec" | grep -qF '順 2〜4 をそのまま使わない'
   ! gate_all | grep -qF '続けるか、範囲外として閉じるか' || return 1
 }
 
@@ -401,7 +409,7 @@ convergence_section() {
 }
 
 @test "convergence (#281): rounds opened by the owner's go-ahead apply the same sorting and stop again" {
-  convergence_section | grep -q '主の回答または決める役の裁定で開いた周の終了時にも同じ仕分け'
+  convergence_section | grep -q '直し方の判定・主の回答・決める役の裁定で開いた周の終了時にも同じ仕分け'
 }
 
 @test "convergence (#281): rewrite of the approach triggers a full review but rounds keep counting" {
@@ -411,8 +419,8 @@ convergence_section() {
   echo "$sec" | grep -q '周回は数え続ける'
 }
 
-@test "convergence (#354): the decider rules only on the approach for row 6 and G keeps the stop verdict" {
-  line="$(convergence_section | grep -F '順 6 の方式だけを裁定')"
+@test "convergence (#354/#722): the decider rules only on the approach for row 6 and the fix-check, and G keeps the stop verdict" {
+  line="$(convergence_section | grep -F '順 6 の方式と直し方の判定の 2 つだけを裁定')"
   [ -n "$line" ] || { echo "no decider paragraph for row 6"; return 1; }
   echo "$line" | grep -qF '`dev-workflow:decider`'
   echo "$line" | grep -qF '止めるかどうかは全周共通の判定で G が決める'
@@ -524,10 +532,10 @@ reviewer_block() {
 }
 
 @test "verdict (#349/#354): the decider paragraph ties the stop decision to the verdict, not to quoting alone" {
-  line="$(grep -F '順 6 の方式だけを裁定' "${TRIAGE}")"
+  line="$(grep -F '順 6 の方式と直し方の判定の 2 つだけを裁定' "${TRIAGE}")"
   [ -n "$line" ]
   echo "$line" | grep -qF '全周共通の判定'
-  run sh -c "grep -F '順 6 の方式だけを裁定' '$SKILL' | grep -F '引用の有無で決まる'"
+  run sh -c "grep -F '裁定する' '$SKILL' | grep -F '引用の有無で決まる'"
   [ "$status" -ne 0 ]
 }
 
@@ -598,7 +606,7 @@ triage_row_section() {
 
 @test "triage (#354): at the end of round 2 and later rounds, rows 2 to 4 are not used" {
   triage_section | grep -qF '2 周目以降の周の終わり'
-  triage_section | grep -qF '順 2〜4 を使わない'
+  triage_section | grep -qF '順 2〜4 をそのまま使わない'
 }
 
 @test "triage (#354): row 5 mixed with rows 2 to 4 holds first and W does not start fixing" {
@@ -1029,6 +1037,68 @@ step3c_body() {
   echo "$row" | grep -qF 'HEAD が動いた'
 }
 
+# ===== 周の終わりに残った指摘を直し方の判定に回す（issue #722）=====
+
+@test "fix-check (#722): the end-of-round paragraph sends rows 2-4-only leftovers to the fix-check" {
+  p="$(triage_section | grep -F '2 周目以降の周の終わり')"
+  [ -n "$p" ] || { echo "no end-of-round paragraph"; return 1; }
+  echo "$p" | grep -qF '順 6 を除いた全件が 1 周目なら順 2〜4'
+  echo "$p" | grep -qF '`needs-fix-check`'
+  echo "$p" | grep -qF '順 5'
+}
+
+@test "fix-check (#722): the triage table keeps exactly six rows" {
+  n="$(triage_section | grep -cE '^\| [0-9]+ \|')"
+  [ "$n" -eq 6 ] || { echo "rows: $n"; return 1; }
+  ! triage_section | grep -E '^\| [0-9]+ \|' | grep -qF 'needs-fix-check' || return 1
+}
+
+@test "fix-check (#722): mixed with row 6, count rulings first; if used up, everything goes to one row-5 hold" {
+  p="$(grep -F '直し方の判定に回す指摘と順 6 の指摘' "$TRIAGE")"
+  [ -n "$p" ] || { echo "no mixed paragraph for fix-check and row 6"; return 1; }
+  echo "$p" | grep -qF '^決める役の裁定:'
+  echo "$p" | grep -qF '1 件以上なら'
+  echo "$p" | grep -qF '1 回の保留にまとめる'
+  echo "$p" | grep -qF '直し方の判定を先にする'
+  echo "$p" | grep -qF '`needs-decider`'
+}
+
+@test "fix-check (#722): the fix-check is not counted as a row-6 ruling and leaves no ruling comment" {
+  line="$(grep -F '直し方の判定は順 6 の回数に数えず' "$TRIAGE")"
+  [ -n "$line" ] || { echo "no not-counted sentence"; return 1; }
+  echo "$line" | grep -qF '`決める役の裁定:` のコメントも残さない'
+}
+
+@test "fix-check (#722): G as develop has a needs-fix-check section and a return heading for it" {
+  nf="$(awk '/^### needs-fix-check のとき/{f=1;next} /^### |^```$/{f=0} f' "$TRIAGE")"
+  [ -n "$nf" ] || { echo "no needs-fix-check section"; return 1; }
+  echo "$nf" | grep -qF '仮の順'
+  echo "$nf" | grep -qF '仕分けの PR コメント URL'
+  echo "$nf" | grep -qF '順 6・未裁定'
+  grep -E '^### return の書式' "$TRIAGE" | grep -qF 'needs-fix-check'
+  # 判定を受け取った照合と振り分けの G の入力
+  line="$(grep -F '直し方の判定の受領' "$TRIAGE")"
+  [ -n "$line" ] || { echo "no fix-check receipt line"; return 1; }
+  echo "$line" | grep -qF '仕分け欄'
+  echo "$line" | grep -qF '仮の順'
+  echo "$line" | grep -qF '`needs-decider`'
+  echo "$line" | grep -qF '順 5'
+}
+
+@test "fix-check (#722): the re-review line opens round 3 only under the three conditions" {
+  line="$(grep -F 'W の修正後の再レビュー' "$TRIAGE" | grep -F '3 周目に入るのは')"
+  [ -n "$line" ]
+  echo "$line" | grep -qF '直し方の判定・主の回答・決める役の裁定のどれか'
+}
+
+@test "fix-check (#722): triage.md points at the develop SKILL.md section and does not define the formats" {
+  grep -qF 'レビューの周を主に聞かずに続ける（直し方の判定）' "$TRIAGE"
+  run grep -qF '^直し方の判定:' "$TRIAGE"
+  [ "$status" -ne 0 ]
+  run grep -qF '^主に聞かずに回した周:' "$TRIAGE"
+  [ "$status" -ne 0 ]
+}
+
 # --- Requirement: 合格条件は会話で受けた許容を正式な回答として受け付ける（#721） ---
 
 step5_body() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_STAGE}"; }
@@ -1091,4 +1161,189 @@ step5_body() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_STAGE}"; }
 @test "conversation reply (#721): step 5 table does not fail a declaration only because the answer link is missing" {
   ! step5_body | grep '^| ' | grep -qF '回答リンクが無い' || return 1
   step5_body | grep '^| ' | grep -F '不可' | grep -qF 'いずれの許容済み条件も満たさない'
+}
+
+# --- Requirement: issue が目的として書いた効果は issue で承認済みとして主に聞き直さない（#723） ---
+
+# 手順 3 の「issue で承認済み」の節（`#### issue で承認済み` から `#### 3-b.` の直前まで）
+issue_approved_section() { awk '/^#### issue で承認済み/{f=1} /^#### 3-b\./{f=0} f' "$DECLARATIONS"; }
+
+@test "issue approved (#723): declarations.md names the state and limits it to the 3 categories" {
+  [ "$(grep -c 'issue で承認済み' "$DECLARATIONS")" -ge 1 ]
+  sec="$(issue_approved_section)"
+  [ -n "$sec" ] || { echo "section not found"; return 1; }
+  # 手順 3 の本文（step3_body）の中に置かれている
+  step3_body | grep -q '^#### issue で承認済み'
+  echo "$sec" | grep -qF '資格情報への接触・安全ゲートの弱体化・エージェント権限の拡張の 3 分類だけ'
+}
+
+@test "issue approved (#723): the 4 outward categories are asked even if the issue states them" {
+  line="$(issue_approved_section | grep -F '外部公開面の変化・データ喪失・課金/法務・プロダクトのユーザーに及ぶ影響')"
+  echo "$line" | grep -qF 'issue に書いてあっても主に聞く' || { echo "$line"; return 1; }
+  issue_approved_section | grep -F '1 つでも' | grep -qF '宣言全体を手順6で主に聞く'
+}
+
+@test "issue approved (#723): the 3 conditions are listed" {
+  sec="$(issue_approved_section)"
+  c1="$(echo "$sec" | grep '^1\. ')"; c2="$(echo "$sec" | grep '^2\. ')"; c3="$(echo "$sec" | grep '^3\. ')"
+  echo "$c1" | grep -qF '目的' && echo "$c1" | grep -qF '引用' || { echo "c1: $c1"; return 1; }
+  for w in 'owner-reply-check.sh' '終了コード 0' '起票の承認' '`/develop <番号>`' 'lastEditedAt'; do
+    echo "$c2" | grep -qF "$w" || { echo "c2 missing: $w"; return 1; }
+  done
+  echo "$c3" | grep -qF '実装中に発覚した影響ではない' && echo "$c3" | grep -qF '`issue 記載済み`' || { echo "c3: $c3"; return 1; }
+}
+
+@test "issue approved (#723): /develop evidence checks the number boundary in command-args" {
+  line="$(issue_approved_section | grep -F '`<command-args>` の直後')"
+  echo "$line" | grep -qF '`#<番号>`' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '`</command-args>`'
+  echo "$line" | grep -qF 'MATCH:'
+}
+
+@test "issue approved (#723): the filing session is only a log whose first URL line is the create command's tool_result" {
+  sec="$(issue_approved_section)"
+  line="$(echo "$sec" | grep -F '初出行')"
+  for w in '`gh issue create`' '`gh api -X POST repos/<R>/issues`' 'tool_result' '`gh issue view`' '`/develop` の引数'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; echo "$line"; return 1; }
+  done
+  # 探し先はスクリプトと同じ式で、subagents/ の下は見ない
+  echo "$sec" | grep -F 'grep -l' | grep -F 'OWNER_REPLY_PROJECTS_DIR' | grep -qF 'subagents/'
+  echo "$sec" | grep -F '候補が 0 件' | grep -qF '手順6で主に聞く'
+}
+
+@test "issue approved (#723): slash-command lines are not used as the filing approval" {
+  issue_approved_section | grep -F '`<command-name>` を含む行' | grep -qF '使わない'
+}
+
+@test "issue approved (#723): an epic's filing approval covers children filed later in the same session only" {
+  line="$(issue_approved_section | grep -F 'エピックの起票の承認')"
+  echo "$line" | grep -qF '同じセッション' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '別のセッション'
+  echo "$line" | grep -qF '証拠にならない'
+}
+
+# --- #802（PR #801 のゲート指摘 F1）: 起票承認の返事を、返事が答えた起票の提案と issue の目的・効果に結び付ける ---
+
+# 「起票の承認」の箇条（`- **起票の承認**` から次の `当てない issue` の段落の直前まで）
+filing_approval_block() { issue_approved_section | awk '/^- \*\*起票の承認\*\*/{f=1} /^当てない issue/{f=0} f'; }
+
+@test "issue approved (#802): the last owner message is only a candidate; the answered proposal must contain the purpose and each quoted effect" {
+  blk="$(filing_approval_block)"
+  [ -n "$blk" ] || { echo "block not found"; return 1; }
+  echo "$blk" | grep -F '主の発言のうち、最後のもの' | grep -qF '候補' || { echo "$blk"; return 1; }
+  line="$(echo "$blk" | grep -F '返事が答えた起票の提案')"
+  for w in '会話から特定' 'issue の目的' '引用した各効果' '特定できない' '証拠にせず手順6で主に聞く'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; echo "$line"; return 1; }
+  done
+}
+
+@test "issue approved (#802): negative example - an OK to another proposal before the target issue was filed is not evidence" {
+  line="$(filing_approval_block | grep -F '負例')"
+  echo "$line" | grep -qF 'README の誤字修正' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '安全ゲートを撤去する issue'
+  echo "$line" | grep -qF '起票の承認の証拠にならない'
+}
+
+@test "issue approved (#802): positive example - an OK to the target proposal is evidence" {
+  line="$(filing_approval_block | grep -F '正例')"
+  echo "$line" | grep -qF '安全ゲート X を撤去する issue を起票しますか' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '引用した効果を含む'
+  echo "$line" | grep -qF '起票の承認の証拠になる'
+  ! echo "$line" | grep -qF '証拠にならない' || return 1
+}
+
+@test "issue approved (#802): an epic's child counts only within the approved proposal" {
+  line="$(issue_approved_section | grep -F 'エピックの起票の承認')"
+  echo "$line" | grep -qF '承認された提案の範囲内' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '範囲外なら証拠にせず手順6'
+}
+
+@test "issue approved (#802): pass.md step 5 rechecks the answered proposal against the issue" {
+  rc="$(step5_body | grep -F '確かめ直す' | grep -F 'issue で承認済み')"
+  for w in '返事が答えた起票の提案' '引用した各効果' '承認された提案の範囲内'; do
+    echo "$rc" | grep -qF "$w" || { echo "recheck missing: $w"; return 1; }
+  done
+}
+
+@test "issue approved (#802): the main spec states the proposal check and fixes both examples as scenarios" {
+  spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
+  req="$(awk '/^### Requirement: issue が目的として書いた効果は/{f=1; print; next} /^### Requirement:/{f=0} f' "$spec")"
+  echo "$req" | grep -F '返事が答えた起票の提案' | grep -F '引用した各効果' | grep -qF '手順 6' || { echo "proposal check missing"; return 1; }
+  echo "$req" | grep -F 'エピックの起票を承認' | grep -qF '承認された提案の範囲内'
+  echo "$req" | grep -qF '#### Scenario: 別の提案への承認のあとに起票された issue には当てない'
+  echo "$req" | grep -qF '#### Scenario: 対象の提案への承認は起票の承認の証拠になる'
+  pass_req="$(awk '/^### Requirement: 合格条件は issue で承認済みの宣言を受け付け/{f=1; print; next} /^### Requirement:/{f=0} f' "$spec")"
+  echo "$pass_req" | grep -qF '返事が答えた起票の提案' || { echo "pass requirement missing"; return 1; }
+}
+
+@test "issue approved (#723): exclusions name agent-proposed, unapproved agent issues, EPIC_DISPATCH_PARENT_EPIC and --unmanned" {
+  sec="$(issue_approved_section)"
+  echo "$sec" | grep -F '`agent-proposed`' | grep -qF '主の承認の記録が無い'
+  echo "$sec" | grep -qF '`EPIC_DISPATCH_PARENT_EPIC`'
+  echo "$sec" | grep -qF '`--unmanned`'
+  echo "$sec" | grep -F '保留や却下' | grep -qF '数えない'
+}
+
+@test "issue approved (#723): unmanned runs and paths without a post-report destination do not apply it (declarations and pass)" {
+  for f in "$DECLARATIONS" "$PASS_STAGE"; do
+    line="$(grep -F '無人運用（loop-dev-agent' "$f" | grep -F 'issue で承認済み')"
+    echo "$line" | grep -qF '主に事後報告を届ける先が無い経路' || { echo "$f: $line"; return 1; }
+    echo "$line" | grep -qF '当てない' || { echo "$f: $line"; return 1; }
+  done
+}
+
+@test "issue approved (#723): the 3 appended lines block exists and does not start with the owner-answer prefix" {
+  block="$(issue_approved_section | awk '/^```$/{f=!f; next} f')"
+  echo "$block" | grep -q '^issue で承認済み — issue #<N> の目的: 「<本文からの引用>」$'
+  echo "$block" | grep -q '^承認の証拠: <起票の承認 | /develop の打ち込み>（セッション <セッション ID> / <日時>）原文: <原文>$'
+  echo "$block" | grep -q '^真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh 終了コード 0）$'
+  [ "$(echo "$block" | wc -l | tr -d ' ')" -eq 3 ] || { echo "$block"; return 1; }
+  ! echo "$block" | grep -q '^主の回答: 許容' || return 1
+  issue_approved_section | grep -F '宣言の本文' | grep -qF '書き換えない'
+}
+
+@test "issue approved (#723): step 3 table routes an issue-approved declaration to step 4 and keeps step 6" {
+  row="$(step3_body | grep '^| \*\*主のリスク許容が必要\*\*')"
+  echo "$row" | grep -qF 'issue で承認済みなら手順 4 へ' || { echo "$row"; return 1; }
+  echo "$row" | grep -qF '手順6へ'
+}
+
+@test "issue approved (#723): the exit of declarations.md tries 3-c, then issue approved, then step 6" {
+  line="$(awk '/^## 出口/{f=1; next} /^## /{f=0} f' "$DECLARATIONS" | grep -F 'issue で承認済み')"
+  [ -n "$line" ] || { echo "no exit line"; return 1; }
+  echo "$line" | awk '{a=index($0,"3-c"); b=index($0,"issue で承認済み"); c=index($0,"手順 6"); exit !(a>0 && b>a && c>b)}' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '先に当たったほうだけ'
+}
+
+@test "issue approved (#723): step 5 table accepts it and the recheck line format is fixed" {
+  row="$(step5_body | grep '^| ' | grep -F 'issue で承認済み')"
+  echo "$row" | grep -qF '| 可 |' || { echo "$row"; return 1; }
+  body="$(step5_body)"
+  echo "$body" | grep -qF '確かめ直し: 済 — 確認者 <エージェント名> / <日時>（手順 5）'
+  echo "$body" | grep -F '`真正性確認: 済` の行は足さない' | grep -qF '前の宣言の選び方'
+  rc="$(echo "$body" | grep -F '確かめ直す' | grep -F 'issue で承認済み')"
+  for w in 'owner-reply-check.sh' '`agent-proposed`' '`lastEditedAt`' '`EPIC_DISPATCH_PARENT_EPIC`' '`--unmanned`' '事後報告を届ける先' '手順6'; do
+    echo "$rc" | grep -qF "$w" || { echo "recheck missing: $w"; return 1; }
+  done
+}
+
+@test "issue approved (#723): pass.md has the post-report and the passed return line" {
+  line="$(step5_body | grep -F '事後報告' | grep -F '1 回')"
+  echo "$line" | grep -qF '宣言コメントの URL' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '引用'
+  ret="$(awk '/^### return の書式（passed）/{f=1; next} /^### この段で/{f=0} f' "$PASS_STAGE")"
+  echo "$ret" | grep -q '^- issue で承認済み: '
+}
+
+@test "issue approved (#723): hold.md does not carry over an issue-approved declaration and states unmet conditions" {
+  grep -F 'issue で承認済み' "$HOLD" | grep -qF '引き継ぎの元にしない'
+  awk '/^## 入口/{f=1; next} /^## /{f=0} f' "$HOLD" | grep -qF 'issue で承認済み'
+  awk '/^### 6\. /{f=1} f' "$HOLD" | grep '^3\. ' | grep -qF '満たさなかった条件'
+}
+
+@test "issue approved (#723): develop (4) passed line relays the issue-approved line to the owner before CI watch" {
+  line="$(grep -F '`issue で承認済み:`' "$DEVELOP_SKILL")"
+  echo "$line" | grep -qF 'CI の見張り' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '1 回'
+  echo "$line" | grep -qF 'stages/pass.md'
 }

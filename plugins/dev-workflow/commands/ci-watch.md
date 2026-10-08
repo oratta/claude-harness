@@ -12,8 +12,9 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, Skill
 ## ファイル特定
 
 ```bash
+plugin_root="${CLAUDE_PLUGIN_ROOT}"
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT}" \
+  "${plugin_root:+$plugin_root}" \
   ~/.claude/plugins/marketplaces/*/plugins/dev-workflow \
   ~/.claude/plugins/installed/*/dev-workflow; do
   [ -n "$dir" ] && [ -f "$dir/references/ci-watch.md" ] && echo "$dir" && break
