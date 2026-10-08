@@ -3,7 +3,8 @@
 # statusline.sh — Claude Code の使用量ステータスライン
 #
 #   1行目: カレントディレクトリ / モデル / git ブランチ
-#   2行目: コンテキスト残量 / API 換算の月額ペース / このセッションの API 換算コスト
+#   2行目: コンテキスト残量 / プロンプトキャッシュのヒット率（直近のミスの原因つき） /
+#          API 換算の月額ペース / このセッションの API 換算コスト
 #   3行目: 5h ウィンドウのレートリミット
 #   4行目: 7d ウィンドウ（全体 + Fable）のレートリミット
 #
@@ -20,6 +21,7 @@
 #   STATUSLINE_CODEX_BIN   Codex CLI のパス（既定 codex）
 #   STATUSLINE_BAR_WIDTH   バーのセル数（既定 16）
 #   STATUSLINE_BAR_GLYPH   日程線の太さ。細い順に ▁ ▂ ▃ ▄（既定 ▂）
+#   STATUSLINE_PROMPT_CACHE 0 でプロンプトキャッシュのヒット率表示を無効化（既定 1）
 #   STATUSLINE_API_PACE    0 で API 換算コスト表示を無効化（既定 1）
 #   STATUSLINE_SESSION_COST 0 でセッションコスト表示を無効化（既定 1）
 #   STATUSLINE_CURRENCY    API 換算コストの通貨。USD なら為替変換なし（既定 JPY）
@@ -254,6 +256,36 @@ if [ -n "$remaining_pct" ]; then
         context_color="$GREEN"
     fi
     context_info="${context_color}Context ${remaining_int}%${RESET}"
+fi
+
+# プロンプトキャッシュのヒット率（stdin の prompt_cache だけを見る。ファイル・ネットワークには触らない）。
+# hit_ratio が 0〜1 の数値のときだけ出す。直近のミスの原因は causes の先頭を短くして添える。
+# 入力の型が想定外でも式全体は落とさず、jq 自体が失敗したら何も出さない。
+cache_info=""
+if [ "${STATUSLINE_PROMPT_CACHE:-1}" != "0" ]; then
+    cache_raw=$(printf '%s' "$input" | jq -r '
+        (.prompt_cache // null) as $p
+        | if ($p | type) == "object" and ($p.hit_ratio | type) == "number"
+             and $p.hit_ratio >= 0 and $p.hit_ratio <= 1
+          then
+            (($p.last_miss_cause // null) as $m
+             | if ($m | type) == "object" and ($m.causes | type) == "array"
+                  and ($m.causes | length) > 0 and ($m.causes[0] | type) == "string"
+                  and ($m.causes[0] | test("^[A-Za-z0-9_]+\\z"))
+               then
+                 ($m.causes[0]) as $c
+                 | ({"tools_changed": "tools", "system_prompt_changed": "system",
+                     "ttl_expired_5m": "ttl5m", "likely_server_side": "server"}[$c] // $c[0:16]) as $n
+                 | "miss:" + $n + (if ($m.causes | length) > 1 then "+" + (($m.causes | length) - 1 | tostring) else "" end)
+               else "" end) as $cause
+            | (($p.hit_ratio * 100 | round | tostring) + (if $cause != "" then " " + $cause else "" end))
+          else empty end' 2>/dev/null) || cache_raw=""
+    if [ -n "$cache_raw" ]; then
+        cache_info="${CYAN}Cache ${cache_raw%% *}%${RESET}"
+        case "$cache_raw" in
+            *" "*) cache_info="${cache_info} ${YELLOW}${cache_raw#* }${RESET}" ;;
+        esac
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -926,7 +958,7 @@ fi
 
 # Build status line
 # Line 1: directory, model, git
-# Line 2: context window, API cost, session cost
+# Line 2: context window, prompt cache, API cost, session cost
 # Line 3: 5h bar / Line 4: 7d All + Fable bars
 printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s\n" \
     "$short_pwd" \
@@ -937,7 +969,7 @@ line2=""
 if [ -n "$context_info" ]; then
     line2="$context_info"
 fi
-for seg in "$api_pace_info" "$session_cost_info"; do
+for seg in "$cache_info" "$api_pace_info" "$session_cost_info"; do
     [ -n "$seg" ] || continue
     if [ -n "$line2" ]; then
         line2="${line2}  ${DIM}│${RESET}  ${seg}"
