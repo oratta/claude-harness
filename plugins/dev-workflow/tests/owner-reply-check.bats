@@ -31,6 +31,12 @@ run_check() { run bash "$SCRIPT" "$@"; }
   [[ "$output" == *"MATCHES=1"* ]] || return 1
 }
 
+@test "owner-reply: isCompactSummary false does not exclude a human message" {
+  add '{"type":"user","isSidechain":false,"isCompactSummary":false,"origin":{"kind":"human"},"timestamp":"2026-10-07T01:00:00.000Z","message":{"role":"user","content":"許容する"}}'
+  run_check "$SID" "許容する"
+  [ "$status" -eq 0 ]
+}
+
 @test "owner-reply: /develop command args match" {
   add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"timestamp":"2026-10-07T02:00:00.000Z","message":{"role":"user","content":"<command-message>dev-workflow:develop</command-message>\n<command-name>/dev-workflow:develop</command-name>\n<command-args>721 許容する</command-args>"}}'
   run_check "$SID" "721 許容する"
@@ -106,6 +112,19 @@ run_check() { run bash "$SCRIPT" "$@"; }
 
 @test "owner-reply: isMeta line does not match" {
   add '{"type":"user","isSidechain":false,"isMeta":true,"timestamp":"2026-10-07T01:00:00.000Z","message":{"role":"user","content":"許容する"}}'
+  run_check "$SID" "許容する"
+  [ "$status" -eq 1 ]
+}
+
+# 圧縮後の要約の行（issue #756）。属性は実ログの要約の行と同じ（type user・isMeta なし・origin なし・isVisibleInTranscriptOnly true）
+@test "owner-reply: compact summary starting with 'This session is being continued' does not match" {
+  add '{"type":"user","isSidechain":false,"isCompactSummary":true,"isVisibleInTranscriptOnly":true,"timestamp":"2026-10-07T01:00:00.000Z","message":{"role":"user","content":"This session is being continued from a previous conversation that ran out of context. The user said: 許容する"}}'
+  run_check "$SID" "許容する"
+  [ "$status" -eq 1 ]
+}
+
+@test "owner-reply: compact summary starting with another prefix does not match" {
+  add '{"type":"user","isSidechain":false,"isCompactSummary":true,"isVisibleInTranscriptOnly":true,"timestamp":"2026-10-07T01:00:00.000Z","message":{"role":"user","content":"<artifact-content-authored-by-others/>\nThe user said: 許容する"}}'
   run_check "$SID" "許容する"
   [ "$status" -eq 1 ]
 }

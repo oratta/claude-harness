@@ -15,8 +15,9 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 2. このプラグインの `templates/` ディレクトリを特定する（`CLAUDE_PLUGIN_ROOT` を第一候補に、marketplace / installed 配下を探索する）:
 
    ```bash
+   plugin_root="${CLAUDE_PLUGIN_ROOT}"
    for dir in \
-     "${CLAUDE_PLUGIN_ROOT}/templates" \
+     "${plugin_root:+$plugin_root/templates}" \
      ~/.claude/plugins/marketplaces/*/plugins/casting/templates \
      ~/.claude/plugins/installed/*/casting/templates; do
      [ -n "$dir" ] && [ -f "$dir/project.md" ] && echo "$dir" && break
