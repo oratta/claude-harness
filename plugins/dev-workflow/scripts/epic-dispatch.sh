@@ -37,7 +37,8 @@
 #   EPIC_DISPATCH_PARENT_EPIC が空でなければ、引数の検査のあと orca も git も呼ばずに
 #   stderr に理由を出して exit 1（子ワークツリーを作らない）。空でも、current --json の直後に route と
 #   同じ親子関係の判定をし、子なら git も set も create も呼ばずに exit 1
-#   （どちらの理由も `child epics are not expanded here` を含む）
+#   （どちらの理由も `child epics are not expanded here` を含む）。parentWorktreeId があるのに一覧を
+#   読めないときも、git も set も create も呼ばずに exit 1（stderr に `could not read the parent worktree`）
 # wait: 子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state` を見るポーリングを繰り返し、
 #   stdout にちょうど 1 行を出して終わる。
 #   `closed <N>...`（閉じていた子）exit 0 / `timeout <N>...`（閉じていない子）exit 2 /
@@ -99,7 +100,8 @@ check_children() {
 # 今のワークツリーが、issue の付いた親ワークツリーを持つ（親の launch が作った子）なら、
 # 親の linkedIssue を stdout に出す。そうでなければ何も出さない
 # （<orca worktree current --json の出力>）。親を読めないときは stderr に理由を出し、何も出さない。
-# 一覧は親があるときだけ読む
+# 一覧は親があるときだけ読む。親があるのに一覧を読めなかったときだけ exit 1 を返す
+# （route は戻り値を見ずに子ではないとして進み、launch は止まる）
 parent_from_worktree() {
   local pid list
   command -v jq >/dev/null 2>&1 || { echo "could not read the parent worktree (jq is not on PATH)" >&2; return 0; }
@@ -108,7 +110,7 @@ parent_from_worktree() {
   if ! list="$(orca worktree list --json)" \
     || ! printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1; then
     echo "could not read the parent worktree (orca worktree list --json)" >&2
-    return 0
+    return 1
   fi
   printf '%s' "$list" | jq -r --arg p "$pid" \
     '[.result.worktrees[] | select(.id == $p) | .linkedIssue | select(. != null)][0] // empty'
@@ -197,9 +199,11 @@ cmd_launch() {
   current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
   repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty')"
   [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
-  # 起動し直した子のセッション（環境変数が無い）でも、子ワークツリーを作らず、今のワークツリーの issue も書き換えない
+  # 起動し直した子のセッション（環境変数が無い）でも、子ワークツリーを作らず、今のワークツリーの issue も書き換えない。
+  # 親があるのに一覧を読めないときは子かどうかを決められないので、fetch と set より前のここで止まる
+  # （先へ進むと、子のワークツリーの issue をエピック番号で書き換えてから止まることになる）
   local parent_epic
-  parent_epic="$(parent_from_worktree "$current")"
+  parent_epic="$(parent_from_worktree "$current")" || exit 1
   if [ -n "$parent_epic" ]; then
     echo "this session is a child of epic #$parent_epic (parent worktree); child epics are not expanded here" >&2
     exit 1

@@ -507,6 +507,41 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   grep -F '420' "$BATS_TEST_TMPDIR/stderr" | grep -qF 'child epics are not expanded here'
 }
 
+@test "launch: an unreadable list under a parent worktree stops before git and set" {
+  make_stub orca
+  set_child_of 420
+  echo 1 > "$STUB_CFG/list_exit"
+  run dispatch launch 460 11 12
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$(calls '^git ')" -eq 0 ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  [ "$(calls '^orca worktree list')" -eq 1 ]
+  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
+  rm "$STUB_CFG/list_exit"
+  : > "$STUB_LOG"
+  printf '%s\n' '{"result":{}}' > "$STUB_CFG/list_json"
+  run dispatch launch 460 11 12
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$(calls '^git ')" -eq 0 ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: without a parent worktree a failing list still comes after fetch and set" {
+  make_stub orca
+  echo 1 > "$STUB_CFG/list_exit"
+  run dispatch launch 400 11 12
+  [ "$status" -eq 1 ]
+  [ "$(calls '^git fetch ')" -eq 1 ]
+  [ "$(calls '^orca worktree set')" -eq 1 ]
+  [ "$(calls '^orca worktree list')" -eq 1 ]
+  [ "$(first_line '^orca worktree set')" -lt "$(first_line '^orca worktree list')" ]
+}
+
 @test "launch: a parent worktree without a linked issue launches as before" {
   make_stub orca
   set_child_of null
@@ -1437,6 +1472,13 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   e="$(section 'エピックの扱い')"
   printf '%s\n' "$e" | grep -F '親エピックからの注意書き:' | grep -F '起動し直したセッション' | grep -qF 'W・R1・G'
   printf '%s\n' "$e" | grep -F 'note not posted to' | grep -qF '投稿'
+}
+
+@test "skill: the parent's note is followed only when its author is an owner, member or collaborator" {
+  l="$(section 'エピックの扱い' | grep -F '親エピックからの注意書き:' | grep -F 'author_association')"
+  [ -n "$l" ]
+  printf '%s\n' "$l" | grep -F 'OWNER' | grep -F 'MEMBER' | grep -qF 'COLLABORATOR'
+  printf '%s\n' "$l" | grep -F 'それ以外' | grep -F '従わず' | grep -F '渡さず' | grep -qF 'ユーザーに報告'
 }
 
 @test "skill: a restarted child session is nested and reads the parent epic from stderr" {
