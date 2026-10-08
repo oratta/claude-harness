@@ -86,6 +86,42 @@ class Unclosed(Exception):
 # ものを含む）と、読み直して判定するバッククォートの中身の並びを返す。扱うのは演算子・行継続・
 # コメント・リダイレクト・ヒアドキュメント（区切り語の全体、<<-、引用された区切り語）・here-string・
 # 置換の中の引用。算術式・${...}・プロセス置換の中身・case の ) は扱わない（守備範囲の外）。
+#
+# 入れ子（$(...) の中、二重引用符の中の $(...)、ヒアドキュメントの本文の $(...)）を読む関数は
+# ジェネレータで書き、内側の読みを `yield` で頼む。run がそれを明示的なスタックで順に進めるので、
+# 入れ子の深さが Python の再帰の深さにならない（再帰で読むと数百〜数千重で再帰が尽き、上限を上げると
+# 古い Python が異常終了して無出力＝素通しになる）。字句読みは run(lex(...)) で呼ぶ。
+#
+# 読み終えた単純コマンドは cmds.append で渡す。judge はここに Judged を渡して、渡されたその場で判定し、
+# 単純コマンドをためない（$(...) を含む語は中身の文字列を丸ごと持つので、入れ子の全段の単純コマンドを
+# 並びにためると、深さの 2 乗のメモリを使う。20000 重の二重引用符つきの入れ子で 2GB を超えた）。
+def run(gen):
+    """ジェネレータ gen を最後まで進めて戻り値を返す。gen が yield したジェネレータは、その戻り値を
+    yield の値として返す。中で上がった例外は、呼び出した側のジェネレータへ順に伝える。"""
+    stack, value, error = [gen], None, None
+    while True:
+        try:
+            if error is not None:
+                pending_error, error = error, None
+                child = stack[-1].throw(pending_error)
+            else:
+                child = stack[-1].send(value)
+        except StopIteration as stop:
+            stack.pop()
+            if not stack:
+                return stop.value
+            value = stop.value
+            continue
+        except Exception as e:
+            stack.pop()
+            if not stack:
+                raise
+            error = e
+            continue
+        stack.append(child)
+        value = None
+
+
 def backquote(s, i):
     """s[i] の ` から、エスケープされていない次の ` までを読む。(中身, 次の位置)。閉じていなければ末尾まで。"""
     out, j, n = [], i + 1, len(s)
@@ -101,19 +137,18 @@ def backquote(s, i):
     return "".join(out), n
 
 
-def subst(s, i, subs, cmds):
+def subst(s, i, subs, cmds, memo=None):
     """s[i:i+2] の $( を、対応する ) まで読む（中の引用・入れ子・コメント・ヒアドキュメントを追う）。
     中で読んだ単純コマンドを cmds に、バッククォートの中身を subs に足し、次の位置を返す。閉じていなければ
     末尾まで。中身を文字列で返して読み直させないのは、入れ子の深さが judge の再帰の上限に数えられて、
-    深い入れ子の中の git を見失うため。"""
-    inner_cmds, inner_subs, end, _ = lex(s, i + 2, in_subst=True)
-    cmds.extend(inner_cmds)
-    subs.extend(inner_subs)
+    深い入れ子の中の git を見失うため。ジェネレータ（run で進める）。"""
+    _, _, end, _ = yield lex(s, i + 2, True, cmds, subs, memo)
     return end
 
 
-def double_quoted(s, i, subs, cmds, term='"'):
-    """二重引用符の中（term=None ならヒアドキュメントの引用されていない本文）を読む。(文字列, 次の位置)。"""
+def double_quoted(s, i, subs, cmds, term='"', memo=None):
+    """二重引用符の中（term=None ならヒアドキュメントの引用されていない本文）を読む。(文字列, 次の位置)。
+    ジェネレータ（run で進める）。"""
     out, n = [], len(s)
     while i < n:
         ch = s[i]
@@ -129,7 +164,7 @@ def double_quoted(s, i, subs, cmds, term='"'):
                 i += 2
                 continue
         if ch == "$" and s.startswith("$(", i):
-            end = subst(s, i, subs, cmds)
+            end = yield subst(s, i, subs, cmds, memo)
             out.append(s[i:end])
             i = end
             continue
@@ -147,7 +182,8 @@ def double_quoted(s, i, subs, cmds, term='"'):
 
 
 def read_heredocs(s, i, pending, subs, cmds, in_subst):
-    """改行の次の位置 i から、読み残しのヒアドキュメントの本文を読み飛ばす。本文の後ろの位置を返す。"""
+    """改行の次の位置 i から、読み残しのヒアドキュメントの本文を読み飛ばす。本文の後ろの位置を返す。
+    ジェネレータ（run で進める）。"""
     n = len(s)
     for delim, strip_tabs, quoted in pending:
         start, body_end = i, n
@@ -167,16 +203,35 @@ def read_heredocs(s, i, pending, subs, cmds, in_subst):
         else:
             i = n
         if not quoted:
-            double_quoted(s[start:body_end], 0, subs, cmds, term=None)
+            yield double_quoted(s[start:body_end], 0, subs, cmds, term=None)
     pending.clear()
     return i
 
 
-def lex(s, i=0, in_subst=False):
+def lex(s, i=0, in_subst=False, cmds=None, subs=None, memo=None):
     """(単純コマンドの並び, バッククォートの中身の並び, 終わりの位置, 閉じたか)。
     $(...) の中の単純コマンドは、同じ並びに足して返す（バッククォートの中身だけ、呼び出し側が読み直す）。
-    in_subst は $( の中で、対応する ) で止まる（閉じたかは in_subst のときだけ意味を持つ）。"""
-    cmds, cur, subs, pending = [], [], [], []
+    cmds / subs を渡すと、その並びに足す（入れ子の読みは外側の並びをそのまま使う。cmds は append を持つ
+    ものなら並びでなくてよい）。
+    in_subst は $( の中で、対応する ) で止まる（閉じたかは in_subst のときだけ意味を持つ）。
+    memo（辞書）を渡すと、閉じずに終わった $( の読みを「始まりの位置 → 末尾まで読めたか」で記録する
+    （引用符が閉じていなくて読めなかったものは False）。split_fallback が同じ位置を読み直さないために使う。
+    ジェネレータなので run(lex(...)) で呼ぶ。"""
+    start = i
+    try:
+        result = yield lex_body(s, i, in_subst, [] if cmds is None else cmds,
+                                [] if subs is None else subs, memo)
+    except Unclosed:
+        if memo is not None:
+            memo[start] = False
+        raise
+    if memo is not None and not result[3]:
+        memo[start] = True
+    return result
+
+
+def lex_body(s, i, in_subst, cmds, subs, memo):
+    cur, pending = [], []
     word, st = [], {"has": False, "quoted": False, "redirect": False, "delim": None}
     paren, n = 0, len(s)
 
@@ -224,11 +279,11 @@ def lex(s, i=0, in_subst=False):
             i = k + 1
             continue
         if ch == '"':
-            text, i = double_quoted(s, i + 1, subs, cmds)
+            text, i = yield double_quoted(s, i + 1, subs, cmds, memo=memo)
             add(text, quoted=True)
             continue
         if ch == "$" and s.startswith("$(", i):
-            end = subst(s, i, subs, cmds)
+            end = yield subst(s, i, subs, cmds, memo)
             add(s[i:end])
             i = end
             continue
@@ -248,7 +303,7 @@ def lex(s, i=0, in_subst=False):
             continue
         if ch == "\n":
             end_cmd()
-            i = read_heredocs(s, i + 1, pending, subs, cmds, in_subst) if pending else i + 1
+            i = (yield read_heredocs(s, i + 1, pending, subs, cmds, in_subst)) if pending else i + 1
             continue
         if ch in "<>" or (ch == "&" and s.startswith("&>", i)):
             # 直前に接した数字だけの語は fd（2>、2>&1）
@@ -288,14 +343,16 @@ def lex(s, i=0, in_subst=False):
     return cmds, subs, n, False
 
 
-def split_fallback(s, deep=False):
-    """字句読みで読めないとき（引用符が閉じていない、または deep=True: 置換の入れ子が深すぎる）:
-    (単純コマンドの並び, 置換の中身の並び)。
+def split_fallback(s, depth):
+    """字句読みで読めないとき（引用符が閉じていない）: (当たった種類の集合, 置換の中身の並び)。
     空白で割った字句を、演算子だけの字句と引用符の外の改行で単純コマンドに分ける。引用符は開閉を数えるだけで、
     閉じていない引用符の中の改行より後ろは読まない。置換は単一引用符の外のものを読む。閉じた $(...) は
-    字句読みで読み、閉じていない $( はその位置で単純コマンドを区切る。deep=True のときは字句読みを呼ばず、
-    単一引用符の外の $( と ( と ) をすべて区切りとして読む（止める側に倒れる読み）。"""
-    out, subs, extra, quote, i, n = [], [], [], None, 0, len(s)
+    字句読みで読み、閉じていない $( はその位置で単純コマンドを区切る。閉じていない $( でも、中の引用符が
+    閉じていて末尾まで字句読みで読めたら、読めた単純コマンドも判定に足す（bash -c / eval に渡した
+    引用つきの引数を、空白で割って失わないため）。一度読んで閉じなかった $( の入れ子は読み直さない
+    （seen。読み直すと、入れ子の数の 2 乗の時間がかかる）。"""
+    out, subs, kinds, quote, i, n = [], [], set(), None, 0, len(s)
+    seen = set()
     while i < n:
         ch = s[i]
         if quote == "'":
@@ -306,23 +363,23 @@ def split_fallback(s, deep=False):
             i += 2
             continue
         elif ch == "$" and s.startswith("$(", i):
-            closed = False
-            if not deep:
+            if i + 2 not in seen:
+                memo, inner = {}, Judged(depth)
                 try:
-                    inner_cmds, inner_subs, end, closed = lex(s, i + 2, in_subst=True)
+                    _, inner_subs, end, closed = run(lex(s, i + 2, True, inner, memo=memo))
                 except Unclosed:
-                    pass
-            if closed:
-                extra.extend(inner_cmds)
-                subs.extend(inner_subs)
-                out.append(s[i:end])
-                i = end
-                continue
+                    seen.update(p for p, read in memo.items() if not read)
+                else:
+                    kinds |= inner.kinds
+                    subs.extend(inner_subs)
+                    if closed:
+                        out.append(s[i:end])
+                        i = end
+                        continue
+                    seen.update(memo)
             out.append(" ; ")
             i += 2
             continue
-        elif deep and ch in "()":
-            ch = " ; "
         elif ch == "`":
             inner, end = backquote(s, i)
             subs.append(inner)
@@ -337,19 +394,19 @@ def split_fallback(s, deep=False):
             ch = " ; "
         out.append(ch)
         i += 1
-    cmds, cur = [], []
+    cur = []
     for t in re.split(r"\s+", "".join(out)):
         if not t:
             continue
         if set(t) <= set("();|&"):
             if cur:
-                cmds.append(cur)
+                kinds |= judge_simple(cur, depth)
             cur = []
             continue
         cur.append(t)
     if cur:
-        cmds.append(cur)
-    return extra + cmds, subs
+        kinds |= judge_simple(cur, depth)
+    return kinds, subs
 
 
 def shorts(args):
@@ -360,21 +417,39 @@ def has_short(args, letter):
     return any(letter in a[1:] for a in shorts(args))
 
 
+class Judged:
+    """字句読みが読み終えた単純コマンドを、ためずにその場で判定して、当たった種類だけを持つ。"""
+
+    def __init__(self, depth):
+        self.kinds, self.depth = set(), depth
+
+    def append(self, cmd):
+        self.kinds |= judge_simple(cmd, self.depth)
+
+
+# judge の結果の控え（(深さ, 文字列) → 当たった種類の集合）。字句読みは bash -c / eval の引数の中の
+# $(...) も同じ深さで読むので、bash -c "$(bash -c "$(...)")" のように重ねると、内側の引数ほど何度も
+# 判定に回る（控えが無いと、重ねた数の 8 乗に比例する回数になり、24 重で 20 秒かかった）。
+JUDGE_MEMO = {}
+
+
 def judge(s, depth=0):
-    kinds = set()
     if depth > 8:
-        return kinds
+        return set()
+    if (depth, s) not in JUDGE_MEMO:
+        JUDGE_MEMO[(depth, s)] = judge_uncached(s, depth)
+    return JUDGE_MEMO[(depth, s)]
+
+
+def judge_uncached(s, depth):
+    read = Judged(depth)
     try:
-        try:
-            cmds, subs, _, _ = lex(s)
-        except Unclosed:
-            cmds, subs = split_fallback(s)
-    except RecursionError:  # 置換の入れ子が深すぎて読めないときも、判定を諦めない
-        cmds, subs = split_fallback(s, deep=True)
+        _, subs, _, _ = run(lex(s, cmds=read))
+        kinds = read.kinds
+    except Unclosed:  # 途中まで読めた分の判定は使わず、粗い読みの結果だけを使う
+        kinds, subs = split_fallback(s, depth)
     for inner in subs:
         kinds |= judge(inner, depth + 1)
-    for cmd in cmds:
-        kinds |= judge_simple(cmd, depth)
     return kinds
 
 
@@ -511,11 +586,6 @@ def judge_push(longs, short_set, positional):
     return kinds
 
 
-# 字句読みは $(...) の入れ子 1 段ごとに 2〜3 段の再帰を使う。既定の上限（1000）では 300 段あまりで尽きて
-# 粗い読み（split_fallback の deep）に倒れるので、上限を上げて 3000 段あまりまで字句読みで読む。
-# 上げすぎると古い Python（3.9・3.10）が C のスタックを使い切って異常終了し、無出力＝素通しになる
-# （30000 で実際に落ちた）ので、10000 にとどめる。
-sys.setrecursionlimit(10000)
 kinds = judge(command)
 if not kinds:
     sys.exit(0)

@@ -284,6 +284,44 @@ expect_silent() {
   expect_stopped "echo ${open}eval \"git reset --hard\"${close}"
   # 深さによらず、単一引用符の中の文字列は読まない
   expect_silent "echo ${open}echo 'git reset --hard'${close}"
+  # 20000 重でも、二重引用符つきの入れ子・閉じていない入れ子・括弧で同じ（異常終了で素通しにしない）
+  local n=20000 qopen qclose popen pclose
+  open="$(printf '$(%.0s' $(seq "$n"))"
+  close="$(printf ')%.0s' $(seq "$n"))"
+  qopen="$(printf 'echo "$(%.0s' $(seq "$n"))"
+  qclose="$(printf ')"%.0s' $(seq "$n"))"
+  popen="$(printf '(%.0s' $(seq "$n"))"
+  expect_stopped "echo ${open}bash -c 'git reset --hard'${close}"
+  expect_stopped "${qopen}eval 'git reset --hard'${qclose}"
+  expect_stopped "${qopen}bash -c 'git reset --hard'"
+  expect_stopped "echo ${open}git reset --hard"
+  expect_stopped "${popen}bash -c 'git reset --hard'${close}"
+  expect_silent "${qopen}echo 'git reset --hard'${qclose}"
+}
+
+@test "shell syntax: an unclosed \$( inside an unclosed quote keeps quoted -c / eval arguments" {
+  # 字句読みに置き換える前から止めていた形。閉じていない $( の中身は、引用符が閉じていれば末尾まで字句読みで読む
+  expect_stopped 'echo "$(bash -c '"'git reset --hard'"
+  expect_stopped 'echo "$(eval "git reset --hard"'
+  expect_stopped 'echo "$(true; git reset --hard'
+  expect_stopped 'echo "$(echo "$(sh -c '"'git reset --hard'"
+  # 閉じていない $( の中でも、単一引用符の中の文字列は読まない
+  expect_silent 'echo "$(echo '"'git reset --hard'"
+}
+
+@test "shell syntax: chained bash -c / eval arguments are judged without repeating the work" {
+  # bash -c "$(bash -c "$(...)")" を重ねた形。字句読みに置き換える前から止めていた。内側の引数を重ねた数の
+  # 8 乗に比例する回数だけ判定し直すと、30 重ほどで hook の時間切れになり、素通しになる
+  local k chain_git='git reset --hard' chain_true='true' eval_git='git reset --hard'
+  for k in $(seq 40); do
+    chain_git="bash -c \"\$(${chain_git})\""
+    chain_true="bash -c \"\$(${chain_true})\""
+    eval_git="eval \"\$(${eval_git})\""
+  done
+  expect_stopped "${chain_git}"
+  expect_stopped "${eval_git}"
+  expect_stopped "${chain_true}; git reset --hard"
+  expect_silent "${chain_true}; git status"
 }
 
 # --- 引数を取るオプションの値（PR #794 ゲート一周目 F2・F11・F12） ---
