@@ -22,6 +22,7 @@ setup() {
 
 @test "every case has graders/*.md and each grader frontmatter has type" {
   for d in "$DEV"/*/ "$CAST"/*/; do
+    [ "$(basename "$d")" = results ] && continue  # 実行結果の置き場（gitignore 済み）
     [ -f "${d}prompt.md" ]
     n="$(ls "${d}"graders/*.md | wc -l | tr -d ' ')"
     [ "$n" -ge 1 ]
@@ -34,6 +35,7 @@ setup() {
 
 @test "cases with a tool_used Skill grader also have a regex or llm result grader" {
   for d in "$DEV"/*/ "$CAST"/*/; do
+    [ "$(basename "$d")" = results ] && continue
     if grep -lE '^tool: Skill' "${d}"graders/*.md >/dev/null 2>&1; then
       grep -lE '^type: (llm|regex)' "${d}"graders/*.md >/dev/null || { echo "結果 grader が無い: $d"; return 1; }
     fi
@@ -60,6 +62,7 @@ setup() {
 
 @test "casting cases inject rules via append_system_prompt and judge with llm" {
   for d in "$CAST"/*/; do
+    [ "$(basename "$d")" = results ] && continue
     grep -q '^append_system_prompt:' "${d}prompt.md"
     grep -lE '^type: llm' "${d}"graders/*.md >/dev/null
   done
