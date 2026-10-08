@@ -11,6 +11,7 @@
 **Non-Goals:**
 - `bundles` の `all` に入っていないプラグインがある件（#708）の解決。この PR は解散対象 3 つを外すところまで
 - 過去の記録（`openspec/changes/archive/`、`_longruns/`、`plugins/dev-workflow/CHANGELOG.md`、`plugins/daily-report/README.md` の版履歴）の書き換え
+- `openspec/specs/discord-plugin-retirement/spec.md`（「dev-workflow・casting・telegram の文中」の一般名詞の記述）と `openspec/specs/retirement-handoff-docs/spec.md`（過去の解散で skill-pack の convention に言及する記述）は、7 文字列に当たらない過去の解散の記録なので直さず残す
 - ユーザーへの連絡手段としての一般名詞「Telegram」を含む文の書き換え（該当があれば）
 
 ## Decisions
