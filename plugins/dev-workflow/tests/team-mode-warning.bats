@@ -63,7 +63,7 @@ assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart"
   ln -s "$(command -v bash)" "$bin/bash"
   ln -s "$(command -v tr)" "$bin/tr"
   ln -s "$(command -v cat)" "$bin/cat"
-  ! PATH="$bin" command -v python3 >/dev/null 2>&1
+  if PATH="$bin" command -v python3 >/dev/null 2>&1; then return 1; fi
   CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 PATH="$bin" run /bin/bash "$SCRIPT"
   [ "$status" -eq 0 ]
   [[ "$output" == *'"systemMessage"'* ]] || return 1
