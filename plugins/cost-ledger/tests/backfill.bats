@@ -58,6 +58,10 @@ setup() {
   SEP='|---|---|---|---|---|'
 }
 
+teardown() {  # 切り離しのテストが途中で落ちても、裏のプロセスを残さない
+  wait_for_workers || true
+}
+
 SEEN0="2026-09-01T12:00:00Z"        # 多くのテストが控えに置く「前回見た時刻」
 M="2026-09-02T00:00:00Z"            # 候補のマージ・クローズの時刻（SEEN0 より後）
 M_EPOCH=1788307200
@@ -480,6 +484,42 @@ PY
   no_python
 }
 
+@test "backfill: a ledger set only through the userConfig LEDGER_PATH still runs the backfill" {  # COST_LEDGER_PATH を外し CLAUDE_PLUGIN_OPTION_LEDGER_PATH だけを設定しても、候補に行が積まれ、控えとロックは userConfig 側の台帳の隣にできる
+  one_pr_candidate
+  unset COST_LEDGER_PATH
+  export CLAUDE_PLUGIN_OPTION_LEDGER_PATH="$LEDGER"
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ "$(posts)" -eq 1 ]
+  [ "$(body_trigger 1)" = "マージ" ]
+  [ -e "$STATE" ]
+  [ -e "$LEDGER.backfill.lock" ]
+}
+
+@test "backfill: when both ledger settings differ the userConfig one holds the state and lock" {  # 両方を別の場所に設定したら userConfig 側の隣にだけ控えとロックができ、COST_LEDGER_PATH 側には作られない
+  one_pr_candidate
+  other="$BATS_TEST_TMPDIR/other/ledger.jsonl"
+  export COST_LEDGER_PATH="$other"
+  export CLAUDE_PLUGIN_OPTION_LEDGER_PATH="$LEDGER"
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ "$(posts)" -eq 1 ]
+  [ -e "$STATE" ]
+  [ -e "$LEDGER.backfill.lock" ]
+  [ ! -e "$other.backfill.json" ]
+  [ ! -e "$other.backfill.lock" ]
+}
+
+@test "backfill: an empty userConfig LEDGER_PATH falls back to COST_LEDGER_PATH" {  # CLAUDE_PLUGIN_OPTION_LEDGER_PATH が空文字なら COST_LEDGER_PATH を使う
+  one_pr_candidate
+  export CLAUDE_PLUGIN_OPTION_LEDGER_PATH=""
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ "$(posts)" -eq 1 ]
+  [ -e "$STATE" ]
+}
+
 @test "backfill: a ledger inside the plugin's own tree is refused" {  # 台帳がスクリプトを含むディレクトリの配下を指していれば、gh を呼ばず控えも書かない
   set_list "pr,300,$(iso_ago 3600)"
   export COST_LEDGER_PATH="$WORK/ledger.jsonl"
@@ -508,6 +548,7 @@ PY
   export GH_HOST=GitHub.com
   run_backfill
   [ "$(list_calls)" -eq 1 ]
+  [ -z "$(grep -vx -- '-' "$GH_LOG.env")" ] || return 1   # 引き継いだ GH_HOST は gh に渡さない
 }
 
 @test "backfill: source clear and compact do nothing" {  # 同じセッションの続きなので、直接流されても gh を呼ばず控えも作らない
@@ -740,7 +781,7 @@ PY
 @test "backfill: one run handles at most 20 candidates and the rest go to the next run" {  # 出来事の時刻がすべて違う 25 件。既存コメントの取得は 20 件分で、seen_until は 20 件目の時刻。もう一度流すと残りの 5 件
   set_seen "$SEEN0"
   specs=()
-  for i in $(seq 1 25); do specs+=("issue,$((100 + i)),$(printf '2026-09-02T00:00:%02dZ' "$i"),2026-09-02T01:00:00Z"); done
+  for i in $(seq 25 -1 1); do specs+=("issue,$((100 + i)),$(printf '2026-09-02T00:00:%02dZ' "$i"),2026-09-02T01:00:00Z"); done
   set_list "${specs[@]}"
   run_backfill
   [ "$(comment_reads)" -eq 20 ]
@@ -791,11 +832,48 @@ PY
   [ "$(seen)" = "2026-10-07T02:00:05Z" ]
 }
 
-@test "backfill: an empty list leaves seen_until as it was" {  # 一覧が 0 件なら変えない
+@test "backfill: an empty list leaves seen_until as it was" {  # 一覧が 0 件で控えに値があれば変えない
   set_seen "2026-10-07T01:00:00Z"
   cp "$STATE" "$WORK/state.before"
   run_backfill
   cmp "$STATE" "$WORK/state.before"
+}
+
+@test "backfill: an empty list with no stored value writes this run's since" {  # 控えが無く一覧が 0 件なら、実行後の seen_until は一覧の since と同じ。gh は一覧の 1 回だけ
+  [ ! -e "$STATE" ]
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ "$(gh_calls)" -eq 1 ]
+  since="$(sed -n 's/.*since=\([^&]*\).*/\1/p' "$GH_LOG.list")"
+  [ -n "$since" ]
+  [ "$(seen)" = "$since" ]
+}
+
+@test "backfill: empty lists in a row do not slide the 24 hour window" {  # 一覧が空の回が続いても since は 1 回目と同じで、その間にマージされた PR #300 は 2 回目で候補になる
+  log_feat_a
+  run_backfill
+  first="$(seen)"
+  recent="$(iso_ago 3600)"
+  set_list "pr,300,$recent"
+  run_backfill
+  second="$(sed -n 's/.*since=\([^&]*\).*/\1/p' "$GH_LOG.list" | tail -n 1)"   # 一覧の問い合わせは回ごとに 1 行足される
+  [ "$second" = "$first" ]
+  [ "$(posts)" -eq 1 ]
+}
+
+@test "backfill: an empty list with a broken state file rewrites it as this run's since" {  # 壊れた控えで一覧が 0 件なら、控えは読める形になり seen_until は一覧の since
+  printf '%s' 'not json' > "$STATE"
+  run_backfill
+  [ "$status" -eq 0 ]
+  since="$(sed -n 's/.*since=\([^&]*\).*/\1/p' "$GH_LOG.list")"
+  [ "$(seen)" = "$since" ]
+}
+
+@test "backfill: a failed list with no stored value writes no state" {  # 控えが無く一覧の取得が失敗したら控えは作られない
+  export FAKE_LIST_FAIL=1
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ ! -e "$STATE" ]
 }
 
 @test "backfill: seen_until never moves backwards" {  # 控えの値より古い updated_at しか返らない一覧では値が変わらない
@@ -813,6 +891,27 @@ PY
   [ "$status" -eq 0 ]
   [ "$(posts)" -eq 1 ]
   [ ! -e "$FIX/comments.300.9.json" ]
+  [ "$(seen)" = "2026-09-02T00:00:09Z" ]
+}
+
+@test "backfill: a failed comment read for one candidate does not hold seen_until back" {  # 既存コメントの取得だけが失敗しても、書き込みはせず、seen_until は一覧の更新時刻の最大値まで進む
+  one_pr_candidate
+  set_list "pr,300,$M,2026-09-02T00:00:09Z"
+  export FAKE_COMMENTS_FAIL=1
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ "$(posts)" -eq 0 ]
+  [ "$(seen)" = "2026-09-02T00:00:09Z" ]
+}
+
+@test "backfill: a failed rewrite of an existing comment does not hold seen_until back" {  # 積み先のコメントの書き換え（PATCH）だけが失敗しても、seen_until は一覧の更新時刻の最大値まで進む
+  one_pr_candidate
+  seed_comment 300 "PR コメント" $((B + 1800))
+  set_list "pr,300,$M,2026-09-02T00:00:09Z"
+  export FAKE_PATCH_FAIL=1
+  run_backfill
+  [ "$status" -eq 0 ]
+  grep -qF -- "-X PATCH" "$GH_LOG"
   [ "$(seen)" = "2026-09-02T00:00:09Z" ]
 }
 
@@ -914,7 +1013,7 @@ PY
   grep -qE -- "^args=timeline --issue 12 --trigger issue クローズ --at $M_EPOCH\.000 --closing-pr 300:feat/a --repo $CWD --target-repo acme/cwd-repo --backfill\$" "$COST_LOG"
   [ "$(body_nrows)" -eq 2 ]
   [ "$(body_trigger 1)" = "issue クローズ" ]
-  [[ "$(body_trigger 2)" == "合計（"* ]]
+  [[ "$(body_trigger 2)" == "合計（"* ]] || return 1
   ! grep -qE "repos/acme/cwd-repo/issues/12( |\$)" "$GH_LOG" || return 1   # 対象の確認の問い合わせを足さない
 }
 
@@ -1160,7 +1259,7 @@ MERGE=(--pr 300 --branch feat/a --trigger マージ)
   tl --issue 13 --repo "$CWD" --trigger "issue クローズ" --closing-pr 300:feat/a --at "$T" --backfill < "$IN" > "$OUT"
   [ "$(nrows "$OUT")" -eq 3 ]
   [ "$(cell "$OUT" 2 2)" = "issue クローズ" ]
-  [[ "$(cell "$OUT" 3 2)" == "合計（"* ]]
+  [[ "$(cell "$OUT" 3 2)" == "合計（"* ]] || return 1
 }
 
 @test "timeline --backfill: zero everywhere is not stacked for an issue either" {  # 区間も閉じた PR の分も 0 なら、既存の本文があっても終了コード 3
