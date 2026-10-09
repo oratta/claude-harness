@@ -13,14 +13,16 @@ setup() {
 
 # payload <command> [permission_mode] — Bash の payload を JSON で出力する。
 # permission_mode に "-" を渡すとキー自体を省く。
+# コマンド文字列は長くなりうる（深い入れ子で数十万字）。Linux は引数 1 つの長さに上限（128 KiB）があるので、
+# 引数や環境変数ではなく、シェル組み込みの printf から標準入力で渡す。
 payload() {
-  python3 -c '
+  printf '%s' "$1" | python3 -c '
 import json, sys
-cmd, mode = sys.argv[1], sys.argv[2]
+cmd, mode = sys.stdin.read(), sys.argv[1]
 p = {"tool_name": "Bash", "tool_input": {"command": cmd}, "hook_event_name": "PreToolUse"}
 if mode != "-":
     p["permission_mode"] = mode
-print(json.dumps(p))' "$1" "${2:-default}"
+print(json.dumps(p))' "${2:-default}"
 }
 
 # call <command> [permission_mode]
@@ -377,13 +379,14 @@ EOF
 ${deep}
 )\""
   done
-  [ "$(DEV_WORKFLOW_GIT_GUARD_DEEP="$deep" python3 - "$SCRIPT" <<'PY'
-import json, os, subprocess, sys
+  # 深い入れ子の文字列は引数にも環境変数にも乗せず、ファイル経由で渡す（Linux の引数 1 つの上限 128 KiB を避ける）
+  printf '%s' "$deep" >|"${BATS_TEST_TMPDIR}/deep.txt"
+  [ "$(python3 - "$SCRIPT" "${BATS_TEST_TMPDIR}/deep.txt" <<'PY'
+import json, subprocess, sys
 p = json.dumps({"tool_name": "Bash", "permission_mode": "default",
-                "tool_input": {"command": os.environ["DEV_WORKFLOW_GIT_GUARD_DEEP"]}})
-env = {k: v for k, v in os.environ.items() if k != "DEV_WORKFLOW_GIT_GUARD_DEEP"}
+                "tool_input": {"command": open(sys.argv[2]).read()}})
 try:
-    r = subprocess.run([sys.argv[1]], input=p, capture_output=True, text=True, timeout=10, env=env)
+    r = subprocess.run([sys.argv[1]], input=p, capture_output=True, text=True, timeout=10)
     o = json.loads(r.stdout)["hookSpecificOutput"]
     print(o["permissionDecision"], "判定しきれなかった" in o["permissionDecisionReason"])
 except Exception as e:
