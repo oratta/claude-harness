@@ -12,7 +12,7 @@
 set -uo pipefail
 
 ROOT="${CLAUDE_PLUGIN_ROOT:-}"
-TEMPLATE="${ROOT}/templates/escalation-tripwires.md"
+TEMPLATE="${ROOT:+${ROOT}/templates/escalation-tripwires.md}"
 SCOPE="${TRIPWIRES_SCOPE:-}"
 [ "$SCOPE" = "subagent-budget" ] || SCOPE="session"
 
@@ -20,6 +20,9 @@ SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
 MEMORY_NOTICE=""
 
 if [ "$SCOPE" = "session" ]; then
+  # CLAUDE_PLUGIN_ROOT が空のときは、テンプレートが無いときと同じく何も出さない。空のまま進むと
+  # "${ROOT}/templates/…" と "${ROOT}/scripts/…" がファイルシステムのルート直下を指す（#847）。
+  [ -n "$ROOT" ] || exit 0
   # テンプレートが無ければ従来どおり fail-soft（残量ブロックも出さない）。
   [ -f "$TEMPLATE" ] || exit 0
 
@@ -34,7 +37,7 @@ fi
 # 導出は active スロットの実効値（セッション記録と snapshot を突き合わせた値）から行う。
 # 規則の実装は usage_view.py の 1 か所（正本: openspec/specs/usage-session-records）。
 TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" MEMORY_NOTICE="$MEMORY_NOTICE" SCOPE="$SCOPE" \
-  USAGE_VIEW_DIR="${ROOT}/scripts" python3 <<'PY'
+  USAGE_VIEW_DIR="${ROOT:+${ROOT}/scripts}" python3 -I <<'PY'
 import json, os, re, sys, time
 
 SCOPE = os.environ.get("SCOPE", "session")
@@ -57,6 +60,9 @@ now = int(now) if (now and now.lstrip("-").isdigit()) else int(time.time())
 # --- active スロットの実効値（fail-open: 読めなければデータ無しとして既定に倒す） ---
 slot = {}
 try:
+    if not os.environ["USAGE_VIEW_DIR"]:
+        # CLAUDE_PLUGIN_ROOT が空。空文字列を検索パスに入れるとカレントディレクトリを指すので読まない（#847）
+        raise RuntimeError("no plugin root")
     sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
     import usage_view
     view = usage_view.build_view(snapshot_path=os.environ["SNAPSHOT"], now=now)

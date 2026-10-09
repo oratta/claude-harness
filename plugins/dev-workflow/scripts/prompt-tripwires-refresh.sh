@@ -78,7 +78,7 @@ SESSION_HOOK="${ROOT}/scripts/session-tripwires.sh"
 BODY="$("$SESSION_HOOK" 2>/dev/null || true)"
 [ -n "$BODY" ] || exit 0
 
-BODY="$BODY" PREV="$PREV" ROOT="$ROOT" python3 <<'PY'
+BODY="$BODY" PREV="$PREV" ROOT="$ROOT" python3 -I <<'PY'
 import json, os
 
 # パスは長いので末尾のディレクトリ名（キャッシュの版名）だけ見せる。旧方式の版番号はそのまま出る。

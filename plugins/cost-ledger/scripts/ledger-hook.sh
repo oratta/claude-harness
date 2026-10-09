@@ -13,5 +13,7 @@ COST_LEDGER_PATH="${CLAUDE_PLUGIN_OPTION_LEDGER_PATH:-${COST_LEDGER_PATH:-}}"
 [ -n "$COST_LEDGER_PATH" ] || exit 0
 export COST_LEDGER_PATH
 command -v python3 >/dev/null 2>&1 || exit 0
-python3 "$(dirname "$0")/cost_ledger.py" ledger-sync --quiet </dev/null >/dev/null 2>&1
+# -E -s で起動し、PYTHON* の環境変数（PYTHONPATH など）とユーザー site を検索パスに使わない（-I にしないのは、
+# cost_ledger.py を置いたディレクトリを検索パスに残すため。backfill.sh・gate-report.sh と呼び方をそろえる。#847）。
+python3 -E -s "$(dirname "$0")/cost_ledger.py" ledger-sync --quiet </dev/null >/dev/null 2>&1
 exit 0
