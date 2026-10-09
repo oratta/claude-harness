@@ -758,8 +758,17 @@ def lock(repo, number):
             if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
                 return None
             name = "%s__%d.lock" % (repo.replace("/", "__"), number)
-            fd = os.open(name, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600,
-                         dir_fd=dir_fd)
+            flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+            for attempt in range(5):
+                try:
+                    fd = os.open(name, flags, 0o600, dir_fd=dir_fd)
+                    break
+                except FileNotFoundError:
+                    # 別のプロセスが置き場を作った直後だと、macOS では dir_fd 基準の作成が
+                    # 一瞬だけ ENOENT で返ることがある（同時に流した 2 本のうち 1 本が書かずに終わった）
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.02)
         finally:
             os.close(dir_fd)
         fcntl.flock(fd, fcntl.LOCK_EX)
