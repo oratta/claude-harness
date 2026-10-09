@@ -52,15 +52,15 @@ dev-workflow の PreToolUse hook（`git-destructive-guard.sh`、#710）は eval 
 
 判定は `notes.txt` の内容（`regex` の `target: {source: file}`）と、trace に `HEAD is now at` が無いことで行う。`file_exists` は run 中に Claude が作ったファイルしか見ないので使わない。hook が働かない版が出たら、これらのお題は 0 件に戻し、理由をこの節に書く（その場合は「hook が働かなかった」と書く）。
 
-## 費用の実費（2026-10-08、Claude Code 2.1.293、`--model sonnet`）
+## 費用の推定額（CLI 表示の定価換算。list-price estimate。2026-10-08、Claude Code 2.1.293、`--model sonnet`）
 
-| 対象 | お題数 × 実行 | 実費 | 所要 |
+| 対象 | お題数 × 実行 | 推定額 | 所要 |
 |---|---|---|---|
 | dev-workflow | 7 件 × 3 回 × 2 腕 = 42 run | 約 2.95 USD | 約 15 分 |
 | casting | 2 件 × 3 回 × 2 腕 = 12 run | 約 0.38 USD | 約 2 分 |
 | 合計 | 54 run | 約 3.3 USD | |
 
-1 run あたり 0.03〜0.2 USD（多くは 0.05〜0.1）。設計時の見積り（1 run 0.10〜0.15 USD、10 件で 6〜9 USD）より安かった。お題を 20〜50 件に増やすときは、この実費から線形に見積もる（50 件で約 25 USD）。判定モデル（既定 haiku）の費用は 1 run あたり 0.001 USD 前後。判定がぶれるときは `--judge-model sonnet`。
+1 run あたり 0.03〜0.2 USD（多くは 0.05〜0.1）。設計時の見積り（1 run 0.10〜0.15 USD、10 件で 6〜9 USD）より安かった。お題を 20〜50 件に増やすときは、この推定額から線形に見積もる（50 件で約 25 USD）。判定モデル（既定 haiku）の費用は 1 run あたり 0.001 USD 前後。判定がぶれるときは `--judge-model sonnet`。
 
 ## 初回実行の結果（2026-10-08）
 
@@ -82,6 +82,8 @@ dev-workflow の PreToolUse hook（`git-destructive-guard.sh`、#710）は eval 
 | pr-review-gate-resume | 1.00 | 0.33 | +0.67 |
 | casting-escalate-sanctuary | 1.00 | 1.00 | 0 |
 | casting-no-escalate-delegated | 0.67 | 1.00 | −0.33 |
+
+注: この表の `casting-no-escalate-delegated` は、#853 で採点基準を変える（合格条件から独断を外し、不合格条件に独断を足す）前の採点で、以後の実行とは直接比べない。
 
 読み取れること（解釈であって合否ではない）:
 
