@@ -3,7 +3,8 @@
 # statusline.sh — Claude Code の使用量ステータスライン
 #
 #   1行目: カレントディレクトリ / モデル / git ブランチ
-#   2行目: コンテキスト残量 / API 換算の月額ペース / このセッションの API 換算コスト
+#   2行目: コンテキスト残量 / プロンプトキャッシュのヒット率（直近のミスの原因つき） /
+#          API 換算の月額ペース / このセッションの API 換算コスト
 #   3行目: 5h ウィンドウのレートリミット
 #   4行目: 7d ウィンドウ（全体 + Fable）のレートリミット
 #
@@ -20,6 +21,7 @@
 #   STATUSLINE_CODEX_BIN   Codex CLI のパス（既定 codex）
 #   STATUSLINE_BAR_WIDTH   バーのセル数（既定 16）
 #   STATUSLINE_BAR_GLYPH   日程線の太さ。細い順に ▁ ▂ ▃ ▄（既定 ▂）
+#   STATUSLINE_PROMPT_CACHE 0 でプロンプトキャッシュのヒット率表示を無効化（既定 1）
 #   STATUSLINE_API_PACE    0 で API 換算コスト表示を無効化（既定 1）
 #   STATUSLINE_SESSION_COST 0 でセッションコスト表示を無効化（既定 1）
 #   STATUSLINE_CURRENCY    API 換算コストの通貨。USD なら為替変換なし（既定 JPY）
@@ -163,7 +165,7 @@ fi
 sessions_dir="${USAGE_SESSIONS_DIR:-$CONFIG_DIR/.usage-sessions}"
 # observed_at は「そのセッションが値を新しく受け取った時刻」（#643）。Claude Code は API 応答以外
 # （モード切り替え・キャッシュ期限切れ等）でも描き直し、そのときの rate_limits は前に受け取った値の
-# ままなので、セッションごとに前回書いた値の署名を .sessions/<session_id の sha256 先頭 16 桁> に
+# ままなので、セッションごとに前回書いた値の署名を .sessions/<session_id を JSON 文字列として引用符付きのまま sha256 した先頭 16 桁> に
 # 覚え、同じなら書かない。記録ファイルの中身とは比べない（他セッションが上書きした新しい値を、
 # 止まっていたセッションの古い値で潰さないため。.rate-limit-snapshot の obs_sig と同じ考え方）。
 # session_id が無い・ハッシュが取れないときは覚える先が無いので毎回書く。
@@ -254,6 +256,36 @@ if [ -n "$remaining_pct" ]; then
         context_color="$GREEN"
     fi
     context_info="${context_color}Context ${remaining_int}%${RESET}"
+fi
+
+# プロンプトキャッシュのヒット率（stdin の prompt_cache だけを見る。ファイル・ネットワークには触らない）。
+# hit_ratio が 0〜1 の数値のときだけ出す。直近のミスの原因は causes の先頭を短くして添える。
+# 入力の型が想定外でも式全体は落とさず、jq 自体が失敗したら何も出さない。
+cache_info=""
+if [ "${STATUSLINE_PROMPT_CACHE:-1}" != "0" ]; then
+    cache_raw=$(printf '%s' "$input" | jq -r '
+        (.prompt_cache // null) as $p
+        | if ($p | type) == "object" and ($p.hit_ratio | type) == "number"
+             and $p.hit_ratio >= 0 and $p.hit_ratio <= 1
+          then
+            (($p.last_miss_cause // null) as $m
+             | if ($m | type) == "object" and ($m.causes | type) == "array"
+                  and ($m.causes | length) > 0 and ($m.causes[0] | type) == "string"
+                  and ($m.causes[0] | test("^[A-Za-z0-9_]+\\z"))
+               then
+                 ($m.causes[0]) as $c
+                 | ({"tools_changed": "tools", "system_prompt_changed": "system",
+                     "ttl_expired_5m": "ttl5m", "likely_server_side": "server"}[$c] // $c[0:16]) as $n
+                 | "miss:" + $n + (if ($m.causes | length) > 1 then "+" + (($m.causes | length) - 1 | tostring) else "" end)
+               else "" end) as $cause
+            | (($p.hit_ratio * 100 | round | tostring) + (if $cause != "" then " " + $cause else "" end))
+          else empty end' 2>/dev/null) || cache_raw=""
+    if [ -n "$cache_raw" ]; then
+        cache_info="${CYAN}Cache ${cache_raw%% *}%${RESET}"
+        case "$cache_raw" in
+            *" "*) cache_info="${cache_info} ${YELLOW}${cache_raw#* }${RESET}" ;;
+        esac
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -858,6 +890,53 @@ if [ "${STATUSLINE_API_PACE:-1}" != "0" ]; then
     fi
 fi
 
+# 本体のセッションコストをセッションごとに書き残す（正本: openspec/specs/session-cost-record）。
+# 読み手は cost-ledger で、自前の単価表で計算した額と比べて単価表のずれを見つける。
+# 記録は <設定ディレクトリ>/.session-cost/<session_id> に 1 行 `1 <t0> <v0> <t1> <v1>`
+# （区間の最初の観測時刻と値、最後に値が変わった観測時刻と値）。値が下がったら区間を始め直す。
+# 値が前回と同じ描画は組み込みの read 1 回だけで終える（外部コマンドを起動しない）。
+# 表示の設定（STATUSLINE_SESSION_COST）には左右されない。どの失敗でも出力を変えない。
+_sc_sid="${session_id#\"}"
+_sc_sid="${_sc_sid%\"}"
+if [[ "$_sc_sid" =~ ^[A-Za-z0-9_-]{1,128}$ ]] \
+    && [[ "$session_cost_usd" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]]; then
+    _sc_dir="$CONFIG_DIR/.session-cost"
+    _sc_file="$_sc_dir/$_sc_sid"
+    _sc_ver="" _sc_t0="" _sc_v0="" _sc_t1="" _sc_v1="" _sc_rest=""
+    _sc_new=""
+    if [ -f "$_sc_file" ]; then
+        { read -r _sc_ver _sc_t0 _sc_v0 _sc_t1 _sc_v1 _sc_rest < "$_sc_file"; } 2>/dev/null
+    else
+        _sc_new=1
+    fi
+    _sc_line=""
+    if [ "$_sc_ver" = "1" ] && [ -z "$_sc_rest" ] \
+        && [[ "$_sc_t0" =~ ^[0-9]+$ ]] && [[ "$_sc_t1" =~ ^[0-9]+$ ]] \
+        && [[ "$_sc_v0" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]] \
+        && [[ "$_sc_v1" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]]; then
+        # 文字列の一致は速い経路。一致しないときだけ awk を 1 回起動して数として比べる
+        if [ "$_sc_v1" != "$session_cost_usd" ]; then
+            case "$(LC_ALL=C awk -v a="$session_cost_usd" -v b="$_sc_v1" \
+                'BEGIN { if (a + 0 == b + 0) print "eq"; else if (a + 0 < b + 0) print "lt"; else print "gt" }' 2>/dev/null)" in
+                gt) _sc_line="1 $_sc_t0 $_sc_v0 $now $session_cost_usd" ;;
+                lt) _sc_line="1 $now $session_cost_usd $now $session_cost_usd" ;;
+            esac
+        fi
+    else
+        _sc_line="1 $now $session_cost_usd $now $session_cost_usd"
+    fi
+    if [ -n "$_sc_line" ] && mkdir -p "$_sc_dir" 2>/dev/null; then
+        # 一時ファイルに書いてから mv で置き換える（読み手に書きかけを見せない）。失敗は無視する
+        _sc_tmp="$(mktemp "$_sc_dir/.tmp.XXXXXX" 2>/dev/null)"
+        if [ -n "$_sc_tmp" ]; then
+            { printf '%s\n' "$_sc_line" > "$_sc_tmp" && mv -f "$_sc_tmp" "$_sc_file"; } 2>/dev/null \
+                || rm -f "$_sc_tmp" 2>/dev/null
+        fi
+        # 400 日より古い記録は、新しい記録ファイルを作る描画でだけ消す（1 セッションに 1 回）
+        [ -n "$_sc_new" ] && find "$_sc_dir" -type f -mtime +400 -delete 2>/dev/null
+    fi
+fi
+
 # このセッションの API 換算コスト（メイン + このセッションが立ち上げたサブエージェントの合算）。
 # Claude Code が stdin に渡す cost.total_cost_usd をそのまま使う（ドキュメント上「セッション内の
 # すべての API 呼び出し」の推定値で、定価ベース。/clear で 0 に戻る）。30 日コストは ccusage が
@@ -879,7 +958,7 @@ fi
 
 # Build status line
 # Line 1: directory, model, git
-# Line 2: context window, API cost, session cost
+# Line 2: context window, prompt cache, API cost, session cost
 # Line 3: 5h bar / Line 4: 7d All + Fable bars
 printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s\n" \
     "$short_pwd" \
@@ -890,7 +969,7 @@ line2=""
 if [ -n "$context_info" ]; then
     line2="$context_info"
 fi
-for seg in "$api_pace_info" "$session_cost_info"; do
+for seg in "$cache_info" "$api_pace_info" "$session_cost_info"; do
     [ -n "$seg" ] || continue
     if [ -n "$line2" ]; then
         line2="${line2}  ${DIM}│${RESET}  ${seg}"
