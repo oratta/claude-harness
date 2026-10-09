@@ -114,4 +114,3 @@ owner-reply-check.sh は、会話ログの行のうち次のすべてを満た�
 
 - **WHEN** 原文を含むのが、`isCompactSummary: false` で他の条件をすべて満たす `type: "user"` の行
 - **THEN** exit 0 を返す
-
