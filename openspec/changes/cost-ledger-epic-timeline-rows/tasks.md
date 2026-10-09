@@ -31,5 +31,5 @@
 
 ## 6. 実測と仕上げ
 
-- [ ] 6.1 変更の後の `gh` の回数と hook 1 回の所要時間を、1.1 と同じ手順で取り、変更の前後の表を PR 本文に書く（子なし・子 1 件・子あり、コメントとクローズ）。同期の部分の所要時間（セッションを止める分）も書く
-- [ ] 6.2 `bats plugins/cost-ledger/tests` と `bats tests/injection-budget.bats` を流し、通ることを確かめる。常時注入（`rules/`・`CLAUDE.md`・`description`）は増やしていないことを確認する
+- [x] 6.1 変更の後の `gh` の回数と hook 1 回の所要時間を、1.1 と同じ手順で取り、変更の前後の表を PR 本文に書く（子なし・子 1 件・子あり、コメントとクローズ）。同期の部分の所要時間（セッションを止める分）も書く
+- [x] 6.2 `bats plugins/cost-ledger/tests` と `bats tests/injection-budget.bats` を流し、通ることを確かめる。常時注入（`rules/`・`CLAUDE.md`・`description`）は増やしていないことを確認する
