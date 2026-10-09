@@ -15,7 +15,7 @@ IFS= read -r PLUGIN_ROOT <<'COST_LEDGER_PLUGIN_ROOT'
 ${CLAUDE_PLUGIN_ROOT}
 COST_LEDGER_PLUGIN_ROOT
 case "$PLUGIN_ROOT" in '$'*) PLUGIN_ROOT= ;; esac
-CL_NG=; if [ -n "${ZSH_VERSION:-}" ] && [ ! -o nullglob ]; then setopt nullglob; CL_NG=1; fi
+CL_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; CL_NG=1; fi
 for dir in \
   "${PLUGIN_ROOT:+$PLUGIN_ROOT/scripts}" \
   ~/.claude/plugins/marketplaces/*/plugins/cost-ledger/scripts \
