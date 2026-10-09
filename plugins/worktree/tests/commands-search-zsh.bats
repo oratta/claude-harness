@@ -34,9 +34,10 @@ for rel in docs.replace("\\n", "\n").split("\n"):
         block = textwrap.dedent(block)
         inst = re.search(r"~/\.claude/plugins/installed/\*/([^\s;\\]+)", block).group(1)
         mark = re.search(r'-f "\$dir/([^"]+)"', block)
+        rootm = re.search(r'"\$\{(?:plugin_root:\+\$plugin_root|CLAUDE_PLUGIN_ROOT:-)([^"}]*)\}"', block)
         n += 1
         open("%s/block-%d.sh" % (out, n), "w", encoding="utf-8").write(block)
-        open("%s/block-%d.meta" % (out, n), "w", encoding="utf-8").write(inst + "\n" + (mark.group(1) if mark else "") + "\n")
+        open("%s/block-%d.meta" % (out, n), "w", encoding="utf-8").write(inst + "\n" + (mark.group(1) if mark else "") + "\n" + ("1" if rootm else "0") + "\n" + (rootm.group(1) if rootm else "") + "\n")
     if n == before:
         print("no search block: " + rel)
         sys.exit(1)
@@ -132,4 +133,28 @@ check_shell() {
     [ "$status" -eq 0 ] || { echo "block-$i: status $status: $output"; return 1; }
     [[ "$output" == "1" || "$output" == *$'\n1' ]] || { echo "block-$i: $output"; return 1; }
   done
+}
+
+@test "wt cmds zsh: a given plugin root is chosen when the later globs match nothing" {  # ルートが有効で glob が当たらない（#938 の再現）
+  need_zsh
+  local n i mark sub root z b hit=0
+  n="$(extract_blocks)" || { echo "$n"; return 1; }
+  for i in $(seq 1 "$n"); do
+    [ "$(sed -n 3p "$BATS_TEST_TMPDIR/block-$i.meta")" = 1 ] || continue
+    hit=$((hit + 1))
+    mark="$(sed -n 2p "$BATS_TEST_TMPDIR/block-$i.meta")"
+    sub="$(sed -n 4p "$BATS_TEST_TMPDIR/block-$i.meta")"
+    root="$BATS_TEST_TMPDIR/root-$i"
+    mkdir -p "$root$sub"
+    if [ -n "$mark" ]; then mkdir -p "$(dirname "$root$sub/$mark")"; : > "$root$sub/$mark"; fi
+    HOME="$HOME_DIR" run env CLAUDE_PLUGIN_ROOT="$root" zsh -f "$BATS_TEST_TMPDIR/block-$i.sh"
+    [ "$status" -eq 0 ] || { echo "block-$i zsh: status $status: $output"; return 1; }
+    z="$output"
+    HOME="$HOME_DIR" run env CLAUDE_PLUGIN_ROOT="$root" /bin/bash "$BATS_TEST_TMPDIR/block-$i.sh"
+    [ "$status" -eq 0 ] || { echo "block-$i bash: status $status: $output"; return 1; }
+    b="$output"
+    [[ "$z" == "$root$sub"* ]] || { echo "block-$i: ルート側が選ばれていない: $z"; return 1; }
+    [ "$z" = "$b" ] || { echo "block-$i: zsh=$z bash=$b"; return 1; }
+  done
+  [ "$hit" -ge 1 ] || { echo "ルートを受けるブロックが無い"; return 1; }
 }
