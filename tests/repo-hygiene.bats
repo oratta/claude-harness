@@ -30,9 +30,11 @@ setup() {
 
   # 実在しないパスでよい（check-ignore は ignore ルールだけを見る）。
   # ディレクトリ形（__pycache__/）と拡張子形（*.pyc）の両方を確認する。
-  run git check-ignore -q tests/lib/__pycache__/scan-multibyte-expansion.cpython-311.pyc
+  run git check-ignore -v tests/lib/__pycache__/scan-multibyte-expansion.cpython-311.pyc
   [ "$status" -eq 0 ]
+  [[ "$output" == .gitignore:* ]] || return 1
 
-  run git check-ignore -q scripts/anywhere.pyc
+  run git check-ignore -v scripts/anywhere.pyc
   [ "$status" -eq 0 ]
+  [[ "$output" == .gitignore:* ]] || return 1
 }
