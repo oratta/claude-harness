@@ -11,12 +11,14 @@ setup() {
 
 # cost.md の bash ブロックを取り出し、置換を模擬して（ルートは未置換のまま）、台帳は未設定にして書き出す。
 # 末尾の python3 起動は偽のスクリプトの出力に差し替えるため、CL を表示する行にする。
+# $1 = 置換済みのルート（省略時は未置換のまま）。
 make_block() {
-  python3 -I - "$COST_MD" > "$BATS_TEST_TMPDIR/block.sh" <<'PY'
+  python3 -I - "$COST_MD" "${1-}" > "$BATS_TEST_TMPDIR/block.sh" <<'PY'
 import re, sys
 text = open(sys.argv[1], encoding="utf-8").read()
 block = re.search(r"```bash\n(.*?)```", text, re.S).group(1)
-block = block.replace("${CLAUDE_PLUGIN_ROOT}", "${CLAUDE_PLUGIN_ROOT}").replace("${user_config.LEDGER_PATH}", "")
+root = sys.argv[2] or "${CLAUDE_PLUGIN_ROOT}"
+block = block.replace("${CLAUDE_PLUGIN_ROOT}", root).replace("${user_config.LEDGER_PATH}", "")
 lines = [l for l in block.splitlines() if not l.startswith("CLAUDE_PLUGIN_OPTION_LEDGER_PATH=")]
 sys.stdout.write("\n".join(lines) + '\nprintf "CL=%s\\n" "${CL-}"\n')
 PY
@@ -74,4 +76,23 @@ check_shell() {
   printf 'setopt | grep -c nullglob\n' >> "$BATS_TEST_TMPDIR/block.sh"
   HOME="$HOME_DIR" run zsh -f "$BATS_TEST_TMPDIR/block.sh"
   [[ "$output" == *$'\n0' ]] || { echo "$output"; return 1; }
+}
+
+@test "cost zsh: a nullglob the user already had is still on after the block runs" {  # 元から有効なら有効のまま
+  need_zsh
+  make_block
+  { printf 'setopt nullglob\n'; cat "$BATS_TEST_TMPDIR/block.sh"; printf 'setopt | grep -c nullglob\n'; } > "$BATS_TEST_TMPDIR/on.sh"
+  HOME="$HOME_DIR" run zsh -f "$BATS_TEST_TMPDIR/on.sh"
+  [ "$status" -eq 0 ] || { echo "status $status: $output"; return 1; }
+  [[ "$output" == *$'\n1' ]] || { echo "$output"; return 1; }
+}
+
+@test "cost zsh: a substituted first root is chosen when the later globs match nothing" {  # 置換済みルートが先頭で glob が当たらない
+  need_zsh
+  local root="$BATS_TEST_TMPDIR/root"
+  fake "$root/scripts"
+  make_block "$root"
+  HOME="$HOME_DIR" run zsh -f "$BATS_TEST_TMPDIR/block.sh"
+  [ "$status" -eq 0 ] || { echo "status $status: $output"; return 1; }
+  [ "$output" = "CL=$root/scripts/cost_ledger.py" ] || { echo "$output"; return 1; }
 }
