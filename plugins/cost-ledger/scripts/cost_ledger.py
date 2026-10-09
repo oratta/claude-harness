@@ -2545,6 +2545,37 @@ def issue_combined_total(matched, closing_prs, pricing: Pricing, resolver: RepoR
             "current": (int(round(total * 1e6)),) + token_totals(all_facts)}
 
 
+def epic_combined_total(matched, closing_prs, pricing: Pricing, resolver: RepoResolver,
+                        at_ms: int | None = None) -> dict:
+    """子 issue 込みの合計（``timeline`` 用）。``/cost <エピック>`` の 1 行目（``assign_epic_rows()``）と
+    同じ単位で丸める: ヘッドブランチごと・(issue, ブランチ) ごとにマイクロドルの整数へ丸めてから足す。
+
+    ``issue_combined_total()`` は PR の外の事実をまとめて浮動小数で足してから丸めるので、
+    境界の額で ``/cost`` と 1 セントずれる。返す形は ``issue_combined_total()`` と同じ。
+    """
+    by_branch = load_branches_facts(resolver, [branch for _number, branch in closing_prs])
+    prs, all_facts, total = [], [], 0
+    for number, branch in closing_prs:
+        facts = by_branch[branch] if at_ms is None else facts_until(by_branch[branch], at_ms)
+        micro = _micro(facts, pricing)
+        prs.append({"number": number, "branch": branch, "usd": micro / 1e6})
+        all_facts.extend(facts)
+        total += micro
+    heads = {branch for _number, branch in closing_prs}
+    groups = defaultdict(list)
+    for row in matched:
+        for fact in row["facts"]:
+            if fact.get("branch") not in heads:
+                groups[(row["issue"], fact.get("branch"))].append(fact)
+    outside_micro = 0
+    for facts in groups.values():
+        outside_micro += _micro(facts, pricing)
+        all_facts.extend(facts)
+    total += outside_micro
+    return {"prs": prs, "outside_usd": outside_micro / 1e6, "total_usd": total / 1e6,
+            "current": (total,) + token_totals(all_facts)}
+
+
 def epic_rows(numbers, repo_id: str, heads, resolver: RepoResolver):
     """対象の issue すべての区間の行と、ヘッドブランチすべての行をまとめて読む。
 
@@ -2707,7 +2738,7 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
                                                         at_ms=at_ms, also=children)
             counted_prs = parse_closing_prs(
                 ["%d:%s" % pair for pair in child_prs + closing_prs])
-            combined = issue_combined_total(matched, counted_prs, pricing, resolver, at_ms=at_ms)
+            combined = epic_combined_total(matched, counted_prs, pricing, resolver, at_ms=at_ms)
             total, kind = combined["total_usd"], "子 issue 込み"
             if closing_prs:
                 total_row = (timeline_epic_total_trigger(

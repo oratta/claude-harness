@@ -122,6 +122,28 @@ rows_of() { grep '^| ' | grep -v '^| 時刻\|^|---'; }
   [ "$(rows_of < "$BATS_TEST_TMPDIR/out.md" | wc -l | tr -d ' ')" -eq 2 ]
 }
 
+# haiku の cache_read は 1M トークンあたり $0.10（1 トークン 0.1 マイクロドル）。24996 トークンは 2499.6 マイクロドル
+cr_row() {  # $1=sessionId $2=requestId $3=timestamp $4=branch $5=cwd $6=Bashコマンド
+  cl_row "$1" "$2" "$3" "$4" "$5" 0 "$6" | python3 -c '
+import json, sys
+row = json.loads(sys.stdin.read())
+row["message"]["usage"]["cache_read_input_tokens"] = 24996
+print(json.dumps(row))'
+}
+
+@test "epic-timeline: acceptance: fractional micro-dollar amounts are rounded per issue like cost, so the rows match the first line of cost" {  # 子 #11・#12 の区間が $0.0024996 ずつ・閉じた PR は $0。まとめて足して丸めると $0.00、issue ごとに丸めて足すと $0.01（cost の 1 行目）
+  cr_row S11 r1 2026-09-01T00:00:10.000Z main "$RA" "gh issue view 11" | cl_write_log s11
+  cr_row S12 r3 2026-09-01T00:00:30.000Z main "$RA" "gh issue view 12" | cl_write_log s12
+  tree "$(pr 300 feat/z)" ""
+  cost_first="$(python3 "$CL" cost 10 --repo "$RA" --no-drift-check | head -n 1)"
+  [[ "$cost_first" == 'コスト: $0.01 / '* ]] || { echo "$cost_first"; return 1; }
+  run timeline --child-issue 11 --child-issue 12 --child-pr 300:feat/z \
+    --closing-pr 300:feat/z --trigger "issue クローズ"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | head -n 1)" = "$cost_first" ] || { echo "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | rows_of | grep -c '| \$0.01 ')" -eq 2 ] || { echo "$output"; return 1; }
+}
+
 @test "epic-timeline: the milestone row is also child-inclusive and has no total row without --closing-pr" {  # 行の金額は $8.00、1 行目の帰属の種別は 子 issue 込み、行は 1 本
   logs
   tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
