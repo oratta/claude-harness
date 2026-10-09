@@ -1065,3 +1065,21 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   # 段ごとの入力の文に直し方の判定の受領がある
   grep -F '段ごとの入力のうち' "$GATE" | grep -qF '直し方の判定の受領'
 }
+
+# TTY の無い Bash ツールでは `openspec archive <change>` が確認プロンプトで exit 1 になる（#596）。
+# develop 配下で change 名を伴う archive の実行指示は、すべて --yes を付ける。
+@test "develop: every openspec archive <change> instruction carries --yes (#596)" {
+  hits="$(grep -rhF 'openspec archive <' "${PLUGIN_DIR}/skills/develop" || true)"
+  [ -n "$hits" ] || { echo "no openspec archive instruction found"; return 1; }
+  if echo "$hits" | grep -vF -e '--yes' | grep -q .; then
+    echo "--yes の付かない openspec archive の実行指示がある" >&2
+    return 1
+  fi
+}
+
+# W の指示書に旧規則の「2 周キャップ」を残さない。周回は develop SKILL.md の節が正本（#752）。
+@test "worker/spec.md points to the SKILL.md round rule, not a 2-round cap (#752)" {
+  if grep -qF '2 周キャップ' "$W_SPEC"; then return 1; fi
+  grep -qF 'レビューの周を主に聞かずに続ける（直し方の判定）' "$W_SPEC" || return 1
+  grep -qF '## レビューの周を主に聞かずに続ける（直し方の判定）' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}

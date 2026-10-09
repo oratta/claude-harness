@@ -6,7 +6,7 @@
 
 単一 change 1 つ分の実装手順。仕様化する場合と直行する場合で入口が違うだけで、**テストを先に書く**のは共通。**この節は verify までで終わる**（archive 以降は `worker/finish.md` の (3b)）。
 
-**仕様化する場合**: `tasks.md` を上から TDD で実装し、終えた項目を `[x]` にする。`openspec validate <change-name> --strict` を実行し、担当した項目のチェックボックスを確認する。(3a) は verify までで return し、`openspec archive <change-name>` は (3b) で行う。
+**仕様化する場合**: `tasks.md` を上から TDD で実装し、終えた項目を `[x]` にする。`openspec validate <change-name> --strict` を実行し、担当した項目のチェックボックスを確認する。(3a) は verify までで return し、`openspec archive <change-name> --yes` は (3b) で行う。
 
 **コード直行する場合（仕様化不要）**:
 1. 実装前に必ず codebase を grep して既存実装を確認する（二重実装しない）
