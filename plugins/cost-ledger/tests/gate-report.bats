@@ -654,12 +654,16 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
   [ "$status" -eq 0 ]
   no_gh_call
   run_hook "gh pr comment 1 -R ../b --body x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh pr comment 1 -R ./b --body x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh pr comment 1 -R ./.. --body x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "GH_REPO=a/.. gh pr comment 1 --body x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh pr comment 1 -R my.org/my.repo --body x"
   queried my.org/my.repo 1
@@ -674,20 +678,27 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
   [ "$status" -eq 0 ]
   no_gh_call
   run_hook "gh api -X POST repos/./b/issues/1/comments -f body=x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh api -X POST repos/a/./issues/1/comments -f body=x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh api -X POST /repos/../../issues/1/comments -f body=x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   # コメント以外のきっかけ（付与・マージ・状態の変更）も同じ
   run_hook "gh api -X POST repos/a/../issues/1/labels -f 'labels[]=agent-review:passed'"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh api -X PUT repos/../b/pulls/1/merge"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh api -X PATCH repos/a/../pulls/1 -f state=closed"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   # 変数で渡しても同じ
   run_hook "R=a/..; gh api -X POST repos/\$R/issues/1/comments -f body=x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   # 正当な名前は拒否しない
   run_hook "gh api -X POST repos/my.org/my.repo/issues/1/comments -f body=x"
@@ -719,27 +730,37 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
   [ -z "$output" ]
   no_gh_call
   run_hook "gh pr comment https://github.com/a/./pull/1 --body x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh pr comment https://github.com/./b/pull/1 --body x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh issue comment https://github.com/./../issues/2 --body x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   # コメント以外のきっかけ（マージ・Ready・状態の変更）も同じ
   run_hook "gh pr merge https://github.com/a/../pull/1"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh pr ready https://github.com/../b/pull/1"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh pr close https://github.com/a/./pull/1"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "gh pr reopen https://github.com/./b/pull/1"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   # 変数で渡しても同じ
   run_hook "U=https://github.com/a/../pull/1; gh pr comment \$U --body x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   # URL が飛ばされたとき、併記した -R / 前置きの GH_REPO のリポジトリには落ちない
   run_hook "gh pr comment https://github.com/a/../pull/1 -R acme/other --body x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   run_hook "GH_REPO=acme/other gh pr comment https://github.com/../b/pull/1 --body x"
+  [ "$status" -eq 0 ] || return 1
   no_gh_call
   # 正当な名前は拒否しない
   run_hook "gh pr comment https://github.com/acme/.github/pull/3 --body x"
