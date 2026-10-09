@@ -28,8 +28,8 @@
 #   （`run:` の値＝ workflow YAML に埋め込まれたシェルだけ）。#171 まで YAML が
 #   対象外で、auto-merge.yml の `run:` ブロックだけがガードを素通りしていた。
 #   `.github/workflows/` に限らず全 YAML を見るのは、配布用の workflow
-#   テンプレートが `plugins/agent-owner/templates/*.yml` のように別の場所にも
-#   置かれており、パスで絞ると取りこぼすため。
+#   テンプレートが `plugins/dev-workflow/templates/auto-merge/.github/workflows/*.yml`
+#   のように別の場所にも置かれており、パスで絞ると取りこぼすため。
 #   _longruns/ は過去実行のアーカイブなので除外。コメント行も対象に含める
 #   （コピペ元になるため）。
 #
