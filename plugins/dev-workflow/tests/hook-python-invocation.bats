@@ -144,3 +144,31 @@ SH
     cmp "${WORK}/out39" "${WORK}/outdef" || { echo "$h: output differs between 3.9 and the default"; return 1; }
   done
 }
+
+# body_less_copy <hook> <empty|unreadable> — 本体を読めなかった場合を再現する複製を作り、そのパスを出す。
+#   empty:      ヒアドキュメントの中身を空にする（read は成功するが変数が空）
+#   unreadable: ヒアドキュメントを、存在しないファイルからのリダイレクトに置き換える（リダイレクト自体が失敗し、
+#               read が実行されない。ヒアドキュメントの一時ファイルを作れないときと同じ経路）
+body_less_copy() {
+  local dst="${WORK}/$1.$2.sh"
+  mkdir -p "${WORK}/no-such-dir-parent"
+  if [ "$2" = empty ]; then
+    awk '/<<.PY. \|\| true$/{print;f=1;next} /^PY$/{f=0} !f' "${SCRIPTS}/$1.sh" >|"$dst"
+  else
+    awk -v src="${WORK}/no-such-dir-parent/missing/body" \
+      '/<<.PY. \|\| true$/{sub(/<<.PY. \|\| true$/, "<\"" src "\" || true");print;f=1;next} /^PY$/{f=0;next} !f' \
+      "${SCRIPTS}/$1.sh" >|"$dst"
+  fi
+  grep -q 'PY_SRC' "$dst" || return 1
+  printf '%s' "$dst"
+}
+
+@test "#869: model-switch-recache-notice stays silent with exit 0 when its body is empty or unreadable" {
+  local mode copy
+  for mode in empty unreadable; do
+    copy="$(body_less_copy model-switch-recache-notice "$mode")"
+    run /bin/bash "$copy" <<<"$(payload_for model-switch-recache-notice)"
+    [ "$status" -eq 0 ] || { echo "$mode: status=$status"; return 1; }
+    [ -z "$output" ] || { echo "$mode: output=$output"; return 1; }
+  done
+}

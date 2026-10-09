@@ -21,7 +21,8 @@ command -v python3 >/dev/null 2>&1 || exit 0
 # 本体を fd 3 のヒアドキュメントに付けて /dev/fd/3 として python3 に読ませる形は使わない: Python 3.9（macOS 標準の
 # /usr/bin/python3 など）は複数行の本体を実行せず rc=0・無出力で終わり、hook が何もしないまま通す（#869）。
 # -I（隔離モード）で起動し、PYTHON* の環境変数・ユーザー site・カレントディレクトリを検索パスに使わない。
-IFS= read -r -d '' PY_SRC <<'PY' || true
+PY_SRC=""
+{ IFS= read -r -d '' PY_SRC <<'PY' || true
 import json, math, sys
 
 
@@ -94,10 +95,11 @@ try:
 except Exception:
     pass
 PY
+} 2>/dev/null
 if [ -z "$PY_SRC" ]; then
   # 本体を読めなかった（ヒアドキュメントの一時ファイルを作れない等）。空の本体を python3 に渡すと
-  # rc=0・無出力で終わるので、渡さずに stderr で知らせる（この hook は通知だけなので exit 0 のまま）。
-  echo "model-switch-recache-notice: 通知の本体を読めなかったため、何も出していない" >&2
+  # rc=0・無出力で終わるだけなので渡さない。この hook はどの環境でも exit 0 で終え、stderr に何も書かない
+  # （spec dev-workflow-model-switch-recache-notice）。読み込みの失敗も上の 2>/dev/null で黙らせている。
   exit 0
 fi
 python3 -I -c "$PY_SRC" 2>/dev/null || true
