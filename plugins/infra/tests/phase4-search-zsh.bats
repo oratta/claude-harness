@@ -45,7 +45,7 @@ run_block() {  # $1 = zsh | bash, $2 = ブロックの番号
   esac
 }
 
-# $1 = zsh | bash（bash は探索が空振りで終わると最後の `&& break` の rc=1 が残るので、rc ではなく出力（エラー文）を見る）。全ブロックについて、候補なし・空の探索先・installed だけに当たりの 3 通りを見る。
+# $1 = zsh | bash（直した後は bash・zsh とも探索が空振りでも終了コード 0。origin/main の版は bash で rc=1 が残る）。全ブロックについて、候補なし・空の探索先・installed だけに当たりの 3 通りを見る。
 check_shell() {
   local sh="$1" n i inst mark
   n="$(extract_blocks)"
@@ -58,18 +58,18 @@ check_shell() {
     rm -rf "$HOME_DIR/.claude"
     # ① ~/.claude/plugins が無い
     run_block "$sh" "$i"
-    { [ "$sh" = bash ] || [ "$status" -eq 0 ]; } || { echo "$sh $i none: status $status: $output"; return 1; }
+    [ "$status" -eq 0 ] || { echo "$sh $i none: status $status: $output"; return 1; }
     [ -z "$output" ] || { echo "$sh $i none: $output"; return 1; }
     # ② 在るが空
     mkdir -p "$HOME_DIR/.claude/plugins/installed" "$HOME_DIR/.claude/plugins/marketplaces"
     run_block "$sh" "$i"
-    { [ "$sh" = bash ] || [ "$status" -eq 0 ]; } || { echo "$sh $i empty: status $status: $output"; return 1; }
+    [ "$status" -eq 0 ] || { echo "$sh $i empty: status $status: $output"; return 1; }
     [ -z "$output" ] || { echo "$sh $i empty: $output"; return 1; }
     # ③ installed だけに当たりがある（marketplaces の glob は当たらない）
     mkdir -p "$HOME_DIR/.claude/plugins/installed/x/$inst"
     if [ -n "$mark" ]; then mkdir -p "$(dirname "$HOME_DIR/.claude/plugins/installed/x/$inst/$mark")"; : > "$HOME_DIR/.claude/plugins/installed/x/$inst/$mark"; fi
     run_block "$sh" "$i"
-    { [ "$sh" = bash ] || [ "$status" -eq 0 ]; } || { echo "$sh $i installed: status $status: $output"; return 1; }
+    [ "$status" -eq 0 ] || { echo "$sh $i installed: status $status: $output"; return 1; }
     [[ "$output" == *"/installed/x/$inst"* ]] || { echo "$sh $i installed: $output"; return 1; }
   done
 }
