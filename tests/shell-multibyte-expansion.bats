@@ -68,8 +68,8 @@ setup() {
 
   run python3 "$SCANNER" "$fixture"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"HEAD_SHA"* ]]
-  [[ "$output" == *":5:"* ]]
+  [[ "$output" == *"HEAD_SHA"* ]] || return 1
+  [[ "$output" == *":5:"* ]] || return 1
 }
 
 @test "guard: accepts the braced form inside a workflow run: block" {
@@ -111,5 +111,5 @@ setup() {
 
   run python3 "$SCANNER" "$fixture"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"COUNT"* ]]
+  [[ "$output" == *"COUNT"* ]] || return 1
 }
