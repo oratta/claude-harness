@@ -10,8 +10,14 @@
 ## Decisions
 
 1. **`reopen` は `ISSUE_RE` の選択肢に足す。** 同じ形（`gh issue <サブコマンド> <番号>`）なので他の変更は要らない。
-2. **`gh api` は別の正規表現 `API_ISSUE_RE` を `ISSUE_RE` の隣に置き、`scan_tool_calls` の同じループで当てる。** `ISSUE_RE` の選択肢に混ぜると、`findall` が複数の群を持ってタプルを返し、既存の呼び出しが壊れる。2 本にして、番号の群は 1 つずつに保つ。代案: `gate_report.py` の解析を再利用する → 別の子が触る範囲なので採らない。代案: `gh api` の語を全部分解する → 帰属の鍵に要るのは番号だけで、過剰。
-3. **`API_ISSUE_RE` が読む形は狭くする。** `gh api` の後ろの、`-X`・`--method` とその値だけを飛ばした最初の語が `repos/<owner>/<repo>/issues/<番号>` で始まり、番号の直後が `/`・空白・`?`・引用符・行末のもの。`<owner>` と `<repo>` は `{owner}`・`{repo}` の置き換え記号も含めて `/` と空白以外の 1 語として読む。読まないもの: 完全な URL、`gh api graphql`、`issues/comments/<id>`（番号の位置が違う）、`--input` や `-f` の値の中の文字列。読み落としは許す（今の状態に戻るだけ）。誤って拾う方向（別の issue へコストが寄る）を避けるのを優先する。
+2. **`gh api` も `ISSUE_RE` 1 本に並べる。変えるのは `ISSUE_RE` の定義の 1 行だけで、`scan_tool_calls` など `ISSUE_RE` 以外の行は変えない。** 親エピックの注意書き（触るのは `cost_ledger.py` の `ISSUE_RE` だけ）に従う。番号のキャプチャ群を 1 つに保ち、`gh issue <動詞>` の形と `gh api` の形を非キャプチャ群の選択肢で並べるので、`findall` は今までどおり番号の文字列のリストを返し、`scan_tool_calls` の `for number in ISSUE_RE.findall(command)` はそのまま動く。形は次のとおり（実装前に python で確かめた）。
+
+   ```
+   gh (?:issue (?:view|comment|edit|close|reopen|develop)\s+
+       |api\s+(?:(?:-X|--method)\s+\S+\s+)?repos/[^/\s]+/[^/\s]+/issues/(?=\d+(?!\w)))(\d+)
+   ```
+   （実際は 1 行で書く）。代案: 別の正規表現 `API_ISSUE_RE` を足して `scan_tool_calls` で当てる → 注意書きを超えるので採らない。代案: `gate_report.py` の解析を再利用する → 別の子の範囲なので採らない。
+3. **`gh api` の形は狭くする。** `gh api` の後ろの、`-X`・`--method` とその値だけを飛ばした最初の語が `repos/<owner>/<repo>/issues/<番号>` で始まり、番号の直後が英数字・`_` でないもの（`/`・空白・`?`・引用符・行末）。番号の直後の条件は `gh api` の側だけに付け、`gh issue <動詞>` の側は今までどおり（直後を見ない）にして、既存の読み方を変えない。`<owner>` と `<repo>` は `{owner}`・`{repo}` の置き換え記号も含めて `/` と空白以外の 1 語として読む。確かめた結果: `issues/comments/<id>`・`gh api graphql ...`・完全な URL・`-H` など他のオプションが先に来る形・`issues/42abc` は拾わず、`issues/42`・`issues/42/comments`・`issues/42?per_page=1`・`-X POST`・`--method PATCH` は 42 を拾う。既存の読み方で保てなかったものは無い。読み落としは許す（今の状態に戻るだけ）。誤って拾う方向（別の issue へコストが寄る）を避けるのを優先する。
 4. **鍵は（リポジトリ識別子, 番号）のまま。** リポジトリ識別子は `cwd` から導くので、endpoint の `<owner>/<repo>` が `cwd` のリポジトリと違う場合（`gh issue view --repo` と同じ）でも、`cwd` のリポジトリの番号として拾う。今の `gh issue ...` の扱いと同じで、新しい誤りの種類は増やさない。
 5. **過去の行は直さない。** 台帳には導いた帰属でなく事実が書かれている。過去の行には再オープンや `gh api` の番号が入っておらず、書き換えない運用（追記のみ・`--rescan` も既存行を書き換えない）なので、直すには台帳を作り直すしかない。過去分の欠けは数字が小さく出るだけで、費用が大きい割に得るものが小さい。新しい行から効く。
 

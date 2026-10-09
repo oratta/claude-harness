@@ -5,8 +5,9 @@ issue へのコストの帰属の鍵（`cost_ledger.py` の `ISSUE_RE`）が拾�
 ## What Changes
 
 - `ISSUE_RE` の拾うサブコマンドに `gh issue reopen` を足す
-- `gh api` の最初の位置引数（endpoint）が `repos/<owner>/<repo>/issues/<番号>` で始まるコマンドも、その番号を帰属の鍵として拾う
+- `ISSUE_RE` 1 本の定義を書き換えて、`gh api` の最初の位置引数（endpoint）が `repos/<owner>/<repo>/issues/<番号>` で始まるコマンドも、その番号を帰属の鍵として拾う
 - 過去に台帳へ書いた行は書き換えない（再オープンや `gh api` の番号が入っていない行は、そのまま）と spec に 1 文で書く
+- `ISSUE_RE` の定義以外のコード（`scan_tool_calls` など）は変えない
 - 走査する場所は今までどおり実行された `Bash` の `command` だけ。実行していない文字列では寄らない
 
 ## Capabilities
@@ -19,8 +20,8 @@ issue へのコストの帰属の鍵（`cost_ledger.py` の `ISSUE_RE`）が拾�
 
 ## Impact
 
-- `plugins/cost-ledger/scripts/cost_ledger.py`（`ISSUE_RE` と、それを使う `scan_tool_calls`）
+- `plugins/cost-ledger/scripts/cost_ledger.py`（`ISSUE_RE` の定義だけ）
 - `plugins/cost-ledger/tests/attribution.bats`
 - `openspec/specs/cost-ledger-attribution/spec.md`（archive 時に delta が反映される）
-- `plugins/cost-ledger/changes/698.md`（変更の記録）
+- `plugins/cost-ledger/changes/698.md`（変更の記録）。このリポジトリの規則（プラグインを変えたら `plugins/<name>/changes/<番号>.md` に記録する）で必要なファイルで、並行する子 #703・#760 が触るファイルとは重ならない
 - 触らない: `gate_report.py`・`backfill.sh`・`backfill.py`・`backfill.bats`（別の子 issue #703・#760 の範囲）
