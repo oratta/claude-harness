@@ -1740,21 +1740,26 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
 
 # lock() を直接呼び、os.open / os.lstat の呼び出しを記録する。置き場を検査してから開くまでの間に
 # パスの解決が入らない（fd を fstat し、ロックファイルはその fd を dir_fd にして開く）ことを確かめる
-@test "timeline-hook: the lock file is opened relative to the verified directory fd" {  # 置き場を O_DIRECTORY | O_NOFOLLOW で開いて fstat し、ロックファイルはその fd を dir_fd に名前だけで開く。置き場のパスに lstat しない
+@test "timeline-hook: the lock file is opened relative to the verified directory fd" {  # 置き場を O_DIRECTORY | O_NOFOLLOW で開いて fstat し、ロックファイルはその fd を dir_fd に名前だけで開く。置き場のパスに lstat しない。検査した fd は lock() が返る前に閉じる（#875: 番号の推測でなく、実際に開いた fd で確かめる）
   run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY'
-import os, sys
+import errno, os, sys
 sys.path.insert(0, sys.argv[1])
 import gate_report
-calls, lstats = [], []
-real_open, real_lstat = os.open, os.lstat
+calls, lstats, fstats = [], [], []
+real_open, real_lstat, real_fstat = os.open, os.lstat, os.fstat
 def spy_open(path, flags, mode=0o777, *, dir_fd=None):
-    calls.append((path, flags, dir_fd))
-    return real_open(path, flags, mode, dir_fd=dir_fd)
+    got = real_open(path, flags, mode, dir_fd=dir_fd)
+    calls.append((path, flags, dir_fd, got))  # got = 実際に開いた fd
+    return got
 def spy_lstat(path, *a, **k):
     lstats.append(path)
     return real_lstat(path, *a, **k)
-os.open, os.lstat = spy_open, spy_lstat
+def spy_fstat(fd):
+    fstats.append(fd)
+    return real_fstat(fd)
+os.open, os.lstat, os.fstat = spy_open, spy_lstat, spy_fstat
 fd = gate_report.lock("a/b", 1)
+os.open, os.lstat, os.fstat = real_open, real_lstat, real_fstat
 assert isinstance(fd, int), fd
 folder = [c for c in calls if c[2] is None]
 lockf = [c for c in calls if c[2] is not None]
@@ -1764,14 +1769,20 @@ assert folder[0][1] & need == need, calls
 assert "/" not in lockf[0][0] and lockf[0][0].endswith(".lock"), calls
 assert lockf[0][1] & os.O_NOFOLLOW, calls
 assert not any(p == folder[0][0] for p in lstats), lstats
-# 検査用の fd は閉じてある: ロックの fd の直前の番号は残っていない
+# 検査（fstat）した fd とロックファイル作成の dir_fd は、置き場を開いて返った fd そのもの
+checked = folder[0][3]
+assert fstats == [checked], (fstats, checked)
+assert lockf[0][2] == checked, calls
+# 返ったロックの fd は検査用の fd とは別物で（検査用が開いている間に開いた）、開いたままである
+assert fd == lockf[0][3] and fd != checked, (fd, calls)
+real_fstat(fd)
+# 検査用の fd は閉じてある: その fd 自身への fstat が EBADF になる
 try:
-    os.fstat(fd - 1)
-    leaked = fd - 1 not in (0, 1, 2) and os.path.exists("/dev/fd/%d" % (fd - 1)) and \
-        os.fstat(fd - 1).st_ino == real_lstat(folder[0][0]).st_ino
-except OSError:
-    leaked = False
-assert not leaked, "directory fd leaked"
+    real_fstat(checked)
+except OSError as e:
+    assert e.errno == errno.EBADF, e
+else:
+    raise AssertionError("directory fd %d leaked" % checked)
 PY
   [ "$status" -eq 0 ]
 }
