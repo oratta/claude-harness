@@ -1782,6 +1782,7 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
 
 # lock() を直接呼び、os.open / os.lstat の呼び出しを記録する。置き場を検査してから開くまでの間に
 # パスの解決が入らない（fd を fstat し、ロックファイルはその fd を dir_fd にして開く）ことを確かめる
+# 検査の範囲は記録した fd の close まで。複製した fd（`os.dup`）の漏れは見ない（#942）
 @test "timeline-hook: the lock file is opened relative to the verified directory fd" {  # 置き場を O_DIRECTORY | O_NOFOLLOW で開いて fstat し、ロックファイルはその fd を dir_fd に名前だけで開く。置き場のパスに lstat しない。検査した fd は lock() が返る前に閉じる（#875: 番号の推測でなく、実際に開いた fd で確かめる）
   run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY'
 import errno, os, sys
