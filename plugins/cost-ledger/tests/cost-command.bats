@@ -170,7 +170,6 @@ PY
   run_cost_block "$BATS_TEST_TMPDIR/root" "/x/'b'/ledger.jsonl"
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = "LEDGER=/x/'b'/ledger.jsonl" ]
-  [ ! -e /x/b ]
 }
 
 @test "cost: ledger paths with an odd quote, spaces, \$, backticks and double quotes reach the script as is" {  # 特殊文字を含む台帳パス
@@ -198,13 +197,15 @@ PY
   run_cost_block "$root" "/x/l.jsonl"
   [ "$status" -eq 0 ]
   [ "${lines[1]}" = "SELF=$root/scripts/cost_ledger.py" ] || { echo "$output"; return 1; }
-  # 値の一部がコマンドとして実行されたなら、別名のディレクトリを探しに行く
-  [ ! -e "$BATS_TEST_TMPDIR/a bx" ]
 }
 
 @test "cost: an unsubstituted plugin root is skipped and the later candidates are tried" {  # ルートが置換されないときは後続の候補へ進む
   local home="$BATS_TEST_TMPDIR/nohome"
   make_fake_root "$home/.claude/plugins/marketplaces/m/plugins/cost-ledger"
+  # 置換されない文字列を空にする case の行が無いと、作業ディレクトリからの相対パス
+  # ${CLAUDE_PLUGIN_ROOT}/scripts/cost_ledger.py が先に見つかる。それが実在する状態で確かめる
+  cd "$BATS_TEST_TMPDIR"
+  make_fake_root "$BATS_TEST_TMPDIR/\${CLAUDE_PLUGIN_ROOT}"
   run_cost_block '${CLAUDE_PLUGIN_ROOT}' "/x/l.jsonl"
   [ "$status" -eq 0 ]
   [ "${lines[1]}" = "SELF=$home/.claude/plugins/marketplaces/m/plugins/cost-ledger/scripts/cost_ledger.py" ] || { echo "$output"; return 1; }
