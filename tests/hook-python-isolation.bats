@@ -200,6 +200,61 @@ cost_ledger_fake_env() {
   [ ! -e "$FAKE_MARKER" ] || { cat "$FAKE_MARKER"; return 1; }
 }
 
+# body_hook_payload <hook> — Python 本体を -c で渡す 5 本が python3 の起動まで進む最小の payload
+body_hook_payload() {
+  case "$1" in
+    git-destructive-guard) printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git reset --hard"},"hook_event_name":"PreToolUse","permission_mode":"default"}' ;;
+    agent-model-guard) printf '%s' '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}' ;;
+    context-tripwire) printf '%s' '{"agent_id":"x","hook_event_name":"PostToolUse"}' ;;
+    subagent-stop-guard) printf '%s' '{"agent_id":"x","hook_event_name":"SubagentStop"}' ;;
+    model-switch-recache-notice) printf '%s' '{"hook_event_name":"PreModelSwitch"}' ;;
+  esac
+}
+
+@test "#847: the five hooks that pass their body with -c do not load json.py from the cwd or PYTHONPATH" {
+  unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_MODEL_GUARD
+  local h copy
+  for h in git-destructive-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice; do
+    body_hook_payload "$h" > "${WORK}/payload.json"
+    # 対照: -I を外した複製は偽の json.py を読む（＝この payload で python3 まで進んでいる）
+    copy="$(unisolated_copy "${DW}/scripts/${h}.sh")"
+    rm -f "$FAKE_MARKER"
+    run in_fake bash -c "'$copy' < '${WORK}/payload.json'"
+    [ -s "$FAKE_MARKER" ] || { echo "$h: 対照で偽の json.py が読まれない（python3 まで進んでいない）"; return 1; }
+    rm -f "$FAKE_MARKER"
+
+    run in_fake bash -c "'${DW}/scripts/${h}.sh' < '${WORK}/payload.json'"
+    [ ! -e "$FAKE_MARKER" ] || { echo "$h: 偽のモジュールが読まれた"; cat "$FAKE_MARKER"; return 1; }
+    case "$h" in
+      git-destructive-guard)
+        [ "$status" -eq 0 ] || { echo "$h: status=$status"; return 1; }
+        [[ "$output" == *'"permissionDecision": "ask"'* ]] || { echo "$h: $output"; return 1; }
+        [[ "$output" == *'git reset --hard'* ]] || { echo "$h: $output"; return 1; }
+        ;;
+      agent-model-guard)
+        [ "$status" -eq 0 ] || { echo "$h: status=$status"; return 1; }
+        [[ "$output" == *'"permissionDecision": "deny"'* ]] || { echo "$h: $output"; return 1; }
+        ;;
+    esac
+  done
+}
+
+@test "#847: worktree wt-create-hook does not load json.py from the cwd or PYTHONPATH" {
+  local hook="${REPO_ROOT}/plugins/worktree/scripts/wt-create-hook.sh" copy
+  # name に / を入れる: python3 で name を読んだ直後に「不正な name」で終わり、worktree を作る手前で止まる。
+  # 偽の json.py が読まれると name を読めず、別の文言（'name' が入力に無い）で終わる
+  printf '%s' '{"hook_event_name":"WorktreeCreate","name":"iso/x"}' > "${WORK}/payload.json"
+  copy="$(unisolated_copy "$hook")"
+  run in_fake bash -c "'$copy' < '${WORK}/payload.json'"
+  [ -s "$FAKE_MARKER" ] || { echo "対照で偽の json.py が読まれない（python3 まで進んでいない）"; return 1; }
+  rm -f "$FAKE_MARKER"
+
+  run in_fake bash -c "'$hook' < '${WORK}/payload.json'"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"不正な name: iso/x"* ]] || { echo "$output"; return 1; }
+  [ ! -e "$FAKE_MARKER" ] || { cat "$FAKE_MARKER"; return 1; }
+}
+
 @test "#847: capability-registry browser-guard does not load fake modules" {
   local guard="${REPO_ROOT}/plugins/capability-registry/scripts/browser-guard.sh"
   export CLAUDE_PLUGIN_ROOT="${REPO_ROOT}/plugins/capability-registry"
