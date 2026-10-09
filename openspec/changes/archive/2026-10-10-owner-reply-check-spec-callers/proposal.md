@@ -1,6 +1,6 @@
 ## Why
 
-issue #890（PR #888 のレビュー指摘）。`dev-workflow-owner-reply-check` の spec は、`owner-reply-check.sh` を回すのを pr-review-gate の G だけと書いている。#776 で、develop の本体が G に渡す前に先に回す経路（`plugins/dev-workflow/skills/develop/SKILL.md` の「保留」の行と「保留からの再開」の手順 2）が加わっており、spec の記述が実態より狭い。
+issue #890（PR #888 のレビュー指摘）。`dev-workflow-owner-reply-check` の spec は、`owner-reply-check.sh` を回すのを pr-review-gate の G だけと書いている。#776 で、develop の本体が G に渡す前に先に回す経路（`plugins/dev-workflow/skills/develop/SKILL.md` の「保留」の行と「新しいセッションでの再開」の手順 2）が加わっており、spec の記述が実態より狭い。
 
 ## What Changes
 
