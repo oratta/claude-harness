@@ -13,7 +13,7 @@
 
 ## 3. 文書
 
-- [ ] 3.1 README の「合計の行が付かない場合」の「（0 件と失敗は見分けが付かない）」を、失敗のときだけ `issue クローズ+PR 照会失敗` と印が付くこと、補う手段は `/cost <issue番号>`、に直す。触る範囲: plugins/cost-ledger/README.md:298-299
+- [ ] 3.1 README の「合計の行が付かない場合」の「（0 件と失敗は見分けが付かない）」を、失敗のときだけ `issue クローズ+PR 照会失敗` と印が付くこと、手動で合計を確認する手段は `/cost <issue番号>`（再表示するだけで既存コメントの行は補わない）、に直す。触る範囲: plugins/cost-ledger/README.md:298-299
 - [ ] 3.2 `plugins/cost-ledger/changes/737.md` を書く（印の形・後追いは補わないこと・`gh` の回数と待ち時間の前後の値）。触る範囲: plugins/cost-ledger/changes/737.md（新規）
 
 ## 4. 検証と実測
