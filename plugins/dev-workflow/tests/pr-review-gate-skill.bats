@@ -115,6 +115,13 @@ setup() {
   grep -qF '.user.login' "${PASS_STAGE}"
 }
 
+@test "authenticity: author match alone is not proof; agent records are rejected (#242)" {
+  grep -qF 'author の一致は必要条件でしかない' "${PASS_STAGE}"
+  grep -qF "grep -c '^記録者: エージェント'" "${PASS_STAGE}"
+  grep -qF 'rules/destructive-git-guard.md' "${PASS_STAGE}"
+  grep -qF '記録者: エージェント（<エージェント名>）' "${HOLD}"
+}
+
 @test "convergence: verification runs in parallel while awaiting risk acceptance" {
   grep -q '並行' "${HOLD}"
 }
