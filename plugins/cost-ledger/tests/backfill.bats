@@ -1184,6 +1184,13 @@ MERGE=(--pr 300 --branch feat/a --trigger マージ)
   cmp "$IN" "$OUT"
 }
 
+@test "timeline --backfill: a close row marked as a failed closing-PR query is not stacked again" {  # きっかけが issue クローズ+PR 照会失敗 の行（T+5 秒）があれば、issue クローズ の後追いは本文をそのまま返す（失敗した回の合計は補わない）
+  add_a r1 00:40:00 1000000
+  one_row_body "issue クローズ+PR 照会失敗" $((T + 5)) > "$IN"
+  tl --issue 12 --trigger "issue クローズ" --at "$T" --backfill --repo "$CWD" < "$IN" > "$OUT"
+  cmp "$IN" "$OUT"
+}
+
 @test "timeline --backfill: without a row of the same trigger the row is added" {  # PR コメント（T−600 秒・$1.00）だけの本文に、T 以前の累計 $3.00 で積むと 2 行目が マージ・$3.00 (+2.00)
   add_a r1 00:30:00 1000000
   add_a r2 00:40:00 1000000

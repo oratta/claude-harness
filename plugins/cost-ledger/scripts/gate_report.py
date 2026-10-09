@@ -72,6 +72,7 @@ VALUE_FLAGS = {
 }
 
 GATE = "ゲート通過"
+CLOSING_FAILED = "PR 照会失敗"  # 閉じた PR の問い合わせが失敗した issue クローズの行に足す印
 # (gh の第 1 語, 第 2 語) -> (行の「きっかけ」, 値を取るフラグ, 番号を省けるか)
 REPO_FLAGS = {"-R", "--repo"}
 BODY_FLAGS = REPO_FLAGS | {"-b", "--body", "-F", "--body-file"}
@@ -812,30 +813,31 @@ def closing_prs(repo, number):
     """issue を閉じた PR のうち数えるものの [(番号, ヘッドブランチ)]。gh api graphql を 1 回呼ぶ。
 
     ベースが対象のリポジトリ（大文字と小文字は区別しない）で、ヘッドブランチも同じリポジトリに
-    ある PR だけを残す。失敗・JSON でない・100 件を超える・1 件でも形が崩れているときは空
-    （一部しか読めていない結果で合計を作らない）。"""
+    ある PR だけを残す。成功して数える PR が無ければ空の一覧。失敗・JSON でない・100 件を超える・
+    1 件でも形が崩れているときは None（一部しか読めていない結果で合計を作らない。呼ぶ側が
+    成功して 0 件の場合と区別できるようにする）。"""
     owner, _, name = repo.partition("/")
     p = gh_api(["graphql", "-f", "query=" + CLOSING_QUERY, "-f", "owner=" + owner,
                 "-f", "name=" + name, "-F", "number=%d" % number])
     if p is None or p.returncode != 0:
-        return []
+        return None
     try:
         refs = json.loads(p.stdout)["data"]["repository"]["issue"]["closedByPullRequestsReferences"]
         nodes, more = refs["nodes"], refs["pageInfo"]["hasNextPage"]
     except (ValueError, KeyError, TypeError):
-        return []
+        return None
     if more is not False or not isinstance(nodes, list):
-        return []
+        return None
     found = []
     for node in nodes:
         if not isinstance(node, dict):
-            return []
+            return None
         pr, head, cross = node.get("number"), node.get("headRefName"), node.get("isCrossRepository")
         base = (node.get("baseRepository") or {}).get("nameWithOwner") \
             if isinstance(node.get("baseRepository"), dict) else None
         if (type(pr) is not int or pr < 1 or not isinstance(head, str) or not head
                 or not isinstance(cross, bool) or not isinstance(base, str)):
-            return []
+            return None
         if not cross and base.lower() == repo.lower():
             found.append((pr, head))
     return found
@@ -851,11 +853,16 @@ def stack(kind, repo, number, branch, names, at, cwd, scripts_dir, extra=()):
     comment_id, before = found
     cmd = [sys.executable, os.path.join(scripts_dir, "cost_ledger.py"), "timeline"]
     cmd += ["--pr", str(number), "--branch", branch] if kind == "pr" else ["--issue", str(number)]
-    cmd += ["--trigger", "+".join(names), "--at", at]
+    closing = []
     if kind == "issue" and "issue クローズ" in names:
-        # 問い合わせが失敗・0 件なら --closing-pr を付けず、issue クローズの行だけを積む
-        for pr, head in closing_prs(repo, number):
-            cmd += ["--closing-pr", "%d:%s" % (pr, head)]
+        # 0 件なら --closing-pr を付けず、issue クローズの行だけを積む。問い合わせが失敗したとき
+        # (None) も同じだが、きっかけの欄の最後に失敗の印を足して 0 件の回と見分けられるようにする
+        closing = closing_prs(repo, number)
+        if closing is None:
+            closing, names = [], names + [CLOSING_FAILED]
+    cmd += ["--trigger", "+".join(names), "--at", at]
+    for pr, head in closing:
+        cmd += ["--closing-pr", "%d:%s" % (pr, head)]
     if cwd:
         cmd += ["--repo", cwd]
     cmd += ["--target-repo", repo]
