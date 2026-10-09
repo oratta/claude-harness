@@ -1,7 +1,7 @@
 ## 1. 帰属の鍵を足す
 
-- [ ] 1.1 `attribution.bats` に、`gh issue reopen 42` を実行した区間が issue 42 に寄るテストと、`gh api -X POST repos/acme/app/issues/42/comments` と `gh api -X PATCH repos/acme/app/issues/42` で寄るテスト、実行していない文字列（`Agent` の指示文や `Edit` の本文の `gh issue reopen 42`）では寄らないテスト、`issues/comments/<id>`・`gh api graphql`・`issues/42abc` では寄らないテストを先に書き、落ちることを確かめる。触る範囲: `plugins/cost-ledger/tests/attribution.bats:1-120`、`load helper` の `cl_row`・`cl_write_log` の使い方は `plugins/cost-ledger/tests/deleted-cwd.bats:289-300` を参照
-- [ ] 1.2 `ISSUE_RE` の定義 1 行だけを書き換え、`reopen` と `gh api` の形を非キャプチャ群の選択肢で並べる（番号のキャプチャ群は 1 つのまま。`findall` は今までどおり番号の文字列のリストを返す）。`scan_tool_calls` など `ISSUE_RE` 以外の行は変えない。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:46-50`（`ISSUE_RE`。コメントも合わせて直す）
+- [ ] 1.1 `attribution.bats` に、`gh issue reopen 42` を実行した区間が issue 42 に寄るテストと、`gh api -X POST repos/acme/app/issues/42/comments` と `gh api -X PATCH repos/acme/app/issues/42` で寄るテスト、実行していない文字列（`Agent` の指示文や `Edit` の本文の `gh issue reopen 42`）では寄らないテスト、`issues/comments/<id>`・`gh api graphql`・`issues/42abc` では寄らないテスト、`gh api -X POST repos/acme/app/issues/42/comments -f body="gh api repos/acme/app/issues/99"` が 42 に寄り 99 に寄らないテスト、行頭・`&&` の直後・`VAR=x gh api ...` で寄り `xargs gh api ...` では寄らない（読み落とす）テストを先に書き、落ちることを確かめる。触る範囲: `plugins/cost-ledger/tests/attribution.bats:1-120`、`load helper` の `cl_row`・`cl_write_log` の使い方は `plugins/cost-ledger/tests/deleted-cwd.bats:289-300` を参照
+- [ ] 1.2 `ISSUE_RE` の定義だけを書き換え、`reopen` と、コマンドの位置（行頭、または `;` `&&` `||` `|` `(` の直後。前の `VAR=値` は可）にある `gh api` の形を非キャプチャ群の選択肢で並べ、`re.M` を付ける（design の決定 2 の形）（番号のキャプチャ群は 1 つのまま。`findall` は今までどおり番号の文字列のリストを返す）。`scan_tool_calls` など `ISSUE_RE` 以外の行は変えない。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:46-50`（`ISSUE_RE`。定義の上のコメントは変えない）
 - [ ] 1.3 `bats plugins/cost-ledger/tests/` が exit 0 になることを確かめる（既存の帰属のテストが変わらず通る）
 
 ## 2. 仕様と記録

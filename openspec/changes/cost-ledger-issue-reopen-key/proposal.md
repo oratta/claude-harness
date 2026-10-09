@@ -5,7 +5,7 @@ issue へのコストの帰属の鍵（`cost_ledger.py` の `ISSUE_RE`）が拾�
 ## What Changes
 
 - `ISSUE_RE` の拾うサブコマンドに `gh issue reopen` を足す
-- `ISSUE_RE` 1 本の定義を書き換えて、`gh api` の最初の位置引数（endpoint）が `repos/<owner>/<repo>/issues/<番号>` で始まるコマンドも、その番号を帰属の鍵として拾う
+- `ISSUE_RE` 1 本の定義を書き換えて、コマンドの位置にある `gh api` の最初の位置引数（endpoint）が `repos/<owner>/<repo>/issues/<番号>` で始まるコマンドも、その番号を帰属の鍵として拾う
 - 過去に台帳へ書いた行は書き換えない（再オープンや `gh api` の番号が入っていない行は、そのまま）と spec に 1 文で書く
 - `ISSUE_RE` の定義以外のコード（`scan_tool_calls` など）は変えない
 - 走査する場所は今までどおり実行された `Bash` の `command` だけ。実行していない文字列では寄らない
