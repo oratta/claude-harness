@@ -14,12 +14,15 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 
 ```bash
 plugin_root="${CLAUDE_PLUGIN_ROOT}"
+WT_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; WT_NG=1; fi
 for dir in \
   "${plugin_root:+$plugin_root/skills/wt-clean}" \
   ~/.claude/plugins/marketplaces/*/plugins/worktree/skills/wt-clean \
   ~/.claude/plugins/installed/*/worktree/skills/wt-clean; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
 done
+if [ -n "$WT_NG" ]; then unsetopt nullglob; fi
+unset WT_NG
 ```
 
 特定した絶対パス（`skills/wt-clean/SKILL.md`）を Read tool で読み込み、その手順（Step -1 対象リポ解決 → Step 0 同期 → Step A TARGETS 確定 → Step B 遅延診断 → Step C レポート）に一言一句従って実行する。
