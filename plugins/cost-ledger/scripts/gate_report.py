@@ -753,45 +753,38 @@ def resolve(target, cwd, at):
     return ("pr", repo, number, branch, names, 0) if names else None
 
 
-def _open_lock_once(folder, name):
-    """置き場を fd で開いて検査し、その fd を基準にロックファイルを開く。(状態, fd)。
-    状態は "ok"（fd を返す）・"unsafe"（置き場が安全でない。再試行しない）・"enoent"（作成が ENOENT）。"""
-    # 共有の /tmp に他人が先に作った場所（シンボリックリンク・他人の持ち物・他人が書ける）は使わない。
-    # 検査と作成の間にパスを差し替えられないよう、置き場を fd で開いてその fd を検査し、
-    # ロックファイルもその fd を基準に開く
-    os.makedirs(folder, mode=0o700, exist_ok=True)
-    dir_fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
-        st = os.fstat(dir_fd)
-        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
-            return "unsafe", None
-        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
-        try:
-            return "ok", os.open(name, flags, 0o600, dir_fd=dir_fd)
-        except FileNotFoundError:
-            return "enoent", None
-    finally:
-        os.close(dir_fd)
-
-
 def lock(repo, number):
     """対象ごとの排他ロックを取る。取れなければ None（読んでから書くまでを直列にできないので書かない）。"""
     try:
         folder = os.path.join(os.environ.get("TMPDIR") or "/tmp", "cost-ledger-timeline")
-        name = "%s__%d.lock" % (repo.lower().replace("/", "__"), number)
-        fd = None
-        for attempt in range(5):
-            # 同時に流した 2 本のうち 1 本が、dir_fd 基準の作成で ENOENT になり書かずに終わることがあった
-            # （macOS）。原因のカーネル側の挙動は特定できていない。同じ dir_fd で待っても回復する保証が
-            # ないので、試行ごとに置き場を作り直し・開き直し・検査し直して fd を取り直す
-            state, fd = _open_lock_once(folder, name)
-            if state == "ok":
-                break
-            if state == "unsafe":
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        # 共有の /tmp に他人が先に作った場所（シンボリックリンク・他人の持ち物・他人が書ける）は使わない。
+        # 検査と作成の間にパスを差し替えられないよう、置き場を fd で開いてその fd を検査し、
+        # ロックファイルもその fd を基準に開く
+        dir_fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            st = os.fstat(dir_fd)
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
                 return None
-            if attempt == 4:
-                return None
-            time.sleep(0.02)
+            name = "%s__%d.lock" % (repo.lower().replace("/", "__"), number)
+            flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+            for attempt in range(5):
+                try:
+                    fd = os.open(name, flags, 0o600, dir_fd=dir_fd)
+                    break
+                except FileNotFoundError:
+                    # macOS では、同じ名前を 2 つのプロセスが dir_fd 基準の O_CREAT で同時に開くと、
+                    # 片方が ENOENT で返ることがある（実測。パス指定の open や別々の名前では出ない）。
+                    # その瞬間も置き場は在り、fd が指す inode はパスの inode と同じで、ロックファイルは
+                    # 相手が作成済み。一過性で、同じ dir_fd のまま開き直せば取れる（実測では 1 回の
+                    # lock() の中で ENOENT は最大 1 回）。置き場は開き直さない: 開き直すと、置き場が
+                    # 消されて作り直されたときに、先に取った側とは別の inode をロックして排他が効かない。
+                    # 上限まで ENOENT が続いたら（fd が指す置き場が消された場合を含む）取れなかったものとする
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.02)
+        finally:
+            os.close(dir_fd)
         fcntl.flock(fd, fcntl.LOCK_EX)
         return fd
     except OSError:
