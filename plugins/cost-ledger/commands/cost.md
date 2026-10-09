@@ -11,17 +11,23 @@ allowed-tools: Bash
 集計スクリプトの絶対パスを特定して、そのまま呼ぶ。
 
 ```bash
-plugin_root="${CLAUDE_PLUGIN_ROOT}"
+IFS= read -r PLUGIN_ROOT <<'COST_LEDGER_PLUGIN_ROOT'
+${CLAUDE_PLUGIN_ROOT}
+COST_LEDGER_PLUGIN_ROOT
+case "$PLUGIN_ROOT" in '$'*) PLUGIN_ROOT= ;; esac
 for dir in \
-  "${plugin_root:+$plugin_root/scripts}" \
+  "${PLUGIN_ROOT:+$PLUGIN_ROOT/scripts}" \
   ~/.claude/plugins/marketplaces/*/plugins/cost-ledger/scripts \
   ~/.claude/plugins/installed/*/cost-ledger/scripts; do
   [ -n "$dir" ] && [ -f "$dir/cost_ledger.py" ] && CL="$dir/cost_ledger.py" && break
 done
-CLAUDE_PLUGIN_OPTION_LEDGER_PATH='${user_config.LEDGER_PATH}' python3 "$CL" cost $ARGUMENTS
+IFS= read -r LEDGER_OPTION <<'LEDGER_PATH_EOF'
+${user_config.LEDGER_PATH}
+LEDGER_PATH_EOF
+CLAUDE_PLUGIN_OPTION_LEDGER_PATH="$LEDGER_OPTION" python3 "$CL" cost $ARGUMENTS
 ```
 
-探索の先頭候補は、コマンド本文の読み込み時に絶対パスへ置換される `plugin_root="${CLAUDE_PLUGIN_ROOT}"` から作る（Bash の実行環境にはプラグインのルートの環境変数が渡らないため、環境変数の形だと先頭が空になり、版の違うインストール済みの旧コピーが選ばれる）。置換されないときは `plugin_root` が空になり、先頭候補は空文字列として飛ばされて、後続の候補へ進む。
+探索の先頭候補と台帳のパスは、コマンド本文の読み込み時に値へ置換される `${CLAUDE_PLUGIN_ROOT}`・`${user_config.LEDGER_PATH}` を、引用した here-document（区切り語を引用符で囲んだ形）で読み込んでシェル変数に入れて使う。値は文字として読まれるので、空白・引用符・`$`・バッククォートを含んでいてもそのまま扱われる（シングルクォートで包む形だと `'` を含むパスで別のパスになり、二重引用符の中に直接置く形だと `$(...)` が実行される）。Bash の実行環境にはプラグインのルートの環境変数が渡らないため、環境変数の形だと先頭が空になり、版の違うインストール済みの旧コピーが選ばれる。置換されないときは、値が `$` で始まる文字列のまま残るので `PLUGIN_ROOT` を空にし、先頭候補は空文字列として飛ばされて、後続の候補へ進む（台帳のパスの側は、置換されない文字列のまま `cost_ledger.py` が未設定として扱う）。
 
 引数の解釈はスクリプト側が行う。
 
@@ -38,7 +44,7 @@ CLAUDE_PLUGIN_OPTION_LEDGER_PATH='${user_config.LEDGER_PATH}' python3 "$CL" cost
 
 会話ログは既定 30 日で消える。消えたあとも同じ値を返すために、プラグイン設定「台帳ファイルのパス」（なければ `COST_LEDGER_PATH`）が指すリポジトリ外の append-only の JSONL 台帳へ、応答が終わるたびに `Stop` hook が増えた分を焼き付ける。
 
-- **台帳が未設定なら**（プラグイン設定「台帳ファイルのパス」も `COST_LEDGER_PATH` も空）、会話ログを直接読んで答えたうえで、台帳ファイルをどこに置くかを利用者に聞く（既定の場所は決めない。このリポジトリの配下は不可。パスにシングルクォート `'` を含めない）。決まったら、`/config` でプラグイン設定「台帳ファイルのパス」に設定するよう先に案内し、従来の方法として `~/.claude/settings.json` の `env` に `COST_LEDGER_PATH` を書くこともできると添える。設定が効いたあと（新しいセッションから）の最初の `/cost` が会話ログの増えた分を台帳に取り込む。すぐ取り込むなら `COST_LEDGER_PATH=<決めたパス> python3 "$CL" ledger-sync` を実行する
+- **台帳が未設定なら**（プラグイン設定「台帳ファイルのパス」も `COST_LEDGER_PATH` も空）、会話ログを直接読んで答えたうえで、台帳ファイルをどこに置くかを利用者に聞く（既定の場所は決めない。このリポジトリの配下は不可）。決まったら、`/config` でプラグイン設定「台帳ファイルのパス」に設定するよう先に案内し、従来の方法として `~/.claude/settings.json` の `env` に `COST_LEDGER_PATH` を書くこともできると添える。設定が効いたあと（新しいセッションから）の最初の `/cost` が会話ログの増えた分を台帳に取り込む。すぐ取り込むなら `COST_LEDGER_PATH=<決めたパス> python3 "$CL" ledger-sync` を実行する
 - 台帳がリポジトリ配下を指していると、スクリプトは終了コード 2 で終わる。その旨を利用者に伝えて場所を聞き直す
 
 ## 出力の扱い
