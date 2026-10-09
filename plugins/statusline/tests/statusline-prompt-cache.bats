@@ -74,8 +74,14 @@ withcause() {
 
 @test "cache: sits between Context and Session" {  # Context と Session のあいだに並ぶ
   l="$(printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"cost":{"total_cost_usd":1.5},"prompt_cache":{"hit_ratio":0.82}}' "$WORK" \
-    | STATUSLINE_CURRENCY=USD STATUSLINE_API_PACE=0 bash "$SL" | strip_ansi | sed -n 2p)"
+    | STATUSLINE_CURRENCY=USD STATUSLINE_API_PACE=0 STATUSLINE_SESSION_COST=1 bash "$SL" | strip_ansi | sed -n 2p)"
   [ "$l" = 'Context 91%  │  Cache 82%  │  Session $1.50' ]
+}
+
+@test "cache: sits before the API segment" {  # API の区画より前に並ぶ
+  echo 'API ¥180,000/mo' > "$WORK/.statusline-api-pace"
+  l="$(mk '{"hit_ratio":0.82}' | STATUSLINE_API_PACE=1 bash "$SL" | strip_ansi | sed -n 2p)"
+  [ "$l" = 'Context 91%  │  Cache 82%  │  API ¥180,000/mo' ]
 }
 
 @test "cache: comes first when Context is absent" {  # Context が無ければ先頭に出る
@@ -84,32 +90,33 @@ withcause() {
 }
 
 @test "cache: color does not depend on the value" {  # 値が違っても色は同じ
-  a="$(out '{"hit_ratio":0.05}' | sed -n 2p | grep -o $'\033\\[[0-9;]*mCache')"
-  b="$(out '{"hit_ratio":0.95}' | sed -n 2p | grep -o $'\033\\[[0-9;]*mCache')"
-  [ -n "$a" ]
+  a="$(out '{"hit_ratio":0.05}' | sed -n 2p | sed 's/Cache 5%/Cache N%/')"
+  b="$(out '{"hit_ratio":0.95}' | sed -n 2p | sed 's/Cache 95%/Cache N%/')"
+  [[ "$a" == *"Cache N%"* ]] || return 1
   [ "$a" = "$b" ]
 }
 
 @test "cache: no prompt_cache means no segment" {  # prompt_cache が無ければ区画が出ない
-  l="$(mk '' | STATUSLINE_API_PACE=0 bash "$SL" | strip_ansi | sed -n 2p)"
-  [ "$l" = 'Context 91%' ]
-  ! mk '' | bash "$SL" | grep -q 'Cache' || return 1
+  mk '' | STATUSLINE_API_PACE=0 bash "$SL" | strip_ansi > "$WORK/o.txt"
+  [ "$(sed 1d "$WORK/o.txt")" = 'Context 91%' ]
+  [ "$(wc -l < "$WORK/o.txt" | tr -d ' ')" = 2 ]
+  ! mk '' | bash "$SL" | tail -n +2 | grep -q 'Cache' || return 1
 }
 
 @test "cache: null hit_ratio gives byte-identical output to no prompt_cache" {  # hit_ratio が null なら従来と完全一致
-  a="$(out '')"
-  b="$(out '{"hit_ratio":null,"last_miss_cause":{"causes":["tools_changed"]}}')"
-  [ "$a" = "$b" ]
+  out '' > "$WORK/a.bin"
+  out '{"hit_ratio":null,"last_miss_cause":{"causes":["tools_changed"]}}' > "$WORK/b.bin"
+  cmp "$WORK/a.bin" "$WORK/b.bin"
 }
 
 @test "cache: malformed prompt_cache gives byte-identical output, empty stderr, exit 0" {  # 壊れた形でも従来と完全一致
-  base="$(out '')"
+  out '' > "$WORK/base.bin"
   for pc in '"str"' '{"hit_ratio":"0.82"}' '{"hit_ratio":1.5}' '{"hit_ratio":-0.1}' '{"last_miss_cause":{"causes":["tools_changed"]}}' '[1]' '{"hit_ratio":true}'; do
     status=0
     mk "$pc" | bash "$SL" > "$WORK/o.txt" 2> "$WORK/e.txt" || status=$?
     [ "$status" -eq 0 ]
     [ ! -s "$WORK/e.txt" ]
-    [ "$(cat "$WORK/o.txt")" = "$base" ]
+    cmp "$WORK/o.txt" "$WORK/base.bin"
   done
 }
 
@@ -126,6 +133,7 @@ withcause() {
   [[ "$l" != *"system"* ]] || return 1
   l="$(withcause '{"causes":["a","b","c","d","e","f","g","h","i","j","k","l","m"]}')"
   [[ "$l" == *"miss:a+12"* ]] || return 1
+  [[ "$(withcause '{"causes":["tools_changed",3]}')" == *"miss:tools+1"* ]] || return 1
 }
 
 @test "cause: unmapped names pass through and are cut at 16 chars" {  # 対応表に無い原因は 16 文字で切る
@@ -147,7 +155,8 @@ withcause() {
 
 @test "cause: broken shapes keep the hit ratio and drop the cause" {  # 原因の形が壊れていればヒット率だけ
   for lmc in '"str"' '{"causes":[]}' '{"causes":"tools_changed"}' '{"causes":7}' '{"causes":[3]}' \
-             '{"causes":["a\u001bb"]}' '{"causes":["a b"]}' '{"causes":[""]}' '{"causes":null}' '[1]'; do
+             '{"causes":["a\u001bb"]}' '{"causes":["a b"]}' '{"causes":[""]}' '{"causes":null}' \
+             '{"causes":["a\n"]}' '{"causes":["tools_changed\n","x"]}' '[1]'; do
     status=0
     mk "{\"hit_ratio\":0.82,\"last_miss_cause\":$lmc}" | bash "$SL" > "$WORK/o.txt" 2> "$WORK/e.txt" || status=$?
     [ "$status" -eq 0 ]
@@ -165,17 +174,24 @@ withcause() {
 }
 
 @test "config: STATUSLINE_PROMPT_CACHE=0 hides the segment" {  # =0 で区画が消える
-  a="$(out '')"
-  b="$(mk '{"hit_ratio":0.82,"last_miss_cause":{"causes":["tools_changed"]}}' | STATUSLINE_PROMPT_CACHE=0 bash "$SL")"
-  [ "$a" = "$b" ]
+  out '' > "$WORK/a.bin"
+  mk '{"hit_ratio":0.82,"last_miss_cause":{"causes":["tools_changed"]}}' | STATUSLINE_PROMPT_CACHE=0 bash "$SL" > "$WORK/b.bin"
+  cmp "$WORK/a.bin" "$WORK/b.bin"
 }
 
 @test "config: unset STATUSLINE_PROMPT_CACHE shows the segment" {  # 未設定なら区画が出る
   [[ "$(line2 '{"hit_ratio":0.82}')" == *"Cache 82%"* ]] || return 1
 }
 
+@test "config: values other than 0 show the segment" {  # 0 以外の値なら区画が出る
+  for v in 1 2 off; do
+    l="$(mk '{"hit_ratio":0.82}' | STATUSLINE_PROMPT_CACHE="$v" bash "$SL" | strip_ansi | sed -n 2p)"
+    [[ "$l" == *"Cache 82%"* ]] || return 1
+  done
+}
+
 @test "config: the variable is documented in README and the script header" {  # README と冒頭コメントに載っている
-  grep -q 'STATUSLINE_PROMPT_CACHE' "${PLUGIN_DIR}/README.md"
+  grep -q '^| `STATUSLINE_PROMPT_CACHE` |' "${PLUGIN_DIR}/README.md"
   head -n 40 "$SL" | grep -q 'STATUSLINE_PROMPT_CACHE'
 }
 
