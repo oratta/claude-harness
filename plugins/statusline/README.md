@@ -4,7 +4,7 @@
 
 ```
 .../workspaces/flatmate/clone-origin-main-repo-sync  Opus 5 (1M context)  oratta/clone-origin-main-repo-sync
-Context 91%  │  API ¥1,446,038/mo  │  Session ¥1,240
+Context 91%  │  Cache 82%  │  API ¥1,446,038/mo  │  Session ¥1,240
 5h       ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    3%  ~4h 13m
 7d All   ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   25%/29%   Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    7%/29%  ~4d 22h
 ```
@@ -12,9 +12,11 @@ Context 91%  │  API ¥1,446,038/mo  │  Session ¥1,240
 | 行 | 内容 |
 |---|---|
 | 1 | カレントディレクトリ / モデル / git ブランチ（未コミット変更は `✱`） |
-| 2 | コンテキスト残量 / 直近30日の使用量を API 従量課金に換算した月額ペース / このセッションの API 換算コスト |
+| 2 | コンテキスト残量 / プロンプトキャッシュのヒット率 / 直近30日の使用量を API 従量課金に換算した月額ペース / このセッションの API 換算コスト |
 | 3 | 5時間ウィンドウのレートリミット消化率 |
 | 4 | 7日ウィンドウのレートリミット消化率（全体 + Fable） |
+
+`Cache` は、メイン会話のセッション累計のプロンプトキャッシュのヒット率（Claude Code が渡す `prompt_cache.hit_ratio` を四捨五入した百分率。サブエージェントの分は含まない）。値によって色は変えない。直近にキャッシュのミスがあれば、そのうしろに `miss:<原因>` が付く。これは直近のミスの原因で、次のミスが起きるまで出続ける。短い名前は `tools`（`tools_changed`）・`system`（`system_prompt_changed`）・`ttl5m`（`ttl_expired_5m`）・`server`（`likely_server_side`）で、これ以外の原因名は 16 文字までそのまま出し、原因が複数あれば先頭だけを出して `+1` のように残りの件数を添える。`prompt_cache` を渡さない版と、最初の API 応答の前は区画を出さない。原因は Claude Code 2.1.260 以降でだけ出る。`caching_observed` は見ないので、キャッシュのトークン数を報告しないプロバイダやゲートウェイでは `Cache 0%` と出る。消したいときは `STATUSLINE_PROMPT_CACHE=0`。
 
 `Session` は、このセッションのメイン会話と、このセッションが立ち上げたサブエージェントを合算した API 換算コスト。Claude Code がステータスラインに渡す `cost.total_cost_usd`（セッション内のすべての API 呼び出しを定価で見積もった値）をそのまま円に換算している。`/clear` で 0 に戻る。30日の数字は ccusage がログから計算したものなので、料金表の違いで両者は多少ずれることがある。為替は30日コストの背景更新が保存したレートを読むだけで、まだ無ければ USD（`Session $1.23`）で出す。
 
@@ -153,6 +155,7 @@ writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合�
 |---|---|---|
 | `STATUSLINE_BAR_WIDTH` | `16` | バーのセル数 |
 | `STATUSLINE_BAR_GLYPH` | `▂` | 日程線の太さ。細い順に `▁` `▂` `▃` `▄` |
+| `STATUSLINE_PROMPT_CACHE` | `1` | `0` でプロンプトキャッシュのヒット率表示を止める |
 | `STATUSLINE_API_PACE` | `1` | `0` で API 換算コスト表示を止める |
 | `STATUSLINE_SESSION_COST` | `1` | `0` でセッションコスト表示を止める |
 | `STATUSLINE_CURRENCY` | `JPY` | API 換算コスト（30日・セッションとも）の通貨。`USD` なら為替変換なし |

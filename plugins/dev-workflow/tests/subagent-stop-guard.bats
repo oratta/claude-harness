@@ -466,7 +466,7 @@ PY
   python3 - "$HOOKS_JSON" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))["hooks"]
-assert set(d) == {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop", "SubagentStart"}, sorted(d)
+assert set(d) == {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop", "SubagentStart", "PreModelSwitch"}, sorted(d)
 assert any("session-tripwires.sh" in h["command"]
            for e in d["SessionStart"] for h in e["hooks"]), d["SessionStart"]
 assert any("prompt-tripwires-refresh.sh" in h["command"]
