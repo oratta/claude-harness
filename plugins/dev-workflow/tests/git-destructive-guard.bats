@@ -324,6 +324,48 @@ expect_silent() {
   expect_silent "${chain_true}; git status"
 }
 
+# chained_within <秒> <重ねる数> <頭> <中心のコマンド> [後ろに続けるコマンド]
+# — <頭> "$(...)" を重ねたコマンドを hook に渡し、上限の秒数のうちに返った結果を 1 語で出す
+# （ask / deny / silent / timeout / error）。hook の時間切れは何も止めないのと同じ結果になるので、時間も検査する。
+chained_within() {
+  python3 - "$SCRIPT" "$@" <<'PY'
+import json, subprocess, sys
+script, limit, n, head, cmd = sys.argv[1], float(sys.argv[2]), int(sys.argv[3]), sys.argv[4], sys.argv[5]
+for _ in range(n):
+    cmd = '%s "$(%s)"' % (head, cmd)
+if len(sys.argv) > 6:
+    cmd += "; " + sys.argv[6]
+p = json.dumps({"tool_name": "Bash", "permission_mode": "default", "tool_input": {"command": cmd}})
+try:
+    r = subprocess.run([script], input=p, capture_output=True, text=True, timeout=limit)
+except subprocess.TimeoutExpired:
+    print("timeout")
+    sys.exit(0)
+if r.returncode != 0 or r.stderr:
+    print("error")
+elif not r.stdout.strip():
+    print("silent")
+else:
+    print(json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"])
+PY
+}
+
+@test "shell syntax: thousands of chained bash -c / eval arguments are judged in time" {
+  # 字句読みに置き換える前は 3000 重でも 1 秒かからずに止めていた形。重ねた数だけ内側の引数を読み直すと、
+  # 1000 重で 30 秒を超えて hook の時間切れになり、素通しになる
+  local n
+  for n in 1000 3000; do
+    [ "$(chained_within 10 "$n" 'bash -c' 'git reset --hard')" = ask ]
+    [ "$(chained_within 10 "$n" 'eval' 'git reset --hard')" = ask ]
+    [ "$(chained_within 10 "$n" 'sh -c' "bash -c 'git reset --hard'")" = ask ]
+    [ "$(chained_within 10 "$n" 'bash -c' 'true' 'git reset --hard')" = ask ]
+    [ "$(chained_within 10 "$n" 'eval' 'true' 'git reset --hard')" = ask ]
+    # 重ねた形の奥や後ろに破壊的操作が無ければ、深くても何も出さない
+    [ "$(chained_within 10 "$n" 'bash -c' 'true' 'git status')" = silent ]
+    [ "$(chained_within 10 "$n" 'eval' "echo 'git reset --hard'")" = silent ]
+  done
+}
+
 # --- 引数を取るオプションの値（PR #794 ゲート一周目 F2・F11・F12） ---
 
 @test "option values: a -n that is an option value does not make push or clean a dry-run" {
