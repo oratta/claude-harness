@@ -17,7 +17,7 @@
 #         （-C <パス> status --porcelain）/ head（-C <パス> rev-parse HEAD。既定 aaa111）/ branch_tip
 #         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（branch -D）
 #   gh  : issue comment <N> --body <本文> は本文を comment_<N> に追記し（1 件ごとに "---" の行で区切る）、
-#         comment_exit で終わる（既定 0）。pr list は pr_out を出して pr_exit で終わる（既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
+#         comment_exit で終わる（既定 0）。成功（exit 0）のときは実物の gh と同じに投稿先の URL を stdout に出す。pr list は pr_out を出して pr_exit で終わる（既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
 #         呼び出し回数は ghcount_<N>。FAIL は stderr に "gh: mock failure for issue <N> (poll <count>)" も出す
 # スクリプトは PATH="<スタブ置き場>:/usr/bin:/bin" で走らせる（jq は実物）。
 # テストの途中に素の [[ ]] を置かない（bash 3.2 では偽でも素通りする）。
@@ -149,7 +149,9 @@ exit 0' ;;
     gh) body='
 if [ "$1 $2" = "issue comment" ]; then
   printf "%s\n---\n" "$5" >> "$STUB_CFG/comment_$3"
-  exit "$(cat "$STUB_CFG/comment_exit" 2>/dev/null || echo 0)"
+  rc="$(cat "$STUB_CFG/comment_exit" 2>/dev/null || echo 0)"
+  [ "$rc" -eq 0 ] && echo "https://github.com/o/r/issues/$3#issuecomment-1"
+  exit "$rc"
 fi
 if [ "$1 $2" = "pr list" ]; then
   cat "$STUB_CFG/pr_out" 2>/dev/null
@@ -623,6 +625,17 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
     [ "$(first_line "^gh issue comment $n ")" -lt "$(first_line "^orca terminal create --worktree path:/work/issue-$n ")" ]
     [ "$(first_line "^gh issue comment $n ")" -gt "$(first_line "^orca worktree create --name issue-$n ")" ]
   done
+}
+
+@test "launch: stdout stays launched|skipped|failed lines only even though gh prints the comment URL on stdout" {
+  make_stub orca
+  run dispatch launch --note "x" 400 11 12
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 2 ] || return 1
+  for l in "${lines[@]}"; do
+    printf '%s\n' "$l" | grep -Eq '^(launched|skipped|failed) [0-9]+$' || return 1
+  done
+  [ "$(calls '^gh issue comment ')" -eq 2 ] || return 1
 }
 
 @test "launch: without --note no comment is posted" {
