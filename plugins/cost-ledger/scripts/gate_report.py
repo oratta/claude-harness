@@ -358,7 +358,7 @@ def field_state(fields, env):
 def api_targets(args, env, gh_repo=None):
     """gh api の REST の直叩きから (種別, owner/repo か None, 番号, きっかけ, None) を取り出す。
     endpoint の {owner}/{repo} は前置きの GH_REPO（gh_repo）、無ければ None（cwd のリポジトリ）。
-    リテラルの owner/repo には GH_REPO は効かない。"""
+    リテラルの owner/repo には GH_REPO は効かない。owner / repo が . か .. の endpoint は取り出さない。"""
     call = api_call(args, env)
     if call is None or call[0] is None:
         return []
@@ -369,6 +369,8 @@ def api_targets(args, env, gh_repo=None):
         if not m:
             continue
         where, family, number, tail = m.group(1), m.group(2), int(m.group(3)), m.group(4)
+        if where != "{owner}/{repo}" and not valid_parts(where.split("/")):
+            continue  # リテラルの owner / repo が . か ..。-R / GH_REPO と同じく解決できない対象として飛ばす
         names = []
         if family == "issues" and tail == "comments":
             if method == "POST":

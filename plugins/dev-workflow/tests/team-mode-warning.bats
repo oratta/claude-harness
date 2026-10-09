@@ -20,6 +20,7 @@ n="CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
 assert n in d["systemMessage"]
 assert n in d["hookSpecificOutput"]["additionalContext"]
 assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart"
+assert d["systemMessage"]==d["hookSpecificOutput"]["additionalContext"]
 '
 }
 
@@ -57,7 +58,7 @@ assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart"
 }
 
 @test "warning still prints when python3 is not on PATH" {
-  # python3 を含まない PATH（bash と tr だけ）を作って実行する
+  # python3 を含まない PATH（bash・tr・cat だけ）を作って実行する
   local bin="${BATS_TEST_TMPDIR}/nopython-bin"
   mkdir -p "$bin"
   ln -s "$(command -v bash)" "$bin/bash"
