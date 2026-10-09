@@ -364,6 +364,12 @@ closing_args() {
   tail -n 1 "$COST_LOG" | grep -oE -- '--closing-pr [^ ]+' | sed 's/^--closing-pr //' | tr '\n' ' ' | sed 's/ $//'
 }
 
+# stub の timeline が最後に受け取った --trigger の値（無ければ空）
+trigger_arg() {
+  [ -f "$COST_LOG" ] || return 0
+  tail -n 1 "$COST_LOG" | sed -n 's/^args=timeline .*--trigger \(.*\) --at [0-9.]*\( .*\)\{0,1\}$/\1/p'
+}
+
 # コメントの作成も書き換えも無い
 no_write() {
   [ ! -f "$GH_LOG" ] && return 0
@@ -1857,6 +1863,48 @@ PY2
   grep -q '^args=timeline --issue 12 ' "$COST_LOG"
 }
 
+@test "timeline-hook: a failed closing-PR query marks the trigger" {  # GraphQL の失敗・JSON でない応答・形の崩れ・100 件超のどれでも --trigger は issue クローズ+PR 照会失敗。gh は 4 回のまま
+  closed_issue_12
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]" FAKE_GRAPHQL_FAIL=1
+  run_hook "gh issue close 12"
+  [ "$(trigger_arg)" = "issue クローズ+PR 照会失敗" ]
+  [ "$(body_trigger 1)" = "issue クローズ+PR 照会失敗" ]
+  [ "$(gh_calls)" -eq 4 ]
+  unset FAKE_GRAPHQL_FAIL
+  for raw in 'not json' '[]' '{"data":{"repository":{"issue":null}}}'; do
+    : > "$COST_LOG"
+    FAKE_GRAPHQL_RAW="$raw" run_hook "gh issue close 12"
+    [ "$(trigger_arg)" = "issue クローズ+PR 照会失敗" ] || { echo "$raw"; return 1; }
+  done
+  unset FAKE_GRAPHQL_RAW
+  : > "$COST_LOG"
+  FAKE_CLOSING_NEXT=1 run_hook "gh issue close 12"
+  [ "$(trigger_arg)" = "issue クローズ+PR 照会失敗" ]
+  for bad in '{"number":"705","headRefName":"feat/y","isCrossRepository":false,"baseRepository":{"nameWithOwner":"acme/cwd-repo"}}' 'null'; do
+    : > "$COST_LOG"
+    FAKE_CLOSING_PRS="[$(closing_node 704 feat/x),$bad]" run_hook "gh issue close 12"
+    [ "$(trigger_arg)" = "issue クローズ+PR 照会失敗" ] || { echo "$bad"; return 1; }
+  done
+}
+
+@test "timeline-hook: a comment and a failed close query mark the joined trigger" {  # gh issue comment 12 --body x && gh issue close 12 で問い合わせが失敗 → issue コメント+issue クローズ+PR 照会失敗
+  closed_issue_12
+  export FAKE_GRAPHQL_FAIL=1
+  run_hook "gh issue comment 12 --body x && gh issue close 12"
+  [ "$(trigger_arg)" = "issue コメント+issue クローズ+PR 照会失敗" ]
+}
+
+@test "timeline-hook: a successful closing-PR query adds no mark and keeps four gh calls" {  # 1 件・0 件・別のリポジトリや fork の PR だけ、のどれでも --trigger は issue クローズで gh は 4 回
+  closed_issue_12
+  for prs in "[$(closing_node 704 feat/x)]" "[]" "[$(closing_node 9 main acme/other),$(closing_node 705 main acme/cwd-repo true)]"; do
+    : > "$COST_LOG"
+    rm -f "$GH_LOG" "$FIX"/comments.12.*.json
+    FAKE_CLOSING_PRS="$prs" run_hook "gh issue close 12"
+    [ "$(trigger_arg)" = "issue クローズ" ] || { echo "$prs"; return 1; }
+    [ "$(gh_calls)" -eq 4 ] || { echo "$prs"; return 1; }
+  done
+}
+
 @test "timeline-hook: more than 100 closing PRs add no total" {  # pageInfo.hasNextPage が真 → --closing-pr は渡らず、コメントは 1 本書き込まれる
   closed_issue_12
   export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]" FAKE_CLOSING_NEXT=1
@@ -1879,7 +1927,7 @@ PY2
     rm -f "$FIX"/comments.12.*.json
     FAKE_CLOSING_PRS="[$good,$bad]" run_hook "gh issue close 12"
     [ -z "$(closing_args)" ] || { echo "$bad"; return 1; }
-    [ "$(body_trigger 1)" = "issue クローズ" ] || { echo "$bad"; return 1; }
+    [ "$(body_trigger 1)" = "issue クローズ+PR 照会失敗" ] || { echo "$bad"; return 1; }
   done
 }
 
@@ -1922,6 +1970,22 @@ PY2
   run_hook "gh issue close 12"
   no_write
   [ ! -s "$COST_LOG" ]
+}
+
+@test "timeline-hook: the real timeline tells a failed query from zero closing PRs" {  # 本物の cost_ledger.py で、問い合わせが失敗した回と 0 件の回のコメントは、きっかけの欄の印だけが違い、どちらにも合計の行は無い
+  use_real_repo_a
+  closed_issue_12
+  cl_row S2 r2 2026-09-01T00:00:20.000Z main "$RA" 1000000 "gh issue comment 12 --body x" | cl_write_log issue12
+  export FAKE_CLOSING_PRS="[]"
+  HOOK_CWD="$RA" run_hook "gh issue close 12"
+  [ "$(body_nrows)" -eq 1 ]
+  [ "$(body_trigger 1)" = "issue クローズ" ]
+  ok="$(cat "$GH_LOG.body")"
+  rm -f "$GH_LOG" "$GH_LOG.body" "$FIX"/comments.12.*.json
+  FAKE_GRAPHQL_FAIL=1 HOOK_CWD="$RA" run_hook "gh issue close 12"
+  [ "$(body_nrows)" -eq 1 ]
+  [ "$(body_trigger 1)" = "issue クローズ+PR 照会失敗" ]
+  [ "$(printf '%s\n' "$ok" | sed 's/+PR 照会失敗//; s/ *| *\([^|]*\) *|/|/' | head -n 1)" = "$(head -n 1 "$GH_LOG.body" | sed 's/ *| *\([^|]*\) *|/|/')" ]
 }
 
 @test "timeline-hook: the real timeline stacks the close row and the total row" {  # 本物の cost_ledger.py で、gh issue close 12 が issue クローズの行と合計の行の 2 行を 1 回の書き込みで積む
