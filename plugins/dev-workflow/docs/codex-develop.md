@@ -21,7 +21,7 @@ Claudeの会話で実行する:
 
 `--executor codex` は後方互換の別名として上の形式に追加できる。profile の Claude entry は `account=current`、model は `haiku|sonnet|opus|fable` のみとし、`fable` は `decider` role だけに指定できる。
 
-profile/旧 account/model を省略すると、各工程の開始時に Codex は fresh（age 300 秒以内）な週次使用量、Claude はセッション記録と snapshot の実効値（リセット前の値は経過時間によらず使う）から `週経過率 - 使用率` を比較する。両方に余裕があれば Claude が書き Codex が検査する `claude-write-codex-review`、Codex だけに余裕があれば `codex-standard`、それ以外は Claude 既定構成になる。工程途中では切り替えず、次工程で再評価する。標準出力の selection evidence（構成、reason、margin、fetched_at、代表 Codex account）は開始コメントと dispatch 記録へ残す。明示指定時はこの読込を行わない。
+profile/旧 account/model を省略すると、各工程の開始時に Codex は週次使用量の実効値、Claude はセッション記録と snapshot の実効値（どちらも、リセット前の値は取得からの経過時間によらず下限として使い、リセットを過ぎた窓は 0% で読む）から `週経過率 - 使用率` を比較する。両方に余裕があれば Claude が書き Codex が検査する `claude-write-codex-review`、Codex だけに余裕があれば `codex-standard`、それ以外は Claude 既定構成になる。工程途中では切り替えず、次工程で再評価する。標準出力の selection evidence（構成、reason、margin、fetched_at、代表 Codex account）は開始コメントと dispatch 記録へ残す。明示指定時はこの読込を行わない。
 
 Claudeが既存developの進め方でworktree/記録先を準備し、仕様化判断から進める。仕様不要なら理由を記録して実装へ、必要なら仕様と独立仕様レビューを経て実装/テスト・PR・レビュー/ゲートへ進む。profile で実行先を選んでもこの判断と工程は変わらない。差戻しも該当 role の実行先へ委譲する。burnを有効化する必要はない。
 
@@ -40,7 +40,7 @@ python3 <plugin>/scripts/codex-develop.py request --phase spec --input /absolute
 python3 <plugin>/scripts/codex-worker.py run --request /absolute/private/request.json
 ```
 
-`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（明示形式どうしはどちらか一方だけ。併用・旧形式の片方欠落は拒否する）。model は系統名（worker が呼ぶ直前に model/list の最新版へ解決する）か完全なモデル ID のどちらでも書ける。どちらも無い場合は自動選択になる。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`request` は標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・解決したrole/account/CODEX_HOME/model/effortと selection evidence を返す。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
+`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（明示形式どうしはどちらか一方だけ。併用・旧形式の片方欠落は拒否する）。model は系統名（worker が呼ぶ直前に model/list の最新版へ解決する）か完全なモデル ID のどちらでも書ける。どちらも無い場合は自動選択になる。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`request` は標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・選択した role/account/CODEX_HOME・要求された model・effort と selection evidence を返す（model は系統名ならその値のまま返り、完全 ID への解決は worker が呼ぶ直前に行う）。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
 
 `run` の結果JSONは `text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`。実効model/effortやIDが未観測ならnullであり、成功値を推測しない。完了は実行terminalであって品質承認ではなく、`completed` でも `error_kind` が非空なら実行成功として扱わない。review verdictと投稿を確認するのはClaude側。コマンド失敗はそこで停止し、別providerへfallbackしない。
 

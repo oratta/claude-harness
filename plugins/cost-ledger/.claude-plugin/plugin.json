@@ -1,8 +1,16 @@
 {
   "name": "cost-ledger",
-  "description": "issue / PR 単位の API 換算コストを、Claude Code の会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/**/*.jsonl`）から集計する。帰属はブランチと（リポジトリ識別子, issue 番号）の 2 本立てで、サブエージェント（isSidechain）の消費も同じブランチに寄せる。`/cost <番号>` で PR ならヘッドブランチの総額、issue なら投稿を境界に切った区間の合計を USD と円で返す。pr-review-gate が `agent-review:passed` を付けた直後に、PostToolUse の hook がその PR へ `/cost` の 1 行目を 1 本のコメントで貼る（環境変数 `COST_LEDGER_GATE_REPORT=off` で止まる）。実行時に python3（3.8 以上）と、番号の判別に認証済みの gh を必要とする。git は 2.31 以上（rev-parse --path-format=absolute を使う）。",
+  "description": "issue / PR 単位の API 換算コストを、Claude Code の会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/**/*.jsonl`）から集計する。帰属はブランチと（リポジトリ識別子, issue 番号）の 2 本立てで、サブエージェント（isSidechain）の消費も同じブランチに寄せる。`/cost <番号>` で PR ならヘッドブランチの総額、issue なら投稿を境界に切った区間の合計を USD と円で返す。PR / issue へのコメント・状態の変更・ゲート通過のたびに、PostToolUse の hook がその PR / issue の 1 本のコメントへ「ここまでのコスト」を 1 行積む。積むのは許可の一覧（既定 `$HOME/.config/cost-ledger/write-repos`、環境変数 `COST_LEDGER_WRITE_REPOS_FILE` で絶対パスを指定可。作業中のリポジトリの中のファイルは無効）に `owner/repo` が載っているリポジトリだけで、一覧が無ければどこにも書かない（環境変数 `COST_LEDGER_GATE_REPORT=off` で全部止まる）。環境変数 `COST_LEDGER_PATH` を設定すると、応答が終わるたびに Stop の hook が会話ログの増えた分をリポジトリ外の append-only 台帳へ追記し、`/cost` は台帳から読む（会話ログが消えたあとも同じ値が返る）。実行時に python3（3.8 以上）と、番号の判別に認証済みの gh を必要とする。git は 2.31 以上（rev-parse --path-format=absolute を使う）。",
   "author": {
     "name": "Oratta"
+  },
+  "userConfig": {
+    "LEDGER_PATH": {
+      "type": "file",
+      "title": "台帳ファイルのパス",
+      "description": "コストの台帳（append-only の JSONL）を置くファイルのパス。リポジトリ（プラグインの clone）の外を指すこと。空なら台帳を使わず、会話ログを直接読む。従来の環境変数 COST_LEDGER_PATH も使えるが、こちらが設定されていればこちらを優先する。",
+      "required": false
+    }
   },
   "license": "MIT",
   "keywords": [

@@ -8,6 +8,7 @@
 load helper
 
 setup() {
+  export LC_ALL=C.UTF-8
   cl_setup
 }
 
@@ -66,6 +67,14 @@ PY
   [ "$status" -eq 0 ]
   [[ "$output" == *'$4.00'* ]] || return 1   # claude-opus-5 の単価に食われると $5.00 になる
   [[ "$output" != *'$5.00'* ]] || return 1
+}
+
+@test "pricing: claude-opus-5-5 prices output and cache_read tokens from its own row too" {  # claude-opus-5-5 の output / cache_read 単価も自分の行で引かれる（input 4 + output 20 + cache_read 0.2）
+  cl_mini_log mini claude-opus-5-5 '{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":1000000}'
+  run python3 "$CL" branch mini
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'$24.20'* ]] || return 1
+  [[ "$output" != *'$30.50'* ]] || return 1   # claude-opus-5 の単価に食われると $30.50 になる
 }
 
 @test "pricing: a dated model name resolves to the undated key" {  # 日付付きのモデル名が日付なしの鍵の単価で引かれる

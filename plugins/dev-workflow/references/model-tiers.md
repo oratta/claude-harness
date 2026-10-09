@@ -38,6 +38,25 @@ Claude entry は account=`current`、model=`haiku|sonnet|opus|fable`、非空の
 
 `haiku` / `sonnet` / `inherit` は残量モードの影響を受けない。降格したときはスクリプトの return 値や PR コメントに 1 行残す（記録形式の正本は pr-review-gate の「決める役モデル: opus（fable レート制限のためフォールバック。subagent_type は dev-workflow:decider のまま）」）。
 
+## 役ごとの effort（推論の深さ）
+
+effort は親セッションの値を継ぐだけだと、答えの型が決まった工程も最終検証と同じ深さで考えて消費する。dev-workflow の 4 つの agent 定義は、frontmatter の `effort:` で既定を持つ。初期値は次のとおり（`/cost` の前後記録を見て調整する。戻し方は frontmatter 1 行の修正）。
+
+| agent 定義 | `effort` | 理由 |
+|-----------|----------|------|
+| `worker` | `medium` | 答えの型が決まった仕様化・実装 |
+| `gate-runner` | `medium` | 決まった手順の実行 |
+| `reviewer` | `high` | 判断が集中する差分レビュー |
+| `decider` | `high` | 修正方針・最終 verify・マージ可否 |
+
+**上書き。** Agent ツールの `effort` 引数（Claude Code 2.1.292）で呼び出し単位に上書きできる（出典は issue #711。公式文書には記載なし）。`model` と違い、呼び出しごとの明示は義務ではない。未指定でも frontmatter の値が効くので、最上位枠を無言で消費する事故は起きない。
+
+**優先順位。** 公式文書（https://code.claude.com/docs/en/sub-agents ）が定める範囲は、frontmatter の `effort` はセッションの effort を上書きするが、環境変数 `CLAUDE_CODE_EFFORT_LEVEL` は上書きしない、まで。環境変数が設定された環境では、4 役の frontmatter の値は効かず環境変数の値が全役に効く（測定前に `echo $CLAUDE_CODE_EFFORT_LEVEL` で確認する）。Agent の `effort` 引数と frontmatter・環境変数の優先関係は文書に記載なし。
+
+**profile の effort との関係。** `references/codex-role-profiles.json` の effort は監査値で、Agent の引数には変換しない。Claude role の値は上の表と同じ（W = medium、レビュー・決める役 = high）。
+
+**検査。** `plugins/dev-workflow/tests/agent-effort.bats` が、4 定義の frontmatter の `effort:` 行数と値を検査する。
+
 ## Agent / Task ツールで直接立てるサブエージェント
 
 ### なぜ `model` の明示が必須か

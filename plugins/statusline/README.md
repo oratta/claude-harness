@@ -4,7 +4,7 @@
 
 ```
 .../workspaces/flatmate/clone-origin-main-repo-sync  Opus 5 (1M context)  oratta/clone-origin-main-repo-sync
-Context 91%  │  API ¥1,446,038/mo  │  Session ¥1,240
+Context 91%  │  Cache 82%  │  API ¥1,446,038/mo  │  Session ¥1,240
 5h       ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    3%  ~4h 13m
 7d All   ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   25%/29%   Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    7%/29%  ~4d 22h
 ```
@@ -12,9 +12,11 @@ Context 91%  │  API ¥1,446,038/mo  │  Session ¥1,240
 | 行 | 内容 |
 |---|---|
 | 1 | カレントディレクトリ / モデル / git ブランチ（未コミット変更は `✱`） |
-| 2 | コンテキスト残量 / 直近30日の使用量を API 従量課金に換算した月額ペース / このセッションの API 換算コスト |
+| 2 | コンテキスト残量 / プロンプトキャッシュのヒット率 / 直近30日の使用量を API 従量課金に換算した月額ペース / このセッションの API 換算コスト |
 | 3 | 5時間ウィンドウのレートリミット消化率 |
 | 4 | 7日ウィンドウのレートリミット消化率（全体 + Fable） |
+
+`Cache` は、メイン会話のセッション累計のプロンプトキャッシュのヒット率（Claude Code が渡す `prompt_cache.hit_ratio` を四捨五入した百分率。サブエージェントの分は含まない）。値によって色は変えない。直近にキャッシュのミスがあれば、そのうしろに `miss:<原因>` が付く。これは直近のミスの原因で、次のミスが起きるまで出続ける。短い名前は `tools`（`tools_changed`）・`system`（`system_prompt_changed`）・`ttl5m`（`ttl_expired_5m`）・`server`（`likely_server_side`）で、これ以外の原因名は 16 文字までそのまま出し、原因が複数あれば先頭だけを出して `+1` のように残りの件数を添える。`prompt_cache` を渡さない版と、最初の API 応答の前は区画を出さない。原因は Claude Code 2.1.260 以降でだけ出る。`caching_observed` は見ないので、キャッシュのトークン数を報告しないプロバイダやゲートウェイでは `Cache 0%` と出る。消したいときは `STATUSLINE_PROMPT_CACHE=0`。
 
 `Session` は、このセッションのメイン会話と、このセッションが立ち上げたサブエージェントを合算した API 換算コスト。Claude Code がステータスラインに渡す `cost.total_cost_usd`（セッション内のすべての API 呼び出しを定価で見積もった値）をそのまま円に換算している。`/clear` で 0 に戻る。30日の数字は ccusage がログから計算したものなので、料金表の違いで両者は多少ずれることがある。為替は30日コストの背景更新が保存したレートを読むだけで、まだ無ければ USD（`Session $1.23`）で出す。
 
@@ -55,6 +57,13 @@ Context 91%  │  API ¥1,446,038/mo  │  Session ¥1,240
 
 プラグイン本体を直接指さずコピーを配るのは、marketplace dir がプラグイン自動更新で再 clone されるため。そこを settings.json から指すと、更新のたびに色や幅の調整が消える。プラグインを更新したら `/statusline:setup` を再実行する。
 
+### 本体のセッションコストの記録
+
+描画のたびに、Claude Code 本体が渡すセッションコスト（`cost.total_cost_usd`）を
+`${CLAUDE_CONFIG_DIR:-~/.claude}/.session-cost/<セッション ID>` に書き残す（1 セッション 1 ファイル・1 行で、最初の観測と最後に値が変わった観測の時刻と値を持つ）。値が前回と同じ描画では書かない。表示は変わらず、`STATUSLINE_SESSION_COST=0` で表示を消していても記録は書く。400 日より古い記録は、新しい記録ファイルを作る描画で消す。
+
+この記録は cost-ledger プラグインが読み、自前の単価表で計算した額と比べて、単価表のずれを `/cost` の出力で知らせるのに使う。記録はコピー先のスクリプトが書くので、プラグインを更新したあと `/statusline:setup` を再実行すると記録が始まる。
+
 ### 前提
 
 | | 必須 | 無い場合 |
@@ -70,7 +79,7 @@ Fable の週次消化率は Claude Code がステータスラインに渡して�
 
 `dev-workflow` を入れていない、あるいは snapshot が6時間以上古い場合は Fable セグメントを黙って省く。
 
-逆方向に、このステータスラインは描画のたびに受け取った 5 時間枠と全体の週次を、起動アカウント別の記録 `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions/<アカウント鍵>.json`（`USAGE_SESSIONS_DIR` で上書き可）に書き出す。アカウント鍵は `CLAUDE_SECURESTORAGE_CONFIG_DIR`（下記）が未設定なら `default`、設定されていれば Keychain のサービス名の末尾と同じ 8 桁で、レジストリや snapshot の `active` からは決めない（別アカウントの値を取り違えないため）。`dev-workflow` の残量モードの判定・アカウント選択・複数アカウント表示の非 active 行はこの記録を主な情報源にし、usage API の snapshot は Fable 週次と記録の無いアカウントの補助に使う。書けなかったときは黙って諦め、表示は変えない。
+逆方向に、このステータスラインは、値が前回書いたものから変わった描画で、受け取った 5 時間枠と全体の週次を、起動アカウント別の記録 `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions/<アカウント鍵>.json`（`USAGE_SESSIONS_DIR` で上書き可）に書き出す。アカウント鍵は `CLAUDE_SECURESTORAGE_CONFIG_DIR`（下記）が未設定なら `default`、設定されていれば Keychain のサービス名の末尾と同じ 8 桁で、レジストリや snapshot の `active` からは決めない（別アカウントの値を取り違えないため）。`dev-workflow` の残量モードの判定・アカウント選択・複数アカウント表示の非 active 行はこの記録を主な情報源にし、usage API の snapshot は Fable 週次と記録の無いアカウントの補助に使う。記録の `observed_at` は値を新しく受け取った時刻で、セッションごとに前回書いた値を記録ディレクトリ内の `.sessions/`（session_id を JSON 文字列として引用符付きのまま sha256 した先頭 16 桁のファイル、7 日より古いものは書き込みのついでに消す）に覚え、前回と同じ値の描き直しでは書かない（止まっているセッションの古い値が、別セッションの新しい値を新しい時刻で潰さないため）。書けなかったときは黙って諦め、表示は変えない。
 
 あわせて、5h の使用率と空でない `session_id` がある既定アカウントの描画では、`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.rate-limit-snapshot` に rate snapshot を書く。`CLAUDE_SECURESTORAGE_CONFIG_DIR` が非空のセッションでは書かない。JSON は `ts`、`observed_at`、`written_at`、`obs_sig`、`host`、`storage_binding`、`session_id`、`five_hour_pct`、`five_hour_resets_at`、`seven_day_pct`、`seven_day_resets_at` を持つ。`ts` と `observed_at` は同じ観測時刻で、枠値・`storage_binding`・`session_id` が変わらない再表示では進まない。`written_at` は書込時刻。`session_id` は入力値をそのまま保存し、`host` は `hostname -s` の英数字・`.`・`_`・`-` 以外を文字ごとに `_` に置き換える。`$HOME/.claude.json` の `oauthAccount.accountUuid` が有効な場合だけ `account_id` も含む。欠けた任意の枠値は `null` とする。書込は同じディレクトリの一時ファイルから原子的に置き換える。
 
@@ -132,7 +141,7 @@ writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合�
 - **いま使っているアカウント**は行頭に `▸` が付き、label が通常の明るさになる。値は Claude Code から渡るライブ値で描き、Fable セグメントには従来どおり 6 時間の鮮度ゲートが効く
   - 記号と明るさの両方で示すのは、片方が落ちる環境があるため。スクリーンショットやログに貼ると色（明るさ）が失われ、フォントに `▸` が無い端末では記号が豆腐になる。どちらか一方でも残れば、どちらのアカウントの数字を見ているかは分かる
   - 記号を差し替えるなら East Asian Width が Neutral のものにすること（`▹` U+25B9 / `›` U+203A など）。`▶` `●` `◆` `·` はいずれも Ambiguous で、曖昧幅を全角にする設定の端末では `▸` の行だけ 1 桁右にずれ、その差が label 以降のすべての列に伝播する
-- **それ以外のアカウント**は行頭が半角スペース 2 つになり、そのアカウントのセッション記録（上記の `.usage-sessions/`）と snapshot の値のうち、同じ窓なら大きい方・窓が違えばリセット時刻が後の方で描き（全体の週次はリセット時刻が 1 時間を超えてずれたら、記録のリセット時刻がまだ来ていない限り記録の方）、行末に採った値の取得時刻からの経過時間（`2h前`）を添える。リセット時刻を過ぎた値も 0% に読み替えず、そのまま描く。こちらには鮮度ゲートを効かせない。使っていないアカウントは OAuth トークンが期限切れで更新できないのが普通で、ゲートを効かせると 6 時間後に行が消えてしまうため
+- **それ以外のアカウント**は行頭が半角スペース 2 つになり、そのアカウントのセッション記録（上記の `.usage-sessions/`）と snapshot の値のうち、同じ窓なら取得時刻の新しい方（等しい・片方無しなら大きい方）・窓が違えばリセット時刻が後の方で描き（全体の週次はリセット時刻が 1 時間を超えてずれたら、記録のリセット時刻がまだ来ていない限り記録の方）、行末に採った値の取得時刻からの経過時間（`2h前`）を添える。リセット時刻を過ぎた値も 0% に読み替えず、そのまま描く。こちらには鮮度ゲートを効かせない。使っていないアカウントは OAuth トークンが期限切れで更新できないのが普通で、ゲートを効かせると 6 時間後に行が消えてしまうため
 - 値がまだ一度も取れていないアカウントは行を出さない
 - リセット時刻を過ぎた窓は、日程分母（`82%/74%` の右側）と残り時間を出さない
 
@@ -146,6 +155,7 @@ writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合�
 |---|---|---|
 | `STATUSLINE_BAR_WIDTH` | `16` | バーのセル数 |
 | `STATUSLINE_BAR_GLYPH` | `▂` | 日程線の太さ。細い順に `▁` `▂` `▃` `▄` |
+| `STATUSLINE_PROMPT_CACHE` | `1` | `0` でプロンプトキャッシュのヒット率表示を止める |
 | `STATUSLINE_API_PACE` | `1` | `0` で API 換算コスト表示を止める |
 | `STATUSLINE_SESSION_COST` | `1` | `0` でセッションコスト表示を止める |
 | `STATUSLINE_CURRENCY` | `JPY` | API 換算コスト（30日・セッションとも）の通貨。`USD` なら為替変換なし |
@@ -164,7 +174,7 @@ bats plugins/statusline/tests/
 python3 -m pytest plugins/statusline/tests/
 ```
 
-`statusline.bats` は 1 スロット時の退行ガード、`statusline-multi-account.bats` は複数スロットの描画と `origin/main` 版との出力バイト一致の検証。`statusline-rate-snapshot.bats` と `test_rate_snapshot_writer.py` は writer の保存契約を検証する。
+`statusline.bats` は 1 スロット時の退行ガード、`statusline-multi-account.bats` は複数スロットの描画と `origin/main` 版との出力バイト一致の検証。`statusline-rate-snapshot.bats` と `test_rate_snapshot_writer.py` は writer の保存契約を検証する。`statusline-session-cost-record.bats` は本体のセッションコストの記録（書く条件・書かない条件・表示を変えないこと）を検証する。
 
 ## Codex の利用上限
 

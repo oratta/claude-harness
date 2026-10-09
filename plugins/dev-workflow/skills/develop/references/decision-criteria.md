@@ -99,7 +99,7 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 
 Fable 残量モードと共有枠モードが食い違うときは**共有枠モードの下限が勝つ**（例: `throttled` なら R1 も Sonnet 起点）。
 
-週次余裕を使う provider 選択では、Codex の snapshot の freshness を age `<= 300` 秒とし、`> 300` 秒は stale（欠測）とする。Claude 側（起動 account の選択と codex-develop の Claude margin）はこの境界を使わず、後述の実効値（リセット時刻より前の値は取得からの経過時間によらず下限として使う）で判定する。
+週次余裕を使う provider 選択では、Codex の週次 snapshot も Claude 側（起動 account の選択と codex-develop の Claude margin）も、取得からの経過時間では捨てない。どちらも後述の実効値（リセット時刻より前の値は取得からの経過時間によらず下限として使い、リセット時刻を過ぎた窓は 0% として読む）で判定する。Codex の snapshot は 7 日より先のリセット時刻も欠測にしない（余裕が負になるだけ）。
 
 ## コンテキスト上限（サブエージェントの手渡し）
 
@@ -112,6 +112,8 @@ W は名前付き spawn ＋ SendMessage 再開でコンテキストを引き継�
 | `DEV_WORKFLOW_CONTEXT_CAP` | 150000 tokens | 再開前チェックでは exit 2（＝再開しない条件）。途中計測では PostToolUse で締めの通知が本人に届く |
 | `DEV_WORKFLOW_CONTEXT_HARD_CAP` | 220000 tokens | 途中計測の強制停止。PreToolUse が `Edit` / `Write` / `NotebookEdit` と `Bash`（コマンド内容によらず全件）を deny する |
 | `DEV_WORKFLOW_CONTEXT_TRIPWIRE` | `on` | `off` で途中計測を全解除する（再開前チェックは残る） |
+| `DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT` | 1800 秒 | 停止確認が返らないときの終端の条件の 1 つ目（停止を指示してからの経過時間） |
+| `DEV_WORKFLOW_STOP_CONFIRM_STALL` | 600 秒 | 終端の条件の 2 つ目（前任のトランスクリプトが更新されていない時間） |
 
 **再開前チェック（本体が測る）**
 
@@ -127,6 +129,7 @@ W は名前付き spawn ＋ SendMessage 再開でコンテキストを引き継�
 - **idle と return の違い**: バックグラウンドコマンドの完了を待って一時的に応答が止まっている（idle）状態は工程の終わりではない。そのコマンドが終われば前任は再び動き出す。本体は return の 1 行目の完全一致だけで見分け（どちらの書式にも一致しないものは上のとおり `工程中断:` 扱い）、内容を読んで独自に判定しない
 - **前任が動作中に交代させる場合**: 先に前任へ停止を指示し（自分で元に戻そうとしないこと＝破壊的 git 操作をしないことを含める）、停止確認（何を編集したか・何を投稿したかの報告）を受け取ってから手渡し先を spawn する（MUST）。停止確認を受け取る前に手渡し先を spawn しない
 - **停止確認を待つ間**: 本体はブロックせずに待つ。他に進められる役割（別 worktree の並列作業）があれば先に進めてよい。前任が停止確認より先に `工程完了:` で return したら、この停止の手順は要らなくなり、上の「手渡しの許可」の条件①を満たした通常の手渡しとして扱う（停止確認を待たない）。unmanned（1 サイクル 1 仕事）で他に進められる作業が無ければ、そのサイクル内で停止確認を待ち続けず、そのサイクルを終える（次サイクルで同じ判定をやり直す）
+- **停止確認が返らないときの終端**: 前任へ停止を指示してから `scripts/subagent-context.sh <agent-name> --stop-since <停止を指示した epoch 秒>` で測り、**停止指示からの経過時間が `DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT` 以上、かつ前任のトランスクリプトの無更新時間が `DEV_WORKFLOW_STOP_CONFIRM_STALL` 以上**（2 条件とも。exit 3）になったら終端とする。本体のターン数は条件に使わない（進められる作業が無い interactive ではターンが進まず、終端が来ないため）。終端に達したときは**手渡し先を spawn せず、その作業を止めて人間に報告する**。報告には前任の名前・停止を指示した時刻・その worktree の `git status` を添え、前任の再開の可否は人間の指示を待つ。人間の返事も経過時間も、停止確認の代わりにならない: 手渡しを行ってよいのは終端に達したあとも上の「手渡しの許可」の①か②を満たしたときだけで、終端は第 3 の経路ではない（前任を放置したまま手渡し先を spawn してはならない）。値は env で上書きでき、閾値の数値はこの節の環境変数の表にだけ置く
 - 上限は初期値。品質が落ちる（手渡し先が前任の判断を取りこぼす）なら上げ、まだ肥大するなら下げる。監査の再集計は `~/.claude/projects` のトランスクリプトから行う
 
 **途中計測（hook が本人を測る）**
@@ -145,7 +148,7 @@ W は名前付き spawn ＋ SendMessage 再開でコンテキストを引き継�
 
 使用量の主な情報源はステータスラインが描画のたびに書く起動アカウント別のセッション記録（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions/<アカウント鍵>.json`。5 時間枠と全体の週次）で、`scripts/usage-probe.sh` が OAuth usage API（`/api/oauth/usage`）から書く `~/.claude/.usage-snapshot`（schema 2。スロット別に `fable_weekly_pct` / `weekly_resets_epoch` などを含む JSON）は、Fable 週次と記録の無いアカウントを埋める補助である。probe は、記録が無い・記録が 3 時間（`USAGE_PROBE_STALE`）より古い、または snapshot の `fetched_at` が 3 時間より古い（無い場合を含む）スロットだけを叩き、前回の試行から 3 時間（`USAGE_PROBE_INTERVAL`）は叩かない。429 が続くスロットは待ちを倍々に延ばす（上限 1 日）。試行は結果にかかわらず `~/.claude/.usage-probe-state` に記録し、`~/.claude/.usage-probe.lock` でマシン全体 1 本に絞る。fail-open はスロット単位（失敗したスロットは前回値を引き継ぎ、全スロット失敗なら snapshot を書かない）。`scripts/session-tripwires.sh` が SessionStart 毎にこの probe を best-effort 実行し、active スロットの実効値からモードを導出して残量ブロックを文脈に注入する。
 
-実効値は `scripts/usage_view.py` の 1 か所で求める（`select-account.sh`・`agent-model-guard.sh`・`codex-develop.py` も同じ実装を使う）。取得からの経過時間で値を捨てず、リセット時刻より前の値は下限としてそのまま使い、リセット時刻を過ぎた値は 0% とみなす。記録と snapshot の両方にあるときは同じ窓なら大きい方を取る。規則の正本は openspec の `usage-session-records`「記録と snapshot から実効値を求める」。
+実効値は `scripts/usage_view.py` の 1 か所で求める（`select-account.sh`・`agent-model-guard.sh`・`codex-develop.py` も同じ実装を使う）。取得からの経過時間で値を捨てず、リセット時刻より前の値は下限としてそのまま使い、リセット時刻を過ぎた値は 0% とみなす。記録と snapshot の両方にあるときは、同じ窓なら取得時刻の新しい方を取る（手動リセットで使用率は同じ窓のまま下がりうるため。取得時刻が等しい・片方無しなら大きい方）。規則の正本は openspec の `usage-session-records`「記録と snapshot から実効値を求める」。
 
 導出は「Fable の消費ペースが週の経過ペースを上回るか」のバーンレート比較で、次の優先順位に従う:
 

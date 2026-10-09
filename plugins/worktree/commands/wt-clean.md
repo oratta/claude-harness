@@ -13,8 +13,9 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 `CLAUDE_PLUGIN_ROOT` を第一候補に、marketplace / installed 配下を探索して SKILL.md の絶対パスを特定する。
 
 ```bash
+plugin_root="${CLAUDE_PLUGIN_ROOT}"
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/wt-clean}" \
+  "${plugin_root:+$plugin_root/skills/wt-clean}" \
   ~/.claude/plugins/marketplaces/*/plugins/worktree/skills/wt-clean \
   ~/.claude/plugins/installed/*/worktree/skills/wt-clean; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break

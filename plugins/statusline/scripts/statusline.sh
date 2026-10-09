@@ -3,7 +3,8 @@
 # statusline.sh — Claude Code の使用量ステータスライン
 #
 #   1行目: カレントディレクトリ / モデル / git ブランチ
-#   2行目: コンテキスト残量 / API 換算の月額ペース / このセッションの API 換算コスト
+#   2行目: コンテキスト残量 / プロンプトキャッシュのヒット率（直近のミスの原因つき） /
+#          API 換算の月額ペース / このセッションの API 換算コスト
 #   3行目: 5h ウィンドウのレートリミット
 #   4行目: 7d ウィンドウ（全体 + Fable）のレートリミット
 #
@@ -20,6 +21,7 @@
 #   STATUSLINE_CODEX_BIN   Codex CLI のパス（既定 codex）
 #   STATUSLINE_BAR_WIDTH   バーのセル数（既定 16）
 #   STATUSLINE_BAR_GLYPH   日程線の太さ。細い順に ▁ ▂ ▃ ▄（既定 ▂）
+#   STATUSLINE_PROMPT_CACHE 0 でプロンプトキャッシュのヒット率表示を無効化（既定 1）
 #   STATUSLINE_API_PACE    0 で API 換算コスト表示を無効化（既定 1）
 #   STATUSLINE_SESSION_COST 0 でセッションコスト表示を無効化（既定 1）
 #   STATUSLINE_CURRENCY    API 換算コストの通貨。USD なら為替変換なし（既定 JPY）
@@ -161,17 +163,46 @@ print(hashlib.sha256(unicodedata.normalize("NFC", os.environ["SECURE"]).encode("
 ' 2>/dev/null)"
 fi
 sessions_dir="${USAGE_SESSIONS_DIR:-$CONFIG_DIR/.usage-sessions}"
-if [ -n "$five_h_pct" ] && [ -n "$session_key" ] && mkdir -p "$sessions_dir" 2>/dev/null; then
+# observed_at は「そのセッションが値を新しく受け取った時刻」（#643）。Claude Code は API 応答以外
+# （モード切り替え・キャッシュ期限切れ等）でも描き直し、そのときの rate_limits は前に受け取った値の
+# ままなので、セッションごとに前回書いた値の署名を .sessions/<session_id を JSON 文字列として引用符付きのまま sha256 した先頭 16 桁> に
+# 覚え、同じなら書かない。記録ファイルの中身とは比べない（他セッションが上書きした新しい値を、
+# 止まっていたセッションの古い値で潰さないため。.rate-limit-snapshot の obs_sig と同じ考え方）。
+# session_id が無い・ハッシュが取れないときは覚える先が無いので毎回書く。
+_rec_sig="${five_h_pct}|${five_h_resets:-null}|${seven_d_pct:-null}|${seven_d_resets:-null}"
+_rec_memo=""
+if [ -n "$session_id" ]; then
+    # ハッシュ対象は jq -c の引用符付き JSON 文字列のまま。python3 を起動しない
+    _rec_sid_hash="$( { printf '%s' "$session_id" | shasum -a 256 2>/dev/null \
+        || printf '%s' "$session_id" | sha256sum 2>/dev/null; } | cut -c1-16)"
+    [[ "$_rec_sid_hash" =~ ^[0-9a-f]{16}$ ]] && _rec_memo="$sessions_dir/.sessions/$_rec_sid_hash"
+fi
+_rec_unchanged=""
+if [ -n "$_rec_memo" ] && [ -f "$_rec_memo" ] && [ "$(cat "$_rec_memo" 2>/dev/null)" = "$_rec_sig" ]; then
+    _rec_unchanged=1
+fi
+if [ -n "$five_h_pct" ] && [ -n "$session_key" ] && [ -z "$_rec_unchanged" ] && mkdir -p "$sessions_dir" 2>/dev/null; then
     # 一時ファイルに書いてから mv で置き換える（読み手に書きかけを見せない）。失敗は無視する
     _rec_tmp="$(mktemp "$sessions_dir/.${session_key}.XXXXXX" 2>/dev/null)"
+    _rec_written=""
     if [ -n "$_rec_tmp" ]; then
         if printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":%s,"five_hour_resets_epoch":%s,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
             "$session_key" "$(date +%s)" "$five_h_pct" "${five_h_resets:-null}" \
-            "${seven_d_pct:-null}" "${seven_d_resets:-null}" > "$_rec_tmp" 2>/dev/null; then
-            mv -f "$_rec_tmp" "$sessions_dir/${session_key}.json" 2>/dev/null || rm -f "$_rec_tmp" 2>/dev/null
+            "${seven_d_pct:-null}" "${seven_d_resets:-null}" > "$_rec_tmp" 2>/dev/null \
+            && mv -f "$_rec_tmp" "$sessions_dir/${session_key}.json" 2>/dev/null; then
+            _rec_written=1
         else
             rm -f "$_rec_tmp" 2>/dev/null
         fi
+    fi
+    # 書けたら署名を覚え直す。覚える側の失敗は無視する（出力を変えない）。7 日より古い覚えは消す
+    if [ -n "$_rec_written" ] && [ -n "$_rec_memo" ] && mkdir -p "${_rec_memo%/*}" 2>/dev/null; then
+        _memo_tmp="$(mktemp "${_rec_memo%/*}/.tmp.XXXXXX" 2>/dev/null)"
+        if [ -n "$_memo_tmp" ]; then
+            { printf '%s\n' "$_rec_sig" > "$_memo_tmp" && mv -f "$_memo_tmp" "$_rec_memo"; } 2>/dev/null \
+                || rm -f "$_memo_tmp" 2>/dev/null
+        fi
+        find "${_rec_memo%/*}" -type f -mtime +7 -delete 2>/dev/null
     fi
 fi
 
@@ -225,6 +256,36 @@ if [ -n "$remaining_pct" ]; then
         context_color="$GREEN"
     fi
     context_info="${context_color}Context ${remaining_int}%${RESET}"
+fi
+
+# プロンプトキャッシュのヒット率（stdin の prompt_cache だけを見る。ファイル・ネットワークには触らない）。
+# hit_ratio が 0〜1 の数値のときだけ出す。直近のミスの原因は causes の先頭を短くして添える。
+# 入力の型が想定外でも式全体は落とさず、jq 自体が失敗したら何も出さない。
+cache_info=""
+if [ "${STATUSLINE_PROMPT_CACHE:-1}" != "0" ]; then
+    cache_raw=$(printf '%s' "$input" | jq -r '
+        (.prompt_cache // null) as $p
+        | if ($p | type) == "object" and ($p.hit_ratio | type) == "number"
+             and $p.hit_ratio >= 0 and $p.hit_ratio <= 1
+          then
+            (($p.last_miss_cause // null) as $m
+             | if ($m | type) == "object" and ($m.causes | type) == "array"
+                  and ($m.causes | length) > 0 and ($m.causes[0] | type) == "string"
+                  and ($m.causes[0] | test("^[A-Za-z0-9_]+\\z"))
+               then
+                 ($m.causes[0]) as $c
+                 | ({"tools_changed": "tools", "system_prompt_changed": "system",
+                     "ttl_expired_5m": "ttl5m", "likely_server_side": "server"}[$c] // $c[0:16]) as $n
+                 | "miss:" + $n + (if ($m.causes | length) > 1 then "+" + (($m.causes | length) - 1 | tostring) else "" end)
+               else "" end) as $cause
+            | (($p.hit_ratio * 100 | round | tostring) + (if $cause != "" then " " + $cause else "" end))
+          else empty end' 2>/dev/null) || cache_raw=""
+    if [ -n "$cache_raw" ]; then
+        cache_info="${CYAN}Cache ${cache_raw%% *}%${RESET}"
+        case "$cache_raw" in
+            *" "*) cache_info="${cache_info} ${YELLOW}${cache_raw#* }${RESET}" ;;
+        esac
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -572,7 +633,10 @@ def combine(rec, snap, weekly):
             return larger(rec, snap)
         return rec if rec["res"] is not None else snap
     if abs(rec["res"] - snap["res"]) <= SAME_WINDOW:
-        return dict(larger(rec, snap), res=newer(rec, snap)["res"])
+        # 同じ窓は取得時刻の新しい方（手動リセットで使用率は下がりうる）。等しい・片方無しなら大きい方
+        if rec["at"] is not None and snap["at"] is not None and rec["at"] != snap["at"]:
+            return newer(rec, snap)
+        return larger(rec, snap)
     if weekly and now < rec["res"]:
         return rec
     return rec if rec["res"] > snap["res"] else snap
@@ -826,6 +890,53 @@ if [ "${STATUSLINE_API_PACE:-1}" != "0" ]; then
     fi
 fi
 
+# 本体のセッションコストをセッションごとに書き残す（正本: openspec/specs/session-cost-record）。
+# 読み手は cost-ledger で、自前の単価表で計算した額と比べて単価表のずれを見つける。
+# 記録は <設定ディレクトリ>/.session-cost/<session_id> に 1 行 `1 <t0> <v0> <t1> <v1>`
+# （区間の最初の観測時刻と値、最後に値が変わった観測時刻と値）。値が下がったら区間を始め直す。
+# 値が前回と同じ描画は組み込みの read 1 回だけで終える（外部コマンドを起動しない）。
+# 表示の設定（STATUSLINE_SESSION_COST）には左右されない。どの失敗でも出力を変えない。
+_sc_sid="${session_id#\"}"
+_sc_sid="${_sc_sid%\"}"
+if [[ "$_sc_sid" =~ ^[A-Za-z0-9_-]{1,128}$ ]] \
+    && [[ "$session_cost_usd" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]]; then
+    _sc_dir="$CONFIG_DIR/.session-cost"
+    _sc_file="$_sc_dir/$_sc_sid"
+    _sc_ver="" _sc_t0="" _sc_v0="" _sc_t1="" _sc_v1="" _sc_rest=""
+    _sc_new=""
+    if [ -f "$_sc_file" ]; then
+        { read -r _sc_ver _sc_t0 _sc_v0 _sc_t1 _sc_v1 _sc_rest < "$_sc_file"; } 2>/dev/null
+    else
+        _sc_new=1
+    fi
+    _sc_line=""
+    if [ "$_sc_ver" = "1" ] && [ -z "$_sc_rest" ] \
+        && [[ "$_sc_t0" =~ ^[0-9]+$ ]] && [[ "$_sc_t1" =~ ^[0-9]+$ ]] \
+        && [[ "$_sc_v0" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]] \
+        && [[ "$_sc_v1" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]]; then
+        # 文字列の一致は速い経路。一致しないときだけ awk を 1 回起動して数として比べる
+        if [ "$_sc_v1" != "$session_cost_usd" ]; then
+            case "$(LC_ALL=C awk -v a="$session_cost_usd" -v b="$_sc_v1" \
+                'BEGIN { if (a + 0 == b + 0) print "eq"; else if (a + 0 < b + 0) print "lt"; else print "gt" }' 2>/dev/null)" in
+                gt) _sc_line="1 $_sc_t0 $_sc_v0 $now $session_cost_usd" ;;
+                lt) _sc_line="1 $now $session_cost_usd $now $session_cost_usd" ;;
+            esac
+        fi
+    else
+        _sc_line="1 $now $session_cost_usd $now $session_cost_usd"
+    fi
+    if [ -n "$_sc_line" ] && mkdir -p "$_sc_dir" 2>/dev/null; then
+        # 一時ファイルに書いてから mv で置き換える（読み手に書きかけを見せない）。失敗は無視する
+        _sc_tmp="$(mktemp "$_sc_dir/.tmp.XXXXXX" 2>/dev/null)"
+        if [ -n "$_sc_tmp" ]; then
+            { printf '%s\n' "$_sc_line" > "$_sc_tmp" && mv -f "$_sc_tmp" "$_sc_file"; } 2>/dev/null \
+                || rm -f "$_sc_tmp" 2>/dev/null
+        fi
+        # 400 日より古い記録は、新しい記録ファイルを作る描画でだけ消す（1 セッションに 1 回）
+        [ -n "$_sc_new" ] && find "$_sc_dir" -type f -mtime +400 -delete 2>/dev/null
+    fi
+fi
+
 # このセッションの API 換算コスト（メイン + このセッションが立ち上げたサブエージェントの合算）。
 # Claude Code が stdin に渡す cost.total_cost_usd をそのまま使う（ドキュメント上「セッション内の
 # すべての API 呼び出し」の推定値で、定価ベース。/clear で 0 に戻る）。30 日コストは ccusage が
@@ -847,7 +958,7 @@ fi
 
 # Build status line
 # Line 1: directory, model, git
-# Line 2: context window, API cost, session cost
+# Line 2: context window, prompt cache, API cost, session cost
 # Line 3: 5h bar / Line 4: 7d All + Fable bars
 printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s\n" \
     "$short_pwd" \
@@ -858,7 +969,7 @@ line2=""
 if [ -n "$context_info" ]; then
     line2="$context_info"
 fi
-for seg in "$api_pace_info" "$session_cost_info"; do
+for seg in "$cache_info" "$api_pace_info" "$session_cost_info"; do
     [ -n "$seg" ] || continue
     if [ -n "$line2" ]; then
         line2="${line2}  ${DIM}│${RESET}  ${seg}"

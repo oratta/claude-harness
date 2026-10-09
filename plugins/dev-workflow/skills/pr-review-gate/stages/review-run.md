@@ -17,7 +17,7 @@
 | 順位 | 手段 | 使い方 | 使う条件 |
 |---|---|---|---|
 | **既定** | Codex CLI | `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` 直叩き、または companion 経由（`/codex:adversarial-review --background --base origin/main` / `codex:codex-rescue` サブエージェント） | **full** と判定したとき（full ではまずここから試す） |
-| フォールバック | Task サブエージェント | Agent ツール（`general-purpose`）に受け入れ条件＋diff 範囲＋`stages/reviewer-brief.md` のレビュアー向け指示ブロックを渡す。差分が 600 行を超えた一周目は `stages/prepare.md` 2-0 の区画ごとに起こす | ① **light** と判定したとき（最初からこれ）② full だが Codex CLI が使えないとき（実測したバイナリ無し・認証切れ・タイムアウト） |
+| フォールバック | Task サブエージェント | Agent ツール（`subagent_type: dev-workflow:reviewer`）に受け入れ条件＋diff 範囲＋`stages/reviewer-brief.md` のレビュアー向け指示ブロックを渡す。差分が 600 行を超えた一周目は `stages/prepare.md` 2-0 の区画ごとに起こす | ① **light** と判定したとき（最初からこれ）② full だが Codex CLI が使えないとき（実測したバイナリ無し・認証切れ・タイムアウト） |
 
 Codex CLI は区画に分けず差分全体を渡す。150,000 トークンの上限は Claude のサブエージェントの hook の上限で Codex には掛からず、三表が欠けた場合は G の機械照合が fail-closed で止める。
 
@@ -47,12 +47,13 @@ Codex を full の既定にする理由: **実装者と別モデル系列で読�
 
 **Task サブエージェントのモデルは明示指定する（Agent ツールの `model` パラメータ）**:
 
+- **種別は `dev-workflow:reviewer`。** 読み取りと `Bash`（差分・`git grep`・テストの再実行）だけを持つレビュアー用の種別で、編集の道具を持たない（定義は `agents/reviewer.md`）。develop 以外から回すときも、この種別で起こす。
 - **既定は `opus`。** モデル未指定のサブエージェントは親セッションのモデルを継承するため、親が Fable のセッションではフォールバックのたびに Fable レビューが自動発火し、週次枠を無言で消費する（主が避けたいと明言している消費）。レビューの価値の中心は「実装者と別の目」であり、モデルの最高性能ではない。
 - **Fable に上げるときは `model` ではなく種別で上げる**: 次の両方を満たすときだけ `subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` は付けない。`scripts/agent-model-guard.sh` が PreToolUse で拒否する）。①変更が壊れると影響の重い部分（マージ条件の判定・レート/使用量制御・エージェントの行動規約）に触れている ② active スロットの Fable 週次の実効値（`~/.claude/.usage-snapshot` の `fable_weekly_pct` をリセット時刻で読み替えた値。取得からの経過時間では捨てない）で、Fable 週次枠に余裕がある（`FABLE_BUDGET_MODE=exhausted` 相当なら種別はそのままに `model: opus` へ落とす）。判断根拠を PR コメントのレビュー実行者行に添える（例: `レビュー実行者: dev-workflow:decider（fable — マージ判定に接触・週次残 40%）`）。決める役は `Bash` を持たないので、レビュー結果の PR コメント投稿はゲートを回す側が代理で行う。
 
 **Codex の呼び出し規約**（2026-08-07 の調査で確定。守らないと「原因不明のタイムアウト」になる）:
 
-- **前景 1 回で起動から完了まで待ち切ろうとする呼び方を禁止する**（前景で待つこと自体の禁止ではない。完了の確認は下のとおり前景ポーリングで行う）。Claude Code の Bash は 1 回 **10 分**が上限で、Codex レビューはそれを超えることがある（上の「10 分でタイムアウト」の直接原因はこれ）。`/codex:adversarial-review` は必ず **`--background`** で起動する。
+- **前景 1 回で起動から完了まで待ち切ろうとする呼び方を禁止する**（前景で待つこと自体の禁止ではない。完了の確認は下のとおり前景ポーリングで行う）。Claude Code の Bash は 1 回 **10 分**が上限で、Codex レビューはそれを超えることがある（stages/prepare.md の手順 2-0 にある「10 分でタイムアウト」の直接原因はこれ）。`/codex:adversarial-review` は必ず **`--background`** で起動する。
 - **待ち方は読み手で変わる。** 待ち値・完了シグナル・繰り返し回数・総待ちの上限の正本は `plugins/dev-workflow/references/subagent-waiting.md` で、**ここには再掲しない**（2 か所に置くと片方だけ古くなる）:
   - **メインセッション（本体）**: 背景タスクの完了で再起動されるので、`--background` 起動 ＋ 完了通知での続行でよい。
   - **サブエージェント（G など）**: 再起動されないので、完了の確認を**同一ターン内の前景ポーリング**で行う。完了を待つ目的でターンを終えてはならない（サブエージェントは再起動されないので、ターンを終えるとオーナーが気づくまで止まったままになり、気づかれなければ何時間でも作業が進まない）。正本を開いて雛形どおりに実行する。
