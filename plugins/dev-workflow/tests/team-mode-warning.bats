@@ -1,10 +1,10 @@
 #!/usr/bin/env bats
 #
 # チーム機能（CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS）が有効なら SessionStart で警告する（issue #591）。
-# spec: openspec/changes/team-mode-warning（archive 後は openspec/specs/dev-workflow-role-agent-types）
+# spec: openspec/specs/dev-workflow-role-agent-types（change: openspec/changes/archive/2026-10-07-team-mode-warning）
 
 setup() {
-  REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../../.." && pwd)"
   SCRIPT="${REPO_ROOT}/plugins/dev-workflow/scripts/team-mode-warning.sh"
   HOOKS="${REPO_ROOT}/plugins/dev-workflow/hooks/hooks.json"
   unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
@@ -54,6 +54,20 @@ assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart"
   CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=FALSE run "$SCRIPT"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+}
+
+@test "warning still prints when python3 is not on PATH" {
+  # python3 を含まない PATH（bash と tr だけ）を作って実行する
+  local bin="${BATS_TEST_TMPDIR}/nopython-bin"
+  mkdir -p "$bin"
+  ln -s "$(command -v bash)" "$bin/bash"
+  ln -s "$(command -v tr)" "$bin/tr"
+  ln -s "$(command -v cat)" "$bin/cat"
+  if PATH="$bin" command -v python3 >/dev/null 2>&1; then return 1; fi
+  CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 PATH="$bin" run /bin/bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"systemMessage"'* ]] || return 1
+  [[ "$output" == *'"additionalContext"'* ]] || return 1
 }
 
 @test "hooks.json registers it under SessionStart with startup-clear-compact matcher" {
