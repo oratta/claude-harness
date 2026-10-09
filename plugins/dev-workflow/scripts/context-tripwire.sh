@@ -47,9 +47,12 @@ case "$payload" in
   *) exit 0 ;;
 esac
 
-# Python 本体は fd 3 のヒアドキュメントで渡し、payload は stdin から読ませる。
-# payload を環境変数や引数に載せると長い prompt で ARG_MAX を超えて hook が落ちる。
-printf '%s' "$payload" | python3 /dev/fd/3 3<<'PY'
+# Python 本体はヒアドキュメントで変数に読み、-c の引数で渡す。payload は stdin のまま読ませる
+# （payload を環境変数や引数に載せると、長い入力で ARG_MAX を超えて hook が落ちる。本体は固定長で数十 KB）。
+# 本体を fd 3 のヒアドキュメントに付けて /dev/fd/3 として python3 に読ませる形は使わない: Python 3.9（macOS 標準の
+# /usr/bin/python3 など）は複数行の本体を実行せず rc=0・無出力で終わり、hook が何もしないまま通す（#869）。
+# -I（隔離モード）で起動し、PYTHON* の環境変数・ユーザー site・カレントディレクトリを検索パスに使わない。
+IFS= read -r -d '' PY_SRC <<'PY' || true
 import json, os, sys, time
 
 TAIL = 256 * 1024        # 末尾だけ読む。環境変数化しない（design Decision 5）
@@ -219,3 +222,10 @@ emit({"hookSpecificOutput": {"hookEventName": "PreToolUse",
                              "permissionDecisionReason": reason}})
 sys.exit(0)
 PY
+if [ -z "$PY_SRC" ]; then
+  # 本体を読めなかった（ヒアドキュメントの一時ファイルを作れない等）。空の本体を python3 に渡すと
+  # rc=0・無出力で終わって黙って通すので、渡さずに stderr で知らせる。
+  echo "context-tripwire: 判定の本体を読めなかったため、判定していない" >&2
+  exit 1
+fi
+printf '%s' "$payload" | python3 -I -c "$PY_SRC"

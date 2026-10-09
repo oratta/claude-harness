@@ -28,12 +28,13 @@ command -v python3 >/dev/null 2>&1 || exit 0   # fail-open（判定できなけ�
 
 SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
 
-# Python 本体は fd 3 のヒアドキュメントで渡し、stdin（hook の payload）はそのまま Python に読ませる。
-# payload を環境変数や引数に載せると、長い prompt で ARG_MAX を超えて hook が非 0 で落ち、
-# Claude Code は非 0/非 2 の hook エラーを「続行」と扱うため、判定が素通りになる。
 # 実効値（セッション記録と snapshot を突き合わせた値）は usage_view.py の 1 か所の実装から得る。
-SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" \
-  python3 /dev/fd/3 3<<'PY'
+# Python 本体はヒアドキュメントで変数に読み、-c の引数で渡す。payload は stdin のまま読ませる
+# （payload を環境変数や引数に載せると、長い入力で ARG_MAX を超えて hook が落ちる。本体は固定長で数十 KB）。
+# 本体を fd 3 のヒアドキュメントに付けて /dev/fd/3 として python3 に読ませる形は使わない: Python 3.9（macOS 標準の
+# /usr/bin/python3 など）は複数行の本体を実行せず rc=0・無出力で終わり、hook が何もしないまま通す（#869）。
+# -I（隔離モード）で起動し、PYTHON* の環境変数・ユーザー site・カレントディレクトリを検索パスに使わない。
+IFS= read -r -d '' PY_SRC <<'PY' || true
 import json, os, sys, time
 
 try:
@@ -107,3 +108,11 @@ if stype in NEEDS_EXPLICIT:
          "規範: rules/subagent-model-selection.md")
 sys.exit(0)
 PY
+if [ -z "$PY_SRC" ]; then
+  # 本体を読めなかった（ヒアドキュメントの一時ファイルを作れない等）。空の本体を python3 に渡すと
+  # rc=0・無出力で終わって黙って通すので、渡さずに stderr で知らせる。
+  echo "agent-model-guard: 判定の本体を読めなかったため、判定していない" >&2
+  exit 1
+fi
+SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" \
+  python3 -I -c "$PY_SRC"
