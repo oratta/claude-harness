@@ -89,6 +89,16 @@
           }
         ]
       }
+    ],
+    "PreModelSwitch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/model-switch-recache-notice.sh\""
+          }
+        ]
+      }
     ]
   }
 }

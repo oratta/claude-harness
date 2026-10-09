@@ -442,6 +442,51 @@ ${shallow}
   expect_stopped 'git push -o x --no-verify origin feature-x'
 }
 
+# --- git と同じオプションの読み方（issue #821） ---
+
+@test "option parsing: env options that take a value do not hide the git command" {
+  expect_stopped 'env -u FOO git reset --hard'
+  expect_stopped 'env -uFOO git reset --hard'
+  expect_stopped 'env --unset=FOO git reset --hard'
+  expect_stopped 'env --unset FOO git reset --hard'
+  expect_stopped 'env -iu FOO git reset --hard'
+  expect_stopped 'env -C dir -u FOO BAR=1 git reset --hard'
+}
+
+@test "option parsing: a later --no-dry-run cancels the dry-run" {
+  expect_stopped 'git push -n --no-dry-run origin main'
+  expect_stopped 'git clean -n --no-dry-run -f'
+  expect_stopped 'git push --dry-run --no-dry-run --force origin main'
+  expect_stopped 'git push -n --no-dry origin main'
+}
+
+@test "option parsing: an abbreviated long option still takes its value" {
+  expect_stopped 'git push --push-opt -n origin main'
+  expect_stopped 'git clean --excl -n -f'
+}
+
+@test "option parsing: --end-of-options ends the options like --" {
+  expect_stopped 'git push --end-of-options -n origin main'
+}
+
+# 実装前から止まる入力。env の -S を値を取るオプションとして読んだり、commit の -n（--no-verify）を
+# --no-dry-run で打ち消したりすると落ちる。
+@test "option parsing: env -S and commit -n stay stopped" {
+  expect_stopped 'env -S git reset --hard'
+  expect_stopped 'env -iS git reset --hard'
+  expect_stopped 'env --split-string git reset --hard'
+  expect_stopped 'git commit -n --no-dry-run -m x'
+}
+
+@test "option parsing: a real dry-run and harmless env commands stay silent" {
+  expect_silent 'git push --no-dry-run -n origin main'
+  expect_silent 'git clean -f --no-dry-run -n'
+  expect_silent 'git push --dry-run --no-dry-run --dry-run --force origin main'
+  expect_silent 'git push --push-option=x -n origin main'
+  expect_silent 'env -u FOO git status'
+  expect_silent 'env -i -u FOO git push origin feature-x'
+}
+
 @test "heredoc: commands after the heredoc are still judged" {
   expect_stopped $'cat <<EOF > note.txt\nbody\nEOF\ngit reset --hard'
 }
