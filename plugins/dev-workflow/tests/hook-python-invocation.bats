@@ -189,3 +189,25 @@ body_less_copy() {
   done
   return 0
 }
+
+@test "#869: model-switch-recache-notice and subagent-stop-guard give the same output on Python 3.9 and on the default python3" {
+  local py h
+  py="$(python39)"
+  [ -n "$py" ] || skip "Python 3.9 が無い（/usr/bin/python3・python3.9・python3 のどれも 3.9 でない）"
+  mkdir -p "${WORK}/bin39"
+  ln -s "$py" "${WORK}/bin39/python3"
+  # model-switch-recache-notice: systemMessage が出る入力（model-switch-recache-notice.bats の BASE と同じ）。
+  # subagent-stop-guard: 本体が session_id を読めず stderr に 1 行出して通す入力（本体が実行された証拠になる）
+  printf '%s' '{"session_id":"abc123","transcript_path":"/tmp/t.jsonl","cwd":"/tmp","hook_event_name":"PreModelSwitch","from_model":"claude-sonnet-5","to_model":"claude-opus-5","requested_model":"opus","source":"command","context_tokens":182340,"prompt_cache_warm":true,"cache_ttl":"5m","estimated_cache_write_usd":1.1396,"pricing":"catalog"}' \
+    >|"${WORK}/in.model-switch-recache-notice"
+  payload_for subagent-stop-guard >|"${WORK}/in.subagent-stop-guard"
+  for h in model-switch-recache-notice subagent-stop-guard; do
+    PATH="${WORK}/bin39:${PATH}" /bin/bash "${SCRIPTS}/${h}.sh" <"${WORK}/in.${h}" >|"${WORK}/out39" 2>&1
+    /bin/bash "${SCRIPTS}/${h}.sh" <"${WORK}/in.${h}" >|"${WORK}/outdef" 2>&1
+    [ -s "${WORK}/out39" ] || { echo "$h: no output on 3.9"; return 1; }
+    cmp "${WORK}/out39" "${WORK}/outdef" || { echo "$h: output differs between 3.9 and the default"; return 1; }
+  done
+  grep -q '"systemMessage"' "${WORK}/in.model-switch-recache-notice" && return 1
+  PATH="${WORK}/bin39:${PATH}" /bin/bash "${SCRIPTS}/model-switch-recache-notice.sh" \
+    <"${WORK}/in.model-switch-recache-notice" | grep -q '"systemMessage"'
+}
