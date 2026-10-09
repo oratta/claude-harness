@@ -332,6 +332,9 @@ PY
     fo_row r1 u2 2026-09-01T00:00:02.000Z 251 none "echo hi"
     fo_row r1 u3 2026-09-01T00:00:03.000Z 252 none "echo hi" | sed 's/"stop_reason":null,//'
   } | cl_write_log a
+  # sed が当たらなければ u3 も "stop_reason" を持ち 3 になる。2 なら u3 だけ消えている
+  [ "$(grep -c '"stop_reason"' "$CONFIG_DIR/projects/a/a.jsonl")" = "2" ] || return 1
+  [ "$(wc -l < "$CONFIG_DIR/projects/a/a.jsonl" | tr -d ' ')" = "3" ] || return 1
   assert_py '
 assert sum(r["output_tokens"] for r in rows)==8, rows'
 }
