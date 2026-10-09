@@ -366,6 +366,42 @@ PY
   done
 }
 
+@test "shell syntax: a command that cannot be judged within the work limit is stopped, not passed" {
+  # ヒアドキュメントを含む置換を bash -c の引数に重ねた形は、内側の引数の読み直しが残る。判定の仕事量が
+  # 上限を超えたら、時間切れ（＝素通し）になる前に打ち切って止める
+  local k deep='git status' shallow='git status'
+  for k in $(seq 1000); do
+    deep="bash -c \"\$(cat <<EOF
+x
+EOF
+${deep}
+)\""
+  done
+  [ "$(DEV_WORKFLOW_GIT_GUARD_DEEP="$deep" python3 - "$SCRIPT" <<'PY'
+import json, os, subprocess, sys
+p = json.dumps({"tool_name": "Bash", "permission_mode": "default",
+                "tool_input": {"command": os.environ["DEV_WORKFLOW_GIT_GUARD_DEEP"]}})
+env = {k: v for k, v in os.environ.items() if k != "DEV_WORKFLOW_GIT_GUARD_DEEP"}
+try:
+    r = subprocess.run([sys.argv[1]], input=p, capture_output=True, text=True, timeout=10, env=env)
+    o = json.loads(r.stdout)["hookSpecificOutput"]
+    print(o["permissionDecision"], "判定しきれなかった" in o["permissionDecisionReason"])
+except Exception as e:
+    print(type(e).__name__)
+PY
+  )" = "ask True" ]
+  # 手で書く程度の重なり（10 重）は上限に届かず、破壊的操作が無ければ何も出さない
+  for k in $(seq 10); do
+    shallow="bash -c \"\$(cat <<EOF
+x
+EOF
+${shallow}
+)\""
+  done
+  expect_silent "$shallow"
+  expect_stopped "${shallow/git status/git reset --hard}"
+}
+
 # --- 引数を取るオプションの値（PR #794 ゲート一周目 F2・F11・F12） ---
 
 @test "option values: a -n that is an option value does not make push or clean a dry-run" {

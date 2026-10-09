@@ -81,6 +81,59 @@ class Unclosed(Exception):
     """引用符が閉じていない。呼び出し側は空白で割った字句に同じ判定をかける。"""
 
 
+class TooMuch(Exception):
+    """判定の仕事量が上限を超えた。判定を打ち切り、止める側（ask / deny）に倒す。"""
+
+
+# 読み済みの置換の控え。字句読みは $(...) を中の単純コマンドまで読んだうえで、その文字列を語にそのまま
+# 写す。bash -c / eval の引数になった語を judge が読み直すとき、写した範囲の中の単純コマンドは外側の読みが
+# もう判定に回しているので、読み直さずに終わりの位置まで飛ばす（bash -c "$(bash -c "$(...)")" を重ねた形で、
+# 重ねた数だけ内側を読み直すと、1000 重で 30 秒を超えて hook の時間切れ＝素通しになる）。
+# 飛ばしてよい根拠: (1) $( の中の読みは $( の位置から先の文字だけで決まる。語には同じ文字がそのまま
+# 写っているので、読み直しが同じ位置を $( として読むなら、結果は外側の読みと同じになる。ただし
+# ヒアドキュメントを含む置換は、本文の終わりを行の単位で探して置換の外の文字まで見るので、控えに入れない。
+# (2) 外側の読みは、読み直しより浅い深さ（judge の depth）で同じ単純コマンドを判定している。判定は深さが
+# 浅いほど多くを拾い、結果は和集合でしか上に渡らないので、読み直しで拾えるものは外側がすべて拾っている。
+# 外側の読みが引用符の不一致で捨てられるときは、その中で呼ばれた読み直しの結果も一緒に捨てられる。
+class Word(str):
+    """読み済みの置換の範囲（始まりの位置 → 終わりの位置）を持つ語。閉じずに終わった置換は語の末尾まで。"""
+    spans = None
+
+
+def join_words(words):
+    """語を空白でつなぐ（eval の引数）。読み済みの置換の範囲を、つないだ後の位置に直して引き継ぐ。"""
+    spans, pos = {}, 0
+    for w in words:
+        for a, b in (getattr(w, "spans", None) or {}).items():
+            spans[pos + a] = pos + b
+        pos += len(w) + 1
+    out = " ".join(words)
+    if spans:
+        out = Word(out)
+        out.spans = spans
+    return out
+
+
+# 判定の仕事量（字句読みにかけた文字数の合計）と上限。読み済みの置換を飛ばしても、ヒアドキュメントを含む
+# 置換を bash -c / eval の引数に何重にも重ねた形などは読み直しが残る。hook の時間切れは何も止めないのと
+# 同じ結果になるので、上限を超えたら判定を打ち切って止める側に倒す（TooMuch）。素通しの側には倒さない。
+# 上限の根拠: 読み直しは bash -c / eval の引数とバッククォートの中身にしか起きず、judge の深さは 0〜8 の
+# 9 段。読み直しが重ならないコマンドでは 1 段あたりの合計がコマンドの長さを超えないので、仕事量は長さの
+# 9 倍（バッククォートを引数の中に書いた分を二重に数えても 18 倍）に収まる。ヒアドキュメントの本文の
+# 終わりを探す分は、本文の $(...) の中に入れ子にしない限り、合計でコマンドの長さを超えない。上限は
+# その上の 32 倍に置き、短いコマンドには 200 万文字の下限を置く（字句読みは 1 秒に約 300 万文字。
+# 200 万文字は 1 秒弱）。
+WORK = [0]
+WORK_LIMIT = max(2000000, 32 * len(command))
+HEREDOCS = [0]  # 読んだヒアドキュメントの数（置換の中にヒアドキュメントがあったかを前後の差で見る）
+
+
+def charge(count):
+    if WORK[0] > WORK_LIMIT:
+        raise TooMuch()
+    WORK[0] += count
+
+
 # 字句読み（spec destructive-git-hook「コマンド文字列をシェルと同じ単位で読む」）。
 # 引用状態と「演算子か語か」を保ったまま 1 回で読み、単純コマンド（語の並び）の並び（$(...) の中の
 # ものを含む）と、読み直して判定するバッククォートの中身の並びを返す。扱うのは演算子・行継続・
@@ -141,19 +194,26 @@ def subst(s, i, subs, cmds, memo=None):
     """s[i:i+2] の $( を、対応する ) まで読む（中の引用・入れ子・コメント・ヒアドキュメントを追う）。
     中で読んだ単純コマンドを cmds に、バッククォートの中身を subs に足し、次の位置を返す。閉じていなければ
     末尾まで。中身を文字列で返して読み直させないのは、入れ子の深さが judge の再帰の上限に数えられて、
-    深い入れ子の中の git を見失うため。ジェネレータ（run で進める）。"""
+    深い入れ子の中の git を見失うため。返すのは (次の位置, 読み済みの置換の控えに入れてよいか)。
+    s が読み済みの置換の範囲を持ち、i がその始まりなら、読まずに終わりの位置を返す。
+    ジェネレータ（run で進める）。"""
+    known = getattr(s, "spans", None)
+    if known and i in known:
+        WORK[0] -= known[i] - i  # 読まなかった分は仕事量に数えない
+        return known[i], True
+    before = HEREDOCS[0]
     _, _, end, _ = yield lex(s, i + 2, True, cmds, subs, memo)
-    return end
+    return end, HEREDOCS[0] == before
 
 
 def double_quoted(s, i, subs, cmds, term='"', memo=None):
-    """二重引用符の中（term=None ならヒアドキュメントの引用されていない本文）を読む。(文字列, 次の位置)。
-    ジェネレータ（run で進める）。"""
-    out, n = [], len(s)
+    """二重引用符の中（term=None ならヒアドキュメントの引用されていない本文）を読む。
+    (文字列, 次の位置, 文字列の中の読み済みの置換の範囲の並び)。ジェネレータ（run で進める）。"""
+    out, n, pos, spans = [], len(s), 0, []
     while i < n:
         ch = s[i]
         if term is not None and ch == term:
-            return "".join(out), i + 1
+            return "".join(out), i + 1, spans
         if ch == "\\" and i + 1 < n:
             nxt = s[i + 1]
             if nxt == "\n":  # 行継続
@@ -161,24 +221,30 @@ def double_quoted(s, i, subs, cmds, term='"', memo=None):
                 continue
             if nxt in '$`"\\':
                 out.append(nxt)
+                pos += 1
                 i += 2
                 continue
         if ch == "$" and s.startswith("$(", i):
-            end = yield subst(s, i, subs, cmds, memo)
+            end, plain = yield subst(s, i, subs, cmds, memo)
+            if plain:
+                spans.append((pos, pos + end - i))
             out.append(s[i:end])
+            pos += end - i
             i = end
             continue
         if ch == "`":
             inner, end = backquote(s, i)
             subs.append(inner)
             out.append(s[i:end])
+            pos += end - i
             i = end
             continue
         out.append(ch)
+        pos += 1
         i += 1
     if term is not None:
         raise Unclosed()
-    return "".join(out), n
+    return "".join(out), n, spans
 
 
 def read_heredocs(s, i, pending, subs, cmds, in_subst):
@@ -202,6 +268,9 @@ def read_heredocs(s, i, pending, subs, cmds, in_subst):
             i = nxt
         else:
             i = n
+        # 本文の終わりを探した分も仕事量に数える（本文の $(...) の中にヒアドキュメントを何重にも入れると、
+        # 内側の本文を重ねた数だけ探し直す）
+        charge(i - start)
         if not quoted:
             yield double_quoted(s[start:body_end], 0, subs, cmds, term=None)
     pending.clear()
@@ -232,7 +301,8 @@ def lex(s, i=0, in_subst=False, cmds=None, subs=None, memo=None):
 
 def lex_body(s, i, in_subst, cmds, subs, memo):
     cur, pending = [], []
-    word, st = [], {"has": False, "quoted": False, "redirect": False, "delim": None}
+    word, st = [], {"has": False, "quoted": False, "redirect": False, "delim": None, "len": 0}
+    spans = []  # 読んでいる語の中の、読み済みの置換の範囲
     paren, n = 0, len(s)
 
     def end_word():
@@ -240,6 +310,11 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
             return
         w = "".join(word)
         word.clear()
+        if spans:
+            w = Word(w)
+            w.spans = dict(spans)
+            spans.clear()
+        st["len"] = 0
         if st["delim"] is not None:
             pending.append((w, st["delim"], st["quoted"]))
             st["delim"] = None
@@ -258,6 +333,7 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
 
     def add(text, quoted=False):
         word.append(text)
+        st["len"] += len(text)
         st["has"] = True
         st["quoted"] = st["quoted"] or quoted
 
@@ -279,11 +355,14 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
             i = k + 1
             continue
         if ch == '"':
-            text, i = yield double_quoted(s, i + 1, subs, cmds, memo=memo)
+            text, i, inner = yield double_quoted(s, i + 1, subs, cmds, memo=memo)
+            spans.extend((st["len"] + a, st["len"] + b) for a, b in inner)
             add(text, quoted=True)
             continue
         if ch == "$" and s.startswith("$(", i):
-            end = yield subst(s, i, subs, cmds, memo)
+            end, plain = yield subst(s, i, subs, cmds, memo)
+            if plain:
+                spans.append((st["len"], st["len"] + end - i))
             add(s[i:end])
             i = end
             continue
@@ -309,13 +388,14 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
             # 直前に接した数字だけの語は fd（2>、2>&1）
             if st["has"] and not st["quoted"] and "".join(word).isdigit():
                 word.clear()
-                st["has"] = False
+                st["has"], st["len"] = False, 0
             else:
                 end_word()
             if s.startswith("<<<", i):
                 st["redirect"], i = True, i + 3
             elif s.startswith("<<", i):
                 strip = s.startswith("<<-", i)
+                HEREDOCS[0] += 1
                 st["delim"], i = strip, i + (3 if strip else 2)
             else:
                 m = re.match(r"&>>|&>|>>|>\||>&|<&|<>|<|>", s[i:])
@@ -351,6 +431,7 @@ def split_fallback(s, depth):
     閉じていて末尾まで字句読みで読めたら、読めた単純コマンドも判定に足す（bash -c / eval に渡した
     引用つきの引数を、空白で割って失わないため）。一度読んで閉じなかった $( の入れ子は読み直さない
     （seen。読み直すと、入れ子の数の 2 乗の時間がかかる）。"""
+    s = str(s)  # 読み済みの置換の控えは使わない（粗い読みは、置換を自分で読んだ結果だけを使う）
     out, subs, kinds, quote, i, n = [], [], set(), None, 0, len(s)
     seen = set()
     while i < n:
@@ -368,8 +449,10 @@ def split_fallback(s, depth):
                 try:
                     _, inner_subs, end, closed = run(lex(s, i + 2, True, inner, memo=memo))
                 except Unclosed:
+                    charge(n - i)
                     seen.update(p for p, read in memo.items() if not read)
                 else:
+                    charge(end - i)
                     kinds |= inner.kinds
                     subs.extend(inner_subs)
                     if closed:
@@ -436,12 +519,20 @@ JUDGE_MEMO = {}
 def judge(s, depth=0):
     if depth > 8:
         return set()
-    if (depth, s) not in JUDGE_MEMO:
-        JUDGE_MEMO[(depth, s)] = judge_uncached(s, depth)
-    return JUDGE_MEMO[(depth, s)]
+    spans = getattr(s, "spans", None) or {}
+    if spans.get(0) == len(s):
+        # 全体が読み済みの置換 1 つ（bash -c "$(...)" の引数）。中の単純コマンドは外側の読みが判定済みで、
+        # 語そのものは $( で始まるので git でも bash -c でも eval でもない。
+        return set()
+    # 控えの鍵に範囲を入れる（同じ文字列でも、範囲が付いていない呼び出しは置換の中を自分で読む）
+    key = (depth, s, tuple(sorted(spans.items())))
+    if key not in JUDGE_MEMO:
+        JUDGE_MEMO[key] = judge_uncached(s, depth)
+    return JUDGE_MEMO[key]
 
 
 def judge_uncached(s, depth):
+    charge(len(s))
     read = Judged(depth)
     try:
         _, subs, _, _ = run(lex(s, cmds=read))
@@ -477,7 +568,7 @@ def judge_simple(cmd, depth):
                     return judge(rest[k + 1], depth + 1)
         return set()
     if head == "eval":
-        return judge(" ".join(rest), depth + 1)
+        return judge(join_words(rest), depth + 1)
     if base == "git":
         return judge_git(rest)
     return set()
@@ -586,8 +677,11 @@ def judge_push(longs, short_set, positional):
     return kinds
 
 
-kinds = judge(command)
-if not kinds:
+try:
+    kinds = judge(command)
+except TooMuch:
+    kinds = None  # 判定しきれなかった。破壊的操作を含むものとして止める
+if kinds is not None and not kinds:
     sys.exit(0)
 
 forced = (os.environ.get("DEV_WORKFLOW_GIT_GUARD_FORCE") or "").strip()
@@ -596,9 +690,14 @@ if forced in ("ask", "deny"):
 else:
     decision = "ask" if payload.get("permission_mode") in ("default", "acceptEdits", "plan", "bypassPermissions") else "deny"
 
-found = "、".join(LABELS[k] for k in ORDER if k in kinds)
-head = ("[dev-workflow git-destructive-guard] 破壊的 git 操作を検出した: " + found + "。"
-        "規範の正本は rules/destructive-git-guard.md（破壊的操作は例外なく事前承認）。")
+if kinds is None:
+    head = ("[dev-workflow git-destructive-guard] git を含むコマンドの入れ子（bash -c / eval / $(...) の重なり）が"
+            "深すぎて、破壊的 git 操作を含むかどうかを判定しきれなかった。含むものとして扱う。"
+            "規範の正本は rules/destructive-git-guard.md（破壊的操作は例外なく事前承認）。")
+else:
+    found = "、".join(LABELS[k] for k in ORDER if k in kinds)
+    head = ("[dev-workflow git-destructive-guard] 破壊的 git 操作を検出した: " + found + "。"
+            "規範の正本は rules/destructive-git-guard.md（破壊的操作は例外なく事前承認）。")
 if decision == "deny":
     body = ("このコマンドは実行していない。何を・なぜ・いつ実行するかを示して主に承認を求め、承認されたら"
             "主が自分で実行する（Claude Code の入力欄で ! を付けて打つか、自分の端末で）。")
