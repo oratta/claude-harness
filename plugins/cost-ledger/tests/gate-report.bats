@@ -665,6 +665,48 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
   queried my.org/my.repo 1
 }
 
+@test "gate-report: a literal gh api endpoint with an owner or repo of . or .. is an unresolvable target and gh is never called" {  # gh api のリテラルの endpoint（repos/<owner>/<repo>/...）の owner / repo のどちらかが . か .. なら、-R と同じく解決できない対象として扱い、gh を呼ばない。名前の中に . を含むだけの endpoint（my.org/my.repo・acme/.github・foo.bar/b）は今までどおり対象の確認を行う
+  run_hook "gh api -X POST repos/a/../issues/1/comments -f body=x"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+  run_hook "gh api -X POST repos/../b/issues/1/comments -f body=x"
+  [ "$status" -eq 0 ]
+  no_gh_call
+  run_hook "gh api -X POST repos/./b/issues/1/comments -f body=x"
+  no_gh_call
+  run_hook "gh api -X POST repos/a/./issues/1/comments -f body=x"
+  no_gh_call
+  run_hook "gh api -X POST /repos/../../issues/1/comments -f body=x"
+  no_gh_call
+  # コメント以外のきっかけ（付与・マージ・状態の変更）も同じ
+  run_hook "gh api -X POST repos/a/../issues/1/labels -f 'labels[]=agent-review:passed'"
+  no_gh_call
+  run_hook "gh api -X PUT repos/../b/pulls/1/merge"
+  no_gh_call
+  run_hook "gh api -X PATCH repos/a/../pulls/1 -f state=closed"
+  no_gh_call
+  # 変数で渡しても同じ
+  run_hook "R=a/..; gh api -X POST repos/\$R/issues/1/comments -f body=x"
+  no_gh_call
+  # 正当な名前は拒否しない
+  run_hook "gh api -X POST repos/my.org/my.repo/issues/1/comments -f body=x"
+  [ "$status" -eq 0 ]
+  queried my.org/my.repo 1
+  : > "$GH_LOG"
+  run_hook "gh api -X POST repos/acme/.github/issues/2/comments -f body=x"
+  queried acme/.github 2
+  : > "$GH_LOG"
+  run_hook "gh api -X POST repos/foo.bar/b/issues/3/comments -f body=x"
+  queried foo.bar/b 3
+  : > "$GH_LOG"
+  run_hook "gh api -X POST repos/a..b/c.../issues/4/comments -f body=x"
+  queried a..b/c... 4
+  : > "$GH_LOG"
+  run_hook "gh api -X POST repos/oratta/claude-harness/issues/5/comments -f body=x"
+  queried oratta/claude-harness 5
+}
+
 @test "gate-report: a command aimed at another host never stacks" {  # --hostname（github.com 以外）・前置きの GH_HOST（github.com 以外）・-R の HOST/OWNER/REPO（github.com 以外）のコマンドは gh を呼ばず無出力で 0。github.com を明示した形は積む
   run_hook "gh api --hostname ghe.example -X POST repos/oratta/claude-harness/issues/300/labels -f 'labels[]=agent-review:passed'"
   [ "$status" -eq 0 ]
