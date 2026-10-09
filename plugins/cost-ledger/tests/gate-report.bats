@@ -1776,6 +1776,80 @@ PY
   [ "$status" -eq 0 ]
 }
 
+@test "timeline-hook: lock retries on the same directory fd when the lock file creation returns ENOENT" {  # ロックファイルの作成が 4 回続けて ENOENT でも、同じ dir_fd のまま開き直してロックを取る（書かずに終わらない）。置き場は開き直さない
+  run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY3'
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import gate_report
+fails, folder_opens, dir_fds = [0], [0], []
+real_open = os.open
+def spy_open(path, flags, mode=0o777, *, dir_fd=None):
+    if dir_fd is None and flags & os.O_DIRECTORY:
+        folder_opens[0] += 1
+    if dir_fd is not None:
+        dir_fds.append(dir_fd)
+        if fails[0] < 4:
+            fails[0] += 1
+            raise FileNotFoundError(2, "injected", path)
+    return real_open(path, flags, mode, dir_fd=dir_fd)
+os.open = spy_open
+fd = gate_report.lock("a/b", 1)
+assert isinstance(fd, int), fd
+assert fails[0] == 4 and folder_opens[0] == 1, (fails, folder_opens)
+assert len(dir_fds) == 5 and len(set(dir_fds)) == 1, dir_fds
+# 取った fd は、置き場にあるロックファイルそのもの
+folder = os.path.join(os.environ["TMPDIR"], "cost-ledger-timeline")
+names = os.listdir(folder)
+assert len(names) == 1, names
+assert os.fstat(fd).st_ino == os.stat(os.path.join(folder, names[0])).st_ino
+PY3
+  [ "$status" -eq 0 ]
+}
+
+@test "timeline-hook: lock returns None without writing when the lock file creation returns ENOENT 5 times" {  # 5 回とも ENOENT なら、ロックを取れなかったものとして None を返す（直列にできないので書かない）。置き場は開き直さず、例外は外へ出さない
+  run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY4'
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import gate_report
+n, folder_opens = [0], [0]
+real_open = os.open
+def spy_open(path, flags, mode=0o777, *, dir_fd=None):
+    if dir_fd is None and flags & os.O_DIRECTORY:
+        folder_opens[0] += 1
+    if dir_fd is not None:
+        n[0] += 1
+        raise FileNotFoundError(2, "injected", path)
+    return real_open(path, flags, mode, dir_fd=dir_fd)
+os.open = spy_open
+assert gate_report.lock("a/b", 1) is None
+assert n[0] == 5 and folder_opens[0] == 1, (n, folder_opens)
+PY4
+  [ "$status" -eq 0 ]
+}
+
+@test "timeline-hook: lock returns None and locks no other directory when the lock directory is removed after it was opened" {  # fd で開いた後に置き場が消えたら、置き場を作り直して別の inode をロックすることはせず、None を返す（先にロックを取った側と同時に読み書きに入らない）
+  run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY5'
+import os, sys, shutil
+sys.path.insert(0, sys.argv[1])
+import gate_report
+folder = os.path.join(os.environ["TMPDIR"], "cost-ledger-timeline")
+real_open = os.open
+state, folder_opens = [0], [0]
+def spy_open(path, flags, mode=0o777, *, dir_fd=None):
+    if dir_fd is None and flags & os.O_DIRECTORY:
+        folder_opens[0] += 1
+    if dir_fd is not None and state[0] == 0:
+        state[0] = 1
+        shutil.rmtree(folder)
+    return real_open(path, flags, mode, dir_fd=dir_fd)
+os.open = spy_open
+assert gate_report.lock("a/b", 1) is None
+assert state[0] == 1 and folder_opens[0] == 1, (state, folder_opens)
+assert not os.path.lexists(folder), "the lock directory was recreated"
+PY5
+  [ "$status" -eq 0 ]
+}
+
 @test "timeline-hook: repos differing only in letter case share one lock file" {  # owner/repo の大文字小文字だけが違う 2 つの名前で lock() を呼ぶと同じ名前のロックファイルを開く（大文字小文字を区別する環境でも同じ対象が別のロックにならない）
   run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY2'
 import os, sys
