@@ -707,6 +707,56 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
   queried oratta/claude-harness 5
 }
 
+@test "gate-report: a positional URL with an owner or repo of . or .. is an unresolvable target and gh is never called" {  # 位置引数の URL（https://github.com/<owner>/<repo>/pull|issues/<番号>）の owner / repo のどちらかが . か .. なら、-R と同じく解決できない対象として扱い、gh を呼ばない（許可の一覧には write_allow_list がこのファイルの URL から拾った a/.. などの名前が載っている）。名前の中に . を含むだけの URL は今までどおり対象の確認を行う（#947）
+  grep -qxF 'a/..' "$COST_LEDGER_WRITE_REPOS_FILE"
+  grep -qxF '../b' "$COST_LEDGER_WRITE_REPOS_FILE"
+  run_hook "gh pr comment https://github.com/a/../pull/1 --body x"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+  run_hook "gh issue close https://github.com/../b/issues/2"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+  run_hook "gh pr comment https://github.com/a/./pull/1 --body x"
+  no_gh_call
+  run_hook "gh pr comment https://github.com/./b/pull/1 --body x"
+  no_gh_call
+  run_hook "gh issue comment https://github.com/./../issues/2 --body x"
+  no_gh_call
+  # コメント以外のきっかけ（マージ・Ready・状態の変更）も同じ
+  run_hook "gh pr merge https://github.com/a/../pull/1"
+  no_gh_call
+  run_hook "gh pr ready https://github.com/../b/pull/1"
+  no_gh_call
+  run_hook "gh pr close https://github.com/a/./pull/1"
+  no_gh_call
+  run_hook "gh pr reopen https://github.com/./b/pull/1"
+  no_gh_call
+  # 変数で渡しても同じ
+  run_hook "U=https://github.com/a/../pull/1; gh pr comment \$U --body x"
+  no_gh_call
+  # URL が飛ばされたとき、併記した -R / 前置きの GH_REPO のリポジトリには落ちない
+  run_hook "gh pr comment https://github.com/a/../pull/1 -R acme/other --body x"
+  no_gh_call
+  run_hook "GH_REPO=acme/other gh pr comment https://github.com/../b/pull/1 --body x"
+  no_gh_call
+  # 正当な名前は拒否しない
+  run_hook "gh pr comment https://github.com/acme/.github/pull/3 --body x"
+  [ "$status" -eq 0 ]
+  queried acme/.github 3
+  : > "$GH_LOG"
+  run_hook "gh issue comment https://github.com/my.org/my.repo/issues/4 --body x"
+  queried my.org/my.repo 4
+  : > "$GH_LOG"
+  run_hook "gh pr comment https://github.com/a..b/c.../pull/5 --body x"
+  queried a..b/c... 5
+  : > "$GH_LOG"
+  # URL の側が正当なら、併記した -R が . / .. でも URL のリポジトリが対象になる
+  run_hook "gh pr comment https://github.com/acme/other/pull/301 -R a/.. --body x"
+  queried acme/other 301
+}
+
 @test "gate-report: a command aimed at another host never stacks" {  # --hostname（github.com 以外）・前置きの GH_HOST（github.com 以外）・-R の HOST/OWNER/REPO（github.com 以外）のコマンドは gh を呼ばず無出力で 0。github.com を明示した形は積む
   run_hook "gh api --hostname ghe.example -X POST repos/oratta/claude-harness/issues/300/labels -f 'labels[]=agent-review:passed'"
   [ "$status" -eq 0 ]
