@@ -333,7 +333,7 @@ for r in rows:
     r.pop("uuid", None)
 open(sys.argv[1], "w").write("".join(json.dumps(r) + "\n" for r in rows))
 PY
-  ! grep -q '"uuid"' "$LEDGER"
+  ! grep -q '"uuid"' "$LEDGER" || return 1
   export COST_LEDGER_PATH="$LEDGER"
   run python3 "$CL" ledger-sync --rescan --quiet
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
