@@ -72,6 +72,21 @@ setup() {
   [[ "$output" == *":5:"* ]] || return 1
 }
 
+@test "guard: detects a bare expansion in a single-line run: value" {
+  fixture="${BATS_TEST_TMPDIR}/bad-inline.yml"
+  {
+    echo 'jobs:'
+    echo '  build:'
+    echo '    steps:'
+    printf '      - run: echo "完了（sha=%sHEAD_SHA）"\n' '$'
+  } > "$fixture"
+
+  run python3 "$SCANNER" "$fixture"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HEAD_SHA"* ]] || return 1
+  [[ "$output" == *":4:"* ]] || return 1
+}
+
 @test "guard: accepts the braced form inside a workflow run: block" {
   fixture="${BATS_TEST_TMPDIR}/good.yml"
   {
