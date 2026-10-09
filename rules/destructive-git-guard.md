@@ -13,8 +13,12 @@
 - `git checkout -- <path>` / `git restore <path>`（作業破棄）
 - `git reset --hard` / `git clean -f`
 - `git commit --amend`（push 済み）/ `git rebase -i`
-- `git push origin main|master` / `git push --force[-with-lease]`
+- `git push <remote> main|master`（remote 名を問わない） / `git push --force[-with-lease]`
 - `git branch -D`
 - `--no-verify` / `--no-gpg-sign`
 
 「戻すだけ」「消すだけ」「一瞬で終わる」と思ったら、それは承認を飛ばそうとしているサイン。手を止めて聞く。
+
+## hook との分担
+
+一覧のうち push 済みの `--amend` と `rebase -i` を除く操作は、dev-workflow の hook が Bash の実行前に止める（主の対話セッションでは確認画面が出る）。止まったら言い換えて再実行せず主に聞く。拒否されたセッションや確認画面が出ないセッションでは、承認されても主が自分で実行する（入力欄の `!` か主の端末）。hook はコマンド文字列しか見ないので、push 済みの `git commit --amend`・`git rebase -i`・ブランチ名を書かない `git push`・スクリプトファイル経由の git は止まらない。ここではこのルールだけが歯止めになる。

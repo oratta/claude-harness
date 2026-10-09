@@ -85,14 +85,14 @@ dev-workflow プラグインは、作業役（develop スキルの W、または
 - **THEN** ここまでの編集内容と判明した事実を引き継ぎ情報として渡し、作業をやり直さない
 
 ### Requirement: SessionStart hook がトリップワイヤーを常駐注入する
-dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart イベント（matcher: `startup|clear|compact`）で注入スクリプトを起動しなければならない（SHALL）。コマンドパスは `${CLAUDE_PLUGIN_ROOT}` を使用する。スクリプトは `templates/escalation-tripwires.md` の「## 昇格トリップワイヤー」節を抽出し、`{"additionalContext": "<節の本文>"}` の JSON を stdout に出力する（single source of truth: 本文の複製を hook 側に持たない）。テンプレートが見つからない・節が抽出できない場合は無出力・exit 0 で終了しなければならない（MUST NOT block session start）。
+dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart イベント（matcher: `startup|clear|compact`）で注入スクリプトを起動しなければならない（SHALL）。コマンドパスは `${CLAUDE_PLUGIN_ROOT}` を使用する。スクリプトは `templates/escalation-tripwires.md` の「## 昇格トリップワイヤー」節を抽出し、`{"additionalContext": "<節の本文>"}` の JSON を stdout に出力する（single source of truth: 本文の複製を hook 側に持たない）。`TRIPWIRES_SCOPE` が未設定のとき、テンプレートが見つからない・節が抽出できない場合は無出力・exit 0 で終了しなければならない（MUST NOT block session start）。`TRIPWIRES_SCOPE=subagent-budget` のときの出力は要件「SubagentStart hook が dev-workflow の役に運用情報を注入する」が定める。
 
 #### Scenario: 注入 JSON が節を含む
 - **WHEN** `CLAUDE_PLUGIN_ROOT` をプラグインルートに設定してスクリプトを実行する
 - **THEN** stdout は valid JSON で、`additionalContext` に「昇格トリップワイヤー」「規模超過」「失敗ループ」「仕様の発明」を含む
 
 #### Scenario: テンプレート欠損時は fail-soft
-- **WHEN** `CLAUDE_PLUGIN_ROOT` をテンプレートの無いディレクトリに設定してスクリプトを実行する
+- **WHEN** `TRIPWIRES_SCOPE` 未設定で、`CLAUDE_PLUGIN_ROOT` をテンプレートの無いディレクトリに設定してスクリプトを実行する
 - **THEN** exit code 0 で出力は空である
 
 #### Scenario: hooks.json の構造
@@ -100,7 +100,7 @@ dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart �
 - **THEN** SessionStart エントリが存在し、matcher が `startup|clear|compact`、command が `${CLAUDE_PLUGIN_ROOT}` 経由でスクリプトを指している
 
 ### Requirement: usage-probe と snapshot 契約
-dev-workflow プラグインは `plugins/dev-workflow/scripts/usage-probe.sh` を配布しなければならない（SHALL）。probe はアカウントレジストリ（`usage-account-registry` capability）の全スロットをループし、スロットごとに導出した Keychain サービス名で認証情報を取得して OAuth usage API（`/api/oauth/usage`）をフェッチし、`~/.claude/.usage-snapshot`（`USAGE_SNAPSHOT` で上書き可）に JSON を書く。
+dev-workflow プラグインは `plugins/dev-workflow/scripts/usage-probe.sh` を配布しなければならない（SHALL）。probe は使用量の補助の情報源であり（主な情報源は `usage-session-records` capability のセッション記録）、アカウントレジストリ（`usage-account-registry` capability）のスロットのうち下記の実行条件を満たすものだけについて、スロットごとに導出した Keychain サービス名で認証情報を取得して OAuth usage API（`/api/oauth/usage`）をフェッチし、`~/.claude/.usage-snapshot`（`USAGE_SNAPSHOT` で上書き可）に JSON を書く。
 
 snapshot は **schema 2** であり、次の構造でなければならない（SHALL）。snapshot は生産者（dev-workflow）と消費者（statusline）が別のタイミングで更新されうる層間契約であるため、**キー名を以下に固定する**:
 
@@ -139,9 +139,17 @@ snapshot は **schema 2** であり、次の構造でなければならない（
 - `active`: 現在アクティブなスロットの id。判定規則は `usage-account-registry` capability の「active スロットの判定規則」に従う
 - `accounts`: スロット id をキーとするオブジェクト。各スロットの値フィールドのキー名は上記に固定する（`label` / `securestorage` / `fetched_at` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `fable_weekly_pct` / `fable_active`）。値が得られないフィールドは `null` とする
 - スロットの `fetched_at`: **そのスロットの値を実際に取得できた時刻**（epoch 秒）。fail-open で前回値を引き継いだスロットは、前回の `fetched_at` をそのまま保たなければならない（SHALL）。probe の実行時刻を書いてはならない（MUST NOT）
-- トップレベルの `fetched_at` / `fable_weekly_pct` / `fable_active` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch`: **active スロットの同名フィールドをミラーしたもの**でなければならない（SHALL）。既存の読み手（`scripts/session-tripwires.sh` の `FABLE_BUDGET_MODE` 導出、および statusline の Fable 表示と 6 時間鮮度ゲート）を無改修で動かすための後方互換であり、独立に計算してはならない（MUST NOT）。特にトップレベル `fetched_at` は probe の実行時刻ではなく active スロットの取得時刻である（statusline の鮮度ゲートがこの値を読むため、実行時刻を書くと古い数字が新鮮な顔で表示される）
+- トップレベルの `fetched_at` / `fable_weekly_pct` / `fable_active` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch`: **active スロットの同名フィールドをミラーしたもの**でなければならない（SHALL）。既存の読み手（statusline の Fable 表示と 6 時間鮮度ゲート、および外部の読み手）を無改修で動かすための後方互換であり、独立に計算してはならない（MUST NOT）。特にトップレベル `fetched_at` は probe の実行時刻ではなく active スロットの取得時刻である（statusline の鮮度ゲートがこの値を読むため、実行時刻を書くと古い数字が新鮮な顔で表示される）
 
-snapshot が TTL（既定 300 秒、`USAGE_PROBE_TTL` で上書き可）以内に更新済みなら再フェッチしてはならない（SHALL NOT）。
+**実行条件**: probe はスロットごとに、次のすべてを満たすときだけ API をフェッチしなければならない（SHALL）。満たさないスロットはフェッチせず、スロット単位 fail-open と同じく前回値を保つ。snapshot の mtime による TTL で判定してはならない（MUST NOT）（全スロットが失敗すると mtime が進まず、呼ばれるたびに叩き直すため）。`USAGE_PROBE_TTL` は読まない。
+
+- 次のどちらかに当たる: そのスロットのセッション記録が無い、または記録の `observed_at` が `USAGE_PROBE_STALE` 秒（既定 10800）より古い／snapshot の同スロットの `fetched_at` が `USAGE_PROBE_STALE` 秒より古い（同スロットや `fetched_at` が無い場合を含む）。後者を含めるのは、Fable 週次がセッション記録に入らず probe からしか得られないため（会話中のアカウントでも Fable の値と statusline の 6 時間鮮度ゲートが止まらないようにする）
+- 試行状態ファイル（`USAGE_PROBE_STATE`、既定 `~/.claude/.usage-probe-state`）にあるそのスロットの前回の試行時刻から `USAGE_PROBE_INTERVAL` 秒（既定 10800）以上経っている
+- そのスロットが 429 による待ち時間の中にいない
+
+probe はフェッチを試みたスロットごとに、結果（200・429・その他の失敗）にかかわらず試行時刻を試行状態ファイルに記録しなければならない（SHALL）。HTTP 429 を受けたスロットは連続 429 回数を 1 増やし、前回の試行から `USAGE_PROBE_INTERVAL × 2^(回数-1)` 秒（上限 86400 秒）経つまで次の試行をしてはならない（MUST NOT）。200 を受けたら連続 429 回数を 0 に戻す。試行状態ファイルは一時ファイルからの置き換えで書き、読めない・壊れているときは全スロットを未試行として扱う。
+
+**マシン全体で 1 本**: probe はフェッチの前に `USAGE_PROBE_LOCK`（既定 `~/.claude/.usage-probe.lock`）をディレクトリ作成で取らなければならない（SHALL）。取れなければ何もせず exit 0 で終わる。ロックが 120 秒より古いときは前の probe が異常終了したとみなして取り直してよい（MAY）。終了時（失敗時を含む）にロックを外さなければならない（SHALL）。実行条件を満たすスロットが 1 つも無いときは、API を叩かず snapshot を書かずに exit 0 で終わる。
 
 **fail-open はスロット単位で行う**（SHALL）。あるスロットの認証取得・通信・パースが失敗した場合、そのスロットの値は既存 snapshot の同スロットの前回値（`fetched_at` を含む）を引き継いで保持し、他スロットの新しい値は書く。
 
@@ -167,9 +175,38 @@ probe は `refresh_token` を用いたアクセストークンの更新を行っ
 - **WHEN** active スロットのフェッチが失敗し、既存 snapshot の同スロットに前回の `fetched_at` がある状態で probe を実行する
 - **THEN** そのスロットの `fetched_at` とトップレベルの `fetched_at` はどちらも前回の取得時刻のままであり、probe の実行時刻に更新されない
 
-#### Scenario: 5 分キャッシュ
-- **WHEN** TTL 以内に更新された snapshot が既に存在する状態で probe を実行する
-- **THEN** API を再フェッチせず、既存 snapshot を維持する
+#### Scenario: セッション記録が新しいスロットはフェッチしない
+- **WHEN** 2 スロットのうち A の鍵のセッション記録が 10 分前で A の snapshot の `fetched_at` も 10 分前、B の記録が無く、どちらも未試行の状態で probe を実行する
+- **THEN** B だけをフェッチし、A は API を叩かず前回値を保つ
+
+#### Scenario: 記録は新しいが snapshot が古いスロットはフェッチする
+- **WHEN** A の鍵のセッション記録が 10 分前、A の snapshot の `fetched_at` が 4 時間前（または A が snapshot に無い）で、A が未試行の状態で probe を実行する
+- **THEN** A をフェッチし、snapshot の A の `fable_weekly_pct` と `fetched_at` が新しい値になる
+
+#### Scenario: 間隔内の再実行はフェッチしない
+- **WHEN** 試行状態ファイルに全スロットの試行時刻が 1 時間前と記録された状態で、既定の間隔で probe を実行する
+- **THEN** どのスロットもフェッチせず、snapshot を書かずに exit 0 で終わる
+
+#### Scenario: 全スロット失敗でも呼ばれるたびに叩き直さない
+- **WHEN** 全スロットのフェッチが失敗した直後に、もう一度 probe を実行する
+- **THEN** 2 回目はどのスロットもフェッチしない
+
+#### Scenario: 429 が続くと間隔を空ける
+- **WHEN** あるスロットが 2 回続けて 429 を受け、前回の試行から `USAGE_PROBE_INTERVAL` の 1.5 倍の時間が経った状態で probe を実行する
+- **THEN** そのスロットはフェッチされない（待ち時間は間隔の 2 倍）
+- **AND** 前回の試行から間隔の 2 倍以上経ったあとの実行ではフェッチされる
+
+#### Scenario: 200 で 429 の回数が戻る
+- **WHEN** 連続 429 回数が 3 のスロットが 200 を受ける
+- **THEN** 試行状態ファイルのそのスロットの連続 429 回数は 0 になる
+
+#### Scenario: ロックが取れなければ何もしない
+- **WHEN** 60 秒前に作られたロックがある状態で probe を実行する
+- **THEN** API を叩かず snapshot も試行状態ファイルも変えずに exit 0 で終わる
+
+#### Scenario: 古いロックは取り直す
+- **WHEN** 300 秒前に作られたロックが残った状態で、実行条件を満たすスロットがある probe を実行する
+- **THEN** ロックを取り直してフェッチし、終了時にロックを外す
 
 #### Scenario: スロット単位 fail-open で前回値が残る
 - **WHEN** 2 スロットのうち片方のフェッチが失敗し、既存 snapshot にそのスロットの前回値がある状態で probe を実行する
@@ -192,17 +229,111 @@ probe は `refresh_token` を用いたアクセストークンの更新を行っ
 - **THEN** `accounts` は既定スロット 1 つだけを持ち、トップレベルの従来キー（`fetched_at` を含む）は変更前と同じ値になる（既存の読み手が無改修で動く）
 
 ### Requirement: SessionStart で残量モードを自動導出注入
-`scripts/session-tripwires.sh` は SessionStart 時に usage-probe を best-effort 実行し、snapshot から導出した残量モードと Fable 残量% を additionalContext に含めなければならない（SHALL）。導出モードのブロックはトリップワイヤー節と併せて注入する。明示 env `FABLE_BUDGET_MODE` があるときはそれを優先し、導出値ではなく明示値を提示する。probe やパースが失敗しても、トリップワイヤー注入自体は従来どおり行われなければならない（SHALL）(probe 失敗が hook 全体を壊さない)。
+`scripts/session-tripwires.sh` は SessionStart 時に usage-probe を best-effort 実行し、active スロットの実効値（`usage-session-records` capability の「記録と snapshot から実効値を求める」。active スロットは `usage-account-registry` の active スロットの判定規則で起動環境から求める）から導出した残量モードと Fable 残量% を additionalContext に含めなければならない（SHALL）。snapshot のトップレベルのミラーを導出に使ってはならない（MUST NOT）。導出の式と優先順位（明示 env > データ無し > 90% 超 > 週経過との比較）は変えない。導出モードのブロックはトリップワイヤー節と併せて注入する。明示 env `FABLE_BUDGET_MODE` があるときはそれを優先し、導出値ではなく明示値を提示する。probe やパースが失敗しても、トリップワイヤー注入自体は従来どおり行われなければならない（SHALL）(probe 失敗が hook 全体を壊さない)。
+
+`scripts/agent-model-guard.sh` の fork 拒否判定で使う共有枠モードも、active スロットの実効値から同じ式で導出しなければならない（SHALL）。
 
 #### Scenario: 導出モードと残量% を注入する
-- **WHEN** 有効な snapshot がある状態で SessionStart スクリプトを実行する
-- **THEN** additionalContext に導出された残量モードと Fable 残量%（100 − `fable_weekly_pct`）が含まれる
+- **WHEN** active スロットの実効値が求まる状態で SessionStart スクリプトを実行する
+- **THEN** additionalContext に導出された残量モードと Fable 残量%（100 − 実効値の `fable_weekly_pct`）が含まれる
 
 #### Scenario: 明示 env が導出を上書きする
 - **WHEN** `FABLE_BUDGET_MODE` を明示設定して SessionStart スクリプトを実行する
 - **THEN** additionalContext は導出値ではなく明示された値を現在モードとして提示する
 
 #### Scenario: probe 失敗でもトリップワイヤーは載る
-- **WHEN** snapshot が無い / probe が失敗する状態で SessionStart スクリプトを実行する
+- **WHEN** snapshot もセッション記録も無い / probe が失敗する状態で SessionStart スクリプトを実行する
 - **THEN** 昇格トリップワイヤー節は従来どおり注入され、残量モードは conserve 既定として提示される
 
+#### Scenario: 使用量 API が 429 を返し続けても共有枠モードはセッション記録から導出する
+- **WHEN** snapshot が無く、active スロットの鍵のセッション記録に週次 95% がある状態で SessionStart スクリプトを実行する
+- **THEN** additionalContext の共有枠モードは `depleted`（自動導出）になる
+
+#### Scenario: 古い snapshot の Fable 値はリセット時刻で読む
+- **WHEN** 2 日前に取得した snapshot の active スロットが Fable 95%・リセット時刻が現在より前である状態で SessionStart スクリプトを実行する
+- **THEN** Fable を 0% として導出し、`exhausted` にならない
+
+#### Scenario: fork の共有枠判定もセッション記録を使う
+- **WHEN** snapshot が無く、active スロットの鍵のセッション記録に週次 95% がある状態で、`SHARED_BUDGET_MODE` 未設定のまま `subagent_type: fork` の Agent 呼び出しを agent-model-guard に渡す
+- **THEN** guard は共有枠モード `depleted` として fork を拒否する
+
+### Requirement: セッション途中のプラグイン更新を CLAUDE_PLUGIN_ROOT の変化で検知して再注入する
+
+`plugins/dev-workflow/scripts/prompt-tripwires-refresh.sh`（UserPromptSubmit hook）は、プラグインの更新の検知に `plugin.json` の `version` を使ってはならない（MUST NOT。issue #447 で撤去したため）。代わりに `CLAUDE_PLUGIN_ROOT` の値（キャッシュの版名＝commit SHA をディレクトリ名に含むパス）をセッションごとの状態ファイルに記録し、記録済みの値と異なるときだけ昇格トリップワイヤー＋残量モードの本文を再注入しなければならない（MUST）。毎プロンプト走る一致時の経路では、今と同じく python3 と find を起動せず、`plugin.json` を読むための処理も足さずに無出力で終わらなければならない（MUST）。`plugin.json` に `version` が無くても、あっても、動作は同じでなければならない（MUST）。既存の契約（セッションの初回は記録だけで注入しない・状態のセッション単位の分離・30 日より古い状態の掃除・全経路 fail-soft で exit 0）は変えない。`CLAUDE_PLUGIN_ROOT` が同じまま中身が変わる経路（`--plugin-dir` での開発中など）は検知しない。旧方式でも版を変えない限り同じく検知しなかったので、対象外とする。キャッシュのパスには版が入るので、旧方式の版の変化と新方式のパスの変化は同じ事象を見ており、検知できる範囲は狭まらない。状態ファイルは `CLAUDE_PLUGIN_ROOT` の外に置くので、パスが変わっても引き継がれる。
+
+#### Scenario: version の無い plugin.json で初回は記録だけする
+
+- **WHEN** `version` の無い `plugin.json` を持つ `CLAUDE_PLUGIN_ROOT` で、状態ファイルの無いセッションの最初のプロンプトを送る
+- **THEN** 無出力で exit 0 し、状態ファイルに `CLAUDE_PLUGIN_ROOT` の値が記録される
+
+#### Scenario: 同じ CLAUDE_PLUGIN_ROOT の間は無出力
+
+- **WHEN** 記録済みと同じ `CLAUDE_PLUGIN_ROOT` で次のプロンプトを送る
+- **THEN** 無出力で exit 0 する
+
+#### Scenario: CLAUDE_PLUGIN_ROOT が変わったら再注入する
+
+- **WHEN** プラグインの更新で `CLAUDE_PLUGIN_ROOT` が別のディレクトリ（例: `.../dev-workflow/<旧SHA>` から `.../dev-workflow/<新SHA>`）に変わった後にプロンプトを送る
+- **THEN** `hookSpecificOutput.additionalContext` に本文を出力し、状態ファイルが新しい値に更新される
+
+#### Scenario: 旧方式の状態ファイルからの移行
+
+- **WHEN** 状態ファイルに旧方式の版番号（例: `2.13.38`）が記録されているセッションでプロンプトを送る
+- **THEN** 記録と一致しないので 1 回だけ再注入し、以後は `CLAUDE_PLUGIN_ROOT` の値で比較する
+
+### Requirement: SubagentStart hook が dev-workflow の役に運用情報を注入する
+
+dev-workflow プラグインは `hooks/hooks.json` に SubagentStart のエントリを持ち、matcher `^dev-workflow:(worker|reviewer|gate-runner)$` で `${CLAUDE_PLUGIN_ROOT}/scripts/subagent-start-context.sh` を起動しなければならない（SHALL）。
+
+スクリプトは stdin の hook 入力の `agent_type` を自分でも照合し、`dev-workflow:worker` / `dev-workflow:reviewer` / `dev-workflow:gate-runner` のどれでもなければ何も出力せず exit 0 で終わらなければならない（MUST）。対象のときは `{"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": "<本文>"}}` を stdout に出す（SHALL）。本文は役ごとに次の行を含む:
+
+- worker と gate-runner: Fable 残量モードと共有枠モード（現在値・出どころ・効果）、途中計測の閾値の現在値
+- reviewer: 途中計測の閾値の現在値だけ（Fable 残量モードと共有枠モードを含めてはならない（MUST NOT））
+
+残量モードの導出は `scripts/session-tripwires.sh` と同じ式・同じ優先順位で行い、式を別の場所に複製してはならない（MUST NOT）。`session-tripwires.sh` は環境変数 `TRIPWIRES_SCOPE=subagent-budget` のとき残量モードのブロックだけを本文のテキストで出し、その範囲では usage-probe を実行しない（SHALL）。`subagent-budget` のときの出力範囲は、`## Fable 残量モード（自動導出）` の見出しから共有枠モードの効果の行までで、親向けの「W を SendMessage で再開する前に `subagent-context.sh` で測る」行・メモリ索引の検知行・昇格トリップワイヤー節を含めてはならない（MUST NOT）。この範囲はテンプレートが無くても出す（SHALL）。`TRIPWIRES_SCOPE` が未設定、または `subagent-budget` 以外の値のときの `session-tripwires.sh` の出力は従来と変えない（SHALL）。
+
+途中計測の行は、hook 実行時の `DEV_WORKFLOW_CONTEXT_CAP` / `DEV_WORKFLOW_CONTEXT_HARD_CAP` の実効値（未設定なら `scripts/context-tripwire.sh` と同じ既定値）と、`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` で全解除されているかを示し、扱いの規則は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」を読むよう案内する（SHALL）。規則の言い換えを本文に書いてはならない（MUST NOT）。
+
+照合の守備範囲は、matcher が効かない・手で実行された・別の設定から流用された経路で対象外の役に返さないことまでとする。Agent Teams の teammate 化で `agent_type` が変わる経路、将来の命名変更、SubagentStart hook がそもそも発火しない経路は守らない。実機で `agent_type` が違う形で届くと判明したら照合と matcher をその形に合わせ、それ以外の穴を塞ぎ切ることは完了条件にしない。
+
+python3 が無い・入力が JSON でない・`agent_type` が無い・残量ブロックの生成が失敗した、のどの場合もサブエージェントの起動を止めてはならず、exit 0 で終わらなければならない（MUST）。残量ブロックが作れなくても途中計測の行は出す。
+
+#### Scenario: worker の入力に運用情報を返す
+- **WHEN** `{"hook_event_name":"SubagentStart","agent_type":"dev-workflow:worker"}` を stdin に渡してスクリプトを実行する
+- **THEN** stdout は valid JSON で、`hookSpecificOutput.hookEventName` が `SubagentStart`、`hookSpecificOutput.additionalContext` に `FABLE_BUDGET_MODE`・`SHARED_BUDGET_MODE`・途中計測の閾値の値・`decision-criteria.md` への案内が含まれる
+
+#### Scenario: Explore の入力には何も返さない
+- **WHEN** `{"hook_event_name":"SubagentStart","agent_type":"Explore"}` を stdin に渡してスクリプトを実行する
+- **THEN** exit code 0 で stdout は空である
+
+#### Scenario: decider と他プラグインのエージェントにも何も返さない
+- **WHEN** `agent_type` が `dev-workflow:decider` または `casting:casting-arbiter` の入力を渡してスクリプトを実行する
+- **THEN** exit code 0 で stdout は空である
+
+#### Scenario: reviewer には残量モードを渡さない
+- **WHEN** `agent_type` が `dev-workflow:reviewer` の入力を渡してスクリプトを実行する
+- **THEN** `additionalContext` に途中計測の閾値の値が含まれ、`FABLE_BUDGET_MODE` と `SHARED_BUDGET_MODE` は含まれない
+
+#### Scenario: 明示 env の残量モードがそのまま届く
+- **WHEN** `FABLE_BUDGET_MODE=reserve` と `SHARED_BUDGET_MODE=throttled` を設定し、`agent_type` が `dev-workflow:gate-runner` の入力を渡してスクリプトを実行する
+- **THEN** `additionalContext` は Fable 残量モード `reserve`（明示 env）と共有枠モード `throttled`（明示 env）を提示する
+
+#### Scenario: 閾値の env 上書きと既定値
+- **WHEN** `DEV_WORKFLOW_CONTEXT_CAP=90000` を設定して worker の入力を渡す／未設定で渡す
+- **THEN** 前者の本文は 90000 を、後者は `context-tripwire.sh` の既定値と同じ値を提示する
+
+#### Scenario: 壊れた入力でも起動を止めない
+- **WHEN** JSON でない文字列、または `agent_type` の無い JSON を stdin に渡してスクリプトを実行する
+- **THEN** exit code 0 で stdout は空である
+
+#### Scenario: subagent-budget はテンプレートが無くても残量ブロックだけを出す
+- **WHEN** テンプレートの無いディレクトリを `CLAUDE_PLUGIN_ROOT` にし（`scripts/` だけは実物を指す構成で）、`TRIPWIRES_SCOPE=subagent-budget` で `session-tripwires.sh` を実行する
+- **THEN** stdout は `## Fable 残量モード` で始まる本文テキストで、`subagent-context.sh` を含まず、usage-probe の実行痕（probe の状態ファイル・snapshot の書き込み）が残らない
+
+#### Scenario: SessionStart の出力は変わらない
+- **WHEN** `TRIPWIRES_SCOPE` を設定せずに `session-tripwires.sh` を実行する
+- **THEN** 出力は従来どおり `additionalContext` に昇格トリップワイヤー節と残量モードのブロックを含む JSON である
+
+#### Scenario: hooks.json の SubagentStart エントリ
+- **WHEN** `plugins/dev-workflow/hooks/hooks.json` をパースする
+- **THEN** SubagentStart エントリが存在し、matcher が `^dev-workflow:(worker|reviewer|gate-runner)$`、command が `${CLAUDE_PLUGIN_ROOT}` 経由で `scripts/subagent-start-context.sh` を指している

@@ -106,3 +106,58 @@ mtime が `SUBAGENT_CONTEXT_AUDIT_TTL`（秒、既定 21600 = 6 時間）以内�
 隔離の有無は隣の `agent-<id>.meta.json` の `spawnedWithWorktree` で分類する。
 meta.json が無い・壊れている件は `non_isolated` に寄せ、全体の `count` からは落とさない
 （分類の失敗で母集団が痩せないようにするため）。ファイル名からの推定はしていない。
+
+## 6. `--by-role`（担当別の内訳）
+
+隔離の有無（`sources`）は役割と相関するが役割そのものではない（隔離ありの中に W も
+decider も混在する）。担当（W / R1 / G / Reviewer / decider）ごとの傾向を見たいときは
+`--by-role` を付ける。
+
+```bash
+# 直近 14 日を担当別に集計する
+plugins/dev-workflow/scripts/subagent-context-audit.sh --by-role --refresh
+```
+
+`--by-role` は既定呼び出しの出力・走査コストに一切影響しない。付けたときだけ、全文を
+前方から順に走査してトップレベルに `by_role` キーを追加する（既定呼び出しは先頭/末尾の
+部分読みで済むが、`--by-role` は担当分類・`docs_median`・`reread_pct` の計上のために
+全文が要る分だけ重い）。**この 2 経路は走査範囲が違うため、`--by-role` の実行と
+`--by-role` を付けない実行とで、同じ瞬間に測っても `last_median` 等がわずかにずれうる**
+（部分読みで見つかる末尾レコードと全文走査で見つかる末尾レコードが一致しない場合がある）。
+固定分の比較には既定呼び出し同士、担当別の内訳には `--by-role` 同士を比べること。
+
+`by_role` は次の 6 個の担当名を常にキーとして持つ（該当 0 件でもキー自体は省略しない）。
+
+| 担当 | 分類規則 |
+|---|---|
+| `decider` | `agent-<id>.meta.json` の `agentType` が `dev-workflow:decider`（`description` の見た目より優先） |
+| `Reviewer`（種別） | `agentType` が `dev-workflow:reviewer`（decider の次に見る。`description` の見た目より優先） |
+| `W` / `R1` / `G` / `Reviewer` | `agentType` が上の 2 つでないとき、`description` の先頭コロン区切りトークンがこれらに完全一致 |
+| `unknown` | どれにも当たらない（`description` 無し・コロン無し・未知のトークン・meta.json 欠損/壊れ） |
+
+G が要求するレビュアーは `dev-workflow:reviewer` で起こすので、`description` が `Reviewer:` で始まっていなくても
+`agentType` で `Reviewer` に数えられる。種別を替える前（`general-purpose` で起こしていた時期）の個体は
+`description` の接頭辞だけが頼りで、書き忘れたものは `unknown` に落ちる。
+
+各値は `count` / `first_median` / `docs_median` / `last_median` / `over_cap_pct` を持ち、
+`W` のみ追加で `reread_pct` を持つ。`count` が 0 の担当は `first_median` / `docs_median` /
+`last_median` が `null`、`over_cap_pct` が `0.0` になる。
+
+- `docs_median`: 指示書（harness の `plugins/cache/oratta-claude-harness/.../*.md`）の
+  `Read`、または `Skill` 呼び出しを含むホップの `usage` 差分を、まず個体（1
+  トランスクリプト）ごとに合計し、その合計値を担当内で中央値に取ったもの。1 ホップ
+  ずつ担当内で中央値を取るのではない点に注意する
+- `reread_pct`: `W` にだけ付く。`description` の `#N`（記録先番号。複数出現時は最も左を
+  使う）で同じ記録先の `W` を時系列でグループ化し、各グループの 2 番目以降について
+  「先行する全 `W` が読んだファイルのうち自分が読み直した割合」を担当内の中央値として
+  出す。**ファイル一致はベースネーム一致**（フルパス一致ではない。worktree ごとに
+  絶対パスの先頭が変わるため）。「読んだファイル」は `Read` の `file_path` に加え、`Bash` の `sed -n` / `cat` /
+  `head` / `tail` の引数のファイル（近似: スクリプト・オプション値・リダイレクト先は数えず、
+  変数・グロブ・`sed -ne`・`xargs cat`・`grep` / `awk` / `less` は数え漏れる）。各グループの最初の `W`（先行がいない個体）と `#N` が
+  取れない `W` はこの中央値の母数から除く。対象が 1 件も無ければ `null`
+
+過去の計測を測り直すときは、キャッシュ（TTL 内）が古い算出を返すので `--refresh` を付ける。
+
+`--cache` を省略した場合、`--by-role` は既定のキャッシュパスに `.by-role` サフィックスを
+足した別ファイルを使う（既定呼び出しと結果が混ざらないようにするため）。`--cache` を
+明示した場合はそのパスをそのまま使う（サフィックスを足さない）。

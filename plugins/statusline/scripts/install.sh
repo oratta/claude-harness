@@ -2,7 +2,7 @@
 #
 # install.sh — statusline.sh を Claude Code の設定ディレクトリに導入する。
 #
-#   1. plugins/statusline/scripts/statusline.sh を <config>/statusline.sh にコピー
+#   1. statusline.sh と statusline-codex.py を <config>/ にコピー
 #   2. <config>/settings.json の .statusLine をそのパスに向ける
 #
 # プラグイン本体ではなくコピーを配る理由:
@@ -27,12 +27,15 @@ CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$PLUGIN_ROOT/scripts/statusline.sh"
 DEST="$CONFIG_DIR/statusline.sh"
+HELPER_SRC="$PLUGIN_ROOT/scripts/statusline-codex.py"
+HELPER_DEST="$CONFIG_DIR/statusline-codex.py"
 SETTINGS="$CONFIG_DIR/settings.json"
 DESIRED_CMD="bash $DEST"
 
 fail() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
 
 [ -f "$SRC" ] || fail "スクリプト本体が見つからない: $SRC"
+[ -f "$HELPER_SRC" ] || fail "Codex helper が見つからない: $HELPER_SRC"
 command -v jq >/dev/null 2>&1 || fail "jq が必要（statusline.sh 自体も jq に依存する）"
 [ -d "$CONFIG_DIR" ] || fail "設定ディレクトリが無い: $CONFIG_DIR"
 
@@ -42,6 +45,13 @@ if [ ! -f "$DEST" ]; then
     script_action="install"
 elif ! cmp -s "$SRC" "$DEST"; then
     script_action="update"
+fi
+
+helper_action="up-to-date"
+if [ ! -f "$HELPER_DEST" ]; then
+    helper_action="install"
+elif ! cmp -s "$HELPER_SRC" "$HELPER_DEST"; then
+    helper_action="update"
 fi
 
 # ---- 2. settings.json の statusLine ----
@@ -62,6 +72,7 @@ fi
 
 printf 'config dir : %s\n' "$CONFIG_DIR"
 printf 'script     : %s (%s)\n' "$DEST" "$script_action"
+printf 'helper     : %s (%s)\n' "$HELPER_DEST" "$helper_action"
 printf 'statusLine : %s\n' "$settings_action"
 [ -n "$current_cmd" ] && printf '  現在      : %s\n' "$current_cmd"
 printf '  適用後    : %s\n' "$DESIRED_CMD"
@@ -73,10 +84,31 @@ fi
 
 ts="$(date +%Y%m%d%H%M%S)"
 
+# helper を先に置く。各ファイルは同じディレクトリ内の rename で原子的に差し替える。
+if [ "$helper_action" != "up-to-date" ]; then
+    if [ -f "$HELPER_DEST" ]; then
+        cp "$HELPER_DEST" "$HELPER_DEST.bak-$ts" || fail "helper のバックアップに失敗"
+    fi
+    tmp="$(mktemp "${HELPER_DEST}.XXXXXX")" || fail "helper 一時ファイルを作れない"
+    if cp "$HELPER_SRC" "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$HELPER_DEST"; then
+        :
+    else
+        rm -f "$tmp"
+        fail "helper のコピーに失敗"
+    fi
+fi
+
 if [ "$script_action" != "up-to-date" ]; then
-    [ -f "$DEST" ] && cp "$DEST" "$DEST.bak-$ts"
-    cp "$SRC" "$DEST" || fail "コピーに失敗: $DEST"
-    chmod +x "$DEST"
+    if [ -f "$DEST" ]; then
+        cp "$DEST" "$DEST.bak-$ts" || fail "スクリプトのバックアップに失敗"
+    fi
+    tmp="$(mktemp "${DEST}.XXXXXX")" || fail "スクリプト一時ファイルを作れない"
+    if cp "$SRC" "$tmp" && chmod 755 "$tmp" && mv -f "$tmp" "$DEST"; then
+        :
+    else
+        rm -f "$tmp"
+        fail "コピーに失敗: $DEST"
+    fi
 fi
 
 if [ "$settings_action" != "up-to-date" ]; then
@@ -97,6 +129,6 @@ if [ "$settings_action" != "up-to-date" ]; then
 fi
 
 printf '\n完了。次のステータスライン再描画から反映される。\n'
-if [ "$script_action" != "up-to-date" ] || [ "$settings_action" != "up-to-date" ]; then
+if [ "$script_action" != "up-to-date" ] || [ "$helper_action" != "up-to-date" ] || [ "$settings_action" != "up-to-date" ]; then
     printf 'バックアップ接尾辞: .bak-%s\n' "$ts"
 fi

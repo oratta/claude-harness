@@ -234,8 +234,8 @@ make_repo() {
   export FMTOKEN_TEST_REGISTERED="op://agents/noremote--github/credential"
   run "$FMTOKEN" github
   [ "$status" -eq 45 ]
-  [[ "$output" == *"origin"* ]]
-  [[ "$output" != *"登録"* ]]
+  [[ "$output" == *"origin"* ]] || return 1
+  [[ "$output" != *"登録"* ]] || return 1
 }
 
 @test "outside a git repo: exit 45 (no cwd fallback reference)" {
@@ -249,8 +249,8 @@ make_repo() {
   make_repo "myproj"
   run "$FMTOKEN" notregistered
   [ "$status" -eq 44 ]
-  [[ "$output" == *"myproj--notregistered"* ]]
-  [[ "$output" == *"登録"* ]]
+  [[ "$output" == *"myproj--notregistered"* ]] || return 1
+  [[ "$output" == *"登録"* ]] || return 1
 }
 
 @test "--check: no token value printed, exit 0 when registered" {
@@ -258,7 +258,7 @@ make_repo() {
   export FMTOKEN_TEST_REGISTERED="op://agents/myproj--github/credential"
   run "$FMTOKEN" --check github
   [ "$status" -eq 0 ]
-  [[ "$output" != *"tok-secret-123"* ]]
+  [[ "$output" != *"tok-secret-123"* ]] || return 1
 }
 
 @test "--check: exit 44 when unregistered" {
@@ -271,9 +271,9 @@ make_repo() {
   make_repo "proj"
   run "$FMTOKEN" --list
   [ "$status" -eq 0 ]
-  [[ "$output" == *"github"* ]]
-  [[ "$output" == *"supabase"* ]]
-  [[ "$output" != *"vercel"* ]]
+  [[ "$output" == *"github"* ]] || return 1
+  [[ "$output" == *"supabase"* ]] || return 1
+  [[ "$output" != *"vercel"* ]] || return 1
 }
 
 @test "missing SA token everywhere: exit 43 with distribution request" {
@@ -281,7 +281,7 @@ make_repo() {
   unset OP_SERVICE_ACCOUNT_TOKEN
   HOME="$WORK" run "$FMTOKEN" github
   [ "$status" -eq 43 ]
-  [[ "$output" == *"SA トークン"* ]]
+  [[ "$output" == *"SA トークン"* ]] || return 1
 }
 
 @test "SA token falls back to 600-permission file" {
@@ -362,22 +362,22 @@ EOF
   export FMTOKEN_TEST_REGISTERED="op://agents/moko--TRELLO_TOKEN/credential"
   run "$FMTOKEN" --check --name moko--TRELLO_TOKEN
   [ "$status" -eq 0 ]
-  [[ "$output" != *"tok-secret-123"* ]]
+  [[ "$output" != *"tok-secret-123"* ]] || return 1
 }
 
 @test "--name unregistered: exit 44 with --register hint" {
   make_repo "myproj"
   run "$FMTOKEN" --name moko--NOT_THERE
   [ "$status" -eq 44 ]
-  [[ "$output" == *"moko--NOT_THERE"* ]]
-  [[ "$output" == *"--register"* ]]
+  [[ "$output" == *"moko--NOT_THERE"* ]] || return 1
+  [[ "$output" == *"--register"* ]] || return 1
 }
 
 @test "--name: naming convention violation exits 46" {
   make_repo "myproj"
   run "$FMTOKEN" --name not_a_valid_name
   [ "$status" -eq 46 ]
-  [[ "$output" == *"命名規約"* ]]
+  [[ "$output" == *"命名規約"* ]] || return 1
 }
 
 # ─── 登録（--register）: rw SA 経由・命名規約の機械検証・上書き防止 ───
@@ -390,7 +390,7 @@ EOF
   run bash -c "printf '%s' sekrit-value | '$FMTOKEN' --register newproj--newsvc"
   [ "$status" -eq 0 ]
   [ "$(created_field title)" = "newproj--newsvc" ]
-  [[ "$output" != *"sekrit-value"* ]]
+  [[ "$output" != *"sekrit-value"* ]] || return 1
 }
 
 # 露出検査（refute_in_file）自身が素通りしないことを固定する。issue #130 の受け入れ条件
@@ -475,7 +475,7 @@ EOF
   run bash -c "printf '%s' v | '$FMTOKEN' --register moko--TRELLO_TOKEN"
   [ "$status" -eq 47 ]
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
-  [[ "$output" == *"登録済み"* ]]
+  [[ "$output" == *"登録済み"* ]] || return 1
 }
 
 @test "--register: empty stdin exits 46" {
@@ -489,7 +489,7 @@ EOF
   # 環境には ro トークン（dummy-sa-token）があるが、rw の解決先はどこにも無い
   HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
   [ "$status" -eq 43 ]
-  [[ "$output" == *"claude-agents-rw"* ]]
+  [[ "$output" == *"claude-agents-rw"* ]] || return 1
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
 }
 
@@ -514,7 +514,7 @@ EOF
   run bash -c "printf '%s' v | '$FMTOKEN' --register moko--TRELLO_TOKEN"
   [ "$status" -eq 47 ]
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
-  [[ "$output" == *"登録済み"* ]]
+  [[ "$output" == *"登録済み"* ]] || return 1
 }
 
 @test "--register: no duplicate title: create is called and exits 0" {
@@ -531,7 +531,7 @@ EOF
   export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
   HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
   [ "$status" -eq 48 ]
-  [[ "$output" == *"fail-closed"* ]]
+  [[ "$output" == *"fail-closed"* ]] || return 1
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
 }
 
@@ -543,8 +543,8 @@ EOF
   [ "$status" -eq 48 ]
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
   # 判定不能で止めたときは、どちらを直せばいいかの選択肢まで出す
-  [[ "$output" == *"claude-agents-ro.token"* ]]
-  [[ "$output" == *"read 権"* ]]
+  [[ "$output" == *"claude-agents-ro.token"* ]] || return 1
+  [[ "$output" == *"read 権"* ]] || return 1
 }
 
 @test "--register: unparsable item list exits 48 without create (parse failure is not 'not found')" {
@@ -554,8 +554,8 @@ EOF
   run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
   [ "$status" -eq 48 ]
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
-  [[ "$output" == *"解析できませんでした"* ]]
-  [[ "$output" == *"claude-agents-ro.token"* ]]
+  [[ "$output" == *"解析できませんでした"* ]] || return 1
+  [[ "$output" == *"claude-agents-ro.token"* ]] || return 1
 }
 
 @test "--register: ro token unresolvable message offers both remedies" {
@@ -563,8 +563,8 @@ EOF
   export OP_SERVICE_ACCOUNT_TOKEN_RW="rw-sa-token"
   HOME="$WORK" run bash -c "printf '%s' v | '$FMTOKEN' --register moko--NEWTOKEN"
   [ "$status" -eq 48 ]
-  [[ "$output" == *"claude-agents-ro.token"* ]]
-  [[ "$output" == *"read 権"* ]]
+  [[ "$output" == *"claude-agents-ro.token"* ]] || return 1
+  [[ "$output" == *"read 権"* ]] || return 1
 }
 
 # ── issue #159-1: --register が末尾改行を落とさないこと ────────────────────────
@@ -856,7 +856,7 @@ assert_xtrace_active() {
   run bash -c "'$FMTOKEN' --register newproj--binary < '${WORK}/binary-value'"
   [ "$status" -eq 46 ]
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
-  [[ "$output" == *"UTF-8"* ]]
+  [[ "$output" == *"UTF-8"* ]] || return 1
 }
 
 # ── PR #177 レビュー指摘: 値のパイプを create 以外の子プロセスに継承させないこと ──
@@ -1040,9 +1040,9 @@ refute_traceback_settles() {
   make_big_value
   run bash -c "'$FMTOKEN' --register newproj--gone <'${WORK}/bigvalue' 2>&1"
   [ "$status" -eq 49 ]
-  [[ "$output" != *"OK:"* ]]
-  [[ "$output" == *"異常終了"* ]]
-  [[ "$output" != *"Traceback"* ]]
+  [[ "$output" != *"OK:"* ]] || return 1
+  [[ "$output" == *"異常終了"* ]] || return 1
+  [[ "$output" != *"Traceback"* ]] || return 1
 }
 
 # issue #181-3: 環境障害（producer が起動できない）は入力不正（exit 46）と同じコードに
@@ -1053,8 +1053,8 @@ refute_traceback_settles() {
   export FMTOKEN_TEST_PYTHON3="${WORK}/no-such-python3"
   run bash -c "printf '%s' v | '$FMTOKEN' --register moko--ENVFAIL 2>&1"
   [ "$status" -eq 49 ]
-  [[ "$output" != *"Traceback"* ]]
-  [[ "$output" == *"fail-closed"* ]]
+  [[ "$output" != *"Traceback"* ]] || return 1
+  [[ "$output" == *"fail-closed"* ]] || return 1
   [ ! -s "$FMTOKEN_TEST_CREATE_LOG" ]
 }
 

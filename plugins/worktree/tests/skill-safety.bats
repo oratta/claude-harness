@@ -11,6 +11,9 @@
 load "$(dirname "$BATS_TEST_FILENAME")/helper.bash"
 
 setup() {
+  # 文面検査の正規表現（[^。]* など）は多バイトを 1 文字として数える UTF-8 ロケールが前提。
+  # LANG 未設定（C ロケール）だと [^。] が日本語の文字を構成するバイトを除外して空振りする（#662）
+  export LC_ALL=C.UTF-8
   wt_setup_paths
 }
 
@@ -39,7 +42,7 @@ setup() {
   # 全 tracked ファイル対象であること
   grep -q 'git -C "$MAIN_REPO" diff "$MAIN_BRANCH" "$BRANCH_NAME" --stat 2>/dev/null' "$WT_CLEAN_SKILL"
   # 言語別フィルタが復活していないこと
-  ! grep -q "diff \"\$MAIN_BRANCH\" \"\$BRANCH_NAME\" --stat -- " "$WT_CLEAN_SKILL"
+  ! grep -q "diff \"\$MAIN_BRANCH\" \"\$BRANCH_NAME\" --stat -- " "$WT_CLEAN_SKILL" || return 1
   grep -q 'パスフィルタを掛けてはならない' "$WT_CLEAN_SKILL"
 }
 
@@ -55,7 +58,7 @@ setup() {
 
 @test "skill: gh is not piped into grep -c (its exit code must be observable)" {
   # `gh ... | grep -c` はパイプ末尾の grep の終了コードになり gh の失敗を隠す
-  ! grep -Eq 'gh pr list[^|]*\| *grep -c' "$WT_CLEAN_SKILL"
+  ! grep -Eq 'gh pr list[^|]*\| *grep -c' "$WT_CLEAN_SKILL" || return 1
 }
 
 @test "skill: a merged PR is only trusted when its headRefOid matches the branch tip" {
@@ -123,4 +126,66 @@ setup() {
 
 @test "skill: wt-setup SKILL.md keeps the Draft PR bootstrap" {
   grep -q 'gh pr create' "$WT_SETUP_SKILL"
+}
+
+# --- wt-setup の frontmatter: context: fork のスキルは Claude Code 2.1.218 から
+# 既定でバックグラウンド実行になる。wt-setup は完了後に後続作業へ進む直列の手順なので、
+# background の指定が無いと呼び出し側が完了を待たずに進みうる（#707）。
+
+# SKILL.md の先頭 frontmatter（最初の --- から次の --- まで）だけを出す
+wt_setup_frontmatter() {
+  awk 'NR==1 && $0=="---" {in_fm=1; next} in_fm && $0=="---" {exit} in_fm {print}' "$WT_SETUP_SKILL"
+}
+
+@test "skill: wt-setup frontmatter specifies background when context is fork (#707)" {
+  fm="$(wt_setup_frontmatter)"
+  [ -n "$fm" ]
+  if printf '%s\n' "$fm" | grep -q '^context: fork$'; then
+    printf '%s\n' "$fm" | grep -Eq '^background: (true|false)$'
+  fi
+}
+
+@test "skill: wt-setup frontmatter sets background false because callers wait for completion (#707)" {
+  wt_setup_frontmatter | grep -q '^background: false$'
+}
+
+# --- dev-workflow の git-destructive-guard に git branch -D を拒否されたときの扱い（#710）
+
+@test "skill: wt-clean holds the branch when the hook denies git branch -D (#710)" {
+  grep -Eq 'git branch -D` が dev-workflow の hook に止められたら' "$WT_CLEAN_SKILL"
+  grep -Eq '言い換えて再実行しない' "$WT_CLEAN_SKILL"
+  grep -Eq 'HELD\+=\("\$BRANCH_NAME \(ブランチ削除は hook に拒否' "$WT_CLEAN_SKILL"
+  grep -Fq 'git -C <メインリポ> branch -D <ブランチ>' "$WT_CLEAN_SKILL"
+}
+
+@test "skill: wt-clean cron section sets DEV_WORKFLOW_GIT_GUARD=off (#710)" {
+  section="$(awk '/^### cron への載せ方/ {on=1; next} on && /^##/ {exit} on {print}' "$WT_CLEAN_SKILL")"
+  printf '%s\n' "$section" | grep -Fq 'DEV_WORKFLOW_GIT_GUARD=off'
+  printf '%s\n' "$section" | grep -Fq '唯一の歯止め'
+}
+
+# --- #732: context: fork / background は同名の commands ラッパーが勝つ現行経路では効かない。
+# 先頭 12 行でそれが読め、本文で観測（版・経路）と残す理由が読めること。
+
+# frontmatter 内のコメント行だけを見る（本文の Markdown 見出しに当たらないようにする。#787）
+fm_comment_says_ineffective() {
+  head -n 12 "$1" | awk 'NR==1 && $0=="---" {f=1; next} f && $0=="---" {exit} f {print}' | grep -E '^#.*効かない' | grep -q '本文'
+}
+
+@test "skill: wt-setup first 12 lines say the fork setting is ineffective and point to the body (#732)" {
+  fm_comment_says_ineffective "$WT_SETUP_SKILL"
+}
+
+@test "skill: the frontmatter check ignores a body heading that matches (#787)" {
+  f="$BATS_TEST_TMPDIR/skill.md"
+  printf -- '---\nname: x\n---\n# 効かない設定は本文を見よ\n' > "$f"
+  run fm_comment_says_ineffective "$f"
+  [ "$status" -ne 0 ]
+}
+
+@test "skill: wt-setup body documents the observation and why the fork setting stays (#732)" {
+  grep -q '^## frontmatter の fork 指定について' "$WT_SETUP_SKILL"
+  grep -q '2\.1\.292' "$WT_SETUP_SKILL"
+  grep -q 'claude -p --plugin-dir' "$WT_SETUP_SKILL"
+  grep -q '残す理由' "$WT_SETUP_SKILL"
 }

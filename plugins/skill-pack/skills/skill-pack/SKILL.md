@@ -1,12 +1,12 @@
 ---
 name: skill-pack
-description: プロジェクトごとに skillOverrides と enabledPlugins を対話的に編集し、必要なスキル/プラグインだけ ON にする。「このプロジェクトで使うスキルを絞りたい」「ユーザーレベルのスキルが多すぎる」「skillOverrides を設定」「プロジェクトのスキル整理」「不要なプラグインを無効化」で起動する。Claude Code 公式の skillOverrides / enabledPlugins 仕様に準拠し、コピーや symlink ではなく設定ファイル編集で実現する。
+description: プロジェクトごとに skillOverrides と enabledPlugins を編集し、必要なスキル/プラグインだけ ON にする。「このプロジェクトで使うスキルを絞りたい」「ユーザーレベルのスキルが多すぎる」「skillOverrides を設定」「プロジェクトのスキル整理」「不要なプラグインを無効化」で起動する。
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
 # skill-pack — プロジェクト別スキル ON/OFF 管理
 
-Claude Code の `skillOverrides` と `enabledPlugins` を対話的に編集し、プロジェクトごとに必要なスキル/プラグインだけを ON に絞り込むスキル。
+Claude Code の `skillOverrides` と `enabledPlugins` を対話的に編集し、プロジェクトごとに必要なスキル/プラグインだけを ON に絞り込むスキル。Claude Code 公式の skillOverrides / enabledPlugins 仕様に準拠し、コピーや symlink ではなく設定ファイル編集で実現する。
 
 ## 背景: なぜこのスキルが必要か
 

@@ -19,6 +19,39 @@ setup() {
   DOC="${TPL}/docs/auto-merge.md"
   TST="${TPL}/scripts/test-auto-merge-workflow.sh"
   README="${TPL}/README.md"
+  SMOKE="${TPL}/.github/workflows/staging-smoke.yml"
+  DENY="${TPL}/.claude/settings.json"
+}
+
+# staging-smoke.yml の smoke ステップ本体（# >>> smoke-script マーカーの間）を、YAML の
+# インデントを剥がした bash スクリプトとして取り出す。curl をスタブに差し替えて実行し、
+# 誤検知ガードの判定を実際に動かして固定する
+extract_smoke_script() {
+  sed -n '/# >>> smoke-script/,/# <<< smoke-script/p' "$SMOKE" | sed 's/^          //'
+}
+
+# $1=スタブ curl が返す HTTP コード、$2=本文。fixture dir を作って PATH 先頭に置く
+make_curl_stub() {
+  local dir="$BATS_TEST_TMPDIR/stub-$1"
+  mkdir -p "$dir"
+  cat > "$dir/curl" <<EOF
+#!/bin/sh
+# 実物と同じく "本文\n<code>" を返す（-w '\n%{http_code}' 相当）
+printf '%s\n%s' '$2' '$1'
+EOF
+  chmod +x "$dir/curl"
+  printf '%s' "$dir"
+}
+
+run_smoke_with_code() { # $1=HTTP code $2=body
+  local stub script out
+  stub="$(make_curl_stub "$1" "$2")"
+  script="$BATS_TEST_TMPDIR/smoke-$1.sh"
+  extract_smoke_script > "$script"
+  out="$BATS_TEST_TMPDIR/output-$1.txt"
+  : > "$out"
+  run env PATH="$stub:$PATH" STAGING_DOMAIN=staging.example.test VERCEL_BYPASS= GITHUB_OUTPUT="$out" bash "$script"
+  SMOKE_OUTPUT_FILE="$out"
 }
 
 # --- Requirement: auto-merge workflow 一式がテンプレートとして配布される ---
@@ -29,6 +62,8 @@ setup() {
   [ -f "$DOC" ]
   [ -f "$TST" ]
   [ -f "$README" ]
+  [ -f "$SMOKE" ]
+  [ -f "$DENY" ]
 }
 
 @test "markers: auto-merge.yml has all replacement/extraction marker pairs" {
@@ -56,7 +91,7 @@ setup() {
 
 @test "invariant: no bare pull_request trigger (head-side definition must never run)" {
   on_block="$(awk '/^on:/{f=1;next} /^[^ #]/{f=0} f' "$WF")"
-  ! printf '%s\n' "$on_block" | grep -qE '^ *pull_request:'
+  ! printf '%s\n' "$on_block" | grep -qE '^ *pull_request:' || return 1
 }
 
 @test "invariant: pull_request_target restricted to labeled events" {
@@ -67,12 +102,12 @@ setup() {
 }
 
 @test "invariant: auto-merge.yml never checks out or clones PR head" {
-  ! grep -vE '^ *#' "$WF" | grep -qE 'actions/checkout|git +clone|gh pr checkout'
+  ! grep -vE '^ *#' "$WF" | grep -qE 'actions/checkout|git +clone|gh pr checkout' || return 1
 }
 
 @test "invariant: merge is SHA-pinned REST, not gh pr merge" {
   # コメントを除いた実行コードに gh pr merge が無いこと
-  ! sed -n '/# >>> automerge-script/,/# <<< automerge-script/p' "$WF" | sed 's/#.*//' | grep -qF 'gh pr merge'
+  ! sed -n '/# >>> automerge-script/,/# <<< automerge-script/p' "$WF" | sed 's/#.*//' | grep -qF 'gh pr merge' || return 1
   grep -qF -- '-f sha="$HEAD_SHA"' "$WF"
   grep -qF -- '-f merge_method=squash' "$WF"
 }
@@ -104,7 +139,7 @@ setup() {
   grep -qF 'workflow_dispatch' "$RV"
   grep -qF 'git revert' "$RV"
   grep -qF 'gh pr create' "$RV"
-  ! grep -qF 'gh pr merge' "$RV"
+  ! grep -qF 'gh pr merge' "$RV" || return 1
   grep -qF 'labels[]=human-merge' "$RV"
   grep -qF -- '-m 1' "$RV"
 }
@@ -143,10 +178,245 @@ extract_revert_code() {
   [ "$prlist_line" -lt "$prcreate_line" ]
 }
 
+# --- Requirement: staging スモーク + auto-revert がテンプレートとして配布される（issue #213） ---
+
+@test "smoke: staging-smoke.yml exists and subscribes to Deploy to Staging completion" {
+  [ -f "$SMOKE" ]
+  grep -qF 'workflow_run:' "$SMOKE"
+  grep -qF 'workflows: ["Deploy to Staging"]' "$SMOKE"
+  grep -qF 'types: [completed]' "$SMOKE"
+}
+
+@test "smoke: both revert-PR and incident-issue paths exist, gated on the blocked output" {
+  code="$(sed -n '/# >>> smoke-revert-script/,/# <<< smoke-revert-script/p' "$SMOKE" | sed 's/#.*//')"
+  printf '%s\n' "$code" | grep -qF 'git revert'
+  printf '%s\n' "$code" | grep -qF 'gh pr create'
+  printf '%s\n' "$code" | grep -qF 'gh issue create'
+  # revert PR は人間レビュー待ち: incident ラベルのみ。passed の自己付与・対象 HEAD コメントの投稿はしない
+  printf '%s\n' "$code" | grep -qF -- '--label "incident"'
+  ! printf '%s\n' "$code" | grep -qF -- '--label "agent-review:passed"' || return 1
+  ! printf '%s\n' "$code" | grep -qF '対象 HEAD' || return 1
+  # revert ジョブは「検証不能」判定のときは走らない
+  grep -qF "needs.smoke.outputs.blocked != 'true'" "$SMOKE"
+  grep -qF "needs.smoke.outputs.blocked == 'true'" "$SMOKE"
+  # デプロイ自体の失敗は incident issue の経路がある
+  grep -qF "github.event.workflow_run.conclusion == 'failure'" "$SMOKE"
+  # 自動 revert は絶対にマージしない
+  ! printf '%s\n' "$code" | grep -qF 'gh pr merge' || return 1
+}
+
+@test "smoke: false-positive guard comment (suimei lesson) and marker pairs survive" {
+  grep -qF 'genetta-inc/suimei の初回実戦で学習' "$SMOKE"
+  grep -qF 'デプロイ保護で検証不能' "$SMOKE"
+  for m in smoke-script smoke-checks smoke-revert-script; do
+    grep -qF "# >>> $m" "$SMOKE"
+    grep -qF "# <<< $m" "$SMOKE"
+  done
+}
+
+@test "smoke guard: all checks 401 -> blocked=true (revert path is NOT taken)" {
+  run_smoke_with_code 401 ""
+  [ "$status" -eq 1 ]
+  grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE"
+  printf '%s\n' "$output" | grep -qF '検証不能'
+}
+
+@test "smoke guard: all checks 302/403 (auth-like) -> blocked=true" {
+  run_smoke_with_code 302 ""
+  [ "$status" -eq 1 ]
+  grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE"
+  run_smoke_with_code 403 ""
+  [ "$status" -eq 1 ]
+  grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE"
+}
+
+@test "smoke guard: 500 -> failure without blocked (revert path IS taken)" {
+  run_smoke_with_code 500 ""
+  [ "$status" -eq 1 ]
+  ! grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE" || return 1
+  grep -qF 'failures=' "$SMOKE_OUTPUT_FILE"
+}
+
+@test "smoke guard: mixed 401 and 500 -> not blocked (any non-auth failure is evidence of a defect)" {
+  # 1 回目の curl は 401、2 回目以降は 500 を返すスタブ
+  dir="$BATS_TEST_TMPDIR/stub-mixed"
+  mkdir -p "$dir"
+  cat > "$dir/curl" <<'EOF'
+#!/bin/sh
+n="$(cat "$MIXED_COUNTER" 2>/dev/null || echo 0)"
+n=$((n + 1)); echo "$n" > "$MIXED_COUNTER"
+if [ "$n" -eq 1 ]; then printf '%s\n%s' '' '401'; else printf '%s\n%s' '' '500'; fi
+EOF
+  chmod +x "$dir/curl"
+  script="$BATS_TEST_TMPDIR/smoke-mixed.sh"
+  extract_smoke_script > "$script"
+  out="$BATS_TEST_TMPDIR/output-mixed.txt"
+  : > "$out"
+  run env PATH="$dir:$PATH" MIXED_COUNTER="$BATS_TEST_TMPDIR/mixed.n" STAGING_DOMAIN=staging.example.test VERCEL_BYPASS= GITHUB_OUTPUT="$out" bash "$script"
+  [ "$status" -eq 1 ]
+  ! grep -qF 'blocked=true' "$out" || return 1
+  printf '%s\n' "$output" | grep -qF 'HTTP401:認証系'
+  printf '%s\n' "$output" | grep -qF 'HTTP500'
+}
+
+@test "smoke guard: all 200 -> success, and unset STAGING_DOMAIN -> skipped" {
+  run_smoke_with_code 200 "ok"
+  [ "$status" -eq 0 ]
+  ! grep -qF 'blocked=true' "$SMOKE_OUTPUT_FILE" || return 1
+  script="$BATS_TEST_TMPDIR/smoke-skip.sh"
+  extract_smoke_script > "$script"
+  out="$BATS_TEST_TMPDIR/output-skip.txt"
+  : > "$out"
+  run env STAGING_DOMAIN= GITHUB_OUTPUT="$out" bash "$script"
+  [ "$status" -eq 0 ]
+  grep -qF 'skipped=true' "$out"
+}
+
+@test "smoke: README documents the deployment step" {
+  grep -q 'staging' "$README"
+  grep -qF 'staging-smoke.yml' "$README"
+  grep -qF 'STAGING_DOMAIN' "$README"
+  grep -qF 'smoke-checks' "$README"
+  grep -q 'staging' "$DOC"
+}
+
+# --- Requirement: deny 設定が auto-merge 配線と同じ場所から配布される（issue #213） ---
+
+@test "deny: settings.json fragment exists, parses, and denies merge / main push / force push" {
+  command -v jq >/dev/null || skip "jq not installed"
+  [ -f "$DENY" ]
+  jq -e '.permissions.deny | type == "array"' "$DENY" >/dev/null
+  for p in 'Bash(gh pr merge:*)' 'Bash(git push origin main:*)' 'Bash(git push origin master:*)' \
+           'Bash(git push --force:*)' 'Bash(git push -f:*)' 'Bash(git push --force-with-lease:*)' \
+           'Bash(git push --no-verify:*)'; do
+    jq -e --arg p "$p" '.permissions.deny | index($p) != null' "$DENY" >/dev/null
+  done
+}
+
+@test "deny: README and docs describe merging into an existing settings.json without dropping deny entries" {
+  grep -qF '.claude/settings.json' "$README"
+  grep -q 'deny' "$README"
+  grep -q '既存の deny を消さずに' "$README"
+  grep -q 'deny' "$DOC"
+  grep -qF 'Bash(gh pr merge:*)' "$DOC"
+}
+
+@test "deny: README merge command preserves existing deny entries and other keys" {
+  command -v jq >/dev/null || skip "jq not installed"
+  cur="$BATS_TEST_TMPDIR/settings.json"
+  cat > "$cur" <<'EOF'
+{"permissions":{"allow":["Bash(ls:*)"],"deny":["Bash(rm -rf:*)","Bash(gh pr merge:*)"]},"env":{"FOO":"bar"}}
+EOF
+  # README の jq 式をそのまま実行する（手順書とテストのズレを作らない）
+  expr="$(sed -n "/jq -s '/,/unique)'/p" "$README" | tr -d '\\' | sed "s/^ *//; s/[[:space:]]*\$//" | sed "s/^jq -s '//; s/'\$//" | tr '\n' ' ')"
+  [ -n "$expr" ]
+  jq -s "$expr" "$cur" "$DENY" > "$cur.merged"
+  jq -e '.permissions.deny | index("Bash(rm -rf:*)") != null' "$cur.merged" >/dev/null
+  jq -e '.permissions.deny | index("Bash(git push --force:*)") != null' "$cur.merged" >/dev/null
+  jq -e '.permissions.allow == ["Bash(ls:*)"]' "$cur.merged" >/dev/null
+  jq -e '.env.FOO == "bar"' "$cur.merged" >/dev/null
+  # 重複しない（既存にあった gh pr merge は 1 件のまま）
+  [ "$(jq '[.permissions.deny[] | select(. == "Bash(gh pr merge:*)")] | length' "$cur.merged")" -eq 1 ]
+}
+
+@test "deny: README step 7 works on a repo that has no .claude directory yet" {
+  command -v jq >/dev/null || skip "jq not installed"
+  repo="$BATS_TEST_TMPDIR/fresh-repo"
+  mkdir -p "$repo/.github/workflows"
+  # README 手順 7 のコードブロックを <repo> / $TPL だけ置換してそのまま実行する
+  block="$(sed -n '/^   # 展開先に .claude\/ が無くても/,/&& mv /p' "$README" | sed 's/^   //' | sed "s#<repo>#$repo#g")"
+  [ -n "$block" ]
+  run env TPL="$TPL" bash -c "$block"
+  [ "$status" -eq 0 ]
+  jq -e '.permissions.deny | index("Bash(gh pr merge:*)") != null' "$repo/.claude/settings.json" >/dev/null
+}
+
+# staging-smoke.yml の revert ステップを、実 git（bare remote）と記録用 gh スタブで実行する。
+# $1=シナリオ名、環境変数 MAIN_ADVANCED=1 で main を BAD_SHA から進める、FAIL_PR=1 で gh pr create を失敗させる
+run_revert_script() {
+  local d="$BATS_TEST_TMPDIR/rv-$1" bin
+  bin="$d/bin"; mkdir -p "$bin" "$d/state"
+  git init -q --bare "$d/remote.git"
+  git init -q -b main "$d/work"
+  git -C "$d/work" config user.email t@example.test; git -C "$d/work" config user.name t
+  git -C "$d/work" remote add origin "$d/remote.git"
+  printf 'a\n' > "$d/work/f.txt"; git -C "$d/work" add f.txt; git -C "$d/work" commit -qm base
+  printf 'b\n' > "$d/work/f.txt"; git -C "$d/work" commit -qam bad
+  BAD="$(git -C "$d/work" rev-parse HEAD)"
+  if [ "${MAIN_ADVANCED:-0}" = 1 ]; then printf 'c\n' > "$d/work/f.txt"; git -C "$d/work" commit -qam later; fi
+  git -C "$d/work" push -q origin main
+  cat > "$bin/gh" <<EOF
+#!/bin/bash
+S="$d/state"
+echo "\$*" >> "\$S/calls.log"
+case "\$1 \$2" in
+  "label create") exit 0 ;;
+  "issue list") [ -f "\$S/issue" ] && echo "https://example.test/o/r/issues/1" ; exit 0 ;;
+  "issue create") touch "\$S/issue"; echo "https://example.test/o/r/issues/1" ;;
+  "issue view") exit 0 ;;
+  "issue comment") exit 0 ;;
+  "pr list") [ -f "\$S/pr" ] && echo "https://example.test/o/r/pull/7" ; exit 0 ;;
+  "pr create") [ "\${FAIL_PR:-0}" = 1 ] && exit 1; touch "\$S/pr"; echo "https://example.test/o/r/pull/7" ;;
+  "api "*) exit 0 ;;
+esac
+exit 0
+EOF
+  chmod +x "$bin/gh"
+  sed -n '/# >>> smoke-revert-script/,/# <<< smoke-revert-script/p' "$SMOKE" | sed 's/^          //' > "$d/revert.sh"
+  cd "$d/work"
+  run env PATH="$bin:$PATH" GH_TOKEN=x MERGE_TOKEN=y REPO=o/r BAD_SHA="$BAD" RUN_URL=https://example.test/run bash "$d/revert.sh"
+  CALLS="$d/state/calls.log"
+  RV_DIR="$d"
+}
+
+@test "revert script: normal failure creates the incident issue first, then the revert PR" {
+  command -v git >/dev/null || skip "git not installed"
+  run_revert_script normal
+  [ "$status" -eq 0 ]
+  grep -q '^issue create' "$CALLS"
+  grep -q '^pr create' "$CALLS"
+  [ "$(grep -n '^issue create' "$CALLS" | head -1 | cut -d: -f1)" -lt "$(grep -n '^pr create' "$CALLS" | head -1 | cut -d: -f1)" ]
+}
+
+@test "revert script: the revert PR is created without agent-review:passed and gets no HEAD comment" {
+  command -v git >/dev/null || skip "git not installed"
+  run_revert_script nopassed
+  [ "$status" -eq 0 ]
+  grep -q '^pr create' "$CALLS"
+  grep '^pr create' "$CALLS" | grep -q -- '--label incident'
+  ! grep -q -- '--label agent-review:passed' "$CALLS" || return 1
+  ! grep -q '対象 HEAD' "$CALLS" || return 1
+  ! grep -q '^api .*-X POST' "$CALLS" || return 1
+}
+
+@test "revert script: main already moved past the deployed commit -> incident only, no revert PR" {
+  command -v git >/dev/null || skip "git not installed"
+  MAIN_ADVANCED=1 run_revert_script advanced
+  [ "$status" -eq 0 ]
+  grep -q '^issue create' "$CALLS"
+  ! grep -q '^pr create' "$CALLS" || return 1
+  ! git -C "$RV_DIR/remote.git" rev-parse --verify -q "refs/heads/revert-auto-${BAD:0:12}" >/dev/null || return 1
+}
+
+@test "revert script: incident exists even when the revert PR cannot be created, and a re-run recovers the PR" {
+  command -v git >/dev/null || skip "git not installed"
+  FAIL_PR=1 run_revert_script partial
+  [ "$status" -ne 0 ]
+  grep -q '^issue create' "$CALLS"
+  git -C "$RV_DIR/remote.git" rev-parse --verify -q "refs/heads/revert-auto-${BAD:0:12}" >/dev/null
+  # 再実行: ブランチは push 済み。PR が無ければ作り直し、incident は重複起票しない
+  : > "$CALLS"
+  cd "$RV_DIR/work"
+  run env PATH="$RV_DIR/bin:$PATH" GH_TOKEN=x MERGE_TOKEN=y REPO=o/r BAD_SHA="$BAD" RUN_URL=https://example.test/run bash "$RV_DIR/revert.sh"
+  [ "$status" -eq 0 ]
+  grep -q '^pr create' "$CALLS"
+  ! grep -q '^issue create' "$CALLS" || return 1
+}
+
 # --- Requirement: 運用ガイドはリポ非依存の記述で提供される ---
 
 @test "portability: no hardcoded flatmate repo URL anywhere in the template" {
-  ! grep -r 'genetta-inc/flatmate' "$TPL"
+  ! grep -r 'genetta-inc/flatmate' "$TPL" || return 1
 }
 
 # --- 自己検証: 同梱の攻撃再現テストがテンプレート自身に対して pass する ---
@@ -187,5 +457,5 @@ extract_revert_code() {
   echo "$output"
   [ "$status" -eq 0 ]
   # 1 件も FAIL していないこと（サマリ行の目視相当を機械化）
-  ! printf '%s\n' "$output" | grep -q '^FAIL'
+  ! printf '%s\n' "$output" | grep -q '^FAIL' || return 1
 }

@@ -2,20 +2,27 @@
 #
 # pr-review-gate の仕様宣言（issue #191）
 # 手順 3 の第 3 のコメント（仕様宣言）、手順 5 の 3 見出し実測と issue 記録との整合照合、
-# spec-touch-check の参照、auto-merge 範囲外の明記を SKILL.md の記述として検証する。
+# spec-touch-check の参照、auto-merge 範囲外の明記を 段のファイル（declarations.md・stages/prepare.md・stages/pass.md）の記述として検証する。
 # spec: dev-workflow-pr-review-gate
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
+  REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
+  REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
+  TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
+  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
 }
 
-head_sec() { awk '/^## 前提と理由/{f=1} /^## 手順/{f=0} f' "$SKILL"; }
-step3() { awk '/^### 3\. /{f=1} /^### 4\. /{f=0} f' "$SKILL"; }
-step5() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "$SKILL"; }
+head_sec() { awk '/^## 前提と理由/{f=1} /^## 手順/{f=0} f' "$DECLARATIONS"; }
+step3() { awk '/^### 3\. /{f=1} /^## 出口/{f=0} f' "$DECLARATIONS"; }
+step5() { awk '/^### 5\. /{f=1} /^## (G として動くとき|出口)/{f=0} f' "$PASS_STAGE"; }
 
 # --- Requirement: 仕様宣言を通過の必須点に加える ---
 
@@ -46,7 +53,7 @@ step5() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "$SKILL"; }
 @test "step 5: SHA-bound listing must show all three headings" {
   step5 | grep -q '仕様宣言'
   step5 | grep -qE '3 ?(見出し|つ).*(すべて|全部|揃)'
-  ! step5 | grep -q '見出しが両方'
+  ! step5 | grep -q '見出しが両方' || return 1
 }
 
 @test "step 5: consistency table has yes / no / no-record rows" {
@@ -90,7 +97,7 @@ fixture_pages() {
 
 @test "step 5: comments are fetched with --paginate --slurp piped to jq (slurp is incompatible with --jq)" {
   step5 | grep '仕様' | grep -- '--paginate --slurp' | grep -q -- '| jq -r'
-  ! step5 | grep '^gh api' | grep -- '--slurp' | grep -q -- '--jq'
+  ! step5 | grep '^gh api' | grep -- '--slurp' | grep -q -- '--jq' || return 1
 }
 
 # --- Requirement: spec-touch-check スクリプトが規範パス接触と openspec 差分を報告する ---
@@ -118,7 +125,7 @@ fixture_pages() {
 # 手順 1 と手順 5 のコマンド例そのものが分岐を実装していることを、偽の gh で実行して確かめる。
 # 偽の gh は呼び出しを $GH_LOG に記録し、path に応じて fixture を返す。
 
-step1() { awk '/^### 1\. /{f=1} /^### 2\. /{f=0} f' "$SKILL"; }
+step1() { awk '/^### 1\. /{f=1} /^### 2\. /{f=0} f' "$PREPARE"; }
 
 # 指定した手順の fenced bash ブロックのうち ISSUE= を含むものから、実行対象の行だけを抜く
 # （説明コメント行と <plugin> プレースホルダを含む spec-touch-check 行は除く）
@@ -166,8 +173,8 @@ run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
   install_fake_gh
   out="$(run_step_cmds step1 'Draft PR 記録先。受け入れ条件はこの本文')"
   [ "$out" = "Draft PR 記録先。受け入れ条件はこの本文" ]
-  ! grep -q 'issues/ ' "$GH_LOG"
-  ! grep -q 'issues//' "$GH_LOG"
+  ! grep -q 'issues/ ' "$GH_LOG" || return 1
+  ! grep -q 'issues//' "$GH_LOG" || return 1
   grep -qE 'repos/o/r/pulls/42 .*\.body' "$GH_LOG"
 }
 
@@ -177,7 +184,7 @@ run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
   [ "$(printf '%s\n' "$out" | sed -n 1p)" = "仕様化判断: しない" ]
   [ "$(printf '%s\n' "$out" | sed -n 2p)" = "仕様レビュー: REQUEST_CHANGES" ]
   grep -q 'repos/o/r/issues/7/comments' "$GH_LOG"
-  ! grep -q 'repos/o/r/issues/42/comments' "$GH_LOG"
+  ! grep -q 'repos/o/r/issues/42/comments' "$GH_LOG" || return 1
 }
 
 @test "step 5: without an issue reference the PR's own comments (issues/<PR number>/comments) are read" {
@@ -185,7 +192,7 @@ run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
   out="$(run_step_cmds step5 'issue 参照なしの Draft PR 記録先')"
   [ "$(printf '%s\n' "$out" | sed -n 1p)" = "仕様化判断: しない" ]
   grep -q 'repos/o/r/issues/42/comments' "$GH_LOG"
-  ! grep -q 'issues//comments' "$GH_LOG"
+  ! grep -q 'issues//comments' "$GH_LOG" || return 1
 }
 
 @test "step 1 and 5: prose names the fallback target (PR itself) next to the commands" {
@@ -198,16 +205,13 @@ run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
 # --- 既存件数固定アサーションを壊さない ---
 
 @test "keeps single occurrence of the cross-layer-contract and sanctuary/merge-permission phrases" {
-  [ "$(grep -cF '層間契約' "$SKILL")" -eq 1 ]
-  [ "$(grep -cF '聖域パス・マージ権限' "$SKILL")" -eq 1 ]
+  [ "$(grep -cF '層間契約' "${TRIAGE}")" -eq 1 ]
+  [ "$(grep -cF '聖域パス・マージ権限' "${TRIAGE}")" -eq 1 ]
 }
 
 # --- 配布 ---
 
-@test "manifest: version above 1.12.0, marketplace in sync, description mentions the spec declaration" {
-  v="$(jq -r '.version' "$MANIFEST")"
-  [ "$(printf '1.12.0\n%s\n' "$v" | sort -V | tail -1)" = "$v" ] && [ "$v" != "1.12.0" ]
-  [ "$(jq -r '.plugins[] | select(.name=="dev-workflow") | .version' "$MARKETPLACE")" = "$v" ]
+@test "manifest: description mentions the spec declaration" {
   jq -r '.description' "$MANIFEST" | grep -q '仕様宣言'
 }
 

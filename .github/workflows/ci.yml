@@ -3,7 +3,7 @@
 #
 # ubuntu ランナーを使う理由:
 #   プラグインの実行環境は macOS だが、macOS ランナーは分課金が 10 倍で、
-#   PR ごとに回すゲートとしては無料枠を圧迫する。bats スイートは全 984 件（2026-08-31 時点）が
+#   PR ごとに回すゲートとしては無料枠を圧迫する。bats スイートは全 990 件（2026-09-03 時点）が
 #   Linux でそのまま動く（BSD date / stat -f 等の macOS 固有コマンドへの依存は
 #   grep で 0 件）ため、ubuntu で全件を回す。
 #
@@ -15,14 +15,16 @@
 #   shellcheck / jq / node / python3 は ubuntu-latest にプリインストール済み。
 #   bats のみ apt で導入する。
 #
-# バージョン整合ガード（S131）について:
-#   plugins/*/.claude-plugin/plugin.json と marketplace.json の bump を
-#   merge-base と比較して検査するテストは origin/main の ref を要求する。
-#   actions/checkout の既定（fetch-depth: 1）では origin/main が無いので
-#   これらは skip される（ローカル実行で担保）。CI を「常に取れる決定論的な
-#   検査」に限定するための意図的な設計で、fetch-depth: 0 にはしない。
-#   （旧 S132 も merge-base 比較だったが、issue #140 でトップレベル version を
-#   廃止して以降は「フィールドが存在しないこと」の決定論的検査になり常時走る）
+# version の不在の検査（S130・S131）について:
+#   issue #447 で plugins/*/.claude-plugin/plugin.json と marketplace.json の
+#   plugins[] から version を撤去し、版は Claude Code が commit SHA から決める。
+#   S130・S131 は「version フィールドが存在しないこと」の決定論的検査で、
+#   origin/main を要さず actions/checkout の既定（fetch-depth: 1）でも常に走る。
+#   版を上げていた古い PR が後からマージされて version が戻るのを CI で落とす。
+#   変更記録の形と CHANGELOG.md の凍結（tests/plugin-release-convention.bats）も
+#   同じく常に走る。CI を「常に取れる決定論的な検査」に限定し、fetch-depth: 0 にはしない。
+#   （S132 も同じく、issue #140 でトップレベル version を廃止して以降は
+#   「フィールドが存在しないこと」の決定論的検査として常時走る）
 # ─────────────────────────────────────────────────────────────
 name: CI
 
@@ -46,7 +48,7 @@ permissions:
   contents: read
 
 # サードパーティ製 action の固定方針（issue #138）:
-#   oven-sh/setup-bun のようなサードパーティ製 action はコミット SHA で固定する
+#   サードパーティ製 action はコミット SHA で固定する
 #   （タグは上流が同じ名前のまま別コミットへ差し替えられるため、可変タグ参照だと
 #   CI が偽 green になりうる）。actions/* は GitHub 公式が所有する action なので
 #   このリポで得られるリスク低減幅が小さい一方、更新追随の対象だけ増えるため対象外。
@@ -80,14 +82,6 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends bats=1.10.0-1
-      # discord プラグインの動的ハーネス（plugins/discord/tests/reaction-order-dynamic.bats）
-      # が bun で server.ts を子プロセス起動する。バージョンは bats と同じ理由で固定する
-      # （無指定だとアクション側の既定更新で bun が黙って上がり、落ち方が変わったときに
-      # 切り分けられない）。上げるときはこのピンを明示的に書き換える。
-      - name: install bun (1.3.5)
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.3.5
       - name: run bats suites (scripts/test.sh)
         run: scripts/test.sh
       # auto-merge workflow の安全不変条件（聖域判定・必須チェック名の一致・fail-closed）。

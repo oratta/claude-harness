@@ -35,12 +35,12 @@ setup() {
 }
 
 @test "S3: goal description no longer says prod side is commented out" {
-  ! grep -q 'prod 側はコメントアウト状態' "$P5"
+  ! grep -q 'prod 側はコメントアウト状態' "$P5" || return 1
   grep -q '\.env\.production\.local' "$P5"
 }
 
 @test "S4: cautions section reflects two-file scheme" {
-  ! grep -q 'prod系がコメントアウトで保存されている前提' "$P5"
+  ! grep -q 'prod系がコメントアウトで保存されている前提' "$P5" || return 1
   grep -q '\.env\.production\.local.*に prod 値が分離保存されている前提' "$P5"
 }
 
@@ -75,12 +75,12 @@ setup() {
   step11="$(awk '/### Step 11: /{flag=1} /### Step 11\.5:/{flag=0} flag' "$P2")"
   step115="$(awk '/### Step 11\.5:/{flag=1} /### Step 12:/{flag=0} flag' "$P2")"
   echo "$step115" | grep -qi 'service_role'
-  ! echo "$step11" | grep -qi 'service_role'
+  ! echo "$step11" | grep -qi 'service_role' || return 1
 }
 
 @test "S10: state file write step does not record the raw service_role key value" {
   step13="$(awk '/### Step 13: /{flag=1} /### Step 14:/{flag=0} flag' "$P2")"
-  ! echo "$step13" | grep -qiE 'service_role_key: \{|service_role: \{[A-Za-z_]*_KEY\}'
+  ! echo "$step13" | grep -qiE 'service_role_key: \{|service_role: \{[A-Za-z_]*_KEY\}' || return 1
 }
 
 @test "S11: Phase 4 reads PROD_SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY from .env.production.local" {
@@ -141,7 +141,7 @@ check_third_party_pins() {
   local lister="$PLUGIN_DIR/tests/list-uses.rb"
   local total=0
   local unpinned=""
-  local file start_line end_line comment value body listed
+  local file start_line end_line comment body value listed
 
   # ファイル列挙は NUL 区切り（-print0 / read -d ''）。改行区切りだと改行を含む
   # ファイル名が 2 つの実在しないパスに行分断され、そのファイルの中身が一度も
@@ -158,11 +158,12 @@ check_third_party_pins() {
       unpinned="${unpinned}${file}: not parseable as YAML: ${listed}"$'\n'
       continue
     fi
-    while IFS=$'\t' read -r start_line end_line comment value; do
+    while IFS=$'\t' read -r start_line end_line comment body value; do
       # `uses` を 1 件も持たないファイルは here-string が空行 1 本になるので読み飛ばす
       [ -n "$start_line" ] || continue
       total=$((total + 1))
-      body="$(sed -n "${start_line}p" "$file")"
+      # 違反行の本文は list-uses.rb が libyaml と同じ改行判定で引いた列を使う（`sed -n` は LF 基準で
+      # bare CR を含むと別の物理行を指す。#247）。
 
       # actions/* は GitHub 公式所有なので #138 の方針どおり対象外。
       # 判定はパーサが返した `uses` の値そのものに対して行う（#176 その2 / #198 その1）。
@@ -252,7 +253,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"# TODO"* ]]
+  [[ "$output" == *"# TODO"* ]] || return 1
 }
 
 @test "S16a-2: 'uses: actions/' inside a comment does not exempt a third-party action" {
@@ -261,7 +262,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses: evil/action@v1 # mimics uses: actions/cache@v4' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-3: 'uses :' with a space before the colon is still extracted and checked" {
@@ -271,7 +272,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses : evil/action@v1' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-4: a properly pinned third-party action passes (quoted form included)" {
@@ -303,7 +304,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses: evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v1' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"* ]]
+  [[ "$output" == *"evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"* ]] || return 1
 }
 
 @test "S16a-8: comments that only look like a version are rejected" {
@@ -349,7 +350,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO #176 follow-up' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"# TODO #176 follow-up"* ]]
+  [[ "$output" == *"# TODO #176 follow-up"* ]] || return 1
 }
 
 @test "S16a-12: a scan path containing ':' does not let a path fragment satisfy the comment check" {
@@ -373,13 +374,13 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     '"uses": evil/action@v1' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 
   run check_third_party_pins "$(write_uses_fixture \
     "'uses': evil/action@v1" \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-14: a flow-mapping step is still extracted and checked" {
@@ -388,14 +389,14 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     '{ uses: evil/action@v1 }' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 
   # 密着形＋ uses が先頭キーでない形（値の直後に `}` が密着する）
   run check_third_party_pins "$(write_uses_fixture \
     '{name: deploy, uses: evil/action@v1}' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-15: properly pinned quoted-key and flow-mapping forms pass" {
@@ -421,7 +422,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     '{ name: "uses: actions/cache@v4", uses: evil/action@v1 }' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-17: a '#' inside a preceding flow-mapping quoted value does not hide the step" {
@@ -431,7 +432,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     '{ name: "a#b", uses: evil/action@v1 }' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 
   # 同じ形で正しく固定されていれば pass する（`#` を含む引用値がコメント判定を邪魔しない）
   run check_third_party_pins "$(write_uses_fixture \
@@ -452,7 +453,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   printf 'jobs:\n  build:\n    steps:\n      - uses: evil/action@v1\n   bad: [\n' > "$dir/fixture.yml.template"
   run check_third_party_pins "$dir"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not parseable as YAML"* ]]
+  [[ "$output" == *"not parseable as YAML"* ]] || return 1
 }
 
 @test "S16a-19: a newline in a template filename does not skip that file's scan" {
@@ -470,7 +471,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     > "$dir/"$'bad\nname.yml.template'
   run check_third_party_pins "$dir"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-20: an unreadable template fails the scan instead of passing silently" {
@@ -494,7 +495,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   # 合格 0 と抽出 0 件 2 を除外する形にして実装の書き換えに巻き込まれないようにする。
   [ "$status" -ne 0 ]
   [ "$status" -ne 2 ]
-  [[ "$output" == *"secret.yml.template"* ]]
+  [[ "$output" == *"secret.yml.template"* ]] || return 1
 }
 
 @test "S16a-21: a 'uses' in the second YAML document of a template is still checked" {
@@ -508,7 +509,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     > "$dir/fixture.yml.template"
   run check_third_party_pins "$dir"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"fixture.yml.template:9:"*"evil/action@v1"* ]]
+  [[ "$output" == *"fixture.yml.template:9:"*"evil/action@v1"* ]] || return 1
 
   # 2 つ目の document が正しく固定されていれば pass する
   printf 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n---\njobs:\n  b:\n    steps:\n      - %s\n' \
@@ -542,13 +543,69 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     > "$dir/fixture.yml.template"
   run check_third_party_pins "$dir"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"fixture.yml.template:4:"* ]]
+  [[ "$output" == *"fixture.yml.template:4:"* ]] || return 1
 
   # 同じ形で閉じ括弧の後にバージョンコメントがあれば pass する
   run check_third_party_pins "$(write_uses_fixture \
     '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: x#v9 } # v2.1.1' \
     '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: "a\"# TODO " } # v2.1.1')"
   [ "$status" -eq 0 ]
+}
+
+@test "S16a-23: a 'uses' key referenced through a YAML alias is still checked" {
+  # `anchors: { k: &u uses }` の後の `- *u: evil/action@v1` は、YAML の意味論では `uses` キーで
+  # GitHub Actions が実行する。キーを Scalar でしか拾わない実装は 1 行も出力せず、走査対象に
+  # 正例が 1 件でもあれば rc=0 で合格していた（#246）。
+  local dir="$BATS_TEST_TMPDIR/alias"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'anchors:\n  k: &u uses\njobs:\n  b:\n    steps:\n      - *u: evil/action@v1\n      - %s\n' \
+    "$PINNED_OK" > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:6:"*"evil/action@v1"* ]] || return 1
+
+  # alias キーでも正しく固定されていれば pass する
+  printf 'anchors:\n  k: &u uses\njobs:\n  b:\n    steps:\n      - *u: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 0 ]
+
+  # `uses` 以外を指す alias キーは対象にならない
+  printf 'anchors:\n  k: &n name\njobs:\n  b:\n    steps:\n      - *n: evil/action@v1\n        uses: actions/checkout@v4\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-24: a bare CR does not shift the line used for the version comment or the reported body" {
+  # libyaml は bare CR も改行として数えるが、`String#lines` と `sed -n` は LF でしか切らない。
+  # 行番号がずれて、別の物理行の `# v9` をバージョンコメントに採用して合格し、違反行の本文も
+  # 空になっていた（#247）。本当のコメントは `# TODO`。
+  local dir="$BATS_TEST_TMPDIR/barecr"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\r  build:\r    steps:\r      - uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO\nx: 1\ny: 2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: 1 # v9\n' \
+    > "$dir/fixture.yml.template"
+  run ruby "$PLUGIN_DIR/tests/list-uses.rb" "$dir/fixture.yml.template"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'\t# TODO\t'* ]] || return 1
+  [[ "$output" != *"# v9"* ]] || return 1
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:4:"*"# TODO"* ]] || return 1
+
+  # 本当のコメントがバージョンなら pass する（bare CR があっても）
+  printf 'jobs:\r  build:\r    steps:\r      - uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1\ny: 1 # TODO\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 0 ]
+
+  # bare CR の中に隠した未固定の uses も捕まり、違反行の本文が出る
+  printf 'jobs:\r  build:\r    steps:\r      - uses: evil/action@v1\r' > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:4:"*"evil/action@v1"* ]] || return 1
 }
 
 @test "S17: all five workflow templates parse as YAML" {
@@ -637,25 +694,15 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   grep -E 'infra-phase-4-github-actions.*deploy-preview' "$SKILL"
 }
 
-@test "S29: SKILL.md frontmatter version matches plugin.json version" {
-  skill_version="$(grep -m1 '^version:' "$SKILL" | sed 's/^version: *//')"
-  plugin_version="$(grep -m1 '"version"' "$PLUGIN_JSON" | sed -E 's/.*"version": *"([^"]+)".*/\1/')"
-  [ -n "$skill_version" ]
-  [ -n "$plugin_version" ]
-  [ "$skill_version" = "$plugin_version" ]
+# plugin.json は version を持たない（issue #447）。一致させる相手が無いので SKILL.md にも置かない。
+@test "S29: SKILL.md frontmatter has no version" {
+  run grep -n '^version:' "$SKILL"
+  [ "$status" -ne 0 ]
 }
 
 @test "S30: no personal Dropbox path remains" {
   run grep -rn "/Users/oratta" "$PLUGIN_DIR" --exclude-dir=tests
   [ "$status" -ne 0 ]
-}
-
-@test "S31: plugin.json version is bumped above 0.2.0" {
-  plugin_version="$(grep -m1 '"version"' "$PLUGIN_JSON" | sed -E 's/.*"version": *"([^"]+)".*/\1/')"
-  [ "$plugin_version" != "0.2.0" ]
-  # crude semver compare: split into major.minor.patch and compare numerically
-  IFS='.' read -r a b c <<< "$plugin_version"
-  [ "$a" -gt 0 ] || { [ "$a" -eq 0 ] && { [ "$b" -gt 2 ] || { [ "$b" -eq 2 ] && [ "$c" -gt 0 ]; }; }; }
 }
 
 @test "all touched JSON parses (jq)" {

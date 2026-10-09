@@ -121,15 +121,59 @@ role_sec() { section "$SKILL" '本体の役割'; }
 @test "criteria: the source section stops at the next heading, not at the next level-2 heading" {
   cap_sec | grep -qF 'コンテキスト上限（サブエージェントの手渡し）'
   local leaked
-  for leaked in 'の自動導出（usage snapshot 契約）' 'モード不変ルール'; do
+  for leaked in 'の自動導出（セッション記録と usage snapshot 契約）' 'モード不変ルール'; do
     if cap_sec | grep -qF "$leaked"; then
       echo "正本の節に後続の小節が混ざっている: $leaked"; return 1
     fi
   done
 }
 
+# 成果一覧（W / G 共通の定義）2 箇所に「読んだコードの要点」が W の場合のみ必須として入り、
+# 書式は worker/common.md を指す。上限行数は worker/common.md にだけ置く（#555）
+@test "criteria: both deliverable lists name the read-code pointers as W-only and defer the format to worker/common.md" {
+  local line
+  for key in '工程完了: <工程名>`（例' '**通知を受けたら**'; do
+    line="$(cap_sec | grep -F "$key")"
+    [ -n "$line" ] || { echo "成果一覧の行が見つからない: $key"; return 1; }
+    echo "$line" | grep -qF '読んだコードの要点' || { echo "欄が無い: $key"; return 1; }
+    echo "$line" | grep -qF 'W の場合のみ必須' || { echo "条件が無い: $key"; return 1; }
+    echo "$line" | grep -qF 'worker/common.md' || { echo "worker/common.md への参照が無い: $key"; return 1; }
+  done
+  if cap_sec | grep -qF '20 行'; then
+    echo "正本の節に上限行数が再掲されている（書式の正本は worker/common.md）" >&2
+    return 1
+  fi
+}
+
 # 同一 worktree の同一役割は 1 人（dev-workflow-develop の別要件）
 @test "skill: same-worktree same-role concurrency is capped at one" {
   role_sec | grep -qE '1 人|同時に動く同一役割'
   role_sec | grep -qF '別々の worktree'
+}
+
+# ⑤停止確認が返らないときの終端（#266）。帰結は「手渡さず止めて人間に報告」で、第 3 の経路を作らない
+@test "criteria(5): terminal needs both elapsed-since-stop and transcript-idle, measured by subagent-context.sh" {
+  cap_sec | grep -qF '停止確認が返らないときの終端'
+  cap_sec | grep -qF '停止指示からの経過時間が `DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT` 以上、かつ前任のトランスクリプトの無更新時間が `DEV_WORKFLOW_STOP_CONFIRM_STALL` 以上'
+  cap_sec | grep -qF 'subagent-context.sh <agent-name> --stop-since'
+}
+
+@test "criteria(5): reaching the terminal stops work and reports to the human, never spawns the successor" {
+  cap_sec | grep -qF '手渡し先を spawn せず、その作業を止めて人間に報告する'
+  # 反転（前任を放置して spawn してよい）を落とす: 禁止の述語と、第 3 の経路でない旨を固定する
+  cap_sec | grep -qF '終端は第 3 の経路ではない'
+  cap_sec | grep -qF '前任を放置したまま手渡し先を spawn してはならない'
+  cap_sec | grep -qF '人間の返事も経過時間も、停止確認の代わりにならない'
+  if cap_sec | grep -qF '前任を放置して手渡し先を spawn してよい'; then return 1; fi
+}
+
+@test "criteria(5): thresholds are env-overridable and the numbers appear only in the env table, not in the terminal prose" {
+  cap_sec | grep -qE '^\| `DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT` \|'
+  cap_sec | grep -qE '^\| `DEV_WORKFLOW_STOP_CONFIRM_STALL` \|'
+  local prose
+  prose="$(cap_sec | grep -F '停止確認が返らないときの終端' | grep -vE '^\|')"
+  [ -n "$prose" ]
+  if echo "$prose" | grep -qE '[0-9]+ ?(秒|分|時間)'; then
+    echo "終端の本文に閾値の数値が直書きされている"; return 1
+  fi
 }

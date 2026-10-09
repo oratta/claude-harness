@@ -81,6 +81,10 @@ setup() {
   [ "$(LC_ALL=C grep -c '^tools:' "$ARBITER" | tr -d ' ')" -eq 1 ]
 }
 
+@test "arbiter: frontmatter omits CLAUDE.md" {
+  [ "$(LC_ALL=C grep -c '^omitClaudeMd: true' "$ARBITER" | tr -d ' ')" -eq 1 ]
+}
+
 @test "arbiter: opening referenced paths is a contract violation that aborts the verdict" {
   LC_ALL=C grep -qF -- "入力契約違反" "$ARBITER"
   LC_ALL=C grep -qF -- "裁定を拒否" "$ARBITER"
@@ -91,10 +95,9 @@ setup() {
   LC_ALL=C grep -qF -- "根拠" "$ARBITER"
 }
 
-@test "plugin.json: registers both agents and bumps version to at least 0.3.0" {
+@test "plugin.json: registers both agents" {
   LC_ALL=C grep -qF -- '"./agents/casting-specialist.md"' "$PLUGIN_JSON"
   LC_ALL=C grep -qF -- '"./agents/casting-arbiter.md"' "$PLUGIN_JSON"
-  LC_ALL=C grep -qF -- '"version": "0.4.3"' "$PLUGIN_JSON"
 }
 
 # --- 受け入れ条件3: 事後報告フォーマットの定義と実例1件 ---
@@ -145,9 +148,11 @@ setup() {
   LC_ALL=C grep -qF -- "読み取り不能" "$SPECIALIST"
 }
 
-@test "rule: step 4 escalates out-of-scope replies to the owner" {
-  LC_ALL=C grep -qF -- "範囲外" "$RULE"
-  LC_ALL=C grep -qF -- "policy 不在" "$RULE"
+# 手順の中身は rules/perspective-casting.md から skills/casting/SKILL.md へ移した（issue #260）。
+# rule は 5 手順の見出しと skill へのポインタだけを持つので、中身の照合先は SKILL.md。
+@test "skill: step 4 escalates out-of-scope replies to the owner" {
+  LC_ALL=C grep -qF -- "範囲外" "$SKILL"
+  LC_ALL=C grep -qF -- "policy 不在" "$SKILL"
 }
 
 @test "precedents template: route vocabulary includes consultation" {
@@ -179,16 +184,16 @@ setup() {
 @test "rule: step 4 branches to specialist consultation and arbitration" {
   LC_ALL=C grep -qF -- "観点スペシャリスト" "$RULE"
   LC_ALL=C grep -qF -- "仲裁" "$RULE"
-  LC_ALL=C grep -qF -- "事後報告" "$RULE"
+  LC_ALL=C grep -qF -- "事後報告" "$SKILL"
 }
 
-@test "rule: issues touching an owner-held perspective bypass consultation and go to the owner" {
-  LC_ALL=C grep -qF -- "担い手が主の観点が1つでも" "$RULE"
-  LC_ALL=C grep -qF -- "相談・仲裁に入らない" "$RULE"
+@test "skill: issues touching an owner-held perspective bypass consultation and go to the owner" {
+  LC_ALL=C grep -qF -- "担い手が主の観点が1つでも" "$SKILL"
+  LC_ALL=C grep -qF -- "相談・仲裁に入らない" "$SKILL"
 }
 
-@test "rule: step 5 attributes statements and verdicts by persona name" {
-  LC_ALL=C grep -qF -- "人格名" "$RULE"
+@test "skill: step 5 attributes statements and verdicts by persona name" {
+  LC_ALL=C grep -qF -- "人格名" "$SKILL"
 }
 
 @test "rule: stays within 30 lines after the rewrite" {
@@ -207,7 +212,7 @@ setup() {
   local section
   section="$(awk '/^## 論点が来たときの判定/{on=1; next} /^## /{on=0} on' "$SKILL")"
   [ -n "$section" ]
-  ! printf '%s' "$section" | LC_ALL=C grep -qF -- "方針文・判断基準に従って自走する"
+  ! printf '%s' "$section" | LC_ALL=C grep -qF -- "方針文・判断基準に従って自走する" || return 1
   printf '%s' "$section" | LC_ALL=C grep -qF -- "「論点相談・仲裁」の手順に入る"
 }
 
@@ -226,6 +231,6 @@ setup() {
 
 @test "plugin.json: description states the claim list, not the retired two-party wording" {
   # 旧仕様「双方の主張」（2者固定）が説明文に残らないこと（Blocking 5）
-  ! LC_ALL=C grep -qF -- "双方の主張" "$PLUGIN_JSON"
+  ! LC_ALL=C grep -qF -- "双方の主張" "$PLUGIN_JSON" || return 1
   LC_ALL=C grep -qF -- "主張リスト" "$PLUGIN_JSON"
 }

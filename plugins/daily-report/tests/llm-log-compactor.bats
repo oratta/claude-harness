@@ -7,6 +7,7 @@
 load "$(dirname "$BATS_TEST_FILENAME")/helper.bash"
 
 setup() {
+  export LC_ALL=C.UTF-8
   dr_setup_paths
   dr_make_tmpdir
   AGENT_FILE="${PLUGIN_DIR}/agents/llm-log-compactor.md"
@@ -35,7 +36,7 @@ teardown() {
 
 @test "llm-log-compactor: frontmatter does NOT include Notion MCP tools" {
   dr_require_file "$AGENT_FILE"
-  ! grep -q "mcp__claude_ai_Notion__" "$AGENT_FILE"
+  ! grep -q "mcp__claude_ai_Notion__" "$AGENT_FILE" || return 1
 }
 
 @test "llm-log-compactor: frontmatter tools include Read Write Bash Glob" {
@@ -48,9 +49,22 @@ teardown() {
   grep -q "^model: opus" "$AGENT_FILE"
 }
 
+@test "llm-log-compactor: frontmatter has no permissionMode (ignored for plugin agents)" {
+  dr_require_file "$AGENT_FILE"
+  ! grep -q "^permissionMode:" "$AGENT_FILE" || return 1
+}
+
 @test "llm-log-compactor: head -5 restriction is removed (sequential scan documented)" {
   dr_require_file "$AGENT_FILE"
-  ! grep -Eq 'head ?-5' "$AGENT_FILE"
+  # Scope to the turn-extraction code block only: prose in the same section
+  # legitimately quotes "head -5" while documenting its removal, and
+  # "Files/Commits (top 5)" elsewhere in the file legitimately uses `head -5`
+  # for an unrelated top-5 listing. Neither should trip this check.
+  extraction_code="$(awk '/^#### 2a\./{f=1} /^#### 2b\./{f=0} f' "$AGENT_FILE" \
+    | awk '/^```/{c++; next} c==1')"
+  # 見出し表記の変更やコードブロックの消失で空になると、下の否定検査が黙って通る
+  [ -n "$extraction_code" ] || return 1
+  ! echo "$extraction_code" | grep -Eq 'head ?-5' || return 1
   # Sequential scan documented (Japanese or English keyword)
   grep -Eq '(先頭から順次|順次スキャン|sequential scan|head ?- ?n ?1)' "$AGENT_FILE"
 }

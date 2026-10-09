@@ -1,6 +1,6 @@
 # R1（仕様レビュアー）の指示書 — develop スキル
 
-`/opsx:ff`（または openspec CLI 直叩き）で W が生成した change の artifact を、**実装に入る前に**実装と別コンテキストで審査する工程の正本。longrun の Build Contract レビュー（plan.md を実装前に審査する工程）を dev-workflow のパイプラインに置き直したもの。仕様レベルの穴（既存規約との整合・config に出すべき固有値・導入先の前提）を実装レビューに持ち込まないための工程で、実装 diff のレビュー（pr-review-gate。G の担当）とは対象が違う。
+W が `openspec new change` と artifact の直書きで作った change（本体や主が `/opsx:ff` で先に作った change を含む）の artifact を、**実装に入る前に**実装と別コンテキストで審査する工程の正本。longrun の Build Contract レビュー（plan.md を実装前に審査する工程）を dev-workflow のパイプラインに置き直したもの。仕様レベルの穴（既存規約との整合・config に出すべき固有値・導入先の前提）を実装レビューに持ち込まないための工程で、実装 diff のレビュー（pr-review-gate。G の担当）とは対象が違う。
 
 R1 は develop の本体が spawn するサブエージェント（W とは別コンテキスト）。R1 が読むのは**このファイル**と、本体から渡される change ディレクトリ・記録先。
 
@@ -27,7 +27,7 @@ R1 は develop の本体が spawn するサブエージェント（W とは別�
 
 ## R1 の spawn（本体が行う。R1 は確認だけ）
 
-- **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。既定は `subagent_type: general-purpose` に `model: opus`。仕様が `references/roles/worker.md` の「重要実装の事前分類」表の分類（マージ権限・層間契約・課金/法務。正本はそこ）に当たる場合は、**`subagent_type: dev-workflow:decider` で spawn する**（`general-purpose` に `model: fable` を付けない。`scripts/agent-model-guard.sh` が拒否する）。聖域パスだけでは上げない。ただし共有枠モードが上限を先に決める（次項）
+- **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。既定は `subagent_type: general-purpose` に `model: opus`。仕様が `references/pre-classification.md` の「重要実装の事前分類」表の分類（マージ権限・層間契約・課金/法務。正本はそこ）に当たる場合は、**`subagent_type: dev-workflow:decider` で spawn する**（`general-purpose` に `model: fable` を付けない。`scripts/agent-model-guard.sh` が拒否する）。聖域パスだけでは上げない。ただし共有枠モードが上限を先に決める（次項）
 - モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 固定・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類（マージ権限・層間契約・課金/法務）による `dev-workflow:decider`（聖域パスは `opus` 止まり） ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限。このとき種別は `dev-workflow:decider` のまま `model: opus` に落とす）。正本は `references/decision-criteria.md`。 interactive の `reserve` は `conserve` と同一に扱う（仕様レビューは verify 側の役割なので決める役として立ててよい）。`throttled` では事前分類に当たっても `opus` 止まり、`depleted` では `sonnet`
 - R1 は**読み取り専用**。仕様ファイル・コードを一切変更しない（修正は本体が W を再開して行わせる）
 
@@ -38,13 +38,14 @@ R1 は develop の本体が spawn するサブエージェント（W とは別�
 3. 関連する既存 `openspec/specs/`。**全読みしない** — `grep -rn` で当たりを付けてから該当 spec だけ Read する（コンテキスト溢れ防止）
 4. 触る予定のスキル・スクリプトの該当箇所
 
-## レビュー観点（5 つ。すべて検査する）
+## レビュー観点（6 つ。すべて検査する）
 
 1. **受け入れ条件の一意性**: Scenario の WHEN/THEN が一意に決まりテスト可能か（bats 等で検証できる粒度か）
 2. **既存 spec との整合**: 既存 `openspec/specs/` の MUST/SHALL と衝突・重複しないか。衝突があれば **spec のパスと要件名**を挙げる
 3. **固有値の直書き**: リポ固有の値（時刻・製品名・パス）が要件に直書きされていないか。config や引数に出す修正案を出す
 4. **前提の明記**: 導入先・前提環境（プラグイン・CLI・権限）が書かれているか
 5. **相互整合**: proposal ↔ specs ↔ design ↔ tasks が整合しているか（Capabilities と spec ファイル、design の決定と要件、tasks の網羅）
+6. **守備範囲の明記**: 入力を検査・判定する要件（検査・lint・ゲート・パーサ・バリデータのように、入力を受け取って通す／落とす／分類する振る舞いを定める要件）に、「何から守るか」と「何は守らないか」の両方を書いた段落があるか。段落に要る要素は ①想定する入力の出どころ ②拾いたい誤り ③通ることを許す入力の具体例 ④穴が見つかるたびに塞ぎ切ることを完了条件にしない、の 4 つ。守備範囲が無い、または「何から守るか」（①②）と「何は守らないか」（③）の片方しか無ければ、その欠落を BLOCKER とし `REQUEST_CHANGES` で差し戻す。④だけが無いときは SHOULD_FIX に留める（PR レビューで「この入力も通る」と指摘されたとき、範囲外と判定する根拠が仕様側に無いと周回が止まらないため）。入力の検査を含まない要件には求めない。検査するのはこの change の delta spec が追加（ADDED）・改定（MODIFIED）する要件だけで、change が触れない既存 `openspec/specs/` の要件には遡及しない
 
 ## 出力書式（R1 が本体に return する）
 
@@ -78,6 +79,7 @@ gh pr comment <PR番号> --body "$(printf '仕様レビュー: REQUEST_CHANGES\n
 
 ## 往復の上限
 
-- **2 周で確定**: 初回 ＋ 修正後の差分再レビュー 1 回。再レビューは 1 周目の指摘が閉じたかと、修正で新たに生じた矛盾だけを見る（新規の気づきは NOTE に留める）
-- 3 周目の例外は設けない（pr-review-gate の「新規の高深刻度 blocking のみ 3 周目可」は PR レビュー側の規定。仕様段階なら人に返す方が安い）
-- 2 周目でも BLOCKER が残る場合: 記録先に `needs-approval` を付けて経緯をコメントし、interactive モードでは本体が AskUserQuestion で判断を仰ぎ、unmanned モードではそのサイクルを終了する
+- **既定 2 周**: 初回 ＋ 修正後の差分再レビュー 1 回。再レビューは前の周の指摘が閉じたかと、修正で新たに生じた矛盾だけを見る（新規の気づきは NOTE に留める）。3 周目以降の周も同じく差分再レビューで応じる
+- 2 周目以降の周の終わりに BLOCKER が残った場合（結果が `REQUEST_CHANGES`）: 本体が主に聞く前に決める役に直し方の判定を依頼する。残った BLOCKER がすべて直し方が決まっているもので、PR トークン上限の内側（`pr-token-budget.sh` が exit 2 でない）なら、本体は主に聞かず次の周を回す（W を再開して artifact を直させ、R1 に次の周の差分再レビューをさせる）。interactive と unmanned で同じに扱う
+- 主に聞くのは、方針の選び直しが要るとき（直し方の判定が「選び直しが要る」。入力不足で判定が出なかったときを含む）と、`pr-token-budget.sh` が exit 2 のときの 2 つだけ。方針の選び直しが要るときは、記録先に `needs-approval` を付けて経緯をコメントし、interactive モードでは本体が AskUserQuestion で判断を仰ぎ、unmanned モードではそのサイクルを終了する。exit 2 のときは develop の SKILL.md「PR トークン上限」の exit 2 の手順に従う
+- 判定役・判定の入力・返答の 1 行目・判定の記録と事後報告の書式は、develop の SKILL.md の節「レビューの周を主に聞かずに続ける（直し方の判定）」が正本で、ここには書かない。R1 は何周目でも上の結果コメントの書式で記録する（周回数の欄に 3 周目以降の値が入ることがある）

@@ -106,3 +106,84 @@ PY
   [ "$status" -eq 1 ]
   echo "$output" | grep -q '"error"'
 }
+
+# --file: worktree 隔離のサブエージェントはファイル名に名前が入らず名前 glob では見つからない（#243）。
+# 途中計測 hook が導出したパスをそのまま測れるように、直接指定の経路を持つ。
+
+@test "--file: measures the given transcript without the name glob" {
+  f="$(make_transcript p1 s1 agent-a1b2c3d4e5f60718.jsonl /tmp/x "1000,2000,3000" "500,0,120000")"
+  run "$SCRIPT" --file "$f" --cap 150000
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+assert d["context_tokens"] == 120500, d
+assert d["over_cap"] is False, d
+# agent はファイル名から導く（agent- と .jsonl を落とす）
+assert d["agent"] == "a1b2c3d4e5f60718", d
+PY
+}
+
+@test "--file: exit 2 when the given transcript is over the cap" {
+  f="$(make_transcript p1 s1 agent-a1b2c3d4e5f60718.jsonl /tmp/x "0,0,200000")"
+  run "$SCRIPT" --file "$f" --cap 150000
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q '"over_cap": true'
+}
+
+@test "--file: exit 1 when the given path is not readable" {
+  run "$SCRIPT" --file "${WORK}/does-not-exist.jsonl"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q '"error"'
+}
+
+@test "--file: without a value returns a one-line JSON error" {
+  run "$SCRIPT" --file
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q '"error"'
+}
+
+@test "--file: the name lookup path is unchanged by the addition" {
+  # 名前指定の既存挙動（cwd 優先・出力フィールド・exit code）が --file 追加の前後で変わらない
+  make_transcript p1 s1 agent-aW-9-abcd.jsonl /tmp/x "0,0,10" >/dev/null
+  run "$SCRIPT" W-9 --projects "$PROJECTS" --cap 150000
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+assert sorted(d) == ["agent", "calls", "cap", "context_tokens", "file", "over_cap"], sorted(d)
+assert d["agent"] == "W-9", d
+PY
+}
+
+@test "--help: the last line of the header is not the shebang-adjacent set line" {
+  run "$SCRIPT" --help
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -q 'set -uo pipefail' || return 1
+  echo "$output" | grep -q -- '--file'
+}
+
+# --stop-since: 停止確認が返らないときの終端（#266）。経過時間と無更新時間の 2 条件がそろったときだけ exit 3
+@test "stop-since: terminal (exit 3) only when both elapsed-since-stop and transcript-idle reach thresholds" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 1,1,1)"
+  now="$(date +%s)"
+  python3 -c 'import os,sys; t=int(sys.argv[2]); os.utime(sys.argv[1],(t,t))' "$f" $((now-1000))
+  # 両方超過
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run "$SCRIPT" --file "$f" --stop-since $((now-500))
+  [ "$status" -eq 3 ]
+  echo "$output" | grep -q '"unconfirmed_terminal": true'
+  # 経過時間だけ超過（停止指示が直近）
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run "$SCRIPT" --file "$f" --stop-since $((now-5))
+  [ "$status" -eq 0 ]
+  # 無更新だけ不足（トランスクリプトが今更新された）
+  touch "$f"
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run "$SCRIPT" --file "$f" --stop-since $((now-500))
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"unconfirmed_terminal": false'
+}
+
+@test "stop-since: non-numeric env threshold is rejected" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 1,1,1)"
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=abc run "$SCRIPT" --file "$f" --stop-since 1
+  [ "$status" -eq 1 ]
+}

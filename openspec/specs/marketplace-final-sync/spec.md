@@ -3,28 +3,9 @@
 ## Purpose
 TBD - created by archiving change repo-cleanup-final. Update Purpose after archive.
 ## Requirements
-### Requirement: 全編集プラグインの plugin.json version bump を確認する
-
-本 run（change-1〜7）で編集した全プラグイン（infra / longrun / lr / worktree / daily-report / weekly-report / skill-pack / experience-to-skill）について、`plugins/<name>/.claude-plugin/plugin.json` の `version` が本 run の変更を反映して bump されていることを確認しなければならない（MUST）。（longrun / lr は 2026-08 に解散したため対象外。#205）本 change 自身が編集する skill-pack / experience-to-skill は本 change 内で bump する（MUST）。
-
-#### Scenario: skill-pack / experience-to-skill の version bump
-
-- **WHEN** 本 change が skill-pack と experience-to-skill を編集した後に両者の plugin.json を読む
-- **THEN** `plugins/skill-pack/.claude-plugin/plugin.json` と `plugins/experience-to-skill/.claude-plugin/plugin.json` の `version` が編集前より bump されている
-
-#### Scenario: 他 change 編集分の version bump 確認
-
-- **WHEN** infra / longrun / lr / worktree / daily-report / weekly-report の plugin.json を読む
-- **THEN** 各 `version` が本 run で編集された変更に対応して bump されている（未 bump のものがあれば本 change で bump を補完する）
-
 ### Requirement: marketplace.json を各 plugin.json と完全一致させる
 
-`.claude-plugin/marketplace.json` の各プラグインエントリの `version` と `description` を、対応する `plugins/<name>/.claude-plugin/plugin.json` の値と完全一致させなければならない（MUST）。version は 1 文字も違わず一致すること（MUST）。marketplace.json の同期は全プラグイン編集の完了後に、同一ファイル競合を避けるため本 change が最後に直列で行う（MUST）。change-6 が除去する obsidian-llm-session-rules / skill-aware-workflow のエントリには手を出さない（MUST）。
-
-#### Scenario: version の完全一致
-
-- **WHEN** marketplace.json の各エントリ version と対応 plugin.json の version を比較する
-- **THEN** infra / longrun / lr / worktree / daily-report / weekly-report / skill-pack / experience-to-skill の全てで両者が完全一致する（受け入れ条件 15。longrun / lr は 2026-08 に解散したため対象外。#205）
+`.claude-plugin/marketplace.json` の各プラグインエントリの `description` を、対応する `plugins/<name>/.claude-plugin/plugin.json` の値と完全一致させなければならない（MUST）。`version` は issue #447 で両方から撤去したため照合の対象にしない（両方に存在しないことは capability `marketplace-plugin-sync` が検査する）。marketplace.json の同期は全プラグイン編集の完了後に、同一ファイル競合を避けるため本 change が最後に直列で行う（MUST）。change-6 が除去する obsidian-llm-session-rules / skill-aware-workflow のエントリには手を出さない（MUST）。
 
 #### Scenario: description の同期
 
@@ -34,7 +15,7 @@ TBD - created by archiving change repo-cleanup-final. Update Purpose after archi
 #### Scenario: 廃止 2 プラグインのエントリに触れない
 
 - **WHEN** 本 change が marketplace.json を編集する
-- **THEN** obsidian-llm-session-rules / skill-aware-workflow のエントリ除去は change-6 の責務であり、本 change はそれらの version/description を触らない
+- **THEN** obsidian-llm-session-rules / skill-aware-workflow のエントリ除去は change-6 の責務であり、本 change はそれらの description を触らない
 
 ### Requirement: 受け入れ条件 5-16 の統合検証を実行する
 
@@ -43,7 +24,7 @@ TBD - created by archiving change repo-cleanup-final. Update Purpose after archi
 #### Scenario: change-7 固有条件（14/15）の検証
 
 - **WHEN** 統合検証を実行する
-- **THEN** `templates/rules/` 不存在・`docs/cooking-mvp-mode-plan.md` 不存在（条件 14）、および全編集プラグインで plugin.json version が marketplace.json と一致（条件 15）が確認される
+- **THEN** `templates/rules/` 不存在・`docs/cooking-mvp-mode-plan.md` 不存在（条件 14）が確認される（条件 15 の plugin.json と marketplace.json の version 一致は、issue #447 で version を撤去したため対象外）
 
 #### Scenario: 他 change 由来条件（5-13, 16）の横断検証
 

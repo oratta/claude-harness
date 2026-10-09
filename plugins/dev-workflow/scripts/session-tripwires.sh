@@ -1,67 +1,91 @@
 #!/usr/bin/env bash
 # SessionStart hook: 昇格トリップワイヤーの常駐ルール + Fable 残量モード（自動導出）を
-# セッション文脈に注入する。
+# セッション文脈に注入する。メモリ索引が閾値を超えていれば memory-tripwire.sh の 1 行を先頭に足す。
 # 本文の single source of truth は templates/escalation-tripwires.md（複製を持たない）。
 # テンプレート欠損・節の抽出失敗時は無出力・exit 0（セッション開始をブロックしない）。
+#
+# TRIPWIRES_SCOPE=subagent-budget（subagent-start-context.sh が使う）のときは、残量モードの
+# ブロック（「## Fable 残量モード（自動導出）」から共有枠モードの効果の行まで）だけを JSON でなく
+# 本文テキストで出す。この範囲では usage-probe・メモリ索引の検知・トリップワイヤー節の抽出を
+# 行わず、親向けの「W を再開する前に測る」行も出さない。テンプレートが無くても出す。
+# 未設定・それ以外の値のときは従来どおり。導出式はこのファイルの 1 か所だけに置く。
 set -uo pipefail
 
 ROOT="${CLAUDE_PLUGIN_ROOT:-}"
 TEMPLATE="${ROOT}/templates/escalation-tripwires.md"
-# テンプレートが無ければ従来どおり fail-soft（残量ブロックも出さない）。
-[ -f "$TEMPLATE" ] || exit 0
-
-# usage-probe を best-effort 実行（失敗しても snapshot は壊れず、導出は conserve 既定に倒れる）。
-PROBE="${ROOT}/scripts/usage-probe.sh"
-[ -x "$PROBE" ] && "$PROBE" >/dev/null 2>&1 || true
+SCOPE="${TRIPWIRES_SCOPE:-}"
+[ "$SCOPE" = "subagent-budget" ] || SCOPE="session"
 
 SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
+MEMORY_NOTICE=""
 
-TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" python3 <<'PY'
-import json, os, re, time
+if [ "$SCOPE" = "session" ]; then
+  # テンプレートが無ければ従来どおり fail-soft（残量ブロックも出さない）。
+  [ -f "$TEMPLATE" ] || exit 0
+
+  # usage-probe を best-effort 実行（失敗しても snapshot は壊れず、導出は conserve 既定に倒れる）。
+  PROBE="${ROOT}/scripts/usage-probe.sh"
+  [ -x "$PROBE" ] && "$PROBE" >/dev/null 2>&1 || true
+
+  # メモリ索引の検知（閾値超のときだけ 1 行。失敗しても無出力で先へ進む）。
+  MEMORY_NOTICE="$("${ROOT}/scripts/memory-tripwire.sh" 2>/dev/null)" || MEMORY_NOTICE=""
+fi
+
+# 導出は active スロットの実効値（セッション記録と snapshot を突き合わせた値）から行う。
+# 規則の実装は usage_view.py の 1 か所（正本: openspec/specs/usage-session-records）。
+TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" MEMORY_NOTICE="$MEMORY_NOTICE" SCOPE="$SCOPE" \
+  USAGE_VIEW_DIR="${ROOT}/scripts" python3 <<'PY'
+import json, os, re, sys, time
+
+SCOPE = os.environ.get("SCOPE", "session")
 
 # --- トリップワイヤー節の抽出（single source of truth） ---
-try:
-    text = open(os.environ["TEMPLATE"], encoding="utf-8").read()
-    m = re.search(r"^## 昇格トリップワイヤー.*", text, flags=re.S | re.M)
-    tripwire = m.group(0).strip() if m else ""
-except Exception:
-    tripwire = ""
-if not tripwire:
-    raise SystemExit(0)  # 節が抽出できなければ fail-soft（無出力）
-
-# --- snapshot 読み取り（fail-open） ---
-snap = None
-try:
-    with open(os.environ["SNAPSHOT"], encoding="utf-8") as f:
-        snap = json.load(f)
-    if not isinstance(snap, dict):
-        snap = None
-except Exception:
-    snap = None
-
-pct = snap.get("fable_weekly_pct") if snap else None
-all_pct = snap.get("weekly_all_pct") if snap else None
-resets_epoch = snap.get("weekly_resets_epoch") if snap else None
-try:
-    pct = float(pct) if pct is not None else None
-except Exception:
-    pct = None
-try:
-    all_pct = float(all_pct) if all_pct is not None else None
-except Exception:
-    all_pct = None
+tripwire = ""
+if SCOPE == "session":
+    try:
+        text = open(os.environ["TEMPLATE"], encoding="utf-8").read()
+        m = re.search(r"^## 昇格トリップワイヤー.*", text, flags=re.S | re.M)
+        tripwire = m.group(0).strip() if m else ""
+    except Exception:
+        tripwire = ""
+    if not tripwire:
+        raise SystemExit(0)  # 節が抽出できなければ fail-soft（無出力）
 
 now = os.environ.get("USAGE_PROBE_NOW")
 now = int(now) if (now and now.lstrip("-").isdigit()) else int(time.time())
 
+# --- active スロットの実効値（fail-open: 読めなければデータ無しとして既定に倒す） ---
+slot = {}
+try:
+    sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
+    import usage_view
+    view = usage_view.build_view(snapshot_path=os.environ["SNAPSHOT"], now=now)
+    slot = view["accounts"].get(view["active"]) or {}
+except Exception:
+    slot = {}
+
+def number(value):
+    try:
+        return float(value) if value is not None else None
+    except Exception:
+        return None
+
+pct = number(slot.get("fable_weekly_pct"))
+all_pct = number(slot.get("weekly_all_pct"))
+
 WEEK = 7 * 86400
-elapsed_pct = None
-if resets_epoch:
+def elapsed_of(resets_epoch):
+    if not resets_epoch:
+        return None
     try:
         remaining = int(resets_epoch) - now
-        elapsed_pct = max(0.0, min(100.0, (WEEK - remaining) / WEEK * 100.0))
+        return max(0.0, min(100.0, (WEEK - remaining) / WEEK * 100.0))
     except Exception:
-        elapsed_pct = None
+        return None
+
+# Fable と全体の週次はそれぞれの窓のリセット時刻から週経過を求める
+elapsed_pct = elapsed_of(slot.get("fable_resets_epoch"))
+all_elapsed_pct = elapsed_of(slot.get("weekly_resets_epoch"))
 
 # --- 残量モード導出（明示 env > snapshot 無し > exhausted > バーンレート比較） ---
 explicit = (os.environ.get("FABLE_BUDGET_MODE") or "").strip()
@@ -85,7 +109,7 @@ elif all_pct is None:
     shared, shared_source = "ok", "既定（usage データなし）"
 elif all_pct > 90:
     shared, shared_source = "depleted", "自動導出"
-elif elapsed_pct is not None and all_pct > elapsed_pct:
+elif all_elapsed_pct is not None and all_pct > all_elapsed_pct:
     shared, shared_source = "throttled", "自動導出"
 else:
     shared, shared_source = "ok", "自動導出"
@@ -118,7 +142,11 @@ lines.append(f"- 共有枠モード SHARED_BUDGET_MODE: {shared}（{shared_sourc
 if all_pct is not None:
     lines.append(f"- 全モデル週次: 使用 {round(all_pct)}% / 残 {round(100 - all_pct)}%")
 lines.append(f"- {shared} の効果: {shared_effect}")
-lines.append("- サブエージェントのコンテキスト上限: W / G を SendMessage で再開する前に "
+if SCOPE == "subagent-budget":
+    # サブエージェント向け: 残量ブロックだけを本文テキストで出す（包む JSON は呼び出し側が作る）
+    print("\n".join(lines))
+    raise SystemExit(0)
+lines.append("- サブエージェントのコンテキスト上限: W を SendMessage で再開する前に "
              "`${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <name>` で測る"
              f"（上限 {os.environ.get('DEV_WORKFLOW_CONTEXT_CAP', '150000')} tokens。exit 2 が上限超）。"
              "上限超のあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・"
@@ -129,5 +157,8 @@ lines.append("- サブエージェントのコンテキスト上限: W / G を S
              "複数の面に散らばっていたことが書き換え漏れの原因だったため）")
 budget = "\n".join(lines)
 
-print(json.dumps({"additionalContext": budget + "\n\n" + tripwire}, ensure_ascii=False))
+notice = (os.environ.get("MEMORY_NOTICE") or "").strip()
+head = notice + "\n\n" if notice else ""
+
+print(json.dumps({"additionalContext": head + budget + "\n\n" + tripwire}, ensure_ascii=False))
 PY
