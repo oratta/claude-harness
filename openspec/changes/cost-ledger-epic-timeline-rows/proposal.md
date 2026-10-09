@@ -24,7 +24,7 @@ cost-ledger の hook（`gate_report.py`）がエピックのコメントに積�
 
 - `plugins/cost-ledger/scripts/gate_report.py`（`stack()` と、子の問い合わせの関数の追加。`resolve()` が応答の `sub_issues_summary.total` を返す）
 - `plugins/cost-ledger/scripts/cost_ledger.py`（`cmd_timeline` と `build_parser` の引数、`issue_combined_total` の拡張。`ISSUE_RE` は触らない）
-- `openspec/specs/cost-ledger-timeline/spec.md`、`plugins/cost-ledger/README.md`（hook の説明があれば）
+- `openspec/specs/cost-ledger-timeline/spec.md`、`openspec/specs/cost-ledger-cost-command/spec.md`、`plugins/cost-ledger/README.md`（hook の説明があれば）
 - `plugins/cost-ledger/tests/`（新しい bats `epic-timeline.bats`。`attribution.bats` は触らない）
 - `plugins/cost-ledger/changes/745.md`
 - 常時注入（`rules/`・`CLAUDE.md`・`description`）は増やさない。LLM のトークンは使わない

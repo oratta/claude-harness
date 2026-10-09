@@ -11,6 +11,7 @@
   （`write_allow.allowed()`。origin のリポジトリが載っていなければ gh を 1 回も呼ばずに終わる）→ 控えの
   「前回見た時刻」→ クローズ済みの issue / PR の一覧 1 回 → 候補ごとに（PR は対象の確認）・
   対象ごとのロック・`gate_report.stack()` → 控えの更新。gh は一覧の 1 回に、候補 1 件あたり 3 回
+  （子 issue を持つ候補は、一覧の応答の `children` で判定し、子孫の問い合わせの分が加わる。追加の判定用の gh は無い）
 - `COST_LEDGER_HOOK_FOREGROUND=1` のときは切り離さず、その場で最後まで実行する（テストと実測）
 
 行の有無の判定（同じ出来事の行が既にある・手元にコストが無い）は `cost_ledger.py timeline
