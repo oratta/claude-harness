@@ -273,6 +273,20 @@ chmod 600 "$HOME/.config/cost-ledger/write-repos"
    gh api -X DELETE repos/<owner>/<repo>/issues/comments/<id>
    ```
 
+### 子 issue を持つ issue の行
+
+GitHub の子 issue を持つ issue（エピック）に積む行は、毎回（節目の行も合計の行も）`/cost <番号>` の 1 行目と同じ
+「子 issue 込み」の累計になる（1 行目の帰属は `子 issue 込み`）。子孫の issue と、エピックと子孫を閉じた PR は、
+裏の処理が GraphQL で子を持つ issue 1 件につき 1 回問い合わせる（1 行につき 5 回まで。超えたら失敗扱い）。
+`gh` の回数は、コメントなどで 3 回から「3 回 + 子を持つ issue の数」、`issue クローズ` で 4 回から
+「4 回 - 1 + 子を持つ issue の数」になる（閉じた PR の問い合わせを子孫の問い合わせが兼ねる）。
+子を持たない issue と PR の回数と行は変わらない。判定は対象の確認の応答の `sub_issues_summary.total` で行うので、
+`gh` は増えない。
+
+- **合計の行**: きっかけの欄は件数だけの書式 `合計（子 issue <n> 件込み: PR <m> 件 $<額> + PR 外 $<額>）`
+- **問い合わせの失敗**（形の崩れ・100 件超・6 回目が必要なときを含む）: 従来の区間だけの行を積み、
+  節目の行のきっかけの欄の最後に `子 issue 照会失敗` を足す
+
 ### issue を閉じたときの合計の行
 
 `gh issue close`（PR でない issue）では、`issue クローズ` の行に続けて、その issue を閉じた PR の分も
