@@ -5,7 +5,9 @@
 # 規範の正本は openspec の spec `cost-ledger-backfill`。
 #
 #   緊急停止 COST_LEDGER_BACKFILL=off（後追いだけ）/ COST_LEDGER_GATE_REPORT=off（GitHub へ書く処理すべて）
-#   COST_LEDGER_PATH が未設定なら動かない（どこまで見たかの控えを台帳の隣に置くため。既定の場所は持たない）
+#   台帳の場所が未設定なら動かない（どこまで見たかの控えを台帳の隣に置くため。既定の場所は持たない）。
+#   場所は ledger-hook.sh と同じく CLAUDE_PLUGIN_OPTION_LEDGER_PATH（userConfig の LEDGER_PATH）を優先し、
+#   空なら COST_LEDGER_PATH を使う（spec `cost-ledger-persistence`）
 #
 # 既定では GitHub に何も書かない。書くのは、利用者がリポジトリの外に置いた許可の一覧
 # （COST_LEDGER_WRITE_REPOS_FILE、無ければ $HOME/.config/cost-ledger/write-repos）に載っている
@@ -26,7 +28,9 @@ exec >/dev/null 2>&1
 
 [ "${COST_LEDGER_GATE_REPORT:-on}" = "off" ] && exit 0
 [ "${COST_LEDGER_BACKFILL:-on}" = "off" ] && exit 0
-[ -n "${COST_LEDGER_PATH:-}" ] || exit 0
+COST_LEDGER_PATH="${CLAUDE_PLUGIN_OPTION_LEDGER_PATH:-${COST_LEDGER_PATH:-}}"
+[ -n "$COST_LEDGER_PATH" ] || exit 0
+export COST_LEDGER_PATH
 write_repos="${COST_LEDGER_WRITE_REPOS_FILE:-${HOME:+$HOME/.config/cost-ledger/write-repos}}"
 [ -n "$write_repos" ] || exit 0
 [ -s "$write_repos" ] || exit 0

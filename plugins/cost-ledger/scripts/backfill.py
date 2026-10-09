@@ -232,6 +232,10 @@ def sweep(gate_report, ledger, cwd, scripts_dir):
     elif items:
         # 手元の時計ではなく GitHub の時刻で進める（次の一覧と同じ基準で比べられる）
         write_seen(state_path, key, max(item["updated"] for item in items))
+    elif seen_until(read_state(state_path), key) is None:
+        # 一覧が空で控えに値が無い回も、今回の since を書く。書かないと「控えが無い」状態が続き、
+        # 24 時間の窓がセッションのたびにずれる。値があれば変えない
+        write_seen(state_path, key, since)
 
 
 def work(job):
