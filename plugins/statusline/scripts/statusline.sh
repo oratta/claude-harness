@@ -169,9 +169,10 @@ sessions_dir="${USAGE_SESSIONS_DIR:-$CONFIG_DIR/.usage-sessions}"
 # 覚え、同じなら書かない。記録ファイルの中身とは比べない（他セッションが上書きした新しい値を、
 # 止まっていたセッションの古い値で潰さないため。.rate-limit-snapshot の obs_sig と同じ考え方）。
 # session_id が無い・ハッシュが取れないときは覚える先が無いので毎回書く。
+# rate_limits の無い描画は記録を書かないので、ハッシュも取らない（使わない shasum と cut を起動しない。#648）。
 _rec_sig="${five_h_pct}|${five_h_resets:-null}|${seven_d_pct:-null}|${seven_d_resets:-null}"
 _rec_memo=""
-if [ -n "$session_id" ]; then
+if [ -n "$five_h_pct" ] && [ -n "$session_id" ]; then
     # ハッシュ対象は jq -c の引用符付き JSON 文字列のまま。python3 を起動しない
     _rec_sid_hash="$( { printf '%s' "$session_id" | shasum -a 256 2>/dev/null \
         || printf '%s' "$session_id" | sha256sum 2>/dev/null; } | cut -c1-16)"
