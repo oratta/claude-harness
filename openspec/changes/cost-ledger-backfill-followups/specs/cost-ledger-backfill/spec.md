@@ -4,7 +4,7 @@
 システムは次のどれかに当たるとき、`gh` を 1 回も呼ばず、控えファイルも書かずに終わ MUST る。
 
 - 環境変数 `COST_LEDGER_GATE_REPORT=off` または `COST_LEDGER_BACKFILL=off`（このときは `python3` も起動しない）
-- 台帳の場所が未設定（`CLAUDE_PLUGIN_OPTION_LEDGER_PATH` と `COST_LEDGER_PATH` の両方が空。解決は `cost-ledger-persistence` の定めに従い、前者が優先。このときは `python3` も起動しない）、または台帳の場所が `cost-ledger-persistence` の定めで書けない場所（プラグインのリポジトリの配下）
+- 台帳の場所が未設定（`CLAUDE_PLUGIN_OPTION_LEDGER_PATH` と `COST_LEDGER_PATH` の両方が空。解決は `cost-ledger-persistence` の定めに従い、前者が優先。このときは `python3` も起動しない）。SessionStart の hook のプロセスには、userConfig が未設定なら `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` 自体が渡らない（`${user_config.` で始まる置換されなかった文字列が渡るのは `/cost` のコマンド本文だけ）ので、`cost-ledger-persistence` の「`${user_config.` で始まる値も未設定」の扱いはここでは要らない、または台帳の場所が `cost-ledger-persistence` の定めで書けない場所（プラグインのリポジトリの配下）
 - 許可の一覧（`cost-ledger-write-allowlist`）のファイルが無い、または大きさが 0（このときは `python3` も起動しない。場所は `COST_LEDGER_WRITE_REPOS_FILE`、無ければ `$HOME/.config/cost-ledger/write-repos`）
 - `python3` か `gh` が無い
 - hook の `cwd` が git リポジトリでない、origin が無い・読めない、または origin のホストが github.com でない
@@ -48,11 +48,11 @@ SessionStart の JSON の `source` が `clear` または `compact` のとき（m
 - **THEN** `gh` と `python3` は一度も呼ばれない
 
 #### Scenario: userConfig だけで台帳を設定した環境でも動く
-- **WHEN** `COST_LEDGER_PATH` を未設定にし、`CLAUDE_PLUGIN_OPTION_LEDGER_PATH` だけを台帳の場所に設定して、候補が 1 件ある SessionStart の hook JSON を流す
+- **WHEN** `COST_LEDGER_PATH` を未設定にし、`CLAUDE_PLUGIN_OPTION_LEDGER_PATH` だけを台帳の場所に設定して、手元にコストがあり、同じきっかけの行がまだ無いマージ済みの PR が候補に 1 件ある状態で SessionStart の hook JSON を流す
 - **THEN** 候補に行が積まれ、控えファイルとロックは `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` が指す台帳の隣にできる
 
 #### Scenario: 両方を別の場所に設定したときは userConfig を使う
-- **WHEN** `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` と `COST_LEDGER_PATH` を別の場所に設定して、候補が 1 件ある SessionStart の hook JSON を流す
+- **WHEN** `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` と `COST_LEDGER_PATH` を別の場所に設定して、手元にコストがあり、同じきっかけの行がまだ無いマージ済みの PR が候補に 1 件ある状態で SessionStart の hook JSON を流す
 - **THEN** 控えファイルは `CLAUDE_PLUGIN_OPTION_LEDGER_PATH` が指す台帳の隣にだけでき、`COST_LEDGER_PATH` の隣には作られない
 
 #### Scenario: github.com でないリポジトリ

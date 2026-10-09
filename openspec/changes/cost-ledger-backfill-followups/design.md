@@ -10,11 +10,11 @@
 - userConfig だけで台帳を設定した環境でも後追いが動き、控えとロックが解決後の台帳の隣にできる
 - 一覧が空の回が続いても、24 時間の窓が最初の実行の位置に固定される
 - `backfill.bats` の取りこぼし 6 件を直す
-- 待ち時間と `gh` の回数を増やさない（実測して記録する）
+- 待ち時間と `gh` の回数の影響を、変更の前後で実測して記録する。`gh` の回数は増やさない（分岐が控えを書くだけ）。待ち時間は、空の一覧の回に控えを 1 回書く分が増えるので、上限は置かず前後の値を記録する
 
 **Non-Goals**
 - `gate_report.py`・`cost_ledger.py` の変更（台帳パスの解決の共通化を含む。#703・#698 が並行して触る）
-- `backfill.sh` での `${user_config.` プレースホルダの除外。後追いは SessionStart の hook で、コマンド本文の置換前の文字列は渡らない。`ledger-hook.sh` も同じ扱いにしてあり、`backfill.py` は `cost_ledger.ledger_path()` で除外している
+- `backfill.sh` での `${user_config.` プレースホルダの除外。実機（`claude -p --plugin-dir`、userConfig 未設定の最小プラグインの SessionStart の hook）で、`CLAUDE_PLUGIN_OPTION_*` が環境に渡らないことを確かめた（置換されなかった文字列が渡るのは `/cost` のコマンド本文だけ、#729）。`ledger-hook.sh` も同じ扱いにしてあり、`backfill.py` は `cost_ledger.ledger_path()` で除外している
 - 一覧に載せたリポジトリでの同名ブランチのコスト混在など、#761 の範囲
 
 ## Decisions
