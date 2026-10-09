@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 #
 # チーム機能（CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS）が有効なら SessionStart で警告する（issue #591）。
-# spec: openspec/changes/team-mode-warning（archive 後は openspec/specs/dev-workflow-role-agent-types）
+# spec: openspec/specs/dev-workflow-role-agent-types（change: openspec/changes/archive/2026-10-07-team-mode-warning）
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../../.." && pwd)"
