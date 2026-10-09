@@ -29,10 +29,16 @@ setup() {
   [[ "$output" == *$'区画: 3\n区画 1/3（100 行）\n- a（100 行）\n区画 2/3（500 行）\n- b（500 行）\n- z（0 行）\n区画 3/3（100 行）\n- c（100 行）'* ]] || return 1
 }
 
-@test "review partitions: leading zero line file belongs to first section" {
-  run sh -c 'printf "0\tz\n500\tb\n101\tc\n" | "$1"' sh "$PARTITIONS"
+@test "review partitions: leading zero line file joins the first section that has changed lines" {
+  run sh -c 'printf "0\ta.png\n500\tb.md\n200\tc.md\n" | "$1"' sh "$PARTITIONS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *$'区画 1/3（0 行）\n- z（0 行）\n区画 2/3（500 行）'* ]] || return 1
+  [ "$output" = $'合計: 700 行\n区画: 2\n区画 1/2（500 行）\n- a.png（0 行）\n- b.md（500 行）\n区画 2/2（200 行）\n- c.md（200 行）' ] || return 1
+}
+
+@test "review partitions: leading zero line files never create an empty section" {
+  run sh -c 'printf "0\tx\n0\ty\n500\ta\n100\tb\n100\tc\n" | "$1"' sh "$PARTITIONS"
+  [ "$status" -eq 0 ]
+  [ "$output" = $'合計: 700 行\n区画: 2\n区画 1/2（500 行）\n- x（0 行）\n- y（0 行）\n- a（500 行）\n区画 2/2（200 行）\n- b（100 行）\n- c（100 行）' ] || return 1
 }
 
 @test "review partitions: empty input succeeds" {
