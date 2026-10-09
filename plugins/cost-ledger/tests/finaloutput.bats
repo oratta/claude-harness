@@ -303,6 +303,29 @@ assert sum(r["output_tokens"] for r in rows) == 251
 PY
 }
 
+@test "finaloutput: final lines arriving in two separate ledger-syncs add up to [8,92,151]" {
+  # 控えの足し込み（cost_ledger.py の out = out + excluded.out）を検査する。u2=100、u3=251 を別々の同期で足す。
+  # 足し込みが上書き（out = excluded.out）に壊れると、3 回目の差分が [8,92,151] でなく [8,92,159] になる
+  fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none | cl_write_log a
+  export COST_LEDGER_PATH="$LEDGER"
+  run python3 "$CL" ledger-sync --quiet
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  {
+    fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none
+    fo_row r1 u2 2026-09-01T00:00:02.000Z 100 tool_use
+  } | cl_write_log a
+  run python3 "$CL" ledger-sync --quiet
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  write_two_finals
+  run python3 "$CL" ledger-sync --quiet
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+assert [r["output_tokens"] for r in rows] == [8, 92, 151], rows
+PY
+}
+
 @test "finaloutput: a null or missing stop_reason on a larger line with Bash is not a final line" {
   {
     fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none
