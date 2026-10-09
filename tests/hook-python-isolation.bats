@@ -3,7 +3,7 @@
 #
 # 何を固定するか:
 #   1. hooks.json に登録されたスクリプト（と、そこから呼ばれる usage-probe.sh）の python3 が、
-#      -I（隔離モード）か、隣のモジュールを読む 3 本だけ -E -s で起動される。
+#      -I（隔離モード）か、隣のモジュールを読む 2 本だけ -E -s で起動される。
 #   2. 作業ディレクトリと PYTHONPATH に置いた偽の json.py・re.py・usage_view.py を hook の python3 が読まない。
 #   3. CLAUDE_PLUGIN_ROOT が空のとき、ファイルシステムのルート直下（/scripts/…・/templates/…）を
 #      探しも実行もしない。
@@ -57,15 +57,14 @@ no_root_level_path() {
   fi
 }
 
-@test "#847: python3 in hook scripts starts with -I (or -E -s for the three that import a sibling module)" {
+@test "#847: python3 in hook scripts starts with -I (or -E -s for the two that import a sibling module)" {
   run python3 -I - "$REPO_ROOT" <<'PY'
 import glob, json, os, re, sys
 root = sys.argv[1]
 # 隣の .py を直接実行し、同じディレクトリのモジュールを import する。-I はそのディレクトリを検索パスから外す
-SIBLING = {"plugins/cost-ledger/scripts/backfill.sh", "plugins/cost-ledger/scripts/gate-report.sh",
-           "plugins/cost-ledger/scripts/ledger-hook.sh"}
-# マージ待ちの別の PR が同じファイルを変えているので、この検査の対象から外す（その PR のマージ後に直す）
-PENDING = {"plugins/dev-workflow/scripts/team-mode-warning.sh",   # PR #897 が python3 を外す
+SIBLING = {"plugins/cost-ledger/scripts/backfill.sh", "plugins/cost-ledger/scripts/gate-report.sh"}
+# 別の PR と同じファイルが重なるので、この検査の対象から外す（follow-up で直す）
+PENDING = {"plugins/cost-ledger/scripts/ledger-hook.sh",          # PR #909 が変えた直後。-E -s は follow-up
            "plugins/worktree/scripts/wt-setup-guard.sh"}          # PR #298 が変更中
 targets = {"plugins/dev-workflow/scripts/usage-probe.sh"}         # session-tripwires.sh から呼ばれる
 for hj in glob.glob(os.path.join(root, "plugins/*/hooks/hooks.json")):
@@ -93,7 +92,7 @@ PY
 }
 
 @test "#847: -I cannot be used for the cost-ledger wrappers (the sibling module is not importable under -I)" {
-  # -E -s を選んだ理由を実物で固定する。-I で動くようになったら、3 本を -I にそろえる
+  # -E -s を選んだ理由を実物で固定する。-I で動くようになったら、2 本を -I にそろえる
   run python3 -I -c 'import runpy, sys; runpy.run_path(sys.argv[1], run_name="not_main")' \
     "${REPO_ROOT}/plugins/cost-ledger/scripts/backfill.py"
   [ "$status" -ne 0 ]
@@ -103,16 +102,37 @@ PY
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
-@test "#847: cost-ledger ledger-hook hands python3 -E -s and the script next to it" {
-  mkdir -p "${WORK}/shim"
-  printf '#!/bin/bash\nprintf "%%s\\n" "$@" > "%s"\n' "${WORK}/argv" > "${WORK}/shim/python3"
-  chmod +x "${WORK}/shim/python3"
-  run env PATH="${WORK}/shim:${PATH}" COST_LEDGER_PATH="${WORK}/ledger.jsonl" \
-    /bin/bash "${REPO_ROOT}/plugins/cost-ledger/scripts/ledger-hook.sh" </dev/null
+# cost_ledger_fake_env <コマンド…> — backfill.sh・gate-report.sh が python3 の起動まで進む最小の環境で実行する。
+# python3 は「起動された印を残して本物に引き継ぐ」shim、gh は必ず失敗する偽物（GitHub に問い合わせない）。
+cost_ledger_fake_env() {
+  local real_py; real_py="$(command -v python3)"
+  mkdir -p "${WORK}/shim" "${WORK}/home"
+  printf '#!/bin/bash\nprintf "%%s\\n" "$*" >> "%s"\nexec "%s" "$@"\n' "${WORK}/py-started" "$real_py" > "${WORK}/shim/python3"
+  printf '#!/bin/bash\nexit 1\n' > "${WORK}/shim/gh"
+  chmod +x "${WORK}/shim/python3" "${WORK}/shim/gh"
+  printf 'example/none\n' > "${WORK}/write-repos"
+  env -u CLAUDE_PLUGIN_OPTION_LEDGER_PATH PATH="${WORK}/shim:${PATH}" HOME="${WORK}/home" \
+    COST_LEDGER_PATH="${WORK}/ledger.jsonl" COST_LEDGER_WRITE_REPOS_FILE="${WORK}/write-repos" \
+    COST_LEDGER_HOOK_FOREGROUND=1 "$@"
+}
+
+@test "#847: cost-ledger backfill.sh and gate-report.sh do not load json.py from the cwd or PYTHONPATH" {
+  local cl="${REPO_ROOT}/plugins/cost-ledger/scripts"
+  # 偽の json.py が効くことの確認: -E -s を付けずに同じ .py を起動すると PYTHONPATH の偽物が読まれる
+  run in_fake python3 "${cl}/backfill.py" </dev/null
+  [ -s "$FAKE_MARKER" ] || { echo "偽の json.py が読まれない（検査が効いていない）"; return 1; }
+  rm -f "$FAKE_MARKER"
+
+  run in_fake cost_ledger_fake_env bash -c "printf '{}' | '${cl}/backfill.sh'"
   [ "$status" -eq 0 ]
-  [ "$(sed -n 1p "${WORK}/argv")" = "-E" ]
-  [ "$(sed -n 2p "${WORK}/argv")" = "-s" ]
-  [ "$(sed -n 3p "${WORK}/argv")" = "${REPO_ROOT}/plugins/cost-ledger/scripts/cost_ledger.py" ]
+  grep -q -- "-E -s ${cl}/backfill.py" "${WORK}/py-started" || { echo "backfill.py が起動されていない"; return 1; }
+  [ ! -e "$FAKE_MARKER" ] || { cat "$FAKE_MARKER"; return 1; }
+
+  run in_fake cost_ledger_fake_env bash -c \
+    "printf '%s' '{\"tool_input\":{\"command\":\"gh pr comment 1 --body x\"}}' | '${cl}/gate-report.sh'"
+  [ "$status" -eq 0 ]
+  grep -q -- "-E -s ${cl}/gate_report.py" "${WORK}/py-started" || { echo "gate_report.py が起動されていない"; return 1; }
+  [ ! -e "$FAKE_MARKER" ] || { cat "$FAKE_MARKER"; return 1; }
 }
 
 @test "#847: subagent-start-context does not load json.py / re.py / usage_view.py from the cwd or PYTHONPATH" {
