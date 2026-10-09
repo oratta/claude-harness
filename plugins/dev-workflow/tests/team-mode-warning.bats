@@ -4,7 +4,7 @@
 # spec: openspec/changes/team-mode-warning（archive 後は openspec/specs/dev-workflow-role-agent-types）
 
 setup() {
-  REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../../.." && pwd)"
   SCRIPT="${REPO_ROOT}/plugins/dev-workflow/scripts/team-mode-warning.sh"
   HOOKS="${REPO_ROOT}/plugins/dev-workflow/hooks/hooks.json"
   unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
