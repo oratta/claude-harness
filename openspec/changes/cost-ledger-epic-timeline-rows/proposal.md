@@ -17,7 +17,8 @@ cost-ledger の hook（`gate_report.py`）がエピックのコメントに積�
 なし
 
 ### Modified Capabilities
-- `cost-ledger-timeline`: 「数字と書式は `timeline` サブコマンドから取る」（子 issue を持つ issue に積む行は区間だけ、という記述を、子孫込みに変える。`--child-issue`・`--child-pr` を足す）、「`gh` の呼び出し回数」（子を持つ issue の回数を足す）。子 issue 込みの行を積む新しい要件を足す
+- `cost-ledger-timeline`: 「数字と書式は `timeline` サブコマンドから取る」（子 issue を持つ issue に積む行は区間だけ、という記述を、子孫込みに変える。`--child-issue`・`--child-pr` を足す）、「`gh` の呼び出し回数」（子を持つ issue の回数を足す）。子 issue 込みの行を積む新しい要件を足す。「`issue クローズ` では、閉じた PR を合わせた合計の行を積む」は、子 issue を持つ issue を例外にする（クローズ以外でも問い合わせる・合計の行は件数だけの書式）
+- `cost-ledger-cost-command`: 「子 issue を持つ issue では、子 issue ごとの内訳と合計を返す」の守備範囲の「hook の行は子 issue を含まない」を、今回の動作（含む。失敗した回だけ区間のみ）に直す
 
 ## Impact
 

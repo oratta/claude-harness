@@ -25,7 +25,7 @@
 
 ## 5. 仕様・文書・記録
 
-- [ ] 5.1 `openspec/specs/cost-ledger-timeline/spec.md` へ、この change の差分を反映する（archive 時に自動）。触る範囲: openspec/specs/cost-ledger-timeline/spec.md:347-404、openspec/specs/cost-ledger-timeline/spec.md:444-475
+- [ ] 5.1 `openspec/specs/cost-ledger-timeline/spec.md`（「数字と書式は `timeline` サブコマンドから取る」「`gh` の呼び出し回数」「`issue クローズ` では、閉じた PR を合わせた合計の行を積む」の改定と、新要件の追加）と `openspec/specs/cost-ledger-cost-command/spec.md`（「子 issue を持つ issue では、子 issue ごとの内訳と合計を返す」の守備範囲）へ、この change の差分を反映する（archive 時に自動）。触る範囲: openspec/specs/cost-ledger-timeline/spec.md:347-404、openspec/specs/cost-ledger-timeline/spec.md:444-475、openspec/specs/cost-ledger-timeline/spec.md:477-570、openspec/specs/cost-ledger-cost-command/spec.md:222
 - [ ] 5.2 README に hook の説明（子を持つ issue の行・`gh` の回数）があれば直す。触る範囲: plugins/cost-ledger/README.md（該当箇所を検索。常時注入の対象ではない）
 - [ ] 5.3 変更の記録 `plugins/cost-ledger/changes/745.md` を、既存の `690.md` の形に合わせて書く（何が変わるか・`gh` の回数・反映に `/reload-plugins` が要らないこと・仕様とテストの場所）。触る範囲: plugins/cost-ledger/changes/745.md（新規）
 
