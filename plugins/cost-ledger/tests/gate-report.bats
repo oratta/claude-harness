@@ -1834,8 +1834,9 @@ PY
 import os, sys
 sys.path.insert(0, sys.argv[1])
 import gate_report
-fails, folder_opens, dir_fds = [0], [0], []
+fails, folder_opens, dir_fds, sleeps = [0], [0], [], []
 real_open = os.open
+gate_report.time.sleep = sleeps.append  # 待たずに、渡された間隔だけを記録する
 def spy_open(path, flags, mode=0o777, *, dir_fd=None):
     if dir_fd is None and flags & os.O_DIRECTORY:
         folder_opens[0] += 1
@@ -1850,6 +1851,8 @@ fd = gate_report.lock("a/b", 1)
 assert isinstance(fd, int), fd
 assert fails[0] == 4 and folder_opens[0] == 1, (fails, folder_opens)
 assert len(dir_fds) == 5 and len(set(dir_fds)) == 1, dir_fds
+# 再試行の間隔は 20 ms。失敗した 4 回のあとに 1 回ずつ空ける
+assert sleeps == [0.02] * 4, sleeps
 # 取った fd は、置き場にあるロックファイルそのもの
 folder = os.path.join(os.environ["TMPDIR"], "cost-ledger-timeline")
 names = os.listdir(folder)
@@ -1864,8 +1867,9 @@ PY3
 import os, sys
 sys.path.insert(0, sys.argv[1])
 import gate_report
-n, folder_opens = [0], [0]
+n, folder_opens, sleeps = [0], [0], []
 real_open = os.open
+gate_report.time.sleep = sleeps.append  # 待たずに、渡された間隔だけを記録する
 def spy_open(path, flags, mode=0o777, *, dir_fd=None):
     if dir_fd is None and flags & os.O_DIRECTORY:
         folder_opens[0] += 1
@@ -1876,28 +1880,38 @@ def spy_open(path, flags, mode=0o777, *, dir_fd=None):
 os.open = spy_open
 assert gate_report.lock("a/b", 1) is None
 assert n[0] == 5 and folder_opens[0] == 1, (n, folder_opens)
+# 5 回目の失敗のあとは空けずに諦める（間隔は 20 ms を 4 回）
+assert sleeps == [0.02] * 4, sleeps
 PY4
   [ "$status" -eq 0 ]
 }
 
 @test "timeline-hook: lock returns None and locks no other directory when the lock directory is removed after it was opened" {  # fd で開いた後に置き場が消えたら、置き場を作り直して別の inode をロックすることはせず、None を返す（先にロックを取った側と同時に読み書きに入らない）
   run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY5'
-import os, sys, shutil
+import os, sys
 sys.path.insert(0, sys.argv[1])
 import gate_report
 folder = os.path.join(os.environ["TMPDIR"], "cost-ledger-timeline")
 real_open = os.open
-state, folder_opens = [0], [0]
+state, folder_opens, sleeps = [0], [0], []
+gate_report.time.sleep = sleeps.append  # 待たずに、渡された間隔だけを記録する
+def remove_folder():
+    # shutil.rmtree は使わない: 内部で os.open を呼び、そのフラグ（O_DIRECTORY の有無）は Python の版で
+    # 変わるので、下の folder_opens の数え方が版に依存する。os.open を通らない呼び出しだけで消す
+    for name in os.listdir(folder):
+        os.unlink(os.path.join(folder, name))
+    os.rmdir(folder)
 def spy_open(path, flags, mode=0o777, *, dir_fd=None):
     if dir_fd is None and flags & os.O_DIRECTORY:
         folder_opens[0] += 1
     if dir_fd is not None and state[0] == 0:
         state[0] = 1
-        shutil.rmtree(folder)
+        remove_folder()
     return real_open(path, flags, mode, dir_fd=dir_fd)
 os.open = spy_open
 assert gate_report.lock("a/b", 1) is None
 assert state[0] == 1 and folder_opens[0] == 1, (state, folder_opens)
+assert sleeps == [0.02] * 4, sleeps
 assert not os.path.lexists(folder), "the lock directory was recreated"
 PY5
   [ "$status" -eq 0 ]
