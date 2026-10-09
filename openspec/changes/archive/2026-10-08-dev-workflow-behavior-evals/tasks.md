@@ -14,7 +14,7 @@
 
 ## 4. docs と設定
 
-- [x] 4.1 完全な実行コマンド・各フラグの理由・費用の見積りと実費・実行した Claude Code の版・読み方（Δ は記録のみ）の docs を書く。触る範囲: `docs/plugin-evals.md`（新規）
+- [x] 4.1 完全な実行コマンド・各フラグの理由・費用の見積りと推定額（CLI 表示の定価換算推定額）・実行した Claude Code の版・読み方（Δ は記録のみ）の docs を書く。触る範囲: `docs/plugin-evals.md`（新規）
 - [x] 4.2 `evals/results/` を `.gitignore` に追加する。触る範囲: `.gitignore`（末尾）
 - [x] 4.3 変更の記録を書く。触る範囲: `plugins/dev-workflow/changes/709.md`（新規）
 - [x] 4.4 お題の構造（件数・`prompt.md` と `graders/*.md` の有無・各 grader の `type:`）を検査する bats を追加する。触る範囲: `plugins/dev-workflow/tests/behavior-evals.bats`（新規）
