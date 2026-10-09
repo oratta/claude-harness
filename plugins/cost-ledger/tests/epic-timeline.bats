@@ -151,11 +151,11 @@ rows_of() { grep '^| ' | grep -v '^| 時刻\|^|---'; }
   printf '%s\n' "$output" | rows_of | grep -F '合計（' | grep -qF '| $7.00 ' || { echo "$output"; return 1; }
 }
 
-@test "epic-timeline: an interval row on a child's PR branch is counted once" {  # r8 は #12 の区間かつ feat/a の行。PR 外には入らず、合計は $8.00（$9.00 ではない）
+@test "epic-timeline: an interval row on a child's PR branch is counted once" {  # r8 は #12 の区間かつ feat/a の行。feat/b は渡さないので r7 は入らず、合計は $7.00（二重に数えると $8.00）
   logs
   run timeline --child-issue 11 --child-issue 12 --child-pr 300:feat/a --trigger "issue コメント"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  printf '%s\n' "$output" | rows_of | grep -qF '| $8.00 ' || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | rows_of | grep -qF '| $7.00 ' || { echo "$output"; return 1; }
 }
 
 @test "epic-timeline: without --child-issue the cumulative is the interval total only" {  # --child-pr だけでは何も変わらない。区間 $1.00
