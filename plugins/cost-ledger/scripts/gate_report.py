@@ -502,6 +502,8 @@ def trigger_targets(args, env, gh_repo=None):
     for v in expand(positional, env) or []:
         m = URL_RE.fullmatch(v)
         if m:
+            if not valid_parts(m.group(1, 2)):
+                continue  # URL の owner / repo が . か ..。-R と同じく解決できなかった対象として飛ばす
             out.append((args[0], m.group(1) + "/" + m.group(2), int(m.group(3)), name, None))
         elif NUMBER_RE.fullmatch(v):
             out.extend((args[0], r, int(v), name, None) for r in repos)
