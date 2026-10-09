@@ -175,6 +175,7 @@ PY
   run python3 "$CL" ledger-sync --quiet
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   cmp "$LEDGER" "$BATS_TEST_TMPDIR/direct.txt"
+  [ "$(grep -c '"output_tokens": 243' "$LEDGER")" = "1" ]
 }
 
 @test "finaloutput: sync split between the head line and the final line gives a total of 251" {
@@ -257,4 +258,144 @@ PY
   echo '{}' | "$HOOK" & echo '{}' | "$HOOK" & wait
   [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "2" ]
   [ "$(grep -c '"request_id": "r1#u2"' "$LEDGER")" = "1" ]
+}
+
+# 先頭 8、確定行が 2 つ（100 → 251）の応答。差分は 100 - 8 = 92 と 251 - 100 = 151
+write_two_finals() {
+  {
+    fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none
+    fo_row r1 u2 2026-09-01T00:00:02.000Z 100 tool_use
+    fo_row r1 u3 2026-09-01T00:00:03.000Z 251 end_turn
+  } | cl_write_log a
+}
+
+@test "finaloutput: two final lines in one response, read directly, give [8,92,151]" {
+  write_two_finals
+  assert_py '
+assert [r["output_tokens"] for r in rows]==[8,92,151], rows
+assert sum(r["output_tokens"] for r in rows)==251'
+}
+
+@test "finaloutput: two final lines in one response within a single ledger-sync give [8,92,151]" {
+  write_two_finals
+  export COST_LEDGER_PATH="$LEDGER"
+  run python3 "$CL" ledger-sync --quiet
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+assert [r["output_tokens"] for r in rows] == [8, 92, 151], rows
+assert sum(r["output_tokens"] for r in rows) == 251
+PY
+}
+
+@test "finaloutput: two final lines arriving in a later ledger-sync give a total of 251" {
+  fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none | cl_write_log a
+  export COST_LEDGER_PATH="$LEDGER"
+  python3 "$CL" ledger-sync --quiet
+  write_two_finals
+  python3 "$CL" ledger-sync --quiet
+  python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+assert [r["output_tokens"] for r in rows] == [8, 92, 151], rows
+assert sum(r["output_tokens"] for r in rows) == 251
+PY
+}
+
+@test "finaloutput: a null or missing stop_reason on a larger line with Bash is not a final line" {
+  {
+    fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none
+    fo_row r1 u2 2026-09-01T00:00:02.000Z 251 none "echo hi"
+    fo_row r1 u3 2026-09-01T00:00:03.000Z 252 none "echo hi" | sed 's/"stop_reason":null,//'
+  } | cl_write_log a
+  assert_py '
+assert sum(r["output_tokens"] for r in rows)==8, rows'
+}
+
+@test "finaloutput: a numeric stop_reason on a larger line with Bash is not a final line" {
+  {
+    fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none
+    fo_row r1 u2 2026-09-01T00:00:02.000Z 251 none "echo hi" | sed 's/"stop_reason":null/"stop_reason":7/'
+  } | cl_write_log a
+  grep -q '"stop_reason":7' "$CONFIG_DIR/projects/a/a.jsonl"
+  assert_py '
+assert sum(r["output_tokens"] for r in rows)==8, rows'
+}
+
+@test "finaloutput: --rescan adds the difference to a legacy ledger row that has no uuid field" {
+  write_two a
+  legacy_ledger
+  python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+for r in rows:
+    r.pop("uuid", None)
+open(sys.argv[1], "w").write("".join(json.dumps(r) + "\n" for r in rows))
+PY
+  ! grep -q '"uuid"' "$LEDGER" || return 1
+  export COST_LEDGER_PATH="$LEDGER"
+  run python3 "$CL" ledger-sync --rescan --quiet
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+assert [r["output_tokens"] for r in rows] == [8, 243], rows
+PY
+}
+
+@test "finaloutput: replacing the ledger with a shorter one and --rescan rebuilds the counted output" {
+  write_two a
+  export COST_LEDGER_PATH="$LEDGER"
+  python3 "$CL" ledger-sync --quiet
+  [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "2" ]
+  # 台帳を先頭の行だけの短いものに差し替える（控えの covered より小さい）。
+  # 数えた出力 251 が残っていると差分が 0 になり、追記されない
+  head -n 1 "$LEDGER" > "$BATS_TEST_TMPDIR/short.jsonl"
+  /bin/cp -f "$BATS_TEST_TMPDIR/short.jsonl" "$LEDGER"
+  run python3 "$CL" ledger-sync --rescan --quiet
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+assert [r["output_tokens"] for r in rows] == [8, 243], rows
+PY
+}
+
+@test "finaloutput: a plain ledger-sync does not reopen a log it has already read to the end" {
+  write_two a
+  export COST_LEDGER_PATH="$LEDGER"
+  python3 "$CL" ledger-sync --quiet
+  [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "2" ]
+  # 控えだけを「差分をまだ数えていない」状態に戻す（台帳は触らない）。
+  # 読み終えたログを開き直せば、差分の行が台帳に追記される
+  python3 - "$LEDGER.state.sqlite" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("DELETE FROM ids WHERE id = 'r1#u2'")
+db.execute("UPDATE counted SET out = 8 WHERE id = 'r1'")
+db.commit()
+PY
+  cp "$LEDGER" "$BATS_TEST_TMPDIR/before.jsonl"
+  python3 "$CL" ledger-sync --quiet
+  [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "2" ]
+  cmp "$LEDGER" "$BATS_TEST_TMPDIR/before.jsonl"
+}
+
+@test "finaloutput: a state file rebuilt from a ledger holding supplements adds a later final line once (49)" {
+  write_two a
+  export COST_LEDGER_PATH="$LEDGER"
+  python3 "$CL" ledger-sync --quiet
+  rm -f "$LEDGER.state.sqlite"*
+  {
+    fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none
+    fo_row r1 u2 2026-09-01T00:00:02.000Z 251 tool_use
+    fo_row r1 u3 2026-09-01T00:00:03.000Z 300 end_turn
+  } | cl_write_log a
+  python3 "$CL" ledger-sync --quiet
+  python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+assert [r["output_tokens"] for r in rows] == [8, 243, 49], rows
+PY
 }
