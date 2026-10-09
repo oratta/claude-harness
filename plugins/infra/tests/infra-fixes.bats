@@ -141,7 +141,7 @@ check_third_party_pins() {
   local lister="$PLUGIN_DIR/tests/list-uses.rb"
   local total=0
   local unpinned=""
-  local file start_line end_line comment value body listed
+  local file start_line end_line comment body value listed
   local found find_rc
 
   # find の出力は一時ファイルに落として終了コードを拾う。プロセス置換 `< <(find ...)` だと
@@ -149,7 +149,10 @@ check_third_party_pins() {
   # 合格する fail-open だった（#240）。列挙が不完全なら違反の有無を判定できないので fail させる。
   found="$(mktemp "${BATS_TEST_TMPDIR:-${TMPDIR:-/tmp}}/found.XXXXXX")" || return 3
   : "${found:?}"
-  find "$dir" \( -type f -o -type l \) -name '*.yml.template' -print0 > "$found" 2> "$found.err"
+  # シンボリックリンクは名前を問わず列挙する（#900）。find は既定でリンク先のディレクトリに降りないので、
+  # `-name '*.yml.template'` をリンクにも掛けると、ディレクトリへのリンク（名前が *.yml.template でない）は
+  # 列挙されず、その下の違反テンプレートが一度も読まれないまま合格していた。リンクは下のループで違反に数える。
+  find "$dir" \( -type l -o \( -type f -name '*.yml.template' \) \) -print0 > "$found" 2> "$found.err"
   find_rc=$?
   if [ "$find_rc" -ne 0 ]; then
     printf 'find failed (exit %s) while listing %s:\n' "$find_rc" "$dir" >&2
@@ -169,6 +172,7 @@ check_third_party_pins() {
     # シンボリックリンクは追跡先を検査せず、リンク自体を違反として報告する（#240）。
     # git はシンボリックリンクを追跡できるので、`-type f` だけだと違反入りの外部 yml への
     # リンクを commit するだけで検査を丸ごと迂回できる。リンク先が壊れていても同じ。
+    # ディレクトリへのリンクも、名前が *.yml.template でないリンクも同じ扱い（#900）。
     if [ -L "$file" ]; then
       total=$((total + 1))
       unpinned="${unpinned}${file}: symbolic link is not allowed as a template"$'\n'
@@ -523,7 +527,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   [[ "$output" == *"secret.yml.template"* ]] || return 1
 }
 
-@test "S16a-23: an unreadable subdirectory fails the scan instead of passing on the listed files" {
+@test "S16a-25: an unreadable subdirectory fails the scan instead of passing on the listed files" {
   # find が Permission denied で非 0 終了しても、列挙できたファイルだけで合格していた（#240）。
   [ "$(id -u)" -eq 0 ] && skip "root には chmod 000 が効かない"
   local dir="$BATS_TEST_TMPDIR/unreadable-sub"
@@ -541,7 +545,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   [[ "$output" == *"find failed"* ]] || return 1
 }
 
-@test "S16a-24: a symbolic link template is reported as a violation" {
+@test "S16a-26: a symbolic link template is reported as a violation" {
   # `-type f` だけの走査は、違反入りの外部 yml へのシンボリックリンクを素通りさせていた（#240）。
   local dir="$BATS_TEST_TMPDIR/symlink"
   rm -rf "$dir" "$BATS_TEST_TMPDIR/outside.yml"
@@ -563,6 +567,62 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   run check_third_party_pins "$dir"
   [ "$status" -eq 1 ]
   [[ "$output" == *"dangling.yml.template"* ]] || return 1
+}
+
+@test "S16a-27: a template under a symbolic link to a directory is not skipped" {
+  # find は既定でシンボリックリンクのディレクトリに降りない。リンクの名前が *.yml.template で
+  # ないと列挙もされず、その下の違反テンプレートが未走査のまま合格していた（#900）。
+  local dir="$BATS_TEST_TMPDIR/symlink-dir"
+  local outside="$BATS_TEST_TMPDIR/outside-dir"
+  rm -rf "$dir" "$outside"
+  mkdir -p "$dir" "$outside"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$outside/bad.yml.template"
+  ln -s "$outside" "$dir/linked"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/linked: symbolic link"* ]] || return 1
+}
+
+@test "S16a-28: every symbolic link in the scanned directory is a violation whatever its name or target" {
+  # S16a-26 は名前が *.yml.template のリンク、S16a-27 は名前が違うディレクトリへのリンクを見る。
+  # 残りの 3 通り（名前が違うファイルへのリンク・名前が違うリンク切れ・名前が *.yml.template の
+  # ディレクトリへのリンク）をここで見る。名前で絞った find に戻すと最初の 2 つが落ちる（#900）。
+  local dir="$BATS_TEST_TMPDIR/symlink-names"
+  local outside="$BATS_TEST_TMPDIR/outside-dir28"
+  rm -rf "$dir" "$outside" "$BATS_TEST_TMPDIR/outside.yml"
+  mkdir -p "$dir" "$outside"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$BATS_TEST_TMPDIR/outside.yml"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$outside/bad.yml.template"
+
+  # 名前が *.yml.template でない、ファイルへのリンク
+  ln -s "$BATS_TEST_TMPDIR/outside.yml" "$dir/link.txt"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/link.txt: symbolic link"* ]] || return 1
+  rm -f "$dir/link.txt"
+
+  # 名前が *.yml.template でない、リンク切れ
+  ln -s "$BATS_TEST_TMPDIR/does-not-exist" "$dir/dangling"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/dangling: symbolic link"* ]] || return 1
+  rm -f "$dir/dangling"
+
+  # 名前が *.yml.template の、ディレクトリへのリンク
+  ln -s "$outside" "$dir/dir.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/dir.yml.template: symbolic link"* ]] || return 1
 }
 
 @test "S16a-21: a 'uses' in the second YAML document of a template is still checked" {
