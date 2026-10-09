@@ -16,12 +16,15 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
    ```bash
    plugin_root="${CLAUDE_PLUGIN_ROOT}"
+   CAST_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; CAST_NG=1; fi
    for dir in \
      "${plugin_root:+$plugin_root/templates}" \
      ~/.claude/plugins/marketplaces/*/plugins/casting/templates \
      ~/.claude/plugins/installed/*/casting/templates; do
      [ -n "$dir" ] && [ -f "$dir/project.md" ] && echo "$dir" && break
    done
+   if [ -n "$CAST_NG" ]; then unsetopt nullglob; fi
+   unset CAST_NG
    ```
 
 3. 下の生成スクリプトを `<repoルート>` `<templatesディレクトリ>` の2引数で実行する。
