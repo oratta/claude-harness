@@ -52,6 +52,7 @@ esac
 # 本体を fd 3 のヒアドキュメントに付けて /dev/fd/3 として python3 に読ませる形は使わない: Python 3.9（macOS 標準の
 # /usr/bin/python3 など）は複数行の本体を実行せず rc=0・無出力で終わり、hook が何もしないまま通す（#869）。
 # -I（隔離モード）で起動し、PYTHON* の環境変数・ユーザー site・カレントディレクトリを検索パスに使わない。
+PY_SRC=""
 IFS= read -r -d '' PY_SRC <<'PY' || true
 import json, os, sys, time
 

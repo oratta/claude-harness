@@ -172,3 +172,20 @@ body_less_copy() {
     [ -z "$output" ] || { echo "$mode: output=$output"; return 1; }
   done
 }
+
+@test "#869: the four judging hooks report an empty or unreadable body on stderr and exit 1 without a verdict" {
+  local h mode copy rc
+  for h in git-destructive-guard agent-model-guard context-tripwire subagent-stop-guard; do
+    for mode in empty unreadable; do
+      copy="$(body_less_copy "$h" "$mode")"
+      rc=0
+      payload_for "$h" | /bin/bash "$copy" >|"${WORK}/stdout" 2>|"${WORK}/stderr" || rc=$?
+      [ "$rc" -eq 1 ] || { echo "$h $mode: exit=$rc"; return 1; }
+      [ ! -s "${WORK}/stdout" ] || { echo "$h $mode: stdout is not empty"; return 1; }
+      grep -q "^${h}: 判定の本体を読めなかったため、判定していない\$" "${WORK}/stderr" \
+        || { echo "$h $mode: message missing"; cat "${WORK}/stderr"; return 1; }
+      grep -q 'unbound variable' "${WORK}/stderr" && { echo "$h $mode: unbound variable"; return 1; }
+    done
+  done
+  return 0
+}
