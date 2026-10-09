@@ -3,7 +3,7 @@
 ### Requirement: issue による帰属（第 2 の鍵）
 issue 番号はリポジトリ内でしか一意でないため、システムは第 2 の帰属の鍵を **（リポジトリ識別子, issue 番号）の組** と SHALL する。issue 番号だけを鍵にしてはなら MUST NOT ない。
 
-issue 番号は各行の `Bash` ツールの `command` から、`gh issue view`・`gh issue comment`・`gh issue edit`・`gh issue close`・`gh issue reopen`・`gh issue develop` に渡された番号と、コマンドの位置（行頭、または `;` `&&` `||` `|` `(` の直後。前に `VAR=値` の代入が付く形も可）にある `gh api` の endpoint（`-X`・`--method` とその値を除いた最初の語）が `repos/<owner>/<repo>/issues/<番号>` で始まるときのその番号として拾 SHALL う。`gh api` の endpoint は、番号の直後が英数字・`_` でないとき（`issues/42/comments`・`issues/42?per_page=1`・行末は読み、`issues/42abc` は読まない）だけ拾い、完全な URL・`gh api graphql`・`issues/comments/<id>`・フィールドや `--input` の値の中の文字列は読まなくてよい（コマンドの位置以外の `gh api`（`xargs gh api ...`・`time gh api ...`・`if gh api ...; then` など）も読まなくてよい。読み落としは許し、その区間はその issue に寄らないだけにして、別の issue へ誤って寄せる方向を避ける）。読み落としの穴を塞ぎ切ることは、この要件の完了条件にしない。`gh issue` の 5 つのサブコマンド（`reopen` 以外）は設計の根拠になった計測（測り方と数字は archive 済みの change `cost-ledger-aggregation` の design に記録。計測スクリプトは change `cost-ledger-gate-report` で削除した）と一致させ、`reopen` と `gh api` は change `cost-ledger-issue-reopen-key` で足した。走査する場所は**実行されたコマンド**に限 SHALL る。その計測はツール呼び出しの入力全体を文字列にして当てていたため、サブエージェントへの指示文やファイル編集の中身に書かれた `gh issue view <番号>` という文字列にも反応した。実行していないコマンドの文字列を根拠に帰属させてはなら MUST NOT ない。ただし例外として、引用符の中の `;` `&` `|` `(` の直後に `gh api repos/<owner>/<repo>/issues/<番号>` が続く文字列（`-f body="x; gh api repos/a/b/issues/99"`）は、正規表現では引用符の内外を区別できないため拾ってよい（まれな形で、塞ぐには引用符を読む解析器が要り範囲外。子 issue #879 で扱う）。
+issue 番号は各行の `Bash` ツールの `command` から、`gh issue view`・`gh issue comment`・`gh issue edit`・`gh issue close`・`gh issue reopen`・`gh issue develop` に渡された番号と、コマンドの位置（行頭、または `;` `&&` `||` `|` `(` の直後。前に `VAR=値` の代入が付く形も可。ただし、直前の行がバックスラッシュで終わる行継続の行頭と、直前がバックスラッシュの区切り（`\;` `\|` など、エスケープされて文字として `echo` などに渡るもの）はコマンドの位置としない）にある `gh api` の endpoint（`-X`・`--method` とその値を除いた最初の語。`gh api` と endpoint の間、`-X`・`--method` とその値の前後は同じ行の空白だけでつながっているものに限り、改行をまたいだ次の行の語は endpoint として読まない）が `repos/<owner>/<repo>/issues/<番号>` で始まるときのその番号として拾 SHALL う。`gh api` の endpoint は、番号の直後が英数字・`_` でないとき（`issues/42/comments`・`issues/42?per_page=1`・行末は読み、`issues/42abc` は読まない）だけ拾い、完全な URL・`gh api graphql`・`issues/comments/<id>`・フィールドや `--input` の値の中の文字列は読まなくてよい（コマンドの位置以外の `gh api`（`xargs gh api ...`・`time gh api ...`・`if gh api ...; then` など）、バックスラッシュの行継続で endpoint を次の行に書いた `gh api`、エスケープしたバックスラッシュの直後の区切り（`echo x\\; gh api ...` の `;` は本当の区切りだが、直前がバックスラッシュなので位置としない）の後ろの `gh api` も読まなくてよい。読み落としは許し、その区間はその issue に寄らないだけにして、別の issue へ誤って寄せる方向を避ける）。読み落としの穴を塞ぎ切ることは、この要件の完了条件にしない。`gh issue` の 5 つのサブコマンド（`reopen` 以外）は設計の根拠になった計測（測り方と数字は archive 済みの change `cost-ledger-aggregation` の design に記録。計測スクリプトは change `cost-ledger-gate-report` で削除した）と一致させ、`reopen` と `gh api` は change `cost-ledger-issue-reopen-key` で足した。走査する場所は**実行されたコマンド**に限 SHALL る。その計測はツール呼び出しの入力全体を文字列にして当てていたため、サブエージェントへの指示文やファイル編集の中身に書かれた `gh issue view <番号>` という文字列にも反応した。実行していないコマンドの文字列を根拠に帰属させてはなら MUST NOT ない。ただし例外として、引用符の中の `;` `&` `|` `(` の直後に `gh api repos/<owner>/<repo>/issues/<番号>` が続く文字列（`-f body="x; gh api repos/a/b/issues/99"`）は、正規表現では引用符の内外を区別できないため拾ってよい（まれな形で、塞ぐには引用符を読む解析器が要り範囲外。子 issue #879 で扱う）。同じく例外として、シェルのコメント（行の途中の、語の先頭の `#` より後ろ）の中の `;` `&` `|` `(` の直後に `gh api repos/<owner>/<repo>/issues/<番号>` が続く文字列（`echo ok #; gh api repos/a/b/issues/99`）も拾ってよい。Python の正規表現の後読みは固定長で、同じ行のそれより前にコメントの `#` があるかを見られず、行頭から読ませる形にすると同じ行の 2 つ目以降のコマンド（`gh issue view 5; gh api repos/a/b/issues/6` の 6）を読み落とす。`#` が引用符の中か外かも正規表現では区別できないので、塞ぐには行を読む解析器が要り範囲外。
 
 過去に台帳へ書いた行は書き換え MUST NOT ない。台帳には導いた帰属ではなく事実（触った issue 番号の列）が書かれており、`reopen` と `gh api` を拾う前に書かれた行にはその番号が入っていないが、そのままにして、新しく書く行から拾う。
 
@@ -38,6 +38,18 @@ issue 番号は各行の `Bash` ツールの `command` から、`gh issue view`�
 #### Scenario: 引用符の中の区切りの直後の gh api は例外として拾う
 - **WHEN** セッション中に `gh api -X POST repos/acme/app/issues/42/comments -f body="x; gh api repos/acme/app/issues/99"` だけが実行されている
 - **THEN** 現状は issue 42 と 99 の両方が拾われ、最後の 99 に帰属する（既知の例外。子 issue #879 で扱う）
+
+#### Scenario: シェルのコメントの中の区切りの直後の gh api は例外として拾う
+- **WHEN** セッション中に `echo ok #; gh api repos/acme/app/issues/99` だけが実行されている
+- **THEN** 現状は issue 99 が拾われ、99 に帰属する（既知の例外。同じ行のそれより前の `#` は正規表現から見えない）
+
+#### Scenario: エスケープした区切りと行継続の後ろの gh api は鍵にならない
+- **WHEN** セッション中に `echo x\; gh api repos/acme/app/issues/99`、`echo x\| gh api repos/acme/app/issues/99`、または行末のバックスラッシュで次の行に続けた `echo x \` と `gh api repos/acme/app/issues/99` の 2 行だけが実行されている
+- **THEN** その区間はどの issue にも帰属しない
+
+#### Scenario: gh api は次の行の語を endpoint として読まない
+- **WHEN** セッション中に、`gh api` または `gh api -X POST` で終わる行と、その次の行の `repos/acme/app/issues/42` だけが実行されている
+- **THEN** その区間はどの issue にも帰属しない
 
 #### Scenario: コマンドの位置にある gh api は鍵になる
 - **WHEN** セッション中に `cd x && gh api repos/acme/app/issues/42`、行頭の `GH_TOKEN=x gh api repos/acme/app/issues/42` のいずれかだけが実行されている
