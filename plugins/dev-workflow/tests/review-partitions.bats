@@ -41,6 +41,12 @@ setup() {
   [ "$output" = $'合計: 700 行\n区画: 2\n区画 1/2（500 行）\n- x（0 行）\n- y（0 行）\n- a（500 行）\n区画 2/2（200 行）\n- b（100 行）\n- c（100 行）' ] || return 1
 }
 
+@test "review partitions: leading zero line file before small files keeps every file in the output" {
+  run sh -c 'printf "0\tz\n100\ta\n300\tb\n300\tc\n" | "$1"' sh "$PARTITIONS"
+  [ "$status" -eq 0 ]
+  [ "$output" = $'合計: 700 行\n区画: 2\n区画 1/2（400 行）\n- z（0 行）\n- a（100 行）\n- b（300 行）\n区画 2/2（300 行）\n- c（300 行）' ] || return 1
+}
+
 @test "review partitions: empty input succeeds" {
   run sh -c '"$1" </dev/null' sh "$PARTITIONS"
   [ "$status" -eq 0 ]
