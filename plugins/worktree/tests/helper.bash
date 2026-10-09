@@ -111,5 +111,6 @@ wt_require_process_listing() {
 
 # Extract only the YAML frontmatter (between the first two `---` lines).
 wt_frontmatter() {
+  [ -n "${1:-}" ] || return 1  # 空引数だと awk が標準入力を読んでしまう
   awk 'NR==1 && $0=="---"{infm=1; next} infm && $0=="---"{exit} infm{print}' "$1"
 }
