@@ -11,6 +11,7 @@ setup() {
 }
 
 @test "value 1 puts the warning in both systemMessage and additionalContext" {
+  # 同じ固定文を 2 か所に書いているので、片方だけ直した取りこぼしを検出する（#905）
   CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 run "$SCRIPT"
   [ "$status" -eq 0 ]
   echo "$output" | python3 -c '
