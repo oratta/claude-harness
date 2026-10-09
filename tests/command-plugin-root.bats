@@ -19,6 +19,7 @@ setup() {
 #
 # 置換されない経路では ${CLAUDE_PLUGIN_ROOT} が空になり、直接参照の先頭候補は /skills/develop のように
 # ルート直下を指す。各ループは plugin_root="${CLAUDE_PLUGIN_ROOT}" を前に置き、空なら先頭候補を検査しない。
+# ただし cost.md だけは変数へ here-document で読み、`$` 始まり（未置換）なら空にする。
 # ルート直下には書けないので、抽出したループ本文のファイル検査 -f "$dir/ を、一時ディレクトリを
 # 接頭辞にした擬似ルートへの検査に差し替えて実行する（"/skills/develop" が擬似ルート内の同名ファイルを指す）。
 
@@ -34,14 +35,18 @@ LOOPS=(
   "plugins/worktree/commands/wt-setup.md|1|/skills/wt-setup|SKILL.md"
 )
 
-# n 番目の「for dir in」ループ（直前が plugin_root= の行ならそれも含む）を標準出力へ
+# n 番目の「for dir in」ループ（その前にルートを変数へ読む plugin_root= / PLUGIN_ROOT= があれば、
+# そこからループまでの行も含む）を標準出力へ
 extract_loop() {
   awk -v n="$2" '
     /^[[:space:]]*for dir in/ { c++ }
-    c == n && !on { on = 1; if (prev ~ /^[[:space:]]*plugin_root=/) print prev }
+    c == n && !on { on = 1; if (buf != "") print buf }
     on { print }
     on && /^[[:space:]]*done/ { exit }
-    { prev = $0 }
+    !on && /^[[:space:]]*(plugin_root|PLUGIN_ROOT)=/ { buf = $0; next }
+    !on && /^[[:space:]]*IFS= read -r PLUGIN_ROOT/ { buf = $0; next }
+    !on && buf != "" { buf = buf "\n" $0 }
+    /^[[:space:]]*done/ { buf = "" }
   ' "$REPO_ROOT/$1"
 }
 
