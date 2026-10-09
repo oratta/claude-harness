@@ -8,7 +8,7 @@ issue #947。cost-ledger の hook（`plugins/cost-ledger/scripts/gate_report.py`
 
 - 実装: `trigger_targets()` が位置引数の URL から取り出した owner / repo に `valid_parts()` を掛け、通らなければ対象として解決しない
 - `cost-ledger-timeline` の要件「対象の解決」の、owner / repo が `.` か `..` の対象を飛ばす文に、位置引数の URL を 4 つ目の経路として足す。URL が飛ばされたとき、併記した `-R` / `--repo` や前置きの `GH_REPO=値` のリポジトリには落ちないことも同じ文に書く（下の実測）
-- 同じ要件の守備範囲から、「位置引数の URL の owner / repo は見ない」の項目を外す。代わりに、この定めが 4 つの経路のどれでも見ないもの（`a/...`・`a/b..` のように `.` を連ねた名前・`.` を含むだけの名前）を、誤ったまま通ることを許す入力として書く。「許可の一覧」には正本の名前（`cost-ledger-write-allowlist`）を添える（issue #951 の指摘）
+- 同じ要件の守備範囲から、「位置引数の URL の owner / repo は見ない」の項目を外す。代わりに、この定めが 4 つの経路のどれでも見ないもの（`a/...`・`a/b..` のように `.` を連ねた名前）を、誤ったまま通ることを許す入力として書く。「許可の一覧」には正本の名前（`cost-ledger-write-allowlist`）を添える（issue #951 の指摘）
 - Scenario を 2 つ足す（どちらも `plugins/cost-ledger/tests/gate-report.bats` に足すテストが固定する）
 - `a/...`・`a/b..`・`%2e%2e`・余分なスラッシュ・`github.com` 以外のホストの URL の扱いは変えない（issue #947 の triage の範囲）
 
