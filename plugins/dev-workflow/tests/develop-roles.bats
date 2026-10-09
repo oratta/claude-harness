@@ -1065,3 +1065,32 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   # 段ごとの入力の文に直し方の判定の受領がある
   grep -F '段ごとの入力のうち' "$GATE" | grep -qF '直し方の判定の受領'
 }
+
+# TTY の無い Bash ツールでは `openspec archive <change>` が確認プロンプトで exit 1 になる（#596）。
+# develop 配下で change 名を伴う archive の実行指示は、すべて --yes を付ける。
+@test "develop: every openspec archive <change> instruction carries --yes (#596)" {
+  # 出現単位で見る（同じ行に付き・無しが並んでもすり抜けない）
+  hits="$(grep -rhoE 'openspec archive <[^>]+>( --yes)?' "${PLUGIN_DIR}/skills/develop" || true)"
+  [ -n "$hits" ] || { echo "no openspec archive instruction found"; return 1; }
+  while IFS= read -r h; do
+    case "$h" in
+      *' --yes') ;;
+      *) echo "--yes の付かない openspec archive の実行指示がある: $h" >&2; return 1 ;;
+    esac
+  done <<< "$hits"
+}
+
+# --yes は未完了タスクの確認も飛ばす（openspec 1.2.0 実測）。finish.md の手順で補う。
+@test "worker/finish.md guards archive: no archive with open tasks, verify the move (#596)" {
+  F="${ROLES}/worker/finish.md"
+  grep -qF '`--yes` は未完了タスクの確認も飛ばす' "$F" || return 1
+  grep -qF '`tasks.md` に `- [ ]` が残っていれば archive せず' "$F" || return 1
+  grep -qF '`openspec/changes/archive/` へ移り、元の `openspec/changes/<change-name>/` が無いことを確かめ' "$F" || return 1
+}
+
+# W の指示書に旧規則の「2 周キャップ」を残さない。周回は develop SKILL.md の節が正本（#752）。
+@test "worker/spec.md points to the SKILL.md round rule, not a 2-round cap (#752)" {
+  if grep -qF '2 周キャップ' "$W_SPEC"; then return 1; fi
+  grep -qF 'レビューの周を主に聞かずに続ける（直し方の判定）' "$W_SPEC" || return 1
+  grep -qxF '## レビューの周を主に聞かずに続ける（直し方の判定）' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+}
