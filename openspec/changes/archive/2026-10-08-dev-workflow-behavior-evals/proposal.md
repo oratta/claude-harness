@@ -23,4 +23,4 @@
 
 - 新規: `plugins/dev-workflow/evals/*/`、`plugins/casting/evals/*/`、`docs/` の実行手順ページ、`.gitignore` への `evals/results/`、変更の記録 `plugins/dev-workflow/changes/709.md`（既存 spec plugin-release-convention の要件）
 - 既存コードは変えない。プラグインの `description` は触らない（常時注入の予算 `tests/injection-budget.txt` に影響しない）
-- 実行には実費がかかる（上限 10 USD）
+- 実行には費用（CLI 表示の定価換算推定額）がかかる（上限 10 USD）

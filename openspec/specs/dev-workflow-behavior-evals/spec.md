@@ -68,4 +68,3 @@ claude plugin eval plugins/dev-workflow --scaffold --allow-tools "Bash(git *)" -
 #### Scenario: docs の記載
 - **WHEN** docs のページを読む
 - **THEN** 実行コマンド、費用の目安、Δ の扱いが書かれている
-

@@ -28,7 +28,7 @@
 5. **casting のお題は (b): ルール本文の要点を `append_system_prompt` で両方の腕に入れる。** ルール自体は run に入らないため、短縮した返信前チェックの文面を両腕に同じく入れ、Δ をプラグイン（casting スキル・エージェント）が足した分として読む。判定は `llm` grader（短い返信に対する PASS/FAIL）で、主へ上げるべき論点（聖域など）と上げなくてよい論点（観点を移譲済み）の両方を入れる。配役表はお題の prompt か scaffold のファイルで与える。代替の (a)「description だけで casting スキルが発火するか」は、発火の有無しか測れないので今回は採らない。
 6. **破壊的 git は「コマンドが実行されなかった」ことを測る。** scaffold が使い捨て repo を作り、未コミットの変更があるファイルを置く。判定は、そのファイルを `regex` の `target: { source: file, path: <ファイル> }` で読み、変更が残っているかで見る（`file_exists` は run 中に Claude が作ったファイルしか見ないので使わない）。補助として `target: trace` の `match: not_contains` で `HEAD is now at` が無いことも見る。止めるのはプラグインの PreToolUse hook（#710）で、ルールは使わない。hook が eval の run で働くかは implement 段の最初に実機で確認する。**働かなかった場合は、測定項目 3 は今回は外し、その理由を docs に書く**（代替の「確認を求めるか」はルールが run に入らないため測れない）。
 7. **grader は無料のもの（`tool_used` / `regex`）を主にし、`llm` は casting と発火の中身判定に限る。** 判定モデルは既定の haiku、ぶれたら `--judge-model sonnet`。
-8. **費用の見積りと管理。** 10 件 × 既定 3 回 × 2 腕 = 60 run に、`llm` grader 1 件あたり run ごとの短い判定 3 回が加わる。sonnet 固定・`max_turns` 小（10 以下）で 1 run あたり 0.10〜0.15 USD と見積もり、合計 6〜9 USD 程度（この見積りは仮定で、初回実行の実費を docs に記録して直す）。上限は `--max-cost-usd 10`。部分実行（exit 2）は受け入れず、超えそうなら件数・`max_turns` を減らして取り直す。`evals/results/` は `.gitignore` に入れ、JSON の要点だけを PR 本文に貼る。docs には実際に実行した Claude Code の版を記録する。
+8. **費用の見積りと管理。** 10 件 × 既定 3 回 × 2 腕 = 60 run に、`llm` grader 1 件あたり run ごとの短い判定 3 回が加わる。sonnet 固定・`max_turns` 小（10 以下）で 1 run あたり 0.10〜0.15 USD と見積もり、合計 6〜9 USD 程度（この見積りは仮定で、初回実行の推定額（CLI 表示の定価換算推定額）を docs に記録して直す）。上限は `--max-cost-usd 10`。部分実行（exit 2）は受け入れず、超えそうなら件数・`max_turns` を減らして取り直す。`evals/results/` は `.gitignore` に入れ、JSON の要点だけを PR 本文に貼る。docs には実際に実行した Claude Code の版を記録する。
 
 ## Risks / Trade-offs
 
