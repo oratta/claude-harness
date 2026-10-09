@@ -20,12 +20,16 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 ## ファイル特定
 
 ```bash
+plugin_root="${CLAUDE_PLUGIN_ROOT}"
+DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/develop}" \
+  "${plugin_root:+$plugin_root/skills/develop}" \
   ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/develop \
   ~/.claude/plugins/installed/*/dev-workflow/skills/develop; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
 done
+if [ -n "$DW_NG" ]; then unsetopt nullglob; fi
+unset DW_NG
 ```
 
 特定した絶対パス（`skills/develop/SKILL.md`）を Read tool で読み込み、本体として 1 ループを回す。**interactive モード**（デフォルト）で実行する。`--unmanned` は loop-dev-agent の憲法ファイル（`docs/agent-loop.md`）の Step 3 でメインが develop の本体を務めるとき専用であり、このコマンドから human が起動した場合には使わない。
@@ -51,12 +55,16 @@ done
 1. **同じプラグイン内の issueify スキルを解決する**（develop 本体の特定と同じパターン。他プラグインへは探索しない）:
 
    ```bash
+   plugin_root="${CLAUDE_PLUGIN_ROOT}"
+   DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
    for dir in \
-     "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/issueify}" \
+     "${plugin_root:+$plugin_root/skills/issueify}" \
      ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/issueify \
      ~/.claude/plugins/installed/*/dev-workflow/skills/issueify; do
      [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
    done
+   if [ -n "$DW_NG" ]; then unsetopt nullglob; fi
+   unset DW_NG
    ```
 
 2. **見つかった場合**: その `skills/issueify/SKILL.md` を Read tool で読み込み、手順（原子化 → 測定可能な受け入れ条件のドラフト → 不足だけヒアリング → 承認 → 起票）をインライン実行する。Skill tool は使わない（この command の方針と同じ）。

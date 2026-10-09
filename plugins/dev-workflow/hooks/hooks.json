@@ -6,7 +6,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-tripwires.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/session-tripwires.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/team-mode-warning.sh\""
           }
         ]
       }
@@ -16,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/prompt-tripwires-refresh.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/prompt-tripwires-refresh.sh\""
           }
         ]
       }
@@ -27,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/agent-model-guard.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/agent-model-guard.sh\""
           }
         ]
       },
@@ -36,7 +45,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/git-destructive-guard.sh\""
           }
         ]
       }
@@ -46,7 +64,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "^dev-workflow:(worker|reviewer|gate-runner)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/subagent-start-context.sh\""
           }
         ]
       }
@@ -56,7 +85,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/subagent-stop-guard.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/subagent-stop-guard.sh\""
+          }
+        ]
+      }
+    ],
+    "PreModelSwitch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/model-switch-recache-notice.sh\""
           }
         ]
       }

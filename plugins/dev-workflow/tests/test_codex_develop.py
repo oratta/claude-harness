@@ -379,14 +379,50 @@ class ForegroundRequest(unittest.TestCase):
             'five_hour_pct': None, 'five_hour_resets_epoch': None,
             'weekly_all_pct': weekly, 'weekly_resets_epoch': reset}))
 
-    def test_freshness_reset_and_weekly_window_are_fail_safe(self):
+    def test_codex_old_value_before_reset_is_a_lower_bound(self):
         now = 2_000_000
-        self.assertIsNotNone(m.usage_margin(self.snapshot(10, now=now, age=300,
-                                                        minutes=10080), now, codex=True))
-        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now, age=301,
-                                                     minutes=10080), now, codex=True))
-        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now,
-                                                      minutes=300), now, codex=True))
+        for age in (300, 301, 86400, 5 * 86400):
+            with self.subTest(age=age):
+                self.assertAlmostEqual(
+                    m.usage_margin(self.snapshot(10, now=now, age=age, minutes=10080), now),
+                    10)
+
+    def test_codex_window_past_reset_reads_as_zero_and_rolls_forward(self):
+        now = 2_000_000
+        week = 604800
+        for passed, rolled in ((0, 1), (1, 1), (week - 1, 1), (week, 2), (3 * week + 5, 4)):
+            with self.subTest(passed=passed):
+                value = {'fetched_at': now - 10, 'windows': [
+                    {'minutes': 10080, 'used_percent': 97, 'reset_at': now - passed}]}
+                reset = now - passed + rolled * week
+                expected = 100 * (1 - (reset - now) / week)
+                self.assertAlmostEqual(m.usage_margin(value, now), expected)
+
+    def test_codex_reset_beyond_seven_days_is_negative_not_missing(self):
+        now = 2_000_000
+        value = {'fetched_at': now, 'windows': [
+            {'minutes': 10080, 'used_percent': 0, 'reset_at': now + 604800 + 3600}]}
+        margin = m.usage_margin(value, now)
+        self.assertIsNotNone(margin)
+        self.assertLess(margin, 0)
+
+    def test_codex_usage_margin_stays_fail_safe_for_invalid_input(self):
+        now = 2_000_000
+        good = self.snapshot(10, now=now, minutes=10080)
+        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now, minutes=300), now))
+        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now, age=-1, minutes=10080), now))
+        self.assertIsNone(m.usage_margin({**good, 'fetched_at': '1'}, now))
+        self.assertIsNone(m.usage_margin({**good, 'windows': 'x'}, now))
+        for used in (-1, 101, float('nan'), True, None):
+            with self.subTest(used=used):
+                bad = {'fetched_at': now, 'windows': [
+                    {'minutes': 10080, 'used_percent': used, 'reset_at': now + 100}]}
+                self.assertIsNone(m.usage_margin(bad, now))
+        for reset in (None, 1.5, True):
+            with self.subTest(reset=reset):
+                bad = {'fetched_at': now, 'windows': [
+                    {'minutes': 10080, 'used_percent': 10, 'reset_at': reset}]}
+                self.assertIsNone(m.usage_margin(bad, now))
 
     def test_active_claude_slot_uses_launch_environment_before_snapshot_mirror(self):
         now = 2_000_000
@@ -646,8 +682,10 @@ class ForegroundRequest(unittest.TestCase):
              'no-provider-has-headroom', 'claude', 'current'),
             ('age-300', -5, 30, 300, 'codex-standard',
              'only-codex-has-headroom', 'codex', 'a'),
-            ('age-301', -5, 30, 301, 'claude-default',
-             'no-provider-has-headroom', 'claude', 'current'),
+            ('age-301', -5, 30, 301, 'codex-standard',
+             'only-codex-has-headroom', 'codex', 'a'),
+            ('age-one-day', 20, -5, 86400, 'claude-default',
+             'only-claude-has-headroom', 'claude', 'current'),
             ('missing', None, None, 0, 'claude-default',
              'no-provider-has-headroom', 'claude', 'current'),
         ]
@@ -828,12 +866,14 @@ class DocumentationContracts(unittest.TestCase):
         self.assertNotIn('statusline-codex', source)
         self.assertNotIn('.statusline-codex', source)
         decision = (self.root / 'skills/develop/references/decision-criteria.md').read_text()
-        self.assertIn('<= 300', decision)
-        self.assertIn('> 300', decision)
+        self.assertNotIn('<= 300', decision)
+        self.assertNotIn('> 300', decision)
+        self.assertIn('リセット時刻', decision)
         for text in (self.adapter, self.skill,
                      (self.root / 'docs/codex-develop.md').read_text()):
             self.assertIn('claude-write-codex-review', text)
-            self.assertIn('300', text)
+            self.assertNotIn('age 300', text)
+            self.assertNotIn('<=300', text)
             self.assertIn('margin', text)
 
     def test_executor_branch_is_documented_on_exactly_one_line(self):

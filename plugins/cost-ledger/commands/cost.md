@@ -4,21 +4,33 @@ description: そのブランチ・PR・issue にかかった API 換算コスト
 allowed-tools: Bash
 ---
 
-会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/**/*.jsonl`）を 1 パスで読み、API 換算のコストを集計する。集計・判別・書式のすべては `scripts/cost_ledger.py` の `cost` サブコマンドが持つ。**このコマンドは単価も換算レートも出力書式も自分では持たない**（単価と換算レートの正本は `pricing.json`、1 行目の書式の正本は `headline()`）。
+会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/**/*.jsonl`）を 1 パスで読み、API 換算のコストを集計する。プラグイン設定「台帳ファイルのパス」または環境変数 `COST_LEDGER_PATH` が設定されていれば、会話ログの増えた分を台帳に追記してから台帳を読む（下の「台帳」）。集計・判別・書式のすべては `scripts/cost_ledger.py` の `cost` サブコマンドが持つ。**このコマンドは単価も換算レートも出力書式も自分では持たない**（単価と換算レートの正本は `pricing.json`、1 行目の書式の正本は `headline()`）。
 
 ## 実行
 
 集計スクリプトの絶対パスを特定して、そのまま呼ぶ。
 
 ```bash
+IFS= read -r PLUGIN_ROOT <<'COST_LEDGER_PLUGIN_ROOT'
+${CLAUDE_PLUGIN_ROOT}
+COST_LEDGER_PLUGIN_ROOT
+case "$PLUGIN_ROOT" in '$'*) PLUGIN_ROOT= ;; esac
+CL_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; CL_NG=1; fi
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/scripts}" \
+  "${PLUGIN_ROOT:+$PLUGIN_ROOT/scripts}" \
   ~/.claude/plugins/marketplaces/*/plugins/cost-ledger/scripts \
   ~/.claude/plugins/installed/*/cost-ledger/scripts; do
   [ -n "$dir" ] && [ -f "$dir/cost_ledger.py" ] && CL="$dir/cost_ledger.py" && break
 done
-python3 "$CL" cost $ARGUMENTS
+if [ -n "$CL_NG" ]; then unsetopt nullglob; fi
+unset CL_NG
+IFS= read -r LEDGER_OPTION <<'LEDGER_PATH_EOF'
+${user_config.LEDGER_PATH}
+LEDGER_PATH_EOF
+CLAUDE_PLUGIN_OPTION_LEDGER_PATH="$LEDGER_OPTION" python3 "$CL" cost $ARGUMENTS
 ```
+
+探索の先頭候補と台帳のパスは、コマンド本文の読み込み時に値へ置換される `${CLAUDE_PLUGIN_ROOT}`・`${user_config.LEDGER_PATH}` を、引用した here-document（区切り語を引用符で囲んだ形）で読み込んでシェル変数に入れて使う。値は文字として読まれるので、空白・引用符・`$`・バッククォートを含んでいてもそのまま扱われる（シングルクォートで包む形だと `'` を含むパスで別のパスになり、二重引用符の中に直接置く形だと `$(...)` が実行される）。Bash の実行環境にはプラグインのルートの環境変数が渡らないため、環境変数の形だと先頭が空になり、版の違うインストール済みの旧コピーが選ばれる。置換されないときは、値が `$` で始まる文字列のまま残るので `PLUGIN_ROOT` を空にし、先頭候補は空文字列として飛ばされて、後続の候補へ進む（台帳のパスの側は、置換されない文字列のまま `cost_ledger.py` が未設定として扱う）。
 
 引数の解釈はスクリプト側が行う。
 
@@ -26,9 +38,17 @@ python3 "$CL" cost $ARGUMENTS
 |---|---|
 | `/cost` | 作業ディレクトリの現在のブランチに帰属するコスト |
 | `/cost <PR番号>` | その PR のヘッドブランチに帰属するコスト |
-| `/cost <issue番号>` | その issue を触った区間のコスト合計（作業ディレクトリのリポジトリの行だけ） |
+| `/cost <issue番号>` | その issue を触った区間のコスト合計（作業ディレクトリのリポジトリの行だけ）。その issue を閉じた PR があれば、2 行目に閉じた PR の分を合わせた合計と内訳が出る（閉じた PR の問い合わせにもネットワークが要る） |
+| `/cost <子 issue を持つ issue の番号>` | 子 issue ごとの内訳と、エピック自身と子孫の issue の合計（同じ PR の分は 1 回だけ数える） |
 
 番号が PR か issue かは `gh api` で GitHub に問い合わせて判別する。**認証済みの `gh` と GitHub への到達性が要る**（コスト計算そのものはオフラインで完結するが、判別だけはネットワークに依存する）。どちらでもない番号は 0 円と表示せず、見つからないと伝えて終了コード 2 で終わる。
+
+## 台帳
+
+会話ログは既定 30 日で消える。消えたあとも同じ値を返すために、プラグイン設定「台帳ファイルのパス」（なければ `COST_LEDGER_PATH`）が指すリポジトリ外の append-only の JSONL 台帳へ、応答が終わるたびに `Stop` hook が増えた分を焼き付ける。
+
+- **台帳が未設定なら**（プラグイン設定「台帳ファイルのパス」も `COST_LEDGER_PATH` も空）、会話ログを直接読んで答えたうえで、台帳ファイルをどこに置くかを利用者に聞く（既定の場所は決めない。このリポジトリの配下は不可）。決まったら、`/config` でプラグイン設定「台帳ファイルのパス」に設定するよう先に案内し、従来の方法として `~/.claude/settings.json` の `env` に `COST_LEDGER_PATH` を書くこともできると添える。設定が効いたあと（新しいセッションから）の最初の `/cost` が会話ログの増えた分を台帳に取り込む。すぐ取り込むなら `COST_LEDGER_PATH=<決めたパス> python3 "$CL" ledger-sync` を実行する
+- 台帳がリポジトリ配下を指していると、スクリプトは終了コード 2 で終わる。その旨を利用者に伝えて場所を聞き直す
 
 ## 出力の扱い
 
@@ -38,6 +58,6 @@ python3 "$CL" cost $ARGUMENTS
 コスト: $108.23 / ¥16,235 @150 — PR #271 (oratta/token-optimize) 帰属: ブランチ
 ```
 
-利用者にはこの 1 行目をそのまま見せ、内訳は聞かれたときだけ示す。issue 単位の数字は区間分割による推定なので、**断定せずに推定と伝える**。リポジトリ不明として別立てされた行があれば、その件数と金額も併せて伝える（`cwd` が削除済みでどのリポジトリの番号か絞れなかった行で、黙って落としても合算してもいない）。
+利用者にはこの 1 行目をそのまま見せ、内訳は聞かれたときだけ示す。ただし `/cost <issue番号>` で `合計（閉じた PR 込み）:` の行、または `閉じた PR を読めなかったため、PR の分は合計に入っていません。` の行が出たときは、1 行目に続けてその行も見せる（1 行目は区間だけの額なので、これを見せないと閉じた PR の分が利用者に届かない）。PR に貼るのは 1 行目だけ。issue 単位の数字は区間分割による推定なので、**断定せずに推定と伝える**。リポジトリ不明として別立てされた行があれば、その件数と金額も併せて伝える（`cwd` が削除済みでどのリポジトリの番号か絞れなかった行で、黙って落としても合算してもいない）。
 
 円換算のレートは `pricing.json` の固定値で、環境変数 `COST_LEDGER_USD_JPY` で上書きできる。レートを変えたいと言われたら、この環境変数か `pricing.json` を案内する。

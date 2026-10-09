@@ -41,32 +41,35 @@ comments, push, PR creation and commit yourself here, and do not return needs-co
 them. The coordinator performs only operations already recorded as ones it could not align.'''
 READER_TRANSPORT = '''This worker is read-only: never write to GitHub, push, or commit. Return the review verdict and
 its evidence; the coordinator posts it on your behalf, then starts a fresh phase with it.'''
-FRESH_SECONDS = 300
 WEEK_SECONDS = 604800
 
 
-def usage_margin(snapshot, now, *, codex=False):
-    """Return the unrounded weekly margin, or None for missing/unsafe input."""
+def usage_margin(snapshot, now):
+    """Return the unrounded weekly margin of a Codex snapshot, or None for missing/unsafe input.
+
+    Same effective-value rule as the Claude side (usage-session-records): the age of the fetch is
+    not checked. Past the weekly reset the window reads as 0% with the reset moved forward by whole
+    weeks; before it the fetched value is a lower bound. A reset more than a week ahead is accepted
+    (the margin just goes negative).
+    """
     if not isinstance(snapshot, dict) or type(snapshot.get('fetched_at')) is not int:
         return None
-    age = now - snapshot['fetched_at']
-    if age < 0 or age > FRESH_SECONDS:
+    if snapshot['fetched_at'] > now:
         return None
-    if codex:
-        windows = snapshot.get('windows')
-        if not isinstance(windows, list):
-            return None
-        weekly = [item for item in windows if isinstance(item, dict) and
-                  item.get('minutes') == 10080]
-        if not weekly:
-            return None
-        value = weekly[0]
-        used, reset = value.get('used_percent'), value.get('reset_at')
-    else:
-        used, reset = snapshot.get('weekly_all_pct'), snapshot.get('weekly_resets_epoch')
+    windows = snapshot.get('windows')
+    if not isinstance(windows, list):
+        return None
+    weekly = [item for item in windows if isinstance(item, dict) and
+              item.get('minutes') == 10080]
+    if not weekly:
+        return None
+    used, reset = weekly[0].get('used_percent'), weekly[0].get('reset_at')
     if (type(used) not in (int, float) or not math.isfinite(used) or not 0 <= used <= 100 or
-            type(reset) is not int or not now < reset <= now + WEEK_SECONDS):
+            type(reset) is not int):
         return None
+    if now >= reset:
+        used = 0
+        reset += ((now - reset) // WEEK_SECONDS + 1) * WEEK_SECONDS
     elapsed = 100 * (1 - (reset - now) / WEEK_SECONDS)
     return elapsed - used
 
@@ -274,7 +277,7 @@ def automatic_selection(mapping, now=None):
     usages = read_codex_usages(mapping, str(config_dir), now) if mapping else {}
     candidates = []
     for order, (name, value) in enumerate(usages.items()):
-        margin = usage_margin(value, now, codex=True)
+        margin = usage_margin(value, now)
         if margin is not None:
             candidates.append((margin, -order, name, value))
     best = max(candidates) if candidates else None

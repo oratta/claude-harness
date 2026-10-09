@@ -10,6 +10,7 @@
 # spec: dev-workflow-develop, dev-workflow-spec-review
 
 setup() {
+  export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
   PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
@@ -236,7 +237,11 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   echo "$s" | grep -qF '## レビュー観点（6 つ'
   echo "$s" | grep -q '守備範囲'
   echo "$s" | grep -qF '入力を検査・判定する要件'
-  echo "$s" | grep -qE '守備範囲.*REQUEST_CHANGES|REQUEST_CHANGES.*守備範囲'
+  # 段落に改行が入っても節内の共起として検査できるよう、節を 1 行に潰してから grep する（#389）
+  flat="$(echo "$s" | tr '\n' ' ')"
+  echo "$flat" | grep -qE '守備範囲.*REQUEST_CHANGES|REQUEST_CHANGES.*守備範囲'
+  # ①②か③の欠落は BLOCKER、④だけの欠落は SHOULD_FIX（#389）
+  echo "$flat" | grep -qE '（①②）.*（③）.*BLOCKER.*④だけが無いとき.*SHOULD_FIX'
 }
 
 @test "reviewer (#287): coverage criterion is not applied retroactively to existing specs" {
@@ -248,9 +253,10 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q 'grep' "$REVIEWER"
 }
 
-@test "reviewer: two-round cap, no third round, needs-approval / AskUserQuestion / unmanned cycle end" {
+@test "reviewer: default two rounds, fix-check continuation, needs-approval / AskUserQuestion / unmanned cycle end" {
   grep -qE '2 ?周' "$REVIEWER"
-  grep -qE '3 ?周目.*(例外|設けない)' "$REVIEWER"
+  ! grep -qE '3 ?周目.*(例外|設けない)' "$REVIEWER" || return 1
+  grep -qF '直し方の判定' "$REVIEWER"
   grep -q 'needs-approval' "$REVIEWER"
   grep -q 'AskUserQuestion' "$REVIEWER"
   grep -qE 'unmanned.*(サイクル|終了)' "$REVIEWER"
@@ -346,7 +352,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "gate-runner (#281): round field covers round 3+ after owner go-ahead and full review line counts" {
-  grep -qE '周回: .*3以降（主の回答または決める役の裁定あり）' "$GATE"
+  grep -qE '周回: .*3以降（直し方の判定・主の回答・決める役の裁定のどれかあり）' "$GATE"
   grep -q '全体レビュー' "$GATE"
 }
 
@@ -598,6 +604,7 @@ extract_context_cap_section() {
 
 @test "gate-runner (#354): Status has needs-decider and a section says what the main session receives" {
   grep -E '^- Status: ' "$GATE" | grep -qF 'needs-decider'
+  grep -E '^- Status: ' "$GATE" | grep -qF 'needs-fix-check'
   nd="$(awk '/^### needs-decider のとき/{f=1;next} /^### |^```$/{f=0} f' "${TRIAGE}")"
   [ -n "$nd" ] || { echo "no needs-decider section"; return 1; }
   echo "$nd" | grep -qF '同じ型の指摘'
@@ -623,7 +630,7 @@ extract_context_cap_section() {
   echo "$line" | grep -qF 'PR コメント'
   echo "$line" | grep -qF '全部列挙してから直す'
   echo "$line" | grep -qF '切り出す'
-  grep -E 'W の修正後の再レビュー' "${TRIAGE}" | grep -qF '主の回答または決める役の裁定'
+  grep -E 'W の修正後の再レビュー' "${TRIAGE}" | grep -qF '直し方の判定・主の回答・決める役の裁定のどれか'
 }
 
 @test "worker (#354): W posts the row-3 table with the search command before pushing, and records row-4 fixes" {
@@ -839,7 +846,7 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -E '^\| `次の段へ` \|' "$GATE" | grep -qF '`合格処理`'
   grep -E '^\| 保留 \|' "$GATE" | grep -qF '`保留の解除`'
   grep -E '^\| passed / review-incomplete \|' "$GATE" | grep -qF '`なし`'
-  grep -E '^\| needs-reviewer / needs-decider \|' "$GATE" | grep -qF '`照合と振り分け`'
+  grep -E '^\| needs-reviewer / needs-decider / needs-fix-check \|' "$GATE" | grep -qF '`照合と振り分け`'
 }
 
 @test "gate-runner (#554): G name and description name the stage and keep the G: prefix" {
@@ -1001,6 +1008,60 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -qF '`explore`・`summarize` role は `general-purpose`' "$codex"
 }
 
+@test "reviewer spawn: every reviewer spawn instruction names dev-workflow:reviewer, not general-purpose (#650)" {
+  review_run="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
+  skill="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  codex="${PLUGIN_DIR}/references/codex-develop.md"
+  # prepare.md: needs-reviewer の段落と推奨モデルの行
+  para="$(grep -F '本体はこれを読んでレビュアー' "$PREPARE")"
+  [ -n "$para" ]
+  echo "$para" | grep -qF 'subagent_type: dev-workflow:reviewer'
+  if echo "$para" | grep -qF 'subagent_type: general-purpose'; then return 1; fi
+  echo "$para" | grep -qF '`general-purpose` に `model: fable` は付けない'
+  rec="$(grep -E '^- 推奨モデル:' "$PREPARE")"
+  echo "$rec" | grep -qF 'dev-workflow:reviewer'
+  echo "$rec" | grep -qF 'dev-workflow:decider'
+  # review-run.md 2-1 のフォールバック行
+  fb="$(grep -E '^\| フォールバック \|' "$review_run")"
+  [ -n "$fb" ]
+  echo "$fb" | grep -qF 'dev-workflow:reviewer'
+  if echo "$fb" | grep -qF 'Agent ツール（`general-purpose`）'; then return 1; fi
+  if grep -qF 'Agent ツール（`general-purpose`）' "$review_run"; then return 1; fi
+  # develop SKILL.md: Agent ツールの行・(4) の ③・モデル表のレビュアー行
+  grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:reviewer'
+  grep -F 'executor が claude なら Agent ツールで' "$skill" | grep -qF 'dev-workflow:reviewer'
+  row="$(grep -E '^\| G が要求するレビュアー' "$skill")"
+  echo "$row" | grep -qF 'dev-workflow:reviewer'
+  if echo "$row" | grep -qF 'subagent_type: general-purpose'; then return 1; fi
+  # codex-develop.md: レビュアーと R1 を分ける
+  grep -qF 'レビュアーは `dev-workflow:reviewer`' "$codex"
+  grep -qF 'R1 は `general-purpose`' "$codex"
+  if grep -qF 'R1 とレビュアーは `general-purpose`' "$codex"; then return 1; fi
+  grep -qF 'dev-workflow:reviewer' "${PLUGIN_DIR}/README.md"
+}
+
 @test "spec-reviewer: change creation describes the openspec CLI and existing changes" {
   grep -qF 'W が `openspec new change` と artifact の直書きで作った change（本体や主が `/opsx:ff` で先に作った change を含む）' "$REVIEWER"
+}
+
+# ===== 直し方の判定（issue #722）=====
+
+@test "gate-runner (#722): needs-fix-check routes to triage and the triage row of the stage table takes the fix-check" {
+  grep -E '^\| needs-reviewer / needs-decider / needs-fix-check \|' "$GATE" | grep -qF '`照合と振り分け`'
+  row="$(grep -E '^\| 照合と振り分け \|' "$GATE")"
+  [ -n "$row" ] || { echo "no triage row in the stage table"; return 1; }
+  echo "$row" | grep -qF '直し方の判定を受け取ったとき'
+  echo "$row" | grep -qF '直し方の判定と判定の記録の URL'
+  echo "$row" | grep -qF '`needs-fix-check`'
+  grep -F 'Status ごとの欄の書式は' "$GATE" | grep -qF '`needs-fix-check`'
+}
+
+@test "gate-runner (#722): the reviewer-summary branch sends end-of-round leftovers to the fix-check and never pairs it with needs-decider" {
+  line="$(grep -F 'レビュアーの要約受領' "$GATE" | grep -v '「レビュアーの要約受領」')"
+  [ -n "$line" ] || { echo "no reviewer-summary resume line"; return 1; }
+  echo "$line" | grep -qF '判定に回す条件に当たれば `needs-fix-check`'
+  echo "$line" | grep -qF '`needs-fix-check` と `needs-decider` を同じ return で指示しない'
+  echo "$line" | grep -qF '順 2〜4 をそのまま使わない'
+  # 段ごとの入力の文に直し方の判定の受領がある
+  grep -F '段ごとの入力のうち' "$GATE" | grep -qF '直し方の判定の受領'
 }

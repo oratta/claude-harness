@@ -14,12 +14,16 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 `CLAUDE_PLUGIN_ROOT` を第一候補に、marketplace / installed 配下を探索して SKILL.md の絶対パスを特定する。
 
 ```bash
+plugin_root="${CLAUDE_PLUGIN_ROOT}"
+WT_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; WT_NG=1; fi
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/wt-setup}" \
+  "${plugin_root:+$plugin_root/skills/wt-setup}" \
   ~/.claude/plugins/marketplaces/*/plugins/worktree/skills/wt-setup \
   ~/.claude/plugins/installed/*/worktree/skills/wt-setup; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
 done
+if [ -n "$WT_NG" ]; then unsetopt nullglob; fi
+unset WT_NG
 ```
 
 特定した絶対パス（`skills/wt-setup/SKILL.md`）を Read tool で読み込み、その手順（Step 1〜6）に従って実行する。

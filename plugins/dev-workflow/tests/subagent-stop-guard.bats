@@ -458,7 +458,7 @@ entries = d["SubagentStop"]
 hit = [h for e in entries for h in e["hooks"] if "subagent-stop-guard.sh" in h["command"]]
 assert len(hit) == 1, entries
 assert hit[0]["type"] == "command"
-assert hit[0]["command"] == "${CLAUDE_PLUGIN_ROOT}/scripts/subagent-stop-guard.sh", hit[0]
+assert hit[0]["command"] == '"${CLAUDE_PLUGIN_ROOT}/scripts/subagent-stop-guard.sh"', hit[0]
 PY
 }
 
@@ -466,7 +466,7 @@ PY
   python3 - "$HOOKS_JSON" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))["hooks"]
-assert set(d) == {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop"}, sorted(d)
+assert set(d) == {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop", "SubagentStart", "PreModelSwitch"}, sorted(d)
 assert any("session-tripwires.sh" in h["command"]
            for e in d["SessionStart"] for h in e["hooks"]), d["SessionStart"]
 assert any("prompt-tripwires-refresh.sh" in h["command"]

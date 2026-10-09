@@ -102,11 +102,13 @@ develop スキルの `plugins/dev-workflow/skills/develop/references/decision-cr
 - **THEN** 出力する JSON のフィールドと exit code は `--file` 追加の前後で変わらない
 
 ### Requirement: model 未指定の Agent spawn は hook が拒否する
-`hooks/hooks.json` は PreToolUse（matcher: `Agent`）に `scripts/agent-model-guard.sh` を登録しなければならない（MUST）。hook は stdin の payload（`tool_name` / `tool_input`）を読み、`tool_name` が `Agent` 以外なら何もしない。`tool_input.subagent_type` が `fork` なら `model` の有無にかかわらず共有枠モード（明示 env `SHARED_BUDGET_MODE`、無ければ usage snapshot の `weekly_all_pct` から導出。90 超は `depleted`、週経過% 超は `throttled`）が `ok` のときだけ許可し、それ以外は拒否する（MUST。fork は model パラメータを無視して親モデルで動くため）。
+`hooks/hooks.json` は PreToolUse（matcher: `Agent`）に `scripts/agent-model-guard.sh` を登録しなければならない（MUST）。hook は stdin の payload（`tool_name` / `tool_input`）を読み、`tool_name` が `Agent` 以外なら何もしない。`tool_input.subagent_type` が `fork` なら `model` の有無にかかわらず共有枠モード（明示 env `SHARED_BUDGET_MODE`、無ければ `scripts/usage_view.py` が求める active スロットの全体週次枠の実効値 `weekly_all_pct` から導出。実効値はセッション記録と usage snapshot を突き合わせた値で、規則の正本は usage-session-records の「記録と snapshot から実効値を求める」。90 超は `depleted`、週経過% 超は `throttled`）が `ok` のときだけ許可し、それ以外は拒否する（MUST。fork は model パラメータを無視して親モデルで動くため）。
 
-fork 以外で `model` が Fable（エイリアス `fable`、または `claude-fable-*` の完全 ID。大文字小文字と前後の空白を無視して判定する）を指す場合は、`subagent_type` が決める役の allowlist（`dev-workflow:decider`。将来増えたらスクリプト内の allowlist に足す）に載っているときだけ許可し、それ以外（`general-purpose` / `Explore` / `Plan` / 未指定 / 他のプラグイン種別）は拒否しなければならない（MUST）。拒否理由には決める役の種別名 `dev-workflow:decider` と、実行役の代替（`sonnet` / `opus`）と、規範（`rules/subagent-model-selection.md`）を含める（SHALL）。この判定はセッションの種類（対話 / 住人 / cron / loop）で変えてはならない（MUST NOT）。Fable 判定は残量（`FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` / usage snapshot）をいっさい参照してはならない（MUST NOT。ガードは「誰が Fable になりうるか」の構造上の上限を見る層で、「今 Fable を使ってよいか」の助言は従来どおり develop 側の残量モードが担う。ガードが snapshot を読むと判定が鮮度と fail-open に依存してしまう）。既存の `fork` 判定が `SHARED_BUDGET_MODE` を見ることと、全解除の `DEV_WORKFLOW_MODEL_GUARD=off` はこの制限の対象外で、従来どおり残す（SHALL）。
+fork 以外で `model` が Fable（エイリアス `fable`、または `claude-fable-*` の完全 ID。大文字小文字と前後の空白を無視して判定する）を指す場合は、`subagent_type` が決める役の allowlist（`dev-workflow:decider`。将来増えたらスクリプト内の allowlist に足す）に載っているときだけ許可し、それ以外（`general-purpose` / `Explore` / `Plan` / 未指定 / 他のプラグイン種別）は拒否しなければならない（MUST）。拒否理由には決める役の種別名 `dev-workflow:decider` と、実行役の代替（`sonnet` / `opus`）と、規範（`rules/subagent-model-selection.md`）を含める（SHALL）。この判定はセッションの種類（対話 / 住人 / cron / loop）で変えてはならない（MUST NOT）。Fable 判定は残量（`FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` / セッション記録 / usage snapshot）をいっさい参照してはならない（MUST NOT。ガードは「誰が Fable になりうるか」の構造上の上限を見る層で、「今 Fable を使ってよいか」の助言は従来どおり develop 側の残量モードが担う。ガードが snapshot を読むと判定が鮮度と fail-open に依存してしまう）。既存の `fork` 判定が `SHARED_BUDGET_MODE` を見ることと、全解除の `DEV_WORKFLOW_MODEL_GUARD=off` はこの制限の対象外で、従来どおり残す（SHALL）。
 
-Fable 以外の `model` があれば許可し、定義側に model を持つエージェント種別（`plugin:agent` 形式・casting 系）も許可する。`subagent_type` が空・`general-purpose`・`Explore`・`Plan`・`claude`・`claude-code-guide`・`statusline-setup` で `model` が無ければ拒否する（MUST）。拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とし、理由に規範（rules/subagent-model-selection.md）と選ぶべきティアを含める（SHALL）。`model` 未指定の拒否理由に列挙するティアは `haiku`（機械的）/ `sonnet`（通常実装・調査）/ `opus`（設計・レビュー）とし、`fable` は決める役の種別でだけ使えることを添える（SHALL）。payload は環境変数や引数に載せず stdin から読む（MUST。長い prompt で ARG_MAX を超えると hook が非 0 で落ちて素通りになるため）。stdin が読めない・python3 が無い・snapshot が読めないときは fail-open（exit 0・無出力）とし、`DEV_WORKFLOW_MODEL_GUARD=off` で全許可できる（SHALL）。
+Fable 以外の `model` があれば許可し、定義側に model を持つエージェント種別（`plugin:agent` 形式・casting 系）も許可する。`subagent_type` が空・`general-purpose`・`Explore`・`Plan`・`claude`・`claude-code-guide`・`statusline-setup` で `model` が無ければ拒否する（MUST）。拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とし、理由に規範（rules/subagent-model-selection.md）と選ぶべきティアを含める（SHALL）。`model` 未指定の拒否理由に列挙するティアは `haiku`（機械的）/ `sonnet`（通常実装・調査）/ `opus`（設計・レビュー）とし、`fable` は決める役の種別でだけ使えることを添える（SHALL）。payload は環境変数や引数に載せず stdin から読む（MUST。長い prompt で ARG_MAX を超えると hook が非 0 で落ちて素通りになるため）。python3 が無い・stdin が JSON として読めない（空の stdin を含む）・payload がオブジェクトでないときは fail-open（exit 0・無出力）とする（SHALL）。`tool_input` は、真とみなされるオブジェクト以外の値（空でない配列・空でない文字列・0 以外の数値・`true`）のときだけ fail-open（exit 0・無出力）とし、無い・`null`・空配列・空文字列・`0`・`false` のときは空のオブジェクトとして扱って `model` 未指定の判定へ進む（`subagent_type` も空になるので拒否される）（SHALL）。`subagent_type` が文字列でないときは空として扱い、`model` が文字列でないときは `model` 無しとして扱う（SHALL）。`fork` の共有枠判定では、`SHARED_BUDGET_MODE` が未設定で、セッション記録と snapshot のどちらからも active スロットの全体週次枠の値が求まらないとき、共有枠モードを `ok` とみなして許可する（SHALL。fail-open）。この fail-open は `fork` の共有枠判定に限り、`fork` 以外の判定（model 未指定・Fable）はセッション記録も snapshot も読まないので、snapshot が読めなくても結果は変わらない（SHALL）。`DEV_WORKFLOW_MODEL_GUARD=off` で全許可できる（SHALL）。
+
+守備範囲: この要件が受け取る入力は次の 3 つに限る。1 つ目は、Claude Code が PreToolUse で hook の stdin に渡す Agent 呼び出しの payload（`tool_name` と、`tool_input` の `subagent_type` / `model`）で、`subagent_type` と `model` はエージェント（本体やサブエージェント）が書く値である。2 つ目は、利用者が自分で設定する環境変数 `DEV_WORKFLOW_MODEL_GUARD` と `SHARED_BUDGET_MODE` である。3 つ目は、`subagent_type` が `fork` で `SHARED_BUDGET_MODE` が未設定のときだけ `scripts/usage_view.py` を通じて読む、アカウント一覧（`accounts.json`）・active スロットのセッション記録（`.usage-sessions/<鍵>.json`。ステータスラインが書く）・usage snapshot（使用量の取得処理が書く）である。この 3 つ目の置き場所・active スロットの選び方・判定に使う現在時刻は、環境変数（`CLAUDE_CONFIG_DIR` / `CLAUDE_ACCOUNTS_FILE` / `USAGE_SESSIONS_DIR` / `USAGE_SNAPSHOT` / `CLAUDE_SECURESTORAGE_CONFIG_DIR` / `USAGE_PROBE_NOW`）で差し替わる。`fork` 以外の判定は 3 つ目を読まない。拾いたい誤りは、`model` を省いた `general-purpose` / `Explore` / `Plan` などの呼び出しが親セッションのモデルを継承すること、決める役の種別以外が `model: "fable"`（または `claude-fable-*`）で起こされること、共有枠モードが `ok` でないときに `fork` が起こされることの 3 つである。次の入力は通ることを許す: `general-purpose` に `model: "opus"` / `"sonnet"` / `"haiku"` を付けた呼び出し（実行役の通常の形）／Fable を指さない `model` の文字列は、実在するモデル名かどうかを確かめずに通す（例: 綴りを誤った `model: "fabel"`、`model: "opus-typo"`）／`model` が文字列でない payload は `model` 無しとして扱う（`subagent_type` が文字列でないときは空として扱うので、`model` が無ければ拒否される）／上に列挙していない `subagent_type`（`plugin:agent` 形式、casting 系、将来増える組み込みの種別。列挙との照合は大文字小文字を区別するので `explore` も含む）は、定義側に model があるかを確かめずに `model` 無しで通す／python3 が無い・stdin が JSON として読めない・payload がオブジェクトでないとき、および `tool_input` が真とみなされるオブジェクト以外の値（空でない配列・空でない文字列・0 以外の数値・`true`）のときは判定せずに通す（fail-open）。`tool_input` が無い・`null`・空配列・空文字列・`0`・`false` のときは通さず、空のオブジェクトとして `model` 未指定の判定へ進むので拒否される／`fork` は、`SHARED_BUDGET_MODE` が未設定で、セッション記録と snapshot のどちらからも active スロットの全体週次枠の値が求まらない（どちらも無い・読めない・値が範囲外など）ときは `ok` とみなして通す（fail-open）。snapshot だけが読めないときはセッション記録の値で判定する。`fork` 以外の判定はこの fail-open の対象外で、snapshot が読めなくても model 未指定の呼び出しと決める役以外の Fable は拒否する／`DEV_WORKFLOW_MODEL_GUARD=off` のときはすべて通す。これらの穴を見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: model 無しの general-purpose は拒否される
 - **WHEN** `{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}` を hook に渡す
@@ -134,7 +136,15 @@ Fable 以外の `model` があれば許可し、定義側に model を持つエ�
 
 #### Scenario: fork は共有枠モードで決まり model を渡しても変わらない
 - **WHEN** `SHARED_BUDGET_MODE=depleted` で `{"tool_name":"Agent","tool_input":{"subagent_type":"fork","model":"sonnet"}}` を渡す
-- **THEN** 拒否される。`SHARED_BUDGET_MODE` 未設定かつ snapshot 無しなら許可される
+- **THEN** 拒否される。`SHARED_BUDGET_MODE` 未設定で、セッション記録も snapshot も無ければ許可される
+
+#### Scenario: snapshot が無くてもセッション記録から fork を止める
+- **WHEN** `SHARED_BUDGET_MODE` 未設定・snapshot 無しで、active スロットのセッション記録の `weekly_all_pct` が 95（リセット前）のまま `{"tool_name":"Agent","tool_input":{"subagent_type":"fork"}}` を渡す
+- **THEN** 拒否され、理由に `depleted` が含まれる
+
+#### Scenario: snapshot もセッション記録も無くても model 無しは拒否される
+- **WHEN** snapshot もセッション記録も無い状態で `{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}` を渡す
+- **THEN** `permissionDecision: deny` の JSON が出力される（fail-open にならない）
 
 #### Scenario: 3MB の prompt でも判定される
 - **WHEN** `prompt` が 3,000,000 文字の model 無し payload を stdin から渡す
@@ -146,7 +156,7 @@ Fable 以外の `model` があれば許可し、定義側に model を持つエ�
 
 #### Scenario: hooks.json に配線されている
 - **WHEN** `hooks/hooks.json` を読む
-- **THEN** `PreToolUse` に matcher `Agent`・command `${CLAUDE_PLUGIN_ROOT}/scripts/agent-model-guard.sh` のエントリがある
+- **THEN** `PreToolUse` に matcher `Agent` のエントリがあり、その command は `${CLAUDE_PLUGIN_ROOT}/scripts/agent-model-guard.sh` を二重引用符で囲んだ文字列（`"${CLAUDE_PLUGIN_ROOT}/scripts/agent-model-guard.sh"`）である
 
 ### Requirement: コンテキスト量の計測の式は 1 つに定める
 
@@ -397,8 +407,6 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 - **WHEN** この change の実装後にセッションを開始する
 - **THEN** `session-tripwires.sh` が注入する内容は従来どおりで、集計に由来する行は 1 行も増えていない
 
-
-
 ### Requirement: `--by-role` による担当別集計の出力
 
 `subagent-context-audit.sh` は `--by-role` フラグを受け付けなければならない（MUST）。`--by-role` を付けない既定の呼び出しは、この要件の追加前と完全に同じ出力（既存キーの形・値）にならなければならない（MUST。走査コストも変えない）。
@@ -445,28 +453,34 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 `--by-role` の担当分類は、対象トランスクリプトの隣にある `agent-<id>.meta.json` を次の優先順位で判定しなければならない（SHALL）。
 
 1. `agentType` が `dev-workflow:decider` と一致する場合、`description` の内容に関わらず常に `decider` に分類する
-2. 1 に当たらない場合、`description` の先頭コロン区切りトークン（例: `W: #552 ...` の `W`）が `W` / `R1` / `G` / `Reviewer` のいずれかに完全一致すればそれに分類する
-3. 1 にも 2 にも当たらない（`description` が無い・コロンが無い・未知のトークン・`meta.json` が無い/読めない）場合は `unknown` に分類する
+2. 1 に当たらず、`agentType` が `dev-workflow:reviewer` と一致する場合、`description` の内容に関わらず常に `Reviewer` に分類する
+3. 1 にも 2 にも当たらない場合、`description` の先頭コロン区切りトークン（例: `W: #552 ...` の `W`）が `W` / `R1` / `G` / `Reviewer` のいずれかに完全一致すればそれに分類する
+4. 1〜3 のどれにも当たらない（`description` が無い・コロンが無い・未知のトークン・`meta.json` が無い/読めない）場合は `unknown` に分類する
 
 分類できない件（`unknown`）も `by_role` の合計・母集団の `count` から落としてはならない（MUST NOT）。
 
-この分類は `agent-<id>.meta.json` の `agentType` / `description` という自由記述を解釈する要件であり、次の 4 点を守備範囲とする。①入力の出どころ: `description` は develop 本体が `plugins/dev-workflow/skills/develop/SKILL.md:153` の紐付け規約（役割を問わず記録先番号を `#N` の形で入れる。例: `W: impl for #288`、`G: gate for PR #400 (#288)`）に沿って書く。②拾いたい誤り: develop の担当を別の担当に数えること、分類できない件が母集団の合計から落ちること。③通ることを許す入力の具体例: develop 以外の経路で起こした `G: ...` のような `description` も先頭トークン一致で `G` に数えてよい。`w:`（小文字）や `Reviewer1:` のような接頭辞の変形は `unknown` に落ちてよい（規約外の書式まで拾い切ることを目的にしない）。④新しい書き方が見つかるたびに規則を足して塞ぎ切ることを完了条件にしない。
+この分類は `agent-<id>.meta.json` の `agentType` / `description` という自由記述を解釈する要件であり、次の 4 点を守備範囲とする。①入力の出どころ: `description` は develop 本体が `plugins/dev-workflow/skills/develop/SKILL.md` の紐付け規約（役割を問わず記録先番号を `#N` の形で入れる。例: `W: impl for #288`、`G: gate for PR #400 (#288)`）に沿って書く。`agentType` は Agent 呼び出しの `subagent_type` がそのまま入る。②拾いたい誤り: develop の担当を別の担当に数えること、分類できない件が母集団の合計から落ちること。③通ることを許す入力の具体例: develop 以外の経路で起こした `G: ...` のような `description` も先頭トークン一致で `G` に数えてよい。`w:`（小文字）や `Reviewer1:` のような接頭辞の変形は `unknown` に落ちてよい（規約外の書式まで拾い切ることを目的にしない）。`general-purpose` で起こした古いレビュアーは `description` の先頭トークンだけで判定し、`Reviewer:` で始まらなければ `unknown` に落ちてよい。④新しい書き方が見つかるたびに規則を足して塞ぎ切ることを完了条件にしない。
 
-`Reviewer` は「G のレビュアー」に割り当てる担当名だが、`plugins/dev-workflow/skills/develop/SKILL.md:153` の紐付け規約は `W:` と `G:` の例しか示しておらず、「G のレビュアー」の `description` が `Reviewer:` で始まる接頭辞を規定していない。したがって実データでは「G のレビュアー」が `unknown` に分類される可能性がある（想定内の挙動とする）。実データ集計（tasks.md「エピック #511 への基準値コメント」）で `Reviewer` の `count` がほぼ 0 で `unknown` に偏っている場合、この change の範囲外として、紐付け規約側に「G のレビュアー」の接頭辞を追加する別 issue を起こす。
+`Reviewer` は「G のレビュアー」に割り当てる担当名である。`dev-workflow:reviewer` で起こしたレビュアーは `agentType` で `Reviewer` に数えられる。新種別より前に `general-purpose` で起こしたレビュアーは `description` の先頭トークンで判定し、`Reviewer:` で始まらなければ `unknown` に落ちうる（想定内の挙動とする）。事前分類で `dev-workflow:decider` で起こしたレビュアーは、1 の規則で `decider` に数える。
 
 #### Scenario: `agentType` が `description` の見た目より優先される
 
 - **WHEN** `agent-<id>.meta.json` の `agentType` が `dev-workflow:decider` で、同じファイルの `description` が `R1: 仕様レビュー` のように別役割の体裁を取っている
 - **THEN** その件は `decider` に分類される
 
+#### Scenario: レビュアーの種別は description に頼らず Reviewer に数えられる
+
+- **WHEN** `agent-<id>.meta.json` の `agentType` が `dev-workflow:reviewer` で、`description` が `code review for PR #12` のように `Reviewer:` で始まっていない
+- **THEN** その件は `Reviewer` に分類される
+
 #### Scenario: `description` の先頭トークンで分類される
 
-- **WHEN** `agentType` が `dev-workflow:decider` ではなく、`description` が `G: #552 のマージ前検査` のように先頭コロン区切りトークンが `G` と完全一致する
+- **WHEN** `agentType` が `dev-workflow:decider` でも `dev-workflow:reviewer` でもなく、`description` が `G: #552 のマージ前検査` のように先頭コロン区切りトークンが `G` と完全一致する
 - **THEN** その件は `G` に分類される
 
 #### Scenario: どちらにも当たらない件は unknown に寄せられる
 
-- **WHEN** `meta.json` が無い、または `description` の先頭トークンが `W` / `R1` / `G` / `Reviewer` のいずれとも一致しない
+- **WHEN** `meta.json` が無い、または `agentType` が `dev-workflow:decider` でも `dev-workflow:reviewer` でもなく、`description` の先頭トークンが `W` / `R1` / `G` / `Reviewer` のいずれとも一致しない
 - **THEN** その件は `unknown` に分類され、全体の `count` には含まれたまま `by_role` の合計にも数えられる
 
 ### Requirement: `docs_median`（指示書の読み込み量の中央値）
@@ -499,16 +513,50 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 `--by-role` は担当 `W` についてのみ `reread_pct` を算出しなければならない（SHALL）。単位は既存の `over_cap_pct` と同様に 0〜100 のパーセントとする（SHALL。0〜1 の比率にしない）。算出手順は次のとおり。
 
 1. 各 `W` の `description` に含まれる `#N`（記録先の issue/PR 番号）で、同じ記録先を担当した `W` を `timestamp`（トランスクリプトの最初のレコードのもの）の開始順にグループ化する（SHALL）。`description` に `#N` が複数出現する場合は、最も左（最初）に出現するものを記録先番号として使う（SHALL）
-2. 各グループの 2 番目以降の `W` について、そのグループ内で自分より前に開始した全 `W` が読んだ `Read` の `file_path` の和集合に対し、自分が読み直した `file_path` の割合（0〜100）を求める（SHALL）。一致判定は `file_path` の末尾のファイル名（ベースネーム）で行い、フルパス一致では判定しない（SHALL。worktree ごとに絶対パスの先頭が変わるため、同名の別ディレクトリ配下のファイルも読み直しとして数えてよい）
+2. 各グループの 2 番目以降の `W` について、そのグループ内で自分より前に開始した全 `W` が読んだファイルの和集合に対し、自分が読み直したファイルの割合（0〜100）を求める（SHALL）。「読んだファイル」は、`Read` ツールの `file_path` に加え、`Bash` ツールの `command` に含まれる `sed -n` / `cat` / `head` / `tail` の引数のファイルとする（SHALL。前任・後任の両方に同じ定義を使う）。一致判定はファイルの末尾のファイル名（ベースネーム）で行い、フルパス一致では判定しない（SHALL。worktree ごとに絶対パスの先頭が変わるため、同名の別ディレクトリ配下のファイルも読み直しとして数えてよい）
 3. 各グループの最初の `W`（先行が存在しない個体）は、この中央値の母数から除く（MUST。分母が定義できないため）
 4. `description` から `#N` が取れない `W` は `reread_pct` の対象から除く（MUST。グルーピングできない個体を母数に含めない）
 5. 2 で求めた割合を担当 `W` 内で中央値に集約し `reread_pct` とする（SHALL）。対象が 1 件も無い場合は `null` とする（SHALL）
+
+`Bash` の `command` からのファイルの取り出しは次の規則に従う（SHALL）。`|` `;` `&&` `||` 改行で区間に分け、先頭語が `sed`（`-n` を含むものだけ）・`cat`・`head`・`tail` の区間を対象にする。オプション、リダイレクト記号とその直後の語、標準入力を表す `-`、`head` / `tail` の `-n` / `-c` の値、`sed` のスクリプト（`-e` / `-f` が無いときの最初の非オプション語、および `-e` / `-f` の値）は、ファイルとして数えない。グロブ（`*` `?` `[`）やシェル変数（`$`）を含む語は、実ファイルが決まらないので数えない。字句分割できない区間は読み飛ばす。`grep` / `awk` など他のコマンドは対象外とする。
+
+`sed` の「`-n` を含む」は、単独の `-n` オプションが付いた形だけを指す（SHALL）。`-ne` のようなまとめ書きは含めない（数えずに通してよい入力として扱う）。リダイレクトが語にくっついた形（`2>/dev/null`、`2>&1`、`>out.txt`、`<in.txt`）は、`>` か `<` を含む語を数えない規則で除外する（SHALL）。
+
+この取り出しの守備範囲は次のとおりとする（SHALL）。
+- 入力の出どころ: `W` のトランスクリプトに残った `Bash` の `command` 文字列だけ。実際のシェルの展開結果や実行結果は見ない
+- 拾いたい誤り: `sed` のスクリプト、オプションの値、リダイレクト先、`echo` の引数を、読んだファイルとして数える過大計上
+- 数えずに通してよい入力（取りこぼしを許容する）: `sed -n '1p;5p' f` のようにスクリプト内に `;` を含む形、`sed -ne ...` のまとめ書き、`cat "$F"` のような変数、`cat *.md` のようなグロブ、`xargs cat`、`grep` / `awk` / `less` による読み、heredoc の本文の行を改行で区間に分けたときの誤計上
+- 取りこぼしや誤計上が新しく見つかるたびに塞ぎ切ることを、この Requirement の完了条件にしない（MUST NOT。近似であることを前提にする）
 
 #### Scenario: 同一記録先の後続 W の読み直し割合が算出される
 
 - **GIVEN** `#552` を記録先とする `W` が 2 体（先行・後続の順で開始）存在し、先行が `fileA.md` と `fileB.md` を読み、後続が `fileA.md` を読み直した
 - **WHEN** `--by-role` を実行する
 - **THEN** 後続の `W` の読み直し割合 `50.0`（2 ファイル中 1 ファイル）が `reread_pct` の算出対象に含まれる
+
+#### Scenario: 先行が Read、後続が Bash の sed -n で読んだ同じファイルを数える
+
+- **GIVEN** `#552` を記録先とする `W` が 2 体存在し、先行が `Read` で `fileA.md` を読み、後続が `Bash` の `sed -n '10,20p' /path/to/fileA.md` で同じファイルを読んだ
+- **WHEN** `--by-role` を実行する
+- **THEN** `reread_pct` は `0.0` ではなく、その 1 件を数えた値（`100.0`）になる
+
+#### Scenario: cat / head / tail の各形でも数える
+
+- **GIVEN** 先行が `Read` で `fileA.md` を読み、後続が `cat fileA.md`、`head -n 5 fileA.md`、`tail -n 5 fileA.md` のいずれかで同じファイルを読んだ
+- **WHEN** `--by-role` を実行する
+- **THEN** いずれの形でも、`reread_pct` はそのファイルを読み直しとして数えた値になる
+
+#### Scenario: Read だけのトランスクリプトでは値が変わらない
+
+- **GIVEN** 先行・後続とも `Bash` の読みを含まず `Read` だけでファイルを読んでいる
+- **WHEN** `--by-role` を実行する
+- **THEN** `reread_pct` はこの変更の前と同じ値になる
+
+#### Scenario: スクリプト・オプション値・リダイレクトはファイルとして数えない
+
+- **GIVEN** 後続が `sed -n '10,20p' fileA.md`、`head -n 20 fileA.md`、`cat fileA.md > out.txt`、`cat fileA.md 2>/dev/null` を実行した
+- **WHEN** `reads` を集める
+- **THEN** 数えられるのは `fileA.md` だけで、`10,20p` `20` `out.txt` `2>/dev/null` は含まれない
 
 #### Scenario: グループ最初の W は母数から除かれる
 

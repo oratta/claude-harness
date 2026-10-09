@@ -202,7 +202,9 @@ GITHUB_TOKEN でマージすると、その push が後続ワークフローを�
    - **Contents: Read and write**（マージ＝ push 相当）
    - **Pull requests: Read and write**
    - Metadata: Read-only（自動で付く）
-4. 有効期限は任意（切れると auto-merge が黙って止まる＝安全側に倒れる。カレンダーに更新を入れておく）
+4. 有効期限は任意（切れるとマージだけが止まる＝安全側に倒れる。カレンダーに更新を入れておく）。
+   失効しても無言では止まらない — run のログに「マージが認証・認可で失敗（HTTP 401）」の
+   **error** が出る（下の「マージされないときの調べ方」の項目 7）
 5. 生成したトークンを `https://github.com/<owner>/<repo>/settings/secrets/actions` で
    **Name: `AUTOMERGE_PAT`** として登録する
 
@@ -243,17 +245,83 @@ CI green の判定は**チェック名の完全一致**で auto-merge が自前�
    出る）。判定は PR コメントの「対象 HEAD: <40桁フル SHA>」と現在の HEAD の一致を要求する。
    止まっていたら pr-review-gate を最初からやり直し、新しい HEAD で宣言・証拠を出し直す
 6. CI が green か。green に見えるのに通らないなら `REQUIRED_CHECKS` とジョブ名のズレを疑う
-7. `AUTOMERGE_PAT` の期限切れ（ログに「未設定」と出る）
+7. `AUTOMERGE_PAT` の期限切れ・権限剥奪。**「未設定」とは出ない**（未設定チェックは
+   secret が空のときだけ効き、期限切れの PAT は「設定済み」として素通りする）。
+   出るのは `PR #N のマージが認証・認可で失敗（HTTP 401）。secrets.AUTOMERGE_PAT が
+   失効／権限不足の可能性が高く、差し替えるまで自己回復しません` という **error** ログ。
+   これが出ていたら PAT を再発行して secret を差し替える（手順はこの文書の PAT の節）
 8. ラベル付与（`agent-review:passed`）では即時に判定が走る（`pull_request_target: labeled`）。
    その run のログを見る。付与時点で CI が未 green だった場合はスキップされるのが正常で、
    次の CI 完了（`workflow_run`）か日次 cron が拾う。急ぐときは手動実行で `pr` に番号を入れる
 9. ログに 409 が出ていないか（判定後に新しいコミットが push されると SHA ピンで拒否される。
-   次のイベントで新しい HEAD を検証し直すので、放置しても最終的にマージされる）
+   次のイベントで新しい HEAD を検証し直すので、放置しても最終的にマージされる）。
+   ただし**自己回復するのは 409 だけ**で、401 / 403（PAT 失効・権限不足）は別のログ
+   （項目 7）に分けて出る。そちらは放置しても直らないので、409 の案内を当てはめない
+
+---
+
+## LLM 側の防壁: `.claude/settings.json` の deny 設定
+
+この仕組みは「マージするのはロボットだけ。LLM は `gh pr merge` も main への直接 push もしない」
+ことを前提にしている。その前提をプロンプト（規約文書）ではなく**ハーネスが実行前にブロックする層**で
+守るのが `.claude/settings.json` の `permissions.deny`（テンプレートの `.claude/settings.json`。
+展開手順は README の手順 7）:
+
+| deny | 塞ぐもの |
+|---|---|
+| `Bash(gh pr merge:*)` | LLM による直接マージ（ゲート・聖域判定・SHA ピンを全部素通りする経路） |
+| `Bash(git push origin main:*)` / `master:*` | PR を経ない main 更新 |
+| `Bash(git push -f:*)` / `--force:*` / `--force-with-lease:*` | 履歴の書き換え（マージ済み SHA の差し替え） |
+| `Bash(git push --no-verify:*)` | pre-push ガード（push-guard-setup）の迂回 |
+
+- 展開先に既存の deny があれば**消さずに足す**（README の jq コマンドは和集合を取る）。
+  deny を減らす変更は `.claude/` が聖域なので必ず human-merge になる。
+- `git merge` / `git rebase` そのものは deny しない（feature ブランチでの main 追従に要る）。
+- 無課金 private リポで branch protection が使えない場合、この deny が LLM 側の主防壁になる。
+  branch protection が使えるリポでは GitHub 側でも main を保護する（PR 必須 + required status checks）。
+
+---
+
+## staging スモーク + auto-revert（`staging-smoke.yml`）
+
+マージ前のゲートで拾えない意味的な破壊（ビルドは通るが画面が死ぬ等）を、**main マージ後の staging
+デプロイ直後に外形チェックで検知し、自分で戻す**層。staging デプロイ（`Deploy to Staging` という名前の
+workflow）を持つリポだけに展開する（README の手順 6）。
+
+### 動き
+
+1. `Deploy to Staging` が成功で完了 → `vars.STAGING_DOMAIN` の代表 URL（既定 3 本。展開時に差し替え）を
+   curl し、HTTP 200 と期待文字列を確認する
+2. 失敗が 1 件でもあれば（5xx / 接続失敗 / 期待文字列なし）→ **revert PR を起票**
+   （`revert-auto-<sha12>` ブランチ、`incident` ラベルのみ。`agent-review:passed` は付けない）
+   + **incident issue を起票**（事実経過と残タスクのチェックリスト）
+3. `Deploy to Staging` 自体が失敗 → revert 対象なしとして incident issue だけ起票
+
+revert PR は auto-merge の合格条件（`agent-review:passed` + 現 HEAD の「対象 HEAD:」コメント）を
+**自己付与しない**。機械生成の PR がレビューゲートを迂回して自動マージされる経路は作らない設計で、
+**人間が revert PR の内容をレビューし、`agent-review:passed` を付けて初めて auto-merge の対象になる**
+（聖域パスに触れていれば従来どおり人間がマージする）。staging の巻き戻しは人間のレビュー待ちの分だけ遅れる。
+
+### 誤検知ガード（revert しないケース）
+
+全チェックが**認証系（3xx / 401 / 403）だけ**で落ちたときは、Vercel の Deployment Protection 等に
+弾かれて「検証不能」なのであってコード欠陥の証拠ではない。この場合は revert せず、
+`warn: staging スモーク検証不能` の issue を 1 件だけ起票する（同種の open issue があれば重複起票しない）。
+対処は `VERCEL_AUTOMATION_BYPASS_SECRET` の登録か staging の保護解除。
+1 件でも認証系以外の失敗が混ざっていればコード欠陥の証拠ありとして revert する。
+この判定はプラグイン側の bats テストが固定している（401 のみ → revert 経路に入らない）。
+
+### 前提と止め方
+
+- `vars.STAGING_DOMAIN` 未設定の間はスモークをスキップして警告だけ出す（何も起票しない）
+- revert PR の push / 作成は `AUTOMERGE_PAT` を共用する。未設定なら revert PR の起票は失敗ログを残して終わる（incident issue は先に起票済み）
+- 同じコミットに対する revert ブランチが既にあれば二重起票しない
+- 止めたいときは `vars.STAGING_DOMAIN` を空にするか、workflow を Actions 画面で disable する
 
 ---
 
 ## この仕組みが担保していないこと（受容済みの残リスク）
 
-テストで拾えない意味的な破壊はこのゲートを通過しうる。その守りは main マージ後の検知
-（デプロイ後スモーク・稼働監視・この文書の巻き戻し手順）としてリポごとに別途用意する。
-本ドキュメントが扱うのは**マージ前のゲートと緊急停止・巻き戻し**まで。
+テストで拾えない意味的な破壊はマージ前のゲートを通過しうる。その守りは main マージ後の検知
+（上の staging スモーク・稼働監視・この文書の巻き戻し手順）として用意する。staging を持たないリポや
+スモークの導線に含まれない画面の破壊は、稼働監視と人間の巻き戻し判断に残る。

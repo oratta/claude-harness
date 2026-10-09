@@ -509,3 +509,70 @@ _fence_trailing_ctrl_fixture() { # $1=出力先ディレクトリ $2=行末に�
   [ "$status" -eq 0 ]
   [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]] || return 1
 }
+
+# --- #150: 複数行コメントを閉じた行に、閉じたコメントがもう1つ同居しても閉じ忘れ扱いにしない ---
+# 修正前は「閉じたあとの残りに <!-- があれば開き直す」だけを見ていたため、
+# `mid --> <!-- b --> tail` の <!-- b --> を閉じ忘れと誤判定して止まっていた（上書き行も 0 になる）。
+# 動的に生成する fixture（静的 fixture を足すと fixtures 一覧の件数を数える検査に触れるため）。
+_pj_fixture() { # $1=出力先ディレクトリ $2=表の前に置く本文（printf の書式ではなく生の文字列）
+  local dir="$1" body="$2"
+  mkdir -p "${dir}/.claude/casting"
+  {
+    printf -- '---\ncatalog_version: 1\n---\n\n# 配役表\n\n'
+    printf '%s\n' "$body"
+    printf '\n| 観点 | この観点が要る論点の条件 | 判断基準の出どころ | 移譲に必要な文書 | 既定の担い手 |\n|---|---|---|---|---|\n'
+    printf '%s\n' '| 財務・コスト | 支出・API 消費・収益に影響するか | 混合（判断力は内蔵・閾値は注入） | 予算方針文（上限額と裁量範囲） | 主 |'
+  } > "${dir}/.claude/casting/project.md"
+}
+
+@test "close-then-reopen-closed: 'mid --> <!-- b --> tail' after a multi-line comment is not reported as unclosed" {
+  local dir="${BATS_TEST_TMPDIR}/close-reopen-closed"
+  _pj_fixture "$dir" $'<!-- open\nmid --> <!-- b --> tail'
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"unclosed-comment"* ]] || return 1
+  run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 主 | project |"* ]] || return 1
+}
+
+@test "close-then-reopen-unclosed: 'mid --> <!-- b' after a multi-line comment is still reported as unclosed" {
+  local dir="${BATS_TEST_TMPDIR}/close-reopen-unclosed"
+  _pj_fixture "$dir" $'<!-- open\nmid --> <!-- b'
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unclosed-comment"* ]] || return 1
+}
+
+# --- #150: エスケープされたパイプ \| は列区切りとして数えない ---
+
+@test "escaped-pipe: a 5-column row whose cell contains \\| is not malformed and resolves with the human value" {
+  local dir="${BATS_TEST_TMPDIR}/escaped-pipe"
+  mkdir -p "${dir}/.claude/casting"
+  printf '%s\n' '---' 'catalog_version: 1' '---' '' '# 配役表' '' \
+    '| 観点 | この観点が要る論点の条件 | 判断基準の出どころ | 移譲に必要な文書 | 既定の担い手 |' \
+    '|---|---|---|---|---|' \
+    '| 財務・コスト | 支出 \| API 消費に影響するか | 混合（判断力は内蔵・閾値は注入） | 予算方針文（上限額と裁量範囲） | 主 |' \
+    > "${dir}/.claude/casting/project.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"malformed-row"* ]] || return 1
+  run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  # 担い手が予算方針文の列へずれず「主」になり、セルの中身は \| のまま出る
+  [[ "$output" == *"| 財務・コスト | 支出 \\| API 消費に影響するか | 混合（判断力は内蔵・閾値は注入） | 予算方針文（上限額と裁量範囲） | 主 | project |"* ]] || return 1
+}
+
+@test "escaped-pipe: an unescaped extra | is still reported as malformed-row (the message names the \\| escape)" {
+  local dir="${BATS_TEST_TMPDIR}/unescaped-pipe"
+  mkdir -p "${dir}/.claude/casting"
+  printf '%s\n' '---' 'catalog_version: 1' '---' '' '# 配役表' '' \
+    '| 観点 | この観点が要る論点の条件 | 判断基準の出どころ | 移譲に必要な文書 | 既定の担い手 |' \
+    '|---|---|---|---|---|' \
+    '| 財務・コスト | 支出 | API 消費に影響するか | 混合 | 予算方針文 | 主 |' \
+    > "${dir}/.claude/casting/project.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"malformed-row"* ]] || return 1
+  [[ "$output" == *'\|'* ]] || return 1
+}

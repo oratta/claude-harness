@@ -87,16 +87,61 @@ class EffectiveValues(unittest.TestCase):
         self.assertEqual(a['weekly_all_pct'], 40)
         self.assertEqual(a['weekly_observed_at'], NOW - 2 * DAY)
 
-    def test_same_window_takes_the_larger_value(self):
+    def test_same_window_takes_the_newer_value(self):
         reset = NOW + 3 * DAY
         self.record(None, observed=NOW - 60, weekly=50, weekly_reset=reset)
         self.snap({'a': {'fetched_at': NOW - 5 * HOUR, 'weekly_all_pct': 55,
                          'weekly_resets_epoch': reset + 1800}})
         a = self.view()['accounts']['a']
-        self.assertEqual(a['weekly_all_pct'], 55)
-        # The reset time comes from the newer source, the observed time from the value taken.
+        # A manual reset lowers the value without moving the reset time, so the size does not decide.
+        self.assertEqual(a['weekly_all_pct'], 50)
         self.assertEqual(a['weekly_resets_epoch'], reset)
-        self.assertEqual(a['weekly_observed_at'], NOW - 5 * HOUR)
+        self.assertEqual(a['weekly_observed_at'], NOW - 60)
+
+    def test_newer_record_after_manual_reset_beats_old_full_snapshot(self):
+        reset = NOW + 3 * DAY
+        self.record(None, observed=NOW - 60, weekly=0, weekly_reset=reset)
+        self.snap({'a': {'fetched_at': NOW - 2 * HOUR, 'weekly_all_pct': 100,
+                         'weekly_resets_epoch': reset}})
+        a = self.view()['accounts']['a']
+        self.assertEqual(a['weekly_all_pct'], 0)
+        self.assertEqual(a['weekly_observed_at'], NOW - 60)
+
+    def test_newer_and_larger_value_is_taken(self):
+        reset = NOW + 3 * DAY
+        self.record(None, observed=NOW - 60, weekly=60, weekly_reset=reset)
+        self.snap({'a': {'fetched_at': NOW - 2 * HOUR, 'weekly_all_pct': 40,
+                         'weekly_resets_epoch': reset}})
+        self.assertEqual(self.view()['accounts']['a']['weekly_all_pct'], 60)
+
+    def test_newer_snapshot_beats_older_record_in_the_same_window(self):
+        reset = NOW + 3 * DAY
+        self.record(None, observed=NOW - 2 * HOUR, weekly=70, weekly_reset=reset)
+        self.snap({'a': {'fetched_at': NOW - 60, 'weekly_all_pct': 0,
+                         'weekly_resets_epoch': reset + 600}})
+        a = self.view()['accounts']['a']
+        self.assertEqual(a['weekly_all_pct'], 0)
+        self.assertEqual(a['weekly_resets_epoch'], reset + 600)
+        self.assertEqual(a['weekly_observed_at'], NOW - 60)
+
+    def test_equal_observed_times_take_the_larger_value(self):
+        reset = NOW + 3 * DAY
+        self.record(None, observed=NOW - 60, weekly=50, weekly_reset=reset)
+        self.snap({'a': {'fetched_at': NOW - 60, 'weekly_all_pct': 55,
+                         'weekly_resets_epoch': reset + 1800}})
+        a = self.view()['accounts']['a']
+        self.assertEqual(a['weekly_all_pct'], 55)
+        # The reset time also comes from the source of the larger value.
+        self.assertEqual(a['weekly_resets_epoch'], reset + 1800)
+
+    def test_missing_observed_time_takes_the_larger_value(self):
+        reset = NOW + 3 * DAY
+        self.record(None, observed=NOW - 60, weekly=50, weekly_reset=reset)
+        self.snap({'a': {'weekly_all_pct': 55, 'weekly_resets_epoch': reset + 1800}})
+        a = self.view()['accounts']['a']
+        self.assertEqual(a['weekly_all_pct'], 55)
+        self.assertEqual(a['weekly_resets_epoch'], reset + 1800)
+        self.assertIsNone(a['weekly_observed_at'])
 
     def test_weekly_all_reset_mismatch_prefers_the_record(self):
         self.record(None, observed=NOW - 60, weekly=10, weekly_reset=NOW + 6 * DAY)

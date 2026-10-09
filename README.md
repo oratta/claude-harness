@@ -25,7 +25,7 @@ Claude Code用スキル・プラグインのマーケットプレイス
 **機能:**
 - `/develop [issue番号|URL|自然文]`（`/work-issue` はエイリアス）— develop スキルを interactive モードで起動する。issue が無ければ issue を切らず Draft PR を記録先にする（issue を切るのは追跡・キュー・議論が要るときだけ）
 - 本体は Edit でコードを書かず、レビューを代行しない。別コンテキストを要する工程（仕様レビュー・PR レビュー）はすべて本体が起こす
-- エピック（独立してマージできる PR が 2 本以上・複数 capability・順序依存）は子 issue ごとに 1 ループを並列に回す（並列可能な子が 2 件以上で `orca` があり本体が Orca 管理のワークツリーにいれば Orca の子ワークツリーの独立セッション、それ以外は `isolation: "worktree"` のサブエージェント。`scripts/epic-dispatch.sh`）
+- エピック（独立してマージできる PR が 2 本以上・複数 capability・順序依存）は子 issue ごとに 1 ループを並列に回す（`orca` があり本体が Orca 管理のワークツリーにいれば Orca の子ワークツリーの独立セッション、それ以外と unmanned は `isolation: "worktree"` のサブエージェント。`plugins/dev-workflow/scripts/epic-dispatch.sh`）。Orca 経路では、子が「用が済んだ」の印を付けたワークツリーを親セッションが片付ける
 - loop-dev-agent の無人サイクル（憲法は各リポの `docs/agent-loop.md`。flatmate が保守）では、憲法のメインが develop の本体を務める（`--unmanned`）
 - 上流の壁打ち（`/opsx:explore`）は呼ばない（issue 化前の壁打ちとは切り分ける）
 - `references/`（プラグイン直下）に他プラグインと共有する契約を置く: 自己検証の共通原則・PR / issue 本文の型・Workflow 実行のロール別ティア・Workflow 実行の型。`issueify` スキルはタスクメモを受け入れ条件付き issue に変換する
@@ -135,5 +135,5 @@ Oratta
 Discord 改造版（公式プラグインの fork で、主のリアクションをセッションへ push 配送するもの）は 2026-09 に flatmate へ移し、flatmate 自身が marketplace として配っている（[genetta-inc/flatmate#851](https://github.com/genetta-inc/flatmate/issues/851)）。harness からは外した（[#314](https://github.com/oratta/claude-harness/issues/314)）。`discord@oratta-claude-harness` を入れている環境は次のとおり切り替える。flatmate の marketplace の登録手順は flatmate#851 を正本とする。
 
 1. `claude plugin uninstall discord@oratta-claude-harness` を実行する
-2. `settings.json` の `enabledPlugins` にある `discord@oratta-claude-harness` を `discord@flatmate` に置き換える
+2. flatmate の marketplace を登録し（手順は flatmate#851）、`settings.json` の `enabledPlugins` に `discord@flatmate` を入れる。手順 1 の uninstall で消えずに `discord@oratta-claude-harness` が残っていれば、そのエントリを消す
 3. 住人の `CHANNEL_PLUGINS` を `plugin:discord@flatmate` にして、住人を再起動する
