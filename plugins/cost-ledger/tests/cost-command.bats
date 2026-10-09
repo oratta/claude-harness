@@ -368,8 +368,22 @@ gql_count() { grep -c '^api graphql' "$GH_LOG" || true; }
   fake_gh_closing
   closing_body "[{\"number\":301,\"headRefName\":\"fork/x\",\"isCrossRepository\":true,\"baseRepository\":{\"nameWithOwner\":\"acme/repo-a\"}},{\"number\":302,\"headRefName\":\"oratta/sample-feature\",\"isCrossRepository\":false,\"baseRepository\":{\"nameWithOwner\":\"acme/other\"}}]"
   run python3 "$CL" cost 148 --repo "$REPO_A"
+  # 問い合わせが成功して読めた場合に限って検証する（読めなかった経路でも通ってしまわないように）
+  [ "$status" -eq 0 ]
+  [ "$(gql_count)" -eq 1 ]
+  [[ "$output" != *'閉じた PR を読めなかった'* ]] || return 1
   [[ "$output" != *'PR #301'* && "$output" != *'PR #302'* ]] || return 1
   [[ "$output" != *'合計（閉じた PR 込み）:'* ]] || return 1
+}
+
+@test "cost: an unknown number never asks for closing PRs" {  # 存在しない番号では閉じた PR の問い合わせ（graphql）に進まない
+  fake_gh_closing
+  closing_body "[$PR300]"
+  run python3 "$CL" cost 999999 --repo "$REPO_A"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'見つかりません'* ]] || return 1
+  [ -s "$GH_LOG" ]
+  [ "$(gql_count)" -eq 0 ]
 }
 
 @test "cost: the PR route and the numberless route never ask for closing PRs" {  # PR 番号・番号なしでは閉じた PR を問い合わせない
