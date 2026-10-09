@@ -383,7 +383,7 @@ gql_count() { grep -c '^api graphql' "$GH_LOG" || true; }
   [ "$status" -ne 0 ]
   [[ "$output" == *'見つかりません'* ]] || return 1
   [ -s "$GH_LOG" ]
-  [ "$(gql_count)" -eq 0 ]
+  [ "$(grep -c 'graphql' "$GH_LOG" || true)" -eq 0 ]
 }
 
 @test "cost: the PR route and the numberless route never ask for closing PRs" {  # PR 番号・番号なしでは閉じた PR を問い合わせない
