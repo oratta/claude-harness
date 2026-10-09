@@ -145,10 +145,10 @@ withcause() {
 }
 
 @test "cause: null and a missing key are identical and show no cause" {  # null もキー無しも原因を出さず同じ出力
-  a="$(mk '{"hit_ratio":0.82,"last_miss_cause":null}' | bash "$SL")"
-  b="$(mk '{"hit_ratio":0.82}' | bash "$SL")"
-  [ "$a" = "$b" ]
-  l="$(printf '%s\n' "$a" | strip_ansi | sed -n 2p)"
+  mk '{"hit_ratio":0.82,"last_miss_cause":null}' | bash "$SL" > "$WORK/a.bin"
+  mk '{"hit_ratio":0.82}' | bash "$SL" > "$WORK/b.bin"
+  cmp "$WORK/a.bin" "$WORK/b.bin"
+  l="$(strip_ansi < "$WORK/a.bin" | sed -n 2p)"
   [[ "$l" == *"Cache 82%"* ]] || return 1
   [[ "$l" != *"miss:"* ]] || return 1
 }

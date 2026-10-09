@@ -168,6 +168,7 @@ wt_setup_frontmatter() {
 # 先頭 12 行でそれが読め、本文で観測（版・経路）と残す理由が読めること。
 
 # frontmatter 内のコメント行だけを見る（本文の Markdown 見出しに当たらないようにする。#787）
+# （1 行目の --- を除くので frontmatter は 11 行。テスト名と上の節コメントの「先頭 12 行」は --- を含む数え方。理由は changes/819.md）
 fm_comment_says_ineffective() {
   wt_frontmatter "$1" | head -n 11 | grep -E '^#.*効かない' | grep -q '本文'
 }
