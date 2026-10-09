@@ -398,14 +398,20 @@ PY
   python3 - "$LEDGER.state.sqlite" <<'PY'
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1])
-db.execute("DELETE FROM ids WHERE id = 'r1#u2'")
-db.execute("UPDATE counted SET out = 8 WHERE id = 'r1'")
+# 0 行にしか当たらなければ戻せていないので、2 文とも 1 行に当たったことを確かめる
+cur = db.execute("DELETE FROM ids WHERE id = 'r1#u2'")
+assert cur.rowcount == 1, cur.rowcount
+cur = db.execute("UPDATE counted SET out = 8 WHERE id = 'r1'")
+assert cur.rowcount == 1, cur.rowcount
 db.commit()
 PY
   cp "$LEDGER" "$BATS_TEST_TMPDIR/before.jsonl"
   python3 "$CL" ledger-sync --quiet
-  [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "2" ]
-  cmp "$LEDGER" "$BATS_TEST_TMPDIR/before.jsonl"
+  [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "2" ] || return 1
+  cmp "$LEDGER" "$BATS_TEST_TMPDIR/before.jsonl" || return 1
+  # 対照: --rescan なら同じ控えの状態から開き直し、差分の行が 1 行増える
+  python3 "$CL" ledger-sync --rescan --quiet
+  [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "3" ] || return 1
 }
 
 @test "finaloutput: a state file rebuilt from a ledger holding supplements adds a later final line once (49)" {
