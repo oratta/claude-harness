@@ -412,6 +412,12 @@ PY
   # 対照: --rescan なら同じ控えの状態から開き直し、差分の行が 1 行増える
   python3 "$CL" ledger-sync --rescan --quiet
   [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "3" ] || return 1
+  # 増えた 1 行が差分（補足）の行であること。補足以外の行を足す退行でも行数は 3 になる
+  python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+assert [r["output_tokens"] for r in rows] == [8, 243, 243], rows
+PY
 }
 
 @test "finaloutput: a state file rebuilt from a ledger holding supplements adds a later final line once (49)" {
