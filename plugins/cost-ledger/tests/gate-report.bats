@@ -1770,6 +1770,27 @@ PY
   [ "$status" -eq 0 ]
 }
 
+@test "timeline-hook: repos differing only in letter case share one lock file" {  # owner/repo の大文字小文字だけが違う 2 つの名前で lock() を呼ぶと同じ名前のロックファイルを開く（大文字小文字を区別する環境でも同じ対象が別のロックにならない）
+  run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY2'
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import gate_report
+names = []
+real_open = os.open
+def spy_open(path, flags, mode=0o777, *, dir_fd=None):
+    if dir_fd is not None:
+        names.append(path)
+    return real_open(path, flags, mode, dir_fd=dir_fd)
+os.open = spy_open
+for repo in ("Acme/Repo", "acme/repo"):
+    fd = gate_report.lock(repo, 7)
+    assert isinstance(fd, int), fd
+    os.close(fd)
+assert len(names) == 2 and names[0] == names[1] == "acme__repo__7.lock", names
+PY2
+  [ "$status" -eq 0 ]
+}
+
 # --- issue クローズでの、閉じた PR の問い合わせ（合計の行） ---
 
 @test "timeline-hook: closing an issue passes its closing PRs to timeline" {  # PR #704（feat/x、同じリポジトリ）を返す issue #12 に gh issue close 12 → timeline は --issue 12 と --closing-pr 704:feat/x を受け取り、コメントが 1 本書き込まれる
