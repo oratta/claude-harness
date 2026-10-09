@@ -29,7 +29,7 @@ INPUT=$(cat)
 parse_field() {
   local key="$1"
   if command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$INPUT" | python3 -c "
+    printf '%s' "$INPUT" | python3 -I -c "
 import json,sys
 try:
     d = json.load(sys.stdin)

@@ -16,5 +16,5 @@ COST_LEDGER_PATH="${CLAUDE_PLUGIN_OPTION_LEDGER_PATH:-${COST_LEDGER_PATH:-}}"
 [ -n "$COST_LEDGER_PATH" ] || exit 0
 export COST_LEDGER_PATH
 command -v python3 >/dev/null 2>&1 || exit 0
-python3 "$(dirname "$0")/cost_ledger.py" ledger-sync --quiet </dev/null >/dev/null 2>&1
+python3 -E -s "$(dirname "$0")/cost_ledger.py" ledger-sync --quiet </dev/null >/dev/null 2>&1
 exit 0

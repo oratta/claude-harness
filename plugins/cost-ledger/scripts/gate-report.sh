@@ -64,5 +64,7 @@ scripts_dir="$(cd "$(dirname "$0")" && pwd)" || exit 0
 [ -f "$scripts_dir/write_allow.py" ] || exit 0
 
 # payload は stdin から読ませる。環境変数や引数に載せると長い出力で ARG_MAX を超えて hook が落ちる。
-printf '%s' "$payload" 2>/dev/null | python3 "$scripts_dir/gate_report.py" >/dev/null 2>&1
+# -E -s で起動し、PYTHON* の環境変数（PYTHONPATH など）とユーザー site を検索パスに使わない。-I は付けない:
+# -I はスクリプトのディレクトリも検索パスから外すので、隣の cost_ledger.py・write_allow.py を import できなくなる（#847）。
+printf '%s' "$payload" 2>/dev/null | python3 -E -s "$scripts_dir/gate_report.py" >/dev/null 2>&1
 exit 0

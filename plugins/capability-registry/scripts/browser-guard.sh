@@ -7,7 +7,7 @@ set -uo pipefail
 
 INPUT="$(cat 2>/dev/null || true)"
 
-SESSION_ID="$(printf '%s' "$INPUT" | python3 -c '
+SESSION_ID="$(printf '%s' "$INPUT" | python3 -I -c '
 import json, sys
 try:
     print(json.load(sys.stdin).get("session_id") or "")
@@ -23,7 +23,7 @@ MARKER="${TMPDIR:-/tmp}/capability-registry-warned-${SESSION_ID}"
 [ -e "$MARKER" ] && exit 0
 touch "$MARKER" 2>/dev/null || exit 0
 
-python3 <<'PY'
+python3 -I <<'PY'
 import json
 ctx = (
     "ブラウザツールを使おうとしています。実行前に capability-registry スキルの索引で確認してください: "
