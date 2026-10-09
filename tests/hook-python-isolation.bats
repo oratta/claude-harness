@@ -16,6 +16,10 @@ setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DW="${REPO_ROOT}/plugins/dev-workflow"
   WORK="$(mktemp -d)"
+  # 実環境の ~/.claude に触れない: HOME と、prompt-tripwires-refresh の状態の置き場を作業ディレクトリの下に向ける
+  mkdir -p "${WORK}/home"
+  export HOME="${WORK}/home"
+  export TRIPWIRE_STATE_DIR="${WORK}/tripwire-versions"
   # 実環境の ~/.claude と実 API を読まない（subagent-start-context.bats の setup と同じ隔離）
   export CLAUDE_ACCOUNTS_FILE="${WORK}/accounts.json"
   export USAGE_SESSIONS_DIR="${WORK}/.usage-sessions"
@@ -47,6 +51,20 @@ teardown() {
 # in_fake <コマンド…> — 偽のモジュールを置いたディレクトリをカレントにし、PYTHONPATH にも入れて実行する
 in_fake() {
   ( cd "$FAKE" && PYTHONPATH="$FAKE" "$@" )
+}
+
+# unisolated_copy <スクリプト> — python3 の -I を外した複製を作り、そのパスを出す。偽のモジュールを置いた
+# ディレクトリで実行すると偽物が読まれる（＝その入力で python3 まで進んでいる）ことを、検査ごとの対照に使う
+unisolated_copy() {
+  local dst; dst="${WORK}/unisolated/$(basename "$1")"
+  mkdir -p "${WORK}/unisolated"
+  sed 's/python3 -I /python3 /' "$1" > "$dst"
+  if cmp -s "$1" "$dst"; then
+    echo "unisolated_copy: $1 に python3 -I が無い" >&2
+    return 1
+  fi
+  chmod +x "$dst"
+  printf '%s' "$dst"
 }
 
 # no_root_level_path <実行記録> — /scripts/ か /templates/ で始まるパスが現れない
@@ -165,13 +183,20 @@ cost_ledger_fake_env() {
 @test "#847: prompt-tripwires-refresh does not load fake modules" {
   export CLAUDE_PLUGIN_ROOT="$DW"
   export TMPDIR="${WORK}/tmp-a"
-  mkdir -p "$TMPDIR"
-  run bash -c "printf '{\"session_id\":\"iso-a\"}' | '${DW}/scripts/prompt-tripwires-refresh.sh'"
+  mkdir -p "$TMPDIR" "$TRIPWIRE_STATE_DIR"
+  local refresh="${DW}/scripts/prompt-tripwires-refresh.sh" state="${TRIPWIRE_STATE_DIR}/iso-a" copy
+  # python3 まで進むのは、状態ファイルに今のプラグインの場所と違う値が入っているとき（プラグイン更新後）だけ。
+  # 対照: -I を外した複製は、同じ条件で偽の json.py を読む（＝この条件で python3 まで進んでいる）
+  copy="$(unisolated_copy "$refresh")"
+  printf 'older-plugin-root\n' > "$state"
+  run in_fake bash -c "printf '{\"session_id\":\"iso-a\"}' | '$copy'"
+  [ -s "$FAKE_MARKER" ] || { echo "対照で偽のモジュールが読まれない（python3 まで進んでいない）"; return 1; }
+  rm -f "$FAKE_MARKER"
+
+  printf 'older-plugin-root\n' > "$state"
+  run in_fake bash -c "printf '{\"session_id\":\"iso-a\"}' | '$refresh'"
   [ "$status" -eq 0 ]
-  export TMPDIR="${WORK}/tmp-b"
-  mkdir -p "$TMPDIR"
-  run in_fake bash -c "printf '{\"session_id\":\"iso-a\"}' | '${DW}/scripts/prompt-tripwires-refresh.sh'"
-  [ "$status" -eq 0 ]
+  [[ "$output" == *"additionalContext"* ]] || return 1
   [ ! -e "$FAKE_MARKER" ] || { cat "$FAKE_MARKER"; return 1; }
 }
 
