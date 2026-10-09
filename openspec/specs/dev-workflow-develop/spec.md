@@ -1800,7 +1800,7 @@ develop の SKILL.md「エピックの扱い」は、端末を作れなかった
 - **THEN** 端末を作れなかった `failed` の子について、既存の端末が無いことを確かめ、作り直して送り、動き出したのを確かめてから再開することが書かれている
 
 ### Requirement: 着手できる子が 1 件でも Orca 経路で回す
-`plugins/dev-workflow/scripts/epic-dispatch.sh` の `route` は、エピックの子のセッションでなく（`nested` でなく）、子の番号が 1 件以上あり、`orca` コマンドが PATH にあり、かつ `orca worktree current --json` が exit 0 で終わる（今いるディレクトリが Orca 管理のワークツリー）ときは、子の件数が何件でも stdout に `orca` の 1 行を出さなければならない（MUST）。子が 0 件のときは `subagent`、`orca` が PATH に無いときと Orca 管理外のときは `subagent` を出す。`nested` の判定が先に行われること、`orca worktree current` を 1 回の `route` で 1 回だけ呼ぶこと、子の番号が数字でなければ exit 1 で終わることは変えない。develop の SKILL.md「エピックの扱い」の「経路の決め方」は、件数の条件を書いてはならない（MUST NOT）。
+`plugins/dev-workflow/scripts/epic-dispatch.sh` の `route` は、エピックの子のセッションでなく（`nested` でなく）、子の番号が 1 件以上あり、`orca` コマンドが PATH にあり、かつ `orca worktree current --json` が exit 0 で終わる（今いるディレクトリが Orca 管理のワークツリー）ときは、子の件数が何件でも stdout に `orca` の 1 行を出さなければならない（MUST）。子が 0 件のときは `subagent`、`orca` が PATH に無いときと Orca 管理外のときは `subagent` を出す。`nested` の判定が先に行われること、`orca worktree current` を 1 回の `route` で 1 回だけ呼ぶこと、子の番号が数字でなければ exit 1 で終わることは変えない。develop の SKILL.md「エピックの扱い」の「経路の決め方」は、`orca` になる条件として子の件数の下限（2 件以上など）を書いてはならない（MUST NOT）。着手できる子が 0 件のとき `subagent` になることと、エピックの子のセッションでは件数によらず `nested` になることは、`route` の実際の結果の説明として書いてよい。
 
 経路は `/develop <エピック番号>` の最初の開始時に 1 回決めて途中で変えず、再開時は `回し方:` で始まる最新のコメントから引き継ぎ、すでに `回し方: サブエージェント` と記録したエピックを途中で Orca 経路に切り替える規則は置かない（SHALL。進行中のサブエージェント方式の子と Orca の子ワークツリーの子が混在する状態を扱う規則が無く、Orca 経路の手順の規定は別の変更が扱うため）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の `route` が `orca` を返す条件の規定、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の `route` の判定の規定、要件「エピックの子への注意書きと…引き継ぐ」の `route` の段落のうち、子の件数の条件に関わる部分に優先する。
 
@@ -1826,7 +1826,7 @@ develop の SKILL.md「エピックの扱い」は、端末を作れなかった
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC=420` の環境で `orca` が PATH にあり Orca 管理のワークツリーにいるとき、`epic-dispatch.sh route 11` を実行する
 - **THEN** stdout は `nested` の 1 行で exit 0、`orca` は呼ばれない
 
-#### Scenario: SKILL.md の経路の決め方に件数の条件が書かれていない
+#### Scenario: SKILL.md の経路の決め方に orca になる条件としての件数の下限が書かれていない
 - **WHEN** `skills/develop/SKILL.md` の「エピックの扱い」の「経路の決め方」を読む
-- **THEN** `orca` になる条件が「`orca` が PATH にあり、本体が Orca 管理のワークツリーにいる」だけで書かれ、blocked されていない子の件数の下限の条件が無く、経路は最初の開始時に 1 回だけ決めて途中で変えないこと、再開時は `回し方:` のコメントから引き継ぐことは残っている
+- **THEN** `orca` になる条件が「`orca` が PATH にあり、本体が Orca 管理のワークツリーにいる」だけで書かれ、`orca` になる条件として blocked されていない子の件数の下限（2 件以上など）が無く（着手できる子が 0 件のとき `subagent` になる旨の文はあってよい）、経路は最初の開始時に 1 回だけ決めて途中で変えないこと、再開時は `回し方:` のコメントから引き継ぐことは残っている
 
