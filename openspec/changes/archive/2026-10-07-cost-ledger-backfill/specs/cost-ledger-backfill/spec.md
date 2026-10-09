@@ -150,7 +150,7 @@ SessionStart の JSON の `source` が `clear` または `compact` のとき（m
 - **THEN** 実行後の控えファイルに `acme/other` の値が実行前と同じまま残っている
 
 #### Scenario: 壊れた控え
-- **WHEN** 控えファイルの中身が JSON でない状態で SessionStart の hook JSON を流す
+- **WHEN** 控えファイルの中身が JSON でない状態で、一覧が 1 件以上を返す SessionStart の hook JSON を流す
 - **THEN** 初回と同じく 24 時間前からの一覧が行われ、実行後の控えファイルは読める形になっている
 
 ### Requirement: 後追いの行を積む

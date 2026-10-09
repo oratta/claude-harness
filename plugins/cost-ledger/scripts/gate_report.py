@@ -757,7 +757,7 @@ def lock(repo, number):
             st = os.fstat(dir_fd)
             if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
                 return None
-            name = "%s__%d.lock" % (repo.replace("/", "__"), number)
+            name = "%s__%d.lock" % (repo.lower().replace("/", "__"), number)
             flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
             for attempt in range(5):
                 try:
