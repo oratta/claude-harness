@@ -817,9 +817,10 @@ def closing_prs(repo, number):
     return found
 
 
-def stack(kind, repo, number, branch, names, at, cwd, scripts_dir):
+def stack(kind, repo, number, branch, names, at, cwd, scripts_dir, extra=()):
     """1 行積む。ロックを持ったまま、読み取り・（issue のクローズなら閉じた PR の問い合わせ）・
-    timeline・書き込みを行う。"""
+    timeline・書き込みを行う。``extra`` は timeline のコマンドの末尾に足す引数（後追いの
+    ``--backfill``。既定は空で、PostToolUse の hook からは渡さない）。"""
     found = existing_comment(repo, number)
     if found is None:  # 既存コメントの有無が分からないので書かない
         return
@@ -834,6 +835,7 @@ def stack(kind, repo, number, branch, names, at, cwd, scripts_dir):
     if cwd:
         cmd += ["--repo", cwd]
     cmd += ["--target-repo", repo]
+    cmd += list(extra)
     p = run(cmd, stdin_text=before, timeout=TIMELINE_TIMEOUT,
             env=dict(os.environ, PYTHONIOENCODING="utf-8"),
             cwd=cwd if cwd and os.path.isdir(cwd) else None)

@@ -2107,6 +2107,34 @@ def _row_trigger(row: str) -> str:
     return cells[2].strip() if len(cells) > 2 else ""
 
 
+# 後追い（--backfill）が「同じ出来事の行が既にある」と見る幅。手で積んだ行の時刻は hook が動いた
+# 手元の時刻で、GitHub が記録した出来事の時刻と数秒ずれる。手元の時計のずれも見込む
+BACKFILL_SAME_EVENT_MS = 300_000
+
+
+def timeline_has_trigger_near(parsed, trigger: str, at_ms: int) -> bool:
+    """``parse_timeline()`` の結果に、同じきっかけの行が ``at_ms`` の近くにあるか（後追いの二重追記の判定）。
+
+    きっかけの欄を ``+`` で分けた要素に ``trigger`` を含み、記録の時刻が ``at_ms`` の 300 秒前以降の
+    行があれば真。記録と対応しない行（行数が記録より多いときの先頭の余りの行と、最終行が読めない
+    本文のすべての行）は、時刻を見ずに呼び名だけで判定する。合計の行は対象にしない。
+    """
+    rows, records = parsed
+    if records is None:
+        times = [None] * len(rows)
+    else:
+        # 行と記録の対応は build_timeline と同じ（記録は後ろから行に当てる）
+        records = records[max(0, len(records) - len(rows)):]
+        times = [None] * (len(rows) - len(records)) + [at for at, _values in records]
+    for row, at in zip(rows, times):
+        name = _row_trigger(row)
+        if _is_total_trigger(name) or trigger not in name.split("+"):
+            continue
+        if at is None or at >= at_ms - BACKFILL_SAME_EVENT_MS:
+            return True
+    return False
+
+
 def _timeline_insert(entries: list, at_ms: int, trigger: str, values, kept, base=None) -> bool:
     """``entries``（``[時刻, きっかけ, 累計, 行]`` の列）の鍵の位置に 1 行入れる。同じ鍵が既に
     あれば入れずに False。
@@ -2658,9 +2686,16 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
         total = summarise(facts, pricing)["total_usd"]
         target, kind = "PR #%s (%s)" % (args.pr, args.branch), "ブランチ"
     current = (int(round(total * 1e6)),) + token_totals(facts)
-    if (current == (0, 0, 0) and not body.strip()
-            and (total_row is None or total_row[1] == (0, 0, 0))):
+    nothing = current == (0, 0, 0) and (total_row is None or total_row[1] == (0, 0, 0))
+    if nothing and not body.strip():
         return 3
+    if args.backfill:
+        # 後追いだけの 2 つの判定（spec cost-ledger-timeline）。行を足す前に見る
+        if timeline_has_trigger_near(parse_timeline(body), args.trigger, at_ms):
+            sys.stdout.write(body)  # 同じ出来事の行が既にある。合計の行も足さない
+            return 0
+        if nothing:
+            return 3  # 手元にコストが無い。別の PC が積んだ累計を 0 の行で打ち消さない
     sys.stdout.write(build_timeline(
         body, at_ms, args.trigger, current,
         lambda micro, is_total: headline(micro / 1e6, pricing, target,
@@ -2944,6 +2979,9 @@ def build_parser() -> argparse.ArgumentParser:
     timeline.add_argument("--closing-pr", action="append", default=None,
                           help="issue を閉じた PR を <PR番号>:<ヘッドブランチ> で渡す（繰り返し可。"
                                "--issue と一緒にだけ）。節目の行に続けて issue の合計の行を積む")
+    timeline.add_argument("--backfill", action="store_true",
+                          help="後追い（セッション開始の hook）からの呼び出し。同じきっかけの行が --at の"
+                               "近くに既にあれば本文を変えず、手元にコストが無ければ積まない")
     timeline.set_defaults(func=cmd_timeline)
 
     report = subparsers.add_parser("report", help="全履歴を帰属先ごとに畳んだ監査用の出力")
