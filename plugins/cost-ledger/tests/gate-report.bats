@@ -643,6 +643,22 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
   no_gh_call
 }
 
+@test "gate-report: an owner or repo of . or .. is an unresolvable target and gh is never called" {  # -R の owner / repo のどちらかが . か .. なら解決できない対象として扱い、gh を呼ばない。名前の中に . を含むだけの指定は今までどおり対象の確認を行う
+  run_hook "gh pr comment 1 -R a/.. --body x"
+  [ "$status" -eq 0 ]
+  no_gh_call
+  run_hook "gh pr comment 1 -R ../b --body x"
+  no_gh_call
+  run_hook "gh pr comment 1 -R ./b --body x"
+  no_gh_call
+  run_hook "gh pr comment 1 -R ./.. --body x"
+  no_gh_call
+  run_hook "GH_REPO=a/.. gh pr comment 1 --body x"
+  no_gh_call
+  run_hook "gh pr comment 1 -R my.org/my.repo --body x"
+  queried my.org/my.repo 1
+}
+
 @test "gate-report: a command aimed at another host never stacks" {  # --hostname（github.com 以外）・前置きの GH_HOST（github.com 以外）・-R の HOST/OWNER/REPO（github.com 以外）のコマンドは gh を呼ばず無出力で 0。github.com を明示した形は積む
   run_hook "gh api --hostname ghe.example -X POST repos/oratta/claude-harness/issues/300/labels -f 'labels[]=agent-review:passed'"
   [ "$status" -eq 0 ]
@@ -1714,6 +1730,44 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
   run_hook "gh pr comment 300 --body x"
   [ "$(posts)" -eq 1 ]
   [ "$(python3 -B -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode))[2:])' "$TMPDIR/cost-ledger-timeline")" = "700" ]
+}
+
+# lock() を直接呼び、os.open / os.lstat の呼び出しを記録する。置き場を検査してから開くまでの間に
+# パスの解決が入らない（fd を fstat し、ロックファイルはその fd を dir_fd にして開く）ことを確かめる
+@test "timeline-hook: the lock file is opened relative to the verified directory fd" {  # 置き場を O_DIRECTORY | O_NOFOLLOW で開いて fstat し、ロックファイルはその fd を dir_fd に名前だけで開く。置き場のパスに lstat しない
+  run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY'
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import gate_report
+calls, lstats = [], []
+real_open, real_lstat = os.open, os.lstat
+def spy_open(path, flags, mode=0o777, *, dir_fd=None):
+    calls.append((path, flags, dir_fd))
+    return real_open(path, flags, mode, dir_fd=dir_fd)
+def spy_lstat(path, *a, **k):
+    lstats.append(path)
+    return real_lstat(path, *a, **k)
+os.open, os.lstat = spy_open, spy_lstat
+fd = gate_report.lock("a/b", 1)
+assert isinstance(fd, int), fd
+folder = [c for c in calls if c[2] is None]
+lockf = [c for c in calls if c[2] is not None]
+assert len(folder) == 1 and len(lockf) == 1, calls
+need = os.O_DIRECTORY | os.O_NOFOLLOW
+assert folder[0][1] & need == need, calls
+assert "/" not in lockf[0][0] and lockf[0][0].endswith(".lock"), calls
+assert lockf[0][1] & os.O_NOFOLLOW, calls
+assert not any(p == folder[0][0] for p in lstats), lstats
+# 検査用の fd は閉じてある: ロックの fd の直前の番号は残っていない
+try:
+    os.fstat(fd - 1)
+    leaked = fd - 1 not in (0, 1, 2) and os.path.exists("/dev/fd/%d" % (fd - 1)) and \
+        os.fstat(fd - 1).st_ino == real_lstat(folder[0][0]).st_ino
+except OSError:
+    leaked = False
+assert not leaked, "directory fd leaked"
+PY
+  [ "$status" -eq 0 ]
 }
 
 # --- issue クローズでの、閉じた PR の問い合わせ（合計の行） ---

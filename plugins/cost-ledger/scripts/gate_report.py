@@ -55,6 +55,14 @@ API_VALUE_FLAGS = {
 API_METHOD_FLAGS = {"-X", "--method"}
 API_FIELD_FLAGS = {"-f", "--raw-field", "-F", "--field"}
 PART_RE = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def valid_parts(parts):
+    """owner と repo の組が名前として使えるか。文字種を満たし、どちらも . / .. ではない
+    （パスに入れたとき別の API に化ける）。名前の中に . を含むだけなら通す。"""
+    return all(PART_RE.fullmatch(p) and p not in (".", "..") for p in parts)
+
+
 NUMBER_RE = re.compile(r"[0-9]+")
 # gh pr edit / gh issue edit で値を取るフラグ（最初の位置引数を見分けるために飛ばす）
 VALUE_FLAGS = {
@@ -427,7 +435,7 @@ def repo_values(repo_word, gh_repo, env):
         parts = v.rstrip("/").split("/")
         if len(parts) >= 3 and parts[-3].lower() != "github.com":
             continue  # HOST/OWNER/REPO の HOST が github.com 以外。行を積む対象は github.com だけ
-        if len(parts) >= 2 and all(PART_RE.fullmatch(p) for p in parts[-2:]):
+        if len(parts) >= 2 and valid_parts(parts[-2:]):
             repos.append(parts[-2] + "/" + parts[-1])
     return repos
 
@@ -655,7 +663,7 @@ def gh_json(path, cwd):
 
 def full_name(text):
     parts = text.rstrip("/").split("/") if isinstance(text, str) else []
-    if len(parts) >= 2 and all(PART_RE.fullmatch(x) for x in parts[-2:]):
+    if len(parts) >= 2 and valid_parts(parts[-2:]):
         return parts[-2] + "/" + parts[-1]
     return None
 
@@ -741,12 +749,28 @@ def lock(repo, number):
     try:
         folder = os.path.join(os.environ.get("TMPDIR") or "/tmp", "cost-ledger-timeline")
         os.makedirs(folder, mode=0o700, exist_ok=True)
-        # 共有の /tmp に他人が先に作った場所（シンボリックリンク・他人の持ち物・他人が書ける）は使わない
-        st = os.lstat(folder)
-        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
-            return None
-        path = os.path.join(folder, "%s__%d.lock" % (repo.replace("/", "__"), number))
-        fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        # 共有の /tmp に他人が先に作った場所（シンボリックリンク・他人の持ち物・他人が書ける）は使わない。
+        # 検査と作成の間にパスを差し替えられないよう、置き場を fd で開いてその fd を検査し、
+        # ロックファイルもその fd を基準に開く
+        dir_fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            st = os.fstat(dir_fd)
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
+                return None
+            name = "%s__%d.lock" % (repo.replace("/", "__"), number)
+            flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+            for attempt in range(5):
+                try:
+                    fd = os.open(name, flags, 0o600, dir_fd=dir_fd)
+                    break
+                except FileNotFoundError:
+                    # 別のプロセスが置き場を作った直後だと、macOS では dir_fd 基準の作成が
+                    # 一瞬だけ ENOENT で返ることがある（同時に流した 2 本のうち 1 本が書かずに終わった）
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.02)
+        finally:
+            os.close(dir_fd)
         fcntl.flock(fd, fcntl.LOCK_EX)
         return fd
     except OSError:
