@@ -7,6 +7,8 @@ issue #900（PR #636 のレビュー指摘の後始末）。第三者 action の
 - 要件「Third-party actions in workflow templates MUST be pinned to a commit SHA」の Scenario「Every third-party `uses:` in the templates carries a SHA and a version comment」に、THEN の条件を 2 行足す（既存の行は 1 文字も変えない）
   - テンプレートの列挙（`find`）が 0 以外で終了したら fail する（既に実装とテスト S16a-25 がある振る舞いを spec に書く）
   - 走査対象の下のシンボリックリンクは、名前とリンク先を問わず、リンク自体を違反にする（ファイルへのリンクは既に実装とテスト S16a-26 がある。ディレクトリへのリンクと、名前が `*.yml.template` でないリンクは、この change で検査を広げる。テスト S16a-27）
+- 同じ要件に「守備範囲」の段落を足す（入力の出どころ・拾いたい誤り・通ることを許す入力。MUST は増やさない）
+- 残りの 3 通り（名前が違うリンク・リンク切れ・名前が `*.yml.template` のディレクトリへのリンク）のテスト S16a-28 を足す
 - `check_third_party_pins` の `find` を、シンボリックリンクは名前を問わず列挙する形に変える
 
 ## Capabilities
