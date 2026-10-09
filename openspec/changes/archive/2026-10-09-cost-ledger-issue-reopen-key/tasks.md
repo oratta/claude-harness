@@ -6,11 +6,11 @@
 
 ## 2. 仕様と記録
 
-- [ ] 2.1 `openspec/specs/cost-ledger-attribution/spec.md` の該当要件に delta を反映する（archive で行う）。触る範囲: `openspec/specs/cost-ledger-attribution/spec.md:138-165`
-- [ ] 2.2 変更の記録 `plugins/cost-ledger/changes/698.md` を書く（直したこと・過去分は直さないこと・`gh api` で読まない形・実測）。触る範囲: `plugins/cost-ledger/changes/698.md`（新規）
+- [x] 2.1 `openspec/specs/cost-ledger-attribution/spec.md` の該当要件に delta を反映する（archive で行う）。触る範囲: `openspec/specs/cost-ledger-attribution/spec.md:138-165`
+- [x] 2.2 変更の記録 `plugins/cost-ledger/changes/698.md` を書く（直したこと・過去分は直さないこと・`gh api` で読まない形・実測）。触る範囲: `plugins/cost-ledger/changes/698.md`（新規）
 
 ## 3. 実測（エピック #272 の全体の制約）
 
-- [ ] 3.1 LLM のトークンを使っていないこと（hook とスクリプトだけの変更）を PR 本文に書く
-- [ ] 3.2 hook 1 回の同期部分の待ち時間を、変更の前後で 20 回測った中央値で PR 本文に書く
-- [ ] 3.3 `gh` の呼び出し回数を、変更の前後で同じ入力に対して数えて PR 本文に書く
+- [x] 3.1 LLM のトークンを使っていないこと（hook とスクリプトだけの変更）を PR 本文に書く
+- [x] 3.2 hook 1 回の同期部分の待ち時間を、変更の前後で 20 回測った中央値で PR 本文に書く
+- [x] 3.3 `gh` の呼び出し回数を、変更の前後で同じ入力に対して数えて PR 本文に書く
