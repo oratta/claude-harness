@@ -2047,6 +2047,16 @@ def timeline_total_trigger(prs, outside_usd: float) -> str:
     return "%s%s）" % (TIMELINE_TOTAL_PREFIX, " + ".join(parts))
 
 
+def timeline_epic_total_trigger(children: int, prs: int, pr_usd: float, outside_usd: float) -> str:
+    """子 issue 込みの合計の行の「きっかけ」の欄。
+
+    ``合計（子 issue 2 件込み: PR 2 件 $3.00 + PR 外 $2.00）``。PR ごとの額は並べない（子の数に
+    比例して長くならないように）。内訳は ``/cost <番号>`` で見る。
+    """
+    return "%s子 issue %d 件込み: PR %d 件 %s + PR 外 %s）" % (
+        TIMELINE_TOTAL_PREFIX, children, prs, _dollars(pr_usd), _dollars(outside_usd))
+
+
 def _is_total_trigger(trigger: str) -> bool:
     return trigger.startswith(TIMELINE_TOTAL_PREFIX)
 
@@ -2458,26 +2468,30 @@ def cmd_intervals(args, pricing: Pricing, resolver: RepoResolver) -> int:
 
 
 def issue_intervals(number: str, repo_id: str, pricing: Pricing, resolver: RepoResolver,
-                    at_ms: int | None = None):
+                    at_ms: int | None = None, also=()):
     """(リポジトリ識別子, issue 番号) に帰属する区間と、リポジトリ不明に落ちた区間と、
     区間に切る前の事実の列を返す。
+
+    ``also`` に番号を渡すと、それらの issue の区間も同じ読み取りでまとめて返す（子 issue 込みの
+    ``timeline``。台帳への差分の追記も 1 回のまま）。
 
     ``cost <issue番号>``・``issue``・``timeline --issue`` の共通の入口。``at_ms`` を渡すと、
     その時刻以前の事実だけに絞ってから区間に切る。事実の列は、その issue を触った
     セッションの全行を含む（台帳から絞って読んでもセッション単位で絞るため）ので、
     単価表のずれの突き合わせに読み直さずに渡せる。
     """
-    facts = list(load_facts(resolver, issue=number))
+    wanted = {number} | {str(other) for other in also}
+    facts = list(load_facts(resolver, issue=wanted if also else number))
     if at_ms is not None:
         facts = facts_until(facts, at_ms)
     rows = price_intervals(split_intervals(facts), pricing)
-    matched = [r for r in rows if r["issue"] == number and r["repo_id"] == repo_id]
-    unknown = [r for r in rows if r["issue"] == number and r["repo_id"] == UNKNOWN_REPO]
+    matched = [r for r in rows if r["issue"] in wanted and r["repo_id"] == repo_id]
+    unknown = [r for r in rows if r["issue"] in wanted and r["repo_id"] == UNKNOWN_REPO]
     return matched, unknown, facts
 
 
-def parse_closing_prs(values):
-    """``--closing-pr <番号>:<ヘッドブランチ>`` の値の列を ``[(番号, ブランチ)]`` にする。
+def parse_closing_prs(values, flag: str = "--closing-pr"):
+    """``--closing-pr <番号>:<ヘッドブランチ>``（``--child-pr`` も同じ形。``flag`` はエラーに出す名前）の値の列を ``[(番号, ブランチ)]`` にする。
 
     最初の ``:`` で分け、前が 1 以上の整数、後ろが空でない文字列のときだけ受ける（崩れていれば
     ValueError）。同じヘッドブランチが複数あれば番号のいちばん小さいものだけを残し、番号の昇順に
@@ -2487,11 +2501,21 @@ def parse_closing_prs(values):
     for value in values or []:
         head, sep, branch = value.partition(":")
         if not sep or not re.fullmatch(r"[0-9]+", head) or int(head) < 1 or not branch:
-            raise ValueError("--closing-pr は <PR番号>:<ヘッドブランチ> の形で渡してください: %s" % value)
+            raise ValueError("%s は <PR番号>:<ヘッドブランチ> の形で渡してください: %s" % (flag, value))
         number = int(head)
         if branch not in by_branch or number < by_branch[branch]:
             by_branch[branch] = number
     return sorted((number, branch) for branch, number in by_branch.items())
+
+
+def parse_child_issues(values):
+    """``--child-issue <番号>`` の値の列を、重複を除いた昇順の整数の列にする（1 以上の整数でなければ ValueError）。"""
+    found = set()
+    for value in values or []:
+        if not re.fullmatch(r"[0-9]+", value) or int(value) < 1:
+            raise ValueError("--child-issue は 1 以上の整数で渡してください: %s" % value)
+        found.add(int(value))
+    return sorted(found)
 
 
 def issue_combined_total(matched, closing_prs, pricing: Pricing, resolver: RepoResolver,
@@ -2638,8 +2662,13 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
     if args.closing_pr and args.issue is None:
         sys.stderr.write("--closing-pr は --issue と一緒にだけ渡せます。\n")
         return 2
+    if (args.child_issue or args.child_pr) and args.issue is None:
+        sys.stderr.write("--child-issue と --child-pr は --issue と一緒にだけ渡せます。\n")
+        return 2
     try:
         closing_prs = parse_closing_prs(args.closing_pr)
+        child_prs = parse_closing_prs(args.child_pr, "--child-pr")
+        children = parse_child_issues(args.child_issue)
     except ValueError as error:
         sys.stderr.write("%s\n" % error)
         return 2
@@ -2669,14 +2698,31 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
                 % (where, number)
             )
             return 2
-        matched, _unknown, _facts = issue_intervals(number, repo_id, pricing, resolver, at_ms=at_ms)
-        facts = [fact for row in matched for fact in row["facts"]]
-        total = sum(row["usd"] for row in matched)
+        children = [child for child in children if str(child) != number]
         target, kind = "issue #%s (%s)" % (number, label), "区間"
-        if closing_prs:
-            combined = issue_combined_total(matched, closing_prs, pricing, resolver, at_ms=at_ms)
-            total_row = (timeline_total_trigger(combined["prs"], combined["outside_usd"]),
-                         combined["current"])
+        if children:
+            # 子 issue 込み: エピックと子孫の区間の行と、PR のブランチの行を、行ごとに 1 回だけ数える
+            # （累計の相手は ``cost <番号>`` の 1 行目。台帳の差分の追記は 1 回のまま）
+            matched, _unknown, _facts = issue_intervals(number, repo_id, pricing, resolver,
+                                                        at_ms=at_ms, also=children)
+            counted_prs = parse_closing_prs(
+                ["%d:%s" % pair for pair in child_prs + closing_prs])
+            combined = issue_combined_total(matched, counted_prs, pricing, resolver, at_ms=at_ms)
+            total, kind = combined["total_usd"], "子 issue 込み"
+            if closing_prs:
+                total_row = (timeline_epic_total_trigger(
+                    len(children), len(counted_prs), sum(pr["usd"] for pr in combined["prs"]),
+                    combined["outside_usd"]), combined["current"])
+            current = combined["current"]
+        else:
+            matched, _unknown, _facts = issue_intervals(number, repo_id, pricing, resolver, at_ms=at_ms)
+            facts = [fact for row in matched for fact in row["facts"]]
+            total = sum(row["usd"] for row in matched)
+            if closing_prs:
+                combined = issue_combined_total(matched, closing_prs, pricing, resolver, at_ms=at_ms)
+                total_row = (timeline_total_trigger(combined["prs"], combined["outside_usd"]),
+                             combined["current"])
+            current = (int(round(total * 1e6)),) + token_totals(facts)
     else:
         if not args.branch:
             # ブランチ無しで読むと全履歴の合計になる。PR の数字として返さない
@@ -2685,7 +2731,7 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
         facts = facts_until(load_facts(resolver, branch=args.branch), at_ms)
         total = summarise(facts, pricing)["total_usd"]
         target, kind = "PR #%s (%s)" % (args.pr, args.branch), "ブランチ"
-    current = (int(round(total * 1e6)),) + token_totals(facts)
+        current = (int(round(total * 1e6)),) + token_totals(facts)
     nothing = current == (0, 0, 0) and (total_row is None or total_row[1] == (0, 0, 0))
     if nothing and not body.strip():
         return 3
@@ -2698,8 +2744,9 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
             return 3  # 手元にコストが無い。別の PC が積んだ累計を 0 の行で打ち消さない
     sys.stdout.write(build_timeline(
         body, at_ms, args.trigger, current,
-        lambda micro, is_total: headline(micro / 1e6, pricing, target,
-                                         "区間+閉じた PR" if is_total else kind),
+        lambda micro, is_total: headline(
+            micro / 1e6, pricing, target,
+            "区間+閉じた PR" if is_total and kind == "区間" else kind),
         total=total_row,
     ))
     return 0
@@ -2979,6 +3026,12 @@ def build_parser() -> argparse.ArgumentParser:
     timeline.add_argument("--closing-pr", action="append", default=None,
                           help="issue を閉じた PR を <PR番号>:<ヘッドブランチ> で渡す（繰り返し可。"
                                "--issue と一緒にだけ）。節目の行に続けて issue の合計の行を積む")
+    timeline.add_argument("--child-issue", action="append", default=None,
+                          help="子孫の issue の番号（繰り返し可。--issue と一緒にだけ）。渡すと、"
+                               "節目の行の累計はエピックと子孫の区間と --child-pr のブランチの合計になる")
+    timeline.add_argument("--child-pr", action="append", default=None,
+                          help="エピックと子孫を閉じた PR を <PR番号>:<ヘッドブランチ> で渡す"
+                               "（繰り返し可。--issue と一緒にだけ。--child-issue があるときに使う）")
     timeline.add_argument("--backfill", action="store_true",
                           help="後追い（セッション開始の hook）からの呼び出し。同じきっかけの行が --at の"
                                "近くに既にあれば本文を変えず、手元にコストが無ければ積まない")

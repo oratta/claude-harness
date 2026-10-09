@@ -31,7 +31,8 @@ SKIP_SOURCES = ("clear", "compact")  # 同じセッションの続き。matcher 
 # 一覧の要素を 1 件 1 行にする。--paginate の出力は複数ページだと配列が連結されるので、全体を
 # 1 つの JSON として読まない（gate_report.existing_comment と同じ読み方）。使う項目だけを取り出す
 LIST_JQ = ('.[] | {number, state, updated_at, closed_at, is_pr: has("pull_request"), '
-           'merged_at: (.pull_request.merged_at // null)} | tojson')
+           'merged_at: (.pull_request.merged_at // null), '
+           'children: (.sub_issues_summary.total // 0)} | tojson')
 ISO = "%Y-%m-%dT%H:%M:%SZ"
 
 
@@ -134,6 +135,9 @@ def list_closed(gate_report, repo, since):
                 "updated": epoch(item.get("updated_at")),
                 "merged": None if item.get("merged_at") is None else epoch(item["merged_at"]),
                 "closed_at": None if item.get("closed_at") is None else epoch(item["closed_at"]),
+                # 子 issue の数（一覧の応答に入っている。1 以上の整数のときだけ子を持つ扱い）
+                "children": item["children"] if type(item.get("children")) is int
+                and item["children"] > 0 else 0,
             })
         except ValueError:
             return None
@@ -183,7 +187,7 @@ def merged_head(gate_report, repo, number, cwd, at):
     return branch if isinstance(branch, str) and branch else None
 
 
-def stack_one(gate_report, repo, cwd, scripts_dir, at, number, kind):
+def stack_one(gate_report, repo, cwd, scripts_dir, at, number, kind, children=0):
     if kind == "pr":
         branch, names = merged_head(gate_report, repo, number, cwd, at), ["マージ"]
         if branch is None:
@@ -197,7 +201,7 @@ def stack_one(gate_report, repo, cwd, scripts_dir, at, number, kind):
     try:
         # 行の時刻と累計を切る時刻は、GitHub が記録した出来事の時刻（セッションを始めた時刻ではない）
         gate_report.stack(kind, repo, number, branch, names, "%.3f" % at, cwd, scripts_dir,
-                          extra=["--backfill"])
+                          extra=["--backfill"], children=children if kind == "issue" else 0)
     finally:
         os.close(fd)  # 閉じるとロックも外れる
 
@@ -222,9 +226,10 @@ def sweep(gate_report, ledger, cwd, scripts_dir):
     if items is None:
         return  # 一覧の失敗。何も積まず、控えも変えない（次のセッション開始でやり直す）
     chosen, rest = take(candidates(items, since))
+    children = {item["number"]: item["children"] for item in items}
     for at, number, kind in chosen:
         try:
-            stack_one(gate_report, repo, cwd, scripts_dir, at, number, kind)
+            stack_one(gate_report, repo, cwd, scripts_dir, at, number, kind, children.get(number, 0))
         except Exception:
             pass  # 候補ごとの失敗では止めない（その 1 件に行が付かないまま先へ進む）
     if rest:
