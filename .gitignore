@@ -16,10 +16,6 @@ Thumbs.db
 # Node
 node_modules/
 
-# Python（tests/lib/*.py の実行で生成される。生成物であって成果物ではない）
-__pycache__/
-*.pyc
-
 # Temporary files
 *.tmp
 *.temp
