@@ -480,6 +480,42 @@ PY
   no_python
 }
 
+@test "backfill: a ledger set only through the userConfig LEDGER_PATH still runs the backfill" {  # COST_LEDGER_PATH を外し CLAUDE_PLUGIN_OPTION_LEDGER_PATH だけを設定しても、候補に行が積まれ、控えとロックは userConfig 側の台帳の隣にできる
+  one_pr_candidate
+  unset COST_LEDGER_PATH
+  export CLAUDE_PLUGIN_OPTION_LEDGER_PATH="$LEDGER"
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ "$(posts)" -eq 1 ]
+  [ "$(body_trigger 1)" = "マージ" ]
+  [ -e "$STATE" ]
+  [ -e "$LEDGER.backfill.lock" ]
+}
+
+@test "backfill: when both ledger settings differ the userConfig one holds the state and lock" {  # 両方を別の場所に設定したら userConfig 側の隣にだけ控えとロックができ、COST_LEDGER_PATH 側には作られない
+  one_pr_candidate
+  other="$BATS_TEST_TMPDIR/other/ledger.jsonl"
+  export COST_LEDGER_PATH="$other"
+  export CLAUDE_PLUGIN_OPTION_LEDGER_PATH="$LEDGER"
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ "$(posts)" -eq 1 ]
+  [ -e "$STATE" ]
+  [ -e "$LEDGER.backfill.lock" ]
+  [ ! -e "$other.backfill.json" ]
+  [ ! -e "$other.backfill.lock" ]
+}
+
+@test "backfill: an empty userConfig LEDGER_PATH falls back to COST_LEDGER_PATH" {  # CLAUDE_PLUGIN_OPTION_LEDGER_PATH が空文字なら COST_LEDGER_PATH を使う
+  one_pr_candidate
+  export CLAUDE_PLUGIN_OPTION_LEDGER_PATH=""
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ "$(posts)" -eq 1 ]
+  [ -e "$STATE" ]
+}
+
 @test "backfill: a ledger inside the plugin's own tree is refused" {  # 台帳がスクリプトを含むディレクトリの配下を指していれば、gh を呼ばず控えも書かない
   set_list "pr,300,$(iso_ago 3600)"
   export COST_LEDGER_PATH="$WORK/ledger.jsonl"
@@ -791,11 +827,48 @@ PY
   [ "$(seen)" = "2026-10-07T02:00:05Z" ]
 }
 
-@test "backfill: an empty list leaves seen_until as it was" {  # 一覧が 0 件なら変えない
+@test "backfill: an empty list leaves seen_until as it was" {  # 一覧が 0 件で控えに値があれば変えない
   set_seen "2026-10-07T01:00:00Z"
   cp "$STATE" "$WORK/state.before"
   run_backfill
   cmp "$STATE" "$WORK/state.before"
+}
+
+@test "backfill: an empty list with no stored value writes this run's since" {  # 控えが無く一覧が 0 件なら、実行後の seen_until は一覧の since と同じ。gh は一覧の 1 回だけ
+  [ ! -e "$STATE" ]
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ "$(gh_calls)" -eq 1 ]
+  since="$(sed -n 's/.*since=\([^&]*\).*/\1/p' "$GH_LOG.list")"
+  [ -n "$since" ]
+  [ "$(seen)" = "$since" ]
+}
+
+@test "backfill: empty lists in a row do not slide the 24 hour window" {  # 一覧が空の回が続いても since は 1 回目と同じで、その間にマージされた PR #300 は 2 回目で候補になる
+  log_feat_a
+  run_backfill
+  first="$(seen)"
+  recent="$(iso_ago 3600)"
+  set_list "pr,300,$recent"
+  run_backfill
+  second="$(sed -n 's/.*since=\([^&]*\).*/\1/p' "$GH_LOG.list")"
+  [ "$second" = "$first" ]
+  [ "$(posts)" -eq 1 ]
+}
+
+@test "backfill: an empty list with a broken state file rewrites it as this run's since" {  # 壊れた控えで一覧が 0 件なら、控えは読める形になり seen_until は一覧の since
+  printf '%s' 'not json' > "$STATE"
+  run_backfill
+  [ "$status" -eq 0 ]
+  since="$(sed -n 's/.*since=\([^&]*\).*/\1/p' "$GH_LOG.list")"
+  [ "$(seen)" = "$since" ]
+}
+
+@test "backfill: a failed list with no stored value writes no state" {  # 控えが無く一覧の取得が失敗したら控えは作られない
+  export FAKE_LIST_FAIL=1
+  run_backfill
+  [ "$status" -eq 0 ]
+  [ ! -e "$STATE" ]
 }
 
 @test "backfill: seen_until never moves backwards" {  # 控えの値より古い updated_at しか返らない一覧では値が変わらない
