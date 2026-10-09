@@ -9,6 +9,8 @@ setup() {
   DOCS="${SEARCH_DOCS:-plugins/casting/commands/init.md}"
   HOME_DIR="$BATS_TEST_TMPDIR/home"
   mkdir -p "$HOME_DIR"
+  # 既定の対象（SEARCH_DOCS 未設定）のときは、取り出すブロック数を期待値で固定する。差し替えのときは固定しない。
+  if [ -n "${SEARCH_DOCS:-}" ]; then EXPECT_N=; else EXPECT_N=1; fi
 }
 
 need_zsh() { command -v zsh >/dev/null || skip "zsh が無い"; }
@@ -16,15 +18,16 @@ need_zsh() { command -v zsh >/dev/null || skip "zsh が無い"; }
 # 文書から `for dir in` を含む bash ブロックを取り出し、block-N.sh（本体）と block-N.meta（installed 側の相対パスと目印のファイル）に書く。
 # 取り出せたブロック数を出力する。
 extract_blocks() {
-  python3 -I - "$BATS_TEST_TMPDIR" "$REPO_DIR" "$DOCS" <<'PY'
+  python3 -I - "$BATS_TEST_TMPDIR" "$REPO_DIR" "$DOCS" "$EXPECT_N" <<'PY'
 import re, sys, textwrap
-out, repo, docs = sys.argv[1], sys.argv[2], sys.argv[3]
+out, repo, docs, expect = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 n = 0
 for rel in docs.replace("\\n", "\n").split("\n"):
     if not rel:
         continue
     path = rel if rel.startswith("/") else repo + "/" + rel
     text = open(path, encoding="utf-8").read()
+    before = n
     for block in re.findall(r"```bash\n(.*?)```", text, re.S):
         if "for dir in" not in block:
             continue
@@ -34,6 +37,12 @@ for rel in docs.replace("\\n", "\n").split("\n"):
         n += 1
         open("%s/block-%d.sh" % (out, n), "w", encoding="utf-8").write(block)
         open("%s/block-%d.meta" % (out, n), "w", encoding="utf-8").write(inst + "\n" + (mark.group(1) if mark else "") + "\n")
+    if n == before:
+        print("no search block: " + rel)
+        sys.exit(1)
+if expect and n != int(expect):
+    print("block count %d != expected %s" % (n, expect))
+    sys.exit(1)
 print(n)
 PY
 }
@@ -48,7 +57,7 @@ run_block() {  # $1 = zsh | bash, $2 = ブロックの番号
 # $1 = zsh | bash（直した後は bash・zsh とも探索が空振りでも終了コード 0。origin/main の版は bash で rc=1 が残る）。全ブロックについて、候補なし・空の探索先・installed だけに当たりの 3 通りを見る。
 check_shell() {
   local sh="$1" n i inst mark
-  n="$(extract_blocks)"
+  n="$(extract_blocks)" || { echo "$n"; return 1; }
   [ "$n" -ge 1 ] || { echo "ブロックを取り出せなかった: $n"; return 1; }
   for i in $(seq 1 "$n"); do
     [ -s "$BATS_TEST_TMPDIR/block-$i.sh" ] || { echo "block-$i が空"; return 1; }
@@ -86,7 +95,7 @@ check_shell() {
 @test "cast init zsh: zsh and bash print the same result for the same input" {  # zsh と bash の出力が一致
   need_zsh
   local n i inst mark z b
-  n="$(extract_blocks)"
+  n="$(extract_blocks)" || { echo "$n"; return 1; }
   [ "$n" -ge 1 ] || { echo "ブロックを取り出せなかった: $n"; return 1; }
   for i in $(seq 1 "$n"); do
     inst="$(sed -n 1p "$BATS_TEST_TMPDIR/block-$i.meta")"
@@ -103,7 +112,7 @@ check_shell() {
 @test "cast init zsh: nullglob stays off when it was off before the block runs" {  # 元が無効なら無効のまま
   need_zsh
   local n i
-  n="$(extract_blocks)"
+  n="$(extract_blocks)" || { echo "$n"; return 1; }
   [ "$n" -ge 1 ] || { echo "ブロックを取り出せなかった: $n"; return 1; }
   for i in $(seq 1 "$n"); do
     { cat "$BATS_TEST_TMPDIR/block-$i.sh"; printf 'setopt | grep -c nullglob\n'; } >| "$BATS_TEST_TMPDIR/off.sh"
@@ -115,7 +124,7 @@ check_shell() {
 @test "cast init zsh: a nullglob the user already had is still on after the block runs" {  # 元から有効なら有効のまま
   need_zsh
   local n i
-  n="$(extract_blocks)"
+  n="$(extract_blocks)" || { echo "$n"; return 1; }
   [ "$n" -ge 1 ] || { echo "ブロックを取り出せなかった: $n"; return 1; }
   for i in $(seq 1 "$n"); do
     { printf 'setopt nullglob\n'; cat "$BATS_TEST_TMPDIR/block-$i.sh"; printf 'setopt | grep -c nullglob\n'; } >| "$BATS_TEST_TMPDIR/on.sh"
