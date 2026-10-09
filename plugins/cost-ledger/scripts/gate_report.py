@@ -773,8 +773,13 @@ def lock(repo, number):
                     fd = os.open(name, flags, 0o600, dir_fd=dir_fd)
                     break
                 except FileNotFoundError:
-                    # 別のプロセスが置き場を作った直後だと、macOS では dir_fd 基準の作成が
-                    # 一瞬だけ ENOENT で返ることがある（同時に流した 2 本のうち 1 本が書かずに終わった）
+                    # macOS では、同じ名前を 2 つのプロセスが dir_fd 基準の O_CREAT で同時に開くと、
+                    # 片方が ENOENT で返ることがある（実測。パス指定の open や別々の名前では出ない）。
+                    # その瞬間も置き場は在り、fd が指す inode はパスの inode と同じで、ロックファイルは
+                    # 相手が作成済み。一過性で、同じ dir_fd のまま開き直せば取れる（実測では 1 回の
+                    # lock() の中で ENOENT は最大 1 回）。置き場は開き直さない: 開き直すと、置き場が
+                    # 消されて作り直されたときに、先に取った側とは別の inode をロックして排他が効かない。
+                    # 上限まで ENOENT が続いたら（fd が指す置き場が消された場合を含む）取れなかったものとする
                     if attempt == 4:
                         raise
                     time.sleep(0.02)
