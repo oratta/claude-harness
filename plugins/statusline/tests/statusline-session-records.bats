@@ -229,3 +229,32 @@ JSON
   [ ! -e "$SESSIONS/.sessions/0000000000000000" ]
   [ -e "$SESSIONS/.sessions/1111111111111111" ]
 }
+
+# ---------- 使わないハッシュを取らない（#648） ----------
+# shasum と sha256sum を、呼ばれたことを記録して失敗するスタブに差し替えて起動の有無を見る。
+# スタブは失敗するので覚えのファイルは作られない（ハッシュが取れないときは毎回書く経路）。
+
+# → PATH の先頭にスタブを置く。呼び出しは $WORK/hash-calls.log に 1 行ずつ残る
+stub_hash_commands() {
+  local c
+  mkdir -p "$WORK/stub"
+  for c in shasum sha256sum; do
+    printf '#!/bin/sh\necho "%s" >> "%s"\nexit 1\n' "$c" "$WORK/hash-calls.log" > "$WORK/stub/$c"
+    chmod +x "$WORK/stub/$c"
+  done
+  PATH="$WORK/stub:$PATH"
+}
+
+@test "hash: a render without rate_limits and with session_id starts neither shasum nor sha256sum" {
+  stub_hash_commands
+  printf '{"session_id":"session-x","workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$WORK" | bash "$SL" > /dev/null
+  [ ! -e "$WORK/hash-calls.log" ]
+  [ ! -e "$SESSIONS" ] || [ -z "$(ls -A "$SESSIONS")" ]
+}
+
+@test "hash: a render with rate_limits and session_id still starts the hash command" {
+  stub_hash_commands
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  [ -s "$WORK/hash-calls.log" ]
+  [ "$(weekly_and_observed)" = "40 $NOW" ]
+}
