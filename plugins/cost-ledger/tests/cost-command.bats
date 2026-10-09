@@ -396,5 +396,6 @@ EOF2
   run python3 "$CL" cost 271 --repo "$REPO_A"
   [ "$status" -eq 0 ]
   run python3 "$CL" cost --repo "$REPO_A"
-  [ "$(gql_count)" -eq 0 ]
+  [ -s "$GH_LOG" ]
+  [ "$(grep -c 'graphql' "$GH_LOG" || true)" -eq 0 ]
 }
