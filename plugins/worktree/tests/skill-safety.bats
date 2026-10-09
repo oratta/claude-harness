@@ -169,7 +169,7 @@ wt_setup_frontmatter() {
 
 # frontmatter 内のコメント行だけを見る（本文の Markdown 見出しに当たらないようにする。#787）
 fm_comment_says_ineffective() {
-  head -n 12 "$1" | awk 'NR==1 && $0=="---" {f=1; next} f && $0=="---" {exit} f {print}' | grep -E '^#.*効かない' | grep -q '本文'
+  wt_frontmatter "$1" | head -n 11 | grep -E '^#.*効かない' | grep -q '本文'
 }
 
 @test "skill: wt-setup first 12 lines say the fork setting is ineffective and point to the body (#732)" {
