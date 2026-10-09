@@ -451,7 +451,7 @@ def trigger_targets(args, env, gh_repo=None):
     (種別, owner/repo か None, 番号か None, きっかけ, ヘッドブランチか None) を取り出す。
     番号 None は省略（ヘッドブランチがあればそのブランチ、無ければ cwd のブランチの PR）。
     位置引数は最初の 1 つだけを見て、数字と github.com の URL 以外（ブランチ名・解決できない
-    変数）は飛ばす。gh pr create は位置引数を取らないので見ない。"""
+    変数）は飛ばす。URL の owner / repo が . か .. のものも飛ばす。gh pr create は位置引数を取らないので見ない。"""
     spec = TRIGGERS.get((args[0], args[1])) if len(args) >= 2 else None
     if spec is None:
         return []
