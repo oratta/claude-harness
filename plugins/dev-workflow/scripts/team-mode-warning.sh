@@ -11,17 +11,8 @@ case "$LOWER" in
   "" | 0 | false) exit 0 ;;
 esac
 
-python3 - <<'PY' || true
-import json
-name = "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
-msg = (
-    f"警告: {name} が有効です。チーム機能が有効だと、名前付きで起こした担当が teammate として起動し、"
-    "subagent_type の定義（道具の制限・本文）が無視されます。develop は W / G を名前付きで起こすため、"
-    f"読み取り専用の種別も Bash・Edit を持ちます。{name} を未設定か 0 にしてから develop を回してください。"
-)
-print(json.dumps({
-    "systemMessage": msg,
-    "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": msg},
-}, ensure_ascii=False))
-PY
+# JSON は固定文なので python3 に頼らず heredoc でそのまま出す（python3 が無い環境でも警告が消えないように）。
+cat <<'JSON'
+{"systemMessage": "警告: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS が有効です。チーム機能が有効だと、名前付きで起こした担当が teammate として起動し、subagent_type の定義（道具の制限・本文）が無視されます。develop は W / G を名前付きで起こすため、読み取り専用の種別も Bash・Edit を持ちます。CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS を未設定か 0 にしてから develop を回してください。", "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "警告: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS が有効です。チーム機能が有効だと、名前付きで起こした担当が teammate として起動し、subagent_type の定義（道具の制限・本文）が無視されます。develop は W / G を名前付きで起こすため、読み取り専用の種別も Bash・Edit を持ちます。CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS を未設定か 0 にしてから develop を回してください。"}}
+JSON
 exit 0
