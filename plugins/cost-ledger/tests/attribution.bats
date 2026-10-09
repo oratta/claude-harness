@@ -117,3 +117,94 @@ print(\"ok\")
   [ "$status" -eq 0 ]
   [[ "$output" == *ok* ]] || return 1
 }
+
+# ---- cost-ledger-attribution: issue による帰属（reopen と gh api の issues endpoint） ----
+
+# 実行した Bash コマンド 1 つから拾われた issue 番号を、カンマ区切りで返す（無ければ空）
+issues_of() {  # $1=Bash コマンド
+  cl_row S1 r1 2026-09-01T00:00:01.000Z feat/x "/nonexistent/a" 1000000 "$1" | cl_write_log a
+  python3 "$CL" facts | python3 -c '
+import json, sys
+for line in sys.stdin:
+    d = json.loads(line)
+    if d["request_id"] == "r1":
+        print(",".join(d["issues"]))
+'
+}
+
+@test "issue key: gh issue reopen picks the number" {  # reopen も鍵になる
+  run issues_of "gh issue reopen 42"
+  [ "$status" -eq 0 ]
+  [ "$output" = "42" ]
+}
+
+@test "issue key: gh api issues endpoint picks the number (POST comments, PATCH, plain, query)" {  # -X / --method の有無と末尾の形
+  run issues_of "gh api -X POST repos/acme/app/issues/42/comments -f body=x"
+  [ "$output" = "42" ]
+  run issues_of "gh api -X PATCH repos/acme/app/issues/42 -f state=open"
+  [ "$output" = "42" ]
+  run issues_of "gh api --method PATCH repos/acme/app/issues/42"
+  [ "$output" = "42" ]
+  run issues_of "gh api repos/acme/app/issues/42?per_page=1"
+  [ "$output" = "42" ]
+  run issues_of "gh api repos/acme/app/issues/42"
+  [ "$output" = "42" ]
+}
+
+@test "issue key: gh api in a command position picks the number (line start, after && ; || |, VAR=x prefix)" {  # コマンドの位置
+  run issues_of "cd x && gh api repos/acme/app/issues/7/comments"
+  [ "$output" = "7" ]
+  run issues_of "cd x;gh api repos/acme/app/issues/7"
+  [ "$output" = "7" ]
+  run issues_of "false || gh api repos/acme/app/issues/8"
+  [ "$output" = "8" ]
+  run issues_of "echo hi | gh api repos/acme/app/issues/9"
+  [ "$output" = "9" ]
+  run issues_of "GH_TOKEN=x gh api -X PATCH repos/acme/app/issues/11 -f state=open"
+  [ "$output" = "11" ]
+  run issues_of "$(printf 'echo ok\ngh api repos/acme/app/issues/13')"
+  [ "$output" = "13" ]
+}
+
+@test "issue key: a gh api string inside a field value does not pick 99" {  # R1 2 周目の BLOCKER。42 だけ拾う
+  run issues_of 'gh api -X POST repos/acme/app/issues/42/comments -f body="gh api repos/acme/app/issues/99"'
+  [ "$output" = "42" ]
+  run issues_of 'gh issue comment 42 --body "gh api repos/acme/app/issues/99"'
+  [ "$output" = "42" ]
+}
+
+@test "issue key: gh api outside a command position is not read (xargs, time, if)" {  # 読み落とし。別の issue へ寄らない
+  run issues_of "xargs gh api repos/acme/app/issues/5"
+  [ "$output" = "" ]
+  run issues_of "time gh api repos/acme/app/issues/5"
+  [ "$output" = "" ]
+  run issues_of "if gh api repos/acme/app/issues/5; then :; fi"
+  [ "$output" = "" ]
+}
+
+@test "issue key: comment endpoint, graphql, and issues/42abc are not keys" {  # 別の endpoint
+  run issues_of "gh api -X PATCH repos/acme/app/issues/comments/777"
+  [ "$output" = "" ]
+  run issues_of "gh api repos/acme/app/issues/42abc"
+  [ "$output" = "" ]
+  run issues_of "gh api graphql -f query=x"
+  [ "$output" = "" ]
+}
+
+@test "issue key: strings in Agent prompts and Edit bodies are not keys (reopen too)" {  # 実行していない文字列
+  cl_row_tool S1 r1 2026-09-01T00:00:01.000Z feat/x "/nonexistent/a" 1000000 Agent '{"prompt":"gh issue reopen 999"}' | cl_write_log a
+  run bash -c "python3 '$CL' facts | python3 -c '
+import json, sys
+for line in sys.stdin:
+    d = json.loads(line)
+    if d[\"request_id\"] == \"r1\":
+        print(\",\".join(d[\"issues\"]))
+'"
+  [ "$status" -eq 0 ]
+  [ "$output" = "" ]
+}
+
+@test "issue key: KNOWN EXCEPTION a gh api after ; inside a quoted value is also picked (#879)" {  # 既知の例外。塞ぐなら #879
+  run issues_of 'gh api -X POST repos/acme/app/issues/42/comments -f body="x; gh api repos/acme/app/issues/99"'
+  [ "$output" = "42,99" ]
+}
