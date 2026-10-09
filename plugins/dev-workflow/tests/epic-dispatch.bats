@@ -1448,7 +1448,8 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   r="$(run_section)"
   p="$(printf '%s\n' "$r" | awk '/^\*\*経路の決め方\*\*/{f=1; print; next} /^$/{f=0} f')"
   [ -n "$p" ]
-  if printf '%s\n' "$p" | grep -qF '2 件以上'; then false; fi
+  if printf '%s\n' "$p" | grep -qF '件以上'; then false; fi
+  printf '%s\n' "$p" | tr '。' '\n' | grep -F '0 件' | grep -qF 'subagent'
   printf '%s\n' "$r" | grep -qF '`orca`'
   printf '%s\n' "$r" | grep -qF 'Orca 管理のワークツリー'
   printf '%s\n' "$r" | grep -qF 'サブエージェント方式'
