@@ -88,10 +88,14 @@ setup() {
 @test "userconfig: hook treats an unsubstituted placeholder as unset and writes nothing in cwd" {  # hook・プレースホルダだけ
   mkdir -p "$BATS_TEST_TMPDIR/cwd"
   cd "$BATS_TEST_TMPDIR/cwd"
-  CLAUDE_PLUGIN_OPTION_LEDGER_PATH='${user_config.LEDGER_PATH}' COST_LEDGER_PATH="" run sh "$HOOK" </dev/null
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  printf '#!/bin/sh\ntouch "%s/python-started"\n' "$BATS_TEST_TMPDIR" >| "$BATS_TEST_TMPDIR/bin/python3"
+  chmod +x "$BATS_TEST_TMPDIR/bin/python3"
+  CLAUDE_PLUGIN_OPTION_LEDGER_PATH='${user_config.LEDGER_PATH}' COST_LEDGER_PATH="" run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" sh "$HOOK" </dev/null
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ -z "$output" ] || return 1
   [ -z "$(ls -A "$BATS_TEST_TMPDIR/cwd")" ] || return 1
+  [ ! -e "$BATS_TEST_TMPDIR/python-started" ] || return 1
 }
 
 @test "userconfig: hook with an unsubstituted placeholder and COST_LEDGER_PATH appends to COST_LEDGER_PATH" {  # hook・プレースホルダ＋従来
