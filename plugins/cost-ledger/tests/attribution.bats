@@ -204,6 +204,29 @@ for line in sys.stdin:
   [ "$output" = "" ]
 }
 
+@test "issue key: a backslash-escaped separator or line continuation is not a command position" {  # PR #880 G 1 周目 F1。echo の引数で実行されない
+  run issues_of 'echo x\; gh api repos/acme/app/issues/99'
+  [ "$output" = "" ]
+  run issues_of 'echo x\| gh api repos/acme/app/issues/99'
+  [ "$output" = "" ]
+  run issues_of "$(printf 'echo x \\\ngh api repos/acme/app/issues/99')"
+  [ "$output" = "" ]
+}
+
+@test "issue key: gh api does not take its endpoint from the next line" {  # PR #880 G 1 周目 F2。改行で別のコマンドになる
+  run issues_of "$(printf 'gh api\nrepos/acme/app/issues/42')"
+  [ "$output" = "" ]
+  run issues_of "$(printf 'gh api -X POST\nrepos/acme/app/issues/42')"
+  [ "$output" = "" ]
+  run issues_of "$(printf 'gh api --method\nPATCH repos/acme/app/issues/42')"
+  [ "$output" = "" ]
+}
+
+@test "issue key: KNOWN EXCEPTION a gh api after ; inside a shell comment is still picked" {  # 既知の例外。行内のそれより前の # は正規表現から見えない
+  run issues_of 'echo ok #; gh api repos/acme/app/issues/99'
+  [ "$output" = "99" ]
+}
+
 @test "issue key: KNOWN EXCEPTION a gh api after ; inside a quoted value is also picked (#879)" {  # 既知の例外。塞ぐなら #879
   run issues_of 'gh api -X POST repos/acme/app/issues/42/comments -f body="x; gh api repos/acme/app/issues/99"'
   [ "$output" = "42,99" ]

@@ -49,7 +49,8 @@ SCAN_STATS = {"unreadable_lines": 0}
 # 実行していない文字列にも反応する）。
 ISSUE_RE = re.compile(
     r"(?:gh issue (?:view|comment|edit|close|reopen|develop)\s+"
-    r"|(?:^|[;&|(])\s*(?:\w+=\S*\s+)*gh api\s+(?:(?:-X|--method)\s+\S+\s+)?"
+    r"|(?:(?<!\\\n)^|(?<!\\)[;&|(])\s*(?:\w+=\S*\s+)*"
+    r"gh api[^\S\r\n]+(?:(?:-X|--method)[^\S\r\n]+\S+[^\S\r\n]+)?"
     r"repos/[^/\s]+/[^/\s]+/issues/(?=\d+(?!\w)))(\d+)",
     re.M,
 )
