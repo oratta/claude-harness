@@ -9,6 +9,9 @@
 # - hook の JSON（stdin）は使わない。会話ログのルート全体を歩くので、サブエージェントの
 #   会話ログも同じ回で拾う
 cat >/dev/null 2>&1
+# 置換されなかったプレースホルダ（${user_config. で始まる値）は未設定と同じに扱う
+# （cost_ledger.py の ledger_path() と同じ規則。作業ディレクトリに台帳を作らせない）
+case "${CLAUDE_PLUGIN_OPTION_LEDGER_PATH:-}" in "\${user_config."*) CLAUDE_PLUGIN_OPTION_LEDGER_PATH= ;; esac
 COST_LEDGER_PATH="${CLAUDE_PLUGIN_OPTION_LEDGER_PATH:-${COST_LEDGER_PATH:-}}"
 [ -n "$COST_LEDGER_PATH" ] || exit 0
 export COST_LEDGER_PATH
