@@ -129,9 +129,85 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "cost: the command passes the userConfig value to the script" {  # 本文が userConfig の値を環境変数で渡す
-  run grep -F "CLAUDE_PLUGIN_OPTION_LEDGER_PATH='\${user_config.LEDGER_PATH}' python3" "$PLUGIN_DIR/commands/cost.md"
+# commands/cost.md の bash ブロックを取り出し、本文の読み込み時に起きる置換（${CLAUDE_PLUGIN_ROOT} と
+# ${user_config.LEDGER_PATH} を値へ文字どおり差し替える）を模擬して、bash で実行する。
+# 引数: 1 = プラグインのルートの置換値、2 = 台帳パスの置換値。出力は偽の集計スクリプトが書く 2 行
+# （受け取った CLAUDE_PLUGIN_OPTION_LEDGER_PATH と、自分のパス）。
+run_cost_block() {
+  python3 -I - "$PLUGIN_DIR/commands/cost.md" "$1" "$2" > "$BATS_TEST_TMPDIR/block.sh" <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+block = re.search(r"```bash\n(.*?)```", text, re.S).group(1)
+block = block.replace("${CLAUDE_PLUGIN_ROOT}", sys.argv[2]).replace("${user_config.LEDGER_PATH}", sys.argv[3])
+sys.stdout.write(block)
+PY
+  HOME="$BATS_TEST_TMPDIR/nohome" run /bin/bash "$BATS_TEST_TMPDIR/block.sh"
+}
+
+# root の下に、受け取った値と自分のパスを 1 行ずつ出す偽の cost_ledger.py を置く
+make_fake_root() {
+  mkdir -p "$1/scripts"
+  cat > "$1/scripts/cost_ledger.py" <<'PY'
+import os, sys
+print("LEDGER=" + os.environ.get("CLAUDE_PLUGIN_OPTION_LEDGER_PATH", "<unset>"))
+print("SELF=" + os.path.abspath(__file__))
+PY
+}
+
+@test "cost: the command reads both substituted values through quoted here-documents" {  # 置換値は引用した here-document で読む
+  local md="$PLUGIN_DIR/commands/cost.md"
+  run grep -n -e "LEDGER_PATH_EOF" -e "COST_LEDGER_PLUGIN_ROOT" "$md"
   [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 4 ]
+  grep -q "<<'LEDGER_PATH_EOF'" "$md" || return 1
+  grep -q "<<'COST_LEDGER_PLUGIN_ROOT'" "$md" || return 1
+  run grep -n -e "LEDGER_PATH='" -e 'plugin_root="' "$md"
+  [ "$status" -eq 1 ]
+}
+
+@test "cost: a ledger path with an even number of single quotes reaches the script as is" {  # ' が偶数個のパスも設定どおり渡る
+  make_fake_root "$BATS_TEST_TMPDIR/root"
+  run_cost_block "$BATS_TEST_TMPDIR/root" "/x/'b'/ledger.jsonl"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "LEDGER=/x/'b'/ledger.jsonl" ]
+  [ ! -e /x/b ]
+}
+
+@test "cost: ledger paths with an odd quote, spaces, \$, backticks and double quotes reach the script as is" {  # 特殊文字を含む台帳パス
+  local v
+  make_fake_root "$BATS_TEST_TMPDIR/root"
+  for v in "/x/it's/l.jsonl" '/x/a  b/l.jsonl' '/x/$HOME/$(echo hi)/l.jsonl' '/x/`echo hi`/l.jsonl' '/x/"q"/l.jsonl' '/x/a\b/l.jsonl' '/x/ trailing /l.jsonl '; do
+    run_cost_block "$BATS_TEST_TMPDIR/root" "$v"
+    [ "$status" -eq 0 ] || { echo "status $status for $v: $output"; return 1; }
+    [ "${lines[0]}" = "LEDGER=$v" ] || { echo "got ${lines[0]} for $v"; return 1; }
+  done
+}
+
+@test "cost: an unsubstituted ledger placeholder is passed on unchanged for the script to treat as unset" {  # 未設定のとき置換されない文字列がそのまま渡る
+  make_fake_root "$BATS_TEST_TMPDIR/root"
+  run_cost_block "$BATS_TEST_TMPDIR/root" '${user_config.LEDGER_PATH}'
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = 'LEDGER=${user_config.LEDGER_PATH}' ]
+}
+
+@test "cost: a plugin root with spaces, \$(...), backticks and double quotes is used as the first candidate as is" {  # 特殊文字を含むルートが先頭候補として文字どおり使われる
+  local root
+  root="$BATS_TEST_TMPDIR"'/a b$(printf x)`q"d/plugin'
+  make_fake_root "$root"
+  mkdir -p "$BATS_TEST_TMPDIR/nohome"
+  run_cost_block "$root" "/x/l.jsonl"
+  [ "$status" -eq 0 ]
+  [ "${lines[1]}" = "SELF=$root/scripts/cost_ledger.py" ] || { echo "$output"; return 1; }
+  # 値の一部がコマンドとして実行されたなら、別名のディレクトリを探しに行く
+  [ ! -e "$BATS_TEST_TMPDIR/a bx" ]
+}
+
+@test "cost: an unsubstituted plugin root is skipped and the later candidates are tried" {  # ルートが置換されないときは後続の候補へ進む
+  local home="$BATS_TEST_TMPDIR/nohome"
+  make_fake_root "$home/.claude/plugins/marketplaces/m/plugins/cost-ledger"
+  run_cost_block '${CLAUDE_PLUGIN_ROOT}' "/x/l.jsonl"
+  [ "$status" -eq 0 ]
+  [ "${lines[1]}" = "SELF=$home/.claude/plugins/marketplaces/m/plugins/cost-ledger/scripts/cost_ledger.py" ] || { echo "$output"; return 1; }
 }
 
 @test "cost: the unset-ledger guidance names /config before settings" {  # 未設定時の案内は /config が先
@@ -146,9 +222,8 @@ sys.exit(0 if "/config" in line and line.index("/config") < line.index("settings
 
 @test "cost: the script lookup tries the substituted plugin root first" {  # 探索の先頭候補は本文置換される絶対パスから作る
   local first
-  grep -q '^plugin_root="${CLAUDE_PLUGIN_ROOT}"$' "$PLUGIN_DIR/commands/cost.md" || return 1
   first="$(grep -n -A2 '^for dir in' "$PLUGIN_DIR/commands/cost.md" | sed -n 2p)"
-  [[ "$first" == *'"${plugin_root:+$plugin_root/scripts}"'* ]] || return 1
+  [[ "$first" == *'"${PLUGIN_ROOT:+$PLUGIN_ROOT/scripts}"'* ]] || return 1
   [[ "$first" != *'CLAUDE_PLUGIN_ROOT:+'* ]] || return 1
 }
 

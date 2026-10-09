@@ -34,14 +34,18 @@ LOOPS=(
   "plugins/worktree/commands/wt-setup.md|1|/skills/wt-setup|SKILL.md"
 )
 
-# n 番目の「for dir in」ループ（直前が plugin_root= の行ならそれも含む）を標準出力へ
+# n 番目の「for dir in」ループ（その前にルートを変数へ読む plugin_root= / PLUGIN_ROOT= があれば、
+# そこからループまでの行も含む）を標準出力へ
 extract_loop() {
   awk -v n="$2" '
     /^[[:space:]]*for dir in/ { c++ }
-    c == n && !on { on = 1; if (prev ~ /^[[:space:]]*plugin_root=/) print prev }
+    c == n && !on { on = 1; if (buf != "") print buf }
     on { print }
     on && /^[[:space:]]*done/ { exit }
-    { prev = $0 }
+    !on && /^[[:space:]]*(plugin_root|PLUGIN_ROOT)=/ { buf = $0; next }
+    !on && /^[[:space:]]*IFS= read -r PLUGIN_ROOT/ { buf = $0; next }
+    !on && buf != "" { buf = buf "\n" $0 }
+    /^[[:space:]]*done/ { buf = "" }
   ' "$REPO_ROOT/$1"
 }
 
