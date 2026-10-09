@@ -587,6 +587,44 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   [[ "$output" == *"$dir/linked: symbolic link"* ]] || return 1
 }
 
+@test "S16a-28: every symbolic link in the scanned directory is a violation whatever its name or target" {
+  # S16a-26 は名前が *.yml.template のリンク、S16a-27 は名前が違うディレクトリへのリンクを見る。
+  # 残りの 3 通り（名前が違うファイルへのリンク・名前が違うリンク切れ・名前が *.yml.template の
+  # ディレクトリへのリンク）をここで見る。名前で絞った find に戻すと最初の 2 つが落ちる（#900）。
+  local dir="$BATS_TEST_TMPDIR/symlink-names"
+  local outside="$BATS_TEST_TMPDIR/outside-dir28"
+  rm -rf "$dir" "$outside" "$BATS_TEST_TMPDIR/outside.yml"
+  mkdir -p "$dir" "$outside"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$BATS_TEST_TMPDIR/outside.yml"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$outside/bad.yml.template"
+
+  # 名前が *.yml.template でない、ファイルへのリンク
+  ln -s "$BATS_TEST_TMPDIR/outside.yml" "$dir/link.txt"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/link.txt: symbolic link"* ]] || return 1
+  rm -f "$dir/link.txt"
+
+  # 名前が *.yml.template でない、リンク切れ
+  ln -s "$BATS_TEST_TMPDIR/does-not-exist" "$dir/dangling"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/dangling: symbolic link"* ]] || return 1
+  rm -f "$dir/dangling"
+
+  # 名前が *.yml.template の、ディレクトリへのリンク
+  ln -s "$outside" "$dir/dir.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/dir.yml.template: symbolic link"* ]] || return 1
+}
+
 @test "S16a-21: a 'uses' in the second YAML document of a template is still checked" {
   # `Psych.parse_file` は最初の document しか返さないので、`---` で区切った 2 つ目以降に
   # 置いた `uses` が走査から丸ごと落ちていた。行 grep 版なら構造的に見落とせない形なので、
