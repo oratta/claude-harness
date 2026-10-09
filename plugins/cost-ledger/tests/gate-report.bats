@@ -1894,14 +1894,28 @@ PY2
   [ "$(trigger_arg)" = "issue コメント+issue クローズ+PR 照会失敗" ]
 }
 
-@test "timeline-hook: a successful closing-PR query adds no mark and keeps four gh calls" {  # 1 件・0 件・別のリポジトリや fork の PR だけ、のどれでも --trigger は issue クローズで gh は 4 回
+@test "timeline-hook: a successful closing-PR query leaves the rows as #689 had them and keeps four gh calls" {  # 本物の cost_ledger.py で、1 件・0 件・別のリポジトリや fork の PR だけ、のどれでも先頭行と表の行（時刻の欄を除く）が #689 のときと同じで、印は付かず、gh は 4 回
+  use_real_repo_a
   closed_issue_12
-  for prs in "[$(closing_node 704 feat/x)]" "[]" "[$(closing_node 9 main acme/other),$(closing_node 705 main acme/cwd-repo true)]"; do
-    : > "$COST_LOG"
-    rm -f "$GH_LOG" "$FIX"/comments.12.*.json
-    FAKE_CLOSING_PRS="$prs" run_hook "gh issue close 12"
-    [ "$(trigger_arg)" = "issue クローズ" ] || { echo "$prs"; return 1; }
-    [ "$(gh_calls)" -eq 4 ] || { echo "$prs"; return 1; }
+  cl_row S2 r2 2026-09-01T00:00:20.000Z main "$RA" 1000000 "gh issue comment 12 --body x" | cl_write_log issue12
+  # 期待値は #689 のとき（8e7c18e4 の gate_report.py）に同じ fixture で得たコメント。CI は浅い clone で
+  # 過去の commit を取り出せないので直書きする。時刻の欄は実行時刻なので sed で落として比べる
+  local -a want_head=('コスト: $2.00 / ¥300 @150 — issue #12 (acme/repo-a) 帰属: 区間+閉じた PR' \
+                      'コスト: $1.00 / ¥150 @150 — issue #12 (acme/repo-a) 帰属: 区間' \
+                      'コスト: $1.00 / ¥150 @150 — issue #12 (acme/repo-a) 帰属: 区間')
+  local -a want_rows=('| issue クローズ | $1.00 (+1.00) | 1.0M (+1.0M) | 0 (+0) |
+| 合計（#704 $1.00 + PR 外 $1.00） | $2.00 (+1.00) | 2.0M (+1.0M) | 0 (+0) |' \
+                      '| issue クローズ | $1.00 (+1.00) | 1.0M (+1.0M) | 0 (+0) |' \
+                      '| issue クローズ | $1.00 (+1.00) | 1.0M (+1.0M) | 0 (+0) |')
+  local -a prs_list=("[$(closing_node 704 oratta/sample acme/repo-a)]" "[]" "[$(closing_node 9 main acme/other),$(closing_node 705 main acme/repo-a true)]")
+  local i
+  for i in 0 1 2; do
+    rm -f "$GH_LOG" "$GH_LOG.body" "$FIX"/comments.12.*.json
+    FAKE_CLOSING_PRS="${prs_list[$i]}" HOOK_CWD="$RA" run_hook "gh issue close 12"
+    [ "$(gh_calls)" -eq 4 ] || { echo "case $i: gh calls"; return 1; }
+    [ "$(body_trigger 1)" = "issue クローズ" ] || { echo "case $i: trigger"; return 1; }
+    [ "$(head -n 1 "$GH_LOG.body")" = "${want_head[$i]}" ] || { echo "case $i: head: $(head -n 1 "$GH_LOG.body")"; return 1; }
+    [ "$(body_rows | sed 's/^| [^|]* |/|/')" = "${want_rows[$i]}" ] || { echo "case $i: rows: $(body_rows)"; return 1; }
   done
 }
 
@@ -1981,11 +1995,14 @@ PY2
   [ "$(body_nrows)" -eq 1 ]
   [ "$(body_trigger 1)" = "issue クローズ" ]
   ok="$(cat "$GH_LOG.body")"
+  ok_rows="$(body_rows)"
   rm -f "$GH_LOG" "$GH_LOG.body" "$FIX"/comments.12.*.json
   FAKE_GRAPHQL_FAIL=1 HOOK_CWD="$RA" run_hook "gh issue close 12"
   [ "$(body_nrows)" -eq 1 ]
   [ "$(body_trigger 1)" = "issue クローズ+PR 照会失敗" ]
-  [ "$(printf '%s\n' "$ok" | sed 's/+PR 照会失敗//; s/ *| *\([^|]*\) *|/|/' | head -n 1)" = "$(head -n 1 "$GH_LOG.body" | sed 's/ *| *\([^|]*\) *|/|/')" ]
+  [ "$(printf '%s\n' "$ok" | head -n 1)" = "$(head -n 1 "$GH_LOG.body")" ]
+  # 表の行は、失敗時から印を除けば 0 件時と行全体が同じ（時刻の欄は実行時刻なので落とす）
+  [ "$(printf '%s\n' "$ok_rows" | sed 's/^| [^|]* |/|/')" = "$(body_rows | sed 's/+PR 照会失敗//; s/^| [^|]* |/|/')" ]
 }
 
 @test "timeline-hook: the real timeline stacks the close row and the total row" {  # 本物の cost_ledger.py で、gh issue close 12 が issue クローズの行と合計の行の 2 行を 1 回の書き込みで積む
