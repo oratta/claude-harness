@@ -56,6 +56,20 @@ assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart"
   [ -z "$output" ]
 }
 
+@test "warning still prints when python3 is not on PATH" {
+  # python3 を含まない PATH（bash と tr だけ）を作って実行する
+  local bin="${BATS_TEST_TMPDIR}/nopython-bin"
+  mkdir -p "$bin"
+  ln -s "$(command -v bash)" "$bin/bash"
+  ln -s "$(command -v tr)" "$bin/tr"
+  ln -s "$(command -v cat)" "$bin/cat"
+  ! PATH="$bin" command -v python3 >/dev/null 2>&1
+  CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 PATH="$bin" run /bin/bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"systemMessage"'* ]] || return 1
+  [[ "$output" == *'"additionalContext"'* ]] || return 1
+}
+
 @test "hooks.json registers it under SessionStart with startup-clear-compact matcher" {
   run python3 -c '
 import json,sys
