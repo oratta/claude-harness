@@ -24,7 +24,7 @@ claude plugin details <プラグイン名>
 
 ## 出力の読み方
 
-**`/doctor prompt-audit`** は指摘の一覧を標準出力に出し、報告（`report.html`）と提案差分（`proposed-project.patch`・`proposed-user-level.patch`）を一時ディレクトリに書く。場所は出力に書かれる（2026-10-08 の実行では `/tmp/claude-501/prompt-audit-<日付>/`）。監査の範囲は `CLAUDE.md`・`AGENTS.md`・`.claude/` 配下・`~/.claude/rules/`・output style・個人のスキルで、有効なプラグインは検索での確認だけになり編集案は出ない。
+**`/doctor prompt-audit`** は指摘の一覧を標準出力に出し、報告（`report.html`）と提案差分（`proposed-project.patch`・`proposed-user-level.patch`）を一時ディレクトリに書く。場所は出力に書かれる（2026-10-08 の実行では `/tmp/claude-501/prompt-audit-<日付>/`）。監査の範囲は `CLAUDE.md`・`AGENTS.md`・`.claude/` 配下・`~/.claude/rules/`・output style・個人のスキルで、有効なプラグインは検索での確認だけになり編集案は出ない。`~/.claude/rules/` と output style は install 済みの版が読まれ、作業ツリーの編集は反映されない（rules を削った後に監査をやり直しても、削る前の内容への指摘が出る）。
 
 **`/skill-doctor`** の `context` 列が毎ターン載る大きさ、`uses` 列が使用回数。「一度も使われていない」と出たスキルがそのまま削れるわけではない。hook の注入で動くプラグイン（casting など）は、スキルの起動回数が 0 でも働いている。プラグインのスキルは個別には無効化できず、プラグイン単位になる。
 
