@@ -111,3 +111,23 @@ setup() {
   [ "$(jq -r --arg n "$first" '.plugins[] | select(.name==$n) | .description' "${scratch}/marketplace.json")" = "edited by ${first}" ]
   [ "$(jq -r --arg n "$last"  '.plugins[] | select(.name==$n) | .description' "${scratch}/marketplace.json")" = "edited by ${last}" ]
 }
+
+# --- S140: bundles "all" lists every plugin except telegram (issue #708) ---
+# 説明は「全プラグインをインストール」。bot トークンの設定が要る telegram だけを意図して外す。
+# 件数は固定せず集合で縛る（telegram を解散する PR が入っても、新しいプラグインを足し忘れても気づける）。
+@test "S140: bundles all equals plugins[] minus telegram" {
+  all="$(jq -r '.bundles[] | select(.name=="all") | .plugins[]' "$MARKETPLACE" | sort)"
+  expected="$(jq -r '.plugins[].name | select(. != "telegram")' "$MARKETPLACE" | sort)"
+  if [ "$all" != "$expected" ]; then
+    echo "bundles all and plugins[] (minus telegram) differ:"
+    diff <(echo "$all") <(echo "$expected") || true
+    return 1
+  fi
+}
+
+@test "S140b: bundles all includes capability-registry, casting and cost-ledger" {
+  for n in capability-registry casting cost-ledger; do
+    jq -e --arg n "$n" '.bundles[] | select(.name=="all") | .plugins | index($n) != null' "$MARKETPLACE" >/dev/null \
+      || { echo "bundles all lacks ${n}"; return 1; }
+  done
+}

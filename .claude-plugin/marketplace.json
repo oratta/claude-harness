@@ -232,7 +232,7 @@
   "bundles": [
     {
       "name": "all",
-      "description": "全プラグインをインストール",
+      "description": "全プラグインをインストール（bot トークンの設定が要る telegram を除く）",
       "plugins": [
         "worktree",
         "weekly-report",
@@ -242,7 +242,10 @@
         "skill-pack",
         "dev-workflow",
         "product-handover",
-        "statusline"
+        "statusline",
+        "capability-registry",
+        "casting",
+        "cost-ledger"
       ],
       "skills": []
     }
