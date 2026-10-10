@@ -85,7 +85,7 @@ cld-account() {
 
 | ファイル | 内容 |
 |---|---|
-| `references/self-verification.md` | 自己検証の共通原則（完了は主張であり証明ではない。evidence を提示してから完了を宣言する）。worktree / infra / daily-report / weekly-report / experience-to-skill の `## 自己検証` 節が参照する |
+| `references/self-verification.md` | 自己検証の共通原則（完了は主張であり証明ではない。evidence を提示してから完了を宣言する）。worktree / infra / daily-report / weekly-report の `## 自己検証` 節が参照する |
 | `references/pr-body-format.md` | エージェントが書く PR / issue 本文の型（5 セクション・軽量モード・issue の承認判断 2 節）。`.github/PULL_REQUEST_TEMPLATE.md` と W の PR 手順が参照する |
 | `references/model-tiers.md` | Workflow スクリプトの `opts.model` に渡すロール別ティア → エイリアスの対応表と、残量モードによる降格。`rules/subagent-model-selection.md` が正本として指す |
 | `references/workflow-execution.md` | develop の 1 ループに収まらない規模をネイティブ Workflow ツールで回す型（Review → Build → Verify・Build Contract レビュー・verifier のしきい値・`resumeFromRunId`）。スクリプトの書き方は `workflow-authoring` スキルが正本 |

@@ -4,7 +4,7 @@
 #
 # 合成 fixture が PII と秘密を含まないこと、および 5 種類の検出対象（sidechain・重複
 # requestId・削除済み cwd・複数 issue への投稿・キャッシュ書込の内訳が無い古い行）を
-# 実際に含んでいることを固定する。前例: plugins/experience-to-skill/tests/sanitize.bats
+# 実際に含んでいることを固定する。
 
 load helper
 

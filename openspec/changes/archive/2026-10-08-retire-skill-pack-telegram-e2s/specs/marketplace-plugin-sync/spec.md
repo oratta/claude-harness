@@ -1,25 +1,4 @@
-# marketplace-plugin-sync Specification
-
-## Purpose
-TBD - created by archiving change loops-longrun-retirement. Update Purpose after archive.
-## Requirements
-### Requirement: marketplace.json と plugins/ の整合ガードはリポジトリ直下のテストが持つ
-`plugins/` 配下と `.claude-plugin/marketplace.json` の整合を検査するテストは、特定プラグインの tests/ ではなくリポジトリ直下の `tests/marketplace-sync.bats` に置かなければならない（MUST）。テストは `bats` と `jq`・`git`・`find` だけで書き、他プラグインのテストヘルパに依存してはならない（MUST NOT）。旧 `plugins/loops/tests/integration.bats` に同居していた S130 / S130b / S131 / S132 / S133 / S139 を引き継ぐ。S130 と S131 は issue #447 で「version を持たない」検査に置き換えた。
-
-#### Scenario: ルートのテストとして実在し scripts/test.sh に拾われる
-- **WHEN** `bash scripts/test.sh tests` を実行する
-- **THEN** `tests/marketplace-sync.bats` が対象に含まれ、全件 pass する
-
-### Requirement: トップレベル version を持たず、全 JSON がパースでき、無関係な PR が衝突しない
-`.claude-plugin/marketplace.json` はトップレベルの `version` フィールドを持ってはならない（MUST NOT。issue #140 で廃止済み。再導入を防ぐ）。`marketplace.json` と全 `plugins/*/.claude-plugin/plugin.json` は `jq empty` を通らなければならない（MUST）。互いに無関係なプラグインのエントリだけを変更する 2 本のブランチは、片方をマージした後もう片方がクリーンにマージできなければならない（MUST）。
-
-#### Scenario: トップレベル version の再導入を検出する
-- **WHEN** marketplace.json に `version` キーが追加される
-- **THEN** テストは issue #140 を示して fail する
-
-#### Scenario: 別エントリを書き換えた 2 ブランチがクリーンにマージできる
-- **WHEN** 実リポの marketplace.json を scratch リポに置き、先頭と末尾のエントリの `description` をそれぞれ別ブランチで書き換え、片方をマージした後もう片方をマージする
-- **THEN** 衝突せず、両エントリの書き換えが残り、JSON としてパースできる
+## MODIFIED Requirements
 
 ### Requirement: plugin.json と plugins[] は version を持たず、全ディレクトリが登録されている
 
@@ -46,4 +25,3 @@ TBD - created by archiving change loops-longrun-retirement. Update Purpose after
 
 - **WHEN** `plugins/` 直下に marketplace 未登録のディレクトリがある（または登録済みなのにディレクトリが無い）
 - **THEN** テストは差分を出力して fail する
-
