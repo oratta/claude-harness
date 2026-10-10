@@ -29,10 +29,12 @@
      if [ "$(gh api repos/$R/pulls/$N --jq .draft)" = false ]; then gh pr ready --undo $N --repo $R; fi   # 非 Draft なら Draft に戻す
    fi
    ```
-3. 記録先の**受け入れ条件**を取得する。判定の唯一の根拠はこれ。記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す issue で、**issue 参照が無い PR（Draft PR を記録先にした依頼）では PR 本文そのもの**が受け入れ条件になる（develop スキルの W は受け入れ条件を PR 本文に書く）:
+3. 記録先の**受け入れ条件**を取得する。判定の唯一の根拠はこれ。記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す issue で、**issue 参照が無い PR（Draft PR を記録先にした依頼）では PR 本文そのもの**が受け入れ条件になる（develop スキルの W は受け入れ条件を PR 本文に書く）。
+   記録先の本文が空・`null`・空白のみなら受け入れ条件なし＝ **`agent-review:failed` にして終了する**（合格処理へ進めない。記録先に受け入れ条件を書いてから手順 1 からやり直す）。この検査は issue 本文経路・PR 本文経路の両方に同じく掛かり、下のコマンドが機械的に判定する（空出力を G が目で見て止まる運用に頼らない）:
    ```bash
    ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')
-   if [ -n "$ISSUE" ]; then gh api repos/$R/issues/$ISSUE --jq '.body'; else gh api repos/$R/pulls/$N --jq '.body'; fi
+   if [ -n "$ISSUE" ]; then BODY=$(gh api repos/$R/issues/$ISSUE --jq '.body // ""'); else BODY=$(gh api repos/$R/pulls/$N --jq '.body // ""'); fi
+   if [ -z "$(printf '%s' "$BODY" | tr -d '[:space:]')" ]; then echo "受け入れ条件なし（記録先の本文が空・null・空白のみ）→ agent-review:failed にして終了。記録先に受け入れ条件を書いてから手順 1 からやり直す" >&2; false; else printf '%s\n' "$BODY"; fi
    ```
 4. `git fetch origin` → `origin/main` をブランチへマージ（rebase + force-push は禁止）。コンフリクトが実装判断を要する規模なら `agent-review:failed` にして終了。
 5. **対象 HEAD を固定する**（main 追従の push を済ませた**後**に取る。マージすると HEAD が動くため）:
