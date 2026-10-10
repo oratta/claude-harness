@@ -287,24 +287,20 @@ write_row3_table() {
 @test "review hit set (#406): a main-table handling violation and a rewritten-rows violation are both reported" {
   setup_head_repo
   commit_head 'done fix\nneedle keep typo\n' 'done same\nneedle same\n'
-  write_row3_table '一致' \
-    '| r/m.txt | 2 | `needle same different` |' \
-    '| r/m.txt | 2 | `needle same different` |'
+  write_row3_table '一致' '| r/m.txt | 2 | `needle same` |'
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
   [ "$status" -eq 1 ]
   [[ "$output" == *'contract: row-3 handling must be 直した or 該当しない: <理由>: r/x.txt:2'* ]] || return 1
-  [[ "$output" == *'contract: rewritten row is duplicated: r/m.txt:2'* ]] || return 1
+  [[ "$output" == *'contract: rewritten row body is unchanged: r/m.txt:2'* ]] || return 1
 }
 
 @test "review hit set (#406): a contract violation suppresses the second-stage unmatched/not-removed diff" {
   setup_head_repo
   commit_head 'done fix\nneedle keep fixed\n' 'done same\nneedle same\n'
-  write_row3_table '該当しない: example' \
-    '| r/m.txt | 2 | `needle same different` |' \
-    '| r/m.txt | 2 | `needle same different` |'
+  write_row3_table '一致'
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract: rewritten row is duplicated: r/m.txt:2'* ]] || return 1
+  [[ "$output" == *'contract: row-3 handling must be 直した or 該当しない: <理由>: r/x.txt:2'* ]] || return 1
   [[ "$output" != *'unmatched:'* ]] || return 1
   [[ "$output" != *'not-removed:'* ]] || return 1
 }
@@ -317,9 +313,11 @@ write_row3_table() {
 |---|---|
 | changed/a.txt | needle one |
 EOF
-  run python3 "$CHECKER" --repo "$REPO" "$REPO/no-header.md"
-  [ "$status" -eq 1 ]
+  run bash -c "python3 '$CHECKER' --repo '$REPO' --head '$SHA' '$REPO/no-header.md' 2>&1 >/dev/null"
   [[ "$output" == *'contract:'*'header'* ]] || return 1
+  [ "$(printf '%s\n' "$output" | wc -l)" -eq 1 ]
+  run python3 "$CHECKER" --repo "$REPO" --head "$SHA" "$REPO/no-header.md"
+  [ "$status" -eq 1 ]
 
   cat > "$REPO/bad-columns.md" <<EOF
 修正前 SHA: $SHA
@@ -328,9 +326,11 @@ EOF
 |---|---:|---|---|
 | changed/a.txt | 1 | \`needle one\` |
 EOF
-  run python3 "$CHECKER" --repo "$REPO" "$REPO/bad-columns.md"
-  [ "$status" -eq 1 ]
+  run bash -c "python3 '$CHECKER' --repo '$REPO' --head '$SHA' '$REPO/bad-columns.md' 2>&1 >/dev/null"
   [[ "$output" == *'contract:'*'columns'* ]] || return 1
+  [ "$(printf '%s\n' "$output" | wc -l)" -eq 1 ]
+  run python3 "$CHECKER" --repo "$REPO" --head "$SHA" "$REPO/bad-columns.md"
+  [ "$status" -eq 1 ]
 }
 
 # ===== 補助表の見出し表記ゆれ・主表の重複・エラー文言（issue #407, #408, #409） =====
@@ -409,4 +409,34 @@ EOF
   run python3 "$CHECKER" --repo "$REPO" "$REPO/bad-row.md"
   [ "$status" -eq 1 ]
   [[ "$output" == *'hit rows require path, numeric line, and body'* ]] || return 1
+}
+
+@test "review hit set (#466): duplicated main-table rows give the same verdict and messages in either row order" {
+  setup_head_repo
+  commit_head 'done fix\nneedle keep fixed\n' 'done same\nneedle same\n'
+  write_row3_table '該当しない: example' '| r/x.txt | 2 | `needle keep fixed` |'
+  # 同じ (r/x.txt, 2) を「直した」で重ねる。a は元の行の後ろ、b は前
+  python3 - "$REPO/row3.md" "$REPO/order-a.md" "$REPO/order-b.md" <<'PY'
+import sys
+src, dst_a, dst_b = sys.argv[1:4]
+dup = '| r/x.txt | 2 | `needle keep typo` | 直した |'
+out_a, out_b = [], []
+for line in open(src).read().splitlines():
+    if line.startswith('| r/x.txt | 2 |') and 'needle keep typo' in line:
+        out_b.append(dup)
+        out_a += [line, dup]
+        out_b.append(line)
+    else:
+        out_a.append(line)
+        out_b.append(line)
+open(dst_a, 'w').write('\n'.join(out_a) + '\n')
+open(dst_b, 'w').write('\n'.join(out_b) + '\n')
+PY
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/order-a.md"
+  [ "$status" -eq 1 ]
+  out_a="$output"
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/order-b.md"
+  [ "$status" -eq 1 ]
+  [ "$output" = "$out_a" ] || { printf 'A:\n%s\nB:\n%s\n' "$out_a" "$output"; return 1; }
+  [[ "$output" == *'rewritten row must point at one not-applicable row: r/x.txt:2'* ]] || return 1
 }
