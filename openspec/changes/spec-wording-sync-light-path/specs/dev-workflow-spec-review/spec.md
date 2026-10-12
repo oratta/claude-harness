@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: 仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く
-develop スキルは、仕様化判断が「する」になった変更のうち、既存の仕様の文言を実装に合わせて直すだけの変更に、成果物を仕様の差分 1 ファイルだけにして R1 の仕様レビューを省く通し方（以下「文言合わせの通し方」）を持たなければならない（MUST）。対象・当てる条件・省くものの正本は `references/decision-criteria.md` の Step B に置き（MUST）、W の手順は `references/roles/worker/spec.md` に、記録の書式は `references/roles/spec-reviewer.md` の「判断記録の契約」に置く（MUST）。3 つのファイルは同じ対象・同じ当てる条件・同じ記録の書式を書かなければならない（MUST）。
+develop スキルは、仕様化判断が「する」になった変更のうち、既存の仕様の文言を実装に合わせて直すだけの変更に、成果物を仕様の差分 1 ファイルだけにして R1 の仕様レビューを省く通し方（以下「文言合わせの通し方」）を持たなければならない（MUST）。対象・当てる条件・省くものの正本は `references/decision-criteria.md` の Step B に置き（MUST）、W の手順は `references/roles/worker/spec.md` に、記録の書式は `references/roles/spec-reviewer.md` の「判断記録の契約」に置く（MUST）。対象・当てる条件の正本は `decision-criteria.md`、記録の書式の正本は `spec-reviewer.md` とし、`worker/spec.md` は正本を指して要約だけを書く。要約が正本と食い違ってはならない（MUST NOT）。
 
 **対象**: 次をすべて満たす変更に限る（MUST）。①`openspec/specs/` の既存の要件の文を、実装に合わせて直すだけである ②新しい要件を足さない・要件を消さない・要件の名前を変えない（差分は `## MODIFIED Requirements` だけで書ける） ③設計の選択が無い（直し方が 1 つに決まっている） ④直す要件が 1 つの capability の spec に収まる（差分が 1 ファイルになる）。
 
