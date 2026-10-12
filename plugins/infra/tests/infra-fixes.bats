@@ -840,34 +840,46 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
 # 雛形のジョブが timeout-minutes（正の整数）を持ち、直前に連続するコメント行に「約 2 倍」があること。
 # YAML の読み込みは S17 と同じ ruby -ryaml。
 
-# $1=テンプレート $2=ジョブ名。timeout-minutes の値を出力する
+# $1=テンプレート $2=ジョブ名。timeout-minutes の値（正の整数）を出力する。整数以外・未設定は exit 1
 job_timeout_minutes() {
-  ruby -ryaml -e 'v = YAML.load_file(ARGV[0]).dig("jobs", ARGV[1], "timeout-minutes"); abort "no timeout-minutes" if v.nil?; puts v' "$1" "$2"
+  ruby -ryaml -e 'v = YAML.load_file(ARGV[0]).dig("jobs", ARGV[1], "timeout-minutes"); abort "timeout-minutes is not a positive integer: #{v.inspect}" unless v.is_a?(Integer) && v > 0; puts v' "$1" "$2"
 }
 
-# $1=テンプレート。timeout-minutes の行の直前に連続するコメント行に「約 2 倍」があれば 0
+# $1=テンプレート $2=ジョブ名。そのジョブ（`  <ジョブ名>:` から次のジョブまで）の timeout-minutes の行の
+# 直前に連続するコメント行に「約 2 倍」があれば 0
 timeout_comment_has_rule() {
-  awk '
-    /^[[:space:]]*timeout-minutes:/ { found = 1; exit }
-    /^[[:space:]]*#/ { buf = buf $0 "\n"; next }
-    { buf = "" }
+  awk -v job="$2" '
+    $0 ~ "^  " job ":" { injob = 1; next }
+    injob && /^  [^ #]/ { exit }
+    injob && /^[[:space:]]*timeout-minutes:/ { found = 1; exit }
+    injob && /^[[:space:]]*#/ { buf = buf $0 "\n"; next }
+    injob { buf = "" }
     END { if (!found) exit 1; if (buf ~ /約 2 倍/) exit 0; exit 1 }
   ' "$1"
 }
 
 @test "T1: ci.yml.template test job has a positive integer timeout-minutes" {
-  v="$(job_timeout_minutes "$WORKFLOWS_DIR/ci.yml.template" test)"
-  [[ "$v" =~ ^[1-9][0-9]*$ ]]
+  v="$(job_timeout_minutes "$WORKFLOWS_DIR/ci.yml.template" test)" || return 1
+  [[ "$v" =~ ^[1-9][0-9]*$ ]] || return 1
 }
 
 @test "T2: weekly-full.yml.template full job has a positive integer timeout-minutes" {
-  v="$(job_timeout_minutes "$WORKFLOWS_DIR/weekly-full.yml.template" full)"
-  [[ "$v" =~ ^[1-9][0-9]*$ ]]
+  v="$(job_timeout_minutes "$WORKFLOWS_DIR/weekly-full.yml.template" full)" || return 1
+  [[ "$v" =~ ^[1-9][0-9]*$ ]] || return 1
 }
 
 @test "T3: timeout-minutes is preceded by a comment block with the 2x rule (both templates)" {
-  timeout_comment_has_rule "$WORKFLOWS_DIR/ci.yml.template"
-  timeout_comment_has_rule "$WORKFLOWS_DIR/weekly-full.yml.template"
+  timeout_comment_has_rule "$WORKFLOWS_DIR/ci.yml.template" test
+  timeout_comment_has_rule "$WORKFLOWS_DIR/weekly-full.yml.template" full
+}
+
+@test "T5: weekly-full report-failure also files an issue when full is cancelled by the timeout" {
+  ruby -ryaml -e '
+    j = YAML.load_file(ARGV[0])["jobs"]["report-failure"]
+    abort "needs must include full" unless Array(j["needs"]).include?("full")
+    c = j["if"].to_s
+    abort "if must handle cancelled: #{c}" unless c.include?("always()") && c.include?("needs.full.result == '"'"'cancelled'"'"'") && c.include?("needs.full.result == '"'"'failure'"'"'")
+  ' "$WORKFLOWS_DIR/weekly-full.yml.template"
 }
 
 @test "T4: SKILL.md timeout section explains how to decide and how to apply to existing repos" {

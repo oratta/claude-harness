@@ -273,8 +273,8 @@ Phase 1 で「開発形態（solo / solo-agent / team）」と「プロダクト
 - **既に雛形から CI を入れたリポジトリへの反映**: `ci.yml` の `test` ジョブと `weekly-full.yml` の `full` ジョブの
   両方に、手で `timeout-minutes: <分>` を 1 行書き足す。`/infra-setup` の再実行は勧めない。Phase 4 が
   「上書き／スキップ／差分を見てから判断」を聞くのは `ci.yml` / `deploy-preview.yml` / `deploy-staging.yml` /
-  `deploy-production.yml` / `migrate-production.yml` の 5 ファイルで、`weekly-full.yml` は確認なしで雛形に書き直され、
-  `PROJECT-SPECIFIC OVERRIDE` の変更も消える。再実行するなら、事前に控えを取るか、実行後に `git diff` で確かめる
+  `deploy-production.yml` / `migrate-production.yml` の 5 ファイルで、`weekly-full.yml` はこの列挙に無いため確認なしで雛形に書き直されることがあり、
+  その場合は `PROJECT-SPECIFIC OVERRIDE` の変更も消える。再実行するなら、事前に控えを取るか、実行後に `git diff` で確かめる
 - **昇格**: pre-release → released は `/infra-setup` を再実行して released を選ぶ。
   Phase 4 が deploy-on-merge.yml の削除を提案し、フルセットに置き換える
 

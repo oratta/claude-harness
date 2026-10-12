@@ -89,7 +89,8 @@ jobs:
   report-failure:
     name: File issue on failure
     needs: full
-    if: failure()
+    # full が timeout-minutes で打ち切られた（cancelled）ときも起票する。failure() だけだと拾えない
+    if: ${{ always() && (needs.full.result == 'failure' || needs.full.result == 'cancelled') }}
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Create or skip issue
