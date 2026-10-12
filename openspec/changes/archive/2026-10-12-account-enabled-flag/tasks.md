@@ -4,7 +4,7 @@
 
 - [x] 1.1 `plugins/dev-workflow/tests/test_usage_view.py` に、`enabled` が `false` / `true` / 省略 / `"false"` / `0` / `null` の 6 スロットで `false` だけがオフに読まれ 6 つとも残ること、先頭がオフの 9 スロットで先頭 8 個が宣言順に残ること、`read_registry` の戻り値が従来の `[(id, securestorage)]` のままであること、オフのスロットが `build_view` の `accounts` と active 判定に残ることのテストを足す。触る範囲: plugins/dev-workflow/tests/test_usage_view.py:30-317（`EffectiveValues` クラスの後ろに新しいクラスを足す）
 - [x] 1.2 `usage_view.py` に、オンかオフかを含めてスロットを返す読み取り関数を足し、`read_registry` はその結果から印を落として返す形にする（戻り値の形は変えない）。オフの判定は `entry.get("enabled") is False` の 1 か所。触る範囲: plugins/dev-workflow/scripts/usage_view.py:57-86（`read_registry`）
-- [x] 1.3 `python3 -m pytest plugins/dev-workflow/tests/test_usage_view.py` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
+- [x] 1.3 `python3 -m pytest plugins/dev-workflow/tests/test_usage_view.py` が exit 0 になることを確かめる（実施時の記録: この PC の `python3` には pytest が入っておらず、このコマンドは `No module named pytest` で exit 1 になる。同じテストファイルを `python3 -m unittest plugins/dev-workflow/tests/test_usage_view.py` と `uv run --no-project --with pytest python -m pytest -p no:cacheprovider plugins/dev-workflow/tests/test_usage_view.py` で実行し、どちらも exit 0 になることで確かめた）。触る範囲: なし（実行のみ）
 
 ## 2. 自動選択と明示選択（select-account.sh）
 
@@ -38,6 +38,6 @@
 
 ## 7. 全体の確認
 
-- [x] 7.1 受け入れ条件の 4 つのコマンドを続けて実行し、すべて exit 0 になることを確かめる: `bats plugins/dev-workflow/tests/account-selector.bats`、`bats plugins/dev-workflow/tests/usage-probe-multi-account.bats`、`bats plugins/statusline/tests/statusline-multi-account.bats`、`python3 -m pytest plugins/dev-workflow/tests/test_usage_view.py`。あわせて `usage_view` を使うほかのテスト（`plugins/dev-workflow/tests/usage-probe.bats`、`plugins/dev-workflow/tests/prompt-tripwires-refresh.bats`）と `bats tests/injection-budget.bats` が通ることを確かめる。触る範囲: なし（実行のみ）
+- [x] 7.1 受け入れ条件の 4 つのコマンドを続けて実行し、すべて exit 0 になることを確かめる: `bats plugins/dev-workflow/tests/account-selector.bats`、`bats plugins/dev-workflow/tests/usage-probe-multi-account.bats`、`bats plugins/statusline/tests/statusline-multi-account.bats`、`python3 -m pytest plugins/dev-workflow/tests/test_usage_view.py`（実施時の記録: この PC の `python3` には pytest が入っておらず、4 つ目のコマンドは `No module named pytest` で exit 1 になる。同じテストファイルを `python3 -m unittest plugins/dev-workflow/tests/test_usage_view.py` と `uv run --no-project --with pytest python -m pytest -p no:cacheprovider plugins/dev-workflow/tests/test_usage_view.py` で実行し、どちらも exit 0 になることで確かめた）。あわせて `usage_view` を使うほかのテスト（`plugins/dev-workflow/tests/usage-probe.bats`、`plugins/dev-workflow/tests/prompt-tripwires-refresh.bats`）と `bats tests/injection-budget.bats` が通ることを確かめる。触る範囲: なし（実行のみ）
 - [x] 7.2 `openspec validate account-enabled-flag --strict` が通ることを確かめる。触る範囲: なし（実行のみ）
 - [x] 7.3 実機の `~/.claude/accounts.json` の B に `"enabled": false` を足し、`select-account.sh` の標準エラーの 1 行（`selected=a`）を issue #976 にコメントする（受け入れ条件の最後の項目。実装後の工程で行い、仕様化と実装の工程ではやらない）。触る範囲: なし（実機の設定ファイルと issue コメント）。実施済み: マージ前に、オーナーから会話で実行を任された develop の本体セッションが HEAD 3132ad08 の `select-account.sh` で実行し、exit 0・標準エラー `selected=a reason=max-weekly-margin margins=a:21.16,b:off` を得た。確認後に登録簿は控えから元に戻した。記録: https://github.com/oratta/claude-harness/issues/976#issuecomment-6116602948
