@@ -13,14 +13,16 @@
 #       gh pr view の JSON → {head, state, failed, runs, checks, retry}
 #       state: conflict / ci-fail / ready / wait。checks は落ちたチェックごとの
 #       {name, run, job, cause}、cause は runner-lost（--hints の annotations_by_job.<job> に
-#       通信切れの文言）→ unrelated（--unrelated の名前）→ real の順。retry は ci-fail で、
+#       通信切れの文言）→ job-timeout（同じく、ジョブの上限時間での打ち切りの文言）→
+#       unrelated（--unrelated の名前）→ real の順。retry は ci-fail で、
 #       落ちたチェックがすべて real でなく、すべてに run ID があるときだけ true
 #   decide [<前回の状態の JSON>]
 #       observe の出力 → {act, next, obs}。act: none / ready / rerun / fix / escalate
 #       状態のキー: state / head / reran_head（やり直した HEAD）/ fixes（PR ごとの修正回数の累計）/
 #       raised（オーナーに上げ済み）。知らないキーは next にそのまま引き継ぐ。
 #       前回の状態が省略・null・{} なら初見。やり直しは HEAD ごとに 1 回、fix は 2 回まで、
-#       3 回目は escalate
+#       3 回目は escalate。やり直しを使い切った HEAD で、real が混ざらず job-timeout を含む
+#       失敗を見たら、fix でなく escalate（fixes は増やさない。前回の原因は見ない）
 #   annotations <owner/repo>
 #       gh pr view の JSON → {"annotations_by_job": {"<job>": [<message>, ...]}}
 #       落ちた Actions のジョブごとに gh api repos/<owner/repo>/check-runs/<job>/annotations を呼ぶ
@@ -34,6 +36,10 @@ set -uo pipefail
 
 # 実行マシンの通信切れを示す annotation の文言（GitHub が変えたらここだけ直す）
 RUNNER_LOST_MSG='The self-hosted runner lost communication with the server'
+# ジョブが上限時間（timeout-minutes）で打ち切られたことを示す annotation の文言。全文は
+# "The job running on runner <名前> has exceeded the maximum execution time of <N> minutes." の形で
+# ランナー名と分数が入るので、変わらない部分だけを見る（GitHub が変えたらここだけ直す）
+JOB_TIMEOUT_MSG='maximum execution time'
 
 PR_STATE_JQ='
 def verdict:
@@ -54,8 +60,10 @@ def observe($hints; $unrelated):
   | ($cs | map(select(.v == "fail"))) as $f
   | ($f | map({name, run, job,
                cause: (.job as $j | .name as $n
-                       | if $j != null and any(($hints.annotations_by_job[$j] // [])[];
-                                               tostring | contains($lost)) then "runner-lost"
+                       | (if $j != null then [($hints.annotations_by_job[$j] // [])[] | tostring]
+                          else [] end) as $msgs
+                       | if any($msgs[]; contains($lost)) then "runner-lost"
+                         elif any($msgs[]; contains($timedout)) then "job-timeout"
                          elif any($unrelated[]; . == $n) then "unrelated"
                          else "real" end)})) as $fc
   | (if .mergeable == "CONFLICTING" then "conflict"
@@ -78,6 +86,9 @@ def decide($prev; $obs):
     elif $p.raised == true then {act: "none", next: $seen}
     elif $obs.state == "ci-fail" and $obs.retry == true and $p.reran_head != $obs.head
       then {act: "rerun", next: ($seen + {state: "wait", reran_head: $obs.head})}
+    elif $obs.state == "ci-fail" and $obs.retry == true
+         and any(($obs.checks // [])[]; .cause == "job-timeout")
+      then {act: "escalate", next: ($seen + {raised: true})}
     elif ($p.fixes // 0) >= 2 then {act: "escalate", next: ($seen + {raised: true})}
     else {act: "fix", next: ($seen + {fixes: (($p.fixes // 0) + 1)})} end
   | . + {obs: $obs};
@@ -102,7 +113,7 @@ cmd_observe() {
   done
   local names
   names="$(jq -cn '$ARGS.positional' --args ${unrelated[@]+"${unrelated[@]}"})"
-  jq -ce --arg lost "$RUNNER_LOST_MSG" --argjson hints "$hints" --argjson unrelated "$names" \
+  jq -ce --arg lost "$RUNNER_LOST_MSG" --arg timedout "$JOB_TIMEOUT_MSG" --argjson hints "$hints" --argjson unrelated "$names" \
     "$PR_STATE_JQ"' if type == "object" then observe($hints; $unrelated) else error("not an object") end' \
     2>/dev/null || die "cannot read gh pr view JSON from stdin"
 }
