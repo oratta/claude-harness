@@ -313,5 +313,62 @@ class EffectiveValues(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['accounts']['a']['weekly_all_pct'], 2)
 
 
+class EnabledFlag(unittest.TestCase):
+    # usage-account-registry "スロットを enabled でオフにできる": only the JSON false turns a
+    # slot off, and an off slot stays a registry slot (order, the cap of 8, active).
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.sessions = self.root / 'sessions'
+        self.sessions.mkdir()
+        self.accounts = self.root / 'accounts.json'
+        self.snapshot = self.root / 'snapshot.json'
+
+    def register(self, entries):
+        self.accounts.write_text(json.dumps({'schema': 1, 'accounts': entries}))
+
+    def test_only_json_false_is_off_and_no_slot_is_dropped(self):
+        values = [('f', False), ('t', True), ('s', 'false'), ('z', 0), ('n', None)]
+        entries = [{'id': sid, 'securestorage': '/x/' + sid, 'enabled': value}
+                   for sid, value in values]
+        entries.insert(2, {'id': 'o', 'securestorage': '/x/o'})
+        self.register(entries)
+        slots = m.read_slots(str(self.accounts))
+        self.assertEqual([sid for sid, _, _ in slots], ['f', 't', 'o', 's', 'z', 'n'])
+        self.assertEqual([enabled for _, _, enabled in slots],
+                         [False, True, True, True, True, True])
+
+    def test_off_slot_counts_toward_the_cap_and_keeps_declared_order(self):
+        entries = [{'id': f's{i}', 'securestorage': f'/x/{i}'} for i in range(9)]
+        entries[0]['enabled'] = False
+        self.register(entries)
+        slots = m.read_slots(str(self.accounts))
+        self.assertEqual([sid for sid, _, _ in slots], [f's{i}' for i in range(8)])
+        self.assertEqual(slots[0], ('s0', '/x/0', False))
+
+    def test_read_registry_keeps_its_two_column_shape(self):
+        self.register([{'id': 'a', 'securestorage': None},
+                       {'id': 'b', 'securestorage': '/x/b', 'enabled': False}])
+        self.assertEqual(m.read_registry(str(self.accounts)), [('a', ''), ('b', '/x/b')])
+
+    def test_unreadable_registry_falls_back_to_an_enabled_default_slot(self):
+        self.assertEqual(m.read_slots(str(self.root / 'absent.json')), [('default', '', True)])
+        self.assertEqual(m.read_registry(str(self.root / 'absent.json')), [('default', '')])
+
+    def test_off_slot_stays_in_the_view_and_can_be_active(self):
+        self.register([{'id': 'a', 'securestorage': None},
+                       {'id': 'b', 'securestorage': '/x/b', 'enabled': False}])
+        self.snapshot.write_text(json.dumps({'schema': 2, 'active': None, 'accounts': {
+            'b': {'fetched_at': NOW - HOUR, 'five_hour_pct': 5,
+                  'five_hour_resets_epoch': NOW + HOUR, 'weekly_all_pct': 40,
+                  'weekly_resets_epoch': NOW + DAY}}}))
+        view = m.build_view(accounts_file=str(self.accounts), sessions_dir=str(self.sessions),
+                            snapshot_path=str(self.snapshot), now=NOW, active_secure='/x/b')
+        self.assertEqual(list(view['accounts']), ['a', 'b'])
+        self.assertEqual(view['accounts']['b']['weekly_all_pct'], 40)
+        self.assertEqual(view['active'], 'b')
+
+
 if __name__ == '__main__':
     unittest.main()
