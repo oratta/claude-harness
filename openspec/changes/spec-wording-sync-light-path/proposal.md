@@ -32,7 +32,7 @@
 
 - 指示書: `plugins/dev-workflow/skills/develop/references/decision-criteria.md`（Step B）、`references/roles/worker/spec.md`・`worker/common.md`・`worker/implement.md`・`worker/finish.md`、`references/roles/spec-reviewer.md`（判断記録の契約）、`skills/develop/SKILL.md`（1 ループの (1)(2)・実行モード）、`skills/pr-review-gate/stages/pass.md`（整合表）、`skills/pr-review-gate/declarations.md`（仕様宣言の形）
 - テスト: `plugins/dev-workflow/tests/` に bats を 1 本足す。既存の `spec-decision-and-review.bats`・`pr-review-gate-spec-declaration.bats`・`develop-roles.bats`・`develop-skill.bats` は通ったままにする
-- 触らないもの: `plugins/dev-workflow/scripts/`、`stages/triage.md`・`stages/hold.md`・`stages/reviewer-brief.md`（issue #973 の別の change が触る）
+- 触らないもの: `plugins/dev-workflow/scripts/`、`stages/triage.md`・`stages/hold.md`・`stages/reviewer-brief.md`（エピック #973 の別の子 issue が触る）
 - 常時注入の予算（`tests/injection-budget.txt`）: 触るファイルはどれも常時注入の対象外なので動かない見込み。動いたら PR 本文に理由を書く
 - 受け入れたリスク（主の決定）: 仕様の書き換えの誤り（直す範囲より広く書き換える・要件の文を落とす）を見るのが実装後レビューだけになる
-- 記録先: issue #973。PR は `Refs #973`（この change は #973 の 3 つの change の 1 つで、issue を閉じない）
+- 記録先: issue #986（エピック #973 の子）。PR は `Closes #986` にし、#973 には `Closes` を向けない
