@@ -8,7 +8,7 @@
 
 - [x] 2.1 失敗するテストを先に書く: `tests/ci-bats-shards.bats` を作り、使い捨てリポジトリ（`s1.bats`〜`s7.bats`）に `scripts/test.sh` を写して回す形で、spec の「scripts/test.sh は TEST_SHARD で全体を分けた 1 組だけを実行できる」と「不正な TEST_SHARD と空の組は成功にしない」の全シナリオを書く（使い捨てリポジトリの作り方は `tests/test-sh-residual-guard.bats` の setup と同じ。内側の `.bats` は 1 件だけ通るテストにする）。触る範囲: tests/ci-bats-shards.bats（新規）、tests/test-sh-residual-guard.bats:13-22（setup。参照のみ）
 - [x] 2.2 `scripts/test.sh` に `TEST_SHARD=k/N` を足す: 値の検証（不正なら標準エラーに値を出して exit 1。bats の有無の確認より後、対象の列挙より前）、`ALL_SUITES` の i 番目を `(i − 1) mod N + 1` の組に割り当ててからフィルタと `TEST_EXCLUDE` を当てる、`  (skipped by TEST_EXCLUDE: <件数>)` の行のすぐ次に `  (shard k/N)` の 1 行を出す（対象スイートの一覧の行のあいだには混ぜない。未指定のときは出さない）。受け付ける値は「0 で始まらない数字 / 0 で始まらない数字」で k ≦ N のものだけにし、先頭ゼロや空白を含む値は読み替えずに落とす。POSIX sh のまま書く（bashism を使わない）。ヘッダのコメントに `TEST_SHARD` の説明を足し、「bats を 1 回だけ呼び」の記述は残す。触る範囲: scripts/test.sh:1-28（ヘッダ）、scripts/test.sh:47-100（対象の列挙と表示）
-- [ ] 2.3 `scripts/test.sh ci-bats-shards` と `scripts/lint.sh` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
+- [x] 2.3 `scripts/test.sh ci-bats-shards` と `scripts/lint.sh` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
 
 ## 3. 必須チェックと ci.yml のジョブの対応の検査
 
