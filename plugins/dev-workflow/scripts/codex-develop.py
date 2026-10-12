@@ -93,7 +93,11 @@ def claude_usage_evidence(snapshot_path, now):
     return {'account': active, 'margin': margin, 'fetched_at': slot.get('observed_at')}
 
 
-def select_configuration(claude_margin, codex_margin):
+def select_configuration(claude_margin, codex_margin, codex_enabled=True):
+    # Codex off (accounts.json "codex"."enabled": false) is the user's setting, not a
+    # headroom result, so it has its own reason whatever the margins are.
+    if not codex_enabled:
+        return 'claude-default', 'codex-off'
     claude_ok, codex_ok = (claude_margin is not None and claude_margin >= 0,
                            codex_margin is not None and codex_margin >= 0)
     if claude_ok and codex_ok:
@@ -274,7 +278,9 @@ def automatic_selection(mapping, now=None):
     _run_usage_probe(snapshot_path)
     now = int(time.time()) if now is None else now
     claude = claude_usage_evidence(snapshot_path, now)
-    usages = read_codex_usages(mapping, str(config_dir), now) if mapping else {}
+    codex_enabled = usage_view.read_codex_enabled(usage_view.default_paths()['accounts_file'])
+    # Off means no Codex usage read at all: no app-server start and no cache update.
+    usages = read_codex_usages(mapping, str(config_dir), now) if mapping and codex_enabled else {}
     candidates = []
     for order, (name, value) in enumerate(usages.items()):
         margin = usage_margin(value, now)
@@ -283,13 +289,14 @@ def automatic_selection(mapping, now=None):
     best = max(candidates) if candidates else None
     codex = {'account': best[2] if best else None, 'margin': best[0] if best else None,
              'fetched_at': best[3].get('fetched_at') if best else None}
-    selected, reason = select_configuration(claude['margin'], codex['margin'])
+    if not codex_enabled:
+        codex['enabled'] = False
+    selected, reason = select_configuration(claude['margin'], codex['margin'], codex_enabled)
     return selected, {'selection_mode': 'automatic', 'configuration': selected,
         'reason': reason,
         'claude': {'account': claude['account'], 'margin': claude['margin'],
                    'fetched_at': claude['fetched_at']},
-        'codex': {'account': codex['account'], 'margin': codex['margin'],
-                  'fetched_at': codex['fetched_at']}}
+        'codex': codex}
 
 
 def bind_codex_account(config, account, accounts):
@@ -497,6 +504,21 @@ REQUEST:
     return text
 
 
+def refuse_explicit_codex_when_off(args, legacy):
+    # An explicit Codex request is never silently replaced by Claude. This runs before the
+    # account-home table is read, so the refusal names the off setting and not a missing
+    # account. A profile is read without the table only to see whether any role uses Codex.
+    accounts_file = usage_view.default_paths()['accounts_file']
+    if usage_view.read_codex_enabled(accounts_file):
+        return
+    if not legacy:
+        roles = load_profile(args.profile, args.profile_file, None)['roles']
+        if all(entry['executor'] != 'codex' for entry in roles.values()):
+            return
+    raise RuntimeError('codex is off: set "codex"."enabled" to true or remove it in '
+                       + str(accounts_file))
+
+
 def build_request(args):
     # Role settings are resolved for each request, and CODEX_HOME comes from the caller's
     # explicit account table. The profile form and account/model form are mutually exclusive.
@@ -506,6 +528,8 @@ def build_request(args):
         raise RuntimeError('profile cannot be combined with account/model; profile-file requires profile')
     if legacy and not (args.account and args.model):
         raise RuntimeError('legacy request requires both account and model')
+    if legacy or profile:
+        refuse_explicit_codex_when_off(args, legacy)
     mapping = account_homes(args.account_home, args.account_home_file)
     if not legacy and not profile and not args.account_home and not args.account_home_file:
         mapping = default_automatic_account_home()
