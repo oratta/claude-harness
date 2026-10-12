@@ -5,6 +5,8 @@
 #
 # 実ホームは触らない。登録簿は CLAUDE_ACCOUNTS_FILE、基点は CLAUDE_ACCOUNTS_HOME を一時ディレクトリに向ける。
 
+bats_require_minimum_version 1.5.0
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   CMD="${PLUGIN_DIR}/scripts/accounts.sh"
