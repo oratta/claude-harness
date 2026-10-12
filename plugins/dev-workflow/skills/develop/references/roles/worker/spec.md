@@ -80,4 +80,4 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 openspec CLI で artifact を作る場合は `openspec new change <change-name>` を実行し、`openspec status --change <change-name>` で依存順を確認する。`openspec instructions <artifact> --change <change-name>` で各 artifact の指示を得て、proposal / design / tasks / specs を直書きする。`tasks.md` の各タスクの末尾には `触る範囲: <パス>:<開始行>-<終了行>` を書く（複数なら読点で並べる。新しく作るファイルは `<パス>（新規）`。節の見出しや関数名が分かるときは添える）。行番号は仕様づくりの時点の値で、前のタスクの編集でずれうる。実装の担い手はこれを案内にして、編集前に該当範囲を読む。揃ったら本体に return し、同じ仕様レビューを受ける。R1 の APPROVE を確認してから実装に入る規則は `worker/common.md`「実装に入る前の確認」。
 
-R1 が記録先にコメントした仕様レビュー結果（書式は `worker/common.md`「実装に入る前の確認」）が `REQUEST_CHANGES` なら、本体からの再開指示を受けて artifact を直し、修正箇所を列挙して return する（再レビューは差分限定、2 周キャップ）。
+R1 が記録先にコメントした仕様レビュー結果（書式は `worker/common.md`「実装に入る前の確認」）が `REQUEST_CHANGES` なら、本体からの再開指示を受けて artifact を直し、修正箇所を列挙して return する（再レビューは差分限定。周回と続行は本体が develop SKILL.md「レビューの周を主に聞かずに続ける（直し方の判定）」で決める）。
