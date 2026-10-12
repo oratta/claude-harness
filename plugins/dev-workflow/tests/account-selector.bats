@@ -405,6 +405,18 @@ JSON
   [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
 }
 
+@test "enabled: a slot turned off with accounts.sh is not selected" {
+  # b は週の 90% 経過・週次 0%（余裕 90）で最大。accounts.sh off b でオフにする
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  write_record "$SECURE_B" "$NOW" 0 0 "$((NOW + 60480))"
+  write_registry
+  CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "${PLUGIN_DIR}/scripts/accounts.sh" off b
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:10.00,b:off" ]
+}
+
 @test "enabled: a registry without enabled selects the same as one with enabled true" {
   write_snapshot "$NOW" "$NOW" 10 10 40 20
   write_registry
