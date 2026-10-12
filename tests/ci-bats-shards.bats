@@ -527,3 +527,23 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep '^FAIL' | grep -qF "$shard_id"
 }
+
+# ══ 4. 内側で test.sh を回すスイートは、外側の TEST_SHARD を引き継がない ══
+#
+# CI は全スイートを TEST_SHARD=k/N 付きで回す。使い捨てリポジトリの中で test.sh を呼ぶ
+# スイートが外側の値を引き継ぐと、内側では空の組になって落ちる。1 番の組に入っている
+# あいだは通ってしまい、スイートの増減で組がずれたときに初めて落ちるので、書き方で確かめる。
+# 見るのは「sh で scripts/test.sh を実行する行を持つ追跡下の .bats は、ファイルのどこかに
+# `-u TEST_SHARD` を持つ」ことだけ（呼び出しごとに付いているかまでは見ない）。
+@test "shard: suites that run test.sh inside do not inherit the outer TEST_SHARD" {
+  local f bad=""
+  for f in $(git -C "$ROOT" ls-files -- '*.bats' ':(exclude)_longruns/'); do
+    if grep -vE '^[ \t]*#' "$ROOT/$f" | grep -qE '(^|[ \t])sh [^#]*scripts/test\.sh'; then
+      grep -qF -- '-u TEST_SHARD' "$ROOT/$f" || bad="$bad $f"
+    fi
+  done
+  [ -z "$bad" ] || { echo "env -u TEST_SHARD を付けずに test.sh を内側で回している:$bad"; return 1; }
+  # この検査が対象を 1 つも見つけられなくなっていないこと
+  grep -vE '^[ \t]*#' "$ROOT/tests/test-sh-residual-guard.bats" \
+    | grep -qE '(^|[ \t])sh [^#]*scripts/test\.sh'
+}

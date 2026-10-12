@@ -73,7 +73,11 @@ run_test_sh_isolated() {
   # STUB_BIN が指定されていれば先頭に足す（ps / pgrep を潰す差し替え用）
   if [ -n "${STUB_BIN:-}" ]; then PATH="$STUB_BIN:$PATH"; fi
   for v in $(compgen -e | grep '^BATS_'); do unset "$v"; done
-  cd "$REPO" && git add -A && TEST_RESIDUAL_GRACE="$INNER_GRACE" sh scripts/test.sh
+  # 外側の TEST_SHARD / TEST_EXCLUDE も渡さない。CI はこのスイートを TEST_SHARD=k/N 付きで
+  # 回すので、引き継ぐとスイートが 1 本しかない使い捨てリポでは 2 番以降の組が空になり、
+  # 内側の test.sh が「no test suites in shard」で落ちる（issue #990）。
+  cd "$REPO" && git add -A \
+    && env -u TEST_SHARD -u TEST_EXCLUDE TEST_RESIDUAL_GRACE="$INNER_GRACE" sh scripts/test.sh
 }
 
 # 内側の .bats を stdin から書く。本文では @test を @@TEST と書く。
