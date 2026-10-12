@@ -91,11 +91,14 @@ if os.path.exists(path):
         raise SystemExit(1)
 
 entry = {"id": sid, "label": label, "securestorage": secure}
+kept = ""
 for i, existing in enumerate(doc["accounts"]):
     if isinstance(existing, dict) and existing.get("id") == sid:
         # 引き継ぐのは enabled だけ（ほかの未知のキーは意味を知らないので写さない）
         if "enabled" in existing:
             entry["enabled"] = existing["enabled"]
+            # 登録し直してもオフのままであることを、完了メッセージで分かるようにする
+            kept = '; kept "enabled": %s' % json.dumps(existing["enabled"], ensure_ascii=False)
         doc["accounts"][i] = entry
         break
 else:
@@ -115,5 +118,5 @@ except Exception:
     except OSError:
         pass
     raise
-sys.stderr.write("registered slot %r (securestorage=%s) in %s\n" % (sid, secure, path))
+sys.stderr.write("registered slot %r (securestorage=%s) in %s%s\n" % (sid, secure, path, kept))
 PY

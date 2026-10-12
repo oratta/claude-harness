@@ -362,6 +362,31 @@ JSON
   [ "$(jq -c '.accounts[1].enabled' "$ACCOUNTS")" = '"false"' ]
 }
 
+@test "init: the completion message says that enabled was kept" {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "A", "securestorage": null },
+  { "id": "b", "label": "B", "securestorage": "${WORK}/claude-b", "enabled": false }
+] }
+JSON
+  # オフのスロットを登録し直したとき: enabled を残したことと、その値を出す（1 行のまま）
+  env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/claude-b" \
+      "$INIT" --id b --label B2 > "${WORK}/init.out" 2> "${WORK}/init.err"
+  [ ! -s "${WORK}/init.out" ]
+  [ "$(wc -l < "${WORK}/init.err" | tr -d ' ')" = 1 ]
+  grep -qF "registered slot 'b'" "${WORK}/init.err"
+  grep -qF 'kept "enabled": false' "${WORK}/init.err"
+
+  # enabled の無いスロットの上書きと新しい id では、enabled に触れない
+  env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      "$INIT" --id a --label A2 2> "${WORK}/init.err"
+  [ "$(wc -l < "${WORK}/init.err" | tr -d ' ')" = 1 ]
+  ! grep -qF 'enabled' "${WORK}/init.err" || return 1
+  env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/claude-c" \
+      "$INIT" --id c --label C 2> "${WORK}/init.err"
+  ! grep -qF 'enabled' "${WORK}/init.err" || return 1
+}
+
 @test "init: enabled is not added to a slot without it or to a new id" {
   write_two_slot_registry
   env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id a --label A2
