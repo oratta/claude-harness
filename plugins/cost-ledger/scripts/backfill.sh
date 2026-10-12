@@ -43,5 +43,7 @@ scripts_dir="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || exit 0
 [ -f "$scripts_dir/write_allow.py" ] || exit 0
 
 # hook の JSON は stdin のまま渡す。
-python3 "$scripts_dir/backfill.py" >/dev/null 2>&1
+# -E -s で起動し、PYTHON* の環境変数（PYTHONPATH など）とユーザー site を検索パスに使わない。-I は付けない:
+# -I はスクリプトのディレクトリも検索パスから外すので、隣の cost_ledger.py・write_allow.py を import できなくなる（#847）。
+python3 -E -s "$scripts_dir/backfill.py" >/dev/null 2>&1
 exit 0

@@ -53,7 +53,7 @@ ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accou
 # ---- レジストリを解決してスロット一覧（TSV）を得る ----
 # 出力: id<TAB>label<TAB>securestorage<TAB>service（1 行 1 スロット）
 read_slots() {
-  ACCOUNTS_FILE="$ACCOUNTS_FILE" python3 <<'PY' 2>/dev/null
+  ACCOUNTS_FILE="$ACCOUNTS_FILE" python3 -I <<'PY' 2>/dev/null
 import hashlib, json, os, re, sys, unicodedata
 
 MAX_SLOTS = 8
@@ -197,7 +197,7 @@ for i in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
   slot_pairs+="${slot_ids[$i]}"$'\t'"${slot_secures[$i]}"$'\n'
 done
 due="$(SLOT_PAIRS="$slot_pairs" USAGE_NOW="$NOW" STALE="$STALE" INTERVAL="$INTERVAL" \
-  STATE="$STATE" SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(dirname "$0")" python3 - <<'PY' 2>/dev/null
+  STATE="$STATE" SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(dirname "$0")" python3 -I - <<'PY' 2>/dev/null
 import json, os, sys
 sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
 import usage_view  # 記録の鍵と置き場所は読み手と同じ規則で求める
@@ -281,12 +281,12 @@ slot_token() {
     cred="$HOME/.claude/.credentials.json"
   fi
   if [ -f "$cred" ]; then
-    token="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('claudeAiOauth',{}).get('accessToken',''))" "$cred" 2>/dev/null || true)"
+    token="$(python3 -I -c "import json,sys;print(json.load(open(sys.argv[1])).get('claudeAiOauth',{}).get('accessToken',''))" "$cred" 2>/dev/null || true)"
   fi
   # サービス名が空のまま Keychain を引くと全件検索になり固まる。念のための番人。
   if [ -z "$token" ] && [ -n "$service" ] && command -v security >/dev/null 2>&1; then
     token="$(security find-generic-password -s "$service" -w 2>/dev/null \
-      | python3 -c "import json,sys;print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null || true)"
+      | python3 -I -c "import json,sys;print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null || true)"
   fi
   printf '%s' "$token"
 }
@@ -360,7 +360,7 @@ for idx in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
 done
 
 # ---- 試行状態を記録する（結果にかかわらず。一時ファイルからの置き換えで書く） ----
-DUE="$due" RAW_DIR="$raw_dir" STATE="$STATE" USAGE_NOW="$NOW" python3 - <<'PY' 2>/dev/null
+DUE="$due" RAW_DIR="$raw_dir" STATE="$STATE" USAGE_NOW="$NOW" python3 -I - <<'PY' 2>/dev/null
 import json, os, tempfile
 
 now = int(os.environ["USAGE_NOW"])
@@ -396,7 +396,7 @@ PY
 
 # ---- パースして snapshot を組み立てる（fail-open） ----
 out="$(SLOTS_TSV="$slots_tsv" RAW_DIR="$raw_dir" PREV_SNAPSHOT="$SNAPSHOT" USAGE_NOW="$NOW" \
-       ACTIVE_SECURE="${CLAUDE_SECURESTORAGE_CONFIG_DIR-}" python3 <<'PY' 2>/dev/null || true
+       ACTIVE_SECURE="${CLAUDE_SECURESTORAGE_CONFIG_DIR-}" python3 -I <<'PY' 2>/dev/null || true
 import hashlib, json, os, unicodedata
 
 now = int(os.environ.get("USAGE_NOW") or 0)

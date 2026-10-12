@@ -23,7 +23,7 @@ ROOT="${CLAUDE_PLUGIN_ROOT:-}"
 payload="$(cat)" || exit 0
 
 # 役を判定する（payload は環境変数や引数に載せず stdin で渡す）
-role="$(printf '%s' "$payload" | python3 -c '
+role="$(printf '%s' "$payload" | python3 -I -c '
 import json, re, sys
 try:
     d = json.load(sys.stdin)
@@ -38,11 +38,12 @@ if isinstance(t, str):
 [ -n "$role" ] || exit 0
 
 budget=""
-if [ "$role" != "reviewer" ] && [ -x "${ROOT}/scripts/session-tripwires.sh" ]; then
+# CLAUDE_PLUGIN_ROOT が空のときは探さない（"${ROOT}/scripts/…" がファイルシステムのルート直下の /scripts/… になる。#847）
+if [ "$role" != "reviewer" ] && [ -n "$ROOT" ] && [ -x "${ROOT}/scripts/session-tripwires.sh" ]; then
   budget="$(TRIPWIRES_SCOPE=subagent-budget "${ROOT}/scripts/session-tripwires.sh" 2>/dev/null)" || budget=""
 fi
 
-BUDGET="$budget" python3 <<'PY' 2>/dev/null || exit 0
+BUDGET="$budget" python3 -I <<'PY' 2>/dev/null || exit 0
 import json, os
 
 def eff(name, default):
