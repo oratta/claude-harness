@@ -32,9 +32,9 @@
 
 ## 6. 文書と変更の記録
 
-- [ ] 6.1 `plugins/statusline/README.md` の登録簿のフィールド表に `enabled` の行を足し、オフのスロットの表示（`off` の 1 行）と、切り替えは当面 `accounts.json` を手で書き換えることを書く。触る範囲: plugins/statusline/README.md:100-135（「レジストリの作り方」とフィールド表）
-- [ ] 6.2 `plugins/dev-workflow/README.md` の「Claude アカウントの起動時選択」に、オフのスロットは自動選択されず `cld-account <id>` では exit 2 になることを 1〜2 文で足す。触る範囲: plugins/dev-workflow/README.md:37-75（「Claude アカウントの起動時選択」）
-- [ ] 6.3 変更の記録を `plugins/dev-workflow/changes/976.md` と `plugins/statusline/changes/976.md` に書く（何が変わるか・戻し方）。触る範囲: plugins/dev-workflow/changes/976.md（新規）、plugins/statusline/changes/976.md（新規）
+- [x] 6.1 `plugins/statusline/README.md` の登録簿のフィールド表に `enabled` の行を足し、オフのスロットの表示（`off` の 1 行）と、切り替えは当面 `accounts.json` を手で書き換えることを書く。触る範囲: plugins/statusline/README.md:100-135（「レジストリの作り方」とフィールド表）
+- [x] 6.2 `plugins/dev-workflow/README.md` の「Claude アカウントの起動時選択」に、オフのスロットは自動選択されず `cld-account <id>` では exit 2 になることを 1〜2 文で足す。触る範囲: plugins/dev-workflow/README.md:37-75（「Claude アカウントの起動時選択」）
+- [x] 6.3 変更の記録を `plugins/dev-workflow/changes/976.md` と `plugins/statusline/changes/976.md` に書く（何が変わるか・戻し方）。触る範囲: plugins/dev-workflow/changes/976.md（新規）、plugins/statusline/changes/976.md（新規）
 
 ## 7. 全体の確認
 
