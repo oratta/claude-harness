@@ -812,6 +812,11 @@ if [ -n "$codex_rows" ]; then
             codex_line+="${DIM}取得待ち${RESET}"
             continue
         fi
+        # accounts.json の codex.enabled が false（Codex オフ）。使用量は取得していない
+        if [ "$c_pct" = "off" ]; then
+            codex_line+="${DIM}off${RESET}"
+            continue
+        fi
         codex_fetched="$c_fetched"
         c_seconds=$(( c_minutes * 60 ))
         c_left=$(( c_reset - now ))

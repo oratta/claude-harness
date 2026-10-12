@@ -222,6 +222,173 @@ class RenderTests(unittest.TestCase):
                 self.assertTrue(spawn.call_args.kwargs['start_new_session'])
                 self.assertEqual(spawn.call_args.kwargs['stdout'], subprocess.DEVNULL)
 
+    # --- Codex off (accounts.json "codex"."enabled": false) through statusline.sh ---
+
+    def set_codex(self, value):
+        path = self.folder / 'accounts.json'
+        document = json.loads(path.read_text())
+        document['codex'] = value
+        path.write_text(json.dumps(document))
+
+    def test_off_row_is_label_and_off_only_even_with_a_fetched_cache(self):
+        cache = self.folder / '.statusline-codex'
+        doc = codex.read_json(cache)
+        doc['resets'] = {'availableCount': 3, 'credits': [
+            {'status': 'available', 'expiresAt': self.now + 10 * 86400}]}
+        codex.atomic(cache, doc)
+        before = cache.read_bytes()
+        self.set_codex({'enabled': False})
+        lines = [line for line in self.render().splitlines() if 'Codex' in line]
+        self.assertEqual(lines, ['  Codex  off'])
+        self.assertIn('\x1b[2moff\x1b[0m', self.render(raw=True))
+        self.assertEqual(cache.read_bytes(), before)
+
+    def test_statusline_codex_zero_wins_over_the_off_setting(self):
+        self.set_codex({'enabled': False})
+        self.assertNotIn('Codex', self.render(False))
+
+    def test_row_is_unchanged_without_the_off_setting(self):
+        absent = [line for line in self.render().splitlines() if 'Codex' in line]
+        self.set_codex({'enabled': True})
+        enabled = [line for line in self.render().splitlines() if 'Codex' in line]
+        self.assertEqual(len(absent), 1)
+        self.assertTrue(absent[0].startswith('  Codex  7d All'))
+        self.assertNotIn('off', absent[0])
+        self.assertEqual(enabled[0].split('  ')[:4], absent[0].split('  ')[:4])
+
+
+class CodexOffTests(unittest.TestCase):
+    # statusline-multi-account-usage "Codex がオフのとき Codex 行は off を出し、取得しない".
+    # The helper reads "codex"."enabled" itself (it never imports dev-workflow's usage_view).
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.folder = Path(self.tmp.name)
+        self.home = self.folder / 'codex-home'
+        self.home.mkdir()
+        self.config = self.folder / 'config'
+        self.config.mkdir()
+        self.calls = self.folder / 'codex-calls'
+        self.stub = self.folder / 'codex'
+        # Records every start; a real `codex app-server` would be started the same way.
+        self.stub.write_text('#!/bin/sh\necho "$@" >> "{}"\n'.format(self.calls))
+        self.stub.chmod(0o700)
+        self.accounts = self.folder / 'accounts.json'
+        self.env = {k: v for k, v in os.environ.items() if k != 'CLAUDE_ACCOUNTS_FILE'}
+        self.env.update(CODEX_HOME=str(self.home), CLAUDE_CONFIG_DIR=str(self.config),
+                        CLAUDE_ACCOUNTS_FILE=str(self.accounts),
+                        STATUSLINE_CODEX_BIN=str(self.stub))
+        self.cache = self.config / '.statusline-codex'
+
+    def login(self):
+        (self.home / 'auth.json').write_text(json.dumps({'tokens': {'account_id': 'test'}}))
+
+    def register(self, **extra):
+        self.accounts.write_text(json.dumps({'schema': 1, 'accounts': [{'id': 'a'}], **extra}))
+
+    def helper(self, *argv):
+        result = subprocess.run(
+            ['python3', str(Path(__file__).parents[1] / 'scripts/statusline-codex.py'), *argv],
+            env=self.env, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def test_off_prints_off_and_never_starts_codex(self):
+        self.login()
+        self.register(codex={'enabled': False})
+        for argv in ((), ('--read',)):
+            with self.subTest(argv=argv):
+                self.assertEqual(self.helper(*argv), 'off\n')
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.cache.exists())
+
+    def test_off_reaches_nothing_but_the_registry(self):
+        self.login()
+        self.register(codex={'enabled': False})
+        for argv in (['statusline-codex.py'], ['statusline-codex.py', '--refresh']):
+            with self.subTest(argv=argv), patch.dict(os.environ, self.env, clear=True), \
+                    patch.object(codex.sys, 'argv', argv), \
+                    patch.object(codex, 'identity') as identity, \
+                    patch.object(codex.shutil, 'which') as which, \
+                    patch.object(codex, 'read_json') as read_cache, \
+                    patch.object(codex, 'atomic') as write_cache, \
+                    patch.object(codex, 'refresh') as refresh, \
+                    patch.object(codex.subprocess, 'Popen') as spawn:
+                codex.main()
+                for mock in (identity, which, read_cache, write_cache, refresh, spawn):
+                    mock.assert_not_called()
+
+    def test_off_ignores_an_existing_cache_and_leaves_it_untouched(self):
+        self.login()
+        with patch.dict(os.environ, self.env, clear=True):
+            key = codex.identity()
+        now = int(time.time())
+        codex.atomic(self.cache, {'identity': key, 'next_attempt': 0, 'fetched_at': now,
+                                  'windows': [{'pct': 46, 'minutes': 10080, 'reset': now + 86400}],
+                                  'resets': {'availableCount': 3, 'credits': []}})
+        before = self.cache.read_bytes()
+        self.register(codex={'enabled': False})
+        self.assertEqual(self.helper(), 'off\n')
+        self.assertEqual(self.cache.read_bytes(), before)
+        self.assertFalse(self.calls.exists())
+
+    def test_off_shows_without_a_codex_login(self):
+        self.register(codex={'enabled': False})
+        self.assertEqual(self.helper(), 'off\n')
+        self.env['STATUSLINE_CODEX_BIN'] = str(self.folder / 'no-such-binary')
+        self.assertEqual(self.helper(), 'off\n')
+
+    def test_off_refresh_prints_nothing_and_does_nothing(self):
+        self.login()
+        self.register(codex={'enabled': False})
+        self.assertEqual(self.helper('--refresh'), '')
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.cache.exists())
+
+    def test_only_json_false_is_off(self):
+        cases = [({'enabled': False}, False), ({'enabled': True}, True), ({}, True),
+                 ({'enabled': 'false'}, True), ({'enabled': 0}, True),
+                 ({'enabled': None}, True), (False, True)]
+        for value, expected in cases:
+            with self.subTest(codex=value):
+                self.register(codex=value)
+                with patch.dict(os.environ, self.env, clear=True):
+                    self.assertIs(codex.codex_enabled(), expected)
+                # No login: an on registry prints nothing, an off one prints off.
+                self.assertEqual(self.helper(), '' if expected else 'off\n')
+
+    def test_missing_broken_and_array_registries_are_on(self):
+        with patch.dict(os.environ, self.env, clear=True):
+            self.assertIs(codex.codex_enabled(), True)
+            self.accounts.write_text('{"codex": {"enabled": false')
+            self.assertIs(codex.codex_enabled(), True)
+            self.accounts.write_text('[{"codex": {"enabled": false}}]')
+            self.assertIs(codex.codex_enabled(), True)
+
+    def test_registry_location_follows_the_config_dir_without_the_override(self):
+        (self.config / 'accounts.json').write_text(json.dumps({'codex': {'enabled': False}}))
+        self.register()
+        self.assertEqual(self.helper(), '')
+        del self.env['CLAUDE_ACCOUNTS_FILE']
+        self.assertEqual(self.helper(), 'off\n')
+
+    def test_output_is_identical_without_the_off_setting(self):
+        self.login()
+        with patch.dict(os.environ, self.env, clear=True):
+            key = codex.identity()
+        now = int(time.time())
+        codex.atomic(self.cache, {'identity': key, 'next_attempt': now + 180, 'fetched_at': now,
+                                  'windows': [{'pct': 46, 'minutes': 10080, 'reset': now + 86400}],
+                                  'resets': {'availableCount': 3, 'credits': []}})
+        self.register()
+        absent = self.helper()
+        self.register(codex={'enabled': True})
+        enabled = self.helper()
+        self.assertEqual(absent, enabled)
+        self.assertEqual(absent, '46\t10080\t{}\t{}\nresets\t3\t0\t{}\n'.format(
+            now + 86400, now, now))
+        self.assertFalse(self.calls.exists())
+
 
 class MoneyFormattingTests(unittest.TestCase):
     def test_grouping_does_not_depend_on_builtin_printf_locale(self):
