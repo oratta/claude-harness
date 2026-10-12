@@ -38,6 +38,6 @@
 
 ## 7. 全体の確認
 
-- [ ] 7.1 受け入れ条件の 4 つのコマンドを続けて実行し、すべて exit 0 になることを確かめる: `bats plugins/dev-workflow/tests/account-selector.bats`、`bats plugins/dev-workflow/tests/usage-probe-multi-account.bats`、`bats plugins/statusline/tests/statusline-multi-account.bats`、`python3 -m pytest plugins/dev-workflow/tests/test_usage_view.py`。あわせて `usage_view` を使うほかのテスト（`plugins/dev-workflow/tests/usage-probe.bats`、`plugins/dev-workflow/tests/prompt-tripwires-refresh.bats`）と `bats tests/injection-budget.bats` が通ることを確かめる。触る範囲: なし（実行のみ）
-- [ ] 7.2 `openspec validate account-enabled-flag --strict` が通ることを確かめる。触る範囲: なし（実行のみ）
+- [x] 7.1 受け入れ条件の 4 つのコマンドを続けて実行し、すべて exit 0 になることを確かめる: `bats plugins/dev-workflow/tests/account-selector.bats`、`bats plugins/dev-workflow/tests/usage-probe-multi-account.bats`、`bats plugins/statusline/tests/statusline-multi-account.bats`、`python3 -m pytest plugins/dev-workflow/tests/test_usage_view.py`。あわせて `usage_view` を使うほかのテスト（`plugins/dev-workflow/tests/usage-probe.bats`、`plugins/dev-workflow/tests/prompt-tripwires-refresh.bats`）と `bats tests/injection-budget.bats` が通ることを確かめる。触る範囲: なし（実行のみ）
+- [x] 7.2 `openspec validate account-enabled-flag --strict` が通ることを確かめる。触る範囲: なし（実行のみ）
 - [ ] 7.3 実機の `~/.claude/accounts.json` の B に `"enabled": false` を足し、`select-account.sh` の標準エラーの 1 行（`selected=a`）を issue #976 にコメントする（受け入れ条件の最後の項目。実装後の工程で行い、仕様化と実装の工程ではやらない）。触る範囲: なし（実機の設定ファイルと issue コメント）
