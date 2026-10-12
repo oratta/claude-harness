@@ -886,3 +886,127 @@ draw_b_with_null_reset_five_hour_record() {
   draw_b_with_null_reset_five_hour_record 0
   [[ "$(grep -E '^(▸ |  )B +5h' "$WORK/out.txt")" =~ \ 0% ]] || return 1
 }
+
+# ---------- enabled が false のスロット（オフ）（#976） ----------
+# spec: statusline-multi-account-usage「オフのスロットは値の代わりに off を 1 行出す」
+#       usage-account-registry「スロットを enabled でオフにできる」
+
+# $1=a の enabled（JSON の値。空なら書かない）$2=b の enabled（同）
+write_two_slot_registry_enabled() {
+  local enabled_a="${1:+, \"enabled\": $1}" enabled_b="${2:+, \"enabled\": $2}"
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "A", "securestorage": null${enabled_a} },
+  { "id": "b", "label": "B", "securestorage": "${SECURE_B}"${enabled_b} }
+] }
+JSON
+}
+
+@test "enabled: a non-active off slot renders a single off row instead of its values" {
+  write_two_slot_registry_enabled "" false
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  write_b_record "$((NOW - 60))" 37 "$((NOW + 172800))" 41 "$((NOW + 9000))"
+  mk_input 55 82 14000 172800 | bash "$SL" > "$WORK/raw.txt"
+  strip_ansi < "$WORK/raw.txt" > "$WORK/out.txt"
+  [ "$(grep -cE '^(▸ |  )B' "$WORK/out.txt")" = "1" ]
+  [ "$(grep -cxF '  B  off' "$WORK/out.txt")" = "1" ]
+  # B の値（snapshot の 3% / 1%、記録の 41% / 37%）と経過時間はどこにも出ない
+  ! grep -qE ' (3|1|41|37)%' "$WORK/out.txt" || return 1
+  ! grep -qE '[0-9]+[mhd]前' "$WORK/out.txt" || return 1
+  # A（active）の 2 行は変わらず、B の行はその後ろ（宣言順）
+  [ "$(grep -cE '^▸ A +(5h|7d All)' "$WORK/out.txt")" = "2" ]
+  [ "$(drop_cwd_line "$WORK/out.txt" | grep -nE '^▸ A +7d All' | cut -d: -f1)" -lt \
+    "$(drop_cwd_line "$WORK/out.txt" | grep -nxF '  B  off' | cut -d: -f1)" ]
+  # label も off も DIM で描く（取得待ちの行と同じ組み立て）
+  grep -qF $'  \033[2mB\033[0m  \033[2moff\033[0m' "$WORK/raw.txt"
+}
+
+@test "enabled: an off slot without any value still renders its off row" {
+  write_two_slot_registry_enabled "" false
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  [ "$(grep -cxF '  B  off' "$WORK/out.txt")" = "1" ]
+  [ "$(grep -cE '^▸ A +5h' "$WORK/out.txt")" = "1" ]
+}
+
+@test "enabled: a registry without enabled and one with enabled true render identical bytes" {
+  write_two_slot_snapshot "$((NOW - 30))" "$((NOW - 7230))" "$((NOW + 172830))"
+  write_b_record "$((NOW - 60))" 37 "$((NOW + 172830))" 41 "$((NOW + 9000))"
+  write_two_slot_registry
+  mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/omitted.txt"
+  write_two_slot_registry_enabled true true
+  mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/true.txt"
+  cmp "$WORK/omitted.txt" "$WORK/true.txt"
+  strip_ansi < "$WORK/true.txt" | grep -qE '^  B +5h'
+  ! strip_ansi < "$WORK/true.txt" | grep -qE ' off$' || return 1
+}
+
+@test "enabled: only the JSON false turns a slot off" {
+  write_two_slot_snapshot "$((NOW - 30))" "$((NOW - 7230))" "$((NOW + 172830))"
+  write_two_slot_registry
+  mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/omitted.txt"
+  local value
+  for value in '"false"' 0 null; do
+    write_two_slot_registry_enabled "" "$value"
+    mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/other.txt"
+    cmp "$WORK/omitted.txt" "$WORK/other.txt"
+  done
+}
+
+@test "enabled: an active off slot is drawn from live values without off" {
+  write_two_slot_registry_enabled "" false
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 66 77 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" \
+    | strip_ansi > "$WORK/out.txt"
+  grep -E '^▸ B +5h' "$WORK/out.txt" | grep -q '66%'
+  grep -E '^▸ B +7d All' "$WORK/out.txt" | grep -q '77%'
+  ! grep -qE ' off$' "$WORK/out.txt" || return 1
+  # オンの A は非 active 行として従来どおり描く
+  [ "$(grep -cE '^  A +(5h|7d All)' "$WORK/out.txt")" = "2" ]
+}
+
+@test "enabled: an off slot's full-width label still counts toward the label column" {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "A", "securestorage": null },
+  { "id": "b", "label": "仕事", "securestorage": "${SECURE_B}", "enabled": false }
+] }
+JSON
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  widths="$(python3 - "$WORK/out.txt" <<'PY'
+import re, sys, unicodedata
+def w(s):
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
+cols, kinds = set(), set()
+for line in open(sys.argv[1], encoding="utf-8").readlines()[1:]:
+    m = re.search(r"(5h|7d All|off$)", line)
+    if m and not line.startswith(("5h", "7d")):
+        cols.add(w(line[:m.start()]))
+        kinds.add(m.group(1))
+print(",".join(str(c) for c in sorted(cols)), ",".join(sorted(kinds)))
+PY
+)"
+  # A の行の 5h / 7d All と、仕事 の行の off が同じ表示幅の位置から始まる（2 + 4 + 2 = 8）
+  [ "$widths" = "8 5h,7d All,off" ]
+  grep -qxF '  仕事  off' "$WORK/out.txt"
+}
+
+@test "enabled: one on slot plus one off slot is still a multi-slot layout" {
+  write_two_slot_registry_enabled "" false
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep -qE '^▸ A +5h' "$WORK/out.txt"
+}
+
+@test "enabled: a single-slot registry renders the same bytes when its slot is off" {
+  old="${WORK}/statusline-old.sh"
+  git -C "$REPO_ROOT" show origin/main:plugins/statusline/scripts/statusline.sh > "$old" 2>/dev/null \
+    || skip "origin/main is not available"
+  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}]}' > "$ACCOUNTS"
+  mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/on.txt"
+  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null,"enabled":false}]}' > "$ACCOUNTS"
+  mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/off.txt"
+  mk_input 3 25 14010 172830 | bash "$old" > "$WORK/old.txt"
+  cmp "$WORK/on.txt" "$WORK/off.txt"
+  cmp "$WORK/old.txt" "$WORK/off.txt"
+  ! strip_ansi < "$WORK/off.txt" | grep -qE ' off$' || return 1
+}

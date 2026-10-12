@@ -25,10 +25,10 @@
 
 ## 5. ステータスライン（statusline.sh）
 
-- [ ] 5.1 `statusline-multi-account.bats` に次のテストを足す: 非 active の `B` が `enabled: false` で snapshot と記録に値があるとき、`B` の行は 1 行だけで ANSI を除くと `  B  off`、`B` の使用率・バー・経過時間が出ない／値が無いオフのスロットも `off` の行を出す／`enabled` を書いていない登録簿と `"enabled": true` を書いた登録簿で出力がバイト単位で一致する（変更前との同一は既存の `byte-identical` のテストが通り続けることで確かめる）／`enabled` が `"false"`・`0`・`null` のスロットは従来どおり描かれる／active のスロットがオフでも `▸ ` とライブ値で描かれ `off` が出ない／オフのスロットの全角 label も列幅に数える／1 スロットだけの登録簿でそのスロットがオフでも出力が変わらない。触る範囲: plugins/statusline/tests/statusline-multi-account.bats:81-91（`write_two_slot_registry`）、plugins/statusline/tests/statusline-multi-account.bats:687-754（バイト同一のテストの足場）、plugins/statusline/tests/statusline-multi-account.bats:885-888（末尾に追加）
-- [ ] 5.2 `statusline.sh` の登録簿を読む埋め込み python が 6 列目にオンかオフかを出すようにし（判定は `e.get("enabled") is False`）、`slot_enabled` の配列に読み込む。登録簿が無いときの既定スロットはオン。触る範囲: plugins/statusline/scripts/statusline.sh:393-472（アカウントレジストリの読み取り）
-- [ ] 5.3 非 active スロットのセッション記録との突き合わせの引数からオフのスロットを外す。描画のループで、非 active かつオフのスロットは `${prefix}${DIM}off${RESET}` を 1 行足して次のスロットへ進む（active の分岐と 1 スロットの経路は変えない）。触る範囲: plugins/statusline/scripts/statusline.sh:584-590（突き合わせの引数）、plugins/statusline/scripts/statusline.sh:721-761（描画のループ）
-- [ ] 5.4 `bats plugins/statusline/tests/statusline-multi-account.bats` が exit 0 になることを確かめる。1 件だけ落ちたときは単独で再実行して判定する（statusline のテストは単発で落ちることがある）。触る範囲: なし（実行のみ）
+- [x] 5.1 `statusline-multi-account.bats` に次のテストを足す: 非 active の `B` が `enabled: false` で snapshot と記録に値があるとき、`B` の行は 1 行だけで ANSI を除くと `  B  off`、`B` の使用率・バー・経過時間が出ない／値が無いオフのスロットも `off` の行を出す／`enabled` を書いていない登録簿と `"enabled": true` を書いた登録簿で出力がバイト単位で一致する（変更前との同一は既存の `byte-identical` のテストが通り続けることで確かめる）／`enabled` が `"false"`・`0`・`null` のスロットは従来どおり描かれる／active のスロットがオフでも `▸ ` とライブ値で描かれ `off` が出ない／オフのスロットの全角 label も列幅に数える／1 スロットだけの登録簿でそのスロットがオフでも出力が変わらない。触る範囲: plugins/statusline/tests/statusline-multi-account.bats:81-91（`write_two_slot_registry`）、plugins/statusline/tests/statusline-multi-account.bats:687-754（バイト同一のテストの足場）、plugins/statusline/tests/statusline-multi-account.bats:885-888（末尾に追加）
+- [x] 5.2 `statusline.sh` の登録簿を読む埋め込み python が 6 列目にオンかオフかを出すようにし（判定は `e.get("enabled") is False`）、`slot_enabled` の配列に読み込む。登録簿が無いときの既定スロットはオン。触る範囲: plugins/statusline/scripts/statusline.sh:393-472（アカウントレジストリの読み取り）
+- [x] 5.3 非 active スロットのセッション記録との突き合わせの引数からオフのスロットを外す。描画のループで、非 active かつオフのスロットは `${prefix}${DIM}off${RESET}` を 1 行足して次のスロットへ進む（active の分岐と 1 スロットの経路は変えない）。触る範囲: plugins/statusline/scripts/statusline.sh:584-590（突き合わせの引数）、plugins/statusline/scripts/statusline.sh:721-761（描画のループ）
+- [x] 5.4 `bats plugins/statusline/tests/statusline-multi-account.bats` が exit 0 になることを確かめる。1 件だけ落ちたときは単独で再実行して判定する（statusline のテストは単発で落ちることがある）。触る範囲: なし（実行のみ）
 
 ## 6. 文書と変更の記録
 
