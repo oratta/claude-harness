@@ -835,3 +835,45 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
 @test "all touched JSON parses (jq)" {
   jq empty "$PLUGIN_JSON"
 }
+
+# --- infra-ci-job-timeout (#992) ---
+# 雛形のジョブが timeout-minutes（正の整数）を持ち、直前に連続するコメント行に「約 2 倍」があること。
+# YAML の読み込みは S17 と同じ ruby -ryaml。
+
+# $1=テンプレート $2=ジョブ名。timeout-minutes の値を出力する
+job_timeout_minutes() {
+  ruby -ryaml -e 'v = YAML.load_file(ARGV[0]).dig("jobs", ARGV[1], "timeout-minutes"); abort "no timeout-minutes" if v.nil?; puts v' "$1" "$2"
+}
+
+# $1=テンプレート。timeout-minutes の行の直前に連続するコメント行に「約 2 倍」があれば 0
+timeout_comment_has_rule() {
+  awk '
+    /^[[:space:]]*timeout-minutes:/ { found = 1; exit }
+    /^[[:space:]]*#/ { buf = buf $0 "\n"; next }
+    { buf = "" }
+    END { if (!found) exit 1; if (buf ~ /約 2 倍/) exit 0; exit 1 }
+  ' "$1"
+}
+
+@test "T1: ci.yml.template test job has a positive integer timeout-minutes" {
+  v="$(job_timeout_minutes "$WORKFLOWS_DIR/ci.yml.template" test)"
+  [[ "$v" =~ ^[1-9][0-9]*$ ]]
+}
+
+@test "T2: weekly-full.yml.template full job has a positive integer timeout-minutes" {
+  v="$(job_timeout_minutes "$WORKFLOWS_DIR/weekly-full.yml.template" full)"
+  [[ "$v" =~ ^[1-9][0-9]*$ ]]
+}
+
+@test "T3: timeout-minutes is preceded by a comment block with the 2x rule (both templates)" {
+  timeout_comment_has_rule "$WORKFLOWS_DIR/ci.yml.template"
+  timeout_comment_has_rule "$WORKFLOWS_DIR/weekly-full.yml.template"
+}
+
+@test "T4: SKILL.md timeout section explains how to decide and how to apply to existing repos" {
+  sec="$(awk '/^## /{p=0} /^## CI\/CD 構成の 2 軸/{p=1} p' "$SKILL")"
+  echo "$sec" | grep -q 'timeout-minutes'
+  echo "$sec" | grep -q '約 2 倍'
+  echo "$sec" | grep -q 'weekly-full\.yml'
+  echo "$sec" | grep -q '確認なし'
+}

@@ -29,6 +29,10 @@ jobs:
   full:
     name: Full Suite (tests + audit)
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # ジョブの上限時間（分）。無いと固まったジョブが 1 本 360 分まで走る。
+    # 決め方: このリポジトリの週次実行の普段の所要時間（Actions の実行履歴）の約 2 倍。
+    # 既定の 30 分は仮の値（フルスイートは PR 用より長い）。実測に合わせて書き換える
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
