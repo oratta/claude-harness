@@ -395,19 +395,22 @@ usnap="$CONFIG_DIR/.usage-snapshot"
 # id は英数字とハイフン 1〜32 文字で一意、先頭 8 スロットまで、不正なら既定スロットへ縮退。
 # dev-workflow の usage-probe.sh と同じ規則だが、プラグインを跨ぐ依存を作らないため
 # 実装は各スクリプトに置く（規則の正本は spec 側）。
+# enabled が JSON の false のスロットは「オフ」（slot_enabled が 0）。オフのスロットも一覧に残し、
+# 上限・label 列の幅・active の判定に数える。false 以外（省略・true・"false"・0・null）はオン。
 accounts_file="${CLAUDE_ACCOUNTS_FILE:-$CONFIG_DIR/accounts.json}"
-slot_ids=(); slot_labels=(); slot_secures=(); slot_services=(); slot_widths=()
+slot_ids=(); slot_labels=(); slot_secures=(); slot_services=(); slot_widths=(); slot_enabled=()
 if [ -f "$accounts_file" ]; then
     # `IFS=$'\t' read` は使えない: タブは IFS 空白なので連続タブが 1 つの区切りに畳まれ、
     # securestorage が空の既定スロットで service 列が消える。IFS 空白でない US(0x1f) に
     # 置換してから read する（usage-probe.sh と同じ理由・同じ対処）。
     while IFS='' read -r _line; do
         [ -n "$_line" ] || continue
-        IFS=$'\x1f' read -r _sid _slabel _ssecure _sservice _swidth <<< "${_line//$'\t'/$'\x1f'}"
+        IFS=$'\x1f' read -r _sid _slabel _ssecure _sservice _swidth _senabled <<< "${_line//$'\t'/$'\x1f'}"
         [ -n "$_sid" ] || continue
         slot_ids+=("$_sid"); slot_labels+=("$_slabel")
         slot_secures+=("$_ssecure"); slot_services+=("$_sservice")
         slot_widths+=("${_swidth:-0}")
+        if [ "$_senabled" = "0" ]; then slot_enabled+=(0); else slot_enabled+=(1); fi
     done < <(ACCOUNTS_FILE="$accounts_file" python3 -c '
 import hashlib, json, os, re, sys, unicodedata
 MAX_SLOTS = 8
@@ -456,19 +459,21 @@ try:
             if CTRL_RE.search(lab) or CTRL_RE.search(sec):
                 continue
             lab = clip_label(lab, MAX_LABEL_WIDTH)
-            slots.append((sid, lab, sec, service(sec)))
+            slots.append((sid, lab, sec, service(sec), e.get("enabled") is not False))
 except Exception:
     slots = []
 for row in slots:
     # 5 列目は label の表示幅。bash の ${#var} は文字数なので、全角ラベルでは
     # printf の %-*s（バイト幅パディング）と食い違って列がずれる。
-    sys.stdout.write("\t".join(row) + "\t" + str(disp_width(row[1])) + "\n")
+    # 6 列目はオンなら 1、オフ（enabled が JSON の false）なら 0。
+    sys.stdout.write("\t".join(row[:4]) + "\t" + str(disp_width(row[1])) + "\t"
+                     + ("1" if row[4] else "0") + "\n")
 ' 2>/dev/null)
 fi
 if [ "${#slot_ids[@]}" -eq 0 ]; then
     # レジストリ不在・不正 → 既定スロット 1 つ。label は空にして列を出さない
     slot_ids=("default"); slot_labels=(""); slot_secures=(""); slot_services=("Claude Code-credentials")
-    slot_widths=(0)
+    slot_widths=(0); slot_enabled=(1)
 fi
 
 n_slots="${#slot_ids[@]}"
@@ -585,9 +590,13 @@ if [ "$multi" -eq 1 ] && [ -d "$sessions_dir" ]; then
     _rec_args=()
     for i in $(seq 0 $(( n_slots - 1 ))); do
         [ "$i" -eq "$active_idx" ] && continue
+        # オフのスロットは値を描かないので、記録との突き合わせにも載せない
+        [ "${slot_enabled[$i]}" = "1" ] || continue
         _rec_args+=("$i" "${slot_secures[$i]}" "${snap_fetched[$i]}" "${snap_five_pct[$i]}"
                     "${snap_five_res[$i]}" "${snap_seven_pct[$i]}" "${snap_seven_res[$i]}")
     done
+    # 突き合わせる相手が無ければ（非 active がすべてオフ）python3 を起動しない
+    [ "${#_rec_args[@]}" -gt 0 ] &&
     while IFS='' read -r _row; do
         IFS=$'\x1f' read -r _ri _f _fp _fr _sp _sr <<< "${_row//$'\t'/$'\x1f'}"
         [[ "$_ri" =~ ^[0-9]+$ ]] && [ "$_ri" -lt "$n_slots" ] || continue
@@ -732,6 +741,13 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
             # 全行が等しく 2 桁を占めるので、バーの左端は揃ったまま
             prefix="  ${DIM}${slot_labels[$i]}${pad}${RESET}  "
         fi
+    fi
+    # 非 active のオフのスロットは値の代わりに off を 1 行だけ出す（値が残っていても描かず、
+    # 値が無くても行は出す）。active のスロットはオフでも下のライブ値の経路で描く。
+    # 1 スロット構成は常に active なので、ここには入らない。
+    if [ "$multi" -eq 1 ] && [ "$i" -ne "$active_idx" ] && [ "${slot_enabled[$i]}" != "1" ]; then
+        usage_lines+=("${prefix}${DIM}off${RESET}")
+        continue
     fi
     fetched_at="${snap_fetched[$i]}"
     fable_pct="${snap_fable_pct[$i]}"
