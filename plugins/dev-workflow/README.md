@@ -79,7 +79,7 @@ cld-account() {
 
 関数定義前の `unalias` は、旧設定の `cld` / `cld-account` alias をこの関数へ置き換えるために必要。`cld` は probe を best-effort で実行してから自動選択し、`cld-account a --resume` のような明示選択では先頭の slot id を除いた引数をそのまま `claude` に渡す。selector の理由行は stderr に残る。空の選択値は既定アカウントを意味するため環境変数を空文字で設定せず `env -u` で解除する。未登録 id などで selector が非 0 なら function も同じ status で終了し、Claude は起動しない。
 
-使っていないアカウントは、`accounts.json` のそのスロットに `"enabled": false` を足すとオフになる。オフのアカウントは `cld` の自動選択で選ばれず（理由行の `margins` に `<id>:off` と出る）、`usage-probe.sh` も使用量を取得しない。`cld-account <id>` でオフのアカウントを指定すると、戻し方を stderr に出して exit 2 で終わり、Claude は起動しない。全アカウントがオフのときは既定アカウントで起動する（理由は `default-due-to-all-off`）。戻すときは `enabled` の行を消すか `true` にする。切り替えは当面 `accounts.json` を手で書き換える。
+使っていないアカウントは、`accounts.json` のそのスロットに `"enabled": false` を足すとオフになる。オフのアカウントは `cld` の自動選択で選ばれず（理由行の `margins` に `<id>:off` と出る）、`usage-probe.sh` も使用量を取得しない。`cld-account <id>` でオフのアカウントを指定すると、戻し方を stderr に出して exit 2 で終わり、Claude は起動しない。全アカウントがオフのときは既定アカウントで起動する（理由は `default-due-to-all-off`）。既定アカウントへの縮退は `enabled` を見ないので、既定アカウント自体をオフにしていても、全アカウントがオフのとき、またはオンのアカウントがすべて欠測か 5 時間枠 90% 以上のときは、そのオフの既定アカウントで起動する。戻すときは `enabled` の行を消すか `true` にする。切り替えは当面 `accounts.json` を手で書き換える。
 
 ## references/（他プラグインと共有する契約）
 
