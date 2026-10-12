@@ -149,7 +149,7 @@ check_shard_matrix() { # <ci.yml>
   }
   denom=${denom_line##*/}
   if [ "$denom" != "$n" ]; then
-    echo "ci.yml の TEST_SHARD の分母（$denom）が matrix の組の数（$n）と違う" >&2
+    echo "ci.yml の TEST_SHARD の分母（${denom}）が matrix の組の数（${n}）と違う" >&2
     return 1
   fi
   echo "$n"
@@ -272,7 +272,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   [ "$status" -eq 0 ] || { echo "$output"; cat "$ERR"; return 1; }
   [ "$(printf '%s\n' "$output" | listed_suites | wc -l | tr -d ' ')" -eq 7 ]
   [ "$(wc -l <"$STUB_ARGS" | tr -d ' ')" -eq 7 ]
-  ! printf '%s\n' "$output" | grep -qF '(shard'
+  ! printf '%s\n' "$output" | grep -qF '(shard' || return 1
 }
 
 @test "shard: an empty TEST_SHARD is the same as unset" {
@@ -280,7 +280,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   run env -u TEST_EXCLUDE PATH="$STUB_BIN:$PATH" TEST_SHARD= sh "$REPO/scripts/test.sh"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(wc -l <"$STUB_ARGS" | tr -d ' ')" -eq 7 ]
-  ! printf '%s\n' "$output" | grep -qF '(shard'
+  ! printf '%s\n' "$output" | grep -qF '(shard' || return 1
 }
 
 @test "shard: a filter does not change which shard a suite belongs to" {
@@ -315,7 +315,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
     run shard_run "$REPO" "$v" ""
     [ "$status" -ne 0 ] || { echo "accepted: '$v'"; echo "$output"; return 1; }
     grep -qF -- "'$v'" "$ERR" || { echo "stderr does not show '$v':"; cat "$ERR"; return 1; }
-    ! printf '%s\n' "$output" | grep -qF '▶ bats suites:' || { echo "listed for '$v'"; return 1; }
+    if printf '%s\n' "$output" | grep -qF '▶ bats suites:'; then echo "listed for '$v'"; return 1; fi
     [ ! -e "$STUB_ARGS" ] || { echo "bats was run for '$v'"; return 1; }
   done
 }
@@ -346,9 +346,9 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   }
   run inner
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"1..2"* ]]
-  [[ "$output" == *"ok 1 s2 passes"* ]]
-  [[ "$output" == *"ok 2 s5 passes"* ]]
+  [[ "$output" == *"1..2"* ]] || return 1
+  [[ "$output" == *"ok 1 s2 passes"* ]] || return 1
+  [[ "$output" == *"ok 2 s5 passes"* ]] || return 1
 }
 
 # ══ 2. ci.yml の matrix と、結果をまとめるジョブ ══════════════
@@ -366,7 +366,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   # 最後の組を落とす（分母は N のまま）
   rewrite_ci "${BATS_TEST_TMPDIR}/ci.yml" -v last=", $n]" \
     '/^ +shard: \[/ { i = index($0, last); if (i) $0 = substr($0, 1, i - 1) "]" } { print }'
-  ! diff -q "$CI_YML" "${BATS_TEST_TMPDIR}/ci.yml" >/dev/null
+  ! diff -q "$CI_YML" "${BATS_TEST_TMPDIR}/ci.yml" >/dev/null || return 1
   run check_shard_matrix "${BATS_TEST_TMPDIR}/ci.yml"
   [ "$status" -ne 0 ]
 }
@@ -376,7 +376,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   cp "$CI_YML" "${BATS_TEST_TMPDIR}/multi.yml"
   rewrite_ci "${BATS_TEST_TMPDIR}/multi.yml" \
     '/^ +shard: \[/ { ind = $0; sub(/shard:.*$/, "", ind); print ind "shard:"; print ind "  - 1"; print ind "  - 2"; next } { print }'
-  ! diff -q "$CI_YML" "${BATS_TEST_TMPDIR}/multi.yml" >/dev/null
+  ! diff -q "$CI_YML" "${BATS_TEST_TMPDIR}/multi.yml" >/dev/null || return 1
   run check_shard_matrix "${BATS_TEST_TMPDIR}/multi.yml"
   [ "$status" -ne 0 ]
 
@@ -384,7 +384,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   cp "$CI_YML" "${BATS_TEST_TMPDIR}/expr.yml"
   rewrite_ci "${BATS_TEST_TMPDIR}/expr.yml" \
     '/^ +TEST_SHARD: / { sub(/\/[0-9]+$/, "/${{ env.SHARDS }}") } { print }'
-  ! diff -q "$CI_YML" "${BATS_TEST_TMPDIR}/expr.yml" >/dev/null
+  ! diff -q "$CI_YML" "${BATS_TEST_TMPDIR}/expr.yml" >/dev/null || return 1
   run check_shard_matrix "${BATS_TEST_TMPDIR}/expr.yml"
   [ "$status" -ne 0 ]
 }
@@ -414,10 +414,10 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   job_block "$CI_YML" "$id" | grep -qxE ' +fail-fast: false'
   # 分けたジョブの名前は bats suites と異なる
   job_block "$CI_YML" "$id" | grep -qE '^    name: '
-  ! job_block "$CI_YML" "$id" | grep -qxF '    name: bats suites'
+  ! job_block "$CI_YML" "$id" | grep -qxF '    name: bats suites' || return 1
   # コメント以外の行に --jobs / -j が無い
-  ! grep -vE '^[ \t]*#' "$CI_YML" | grep -qE -- '(--jobs|bats +-j)'
-  ! grep -vE '^[ \t]*#' "$ROOT/scripts/test.sh" | grep -qE -- '(--jobs|bats +-j)'
+  ! grep -vE '^[ \t]*#' "$CI_YML" | grep -qE -- '(--jobs|bats +-j)' || return 1
+  ! grep -vE '^[ \t]*#' "$ROOT/scripts/test.sh" | grep -qE -- '(--jobs|bats +-j)' || return 1
 }
 
 @test "ci.yml: the bats suites job waits for the shards and judges every needs result" {
@@ -435,13 +435,13 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   cp "$CI_YML" "${BATS_TEST_TMPDIR}/named.yml"
   rewrite_ci "${BATS_TEST_TMPDIR}/named.yml" -v id="$shard_id" \
     '{ while ((i = index($0, "needs.*.result")) > 0) $0 = substr($0, 1, i - 1) "needs." id ".result" substr($0, i + 14); print }'
-  ! diff -q "$CI_YML" "${BATS_TEST_TMPDIR}/named.yml" >/dev/null
+  ! diff -q "$CI_YML" "${BATS_TEST_TMPDIR}/named.yml" >/dev/null || return 1
   run check_result_job "${BATS_TEST_TMPDIR}/named.yml"
   [ "$status" -ne 0 ]
 
   cp "$CI_YML" "${BATS_TEST_TMPDIR}/noalways.yml"
   rewrite_ci "${BATS_TEST_TMPDIR}/noalways.yml" '$0 != "    if: always()" { print }'
-  ! diff -q "$CI_YML" "${BATS_TEST_TMPDIR}/noalways.yml" >/dev/null
+  ! diff -q "$CI_YML" "${BATS_TEST_TMPDIR}/noalways.yml" >/dev/null || return 1
   run check_result_job "${BATS_TEST_TMPDIR}/noalways.yml"
   [ "$status" -ne 0 ]
 }
@@ -452,7 +452,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   id=$(job_ids_named "$CI_YML" "shellcheck")
   [ "$(printf '%s\n' "$id" | grep -c .)" -eq 1 ]
   job_block "$CI_YML" "$id" | grep -qE '^ +run: scripts/test-auto-merge-workflow\.sh$'
-  ! job_block "$CI_YML" "$id" | grep -qE '^ +shard:'
+  ! job_block "$CI_YML" "$id" | grep -qE '^ +shard:' || return 1
 }
 
 # ══ 3. 必須チェックと ci.yml のジョブの対応の検査 ═════════════
@@ -462,7 +462,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   grep -qxF '    if: always()' "$TREE_CI"
   run_invariants
   [ "$status" -eq 0 ] || { echo "$output" | grep -v '^PASS'; return 1; }
-  [[ "$output" == *"PASS  ci.yml の全ジョブが必須チェックか"* ]]
+  [[ "$output" == *"PASS  ci.yml の全ジョブが必須チェックか"* ]] || return 1
 }
 
 @test "invariants: a job that is neither required nor needed by a required job is detected" {
@@ -491,7 +491,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   make_tree
   rewrite_ci "$TREE_CI" \
     '/^    needs: / { print "    needs:"; print "      - " substr($0, 12); next } { print }'
-  ! diff -q "$CI_YML" "$TREE_CI" >/dev/null
+  ! diff -q "$CI_YML" "$TREE_CI" >/dev/null || return 1
   run_invariants
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep '^FAIL' | grep -qF '1 行の形'
@@ -500,7 +500,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
 @test "invariants: a required check name with no matching job is detected" {
   make_tree
   rewrite_ci "$TREE_CI" '$0 == "    name: bats suites" { print "    name: bats all"; next } { print }'
-  ! diff -q "$CI_YML" "$TREE_CI" >/dev/null
+  ! diff -q "$CI_YML" "$TREE_CI" >/dev/null || return 1
   run_invariants
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep '^FAIL' | grep -qF 'bats suites'
@@ -522,7 +522,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
     /^  [A-Za-z_][A-Za-z0-9_-]*:[ \t]*$/ { on = ($0 == "  " id ":") }
     on && /^    name: / { next }
     { print }'
-  ! diff -q "$CI_YML" "$TREE_CI" >/dev/null
+  ! diff -q "$CI_YML" "$TREE_CI" >/dev/null || return 1
   run_invariants
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep '^FAIL' | grep -qF "$shard_id"
