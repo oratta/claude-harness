@@ -2,9 +2,9 @@
 
 ## 1. オンオフの読み取り（usage_view.py）
 
-- [ ] 1.1 `plugins/dev-workflow/tests/test_usage_view.py` に、`codex.enabled` が `false` / `true` / 省略 / `"false"` / `0` / `null` の 6 つと `"codex": false`（オブジェクトでない）で `false` だけがオフに読まれること、ファイル無し・壊れた JSON・トップレベルが配列でオンに読まれること、`read_slots` / `read_registry` の戻り値が `codex` の有無で変わらないこと、`--codex-enabled` が `on` / `off` の 1 行を出して exit 0 になることのテストを足す。触る範囲: plugins/dev-workflow/tests/test_usage_view.py:320-374（末尾に新しいクラスを足す）
-- [ ] 1.2 `usage_view.py` に `read_codex_enabled(path)`（`codex` がオブジェクトで `enabled is False` のときだけ偽、それ以外は真）を足し、`main` に `--codex-enabled` を足す（登録簿のパスは `default_paths()["accounts_file"]`）。`--json` の出力は変えない。冒頭の docstring に 1 行足す。触る範囲: plugins/dev-workflow/scripts/usage_view.py:1-16（docstring）、plugins/dev-workflow/scripts/usage_view.py:94-101（`read_registry` の後ろに足す）、plugins/dev-workflow/scripts/usage_view.py:254-275（`main`）
-- [ ] 1.3 `python3 -m pytest plugins/dev-workflow/tests/test_usage_view.py` が exit 0 になることを確かめる（この PC の `python3` に pytest が無いときは、`uv run --no-project --with pytest python -m pytest -p no:cacheprovider <同じファイル>` で確かめ、実施時の記録に書く）。触る範囲: なし（実行のみ）
+- [x] 1.1 `plugins/dev-workflow/tests/test_usage_view.py` に、`codex.enabled` が `false` / `true` / 省略 / `"false"` / `0` / `null` の 6 つと `"codex": false`（オブジェクトでない）で `false` だけがオフに読まれること、ファイル無し・壊れた JSON・トップレベルが配列でオンに読まれること、`read_slots` / `read_registry` の戻り値が `codex` の有無で変わらないこと、`--codex-enabled` が `on` / `off` の 1 行を出して exit 0 になることのテストを足す。触る範囲: plugins/dev-workflow/tests/test_usage_view.py:320-374（末尾に新しいクラスを足す）
+- [x] 1.2 `usage_view.py` に `read_codex_enabled(path)`（`codex` がオブジェクトで `enabled is False` のときだけ偽、それ以外は真）を足し、`main` に `--codex-enabled` を足す（登録簿のパスは `default_paths()["accounts_file"]`）。`--json` の出力は変えない。冒頭の docstring に 1 行足す。触る範囲: plugins/dev-workflow/scripts/usage_view.py:1-16（docstring）、plugins/dev-workflow/scripts/usage_view.py:94-101（`read_registry` の後ろに足す）、plugins/dev-workflow/scripts/usage_view.py:254-275（`main`）
+- [x] 1.3 `python3 -m pytest plugins/dev-workflow/tests/test_usage_view.py` が exit 0 になることを確かめる（この PC の `python3` に pytest が無いときは、`uv run --no-project --with pytest python -m pytest -p no:cacheprovider <同じファイル>` で確かめ、実施時の記録に書く）。触る範囲: なし（実行のみ）
 
 ## 2. develop の自動選択と明示指定（codex-develop.py）
 
