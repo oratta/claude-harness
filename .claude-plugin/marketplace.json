@@ -182,7 +182,7 @@
   "bundles": [
     {
       "name": "all",
-      "description": "全プラグインをインストール（bot トークンの設定が要る telegram を除く）",
+      "description": "全プラグインをインストール",
       "plugins": [
         "worktree",
         "weekly-report",
