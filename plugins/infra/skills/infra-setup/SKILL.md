@@ -266,6 +266,15 @@ Phase 1 で「開発形態（solo / solo-agent / team）」と「プロダクト
 - solo-agent（エージェント自動マージ）は人間レビューが無い分、PR CI がレビューの代替 = マージゲートとして必須
 - 全ワークフローの `runs-on` は `${{ vars.CI_RUNNER || 'ubuntu-latest' }}`。free 枠を使い切ったら
   セルフホストランナー登録 + repo variable `CI_RUNNER=self-hosted` で無課金継続、月初に variable を消して復帰
+- **ジョブの上限時間**: `ci.yml` の `test` ジョブと `weekly-full.yml` の `full` ジョブは `timeout-minutes`
+  を持つ（無いと固まったジョブが 1 本 360 分まで走る。flatmate で 2026-10 に実発生）。値は雛形に数値で直書きされ
+  （既定は ci.yml 10 分・weekly-full.yml 30 分）、決め方は「Actions の実行履歴にある普段の所要時間の約 2 倍」。
+  実測に合わせて、生成後のファイルで書き換えてコミットする
+- **既に雛形から CI を入れたリポジトリへの反映**: `ci.yml` の `test` ジョブと `weekly-full.yml` の `full` ジョブの
+  両方に、手で `timeout-minutes: <分>` を 1 行書き足す。`/infra-setup` の再実行は勧めない。Phase 4 が
+  「上書き／スキップ／差分を見てから判断」を聞くのは `ci.yml` / `deploy-preview.yml` / `deploy-staging.yml` /
+  `deploy-production.yml` / `migrate-production.yml` の 5 ファイルで、`weekly-full.yml` はこの列挙に無いため確認なしで雛形に書き直されることがあり、
+  その場合は `PROJECT-SPECIFIC OVERRIDE` の変更も消える。再実行するなら、事前に控えを取るか、実行後に `git diff` で確かめる
 - **昇格**: pre-release → released は `/infra-setup` を再実行して released を選ぶ。
   Phase 4 が deploy-on-merge.yml の削除を提案し、フルセットに置き換える
 

@@ -45,6 +45,10 @@ jobs:
     # auto-merge 等がチェック名で参照する場合があるため、job 名の変更は参照側とセットで行う
     name: Lint & Type Check & Test
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # ジョブの上限時間（分）。無いと固まったジョブが 1 本 360 分まで走る。
+    # 決め方: このリポジトリの普段の所要時間（Actions の実行履歴）の約 2 倍。
+    # 既定の 10 分は、この雛形の設計目標「5 分以内」の約 2 倍。実測に合わせて書き換える
+    timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v7
