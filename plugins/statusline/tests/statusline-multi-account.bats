@@ -997,16 +997,24 @@ PY
   grep -qE '^▸ A +5h' "$WORK/out.txt"
 }
 
+# origin/main を参照しない。下の旧実装との比較が skip される環境（origin/main の無い clone）でも、
+# 1 スロットの登録簿がオフで出力を変えないことはここで検査される
 @test "enabled: a single-slot registry renders the same bytes when its slot is off" {
-  old="${WORK}/statusline-old.sh"
-  git -C "$REPO_ROOT" show origin/main:plugins/statusline/scripts/statusline.sh > "$old" 2>/dev/null \
-    || skip "origin/main is not available"
   printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}]}' > "$ACCOUNTS"
   mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/on.txt"
   printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null,"enabled":false}]}' > "$ACCOUNTS"
   mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/off.txt"
-  mk_input 3 25 14010 172830 | bash "$old" > "$WORK/old.txt"
+  [ -s "$WORK/off.txt" ]
   cmp "$WORK/on.txt" "$WORK/off.txt"
-  cmp "$WORK/old.txt" "$WORK/off.txt"
   ! strip_ansi < "$WORK/off.txt" | grep -qE ' off$' || return 1
+}
+
+@test "enabled: a single-slot registry with its slot off renders the same bytes as origin/main" {
+  old="${WORK}/statusline-old.sh"
+  git -C "$REPO_ROOT" show origin/main:plugins/statusline/scripts/statusline.sh > "$old" 2>/dev/null \
+    || skip "origin/main is not available"
+  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null,"enabled":false}]}' > "$ACCOUNTS"
+  mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/off.txt"
+  mk_input 3 25 14010 172830 | bash "$old" > "$WORK/old.txt"
+  cmp "$WORK/old.txt" "$WORK/off.txt"
 }
