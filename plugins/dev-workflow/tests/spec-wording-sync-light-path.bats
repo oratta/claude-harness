@@ -124,11 +124,13 @@ step5() { LC_ALL=C awk '/^### 5\. /{f=1} /^## (G として動くとき|出口)/{
 # --- Requirement: 1 ループは W→R1→W→G の順で回る / 実行モード / W の仕様化経路 ---
 
 @test "loop: wording-sync path skips (2) after the main agent checks the recorded line" {
+  # (1) に足した行には「(2)」「(3)」「apply」「仕様レビュー」を書かない（既存の bats が 1 ループの節でこれらの語の最初の行の順を見ている）
+  ! loop_sec | grep '文言合わせ' | grep 'return の文面ではなく\|仕様の差分 1 ファイルだけを書いて' | grep -q '(2)\|(3)\|apply\|仕様レビュー' || return 1
   loop_sec | grep '文言合わせ' | grep -q '仕様の差分 1 ファイル'
   loop_sec | grep -q '通し方: 文言合わせ'
-  loop_sec | grep -qE '通し方: 文言合わせ.*\(2\) を飛ばし.*段: implement'
+  loop_sec | grep -qE '通し方: 文言合わせ.*R1 の工程を飛ばし.*段: implement'
   loop_sec | grep -qE 'return の文面ではなく'
-  loop_sec | grep -qE '行が無ければ.*段: spec.*\(2\)'
+  loop_sec | grep -qE '行が無ければ.*段: spec.*R1 の工程を通す'
   loop_sec | grep -q 'references/decision-criteria.md` Step B'
 }
 
@@ -305,8 +307,11 @@ DELTA_OK='## MODIFIED Requirements
   [ "$status" -eq 0 ]
   echo "$output" | grep -qx 'WAY=1'
   # 差分はちょうど 1 ファイル・ADDED / REMOVED / RENAMED の見出しは 0 件・直す文に無い要件は出力されない
-  [ "$(echo "$output" | sed -n 1p | tr -d ' ')" = "1" ]
-  [ "$(echo "$output" | sed -n 2p | tr -d ' ')" = "0" ]
+  # 出力の並び: 1 行目 通し方の行の件数、2〜3 行目 直す文の行（fixture は 2 行）、4 行目 差分ファイルの数、5 行目 見出しの件数
+  [ "$(echo "$output" | sed -n 1p)" = "1" ]
+  [ "$(echo "$output" | sed -n 2,3p | grep -c '^直す文: ')" -eq 2 ]
+  [ "$(echo "$output" | sed -n 4p | tr -d ' ')" = "1" ]
+  [ "$(echo "$output" | sed -n 5p | tr -d ' ')" = "0" ]
   ! echo "$output" | grep -q '直す文に無い要件' || return 1
   # 記録先に仕様レビューのコメントは 1 件も無い（fixture にも無い）
   ! grep -q '仕様レビュー:' "$FIXTURE_PAGES" || return 1
@@ -324,7 +329,7 @@ DELTA_OK='## MODIFIED Requirements
 - **THEN** y"
   run_light
   echo "$output" | grep -qx 'WAY=1'
-  [ "$(echo "$output" | sed -n 2p | tr -d ' ')" = "1" ]
+  [ "$(echo "$output" | sed -n 5p | tr -d ' ')" = "1" ]
 }
 
 @test "step 5 commands: a requirement missing from the fix lines is caught" {
@@ -349,7 +354,7 @@ DELTA_OK='## MODIFIED Requirements
   mkdir -p "$BATS_TEST_TMPDIR/work/openspec/changes/archive/2026-10-12-demo-change/specs/other"
   printf '%s\n' "$DELTA_OK" > "$BATS_TEST_TMPDIR/work/openspec/changes/archive/2026-10-12-demo-change/specs/other/spec.md"
   run_light
-  [ "$(echo "$output" | sed -n 1p | tr -d ' ')" = "2" ]
+  [ "$(echo "$output" | sed -n 4p | tr -d ' ')" = "2" ]
 }
 
 @test "step 5 commands: latest decision without the line counts zero (falls back to the plain 'yes' row)" {
