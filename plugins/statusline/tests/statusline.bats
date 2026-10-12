@@ -212,6 +212,17 @@ codex_off_env() {
 
 @test "codex off: only the JSON false shows off (a string false keeps the old output)" {
   codex_off_env
+  # 2 回描いて cmp するので `date +%s` を NOW に固定する（実時計が秒の切れ目をまたぐと
+  # 残り時間の分の桁がずれて落ちる。statusline-rate-snapshot.bats と同じ方式）
+  export NOW
+  date() {
+    if [ "$1" = "+%s" ]; then
+      printf '%s\n' "$NOW"
+    else
+      command date "$@"
+    fi
+  }
+  export -f date
   echo '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}]}' > "$WORK/accounts.json"
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/absent.txt"
   echo '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"enabled":"false"}}' > "$WORK/accounts.json"

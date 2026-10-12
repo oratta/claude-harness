@@ -417,7 +417,10 @@ codex_off_paragraph() {
   [ -f "$gate_runner" ]
   grep -qF -- '--codex-enabled' "$REVIEW_RUN"
   for file in "$SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$gate_runner" "$DEVELOP_SKILL"; do
-    ! grep -qF -- '--codex-enabled' "$file" || { echo "off check repeated in ${file}"; return 1; }
+    if grep -qF -- '--codex-enabled' "$file"; then
+      echo "off check repeated in ${file}"
+      return 1
+    fi
   done
   # 手順を書く段落は 1 つ。G の表はそれを指すだけにする
   [ "$(grep -cF -- '--codex-enabled' "$REVIEW_RUN")" -le 3 ]
