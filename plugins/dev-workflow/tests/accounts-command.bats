@@ -49,8 +49,8 @@ assert s=={"id":"b","label":"B","securestorage":sys.argv[2]}, s
   run --separate-stderr "$CMD" add b
   [ "$status" -eq 0 ]
   [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" = 1 ]
-  [[ "$output" == "CLAUDE_SECURESTORAGE_CONFIG_DIR='"* ]]
-  [[ "$output" == *"' claude" ]]
+  [ "${output#CLAUDE_SECURESTORAGE_CONFIG_DIR=\'}" != "$output" ]
+  [ "${output%\' claude}" != "$output" ]
 }
 
 @test "add: creates the registry when it does not exist, without a .bak" {
