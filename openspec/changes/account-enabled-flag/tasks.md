@@ -2,15 +2,15 @@
 
 ## 1. 登録簿の読み取り（usage_view.py）
 
-- [ ] 1.1 `plugins/dev-workflow/tests/test_usage_view.py` に、`enabled` が `false` / `true` / 省略 / `"false"` / `0` / `null` の 6 スロットで `false` だけがオフに読まれ 6 つとも残ること、先頭がオフの 9 スロットで先頭 8 個が宣言順に残ること、`read_registry` の戻り値が従来の `[(id, securestorage)]` のままであること、オフのスロットが `build_view` の `accounts` と active 判定に残ることのテストを足す。触る範囲: plugins/dev-workflow/tests/test_usage_view.py:30-317（`EffectiveValues` クラスの後ろに新しいクラスを足す）
-- [ ] 1.2 `usage_view.py` に、オンかオフかを含めてスロットを返す読み取り関数を足し、`read_registry` はその結果から印を落として返す形にする（戻り値の形は変えない）。オフの判定は `entry.get("enabled") is False` の 1 か所。触る範囲: plugins/dev-workflow/scripts/usage_view.py:57-86（`read_registry`）
-- [ ] 1.3 `python3 -m pytest plugins/dev-workflow/tests/test_usage_view.py` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
+- [x] 1.1 `plugins/dev-workflow/tests/test_usage_view.py` に、`enabled` が `false` / `true` / 省略 / `"false"` / `0` / `null` の 6 スロットで `false` だけがオフに読まれ 6 つとも残ること、先頭がオフの 9 スロットで先頭 8 個が宣言順に残ること、`read_registry` の戻り値が従来の `[(id, securestorage)]` のままであること、オフのスロットが `build_view` の `accounts` と active 判定に残ることのテストを足す。触る範囲: plugins/dev-workflow/tests/test_usage_view.py:30-317（`EffectiveValues` クラスの後ろに新しいクラスを足す）
+- [x] 1.2 `usage_view.py` に、オンかオフかを含めてスロットを返す読み取り関数を足し、`read_registry` はその結果から印を落として返す形にする（戻り値の形は変えない）。オフの判定は `entry.get("enabled") is False` の 1 か所。触る範囲: plugins/dev-workflow/scripts/usage_view.py:57-86（`read_registry`）
+- [x] 1.3 `python3 -m pytest plugins/dev-workflow/tests/test_usage_view.py` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
 
 ## 2. 自動選択と明示選択（select-account.sh）
 
-- [ ] 2.1 `account-selector.bats` に次のテストを足す: オフのスロットは週次余裕が最大でも選ばれず `margins` に `b:off` が出る／`enabled` を書いていない登録簿では stdout と理由行が変わらない（既存のテストが通り続けることに加え、`"enabled": true` を書いた登録簿と書かない登録簿で出力が一致することを 1 本で確かめる）／オフのスロットの明示選択は exit 2・stdout 空・stderr に id と `enabled` と登録簿のパス／全スロットがオフなら stdout 空行・exit 0・`selected=a reason=default-due-to-all-off`／オンのスロットが欠測でオフのスロットに値があるとき `reason=default-due-to-missing-usage` と `margins=a:missing,b:off`。`write_registry` は `enabled` を渡せるように引数を足すか、テスト内で登録簿を直接書く。触る範囲: plugins/dev-workflow/tests/account-selector.bats:26-34（`write_registry`）、plugins/dev-workflow/tests/account-selector.bats:239-259（明示選択のテストの並び）、plugins/dev-workflow/tests/account-selector.bats:374-383（末尾に追加）
-- [ ] 2.2 `select-account.sh` を、タスク 1.2 の読み取り関数でスロットを読むように変える。明示選択はオフなら診断を出して exit 2。自動選択はオフのスロットを実効値を調べる前に `off` として `margins` に積んで飛ばす。候補が無いとき、オンのスロットが 1 つも無ければ理由を `default-due-to-all-off` にする（`selected` の決め方は変えない）。冒頭のコメントに `off` を足す。触る範囲: plugins/dev-workflow/scripts/select-account.sh:39-49（明示選択）、plugins/dev-workflow/scripts/select-account.sh:59-96（自動選択と縮退）
-- [ ] 2.3 `bats plugins/dev-workflow/tests/account-selector.bats` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
+- [x] 2.1 `account-selector.bats` に次のテストを足す: オフのスロットは週次余裕が最大でも選ばれず `margins` に `b:off` が出る／`enabled` を書いていない登録簿では stdout と理由行が変わらない（既存のテストが通り続けることに加え、`"enabled": true` を書いた登録簿と書かない登録簿で出力が一致することを 1 本で確かめる）／オフのスロットの明示選択は exit 2・stdout 空・stderr に id と `enabled` と登録簿のパス／全スロットがオフなら stdout 空行・exit 0・`selected=a reason=default-due-to-all-off`／オンのスロットが欠測でオフのスロットに値があるとき `reason=default-due-to-missing-usage` と `margins=a:missing,b:off`。`write_registry` は `enabled` を渡せるように引数を足すか、テスト内で登録簿を直接書く。触る範囲: plugins/dev-workflow/tests/account-selector.bats:26-34（`write_registry`）、plugins/dev-workflow/tests/account-selector.bats:239-259（明示選択のテストの並び）、plugins/dev-workflow/tests/account-selector.bats:374-383（末尾に追加）
+- [x] 2.2 `select-account.sh` を、タスク 1.2 の読み取り関数でスロットを読むように変える。明示選択はオフなら診断を出して exit 2。自動選択はオフのスロットを実効値を調べる前に `off` として `margins` に積んで飛ばす。候補が無いとき、オンのスロットが 1 つも無ければ理由を `default-due-to-all-off` にする（`selected` の決め方は変えない）。冒頭のコメントに `off` を足す。触る範囲: plugins/dev-workflow/scripts/select-account.sh:39-49（明示選択）、plugins/dev-workflow/scripts/select-account.sh:59-96（自動選択と縮退）
+- [x] 2.3 `bats plugins/dev-workflow/tests/account-selector.bats` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
 
 ## 3. 使用量の取得（usage-probe.sh）
 
