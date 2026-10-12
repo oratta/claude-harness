@@ -110,8 +110,10 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
 @test "issue bodies are never printed or requested" {  # 本文は出力に含まれない
   set_list a.md "1:題名"
   run "$SCRIPT" --repo o/r x/a.md
-  [[ "$output" != *BODY-SECRET* ]]
-  ! grep -q 'body' "$GH_LOG"
+  run grep -q BODY-SECRET <<<"$output"
+  [ "$status" -eq 1 ]
+  run grep -q -- '--json [a-z,]*body' "$GH_LOG"
+  [ "$status" -eq 1 ]
   grep -qF -- '--json number,title' "$GH_LOG"
 }
 
@@ -121,8 +123,8 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
   set_list a.md "973:自分" "886:相手"
   run "$SCRIPT" --repo o/r --exclude 973 --exclude 980 x/a.md
   [ "$status" -eq 0 ]
-  [[ "$output" == *"886${TAB}相手"* ]]
-  [[ "$output" != *"973${TAB}"* ]]
+  [[ "$output" == *"886${TAB}相手"* ]] || return 1
+  [[ "$output" != *"973${TAB}"* ]] || return 1
 }
 
 @test "limit is 15 plus excludes plus 1" {  # 外す番号の分だけ多く取り寄せる
@@ -150,7 +152,7 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
   run "$SCRIPT" --repo o/r x/a.md
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 16 ]
-  [[ "$output" != *打ち切り* ]]
+  [[ "$output" != *打ち切り* ]] || return 1
 }
 
 @test "15 after excluding prints no note" {  # 外す番号を除いて 15 件になるなら打ち切りの行は出ない
@@ -159,7 +161,7 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
   set_list a.md "${items[@]}"
   run "$SCRIPT" --repo o/r --exclude 101 x/a.md
   [ "${#lines[@]}" -eq 16 ]
-  [[ "$output" != *打ち切り* ]]
+  [[ "$output" != *打ち切り* ]] || return 1
 }
 
 # --- エピック ---
