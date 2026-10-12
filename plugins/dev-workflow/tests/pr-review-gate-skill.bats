@@ -334,6 +334,96 @@ review_execution() {
   done
 }
 
+# --- Codex オフ（accounts.json の codex.enabled が false。#978） ---
+
+# 「Codex がオフのとき」の段落（2-1 の表の下に 1 つだけ置く）
+codex_off_paragraph() {
+  review_execution | grep -F '**Codex がオフのとき**'
+}
+
+@test "codex off (#978): review-run decides it with usage_view.py --codex-enabled before trying Codex" {
+  local para
+  para="$(codex_off_paragraph)"
+  [ -n "$para" ] || { echo "no Codex off paragraph in step 2-1"; return 1; }
+  [ "$(printf '%s\n' "$para" | wc -l | tr -d ' ')" -eq 1 ]
+  echo "$para" | grep -qF 'scripts/usage_view.py --codex-enabled'
+  echo "$para" | grep -qE 'full と判定したあと[^。]*Codex を試す前に'
+  echo "$para" | grep -qF '`off`'
+  echo "$para" | grep -qF '`on`'
+}
+
+@test "codex off (#978): Codex is not called and the binary is not even looked up" {
+  local para
+  para="$(codex_off_paragraph)"
+  echo "$para" | grep -qE '`off` なら[^。]*バイナリ探索（`command -v codex`）も Codex の呼び出しも(し|行わ)ない'
+  echo "$para" | grep -qF 'Task サブエージェント'
+  echo "$para" | grep -qF 'dev-workflow:reviewer'
+}
+
+@test "codex off (#978): off is a setting, not one of the three measured conditions" {
+  local para judge
+  para="$(codex_off_paragraph)"
+  echo "$para" | grep -qE 'オフは利用者が明示した設定で[^。]*三条件の実測(では|には)'
+  echo "$para" | grep -qF '設定ファイルを自分で読まず'
+  # 不可判定の段落も、オフが三条件とは別であることを一言で指す
+  judge="$(review_execution | grep -F '**従来モードの不可判定**')"
+  echo "$judge" | grep -qE 'Codex オフ[^。]*三条件とは別'
+  # 三条件の箇条書きは 3 つのまま（オフを 4 つ目として混ぜない）
+  [ "$(review_execution | grep -cE '^- (バイナリ無し|認証切れ|タイムアウト): ')" -eq 3 ]
+  ! review_execution | grep -E '^- ' | grep -q 'オフ' || return 1
+}
+
+@test "codex off (#978): light, the declarations and the fail-closed order are unchanged" {
+  local para
+  para="$(codex_off_paragraph)"
+  echo "$para" | grep -qE '変わるのはレビュー実行者だけ'
+  echo "$para" | grep -qE '新 Codex モード[^。]*adapter 経路[^。]*(変えない|適用しない)'
+}
+
+@test "codex off (#978): the evidence template has the off form without the word measured" {
+  local block line field
+  block="$(awk '/^対象 HEAD: <40 桁フル SHA>/{f=1} f{print} f && /^```$/{exit}' "${REVIEW_RUN}")"
+  [ -n "$block" ] || { echo "review evidence template missing"; return 1; }
+  echo "$block" | grep -F 'レビュー実行者:' | grep -qF 'Task サブエージェント（full・Codex オフ）'
+  for field in '選んだ経路:' '終了コード:' '実待ち時間:'; do
+    echo "$block" | grep -F -- "$field" | grep -qF '未実行（Codex オフ）' || { echo "missing off value in ${field}"; return 1; }
+  done
+  echo "$block" | grep -F '実行コマンド:' | grep -qF 'usage_view.py --codex-enabled → off'
+  echo "$block" | grep -F '出力の要点:' | grep -qF 'Codex オフの設定により Codex を試していない'
+  # オフの書式そのものには「実測した」を含めない
+  ! grep -oE '（full・Codex オフ[^）]*）' "$REVIEW_RUN" "$TRIAGE" | grep -q '実測した' || return 1
+  review_execution | grep -F '書き分ける' | grep -qF 'レビュー実行者: Task サブエージェント（full・Codex オフ）'
+}
+
+@test "codex off (#978): G returns needs-reviewer with the off-by-setting reason" {
+  local doc row
+  doc="$(awk '/^### レビューの実行者/{f=1;print;next} /^##/{f=0} f' "$REVIEW_RUN")"
+  row="$(echo "$doc" | grep -E '^\| \*\*full\*\* で Codex がオフ')"
+  [ -n "$row" ] || { echo "no Codex off row in the G table"; return 1; }
+  echo "$row" | grep -qF '`needs-reviewer`'
+  echo "$row" | grep -qF '`Codex オフ（設定）`'
+  echo "$row" | grep -qE 'Codex を(試さ|呼ば)ない'
+  # 既定の行はオンのときだけ（オンの経路そのものは変えない）
+  echo "$doc" | grep -F '| **full**（既定） | Codex CLI |' | grep -qF 'G の **Bash から直接**呼ぶ'
+}
+
+@test "codex off (#978): triage carries the reviewer line form for Codex off" {
+  grep -F '「レビュー実行者:」の PR コメント（' "$TRIAGE" | grep -qF '（full・Codex オフ）'
+}
+
+@test "codex off (#978): the off check is written in review-run.md only" {
+  local file gate_runner
+  gate_runner="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+  [ -f "$gate_runner" ]
+  grep -qF -- '--codex-enabled' "$REVIEW_RUN"
+  for file in "$SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$gate_runner" "$DEVELOP_SKILL"; do
+    ! grep -qF -- '--codex-enabled' "$file" || { echo "off check repeated in ${file}"; return 1; }
+  done
+  # 手順を書く段落は 1 つ。G の表はそれを指すだけにする
+  [ "$(grep -cF -- '--codex-enabled' "$REVIEW_RUN")" -le 3 ]
+  [ "$(grep -cF 'バイナリ探索（`command -v codex`）も' "$REVIEW_RUN")" -eq 1 ]
+}
+
 @test "legacy: App Server mode cannot inherit exec or Claude fallback" {
   review_execution | grep -q '新 Codex モード.*App Server 固定.*適用しない'
 }

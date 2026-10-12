@@ -15,10 +15,10 @@
 
 ## 3. pr-review-gate の従来経路（手順書）
 
-- [ ] 3.1 `plugins/dev-workflow/tests/pr-review-gate-skill.bats` に次の新規テストを足す: `review-run.md` の「従来モードの不可判定」に `Codex オフ` と `usage_view.py --codex-enabled` があること、オフのとき Codex を呼ばない（バイナリ探索もしない）と書かれていること、オフが実測の三条件ではなく設定であると書かれていること、証拠欄の雛形に `未実行（Codex オフ）` があること、`triage.md` の「レビュー実行者:」の書式に `（full・Codex オフ）` があること、オフの判定を書いたのが `review-run.md` の 1 か所だけであること（`gate-runner.md` などに同じ手順が再掲されていない）。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:300-340（レビュー実行者の部分のテストの並び）
-- [ ] 3.2 `stages/review-run.md` を直す: 2-1 の表の「既定」行の使う条件に「Codex がオンのとき」を足し、表の下に「Codex がオフのとき」の節を足す（full と判定したあと Codex を試す前に `python3 <dev-workflow>/scripts/usage_view.py --codex-enabled` を実行し、`off` ならバイナリ探索も呼び出しもせず Task サブエージェントに回す。オフは設定であって、三条件の実測ではない）。「従来モードの不可判定」の冒頭にオフは三条件とは別と一言添える。証拠の雛形に `Task サブエージェント（full・Codex オフ）` と `未実行（Codex オフ）` を足す。「G として動くとき」の表の full の行にオフの扱い（`needs-reviewer`、根拠 `Codex オフ（設定）`）を足す。同じ手順を別のファイルに再掲しない。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/review-run.md:13-26（表）、plugins/dev-workflow/skills/pr-review-gate/stages/review-run.md:30-40（不可判定と雛形）、plugins/dev-workflow/skills/pr-review-gate/stages/review-run.md:84-100（G の表）
-- [ ] 3.3 `stages/triage.md` の「レビュー実行者:」の書式に `レビュー実行者: Task サブエージェント（full・Codex オフ）` を足す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/triage.md:136-140
-- [ ] 3.4 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
+- [x] 3.1 `plugins/dev-workflow/tests/pr-review-gate-skill.bats` に次の新規テストを足す: `review-run.md` の「従来モードの不可判定」に `Codex オフ` と `usage_view.py --codex-enabled` があること、オフのとき Codex を呼ばない（バイナリ探索もしない）と書かれていること、オフが実測の三条件ではなく設定であると書かれていること、証拠欄の雛形に `未実行（Codex オフ）` があること、`triage.md` の「レビュー実行者:」の書式に `（full・Codex オフ）` があること、オフの判定を書いたのが `review-run.md` の 1 か所だけであること（`gate-runner.md` などに同じ手順が再掲されていない）。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:300-340（レビュー実行者の部分のテストの並び）
+- [x] 3.2 `stages/review-run.md` を直す: 2-1 の表の「既定」行の使う条件に「Codex がオンのとき」を足し、表の下に「Codex がオフのとき」の節を足す（full と判定したあと Codex を試す前に `python3 <dev-workflow>/scripts/usage_view.py --codex-enabled` を実行し、`off` ならバイナリ探索も呼び出しもせず Task サブエージェントに回す。オフは設定であって、三条件の実測ではない）。「従来モードの不可判定」の冒頭にオフは三条件とは別と一言添える。証拠の雛形に `Task サブエージェント（full・Codex オフ）` と `未実行（Codex オフ）` を足す。「G として動くとき」の表の full の行にオフの扱い（`needs-reviewer`、根拠 `Codex オフ（設定）`）を足す。同じ手順を別のファイルに再掲しない。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/review-run.md:13-26（表）、plugins/dev-workflow/skills/pr-review-gate/stages/review-run.md:30-40（不可判定と雛形）、plugins/dev-workflow/skills/pr-review-gate/stages/review-run.md:84-100（G の表）
+- [x] 3.3 `stages/triage.md` の「レビュー実行者:」の書式に `レビュー実行者: Task サブエージェント（full・Codex オフ）` を足す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/triage.md:136-140
+- [x] 3.4 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
 
 ## 4. ステータスライン
 
