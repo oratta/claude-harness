@@ -527,3 +527,8 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep '^FAIL' | grep -qF "$shard_id"
 }
+
+# issue #990 の受け入れ条件の確認用（PR #1010 には入れない。マージしない）
+@test "deliberate failure for #990 acceptance check (do not merge)" {
+  false
+}
