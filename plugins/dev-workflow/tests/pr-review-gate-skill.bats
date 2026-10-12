@@ -626,7 +626,8 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
 @test "nonblocking triage (#985): no stage file sends non-stopping findings to follow-up issues without the table" {
   hits="$(grep -n 'follow-up issue' "${PLUGIN_DIR}"/skills/pr-review-gate/stages/*.md)"
   [ -n "$hits" ]
-  ! echo "$hits" | grep -qE 'follow-up issue (に回す|化|に切り出す|側に回す)' || { echo "$hits"; return 1; }
+  echo "$hits"
+  ! echo "$hits" | grep -qE 'follow-up issue (に回す|化|に切り出す|側に回す)' || return 1
   ! echo "$hits" | grep -qF '止めない指摘（順 1）を follow-up issue に切って' || return 1
   ! echo "$hits" | grep -qF '順 1 だけなら follow-up issue に切って' || return 1
   ! echo "$hits" | grep -qF '未解決の止めない指摘を follow-up issue に切って' || return 1
