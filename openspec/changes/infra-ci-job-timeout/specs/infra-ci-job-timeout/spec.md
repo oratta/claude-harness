@@ -21,7 +21,7 @@
 
 ### Requirement: infra-setup の SKILL.md は上限時間の決め方と既存リポジトリへの反映のしかたを書かなければならない
 
-`plugins/infra/skills/infra-setup/SKILL.md` は、上限時間の決め方（普段の所要時間の約 2 倍）と、既に雛形から CI を入れたリポジトリへ上限時間を反映する手順（手で `timeout-minutes` を書き足すか、infra-setup を再実行するか、どちらを勧めるか）を書かなければならない。This requirement MUST be satisfied.
+`plugins/infra/skills/infra-setup/SKILL.md` は、上限時間の決め方（普段の所要時間の約 2 倍）と、既に雛形から CI を入れたリポジトリへ上限時間を反映する手順を書かなければならない。手順は、`ci.yml` の `test` ジョブと `weekly-full.yml` の `full` ジョブの両方に手で `timeout-minutes` を書き足すことを勧め、infra-setup の再実行では `weekly-full.yml` が確認なしで書き直される（再実行の前に控えを取るか `git diff` で確かめる）ことを注意する内容でなければならない。This requirement MUST be satisfied.
 
 #### Scenario: SKILL.md に決め方と反映のしかたがある
 

@@ -9,5 +9,5 @@
 
 ## 3. テスト
 
-- [ ] 3.1 両雛形の `timeout-minutes` が正の整数であること、の行の直前に連続するコメント行のどれかに「約 2 倍」があること（YAML の読み込みは既存の S17 と同じ `ruby -ryaml` で行う）、SKILL.md の `timeout-minutes` を含む節に「約 2 倍」・`weekly-full.yml`・「確認なし」があることを検査する bats を足す 触る範囲: plugins/infra/tests/infra-fixes.bats（末尾に追記。または新規 plugins/infra/tests/ci-timeout.bats）
+- [ ] 3.1 両雛形の `timeout-minutes` が正の整数であること、`timeout-minutes` の行の直前に連続するコメント行のどれかに「約 2 倍」があること（YAML の読み込みは既存の S17 と同じ `ruby -ryaml` で行う）、SKILL.md の `timeout-minutes` を含む節に「約 2 倍」・`weekly-full.yml`・「確認なし」があることを検査する bats を足す 触る範囲: plugins/infra/tests/infra-fixes.bats（末尾に追記。または新規 plugins/infra/tests/ci-timeout.bats）
 - [ ] 3.2 `scripts/test.sh infra` が exit 0 になることを確かめる
