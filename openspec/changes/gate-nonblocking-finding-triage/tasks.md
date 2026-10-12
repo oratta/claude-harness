@@ -32,8 +32,8 @@
 
 - [x] 4.1 `bats plugins/dev-workflow/tests/` を実行し、文言の変更で落ちた既存の検査だけを、新しい文言を見る形に直す（検査を消さない）。見込み: 判定の段落に `follow-up issue` を求める行、gate-runner の要約受領の行に `follow-up issue` を求める行。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:501-512, plugins/dev-workflow/tests/develop-roles.bats:342-346, 370-374, 562-568, 921-924
 - [x] 4.2 変更の記録を書く（何を変えたか・戻し方。版は上げない）。触る範囲: plugins/dev-workflow/changes/985.md（新規）
-- [ ] 4.3 `bats tests/` と `bats plugins/dev-workflow/tests/` が exit 0、`openspec validate gate-nonblocking-finding-triage --strict` が通ることを確かめる。常時注入の予算（`tests/injection-budget.bats`）が動いたら、理由を PR 本文に書く。触る範囲: なし（実行だけ）
-- [ ] 4.4 `grep -n 'follow-up issue' plugins/dev-workflow/skills/pr-review-gate/stages/*.md` の全行を読み、どの行も振り分けを経た書き方であることを確かめ、出力を PR 本文の動作確認に貼る。触る範囲: なし（実行だけ）
+- [x] 4.3 `bats tests/` と `bats plugins/dev-workflow/tests/` が exit 0、`openspec validate gate-nonblocking-finding-triage --strict` が通ることを確かめる。常時注入の予算（`tests/injection-budget.bats`）が動いたら、理由を PR 本文に書く。触る範囲: なし（実行だけ）
+- [x] 4.4 `grep -n 'follow-up issue' plugins/dev-workflow/skills/pr-review-gate/stages/*.md` の全行を読み、どの行も振り分けを経た書き方であることを確かめ、出力を PR 本文の動作確認に貼る。触る範囲: なし（実行だけ）
 
 ## 5. PR 本文（(3b) で書く）
 
