@@ -3,7 +3,7 @@
 # review-issue-candidates.sh: レビューの指摘が指すファイルについて、同じ場所を直す open の issue の
 # 候補（番号と題名）をパスごとに 1 回の検索で返す。gh は偽物に差し替え、実物の GitHub は呼ばない。
 #
-# spec: openspec/changes/review-finding-issue-candidates（dev-workflow-review-issue-candidates）
+# spec: openspec/specs/dev-workflow-review-issue-candidates（change: review-finding-issue-candidates）
 
 TAB=$'\t'
 
@@ -70,8 +70,8 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
   run "$SCRIPT" --repo o/r plugins/x/scripts/pr-state.sh plugins/x/stages/triage.md
   [ "$status" -eq 0 ]
   [ "$(gh_calls)" -eq 2 ]
-  grep -qF -- '--search "pr-state.sh" in:title,body' "$GH_LOG"
-  grep -qF -- '--search "triage.md" in:title,body' "$GH_LOG"
+  grep -qF -- '--search "pr-state.sh" in:title,body --limit' "$GH_LOG"
+  grep -qF -- '--search "triage.md" in:title,body --limit' "$GH_LOG"
   [ "$(grep -c -- '--state open' "$GH_LOG")" -eq 2 ]
   [ "$(grep -c -- '--repo o/r' "$GH_LOG")" -eq 2 ]
 }
@@ -105,6 +105,23 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
   [ "$status" -eq 0 ]
   [ "$(gh_calls)" -eq 1 ]
   [ "$(printf '%s\n' "$output" | grep -c '^== ')" -eq 1 ]
+}
+
+@test "same file name under different paths is searched for each path" {  # ファイル名が同じで別のパスは両方検索する
+  run "$SCRIPT" --repo o/r x/SKILL.md y/SKILL.md
+  [ "$status" -eq 0 ]
+  [ "$(gh_calls)" -eq 2 ]
+  [ "${lines[0]}" = "== x/SKILL.md" ]
+  [ "${lines[2]}" = "== y/SKILL.md" ]
+}
+
+@test "a CR or LF in a title becomes one space" {  # 題名の CR と LF は空白 1 個になる
+  jq -cn '[{number: 7, title: "前\r後"}, {number: 8, title: "前\n後"}]' > "${WORK}/gh/list-a.md.json"
+  run "$SCRIPT" --repo o/r x/a.md
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 3 ]
+  [ "${lines[1]}" = "7${TAB}前 後" ]
+  [ "${lines[2]}" = "8${TAB}前 後" ]
 }
 
 @test "issue bodies are never printed or requested" {  # 本文は出力に含まれない
@@ -181,6 +198,19 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
   [ "$(grep -c '^api ' "$GH_LOG")" -eq 1 ]
   grep -q '^api .*repos/o/r/issues/725/sub_issues' "$GH_LOG"
   [ "$(grep -c '^issue list' "$GH_LOG")" -eq 3 ]
+  grep -q -- '--paginate' "$GH_LOG"
+  run grep -c 'parent-issue:' "$GH_LOG"
+  [ "$output" = "0" ]
+}
+
+@test "children across paginated sub_issues responses are all marked child" {  # 子の一覧は複数ページを束ねて判定する
+  printf '[{"number":721}]\n[{"number":694}]\n' > "${WORK}/gh/sub.json"
+  set_list a.md "721:一ページ目" "694:二ページ目" "886:外"
+  run "$SCRIPT" --repo o/r --epic 725 x/a.md
+  [ "$status" -eq 0 ]
+  [ "${lines[1]}" = "721${TAB}一ページ目${TAB}child" ]
+  [ "${lines[2]}" = "694${TAB}二ページ目${TAB}child" ]
+  [ "${lines[3]}" = "886${TAB}外${TAB}other" ]
 }
 
 @test "children-only adds parent-issue to the query" {  # 子だけに絞ると検索語に親の指定が足される
@@ -207,7 +237,7 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
   run --separate-stderr "$SCRIPT" --repo o/r x/a.md x/b.md
   [ "$status" -eq 1 ]
   [ -z "$output" ]
-  [ -n "$stderr" ]
+  [[ "$stderr" == *"review-issue-candidates: gh issue list"* ]] || return 1
 }
 
 @test "a failed sub_issues fetch stops before searching" {  # 子の一覧が取れなければ検索に進まない
@@ -215,7 +245,7 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
   run --separate-stderr "$SCRIPT" --repo o/r --epic 725 x/a.md
   [ "$status" -eq 1 ]
   [ -z "$output" ]
-  [ -n "$stderr" ]
+  [[ "$stderr" == *"review-issue-candidates: gh api"* ]] || return 1
   [ "$(grep -c '^issue list' "$GH_LOG")" -eq 0 ]
 }
 
@@ -238,16 +268,19 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
 }
 
 @test "missing gh or jq exits 2" {  # gh か jq が無ければ終了コード 2
-  local bin="${WORK}/nogh"
+  local bin="${WORK}/nogh" rc=0
   mkdir -p "$bin"
   ln -s "$(command -v bash)" "$bin/bash"
   ln -s "$(command -v jq)" "$bin/jq"
-  PATH="$bin" run /bin/bash "$SCRIPT" --repo o/r x/a.md
-  [ "$status" -eq 2 ]
+  PATH="$bin" /bin/bash "$SCRIPT" --repo o/r x/a.md 2> "${WORK}/err" || rc=$?
+  [ "$rc" -eq 2 ]
+  grep -q 'gh not found' "${WORK}/err"
   rm -f "$bin/jq"
   ln -s "${WORK}/bin/gh" "$bin/gh"
-  PATH="$bin" run /bin/bash "$SCRIPT" --repo o/r x/a.md
-  [ "$status" -eq 2 ]
+  rc=0
+  PATH="$bin" /bin/bash "$SCRIPT" --repo o/r x/a.md 2> "${WORK}/err" || rc=$?
+  [ "$rc" -eq 2 ]
+  grep -q 'jq not found' "${WORK}/err"
   [ -z "$(cat "$GH_LOG")" ]
 }
 
@@ -258,11 +291,15 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
   [ "$status" -eq 2 ]
   run "$SCRIPT" --repo o/r --epic 0 x/a.md
   [ "$status" -eq 2 ]
+  run "$SCRIPT" --repo o/r --epic '' x/a.md
+  [ "$status" -eq 2 ]
   [ -z "$(cat "$GH_LOG")" ]
 }
 
 @test "children-only without epic exits 2" {  # エピックなしの子だけ指定は終了コード 2
   run "$SCRIPT" --repo o/r --children-only x/a.md
+  [ "$status" -eq 2 ]
+  run "$SCRIPT" --repo o/r --epic '' --children-only x/a.md
   [ "$status" -eq 2 ]
   [ -z "$(cat "$GH_LOG")" ]
 }
@@ -277,6 +314,8 @@ gh_calls() { grep -c . "$GH_LOG" || true; }
   run "$SCRIPT" --repo o/r plugins/x/
   [ "$status" -eq 2 ]
   run "$SCRIPT" --repo o/r 'x/a"b.md'
+  [ "$status" -eq 2 ]
+  run "$SCRIPT" --repo o/r ''
   [ "$status" -eq 2 ]
   [ -z "$(cat "$GH_LOG")" ]
 }

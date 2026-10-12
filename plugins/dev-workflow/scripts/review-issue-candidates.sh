@@ -28,6 +28,7 @@ die2() {
 
 repo=""
 epic=""
+epic_given=0
 children_only=0
 excludes=()
 paths=()
@@ -39,7 +40,7 @@ while [ "$#" -gt 0 ]; do
       case "$1" in
         --repo) repo="$2" ;;
         --exclude) excludes+=("$2") ;;
-        --epic) epic="$2" ;;
+        --epic) epic="$2"; epic_given=1 ;;
       esac
       shift 2
       ;;
@@ -55,10 +56,10 @@ done
 for n in ${excludes[@]+"${excludes[@]}"}; do
   [[ "$n" =~ ^[1-9][0-9]*$ ]] || die2 "--exclude must be a positive integer: '${n}'"
 done
-if [ -n "$epic" ]; then
+if [ "$epic_given" -eq 1 ]; then
   [[ "$epic" =~ ^[1-9][0-9]*$ ]] || die2 "--epic must be a positive integer: '${epic}'"
 fi
-if [ "$children_only" -eq 1 ] && [ -z "$epic" ]; then
+if [ "$children_only" -eq 1 ] && [ "$epic_given" -eq 0 ]; then
   die2 "--children-only needs --epic"
 fi
 for p in "${paths[@]}"; do
@@ -84,7 +85,7 @@ limit=$((15 + ${#excludes[@]} + 1))
 
 kids_json="[]"
 mark="none"
-if [ -n "$epic" ]; then
+if [ "$epic_given" -eq 1 ]; then
   if [ "$children_only" -eq 1 ]; then
     mark="all"
   else
