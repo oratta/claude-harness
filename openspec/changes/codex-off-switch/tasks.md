@@ -22,9 +22,13 @@
 
 ## 4. ステータスライン
 
-- [ ] 4.1 `plugins/statusline/tests/test_codex.py` に、spec の statusline-multi-account-usage の Scenario を足す: オフなら `off` の 1 行で、`STATUSLINE_CODEX_BIN` の起動記録スタブが 1 回も呼ばれず `.statusline-codex` が作られない／`auth.json` が無くても `off`／`--refresh` は何もしない／`false` だけがオフ（6 つの値）／`codex` 無しと `enabled: true` で出力が一致。`statusline.sh` 経由の行（`Codex` に `off` が続く 1 行）と `STATUSLINE_CODEX=0` の優先は `plugins/statusline/tests/statusline.bats` に足す。触る範囲: plugins/statusline/tests/test_codex.py:121-225（`RenderTests`）、plugins/statusline/tests/statusline.bats（Codex 行のテストの並びを探して足す）
-- [ ] 4.2 `statusline-codex.py` に、登録簿の `codex.enabled` を読む処理を自前で足し（`CLAUDE_ACCOUNTS_FILE` → `${CLAUDE_CONFIG_DIR:-~/.claude}/accounts.json`。`usage_view.py` は読まない）、`main` の先頭で、オフなら `off` を出して戻る（`--refresh` を含む）。`statusline.sh` は `off` を `pending` の行と同じ組み立てで `DIM` の `off` にする。触る範囲: plugins/statusline/scripts/statusline-codex.py:179-200（`main`）、plugins/statusline/scripts/statusline.sh:518-523（`codex_rows` の取得）、plugins/statusline/scripts/statusline.sh:806-815（`pending` の分岐の隣）
+- [ ] 4.1 `plugins/statusline/tests/test_codex.py` に、spec の statusline-multi-account-usage の Scenario を足す: オフなら `off` の 1 行で、`STATUSLINE_CODEX_BIN` の起動記録スタブが 1 回も呼ばれず `.statusline-codex` が作られない／`auth.json` が有効で既存のキャッシュがあってもオフなら `off` だけでキャッシュは読まれず内容も変わらない／`auth.json` が無くても `off`／`--refresh` は標準出力が空で何もしない／`false` だけがオフ（6 つの値）／`codex` 無しと `enabled: true` で出力が一致。`statusline.sh` 経由の行（`Codex` に `off` が続く 1 行）と `STATUSLINE_CODEX=0` の優先は `plugins/statusline/tests/statusline.bats` に足す。触る範囲: plugins/statusline/tests/test_codex.py:121-225（`RenderTests`）、plugins/statusline/tests/statusline.bats（Codex 行のテストの並びを探して足す）
+- [ ] 4.2 `statusline-codex.py` に、登録簿の `codex.enabled` を読む処理を自前で足し（`CLAUDE_ACCOUNTS_FILE` → `${CLAUDE_CONFIG_DIR:-~/.claude}/accounts.json`。`usage_view.py` は読まない）、`main` の先頭で、オフなら通常の描画は `off` と改行の 1 行を出して戻る（`--refresh` のときは何も出さずに戻り、標準出力は空）。`statusline.sh` は `off` を `pending` の行と同じ組み立てで `DIM` の `off` にする。触る範囲: plugins/statusline/scripts/statusline-codex.py:179-200（`main`）、plugins/statusline/scripts/statusline.sh:518-523（`codex_rows` の取得）、plugins/statusline/scripts/statusline.sh:806-815（`pending` の分岐の隣）
 - [ ] 4.3 `python3 -m pytest plugins/statusline/tests/test_codex.py` と `bats plugins/statusline/tests/statusline.bats` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
+
+## 4b. accounts-init.sh が codex を消さないこと
+
+- [ ] 4b.1 `plugins/dev-workflow/tests` の `accounts-init` のテスト（bats。無ければ `account-selector.bats` の登録簿を作る足場の隣）に、`"codex": {"enabled": false}` を持つレジストリへ `accounts-init.sh --id a --label A2` を実行しても、`a` の `label` が変わり、トップレベルの `codex` が `{"enabled": false}` のまま残ることのテストを足す。実装の変更は不要の見込み（既存の書き戻しは文書全体を保つ）で、落ちたときだけ `accounts-init.sh` を直す。触る範囲: plugins/dev-workflow/tests（`accounts-init` を呼ぶ bats を grep で探して足す）、plugins/dev-workflow/scripts/accounts-init.sh:74-95（確認のみ）
 
 ## 5. 文書と変更の記録
 
@@ -33,6 +37,6 @@
 - [ ] 5.3 変更の記録を `plugins/dev-workflow/changes/978.md` と `plugins/statusline/changes/978.md` に書く。置き場所の決定（`accounts.json` のトップレベル `codex.enabled`）と理由（design.md の決定 1 の表の要約と、別ファイルへ戻す条件）、オフになる条件が `false` との一致 1 つであること、#616 に足した差分を小さく保ったこと、戻し方を書く。形式は `plugins/dev-workflow/changes/976.md` に揃える。触る範囲: plugins/dev-workflow/changes/978.md（新規）、plugins/statusline/changes/978.md（新規）
 - [ ] 5.4 `bats tests/injection-budget.bats` と、触ったプラグインのテスト一式（`bats plugins/dev-workflow/tests plugins/statusline/tests` と `python3 -m pytest plugins/dev-workflow/tests plugins/statusline/tests`）が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
 
-## 6. 実機確認（実装とマージの外。テストでは代えない）
+## 6. 実機確認（実装の段の外。PR の実装が揃ったあと、マージの前に本体が行う。テストでは代えない）
 
-- [ ] 6.1 実機の `accounts.json` のトップレベルに `"codex": {"enabled": false}` を手で足し、full 判定になる PR を 1 本ゲートに通して、PR コメントの `レビュー実行者:` に `Task サブエージェント（full・Codex オフ）` が出ること、Codex が呼ばれていないこと（`codex` の起動の痕跡が無い）を確かめる。その `レビュー実行者:` のコメントの URL を issue #978 に貼る。確認後、`codex` のキーを消して戻す。担い手は本体（interactive では主）。実装の段では行わない。触る範囲: なし（実機操作のみ）
+- [ ] 6.1 実機の `accounts.json` のトップレベルに `"codex": {"enabled": false}` を手で足し、full 判定になる PR を 1 本、**従来経路**（`レビュー経路: 従来`。adapter 経路では `Task サブエージェント（full・Codex オフ）` のコメントが出ないため使えない）のゲートに通して、PR コメントの `レビュー実行者:` に `Task サブエージェント（full・Codex オフ）` が出ること、Codex が呼ばれていないこと（`codex` の起動の痕跡が無い）を確かめる。その `レビュー実行者:` のコメントの URL を issue #978 に貼る。確認後、`codex` のキーを消して戻す。担い手は本体（interactive では主）。実装の段では行わない。触る範囲: なし（実機操作のみ）

@@ -7,6 +7,8 @@
 
 明示指定は、オフのとき黙って Claude に差し替えてはならない（MUST NOT）。旧形式（`--account` / `--model`）と、いずれかの role の executor が `codex` の profile（`--profile`）は、依頼ファイルを作らず、`status: blocked` と exit 2 で拒否する。エラー文にはオフであること、戻し方（`codex.enabled` を `true` にするか `codex` のキーを消すこと）、読んだ登録簿のパスを入れる。この拒否は、アカウント対応表の検査（`account is not registered` など）より先に行う。executor が `codex` の role を 1 つも持たない profile は拒否しない。
 
+`codex.enabled` の読み方（入力の出どころ、オフになる条件が `false` との一致 1 つであること、書き損じを防ぎ切ることを完了条件にしないこと）は `usage-account-registry` の要件「Codex を codex.enabled でオフにできる」の守備範囲に従い、ここで独自の検査を足さない（SHALL）。
+
 `codex.enabled` が無い、または `false` 以外のとき、選ばれる構成・reason・selection evidence・依頼ファイルは変更前と同一でなければならない（SHALL）。
 
 #### Scenario: オフなら Codex の余裕が大きくても Claude だけを選ぶ
