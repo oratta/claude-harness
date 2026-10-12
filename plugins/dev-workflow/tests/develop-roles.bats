@@ -934,9 +934,9 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   echo "$inp" | grep -qF '`次の段へ`'
   echo "$inp" | grep -qF '`次の段: 前提確認と重さ判定`'
   echo "$inp" | grep -qF '`次の段: 合格処理`'
-  # 照合と振り分けの G は止める指摘が無ければ follow-up issue に切ってから 次の段へ
+  # 照合と振り分けの G は止める指摘が無ければ止めない指摘の振り分け表に通してから 次の段へ（#985）
   inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$TRIAGE")"
-  echo "$inp" | grep -qF 'follow-up issue'
+  echo "$inp" | grep -qF '止めない指摘の振り分け表に通す'
   echo "$inp" | grep -qF '`次の段: 合格処理`'
 }
 

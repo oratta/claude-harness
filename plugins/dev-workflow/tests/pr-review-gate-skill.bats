@@ -101,9 +101,9 @@ setup() {
   grep -q '高深刻度' "${TRIAGE}"
 }
 
-@test "convergence: re-review is diff-limited, new findings go to follow-up issues" {
+@test "convergence: re-review is diff-limited, new findings go through the non-stopping triage table" {
   grep -q '差分' "${PREPARE}"
-  grep -q 'follow-up issue' "${TRIAGE}"
+  grep -qF '再レビュー中の新規の気づきは止めない指摘の振り分け表に通す' "${TRIAGE}"
 }
 
 @test "convergence: mergeable-after fixes are not blocking" {
@@ -380,10 +380,10 @@ convergence_section() {
   ! gate_all | grep -qF '1周目は PR コメントに止める指摘を書き' || return 1
 }
 
-@test "convergence (#281): unquotable findings go to follow-up issues and proceed to passed" {
+@test "convergence (#281): unquotable findings go through the non-stopping triage table and proceed to passed" {
   sec="$(convergence_section)"
   echo "$sec" | grep -q '引用できない指摘'
-  echo "$sec" | grep -q 'follow-up issue'
+  echo "$sec" | grep -qF '止めない指摘の振り分け表に通して `passed` の判定へ進む'
   echo "$sec" | grep -q 'passed'
 }
 
