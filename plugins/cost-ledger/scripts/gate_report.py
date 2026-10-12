@@ -19,7 +19,9 @@ Bash のコマンド文字列から見つけ、その PR / issue の 1 本のコ
   触らない。対象があれば自分自身を `--work <JSON>` で切り離して起こし、すぐ終わる
 - 裏の処理（`--work`）: 対象の確認 → ロック → 既存コメントの取得 →（PR でない issue の
   `issue クローズ` だけ）閉じた PR の問い合わせ → `cost_ledger.py timeline` → 書き込み。gh は
-  対象 1 件あたり 3 回、閉じた PR を問い合わせるときだけ 4 回。数字と書式は `cost_ledger.py`
+  対象 1 件あたり 3 回、閉じた PR を問い合わせるときだけ 4 回。子 issue を持つ issue は
+  子孫の問い合わせが子を持つ issue 1 件につき 1 回（1 行につき 5 回まで）で、それが閉じた PR の
+  問い合わせを兼ねる（コメントで 3 + その回数、クローズで 3 + その回数）。数字と書式は `cost_ledger.py`
   だけが持ち、ここは gh の読み書きだけを持つ
 - `COST_LEDGER_HOOK_FOREGROUND=1` のときは切り離さず、その場で最後まで実行する（テストと実測）
 - 書くのは許可の一覧に載っているリポジトリだけ（spec `cost-ledger-write-allowlist`）。裏の処理は
@@ -55,6 +57,14 @@ API_VALUE_FLAGS = {
 API_METHOD_FLAGS = {"-X", "--method"}
 API_FIELD_FLAGS = {"-f", "--raw-field", "-F", "--field"}
 PART_RE = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def valid_parts(parts):
+    """owner と repo の組が名前として使えるか。文字種を満たし、どちらも . / .. ではない
+    （パスに入れたとき別の API に化ける）。名前の中に . を含むだけなら通す。"""
+    return all(PART_RE.fullmatch(p) and p not in (".", "..") for p in parts)
+
+
 NUMBER_RE = re.compile(r"[0-9]+")
 # gh pr edit / gh issue edit で値を取るフラグ（最初の位置引数を見分けるために飛ばす）
 VALUE_FLAGS = {
@@ -64,6 +74,8 @@ VALUE_FLAGS = {
 }
 
 GATE = "ゲート通過"
+CLOSING_FAILED = "PR 照会失敗"  # 閉じた PR の問い合わせが失敗した issue クローズの行に足す印
+CHILD_FAILED = "子 issue 照会失敗"  # 子孫の問い合わせが失敗した、子を持つ issue の行に足す印
 # (gh の第 1 語, 第 2 語) -> (行の「きっかけ」, 値を取るフラグ, 番号を省けるか)
 REPO_FLAGS = {"-R", "--repo"}
 BODY_FLAGS = REPO_FLAGS | {"-b", "--body", "-F", "--body-file"}
@@ -346,7 +358,7 @@ def field_state(fields, env):
 def api_targets(args, env, gh_repo=None):
     """gh api の REST の直叩きから (種別, owner/repo か None, 番号, きっかけ, None) を取り出す。
     endpoint の {owner}/{repo} は前置きの GH_REPO（gh_repo）、無ければ None（cwd のリポジトリ）。
-    リテラルの owner/repo には GH_REPO は効かない。"""
+    リテラルの owner/repo には GH_REPO は効かない。owner / repo が . か .. の endpoint は取り出さない。"""
     call = api_call(args, env)
     if call is None or call[0] is None:
         return []
@@ -357,6 +369,8 @@ def api_targets(args, env, gh_repo=None):
         if not m:
             continue
         where, family, number, tail = m.group(1), m.group(2), int(m.group(3)), m.group(4)
+        if where != "{owner}/{repo}" and not valid_parts(where.split("/")):
+            continue  # リテラルの owner / repo が . か ..。-R / GH_REPO と同じく解決できない対象として飛ばす
         names = []
         if family == "issues" and tail == "comments":
             if method == "POST":
@@ -427,7 +441,7 @@ def repo_values(repo_word, gh_repo, env):
         parts = v.rstrip("/").split("/")
         if len(parts) >= 3 and parts[-3].lower() != "github.com":
             continue  # HOST/OWNER/REPO の HOST が github.com 以外。行を積む対象は github.com だけ
-        if len(parts) >= 2 and all(PART_RE.fullmatch(p) for p in parts[-2:]):
+        if len(parts) >= 2 and valid_parts(parts[-2:]):
             repos.append(parts[-2] + "/" + parts[-1])
     return repos
 
@@ -437,7 +451,7 @@ def trigger_targets(args, env, gh_repo=None):
     (種別, owner/repo か None, 番号か None, きっかけ, ヘッドブランチか None) を取り出す。
     番号 None は省略（ヘッドブランチがあればそのブランチ、無ければ cwd のブランチの PR）。
     位置引数は最初の 1 つだけを見て、数字と github.com の URL 以外（ブランチ名・解決できない
-    変数）は飛ばす。gh pr create は位置引数を取らないので見ない。"""
+    変数）は飛ばす。URL の owner / repo が . か .. のものも飛ばす。gh pr create は位置引数を取らないので見ない。"""
     spec = TRIGGERS.get((args[0], args[1])) if len(args) >= 2 else None
     if spec is None:
         return []
@@ -488,6 +502,8 @@ def trigger_targets(args, env, gh_repo=None):
     for v in expand(positional, env) or []:
         m = URL_RE.fullmatch(v)
         if m:
+            if not valid_parts(m.group(1, 2)):
+                continue  # URL の owner / repo が . か ..。-R と同じく解決できなかった対象として飛ばす
             out.append((args[0], m.group(1) + "/" + m.group(2), int(m.group(3)), name, None))
         elif NUMBER_RE.fullmatch(v):
             out.extend((args[0], r, int(v), name, None) for r in repos)
@@ -655,7 +671,7 @@ def gh_json(path, cwd):
 
 def full_name(text):
     parts = text.rstrip("/").split("/") if isinstance(text, str) else []
-    if len(parts) >= 2 and all(PART_RE.fullmatch(x) for x in parts[-2:]):
+    if len(parts) >= 2 and valid_parts(parts[-2:]):
         return parts[-2] + "/" + parts[-1]
     return None
 
@@ -695,8 +711,10 @@ def issue_checks(data):
 
 
 def resolve(target, cwd, at):
-    """対象を GitHub に確かめ、(種別, owner/repo, 番号, ヘッドブランチ, 残ったきっかけ) を返す。
-    存在しない・状態が合わない・解決できないときは None。at はきっかけの時刻（PR 作成の確認に使う）。"""
+    """対象を GitHub に確かめ、(種別, owner/repo, 番号, ヘッドブランチ, 残ったきっかけ, 子 issue の数)
+    を返す。存在しない・状態が合わない・解決できないときは None。at はきっかけの時刻（PR 作成の
+    確認に使う）。子 issue の数は、issue の応答の ``sub_issues_summary.total``（1 以上の整数のときだけ。
+    無い・0・整数でない・PR のときは 0。そのための gh は足さない）。"""
     kind, spec, number, names = (target["kind"], target["repo"], target["number"],
                                  list(target["triggers"]))
     where = spec or "{owner}/{repo}"
@@ -710,7 +728,10 @@ def resolve(target, cwd, at):
         if "pull_request" not in data:
             checks = issue_checks(data)
             names = [n for n in names if checks.get(n)]
-            return ("issue", repo, number, None, names) if names else None
+            summary = data.get("sub_issues_summary")
+            total = summary.get("total") if isinstance(summary, dict) else None
+            children = total if type(total) is int and total > 0 else 0
+            return ("issue", repo, number, None, names, children) if names else None
         # 番号が PR だった。PR として扱い、ヘッドブランチと状態は pulls/<番号> から取り直す
         names = [AS_PR[n] for n in names if n in AS_PR]
         if not names:
@@ -733,7 +754,7 @@ def resolve(target, cwd, at):
         return None
     checks = pr_checks(data, at)
     names = [n for n in names if checks.get(n)]
-    return ("pr", repo, number, branch, names) if names else None
+    return ("pr", repo, number, branch, names, 0) if names else None
 
 
 def lock(repo, number):
@@ -741,12 +762,33 @@ def lock(repo, number):
     try:
         folder = os.path.join(os.environ.get("TMPDIR") or "/tmp", "cost-ledger-timeline")
         os.makedirs(folder, mode=0o700, exist_ok=True)
-        # 共有の /tmp に他人が先に作った場所（シンボリックリンク・他人の持ち物・他人が書ける）は使わない
-        st = os.lstat(folder)
-        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
-            return None
-        path = os.path.join(folder, "%s__%d.lock" % (repo.replace("/", "__"), number))
-        fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        # 共有の /tmp に他人が先に作った場所（シンボリックリンク・他人の持ち物・他人が書ける）は使わない。
+        # 検査と作成の間にパスを差し替えられないよう、置き場を fd で開いてその fd を検査し、
+        # ロックファイルもその fd を基準に開く
+        dir_fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            st = os.fstat(dir_fd)
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
+                return None
+            name = "%s__%d.lock" % (repo.lower().replace("/", "__"), number)
+            flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+            for attempt in range(5):
+                try:
+                    fd = os.open(name, flags, 0o600, dir_fd=dir_fd)
+                    break
+                except FileNotFoundError:
+                    # macOS では、同じ名前を 2 つのプロセスが dir_fd 基準の O_CREAT で同時に開くと、
+                    # 片方が ENOENT で返ることがある（実測。パス指定の open や別々の名前では出ない）。
+                    # その瞬間も置き場は在り、fd が指す inode はパスの inode と同じで、ロックファイルは
+                    # 相手が作成済み。一過性で、同じ dir_fd のまま開き直せば取れる（実測では 1 回の
+                    # lock() の中で ENOENT は最大 1 回）。置き場は開き直さない: 開き直すと、置き場が
+                    # 消されて作り直されたときに、先に取った側とは別の inode をロックして排他が効かない。
+                    # 上限まで ENOENT が続いたら（fd が指す置き場が消された場合を含む）取れなかったものとする
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.02)
+        finally:
+            os.close(dir_fd)
         fcntl.flock(fd, fcntl.LOCK_EX)
         return fd
     except OSError:
@@ -788,52 +830,207 @@ def closing_prs(repo, number):
     """issue を閉じた PR のうち数えるものの [(番号, ヘッドブランチ)]。gh api graphql を 1 回呼ぶ。
 
     ベースが対象のリポジトリ（大文字と小文字は区別しない）で、ヘッドブランチも同じリポジトリに
-    ある PR だけを残す。失敗・JSON でない・100 件を超える・1 件でも形が崩れているときは空
-    （一部しか読めていない結果で合計を作らない）。"""
+    ある PR だけを残す。成功して数える PR が無ければ空の一覧。失敗・JSON でない・100 件を超える・
+    1 件でも形が崩れているときは None（一部しか読めていない結果で合計を作らない。呼ぶ側が
+    成功して 0 件の場合と区別できるようにする）。"""
     owner, _, name = repo.partition("/")
     p = gh_api(["graphql", "-f", "query=" + CLOSING_QUERY, "-f", "owner=" + owner,
                 "-f", "name=" + name, "-F", "number=%d" % number])
     if p is None or p.returncode != 0:
-        return []
+        return None
     try:
         refs = json.loads(p.stdout)["data"]["repository"]["issue"]["closedByPullRequestsReferences"]
         nodes, more = refs["nodes"], refs["pageInfo"]["hasNextPage"]
     except (ValueError, KeyError, TypeError):
-        return []
+        return None
     if more is not False or not isinstance(nodes, list):
-        return []
+        return None
     found = []
     for node in nodes:
         if not isinstance(node, dict):
-            return []
+            return None
         pr, head, cross = node.get("number"), node.get("headRefName"), node.get("isCrossRepository")
         base = (node.get("baseRepository") or {}).get("nameWithOwner") \
             if isinstance(node.get("baseRepository"), dict) else None
         if (type(pr) is not int or pr < 1 or not isinstance(head, str) or not head
                 or not isinstance(cross, bool) or not isinstance(base, str)):
-            return []
+            return None
         if not cross and base.lower() == repo.lower():
             found.append((pr, head))
     return found
 
 
-def stack(kind, repo, number, branch, names, at, cwd, scripts_dir):
+# 子孫を辿る深さの上限（エピックから数えた段数。cost_ledger.EPIC_MAX_DEPTH と同じ）と、1 行につき
+# 呼ぶ GraphQL の回数の上限（子を持つ issue の数に比例する。超えたら失敗として扱う）
+EPIC_MAX_DEPTH = 8
+EPIC_MAX_QUERIES = 5
+_CLOSING_FIELDS = (
+    "closedByPullRequestsReferences(first: 100) {"
+    " nodes { number headRefName isCrossRepository baseRepository { nameWithOwner } }"
+    " pageInfo { hasNextPage } }"
+)
+# ある issue の子と、子ごとの閉じた PR を 1 回で取る（cost_ledger.SUB_ISSUES_QUERY と同じ形）。
+# owner・name・number は変数で渡し、問い合わせの文字列に埋め込まない
+SUB_ISSUES_QUERY = (
+    "query($owner: String!, $name: String!, $number: Int!) {"
+    " repository(owner: $owner, name: $name) { nameWithOwner issue(number: $number) {"
+    " number title state " + _CLOSING_FIELDS +
+    " subIssues(first: 100) {"
+    " nodes { number title state repository { nameWithOwner } subIssuesSummary { total } "
+    + _CLOSING_FIELDS + " }"
+    " pageInfo { hasNextPage } } } } }"
+)
+
+
+class TreeError(Exception):
+    """子孫を読み切れなかった（一部しか読めていない結果を子込みの額にしないために止める）。"""
+
+
+def _closing_refs(refs, repo):
+    """``closedByPullRequestsReferences`` から数える PR の ``{ヘッドブランチ: 番号}`` を作る
+    （ベースが repo で fork でないものだけ。同じブランチは番号の小さい方）。崩れていれば TreeError。"""
+    if not isinstance(refs, dict) or not isinstance(refs.get("pageInfo"), dict):
+        raise TreeError("closing prs")
+    if refs["pageInfo"].get("hasNextPage") is not False or not isinstance(refs.get("nodes"), list):
+        raise TreeError("closing prs")
+    by_branch = {}
+    for node in refs["nodes"]:
+        if not isinstance(node, dict):
+            raise TreeError("closing prs")
+        pr, head, cross = node.get("number"), node.get("headRefName"), node.get("isCrossRepository")
+        base = node.get("baseRepository")
+        base = base.get("nameWithOwner") if isinstance(base, dict) else None
+        if (type(pr) is not int or pr < 1 or not isinstance(head, str) or not head
+                or not isinstance(cross, bool) or not isinstance(base, str)):
+            raise TreeError("closing prs")
+        if cross or base.lower() != repo.lower():
+            continue
+        if head not in by_branch or pr < by_branch[head]:
+            by_branch[head] = pr
+    return by_branch
+
+
+def _issue_head(node):
+    """応答の issue 1 件の ``(番号, 状態の妥当性)`` を確かめる。崩れていれば TreeError。"""
+    if not isinstance(node, dict):
+        raise TreeError("issue")
+    number, title, state = node.get("number"), node.get("title"), node.get("state")
+    if (type(number) is not int or number < 1 or not isinstance(title, str)
+            or state not in ("OPEN", "CLOSED")):
+        raise TreeError("issue")
+    return number
+
+
+def epic_tree(repo, number):
+    """子を持つ issue の子孫と、数える PR を ``([子孫の番号], [(PR 番号, ヘッドブランチ)])`` で返す。
+
+    PR は対象の issue 自身と子孫を閉じたもの（番号の昇順、同じヘッドブランチは番号の小さい方だけ）。
+    gh api graphql を、子を持つ issue（対象を含む）1 件につき 1 回呼び、1 行につき EPIC_MAX_QUERIES
+    回まで。数えるのは対象と同じリポジトリの子だけ（別のリポジトリの子は数えず辿らない）。失敗・
+    JSON でない・形の崩れ・100 件超・EPIC_MAX_DEPTH 段超・回数の上限を超えるときは None（呼ぶ側が
+    一部しか読めていない結果を使わない）。``cost_ledger.fetch_epic_tree()`` と同じ集合になる。"""
+    owner, _, name = repo.partition("/")
+    state = {"repo": None, "queries": 0}
+    seen, descendants, branches = {number}, [], {}
+
+    def query(target):
+        if state["queries"] >= EPIC_MAX_QUERIES:
+            raise TreeError("too many queries")
+        state["queries"] += 1
+        p = gh_api(["graphql", "-f", "query=" + SUB_ISSUES_QUERY, "-f", "owner=" + owner,
+                    "-f", "name=" + name, "-F", "number=%d" % target])
+        if p is None or p.returncode != 0:
+            raise TreeError("gh")
+        try:
+            repository = json.loads(p.stdout)["data"]["repository"]
+            found, issue = repository["nameWithOwner"], repository["issue"]
+            subs = issue["subIssues"]
+            nodes, more = subs["nodes"], subs["pageInfo"]["hasNextPage"]
+        except (ValueError, KeyError, TypeError):
+            raise TreeError("shape")
+        if not isinstance(found, str) or not found or not isinstance(nodes, list) or more is not False:
+            raise TreeError("shape")
+        if state["repo"] is None:
+            state["repo"] = found
+        return issue, nodes
+
+    def add_branches(by_branch):
+        for head, pr in by_branch.items():
+            if head not in branches or pr < branches[head]:
+                branches[head] = pr
+
+    def walk(target, depth, top):
+        issue, nodes = query(target)
+        if top:
+            _issue_head(issue)
+            add_branches(_closing_refs(issue.get("closedByPullRequestsReferences"), state["repo"]))
+        for node in nodes:
+            child = _issue_head(node)
+            owner_repo = node.get("repository")
+            owner_repo = owner_repo.get("nameWithOwner") if isinstance(owner_repo, dict) else None
+            summary = node.get("subIssuesSummary")
+            total = summary.get("total") if isinstance(summary, dict) else None
+            if not isinstance(owner_repo, str) or not owner_repo or type(total) is not int or total < 0:
+                raise TreeError("shape")
+            if owner_repo.lower() != state["repo"].lower():
+                continue  # 別のリポジトリの子は数えず、その子も辿らない
+            if child in seen:
+                continue
+            seen.add(child)
+            descendants.append(child)
+            add_branches(_closing_refs(node.get("closedByPullRequestsReferences"), state["repo"]))
+            if total > 0:
+                if depth + 1 >= EPIC_MAX_DEPTH:
+                    raise TreeError("too deep")
+                walk(child, depth + 1, False)
+
+    try:
+        walk(number, 0, True)
+    except TreeError:
+        return None
+    return sorted(descendants), sorted((pr, head) for head, pr in branches.items())
+
+
+def stack(kind, repo, number, branch, names, at, cwd, scripts_dir, extra=(), children=0):
     """1 行積む。ロックを持ったまま、読み取り・（issue のクローズなら閉じた PR の問い合わせ）・
-    timeline・書き込みを行う。"""
+    timeline・書き込みを行う。``extra`` は timeline のコマンドの末尾に足す引数（後追いの
+    ``--backfill``。既定は空で、PostToolUse の hook からは渡さない）。"""
     found = existing_comment(repo, number)
     if found is None:  # 既存コメントの有無が分からないので書かない
         return
     comment_id, before = found
     cmd = [sys.executable, os.path.join(scripts_dir, "cost_ledger.py"), "timeline"]
     cmd += ["--pr", str(number), "--branch", branch] if kind == "pr" else ["--issue", str(number)]
+    closing, child_issues, child_prs = [], [], []
+    if kind == "issue" and children > 0:
+        # 子を持つ issue（対象の確認の応答で分かっている）だけ、子孫と閉じた PR を 1 回の GraphQL
+        # （子を持つ issue ごと）で取る。子を持たない issue と PR は、この分岐に入らず gh も増えない。
+        # 失敗したときは子なしの引数で積み、印を足す（一部しか読めていない結果は使わない）
+        tree = epic_tree(repo, number)
+        if tree is None:
+            names = names + [CHILD_FAILED]
+        else:
+            child_issues, child_prs = tree
+            if "issue クローズ" in names:
+                closing = child_prs  # 子孫の問い合わせの応答に、この issue を閉じた PR も入っている
+    elif kind == "issue" and "issue クローズ" in names:
+        # 0 件なら --closing-pr を付けず、issue クローズの行だけを積む。問い合わせが失敗したとき
+        # (None) も同じだが、きっかけの欄の最後に失敗の印を足して 0 件の回と見分けられるようにする
+        closing = closing_prs(repo, number)
+        if closing is None:
+            closing, names = [], names + [CLOSING_FAILED]
     cmd += ["--trigger", "+".join(names), "--at", at]
-    if kind == "issue" and "issue クローズ" in names:
-        # 問い合わせが失敗・0 件なら --closing-pr を付けず、issue クローズの行だけを積む
-        for pr, head in closing_prs(repo, number):
-            cmd += ["--closing-pr", "%d:%s" % (pr, head)]
+    for pr, head in closing:
+        cmd += ["--closing-pr", "%d:%s" % (pr, head)]
+    for child in child_issues:
+        cmd += ["--child-issue", str(child)]
+    if child_issues:
+        for pr, head in child_prs:
+            cmd += ["--child-pr", "%d:%s" % (pr, head)]
     if cwd:
         cmd += ["--repo", cwd]
     cmd += ["--target-repo", repo]
+    cmd += list(extra)
     p = run(cmd, stdin_text=before, timeout=TIMELINE_TIMEOUT,
             env=dict(os.environ, PYTHONIOENCODING="utf-8"),
             cwd=cwd if cwd and os.path.isdir(cwd) else None)
@@ -863,7 +1060,7 @@ def work(job):
     # 書かないことが決まっている。gh を 1 回も呼ばずに終わる
     if not write_allow.allowed(write_allow.origin_repo(cwd), cwd):
         return
-    resolved = {}  # (owner/repo, 番号) -> [種別, ヘッドブランチ, きっかけ]。別の書き方で同じ対象を指した分をまとめる
+    resolved = {}  # (owner/repo, 番号) -> [種別, ヘッドブランチ, きっかけ, 子 issue の数]。別の書き方で同じ対象を指した分をまとめる
     for target in job["targets"]:
         if target["repo"] is not None and not write_allow.allowed(target["repo"], cwd):
             continue  # コマンドが名指ししたリポジトリが一覧に無い。対象の確認の gh も呼ばない
@@ -873,18 +1070,18 @@ def work(job):
             found = None
         if found is None:
             continue
-        kind, repo, number, branch, names = found
+        kind, repo, number, branch, names, children = found
         if not write_allow.allowed(repo, cwd):
             continue  # GitHub が返した名前が一覧に無い（改名・移管で別の名前へ転送された）。ここから先の gh は呼ばない
-        entry = resolved.setdefault((repo, number), [kind, branch, []])
+        entry = resolved.setdefault((repo, number), [kind, branch, [], children])
         for name in names:
             add_name(entry[2], name)
-    for (repo, number), (kind, branch, names) in resolved.items():
+    for (repo, number), (kind, branch, names, children) in resolved.items():
         fd = lock(repo, number)
         if fd is None:
             continue
         try:
-            stack(kind, repo, number, branch, names, at, cwd, scripts_dir)
+            stack(kind, repo, number, branch, names, at, cwd, scripts_dir, children=children)
         except Exception:
             pass
         finally:

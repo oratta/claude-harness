@@ -69,12 +69,33 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "matcher": "^dev-workflow:(worker|reviewer|gate-runner)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/subagent-start-context.sh\""
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/subagent-stop-guard.sh\""
+          }
+        ]
+      }
+    ],
+    "PreModelSwitch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/model-switch-recache-notice.sh\""
           }
         ]
       }

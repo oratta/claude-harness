@@ -2,7 +2,7 @@
 
 - [x] 1.1 `fetch_closing_prs(where, number)` を足す。`gh api graphql` を 1 回（`issue(number) { _CLOSING_FIELDS }` と `nameWithOwner`、`{owner}` `{repo}` の置換で変数を渡す）、`_closing_refs()` で絞る。失敗・形の崩れ・100 件超は `EpicError` を呼び元で受けて `None`（読めなかった）を返す。0 件は `[]`。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:367-427`（`_CLOSING_FIELDS`・`_closing_refs()` の直後に新規関数）
 - [x] 1.2 `cmd_cost` の「子 issue を持たない issue」の分岐（`kind == "issue"`）で `fetch_closing_prs` を呼び、結果を `cmd_issue` に渡す（`closing_pr` の引数に `番号:ブランチ` の列を組む、または `Namespace` に `closing_prs` と `closing_prs_error` を足す）。PR・エピック・番号なしの経路では呼ばない。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:2307-2320`（`cmd_cost`）
-- [x] 1.3 `cmd_issue` で読めなかったときの 1 行（`  閉じた PR を読めなかったため、PR の分は合計に入っていません。`）を、合計の行を出さない位置（`対象:` の行の直後。2 行目の位置を既存のテストと同じに保つため）に足し、`--json` は標準出力を JSON だけに保ち、読めなかった行を混ぜずに `closing_prs_error`（読めたら `false`、0 件でも `false`）を足す。通常出力の 0 件時は 1 文字も変えない。`cost_ledger.py issue` の直接呼び（`--closing-pr` あり・なし）の出力は変えない。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:2642-2700`（`cmd_issue`）
+- [x] 1.3 `cmd_issue` で読めなかったときの 1 行（`  閉じた PR を読めなかったため、PR の分は合計に入っていません。`）を、合計の行を出さない位置（`対象:` の行の直後。2 行目の位置を既存のテストと同じに保つため）に足し、`--json` は標準出力を JSON だけに保ち、読めなかった行を混ぜずに `closing_prs_error`（読めたら `false`、0 件でも `false`）を足す。通常出力の 0 件時は 1 文字も変えない。`cost_ledger.py issue` の直接呼びも通常出力は変えず、`--json` には鍵 `closing_prs_error` が増える（直接呼びでも同じ。`--closing-pr` あり・なしを問わない）。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:2642-2700`（`cmd_issue`）
 
 ## 2. テスト（偽の `gh` で。GraphQL の呼び出し回数も数える）
 

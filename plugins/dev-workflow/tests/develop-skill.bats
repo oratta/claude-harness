@@ -540,3 +540,89 @@ refute() {
   grep -qF 'session id:' "$r"
   grep -qF 'threadId' "$r"
 }
+
+# --- レビューの周を主に聞かずに続ける（直し方の判定。#722） ---
+
+@test "fix-check (#722): the section sits between the token budget and the handover sections" {
+  heads="$(grep -nE '^## ' "$SKILL")"
+  b="$(echo "$heads" | grep -F '## PR トークン上限' | cut -d: -f1)"
+  f="$(echo "$heads" | grep -F '## レビューの周を主に聞かずに続ける（直し方の判定）' | cut -d: -f1)"
+  h="$(echo "$heads" | grep -F '## 保留で止まるときの引き継ぎ' | cut -d: -f1)"
+  [ -n "$b" ] && [ -n "$f" ] && [ -n "$h" ] || { echo "missing section: $b / $f / $h"; return 1; }
+  [ "$b" -lt "$f" ] && [ "$f" -lt "$h" ]
+}
+
+@test "fix-check (#722): the decider is asked with the verdict-and-reasons contract, not the 3 points" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  [ -n "$s" ] || { echo "no fix-check section"; return 1; }
+  echo "$s" | grep -qF 'subagent_type: dev-workflow:decider'
+  echo "$s" | grep -qF '可否と根拠'
+  echo "$s" | grep -qF '3 点ではなく'
+  echo "$s" | grep -qF 'agents/decider.md'
+  # 定義の 3 条件
+  echo "$s" | grep -qF '直し方が 1 つに決まる'
+  echo "$s" | grep -qF '記録先の範囲'
+  echo "$s" | grep -qF '前の周で「決まっている」と判定した直し方を当てたのに閉じなかった'
+}
+
+@test "fix-check (#722): the five inputs are fixed" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  for token in '記録先の本文と関連コメント' '残った指摘の原文' '前の周の指摘の原文' '対象ファイルのパス' 'W の直近の return'; do
+    echo "$s" | grep -qF "$token" || { echo "missing input: $token"; return 1; }
+  done
+}
+
+@test "fix-check (#722): first-line answers, one retry on shortage, then treated as re-choosing" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  for token in '`裁定: 可`' '`裁定: 否`' '`不足: <足りないもの>`' '1 回だけ依頼し直し' '3 回目の依頼はしない'; do
+    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  echo "$s" | grep -F '1 回だけ依頼し直し' | grep -qF '選び直しが要る'
+}
+
+@test "fix-check (#722): the record format is defined here with its first line and fields" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  echo "$s" | grep -qF '`^直し方の判定: (決まっている|選び直しが要る)$`'
+  for f in '対象' '周' '判定役' '指摘ごとの判定' '入力不足'; do
+    echo "$s" | grep -qE "^\| ${f} \|" || { echo "record lacks field: $f"; return 1; }
+  done
+}
+
+@test "fix-check (#722): the after-the-fact report format is defined here with its first line and fields" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  echo "$s" | grep -qF '`^主に聞かずに回した周: [0-9]+ 周目$`'
+  for f in '残っていた指摘' '判定の根拠' '使ったトークン' '周の結果'; do
+    echo "$s" | grep -qE "^\| ${f} \|" || { echo "report lacks field: $f"; return 1; }
+  done
+  # トークンの 2 つの値は既存の計測から取る
+  echo "$s" | grep -qF '新しい計測の仕組みは足さない'
+}
+
+@test "fix-check (#722): only two conditions ask the owner" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  echo "$s" | grep -qF '方針の選び直し'
+  echo "$s" | grep -qF '`pr-token-budget.sh` が exit 2'
+  echo "$s" | grep -qF '2 つだけ'
+  echo "$s" | grep -qF '回数に上限は置かない'
+  echo "$s" | grep -qF '`2 周キャップ超え`'
+}
+
+@test "fix-check (#722): step (4) handles needs-fix-check by posting the record and starting the triage G" {
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$SKILL")"
+  echo "$step4" | grep -qF 'needs-decider / needs-fix-check / review-incomplete'
+  nf="$(echo "$step4" | awk '/^      needs-fix-check →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  [ -n "$nf" ] || { echo "no needs-fix-check line in step (4)"; return 1; }
+  for token in 'PR トークン上限' 'dev-workflow:decider' '判定の記録' '照合と振り分けの G を新しく起こ' 'レビューの周を主に聞かずに続ける（直し方の判定）' 'W も再開しない' '事後報告'; do
+    echo "$nf" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  # needs-fix-check の段落は needs-decider の段落の前に置く
+  a="$(echo "$step4" | grep -n '^      needs-fix-check →' | cut -d: -f1)"
+  d="$(echo "$step4" | grep -n '^      needs-decider →' | cut -d: -f1)"
+  [ "$a" -lt "$d" ]
+}
+
+@test "fix-check (#722): the handover scene for the two-round cap points at the re-choosing verdict" {
+  s="$(section '保留で止まるときの引き継ぎ')"
+  echo "$s" | grep -F 'レビューの 2 周キャップ超え' | grep -qF '選び直しが要る'
+  echo "$s" | grep -qF '`2 周キャップ超え`'
+}

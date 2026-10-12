@@ -12,12 +12,15 @@ allowed-tools: Read, Bash, AskUserQuestion
 ### 1. プラグインルートを特定する
 
 ```bash
+SL_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; SL_NG=1; fi
 for dir in \
   "${CLAUDE_PLUGIN_ROOT:-}" \
   ~/.claude/plugins/marketplaces/*/plugins/statusline \
   ~/.claude/plugins/installed/*/statusline; do
   [ -n "$dir" ] && [ -f "$dir/scripts/install.sh" ] && echo "$dir" && break
 done
+if [ -n "$SL_NG" ]; then unsetopt nullglob; fi
+unset SL_NG
 ```
 
 見つからなければ「statusline プラグインが見つからない」と報告して終了する。

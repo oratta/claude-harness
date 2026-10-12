@@ -23,12 +23,15 @@ teardown() {
   rm -rf "$WORK"
 }
 
+# $1=a の securestorage（JSON）$2=b の securestorage（JSON）
+# $3=a の enabled（JSON の値。空なら書かない）$4=b の enabled（同）
 write_registry() {
   local secure_a="${1:-null}" secure_b="${2:-\"${SECURE_B}\"}"
+  local enabled_a="${3:+, \"enabled\": $3}" enabled_b="${4:+, \"enabled\": $4}"
   cat > "$ACCOUNTS" <<JSON
 { "schema": 1, "accounts": [
-  { "id": "a", "label": "A", "securestorage": ${secure_a} },
-  { "id": "b", "label": "B", "securestorage": ${secure_b} }
+  { "id": "a", "label": "A", "securestorage": ${secure_a}${enabled_a} },
+  { "id": "b", "label": "B", "securestorage": ${secure_b}${enabled_b} }
 ] }
 JSON
 }
@@ -380,4 +383,95 @@ JSON
   [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
   [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
   ! grep -qF 'selected=' "${WORK}/stdout" || return 1
+}
+
+# ── enabled（usage-account-registry「スロットを enabled でオフにできる」）──
+
+@test "enabled: an off slot is not selected even with the greatest weekly margin" {
+  # b は週の 90% 経過・週次 0%（余裕 90）。a は余裕 10
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  write_record "$SECURE_B" "$NOW" 0 0 "$((NOW + 60480))"
+  write_registry
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:90.00" ]
+
+  write_registry "" "" "" false
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:10.00,b:off" ]
+  [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
+}
+
+@test "enabled: a registry without enabled selects the same as one with enabled true" {
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  write_registry
+  run invoke
+  [ "$status" -eq 0 ]
+  cp "${WORK}/stdout" "${WORK}/stdout.omitted"
+  cp "${WORK}/stderr" "${WORK}/stderr.omitted"
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:30.00" ]
+
+  write_registry "" "" true true
+  run invoke
+  [ "$status" -eq 0 ]
+  cmp "${WORK}/stdout" "${WORK}/stdout.omitted"
+  cmp "${WORK}/stderr" "${WORK}/stderr.omitted"
+}
+
+@test "enabled: only the JSON false turns a slot off" {
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  local value
+  for value in '"false"' 0 null; do
+    write_registry "" "" "" "$value"
+    run invoke
+    [ "$status" -eq 0 ]
+    [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:30.00" ]
+  done
+}
+
+@test "enabled: explicit selection of an off slot returns 2 with the way back" {
+  write_registry "" "" "" false
+  run invoke b
+  [ "$status" -eq 2 ]
+  [ ! -s "${WORK}/stdout" ]
+  [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
+  grep -qF 'account b is off' "${WORK}/stderr"
+  grep -qF 'enabled' "${WORK}/stderr"
+  grep -qF "$ACCOUNTS" "${WORK}/stderr"
+  ! grep -qF 'unknown account id' "${WORK}/stderr" || return 1
+
+  # オンのスロットの明示選択は変わらない
+  run invoke a
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=explicit margins=-" ]
+}
+
+@test "enabled: all slots off fall back to the default account without an error" {
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  write_registry "" "" false false
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-all-off margins=a:off,b:off" ]
+}
+
+@test "enabled: all slots off without a registered default use the sentinel" {
+  write_registry "\"${SECURE_A}\"" "" false false
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=@unregistered-default reason=default-due-to-all-off margins=a:off,b:off" ]
+}
+
+@test "enabled: an on slot with missing usage is not replaced by an off slot with values" {
+  write_record "$SECURE_B" "$NOW" 0 0
+  write_registry "" "" "" false
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-missing-usage margins=a:missing,b:off" ]
 }

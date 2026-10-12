@@ -6,7 +6,7 @@
 
 - dev-workflow の SessionStart hook に、`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` が有効な値のとき警告を出す処理を足す（新規 `scripts/team-mode-warning.sh`、`hooks/hooks.json` の SessionStart に登録）
 - 未設定・空・`0`・`false` のときは何も出さない
-- テスト `tests/team-mode-warning.bats` を足す
+- テスト `plugins/dev-workflow/tests/team-mode-warning.bats` を足す
 - 変更の記録 `plugins/dev-workflow/changes/591.md`
 
 ## Capabilities

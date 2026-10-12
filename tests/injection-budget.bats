@@ -364,6 +364,7 @@ report() { # <verdict> <budget> <total> <内訳テキスト>
     echo "  tests/injection-budget.txt を推奨値 $(recommended_budget "$total")（実測 + 約 5%）に下げる"
     echo "  削った分を予算に残さないためのラチェット。引き下げも同じ diff に載せること"
   fi
+  echo "  削れるものを探す診断の手順（公式の診断コマンド 3 つ）: $REVIEW_DOC"
 }
 
 # ── frontmatter 書式ガード（許可リスト方式）───────────────────
@@ -478,6 +479,45 @@ check_frontmatter_shape() { emit_z "$@" | check_frontmatter_shape_z; }
 check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_shape_z; }
 
 # ══ 1. 集計ヘルパ ══════════════════════════════════════════
+
+# ── 思考の深さを文で指示する言い回しの検査（issue #712）──────────
+# 「よく考えて」「Think deeply.」の類は、現行モデルでは効かないか余計な長考を招く
+# （/doctor prompt-audit の指摘）。一度消した句が戻るのを止めるための検査である。
+#
+# 守備範囲: 違反が入る経路は、openspec CLI が .claude/ 配下を再生成したときと、対象
+# ファイルを手で編集したときの 2 つ。拾うのは下の 5 つの句が 1 行にそのまま現れた場合だけ。
+# 言い換え（じっくり考えて・ultrathink 等）と改行またぎは通り、逆に think hard-coded の
+# ような無関係な英文にも当たりうる。句や例外を足して塞ぎ切ることは目指さない（言い換えを
+# 見つけるのは診断コマンドの役目。手順は docs/injection-budget-review.md）。
+# 「必ず」「絶対」「MUST」「IMPORTANT」などの強調語は対象にしない（破壊的操作の防止に
+# 理由つきで使われているものが大半で、一律に禁じると必要な制約まで落ちる）。
+THINKING_PHRASE_RE='よく考え|think deeply|think hard|think carefully|think step by step'
+REVIEW_DOC='docs/injection-budget-review.md'
+
+# check_thinking_phrases_z — stdin: NUL 区切りの一覧。該当行を「ファイル:行番号:本文」で
+# 出力し、1 件でもあれば 1 を返す。英語の句は大文字小文字を区別しない。
+check_thinking_phrases_z() {
+  local f hits bad=0
+  while IFS= read -r -d '' f; do
+    [ -f "$f" ] || continue
+    hits=$(LC_ALL=C grep -HniE -- "$THINKING_PHRASE_RE" "$f") || continue
+    printf '%s\n' "$hits"
+    bad=1
+  done
+  return "$bad"
+}
+check_thinking_phrases() { emit_z "$@" | check_thinking_phrases_z; }
+
+# 検査対象: 常時注入の文書（rules / CLAUDE.md / output-styles）と、プラグインと .claude/ の
+# スキル・コマンド（本文を含む）。plugins/ 配下は SKILL.md だけで、references/ 等は対象外。
+list_thinking_phrase_targets() {
+  list_synced_md "$REPO_ROOT/rules"
+  printf '%s\0' "$REPO_ROOT/CLAUDE.md"
+  list_synced_md "$REPO_ROOT/output-styles"
+  list_plugin_skills
+  list_dir_files "$REPO_ROOT/.claude/commands" '*'
+  list_dir_files "$REPO_ROOT/.claude/skills" '*'
+}
 
 @test "sum_files adds up the byte counts of the given list" {
   printf '12345' > "$TMPD/a.md"      # 5 bytes
@@ -860,6 +900,19 @@ EOF
   [[ "$output" == *"固定分を削る"* ]] || return 1
   [[ "$output" == *"tests/injection-budget.txt を上げて"* ]] || return 1
   [[ "$output" == *"PR 本文に理由を書く"* ]] || return 1
+}
+
+@test "the over-budget report points to the review procedure" {
+  run report over 50000 52000 "$(breakdown)"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"docs/injection-budget-review.md"* ]] || return 1
+}
+
+@test "the under-budget report points to the review procedure" {
+  [ "$(verdict 52000 40000)" = "under" ]
+  run report under 52000 40000 "$(breakdown)"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"docs/injection-budget-review.md"* ]] || return 1
 }
 
 @test "the under-budget report names a concrete recommended value" {
@@ -1251,6 +1304,71 @@ read_first_byte_fixtures() {
   # rules/*.md は全プロジェクトのセッションに注入される。このリポ固有の規約をそこに
   # 置くと、この change 自身が減らそうとしている固定分を増やすことになる。
   run grep -rn 'injection-budget' "$REPO_ROOT/rules/"
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+}
+
+# ── 予算を見直すときの診断手順（issue #712）─────────────────────
+@test "the review procedure names the three diagnostic commands" {
+  local doc="$REPO_ROOT/$REVIEW_DOC"
+  [ -f "$doc" ]
+  grep -qF '/doctor prompt-audit' "$doc"
+  grep -qF '/skill-doctor' "$doc"
+  grep -qF 'claude plugin details' "$doc"
+}
+
+@test "the review procedure records the Claude Code version it was checked on" {
+  # 版の値は直書きしない（確かめ直して版を書き換えても落ちないよう、形だけを見る）。
+  run grep -cE '[0-9]+\.[0-9]+\.[0-9]+' "$REPO_ROOT/$REVIEW_DOC"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+@test "the review procedure is not written into CLAUDE.md or rules/" {
+  # どちらも測定対象で、手順を書いた分だけ固定分が増える。
+  run grep -rnE 'prompt-audit|skill-doctor' "$REPO_ROOT/CLAUDE.md" "$REPO_ROOT/rules/"
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+}
+
+@test "a depth-of-thinking phrase is detected with its file and line" {
+  printf 'first line\nEnter explore mode. Think deeply.\n' > "$TMPD/explore.md"
+  printf 'じっくり読む。\nここはよく考えてから進める。\n' > "$TMPD/ja.md"
+  run check_thinking_phrases "$TMPD/explore.md" "$TMPD/ja.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"explore.md:2:"* ]] || return 1
+  [[ "$output" == *"ja.md:2:"* ]] || return 1
+}
+
+@test "emphasis words alone are not a depth-of-thinking violation" {
+  printf '必ず確認する\nIMPORTANT: Do NOT guess\nYou MUST NEVER write code\n' > "$TMPD/emphasis.md"
+  run check_thinking_phrases "$TMPD/emphasis.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "no depth-of-thinking phrase in rules, CLAUDE.md, output-styles, skills or .claude" {
+  local hits
+  if ! hits=$(list_thinking_phrase_targets | check_thinking_phrases_z); then
+    echo "思考の深さを文で指示する言い回しが見つかった（該当の文を削る）:"
+    printf '%s\n' "$hits"
+    echo "openspec CLI の再生成で戻った場合も同じ文を削り直す。手順: $REVIEW_DOC"
+    return 1
+  fi
+}
+
+@test "the phrase check covers plugin skills and the generated .claude files" {
+  run bash -c "$(declare -f list_thinking_phrase_targets list_synced_md list_plugin_skills list_plugin_category list_dir_files); REPO_ROOT='$REPO_ROOT'; list_thinking_phrase_targets | tr '\\000' '\\n'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"/rules/communication-style.md"* ]] || return 1
+  [[ "$output" == *"/plugins/dev-workflow/skills/develop/SKILL.md"* ]] || return 1
+  [[ "$output" == *"/.claude/commands/opsx/explore.md"* ]] || return 1
+  [[ "$output" == *"/.claude/skills/openspec-explore/SKILL.md"* ]] || return 1
+  [[ "$output" != *"/references/"* ]] || return 1
+}
+
+@test "rules carry no yoku-kangae phrase (issue 712 acceptance)" {
+  run grep -rn 'よく考え' "$REPO_ROOT/rules/"
   [ "$status" -ne 0 ]
   [ -z "$output" ]
 }

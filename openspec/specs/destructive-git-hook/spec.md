@@ -3,7 +3,6 @@
 ## Purpose
 
 `rules/destructive-git-guard.md` の一覧にある破壊的 git 操作を、dev-workflow の PreToolUse hook が Bash の実行前に止め、主に確認を回す。判定の対象・守備範囲・モード別の ask / deny・逃げ道、ルール本文との分担、wt-clean のブランチ削除が止められたときの扱いを定義する。
-
 ## Requirements
 ### Requirement: 破壊的 git 操作を Bash の実行前に検出する
 
@@ -14,16 +13,18 @@ dev-workflow は PreToolUse の command hook `scripts/git-destructive-guard.sh` 
 1. `git checkout` で `--` の後ろにパスがある、または引数が `.` だけ（作業の破棄）
 2. `git restore`（`--staged` / `-S` だけを付けて `--worktree` / `-W` を付けないものを除く）
 3. `git reset --hard`
-4. `git clean` で `-f` / `--force`（`-fd` `-xdf` のようにまとめた短いオプションを含む）があり、`-n` / `--dry-run` が無い
-5. `git push` の送り先が `main` / `master`（`main`、`+main`、`refs/heads/main`、`HEAD:main`、`<src>:main`、`:main`、`--delete main` を含む。master も同じ。remote 名は問わない）。`-n` / `--dry-run`（まとめた短いオプションを含む）があるものは除く（remote を変えないため）
-6. `git push` に `--force` / `-f`（まとめた短いオプションを含む）/ `--force-with-lease[=...]` がある、または `+` で始まる refspec がある。`-n` / `--dry-run` があるものは除く
+4. `git clean` で `-f` / `--force`（`-fd` `-xdf` のようにまとめた短いオプションを含む）があり、dry-run でない（dry-run かどうかの決め方は下の「dry-run の決め方」）
+5. `git push` の送り先が `main` / `master`（`main`、`+main`、`refs/heads/main`、`HEAD:main`、`<src>:main`、`:main`、`--delete main` を含む。master も同じ。remote 名は問わない）。dry-run のものは除く（remote を変えないため）
+6. `git push` に `--force` / `-f`（まとめた短いオプションを含む）/ `--force-with-lease[=...]` がある、または `+` で始まる refspec がある。dry-run のものは除く
 7. `git branch -D`、または `-d` / `--delete` と `-f` / `--force` の組み合わせ（`-df` を含む）
 8. git のサブコマンドに `--no-verify` がある、または `git commit` の短いオプションに `n` がある。まとめた短いオプション（`-an`、`-anm x`）も含み、引数を取る短いオプション（`-m` `-F` `-c` `-C` `-t`）より後ろの文字は、その引数として扱って見ない（`-mn` はメッセージ `n` なので当たらない）
 9. git のサブコマンドに `--no-gpg-sign` がある
 
-判定は単純コマンドごとに行い、次の形の中も同じ判定にかけなければならない（MUST）: `&&` `||` `;` `|` `&` 改行で連結したコマンド、`$(...)` とバッククォートの中、`bash` / `sh` / `zsh` の `-c` の引数、`eval` の引数。単純コマンドの先頭の環境変数代入と `command` / `env` / `sudo` / `nohup` / `time` は読み飛ばし、git の大域オプション（`-C <path>`、`-c <k=v>`、`--git-dir`、`--work-tree`、`--namespace`、`--no-pager`、`-P` など）を読み飛ばしてサブコマンドを決めなければならない（MUST）。引用符の中の文字列や、git が単純コマンドの先頭に無いもの（`echo git reset --hard`）は対象にしてはならない（MUST NOT）。ヒアドキュメントの本文と、引用符の中の改行より後ろの行（commit メッセージや issue コメントの本文に書いた git の行）もコマンドとして読んではならない（MUST NOT）。ヒアドキュメントの終わりの行より後ろのコマンドは判定する。引数を取るオプション（`git push -o <値>`、`git commit --author <値>`、`git commit -m <値>` など）の次の字句は、そのオプションの値として読み飛ばし、送り先や短いオプションとして判定しない（MUST）。
+dry-run の決め方: `git push` / `git clean` の引数をオプションとして左から読み、最後に効いているもので決めなければならない（MUST）。`-n`（まとめた短いオプションを含む）と `--dry-run` は dry-run にし、`--no-dry-run` と、`--no-d` 以上の長さでその先頭と一致する省略形（`--no-dry` など）は dry-run を打ち消す。`git push -n --no-dry-run origin main` は dry-run でなく、`git push --no-dry-run -n origin main` は dry-run である。
 
-守備範囲: この要件の目的は、ルールを読み飛ばした Claude が一覧の操作をそのまま打ったときに止めることで、セキュリティ境界ではない。受け取る入力は次の 2 つに限る。1 つ目は、Claude Code が PreToolUse で hook の stdin に渡す Bash 呼び出しの payload（`tool_name`、`tool_input.command`、`permission_mode`）で、`tool_input.command` はエージェント（本体やサブエージェント）が書く値である。2 つ目は、利用者が自分で設定する環境変数 `DEV_WORKFLOW_GIT_GUARD` と `DEV_WORKFLOW_GIT_GUARD_FORCE` である。拾いたい誤りは、上の 9 種のいずれかを、コマンド文字列にそのまま書いて実行しようとすることである（連結・コマンド置換・`bash -c`・git の大域オプションを挟んだ形を含む）。次の入力は通ることを許す: 変数や置換でサブコマンドや引数を組み立てた形（`git $SUB --hard`、`SUB=reset; git $SUB --hard`）／git の alias（`git config alias.nuke 'reset --hard'` を定義したうえでの `git nuke`）や git を包むシェル関数・エイリアス／スクリプトファイル・Makefile・npm scripts の中で実行される git（`bash cleanup.sh`、`make clean`）／ブランチ名を書かない `git push` や `git push origin HEAD`（現在のブランチが main でも当たらない）／push 済みの `git commit --amend` と `git rebase -i`（リポジトリの状態を見ないと判定できない）／引用符の中の文字列（`git commit -m "--no-verify を外す"`）と、git が単純コマンドの先頭に無いもの（`echo git reset --hard`）／ヒアドキュメントの本文と引用符の中の改行より後ろの行に書いた git（`git commit -F - <<EOF` の本文や複数行の `-m "..."` の 2 行目以降。シェルはこれをコマンドとして実行しない）／python3 が無い・stdin が JSON として読めない・payload がオブジェクトでない・`tool_name` が `Bash` でない・`tool_input.command` が文字列でないときは判定せずに通す（fail-open）／`DEV_WORKFLOW_GIT_GUARD=off` のときはすべて通す。これらの穴を見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。穴のうちルール本文で補うもの（push 済みの `--amend`、`rebase -i`、ブランチ名を書かない push、スクリプト経由）は、要件「ルール本文と hook の分担」で本文に書く。
+判定は単純コマンドごとに行い、次の形の中も同じ判定にかけなければならない（MUST）: `&&` `||` `;` `|` `&` 改行で連結したコマンド、`$(...)` とバッククォートの中、`bash` / `sh` / `zsh` の `-c` の引数、`eval` の引数。単純コマンドの先頭の環境変数代入と `command` / `env` / `sudo` / `nohup` / `time` は読み飛ばし（`env` の値を取るオプション `-u` / `--unset`、`-C` / `--chdir`、`-P`、`-a` / `--argv0` は値ごと読み飛ばす。`env -u FOO git reset --hard` の `FOO` はコマンド名ではない。`-S` / `--split-string` は値を取るものとして読まない。後ろの字句がコマンドとして実行されるため）、git の大域オプション（`-C <path>`、`-c <k=v>`、`--git-dir`、`--work-tree`、`--namespace`、`--no-pager`、`-P` など）を読み飛ばしてサブコマンドを決めなければならない（MUST）。引用符の中の文字列や、git が単純コマンドの先頭に無いもの（`echo git reset --hard`）は対象にしてはならない（MUST NOT）。ヒアドキュメントの本文と、引用符の中の改行より後ろの行（commit メッセージや issue コメントの本文に書いた git の行）もコマンドとして読んではならない（MUST NOT）。ヒアドキュメントの終わりの行より後ろのコマンドは判定する。引数を取るオプション（`git push -o <値>`、`git commit --author <値>`、`git commit -m <値>` など）の次の字句は、そのオプションの値として読み飛ばし、送り先や短いオプションとして判定しない（MUST）。値を取る長いオプションは、一覧の中で一意に決まる省略形（`git push --push-opt <値>`、`git clean --excl <値>`）も同じオプションとして読む（MUST）。`--end-of-options` は `--` と同じく、それより後ろの字句をすべてオプションでない引数として読む（MUST。`git push --end-of-options -n origin main` の `-n` は dry-run ではなく送り先のリモート名で、`main` は refspec）。
+
+守備範囲: この要件の目的は、ルールを読み飛ばした Claude が一覧の操作をそのまま打ったときに止めることで、セキュリティ境界ではない。受け取る入力は次の 2 つに限る。1 つ目は、Claude Code が PreToolUse で hook の stdin に渡す Bash 呼び出しの payload（`tool_name`、`tool_input.command`、`permission_mode`）で、`tool_input.command` はエージェント（本体やサブエージェント）が書く値である。2 つ目は、利用者が自分で設定する環境変数 `DEV_WORKFLOW_GIT_GUARD` と `DEV_WORKFLOW_GIT_GUARD_FORCE` である。拾いたい誤りは、上の 9 種のいずれかを、コマンド文字列にそのまま書いて実行しようとすることである（連結・コマンド置換・`bash -c`・git の大域オプションを挟んだ形を含む）。次の入力は通ることを許す: 変数や置換でサブコマンドや引数を組み立てた形（`git $SUB --hard`、`SUB=reset; git $SUB --hard`）／git の alias（`git config alias.nuke 'reset --hard'` を定義したうえでの `git nuke`）や git を包むシェル関数・エイリアス／スクリプトファイル・Makefile・npm scripts の中で実行される git（`bash cleanup.sh`、`make clean`）／ブランチ名を書かない `git push` や `git push origin HEAD`（現在のブランチが main でも当たらない）／push 済みの `git commit --amend` と `git rebase -i`（リポジトリの状態を見ないと判定できない）／引用符の中の文字列（`git commit -m "--no-verify を外す"`）と、git が単純コマンドの先頭に無いもの（`echo git reset --hard`）／ヒアドキュメントの本文と引用符の中の改行より後ろの行に書いた git（`git commit -F - <<EOF` の本文や複数行の `-m "..."` の 2 行目以降。シェルはこれをコマンドとして実行しない）／python3 が無い・stdin が JSON として読めない・payload がオブジェクトでない・`tool_name` が `Bash` でない・`tool_input.command` が文字列でないときは判定せずに通す（fail-open）／`DEV_WORKFLOW_GIT_GUARD=off` のときはすべて通す／値を取らないオプションの省略形（`git reset --har`、`git clean --forc`）／`env` 以外の wrapper の値を取るオプション（`sudo -u root git reset --hard`）と、1 字句にクォートした `env -S 'git reset --hard'`／`--no-dry-run` 以外の打ち消し（`--no-force`、`--verify` など）は読まない（`git push --force --no-force origin feature-x` のように、止めすぎる向きに出るものを含む）。これらの穴を見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。穴のうちルール本文で補うもの（push 済みの `--amend`、`rebase -i`、ブランチ名を書かない push、スクリプト経由）は、要件「ルール本文と hook の分担」で本文に書く。
 
 #### Scenario: 対象 9 種が止まる
 
@@ -34,6 +35,16 @@ dev-workflow は PreToolUse の command hook `scripts/git-destructive-guard.sh` 
 
 - **WHEN** `cd x && git reset --hard`、`echo $(git reset --hard)`、`bash -c 'git push -f origin x'`、`git -C repo reset --hard`、`git -c core.x=y push origin HEAD:master`、`FOO=1 git clean -xdf`、`git commit -an`、`git commit -anm x` を渡す
 - **THEN** どれも `permissionDecision` が `ask` か `deny` の JSON が出る
+
+#### Scenario: dry-run の打ち消し・長いオプションの省略形・--end-of-options・env のオプションを git と同じに読む
+
+- **WHEN** `env -u FOO git reset --hard`、`git push -n --no-dry-run origin main`、`git clean -n --no-dry-run -f`、`git push --dry-run --no-dry-run --force origin main`、`git push -n --no-dry origin main`、`git push --push-opt -n origin main`、`git clean --excl -n -f`、`git push --end-of-options -n origin main`、`env -S git reset --hard`、`git commit -n --no-dry-run -m x` を渡す
+- **THEN** どれも `permissionDecision` が `ask` か `deny` の JSON が出る
+
+#### Scenario: 本当の dry-run と env を挟んだ無害なコマンドは止めない
+
+- **WHEN** `git push --no-dry-run -n origin main`、`git clean -f --no-dry-run -n`、`git push --dry-run --no-dry-run --dry-run --force origin main`、`git push --push-option=x -n origin main`、`env -u FOO git status`、`env -i -u FOO git push origin feature-x` を渡す
+- **THEN** どれも exit 0 で、何も出力しない
 
 #### Scenario: 対象外のコマンドは何も出さない
 
@@ -133,4 +144,85 @@ worktree プラグインの `skills/wt-clean/SKILL.md` は、`git branch -D`（s
 
 - **WHEN** `plugins/worktree/skills/wt-clean/SKILL.md` を読む
 - **THEN** `git branch -D` が拒否されたら `HELD` に入れて完了レポートに主が打つコマンドを載せること、cron の節に `DEV_WORKFLOW_GIT_GUARD=off` が書かれている
+
+### Requirement: コマンド文字列をシェルと同じ単位で読む
+
+`scripts/git-destructive-guard.sh` は、`tool_input.command` を単純コマンドと語に分けるとき、引用状態と「演算子か語か」の区別を保ち、次の構文をシェルと同じ単位で読まなければならない（MUST）。判定の 9 種・モード別の ask / deny・逃げ道・fail-open と、git のサブコマンドとオプションの解釈は、要件「破壊的 git 操作を Bash の実行前に検出する」ほかの既存要件のまま変えない。
+
+1. `;` `&&` `||` `|` `&` `(` `)` と改行は、引用符の外にあるときだけ単純コマンドの区切りとする。引用符の中とバックスラッシュの後ろにある同じ文字は語の一部とする（MUST）
+2. 引用符の外と二重引用符の中にあるバックスラッシュと改行の組（行継続）は取り除いて読む（MUST）。単一引用符の中では文字どおり残す
+3. 引用符の外で語の境目にある `#` から行末までをコメントとして読み飛ばし、コメントの中の引用符で引用状態を変えない（MUST）。引用符の中の `#` と語の途中の `#` は語の一部とする
+4. リダイレクト（`<` `>` `>>` `<>` `>|` `>&` `<&` `&>` `&>>`。直前に接した数字の fd を含む）とその対象の語は、単純コマンドを区切らずに取り除く（MUST）
+5. ヒアドキュメント（`<<` / `<<-`）の区切り語は、引用除去後の語全体とする（MUST。`END-TAG` のようにハイフンを含む語も）。本文は区切り語と一致する行（`<<-` は先頭のタブを除いて一致する行）までで、本文の行はコマンドとして読まない。区切り語が引用されている（引用符かバックスラッシュを含む）ヒアドキュメントの本文からは、`$(...)` とバッククォートを置換として取り出さない（MUST NOT）。引用されていない本文の `$(...)` とバッククォートは、置換として中を判定する。要件「破壊的 git 操作を Bash の実行前に検出する」の「ヒアドキュメントの本文…もコマンドとして読んではならない（MUST NOT）」は、本文の行を単純コマンドとして読まないことを指す。引用されていない本文の `$(...)` とバッククォートはシェルが実行するので、この MUST NOT に当たらない
+6. `<<<`（here-string）はヒアドキュメントとして扱わず、次の語を通常の語として読む（MUST）
+7. `$(...)` の終わりは、置換の中の引用符・入れ子の置換を追って、引用符の外にある対応する `)` で決める（MUST。`"$(printf ')'; git reset --hard)"` の `')'` を終わりにしない）
+8. 引用符の中に改行を含む語も 1 つの語として残す（MUST）。`bash` / `sh` / `zsh` の `-c` の引数と `eval` の引数は、改行を含んでいても既存要件どおりコマンドとして判定し、その中の改行は連結として扱う。要件「破壊的 git 操作を Bash の実行前に検出する」の「引用符の中の改行より後ろの行もコマンドとして読んではならない（MUST NOT）」は、`-c` / `eval` の引数にならない位置の引用文字列（`git commit -m` の値、`echo` の引数など）に適用する
+9. 引用符が閉じていない入力は、空白と改行で割った字句に同じ判定をかける（MUST。判定を諦めて素通りにしない）。要件「逃げ道と fail-open」の「`shlex` が引用符の不整合で字句に分けられないとき」は、この字句読みが引用符の閉じていない入力を受けたときと読む
+
+守備範囲: この要件は、要件「破壊的 git 操作を Bash の実行前に検出する」の守備範囲を広げるものではない。受け取る入力は同じで、Claude Code が PreToolUse で渡す Bash 呼び出しの payload の `tool_input.command`（エージェントが書く値）である。拾いたい誤りは 2 つある。1 つ目は、対象の 9 種を、改行・コメント・行継続・途中のリダイレクト・引用された演算子・ヒアドキュメントや here-string を挟んで書いた形を取りこぼすこと。2 つ目は、引用された演算子や引用されたヒアドキュメントの本文の置換のように、シェルが実行しない文字列を git の操作と読んで止めること。次の入力は通ることを許す: bash の文法のうち上に挙げていない形（算術式 `$((...))` の中身、`${...}` の中の置換、プロセス置換 `<(...)` の中身、`case` の `)` など）／予約語や記号が単純コマンドの先頭に来る形（`for f in *; do git checkout -- "$f"; done` の `do`、`if true; then git reset --hard; fi` の `then`、`{ git reset --hard; }`、`! git reset --hard`。変更の前も後も取りこぼす）。上に挙げていない形を読み違えて止める側に倒れる場合は、止まってよい（ask / deny が出るだけで、確認画面か主の実行で通せる）。これらの穴を見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
+
+#### Scenario: 改行を含む引数の中の git を判定する
+
+- **WHEN** `bash -c '<改行>git reset --hard<改行>'`、`git -c core.x='first<改行>second' reset --hard` を渡す
+- **THEN** どれも `permissionDecision` が `ask` か `deny` の JSON が出る
+
+#### Scenario: 複数行のメッセージは引き続き読まない
+
+- **WHEN** `git commit -m "1 行目<改行>git branch -D x を止める"`、`echo "a<改行>git reset --hard"` を渡す
+- **THEN** どれも exit 0 で、何も出力しない
+
+#### Scenario: 置換の中の引用された閉じ括弧で置換を終わらせない
+
+- **WHEN** `echo "$(printf ')'; git reset --hard)"`、`echo "$(echo "$(git reset --hard)")"` を渡す
+- **THEN** どれも `permissionDecision` が `ask` か `deny` の JSON が出る
+
+#### Scenario: コメントの中の引用符で後ろの行を見失わない
+
+- **WHEN** `# It's cleanup<改行>git reset --hard`、`ls # it's fine<改行>git reset --hard` を渡す
+- **THEN** どれも `permissionDecision` が `ask` か `deny` の JSON が出る
+
+#### Scenario: コメントの中の git と引用符の中の # は判定しない
+
+- **WHEN** `ls # git reset --hard`、`echo "#"; git status` を渡す
+- **THEN** どれも exit 0 で、何も出力しない
+
+#### Scenario: リダイレクトで単純コマンドを割らない
+
+- **WHEN** `git reset >/dev/null --hard`、`git reset 2>&1 --hard`、`>/dev/null git reset --hard`、`git reset --hard >/dev/null` を渡す
+- **THEN** どれも `permissionDecision` が `ask` か `deny` の JSON が出る
+
+#### Scenario: 行継続をつないで読む
+
+- **WHEN** `git \<改行>reset --hard`、`git reset \<改行>  --hard` を渡す
+- **THEN** どれも `permissionDecision` が `ask` か `deny` の JSON が出る
+
+#### Scenario: 単一引用符の中のバックスラッシュと改行は行継続にしない
+
+- **WHEN** `echo 'a \<改行>git reset --hard'` を渡す
+- **THEN** exit 0 で、何も出力しない
+
+#### Scenario: 引用された演算子で単純コマンドを区切らない
+
+- **WHEN** `echo ';' git reset --hard`、`echo "|" git reset --hard`、`echo \& git reset --hard` を渡す
+- **THEN** どれも exit 0 で、何も出力しない
+
+#### Scenario: 引用されていない演算子では引き続き区切る
+
+- **WHEN** `echo x; git reset --hard`、`echo x | git reset --hard`、`echo x & git reset --hard` を渡す
+- **THEN** どれも `permissionDecision` が `ask` か `deny` の JSON が出る
+
+#### Scenario: 区切り語の全体と here-string を区別する
+
+- **WHEN** `cat <<END-TAG<改行>body<改行>END-TAG<改行>git reset --hard`、`cat <<-'EOF'<改行><タブ>body<改行><タブ>EOF<改行>git reset --hard`、`cat <<< EOF<改行>git reset --hard` を渡す
+- **THEN** どれも `permissionDecision` が `ask` か `deny` の JSON が出る
+
+#### Scenario: 引用されたヒアドキュメントの本文の置換は判定しない
+
+- **WHEN** `cat <<'EOF'<改行>$(git reset --hard)<改行>EOF`、`` cat <<"EOF"<改行>`git reset --hard`<改行>EOF `` を渡す
+- **THEN** どれも exit 0 で、何も出力しない
+
+#### Scenario: 引用されていないヒアドキュメントの本文の置換は判定する
+
+- **WHEN** `cat <<EOF<改行>$(git reset --hard)<改行>EOF` を渡す
+- **THEN** `permissionDecision` が `ask` か `deny` の JSON が出る
 

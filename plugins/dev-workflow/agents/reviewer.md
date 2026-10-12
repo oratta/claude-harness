@@ -6,4 +6,4 @@ model: opus
 effort: high
 ---
 
-起動指示に貼られたレビュアー向け指示ブロックと `skills/pr-review-gate/stages/reviewer-brief.md` を読み、その指示に従う。ファイルは編集しない。サブエージェントを起こさない。PR / issue にコメントを投稿せず、三表と指摘を起こした側に返す。
+起動指示に貼られたレビュアー向け指示ブロックと `skills/pr-review-gate/stages/reviewer-brief.md`（dev-workflow プラグイン直下が起点で、作業リポジトリの worktree からは読めないことがある。見つからなければ探さず、起動指示のブロックだけに従う）を読み、その指示に従う。ファイルは編集しない。サブエージェントを起こさない。PR / issue にコメントを投稿せず、三表と指摘を起こした側に返す。

@@ -180,4 +180,3 @@ PR の経路はブランチ名だけで引いて SHALL よい。PR のヘッド�
 #### Scenario: fork の PR は数えない
 - **WHEN** 共通のデータで、#11 を閉じた PR として #300（`feat/a`、`isCrossRepository` が真）だけを返す状態で `cost_ledger.py cost 10 --json` を実行する
 - **THEN** #11 の `closing_prs` は空の配列で、`own_usd` は 2.0
-

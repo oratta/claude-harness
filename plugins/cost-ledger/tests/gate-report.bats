@@ -364,6 +364,12 @@ closing_args() {
   tail -n 1 "$COST_LOG" | grep -oE -- '--closing-pr [^ ]+' | sed 's/^--closing-pr //' | tr '\n' ' ' | sed 's/ $//'
 }
 
+# stub の timeline が最後に受け取った --trigger の値（無ければ空）
+trigger_arg() {
+  [ -f "$COST_LOG" ] || return 0
+  tail -n 1 "$COST_LOG" | sed -n 's/^args=timeline .*--trigger \(.*\) --at [0-9.]*\( .*\)\{0,1\}$/\1/p'
+}
+
 # コメントの作成も書き換えも無い
 no_write() {
   [ ! -f "$GH_LOG" ] && return 0
@@ -641,6 +647,135 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
   no_gh_call
   run_hook "GH_REPO=\$UNSET gh pr edit 300 --add-label agent-review:passed"
   no_gh_call
+}
+
+@test "gate-report: an owner or repo of . or .. is an unresolvable target and gh is never called" {  # -R の owner / repo のどちらかが . か .. なら解決できない対象として扱い、gh を呼ばない。名前の中に . を含むだけの指定は今までどおり対象の確認を行う
+  run_hook "gh pr comment 1 -R a/.. --body x"
+  [ "$status" -eq 0 ]
+  no_gh_call
+  run_hook "gh pr comment 1 -R ../b --body x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh pr comment 1 -R ./b --body x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh pr comment 1 -R ./.. --body x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "GH_REPO=a/.. gh pr comment 1 --body x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh pr comment 1 -R my.org/my.repo --body x"
+  queried my.org/my.repo 1
+}
+
+@test "gate-report: a literal gh api endpoint with an owner or repo of . or .. is an unresolvable target and gh is never called" {  # gh api のリテラルの endpoint（repos/<owner>/<repo>/...）の owner / repo のどちらかが . か .. なら、-R と同じく解決できない対象として扱い、gh を呼ばない。名前の中に . を含むだけの endpoint（my.org/my.repo・acme/.github・foo.bar/b）は今までどおり対象の確認を行う
+  run_hook "gh api -X POST repos/a/../issues/1/comments -f body=x"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+  run_hook "gh api -X POST repos/../b/issues/1/comments -f body=x"
+  [ "$status" -eq 0 ]
+  no_gh_call
+  run_hook "gh api -X POST repos/./b/issues/1/comments -f body=x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh api -X POST repos/a/./issues/1/comments -f body=x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh api -X POST /repos/../../issues/1/comments -f body=x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  # コメント以外のきっかけ（付与・マージ・状態の変更）も同じ
+  run_hook "gh api -X POST repos/a/../issues/1/labels -f 'labels[]=agent-review:passed'"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh api -X PUT repos/../b/pulls/1/merge"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh api -X PATCH repos/a/../pulls/1 -f state=closed"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  # 変数で渡しても同じ
+  run_hook "R=a/..; gh api -X POST repos/\$R/issues/1/comments -f body=x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  # 正当な名前は拒否しない
+  run_hook "gh api -X POST repos/my.org/my.repo/issues/1/comments -f body=x"
+  [ "$status" -eq 0 ]
+  queried my.org/my.repo 1
+  : > "$GH_LOG"
+  run_hook "gh api -X POST repos/acme/.github/issues/2/comments -f body=x"
+  queried acme/.github 2
+  : > "$GH_LOG"
+  run_hook "gh api -X POST repos/foo.bar/b/issues/3/comments -f body=x"
+  queried foo.bar/b 3
+  : > "$GH_LOG"
+  run_hook "gh api -X POST repos/a..b/c.../issues/4/comments -f body=x"
+  queried a..b/c... 4
+  : > "$GH_LOG"
+  run_hook "gh api -X POST repos/oratta/claude-harness/issues/5/comments -f body=x"
+  queried oratta/claude-harness 5
+}
+
+@test "gate-report: a positional URL with an owner or repo of . or .. is an unresolvable target and gh is never called" {  # 位置引数の URL（https://github.com/<owner>/<repo>/pull|issues/<番号>）の owner / repo のどちらかが . か .. なら、-R と同じく解決できない対象として扱い、gh を呼ばない（許可の一覧には write_allow_list がこのファイルの URL から拾った a/.. などの名前が載っている）。名前の中に . を含むだけの URL は今までどおり対象の確認を行う（#947）
+  grep -qxF 'a/..' "$COST_LEDGER_WRITE_REPOS_FILE"
+  grep -qxF '../b' "$COST_LEDGER_WRITE_REPOS_FILE"
+  run_hook "gh pr comment https://github.com/a/../pull/1 --body x"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+  run_hook "gh issue close https://github.com/../b/issues/2"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  no_gh_call
+  run_hook "gh pr comment https://github.com/a/./pull/1 --body x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh pr comment https://github.com/./b/pull/1 --body x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh issue comment https://github.com/./../issues/2 --body x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  # コメント以外のきっかけ（マージ・Ready・状態の変更）も同じ
+  run_hook "gh pr merge https://github.com/a/../pull/1"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh pr ready https://github.com/../b/pull/1"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh pr close https://github.com/a/./pull/1"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "gh pr reopen https://github.com/./b/pull/1"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  # 変数で渡しても同じ
+  run_hook "U=https://github.com/a/../pull/1; gh pr comment \$U --body x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  # URL が飛ばされたとき、併記した -R / 前置きの GH_REPO のリポジトリには落ちない
+  run_hook "gh pr comment https://github.com/a/../pull/1 -R acme/other --body x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  run_hook "GH_REPO=acme/other gh pr comment https://github.com/../b/pull/1 --body x"
+  [ "$status" -eq 0 ] || return 1
+  no_gh_call
+  # 正当な名前は拒否しない
+  run_hook "gh pr comment https://github.com/acme/.github/pull/3 --body x"
+  [ "$status" -eq 0 ]
+  queried acme/.github 3
+  : > "$GH_LOG"
+  run_hook "gh issue comment https://github.com/my.org/my.repo/issues/4 --body x"
+  queried my.org/my.repo 4
+  : > "$GH_LOG"
+  run_hook "gh pr comment https://github.com/a..b/c.../pull/5 --body x"
+  queried a..b/c... 5
+  : > "$GH_LOG"
+  # URL の側が正当なら、併記した -R が . / .. でも URL のリポジトリが対象になる
+  run_hook "gh pr comment https://github.com/acme/other/pull/301 -R a/.. --body x"
+  queried acme/other 301
 }
 
 @test "gate-report: a command aimed at another host never stacks" {  # --hostname（github.com 以外）・前置きの GH_HOST（github.com 以外）・-R の HOST/OWNER/REPO（github.com 以外）のコマンドは gh を呼ばず無出力で 0。github.com を明示した形は積む
@@ -1716,6 +1851,165 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
   [ "$(python3 -B -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode))[2:])' "$TMPDIR/cost-ledger-timeline")" = "700" ]
 }
 
+# lock() を直接呼び、os.open / os.lstat の呼び出しを記録する。置き場を検査してから開くまでの間に
+# パスの解決が入らない（fd を fstat し、ロックファイルはその fd を dir_fd にして開く）ことを確かめる
+# 検査の範囲は記録した fd の close まで。複製した fd（`os.dup`）の漏れは見ない（#942）
+@test "timeline-hook: the lock file is opened relative to the verified directory fd" {  # 置き場を O_DIRECTORY | O_NOFOLLOW で開いて fstat し、ロックファイルはその fd を dir_fd に名前だけで開く。置き場のパスに lstat しない。検査した fd は lock() が返る前に閉じる（#875: 番号の推測でなく、実際に開いた fd で確かめる）
+  run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY'
+import errno, os, sys
+sys.path.insert(0, sys.argv[1])
+import gate_report
+calls, lstats, fstats = [], [], []
+real_open, real_lstat, real_fstat = os.open, os.lstat, os.fstat
+def spy_open(path, flags, mode=0o777, *, dir_fd=None):
+    got = real_open(path, flags, mode, dir_fd=dir_fd)
+    calls.append((path, flags, dir_fd, got))  # got = 実際に開いた fd
+    return got
+def spy_lstat(path, *a, **k):
+    lstats.append(path)
+    return real_lstat(path, *a, **k)
+def spy_fstat(fd):
+    fstats.append(fd)
+    return real_fstat(fd)
+os.open, os.lstat, os.fstat = spy_open, spy_lstat, spy_fstat
+fd = gate_report.lock("a/b", 1)
+os.open, os.lstat, os.fstat = real_open, real_lstat, real_fstat
+assert isinstance(fd, int), fd
+folder = [c for c in calls if c[2] is None]
+lockf = [c for c in calls if c[2] is not None]
+assert len(folder) == 1 and len(lockf) == 1, calls
+need = os.O_DIRECTORY | os.O_NOFOLLOW
+assert folder[0][1] & need == need, calls
+assert "/" not in lockf[0][0] and lockf[0][0].endswith(".lock"), calls
+assert lockf[0][1] & os.O_NOFOLLOW, calls
+assert not any(p == folder[0][0] for p in lstats), lstats
+# 検査（fstat）した fd とロックファイル作成の dir_fd は、置き場を開いて返った fd そのもの
+checked = folder[0][3]
+assert fstats == [checked], (fstats, checked)
+assert lockf[0][2] == checked, calls
+# 返ったロックの fd は検査用の fd とは別物で（検査用が開いている間に開いた）、開いたままである
+assert fd == lockf[0][3] and fd != checked, (fd, calls)
+real_fstat(fd)
+# 検査用の fd は閉じてある: その fd 自身への fstat が EBADF になる
+try:
+    real_fstat(checked)
+except OSError as e:
+    assert e.errno == errno.EBADF, e
+else:
+    raise AssertionError("directory fd %d leaked" % checked)
+PY
+  [ "$status" -eq 0 ]
+}
+
+@test "timeline-hook: lock retries on the same directory fd when the lock file creation returns ENOENT" {  # ロックファイルの作成が 4 回続けて ENOENT でも、同じ dir_fd のまま開き直してロックを取る（書かずに終わらない）。置き場は開き直さない
+  run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY3'
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import gate_report
+fails, folder_opens, dir_fds, sleeps = [0], [0], [], []
+real_open = os.open
+gate_report.time.sleep = sleeps.append  # 待たずに、渡された間隔だけを記録する
+def spy_open(path, flags, mode=0o777, *, dir_fd=None):
+    if dir_fd is None and flags & os.O_DIRECTORY:
+        folder_opens[0] += 1
+    if dir_fd is not None:
+        dir_fds.append(dir_fd)
+        if fails[0] < 4:
+            fails[0] += 1
+            raise FileNotFoundError(2, "injected", path)
+    return real_open(path, flags, mode, dir_fd=dir_fd)
+os.open = spy_open
+fd = gate_report.lock("a/b", 1)
+assert isinstance(fd, int), fd
+assert fails[0] == 4 and folder_opens[0] == 1, (fails, folder_opens)
+assert len(dir_fds) == 5 and len(set(dir_fds)) == 1, dir_fds
+# 再試行の間隔は 20 ms。失敗した 4 回のあとに 1 回ずつ空ける
+assert sleeps == [0.02] * 4, sleeps
+# 取った fd は、置き場にあるロックファイルそのもの
+folder = os.path.join(os.environ["TMPDIR"], "cost-ledger-timeline")
+names = os.listdir(folder)
+assert len(names) == 1, names
+assert os.fstat(fd).st_ino == os.stat(os.path.join(folder, names[0])).st_ino
+PY3
+  [ "$status" -eq 0 ]
+}
+
+@test "timeline-hook: lock returns None without writing when the lock file creation returns ENOENT 5 times" {  # 5 回とも ENOENT なら、ロックを取れなかったものとして None を返す（直列にできないので書かない）。置き場は開き直さず、例外は外へ出さない
+  run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY4'
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import gate_report
+n, folder_opens, sleeps = [0], [0], []
+real_open = os.open
+gate_report.time.sleep = sleeps.append  # 待たずに、渡された間隔だけを記録する
+def spy_open(path, flags, mode=0o777, *, dir_fd=None):
+    if dir_fd is None and flags & os.O_DIRECTORY:
+        folder_opens[0] += 1
+    if dir_fd is not None:
+        n[0] += 1
+        raise FileNotFoundError(2, "injected", path)
+    return real_open(path, flags, mode, dir_fd=dir_fd)
+os.open = spy_open
+assert gate_report.lock("a/b", 1) is None
+assert n[0] == 5 and folder_opens[0] == 1, (n, folder_opens)
+# 5 回目の失敗のあとは空けずに諦める（間隔は 20 ms を 4 回）
+assert sleeps == [0.02] * 4, sleeps
+PY4
+  [ "$status" -eq 0 ]
+}
+
+@test "timeline-hook: lock returns None and locks no other directory when the lock directory is removed after it was opened" {  # fd で開いた後に置き場が消えたら、置き場を作り直して別の inode をロックすることはせず、None を返す（先にロックを取った側と同時に読み書きに入らない）
+  run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY5'
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import gate_report
+folder = os.path.join(os.environ["TMPDIR"], "cost-ledger-timeline")
+real_open = os.open
+state, folder_opens, sleeps = [0], [0], []
+gate_report.time.sleep = sleeps.append  # 待たずに、渡された間隔だけを記録する
+def remove_folder():
+    # shutil.rmtree は使わない: 内部で os.open を呼び、そのフラグ（O_DIRECTORY の有無）は Python の版で
+    # 変わるので、下の folder_opens の数え方が版に依存する。os.open を通らない呼び出しだけで消す
+    for name in os.listdir(folder):
+        os.unlink(os.path.join(folder, name))
+    os.rmdir(folder)
+def spy_open(path, flags, mode=0o777, *, dir_fd=None):
+    if dir_fd is None and flags & os.O_DIRECTORY:
+        folder_opens[0] += 1
+    if dir_fd is not None and state[0] == 0:
+        state[0] = 1
+        remove_folder()
+    return real_open(path, flags, mode, dir_fd=dir_fd)
+os.open = spy_open
+assert gate_report.lock("a/b", 1) is None
+assert state[0] == 1 and folder_opens[0] == 1, (state, folder_opens)
+assert sleeps == [0.02] * 4, sleeps
+assert not os.path.lexists(folder), "the lock directory was recreated"
+PY5
+  [ "$status" -eq 0 ]
+}
+
+@test "timeline-hook: repos differing only in letter case share one lock file" {  # owner/repo の大文字小文字だけが違う 2 つの名前で lock() を呼ぶと同じ名前のロックファイルを開く（大文字小文字を区別する環境でも同じ対象が別のロックにならない）
+  run "$REAL_PYTHON" -B -I - "$WORK/scripts" <<'PY2'
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import gate_report
+names = []
+real_open = os.open
+def spy_open(path, flags, mode=0o777, *, dir_fd=None):
+    if dir_fd is not None:
+        names.append(path)
+    return real_open(path, flags, mode, dir_fd=dir_fd)
+os.open = spy_open
+for repo in ("Acme/Repo", "acme/repo"):
+    fd = gate_report.lock(repo, 7)
+    assert isinstance(fd, int), fd
+    os.close(fd)
+assert len(names) == 2 and names[0] == names[1] == "acme__repo__7.lock", names
+PY2
+  [ "$status" -eq 0 ]
+}
+
 # --- issue クローズでの、閉じた PR の問い合わせ（合計の行） ---
 
 @test "timeline-hook: closing an issue passes its closing PRs to timeline" {  # PR #704（feat/x、同じリポジトリ）を返す issue #12 に gh issue close 12 → timeline は --issue 12 と --closing-pr 704:feat/x を受け取り、コメントが 1 本書き込まれる
@@ -1782,6 +2076,62 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
   grep -q '^args=timeline --issue 12 ' "$COST_LOG"
 }
 
+@test "timeline-hook: a failed closing-PR query marks the trigger" {  # GraphQL の失敗・JSON でない応答・形の崩れ・100 件超のどれでも --trigger は issue クローズ+PR 照会失敗。gh は 4 回のまま
+  closed_issue_12
+  export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]" FAKE_GRAPHQL_FAIL=1
+  run_hook "gh issue close 12"
+  [ "$(trigger_arg)" = "issue クローズ+PR 照会失敗" ]
+  [ "$(body_trigger 1)" = "issue クローズ+PR 照会失敗" ]
+  [ "$(gh_calls)" -eq 4 ]
+  unset FAKE_GRAPHQL_FAIL
+  for raw in 'not json' '[]' '{"data":{"repository":{"issue":null}}}'; do
+    : > "$COST_LOG"
+    FAKE_GRAPHQL_RAW="$raw" run_hook "gh issue close 12"
+    [ "$(trigger_arg)" = "issue クローズ+PR 照会失敗" ] || { echo "$raw"; return 1; }
+  done
+  unset FAKE_GRAPHQL_RAW
+  : > "$COST_LOG"
+  FAKE_CLOSING_NEXT=1 run_hook "gh issue close 12"
+  [ "$(trigger_arg)" = "issue クローズ+PR 照会失敗" ]
+  for bad in '{"number":"705","headRefName":"feat/y","isCrossRepository":false,"baseRepository":{"nameWithOwner":"acme/cwd-repo"}}' 'null'; do
+    : > "$COST_LOG"
+    FAKE_CLOSING_PRS="[$(closing_node 704 feat/x),$bad]" run_hook "gh issue close 12"
+    [ "$(trigger_arg)" = "issue クローズ+PR 照会失敗" ] || { echo "$bad"; return 1; }
+  done
+}
+
+@test "timeline-hook: a comment and a failed close query mark the joined trigger" {  # gh issue comment 12 --body x && gh issue close 12 で問い合わせが失敗 → issue コメント+issue クローズ+PR 照会失敗
+  closed_issue_12
+  export FAKE_GRAPHQL_FAIL=1
+  run_hook "gh issue comment 12 --body x && gh issue close 12"
+  [ "$(trigger_arg)" = "issue コメント+issue クローズ+PR 照会失敗" ]
+}
+
+@test "timeline-hook: a successful closing-PR query leaves the rows as #689 had them and keeps four gh calls" {  # 本物の cost_ledger.py で、1 件・0 件・別のリポジトリや fork の PR だけ、のどれでも先頭行と表の行（時刻の欄を除く）が #689 のときと同じで、印は付かず、gh は 4 回
+  use_real_repo_a
+  closed_issue_12
+  cl_row S2 r2 2026-09-01T00:00:20.000Z main "$RA" 1000000 "gh issue comment 12 --body x" | cl_write_log issue12
+  # 期待値は #689 のとき（8e7c18e4 の gate_report.py）に同じ fixture で得たコメント。CI は浅い clone で
+  # 過去の commit を取り出せないので直書きする。時刻の欄は実行時刻なので sed で落として比べる
+  local -a want_head=('コスト: $2.00 / ¥300 @150 — issue #12 (acme/repo-a) 帰属: 区間+閉じた PR' \
+                      'コスト: $1.00 / ¥150 @150 — issue #12 (acme/repo-a) 帰属: 区間' \
+                      'コスト: $1.00 / ¥150 @150 — issue #12 (acme/repo-a) 帰属: 区間')
+  local -a want_rows=('| issue クローズ | $1.00 (+1.00) | 1.0M (+1.0M) | 0 (+0) |
+| 合計（#704 $1.00 + PR 外 $1.00） | $2.00 (+1.00) | 2.0M (+1.0M) | 0 (+0) |' \
+                      '| issue クローズ | $1.00 (+1.00) | 1.0M (+1.0M) | 0 (+0) |' \
+                      '| issue クローズ | $1.00 (+1.00) | 1.0M (+1.0M) | 0 (+0) |')
+  local -a prs_list=("[$(closing_node 704 oratta/sample acme/repo-a)]" "[]" "[$(closing_node 9 main acme/other),$(closing_node 705 main acme/repo-a true)]")
+  local i
+  for i in 0 1 2; do
+    rm -f "$GH_LOG" "$GH_LOG.body" "$FIX"/comments.12.*.json
+    FAKE_CLOSING_PRS="${prs_list[$i]}" HOOK_CWD="$RA" run_hook "gh issue close 12"
+    [ "$(gh_calls)" -eq 4 ] || { echo "case $i: gh calls"; return 1; }
+    [ "$(body_trigger 1)" = "issue クローズ" ] || { echo "case $i: trigger"; return 1; }
+    [ "$(head -n 1 "$GH_LOG.body")" = "${want_head[$i]}" ] || { echo "case $i: head: $(head -n 1 "$GH_LOG.body")"; return 1; }
+    [ "$(body_rows | sed 's/^| [^|]* |/|/')" = "${want_rows[$i]}" ] || { echo "case $i: rows: $(body_rows)"; return 1; }
+  done
+}
+
 @test "timeline-hook: more than 100 closing PRs add no total" {  # pageInfo.hasNextPage が真 → --closing-pr は渡らず、コメントは 1 本書き込まれる
   closed_issue_12
   export FAKE_CLOSING_PRS="[$(closing_node 704 feat/x)]" FAKE_CLOSING_NEXT=1
@@ -1804,7 +2154,7 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
     rm -f "$FIX"/comments.12.*.json
     FAKE_CLOSING_PRS="[$good,$bad]" run_hook "gh issue close 12"
     [ -z "$(closing_args)" ] || { echo "$bad"; return 1; }
-    [ "$(body_trigger 1)" = "issue クローズ" ] || { echo "$bad"; return 1; }
+    [ "$(body_trigger 1)" = "issue クローズ+PR 照会失敗" ] || { echo "$bad"; return 1; }
   done
 }
 
@@ -1847,6 +2197,25 @@ wait_for_workers() {  # 裏のプロセスが終わるまで待つ（最大 30 �
   run_hook "gh issue close 12"
   no_write
   [ ! -s "$COST_LOG" ]
+}
+
+@test "timeline-hook: the real timeline tells a failed query from zero closing PRs" {  # 本物の cost_ledger.py で、問い合わせが失敗した回と 0 件の回のコメントは、きっかけの欄の印だけが違い、どちらにも合計の行は無い
+  use_real_repo_a
+  closed_issue_12
+  cl_row S2 r2 2026-09-01T00:00:20.000Z main "$RA" 1000000 "gh issue comment 12 --body x" | cl_write_log issue12
+  export FAKE_CLOSING_PRS="[]"
+  HOOK_CWD="$RA" run_hook "gh issue close 12"
+  [ "$(body_nrows)" -eq 1 ]
+  [ "$(body_trigger 1)" = "issue クローズ" ]
+  ok="$(cat "$GH_LOG.body")"
+  ok_rows="$(body_rows)"
+  rm -f "$GH_LOG" "$GH_LOG.body" "$FIX"/comments.12.*.json
+  FAKE_GRAPHQL_FAIL=1 HOOK_CWD="$RA" run_hook "gh issue close 12"
+  [ "$(body_nrows)" -eq 1 ]
+  [ "$(body_trigger 1)" = "issue クローズ+PR 照会失敗" ]
+  [ "$(printf '%s\n' "$ok" | head -n 1)" = "$(head -n 1 "$GH_LOG.body")" ]
+  # 表の行は、失敗時から印を除けば 0 件時と行全体が同じ（時刻の欄は実行時刻なので落とす）
+  [ "$(printf '%s\n' "$ok_rows" | sed 's/^| [^|]* |/|/')" = "$(body_rows | sed 's/+PR 照会失敗//; s/^| [^|]* |/|/')" ]
 }
 
 @test "timeline-hook: the real timeline stacks the close row and the total row" {  # 本物の cost_ledger.py で、gh issue close 12 が issue クローズの行と合計の行の 2 行を 1 回の書き込みで積む

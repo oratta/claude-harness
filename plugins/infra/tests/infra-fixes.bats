@@ -133,7 +133,7 @@ setup() {
 # パーサに任せれば、キー・値・コメントの区別は YAML の文法どおりに付く。
 # S17 が既に ruby YAML でテンプレートのパース可否を見ているので、依存は増えない。
 #
-# 戻り値: 0=合格 / 1=違反あり（違反行を stderr に出す。読めない／パースできないファイルも違反）/ 2=抽出 0 件
+# 戻り値: 0=合格 / 1=違反あり（違反行を stderr に出す。読めない／パースできないファイル・シンボリックリンクも違反）/ 2=抽出 0 件 / 3=find の列挙エラー
 # テスト関数から分離してあるのは、本物のテンプレート（正例）と、すり抜けを狙った
 # フィクスチャ（負例）の両方に同じ検査を当てるため。
 check_third_party_pins() {
@@ -142,6 +142,25 @@ check_third_party_pins() {
   local total=0
   local unpinned=""
   local file start_line end_line comment body value listed
+  local found find_rc
+
+  # find の出力は一時ファイルに落として終了コードを拾う。プロセス置換 `< <(find ...)` だと
+  # 読めないサブディレクトリで find が非 0 終了しても $? が見えず、列挙できたファイルだけで
+  # 合格する fail-open だった（#240）。列挙が不完全なら違反の有無を判定できないので fail させる。
+  found="$(mktemp "${BATS_TEST_TMPDIR:-${TMPDIR:-/tmp}}/found.XXXXXX")" || return 3
+  : "${found:?}"
+  # シンボリックリンクは名前を問わず列挙する（#900）。find は既定でリンク先のディレクトリに降りないので、
+  # `-name '*.yml.template'` をリンクにも掛けると、ディレクトリへのリンク（名前が *.yml.template でない）は
+  # 列挙されず、その下の違反テンプレートが一度も読まれないまま合格していた。リンクは下のループで違反に数える。
+  find "$dir" \( -type l -o \( -type f -name '*.yml.template' \) \) -print0 > "$found" 2> "$found.err"
+  find_rc=$?
+  if [ "$find_rc" -ne 0 ]; then
+    printf 'find failed (exit %s) while listing %s:\n' "$find_rc" "$dir" >&2
+    cat "$found.err" >&2
+    rm -f "$found" "$found.err"
+    return 3
+  fi
+  rm -f "$found.err"
 
   # ファイル列挙は NUL 区切り（-print0 / read -d ''）。改行区切りだと改行を含む
   # ファイル名が 2 つの実在しないパスに行分断され、そのファイルの中身が一度も
@@ -150,6 +169,15 @@ check_third_party_pins() {
   # 分断されたパスが違反に落ちるので pass はしないが、報告が実在しないパスになり
   # 本当の違反行が出ないので、列挙の時点で分断させない。
   while IFS= read -r -d '' file; do
+    # シンボリックリンクは追跡先を検査せず、リンク自体を違反として報告する（#240）。
+    # git はシンボリックリンクを追跡できるので、`-type f` だけだと違反入りの外部 yml への
+    # リンクを commit するだけで検査を丸ごと迂回できる。リンク先が壊れていても同じ。
+    # ディレクトリへのリンクも、名前が *.yml.template でないリンクも同じ扱い（#900）。
+    if [ -L "$file" ]; then
+      total=$((total + 1))
+      unpinned="${unpinned}${file}: symbolic link is not allowed as a template"$'\n'
+      continue
+    fi
     # ファイルパスは ruby の引数として渡す（`grep -rn` の前置 `<パス>:<行番号>:` を剥がす方式は
     # パスが `:` や `# v9` を含むと本文に片が残ってコメント検査を肩代わりしていた。#183）。
     # パースできないファイルは fail-closed で違反に数える（0 件扱いで無言 pass させない）。
@@ -204,7 +232,8 @@ check_third_party_pins() {
         unpinned="${unpinned}${file}:${start_line}:${body}"$'\n'
       fi
     done <<< "$listed"
-  done < <(find "$dir" -type f -name '*.yml.template' -print0)
+  done < "$found"
+  rm -f "$found"
 
   # テンプレートの改名・移動で走査対象が 0 件になり、テストが無言で pass するのを防ぐ
   if [ "$total" -eq 0 ]; then
@@ -498,6 +527,104 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   [[ "$output" == *"secret.yml.template"* ]] || return 1
 }
 
+@test "S16a-25: an unreadable subdirectory fails the scan instead of passing on the listed files" {
+  # find が Permission denied で非 0 終了しても、列挙できたファイルだけで合格していた（#240）。
+  [ "$(id -u)" -eq 0 ] && skip "root には chmod 000 が効かない"
+  local dir="$BATS_TEST_TMPDIR/unreadable-sub"
+  rm -rf "$dir"
+  mkdir -p "$dir/sub"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$dir/sub/bad.yml.template"
+  chmod 000 "$dir/sub"
+  run check_third_party_pins "$dir"
+  chmod 755 "$dir/sub"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"find failed"* ]] || return 1
+}
+
+@test "S16a-26: a symbolic link template is reported as a violation" {
+  # `-type f` だけの走査は、違反入りの外部 yml へのシンボリックリンクを素通りさせていた（#240）。
+  local dir="$BATS_TEST_TMPDIR/symlink"
+  rm -rf "$dir" "$BATS_TEST_TMPDIR/outside.yml"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$BATS_TEST_TMPDIR/outside.yml"
+  ln -s "$BATS_TEST_TMPDIR/outside.yml" "$dir/link.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"link.yml.template"* ]] || return 1
+  [[ "$output" == *"symbolic link"* ]] || return 1
+
+  # リンク先が無いリンクも同じく違反にする
+  rm -f "$dir/link.yml.template"
+  ln -s "$BATS_TEST_TMPDIR/does-not-exist.yml" "$dir/dangling.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"dangling.yml.template"* ]] || return 1
+}
+
+@test "S16a-27: a template under a symbolic link to a directory is not skipped" {
+  # find は既定でシンボリックリンクのディレクトリに降りない。リンクの名前が *.yml.template で
+  # ないと列挙もされず、その下の違反テンプレートが未走査のまま合格していた（#900）。
+  local dir="$BATS_TEST_TMPDIR/symlink-dir"
+  local outside="$BATS_TEST_TMPDIR/outside-dir"
+  rm -rf "$dir" "$outside"
+  mkdir -p "$dir" "$outside"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$outside/bad.yml.template"
+  ln -s "$outside" "$dir/linked"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/linked: symbolic link"* ]] || return 1
+}
+
+@test "S16a-28: every symbolic link in the scanned directory is a violation whatever its name or target" {
+  # S16a-26 は名前が *.yml.template のリンク、S16a-27 は名前が違うディレクトリへのリンクを見る。
+  # 残りの 3 通り（名前が違うファイルへのリンク・名前が違うリンク切れ・名前が *.yml.template の
+  # ディレクトリへのリンク）をここで見る。名前で絞った find に戻すと最初の 2 つが落ちる（#900）。
+  local dir="$BATS_TEST_TMPDIR/symlink-names"
+  local outside="$BATS_TEST_TMPDIR/outside-dir28"
+  rm -rf "$dir" "$outside" "$BATS_TEST_TMPDIR/outside.yml"
+  mkdir -p "$dir" "$outside"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$BATS_TEST_TMPDIR/outside.yml"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$outside/bad.yml.template"
+
+  # 名前が *.yml.template でない、ファイルへのリンク
+  ln -s "$BATS_TEST_TMPDIR/outside.yml" "$dir/link.txt"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/link.txt: symbolic link"* ]] || return 1
+  rm -f "$dir/link.txt"
+
+  # 名前が *.yml.template でない、リンク切れ
+  ln -s "$BATS_TEST_TMPDIR/does-not-exist" "$dir/dangling"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/dangling: symbolic link"* ]] || return 1
+  rm -f "$dir/dangling"
+
+  # 名前が *.yml.template の、ディレクトリへのリンク
+  ln -s "$outside" "$dir/dir.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/dir.yml.template: symbolic link"* ]] || return 1
+}
+
 @test "S16a-21: a 'uses' in the second YAML document of a template is still checked" {
   # `Psych.parse_file` は最初の document しか返さないので、`---` で区切った 2 つ目以降に
   # 置いた `uses` が走査から丸ごと落ちていた。行 grep 版なら構造的に見落とせない形なので、
@@ -707,4 +834,58 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
 
 @test "all touched JSON parses (jq)" {
   jq empty "$PLUGIN_JSON"
+}
+
+# --- infra-ci-job-timeout (#992) ---
+# 雛形のジョブが timeout-minutes（正の整数）を持ち、直前に連続するコメント行に「約 2 倍」があること。
+# YAML の読み込みは S17 と同じ ruby -ryaml。
+
+# $1=テンプレート $2=ジョブ名。timeout-minutes の値（正の整数）を出力する。整数以外・未設定は exit 1
+job_timeout_minutes() {
+  ruby -ryaml -e 'v = YAML.load_file(ARGV[0]).dig("jobs", ARGV[1], "timeout-minutes"); abort "timeout-minutes is not a positive integer: #{v.inspect}" unless v.is_a?(Integer) && v > 0; puts v' "$1" "$2"
+}
+
+# $1=テンプレート $2=ジョブ名。そのジョブ（`  <ジョブ名>:` から次のジョブまで）の timeout-minutes の行の
+# 直前に連続するコメント行に「約 2 倍」があれば 0
+timeout_comment_has_rule() {
+  awk -v job="$2" '
+    $0 ~ "^  " job ":" { injob = 1; next }
+    injob && /^  [^ #]/ { exit }
+    injob && /^[[:space:]]*timeout-minutes:/ { found = 1; exit }
+    injob && /^[[:space:]]*#/ { buf = buf $0 "\n"; next }
+    injob { buf = "" }
+    END { if (!found) exit 1; if (buf ~ /約 2 倍/) exit 0; exit 1 }
+  ' "$1"
+}
+
+@test "T1: ci.yml.template test job has a positive integer timeout-minutes" {
+  v="$(job_timeout_minutes "$WORKFLOWS_DIR/ci.yml.template" test)" || return 1
+  [[ "$v" =~ ^[1-9][0-9]*$ ]] || return 1
+}
+
+@test "T2: weekly-full.yml.template full job has a positive integer timeout-minutes" {
+  v="$(job_timeout_minutes "$WORKFLOWS_DIR/weekly-full.yml.template" full)" || return 1
+  [[ "$v" =~ ^[1-9][0-9]*$ ]] || return 1
+}
+
+@test "T3: timeout-minutes is preceded by a comment block with the 2x rule (both templates)" {
+  timeout_comment_has_rule "$WORKFLOWS_DIR/ci.yml.template" test
+  timeout_comment_has_rule "$WORKFLOWS_DIR/weekly-full.yml.template" full
+}
+
+@test "T5: weekly-full report-failure also files an issue when full is cancelled by the timeout" {
+  ruby -ryaml -e '
+    j = YAML.load_file(ARGV[0])["jobs"]["report-failure"]
+    abort "needs must include full" unless Array(j["needs"]).include?("full")
+    c = j["if"].to_s
+    abort "if must handle cancelled: #{c}" unless c.include?("always()") && c.include?("needs.full.result == '"'"'cancelled'"'"'") && c.include?("needs.full.result == '"'"'failure'"'"'")
+  ' "$WORKFLOWS_DIR/weekly-full.yml.template"
+}
+
+@test "T4: SKILL.md timeout section explains how to decide and how to apply to existing repos" {
+  sec="$(awk '/^## /{p=0} /^## CI\/CD 構成の 2 軸/{p=1} p' "$SKILL")"
+  echo "$sec" | grep -q 'timeout-minutes'
+  echo "$sec" | grep -q '約 2 倍'
+  echo "$sec" | grep -q 'weekly-full\.yml'
+  echo "$sec" | grep -q '確認なし'
 }

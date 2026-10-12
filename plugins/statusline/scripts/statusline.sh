@@ -3,7 +3,8 @@
 # statusline.sh — Claude Code の使用量ステータスライン
 #
 #   1行目: カレントディレクトリ / モデル / git ブランチ
-#   2行目: コンテキスト残量 / API 換算の月額ペース / このセッションの API 換算コスト
+#   2行目: コンテキスト残量 / プロンプトキャッシュのヒット率（直近のミスの原因つき） /
+#          API 換算の月額ペース / このセッションの API 換算コスト
 #   3行目: 5h ウィンドウのレートリミット
 #   4行目: 7d ウィンドウ（全体 + Fable）のレートリミット
 #
@@ -20,6 +21,7 @@
 #   STATUSLINE_CODEX_BIN   Codex CLI のパス（既定 codex）
 #   STATUSLINE_BAR_WIDTH   バーのセル数（既定 16）
 #   STATUSLINE_BAR_GLYPH   日程線の太さ。細い順に ▁ ▂ ▃ ▄（既定 ▂）
+#   STATUSLINE_PROMPT_CACHE 0 でプロンプトキャッシュのヒット率表示を無効化（既定 1）
 #   STATUSLINE_API_PACE    0 で API 換算コスト表示を無効化（既定 1）
 #   STATUSLINE_SESSION_COST 0 でセッションコスト表示を無効化（既定 1）
 #   STATUSLINE_CURRENCY    API 換算コストの通貨。USD なら為替変換なし（既定 JPY）
@@ -167,9 +169,10 @@ sessions_dir="${USAGE_SESSIONS_DIR:-$CONFIG_DIR/.usage-sessions}"
 # 覚え、同じなら書かない。記録ファイルの中身とは比べない（他セッションが上書きした新しい値を、
 # 止まっていたセッションの古い値で潰さないため。.rate-limit-snapshot の obs_sig と同じ考え方）。
 # session_id が無い・ハッシュが取れないときは覚える先が無いので毎回書く。
+# rate_limits の無い描画は記録を書かないので、ハッシュも取らない（使わない shasum と cut を起動しない。#648）。
 _rec_sig="${five_h_pct}|${five_h_resets:-null}|${seven_d_pct:-null}|${seven_d_resets:-null}"
 _rec_memo=""
-if [ -n "$session_id" ]; then
+if [ -n "$five_h_pct" ] && [ -n "$session_id" ]; then
     # ハッシュ対象は jq -c の引用符付き JSON 文字列のまま。python3 を起動しない
     _rec_sid_hash="$( { printf '%s' "$session_id" | shasum -a 256 2>/dev/null \
         || printf '%s' "$session_id" | sha256sum 2>/dev/null; } | cut -c1-16)"
@@ -254,6 +257,36 @@ if [ -n "$remaining_pct" ]; then
         context_color="$GREEN"
     fi
     context_info="${context_color}Context ${remaining_int}%${RESET}"
+fi
+
+# プロンプトキャッシュのヒット率（stdin の prompt_cache だけを見る。ファイル・ネットワークには触らない）。
+# hit_ratio が 0〜1 の数値のときだけ出す。直近のミスの原因は causes の先頭を短くして添える。
+# 入力の型が想定外でも式全体は落とさず、jq 自体が失敗したら何も出さない。
+cache_info=""
+if [ "${STATUSLINE_PROMPT_CACHE:-1}" != "0" ]; then
+    cache_raw=$(printf '%s' "$input" | jq -r '
+        (.prompt_cache // null) as $p
+        | if ($p | type) == "object" and ($p.hit_ratio | type) == "number"
+             and $p.hit_ratio >= 0 and $p.hit_ratio <= 1
+          then
+            (($p.last_miss_cause // null) as $m
+             | if ($m | type) == "object" and ($m.causes | type) == "array"
+                  and ($m.causes | length) > 0 and ($m.causes[0] | type) == "string"
+                  and ($m.causes[0] | test("^[A-Za-z0-9_]+\\z"))
+               then
+                 ($m.causes[0]) as $c
+                 | ({"tools_changed": "tools", "system_prompt_changed": "system",
+                     "ttl_expired_5m": "ttl5m", "likely_server_side": "server"}[$c] // $c[0:16]) as $n
+                 | "miss:" + $n + (if ($m.causes | length) > 1 then "+" + (($m.causes | length) - 1 | tostring) else "" end)
+               else "" end) as $cause
+            | (($p.hit_ratio * 100 | round | tostring) + (if $cause != "" then " " + $cause else "" end))
+          else empty end' 2>/dev/null) || cache_raw=""
+    if [ -n "$cache_raw" ]; then
+        cache_info="${CYAN}Cache ${cache_raw%% *}%${RESET}"
+        case "$cache_raw" in
+            *" "*) cache_info="${cache_info} ${YELLOW}${cache_raw#* }${RESET}" ;;
+        esac
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -362,19 +395,22 @@ usnap="$CONFIG_DIR/.usage-snapshot"
 # id は英数字とハイフン 1〜32 文字で一意、先頭 8 スロットまで、不正なら既定スロットへ縮退。
 # dev-workflow の usage-probe.sh と同じ規則だが、プラグインを跨ぐ依存を作らないため
 # 実装は各スクリプトに置く（規則の正本は spec 側）。
+# enabled が JSON の false のスロットは「オフ」（slot_enabled が 0）。オフのスロットも一覧に残し、
+# 上限・label 列の幅・active の判定に数える。false 以外（省略・true・"false"・0・null）はオン。
 accounts_file="${CLAUDE_ACCOUNTS_FILE:-$CONFIG_DIR/accounts.json}"
-slot_ids=(); slot_labels=(); slot_secures=(); slot_services=(); slot_widths=()
+slot_ids=(); slot_labels=(); slot_secures=(); slot_services=(); slot_widths=(); slot_enabled=()
 if [ -f "$accounts_file" ]; then
     # `IFS=$'\t' read` は使えない: タブは IFS 空白なので連続タブが 1 つの区切りに畳まれ、
     # securestorage が空の既定スロットで service 列が消える。IFS 空白でない US(0x1f) に
     # 置換してから read する（usage-probe.sh と同じ理由・同じ対処）。
     while IFS='' read -r _line; do
         [ -n "$_line" ] || continue
-        IFS=$'\x1f' read -r _sid _slabel _ssecure _sservice _swidth <<< "${_line//$'\t'/$'\x1f'}"
+        IFS=$'\x1f' read -r _sid _slabel _ssecure _sservice _swidth _senabled <<< "${_line//$'\t'/$'\x1f'}"
         [ -n "$_sid" ] || continue
         slot_ids+=("$_sid"); slot_labels+=("$_slabel")
         slot_secures+=("$_ssecure"); slot_services+=("$_sservice")
         slot_widths+=("${_swidth:-0}")
+        if [ "$_senabled" = "0" ]; then slot_enabled+=(0); else slot_enabled+=(1); fi
     done < <(ACCOUNTS_FILE="$accounts_file" python3 -c '
 import hashlib, json, os, re, sys, unicodedata
 MAX_SLOTS = 8
@@ -423,19 +459,21 @@ try:
             if CTRL_RE.search(lab) or CTRL_RE.search(sec):
                 continue
             lab = clip_label(lab, MAX_LABEL_WIDTH)
-            slots.append((sid, lab, sec, service(sec)))
+            slots.append((sid, lab, sec, service(sec), e.get("enabled") is not False))
 except Exception:
     slots = []
 for row in slots:
     # 5 列目は label の表示幅。bash の ${#var} は文字数なので、全角ラベルでは
     # printf の %-*s（バイト幅パディング）と食い違って列がずれる。
-    sys.stdout.write("\t".join(row) + "\t" + str(disp_width(row[1])) + "\n")
+    # 6 列目はオンなら 1、オフ（enabled が JSON の false）なら 0。
+    sys.stdout.write("\t".join(row[:4]) + "\t" + str(disp_width(row[1])) + "\t"
+                     + ("1" if row[4] else "0") + "\n")
 ' 2>/dev/null)
 fi
 if [ "${#slot_ids[@]}" -eq 0 ]; then
     # レジストリ不在・不正 → 既定スロット 1 つ。label は空にして列を出さない
     slot_ids=("default"); slot_labels=(""); slot_secures=(""); slot_services=("Claude Code-credentials")
-    slot_widths=(0)
+    slot_widths=(0); slot_enabled=(1)
 fi
 
 n_slots="${#slot_ids[@]}"
@@ -552,9 +590,13 @@ if [ "$multi" -eq 1 ] && [ -d "$sessions_dir" ]; then
     _rec_args=()
     for i in $(seq 0 $(( n_slots - 1 ))); do
         [ "$i" -eq "$active_idx" ] && continue
+        # オフのスロットは値を描かないので、記録との突き合わせにも載せない
+        [ "${slot_enabled[$i]}" = "1" ] || continue
         _rec_args+=("$i" "${slot_secures[$i]}" "${snap_fetched[$i]}" "${snap_five_pct[$i]}"
                     "${snap_five_res[$i]}" "${snap_seven_pct[$i]}" "${snap_seven_res[$i]}")
     done
+    # 突き合わせる相手が無ければ（非 active がすべてオフ）python3 を起動しない
+    [ "${#_rec_args[@]}" -gt 0 ] &&
     while IFS='' read -r _row; do
         IFS=$'\x1f' read -r _ri _f _fp _fr _sp _sr <<< "${_row//$'\t'/$'\x1f'}"
         [[ "$_ri" =~ ^[0-9]+$ ]] && [ "$_ri" -lt "$n_slots" ] || continue
@@ -699,6 +741,13 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
             # 全行が等しく 2 桁を占めるので、バーの左端は揃ったまま
             prefix="  ${DIM}${slot_labels[$i]}${pad}${RESET}  "
         fi
+    fi
+    # 非 active のオフのスロットは値の代わりに off を 1 行だけ出す（値が残っていても描かず、
+    # 値が無くても行は出す）。active のスロットはオフでも下のライブ値の経路で描く。
+    # 1 スロット構成は常に active なので、ここには入らない。
+    if [ "$multi" -eq 1 ] && [ "$i" -ne "$active_idx" ] && [ "${slot_enabled[$i]}" != "1" ]; then
+        usage_lines+=("${prefix}${DIM}off${RESET}")
+        continue
     fi
     fetched_at="${snap_fetched[$i]}"
     fable_pct="${snap_fable_pct[$i]}"
@@ -926,7 +975,7 @@ fi
 
 # Build status line
 # Line 1: directory, model, git
-# Line 2: context window, API cost, session cost
+# Line 2: context window, prompt cache, API cost, session cost
 # Line 3: 5h bar / Line 4: 7d All + Fable bars
 printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s\n" \
     "$short_pwd" \
@@ -937,7 +986,7 @@ line2=""
 if [ -n "$context_info" ]; then
     line2="$context_info"
 fi
-for seg in "$api_pace_info" "$session_cost_info"; do
+for seg in "$cache_info" "$api_pace_info" "$session_cost_info"; do
     [ -n "$seg" ] || continue
     if [ -n "$line2" ]; then
         line2="${line2}  ${DIM}│${RESET}  ${seg}"

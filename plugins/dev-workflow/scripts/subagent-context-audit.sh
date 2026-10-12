@@ -322,14 +322,14 @@ def bash_read_files(command):
                 skip_next = False
                 continue
             if ">" in w or "<" in w:
-                # 記号だけの語（> や >>）は直後の語（リダイレクト先）も数えない
-                if re.fullmatch(r"\d*(>>?|<)", w):
+                # 記号だけの語（> >> < << <<< &> &>>）は直後の語（リダイレクト先・heredoc の区切り語）も数えない
+                if re.fullmatch(r"\d*(>>?|<<?<?|&>>?)", w):
                     skip_next = True
                 continue
             if w == "-":
                 continue
             if w.startswith("-"):
-                if (cmd in ("head", "tail") and w in ("-n", "-c")) or (cmd == "sed" and w in ("-e", "-f")):
+                if (cmd in ("head", "tail") and w in ("-n", "-c", "--lines", "--bytes")) or (cmd == "sed" and w in ("-e", "-f")):
                     skip_next = True
                 continue
             if script_pending:

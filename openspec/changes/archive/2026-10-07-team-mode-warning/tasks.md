@@ -5,7 +5,7 @@
 
 ## 2. テスト
 
-- [x] 2.1 `tests/team-mode-warning.bats`: 1 / true で警告、未設定・空・0・false で無出力、hooks.json への登録を検証する 触る範囲: tests/team-mode-warning.bats（新規）
+- [x] 2.1 `plugins/dev-workflow/tests/team-mode-warning.bats`: 1 / true で警告、未設定・空・0・false で無出力、hooks.json への登録を検証する 触る範囲: plugins/dev-workflow/tests/team-mode-warning.bats（新規）
 - [x] 2.2 `./scripts/test.sh` が exit 0 になることを確かめる（予算ファイルは動かさない）
 
 ## 3. 記録

@@ -12,7 +12,9 @@
 # 人手でパスを転記すると、末尾スラッシュや ~ 展開の差で Keychain のサービス名が変わり、
 # 別アカウント扱いになって残量が取れなくなるため。
 #
-# 同じ id が既にあれば上書きし、無ければ末尾に追加する。
+# 同じ id が既にあれば上書きし、無ければ末尾に追加する。上書きするとき、既存スロットに
+# enabled（false ならそのアカウントはオフ）が書かれていれば同じ値のまま残す。登録し直しただけで
+# オフにしたアカウントがオンに戻らないようにするため。enabled の無いスロットと新しい id には書かない。
 set -uo pipefail
 
 ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json}"
@@ -89,8 +91,14 @@ if os.path.exists(path):
         raise SystemExit(1)
 
 entry = {"id": sid, "label": label, "securestorage": secure}
+kept = ""
 for i, existing in enumerate(doc["accounts"]):
     if isinstance(existing, dict) and existing.get("id") == sid:
+        # 引き継ぐのは enabled だけ（ほかの未知のキーは意味を知らないので写さない）
+        if "enabled" in existing:
+            entry["enabled"] = existing["enabled"]
+            # 登録し直してもオフのままであることを、完了メッセージで分かるようにする
+            kept = '; kept "enabled": %s' % json.dumps(existing["enabled"], ensure_ascii=False)
         doc["accounts"][i] = entry
         break
 else:
@@ -110,5 +118,5 @@ except Exception:
     except OSError:
         pass
     raise
-sys.stderr.write("registered slot %r (securestorage=%s) in %s\n" % (sid, secure, path))
+sys.stderr.write("registered slot %r (securestorage=%s) in %s%s\n" % (sid, secure, path, kept))
 PY

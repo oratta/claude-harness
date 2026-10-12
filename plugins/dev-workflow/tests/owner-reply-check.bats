@@ -37,6 +37,14 @@ run_check() { run bash "$SCRIPT" "$@"; }
   [ "$status" -eq 0 ]
 }
 
+# isVisibleInTranscriptOnly だけでは除外しない（除外の根拠は isCompactSummary。spec 守備範囲③、issue #838）
+@test "owner-reply: isVisibleInTranscriptOnly true without isCompactSummary does not exclude a human message" {
+  add '{"type":"user","isSidechain":false,"isVisibleInTranscriptOnly":true,"origin":{"kind":"human"},"timestamp":"2026-10-07T01:00:00.000Z","message":{"role":"user","content":"許容する"}}'
+  run_check "$SID" "許容する"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"MATCHES=1"* ]] || return 1
+}
+
 @test "owner-reply: /develop command args match" {
   add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"timestamp":"2026-10-07T02:00:00.000Z","message":{"role":"user","content":"<command-message>dev-workflow:develop</command-message>\n<command-name>/dev-workflow:develop</command-name>\n<command-args>721 許容する</command-args>"}}'
   run_check "$SID" "721 許容する"
