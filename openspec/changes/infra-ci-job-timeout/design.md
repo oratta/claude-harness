@@ -22,7 +22,11 @@
 
 ### 反映のしかた（SKILL.md に書く）
 
-infra-setup の Phase 4 は既存のワークフローを見つけると「上書き／スキップ／差分を見てから判断」を聞く。再実行して「上書き」を選ぶと、利用者が雛形から変えた箇所（`PROJECT-SPECIFIC OVERRIDE` など）も雛形に戻る。そのため、既に CI を入れたリポジトリには、手で `timeout-minutes` の 1 行を `test` ジョブに書き足すことを勧める。再実行は、ほかの雛形の更新も取り込みたいときに「差分を見てから判断」を選ぶ。
+既に CI を入れたリポジトリには、`ci.yml` の `test` ジョブと `weekly-full.yml` の `full` ジョブの両方に、手で `timeout-minutes` の 1 行を書き足すことを勧める。
+
+再実行は勧めない。Phase 4（`plugins/infra/agents/infra-phase-4-github-actions.md:67`）が「上書き／スキップ／差分を見てから判断」を聞く対象は `ci.yml` / `deploy-preview.yml` / `deploy-staging.yml` / `deploy-production.yml` / `migrate-production.yml` の 5 ファイルで、`weekly-full.yml` は含まれない。そのため再実行すると `weekly-full.yml` は確認なしで雛形に書き直され、`PROJECT-SPECIFIC OVERRIDE`（ローカル Supabase の起動など）の変更も消える。再実行するなら、事前に控えを取るか、実行後に `git diff` で確かめる。
+
+Phase 4 の手順書は変えない（この issue の範囲を広げないため。`weekly-full.yml` を確認対象に足すかは別の話）。
 
 ## Risks / Trade-offs
 

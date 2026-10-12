@@ -2,7 +2,7 @@
 
 ### Requirement: CI 雛形のジョブは上限時間を持たなければならない
 
-`plugins/infra/templates/workflows/ci.yml.template` の `test` ジョブと、`plugins/infra/templates/workflows/weekly-full.yml.template` の `full` ジョブは、正の整数の `timeout-minutes` を持たなければならない。直上のコメントに、決め方（普段の所要時間の約 2 倍）を書かなければならない。This requirement MUST be satisfied.
+`plugins/infra/templates/workflows/ci.yml.template` の `test` ジョブと、`plugins/infra/templates/workflows/weekly-full.yml.template` の `full` ジョブは、正の整数の `timeout-minutes` を持たなければならない。`timeout-minutes` の行の直前に連続するコメント行のどれかに、決め方として「約 2 倍」（普段の所要時間の約 2 倍）を書かなければならない。This requirement MUST be satisfied.
 
 #### Scenario: ci.yml.template の test ジョブに上限がある
 
@@ -16,8 +16,8 @@
 
 #### Scenario: 決め方がコメントにある
 
-- **WHEN** 両雛形の `timeout-minutes` の直上のコメントを読む
-- **THEN** 「約 2 倍」という決め方が書かれていなければならない
+- **WHEN** 両雛形で `timeout-minutes` の行の直前に連続するコメント行を読む
+- **THEN** そのどれかに「約 2 倍」の文字列がなければならない
 
 ### Requirement: infra-setup の SKILL.md は上限時間の決め方と既存リポジトリへの反映のしかたを書かなければならない
 
@@ -26,4 +26,4 @@
 #### Scenario: SKILL.md に決め方と反映のしかたがある
 
 - **WHEN** `SKILL.md` の `timeout-minutes` を含む節を読む
-- **THEN** 決め方と、既存リポジトリへの反映手順が書かれていなければならない
+- **THEN** その節に、「約 2 倍」と、`ci.yml` と `weekly-full.yml` の両方へ手で書き足すことを勧める文と、再実行で `weekly-full.yml` が確認なしで書き直される旨の文（「確認なし」を含む）がなければならない
