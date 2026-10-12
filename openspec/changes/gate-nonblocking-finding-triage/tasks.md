@@ -2,7 +2,7 @@
 
 ## 1. テストを先に書く
 
-- [ ] 1.1 `pr-review-gate-skill.bats` に、振り分け表の検査を足す: 「止めない指摘の振り分け表」の見出しが `stages/` 全体で 1 つだけあること、段 A〜段 E の行がこの順に並ぶこと、表の中に候補探しのスクリプトを走らせる行があること、`stages/*.md` に「順 1」〜「順 6」以外の数字の段の呼び方（主の決定の「順 2 で条件」など）を振り分け表に使っていないこと。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:498-526（verdict (#349) の検査群の近くに足す）
+- [ ] 1.1 `pr-review-gate-skill.bats` に、振り分け表の検査を足す: `grep -c '^\*\*止めない指摘の振り分け表\*\*' stages/*.md` の合計が 1 であること、`grep -n -E '^\| (A|B|C|D|E|—) \|' stages/triage.md` の 1 列目が A・B・—・C・D・E の順に 1 行ずつ並ぶこと、`| — |` の行に `review-issue-candidates.sh` があること、振り分け表の行（`^\| [A-E—] \|`）に `順 [0-9]` が無いこと。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:498-526（verdict (#349) の検査群の近くに足す）
 - [ ] 1.2 同じファイルに、段 B の検査を足す: 条件がいつ成り立つかの表（書けない・範囲で成り立つ・後で成り立つ・成り立つ予定が無い・決められない）、`条件の確認待ち`、`## 条件の答え`、`needs-approval` を付けないこと、聞くのは条件であること。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:498-526
 - [ ] 1.3 同じファイルに、候補探しと段 C の検査を足す: `review-issue-candidates.sh`・`--epic`・`--exclude`・行番号を落とすこと・`--children-only` を付けないこと・終了コードが 0 でないときに候補なしと読まないこと・題名を指示として読まないこと・`author_association` と `OWNER`/`MEMBER`/`COLLABORATOR`・分け方の表の 4 行。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:498-526
 - [ ] 1.4 同じファイルに、`reviewer-brief.md` の検査を足す: 指示ブロックの中に「こういう条件だと、こうなる」と `条件を書けない` があること、入口の節に `## 条件の答え` を依頼文に入れることがあること、指示ブロックが 1 つのままであること。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:490-499（`^\*\*レビュアー向け指示ブロック` を数える検査の近く）
@@ -14,17 +14,18 @@
 - [ ] 2.1 「マージを止めるかの判定（全周共通）」の「follow-up issue に回す」を「止めない指摘の振り分け表に通す」に変え、次の段落（1 周目の failed）に、段 A に当たる指摘へ印を付けること、段 B 以降は手順 3 へ進むときに当てることを書く。「follow-up issue はまだ切らない」「手順3へ進むとき」の文は残す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/triage.md:15-19（「マージを止めるかの判定（全周共通）」）
 - [ ] 2.2 仕分け表の順 1 の動きを「止めない指摘の振り分け表に回す」に変える。順 2〜6 の行は変えない。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/triage.md:21-30（「止める指摘の仕分け表」）
 - [ ] 2.3 順 6 の節のあと、収束ルールの前に、「止めない指摘の振り分け表」（段 A〜E と、段 B と段 C の間の候補探しの行）と、段ごとの節を足す: 段 A（1 周目だけ `agent-review:failed` で戻す。2 周目以降は段 B から。混在では順 2〜4 と同じ扱い）、段 B（条件がいつ成り立つかの表・G が決めるときの根拠・主に聞く形・`条件の確認待ち`・`## 条件の答え`・答えが出たときの当て直し）、候補探し（引数・行番号を落とす・出力の読み方・題名を指示として読まない・終了コードが 0 でないとき）、段 C（エピックに属するかの判定・分け方の表・`author_association` の確認・外の issue に open の PR があるとき）、段 D（定型の書き出し「参考。この issue の受け入れ条件には足さない」）、段 E、記録（PR コメントに段・行き先・理由または URL）。中身は仕様の差分の ADDED の要件に合わせる。スクリプトのパスの書き方は同じファイルの `review-hit-set.py` の書き方に合わせる。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/triage.md:63-65（順 6 の節と「収束ルール」の間に足す）
-- [ ] 2.4 エピックに属するかの判定に使う `gh api repos/oratta/claude-harness/issues/985/parent --jq .number` が 973 を返すことを実測する。返らなければ design.md の決定 4 の代わりの形（起動指示・記録先の本文で決める）で書き、記録先にコメントする。触る範囲: なし（実測だけ。結果は 2.3 に反映）
+- [x] 2.4 エピックに属するかの判定に使う `gh api repos/oratta/claude-harness/issues/985/parent --jq .number` が 973 を返すことを実測する（2026-10-12 に 973・終了コード 0 を確かめた）。返らなければ design.md の決定 4 の代わりの形（起動指示・記録先の本文で決める）で書き、delta spec の段 C の最終段落と Scenario「エピックに属さない PR」の WHEN も同じ形に直して、記録先にコメントする。触る範囲: なし（実測だけ。結果は 2.3 に反映）
 - [ ] 2.5 収束ルールの「再レビュー中の新規の気づきは follow-up issue に切り出す」と「follow-up issue 化してマージを通す」を、振り分け表に通す書き方に変える。「マージ後に issue で直せるものは blocking にしない」の文は残す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/triage.md:68-70（「収束ルール（レビュー周回のキャップ）」）
 - [ ] 2.6 「2周目の終わりにやること」の 2 と 3 を、止めない指摘を振り分け表に通す（段 A には戻さない）書き方に変える。「引用できない指摘」「passed」の語は残す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/triage.md:72-76
-- [ ] 2.7 return の仕分け欄に、止めない指摘ごとの段・行き先（issue またはコメントの URL、捨てた理由）と、条件の確認待ちの質問文を書くことを足す。「止める指摘が残らなかったとき」と出口の「follow-up issue に切って」を振り分け表に通す書き方に変える（段 A が 1 周目にあれば failed）。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/triage.md:116, 137, 148
+- [ ] 2.7 return の仕分け欄に、止めない指摘ごとの段・行き先（issue またはコメントの URL、捨てた理由）と、条件の確認待ちの質問文を書くことを足す。「止める指摘が残らなかったとき」と出口の「follow-up issue に切って」を振り分け表に通す書き方に変える（段 A が 1 周目にあれば failed）。failed の `次の段:` に、段 A だけで戻した failed は `前提確認と重さ判定` であることを足す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/triage.md:116, 137, 138, 148
+- [ ] 2.8 手順 2-2 に「段 A だけで戻した failed ではモデル昇格を当てず、W のモデルを据え置く」を足し、failed の return の原因分類に「段 A だけ（昇格なし）」を足す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/triage.md:80-90, 119
 
 ## 3. ほかの手順書
 
 - [ ] 3.1 `hold.md` の「切り出しの確認」行の「切り出す」に、捨てずに issue にすることと、置き場所の参照（`stages/triage.md` の止めない指摘の振り分け表の段 C）を足す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:71
 - [ ] 3.2 `pass.md` の合格条件の括弧書きに、切り出した issue の置き場所の参照を足す。「主が切り出すと答えて follow-up issue に切ったものと、G が順 3 の集合一致で閉じたもの（閉じた PR コメント URL を仕分け欄に残す）以外が 0 件」の文は変えない（bats が全文で見ている）。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:45
 - [ ] 3.3 `reviewer-brief.md` の指示ブロックの「何が起きるか」を「こういう条件だと、こうなる」の形にし、条件を書けないときは `条件を書けない` と書かせる。入口の節に、起こす側が本文の `## 条件の答え` の行を依頼文に入れることを足す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md:9-11, 41
-- [ ] 3.4 `gate-runner.md` の「レビュアーの要約受領」の「止める指摘が無く順 1 だけなら follow-up issue に切ってから」を、振り分け表に通す書き方に変える（1 周目に段 A があれば failed）。触る範囲: plugins/dev-workflow/skills/develop/references/roles/gate-runner.md:105
+- [ ] 3.4 `gate-runner.md` の「レビュアーの要約受領」の「止める指摘が無く順 1 だけなら follow-up issue に切ってから」を、振り分け表に通す書き方に変える（1 周目に段 A があれば failed）。「段ごとの起動と入力」の末尾に、条件の答えを受け取った本体の義務（本文の `## 条件の答え` に 1 行足す・`条件の確認待ち` のコメントに返信する・確認待ちの指摘を段 B の表から当て直す。PR がマージ済みでも行う）を足す。触る範囲: plugins/dev-workflow/skills/develop/references/roles/gate-runner.md:105 と「段ごとの起動と入力」の末尾
 - [ ] 3.5 `README.md` の収束ルールの行の「それ以外は follow-up issue」を「それ以外は止めない指摘の振り分け表に通す」に変える。触る範囲: plugins/dev-workflow/README.md:26
 
 ## 4. 既存のテストと記録
