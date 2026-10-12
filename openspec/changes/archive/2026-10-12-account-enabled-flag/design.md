@@ -82,7 +82,7 @@ active のスロットがオフの場合は `off` を出さず、従来どおり
 
 ## Migration Plan
 
-`schema` は `1` のままで、既存の登録簿は書き換え不要。マージ後、実機の `~/.claude/accounts.json` の B に `"enabled": false` を手で足し、`select-account.sh` の標準エラーが `selected=a` になることを issue #976 にコメントする（受け入れ条件の最後の項目。実装後の工程で行う）。戻すときは `enabled` の行を消す。
+`schema` は `1` のままで、既存の登録簿は書き換え不要。マージ前に、実機の `~/.claude/accounts.json` の B に `"enabled": false` を手で足し、`select-account.sh` の標準エラーが `selected=a` になることを issue #976 にコメントする（受け入れ条件の最後の項目。実装後の工程で行う）。戻すときは `enabled` の行を消す。
 
 ## Open Questions
 
