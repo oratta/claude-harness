@@ -37,6 +37,12 @@
 - [x] 5.3 変更の記録を `plugins/dev-workflow/changes/978.md` と `plugins/statusline/changes/978.md` に書く。置き場所の決定（`accounts.json` のトップレベル `codex.enabled`）と理由（design.md の決定 1 の表の要約と、別ファイルへ戻す条件）、オフになる条件が `false` との一致 1 つであること、#616 に足した差分を小さく保ったこと、戻し方を書く。形式は `plugins/dev-workflow/changes/976.md` に揃える。触る範囲: plugins/dev-workflow/changes/978.md（新規）、plugins/statusline/changes/978.md（新規）
 - [x] 5.4 `bats tests/injection-budget.bats` と、触ったプラグインのテスト一式（`bats plugins/dev-workflow/tests plugins/statusline/tests` と `python3 -m pytest plugins/dev-workflow/tests plugins/statusline/tests`）が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
 
-## 6. 実機確認（実装の段の外。PR の実装が揃ったあと、マージの前に本体が行う。テストでは代えない）
+## 6. 実機確認（tasks の項目ではなく、PR の動作確認ポイントとしてマージの前に本体が行う）
 
-- [ ] 6.1 実機の `accounts.json` のトップレベルに `"codex": {"enabled": false}` を手で足し、full 判定になる PR を 1 本、**従来経路**（`レビュー経路: 従来`。adapter 経路では `Task サブエージェント（full・Codex オフ）` のコメントが出ないため使えない）のゲートに通して、PR コメントの `レビュー実行者:` に `Task サブエージェント（full・Codex オフ）` が出ること、Codex が呼ばれていないこと（`codex` の起動の痕跡が無い）を確かめる。その `レビュー実行者:` のコメントの URL を issue #978 に貼る。確認後、`codex` のキーを消して戻す。担い手は本体（interactive では主）。実装の段では行わない。触る範囲: なし（実機操作のみ）
+テストでは代えない。実装の段（W）では行わず、PR の実装が揃ったあと、マージの前に本体（interactive では主）が行う。済んだかどうかは PR 本文の動作確認ポイントと issue #978 で追う。
+
+- 実機の `accounts.json` のトップレベルに `"codex": {"enabled": false}` を手で足す
+- full 判定になる PR を 1 本、**従来経路**（`レビュー経路: 従来`。adapter 経路では `Task サブエージェント（full・Codex オフ）` のコメントが出ないため使えない）のゲートに通す
+- PR コメントの `レビュー実行者:` に `Task サブエージェント（full・Codex オフ）` が出ること、Codex が呼ばれていないこと（`codex` の起動の痕跡が無い）を確かめる
+- その `レビュー実行者:` のコメントの URL を issue #978 に貼る
+- 確認後、`codex` のキーを消して戻す
