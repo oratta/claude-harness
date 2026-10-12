@@ -12,7 +12,9 @@
 # 人手でパスを転記すると、末尾スラッシュや ~ 展開の差で Keychain のサービス名が変わり、
 # 別アカウント扱いになって残量が取れなくなるため。
 #
-# 同じ id が既にあれば上書きし、無ければ末尾に追加する。
+# 同じ id が既にあれば上書きし、無ければ末尾に追加する。上書きするとき、既存スロットに
+# enabled（false ならそのアカウントはオフ）が書かれていれば同じ値のまま残す。登録し直しただけで
+# オフにしたアカウントがオンに戻らないようにするため。enabled の無いスロットと新しい id には書かない。
 set -uo pipefail
 
 ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json}"
@@ -91,6 +93,9 @@ if os.path.exists(path):
 entry = {"id": sid, "label": label, "securestorage": secure}
 for i, existing in enumerate(doc["accounts"]):
     if isinstance(existing, dict) and existing.get("id") == sid:
+        # 引き継ぐのは enabled だけ（ほかの未知のキーは意味を知らないので写さない）
+        if "enabled" in existing:
+            entry["enabled"] = existing["enabled"]
         doc["accounts"][i] = entry
         break
 else:

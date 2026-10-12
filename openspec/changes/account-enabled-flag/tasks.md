@@ -14,14 +14,14 @@
 
 ## 3. 使用量の取得（usage-probe.sh）
 
-- [ ] 3.1 `usage-probe-multi-account.bats` に次のテストを足す: 本番経路（`curl` と `security` を `PATH` の差し替えで記録するスタブにする。既存の `user-agent:` のテストの足場と同じ形）で、`b` が `enabled: false` のとき `b` のサービス名での `security` の呼び出しと `b` のための `curl` の呼び出しが 0 回で、`a` は取得される／snapshot に `b` の前回値があるとき、`a` の取得後も `accounts.b` が `fetched_at` 込みで前回値のまま／全スロットがオフなら snapshot も試行状態も書き換えられず exit 0／`--print-slots` はオフのスロットも 4 列で出す／試行状態に `b` が記録されない。触る範囲: plugins/dev-workflow/tests/usage-probe-multi-account.bats:515-573（スタブの足場）、plugins/dev-workflow/tests/usage-probe-multi-account.bats:607-650（実行条件のテストの並び）、plugins/dev-workflow/tests/usage-probe-multi-account.bats:806-815（末尾に追加）
-- [ ] 3.2 `usage-probe.sh` の `read_slots` が 5 列目にオンかオフかを出すようにし、配列に読み込む。5 列目が無い行（python3 が無いときに出す 4 列の縮退行）はオンと読む。`--print-slots` は 4 列のまま。叩くスロットを選ぶ判定（`due`）でオフのスロットを落とす。snapshot の組み立ては変えない（取得しなかったスロットは前回値を引き継ぐ既存の経路に入る。組み立て側が TSV の先頭 4 列だけを読むことを確かめる）。冒頭の契約コメントにオフのスロットの扱いを 1 項目足す。触る範囲: plugins/dev-workflow/scripts/usage-probe.sh:4-21（契約コメント）、plugins/dev-workflow/scripts/usage-probe.sh:55-146（`read_slots` と配列への展開）、plugins/dev-workflow/scripts/usage-probe.sh:193-241（実行条件）、plugins/dev-workflow/scripts/usage-probe.sh:482-489（組み立て側の TSV の読み方。確認のみ）
-- [ ] 3.3 `bats plugins/dev-workflow/tests/usage-probe-multi-account.bats` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
+- [x] 3.1 `usage-probe-multi-account.bats` に次のテストを足す: 本番経路（`curl` と `security` を `PATH` の差し替えで記録するスタブにする。既存の `user-agent:` のテストの足場と同じ形）で、`b` が `enabled: false` のとき `b` のサービス名での `security` の呼び出しと `b` のための `curl` の呼び出しが 0 回で、`a` は取得される／snapshot に `b` の前回値があるとき、`a` の取得後も `accounts.b` が `fetched_at` 込みで前回値のまま／全スロットがオフなら snapshot も試行状態も書き換えられず exit 0／`--print-slots` はオフのスロットも 4 列で出す／試行状態に `b` が記録されない。触る範囲: plugins/dev-workflow/tests/usage-probe-multi-account.bats:515-573（スタブの足場）、plugins/dev-workflow/tests/usage-probe-multi-account.bats:607-650（実行条件のテストの並び）、plugins/dev-workflow/tests/usage-probe-multi-account.bats:806-815（末尾に追加）
+- [x] 3.2 `usage-probe.sh` の `read_slots` が 5 列目にオンかオフかを出すようにし、配列に読み込む。5 列目が無い行（python3 が無いときに出す 4 列の縮退行）はオンと読む。`--print-slots` は 4 列のまま。叩くスロットを選ぶ判定（`due`）でオフのスロットを落とす。snapshot の組み立ては変えない（取得しなかったスロットは前回値を引き継ぐ既存の経路に入る。組み立て側が TSV の先頭 4 列だけを読むことを確かめる）。冒頭の契約コメントにオフのスロットの扱いを 1 項目足す。触る範囲: plugins/dev-workflow/scripts/usage-probe.sh:4-21（契約コメント）、plugins/dev-workflow/scripts/usage-probe.sh:55-146（`read_slots` と配列への展開）、plugins/dev-workflow/scripts/usage-probe.sh:193-241（実行条件）、plugins/dev-workflow/scripts/usage-probe.sh:482-489（組み立て側の TSV の読み方。確認のみ）
+- [x] 3.3 `bats plugins/dev-workflow/tests/usage-probe-multi-account.bats` が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
 
 ## 4. 生成手段（accounts-init.sh）
 
-- [ ] 4.1 `usage-probe-multi-account.bats` の `init:` の並びに、`enabled: false` の `b` を `--id b --label B2` で上書きしても `enabled` が `false` のまま残ること、`enabled` の無いスロットの上書きと新しい id の追加では `enabled` が書かれないことのテストを足す。触る範囲: plugins/dev-workflow/tests/usage-probe-multi-account.bats:308-345（`accounts-init.sh` のテストの並び）
-- [ ] 4.2 `accounts-init.sh` の上書きの分岐で、既存スロットに `enabled` があればその値を新しいスロットに写す。冒頭のコメントの「同じ id が既にあれば上書きし」に `enabled` は残す旨を足す。触る範囲: plugins/dev-workflow/scripts/accounts-init.sh:15（コメント）、plugins/dev-workflow/scripts/accounts-init.sh:91-97（上書きと追加）
+- [x] 4.1 `usage-probe-multi-account.bats` の `init:` の並びに、`enabled: false` の `b` を `--id b --label B2` で上書きしても `enabled` が `false` のまま残ること、`enabled` の無いスロットの上書きと新しい id の追加では `enabled` が書かれないことのテストを足す。触る範囲: plugins/dev-workflow/tests/usage-probe-multi-account.bats:308-345（`accounts-init.sh` のテストの並び）
+- [x] 4.2 `accounts-init.sh` の上書きの分岐で、既存スロットに `enabled` があればその値を新しいスロットに写す。冒頭のコメントの「同じ id が既にあれば上書きし」に `enabled` は残す旨を足す。触る範囲: plugins/dev-workflow/scripts/accounts-init.sh:15（コメント）、plugins/dev-workflow/scripts/accounts-init.sh:91-97（上書きと追加）
 
 ## 5. ステータスライン（statusline.sh）
 

@@ -19,6 +19,8 @@
 #     トップレベルの従来キーは active スロットの同名フィールドのミラー（既存の読み手用）
 #   - fail-open はスロット単位。あるスロットが失敗しても前回値（fetched_at 込み）を引き継ぐ。
 #     全スロットが失敗したとき、および組み立て・書き込みが失敗したときは snapshot を書かない
+#   - レジストリで enabled が false のスロット（オフ）は叩かない。認証情報も読まず、試行も記録しない。
+#     snapshot の同スロットの項目は、取得しなかったスロットと同じく前回値のまま引き継ぐ
 #
 # refresh_token を使ったアクセストークンの更新は意図的に実装しない。
 # リフレッシュはトークンをローテートするため、Claude Code 本体が同じ refresh_token で
@@ -51,7 +53,8 @@ ENDPOINT="${USAGE_PROBE_ENDPOINT:-https://api.anthropic.com/api/oauth/usage}"
 ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json}"
 
 # ---- レジストリを解決してスロット一覧（TSV）を得る ----
-# 出力: id<TAB>label<TAB>securestorage<TAB>service（1 行 1 スロット）
+# 出力: id<TAB>label<TAB>securestorage<TAB>service<TAB>enabled（1 行 1 スロット）
+# enabled は 1（オン）か 0（オフ）。オフになるのは enabled が JSON の false のときだけ
 read_slots() {
   ACCOUNTS_FILE="$ACCOUNTS_FILE" python3 <<'PY' 2>/dev/null
 import hashlib, json, os, re, sys, unicodedata
@@ -112,12 +115,13 @@ try:
             if CTRL_RE.search(label) or CTRL_RE.search(sec):
                 continue
             label = clip_label(label, MAX_LABEL_WIDTH)
-            slots.append((sid, label, sec, service(sec)))
+            enabled = "0" if entry.get("enabled") is False else "1"
+            slots.append((sid, label, sec, service(sec), enabled))
 except Exception:
     slots = []
 
 if not slots:
-    slots = [("default", "default", "", service(""))]
+    slots = [("default", "default", "", service(""), "1")]
 
 for row in slots:
     sys.stdout.write("\t".join(row) + "\n")
@@ -132,17 +136,19 @@ slots_tsv="$(read_slots)"
 # 1 つの区切りに畳まれ、securestorage が空の既定スロットで service 列が消える
 # （空のサービス名で Keychain を引いて全件検索になり固まる事故があった）。
 # 区切りを IFS 空白ではない US(0x1f) に置換してから read する。
-slot_ids=(); slot_labels=(); slot_secures=(); slot_services=()
+# 5 列目（enabled）が無い行（上の 4 列の縮退行）はオンと読む。オフは 0 との一致だけ。
+slot_ids=(); slot_labels=(); slot_secures=(); slot_services=(); slot_enabled=()
 while IFS='' read -r line; do
   [ -n "$line" ] || continue
-  IFS=$'\x1f' read -r _id _label _secure _service <<< "${line//$'\t'/$'\x1f'}"
+  IFS=$'\x1f' read -r _id _label _secure _service _enabled <<< "${line//$'\t'/$'\x1f'}"
   [ -n "$_id" ] || continue
   slot_ids+=("$_id"); slot_labels+=("$_label")
   slot_secures+=("$_secure"); slot_services+=("$_service")
+  if [ "$_enabled" = "0" ]; then slot_enabled+=(0); else slot_enabled+=(1); fi
 done <<< "$slots_tsv"
 if [ "${#slot_ids[@]}" -eq 0 ]; then
   slot_ids=("default"); slot_labels=("default")
-  slot_secures=(""); slot_services=("Claude Code-credentials")
+  slot_secures=(""); slot_services=("Claude Code-credentials"); slot_enabled=(1)
 fi
 
 if [ "${1:-}" = "--print-slots" ]; then
@@ -192,8 +198,10 @@ trap cleanup EXIT
 
 # ---- 実行条件: 叩くスロットを選ぶ（ロックを取ってから判定する） ----
 # 出力は叩くスロット id（1 行 1 つ）。判定自体が落ちたら何も叩かない（fail-open）
+# オフのスロットはここで落とす。認証情報を読むのはこの後なので、Keychain の読み出しも API 呼び出しも起きない
 slot_pairs=""
 for i in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
+  [ "${slot_enabled[$i]}" = "1" ] || continue
   slot_pairs+="${slot_ids[$i]}"$'\t'"${slot_secures[$i]}"$'\n'
 done
 due="$(SLOT_PAIRS="$slot_pairs" USAGE_NOW="$NOW" STALE="$STALE" INTERVAL="$INTERVAL" \
