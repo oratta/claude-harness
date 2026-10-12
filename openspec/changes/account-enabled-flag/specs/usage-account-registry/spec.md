@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: スロットを enabled でオフにできる
-スロットの `enabled` が JSON の `false` であるとき、そのスロットは「オフ」として扱わなければならない（SHALL）。`enabled` が省略されているとき、および `true` のときは「オン」とする。`enabled` が真偽値でない（文字列の `"false"`、数値の `0`、`null` など）ときもオンとして扱わなければならず（SHALL）、そのスロットを捨ててはならない（MUST NOT）。オフにするのは利用者が明示したときだけにし、書き損じでアカウントが黙って候補から消えないようにするため。書き損じた場合はステータスラインに `off` が出ないことで気づける。
+スロットの `enabled` が JSON の `false` であるとき、そのスロットは「オフ」として扱わなければならない（SHALL）。`enabled` が省略されているとき、および `true` のときは「オン」とする。`enabled` が真偽値でない（文字列の `"false"`、数値の `0`、`null` など）ときもオンとして扱わなければならず（SHALL）、そのスロットを捨ててはならない（MUST NOT）。オフにするのは利用者が明示したときだけにし、書き損じでアカウントが黙って候補から消えないようにするため。書き損じた場合はステータスラインに `off` が出ないことで気づける。この判定が扱う入力は、手で編集した `accounts.json` と `accounts-init.sh` の出力の 2 つである。`false` 以外の書き損じを見つけて報告することはこの要件の範囲外で、新しい書き損じの形が見つかっても判定を増やさない（オフになる条件は `false` との一致 1 つのままにする）。
 
 オフのスロットは次のように扱わなければならない（SHALL）:
 
@@ -143,8 +143,9 @@ snapshot を書くとき、オフのスロットの項目は前回の値（`fetc
 - **THEN** selector は `a` の `securestorage` を出力し、理由行は `selected=a reason=max-weekly-margin` と `margins=a:10.00,b:off` を含む
 
 #### Scenario: enabled を書いていない登録簿では選択が変わらない
-- **WHEN** どのスロットにも `enabled` が無い登録簿と、この変更の前と同じセッション記録・snapshot を与える
-- **THEN** stdout と理由行はこの変更の前と同じになる
+- **WHEN** どのスロットにも `enabled` が無い登録簿と、全スロットに `"enabled": true` を書いた同じ内容の登録簿を、同じセッション記録・snapshot で順に与える
+- **THEN** 2 つの登録簿で stdout と理由行が一致する
+- **AND** `enabled` を書いていない登録簿を使う既存のテストは、期待値を変えずに通る
 
 #### Scenario: 全スロットがオフなら既定アカウントへ縮退する
 - **WHEN** id が `a` の既定スロットを含む全スロットが `enabled: false` である
@@ -170,7 +171,7 @@ snapshot を書くとき、オフのスロットの項目は前回の値（`fetc
 - **THEN** selector は stdout に値を出さず exit 2 になり、stderr はその id、`enabled`、レジストリファイルのパスを含む 1 行である
 
 ### Requirement: 値と選択理由を別の出力ストリームで返す
-成功時の selector は stdout に選んだ `securestorage` の実値だけを改行付きで出さなければならない（SHALL）。既定アカウントの stdout は空行とする。stderr には `selected=<id-or-sentinel> reason=<reason> margins=<entries>` の 1 行だけを出さなければならない（SHALL）。`selected` は選んだ登録スロットの実 id とし、登録されていない既定アカウントへの縮退だけは `@unregistered-default` とする。自動選択の `margins` は全登録スロットを宣言順に含み、候補は週次余裕を小数点以下 2 桁、候補外は `stale`、`missing`、`five-hour>=90`、`off` のいずれかで示さなければならない（SHALL）。オフのスロットも `margins` から省いてはならない（MUST NOT）。省くと、登録したはずのスロットが選ばれない理由を理由行から読めなくなる。
+成功時の selector は stdout に選んだ `securestorage` の実値だけを改行付きで出さなければならない（SHALL）。既定アカウントの stdout は空行とする。stderr には `selected=<id-or-sentinel> reason=<reason> margins=<entries>` の 1 行だけを出さなければならない（SHALL）。`selected` は選んだ登録スロットの実 id とし、登録されていない既定アカウントへの縮退だけは `@unregistered-default` とする。自動選択の `margins` は全登録スロットを宣言順に含み、候補は週次余裕を小数点以下 2 桁、候補外は `missing`、`five-hour>=90`、`off` のいずれかで示さなければならない（SHALL）。オフのスロットも `margins` から省いてはならない（MUST NOT）。省くと、登録したはずのスロットが選ばれない理由を理由行から読めなくなる。
 
 #### Scenario: shell は stdout だけを値として取り込める
 - **WHEN** 自動選択の stdout を command substitution で取得し、stderr を端末へ残す

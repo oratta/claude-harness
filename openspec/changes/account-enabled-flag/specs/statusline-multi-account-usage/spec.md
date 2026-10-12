@@ -28,8 +28,9 @@ active スロットがオフの場合（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を手
 - **THEN** `B` の `off` の行が 1 行出る
 
 #### Scenario: enabled を書いていないレジストリでは出力が変わらない
-- **WHEN** どのスロットにも `enabled` が無い 2 スロットのレジストリと、この変更の前と同じ stdin・snapshot・セッション記録を与えて statusline を実行する
-- **THEN** 出力はこの変更の前の出力とバイト単位で一致する
+- **WHEN** どのスロットにも `enabled` が無い 2 スロットのレジストリと、全スロットに `"enabled": true` を書いた同じ内容のレジストリを、同じ stdin・snapshot・セッション記録で順に与えて statusline を実行する
+- **THEN** 2 つのレジストリで出力がバイト単位で一致する
+- **AND** `enabled` を書いていないレジストリを使う既存のバイト同一のテストは、期待値を変えずに通る
 
 #### Scenario: enabled が true のスロットは従来どおり描く
 - **WHEN** 非 active の `B` に `"enabled": true` を書いたレジストリと、`B` の値を含む snapshot を与えて statusline を実行する
