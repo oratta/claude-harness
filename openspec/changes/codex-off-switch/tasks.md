@@ -35,7 +35,7 @@
 - [x] 5.1 `plugins/dev-workflow/docs/codex-develop.md` と `plugins/dev-workflow/references/codex-develop.md` の自動選択の段落に、`codex.enabled` が `false` のときの挙動（構成 `claude-default`・reason `codex-off`、明示指定は拒否）を 1 文ずつ足す。既存のテストが要求する語（`claude-write-codex-review`・`margin`）は消さない。触る範囲: plugins/dev-workflow/docs/codex-develop.md:24、plugins/dev-workflow/references/codex-develop.md:9-17
 - [x] 5.2 `plugins/dev-workflow/README.md` の `enabled` の節の隣に、Codex をオフにする書き方（`"codex": {"enabled": false}`）と戻し方を足す。`plugins/statusline/README.md` の Codex の節に `off` の表示とオフの書き方を足す。触る範囲: plugins/dev-workflow/README.md:82、plugins/statusline/README.md:199-216
 - [x] 5.3 変更の記録を `plugins/dev-workflow/changes/978.md` と `plugins/statusline/changes/978.md` に書く。置き場所の決定（`accounts.json` のトップレベル `codex.enabled`）と理由（design.md の決定 1 の表の要約と、別ファイルへ戻す条件）、オフになる条件が `false` との一致 1 つであること、#616 に足した差分を小さく保ったこと、戻し方を書く。形式は `plugins/dev-workflow/changes/976.md` に揃える。触る範囲: plugins/dev-workflow/changes/978.md（新規）、plugins/statusline/changes/978.md（新規）
-- [ ] 5.4 `bats tests/injection-budget.bats` と、触ったプラグインのテスト一式（`bats plugins/dev-workflow/tests plugins/statusline/tests` と `python3 -m pytest plugins/dev-workflow/tests plugins/statusline/tests`）が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
+- [x] 5.4 `bats tests/injection-budget.bats` と、触ったプラグインのテスト一式（`bats plugins/dev-workflow/tests plugins/statusline/tests` と `python3 -m pytest plugins/dev-workflow/tests plugins/statusline/tests`）が exit 0 になることを確かめる。触る範囲: なし（実行のみ）
 
 ## 6. 実機確認（実装の段の外。PR の実装が揃ったあと、マージの前に本体が行う。テストでは代えない）
 
