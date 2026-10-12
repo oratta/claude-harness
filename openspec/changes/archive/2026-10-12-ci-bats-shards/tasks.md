@@ -25,6 +25,6 @@
 
 ## 5. CI での確認と計測（PR を作ったあと）
 
-- [ ] 5.1 PR の CI で、分けたジョブが 4 つ走り、`bats suites` と `shellcheck` が success になることを確かめる。各組のログの対象スイートの件数の合計が `git ls-files -- '*.bats' ':(exclude)_longruns/' | wc -l` と一致することを確かめる。触る範囲: なし（確認のみ）
-- [ ] 5.2 この PR のブランチから別のブランチを切り、テストを 1 件わざと失敗させた確認用の Draft PR を作って CI を走らせる。その組のジョブが failure、ほかの組が最後まで走り、`bats suites` の conclusion が `failure` になることを `gh api repos/oratta/claude-harness/commits/<sha>/check-runs` で確かめ、run の URL を issue #990 にコメントする。確認用の PR はマージせずに閉じる（ブランチの削除は主に確認してから行う）。触る範囲: なし（確認用のブランチでのみ 1 件のテストを書き換える）
-- [ ] 5.3 変更後の CI の開始から全チェック完了までの時間を 5 回ぶん測る（この PR の run。足りないぶんは `gh run rerun <run-id>` で走らせる）。変更前の 5 回（1.1）と並べ、組ごとの所要時間を添えて issue #990 にコメントする。所要時間に合否の線は引かず、縮んだ幅と、分割数を 4 のままにするかの判断を書く。触る範囲: なし（計測のみ）
+- [x] 5.1 PR の CI で、分けたジョブが 4 つ走り、`bats suites` と `shellcheck` が success になることを確かめる。各組のログの対象スイートの件数の合計が `git ls-files -- '*.bats' ':(exclude)_longruns/' | wc -l` と一致することを確かめる。触る範囲: なし（確認のみ）
+- [x] 5.2 この PR のブランチから別のブランチを切り、テストを 1 件わざと失敗させた確認用の Draft PR を作って CI を走らせる。その組のジョブが failure、ほかの組が最後まで走り、`bats suites` の conclusion が `failure` になることを `gh api repos/oratta/claude-harness/commits/<sha>/check-runs` で確かめ、run の URL を issue #990 にコメントする。確認用の PR はマージせずに閉じる（ブランチの削除は主に確認してから行う）。触る範囲: なし（確認用のブランチでのみ 1 件のテストを書き換える）
+- [x] 5.3 変更後の CI の開始から全チェック完了までの時間を 5 回ぶん測る（この PR の run。足りないぶんは `gh run rerun <run-id>` で走らせる）。変更前の 5 回（1.1）と並べ、組ごとの所要時間を添えて issue #990 にコメントする。所要時間に合否の線は引かず、縮んだ幅と、分割数を 4 のままにするかの判断を書く。触る範囲: なし（計測のみ）
