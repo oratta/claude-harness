@@ -54,8 +54,13 @@ def session_key(securestorage):
     return hashlib.sha256(value).hexdigest()[:8]
 
 
-def read_registry(path):
-    """Same resolution as select-account.sh: [(id, securestorage)], default slot on failure."""
+def read_slots(path):
+    """Registry slots as [(id, securestorage, enabled)], default slot on failure.
+
+    A slot is off only when its "enabled" is the JSON false (usage-account-registry
+    "スロットを enabled でオフにできる"). Off slots stay in the list: declared order, the cap
+    of 8, id uniqueness and the active slot are all counted over every slot.
+    """
     slots = []
     try:
         with open(path, encoding="utf-8") as handle:
@@ -80,10 +85,15 @@ def read_registry(path):
                 if not isinstance(secure, str) or CTRL_RE.search(label) or CTRL_RE.search(secure):
                     continue
                 seen.add(slot_id)
-                slots.append((slot_id, secure))
+                slots.append((slot_id, secure, entry.get("enabled") is not False))
     except Exception:
         pass
-    return slots or [("default", "")]
+    return slots or [("default", "", True)]
+
+
+def read_registry(path):
+    """Same slots as read_slots without the on/off mark: [(id, securestorage)]."""
+    return [(slot_id, secure) for slot_id, secure, _ in read_slots(path)]
 
 
 def _read_json(path):
