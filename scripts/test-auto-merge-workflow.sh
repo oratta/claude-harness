@@ -8,9 +8,19 @@
 #
 #   (1) 聖域パス判定の**実物の正規表現**を workflow から抜き出し、聖域パス群に一致し、
 #       それ以外のパスに一致しないことを実際に grep で確かめる（文字列の目視ではなく挙動）
-#   (2) 必須チェック名（REQUIRED_CHECKS）と ci.yml のジョブ名が**完全に一致**する
+#   (2) ci.yml の全ジョブが、必須チェック（REQUIRED_CHECKS）か、必須チェックのジョブが
+#       needs: で直接待つジョブである。確かめるのは次の 3 つ:
+#         a. 必須チェック名それぞれが、ci.yml のちょうど 1 つのジョブの name: に一致する
+#         b. ci.yml の全ジョブに name: がある
+#         c. name: が必須チェックに無いジョブは、必須チェックのジョブの needs: に
+#            ジョブ ID が直接挙がっている（推移的な依存は認めない）
 #       （GitHub Free private は branch protection が使えず、名前一致だけが CI green の
-#       判定根拠。ズレると原因不明の停滞に見えるので、ズレた瞬間に CI で落とす）
+#       判定根拠。名前がズレると原因不明の停滞に見え、足したジョブを必須チェックにも
+#       needs: にも入れ忘れると、そのジョブが落ちてもマージされる。どちらも CI で落とす）
+#       読む形は 1 つだけ: jobs: 直下のインデント 2 のキーがジョブ ID、インデント 4 の
+#       name: / needs: がジョブ名と依存、needs: は 1 行（needs: a か needs: [a, b]）。
+#       それ以外の形は読めないものとして失敗にする。name: の値は式を展開せず文字列のまま
+#       比べ、必須チェックのジョブに付いた if: は見ない
 #   (3) 5条件（agent-review:passed / 合格の HEAD 束縛 / CI green / 聖域 /
 #       AUTOMERGE_PAUSED）と PAT 未設定時の fail-closed が workflow に存在する
 #   (4) revert workflow は revert PR を作るだけでマージしない
@@ -395,25 +405,102 @@ else
   fi
 fi
 
-# ── (2) 必須チェック名 == ci.yml のジョブ名（完全一致）────────
+# ── (2) ci.yml の全ジョブが必須チェックか、必須チェックが待つジョブ ──
 extract_block "$WF" "required-checks" \
   | grep -v '# >>>' | grep -v '# <<<' \
   | sed "s/^ *//; s/^REQUIRED_CHECKS='//; s/'\$//" \
   | grep -v '^$' | LC_ALL=C sort > "$TMPD/required.txt"
 
-# ci.yml のジョブ名（ジョブ直下の name: はインデント4）。トップレベルの `name: CI` は拾わない。
-grep -E '^    name: ' "$CI" | sed 's/^    name: //' | LC_ALL=C sort > "$TMPD/jobs.txt"
+# ci.yml を 1 行 1 件のタブ区切りに読む（ubuntu の mawk でも動くよう [ \t] で書く）。
+#   job <id> / name <id> <名前> / needs <id> <待つジョブの id> /
+#   badneeds <id>（1 行の形でない needs:） / badkey <行>（ジョブ ID として読めないキー）
+# トップレベルの `name: CI` やステップの name:（インデント 6 以上）は拾わない。
+awk '
+  /^jobs:[ \t]*$/ { j = 1; next }
+  j && /^[^ \t#]/ { j = 0 }
+  !j { next }
+  /^  [A-Za-z_][A-Za-z0-9_-]*:[ \t]*$/ {
+    id = $0; sub(/^  /, "", id); sub(/:[ \t]*$/, "", id)
+    print "job\t" id
+    next
+  }
+  /^  [^ \t#]/ { id = ""; print "badkey\t" $0; next }
+  id == "" { next }
+  /^    name: / { print "name\t" id "\t" substr($0, 11); next }
+  /^    needs:/ {
+    v = $0; sub(/^    needs:[ \t]*/, "", v); sub(/[ \t]+$/, "", v)
+    if (v ~ /^[A-Za-z_][A-Za-z0-9_-]*$/) {
+      print "needs\t" id "\t" v
+    } else if (v ~ /^\[[ \t]*[A-Za-z_][A-Za-z0-9_-]*([ \t]*,[ \t]*[A-Za-z_][A-Za-z0-9_-]*)*[ \t]*\]$/) {
+      sub(/^\[/, "", v); sub(/\]$/, "", v); gsub(/[ \t]/, "", v)
+      n = split(v, a, ",")
+      for (i = 1; i <= n; i++) print "needs\t" id "\t" a[i]
+    } else {
+      print "badneeds\t" id
+    }
+  }
+' "$CI" > "$TMPD/ci-jobs.txt"
 
 if [ ! -s "$TMPD/required.txt" ]; then
   ng "REQUIRED_CHECKS を auto-merge.yml から抽出できない（# >>> required-checks マーカーを確認）"
-elif [ ! -s "$TMPD/jobs.txt" ]; then
-  ng "ci.yml からジョブ名を抽出できない"
-elif diff "$TMPD/required.txt" "$TMPD/jobs.txt" >/dev/null 2>&1; then
-  ok "必須チェック名が ci.yml のジョブ名と完全一致する（$(tr '\n' '/' < "$TMPD/required.txt")）"
+elif ! grep -q '^job	' "$TMPD/ci-jobs.txt"; then
+  ng "ci.yml からジョブを抽出できない（jobs: 直下のインデント 2 のキーをジョブ ID として読む）"
 else
-  ng "必須チェック名と ci.yml のジョブ名がズレている（auto-merge が永久に green と判定しない）"
-  echo "      REQUIRED_CHECKS: $(tr '\n' '/' < "$TMPD/required.txt")"
-  echo "      ci.yml jobs:     $(tr '\n' '/' < "$TMPD/jobs.txt")"
+  # 満たしていない条件を 1 行 1 件で出す（空なら 3 条件とも満たしている）
+  awk -F '\t' -v req="$TMPD/required.txt" '
+    FILENAME == req { if ($0 != "") { R[$0] = 1; rorder[++nr] = $0 }; next }
+    $1 == "job" { ids[++nj] = $2; next }
+    $1 == "name" { if (!($2 in name)) name[$2] = $3; next }
+    $1 == "needs" { needs[$2 "\t" $3] = 1; next }
+    $1 == "badneeds" {
+      print "ci.yml のジョブ " $2 " の needs: を読めない（needs: a か needs: [a, b] の 1 行の形で書く）"
+      next
+    }
+    $1 == "badkey" {
+      print "ci.yml の jobs: 直下にジョブ ID として読めないキーがある: " $2
+      next
+    }
+    END {
+      for (i = 1; i <= nj; i++) {
+        id = ids[i]
+        if (!(id in name)) {
+          print "ci.yml のジョブ " id " に name: が無い（必須チェックかどうかを判定できない）"
+        } else if (name[id] in R) {
+          cnt[name[id]]++
+          reqjob[id] = 1
+        }
+      }
+      for (i = 1; i <= nr; i++) {
+        c = cnt[rorder[i]] + 0
+        if (c == 0) {
+          print "必須チェック名「" rorder[i] "」に一致する name: のジョブが ci.yml に無い（auto-merge が永久に green と判定しない）"
+        } else if (c > 1) {
+          print "必須チェック名「" rorder[i] "」を ci.yml の " c " 個のジョブが名乗っている（ちょうど 1 つにする）"
+        }
+      }
+      for (i = 1; i <= nj; i++) {
+        id = ids[i]
+        if (id in reqjob) continue
+        found = 0
+        for (k = 1; k <= nj; k++) {
+          if ((ids[k] in reqjob) && ((ids[k] "\t" id) in needs)) found = 1
+        }
+        if (!found) {
+          print "ci.yml のジョブ " id " は必須チェックでも、必須チェックのジョブの needs: に直接挙がっているジョブでもない（落ちてもマージされる）"
+        }
+      }
+    }
+  ' "$TMPD/required.txt" "$TMPD/ci-jobs.txt" > "$TMPD/ci-jobs-ng.txt"
+
+  if [ ! -s "$TMPD/ci-jobs-ng.txt" ]; then
+    ok "ci.yml の全ジョブが必須チェックか、必須チェックのジョブが needs: で待つジョブである（必須チェック: $(tr '\n' '/' < "$TMPD/required.txt")）"
+  else
+    while IFS= read -r line; do
+      ng "$line"
+    done < "$TMPD/ci-jobs-ng.txt"
+    echo "      REQUIRED_CHECKS: $(tr '\n' '/' < "$TMPD/required.txt")"
+    echo "      ci.yml jobs:     $(grep '^job	' "$TMPD/ci-jobs.txt" | cut -f2 | tr '\n' '/')"
+  fi
 fi
 
 # ── (3) 4条件と fail-closed ──────────────────────────────────

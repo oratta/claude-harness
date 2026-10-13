@@ -348,6 +348,20 @@ JSON
   [ "$(jq -c '.accounts[0] | has("enabled")' "$ACCOUNTS")" = "false" ]
 }
 
+@test "init: overwriting a slot keeps the top-level codex block" {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "A", "securestorage": null },
+  { "id": "b", "label": "B", "securestorage": "${WORK}/claude-b" }
+], "codex": { "enabled": false } }
+JSON
+  run env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id a --label A2
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts[0].label' "$ACCOUNTS")" = "A2" ]
+  [ "$(jq -r '.accounts | length' "$ACCOUNTS")" = "2" ]
+  [ "$(jq -c '.codex' "$ACCOUNTS")" = '{"enabled":false}' ]
+}
+
 @test "init: overwriting keeps the written enabled value as it is" {
   cat > "$ACCOUNTS" <<JSON
 { "schema": 1, "accounts": [

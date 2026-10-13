@@ -61,7 +61,7 @@ SKILL.md は 1 ループの最初の工程「入口 0」として記録先の決
 - **THEN** 仕様化判断・仕様レビュー結果は記録先のコメントに置くと書かれ、仕様宣言は記録先が issue でも PR コメントに置くと書かれており、記録先のコメントに置くものの列挙に仕様宣言が含まれていない
 
 ### Requirement: 1 ループは W→R1→W→G の順で回る
-SKILL.md は 1 issue（または 1 Draft PR）の 1 ループを次の順で規定しなければならない（MUST）: (0) 記録先の確定 → (1) W が仕様化判断の記録・分割判定・openspec CLI による change の作成（`openspec new change` と artifact の直書き）まで行い return（仕様化しない判定なら (3) へ直行）→ (2) R1 が別コンテキストで仕様レビューし、結果を記録先にコメントして return（R1 を `subagent_type: dev-workflow:decider` で起こした場合は R1 が投稿できないため、本体が return を同じ書式で代理投稿する）。REQUEST_CHANGES なら W を SendMessage で再開して修正し R1 を再開して差分再レビュー（既定 2 周。2 周目以降の周の終わりに BLOCKER が残れば、下の「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement の直し方の判定を通し、「決まっている」で PR トークン上限の内側なら主に聞かず次の周を回し、そうでなければ `needs-approval`）→ **(3) W を再開して実装以降を回す。(3) は 2 段に分かれ、(3a) 実装（`tasks.md` を TDD で。直行なら TDD）・verify（`openspec validate --strict`）まで行って return、本体が計測し、W の return の `画面確認:` の行が `要る` なら画面確認役 V を起こしてから（下の「画面確認役 V は (3a) と (3b) の間に本体が必要時だけ起こす」Requirement）、(3b) `openspec archive`・PR を Draft のまま用意（無ければ Draft で作成）・仕様宣言まで行って return する（下の「W の (3) は 2 回の return に分かれる」Requirement）** → (4) G が pr-review-gate の手順 1〜5 を実行し `passed` / `failed` / `保留` / `needs-reviewer` / `needs-decider` / `needs-fix-check` / `review-incomplete` のいずれかを return。PR の Ready 化は G が手順 5 の合格処理で行い（Draft なら Ready にしてから `agent-review:passed` を付ける）、W は行ってはならない（MUST NOT）。
+SKILL.md は 1 issue（または 1 Draft PR）の 1 ループを次の順で規定しなければならない（MUST）: (0) 記録先の確定 → (1) W が仕様化判断の記録・分割判定・openspec CLI による change の作成（`openspec new change` と artifact の直書き）まで行い return（仕様化しない判定なら (3) へ直行。文言合わせの通し方（`dev-workflow-spec-review` の「仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く」Requirement）なら、W は仕様の差分 1 ファイルだけを書いて return し、本体は記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行があることを確かめてから (2) を飛ばして (3) へ進む）→ (2) R1 が別コンテキストで仕様レビューし、結果を記録先にコメントして return（R1 を `subagent_type: dev-workflow:decider` で起こした場合は R1 が投稿できないため、本体が return を同じ書式で代理投稿する）。REQUEST_CHANGES なら W を SendMessage で再開して修正し R1 を再開して差分再レビュー（既定 2 周。2 周目以降の周の終わりに BLOCKER が残れば、下の「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement の直し方の判定を通し、「決まっている」で PR トークン上限の内側なら主に聞かず次の周を回し、そうでなければ `needs-approval`）→ **(3) W を再開して実装以降を回す。(3) は 2 段に分かれ、(3a) 実装（`tasks.md` を TDD で。直行なら TDD。文言合わせの通し方なら W が (1) の return に書いた作業項目を TDD で）・verify（`openspec validate --strict`）まで行って return、本体が計測し、W の return の `画面確認:` の行が `要る` なら画面確認役 V を起こしてから（下の「画面確認役 V は (3a) と (3b) の間に本体が必要時だけ起こす」Requirement）、(3b) `openspec archive`・PR を Draft のまま用意（無ければ Draft で作成）・仕様宣言まで行って return する（下の「W の (3) は 2 回の return に分かれる」Requirement）** → 文言合わせの通し方では、本体は G を起こす前に、記録先の最新の仕様化判断のコメントの `直す文:` の行が archive 済みの差分の要件名と一致することを確かめる（SHALL） → (4) G が pr-review-gate の手順 1〜5 を実行し `passed` / `failed` / `保留` / `needs-reviewer` / `needs-decider` / `needs-fix-check` / `review-incomplete` のいずれかを return。PR の Ready 化は G が手順 5 の合格処理で行い（Draft なら Ready にしてから `agent-review:passed` を付ける）、W は行ってはならない（MUST NOT）。
 
 G が `review-incomplete` を return したとき、本体は新しい reviewer を起動せず、`agent-review:pending` のまま残差を報告して工程を止めなければならない（MUST）。`needs-reviewer` が一周目照合の補足要求である場合、本体は fresh reviewer に固定 HEAD・元の三表・残差・補足済み回数を渡し、同じレビューの不足分だけを補わせなければならず（MUST）、レビューを最初からやり直させてはならない（MUST NOT）。
 
@@ -74,6 +74,14 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 #### Scenario: ループの順序が書かれている
 - **WHEN** SKILL.md の 1 ループの記述を読む
 - **THEN** 0〜4 の工程が W→R1→W→G の順で並び、(1) の W の工程に `openspec new change` があり、仕様化しない判定は (3) へ直行し、R1 と G にそれぞれ既定 2 周と、2 周目以降の周の終わりに直し方の判定を通す続行がある
+
+#### Scenario: 文言合わせの通し方は (2) を飛ばす
+- **WHEN** SKILL.md の 1 ループの (1) と (2) を読む
+- **THEN** 文言合わせの通し方では W が仕様の差分 1 ファイルだけを書いて return し、本体が記録先の仕様化判断のコメントの `通し方: 文言合わせ` の行を確かめて R1 を起こさずに (3) へ進むことが書かれ、その行が無ければ (2) の R1 を通すことが書かれている
+
+#### Scenario: 文言合わせの通し方では G を起こす前に本体が直す文の行を確かめる
+- **WHEN** SKILL.md の 1 ループの (4) を読む
+- **THEN** 文言合わせの通し方では、本体が G を起こす前に、記録先の最新の仕様化判断のコメントの `直す文:` の行が archive 済みの差分の要件名と一致することを確かめると書かれている
 
 #### Scenario: (3) は 2 段に分かれて書かれている
 - **WHEN** SKILL.md の 1 ループの (3) を読む
@@ -186,7 +194,11 @@ SKILL.md は次を規定しなければならない（MUST）。**条件**（い
 - **THEN** 子セッションのモデルは `epic-dispatch.sh launch` が `cld --model` で指定すること、既定が `opus` であること、`EPIC_DISPATCH_MODEL` で変えられること、Claude Code の既定モデルが何であっても子は指定したモデルで起動すること、コマンド部分を `EPIC_DISPATCH_CLAUDE_CMD` で差し替えられ Orca 側のコマンドを変えたら合わせて変えること、`--dangerously-skip-permissions` を付けるのは `cld` であることが書かれている
 
 ### Requirement: 実行モードと unmanned の責務分割
-SKILL.md は実行モード表（interactive / unmanned）を持ち、unmanned（`--unmanned`。loop-dev-agent の憲法 Step 3 から呼ばれる）では次を規定しなければならない（MUST）: develop の本体は憲法のメイン自身が務め、W / R1 をメインが spawn する。worktree は憲法側が用意したものを使う。1 ループのうち (0)〜(3) を回し、(3) で W が Draft PR の作成と `agent-review:pending` の付与（憲法 Step 3 の 5〜6 に相当）まで行う。(4) の G は unmanned では起こさず、憲法 Step 1（レビューモード）が次サイクル以降で担う（1 サイクル 1 仕事を維持）。複数 change に割れた場合は子 issue を作って `blocked_by` で順序付けし、そのサイクルを終える。仕様化判断の記録と仕様レビューは unmanned でも免除しない（MUST）。
+SKILL.md は実行モード表（interactive / unmanned）を持ち、unmanned（`--unmanned`。loop-dev-agent の憲法 Step 3 から呼ばれる）では次を規定しなければならない（MUST）: develop の本体は憲法のメイン自身が務め、W / R1 をメインが spawn する。worktree は憲法側が用意したものを使う。1 ループのうち (0)〜(3) を回し、(3) で W が Draft PR の作成と `agent-review:pending` の付与（憲法 Step 3 の 5〜6 に相当）まで行う。(4) の G は unmanned では起こさず、憲法 Step 1（レビューモード）が次サイクル以降で担う（1 サイクル 1 仕事を維持）。複数 change に割れた場合は子 issue を作って `blocked_by` で順序付けし、そのサイクルを終える。仕様化判断の記録と仕様レビューは unmanned でも免除しない（MUST）。文言合わせの通し方（`dev-workflow-spec-review` の「仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く」Requirement）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる（SHALL）。
+
+#### Scenario: unmanned でも文言合わせの通し方は同じ条件で当たる
+- **WHEN** SKILL.md の実行モードの節を読む
+- **THEN** 仕様化判断の記録と仕様レビューを unmanned でも免除しないことと、文言合わせの通し方は interactive と同じ条件で unmanned にも当てることが書かれている
 
 #### Scenario: unmanned では G を起こさない
 - **WHEN** SKILL.md の実行モード表を読む
@@ -839,7 +851,7 @@ G は前の段の会話を持たない前提で動かなければならない（
 | レビューの三表と補足済み回数（補足を頼んだ時点で 1。コメントが無ければ 0） | 1 行目 `レビュー三表:` のコメント（`補足済み回数:` の行を持つ） | 照合と振り分け |
 | 振り分けの結果 | 既存の仕分けコメント | 照合と振り分け |
 
-照合と振り分けの G は、補足の `needs-reviewer` を返す前に `補足済み回数: 1` を書いた `レビュー三表:` のコメントを投稿しなければならない（MUST。補足を頼んだ時点で 1 と数え、reviewer への payload は 0 のまま）。補足済み回数は G が交代しても最新の `レビュー三表:` のコメントから読み、リセットしてはならない（MUST NOT）。止める指摘が無い周で止めない指摘を follow-up issue に切るのは照合と振り分けの G で、`次の段へ` を返す前に行う（MUST）。
+照合と振り分けの G は、補足の `needs-reviewer` を返す前に `補足済み回数: 1` を書いた `レビュー三表:` のコメントを投稿しなければならない（MUST。補足を頼んだ時点で 1 と数え、reviewer への payload は 0 のまま）。補足済み回数は G が交代しても最新の `レビュー三表:` のコメントから読み、リセットしてはならない（MUST NOT）。止める指摘が無い周で止めない指摘を振り分け表（dev-workflow-pr-review-gate の「止めない指摘は振り分け表に上から当てる」Requirement）に通すのは照合と振り分けの G で、`次の段へ` を返す前に行う（MUST。1 周目に段 A に当たる指摘があれば `次の段へ` ではなく `agent-review:failed` で返す）。
 
 固定した HEAD の行を `対象 HEAD:` と書いてはならない（MUST NOT。auto-merge workflow がこの文字列を宣言の照合に使うため）。
 
@@ -941,7 +953,9 @@ G が要求するレビュアー（決める役でないとき）は、本体が
 - **THEN** レビュアーの既定の種別として `dev-workflow:reviewer` が書かれ、事前分類に当たるときの `dev-workflow:decider` が残り、レビュアーの段落・行に `subagent_type: general-purpose` と `` Agent ツール（`general-purpose`） `` の形が無い（`` `general-purpose` に `model: fable` は付けない `` の文言は残ってよい）
 
 ### Requirement: W の仕様化経路は openspec CLI だけで進める
-`dev-workflow:worker` は `Skill` を持たないので、W は仕様化・実装の検証・archive を openspec CLI で行わなければならない（MUST）。仕様化は `openspec new change` と artifact の直書き（雛形と書き方の指示は `openspec instructions <artifact> --change <name>`、依存順は `openspec status --change <name>` で得る）、実装の検証は `openspec validate <change> --strict` と `tasks.md` のチェックボックスの確認、archive は `openspec archive <change>` で行う（SHALL）。工程の区切り（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）と R1 の仕様レビューは変えない（SHALL）。
+`dev-workflow:worker` は `Skill` を持たないので、W は仕様化・実装の検証・archive を openspec CLI で行わなければならない（MUST）。仕様化は `openspec new change` と artifact の直書き（雛形と書き方の指示は `openspec instructions <artifact> --change <name>`、依存順は `openspec status --change <name>` で得る）、実装の検証は `openspec validate <change> --strict` と `tasks.md` のチェックボックスの確認、archive は `openspec archive <change>` で行う（SHALL）。工程の区切り（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）は変えない（SHALL）。R1 の仕様レビューも、文言合わせの通し方（次の段落）を除いて変えない（SHALL）。
+
+文言合わせの通し方（`dev-workflow-spec-review` の「仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く」Requirement）では、change に proposal.md が無いので、W は実装の検証を `openspec validate <change> --type change --strict` で行わなければならない（MUST。`--type change` を付けない形は change を見つけられず `Unknown item` で終了コード 1 になり、`openspec validate --changes --strict` はこの change を検査せずに終了コード 0 を返す）。`tasks.md` が無いのでチェックボックスの確認は行わない（SHALL）。`openspec archive <change>` は見出しが既存の要件名と一致しないとき、何も変えずに終了コード 0 で終わるので、W は archive のあと `openspec/changes/archive/` に change のディレクトリがあることを確かめる（MUST）。`references/roles/worker/implement.md` と `references/roles/worker/finish.md` はこの 2 点を書かなければならない（MUST）。
 
 W の仕様化経路があるかどうかは `openspec --version` が成功するかだけで決めなければならない（MUST）。`.claude/commands/opsx/` の有無で決めてはならない（MUST NOT）。opsx コマンドがあっても openspec CLI が無ければ、W は `仕様化判断: しない` の理由に「openspec 不在」と書いてコード直行する（SHALL）。
 
@@ -950,6 +964,14 @@ W の仕様化経路があるかどうかは `openspec --version` が成功す�
 #### Scenario: worker.md が CLI の経路で書かれている
 - **WHEN** `plugins/dev-workflow/skills/develop/references/roles/worker.md` を読む
 - **THEN** `openspec new change`・`openspec validate`・`openspec archive` を使う手順があり、(3a) の節と (3b) の節に `/opsx:` の文字列が無く、`/opsx:` を含む行はどれも `本体` か `主` の語を含む
+
+#### Scenario: 文言合わせの通し方の検証コマンドが書かれている
+- **WHEN** `references/roles/worker/implement.md` の実装と verify の記述と、`references/roles/worker/finish.md` の archive の記述を読む
+- **THEN** `implement.md` に文言合わせの通し方では `openspec validate <change-name> --type change --strict` を使うことが書かれ、`finish.md` に archive のあと `openspec/changes/archive/` に change のディレクトリがあることを確かめることが書かれている
+
+#### Scenario: proposal.md の無い change を名前だけで検証する
+- **WHEN** `specs/<capability>/spec.md` だけを持つ change に `openspec validate <change> --strict` を実行する
+- **THEN** `Unknown item` と出て終了コード 1 で終わり、`--type change` を付けると差分が検査されて正しい差分なら終了コード 0 で終わる
 
 #### Scenario: 経路の有無を CLI だけで決める
 - **WHEN** `worker.md` の仕様化判断の節と、`develop/SKILL.md` の前提の表の openspec の行を読む
@@ -1829,4 +1851,39 @@ develop の SKILL.md「エピックの扱い」は、端末を作れなかった
 #### Scenario: SKILL.md の経路の決め方に orca になる条件としての件数の下限が書かれていない
 - **WHEN** `skills/develop/SKILL.md` の「エピックの扱い」の「経路の決め方」を読む
 - **THEN** `orca` になる条件が「`orca` が PATH にあり、本体が Orca 管理のワークツリーにいる」だけで書かれ、`orca` になる条件として blocked されていない子の件数の下限（2 件以上など）が無く（着手できる子が 0 件のとき `subagent` になる旨の文はあってよい）、経路は最初の開始時に 1 回だけ決めて途中で変えないこと、再開時は `回し方:` のコメントから引き継ぐことは残っている
+
+### Requirement: Codex がオフのとき自動選択は Claude だけの構成を返し、明示指定は拒否する
+`plugins/dev-workflow/scripts/codex-develop.py` は、レジストリの `codex.enabled` が `false`（`usage-account-registry` capability の要件「Codex を codex.enabled でオフにできる」）のとき、次のとおり動かなければならない（SHALL）。
+
+自動選択（profile も旧形式も無指定）は、Codex の週次の余裕の値にかかわらず、構成 `claude-default`・reason `codex-off` を返す。Codex の使用量を取得せず（app-server の起動もキャッシュの更新もしない）、selection evidence の `codex` ブロックは `account`・`margin`・`fetched_at` を `null`、`enabled` を `false` とする。Claude の余裕の評価と、`claude` ブロックの形は変えない。`select_configuration` は、`codex_enabled` を引数に取り（既定は真）、偽なら余裕の値にかかわらず `('claude-default', 'codex-off')` を返す。
+
+明示指定は、オフのとき黙って Claude に差し替えてはならない（MUST NOT）。旧形式（`--account` / `--model`）と、いずれかの role の executor が `codex` の profile（`--profile`）は、依頼ファイルを作らず、`status: blocked` と exit 2 で拒否する。エラー文にはオフであること、戻し方（`codex.enabled` を `true` にするか `codex` のキーを消すこと）、読んだ登録簿のパスを入れる。この拒否は、アカウント対応表の検査（`account is not registered` など）より先に行う。executor が `codex` の role を 1 つも持たない profile は拒否しない。
+
+`codex.enabled` の読み方（入力の出どころ、オフになる条件が `false` との一致 1 つであること、書き損じを防ぎ切ることを完了条件にしないこと）は `usage-account-registry` の要件「Codex を codex.enabled でオフにできる」の守備範囲に従い、ここで独自の検査を足さない（SHALL）。
+
+`codex.enabled` が無い、または `false` 以外のとき、選ばれる構成・reason・selection evidence・依頼ファイルは変更前と同一でなければならない（SHALL）。
+
+#### Scenario: オフなら Codex の余裕が大きくても Claude だけを選ぶ
+- **WHEN** `codex.enabled` が `false` で、Codex の週次の余裕が Claude より大きい（両方 0 以上）状態で自動選択する
+- **THEN** 構成は `claude-default`、reason は `codex-off` で、`codex.enabled` は `false`。Codex の使用量の取得は呼ばれない
+
+#### Scenario: オフで Claude にも余裕が無いとき
+- **WHEN** `codex.enabled` が `false` で、Claude の余裕が負（または欠測）の状態で自動選択する
+- **THEN** 構成は `claude-default`、reason は `codex-off`（`no-provider-has-headroom` ではない）
+
+#### Scenario: オフで Codex の profile を明示すると拒否する
+- **WHEN** `codex.enabled` が `false` で、`--profile codex-standard` を指定して `request` を実行する
+- **THEN** exit 2 で終わり、`status` は `blocked`、エラー文にオフであることが出る。依頼ファイルは作られない
+
+#### Scenario: オフで旧形式を明示しても拒否する
+- **WHEN** `codex.enabled` が `false` で、`--account NAME --model MODEL` を指定して `request` を実行する
+- **THEN** exit 2 で終わり、エラー文にオフであることが出る
+
+#### Scenario: オフの拒否は対応表の検査より先
+- **WHEN** `codex.enabled` が `false` で、`--account-home` を渡さずに `--profile codex-standard` を指定する
+- **THEN** エラー文は `account is not registered` ではなくオフであることを示す
+
+#### Scenario: 設定が無い環境では変わらない
+- **WHEN** `codex` を書いていないレジストリ、レジストリ無し、`codex.enabled` が `true` のレジストリのそれぞれで、同じ使用量の入力で自動選択する
+- **THEN** 3 つとも、選ばれる構成・reason・selection evidence が同一で、`codex` ブロックに `enabled` のキーは無い
 

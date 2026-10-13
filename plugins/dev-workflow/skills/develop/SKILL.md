@@ -86,6 +86,9 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
 (1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（起動指示に `段: spec` の 1 行を書く。model: references/pre-classification.md の事前分類表の「1 周目」列に当たればその値（4 分類のいずれでも opus。W の上限は opus）、それ以外 sonnet。W を fable にはしない。共有枠モードが下限を決める）:
       記録先の用意（Draft PR 経路）→ 仕様化判断の記録 → 分割判定 → openspec new change → return「仕様できた」
       仕様化しない判定なら → (3) へ直行（TDD → PR）
+      文言合わせの通し方（既存の仕様の文言を実装に合わせて直すだけの変更。判定基準は `references/decision-criteria.md` Step B）なら → W は仕様の差分 1 ファイルだけを書いて return する。
+           本体は W の return の文面ではなく、記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行があることを確かめ、あれば次の R1 の工程を飛ばして W を `段: implement` で再開する。
+           行が無ければ W を実装に進めず、`段: spec` で再開して仕様化判断を投稿し直させる（そのあとは R1 の工程を通す）
 (2) R1 を spawn（model: 既定 opus。マージ条件・層間契約・課金/法務に触れれば subagent_type: dev-workflow:decider で spawn する。聖域パスだけでは上げない）:
       references/roles/spec-reviewer.md に従って別コンテキストで仕様レビュー → 結果を記録先にコメント → return
       dev-workflow:decider で起こした R1 は gh を実行できないので投稿せず return し、本体が同じ書式で代理投稿する
@@ -94,12 +97,13 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       （既定 2 周＝初回＋差分 1 回。2 周目以降の周の終わりに BLOCKER が残れば、節「レビューの周を主に聞かずに続ける（直し方の判定）」の判定を通す。
        残った BLOCKER がすべて直し方が決まっているもので PR トークン上限の内側（`pr-token-budget.sh` が exit 2 でない）なら、主に聞かず次の周を回す（W を `段: spec` で再開 → R1 に差分再レビュー）。
        方針の選び直しが要るなら needs-approval を付けて本体がオーナーに 1 アクションで依頼し、「保留で止まるときの引き継ぎ」の節どおり引き継ぎを残す）
-      R1 の APPROVE が記録先に記録されるまで W を apply に進めない（再開しない）
+      R1 の APPROVE が記録先に記録されるまで W を apply に進めない（再開しない。例外は (1) の文言合わせの通し方だけ）
 (3) W を SendMessage で再開（再開前に `scripts/subagent-context.sh <W の名前>` で測る。上限超を検知した
       あとの扱いは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本。正本を読むまで手渡さない）。
       (3) は 2 回の return に分かれる:
       (3a) 再開指示に `段: implement` を書く。apply（TDD。openspec CLI で tasks を実装）→ openspec validate --strict → return「工程完了: 実装＋verify」
            （実行したテストコマンドと exit code、openspec validate --strict の exit code、画面確認: の行を載せる）
+           （文言合わせの通し方の (3a) では `tasks.md` が無いので、W が (1) の return に書いた作業項目を TDD で実装し、検証は `openspec validate <change-name> --type change --strict` で行う）
            → 本体はここで `scripts/subagent-context.sh <W の名前>` をもう一度実行して測ってから (3b) を指示する
       (3b) 再開指示に `段: finish` を書く。openspec archive → PR を Draft のまま用意（無ければ Draft で作成。Ready 化は (4) の G が pr-review-gate 手順 5 で行う）→ 仕様宣言を PR コメントに書く
            → return「工程完了: archive＋PR＋仕様宣言」（PR #N と仕様宣言のコメント URL を載せる）
@@ -113,6 +117,8 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            (3a) の return に PR 番号と仕様宣言のコメント URL が既に揃っていれば（古い世代の W が (3) を
            通しで終えた場合）、(3b) を指示せず、そのまま (4)（G の工程）へ進む
 (4) G を `subagent_type: dev-workflow:gate-runner` で段ごとに名前付き spawn（model: 既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は needs-reviewer で本体が起こすレビュアー（従来経路では Codex）が担う）:
+      文言合わせの通し方では、本体は G を起こす前に、記録先の最新の仕様化判断のコメントの `直す文:` の行が archive 済みの差分の要件名と一致することを確かめる
+           （1 つの記録先を複数の change が共有すると、最新の仕様化判断が別の change のものになることがある。一致しなければ G を起こさず、W を `段: spec` で再開してその change の仕様化判断を投稿し直させる）
       段ごとに新しい G を起こす（段は 前提確認と重さ判定・照合と振り分け・合格処理・保留の解除 の 4 つ。1 体は 1 段だけを担当する。
            起こす時点と渡すものの表は gate-runner.md「段ごとの起動と入力」）。名前は `G-<PR>-<prepare|triage|pass|hold>-<n>`（n はその PR・その段で
            起こした回数）、description は `G: <段> for PR #N (#issue)`（先頭の `G:` を残す。役割別集計がこの接頭辞で G と判定する）
@@ -340,7 +346,7 @@ W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 �
 
 unmanned で複数 change に割れた場合は、W が change 単位で子 issue を作って `blocked_by` で順序付けし、元 issue に分割結果をコメントしてそのサイクルを終える（`references/roles/worker/spec.md`「分割判定」）。判断がつかないほど曖昧なら Discord で質問し、`needs-approval` を付けてサイクルを終える。
 
-**仕様化判断の記録と仕様レビューは unmanned でも免除しない**（同じ書式で記録先に記録し、R1 の APPROVE まで W を apply に進めない）。
+**仕様化判断の記録と仕様レビューは unmanned でも免除しない**（同じ書式で記録先に記録し、R1 の APPROVE まで W を apply に進めない）。文言合わせの通し方（1 ループの (1)。判定基準は `references/decision-criteria.md` Step B）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる。
 
 ## エピックの扱い
 

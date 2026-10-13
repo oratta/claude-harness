@@ -6,6 +6,7 @@ The rules are specified in openspec/specs/usage-session-records ("記録と snap
 agent-model-guard.sh, codex-develop.py) uses this one implementation.
 
   usage_view.py --json [--now EPOCH]   print {"now", "active", "accounts"} as one JSON line
+  usage_view.py --codex-enabled        print "on" or "off" (registry "codex"."enabled"), exit 0
 
 Inputs: CLAUDE_ACCOUNTS_FILE (default ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json),
 USAGE_SESSIONS_DIR (default ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions),
@@ -103,6 +104,17 @@ def _read_json(path):
         return document if isinstance(document, dict) else None
     except Exception:
         return None
+
+
+def read_codex_enabled(path):
+    """False only when the registry's top-level "codex"."enabled" is the JSON false.
+
+    usage-account-registry "Codex を codex.enabled でオフにできる": a missing or broken
+    registry, a missing key and every other value read as on, so a slip of the pen never
+    stops Codex silently.
+    """
+    codex = (_read_json(path) or {}).get("codex")
+    return not (isinstance(codex, dict) and codex.get("enabled") is False)
 
 
 def read_snapshot(path):
@@ -252,6 +264,9 @@ def build_view(accounts_file=None, sessions_dir=None, snapshot_path=None, now=No
 
 
 def main(argv):
+    if argv == ["--codex-enabled"]:
+        print("on" if read_codex_enabled(default_paths()["accounts_file"]) else "off")
+        return 0
     now = None
     if "--now" in argv:
         index = argv.index("--now")

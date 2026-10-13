@@ -23,7 +23,7 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 - 実装と**別コンテキスト**（既定 Codex CLI、フォールバック Task サブエージェント）でレビューする
 - **リスク宣言の positive affirmation**: 「リスクなし」か「主のリスク許容が必要」のどちらかを必ず PR コメントに残す（書かないは選べない・fail-closed）
 - 動作確認の**証拠**（HEAD SHA 付き）を添付し、API で実在を実測してから `agent-review:passed` を付ける
-- 収束ルール: レビューは既定2周キャップ・再レビューは差分限定（方式の書き換え後は全体レビュー）・マージ後に直せるものは blocking にしない・マージを止めるのは全周共通で `blocking` かつ `confirmed` かつ違反文の引用（または例外 3 種）を G が照合できた指摘だけで、それ以外は follow-up issue・2周目の終わりに止める指摘が残れば `needs-approval` で主に上げる（3周目を自動で開けない）。レビュアーには手順 2-1 の固定書式（深刻度・検証・根拠・場所・何が起きるか・直し方）で指摘を書かせる
+- 収束ルール: レビューは既定2周キャップ・再レビューは差分限定（方式の書き換え後は全体レビュー）・マージ後に直せるものは blocking にしない・マージを止めるのは全周共通で `blocking` かつ `confirmed` かつ違反文の引用（または例外 3 種）を G が照合できた指摘だけで、それ以外は止めない指摘の振り分け表に通す（段 A〜E。無条件では issue にしない）・2周目の終わりに止める指摘が残れば `needs-approval` で主に上げる（3周目を自動で開けない）。レビュアーには手順 2-1 の固定書式（深刻度・検証・根拠・場所・何が起きるか・直し方）で指摘を書かせ、「何が起きるか」は「こういう条件だと、こうなる」の形にする
 - auto-merge workflow 配備済みリポでは passed 付与で機械マージ、未配備リポではマージは人間操作（ゲート手順は同一）
 
 ### push-guard-setup
@@ -91,6 +91,14 @@ accounts.sh on b           # b をオンに戻す
 `add` が出したコマンドをそのまま実行して `claude` を起動し、`/login` でログインする。置き場所の基点は環境変数 `CLAUDE_ACCOUNTS_HOME`（絶対パス。既定 `$HOME/.claude-accounts`）で変えられる。同じ id の `add` は拒否される。`add` / `on` / `off` は書き換える前に登録簿を `accounts.json.bak` に控える（1 世代）。登録簿が壊れているときは何も書かずに止まる。最初の `add` では既定アカウントのスロットができないので、既定アカウントも並べたいときは、そのシェルで `accounts-init.sh --id <id>` を実行する。
 
 使っていないアカウントは `accounts.sh off <id>` でオフになる。オフのアカウントは `cld` の自動選択で選ばれず（理由行の `margins` に `<id>:off` と出る）、`usage-probe.sh` も使用量を取得しない。`cld-account <id>` でオフのアカウントを指定すると、戻し方を stderr に出して exit 2 で終わり、Claude は起動しない。全アカウントがオフのときは既定アカウントで起動する（理由は `default-due-to-all-off`）。既定アカウントへの縮退は `enabled` を見ないので、既定アカウント自体をオフにしていても、全アカウントがオフのとき、またはオンのアカウントがすべて欠測か 5 時間枠 90% 以上のときは、そのオフの既定アカウントで起動する。戻すときは `accounts.sh on <id>` を実行する。
+
+Codex を使わない期間は、`accounts.json` のトップレベル（`accounts` の配列の外）に `"codex": {"enabled": false}` を足すと Codex がオフになる。
+
+```json
+{ "schema": 1, "accounts": [ ... ], "codex": { "enabled": false } }
+```
+
+オフのあいだ、develop の自動選択は Codex の使用量を読まずに Claude 既定構成を選び（reason `codex-off`）、Codex に投げる明示指定（Codex の role を含む `--profile`、旧形式の `--account`/`--model`）は戻し方を出して exit 2 で終わる。pr-review-gate の従来経路は、full 判定でも Codex を探さず呼ばず、Task サブエージェントでレビューする（`レビュー実行者: Task サブエージェント（full・Codex オフ）`）。ステータスラインの Codex 行は `off` になる。オフになるのは値が JSON の `false` のときだけで、`"false"`・`0`・`null` や `codex` の省略はオンとして読む。いまの設定は `python3 scripts/usage_view.py --codex-enabled` が `on` / `off` で返す。戻すときは `codex` のキーを消すか `enabled` を `true` にする。
 
 ## references/（他プラグインと共有する契約）
 

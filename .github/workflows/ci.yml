@@ -3,13 +3,27 @@
 #
 # ubuntu ランナーを使う理由:
 #   プラグインの実行環境は macOS だが、macOS ランナーは分課金が 10 倍で、
-#   PR ごとに回すゲートとしては無料枠を圧迫する。bats スイートは全 990 件（2026-09-03 時点）が
-#   Linux でそのまま動く（BSD date / stat -f 等の macOS 固有コマンドへの依存は
-#   grep で 0 件）ため、ubuntu で全件を回す。
+#   PR ごとに回すゲートとしては無料枠を圧迫する。bats スイートは全 134 スイート・
+#   約 3,100 件（2026-10-12 時点）が Linux でそのまま動く（BSD date / stat -f 等の
+#   macOS 固有コマンドへの依存は grep で 0 件）ため、ubuntu で全件を回す。
 #
 #   将来 macOS 固有スイートが増えたら scripts/test.sh の TEST_EXCLUDE に
 #   パス片を並べて明示スキップする（下の env を有効化する）。除外は
 #   test.sh が "skipped by TEST_EXCLUDE: N" として出力するので無言では減らない。
+#
+# ジョブの構成（issue #990）:
+#   lint（チェック名 shellcheck）   scripts/lint.sh と auto-merge workflow の不変条件の検査
+#   test（matrix で 4 つに分ける）  bats の全スイートを 4 組に分け、1 組ずつ別のジョブで回す
+#                                   （scripts/test.sh の TEST_SHARD=k/N）。1 本で回すと
+#                                   10 分前後かかるので、同時に走らせて PR の待ちを縮める
+#   test-result（チェック名 bats suites）
+#                                   分けたジョブを needs で待ち、全部が success のときだけ成功する
+#   auto-merge.yml の必須チェック（REQUIRED_CHECKS）は shellcheck と bats suites の 2 つのまま。
+#   分けたジョブは必須チェックに入れず、bats suites のジョブが結果をまとめて報告する。
+#   分割数を変えるときは、test ジョブの matrix の shard: と TEST_SHARD: の分母の 2 か所を
+#   同じ数に直す（そろっていることは tests/ci-bats-shards.bats が確かめる）。
+#   ジョブを足すときは、必須チェックに入れるか、必須チェックのジョブの needs: に直接入れる
+#   （scripts/test-auto-merge-workflow.sh が確かめる。docs/auto-merge.md 参照）。
 #
 # 前提パッケージ:
 #   shellcheck / jq / node / python3 は ubuntu-latest にプリインストール済み。
@@ -63,13 +77,30 @@ jobs:
       # ubuntu-latest には shellcheck がプリインストールされている
       - name: shellcheck (scripts/lint.sh)
         run: scripts/lint.sh
+      # auto-merge workflow の安全不変条件（聖域判定・必須チェックと ci.yml のジョブの対応・
+      # fail-closed）。bats ではなく素の sh なので test.sh の自動発見に乗らず、ここで明示実行する。
+      # bats のジョブは matrix で分かれていて、そこに置くと組の数だけ走るので、このジョブに置く
+      # （落ちたときは必須チェック shellcheck が失敗になる。ステップ名で見分ける）。
+      - name: auto-merge workflow invariants
+        run: scripts/test-auto-merge-workflow.sh
 
   test:
-    name: bats suites
+    # bats suites とは別の名前にする（bats suites は下の test-result ジョブが名乗る必須チェック名）
+    name: bats shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
+    strategy:
+      # 1 つの組が落ちても残りの組を最後まで走らせる（1 回の CI で落ちるテストを全部見る）
+      fail-fast: false
+      matrix:
+        # 組の番号は 1 行のリストで書く。数を変えるときは下の TEST_SHARD の分母も同じ数に直す
+        shard: [1, 2, 3, 4]
     # macOS 固有スイートが出てきたらここに空白区切りのパス片を並べる
     # env:
     #   TEST_EXCLUDE: some-macos-only-suite
+    # （TEST_EXCLUDE を有効にするときは、下の env: に TEST_EXCLUDE の行を足す）
+    env:
+      # 全スイートを 4 組に分けた k 番目だけを回す。分母は式を経由せず数字で直接書く
+      TEST_SHARD: ${{ matrix.shard }}/4
     steps:
       # actions/checkout は GitHub 公式 action なので SHA 固定の対象外（方針は上記コメント参照）
       - uses: actions/checkout@v4
@@ -84,7 +115,36 @@ jobs:
           sudo apt-get install -y --no-install-recommends bats=1.10.0-1
       - name: run bats suites (scripts/test.sh)
         run: scripts/test.sh
-      # auto-merge workflow の安全不変条件（聖域判定・必須チェック名の一致・fail-closed）。
-      # bats ではなく素の sh なので test.sh の自動発見に乗らず、ここで明示実行する。
-      - name: auto-merge workflow invariants
-        run: scripts/test-auto-merge-workflow.sh
+
+  # 分けたジョブの結果をまとめて、必須チェック名 bats suites で報告する。
+  # checkout はしない（結果の判定だけを行う）。
+  test-result:
+    name: bats suites
+    runs-on: ubuntu-latest
+    needs: [test]
+    # always() を付けないと、分けたジョブが落ちたときにこのジョブは「失敗」ではなく
+    # 「飛ばされた」になる。always() は、連続 push で取り消された run でもこのジョブを走らせ、
+    # 古い SHA に bats suites の failure を付ける。取り消しも失敗として報告する意図した挙動なので、
+    # !cancelled() に置き換えない（auto-merge.yml は PR の今の HEAD のチェックだけを見るので、
+    # 古い SHA の failure は新しい run の判定に影響しない）。
+    if: always()
+    steps:
+      # always() を付けたジョブは needs のジョブが落ちても実行されるので、止めるのはこの判定だけ
+      # になる。ジョブ ID を 1 つずつ書かず、needs.*.result で needs の全要素を見る
+      # （ID を書く形だと、あとから needs: に足したジョブが落ちても成功になる）。
+      # success 以外（failure / cancelled / skipped）が 1 つでもあれば失敗にする。
+      - name: all shards succeeded
+        env:
+          NEEDS_RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needs の result: ${NEEDS_RESULTS:-(空)}"
+          if [ -z "$NEEDS_RESULTS" ]; then
+            echo "::error::needs の result を 1 つも読めない"
+            exit 1
+          fi
+          for r in $NEEDS_RESULTS; do
+            if [ "$r" != "success" ]; then
+              echo "::error::分けた bats のジョブに success 以外の結果がある: $NEEDS_RESULTS"
+              exit 1
+            fi
+          done

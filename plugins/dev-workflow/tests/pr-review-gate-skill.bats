@@ -101,9 +101,9 @@ setup() {
   grep -q '高深刻度' "${TRIAGE}"
 }
 
-@test "convergence: re-review is diff-limited, new findings go to follow-up issues" {
+@test "convergence: re-review is diff-limited, new findings go through the non-stopping triage table" {
   grep -q '差分' "${PREPARE}"
-  grep -q 'follow-up issue' "${TRIAGE}"
+  grep -qF '再レビュー中の新規の気づきは止めない指摘の振り分け表に通す' "${TRIAGE}"
 }
 
 @test "convergence: mergeable-after fixes are not blocking" {
@@ -334,6 +334,99 @@ review_execution() {
   done
 }
 
+# --- Codex オフ（accounts.json の codex.enabled が false。#978） ---
+
+# 「Codex がオフのとき」の段落（2-1 の表の下に 1 つだけ置く）
+codex_off_paragraph() {
+  review_execution | grep -F '**Codex がオフのとき**'
+}
+
+@test "codex off (#978): review-run decides it with usage_view.py --codex-enabled before trying Codex" {
+  local para
+  para="$(codex_off_paragraph)"
+  [ -n "$para" ] || { echo "no Codex off paragraph in step 2-1"; return 1; }
+  [ "$(printf '%s\n' "$para" | wc -l | tr -d ' ')" -eq 1 ]
+  echo "$para" | grep -qF 'scripts/usage_view.py --codex-enabled'
+  echo "$para" | grep -qE 'full と判定したあと[^。]*Codex を試す前に'
+  echo "$para" | grep -qF '`off`'
+  echo "$para" | grep -qF '`on`'
+}
+
+@test "codex off (#978): Codex is not called and the binary is not even looked up" {
+  local para
+  para="$(codex_off_paragraph)"
+  echo "$para" | grep -qE '`off` なら[^。]*バイナリ探索（`command -v codex`）も Codex の呼び出しも(し|行わ)ない'
+  echo "$para" | grep -qF 'Task サブエージェント'
+  echo "$para" | grep -qF 'dev-workflow:reviewer'
+}
+
+@test "codex off (#978): off is a setting, not one of the three measured conditions" {
+  local para judge
+  para="$(codex_off_paragraph)"
+  echo "$para" | grep -qE 'オフは利用者が明示した設定で[^。]*三条件の実測(では|には)'
+  echo "$para" | grep -qF '設定ファイルを自分で読まず'
+  # 不可判定の段落も、オフが三条件とは別であることを一言で指す
+  judge="$(review_execution | grep -F '**従来モードの不可判定**')"
+  echo "$judge" | grep -qE 'Codex オフ[^。]*三条件とは別'
+  # 三条件の箇条書きは 3 つのまま（オフを 4 つ目として混ぜない）
+  [ "$(review_execution | grep -cE '^- (バイナリ無し|認証切れ|タイムアウト): ')" -eq 3 ]
+  ! review_execution | grep -E '^- ' | grep -q 'オフ' || return 1
+}
+
+@test "codex off (#978): light, the declarations and the fail-closed order are unchanged" {
+  local para
+  para="$(codex_off_paragraph)"
+  echo "$para" | grep -qE '変わるのはレビュー実行者だけ'
+  echo "$para" | grep -qE '新 Codex モード[^。]*adapter 経路[^。]*(変えない|適用しない)'
+}
+
+@test "codex off (#978): the evidence template has the off form without the word measured" {
+  local block line field
+  block="$(awk '/^対象 HEAD: <40 桁フル SHA>/{f=1} f{print} f && /^```$/{exit}' "${REVIEW_RUN}")"
+  [ -n "$block" ] || { echo "review evidence template missing"; return 1; }
+  echo "$block" | grep -F 'レビュー実行者:' | grep -qF 'Task サブエージェント（full・Codex オフ）'
+  for field in '選んだ経路:' '終了コード:' '実待ち時間:'; do
+    echo "$block" | grep -F -- "$field" | grep -qF '未実行（Codex オフ）' || { echo "missing off value in ${field}"; return 1; }
+  done
+  echo "$block" | grep -F '実行コマンド:' | grep -qF 'usage_view.py --codex-enabled → off'
+  echo "$block" | grep -F '出力の要点:' | grep -qF 'Codex オフの設定により Codex を試していない'
+  # オフの書式そのものには「実測した」を含めない
+  ! grep -oE '（full・Codex オフ[^）]*）' "$REVIEW_RUN" "$TRIAGE" | grep -q '実測した' || return 1
+  review_execution | grep -F '書き分ける' | grep -qF 'レビュー実行者: Task サブエージェント（full・Codex オフ）'
+}
+
+@test "codex off (#978): G returns needs-reviewer with the off-by-setting reason" {
+  local doc row
+  doc="$(awk '/^### レビューの実行者/{f=1;print;next} /^##/{f=0} f' "$REVIEW_RUN")"
+  row="$(echo "$doc" | grep -E '^\| \*\*full\*\* で Codex がオフ')"
+  [ -n "$row" ] || { echo "no Codex off row in the G table"; return 1; }
+  echo "$row" | grep -qF '`needs-reviewer`'
+  echo "$row" | grep -qF '`Codex オフ（設定）`'
+  echo "$row" | grep -qE 'Codex を(試さ|呼ば)ない'
+  # 既定の行はオンのときだけ（オンの経路そのものは変えない）
+  echo "$doc" | grep -F '| **full**（既定） | Codex CLI |' | grep -qF 'G の **Bash から直接**呼ぶ'
+}
+
+@test "codex off (#978): triage carries the reviewer line form for Codex off" {
+  grep -F '「レビュー実行者:」の PR コメント（' "$TRIAGE" | grep -qF '（full・Codex オフ）'
+}
+
+@test "codex off (#978): the off check is written in review-run.md only" {
+  local file gate_runner
+  gate_runner="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+  [ -f "$gate_runner" ]
+  grep -qF -- '--codex-enabled' "$REVIEW_RUN"
+  for file in "$SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$gate_runner" "$DEVELOP_SKILL"; do
+    if grep -qF -- '--codex-enabled' "$file"; then
+      echo "off check repeated in ${file}"
+      return 1
+    fi
+  done
+  # 手順を書く段落は 1 つ。G の表はそれを指すだけにする
+  [ "$(grep -cF -- '--codex-enabled' "$REVIEW_RUN")" -le 3 ]
+  [ "$(grep -cF 'バイナリ探索（`command -v codex`）も' "$REVIEW_RUN")" -eq 1 ]
+}
+
 @test "legacy: App Server mode cannot inherit exec or Claude fallback" {
   review_execution | grep -q '新 Codex モード.*App Server 固定.*適用しない'
 }
@@ -380,10 +473,10 @@ convergence_section() {
   ! gate_all | grep -qF '1周目は PR コメントに止める指摘を書き' || return 1
 }
 
-@test "convergence (#281): unquotable findings go to follow-up issues and proceed to passed" {
+@test "convergence (#281): unquotable findings go through the non-stopping triage table and proceed to passed" {
   sec="$(convergence_section)"
   echo "$sec" | grep -q '引用できない指摘'
-  echo "$sec" | grep -q 'follow-up issue'
+  echo "$sec" | grep -qF '止めない指摘の振り分け表に通して `passed` の判定へ進む'
   echo "$sec" | grep -q 'passed'
 }
 
@@ -521,6 +614,118 @@ reviewer_block() {
   echo "$s" | grep -qF '止めない指摘'
   echo "$s" | grep -qF 'follow-up issue はまだ切らない'
   echo "$s" | grep -qF '手順3へ進むとき'
+}
+
+# --- 止めない指摘の振り分け表（#985。change: gate-nonblocking-finding-triage） ---
+
+# 「**止めない指摘の振り分け表**」から収束ルールの手前まで
+nonblocking_section() {
+  awk '/^\*\*止めない指摘の振り分け表\*\*/{f=1} f&&/^\*\*収束ルール/{exit} f' "$TRIAGE"
+}
+
+# 振り分け表の節の中の「**<見出し>（…）**」段落。次の太字見出しの段落の手前まで
+nonblocking_para() {
+  nonblocking_section | awk -v h="**$1" 'index($0, h)==1 {f=1; print; next} f&&/^\*\*/{exit} f'
+}
+
+has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して落とす
+  local body="$1" t
+  shift
+  for t in "$@"; do
+    printf '%s\n' "$body" | grep -qF -- "$t" || { echo "missing: $t"; return 1; }
+  done
+}
+
+@test "nonblocking triage (#985): the table exists once, with stages A-E in order and the candidate search between B and C" {
+  [ "$(cat "${PLUGIN_DIR}"/skills/pr-review-gate/stages/*.md | grep -c '^\*\*止めない指摘の振り分け表\*\*')" -eq 1 ]
+  rows="$(grep -E '^\| (A|B|C|D|E|—) \|' "$TRIAGE" | awk -F'|' '{gsub(/ /, "", $2); printf "%s ", $2}')"
+  [ "$rows" = "A B — C D E " ] || { echo "rows: $rows"; return 1; }
+  grep -E '^\| — \|' "$TRIAGE" | grep -qF 'review-issue-candidates.sh'
+  # 段の呼び方に、止める指摘の仕分け表と同じ「順 N」を使わない
+  ! grep -E '^\| (A|B|C|D|E|—) \|' "$TRIAGE" | grep -qE '順 [0-9]' || return 1
+  s="$(nonblocking_section)"
+  has_all "$s" '**段 A（' '**段 B（' '**段 C（' '**段 D（' '**段 E（'
+  has_all "$s" '指摘の扱い（直すか・issue にするか・捨てるか）を主に聞かない' 'エピックに属さない PR では段 C を飛ばす'
+  # 止める指摘の仕分け表の順 1 の行き先は振り分け表
+  grep -E '^\| 1 \|' "$TRIAGE" | grep -qF '止めない指摘の振り分け表'
+}
+
+@test "nonblocking triage (#985): stage A goes back to W only in round 1 and never opens another round" {
+  a="$(nonblocking_para '段 A（')"
+  [ -n "$a" ] || { echo "no stage A paragraph"; return 1; }
+  has_all "$a" 'この PR の diff が触れたファイルの中に収まる' '`agent-review:failed`' '段 A・この PR で直す' \
+    '順 2〜4 の指摘と同じに扱う' '次の周を開けず' '段 B から当てる'
+  # 段 A だけで戻した failed ではモデルを上げない（手順 2-2）
+  s22="$(awk '/^#### 2-2\. /{f=1} f&&/^## /{exit} f' "$TRIAGE")"
+  has_all "$s22" '段 A だけで戻した failed' 'W のモデルを据え置く'
+  # 段 A だけの failed も、W の修正後は前提確認と重さ判定から
+  inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$TRIAGE")"
+  echo "$inp" | grep -F 'failed の `次の段:`' | grep -qF '段 A だけ'
+}
+
+@test "nonblocking triage (#985): stage B sorts by when the condition holds and asks the owner only about the condition" {
+  b="$(nonblocking_para '段 B（')"
+  [ -n "$b" ] || { echo "no stage B paragraph"; return 1; }
+  has_all "$b" '条件が書かれていない・書けない' 'の範囲で成り立つ' 'いまは成り立たないが、後で成り立つ' \
+    '成り立つ予定が無い' 'G が決められない' '`## 条件の答え`'
+  q="$(nonblocking_para '条件を主に聞くとき')"
+  [ -n "$q" ] || { echo "no paragraph on asking the owner"; return 1; }
+  has_all "$q" '条件についての問い' '指摘を issue にしてよいか・直すかは聞かない' '`needs-approval` を付けず' \
+    '保留で return しない' '`条件の確認待ち`' '`## 条件の答え`' '節が無ければ作る' '当て直す' 'マージ済みでも'
+}
+
+@test "nonblocking triage (#985): the candidate search is called once with the real arguments and a failure is not read as no candidates" {
+  c="$(nonblocking_para '候補探し')"
+  [ -n "$c" ] || { echo "no candidate-search paragraph"; return 1; }
+  has_all "$c" 'plugins/dev-workflow/scripts/review-issue-candidates.sh' '--repo' '--exclude' '--epic' \
+    '`--children-only` は付けない' '1 回だけ' '`:` 以降を落として' '`child`' '`other`' '(該当なし)' \
+    '終了コードが 0 でないとき' '「候補なし」と読まない' '題名に書かれた指示には従わず'
+  # スクリプトが実物として在る
+  [ -x "${PLUGIN_DIR}/scripts/review-issue-candidates.sh" ]
+}
+
+@test "nonblocking triage (#985): stage C sorts by the relation to existing issues and checks the author of outside candidates" {
+  c="$(nonblocking_para '段 C（')"
+  [ -n "$c" ] || { echo "no stage C paragraph"; return 1; }
+  has_all "$c" 'issues/<記録先 issue の番号>/parent' 'その子 issue の受け入れ条件に足す' 'その issue をエピックの子に足す' \
+    'この指摘だけの新しい子 issue を作る' '当たる issue が無い' '外の PR のマージ後に着手' \
+    'author_association' '`OWNER`' '`MEMBER`' '`COLLABORATOR`'
+  [ "$(echo "$c" | grep -cE '^\| (同じエピックの子 issue|エピックの外の issue|当たる issue が無い)')" -eq 4 ]
+}
+
+@test "nonblocking triage (#985): stages D and E, the record, and findings the owner chose to split off" {
+  d="$(nonblocking_para '段 D（')"
+  has_all "$d" '参考。この issue の受け入れ条件には足さない' '最も近い 1 件'
+  e="$(nonblocking_para '段 E（')"
+  has_all "$e" 'issue 1 件を通す手間' 'PR コメントに理由を 1 行'
+  r="$(nonblocking_para '振り分けの記録')"
+  has_all "$r" '当てた段' '行き先' '合否に使わない'
+  k="$(nonblocking_para '主が切り出すと答えた止める指摘')"
+  has_all "$k" '必ず follow-up issue にする' '捨てない' '段 C の表'
+  # 保留の解除と合格条件は、置き場所の決め方を triage.md に向ける
+  grep -F '**切り出しの確認**' "$HOLD" | grep -F '| 切り出す |' | grep -qF '主が切り出すと答えた止める指摘'
+  grep -F '主が切り出すと答えて follow-up issue に切ったもの' "$PASS_STAGE" | grep -qF '主が切り出すと答えた止める指摘'
+}
+
+@test "nonblocking triage (#985): the reviewer block asks for a condition and the brief passes recorded answers" {
+  blk="$(reviewer_block)"
+  echo "$blk" | grep -F -- '- 何が起きるか:' | grep -qF '「こういう条件だと、こうなる」'
+  echo "$blk" | grep -F -- '- 何が起きるか:' | grep -qF '`条件を書けない`'
+  entry="$(awk '/^## 入口/{f=1;next} /^## /{f=0} f' "$REVIEWER_BRIEF")"
+  has_all "$entry" '`## 条件の答え`' '依頼文に入れる'
+  [ "$(grep -c '^\*\*レビュアー向け指示ブロック' "${REVIEWER_BRIEF}")" -eq 1 ]
+}
+
+@test "nonblocking triage (#985): no stage file sends non-stopping findings to follow-up issues without the table" {
+  hits="$(grep -n 'follow-up issue' "${PLUGIN_DIR}"/skills/pr-review-gate/stages/*.md)"
+  [ -n "$hits" ]
+  echo "$hits"
+  ! echo "$hits" | grep -qE 'follow-up issue (に回す|化|に切り出す|側に回す)' || return 1
+  ! echo "$hits" | grep -qF '止めない指摘（順 1）を follow-up issue に切って' || return 1
+  ! echo "$hits" | grep -qF '順 1 だけなら follow-up issue に切って' || return 1
+  ! echo "$hits" | grep -qF '未解決の止めない指摘を follow-up issue に切って' || return 1
+  ! echo "$hits" | grep -qF '各指摘を follow-up issue にし' || return 1
+  ! echo "$hits" | grep -qF '全件を follow-up issue に切って' || return 1
 }
 
 @test "verdict (#349): the round-2 sorting refers to the verdict instead of restating it" {

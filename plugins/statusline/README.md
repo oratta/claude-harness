@@ -224,9 +224,11 @@ Codex CLI に ChatGPT アカウントでログイン済みなら、Claude アカ
 
 Python 3 helper が [Codex App Server](https://learn.chatgpt.com/docs/app-server) の `account/rateLimits/read` で取得する。描画は `${CLAUDE_CONFIG_DIR:-~/.claude}/.statusline-codex` のキャッシュを読み、180秒経過後の描画でバックグラウンド更新を開始する。失敗後は60秒待って再試行する。取得できない間は前回値に取得時刻からの経過時間を添え、初回は `取得待ち`。認証ファイルが変わると旧アカウントのキャッシュを無効化する。認証情報や生の応答はキャッシュへ保存しない。
 
-- `STATUSLINE_CODEX=0`: Codex 行・取得を無効化
+- `STATUSLINE_CODEX=0`: Codex 行・取得を無効化（下の `off` の表示より優先し、行そのものを出さない）
 - `STATUSLINE_CODEX_BIN`: Codex CLI の実行ファイルを指定（既定 `codex`）
 - `CODEX_HOME`: 表示する CLI の設定・認証ディレクトリ
+
+`accounts.json`（`CLAUDE_ACCOUNTS_FILE`、未設定なら `${CLAUDE_CONFIG_DIR:-~/.claude}/accounts.json`）のトップレベルに `"codex": {"enabled": false}` を書くと Codex がオフになり、Codex 行は使用率の代わりに `  Codex  off` の 1 行になる。オフのあいだは Codex CLI を起動せず、キャッシュも読み書きしない（Codex にログインしていなくても `off` は出る）。オフになるのは値が JSON の `false` のときだけ。戻すときは `codex` のキーを消すか `enabled` を `true` にする。develop とレビューでの扱いは `plugins/dev-workflow/README.md`。
 
 起動直後に Claude のライブ値がまだ無い場合も、複数アカウントなら使用中のアカウントを `▸ A  取得待ち` のように示す。snapshot の値でライブ値を補完しない。
 
