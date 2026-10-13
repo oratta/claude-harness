@@ -230,11 +230,30 @@ PAT なしでも判定ログだけ出せる:
 GitHub Free の private リポジトリでは branch protection が使えないため、
 CI green の判定は**チェック名の完全一致**で auto-merge が自前検証している。
 
-- 必須チェック名の一覧は `auto-merge.yml` 内の `REQUIRED_CHECKS`（`# >>> required-checks` マーカーの間）
-- ci.yml のジョブ名（`name:`）を変えたり、ジョブを増やしたら `REQUIRED_CHECKS` も直す
-- 一致しないと「green にならない」＝マージされない側（fail-closed）に倒れるので危険はないが、
-  原因不明の停滞に見える
-- この一致は `scripts/test-auto-merge-workflow.sh` が CI で機械的に検証する（ズレたらテストが落ちる）
+必須チェック名の一覧は `auto-merge.yml` 内の `REQUIRED_CHECKS`（`# >>> required-checks` マーカーの間）で、
+いまは `shellcheck` と `bats suites` の 2 つ。auto-merge が見るのはこの 2 つのチェックだけなので、
+ci.yml のジョブは次のどちらかでなければならない。
+
+| ジョブの種類 | 条件 | いまの ci.yml での例 |
+|---|---|---|
+| 必須チェックのジョブ | `name:` が `REQUIRED_CHECKS` の名前と完全に一致する。1 つの名前を名乗るジョブはちょうど 1 つ | `lint`（`name: shellcheck`）、`test-result`（`name: bats suites`） |
+| 必須チェックが待つジョブ | ジョブ ID が、必須チェックのジョブの `needs:` に直接挙がっている | `test`（bats を 4 組に分けた matrix のジョブ。`test-result` が `needs: [test]` で待つ） |
+
+- 必須チェックのジョブの `name:` を変えるときは `REQUIRED_CHECKS` も直す。一致しないと「green にならない」
+  ＝マージされない側（fail-closed）に倒れるので危険はないが、原因不明の停滞に見える
+- ジョブを足すときは、`REQUIRED_CHECKS` に名前を入れるか、必須チェックのジョブの `needs:` に直接入れる。
+  どちらにも入れないと、そのジョブが落ちてもマージされる。別のジョブを経由した依存（足したジョブを
+  `test` が待ち、`test` を `test-result` が待つ、など）は「待っている」と見なさない
+- bats のジョブは `scripts/test.sh` の `TEST_SHARD=k/N` で全スイートを分けて同時に走らせている。
+  分けたジョブは必須チェックに入れず、`bats suites` のジョブが `if: always()` で必ず走って
+  `needs.*.result` の全部が `success` のときだけ成功する。この判定をジョブ ID を 1 つずつ書く形に
+  変えない（あとから `needs:` に足したジョブが落ちても成功になる）
+- 分割数を変えるときは、ci.yml の matrix の `shard: [1, 2, 3, 4]` と `TEST_SHARD:` の分母を同じ数に直す
+  （`REQUIRED_CHECKS` は直さなくてよい）
+- 検査が読めるように、ジョブの `name:` と `needs:` はインデント 4、`needs:` は 1 行の形
+  （`needs: a` か `needs: [a, b]`）で書く。複数行の `needs:` は検査が落ちる
+- ジョブの対応は `scripts/test-auto-merge-workflow.sh` が、matrix の番号と分母・`bats suites` の
+  ジョブの形は `tests/ci-bats-shards.bats` が CI で機械的に検証する（ズレたらテストが落ちる）
 
 ---
 
