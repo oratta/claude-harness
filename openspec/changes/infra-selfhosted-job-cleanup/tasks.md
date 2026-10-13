@@ -9,6 +9,6 @@
 
 ## 3. テスト
 
-- [ ] 3.1 両雛形の最後の手順の `if` / `run` / `continue-on-error` の静的検査、2 つの `run` の一致、`run` を取り出して偽のプロセスで走らせる範囲検査（作業ディレクトリ配下は止まり、外・前方一致する隣は生きる）、SKILL.md の節の検査を足す 触る範囲: plugins/infra/tests/infra-fixes.bats:879-891（末尾に追記）
+- [ ] 3.1 両雛形の最後の手順の `if` / `run` / `continue-on-error` の静的検査、2 つの `run` の一致、`run` を取り出して偽のプロセスで走らせる範囲検査（作業ディレクトリ配下は止まり、外・前方一致する隣は生きる）、TERM を無視するプロセスが KILL で止まる検査、`kill` を差し替えて止められない対象があるとき非 0 になり PID が出る検査、待つ間に消えた PID が正常になる検査、SKILL.md の節の検査を足す 触る範囲: plugins/infra/tests/infra-fixes.bats:879-891（末尾に追記）
 - [ ] 3.2 変更の記録を書く 触る範囲: plugins/infra/changes/994.md（新規）
 - [ ] 3.3 `scripts/test.sh infra` が exit 0 になることを確かめる
