@@ -81,6 +81,14 @@ cld-account() {
 
 使っていないアカウントは、`accounts.json` のそのスロットに `"enabled": false` を足すとオフになる。オフのアカウントは `cld` の自動選択で選ばれず（理由行の `margins` に `<id>:off` と出る）、`usage-probe.sh` も使用量を取得しない。`cld-account <id>` でオフのアカウントを指定すると、戻し方を stderr に出して exit 2 で終わり、Claude は起動しない。全アカウントがオフのときは既定アカウントで起動する（理由は `default-due-to-all-off`）。既定アカウントへの縮退は `enabled` を見ないので、既定アカウント自体をオフにしていても、全アカウントがオフのとき、またはオンのアカウントがすべて欠測か 5 時間枠 90% 以上のときは、そのオフの既定アカウントで起動する。戻すときは `enabled` の行を消すか `true` にする。切り替えは当面 `accounts.json` を手で書き換える。
 
+Codex を使わない期間は、`accounts.json` のトップレベル（`accounts` の配列の外）に `"codex": {"enabled": false}` を足すと Codex がオフになる。
+
+```json
+{ "schema": 1, "accounts": [ ... ], "codex": { "enabled": false } }
+```
+
+オフのあいだ、develop の自動選択は Codex の使用量を読まずに Claude 既定構成を選び（reason `codex-off`）、Codex に投げる明示指定（Codex の role を含む `--profile`、旧形式の `--account`/`--model`）は戻し方を出して exit 2 で終わる。pr-review-gate の従来経路は、full 判定でも Codex を探さず呼ばず、Task サブエージェントでレビューする（`レビュー実行者: Task サブエージェント（full・Codex オフ）`）。ステータスラインの Codex 行は `off` になる。オフになるのは値が JSON の `false` のときだけで、`"false"`・`0`・`null` や `codex` の省略はオンとして読む。いまの設定は `python3 scripts/usage_view.py --codex-enabled` が `on` / `off` で返す。戻すときは `codex` のキーを消すか `enabled` を `true` にする。
+
 ## references/（他プラグインと共有する契約）
 
 複数プラグインから参照される契約と、dev-workflow 内の複数スキル（develop の役割指示書と pr-review-gate）が共通で読む契約は、スキル配下ではなくプラグイン直下の `references/` に置く（#205 で旧プラグインから移設）。

@@ -842,6 +842,140 @@ class ForegroundRequest(unittest.TestCase):
         self.call('--account-home', 'mapped=' + str(self.home))
         self.assertEqual(stat.S_IMODE(self.out.stat().st_mode), 0o600)
 
+    # --- Codex off (accounts.json "codex"."enabled": false; dev-workflow-develop spec) ---
+
+    def write_registry(self, codex='absent'):
+        document = {'schema': 1, 'accounts': [{'id': 'default', 'securestorage': None}]}
+        if codex != 'absent':
+            document['codex'] = codex
+        path = self.root / 'registry.json'
+        path.write_text(json.dumps(document))
+        os.environ['CLAUDE_ACCOUNTS_FILE'] = str(path)
+        return path
+
+    def run_script(self, *extra):
+        # A real process: the exit code and the blocked JSON are part of the contract.
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), 'request', '--phase', 'implement',
+             '--input', str(self.input), '--cwd', str(self.cwd), '--out', str(self.out), *extra],
+            capture_output=True, text=True)
+
+    def automatic_off_case(self, claude_margin, usages):
+        now = 2_000_000
+        snapshot_path = self.root / 'off-snapshot.json'
+        accounts = ({} if claude_margin is None else
+                    {'default': self.snapshot(claude_margin, now=now)})
+        snapshot_path.write_text(json.dumps({'schema': 2, 'active': 'default',
+                                             'accounts': accounts}))
+        with patch.dict(os.environ, {'USAGE_SNAPSHOT': str(snapshot_path)}, clear=False), \
+                patch.object(m, '_run_usage_probe'), \
+                patch.object(m.time, 'time', return_value=now), \
+                patch.object(m, 'probe_codex_account',
+                             side_effect=AssertionError('codex probed')) as probe, \
+                patch.object(m, 'read_codex_usages', **usages) as read:
+            result = self.call_automatic()
+        return result, read, probe
+
+    def test_select_configuration_returns_claude_default_when_codex_is_off(self):
+        for claude, codex in ((20, 30), (0, 0), (-5, 30), (-5, -5), (None, None), (20, None)):
+            with self.subTest(claude=claude, codex=codex):
+                self.assertEqual(m.select_configuration(claude, codex, codex_enabled=False),
+                                 ('claude-default', 'codex-off'))
+                self.assertEqual(m.select_configuration(claude, codex, codex_enabled=True),
+                                 m.select_configuration(claude, codex))
+
+    def test_codex_off_selects_claude_only_even_when_codex_has_more_headroom(self):
+        self.write_registry({'enabled': False})
+        result, read, probe = self.automatic_off_case(
+            20, {'side_effect': AssertionError('codex usage read')})
+        selection = result['selection']
+        self.assertEqual((selection['configuration'], selection['reason']),
+                         ('claude-default', 'codex-off'))
+        self.assertEqual(selection['codex'], {'account': None, 'margin': None,
+                                              'fetched_at': None, 'enabled': False})
+        self.assertAlmostEqual(selection['claude']['margin'], 20)
+        self.assertEqual((result['status'], result['executor']), ('agent-required', 'claude'))
+        read.assert_not_called()
+        probe.assert_not_called()
+        self.assertFalse(self.out.exists())
+
+    def test_codex_off_reason_wins_when_claude_has_no_headroom_either(self):
+        self.write_registry({'enabled': False})
+        for margin in (-5, None):
+            with self.subTest(margin=margin):
+                result, read, _ = self.automatic_off_case(
+                    margin, {'side_effect': AssertionError('codex usage read')})
+                self.assertEqual((result['selection']['configuration'],
+                                  result['selection']['reason']),
+                                 ('claude-default', 'codex-off'))
+                read.assert_not_called()
+
+    def test_codex_off_refuses_an_explicit_codex_profile(self):
+        registry = self.write_registry({'enabled': False})
+        result = self.run_script('--profile', 'codex-standard',
+                                 '--account-home', 'current=' + str(self.home))
+        self.assertEqual(result.returncode, 2)
+        document = json.loads(result.stdout)
+        self.assertEqual(document['status'], 'blocked')
+        self.assertEqual(document['error'], 'codex is off: set "codex"."enabled" to true '
+                                            'or remove it in ' + str(registry))
+        self.assertFalse(self.out.exists())
+
+    def test_codex_off_refuses_the_legacy_account_model_form(self):
+        self.write_registry({'enabled': False})
+        result = self.run_script('--account', 'current', '--model', 'fixture-model',
+                                 '--account-home', 'current=' + str(self.home))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('codex is off', json.loads(result.stdout)['error'])
+        self.assertFalse(self.out.exists())
+
+    def test_codex_off_is_reported_before_the_account_table_checks(self):
+        self.write_registry({'enabled': False})
+        for extra in (('--profile', 'codex-standard'),
+                      ('--account', 'unmapped', '--model', 'fixture-model')):
+            with self.subTest(extra=extra):
+                result = self.run_script(*extra)
+                error = json.loads(result.stdout)['error']
+                self.assertEqual(result.returncode, 2)
+                self.assertIn('codex is off', error)
+                self.assertNotIn('account is not', error)
+
+    def test_codex_off_keeps_a_profile_without_codex_roles(self):
+        self.write_registry({'enabled': False})
+        roles = {role: {'executor': 'claude', 'account': 'current',
+                        'model': 'sonnet', 'effort': 'medium'} for role in m.CANONICAL_ROLES}
+        self.profile_file.write_text(json.dumps(
+            {'version': 1, 'profiles': {'custom': {'roles': roles}}}))
+        result = self.call()
+        self.assertEqual((result['status'], result['executor']), ('agent-required', 'claude'))
+        self.assertEqual(result['selection']['reason'], 'explicit-profile')
+
+    def test_explicit_requests_are_unchanged_while_codex_is_on(self):
+        for codex in ('absent', {'enabled': True}, {'enabled': 'false'}, False):
+            with self.subTest(codex=codex):
+                self.write_registry(codex)
+                self.out.unlink(missing_ok=True)
+                result = self.call('--account-home', 'mapped=' + str(self.home))
+                self.assertEqual(result['status'], 'request-written')
+
+    def test_automatic_selection_is_identical_without_the_off_setting(self):
+        usages = {'a': self.snapshot(30, now=2_000_000, minutes=10080), 'b': None}
+        outcomes = []
+        for codex in ('none', 'absent', {'enabled': True}):
+            if codex == 'none':
+                os.environ['CLAUDE_ACCOUNTS_FILE'] = str(self.root / 'no-registry.json')
+            else:
+                self.write_registry(codex)
+            self.out.unlink(missing_ok=True)
+            result, read, _ = self.automatic_off_case(20, {'return_value': usages})
+            read.assert_called_once()
+            outcomes.append(result['selection'])
+        self.assertEqual(outcomes[0], outcomes[1])
+        self.assertEqual(outcomes[0], outcomes[2])
+        self.assertEqual((outcomes[0]['configuration'], outcomes[0]['reason']),
+                         ('claude-write-codex-review', 'both-providers-have-headroom'))
+        self.assertEqual(set(outcomes[0]['codex']), {'account', 'margin', 'fetched_at'})
+
 
 class DocumentationContracts(unittest.TestCase):
     def setUp(self):

@@ -370,5 +370,74 @@ class EnabledFlag(unittest.TestCase):
         self.assertEqual(view['active'], 'b')
 
 
+class CodexEnabled(unittest.TestCase):
+    # usage-account-registry "Codex を codex.enabled でオフにできる": Codex is off only when
+    # the top-level "codex"."enabled" is the JSON false; every other input reads as on.
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.accounts = self.root / 'accounts.json'
+
+    def write(self, document):
+        self.accounts.write_text(json.dumps(document))
+
+    def registry(self, **extra):
+        return {'schema': 1, 'accounts': [{'id': 'a', 'securestorage': None}], **extra}
+
+    def test_only_json_false_turns_codex_off(self):
+        cases = [({'enabled': False}, False), ({'enabled': True}, True), ({}, True),
+                 ({'enabled': 'false'}, True), ({'enabled': 0}, True),
+                 ({'enabled': None}, True), (False, True)]
+        for codex, expected in cases:
+            with self.subTest(codex=codex):
+                self.write(self.registry(codex=codex))
+                self.assertIs(m.read_codex_enabled(str(self.accounts)), expected)
+
+    def test_registry_without_the_key_is_on(self):
+        self.write(self.registry())
+        self.assertIs(m.read_codex_enabled(str(self.accounts)), True)
+
+    def test_missing_broken_and_array_registries_are_on(self):
+        self.assertIs(m.read_codex_enabled(str(self.root / 'absent.json')), True)
+        self.accounts.write_text('{"codex": {"enabled": false')
+        self.assertIs(m.read_codex_enabled(str(self.accounts)), True)
+        self.accounts.write_text('[{"codex": {"enabled": false}}]')
+        self.assertIs(m.read_codex_enabled(str(self.accounts)), True)
+
+    def test_codex_key_does_not_change_the_slots(self):
+        self.write(self.registry())
+        slots, registry = m.read_slots(str(self.accounts)), m.read_registry(str(self.accounts))
+        self.write(self.registry(codex={'enabled': False}))
+        self.assertEqual(m.read_slots(str(self.accounts)), slots)
+        self.assertEqual(m.read_registry(str(self.accounts)), registry)
+        self.assertEqual(registry, [('a', '')])
+
+    def run_cli(self, *argv):
+        env = {k: v for k, v in os.environ.items() if k != 'CLAUDE_CONFIG_DIR'}
+        env['CLAUDE_ACCOUNTS_FILE'] = str(self.accounts)
+        return subprocess.run([sys.executable, str(SCRIPT), *argv], env=env,
+                              capture_output=True, text=True)
+
+    def test_cli_prints_one_line_and_always_exits_zero(self):
+        self.write(self.registry(codex={'enabled': False}))
+        result = self.run_cli('--codex-enabled')
+        self.assertEqual((result.returncode, result.stdout), (0, 'off\n'))
+        self.write(self.registry())
+        result = self.run_cli('--codex-enabled')
+        self.assertEqual((result.returncode, result.stdout), (0, 'on\n'))
+        self.accounts.unlink()
+        result = self.run_cli('--codex-enabled')
+        self.assertEqual((result.returncode, result.stdout), (0, 'on\n'))
+
+    def test_json_view_is_unchanged_by_the_codex_key(self):
+        self.write(self.registry())
+        before = self.run_cli('--json', '--now', str(NOW)).stdout
+        self.write(self.registry(codex={'enabled': False}))
+        after = self.run_cli('--json', '--now', str(NOW))
+        self.assertEqual(after.returncode, 0)
+        self.assertEqual(after.stdout, before)
+
+
 if __name__ == '__main__':
     unittest.main()
