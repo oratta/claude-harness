@@ -275,6 +275,15 @@ Phase 1 で「開発形態（solo / solo-agent / team）」と「プロダクト
   「上書き／スキップ／差分を見てから判断」を聞くのは `ci.yml` / `deploy-preview.yml` / `deploy-staging.yml` /
   `deploy-production.yml` / `migrate-production.yml` の 5 ファイルで、`weekly-full.yml` はこの列挙に無いため確認なしで雛形に書き直されることがあり、
   その場合は `PROJECT-SPECIFIC OVERRIDE` の変更も消える。再実行するなら、事前に控えを取るか、実行後に `git diff` で確かめる
+- **ジョブ終了時の掃除（セルフホスト限定）**: `ci.yml` の `test` ジョブと `weekly-full.yml` の `full` ジョブは、最後の手順として
+  `if: always() && runner.environment == 'self-hosted'` の掃除を持つ。ジョブが成功・失敗・キャンセル・上限超過のどれで終わっても、
+  セルフホストのときだけ、そのジョブの作業ディレクトリ（`$GITHUB_WORKSPACE`）の下に cwd を持つプロセスを、自分と祖先を除いて
+  TERM → 5 秒待ち → 残りへ KILL で止める。止めるのは作業ディレクトリの下だけで、同じ Mac で走るほかのジョブは止めない。
+  作業ディレクトリの外へ cwd を移したプロセスは止まらない（ランナーの Mac の定期見張りの役割）。止められない PID があれば手順が赤になる。
+  上限超過のあとにこの手順が実際に起動するかは、最初の打ち切りの run のログで確かめる
+- **既に雛形から CI を入れたリポジトリへの掃除の反映**: `ci.yml` の `test` ジョブと `weekly-full.yml` の `full` ジョブの両方の
+  最後の手順として、雛形（`templates/workflows/ci.yml.template`）の掃除の手順を手で書き足す。両ファイルで同じ文面にする。
+  `/infra-setup` の再実行は勧めない（理由は上限時間と同じ。`weekly-full.yml` が確認なしで書き直されることがある）
 - **昇格**: pre-release → released は `/infra-setup` を再実行して released を選ぶ。
   Phase 4 が deploy-on-merge.yml の削除を提案し、フルセットに置き換える
 

@@ -889,3 +889,159 @@ timeout_comment_has_rule() {
   echo "$sec" | grep -q 'weekly-full\.yml'
   echo "$sec" | grep -q '確認なし'
 }
+
+# --- infra-selfhosted-job-cleanup (#994) ---
+# 両雛形の最後の手順（セルフホスト限定の掃除）の静的検査と、run を取り出して偽のプロセスで走らせる検査。
+# 偽のプロセスはテストが起こした sleep だけ。teardown で、記録した PID のうち生きているものだけを止める。
+
+teardown() {
+  if [ -n "${BATS_TEST_TMPDIR:-}" ] && [ -f "$BATS_TEST_TMPDIR/fake-pids" ]; then
+    while read -r p; do
+      [ -n "$p" ] && kill -KILL "$p" 2>/dev/null
+    done < "$BATS_TEST_TMPDIR/fake-pids"
+  fi
+  return 0
+}
+
+# $1=テンプレート $2=ジョブ名 $3=項目（if / run / continue-on-error / name）。最後の手順のその値を出力する
+last_step_field() {
+  ruby -ryaml -e 's = YAML.load_file(ARGV[0]).dig("jobs", ARGV[1], "steps").last; v = s[ARGV[2]]; abort "no #{ARGV[2]}" if v.nil?; puts v' "$1" "$2" "$3"
+}
+
+# $1=テンプレート $2=ジョブ名 $3=出力先。最後の手順の run を書き出す
+extract_cleanup_run() {
+  last_step_field "$1" "$2" run > "$3"
+}
+
+# $1=作業ディレクトリ $2...=そのまま sleep の前に実行するシェル断片。偽のプロセスを孤児として起こし PID を出力・記録する
+spawn_fake() {
+  local dir="$1" pre="${2:-:}" pid
+  pid="$( cd "$dir" && { ( eval "$pre"; exec sleep 300 ) >/dev/null 2>&1 & echo $!; } )"
+  echo "$pid" >> "$BATS_TEST_TMPDIR/fake-pids"
+  echo "$pid"
+}
+
+fake_alive() { ps -p "$1" >/dev/null 2>&1; }
+fake_dead() { ! ps -p "$1" >/dev/null 2>&1; }
+
+# 作業ディレクトリ ws と、外の outside / 前方一致する隣 ws-other を作る
+make_dirs() {
+  mkdir -p "$BATS_TEST_TMPDIR/ws/sub" "$BATS_TEST_TMPDIR/ws-other" "$BATS_TEST_TMPDIR/outside"
+  WS="$(cd "$BATS_TEST_TMPDIR/ws" && pwd -P)"
+  OTHER="$(cd "$BATS_TEST_TMPDIR/ws-other" && pwd -P)"
+  OUTSIDE="$(cd "$BATS_TEST_TMPDIR/outside" && pwd -P)"
+  RUN="$BATS_TEST_TMPDIR/cleanup.sh"
+  extract_cleanup_run "$WORKFLOWS_DIR/ci.yml.template" test "$RUN"
+}
+
+# $1=前置きのシェル断片（kill / ps の差し替え）。前置き + run を bash で実行する
+run_cleanup() {
+  { printf '%s\n' "${1:-:}"; cat "$RUN"; } > "$BATS_TEST_TMPDIR/cleanup-full.sh"
+  GITHUB_WORKSPACE="$WS" run bash "$BATS_TEST_TMPDIR/cleanup-full.sh"
+}
+
+@test "U1: last step of both templates is a self-hosted-only cleanup with always()" {
+  for spec in "ci.yml.template:test" "weekly-full.yml.template:full"; do
+    t="$WORKFLOWS_DIR/${spec%%:*}"; j="${spec##*:}"
+    c="$(last_step_field "$t" "$j" if)"
+    [[ "$c" == *"always()"* ]] || return 1
+    [[ "$c" == *"runner.environment == 'self-hosted'"* ]] || return 1
+    r="$(last_step_field "$t" "$j" run)"
+    [[ "$r" == *GITHUB_WORKSPACE* ]] || return 1
+    [[ "$r" != *pkill* ]] || return 1
+    [[ "$r" != *killall* ]] || return 1
+    [[ "$r" != *"|| true"* ]] || return 1
+    run last_step_field "$t" "$j" continue-on-error
+    [ "$status" -ne 0 ]
+  done
+}
+
+@test "U2: the cleanup run is identical in ci.yml.template and weekly-full.yml.template" {
+  a="$(last_step_field "$WORKFLOWS_DIR/ci.yml.template" test run)"
+  b="$(last_step_field "$WORKFLOWS_DIR/weekly-full.yml.template" full run)"
+  [ -n "$a" ]
+  [ "$a" = "$b" ]
+}
+
+@test "U3: only processes under the workspace are stopped; outside and prefix-sibling survive" {
+  command -v lsof >/dev/null
+  make_dirs
+  inside="$(spawn_fake "$WS")"
+  deep="$(spawn_fake "$WS/sub")"
+  outside="$(spawn_fake "$OUTSIDE")"
+  sibling="$(spawn_fake "$OTHER")"
+  moved="$(spawn_fake "$WS" "cd $OUTSIDE")"
+  sleep 1
+  run_cleanup
+  [ "$status" -eq 0 ]
+  fake_dead "$inside"
+  fake_dead "$deep"
+  fake_alive "$outside"
+  fake_alive "$sibling"
+  fake_alive "$moved"
+}
+
+@test "U4: exits 0 when there is nothing to stop (and does not stop itself)" {
+  command -v lsof >/dev/null
+  make_dirs
+  outside="$(spawn_fake "$OUTSIDE")"
+  sleep 1
+  # 自分の cwd も作業ディレクトリにして、自分を止めないことを確かめる
+  { printf ':\n'; printf 'cd %q\n' "$WS"; cat "$RUN"; } > "$BATS_TEST_TMPDIR/cleanup-full.sh"
+  GITHUB_WORKSPACE="$WS" run bash "$BATS_TEST_TMPDIR/cleanup-full.sh"
+  [ "$status" -eq 0 ]
+  fake_alive "$outside"
+}
+
+@test "U5: a process ignoring TERM is stopped by KILL" {
+  command -v lsof >/dev/null
+  make_dirs
+  stubborn="$(spawn_fake "$WS" "trap '' TERM")"
+  sleep 1
+  run_cleanup
+  [ "$status" -eq 0 ]
+  fake_dead "$stubborn"
+}
+
+@test "U6: a target that cannot be stopped makes the step fail and prints its PID" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup 'kill() { return 0; }'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$pid"* ]] || return 1
+}
+
+@test "U7: kill denied by permission (ps still sees the process) is not treated as gone" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup 'kill() { echo "kill: ($2) - Operation not permitted" >&2; return 1; }'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$pid"* ]] || return 1
+}
+
+@test "U8: a PID that disappears while waiting (ps -p fails) is treated as success" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  # kill は何もせず、対象の ps -p だけが「存在しない」と答える（祖先を辿る ps -o ppid= は本物）
+  run_cleanup "kill() { return 0; }
+ps() { if [ \"\$1\" = -p ] && [ \"\$2\" = $pid ]; then return 1; fi; command ps \"\$@\"; }"
+  [ "$status" -eq 0 ]
+}
+
+@test "U9: SKILL.md explains the self-hosted cleanup and how to apply it to existing repos" {
+  sec="$(awk '/^## /{p=0} /^## CI\/CD 構成の 2 軸/{p=1} p' "$SKILL")"
+  echo "$sec" | grep -q 'ジョブ終了時の掃除'
+  echo "$sec" | grep -q 'self-hosted'
+  echo "$sec" | grep -q '作業ディレクトリ'
+  echo "$sec" | grep -q 'ほかのジョブ'
+  echo "$sec" | grep -q '作業ディレクトリの外'
+  echo "$sec" | grep -q 'ci\.yml'
+  echo "$sec" | grep -q 'weekly-full\.yml'
+  echo "$sec" | grep -q '手で書き足'
+}
