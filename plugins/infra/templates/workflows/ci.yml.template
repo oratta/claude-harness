@@ -91,3 +91,146 @@ jobs:
       # フル実行は weekly-full.yml と deploy-production.yml の preflight が担う）
       - name: Run unit tests
         run: npm run test:run --if-present
+
+      # セルフホストのランナーだけ、ジョブの終わりに作業ディレクトリ（GITHUB_WORKSPACE）配下を cwd にする
+      # プロセスを止める。timeout-minutes での打ち切りや失敗・キャンセルでも always() で走る
+      # （打ち切り後に実際に起動するかは、最初の打ち切りの run のログで確かめる）。
+      # 止めるのは自分と祖先を除く cwd が作業ディレクトリ配下のプロセスだけ（同じ Mac のほかのジョブは止めない）。
+      # cwd を作業ディレクトリの外へ移したプロセスは止まらない。作業ディレクトリを cwd にした常駐プロセスは置かないこと。
+      # シグナルを送る直前に cwd を取り直し、作業ディレクトリ配下でなくなった PID（使い回しなど）には送らない。
+      # 失敗は隠さない（止められない PID があるとき、lsof が非 0 で終わったときは赤になる）。
+      # ci.yml と weekly-full.yml で同じ文面にする。
+      - name: Clean up processes left in the workspace (self-hosted only)
+        if: always() && runner.environment == 'self-hosted'
+        run: |
+          if ! command -v lsof >/dev/null 2>&1; then
+            echo "lsof が無いため掃除できない" >&2
+            exit 1
+          fi
+          ws="${GITHUB_WORKSPACE%/}"
+          if [ -z "$ws" ]; then
+            echo "GITHUB_WORKSPACE が空のため掃除できない" >&2
+            exit 1
+          fi
+          # 自分自身とその祖先は止めない。親を PID 0 まで辿れなければ、祖先を止めるおそれがあるので何も送らずに失敗で終わる
+          skip=" "
+          p=$$
+          n=0
+          while [ -n "$p" ] && [ "$p" -gt 0 ] 2>/dev/null && [ "$n" -lt 64 ]; do
+            skip="$skip$p "
+            p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+            n=$((n + 1))
+          done
+          if [ "$p" != 0 ]; then
+            echo "祖先のプロセスを最後まで辿れなかったため掃除できない" >&2
+            exit 1
+          fi
+          # cwd が作業ディレクトリと等しいか、その配下のプロセスを集める（前方一致だけの隣のディレクトリは除く）。
+          # lsof が非 0 で終わったら、出力が空ならここで失敗、出力があれば出た分で掃除を続けて最後に失敗で終わる
+          lsof_rc=0
+          out=$(lsof -a -d cwd -F pn) || lsof_rc=$?
+          if [ "$lsof_rc" -ne 0 ]; then
+            if [ -z "$out" ]; then
+              echo "lsof が失敗した（終了コード $lsof_rc）" >&2
+              exit 1
+            fi
+            echo "lsof が終了コード $lsof_rc で終わった。出た分の一覧で掃除を続け、最後に失敗で終わる" >&2
+          fi
+          targets=""
+          pid=""
+          while IFS= read -r line; do
+            case "$line" in
+              p*) pid="${line#p}" ;;
+              n*)
+                case "${line#n}" in
+                  "$ws" | "$ws"/*)
+                    case "$skip$targets " in
+                      *" $pid "*) ;;
+                      *) targets="$targets $pid" ;;
+                    esac
+                    ;;
+                esac
+                ;;
+            esac
+          done <<< "$out"
+          if [ -z "$targets" ]; then
+            if [ "$lsof_rc" -ne 0 ]; then
+              echo "一覧に止めるプロセスは無いが、lsof が失敗したので一覧が欠けているおそれがある" >&2
+              exit 1
+            fi
+            echo "止めるプロセスは無い"
+            exit 0
+          fi
+          # 消滅は ps -p で確かめる（kill -0 の失敗は権限拒否でも起きるので消滅とみなさない）
+          alive() {
+            for q in $1; do
+              if ps -p "$q" >/dev/null 2>&1; then printf '%s ' "$q"; fi
+            done
+          }
+          # $1=PID。cwd を取り直し、今も作業ディレクトリ配下なら in、外なら out、読めなければ unknown を出力する
+          cwd_state() {
+            o=$(lsof -a -d cwd -F pn -p "$1" 2>/dev/null) || o=""
+            s=unknown
+            while IFS= read -r l; do
+              case "$l" in
+                n*)
+                  case "${l#n}" in
+                    "$ws" | "$ws"/*) s=in ;;
+                    *) s=out ;;
+                  esac
+                  break
+                  ;;
+              esac
+            done <<< "$o"
+            printf '%s' "$s"
+          }
+          # $1=PID の並び。送る直前に cwd を取り直し、今も作業ディレクトリ配下のものだけを出力する
+          # （一覧のあとに終わって PID がほかのジョブのプロセスに使い回されたとき、そのプロセスへ送らないため）
+          still_in() {
+            for q in $1; do
+              if [ "$(cwd_state "$q")" = in ]; then printf '%s ' "$q"; fi
+            done
+          }
+          to=$(still_in "$targets")
+          if [ -n "$to" ]; then
+            echo "TERM を送る: $to"
+            kill -TERM $to 2>/dev/null || echo "kill -TERM が失敗した対象がある（消滅は ps -p で確かめる）"
+          fi
+          left="$targets"
+          i=0
+          while :; do
+            left=$(alive "$left")
+            if [ -z "$left" ] || [ "$i" -ge 5 ]; then break; fi
+            sleep 1
+            i=$((i + 1))
+          done
+          to=$(still_in "$left")
+          if [ -n "$to" ]; then
+            echo "KILL を送る: $to"
+            kill -KILL $to 2>/dev/null || echo "kill -KILL が失敗した対象がある（消滅は ps -p で確かめる）"
+            sleep 1
+          fi
+          # 生き残った PID を仕分ける。cwd が今も配下なら止められなかった対象。cwd が外なら対象でなくなったもの
+          # （PID の使い回しか cwd の移動）。cwd を読めないまま生きているものは確かめられないので失敗にする
+          bad=""
+          for q in $(alive "$left"); do
+            case "$(cwd_state "$q")" in
+              in) bad="$bad $q" ;;
+              out) echo "PID $q は cwd が作業ディレクトリの外になったので対象から外した（シグナルは送っていない）" ;;
+              *)
+                if ps -p "$q" >/dev/null 2>&1; then
+                  echo "PID $q は cwd を読めないので、作業ディレクトリ配下かを確かめられない" >&2
+                  bad="$bad $q"
+                fi
+                ;;
+            esac
+          done
+          if [ -n "$bad" ]; then
+            echo "止められなかったプロセス:$bad" >&2
+            exit 1
+          fi
+          if [ "$lsof_rc" -ne 0 ]; then
+            echo "一覧の分は止めたが、lsof が失敗したので一覧が欠けているおそれがある" >&2
+            exit 1
+          fi
+          echo "掃除完了"

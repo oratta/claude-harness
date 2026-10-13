@@ -889,3 +889,273 @@ timeout_comment_has_rule() {
   echo "$sec" | grep -q 'weekly-full\.yml'
   echo "$sec" | grep -q '確認なし'
 }
+
+# --- infra-selfhosted-job-cleanup (#994) ---
+# 両雛形の最後の手順（セルフホスト限定の掃除）の静的検査と、run を取り出して偽のプロセスで走らせる検査。
+# 偽のプロセスはテストが起こした sleep だけ。teardown は、記録した PID のうち開始時刻が記録と同じもの
+# （＝テストが起こした偽のプロセスそのもの）だけを止める。既に消えた PID と、消えたあと別のプロセスに
+# 使い回された PID には送らない。
+
+# $1=PID。そのプロセスの開始時刻を出力する（無ければ空）
+fake_started() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//; s/ *$//'; }
+
+# 記録（1 行に「PID|開始時刻」）を読み、開始時刻が今も同じ PID だけを KILL する
+stop_fakes() {
+  local file="$1" p started now
+  [ -f "$file" ] || return 0
+  while IFS='|' read -r p started; do
+    [ -n "$p" ] && [ -n "$started" ] || continue
+    now="$(fake_started "$p")"
+    [ -n "$now" ] && [ "$now" = "$started" ] || continue
+    kill -KILL "$p" 2>/dev/null
+  done < "$file"
+  return 0
+}
+
+teardown() {
+  if [ -n "${BATS_TEST_TMPDIR:-}" ]; then
+    stop_fakes "$BATS_TEST_TMPDIR/fake-pids"
+  fi
+  return 0
+}
+
+# $1=テンプレート $2=ジョブ名 $3=項目（if / run / continue-on-error / name）。最後の手順のその値を出力する
+last_step_field() {
+  ruby -ryaml -e 's = YAML.load_file(ARGV[0]).dig("jobs", ARGV[1], "steps").last; v = s[ARGV[2]]; abort "no #{ARGV[2]}" if v.nil?; puts v' "$1" "$2" "$3"
+}
+
+# $1=テンプレート $2=ジョブ名 $3=出力先。最後の手順の run を書き出す
+extract_cleanup_run() {
+  last_step_field "$1" "$2" run > "$3"
+}
+
+# $1=作業ディレクトリ $2...=そのまま sleep の前に実行するシェル断片。偽のプロセスを孤児として起こし PID を出力・記録する
+spawn_fake() {
+  local dir="$1" pre="${2:-:}" pid
+  pid="$( cd "$dir" && { ( eval "$pre"; exec sleep 300 ) >/dev/null 2>&1 & echo $!; } )"
+  echo "$pid|$(fake_started "$pid")" >> "$BATS_TEST_TMPDIR/fake-pids"
+  echo "$pid"
+}
+
+fake_alive() { ps -p "$1" >/dev/null 2>&1; }
+fake_dead() { ! ps -p "$1" >/dev/null 2>&1; }
+
+# 作業ディレクトリ ws と、外の outside / 前方一致する隣 ws-other を作る
+make_dirs() {
+  mkdir -p "$BATS_TEST_TMPDIR/ws/sub" "$BATS_TEST_TMPDIR/ws-other" "$BATS_TEST_TMPDIR/outside"
+  WS="$(cd "$BATS_TEST_TMPDIR/ws" && pwd -P)"
+  OTHER="$(cd "$BATS_TEST_TMPDIR/ws-other" && pwd -P)"
+  OUTSIDE="$(cd "$BATS_TEST_TMPDIR/outside" && pwd -P)"
+  RUN="$BATS_TEST_TMPDIR/cleanup.sh"
+  extract_cleanup_run "$WORKFLOWS_DIR/ci.yml.template" test "$RUN"
+}
+
+# $1=前置きのシェル断片（kill / ps / lsof の差し替え）。前置き + run を bash -e で実行する
+# （shell を指定しない手順を GitHub Actions は bash -e で走らせるので、それに合わせる）
+run_cleanup() {
+  { printf '%s\n' "${1:-:}"; cat "$RUN"; } > "$BATS_TEST_TMPDIR/cleanup-full.sh"
+  GITHUB_WORKSPACE="$WS" run bash -e "$BATS_TEST_TMPDIR/cleanup-full.sh"
+}
+
+@test "U1: last step of both templates is a self-hosted-only cleanup with always()" {
+  for spec in "ci.yml.template:test" "weekly-full.yml.template:full"; do
+    t="$WORKFLOWS_DIR/${spec%%:*}"; j="${spec##*:}"
+    c="$(last_step_field "$t" "$j" if)"
+    [[ "$c" == *"always()"* ]] || return 1
+    [[ "$c" == *"runner.environment == 'self-hosted'"* ]] || return 1
+    r="$(last_step_field "$t" "$j" run)"
+    [[ "$r" == *GITHUB_WORKSPACE* ]] || return 1
+    [[ "$r" != *pkill* ]] || return 1
+    [[ "$r" != *killall* ]] || return 1
+    [[ "$r" != *"|| true"* ]] || return 1
+    run last_step_field "$t" "$j" continue-on-error
+    [ "$status" -ne 0 ]
+  done
+}
+
+@test "U2: the cleanup run is identical in ci.yml.template and weekly-full.yml.template" {
+  a="$(last_step_field "$WORKFLOWS_DIR/ci.yml.template" test run)"
+  b="$(last_step_field "$WORKFLOWS_DIR/weekly-full.yml.template" full run)"
+  [ -n "$a" ]
+  [ "$a" = "$b" ]
+}
+
+@test "U3: only processes under the workspace are stopped; outside and prefix-sibling survive" {
+  command -v lsof >/dev/null
+  make_dirs
+  inside="$(spawn_fake "$WS")"
+  deep="$(spawn_fake "$WS/sub")"
+  outside="$(spawn_fake "$OUTSIDE")"
+  sibling="$(spawn_fake "$OTHER")"
+  moved="$(spawn_fake "$WS" "cd $OUTSIDE")"
+  sleep 1
+  run_cleanup
+  [ "$status" -eq 0 ]
+  fake_dead "$inside"
+  fake_dead "$deep"
+  fake_alive "$outside"
+  fake_alive "$sibling"
+  fake_alive "$moved"
+}
+
+@test "U4: exits 0 when there is nothing to stop (and does not stop itself)" {
+  command -v lsof >/dev/null
+  make_dirs
+  outside="$(spawn_fake "$OUTSIDE")"
+  sleep 1
+  # 自分の cwd も作業ディレクトリにして、自分を止めないことを確かめる
+  { printf ':\n'; printf 'cd %q\n' "$WS"; cat "$RUN"; } > "$BATS_TEST_TMPDIR/cleanup-full.sh"
+  GITHUB_WORKSPACE="$WS" run bash -e "$BATS_TEST_TMPDIR/cleanup-full.sh"
+  [ "$status" -eq 0 ]
+  fake_alive "$outside"
+}
+
+@test "U5: a process ignoring TERM is stopped by KILL" {
+  command -v lsof >/dev/null
+  make_dirs
+  stubborn="$(spawn_fake "$WS" "trap '' TERM")"
+  sleep 1
+  run_cleanup
+  [ "$status" -eq 0 ]
+  fake_dead "$stubborn"
+}
+
+@test "U6: a target that cannot be stopped makes the step fail and prints its PID" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup 'kill() { return 0; }'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$pid"* ]] || return 1
+}
+
+@test "U7: kill denied by permission (ps still sees the process) is not treated as gone" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup 'kill() { echo "kill: ($2) - Operation not permitted" >&2; return 1; }'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$pid"* ]] || return 1
+}
+
+@test "U8: a PID that disappears while waiting (ps -p fails) is treated as success" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  # kill は何もせず、対象の ps -p だけが「存在しない」と答える（祖先を辿る ps -o ppid= は本物）
+  run_cleanup "kill() { return 0; }
+ps() { if [ \"\$1\" = -p ] && [ \"\$2\" = $pid ]; then return 1; fi; command ps \"\$@\"; }"
+  [ "$status" -eq 0 ]
+}
+
+@test "U9: SKILL.md explains the self-hosted cleanup and how to apply it to existing repos" {
+  sec="$(awk '/^## /{p=0} /^## CI\/CD 構成の 2 軸/{p=1} p' "$SKILL")"
+  echo "$sec" | grep -q 'ジョブ終了時の掃除'
+  echo "$sec" | grep -q 'self-hosted'
+  echo "$sec" | grep -q '作業ディレクトリ'
+  echo "$sec" | grep -q 'ほかのジョブ'
+  echo "$sec" | grep -q '作業ディレクトリの外'
+  echo "$sec" | grep -q 'ci\.yml'
+  echo "$sec" | grep -q 'weekly-full\.yml'
+  echo "$sec" | grep -q '手で書き足'
+}
+
+@test "U10: lsof ending non-zero after partial output still cleans up but the step fails" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  # 一覧（-p なし）の lsof だけ、出力のあと非 0 で終わる
+  run_cleanup 'lsof() { case " $* " in *" -p "*) command lsof "$@" ;; *) command lsof "$@"; return 1 ;; esac; }'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"lsof"* ]] || return 1
+  fake_dead "$pid"
+}
+
+@test "U11: lsof ending non-zero fails the step even when there is nothing to stop, or no output" {
+  command -v lsof >/dev/null
+  make_dirs
+  outside="$(spawn_fake "$OUTSIDE")"
+  sleep 1
+  run_cleanup 'lsof() { case " $* " in *" -p "*) command lsof "$@" ;; *) command lsof "$@"; return 1 ;; esac; }'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"lsof"* ]] || return 1
+  inside="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup 'lsof() { return 1; }'
+  [ "$status" -ne 0 ]
+  fake_alive "$inside"
+  fake_alive "$outside"
+}
+
+@test "U12: a PID whose cwd is no longer under the workspace before TERM gets no signal" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  # 一覧のあと PID が別のジョブのプロセスに使い回された状況: 取り直した cwd は作業ディレクトリの外
+  run_cleanup "lsof() { case \" \$* \" in *\" -p $pid \"*|*\" -p $pid\") printf 'p%s\\nfcwd\\nn%s\\n' $pid '$OUTSIDE' ;; *) command lsof \"\$@\" ;; esac; }"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$pid"* ]] || return 1
+  fake_alive "$pid"
+}
+
+@test "U13: a PID reused while waiting (cwd outside before KILL) gets no KILL" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS" "trap '' TERM")"
+  sleep 1
+  # 1 回目の取り直し（TERM の前）は本物、2 回目以降（KILL の前）は作業ディレクトリの外と答える
+  cnt="$BATS_TEST_TMPDIR/recheck-count"
+  run_cleanup "lsof() { case \" \$* \" in *\" -p $pid \"*|*\" -p $pid\") if [ -f '$cnt' ]; then printf 'p%s\\nfcwd\\nn%s\\n' $pid '$OUTSIDE'; else : >> '$cnt'; command lsof \"\$@\"; fi ;; *) command lsof \"\$@\" ;; esac; }"
+  [ "$status" -eq 0 ]
+  [ -f "$cnt" ]
+  [[ "$output" == *"TERM を送る"* ]] || return 1
+  [[ "$output" != *"KILL を送る"* ]] || return 1
+  fake_alive "$pid"
+}
+
+@test "U14: a live PID whose cwd cannot be re-read gets no signal and the step fails with its PID" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup "lsof() { case \" \$* \" in *\" -p $pid \"*|*\" -p $pid\") return 1 ;; *) command lsof \"\$@\" ;; esac; }"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$pid"* ]] || return 1
+  fake_alive "$pid"
+}
+
+@test "U15: failing to walk up the ancestors stops the step before any signal" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup 'ps() { if [ "$1" = -o ]; then return 1; fi; command ps "$@"; }'
+  [ "$status" -ne 0 ]
+  fake_alive "$pid"
+}
+
+@test "U16: teardown stops only recorded fakes whose start time still matches" {
+  make_dirs
+  mine="$(spawn_fake "$OUTSIDE")"
+  # 記録の PID は生きているが開始時刻が違う（＝記録したあと別のプロセスに使い回された PID）
+  reused="$( cd "$OUTSIDE" && { sleep 300 >/dev/null 2>&1 & echo $!; } )"
+  sleep 1
+  rec="$BATS_TEST_TMPDIR/records"
+  {
+    echo "$reused|Thu Jan  1 00:00:00 1970"
+    echo "$reused|"
+    echo "$reused"
+    grep "^$mine|" "$BATS_TEST_TMPDIR/fake-pids"
+  } > "$rec"
+  stop_fakes "$rec"
+  sleep 1
+  fake_alive "$reused" || { kill -KILL "$reused" 2>/dev/null; return 1; }
+  # 後片付け: reused は今ここで起こして生存を確かめた直後の PID なので、開始時刻を記録して回収に回す
+  echo "$reused|$(fake_started "$reused")" >> "$BATS_TEST_TMPDIR/fake-pids"
+  fake_dead "$mine"
+}
