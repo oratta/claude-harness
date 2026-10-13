@@ -8,7 +8,7 @@ flatmate#1563 の掃除は、`scripts/test.sh` が `.test-run/<PID>` に残す�
 
 **Goals:**
 
-- ジョブが成功・失敗・キャンセル・上限超過のどれで終わっても、そのジョブの作業ディレクトリの下に cwd を持つプロセスがランナーの Mac に残らない
+- ジョブが成功・失敗・キャンセル・上限超過のどれで終わっても、手順が起動すれば、そのジョブの作業ディレクトリの下に cwd を持つプロセスがランナーの Mac に残らない（起動の保証は GitHub の説明に頼る。リスク欄）
 - GitHub のランナーでは何もしない
 - 同じ Mac で走るほかのジョブのプロセスを止めない
 
@@ -38,15 +38,15 @@ flatmate#1563 の掃除は、`scripts/test.sh` が `.test-run/<PID>` に残す�
 
 ### 3. 止め方は TERM、待ち、残ったものだけ KILL
 
-先に TERM を送ってプロセス自身に後始末（`wrangler dev` の子の終了など）をさせ、5 秒待って、まだ生きているものに KILL を送る。TERM を無視するプロセスも KILL で止まる。KILL を送る前後の生死は `kill -0 <PID>` で確かめ、待つ間に消えていた PID は正常として扱う。KILL のあとも `kill -0` が成功する PID（権限不足などで止められないもの）は、PID を出力して非 0 で終わる。`kill` の失敗を一律に無視はしない。
+先に TERM を送ってプロセス自身に後始末（`wrangler dev` の子の終了など）をさせ、5 秒待って、まだ生きているものに KILL を送る。TERM を無視するプロセスも KILL で止まる。生死は `ps -p <PID>` で確かめる（`ps -p` は、権限が無くても存在するプロセスなら成功し、存在しなければ失敗する。`kill -0` は権限拒否（EPERM）でも失敗するので、消滅の判定には使わない）。消滅を確認できた PID（`ps -p` が失敗）だけを正常として扱う。`kill` が失敗したときも、`ps -p` でその PID が消えたことを確認できなければ正常とせず、権限拒否など消滅を確認できない失敗は、KILL のあとも含めて PID を出力して非 0 で終わる。`kill` の失敗を一律に無視はしない。
 
 ### 4. セルフホスト限定は `runner.environment == 'self-hosted'`
 
-`if: always() && runner.environment == 'self-hosted'`。`runner.environment` は GitHub のランナーで `github-hosted`、セルフホストで `self-hosted` になる実行時の値で、`vars.CI_RUNNER` の値（`self-hosted` 以外のラベルを付けているリポジトリもありうる）に依らない。`always()` は、キャンセルと上限超過のあとにも手順を走らせる。
+`if: always() && runner.environment == 'self-hosted'`。`runner.environment` は GitHub のランナーで `github-hosted`、セルフホストで `self-hosted` になる実行時の値で、`vars.CI_RUNNER` の値（`self-hosted` 以外のラベルを付けているリポジトリもありうる）に依らない。`always()` は GitHub の説明ではキャンセル時にも真になる式で、上限超過のあとにこの手順が実際に起動するかは未確認（リスク欄）。
 
 ### 5. 失敗は隠さない。ただし止める相手が無いことは失敗ではない
 
-止める相手が無ければ 0 で終わる。`lsof` が無いとき、および KILL のあとも生き残る対象があるときは、掃除ができないことを赤で見せるため非 0 で終わる（`|| true` と `continue-on-error` は付けない）。決定 3 の「既に消えた PID は正常」と矛盾しないよう、正常扱いは「`kill -0` が失敗する（存在しない）」場合だけにする。
+止める相手が無ければ 0 で終わる。`lsof` が無いとき、および KILL のあとも生き残る対象があるときは、掃除ができないことを赤で見せるため非 0 で終わる（`|| true` と `continue-on-error` は付けない）。決定 3 の「既に消えた PID は正常」と矛盾しないよう、正常扱いは「`ps -p` で消滅を確認できた」場合だけにし、権限拒否など消滅を確認できない失敗は非 0 にする。
 
 ### 6. 手順は雛形に直書きし、両ジョブで同じ文面にする
 
@@ -54,7 +54,7 @@ flatmate#1563 の掃除は、`scripts/test.sh` が `.test-run/<PID>` に残す�
 
 ## Risks / Trade-offs
 
-- `always()` の手順がキャンセル・上限超過のあとに走ることは、GitHub の説明（`always()` は「キャンセルされたときも実行され true を返す」: https://docs.github.com/en/actions/reference/workflows-and-actions/expressions 、`timeout-minutes` はジョブを打ち切る: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax）に基づく。flatmate#1570 のマージは、この手順が上限超過後に実際に動いた証拠ではないので裏付けにしない。マージ前のテストでは確かめられないため、bats では `if` の式と位置を静的に検査し、止める範囲と止め方は偽のプロセスで実際に走らせて検査する。実際の打ち切りでの動作は、雛形を入れたリポジトリの最初の打ち切りの run のログで確かめる（この change の完了条件にしない）
+- `always()` の手順がキャンセル・上限超過のあとに走ることは、GitHub の説明（`always()` は「キャンセルされたときも実行され true を返す」: https://docs.github.com/en/actions/reference/workflows-and-actions/expressions 、`timeout-minutes` はジョブを打ち切る: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax）に基づく。ただし、これらの文書は `always()` がキャンセル時に真になることと、上限到達でジョブがキャンセルされることを説明しているだけで、上限到達後にこの最後の手順が実際に起動する保証までは示していない。**上限超過後の手順の実行は未確認**である。flatmate#1570 のマージは、この手順が上限超過後に実際に動いた証拠ではないので裏付けにしない。マージ前のテストでは確かめられないため、bats では `if` の式と位置を静的に検査し、止める範囲と止め方は偽のプロセスで実際に走らせて検査する。実際の打ち切りでの動作は、雛形を入れたリポジトリの最初の打ち切りの run のログで確かめる（この change の完了条件にしない）
 - 作業ディレクトリの外に cwd を移したプロセスは残る → Non-Goals のとおり、見張り（#1567）の役割
 - 作業ディレクトリを cwd にして常駐させたい利用者のプロセスがあれば止まる → 作業ディレクトリはジョブごとの置き場なので、常駐は置かない前提。コメントに書く
 - 雛形に同じ文面が 2 つあり、片方だけ直す事故が起こりうる → bats で一致を検査する
