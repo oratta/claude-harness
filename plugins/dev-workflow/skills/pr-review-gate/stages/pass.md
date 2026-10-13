@@ -118,7 +118,7 @@ gh api repos/$R/issues/$N/comments --jq \
 出力に**リスク宣言・仕様宣言・動作確認の 3 見出しがすべて**現れることを確認する。
 1 つでも欠けていれば**合格処理をしない**（コメントを出し直してから再確認する）。
 
-**仕様宣言は記録先の記録と突き合わせる。** 記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す元 issue で、**issue 参照が無い PR では PR 自身**（`$REC` を PR 番号に切り替える。PR のコメントも `issues/<番号>/comments` で読める）。そこから最新の `仕様化判断:` コメント（1 行目が `^仕様化判断: (する|しない)$`）を取る。PR コメントへの記録が許されるのは **PR 本文に issue 参照が無い場合に限る**（issue 参照があれば issue 側が正。issue 側に記録が無ければ issue に投稿する）。`$ISSUE` が空のまま `issues/$ISSUE/comments` を叩くと `issues//comments` で 404 になるので、必ず `$REC` を経由する:
+**仕様宣言は記録先の記録と突き合わせる。** 記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す元 issue で、**issue 参照が無い PR では PR 自身**（`$REC` を PR 番号に切り替える。PR のコメントも `issues/<番号>/comments` で読める）。そこから最新の `仕様化判断:` コメント（1 行目が `^仕様化判断: (する|しない)$`）を取る。このコメントは 1 行目だけでなく、2 行目以降の `通し方:` の行と `直す文:` の行も読む（文言合わせの通し方で仕様レビューを省いた PR を見分けるため）。PR コメントへの記録が許されるのは **PR 本文に issue 参照が無い場合に限る**（issue 参照があれば issue 側が正。issue 側に記録が無ければ issue に投稿する）。`$ISSUE` が空のまま `issues/$ISSUE/comments` を叩くと `issues//comments` で 404 になるので、必ず `$REC` を経由する:
 
 ```bash
 ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')
@@ -129,13 +129,25 @@ gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | se
 gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様レビュー: (APPROVE|REQUEST_CHANGES)$"))] | last | .body | split("\n")[0]'
 # 2 つ目の出力が「仕様レビュー: APPROVE」ちょうどであること（最新のレビュー結果が正。古い APPROVE の後に REQUEST_CHANGES が出ていれば不合格）
 bash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF / 触れた規範パス。終了コード 2 = 規範パスに触れて openspec 差分なし
+# 文言合わせの通し方かどうかは、同じ最新の仕様化判断のコメントの本文（2 行目以降）で見分ける
+DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body')
+WAY=$(printf '%s\n' "$DEC" | grep -cx '通し方: 文言合わせ')   # 1 以上なら文言合わせの通し方。0 件のとき grep の終了コードは 1 になるので、終了コードではなく出力の値で判定する
+FIXES=$(printf '%s\n' "$DEC" | grep '^直す文: ')             # 直す要件ごとに 1 行
+echo "$WAY"; printf '%s\n' "$FIXES"
+# ここから下の 3 本は WAY が 1 以上のときだけ実行する。場所は PR の HEAD の作業ツリー（git rev-parse HEAD の出力が $HEAD_SHA と一致すること）。CHANGE には仕様宣言が指す change 名を入れる
+ls openspec/changes/archive/*-"$CHANGE"/specs/*/spec.md | wc -l          # ちょうど 1（archive 済みで、差分が 1 ファイル）
+grep -cE '^## (ADDED|REMOVED|RENAMED) Requirements' openspec/changes/archive/*-"$CHANGE"/specs/*/spec.md   # 0（ここも終了コードではなく出力の値で判定する）
+grep -h '^### Requirement: ' openspec/changes/archive/*-"$CHANGE"/specs/*/spec.md | sed 's/^### Requirement: //' | while IFS= read -r REQ; do printf '%s\n' "$FIXES" | grep -qF "「${REQ}」" || echo "直す文に無い要件: ${REQ}"; done   # 何も出力されなければ、要件名はすべて直す文の行にある
 ```
 
 | 記録先（issue、無ければ PR 自身）の記録 | 合格に必要な状態 |
 |---|---|
-| `仕様化判断: する` | PR の変更ファイルに `openspec/` が含まれる、**または**宣言が指す change が base で archive 済み（`openspec/changes/archive/*-<change-name>/` の実在を実測。スタック PR で仕様が先行 PR に入っている場合）。**かつ** 記録先の最新の `仕様レビュー:` コメントが `APPROVE`（古い APPROVE の後に REQUEST_CHANGES があれば不可）。仕様宣言は「更新した」形 |
+| `仕様化判断: する`（`通し方: 文言合わせ` の行なし） | PR の変更ファイルに `openspec/` が含まれる、**または**宣言が指す change が base で archive 済み（`openspec/changes/archive/*-<change-name>/` の実在を実測。スタック PR で仕様が先行 PR に入っている場合）。**かつ** 記録先の最新の `仕様レビュー:` コメントが `APPROVE`（古い APPROVE の後に REQUEST_CHANGES があれば不可）。仕様宣言は「更新した」形 |
+| `仕様化判断: する`＋`通し方: 文言合わせ` の行あり | `仕様レビュー:` のコメントは照合しない（この通し方では R1 を起こさないので、コメントが無いことを不合格の理由にしない）。代わりに次の 4 点をすべて実測する: ①仕様宣言が `仕様レビュー: 省いた（文言合わせ。` を含む「更新した」形 ②PR の HEAD で `openspec/changes/archive/*-<change-name>/specs/*/spec.md` に当たるファイルがちょうど 1 つ（archive 済みで、差分が 1 ファイル） ③そのファイルに ADDED / REMOVED / RENAMED の見出しが無い ④そのファイルの `### Requirement:` の要件名がすべて、`直す文:` で始まるどれかの行に `「<要件名>」` の形で現れる。1 つでも満たさなければ合格しない。直し方は、差分か仕様化判断のコメントを直して 4 点を満たすか、`通し方:` の行の無い仕様化判断を投稿し直して artifact 一式と仕様レビューからやり直すかのどちらか |
 | `仕様化判断: しない` | 仕様宣言は「変更なし＋理由」形。PR に `openspec/` 差分が**無い**こと（差分があれば「しない」と矛盾＝合格しない。判断を「する」に取り直すか差分を外す）。`spec-touch-check.sh` が終了コード 2 なら、理由に規範パス接触への言及があること |
 | 記録なし | **合格しない**。今から判断して記録先に `仕様化判断:` を投稿する（「する」なら仕様化・仕様レビューからやり直す）。issue が無い PR に限り PR 自身のコメントに同書式で記録してよい（`gh api -X POST repos/$R/issues/$REC/comments`） |
+
+最新の仕様化判断のコメントに `通し方: 文言合わせ` の行が無い PR は、仕様宣言が `仕様レビュー: 省いた` の形でも「行なし」の行で照合する（`仕様レビュー: APPROVE` を求める）。4 点の照合は差分の形だけを見る。挙げた要件の中での書き換えすぎと、受け入れ条件と `直す文:` の行の食い違いは実装後レビューが見る。
 
 **`needs-approval` が付いていないことを、Ready 化より前に確認する。** auto-merge は `needs-approval` を
 BLOCKING_LABELS に含むため無審査マージにはならないが、**passed と併存すると

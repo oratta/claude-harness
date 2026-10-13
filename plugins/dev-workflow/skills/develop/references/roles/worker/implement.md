@@ -8,6 +8,8 @@
 
 **仕様化する場合**: `tasks.md` を上から TDD で実装し、終えた項目を `[x]` にする。`openspec validate <change-name> --strict` を実行し、担当した項目のチェックボックスを確認する。(3a) は verify までで return し、`openspec archive <change-name> --yes` は (3b) で行う。
 
+**文言合わせの通し方の場合**（記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行がある）: `tasks.md` が無いので、(1) の return に書いた作業項目（手渡しで起こされたときは本体から渡された作業項目）を TDD で実装する。検証は `openspec validate <change-name> --type change --strict` で行う（change に proposal.md が無いので、`--type change` を付けない形は change を見つけられず `Unknown item` で終了コード 1 になる。`openspec validate --changes --strict` はこの change を検査せずに終了コード 0 を返すので使わない）。チェックボックスの確認は行わない。実装の途中で対象から外れると分かったら（新しい要件が要る・設計の選択が出た・2 つ以上の capability に広がった）、手を止めて return する（そのあとの扱いは `worker/spec.md`「仕様化する場合（(1) の終わり）」）。
+
 **コード直行する場合（仕様化不要）**:
 1. 実装前に必ず codebase を grep して既存実装を確認する（二重実装しない）
 2. 受け入れ条件・期待動作を**テストとして先に書く**（Red）
