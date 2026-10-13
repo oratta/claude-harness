@@ -560,6 +560,22 @@ extract_context_cap_section() {
   echo "$n" | grep -qF '「レビュアーの要約受領」'
 }
 
+@test "gate-runner (#985): non-stopping findings go through the triage table, and the session that gets a condition answer re-sorts" {
+  line="$(grep -F 'レビュアーの要約受領' "$GATE" | grep -v '「レビュアーの要約受領」')"
+  echo "$line" | grep -qF '止めない指摘の振り分け表'
+  echo "$line" | grep -qF '段 A'
+  ! echo "$line" | grep -qF '順 1 だけなら follow-up issue に切って' || return 1
+  sec="$(awk '/^## 段ごとの起動と入力/{f=1;next} /^## /{f=0} f' "$GATE")"
+  ans="$(echo "$sec" | grep -F '条件の答えを受け取ったとき')"
+  [ -n "$ans" ] || { echo "no condition-answer duty in gate-runner.md"; return 1; }
+  for t in '`## 条件の答え`' '`条件の確認待ち`' '段 B の表から当て直す' 'マージ済みでも' 'G を起こさない'; do
+    echo "$ans" | grep -qF -- "$t" || { echo "missing: $t"; return 1; }
+  done
+  # 照合と振り分けの G は、止める指摘が無ければ振り分け表に通してから 次の段へ
+  inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$TRIAGE")"
+  echo "$inp" | grep -F '止める指摘が残らなかったとき' | grep -qF '止めない指摘の振り分け表'
+}
+
 @test "gate-runner (#349): the reviewer-summary resume branches through the all-round verdict" {
   line="$(grep -F 'レビュアーの要約受領' "$GATE" | grep -v '「レビュアーの要約受領」')"
   [ -n "$line" ] || { echo "no reviewer-summary resume line"; return 1; }
@@ -918,9 +934,9 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   echo "$inp" | grep -qF '`次の段へ`'
   echo "$inp" | grep -qF '`次の段: 前提確認と重さ判定`'
   echo "$inp" | grep -qF '`次の段: 合格処理`'
-  # 照合と振り分けの G は止める指摘が無ければ follow-up issue に切ってから 次の段へ
+  # 照合と振り分けの G は止める指摘が無ければ止めない指摘の振り分け表に通してから 次の段へ（#985）
   inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$TRIAGE")"
-  echo "$inp" | grep -qF 'follow-up issue'
+  echo "$inp" | grep -qF '止めない指摘の振り分け表に通す'
   echo "$inp" | grep -qF '`次の段: 合格処理`'
 }
 
