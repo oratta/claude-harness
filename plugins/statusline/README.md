@@ -104,19 +104,31 @@ writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合�
 
 ### レジストリの作り方
 
-登録先は `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json`（`CLAUDE_ACCOUNTS_FILE` で上書き可）。**登録したいアカウントのシェルで** `dev-workflow` の生成スクリプトを実行する:
+登録先は `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json`（`CLAUDE_ACCOUNTS_FILE` で上書き可）。`dev-workflow` の `accounts.sh` で操作する:
 
 ```bash
-# 既定アカウント（CLAUDE_SECURESTORAGE_CONFIG_DIR を設定していないシェル）で
-~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts/accounts-init.sh --id a --label A
+SCRIPTS=~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts
 
-# もう一方のアカウントのシェルで
-~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts/accounts-init.sh --id b --label B
+# 新しいアカウントを足す（認証情報の置き場所 ~/.claude-accounts/b を作って登録し、ログインするコマンドを 1 行出す）
+$SCRIPTS/accounts.sh add b --label B
+# 出力された CLAUDE_SECURESTORAGE_CONFIG_DIR=... claude をそのまま実行し、起動後に /login する
+
+$SCRIPTS/accounts.sh list     # 登録の一覧
 ```
 
-パスを手で書き写さずこのスクリプトを使うこと。`securestorage` には `CLAUDE_SECURESTORAGE_CONFIG_DIR` の**実値をそのまま**書き出す必要がある。末尾スラッシュや `~` 展開が 1 文字でも違うと、Claude Code 本体にとっては別の Keychain 項目になり、そのアカウントの残量が取れなくなる。
+置き場所の基点は `CLAUDE_ACCOUNTS_HOME`（絶対パス）で変えられる。`securestorage` には `CLAUDE_SECURESTORAGE_CONFIG_DIR` の**実値をそのまま**書き出す必要がある。末尾スラッシュや `~` 展開が 1 文字でも違うと、Claude Code 本体にとっては別の Keychain 項目になり、そのアカウントの残量が取れなくなる。`add` は作ったディレクトリの絶対パスをそのまま書くので、パスを書き写す必要は無い。
 
-できあがる形は次のとおり。手で書いてもよい:
+既定アカウント（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を設定していないシェル）や、すでに別の場所で使っているアカウントを登録するときは、**そのアカウントのシェルで** `accounts-init.sh` を実行する。居るシェルの実値をそのまま書き出す:
+
+```bash
+# 既定アカウントのシェルで
+$SCRIPTS/accounts-init.sh --id a --label A
+
+# もう一方のアカウントのシェルで
+$SCRIPTS/accounts-init.sh --id b --label B
+```
+
+登録簿は次の形になる（参照用）:
 
 ```json
 {
@@ -139,10 +151,10 @@ writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合�
 
 ### 使っていないアカウントをオフにする
 
-解約したアカウントなど、当面使わないアカウントは、登録を消さずに `accounts.json` のそのスロットへ `"enabled": false` を足す:
+解約したアカウントなど、当面使わないアカウントは、登録を消さずに `accounts.sh off <id>` でオフにする:
 
-```json
-{ "id": "b", "label": "B", "securestorage": "/Users/example/.claude-b", "enabled": false }
+```bash
+$SCRIPTS/accounts.sh off b
 ```
 
 オフのアカウントは、ステータスラインでは値の代わりに `off` の 1 行になり、`dev-workflow` の起動時の自動選択（`cld`）の候補から外れ、使用量の取得もされない。
@@ -153,7 +165,7 @@ writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合�
   B  off
 ```
 
-戻すときは `enabled` の行を消すか `true` にする。認証情報と、それまでに記録された使用量は残っているので、登録をやり直す必要は無い。切り替えは当面 `accounts.json` を手で書き換える（`accounts-init.sh` で同じ id を登録し直しても `enabled` は消えない）。オフのアカウントがいま使っているアカウントになっているセッション（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を手で設定して起動した場合のほか、オフにした既定アカウントへ `cld` の自動選択が縮退して起動した場合、起動したあとでそのアカウントをオフにした場合）では、そのアカウントは `off` ではなくライブ値で描く。
+戻すときは `accounts.sh on <id>` を実行する。認証情報と、それまでに記録された使用量は残っているので、登録をやり直す必要は無い（書き換える前の登録簿は `accounts.json.bak` に 1 世代だけ残る。`accounts-init.sh` で同じ id を登録し直しても `enabled` は消えない）。オフのアカウントがいま使っているアカウントになっているセッション（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を手で設定して起動した場合のほか、オフにした既定アカウントへ `cld` の自動選択が縮退して起動した場合、起動したあとでそのアカウントをオフにした場合）では、そのアカウントは `off` ではなくライブ値で描く。
 
 ### 表示の読み方（複数アカウント時）
 

@@ -79,7 +79,18 @@ cld-account() {
 
 関数定義前の `unalias` は、旧設定の `cld` / `cld-account` alias をこの関数へ置き換えるために必要。`cld` は probe を best-effort で実行してから自動選択し、`cld-account a --resume` のような明示選択では先頭の slot id を除いた引数をそのまま `claude` に渡す。selector の理由行は stderr に残る。空の選択値は既定アカウントを意味するため環境変数を空文字で設定せず `env -u` で解除する。未登録 id などで selector が非 0 なら function も同じ status で終了し、Claude は起動しない。
 
-使っていないアカウントは、`accounts.json` のそのスロットに `"enabled": false` を足すとオフになる。オフのアカウントは `cld` の自動選択で選ばれず（理由行の `margins` に `<id>:off` と出る）、`usage-probe.sh` も使用量を取得しない。`cld-account <id>` でオフのアカウントを指定すると、戻し方を stderr に出して exit 2 で終わり、Claude は起動しない。全アカウントがオフのときは既定アカウントで起動する（理由は `default-due-to-all-off`）。既定アカウントへの縮退は `enabled` を見ないので、既定アカウント自体をオフにしていても、全アカウントがオフのとき、またはオンのアカウントがすべて欠測か 5 時間枠 90% 以上のときは、そのオフの既定アカウントで起動する。戻すときは `enabled` の行を消すか `true` にする。切り替えは当面 `accounts.json` を手で書き換える。
+アカウント登録簿（`accounts.json`）の一覧・追加・オン・オフは `scripts/accounts.sh` で行う。
+
+```bash
+accounts.sh list           # id・label・on|off・securestorage をタブ区切りで 1 行ずつ
+accounts.sh add b --label B  # 認証情報の置き場所 ~/.claude-accounts/b を作って登録し、ログインするコマンドを 1 行出す
+accounts.sh off b          # b をオフにする
+accounts.sh on b           # b をオンに戻す
+```
+
+`add` が出したコマンドをそのまま実行して `claude` を起動し、`/login` でログインする。置き場所の基点は環境変数 `CLAUDE_ACCOUNTS_HOME`（絶対パス。既定 `$HOME/.claude-accounts`）で変えられる。同じ id の `add` は拒否される。`add` / `on` / `off` は書き換える前に登録簿を `accounts.json.bak` に控える（1 世代）。登録簿が壊れているときは何も書かずに止まる。最初の `add` では既定アカウントのスロットができないので、既定アカウントも並べたいときは、そのシェルで `accounts-init.sh --id <id>` を実行する。
+
+使っていないアカウントは `accounts.sh off <id>` でオフになる。オフのアカウントは `cld` の自動選択で選ばれず（理由行の `margins` に `<id>:off` と出る）、`usage-probe.sh` も使用量を取得しない。`cld-account <id>` でオフのアカウントを指定すると、戻し方を stderr に出して exit 2 で終わり、Claude は起動しない。全アカウントがオフのときは既定アカウントで起動する（理由は `default-due-to-all-off`）。既定アカウントへの縮退は `enabled` を見ないので、既定アカウント自体をオフにしていても、全アカウントがオフのとき、またはオンのアカウントがすべて欠測か 5 時間枠 90% 以上のときは、そのオフの既定アカウントで起動する。戻すときは `accounts.sh on <id>` を実行する。
 
 Codex を使わない期間は、`accounts.json` のトップレベル（`accounts` の配列の外）に `"codex": {"enabled": false}` を足すと Codex がオフになる。
 
