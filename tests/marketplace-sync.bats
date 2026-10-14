@@ -112,14 +112,14 @@ setup() {
   [ "$(jq -r --arg n "$last"  '.plugins[] | select(.name==$n) | .description' "${scratch}/marketplace.json")" = "edited by ${last}" ]
 }
 
-# --- S140: bundles "all" lists every plugin except telegram (issue #708) ---
-# 説明は「全プラグインをインストール」。bot トークンの設定が要る telegram だけを意図して外す。
-# 件数は固定せず集合で縛る（telegram を解散する PR が入っても、新しいプラグインを足し忘れても気づける）。
-@test "S140: bundles all equals plugins[] minus telegram" {
+# --- S140: bundles "all" lists every plugin (issue #708) ---
+# 説明は「全プラグインをインストール」。件数は固定せず集合で縛る（新しいプラグインを足し忘れても気づける）。
+# bot トークンの設定が要る telegram だけを外していたが、telegram は解散した（PR #841）ので除外はない。
+@test "S140: bundles all equals plugins[]" {
   all="$(jq -r '.bundles[] | select(.name=="all") | .plugins[]' "$MARKETPLACE" | sort)"
-  expected="$(jq -r '.plugins[].name | select(. != "telegram")' "$MARKETPLACE" | sort)"
+  expected="$(jq -r '.plugins[].name' "$MARKETPLACE" | sort)"
   if [ "$all" != "$expected" ]; then
-    echo "bundles all and plugins[] (minus telegram) differ:"
+    echo "bundles all and plugins[] differ:"
     diff <(echo "$all") <(echo "$expected") || true
     return 1
   fi

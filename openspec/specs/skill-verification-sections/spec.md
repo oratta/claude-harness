@@ -7,10 +7,10 @@ TBD - created by archiving change skill-verification. Update Purpose after archi
 
 棚卸しリスト（`plugins/dev-workflow/references/self-verification.md` の「対象スキル一覧」）で対象と判定された各スキルの SKILL.md は、見出しリテラル「## 自己検証」の節を持たなければならない (MUST)。節は (a) `plugins/dev-workflow/references/self-verification.md` への参照 1 行、(b) スキル固有の検証手順、の 2 要素で構成し、固有手順には検証コマンド（実行可能なコマンド文字列）または検証対象の成果物パスを最低 1 つ含めなければならない (MUST)。
 
-#### Scenario: 7 スキルの SKILL.md に「## 自己検証」節が存在する
+#### Scenario: 6 スキルの SKILL.md に「## 自己検証」節が存在する
 
-- **WHEN** ユーザーが `plugins/worktree/skills/wt-setup/SKILL.md`・`plugins/worktree/skills/wt-clean/SKILL.md`・`plugins/daily-report/skills/daily-report/SKILL.md`・`plugins/weekly-report/skills/weekly-report/SKILL.md`・`plugins/infra/skills/infra-setup/SKILL.md`・`plugins/experience-to-skill/skills/experience-to-skill/SKILL.md`・`plugins/dev-workflow/skills/push-guard-setup/SKILL.md` の各ファイルで「## 自己検証」を grep する
-- **THEN** 7 ファイルすべてで見出しがちょうど 1 件ヒットする
+- **WHEN** ユーザーが `plugins/worktree/skills/wt-setup/SKILL.md`・`plugins/worktree/skills/wt-clean/SKILL.md`・`plugins/daily-report/skills/daily-report/SKILL.md`・`plugins/weekly-report/skills/weekly-report/SKILL.md`・`plugins/infra/skills/infra-setup/SKILL.md`・`plugins/dev-workflow/skills/push-guard-setup/SKILL.md` の各ファイルで「## 自己検証」を grep する
+- **THEN** 6 ファイルすべてで見出しがちょうど 1 件ヒットする
 
 #### Scenario: 各節が共通原則リファレンスへの参照 1 行を含む
 

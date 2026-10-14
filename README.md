@@ -59,13 +59,10 @@ Claude Code用スキル・プラグインのマーケットプレイス
 
 | プラグイン | 説明 |
 |-----------|------|
-| `telegram` | Telegram messaging bridge。公式プラグインの fork で、主のリアクション（👍👀等）をセッションに配送する |
 | `worktree` | Git worktree のセットアップ（`/wt-setup`。`--with-pr` で Draft PR まで作成）とクリーンアップ（`/wt-clean`） |
 | `weekly-report` | 週次プロジェクト実績レポートを自動生成し、Obsidian 週次ノートに挿入する。cron 非対話実行に対応 |
 | `daily-report` | 音声トランスクリプト・Obsidian ノート・LLM セッションログを横断集約し、日次日記を生成する |
 | `infra` | Vercel + Supabase + GitHub Actions で local/staging/prod の環境を一括セットアップする（`/infra-setup`） |
-| `experience-to-skill` | セッションの jsonl ログを素材に、自然言語の依頼で SKILL.md を蒸留する（`/e2s:distill`） |
-| `skill-pack` | プロジェクトごとに skillOverrides / enabledPlugins を対話的に編集し、必要なスキルだけを ON にする |
 | `capability-registry` | 外部サービスを操作する前に CLI とトークンの在処を教える発見層。`fmtoken.sh` を同梱 |
 | `statusline` | 使用量ステータスライン。クォータ消化率と窓の日程消化率を1本のバーに重ね、`25%/29%` の形で「今のペースでリセットまで持つか」を示す（`/statusline:setup`） |
 
@@ -137,3 +134,17 @@ Discord 改造版（公式プラグインの fork で、主のリアクション
 1. `claude plugin uninstall discord@oratta-claude-harness` を実行する
 2. flatmate の marketplace を登録し（手順は flatmate#851）、`settings.json` の `enabledPlugins` に `discord@flatmate` を入れる。手順 1 の uninstall で消えずに `discord@oratta-claude-harness` が残っていれば、そのエントリを消す
 3. 住人の `CHANNEL_PLUGINS` を `plugin:discord@flatmate` にして、住人を再起動する
+
+`skill-pack`・`telegram`・`experience-to-skill` の 3 プラグインは 2026-10 に解散した（[PR #841](https://github.com/oratta/claude-harness/pull/841)）。`bundles` の `all` からも外した。理由と代替は次のとおり。
+
+| プラグイン | 解散の理由 | 代替 |
+|-----------|-----------|------|
+| `skill-pack` | Claude Code 本体でプロジェクト単位の ON/OFF ができるようになった | `/skills` 画面と `skillOverrides`（個人スキル）、`/plugin` または `claude plugin enable\|disable --scope`（プラグイン単位） |
+| `telegram` | 公式プラグインで代替できる。fork の目的だった「利用者のリアクションをセッションへ届ける」機能は不要と判断した | 公式 `telegram@claude-plugins-official` |
+| `experience-to-skill` | 公式のスキルで足り、使われていなかった | 公式の `skill-creator` スキル |
+
+install 済みの環境では、入れていたプラグインについて次を行う。
+
+1. `claude plugin uninstall skill-pack@oratta-claude-harness`・`claude plugin uninstall telegram@oratta-claude-harness`・`claude plugin uninstall experience-to-skill@oratta-claude-harness` のうち、入れていたものを実行する
+2. uninstall で消えずに `settings.json` / `settings.local.json` の `enabledPlugins` に `<name>@oratta-claude-harness` が残っていれば、そのエントリを消す
+3. telegram を使っていた環境は、公式の `telegram@claude-plugins-official` を入れる（設定は公式側の手順に従う）
