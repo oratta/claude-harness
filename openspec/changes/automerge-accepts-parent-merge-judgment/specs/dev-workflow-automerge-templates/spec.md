@@ -6,20 +6,22 @@
 
 auto-merge.yml は、親の判断の印があるかをマーカー `# >>> parent-merge-judgment` 〜 `# <<< parent-merge-judgment` の 1 か所で判定し、次の 4 つをすべて満たすときだけ `PARENT_OK` を真にしなければならない（MUST）。
 
-1. PR に `parent-merge-approved` ラベルがあり、かつ PR コメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のどれかで、1 行目がちょうど `親のマージ判断: 可`、本文のある行がちょうど `親が見た HEAD: <判定時の HEAD の 40 桁 SHA>` のものが 1 件以上ある
-2. 付いている見送りラベル（`BLOCKING_LABELS`）が `human-merge` だけである
+1. PR に `parent-merge-approved` ラベルがあり、かつ PR コメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のどれかで、1 行目がちょうど `親のマージ判断: 可`、本文のある行がちょうど `親が見た HEAD: <判定時の HEAD の 40 桁 SHA>` のものが 1 件以上ある（行の比較の前に本文から `\r` を取り除く。Web UI から投稿されたコメントの改行 `\r\n` でも一致させるため）
+2. `human-merge` が付いていて、`human-merge` 以外の見送りラベル（`BLOCKING_LABELS` のうち `needs-human-merge`・`human-only`・`needs-approval`）が 1 つも付いていない
 3. 変更ファイルの一覧（変更後のパスと rename 元のパス）のどれかが `SACRED` に一致する
 4. 変更ファイルの一覧（変更後のパスと rename 元のパス）のどれも `MERGE_CONDITION` に一致しない
 
 コメントの取得に失敗したとき、判定時の HEAD が 40 桁の 16 進でないときは `PARENT_OK` を偽にしなければならない（MUST。マージしない側に倒す）。
 
+印が `human-merge` より先に付いた聖域接触の PR は、初回の判定では条件 2 を満たさないので `PARENT_OK` が偽になり、聖域判定で `human-merge` が付いて見送られる。次の判定（次のイベントか定期実行）で条件 2 を満たし、`PARENT_OK` が真になる（SHALL）。
+
 `PARENT_OK` が真のときに限り、auto-merge.yml は見送りラベルの判定で `human-merge` を見送りの理由に数えず、聖域判定で `human-merge` を付けて見送る代わりに次の判定へ進まなければならない（MUST）。それ以外の条件（`agent-review:passed`・`対象 HEAD:` による合格の HEAD 束縛・必須チェックの green・`AUTOMERGE_PAUSED` の全停止・`AUTOMERGE_PAT` 未設定の fail-closed・SHA ピンのマージ・draft と base の判定）は `PARENT_OK` によって変えてはならない（MUST NOT）。`human-merge` 以外の見送りラベルを `PARENT_OK` によって外してはならない（MUST NOT）。マージ直前の取り直し（`pre-merge-recheck`）でも同じ判定をやり直し、そのとき `PARENT_OK` が偽なら `human-merge` を見送りの理由に数えなければならない（MUST）。
 
-`pull_request_target: labeled` で起動したジョブは、付いたラベルが `agent-review:passed` か `parent-merge-approved` のときに判定を走らせなければならない（SHALL）。イベント種は labeled のまま変えてはならない（MUST NOT）。`PARENT_OK` で進んだ PR は、判定ログに 1 行その旨を出し、マージ後のコメントに親の判断で `human-merge` を外したことを書かなければならない（SHALL）。
+`pull_request_target: labeled` で起動したジョブは、付いたラベルが `agent-review:passed` か `parent-merge-approved` のときに判定を走らせなければならない（SHALL）。イベント種は labeled のまま変えてはならない（MUST NOT）。`PARENT_OK` で進んだ PR は、判定ログに 1 行その旨を出し、マージ後のコメントに親の判断で `human-merge` を外したことと、印のコメントの URL を書かなければならない（SHALL）。
 
-運用ガイド（展開先と原本の `docs/auto-merge.md`）は、`human-merge` を外せる 4 つの条件、`MERGE_CONDITION` のパスと `SACRED` との関係、印の書式（`parent-merge-approved` ラベルと `親のマージ判断: 可`・`親が見た HEAD:` の行）、親の判断があっても他の見送りラベルと他の条件はそのまま効くこと、マージされないときの調べ方を書かなければならない（SHALL）。「マージの実行権は常に自動マージの処理の側で、LLM が直接マージすることは禁止」の原則は変えずに書く（SHALL）。原本の README は `merge-condition-paths` をリポ固有の差し替え箇所として書く（SHALL）。
+運用ガイド（展開先と原本の `docs/auto-merge.md`）は、`human-merge` を外せる 4 つの条件、`MERGE_CONDITION` のパスと `SACRED` との関係、印の書式（`parent-merge-approved` ラベルと `親のマージ判断: 可`・`親が見た HEAD:` の行）、親の判断があっても他の見送りラベルと他の条件はそのまま効くこと、マージされないときの調べ方、聖域に触れる PR を親の判断からも外したいときは `human-merge` ではなく `human-only` か `needs-approval` を付けることを書かなければならない（SHALL）。「マージの実行権は常に自動マージの処理の側で、LLM が直接マージすることは禁止」の原則は変えずに書く（SHALL）。原本の README は、必ず差し替える 3 点を変えずに、`merge-condition-paths` を任意の差し替え箇所（既定の `^\.github/workflows/` のままでも動き、リポ固有のマージ条件があれば足す）として書く（SHALL）。
 
-この要件の守備範囲で入力として扱うのは、判定時に REST で取る PR のラベル・コメント（本文と `author_association`）・変更ファイルの一覧（`filename` と `previous_filename`）と HEAD の SHA だけである。拾いたい誤りは、マージ条件そのものに触れる PR を親の判断でマージすること、人が手で付けた `human-merge`（聖域に触れていない PR のもの）や他の見送りラベルを親の判断で外すこと、親が見たあとに push されたコミットを親の判断で入れること、親の判断のコメントを既存の合格の HEAD 束縛として数えること、の 4 つである。次はこの要件では止めない: 主の資格情報で動くセッションが印を付けること（誰が付けたかは区別しない。手順書の規則で扱う）／印のコメントの 2 行目以降の他の行の書き方／印の判断の中身の正しさ。
+この要件の守備範囲で入力として扱うのは、判定時に REST で取る PR のラベル・コメント（本文と `author_association`）・変更ファイルの一覧（`filename` と `previous_filename`）と HEAD の SHA だけである。拾いたい誤りは、マージ条件そのものに触れる PR を親の判断でマージすること、人が手で付けた `human-merge`（聖域に触れていない PR のもの）や他の見送りラベルを親の判断で外すこと、親が見たあとに push されたコミットを親の判断で入れること、親の判断のコメントを既存の合格の HEAD 束縛として数えること、の 4 つである。次はこの要件では止めない: 主の資格情報で動くセッションが印を付けること（誰が付けたかは区別しない。手順書の規則で扱う）／印のコメントの 2 行目以降の他の行の書き方／印の判断の中身の正しさ／聖域に触れる PR に人が手で付けた `human-merge` と処理が付けた `human-merge` の区別（運用ガイドで `human-only`・`needs-approval` を使うよう案内する）。抜け穴を塞ぎ切ることをこの要件の完了条件にしない。
 
 #### Scenario: 聖域だけに触れ、印がある PR はマージに進む
 
@@ -35,6 +37,16 @@ auto-merge.yml は、親の判断の印があるかをマーカー `# >>> parent
 
 - **WHEN** 印のコメントの `親が見た HEAD:` が前の HEAD で、そのあとにコミットが push された PR を判定する
 - **THEN** `PARENT_OK` が偽になり、`human-merge` で見送られる
+
+#### Scenario: 印が human-merge より先に付いた PR は次の判定でマージに進む
+
+- **WHEN** 聖域だけに触れ、印（ラベルとコメント）があり、まだ見送りラベルが 1 つも付いていない PR を判定し、そのあと同じ HEAD のまま次の判定が走る
+- **THEN** 初回の判定では `PARENT_OK` が偽になり、聖域判定で `human-merge` が付いて見送られる。次の判定では `PARENT_OK` が真になり、マージに進む
+
+#### Scenario: Web UI から投稿された印のコメント（改行が \r\n）も数える
+
+- **WHEN** 聖域だけに触れ `human-merge` と `parent-merge-approved` が付いた PR の印のコメントの本文が、`親のマージ判断: 可\r\n親が見た HEAD: <今の HEAD>\r\n` のように `\r\n` で改行されている
+- **THEN** `PARENT_OK` が真になる
 
 #### Scenario: human-merge 以外の見送りラベルは外さない
 
