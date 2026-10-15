@@ -1,20 +1,20 @@
 ## 1. SKILL.md
 
-- [ ] 1.1 節「エピックの子が主の返事を待って止まるとき」の「記録」の項を書き換える。「項目名・並び・改行の形は #1036 で決める」を消し、2 行目以降を 6 つの項目（`止まった理由:` → `前提:` → `推奨:` → `推奨の根拠:` → `受け入れるリスク:` → `再開に要る途中経過:`）で書くこと、各項目の中身の定義、行頭の `<項目名>:` で始めて値は次の項目の行まで複数行に続けてよいこと、どの項目も省かず該当が無ければ `なし`・推奨を出せないときは `推奨: なし（<足りない情報>）` で根拠とリスクは `なし` を書く。引き継ぎを書く場面の「引き継ぎを先に投稿」「引き継ぎのコメントの URL」の文は残し、`再開に要る途中経過:` に入れることと他の 5 項目も省かないことを添える。項目の並びは表かコードブロックの雛形で見せる 触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:322-332（節「エピックの子が主の返事を待って止まるとき」、326 行の「記録」の項）
-- [ ] 1.2 同じ節に記録の書き方の決まりを足す: 読み手（親・親の決める役・主）は子の会話を読んでいない前提で書く、子が作業中に振ったラベル・番号・略称や「上記」「前回」で指さず中身を書く、PR・issue・コメントはフル URL を添える、専門用語は初出で一言の言い換えを添える、文章全般は `rules/communication-style.md` に従う 触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:322-332
-- [ ] 1.3 節「ループの終わり」に 1 項目足す: エピックの子（`scripts/epic-dispatch.sh route`（子の番号なし）が `nested`）の完了報告の 1 行目は `主がこのセッションで次にすること: なし` か `主がこのセッションで次にすること: <どの画面で何をするか>`。マージ済みで `mark` を呼ぶときは `なし` なら `done`、中身があれば `waiting`。子でないセッションには求めない。足す位置は 187 行（片付けを聞かない項）と 188 行（`mark <done|waiting>` の項）の間にする（PR #1042 が書き換える 189 行の「PR がマージされていないとき」の項と隣り合わせない） 触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:185-191（節「ループの終わり」）
-- [ ] 1.4 Orca 経路の手順 8 の文は変えない。手順 8 の「止まった理由・推奨」が記録の項目名と同じ語であることだけを確かめる 触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:398
+- [x] 1.1 節「エピックの子が主の返事を待って止まるとき」の「記録」の項を書き換える。「項目名・並び・改行の形は #1036 で決める」を消し、2 行目以降を 6 つの項目（`止まった理由:` → `前提:` → `推奨:` → `推奨の根拠:` → `受け入れるリスク:` → `再開に要る途中経過:`）で書くこと、各項目の中身の定義、行頭の `<項目名>:` で始めて値は次の項目の行まで複数行に続けてよいこと、どの項目も省かず該当が無ければ `なし`・推奨を出せないときは `推奨: なし（<足りない情報>）` で根拠とリスクは `なし` を書く。引き継ぎを書く場面の「引き継ぎを先に投稿」「引き継ぎのコメントの URL」の文は残し、`再開に要る途中経過:` に入れることと他の 5 項目も省かないことを添える。項目の並びは表かコードブロックの雛形で見せる 触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:322-332（節「エピックの子が主の返事を待って止まるとき」、326 行の「記録」の項）
+- [x] 1.2 同じ節に記録の書き方の決まりを足す: 読み手（親・親の決める役・主）は子の会話を読んでいない前提で書く、子が作業中に振ったラベル・番号・略称や「上記」「前回」で指さず中身を書く、PR・issue・コメントはフル URL を添える、専門用語は初出で一言の言い換えを添える、文章全般は `rules/communication-style.md` に従う 触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:322-332
+- [x] 1.3 節「ループの終わり」に 1 項目足す: エピックの子（`scripts/epic-dispatch.sh route`（子の番号なし）が `nested`）の完了報告の 1 行目は `主がこのセッションで次にすること: なし` か `主がこのセッションで次にすること: <どの画面で何をするか>`。マージ済みで `mark` を呼ぶときは `なし` なら `done`、中身があれば `waiting`。子でないセッションには求めない。足す位置は 187 行（片付けを聞かない項）と 188 行（`mark <done|waiting>` の項）の間にする（PR #1042 が書き換える 189 行の「PR がマージされていないとき」の項と隣り合わせない） 触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:185-191（節「ループの終わり」）
+- [x] 1.4 Orca 経路の手順 8 の文は変えない。手順 8 の「止まった理由・推奨」が記録の項目名と同じ語であることだけを確かめる 触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:398
 
 ## 2. テスト
 
-- [ ] 2.1 テスト「skill: an epic child records its stop before marking it, in both waiting orders」から `#1036` を確かめる行を外す 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:1978-1990
-- [ ] 2.2 テストを足す: 節「エピックの子が主の返事を待って止まるとき」に 6 つの項目名がこの順で出ること（行番号の昇順で確かめる）、`なし` と `推奨: なし（` の規定、書き方の決まり（「上記」「前回」・フル URL・`rules/communication-style.md`）、手順 8（`^8\. ` の行）に「止まった理由」「推奨」が含まれること 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:1990（1.1 のテストの後ろに新規）
-- [ ] 2.3 テストを足す: 節「ループの終わり」に `主がこのセッションで次にすること:` と `nested`、`なし` と `done`・`waiting` の対応が書かれていること 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:1915-1927（ループの終わりのテストの後ろに新規）
-- [ ] 2.4 `bats plugins/dev-workflow/tests/epic-dispatch.bats` と `bats tests/injection-budget.bats` が通ることを確かめる（SKILL.md 本文は常時注入ではないが、description に触れていないことの確認） 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats、tests/injection-budget.bats
+- [x] 2.1 テスト「skill: an epic child records its stop before marking it, in both waiting orders」から `#1036` を確かめる行を外す 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:1978-1990
+- [x] 2.2 テストを足す: 節「エピックの子が主の返事を待って止まるとき」に 6 つの項目名がこの順で出ること（行番号の昇順で確かめる）、`なし` と `推奨: なし（` の規定、書き方の決まり（「上記」「前回」・フル URL・`rules/communication-style.md`）、手順 8（`^8\. ` の行）に「止まった理由」「推奨」が含まれること 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:1990（1.1 のテストの後ろに新規）
+- [x] 2.3 テストを足す: 節「ループの終わり」に `主がこのセッションで次にすること:` と `nested`、`なし` と `done`・`waiting` の対応が書かれていること 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:1915-1927（ループの終わりのテストの後ろに新規）
+- [x] 2.4 `bats plugins/dev-workflow/tests/epic-dispatch.bats` と `bats tests/injection-budget.bats` が通ることを確かめる（SKILL.md 本文は常時注入ではないが、description に触れていないことの確認） 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats、tests/injection-budget.bats
 
 ## 3. 変更の記録
 
-- [ ] 3.1 `plugins/dev-workflow/changes/1036.md` に変更の記録を書く（何を変えたか・入れなかったもの・戻し方。完了条件の「2 週間分のログで聞き返しの件数を数え直し、エピックにコメントする」はマージ後の作業として tasks 4.1 に残してあると書く）。版は上げない 触る範囲: plugins/dev-workflow/changes/1036.md（新規）
+- [x] 3.1 `plugins/dev-workflow/changes/1036.md` に変更の記録を書く（何を変えたか・入れなかったもの・戻し方。完了条件の「2 週間分のログで聞き返しの件数を数え直し、エピックにコメントする」はマージ後の作業として tasks 4.1 に残してあると書く）。版は上げない 触る範囲: plugins/dev-workflow/changes/1036.md（新規）
 
 ## 4. マージ後の作業（再集計とエピックへの投稿が済むまで未完了のまま残す）
 
