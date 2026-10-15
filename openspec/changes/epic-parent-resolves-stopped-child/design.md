@@ -46,7 +46,7 @@
 
 `scripts/stop-judge.sh <epic> <child>` が入力を集め、モデルを 1 回呼び、決まった形の 4 行を stdout に出す。`orca` の語を含まないので、`orca` を呼ぶスクリプトが 1 本という既存要件のままにできる。`epic-dispatch.sh` は `EPIC_DISPATCH_JUDGE`（既定は同じディレクトリの `stop-judge.sh`）で判断のコマンドを呼ぶので、テストではスタブに差し替えられる。
 
-- **入力**（`gh` で集める）: エピックの本文、子 issue の本文、子 issue の `親エピックからの注意書き:` のコメント（投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のものだけ。既存の規則と同じ）、子 issue の 1 行目が `子の停止: 主の返事待ち` の最新のコメントとその URL、エピックのコメントのうち `親の判断: 子 #<child> ` で始まる行、`references/parent-pass-criteria.md` の本文、リポジトリに `.claude/casting/project.md`・`.claude/casting/local.md` があればその本文。親の会話・子の会話・他の子の記録は渡さない
+- **入力**（`gh` で集める）: エピックの本文、子 issue の本文、子 issue の `親エピックからの注意書き:` のコメント（投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のものだけ。既存の規則と同じ）、子 issue の 1 行目が `子の停止: 主の返事待ち` の最新のコメントとその URL、エピックのコメントのうち `親の判断: 子 #<child> ` で始まる行（この 2 つも投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のものだけ。子 issue には誰でもコメントできるので、偽の停止の記録で判断を誘導されないようにする）、`references/parent-pass-criteria.md` の本文、リポジトリに `.claude/casting/project.md`・`.claude/casting/local.md` があればその本文。親の会話・子の会話・他の子の記録は渡さない
 - **呼び方**: 既定は `claude -p --model <EPIC_DISPATCH_JUDGE_MODEL、既定 sonnet> --tools "" --no-session-persistence`（`EPIC_DISPATCH_JUDGE_CMD` で丸ごと変えられる）。ツールを渡さないので、判断は渡した文面だけで行われ、何も書き換えない
 - **出力**: 1 行目 `判断: 通す` か `判断: 主に上げる`、2 行目 `理由: <1 行>`、3 行目 `返事: <1 行>`（通すときに子へ送る文。主に上げるときは空でよい）までがモデルの出力で、4 行目 `記録: <停止の記録の URL>` は `stop-judge.sh` が付ける（エピックの 1 行に使う）。モデルの出力がこの形で読めなければ `stop-judge.sh` は exit 1 で終わり、`wait` は親を起こす側に倒す
 - **モデルを `sonnet` にする理由**: 判断は基準の表に照らして通すか上げるかを決めるだけで、数ターンで終わる。`dev-workflow:decider`（決める役の種別、`fable`）は修正方針・マージ可否のような判断が一点に集中する仕事に使うもので、1 件ごとに呼ぶこの判断に最上位の枠を使わない。通すと決めた件は主が事後にエピックで見られるので、誤って通したときに戻せる範囲に基準を絞ることで、小さいモデルの誤りを受け止める

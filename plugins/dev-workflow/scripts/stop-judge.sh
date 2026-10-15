@@ -7,8 +7,8 @@
 # 入力として集めるのは次だけ（親や子の会話は渡さない）:
 #   エピックの本文、子 issue の本文、子 issue の `親エピックからの注意書き:` で始まるコメントのうち
 #   author_association が OWNER / MEMBER / COLLABORATOR のもの、子 issue の 1 行目が
-#   `子の停止: 主の返事待ち` の最新のコメントの本文と URL、エピックのコメントのうち
-#   `親の判断: 子 #<child> ` で始まるもの、skills/develop/references/parent-pass-criteria.md の本文、
+#   `子の停止: 主の返事待ち` の最新のコメント（同じ 3 種の投稿者のもの）の本文と URL、エピックのコメント
+#   （同じ 3 種の投稿者のもの）のうち `親の判断: 子 #<child> ` で始まる行、skills/develop/references/parent-pass-criteria.md の本文、
 #   リポジトリの .claude/casting/project.md・.claude/casting/local.md（あるものだけ）
 # モデルの呼び方: 既定は `claude -p --model <EPIC_DISPATCH_JUDGE_MODEL、既定 sonnet> --tools ""
 #   --no-session-persistence`（ツールを渡さない）。EPIC_DISPATCH_JUDGE_CMD を設定するとコマンド全体を
@@ -52,8 +52,11 @@ epic_comments="$(gh api --paginate "repos/{owner}/{repo}/issues/$epic/comments")
 epic_comments="$(printf '%s' "$epic_comments" | jq -s 'add // []' 2>/dev/null)" \
   || { echo "the comments of epic #$epic are not readable" >&2; exit 1; }
 
+# 投稿者が OWNER / MEMBER / COLLABORATOR のコメントだけを読む（子 issue には誰でもコメントできるので、
+# 偽の停止の記録や偽の親の判断で判断を誘導されないようにする）
+trusted='select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")'
 stop="$(printf '%s' "$child_comments" | jq -c \
-  '[.[] | select((.body // "") | split("\n")[0] | rtrimstr("\r") == "子の停止: 主の返事待ち")] | last // empty')"
+  '[.[] | '"$trusted"' | select((.body // "") | split("\n")[0] | rtrimstr("\r") == "子の停止: 主の返事待ち")] | last // empty')"
 [ -n "$stop" ] || { echo "no stop record (子の停止: 主の返事待ち) on child #$child" >&2; exit 1; }
 stop_url="$(printf '%s' "$stop" | jq -r '.html_url // empty')"
 stop_body="$(printf '%s' "$stop" | jq -r '.body // empty')"
@@ -61,10 +64,10 @@ stop_body="$(printf '%s' "$stop" | jq -r '.body // empty')"
 
 notes="$(printf '%s' "$child_comments" | jq -r \
   '.[] | select((.body // "") | startswith("親エピックからの注意書き:"))
-       | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")
+       | '"$trusted"'
        | .body, "---"')"
 past="$(printf '%s' "$epic_comments" | jq -r --arg p "親の判断: 子 #$child " \
-  '.[] | (.body // "") | split("\n")[] | select(startswith($p))')"
+  '.[] | '"$trusted"' | (.body // "") | split("\n")[] | select(startswith($p))')"
 
 casting=""
 top="$(git rev-parse --show-toplevel 2>/dev/null)" || top=""

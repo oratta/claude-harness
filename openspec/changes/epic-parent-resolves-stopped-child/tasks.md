@@ -4,7 +4,7 @@
 
 ## 2. 判断のスクリプト
 
-- [x] 2.1 `tests/stop-judge.bats` を新しく作る。`gh` とモデルのコマンド（`EPIC_DISPATCH_JUDGE_CMD`）をスタブにし、入力に渡すもの（エピックの本文・子の本文・注意書きのうち OWNER/MEMBER/COLLABORATOR のもの・最新の `子の停止:` の本文と URL・同じ子への `親の判断:`・基準のファイル・配役表があればその本文）、既定の呼び方（`--model sonnet`・`--tools ""`・`--no-session-persistence`、`EPIC_DISPATCH_JUDGE_MODEL` での上書き）、4 行の出力、形が崩れたときと停止の記録が無いときと `gh` が失敗したときの exit 1、ファイルに `orca` の語が無いことを確かめる。触る範囲: plugins/dev-workflow/tests/stop-judge.bats（新規）
+- [x] 2.1 `tests/stop-judge.bats` を新しく作る。`gh` とモデルのコマンド（`EPIC_DISPATCH_JUDGE_CMD`）をスタブにし、入力に渡すもの（エピックの本文・子の本文・注意書きのうち OWNER/MEMBER/COLLABORATOR のもの・最新の `子の停止:` の本文と URL・同じ子への `親の判断:`・基準のファイル・配役表があればその本文）、既定の呼び方（`--model sonnet`・`--tools ""`・`--no-session-persistence`、`EPIC_DISPATCH_JUDGE_MODEL` での上書き）、4 行の出力、形が崩れたときと停止の記録が無いときと `gh` が失敗したときの exit 1、OWNER/MEMBER/COLLABORATOR 以外が書いた停止の記録と親の判断の行を読まないこと、ファイルに `orca` の語が無いことを確かめる。触る範囲: plugins/dev-workflow/tests/stop-judge.bats（新規）
 - [x] 2.2 `scripts/stop-judge.sh` を新しく作り、2.1 を通す。触る範囲: plugins/dev-workflow/scripts/stop-judge.sh（新規）
 
 ## 3. epic-dispatch.sh の reply と wait の resolve
