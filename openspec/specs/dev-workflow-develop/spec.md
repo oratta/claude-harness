@@ -2096,10 +2096,10 @@ develop の SKILL.md「エピックの扱い」の「回し方」は、子セッ
 
 `plugins/dev-workflow/scripts/stop-judge.sh <epic> <child>` は、次の入力だけを集めてモデルを 1 回呼び、stdout に 4 行を出さなければならない（MUST）。
 
-- 入力: エピックの本文、子 issue の本文、子 issue の `親エピックからの注意書き:` で始まるコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のもの、子 issue の 1 行目が `子の停止: 主の返事待ち` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` の最新のものの本文と URL、エピックのコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` で `親の判断: 子 #<child> ` で始まるもの、`plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` の本文、リポジトリの `.claude/casting/project.md`・`.claude/casting/local.md`（あるものだけ）
+- 入力: エピックの本文と子 issue の本文（どちらも、その issue の投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のときだけ）、子 issue の `親エピックからの注意書き:` で始まるコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のもの、子 issue の 1 行目が `子の停止: 主の返事待ち` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` の最新のものの本文と URL、エピックのコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` で `親の判断: 子 #<child> ` で始まるもの、`plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` の本文、リポジトリの `.claude/casting/project.md`・`.claude/casting/local.md`（あるものだけ）
 - 呼び方: 既定は `claude -p --model <モデル> --tools "" --no-session-persistence`。モデルは `EPIC_DISPATCH_JUDGE_MODEL`（既定 `sonnet`）、コマンド全体は `EPIC_DISPATCH_JUDGE_CMD` で変えられる。ツールを渡してはならない（MUST NOT）
 - 出力: 1〜3 行目はモデルの出力の 1 行目 `判断: 通す` か `判断: 主に上げる`、2 行目 `理由: <1 行>`、3 行目 `返事: <1 行>`。4 行目は `stop-judge.sh` 自身が付ける `記録: <停止の記録のコメントの URL>`。モデルの出力が 1〜3 行目の形で読めなければ、stdout に何も出さず exit 1 で終わる（MUST）
-- 停止の記録のコメントが見つからない・`gh` が失敗したときは、モデルを呼ばずに exit 1 で終わる（MUST）
+- 停止の記録のコメントが見つからない・`gh` が失敗した・エピックか子 issue の投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のどれでもないか読めないときは、モデルを呼ばずに exit 1 で終わる（MUST）。exit 1 は `wait` の側で判断の失敗になり、子は主に上がる（issue は誰でも立てられるので、ほかの投稿者の本文で判断を誘導されないようにする）
 - `orca` の語を含んではならない（MUST NOT。既存要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」）
 
 `plugins/dev-workflow/tests/epic-dispatch.bats` と `plugins/dev-workflow/tests/stop-judge.bats` は、判断のコマンドとモデルのコマンドをスタブにして、上の振る舞い（通して送れたら出力に含めずエピックに 1 行残すこと、送れたがエピックへの投稿に失敗すると `unrecorded` を出すこと、主に上げると `stopped` を出し子 issue のコメントに `停止の記録:` の行があること、子 issue への投稿に失敗しても `stopped` を出すこと、判断の失敗・形の崩れ・送信の失敗で `stopped` を出すこと、`--resolve` なしでは判断を呼ばないこと、入力の集め方と出力の形の検査）を確かめなければならない（MUST）。
@@ -2133,6 +2133,10 @@ develop の SKILL.md「エピックの扱い」の「回し方」は、子セッ
 #### Scenario: stop-judge.sh は形の崩れた出力を通さない
 - **WHEN** モデルのスタブが `判断: 通す` の 1 行だけを出す
 - **THEN** `stop-judge.sh` は stdout に何も出さず exit 1 で終わる
+
+#### Scenario: stop-judge.sh は信頼できない投稿者の issue の本文を判断に渡さない
+- **WHEN** 子 11 の issue の投稿者の `author_association` が `NONE` で、`stop-judge.sh 400 11` をモデルのスタブで実行する
+- **THEN** `stop-judge.sh` はモデルのスタブを呼ばず、stdout に何も出さず exit 1 で終わる
 
 #### Scenario: stop-judge.sh は親の会話を渡さず、基準と記録を渡す
 - **WHEN** `stop-judge.sh 400 11` をモデルのスタブで実行する

@@ -5,7 +5,8 @@
 #   stop-judge.sh <epic> <child>
 #
 # 入力として集めるのは次だけ（親や子の会話は渡さない）:
-#   エピックの本文、子 issue の本文、子 issue の `親エピックからの注意書き:` で始まるコメントのうち
+#   エピックの本文、子 issue の本文（どちらも issue の author_association が OWNER / MEMBER / COLLABORATOR の
+#   ときだけ。それ以外は exit 1 でモデルを呼ばない）、子 issue の `親エピックからの注意書き:` で始まるコメントのうち
 #   author_association が OWNER / MEMBER / COLLABORATOR のもの、子 issue の 1 行目が
 #   `子の停止: 主の返事待ち` の最新のコメント（同じ 3 種の投稿者のもの）の本文と URL、エピックのコメント
 #   （同じ 3 種の投稿者のもの）のうち `親の判断: 子 #<child> ` で始まる行、skills/develop/references/parent-pass-criteria.md の本文、
@@ -16,7 +17,8 @@
 # 出力（stdout）: 1〜3 行目はモデルの出力の空行を除いた最初の 3 行で、`判断: 通す` か `判断: 主に上げる`、
 #   `理由: <1 行>`、`返事: <1 行>`（主に上げるときは空でよい）。4 行目に `記録: <停止の記録の URL>` を付ける。
 #   exit 0。
-# exit 1（stdout は空）: 引数の誤り、gh の失敗、停止の記録が無い（このときモデルを呼ばない）、
+# exit 1（stdout は空）: 引数の誤り、gh の失敗、エピックか子の issue の投稿者が上の 3 種でない、
+#   停止の記録が無い（ここまではモデルを呼ばない）、
 #   モデルのコマンドが非 0、モデルの出力が 1〜3 行目の形で読めない。
 #
 # 正本は openspec の dev-workflow-develop spec「epic-dispatch.sh の wait は止まった子を判断し、
@@ -38,10 +40,23 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 criteria="$here/../skills/develop/references/parent-pass-criteria.md"
 [ -r "$criteria" ] || { echo "criteria file not found: $criteria" >&2; exit 1; }
 
-epic_body="$(gh api "repos/{owner}/{repo}/issues/$epic" --jq .body)" \
-  || { echo "could not read epic #$epic" >&2; exit 1; }
-child_body="$(gh api "repos/{owner}/{repo}/issues/$child" --jq .body)" \
-  || { echo "could not read child #$child" >&2; exit 1; }
+# issue の本文は、投稿者が OWNER / MEMBER / COLLABORATOR のときだけ判断に渡す（それ以外の投稿者が
+# 立てた issue の本文で判断を誘導されないようにする）。それ以外・読めないときは exit 1 で主に上げる
+read_trusted_body() { # <issue number> <label>
+  local raw assoc
+  raw="$(gh api "repos/{owner}/{repo}/issues/$1")" \
+    || { echo "could not read $2 #$1" >&2; return 1; }
+  assoc="$(printf '%s' "$raw" | jq -r '.author_association // empty' 2>/dev/null)" \
+    || { echo "$2 #$1 is not readable" >&2; return 1; }
+  case "$assoc" in
+    OWNER|MEMBER|COLLABORATOR) ;;
+    *) echo "the body of $2 #$1 is by an author who is not an owner, member or collaborator (${assoc:-unknown})" >&2
+       return 1 ;;
+  esac
+  printf '%s' "$raw" | jq -r '.body // ""'
+}
+epic_body="$(read_trusted_body "$epic" epic)" || exit 1
+child_body="$(read_trusted_body "$child" child)" || exit 1
 # --paginate はページごとの配列を続けて出すので、jq -s で 1 つにまとめる
 child_comments="$(gh api --paginate "repos/{owner}/{repo}/issues/$child/comments")" \
   || { echo "could not read the comments of child #$child" >&2; exit 1; }

@@ -4,7 +4,8 @@
 #
 # スタブは自分の名前と引数（printf '%q'）を共通のログ（${STUB_LOG}）に 1 行ずつ追記する。
 # 返り値は $STUB_CFG の設定ファイルで切り替える:
-#   gh    : api ... issues/<N> --jq .body は body_<N> を出す（fail_body_<N> があれば exit 1）。
+#   gh    : api ... issues/<N> は {"body": body_<N> の中身, "author_association": assoc_<N> の中身（無ければ OWNER）}
+#           を出す（fail_body_<N> があれば exit 1。raw_issue_<N> があればその中身をそのまま出す）。
 #           api --paginate ... issues/<N>/comments は comments_<N>（JSON の配列）を出す
 #           （fail_comments_<N> があれば exit 1。無ければ []）
 #   git   : rev-parse --show-toplevel は toplevel を出す
@@ -62,7 +63,10 @@ case "$path" in
   *)
     n="${path##*/}"
     [ -e "$STUB_CFG/fail_body_$n" ] && { echo "gh: mock failure" >&2; exit 1; }
-    cat "$STUB_CFG/body_$n" 2>/dev/null
+    [ -e "$STUB_CFG/raw_issue_$n" ] && { cat "$STUB_CFG/raw_issue_$n"; exit 0; }
+    jq -n --arg b "$(cat "$STUB_CFG/body_$n" 2>/dev/null)" \
+      --arg a "$(cat "$STUB_CFG/assoc_$n" 2>/dev/null || echo OWNER)" \
+      '{body: $b, author_association: $a}'
     exit 0 ;;
 esac
 EOF
@@ -252,6 +256,42 @@ EOF
   grep -qF '本物の判断' "$STUB_CFG/model_in"
   run grep -F '偽の判断' "$STUB_CFG/model_in"; [ "$status" -eq 1 ]
   run grep -F '外の人の判断' "$STUB_CFG/model_in"; [ "$status" -eq 1 ]
+}
+
+@test "stop-judge: a child or epic body by an author other than an owner, member or collaborator means exit 1 without calling the model" {
+  for target in 11 400; do
+    for assoc in NONE CONTRIBUTOR FIRST_TIME_CONTRIBUTOR; do
+      rm -f "$STUB_CFG"/assoc_*
+      echo "$assoc" > "$STUB_CFG/assoc_$target"
+      : > "$STUB_LOG"
+      run judge 400 11
+      [ "$status" -eq 1 ] || { echo "#$target $assoc: status=$status"; false; }
+      [ -z "$output" ]
+      [ "$(calls '^claude ')" -eq 0 ] || { echo "#$target $assoc: model was called"; false; }
+    done
+  done
+}
+
+@test "stop-judge: child and epic bodies by an owner, member or collaborator are passed" {
+  for assoc in OWNER MEMBER COLLABORATOR; do
+    echo "$assoc" > "$STUB_CFG/assoc_11"
+    echo "$assoc" > "$STUB_CFG/assoc_400"
+    run judge 400 11
+    [ "$status" -eq 0 ] || { echo "$assoc: status=$status"; false; }
+    grep -qF '子の本文: 受け入れ条件はこれ' "$STUB_CFG/model_in"
+    grep -qF 'エピックの本文: 止まった子を親が解決する' "$STUB_CFG/model_in"
+  done
+}
+
+@test "stop-judge: an issue without author_association or with an unreadable reply means exit 1 without calling the model" {
+  for raw in '{"body":"子の本文"}' '{"body":"子の本文","author_association":null}' 'not json'; do
+    printf '%s\n' "$raw" > "$STUB_CFG/raw_issue_11"
+    : > "$STUB_LOG"
+    run judge 400 11
+    [ "$status" -eq 1 ] || { echo "$raw: status=$status"; false; }
+    [ -z "$output" ]
+    [ "$(calls '^claude ')" -eq 0 ] || { echo "$raw: model was called"; false; }
+  done
 }
 
 @test "stop-judge: a failing gh call means exit 1 without calling the model" {
