@@ -59,8 +59,10 @@
 #   / `failed <issue>`（exit 1）/ `skipped <issue> not-linked` / `skipped <issue> no-workspace`
 #   （orca が無いか Orca 管理外。exit 0）。EPIC_DISPATCH_PARENT_EPIC は見ない
 # reap: 子ごとに、一覧の候補 1 件・親の launch が作った（parentWorktreeId が今のワークツリーの id）・
-#   completed・git status がきれい・LLM/ が無い・ブランチ上・マージ済み PR の headRefOid と HEAD が一致、
-#   の順に確かめ、全部通れば `orca terminal close --all` → `orca worktree rm`（--force なし）→
+#   completed・git status がきれい・LLM/ が無い・ブランチ上・マージ済み PR の headRefOid と HEAD が一致
+#   （`--head <ブランチ>` で一致しなければ、`--state merged --search <HEAD>` でブランチ名を問わず探す）、
+#   の順に確かめ、全部通れば `orca terminal close --all` → `orca worktree rm`（--force なし・再試行なし。
+#   stderr に `terminal sweep failed` を含む失敗は `kept <N> rm-failed-terminal-sweep`）→
 #   残ったローカルブランチは先端が HEAD と同じときだけ `git branch -D`。stdout は子ごとに
 #   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。
 #   current / list を読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
@@ -418,7 +420,7 @@ cmd_reap() {
   printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
     || { echo "orca worktree list --json is not readable" >&2; exit 1; }
 
-  local n cands count w path ref branch st head heads tip seen=" "
+  local n cands count w path ref branch st head heads sheads rmerr tip seen=" "
   for n in "$@"; do
     case "$seen" in *" $n "*) continue ;; esac
     seen="$seen$n "
@@ -444,16 +446,36 @@ cmd_reap() {
       refs/heads/?*) branch="${ref#refs/heads/}" ;;
       *) echo "kept $n no-branch"; continue ;;
     esac
+    head="$(git -C "$path" rev-parse HEAD)" || head=""
     heads="$(gh pr list --head "$branch" --state merged --json headRefOid --jq '.[].headRefOid')" \
       || { echo "kept $n pr-lookup-failed"; continue; }
-    [ -n "$heads" ] || { echo "kept $n no-merged-pr"; continue; }
-    head="$(git -C "$path" rev-parse HEAD)" || head=""
     if [ -z "$head" ] || ! printf '%s\n' "$heads" | grep -qxF -- "$head"; then
-      echo "kept $n head-mismatch"; continue
+      # squash マージでは別名のブランチの PR で入ることがある。HEAD を先端に持つマージ済み PR を
+      # ブランチ名を問わず探す（最終判定は headRefOid と HEAD の完全一致のまま）
+      sheads=""
+      if [ -n "$head" ]; then
+        sheads="$(gh pr list --state merged --search "$head" --json headRefOid --jq '.[].headRefOid')" \
+          || { echo "kept $n pr-lookup-failed"; continue; }
+      fi
+      if [ -z "$head" ] || ! printf '%s\n' "$sheads" | grep -qxF -- "$head"; then
+        if [ -z "$heads" ] && [ -z "$sheads" ]; then echo "kept $n no-merged-pr"; else echo "kept $n head-mismatch"; fi
+        continue
+      fi
     fi
     orca terminal close --worktree "path:$path" --all >&2 || { echo "kept $n close-failed"; continue; }
     # --force は付けない（確認のあとに増えた未コミットの変更があれば rm が止まる）
-    orca worktree rm --worktree "path:$path" >&2 || { echo "kept $n rm-failed"; continue; }
+    # 端末の片付けの失敗（stderr に terminal sweep failed）は別の理由で返す。再試行もしない
+    rmerr="$(mktemp)" || { echo "kept $n rm-failed"; continue; }
+    if ! orca worktree rm --worktree "path:$path" 2>"$rmerr"; then
+      cat "$rmerr" >&2
+      if grep -qF -- 'terminal sweep failed' "$rmerr"; then
+        echo "kept $n rm-failed-terminal-sweep"
+      else
+        echo "kept $n rm-failed"
+      fi
+      rm -f "$rmerr"; continue
+    fi
+    cat "$rmerr" >&2; rm -f "$rmerr"
     if tip="$(git rev-parse --verify --quiet "refs/heads/$branch")"; then
       if [ "$tip" = "$head" ] && git branch -D "$branch" >&2; then
         echo "reaped $n"
