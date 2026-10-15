@@ -24,5 +24,5 @@
 ## 5. 変更の記録と確認
 
 - [x] 5.1 変更の記録を書く（何が増えたか・`mark` の新しい種別と `wait --watch-stopped`・SKILL.md の手順・入れなかったもの（入力待ちでの推定）とその根拠・受け入れること（主のコメント欄のメモの上書き）・戻し方） 触る範囲: plugins/dev-workflow/changes/1033.md（新規）
-- [ ] 5.2 `bats plugins/dev-workflow/tests/epic-dispatch.bats` と `openspec validate epic-child-stop-signal --type change --strict` を通す。常時注入の予算のテスト（`tests/injection-budget.bats`）は SKILL.md の本文を数えないことを確かめ、数えるなら通す 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats、openspec/changes/epic-child-stop-signal/
+- [x] 5.2 `bats plugins/dev-workflow/tests/epic-dispatch.bats` と `openspec validate epic-child-stop-signal --type change --strict` を通す。常時注入の予算のテスト（`tests/injection-budget.bats`）は SKILL.md の本文を数えないことを確かめ、数えるなら通す 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats、openspec/changes/epic-child-stop-signal/
 - [x] 5.3 (3a) の return の `画面確認:` 行は「不要」とし、design.md「実機での確かめ方」の 1〜5 を本体が実機の Orca で行うことを書く（スクリプトの往復は bats で、通しの確認は実機でしか確かめられない）
