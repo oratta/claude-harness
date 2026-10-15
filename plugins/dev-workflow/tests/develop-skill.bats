@@ -626,3 +626,52 @@ refute() {
   echo "$s" | grep -F 'レビューの 2 周キャップ超え' | grep -qF '選び直しが要る'
   echo "$s" | grep -qF '`2 周キャップ超え`'
 }
+
+# --- #1035: 主の側にしか無い情報が要るときだけ主に聞く ---
+
+@test "ask-owner (#1035): exactly one section names when to ask the owner and the four types" {
+  [ "$(grep -c '^## 主に聞かずに決めること$' "$SKILL")" -eq 1 ]
+  s="$(section '主に聞かずに決めること')"
+  for token in '主の側にしか無い情報' '主の手でしかできない操作' '規則が主の承認を求める操作' \
+               '自分側の誤りの後始末' '範囲外の問題の起票' '小さな実装の選択' '閉じる操作'; do
+    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "ask-owner (#1035): cleanup of own mistakes reverts with a backup and excludes git and the sanctuary" {
+  s="$(section '主に聞かずに決めること')"
+  for token in '控えを取って戻し' '事後報告' 'git の破壊的操作' 'destructive-git-guard' '聖域'; do
+    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "ask-owner (#1035): out-of-scope filing defines search, record, pending condition and epic note" {
+  s="$(section '主に聞かずに決めること')"
+  for token in 'triage.md' 'review-issue-candidates.sh' 'gh issue list' '`範囲外の問題の振り分け`' \
+               '`条件の確認待ち`' '`## 条件の答え`' '注意書き' 'needs-approval'; do
+    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "ask-owner (#1035): a failed candidate search is recorded in the out-of-scope comment, not a PR comment" {
+  s="$(section '主に聞かずに決めること')"
+  echo "$s" | grep -F '候補探し:' | grep -qF '再試行後の終了コードは記録先の `範囲外の問題の振り分け` コメントに書き、既存 issue への相乗りをせずに段 E へ進む'
+}
+
+@test "ask-owner (#1035): both cleanup and filing carry a scope paragraph" {
+  s="$(section '主に聞かずに決めること')"
+  echo "$s" | grep -qF '自分側の誤りの後始末の守備範囲は'
+  echo "$s" | grep -qF '範囲外の問題の起票の守備範囲は'
+}
+
+@test "ask-owner (#1035): fix-check definition 1 accepts choices that do not change visible behaviour" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  echo "$s" | grep -E '^1\. ' | grep -qF '利用者に見える振る舞い'
+}
+
+@test "ask-owner (#1035): loop end closes PR-less record issues without handing it to the owner" {
+  s="$(section 'ループの終わり')"
+  echo "$s" | grep -qF 'gh issue close <N> --reason completed'
+  echo "$s" | grep -qF '主に渡さない'
+  echo "$s" | grep -qF 'PR を伴わない記録先 issue を閉じたときを除く'
+}
