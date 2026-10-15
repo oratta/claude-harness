@@ -30,7 +30,8 @@
 #   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。<tokens> は子の
 #   待っている間の自動コンパクトの閾値で既定は 120000、EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS
 #   で変える。空か数字でなければ使い方を出して exit 1（根拠は skills/develop/references/reply-after-idle.md）。
-#   作れなければ、既存の端末が無いことの確認・作り直し・送信のコマンドを stderr に出す）→ `orca terminal wait --for tui-idle` →
+#   作れなければ、既存の端末が無いことの確認・作り直し・送信のコマンドを stderr に出す。作れたらハンドルを子のワークツリーの
+#   `git rev-parse --path-format=absolute --git-path epic-dispatch-terminal` に記録する）→ `orca terminal wait --for tui-idle` →
 #   `orca terminal send --text <指示> --enter --wait-submit <秒>`。stdout は子ごとに `launched <N>`
 #   （send の stages に turn_started がある）/ `skipped <N>` / `failed <N>` の 1 行。failed で
 #   ハンドルが取れていれば送り直しのコマンドを stderr に出す。orca 自身の出力は stderr。
@@ -68,17 +69,19 @@
 #   `判断: 通す` で返事が空でなければ reply --as parent と同じ処理で送り、sent / relaunched ならエピックに
 #   `親の判断: 子 #<N> 通した — <理由> <記録>` を投稿して出力から外す（投稿に失敗したら `unrecorded` に入れ、
 #   stderr に投稿し直しのコマンド）。`判断: 主に上げる` は子 issue に `親の判断: 主に上げる`、判断の失敗・
-#   形の崩れ・送信の失敗は `親の判断: 判断できなかった` を、2 行目 `停止の記録: <URL か 不明>` 付きで投稿して
+#   形の崩れは `親の判断: 判断できなかった`、通すで送信の失敗は `親の判断: 通すが送れなかった` を、2 行目 `停止の記録: <URL か 不明>` 付きで投稿して
 #   `stopped` に残す（投稿に失敗したら stderr に投稿し直しのコマンド）。出力は closed / done / stopped /
 #   unrecorded の順の 1〜4 行。--resolve が無ければ判断を呼ばず、unrecorded も出さない。
 #   --resolve の値が無い・数字でない、または返事の送り方の環境変数が誤っていれば使い方を出して exit 1
 #   orca / jq が無い・`orca worktree current` が失敗したら stdout に何も出さず exit 1
 # reply: 今のワークツリーと同じ repoId・linkedIssue が <child>・archive されていない子のワークツリーが 1 件で、
-#   端末が 1 つ（--relaunch なし）なら、頭（--as parent は `親エピック #<epic> の判断（主の承認ではない）: `、
+#   端末があり（--relaunch なし）、子のセッションの端末（記録したハンドルが一覧にあればそれ、無ければ agentIdentity が
+#   claude かタイトルに Claude Code を含む端末がちょうど 1 つ）が決まれば、頭（--as parent は `親エピック #<epic> の判断（主の承認ではない）: `、
 #   owner は `主の返事（親エピック #<epic> 経由）: `）を付けた文を送り、ターンの開始まで確かめて `sent <child>`。
 #   端末が 0 か --relaunch なら（--relaunch は先に端末を全部閉じて）launch と同じ起動コマンドで端末を作り、
-#   `/develop #<child> （エピック #<epic> の子。返事を受けて起動し直し） <頭付きの文>` を送って `relaunched <child>`。
-#   端末が 2 つ以上・ワークツリーが 0 件か 2 件以上・送信 / 作成 / 閉じるの失敗は `failed <child> <段>` で exit 1
+#   `/develop #<child> （エピック #<epic> の子。返事を受けて起動し直し） <頭付きの文>` を送って `relaunched <child>`
+#   （作った端末のハンドルを記録し直す）。端末はあるが子のセッションの端末を決められない（シェルの端末だけも含む）
+#   ときは `failed <child> ambiguous-terminal`。ワークツリーが 0 件か 2 件以上・送信 / 作成 / 閉じるの失敗は `failed <child> <段>` で exit 1
 #   （送り直しか作り直しのコマンドを stderr に出す）。引数の誤りは orca を呼ばずに使い方を出して exit 1
 # mark: 今のワークスペースの linkedIssue が <issue> のときだけ `orca worktree set --worktree current
 #   --workspace-status <completed|in-review>`（done / waiting）。stdout は `marked <issue> <kind>`（exit 0）
@@ -227,6 +230,38 @@ retry_id() {
   printf '%s' "$1" | jq -r 'first(.. | objects | (.retryRequestId // .retryRequest) | strings) // empty' 2>/dev/null
 }
 
+# 子のセッションを起動した端末のハンドルの記録の置き場（子のワークツリーの git-path 配下。git の管理外）。
+# Orca は子のワークツリーにシェルの端末も必ず作るので、reply はこの記録で送り先を決める
+term_record_path() {
+  git -C "$1" rev-parse --path-format=absolute --git-path epic-dispatch-terminal 2>/dev/null
+}
+
+# 子のセッションを起動した端末のハンドルを記録する（<worktree> <handle>）。失敗しても起動は止めない
+record_term() {
+  local f
+  f="$(term_record_path "$1")"
+  if [ -z "$f" ] || ! printf '%s\n' "$2" 2>/dev/null > "$f"; then
+    echo "could not record the terminal handle $2 for $1 (reply falls back to the terminal list)" >&2
+  fi
+}
+
+# 端末の一覧から子のセッションの端末を 1 つ選ぶ（<worktree> <端末の一覧の JSON>）。
+# 記録したハンドルが一覧にあればそれ、無ければ Claude Code の端末（agentIdentity が claude か、
+# タイトルに Claude Code を含む）がちょうど 1 つのときだけそれを stdout に出す。決められなければ何も出さない
+pick_session_term() {
+  local f rec="" cands
+  f="$(term_record_path "$1")"
+  [ -n "$f" ] && [ -r "$f" ] && rec="$(head -n 1 "$f")"
+  if [ -n "$rec" ] && printf '%s' "$2" | jq -e --arg h "$rec" 'any(.result.terminals[]; .handle == $h)' >/dev/null 2>&1; then
+    printf '%s\n' "$rec"; return 0
+  fi
+  cands="$(printf '%s' "$2" | jq -r '[.result.terminals[]
+    | select(.agentIdentity == "claude" or ((.title // "") | tostring | contains("Claude Code")))
+    | .handle // empty | strings | select(. != "")] | if length == 1 then .[0] else empty end' 2>/dev/null)"
+  [ -n "$cands" ] && printf '%s\n' "$cands"
+  return 0
+}
+
 cmd_launch() {
   local note="" base="${EPIC_DISPATCH_BASE:-main}"
   while [ "$#" -gt 0 ]; do
@@ -316,6 +351,7 @@ cmd_launch() {
       recreate_hint "$child" "$agent_cmd" "$prompt" "$submit"
       echo "failed $n"; failed=1; continue
     fi
+    record_term "$child" "$handle"
     if ! orca terminal wait --terminal "$handle" --for tui-idle --timeout-ms "$ready" --json >&2; then
       resend_hint "$handle" "$prompt" "$submit"
       echo "failed $n"; failed=1; continue
@@ -363,10 +399,16 @@ deliver_reply() {
     echo "orca terminal list --worktree path:$path --json is not readable" >&2
     echo "failed $n terminal-list"; return 1
   fi
-  # 端末が 1 つなら、そのまま送る（止まっている子の入力欄に打ち込み、ターンの開始まで確かめる）
-  if [ "$relaunch" -eq 0 ] && [ "$tcount" -eq 1 ]; then
-    handle="$(printf '%s' "$terms" | jq -r '.result.terminals[0].handle // empty')"
-    [ -n "$handle" ] || { echo "failed $n terminal-list"; return 1; }
+  # 端末があれば、子のセッションの端末（記録したハンドル、無ければ Claude Code の端末 1 つ）に送る
+  # （止まっている子の入力欄に打ち込み、ターンの開始まで確かめる）。Orca は子のワークツリーにシェルの
+  # 端末も作るので、端末の数では決めない。決められなければ送らない（シェルの端末だけのときも、
+  # それが子のセッションでないと一覧から言い切れないので起動し直さない。主の判断で --relaunch を使う）
+  if [ "$relaunch" -eq 0 ] && [ "$tcount" -gt 0 ]; then
+    handle="$(pick_session_term "$path" "$terms")"
+    if [ -z "$handle" ]; then
+      echo "terminals in $path: $tcount, but none is recorded and not exactly one is Claude Code (cannot tell which one runs the child session; use reply --relaunch to start it over)" >&2
+      echo "failed $n ambiguous-terminal"; return 1
+    fi
     sent="$(orca terminal send --terminal "$handle" --text "$msg" --enter --wait-submit "$submit" --json)"
     rc=$?
     printf '%s\n' "$sent" >&2
@@ -375,10 +417,6 @@ deliver_reply() {
     fi
     resend_hint "$handle" "$msg" "$submit" "$(retry_id "$sent")"
     echo "failed $n send"; return 1
-  fi
-  if [ "$relaunch" -eq 0 ] && [ "$tcount" -gt 1 ]; then
-    echo "terminals in $path: $tcount (cannot tell which one runs the child session)" >&2
-    echo "failed $n ambiguous-terminal"; return 1
   fi
   # 端末が無いか --relaunch: 古いセッションを残したまま二重に起動しないよう、先に全部閉じてから作る
   if [ "$tcount" -gt 0 ]; then
@@ -394,6 +432,7 @@ deliver_reply() {
     recreate_hint "$path" "$agent_cmd" "$prompt" "$submit"
     echo "failed $n create"; return 1
   fi
+  record_term "$path" "$handle"
   if ! orca terminal wait --terminal "$handle" --for tui-idle --timeout-ms "$ready" --json >&2; then
     resend_hint "$handle" "$prompt" "$submit"
     echo "failed $n ready"; return 1
@@ -493,6 +532,7 @@ resolve_stopped() {
   local epic="$1" n="$2" repo="$3"
   local judge="${EPIC_DISPATCH_JUDGE:-$(dirname "$0")/stop-judge.sh}"
   local out rc l1 l2 l3 l4 reason="" reply="" url="" why="" res line body
+  local head1="親の判断: 判断できなかった"
   out="$("$judge" "$epic" "$n")"; rc=$?
   l1="$(printf '%s\n' "$out" | sed -n 1p)"
   l2="$(printf '%s\n' "$out" | sed -n 2p)"
@@ -527,11 +567,12 @@ resolve_stopped() {
         return 2 ;;
     esac
     why="$(printf '返事を送れなかった: %s\n送るはずだった返事: %s' "$res" "$reply")"
+    head1="親の判断: 通すが送れなかった"
   fi
   # 判断の出力そのものは公開の子 issue に貼らない（モデルの入力には gitignore 済みの配役表も入るので、
   # 出力に引用されうる）。見たいときのために stderr にだけ出す
   [ -n "$out" ] && printf 'judge output for #%s:\n%s\n' "$n" "$out" >&2
-  body="$(printf '親の判断: 判断できなかった\n停止の記録: %s\n%s' "${url:-不明}" "$why")"
+  body="$(printf '%s\n停止の記録: %s\n%s' "$head1" "${url:-不明}" "$why")"
   gh issue comment "$n" --body "$body" >&2 || repost_hint "$n" "$body"
   return 1
 }
