@@ -357,7 +357,9 @@ deliver_reply() {
   path="$(printf '%s' "$cands" | jq -r '.[0].path // empty')"
   [ -n "$path" ] || { echo "failed $n no-worktree"; return 1; }
   if ! terms="$(orca terminal list --worktree "path:$path" --json)" \
-    || ! tcount="$(printf '%s' "$terms" | jq -e '.result.terminals | length' 2>/dev/null)"; then
+    || ! tcount="$(printf '%s' "$terms" \
+      | jq -e '.result.terminals | if type == "array" then length else error("terminals is not an array") end' 2>/dev/null)"; then
+    # terminals が欠落・null・配列以外なら 0 個と数えない（0 個として作り直すと、動いている子が二重に起動する）
     echo "orca terminal list --worktree path:$path --json is not readable" >&2
     echo "failed $n terminal-list"; return 1
   fi
@@ -526,7 +528,9 @@ resolve_stopped() {
     esac
     why="$(printf '返事を送れなかった: %s\n送るはずだった返事: %s' "$res" "$reply")"
   fi
-  [ -n "$out" ] && why="$(printf '%s\n判断の出力:\n%s' "$why" "$out")"
+  # 判断の出力そのものは公開の子 issue に貼らない（モデルの入力には gitignore 済みの配役表も入るので、
+  # 出力に引用されうる）。見たいときのために stderr にだけ出す
+  [ -n "$out" ] && printf 'judge output for #%s:\n%s\n' "$n" "$out" >&2
   body="$(printf '親の判断: 判断できなかった\n停止の記録: %s\n%s' "${url:-不明}" "$why")"
   gh issue comment "$n" --body "$body" >&2 || repost_hint "$n" "$body"
   return 1

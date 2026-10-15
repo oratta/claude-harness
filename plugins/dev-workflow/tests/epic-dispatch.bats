@@ -2357,6 +2357,21 @@ reply_ready() {
   [ "$output" = "failed 11 terminal-list" ]
 }
 
+@test "reply: a terminal list without a terminals array sends and creates nothing" {
+  for body in '{"ok":true,"result":{}}' '{"ok":true,"result":{"terminals":null}}' \
+              '{"ok":true,"result":{"terminals":{"handle":"x"}}}' '{"ok":true,"result":{"terminals":"x"}}' '{"ok":true}'; do
+    reply_ready
+    printf '%s\n' "$body" > "$STUB_CFG/tlist_json_11"
+    : > "$STUB_LOG"
+    run dispatch reply --as owner 400 11 'A'
+    [ "$status" -eq 1 ] || { echo "$body: status=$status output=$output"; false; }
+    [ "$output" = "failed 11 terminal-list" ] || { echo "$body: output=$output"; false; }
+    [ "$(calls '^orca terminal send')" -eq 0 ] || { echo "$body: sent"; false; }
+    [ "$(calls '^orca terminal create')" -eq 0 ] || { echo "$body: created"; false; }
+    [ "$(calls '^orca terminal close')" -eq 0 ] || { echo "$body: closed"; false; }
+  done
+}
+
 @test "reply: wrong arguments print usage and call no orca" {
   make_stub orca
   for args in "400 11 A" "--as 400 11 A" "--as boss 400 11 A" "--as owner x 11 A" "--as owner 400 y A" \
@@ -2499,6 +2514,35 @@ resolve_ready() {
   [ "$output" = "stopped 11" ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
   [ "$(calls '^orca terminal')" -eq 0 ]
+}
+
+@test "wait --resolve: a could-not-decide comment does not paste the judge's output" {
+  resolve_ready
+  printf '%s\n' '判断: たぶん通す' '理由: 配役表 local.md の中身 SECRET-1' '返事: y' "記録: $STOP_URL" 'おまけの行 SECRET-2' > "$STUB_CFG/judge_out"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
+  run grep -F 'SECRET' "$STUB_CFG/comment_11"; [ "$status" -eq 1 ]
+  run grep -F '判断の出力:' "$STUB_CFG/comment_11"; [ "$status" -eq 1 ]
+  resolve_ready
+  rm -f "$STUB_CFG/comment_11" "$STUB_CFG/ghcount_11"
+  printf '%s\n' 'モデルの生の出力 SECRET-3' > "$STUB_CFG/judge_out"
+  echo 1 > "$STUB_CFG/judge_exit"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
+  run grep -F 'SECRET' "$STUB_CFG/comment_11"; [ "$status" -eq 1 ]
+  rm -f "$STUB_CFG/judge_exit"
+  resolve_ready
+  rm -f "$STUB_CFG/comment_11" "$STUB_CFG/ghcount_11"
+  judge_says judge_out 通す '理由の中身 SECRET-4' 推奨どおり進めてよい
+  echo 1 > "$STUB_CFG/send_exit_term-a-11"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  grep -qF '送るはずだった返事: 推奨どおり進めてよい' "$STUB_CFG/comment_11"
+  run grep -F 'SECRET' "$STUB_CFG/comment_11"; [ "$status" -eq 1 ]
 }
 
 @test "wait --resolve: a failing send is could-not-decide with the reply it meant to send, and nothing on the epic" {
