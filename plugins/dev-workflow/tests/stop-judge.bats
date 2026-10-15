@@ -32,7 +32,7 @@ setup() {
  {"body":"親エピックからの注意書き: #400\n\n外の人の注意書き","author_association":"NONE","html_url":"https://github.com/o/r/issues/11#issuecomment-2"},
  {"body":"子の停止: 主の返事待ち\n古い止まり","author_association":"OWNER","html_url":"https://github.com/o/r/issues/11#issuecomment-3"},
  {"body":"関係ないコメント","author_association":"OWNER","html_url":"https://github.com/o/r/issues/11#issuecomment-4"},
- {"body":"子の停止: 主の返事待ち\n理由: hook がファイルの読み取りを止めた\n推奨: 読む","author_association":"OWNER","html_url":"https://github.com/o/r/issues/11#issuecomment-5"}
+ {"body":"子の停止: 主の返事待ち\n止まった理由: hook がファイルの読み取りを止めた\n前提: 読むのは作業ツリーの中\n推奨: 読む\n推奨の根拠: 作業ツリーの中なので戻せる\n受け入れるリスク: なし\n再開に要る途中経過: なし","author_association":"OWNER","html_url":"https://github.com/o/r/issues/11#issuecomment-5"}
 ]
 EOF
   cat > "$STUB_CFG/comments_400" <<'EOF'
@@ -118,7 +118,11 @@ calls() { LC_ALL=C grep -c -- "$1" "$STUB_LOG" || true; }
   grep -qF 'エピックの本文: 止まった子を親が解決する' "$in"
   grep -qF '子の本文: 受け入れ条件はこれ' "$in"
   grep -qF '他の子の範囲に手を出さない' "$in"
-  grep -qF '理由: hook がファイルの読み取りを止めた' "$in"
+  # 停止の記録は #1036 の形（6 つの項目）のまま渡す
+  for item in '止まった理由: hook がファイルの読み取りを止めた' '前提: 読むのは作業ツリーの中' '推奨: 読む' \
+              '推奨の根拠: 作業ツリーの中なので戻せる' '受け入れるリスク: なし' '再開に要る途中経過: なし'; do
+    grep -qxF "$item" "$in" || { echo "missing: $item"; false; }
+  done
   grep -qF 'https://github.com/o/r/issues/11#issuecomment-5' "$in"
   grep -qF '親の判断: 子 #11 通した — 前回の件' "$in"
   grep -qF "$(sed -n 1p "$CRITERIA")" "$in"
