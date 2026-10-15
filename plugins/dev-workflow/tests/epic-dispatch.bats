@@ -6,7 +6,9 @@
 # スタブは自分の名前と引数（printf '%q'）を共通のログ（${STUB_LOG}）に 1 行ずつ追記する。
 # 返り値は $STUB_CFG の設定ファイルで切り替える:
 #   orca: current_exit / current_json / list_exit / list_json（list_json_<回数> があればその回だけ
-#         それを返す。回数は listcount）/ set_exit / close_exit / rm_exit / create_fail_<N>
+#         それを返す。回数は listcount）/ set_exit / set_comment_exit（--comment 付きの set だけの終了コード。既定は set_exit。
+#         --comment が成功したら current_json と list_json* の同じ path の comment をその値に書き換える）
+#         / close_exit / rm_exit / create_fail_<N>
 #         / create_json_<N>（既定は result.worktree.path が /work/issue-<N> の JSON）
 #         / tcreate_fail_<N> / tcreate_json_<N>（terminal create。<N> は --worktree の path の issue-<N>。
 #         既定は result.terminal.handle が term-<N> の JSON。--command は tcmd_<N> に書き出す）
@@ -67,7 +69,33 @@ case "$1 $2" in
     exit "$(cat "$STUB_CFG/close_exit" 2>/dev/null || echo 0)" ;;
   "worktree set")
     echo "{\"ok\":true}"
-    exit "$(cat "$STUB_CFG/set_exit" 2>/dev/null || echo 0)" ;;
+    rc=$(cat "$STUB_CFG/set_exit" 2>/dev/null || echo 0)
+    wt=""; cm=""; hasc=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --worktree) wt="$2"; shift ;;
+        --comment) cm="$2"; hasc=1; shift ;;
+      esac
+      shift
+    done
+    if [ "$hasc" -eq 1 ]; then
+      rc=$(cat "$STUB_CFG/set_comment_exit" 2>/dev/null || echo "$rc")
+      if [ "$rc" -eq 0 ]; then
+        case "$wt" in
+          current) p=$(jq -r ".result.worktree.path // empty" "$STUB_CFG/current_json") ;;
+          path:*) p="${wt#path:}" ;;
+          *) p="" ;;
+        esac
+        for f in "$STUB_CFG"/current_json "$STUB_CFG"/list_json*; do
+          [ -e "$f" ] || continue
+          jq -c --arg p "$p" --arg c "$cm" \
+            "if .result.worktree.path? == \$p then .result.worktree.comment = \$c else . end
+             | if (.result.worktrees? | type) == \"array\" then .result.worktrees |= map(if .path == \$p then .comment = \$c else . end) else . end" \
+            "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+        done
+      fi
+    fi
+    exit "$rc" ;;
   "worktree create")
     issue=""; prompt=""
     while [ $# -gt 0 ]; do
@@ -205,21 +233,21 @@ starts_with() {
   return 1
 }
 
-# 一覧の 1 件（<N> <workspaceStatus> [parentWorktreeId] [repoId] [isArchived]）。パスは実在のディレクトリ
+# 一覧の 1 件（<N> <workspaceStatus> [parentWorktreeId] [repoId] [isArchived] [comment]）。パスは実在のディレクトリ
 wt_entry() {
-  local n="$1" st="$2" par="${3-repo-a::/work/parent}" repo="${4-repo-a}" arch="${5-false}"
+  local n="$1" st="$2" par="${3-repo-a::/work/parent}" repo="${4-repo-a}" arch="${5-false}" cm="${6-}"
   local p="$BATS_TEST_TMPDIR/work/issue-$n"
   mkdir -p "$p"
-  printf '{"id":"%s::%s","repoId":"%s","path":"%s","branch":"refs/heads/oratta/issue-%s","linkedIssue":%s,"isArchived":%s,"isMainWorktree":false,"workspaceStatus":"%s","parentWorktreeId":"%s"}' \
-    "$repo" "$p" "$repo" "$p" "$n" "$n" "$arch" "$st" "$par"
+  printf '{"id":"%s::%s","repoId":"%s","path":"%s","branch":"refs/heads/oratta/issue-%s","linkedIssue":%s,"isArchived":%s,"isMainWorktree":false,"workspaceStatus":"%s","parentWorktreeId":"%s","comment":"%s"}' \
+    "$repo" "$p" "$repo" "$p" "$n" "$n" "$arch" "$st" "$par" "$cm"
 }
 
 # 一覧を置く（引数は wt_entry の出力。<file> の既定は list_json）
 set_list() { local f="$1"; shift; local IFS=,; printf '{"result":{"worktrees":[%s]}}\n' "$*" > "$STUB_CFG/$f"; }
 
-# 今のワークツリー（id と linkedIssue を持つ）
+# 今のワークツリー（id と linkedIssue を持つ。2 番目の引数はコメント欄。既定は空）
 set_current() {
-  printf '{"result":{"worktree":{"id":"repo-a::/work/parent","repoId":"repo-a","path":"/work/parent","linkedIssue":%s}}}\n' "$1" > "$STUB_CFG/current_json"
+  printf '{"result":{"worktree":{"id":"repo-a::/work/parent","repoId":"repo-a","path":"/work/parent","linkedIssue":%s,"comment":"%s"}}}\n' "$1" "${2-}" > "$STUB_CFG/current_json"
 }
 
 # 今のワークツリーを、親ワークツリー（linkedIssue が <1>。null も可）を持つ子にする
