@@ -180,6 +180,32 @@ recreate_hint() {
   } >&2
 }
 
+# 子のセッションの起動コマンドと、起動完了待ち・送信の観測時間を環境変数から組み立てる（launch と reply が共用）。
+# 結果は ready / submit / agent_cmd に入れる。値が誤っていれば stderr に理由を出して 1 を返す（orca は呼ばない）
+ready=""; submit=""; agent_cmd=""
+agent_setup() {
+  ready="${EPIC_DISPATCH_READY_TIMEOUT_MS:-60000}" submit="${EPIC_DISPATCH_SUBMIT_WAIT:-30}"
+  is_num "$ready" || { echo "EPIC_DISPATCH_READY_TIMEOUT_MS must be a non-negative integer: $ready" >&2; return 1; }
+  is_num "$submit" || { echo "EPIC_DISPATCH_SUBMIT_WAIT must be a non-negative integer: $submit" >&2; return 1; }
+  local model="${EPIC_DISPATCH_MODEL-opus}"
+  [ -n "$model" ] || { echo "EPIC_DISPATCH_MODEL must not be empty" >&2; return 1; }
+  local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-cld}"
+  [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; return 1; }
+  local idle_compact="${EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS-120000}"
+  is_num "$idle_compact" || { echo "EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS must be a non-negative integer: $idle_compact" >&2; return 1; }
+  agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$1 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=$idle_compact $claude_cmd --model $(shq "$model")"
+}
+
+# send の出力にターンの開始（stages の turn_started）があるか
+turn_started() {
+  printf '%s' "$1" | jq -e '[.. | objects | .stages? | arrays | .[]] | index("turn_started") != null' >/dev/null 2>&1
+}
+
+# send の出力から再試行の ID を取り出す（無ければ空）
+retry_id() {
+  printf '%s' "$1" | jq -r 'first(.. | objects | (.retryRequestId // .retryRequest) | strings) // empty' 2>/dev/null
+}
+
 cmd_launch() {
   local note="" base="${EPIC_DISPATCH_BASE:-main}"
   while [ "$#" -gt 0 ]; do
@@ -194,21 +220,11 @@ cmd_launch() {
   local epic="$1"; shift
   is_num "$epic" || { echo "not an issue number: $epic" >&2; usage; }
   check_children "$@"
-  local ready="${EPIC_DISPATCH_READY_TIMEOUT_MS:-60000}" submit="${EPIC_DISPATCH_SUBMIT_WAIT:-30}"
-  is_num "$ready" || { echo "EPIC_DISPATCH_READY_TIMEOUT_MS must be a non-negative integer: $ready" >&2; usage; }
-  is_num "$submit" || { echo "EPIC_DISPATCH_SUBMIT_WAIT must be a non-negative integer: $submit" >&2; usage; }
-  local model="${EPIC_DISPATCH_MODEL-opus}"
-  [ -n "$model" ] || { echo "EPIC_DISPATCH_MODEL must not be empty" >&2; usage; }
-  local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-cld}"
-  [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; usage; }
-  local idle_compact="${EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS-120000}"
-  is_num "$idle_compact" || { echo "EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS must be a non-negative integer: $idle_compact" >&2; usage; }
+  agent_setup "$epic" || usage
   if [ -n "${EPIC_DISPATCH_PARENT_EPIC-}" ]; then
     echo "this session is a child of epic #$EPIC_DISPATCH_PARENT_EPIC (EPIC_DISPATCH_PARENT_EPIC); child epics are not expanded here" >&2
     exit 1
   fi
-  local agent_cmd
-  agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$epic CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=$idle_compact $claude_cmd --model $(shq "$model")"
 
   command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
@@ -286,17 +302,113 @@ cmd_launch() {
     sent="$(orca terminal send --terminal "$handle" --text "$prompt" --enter --wait-submit "$submit" --json)"
     rc=$?
     printf '%s\n' "$sent" >&2
-    if [ "$rc" -eq 0 ] && printf '%s' "$sent" \
-      | jq -e '[.. | objects | .stages? | arrays | .[]] | index("turn_started") != null' >/dev/null 2>&1; then
+    if [ "$rc" -eq 0 ] && turn_started "$sent"; then
       echo "launched $n"
     else
-      retry="$(printf '%s' "$sent" \
-        | jq -r 'first(.. | objects | (.retryRequestId // .retryRequest) | strings) // empty' 2>/dev/null)"
+      retry="$(retry_id "$sent")"
       resend_hint "$handle" "$prompt" "$submit" "$retry"
       echo "failed $n"; failed=1
     fi
   done
   exit "$failed"
+}
+
+# 子の端末に、送り手を付けた返事を届ける（<relaunch 0|1> <parent|owner> <epic> <child> <text> <repoId>）。
+# agent_setup を済ませてから呼ぶ。stdout に `sent <child>` / `relaunched <child>` / `failed <child> <理由>` の
+# 1 行を出し、failed なら 1 を返す。orca 自身の出力は stderr。reply と wait --resolve が共用する
+deliver_reply() {
+  local relaunch="$1" as="$2" epic="$3" n="$4" text="$5" repo="$6"
+  local msg list cands count path terms tcount handle out rc sent prompt
+  case "$as" in
+    parent) msg="親エピック #$epic の判断（主の承認ではない）: $text" ;;
+    *) msg="主の返事（親エピック #$epic 経由）: $text" ;;
+  esac
+  if ! list="$(orca worktree list --json)" \
+    || ! printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1; then
+    echo "orca worktree list --json is not readable" >&2
+    echo "failed $n list"; return 1
+  fi
+  cands="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$n" \
+    '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)]')"
+  count="$(printf '%s' "$cands" | jq 'length')"
+  [ "$count" -eq 0 ] && { echo "failed $n no-worktree"; return 1; }
+  [ "$count" -gt 1 ] && { echo "failed $n ambiguous-worktree"; return 1; }
+  path="$(printf '%s' "$cands" | jq -r '.[0].path // empty')"
+  [ -n "$path" ] || { echo "failed $n no-worktree"; return 1; }
+  if ! terms="$(orca terminal list --worktree "path:$path" --json)" \
+    || ! tcount="$(printf '%s' "$terms" | jq -e '.result.terminals | length' 2>/dev/null)"; then
+    echo "orca terminal list --worktree path:$path --json is not readable" >&2
+    echo "failed $n terminal-list"; return 1
+  fi
+  # 端末が 1 つなら、そのまま送る（止まっている子の入力欄に打ち込み、ターンの開始まで確かめる）
+  if [ "$relaunch" -eq 0 ] && [ "$tcount" -eq 1 ]; then
+    handle="$(printf '%s' "$terms" | jq -r '.result.terminals[0].handle // empty')"
+    [ -n "$handle" ] || { echo "failed $n terminal-list"; return 1; }
+    sent="$(orca terminal send --terminal "$handle" --text "$msg" --enter --wait-submit "$submit" --json)"
+    rc=$?
+    printf '%s\n' "$sent" >&2
+    if [ "$rc" -eq 0 ] && turn_started "$sent"; then
+      echo "sent $n"; return 0
+    fi
+    resend_hint "$handle" "$msg" "$submit" "$(retry_id "$sent")"
+    echo "failed $n send"; return 1
+  fi
+  if [ "$relaunch" -eq 0 ] && [ "$tcount" -gt 1 ]; then
+    echo "terminals in $path: $tcount (cannot tell which one runs the child session)" >&2
+    echo "failed $n ambiguous-terminal"; return 1
+  fi
+  # 端末が無いか --relaunch: 古いセッションを残したまま二重に起動しないよう、先に全部閉じてから作る
+  if [ "$tcount" -gt 0 ]; then
+    orca terminal close --worktree "path:$path" --all --json >&2 || { echo "failed $n close"; return 1; }
+  fi
+  prompt="/develop #$n （エピック #$epic の子。返事を受けて起動し直し） $msg"
+  out="$(orca terminal create --worktree "path:$path" --command "$agent_cmd" --json)"
+  rc=$?
+  printf '%s\n' "$out" >&2
+  handle=""
+  [ "$rc" -eq 0 ] && handle="$(printf '%s' "$out" | jq -r '.result.terminal.handle // empty' 2>/dev/null)"
+  if [ -z "$handle" ]; then
+    recreate_hint "$path" "$agent_cmd" "$prompt" "$submit"
+    echo "failed $n create"; return 1
+  fi
+  if ! orca terminal wait --terminal "$handle" --for tui-idle --timeout-ms "$ready" --json >&2; then
+    resend_hint "$handle" "$prompt" "$submit"
+    echo "failed $n ready"; return 1
+  fi
+  sent="$(orca terminal send --terminal "$handle" --text "$prompt" --enter --wait-submit "$submit" --json)"
+  rc=$?
+  printf '%s\n' "$sent" >&2
+  if [ "$rc" -eq 0 ] && turn_started "$sent"; then
+    echo "relaunched $n"; return 0
+  fi
+  resend_hint "$handle" "$prompt" "$submit" "$(retry_id "$sent")"
+  echo "failed $n send"; return 1
+}
+
+cmd_reply() {
+  local relaunch=0 as=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --relaunch) relaunch=1; shift ;;
+      --as) [ "$#" -ge 2 ] || usage; as="$2"; shift 2 ;;
+      --*) usage ;;
+      *) break ;;
+    esac
+  done
+  case "$as" in parent|owner) ;; *) echo "--as must be parent or owner" >&2; usage ;; esac
+  [ "$#" -eq 3 ] || usage
+  is_num "$1" || { echo "not an issue number: $1" >&2; usage; }
+  is_num "$2" || { echo "not an issue number: $2" >&2; usage; }
+  [ -n "$3" ] || { echo "the reply text must not be empty" >&2; usage; }
+  agent_setup "$1" || usage
+  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
+  command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
+  local current repo
+  current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
+  repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
+  [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+  deliver_reply "$relaunch" "$as" "$1" "$2" "$3" "$repo" || exit 1
+  exit 0
 }
 
 # 今いるワークスペースに印を付ける（done = completed / waiting = in-review は列、
@@ -552,6 +664,7 @@ sub="$1"; shift
 case "$sub" in
   route) cmd_route "$@" ;;
   launch) cmd_launch "$@" ;;
+  reply) cmd_reply "$@" ;;
   wait) cmd_wait "$@" ;;
   mark) cmd_mark "$@" ;;
   reap) cmd_reap "$@" ;;

@@ -9,6 +9,7 @@
 #         それを返す。回数は listcount）/ set_exit / set_comment_exit（--comment 付きの set だけの終了コード。既定は set_exit。
 #         --comment が成功したら current_json と list_json* の同じ path の comment をその値に書き換える）
 #         / close_exit / rm_exit / rm_err（rm の stderr）/ create_fail_<N>
+#         / tlist_exit / tlist_json_<N>（terminal list。<N> は --worktree の path の issue-<N>。既定は端末 0 個）
 #         / create_json_<N>（既定は result.worktree.path が /work/issue-<N> の JSON）
 #         / tcreate_fail_<N> / tcreate_json_<N>（terminal create。<N> は --worktree の path の issue-<N>。
 #         既定は result.terminal.handle が term-<N> の JSON。--command は tcmd_<N> に書き出す）
@@ -19,7 +20,7 @@
 #         （-C <パス> status --porcelain）/ head（-C <パス> rev-parse HEAD。既定 aaa111）/ branch_tip
 #         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（branch -D）
 #   gh  : issue comment <N> --body <本文> は本文を comment_<N> に追記し（1 件ごとに "---" の行で区切る）、
-#         comment_exit で終わる（既定 0）。成功（exit 0）のときは実物の gh と同じに投稿先の URL を stdout に出す。pr list は pr_out を出して pr_exit で終わる（--search 付きは pr_search_out と pr_search_exit。既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
+#         comment_exit_<N>（無ければ comment_exit）で終わる（既定 0）。成功（exit 0）のときは実物の gh と同じに投稿先の URL を stdout に出す。pr list は pr_out を出して pr_exit で終わる（--search 付きは pr_search_out と pr_search_exit。既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
 #         呼び出し回数は ghcount_<N>。FAIL は stderr に "gh: mock failure for issue <N> (poll <count>)" も出す
 # スクリプトは PATH="<スタブ置き場>:/usr/bin:/bin" で走らせる（jq は実物）。
 # テストの途中に素の [[ ]] を置かない（bash 3.2 では偽でも素通りする）。
@@ -68,6 +69,19 @@ case "$1 $2" in
     exit "$(cat "$STUB_CFG/rm_exit" 2>/dev/null || echo 0)" ;;
   "terminal close")
     exit "$(cat "$STUB_CFG/close_exit" 2>/dev/null || echo 0)" ;;
+  "terminal list")
+    issue=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --worktree) issue="${2##*issue-}"; shift ;;
+      esac
+      shift
+    done
+    rc=$(cat "$STUB_CFG/tlist_exit" 2>/dev/null || echo 0)
+    if [ "$rc" -eq 0 ]; then
+      if [ -e "$STUB_CFG/tlist_json_$issue" ]; then cat "$STUB_CFG/tlist_json_$issue"; else echo "{\"ok\":true,\"result\":{\"terminals\":[]}}"; fi
+    fi
+    exit "$rc" ;;
   "worktree set")
     echo "{\"ok\":true}"
     rc=$(cat "$STUB_CFG/set_exit" 2>/dev/null || echo 0)
@@ -178,7 +192,7 @@ exit 0' ;;
     gh) body='
 if [ "$1 $2" = "issue comment" ]; then
   printf "%s\n---\n" "$5" >> "$STUB_CFG/comment_$3"
-  rc="$(cat "$STUB_CFG/comment_exit" 2>/dev/null || echo 0)"
+  rc="$(cat "$STUB_CFG/comment_exit_$3" 2>/dev/null || cat "$STUB_CFG/comment_exit" 2>/dev/null || echo 0)"
   [ "$rc" -eq 0 ] && echo "https://github.com/o/r/issues/$3#issuecomment-1"
   exit "$rc"
 fi
@@ -2039,4 +2053,358 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   r="$(run_section)"
   printf '%s\n' "$r" | grep -F 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS' | grep -qF 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS'
   printf '%s\n' "$r" | grep -F 'references/reply-after-idle.md' | grep -qF '起動し直す'
+}
+
+# --- reply ---
+# spec: dev-workflow-develop（epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける）
+
+# 子 <N> のワークツリーの端末を置く（引数はハンドル。0 個なら端末なし）
+set_terms() {
+  local n="$1"; shift
+  local t="" h
+  for h in "$@"; do t="$t${t:+,}{\"handle\":\"$h\"}"; done
+  printf '{"ok":true,"result":{"terminals":[%s]}}\n' "$t" > "$STUB_CFG/tlist_json_$n"
+}
+
+# 子 11 のワークツリーが 1 件ある環境（端末は引数のハンドル）
+reply_ready() {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 in-review)"
+  set_terms 11 "$@"
+}
+
+@test "reply: one terminal gets the owner's answer with its header" {
+  reply_ready term-a-11
+  run dispatch reply --as owner 400 11 'A で進めて'
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$output" = "sent 11" ]
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "主の返事（親エピック #400 経由）: A で進めて" ]
+  [ "$(calls "^orca terminal list --worktree path:$BATS_TEST_TMPDIR/work/issue-11 --json\$")" -eq 1 ]
+  [ "$(calls '^orca terminal send --terminal term-a-11 ')" -eq 1 ]
+  [ "$(calls '^orca terminal send .*--enter --wait-submit 30 --json')" -eq 1 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+}
+
+@test "reply: the parent's decision is headed as not the owner's approval" {
+  reply_ready term-a-11
+  run dispatch reply --as parent 400 11 '推奨どおり'
+  [ "$status" -eq 0 ]
+  [ "$output" = "sent 11" ]
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり" ]
+}
+
+@test "reply: no terminal relaunches the child with the launch command and the reply after /develop" {
+  reply_ready
+  run dispatch reply --as parent 400 11 '推奨どおり'
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "relaunched 11" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'" ]
+  s="$(cat "$STUB_CFG/sent_term-11")"
+  starts_with "$s" "/develop #11 "
+  case "$s" in *"親エピック #400 の判断（主の承認ではない）: 推奨どおり") ;; *) echo "sent: $s"; false ;; esac
+  [ "$(calls '^orca terminal wait --terminal term-11 --for tui-idle')" -eq 1 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+}
+
+@test "reply: the relaunch command follows EPIC_DISPATCH_CLAUDE_CMD, EPIC_DISPATCH_MODEL and the threshold" {
+  reply_ready
+  EPIC_DISPATCH_CLAUDE_CMD='cld-account b' EPIC_DISPATCH_MODEL=sonnet EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=150000 \
+    run dispatch reply --as owner 400 11 'B で'
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=150000 cld-account b --model 'sonnet'" ]
+}
+
+@test "reply: --relaunch closes the terminals before creating one" {
+  reply_ready term-a-11
+  run dispatch reply --relaunch --as owner 400 11 'B で'
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "relaunched 11" ]
+  [ "$(calls "^orca terminal close --worktree path:$BATS_TEST_TMPDIR/work/issue-11 --all")" -eq 1 ]
+  [ "$(first_line '^orca terminal close')" -lt "$(first_line '^orca terminal create')" ]
+  case "$(cat "$STUB_CFG/sent_term-11")" in *"主の返事（親エピック #400 経由）: B で") ;; *) false ;; esac
+  [ ! -e "$STUB_CFG/sent_term-a-11" ]
+}
+
+@test "reply: two terminals send nothing" {
+  reply_ready term-a-11 term-b-11
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 ambiguous-terminal" ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+}
+
+@test "reply: no worktree or two worktrees send nothing; archived and other-repo worktrees do not count" {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 in-review repo-b::/x repo-b)" "$(wt_entry 11 in-review repo-a::/work/parent repo-a true)"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 no-worktree" ]
+  set_list list_json "$(wt_entry 11 in-review)" "$(wt_entry 11 completed)"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 ambiguous-worktree" ]
+  [ "$(calls '^orca terminal')" -eq 0 ]
+}
+
+@test "reply: a send that fails or starts no turn is failed with a resend hint" {
+  reply_ready term-a-11
+  echo 1 > "$STUB_CFG/send_exit_term-a-11"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 send" ]
+  grep -qF 'resend: orca terminal send --terminal' "$BATS_TEST_TMPDIR/stderr"
+  rm -f "$STUB_CFG/send_exit_term-a-11"
+  echo '{"ok":true,"result":{"stages":["input_accepted"]}}' > "$STUB_CFG/send_json_term-a-11"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 send" ]
+}
+
+@test "reply: a failing create, close, ready wait or terminal list is failed with the stage" {
+  reply_ready
+  touch "$STUB_CFG/tcreate_fail_11"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 create" ]
+  grep -qF 'create: orca terminal create --worktree' "$BATS_TEST_TMPDIR/stderr"
+  rm -f "$STUB_CFG/tcreate_fail_11"
+  echo 1 > "$STUB_CFG/wait_exit_term-11"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 ready" ]
+  grep -qF 'resend: orca terminal send --terminal' "$BATS_TEST_TMPDIR/stderr"
+  set_terms 11 term-a-11
+  echo 1 > "$STUB_CFG/close_exit"
+  : > "$STUB_LOG"
+  run dispatch reply --relaunch --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 close" ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  echo 1 > "$STUB_CFG/tlist_exit"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 terminal-list" ]
+}
+
+@test "reply: wrong arguments print usage and call no orca" {
+  make_stub orca
+  for args in "400 11 A" "--as 400 11 A" "--as boss 400 11 A" "--as owner x 11 A" "--as owner 400 y A" \
+    "--as owner 400 11" "--as owner 400 11 A B" "--bogus --as owner 400 11 A"; do
+    # shellcheck disable=SC2086
+    run dispatch reply $args
+    [ "$status" -eq 1 ] || { echo "$args: status=$status"; false; }
+    grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr" || { echo "$args: no usage"; false; }
+  done
+  run dispatch reply --as owner 400 11 ''
+  [ "$status" -eq 1 ]
+  [ "$(calls '^orca')" -eq 0 ]
+}
+
+@test "reply: an empty EPIC_DISPATCH_MODEL or a bad threshold calls no orca" {
+  make_stub orca
+  EPIC_DISPATCH_MODEL= run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=120k run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$(calls '^orca')" -eq 0 ]
+}
+
+# --- wait --resolve ---
+# spec: dev-workflow-develop（epic-dispatch.sh の wait は止まった子を判断し、通すものには返事を送って待ちを続ける）
+
+STOP_URL="https://github.com/o/r/issues/11#issuecomment-5"
+
+# 判断のスタブ（judge_out_<child> か judge_out を出し、judge_exit で終わる）を EPIC_DISPATCH_JUDGE に置く
+make_judge() {
+  cat > "$STUB_BIN/judge" <<'EOF'
+#!/bin/bash
+{ printf '%s' judge; printf ' %q' "$@"; echo; } >> "$STUB_LOG"
+if [ -e "$STUB_CFG/judge_out_$2" ]; then cat "$STUB_CFG/judge_out_$2"; else cat "$STUB_CFG/judge_out" 2>/dev/null; fi
+exit "$(cat "$STUB_CFG/judge_exit" 2>/dev/null || echo 0)"
+EOF
+  chmod +x "$STUB_BIN/judge"
+  export EPIC_DISPATCH_JUDGE="$STUB_BIN/judge"
+}
+
+# 判断の出力を置く（<file> <判断> <理由> <返事> [<記録>]）
+judge_says() {
+  local f="$1"; shift
+  printf '判断: %s\n理由: %s\n返事: %s\n記録: %s\n' "$1" "$2" "$3" "${4-$STOP_URL}" > "$STUB_CFG/$f"
+}
+
+# 子 11 が止まっていて端末が 1 つある環境（2 回目のポーリングで子 11 が閉じる）
+resolve_ready() {
+  make_stub orca
+  make_judge
+  set_current 400
+  gh_seq 11 open closed
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  set_terms 11 term-a-11
+}
+
+@test "wait --resolve: a pass is sent to the child, recorded on the epic, and the wait goes on" {
+  resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(calls '^judge 400 11$')" -eq 1 ]
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+  [ "$(first_line '^orca terminal send')" -lt "$(first_line '^gh issue comment 400')" ]
+  [ ! -e "$STUB_CFG/comment_11" ]
+}
+
+@test "wait --resolve: a pass through a relaunch is recorded too" {
+  resolve_ready
+  set_terms 11
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+}
+
+@test "wait --resolve: a sent pass that cannot be posted on the epic wakes the parent with unrecorded" {
+  resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  echo 1 > "$STUB_CFG/comment_exit_400"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "unrecorded 11" ]
+  grep -F 'gh issue comment 400' "$BATS_TEST_TMPDIR/stderr" | grep -qF '親の判断: 子 #11 通した'
+  [ -e "$STUB_CFG/sent_term-a-11" ]
+}
+
+@test "wait --resolve: an escalation is posted on the child with the stop record and wakes the parent" {
+  resolve_ready
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  grep -qF '主の好みが要る' "$STUB_CFG/comment_11"
+  [ "$(calls '^orca terminal')" -eq 0 ]
+  [ ! -e "$STUB_CFG/comment_400" ]
+}
+
+@test "wait --resolve: a failing post on the child still wakes the parent with stopped" {
+  resolve_ready
+  judge_says judge_out 主に上げる 実機操作 ''
+  echo 1 > "$STUB_CFG/comment_exit_11"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  grep -qF 'gh issue comment 11' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "wait --resolve: a failing judge is posted as could-not-decide with an unknown record" {
+  resolve_ready
+  echo 1 > "$STUB_CFG/judge_exit"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: 不明" ]
+  [ "$(calls '^orca terminal')" -eq 0 ]
+}
+
+@test "wait --resolve: a malformed decision or an empty reply to pass is could-not-decide" {
+  resolve_ready
+  judge_says judge_out たぶん通す x y
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  [ "$(calls '^orca terminal')" -eq 0 ]
+  resolve_ready
+  rm -f "$STUB_CFG/comment_11" "$STUB_CFG/ghcount_11"
+  judge_says judge_out 通す x ''
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
+  [ "$(calls '^orca terminal')" -eq 0 ]
+}
+
+@test "wait --resolve: a failing send is could-not-decide with the reply it meant to send, and nothing on the epic" {
+  resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
+  echo 1 > "$STUB_CFG/send_exit_term-a-11"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  grep -qF '推奨どおり進めてよい' "$STUB_CFG/comment_11"
+  grep -qF 'failed 11 send' "$STUB_CFG/comment_11"
+  [ ! -e "$STUB_CFG/comment_400" ]
+}
+
+@test "wait --resolve: closed, done, stopped and unrecorded print in that order" {
+  make_stub orca
+  make_judge
+  set_current 400
+  gh_seq 12 closed
+  gh_seq 13 open
+  gh_seq 14 open
+  set_list list_json "$(wt_entry 11 completed)" \
+    "$(wt_entry 13 in-review repo-a::/work/parent repo-a false epic-stopped)" \
+    "$(wt_entry 14 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  set_terms 14 term-a-14
+  judge_says judge_out_13 主に上げる 実機操作 ''
+  judge_says judge_out_14 通す 範囲の内側 進めて
+  echo 1 > "$STUB_CFG/comment_exit_400"
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11 --watch-stopped --resolve 400 12 13 14
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "${#lines[@]}" -eq 4 ]
+  [ "${lines[0]}" = "closed 12" ]
+  [ "${lines[1]}" = "done 11" ]
+  [ "${lines[2]}" = "stopped 13" ]
+  [ "${lines[3]}" = "unrecorded 14" ]
+}
+
+@test "wait: without --resolve the judge is never called and there is no unrecorded line" {
+  resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(calls '^judge')" -eq 0 ]
+  [ "$(calls '^orca terminal')" -eq 0 ]
+  [ "$(calls '^gh issue comment')" -eq 0 ]
+}
+
+@test "wait: --resolve without --watch-stopped does nothing" {
+  resolve_ready
+  gh_seq 11 open
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  run dispatch wait --interval 0 --timeout 0 --resolve 400 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ "$(calls '^judge')" -eq 0 ]
+  [ "$(calls '^orca')" -eq 0 ]
+}
+
+@test "wait: a non-numeric or missing --resolve value prints usage and calls nothing" {
+  make_stub orca
+  make_judge
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve x 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11 --resolve
+  [ "$status" -eq 1 ]
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve
+  [ "$status" -eq 1 ]
+  [ "$(calls '^orca')" -eq 0 ]
+  [ "$(calls '^gh ')" -eq 0 ]
+  [ "$(calls '^judge')" -eq 0 ]
 }
