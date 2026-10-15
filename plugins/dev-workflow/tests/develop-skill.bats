@@ -653,6 +653,11 @@ refute() {
   done
 }
 
+@test "ask-owner (#1035): a failed candidate search is recorded in the out-of-scope comment, not a PR comment" {
+  s="$(section '主に聞かずに決めること')"
+  echo "$s" | grep -F '候補探し:' | grep -qF '再試行後の終了コードは記録先の `範囲外の問題の振り分け` コメントに書き、既存 issue への相乗りをせずに段 E へ進む'
+}
+
 @test "ask-owner (#1035): both cleanup and filing carry a scope paragraph" {
   s="$(section '主に聞かずに決めること')"
   echo "$s" | grep -qF '自分側の誤りの後始末の守備範囲は'
