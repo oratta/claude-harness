@@ -24,5 +24,5 @@
 ## 5. 記録と確認
 
 - [x] 5.1 `plugins/dev-workflow/changes/1034.md` を書く（何を変えたか、基準が案で主が PR で決めること、判断のモデルの既定と費用）。触る範囲: plugins/dev-workflow/changes/1034.md（新規）
-- [ ] 5.2 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/stop-judge.bats` と、常時注入の予算（`tests/injection-budget.bats`）が通ることを確かめる。触る範囲: なし（実行のみ）
+- [x] 5.2 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/stop-judge.bats` と、常時注入の予算（`tests/injection-budget.bats`）が通ることを確かめる。触る範囲: なし（実行のみ）
 - [ ] 5.3 実機の Orca 経路の確認の手順を PR 本文に書く（受け入れ条件「子が止まった印を付けると、主が触らずに、進めてよいものは子が続きから進み、そうでないものは親のタブに主向けの説明が出る」「親が通した判断がエピックに残っている」）。試しのエピックで、通る止まり 1 件と主に上げる止まり 1 件を起こし、`wait --resolve` の出力・子の端末・エピックの `親の判断:` の行・親のタブの説明を見る。主の環境で行うので、手順とどこを見れば合格かを書く。触る範囲: なし（PR 本文）
