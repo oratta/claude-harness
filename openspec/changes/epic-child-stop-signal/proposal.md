@@ -6,7 +6,7 @@ Orca 経路のエピックで、子セッションが主の返事を待って止
 
 - `epic-dispatch.sh mark` に種別 `stopped` と `resumed` を足す。`stopped` は今のワークスペース（linkedIssue が一致するときだけ）の Orca のコメント欄を `epic-stopped` にし、`resumed` は止まった印（`epic-stopped` / `epic-stopped-seen`）があるときだけ `epic-resumed` に書き換える。ボードの列（`workspaceStatus`）には触れないので、`waiting` の `in-review` と取り違えない
 - `epic-dispatch.sh wait` に `--watch-stopped` を足す。付けたときは、ポーリングごとの 1 回の `orca worktree list --json` で位置引数の子のコメント欄を見て、`epic-stopped` の子があれば、その子のコメント欄を `epic-stopped-seen` に書き換えてから `stopped <N>...` の行を出して exit 0 で終わる。書き換えた子は次の `wait` で同じ止まりを返さない
-- develop の SKILL.md に、エピックの子のセッション（`route` が `nested` を返す）が主の返事を待ってターンを終える前に、記録先の子 issue へ 1 行目 `子の停止: 主の返事待ち` の記録（止まった理由・推奨・根拠・受け入れるリスク・途中経過）を 1 件残し、最後のツール呼び出しで `mark stopped` を呼ぶ手順と、主の返事を受けたら最初に `mark resumed` を呼ぶ手順を足す
+- develop の SKILL.md に、エピックの子のセッション（`route` が `nested` を返す）が主の返事を待って止まるとき、記録先の子 issue へ 1 行目 `子の停止: 主の返事待ち` で始まり、止まった理由・推奨とその根拠・推奨を選ぶと受け入れるリスク・再開に要る途中経過を含む記録を 1 件残してから `mark stopped` を呼ぶ手順と、主の返事を受けた直後に `mark resumed` を呼ぶ手順を足す。本文で質問してターンを終えるときは `mark stopped` をそのターンの最後のツール呼び出しにし、質問ツール（AskUserQuestion）で待つときは記録 → `mark stopped` → 質問ツールの順にする。記録の 2 行目以降の項目名と形は #1036 で決める
 - SKILL.md の Orca 経路の手順で、`wait` に `--watch-stopped` を付け、`stopped <N>...` で起こされたら最新の `子の停止:` の記録を読んでユーザーに報告し、再び待つようにする。`timeout` の確認の説明は、記録を残さずに止まった子だけが検知できないと書き直す
 - 記録を残さずに止まった子を、端末の入力待ちが一定時間続いたことで拾う仕組みは入れない（誤検知が多い。根拠は design.md）
 
