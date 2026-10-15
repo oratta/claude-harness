@@ -23,9 +23,12 @@
 #   ワークツリーがあれば作らない。--agent も --prompt も渡さない）→ --note があれば
 #   `gh issue comment <N> --body <親エピックからの注意書き: #<epic>・空行・注意書き>`（失敗しても起動は
 #   続け、stderr に `note not posted to #<N>` と手で投稿するコマンドを出す）→ `orca terminal create
-#   --worktree path:<子> --command "EPIC_DISPATCH_PARENT_EPIC=<epic> <cmd> --model <model>"`
+#   --worktree path:<子> --command "EPIC_DISPATCH_PARENT_EPIC=<epic>
+#   CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=<tokens> <cmd> --model <model>"`
 #   （<cmd> の既定は cld、EPIC_DISPATCH_CLAUDE_CMD で変える。<model> の既定は opus、
-#   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。
+#   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。<tokens> は子の
+#   待っている間の自動コンパクトの閾値で既定は 120000、EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS
+#   で変える。空か数字でなければ使い方を出して exit 1（根拠は skills/develop/references/reply-after-idle.md）。
 #   作れなければ、既存の端末が無いことの確認・作り直し・送信のコマンドを stderr に出す）→ `orca terminal wait --for tui-idle` →
 #   `orca terminal send --text <指示> --enter --wait-submit <秒>`。stdout は子ごとに `launched <N>`
 #   （send の stages に turn_started がある）/ `skipped <N>` / `failed <N>` の 1 行。failed で
@@ -198,12 +201,14 @@ cmd_launch() {
   [ -n "$model" ] || { echo "EPIC_DISPATCH_MODEL must not be empty" >&2; usage; }
   local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-cld}"
   [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; usage; }
+  local idle_compact="${EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS-120000}"
+  is_num "$idle_compact" || { echo "EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS must be a non-negative integer: $idle_compact" >&2; usage; }
   if [ -n "${EPIC_DISPATCH_PARENT_EPIC-}" ]; then
     echo "this session is a child of epic #$EPIC_DISPATCH_PARENT_EPIC (EPIC_DISPATCH_PARENT_EPIC); child epics are not expanded here" >&2
     exit 1
   fi
   local agent_cmd
-  agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$epic $claude_cmd --model $(shq "$model")"
+  agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$epic CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=$idle_compact $claude_cmd --model $(shq "$model")"
 
   command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }

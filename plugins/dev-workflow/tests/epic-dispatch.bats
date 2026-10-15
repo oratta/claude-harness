@@ -473,7 +473,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${log[5]}" = "orca worktree create --name issue-11 --issue 11 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
   starts_with "${log[6]}" "orca terminal create --worktree path:/work/issue-11 --command "
   case "${log[6]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'" ]
   [ "${log[7]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
   starts_with "${log[8]}" "orca terminal send --terminal term-11 --text "
   case "${log[8]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
@@ -490,7 +490,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   EPIC_DISPATCH_MODEL='opus[1m]' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --model 'opus[1m]'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus[1m]'" ]
 }
 
 @test "launch: EPIC_DISPATCH_CLAUDE_CMD replaces the command as is" {
@@ -498,7 +498,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   EPIC_DISPATCH_CLAUDE_CMD='cld-account b' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld-account b --model 'opus'" ]
 }
 
 @test "launch: an empty EPIC_DISPATCH_CLAUDE_CMD creates nothing" {
@@ -513,6 +513,38 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   EPIC_DISPATCH_MODEL= run dispatch launch 400 11
   [ "$status" -eq 1 ]
   [ "$(calls 'worktree create')" -eq 0 ]
+}
+
+@test "launch: EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS changes the idle compaction threshold" {
+  make_stub orca
+  EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=150000 run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=150000 cld --model 'opus'" ]
+}
+
+@test "launch: an empty EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS calls neither orca nor git" {
+  make_stub orca
+  make_stub git
+  EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS= run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS' "$BATS_TEST_TMPDIR/stderr"
+  grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  [ ! -s "$STUB_LOG" ]
+}
+
+@test "launch: a non-numeric EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS calls neither orca nor git" {
+  make_stub orca
+  make_stub git
+  for v in 120k 1.2e5 120,000 '120000 x'; do
+    EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS="$v" run dispatch launch 400 11
+    [ "$status" -eq 1 ]
+    [ -z "$output" ]
+    grep -qF 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS' "$BATS_TEST_TMPDIR/stderr"
+    grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  done
+  [ ! -s "$STUB_LOG" ]
 }
 
 @test "launch: a failing terminal create is failed and prints the terminal create and send commands" {
@@ -1969,4 +2001,42 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$p" | grep -qF '外さず'
   printf '%s\n' "$p" | grep -qF '2 に戻る'
   printf '%s\n' "$r" | grep -E '^5\. ' | grep -F '記録' | grep -F '子のタブ' | grep -qF '検知できない'
+}
+
+@test "reply-after-idle: the rule file states the thresholds and where they are set" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  [ -f "$f" ]
+  grep -F '120,000' "$f" | grep -qF '子'
+  grep -F '100,000' "$f" | grep -qF '親'
+  grep -qF 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=100000' "$f"
+  grep -qF 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS' "$f"
+  grep -F 'settings.json' "$f" | grep -qF '置かない'
+}
+
+@test "reply-after-idle: the rule file states when to send as is and when to relaunch" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  grep -F '端末が無' "$f" | grep -qF '起動し直す'
+  grep -F '60 分未満' "$f" | grep -qF 'そのまま送る'
+  grep -F 'コンパクトが走' "$f" | grep -qF 'そのまま送る'
+  grep -F '150,000' "$f" | grep -qF '起動し直す'
+  grep -qF 'compact_boundary' "$f"
+  grep -qF 'subagent-context.sh --file' "$f"
+  grep -qF '#1034' "$f"
+}
+
+@test "reply-after-idle: the rule file covers the parent, its restorable state, the basis and the recount" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  grep -qF '回し方:' "$f"
+  grep -qF '子 #N マージ → 残り k 件' "$f"
+  grep -qF '後で別に起動するエピック:' "$f"
+  grep -qF '子 #N のワークツリーを残した' "$f"
+  grep -qF 'https://github.com/oratta/claude-harness/issues/1039#issuecomment-6182988861' "$f"
+  grep -F '1〜2 週間' "$f" | grep -qF '集計'
+  grep -qF '合否に使わ' "$f"
+}
+
+@test "skill: the Orca route puts the idle compaction threshold on child sessions and points to reply-after-idle.md" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -F 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS' | grep -qF 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS'
+  printf '%s\n' "$r" | grep -F 'references/reply-after-idle.md' | grep -qF '起動し直す'
 }
