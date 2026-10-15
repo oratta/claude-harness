@@ -2017,6 +2017,73 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$r" | grep -E '^5\. ' | grep -F '記録' | grep -F '子のタブ' | grep -qF '検知できない'
 }
 
+# spec: dev-workflow-develop（Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる）
+
+@test "skill: Orca route resolves stopped children in wait and escalates the rest in the readable order" {
+  r="$(run_section)"
+  l2="$(printf '%s\n' "$r" | grep -E '^2\. ')"
+  printf '%s\n' "$l2" | grep -qF -- '--resolve <エピック番号> --watch-stopped <動いている子>...'
+  printf '%s\n' "$l2" | grep -F '`unrecorded <N>...`' | grep -qF '1〜4 行'
+  printf '%s\n' "$l2" | grep -F '付けないときは従来どおり' | grep -qF '1〜3 行'
+  printf '%s\n' "$l2" | grep -F '`unrecorded <N>...` で起こされたら' | grep -F '主に上げず' | grep -qF '投稿し直しのコマンド'
+  printf '%s\n' "$l2" | grep -qF '親の判断: 子 #N 通した — 理由は記録できなかった <最新の子の停止の記録の URL>'
+  printf '%s\n' "$l2" | grep -qF 'references/parent-pass-criteria.md'
+  p="$(printf '%s\n' "$r" | grep -E '^8\. ')"
+  printf '%s\n' "$p" | grep -F '`停止の記録:`' | grep -qF 'URL と一致する最新の `親の判断:`'
+  printf '%s\n' "$p" | grep -qF '一致する `親の判断:` が無ければ、判断が無いものとして主に上げる'
+  printf '%s\n' "$p" | grep -F '送信だけが失敗' | grep -qF 'reply --as parent'
+  printf '%s\n' "$p" | grep -qF '目的 → いま取り組んでいる場所 → 起きた事実 → 決めてほしいこと 1 つ → 推奨と受け入れるリスク'
+  printf '%s\n' "$p" | grep -qF 'エピックの目的と他の子との関係'
+  printf '%s\n' "$p" | grep -qF '子の停止の記録の URL'
+  printf '%s\n' "$p" | grep -qF 'どの子の・どの画面で・何をするか'
+  printf '%s\n' "$p" | grep -F 'references/reply-after-idle.md' | grep -F 'reply --as owner' | grep -qF -- '--relaunch'
+  printf '%s\n' "$p" | grep -qF 'references/parent-pass-criteria.md'
+}
+
+# spec: dev-workflow-develop（エピックの子は親から届いた返事を止まった件への返事として受け取る）
+
+@test "skill: an epic child takes a reply from the parent as the answer to its stop" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  l="$(printf '%s\n' "$r" | grep -F '親から届いた返事')"
+  printf '%s\n' "$l" | grep -qF '`親エピック #<E> の判断（主の承認ではない）:`'
+  printf '%s\n' "$l" | grep -qF '`主の返事（親エピック #<E> 経由）:`'
+  printf '%s\n' "$l" | grep -qF '`mark resumed`'
+  printf '%s\n' "$l" | grep -qF '完了報告に書く'
+  printf '%s\n' "$l" | grep -F '聖域' | grep -F '破壊的な操作' | grep -qF '承認として扱わない'
+}
+
+# spec: dev-workflow-develop（親が通してよい範囲の基準を 1 つのファイルに置く）
+
+@test "criteria: the file states the nine conditions, the examples and the output form" {
+  f="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
+  [ -f "$f" ]
+  for c in '既存の規則が主に聞く止まりでない' '推奨がある' '範囲の内側' '聖域でない' '戻せる' \
+    '主の側の情報が要らない' '実機操作でない' '配役表で主の観点が無い' '繰り返していない'; do
+    grep -qF "| $c |" "$f" || { echo "missing condition: $c"; false; }
+  done
+  [ "$(grep -cE '^\| [^-|][^|]* \| .* \|$' "$f")" -eq 10 ]
+  grep -F '9 つ' "$f" | grep -qF 'すべて'
+  grep -F '判断できなければ' "$f" | grep -qF '主に上げる'
+  grep -qF '通る例' "$f"
+  grep -qF '通らない例' "$f"
+  grep -F 'トークン上限の引き上げ' "$f" | grep -F 'exit 2' | grep -qF '記録が作られない'
+  grep -F 'マージの可否' "$f" | grep -qF '通さない'
+  grep -F '既存の規則が主に聞くと定めている止まりも' "$f" | grep -qF '通さない'
+  grep -qx '判断: 通す' "$f"
+  grep -qF '`判断: 主に上げる`' "$f"
+  grep -qF '理由: <1 行' "$f"
+  grep -qF '返事: <1 行' "$f"
+  grep -qF '#1030' "$f"
+  grep -F '案' "$f" | grep -qF 'PR'
+}
+
+@test "reply-after-idle: the restore table has the parent's pass decisions and the terminal check is in reply" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  grep -E '^\| 親が通した判断 \|' "$f" | grep -qF '`親の判断: 子 #N 通した`'
+  grep -F '子の端末の有無' "$f" | grep -qF 'epic-dispatch.sh reply'
+  run grep -F 'まだエピックに記録されない' "$f"; [ "$status" -eq 1 ]
+}
+
 @test "reply-after-idle: the rule file states the thresholds and where they are set" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   [ -f "$f" ]
