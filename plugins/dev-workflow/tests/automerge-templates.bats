@@ -485,7 +485,7 @@ parent-merge-approved'
 @test "parent judgment: touching the merge condition itself (incl. rename source) -> false" {
   run_parent_judgment mc1 "$LBL_OK" "$(printf 'CLAUDE.md\n.github/workflows/ci.yml')" "[$(pj_mark OWNER "$PJ_HEAD")]"
   printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
-  # rename 元（previous_filename）も変更ファイルの一覧に入る
+  # rename 元も含む一覧として渡されれば止まる（一覧に rename 元が入ることは e2e mc-rename と test script 1-b が確かめる）
   run_parent_judgment mc2 "$LBL_OK" "$(printf 'docs/new.yml\n.github/workflows/old.yml')" "[$(pj_mark OWNER "$PJ_HEAD")]"
   printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
 }
@@ -507,7 +507,10 @@ parent-merge-approved'
 }
 
 @test "parent judgment: other blocking labels are never lifted" {
-  for L in needs-approval needs-human-merge human-only; do
+  local blk
+  blk="$(sed -n "/BLOCKING_LABELS='/,/'\$/p" "$WF" | sed "s/^ *BLOCKING_LABELS='//; s/'\$//; s/^ *//" | grep -v '^$' | grep -vx human-merge)"
+  [ "$(printf '%s\n' "$blk" | wc -l)" -ge 3 ]
+  for L in $blk; do
     run_parent_judgment "blk-$L" "$(printf '%s\n%s' "$LBL_OK" "$L")" "CLAUDE.md" "[$(pj_mark OWNER "$PJ_HEAD")]"
     printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
   done
@@ -558,13 +561,19 @@ parent-merge-approved'
 
 # automerge-script 全体を、エンドポイントごとに fixture を返す gh スタブ（--jq は本物の jq で適用）で動かす。
 # $1=シナリオ名 $2=1 回目のラベル $3=2 回目以降のラベル（マージ直前の取り直し） $4=変更ファイル $5=コメントの JSON 配列
+# $6=マージ直前の取り直し（ラベルを 2 回目に取ったあと）で返すコメントの JSON 配列（省略時は $5）。E2E_FILES_JSON を渡すと変更ファイルの JSON をそのまま使う（rename 元の再現用）
 run_automerge_e2e() {
   local d="$BATS_TEST_TMPDIR/e2e-$1" checks
   mkdir -p "$d/bin"
   printf '%s' "$5" > "$d/comments.json"
+  printf '%s' "${6:-$5}" > "$d/comments2.json"
   printf '%s\n' "$2" | jq -R . | jq -s 'map(select(length>0)) | map({name:.})' > "$d/labels1.json"
   printf '%s\n' "$3" | jq -R . | jq -s 'map(select(length>0)) | map({name:.})' > "$d/labels2.json"
-  printf '%s\n' "$4" | jq -R . | jq -s 'map(select(length>0)) | map({filename:.})' > "$d/files.json"
+  if [ -n "${E2E_FILES_JSON:-}" ]; then
+    printf '%s' "$E2E_FILES_JSON" > "$d/files.json"
+  else
+    printf '%s\n' "$4" | jq -R . | jq -s 'map(select(length>0)) | map({filename:.})' > "$d/files.json"
+  fi
   printf '{"draft":false,"head":{"sha":"%s"},"base":{"ref":"main"},"merged":false}' "$PJ_HEAD" > "$d/pr.json"
   sed -n "/REQUIRED_CHECKS='/,/'\$/p" "$WF" | sed "s/^ *//; s/^REQUIRED_CHECKS='//; s/'\$//" | grep -v '^$' \
     | jq -R . | jq -s '{check_runs: map({name:., conclusion:"success", started_at:"2026-01-01T00:00:00Z"})}' > "$d/checks.json"
@@ -593,7 +602,8 @@ case "\$method \$ep" in
   "POST "*/labels) touch "\$F/human-merge-added"; exit 0 ;;
 esac
 case "\$ep" in
-  */issues/*/comments*) body=\$(cat "\$F/comments.json") ;;
+  */issues/*/comments*) n=\$(cat "\$F/labels-count" 2>/dev/null || echo 0); echo "\$n" >> "\$F/comments-phase.log"
+    if [ "\$n" -ge 2 ]; then body=\$(cat "\$F/comments2.json"); else body=\$(cat "\$F/comments.json"); fi ;;
   */issues/*/labels) n=\$(cat "\$F/labels-count" 2>/dev/null || echo 0); n=\$((n+1)); echo "\$n" > "\$F/labels-count"
     if [ "\$n" -ge 2 ]; then body=\$(cat "\$F/labels2.json"); else body=\$(cat "\$F/labels1.json"); fi ;;
   */pulls/*/files*) body=\$(cat "\$F/files.json") ;;
@@ -644,6 +654,32 @@ EOF
   echo "$output"
   [ "$status" -eq 0 ]
   [ ! -f "$E2E_DIR/merged" ]
+}
+
+@test "e2e: rename source in the merge condition blocks the parent mark (files list carries previous_filename)" {
+  command -v jq >/dev/null || skip "jq not installed"
+  # rename 先だけを見ると聖域に当たらず、そのままマージされてしまう
+  E2E_FILES_JSON='[{"filename":"docs/new.yml","previous_filename":".github/workflows/old.yml","status":"renamed"}]' \
+    run_automerge_e2e mc-rename "$LBL_OK" "$LBL_OK" "" "[$(pj_passed),$(pj_mark OWNER "$PJ_HEAD")]"
+  [ "$status" -eq 0 ]
+  [ ! -f "$E2E_DIR/merged" ]
+  # 聖域に触れていても、判定の関数に渡る一覧に rename 元が無ければ親の印でマージされてしまう
+  E2E_FILES_JSON='[{"filename":"CLAUDE.md","status":"modified"},{"filename":"docs/new.yml","previous_filename":".github/workflows/old.yml","status":"renamed"}]' \
+    run_automerge_e2e mc-rename2 "$LBL_OK" "$LBL_OK" "" "[$(pj_passed),$(pj_mark OWNER "$PJ_HEAD")]"
+  [ "$status" -eq 0 ]
+  [ ! -f "$E2E_DIR/merged" ]
+}
+
+@test "e2e: the mark comment deleted before the pre-merge recheck -> no merge" {
+  command -v jq >/dev/null || skip "jq not installed"
+  run_automerge_e2e recheck3 "$LBL_OK" "$LBL_OK" "CLAUDE.md" "[$(pj_passed),$(pj_mark OWNER "$PJ_HEAD")]" "[$(pj_passed)]"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ ! -f "$E2E_DIR/merged" ]
+  # 1 回目の判定では印のあるコメントを返し、取り直しで初めて消えている
+  grep -qx 1 "$E2E_DIR/comments-phase.log"
+  grep -qx 2 "$E2E_DIR/comments-phase.log"
+  printf '%s\n' "$output" | grep -qF '親の判断の印があるため'
 }
 
 @test "e2e: human-merge removed by hand before the recheck still blocks a sacred PR" {
