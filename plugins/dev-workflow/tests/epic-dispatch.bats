@@ -6,7 +6,7 @@
 # スタブは自分の名前と引数（printf '%q'）を共通のログ（${STUB_LOG}）に 1 行ずつ追記する。
 # 返り値は $STUB_CFG の設定ファイルで切り替える:
 #   orca: current_exit / current_json / list_exit / list_json（list_json_<回数> があればその回だけ
-#         それを返す。回数は listcount）/ set_exit / close_exit / rm_exit / create_fail_<N>
+#         それを返す。回数は listcount）/ set_exit / close_exit / rm_exit / rm_err（rm の stderr）/ create_fail_<N>
 #         / create_json_<N>（既定は result.worktree.path が /work/issue-<N> の JSON）
 #         / tcreate_fail_<N> / tcreate_json_<N>（terminal create。<N> は --worktree の path の issue-<N>。
 #         既定は result.terminal.handle が term-<N> の JSON。--command は tcmd_<N> に書き出す）
@@ -17,7 +17,7 @@
 #         （-C <パス> status --porcelain）/ head（-C <パス> rev-parse HEAD。既定 aaa111）/ branch_tip
 #         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（branch -D）
 #   gh  : issue comment <N> --body <本文> は本文を comment_<N> に追記し（1 件ごとに "---" の行で区切る）、
-#         comment_exit で終わる（既定 0）。成功（exit 0）のときは実物の gh と同じに投稿先の URL を stdout に出す。pr list は pr_out を出して pr_exit で終わる（既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
+#         comment_exit で終わる（既定 0）。成功（exit 0）のときは実物の gh と同じに投稿先の URL を stdout に出す。pr list は pr_out を出して pr_exit で終わる（--search 付きは pr_search_out と pr_search_exit。既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
 #         呼び出し回数は ghcount_<N>。FAIL は stderr に "gh: mock failure for issue <N> (poll <count>)" も出す
 # スクリプトは PATH="<スタブ置き場>:/usr/bin:/bin" で走らせる（jq は実物）。
 # テストの途中に素の [[ ]] を置かない（bash 3.2 では偽でも素通りする）。
@@ -62,6 +62,7 @@ case "$1 $2" in
     fi
     exit "$rc" ;;
   "worktree rm")
+    cat "$STUB_CFG/rm_err" >&2 2>/dev/null
     exit "$(cat "$STUB_CFG/rm_exit" 2>/dev/null || echo 0)" ;;
   "terminal close")
     exit "$(cat "$STUB_CFG/close_exit" 2>/dev/null || echo 0)" ;;
@@ -154,6 +155,12 @@ if [ "$1 $2" = "issue comment" ]; then
   exit "$rc"
 fi
 if [ "$1 $2" = "pr list" ]; then
+  for a in "$@"; do
+    if [ "$a" = "--search" ]; then
+      cat "$STUB_CFG/pr_search_out" 2>/dev/null
+      exit "$(cat "$STUB_CFG/pr_search_exit" 2>/dev/null || echo 0)"
+    fi
+  done
   cat "$STUB_CFG/pr_out" 2>/dev/null
   exit "$(cat "$STUB_CFG/pr_exit" 2>/dev/null || echo 0)"
 fi
@@ -1394,6 +1401,79 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$output" = "reaped 11" ]
   [ "$(calls '^git rev-parse --verify --quiet refs/heads/oratta/issue-11$')" -eq 1 ]
   [ "$(calls '^git branch -D')" -eq 0 ]
+}
+
+@test "reap: a merged PR under another branch name matches by HEAD through --search" {
+  reap_ready
+  : > "$STUB_CFG/pr_out"
+  echo aaa111 > "$STUB_CFG/pr_search_out"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11" ]
+  grep -qF -- 'gh pr list --state merged --search aaa111 --json headRefOid' "$STUB_LOG"
+  [ "$(calls '^orca worktree rm')" -eq 1 ]
+  [ "$(calls '^orca .*--force')" -eq 0 ]
+}
+
+@test "reap: a --head PR that does not match HEAD still falls through to --search" {
+  reap_ready
+  echo ccc333 > "$STUB_CFG/pr_out"
+  echo aaa111 > "$STUB_CFG/pr_search_out"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11" ]
+}
+
+@test "reap: --search is not called when --head already matches" {
+  reap_ready
+  run dispatch reap 11
+  [ "$output" = "reaped 11" ]
+  [ "$(calls '^gh pr list .*--search')" -eq 0 ]
+}
+
+@test "reap: --search finding nothing, another tip, or failing keeps the child" {
+  reap_ready
+  : > "$STUB_CFG/pr_out"
+  echo ccc333 > "$STUB_CFG/pr_search_out"
+  run dispatch reap 11
+  [ "$output" = "kept 11 head-mismatch" ]
+  : > "$STUB_CFG/pr_search_out"
+  run dispatch reap 11
+  [ "$output" = "kept 11 no-merged-pr" ]
+  echo aaa111 > "$STUB_CFG/pr_search_out"
+  echo 1 > "$STUB_CFG/pr_search_exit"
+  run dispatch reap 11
+  [ "$output" = "kept 11 pr-lookup-failed" ]
+  echo ccc333 > "$STUB_CFG/pr_out"
+  : > "$STUB_CFG/pr_search_out"
+  rm -f "$STUB_CFG/pr_search_exit"
+  run dispatch reap 11
+  [ "$output" = "kept 11 head-mismatch" ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+}
+
+@test "reap: a terminal sweep failure in rm is told apart, never forced or retried" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  echo 1 > "$STUB_CFG/rm_exit"
+  echo "Error: terminal sweep failed: connect ECONNREFUSED" > "$STUB_CFG/rm_err"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "kept 11 rm-failed-terminal-sweep" ]
+  grep -qF "terminal sweep failed" "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca worktree rm')" -eq 1 ]
+  [ "$(calls '^orca .*--force')" -eq 0 ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
+}
+
+@test "reap: another rm failure stays rm-failed" {
+  reap_ready
+  echo 1 > "$STUB_CFG/rm_exit"
+  echo "Error: worktree has uncommitted changes" > "$STUB_CFG/rm_err"
+  run dispatch reap 11
+  [ "$output" = "kept 11 rm-failed" ]
+  [ "$(calls '^orca worktree rm')" -eq 1 ]
+  [ "$(calls '^orca .*--force')" -eq 0 ]
 }
 
 @test "reap: a failing terminal close keeps the worktree" {
