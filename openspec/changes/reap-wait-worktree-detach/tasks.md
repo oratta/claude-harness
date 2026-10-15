@@ -4,7 +4,7 @@
 
 ## 2. テスト
 
-- [ ] 2.1 bats のスタブ git に `worktree list --porcelain` を足す（設定 `wtlist_out`／回数で切り替え。無設定は従来どおり空で exit 0 にして既存テストを変えない）。偽の orca の rm が exit 0 のあと一定回数だけワークツリーが残るケースで `reaped 11` とブランチ削除、常に残るケース（上限を短くする）で `reaped 11 branch-kept` と `branch -D` 非呼び出し、先端が違うケースで消さないことを確かめる。 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:156-177（git スタブ）、plugins/dev-workflow/tests/epic-dispatch.bats:269-283（reap_ready）、reap のテスト群（「残ったブランチ」を含むテストの近く）
+- [ ] 2.1 bats のスタブ git に `worktree list --porcelain` を足す（設定 `wtlist_out`／回数で切り替え。無設定は従来どおり空で exit 0 にして既存テストを変えない）。偽の orca の rm が exit 0 のあと一定回数だけワークツリーが残るケースで `reaped 11` とブランチ削除、常に残るケース（上限を短くする）で `reaped 11 branch-kept` と `branch -D` 非呼び出し、先端が違うケース（待たずに消さない）と、一覧に前方一致の別パスだけがあるケース（待たずに消す）を確かめる。 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:156-177（git スタブ）、plugins/dev-workflow/tests/epic-dispatch.bats:269-283（reap_ready）、reap のテスト群（「残ったブランチ」を含むテストの近く）
 
 ## 3. 仕様
 
