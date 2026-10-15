@@ -1,11 +1,11 @@
 ## 1. 親が通してよい範囲の基準
 
-- [ ] 1.1 `references/parent-pass-criteria.md` を新しく作る。9 つの通す条件の表（先頭は「既存の規則が主に聞くと定めている止まり（PR トークン上限の exit 2・周の終わりの「選び直しが要る」・マージ）でない」）、判断できなければ主に上げること、通る例 3 つ（hook が止めたファイルの読み取り・手順外の判断を推奨どおり受け入れること・自分の配下の暴走プロセスの停止）と通らない例 6 つ（PR トークン上限の引き上げ・周の終わりで選び直しが要るときの続行・マージの承認・聖域のファイルの変更・実機操作・主しか知らない設計意図）、PR トークン上限の引き上げを通さない理由（既存の規則が exit 2 で主に聞き、新しい上限の記録は主の返事を受けた本体が作る）、マージと既存の規則が主に聞くと定めた止まりを通さないこと（#1030 に任せる）、モデルの出力の 3 行の形、この基準が案で主が PR で決めることと #1030 が参照することを書く（design.md 決定 4）。触る範囲: plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md（新規）
+- [x] 1.1 `references/parent-pass-criteria.md` を新しく作る。9 つの通す条件の表（先頭は「既存の規則が主に聞くと定めている止まり（PR トークン上限の exit 2・周の終わりの「選び直しが要る」・マージ）でない」）、判断できなければ主に上げること、通る例 3 つ（hook が止めたファイルの読み取り・手順外の判断を推奨どおり受け入れること・自分の配下の暴走プロセスの停止）と通らない例 6 つ（PR トークン上限の引き上げ・周の終わりで選び直しが要るときの続行・マージの承認・聖域のファイルの変更・実機操作・主しか知らない設計意図）、PR トークン上限の引き上げを通さない理由（既存の規則が exit 2 で主に聞き、新しい上限の記録は主の返事を受けた本体が作る）、マージと既存の規則が主に聞くと定めた止まりを通さないこと（#1030 に任せる）、モデルの出力の 3 行の形、この基準が案で主が PR で決めることと #1030 が参照することを書く（design.md 決定 4）。触る範囲: plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md（新規）
 
 ## 2. 判断のスクリプト
 
-- [ ] 2.1 `tests/stop-judge.bats` を新しく作る。`gh` とモデルのコマンド（`EPIC_DISPATCH_JUDGE_CMD`）をスタブにし、入力に渡すもの（エピックの本文・子の本文・注意書きのうち OWNER/MEMBER/COLLABORATOR のもの・最新の `子の停止:` の本文と URL・同じ子への `親の判断:`・基準のファイル・配役表があればその本文）、既定の呼び方（`--model sonnet`・`--tools ""`・`--no-session-persistence`、`EPIC_DISPATCH_JUDGE_MODEL` での上書き）、4 行の出力、形が崩れたときと停止の記録が無いときと `gh` が失敗したときの exit 1、ファイルに `orca` の語が無いことを確かめる。触る範囲: plugins/dev-workflow/tests/stop-judge.bats（新規）
-- [ ] 2.2 `scripts/stop-judge.sh` を新しく作り、2.1 を通す。触る範囲: plugins/dev-workflow/scripts/stop-judge.sh（新規）
+- [x] 2.1 `tests/stop-judge.bats` を新しく作る。`gh` とモデルのコマンド（`EPIC_DISPATCH_JUDGE_CMD`）をスタブにし、入力に渡すもの（エピックの本文・子の本文・注意書きのうち OWNER/MEMBER/COLLABORATOR のもの・最新の `子の停止:` の本文と URL・同じ子への `親の判断:`・基準のファイル・配役表があればその本文）、既定の呼び方（`--model sonnet`・`--tools ""`・`--no-session-persistence`、`EPIC_DISPATCH_JUDGE_MODEL` での上書き）、4 行の出力、形が崩れたときと停止の記録が無いときと `gh` が失敗したときの exit 1、ファイルに `orca` の語が無いことを確かめる。触る範囲: plugins/dev-workflow/tests/stop-judge.bats（新規）
+- [x] 2.2 `scripts/stop-judge.sh` を新しく作り、2.1 を通す。触る範囲: plugins/dev-workflow/scripts/stop-judge.sh（新規）
 
 ## 3. epic-dispatch.sh の reply と wait の resolve
 
