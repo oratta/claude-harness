@@ -386,9 +386,11 @@ unmanned で複数 change に割れた場合は、W が change 単位で子 issu
 
 `timeout` と `closed` で起こされたときの確認では、エピックに `後で別に起動するエピック: #N` の行がある子を動いている子から外す（その子は子エピックとして止まっていて閉じないので、`wait` に渡し続けると最長 6 時間待つ）。
 
-子セッションは `launch` が `cld --model '<model>'` で起動する。`<model>` の既定は `opus`（子は `/develop` の 1 ループを丸ごと回すオーケストレーターなのでメインセッションと同じ扱い）で、環境変数 `EPIC_DISPATCH_MODEL` で変えられる。Claude Code の既定モデルは子に効かない。コマンド部分（既定 `cld`）は環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で差し替えられ、クォートせずそのまま置くので `cld-account b` のような引数付きも書ける。Orca に設定したエージェントのコマンドはハーネスから読めないので、Orca 側のコマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変える。端末を作れずに `failed` になった子には、既存の端末が無いことの確認・端末の作り直し・最初の指示の送信のコマンドが stderr に出る（使い方は手順 6）。
+子セッションは `launch` が `cld --model '<model>'` で起動する。`<model>` の既定は `opus`（子は `/develop` の 1 ループを丸ごと回すオーケストレーターなのでメインセッションと同じ扱い）で、環境変数 `EPIC_DISPATCH_MODEL` で変えられる。Claude Code の既定モデルは子に効かない。起動コマンドの先頭には子の待っている間の自動コンパクトの閾値 `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS`（既定 120000）も付き、環境変数 `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` で変えられる。コマンド部分（既定 `cld`）は環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で差し替えられ、クォートせずそのまま置くので `cld-account b` のような引数付きも書ける。Orca に設定したエージェントのコマンドはハーネスから読めないので、Orca 側のコマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変える。端末を作れずに `failed` になった子には、既存の端末が無いことの確認・端末の作り直し・最初の指示の送信のコマンドが stderr に出る（使い方は手順 6）。
 
 子セッションは `cld`（`EPIC_DISPATCH_CLAUDE_CMD` で差し替えたコマンド）が付ける `--dangerously-skip-permissions` で動き（`epic-dispatch.sh` が足すのは `--model` だけ）、許可の確認画面は出ない（hooks は効く）。マージを止めているのは確認画面ではなく develop と pr-review-gate の規則と hooks である。子の PR のマージは今までどおり子セッションの中で人の承認で行い、本体は自動でマージしない。
+
+止まってから時間がたった子に返事を送る前（親自身が長く待ったあとも）、そのまま送るか起動し直すかを `references/reply-after-idle.md` の規則で決める（親の閾値の付け方もそこにある）。送り方と起動し直し方の手順は止まった子を解決する手順に従う。
 
 **サブエージェント方式**: blocked されていない子から**上の 1 ループを子ごとに並列**で起こす。worktree は子ごとで、本体が W を `isolation: "worktree"` で spawn して用意する（W は自分で worktree を切らない）。子の PR がマージされたらエピックに 1 行コメント（`子 #N マージ → 残り k 件`）し、依存が解けた子を次に起こす。
 
