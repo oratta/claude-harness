@@ -71,6 +71,18 @@ lint_template_paths() {
   LC_ALL=C grep -qF -- "catalog/catalog.md" "$SKILL"
 }
 
+@test "rule (#1035): step 1 treats reverting own unique mistakes as recoverable, except git and the sanctuary" {
+  RULE="${REPO_ROOT}/rules/perspective-casting.md"
+  SKILL="${PLUGIN_DIR}/skills/casting/SKILL.md"
+  for f in "$RULE" "$SKILL"; do
+    step1="$(grep -E '^1\. \*\*聖域か\*\*' "$f")"
+    [ -n "$step1" ] || { echo "no step 1 in $f"; return 1; }
+    for token in "戻し先が差分から一意" "git の破壊的操作と聖域への変更を戻す操作は除く" "回復不能側に倒す"; do
+      echo "$step1" | grep -qF -- "$token" || { echo "$f step 1 lacks: $token"; return 1; }
+    done
+  done
+}
+
 @test "rule: listed in rules/README.md" {
   LC_ALL=C grep -qF -- "perspective-casting.md" "${REPO_ROOT}/rules/README.md"
 }
