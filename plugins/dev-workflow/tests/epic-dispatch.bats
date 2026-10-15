@@ -2026,6 +2026,19 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   grep -n "worktree" "$SKILL" | grep -qF 'worktree の片付けを提案も質問もしない'
 }
 
+# spec: dev-workflow-develop（エピックの子の完了報告は、主がこのセッションで次にすることを 1 行目に書く）
+
+@test "skill: an epic child's completion report starts with what the owner does next in this session" {
+  e="$(section 'ループの終わり')"
+  l="$(printf '%s\n' "$e" | grep -F '主がこのセッションで次にすること:')"
+  [ -n "$l" ]
+  printf '%s\n' "$l" | grep -F '`nested`' | grep -qF '1 行目'
+  printf '%s\n' "$l" | grep -qF '`主がこのセッションで次にすること: なし`'
+  printf '%s\n' "$l" | grep -qF 'どの画面で何をするか'
+  printf '%s\n' "$l" | grep -F '`なし` なら `done`' | grep -qF '`waiting`'
+  printf '%s\n' "$l" | grep -qF 'エピックの子でないセッション'
+}
+
 @test "skill: Orca route watches for done marks and reaps marked children" {
   r="$(run_section)"
   printf '%s\n' "$r" | grep -qF -- '--watch-done'
@@ -2087,7 +2100,43 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$r" | grep -F '回答を受けたら' | grep -qF '`mark resumed`'
   printf '%s\n' "$r" | grep -F '引き継ぎを先に投稿' | grep -qF '引き継ぎのコメントの URL'
   printf '%s\n' "$r" | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
-  printf '%s\n' "$r" | grep -qF '#1036'
+}
+
+# spec: dev-workflow-develop（エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く）
+
+@test "skill: an epic child's stop record lists the six items in order" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  [ -n "$r" ]
+  # 6 つの項目名が行頭の `<項目名>:` の形でこの順に出る（雛形の行で確かめる）
+  prev=0
+  for k in '止まった理由:' '前提:' '推奨:' '推奨の根拠:' '受け入れるリスク:' '再開に要る途中経過:'; do
+    n="$(printf '%s\n' "$r" | grep -n "^${k}" | head -1 | cut -d: -f1)"
+    [ -n "$n" ]
+    [ "$n" -gt "$prev" ]
+    prev="$n"
+  done
+  printf '%s\n' "$r" | grep -F '6 つの項目' | grep -qF 'どの項目も省かない'
+  printf '%s\n' "$r" | grep -F '該当が無い項目' | grep -qF '`なし` と書く'
+  printf '%s\n' "$r" | grep -qF '`推奨: なし（<足りない情報>）`'
+  printf '%s\n' "$r" | grep -F '次の項目の行まで' | grep -qF '複数行'
+  printf '%s\n' "$r" | grep -F '`再開に要る途中経過:`' | grep -qF '引き継ぎのコメントの URL'
+}
+
+@test "skill: an epic child's stop record is written for readers who have not read the child's conversation" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  printf '%s\n' "$r" | grep -qF '子の会話を読んでいない'
+  printf '%s\n' "$r" | grep -F '「上記」' | grep -qF '「前回」'
+  printf '%s\n' "$r" | grep -qF 'フル URL'
+  printf '%s\n' "$r" | grep -F '専門用語' | grep -qF '言い換え'
+  printf '%s\n' "$r" | grep -qF 'rules/communication-style.md'
+}
+
+@test "skill: step 8 of the Orca route reads the same item names as the stop record" {
+  p="$(run_section | grep -E '^8\. ')"
+  printf '%s\n' "$p" | grep -F '止まった理由' | grep -qF '推奨'
+  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  printf '%s\n' "$r" | grep -q '^止まった理由:'
+  printf '%s\n' "$r" | grep -q '^推奨:'
 }
 
 @test "skill: Orca route waits with --watch-stopped and reports stopped children without dropping them" {
