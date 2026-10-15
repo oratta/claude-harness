@@ -641,6 +641,7 @@ develop の SKILL.md「エピックの扱い」は次を規定しなければな
 
 #### Scenario: SKILL.md に子エピックの扱いと完了報告が書かれている
 - **WHEN** SKILL.md の「エピックの扱い」を読む
+- **THEN** sub-issue を持つ子を外して `後で別に起動するエピック: #N` とコメントすること、`route` の `nested` を受けたら展開せず親エピックと自分の issue にコメントして止まること、`nested` と同じく `launch` の拒否でも止まり「親ワークツリーで開き直す」と報告しないこと、`timeout` と `closed` の確認でその行がある子を待つ対象から外すこと、完了報告に `後で別に起動するエピック:` の番号を載せることが書かれている
 
 ### Requirement: launch は同じ呼び出し内で渡された重複した子番号も skipped にする
 `plugins/dev-workflow/scripts/epic-dispatch.sh launch` は、引数に渡された子番号を先頭から処理する際、同じ呼び出しの中で既に `launched`・`skipped`・`failed` のいずれかとして処理済みの番号が再び現れたら、`orca worktree create` を呼ばずに `skipped <N>` を出さなければならない（MUST）。これは要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち「一覧に同じ `repoId` で `linkedIssue` が `<N>` の archive されていないワークツリーがある子には create を呼ばず `skipped <N>` を出す」規定（`spec.md:462`）を書き換えず、同じ `skipped <N>` の出力形のまま、判定基準に「同じ呼び出し内で既に処理済みの番号」を追加するものである。
