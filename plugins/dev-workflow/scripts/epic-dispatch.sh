@@ -4,7 +4,8 @@
 #
 #   epic-dispatch.sh route <child>...
 #   epic-dispatch.sh launch [--note <text>] [--base <branch>] <epic> <child>...
-#   epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [<child>...]
+#   epic-dispatch.sh reply [--relaunch] --as <parent|owner> <epic> <child> <text>
+#   epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
 #   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
 #   epic-dispatch.sh reap <child>...
 #
@@ -62,7 +63,23 @@
 #   「止まった子」とする（1 つでも失敗すれば失敗したポーリングに数える）。出力は `closed <N>...`・
 #   `done <N>...`・`stopped <N>...` を該当するものだけこの順に（1〜3 行）出して exit 0。
 #   --watch-done も --watch-stopped（子 1 件以上）も無ければ orca を呼ばず、コメント欄も見ない。
+#   --resolve <epic>（--watch-stopped と位置引数の子が 1 件以上あるときだけ働く）を付けると、止まった子ごとに
+#   判断のコマンド（EPIC_DISPATCH_JUDGE。既定は同じディレクトリの stop-judge.sh）を `<epic> <child>` で 1 回呼ぶ。
+#   `判断: 通す` で返事が空でなければ reply --as parent と同じ処理で送り、sent / relaunched ならエピックに
+#   `親の判断: 子 #<N> 通した — <理由> <記録>` を投稿して出力から外す（投稿に失敗したら `unrecorded` に入れ、
+#   stderr に投稿し直しのコマンド）。`判断: 主に上げる` は子 issue に `親の判断: 主に上げる`、判断の失敗・
+#   形の崩れ・送信の失敗は `親の判断: 判断できなかった` を、2 行目 `停止の記録: <URL か 不明>` 付きで投稿して
+#   `stopped` に残す（投稿に失敗したら stderr に投稿し直しのコマンド）。出力は closed / done / stopped /
+#   unrecorded の順の 1〜4 行。--resolve が無ければ判断を呼ばず、unrecorded も出さない。
+#   --resolve の値が無い・数字でない、または返事の送り方の環境変数が誤っていれば使い方を出して exit 1
 #   orca / jq が無い・`orca worktree current` が失敗したら stdout に何も出さず exit 1
+# reply: 今のワークツリーと同じ repoId・linkedIssue が <child>・archive されていない子のワークツリーが 1 件で、
+#   端末が 1 つ（--relaunch なし）なら、頭（--as parent は `親エピック #<epic> の判断（主の承認ではない）: `、
+#   owner は `主の返事（親エピック #<epic> 経由）: `）を付けた文を送り、ターンの開始まで確かめて `sent <child>`。
+#   端末が 0 か --relaunch なら（--relaunch は先に端末を全部閉じて）launch と同じ起動コマンドで端末を作り、
+#   `/develop #<child> （エピック #<epic> の子。返事を受けて起動し直し） <頭付きの文>` を送って `relaunched <child>`。
+#   端末が 2 つ以上・ワークツリーが 0 件か 2 件以上・送信 / 作成 / 閉じるの失敗は `failed <child> <段>` で exit 1
+#   （送り直しか作り直しのコマンドを stderr に出す）。引数の誤りは orca を呼ばずに使い方を出して exit 1
 # mark: 今のワークスペースの linkedIssue が <issue> のときだけ `orca worktree set --worktree current
 #   --workspace-status <completed|in-review>`（done / waiting）。stdout は `marked <issue> <kind>`（exit 0）
 #   / `failed <issue>`（exit 1）/ `skipped <issue> not-linked` / `skipped <issue> no-workspace`
@@ -88,7 +105,9 @@
 # LLM なしで行う」「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」
 # 「エピックの子への注意書きと子であることを、起動し直したセッションにも引き継ぐ」
 # 「端末を作れなかった子と指示が届かなかった子の案内は、二重起動を避ける確認を先に出す」
-# 「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」が正本。
+# 「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」
+# 「epic-dispatch.sh の wait は止まった子を判断し、通すものには返事を送って待ちを続ける」
+# 「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」が正本。
 set -uo pipefail
 
 usage() {
@@ -96,7 +115,8 @@ usage() {
 usage:
   epic-dispatch.sh route <child>...
   epic-dispatch.sh launch [--note <text>] [--base <branch>] <epic> <child>...
-  epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [<child>...]
+  epic-dispatch.sh reply [--relaunch] --as <parent|owner> <epic> <child> <text>
+  epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
   epic-dispatch.sh reap <child>...
 EOF
@@ -457,10 +477,64 @@ cmd_mark() {
   exit 1
 }
 
+# 投稿に失敗したコメントの、投稿し直しのコマンドを stderr に出す（<issue> <本文>）
+repost_hint() {
+  echo "comment not posted to #$1. post it again: gh issue comment $1 --body $(shq "$2")" >&2
+}
+
+# wait --resolve: 止まった子 1 件を判断のコマンドに渡し、結果どおりに送るか子 issue に残す
+# （<epic> <child> <repoId>）。agent_setup を済ませてから呼ぶ。
+# 戻り値 0 = 通して返事を送り、エピックに 1 行残した（出力から外す）/ 2 = 通して送ったが
+# エピックに残せなかった（unrecorded）/ 1 = 主に上げる・判断できなかった（stopped に残す）
+resolve_stopped() {
+  local epic="$1" n="$2" repo="$3"
+  local judge="${EPIC_DISPATCH_JUDGE:-$(dirname "$0")/stop-judge.sh}"
+  local out rc l1 l2 l3 l4 reason="" reply="" url="" why="" res line body
+  out="$("$judge" "$epic" "$n")"; rc=$?
+  l1="$(printf '%s\n' "$out" | sed -n 1p)"
+  l2="$(printf '%s\n' "$out" | sed -n 2p)"
+  l3="$(printf '%s\n' "$out" | sed -n 3p)"
+  l4="$(printf '%s\n' "$out" | sed -n 4p)"
+  # 停止の記録の URL は、判断の出力から読めたときだけ使う
+  case "$l4" in "記録: "?*) url="${l4#記録: }" ;; esac
+  case "$l2" in "理由: "*) reason="${l2#理由: }" ;; *) l2="" ;; esac
+  case "$l3" in "返事: "*) reply="${l3#返事: }" ;; "返事:") ;; *) l3="" ;; esac
+  if [ "$rc" -ne 0 ]; then
+    why="判断のコマンドが exit $rc で終わった"
+  elif [ -z "$l2" ] || [ -z "$l3" ] || [ -z "$url" ]; then
+    why="判断の出力を 4 行の形で読めなかった"
+  elif [ "$l1" = "判断: 主に上げる" ]; then
+    body="$(printf '親の判断: 主に上げる\n停止の記録: %s\n%s' "$url" "$reason")"
+    gh issue comment "$n" --body "$body" >&2 || repost_hint "$n" "$body"
+    return 1
+  elif [ "$l1" != "判断: 通す" ]; then
+    why="判断の出力の 1 行目が「判断: 通す」でも「判断: 主に上げる」でもない"
+  elif [ -z "$reply" ]; then
+    why="判断は通すだが、返事の行が空"
+  else
+    res="$(deliver_reply 0 parent "$epic" "$n" "$reply" "$repo")"
+    case "$res" in
+      "sent $n"|"relaunched $n")
+        # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに通していない判断が残る）
+        line="親の判断: 子 #$n 通した — $reason $url"
+        if gh issue comment "$epic" --body "$line" >&2; then
+          return 0
+        fi
+        repost_hint "$epic" "$line"
+        return 2 ;;
+    esac
+    why="$(printf '返事を送れなかった: %s\n送るはずだった返事: %s' "$res" "$reply")"
+  fi
+  [ -n "$out" ] && why="$(printf '%s\n判断の出力:\n%s' "$why" "$out")"
+  body="$(printf '親の判断: 判断できなかった\n停止の記録: %s\n%s' "${url:-不明}" "$why")"
+  gh issue comment "$n" --body "$body" >&2 || repost_hint "$n" "$body"
+  return 1
+}
+
 cmd_wait() {
   local interval="${EPIC_DISPATCH_INTERVAL:-300}" timeout="${EPIC_DISPATCH_TIMEOUT:-21600}"
   # --watch-done の子（空白区切り。bash 3.2 の set -u で空の配列を展開できないので文字列で持つ）
-  local watch="" watchstop=0
+  local watch="" watchstop=0 resolve=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --interval) [ "$#" -ge 2 ] || usage; interval="$2"; shift 2 ;;
@@ -471,6 +545,10 @@ cmd_wait() {
         case " $watch " in *" $2 "*) ;; *) watch="$watch $2" ;; esac
         shift 2 ;;
       --watch-stopped) watchstop=1; shift ;;
+      --resolve)
+        [ "$#" -ge 2 ] || usage
+        is_num "$2" || { echo "--resolve needs an epic issue number: $2" >&2; usage; }
+        resolve="$2"; shift 2 ;;
       --*) usage ;;
       *) break ;;
     esac
@@ -481,6 +559,9 @@ cmd_wait() {
   check_children "$@"
   # --watch-stopped は位置引数の子だけを見る（子が 0 件なら何も見ない）
   [ "$#" -ge 1 ] || watchstop=0
+  # --resolve は --watch-stopped（子 1 件以上）のときだけ働く。返事の送り方の設定は待つ前に確かめる
+  [ "$watchstop" -eq 1 ] || resolve=""
+  if [ -n "$resolve" ]; then agent_setup "$resolve" || usage; fi
 
   local repo="" current list
   if [ -n "$watch" ] || [ "$watchstop" -eq 1 ]; then
@@ -491,11 +572,11 @@ cmd_wait() {
     [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
   fi
 
-  local fails=0 n state closed failed marked stopped wsfail paths p ok
+  local fails=0 n state closed failed marked stopped wsfail paths p ok unrecorded still
   local errf; errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
   SECONDS=0
   while :; do
-    closed=""; failed=""; marked=""; stopped=""; wsfail=0; : > "$errf"
+    closed=""; failed=""; marked=""; stopped=""; unrecorded=""; wsfail=0; : > "$errf"
     for n in "$@"; do
       if state="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state 2>>"$errf")"; then
         case "$state" in
@@ -544,10 +625,24 @@ EOF_PATHS
         wsfail=1
       fi
     fi
-    if [ -n "$closed" ] || [ -n "$marked" ] || [ -n "$stopped" ]; then
+    # --resolve: 止まった子ごとに判断し、通して記録できた子は出力から外す
+    if [ -n "$resolve" ] && [ -n "$stopped" ]; then
+      still=""
+      for n in $stopped; do
+        resolve_stopped "$resolve" "$n" "$repo"
+        case $? in
+          0) ;;
+          2) unrecorded="$unrecorded $n" ;;
+          *) still="$still $n" ;;
+        esac
+      done
+      stopped="$still"
+    fi
+    if [ -n "$closed" ] || [ -n "$marked" ] || [ -n "$stopped" ] || [ -n "$unrecorded" ]; then
       [ -n "$closed" ] && echo "closed${closed}"
       [ -n "$marked" ] && echo "done${marked}"
       [ -n "$stopped" ] && echo "stopped${stopped}"
+      [ -n "$unrecorded" ] && echo "unrecorded${unrecorded}"
       exit 0
     fi
     if [ -n "$failed" ] || [ "$wsfail" -eq 1 ]; then
