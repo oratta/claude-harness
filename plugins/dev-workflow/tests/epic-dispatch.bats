@@ -1026,8 +1026,93 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   run dispatch mark done 11 12
   [ "$status" -eq 1 ]
   [ -z "$output" ]
+  run dispatch mark stop 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  run dispatch mark resumed
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  run dispatch mark stopped 11 12
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
   [ "$(calls '^orca')" -eq 0 ]
   grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+}
+
+# spec: dev-workflow-develop（epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す）
+
+@test "mark: stopped on the linked workspace sets the comment, not the board column" {
+  make_stub orca
+  set_current 460
+  run dispatch mark stopped 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked 460 stopped" ]
+  [ "$(calls '^orca worktree set --worktree current --comment epic-stopped$')" -eq 1 ]
+  [ "$(calls 'workspace-status')" -eq 0 ]
+}
+
+@test "mark: stopped on another issue's workspace is not marked" {
+  make_stub orca
+  set_current 461
+  run dispatch mark stopped 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 460 not-linked" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "mark: resumed rewrites only a stopped or seen comment" {
+  make_stub orca
+  set_current 460 epic-stopped
+  run dispatch mark resumed 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked 460 resumed" ]
+  [ "$(calls '^orca worktree set --worktree current --comment epic-resumed$')" -eq 1 ]
+  : > "$STUB_LOG"
+  set_current 460 epic-stopped-seen
+  run dispatch mark resumed 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked 460 resumed" ]
+  [ "$(calls '^orca worktree set --worktree current --comment epic-resumed$')" -eq 1 ]
+  : > "$STUB_LOG"
+  set_current 460 メモ
+  run dispatch mark resumed 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 460 not-stopped" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(calls '^orca worktree current --json$')" -eq 1 ]
+}
+
+@test "mark: resumed on another issue's workspace is not marked" {
+  make_stub orca
+  set_current 461 epic-stopped
+  run dispatch mark resumed 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 460 not-linked" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "mark: a failing stopped or resumed set ends with failed" {
+  make_stub orca
+  set_current 460 epic-stopped
+  echo 1 > "$STUB_CFG/set_exit"
+  run dispatch mark stopped 460
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 460" ]
+  run dispatch mark resumed 460
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 460" ]
+}
+
+@test "mark: stopped and resumed outside Orca do nothing" {
+  make_stub orca
+  echo 1 > "$STUB_CFG/current_exit"
+  run dispatch mark stopped 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 460 no-workspace" ]
+  run dispatch mark resumed 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 460 no-workspace" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
 }
 
 # --- wait ---
@@ -1265,6 +1350,147 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   run dispatch wait --interval 0 --timeout 0 --watch-done
   [ "$status" -eq 1 ]
   [ -z "$output" ]
+  [ "$(calls '^orca')" -eq 0 ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+# --- wait --watch-stopped ---
+# spec: dev-workflow-develop（epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す）
+
+@test "wait: --watch-stopped rewrites a stopped child to seen and ends with stopped" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 open
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(calls "^orca worktree set --worktree path:$BATS_TEST_TMPDIR/work/issue-11 --comment epic-stopped-seen\$")" -eq 1 ]
+  [ "$(calls '^orca worktree set')" -eq 1 ]
+  [ "$(calls 'workspace-status')" -eq 0 ]
+  [ "${#lines[@]}" -eq 1 ]
+}
+
+@test "wait: --watch-stopped does not wake on seen or resumed comments" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 open
+  gh_seq 12 open
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped-seen)" \
+    "$(wt_entry 12 in-review repo-a::/work/parent repo-a false epic-resumed)"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11 12
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11 12" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "wait: closed, done and stopped in the same poll print three lines in that order" {
+  make_stub orca
+  set_current 400
+  gh_seq 12 closed
+  gh_seq 13 open
+  set_list list_json "$(wt_entry 11 completed)" \
+    "$(wt_entry 13 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11 --watch-stopped 12 13
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "${#lines[@]}" -eq 3 ]
+  [ "${lines[0]}" = "closed 12" ]
+  [ "${lines[1]}" = "done 11" ]
+  [ "${lines[2]}" = "stopped 13" ]
+  [ "$(calls '^orca worktree list --json$')" -eq 1 ]
+  [ "$(calls '^gh ')" -eq 2 ]
+}
+
+@test "wait: a closed child is not counted as stopped" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 closed
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "wait: stopped comments on another repo or on archived worktrees do not count" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 open
+  set_list list_json "$(wt_entry 11 in-review repo-b::/x repo-b false epic-stopped)" \
+    "$(wt_entry 11 in-review repo-a::/work/parent repo-a true epic-stopped)"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "wait: three polls failing to rewrite to seen end with error workspaces" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 open
+  echo 1 > "$STUB_CFG/set_comment_exit"
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 1 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "error workspaces" ]
+  [ "$(calls '^orca worktree set')" -eq 3 ]
+  [ "$(calls '^orca worktree list --json$')" -eq 3 ]
+}
+
+@test "wait: without --watch-stopped the comment is never read" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 open
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 0 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ "$(calls '^orca')" -eq 0 ]
+  run dispatch wait --interval 0 --timeout 0 --watch-done 12 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "wait: --watch-stopped with --watch-done and no positional child looks at no comment" {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11 --watch-stopped
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "wait: a seen stop does not wake the parent again, a stop marked again does" {
+  make_stub orca
+  printf '{"result":{"worktree":{"id":"repo-a::%s","repoId":"repo-a","path":"%s","linkedIssue":11,"comment":""}}}\n' \
+    "$BATS_TEST_TMPDIR/work/issue-11" "$BATS_TEST_TMPDIR/work/issue-11" > "$STUB_CFG/current_json"
+  gh_seq 11 open
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "1st: status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(calls '^orca worktree set')" -eq 1 ]
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ] || { echo "2nd: status=$status output=$output"; cat "$STUB_CFG/list_json"; false; }
+  [ "$output" = "timeout 11" ]
+  [ "$(calls '^orca worktree set')" -eq 1 ]
+  run dispatch mark stopped 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked 11 stopped" ]
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "3rd: status=$status output=$output"; cat "$STUB_CFG/list_json"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(calls '^orca worktree set')" -eq 3 ]
+}
+
+@test "wait: --watch-stopped alone without children prints usage and calls nothing" {
+  make_stub orca
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
   [ "$(calls '^orca')" -eq 0 ]
   [ "$(calls '^gh ')" -eq 0 ]
 }
