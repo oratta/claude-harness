@@ -1549,9 +1549,9 @@ executor ごとの起こし方は次のとおりとしなければならない�
    1. `gh pr list --head <ブランチ> --state merged --json headRefOid --jq '.[].headRefOid'` が非 0 なら `kept <N> pr-lookup-failed`。出力のどれかの行が HEAD と一致すれば 7 を通る
    2. 1 で一致する行が無い（出力が空、または一致しない）ときに限り、ブランチ名を問わずに探す。`gh pr list --state merged --search <HEAD> --json headRefOid --jq '.[].headRefOid'` が非 0 なら `kept <N> pr-lookup-failed`、出力のどれかの行が HEAD と一致すれば 7 を通る（squash マージでは子の HEAD が main の祖先にならず、子のブランチと別名のブランチの PR で入ることがあるため）。一致する行が無ければ、1 と 2 の出力がどちらも空なら `kept <N> no-merged-pr`、どちらかに出力があったなら `kept <N> head-mismatch`
 
-1〜7 をすべて通った子に限り、`orca terminal close --worktree path:<子のパス> --all`、`orca worktree rm --worktree path:<子のパス>` をこの順に 1 回ずつ呼ばなければならない（MUST）。`orca worktree rm` に `--force` を付けてはならない（MUST NOT）。close が非 0 なら rm を呼ばずに `kept <N> close-failed`、rm が非 0 なら `kept <N> rm-failed` を出す（MUST）。ただし rm が非 0 で、その stderr に `terminal sweep failed` を含むとき（Orca が端末の片付けを確かめられずに削除を止めたとき）は、理由を `rm-failed-terminal-sweep` にして `kept <N> rm-failed-terminal-sweep` を出す（MUST）。どちらの rm の失敗でも `--force` を付けた再試行をしてはならず、rm は子ごとに 1 回しか呼ばない（MUST NOT。`--force` は端末の片付けの確認だけでなく git の未コミット変更の保護も外すため。Orca を再起動してから `reap` をやり直せば通る見込みで、やり直しは親の判断に残す）。rm の stderr は従来どおり親の stderr にも流す（SHALL）。rm が exit 0 のあと、`git rev-parse --verify --quiet refs/heads/<ブランチ>` が exit 0 で、その出力が 7 で一致した HEAD と同じときだけ `git branch -D <ブランチ>` を呼ぶ（MUST）。ブランチが無いか、`git branch -D` が exit 0 なら `reaped <N>`、先端が違うか `git branch -D` が非 0 なら `reaped <N> branch-kept` を出す（MUST）。1〜7 のどれかで外れた子、close か rm が失敗した子について、`git branch -D` を呼んではならない（MUST NOT）。stdout には子ごとに 1 行だけを出し、`orca`・`git`・`gh` 自身の出力は stderr に流す（SHALL）。子ごとの行を出し終えたら、`kept` があっても exit 0 で終わる（MUST）。
+1〜7 をすべて通った子に限り、`orca terminal close --worktree path:<子のパス> --all`、`orca worktree rm --worktree path:<子のパス>` をこの順に 1 回ずつ呼ばなければならない（MUST）。`orca worktree rm` に `--force` を付けてはならない（MUST NOT）。close が非 0 なら rm を呼ばずに `kept <N> close-failed`、rm が非 0 なら `kept <N> rm-failed` を出す（MUST）。ただし rm が非 0 で、その stderr に `terminal sweep failed` を含むとき（Orca が端末の片付けを確かめられずに削除を止めたとき）は、理由を `rm-failed-terminal-sweep` にして `kept <N> rm-failed-terminal-sweep` を出す（MUST）。どちらの rm の失敗でも `--force` を付けた再試行をしてはならず、rm は子ごとに 1 回しか呼ばない（MUST NOT。`--force` は端末の片付けの確認だけでなく git の未コミット変更の保護も外すため。Orca を再起動してから `reap` をやり直せば通る見込みで、やり直しは親の判断に残す）。rm の stderr は従来どおり親の stderr にも流す（SHALL）。rm が exit 0 のあと、`git rev-parse --verify --quiet refs/heads/<ブランチ>` が exit 0 で、その出力が 7 で一致した HEAD と同じときだけ、`git worktree list --porcelain` にその子のパスが無くなるまで待ち（`EPIC_DISPATCH_REAP_DETACH_TIMEOUT` 秒を上限、既定 30。確認の回数（上限秒数 ÷ 間隔 + 1 回）か経過秒数のどちらか早い方で止める。`EPIC_DISPATCH_REAP_DETACH_INTERVAL` 秒間隔、既定 1。`git worktree list` が非 0 のときは残っているものとして待つ）、無くなったら、ブランチの先端を読み直して HEAD と同じときだけ `git branch -D <ブランチ>` を呼ぶ（MUST。違えば呼ばずに `reaped <N> branch-kept`）。上限を超えても残っているときは `git branch -D` を呼ばずに `reaped <N> branch-kept` を出す（MUST）。ブランチが無いか、`git branch -D` が exit 0 なら `reaped <N>`、先端が違うか `git branch -D` が非 0 なら `reaped <N> branch-kept` を出す（MUST）。1〜7 のどれかで外れた子、close か rm が失敗した子について、`git branch -D` を呼んではならない（MUST NOT）。stdout には子ごとに 1 行だけを出し、`orca`・`git`・`gh` 自身の出力は stderr に流す（SHALL）。子ごとの行を出し終えたら、`kept` があっても exit 0 で終わる（MUST）。
 
-この要件の守備範囲で入力として扱うのは、develop の本体が SKILL.md の手順どおりに渡す番号と、`orca worktree current --json`・`orca worktree list --json` の出力（2026-10-08、Orca 1.4.222 で確かめた `id`・`repoId`・`path`・`branch`・`linkedIssue`・`isArchived`・`isMainWorktree`・`workspaceStatus`・`parentWorktreeId`）に加え、7 の 2 段目で判定する `gh pr list --state merged --search <HEAD>` の出力（`headRefOid` の行。検索が返す PR の絞り込みは信用せず、完全一致だけで判定する）と、`orca worktree rm` の stderr（`terminal sweep failed` を含むかだけを見る。文言が変わると `rm-failed` に戻り、消す側には倒れない）である。拾いたい誤りは、印が付いていない子・親の `launch` が作っていないワークツリー・push していないコミットや未コミットの変更や `LLM/` を持つワークツリーを消すことである。次は通してよく、この要件では止めない: Orca の出力の形が変わったときの検知（読めなければ `gone` か `kept` になり、消す側には倒れない）／フォークの同名ブランチのマージ済み PR（HEAD の一致で落ちる）／オーナーがボードで手で `completed` に動かした子（子が付けた印と同じに扱う）／確認から削除までの間に子が積んだコミット（`--force` を付けない rm と、ブランチの先端の比較で残る）。`mark` は `<issue>` の PR がマージ済みかを検査しない（手順書の条件に頼る。誤って付いた印は `reap` の `no-merged-pr`・`head-mismatch` で止まる）。`.gitignore` の対象のうち `LLM/` 以外は守らない（`git status --porcelain` に出ないので、ワークツリーと一緒に消える）。すり抜ける入力が見つかるたびに確認を足すことは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、develop の本体が SKILL.md の手順どおりに渡す番号と、`orca worktree current --json`・`orca worktree list --json` の出力（2026-10-08、Orca 1.4.222 で確かめた `id`・`repoId`・`path`・`branch`・`linkedIssue`・`isArchived`・`isMainWorktree`・`workspaceStatus`・`parentWorktreeId`）に加え、7 の 2 段目で判定する `gh pr list --state merged --search <HEAD>` の出力（`headRefOid` の行。検索が返す PR の絞り込みは信用せず、完全一致だけで判定する）と、`orca worktree rm` の stderr（`terminal sweep failed` を含むかだけを見る。文言が変わると `rm-failed` に戻り、消す側には倒れない）と、`orca worktree rm` が exit 0 のあとに `git worktree list --porcelain` が返す出力と終了コード（`worktree <パス>` の行だけを見て、対象の子のパスと完全一致する行があるかだけで判定する。非 0 のときは残っているものとして扱う）である。拾いたい誤りは、対象のワークツリーが git に残っている間にそのブランチを消そうとして失敗すること（残っている間は消さずに待つ。上限を超えたら消さずに `branch-kept`）、印が付いていない子・親の `launch` が作っていないワークツリー・push していないコミットや未コミットの変更や `LLM/` を持つワークツリーを消すことである。次は通してよく、この要件では止めない: 一覧に対象以外のパスだけがある（対象のパスは無い。パスの前方一致・部分一致は残っている扱いにしない）ときは待たずにブランチ削除へ進む／Orca の出力の形が変わったときの検知（読めなければ `gone` か `kept` になり、消す側には倒れない）／フォークの同名ブランチのマージ済み PR（HEAD の一致で落ちる）／オーナーがボードで手で `completed` に動かした子（子が付けた印と同じに扱う）／確認から削除までの間に子が積んだコミット（`--force` を付けない rm と、ブランチの先端の比較で残る）。`mark` は `<issue>` の PR がマージ済みかを検査しない（手順書の条件に頼る。誤って付いた印は `reap` の `no-merged-pr`・`head-mismatch` で止まる）。`.gitignore` の対象のうち `LLM/` 以外は守らない（`git status --porcelain` に出ないので、ワークツリーと一緒に消える）。すり抜ける入力が見つかるたびに確認を足すことは、この要件の完了条件としない。
 
 `plugins/dev-workflow/tests/epic-dispatch.bats` は、`orca`・`gh`・`git`・`sleep` を PATH 上のスタブにして、下の Scenario を確かめなければならない（MUST）。
 
@@ -1654,6 +1654,22 @@ executor ごとの起こし方は次のとおりとしなければならない�
 #### Scenario: 一覧を取れなければ何も消さない
 - **WHEN** `orca worktree list` が非 0 で終わるスタブ環境で `epic-dispatch.sh reap 11` を実行する
 - **THEN** `orca terminal close` も `orca worktree rm` も呼ばれず、stdout は空で exit 1
+
+#### Scenario: rm のあとしばらくワークツリーが git に残っても、外れたらブランチを消す
+- **WHEN** `orca worktree rm` が exit 0 で、その後 `git worktree list --porcelain` に子のパスが 2 回目の確認まで残り、先端が HEAD と同じブランチが残るスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `git branch -D oratta/issue-11` が 1 回呼ばれ、stdout は `reaped 11` で exit 0
+
+#### Scenario: 上限を超えても残るなら branch-kept
+- **WHEN** `git worktree list --porcelain` が常に子のパスを返し、上限を短くしたスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `git branch -D` は呼ばれず、stdout は `reaped 11 branch-kept` で exit 0
+
+#### Scenario: 先端が HEAD と違うブランチは待たずに消さない
+- **WHEN** ブランチの先端が HEAD と違い、`git worktree list --porcelain` に子のパスが残るスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `git worktree list` を繰り返し呼んで待つことはなく、`git branch -D` は呼ばれず、stdout は `reaped 11 branch-kept` で exit 0
+
+#### Scenario: 一覧に対象以外のパスだけがあるときは待たずにブランチを消す
+- **WHEN** `git worktree list --porcelain` が `/work/issue-110`（子 11 のパスの前方一致）と別のワークツリーのパスだけを返し、先端が HEAD と同じブランチが残るスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `git branch -D oratta/issue-11` が 1 回呼ばれ、stdout は `reaped 11` で exit 0
 
 ### Requirement: wait のテストはポーリングごとの stderr の空化を固定する
 `plugins/dev-workflow/tests/epic-dispatch.bats` の「`gh` の stderr はエラー行の直前に出る」テストは、`error` で終わったときに本体の stderr に出るのが最後（3 回目）のポーリングの `gh` の stderr だけであることを確かめなければならない（MUST）。`gh` のスタブは失敗のたびに `gh: mock failure for issue <N> (poll <回数>)` を stderr に出すので、stderr に `(poll 3)` が含まれることと、`mock failure` を含む行がちょうど 1 行であることを確かめる（MUST）。
@@ -1970,6 +1986,119 @@ develop の SKILL.md「エピックの扱い」は、端末を作れなかった
 #### Scenario: エピックの注意書きが段 C より優先される
 - **WHEN** エピックの子の記録先に、親から「新しい問題は新しい子 issue として切る」の注意書きがあり、範囲外の問題が同じエピックの既存の子 issue と同じ場所を指す
 - **THEN** 本体は既存の子 issue の受け入れ条件に足さず、エピックに新しい子 issue を作る
+
+### Requirement: epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す
+`plugins/dev-workflow/scripts/epic-dispatch.sh` の `mark` は、種別 `done`・`waiting` に加えて `stopped` と `resumed` を受け付けなければならない（MUST）。`wait` はフラグ `--watch-stopped`（値なし）を受け付けなければならない（MUST）。どちらも LLM を呼んではならない（MUST NOT）。この要件は、要件「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」のうち、次の 4 点に優先する。`mark` の種別を `done|waiting` とする規定と、それ以外の種別を引数の誤りとする規定／`wait` が `--watch-done` が 1 つも無いときは `orca` を呼ばないとする規定（`--watch-done` も `--watch-stopped` も無いときに読み替える）／`wait` が `closed` と `done` を 1 行か 2 行で出す規定（`stopped` を加えて 1〜3 行）／一覧の取得の失敗だけを「失敗したポーリング」に数える規定（止まった印の書き換えの失敗を加える）。
+
+止まった印は Orca のワークツリーのコメント欄（`orca worktree set --comment`、`orca worktree list --json` の `comment`）に置き、ボードの列（`workspaceStatus`）には触れてはならない（MUST NOT。`mark waiting` の `in-review` と取り違えないため）。コメント欄の値は次の 3 つに固定し、完全一致で比べる（MUST）: `epic-stopped`（止まった。親はまだ受けていない）／`epic-stopped-seen`（親の `wait` が一度受けた）／`epic-resumed`（返事を受けて動いている）。
+
+**`mark stopped <issue>`** は、今のワークスペースの linkedIssue が `<issue>` のときだけ、`orca worktree set --worktree current --comment epic-stopped` を 1 回呼ぶ（MUST）。exit 0 なら `marked <issue> stopped`、非 0 なら `failed <issue>`（exit 1）を出す。`orca` が無い・Orca 管理外・linkedIssue が違うときの出力と、`EPIC_DISPATCH_PARENT_EPIC` を見ないことは、`done` / `waiting` と同じとする（MUST）。
+
+**`mark resumed <issue>`** は、linkedIssue が `<issue>` で、今のワークスペースの `comment` が `epic-stopped` か `epic-stopped-seen` のときだけ、`orca worktree set --worktree current --comment epic-resumed` を 1 回呼び、`marked <issue> resumed`（失敗なら `failed <issue>`、exit 1）を出す（MUST）。`comment` がそれ以外のときは `orca worktree set` を呼ばず、stdout に `skipped <issue> not-stopped` を出して exit 0 で終わる（MUST）。
+
+**`wait --watch-stopped`** は次のとおり動かなければならない（MUST）。
+
+- `--watch-stopped` は位置引数の子を対象にする。位置引数の子が 0 件なら、`--watch-done` があってもなくても `--watch-stopped` は何も見ない。`--watch-done` も位置引数の子も無ければ、`--watch-stopped` があっても stderr に使い方を出して exit 1 で終わる
+- ポーリングを始める前の `orca worktree current --json` による `repoId` の取得と、取れないときの終わり方（stdout に何も出さず exit 1）は `--watch-done` と同じとする
+- ポーリングごとの `orca worktree list --json` は、`--watch-done` と `--watch-stopped` の両方があっても 1 回だけ呼ぶ。ポーリング 1 回あたりの `gh` の呼び出しは位置引数の子の数と同じのままとする
+- 位置引数の子 `<N>` のうち、そのポーリングで閉じていなかった子について、一覧に `repoId` が同じ・`linkedIssue` が `<N>`・`isArchived` が true でない・`comment` が `epic-stopped` のワークツリーがあれば、その全部に `orca worktree set --worktree path:<そのパス> --comment epic-stopped-seen` を呼ぶ。全部が exit 0 ならその子を「止まった子」とする。1 つでも非 0 ならその子を止まった子にせず、そのポーリングを「失敗したポーリング」に数える。`orca` 自身の出力は stderr に流す
+- 閉じた子・印が付いた子・止まった子が 1 件以上あれば、`closed <N>...`・`done <N>...`・`stopped <N>...` を、該当するものだけこの順で 1 行ずつ出して exit 0 で終わる
+- `comment` が `epic-stopped-seen`・`epic-resumed`・それ以外の値のワークツリーは止まった子に数えない
+- `--watch-stopped` が無ければ、コメント欄を見てはならず、`orca worktree set` を呼んではならない（MUST NOT）
+
+この要件の守備範囲で入力として扱うのは、`orca worktree current --json` と `orca worktree list --json` が返す Orca のメタデータ（`repoId`・`linkedIssue`・`isArchived`・`comment`・`path`）、`orca worktree set` の終了コード、`gh` が返す子 issue の state、`mark` と `wait` の引数である。拾いたい誤りは、止まった子を親が受けずに待ち続けること、一度受けた止まりで親の `wait` が起き続けること、再開して再び止まった子を取りこぼすこと、完了の印（ボードの列 `completed` / `in-review`）と止まった印を取り違えること、別の repo や archive されたワークツリーの印を数えること、受けた印に書き換えられていない止まりを報告することの 6 つである。次は通ってよく、この要件では止めない: 主がコメント欄に書いたメモ（`epic-stopped` の 3 つの値以外は無視するだけで、`mark stopped` が上書きする）／一覧を読んでから受けた印に書き換えるまでの間に子が `mark resumed` を呼び、再開した子の `stopped` を親が受けること（間はミリ秒単位で、親は記録を読んで報告するだけ）／子が `mark resumed` を付け忘れ、`epic-stopped-seen` が残ったまま動いていること（次の `mark stopped` で上書きされる）／同じ linkedIssue のワークツリーが 2 つ以上あること（全部を書き換える）。Orca がコメント欄を別の値に書き換えるなど、ここに挙げていない入力の組み合わせを見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。この要件は要件「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」の `reap` の守備範囲に頼らない。
+
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、`orca`・`gh`・`sleep` を PATH 上のスタブにして、下の Scenario を確かめなければならない（MUST）。
+
+#### Scenario: 自分の issue のワークスペースに止まった印を付ける
+- **WHEN** linkedIssue が 460 のワークスペースで `epic-dispatch.sh mark stopped 460` を実行する
+- **THEN** `orca worktree set --worktree current --comment epic-stopped` が 1 回呼ばれ、`--workspace-status` を含む呼び出しは無く、stdout は `marked 460 stopped`、exit 0 である
+
+#### Scenario: 別の issue のワークスペースには止まった印を付けない
+- **WHEN** linkedIssue が 461 のワークスペースで `epic-dispatch.sh mark stopped 460` を実行する
+- **THEN** `orca worktree set` は呼ばれず、stdout は `skipped 460 not-linked`、exit 0 である
+
+#### Scenario: 止まった印があるときだけ再開の印に書き換える
+- **WHEN** `comment` が `epic-stopped`、`epic-stopped-seen`、`メモ` のワークスペースで、それぞれ `epic-dispatch.sh mark resumed 460` を実行する
+- **THEN** 前の 2 つでは `orca worktree set --worktree current --comment epic-resumed` が 1 回呼ばれて stdout は `marked 460 resumed`、`メモ` では `orca worktree set` が呼ばれず stdout は `skipped 460 not-stopped` で、どれも exit 0 である
+
+#### Scenario: 止まった印を付けられなければ failed
+- **WHEN** `orca worktree set` が非 0 で終わる環境で `epic-dispatch.sh mark stopped 460` を実行する
+- **THEN** stdout は `failed 460`、exit 1 である
+
+#### Scenario: 止まった子を受けた印に書き換えて stopped で終わる
+- **WHEN** 子 11 が open のまま、一覧で 11 の `comment` が `epic-stopped` の環境で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-stopped 11` を実行する
+- **THEN** `orca worktree set --worktree path:<11 のパス> --comment epic-stopped-seen` が 1 回呼ばれ、stdout は `stopped 11`、exit 0 である
+
+#### Scenario: 受けた印と再開の印では起きない
+- **WHEN** 一覧で 11 の `comment` が `epic-stopped-seen`、12 の `comment` が `epic-resumed` で、どちらも open の環境で `epic-dispatch.sh wait --interval 0 --timeout 0 --watch-stopped 11 12` を実行する
+- **THEN** `orca worktree set` は呼ばれず、stdout は `timeout 11 12`、exit 2 である
+
+#### Scenario: 閉じた子・印が付いた子・止まった子は 3 行で出す
+- **WHEN** 子 12 が closed、`--watch-done` の子 11 が `completed`、子 13 が open で `comment` が `epic-stopped` の環境で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-done 11 --watch-stopped 12 13` を実行する
+- **THEN** stdout は `closed 12`・`done 11`・`stopped 13` の 3 行がこの順で、exit 0、`orca worktree list --json` の呼び出しは 1 回である
+
+#### Scenario: 閉じた子は止まった子に数えない
+- **WHEN** 子 11 が closed で、一覧の 11 の `comment` が `epic-stopped` の環境で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-stopped 11` を実行する
+- **THEN** stdout は `closed 11` の 1 行だけで、`orca worktree set` は呼ばれない
+
+#### Scenario: 別の repo や archive されたワークツリーの止まった印は数えない
+- **WHEN** 一覧で 11 の `comment` が `epic-stopped` のワークツリーが、`repoId` の違うものと `isArchived` が true のものだけの環境で `--watch-stopped 11` の `wait` を `--timeout 0` で実行する
+- **THEN** `orca worktree set` は呼ばれず、stdout は `timeout 11`、exit 2 である
+
+#### Scenario: 受けた印に書き換えられないポーリングが 3 回続いたら error で終わる
+- **WHEN** 一覧で 11 の `comment` が `epic-stopped` のまま、`orca worktree set` が常に非 0 で終わる環境で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-stopped 11` を実行する
+- **THEN** stdout は `error workspaces` の 1 行、exit 1 で、`stopped` の行は出ない
+
+#### Scenario: --watch-stopped が無ければコメント欄を見ない
+- **WHEN** 一覧で 11 の `comment` が `epic-stopped` の環境で `epic-dispatch.sh wait --interval 0 --timeout 0 11` を実行する
+- **THEN** `orca` は呼ばれず、stdout は `timeout 11`、exit 2 である
+
+#### Scenario: 受けた止まりでは起き直さず、付け直した止まりではまた起きる
+- **WHEN** 子 11 が open のまま、一覧で 11 の `comment` が `epic-stopped` の環境で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-stopped 11` を実行し、続けて同じスタブの状態（コメント欄はスタブの `orca worktree set` が書き換えた値を一覧に返す）で `--timeout 0` の `wait` を実行し、さらに linkedIssue が 11 のワークスペースとして `epic-dispatch.sh mark stopped 11` を実行してから 3 回目の `--timeout 60` の `wait` を実行する
+- **THEN** 1 回目は stdout `stopped 11`・exit 0、2 回目は stdout `timeout 11`・exit 2 で `orca worktree set` を呼ばず、3 回目は stdout `stopped 11`・exit 0 である
+
+#### Scenario: --watch-stopped だけで子が無ければ使い方を出す
+- **WHEN** `epic-dispatch.sh wait --watch-stopped` を子なしで実行する
+- **THEN** stderr に使い方が出て exit 1 で、`orca` も `gh` も呼ばれない
+
+### Requirement: エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する
+develop の SKILL.md は、エピックの子のセッションが主の返事を待って止まるときの手順と、Orca 経路の親が `stopped` を受けたときの手順を規定しなければならない（MUST）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」のうち、子が自分のタブでユーザーに質問して止まっている場合は `timeout` の確認では気づけないと書く規定に優先する（記録を残さずに止まった子に限って気づけないと書く）。
+
+**子の側**:
+
+- 対象は `scripts/epic-dispatch.sh route`（子の番号なし）が `nested` を返すセッションに限る（MUST）。それ以外のセッションでは記録も印も付けない（MUST NOT）
+- 主の返事を待って止まるときは、待ち方で順序を分ける（MUST）。どちらでも印を記録より先に付けてはならない（MUST NOT）
+  - **本文で質問してターンを終えるとき**（`needs-approval` を付けた保留で、質問ツールを使わずにターンを終えるときを含む）: ターンを終える前に記録先の issue へ記録を 1 件投稿し、続けてそのターンの最後のツール呼び出しとして `scripts/epic-dispatch.sh mark stopped <記録先の issue 番号>` を呼ぶ。主の返事は次のターンで届くので、そのターンの最初のツール呼び出しとして `scripts/epic-dispatch.sh mark resumed <記録先の issue 番号>` を呼ぶ
+  - **質問ツール（AskUserQuestion）の中で待つとき**: 質問ツールを呼ぶ前に記録を投稿し、続けて `mark stopped` を呼んでから質問ツールを呼ぶ。質問ツールは回答が来るまで同じターンの中で待つので、`mark stopped` は最後のツール呼び出しにならない。回答を受けたら、次のツール呼び出しとして `mark resumed` を呼ぶ
+- 背景のタスクの終わりを待ってターンを終えるときは記録も印も付けない（MUST NOT）
+- 記録は、1 行目を識別用の `^子の停止: 主の返事待ち$` に完全一致させ、2 行目以降に止まった理由・推奨とその根拠・推奨を選ぶと受け入れるリスク・再開に要る途中経過の 4 つの情報を含める（MUST）。2 行目以降の項目名・並び・改行の形は決めない（細部は #1036 で決める）。止まるたびに新しいコメントを投稿し、最新の 1 件を正とする（SHALL）
+- 「保留で止まるときの引き継ぎ」を書く場面では、引き継ぎを先に投稿し、そのあとに記録を投稿して、再開に要る途中経過として引き継ぎのコメントの URL を書く（MUST）。引き継ぎの書式（1 行目 `引き継ぎ: 主の返事待ち`）は変えない
+- `mark stopped` の出力が `marked` / `skipped` なら何もせず、`failed` なら主への質問に「親に止まったことが伝わっていない」と 1 行添える（SHALL）。`mark resumed` は出力によらず止まらない（SHALL）
+
+**親の側（Orca 経路）**:
+
+- 動いている子を待つ `wait` には `--watch-stopped` を付ける（MUST）
+- `stopped <N>...` で起こされたら、止まった子ごとに子 issue の最新の `子の停止: 主の返事待ち` のコメントを読み、子の番号・止まった理由・推奨・コメントの URL をユーザーに報告し、残りの動いている子（止まった子を含む）で再び `wait` する（MUST）。止まった子を動いている子から外してはならない（MUST NOT。閉じたことを検知できなくなるため）。止まった子への返事の仕方は #1034 で決める
+- `wait` の出力の説明を、`closed`・`done`・`stopped` の 1〜3 行とする（MUST）
+- 記録を残さずに子のタブで質問して止まった子は、`timeout` の確認でも検知できないので、ユーザーに子のタブも見るよう伝えることを残す（SHALL）
+- 端末の入力待ちが続いたことで子の止まりを推定する手順を書いてはならない（MUST NOT。誤検知が多いため。根拠は change `epic-child-stop-signal` の design.md）
+
+develop の手順書（`skills/develop` 配下）に `orca` のサブコマンドを書いてはならない（MUST NOT。既存の規定どおり、`orca` を呼ぶのは `epic-dispatch.sh` だけ）。
+
+この要件の守備範囲で入力として扱うのは、子のセッションでは `epic-dispatch.sh route`（子の番号なし）の出力と `mark` の出力、主の返事を待つかどうかの子自身の判断（本文で質問するか、質問ツールを使うか、背景のタスクを待つだけか）、記録先の issue 番号で、親のセッションでは `wait` の出力と子 issue のコメント（1 行目が `子の停止: 主の返事待ち` の最新の 1 件）である。拾いたい誤りは、エピックの子が主の返事を待っているのに記録も印も残さずに止まること、印が記録より先に付いて親が記録の無い止まりを読むこと、質問ツールで待つ子が回答を受けたあとも止まった印を残すこと、エピックの子でないセッションが読む者のいない記録を残すこと、親が止まった子を動いている子から外して閉じたことを検知できなくなることの 5 つである。次は通ってよく、この要件では止めない: 記録の 2 行目以降の項目名・並び・改行の形の違い（4 つの情報が読めればよい。形は #1036 で決める）／止まるたびに記録が増えること（最新の 1 件を正とする）／保留の場面で引き継ぎと記録の 2 件のコメントが並ぶこと／主が子のタブで先に答えて、親が既に再開した子の `stopped` を受けること（親は記録を読んで報告するだけで、返事の仕方は #1034 で決める）／子が記録を書かずに止まり、親が `timeout` まで気づかないこと（入力待ちからの推定は入れない）。記録の中身（理由・推奨・リスクの正しさ）を確かめることと、手順を守らない子を見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
+
+#### Scenario: 子が止まるときの記録と印の手順が書かれている
+- **WHEN** SKILL.md のエピックの子が止まるときの手順を読む
+- **THEN** `route` が `nested` を返すセッションに限ること、1 行目 `子の停止: 主の返事待ち` の記録を投稿してから `mark stopped` を呼ぶこと、本文で質問してターンを終えるときは `mark stopped` をそのターンの最後のツール呼び出しにすること、質問ツールで待つときは記録・`mark stopped`・質問ツールの順に呼んで回答のあとに `mark resumed` を呼ぶこと、本文で質問したときは返事を受けたターンの最初に `mark resumed` を呼ぶこと、引き継ぎを書く場面では引き継ぎを先に投稿することが書かれている。記録の 2 行目以降の項目名は文言のテストで固定しない
+
+#### Scenario: 親が stopped を受けたときの手順が書かれている
+- **WHEN** SKILL.md の Orca 経路の手順を読む
+- **THEN** `wait` に `--watch-stopped` を付けること、出力が `closed`・`done`・`stopped` の 1〜3 行であること、`stopped` で起こされたら最新の `子の停止:` の記録を読んでユーザーに報告し、止まった子を外さずに再び `wait` することが書かれている
+
+#### Scenario: 記録を残さずに止まった子は検知できないことが書かれている
+- **WHEN** SKILL.md の Orca 経路の `timeout` の手順を読む
+- **THEN** 記録を残さずに子のタブで質問して止まった子は検知できず、ユーザーに子のタブも見るよう伝えることが書かれている
 
 ### Requirement: 時間がたった子・親への返事は待っている間の自動コンパクトの閾値と分ける条件で決める
 `plugins/dev-workflow/scripts/epic-dispatch.sh launch` が子の起動コマンドに前置きする `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=<値>` の `<値>` は、既定で `120000` でなければならない（MUST）。環境変数 `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` が設定されていればその値を使う（SHALL）。設定された値が空文字か、数字だけでない文字列なら、`launch` は stderr に変数名と使い方を出して exit 1 で終わり、`orca` と `git` を 1 つも呼んではならない（MUST）。100,000 未満の値は拒まない（SHALL。下限の扱いは Claude Code が持つ）。

@@ -6,7 +6,9 @@
 # スタブは自分の名前と引数（printf '%q'）を共通のログ（${STUB_LOG}）に 1 行ずつ追記する。
 # 返り値は $STUB_CFG の設定ファイルで切り替える:
 #   orca: current_exit / current_json / list_exit / list_json（list_json_<回数> があればその回だけ
-#         それを返す。回数は listcount）/ set_exit / close_exit / rm_exit / rm_err（rm の stderr）/ create_fail_<N>
+#         それを返す。回数は listcount）/ set_exit / set_comment_exit（--comment 付きの set だけの終了コード。既定は set_exit。
+#         --comment が成功したら current_json と list_json* の同じ path の comment をその値に書き換える）
+#         / close_exit / rm_exit / rm_err（rm の stderr）/ create_fail_<N>
 #         / create_json_<N>（既定は result.worktree.path が /work/issue-<N> の JSON）
 #         / tcreate_fail_<N> / tcreate_json_<N>（terminal create。<N> は --worktree の path の issue-<N>。
 #         既定は result.terminal.handle が term-<N> の JSON。--command は tcmd_<N> に書き出す）
@@ -16,6 +18,9 @@
 #   git : toplevel（rev-parse --show-toplevel の出力）/ fetch_exit / status_exit / status_out
 #         （-C <パス> status --porcelain）/ head（-C <パス> rev-parse HEAD。既定 aaa111）/ branch_tip
 #         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（branch -D）
+#         / wtlist_out・wtlist_out_<回数>・wtlist_exit（worktree list --porcelain。既定は空・0。回数は wtcount）
+#           wtlist_sleep（1 回の worktree list にかかる実時間の秒数）/ wttip_<回数>（その回の呼び出しで branch_tip をこの内容にする）
+#           branch -D が成功すると branch_tip を消す（ブランチが消えたことの表現）
 #   gh  : issue comment <N> --body <本文> は本文を comment_<N> に追記し（1 件ごとに "---" の行で区切る）、
 #         comment_exit で終わる（既定 0）。成功（exit 0）のときは実物の gh と同じに投稿先の URL を stdout に出す。pr list は pr_out を出して pr_exit で終わる（--search 付きは pr_search_out と pr_search_exit。既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
 #         呼び出し回数は ghcount_<N>。FAIL は stderr に "gh: mock failure for issue <N> (poll <count>)" も出す
@@ -68,7 +73,33 @@ case "$1 $2" in
     exit "$(cat "$STUB_CFG/close_exit" 2>/dev/null || echo 0)" ;;
   "worktree set")
     echo "{\"ok\":true}"
-    exit "$(cat "$STUB_CFG/set_exit" 2>/dev/null || echo 0)" ;;
+    rc=$(cat "$STUB_CFG/set_exit" 2>/dev/null || echo 0)
+    wt=""; cm=""; hasc=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --worktree) wt="$2"; shift ;;
+        --comment) cm="$2"; hasc=1; shift ;;
+      esac
+      shift
+    done
+    if [ "$hasc" -eq 1 ]; then
+      rc=$(cat "$STUB_CFG/set_comment_exit" 2>/dev/null || echo "$rc")
+      if [ "$rc" -eq 0 ]; then
+        case "$wt" in
+          current) p=$(jq -r ".result.worktree.path // empty" "$STUB_CFG/current_json") ;;
+          path:*) p="${wt#path:}" ;;
+          *) p="" ;;
+        esac
+        for f in "$STUB_CFG"/current_json "$STUB_CFG"/list_json*; do
+          [ -e "$f" ] || continue
+          jq -c --arg p "$p" --arg c "$cm" \
+            "if .result.worktree.path? == \$p then .result.worktree.comment = \$c else . end
+             | if (.result.worktrees? | type) == \"array\" then .result.worktrees |= map(if .path == \$p then .comment = \$c else . end) else . end" \
+            "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+        done
+      fi
+    fi
+    exit "$rc" ;;
   "worktree create")
     issue=""; prompt=""
     while [ $# -gt 0 ]; do
@@ -137,10 +168,23 @@ if [ "$1" = "-C" ]; then
   exit 0
 fi
 case "$1 ${2-}" in
+  "worktree list")
+    wc=$(( $(cat "$STUB_CFG/wtcount" 2>/dev/null || echo 0) + 1 ))
+    echo "$wc" > "$STUB_CFG/wtcount"
+    [ -e "$STUB_CFG/wtlist_sleep" ] && /bin/sleep "$(cat "$STUB_CFG/wtlist_sleep")"
+    [ -e "$STUB_CFG/wttip_$wc" ] && cp "$STUB_CFG/wttip_$wc" "$STUB_CFG/branch_tip"
+    rc=$(cat "$STUB_CFG/wtlist_exit" 2>/dev/null || echo 0)
+    if [ "$rc" -eq 0 ]; then
+      if [ -e "$STUB_CFG/wtlist_out_$wc" ]; then cat "$STUB_CFG/wtlist_out_$wc"; else cat "$STUB_CFG/wtlist_out" 2>/dev/null; fi
+    fi
+    exit "$rc" ;;
   "rev-parse --verify")
     [ -e "$STUB_CFG/branch_tip" ] || exit 1
     cat "$STUB_CFG/branch_tip"; exit 0 ;;
-  "branch -D") exit "$(cat "$STUB_CFG/branchd_exit" 2>/dev/null || echo 0)" ;;
+  "branch -D")
+    rc="$(cat "$STUB_CFG/branchd_exit" 2>/dev/null || echo 0)"
+    [ "$rc" -eq 0 ] && rm -f "$STUB_CFG/branch_tip"
+    exit "$rc" ;;
 esac
 case "$1" in
   rev-parse) cat "$STUB_CFG/toplevel"; exit 0 ;;
@@ -212,21 +256,21 @@ starts_with() {
   return 1
 }
 
-# 一覧の 1 件（<N> <workspaceStatus> [parentWorktreeId] [repoId] [isArchived]）。パスは実在のディレクトリ
+# 一覧の 1 件（<N> <workspaceStatus> [parentWorktreeId] [repoId] [isArchived] [comment]）。パスは実在のディレクトリ
 wt_entry() {
-  local n="$1" st="$2" par="${3-repo-a::/work/parent}" repo="${4-repo-a}" arch="${5-false}"
+  local n="$1" st="$2" par="${3-repo-a::/work/parent}" repo="${4-repo-a}" arch="${5-false}" cm="${6-}"
   local p="$BATS_TEST_TMPDIR/work/issue-$n"
   mkdir -p "$p"
-  printf '{"id":"%s::%s","repoId":"%s","path":"%s","branch":"refs/heads/oratta/issue-%s","linkedIssue":%s,"isArchived":%s,"isMainWorktree":false,"workspaceStatus":"%s","parentWorktreeId":"%s"}' \
-    "$repo" "$p" "$repo" "$p" "$n" "$n" "$arch" "$st" "$par"
+  printf '{"id":"%s::%s","repoId":"%s","path":"%s","branch":"refs/heads/oratta/issue-%s","linkedIssue":%s,"isArchived":%s,"isMainWorktree":false,"workspaceStatus":"%s","parentWorktreeId":"%s","comment":"%s"}' \
+    "$repo" "$p" "$repo" "$p" "$n" "$n" "$arch" "$st" "$par" "$cm"
 }
 
 # 一覧を置く（引数は wt_entry の出力。<file> の既定は list_json）
 set_list() { local f="$1"; shift; local IFS=,; printf '{"result":{"worktrees":[%s]}}\n' "$*" > "$STUB_CFG/$f"; }
 
-# 今のワークツリー（id と linkedIssue を持つ）
+# 今のワークツリー（id と linkedIssue を持つ。2 番目の引数はコメント欄。既定は空）
 set_current() {
-  printf '{"result":{"worktree":{"id":"repo-a::/work/parent","repoId":"repo-a","path":"/work/parent","linkedIssue":%s}}}\n' "$1" > "$STUB_CFG/current_json"
+  printf '{"result":{"worktree":{"id":"repo-a::/work/parent","repoId":"repo-a","path":"/work/parent","linkedIssue":%s,"comment":"%s"}}}\n' "$1" "${2-}" > "$STUB_CFG/current_json"
 }
 
 # 今のワークツリーを、親ワークツリー（linkedIssue が <1>。null も可）を持つ子にする
@@ -1037,8 +1081,93 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   run dispatch mark done 11 12
   [ "$status" -eq 1 ]
   [ -z "$output" ]
+  run dispatch mark stop 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  run dispatch mark resumed
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  run dispatch mark stopped 11 12
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
   [ "$(calls '^orca')" -eq 0 ]
   grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+}
+
+# spec: dev-workflow-develop（epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す）
+
+@test "mark: stopped on the linked workspace sets the comment, not the board column" {
+  make_stub orca
+  set_current 460
+  run dispatch mark stopped 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked 460 stopped" ]
+  [ "$(calls '^orca worktree set --worktree current --comment epic-stopped$')" -eq 1 ]
+  [ "$(calls 'workspace-status')" -eq 0 ]
+}
+
+@test "mark: stopped on another issue's workspace is not marked" {
+  make_stub orca
+  set_current 461
+  run dispatch mark stopped 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 460 not-linked" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "mark: resumed rewrites only a stopped or seen comment" {
+  make_stub orca
+  set_current 460 epic-stopped
+  run dispatch mark resumed 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked 460 resumed" ]
+  [ "$(calls '^orca worktree set --worktree current --comment epic-resumed$')" -eq 1 ]
+  : > "$STUB_LOG"
+  set_current 460 epic-stopped-seen
+  run dispatch mark resumed 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked 460 resumed" ]
+  [ "$(calls '^orca worktree set --worktree current --comment epic-resumed$')" -eq 1 ]
+  : > "$STUB_LOG"
+  set_current 460 メモ
+  run dispatch mark resumed 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 460 not-stopped" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(calls '^orca worktree current --json$')" -eq 1 ]
+}
+
+@test "mark: resumed on another issue's workspace is not marked" {
+  make_stub orca
+  set_current 461 epic-stopped
+  run dispatch mark resumed 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 460 not-linked" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "mark: a failing stopped or resumed set ends with failed" {
+  make_stub orca
+  set_current 460 epic-stopped
+  echo 1 > "$STUB_CFG/set_exit"
+  run dispatch mark stopped 460
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 460" ]
+  run dispatch mark resumed 460
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 460" ]
+}
+
+@test "mark: stopped and resumed outside Orca do nothing" {
+  make_stub orca
+  echo 1 > "$STUB_CFG/current_exit"
+  run dispatch mark stopped 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 460 no-workspace" ]
+  run dispatch mark resumed 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 460 no-workspace" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
 }
 
 # --- wait ---
@@ -1280,6 +1409,147 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^gh ')" -eq 0 ]
 }
 
+# --- wait --watch-stopped ---
+# spec: dev-workflow-develop（epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す）
+
+@test "wait: --watch-stopped rewrites a stopped child to seen and ends with stopped" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 open
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(calls "^orca worktree set --worktree path:$BATS_TEST_TMPDIR/work/issue-11 --comment epic-stopped-seen\$")" -eq 1 ]
+  [ "$(calls '^orca worktree set')" -eq 1 ]
+  [ "$(calls 'workspace-status')" -eq 0 ]
+  [ "${#lines[@]}" -eq 1 ]
+}
+
+@test "wait: --watch-stopped does not wake on seen or resumed comments" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 open
+  gh_seq 12 open
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped-seen)" \
+    "$(wt_entry 12 in-review repo-a::/work/parent repo-a false epic-resumed)"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11 12
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11 12" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "wait: closed, done and stopped in the same poll print three lines in that order" {
+  make_stub orca
+  set_current 400
+  gh_seq 12 closed
+  gh_seq 13 open
+  set_list list_json "$(wt_entry 11 completed)" \
+    "$(wt_entry 13 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11 --watch-stopped 12 13
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "${#lines[@]}" -eq 3 ]
+  [ "${lines[0]}" = "closed 12" ]
+  [ "${lines[1]}" = "done 11" ]
+  [ "${lines[2]}" = "stopped 13" ]
+  [ "$(calls '^orca worktree list --json$')" -eq 1 ]
+  [ "$(calls '^gh ')" -eq 2 ]
+}
+
+@test "wait: a closed child is not counted as stopped" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 closed
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "wait: stopped comments on another repo or on archived worktrees do not count" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 open
+  set_list list_json "$(wt_entry 11 in-review repo-b::/x repo-b false epic-stopped)" \
+    "$(wt_entry 11 in-review repo-a::/work/parent repo-a true epic-stopped)"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "wait: three polls failing to rewrite to seen end with error workspaces" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 open
+  echo 1 > "$STUB_CFG/set_comment_exit"
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 1 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "error workspaces" ]
+  [ "$(calls '^orca worktree set')" -eq 3 ]
+  [ "$(calls '^orca worktree list --json$')" -eq 3 ]
+}
+
+@test "wait: without --watch-stopped the comment is never read" {
+  make_stub orca
+  set_current 400
+  gh_seq 11 open
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 0 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ "$(calls '^orca')" -eq 0 ]
+  run dispatch wait --interval 0 --timeout 0 --watch-done 12 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "wait: --watch-stopped with --watch-done and no positional child looks at no comment" {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11 --watch-stopped
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "wait: a seen stop does not wake the parent again, a stop marked again does" {
+  make_stub orca
+  printf '{"result":{"worktree":{"id":"repo-a::%s","repoId":"repo-a","path":"%s","linkedIssue":11,"comment":""}}}\n' \
+    "$BATS_TEST_TMPDIR/work/issue-11" "$BATS_TEST_TMPDIR/work/issue-11" > "$STUB_CFG/current_json"
+  gh_seq 11 open
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "1st: status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(calls '^orca worktree set')" -eq 1 ]
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ] || { echo "2nd: status=$status output=$output"; cat "$STUB_CFG/list_json"; false; }
+  [ "$output" = "timeout 11" ]
+  [ "$(calls '^orca worktree set')" -eq 1 ]
+  run dispatch mark stopped 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked 11 stopped" ]
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "3rd: status=$status output=$output"; cat "$STUB_CFG/list_json"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(calls '^orca worktree set')" -eq 3 ]
+}
+
+@test "wait: --watch-stopped alone without children prints usage and calls nothing" {
+  make_stub orca
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca')" -eq 0 ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
 # --- reap ---
 
 @test "reap: a child meeting every condition is closed then removed, without --force" {
@@ -1378,12 +1648,96 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11" ]
   [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
+  [ ! -e "$STUB_CFG/branch_tip" ]
   : > "$STUB_LOG"
   echo bbb222 > "$STUB_CFG/branch_tip"
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11 branch-kept" ]
   [ "$(calls '^git branch -D')" -eq 0 ]
+}
+
+@test "reap: waits until the worktree leaves git worktree list, then deletes the branch" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'worktree %s\nHEAD aaa111\n\n' "$BATS_TEST_TMPDIR/work/issue-11" > "$STUB_CFG/wtlist_out_1"
+  cp "$STUB_CFG/wtlist_out_1" "$STUB_CFG/wtlist_out_2"
+  printf 'worktree /work/other\n\n' > "$STUB_CFG/wtlist_out"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11" ]
+  [ "$(calls '^git worktree list --porcelain')" -eq 3 ]
+  [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
+  [ "$(first_line '^orca worktree rm')" -lt "$(first_line '^git worktree list')" ]
+  [ "$(first_line '^git worktree list')" -lt "$(first_line '^git branch -D')" ]
+  [ ! -e "$STUB_CFG/branch_tip" ]
+}
+
+@test "reap: a branch tip that moved while waiting is not deleted" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'worktree %s\n\n' "$BATS_TEST_TMPDIR/work/issue-11" > "$STUB_CFG/wtlist_out_1"
+  printf 'worktree /work/other\n\n' > "$STUB_CFG/wtlist_out"
+  echo bbb222 > "$STUB_CFG/wttip_2"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11 branch-kept" ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(cat "$STUB_CFG/branch_tip")" = "bbb222" ]
+}
+
+@test "reap: the wait also stops by elapsed seconds when each check is slow" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'worktree %s\n\n' "$BATS_TEST_TMPDIR/work/issue-11" > "$STUB_CFG/wtlist_out"
+  echo 3 > "$STUB_CFG/wtlist_sleep"
+  export EPIC_DISPATCH_REAP_DETACH_TIMEOUT=2 EPIC_DISPATCH_REAP_DETACH_INTERVAL=1
+  run dispatch reap 11
+  [ "$output" = "reaped 11 branch-kept" ]
+  [ "$(calls '^git worktree list --porcelain')" -eq 1 ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
+}
+
+@test "reap: a worktree that never leaves git worktree list gives branch-kept after the limit" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'worktree %s\n\n' "$BATS_TEST_TMPDIR/work/issue-11" > "$STUB_CFG/wtlist_out"
+  export EPIC_DISPATCH_REAP_DETACH_TIMEOUT=3 EPIC_DISPATCH_REAP_DETACH_INTERVAL=1
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11 branch-kept" ]
+  [ "$(calls '^git worktree list --porcelain')" -ge 2 ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
+}
+
+@test "reap: a failing git worktree list counts as still attached" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  echo 1 > "$STUB_CFG/wtlist_exit"
+  export EPIC_DISPATCH_REAP_DETACH_TIMEOUT=2 EPIC_DISPATCH_REAP_DETACH_INTERVAL=1
+  run dispatch reap 11
+  [ "$output" = "reaped 11 branch-kept" ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
+}
+
+@test "reap: a tip that differs from HEAD is not waited for and not deleted" {
+  reap_ready
+  echo bbb222 > "$STUB_CFG/branch_tip"
+  printf 'worktree %s\n\n' "$BATS_TEST_TMPDIR/work/issue-11" > "$STUB_CFG/wtlist_out"
+  run dispatch reap 11
+  [ "$output" = "reaped 11 branch-kept" ]
+  [ "$(calls '^git worktree list')" -eq 0 ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
+}
+
+@test "reap: only other paths in git worktree list (even a prefix match) do not make it wait" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'worktree %s0\n\nworktree /work/other\n\n' "$BATS_TEST_TMPDIR/work/issue-11" > "$STUB_CFG/wtlist_out"
+  run dispatch reap 11
+  [ "$output" = "reaped 11" ]
+  [ "$(calls '^git worktree list --porcelain')" -eq 1 ]
+  [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
 }
 
 @test "reap: a failing branch -D is reported as branch-kept" {
@@ -1717,6 +2071,36 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   run grep -rlw orca "$PLUGIN_DIR" --include='*.sh'
   [ "$status" -eq 0 ]
   [ "$output" = "$PLUGIN_DIR/scripts/epic-dispatch.sh" ]
+}
+
+# spec: dev-workflow-develop（エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する）
+
+@test "skill: an epic child records its stop before marking it, in both waiting orders" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  [ -n "$r" ]
+  printf '%s\n' "$r" | grep -F 'route' | grep -qF '`nested`'
+  printf '%s\n' "$r" | grep -qF '`子の停止: 主の返事待ち`'
+  printf '%s\n' "$r" | grep -qF 'scripts/epic-dispatch.sh mark stopped <記録先の issue 番号>'
+  printf '%s\n' "$r" | grep -qF 'scripts/epic-dispatch.sh mark resumed <記録先の issue 番号>'
+  printf '%s\n' "$r" | grep -F '本文で質問してターンを終えるとき' | grep -F '最後のツール呼び出し' | grep -qF '最初のツール呼び出し'
+  printf '%s\n' "$r" | grep -F '質問ツール' | grep -qF '記録 → `mark stopped` → 質問ツール'
+  printf '%s\n' "$r" | grep -F '回答を受けたら' | grep -qF '`mark resumed`'
+  printf '%s\n' "$r" | grep -F '引き継ぎを先に投稿' | grep -qF '引き継ぎのコメントの URL'
+  printf '%s\n' "$r" | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
+  printf '%s\n' "$r" | grep -qF '#1036'
+}
+
+@test "skill: Orca route waits with --watch-stopped and reports stopped children without dropping them" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF -- '--watch-stopped <動いている子>...'
+  printf '%s\n' "$r" | grep -F '`stopped <N>...`' | grep -qF '1〜3 行'
+  p="$(printf '%s\n' "$r" | grep -E '^8\. ')"
+  printf '%s\n' "$p" | grep -qF '`stopped <N>...` で起こされたら'
+  printf '%s\n' "$p" | grep -qF '`子の停止: 主の返事待ち`'
+  printf '%s\n' "$p" | grep -qF '報告'
+  printf '%s\n' "$p" | grep -qF '外さず'
+  printf '%s\n' "$p" | grep -qF '2 に戻る'
+  printf '%s\n' "$r" | grep -E '^5\. ' | grep -F '記録' | grep -F '子のタブ' | grep -qF '検知できない'
 }
 
 @test "reply-after-idle: the rule file states the thresholds and where they are set" {

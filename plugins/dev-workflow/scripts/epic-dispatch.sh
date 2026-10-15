@@ -4,8 +4,8 @@
 #
 #   epic-dispatch.sh route <child>...
 #   epic-dispatch.sh launch [--note <text>] [--base <branch>] <epic> <child>...
-#   epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [<child>...]
-#   epic-dispatch.sh mark <done|waiting> <issue>
+#   epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [<child>...]
+#   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
 #   epic-dispatch.sh reap <child>...
 #
 # Orca のコマンドを呼ぶのはこのスクリプトだけ（develop の手順書には orca のコマンドを書かない）。
@@ -56,20 +56,31 @@
 #   あれば「印が付いた」とする。閉じた子・印が付いた子がいれば `closed <N>...` と `done <N>...` を
 #   この順に（1 行か 2 行）出して exit 0。一覧を読めないポーリングも失敗したポーリングに数え、
 #   3 回続いて gh の失敗が無ければ `error workspaces`。位置引数 0 件も可（timeout は `timeout` だけ）。
+#   --watch-stopped（値なし）を付け、位置引数の子が 1 件以上あるときは、同じ一覧で、閉じていない位置引数の
+#   子のうち同じ repoId・linkedIssue が <N>・archive されていない・comment が epic-stopped のワークツリー
+#   全部に `orca worktree set --worktree path:<パス> --comment epic-stopped-seen` を呼び、全部 exit 0 なら
+#   「止まった子」とする（1 つでも失敗すれば失敗したポーリングに数える）。出力は `closed <N>...`・
+#   `done <N>...`・`stopped <N>...` を該当するものだけこの順に（1〜3 行）出して exit 0。
+#   --watch-done も --watch-stopped（子 1 件以上）も無ければ orca を呼ばず、コメント欄も見ない。
 #   orca / jq が無い・`orca worktree current` が失敗したら stdout に何も出さず exit 1
 # mark: 今のワークスペースの linkedIssue が <issue> のときだけ `orca worktree set --worktree current
 #   --workspace-status <completed|in-review>`（done / waiting）。stdout は `marked <issue> <kind>`（exit 0）
 #   / `failed <issue>`（exit 1）/ `skipped <issue> not-linked` / `skipped <issue> no-workspace`
-#   （orca が無いか Orca 管理外。exit 0）。EPIC_DISPATCH_PARENT_EPIC は見ない
+#   （orca が無いか Orca 管理外。exit 0）。EPIC_DISPATCH_PARENT_EPIC は見ない。
+#   stopped / resumed は列に触れず `orca worktree set --worktree current --comment <epic-stopped|epic-resumed>`
+#   を 1 回呼ぶ。resumed は今の comment が epic-stopped / epic-stopped-seen のときだけ付け、
+#   それ以外は set を呼ばずに `skipped <issue> not-stopped`（exit 0）
 # reap: 子ごとに、一覧の候補 1 件・親の launch が作った（parentWorktreeId が今のワークツリーの id）・
 #   completed・git status がきれい・LLM/ が無い・ブランチ上・マージ済み PR の headRefOid と HEAD が一致
 #   （`--head <ブランチ>` で一致しなければ、`--state merged --search <HEAD>` でブランチ名を問わず探す）、
 #   の順に確かめ、全部通れば `orca terminal close --all` → `orca worktree rm`（--force なし・再試行なし。
 #   stderr に `terminal sweep failed` を含む失敗は `kept <N> rm-failed-terminal-sweep`）→
-#   残ったローカルブランチは先端が HEAD と同じときだけ `git branch -D`。stdout は子ごとに
+#   残ったローカルブランチは先端が HEAD と同じときだけ、ワークツリーが `git worktree list` から外れるのを
+#   上限つきで待って（EPIC_DISPATCH_REAP_DETACH_TIMEOUT 秒・既定 30、_INTERVAL 秒・既定 1）`git branch -D`。stdout は子ごとに
 #   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。
 #   current / list を読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
-# 引数の誤り（launch は epic か子が無い、wait は子も --watch-done も 0 件、mark の種別・引数の数、
+# 引数の誤り（launch は epic か子が無い、wait は子も --watch-done も 0 件（--watch-stopped だけも含む）、
+#   mark の種別（done / waiting / stopped / resumed 以外）・引数の数、
 #   reap は子が 0 件、番号が数字でない、フラグ値の誤り）は
 #   stderr に使い方を出して exit 1。route は子 0 件でも subagent（エピックの子のセッションなら nested）。
 #
@@ -77,7 +88,8 @@
 # openspec の dev-workflow-develop spec「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを
 # LLM なしで行う」「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」
 # 「エピックの子への注意書きと子であることを、起動し直したセッションにも引き継ぐ」
-# 「端末を作れなかった子と指示が届かなかった子の案内は、二重起動を避ける確認を先に出す」が正本。
+# 「端末を作れなかった子と指示が届かなかった子の案内は、二重起動を避ける確認を先に出す」
+# 「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」が正本。
 set -uo pipefail
 
 usage() {
@@ -85,8 +97,8 @@ usage() {
 usage:
   epic-dispatch.sh route <child>...
   epic-dispatch.sh launch [--note <text>] [--base <branch>] <epic> <child>...
-  epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [<child>...]
-  epic-dispatch.sh mark <done|waiting> <issue>
+  epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [<child>...]
+  epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
   epic-dispatch.sh reap <child>...
 EOF
   exit 1
@@ -288,14 +300,17 @@ cmd_launch() {
   exit "$failed"
 }
 
-# 今いるワークスペースに印を付ける（done = completed / waiting = in-review）。
+# 今いるワークスペースに印を付ける（done = completed / waiting = in-review は列、
+# stopped = epic-stopped / resumed = epic-resumed はコメント欄）。
 # 今のワークスペースの linkedIssue が <issue> と一致するときだけ付ける
 cmd_mark() {
   [ "$#" -eq 2 ] || usage
-  local kind="$1" n="$2" status
+  local kind="$1" n="$2" status="" comment=""
   case "$kind" in
     done) status=completed ;;
     waiting) status=in-review ;;
+    stopped) comment="epic-stopped" ;;
+    resumed) comment="epic-resumed" ;;
     *) usage ;;
   esac
   is_num "$n" || { echo "not an issue number: $n" >&2; usage; }
@@ -310,7 +325,20 @@ cmd_mark() {
     echo "skipped $n not-linked"
     return 0
   fi
-  if orca worktree set --worktree current --workspace-status "$status" >&2; then
+  # 再開の印は、止まった印（受けた印を含む）があるときだけ付ける
+  if [ "$kind" = resumed ]; then
+    case "$(printf '%s' "$current" | jq -r '.result.worktree.comment // empty' 2>/dev/null)" in
+      epic-stopped|epic-stopped-seen) ;;
+      *) echo "skipped $n not-stopped"; return 0 ;;
+    esac
+  fi
+  local rc
+  if [ -n "$comment" ]; then
+    orca worktree set --worktree current --comment "$comment" >&2; rc=$?
+  else
+    orca worktree set --worktree current --workspace-status "$status" >&2; rc=$?
+  fi
+  if [ "$rc" -eq 0 ]; then
     echo "marked $n $kind"
     return 0
   fi
@@ -321,7 +349,7 @@ cmd_mark() {
 cmd_wait() {
   local interval="${EPIC_DISPATCH_INTERVAL:-300}" timeout="${EPIC_DISPATCH_TIMEOUT:-21600}"
   # --watch-done の子（空白区切り。bash 3.2 の set -u で空の配列を展開できないので文字列で持つ）
-  local watch=""
+  local watch="" watchstop=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --interval) [ "$#" -ge 2 ] || usage; interval="$2"; shift 2 ;;
@@ -331,6 +359,7 @@ cmd_wait() {
         is_num "$2" || { echo "--watch-done needs an issue number: $2" >&2; usage; }
         case " $watch " in *" $2 "*) ;; *) watch="$watch $2" ;; esac
         shift 2 ;;
+      --watch-stopped) watchstop=1; shift ;;
       --*) usage ;;
       *) break ;;
     esac
@@ -339,21 +368,23 @@ cmd_wait() {
   is_num "$timeout" || { echo "--timeout must be a non-negative integer: $timeout" >&2; usage; }
   [ "$#" -ge 1 ] || [ -n "$watch" ] || usage
   check_children "$@"
+  # --watch-stopped は位置引数の子だけを見る（子が 0 件なら何も見ない）
+  [ "$#" -ge 1 ] || watchstop=0
 
   local repo="" current list
-  if [ -n "$watch" ]; then
-    command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH (needed by --watch-done)" >&2; exit 1; }
-    command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH (needed by --watch-done)" >&2; exit 1; }
+  if [ -n "$watch" ] || [ "$watchstop" -eq 1 ]; then
+    command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH (needed by --watch-done / --watch-stopped)" >&2; exit 1; }
+    command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH (needed by --watch-done / --watch-stopped)" >&2; exit 1; }
     current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
     repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
     [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
   fi
 
-  local fails=0 n state closed failed marked wsfail
+  local fails=0 n state closed failed marked stopped wsfail paths p ok
   local errf; errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
   SECONDS=0
   while :; do
-    closed=""; failed=""; marked=""; wsfail=0; : > "$errf"
+    closed=""; failed=""; marked=""; stopped=""; wsfail=0; : > "$errf"
     for n in "$@"; do
       if state="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state 2>>"$errf")"; then
         case "$state" in
@@ -365,8 +396,8 @@ cmd_wait() {
         failed="$failed $n"
       fi
     done
-    # 完了の印は、ポーリングごとに 1 回の一覧で全部の --watch-done の子を見る
-    if [ -n "$watch" ]; then
+    # 完了の印と止まった印は、ポーリングごとに 1 回の一覧で全部の子を見る
+    if [ -n "$watch" ] || [ "$watchstop" -eq 1 ]; then
       if list="$(orca worktree list --json 2>>"$errf")" \
         && printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1; then
         for n in $watch; do
@@ -376,13 +407,36 @@ cmd_wait() {
             marked="$marked $n"
           fi
         done
+        # 止まった印（epic-stopped）は、閉じていない位置引数の子だけを、受けた印に書き換えてから数える
+        if [ "$watchstop" -eq 1 ]; then
+          for n in "$@"; do
+            case " $closed $stopped " in *" $n "*) continue ;; esac
+            paths="$(printf '%s' "$list" | jq -r --arg r "$repo" --arg n "$n" \
+              '.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n
+                and .isArchived != true and .comment == "epic-stopped") | .path' 2>/dev/null)"
+            [ -n "$paths" ] || continue
+            ok=1
+            while IFS= read -r p; do
+              [ -n "$p" ] || continue
+              orca worktree set --worktree "path:$p" --comment epic-stopped-seen >&2 || ok=0
+            done <<EOF_PATHS
+$paths
+EOF_PATHS
+            if [ "$ok" -eq 1 ]; then
+              stopped="$stopped $n"
+            else
+              wsfail=1
+            fi
+          done
+        fi
       else
         wsfail=1
       fi
     fi
-    if [ -n "$closed" ] || [ -n "$marked" ]; then
+    if [ -n "$closed" ] || [ -n "$marked" ] || [ -n "$stopped" ]; then
       [ -n "$closed" ] && echo "closed${closed}"
       [ -n "$marked" ] && echo "done${marked}"
+      [ -n "$stopped" ] && echo "stopped${stopped}"
       exit 0
     fi
     if [ -n "$failed" ] || [ "$wsfail" -eq 1 ]; then
@@ -482,7 +536,32 @@ cmd_reap() {
     fi
     cat "$rmerr" >&2; rm -f "$rmerr"
     if tip="$(git rev-parse --verify --quiet "refs/heads/$branch")"; then
-      if [ "$tip" = "$head" ] && git branch -D "$branch" >&2; then
+      # Orca は rm の exit 0 のあともワークツリーを非同期で消すことがあり、git の一覧から外れるまで
+      # そのブランチは消せない。先端が HEAD と同じときだけ、外れるのを上限つきで待つ
+      # （git worktree list が失敗したら残っているものとして待つ。上限を超えたら branch-kept）
+      attached=0
+      if [ "$tip" = "$head" ]; then
+        dt="${EPIC_DISPATCH_REAP_DETACH_TIMEOUT:-30}"; di="${EPIC_DISPATCH_REAP_DETACH_INTERVAL:-1}"
+        case "$dt" in ''|*[!0-9]*) dt=30 ;; esac
+        case "$di" in ''|*[!0-9]*|0) di=1 ;; esac
+        tries=$(( dt / di + 1 ))
+        started=$SECONDS
+        while :; do
+          if wtl="$(git worktree list --porcelain)" && ! printf '%s\n' "$wtl" | grep -qxF -- "worktree $path"; then
+            attached=0; break
+          fi
+          attached=1
+          tries=$(( tries - 1 ))
+          [ "$tries" -gt 0 ] || break
+          [ $(( SECONDS - started )) -lt "$dt" ] || break
+          echo "waiting for the worktree to leave git: $path" >&2
+          sleep "$di"
+        done
+      fi
+      # 待っている間に先端が進んだかもしれないので、消す直前に読み直して HEAD と比べる
+      if [ "$tip" = "$head" ] && [ "$attached" -eq 0 ] \
+        && tip2="$(git rev-parse --verify --quiet "refs/heads/$branch")" && [ "$tip2" = "$head" ] \
+        && git branch -D "$branch" >&2; then
         echo "reaped $n"
       else
         echo "reaped $n branch-kept"
