@@ -82,12 +82,7 @@
 | 端末の一覧が読めない（`orca` が失敗した、または `result.terminals` が欠落・`null`・配列以外） | 端末を 0 と数えず、送らず、作らず、閉じない（0 と数えて作り直すと、動いている子が二重に起動するため） | `failed <child> terminal-list` | 1 |
 | 送信・作成・閉じるのどれかが失敗、またはターンの開始を確かめられない | 送り直しか作り直しのコマンドを stderr に出す（`launch` の案内と同じ形） | `failed <child> <段>` | 1 |
 
-子のセッションの端末は次の順で決めなければならない（MUST）。Orca は子のワークツリーにシェルの端末（タイトル `Terminal 1`）も必ず作るので、端末の数では決めない。
-
-1. `launch` と `reply` の起動し直しは、`orca terminal create` で得た端末のハンドルを、子のワークツリーの `git rev-parse --path-format=absolute --git-path epic-dispatch-terminal` のファイル（git の管理外）に記録する（記録できなくても起動は止めず、stderr に出す）
-2. 記録したハンドルが端末の一覧（`result.terminals[].handle`）にあれば、その端末
-3. 記録が無いか一覧に無ければ、`agentIdentity` が `claude` か、`title` に `Claude Code` を含む端末（Claude Code はタイトルを書き換えるので `agentIdentity` を先に見る）がちょうど 1 つのとき、その端末
-4. それ以外は決まらない
+子のセッションの端末は、端末の一覧（`result.terminals`）のうち `agentIdentity` が `claude` の端末、それが 1 つも無ければ `title` に `Claude Code` を含む端末（Claude Code はタイトルを書き換えるので `agentIdentity` を先に見る）が、ちょうど 1 つのときのその端末としなければならない（MUST）。今の Orca では `launch` の `orca worktree create` が空のシェルの端末（タイトル `Terminal 1`）を作り、そのあと Claude Code の端末を足すので、端末の数では決めない。`launch` を直して端末を 1 つにする件（#1055）のあとの、Claude Code の端末だけがある形でも同じ決め方で送る。
 
 develop の手順書には `orca` のコマンドを書かず、端末の有無の確かめ方は `reply` が持つ（MUST。既存要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」）。
 
@@ -108,15 +103,11 @@ develop の手順書には `orca` のコマンドを書かず、端末の有無�
 - **THEN** 端末を閉じる呼び出しが端末を作る呼び出しより先にあり、stdout は `relaunched 11`
 
 #### Scenario: Orca のシェルの端末と Claude Code の端末があれば Claude Code の端末に送る
-- **WHEN** 子 11 のワークツリーに、タイトル `Terminal 1` のシェルの端末と `agentIdentity` が `claude` の端末があり、記録が無い状態で `reply --as parent 400 11 '推奨どおり'` を実行する
+- **WHEN** 子 11 のワークツリーに、タイトル `Terminal 1` のシェルの端末と `agentIdentity` が `claude` の端末がある状態で `reply --as parent 400 11 '推奨どおり'` を実行する
 - **THEN** `agentIdentity` が `claude` の端末にだけ送られ、stdout は `sent 11` で exit 0
 
-#### Scenario: 記録したハンドルを優先する
-- **WHEN** 子 11 のワークツリーの記録のファイルにハンドル `term-rec-11` があり、端末の一覧にそれと Claude Code の端末がある状態で `reply --as owner 400 11 'A'` を実行する
-- **THEN** `term-rec-11` にだけ送られ、stdout は `sent 11`
-
 #### Scenario: 子のセッションの端末が決まらなければ送らない
-- **WHEN** 記録が無く、子 11 のワークツリーに Claude Code の端末が 2 つある、またはシェルの端末だけがある状態で `reply --as owner 400 11 'A'` を実行する
+- **WHEN** 子 11 のワークツリーに Claude Code の端末が 2 つある、またはシェルの端末だけがある状態で `reply --as owner 400 11 'A'` を実行する
 - **THEN** 送信・作成・閉じるの呼び出しは無く、stdout は `failed 11 ambiguous-terminal` で exit 1
 
 #### Scenario: as が無ければ orca を呼ばない

@@ -16,8 +16,7 @@
 #         / wait_exit_<handle> / send_exit_<handle> / send_json_<handle>
 #         （既定は stages に turn_started を含む JSON）。
 #         create に --prompt が渡されたら prompt_<N> に、terminal send の --text は sent_<handle> に書き出す
-#   git : -C <パス> rev-parse --path-format=absolute --git-path は $STUB_CFG/termrec_<パスの末尾> を出す
-#         （gitpath_exit で終了コード。0 以外なら何も出さない）/ toplevel（rev-parse --show-toplevel の出力）/ fetch_exit / status_exit / status_out
+#   git : toplevel（rev-parse --show-toplevel の出力）/ fetch_exit / status_exit / status_out
 #         （-C <パス> status --porcelain）/ head（-C <パス> rev-parse HEAD。既定 aaa111）/ branch_tip
 #         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（branch -D）
 #         / wtlist_out・wtlist_out_<回数>・wtlist_exit（worktree list --porcelain。既定は空・0。回数は wtcount）
@@ -173,13 +172,8 @@ esac
 exit 0' ;;
     git) body='
 if [ "$1" = "-C" ]; then
-  cpath="$2"
   shift 2
   case "$1 ${2-}" in
-    "rev-parse --path-format=absolute")
-      rc=$(cat "$STUB_CFG/gitpath_exit" 2>/dev/null || echo 0)
-      [ "$rc" -eq 0 ] && echo "$STUB_CFG/termrec_${cpath##*/}"
-      exit "$rc" ;;
     "status --porcelain")
       cat "$STUB_CFG/status_out" 2>/dev/null
       exit "$(cat "$STUB_CFG/status_exit" 2>/dev/null || echo 0)" ;;
@@ -500,7 +494,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${#lines[@]}" -eq 2 ]
   log=()
   while IFS= read -r l; do log+=("$l"); done < "$STUB_LOG"
-  [ "${#log[@]}" -eq 15 ]
+  [ "${#log[@]}" -eq 13 ]
   [ "${log[0]}" = "orca worktree current --json" ]
   [ "${log[1]}" = "git rev-parse --show-toplevel" ]
   [ "${log[2]}" = "git fetch origin main" ]
@@ -510,18 +504,13 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   starts_with "${log[6]}" "orca terminal create --worktree path:/work/issue-11 --command "
   case "${log[6]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
   [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'" ]
-  [ "${log[7]}" = "git -C /work/issue-11 rev-parse --path-format=absolute --git-path epic-dispatch-terminal" ]
-  [ "${log[8]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
-  starts_with "${log[9]}" "orca terminal send --terminal term-11 --text "
-  case "${log[9]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
-  [ "${log[10]}" = "orca worktree create --name issue-12 --issue 12 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
-  starts_with "${log[11]}" "orca terminal create --worktree path:/work/issue-12 --command "
-  [ "${log[12]}" = "git -C /work/issue-12 rev-parse --path-format=absolute --git-path epic-dispatch-terminal" ]
-  [ "${log[13]}" = "orca terminal wait --terminal term-12 --for tui-idle --timeout-ms 60000 --json" ]
-  starts_with "${log[14]}" "orca terminal send --terminal term-12 --text "
-  # 子のセッションを起動した端末のハンドルを子のワークツリーの git-path 配下に記録する（reply の送り先）
-  [ "$(cat "$STUB_CFG/termrec_issue-11")" = "term-11" ]
-  [ "$(cat "$STUB_CFG/termrec_issue-12")" = "term-12" ]
+  [ "${log[7]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
+  starts_with "${log[8]}" "orca terminal send --terminal term-11 --text "
+  case "${log[8]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
+  [ "${log[9]}" = "orca worktree create --name issue-12 --issue 12 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
+  starts_with "${log[10]}" "orca terminal create --worktree path:/work/issue-12 --command "
+  [ "${log[11]}" = "orca terminal wait --terminal term-12 --for tui-idle --timeout-ms 60000 --json" ]
+  starts_with "${log[12]}" "orca terminal send --terminal term-12 --text "
   [ "$(calls '--prompt')" -eq 0 ]
   [ "$(calls '--agent')" -eq 0 ]
 }
@@ -2376,6 +2365,23 @@ reply_ready() {
   [ "$(calls '^orca terminal close')" -eq 0 ]
 }
 
+@test "reply: a single Claude Code terminal (the shape after #1055) gets the reply" {
+  reply_ready term-cc-11
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "sent 11" ]
+  [ -e "$STUB_CFG/sent_term-cc-11" ]
+}
+
+@test "reply: an agentIdentity of claude wins over a title that mentions Claude Code" {
+  reply_ready term-t-11:title term-cc-11
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "sent 11" ]
+  [ -e "$STUB_CFG/sent_term-cc-11" ]
+  [ ! -e "$STUB_CFG/sent_term-t-11" ]
+}
+
 @test "reply: without agentIdentity, the terminal titled Claude Code is the child session" {
   reply_ready term-sh-11:shell term-cc-11:title
   run dispatch reply --as owner 400 11 'A'
@@ -2383,26 +2389,6 @@ reply_ready() {
   [ "$output" = "sent 11" ]
   [ -e "$STUB_CFG/sent_term-cc-11" ]
   [ ! -e "$STUB_CFG/sent_term-sh-11" ]
-}
-
-@test "reply: the recorded handle of the terminal that started the child wins over titles" {
-  reply_ready term-sh-11:shell term-cc-11 term-rec-11:shell
-  echo term-rec-11 > "$STUB_CFG/termrec_issue-11"
-  run dispatch reply --as owner 400 11 'A'
-  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
-  [ "$output" = "sent 11" ]
-  [ -e "$STUB_CFG/sent_term-rec-11" ]
-  [ ! -e "$STUB_CFG/sent_term-cc-11" ]
-  [ "$(calls "^git -C $BATS_TEST_TMPDIR/work/issue-11 rev-parse --path-format=absolute --git-path epic-dispatch-terminal\$")" -ge 1 ]
-}
-
-@test "reply: a recorded handle that is gone from the list falls back to the Claude Code terminal" {
-  reply_ready term-sh-11:shell term-cc-11
-  echo term-old-11 > "$STUB_CFG/termrec_issue-11"
-  run dispatch reply --as owner 400 11 'A'
-  [ "$status" -eq 0 ]
-  [ "$output" = "sent 11" ]
-  [ -e "$STUB_CFG/sent_term-cc-11" ]
 }
 
 @test "reply: two Claude Code terminals or only a shell terminal send nothing and relaunch nothing" {
@@ -2415,33 +2401,9 @@ reply_ready() {
   [ "$status" -eq 1 ]
   [ "$output" = "failed 11 ambiguous-terminal" ]
   grep -qF -- '--relaunch' "$BATS_TEST_TMPDIR/stderr"
-  # 記録の置き場を読めなくても、Claude Code の端末が 1 つに決まらなければ送らない
-  set_terms 11 term-sh-11:shell term-a-11 term-b-11
-  echo 1 > "$STUB_CFG/gitpath_exit"
-  run dispatch reply --as owner 400 11 'A'
-  [ "$status" -eq 1 ]
-  [ "$output" = "failed 11 ambiguous-terminal" ]
   [ "$(calls '^orca terminal send')" -eq 0 ]
   [ "$(calls '^orca terminal create')" -eq 0 ]
   [ "$(calls '^orca terminal close')" -eq 0 ]
-}
-
-@test "reply: a relaunch records the handle of the terminal it created" {
-  reply_ready term-a-11
-  echo term-a-11 > "$STUB_CFG/termrec_issue-11"
-  run dispatch reply --relaunch --as owner 400 11 'B で'
-  [ "$status" -eq 0 ]
-  [ "$output" = "relaunched 11" ]
-  [ "$(cat "$STUB_CFG/termrec_issue-11")" = "term-11" ]
-}
-
-@test "launch: a terminal handle that cannot be recorded does not stop the launch" {
-  make_stub orca
-  echo 1 > "$STUB_CFG/gitpath_exit"
-  run dispatch launch 400 11
-  [ "$status" -eq 0 ]
-  [ "$output" = "launched 11" ]
-  grep -qF 'could not record the terminal handle term-11' "$BATS_TEST_TMPDIR/stderr"
 }
 
 @test "reply: no worktree or two worktrees send nothing; archived and other-repo worktrees do not count" {
