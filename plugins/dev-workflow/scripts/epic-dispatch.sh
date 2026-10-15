@@ -92,7 +92,8 @@
 #   （`--head <ブランチ>` で一致しなければ、`--state merged --search <HEAD>` でブランチ名を問わず探す）、
 #   の順に確かめ、全部通れば `orca terminal close --all` → `orca worktree rm`（--force なし・再試行なし。
 #   stderr に `terminal sweep failed` を含む失敗は `kept <N> rm-failed-terminal-sweep`）→
-#   残ったローカルブランチは先端が HEAD と同じときだけ `git branch -D`。stdout は子ごとに
+#   残ったローカルブランチは先端が HEAD と同じときだけ、ワークツリーが `git worktree list` から外れるのを
+#   上限つきで待って（EPIC_DISPATCH_REAP_DETACH_TIMEOUT 秒・既定 30、_INTERVAL 秒・既定 1）`git branch -D`。stdout は子ごとに
 #   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。
 #   current / list を読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
 # 引数の誤り（launch は epic か子が無い、wait は子も --watch-done も 0 件（--watch-stopped だけも含む）、
@@ -742,7 +743,32 @@ cmd_reap() {
     fi
     cat "$rmerr" >&2; rm -f "$rmerr"
     if tip="$(git rev-parse --verify --quiet "refs/heads/$branch")"; then
-      if [ "$tip" = "$head" ] && git branch -D "$branch" >&2; then
+      # Orca は rm の exit 0 のあともワークツリーを非同期で消すことがあり、git の一覧から外れるまで
+      # そのブランチは消せない。先端が HEAD と同じときだけ、外れるのを上限つきで待つ
+      # （git worktree list が失敗したら残っているものとして待つ。上限を超えたら branch-kept）
+      attached=0
+      if [ "$tip" = "$head" ]; then
+        dt="${EPIC_DISPATCH_REAP_DETACH_TIMEOUT:-30}"; di="${EPIC_DISPATCH_REAP_DETACH_INTERVAL:-1}"
+        case "$dt" in ''|*[!0-9]*) dt=30 ;; esac
+        case "$di" in ''|*[!0-9]*|0) di=1 ;; esac
+        tries=$(( dt / di + 1 ))
+        started=$SECONDS
+        while :; do
+          if wtl="$(git worktree list --porcelain)" && ! printf '%s\n' "$wtl" | grep -qxF -- "worktree $path"; then
+            attached=0; break
+          fi
+          attached=1
+          tries=$(( tries - 1 ))
+          [ "$tries" -gt 0 ] || break
+          [ $(( SECONDS - started )) -lt "$dt" ] || break
+          echo "waiting for the worktree to leave git: $path" >&2
+          sleep "$di"
+        done
+      fi
+      # 待っている間に先端が進んだかもしれないので、消す直前に読み直して HEAD と比べる
+      if [ "$tip" = "$head" ] && [ "$attached" -eq 0 ] \
+        && tip2="$(git rev-parse --verify --quiet "refs/heads/$branch")" && [ "$tip2" = "$head" ] \
+        && git branch -D "$branch" >&2; then
         echo "reaped $n"
       else
         echo "reaped $n branch-kept"
