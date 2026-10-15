@@ -19,6 +19,8 @@
 #         （-C <パス> status --porcelain）/ head（-C <パス> rev-parse HEAD。既定 aaa111）/ branch_tip
 #         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（branch -D）
 #         / wtlist_out・wtlist_out_<回数>・wtlist_exit（worktree list --porcelain。既定は空・0。回数は wtcount）
+#           wtlist_sleep（1 回の worktree list にかかる実時間の秒数）/ wttip_<回数>（その回の呼び出しで branch_tip をこの内容にする）
+#           branch -D が成功すると branch_tip を消す（ブランチが消えたことの表現）
 #   gh  : issue comment <N> --body <本文> は本文を comment_<N> に追記し（1 件ごとに "---" の行で区切る）、
 #         comment_exit で終わる（既定 0）。成功（exit 0）のときは実物の gh と同じに投稿先の URL を stdout に出す。pr list は pr_out を出して pr_exit で終わる（--search 付きは pr_search_out と pr_search_exit。既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
 #         呼び出し回数は ghcount_<N>。FAIL は stderr に "gh: mock failure for issue <N> (poll <count>)" も出す
@@ -169,6 +171,8 @@ case "$1 ${2-}" in
   "worktree list")
     wc=$(( $(cat "$STUB_CFG/wtcount" 2>/dev/null || echo 0) + 1 ))
     echo "$wc" > "$STUB_CFG/wtcount"
+    [ -e "$STUB_CFG/wtlist_sleep" ] && /bin/sleep "$(cat "$STUB_CFG/wtlist_sleep")"
+    [ -e "$STUB_CFG/wttip_$wc" ] && cp "$STUB_CFG/wttip_$wc" "$STUB_CFG/branch_tip"
     rc=$(cat "$STUB_CFG/wtlist_exit" 2>/dev/null || echo 0)
     if [ "$rc" -eq 0 ]; then
       if [ -e "$STUB_CFG/wtlist_out_$wc" ]; then cat "$STUB_CFG/wtlist_out_$wc"; else cat "$STUB_CFG/wtlist_out" 2>/dev/null; fi
@@ -177,7 +181,10 @@ case "$1 ${2-}" in
   "rev-parse --verify")
     [ -e "$STUB_CFG/branch_tip" ] || exit 1
     cat "$STUB_CFG/branch_tip"; exit 0 ;;
-  "branch -D") exit "$(cat "$STUB_CFG/branchd_exit" 2>/dev/null || echo 0)" ;;
+  "branch -D")
+    rc="$(cat "$STUB_CFG/branchd_exit" 2>/dev/null || echo 0)"
+    [ "$rc" -eq 0 ] && rm -f "$STUB_CFG/branch_tip"
+    exit "$rc" ;;
 esac
 case "$1" in
   rev-parse) cat "$STUB_CFG/toplevel"; exit 0 ;;
@@ -1641,6 +1648,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11" ]
   [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
+  [ ! -e "$STUB_CFG/branch_tip" ]
   : > "$STUB_LOG"
   echo bbb222 > "$STUB_CFG/branch_tip"
   run dispatch reap 11
@@ -1662,6 +1670,32 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
   [ "$(first_line '^orca worktree rm')" -lt "$(first_line '^git worktree list')" ]
   [ "$(first_line '^git worktree list')" -lt "$(first_line '^git branch -D')" ]
+  [ ! -e "$STUB_CFG/branch_tip" ]
+}
+
+@test "reap: a branch tip that moved while waiting is not deleted" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'worktree %s\n\n' "$BATS_TEST_TMPDIR/work/issue-11" > "$STUB_CFG/wtlist_out_1"
+  printf 'worktree /work/other\n\n' > "$STUB_CFG/wtlist_out"
+  echo bbb222 > "$STUB_CFG/wttip_2"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11 branch-kept" ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(cat "$STUB_CFG/branch_tip")" = "bbb222" ]
+}
+
+@test "reap: the wait also stops by elapsed seconds when each check is slow" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'worktree %s\n\n' "$BATS_TEST_TMPDIR/work/issue-11" > "$STUB_CFG/wtlist_out"
+  echo 3 > "$STUB_CFG/wtlist_sleep"
+  export EPIC_DISPATCH_REAP_DETACH_TIMEOUT=2 EPIC_DISPATCH_REAP_DETACH_INTERVAL=1
+  run dispatch reap 11
+  [ "$output" = "reaped 11 branch-kept" ]
+  [ "$(calls '^git worktree list --porcelain')" -eq 1 ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
 }
 
 @test "reap: a worktree that never leaves git worktree list gives branch-kept after the limit" {

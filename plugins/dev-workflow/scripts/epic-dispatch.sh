@@ -545,6 +545,7 @@ cmd_reap() {
         case "$dt" in ''|*[!0-9]*) dt=30 ;; esac
         case "$di" in ''|*[!0-9]*|0) di=1 ;; esac
         tries=$(( dt / di + 1 ))
+        started=$SECONDS
         while :; do
           if wtl="$(git worktree list --porcelain)" && ! printf '%s\n' "$wtl" | grep -qxF -- "worktree $path"; then
             attached=0; break
@@ -552,11 +553,15 @@ cmd_reap() {
           attached=1
           tries=$(( tries - 1 ))
           [ "$tries" -gt 0 ] || break
+          [ $(( SECONDS - started )) -lt "$dt" ] || break
           echo "waiting for the worktree to leave git: $path" >&2
           sleep "$di"
         done
       fi
-      if [ "$tip" = "$head" ] && [ "$attached" -eq 0 ] && git branch -D "$branch" >&2; then
+      # 待っている間に先端が進んだかもしれないので、消す直前に読み直して HEAD と比べる
+      if [ "$tip" = "$head" ] && [ "$attached" -eq 0 ] \
+        && tip2="$(git rev-parse --verify --quiet "refs/heads/$branch")" && [ "$tip2" = "$head" ] \
+        && git branch -D "$branch" >&2; then
         echo "reaped $n"
       else
         echo "reaped $n branch-kept"
