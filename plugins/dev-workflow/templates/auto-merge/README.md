@@ -55,7 +55,7 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
      run: scripts/test-auto-merge-workflow.sh
    ```
 
-4. **ラベルを用意する**（`human-merge` は workflow が自動作成するので不要）:
+4. **ラベルを用意する**（`human-merge` と `parent-merge-approved` は workflow が自動作成するので不要）:
 
    ```sh
    R=<owner>/<repo>

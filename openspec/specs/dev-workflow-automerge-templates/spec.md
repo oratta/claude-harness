@@ -15,7 +15,7 @@ dev-workflow プラグインは `templates/auto-merge/` に、展開先リポの
 #### Scenario: 差し替え箇所のマーカーが揃っている
 
 - **WHEN** テンプレートの auto-merge.yml を検査する
-- **THEN** `sacred-paths` / `sacred-paths-jq` / `required-checks` / `labeled-target` / `passed-head-binding` / `pre-merge-recheck` / `automerge-script` のマーカー対（`# >>> name` と `# <<< name`）がすべて存在し、revert-pr.yml には `revert-script` のマーカー対が存在する
+- **THEN** `sacred-paths` / `sacred-paths-jq` / `merge-condition-paths` / `parent-merge-judgment` / `required-checks` / `labeled-target` / `passed-head-binding` / `pre-merge-recheck` / `automerge-script` のマーカー対（`# >>> name` と `# <<< name`）がすべて存在し、revert-pr.yml には `revert-script` のマーカー対が存在する
 
 #### Scenario: README が展開手順を提供する
 

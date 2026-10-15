@@ -18,7 +18,7 @@
 | 1 | PR に `agent-review:passed` ラベルが付いている | REST でラベル取得（`gh pr list --label` はコロン入りラベルで 0 件を返すことがあるため使わない） |
 | 2 | その合格が**現在の HEAD に束縛**されている | PR コメントに「対象 HEAD: <現在の HEAD の40桁フル SHA>」を含むもの（pr-review-gate 手順3・4 が投稿する宣言・証拠コメント）が実在することを確認。無ければマージしない（fail-closed）。**合格ラベル付与後に push された未レビューコミットはここで止まる** |
 | 3 | ci.yml の必須チェックがすべて green | check-runs API を**チェック名の完全一致**で検証。名前ごとに最新 run の conclusion だけを見る |
-| 4 | 聖域パスに一切触れていない | PR の変更ファイル一覧を**パス正規表現**で判定。**rename 元のパス（`previous_filename`）も対象**にするので、聖域ファイルを別名に移して迂回することはできない |
+| 4 | 聖域パスに一切触れていない（例外は 1 つ: マージ条件そのもののパス（`MERGE_CONDITION`）に触れず、親の判断の印がある PR。下の「親の判断で human-merge を外す」） | PR の変更ファイル一覧を**パス正規表現**で判定。**rename 元のパス（`previous_filename`）も対象**にするので、聖域ファイルを別名に移して迂回することはできない |
 | 5 | リポ変数 `AUTOMERGE_PAUSED` が未設定 | 空でない値が入っていたら全停止 |
 
 加えて、次のいずれかに当てはまる PR は対象外（スキップ）:
@@ -100,10 +100,10 @@ REST 読み取りは成功しないため。2026-08-03 実測）。run の寿命
 
 ---
 
-## 聖域パス（常に人間がマージする）
+## 聖域パス（人間がマージする。例外は下の「親の判断で human-merge を外す」）
 
 **パスベース判定**であり、内容の意味判定（LLM・レビューエージェント）には一切委ねない。
-聖域に触れる PR には `human-merge` ラベルが自動で付き、理由がコメントされ、以後スキップされる。
+聖域に触れる PR には `human-merge` ラベルが自動で付き、理由がコメントされ、以後スキップされる（親の判断の印がある PR だけ例外。マージ条件そのもののパスに触れる PR は例外なくスキップされる）。
 
 | パス | なぜ聖域か |
 |---|---|
@@ -126,7 +126,7 @@ ci.yml の隣に新しい workflow を置くだけで素通りできてしまう
   `previous_filename` も列挙して判定する
 
 聖域判定は `AUTOMERGE_PAUSED` の状態と無関係に必ず通る（停止中は何もマージしないので、
-どちらに転んでも聖域 PR が機械マージされることはない）。
+どちらに転んでも、親の判断の印が無い聖域 PR が機械マージされることはない。印がある聖域 PR も、停止中はマージされない）。
 
 ### 見送りラベルの使い分け（どれが付いていてもマージしない）
 
@@ -236,7 +236,7 @@ gh api -X DELETE repos/<owner>/<repo>/actions/variables/AUTOMERGE_PAUSED        
 
 - squash マージ（このロボットの既定）と merge commit の両方に対応する（親コミット数を見て
   `git revert -m 1` の要否を自動で切り替える）。
-- revert PR には `human-merge` が付くので、auto-merge が拾うことはない。
+- revert PR には `human-merge` が付くので、auto-merge が拾うことはない（聖域に触れる revert PR に親の判断の印が付いた場合だけ例外）。
 - revert がコンフリクトした場合はワークフローが失敗する。その場合は手で revert ブランチを作る。
 - 指定できるのは**既定ブランチへマージされた PR だけ**。別ブランチへマージされた PR や、
   マージコミットが既定ブランチの履歴に無い PR は、副作用（ブランチ作成・push）より前に
@@ -343,7 +343,8 @@ CI green の判定は**チェック名の完全一致**で auto-merge が自前�
 | `Bash(git push --no-verify:*)` | pre-push ガード（push-guard-setup）の迂回 |
 
 - 展開先に既存の deny があれば**消さずに足す**（README の jq コマンドは和集合を取る）。
-  deny を減らす変更は `.claude/` が聖域なので必ず human-merge になる。
+  deny を減らす変更は `.claude/` が聖域なので `human-merge` になるが、親の判断の印で外れる。主の目を必ず通したいリポは
+  `auto-merge.yml` の `MERGE_CONDITION` に `|^\.claude/settings\.json$` を足す（足したら `scripts/test-auto-merge-workflow.sh` の must-match にも足す）。
 - `git merge` / `git rebase` そのものは deny しない（feature ブランチでの main 追従に要る）。
 - 無課金 private リポで branch protection が使えない場合、この deny が LLM 側の主防壁になる。
   branch protection が使えるリポでは GitHub 側でも main を保護する（PR 必須 + required status checks）。
@@ -368,7 +369,7 @@ workflow）を持つリポだけに展開する（README の手順 6）。
 revert PR は auto-merge の合格条件（`agent-review:passed` + 現 HEAD の「対象 HEAD:」コメント）を
 **自己付与しない**。機械生成の PR がレビューゲートを迂回して自動マージされる経路は作らない設計で、
 **人間が revert PR の内容をレビューし、`agent-review:passed` を付けて初めて auto-merge の対象になる**
-（聖域パスに触れていれば従来どおり人間がマージする）。staging の巻き戻しは人間のレビュー待ちの分だけ遅れる。
+（聖域パスに触れていれば人間がマージする。親の判断の印が付いた場合だけ例外）。staging の巻き戻しは人間のレビュー待ちの分だけ遅れる。
 
 ### 誤検知ガード（revert しないケース）
 
