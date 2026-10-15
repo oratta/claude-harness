@@ -1,0 +1,186 @@
+## ADDED Requirements
+
+### Requirement: epic-dispatch.sh の wait は止まった子を判断し、通すものには返事を送って待ちを続ける
+`plugins/dev-workflow/scripts/epic-dispatch.sh wait` は `--resolve <epic>` を受け付けなければならない（MUST）。`<epic>` が数字でなければ使い方を出して exit 1 で終わる（MUST）。`--resolve` は `--watch-stopped` と位置引数の子が 1 件以上あるときだけ働き（SHALL）、それ以外では何もしない。`--resolve` が無い `wait` の振る舞いは変えない（MUST）。
+
+`--resolve <epic>` が働くとき、`wait` はポーリングで止まった子（既存の要件のとおり `epic-stopped-seen` に書き換えられた子）ごとに、次を行わなければならない（MUST）。
+
+1. 判断のコマンド（環境変数 `EPIC_DISPATCH_JUDGE`。既定は `epic-dispatch.sh` と同じディレクトリの `stop-judge.sh`）を `<epic> <child>` を引数に 1 回呼ぶ
+2. 判断の出力の 1 行目が `判断: 通す` で、3 行目が `返事: ` に続く空でない文なら、要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」の `--as parent` と同じ処理でその文を子に送る。結果が `sent` か `relaunched` なら、エピックに `親の判断: 子 #<child> 通した — <2 行目の 理由: のうしろ> <4 行目の 記録: のうしろ>` の 1 行をコメントし、その子を出力に含めない
+3. 判断が `判断: 主に上げる` なら、子 issue に 1 行目 `親の判断: 主に上げる`、2 行目以降に判断の理由を書いたコメントを投稿し、その子を `stopped` に含める
+4. 判断のコマンドが非 0 で終わった・出力が 1〜4 行目の形で読めない・送れなかった（`failed`）なら、子 issue に 1 行目 `親の判断: 判断できなかった`、2 行目以降に何が失敗したかと（あれば）送るはずだった返事を書いたコメントを投稿し、その子を `stopped` に含める
+
+ポーリングで `stopped` に含める子が 1 件も無く、閉じた子も完了の印の子もいなければ、`wait` は待ちを続けなければならない（MUST）。エピックや子 issue へのコメントの投稿に失敗しても、その子の扱い（出力に含めるか）は変えず、stderr に投稿し直すコマンドを出す（SHALL）。
+
+`plugins/dev-workflow/scripts/stop-judge.sh <epic> <child>` は、次の入力だけを集めてモデルを 1 回呼び、stdout に 4 行を出さなければならない（MUST）。
+
+- 入力: エピックの本文、子 issue の本文、子 issue の `親エピックからの注意書き:` で始まるコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のもの、子 issue の 1 行目が `子の停止: 主の返事待ち` の最新のコメントの本文と URL、エピックのコメントのうち `親の判断: 子 #<child> ` で始まるもの、`plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` の本文、リポジトリの `.claude/casting/project.md`・`.claude/casting/local.md`（あるものだけ）
+- 呼び方: 既定は `claude -p --model <モデル> --tools "" --no-session-persistence`。モデルは `EPIC_DISPATCH_JUDGE_MODEL`（既定 `sonnet`）、コマンド全体は `EPIC_DISPATCH_JUDGE_CMD` で変えられる。ツールを渡してはならない（MUST NOT）
+- 出力: 1〜3 行目はモデルの出力の 1 行目 `判断: 通す` か `判断: 主に上げる`、2 行目 `理由: <1 行>`、3 行目 `返事: <1 行>`。4 行目は `stop-judge.sh` 自身が付ける `記録: <停止の記録のコメントの URL>`。モデルの出力が 1〜3 行目の形で読めなければ、stdout に何も出さず exit 1 で終わる（MUST）
+- 停止の記録のコメントが見つからない・`gh` が失敗したときは、モデルを呼ばずに exit 1 で終わる（MUST）
+- `orca` の語を含んではならない（MUST NOT。既存要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」）
+
+`plugins/dev-workflow/tests/epic-dispatch.bats` と `plugins/dev-workflow/tests/stop-judge.bats` は、判断のコマンドとモデルのコマンドをスタブにして、上の振る舞い（通して送れたら出力に含めずエピックに 1 行残すこと、主に上げると `stopped` を出すこと、判断の失敗・形の崩れ・送信の失敗で `stopped` を出すこと、`--resolve` なしでは判断を呼ばないこと、入力の集め方と出力の形の検査）を確かめなければならない（MUST）。
+
+この要件の守備範囲で入力として扱うのは、`wait` では判断のコマンドの終了コードと stdout、`reply` と同じ処理の結果で、`stop-judge.sh` では `gh` の出力（エピック・子 issue・コメント）と、モデルのコマンドの stdout である。拾いたい誤りは、判断に失敗した止まりや主に上げる止まりを親に知らせずに待ち続けること、判断の結果を読み違えて通さない件を子に送ること、通した件がエピックに残らないこと、判断の入力に親の会話が混ざって費用が増えることの 4 つである。次は通ってよく、この要件では止めない: モデルの理由や返事の文の中身の良し悪し（基準の当てはめの正しさはこの要件の完了条件にしない）／判断のあとに子が自分で再開していて、返事が既に進んでいる子に届くこと（子は受け取って続ける）／1 回のポーリングで複数の子が止まり、判断を子の数だけ順に呼ぶこと。
+
+#### Scenario: 通すと判断した子には返事を送り、親を起こさない
+- **WHEN** `--watch-stopped --resolve 400 11` の `wait` で、子 11 のワークスペースが `epic-stopped` になり、判断のスタブが `判断: 通す`・`理由: 範囲の内側`・`返事: 推奨どおり進めてよい`・`記録: <URL>` を出し、送信が成功する
+- **THEN** 子 11 の端末に `親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい` が送られ、エピック 400 に `親の判断: 子 #11 通した — 範囲の内側` で始まるコメントが投稿され、`wait` は `stopped 11` を出さずに待ちを続ける
+
+#### Scenario: 主に上げると判断した子は stopped で返す
+- **WHEN** 判断のスタブが `判断: 主に上げる` を出す
+- **THEN** 子 issue に 1 行目 `親の判断: 主に上げる` のコメントが投稿され、`wait` は `stopped 11` を出して exit 0 で終わり、子の端末には何も送られない
+
+#### Scenario: 判断に失敗した子は stopped で返す
+- **WHEN** 判断のスタブが exit 1 で終わる、または 1 行目が `判断: たぶん通す` である
+- **THEN** 子 issue に 1 行目 `親の判断: 判断できなかった` のコメントが投稿され、`wait` は `stopped 11` を出して exit 0 で終わる
+
+#### Scenario: resolve が無ければ判断を呼ばない
+- **WHEN** `--resolve` を付けずに `--watch-stopped 11` の `wait` で子 11 が止まる
+- **THEN** 判断のスタブは呼ばれず、`wait` は `stopped 11` を出す
+
+#### Scenario: stop-judge.sh は形の崩れた出力を通さない
+- **WHEN** モデルのスタブが `判断: 通す` の 1 行だけを出す
+- **THEN** `stop-judge.sh` は stdout に何も出さず exit 1 で終わる
+
+#### Scenario: stop-judge.sh は親の会話を渡さず、基準と記録を渡す
+- **WHEN** `stop-judge.sh 400 11` をモデルのスタブで実行する
+- **THEN** スタブが受け取った入力に、エピック 400 の本文、子 11 の本文、最新の `子の停止: 主の返事待ち` の本文と URL、`parent-pass-criteria.md` の本文が含まれ、スタブの引数に `--tools` と空の値、`--model sonnet` が含まれる
+
+### Requirement: epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける
+`plugins/dev-workflow/scripts/epic-dispatch.sh` は `reply [--relaunch] --as <parent|owner> <epic> <child> <text>` を受け付けなければならない（MUST）。`--as` が無い・値が `parent` / `owner` 以外・`<epic>` か `<child>` が数字でない・`<text>` が空なら、使い方を出して exit 1 で終わり、`orca` を呼んではならない（MUST）。
+
+送る文の頭には、`--as parent` なら `親エピック #<epic> の判断（主の承認ではない）: `、`--as owner` なら `主の返事（親エピック #<epic> 経由）: ` を付けなければならない（MUST）。
+
+`reply` は今の Orca の一覧から、今のワークツリーと同じ repoId・linkedIssue が `<child>`・archive されていない子のワークツリーを探し、次のとおりに動かなければならない（MUST）。stdout は 1 行。
+
+| 状態 | 動き | stdout | exit |
+|---|---|---|---|
+| ワークツリーがちょうど 1 件、端末が 1 つ、`--relaunch` なし | その端末に送り、ターンの開始まで確かめる（`launch` と同じ確かめ方） | `sent <child>` | 0 |
+| ワークツリーがちょうど 1 件、端末が 0 か `--relaunch` | `--relaunch` なら先にそのワークツリーの端末を全部閉じる。`launch` と同じ起動コマンド（`EPIC_DISPATCH_PARENT_EPIC=<epic>` と待っている間の自動コンパクトの閾値を前置きしたもの）で端末を作り、`/develop #<child> （エピック #<epic> の子。返事を受けて起動し直し）` のうしろに頭を付けた文を続けて送る | `relaunched <child>` | 0 |
+| 端末が 2 つ以上（`--relaunch` なし） | 送らない | `failed <child> ambiguous-terminal` | 1 |
+| ワークツリーが 0 件か 2 件以上 | 送らない | `failed <child> no-worktree` / `failed <child> ambiguous-worktree` | 1 |
+| 送信・作成・閉じるのどれかが失敗、またはターンの開始を確かめられない | 送り直しか作り直しのコマンドを stderr に出す（`launch` の案内と同じ形） | `failed <child> <段>` | 1 |
+
+develop の手順書には `orca` のコマンドを書かず、端末の有無の確かめ方は `reply` が持つ（MUST。既存要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」）。
+
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、`orca` のスタブで上の表の各行と、頭の付け方、引数の誤りで `orca` を呼ばないことを確かめなければならない（MUST）。
+
+この要件の守備範囲で入力として扱うのは、引数と、`orca` の一覧・端末の一覧・送信の出力である。拾いたい誤りは、親の判断を主の返事として届けること（頭の取り違え）、どの端末が子のセッションか分からないまま送ること、端末が無い子に送ったつもりで何も届かないこと、`--relaunch` で古いセッションを残したまま新しいセッションを起動して同じ子が二重に動くことの 4 つである。次は通ってよく、この要件では止めない: 返事の文の中身（親が主の答えを書き換えることは手順で防ぎ、この要件では見ない）／送った端末で子のセッションがちょうど終わっていて、シェルに文字が打ち込まれること（端末の一覧から区別できない。子が閉じた件は `wait` の `closed` で分かる）。
+
+#### Scenario: 端末が 1 つなら送り手を付けて送る
+- **WHEN** 子 11 のワークツリーに端末が 1 つある状態で `reply --as owner 400 11 'A で進めて'` を実行する
+- **THEN** その端末に `主の返事（親エピック #400 経由）: A で進めて` が送られ、stdout は `sent 11` で exit 0
+
+#### Scenario: 端末が無ければ起動し直して返事を付ける
+- **WHEN** 子 11 のワークツリーに端末が無い状態で `reply --as parent 400 11 '推奨どおり'` を実行する
+- **THEN** `EPIC_DISPATCH_PARENT_EPIC=400` と閾値を前置きした起動コマンドで端末が作られ、`/develop #11` で始まり `親エピック #400 の判断（主の承認ではない）: 推奨どおり` を含む文が送られ、stdout は `relaunched 11`
+
+#### Scenario: relaunch は先に端末を閉じる
+- **WHEN** 子 11 のワークツリーに端末が 1 つある状態で `reply --relaunch --as owner 400 11 'B で'` を実行する
+- **THEN** 端末を閉じる呼び出しが端末を作る呼び出しより先にあり、stdout は `relaunched 11`
+
+#### Scenario: 端末が 2 つ以上なら送らない
+- **WHEN** 子 11 のワークツリーに端末が 2 つある状態で `reply --as owner 400 11 'A'` を実行する
+- **THEN** 送信の呼び出しは無く、stdout は `failed 11 ambiguous-terminal` で exit 1
+
+#### Scenario: as が無ければ orca を呼ばない
+- **WHEN** `reply 400 11 'A'` を実行する
+- **THEN** stderr に使い方が出て exit 1、`orca` は呼ばれない
+
+### Requirement: 親が通してよい範囲の基準を 1 つのファイルに置く
+`plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` は、止まった子を親の側で通してよい範囲の基準と、判断の出力の形を書かなければならない（MUST）。判断（`stop-judge.sh` が呼ぶモデル）はこのファイルを読んで決める。
+
+- **通す条件**: 次をすべて満たすときだけ通す。推奨がある／推奨がエピックの目的と子 issue の受け入れ条件の範囲を広げず逆向きにしない／聖域（`CLAUDE.md`・hooks・権限設定・`rules/`・常時注入の予算ファイル、`rules/destructive-git-guard.md` の破壊的な git 操作、秘密情報の値、外部への公開・送信・課金、PR のマージ）に触れない／そのブランチの中の取り消しや設定の戻しで戻せる／主の側の情報（好み・事業判断・主しか知らない事実・リスクの許容）が要らない／実機操作（MFA・OAuth・ログイン・ダッシュボードの操作）でない／配役表が渡されたとき、要る観点の担い手が主でない／同じ子の同じ件を既に一度通していない
+- **迷ったとき**: 1 つでも満たすか判断できなければ主に上げる
+- **例**: 通る例（仕様レビューの周の上限を超えた続行、その PR の中に閉じるトークン上限の引き上げ、リポジトリの中のソースでファイル名が理由で hook が止めたファイルの読み取り、手順外の判断を推奨どおり受け入れること、自分の実行の配下で暴走したプロセスの停止）と、通らない例（マージの承認、聖域のファイルの変更、実機操作、主しか知らない設計意図）
+- **出力の形**: 1 行目 `判断: 通す` か `判断: 主に上げる`、2 行目 `理由: <1 行>`、3 行目 `返事: <1 行>`
+- **位置づけ**: この基準は案で主が PR で決めること、#1030 の「合理性があり危険が低い」はこの基準を参照すること
+
+PR のマージの可否はこの基準で通してはならない（MUST NOT。#1030 の手順に任せる）。
+
+#### Scenario: 基準のファイルに通す条件と出力の形が書かれている
+- **WHEN** `parent-pass-criteria.md` を読む
+- **THEN** 上の 8 つの通す条件、判断できなければ主に上げること、通る例と通らない例、3 行の出力の形が書かれ、マージを通さないことが書かれている
+
+### Requirement: Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる
+develop の SKILL.md「エピックの扱い」→「回し方」の Orca 経路の手順は、次を規定しなければならない（MUST）。この要件は、要件「エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する」の親の側のうち、`stopped` で起こされたら記録を読んでユーザーに報告する規定と、止まった子への返事の仕方を #1034 で決めるとする規定に優先する。
+
+- 動いている子を待つ `wait` には、`--watch-stopped` に加えて `--resolve <エピック番号>` を付ける（MUST）。通すと判断された止まりは `wait` の中で返事が送られ、親は起こされない
+- `stopped <N>...` で起こされたら、止まった子ごとに子 issue の最新の `子の停止: 主の返事待ち` と `親の判断:` のコメントを読む（MUST）
+  - `親の判断: 判断できなかった` で、送るはずだった返事があり、送信だけが失敗した件は、主に上げずに `epic-dispatch.sh reply --as parent` で送り直してよい（MAY）。送れたらエピックに `親の判断: 子 #N 通した` の 1 行を残す（MUST）
+  - それ以外は主に上げる（MUST）。説明は `output-styles/readable.md` の「判断を求めるときは、背景から書いて推奨まで出す」の順（目的 → いま取り組んでいる場所 → 起きた事実 → 決めてほしいこと 1 つ → 推奨と受け入れるリスク）で書き、エピックの目的と他の子との関係を含め、子の停止の記録の URL を添える。実機操作は、どの子の・どの画面で・何をするかを書く
+- 主の答えを受けたら、`references/reply-after-idle.md` の表でそのまま送るか起動し直すかを決め、`epic-dispatch.sh reply --as owner`（起動し直すなら `--relaunch` も）に主の答えをそのまま渡して子に届ける（MUST）。`reply` の出力が `failed` なら主に報告する（MUST）
+- 止まった子を動いている子から外さず、2 に戻る（MUST。既存の規定のまま）
+- 親が通してよい範囲の基準は `references/parent-pass-criteria.md` を指す（MUST）
+
+develop の手順書（`skills/develop` 配下）に `orca` のサブコマンドを書いてはならない（MUST NOT）。
+
+この要件の守備範囲で入力として扱うのは、`wait` の出力と、子 issue の `子の停止:` と `親の判断:` のコメント、主の答え（親のセッションの会話）、`reply` の出力である。拾いたい誤りは、通せなかった止まりを主に上げずに待ち続けること、主に上げる説明が子の会話を前提にして主が読めないこと、主の答えを子に届けないこと、時間がたった子に表を見ずに送ることの 4 つである。次は通ってよく、この要件では止めない: 説明の文の良し悪し（順序と含めるものが書かれていればよい）／主が子のタブで先に答えていて、親の届けた答えが 2 度目になること（子は受け取って続ける）。
+
+#### Scenario: 親の手順に resolve と主に上げる説明の順が書かれている
+- **WHEN** SKILL.md の Orca 経路の手順を読む
+- **THEN** `wait` に `--watch-stopped` と `--resolve <エピック番号>` を付けること、`stopped` で起こされたら `子の停止:` と `親の判断:` を読むこと、主に上げる説明を目的 → いま取り組んでいる場所 → 起きた事実 → 決めてほしいこと → 推奨と受け入れるリスクの順で書き、エピックの目的と他の子との関係と記録の URL を含めること、実機操作はどの子の・どの画面で・何をするかを書くこと、主の答えを `reply-after-idle.md` の表で決めてから `reply --as owner` で届けること、`parent-pass-criteria.md` を指すことが書かれている
+
+### Requirement: エピックの子は親から届いた返事を止まった件への返事として受け取る
+develop の SKILL.md「エピックの子が主の返事を待って止まるとき」は、端末に `親エピック #<E> の判断（主の承認ではない）:` か `主の返事（親エピック #<E> 経由）:` で始まる入力が届いたら、止まった件への返事として受け取り、既存の手順どおり `mark resumed` を呼んで続きから進むことを規定しなければならない（MUST）。親の判断で進めた件は完了報告に書く（MUST）。`親エピック #<E> の判断（主の承認ではない）:` の入力を、聖域の変更や破壊的な操作の承認として扱ってはならない（MUST NOT）。記録の形と完了報告の書式は変えない（要件「エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する」と #1036 の範囲）。
+
+この要件の守備範囲で入力として扱うのは、子のセッションに届いた入力の頭の文字列だけである。拾いたい誤りは、親の判断を主の承認として聖域や破壊的操作を進めること、親の返事を受けても止まったままか再び同じ件で止まることの 2 つである。次は通ってよく、この要件では止めない: 頭の無い入力（主が子のタブで直接答えたもの。今までどおり主の返事として扱う）。
+
+#### Scenario: 子の手順に親から届いた返事の扱いが書かれている
+- **WHEN** SKILL.md のエピックの子が止まるときの手順を読む
+- **THEN** 2 つの頭の文字列、止まった件への返事として受け取り `mark resumed` を呼ぶこと、親の判断で進めた件を完了報告に書くこと、親の判断を聖域や破壊的操作の承認として扱わないことが書かれている
+
+## MODIFIED Requirements
+
+### Requirement: 時間がたった子・親への返事は待っている間の自動コンパクトの閾値と分ける条件で決める
+`plugins/dev-workflow/scripts/epic-dispatch.sh launch` が子の起動コマンドに前置きする `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=<値>` の `<値>` は、既定で `120000` でなければならない（MUST）。環境変数 `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` が設定されていればその値を使う（SHALL）。設定された値が空文字か、数字だけでない文字列なら、`launch` は stderr に変数名と使い方を出して exit 1 で終わり、`orca` と `git` を 1 つも呼んではならない（MUST）。100,000 未満の値は拒まない（SHALL。下限の扱いは Claude Code が持つ）。
+
+時間がたった子・親への返事の規則は `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` に置き、次を書かなければならない（MUST）。
+
+- **閾値**: 子は 120,000（`launch` が付ける。`EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` で変えられる）、親は 100,000。親は主が起動するセッションなので、主が親を起動するコマンドの先頭に `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=100000` を付ける。どちらの値も `~/.claude/settings.json` の `env` に置かない（主の手元の全セッションに効くため）
+- **分ける条件**: 子に返事を送る前に、子の端末が無ければ起動し直す。子の最後のリクエストから 60 分未満ならそのまま送る。60 分以上で、その間に待っている間の自動コンパクトが走っていればそのまま送る。60 分以上でコンパクトが走っていなければ、会話量 N が 150,000 トークン以上なら起動し直し、150,000 未満ならそのまま送る
+- **判定に使う事実**: 子の端末の有無（子のワークスペースに端末が残っているか。`orca` のコマンドは書かず、要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」に従う。端末の有無は `epic-dispatch.sh reply` が確かめ、端末が無ければ起動し直す。要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」）、子のセッションのトランスクリプト（`~/.claude/projects/` 配下の jsonl）の最後のリクエストの時刻と、そのあとの `compact_boundary` の有無、会話量 N（`plugins/dev-workflow/scripts/subagent-context.sh --file <トランスクリプト>`）
+- **親への適用**: 親自身が長く待ったあとも同じ条件で、そのまま続けるか起動し直すかを決める。親の状態のうち、回し方（`回し方:`）・終わった子（`子 #N マージ → 残り k 件` / `子 #N 見送り`）・外した子エピック（`後で別に起動するエピック:`）・残したワークツリー（`子 #N のワークツリーを残した`）・親が通した判断（`親の判断: 子 #N 通した`）はエピックのコメントから、残りの子は依存グラフと子 issue の状態から復元できる
+- **根拠と限り**: 値と条件の根拠として #1039 の集計コメントの URL と要点（返事の直前の会話の中央値、起動し直しの費用、閾値ごとの費用の増減）、実績の少なさと PC が寝ているとコンパクトが走らないこと
+- **再集計**: 1〜2 週間回したあとに同じ集計をやり直して #1039 にコメントし、値を見直す。件数・金額は合否に使わず記録する
+
+送り方と起動し直し方の手順本体はこのファイルに書かない（SHALL NOT。止まった子を親が解決する手順（develop の SKILL.md の Orca 経路と `epic-dispatch.sh reply`）が書き、このファイルを参照する）。
+
+develop の SKILL.md「エピックの扱い」の「回し方」は、子セッションの起動コマンドに `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` が付くことと、時間がたった子・親に返事を送る前に `references/reply-after-idle.md` の規則で「そのまま送る」か「起動し直す」かを決めることを書かなければならない（MUST）。
+
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、既定の前置き、`EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` での上書き、空文字と数字でない値の拒否、規則のファイルの上の記述（値・分ける条件・`settings.json` に置かないこと）、SKILL.md の上の記述を確かめなければならない（MUST）。
+
+この要件の守備範囲は、閾値の上書き値の検査と、返事の前の分類の 2 つである。
+
+閾値の上書き値の検査について、入力として扱うのは `launch` を実行したシェルの環境変数 `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS`（主か親のセッションが `launch` の呼び出しに付けたもの）だけである。拾いたい誤りは、空文字や `120k`・`1.2e5`・`120,000` のような数字だけでない値がそのまま子の起動コマンドに入り、子の Claude Code が閾値を読めずに既定の 200,000 で動くことと、値の空白や記号でコマンドが壊れることである。次は通してよく、この検査では止めない: `0` や `99999` のような 100,000 未満の数字（下限の扱いは Claude Code が持つ）／`200000` や `1000000` のような大きな数字／`0120000` のような先頭に 0 の付いた数字／変数が設定されていない環境（既定の 120000 を使う）。
+
+返事の前の分類について、入力として扱うのは、子の端末の有無（子のワークスペースに端末が残っているか）、子のセッションのトランスクリプト（`~/.claude/projects/` 配下の jsonl）に記録された最後のリクエストの時刻とそのあとの `compact_boundary` の有無、同じトランスクリプトから `plugins/dev-workflow/scripts/subagent-context.sh --file` で測った会話量 N である。この分類はスクリプトではなく、本体が規則のファイルを読んで行う。拾いたい誤りは、PC が寝ていてコンパクトが走らなかった 150,000 トークン以上の会話に、そのまま返事を送って会話全体を書き込み直すことと、コンパクトが走った子や 60 分未満の子を起動し直して、子が積んだ判断と起動し直しの費用（平均約 258k）を無駄にすることである。次は通してよく、この分類では止めない: 経過時間がちょうど 60 分前後で、時刻の読み方によって扱いが分かれる子／N が 150,000 前後で、測り方の誤差で扱いが分かれる子／トランスクリプトが複数あってどれが子のセッションか分からず、そのまま送った子／この変更より前に起動され、前置きが無く既定の 200,000 で動いている子／主が親の起動コマンドに値を付け忘れ、既定のまま動く親／`EPIC_DISPATCH_CLAUDE_CMD` が前置きの代入を受け付けない形（`exec` で始まる文字列など）で値が渡らなかった子。
+
+どちらについても、すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
+
+#### Scenario: launch は子の起動コマンドに既定の閾値を前置きする
+- **WHEN** `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` の無い環境で `epic-dispatch.sh launch 400 11` を実行する
+- **THEN** `orca terminal create` の `--command` は `EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'` である
+
+#### Scenario: 閾値は環境変数で変えられる
+- **WHEN** `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=150000` の環境で `epic-dispatch.sh launch 400 11` を実行する
+- **THEN** `orca terminal create` の `--command` は `EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=150000 cld --model 'opus'` である
+
+#### Scenario: 閾値の上書きが空なら起動しない
+- **WHEN** `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=` の環境で `epic-dispatch.sh launch 400 11` を実行する
+- **THEN** stderr に `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` と使い方が出て exit 1、`orca` と `git` は呼ばれない
+
+#### Scenario: 閾値の上書きが数字でなければ起動しない
+- **WHEN** `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=120k` の環境で `epic-dispatch.sh launch 400 11` を実行する
+- **THEN** stderr に `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` と使い方が出て exit 1、`orca` と `git` は呼ばれない
+
+#### Scenario: 規則のファイルに値と分ける条件が書かれている
+- **WHEN** `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` を読む
+- **THEN** 子 120,000・親 100,000 の値、親の値を主の起動コマンドで付けて `settings.json` の `env` に置かないこと、端末が無い・60 分未満・コンパクトが走った・N が 150,000 以上か未満で「そのまま送る」か「起動し直す」かを分ける条件、判定に使う事実（端末の有無は `epic-dispatch.sh reply` が確かめること）、親の状態の復元（親が通した判断を含む）、1〜2 週間後の再集計が書かれている
+
+#### Scenario: SKILL.md の回し方が規則のファイルを指す
+- **WHEN** SKILL.md の「エピックの扱い」を読む
+- **THEN** 子の起動コマンドに `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` が付くことと、時間がたった子・親に返事を送る前に `references/reply-after-idle.md` の規則で決めることが書かれている
+
