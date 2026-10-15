@@ -42,6 +42,12 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
    | 2 | `auto-merge.yml` の `REQUIRED_CHECKS`（`# >>> required-checks` マーカーの間） | 展開先リポの ci.yml のジョブ `name:` と**完全一致**させる（既定: `shellcheck` / `bats suites`）。ズレると永久にマージされない（fail-closed）。一致はテストが CI で機械検証する |
    | 3 | `AUTOMERGE_PAT` | Fine-grained PAT（Contents: RW / Pull requests: RW、対象リポのみ）を発行して リポの Actions secrets に登録する。手順の詳細: `docs/auto-merge.md`。**登録するまで 1 件もマージされない**（dry_run で判定ログだけ確認できる） |
 
+   **任意の差し替え**（既定のままでも動く）: `auto-merge.yml` の `MERGE_CONDITION`（`# >>> merge-condition-paths` マーカーの間）。
+   マージ条件そのもののパスで、ここに触れる PR は親の判断の印（`parent-merge-approved`）があっても `human-merge` が外れない。
+   既定は `^\.github/workflows/` だけ。合格ラベルを発行するゲートの定義など、リポ固有のマージ条件があれば足す。
+   `SACRED` の部分集合にすること。**足したら `test-auto-merge-workflow.sh` の `MERGE_CONDITION` の must-match リストにも代表パスを足す**。
+   条件の全体は `docs/auto-merge.md` の「親の判断で human-merge を外す」。
+
 3. **テストを CI に組み込む**（ci.yml に 1 ステップ追加）:
 
    ```yaml
