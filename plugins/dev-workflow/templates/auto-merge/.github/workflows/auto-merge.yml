@@ -177,7 +177,6 @@ jobs:
           MERGE_CONDITION='^\.github/workflows/'
           # <<< merge-condition-paths
 
-
           # ── ci.yml の必須チェック（ジョブ名と完全一致させること）──
           # 【展開時に差し替え】展開先リポの ci.yml のジョブ name: と完全一致させる。
           # ズレは scripts/test-auto-merge-workflow.sh が CI で検知する。
@@ -234,7 +233,7 @@ jobs:
             if printf '%s\n' "$pj_files" | grep -qE "$MERGE_CONDITION"; then
               return 0
             fi
-            pj_json=$(gh api "repos/$REPO/issues/$pj_n/comments?per_page=100" --paginate --slurp 2>/dev/null) || return 0
+            pj_json=$(gh api "repos/$REPO/issues/$pj_n/comments?per_page=100" --paginate --slurp 2>/dev/null) || { echo "親の判断の印: コメントの取得に失敗（印は無いものとして扱う）"; return 0; }
             pj_url=$(printf '%s' "$pj_json" | jq -r --arg head "$pj_head" '
               (add // [])
               | map(select(
@@ -242,7 +241,7 @@ jobs:
                   and ((.body // "") | gsub("\r"; "") | split("\n")
                        | (.[0] == "親のマージ判断: 可") and any(.[]; . == ("親が見た HEAD: " + $head))))
                 )
-              | last | .html_url // empty' 2>/dev/null) || return 0
+              | last | .html_url // empty' 2>/dev/null) || { echo "親の判断の印: コメントの jq の評価に失敗（印は無いものとして扱う）"; return 0; }
             [ -n "$pj_url" ] || return 0
             PARENT_COMMENT_URL="$pj_url"
             PARENT_OK=true
@@ -404,7 +403,11 @@ jobs:
             fi
 
             if [ "$DRY_RUN" = "true" ]; then
-              echo "[dry-run] PR #$N は全条件を満たしています（agent-review:passed / CI green / 聖域非接触）。実マージはしません"
+              if [ "$PARENT_USED" = "true" ]; then
+                echo "[dry-run] PR #$N は全条件を満たしています（agent-review:passed / CI green / 聖域接触だが親の判断の印あり）。実マージはしません"
+              else
+                echo "[dry-run] PR #$N は全条件を満たしています（agent-review:passed / CI green / 聖域非接触）。実マージはしません"
+              fi
               continue
             fi
 
