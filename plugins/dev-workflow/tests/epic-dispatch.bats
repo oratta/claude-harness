@@ -1860,3 +1860,33 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$status" -eq 0 ]
   [ "$output" = "$PLUGIN_DIR/scripts/epic-dispatch.sh" ]
 }
+
+# spec: dev-workflow-develop（エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する）
+
+@test "skill: an epic child records its stop before marking it, in both waiting orders" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  [ -n "$r" ]
+  printf '%s\n' "$r" | grep -F 'route' | grep -qF '`nested`'
+  printf '%s\n' "$r" | grep -qF '`子の停止: 主の返事待ち`'
+  printf '%s\n' "$r" | grep -qF 'scripts/epic-dispatch.sh mark stopped <記録先の issue 番号>'
+  printf '%s\n' "$r" | grep -qF 'scripts/epic-dispatch.sh mark resumed <記録先の issue 番号>'
+  printf '%s\n' "$r" | grep -F '本文で質問してターンを終えるとき' | grep -F '最後のツール呼び出し' | grep -qF '最初のツール呼び出し'
+  printf '%s\n' "$r" | grep -F '質問ツール' | grep -qF '記録 → `mark stopped` → 質問ツール'
+  printf '%s\n' "$r" | grep -F '回答を受けたら' | grep -qF '`mark resumed`'
+  printf '%s\n' "$r" | grep -F '引き継ぎを先に投稿' | grep -qF '引き継ぎのコメントの URL'
+  printf '%s\n' "$r" | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
+  printf '%s\n' "$r" | grep -qF '#1036'
+}
+
+@test "skill: Orca route waits with --watch-stopped and reports stopped children without dropping them" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF -- '--watch-stopped <動いている子>...'
+  printf '%s\n' "$r" | grep -F '`stopped <N>...`' | grep -qF '1〜3 行'
+  p="$(printf '%s\n' "$r" | grep -E '^8\. ')"
+  printf '%s\n' "$p" | grep -qF '`stopped <N>...` で起こされたら'
+  printf '%s\n' "$p" | grep -qF '`子の停止: 主の返事待ち`'
+  printf '%s\n' "$p" | grep -qF '報告'
+  printf '%s\n' "$p" | grep -qF '外さず'
+  printf '%s\n' "$p" | grep -qF '2 に戻る'
+  printf '%s\n' "$r" | grep -E '^5\. ' | grep -F '記録' | grep -F '子のタブ' | grep -qF '検知できない'
+}
