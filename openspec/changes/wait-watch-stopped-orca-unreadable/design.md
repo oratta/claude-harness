@@ -10,3 +10,7 @@
 ## Risks / Trade-offs
 
 なし。文言のみの変更。
+
+## Test
+
+手順 6 の文言は bats の検査で守る。既存の検査は `--watch-done` を含む行だけを見るため、`--watch-stopped` を落としても通る。`stdout に何も出さず exit 1` を含む行に、`--watch-done` と `--watch-stopped` の両方と「親ワークツリーで開き直す」があることを確かめる検査を、同じテストの末尾に足す。
