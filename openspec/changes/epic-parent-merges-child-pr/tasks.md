@@ -1,0 +1,24 @@
+## 1. テストを先に足す（まだ落ちる）
+
+- [ ] 1.1 新しい bats `plugins/dev-workflow/tests/parent-merge.bats` を作り、次を検査する: `parent-merge-criteria.md` が在り、6 つの条件名（見送りが聖域接触だけ・ゲートが今の HEAD で済んでいる・主の側の情報が要らない・範囲の内側・戻せる・配役表で主の観点が無い）と「迷ったら主に上げる」の趣旨の文、`裁定: 可`・`裁定: 否`・`不足:` を含む／SKILL.md に `本体は自動でマージしない` が 0 件で、Orca 経路の段落に `PR のマージ待ち（`・`parent-merge-criteria.md`・`dev-workflow:decider`・`親のマージ判断: 可`・`親が見た HEAD:`・`parent-merge-approved`・`マージに回した` があり、コメントがラベルより先と書かれている／`ci-watch.md` の見送りラベルの分岐に `nested`・`PR のマージ待ち（human-merge）`・`--until-merged` と、子が印を付けない旨がある／`commit-and-pr-operations.md` の「唯一のマージ経路」の段落に `parent-merge-approved` がある／`parent-pass-criteria.md` にマージの条件を足していない（`裁定:` を含まない）。触る範囲: plugins/dev-workflow/tests/parent-merge.bats（新規。既存の `plugins/dev-workflow/tests/epic-dispatch.bats` の冒頭の `section`・`run_section` の作りを参考にする）
+- [ ] 1.2 `epic-dispatch.bats` の「skill: child sessions skip permissions and the parent never merges」の最後の 1 行（`自動でマージしない` を見る行）を、新しい段落の文（直接マージしない旨）を見る行に差し替える。ほかの行と epic-dispatch.sh は変えない。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:1971-1980
+
+## 2. 基準のファイル
+
+- [ ] 2.1 `parent-merge-criteria.md` を新しく作る。冒頭に使いどころ（`human-merge` で止まった子の PR を、親が起こした `dev-workflow:decider` が読み、親が判断の印を付けてよいかを決める。マージを実行するのは自動マージの処理）、可の条件の表（design.md の 6 条件と `parent-pass-criteria.md` の条件との対応の列）、「迷ったとき」の段落、出力の形（1 行目 `裁定: 可`・`裁定: 否`・`不足: <足りないもの>`、2 行目 `理由: <1 行>`。前置きを付けない）、守備範囲（入力と拾いたい誤り）を書く。`parent-pass-criteria.md` の構成と語にそろえる。触る範囲: plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md（新規）、参照 plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md:1-62
+
+## 3. develop の SKILL.md
+
+- [ ] 3.1 「子の PR のマージは今までどおり子セッションの中で人の承認で行い、本体は自動でマージしない。」の文を、「本体は子の PR を `gh pr merge` や merge API で直接マージしない。マージは子セッションの中の人の承認か自動マージの処理が行い、`human-merge` の付いた子の PR は、本体が下の『マージ待ちの子』の手順で判断の印を付けたときに限って自動マージの処理がマージする」の趣旨に書き換える。同じ段落のほかの文は変えない。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:440
+- [ ] 3.2 Orca 経路の手順のあと（手順 8 の次の段落「`timeout` と `closed` で起こされたときの確認では…」の後ろ）に、**マージ待ちの子** の段落を足す。中身は spec の要件「Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける」のとおり: 手順 8 で読んだ記録の `止まった理由:` が `PR のマージ待ち（` で始まる子は主に上げる前にこの手順を行う／4 つの前提（`gh api repos/<owner>/<repo>/contents/.github/workflows/auto-merge.yml` で main の中身に `parent-merge-approved` があるか、見送りラベルが `human-merge` だけか、PR の URL の一致、今の HEAD の `親のマージ判断: 可` がまだ無いか）／`dev-workflow:decider` に貼る入力の一覧と `references/parent-merge-criteria.md`／可のときの HEAD の取り直し → コメント → ラベル → `reply --as parent` → エピックに `親の判断: 子 #N マージに回した — <理由> <PR の URL>`／否・不足・形が崩れた・迷ったときは手順 8 の報告の形で主に上げ、PR の URL と決める役の理由を含める／印を付けるのは親だけで、親も直接マージしない。手順 2・手順 8・子の側の「親から届いた返事」の行は変えない。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:436-438（436 の段落の後ろに挿入）
+
+## 4. 共有 reference
+
+- [ ] 4.1 `ci-watch.md`「`ready` を受けたあと」の 1 に、エピックの子の分岐を足す: `epic-dispatch.sh route`（子の番号なし）が `nested` で、付いている見送りラベルが `human-merge` だけで、対象リポの main の `auto-merge.yml` に `parent-merge-approved` の語があるときは、オーナーに直接頼まず、develop の SKILL.md「エピックの子が主の返事を待って止まるとき」の記録を `止まった理由: PR のマージ待ち（human-merge）: <PR の URL>` で残して止まる。親の返事が届いたら `ci-watch.sh wait <owner/repo> <PR番号> --until-merged` を `run_in_background` で起動して見届ける（結果は 4 の表のまま。`timeout` で改めて止まるときの `止まった理由:` は `PR のマージ待ち（human-merge、親の判断の印のあともマージされない）: <PR の URL>`）。子は `parent-merge-approved` も `親のマージ判断:` も付けず、親の返事を承認として扱わない。それ以外は従来の文のまま（`待たずに PR の URL を添えてオーナーにマージを頼み` の文は残す。`ci-watch.bats` が見ている）。触る範囲: plugins/dev-workflow/references/ci-watch.md:78
+- [ ] 4.2 `commit-and-pr-operations.md` の「ゲート通過 → auto-merge の機械マージが唯一のマージ経路」の段落に、エピックの子の PR で聖域接触だけで `human-merge` が付いたものは、親の判断の印（`parent-merge-approved` ラベルと `親のマージ判断: 可`・`親が見た HEAD:` のコメント）で自動マージの処理が `human-merge` を外せること（マージするのは処理の側で、LLM の直接マージの禁止は変わらない。条件の正本は各リポの `docs/auto-merge.md`、親の手順は develop の SKILL.md）を 1〜2 文で足す。触る範囲: plugins/dev-workflow/references/commit-and-pr-operations.md:18
+
+## 5. 記録と確認
+
+- [ ] 5.1 変更の記録を書く（何が変わったか・親が気づく経路を epic-dispatch.sh を変えずに既存の `stopped` に乗せたこと・印が効かないリポでは主に上げること・戻し方）。触る範囲: plugins/dev-workflow/changes/1054.md（新規。書式は plugins/dev-workflow/changes/1030.md:1-12 にそろえる）
+- [ ] 5.2 `grep -n '本体は自動でマージしない' plugins/dev-workflow/skills/develop/SKILL.md` が 0 件、`bats plugins/dev-workflow/tests/` が通る、`openspec validate --strict` が exit 0 を確かめる
+- [ ] 5.3 archive の前に、dev-workflow-develop「エピックの条件・作り方・回し方・完了条件を規定する」の main の今の文と、この change の MODIFIED の文を突き合わせる。並行する子（#1043 など）が先に同じ要件を書き換えて main に入っていたら、main の今の文に、この change の 2 か所の書き換え（最後の文とシナリオ「Orca 経路の本体は wait の出力で次を決める」の最後の句）だけを載せ直してから archive する。触る範囲: openspec/changes/epic-parent-merges-child-pr/specs/dev-workflow-develop/spec.md:3-33
