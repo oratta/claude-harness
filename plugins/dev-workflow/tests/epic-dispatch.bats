@@ -1976,7 +1976,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$r" | grep -qF 'EPIC_DISPATCH_MODEL'
   printf '%s\n' "$r" | grep -F 'EPIC_DISPATCH_MODEL' | grep -qF 'opus'
   printf '%s\n' "$r" | grep -qF 'pr-review-gate'
-  printf '%s\n' "$r" | grep -qF '自動でマージしない'
+  printf '%s\n' "$r" | grep -F '直接マージしない' | grep -qF 'gh pr merge'
 }
 
 @test "skill: prerequisites table has an orca row with the subagent fallback" {
