@@ -32,7 +32,7 @@ ready_section() { awk '/^### `ready` を受けたあと/{f=1; print; next} /^#+ 
   grep -qF '判断できなければ「主に上げる」' "$CRITERIA"
 }
 
-@test "criteria: output is 裁定: 可 / 裁定: 否 / 不足: with a reason line" {
+@test "criteria: output is the verdict line with a reason line" {
   grep -qxF '裁定: 可' "$CRITERIA"
   grep -qF '`裁定: 否`' "$CRITERIA"
   grep -qF '`不足: <足りないもの>`' "$CRITERIA"
@@ -85,7 +85,7 @@ ready_section() { awk '/^### `ready` を受けたあと/{f=1; print; next} /^#+ 
   printf '%s\n' "$p" | grep -qF 'auto-merge 対象外（聖域パス接触）'
 }
 
-@test "skill: on 可 the parent rechecks HEAD, comments before labeling, replies and records 'マージに回した'" {
+@test "skill: on approval the parent rechecks HEAD, comments before labeling, replies and records" {
   p="$(merge_para)"
   printf '%s\n' "$p" | grep -qF 'headRefOid'
   printf '%s\n' "$p" | grep -qF '親のマージ判断: 可'
