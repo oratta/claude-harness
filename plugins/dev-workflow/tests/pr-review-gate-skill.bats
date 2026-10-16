@@ -1552,3 +1552,77 @@ filing_approval_block() { issue_approved_section | awk '/^- \*\*起票の承認\
   echo "$line" | grep -qF '1 回'
   echo "$line" | grep -qF 'stages/pass.md'
 }
+
+# --- Requirement: 合格条件はエピックの親経由で受けた許容を、親の会話ログで確かめて受け付ける（#1059） ---
+# 照合の対象は手順書（pass.md・hold.md）の文だけで、openspec の spec の文言は照合しない。
+
+@test "relayed reply (#1059): step 5 has the relayed record format" {
+  step5_body | grep -qF '主の回答: 許容 — 親経由で受領（親セッション <セッション ID> / 発言 <uuid> / <日時>）停止の記録: <URL> 原文: <原文>'
+}
+
+@test "relayed reply (#1059): step 5 table treats a relayed record as accepted" {
+  row="$(step5_body | grep '^| ' | grep -F '親経由で受領')"
+  echo "$row" | grep -qF '| 可 |'
+}
+
+@test "relayed reply (#1059): step 5 checks the stop record comment (first line, author association, record target)" {
+  body="$(step5_body | awk '/親経由で受けた許容（親経由で受領）の真正性確認/{f=1} f')"
+  echo "$body" | grep -qF '子の停止: 主の返事待ち'
+  echo "$body" | grep -qF 'author_association'
+  echo "$body" | grep -qF 'COLLABORATOR'
+  echo "$body" | grep -qF '記録先'
+}
+
+@test "relayed reply (#1059): step 5 runs owner-reply-check.sh --relayed and records its exit 0" {
+  body="$(step5_body)"
+  echo "$body" | grep -qF 'owner-reply-check.sh --relayed <セッション ID> <uuid> <停止の記録の作成日時> <停止の記録の URL>'
+  echo "$body" | grep -qF '真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh --relayed 終了コード 0）'
+  for r in not-found not-owner not-after not-asked not-direct; do
+    echo "$body" | grep -qF "$r" || return 1
+  done
+}
+
+@test "relayed reply (#1059): step 5 reads the full text, passes unnamed and jointly named answers, and rejects other-child-only answers" {
+  body="$(step5_body | awk '/親経由で受けた許容（親経由で受領）の真正性確認/{f=1} f')"
+  echo "$body" | grep -F 'この子・この PR への許容' | grep -F '名指しが無い許容' | grep -qF '通す'
+  echo "$body" | grep -qF '別の PR・別の記録先・別の子・別のリスクだけを名指しした答えでない'
+  echo "$body" | grep -F '宣言コメントの作成日時' | grep -qF 'より後'
+  echo "$body" | grep -qF '子のタブ'
+}
+
+@test "relayed reply (#1059): the scope sentence says only the fixed heads are not counted" {
+  scope="$(step5_body | grep '^守備範囲: 会話ログの改変')"
+  echo "$scope" | grep -qF '決まった頭'
+  echo "$scope" | grep -qF '主の返事（親エピック #'
+  echo "$scope" | grep -qF '頭の無い'
+}
+
+@test "relayed reply (#1059): step 6 resume row for risk acceptance handles a relayed record" {
+  row="$(awk '/^### 6\. /{f=1} f' "${HOLD}" | grep -F '| **リスク許容待ち**' | head -1)"
+  echo "$row" | grep -qF '親経由で受領'
+}
+
+@test "relayed reply (#1059): 3-c condition 3 accepts a relayed record and rechecks with --relayed" {
+  cond3="$(step3c_body | grep '^3\. ')"
+  echo "$cond3" | grep -qF '親経由で受領'
+  echo "$cond3" | grep -qF 'owner-reply-check.sh --relayed'
+  echo "$cond3" | grep -qF '真正性確認」の 1〜3'
+}
+
+@test "relayed reply (#1059): 3-c allows the relayed form on line 1" {
+  step3c_body | grep -F '1 行目' | grep -qF '親経由で受領（親セッション'
+}
+
+@test "relayed reply (#1059): step 5 reads html_url of the stop record and checks it is the latest stop record" {
+  body="$(step5_body | awk '/親経由で受けた許容（親経由で受領）の真正性確認/{f=1} f')"
+  echo "$body" | grep -qF "{body, author_association, issue_url, html_url, created_at}"
+  echo "$body" | grep -F '1 で取った' | grep -qF 'html_url'
+  echo "$body" | grep -qF 'last | .html_url'
+  echo "$body" | grep -F '最新の停止の記録' | grep -qF '一致'
+}
+
+@test "relayed reply (#1059): the relayed check has its own scope sentence" {
+  scope="$(step5_body | grep '^守備範囲: 親の会話ログの改変')"
+  echo "$scope" | grep -qF '頭を付けずに打ち込まれた文'
+  echo "$scope" | grep -qF '塞ぎ切る'
+}
