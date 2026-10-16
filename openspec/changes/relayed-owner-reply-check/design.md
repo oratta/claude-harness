@@ -105,6 +105,9 @@ epic-dispatch.sh reply --as owner <E> <N> '<主の答え> [主の発言: セッ�
 - 親（エピック #1038 のセッション）は main の版の手順書で動いているので、手順 8 の新しい送り方は手で行う。`--locate` は PR の worktree の `owner-reply-check.sh` を絶対パス（`<PR の worktree>/plugins/dev-workflow/scripts/owner-reply-check.sh`）で回す
 - 結果の記録に、子を起動したときの `EPIC_DISPATCH_CLAUDE_CMD` の値（子が読んだ plugin dir）を 1 行入れる
 - 試しの Draft PR を子のブランチに載せる順序: ①試しのエピックと子 issue を作る ②`origin/main` から試しのブランチを切って無害な 1 行の変更を commit・push し、本文に `Closes #<子>` を書いた Draft PR を作る ③その PR に `主のリスク許容が必要` の宣言コメントを置き `needs-approval` を付け、子 issue に、その PR とその HEAD を書いた `引き継ぎ: 主の返事待ち` のコメントを置く ④`epic-dispatch.sh launch --base <試しのブランチ>` で子を起動する（子のワークツリーは試しのブランチの先頭から作られ、HEAD が PR の HEAD と同じになるので、再開手順 3 の HEAD の照合が通る）
+- 試しの Draft PR には `human-merge` を付けておく（auto-merge で main に入らないように）
+- 合否は、試しの PR の宣言コメントに `主の回答: 許容 — 親経由で受領（…）` と `真正性確認: 済 …（owner-reply-check.sh --relayed 終了コード 0）` の 2 行が追記され、`needs-approval` が外れていることまでで判定する。そのあとの合格処理は試しの範囲外とする（保留の解除から合格処理への経路では push が走らないので、子のワークツリーのブランチ名が PR のブランチと違っても当たらない）
+- 試しの前に `cld --plugin-dir <path> --version` が通るかを確かめる（通らなければ `claude --dangerously-skip-permissions --plugin-dir …` の形にする）
 - `wait` に `--resolve` を付けても、`references/parent-pass-criteria.md` はリスク許容が要る止まりを通さないので、親の判断が先に返事を送ることはない
 
 手順:
@@ -112,7 +115,7 @@ epic-dispatch.sh reply --as owner <E> <N> '<主の答え> [主の発言: セッ�
 1. 上の順序で試しのエピック・子 issue・試しの Draft PR・引き継ぎのコメントを置き、子を `EPIC_DISPATCH_CLAUDE_CMD` を付けた `epic-dispatch.sh launch` で起動する（子は再開の手順で主の返事を待ち、停止の記録を残して `mark stopped` する）
 2. 親は `wait --watch-stopped` で子の止まりを受け、停止の記録の URL を添えて主に本文で報告する（質問ツールで聞かない）
 3. 偽の文を 2 つ先に送る: (i) 添え書きの uuid を親自身の発言かツールの結果の行にしたもの (ii) 停止より前の主の発言の uuid にしたもの。期待: 子は `--relayed` で落とし（`not-owner` / `not-after`）、G を起こさず、主に子のタブで打つよう頼む（停止の記録を出し直す）
-4. 子が出し直した停止の記録を親が `wait --watch-stopped` で受け、その URL を添えて主に報告する。主が親のタブで「許容」と書き、親が手順 8 どおり添え書きを付けて送る（`reply-after-idle.md` の表で起動し直すことになったら、`--relaunch` にも同じ `EPIC_DISPATCH_CLAUDE_CMD` を付ける。起動し直された子は、引数の残りの親経由の許容を決定 7 どおり再開手順 2 より先に受ける）。期待: 子の `--relayed` が exit 0、保留の解除の G が宣言コメントに `親経由で受領` の記録と `真正性確認: 済 …（owner-reply-check.sh --relayed 終了コード 0）` を追記し、`needs-approval` を外して合格処理へ進む。主は子のタブを開かない
+4. 子が出し直した停止の記録を親が `wait --watch-stopped` で受け、その URL を添えて主に報告する。主が親のタブで「許容」と書き、親が手順 8 どおり添え書きを付けて送る（`reply-after-idle.md` の表で起動し直すことになったら、`--relaunch` にも同じ `EPIC_DISPATCH_CLAUDE_CMD` を付ける。起動し直された子は、引数の残りの親経由の許容を決定 7 どおり再開手順 2 より先に受ける）。期待: 子の `--relayed` が exit 0、保留の解除の G が宣言コメントに `親経由で受領` の記録と `真正性確認: 済 …（owner-reply-check.sh --relayed 終了コード 0）` を追記し、`needs-approval` を外す（ここまでで合否を判定する）。主は子のタブを開かない
 5. 結果（子 issue と試しの PR のコメントの URL、子が読んだ plugin dir の 1 行）を PR に返し、試しの issue・PR・ワークツリーを片付ける
 
 ### 7. 起動し直しで届いた親経由の許容は、再開手順 2 より先に受ける

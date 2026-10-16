@@ -31,5 +31,5 @@
 
 - `plugins/dev-workflow/scripts/owner-reply-check.sh` とその bats
 - `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md`（手順 5）・`stages/hold.md`（手順 3-c と手順 6 の復帰手順）
-- `plugins/dev-workflow/skills/develop/SKILL.md` の 3 か所だけ: 保留の行の「リスク許容を会話で受けたら」の文、「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」、Orca 経路の手順 8 の `reply --as owner` の送り方。ほかの節には触れない（エピック #1038 の並行する子の範囲）
+- `plugins/dev-workflow/skills/develop/SKILL.md` の 3 か所だけ: 保留の行の「リスク許容を会話で受けたら」の文、「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」、Orca 経路の手順 8 の報告の文と送り方。ほかの節には触れない（エピック #1038 の並行する子の範囲）
 - `scripts/epic-dispatch.sh` は変えない
