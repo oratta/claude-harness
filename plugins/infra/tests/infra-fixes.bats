@@ -873,6 +873,20 @@ timeout_comment_has_rule() {
   timeout_comment_has_rule "$WORKFLOWS_DIR/weekly-full.yml.template" full
 }
 
+@test "T6 (#997): deploy-production.yml.template preflight job has a positive integer timeout-minutes" {
+  v="$(job_timeout_minutes "$WORKFLOWS_DIR/deploy-production.yml.template" preflight)" || return 1
+  [[ "$v" =~ ^[1-9][0-9]*$ ]] || return 1
+}
+
+@test "T7 (#997): preflight timeout-minutes is preceded by a comment block with the 2x rule" {
+  timeout_comment_has_rule "$WORKFLOWS_DIR/deploy-production.yml.template" preflight
+}
+
+@test "T8 (#997): SKILL.md tells how to apply the preflight timeout to existing repos" {
+  sec="$(awk '/^## /{p=0} /^## CI\/CD 構成の 2 軸/{p=1} p' "$SKILL")"
+  echo "$sec" | grep -q '`preflight` ジョブ'
+}
+
 @test "T5: weekly-full report-failure also files an issue when full is cancelled by the timeout" {
   ruby -ryaml -e '
     j = YAML.load_file(ARGV[0])["jobs"]["report-failure"]
