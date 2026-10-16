@@ -2066,6 +2066,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$r" | grep -qF 'error workspaces'
   printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF '親ワークツリーで開き直す'
   printf '%s\n' "$r" | grep -F 'stdout に何も出さず exit 1' | grep -F -- '`--watch-done` か `--watch-stopped` を付けた `wait`' | grep -qF '親ワークツリーで開き直す'
+  printf '%s\n' "$r" | grep -F 'stdout に何も出さず exit 1' | grep -F 'not in an Orca-managed worktree' | grep -qF 'stderr が `usage:` を含むときは、stderr を添えて設定の誤りとして報告して止まる'
 }
 
 @test "skill: Orca route drops reaped and gone children from the done-watch set" {
