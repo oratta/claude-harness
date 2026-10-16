@@ -92,6 +92,10 @@
 # reap: 子ごとに、一覧の候補 1 件・親の launch が作った（parentWorktreeId が今のワークツリーの id）・
 #   completed・git status がきれい・LLM/ が無い・ブランチ上・マージ済み PR の headRefOid と HEAD が一致
 #   （`--head <ブランチ>` で一致しなければ、`--state merged --search <HEAD>` でブランチ名を問わず探す）、
+#   （一致しなくても、そのブランチに PR が状態を問わず無く・issue が閉じていて・HEAD が
+#   `git ls-remote origin refs/heads/${EPIC_DISPATCH_BASE:-main}` のリモートの今の先端に含まれる子は通す。
+#   手元の追跡参照は使わない。理由は pr-lookup-failed / issue-lookup-failed / base-lookup-failed /
+#   unmerged-commits / git-failed）、
 #   の順に確かめ、全部通れば `orca terminal close --all` → `orca worktree rm`（--force なし・再試行なし。
 #   stderr に `terminal sweep failed` を含む失敗は `kept <N> rm-failed-terminal-sweep`）→
 #   残ったローカルブランチは先端が HEAD と同じときだけ、ワークツリーが `git worktree list` から外れるのを
@@ -710,6 +714,7 @@ cmd_reap() {
     || { echo "orca worktree list --json is not readable" >&2; exit 1; }
 
   local n cands count w path ref branch st head heads sheads rmerr tip seen=" "
+  local legacy allprs istate lsout btip="" base_looked=0 base_fetched=0 base="${EPIC_DISPATCH_BASE:-main}"
   for n in "$@"; do
     case "$seen" in *" $n "*) continue ;; esac
     seen="$seen$n "
@@ -747,8 +752,41 @@ cmd_reap() {
           || { echo "kept $n pr-lookup-failed"; continue; }
       fi
       if [ -z "$head" ] || ! printf '%s\n' "$sheads" | grep -qxF -- "$head"; then
-        if [ -z "$heads" ] && [ -z "$sheads" ]; then echo "kept $n no-merged-pr"; else echo "kept $n head-mismatch"; fi
-        continue
+        legacy="head-mismatch"
+        if [ -z "$heads" ] && [ -z "$sheads" ]; then legacy="no-merged-pr"; fi
+        # PR が 1 件も無く issue が閉じた子（PR を伴わない記録先）は、HEAD がリモートの今の base に
+        # 含まれるときだけ片付ける。判定の相手は手元の追跡参照ではなく ls-remote で取った今の先端
+        [ -n "$head" ] || { echo "kept $n $legacy"; continue; }
+        allprs="$(gh pr list --head "$branch" --state all --json number --jq '.[].number')" \
+          || { echo "kept $n pr-lookup-failed"; continue; }
+        [ -z "$allprs" ] || { echo "kept $n $legacy"; continue; }
+        istate="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state)" \
+          || { echo "kept $n issue-lookup-failed"; continue; }
+        [ "$istate" = closed ] || { echo "kept $n $legacy"; continue; }
+        if [ "$base_looked" -eq 0 ]; then
+          base_looked=1
+          if lsout="$(git ls-remote origin "refs/heads/$base")"; then
+            btip="$(printf '%s\n' "$lsout" | awk 'NR==1{print $1}')"
+            case "$btip" in
+              *[!0-9a-f]*) btip="" ;;
+              *) [ "${#btip}" -eq 40 ] || btip="" ;;
+            esac
+          fi
+        fi
+        [ -n "$btip" ] || { echo "kept $n base-lookup-failed"; continue; }
+        if ! git cat-file -e "$btip^{commit}" >&2; then
+          if [ "$base_fetched" -eq 0 ]; then
+            base_fetched=1
+            git fetch origin "$base" >&2 || true
+          fi
+          git cat-file -e "$btip^{commit}" >&2 || { echo "kept $n base-lookup-failed"; continue; }
+        fi
+        git -C "$path" merge-base --is-ancestor "$head" "$btip" >&2
+        case "$?" in
+          0) ;;
+          1) echo "kept $n unmerged-commits"; continue ;;
+          *) echo "kept $n git-failed"; continue ;;
+        esac
       fi
     fi
     orca terminal close --worktree "path:$path" --all >&2 || { echo "kept $n close-failed"; continue; }

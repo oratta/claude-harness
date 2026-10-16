@@ -178,6 +178,7 @@ if [ "$1" = "-C" ]; then
       cat "$STUB_CFG/status_out" 2>/dev/null
       exit "$(cat "$STUB_CFG/status_exit" 2>/dev/null || echo 0)" ;;
     "rev-parse HEAD") cat "$STUB_CFG/head" 2>/dev/null || echo aaa111; exit 0 ;;
+    "merge-base --is-ancestor") exit "$(cat "$STUB_CFG/ancestor_exit" 2>/dev/null || echo 0)" ;;
   esac
   exit 0
 fi
@@ -195,6 +196,13 @@ case "$1 ${2-}" in
   "rev-parse --verify")
     [ -e "$STUB_CFG/branch_tip" ] || exit 1
     cat "$STUB_CFG/branch_tip"; exit 0 ;;
+  "ls-remote origin")
+    if [ -e "$STUB_CFG/lsremote_out" ]; then cat "$STUB_CFG/lsremote_out"; else printf "ccc3330000000000000000000000000000000000\t%s\n" "$3"; fi
+    exit "$(cat "$STUB_CFG/lsremote_exit" 2>/dev/null || echo 0)" ;;
+  "cat-file -e")
+    cc=$(( $(cat "$STUB_CFG/catfile_count" 2>/dev/null || echo 0) + 1 ))
+    echo "$cc" > "$STUB_CFG/catfile_count"
+    exit "$(cat "$STUB_CFG/catfile_exit_$cc" 2>/dev/null || cat "$STUB_CFG/catfile_exit" 2>/dev/null || echo 0)" ;;
   "branch -D")
     rc="$(cat "$STUB_CFG/branchd_exit" 2>/dev/null || echo 0)"
     [ "$rc" -eq 0 ] && rm -f "$STUB_CFG/branch_tip"
@@ -217,6 +225,10 @@ if [ "$1 $2" = "pr list" ]; then
     if [ "$a" = "--search" ]; then
       cat "$STUB_CFG/pr_search_out" 2>/dev/null
       exit "$(cat "$STUB_CFG/pr_search_exit" 2>/dev/null || echo 0)"
+    fi
+    if [ "$a" = "all" ]; then
+      cat "$STUB_CFG/pr_all_out" 2>/dev/null
+      exit "$(cat "$STUB_CFG/pr_all_exit" 2>/dev/null || echo 0)"
     fi
   done
   cat "$STUB_CFG/pr_out" 2>/dev/null
@@ -302,6 +314,13 @@ reap_ready() {
   set_current 400
   set_list list_json "$(wt_entry 11 completed)"
   echo aaa111 > "$STUB_CFG/pr_out"
+}
+
+# PR の無い子 11 の環境（reap_ready から merged PR を消し、issue 11 を closed にする）
+reap_prless_ready() {
+  reap_ready
+  : > "$STUB_CFG/pr_out"
+  gh_seq 11 closed
 }
 
 # SKILL.md の「## <見出し>」から次の「## 」まで
@@ -1918,6 +1937,152 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^orca')" -eq 0 ]
 }
 
+# --- reap: PR の無い、issue を閉じた子 ---
+
+@test "reap: a PR-less closed child whose HEAD is in the remote's current base is reaped, judged against ls-remote" {
+  reap_prless_ready
+  run dispatch reap 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "reaped 11" ]
+  p="$BATS_TEST_TMPDIR/work/issue-11"
+  close_line="$(grep -n "^orca terminal close --worktree path:$p --all$" "$STUB_LOG" | cut -d: -f1)"
+  rm_line="$(grep -n "^orca worktree rm --worktree path:$p$" "$STUB_LOG" | cut -d: -f1)"
+  [ -n "$close_line" ] && [ -n "$rm_line" ] && [ "$close_line" -lt "$rm_line" ]
+  [ "$(calls '^orca .*--force')" -eq 0 ]
+  grep -qF -- 'gh pr list --head oratta/issue-11 --state all --json number' "$STUB_LOG"
+  grep -qF -- 'git ls-remote origin refs/heads/main' "$STUB_LOG"
+  grep -qF -- 'merge-base --is-ancestor aaa111 ccc3330000000000000000000000000000000000' "$STUB_LOG"
+  [ "$(calls 'refs/remotes/origin')" -eq 0 ]
+  [ "$(calls '^git fetch')" -eq 0 ]
+}
+
+@test "reap: a PR found by searching HEAD does not stop a PR-less child" {
+  reap_prless_ready
+  echo bbb222 > "$STUB_CFG/pr_search_out"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11" ]
+  [ "$(calls '^orca worktree rm')" -eq 1 ]
+}
+
+@test "reap: a child that has a PR in any state keeps the old reason" {
+  reap_prless_ready
+  echo 77 > "$STUB_CFG/pr_all_out"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "kept 11 no-merged-pr" ]
+  [ "$(calls '^gh api')" -eq 0 ]
+  [ "$(calls 'merge-base')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+}
+
+@test "reap: an open issue, an unreadable issue and an unreadable PR list keep a PR-less child" {
+  reap_prless_ready
+  gh_seq 11 open
+  run dispatch reap 11
+  [ "$output" = "kept 11 no-merged-pr" ]
+  rm -f "$STUB_CFG/ghcount_11"
+  gh_seq 11 FAIL
+  run dispatch reap 11
+  [ "$output" = "kept 11 issue-lookup-failed" ]
+  gh_seq 11 closed
+  rm -f "$STUB_CFG/ghcount_11"
+  echo 1 > "$STUB_CFG/pr_all_exit"
+  run dispatch reap 11
+  [ "$output" = "kept 11 pr-lookup-failed" ]
+  [ "$(calls 'merge-base')" -eq 0 ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+}
+
+@test "reap: commits not in the base and an undecidable ancestry keep the child" {
+  reap_prless_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  echo 1 > "$STUB_CFG/ancestor_exit"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "kept 11 unmerged-commits" ]
+  echo 128 > "$STUB_CFG/ancestor_exit"
+  run dispatch reap 11
+  [ "$output" = "kept 11 git-failed" ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
+}
+
+@test "reap: a rewound base keeps a child whose HEAD equals the stale tracking ref" {
+  reap_prless_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'ddd4440000000000000000000000000000000000\trefs/heads/main\n' > "$STUB_CFG/lsremote_out"
+  echo 1 > "$STUB_CFG/ancestor_exit"
+  run dispatch reap 11
+  [ "$output" = "kept 11 unmerged-commits" ]
+  grep -qF -- 'merge-base --is-ancestor aaa111 ddd4440000000000000000000000000000000000' "$STUB_LOG"
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
+}
+
+@test "reap: an unreadable remote base keeps a PR-less child as base-lookup-failed" {
+  p="$BATS_TEST_TMPDIR/work/issue-11"
+  for c in lsremote-fail lsremote-empty fetch-fail fetch-ok; do
+    rm -rf "$STUB_CFG" "$p"; mkdir -p "$STUB_CFG"; : > "$STUB_LOG"
+    printf '%s\n' '/work/parent' > "$STUB_CFG/toplevel"
+    reap_prless_ready
+    case "$c" in
+      lsremote-fail) echo 128 > "$STUB_CFG/lsremote_exit" ;;
+      lsremote-empty) : > "$STUB_CFG/lsremote_out" ;;
+      fetch-fail) echo 1 > "$STUB_CFG/catfile_exit"; echo 1 > "$STUB_CFG/fetch_exit" ;;
+      fetch-ok) echo 1 > "$STUB_CFG/catfile_exit" ;;
+    esac
+    run dispatch reap 11
+    [ "$status" -eq 0 ] || { echo "$c: status=$status"; false; }
+    [ "$output" = "kept 11 base-lookup-failed" ] || { echo "$c: output=$output"; false; }
+    [ "$(calls 'merge-base')" -eq 0 ]
+    [ "$(calls '^orca worktree rm')" -eq 0 ]
+  done
+}
+
+@test "reap: a base tip missing locally is fetched once, ls-remote runs once for two children" {
+  reap_prless_ready
+  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 completed)"
+  gh_seq 12 closed
+  echo 1 > "$STUB_CFG/catfile_exit_1"
+  run dispatch reap 11 12
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "$(printf 'reaped 11\nreaped 12')" ]
+  [ "$(calls '^git ls-remote')" -eq 1 ]
+  [ "$(calls '^git fetch origin main')" -eq 1 ]
+}
+
+@test "reap: a second child does not fetch again when the base tip is still missing" {
+  reap_prless_ready
+  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 completed)"
+  gh_seq 12 closed
+  echo 1 > "$STUB_CFG/catfile_exit"
+  run dispatch reap 11 12
+  [ "$output" = "$(printf 'kept 11 base-lookup-failed\nkept 12 base-lookup-failed')" ]
+  [ "$(calls '^git ls-remote')" -eq 1 ]
+  [ "$(calls '^git fetch')" -eq 1 ]
+}
+
+@test "reap: the base branch follows EPIC_DISPATCH_BASE" {
+  reap_prless_ready
+  EPIC_DISPATCH_BASE=develop run dispatch reap 11
+  [ "$output" = "reaped 11" ]
+  grep -qF -- 'git ls-remote origin refs/heads/develop' "$STUB_LOG"
+}
+
+@test "reap: a child matched by a merged PR never runs the PR-less checks" {
+  reap_ready
+  run dispatch reap 11
+  [ "$output" = "reaped 11" ]
+  [ "$(calls '--state all')" -eq 0 ]
+  [ "$(calls '^gh api')" -eq 0 ]
+  [ "$(calls '^git ls-remote')" -eq 0 ]
+  [ "$(calls '^git fetch')" -eq 0 ]
+  [ "$(calls 'merge-base')" -eq 0 ]
+}
+
 # --- SKILL.md ---
 
 @test "skill: epic run section names route, launch, wait and background waiting" {
@@ -2038,6 +2203,14 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$e" | grep -F '呼ばない' | grep -F 'マージされていない' | grep -qF 'Draft PR'
   printf '%s\n' "$e" | grep -qF '端末を閉じて'
   grep -n "worktree" "$SKILL" | grep -qF 'worktree の片付けを提案も質問もしない'
+}
+
+@test "skill: the end of a loop tells what the parent's reap needs to clean a PR-less child" {
+  e="$(section 'ループの終わり')"
+  l="$(printf '%s\n' "$e" | grep -F 'epic-dispatch.sh reap')"
+  [ -n "$l" ]
+  printf '%s\n' "$l" | grep -F 'PR が無く' | grep -F 'issue が閉じて' | grep -qF 'リモートの今の main'
+  printf '%s\n' "$l" | grep -qF 'unmerged-commits'
 }
 
 # spec: dev-workflow-develop（エピックの子の完了報告は、主がこのセッションで次にすることを 1 行目に書く）
