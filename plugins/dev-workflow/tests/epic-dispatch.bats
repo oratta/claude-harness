@@ -10,6 +10,7 @@
 #         --comment が成功したら current_json と list_json* の同じ path の comment をその値に書き換える）
 #         / close_exit / rm_exit / rm_err（rm の stderr）/ create_fail_<N>
 #         / tlist_exit / tlist_json_<N>（terminal list。<N> は --worktree の path の issue-<N>。既定は端末 0 個）
+#           / tlist_after_<N>（term-<N> に terminal send が届いたあとの terminal list。無ければ tlist_json_<N> のまま）
 #         / create_json_<N>（既定は result.worktree.path が /work/issue-<N> の JSON）
 #         / tcreate_fail_<N> / tcreate_json_<N>（terminal create。<N> は --worktree の path の issue-<N>。
 #         既定は result.terminal.handle が term-<N> の JSON。--command は tcmd_<N> に書き出す）
@@ -82,7 +83,8 @@ case "$1 $2" in
     done
     rc=$(cat "$STUB_CFG/tlist_exit" 2>/dev/null || echo 0)
     if [ "$rc" -eq 0 ]; then
-      if [ -e "$STUB_CFG/tlist_json_$issue" ]; then cat "$STUB_CFG/tlist_json_$issue"; else echo "{\"ok\":true,\"result\":{\"terminals\":[]}}"; fi
+      if [ -e "$STUB_CFG/tlist_after_$issue" ] && [ -e "$STUB_CFG/sent_term-$issue" ]; then cat "$STUB_CFG/tlist_after_$issue"
+      elif [ -e "$STUB_CFG/tlist_json_$issue" ]; then cat "$STUB_CFG/tlist_json_$issue"; else echo "{\"ok\":true,\"result\":{\"terminals\":[]}}"; fi
     fi
     exit "$rc" ;;
   "worktree set")
@@ -494,25 +496,93 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${#lines[@]}" -eq 2 ]
   log=()
   while IFS= read -r l; do log+=("$l"); done < "$STUB_LOG"
-  [ "${#log[@]}" -eq 13 ]
+  [ "${#log[@]}" -eq 15 ]
   [ "${log[0]}" = "orca worktree current --json" ]
   [ "${log[1]}" = "git rev-parse --show-toplevel" ]
   [ "${log[2]}" = "git fetch origin main" ]
   [ "${log[3]}" = "orca worktree set --worktree path:/work/parent --issue 400" ]
   [ "${log[4]}" = "orca worktree list --json" ]
   [ "${log[5]}" = "orca worktree create --name issue-11 --issue 11 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
-  starts_with "${log[6]}" "orca terminal create --worktree path:/work/issue-11 --command "
-  case "${log[6]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
+  [ "${log[6]}" = "orca terminal list --worktree path:/work/issue-11 --json" ]
+  starts_with "${log[7]}" "orca terminal create --worktree path:/work/issue-11 --command "
+  case "${log[7]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
   [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'" ]
-  [ "${log[7]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
-  starts_with "${log[8]}" "orca terminal send --terminal term-11 --text "
-  case "${log[8]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
-  [ "${log[9]}" = "orca worktree create --name issue-12 --issue 12 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
-  starts_with "${log[10]}" "orca terminal create --worktree path:/work/issue-12 --command "
-  [ "${log[11]}" = "orca terminal wait --terminal term-12 --for tui-idle --timeout-ms 60000 --json" ]
-  starts_with "${log[12]}" "orca terminal send --terminal term-12 --text "
+  [ "${log[8]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
+  starts_with "${log[9]}" "orca terminal send --terminal term-11 --text "
+  case "${log[9]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
+  [ "${log[10]}" = "orca worktree create --name issue-12 --issue 12 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
+  [ "${log[11]}" = "orca terminal list --worktree path:/work/issue-12 --json" ]
+  starts_with "${log[12]}" "orca terminal create --worktree path:/work/issue-12 --command "
+  [ "${log[13]}" = "orca terminal wait --terminal term-12 --for tui-idle --timeout-ms 60000 --json" ]
+  starts_with "${log[14]}" "orca terminal send --terminal term-12 --text "
   [ "$(calls '--prompt')" -eq 0 ]
   [ "$(calls '--agent')" -eq 0 ]
+}
+
+# worktree create が空のシェルの端末（Terminal 1）を 1 つ作る実物の Orca の場面
+@test "launch: the shell terminal from worktree create is reused, so the child has exactly one terminal running the session" {
+  make_stub orca
+  set_terms 11 term-11
+  mv "$STUB_CFG/tlist_json_11" "$STUB_CFG/tlist_after_11"
+  set_terms 11 term-11:shell
+  run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "launched 11" ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  # 起動コマンドを同じ端末に打ち込み、そのあと指示を送る。環境変数の意味は従来の terminal create と同じ
+  first_send="$(grep -m1 '^orca terminal send --terminal term-11 ' "$STUB_LOG")"
+  case "$first_send" in *"EPIC_DISPATCH_PARENT_EPIC=400"*"CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000"*"cld"*"--model"*" --enter --json") ;; *) echo "$first_send" >&2; false ;; esac
+  [ "$(calls '^orca terminal send --terminal term-11 ')" -eq 2 ]
+  [ "$(calls '^orca terminal wait --terminal term-11 --for tui-idle')" -eq 1 ]
+  case "$(cat "$STUB_CFG/sent_term-11")" in "/develop #11 "*) ;; *) false ;; esac
+  # 最後の端末一覧は 1 行で、その端末が Claude Code
+  [ "$(jq '.result.terminals | length' "$STUB_CFG/tlist_after_11")" -eq 1 ]
+  [ "$(jq -r '.result.terminals[0].agentIdentity' "$STUB_CFG/tlist_after_11")" = claude ]
+}
+
+@test "launch: the shell terminal never becomes Claude Code means failed without a second terminal" {
+  make_stub orca
+  set_terms 11 term-11:shell
+  EPIC_DISPATCH_READY_TIMEOUT_MS=2000 run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ "${lines[0]}" = "failed 11" ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^orca terminal wait')" -eq 0 ]
+  grep -qF 'did not become Claude Code' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: a second terminal appearing after the start command is typed is failed without sending the prompt" {
+  make_stub orca
+  set_terms 11 term-11 term-x:shell
+  mv "$STUB_CFG/tlist_json_11" "$STUB_CFG/tlist_after_11"
+  set_terms 11 term-11:shell
+  run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ "${lines[0]}" = "failed 11" ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^orca terminal wait')" -eq 0 ]
+  [ "$(calls '^orca terminal send --terminal term-11 ')" -eq 1 ]
+  grep -qF 'terminals' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: two or more terminals in the new worktree is failed without creating another" {
+  make_stub orca
+  set_terms 11 term-11:shell term-x
+  run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ "${lines[0]}" = "failed 11" ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+}
+
+@test "launch: an unreadable terminal list is failed without creating a terminal" {
+  make_stub orca
+  echo 1 > "$STUB_CFG/tlist_exit"
+  run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ "${lines[0]}" = "failed 11" ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
 }
 
 @test "launch: EPIC_DISPATCH_MODEL changes the model passed to --model" {
@@ -2065,6 +2135,8 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$r" | grep -F '再開したら' | grep -qF '`launch` の前に'
   printf '%s\n' "$r" | grep -qF 'error workspaces'
   printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF '親ワークツリーで開き直す'
+  printf '%s\n' "$r" | grep -F 'stdout に何も出さず exit 1' | grep -F -- '`--watch-done` か `--watch-stopped` を付けた `wait`' | grep -qF '親ワークツリーで開き直す'
+  printf '%s\n' "$r" | grep -F 'stdout に何も出さず exit 1' | grep -F 'not in an Orca-managed worktree' | grep -qF 'stderr が `usage:` を含むときは、stderr を添えて設定の誤りとして報告して止まる'
 }
 
 @test "skill: Orca route drops reaped and gone children from the done-watch set" {
