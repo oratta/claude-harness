@@ -7,10 +7,10 @@
 
 ## 2. pr-review-gate
 
-- [ ] 2.1 手順 5 の合格条件の表に `親経由で受領` の行を足す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:46-54（合格条件の表）
-- [ ] 2.2 手順 5 に「親経由で受けた許容（親経由で受領）の真正性確認」の段落を足す（記録の 1 行の書式、停止の記録のコメントの確かめ方、`--relayed` の呼び方と出力の意味、全文の読み方（全文がこの子・この PR への許容と読め、別の子・別の PR だけを名指しした答えでないこと。同じ文に、名指しが無い許容とこの子とほかの子をまとめて名指しした答えは通すことを添える）、宣言コメントの作成日時との比較、`真正性確認: 済 …（owner-reply-check.sh --relayed 終了コード 0）`、通らないときは手順 6 で主に子のタブでの返事を頼む）。「会話で受領」の守備範囲の文を、決まった頭の打ち込みは数えない・頭の無い文は区別できない、に書き直す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:73-94（「会話で受けた許容」の段落と守備範囲の文。その直後に新しい段落を置く）
-- [ ] 2.3 手順 6 の復帰手順のリスク許容待ちの行に、親経由で受けた回答なら `親経由で受領` の 1 行を追記してから手順 5 の真正性確認に進むことを足す。手順 3-c の引き継ぎの条件 3 と、引き継ぎの 1 行目の置き換えに `親経由で受領` の形を足す（停止の記録のコメントと `--relayed` で確かめ直し、timestamp が元の記録を最初に追記した宣言の作成日時より後であることを確かめる）。（pass.md の守備範囲の文の書き直しは 2.2 で行う。hold.md には同じ文が無い。）触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:39（3-c の条件 3）、plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:51（1 行目の置き換え）、plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:67（リスク許容待ちの行）
-- [ ] 2.4 bats を足す: pass.md の手順 5 に `親経由で受領` の書式・停止の記録の確かめ方・`owner-reply-check.sh --relayed`・真正性確認の行があり、合格条件の表に行があること、hold.md の 3-c と復帰手順に `親経由で受領` があること、守備範囲の文が書き直されていること。照合の対象は手順書（pass.md・hold.md）の文だけで、openspec の spec の文言は照合しない。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:1308-1360（「会話で受けた許容」の既存テストのうしろに足す）
+- [x] 2.1 手順 5 の合格条件の表に `親経由で受領` の行を足す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:46-54（合格条件の表）
+- [x] 2.2 手順 5 に「親経由で受けた許容（親経由で受領）の真正性確認」の段落を足す（記録の 1 行の書式、停止の記録のコメントの確かめ方、`--relayed` の呼び方と出力の意味、全文の読み方（全文がこの子・この PR への許容と読め、別の子・別の PR だけを名指しした答えでないこと。同じ文に、名指しが無い許容とこの子とほかの子をまとめて名指しした答えは通すことを添える）、宣言コメントの作成日時との比較、`真正性確認: 済 …（owner-reply-check.sh --relayed 終了コード 0）`、通らないときは手順 6 で主に子のタブでの返事を頼む）。「会話で受領」の守備範囲の文を、決まった頭の打ち込みは数えない・頭の無い文は区別できない、に書き直す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:73-94（「会話で受けた許容」の段落と守備範囲の文。その直後に新しい段落を置く）
+- [x] 2.3 手順 6 の復帰手順のリスク許容待ちの行に、親経由で受けた回答なら `親経由で受領` の 1 行を追記してから手順 5 の真正性確認に進むことを足す。手順 3-c の引き継ぎの条件 3 と、引き継ぎの 1 行目の置き換えに `親経由で受領` の形を足す（停止の記録のコメントと `--relayed` で確かめ直し、timestamp が元の記録を最初に追記した宣言の作成日時より後であることを確かめる）。（pass.md の守備範囲の文の書き直しは 2.2 で行う。hold.md には同じ文が無い。）触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:39（3-c の条件 3）、plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:51（1 行目の置き換え）、plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:67（リスク許容待ちの行）
+- [x] 2.4 bats を足す: pass.md の手順 5 に `親経由で受領` の書式・停止の記録の確かめ方・`owner-reply-check.sh --relayed`・真正性確認の行があり、合格条件の表に行があること、hold.md の 3-c と復帰手順に `親経由で受領` があること、守備範囲の文が書き直されていること。照合の対象は手順書（pass.md・hold.md）の文だけで、openspec の spec の文言は照合しない。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:1308-1360（「会話で受けた許容」の既存テストのうしろに足す）
 
 ## 3. develop の SKILL.md（3 か所だけ）
 
