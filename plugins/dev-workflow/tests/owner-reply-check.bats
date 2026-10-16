@@ -470,3 +470,57 @@ relayed_not_owner() {  # $1 = the line to point at (uuid 55555555-...)
   [ "$status" -eq 0 ]
   [[ "$output" == *"MATCHES=1"* ]] || return 1
 }
+
+@test "owner-reply #1059: --relayed reports not-after for an owner message at the same time as the stop record" {
+  add_owner "2026-10-15T07:00:00.000Z"
+  add_report "2026-10-15T07:34:00.000Z"
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-after"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed reports not-asked when the URL appears only in a tool_use input and a tool_result" {
+  add '{"type":"assistant","isSidechain":false,"uuid":"33333333-3333-4333-8333-33333333333c","timestamp":"2026-10-15T07:34:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"gh api repos/oratta/claude-harness/issues/comments/1111111111 # '"$STOP_URL"'"}}]}}'
+  add '{"type":"user","isSidechain":false,"uuid":"66666666-6666-4666-8666-666666666666","timestamp":"2026-10-15T07:34:05.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","content":"子の停止: 主の返事待ち '"$STOP_URL"'"}]}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-asked"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed reports not-asked when the stop record URL only appears as the tail of another URL" {
+  add '{"type":"assistant","isSidechain":false,"uuid":"33333333-3333-4333-8333-33333333333d","timestamp":"2026-10-15T07:34:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"転送: https://example.com/r?to='"$STOP_URL"'"}]}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-asked"* ]] || return 1
+}
+
+# 結び付けは「URL を書いた最後の親の発言」と主の発言のあいだに別の主の発言が無いときだけ（P4-F1）
+@test "owner-reply #1059: --relayed reports not-direct when another owner message sits between the last report and the answer" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"77777777-7777-4777-8777-777777777777","timestamp":"2026-10-15T08:00:00.000Z","message":{"role":"user","content":"親のゲートの件は進めて"}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-direct"* ]] || return 1
+  [[ "$output" == *"MATCHES=0"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed passes when the other owner message is before the last report" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"77777777-7777-4777-8777-777777777777","timestamp":"2026-10-15T07:40:00.000Z","message":{"role":"user","content":"1034 の止まった理由をもう一度"}}'
+  add_report "2026-10-15T08:10:00.000Z" false 5
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"MATCHES=1"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed does not count a tool result between the report and the answer as another owner message" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add '{"type":"user","isSidechain":false,"uuid":"66666666-6666-4666-8666-666666666667","timestamp":"2026-10-15T08:00:00.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t3","content":"ok"}]}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 0 ]
+}

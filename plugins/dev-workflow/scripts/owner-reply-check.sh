@@ -32,6 +32,7 @@
 #              理由は次の順に確かめる: not-found（その uuid の行が無い）→ not-owner（主の発言の 9 条件を満たさない）
 #              → not-after（その行の timestamp が停止の記録の作成日時より後でない）→ not-asked（作成日時より後でその行より前の
 #              親の発言（type:"assistant"・isSidechain が true でない）の text の本文に停止の記録の URL が無い）
+#              → not-direct（URL を書いた最後の親の発言とその行のあいだに、別の主の発言がある）
 # 終了コード: 0 = 一致（--relayed は通った）/ 1 = 一致なし（--relayed は REASON の付く落ち）/
 #   2 = 引数の不備・UUID でない ID・空の原文・日時を読めない・https で始まらない URL・会話ログなし・python3 なし・
 #       空白をまとめると空になる原文・会話ログを読めない・--relayed で指した行の timestamp を読めない
@@ -226,7 +227,9 @@ def relayed(target_uuid, stop_at_text, stop_url, paths):
     # 停止の記録の URL は完全一致で探す。前後が URL を続ける文字のときは別の URL の一部なので数えない
     # （…#issuecomment-123 が …#issuecomment-1234 に部分一致しないように）。文末の . や括弧・句読点は URL を続けない文字として扱う
     url_re = re.compile(r"(?<![A-Za-z0-9_\-.~/:%%?#&=+@])%s(?![A-Za-z0-9_\-~/%%?#&=+@])" % re.escape(stop_url))
-    asked = False
+    # 結び付けは URL を書いた最後の親の発言の時刻で取り、そこから主の発言までに別の主の発言があれば落とす
+    # （親が報告したあとに主が別の件へ返した名指しの無い答えを、この止まりへの返事として通さないため）
+    asked_at = None
     for rec in records:
         if rec.get("type") != "assistant" or rec.get("isSidechain") is True:
             continue
@@ -234,10 +237,13 @@ def relayed(target_uuid, stop_at_text, stop_url, paths):
         if when is None or not (stop_at < when < said_at):
             continue
         if any(url_re.search(part) for part in assistant_texts(rec)):
-            asked = True
-            break
-    if not asked:
+            asked_at = when if asked_at is None else max(asked_at, when)
+    if asked_at is None:
         fail("not-asked")
+    for rec in records:
+        when = parse_time(rec.get("timestamp"))
+        if when is not None and asked_at < when < said_at and owner_text(rec) is not None:
+            fail("not-direct")
     print("MATCH: %s %s" % (target.get("timestamp", ""), norm(text)))
     print("MATCHES=1")
     sys.exit(0)
