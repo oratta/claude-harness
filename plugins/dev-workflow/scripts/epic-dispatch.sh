@@ -21,7 +21,9 @@
 # launch: `orca worktree current --json` → `git rev-parse --show-toplevel` → `git fetch origin <base>`
 #   → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` →
 #   子ごとに `orca worktree create`（同じ repoId・同じ linkedIssue・archive されていない
-#   ワークツリーがあれば作らない。--agent も --prompt も渡さない）→ --note があれば
+#   ワークツリーがあれば作らない。--agent も --prompt も渡さない。create は空のシェルの端末を 1 つ作るので、
+#   `orca terminal list` でそれがちょうど 1 つならそこへ下の <起動コマンド> を `terminal send --enter` で打ち込み、
+#   端末が Claude Code になるまで list で待つ。0 個のときだけ下の terminal create で作る。2 個以上・list 失敗は failed）→ --note があれば
 #   `gh issue comment <N> --body <親エピックからの注意書き: #<epic>・空行・注意書き>`（失敗しても起動は
 #   続け、stderr に `note not posted to #<N>` と手で投稿するコマンドを出す）→ `orca terminal create
 #   --worktree path:<子> --command "EPIC_DISPATCH_PARENT_EPIC=<epic>
@@ -246,6 +248,51 @@ pick_session_term() {
   return 0
 }
 
+# launch 用: 子のワークツリーに worktree create が作った空のシェルの端末がちょうど 1 つあれば、そこへ起動
+# コマンドを打ち込み、端末が Claude Code になる（agentIdentity か タイトル）まで待つ（<子のパス> <起動コマンド>）。
+# 戻り値 0 = 起動した（SHELL_HANDLE にハンドル）/ 1 = 端末が 0 個（呼び出し側が terminal create で作る）/
+# 3 = 失敗（理由と手で続けるコマンドを stderr に出した。端末を増やすと二重になるので作らない）
+SHELL_HANDLE=""
+shell_start() {
+  local terms cnt h out tries i
+  SHELL_HANDLE=""
+  if ! terms="$(orca terminal list --worktree "path:$1" --json)" \
+    || ! cnt="$(printf '%s' "$terms" | jq -e '.result.terminals | if type == "array" then length else error("x") end' 2>/dev/null)"; then
+    echo "orca terminal list --worktree path:$1 --json is not readable" >&2
+    echo "check the terminals before creating one: orca terminal list --worktree path:$1 --json" >&2
+    return 3
+  fi
+  [ "$cnt" -eq 0 ] && return 1
+  h="$(printf '%s' "$terms" | jq -r '.result.terminals | select(length == 1) | .[0].handle // empty' 2>/dev/null)"
+  if [ -z "$h" ]; then
+    echo "terminals in $1: $cnt (expected the one empty shell from worktree create); not starting a second one" >&2
+    echo "check: orca terminal list --worktree path:$1 --json" >&2
+    return 3
+  fi
+  if ! out="$(orca terminal send --terminal "$h" --text "$2" --enter --json)"; then
+    printf '%s\n' "$out" >&2
+    echo "could not type the start command into terminal $h. type it by hand: $2" >&2
+    return 3
+  fi
+  tries=$(( ready / 1000 )); [ "$tries" -ge 1 ] || tries=1
+  for (( i = 0; i < tries; i++ )); do
+    if terms="$(orca terminal list --worktree "path:$1" --json)"; then
+      cnt="$(printf '%s' "$terms" | jq -r '.result.terminals | if type == "array" then length else empty end' 2>/dev/null)"
+      if [ -n "$cnt" ] && [ "$cnt" -ge 2 ]; then
+        echo "terminals in $1: $cnt after typing the start command (expected 1); not sending the prompt" >&2
+        echo "check: orca terminal list --worktree path:$1 --json" >&2
+        return 3
+      fi
+      if [ "$(pick_session_term "$terms")" = "$h" ]; then
+        SHELL_HANDLE="$h"; return 0
+      fi
+    fi
+    sleep 1
+  done
+  echo "terminal $h did not become Claude Code within ${tries}s. check: orca terminal read --terminal $(shq "$h")" >&2
+  return 3
+}
+
 cmd_launch() {
   local note="" base="${EPIC_DISPATCH_BASE:-main}"
   while [ "$#" -gt 0 ]; do
@@ -325,11 +372,20 @@ cmd_launch() {
       echo "no worktree path for #$n in orca worktree create --json" >&2
       echo "failed $n"; failed=1; continue
     fi
-    out="$(orca terminal create --worktree "path:$child" --command "$agent_cmd" --json)"
-    rc=$?
-    printf '%s\n' "$out" >&2
-    handle=""
-    [ "$rc" -eq 0 ] && handle="$(printf '%s' "$out" | jq -r '.result.terminal.handle // empty' 2>/dev/null)"
+    # worktree create が空のシェルの端末を 1 つ作っていれば、新しい端末は作らずそこで起動する
+    # （端末が 2 つになると reply が ambiguous-terminal で止まる）。0 個なら従来どおり作る
+    handle=""; shell_rc=0
+    shell_start "$child" "$agent_cmd" || shell_rc=$?
+    if [ "$shell_rc" -eq 0 ]; then
+      handle="$SHELL_HANDLE"
+    elif [ "$shell_rc" -eq 3 ]; then
+      echo "failed $n"; failed=1; continue
+    else
+      out="$(orca terminal create --worktree "path:$child" --command "$agent_cmd" --json)"
+      rc=$?
+      printf '%s\n' "$out" >&2
+      [ "$rc" -eq 0 ] && handle="$(printf '%s' "$out" | jq -r '.result.terminal.handle // empty' 2>/dev/null)"
+    fi
     if [ -z "$handle" ]; then
       echo "no terminal handle for #$n from orca terminal create --json" >&2
       recreate_hint "$child" "$agent_cmd" "$prompt" "$submit"
