@@ -552,6 +552,20 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   grep -qF 'did not become Claude Code' "$BATS_TEST_TMPDIR/stderr"
 }
 
+@test "launch: a second terminal appearing after the start command is typed is failed without sending the prompt" {
+  make_stub orca
+  set_terms 11 term-11 term-x:shell
+  mv "$STUB_CFG/tlist_json_11" "$STUB_CFG/tlist_after_11"
+  set_terms 11 term-11:shell
+  run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ "${lines[0]}" = "failed 11" ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^orca terminal wait')" -eq 0 ]
+  [ "$(calls '^orca terminal send --terminal term-11 ')" -eq 1 ]
+  grep -qF 'terminals' "$BATS_TEST_TMPDIR/stderr"
+}
+
 @test "launch: two or more terminals in the new worktree is failed without creating another" {
   make_stub orca
   set_terms 11 term-11:shell term-x

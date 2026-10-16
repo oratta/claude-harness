@@ -2358,7 +2358,7 @@ develop の SKILL.md の節「ループの終わり」は、`scripts/epic-dispat
 
 - 端末がちょうど 1 つなら、`orca terminal create` を呼ばず、その端末のハンドルに `orca terminal send --terminal <handle> --text <cmd> --enter --json` で起動コマンド `<cmd>`（従来 `--command` に渡していた文字列と同じ）を打ち込む（MUST）。続けて `orca terminal list --worktree path:<子> --json` を引き直し、その端末が Claude Code（`agentIdentity` が `claude`、無ければタイトルに `Claude Code` を含む）になるのを待つ（MUST。シェルは起動コマンドを打つ前から idle で、すぐ `terminal wait` を呼ぶと最初の指示がシェルに入るため）。待つ上限は `EPIC_DISPATCH_READY_TIMEOUT_MS` を秒にした値（最低 1 回）とする。Claude Code になったら、その端末のハンドルで `terminal wait --for tui-idle` と指示の `terminal send` へ進む（MUST）
 - 端末が 0 個なら、従来どおり `orca terminal create` で作る（MUST。worktree create が端末を作らない版の後方互換）
-- 一覧を読めない・端末が 2 個以上・起動コマンドを打ち込めない・待っても Claude Code にならない、のいずれかなら、その子を `failed <N>` とし、`orca terminal create` を呼ばない（MUST。端末を増やすと二重起動の原因になるため）。stderr に理由と、確認または続きを手で行うコマンド（`orca terminal list --worktree path:<子> --json`、`orca terminal read --terminal <handle>`、打ち込めなかった起動コマンド）を出す（SHALL）
+- 一覧を読めない・端末が 2 個以上（起動コマンドを打ち込んだあとの引き直しで 2 個以上になった場合を含み、その場合は指示を送らない）・起動コマンドを打ち込めない・待っても Claude Code にならない、のいずれかなら、その子を `failed <N>` とし、`orca terminal create` を呼ばない（MUST。端末を増やすと二重起動の原因になるため）。stderr に理由と、確認または続きを手で行うコマンド（`orca terminal list --worktree path:<子> --json`、`orca terminal read --terminal <handle>`、打ち込めなかった起動コマンド）を出す（SHALL）
 
 #### Scenario: worktree create が作ったシェルの端末で子のセッションが起動し、端末は 1 つのまま
 - **WHEN** 子 11 のワークツリーに空のシェルの端末（`term-11`、`agentIdentity` なし）が 1 つあり、起動コマンドが届いたあとは同じ端末が `agentIdentity: claude` になるスタブ環境で `epic-dispatch.sh launch 400 11` を実行する

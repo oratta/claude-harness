@@ -272,8 +272,16 @@ shell_start() {
   fi
   tries=$(( ready / 1000 )); [ "$tries" -ge 1 ] || tries=1
   for (( i = 0; i < tries; i++ )); do
-    if terms="$(orca terminal list --worktree "path:$1" --json)" && [ "$(pick_session_term "$terms")" = "$h" ]; then
-      SHELL_HANDLE="$h"; return 0
+    if terms="$(orca terminal list --worktree "path:$1" --json)"; then
+      cnt="$(printf '%s' "$terms" | jq -r '.result.terminals | if type == "array" then length else empty end' 2>/dev/null)"
+      if [ -n "$cnt" ] && [ "$cnt" -ge 2 ]; then
+        echo "terminals in $1: $cnt after typing the start command (expected 1); not sending the prompt" >&2
+        echo "check: orca terminal list --worktree path:$1 --json" >&2
+        return 3
+      fi
+      if [ "$(pick_session_term "$terms")" = "$h" ]; then
+        SHELL_HANDLE="$h"; return 0
+      fi
     fi
     sleep 1
   done
