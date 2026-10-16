@@ -708,3 +708,16 @@ refute() {
   echo "$line" | grep -qF 'エピックの子が親経由で'
   echo "$line" | grep -qF '「親から届いた返事」'
 }
+
+@test "relayed reply (#1059): Orca step 8 compares the full text with whitespace collapsed and re-reports when another owner message sits in between" {
+  line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$SKILL")"
+  echo "$line" | grep -qF '全文が主の答えと同じ（どちらも連続する空白を 1 個にまとめて比べる）'
+  echo "$line" | grep -qF 'not-direct'
+}
+
+@test "relayed reply (#1059): a confirmed relayed refusal is taken as the owner's refusal" {
+  item="$(grep -F -- '- **親から届いた返事**' "$SKILL")"
+  echo "$item" | grep -qF '全文から不許容の意思が読め'
+  echo "$item" | grep -qF '主本人の不許容として受け取り'
+  echo "$item" | grep -qF '許容とも不許容とも読めない'
+}
