@@ -223,6 +223,9 @@ def relayed(target_uuid, stop_at_text, stop_url, paths):
         sys.exit(2)
     if not said_at > stop_at:
         fail("not-after")
+    # 停止の記録の URL は完全一致で探す。前後が URL を続ける文字のときは別の URL の一部なので数えない
+    # （…#issuecomment-123 が …#issuecomment-1234 に部分一致しないように）。文末の . や括弧・句読点は URL を続けない文字として扱う
+    url_re = re.compile(r"(?<![A-Za-z0-9_\-.~/:%%?#&=+@])%s(?![A-Za-z0-9_\-~/%%?#&=+@])" % re.escape(stop_url))
     asked = False
     for rec in records:
         if rec.get("type") != "assistant" or rec.get("isSidechain") is True:
@@ -230,7 +233,7 @@ def relayed(target_uuid, stop_at_text, stop_url, paths):
         when = parse_time(rec.get("timestamp"))
         if when is None or not (stop_at < when < said_at):
             continue
-        if any(stop_url in part for part in assistant_texts(rec)):
+        if any(url_re.search(part) for part in assistant_texts(rec)):
             asked = True
             break
     if not asked:

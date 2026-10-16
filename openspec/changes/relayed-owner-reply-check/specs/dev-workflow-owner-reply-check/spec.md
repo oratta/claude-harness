@@ -141,7 +141,7 @@ owner-reply-check.sh は、会話ログの行のうち次のすべてを満た�
 | 2 | 会話ログに `uuid` がその値の行がある | `REASON=not-found`・`MATCHES=0`、exit 1 |
 | 3 | その行が主の発言の 9 条件を満たす | `REASON=not-owner`・`MATCHES=0`、exit 1 |
 | 4 | その行の timestamp が作成日時より後（時刻として比べる。`Z` と `+00:00` の違いは同じに扱う） | `REASON=not-after`・`MATCHES=0`、exit 1 |
-| 5 | 作成日時より後で、その行の timestamp より前の、`type: "assistant"` で `isSidechain` が true でない行のどれかの `type: "text"` の本文に、URL が文字列として含まれる | `REASON=not-asked`・`MATCHES=0`、exit 1 |
+| 5 | 作成日時より後で、その行の timestamp より前の、`type: "assistant"` で `isSidechain` が true でない行のどれかの `type: "text"` の本文に、URL が完全一致で含まれる（前後が URL を続ける文字（英数字や `/`・`#`・`-`・`?`・`&`・`=` など）のときは別の URL の一部として数えない。`…#issuecomment-123` は `…#issuecomment-1234` に一致しない） | `REASON=not-asked`・`MATCHES=0`、exit 1 |
 
 すべて通れば `MATCH: <timestamp> <空白をまとめた本文の全文>` と `MATCHES=1` を出して exit 0 で終わらなければならない（MUST）。行の timestamp を読めないときは exit 2 で終わらなければならない（MUST）。許容の語は確かめない（全文は呼び出し側が読む）。
 

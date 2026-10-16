@@ -454,3 +454,19 @@ relayed_not_owner() {  # $1 = the line to point at (uuid 55555555-...)
   run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
   [ "$status" -eq 2 ]
 }
+
+@test "owner-reply #1059: --relayed reports not-asked when the parent message only has a URL whose comment number merely starts with the stop record's" {
+  add '{"type":"assistant","isSidechain":false,"uuid":"33333333-3333-4333-8333-33333333333a","timestamp":"2026-10-15T07:34:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"子 #1034 がまた止まった。停止の記録: '"$STOP_URL"'2"}]}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-asked"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed accepts the stop record URL followed by punctuation that does not continue a URL" {
+  add '{"type":"assistant","isSidechain":false,"uuid":"33333333-3333-4333-8333-33333333333b","timestamp":"2026-10-15T07:34:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"子 #1034 が止まった（停止の記録 '"$STOP_URL"'）。許容するか決めてほしい"}]}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"MATCHES=1"* ]] || return 1
+}
