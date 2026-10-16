@@ -414,8 +414,16 @@ class CodexEnabled(unittest.TestCase):
         self.assertEqual(registry, [('a', '')])
 
     def run_cli(self, *argv):
-        env = {k: v for k, v in os.environ.items() if k != 'CLAUDE_CONFIG_DIR'}
+        # Keep the real ~/.claude out of the run: the status line rewrites its session records
+        # between two runs and would make the --json comparison flaky.
+        env = {k: v for k, v in os.environ.items()
+               if k not in ('CLAUDE_CONFIG_DIR', 'USAGE_SESSIONS_DIR',
+                            'CLAUDE_SECURESTORAGE_CONFIG_DIR')}
+        sessions = self.root / 'sessions'
+        sessions.mkdir(exist_ok=True)
         env['CLAUDE_ACCOUNTS_FILE'] = str(self.accounts)
+        env['USAGE_SESSIONS_DIR'] = str(sessions)
+        env['USAGE_SNAPSHOT'] = str(self.root / 'snapshot.json')
         return subprocess.run([sys.executable, str(SCRIPT), *argv], env=env,
                               capture_output=True, text=True)
 
