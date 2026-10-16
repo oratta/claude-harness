@@ -21,7 +21,9 @@
 # launch: `orca worktree current --json` → `git rev-parse --show-toplevel` → `git fetch origin <base>`
 #   → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` →
 #   子ごとに `orca worktree create`（同じ repoId・同じ linkedIssue・archive されていない
-#   ワークツリーがあれば作らない。--agent も --prompt も渡さない）→ --note があれば
+#   ワークツリーがあれば作らない。--agent も --prompt も渡さない。create は空のシェルの端末を 1 つ作るので、
+#   `orca terminal list` でそれがちょうど 1 つならそこへ下の <起動コマンド> を `terminal send --enter` で打ち込み、
+#   端末が Claude Code になるまで list で待つ。0 個のときだけ下の terminal create で作る。2 個以上・list 失敗は failed）→ --note があれば
 #   `gh issue comment <N> --body <親エピックからの注意書き: #<epic>・空行・注意書き>`（失敗しても起動は
 #   続け、stderr に `note not posted to #<N>` と手で投稿するコマンドを出す）→ `orca terminal create
 #   --worktree path:<子> --command "EPIC_DISPATCH_PARENT_EPIC=<epic>
@@ -92,6 +94,10 @@
 # reap: 子ごとに、一覧の候補 1 件・親の launch が作った（parentWorktreeId が今のワークツリーの id）・
 #   completed・git status がきれい・LLM/ が無い・ブランチ上・マージ済み PR の headRefOid と HEAD が一致
 #   （`--head <ブランチ>` で一致しなければ、`--state merged --search <HEAD>` でブランチ名を問わず探す）、
+#   （一致しなくても、そのブランチに PR が状態を問わず無く・issue が閉じていて・HEAD が
+#   `git ls-remote origin refs/heads/${EPIC_DISPATCH_BASE:-main}` のリモートの今の先端に含まれる子は通す。
+#   手元の追跡参照は使わない。理由は pr-lookup-failed / issue-lookup-failed / base-lookup-failed /
+#   unmerged-commits / git-failed）、
 #   の順に確かめ、全部通れば `orca terminal close --all` → `orca worktree rm`（--force なし・再試行なし。
 #   stderr に `terminal sweep failed` を含む失敗は `kept <N> rm-failed-terminal-sweep`）→
 #   残ったローカルブランチは先端が HEAD と同じときだけ、ワークツリーが `git worktree list` から外れるのを
@@ -242,6 +248,51 @@ pick_session_term() {
   return 0
 }
 
+# launch 用: 子のワークツリーに worktree create が作った空のシェルの端末がちょうど 1 つあれば、そこへ起動
+# コマンドを打ち込み、端末が Claude Code になる（agentIdentity か タイトル）まで待つ（<子のパス> <起動コマンド>）。
+# 戻り値 0 = 起動した（SHELL_HANDLE にハンドル）/ 1 = 端末が 0 個（呼び出し側が terminal create で作る）/
+# 3 = 失敗（理由と手で続けるコマンドを stderr に出した。端末を増やすと二重になるので作らない）
+SHELL_HANDLE=""
+shell_start() {
+  local terms cnt h out tries i
+  SHELL_HANDLE=""
+  if ! terms="$(orca terminal list --worktree "path:$1" --json)" \
+    || ! cnt="$(printf '%s' "$terms" | jq -e '.result.terminals | if type == "array" then length else error("x") end' 2>/dev/null)"; then
+    echo "orca terminal list --worktree path:$1 --json is not readable" >&2
+    echo "check the terminals before creating one: orca terminal list --worktree path:$1 --json" >&2
+    return 3
+  fi
+  [ "$cnt" -eq 0 ] && return 1
+  h="$(printf '%s' "$terms" | jq -r '.result.terminals | select(length == 1) | .[0].handle // empty' 2>/dev/null)"
+  if [ -z "$h" ]; then
+    echo "terminals in $1: $cnt (expected the one empty shell from worktree create); not starting a second one" >&2
+    echo "check: orca terminal list --worktree path:$1 --json" >&2
+    return 3
+  fi
+  if ! out="$(orca terminal send --terminal "$h" --text "$2" --enter --json)"; then
+    printf '%s\n' "$out" >&2
+    echo "could not type the start command into terminal $h. type it by hand: $2" >&2
+    return 3
+  fi
+  tries=$(( ready / 1000 )); [ "$tries" -ge 1 ] || tries=1
+  for (( i = 0; i < tries; i++ )); do
+    if terms="$(orca terminal list --worktree "path:$1" --json)"; then
+      cnt="$(printf '%s' "$terms" | jq -r '.result.terminals | if type == "array" then length else empty end' 2>/dev/null)"
+      if [ -n "$cnt" ] && [ "$cnt" -ge 2 ]; then
+        echo "terminals in $1: $cnt after typing the start command (expected 1); not sending the prompt" >&2
+        echo "check: orca terminal list --worktree path:$1 --json" >&2
+        return 3
+      fi
+      if [ "$(pick_session_term "$terms")" = "$h" ]; then
+        SHELL_HANDLE="$h"; return 0
+      fi
+    fi
+    sleep 1
+  done
+  echo "terminal $h did not become Claude Code within ${tries}s. check: orca terminal read --terminal $(shq "$h")" >&2
+  return 3
+}
+
 cmd_launch() {
   local note="" base="${EPIC_DISPATCH_BASE:-main}"
   while [ "$#" -gt 0 ]; do
@@ -321,11 +372,20 @@ cmd_launch() {
       echo "no worktree path for #$n in orca worktree create --json" >&2
       echo "failed $n"; failed=1; continue
     fi
-    out="$(orca terminal create --worktree "path:$child" --command "$agent_cmd" --json)"
-    rc=$?
-    printf '%s\n' "$out" >&2
-    handle=""
-    [ "$rc" -eq 0 ] && handle="$(printf '%s' "$out" | jq -r '.result.terminal.handle // empty' 2>/dev/null)"
+    # worktree create が空のシェルの端末を 1 つ作っていれば、新しい端末は作らずそこで起動する
+    # （端末が 2 つになると reply が ambiguous-terminal で止まる）。0 個なら従来どおり作る
+    handle=""; shell_rc=0
+    shell_start "$child" "$agent_cmd" || shell_rc=$?
+    if [ "$shell_rc" -eq 0 ]; then
+      handle="$SHELL_HANDLE"
+    elif [ "$shell_rc" -eq 3 ]; then
+      echo "failed $n"; failed=1; continue
+    else
+      out="$(orca terminal create --worktree "path:$child" --command "$agent_cmd" --json)"
+      rc=$?
+      printf '%s\n' "$out" >&2
+      [ "$rc" -eq 0 ] && handle="$(printf '%s' "$out" | jq -r '.result.terminal.handle // empty' 2>/dev/null)"
+    fi
     if [ -z "$handle" ]; then
       echo "no terminal handle for #$n from orca terminal create --json" >&2
       recreate_hint "$child" "$agent_cmd" "$prompt" "$submit"
@@ -710,6 +770,7 @@ cmd_reap() {
     || { echo "orca worktree list --json is not readable" >&2; exit 1; }
 
   local n cands count w path ref branch st head heads sheads rmerr tip seen=" "
+  local legacy allprs istate lsout btip="" base_looked=0 base_fetched=0 base="${EPIC_DISPATCH_BASE:-main}"
   for n in "$@"; do
     case "$seen" in *" $n "*) continue ;; esac
     seen="$seen$n "
@@ -747,8 +808,41 @@ cmd_reap() {
           || { echo "kept $n pr-lookup-failed"; continue; }
       fi
       if [ -z "$head" ] || ! printf '%s\n' "$sheads" | grep -qxF -- "$head"; then
-        if [ -z "$heads" ] && [ -z "$sheads" ]; then echo "kept $n no-merged-pr"; else echo "kept $n head-mismatch"; fi
-        continue
+        legacy="head-mismatch"
+        if [ -z "$heads" ] && [ -z "$sheads" ]; then legacy="no-merged-pr"; fi
+        # PR が 1 件も無く issue が閉じた子（PR を伴わない記録先）は、HEAD がリモートの今の base に
+        # 含まれるときだけ片付ける。判定の相手は手元の追跡参照ではなく ls-remote で取った今の先端
+        [ -n "$head" ] || { echo "kept $n $legacy"; continue; }
+        allprs="$(gh pr list --head "$branch" --state all --json number --jq '.[].number')" \
+          || { echo "kept $n pr-lookup-failed"; continue; }
+        [ -z "$allprs" ] || { echo "kept $n $legacy"; continue; }
+        istate="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state)" \
+          || { echo "kept $n issue-lookup-failed"; continue; }
+        [ "$istate" = closed ] || { echo "kept $n $legacy"; continue; }
+        if [ "$base_looked" -eq 0 ]; then
+          base_looked=1
+          if lsout="$(git ls-remote origin "refs/heads/$base")"; then
+            btip="$(printf '%s\n' "$lsout" | awk 'NR==1{print $1}')"
+            case "$btip" in
+              *[!0-9a-f]*) btip="" ;;
+              *) [ "${#btip}" -eq 40 ] || btip="" ;;
+            esac
+          fi
+        fi
+        [ -n "$btip" ] || { echo "kept $n base-lookup-failed"; continue; }
+        if ! git cat-file -e "$btip^{commit}" >&2; then
+          if [ "$base_fetched" -eq 0 ]; then
+            base_fetched=1
+            git fetch origin "$base" >&2 || true
+          fi
+          git cat-file -e "$btip^{commit}" >&2 || { echo "kept $n base-lookup-failed"; continue; }
+        fi
+        git -C "$path" merge-base --is-ancestor "$head" "$btip" >&2
+        case "$?" in
+          0) ;;
+          1) echo "kept $n unmerged-commits"; continue ;;
+          *) echo "kept $n git-failed"; continue ;;
+        esac
       fi
     fi
     orca terminal close --worktree "path:$path" --all >&2 || { echo "kept $n close-failed"; continue; }
