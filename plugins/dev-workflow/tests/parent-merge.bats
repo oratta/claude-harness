@@ -47,14 +47,14 @@ ready_section() { awk '/^### `ready` を受けたあと/{f=1; print; next} /^#+ 
 }
 
 @test "criteria: parent-pass-criteria.md does not gain the merge conditions" {
-  ! grep -qF '裁定:' "$PASS_CRITERIA"
+  ! grep -qF '裁定:' "$PASS_CRITERIA" || return 1
   grep -qF 'PR のマージの可否は、この基準で通さない' "$PASS_CRITERIA"
 }
 
 # --- develop の SKILL.md ---
 
 @test "skill: the old no-auto-merge sentence is gone and direct merges stay forbidden" {
-  ! grep -qF '本体は自動でマージしない' "$SKILL"
+  ! grep -qF '本体は自動でマージしない' "$SKILL" || return 1
   r="$(run_section)"
   printf '%s\n' "$r" | grep -F '直接マージしない' | grep -qF 'gh pr merge'
 }
@@ -122,7 +122,7 @@ ready_section() { awk '/^### `ready` を受けたあと/{f=1; print; next} /^#+ 
   printf '%s\n' "$r" | grep -F 'until-merged' | grep -qF 'run_in_background'
   printf '%s\n' "$r" | grep -qF 'PR のマージ待ち（human-merge、親の返事のあともマージされない）'
   printf '%s\n' "$r" | grep -qF '子は `parent-merge-approved` ラベルも `親のマージ判断:` のコメントも付けない'
-  ! printf '%s\n' "$r" | grep -qF '親の判断の印のあともマージされない'
+  ! printf '%s\n' "$r" | grep -qF '親の判断の印のあともマージされない' || return 1
 }
 
 # --- commit-and-pr-operations.md ---
