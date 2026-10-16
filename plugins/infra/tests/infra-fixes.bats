@@ -883,8 +883,11 @@ timeout_comment_has_rule() {
 }
 
 @test "T8 (#997): SKILL.md tells how to apply the preflight timeout to existing repos" {
-  sec="$(awk '/^## /{p=0} /^## CI\/CD 構成の 2 軸/{p=1} p' "$SKILL")"
-  echo "$sec" | grep -q '`preflight` ジョブ'
+  # 「既に雛形から CI を入れたリポジトリへの反映」の項目（次の `- **` の行まで）だけを見る
+  item="$(awk '/^## /{p=0} /^## CI\/CD 構成の 2 軸/{p=1} p && /^- \*\*/{q=0} p && /^- \*\*既に雛形から CI を入れたリポジトリへの反映\*\*/{q=1} q' "$SKILL")"
+  [ -n "$item" ]
+  echo "$item" | grep -q '`preflight` ジョブ'
+  echo "$item" | grep -qF 'timeout-minutes: <分>'
 }
 
 @test "T5: weekly-full report-failure also files an issue when full is cancelled by the timeout" {
