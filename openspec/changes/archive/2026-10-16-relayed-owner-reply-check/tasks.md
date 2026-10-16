@@ -22,6 +22,6 @@
 ## 4. 記録と確認
 
 - [x] 4.1 既存の bats が通ることを確かめる（`scripts/test.sh owner-reply-check`・`pr-review-gate-skill`・`develop-skill`・`epic-dispatch`）。`openspec validate relayed-owner-reply-check --type change --strict` を通す
-- [ ] 4.2 手元の実物の会話ログで読み取り確認をする（design.md の決定 6 の「手元の実物の会話ログでの読み取り確認」の 3 点。読むだけ）。結果を PR に書く。会話ログが手元に無ければ省いてその旨を書く
+- [x] 4.2 手元の実物の会話ログで読み取り確認をする（design.md の決定 6 の「手元の実物の会話ログでの読み取り確認」の 3 点。読むだけ）。結果を PR に書く。会話ログが手元に無ければ省いてその旨を書く
 - [x] 4.3 変更の記録を書く。触る範囲: plugins/dev-workflow/changes/1059.md（新規）
-- [ ] 4.4 実機の Orca 経路の確認は、ゲートの動作確認で「主に依頼」とし、design.md の決定 6 の手順（親エピック #1038 のセッションが代行し、主は親のタブで「許容」と打つだけ）を依頼に書く。依頼には、子を `launch` と `reply --relaunch` のどちらでも `EPIC_DISPATCH_CLAUDE_CMD='cld --plugin-dir <PR の worktree>/plugins/dev-workflow'` で起動すること、親の `--locate` は PR の worktree の `owner-reply-check.sh` を絶対パスで回すこと、試しの Draft PR を子のブランチに載せる順序（試しのブランチと Draft PR と引き継ぎのコメントを先に置き、`launch --base <試しのブランチ>` で起動する）、結果の記録に子が読んだ plugin dir を 1 行入れること、試しの Draft PR に `human-merge` を付けること、合否は宣言コメントに `親経由で受領` と `真正性確認: 済 …（owner-reply-check.sh --relayed 終了コード 0）` の 2 行が追記され `needs-approval` が外れたことまでで判定し合格処理は範囲外とすることを書く
+- [x] 4.4 実機の Orca 経路の確認は、ゲートの動作確認で「主に依頼」とし、design.md の決定 6 の手順（親エピック #1038 のセッションが代行し、主は親のタブで「許容」と打つだけ）を依頼に書く。依頼には、子を `launch` と `reply --relaunch` のどちらでも `EPIC_DISPATCH_CLAUDE_CMD='cld --plugin-dir <PR の worktree>/plugins/dev-workflow'` で起動すること、親の `--locate` は PR の worktree の `owner-reply-check.sh` を絶対パスで回すこと、試しの Draft PR を子のブランチに載せる順序（試しのブランチと Draft PR と引き継ぎのコメントを先に置き、`launch --base <試しのブランチ>` で起動する）、結果の記録に子が読んだ plugin dir を 1 行入れること、試しの Draft PR に `human-merge` を付けること、合否は宣言コメントに `親経由で受領` と `真正性確認: 済 …（owner-reply-check.sh --relayed 終了コード 0）` の 2 行が追記され `needs-approval` が外れたことまでで判定し合格処理は範囲外とすることを書く
