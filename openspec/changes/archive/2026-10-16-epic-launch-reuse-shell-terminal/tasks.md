@@ -12,4 +12,4 @@
 
 - [x] 3.1 変更の記録 `plugins/dev-workflow/changes/1055.md`（新規）を書く
 - [x] 3.2 `bats plugins/dev-workflow/tests/epic-dispatch.bats`、`scripts/lint.sh`、`openspec validate --specs --strict`、`openspec validate epic-launch-reuse-shell-terminal --type change --strict` を通す
-- [ ] 3.3 （本体の作業。W は行わない）受け入れ条件 2 の実機確認: 実機の Orca で launch した子のワークツリーの `orca terminal list` が 1 行で、その端末が Claude Code であることを確かめる。触る範囲: なし（実行だけ）
+- [x] 3.3 （本体の作業。W は行わない）受け入れ条件 2 の実機確認: 実機の Orca で launch した子のワークツリーの `orca terminal list` が 1 行で、その端末が Claude Code であることを確かめる。触る範囲: なし（実行だけ） 実機確認済み: https://github.com/oratta/claude-harness/issues/1055#issuecomment-6205585751
