@@ -21,8 +21,8 @@
 #      （先頭の空白を除く）が "#<数字> （エピック #<数字> の子。" で始まらない（エピックの親が子の端末に打ち込んだ返事と、
 #      子を起動する指示）。<command-args> の頭の出どころは scripts/epic-dispatch.sh の次の 2 つの文字列で、
 #      ここはそれに結び付いている（epic-dispatch.sh の文を変えたらこの条件と bats の入力も直す）:
-#        launch（epic-dispatch.sh:301）:          /develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）
-#        reply --relaunch（epic-dispatch.sh:404）: /develop #$n （エピック #$epic の子。返事を受けて起動し直し） $msg
+#        launch（epic-dispatch.sh の cmd_launch の prompt=）:            /develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）
+#        reply --relaunch（epic-dispatch.sh の deliver_reply の prompt=）: /develop #$n （エピック #$epic の子。返事を受けて起動し直し） $msg
 #   <command-args>（スラッシュコマンドの引数）と <bash-input>（主が ! で打った入力）は、9 に当たらなければタグごと本文として比べる。
 # 出力:
 #   既定:      一致した発言ごとに "MATCH: <timestamp> <空白をまとめた本文の全文>"、最後に "MATCHES=<件数>"
@@ -110,7 +110,7 @@ import sys
 
 FORWARD_PREFIX = "Another Claude session sent a message"
 OUTPUT_PREFIXES = ("<bash-stdout>", "<bash-stderr>", "<local-command-stdout>", "<local-command-stderr>")
-# 9 つ目の条件（issue #1059）。出どころは冒頭の説明（epic-dispatch.sh:301 / :404）
+# 9 つ目の条件（issue #1059）。出どころは冒頭の説明（epic-dispatch.sh の cmd_launch / deliver_reply の prompt=）
 RELAY_PREFIXES = ("主の返事（親エピック #", "親エピック #")
 DISPATCH_ARGS = re.compile(r"<command-args>\s*#\d+\s*（エピック #\d+ の子。")
 

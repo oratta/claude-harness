@@ -72,7 +72,7 @@ epic-dispatch.sh reply --as owner <E> <N> '<主の答え> [主の発言: セッ�
 - 子の会話ログでは、親の打ち込みが主の発言として通る穴を、決まった頭の文については塞ぐ（2026-10-15 の打ち込みもこの頭で始まっていた）
 - 親自身がさらに上のエピックの子のとき、その親の会話ログに残る上の親からの打ち込みを、`--relayed` が主の入力として通さない
 - 頭の無い自由な文の打ち込みは今までどおり区別できない（守備範囲に残す）
-- `<command-args>` の頭 `#<数字> （エピック #<数字> の子。` は、`scripts/epic-dispatch.sh` の `launch` が打つ `/develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）`（epic-dispatch.sh:301）と `reply --relaunch` が打つ `/develop #$n （エピック #$epic の子。返事を受けて起動し直し） $msg`（epic-dispatch.sh:404）の文字列に結び付いている。`owner-reply-check.sh` の冒頭の説明にこの出どころ（ファイルと行と文字列）を書き、bats の入力はこの 2 つの文字列をそのまま写す。`epic-dispatch.sh` は変えない
+- `<command-args>` の頭 `#<数字> （エピック #<数字> の子。` は、`scripts/epic-dispatch.sh` の `launch` が打つ `/develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）`（epic-dispatch.sh の cmd_launch の prompt=）と `reply --relaunch` が打つ `/develop #$n （エピック #$epic の子。返事を受けて起動し直し） $msg`（epic-dispatch.sh の deliver_reply の prompt=）の文字列に結び付いている。`owner-reply-check.sh` の冒頭の説明にこの出どころ（ファイルと関数と文字列）を書き、bats の入力はこの 2 つの文字列をそのまま写す。`epic-dispatch.sh` は変えない
 - 要件「主の発言として数える行と数えない行」の⑨に合わせ、要件「owner-reply-check.sh は会話ログに主の発言が実在するかを終了コードで返す」も MODIFIED にする。引数が 2 個でないと exit 2 とする規定は既定の使い方だけに掛け、`--locate`・`--relayed` の引数は新しい要件に従うとする。守備範囲 ③ の「親の打ち込みは通りうる」は「決まった頭を付けずに打ち込んだ文は通りうる」に直し、呼び出し元の補足に「親は `--locate`、子と G は `--relayed`」を足す。pr-review-gate の 3 要件（会話で受けた許容の合格条件・引き継ぎの元・引き継いだ宣言の書式）の守備範囲 ③ の同じ文も同じに直す
 
 ### 5. 記録の形と G の確かめ方
@@ -101,7 +101,7 @@ epic-dispatch.sh reply --as owner <E> <N> '<主の答え> [主の発言: セッ�
 
 プラグインの版: 子は何も指定しないと `cld` が読む main の版（marketplace のプラグイン）で動き、この PR の手順書もスクリプトも使わないので、合否の判定にならない。そこで次のように版を決める。
 
-- 子は、この PR の worktree のプラグインで動かす。親は `launch` と `reply --relaunch` のどちらでも、`EPIC_DISPATCH_CLAUDE_CMD='cld --plugin-dir <PR の worktree>/plugins/dev-workflow'` を付けて `epic-dispatch.sh` を回す（`epic-dispatch.sh` は子の端末のコマンドの頭をこの環境変数から作る。epic-dispatch.sh:215-219）。起動し直しで付け忘れると、新しい子は main の版で動くので、その回の結果は採らずにやり直す
+- 子は、この PR の worktree のプラグインで動かす。親は `launch` と `reply --relaunch` のどちらでも、`EPIC_DISPATCH_CLAUDE_CMD='cld --plugin-dir <PR の worktree>/plugins/dev-workflow'` を付けて `epic-dispatch.sh` を回す（`epic-dispatch.sh` は子の端末のコマンドの頭をこの環境変数から作る。epic-dispatch.sh の agent_setup の claude_cmd=）。起動し直しで付け忘れると、新しい子は main の版で動くので、その回の結果は採らずにやり直す
 - 親（エピック #1038 のセッション）は main の版の手順書で動いているので、手順 8 の新しい送り方は手で行う。`--locate` は PR の worktree の `owner-reply-check.sh` を絶対パス（`<PR の worktree>/plugins/dev-workflow/scripts/owner-reply-check.sh`）で回す
 - 結果の記録に、子を起動したときの `EPIC_DISPATCH_CLAUDE_CMD` の値（子が読んだ plugin dir）を 1 行入れる
 - 試しの Draft PR を子のブランチに載せる順序: ①試しのエピックと子 issue を作る ②`origin/main` から試しのブランチを切って無害な 1 行の変更を commit・push し、本文に `Closes #<子>` を書いた Draft PR を作る ③その PR に `主のリスク許容が必要` の宣言コメントを置き `needs-approval` を付け、子 issue に、その PR とその HEAD を書いた `引き継ぎ: 主の返事待ち` のコメントを置く ④`epic-dispatch.sh launch --base <試しのブランチ>` で子を起動する（子のワークツリーは試しのブランチの先頭から作られ、HEAD が PR の HEAD と同じになるので、再開手順 3 の HEAD の照合が通る）
@@ -131,7 +131,7 @@ epic-dispatch.sh reply --as owner <E> <N> '<主の答え> [主の発言: セッ�
 - [親が頭を付けずに自由な文で子に許容を打ち込む] → 子の会話ログでは今までどおり主の発言と区別できない（9 つ目の条件は決まった頭だけを落とす）。手順 8 は `reply --as owner` を使うと定めているので、通常の親は頭を付ける
 - [親の報告より後に主が別の子について「許容」と言い、親がそれを取り違えて送る] → 結び付けは「停止より後・報告より後」までしか見ない。全文が別の子・別の PR を名指ししていればゲートの全文の読みで落ちる。名指しの無い「許容」は取り違えを区別できない（今の「会話で受領」の「PR もリスクも名指ししない許容は区別できない」と同じ限界）
 - [会話ログの改変] → 検知しない（既存の守備範囲と同じ）
-- [`epic-dispatch.sh` の `launch` の指示の文が変わる（エピック #1038 の子 #1055 など）] → ⑨の `<command-args>` の頭 `#<数字> （エピック #<数字> の子。` が合わなくなると、起動の指示の行が主の発言として通りうる（今の動きに戻るだけで、親経由の許容が誤って通るわけではない。`--relayed` は親の会話ログの行を読む）。`owner-reply-check.sh` の冒頭に出どころ（epic-dispatch.sh:301 と :404 の文字列）を書くので、両方を読む人は結び付きに気づける。bats は写した文字列を固定するだけで `epic-dispatch.sh` の実物と突き合わせないので、`epic-dispatch.sh` だけを変えても bats は落ちない
+- [`epic-dispatch.sh` の `launch` の指示の文が変わる（エピック #1038 の子 #1055 など）] → ⑨の `<command-args>` の頭 `#<数字> （エピック #<数字> の子。` が合わなくなると、起動の指示の行が主の発言として通りうる（今の動きに戻るだけで、親経由の許容が誤って通るわけではない。`--relayed` は親の会話ログの行を読む）。`owner-reply-check.sh` の冒頭に出どころ（epic-dispatch.sh の cmd_launch と deliver_reply の prompt= の文字列）を書くので、両方を読む人は結び付きに気づける。bats は写した文字列を固定するだけで `epic-dispatch.sh` の実物と突き合わせないので、`epic-dispatch.sh` だけを変えても bats は落ちない
 - [9 つ目の条件で、主が自分で `親エピック #…` と書き始めた発言が数えられなくなる] → 主がその書き出しで許容を書く場面は想定しにくい。落ちた場合は確かめられない側に倒れ、主に聞き直すだけで、誤って通すことはない
 
 ## Migration Plan

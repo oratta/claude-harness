@@ -227,7 +227,7 @@ run_check() { run bash "$SCRIPT" "$@"; }
 
 # ---- 9 つ目の条件: エピックの親の打ち込みと子を起動する指示（issue #1059）
 # 入力の行の形は 2026-10-15 時点の Orca 経路のエピックの親と子の実物に合わせる。
-# 起動の指示の <command-args> は scripts/epic-dispatch.sh の launch（:301）と reply --relaunch（:404）の文字列を写す:
+# 起動の指示の <command-args> は scripts/epic-dispatch.sh の launch（cmd_launch の prompt=）と reply --relaunch（deliver_reply の prompt=）の文字列を写す:
 #   launch:   /develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）
 #   relaunch: /develop #$n （エピック #$epic の子。返事を受けて起動し直し） $msg
 
