@@ -1716,7 +1716,7 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 - 開いている子が無くなったら、片付け待ちの子で `reap` を 1 回呼び、`reaped`・`gone` の子を片付け待ちから外す。残った片付け待ちの子（`kept <N> not-done` の子）が 1 件以上あれば、その子だけを `--watch-done` に渡して（位置引数の子なしで）待つ。0 件なら `wait` を呼ばずに待ちを終える（MUST）。完了条件の確認と報告がまだなら行う。待ちの途中で `done <N>...` で起こされたときも、`reap` の結果で `reaped`・`gone` の子を外して同じに扱う（MUST。このとき読まれるのは `done` で起こされたときの手順なので、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことを、その手順にも書く）。エピックの完了条件の確認と報告を、この待ちを理由に遅らせない（SHALL）。この待ちが `timeout` で終わったら、残っている子の番号をユーザーに報告して待ちをやめる（SHALL）
 - `回し方: Orca` を引き継いで再開したら、`launch` の前に、`launch` に渡したことのある子（閉じた子を含む。`子 #N のワークツリーを残した` の行がある子も除かない）で `reap` を 1 回呼び、`reaped`・`gone` の子を片付け待ちから外す（SHALL。再開したセッションは前のセッションの `reap` の結果を持たないので、この 1 回で作り直す）。そのあとの `launch` を終えて、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行う（MUST）
 - `wait` の `error workspaces` は `error gh ...` と同じく、ユーザーに報告して止まる（MUST）
-- `--watch-done` 付きの `wait` が stdout に何も出さず exit 1 で終わったら（今のワークツリーを Orca から読めない）、`launch` の exit 1 と同じく、Orca の親ワークツリーで開き直すようユーザーに報告して止まる（MUST）
+- `--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わったら（stderr に `not in an Orca-managed worktree` などが出て、今のワークツリーを Orca から読めない）、`launch` の exit 1 と同じく、Orca の親ワークツリーで開き直すようユーザーに報告して止まる（MUST）。stderr が `usage:` を含むときは、stderr を添えて設定の誤りとして報告して止まる（MUST）
 
 #### Scenario: Orca 経路に片付けの手順が書かれている
 - **WHEN** SKILL.md の「エピックの扱い」の「回し方」を読む
@@ -1737,6 +1737,10 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 #### Scenario: 再開して動かす子も片付け待ちの子も無ければ待たずに終える
 - **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 7（`回し方: Orca` を引き継いで再開したときの手順）を読む
 - **THEN** `reap` と `launch` のあと、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことが手順 7 に書かれている
+
+#### Scenario: --watch-stopped 付きの wait が Orca から読めずに終わったら親ワークツリーで開き直す
+- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 6 を読む
+- **THEN** `--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わった場合に、報告に「親ワークツリーで開き直す」と書くことが書かれている
 
 ### Requirement: develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする
 `plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
