@@ -133,3 +133,23 @@ ready_section() { awk '/^### `ready` を受けたあと/{f=1; print; next} /^#+ 
   printf '%s\n' "$p" | grep -qF '親のマージ判断: 可'
   printf '%s\n' "$p" | grep -qF 'human-merge'
 }
+
+# --- ゲート一周目の指摘（#1067） ---
+
+@test "ci-watch: after the parent's reply the child checks for a duplicate watch and posts a start comment before --until-merged" {
+  line="$(ready_section | grep -F '親エピック #<E> の判断（主の承認ではない）:')"
+  [ -n "$line" ]
+  printf '%s\n' "$line" | grep -qF '上の 2 の重複の確認'
+  printf '%s\n' "$line" | grep -qF '`CI 見張り開始:` のコメントの投稿をしてから、`ci-watch.sh wait <owner/repo> <PR番号> --until-merged`'
+}
+
+@test "skill: re-approving a new HEAD removes the stale parent-merge-approved label before commenting and labeling" {
+  p="$(merge_para)"
+  printf '%s\n' "$p" | grep -qF '古い HEAD の判断で付けた `parent-merge-approved` が PR に残っていれば先に外し'
+  printf '%s\n' "$p" | grep -qF 'gh api -X DELETE "repos/<owner>/<repo>/issues/<PR番号>/labels/parent-merge-approved"'
+  # 外す → HEAD の取り直し → コメント → ラベルの順
+  printf '%s\n' "$p" | awk '{
+    a=index($0,"labels/parent-merge-approved"); b=index($0,"headRefOid` で取り直して"); c=index($0,"1 行目 `親のマージ判断: 可`"); d=index($0,"投稿してから `parent-merge-approved` ラベルを付ける")
+    if (a && b && c && d && a<b && b<c && c<d) ok=1
+  } END { exit ok ? 0 : 1 }'
+}
