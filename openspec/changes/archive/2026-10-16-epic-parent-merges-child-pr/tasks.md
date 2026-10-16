@@ -21,4 +21,4 @@
 
 - [x] 5.1 変更の記録を書く（何が変わったか・親が気づく経路を epic-dispatch.sh を変えずに既存の `stopped` に乗せたこと・印が効かないリポでは主に上げること・戻し方）。触る範囲: plugins/dev-workflow/changes/1054.md（新規。書式は plugins/dev-workflow/changes/1030.md:1-12 にそろえる）
 - [x] 5.2 `grep -n '本体は自動でマージしない' plugins/dev-workflow/skills/develop/SKILL.md` が 0 件、`bats plugins/dev-workflow/tests/` が通る、`openspec validate --strict` が exit 0 を確かめる
-- [ ] 5.3 archive の前に、dev-workflow-develop「エピックの条件・作り方・回し方・完了条件を規定する」の main の今の文と、この change の MODIFIED の文を突き合わせる。並行する子（#1043 など）が先に同じ要件を書き換えて main に入っていたら、main の今の文に、この change の 2 か所の書き換え（最後の文とシナリオ「Orca 経路の本体は wait の出力で次を決める」の最後の句）だけを載せ直してから archive する。触る範囲: openspec/changes/epic-parent-merges-child-pr/specs/dev-workflow-develop/spec.md:3-33
+- [x] 5.3 archive の前に、dev-workflow-develop「エピックの条件・作り方・回し方・完了条件を規定する」の main の今の文と、この change の MODIFIED の文を突き合わせる。並行する子（#1043 など）が先に同じ要件を書き換えて main に入っていたら、main の今の文に、この change の 2 か所の書き換え（最後の文とシナリオ「Orca 経路の本体は wait の出力で次を決める」の最後の句）だけを載せ直してから archive する。触る範囲: openspec/changes/epic-parent-merges-child-pr/specs/dev-workflow-develop/spec.md:3-33
