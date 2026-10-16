@@ -675,3 +675,36 @@ refute() {
   echo "$s" | grep -qF '主に渡さない'
   echo "$s" | grep -qF 'PR を伴わない記録先 issue を閉じたときを除く'
 }
+
+# --- Requirement: 親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る（#1059） ---
+# 照合の対象は SKILL.md の文だけで、openspec の spec の文言は照合しない。
+
+@test "relayed reply (#1059): Orca step 8 reports in the body, locates the uuid, and appends the location" {
+  line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$SKILL")"
+  echo "$line" | grep -qF '本文で報告する（質問ツールで聞かない）'
+  echo "$line" | grep -qF 'owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <主の答え>'
+  echo "$line" | grep -qF ' [主の発言: セッション <親のセッション ID> / uuid <uuid>]'
+  echo "$line" | grep -qF '書き換えず'
+  echo "$line" | grep -qF '子のタブ'
+}
+
+@test "relayed reply (#1059): the child's 'reply from the parent' item checks with --relayed before handing to G" {
+  item="$(grep -F -- '- **親から届いた返事**' "$SKILL")"
+  echo "$item" | grep -qF '[主の発言: セッション <ID> / uuid <uuid>]'
+  echo "$item" | grep -qF 'owner-reply-check.sh --relayed <ID> <uuid> <作成日時> <URL>'
+  echo "$item" | grep -qF '子のタブ'
+  echo "$item" | grep -qF 'REASON='
+  echo "$item" | grep -qF '「親経由で受領」'
+}
+
+@test "relayed reply (#1059): a relayed reply on a relaunch is handled before resume step 2 without the own session ID" {
+  item="$(grep -F -- '- **親から届いた返事**' "$SKILL")"
+  echo "$item" | grep -qF '手順 2 より先に当て'
+  echo "$item" | grep -qF '自分のセッション ID で `owner-reply-check.sh` に掛けない'
+}
+
+@test "relayed reply (#1059): the hold line refers to 'reply from the parent' for a child that got the acceptance via the parent" {
+  line="$(grep -F 'リスク許容を会話で受けたら主に PR へのコメントを求めず' "$SKILL")"
+  echo "$line" | grep -qF 'エピックの子が親経由で'
+  echo "$line" | grep -qF '「親から届いた返事」'
+}
