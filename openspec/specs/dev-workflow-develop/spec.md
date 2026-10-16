@@ -487,7 +487,7 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 
 `route <child>...` は、引数の子が 1 件以上あり、`orca` コマンドが PATH にあり、かつ `orca worktree current` が exit 0 で終わる（今いるディレクトリが Orca 管理のワークツリー）ときだけ stdout に `orca` の 1 行を出し、それ以外は `subagent` の 1 行を出して exit 0 で終わらなければならない（MUST）。子の番号が数字でなければ stderr に使い方を出して exit 1 で終わる（SHALL）。
 
-`launch [--note <text>] [--base <branch>] <epic> <child>...` は、次の順で呼び出さなければならない（MUST）: `orca worktree current --json`（今の repo の `repoId` を得る）→ `git rev-parse --show-toplevel` → `git fetch origin <base>` → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` → 子ごとに `orca worktree create --name issue-<N> --issue <N> --base-branch origin/<base> --parent-worktree path:<親> --json` → `orca terminal create --worktree path:<子> --command <cmd> --json` → `orca terminal wait --terminal <handle> --for tui-idle --timeout-ms <ready> --json` → `orca terminal send --terminal <handle> --text <prompt> --enter --wait-submit <submit> --json`。worktree create に `--agent` と `--prompt` を渡してはならない（MUST NOT。`--agent` で起動すると子セッションのモデルを指定できず Claude Code の既定モデルで動くため。`--prompt` は Orca 1.4.209 では指示が子の入力欄に届かず、送信と併用すると指示が 2 回届くおそれがあるため）。`<子>` は worktree create の JSON 出力の `result.worktree.path` とする（MUST）。`<cmd>` は `<claude-cmd> --model <model>` で（`--dangerously-skip-permissions` などの許可に関わる引数は付けてはならない（MUST NOT）。付けるのは `<claude-cmd>` 側に任せる）、`<claude-cmd>` の既定は `cld` で環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で変えられ、クォートせずそのまま置く（MUST。`--command` の文字列は Orca が開いたログインシェルに打ち込まれるのでシェル関数も解決され、`cld-account b` のような引数付きも書けるため）。`<model>` はシェルに打ち込まれても 1 語のまま渡るよう単一引用符で囲む（MUST。`opus[1m]` のような値がグロブとして解釈されないため）。`<model>` の既定は `opus` で、環境変数 `EPIC_DISPATCH_MODEL` で変えられる（MUST）。`<handle>` は terminal create の JSON 出力の `result.terminal.handle` とする（MUST）。`<ready>` の既定は 60000（ミリ秒）で環境変数 `EPIC_DISPATCH_READY_TIMEOUT_MS` で、`<submit>` の既定は 30（秒）で環境変数 `EPIC_DISPATCH_SUBMIT_WAIT` で変えられる（SHALL）。`<親>` は `git rev-parse --show-toplevel` で求めた親ワークツリーの絶対パスで、親の指定は create と set の両方で `path:` を使わなければならない（MUST。`worktree:<id>` は set で `selector_not_found` になるため）。`<base>` の既定は `main` で、環境変数 `EPIC_DISPATCH_BASE` で既定を変えられ、`--base` が環境変数より優先する（MUST）。`<prompt>` は `/develop #<N>` で始まり、エピック番号を含み、`--note` があればその文を含む（SHALL）。子を `launched <N>` とするのは、worktree create が exit 0 で終わり、子のワークツリーのパスが取れ、terminal create が exit 0 で終わり、ハンドルが取れ、`terminal wait` が exit 0 で終わり、`terminal send` が exit 0 で終わってその JSON 出力のどこかの `stages` 配列に `turn_started` が含まれるときだけでなければならない（MUST）。どれか 1 つでも満たさなければ `failed <N>` とし（MUST）、子のワークツリーのパスが取れていてハンドルが取れていなければ（terminal create の失敗を含む）、端末を手で起動し直すための `orca terminal create --worktree path:<子> --command <cmd> --json` を stderr に出すに続けて、最初の指示を送るための `orca terminal send --terminal <作り直した端末のハンドル> --text <prompt> --enter --wait-submit <submit> --json` を stderr に出す（SHALL。ワークツリーは残るので、再実行ではその子は `skipped <N>` になり端末が作られないため）。ハンドルが取れていれば、指示を手で送り直すための `orca terminal send --terminal <handle> --text <prompt> --enter --wait-submit <submit> --json` を stderr に出し、あわせて「送る前に `orca terminal read --terminal <handle>` で入力欄とターンの状態を確かめる」旨の案内を出す（SHALL。送信が非 0 やターン未観測で終わっても指示が届いていることがあり、確かめずに送ると 2 回届くため）。`terminal send` の JSON 出力に送り直し用の ID（キー `retryRequestId` または `retryRequest` の文字列値）があれば、送り直しのコマンドに `--retry-request <id>` を付ける（SHALL）。ワークツリーは残すので、再実行ではその子は `skipped <N>` になり、指示を送り直さない（SHALL）。一覧に、同じ `repoId` で `linkedIssue` が `<N>` の archive されていないワークツリーがある子には create を呼ばず `skipped <N>` を出さなければならない（MUST。再開時や取り違えで同じ子を二重に起動しないため）。`orca` が PATH に無いときは何も呼ばずに exit 1 で終わり、`orca worktree current`・`git fetch`・`orca worktree set`・`orca worktree list` のどれかが失敗したとき（`jq` が無くて一覧を読めないときを含む）は子を 1 件も作らずに exit 1 で終わらなければならない（MUST）。stdout には子ごとに `launched <N>`・`skipped <N>`・`failed <N>` のどれか 1 行だけを出し、`orca` 自身の出力は stderr に流す（SHALL）。1 件の失敗で残りの子の起動を止めず、`failed` が 0 件なら exit 0、1 件でもあれば exit 1 で終わる（MUST）。
+`launch [--note <text>] [--base <branch>] <epic> <child>...` は、次の順で呼び出さなければならない（MUST）: `orca worktree current --json`（今の repo の `repoId` を得る）→ `git rev-parse --show-toplevel` → `git fetch origin <base>` → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` → 子ごとに `orca worktree create --name issue-<N> --issue <N> --base-branch origin/<base> --parent-worktree path:<親> --json` → 子の端末を用意する（`orca terminal list --worktree path:<子> --json` で端末を数え、0 個のときだけ `orca terminal create --worktree path:<子> --command <cmd> --json` で作る。ちょうど 1 つのときは作らずにその端末を使う。詳細は要件「launch は worktree create が作った空のシェルの端末を子のセッションの端末に使い、子のワークツリーの端末を 1 つに保つ」）→ `orca terminal wait --terminal <handle> --for tui-idle --timeout-ms <ready> --json` → `orca terminal send --terminal <handle> --text <prompt> --enter --wait-submit <submit> --json`。worktree create に `--agent` と `--prompt` を渡してはならない（MUST NOT。`--agent` で起動すると子セッションのモデルを指定できず Claude Code の既定モデルで動くため。`--prompt` は Orca 1.4.209 では指示が子の入力欄に届かず、送信と併用すると指示が 2 回届くおそれがあるため）。`<子>` は worktree create の JSON 出力の `result.worktree.path` とする（MUST）。`<cmd>` は `<claude-cmd> --model <model>` で（`--dangerously-skip-permissions` などの許可に関わる引数は付けてはならない（MUST NOT）。付けるのは `<claude-cmd>` 側に任せる）、`<claude-cmd>` の既定は `cld` で環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で変えられ、クォートせずそのまま置く（MUST。`--command` の文字列は Orca が開いたログインシェルに打ち込まれるのでシェル関数も解決され、`cld-account b` のような引数付きも書けるため）。`<model>` はシェルに打ち込まれても 1 語のまま渡るよう単一引用符で囲む（MUST。`opus[1m]` のような値がグロブとして解釈されないため）。`<model>` の既定は `opus` で、環境変数 `EPIC_DISPATCH_MODEL` で変えられる（MUST）。`<handle>` は、端末を作ったときは terminal create の JSON 出力の `result.terminal.handle`、使い回したときはその端末のハンドルとする（MUST）。`<ready>` の既定は 60000（ミリ秒）で環境変数 `EPIC_DISPATCH_READY_TIMEOUT_MS` で、`<submit>` の既定は 30（秒）で環境変数 `EPIC_DISPATCH_SUBMIT_WAIT` で変えられる（SHALL）。`<親>` は `git rev-parse --show-toplevel` で求めた親ワークツリーの絶対パスで、親の指定は create と set の両方で `path:` を使わなければならない（MUST。`worktree:<id>` は set で `selector_not_found` になるため）。`<base>` の既定は `main` で、環境変数 `EPIC_DISPATCH_BASE` で既定を変えられ、`--base` が環境変数より優先する（MUST）。`<prompt>` は `/develop #<N>` で始まり、エピック番号を含み、`--note` があればその文を含む（SHALL）。子を `launched <N>` とするのは、worktree create が exit 0 で終わり、子のワークツリーのパスが取れ、端末を用意でき（terminal create が exit 0 で終わりハンドルが取れた、または使い回した端末が Claude Code になった）、`terminal wait` が exit 0 で終わり、`terminal send` が exit 0 で終わってその JSON 出力のどこかの `stages` 配列に `turn_started` が含まれるときだけでなければならない（MUST）。どれか 1 つでも満たさなければ `failed <N>` とし（MUST）、子のワークツリーのパスが取れていて、端末を作る経路でハンドルが取れていなければ（terminal create の失敗を含む）、端末を手で起動し直すための `orca terminal create --worktree path:<子> --command <cmd> --json` を stderr に出すに続けて、最初の指示を送るための `orca terminal send --terminal <作り直した端末のハンドル> --text <prompt> --enter --wait-submit <submit> --json` を stderr に出す（SHALL。ワークツリーは残るので、再実行ではその子は `skipped <N>` になり端末が作られないため）。端末を用意できたあと（`terminal wait` か `terminal send` の段）で失敗し、ハンドルが取れていれば、指示を手で送り直すための `orca terminal send --terminal <handle> --text <prompt> --enter --wait-submit <submit> --json` を stderr に出し、あわせて「送る前に `orca terminal read --terminal <handle>` で入力欄とターンの状態を確かめる」旨の案内を出す（SHALL。送信が非 0 やターン未観測で終わっても指示が届いていることがあり、確かめずに送ると 2 回届くため）。`terminal send` の JSON 出力に送り直し用の ID（キー `retryRequestId` または `retryRequest` の文字列値）があれば、送り直しのコマンドに `--retry-request <id>` を付ける（SHALL）。ワークツリーは残すので、再実行ではその子は `skipped <N>` になり、指示を送り直さない（SHALL）。一覧に、同じ `repoId` で `linkedIssue` が `<N>` の archive されていないワークツリーがある子には create を呼ばず `skipped <N>` を出さなければならない（MUST。再開時や取り違えで同じ子を二重に起動しないため）。`orca` が PATH に無いときは何も呼ばずに exit 1 で終わり、`orca worktree current`・`git fetch`・`orca worktree set`・`orca worktree list` のどれかが失敗したとき（`jq` が無くて一覧を読めないときを含む）は子を 1 件も作らずに exit 1 で終わらなければならない（MUST）。stdout には子ごとに `launched <N>`・`skipped <N>`・`failed <N>` のどれか 1 行だけを出し、`orca` 自身の出力は stderr に流す（SHALL）。1 件の失敗で残りの子の起動を止めず、`failed` が 0 件なら exit 0、1 件でもあれば exit 1 で終わる（MUST）。
 
 `wait [--interval <sec>] [--timeout <sec>] <child>...` は、子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state` で state を確かめるポーリングを繰り返し、stdout にちょうど 1 行を出して終わらなければならない（MUST）。子ごとの結果は、出力が `closed` なら閉じている、`open` なら開いている、`gh` が非 0 で終わったか出力がそれ以外（空文字を含む）なら失敗とする（MUST）。1 件以上の子が閉じていれば `closed <N>...`（閉じていた子の番号）で exit 0、上限時間に達したら `timeout <N>...`（閉じていない子の番号）で exit 2、失敗したポーリングが 3 回続いたら `error gh <N>...`（3 回目で失敗した子の番号）で exit 1 で終わる（MUST）。失敗したポーリングとは、1 件以上の子が失敗し、かつ閉じた子が 1 件も無いポーリングを言い、一部の子だけが失敗してほかの子が `open` の場合も含む（MUST）。失敗の無いポーリングがあれば数え直す（SHALL）。閉じた子がいるポーリングでは、ほかの子の失敗より `closed` を優先する（SHALL）。間隔と上限は秒で、既定は間隔 300・上限 21600、環境変数 `EPIC_DISPATCH_INTERVAL` / `EPIC_DISPATCH_TIMEOUT` で既定を変えられ、フラグが環境変数より優先する（MUST）。ポーリングのあとで経過時間が上限に達しているか、経過時間と間隔の和が上限を超えるなら、眠らずに `timeout` で終わる（MUST。`--timeout 0` は間隔によらず 1 回だけ確かめて終わる）。子が 0 件、番号が数字でない、間隔・上限が非負整数でないときは stderr に使い方を出して exit 1 で終わる（SHALL）。
 
@@ -508,8 +508,8 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 - **THEN** stdout は `orca` の 1 行で exit 0
 
 #### Scenario: launch は fetch してから path: で親を渡して子を作る
-- **WHEN** 一覧に子のワークツリーが無いスタブ環境で `epic-dispatch.sh launch 400 11 12` を実行する
-- **THEN** 呼び出しの記録は `orca worktree current --json`、`git rev-parse --show-toplevel`、`git fetch origin main`、`orca worktree set --worktree path:<親> --issue 400`、`orca worktree list --json`、子ごとに `orca worktree create`（`--name issue-<N> --issue <N> --base-branch origin/main --parent-worktree path:<親> --json`。`--agent` も `--prompt` も含まない）、`orca terminal create --worktree path:<子> --command "cld --model 'opus'" --json`、`orca terminal wait --terminal <handle> --for tui-idle`、`orca terminal send --terminal <handle> --text "/develop #<N> ..." --enter --wait-submit 30 --json` を子 11・子 12 の順に繰り返し、stdout は `launched 11` と `launched 12`、exit 0
+- **WHEN** 一覧に子のワークツリーが無く、子のワークツリーの端末が 0 個のスタブ環境で `epic-dispatch.sh launch 400 11 12` を実行する
+- **THEN** 呼び出しの記録は `orca worktree current --json`、`git rev-parse --show-toplevel`、`git fetch origin main`、`orca worktree set --worktree path:<親> --issue 400`、`orca worktree list --json`、子ごとに `orca worktree create`（`--name issue-<N> --issue <N> --base-branch origin/main --parent-worktree path:<親> --json`。`--agent` も `--prompt` も含まない）、`orca terminal list --worktree path:<子> --json`、`orca terminal create --worktree path:<子> --command "cld --model 'opus'" --json`、`orca terminal wait --terminal <handle> --for tui-idle`、`orca terminal send --terminal <handle> --text "/develop #<N> ..." --enter --wait-submit 30 --json` を子 11・子 12 の順に繰り返し、stdout は `launched 11` と `launched 12`、exit 0
 
 #### Scenario: 子セッションのモデルを環境変数で変えられる
 - **WHEN** `EPIC_DISPATCH_MODEL='opus[1m]'` のスタブ環境で `epic-dispatch.sh launch 400 11` を実行する
@@ -1721,7 +1721,7 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 - 開いている子が無くなったら、片付け待ちの子で `reap` を 1 回呼び、`reaped`・`gone` の子を片付け待ちから外す。残った片付け待ちの子（`kept <N> not-done` の子）が 1 件以上あれば、その子だけを `--watch-done` に渡して（位置引数の子なしで）待つ。0 件なら `wait` を呼ばずに待ちを終える（MUST）。完了条件の確認と報告がまだなら行う。待ちの途中で `done <N>...` で起こされたときも、`reap` の結果で `reaped`・`gone` の子を外して同じに扱う（MUST。このとき読まれるのは `done` で起こされたときの手順なので、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことを、その手順にも書く）。エピックの完了条件の確認と報告を、この待ちを理由に遅らせない（SHALL）。この待ちが `timeout` で終わったら、残っている子の番号をユーザーに報告して待ちをやめる（SHALL）
 - `回し方: Orca` を引き継いで再開したら、`launch` の前に、`launch` に渡したことのある子（閉じた子を含む。`子 #N のワークツリーを残した` の行がある子も除かない）で `reap` を 1 回呼び、`reaped`・`gone` の子を片付け待ちから外す（SHALL。再開したセッションは前のセッションの `reap` の結果を持たないので、この 1 回で作り直す）。そのあとの `launch` を終えて、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行う（MUST）
 - `wait` の `error workspaces` は `error gh ...` と同じく、ユーザーに報告して止まる（MUST）
-- `--watch-done` 付きの `wait` が stdout に何も出さず exit 1 で終わったら（今のワークツリーを Orca から読めない）、`launch` の exit 1 と同じく、Orca の親ワークツリーで開き直すようユーザーに報告して止まる（MUST）
+- `--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わったら（stderr に `not in an Orca-managed worktree` などが出て、今のワークツリーを Orca から読めない）、`launch` の exit 1 と同じく、Orca の親ワークツリーで開き直すようユーザーに報告して止まる（MUST）。stderr が `usage:` を含むときは、stderr を添えて設定の誤りとして報告して止まる（MUST）
 
 #### Scenario: Orca 経路に片付けの手順が書かれている
 - **WHEN** SKILL.md の「エピックの扱い」の「回し方」を読む
@@ -1742,6 +1742,10 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 #### Scenario: 再開して動かす子も片付け待ちの子も無ければ待たずに終える
 - **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 7（`回し方: Orca` を引き継いで再開したときの手順）を読む
 - **THEN** `reap` と `launch` のあと、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことが手順 7 に書かれている
+
+#### Scenario: --watch-stopped 付きの wait が Orca から読めずに終わったら親ワークツリーで開き直す
+- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 6 を読む
+- **THEN** `--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わった場合に、報告に「親ワークツリーで開き直す」と書くことが書かれている
 
 ### Requirement: develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする
 `plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
@@ -2395,3 +2399,95 @@ develop の SKILL.md は、Orca 経路のエピックで主が親のセッショ
 - **WHEN** SKILL.md の保留の行の「リスク許容を会話で受けたら」の文を読む
 - **THEN** エピックの子が親経由で受けたときは「親から届いた返事」の手順に従うことが書かれている
 
+### Requirement: epic-dispatch.sh reap は PR が無く issue を閉じた子を、main に入っていない commit が無いときに片付ける
+この要件は、要件「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」の確認 7（マージ済み PR の先端と HEAD の一致）で一致する行が無かったときの扱いに優先しなければならない（MUST）。7 の 1 段・2 段の出力の取り方、一致したときの扱い、1〜6 の確認、片付け（`orca terminal close` → `--force` なしの `orca worktree rm` → ローカルブランチの削除）の手順は変えない。
+
+`reap` は、7 の 1 段と 2 段のどちらでも HEAD と一致する行が無く、HEAD（`git -C <子のパス> rev-parse HEAD` の出力）が空でない子について、従来の理由を出す前に次の順で確かめなければならない（MUST）。以下で「従来の理由」は、7 の 1 段と 2 段の出力がどちらも空なら `no-merged-pr`、どちらかに出力があれば `head-mismatch` を指す。外れた時点でその子についてはそれ以上何も呼ばず、対応する 1 行を出して次の子へ進まなければならない（MUST）。HEAD が空の子は従来どおり従来の理由を出す（MUST）。
+
+1. `gh pr list --head <ブランチ> --state all --json number --jq '.[].number'` が非 0 なら `kept <N> pr-lookup-failed`。出力が空でなければ（状態を問わずそのブランチの PR がある）`kept <N> <従来の理由>`
+2. `gh api repos/{owner}/{repo}/issues/<N> --jq .state` が非 0 なら `kept <N> issue-lookup-failed`。出力が `closed` でなければ `kept <N> <従来の理由>`
+3. リモートの今の base の先端（以下 base の先端）を `git ls-remote origin refs/heads/<base>` で取る。`<base>` は環境変数 `EPIC_DISPATCH_BASE` の値で、未設定か空なら `main`。`git ls-remote` が非 0 か、出力の 1 列目に 40 桁の 16 進の commit ID が無ければ `kept <N> base-lookup-failed`
+4. `git cat-file -e <base の先端>^{commit}` が非 0 なら（base の先端の commit が手元に無い）、`git fetch origin <base>` を呼んでから `git cat-file -e` をもう 1 回呼ぶ。それでも非 0 なら（fetch が非 0 だったときを含む）`kept <N> base-lookup-failed`
+5. `git -C <子のパス> merge-base --is-ancestor <HEAD> <base の先端>` を呼ぶ。exit 0 なら通る。exit 1 なら `kept <N> unmerged-commits`、それ以外の終了コードなら `kept <N> git-failed`
+
+祖先の判定の相手に手元の追跡参照（`refs/remotes/origin/<base>`）を使ってはならない（MUST NOT。リモートの base が force push で巻き戻されたあと、古い追跡参照と子の HEAD が同じなら判定が通り、今の base に無い commit を持つブランチを消してしまうため）。`git ls-remote` は 1 回の `reap` の呼び出しで最大 1 回だけ呼び、その結果（失敗を含む）を後の子に使い回さなければならない（MUST）。`git fetch` も 1 回の `reap` の呼び出しで最大 1 回とし、2 件目以降の子で base の先端の commit が手元に無ければ fetch を呼ばずに `kept <N> base-lookup-failed` とする（MUST）
+
+1〜5 をすべて通った子は、7 を通った子と同じ手順で片付けなければならない（MUST）。ローカルブランチの削除の条件（先端が HEAD と同じとき・`git worktree list` から外れるのを待つこと・消す直前に先端を読み直すこと）と、出す行（`reaped <N>` / `reaped <N> branch-kept` / `kept <N> close-failed` / `kept <N> rm-failed` / `kept <N> rm-failed-terminal-sweep`）も同じとする（MUST）。
+
+`reap` は issue の `state_reason` を見てはならない（MUST NOT。消してよいかは main に入っていない commit が無いことで決まり、閉じ方の理由で変わらないため）。`git fetch` は 4 の場合のほかに呼んではならない（MUST NOT）。7 で HEAD と一致する行があった子について、1〜5 のどれも呼んではならない（MUST NOT）。
+
+この要件の守備範囲で入力として扱うのは、要件「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」の入力に加え、`gh pr list --head <ブランチ> --state all` の出力の有無と終了コード、`gh api repos/{owner}/{repo}/issues/<N> --jq .state` の出力と終了コード、`git ls-remote origin refs/heads/<base>` の出力と終了コード、`git cat-file -e`・`git fetch origin <base>`・`git merge-base --is-ancestor` の終了コードである。拾いたい誤りは、PR を作らず issue を閉じた子のワークツリーが `no-merged-pr`・`head-mismatch` で残り続けること、および今のリモートの base に入っていない commit（base の巻き戻しで消えた commit を含む）・マージされていない PR・開いている issue を持つ子を消すことである。次は通してよく、この要件では止めない: `.gitignore` の対象のうち `LLM/` 以外（既存の要件と同じく守らない）／`--base` で main 以外から起動したのに `EPIC_DISPATCH_BASE` を設定していない親の子（`unmerged-commits` か `git-failed` で残る）／`git ls-remote` で base の先端を取ってから子のワークツリーを消すまでの間に、リモートの base が巻き戻されること／fetch と ls-remote の間に base がさらに進み、先端の commit が手元に無いままの子（`base-lookup-failed` で残り、次の `reap` で通る）。すり抜ける入力が見つかるたびに確認を足して塞ぎ切ることは、この要件の完了条件としない。
+
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、`orca`・`gh`・`git`・`sleep` を PATH 上のスタブにして、下の Scenario を確かめなければならない（MUST）。
+
+#### Scenario: PR が無く issue を閉じ、HEAD がリモートの今の main に含まれる子は片付ける
+- **WHEN** 要件「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」の 1〜6 を満たす子 11 について、`gh pr list` の出力が `--state merged`・`--search <HEAD>`・`--state all` のどれでも空、`gh api repos/{owner}/{repo}/issues/11 --jq .state` の出力が `closed`、`git ls-remote origin refs/heads/main` の出力が base の先端 `ccc333…`（40 桁）の 1 行、`git cat-file -e` が exit 0、`git -C <子> merge-base --is-ancestor <HEAD> <base の先端>` が exit 0 のスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `orca terminal close --worktree path:<子> --all` と `orca worktree rm --worktree path:<子>` がこの順に 1 回ずつ呼ばれ、どの `orca` の呼び出しにも `--force` が無く、`git merge-base --is-ancestor` は `refs/remotes/origin/main` ではなく base の先端の commit ID に対して呼ばれ、`git fetch` は呼ばれず、stdout は `reaped 11` の 1 行で exit 0
+
+#### Scenario: main の先端の PR が検索に出ても、PR の無い子は片付ける
+- **WHEN** 上の Scenario から、`--search <HEAD>` の出力だけを HEAD と違う `headRefOid` の 1 行に変えたスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `orca worktree rm` が 1 回呼ばれ、stdout は `reaped 11` で exit 0
+
+#### Scenario: PR がある子は issue が閉じていても従来の理由で残す
+- **WHEN** 最初の Scenario から、`--state all` の出力だけを 1 行（PR の番号）に変えたスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `gh api`・`git merge-base`・`orca terminal close`・`orca worktree rm` は 1 回も呼ばれず、stdout は `kept 11 no-merged-pr` で exit 0
+
+#### Scenario: issue が開いている子は従来の理由で残し、状態を読めなければ issue-lookup-failed
+- **WHEN** 最初の Scenario から、issue の状態の出力を `open` に変えたスタブ環境、`gh api` が非 0 で終わるスタブ環境、`--state all` の `gh pr list` が非 0 で終わるスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** どれも `git merge-base`・`orca worktree rm` は呼ばれず、stdout は順に `kept 11 no-merged-pr`・`kept 11 issue-lookup-failed`・`kept 11 pr-lookup-failed` で exit 0
+
+#### Scenario: main に入っていない commit がある子と、祖先を判定できない子は残す
+- **WHEN** 最初の Scenario から、`git merge-base --is-ancestor` の終了コードを 1 に変えたスタブ環境と 128 に変えたスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** どちらも `orca terminal close`・`orca worktree rm`・`git branch -D` は呼ばれず、stdout は順に `kept 11 unmerged-commits`・`kept 11 git-failed` で exit 0
+
+#### Scenario: リモートの base が巻き戻されていれば、古い追跡参照と同じ HEAD の子も残す
+- **WHEN** 最初の Scenario から、手元の `refs/remotes/origin/main` が子の HEAD と同じ（巻き戻し前の先端）で、`git ls-remote` が返す base の先端が巻き戻し後の別の commit、その先端に対する `git merge-base --is-ancestor <HEAD> <base の先端>` が exit 1 のスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `orca terminal close`・`orca worktree rm`・`git branch -D` は呼ばれず、stdout は `kept 11 unmerged-commits` で exit 0
+
+#### Scenario: リモートの base を読めない子は残す
+- **WHEN** 最初の Scenario から、`git ls-remote` が非 0 で終わるスタブ環境、`git ls-remote` の出力が空のスタブ環境、`git cat-file -e` が常に非 0 で `git fetch` が非 0 で終わるスタブ環境、`git cat-file -e` が常に非 0 で `git fetch` が exit 0 のスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** どれも `git merge-base`・`orca worktree rm` は呼ばれず、stdout は `kept 11 base-lookup-failed` で exit 0
+
+#### Scenario: 先端の commit が手元に無ければ 1 回だけ fetch してから判定する
+- **WHEN** 子 11 と子 12 がどちらも最初の Scenario の条件を満たし、`git cat-file -e` が 1 回目だけ非 0 で 2 回目以降は exit 0 のスタブ環境で `epic-dispatch.sh reap 11 12` を実行する
+- **THEN** `git ls-remote` と `git fetch origin main` はそれぞれ 1 回だけ呼ばれ、stdout は `reaped 11` と `reaped 12` の 2 行で exit 0
+
+#### Scenario: 起点のブランチは EPIC_DISPATCH_BASE で変わる
+- **WHEN** 最初の Scenario の環境で、`EPIC_DISPATCH_BASE=develop` を付けて `epic-dispatch.sh reap 11` を実行する
+- **THEN** `git ls-remote` は `origin refs/heads/develop` に対して呼ばれ、stdout は `reaped 11` で exit 0
+
+#### Scenario: マージ済み PR で一致した子には PR の無い子の確認を呼ばない
+- **WHEN** 要件「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」の Scenario「条件をすべて満たす子は端末を閉じてからワークツリーを消す」の環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `gh pr list --state all`・`gh api`・`git ls-remote`・`git fetch`・`git merge-base` は 1 回も呼ばれず、stdout は `reaped 11` で exit 0
+
+### Requirement: develop のループの終わりは、PR を伴わない子を親が片付ける条件を書く
+develop の SKILL.md の節「ループの終わり」の、PR を伴わない記録先 issue を閉じて `mark` を呼ぶ項は、親の `epic-dispatch.sh reap` がその子を片付ける条件（そのブランチに PR が無い・issue が閉じている・HEAD がリモートの今の main に含まれる）と、main に入っていない commit を積んだまま閉じると `kept <N> unmerged-commits` で残ることを書かなければならない（MUST）。`mark` を呼ぶ手順は変えない（SHALL）。
+
+#### Scenario: ループの終わりに PR の無い子の片付けの条件が書かれている
+- **WHEN** SKILL.md の節「ループの終わり」を読む
+- **THEN** PR を伴わない記録先 issue の項に、親の `reap` が片付ける条件と `unmerged-commits` の語が書かれている
+
+### Requirement: launch は worktree create が作った空のシェルの端末を子のセッションの端末に使い、子のワークツリーの端末を 1 つに保つ
+`plugins/dev-workflow/scripts/epic-dispatch.sh launch` は、子ごとに `orca worktree create` が終わったあと、`orca terminal list --worktree path:<子> --json` で端末を数えなければならない（MUST。Orca は worktree create で空のシェルの端末を 1 つ作り、`orca terminal create` で 2 つ目を作ると子の端末が 2 つになって、`reply` が `ambiguous-terminal` で止まるため）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の launch の呼び出し順のうち、端末を用意する段の中身を定める（その要件の本文はこの変更で端末を用意する段を条件付きに直してある）。それ以外の規定（起動コマンドの形・環境変数・`terminal wait`・`terminal send`）は変えない。`launched`/`failed` の判定は、この要件では定めない（MODIFIED 側の本文に従う）。
+
+- 端末がちょうど 1 つなら、`orca terminal create` を呼ばず、その端末のハンドルに `orca terminal send --terminal <handle> --text <cmd> --enter --json` で起動コマンド `<cmd>`（従来 `--command` に渡していた文字列と同じ）を打ち込む（MUST）。続けて `orca terminal list --worktree path:<子> --json` を引き直し、その端末が Claude Code（`agentIdentity` が `claude`、無ければタイトルに `Claude Code` を含む）になるのを待つ（MUST。シェルは起動コマンドを打つ前から idle で、すぐ `terminal wait` を呼ぶと最初の指示がシェルに入るため）。待つ上限は `EPIC_DISPATCH_READY_TIMEOUT_MS` を秒にした値（最低 1 回）とする。Claude Code になったら、その端末のハンドルで `terminal wait --for tui-idle` と指示の `terminal send` へ進む（MUST）
+- 端末が 0 個なら、従来どおり `orca terminal create` で作る（MUST。worktree create が端末を作らない版の後方互換）
+- 一覧を読めない・端末が 2 個以上（起動コマンドを打ち込んだあとの引き直しで 2 個以上になった場合を含み、その場合は指示を送らない）・起動コマンドを打ち込めない・待っても Claude Code にならない、のいずれかなら、その子を `failed <N>` とし、`orca terminal create` を呼ばない（MUST。端末を増やすと二重起動の原因になるため）。stderr に理由と、確認または続きを手で行うコマンド（`orca terminal list --worktree path:<子> --json`、`orca terminal read --terminal <handle>`、打ち込めなかった起動コマンド）を出す（SHALL）
+
+#### Scenario: worktree create が作ったシェルの端末で子のセッションが起動し、端末は 1 つのまま
+- **WHEN** 子 11 のワークツリーに空のシェルの端末（`term-11`、`agentIdentity` なし）が 1 つあり、起動コマンドが届いたあとは同じ端末が `agentIdentity: claude` になるスタブ環境で `epic-dispatch.sh launch 400 11` を実行する
+- **THEN** `orca terminal create` は呼ばれず、`orca terminal send --terminal term-11` が 2 回（1 回目は `EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'` を含む `--enter --json`、2 回目は `/develop #11` を含む指示）、`orca terminal wait --terminal term-11 --for tui-idle` が 1 回呼ばれ、stdout は `launched 11`、exit 0
+
+#### Scenario: 端末が 0 個なら従来どおり terminal create で作る
+- **WHEN** 子 11 のワークツリーの端末が 0 個のスタブ環境で `epic-dispatch.sh launch 400 11` を実行する
+- **THEN** `orca terminal create --worktree path:<子 11> --command ... --json` が呼ばれ、stdout は `launched 11`、exit 0
+
+#### Scenario: シェルの端末が Claude Code にならなければ端末を作らずに failed
+- **WHEN** 起動コマンドを打ち込んだあとも端末が Claude Code にならないスタブ環境で `epic-dispatch.sh launch 400 11` を実行する
+- **THEN** `orca terminal create` も `orca terminal wait` も呼ばれず、stderr に `did not become Claude Code` を含む行が出て、stdout は `failed 11`、exit 1
+
+#### Scenario: 端末が 2 個以上・一覧が読めないときは端末を作らずに failed
+- **WHEN** 子 11 のワークツリーの端末が 2 個ある、または `orca terminal list` が非 0 で終わるスタブ環境で `epic-dispatch.sh launch 400 11` を実行する
+- **THEN** `orca terminal create` は呼ばれず、stdout は `failed 11`、exit 1
+
+この要件の守備範囲で入力として扱うのは、`orca terminal list --worktree path:<子> --json` の出力である。出どころは、launch が直前に worktree create で作った子のワークツリーに対する Orca 自身の出力で、人が手で打つ入力ではない。拾いたい誤りは、端末の数を取り違えて端末を増やすこと（一覧が読めないのを 0 個として作る、2 個以上なのに作る）と、シェルが idle のうちに最初の指示を送ってしまうことである。通してよい入力は、`result.terminals` が配列で、要素の `handle` が空でない文字列のもの（`agentIdentity` や `title` が無い要素を含む。使い回す端末の識別には起動後の `agentIdentity`・タイトルだけを使う）、および `Terminal 1` 以外のタイトルの端末である。一覧の形が変わったときの検知は範囲外とし、読めなければ `failed` として表に出すだけにする。入力の穴を塞ぎ切ることをこの要件の完了条件としない。
