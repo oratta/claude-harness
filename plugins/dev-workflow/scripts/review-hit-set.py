@@ -146,7 +146,8 @@ def parse_table(lines):
 def parse_rewritten(lines, rows):
     """Parse the rewritten not-applicable rows table into ({(path, line): new body}, violations).
 
-    Structural errors (missing header) still raise immediately. The three per-row content
+    Structural errors (missing header, non-numeric path/line, bad body fence or escape) still
+    raise immediately and discard any violations accumulated so far. The three per-row content
     checks (duplicate key, wrong target, unchanged body) accumulate into `violations` instead
     so the rest of the table keeps being checked; a violating row is not added to `rewritten`.
     """
@@ -161,7 +162,10 @@ def parse_rewritten(lines, rows):
     raw = table_rows(lines, REWRITTEN_HEADER, start + 1)
     if raw is None:
         raise ContractError("rewritten-rows table header is required under its heading")
-    by_key = {(path, number): (body, handling) for path, number, body, handling in rows}
+    # Keep every row per key: a duplicated key must not resolve by row order (#466).
+    targets = {}
+    for path, number, body, handling in rows:
+        targets.setdefault((path, number), []).append((body, handling))
     rewritten = {}
     violations = []
     seen = set()
@@ -172,11 +176,11 @@ def parse_rewritten(lines, rows):
             violations.append(f"rewritten row is duplicated: {key[0]}:{key[1]}")
             continue
         seen.add(key)
-        if key not in by_key or not NOT_APPLICABLE_RE.fullmatch(by_key[key][1]):
+        if len(targets.get(key, [])) != 1 or not NOT_APPLICABLE_RE.fullmatch(targets[key][0][1]):
             violations.append(
                 f"rewritten row must point at one not-applicable row: {key[0]}:{key[1]}")
             continue
-        if new_body == by_key[key][0]:
+        if new_body == targets[key][0][0]:
             violations.append(f"rewritten row body is unchanged: {key[0]}:{key[1]}")
             continue
         rewritten[key] = new_body
