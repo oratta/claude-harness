@@ -352,6 +352,12 @@ codex_off_paragraph() {
   echo "$para" | grep -qF '`on`'
 }
 
+@test "codex off (#1020): output that is neither on nor off is treated as on and recorded" {
+  local para
+  para="$(codex_off_paragraph)"
+  echo "$para" | grep -qF '`on` なら表の既定どおり Codex から試す。出力が `on` でも `off` でもない（コマンドが失敗した）ときは `on` と同じに扱い、その出力を `実行コマンド` の証拠に書く。'
+}
+
 @test "codex off (#978): Codex is not called and the binary is not even looked up" {
   local para
   para="$(codex_off_paragraph)"

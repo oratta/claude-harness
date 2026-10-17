@@ -921,6 +921,17 @@ class ForegroundRequest(unittest.TestCase):
                                             'or remove it in ' + str(registry))
         self.assertFalse(self.out.exists())
 
+    def test_codex_off_refuses_a_profile_with_only_some_codex_roles(self):
+        registry = self.write_registry({'enabled': False})
+        self.write_mixed_profile()
+        result = self.run_script('--profile', 'custom', '--profile-file', str(self.profile_file),
+                                 '--account-home', 'mapped=' + str(self.home))
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stdout)['error'],
+                         'codex is off: set "codex"."enabled" to true '
+                         'or remove it in ' + str(registry))
+        self.assertFalse(self.out.exists())
+
     def test_codex_off_refuses_the_legacy_account_model_form(self):
         self.write_registry({'enabled': False})
         result = self.run_script('--account', 'current', '--model', 'fixture-model',

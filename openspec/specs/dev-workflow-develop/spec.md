@@ -167,7 +167,7 @@ SKILL.md は次を規定しなければならない（MUST）。**条件**（い
 
 **回し方（経路の決め方）**: interactive の本体は子の依存グラフを読み、blocked されていない子の番号を `plugins/dev-workflow/scripts/epic-dispatch.sh route` に渡して経路を決める（MUST）。`route` が `orca` を返したとき（`orca` コマンドが PATH にあり、本体が Orca 管理のワークツリーにいる）は **Orca 経路**、`subagent` を返したときは **サブエージェント方式**で進める（MUST）。経路は `/develop <エピック番号>` の最初の開始時に 1 回決め、途中で変えてはならず（MUST NOT）、決めた経路をエピックに `回し方:` で始まる 1 行コメントで残す（MUST）。別セッションで同じエピックを再開したときは、`回し方:` で始まる最新のコメントを読んで経路を引き継ぎ、`route` をやり直してはならない（MUST NOT）。unmanned（`--unmanned`）では `route` を呼ばず、サブエージェント方式で進める（MUST。背景で待って起こされる動きが 1 サイクル 1 仕事と合わないため）。
 
-**回し方（Orca 経路）**: 本体は `epic-dispatch.sh launch` で子ごとに Orca の子ワークツリーを作り、子は独立した Claude Code セッションとして `/develop #<N>` の 1 ループを丸ごと回す（本体は子の W / R1 / G を起こさない）。再開時も、依存が解けた open の子を `launch` に渡し、起動済みの子は `launch` の `skipped` で見分ける（同じ子を二重に起動しない）。本体は `launch` が `launched` / `skipped` を出した子を動いている子とし、`epic-dispatch.sh wait` を Bash の `run_in_background: true` で起動して待ち、終わって起こされたら出力の 1 行で次を決める。`closed` なら閉じた子ごとに `state_reason` を読み、`completed` ならエピックへ `子 #N マージ → 残り k 件` とコメントして依存グラフを読み直し、解けた子を件数にかかわらず `launch` する。`completed` 以外ならエピックへ `子 #N 見送り（<state_reason>）→ 残り k 件` とコメントし、その子を前提にしていた子を起動してはならず（MUST NOT）、ユーザーに報告する。そのあと残りの動いている子で再び `wait` する。`timeout` なら待っている子に `needs-approval` などの停止の兆候が無いかを見て、あればユーザーに報告し、報告したかどうかにかかわらず残りの動いている子で再び `wait` する。子が自分のタブでユーザーに質問して止まっている場合はこの確認では気づけないことを書く（SHALL）。`wait` の `error` と `launch` の `failed` はユーザーに報告して止まる。`launch` に失敗した子をサブエージェント方式に自動で振り替えてはならない（MUST NOT）。子セッションのモデルは `epic-dispatch.sh launch` が起動時に `cld --model` で指定し、既定は `opus` で環境変数 `EPIC_DISPATCH_MODEL` で変えられること（Claude Code の既定モデルは子に効かないこと）、コマンド部分（既定 `cld`）は環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で差し替えられ、Orca に設定したコマンドはハーネスから読めないので Orca 側のコマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変えることを書く（SHALL）。子セッションは `cld` が付ける `--dangerously-skip-permissions` で動き許可の確認画面が出ないこと（`epic-dispatch.sh` が足すのは `--model` だけであること）、マージを止めているのは develop と pr-review-gate の規則と hooks であることを書く（SHALL）。子の PR のマージは今までどおり子セッションの中で人の承認で行い、本体が自動でマージしてはならない（MUST NOT）。
+**回し方（Orca 経路）**: 本体は `epic-dispatch.sh launch` で子ごとに Orca の子ワークツリーを作り、子は独立した Claude Code セッションとして `/develop #<N>` の 1 ループを丸ごと回す（本体は子の W / R1 / G を起こさない）。再開時も、依存が解けた open の子を `launch` に渡し、起動済みの子は `launch` の `skipped` で見分ける（同じ子を二重に起動しない）。本体は `launch` が `launched` / `skipped` を出した子を動いている子とし、`epic-dispatch.sh wait` を Bash の `run_in_background: true` で起動して待ち、終わって起こされたら出力の 1 行で次を決める。`closed` なら閉じた子ごとに `state_reason` を読み、`completed` ならエピックへ `子 #N マージ → 残り k 件` とコメントして依存グラフを読み直し、解けた子を件数にかかわらず `launch` する。`completed` 以外ならエピックへ `子 #N 見送り（<state_reason>）→ 残り k 件` とコメントし、その子を前提にしていた子を起動してはならず（MUST NOT）、ユーザーに報告する。そのあと残りの動いている子で再び `wait` する。`timeout` なら待っている子に `needs-approval` などの停止の兆候が無いかを見て、あればユーザーに報告し、報告したかどうかにかかわらず残りの動いている子で再び `wait` する。子が自分のタブでユーザーに質問して止まっている場合はこの確認では気づけないことを書く（SHALL）。`wait` の `error` と `launch` の `failed` はユーザーに報告して止まる。`launch` に失敗した子をサブエージェント方式に自動で振り替えてはならない（MUST NOT）。子セッションのモデルは `epic-dispatch.sh launch` が起動時に `cld --model` で指定し、既定は `opus` で環境変数 `EPIC_DISPATCH_MODEL` で変えられること（Claude Code の既定モデルは子に効かないこと）、コマンド部分（既定 `cld`）は環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で差し替えられ、Orca に設定したコマンドはハーネスから読めないので Orca 側のコマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変えることを書く（SHALL）。子セッションは `cld` が付ける `--dangerously-skip-permissions` で動き許可の確認画面が出ないこと（`epic-dispatch.sh` が足すのは `--model` だけであること）、マージを止めているのは develop と pr-review-gate の規則と hooks であることを書く（SHALL）。本体は子の PR を `gh pr merge` や merge API で直接マージしてはならない（MUST NOT）。子の PR のマージは、子セッションの中の人の承認か自動マージの処理（`.github/workflows/auto-merge.yml`）が行い、`human-merge` の付いた子の PR は、本体が要件「Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける」の手順で判断の印を付けたときに限って自動マージの処理がマージすることを書く（SHALL）。
 
 **回し方（サブエージェント方式）**: 今までどおり blocked されていない子から 1 ループを子ごとに並列で起こす（worktree は子ごと。本体が W を `isolation: "worktree"` で spawn して用意し、W は自分で worktree を切らない）。子の PR がマージされたらエピックに 1 行コメントし、依存が解けた子を次に起こす。
 
@@ -187,7 +187,7 @@ SKILL.md は次を規定しなければならない（MUST）。**条件**（い
 
 #### Scenario: Orca 経路の本体は wait の出力で次を決める
 - **WHEN** Orca 経路の本体の手順を読む
-- **THEN** `launch` で子を起動し、`wait` を `run_in_background: true` で起動して待つこと、`closed` で `state_reason` を読み `completed` なら `子 #N マージ → 残り k 件` をコメントして解けた子を `launch` し、それ以外なら `見送り` とコメントして後続を起動せず報告すること、`timeout` で停止の兆候を確かめて報告したうえで再び待つこと、子のタブでの質問は検知できないこと、子の PR を本体が自動でマージしないことが書かれている
+- **THEN** `launch` で子を起動し、`wait` を `run_in_background: true` で起動して待つこと、`closed` で `state_reason` を読み `completed` なら `子 #N マージ → 残り k 件` をコメントして解けた子を `launch` し、それ以外なら `見送り` とコメントして後続を起動せず報告すること、`timeout` で停止の兆候を確かめて報告したうえで再び待つこと、子のタブでの質問は検知できないこと、本体が子の PR を直接マージせず、`human-merge` の付いた子の PR は本体が判断の印を付けたときに限って自動マージの処理がマージすることが書かれている
 
 #### Scenario: Orca 経路に子セッションのモデルの決め方が書かれている
 - **WHEN** Orca 経路の説明を読む
@@ -2491,3 +2491,39 @@ develop の SKILL.md の節「ループの終わり」の、PR を伴わない�
 - **THEN** `orca terminal create` は呼ばれず、stdout は `failed 11`、exit 1
 
 この要件の守備範囲で入力として扱うのは、`orca terminal list --worktree path:<子> --json` の出力である。出どころは、launch が直前に worktree create で作った子のワークツリーに対する Orca 自身の出力で、人が手で打つ入力ではない。拾いたい誤りは、端末の数を取り違えて端末を増やすこと（一覧が読めないのを 0 個として作る、2 個以上なのに作る）と、シェルが idle のうちに最初の指示を送ってしまうことである。通してよい入力は、`result.terminals` が配列で、要素の `handle` が空でない文字列のもの（`agentIdentity` や `title` が無い要素を含む。使い回す端末の識別には起動後の `agentIdentity`・タイトルだけを使う）、および `Terminal 1` 以外のタイトルの端末である。一覧の形が変わったときの検知は範囲外とし、読めなければ `failed` として表に出すだけにする。入力の穴を塞ぎ切ることをこの要件の完了条件としない。
+
+### Requirement: Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける
+develop の SKILL.md「エピックの扱い」→「回し方」は、Orca 経路の手順のあとに、マージ待ちで止まった子の扱いを規定しなければならない（MUST）。この要件は、要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」の `stopped` で主に上げるどちらの経路（一致する `親の判断:` が無ければ主に上げる、と、それ以外は主に上げる）にも、子の最新の停止の記録の `止まった理由:` が `PR のマージ待ち（` で始まる子について優先する（主に上げる前にこの手順を行い、ここで主に上げると決まったものは同じ要件の報告の形で上げる）。手順 2・手順 8 の文は変えない。
+
+- **気づく経路**: 子が「エピックの子が主の返事を待って止まるとき」の記録を `止まった理由: PR のマージ待ち（human-merge）: <PR の URL>` で残し、`wait --resolve` の判断がマージを通さないので親が `stopped` で起こされる経路に乗る。epic-dispatch.sh にマージ待ちを返す出力を足さない
+- **前提の確認**（`gh` で機械的に見る。どれかを満たさなければ決める役を起こさずに主に上げる。MUST）: 対象リポの PR の base ブランチの `.github/workflows/auto-merge.yml`（`gh api "repos/<owner>/<repo>/contents/.github/workflows/auto-merge.yml?ref=<PR の base ブランチ>" --jq .content | base64 -d`） に `parent-merge-approved` の語がある／PR が open で、見送りラベル（`human-merge`・`needs-human-merge`・`human-only`・`needs-approval`）のうち付いているのが `human-merge` だけ／記録の PR の本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` が子 issue の番号である／PR に、今の HEAD を `親が見た HEAD:` に持つ `親のマージ判断: 可` のコメントがまだ無い（あれば自動マージの処理の側が止めているので、`docs/auto-merge.md` の「親の判断の印を付けたのにマージされないとき」の調べ方を添えて上げる）
+- **判断**: `subagent_type: dev-workflow:decider` を起こし、`references/parent-merge-criteria.md` で判断させる（MUST）。親は自分で可否を決めない（MUST NOT）。決める役は `Bash` を持たないので、親がエピックの本文、子 issue の本文と OWNER・MEMBER・COLLABORATOR の `親エピックからの注意書き:`、子の停止の記録、PR の本文とラベルと今の HEAD の SHA、変更ファイルの一覧と差分、PR のリスク宣言・動作確認・ゲートのコメント、CI の結果、取得した `auto-merge.yml` の `# >>> sacred-paths` 〜 `# <<< merge-condition-paths` の行（聖域とマージ条件そのもののパスの正規表現）、PR のコメントのうち自動マージの処理が `human-merge` を付けた旨の投稿（`🔒 **auto-merge 対象外（聖域パス接触）**` で始まるもの）、あれば配役表を入力文に貼る
+- **可のとき**: 古い HEAD の判断で付けた `parent-merge-approved` が PR に残っていれば、先に外す（MUST。付いたままでは付け直しても新しい `labeled` が起きず、自動マージの処理には `issue_comment` のきっかけが無いので、日次の判定まで判定が走らない）。そのあと PR の今の HEAD を取り直し、決める役に渡した HEAD と一致することを確かめる（一致しなければ印を付けずに主に上げる。MUST）。一致したら、PR に 1 行目 `親のマージ判断: 可`・2 行目 `親が見た HEAD: <40 桁 SHA>`・3 行目 `理由: <決める役の理由>` のコメントを投稿し、そのあとに `parent-merge-approved` ラベルを付ける（この順。MUST）。続けて `epic-dispatch.sh reply --as parent <エピック番号> <N> <返事>` で、自動マージの処理に回したこと・子は `ci-watch.sh wait --until-merged` で見届けること・子は何も承認せず印も付けないことを伝え、エピックに `親の判断: 子 #N マージに回した — <理由> <PR の URL>` の 1 行を残す（MUST）。`reply` が `failed` なら主に報告する（印は外さない）
+- **否・不足・形が崩れた出力・迷ったとき**: 印を付けずに主に上げる（MUST）。報告には PR の URL と決める役の理由（`不足:` なら足りないもの）を含める
+- **印を付ける者**: 判断の印（ラベルとコメント）を付けるのは親だけで、子は付けない（MUST NOT）ことを書く。親が `gh pr merge` や merge API を叩いてはならない（MUST NOT）。印が数えられるのは `gh` の認証アカウントが対象リポの OWNER・MEMBER・COLLABORATOR のときだけであることを書く（SHALL）
+
+この要件の守備範囲で入力として扱うのは、子の停止の記録、`gh` で読める PR と PR の base ブランチの `auto-merge.yml`、決める役の出力である。拾いたい誤りは、印が効かないリポや `human-merge` 以外の見送りラベルが付いた PR に印を付けること、決める役の判断を経ずに印を付けること、判断したあとに変わった HEAD に印を付けること、ラベルをコメントより先に付けて最初の判定を空振りさせること、マージされない印を付け直し続けること、古い HEAD のラベルを残したまま新しい HEAD を承認して判定を走らせないことの 6 つである。次は通ってよく、この要件では止めない: 決める役が通してよい PR を否とすること（主の手間は増えるが危険は無い）／マージ待ちの止まりのたびに `stop-judge.sh` のモデル呼び出しが 1 回空振りすること／子が技術的には印を付けられること（受け取り側の判定と手順書の規則に任せる。#1030 で主が受け入れた）。基準をすり抜ける PR が見つかるたびに手順を足して塞ぎ切ることは、この要件の完了条件としない。
+
+#### Scenario: 親の手順にマージ待ちの判断と印の付け方が書かれている
+- **WHEN** SKILL.md の Orca 経路の手順のあとの段落を読む
+- **THEN** `止まった理由:` が `PR のマージ待ち（` で始まる子について、手順 8 で主に上げるどちらの経路でも報告の前に行うこと、決める役に `auto-merge.yml` の聖域とマージ条件の行と `human-merge` を付けたロボットの投稿を貼ること、4 つの前提（PR の base ブランチの `auto-merge.yml` の `parent-merge-approved`、見送りラベルが `human-merge` だけ、PR 本文の最初の `Closes`・`Fixes`・`Refs` が子 issue の番号、今の HEAD の判断のコメントがまだ無い）、`dev-workflow:decider` に `parent-merge-criteria.md` で判断させること、可のとき残っている `parent-merge-approved` を外し、HEAD を確かめてから `親のマージ判断: 可`・`親が見た HEAD:` のコメント → `parent-merge-approved` ラベルの順に付け、`reply --as parent` で子に伝え、エピックに `マージに回した` の 1 行を残すこと、否・不足・迷ったときは主に上げること、印を付けるのは親だけで直接マージしないことが書かれている
+
+#### Scenario: マージ待ち以外の止まりは今までどおり
+- **WHEN** 子の停止の記録の `止まった理由:` が `PR のマージ待ち（` で始まらない
+- **THEN** 親はこの手順を行わず、手順 8 のとおりに扱う
+
+### Requirement: 親がマージに回してよい子の PR の基準を 1 つのファイルに置く
+`plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` は、`human-merge` の付いた子の PR を親が自動マージの処理に回してよい範囲の基準と、判断の出力の形を書かなければならない（MUST）。条件名と「迷ったら主に上げる」は `parent-pass-criteria.md` とそろえる（MUST）。マージの条件を `parent-pass-criteria.md` に足してはならない（MUST NOT。`stop-judge.sh` がそのまま読むプロンプトで、マージはその基準で通さないと定めているため）。
+
+- **可の条件**: 次の 6 つをすべて満たすときだけ可にする。見送りが聖域接触だけ（見送りラベルが自動マージの処理が付けた `human-merge` だけで、変更ファイル（rename 元を含む）がマージ条件そのもののパスに触れていない）／ゲートが今の HEAD で済んでいる（`agent-review:passed` と今の HEAD の宣言・証拠のコメントがあり、CI が green）／主の側の情報が要らない（リスク宣言が「リスクなし」か、主の許容が今の HEAD について記録済み）／範囲の内側（差分が子 issue の受け入れ条件とエピックの目的を広げず、逆向きにもしない）／戻せる（revert PR で元に戻り、マージから戻すまでの間にリポジトリの外へ戻せない作用（外部公開・送信・課金・データ削除・秘密情報）が出ない）／配役表で主の観点が無い（配役表が渡されたとき、この変更に要る観点の担い手が主でない）
+- **迷ったとき**: 1 つでも満たさないか、満たすか判断できなければ主に上げる
+- **各条件と `parent-pass-criteria.md` の条件の対応**を書く
+- **出力の形**: 1 行目 `裁定: 可`・`裁定: 否`・`不足: <足りないもの>` のどれか、2 行目 `理由: <1 行>`
+- **位置づけ**: マージの実行は自動マージの処理が行い、この基準は親が判断の印を付けてよいかだけを決めること。マージ条件そのもののパスと判断後の push は処理の側が止めること
+
+この要件の守備範囲で入力として扱うのは、親が決める役に貼るもの（要件「Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける」の判断の項）と、このファイル、あれば配役表である。拾いたい誤りは、主のリスクの許容が要る PR を可とすること、範囲を広げる差分を可とすること、外へ戻せない作用を持つ PR を可とすること、ゲートや CI が今の HEAD で済んでいない PR を可とすることの 4 つである。次は通ってよく、この要件では止めない: 可としてよい PR を否とすること／判断した可があとで主に止められること（revert PR で戻す）。基準の文の解釈の揺れや、基準をすり抜ける PR が見つかるたびに条件を足して塞ぎ切ることは、この要件の完了条件としない（基準は案で、主が PR で見直す）。
+
+#### Scenario: 基準のファイルに 6 条件と出力の形が書かれている
+- **WHEN** `parent-merge-criteria.md` を読む
+- **THEN** 上の 6 つの条件名、判断できなければ主に上げること、`parent-pass-criteria.md` の条件との対応、`裁定: 可`・`裁定: 否`・`不足:` の出力の形、マージの実行は自動マージの処理が行うことが書かれている
+

@@ -50,6 +50,10 @@ jobs:
   preflight:
     name: Preflight (full tests)
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # ジョブの上限時間（分）。無いと固まったジョブが 1 本 360 分まで走る。
+    # 決め方: このリポジトリの本番デプロイ前の preflight の普段の所要時間（Actions の実行履歴）の約 2 倍。
+    # 既定の 30 分は仮の値（weekly-full.yml と同内容のフルテストのため）。実測に合わせて書き換える
+    timeout-minutes: 30
     steps:
       - name: Validate confirmation
         if: ${{ github.event.inputs.confirm != 'true' }}
