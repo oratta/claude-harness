@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- 新しい bats `plugins/dev-workflow/tests/owner-reply-relayed-scenario.bats` を足す。親の会話ログ 1 本に、偽の文 2 件と本物の文 1 件を同居させ、`--relayed` を 3 回当てて合否を固定する。`scripts/test.sh owner-reply-relayed-scenario` の 1 コマンドで主の入力なしに合否が出る。
+- 新しい bats `plugins/dev-workflow/tests/owner-reply-relayed-scenario.bats` を足す。親の会話ログ 1 本に、偽の文 2 件と本物の文 1 件を同居させ、`--relayed` を 4 回（偽 1 は親の発言とツールの結果の 2 行、偽 2、本物）当てて合否を固定する。`scripts/test.sh owner-reply-relayed-scenario` の 1 コマンドで主の入力なしに合否が出る。
 - 仕様 `dev-workflow-owner-reply-check` に、この回帰の範囲（固定するもの・固定しないもの）を要件として足す。
 - 実機 Orca による確認（PR #1066 の 2 段の手順）は残す。コードの変更は無い。
 
