@@ -2312,8 +2312,10 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$s8" | grep -qF '主がすること:'
   printf '%s\n' "$s8" | grep -qF '親のタブ'
   printf '%s\n' "$s8" | grep -qF '別の発言を挟まず'
-  printf '%s\n' "$s8" | grep -qF '子のタブ'
-  printf '%s\n' "$s8" | grep -F 'failed <N> <段>' | grep -qF '主がすること:'
+  printf '%s\n' "$s8" | grep -qF '1 行目は `主がすること: 子のタブで'
+  printf '%s\n' "$s8" | grep -qF '`failed <N> <段>` なら主に報告する（1 行目は `主がすること:`'
+  printf '%s\n' "$r" | grep -qF '手順 7 と完了条件で待ちを終えるときの報告、**マージ待ちの子** の `reply` の `failed` の報告'
+  printf '%s\n' "$r" | grep '^2\. ' | grep -qF '同じターンで主の操作が要る報告（手順 4〜6・8）を出したときは、待ちに入る通知の 1 行目にもその報告の `主がすること:` を繰り返す'
 }
 
 @test "skill: Orca route watches for done marks and reaps marked children" {
