@@ -2296,6 +2296,26 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$l" | grep -qF 'エピックの子でないセッション'
 }
 
+# spec: dev-workflow-develop（エピックの親が主に出す報告は、主がすることを 1 行目に書く）
+
+@test "skill: Orca route parent reports start with what the owner does" {
+  r="$(run_section)"
+  l="$(printf '%s\n' "$r" | grep -F '主がすること: なし' | grep -v '^8\. ' | head -1)"
+  [ -n "$l" ]
+  printf '%s\n' "$l" | grep -qF '<どの画面・入力欄で> <何を打つ・押す>'
+  printf '%s\n' "$l" | grep -qF 'ターンを終えるとき'
+  printf '%s\n' "$l" | grep -qF '主がこのセッションで次にすること:'
+  for n in 2 3 4 5 6; do
+    printf '%s\n' "$r" | grep "^$n\. " | grep -qF '主がすること:'
+  done
+  s8="$(printf '%s\n' "$r" | grep '^8\. ')"
+  printf '%s\n' "$s8" | grep -qF '主がすること:'
+  printf '%s\n' "$s8" | grep -qF '親のタブ'
+  printf '%s\n' "$s8" | grep -qF '別の発言を挟まず'
+  printf '%s\n' "$s8" | grep -qF '子のタブ'
+  printf '%s\n' "$s8" | grep -F 'failed <N> <段>' | grep -qF '主がすること:'
+}
+
 @test "skill: Orca route watches for done marks and reaps marked children" {
   r="$(run_section)"
   printf '%s\n' "$r" | grep -qF -- '--watch-done'
