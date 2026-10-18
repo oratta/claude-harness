@@ -18,7 +18,7 @@
 2. **形は新しい bats 1 ファイル。** 新しい実行用スクリプトは足さない。`scripts/test.sh` が `git ls-files '*.bats'` で拾うので、`scripts/test.sh owner-reply-relayed-scenario` が「コマンド 1 つ」になる。代案（`plugins/dev-workflow/scripts/` に自己診断スクリプトを置く）は、保守するコードが増えるのに得るものが無いので採らない。
 3. **既存の個別テストと別ファイルにする理由。** 既存は 1 ケース 1 ログ。ここでは1 本の親ログに偽・本物を並べ、1 つの停止の記録に対して判定する（実機の試しでは偽のたびに新しい停止の記録が立つが、ここでは 1 つに寄せる）。混在ログでの取り違え（偽の行が本物の判定に影響する・その逆）を見る。既存の fixture の書き方（`OWNER_REPLY_PROJECTS_DIR` と jsonl の行）は同じものを使う。
 4. **主の「許容」の代わりの入力** は、ログに書く主の発言の行（`origin.kind` が `human`、本文「許容」）。`OWNER_REPLY_PROJECTS_DIR` を bats の一時ディレクトリに向ける。
-5. **ケース。** 同一ログ・同一の停止の記録で次の 3 件に加えて対の確認を行う。
+5. **ケース。** 同一ログ・同一の停止の記録で次の 4 件に加えて対の確認を行う。
    - 偽 1a: uuid が親の発言の行 → `REASON=not-owner`、exit 1
    - 偽 1b: uuid がツールの結果の行 → `REASON=not-owner`、exit 1
    - 偽 2: 停止の記録より前の主の発言の行 → `REASON=not-after`、exit 1
