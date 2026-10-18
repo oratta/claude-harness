@@ -224,3 +224,303 @@ run_check() { run bash "$SCRIPT" "$@"; }
   chmod 600 "$LOG"
   [ "$status" -eq 2 ]
 }
+
+# ---- 9 つ目の条件: エピックの親の打ち込みと子を起動する指示（issue #1059）
+# 入力の行の形は 2026-10-15 時点の Orca 経路のエピックの親と子の実物に合わせる。
+# 起動の指示の <command-args> は scripts/epic-dispatch.sh の launch（cmd_launch の prompt=）と reply --relaunch（deliver_reply の prompt=）の文字列を写す:
+#   launch:   /develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）
+#   relaunch: /develop #$n （エピック #$epic の子。返事を受けて起動し直し） $msg
+
+@test "owner-reply #1059: a reply typed by the parent with the owner-reply head does not match" {
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111111","timestamp":"2026-10-15T08:33:00.000Z","message":{"role":"user","content":"主の返事（親エピック #1038 経由）: 許容"}}'
+  run_check "$SID" "許容"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"MATCHES=0"* ]] || return 1
+}
+
+@test "owner-reply #1059: a reply typed by the parent with the parent-epic head does not match (leading spaces too)" {
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111112","timestamp":"2026-10-15T08:33:00.000Z","message":{"role":"user","content":"  親エピック #1038 から: 主が会話で『許容』と返した"}}'
+  run_check "$SID" "主が会話で『許容』と返した"
+  [ "$status" -eq 1 ]
+}
+
+@test "owner-reply #1059: the launch instruction from epic-dispatch.sh does not match" {
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111113","timestamp":"2026-10-15T06:00:00.000Z","message":{"role":"user","content":"<command-message>dev-workflow:develop</command-message>\n<command-name>/develop</command-name>\n<command-args>#1034 （エピック #1038 の子。親ワークツリー /Users/someone/orca/workspaces/repo/epic から Orca で起動） 許容</command-args>"}}'
+  run_check "$SID" "許容"
+  [ "$status" -eq 1 ]
+}
+
+@test "owner-reply #1059: the relaunch instruction from epic-dispatch.sh does not match" {
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111114","timestamp":"2026-10-15T08:34:00.000Z","message":{"role":"user","content":"<command-message>dev-workflow:develop</command-message>\n<command-name>/develop</command-name>\n<command-args>#1034 （エピック #1038 の子。返事を受けて起動し直し） 主の返事（親エピック #1038 経由）: 許容</command-args>"}}'
+  run_check "$SID" "許容"
+  [ "$status" -eq 1 ]
+}
+
+@test "owner-reply #1059: other /develop args such as 721 still match" {
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111115","timestamp":"2026-10-15T02:00:00.000Z","message":{"role":"user","content":"<command-name>/dev-workflow:develop</command-name>\n<command-args>721 許容する</command-args>"}}'
+  run_check "$SID" "721 許容する"
+  [ "$status" -eq 0 ]
+}
+
+# ---- --locate
+
+@test "owner-reply #1059: --locate prints timestamp, uuid and the full text" {
+  add '{"parentUuid":"346795f5-2475-4a44-a047-a8ac29560b91","isSidechain":false,"type":"user","message":{"role":"user","content":"1034は許容"},"uuid":"56c1ea83-9220-4d69-95bf-37f878ddcc94","timestamp":"2026-10-15T08:32:56.042Z","origin":{"kind":"human"},"promptSource":"typed"}'
+  run_check --locate "$SID" "1034は許容"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"MATCH: 2026-10-15T08:32:56.042Z 56c1ea83-9220-4d69-95bf-37f878ddcc94 1034は許容"* ]] || return 1
+  [[ "$output" == *"MATCHES=1"* ]] || return 1
+}
+
+@test "owner-reply #1059: --locate skips lines without a uuid" {
+  add '{"isSidechain":false,"type":"user","message":{"role":"user","content":"1034は許容"},"timestamp":"2026-10-15T08:30:00.000Z","origin":{"kind":"human"}}'
+  run_check --locate "$SID" "1034は許容"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"MATCHES=0"* ]] || return 1
+  [[ "$output" != *"MATCH: "* ]] || return 1
+}
+
+@test "owner-reply #1059: --locate applies the owner conditions (assistant line is not located)" {
+  add '{"type":"assistant","isSidechain":false,"uuid":"22222222-2222-4222-8222-222222222222","timestamp":"2026-10-15T08:30:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"1034は許容"}]}}'
+  run_check --locate "$SID" "1034は許容"
+  [ "$status" -eq 1 ]
+}
+
+@test "owner-reply #1059: --locate with a wrong number of arguments gives exit 2" {
+  run_check --locate "$SID"
+  [ "$status" -eq 2 ]
+}
+
+# ---- --relayed
+# 停止の記録の作成日時 07:00、親の報告 07:34（URL あり）、圧縮の要約 08:00、主の答え 08:32 の並び
+
+STOP_AT="2026-10-15T07:00:00Z"
+STOP_URL="https://github.com/oratta/claude-harness/issues/1034#issuecomment-1111111111"
+OWNER_UUID="56c1ea83-9220-4d69-95bf-37f878ddcc94"
+
+add_report() {  # $1 = timestamp, $2 = sidechain(true/false)
+  add '{"type":"assistant","isSidechain":'"${2:-false}"',"uuid":"33333333-3333-4333-8333-33333333333'"${3:-3}"'","timestamp":"'"$1"'","message":{"role":"assistant","content":[{"type":"text","text":"子 #1034 が主の許容を待って止まった。停止の記録: '"$STOP_URL"'"}]}}'
+}
+add_summary() {
+  add '{"type":"user","isSidechain":false,"isCompactSummary":true,"isVisibleInTranscriptOnly":true,"uuid":"44444444-4444-4444-8444-444444444444","timestamp":"2026-10-15T08:00:00.000Z","message":{"role":"user","content":"This session is being continued from a previous conversation. 1034は許容"}}'
+}
+add_owner() {  # $1 = timestamp
+  add '{"parentUuid":"346795f5-2475-4a44-a047-a8ac29560b91","isSidechain":false,"type":"user","message":{"role":"user","content":"1034は許容"},"uuid":"'"$OWNER_UUID"'","timestamp":"'"${1:-2026-10-15T08:32:56.042Z}"'","origin":{"kind":"human"},"promptSource":"typed"}'
+}
+
+@test "owner-reply #1059: --relayed passes for the owner's answer after the report (compact summary in between)" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add_summary
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"MATCH: 2026-10-15T08:32:56.042Z 1034は許容"* ]] || return 1
+  [[ "$output" == *"MATCHES=1"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed treats +00:00 and Z as the same time" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "2026-10-15T07:00:00+00:00" "$STOP_URL"
+  [ "$status" -eq 0 ]
+}
+
+@test "owner-reply #1059: --relayed reports not-found for a uuid that is not in the log" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add_owner
+  run_check --relayed "$SID" "99999999-9999-4999-8999-999999999999" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-found"* ]] || return 1
+  [[ "$output" == *"MATCHES=0"* ]] || return 1
+}
+
+relayed_not_owner() {  # $1 = the line to point at (uuid 55555555-...)
+  add_report "2026-10-15T07:34:00.000Z"
+  add "$1"
+  run_check --relayed "$SID" "55555555-5555-4555-8555-555555555555" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-owner"* ]] || return 1
+  [[ "$output" == *"MATCHES=0"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed not-owner for a tool result" {
+  relayed_not_owner '{"type":"user","isSidechain":false,"uuid":"55555555-5555-4555-8555-555555555555","timestamp":"2026-10-15T08:32:00.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"1034は許容"}]}}'
+}
+
+@test "owner-reply #1059: --relayed not-owner for the parent's own message" {
+  relayed_not_owner '{"type":"assistant","isSidechain":false,"uuid":"55555555-5555-4555-8555-555555555555","timestamp":"2026-10-15T08:32:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"1034は許容として送る"}]}}'
+}
+
+@test "owner-reply #1059: --relayed not-owner for a compact summary" {
+  relayed_not_owner '{"type":"user","isSidechain":false,"isCompactSummary":true,"isVisibleInTranscriptOnly":true,"uuid":"55555555-5555-4555-8555-555555555555","timestamp":"2026-10-15T08:32:00.000Z","message":{"role":"user","content":"This session is being continued from a previous conversation. 1034は許容"}}'
+}
+
+@test "owner-reply #1059: --relayed not-owner for an isMeta line (hook injection)" {
+  relayed_not_owner '{"type":"user","isSidechain":false,"isMeta":true,"uuid":"55555555-5555-4555-8555-555555555555","timestamp":"2026-10-15T08:32:00.000Z","message":{"role":"user","content":"1034は許容"}}'
+}
+
+@test "owner-reply #1059: --relayed not-owner for an isSidechain line" {
+  relayed_not_owner '{"type":"user","isSidechain":true,"origin":{"kind":"human"},"uuid":"55555555-5555-4555-8555-555555555555","timestamp":"2026-10-15T08:32:00.000Z","message":{"role":"user","content":"1034は許容"}}'
+}
+
+@test "owner-reply #1059: --relayed not-owner for a reply typed with the owner-reply head" {
+  relayed_not_owner '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"55555555-5555-4555-8555-555555555555","timestamp":"2026-10-15T08:32:00.000Z","message":{"role":"user","content":"主の返事（親エピック #900 経由）: 許容"}}'
+}
+
+@test "owner-reply #1059: --relayed not-owner for a reply typed with the parent-epic head" {
+  relayed_not_owner '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"55555555-5555-4555-8555-555555555555","timestamp":"2026-10-15T08:32:00.000Z","message":{"role":"user","content":"親エピック #900 から: 主が会話で『許容』と返した"}}'
+}
+
+@test "owner-reply #1059: --relayed not-owner for a launch instruction" {
+  relayed_not_owner '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"55555555-5555-4555-8555-555555555555","timestamp":"2026-10-15T08:32:00.000Z","message":{"role":"user","content":"<command-name>/develop</command-name>\n<command-args>#1038 （エピック #900 の子。返事を受けて起動し直し） 主の返事（親エピック #900 経由）: 許容</command-args>"}}'
+}
+
+@test "owner-reply #1059: --relayed reports not-after for an owner message before the stop record" {
+  add_owner "2026-10-15T06:59:59.000Z"
+  add_report "2026-10-15T07:34:00.000Z"
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-after"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed reports not-asked when no parent message has the stop record URL" {
+  add '{"type":"assistant","isSidechain":false,"uuid":"33333333-3333-4333-8333-333333333339","timestamp":"2026-10-15T07:34:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"子 #1030 が止まった。停止の記録: https://github.com/oratta/claude-harness/issues/1030#issuecomment-2222222222"}]}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-asked"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed reports not-asked when the URL appears only before the stop record" {
+  add_report "2026-10-15T06:30:00.000Z"
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-asked"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed reports not-asked when the URL appears only in a subagent message" {
+  add_report "2026-10-15T07:34:00.000Z" true
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-asked"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed reports not-asked when the URL appears only after the owner's answer" {
+  add_owner
+  add_report "2026-10-15T08:40:00.000Z"
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-asked"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed with three arguments gives exit 2" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT"
+  [ "$status" -eq 2 ]
+}
+
+@test "owner-reply #1059: --relayed with a uuid that is not a UUID gives exit 2" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add_owner
+  run_check --relayed "$SID" "56c1ea83" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 2 ]
+}
+
+@test "owner-reply #1059: --relayed with an unreadable stop time gives exit 2" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "yesterday" "$STOP_URL"
+  [ "$status" -eq 2 ]
+}
+
+@test "owner-reply #1059: --relayed with a URL that is not https gives exit 2" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "issues/1034#issuecomment-1"
+  [ "$status" -eq 2 ]
+}
+
+@test "owner-reply #1059: --relayed with a missing log gives exit 2" {
+  run_check --relayed "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 2 ]
+}
+
+@test "owner-reply #1059: --relayed with an unreadable timestamp on the pointed line gives exit 2" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add_owner "not-a-time"
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 2 ]
+}
+
+@test "owner-reply #1059: --relayed reports not-asked when the parent message only has a URL whose comment number merely starts with the stop record's" {
+  add '{"type":"assistant","isSidechain":false,"uuid":"33333333-3333-4333-8333-33333333333a","timestamp":"2026-10-15T07:34:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"子 #1034 がまた止まった。停止の記録: '"$STOP_URL"'2"}]}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-asked"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed accepts the stop record URL followed by punctuation that does not continue a URL" {
+  add '{"type":"assistant","isSidechain":false,"uuid":"33333333-3333-4333-8333-33333333333b","timestamp":"2026-10-15T07:34:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"子 #1034 が止まった（停止の記録 '"$STOP_URL"'）。許容するか決めてほしい"}]}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"MATCHES=1"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed reports not-after for an owner message at the same time as the stop record" {
+  add_owner "2026-10-15T07:00:00.000Z"
+  add_report "2026-10-15T07:34:00.000Z"
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-after"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed reports not-asked when the URL appears only in a tool_use input and a tool_result" {
+  add '{"type":"assistant","isSidechain":false,"uuid":"33333333-3333-4333-8333-33333333333c","timestamp":"2026-10-15T07:34:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"gh api repos/oratta/claude-harness/issues/comments/1111111111 # '"$STOP_URL"'"}}]}}'
+  add '{"type":"user","isSidechain":false,"uuid":"66666666-6666-4666-8666-666666666666","timestamp":"2026-10-15T07:34:05.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","content":"子の停止: 主の返事待ち '"$STOP_URL"'"}]}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-asked"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed reports not-asked when the stop record URL only appears as the tail of another URL" {
+  add '{"type":"assistant","isSidechain":false,"uuid":"33333333-3333-4333-8333-33333333333d","timestamp":"2026-10-15T07:34:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"転送: https://example.com/r?to='"$STOP_URL"'"}]}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-asked"* ]] || return 1
+}
+
+# 結び付けは「URL を書いた最後の親の発言」と主の発言のあいだに別の主の発言が無いときだけ（P4-F1）
+@test "owner-reply #1059: --relayed reports not-direct when another owner message sits between the last report and the answer" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"77777777-7777-4777-8777-777777777777","timestamp":"2026-10-15T08:00:00.000Z","message":{"role":"user","content":"親のゲートの件は進めて"}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REASON=not-direct"* ]] || return 1
+  [[ "$output" == *"MATCHES=0"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed passes when the other owner message is before the last report" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"77777777-7777-4777-8777-777777777777","timestamp":"2026-10-15T07:40:00.000Z","message":{"role":"user","content":"1034 の止まった理由をもう一度"}}'
+  add_report "2026-10-15T08:10:00.000Z" false 5
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"MATCHES=1"* ]] || return 1
+}
+
+@test "owner-reply #1059: --relayed does not count a tool result between the report and the answer as another owner message" {
+  add_report "2026-10-15T07:34:00.000Z"
+  add '{"type":"user","isSidechain":false,"uuid":"66666666-6666-4666-8666-666666666667","timestamp":"2026-10-15T08:00:00.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t3","content":"ok"}]}}'
+  add_owner
+  run_check --relayed "$SID" "$OWNER_UUID" "$STOP_AT" "$STOP_URL"
+  [ "$status" -eq 0 ]
+}
