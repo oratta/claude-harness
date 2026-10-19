@@ -23,6 +23,7 @@
 #         / wtlist_out・wtlist_out_<回数>・wtlist_exit（worktree list --porcelain。既定は空・0。回数は wtcount）
 #           wtlist_sleep（1 回の worktree list にかかる実時間の秒数）/ wttip_<回数>（その回の呼び出しで branch_tip をこの内容にする）
 #           branch -D が成功すると branch_tip を消す（ブランチが消えたことの表現）
+#   sysctl: -n hw.memsize は memsize の内容を出して sysctl_exit（既定 0）で終わる。memsize が無ければ exit 1
 #   gh  : issue comment <N> --body <本文> は本文を comment_<N> に追記し（1 件ごとに "---" の行で区切る）、
 #         comment_exit_<N>（無ければ comment_exit）で終わる（既定 0）。成功（exit 0）のときは実物の gh と同じに投稿先の URL を stdout に出す。pr list は pr_out を出して pr_exit で終わる（--search 付きは pr_search_out と pr_search_exit。既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
 #         呼び出し回数は ghcount_<N>。FAIL は stderr に "gh: mock failure for issue <N> (poll <count>)" も出す
@@ -46,8 +47,13 @@ setup() {
   make_stub gh
   make_stub git
   make_stub sleep
+  make_stub sysctl
   # 外の環境（並列起動された子のセッション）の値をテストに漏らさない
   unset EPIC_DISPATCH_PARENT_EPIC
+  # 既存の launch のテストが上限に当たらないよう大きくする（上限のテストだけで上書き・unset する）。
+  # 物理メモリは sysctl のスタブ（memsize / sysctl_exit）だけから読ませ、実物の /proc/meminfo を読ませない
+  export EPIC_DISPATCH_MAX_PARALLEL=99
+  export EPIC_DISPATCH_MEMINFO_FILE="${BATS_TEST_TMPDIR}/no-meminfo"
 }
 
 # 共通の前半（ログへの追記）と、名前ごとの返り値の処理を持つスタブを置く
@@ -250,6 +256,11 @@ val=$(sed -n "${idx}p" "$STUB_CFG/gh_$n")
 echo "$val"
 exit 0' ;;
     sleep) body='exit 0' ;;
+    sysctl) body='
+[ "$*" = "-n hw.memsize" ] || exit 1
+[ -e "$STUB_CFG/memsize" ] || { echo "sysctl: unknown oid" >&2; exit 1; }
+cat "$STUB_CFG/memsize"
+exit "$(cat "$STUB_CFG/sysctl_exit" 2>/dev/null || echo 0)"' ;;
   esac
   {
     echo '#!/bin/bash'
@@ -1092,6 +1103,190 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
   grep -q '"ok":true' "$BATS_TEST_TMPDIR/stderr"
+}
+
+# --- max-parallel と launch の上限 ---
+# spec: dev-workflow-develop（epic-dispatch.sh は同時に枠を使う子の上限を環境変数か物理メモリから決める /
+# epic-dispatch.sh launch は空いた枠の分だけ子を起動し、残りを deferred で出す）
+
+@test "max-parallel: without the variable 16 GiB of memory gives 4 and calls neither orca, gh nor git" {
+  make_stub orca
+  unset EPIC_DISPATCH_MAX_PARALLEL
+  echo 17179869184 > "$STUB_CFG/memsize"
+  run dispatch max-parallel
+  [ "$status" -eq 0 ]
+  [ "$output" = "4" ]
+  [ "$(calls '^orca')" -eq 0 ]
+  [ "$(calls '^gh')" -eq 0 ]
+  [ "$(calls '^git')" -eq 0 ]
+}
+
+@test "max-parallel: 2 GiB of memory still gives 1" {
+  unset EPIC_DISPATCH_MAX_PARALLEL
+  echo 2147483648 > "$STUB_CFG/memsize"
+  run dispatch max-parallel
+  [ "$status" -eq 0 ]
+  [ "$output" = "1" ]
+}
+
+@test "max-parallel: unreadable memory gives 2 and says so on stderr" {
+  unset EPIC_DISPATCH_MAX_PARALLEL
+  run dispatch max-parallel
+  [ "$status" -eq 0 ]
+  [ "$output" = "2" ]
+  grep -q 'physical memory' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "max-parallel: a non-numeric sysctl output falls back to MemTotal in the meminfo file" {
+  unset EPIC_DISPATCH_MAX_PARALLEL
+  echo garbage > "$STUB_CFG/memsize"
+  printf 'MemTotal:       33554432 kB\nMemFree:  1 kB\n' > "$BATS_TEST_TMPDIR/meminfo"
+  EPIC_DISPATCH_MEMINFO_FILE="$BATS_TEST_TMPDIR/meminfo" run dispatch max-parallel
+  [ "$status" -eq 0 ]
+  [ "$output" = "8" ]
+}
+
+@test "max-parallel: EPIC_DISPATCH_MAX_PARALLEL wins over the memory" {
+  echo 17179869184 > "$STUB_CFG/memsize"
+  EPIC_DISPATCH_MAX_PARALLEL=3 run dispatch max-parallel
+  [ "$status" -eq 0 ]
+  [ "$output" = "3" ]
+}
+
+@test "max-parallel: 0, two or an empty EPIC_DISPATCH_MAX_PARALLEL prints the usage and exits 1" {
+  local v
+  for v in 0 two ''; do
+    EPIC_DISPATCH_MAX_PARALLEL="$v" run dispatch max-parallel
+    [ "$status" -eq 1 ]
+    [ -z "$output" ]
+    grep -q 'EPIC_DISPATCH_MAX_PARALLEL' "$BATS_TEST_TMPDIR/stderr"
+    grep -q 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  done
+}
+
+@test "launch: with max 2 and five startable children, two are launched and three deferred" {
+  make_stub orca
+  set_current 400
+  EPIC_DISPATCH_MAX_PARALLEL=2 run dispatch launch 400 11 12 13 14 15
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'launched 11\nlaunched 12\ndeferred 13\ndeferred 14\ndeferred 15')" ]
+  [ "$(calls '^orca worktree create')" -eq 2 ]
+  [ "$(calls '^orca worktree create .*--issue 1[345] ')" -eq 0 ]
+  grep -q 'max parallel 2 (EPIC_DISPATCH_MAX_PARALLEL); in use 0' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: one running child closing frees one slot for a deferred child" {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent')" "$(wt_entry 12 '' 'repo-a::/work/parent')"
+  gh_seq 11 closed
+  gh_seq 12 open
+  EPIC_DISPATCH_MAX_PARALLEL=2 run dispatch launch 400 12 13 14 15
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'skipped 12\nlaunched 13\ndeferred 14\ndeferred 15')" ]
+  [ "$(calls '^orca worktree create')" -eq 1 ]
+  [ "$(calls '^orca worktree create .*--issue 13 ')" -eq 1 ]
+  grep -q 'in use 1: #12' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: children with the done mark or the stopped mark do not use a slot" {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 '' 'repo-a::/work/parent' repo-a false epic-stopped-seen)" \
+    "$(wt_entry 16 '' 'repo-a::/work/parent' repo-a false epic-stopped)"
+  gh_seq 11 open
+  gh_seq 12 open
+  gh_seq 16 open
+  EPIC_DISPATCH_MAX_PARALLEL=2 run dispatch launch 400 13 14 15
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'launched 13\nlaunched 14\ndeferred 15')" ]
+}
+
+@test "launch: a resumed child uses a slot" {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent' repo-a false epic-resumed)"
+  gh_seq 11 open
+  EPIC_DISPATCH_MAX_PARALLEL=2 run dispatch launch 400 13 14
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'launched 13\ndeferred 14')" ]
+}
+
+@test "launch: a child whose issue state cannot be read is counted as using a slot" {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent')"
+  gh_seq 11 FAIL
+  EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 400 13
+  [ "$status" -eq 0 ]
+  [ "$output" = "deferred 13" ]
+  grep -q '#11' "$BATS_TEST_TMPDIR/stderr"
+  grep -q 'could not read the state of #11' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: children of another parent worktree and archived children are not counted" {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/other')" "$(wt_entry 12 '' 'repo-a::/work/parent' repo-a true)"
+  gh_seq 11 open
+  gh_seq 12 open
+  EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 400 13
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 13" ]
+}
+
+@test "launch: more children in use than the max defers everything without create" {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent')" "$(wt_entry 12 '' 'repo-a::/work/parent')" \
+    "$(wt_entry 13 '' 'repo-a::/work/parent')"
+  gh_seq 11 open
+  gh_seq 12 open
+  gh_seq 13 open
+  EPIC_DISPATCH_MAX_PARALLEL=2 run dispatch launch 400 14 15
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'deferred 14\ndeferred 15')" ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+}
+
+@test "launch: a failed child also uses a free slot" {
+  make_stub orca
+  set_current 400
+  touch "$STUB_CFG/create_fail_11"
+  EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 400 11 12
+  [ "$status" -eq 1 ]
+  [ "$output" = "$(printf 'failed 11\ndeferred 12')" ]
+}
+
+@test "launch: a deferred child gets no note" {
+  make_stub orca
+  set_current 400
+  EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch --note 注意 400 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'launched 11\ndeferred 12')" ]
+  [ -e "$STUB_CFG/comment_11" ]
+  [ ! -e "$STUB_CFG/comment_12" ]
+}
+
+@test "launch: a wrong EPIC_DISPATCH_MAX_PARALLEL calls neither orca nor git" {
+  make_stub orca
+  EPIC_DISPATCH_MAX_PARALLEL=abc run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$(calls '^orca')" -eq 0 ]
+  [ "$(calls '^git')" -eq 0 ]
+  grep -q 'EPIC_DISPATCH_MAX_PARALLEL' "$BATS_TEST_TMPDIR/stderr"
+  grep -q 'usage:' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: a current worktree without an id counts no children in use and says so" {
+  make_stub orca
+  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent')"
+  gh_seq 11 open
+  EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 400 13
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 13" ]
+  grep -q 'no id' "$BATS_TEST_TMPDIR/stderr"
 }
 
 # --- mark ---
@@ -3271,6 +3466,84 @@ nothing_sent() {
   [ "$l" -gt 0 ]
   [ "$n" -lt "$l" ]
   printf '%s\n' "$l4" | grep -qF '`launch` が `failed` を返しても'
+}
+
+# --- 同時に動く子の上限（SKILL.md） ---
+# spec: dev-workflow-develop（epic-dispatch.sh は同時に枠を使う子の上限を環境変数か物理メモリから決める /
+# 親は枠が空いたら後回しの子を起動し、サブエージェント方式でも同じ上限を当てる）
+
+# 「回し方」の「**同時に動く子の上限**」の段落
+limit_para() { run_section | grep -E '^\*\*同時に動く子の上限\*\*'; }
+# 「回し方」の「**サブエージェント方式**」の段落
+subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*'; }
+
+@test "skill: the limit paragraph names the variable, the default formula and the measured RSS" {
+  p="$(limit_para)"
+  [ -n "$p" ]
+  printf '%s\n' "$p" | grep -qF '`EPIC_DISPATCH_MAX_PARALLEL`'
+  printf '%s\n' "$p" | grep -qF '物理メモリの GiB を 4 で割って切り捨てた値（最小 1。メモリ量を読めなければ 2）'
+  printf '%s\n' "$p" | grep -qF '`scripts/epic-dispatch.sh max-parallel`'
+  printf '%s\n' "$p" | grep -qF '146〜404 MB'
+  printf '%s\n' "$p" | grep -qF '最大 564 MB'
+  printf '%s\n' "$p" | grep -qF '1.5 GiB は実測ではない'
+}
+
+@test "skill: the limit paragraph does not count done, closed and stopped children, and resumed children can go over on Orca" {
+  p="$(limit_para)"
+  printf '%s\n' "$p" | grep -qF '完了の印（`done`）の子・閉じた子・主の返事待ちで止まった子を除いたもの'
+  printf '%s\n' "$p" | grep -qF '数えると主の返事が遅れるあいだ全体が止まる'
+  printf '%s\n' "$p" | grep -qF '戻った子の分だけ一時的に上限を超えうる'
+  printf '%s\n' "$p" | grep -qF 'サブエージェント方式では再開を本体が行い、再開の前に空き枠を確かめるので上限を超えない'
+}
+
+@test "skill: Orca route steps 1 and 2 explain deferred children and keep them out of wait" {
+  r="$(run_section)"
+  l1="$(printf '%s\n' "$r" | grep -E '^1\. ')"
+  l2="$(printf '%s\n' "$r" | grep -E '^2\. ')"
+  printf '%s\n' "$l1" | grep -qF '`deferred <N>`'
+  printf '%s\n' "$l1" | grep -qF '`EPIC_DISPATCH_MAX_PARALLEL`'
+  printf '%s\n' "$l2" | grep -qF '後回しの子は動いている子にも片付け待ちの子にも入れない'
+  printf '%s\n' "$l2" | grep -qF '`wait` の位置引数にも `--watch-done` にも渡さない'
+}
+
+@test "skill: Orca route steps 3, 4 and 8 launch the deferred children again" {
+  r="$(run_section)"
+  for k in 3 8; do
+    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -qF '後回しの子が残っていれば、2 に戻る前に依存の解けた開いた子を `launch` に渡し直す'
+  done
+  printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子もここに含まれる'
+}
+
+@test "skill: Orca route reports to the owner when only deferred children are left" {
+  l2="$(run_section | grep -E '^2\. ')"
+  printf '%s\n' "$l2" | grep -qF '動いている子も片付け待ちの子も 0 件なのに後回しの子が残るときは、`wait` を呼ばずに主に報告する'
+  printf '%s\n' "$l2" | grep -qF '`launch` の stderr の `max parallel'
+}
+
+@test "skill: a relaunched parent learns the deferred children from launch, nothing is stored" {
+  printf '%s\n' "$(run_section)" | grep -E '^7\. ' | grep -qF '後回しの子の一覧はどこにも保存しない'
+}
+
+@test "skill: the subagent route caps the total of W across children with max-parallel" {
+  p="$(subagent_para)"
+  printf '%s\n' "$p" | grep -qF '`scripts/epic-dispatch.sh max-parallel` を 1 回呼んでその値を上限にし'
+  printf '%s\n' "$p" | grep -qF 'エピックの全部の子をまたいで、枠を使っている W の総数をその上限までに抑える'
+  printf '%s\n' "$p" | grep -qF '担う change のループが終わる（PR がマージされる・記録先が閉じる）か、主の返事待ちで保留に入るまで 1 枠を使う'
+  printf '%s\n' "$p" | grep -qF '新しい子の最初の W を起こす前・同じ子の中で別の change の W を起こす前・保留から戻る W を再開する前に'
+  printf '%s\n' "$p" | grep -qF '保留から戻る W の再開 → 同じ子の中の別の change の W → 依存の解けた新しい子の最初の W の順'
+}
+
+@test "skill: the subagent route does not resume a W back from hold until a slot frees" {
+  p="$(subagent_para)"
+  printf '%s\n' "$p" | grep -qF '0 なら起こさず再開もせずに待ちに回す'
+  printf '%s\n' "$p" | grep -qF '空き枠が 0 なので A は待ちに回し'
+  printf '%s\n' "$p" | grep -qF '本体が `needs-approval` を付けて主の返事を待つ場面（W の停止・G の保留のどちらも）'
+  printf '%s\n' "$p" | grep -qF 'コンテキスト上限で手渡した後任の W は前任の枠を引き継ぐ'
+}
+
+@test "skill: each W per change inside one child uses its own slot" {
+  printf '%s\n' "$(subagent_para)" | grep -qF 'change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う'
+  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは「エピックの扱い」→「回し方」のサブエージェント方式の枠に従う）' "$SKILL"
 }
 
 # --- wait --resolve: 通す返事を起動し直すかを表で決める ---
