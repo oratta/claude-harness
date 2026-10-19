@@ -3269,3 +3269,126 @@ nothing_sent() {
   [ "$n" -lt "$l" ]
   printf '%s\n' "$l4" | grep -qF '`launch` が `failed` を返しても'
 }
+
+# --- wait --resolve: 通す返事を起動し直すかを表で決める ---
+# spec: dev-workflow-develop（wait --resolve は通す返事を送る前に起動し直すかを表で決める）
+
+# 子 11 のトランスクリプトを置く（<何分前の最後のリクエスト> <会話量> [compact 1] [ファイル名]）
+put_transcript() {
+  local ago="$1" ctx="$2" compact="${3-0}" name="${4-s1}"
+  local p="$BATS_TEST_TMPDIR/work/issue-11" dir ts
+  dir="$BATS_TEST_TMPDIR/projects/$(printf '%s' "$p" | sed 's/[^A-Za-z0-9]/-/g')"
+  mkdir -p "$dir"
+  ts="$(python3 -c "import datetime,sys;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=$ago)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
+  {
+    printf '{"type":"assistant","timestamp":"%s","message":{"usage":{"input_tokens":%s,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n' "$ts" "$ctx"
+    [ "$compact" = 1 ] && printf '{"type":"system","subtype":"compact_boundary","timestamp":"%s"}\n' "$ts"
+  } > "$dir/$name.jsonl"
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+}
+
+resolve_pass() {
+  resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
+  # 子の判断の既定の subagent-context.sh は plugin のものを使う
+}
+
+@test "wait --resolve relaunch: 60+ minutes, no compaction, N >= 150000 relaunches the child" {
+  resolve_pass
+  put_transcript 90 160000
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(calls '^orca terminal create')" -eq 1 ]
+  [ "$(calls '^orca terminal send')" -ge 1 ]
+  starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+}
+
+@test "wait --resolve relaunch: under 60 minutes sends as is" {
+  resolve_pass
+  put_transcript 30 160000
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
+}
+
+@test "wait --resolve relaunch: compaction during the wait or N under 150000 sends as is" {
+  resolve_pass
+  put_transcript 90 160000 1
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  resolve_pass
+  put_transcript 90 100000
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+}
+
+@test "wait --resolve relaunch: no transcript or two transcripts sends as is" {
+  resolve_pass
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ -e "$STUB_CFG/sent_term-a-11" ]
+  resolve_pass
+  put_transcript 90 160000 0 s1
+  put_transcript 90 160000 0 s2
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+}
+
+@test "wait --resolve relaunch: thresholds can be overridden and bad values are refused" {
+  resolve_pass
+  put_transcript 30 160000
+  EPIC_DISPATCH_RELAUNCH_IDLE_SEC=60 run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 1 ]
+  resolve_pass
+  : > "$STUB_LOG"
+  put_transcript 90 160000
+  EPIC_DISPATCH_RELAUNCH_MIN_TOKENS=200000 run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  for v in EPIC_DISPATCH_RELAUNCH_IDLE_SEC EPIC_DISPATCH_RELAUNCH_MIN_TOKENS; do
+    resolve_pass
+    : > "$STUB_LOG"
+    export "$v=150k"
+    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    unset "$v"
+    [ "$status" -eq 1 ]
+    grep -qF "$v" "$BATS_TEST_TMPDIR/stderr"
+    grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+    [ "$(calls '^orca terminal')" -eq 0 ]
+  done
+}
+
+# --- pending-owner ---
+# spec: dev-workflow-develop（起動し直した親は主の返事待ちの子を主に出し直す）
+
+@test "pending-owner: only a child still marked epic-stopped-seen is pending, and nothing is written" {
+  make_stub orca
+  set_current 400
+  set_list list_json \
+    "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped-seen)" \
+    "$(wt_entry 12 in-review repo-a::/work/parent repo-a false epic-resumed)" \
+    "$(wt_entry 13 in-review repo-a::/work/parent repo-a false epic-stopped)" \
+    "$(wt_entry 14 in-review repo-a::/work/parent repo-a true epic-stopped-seen)"
+  run dispatch pending-owner 11 12 13 14
+  [ "$status" -eq 0 ]
+  [ "$output" = "pending 11" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "pending-owner: no children or an unreadable list is an error" {
+  make_stub orca
+  run dispatch pending-owner
+  [ "$status" -eq 1 ]
+  printf 'x\n' > "$STUB_CFG/list_json"
+  run dispatch pending-owner 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
