@@ -1757,15 +1757,19 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 - **THEN** 本体は `<path>/LLM` があるので確認 (a) を満たさず、消さずに残して `子 #N のワークツリーを残した（llm-logs） — LLM/ が残っている` をコメントする
 
 ### Requirement: develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする
-`plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
+`plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。例外は 1 つだけで、要件「Orca 経路の本体は印が付いた子のワークスペースを片付ける」で本体が確かめて消すときの `orca worktree rm --worktree path:<path>` を、SKILL.md の「エピックの扱い」の回し方の手順 3 に 1 回だけ書いてよい（MAY。`reap` が残したワークツリーを消す判断は本体がその場で行うもので、`epic-dispatch.sh` のサブコマンドにすると `reap` の処理を変えることになるため）。この 1 件と同じ行に別の `orca` のコマンドを書くことと、この書き方を 2 回以上書くことは、例外に含めない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
 
 `plugins/dev-workflow/` 配下のシェルスクリプト（`*.sh`）のうち、`orca` の語を含むのは `scripts/epic-dispatch.sh` だけでなければならない（MUST）。`epic-dispatch.sh` の中では `orca` のコマンドをそのまま呼び、Orca の機能を自前で作り直してはならない（MUST NOT）。Orca が無い環境のための代わりの実装を持ってはならない（MUST NOT。`route` の `subagent` と `mark` の `skipped` のように、何もしないで終わる分岐は代わりの実装に数えない）。
 
-`plugins/dev-workflow/tests/epic-dispatch.bats` は、この 2 つの検索の結果を確かめなければならない（MUST）。この 2 つの検索で拾いたい誤りは、手順書に `orca` のサブコマンドを書き足すことと、`epic-dispatch.sh` 以外のシェルスクリプトに `orca` の呼び出しを足すことである。変数やコマンド置換を介した呼び出し、`orca` の語を含まない別名など、検索をすり抜ける書き方が見つかるたびに塞ぐことは、この要件の完了条件としない。
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、この 2 つの検索の結果を確かめなければならない（MUST）。手順書の検索では、許可した 1 件を出現ごとに取り除いてから残りを探し、行ごと除外してはならない（MUST NOT。同じ行に置いた別の `orca` のコマンドを見逃すため）。この 2 つの検索で拾いたい誤りは、手順書に `orca` のサブコマンドを書き足すことと、`epic-dispatch.sh` 以外のシェルスクリプトに `orca` の呼び出しを足すことである。変数やコマンド置換を介した呼び出し、`orca` の語を含まない別名など、検索をすり抜ける書き方が見つかるたびに塞ぐことは、この要件の完了条件としない。
 
-#### Scenario: 手順書に orca を実行する書き方が無い
-- **WHEN** `grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` を実行する
-- **THEN** 出力は 0 行である
+#### Scenario: 手順書に orca を実行する書き方は許可した 1 件しか無い
+- **WHEN** `grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` の各行から `orca worktree rm --worktree path:<path>` を 1 回取り除き、残りを `grep -E 'orca [a-z]+'` で探す
+- **THEN** 出力は 0 行であり、`grep -rhoF 'orca worktree rm --worktree path:<path>' plugins/dev-workflow/skills/develop` の出力は SKILL.md の手順 3 にある 1 行だけである
+
+#### Scenario: 許可した 1 件と同じ行に別の orca のコマンドがあると落ちる
+- **WHEN** 手順書の 1 行に `orca worktree rm --worktree path:<path>` と `orca terminal close --all` を並べて書く
+- **THEN** 手順書の検索は `orca terminal close` を見つけ、`epic-dispatch.bats` のテストは失敗する
 
 #### Scenario: orca を呼ぶスクリプトは 1 本だけ
 - **WHEN** `grep -rlw orca plugins/dev-workflow --include='*.sh'` を実行する

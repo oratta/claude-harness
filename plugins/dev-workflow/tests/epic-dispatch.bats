@@ -2371,13 +2371,34 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$s7" | grep -F 'どちらも 0 件なら' | grep -F '`wait` を呼ばず' | grep -qF '完了条件の確認と報告がまだなら行う'
 }
 
+# 手順書に書いてよい orca のコマンドは、手順 3 で親が確かめて消すときの 1 件だけ（#1095）。
+# 許可した書き方を出現ごとに 1 回だけ取り除いてから orca <subcommand> を探すので、
+# 同じ行に別の orca のコマンドを置いても見逃さない。許可した書き方の出現は全体で 1 回まで。
+ORCA_DOC_ALLOWED='orca worktree rm --worktree path:<path>'
+orca_doc_violations() {
+  grep -rnE 'orca [a-z]+' "$1" | sed "s|$ORCA_DOC_ALLOWED||" | grep -E 'orca [a-z]+'
+  n="$(grep -rhoF "$ORCA_DOC_ALLOWED" "$1" | grep -c .)"
+  [ "$n" -le 1 ] || echo "allowed command appears $n times"
+}
+
+@test "orca_doc_violations flags another orca command on the allowed line and a second allowed command" {
+  d="$BATS_TEST_TMPDIR/docs"
+  mkdir -p "$d"
+  printf '%s\n' "消す: \`$ORCA_DOC_ALLOWED\`" > "$d/ok.md"
+  [ -z "$(orca_doc_violations "$d")" ]
+  printf '%s\n' "消す: \`$ORCA_DOC_ALLOWED\` と \`orca terminal close --all\`" > "$d/ok.md"
+  orca_doc_violations "$d" | grep -qF 'orca terminal close'
+  printf '%s\n' "消す: \`$ORCA_DOC_ALLOWED\`" > "$d/ok.md"
+  printf '%s\n' "もう一度: \`$ORCA_DOC_ALLOWED\`" > "$d/two.md"
+  [ -n "$(orca_doc_violations "$d")" ]
+  rm "$d/two.md"
+  printf '%s\n' "\`orca worktree rm --force --worktree path:<path>\`" > "$d/force.md"
+  [ -n "$(orca_doc_violations "$d")" ]
+}
+
 @test "skill: develop's docs run no orca subcommand and only epic-dispatch.sh calls orca" {
-  # 例外は 1 つだけ: 手順 3 で親が確かめて消すときの `orca worktree rm --worktree path:<path>`（#1095）
-  run bash -c "grep -rnE 'orca [a-z]+' \"\$1\" | grep -vF 'orca worktree rm --worktree path:<path>'" _ "$PLUGIN_DIR/skills/develop"
-  [ "$status" -eq 1 ]
-  [ -z "$output" ]
-  run grep -rnF 'orca worktree rm' "$PLUGIN_DIR/skills/develop"
-  [ "$(printf '%s\n' "$output" | grep -c .)" -eq 1 ]
+  [ -z "$(orca_doc_violations "$PLUGIN_DIR/skills/develop")" ]
+  [ "$(grep -rhoF "$ORCA_DOC_ALLOWED" "$PLUGIN_DIR/skills/develop" | grep -c .)" -eq 1 ]
   run grep -rlw orca "$PLUGIN_DIR" --include='*.sh'
   [ "$status" -eq 0 ]
   [ "$output" = "$PLUGIN_DIR/scripts/epic-dispatch.sh" ]
