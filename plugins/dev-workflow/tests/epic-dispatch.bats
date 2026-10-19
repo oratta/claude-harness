@@ -3217,3 +3217,17 @@ nothing_sent() {
   printf '%s\n' "$l4" | grep -qF '`completed` 以外の子には `notify-closed` を呼ばない'
   printf '%s\n' "$r" | grep -F '主がすること: なし' | grep -qF '`notify-closed` の `failed` の報告'
 }
+
+@test "skill: Orca route step 4 calls notify-closed before launching the unblocked children" {
+  # 後続の子の launch が failed を返すと親は手順 6 で止まり、再開の手順 7 も notify-closed を呼ばない。
+  # launch より後ろに書くと閉じた子に送られないまま残るので、手順 4 の中で launch より先に現れること
+  r="$(run_section)"
+  l4="$(printf '%s\n' "$r" | grep -E '^4\. ')"
+  [ -n "$l4" ]
+  n="$(printf '%s' "$l4" | awk '{ print index($0, "scripts/epic-dispatch.sh notify-closed") }')"
+  l="$(printf '%s' "$l4" | awk '{ print index($0, "解けた子を件数にかかわらず `launch`") }')"
+  [ "$n" -gt 0 ]
+  [ "$l" -gt 0 ]
+  [ "$n" -lt "$l" ]
+  printf '%s\n' "$l4" | grep -qF '`launch` が `failed` を返しても'
+}
