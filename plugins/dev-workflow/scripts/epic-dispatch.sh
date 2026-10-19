@@ -5,6 +5,7 @@
 #   epic-dispatch.sh route <child>...
 #   epic-dispatch.sh launch [--note <text>] [--base <branch>] <epic> <child>...
 #   epic-dispatch.sh reply [--relaunch] --as <parent|owner> <epic> <child> <text>
+#   epic-dispatch.sh notify-closed [--relaunch] <epic> <child>
 #   epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
 #   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
 #   epic-dispatch.sh reap <child>...
@@ -84,6 +85,17 @@
 #   端末はあるが子のセッションの端末を決められない（シェルの端末だけも含む）
 #   ときは `failed <child> ambiguous-terminal`。ワークツリーが 0 件か 2 件以上・送信 / 作成 / 閉じるの失敗は `failed <child> <段>` で exit 1
 #   （送り直しか作り直しのコマンドを stderr に出す）。引数の誤りは orca を呼ばずに使い方を出して exit 1
+# notify-closed: 子 issue の state が closed でなければ `skipped <child> not-closed`、state_reason が completed で
+#   なければ `skipped <child> not-completed`（gh の失敗は `failed <child> issue`）。今のワークツリーと同じ repoId・
+#   linkedIssue が <child>・archive されていない子のワークツリーが 0 件なら `skipped <child> no-worktree`、2 件以上は
+#   `failed <child> ambiguous-worktree`、一覧を読めなければ `failed <child> list`。workspaceStatus が completed なら
+#   `skipped <child> already-done`、comment が epic-stopped / epic-stopped-seen でなければ `skipped <child> not-stopped`。
+#   条件を満たせば reply --as parent と同じ処理（--relaunch も同じ）で「記録先の issue #<child> は completed で
+#   閉じた。完了報告を書き、mark done で終える（停止の記録: <URL>）」を送り（URL は OWNER / MEMBER / COLLABORATOR の
+#   最新の `子の停止: 主の返事待ち` のコメント、無ければ子 issue の URL）、送れたらエピックに
+#   `親の判断: 子 #<child> 通した — 記録先が completed で閉じたので、完了報告と mark done を促した <URL>` を投稿して
+#   `notified <child>`（投稿に失敗したら `unrecorded <child>` と stderr に投稿し直しのコマンド）。skipped / notified /
+#   unrecorded は exit 0、送信の失敗は `failed <child> <段>` で exit 1。skipped のときはどこにも投稿しない
 # mark: 今のワークスペースの linkedIssue が <issue> のときだけ `orca worktree set --worktree current
 #   --workspace-status <completed|in-review>`（done / waiting）。stdout は `marked <issue> <kind>`（exit 0）
 #   / `failed <issue>`（exit 1）/ `skipped <issue> not-linked` / `skipped <issue> no-workspace`
@@ -116,7 +128,8 @@
 # 「端末を作れなかった子と指示が届かなかった子の案内は、二重起動を避ける確認を先に出す」
 # 「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」
 # 「epic-dispatch.sh の wait は止まった子を判断し、通すものには返事を送って待ちを続ける」
-# 「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」が正本。
+# 「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」
+# 「Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る」が正本。
 set -uo pipefail
 
 usage() {
@@ -125,6 +138,7 @@ usage:
   epic-dispatch.sh route <child>...
   epic-dispatch.sh launch [--note <text>] [--base <branch>] <epic> <child>...
   epic-dispatch.sh reply [--relaunch] --as <parent|owner> <epic> <child> <text>
+  epic-dispatch.sh notify-closed [--relaunch] <epic> <child>
   epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
   epic-dispatch.sh reap <child>...
@@ -508,6 +522,83 @@ cmd_reply() {
   repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
   [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
   deliver_reply "$relaunch" "$as" "$1" "$2" "$3" "$repo" || exit 1
+  exit 0
+}
+
+# 止まった印のまま completed で閉じた子に、完了報告と mark done を促す返事を送り、エピックに 1 行残す。
+# stdout に notified / unrecorded / skipped <理由> / failed <段> の 1 行
+cmd_notify_closed() {
+  local relaunch=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --relaunch) relaunch=1; shift ;;
+      --*) usage ;;
+      *) break ;;
+    esac
+  done
+  [ "$#" -eq 2 ] || usage
+  is_num "$1" || { echo "not an issue number: $1" >&2; usage; }
+  is_num "$2" || { echo "not an issue number: $2" >&2; usage; }
+  local epic="$1" n="$2"
+  agent_setup "$epic" || usage
+  local info state reason issue_url
+  if ! info="$(gh api "repos/{owner}/{repo}/issues/$n" --jq '[.state, (.state_reason // ""), .html_url] | join(" ")')"; then
+    echo "could not read issue #$n" >&2
+    echo "failed $n issue"; exit 1
+  fi
+  state="$(printf '%s' "$info" | awk '{print $1}')"
+  reason="$(printf '%s' "$info" | awk 'NF == 3 {print $2}')"
+  issue_url="$(printf '%s' "$info" | awk '{print $NF}')"
+  case "$state" in
+    closed) ;;
+    open) echo "skipped $n not-closed"; exit 0 ;;
+    *) echo "issue #$n state is not readable: $info" >&2; echo "failed $n issue"; exit 1 ;;
+  esac
+  [ "$reason" = completed ] || { echo "skipped $n not-completed"; exit 0; }
+  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
+  command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
+  local current repo list cands count st cm
+  current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
+  repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
+  [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+  if ! list="$(orca worktree list --json)" \
+    || ! printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1; then
+    echo "orca worktree list --json is not readable" >&2
+    echo "failed $n list"; exit 1
+  fi
+  cands="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$n" \
+    '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)]')"
+  count="$(printf '%s' "$cands" | jq 'length')"
+  [ "$count" -eq 0 ] && { echo "skipped $n no-worktree"; exit 0; }
+  [ "$count" -gt 1 ] && { echo "failed $n ambiguous-worktree"; exit 1; }
+  st="$(printf '%s' "$cands" | jq -r '.[0].workspaceStatus // empty')"
+  cm="$(printf '%s' "$cands" | jq -r '.[0].comment // empty')"
+  [ "$st" = completed ] && { echo "skipped $n already-done"; exit 0; }
+  case "$cm" in
+    epic-stopped|epic-stopped-seen) ;;
+    *) echo "skipped $n not-stopped"; exit 0 ;;
+  esac
+  # 停止の記録は、信頼できる投稿者の最新の `子の停止: 主の返事待ち` のコメント（無ければ子 issue の URL）
+  local url
+  url="$(gh api "repos/{owner}/{repo}/issues/$n/comments" --paginate --jq \
+    '.[] | select((.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")
+      and (((.body // "") | split("\n")[0] | rtrimstr("\r")) == "子の停止: 主の返事待ち")) | .html_url' 2>/dev/null \
+    | awk 'NF { u = $0 } END { print u }')"
+  [ -n "$url" ] || url="$issue_url"
+  local text res line
+  text="記録先の issue #$n は completed で閉じた。完了報告を書き、mark done で終える（停止の記録: ${url}）"
+  res="$(deliver_reply "$relaunch" parent "$epic" "$n" "$text" "$repo")"
+  case "$res" in
+    "sent $n"|"relaunched $n") ;;
+    *) echo "$res"; exit 1 ;;
+  esac
+  # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに送っていない判断が残る）
+  line="親の判断: 子 #$n 通した — 記録先が completed で閉じたので、完了報告と mark done を促した $url"
+  if gh issue comment "$epic" --body "$line" >&2; then
+    echo "notified $n"; exit 0
+  fi
+  repost_hint "$epic" "$line"
+  echo "unrecorded $n"
   exit 0
 }
 
@@ -903,6 +994,7 @@ case "$sub" in
   route) cmd_route "$@" ;;
   launch) cmd_launch "$@" ;;
   reply) cmd_reply "$@" ;;
+  notify-closed) cmd_notify_closed "$@" ;;
   wait) cmd_wait "$@" ;;
   mark) cmd_mark "$@" ;;
   reap) cmd_reap "$@" ;;

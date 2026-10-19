@@ -6,6 +6,8 @@ Orca 経路のエピックでは、子は独立した Claude Code セッショ�
 
 `epic-dispatch.sh` は Orca のコマンドを呼ぶ唯一のスクリプトで、手順書に `orca` のコマンドを書かない既存要件がある。返事の送信は `deliver_reply`（`reply` と `wait --resolve` が共用）が持ち、端末が無ければ起動し直す。
 
+前提: `notify-closed` を呼ぶ親は Orca 管理下のワークツリーで動いている（`orca worktree current --json` が読め、子のワークツリーと同じ repoId を持つ）。親の `gh` の認証アカウントには、子 issue の状態とコメントを読む権限と、エピックに issue コメントを投稿する権限が要る（投稿できないときは `unrecorded` で親に知らせる）。
+
 ## Goals / Non-Goals
 
 **Goals:**
