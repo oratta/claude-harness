@@ -1,0 +1,74 @@
+## MODIFIED Requirements
+
+### Requirement: Orca 経路の本体は印が付いた子のワークスペースを片付ける
+develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定しなければならない（MUST）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の Orca 経路の規定に加わる。
+
+- 本体は `epic-dispatch.sh wait` に、片付け待ちの子を `--watch-done <N>` で渡す（MUST）。片付け待ちの子は、`launch` に渡したことのある子（閉じた子を含む）から、エピックに `子 #N のワークツリーを残した` で始まる行がある子と、このセッションで `reap` が `reaped <N>`（`branch-kept` を含む）か `gone <N>` を返した子と、本体が確かめて消した子（下の `kept` の扱い）を除いたものとする（MUST）。除いたあとにこのセッションの `launch` が `launched <N>` を返した子は片付け待ちに戻す（MUST。前のセッションで起動に失敗した子やワークツリーを手で消した子は `gone` になるが、起動し直すとワークツリーができるため）。除いた子は渡さない（MUST NOT。ワークツリーが無い子は印が付かず、`wait` が最長 6 時間待つため）
+- `done <N>...` で起こされたら、本体は `epic-dispatch.sh reap <N>...` を Bash で 1 回呼ぶ（MUST）。wt-clean を呼んではならない（MUST NOT）。子ごとの確認をオーナーに取ってはならない（MUST NOT。子が印を付けたことを承認として扱う）
+- `reaped <N>` と `gone <N>` はワークツリーに何もしないが、本体はその子を以後の片付け待ちから外す（MUST）。`reaped <N> branch-kept` はエピックに `子 #N のローカルブランチを残した` と 1 行コメントする。`kept <N> not-done` は待ちを続ける。それ以外の `kept <N> <理由>` は、本体が主に聞かずに次の 2 つを確かめて、消すか残すかを決める（MUST。主には判断材料が無い）。(a) `reap` がそのワークツリーを残した理由が解消していて、未コミットの変更が無い（`git -C <path> status --porcelain` が空、かつ `<path>/LLM` が無い。`LLM/` は gitignore 済みで `status` に出ないが、`reap` は `kept <N> llm-logs` で残す理由にしている。本体は `LLM/` を消さない）。(b) ワークツリーの HEAD が、`launch` の起点ブランチ（`EPIC_DISPATCH_BASE` か `--base`。既定は main）のリモートの今の先端に含まれるか、マージ済みの PR の HEAD に入っている（HEAD がその PR の `headRefOid` と同じか、HEAD の tree が `headRefOid` の tree と同じ。squash でマージされた PR は tree の一致で見る）。対象のワークツリーは、`reap` が `kept <N> ambiguous`（候補が複数）か `kept <N> not-child`（親の子ではない）を返したときは一意にも親の子としても特定できないので、確かめも消しもせず残す（MUST。単一の `<path>` を前提にした削除をしない）。`reap` が `kept <N> close-failed`（1 回閉じ直しても端末を閉じられなかった）を返したときも、子のターンがまだ動いている見込みがあるので確かめも消しもせず残し、エピックに `子 #N のワークツリーを残した（close-failed） — <reap の stderr の owner action の行>` と 1 行コメントする（MUST。どの画面で何をするかを主に渡す）。両方を満たしたら、本体が `orca worktree rm --worktree path:<path>`（`--force` なし）で消し、エピックに `子 #N のワークツリーを確かめて消した（<理由>）` と 1 行コメントして、その子を片付け待ちから外す（MUST。この行は `子 #N のワークツリーを残した` で始めない）。どちらかを満たさないか `rm` が失敗したら、消さずに残し、エピックに `子 #N のワークツリーを残した（<理由>） — <満たさなかったこと、または rm 失敗、または ambiguous / not-child で特定できない>` と 1 行コメントする（MUST）。どちらの場合も主に消すかを聞かない（MUST NOT）
+
+この規定の守備範囲で入力として扱うのは、`reap` の `kept` の行、対象ワークツリーの `git status` と `LLM/` の有無と HEAD、起点ブランチのリモートの先端、マージ済み PR の `headRefOid` である。拾いたい誤りは、消してはいけないもの（未コミットの変更、起点ブランチに入っていない commit、ログ）を含むワークツリーを消すことと、特定できないワークツリーを消すことである。次は通ってよく、この規定では止めない: PR が複数ありどれかの `headRefOid` と一致すれば取り込み済みとみなすこと、HEAD より後の commit が PR に無くても tree が一致すれば消すこと、`gh` や `git` の一時的な失敗で消さずに残すこと。穴を塞ぎ切ることは完了条件にしない（`--force` なしの `rm` が未コミットの変更で止まる安全網があり、取りこぼしは残す側に倒れる）
+- `closed` と `done` の 2 行で起こされたら、両方を処理する（MUST）
+- 開いている子が無くなったら、片付け待ちの子で `reap` を 1 回呼び、`reaped`・`gone` の子を片付け待ちから外す。残った片付け待ちの子（`kept <N> not-done` の子）が 1 件以上あれば、その子だけを `--watch-done` に渡して（位置引数の子なしで）待つ。0 件なら `wait` を呼ばずに待ちを終える（MUST）。完了条件の確認と報告がまだなら行う。待ちの途中で `done <N>...` で起こされたときも、`reap` の結果で `reaped`・`gone` の子を外して同じに扱う（MUST。このとき読まれるのは `done` で起こされたときの手順なので、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことを、その手順にも書く）。エピックの完了条件の確認と報告を、この待ちを理由に遅らせない（SHALL）。この待ちが `timeout` で終わったら、残っている子の番号をユーザーに報告して待ちをやめる（SHALL）
+- `回し方: Orca` を引き継いで再開したら、`launch` の前に、`launch` に渡したことのある子（閉じた子を含む。`子 #N のワークツリーを残した` の行がある子も除かない）で `reap` を 1 回呼び、`reaped`・`gone` の子を片付け待ちから外す（SHALL。再開したセッションは前のセッションの `reap` の結果を持たないので、この 1 回で作り直す）。そのあとの `launch` を終えて、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行う（MUST）
+- `wait` の `error workspaces` は `error gh ...` と同じく、ユーザーに報告して止まる（MUST）
+- `--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わったら（stderr に `not in an Orca-managed worktree` などが出て、今のワークツリーを Orca から読めない）、`launch` の exit 1 と同じく、Orca の親ワークツリーで開き直すようユーザーに報告して止まる（MUST）。stderr が `usage:` を含むときは、stderr を添えて設定の誤りとして報告して止まる（MUST）
+
+#### Scenario: Orca 経路に片付けの手順が書かれている
+- **WHEN** SKILL.md の「エピックの扱い」の「回し方」を読む
+- **THEN** `wait` に `--watch-done` を付けること、`done` で起こされたら `reap` を 1 回呼ぶこと、`kept` の子は本体が未コミットの変更の有無と HEAD の取り込み済みを確かめ、満たせば消してエピックに `子 #N のワークツリーを確かめて消した（<理由>）`、満たさなければ残して `子 #N のワークツリーを残した（<理由>） — <満たさなかったこと>` とコメントし、どちらも主に聞かないこと、`not-done` は待ちを続けること、`reaped`・`gone` の子を片付け待ちから外すこと、開いている子が無くなったあとは確認待ちの子だけを待ち `timeout` で待ちをやめること、再開時に `reap` を 1 回呼ぶことが書かれている
+
+#### Scenario: 片付けた子と消えた子は片付け待ちから外れる
+- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 2〜4 を読む
+- **THEN** 片付け待ちの子から `reaped`（`branch-kept` を含む）と `gone` の子を除くことが、手順 2 の集合の定義と手順 3 に書かれ、除いたあとに `launched <N>` を返した子は戻すことが手順 2 に書かれている
+
+#### Scenario: 全 issue が閉じたあと最後の done を片付けたら待たずに終える
+- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 3（`done <N>...` で起こされたときの手順）を読む
+- **THEN** `reap` のあと、動いている子か片付け待ちの子があれば手順 2 に戻ることと、どちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことが、手順 3 の中に書かれている（手順 4 の記述だけでは満たさない。全 issue が閉じたあとの最後の `done` では手順 4 が読まれないため）
+
+#### Scenario: 開いている子が無くなったとき確認待ちの子が無ければ待たずに終える
+- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 4（`closed <N>...` で起こされたときの手順）を読む
+- **THEN** 開いている子が無くなったあと、`reaped`・`gone` を外した片付け待ちの子が 0 件なら `wait` を呼ばずに待ちを終えること、`kept <N> not-done` の子が残っているときだけその子を `--watch-done` に渡して待つことが手順 4 に書かれている
+
+#### Scenario: 再開して動かす子も片付け待ちの子も無ければ待たずに終える
+- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 7（`回し方: Orca` を引き継いで再開したときの手順）を読む
+- **THEN** `reap` と `launch` のあと、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことが手順 7 に書かれている
+
+#### Scenario: --watch-stopped 付きの wait が Orca から読めずに終わったら親ワークツリーで開き直す
+- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 6 を読む
+- **THEN** `--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わった場合に、報告に「親ワークツリーで開き直す」と書くことが書かれている
+
+#### Scenario: 残された子のワークツリーを本体が確かめて決める
+- **WHEN** `reap` が `kept <N> unmerged-commits` や `kept <N> rm-failed` を返し、本体が SKILL.md の手順 3 に従う
+- **THEN** 本体は残された理由の解消と未コミットの変更・`LLM/` の有無と HEAD の取り込み済み（設定された起点ブランチ（`EPIC_DISPATCH_BASE` / `--base`、既定 main）のリモートの先端への包含、またはマージ済み PR の HEAD との一致・tree の一致）を確かめ、満たせば `orca worktree rm` で消して `子 #N のワークツリーを確かめて消した（<理由>）` を、満たさなければ残して `子 #N のワークツリーを残した（<理由>） — <満たさなかったこと>` をエピックにコメントし、主に消すかを聞かない
+
+#### Scenario: 特定できないワークツリーは消さずに残す
+- **WHEN** `reap` が `kept <N> ambiguous` か `kept <N> not-child` を返した
+- **THEN** 本体は確かめも `orca worktree rm` もせず、エピックに `子 #N のワークツリーを残した（ambiguous）` か `子 #N のワークツリーを残した（not-child）` で始まる 1 行をコメントし、主に聞かない
+
+#### Scenario: 端末を閉じられなかったワークツリーは確かめずに残し、主の操作を添える
+- **WHEN** `reap` が `kept <N> close-failed` を返し、stderr に `owner action for #<N>: ...` の行を出した
+- **THEN** 本体は確かめも `orca worktree rm` もせず、エピックに `子 #N のワークツリーを残した（close-failed） — ` に続けてその `owner action` の行を書いた 1 行をコメントする
+
+#### Scenario: LLM/ が残るワークツリーは消さない
+- **WHEN** `reap` が `kept <N> llm-logs` を返した（`git status` は空）
+- **THEN** 本体は `<path>/LLM` があるので確認 (a) を満たさず、消さずに残して `子 #N のワークツリーを残した（llm-logs） — LLM/ が残っている` をコメントする
+
+### Requirement: develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする
+`plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。例外は 1 つだけで、要件「Orca 経路の本体は印が付いた子のワークスペースを片付ける」で本体が確かめて消すときの `orca worktree rm --worktree path:<path>` を、SKILL.md の「エピックの扱い」の回し方の手順 3 に 1 回だけ書いてよい（MAY。`reap` が残したワークツリーを消す判断は本体がその場で行うもので、`epic-dispatch.sh` のサブコマンドにすると `reap` の処理を変えることになるため）。この 1 件と同じ行に別の `orca` のコマンドを書くことと、この書き方を 2 回以上書くことは、例外に含めない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
+
+`plugins/dev-workflow/` 配下のシェルスクリプト（`*.sh`）のうち、`orca` の語を含むのは `scripts/epic-dispatch.sh` だけでなければならない（MUST）。`epic-dispatch.sh` の中では `orca` のコマンドをそのまま呼び、Orca の機能を自前で作り直してはならない（MUST NOT）。Orca が無い環境のための代わりの実装を持ってはならない（MUST NOT。`route` の `subagent` と `mark` の `skipped` のように、何もしないで終わる分岐は代わりの実装に数えない）。
+
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、この 2 つの検索の結果を確かめなければならない（MUST）。手順書の検索では、許可した 1 件を出現ごとに取り除いてから残りを探し、行ごと除外してはならない（MUST NOT。同じ行に置いた別の `orca` のコマンドを見逃すため）。この 2 つの検索で拾いたい誤りは、手順書に `orca` のサブコマンドを書き足すことと、`epic-dispatch.sh` 以外のシェルスクリプトに `orca` の呼び出しを足すことである。変数やコマンド置換を介した呼び出し、`orca` の語を含まない別名など、検索をすり抜ける書き方が見つかるたびに塞ぐことは、この要件の完了条件としない。
+
+#### Scenario: 手順書に orca を実行する書き方は許可した 1 件しか無い
+- **WHEN** `grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` の各行から `orca worktree rm --worktree path:<path>` を 1 回取り除き、残りを `grep -E 'orca [a-z]+'` で探す
+- **THEN** 出力は 0 行であり、`grep -rhoF 'orca worktree rm --worktree path:<path>' plugins/dev-workflow/skills/develop` の出力は SKILL.md の手順 3 にある 1 行だけである
+
+#### Scenario: 許可した 1 件と同じ行に別の orca のコマンドがあると落ちる
+- **WHEN** 手順書の 1 行に `orca worktree rm --worktree path:<path>` と `orca terminal close --all` を並べて書く
+- **THEN** 手順書の検索は `orca terminal close` を見つけ、`epic-dispatch.bats` のテストは失敗する
+
+#### Scenario: orca を呼ぶスクリプトは 1 本だけ
+- **WHEN** `grep -rlw orca plugins/dev-workflow --include='*.sh'` を実行する
+- **THEN** 出力は `plugins/dev-workflow/scripts/epic-dispatch.sh` の 1 行だけである
