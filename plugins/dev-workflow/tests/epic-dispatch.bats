@@ -2577,8 +2577,11 @@ orca_doc_violations() {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   [ -f "$f" ]
   grep -F '120,000' "$f" | grep -qF '子'
-  grep -F '100,000' "$f" | grep -qF '親'
-  grep -qF 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=100000' "$f"
+  grep -E '^\| 親 \|' "$f" | grep -qF '120,000'
+  grep -E '^\| 親 \|' "$f" | grep -qF '未設定のときだけ'
+  grep -E '^\| 親 \|' "$f" | grep -qF 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000'
+  run grep -F '=100000' "$f"; [ "$status" -eq 1 ]
+  run grep -F '100,000' "$f"; [ "$status" -eq 1 ]
   grep -qF 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS' "$f"
   grep -F 'settings.json' "$f" | grep -qF '置かない'
 }
