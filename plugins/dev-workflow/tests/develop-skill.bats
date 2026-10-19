@@ -721,3 +721,25 @@ refute() {
   echo "$item" | grep -qF '主本人の不許容として受け取り'
   echo "$item" | grep -qF '許容とも不許容とも読めない'
 }
+
+@test "skill: step 7 of the Orca route re-presents children waiting for the owner before launch" {
+  p="$(grep -E '^7\. `回し方: Orca`' "$SKILL")"
+  printf '%s\n' "$p" | grep -qF 'pending-owner'
+  printf '%s\n' "$p" | grep -qF 'epic-stopped-seen'
+  printf '%s\n' "$p" | grep -qF '手順 8 と同じ報告'
+  printf '%s\n' "$p" | grep -qF '子 issue のコメントの新旧では再開を判定しない'
+}
+
+@test "reply-after-idle: the restore table has the child waiting for the owner" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  row="$(grep -E '^\| 主の返事待ちの子 \|' "$f")"
+  printf '%s\n' "$row" | grep -qF 'epic-stopped-seen'
+  printf '%s\n' "$row" | grep -qF '子の停止: 主の返事待ち'
+  printf '%s\n' "$row" | grep -qF '親の判断:'
+}
+
+@test "reply-after-idle: wait --resolve decides the relaunch itself with overridable thresholds" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  grep -qF 'EPIC_DISPATCH_RELAUNCH_IDLE_SEC' "$f"
+  grep -qF 'EPIC_DISPATCH_RELAUNCH_MIN_TOKENS' "$f"
+}
