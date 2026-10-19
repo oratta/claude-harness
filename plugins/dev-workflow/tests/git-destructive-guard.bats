@@ -668,7 +668,12 @@ PY
   call 'git checkout -- b' default '"a1"' s1
   [ "$(decision)" = "deny" ]
   [[ "$(reason)" == *直ちに作業を終えて親に返す* ]] || return 1
-  # continue: false を返すかは実機確認（tasks 1.4）の結果で決める
+  # 実機確認で、子の中の continue: false は子だけを終わらせ、親は続けると確かめた（design.md「実機確認の結果」）
+  python3 -c '
+import json, sys
+o = json.loads(sys.stdin.read())
+assert o["continue"] is False, o
+assert isinstance(o.get("stopReason"), str) and o["stopReason"], o' <<<"$output"
 }
 
 @test "child count: another child counts from one" {
@@ -817,4 +822,28 @@ assert "if" not in h, h
 assert h["type"] == "command"
 assert h["command"] == '"${CLAUDE_PLUGIN_ROOT}/scripts/git-destructive-guard.sh"', h["command"]
 PY
+}
+
+# --- エージェント定義と規則（spec: 子の定義に検証用 repo の戻し方を書く／ルール本文と hook の分担） ---
+
+@test "agents: reviewer, worker and gate-runner say to rebuild scratchpad repos instead of git" {
+  local f body
+  for f in reviewer worker gate-runner; do
+    body="$(awk 'BEGIN{n=0} /^---$/{n++; next} n>=2' "${PLUGIN_DIR}/agents/${f}.md")"
+    printf '%s' "$body" | grep -F 'scratchpad' | grep -F '作り直す' | grep -qF 'git の破壊的操作' \
+      || { echo "missing in ${f}.md"; return 1; }
+  done
+}
+
+@test "rules: destructive-git-guard.md says subagents are denied without a screen and return to the parent" {
+  local rule="${PLUGIN_DIR}/../../rules/destructive-git-guard.md"
+  local sec
+  sec="$(awk '/^## hook との分担/{f=1; next} /^## /{f=0} f' "$rule")"
+  printf '%s' "$sec" | grep -F 'サブエージェント' | grep -F '確認画面を出さず' | grep -F '打ち直さず' | grep -qF '親に返る'
+  ! grep -qF 'DEV_WORKFLOW_GIT_GUARD_FORCE' "$rule"
+}
+
+@test "rules: README row for destructive-git-guard.md mentions subagents" {
+  grep -F '| `destructive-git-guard.md` |' "${PLUGIN_DIR}/../../rules/README.md" \
+    | grep -F 'サブエージェント' | grep -F '確認画面を出さず' | grep -qF '親に返る'
 }

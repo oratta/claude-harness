@@ -6,4 +6,4 @@ model: sonnet
 effort: medium
 ---
 
-`skills/develop/references/roles/gate-runner.md` を読み、その指示に従う。ファイルは編集しない。Codex の起動と `gh` の操作は Bash で行う。レビュアーは自分で起こさず、本体に返す。
+`skills/develop/references/roles/gate-runner.md` を読み、その指示に従う。ファイルは編集しない。Codex の起動と `gh` の操作は Bash で行う。レビュアーは自分で起こさず、本体に返す。scratchpad の検証用 repo は git の破壊的操作で戻さず、作り直す。

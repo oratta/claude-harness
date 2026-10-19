@@ -23,7 +23,8 @@
 # 返す値: payload の agent_id が空でない文字列（サブエージェントからの呼び出し）なら、permission_mode にも
 #   DEV_WORKFLOW_GIT_GUARD_FORCE にもよらず deny（親は子の確認画面に応答できないため）。子への拒否の回数は
 #   ${TMPDIR:-/tmp}/dev-workflow-git-guard/<sha256(session_id + NUL + agent_id)> に数え、2 回目以降は
-#   直ちに親に返すよう理由文を強める（数えられなければ 1 回目として扱い、deny は必ず返す）。
+#   直ちに親に返すよう理由文を強め、continue: false で子を打ち切る（数えられなければ 1 回目として扱い、
+#   deny は必ず返す）。
 #   それ以外（主の呼び出し）は、permission_mode が default / acceptEdits / plan / bypassPermissions なら ask
 #   （対話セッションでは確認画面が出て主が承認できる。claude -p では確認できず実行されない。どちらも実機で
 #   確認済み）、それ以外（dontAsk・auto・未知・欠落）は deny。DEV_WORKFLOW_GIT_GUARD_FORCE=ask|deny は
@@ -797,10 +798,16 @@ else:
 tail = "言い換えたコマンドや別の書き方で再実行して、この確認を避けてはならない。"
 if is_child:
     tail = ""
-print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
-                                          "permissionDecision": decision,
-                                          "permissionDecisionReason": head + body + tail}},
-                 ensure_ascii=False))
+out = {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                              "permissionDecision": decision,
+                              "permissionDecisionReason": head + body + tail}}
+if is_child and deny_count >= 2:
+    # 子の中で continue: false を返すと子だけが終わり、親は続ける（実機で確認済み。
+    # openspec/changes/subagent-git-guard-deny/design.md「実機確認の結果」）
+    out["continue"] = False
+    out["stopReason"] = ("[dev-workflow git-destructive-guard] 同じサブエージェントが破壊的 git 操作で 2 回以上"
+                         "拒否されたので、この子の作業を打ち切った。")
+print(json.dumps(out, ensure_ascii=False))
 PY
 if [ -z "$PY_SRC" ]; then
   # 本体を読めなかった（ヒアドキュメントの一時ファイルを作れない等）。空の本体を python3 に渡すと

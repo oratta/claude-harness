@@ -26,7 +26,7 @@ hook の payload には、子から呼ばれたとき `agent_id` が入る。`pl
 
 - `FORCE` より先に置く理由: `FORCE=ask` は実機確認のための上書きで、それが残ったセッションで子が起きると、今回と同じく子が確認画面で止まる。子には `ask` を返す場面が無いので、上書きを効かせる必要が無い
 - `DEV_WORKFLOW_GIT_GUARD=off` は子でも全許可のまま（無人運用の逃げ道。シェル側で python3 より前に抜ける今の形を変えない）
-- `agent_id` が無い・文字列でない・空のときは主の呼び出しとして今までどおり扱う。Claude Code の版によって子の payload に `agent_id` が入らない場合は今の振る舞い（`ask`）に戻るだけで、今より悪くならない
+- `agent_id` が無い・文字列でない・空のときは主の呼び出しとして今までどおり扱う。Claude Code の版によって子の payload に `agent_id` が入らない場合は主の呼び出しとして `permission_mode` と `DEV_WORKFLOW_GIT_GUARD_FORCE` の規則に従う今の振る舞いに戻るだけで、今より悪くならない
 
 ### 拒否した回数は一時ディレクトリに `agent_id` ごとのファイルで数える
 
@@ -66,3 +66,13 @@ reviewer / worker / gate-runner の定義の本文に「scratchpad の検証用 
 - 子が本当に破壊的操作を必要とする場面（主が子に `git branch -D` を任せた、など）でも子では実行できず、親か主が打つことになる。今も確認画面で止まって進まないので、実行できないこと自体は変わらず、止まらずに返る分だけ良くなる
 - 同じ子が並列の Bash 呼び出しで同時に拒否されると、回数の読み書きが重なって 2 回とも 1 回目と数えることがある。起きても打ち切りが 1 回遅れるだけで、拒否は返る
 - 再開をまたいで回数が続くので、前の工程で 1 回拒否された子は、次の工程で 1 回目の破壊的操作から打ち切られる（上の判断）。打ち切られても子は親に返るだけで、作業は親が引き継げる
+
+## 実機確認の結果
+
+2026-10-20、Claude Code 2.1.303 で確かめた。親は `claude -p --setting-sources project,local --plugin-dir <worktree>/plugins/dev-workflow --permission-mode bypassPermissions --model sonnet`、子は `general-purpose`（`model: haiku`）。`TMPDIR` は実験ごとに scratchpad の空のディレクトリに向け、子には scratchpad の使い捨て repo で `git -C <repo> checkout -- <file>` を打たせた。`--setting-sources project,local` を付けたのは、主の常時注入のルール（`rules/destructive-git-guard.md`）が載っていると、子が hook に当たる前に自分の判断で打たずに返り、hook を確かめられなかったため。
+
+- **1 回目の拒否**: 子の Bash に hook の `deny` が返り（確認画面では止まらない）、子は打ち直さずに拒否理由を報告して親に返り、親は目印の行 `PARENT-CONTINUED` を出力した。回数のファイルが `TMPDIR/dev-workflow-git-guard/` の下に 1 つ作られ中身は `1` だったので、子の payload に `agent_id` が入っていることも確かめた
+- **2 回目の拒否で `continue: false` を返す版**（scratchpad に複製したプラグインで、2 回目以降の出力に `"continue": false` と `stopReason` を足したもの）: 子に拒否されても別のファイルでもう一度打つよう指示した。2 回目の拒否で子はその場で終わり、親は子の結果を受け取って `PARENT-CONTINUED` を出力した。前景で起こした子でも、`run_in_background: true` で起こした子でも同じだった。最後に、この worktree の実装（2 回目以降に `continue: false` を返す）でも前景の子で同じ結果を確かめた
+- 子が `continue: false` で打ち切られたとき、親が受け取る子の結果は `(Subagent completed but returned no output.)` だけで、拒否理由も `stopReason` も親には届かない。バックグラウンドの子は SendMessage で再開すれば報告を書き直せた（再開後は破壊的操作を打たないので回数は増えない）
+
+**決めた方**: 子の中の `continue: false` は子だけを終わらせ親は続けると確かめたので、spec のとおり 2 回目以降の拒否で出力のトップレベルに `"continue": false` と `stopReason` を含める。
