@@ -72,6 +72,9 @@ case "$1 $2" in
     cat "$STUB_CFG/rm_err" >&2 2>/dev/null
     exit "$(cat "$STUB_CFG/rm_exit" 2>/dev/null || echo 0)" ;;
   "terminal close")
+    cc=$(( $(cat "$STUB_CFG/closecount" 2>/dev/null || echo 0) + 1 ))
+    echo "$cc" > "$STUB_CFG/closecount"
+    if [ -e "$STUB_CFG/close_exit_$cc" ]; then exit "$(cat "$STUB_CFG/close_exit_$cc")"; fi
     exit "$(cat "$STUB_CFG/close_exit" 2>/dev/null || echo 0)" ;;
   "terminal list")
     issue=""
@@ -1933,15 +1936,46 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^orca .*--force')" -eq 0 ]
 }
 
-@test "reap: a failing terminal close keeps the worktree" {
+@test "reap: a terminal close that keeps failing is retried once, then keeps the worktree and tells the owner what to do" {
   reap_ready
   echo aaa111 > "$STUB_CFG/branch_tip"
   echo 1 > "$STUB_CFG/close_exit"
+  export EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT=0
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "kept 11 close-failed" ]
+  [ "$(calls '^orca terminal close')" -eq 2 ]
+  [ "$(calls '^orca terminal list --worktree path:.*issue-11 --json')" -eq 1 ]
   [ "$(calls '^orca worktree rm')" -eq 0 ]
   [ "$(calls '^git branch -D')" -eq 0 ]
+  grep -qF 'issue-11' "$BATS_TEST_TMPDIR/stderr"
+  grep -qF 'epic-dispatch.sh reap 11' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "reap: a first incomplete terminal close is retried after the wait and the child is reaped" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  echo 1 > "$STUB_CFG/close_exit_1"
+  echo 0 > "$STUB_CFG/close_exit_2"
+  export EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT=0
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11" ]
+  [ "$(calls '^orca terminal close')" -eq 2 ]
+  [ "$(calls '^orca terminal list --worktree path:.*issue-11 --json')" -eq 1 ]
+  [ "$(calls '^orca worktree rm')" -eq 1 ]
+}
+
+@test "reap: the retry waits EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT seconds between the two closes" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  echo 1 > "$STUB_CFG/close_exit_1"
+  export EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT=2
+  run dispatch reap 11
+  [ "$output" = "reaped 11" ]
+  [ "$(calls '^sleep 2$')" -eq 1 ]
+  # 待ちは 1 回目の close と 2 回目の close の間に入る
+  [ "$(first_line '^sleep 2$')" -gt "$(first_line '^orca terminal close')" ]
 }
 
 @test "reap: a failing worktree rm keeps the branch" {
