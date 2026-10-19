@@ -743,3 +743,12 @@ refute() {
   grep -qF 'EPIC_DISPATCH_RELAUNCH_IDLE_SEC' "$f"
   grep -qF 'EPIC_DISPATCH_RELAUNCH_MIN_TOKENS' "$f"
 }
+
+@test "skill: step 7 drops a pending child whose pass on the epic matches the latest stop record" {
+  p="$(grep -E '^7\. `回し方: Orca`' "$SKILL")"
+  printf '%s\n' "$p" | grep -qF 'エピックのコメントの `親の判断: 子 #N 通した`'
+  printf '%s\n' "$p" | grep -qF '停止の記録の URL が子の最新の `子の停止: 主の返事待ち` の URL と一致'
+  printf '%s\n' "$p" | grep -qF '再報告から外す'
+  row="$(grep -E '^\| 主の返事待ちの子 \|' "$PLUGIN_DIR/skills/develop/references/reply-after-idle.md")"
+  printf '%s\n' "$row" | grep -qF '`親の判断: 子 #N 通した`'
+}
