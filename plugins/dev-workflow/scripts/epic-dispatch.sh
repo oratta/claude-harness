@@ -110,7 +110,9 @@
 #   `git ls-remote origin refs/heads/${EPIC_DISPATCH_BASE:-main}` のリモートの今の先端に含まれる子は通す。
 #   手元の追跡参照は使わない。理由は pr-lookup-failed / issue-lookup-failed / base-lookup-failed /
 #   unmerged-commits / git-failed）、
-#   の順に確かめ、全部通れば `orca terminal close --all` → `orca worktree rm`（--force なし・再試行なし。
+#   の順に確かめ、全部通れば `orca terminal close --all`（失敗したら `orca terminal list` を stderr に出し
+#   EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT 秒・既定 10 待って 1 回だけ閉じ直す。それでも失敗なら rm せず
+#   `kept <N> close-failed` と stderr に主がする操作）→ `orca worktree rm`（--force なし・再試行なし。
 #   stderr に `terminal sweep failed` を含む失敗は `kept <N> rm-failed-terminal-sweep`）→
 #   残ったローカルブランチは先端が HEAD と同じときだけ、ワークツリーが `git worktree list` から外れるのを
 #   上限つきで待って（EPIC_DISPATCH_REAP_DETACH_TIMEOUT 秒・既定 30、_INTERVAL 秒・既定 1）`git branch -D`。stdout は子ごとに
@@ -936,7 +938,19 @@ cmd_reap() {
         esac
       fi
     fi
-    orca terminal close --worktree "path:$path" --all >&2 || { echo "kept $n close-failed"; continue; }
+    # 端末の閉じが失敗したら（子のターンが終わっておらず terminal_close_incomplete になることがある）、
+    # 原因の手がかりに端末の一覧を stderr に出し、待ってから 1 回だけ閉じ直す。それでも駄目なら主の操作に回す
+    if ! orca terminal close --worktree "path:$path" --all >&2; then
+      cw="${EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT:-10}"
+      case "$cw" in ''|*[!0-9]*) cw=10 ;; esac
+      echo "terminal close was incomplete for #$n; listing terminals, waiting ${cw}s and retrying once" >&2
+      orca terminal list --worktree "path:$path" --json >&2 || true
+      sleep "$cw"
+      if ! orca terminal close --worktree "path:$path" --all >&2; then
+        echo "owner action for #$n: open the workspace $path in Orca, wait for the child's running turn to end or close its terminals by hand, then run: epic-dispatch.sh reap $n" >&2
+        echo "kept $n close-failed"; continue
+      fi
+    fi
     # --force は付けない（確認のあとに増えた未コミットの変更があれば rm が止まる）
     # 端末の片付けの失敗（stderr に terminal sweep failed）は別の理由で返す。再試行もしない
     rmerr="$(mktemp)" || { echo "kept $n rm-failed"; continue; }
