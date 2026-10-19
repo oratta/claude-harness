@@ -118,6 +118,16 @@
 #   上限つきで待って（EPIC_DISPATCH_REAP_DETACH_TIMEOUT 秒・既定 30、_INTERVAL 秒・既定 1）`git branch -D`。stdout は子ごとに
 #   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。
 #   current / list を読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
+# pending-owner: 読み取り専用。子ごとに、同じ repoId・linkedIssue が <N>・archive されていないワークツリーの
+#   comment が epic-stopped-seen（親が受けたまま、子が mark resumed を付けていない）のものがあれば
+#   `pending <N>` を 1 行ずつ出して exit 0（orca worktree set は呼ばない）。起動し直した親が、主の返事待ちの子を
+#   出し直す対象を集める。一覧を読めなければ stdout 空で exit 1
+# wait --resolve が通す返事は、送る前に references/reply-after-idle.md の表で起動し直すかを決める:
+#   子のトランスクリプト（${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl、
+#   ちょうど 1 本）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前で、
+#   その assistant より後に compact_boundary が無く、subagent-context.sh --file の context_tokens が
+#   EPIC_DISPATCH_RELAUNCH_MIN_TOKENS（既定 150000）以上のときだけ --relaunch 相当。読めなければそのまま送る。
+#   2 つの変数が空か数字でなければ wait は使い方を出して exit 1
 # 引数の誤り（launch は epic か子が無い、wait は子も --watch-done も 0 件（--watch-stopped だけも含む）、
 #   mark の種別（done / waiting / stopped / resumed 以外）・引数の数、
 #   reap は子が 0 件、番号が数字でない、フラグ値の誤り）は
@@ -144,6 +154,7 @@ usage:
   epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
   epic-dispatch.sh reap <child>...
+  epic-dispatch.sh pending-owner <child>...
 EOF
   exit 1
 }
@@ -655,6 +666,49 @@ repost_hint() {
   echo "comment not posted to #$1. post it again: gh issue comment $1 --body $(shq "$2")" >&2
 }
 
+# 通す返事を起動し直して送るかを決める（<子のワークツリーのパス>）。起動し直すなら 1、そのまま送るなら 0 を出す。
+# 事実を 1 つでも読めなければ 0（references/reply-after-idle.md の表の「扱いが揺れる子」と同じ）
+decide_relaunch() {
+  local path="$1" dir files count file facts last compacted now ctx
+  local idle="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC:-3600}" min="${EPIC_DISPATCH_RELAUNCH_MIN_TOKENS:-150000}"
+  dir="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}/$(printf '%s' "$path" | sed 's/[^A-Za-z0-9]/-/g')"
+  files="$(ls -1 "$dir"/*.jsonl 2>/dev/null)"
+  [ -n "$files" ] || { echo 0; return 0; }
+  count="$(printf '%s\n' "$files" | wc -l | tr -d ' ')"
+  [ "$count" -eq 1 ] || { echo 0; return 0; }
+  file="$files"
+  command -v python3 >/dev/null 2>&1 || { echo 0; return 0; }
+  facts="$(FILE="$file" python3 - <<'PY' 2>/dev/null
+import json, os, datetime
+last = None; idx_a = -1; idx_c = -1
+with open(os.environ["FILE"], encoding="utf-8") as f:
+    for i, line in enumerate(f):
+        try:
+            d = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(d, dict):
+            continue
+        if d.get("type") == "assistant" and isinstance(d.get("timestamp"), str):
+            last = d["timestamp"]; idx_a = i
+        elif d.get("subtype") == "compact_boundary":
+            idx_c = i
+if last is None:
+    raise SystemExit(1)
+t = datetime.datetime.fromisoformat(last.replace("Z", "+00:00")).timestamp()
+print(int(t), 1 if idx_c > idx_a else 0)
+PY
+)" || { echo 0; return 0; }
+  last="${facts%% *}"; compacted="${facts##* }"
+  is_num "$last" || { echo 0; return 0; }
+  [ "$compacted" = 0 ] || { echo 0; return 0; }
+  now="$(date +%s)"
+  [ $((now - last)) -ge "$idle" ] || { echo 0; return 0; }
+  ctx="$("$(dirname "$0")/subagent-context.sh" --file "$file" --cap 2147483647 2>/dev/null | jq -r '.context_tokens // empty' 2>/dev/null)"
+  is_num "$ctx" || { echo 0; return 0; }
+  [ "$ctx" -ge "$min" ] && echo 1 || echo 0
+}
+
 # wait --resolve: 止まった子 1 件を判断のコマンドに渡し、結果どおりに送るか子 issue に残す
 # （<epic> <child> <repoId>）。agent_setup を済ませてから呼ぶ。
 # 戻り値 0 = 通して返事を送り、エピックに 1 行残した（出力から外す）/ 2 = 通して送ったが
@@ -662,7 +716,7 @@ repost_hint() {
 resolve_stopped() {
   local epic="$1" n="$2" repo="$3"
   local judge="${EPIC_DISPATCH_JUDGE:-$(dirname "$0")/stop-judge.sh}"
-  local out rc l1 l2 l3 l4 reason="" reply="" url="" why="" res line body
+  local out rc l1 l2 l3 l4 reason="" reply="" url="" why="" res line body rl wpath
   local head1="親の判断: 判断できなかった"
   out="$("$judge" "$epic" "$n")"; rc=$?
   l1="$(printf '%s\n' "$out" | sed -n 1p)"
@@ -686,7 +740,11 @@ resolve_stopped() {
   elif [ -z "$reply" ]; then
     why="判断は通すだが、返事の行が空"
   else
-    res="$(deliver_reply 0 parent "$epic" "$n" "$reply" "$repo")"
+    rl=0
+    wpath="$(orca worktree list --json 2>/dev/null | jq -r --arg r "$repo" --arg n "$n" \
+      '[.result.worktrees[]? | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true) | .path] | if length == 1 then .[0] else empty end' 2>/dev/null)"
+    [ -z "$wpath" ] || rl="$(decide_relaunch "$wpath")"
+    res="$(deliver_reply "$rl" parent "$epic" "$n" "$reply" "$repo")"
     case "$res" in
       "sent $n"|"relaunched $n")
         # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに通していない判断が残る）
@@ -738,7 +796,11 @@ cmd_wait() {
   [ "$#" -ge 1 ] || watchstop=0
   # --resolve は --watch-stopped（子 1 件以上）のときだけ働く。返事の送り方の設定は待つ前に確かめる
   [ "$watchstop" -eq 1 ] || resolve=""
-  if [ -n "$resolve" ]; then agent_setup "$resolve" || usage; fi
+  if [ -n "$resolve" ]; then
+    agent_setup "$resolve" || usage
+    is_num "${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}" || { echo "EPIC_DISPATCH_RELAUNCH_IDLE_SEC must be a non-negative integer" >&2; usage; }
+    is_num "${EPIC_DISPATCH_RELAUNCH_MIN_TOKENS-150000}" || { echo "EPIC_DISPATCH_RELAUNCH_MIN_TOKENS must be a non-negative integer" >&2; usage; }
+  fi
 
   local repo="" current list
   if [ -n "$watch" ] || [ "$watchstop" -eq 1 ]; then
@@ -844,6 +906,30 @@ EOF_PATHS
     fi
     sleep "$interval"
   done
+}
+
+# pending-owner: 受けた印（epic-stopped-seen）のままの子を出す。読み取り専用
+cmd_pending_owner() {
+  [ "$#" -ge 1 ] || usage
+  check_children "$@"
+  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
+  command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
+  local current repo list n
+  current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
+  repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
+  [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+  if ! list="$(orca worktree list --json)" \
+    || ! printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1; then
+    echo "orca worktree list --json is not readable" >&2
+    exit 1
+  fi
+  for n in "$@"; do
+    if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$n" \
+      '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true and .comment == "epic-stopped-seen")] | length > 0' >/dev/null 2>&1; then
+      echo "pending $n"
+    fi
+  done
+  exit 0
 }
 
 # 完了の印が付き、安全確認を全部通った子だけ、端末を閉じてワークツリーとローカルブランチを消す。
@@ -1012,5 +1098,6 @@ case "$sub" in
   wait) cmd_wait "$@" ;;
   mark) cmd_mark "$@" ;;
   reap) cmd_reap "$@" ;;
+  pending-owner) cmd_pending_owner "$@" ;;
   *) usage ;;
 esac
