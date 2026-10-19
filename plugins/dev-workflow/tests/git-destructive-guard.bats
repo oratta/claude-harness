@@ -658,7 +658,7 @@ PY
 @test "child count: first deny does not cut the child off" {
   call 'git checkout -- a' default '"a1"' s1
   [ "$(decision)" = "deny" ]
-  ! has_continue
+  ! has_continue || return 1
   [[ "$(reason)" != *直ちに作業を終えて親に返す* ]] || return 1
 }
 
@@ -680,7 +680,7 @@ assert isinstance(o.get("stopReason"), str) and o["stopReason"], o' <<<"$output"
   call 'git checkout -- a' default '"a1"' s1
   call 'git checkout -- a' default '"a2"' s1
   [ "$(decision)" = "deny" ]
-  ! has_continue
+  ! has_continue || return 1
   [[ "$(reason)" != *直ちに作業を終えて親に返す* ]] || return 1
 }
 
@@ -725,7 +725,7 @@ assert isinstance(o.get("stopReason"), str) and o["stopReason"], o' <<<"$output"
 @test "child count: unset or empty TMPDIR falls back to /tmp, not to tempfile's search" {
   # 実際の /tmp には書かずに、置き場所の決め方だけを本文で確かめる
   grep -qF 'os.environ.get("TMPDIR") or "/tmp"' "$SCRIPT"
-  ! grep -qF 'gettempdir(' "$SCRIPT"
+  ! grep -qF 'gettempdir(' "$SCRIPT" || return 1
 }
 
 @test "child count: the main session is not counted" {
@@ -733,10 +733,10 @@ assert isinstance(o.get("stopReason"), str) and o["stopReason"], o' <<<"$output"
   for i in 1 2; do
     call 'git reset --hard' auto
     [ "$(decision)" = "deny" ]
-    ! has_continue
+    ! has_continue || return 1
     call 'git reset --hard' auto '""'
     [ "$(decision)" = "deny" ]
-    ! has_continue
+    ! has_continue || return 1
   done
   [ ! -e "$TMPDIR/dev-workflow-git-guard" ]
 }
@@ -840,7 +840,7 @@ PY
   local sec
   sec="$(awk '/^## hook との分担/{f=1; next} /^## /{f=0} f' "$rule")"
   printf '%s' "$sec" | grep -F 'サブエージェント' | grep -F '確認画面を出さず' | grep -F '打ち直さず' | grep -qF '親に返る'
-  ! grep -qF 'DEV_WORKFLOW_GIT_GUARD_FORCE' "$rule"
+  ! grep -qF 'DEV_WORKFLOW_GIT_GUARD_FORCE' "$rule" || return 1
 }
 
 @test "rules: README row for destructive-git-guard.md mentions subagents" {
