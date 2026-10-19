@@ -30,3 +30,14 @@ R1・G・レビュアーのように再開しない役が空で返ったとき�
 
 - 報告の書き直しは子のコンテキストを 1 往復分増やす。1 回に限るので上限は小さい
 - SendMessage で再開した子の報告が、打ち切りの理由を正しく書く保証は無い。そのため、差分の確認は報告に頼らずに行う
+
+## 実機確認の結果
+
+2026-10-20、Claude Code 2.1.303 で確かめた。親は `claude -p --setting-sources project,local --plugin-dir <worktree>/plugins/dev-workflow --permission-mode bypassPermissions --model sonnet`、子は `general-purpose`（`model: haiku`、`name` 付き）。`TMPDIR` は実験ごとに scratchpad の空のディレクトリに向け、子には scratchpad の使い捨て repo で `checkout -- a.txt` と `checkout -- b.txt`（どちらも `-C <repo>` 付きの git）を打たせた。親には、子の結果が `(Subagent completed but returned no output.)` だけなら SendMessage で報告を求めるよう指示し、最後に目印の行 `PARENT-CONTINUED` を出力させた。
+
+- 子に「拒否されたら打ち直せ」と指示する形では、haiku も sonnet も hook の文面に従って 2 回目を打たず、打ち切りに至らなかった。そこで 2 つの Bash 呼び出しを同じメッセージで並列に発行させ、2 回拒否させた
+- **バックグラウンド指定あり（`run_in_background: true`）**: 回数のファイルは `2`。子は打ち切られ、親には結果本文のない完了通知だけが届いた。親が SendMessage で報告を求めると、子は何をしようとして何が拒否されたか、2 回の拒否で打ち切られたこと、repo が変わっていないことを報告に書き直した。親は `PARENT-CONTINUED` を出力した
+- **既定の起こし方（`run_in_background` を指定しない）**: 回数のファイルは `2`。親には同じく結果本文のない完了通知だけが届き（完了通知が非同期に届いたので、既定でもバックグラウンドで返る）、SendMessage で同様の報告を取り直せた。親は `PARENT-CONTINUED` を出力した
+- 使い捨て repo の作業ツリーは両方とも変わっていない（拒否されたため）
+
+**決めた方**: 既定の起こし方でも報告を取り直せたので、SKILL.md の W 起動指示に `run_in_background` の指定は足さない。
