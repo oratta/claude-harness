@@ -20,10 +20,15 @@
 #   git push --force 系（dry-run を除く）・git branch -D ・--no-verify / git commit -n ・--no-gpg-sign
 #   dry-run は、後ろの --no-dry-run で打ち消されていないものだけを指す。
 #
-# 返す値: permission_mode が default / acceptEdits / plan / bypassPermissions なら ask（対話セッションでは
-#   確認画面が出て主が承認できる。claude -p では確認できず実行されない。どちらも実機で確認済み）、それ以外
-#   （dontAsk・auto・未知・欠落）は deny。DEV_WORKFLOW_GIT_GUARD_FORCE=ask|deny は
-#   実機確認と bats のための上書き（恒久設定にしない）。
+# 返す値: payload の agent_id が空でない文字列（サブエージェントからの呼び出し）なら、permission_mode にも
+#   DEV_WORKFLOW_GIT_GUARD_FORCE にもよらず deny（親は子の確認画面に応答できないため）。子への拒否の回数は
+#   ${TMPDIR:-/tmp}/dev-workflow-git-guard/<sha256(session_id + NUL + agent_id)> に数え、2 回目以降は
+#   直ちに親に返すよう理由文を強め、continue: false で子を打ち切る（数えられなければ 1 回目として扱い、
+#   deny は必ず返す）。
+#   それ以外（主の呼び出し）は、permission_mode が default / acceptEdits / plan / bypassPermissions なら ask
+#   （対話セッションでは確認画面が出て主が承認できる。claude -p では確認できず実行されない。どちらも実機で
+#   確認済み）、それ以外（dontAsk・auto・未知・欠落）は deny。DEV_WORKFLOW_GIT_GUARD_FORCE=ask|deny は
+#   実機確認と bats のための上書き（恒久設定にしない。子には効かない）。
 # DEV_WORKFLOW_GIT_GUARD=off で全許可（セッションの起動時の環境に入れる。コマンドの前置きでは効かない）。
 #
 # fail-open: python3 が無い・payload が読めない・Bash 以外・command が文字列でないときは何も出さず exit 0。
@@ -49,7 +54,7 @@ esac
 # -I（隔離モード）で起動し、PYTHON* の環境変数・ユーザー site・カレントディレクトリを検索パスに使わない。
 PY_SRC=""
 IFS= read -r -d '' PY_SRC <<'PY' || true
-import json, os, re, sys
+import hashlib, json, os, re, sys
 
 try:
     payload = json.load(sys.stdin)
@@ -722,11 +727,51 @@ except TooMuch:
 if kinds is not None and not kinds:
     sys.exit(0)
 
-forced = (os.environ.get("DEV_WORKFLOW_GIT_GUARD_FORCE") or "").strip()
-if forced in ("ask", "deny"):
-    decision = forced
+# 子（サブエージェント）の呼び出しは agent_id が空でない文字列（context-tripwire.sh と同じ判定）。
+# 親は子の確認画面に応答できず、子が止まっていることも分からないので、子には ask を返さない。
+# FORCE より先に見る: FORCE=ask が残ったセッションで子が起きても確認画面で止めないため。
+agent_id = payload.get("agent_id")
+is_child = isinstance(agent_id, str) and agent_id != ""
+
+
+def count_child_deny(agent_id):
+    """この子（session_id と agent_id の組）への拒否の回数を 1 足して返す。数えられなければ 1。"""
+    session_id = payload.get("session_id")
+    if not isinstance(session_id, str):
+        session_id = ""
+    # tempfile の一時ディレクトリ探しは書き込めない TMPDIR を黙って飛ばして別の候補に書くので使わない
+    base = os.environ.get("TMPDIR") or "/tmp"
+    d = os.path.join(base, "dev-workflow-git-guard")
+    name = hashlib.sha256((session_id + "\0" + agent_id).encode("utf-8", "surrogatepass")).hexdigest()
+    f = os.path.join(d, name)
+    n = 0
+    try:
+        with open(f) as fh:
+            n = int(fh.read().strip())
+        if n < 0:
+            n = 0
+    except Exception:
+        n = 0
+    n += 1
+    try:
+        os.makedirs(d, exist_ok=True)
+        with open(f, "w") as fh:
+            fh.write(str(n))
+    except Exception:
+        return 1
+    return n
+
+
+deny_count = 0
+if is_child:
+    decision = "deny"
+    deny_count = count_child_deny(agent_id)
 else:
-    decision = "ask" if payload.get("permission_mode") in ("default", "acceptEdits", "plan", "bypassPermissions") else "deny"
+    forced = (os.environ.get("DEV_WORKFLOW_GIT_GUARD_FORCE") or "").strip()
+    if forced in ("ask", "deny"):
+        decision = forced
+    else:
+        decision = "ask" if payload.get("permission_mode") in ("default", "acceptEdits", "plan", "bypassPermissions") else "deny"
 
 if kinds is None:
     head = ("[dev-workflow git-destructive-guard] git を含むコマンドの入れ子（bash -c / eval / $(...) の重なり）が"
@@ -736,7 +781,14 @@ else:
     found = "、".join(LABELS[k] for k in ORDER if k in kinds)
     head = ("[dev-workflow git-destructive-guard] 破壊的 git 操作を検出した: " + found + "。"
             "規範の正本は rules/destructive-git-guard.md（破壊的操作は例外なく事前承認）。")
-if decision == "deny":
+if is_child:
+    # 子には主向けの案内（確認画面・! を付けて打つ）を書かない。主に上げるのは親の役目
+    body = ("このコマンドは実行されない。打ち直さず、別の書き方も試さないこと。scratchpad の検証用 repo を"
+            "戻したいだけなら、git で戻さず作り直す。それ以外は作業を止め、何を・なぜ実行したかったかを"
+            "報告に書いて親に返す。")
+    if deny_count >= 2:
+        body += "この子への拒否は 2 回目以降なので、直ちに作業を終えて親に返す。"
+elif decision == "deny":
     body = ("このコマンドは実行していない。何を・なぜ・いつ実行するかを示して主に承認を求め、承認されたら"
             "主が自分で実行する（Claude Code の入力欄で ! を付けて打つか、自分の端末で）。")
 else:
@@ -744,10 +796,18 @@ else:
             "確認画面が出ないセッション（claude -p など）ではこのコマンドは実行されないので、主に承認を求め、"
             "承認されたら主が自分で実行する（Claude Code の入力欄で ! を付けて打つか、自分の端末で）。")
 tail = "言い換えたコマンドや別の書き方で再実行して、この確認を避けてはならない。"
-print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
-                                          "permissionDecision": decision,
-                                          "permissionDecisionReason": head + body + tail}},
-                 ensure_ascii=False))
+if is_child:
+    tail = ""
+out = {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                              "permissionDecision": decision,
+                              "permissionDecisionReason": head + body + tail}}
+if is_child and deny_count >= 2:
+    # 子の中で continue: false を返すと子だけが終わり、親は続ける（実機で確認済み。
+    # openspec/changes/archive/2026-10-19-subagent-git-guard-deny/design.md「実機確認の結果」）
+    out["continue"] = False
+    out["stopReason"] = ("[dev-workflow git-destructive-guard] 同じサブエージェントが破壊的 git 操作で 2 回以上"
+                         "拒否されたので、この子の作業を打ち切った。")
+print(json.dumps(out, ensure_ascii=False))
 PY
 if [ -z "$PY_SRC" ]; then
   # 本体を読めなかった（ヒアドキュメントの一時ファイルを作れない等）。空の本体を python3 に渡すと

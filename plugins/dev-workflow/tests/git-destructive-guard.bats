@@ -9,27 +9,42 @@ setup() {
   SCRIPT="${PLUGIN_DIR}/scripts/git-destructive-guard.sh"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
   unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE
+  # 子への拒否の回数は TMPDIR の下に数える。テストごとの空のディレクトリに向けて隔離する
+  export TMPDIR="${BATS_TEST_TMPDIR}/tmp"
+  mkdir -p "$TMPDIR"
 }
 
-# payload <command> [permission_mode] — Bash の payload を JSON で出力する。
-# permission_mode に "-" を渡すとキー自体を省く。
+# payload <command> [permission_mode] [agent_id] [session_id] — Bash の payload を JSON で出力する。
+# permission_mode に "-" を渡すとキー自体を省く。agent_id は JSON の値で渡す（'"a1"' / '""' / '7'）。
+# agent_id と session_id は省くか "-" を渡すとキー自体を省く（主の呼び出し）。
 # コマンド文字列は長くなりうる（深い入れ子で数十万字）。Linux は引数 1 つの長さに上限（128 KiB）があるので、
 # 引数や環境変数ではなく、シェル組み込みの printf から標準入力で渡す。
 payload() {
   printf '%s' "$1" | python3 -c '
 import json, sys
-cmd, mode = sys.stdin.read(), sys.argv[1]
+cmd, mode, agent, session = sys.stdin.read(), sys.argv[1], sys.argv[2], sys.argv[3]
 p = {"tool_name": "Bash", "tool_input": {"command": cmd}, "hook_event_name": "PreToolUse"}
 if mode != "-":
     p["permission_mode"] = mode
-print(json.dumps(p))' "${2:-default}"
+if agent != "-":
+    p["agent_id"] = json.loads(agent)
+if session != "-":
+    p["session_id"] = session
+print(json.dumps(p))' "${2:-default}" "${3:--}" "${4:--}"
 }
 
-# call <command> [permission_mode]
+# call <command> [permission_mode] [agent_id] [session_id]
 call() {
   local json
-  json="$(payload "$1" "${2:-default}")"
+  json="$(payload "$1" "${2:-default}" "${3:--}" "${4:--}")"
   run "$SCRIPT" <<<"$json"
+}
+
+# has_continue — 出力のトップレベルに continue のキーがあれば真
+has_continue() {
+  python3 -c '
+import json, sys
+sys.exit(0 if "continue" in json.loads(sys.stdin.read()) else 1)' <<<"$output"
 }
 
 # decision — 出力の permissionDecision を出す（JSON でなければ空）
@@ -565,6 +580,167 @@ ${shallow}
   echo "$r" | grep -qF 'force'
 }
 
+# --- 子（サブエージェント）からの呼び出し ---
+
+@test "child: deny even in modes that show the confirmation screen" {
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  call 'git checkout -- a' bypassPermissions '"a2"' s1
+  [ "$(decision)" = "deny" ]
+}
+
+@test "child: force env ask does not apply" {
+  local json
+  json="$(payload 'git checkout -- a' default '"a1"' s1)"
+  run env DEV_WORKFLOW_GIT_GUARD_FORCE=ask "$SCRIPT" <<<"$json"
+  [ "$(decision)" = "deny" ]
+}
+
+@test "child: empty or non-string agent_id is treated as the main session" {
+  call 'git checkout -- a' default '""' s1
+  [ "$(decision)" = "ask" ]
+  call 'git checkout -- a' default '7' s1
+  [ "$(decision)" = "ask" ]
+}
+
+@test "child: off still lets everything pass" {
+  local json
+  json="$(payload 'git reset --hard' default '"a1"' s1)"
+  run env DEV_WORKFLOW_GIT_GUARD=off "$SCRIPT" <<<"$json"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "child reason: tells the child to return to the parent" {
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  local r
+  r="$(reason)"
+  echo "$r" | grep -qF '作業の破棄'
+  echo "$r" | grep -qF 'rules/destructive-git-guard.md'
+  echo "$r" | grep -qF '実行されない'
+  echo "$r" | grep -qF '打ち直さず'
+  echo "$r" | grep -qF 'scratchpad'
+  echo "$r" | grep -qF '作り直す'
+  echo "$r" | grep -qF '何を・なぜ'
+  echo "$r" | grep -qF '親に返す'
+  [[ "$r" != *確認画面* ]] || return 1
+  [[ "$r" != *'! を付けて'* ]] || return 1
+  [[ "$r" != *DEV_WORKFLOW_GIT_GUARD* ]] || return 1
+}
+
+@test "child reason: undecidable nesting keeps the head and uses the child tail" {
+  # 判定の仕事量の上限を超える形（"shell syntax: a command that cannot be judged ..." と同じ組み立て）
+  local k deep='git status'
+  for k in $(seq 1000); do
+    deep="bash -c \"\$(cat <<EOF
+x
+EOF
+${deep}
+)\""
+  done
+  printf '%s' "$deep" >|"${BATS_TEST_TMPDIR}/deep.txt"
+  run python3 - "$SCRIPT" "${BATS_TEST_TMPDIR}/deep.txt" <<'PY'
+import json, subprocess, sys
+p = json.dumps({"tool_name": "Bash", "permission_mode": "default", "agent_id": "a1", "session_id": "s1",
+                "tool_input": {"command": open(sys.argv[2]).read()}})
+r = subprocess.run([sys.argv[1]], input=p, capture_output=True, text=True, timeout=10)
+print(r.stdout)
+PY
+  [ "$(decision)" = "deny" ]
+  local r
+  r="$(reason)"
+  echo "$r" | grep -qF '判定しきれなかった'
+  echo "$r" | grep -qF '親に返す'
+  [[ "$r" != *確認画面* ]] || return 1
+}
+
+@test "child count: first deny does not cut the child off" {
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  ! has_continue || return 1
+  [[ "$(reason)" != *直ちに作業を終えて親に返す* ]] || return 1
+}
+
+@test "child count: second deny for the same child returns a stronger reason" {
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  call 'git checkout -- b' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" == *直ちに作業を終えて親に返す* ]] || return 1
+  # 実機確認で、子の中の continue: false は子だけを終わらせ、親は続けると確かめた（design.md「実機確認の結果」）
+  python3 -c '
+import json, sys
+o = json.loads(sys.stdin.read())
+assert o["continue"] is False, o
+assert isinstance(o.get("stopReason"), str) and o["stopReason"], o' <<<"$output"
+}
+
+@test "child count: another child counts from one" {
+  call 'git checkout -- a' default '"a1"' s1
+  call 'git checkout -- a' default '"a2"' s1
+  [ "$(decision)" = "deny" ]
+  ! has_continue || return 1
+  [[ "$(reason)" != *直ちに作業を終えて親に返す* ]] || return 1
+}
+
+@test "child count: same agent_id in another session counts from one" {
+  call 'git checkout -- a' default '"a1"' s1
+  call 'git checkout -- a' default '"a1"' s2
+  [[ "$(reason)" != *直ちに作業を終えて親に返す* ]] || return 1
+}
+
+@test "child count: file name is a hash, not the raw ids" {
+  call 'git checkout -- a' default '"../x"' s1
+  [ "$(decision)" = "deny" ]
+  local f
+  f="$(ls "$TMPDIR/dev-workflow-git-guard")"
+  [[ "$f" =~ ^[0-9a-f]{64}$ ]] || { echo "name=$f"; return 1; }
+  [ "$(cat "$TMPDIR/dev-workflow-git-guard/$f")" = "1" ]
+}
+
+@test "child count: still denies when the count cannot be written" {
+  chmod 500 "$TMPDIR"
+  call 'git checkout -- a' default '"a1"' s1
+  local d1="$(decision)" r1="$(reason)"
+  call 'git checkout -- a' default '"a1"' s1
+  local d2="$(decision)" r2="$(reason)"
+  chmod 700 "$TMPDIR"
+  [ "$d1" = "deny" ]
+  [ "$d2" = "deny" ]
+  [[ "$r2" != *直ちに作業を終えて親に返す* ]] || return 1
+  [ ! -e "$TMPDIR/dev-workflow-git-guard" ]
+}
+
+@test "child count: a broken count file is treated as the first deny" {
+  call 'git checkout -- a' default '"a1"' s1
+  local f
+  f="$(ls "$TMPDIR/dev-workflow-git-guard")"
+  printf 'x' >| "$TMPDIR/dev-workflow-git-guard/$f"
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" != *直ちに作業を終えて親に返す* ]] || return 1
+}
+
+@test "child count: unset or empty TMPDIR falls back to /tmp, not to tempfile's search" {
+  # 実際の /tmp には書かずに、置き場所の決め方だけを本文で確かめる
+  grep -qF 'os.environ.get("TMPDIR") or "/tmp"' "$SCRIPT"
+  ! grep -qF 'gettempdir(' "$SCRIPT" || return 1
+}
+
+@test "child count: the main session is not counted" {
+  local i
+  for i in 1 2; do
+    call 'git reset --hard' auto
+    [ "$(decision)" = "deny" ]
+    ! has_continue || return 1
+    call 'git reset --hard' auto '""'
+    [ "$(decision)" = "deny" ]
+    ! has_continue || return 1
+  done
+  [ ! -e "$TMPDIR/dev-workflow-git-guard" ]
+}
+
 # --- 逃げ道と fail-open ---
 
 @test "off: everything passes" {
@@ -646,4 +822,28 @@ assert "if" not in h, h
 assert h["type"] == "command"
 assert h["command"] == '"${CLAUDE_PLUGIN_ROOT}/scripts/git-destructive-guard.sh"', h["command"]
 PY
+}
+
+# --- エージェント定義と規則（spec: 子の定義に検証用 repo の戻し方を書く／ルール本文と hook の分担） ---
+
+@test "agents: reviewer, worker and gate-runner say to rebuild scratchpad repos instead of git" {
+  local f body
+  for f in reviewer worker gate-runner; do
+    body="$(awk 'BEGIN{n=0} /^---$/{n++; next} n>=2' "${PLUGIN_DIR}/agents/${f}.md")"
+    printf '%s' "$body" | grep -F 'scratchpad' | grep -F '作り直す' | grep -qF 'git の破壊的操作' \
+      || { echo "missing in ${f}.md"; return 1; }
+  done
+}
+
+@test "rules: destructive-git-guard.md says subagents are denied without a screen and return to the parent" {
+  local rule="${PLUGIN_DIR}/../../rules/destructive-git-guard.md"
+  local sec
+  sec="$(awk '/^## hook との分担/{f=1; next} /^## /{f=0} f' "$rule")"
+  printf '%s' "$sec" | grep -F 'サブエージェント' | grep -F '確認画面を出さず' | grep -F '打ち直さず' | grep -qF '親に返る'
+  ! grep -qF 'DEV_WORKFLOW_GIT_GUARD_FORCE' "$rule" || return 1
+}
+
+@test "rules: README row for destructive-git-guard.md mentions subagents" {
+  grep -F '| `destructive-git-guard.md` |' "${PLUGIN_DIR}/../../rules/README.md" \
+    | grep -F 'サブエージェント' | grep -F '確認画面を出さず' | grep -qF '親に返る'
 }
