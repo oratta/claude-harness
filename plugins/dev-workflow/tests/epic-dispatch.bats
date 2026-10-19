@@ -2581,7 +2581,7 @@ orca_doc_violations() {
   grep -E '^\| 親 \|' "$f" | grep -qF '未設定のときだけ'
   grep -E '^\| 親 \|' "$f" | grep -qF 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000'
   run grep -F '=100000' "$f"; [ "$status" -eq 1 ]
-  run grep -E '^\| 親 \| 100,000' "$f"; [ "$status" -eq 1 ]
+  run grep -F '100,000' "$f"; [ "$status" -eq 1 ]
   grep -qF 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS' "$f"
   grep -F 'settings.json' "$f" | grep -qF '置かない'
 }
