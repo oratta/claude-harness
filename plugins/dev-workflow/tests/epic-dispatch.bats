@@ -3023,3 +3023,211 @@ resolve_ready() {
   [ "$(calls '^gh ')" -eq 0 ]
   [ "$(calls '^judge')" -eq 0 ]
 }
+
+# spec: dev-workflow-develop（Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る）
+CLOSED_STOP_URL="https://github.com/o/r/issues/11#issuecomment-7"
+CLOSED_MSG_HEAD="親エピック #400 の判断（主の承認ではない）: 記録先の issue #11 は completed で閉じた。完了報告を書き、mark done で終える"
+
+# 子 11 が completed で閉じ、ワークツリーのコメント欄が <comment>（既定 epic-stopped-seen）・
+# workspaceStatus が <status>（既定 in-review）で、端末が 1 つある環境
+closed_ready() {
+  make_stub orca
+  set_current 400
+  gh_seq 11 "closed completed https://github.com/o/r/issues/11"
+  gh_seq comments "$CLOSED_STOP_URL"
+  set_list list_json "$(wt_entry 11 "${2-in-review}" repo-a::/work/parent repo-a false "${1-epic-stopped-seen}")"
+  set_terms 11 term-a-11
+}
+
+# 子に何も送らず、どこにも投稿していない
+nothing_sent() {
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^gh issue comment')" -eq 0 ]
+}
+
+@test "notify-closed: a child closed as completed with the stopped mark gets the reply and the epic gets the line" {
+  for mark in epic-stopped-seen epic-stopped; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+    closed_ready "$mark"
+    run dispatch notify-closed 400 11
+    [ "$status" -eq 0 ] || { echo "mark=$mark status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+    [ "$output" = "notified 11" ]
+    [ "$(cat "$STUB_CFG/sent_term-a-11")" = "${CLOSED_MSG_HEAD}（停止の記録: ${CLOSED_STOP_URL}）" ]
+    [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 記録先が completed で閉じたので、完了報告と mark done を促した $CLOSED_STOP_URL" ]
+    [ "$(first_line '^orca terminal send')" -lt "$(first_line '^gh issue comment 400')" ]
+    [ ! -e "$STUB_CFG/comment_11" ]
+    [ "$(calls '^gh issue comment')" -eq 1 ]
+  done
+}
+
+@test "notify-closed: the stop record is read only from trusted authors' stop comments" {
+  closed_ready
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 0 ]
+  line="$(grep -F 'issues/11/comments' "$STUB_LOG")"
+  case "$line" in *OWNER*MEMBER*COLLABORATOR*) ;; *) echo "$line"; false ;; esac
+}
+
+@test "notify-closed: without a stop record the child issue URL is used" {
+  closed_ready
+  gh_seq comments ""
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "notified 11" ]
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "${CLOSED_MSG_HEAD}（停止の記録: https://github.com/o/r/issues/11）" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 記録先が completed で閉じたので、完了報告と mark done を促した https://github.com/o/r/issues/11" ]
+}
+
+@test "notify-closed: no terminal relaunches the child, and --relaunch closes the terminals first" {
+  closed_ready
+  set_terms 11
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "notified 11" ]
+  s="$(cat "$STUB_CFG/sent_term-11")"
+  starts_with "$s" "/develop #11 "
+  case "$s" in *"$CLOSED_MSG_HEAD"*) ;; *) echo "sent: $s"; false ;; esac
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 記録先が completed で閉じたので、完了報告と mark done を促した $CLOSED_STOP_URL" ]
+
+  : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_*
+  closed_ready
+  run dispatch notify-closed --relaunch 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "notified 11" ]
+  [ "$(calls '^orca terminal close')" -eq 1 ]
+  [ "$(first_line '^orca terminal close')" -lt "$(first_line '^orca terminal create')" ]
+  starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
+}
+
+@test "notify-closed: a child that is not stopped gets nothing" {
+  for mark in "" epic-resumed; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
+    closed_ready "$mark"
+    run dispatch notify-closed 400 11
+    [ "$status" -eq 0 ] || { echo "mark=$mark status=$status output=$output"; false; }
+    [ "$output" = "skipped 11 not-stopped" ]
+    nothing_sent
+  done
+}
+
+@test "notify-closed: a child that already marked done gets nothing" {
+  closed_ready epic-stopped-seen completed
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 already-done" ]
+  nothing_sent
+}
+
+@test "notify-closed: a child closed as not planned or still open gets nothing and orca is not asked" {
+  closed_ready epic-stopped
+  gh_seq 11 "closed not_planned https://github.com/o/r/issues/11"
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 not-completed" ]
+  nothing_sent
+  [ "$(calls '^orca worktree list')" -eq 0 ]
+
+  : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
+  gh_seq 11 "open  https://github.com/o/r/issues/11"
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 not-closed" ]
+  nothing_sent
+}
+
+@test "notify-closed: a child without a worktree gets nothing" {
+  closed_ready
+  set_list list_json "$(wt_entry 12 in-review repo-a::/work/parent repo-a false epic-stopped)" \
+    "$(wt_entry 11 in-review repo-a::/work/parent repo-a true epic-stopped)" \
+    "$(wt_entry 11 in-review repo-a::/work/parent repo-b false epic-stopped)"
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 no-worktree" ]
+  nothing_sent
+}
+
+@test "notify-closed: two worktrees, an unreadable list or a failing gh is failed" {
+  closed_ready
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)" \
+    "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 ambiguous-worktree" ]
+  nothing_sent
+
+  : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
+  closed_ready
+  echo 1 > "$STUB_CFG/list_exit"
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 list" ]
+  nothing_sent
+  rm -f "$STUB_CFG/list_exit"
+
+  : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
+  closed_ready
+  gh_seq 11 FAIL
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 issue" ]
+  nothing_sent
+}
+
+@test "notify-closed: a sent reply that cannot be posted on the epic is unrecorded with the repost command" {
+  closed_ready
+  echo 1 > "$STUB_CFG/comment_exit_400"
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "unrecorded 11" ]
+  grep -F 'gh issue comment 400' "$BATS_TEST_TMPDIR/stderr" | grep -qF '親の判断: 子 #11 通した'
+}
+
+@test "notify-closed: a failing send is failed and nothing is posted on the epic" {
+  closed_ready
+  echo 1 > "$STUB_CFG/send_exit_term-a-11"
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 send" ]
+  [ "$(calls '^gh issue comment')" -eq 0 ]
+}
+
+@test "notify-closed: wrong arguments print usage and call neither orca nor gh" {
+  make_stub orca
+  for args in "400 abc" "400" "abc 11" "400 11 12" "--force 400 11" ""; do
+    # shellcheck disable=SC2086
+    run dispatch notify-closed $args
+    [ "$status" -eq 1 ] || { echo "args=$args status=$status"; false; }
+    [ -z "$output" ]
+    grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  done
+  EPIC_DISPATCH_SUBMIT_WAIT=x run dispatch notify-closed 400 11
+  [ "$status" -eq 1 ]
+  [ "$(calls '^orca')" -eq 0 ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "skill: Orca route step 4 nudges a stopped child closed as completed with notify-closed" {
+  r="$(run_section)"
+  l4="$(printf '%s\n' "$r" | grep -E '^4\. ')"
+  printf '%s\n' "$l4" | grep -F '`completed`' | grep -qF 'scripts/epic-dispatch.sh notify-closed'
+  printf '%s\n' "$l4" | grep -F 'references/reply-after-idle.md' | grep -qF -- '--relaunch'
+  printf '%s\n' "$l4" | grep -F '`unrecorded <N>`' | grep -qF '投稿し直しのコマンド'
+  printf '%s\n' "$l4" | grep -F '`failed <N> <段>`' | grep -qF '主に報告'
+  printf '%s\n' "$l4" | grep -qF '`completed` 以外の子には `notify-closed` を呼ばない'
+  printf '%s\n' "$r" | grep -F '主がすること: なし' | grep -qF '`notify-closed` の `failed` の報告'
+}
+
+@test "skill: Orca route step 4 calls notify-closed before launching the unblocked children" {
+  # 後続の子の launch が failed を返すと親は手順 6 で止まり、再開の手順 7 も notify-closed を呼ばない。
+  # launch より後ろに書くと閉じた子に送られないまま残るので、手順 4 の中で launch より先に現れること
+  r="$(run_section)"
+  l4="$(printf '%s\n' "$r" | grep -E '^4\. ')"
+  [ -n "$l4" ]
+  n="$(printf '%s' "$l4" | awk '{ print index($0, "scripts/epic-dispatch.sh notify-closed") }')"
+  l="$(printf '%s' "$l4" | awk '{ print index($0, "解けた子を件数にかかわらず `launch`") }')"
+  [ "$n" -gt 0 ]
+  [ "$l" -gt 0 ]
+  [ "$n" -lt "$l" ]
+  printf '%s\n' "$l4" | grep -qF '`launch` が `failed` を返しても'
+}
