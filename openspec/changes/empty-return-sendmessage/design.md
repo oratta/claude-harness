@@ -1,6 +1,6 @@
 ## Context
 
-`continue: false` で打ち切られた子の結果は、親には `(Subagent completed but returned no output.)` だけで届く（#1108 の実機確認。`openspec/changes/archive/2026-10-19-subagent-git-guard-deny/design.md`「実機確認の結果」）。W は名前付きで起こして SendMessage で再開する設計なので、報告を求める経路が既にある。実機で SendMessage により報告を取り直せたのはバックグラウンドで起こした子である。develop の本体は W を名前付きで起こし、Agent はバックグラウンドで返るので、W はこの前提を満たす。R1・G など再開しない役は段ごとに新しく起こす。
+`continue: false` で打ち切られた子の結果は、親には `(Subagent completed but returned no output.)` だけで届く（#1108 の実機確認。`openspec/changes/archive/2026-10-19-subagent-git-guard-deny/design.md`「実機確認の結果」）。W は名前付きで起こして SendMessage で再開する設計なので、報告を求める経路が既にある。実機で SendMessage により報告を取り直せたのはバックグラウンドで起こした子である。ただし現行の SKILL.md の W 起動指示に `run_in_background: true` の指定は無く、W が確認済みの前提を満たす根拠は「名前付きで起こした Agent の子は SendMessage で再開でき、develop 本体の環境では既定でバックグラウンドで返る」という見立てに依る。この見立ては弱いので、実機確認（tasks 2.2）で `run_in_background: true` の子に加えて、指定しない既定の起こし方（W と同じ起こし方）の子でも報告を取り直せるかを確かめ、結果を design 末尾に記録する。既定の起こし方で取り直せなければ、SKILL.md の W 起動指示にバックグラウンド指定を足すかを、その結果を見て決める。R1・G など再開しない役は段ごとに新しく起こす。
 
 この change の対象は W だけにする。issue の受け入れ条件も実機確認も W 相当の子を想定している。R1・G・レビュアーが空で返ったときは範囲外とし、既存の手渡しの許可条件（空の return は `工程中断:` 扱いで、停止確認などの条件を満たすまで新しい役を起こさない）に従う。
 
