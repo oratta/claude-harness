@@ -2326,8 +2326,8 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$r" | grep -qF '子 #N のローカルブランチを残した'
   printf '%s\n' "$r" | grep -F 'not-done' | grep -qF '待ちを続ける'
   printf '%s\n' "$r" | grep -F '`kept <N> not-done` は待ちを続ける' | grep -qF 'wt-clean は呼ばず'
-  ! printf '%s\n' "$r" | grep -qF 'オーナーの判断に残し'
-  ! printf '%s\n' "$r" | grep -qF '手で消し直さない'
+  ! printf '%s\n' "$r" | grep -qF 'オーナーの判断に残し' || return 1
+  ! printf '%s\n' "$r" | grep -qF '手で消し直さない' || return 1
   l="$(printf '%s\n' "$r" | grep '^3\. ')"
   printf '%s\n' "$l" | grep -qF 'git -C <path> status --porcelain'
   printf '%s\n' "$l" | grep -qF '<path>/LLM'
