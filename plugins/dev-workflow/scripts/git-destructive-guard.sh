@@ -803,7 +803,7 @@ out = {"hookSpecificOutput": {"hookEventName": "PreToolUse",
                               "permissionDecisionReason": head + body + tail}}
 if is_child and deny_count >= 2:
     # 子の中で continue: false を返すと子だけが終わり、親は続ける（実機で確認済み。
-    # openspec/changes/subagent-git-guard-deny/design.md「実機確認の結果」）
+    # openspec/changes/archive/2026-10-19-subagent-git-guard-deny/design.md「実機確認の結果」）
     out["continue"] = False
     out["stopReason"] = ("[dev-workflow git-destructive-guard] 同じサブエージェントが破壊的 git 操作で 2 回以上"
                          "拒否されたので、この子の作業を打ち切った。")
