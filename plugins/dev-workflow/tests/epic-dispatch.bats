@@ -2042,16 +2042,15 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
 
 @test "reap: a child off by one condition is kept with the reason" {
   p="$BATS_TEST_TMPDIR/work/issue-11"
-  for c in not-done head-mismatch dirty llm-logs not-child; do
+  for c in not-done head-mismatch dirty llm-logs; do
     rm -rf "$STUB_CFG" "$p"; mkdir -p "$STUB_CFG"; : > "$STUB_LOG"
     printf '%s\n' '/work/parent' > "$STUB_CFG/toplevel"
     reap_ready
     case "$c" in
-      not-done) set_list list_json "$(wt_entry 11 in-review)" ;;
+      not-done) put_record 11 status=running ;;
       head-mismatch) echo bbb222 > "$STUB_CFG/head" ;;
       dirty) echo ' M a.txt' > "$STUB_CFG/status_out" ;;
       llm-logs) mkdir -p "$p/LLM" ;;
-      not-child) set_list list_json "$(wt_entry 11 completed repo-a::/work/other)" ;;
     esac
     echo aaa111 > "$STUB_CFG/branch_tip"
     run dispatch reap 11
@@ -2063,21 +2062,17 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   done
 }
 
-@test "reap: a main worktree, a failing git status, and a detached HEAD are kept" {
+@test "reap: a failing git status and a record without a branch are kept" {
   reap_ready
-  p="$BATS_TEST_TMPDIR/work/issue-11"
-  set_list list_json "$(wt_entry 11 completed | sed 's/"isMainWorktree":false/"isMainWorktree":true/')"
-  run dispatch reap 11
-  [ "$output" = "kept 11 not-child" ]
-  set_list list_json "$(wt_entry 11 completed)"
   echo 128 > "$STUB_CFG/status_exit"
   run dispatch reap 11
   [ "$output" = "kept 11 git-failed" ]
   rm -f "$STUB_CFG/status_exit"
-  set_list list_json "$(wt_entry 11 completed | sed 's#"branch":"refs/heads/oratta/issue-11"#"branch":""#')"
+  put_record 11 status=done branch=
   run dispatch reap 11
   [ "$output" = "kept 11 no-branch" ]
   [ "$(calls '^orca worktree rm')" -eq 0 ]
+  [ -e "$(rec_of 1122 11)" ]
 }
 
 @test "reap: no merged PR or a failing PR lookup keeps the child" {
@@ -2100,17 +2095,68 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$output" = "reaped 11" ]
 }
 
-@test "reap: a child with no worktree is gone, two candidates are ambiguous" {
+@test "reap: a child without a record or without its worktree directory is gone, two records are ambiguous" {
   reap_ready
-  set_list list_json
+  rm -f "$(rec_of 1122 11)"
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "gone 11" ]
-  [ "$(calls '^git ')" -eq 0 ]
+  [ "$(calls '^git -C')" -eq 0 ]
   [ "$(calls '^gh ')" -eq 0 ]
-  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 11 completed)"
+  put_record 11 status=done
+  rm -rf "$BATS_TEST_TMPDIR/work/issue-11"
+  run dispatch reap 11
+  [ "$output" = "gone 11" ]
+  [ ! -e "$(rec_of 1122 11)" ]
+  put_record 11 status=done worktree=
+  run dispatch reap 11
+  [ "$output" = "gone 11" ]
+  [ ! -e "$(rec_of 1122 11)" ]
+  put_record 11 status=done
+  put_record 11 status=done epic=oratta/claude-harness#900
   run dispatch reap 11
   [ "$output" = "kept 11 ambiguous" ]
+  [ -e "$(rec_of 1122 11)" ]
+  [ -e "$(rec_of 900 11)" ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+}
+
+@test "reap: a broken record is kept as state-unreadable and stays as it is" {
+  reap_ready
+  printf '{\n' >| "$(rec_of 1122 11)"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "kept 11 state-unreadable" ]
+  [ "$(cat "$(rec_of 1122 11)")" = "{" ]
+  [ "$(calls '^orca ')" -eq 0 ]
+}
+
+@test "reap: a reaped child's record is removed, and a second reap of it is gone" {
+  reap_ready
+  run dispatch reap 11
+  [ "$output" = "reaped 11" ]
+  [ ! -e "$(rec_of 1122 11)" ]
+  run dispatch reap 11
+  [ "$output" = "gone 11" ]
+}
+
+@test "reap: another parent's record is not looked at and the child is gone" {
+  reap_ready
+  put_record 11 status=done parent_worktree=/work/other
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "gone 11" ]
+  [ -e "$(rec_of 1122 11)" ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+}
+
+@test "reap: an Orca completed mark alone does not reap a running child" {
+  reap_ready
+  put_record 11 status=running
+  set_list list_json "$(wt_entry 11 completed)"
+  run dispatch reap 11
+  [ "$output" = "kept 11 not-done" ]
+  [ "$(calls '^orca worktree list')" -eq 0 ]
 }
 
 @test "reap: a branch left behind is deleted only when its tip is the PR head" {
@@ -2122,10 +2168,12 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
   [ ! -e "$STUB_CFG/branch_tip" ]
   : > "$STUB_LOG"
+  put_record 11 status=done
   echo bbb222 > "$STUB_CFG/branch_tip"
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11 branch-kept" ]
+  [ ! -e "$(rec_of 1122 11)" ]
   [ "$(calls '^git branch -D')" -eq 0 ]
 }
 
@@ -2356,7 +2404,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
 
 @test "reap: several children are judged one by one, duplicates once" {
   reap_ready
-  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 in-review)"
+  put_record 12 status=running
   run dispatch reap 11 12 11
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
@@ -2364,7 +2412,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "${lines[1]}" = "kept 12 not-done" ]
   [ "$(calls '^orca worktree rm')" -eq 1 ]
   [ "$(calls "^orca worktree rm --worktree path:$BATS_TEST_TMPDIR/work/issue-11$")" -eq 1 ]
-  [ "$(calls '^orca worktree list')" -eq 1 ]
+  [ "$(calls '^orca worktree list')" -eq 0 ]
 }
 
 @test "reap: EPIC_DISPATCH_PARENT_EPIC does not change it" {
@@ -2373,23 +2421,19 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$output" = "reaped 11" ]
 }
 
-@test "reap: an unreadable list or current worktree removes nothing and prints nothing" {
+@test "reap: no worktree to stand on or no jq removes nothing and prints nothing" {
   reap_ready
-  echo 1 > "$STUB_CFG/list_exit"
+  : >| "$STUB_CFG/toplevel"
   run dispatch reap 11
   [ "$status" -eq 1 ]
   [ -z "$output" ]
-  rm -f "$STUB_CFG/list_exit"
-  echo '{"result":{}}' > "$STUB_CFG/list_json"
-  run dispatch reap 11
-  [ "$status" -eq 1 ]
-  [ -z "$output" ]
-  echo 1 > "$STUB_CFG/current_exit"
-  run dispatch reap 11
+  printf '%s\n' '/work/parent' >| "$STUB_CFG/toplevel"
+  run dispatch_nojq reap 11
   [ "$status" -eq 1 ]
   [ -z "$output" ]
   [ "$(calls '^orca terminal close')" -eq 0 ]
   [ "$(calls '^orca worktree rm')" -eq 0 ]
+  [ -e "$(rec_of 1122 11)" ]
   rm -f "$STUB_BIN/orca"
   run dispatch reap 11
   [ "$status" -eq 1 ]
@@ -2514,7 +2558,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
 
 @test "reap: a base tip missing locally is fetched once, ls-remote runs once for two children" {
   reap_prless_ready
-  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 completed)"
+  put_record 12 status=done
   gh_seq 12 closed
   echo 1 > "$STUB_CFG/catfile_exit_1"
   run dispatch reap 11 12
@@ -2526,7 +2570,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
 
 @test "reap: a second child does not fetch again when the base tip is still missing" {
   reap_prless_ready
-  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 completed)"
+  put_record 12 status=done
   gh_seq 12 closed
   echo 1 > "$STUB_CFG/catfile_exit"
   run dispatch reap 11 12
