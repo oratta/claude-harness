@@ -165,7 +165,7 @@ SKILL.md は役割ごとのモデルを次のとおり規定しなければな�
 ### Requirement: エピックの条件・作り方・回し方・完了条件を規定する
 SKILL.md は次を規定しなければならない（MUST）。**条件**（いずれか）: 1 つのユーザーストーリーの原因が複数あり独立してマージできる PR が 2 本以上に割れる／複数の capability（openspec の spec）にまたがる／子の間に順序依存があり 1 サイクルで終わらない。**作り方**: エピック issue にユーザーストーリー・完了条件・子 issue の一覧と依存順を書き、エピック自身にコードを紐づけない（PR の `Closes` は子に向ける）。子 issue はそれ単体で実装可能な記述と測定可能な受け入れ条件を持ち、依存は `gh api .../dependencies/blocked_by` で張る。洗い出しと解決はセッションを分け、解決セッションの入口は `/develop <エピック番号>`。
 
-**回し方（経路の決め方）**: interactive の本体は子の依存グラフを読み、blocked されていない子の番号を `plugins/dev-workflow/scripts/epic-dispatch.sh route` に渡して経路を決める（MUST）。`route` が `orca` を返したとき（`orca` コマンドが PATH にあり、本体が Orca 管理のワークツリーにいる）は **Orca 経路**、`subagent` を返したときは **サブエージェント方式**で進める（MUST）。経路は `/develop <エピック番号>` の最初の開始時に 1 回決め、途中で変えてはならず（MUST NOT）、決めた経路をエピックに `回し方:` で始まる 1 行コメントで残す（MUST）。別セッションで同じエピックを再開したときは、`回し方:` で始まる最新のコメントを読んで経路を引き継ぎ、`route` をやり直してはならない（MUST NOT）。unmanned（`--unmanned`）では `route` を呼ばず、サブエージェント方式で進める（MUST。背景で待って起こされる動きが 1 サイクル 1 仕事と合わないため）。
+**回し方（経路の決め方）**: interactive の本体は子の依存グラフを読み、blocked されていない子の番号を `plugins/dev-workflow/scripts/epic-dispatch.sh route` に渡して経路を決める（MUST）。`route` が `orca` を返したとき（`orca` コマンドが PATH にあり、本体が Orca 管理のワークツリーにいる）は **Orca 経路**、`subagent` を返したときは **サブエージェント方式**で進める（MUST）。経路は `/develop <エピック番号>` の最初の開始時に 1 回決め、途中で変えてはならず（MUST NOT）、決めた経路をエピックに `回し方:` で始まる 1 行コメントで残す（MUST）。別セッションで同じエピックを再開したときは、`回し方:` で始まる最新のコメントを読んで経路を引き継ぎ、`route` をやり直してはならない（MUST NOT）。unmanned（`--unmanned`）では `route` を呼ばず、サブエージェント方式で進める（MUST。背景で待って起こされる動きが 1 サイクル 1 仕事と合わないため）。channel でも `route` を呼ばず、サブエージェント方式で進め、エピックに `回し方: サブエージェント（channel モード）` を残す（MUST）。channel の本体は、develop の手順のために別の Claude Code セッション（Orca・tmux など）を起こしてはならない（MUST NOT。別に起こしたセッションには印 `DEV_WORKFLOW_UNATTENDED` が届かず、その画面を誰も見ていないので、子が主の返事待ちで止まっても誰も気づかない）。develop の外で住人が別のセッションを起こすときの印の渡し方は、この要件の範囲に入れない（#1123）。
 
 **回し方（Orca 経路）**: 本体は `epic-dispatch.sh launch` で子ごとに Orca の子ワークツリーを作り、子は独立した Claude Code セッションとして `/develop #<N>` の 1 ループを丸ごと回す（本体は子の W / R1 / G を起こさない）。再開時も、依存が解けた open の子を `launch` に渡し、起動済みの子は `launch` の `skipped` で見分ける（同じ子を二重に起動しない）。本体は `launch` が `launched` / `skipped` を出した子を動いている子とし、`epic-dispatch.sh wait` を Bash の `run_in_background: true` で起動して待ち、終わって起こされたら出力の 1 行で次を決める。`closed` なら閉じた子ごとに `state_reason` を読み、`completed` ならエピックへ `子 #N マージ → 残り k 件` とコメントして依存グラフを読み直し、解けた子を件数にかかわらず `launch` する。`completed` 以外ならエピックへ `子 #N 見送り（<state_reason>）→ 残り k 件` とコメントし、その子を前提にしていた子を起動してはならず（MUST NOT）、ユーザーに報告する。そのあと残りの動いている子で再び `wait` する。`timeout` なら待っている子に `needs-approval` などの停止の兆候が無いかを見て、あればユーザーに報告し、報告したかどうかにかかわらず残りの動いている子で再び `wait` する。子が自分のタブでユーザーに質問して止まっている場合はこの確認では気づけないことを書く（SHALL）。`wait` の `error` と `launch` の `failed` はユーザーに報告して止まる。`launch` に失敗した子をサブエージェント方式に自動で振り替えてはならない（MUST NOT）。子セッションのモデルは `epic-dispatch.sh launch` が起動時に `cld --model` で指定し、既定は `opus` で環境変数 `EPIC_DISPATCH_MODEL` で変えられること（Claude Code の既定モデルは子に効かないこと）、コマンド部分（既定 `cld`）は環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で差し替えられ、Orca に設定したコマンドはハーネスから読めないので Orca 側のコマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変えることを書く（SHALL）。子セッションは `cld` が付ける `--dangerously-skip-permissions` で動き許可の確認画面が出ないこと（`epic-dispatch.sh` が足すのは `--model` だけであること）、マージを止めているのは develop と pr-review-gate の規則と hooks であることを書く（SHALL）。本体は子の PR を `gh pr merge` や merge API で直接マージしてはならない（MUST NOT）。子の PR のマージは、子セッションの中の人の承認か自動マージの処理（`.github/workflows/auto-merge.yml`）が行い、`human-merge` の付いた子の PR は、本体が要件「Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける」の手順で判断の印を付けたときに限って自動マージの処理がマージすることを書く（SHALL）。
 
@@ -193,8 +193,14 @@ SKILL.md は次を規定しなければならない（MUST）。**条件**（い
 - **WHEN** Orca 経路の説明を読む
 - **THEN** 子セッションのモデルは `epic-dispatch.sh launch` が `cld --model` で指定すること、既定が `opus` であること、`EPIC_DISPATCH_MODEL` で変えられること、Claude Code の既定モデルが何であっても子は指定したモデルで起動すること、コマンド部分を `EPIC_DISPATCH_CLAUDE_CMD` で差し替えられ Orca 側のコマンドを変えたら合わせて変えること、`--dangerously-skip-permissions` を付けるのは `cld` であることが書かれている
 
+#### Scenario: Orca がある環境の channel の本体がエピックを回す
+- **WHEN** `orca` が PATH にあり Orca 管理のワークツリーにいる channel の本体が `/develop <エピック番号>` を始める
+- **THEN** 本体は `route` を呼ばず、エピックに `回し方: サブエージェント（channel モード）` とコメントしてサブエージェント方式で回し、別の Claude Code セッションを起こさない
+
 ### Requirement: 実行モードと unmanned の責務分割
-SKILL.md は実行モード表（interactive / unmanned）を持ち、unmanned（`--unmanned`。loop-dev-agent の憲法 Step 3 から呼ばれる）では次を規定しなければならない（MUST）: develop の本体は憲法のメイン自身が務め、W / R1 をメインが spawn する。worktree は憲法側が用意したものを使う。1 ループのうち (0)〜(3) を回し、(3) で W が Draft PR の作成と `agent-review:pending` の付与（憲法 Step 3 の 5〜6 に相当）まで行う。(4) の G は unmanned では起こさず、憲法 Step 1（レビューモード）が次サイクル以降で担う（1 サイクル 1 仕事を維持）。複数 change に割れた場合は子 issue を作って `blocked_by` で順序付けし、そのサイクルを終える。仕様化判断の記録と仕様レビューは unmanned でも免除しない（MUST）。文言合わせの通し方（`dev-workflow-spec-review` の「仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く」Requirement）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる（SHALL）。
+SKILL.md は実行モード表（interactive / channel / unmanned）を持ち、unmanned（`--unmanned`。loop-dev-agent の憲法 Step 3 から呼ばれる）では次を規定しなければならない（MUST）: develop の本体は憲法のメイン自身が務め、W / R1 をメインが spawn する。worktree は憲法側が用意したものを使う。1 ループのうち (0)〜(3) を回し、(3) で W が Draft PR の作成と `agent-review:pending` の付与（憲法 Step 3 の 5〜6 に相当）まで行う。(4) の G は unmanned では起こさず、憲法 Step 1（レビューモード）が次サイクル以降で担う（1 サイクル 1 仕事を維持）。複数 change に割れた場合は子 issue を作って `blocked_by` で順序付けし、そのサイクルを終える。仕様化判断の記録と仕様レビューは unmanned でも免除しない（MUST）。文言合わせの通し方（`dev-workflow-spec-review` の「仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く」Requirement）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる（SHALL）。
+
+channel（画面を見ている人がいないセッションで、主とチャンネル（Discord など）だけで会話する。flatmate の住人がオーナーから開発を頼まれたときの形）は、interactive と同じ (0)〜(4) を回す（MUST。G を起こし、PR の合格まで進む）。interactive との違いは、主に聞く先と主への発言の宛先（チャンネル）・保留からの再開の案内（G の依頼文を含む）・リスク許容の受け方・エピックの回し方・主への発言の 1 行目だけで、それぞれの決まりは要件「channel モードでは主に聞くときチャンネルに送り、AskUserQuestion を呼ばない」「channel モードの保留はチャンネルの返事で再開する」「channel モードのリスク許容はチャンネルの返事を確かめられるときだけチャンネルで受ける」「エピックの条件・作り方・回し方・完了条件を規定する」（回し方の経路の決め方）「channel モードの主への発言はすべてチャンネルに送り、チャンネルでする操作を 1 行目に書く」に従う（MUST）。モードの決め方は要件「実行モードは引数・印・依頼の届き方で開始時に決める」に従う（MUST）。
 
 #### Scenario: unmanned でも文言合わせの通し方は同じ条件で当たる
 - **WHEN** SKILL.md の実行モードの節を読む
@@ -204,6 +210,10 @@ SKILL.md は実行モード表（interactive / unmanned）を持ち、unmanned�
 - **WHEN** SKILL.md の実行モード表を読む
 - **THEN** unmanned では憲法のメインが本体を務めて W / R1 を spawn し、(3) で Draft PR と `agent-review:pending` まで W が行い、G は憲法 Step 1 に委ねると書かれている
 
+#### Scenario: channel は interactive と同じ工程を回す
+- **WHEN** SKILL.md の実行モード表を読む
+- **THEN** `channel` の行があり、回す工程が (0)〜(4) で、対話の欄に「チャンネルで聞く（AskUserQuestion は使わない）」と書かれている
+
 ### Requirement: 前提環境を明記する
 SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前付き spawn・`isolation: "worktree"`・W は `subagent_type: dev-workflow:worker`、G は `subagent_type: dev-workflow:gate-runner`）と SendMessage、`gh`（issue / PR コメントとラベル、issue dependencies API）、openspec CLI（W は CLI だけで仕様化経路を進め、経路の有無は `openspec --version` で決める。opsx コマンドは本体や主が対話で使う道具で、W の経路の有無を決めない。CLI が無ければ仕様化経路が発生しない）、Codex CLI（無ければ G が `needs-reviewer` に縮退）、`orca` コマンド（エピックの子を Orca の子ワークツリーで独立セッションとして起動する。無いとき、または本体が Orca 管理外のワークツリーにいるときは、エピックをサブエージェント方式で回す）を列挙しなければならない（MUST）。
 
@@ -212,7 +222,7 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 - **THEN** Agent / SendMessage / gh / openspec CLI / Codex CLI / orca とそれぞれ無いときの縮退が書かれ、Agent の行に W と G の種別が書かれ、openspec の行に W の経路の有無を `openspec --version` で決めることが書かれ、orca の行には Orca 管理外のワークツリーにいるときもサブエージェント方式になることが書かれている
 
 ### Requirement: /develop コマンドと /work-issue エイリアス
-`plugins/dev-workflow/commands/develop.md` が存在し、`skills/develop/SKILL.md` を path-discovery で特定して Read し interactive モードでインライン実行する薄いラッパーでなければならない（MUST）。frontmatter の `allowed-tools` は Agent と SendMessage を含み、Edit を含まない（MUST。本体はコードを書かない）。`commands/work-issue.md` は `/develop` のエイリアスとして残し、同じ引数を develop の手順に渡す（MUST）。plugin.json の `skills` に `./skills/develop`、`commands` に `./commands/develop.md` と `./commands/work-issue.md` が登録されている（MUST）。
+`plugins/dev-workflow/commands/develop.md` が存在し、`skills/develop/SKILL.md` を path-discovery で特定して Read し、SKILL.md「実行モード」の決め方（要件「実行モードは引数・印・依頼の届き方で開始時に決める」）でモードを決めてインライン実行する薄いラッパーでなければならない（MUST）。印もチャンネルの依頼も無ければ interactive（既定）で実行し、`--unmanned` はこのコマンドから使わない（MUST）。引数の分岐 ②⑤ の候補の提示と issueify フォールバックの承認は、channel ではチャンネルでの質問になることをその場に書く（MUST。要件「channel モードでは主に聞くときチャンネルに送り、AskUserQuestion を呼ばない」）。frontmatter の `allowed-tools` は Agent と SendMessage を含み、Edit を含まない（MUST。本体はコードを書かない）。`commands/work-issue.md` は `/develop` のエイリアスとして残し、同じ引数を develop の手順に渡す（MUST）。plugin.json の `skills` に `./skills/develop`、`commands` に `./commands/develop.md` と `./commands/work-issue.md` が登録されている（MUST）。
 
 #### Scenario: /work-issue が /develop として動く
 - **WHEN** `/work-issue 42` を起動する
@@ -221,6 +231,10 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 #### Scenario: plugin.json の登録
 - **WHEN** `.claude-plugin/plugin.json` を読む
 - **THEN** `skills` に `./skills/develop` があり `./skills/github-issue` が無く、`commands` に `./commands/develop.md` と `./commands/work-issue.md` がある
+
+#### Scenario: モードは SKILL.md の決め方で決まる
+- **WHEN** `commands/develop.md` の実行の文を読む
+- **THEN** SKILL.md「実行モード」の決め方でモードを決めること、印もチャンネルの依頼も無ければ interactive（既定）であること、`--unmanned` をこのコマンドから使わないことが書かれている
 
 ### Requirement: コンテキスト上限の規則の本文は decision-criteria.md 1 箇所に置く
 
@@ -1046,7 +1060,7 @@ V は数ターンで終わる役なので、SendMessage で再開してはなら
 | 主への依頼 | ①で得た依頼コメントの URL（PR のコメントでもよい） |
 | 対象 | PR 番号（まだ無ければ `なし`）・HEAD の 40 桁 SHA・ブランチ・worktree のパス |
 | ラベルの付け先 | `needs-approval` を付けた先。PR があれば `PR #N`、PR がまだ無ければ記録先（`issue #N`）。コメントの記録先とは別に書く |
-| 実行モード | interactive / unmanned |
+| 実行モード | interactive / channel / unmanned |
 | 実行先 | 実行先オプションと account-home の対応（明示したときだけ。無ければ `自動選択`）と、開始済みの phase ごとの選択結果（構成・executor・account・model）が書かれたコメントの URL。最初の phase の選択結果は develop 開始コメント（`develop/SKILL.md`「Role profile の選択」）、以降の phase は dispatch 記録のコメントにある。両方書く（どちらも無ければ `なし`） |
 | 次に起こす役割 | 返事のあとに最初に起こす役割と、渡す入力の在り処 |
 | 周回 | 仕様レビューと G の周回の数・W の修正の周回の数 |
@@ -1058,11 +1072,11 @@ W の名前は書かない（新しいセッションでは SendMessage でき�
 
 **前任 W の手渡し可否**: 前任 W を後任へ手渡してよいのは、`references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」の「手渡しの許可」を満たすときだけである（MUST）。新しいセッションの本体は前任に停止を指示できないので、本体は引き継ぎを書く前に、前任 W の直近の return の 1 行目が `工程完了:` であることを確かめるか、前任が `工程中断:` なら前任に停止を指示して停止確認を受け取り、未コミット差分があれば本体が commit する（MUST。commit してから引き継ぎを書く）。いずれかを満たしたら「前任 W」の項目に `手渡し: 可（工程完了 | 停止確認済み）` と確認結果（編集ファイル・commit の SHA）を書く。どちらも満たせないとき（exit 2 で SendMessage を送れない・前任が停止確認を返さない）は `手渡し: 不可（<理由>）` と書く。W を起こしていなければ `手渡し: 不要` と書く。
 
-本体は主への依頼に「返事は新しいセッションで `/develop <記録先>` と一緒に渡す。1 時間以内に返事ができるなら、このセッションで続けてもよい」という案内を含めなければならない（MUST）。引き継ぎのコメントは、返事がいつ来るかを本体が知らないので必ず残し、どちらで続けるかは主が決める（MUST）。
+interactive の本体は主への依頼に「返事は新しいセッションで `/develop <記録先>` と一緒に渡す。1 時間以内に返事ができるなら、このセッションで続けてもよい」という案内を含めなければならない（MUST）。channel の本体はこの案内を出さず、要件「channel モードの保留はチャンネルの返事で再開する」の案内を出す（MUST）。引き継ぎのコメントは、返事がいつ来るかを本体が知らないので、どのモードでも必ず残し、どちらで続けるかは主が決める（MUST）。
 
 #### Scenario: pr-review-gate の保留で止まる
 
-- **WHEN** G が保留で返り、本体が `needs-approval` のまま主に 1 アクションで依頼する
+- **WHEN** interactive の G が保留で返り、本体が `needs-approval` のまま主に 1 アクションで依頼する
 - **THEN** 本体は依頼コメントの投稿のあとに記録先へ `引き継ぎ: 主の返事待ち` のコメントを投稿し、待ち理由に `リスク許容`・`動作確認`・`切り出しの確認` のどれかを、ラベルの付け先に `PR #N` を書き、主への案内に `/develop <記録先>` を含める
 
 #### Scenario: PR トークン上限の exit 2 で止まる
@@ -1080,18 +1094,23 @@ W の名前は書かない（新しいセッションでは SendMessage でき�
 - **WHEN** 前任 W の直近の return が `工程中断:` で、本体が保留に入る
 - **THEN** 本体は前任へ停止を指示して停止確認を受け取り、未コミット差分を commit してから引き継ぎを書き、`手渡し: 可（停止確認済み）` とする。停止確認が取れなければ `手渡し: 不可` と書く
 
+#### Scenario: channel の保留でも引き継ぎを残す
+
+- **WHEN** channel の本体が pr-review-gate の保留で止まる
+- **THEN** 本体は同じ書式の引き継ぎのコメントを `実行モード: channel` で残し、主への案内に新しいセッションを開く案内を含めない
+
 ### Requirement: 新しいセッションの本体は引き継ぎのコメントとラベルから続ける
 
 `skills/develop/SKILL.md` は、記録先に `引き継ぎ: 主の返事待ち` のコメントがある記録先で新しいセッションの本体が起動したときの再開手順を規定しなければならない（MUST）。手順は次のとおり。
 
 1. 記録先の最新の引き継ぎのコメントを読む。
-2. そのコメントより後の主の回答（記録先または対象 PR のコメント、または `/develop` の引数の残り）を探し、あれば使う。無ければ、引き継ぎの「主への依頼」を主に見せ直して返事を聞き、返事が来るまで役割を起こさない。
+2. そのコメントより後の主の回答（記録先または対象 PR のコメント、または `/develop` の引数の残り。引き継ぎの `実行モード` が `channel` のときは、このセッションが受けた `#<記録先>` を添えたチャンネルの返事も含む）を探し、あれば使う。無ければ、引き継ぎの「主への依頼」を主に見せ直して返事を聞き、返事が来るまで役割を起こさない。
 3. 引き継ぎの「ラベルの付け先」に `needs-approval` が付いていることと、対象の PR の HEAD が引き継ぎの HEAD と同じことを確かめる（ラベルはコメントの記録先ではなく、この項目の指す先で見る）。ラベルが無ければ保留は既に解かれているので、記録先のコメントから今の状態を組み立て直して主に報告する。HEAD が動いていれば、引き継ぎの HEAD からの差分を主に報告し、続けるかを聞く。
 4. W は SendMessage で再開せず、手渡し（前任の return と記録先を渡して新しい W を起こす）にする。引き継ぎの「前任 W」が `手渡し: 可` のとき、または `手渡し: 不要`（前任の W がいない。最初の W を起こす前に止まった場合など）のときに新しい W を起こす。`可` は前任の return と記録先を渡す手渡しで、`不要` は前任がいないので「次に起こす役割」の入力で初回の W を起こす。`手渡し: 不可` のときは W を起こさず、理由を主に報告して指示を聞く。G は従来どおり段ごとに新しく起こす。
 5. 実行先: 引き継ぎに明示の実行先オプションがあれば、再推測せずそのまま使う（主の返事に同じオプションが無いときは引き継ぎの値を使う）。自動選択のときは、次に起こす役割が属する phase の選択結果が引き継ぎの「実行先」の指すコメント（最初の phase は develop 開始コメント、以降は dispatch 記録）にあれば、その構成・executor・account・model を続け、選び直さない（開始済みの role は途中で切り替えない）。どちらのコメントにも選択結果が無い（未開始の）phase だけ、その phase の開始時に adapter で自動選択を評価する。
 6. PR トークン上限の計測の `--cap` には、記録先の最新の `PR トークン上限:` コメントの値を使う。
 
-**守備範囲（再開手順が通す入力と守らない入力）**: 再開手順が読む入力は、記録先のコメント（本体・G・主が書く）・主の返事（記録先または対象 PR のコメントか `/develop` の引数）・ラベル・PR の HEAD で、出どころは GitHub の記録先と PR だけである。拾いたい誤りは、引き継ぎが最新でないまま読まれること、返事が無いまま役割を起こすこと、保留が既に解かれているのに再開を進めること、HEAD が動いているのに気づかず続けること、手渡し不可の前任に代えて W を起こすことの 5 つである。通してよい入力は、項目の並び順が書式と違うコメント、値の前後の空白、返事が引数ではなく記録先か PR のコメントで来たもの、HEAD が引き継ぎと同じ PR である。守らないのは、引き継ぎの値（周回の数・要約）が事実と合っているかの検証と、主の返事の真正性（真正性は pr-review-gate 手順 5 が正本で、ここでは確かめない）である。上の 5 つ以外の入力の不備を見つけるたびに検査を足し続けることを、この要件の完了条件にしない（MUST NOT）。
+**守備範囲（再開手順が通す入力と守らない入力）**: 再開手順が読む入力は、記録先のコメント（本体・G・主が書く）・主の返事（記録先または対象 PR のコメントか `/develop` の引数）・ラベル・PR の HEAD で、出どころは GitHub の記録先と PR と、引き継ぎの `実行モード` が `channel` のときのチャンネルの返事（このセッションの会話に届いた主の発言）である（チャンネルの返事の扱いは要件「channel モードの保留はチャンネルの返事で再開する」）。拾いたい誤りは、引き継ぎが最新でないまま読まれること、返事が無いまま役割を起こすこと、保留が既に解かれているのに再開を進めること、HEAD が動いているのに気づかず続けること、手渡し不可の前任に代えて W を起こすことの 5 つである。通してよい入力は、項目の並び順が書式と違うコメント、値の前後の空白、返事が引数ではなく記録先か PR のコメントで来たもの、channel の返事がチャンネルで来たもの、HEAD が引き継ぎと同じ PR である。守らないのは、引き継ぎの値（周回の数・要約）が事実と合っているかの検証と、主の返事の真正性（真正性は pr-review-gate 手順 5 が正本で、ここでは確かめない）である。上の 5 つ以外の入力の不備を見つけるたびに検査を足し続けることを、この要件の完了条件にしない（MUST NOT）。
 
 新しいセッションの本体は、前のセッションの会話・名前付きの W への SendMessage・引き継ぎに書かれていない実行先の推測に頼ってはならない（MUST NOT）。
 
@@ -1129,6 +1148,11 @@ W の名前は書かない（新しいセッションでは SendMessage でき�
 
 - **WHEN** 自動選択で、次に起こす役割の phase の選択結果が develop 開始コメントまたは dispatch 記録にある
 - **THEN** 本体は記録の構成・executor・account・model で続け、選び直さない
+
+#### Scenario: channel の引き継ぎに返事がチャンネルで届く
+
+- **WHEN** 引き継ぎの `実行モード` が `channel` で、新しいセッションがチャンネルで `#<記録先> 確認した` を受ける
+- **THEN** 本体はそのチャンネルの返事を手順 2 の主の回答として使い、`/develop` の引数や PR のコメントを主に求めない
 
 ### Requirement: /develop の入口は引き継ぎのある記録先を再開手順へ進める
 
@@ -1502,7 +1526,7 @@ executor ごとの起こし方は次のとおりとしなければならない�
 
 ### Requirement: 保留の許容は会話の返事で受け、PR へのコメントを求めない
 
-`skills/develop/SKILL.md` の「保留で止まるときの引き継ぎ」の主への案内は、リスク許容の返事について「このセッションの会話で返すか、新しいセッションで `/develop <記録先> 許容する` と打てばよく、PR へのコメントは要らない」と書かなければならない（MUST）。本体は会話で許容の返事を受けたら、主に PR へのコメントを求めてはならず（MUST NOT）、保留の解除の G に、自分のセッション ID（`$CLAUDE_CODE_SESSION_ID`）・その発言の日時（会話ログの timestamp）・原文を渡さなければならない（MUST）。新しいセッションでの再開手順は、`/develop` の引数の残り（`許容する` など）を会話で受けた回答として扱い、その新しいセッションのセッション ID・日時・原文を同じく G に渡さなければならない（MUST）。ただし Orca 経路のエピックの子が親経由でリスク許容を受けたとき（会話に届いた入力が `主の返事（親エピック #<E> 経由）:` で始まるとき、または起動し直されたセッションの最初の指示の引数の残りのうち、起動し直しの括弧 `（エピック #<E> の子。返事を受けて起動し直し）` のうしろが `主の返事（親エピック #<E> 経由）:` で始まるとき）は、自分のセッション ID・日時・原文を渡さず、要件「親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る」の手順（`owner-reply-check.sh --relayed`）で確かめてから G に渡さなければならない（MUST）。この手順は SKILL.md の「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」に書き、再開手順の手順 2 より先に当てる。再開手順の本文は変えない（MUST）。記録の書式と真正性確認は pr-review-gate の手順 5 が正本で、SKILL.md には書式を再掲しない（MUST NOT）。（起動し直しで届いた親経由の許容の Scenario は、要件「親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る」の「起動し直しの指示に付いて届いた親経由の許容を確かめる」が正本）
+この要件の案内と、会話で受けた許容に PR へのコメントを求めない決まりは、interactive の本体のものである。channel の本体は、要件「channel モードのリスク許容はチャンネルの返事を確かめられるときだけチャンネルで受ける」と「channel モードの保留はチャンネルの返事で再開する」に従う（MUST。チャンネルの返事を確かめられるセッションでは、チャンネルの返事を会話で受けた回答として同じく PR へのコメントを求めない）。interactive の本体では、`skills/develop/SKILL.md` の「保留で止まるときの引き継ぎ」の主への案内は、リスク許容の返事について「このセッションの会話で返すか、新しいセッションで `/develop <記録先> 許容する` と打てばよく、PR へのコメントは要らない」と書かなければならない（MUST）。本体は会話で許容の返事を受けたら、主に PR へのコメントを求めてはならず（MUST NOT）、保留の解除の G に、自分のセッション ID（`$CLAUDE_CODE_SESSION_ID`）・その発言の日時（会話ログの timestamp）・原文を渡さなければならない（MUST）。新しいセッションでの再開手順は、`/develop` の引数の残り（`許容する` など）を会話で受けた回答として扱い、その新しいセッションのセッション ID・日時・原文を同じく G に渡さなければならない（MUST）。ただし Orca 経路のエピックの子が親経由でリスク許容を受けたとき（会話に届いた入力が `主の返事（親エピック #<E> 経由）:` で始まるとき、または起動し直されたセッションの最初の指示の引数の残りのうち、起動し直しの括弧 `（エピック #<E> の子。返事を受けて起動し直し）` のうしろが `主の返事（親エピック #<E> 経由）:` で始まるとき）は、自分のセッション ID・日時・原文を渡さず、要件「親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る」の手順（`owner-reply-check.sh --relayed`）で確かめてから G に渡さなければならない（MUST）。この手順は SKILL.md の「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」に書き、再開手順の手順 2 より先に当てる。再開手順の本文は変えない（MUST）。記録の書式と真正性確認は pr-review-gate の手順 5 が正本で、SKILL.md には書式を再掲しない（MUST NOT）。（起動し直しで届いた親経由の許容の Scenario は、要件「親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る」の「起動し直しの指示に付いて届いた親経由の許容を確かめる」が正本）
 
 #### Scenario: 案内に会話の返事と /develop の引数がある
 
@@ -1513,6 +1537,11 @@ executor ごとの起こし方は次のとおりとしなければならない�
 
 - **WHEN** 主が新しいセッションで `/develop 721 許容する` と打ち、記録先に引き継ぎのコメントがある
 - **THEN** 本体は `許容する` を会話で受けた回答として、新しいセッションのセッション ID・日時・原文を保留の解除の G に渡し、主に PR へのコメントを求めない
+
+#### Scenario: channel では新しいセッションの案内を出さない
+
+- **WHEN** channel の本体がリスク許容の保留で主に案内する
+- **THEN** 案内に `/develop <記録先> 許容する` と新しいセッションを開く案内が無く、チャンネルの返事を確かめられないセッションでだけ PR のコメントを案内する
 
 ### Requirement: epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける
 `plugins/dev-workflow/scripts/epic-dispatch.sh` は、サブコマンド `route`・`launch`・`wait` に加えて `mark` と `reap` を持たなければならない（MUST）。どちらも LLM を呼んではならない（MUST NOT）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち、次の 5 点に優先する。サブコマンドを `route`・`launch`・`wait` とする規定／`wait` が stdout にちょうど 1 行を出す規定／`wait` の子が 0 件なら使い方を出す規定／「失敗したポーリング」の定義（`--watch-done` が 1 つ以上あるときは、一覧の取得の失敗も失敗したポーリングに数える）／`wait` の終わり方の列挙（`closed`・`timeout`・`error gh` に、`done` と `error workspaces` が加わる）。
@@ -2822,4 +2851,123 @@ develop の SKILL.md「エピックの扱い」→「回し方」は、次を書
 #### Scenario: 枠を使っている子の数え方が書かれている
 - **WHEN** SKILL.md の回し方を読む
 - **THEN** 完了の印の子・閉じた子・主の返事待ちで止まった子を数えないことと、戻った子の分だけ一時的に上限を超えうることが書かれている
+
+### Requirement: 実行モードは引数・印・依頼の届き方で開始時に決める
+
+本体は develop を始めるときに 1 回、次の順で実行モードを決めなければならない（MUST）。
+
+1. 引数に `--unmanned` があれば unmanned
+2. セッションに印 `DEV_WORKFLOW_UNATTENDED` があるか、develop の依頼の発言がチャンネルのメッセージ（本文が `<channel source=` で始まる発言）なら channel。印の読み方は git ガード（`destructive-git-hook` の要件）と同じにする（未設定・空・`0` は印なし、それ以外は印あり。前後の空白は除いて比べる）。本体は印を Bash で読む
+3. どちらでもなければ interactive
+
+本体は決めたモードを develop 開始コメントに `実行モード: <モード>（<理由>）` の 1 行で残さなければならない（MUST。理由は `引数`・`印`・`チャンネルの依頼`・`既定` のどれか）。途中でモードを変えてはならない（MUST NOT）。新しいセッションで引き継ぎから再開するときは、引き継ぎの `実行モード` の値を使い、決め直さない（MUST）。
+
+この要件の守備範囲は、画面を見ている人のいないセッションやチャンネルで頼まれた開発が interactive になって AskUserQuestion で止まることを防ぐことである。拾いたい誤りは、印のある住人と、印が付く前でもオーナーが Discord で頼んだ住人が interactive になること。オーナーが自分の画面の前にいて Discord から頼んだセッションが channel になることは止めない（質問の届く先が変わるだけで止まらない）。印が付かず、依頼もチャンネル以外から届いた住人が interactive になることは、この要件では塞がない。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
+
+#### Scenario: 印のあるセッション
+
+- **WHEN** `DEV_WORKFLOW_UNATTENDED=1` のセッションで、引数に `--unmanned` の無い develop を始める
+- **THEN** 本体は channel に決め、develop 開始コメントに `実行モード: channel（印）` を残す
+
+#### Scenario: 印は無いがチャンネルで頼まれた
+
+- **WHEN** 印の無いセッションで、develop の依頼の発言が `<channel source="plugin:discord:discord" ...>` で始まる
+- **THEN** 本体は channel に決め、develop 開始コメントに `実行モード: channel（チャンネルの依頼）` を残す
+
+#### Scenario: 印の値が 0
+
+- **WHEN** `DEV_WORKFLOW_UNATTENDED=0` のセッションで、画面の入力欄から develop を頼まれる
+- **THEN** 本体は interactive に決める
+
+#### Scenario: SKILL.md の文面
+
+- **WHEN** SKILL.md の実行モードの節を読む
+- **THEN** 決める順（`--unmanned` → 印かチャンネルの依頼 → interactive）と、印の読み方（未設定・空・`0` は印なし）と、開始コメントの `実行モード:` の行が書かれている
+
+### Requirement: channel モードでは主に聞くときチャンネルに送り、AskUserQuestion を呼ばない
+
+channel の本体は AskUserQuestion を呼んではならない（MUST NOT）。主に聞くときは、依頼の届いたチャンネル（依頼の発言の開きタグの `chat_id`）にチャンネルの返信ツールで質問を送り、そのターンを終えなければならない（MUST）。依頼がチャンネルから届いていないときは、そのセッションの運用が決める主への連絡先に送り、連絡先が分からなければ記録先に質問をコメントして `needs-approval` を付けて止まる（MUST）。記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限）は先に PR か記録先のコメントに書き、チャンネルの質問にそのコメントのフル URL を添える（MUST）。
+
+SKILL.md の実行モードの節は、develop と develop から読む文書の「interactive は AskUserQuestion で聞く」を、channel ではこの聞き方に読むと 1 か所に書き、対象の文書（`skills/develop/references/decision-criteria.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`skills/develop/references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`skills/issueify/SKILL.md`）を、`plugins/dev-workflow/` からの相対パスの 1 つの形で挙げなければならない（MUST）。`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く。`changes/` は変更の記録で、手順として読まれない）で `AskUserQuestion` を含むファイルは、SKILL.md 自身を除いてすべて、`plugins/dev-workflow/` からの相対パスがそのまま（バッククォートで囲んだ形で）この列挙に載っていなければならず（MUST）、bats で確かめる（SHALL。読み替えを 1 か所に書く方式は、列挙が漏れると漏れた文書の本体の手順が AskUserQuestion に流れるため）。`commands/develop.md` は、引数の分岐 ②⑤ の候補の提示と issueify フォールバックの承認が channel ではチャンネルでの質問になることを、その場にも書かなければならない（MUST。本体は SKILL.md より先にこの分岐を処理するため）。
+
+この要件の守備範囲は、channel で本体が AskUserQuestion に流れる経路を develop の文面から無くすことである。拾いたい誤りは、develop の手順のどこかが channel の本体に AskUserQuestion を呼ばせること。develop 以外のスキル（wt-clean など）が AskUserQuestion を呼ぶことと、本体が文面に反して呼ぶことを機械的に止めることは、この要件の範囲に入れない。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
+
+#### Scenario: 2 周キャップ超えで選び直しが要る
+
+- **WHEN** channel の本体で、仕様レビューの直し方の判定が「選び直しが要る」になる
+- **THEN** 本体は記録先に `needs-approval` を付けて経緯をコメントし、そのコメントの URL を添えた質問を依頼の届いたチャンネルに送ってターンを終え、AskUserQuestion を呼ばない
+
+#### Scenario: 引数なしの /develop をチャンネルで頼まれた
+
+- **WHEN** channel の本体が `commands/develop.md` の分岐 ⑤（引数なし）を処理する
+- **THEN** 開いている issue の一覧と 2 つの選択肢をチャンネルに送ってターンを終え、AskUserQuestion を呼ばない
+
+#### Scenario: AskUserQuestion の経路が残っていない
+
+- **WHEN** SKILL.md と `commands/develop.md` で `AskUserQuestion` を含む行を読む
+- **THEN** その行か、実行モードの節の読み替えの規則によって、channel では AskUserQuestion を呼ばないことが読み取れる
+
+#### Scenario: AskUserQuestion に触れるファイルが列挙から漏れていない
+
+- **WHEN** bats が `plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で `AskUserQuestion` を含むファイルを集める
+- **THEN** SKILL.md 以外のすべてのファイルの `plugins/dev-workflow/` からの相対パスが、バッククォートで囲んだ形で実行モードの節の読み替えの対象の列挙に載っている
+
+### Requirement: channel モードの保留はチャンネルの返事で再開する
+
+channel の本体は、保留の主への案内を「このチャンネルで記録先の番号を添えて返事をすれば続ける（例: `#<記録先> 許容する`）」にしなければならない（MUST）。新しいセッションを開く案内と `/develop <記録先> 許容する` の案内を出してはならない（MUST NOT）。
+
+返事が同じセッションに届いたら、そのセッションで続ける（MUST）。セッションが入れ替わっていたら、`#<番号>` を添えたチャンネルの返事を受けたセッションは、develop を記録先 `<番号>` で起動し（develop の手順を読み込み、本体になる）、その記録先に `引き継ぎ: 主の返事待ち` があることを確かめてから「新しいセッションでの再開」の手順で続ける（MUST）。その手順 2 の「`/develop` の引数の残り」の代わりに、そのチャンネルの返事を会話で受けた回答として扱う（MUST）。新しいセッションが develop を読み込んでいなくても返事を受けて develop を起動できるよう、住人の運用（flatmate の CLAUDE.md など）にこの起動の案内を置くことは、変更の記録（`plugins/dev-workflow/changes/1126.md`）に flatmate 側で要る設定として書く（SHALL）。
+
+リスク許容の返事を保留の解除の G に渡すときは、返事を受けたセッションのセッション ID（`$CLAUDE_CODE_SESSION_ID`）と、そのチャンネルの発言の原文と timestamp を、このセッションの会話ログで主の発言として数えられる行（`<channel source=` で始まる、その返事の行）から取らなければならない（MUST）。本体が要約・書き直した文や、チャンネルのメッセージの別の表示から取ってはならない（MUST NOT。`owner-reply-check.sh` は会話ログの原文と timestamp で照合するため）。番号の無い返事は、このセッションが関わった開いている引き継ぎが 1 件ならそれへの返事として扱い、2 件以上ならどれへの返事かをチャンネルで聞き直す（MUST）。
+
+この要件の守備範囲は、オーナーが開けない新しいセッションを案内して保留が解けなくなることを防ぐことである。拾いたい誤りは、channel の案内に新しいセッションや `/develop` の打ち方が出ることと、入れ替わったセッションが返事をどの記録先のものか決められずに止まること。1 時間以上あいてから同じセッションで続けるときのキャッシュの代金は防がない（住人には別の経路が無い）。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
+
+#### Scenario: 同じセッションに返事が届く
+
+- **WHEN** channel の本体がリスク許容の保留で止まり、主がチャンネルで `#1126 許容する` と返す
+- **THEN** 本体は同じセッションで返事を受け、保留の解除の G を起こす前に要件「channel モードのリスク許容はチャンネルの返事を確かめられるときだけチャンネルで受ける」どおりに確かめる
+
+#### Scenario: セッションが入れ替わっていた
+
+- **WHEN** 住人のセッションが再起動され、新しいセッションがチャンネルで `#1126 許容する` を受ける
+- **THEN** そのセッションは develop を記録先 #1126 で起動し、最新の引き継ぎを読み、そのチャンネルの返事を手順 2 の回答として「新しいセッションでの再開」の手順で続け、保留の解除の G には会話ログ上のその返事の行の原文と timestamp と、このセッションのセッション ID を渡す
+
+### Requirement: channel モードのリスク許容はチャンネルの返事を確かめられるときだけチャンネルで受ける
+
+channel の本体は、モードを決めた時点でセッションの環境に `OWNER_REPLY_CHANNEL_SENDERS` があるか（空でないか）を確かめ、値を出さずに、develop 開始コメントに `チャンネルの返事の確認: 可` か `チャンネルの返事の確認: 不可（OWNER_REPLY_CHANNEL_SENDERS が無い）` を残さなければならない（MUST）。channel の本体は、G の起動指示に、実行モードの行と並べて、開始コメントと同じ値の `チャンネルの返事の確認: 可` / `チャンネルの返事の確認: 不可` の行を書かなければならない（MUST。G の依頼文の書き分けは `dev-workflow-pr-review-gate` の要件「保留処理の依頼文は新しいセッションでの再開を案内する」が正本）。
+
+可のセッションでは、リスク許容のチャンネルの返事を pr-review-gate 手順 5 の「会話で受領」として扱い、`owner-reply-check.sh` で確かめてから保留の解除の G に渡す（MUST。書式と確かめ方は pr-review-gate 手順 5 が正本）。不可のセッションでは、リスク許容の依頼に限り「PR #<N> にコメントで `許容する` と書く」と案内し、PR のフル URL を添える（MUST）。確かめられなかったときの受け直しの案内はチャンネルに送り、「ゲートと同じ PC での `/develop <記録先> 許容する`」の代わりに PR のコメントを案内する（MUST）。リスク許容以外の返事（動作確認の結果・切り出しの確認・方針の選び直し）はチャンネルの返事で進める（MAY）。
+
+この要件の守備範囲は、チャンネルの返事で確かめられないリスク許容を主に頼み、受け直しを重ねることを防ぐことである。拾いたい誤りは、`OWNER_REPLY_CHANNEL_SENDERS` の無い住人にチャンネルで許容を求めること。設定の値が正しいか（主の ID か）は確かめない（`owner-reply-check.sh` が一致しない行を数えないので、合格しない側に倒れる）。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
+
+#### Scenario: 設定が無い住人
+
+- **WHEN** `OWNER_REPLY_CHANNEL_SENDERS` の無い channel の本体がリスク許容の保留で止まる
+- **THEN** チャンネルに送る依頼の 1 行目は `主がすること: PR #<N> に` で始まり、PR のフル URL が添えられている
+
+#### Scenario: 設定がある住人
+
+- **WHEN** `OWNER_REPLY_CHANNEL_SENDERS` のある channel の本体がリスク許容の保留で止まる
+- **THEN** チャンネルに送る依頼の 1 行目は `主がすること: このチャンネルで` で始まり、返事を受けたら `owner-reply-check.sh` で確かめてから保留の解除の G に渡す
+
+### Requirement: channel モードの主への発言はすべてチャンネルに送り、チャンネルでする操作を 1 行目に書く
+
+channel の本体は、主へのすべての発言を、要件「channel モードでは主に聞くときチャンネルに送り、AskUserQuestion を呼ばない」と同じ宛先のチャンネルに送らなければならない（MUST）。質問だけでなく、質問ではない報告（再開で HEAD が動いていた・前任 W の手渡し不可・`epic-dispatch.sh` などのスクリプトの失敗・レビューの周の打ち切り・完了報告・エピックの親の報告）も含む。端末に出すだけで済ませてはならない（MUST NOT。住人の画面は誰も見ていないので、端末に出しただけの報告は誰にも読まれず、主の指示を待ったまま止まる）。それらの発言は、1 行目を `主がすること: なし`、`主がすること: このチャンネルで <何を返す>`、`主がすること: PR #<N> に <何を書く>` のどれかにしなければならない（MUST）。`PR #<N> に` の形のときは 2 行目に PR のフル URL を置く（MUST）。1 行目に画面・タブ・入力欄（`子のタブで`・`入力欄で` など）を書いてはならない（MUST NOT）。
+
+この要件の守備範囲は、チャンネルだけを見ている主が 1 行目から自分の操作を読み取れないことを防ぐことである。拾いたい誤りは、主への報告が端末に出るだけでチャンネルに届かないことと、1 行目が主の見ていない画面を指すことと、主の操作が要るのに 1 行目が無いこと。2 行目以降の説明の良し悪しと、`主がすること:` の中身の正しさは、この要件では止めない。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
+
+#### Scenario: 保留の依頼
+
+- **WHEN** channel の本体が動作確認の保留で主に依頼する
+- **THEN** チャンネルに送る発言の 1 行目は `主がすること: このチャンネルで` で始まり、何を返せばよいか（例: 「#1126 確認した」）が書かれている
+
+#### Scenario: 完了報告
+
+- **WHEN** channel の本体が PR の合格とマージ待ちを報告する
+- **THEN** 1 行目は `主がすること:` で始まり、画面やタブを指していない
+
+#### Scenario: 再開で HEAD が動いていた
+
+- **WHEN** channel の本体が新しいセッションでの再開の手順 3 で、引き継ぎの HEAD と PR の今の HEAD が違うと分かる
+- **THEN** 本体は差分の報告と続けるかの問いを、1 行目 `主がすること: このチャンネルで` で始まる発言としてチャンネルに送り、端末に出すだけで済ませない
 
