@@ -768,3 +768,33 @@ refute() {
   printf '%s\n' "$p" | grep -qF '再開しない役'
   printf '%s\n' "$p" | grep -qF '範囲外'
 }
+
+@test "skill: a denial report from W is handled by writing a permit and resuming, or escalating to the owner (#1135)" {
+  # spec: dev-workflow-develop「破壊的 git 操作の拒否の報告を受けたら、条件を満たすときだけ許可を書いて再開し、それ以外はオーナーに上げる」
+  p="$(section '1 ループ' | grep -F 'returned no output')"
+  [ -n "$p" ]
+  [ "$(printf '%s\n' "$p" | wc -l | tr -d ' ')" = 1 ]
+  # 報告の 4 項目
+  for t in 'コマンドの全文' '対象のパス' '自分で作った' 'なぜ'; do
+    printf '%s\n' "$p" | grep -qF "$t" || { echo "missing $t"; return 1; }
+  done
+  # 許可を書く条件
+  printf '%s\n' "$p" | grep -qF 'git-guard-permit.sh'
+  printf '%s\n' "$p" | grep -qF 'scratchpad の中'
+  printf '%s\n' "$p" | grep -qF '戻す'
+  printf '%s\n' "$p" | grep -qF 'git を実行しない'
+  # cwd と操作対象を同一視せず、-C の例を扱う
+  printf '%s\n' "$p" | grep -qF 'cwd'
+  printf '%s\n' "$p" | grep -qF 'git -C'
+  # 再開
+  printf '%s\n' "$p" | grep -qF '同じ W を SendMessage で再開'
+  printf '%s\n' "$p" | grep -qF '1 文字も変えず'
+  printf '%s\n' "$p" | grep -qF '15 分'
+  printf '%s\n' "$p" | grep -qF 'hook が決める'
+  printf '%s\n' "$p" | grep -qF 'コンテキスト上限（サブエージェントの手渡し）'
+  printf '%s\n' "$p" | grep -qF '転用しない'
+  # オーナーに上げる条件
+  printf '%s\n' "$p" | grep -qF '0 以外で終わった'
+  printf '%s\n' "$p" | grep -qF '再び返った'
+  printf '%s\n' "$p" | grep -qF 'オーナーが自分で実行'
+}
