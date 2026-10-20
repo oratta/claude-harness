@@ -232,7 +232,7 @@
 - **THEN** selector は `b` を選ばず、空の `securestorage` を出力し、理由行は `selected=a reason=default-due-to-missing-usage` と `margins=a:missing,b:off` を含む
 
 ### Requirement: 登録済みスロットを明示選択できる
-`select-account.sh <slot-id>` は usage snapshot を読まず、レジストリに登録されたオンのスロットの id の `securestorage` を返さなければならない（SHALL）。id が未登録、または引数が 2 個以上なら stdout に値を出さず exit 2 で終了しなければならない（SHALL）。id がオフのスロット（要件「スロットを enabled でオフにできる」）を指す場合も stdout に値を出さず exit 2 で終了し、stderr の 1 行に、その id・オフであること・戻し方（読んだレジストリファイルのパスと、そのスロットの `enabled` を `true` にするか消すこと）を含めなければならない（SHALL）。未登録の診断と同じ文面にしてはならない（MUST NOT）。登録はあるのに使えない理由と直し方が、未登録の場合と違うため。
+`select-account.sh <slot-id>` は usage snapshot を読まず、レジストリに登録されたオンのスロットの id の `securestorage` を返さなければならない（SHALL）。id が未登録、または引数が 2 個以上なら stdout に値を出さず exit 2 で終了しなければならない（SHALL）。id がオフのスロット（要件「スロットを enabled でオフにできる」）を指す場合も stdout に値を出さず exit 2 で終了し、stderr の 1 行に、その id・オフであること・戻し方（読んだレジストリファイルのパスと、`accounts.sh on <id>` を実行すること）を含めなければならない（SHALL）。未登録の診断と同じ文面にしてはならない（MUST NOT）。登録はあるのに使えない理由と直し方が、未登録の場合と違うため。
 
 #### Scenario: 登録済み id を snapshot 無しで選ぶ
 - **WHEN** 登録済み id を 1 個渡し、usage snapshot が存在しない
@@ -244,7 +244,7 @@
 
 #### Scenario: オフのスロットの明示選択を拒否する
 - **WHEN** `enabled: false` のスロットの id を 1 個渡す
-- **THEN** selector は stdout に値を出さず exit 2 になり、stderr はその id、`enabled`、レジストリファイルのパスを含む 1 行である
+- **THEN** selector は stdout に値を出さず exit 2 になり、stderr はその id、`enabled`、レジストリファイルのパス、`accounts.sh on <id>` を含む 1 行である
 
 ### Requirement: 値と選択理由を別の出力ストリームで返す
 成功時の selector は stdout に選んだ `securestorage` の実値だけを改行付きで出さなければならない（SHALL）。既定アカウントの stdout は空行とする。stderr には `selected=<id-or-sentinel> reason=<reason> margins=<entries>` の 1 行だけを出さなければならない（SHALL）。`selected` は選んだ登録スロットの実 id とし、登録されていない既定アカウントへの縮退だけは `@unregistered-default` とする。自動選択の `margins` は全登録スロットを宣言順に含み、候補は週次余裕を小数点以下 2 桁、候補外は `missing`、`five-hour>=90`、`off` のいずれかで示さなければならない（SHALL）。オフのスロットも `margins` から省いてはならない（MUST NOT）。省くと、登録したはずのスロットが選ばれない理由を理由行から読めなくなる。
@@ -279,7 +279,7 @@
 - **THEN** shell function も exit 2 で終了し、既定アカウントを含むどのアカウントでも `claude` を起動しない
 
 ### Requirement: スロットを enabled でオフにできる
-スロットの `enabled` が JSON の `false` であるとき、そのスロットは「オフ」として扱わなければならない（SHALL）。`enabled` が省略されているとき、および `true` のときは「オン」とする。`enabled` が真偽値でない（文字列の `"false"`、数値の `0`、`null` など）ときもオンとして扱わなければならず（SHALL）、そのスロットを捨ててはならない（MUST NOT）。オフにするのは利用者が明示したときだけにし、書き損じでアカウントが黙って候補から消えないようにするため。書き損じた場合はステータスラインに `off` が出ないことで気づける。この判定が扱う入力は、手で編集した `accounts.json` と `accounts-init.sh` の出力の 2 つである。`false` 以外の書き損じを見つけて報告することはこの要件の範囲外で、新しい書き損じの形が見つかっても判定を増やさない（オフになる条件は `false` との一致 1 つのままにする）。
+スロットの `enabled` が JSON の `false` であるとき、そのスロットは「オフ」として扱わなければならない（SHALL）。`enabled` が省略されているとき、および `true` のときは「オン」とする。`enabled` が真偽値でない（文字列の `"false"`、数値の `0`、`null` など）ときもオンとして扱わなければならず（SHALL）、そのスロットを捨ててはならない（MUST NOT）。オフにするのは利用者が明示したときだけにし、書き損じでアカウントが黙って候補から消えないようにするため。書き損じた場合はステータスラインに `off` が出ないことで気づける。この判定が扱う入力は、手で編集した `accounts.json`、`accounts-init.sh` の出力、`accounts.sh on|off` の出力の 3 つである。`false` 以外の書き損じを見つけて報告することはこの要件の範囲外で、新しい書き損じの形が見つかっても判定を増やさない（オフになる条件は `false` との一致 1 つのままにする）。
 
 オフのスロットは次のように扱わなければならない（SHALL）:
 
@@ -290,7 +290,7 @@
 
 オフのスロットもレジストリのスロットであり続ける。宣言順、先頭 8 個までの上限、`id` の一意性、不正なスロットの除外、active スロットの判定は、オンのスロットと同じ規則で数えなければならない（SHALL）。`CLAUDE_SECURESTORAGE_CONFIG_DIR` を手で設定してオフのスロットのアカウントで起動したセッションでは、そのスロットが active になる。`enabled` はアカウントの認証情報にも、セッション記録・snapshot に残っている値にも触れない。オンに戻せば、残っている値からそのまま再開する。
 
-レジストリを読む 5 か所（`usage_view.py`、`select-account.sh`、`usage-probe.sh`、`statusline.sh`、`accounts-init.sh`）は、この同じ意味で `enabled` を読まなければならない（SHALL）。
+レジストリを読む 6 か所（`usage_view.py`、`select-account.sh`、`usage-probe.sh`、`statusline.sh`、`accounts-init.sh`、`accounts.sh list`）は、この同じ意味で `enabled` を読まなければならない（SHALL）。
 
 #### Scenario: false だけがオフになる
 - **WHEN** `enabled` が `false`、`true`、省略、文字列 `"false"`、数値 `0`、`null` の 6 スロットを与えて読み取り処理を実行する
