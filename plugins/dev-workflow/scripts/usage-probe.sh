@@ -41,7 +41,7 @@
 #   - USAGE_PROBE_NOW:                現在 epoch を固定する（実行条件と試行時刻もこの時刻で測る）
 #   いずれかが設定されていれば全スロットがテスト経路になり、Keychain / curl は使わない。
 #   - USAGE_PROBE_USER_AGENT:         本番経路で送る User-Agent を固定する（テスト経路には切り替えない。
-#                                     既定は claude-code/<claude --version の版>）
+#                                     既定は claude-cli/<claude --version の版> (external, cli)）
 #
 # サブコマンド:
 #   --print-slots  レジストリを解決して `id<TAB>label<TAB>securestorage<TAB>service` を出力する
@@ -306,15 +306,18 @@ slot_token() {
   printf '%s' "$token"
 }
 
-# 使用量 API は User-Agent が claude-code/<版> でないリクエストを厳しい別枠で数え、
+# 使用量 API は Claude Code の User-Agent を名乗らないリクエストを厳しい別枠で数え、
 # 間隔を空けても 429 を返し続ける（2026-09 実測: 同じトークンで付けないと 429、付けると 200）。
+# さらにリセット権（cedar_ember）は、Claude Code 本体と同じ claude-cli/<版> (external, cli) で
+# ないと対象外になる（2026-10 実測: claude-code/<版> だと eligible: false・ineligible_reason "surface"、
+# claude-cli の形だと eligible: true で grants が返り、使用率も同じ呼び出しで 200）。
 # 版は照合されないとの報告があるが、実際に入っている版を名乗る。取れなければ固定値に落とす。
 user_agent="${USAGE_PROBE_USER_AGENT:-}"
 if [ -z "$user_agent" ]; then
   cc_version="$(claude --version 2>/dev/null | awk 'NR==1{print $1}' || true)"
   # 数字とドットだけの版（例: 2.1.280）以外は、出力の形が変わったとみなして固定値に落とす
   [[ "$cc_version" =~ ^[0-9]+(\.[0-9]+)+$ ]] || cc_version="2.1.0"
-  user_agent="claude-code/${cc_version}"
+  user_agent="claude-cli/${cc_version} (external, cli)"
 fi
 
 any_new=0
