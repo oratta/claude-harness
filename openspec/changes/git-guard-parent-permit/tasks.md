@@ -26,7 +26,7 @@
 - [x] 4.4 hook 側の拒否のテスト: 許可を書いたあと repo の `.git` を外の git ディレクトリへの symlink に差し替えると `deny` で理由に「許可はあるが行き先を確かめられない」・許可ファイルが消える／スクリプトを使わずに外の repo の cwd で一致する許可を `permits/` に直接書くと `deny` で同じ理由 触る範囲: plugins/dev-workflow/tests/git-destructive-guard.bats（末尾に新しい節）
 - [x] 4.5 数え直しのテスト: 拒否 1 回 → 許可 → `allow` → 別の操作の拒否が `continue` なし・「直ちに作業を終えて親に返す」なし 触る範囲: plugins/dev-workflow/tests/git-destructive-guard.bats（末尾に新しい節）
 - [x] 4.6 拒否の記録・子への理由文（記録のパスを含み、`git-guard-permit.sh` を含まない）・自己許可の拒否（子は deny、主と `cat` は無出力）・TMPDIR が違ってもスクリプトが記録の場所に書く・`permit-log.jsonl` に permit → use の順で残る、のテスト。既存の「子への理由」のテストに `git-guard-permit.sh` を含まない検査を足す 触る範囲: plugins/dev-workflow/tests/git-destructive-guard.bats:614-657（子への理由の既存テスト）、plugins/dev-workflow/tests/git-destructive-guard.bats（末尾に新しい節）
-- [ ] 4.7 `bats plugins/dev-workflow/tests/git-destructive-guard.bats` と `bats tests/injection-budget.bats` が通ることを確かめる 触る範囲: なし（実行のみ）
+- [x] 4.7 `bats plugins/dev-workflow/tests/git-destructive-guard.bats` と `bats tests/injection-budget.bats` が通ることを確かめる 触る範囲: なし（実行のみ）
 
 ## 5. 実機確認と記録
 
