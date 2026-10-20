@@ -4045,12 +4045,12 @@ resolve_pass() {
   printf '{\n' >| "$(rec_of 1122 15)"
   put_record 16 stop=stopped-seen
   put_record 16 stop=stopped-seen epic=oratta/claude-harness#900
-  before="$(cd "$EPIC_STATE_ROOT" && ls -lR | md5)"
+  before="$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)"
   run dispatch pending-owner 11 12 13 14 15 16 17
   [ "$status" -eq 0 ]
   [ "$output" = "pending 11" ]
   [ "$(calls '^orca ')" -eq 0 ]
-  [ "$(cd "$EPIC_STATE_ROOT" && ls -lR | md5)" = "$before" ]
+  [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
 }
 
 @test "pending-owner: an Orca stopped-seen mark alone is not pending" {
