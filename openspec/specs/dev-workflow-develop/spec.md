@@ -1540,7 +1540,7 @@ executor ごとの起こし方は次のとおりとしなければならない�
 **`reap <child>...`** は、印が付いた子のワークスペースを片付ける。子が 0 件か番号が数字でなければ stderr に使い方を出して exit 1 で終わる（SHALL）。`orca` か `jq` が PATH に無い、`orca worktree current --json` が非 0 で終わるか `repoId`・`id` が取れない、`orca worktree list --json` が非 0 で終わるか `.result.worktrees` が配列でないときは、何も消さず、stdout に何も出さず exit 1 で終わらなければならない（MUST）。一覧は 1 回だけ取る（SHALL）。子ごとに次の順で確かめ、外れた時点でその子についてはそれ以上何も呼ばず、対応する 1 行を出して次の子へ進まなければならない（MUST）。同じ呼び出しの中で 2 回目以降に現れた番号は何もせず行も出さない（SHALL）。
 
 1. 一覧のうち、`repoId` が今のワークツリーと同じ・`linkedIssue` が `<N>`・`isArchived` が true でないワークツリーを子の候補とする。0 件なら `gone <N>`、2 件以上なら `kept <N> ambiguous`
-2. 候補の `isMainWorktree` が true、または `parentWorktreeId` が今のワークツリーの `id` と一致しなければ `kept <N> not-child`
+2. 候補の `isMainWorktree` が true、または `parentWorktreeId` が今のワークツリーの `id` と一致しなければ `kept <N> not-child`（この確認は要件「Orca の印を正本にした既存要件を状態の記録の項目で読み替える」により行わない）
 3. 候補の `workspaceStatus` が `completed` でなければ `kept <N> not-done`
 4. `git -C <子のパス> status --porcelain` が非 0 なら `kept <N> git-failed`、出力が空でなければ `kept <N> dirty`
 5. `<子のパス>/LLM` が存在すれば `kept <N> llm-logs`
@@ -1612,8 +1612,8 @@ executor ごとの起こし方は次のとおりとしなければならない�
 - **THEN** `orca terminal close --worktree path:<子> --all` と `orca worktree rm --worktree path:<子>` がこの順に 1 回ずつ呼ばれ、どの `orca` の呼び出しにも `--force` が無く、stdout は `reaped 11` の 1 行で exit 0
 
 #### Scenario: 条件を外れた子は消さずに理由を出す
-- **WHEN** 上の Scenario から 1 点だけを変えたスタブ環境（`workspaceStatus` が `in-review`／ワークツリーの HEAD が PR の `headRefOid` と違う／`git status --porcelain` に出力がある／`<子>/LLM` がある／`parentWorktreeId` が別のワークツリー）それぞれで `epic-dispatch.sh reap 11` を実行する
-- **THEN** どの場合も `orca terminal close`・`orca worktree rm`・`git branch -D` は 1 回も呼ばれず、stdout は順に `kept 11 not-done`・`kept 11 head-mismatch`・`kept 11 dirty`・`kept 11 llm-logs`・`kept 11 not-child` の 1 行で exit 0
+- **WHEN** 上の Scenario から 1 点だけを変えたスタブ環境（`workspaceStatus` が `in-review`／ワークツリーの HEAD が PR の `headRefOid` と違う／`git status --porcelain` に出力がある／`<子>/LLM` がある）それぞれで `epic-dispatch.sh reap 11` を実行する
+- **THEN** どの場合も `orca terminal close`・`orca worktree rm`・`git branch -D` は 1 回も呼ばれず、stdout は順に `kept 11 not-done`・`kept 11 head-mismatch`・`kept 11 dirty`・`kept 11 llm-logs` の 1 行で exit 0
 
 #### Scenario: マージ済みの PR が無い子と、PR を調べられない子は消さない
 - **WHEN** `gh pr list` の出力が空のスタブ環境、および `gh pr list` が非 0 で終わるスタブ環境で `epic-dispatch.sh reap 11` を実行する
@@ -1753,8 +1753,8 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 - **THEN** 本体は残された理由の解消と未コミットの変更・`LLM/` の有無と HEAD の取り込み済み（設定された起点ブランチ（`EPIC_DISPATCH_BASE` / `--base`、既定 main）のリモートの先端への包含、またはマージ済み PR の HEAD との一致・tree の一致）を確かめ、満たせば `orca worktree rm` で消して `子 #N のワークツリーを確かめて消した（<理由>）` を、満たさなければ残して `子 #N のワークツリーを残した（<理由>） — <満たさなかったこと>` をエピックにコメントし、主に消すかを聞かない
 
 #### Scenario: 特定できないワークツリーは消さずに残す
-- **WHEN** `reap` が `kept <N> ambiguous` か `kept <N> not-child` を返した
-- **THEN** 本体は確かめも `orca worktree rm` もせず、エピックに `子 #N のワークツリーを残した（ambiguous）` か `子 #N のワークツリーを残した（not-child）` で始まる 1 行をコメントし、主に聞かない
+- **WHEN** `reap` が `kept <N> ambiguous` を返した
+- **THEN** 本体は確かめも `orca worktree rm` もせず、エピックに `子 #N のワークツリーを残した（ambiguous）` で始まる 1 行をコメントし、主に聞かない
 
 #### Scenario: 端末を閉じられなかったワークツリーは確かめずに残し、主の操作を添える
 - **WHEN** `reap` が `kept <N> close-failed` を返し、stderr に `owner action for #<N>: ...` の行を出した
@@ -2810,7 +2810,7 @@ develop の SKILL.md「エピックの扱い」→「回し方」は、次を書
 | 「同じ linkedIssue のワークツリーが 2 つ以上」 | 「同じ親のワークツリー・同じ子の記録が 2 件以上」 |
 | ポーリングごとに `orca worktree list --json` を 1 回呼ぶ | ポーリングごとに渡された子の記録を 1 回ずつ読み、`orca worktree list` は呼ばない |
 | `route` / `launch` の子の判定に使う `parentWorktreeId` と親のワークツリーの `linkedIssue` | 今いるワークツリーのパスを `worktree` に持つ記録と、その `epic`（環境変数 `EPIC_DISPATCH_PARENT_EPIC` を先に見る規則は変えない） |
-| `gh api repos/{owner}/{repo}/issues/<N>` | 記録の `repo` がエピックと同じリポジトリの子と記録の無い子は今のまま。違うリポジトリの子だけ `gh api repos/<repo>/issues/<N>`。`reap` の `gh pr list`・`git ls-remote` の呼び出しの形はこの change では変えない |
+| `gh api repos/{owner}/{repo}/issues/<N>` | 記録の `repo` がエピックと同じリポジトリの子と、番号だけで渡した記録の無い子は今のまま。違うリポジトリの子は `gh api repos/<repo>/issues/<N>`、`<owner>/<repo>#<N>` で渡した記録の無い子は引数の `<owner>/<repo>`（小文字）で `gh api repos/<owner>/<repo>/issues/<N>`。`reap` の `gh pr list`・`git ls-remote` の呼び出しの形はこの change では変えない |
 | `reap` の `kept <N> not-child` | 出さない（親は自分の `parent_worktree` の記録しか見ない。記録の無い子は `gone <N>`） |
 | `mark` の「`orca` が PATH に無いか `orca worktree current --json` が非 0 なら `skipped <issue> no-workspace`」と「印の代わりになるもの（ファイルなど）を作ってはならない」 | 今いるワークツリーのパスを `worktree` に持つ記録が無ければ `skipped <issue> no-workspace`。記録は印の代わりではなく正本で、`mark` は記録を作らない（作るのは `launch` と `adopt` だけ）。`orca` の有無は Orca の印へ写すかどうかだけを決める |
 | 「Orca が無い環境のための代わりの実装を持ってはならない」 | 状態の記録は Orca の機能の代わりの実装ではない（Orca の有無によらず正本として書く）。記録を読み書きする新しいスクリプト `scripts/epic-state.sh` は `orca` の語を含まず、`orca` を呼ぶスクリプトは今のまま `scripts/epic-dispatch.sh` 1 本だけ |
@@ -2849,7 +2849,7 @@ develop の SKILL.md「エピックの扱い」→「回し方」は、次を書
 
 develop の SKILL.md「エピックの扱い」→「回し方」の Orca 経路は、次を書かなければならない（MUST）。
 
-- 手順 7（`回し方: Orca` を引き継いだ再開）は、`reap` より前に、`launch` に渡したことのある子（エピックの状態ディレクトリにある記録の子と、エピックのコメントから分かる子を合わせたもの）で `scripts/epic-dispatch.sh adopt <エピック番号> <子>...` を 1 回呼び、そのあと `reap` → `pending-owner` → `launch` の順に進むと書く。`adopted` / `skipped` / `none` は何もせず、`failed <N> ambiguous` は主に聞かずにその子を残して進み、エピックに `子 #N の記録を取り込めなかった（ambiguous）` と 1 行コメントすると書く。`adopt` が stdout に何も出さず exit 1 で終わったら（`orca` が無い・一覧を読めない・origin を読めない）、stderr を添えて主に報告して止まると書く（`failed <N> ambiguous` の行を出して exit 1 で終わったときは止まらない）
+- 手順 7（`回し方: Orca` を引き継いだ再開）は、`reap` より前に、`launch` に渡したことのある子（エピックの状態ディレクトリにある記録の子と、エピックのコメントから分かる子を合わせたもの）で `scripts/epic-dispatch.sh adopt <エピック番号> <子>...` を 1 回呼び、そのあと `reap` → `pending-owner` → `launch` の順に進むと書く。`adopted` / `skipped` / `none` は何もせず、`failed <N> ambiguous` は主に聞かずにその子を残して進み、エピックに `子 #N の記録を取り込めなかった（ambiguous）` と 1 行コメントすると書く。`failed <N> state-unreadable`（その子の記録が読めない）も同じに、止まらずにその子を残して進み、`子 #N の記録を取り込めなかった（state-unreadable）` と 1 行コメントすると書く。理由の無い `failed <N>`（記録を書けなかった）は、stderr を添えて主に報告して止まると書く。`adopt` が stdout に何も出さず exit 1 で終わったら（`orca` が無い・一覧を読めない・origin を読めない）、stderr を添えて主に報告して止まると書く（`failed <N> ambiguous` の行を出して exit 1 で終わったときは止まらない）
 - 手順 3・4・7 の「動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終える」箇所は、待ちを終える前に `scripts/epic-dispatch.sh clear <エピック番号>` を 1 回呼ぶと書く。`cleared` / `none` は何もせず、exit 1 は主に報告すると書く。`clear` は待ちを終えるときに 1 回だけ呼び、エピックを閉じるのを待たない
 - 手順 3 の `kept` の扱いのうち「`ambiguous`・`not-child` は対象を特定できないので確かめず残す」から `not-child` を外す（`reap` が出さなくなる）。`kept <N> state-unreadable` は確かめず残し、`子 #N のワークツリーを残した（state-unreadable） — <reap の stderr の記録のパス>` と 1 行コメントすると書く
 - 手順 6 の「`--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わった（今のワークツリーを Orca から読めない）ときは親ワークツリーで開き直す」は、`wait` が Orca を読まなくなるので消し、`launch` が exit 1 で子を 1 件も作らなかったときと `adopt` が stdout に何も出さず exit 1 で終わったときの報告として書き直す

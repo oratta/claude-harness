@@ -4,7 +4,7 @@
 
 エピックの子の状態の正本は、`${EPIC_STATE_ROOT:-$HOME/.claude/epic-state}/<エピックの owner>.<エピックの repo>-<エピック番号>/<子の owner>.<子の repo>-<子の番号>.json` に子ごと 1 ファイルで置かなければならない（MUST）。`EPIC_STATE_ROOT` が相対パスなら、各サブコマンドの開始時の作業ディレクトリを基準に絶対パスにしてから使う。記録を `~/.claude/projects/` の配下に置いてはならない（MUST NOT）。記録は PC をまたいで共有しない。
 
-エピックの `<owner>/<repo>` は、記録を新しく作るか消すサブコマンド（`launch`・`adopt`・`clear`）だけが、親のワークツリーの `git remote get-url origin` から読む（MUST）。受け付ける形は、ホストが `github.com` の `git@github.com:<o>/<r>`・`ssh://git@github.com/<o>/<r>`・`https://github.com/<o>/<r>` の 3 つで、どれも末尾の `.git` と `/` は有っても無くてもよい。`<o>` と `<r>` は ASCII の小文字にそろえて記録とファイル名に使う（GitHub は owner と repo の大文字小文字を区別しないため）。origin が無い・この 3 つの形でない・ホストが `github.com` でないときは、記録を書かず何も消さずに、stderr に `cannot read the epic repository from origin: <URL か「no origin」>` を出して exit 1 で終わる（MUST）。親の見張り（`wait`・`pending-owner`・`reap`・`notify-closed`・`reply`）と子の側（`mark`・`route`）は origin を読まず、記録の中の `epic`・`repo` を使う。
+エピックの `<owner>/<repo>` は、記録のディレクトリ名をエピックから組み立てるサブコマンド（`launch`・`adopt`・`clear`）だけが、親のワークツリーの `git remote get-url origin` から読む（MUST）。受け付ける形は、ホストが `github.com` の `git@github.com:<o>/<r>`・`ssh://git@github.com/<o>/<r>`・`https://github.com/<o>/<r>` の 3 つで、どれも末尾の `.git` と `/` は有っても無くてもよい。`<o>` と `<r>` は ASCII の小文字にそろえて記録とファイル名に使う（GitHub は owner と repo の大文字小文字を区別しないため）。origin が無い・この 3 つの形でない・ホストが `github.com` でないときは、記録を書かず何も消さずに、stderr に `cannot read the epic repository from origin: <URL か「no origin」>` を出して exit 1 で終わる（MUST）。親の見張り（`wait`・`pending-owner`・`reap`・`notify-closed`・`reply`）と子の側（`mark`・`route`）は origin を読まず、記録の中の `epic`・`repo` を使う。
 
 この要件の守備範囲で入力として扱うのは、親のワークツリーの origin の URL（ハーネスの作業 repo は GitHub の clone）と `EPIC_STATE_ROOT` の値である。拾いたい誤りは、origin を読み違えて別のエピックのディレクトリに記録を書くことと、GitHub 以外のリポジトリで記録を作ってしまうことである。次は通してよく、この要件では止めない: owner や repo が GitHub に実在しないこと（`gh` の呼び出しで別に失敗する）／origin が fork を指していること／`EPIC_STATE_ROOT` が書き込めない場所であること（書き込みの失敗として表に出る）。URL の形の揺れを見つけるたびに受け付ける形を足して塞ぎ切ることは、この要件の完了条件としない。
 
@@ -43,12 +43,12 @@
 | `branch` | 文字列 | 子のワークツリーのブランチ名（`refs/heads/` を除く。読めなければ空） |
 | `base` | 文字列 | 子のワークツリーの起点ブランチ |
 | `session` | 文字列 | 起動部品が子のセッションに届く手がかり（Orca は端末のハンドル。無ければ空） |
-| `launch_failed` | 文字列 | ワークツリーを作ったあとで `launch` が失敗した段（成功なら空） |
+| `launch_failed` | 文字列 | `launch` が記録を書いたあとで失敗した段（`create`: 作成の呼び出しは成功したが path を読めない／`terminal`／`ready`／`send`。成功なら空） |
 | `status` | 文字列 | `running`・`waiting`・`done` のどれか |
 | `stop` | 文字列 | 空・`stopped`・`stopped-seen`・`resumed` のどれか |
 | `created_at` / `updated_at` | 文字列 | UTC の `YYYY-MM-DDTHH:MM:SSZ` |
 
-`status` は今のボードの列（`running` は印なし、`waiting` は `in-review`、`done` は `completed`）に、`stop` は今のコメント欄（`stopped` は `epic-stopped`、`stopped-seen` は `epic-stopped-seen`、`resumed` は `epic-resumed`）に当たり、値の遷移は今の印と同じにしなければならない（MUST）。止まった理由の本文は記録に持たず、子 issue の `子の停止: 主の返事待ち` のコメントを正本のままにする。`session` はこの版では Orca の `launch` が端末のハンドルを書き、`adopt` は空のまま書く（見張りの判定には使わない）。
+`status` は今のボードの列（`running` は印なし、`waiting` は `in-review`、`done` は `completed`）に、`stop` は今のコメント欄（`stopped` は `epic-stopped`、`stopped-seen` は `epic-stopped-seen`、`resumed` は `epic-resumed`）に当たり、値の遷移は今の印と同じにしなければならない（MUST）。止まった理由の本文は記録に持たず、子 issue の `子の停止: 主の返事待ち` のコメントを正本のままにする。`session` はこの版では Orca の `launch` と、起動し直した `reply`（`notify-closed`・`wait --resolve` の起動し直しを含む）が端末のハンドルを書き、`adopt` は空のまま書く（見張りの判定には使わない）。
 
 次のどれかに当たる記録は「読めない記録」とする: JSON のオブジェクトとして読めない／`schema` が `1` でない／`status` か `stop` が上の表に無い値／`epic`・`child`・`repo`・`number`・`parent_worktree`・`worktree` のどれかが無いか型が違う。読めない記録は書き換えも削除もしてはならず（MUST NOT）、サブコマンドごとに次のとおり扱わなければならない（MUST）。どの場合も stderr にその記録のパスを出す。
 
@@ -60,6 +60,7 @@
 | `notify-closed`・`reply` | `failed <N> state-unreadable` |
 | `launch` | その子自身の記録なら `failed <N> state-unreadable`（作り直さない）。枠の数では、ほかの子の読めない記録を使用中の 1 枠に数える |
 | `adopt` | `failed <N> state-unreadable` |
+| `clear` | 消す対象のエピックのディレクトリにある読めない記録は、stderr に `remaining state record: unreadable (<パス>)` と出してからディレクトリごと消す（ディレクトリ単位の削除で、個別の書き換え・削除はしない） |
 | `mark`・`route`（今のワークツリーのパスで探すとき） | その記録を候補から外す |
 
 この要件の守備範囲で入力として扱うのは、`launch`・`adopt`・`mark`・`wait` 自身が書いた記録のファイルで、人が手で書く想定はしない。拾いたい誤りは、書き込みの途中で殺されたプロセスや版の違うスクリプトが残した記録を、正しい状態として読んで子を片付けたり見張りから落としたりすることである。次は通してよく、この要件では止めない: 項目の値どうしの矛盾（`child` の番号と `number` が違う・`worktree` が別のリポジトリを指す）／`created_at` と `updated_at` の形の崩れ／`mark`・`route` が読めない記録を候補から外したために、その子が自分を `no-workspace` と判定すること（一時ファイルからの置き換えで途中まで書かれた記録は生じないので、起きるのは人が手で壊したときだけ）。壊れ方を見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
@@ -98,7 +99,7 @@
 
 子の引数の形は `^[0-9]+$` か `^[A-Za-z0-9-]+/[A-Za-z0-9._-]+#[0-9]+$` のどちらかでなければならず、それ以外は何も呼ばずに stderr に使い方を出して exit 1 で終わる（MUST）。`<owner>/<repo>` は ASCII の小文字にそろえてから記録の `repo` と比べる（大文字小文字だけが違う `Oratta/Claude-Harness#5` は `oratta/claude-harness#5` と同じ子）。
 
-親の見張り（`wait`・`pending-owner`・`reap`・`notify-closed`・`reply`）は origin を読まずに子の記録を探す（MUST）。番号だけの引数 `<N>` は、`parent_worktree` が今のワークツリーの最上位のパスで、`number` が `<N>` で、`repo` が記録の `epic` のリポジトリの部分と一致する記録に当てる。`<owner>/<repo>#<N>` の引数は、`parent_worktree` が今のワークツリーで `child` が一致する記録に当てる。子 issue を `gh` で読む先は、記録の `repo` が記録の `epic` のリポジトリと同じ子と記録の無い子は今のまま `gh api repos/{owner}/{repo}/issues/<N>`（`gh` が今のワークツリーのリポジトリに置き換える）、違う子は `gh api repos/<repo>/issues/<N>` にしなければならない（MUST。この change では同じリポジトリの子の呼び出しの形を変えない）。
+親の見張り（`wait`・`pending-owner`・`reap`・`notify-closed`・`reply`）は origin を読まずに子の記録を探す（MUST）。番号だけの引数 `<N>` は、`parent_worktree` が今のワークツリーの最上位のパスで、`number` が `<N>` で、`repo` が記録の `epic` のリポジトリの部分と一致する記録に当てる。`<owner>/<repo>#<N>` の引数は、`parent_worktree` が今のワークツリーで `child` が一致する記録に当てる。子 issue を `gh` で読む先は、記録の `repo` が記録の `epic` のリポジトリと同じ子と番号だけで渡した記録の無い子は今のまま `gh api repos/{owner}/{repo}/issues/<N>`（`gh` が今のワークツリーのリポジトリに置き換える）、記録の `repo` が違う子は `gh api repos/<repo>/issues/<N>`、`<owner>/<repo>#<N>` で渡した記録の無い子は引数の `<owner>/<repo>` を小文字にそろえて `gh api repos/<owner>/<repo>/issues/<N>` にしなければならない（MUST。この change では同じリポジトリの子の呼び出しの形を変えない）。
 
 この change の `launch` は、エピックと別のリポジトリの子を受けたら、記録もワークツリーも作らず、枠も使わずに `failed <owner>/<repo>#<N> other-repo` を出さなければならない（MUST）（別のリポジトリにワークツリーを作るのは後続の change）。
 
@@ -189,7 +190,7 @@
 
 ### Requirement: Orca の部品は記録を書いたあとに Orca の印へ写す
 
-`launch`・`mark`・`wait --watch-stopped` は、記録を書いたあと、記録の `launcher` が `orca` で `orca` が PATH にあるときは、今と同じ Orca の印（`mark done` / `waiting` は `--workspace-status completed` / `in-review`、`stopped` / `resumed` は `--comment epic-stopped` / `epic-resumed`、受けた印は `--comment epic-stopped-seen`）を写さなければならない（MUST）。写しに失敗しても記録の書き込みを成功として扱い、出力を変えずに stderr に写せなかったことを出さなければならない（MUST）。
+`mark`・`wait --watch-stopped` は、記録を書いたあと、記録の `launcher` が `orca` で `orca` が PATH にあるときは、今と同じ Orca の印（`mark done` / `waiting` は `--workspace-status completed` / `in-review`、`stopped` / `resumed` は `--comment epic-stopped` / `epic-resumed`、受けた印は `--comment epic-stopped-seen`）を写さなければならない（MUST）。写しに失敗しても記録の書き込みを成功として扱い、出力を変えずに stderr に写せなかったことを出さなければならない（MUST）。
 
 #### Scenario: 写しに失敗しても mark は成功
 - **WHEN** `orca worktree set` が非 0 で終わる環境で、子のワークツリーで `epic-dispatch.sh mark done 1123` を実行する
@@ -201,11 +202,15 @@
 
 ### Requirement: adopt は記録の無い Orca の子を記録に取り込む
 
-`epic-dispatch.sh adopt <epic> <child>...` は、記録の無い子ごとに、`orca worktree list --json` の、`repoId` が今のワークツリーと同じ・`linkedIssue` が子・`isArchived` が true でない・`parentWorktreeId` が今のワークツリーの id のワークツリーを探さなければならない（MUST）。ちょうど 1 つなら、その `path`・`branch` と、`workspaceStatus`（`completed` → `done`、`in-review` → `waiting`、それ以外 → `running`）と `comment`（`epic-stopped` → `stopped`、`epic-stopped-seen` → `stopped-seen`、`epic-resumed` → `resumed`、それ以外 → 空）を写し、`base` を `EPIC_DISPATCH_BASE`（空なら `main`）、`launcher` を `orca`、`session` と `launch_failed` を空にした記録を作り、`adopted <N>` を出す。記録が既にあれば `skipped <N>`、該当が無ければ `none <N>`、2 つ以上なら `failed <N> ambiguous` を出す（MUST）。`orca`・`jq` が無い・Orca 管理外・一覧を読めない・origin からエピックのリポジトリを読めないときは、stdout に何も出さず記録を作らずに exit 1。`failed` があれば exit 1、無ければ exit 0。
+`epic-dispatch.sh adopt <epic> <child>...` は、記録の無い子ごとに、`orca worktree list --json` の、`repoId` が今のワークツリーと同じ・`linkedIssue` が子・`isArchived` が true でない・`parentWorktreeId` が今のワークツリーの id のワークツリーを探さなければならない（MUST）。ちょうど 1 つなら、その `path`・`branch` と、`workspaceStatus`（`completed` → `done`、`in-review` → `waiting`、それ以外 → `running`）と `comment`（`epic-stopped` → `stopped`、`epic-stopped-seen` → `stopped-seen`、`epic-resumed` → `resumed`、それ以外 → 空）を写し、`base` を `EPIC_DISPATCH_BASE`（空なら `main`）、`launcher` を `orca`、`session` と `launch_failed` を空にした記録を作り、`adopted <N>` を出す。読める記録が既にあれば `skipped <N>`、読めない記録なら stderr にそのパスを出して `failed <N> state-unreadable`（記録は変えない）、該当が無ければ `none <N>`、2 つ以上なら `failed <N> ambiguous`、記録を書けなければ stderr にパスを出して理由の無い `failed <N>` を出す（MUST）。`orca`・`jq` が無い・Orca 管理外・一覧を読めない・origin からエピックのリポジトリを読めないときは、stdout に何も出さず記録を作らずに exit 1。`failed` があれば exit 1、無ければ exit 0。
 
 #### Scenario: 止まった印の Orca の子を取り込む
 - **WHEN** 記録が無く、Orca の一覧に親が今のワークツリーで `linkedIssue` が 11・`comment` が `epic-stopped-seen` のワークツリーがある状態で `epic-dispatch.sh adopt 1122 11` を実行する
 - **THEN** 記録の `stop` が `stopped-seen`、`status` が `running`、`worktree` が一覧の `path` で作られ、stdout は `adopted 11`、exit 0 である
+
+#### Scenario: 読めない記録の子は取り込まず failed state-unreadable
+- **WHEN** 子 11 の記録が JSON として読めない状態で `epic-dispatch.sh adopt 1122 11` を実行する
+- **THEN** 記録は変わらず、stdout は `failed 11 state-unreadable`、exit 1 で、stderr にその記録のパスが出る
 
 #### Scenario: 記録がある子は取り込まない
 - **WHEN** 子 11 の記録がある状態で `epic-dispatch.sh adopt 1122 11` を実行する
@@ -239,7 +244,7 @@
 
 ### Requirement: launch は子のワークツリーを作る前に記録を書く
 
-`launch` は、子ごとに、記録があれば（`worktree` が空でない）`skipped <N>` とし、`worktree` が空の記録が残っていれば（前の `launch` が書いたあとで殺された）上書きして作成に進み、無ければ（`deferred` の判定のあと）`status` が `running`・`worktree` が空の記録を書いてから子のワークツリーを作らなければならない（MUST）。ワークツリーの作成に失敗したら記録を消し（MUST）、作れたら `worktree`・`branch` を書き足す。ワークツリーを作ったあとで端末・起動待ち・送信に失敗したら、記録を残して `launch_failed` に段の名前を書く（MUST）。Orca の一覧に同じ子のワークツリーがあって記録が無いとき（この変更の前に起動した子）は、今と同じく `skipped <N>` とし、記録は作らない（取り込みは `adopt`）。
+`launch` は、子ごとに、記録があれば（`worktree` が空でない）`skipped <N>` とし、`worktree` が空の記録が残っていれば（前の `launch` が書いたあとで殺された）、Orca の一覧にその子のワークツリーがちょうど 1 つあるときは記録の `worktree`・`branch` をその `path`・`branch` で埋めて `skipped <N>` とし（埋められなくても `skipped <N>`）、無いときは上書きして作成に進み（この記録は要件「同時に枠を使う子は記録から数える」の数えで使用中に入るので、その子は空き枠をもう 1 つ減らさず、空き枠の判定も行わない）、記録が無ければ（`deferred` の判定のあと）`status` が `running`・`worktree` が空の記録を書いてから子のワークツリーを作らなければならない（MUST）。ワークツリーの作成に失敗したら記録を消し（MUST）、作れたら `worktree`・`branch` を書き足す。ワークツリーを作ったあとで端末・起動待ち・送信に失敗したら、記録を残して `launch_failed` に段の名前を書く（MUST）。Orca の一覧に同じ子のワークツリーがあって記録が無いとき（この変更の前に起動した子）は、今と同じく `skipped <N>` とし、記録は作らない（取り込みは `adopt`）。
 
 #### Scenario: 作成に失敗したら記録が残らない
 - **WHEN** `orca worktree create` が非 0 で終わる環境で `epic-dispatch.sh launch 1122 11` を実行する
@@ -251,7 +256,7 @@
 
 ### Requirement: 同時に枠を使う子は記録から数える
 
-issue #1106（PR #1120）が `launch` に入れる同時に枠を使う子の上限について、枠を使っている子は、`EPIC_STATE_ROOT` の下の全エピックのディレクトリを横断して、今のワークツリーを `parent_worktree` に持つ記録のうち（#1120 が `parentWorktreeId` で数えるのと同じく、エピックを問わない）、`status` が `done` でなく、`stop` が `stopped` / `stopped-seen` でなく、記録の `repo` に対する issue の state が `closed` でないものとして数えなければならない（MUST）。state を読めない子は数える。上限の値の決め方（`max-parallel`）・`deferred <N>` の出し方・「`create` に進んだ子は結果によらず 1 枠を使う」は #1120 の要件のまま変えない（MUST）。起動部品は上限を知らず、上限は記録と見張りの側で決める。
+issue #1106（PR #1120）が `launch` に入れる同時に枠を使う子の上限について、枠を使っている子は、`EPIC_STATE_ROOT` の下の全エピックのディレクトリを横断して、今のワークツリーを `parent_worktree` に持つ記録のうち（#1120 が `parentWorktreeId` で数えるのと同じく、エピックを問わない）、`status` が `done` でなく、`stop` が `stopped` / `stopped-seen` でなく、記録の `repo` に対する issue の state が `closed` でないものとして数えなければならない（MUST）。state を読めない子は数える。上限の値の決め方（`max-parallel`）・`deferred <N>` の出し方・「`create` に進んだ子は結果によらず 1 枠を使う」は #1120 の要件のまま変えない（MUST。`worktree` が空の自分の記録は上の数えで使用中に入るので、その子が `create` に進むときは新しく 1 枠を足さず、その記録の 1 枠を使う）。起動部品は上限を知らず、上限は記録と見張りの側で決める。
 
 #### Scenario: 記録で数えた使用中の数で後回しを決める
 - **WHEN** `EPIC_DISPATCH_MAX_PARALLEL=2` で、`status` が `running`・`stop` が空・issue が open の記録が 1 件、`status` が `done` の記録が 1 件、`stop` が `stopped-seen` の記録が 1 件ある状態で `epic-dispatch.sh launch 1122 21 22` を実行する

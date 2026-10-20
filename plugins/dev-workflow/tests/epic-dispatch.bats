@@ -4220,6 +4220,13 @@ resolve_pass() {
   [ "$(cat "$(rec_of 1122 11)")" = "$before" ]
 }
 
+@test "max-parallel: an empty EPIC_STATE_ROOT does not stop it, which reads no record" {
+  make_stub orca
+  EPIC_STATE_ROOT= run dispatch max-parallel
+  [ "$status" -eq 0 ]
+  [ "$output" = 99 ]
+}
+
 @test "adopt: an unreadable record is failed state-unreadable and left as is" {
   make_stub orca
   set_current 1122
