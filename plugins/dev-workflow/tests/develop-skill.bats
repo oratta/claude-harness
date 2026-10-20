@@ -752,3 +752,19 @@ refute() {
   row="$(grep -E '^\| 主の返事待ちの子 \|' "$PLUGIN_DIR/skills/develop/references/reply-after-idle.md")"
   printf '%s\n' "$row" | grep -qF '`親の判断: 子 #N 通した`'
 }
+
+@test "skill: an empty return from W asks for a report once and never relaunches with the same instruction (#1117)" {
+  # spec: dev-workflow-develop「空の return を受けたら報告を 1 回だけ求め、同じ指示で起こし直さない」
+  p="$(section '1 ループ' | grep -F 'returned no output')"
+  [ -n "$p" ]
+  [ "$(printf '%s\n' "$p" | wc -l | tr -d ' ')" = 1 ]
+  printf '%s\n' "$p" | grep -qF 'SendMessage で 1 回だけ報告を求める'
+  printf '%s\n' "$p" | grep -qF 'git -C <path> status --porcelain'
+  printf '%s\n' "$p" | grep -qF '同じ指示で起こし直さない'
+  printf '%s\n' "$p" | grep -qF '主に上げる'
+  # 再報告が空のときも起こし直さない
+  printf '%s\n' "$p" | grep -qF '1 回求めても報告が空'
+  # 対象は W だけ。再開しない役は範囲外で既存の手順に従う
+  printf '%s\n' "$p" | grep -qF '再開しない役'
+  printf '%s\n' "$p" | grep -qF '範囲外'
+}

@@ -3,6 +3,8 @@
 # statusline.sh — Claude Code の使用量ステータスライン
 #
 #   1行目: カレントディレクトリ / モデル / git ブランチ
+#          （<config>/.statusline-update-available があれば末尾に「更新あり /statusline:setup」。
+#           印は statusline プラグインの SessionStart フックが置く）
 #   2行目: コンテキスト残量 / プロンプトキャッシュのヒット率（直近のミスの原因つき） /
 #          API 換算の月額ペース / このセッションの API 換算コスト
 #   3行目: 5h ウィンドウのレートリミット
@@ -72,7 +74,10 @@ pkg_runner() {
 resolve_rate_share_dir() {
     local dir conf tilde='~'
     if [ "${FLATMATE_RATE_SHARE_DIR+x}" ]; then
+        # Trim the whole string (sed works per line and would keep a leading LF); no python3 here.
         dir="$FLATMATE_RATE_SHARE_DIR"
+        dir="${dir#"${dir%%[![:space:]]*}"}"
+        dir="${dir%"${dir##*[![:space:]]}"}"
     else
         conf="${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"
         dir=""
@@ -91,7 +96,11 @@ resolve_rate_share_dir() {
 write_rate_snapshot_atomic() {
     local dest="$1" body="$2" tmp
     tmp=$(mktemp "$(dirname "$dest")/.rate-snapshot.XXXXXX" 2>/dev/null) || return 1
-    if ! printf '%s\n' "$body" > "$tmp" 2>/dev/null || ! mv -f "$tmp" "$dest" 2>/dev/null; then
+    # mktemp makes the file 0600; restore the 0644 a plain redirect gets under the usual umask.
+    # chmod runs before mv so a reader never sees the 0600 file at the destination.
+    if ! printf '%s\n' "$body" > "$tmp" 2>/dev/null \
+        || ! { chmod 0644 "$tmp" 2>/dev/null || true; } \
+        || ! mv -f "$tmp" "$dest" 2>/dev/null; then
         rm -f "$tmp" 2>/dev/null
         return 1
     fi
@@ -125,7 +134,7 @@ if [ -n "$five_h_pct" ] && [ -n "$session_id" ] && [ -z "${CLAUDE_SECURESTORAGE_
         account_id=$(jq -r '
             .oauthAccount.accountUuid | select(type == "string") |
             gsub("^[[:space:]]+|[[:space:]]+$"; "") |
-            select(length > 0 and length <= 256 and (contains("\n") | not))
+            select(length > 0 and length <= 256 and (test("[\r\n]") | not))
         ' "$HOME/.claude.json" 2>/dev/null)
     fi
     snap_body=$(jq -cn --arg account "$account_id" \
@@ -396,7 +405,7 @@ usnap="$CONFIG_DIR/.usage-snapshot"
 # dev-workflow の usage-probe.sh と同じ規則だが、プラグインを跨ぐ依存を作らないため
 # 実装は各スクリプトに置く（規則の正本は spec 側）。
 # enabled が JSON の false のスロットは「オフ」（slot_enabled が 0）。オフのスロットも一覧に残し、
-# 上限・label 列の幅・active の判定に数える。false 以外（省略・true・"false"・0・null）はオン。
+# 上限と active の判定に数える（表示と label 列の幅には、非 active のオフは数えない）。false 以外（省略・true・"false"・0・null）はオン。
 accounts_file="${CLAUDE_ACCOUNTS_FILE:-$CONFIG_DIR/accounts.json}"
 codex_name="Codex A"; codex_name_w=7   # 登録簿に codex.label が無いときの既定
 slot_ids=(); slot_labels=(); slot_secures=(); slot_services=(); slot_widths=(); slot_enabled=()
@@ -493,6 +502,8 @@ if [ "${#slot_ids[@]}" -eq 0 ]; then
 fi
 
 n_slots="${#slot_ids[@]}"
+# active の判定はオフを含む登録簿の全スロットで行う（下の active_idx）。
+# 表示するかどうかと複数スロット表示の判定は、active の確定後に決める（下の slot_show / multi）。
 multi=0
 [ "$n_slots" -gt 1 ] && multi=1
 
@@ -530,12 +541,30 @@ if [ "$multi" -eq 1 ]; then
     [ "$active_idx" -lt 0 ] && active_idx=0
 fi
 
+# ---- 表示対象のスロット（正本: statusline-multi-account-usage「オフのスロットは表示しない」） ----
+# active のスロットはオフでも表示する（ライブ値）。非 active のオフスロットは行を出さず、
+# 複数スロット表示の判定にも名前列の幅にも数えない。表示対象が 1 つなら 1 スロット表示に戻る
+# （1 つだけ残るのは必ず active なので、名前列と active の目印は出ない）。
+slot_show=()
+n_show=0
+for i in $(seq 0 $(( n_slots - 1 ))); do
+    if [ "$i" -eq "$active_idx" ] || [ "${slot_enabled[$i]}" = "1" ]; then
+        slot_show+=(1); n_show=$(( n_show + 1 ))
+    else
+        slot_show+=(0)
+    fi
+done
+multi=0
+[ "$n_show" -gt 1 ] && multi=1
+
 # Cache reads are local; refresh is detached by the helper.
 codex_rows=""
 if [ "${STATUSLINE_CODEX:-1}" != "0" ]; then
     codex_helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/statusline-codex.py"
     if [ -f "$codex_helper" ]; then
         codex_rows="$(python3 "$codex_helper" --read 2>/dev/null)"
+        # helper の内部センチネル off（Codex オフ）は行にも列幅にも出さない
+        [ "$codex_rows" = "off" ] && codex_rows=""
     fi
 fi
 
@@ -543,7 +572,9 @@ fi
 # 幅は文字数ではなく表示幅（python 側が 5 列目で渡す）。全角ラベルでも列が揃う。
 label_w=0
 if [ "$multi" -eq 1 ]; then
-    for w in "${slot_widths[@]}"; do
+    for i in $(seq 0 $(( n_slots - 1 ))); do
+        [ "${slot_show[$i]}" = "1" ] || continue
+        w="${slot_widths[$i]}"
         [ "$w" -gt "$label_w" ] && label_w="$w"
     done
 fi
@@ -606,8 +637,8 @@ if [ "$multi" -eq 1 ] && [ -d "$sessions_dir" ]; then
     _rec_args=()
     for i in $(seq 0 $(( n_slots - 1 ))); do
         [ "$i" -eq "$active_idx" ] && continue
-        # オフのスロットは値を描かないので、記録との突き合わせにも載せない
-        [ "${slot_enabled[$i]}" = "1" ] || continue
+        # 非表示（非 active のオフ）のスロットは値を描かないので、記録との突き合わせにも載せない
+        [ "${slot_show[$i]}" = "1" ] || continue
         _rec_args+=("$i" "${slot_secures[$i]}" "${snap_fetched[$i]}" "${snap_five_pct[$i]}"
                     "${snap_five_res[$i]}" "${snap_seven_pct[$i]}" "${snap_seven_res[$i]}")
     done
@@ -744,6 +775,9 @@ render_slot() {
 }
 
 for i in $(seq 0 $(( n_slots - 1 ))); do
+    # 非 active のオフのスロットは行を出さない（値が残っていても、無くても）。
+    # active のスロットはオフでも下のライブ値の経路で描く。
+    [ "${slot_show[$i]}" = "1" ] || continue
     prefix=""
     if [ "$multi" -eq 1 ]; then
         # printf の %-*s はバイト幅で詰めるので使えない。表示幅の差だけ手で空白を足す。
@@ -757,13 +791,6 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
             # 全行が等しく 2 桁を占めるので、バーの左端は揃ったまま
             prefix="  ${DIM}${slot_labels[$i]}${pad}${RESET}  "
         fi
-    fi
-    # 非 active のオフのスロットは値の代わりに off を 1 行だけ出す（値が残っていても描かず、
-    # 値が無くても行は出す）。active のスロットはオフでも下のライブ値の経路で描く。
-    # 1 スロット構成は常に active なので、ここには入らない。
-    if [ "$multi" -eq 1 ] && [ "$i" -ne "$active_idx" ] && [ "${slot_enabled[$i]}" != "1" ]; then
-        usage_lines+=("${prefix}${DIM}off${RESET}")
-        continue
     fi
     fetched_at="${snap_fetched[$i]}"
     fable_pct="${snap_fable_pct[$i]}"
@@ -826,11 +853,6 @@ if [ -n "$codex_rows" ]; then
         fi
         if [ "$c_pct" = "pending" ]; then
             codex_line+="${DIM}取得待ち${RESET}"
-            continue
-        fi
-        # accounts.json の codex.enabled が false（Codex オフ）。使用量は取得していない
-        if [ "$c_pct" = "off" ]; then
-            codex_line+="${DIM}off${RESET}"
             continue
         fi
         codex_fetched="$c_fetched"
@@ -998,10 +1020,15 @@ fi
 # Line 1: directory, model, git
 # Line 2: context window, prompt cache, API cost, session cost
 # Line 3: 5h bar / Line 4: 7d All + Fable bars
-printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s\n" \
+update_info=""
+if [ -f "$CONFIG_DIR/.statusline-update-available" ]; then
+    update_info="  ${YELLOW}更新あり /statusline:setup${RESET}"
+fi
+printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s%s\n" \
     "$short_pwd" \
     "$model_name" \
-    "$git_info"
+    "$git_info" \
+    "$update_info"
 
 line2=""
 if [ -n "$context_info" ]; then

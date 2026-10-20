@@ -55,14 +55,22 @@ Context 91%  │  Cache 82%  │  API ¥1,446,038/mo  │  Session ¥1,240
 - `/statusline:setup --dry-run` — 何が変わるかだけ表示する
 - `/statusline:setup --uninstall` — `settings.json` から `statusLine` を外す
 
-プラグイン本体を直接指さずコピーを配るのは、marketplace dir がプラグイン自動更新で再 clone されるため。そこを settings.json から指すと、更新のたびに色や幅の調整が消える。プラグインを更新したら `/statusline:setup` を再実行する。
+プラグイン本体を直接指さずコピーを配るのは、marketplace dir がプラグイン自動更新で再 clone されるため。そこを settings.json から指すと、更新のたびに色や幅の調整が消える。
+
+プラグインを更新したあとのコピーの扱いは、手を入れたかどうかで分かれる。`/statusline:setup` はコピーした内容のハッシュを `~/.claude/.statusline-installed` に記録し、セッション開始時（statusline プラグインの SessionStart フック）にコピーをこの記録とプラグインの本体と比べる。
+
+- 手を入れていない（記録どおり）コピーは、黙って新しい版に置き換わる
+- 手を入れたコピーは上書きしない。プラグインが新しい版になっていれば（配った版から本体が変わっていれば）、代わりにステータスラインの 1 行目の末尾に `更新あり /statusline:setup` が出る。手を入れただけでプラグインがまだ更新されていなければ何も出ない。`/statusline:setup` を打ち直すと新しい版になり（元のコピーは `.bak-<timestamp>` に残る）、表示もすぐ消える
+- この仕組みより前に入れたコピーは記録が無いので、手を入れたものとして扱う。印を読めない古いコピーではステータスラインに出せないので、セッション開始時に同じ案内が出る。一度 `/statusline:setup` を打ち直せば、以後は自動で揃う
+
+自動の置き換えは、いまインストールされている版のプラグインから起動したセッションでだけ行う。`claude --plugin-dir` で開発中の版を読み込んだセッションと、プラグイン更新より前から開いている古い版のセッションでは何もしない（古い版のセッションで新しいコピーを巻き戻さないため）。
 
 ### 本体のセッションコストの記録
 
 描画のたびに、Claude Code 本体が渡すセッションコスト（`cost.total_cost_usd`）を
 `${CLAUDE_CONFIG_DIR:-~/.claude}/.session-cost/<セッション ID>` に書き残す（1 セッション 1 ファイル・1 行で、最初の観測と最後に値が変わった観測の時刻と値を持つ）。値が前回と同じ描画では書かない。表示は変わらず、`STATUSLINE_SESSION_COST=0` で表示を消していても記録は書く。400 日より古い記録は、新しい記録ファイルを作る描画で消す。
 
-この記録は cost-ledger プラグインが読み、自前の単価表で計算した額と比べて、単価表のずれを `/cost` の出力で知らせるのに使う。記録はコピー先のスクリプトが書くので、プラグインを更新したあと `/statusline:setup` を再実行すると記録が始まる。
+この記録は cost-ledger プラグインが読み、自前の単価表で計算した額と比べて、単価表のずれを `/cost` の出力で知らせるのに使う。記録はコピー先のスクリプトが書くので、コピーが新しい版になってから記録が始まる（手を入れていないコピーはセッション開始時に自動で揃う。手を入れたコピーと記録の無い古いコピーは `/statusline:setup` の打ち直しが要る）。
 
 ### 前提
 
@@ -83,7 +91,7 @@ Fable の週次消化率は Claude Code がステータスラインに渡して�
 
 あわせて、5h の使用率と空でない `session_id` がある既定アカウントの描画では、`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.rate-limit-snapshot` に rate snapshot を書く。`CLAUDE_SECURESTORAGE_CONFIG_DIR` が非空のセッションでは書かない。JSON は `ts`、`observed_at`、`written_at`、`obs_sig`、`host`、`storage_binding`、`session_id`、`five_hour_pct`、`five_hour_resets_at`、`seven_day_pct`、`seven_day_resets_at` を持つ。`ts` と `observed_at` は同じ観測時刻で、枠値・`storage_binding`・`session_id` が変わらない再表示では進まない。`written_at` は書込時刻。`session_id` は入力値をそのまま保存し、`host` は `hostname -s` の英数字・`.`・`_`・`-` 以外を文字ごとに `_` に置き換える。`$HOME/.claude.json` の `oauthAccount.accountUuid` が有効な場合だけ `account_id` も含む。欠けた任意の枠値は `null` とする。書込は同じディレクトリの一時ファイルから原子的に置き換える。
 
-共有先を設定すると `<共有先>/<host>.json` にローカルと同じ JSON を書く。`FLATMATE_RATE_SHARE_DIR` が定義されていればその値を使い、空文字なら共有を無効にする。未定義なら `FLATMATE_RATE_SHARE_CONF`（既定 `$HOME/.claude/flatmate-rate-share`）の先頭の非コメント・非空行を使う。設定ファイルのパスは前後空白を除き、先頭の `~` を HOME に展開する。共有先に書けなくてもローカルの保存と表示は続く。
+共有先を設定すると `<共有先>/<host>.json` にローカルと同じ JSON を書く。`FLATMATE_RATE_SHARE_DIR` が定義されていればその値（前後の空白は除く）を使い、空文字や空白だけなら共有を無効にする。未定義なら `FLATMATE_RATE_SHARE_CONF`（既定 `$HOME/.claude/flatmate-rate-share`）の先頭の非コメント・非空行を使う。環境変数・設定ファイル由来のパスは前後空白を除き、先頭の `~` を HOME に展開する。共有先に書けなくてもローカルの保存と表示は続く。
 
 writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合、reader 側の `RATE_GUARD_SNAPSHOT` を同じファイルに合わせる必要がある。共有先の環境変数名と設定ファイル名は flatmate reader と共通。
 
@@ -106,8 +114,13 @@ writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合�
 
 登録先は `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json`（`CLAUDE_ACCOUNTS_FILE` で上書き可）。`dev-workflow` の `accounts.sh` で操作する:
 
+既定アカウントを使っているなら、先に `CLAUDE_SECURESTORAGE_CONFIG_DIR` を設定していないシェルで登録する。`add` を先に実行すると登録簿の順が `b`、`a` になる。既定アカウントを登録しないままだと、その使用量は `b` のものとして扱われる:
+
 ```bash
 SCRIPTS=~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts
+
+# 既定アカウントのシェル（CLAUDE_SECURESTORAGE_CONFIG_DIR 未設定）で、b を足す前に
+env -u CLAUDE_SECURESTORAGE_CONFIG_DIR "$SCRIPTS/accounts-init.sh" --id a --label A
 
 # 新しいアカウントを足す（認証情報の置き場所 ~/.claude-accounts/b を作って登録し、ログインするコマンドを 1 行出す）
 $SCRIPTS/accounts.sh add b --label B
@@ -118,14 +131,12 @@ $SCRIPTS/accounts.sh list     # 登録の一覧
 
 置き場所の基点は `CLAUDE_ACCOUNTS_HOME`（絶対パス）で変えられる。`securestorage` には `CLAUDE_SECURESTORAGE_CONFIG_DIR` の**実値をそのまま**書き出す必要がある。末尾スラッシュや `~` 展開が 1 文字でも違うと、Claude Code 本体にとっては別の Keychain 項目になり、そのアカウントの残量が取れなくなる。`add` は作ったディレクトリの絶対パスをそのまま書くので、パスを書き写す必要は無い。
 
-既定アカウント（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を設定していないシェル）や、すでに別の場所で使っているアカウントを登録するときは、**そのアカウントのシェルで** `accounts-init.sh` を実行する。居るシェルの実値をそのまま書き出す:
+すでに別の場所で使っているアカウントを登録するときは、**そのアカウントのシェルで** `accounts-init.sh` を実行する。居るシェルの実値をそのまま書き出す。上で登録した `a` と重ならない id を使う:
 
 ```bash
-# 既定アカウントのシェルで
-$SCRIPTS/accounts-init.sh --id a --label A
-
-# もう一方のアカウントのシェルで
-$SCRIPTS/accounts-init.sh --id b --label B
+# 既存のアカウントのシェルで（CLAUDE_SECURESTORAGE_CONFIG_DIR はそのアカウントの値のまま）
+SCRIPTS=~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts
+"$SCRIPTS/accounts-init.sh" --id c --label C
 ```
 
 登録簿は次の形になる（参照用）:
@@ -135,7 +146,7 @@ $SCRIPTS/accounts-init.sh --id b --label B
   "schema": 1,
   "accounts": [
     { "id": "a", "label": "A", "securestorage": null },
-    { "id": "b", "label": "B", "securestorage": "/Users/example/.claude-b" }
+    { "id": "b", "label": "B", "securestorage": "/Users/example/.claude-accounts/b" }
   ]
 }
 ```
@@ -154,18 +165,19 @@ $SCRIPTS/accounts-init.sh --id b --label B
 解約したアカウントなど、当面使わないアカウントは、登録を消さずに `accounts.sh off <id>` でオフにする:
 
 ```bash
-$SCRIPTS/accounts.sh off b
+~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts/accounts.sh off b
 ```
 
-オフのアカウントは、ステータスラインでは値の代わりに `off` の 1 行になり、`dev-workflow` の起動時の自動選択（`cld`）の候補から外れ、使用量の取得もされない。
+オフのアカウントは、ステータスラインから消え、`dev-workflow` の起動時の自動選択（`cld`）の候補から外れ、使用量の取得もされない。
+
+表示するアカウントが 1 つだけになると、左端の名前と `▸` も出ない 1 アカウントの表示に戻る。
 
 ```
-▸ Claude A  5h      ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   55%          ~4h 12m
-▸ Claude A  7d All  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   82%/74%   Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   94%   ~2d 3h
-  Claude B  off
+5h      ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   55%          ~4h 12m
+7d All  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   82%/74%   Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   94%   ~2d 3h
 ```
 
-戻すときは `accounts.sh on <id>` を実行する。認証情報と、それまでに記録された使用量は残っているので、登録をやり直す必要は無い（書き換える前の登録簿は `accounts.json.bak` に 1 世代だけ残る。`accounts-init.sh` で同じ id を登録し直しても `enabled` は消えない）。オフのアカウントがいま使っているアカウントになっているセッション（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を手で設定して起動した場合のほか、オフにした既定アカウントへ `cld` の自動選択が縮退して起動した場合、起動したあとでそのアカウントをオフにした場合）では、そのアカウントは `off` ではなくライブ値で描く。
+戻すときは `accounts.sh on <id>` を実行する。認証情報と、それまでに記録された使用量は残っているので、登録をやり直す必要は無い（書き換える前の登録簿は `accounts.json.bak` に 1 世代だけ残る。`accounts-init.sh` で同じ id を登録し直しても `enabled` は消えない）。オフのアカウントがいま使っているアカウントになっているセッション（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を手で設定して起動した場合のほか、オフにした既定アカウントへ `cld` の自動選択が縮退して起動した場合、起動したあとでそのアカウントをオフにした場合）では、そのアカウントは消さずにライブ値で描く（他のアカウントがオンなら複数アカウントの表示になる）。
 
 ### 表示の読み方（複数アカウント時）
 
@@ -174,14 +186,14 @@ $SCRIPTS/accounts.sh off b
   - 記号を差し替えるなら East Asian Width が Neutral のものにすること（`▹` U+25B9 / `›` U+203A など）。`▶` `●` `◆` `·` はいずれも Ambiguous で、曖昧幅を全角にする設定の端末では `▸` の行だけ 1 桁右にずれ、その差が label 以降のすべての列に伝播する
 - **それ以外のアカウント**は行頭が半角スペース 2 つになり、そのアカウントのセッション記録（上記の `.usage-sessions/`）と snapshot の値のうち、同じ窓なら取得時刻の新しい方（等しい・片方無しなら大きい方）・窓が違えばリセット時刻が後の方で描き（全体の週次はリセット時刻が 1 時間を超えてずれたら、記録のリセット時刻がまだ来ていない限り記録の方）、行末に採った値の取得時刻からの経過時間（`2h前`）を添える。リセット時刻を過ぎた値も 0% に読み替えず、そのまま描く。こちらには鮮度ゲートを効かせない。使っていないアカウントは OAuth トークンが期限切れで更新できないのが普通で、ゲートを効かせると 6 時間後に行が消えてしまうため
 - 値がまだ一度も取れていないアカウントは行を出さない
-- オフのアカウント（`"enabled": false`）は、値があっても無くても `off` の 1 行だけを出す
+- オフのアカウント（`"enabled": false`）は、値があっても無くても行を出さない。名前列の幅や複数アカウント表示の判定にも数えない（いま使っているアカウントを除く）
 - リセット時刻を過ぎた窓は、日程分母（`82%/74%` の右側）と残り時間を出さない
 
 いま使っているアカウントの判定は、`CLAUDE_SECURESTORAGE_CONFIG_DIR` から導出した Keychain のサービス名と一致するスロットを探し、見つからなければ snapshot が記録している値、それも無ければ最初のスロット、の順に決める。環境変数が未設定のときは「既定アカウント」を指しているものとして扱うので、`securestorage` が `null` のスロットがあればそこに一致する。ステータスラインのサブプロセスに環境変数が渡るかは Claude Code 側の実装に依存するため、snapshot へのフォールバックを併せ持っている。
 
 ## カスタマイズ
 
-`~/.claude/statusline.sh` を直接編集してよい（プラグイン更新では消えない。ただし `/statusline:setup` を再実行すると上書きされ、`.bak-<timestamp>` が残る）。環境変数でも変えられる:
+`~/.claude/statusline.sh` を直接編集してよい（手を入れたコピーはプラグイン更新で自動では上書きされず、プラグインが新しい版になると 1 行目の末尾に `更新あり /statusline:setup` が出る。`/statusline:setup` を再実行すると上書きされ、`.bak-<timestamp>` が残る）。環境変数でも変えられる:
 
 | 変数 | 既定 | 効果 |
 |---|---|---|
@@ -206,7 +218,7 @@ bats plugins/statusline/tests/
 python3 -m pytest plugins/statusline/tests/
 ```
 
-`statusline.bats` は 1 スロット時の退行ガード、`statusline-multi-account.bats` は複数スロットの描画と `origin/main` 版との出力バイト一致の検証。`statusline-rate-snapshot.bats` と `test_rate_snapshot_writer.py` は writer の保存契約を検証する。`statusline-session-cost-record.bats` は本体のセッションコストの記録（書く条件・書かない条件・表示を変えないこと）を検証する。
+`statusline.bats` は 1 スロット時の退行ガード、`statusline-multi-account.bats` は複数スロットの描画と `origin/main` 版との出力バイト一致の検証。`statusline-rate-snapshot.bats` と `test_rate_snapshot_writer.py` は writer の保存契約を検証する。`statusline-session-cost-record.bats` は本体のセッションコストの記録（書く条件・書かない条件・表示を変えないこと）を検証する。`statusline-copy-update.bats` はコピーの自動更新（`install.sh` の記録、SessionStart フックの置き換え・上書きしない条件・動く場所、1 行目の `更新あり`）を検証する。
 
 ## Codex の利用上限
 
@@ -224,11 +236,11 @@ Codex CLI に ChatGPT アカウントでログイン済みなら、Claude アカ
 
 Python 3 helper が [Codex App Server](https://learn.chatgpt.com/docs/app-server) の `account/rateLimits/read` で取得する。描画は `${CLAUDE_CONFIG_DIR:-~/.claude}/.statusline-codex` のキャッシュを読み、180秒経過後の描画でバックグラウンド更新を開始する。失敗後は60秒待って再試行する。取得できない間は前回値に取得時刻からの経過時間を添え、初回は `取得待ち`。認証ファイルが変わると旧アカウントのキャッシュを無効化する。認証情報や生の応答はキャッシュへ保存しない。
 
-- `STATUSLINE_CODEX=0`: Codex 行・取得を無効化（下の `off` の表示より優先し、行そのものを出さない）
+- `STATUSLINE_CODEX=0`: Codex 行・取得を無効化（`codex.enabled` のオフの設定より優先する）
 - `STATUSLINE_CODEX_BIN`: Codex CLI の実行ファイルを指定（既定 `codex`）
 - `CODEX_HOME`: 表示する CLI の設定・認証ディレクトリ
 
-`accounts.json`（`CLAUDE_ACCOUNTS_FILE`、未設定なら `${CLAUDE_CONFIG_DIR:-~/.claude}/accounts.json`）のトップレベルに `"codex": {"enabled": false}` を書くと Codex がオフになり、Codex 行は使用率の代わりに `  Codex A  off` の 1 行になる。オフのあいだは Codex CLI を起動せず、キャッシュも読み書きしない（Codex にログインしていなくても `off` は出る）。オフになるのは値が JSON の `false` のときだけ。戻すときは `codex` のキーを消すか `enabled` を `true` にする。develop とレビューでの扱いは `plugins/dev-workflow/README.md`。
+`accounts.json`（`CLAUDE_ACCOUNTS_FILE`、未設定なら `${CLAUDE_CONFIG_DIR:-~/.claude}/accounts.json`）のトップレベルに `"codex": {"enabled": false}` を書くと Codex がオフになり、Codex 行は出なくなり、名前列の幅にも数えない。オフのあいだは Codex CLI を起動せず、キャッシュも読み書きしない（Codex にログインしていなくても同じ）。オフになるのは値が JSON の `false` のときだけ。戻すときは `codex` のキーを消すか `enabled` を `true` にする。develop とレビューでの扱いは `plugins/dev-workflow/README.md`。
 
 起動直後に Claude のライブ値がまだ無い場合も、複数アカウントなら使用中のアカウントを `▸ Claude A  取得待ち` のように示す。snapshot の値でライブ値を補完しない。
 

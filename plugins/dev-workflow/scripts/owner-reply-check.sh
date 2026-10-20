@@ -11,8 +11,17 @@
 #   （<セッション ID>/subagents/ の下は読まない）。OWNER_REPLY_PROJECTS_DIR はテスト用の差し替え口。
 # 比べ方: 原文と各発言の本文の連続する空白（改行を含む）を 1 個の空白にまとめ、前後の空白を落として部分一致。
 # 主の発言として数える行（すべて満たすもの。3 つの使い方で同じ）:
-#   1. type が "user"            2. isSidechain が true でない      3. isMeta が true でない
-#   4. origin のキーがあるなら（null を含む）origin.kind が "human"
+#   1. type が "user"            2. isSidechain が true でない
+#   3. isMeta が true でない（4 のチャンネルの行は除かない。実物は isMeta: true で残る）
+#   4. origin のキーがあるなら（null を含む）origin.kind が "human"、または "channel" で次のすべてを満たす（issue #1125）:
+#      origin.server が空でない文字列／本文が先頭の空白なしに開きタグ <channel( 名前="値")*>＋改行で始まる／
+#      属性名に重複が無い／source 属性が origin.server と同じ／user_id 属性が空でない／
+#      末尾（後ろの空白を除く）が改行＋</channel>／(origin.server, user_id) が OWNER_REPLY_CHANNEL_SENDERS にある／
+#      中身に </channel> や <channel の形のタグが無く（1 行に塊がちょうど 1 つ）、content が文字列か text 部品 1 つの配列／
+#      中身に user_id=" が無く、中身のどの行も "> で終わらない（meta の値の " と改行で開きタグを早く閉じる偽装を落とす）。
+#      OWNER_REPLY_CHANNEL_SENDERS は <server>=<ID> を空白かカンマで区切って並べる（例 plugin:discord:discord=<主の Discord ID>）。
+#      未設定か空ならチャンネルの行は数えない。チャンネルの行は開きタグと閉じタグを外した中身を本文とし、6・7・9 は中身に当てる。
+#      照合にユーザー名（user 属性）は使わない。
 #   5. message.content が文字列、または type:"text" の要素だけの配列（tool_result を含む配列は数えない）
 #   6. 本文が "Another Claude session sent a message" で始まらず、"<teammate-message" を含まない
 #   7. 本文が <bash-stdout> / <bash-stderr> / <local-command-stdout> / <local-command-stderr> で始まらない
@@ -35,7 +44,8 @@
 #              → not-direct（URL を書いた最後の親の発言とその行のあいだに、別の主の発言がある）
 # 終了コード: 0 = 一致（--relayed は通った）/ 1 = 一致なし（--relayed は REASON の付く落ち）/
 #   2 = 引数の不備・UUID でない ID・空の原文・日時を読めない・https で始まらない URL・会話ログなし・python3 なし・
-#       空白をまとめると空になる原文・会話ログを読めない・--relayed で指した行の timestamp を読めない
+#       空白をまとめると空になる原文・会話ログを読めない・--relayed で指した行の timestamp を読めない・
+#       OWNER_REPLY_CHANNEL_SENDERS に <server>=<ID> の形でない項目がある（空の項目は数えない）
 #   （2 は「確かめられない」。呼び出し側は 1 と同じく通さない側に倒す）
 #
 # 許容の意思は見ない（部分一致なので「許容しない」の一部の「許容」も一致する）。呼び出し側（pr-review-gate 手順 5）が
@@ -106,6 +116,7 @@ fi
 PYTHONDONTWRITEBYTECODE=1 python3 -I - "$mode" "$excerpt" "$target_uuid" "$stop_at" "$stop_url" "${logs[@]}" <<'PY'
 import datetime
 import json
+import os
 import re
 import sys
 
@@ -114,6 +125,65 @@ OUTPUT_PREFIXES = ("<bash-stdout>", "<bash-stderr>", "<local-command-stdout>", "
 # 9 つ目の条件（issue #1059）。出どころは冒頭の説明（epic-dispatch.sh の cmd_launch / deliver_reply の prompt=）
 RELAY_PREFIXES = ("主の返事（親エピック #", "親エピック #")
 DISPATCH_ARGS = re.compile(r"<command-args>\s*#\d+\s*（エピック #\d+ の子。")
+# チャンネル経由の行（issue #1125）。開きタグは Claude Code がチャンネルプラグインの通知の meta から組み立てて本文の先頭に置く
+CHANNEL_OPEN = re.compile(r'<channel((?: [A-Za-z_][A-Za-z0-9_]*="[^"\n]*")*)>\n')
+CHANNEL_ATTR = re.compile(r' ([A-Za-z_][A-Za-z0-9_]*)="([^"\n]*)"')
+CHANNEL_CLOSE = "\n</channel>"
+# 中身にチャンネルのタグがあれば数えない（1 行に塊が 2 つ以上あると、続きの塊の送信者を確かめられないため）
+CHANNEL_TAG = re.compile(r"</?channel[\s>]")
+# 中身に user_id=" があるか、中身のどこかの行が "> で終われば数えない。user_id より前の meta の値に " と改行を入れると
+# 開きタグが早く閉じ、偽の user_id を先頭に置いたまま本物の属性の残り（user_id=" と "> の行末）が中身へ押し出されるため
+CHANNEL_SPOOF = re.compile(r'user_id="|">(?:\n|$)')
+SENDERS_ENV = "OWNER_REPLY_CHANNEL_SENDERS"
+SENDER_ITEM = re.compile(r"[^=\s,]+=[^=\s,]+")
+
+
+def load_channel_senders():
+    """OWNER_REPLY_CHANNEL_SENDERS を (server, ID) の組の集合にする。形の誤りは exit 2（確かめられない）。"""
+    raw = os.environ.get(SENDERS_ENV, "")
+    senders = set()
+    for item in re.split(r"[\s,]+", raw):
+        if not item:
+            continue
+        if not SENDER_ITEM.fullmatch(item):
+            sys.stderr.write("owner-reply-check: %s has a malformed entry (expected <server>=<id>): %s\n" % (SENDERS_ENV, item))
+            sys.exit(2)
+        server, sender = item.split("=", 1)
+        senders.add((server, sender))
+    return senders
+
+
+CHANNEL_SENDERS = load_channel_senders()
+
+
+def channel_inside(origin, text, part_count):
+    """チャンネルの行の送信者が許可されていれば、開きタグと閉じタグを外した中身を返す。読めない・許可されていなければ None。"""
+    if part_count != 1:  # content が 2 つ以上の text 部品の配列なら数えない
+        return None
+    server = origin.get("server")
+    if not isinstance(server, str) or not server:
+        return None
+    head = CHANNEL_OPEN.match(text)
+    if head is None:
+        return None
+    attrs = CHANNEL_ATTR.findall(head.group(1))
+    names = [name for name, _ in attrs]
+    if len(names) != len(set(names)):
+        return None
+    attr = dict(attrs)
+    if attr.get("source") != server or not attr.get("user_id"):
+        return None
+    # 末尾（後ろの空白を除く）が改行のあとの </channel>。閉じタグの前の改行は開きタグの行末の改行と兼ねてよい（中身が空のとき）
+    full = text.rstrip()
+    end = len(full) - len(CHANNEL_CLOSE)
+    if not full.endswith(CHANNEL_CLOSE) or end < head.end() - 1:
+        return None
+    if (server, attr["user_id"]) not in CHANNEL_SENDERS:
+        return None
+    inside = full[head.end():end]
+    if CHANNEL_TAG.search(inside) or CHANNEL_SPOOF.search(inside):
+        return None
+    return inside
 
 
 def norm(text):
@@ -124,20 +194,27 @@ def owner_text(rec):
     """主の発言なら本文を、そうでなければ None を返す。"""
     if not isinstance(rec, dict) or rec.get("type") != "user":
         return None
-    if rec.get("isSidechain") is True or rec.get("isMeta") is True:
+    if rec.get("isSidechain") is True:
         return None
     if rec.get("isCompactSummary") is True:  # 会話の圧縮後にモデルが書いた要約（issue #756）
         return None
+    channel = None
     if "origin" in rec:
         origin = rec.get("origin")
-        if not isinstance(origin, dict) or origin.get("kind") != "human":
+        if not isinstance(origin, dict) or origin.get("kind") not in ("human", "channel"):
             return None
+        if origin.get("kind") == "channel":
+            channel = origin
+    # isMeta はチャンネルの行だけ見ない（実物のチャンネルの行は isMeta: true で残る。送信者の確かめで代える。issue #1125）
+    if channel is None and rec.get("isMeta") is True:
+        return None
     message = rec.get("message")
     if not isinstance(message, dict):
         return None
     content = message.get("content")
     if isinstance(content, str):
         text = content
+        part_count = 1
     elif isinstance(content, list) and content:
         parts = []
         for item in content:
@@ -145,8 +222,13 @@ def owner_text(rec):
                 return None
             parts.append(item["text"])
         text = "\n".join(parts)
+        part_count = len(parts)
     else:
         return None
+    if channel is not None:
+        text = channel_inside(channel, text, part_count)
+        if text is None:
+            return None
     stripped = text.lstrip()
     if stripped.startswith(FORWARD_PREFIX) or "<teammate-message" in text:
         return None
