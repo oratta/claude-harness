@@ -314,9 +314,20 @@ slot_token() {
 # 版は照合されないとの報告があるが、実際に入っている版を名乗る。取れなければ固定値に落とす。
 user_agent="${USAGE_PROBE_USER_AGENT:-}"
 if [ -z "$user_agent" ]; then
-  cc_version="$(claude --version 2>/dev/null | awk 'NR==1{print $1}' || true)"
+  # cron・hook・launchd などでは PATH に claude が無いことがあるので、標準の置き場所も探す
+  claude_bin="$(command -v claude 2>/dev/null || true)"
+  if [ -z "$claude_bin" ] && [ -x "$HOME/.local/bin/claude" ]; then
+    claude_bin="$HOME/.local/bin/claude"
+  fi
+  cc_version=""
+  if [ -n "$claude_bin" ]; then
+    cc_version="$("$claude_bin" --version 2>/dev/null | awk 'NR==1{print $1}' || true)"
+  fi
   # 数字とドットだけの版（例: 2.1.280）以外は、出力の形が変わったとみなして固定値に落とす
-  [[ "$cc_version" =~ ^[0-9]+(\.[0-9]+)+$ ]] || cc_version="2.1.0"
+  if ! [[ "$cc_version" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+    cc_version="2.1.0"
+    echo "usage-probe: claude の版を取れなかったので User-Agent を固定の版 2.1.0 にした（PATH と \$HOME/.local/bin に claude が無いか、--version の出力が想定外）" >&2
+  fi
   user_agent="claude-cli/${cc_version} (external, cli)"
 fi
 

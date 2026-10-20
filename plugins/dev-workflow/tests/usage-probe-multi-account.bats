@@ -645,6 +645,49 @@ SH
   grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
 }
 
+bats_require_minimum_version 1.5.0
+
+# PATH に claude が無い環境（cron・hook・launchd 等）の再現。claude を置かない STUB と最小の PATH を使う
+setup_no_path_claude() {
+  setup_production_stubs ""
+  rm -f "${STUB:?}/claude"
+  NOCLAUDE_PATH="${STUB}:/usr/bin:/bin"
+  if PATH="$NOCLAUDE_PATH" command -v claude >/dev/null 2>&1; then
+    skip "claude is on the minimal PATH of this machine"
+  fi
+  FAKE_HOME="${WORK}/home"
+  mkdir -p "${FAKE_HOME}/.local/bin"
+}
+
+@test "user-agent: finds claude in \$HOME/.local/bin when PATH has none" {
+  setup_no_path_claude
+  printf '#!/usr/bin/env bash\necho "2.1.280 (Claude Code)"\n' > "${FAKE_HOME}/.local/bin/claude"
+  chmod +x "${FAKE_HOME}/.local/bin/claude"
+  run env HOME="$FAKE_HOME" PATH="$NOCLAUDE_PATH" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-cli/2.1.280 (external, cli)' "${WORK}/curl-args"
+  [[ "$output" != *"2.1.0"* ]]
+}
+
+@test "user-agent: warns on stderr when no claude is found and the fixed version is used" {
+  setup_no_path_claude
+  run --separate-stderr env HOME="$FAKE_HOME" PATH="$NOCLAUDE_PATH" USAGE_SNAPSHOT="$SNAP" \
+      CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
+  [[ "$stderr" == *"claude"*"2.1.0"* ]]
+  [ "$(printf '%s\n' "$stderr" | grep -c 'usage-probe')" -eq 1 ]
+}
+
+@test "user-agent: no warning when the version is found" {
+  setup_production_stubs "2.1.280 (Claude Code)"
+  run --separate-stderr env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [[ "$stderr" != *"2.1.0"* ]]
+}
+
 @test "user-agent: USAGE_PROBE_USER_AGENT overrides the header" {
   setup_production_stubs "2.1.280 (Claude Code)"
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
