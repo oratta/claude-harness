@@ -26,6 +26,7 @@ ACCOUNTS_FILE="$ACCOUNTS_FILE" USAGE_SNAPSHOT="$SNAPSHOT" SELECT_ACCOUNT_NOW="$N
   USAGE_VIEW_DIR="$SCRIPT_DIR" python3 - "$@" <<'PY'
 import math
 import os
+import shlex
 import sys
 
 sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
@@ -47,8 +48,8 @@ if len(sys.argv) == 2:
         if slot_id == requested:
             if not enabled:
                 sys.stderr.write(
-                    f"account {requested} is off: set \"enabled\" to true or remove it "
-                    f"for this slot in {os.environ['ACCOUNTS_FILE']}\n")
+                    f"account {requested} is off (enabled is false in {os.environ['ACCOUNTS_FILE']}): "
+                    f"run {shlex.quote(os.path.join(os.environ['USAGE_VIEW_DIR'], 'accounts.sh'))} on {requested}\n")
                 raise SystemExit(2)
             print(secure)
             sys.stderr.write(f"selected={slot_id} reason=explicit margins=-\n")
