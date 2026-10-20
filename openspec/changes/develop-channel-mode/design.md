@@ -40,7 +40,7 @@ main に入っている関連の変更:
 
 ### 住人のモードは 3 つ目の実行モード `channel` にする
 
-- 採る: 実行モード表に `channel` を足す。工程は interactive と同じ (0)〜(4)（G を回し、PR の合格まで進む）。違いは、主に聞く先（チャンネル）・保留からの再開の案内・エピックの回し方（サブエージェント方式）・主への発言の 1 行目の 4 つだけ
+- 採る: 実行モード表に `channel` を足す。工程は interactive と同じ (0)〜(4)（G を回し、PR の合格まで進む）。違いは、主に聞く先と主への発言の宛先（チャンネル）・保留からの再開の案内（G の依頼文を含む）・リスク許容の受け方・エピックの回し方（サブエージェント方式）・主への発言の 1 行目だけ
 - 採らない: interactive のまま「聞く」をチャンネルに読み替える。引き継ぎのコメントの `実行モード` の値と、新しいセッションの本体がどの案内で再開するかを決める値が必要で、interactive の中の条件分岐にすると「interactive は AskUserQuestion」と書いた箇所がどちらを指すか読み分けられなくなる
 - 採らない: unmanned を住人に使う。unmanned は G を回さず 1 サイクルで終える形で、オーナーの依頼に PR の合格まで応える使い方と合わない。憲法の外枠も無い
 
@@ -70,7 +70,7 @@ main に入っている関連の変更:
 - 読み替えの規則: SKILL.md の実行モードの節に「develop と、develop から読む文書の『interactive は AskUserQuestion』は、channel モードではこの聞き方に読む」と 1 か所に書く。対象の文書を名前で列挙する（列挙は下）
   - 採る: 読み替えを 1 か所に書く。主に聞くのは常に本体で、本体は SKILL.md を先に読んでいる。同じ規則を各文書に書くと、直すときに片方が漏れる（`worker/common.md` が正本を 1 か所にしている理由と同じ）
   - 採らない: 各文書の該当行を `interactive は AskUserQuestion、channel はチャンネル` に書き換える。編集するファイルが 6 つ増え、モードを足すたびに同じ数を直すことになる
-  - 列挙は漏れなくする。読み替えを 1 か所に書く方式は、列挙から漏れた文書を読んだ本体が AskUserQuestion に流れるので、`plugins/dev-workflow/` 配下（`tests/` を除く）で `AskUserQuestion` を含むファイルが SKILL.md 以外すべて列挙に載っていることを bats で確かめる。列挙は `references/decision-criteria.md`・`references/roles/spec-reviewer.md`・`references/roles/worker/common.md`・`references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`skills/issueify/SKILL.md` の 8 つ
+  - 列挙は漏れなくする。読み替えを 1 か所に書く方式は、列挙から漏れた文書を読んだ本体が AskUserQuestion に流れるので、`plugins/dev-workflow/` 配下（`tests/` を除く）（`changes/` も除く。変更の記録は手順として読まれない）で `AskUserQuestion` を含むファイルが SKILL.md 以外すべて列挙に載っていることを bats で確かめる。照合を機械的にするため、列挙は `plugins/dev-workflow/` からの相対パスの 1 つの形に揃え、bats はその相対パスをバッククォートで囲んだ文字列が列挙にあるかを見る。列挙は `skills/develop/references/decision-criteria.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`skills/develop/references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`skills/issueify/SKILL.md` の 8 つ
   - `commands/develop.md` は本体が最初に読むので、引数の分岐 ②⑤ と issueify フォールバックの「提示して選ばせる・承認を得る」がチャンネルでの質問になることを、その場にも 1 文書く（SKILL.md を読む前に分岐を処理するため）
 
 ### channel モードの保留と再開

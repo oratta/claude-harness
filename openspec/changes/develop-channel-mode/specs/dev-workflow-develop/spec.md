@@ -3,7 +3,7 @@
 ### Requirement: 実行モードと unmanned の責務分割
 SKILL.md は実行モード表（interactive / channel / unmanned）を持ち、unmanned（`--unmanned`。loop-dev-agent の憲法 Step 3 から呼ばれる）では次を規定しなければならない（MUST）: develop の本体は憲法のメイン自身が務め、W / R1 をメインが spawn する。worktree は憲法側が用意したものを使う。1 ループのうち (0)〜(3) を回し、(3) で W が Draft PR の作成と `agent-review:pending` の付与（憲法 Step 3 の 5〜6 に相当）まで行う。(4) の G は unmanned では起こさず、憲法 Step 1（レビューモード）が次サイクル以降で担う（1 サイクル 1 仕事を維持）。複数 change に割れた場合は子 issue を作って `blocked_by` で順序付けし、そのサイクルを終える。仕様化判断の記録と仕様レビューは unmanned でも免除しない（MUST）。文言合わせの通し方（`dev-workflow-spec-review` の「仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く」Requirement）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる（SHALL）。
 
-channel（画面を見ている人がいないセッションで、主とチャンネル（Discord など）だけで会話する。flatmate の住人がオーナーから開発を頼まれたときの形）は、interactive と同じ (0)〜(4) を回す（MUST。G を起こし、PR の合格まで進む）。interactive との違いは、主に聞く先・保留からの再開の案内・エピックの回し方・主への発言の 1 行目の 4 つだけで、それぞれの決まりは要件「channel モードでは主に聞くときチャンネルに送り、AskUserQuestion を呼ばない」「channel モードの保留はチャンネルの返事で再開する」「channel モードのリスク許容はチャンネルの返事を確かめられるときだけチャンネルで受ける」「エピックの条件・作り方・回し方・完了条件を規定する」（回し方の経路の決め方）「channel モードの主への発言はすべてチャンネルに送り、チャンネルでする操作を 1 行目に書く」に従う（MUST）。モードの決め方は要件「実行モードは引数・印・依頼の届き方で開始時に決める」に従う（MUST）。
+channel（画面を見ている人がいないセッションで、主とチャンネル（Discord など）だけで会話する。flatmate の住人がオーナーから開発を頼まれたときの形）は、interactive と同じ (0)〜(4) を回す（MUST。G を起こし、PR の合格まで進む）。interactive との違いは、主に聞く先と主への発言の宛先（チャンネル）・保留からの再開の案内（G の依頼文を含む）・リスク許容の受け方・エピックの回し方・主への発言の 1 行目だけで、それぞれの決まりは要件「channel モードでは主に聞くときチャンネルに送り、AskUserQuestion を呼ばない」「channel モードの保留はチャンネルの返事で再開する」「channel モードのリスク許容はチャンネルの返事を確かめられるときだけチャンネルで受ける」「エピックの条件・作り方・回し方・完了条件を規定する」（回し方の経路の決め方）「channel モードの主への発言はすべてチャンネルに送り、チャンネルでする操作を 1 行目に書く」に従う（MUST）。モードの決め方は要件「実行モードは引数・印・依頼の届き方で開始時に決める」に従う（MUST）。
 
 #### Scenario: unmanned でも文言合わせの通し方は同じ条件で当たる
 - **WHEN** SKILL.md の実行モードの節を読む
@@ -232,7 +232,7 @@ SKILL.md は次を規定しなければならない（MUST）。**条件**（い
 
 channel の本体は AskUserQuestion を呼んではならない（MUST NOT）。主に聞くときは、依頼の届いたチャンネル（依頼の発言の開きタグの `chat_id`）にチャンネルの返信ツールで質問を送り、そのターンを終えなければならない（MUST）。依頼がチャンネルから届いていないときは、そのセッションの運用が決める主への連絡先に送り、連絡先が分からなければ記録先に質問をコメントして `needs-approval` を付けて止まる（MUST）。記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限）は先に PR か記録先のコメントに書き、チャンネルの質問にそのコメントのフル URL を添える（MUST）。
 
-SKILL.md の実行モードの節は、develop と develop から読む文書の「interactive は AskUserQuestion で聞く」を、channel ではこの聞き方に読むと 1 か所に書き、対象の文書（`references/decision-criteria.md`・`references/roles/spec-reviewer.md`・`references/roles/worker/common.md`・`references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`skills/issueify/SKILL.md`）を名前で挙げなければならない（MUST）。`plugins/dev-workflow/` 配下（`tests/` を除く）で `AskUserQuestion` を含むファイルは、SKILL.md 自身を除いてすべてこの列挙に載っていなければならず（MUST）、bats で確かめる（SHALL。読み替えを 1 か所に書く方式は、列挙が漏れると漏れた文書の本体の手順が AskUserQuestion に流れるため）。`commands/develop.md` は、引数の分岐 ②⑤ の候補の提示と issueify フォールバックの承認が channel ではチャンネルでの質問になることを、その場にも書かなければならない（MUST。本体は SKILL.md より先にこの分岐を処理するため）。
+SKILL.md の実行モードの節は、develop と develop から読む文書の「interactive は AskUserQuestion で聞く」を、channel ではこの聞き方に読むと 1 か所に書き、対象の文書（`skills/develop/references/decision-criteria.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`skills/develop/references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`skills/issueify/SKILL.md`）を、`plugins/dev-workflow/` からの相対パスの 1 つの形で挙げなければならない（MUST）。`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く。`changes/` は変更の記録で、手順として読まれない）で `AskUserQuestion` を含むファイルは、SKILL.md 自身を除いてすべて、`plugins/dev-workflow/` からの相対パスがそのまま（バッククォートで囲んだ形で）この列挙に載っていなければならず（MUST）、bats で確かめる（SHALL。読み替えを 1 か所に書く方式は、列挙が漏れると漏れた文書の本体の手順が AskUserQuestion に流れるため）。`commands/develop.md` は、引数の分岐 ②⑤ の候補の提示と issueify フォールバックの承認が channel ではチャンネルでの質問になることを、その場にも書かなければならない（MUST。本体は SKILL.md より先にこの分岐を処理するため）。
 
 この要件の守備範囲は、channel で本体が AskUserQuestion に流れる経路を develop の文面から無くすことである。拾いたい誤りは、develop の手順のどこかが channel の本体に AskUserQuestion を呼ばせること。develop 以外のスキル（wt-clean など）が AskUserQuestion を呼ぶことと、本体が文面に反して呼ぶことを機械的に止めることは、この要件の範囲に入れない。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
 
@@ -253,8 +253,8 @@ SKILL.md の実行モードの節は、develop と develop から読む文書の
 
 #### Scenario: AskUserQuestion に触れるファイルが列挙から漏れていない
 
-- **WHEN** bats が `plugins/dev-workflow/` 配下（`tests/` を除く）で `AskUserQuestion` を含むファイルを集める
-- **THEN** SKILL.md 以外のすべてのファイルが、実行モードの節の読み替えの対象の列挙にリポジトリ相対の名前で載っている
+- **WHEN** bats が `plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で `AskUserQuestion` を含むファイルを集める
+- **THEN** SKILL.md 以外のすべてのファイルの `plugins/dev-workflow/` からの相対パスが、バッククォートで囲んだ形で実行モードの節の読み替えの対象の列挙に載っている
 
 ### Requirement: channel モードの保留はチャンネルの返事で再開する
 
