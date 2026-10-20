@@ -44,7 +44,7 @@ clone を次の順に探す。各段で、候補ごとに `git -C <候補> remot
 
 - 見つからなければ、自動で clone せず、記録も作らず枠も使わずに `failed <child> no-clone` を stdout に出し、stderr に `EPIC_DISPATCH_CLONES` の書き方（`export EPIC_DISPATCH_CLONES='<o>/<r>=<clone の絶対パス>'`）と clone のコマンド（`git clone git@github.com:<o>/<r>.git <置きたい場所>`）を出す。clone の置き場はオーナーのディスクの構成で決まるので、ハーネスがパスを決めない。一度設定すれば以後は見つかる
 - 同じ段に 2 つ以上の候補が一致したら `failed <child> ambiguous-clone`（記録も枠も使わない）。stderr に候補のパスを出す。段をまたいだ重複は先の段を取る（`EPIC_DISPATCH_CLONES` の指定が Orca の登録より優先）
-- ワークツリーの起点は、`--base` / `EPIC_DISPATCH_BASE` があればそれ、無ければ子のリポジトリの既定ブランチ（`gh api repos/<o>/<r> --jq .default_branch`）。同じリポジトリの子は今までどおり無ければ `main`（呼び出しの形を変えない）。`--base` と `EPIC_DISPATCH_BASE` は 1 回の `launch` の全部の子に掛かるので、リポジトリごとに既定ブランチが違う子を渡すときは、`--base` を付けずに（既定ブランチを使わせる）か、`launch` をリポジトリごとに分けて呼ぶ（SKILL.md に書く）
+- ワークツリーの起点は、`--base` / `EPIC_DISPATCH_BASE` があればそれ、無ければ子のリポジトリの既定ブランチ（`gh api repos/<o>/<r>` の 1 回の応答の `.default_branch`。`.permissions.push` と同じ応答で、判定順は Decision 3）。同じリポジトリの子は今までどおり無ければ `main`（呼び出しの形を変えない）。`--base` と `EPIC_DISPATCH_BASE` は 1 回の `launch` の全部の子に掛かるので、リポジトリごとに既定ブランチが違う子を渡すときは、`--base` を付けずに（既定ブランチを使わせる）か、`launch` をリポジトリごとに分けて呼ぶ（SKILL.md に書く）
 - 子の clone の `origin` の取得は `git -C <clone> fetch origin <base>`。Orca の部品は `orca worktree create --repo <selector> ...`（Orca に登録されたリポジトリ）で作る。(2) で見つけた clone が Orca に登録されていないときは、`orca repo list --json` で当たらないので記録を書く前に `failed <child> not-in-orca`(記録も枠も使わない。stderr に `orca repo add` の案内を出す)。登録を `launch` が自動で行うことはしない（Orca のリポジトリの追加は画面の状態を変えるため）
 - 1 回の `launch` の中で、同じリポジトリの clone の探索・書き込み権・既定ブランチの照会は 1 回にまとめる（子ごとに繰り返さない）
 
@@ -64,7 +64,7 @@ clone を次の順に探す。各段で、候補ごとに `git -C <候補> remot
 ### 5. 親の見張りの残り（項目 6 の残り。Decision 6）
 
 - `reap` の PR の照会を別リポジトリの子では `gh pr list -R <子のリポジトリ> --head <branch> --state merged ...` に向け（`--search` の形も `-R` を足す）、base の照会は子のワークツリーの origin に向ける（`git -C <子のワークツリー> ls-remote origin refs/heads/<base>`、`git -C <子のワークツリー> fetch origin <base>`）。同じリポジトリの子は呼び出しの形を変えない（既存の bats の照合をそのまま通す）。別リポジトリの子の issue の state は、change 1 の `issue_api` が記録の `repo` で読む形のまま
-- `wait`・`pending-owner`・`notify-closed`・`reply` は change 1 で記録の `repo` を使うように作られているので、追加の変更は書式だけ（下の 6）。`reap` はそのほかに、base の名前を記録の `base` に、base の先端をリポジトリごとに 1 回に、`git cat-file -e` を子のワークツリーに、ブランチの片付け(`rev-parse`・`worktree list`・`branch -D`)を子の clone に向ける(`orca worktree rm` の前に `git-common-dir` で clone を控える)
+- `wait`・`pending-owner`・`notify-closed`・`reply` は change 1 で記録の `repo` を使うように作られているので、追加の変更は書式だけ（下の 6）。`reap` はそのほかに、base の名前を記録の `base` に、base の先端をリポジトリと base の組ごとに 1 回に、`git cat-file -e` を子のワークツリーに、ブランチの片付け(`rev-parse`・`worktree list`・`branch -D`)を子の clone に向ける(`orca worktree rm` の前に `git-common-dir` で clone を控える)
 
 ### 6. 書式（Decision 4 の続き）
 

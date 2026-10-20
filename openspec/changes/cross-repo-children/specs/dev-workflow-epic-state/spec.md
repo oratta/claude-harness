@@ -179,7 +179,7 @@ Orca の部品は、見つけた clone のパスに当たるリポジトリを `
 - **THEN** stdout は `failed genetta-inc/flatmate#1615 base-lookup-failed`、exit 1 で、記録は作られず、枠は使われない
 
 #### Scenario: --base があればそれを使う
-- **WHEN** `--base staging` を付けて同じ `launch` を実行する
+- **WHEN** `gh api repos/genetta-inc/flatmate` の応答の `permissions.push` が `true` で `default_branch` が `develop` の状態で、`--base staging` を付けて `epic-dispatch.sh launch --base staging 1122 genetta-inc/flatmate#1615` を実行する
 - **THEN** `--base-branch` は `origin/staging` である（書き込み権の応答は読むが、既定ブランチは使われない）
 
 ### Requirement: 別のリポジトリの子の起動の指示・環境変数・注意書き・返事の頭にはエピックのリポジトリを足す

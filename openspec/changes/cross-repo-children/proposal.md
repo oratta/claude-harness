@@ -7,7 +7,7 @@
 ## What Changes
 
 - `launch` が、エピックと別のリポジトリの子（`<owner>/<repo>#<N>` で渡された子）のワークツリーを、子のリポジトリのローカル clone に作る。clone は (1) 親のワークツリーの clone（子がエピックと同じリポジトリのとき）→ (2) 環境変数 `EPIC_DISPATCH_CLONES` → (3) Orca に登録されたリポジトリ、の順に探し、候補ごとに origin が子のリポジトリを指すことを確かめる。見つからなければ自動で clone せず `failed <child> no-clone`、同じ段に 2 つ以上あれば `failed <child> ambiguous-clone`（どちらも記録も枠も使わない）
-- ワークツリーを作る前に `gh api repos/<o>/<r> --jq .permissions.push` を読み、`true` でなければ `failed <child> no-push`、読めなければ `failed <child> permission-lookup-failed`（記録も枠も使わない）。fork から PR を出す経路は作らない。clone が Orca に登録されていなければ `failed <child> not-in-orca`、既定ブランチを読めなければ `failed <child> base-lookup-failed`（どちらも記録も枠も使わない）
+- ワークツリーを作る前に `gh api repos/<o>/<r>` の 1 回の応答の `.default_branch`／`.permissions.push` を読み（判定順は design の Decision 3）、`true` でなければ `failed <child> no-push`、読めなければ `failed <child> permission-lookup-failed`（記録も枠も使わない）。fork から PR を出す経路は作らない。clone が Orca に登録されていなければ `failed <child> not-in-orca`、既定ブランチを読めなければ `failed <child> base-lookup-failed`（どちらも記録も枠も使わない）
 - 別リポジトリの子のワークツリーの起点は、`--base` / `EPIC_DISPATCH_BASE` があればそれ、無ければ子のリポジトリの既定ブランチ。子の起動の指示・`EPIC_DISPATCH_PARENT_EPIC`・注意書きのコメント・親から子への返事の頭は、別リポジトリのエピックの形（エピックの番号のあとにリポジトリを足す）にする
 - `reap` の `gh pr list` と base の照会は、別リポジトリの子では子のリポジトリ（`-R <repo>`）と子のワークツリーの origin に向ける（同じリポジトリの子の呼び出しの形は変えない）。`stop-judge.sh` が別リポジトリの子を受けられるようにする
 - develop の SKILL.md「エピックの扱い」に複数リポジトリの挙動を書く: 依存と子エピックの判定を子のリポジトリに対して読む、エピックの子の一覧の組み立て、コメント・完了報告の書式、マージ待ちの子の PR を子のリポジトリで扱う手順、子の側が親エピックに残す記録の置き場、clone・書き込み権の `failed` を主に報告すること
