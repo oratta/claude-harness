@@ -9,6 +9,7 @@
 #   epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
 #   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
 #   epic-dispatch.sh reap <child>...
+#   epic-dispatch.sh max-parallel
 #
 # Orca のコマンドを呼ぶのはこのスクリプトだけ（develop の手順書には orca のコマンドを書かない）。
 # route: 子の番号の検査のあと、子の件数によらず最初に「エピックの子のセッションか」を見る。
@@ -35,12 +36,20 @@
 #   で変える。空か数字でなければ使い方を出して exit 1（根拠は skills/develop/references/reply-after-idle.md）。
 #   作れなければ、既存の端末が無いことの確認・作り直し・送信のコマンドを stderr に出す）→ `orca terminal wait --for tui-idle` →
 #   `orca terminal send --text <指示> --enter --wait-submit <秒>`。stdout は子ごとに `launched <N>`
-#   （send の stages に turn_started がある）/ `skipped <N>` / `failed <N>` の 1 行。failed で
+#   （send の stages に turn_started がある）/ `skipped <N>` / `failed <N>` / `deferred <N>`（上限で後回し）の 1 行。failed で
 #   ハンドルが取れていれば送り直しのコマンドを stderr に出す。orca 自身の出力は stderr。
 #   <base> の既定は main（EPIC_DISPATCH_BASE、--base が優先）。起動完了待ちの上限（ミリ秒）と
 #   送信の観測時間（秒）の既定は 60000 / 30（EPIC_DISPATCH_READY_TIMEOUT_MS / EPIC_DISPATCH_SUBMIT_WAIT）
 #   exit 0 = failed なし / 1 = failed あり、または orca・jq が無い・current / fetch / set / list の
 #   失敗（このときは子を 1 件も作らない）
+#   上限（max-parallel と同じ値）: list のあと、同じ repoId・parentWorktreeId が今のワークツリーの id・
+#   archive されていない・linkedIssue がある子のうち、workspaceStatus が completed でなく、comment が
+#   epic-stopped / epic-stopped-seen でなく、`gh api repos/{owner}/{repo}/issues/<N> --jq .state` が closed で
+#   ないものを「枠を使っている子」と数える（gh の失敗・open / closed 以外は数え、stderr にその子を出す。
+#   今のワークツリーの id が無ければ 0 件で stderr）。stderr に `max parallel <上限> (<出どころ>); in use <数>: #<N>...`。
+#   空き枠 = max(0, 上限 − 使用中)。子ごとに skipped の判定のあと、空き枠が 0 なら create も注意書きも
+#   行わずに `deferred <N>`（exit code に影響しない）。create に進んだ子は結果によらず空き枠を 1 減らす。
+#   上限の値が誤っていれば引数の検査のあと orca も git も呼ばずに使い方を出して exit 1
 #   EPIC_DISPATCH_PARENT_EPIC が空でなければ、引数の検査のあと orca も git も呼ばずに
 #   stderr に理由を出して exit 1（子ワークツリーを作らない）。空でも、current --json の直後に route と
 #   同じ親子関係の判定をし、子なら git も set も create も呼ばずに exit 1
@@ -122,6 +131,11 @@
 #   comment が epic-stopped-seen（親が受けたまま、子が mark resumed を付けていない）のものがあれば
 #   `pending <N>` を 1 行ずつ出して exit 0（orca worktree set は呼ばない）。起動し直した親が、主の返事待ちの子を
 #   出し直す対象を集める。一覧を読めなければ stdout 空で exit 1
+# max-parallel: 同時に枠を使う子の上限を stdout に数字 1 行で出して exit 0（orca / gh / git を呼ばない）。
+#   EPIC_DISPATCH_MAX_PARALLEL（1 以上の整数。空・0・数字以外は使い方を出して exit 1）があればその値、
+#   無ければ物理メモリの GiB（`sysctl -n hw.memsize` のバイト、読めなければ
+#   EPIC_DISPATCH_MEMINFO_FILE（テスト用。既定 /proc/meminfo）の MemTotal の kB）を 4 で割って切り捨て、最小 1。
+#   どちらも読めなければ 2 で、stderr に `physical memory not readable`。launch も同じ値を使う
 # wait --resolve が通す返事は、送る前に references/reply-after-idle.md の表で起動し直すかを決める:
 #   子のトランスクリプト（${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl、
 #   ちょうど 1 本）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前で、
@@ -141,7 +155,9 @@
 # 「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」
 # 「epic-dispatch.sh の wait は止まった子を判断し、通すものには返事を送って待ちを続ける」
 # 「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」
-# 「Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る」が正本。
+# 「Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る」
+# 「epic-dispatch.sh は同時に枠を使う子の上限を環境変数か物理メモリから決める」
+# 「epic-dispatch.sh launch は空いた枠の分だけ子を起動し、残りを deferred で出す」が正本。
 set -uo pipefail
 
 # 状態の記録の読み書き（置き場・排他・照合）は epic-state.sh に置く
@@ -159,6 +175,7 @@ usage:
   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
   epic-dispatch.sh reap <child>...
   epic-dispatch.sh pending-owner <child>...
+  epic-dispatch.sh max-parallel
 EOF
   exit 1
 }
@@ -305,6 +322,44 @@ agent_setup() {
   agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$1 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=$idle_compact $claude_cmd --model $(shq "$model")"
 }
 
+# 同時に枠を使う子の上限を決める（launch と max-parallel が共用）。結果は max_par（数）と max_par_src
+# （出どころ）に入れる。EPIC_DISPATCH_MAX_PARALLEL の値が誤っていれば stderr に理由を出して 1 を返す。
+# sysctl は PATH で引く（テストのスタブを効かせるため。絶対パスで呼ばない）
+max_par=""; max_par_src=""
+max_parallel_setup() {
+  if [ -n "${EPIC_DISPATCH_MAX_PARALLEL+set}" ]; then
+    max_par="$EPIC_DISPATCH_MAX_PARALLEL"
+    if ! is_num "$max_par" || [ "$(( 10#$max_par ))" -lt 1 ]; then
+      echo "EPIC_DISPATCH_MAX_PARALLEL must be an integer of 1 or more: $max_par" >&2
+      return 1
+    fi
+    max_par="$(( 10#$max_par ))" max_par_src="EPIC_DISPATCH_MAX_PARALLEL"
+    return 0
+  fi
+  local bytes kb gib=""
+  bytes="$(sysctl -n hw.memsize 2>/dev/null)" || bytes=""
+  if is_num "$bytes"; then
+    gib=$(( bytes / 1073741824 ))
+  else
+    kb="$(awk '$1 == "MemTotal:" { print $2; exit }' "${EPIC_DISPATCH_MEMINFO_FILE:-/proc/meminfo}" 2>/dev/null)" || kb=""
+    is_num "$kb" && gib=$(( kb / 1048576 ))
+  fi
+  if [ -z "$gib" ]; then
+    echo "physical memory not readable (sysctl -n hw.memsize, ${EPIC_DISPATCH_MEMINFO_FILE:-/proc/meminfo}); max parallel defaults to 2" >&2
+    max_par=2 max_par_src="default; physical memory not readable"
+    return 0
+  fi
+  max_par=$(( gib / 4 ))
+  [ "$max_par" -ge 1 ] || max_par=1
+  max_par_src="physical memory ${gib} GiB"
+}
+
+cmd_max_parallel() {
+  [ "$#" -eq 0 ] || usage
+  max_parallel_setup || usage
+  echo "$max_par"
+}
+
 # send の出力にターンの開始（stages の turn_started）があるか
 turn_started() {
   printf '%s' "$1" | jq -e '[.. | objects | .stages? | arrays | .[]] | index("turn_started") != null' >/dev/null 2>&1
@@ -388,6 +443,7 @@ cmd_launch() {
   is_num "$epic" || { echo "not an issue number: $epic" >&2; usage; }
   check_children "$@"
   agent_setup "$epic" || usage
+  max_parallel_setup || usage
   if [ -n "${EPIC_DISPATCH_PARENT_EPIC-}" ]; then
     echo "this session is a child of epic #$EPIC_DISPATCH_PARENT_EPIC (EPIC_DISPATCH_PARENT_EPIC); child epics are not expanded here" >&2
     exit 1
@@ -417,6 +473,26 @@ cmd_launch() {
   printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
     || { echo "orca worktree list --json is not readable" >&2; exit 1; }
 
+  # 枠を使っている子を数える（完了の印・止まった印・閉じた子は数えない。state を読めない子は数える）
+  local self cn cst in_use=0 in_use_list="" free
+  self="$(printf '%s' "$current" | jq -r '.result.worktree.id // empty' 2>/dev/null)"
+  if [ -z "$self" ]; then
+    echo "orca worktree current --json has no id; counting no children in use" >&2
+  else
+    for cn in $(printf '%s' "$list" | jq -r --arg r "$repo" --arg p "$self" \
+      '.result.worktrees[] | select(.repoId == $r and .parentWorktreeId == $p and .isArchived != true
+        and .linkedIssue != null and .workspaceStatus != "completed"
+        and ((.comment // "") | . != "epic-stopped" and . != "epic-stopped-seen"))
+        | .linkedIssue | tostring' 2>/dev/null); do
+      cst="$(gh api "repos/{owner}/{repo}/issues/$cn" --jq .state)" || cst=""
+      [ "$cst" = closed ] && continue
+      [ "$cst" = open ] || echo "could not read the state of #$cn; counting it as in use" >&2
+      in_use=$(( in_use + 1 )); in_use_list="$in_use_list #$cn"
+    done
+  fi
+  echo "max parallel $max_par ($max_par_src); in use $in_use:$in_use_list" >&2
+  free=$(( max_par - in_use )); [ "$free" -ge 0 ] || free=0
+
   local n prompt body out rc child handle sent retry failed=0 seen=" "
   for n in "$@"; do
     case "$seen" in
@@ -429,6 +505,11 @@ cmd_launch() {
       echo "skipped $n"
       continue
     fi
+    # 空き枠が無ければ作らず注意書きも投稿しない。create に進む子は結果によらず 1 枠を使う
+    if [ "$free" -le 0 ]; then
+      echo "deferred $n"; continue
+    fi
+    free=$(( free - 1 ))
     prompt="/develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
     [ -n "$note" ] && prompt="$prompt $note"
     out="$(orca worktree create --name "issue-$n" --issue "$n" --base-branch "origin/$base" \
@@ -1127,5 +1208,6 @@ case "$sub" in
   pending-owner) cmd_pending_owner "$@" ;;
   adopt) cmd_adopt "$@" ;;
   clear) cmd_clear "$@" ;;
+  max-parallel) cmd_max_parallel "$@" ;;
   *) usage ;;
 esac
