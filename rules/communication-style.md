@@ -12,4 +12,4 @@
 5. **ヒアリングと壁打ちでは、1問ずつ自由回答で聞く。** 複数の質問を並べて選ばせる形（AskUserQuestion のような UI）は使わない。仮説が立った段階で「この理解で合っているか」と確認する形なら選択肢を出してよい。選択肢を並べてよいのは、状況を把握していて網羅的で重ならない選択肢を作れるときだけ
 6. **100行を超える分析・比較・手順は、会話に流さずHTMLのページにして渡す。** 装飾は足さない
 
-全文の正本は `~/.claude/plugins/marketplaces/oratta-claude-harness/output-styles/readable.md`（Output Style `readable`）。このファイルはそこから要点を抜いた短い版で、原則を増減させたときは両方を直す。Output Style はメインの会話にしか効かないため、サブエージェントと Output Style 未選択の環境ではこのファイルだけが効く。
+全文の正本は `~/.claude/output-styles/readable.md`（Output Style `readable`）。このファイルはそこから要点を抜いた短い版で、原則を増減させたときは両方を直す。Output Style はメインの会話にしか効かないため、サブエージェントと Output Style 未選択の環境ではこのファイルだけが効く。
