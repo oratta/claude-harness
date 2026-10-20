@@ -667,7 +667,7 @@ setup_no_path_claude() {
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
   grep -qxF 'User-Agent: claude-cli/2.1.280 (external, cli)' "${WORK}/curl-args"
-  [[ "$output" != *"2.1.0"* ]]
+  [[ "$output" != *"2.1.0"* ]] || return 1
 }
 
 @test "user-agent: warns on stderr when no claude is found and the fixed version is used" {
@@ -676,7 +676,7 @@ setup_no_path_claude() {
       CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
   grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
-  [[ "$stderr" == *"claude"*"2.1.0"* ]]
+  [[ "$stderr" == *"claude"*"2.1.0"* ]] || return 1
   [ "$(printf '%s\n' "$stderr" | grep -c 'usage-probe')" -eq 1 ]
 }
 
@@ -685,7 +685,7 @@ setup_no_path_claude() {
   run --separate-stderr env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  [[ "$stderr" != *"2.1.0"* ]]
+  [[ "$stderr" != *"2.1.0"* ]] || return 1
 }
 
 @test "user-agent: USAGE_PROBE_USER_AGENT overrides the header" {
