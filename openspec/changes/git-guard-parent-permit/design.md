@@ -86,7 +86,7 @@ git を動かして確かめる案（`git rev-parse --show-toplevel --git-common
 
 ### 6. 記録を残す
 
-スクリプトは許可を書く前に `<base>/permit-log.jsonl` に 1 行（`event: "permit"`、時刻・session_id・agent_id・cwd・command・scratchpad・repos・reason・expires_at）を追記する。追記できなければ許可を書かずに exit 1（記録の無い許可を作らない）。hook は許可を使ったとき `event: "use"`、期限切れで捨てたとき `event: "expired"` を追記する。hook の追記の失敗は判定を変えない（`allow` を `deny` に変えない）。スクリプトは成功時に、許可したコマンド・cwd・scratchpad・確かめた repo・期限を stdout に書く（親が報告に引用できるように）。
+スクリプトは許可を書く前に `<base>/permit-log.jsonl` に 1 行（`event: "permit"`、時刻・session_id・agent_id・cwd・command・scratchpad・repos・reason・expires_at）を追記する。追記できなければ許可を書かずに exit 1（記録の無い許可を作らない）。hook は許可を使ったとき `event: "use"`、期限切れで捨てたとき `event: "expired"`、4 つの値は一致し期限内だが使う時点の一時領域の判定で `deny` にしたとき `event: "rejected"`（満たさなかった理由を含む）を追記する。hook の追記の失敗は判定を変えない（`allow` を `deny` に変えない）。スクリプトは成功時に、許可したコマンド・cwd・scratchpad・確かめた repo・期限を stdout に書く（親が報告に引用できるように）。
 
 一時ディレクトリに置くので、OS が一時ディレクトリを片付ければ記録も消える。記録先（issue / PR）へ親が書き残すかは #1135 で決める。
 
@@ -94,14 +94,14 @@ git を動かして確かめる案（`git rev-parse --show-toplevel --git-common
 
 `plugins/dev-workflow/scripts/git-guard-permit.sh` に置く。hook の本体と同じ `scripts/` にあり、develop の手順書から `scripts/...` で参照できる。中身は `git-destructive-guard.sh` と同じく、bash から `python3 -I -c` で Python の本体を動かす形（ヒアドキュメントで変数に読む。Python 3.9 で `/dev/fd/3` を使わない理由は #869）。hook の字句読みは使わないので、hook のスクリプトに許可を書くモードを足さない（hook の入口を 1 つに保つ）。
 
-一時領域の判定（決定 2）・`<base>` と `<key>` の求め方・記録の追記は、共通ファイル `plugins/dev-workflow/scripts/git-guard-scratchpad.py` に関数として置き、hook とスクリプトの両方がこのファイルを読んで使う（判定を 1 か所に置く）。どちらも `python3 -I` で動くので、スクリプトのディレクトリは `sys.path` に入らない。bash 側が自分のディレクトリ（`$(dirname "$0")`）からこのファイルのパスを求めて引数で渡し、Python 側はその中身を読んで `exec` で関数を取り込む。hook は許可が一致したときだけこのファイルを読み、読めない・取り込めないときは一時領域の判定を満たさないものとして `deny` にする（`allow` の側に倒さない）。許可が無い通常の拒否では読まない（今の判定の速さを変えない）
+一時領域の判定（決定 2）・`<base>` と `<key>` の求め方・記録の追記は、共通ファイル `plugins/dev-workflow/scripts/git-guard-scratchpad.py` に関数として置き、hook とスクリプトの両方がこのファイルを読んで使う（判定を 1 か所に置く）。どちらも `python3 -I` で動くので、スクリプトのディレクトリは `sys.path` に入らない。bash 側が自分のディレクトリ（`$(dirname "$0")`）からこのファイルのパスを求めて引数で渡し、Python 側はその中身を読んで `exec` で関数を取り込む。hook は子の呼び出しで破壊的操作（決定 5 の自己許可を含む）を見つけたときにこのファイルを読む（`<key>` の計算と拒否の記録の追記もこのファイルにあるため）。主の呼び出しと、破壊的操作の無い呼び出しでは読まない（それらの判定の速さを変えない）。読めない・取り込めないときは `<key>` を出せないので、許可を探さず、拒否の記録も書かず、`deny` だけを返して回数を数える（`allow` の側に倒さない。子への理由文には記録のパスが載らない）
 
 ## Risks / Trade-offs
 
 - [子の Bash の環境に `GIT_DIR` / `GIT_WORK_TREE` が入っていると、git が scratchpad の外を触る] → スクリプトは子の環境を見られない。子の環境変数を子が自分で設定するのは、hook に当たらない書き方と同じく守備範囲の外とし、spec の守備範囲に書く
 - [許可を書いてから使うまでの間に、子が scratchpad の中のディレクトリを外への symlink に差し替える] → hook が使う時点で同じ判定をかけ直すので止まる。残るのは hook の判定からコマンドの実行までの短い間の差し替えだけで、守備範囲に書く
 - [子や他のプロセスが `permits/` に許可を直接書く] → 親の同意は経ないが、hook の判定で通るのは scratchpad の中だけ。守備範囲に書く
-- [hook が許可の一致のたびに共通ファイルを読む] → 許可が一致したときだけ読むので、許可の無い通常の拒否の速さは変わらない
+- [hook が子の破壊的操作のたびに共通ファイルを読む] → 読むのは子の呼び出しで破壊的操作を見つけたときだけで、主の呼び出しと破壊的操作の無い呼び出しの速さは変わらない。子の拒否はもともと回数のファイルを読み書きしており、1 ファイルの読み込みが足されるだけ
 - [拒否の記録が拒否のたびに増える] → 同じ子・同じ cwd・同じコマンドは同じファイルを上書きする。一時ディレクトリの下なので OS の片付けに任せる
 - [scratchpad のパスの形が Claude Code の版で変わる] → 形が変わると許可が書けなくなるだけで、外へ通る向きには壊れない（今の振る舞いに戻る）
 - [子が SendMessage で再開されずに新しい子として起こされると agent_id が変わり、許可が一致しない] → 一致しないのは止める向きなので許す
