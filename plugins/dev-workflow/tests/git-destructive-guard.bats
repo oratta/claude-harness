@@ -1307,8 +1307,10 @@ json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "com
   local base rec cmd
   base="$(GUARD_BASE)"
   # cd で中に移る・-C を重ねる・scratchpad そのものが repo
-  for cmd in "cd ./repo && git reset --hard" "cd $REPO; cd .. && cd ./repo/. && git status" \
-             "git -C repo -C . clean -fdx" "git -C $REPO checkout -- a"; do
+  # git が 2 つ以上でも、-C を付けず作業ツリーの最上位で走らせる形は受け付ける
+  for cmd in "cd ./repo && git reset --hard" "cd $REPO && cd .. && cd ./repo/. && git status" \
+             "git -C repo -C . clean -fdx" "git -C $REPO checkout -- a" \
+             "cd ./repo && git reset --hard && git clean -fdx"; do
     rec="$(mk_record "$base" "$PERMIT_SID" a1 "$SP" "$cmd")"
     run "$PERMIT" "$rec" "戻すだけ"
     [ "$status" -eq 0 ] || { echo "refused: $cmd: $output"; return 1; }
@@ -1319,6 +1321,48 @@ json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "com
   rec="$(mk_record "$base" 0a1b2c3d-sid2 a1 "$sp2" "git reset --hard")"
   run "$PERMIT" "$rec" "戻すだけ"
   [ "$status" -eq 0 ] || { echo "refused scratchpad root: $output"; return 1; }
+}
+
+# mk_evil_repo <dir> — main で sub/f を追跡し、ブランチ evil では sub が $OUT への symlink になる repo を作る。
+# 未追跡のディレクトリ build も置く（git clean -fdx で消える）。main を checkout した状態で返す
+mk_evil_repo() {
+  mk_repo "$1" >/dev/null
+  mkdir -p "$1/sub" "$1/build"
+  printf 'f\n' >|"$1/sub/f"
+  git -C "$1" add sub/f
+  git -C "$1" -c user.name=t -c user.email=t@t commit -qm sub
+  git -C "$1" checkout -qb evil
+  git -C "$1" rm -rq sub
+  ln -s "$OUT" "$1/sub"
+  git -C "$1" add sub
+  git -C "$1" -c user.name=t -c user.email=t@t commit -qm evil
+  git -C "$1" checkout -q -
+}
+
+# cd が失敗すると（実行権限の無いディレクトリなど）、; や改行の後ろの git は元の cwd（外の作業ツリー）で走る。
+# cd を含むコマンドは区切りを && だけにする。スクリプトは許可を書かず、直接書いた許可も hook は使わない
+@test "permit: a cd that may fail is refused unless every separator is &&" {
+  setup_permit
+  local base rec cmd st
+  base="$(GUARD_BASE)"
+  mkdir -p "$REPO/locked"
+  chmod 000 "$REPO/locked"
+  local -a cmds=("cd $REPO/locked ; git reset --hard" "cd $REPO/locked"$'\n'"git reset --hard")
+  local -a bad=()
+  for cmd in "${cmds[@]}"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$OUT" "$cmd")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -ne 0 ] || bad+=("permitted: $cmd")
+    permits_empty || bad+=("permit written: $cmd")
+  done
+  write_permit "$OUT" "cd $REPO/locked ; git reset --hard"
+  call_cwd "cd $REPO/locked ; git reset --hard" '"a1"' "$PERMIT_SID" "$OUT"
+  st="$(decision)"
+  [[ "$(reason)" == *'許可はあるが行き先を確かめられない'* ]] || bad+=("reason: $(reason)")
+  chmod 755 "$REPO/locked"
+  [ "${#bad[@]}" -eq 0 ] || { printf '%s\n' "${bad[@]}"; return 1; }
+  [ "$st" = "deny" ]
+  permits_empty
 }
 
 @test "permit: the script refuses targets outside the scratchpad" {
@@ -1338,6 +1382,7 @@ json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "com
   # 別のセッションの scratchpad の repo
   local other
   other="$(mk_repo "$(scratch_dir 0a1b2c3d-other)/repo")"
+  mk_evil_repo "$SP/evil"
   local -a cases=(
     "$OUT|git checkout -- ."
     "$REPO|cd $OUT && git reset --hard"
@@ -1348,6 +1393,13 @@ json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "com
     "$inc|git checkout -- ."
     "$SP|git status"
     "$SP|cd repo"
+    # 前の cd や git が失敗する・ファイルの配置を書き換えると行き先が変わるもの（記録の cwd は外の作業ツリー）
+    "$OUT|git -C $SP/evil clean -fdx ; cd $SP/evil/build ; git reset --hard"
+    "$OUT|cd $SP/evil && git checkout evil && cd ./sub && git reset --hard"
+    "$OUT|git -C $SP/evil checkout evil && git -C $SP/evil/sub reset --hard"
+    "$OUT|cd $SP/evil/sub && git checkout evil && git reset --hard"
+    "$REPO|cd $REPO; git reset --hard"
+    "$REPO|git status && cd $REPO && git reset --hard"
   )
   for c in "${cases[@]}"; do
     cwd="${c%%|*}"; cmd="${c#*|}"

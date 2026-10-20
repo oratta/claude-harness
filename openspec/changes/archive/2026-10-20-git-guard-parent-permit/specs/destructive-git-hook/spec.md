@@ -63,6 +63,11 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 - コマンドが英数字・空白・タブ・改行（LF だけ。CR は拒む）・`/ . _ , : = @ + % -`・`;`・`&&` だけでできている（変数・置換・引用符・リダイレクト・パイプ・グロブ・`~`・コメント・行継続を含まない）
 - `&&`・`;`・改行で区切った単純コマンドがすべて、引数 1 つの `cd`（実在するディレクトリで、引数が `/`・`./`・`../` で始まるか `.`・`..` そのもの。シェルはそれ以外の引数を、オプション（`-P`・`--`）・ディレクトリスタックの番号（`+1`・`-1`）・zsh の `=` 展開・`CDPATH` や zsh の `cdpath` の探索として読みうるため）か、サブコマンドの前に `-C <パス>` だけを置いた `git`（`-C` は複数置けて、左から順に適用する）で、サブコマンドが `checkout`・`restore`・`reset`・`clean`・`branch`・`switch`・`status`・`add`・`commit`・`rev-parse` のどれかであり、`git` が 1 つ以上ある
 - 各 `git` の作業ディレクトリ（`cwd` から `cd` と `-C` を順に適用し `realpath` で解決したもの）から親へ辿って見つかる `.git` について、作業ツリーの最上位・git ディレクトリ（`.git` がファイルなら `gitdir:` の先）・共通の git ディレクトリ（`commondir` があればその先）の `realpath` が、すべて `session_id` のセッションの scratchpad の中（scratchpad そのものを含む。scratchpad の直下に `.git` があれば scratchpad 全体を作業ツリーとする repo として中に数える）にある。scratchpad とは、`basename` が `scratchpad`、その親の `basename` が `session_id`、さらに 2 つ上の `basename` が `claude-<判定を動かすユーザーの uid>` のディレクトリで、かつその `claude-<uid>` の親の `realpath` が一時フォルダの置き場所（`/tmp`・`/private/tmp` と、hook では自分の環境変数 `TMPDIR` と Python の `tempfile.gettempdir()`、許可を書くスクリプトでは `<base>` の親（hook が `<base>` を置いた `TMPDIR`）の、`realpath` のどれか。hook と親の Bash で `TMPDIR` が違いうるので、スクリプトは自分の `TMPDIR` を数えず、hook と同じ候補で判定する）で、`claude-<uid>` がディレクトリで、所有者が判定を動かすユーザーの uid で、グループと他者に書き込み権が無いものである（作業ツリーの中などに同じ形のフォルダを作っても scratchpad に数えない）。`session_id` は英数字と `-` だけの空でない文字列でなければならない。scratchpad の中で `.git` が見つからないものは拒む
+- 判定は単純コマンドを左から順に、実行前のファイルの配置で解く。前の単純コマンドが失敗したりファイルの配置を書き換えたりすると、判定が見た行き先と実際の行き先が割れるので、次をすべて満たす。これは判定から実行までの短い窓（判定のあとで別のものが配置を差し替える）とは別物で、コマンド自身の結果（`cd` の失敗、前の `git` による作業ツリーの書き換え）で起きる
+  - `cd` を 1 つでも含むコマンドは、区切りが `&&` だけである（`;` と改行を 1 つも含まない。実行権限の無いディレクトリへの `cd` などが失敗すると、`;` や改行の後ろの `git` は元の `cwd` で走るため）
+  - `cd` は最初の `git` より前にだけある（前の `git` が移り先を消したり、外への symlink に置き換えたりしうるため）
+  - `git` が 2 つ以上あるコマンドでは、どの `git` にも `-C` が無い（前の `git` が `-C` の辿る道筋を書き換えうるため）
+  - `git` が 2 つ以上あるコマンドでは、作業ディレクトリ（`cwd` から `cd` を辿った物理パス。`cd` が無ければ `cwd`）の `realpath` が、見つかった作業ツリーの最上位の `realpath` と一致する（作業ツリーの中のサブディレクトリは前の `git` に消されたり置き換えられたりしうるため）
 - 見つかった `.git` を git が git ディレクトリとして受け入れる形である（git ディレクトリと共通の git ディレクトリと、共通の git ディレクトリの `objects` と `refs` がディレクトリで、どれにも判定を動かすユーザーが入れる（実行権限がある）。git ディレクトリの `HEAD` が `ref: refs/` で始まるか 40 桁か 64 桁の 16 進）。`.git` ファイルと `commondir` は、git と同じくファイル全体を読んで末尾の CR と LF だけを落とし、そのあとに CR・LF・NUL が残るもの（2 行以上ある・行の途中に改行文字がある）は拒む（git は受け入れない `.git` を飛ばして上の階層の repo を使い、改行を含んだままのパスを使うため）
 - 作業ツリーの最上位より上のどの階層（scratchpad とその外を含め `/` まで）にも、`.git` も、git ディレクトリそのものの形（`HEAD` と、`objects` か `refs`）も無い（判定と git の受け入れ方がずれたときに、git が確かめていない repo や scratchpad の外に置かれた `.git` を使う余地を残さないため）
 - git ディレクトリと共通の git ディレクトリの中に symlink が 1 つも無く、サブモジュールの git ディレクトリ（`modules`）も無く、作業ツリーの最上位に `.gitmodules` も無い（`refs`・`index`・`objects` などが外を指すと、中の repo への操作が外の repo を書き換え、サブモジュールへの再帰は `.git/modules/<name>` の先の repo を触るため）
@@ -70,7 +75,7 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 
 判定のために git を実行してはならない（MUST NOT。子が作った repo の設定でコマンドが動きうるため）。許可は `<base>/permits/<key>.json` に、`session_id`・`agent_id`・`cwd`・`command`・`scratchpad`・確かめた repo・理由・`created_at`・`expires_at`（書いた時刻の 15 分後の UNIX 秒）を入れて、一時ファイルからの `rename` で置かなければならない（MUST）。許可を書いたら、その子の回数のファイル（`<base>/<sha256(session_id + NUL + agent_id)>`）を消さなければならない（MUST。要件「同じ子への拒否の繰り返しを打ち切る」）。消せなかったときは stderr に書き、exit 0 で終わってよい。成功したときは、許可したコマンド・cwd・scratchpad・確かめた repo・期限を stdout に書かなければならない（MUST）。
 
-守備範囲: 受け取る入力は、引数・拒否の記録・ファイルシステム上の scratchpad と repo の置き場所である。拾いたい誤りは、親が「子が自分の一時領域を戻すだけ」と判断を誤って、一時領域の外のワークツリー・ホーム・他のリポジトリへの破壊的な操作を許可することである。次の入力は通す（許可を書く）ことを許す: 子が自分の Bash の中だけで `GIT_DIR` / `GIT_WORK_TREE` などを設定し、判定する側の環境には無いまま git が別の場所を触るもの（スクリプトと hook は子のシェルの中の環境を見られない。同じ呼び出しの中で代入する形は文字の制限と単純コマンドの制限で拒む）／scratchpad の中の、親の判断と違うファイルや repo を触るもの（守らないもの）。止めすぎる向きでは、引用符やグロブを使ったコマンド・許した以外の git のサブコマンドは scratchpad の中でも許可できないが、これは許す。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+守備範囲: 受け取る入力は、引数・拒否の記録・ファイルシステム上の scratchpad と repo の置き場所である。拾いたい誤りは、親が「子が自分の一時領域を戻すだけ」と判断を誤って、一時領域の外のワークツリー・ホーム・他のリポジトリへの破壊的な操作を許可することである。次の入力は通す（許可を書く）ことを許す: 子が自分の Bash の中だけで `GIT_DIR` / `GIT_WORK_TREE` などを設定し、判定する側の環境には無いまま git が別の場所を触るもの（スクリプトと hook は子のシェルの中の環境を見られない。同じ呼び出しの中で代入する形は文字の制限と単純コマンドの制限で拒む）／scratchpad の中の、親の判断と違うファイルや repo を触るもの（守らないもの）。止めすぎる向きでは、引用符やグロブを使ったコマンド・許した以外の git のサブコマンドは scratchpad の中でも許可できないが、これは許す。`git -C X reset --hard && git -C X clean -fdx` のように `git` が 2 つ以上で `-C` を使うもの（`cd X && git reset --hard && git clean -fdx` に書き直す）・作業ツリーの中のサブディレクトリで `git` を 2 つ以上走らせるもの・末尾に改行や `;` がある `cd` 入りのコマンドも許可できないが、これも許す。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: 一時領域の中の repo への操作は許可を書く
 
@@ -106,6 +111,11 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 
 - **WHEN** scratchpad の外の `cwd` に、scratchpad の中の repo を指す `-Z`・`-P`・`--`・`+1`・`=git`・`repo` という名前のリンクを置き、`cd -Z; git reset --hard`・`cd -P && git status`・`cd -- && git reset --hard`・`cd +1; git reset --hard`・`cd =git; git reset --hard`・`cd repo && git reset --hard` の拒否の記録をそれぞれ渡す。また、`cd -Z; git reset --hard` について 4 つの値が一致し期限内の許可を `permits/<key>.json` に直接書いてから、その payload を hook に渡す
 - **THEN** スクリプトはどれも 0 以外で終わって `permits/` に許可が作られず、hook は `permissionDecision` が `deny` で `permissionDecisionReason` に「許可はあるが行き先を確かめられない」を含む
+
+#### Scenario: cd の失敗や前の git の書き換えで行き先が変わるコマンドは許可を書かず、使わない
+
+- **WHEN** `cwd` が scratchpad の外の作業ツリーで、scratchpad の中の repo（`main` で `sub/f` を追跡し、ブランチ `evil` では `sub` が外への symlink。未追跡のディレクトリ `build` がある）と実行権限を落としたディレクトリ `locked` について、`cd <repo>/locked ; git reset --hard`・`;` を改行にした同じもの・`git -C <repo> clean -fdx ; cd <repo>/build ; git reset --hard`・`cd <repo> && git checkout evil && cd ./sub && git reset --hard`・`git -C <repo> checkout evil && git -C <repo>/sub reset --hard`・`cd <repo>/sub && git checkout evil && git reset --hard` の拒否の記録をそれぞれ渡す。また、`cwd` が repo で `cd <repo>; git reset --hard`・`git status && cd <repo> && git reset --hard` の記録を渡す。また、`cd <repo>/locked ; git reset --hard` について 4 つの値が一致し期限内の許可を `permits/<key>.json` に直接書いてから、その payload を hook に渡す
+- **THEN** スクリプトはどれも 0 以外で終わって `permits/` に許可が作られず、hook は `permissionDecision` が `deny` で `permissionDecisionReason` に「許可はあるが行き先を確かめられない」を含む。`cd ./repo && git reset --hard && git clean -fdx`（`cwd` が scratchpad）は今までどおり許可を書く
 
 #### Scenario: 置き場所や中身が合わない記録には許可を書かない
 

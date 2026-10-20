@@ -307,12 +307,20 @@ def check(session_id, cwd, command, temp_dir=None):
         return "区切りの && 以外の & がある", None, None
     if not os.path.isdir(cwd):
         return "cwd %s がディレクトリでない" % cwd, None, None
+    # 判定は単純コマンドを実行前のファイルの配置で左から解くので、前のコマンドが成功し配置を変えないことを前提に
+    # している。cd が失敗したり、前の git が作業ツリーを書き換えたりすると、判定が見た行き先と実際が割れる。
+    # その前提が崩れうる形を次の 4 つで拒む（判定から実行までの短い窓とは別に、コマンド自身の結果で起きる）。
+    # 規則 1 と 3 はループで個々の cd と git の形を確かめた後に見る（形の誤りを先に理由として返すため）
+    total_git = sum(1 for w in simple if w[0] == "git")
     logical = os.path.normpath(cwd)
     physical = os.path.realpath(cwd)
     sp_found, repos, n_git = None, [], 0
     for words in simple:
         head, args = words[0], words[1:]
         if head == "cd":
+            # 規則 2: 前の git が移り先を消したり symlink に置き換えたりしうるので、cd は最初の git より前だけ
+            if n_git:
+                return "cd は最初の git より前にだけ書く（前の git が移り先を書き換えうる）", None, None
             if len(args) != 1:
                 return "cd は移り先を 1 つだけ書く（cd だけは扱わない）", None, None
             # シェルは / ・ ./ ・ ../ で始まらない引数を、オプション（-P・--）・ディレクトリスタック（+1・-1）・
@@ -355,8 +363,18 @@ def check(session_id, cwd, command, temp_dir=None):
         err, top = _resolve_repo(d, sp)
         if err:
             return err, None, None
+        # 規則 4: 作業ツリーの中のサブディレクトリは前の git に消されたり置き換えられたりしうる
+        if total_git >= 2 and os.path.realpath(d) != os.path.realpath(top):
+            return ("git が 2 つ以上あるコマンドは作業ツリーの最上位 %s で走らせる（作業ディレクトリ %s は"
+                    "前の git が書き換えうる）" % (top, d)), None, None
         if top not in repos:
             repos.append(top)
     if n_git == 0:
         return "git のコマンドが無い", None, None
+    # 規則 1: cd が失敗すると ; や改行の後ろが元の cwd で走るので、cd を含むなら区切りは && だけ
+    if any(w[0] == "cd" for w in simple) and re.search(r"[;\n]", command):
+        return "cd を含むコマンドの区切りは && だけにする（cd が失敗すると ; や改行の後ろが元の cwd で走る）", None, None
+    # 規則 3: 前の git が作業ツリーを書き換えると、後ろの git の -C が辿る道筋が変わる
+    if total_git >= 2 and any(w[0] == "git" and "-C" in w[1:2] for w in simple):
+        return "git が 2 つ以上あるコマンドでは -C を使わない（前の git が -C の辿る道筋を書き換えうる）", None, None
     return None, sp_found, repos
