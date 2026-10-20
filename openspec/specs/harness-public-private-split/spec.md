@@ -101,4 +101,3 @@ TBD - created by archiving change harness-public-private-split. Update Purpose a
 #### Scenario: 形の誤りは検査で落ちる
 - **WHEN** 表の分類の欄に「配る」のような決めた値以外の文字列がある
 - **THEN** `tests/public-private-split.bats` が落ちる
-

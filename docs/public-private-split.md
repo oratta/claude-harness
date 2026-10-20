@@ -227,10 +227,12 @@ https://github.com/oratta/claude-harness/issues/1164
 | `plugins/dev-workflow/templates/auto-merge/scripts/test-auto-merge-workflow.sh:148` | 固有名 | 検査の入力のパスにオーナーのプロジェクト名 `workspace/moko/CLAUDE.md` | 担い手なし |
 | `plugins/infra/templates/workflows/deploy-production.yml.template:77` | 固有名 | 手本としてオーナーのプロジェクト suimei の `deploy-production.yml` を参照させる | 担い手なし |
 | `plugins/infra/templates/workflows/weekly-full.yml.template:53` | 固有名 | 手本としてオーナーのプロジェクト suimei の `weekly-full.yml` を参照させる | 担い手なし |
+| `plugins/casting/catalog/injection.md:42` | 環境依存 | flatmate の burn-select を配線先として記載 | 担い手なし |
 | `plugins/casting/catalog/injection.md:79` | 固有名 | 注入の機構の一覧にオーナーの別プラグイン sns-autopilot | 担い手なし |
 | `plugins/casting/catalog/injection.md:80` | 固有名 | 注入の機構の一覧に genetta-inc/flatmate の `scripts/burn-select.sh` | 担い手なし |
 | `plugins/casting/catalog/delegation.md:24` | 固有名 | ロールの組み合わせの持ち主の例に flatmate の住人定義 | 担い手なし |
 | `plugins/cost-ledger/README.md:107` | 固有名 | 例のブランチ名にオーナーのアカウント名 `oratta/issue-cost` | 担い手なし |
+| `plugins/cost-ledger/README.md:238` | 固有名 | 書き込み許可先（write-repos）に作者のリポジトリ `oratta/claude-harness` を指定している設定例 | 担い手なし |
 | `plugins/cost-ledger/commands/cost.md:58` | 固有名 | 出力例のブランチ名にオーナーのアカウント名 `oratta/token-optimize` | 担い手なし |
 | `plugins/statusline/README.md:6` | 固有名 | 表示例にオーナーの workspace のパス（flatmate）とアカウント名 oratta | 担い手なし |
 | `plugins/statusline/README.md:94` | 環境依存 | 枠の共有先を flatmate の環境変数 `FLATMATE_RATE_SHARE_DIR`・`FLATMATE_RATE_SHARE_CONF` で決める | 担い手なし |
@@ -269,7 +271,7 @@ https://github.com/oratta/claude-harness/issues/1164
 
 候補語に当たっても、次に当たる行は一覧に載せない。
 
-- **公開版自身の名前**: `oratta/claude-harness`・`oratta-claude-harness`、その install 先のパス（`~/.claude/plugins/marketplaces/oratta-claude-harness/...`・`plugins/cache/oratta-claude-harness/...`）、`plugin.json` の author と README の著者の `Oratta`。公開版はこの名前のまま使い続けるので固有記述ではない。ただし #1098 の 6 本（`rules/communication-style.md`・`rules/link-when-requesting-review.md`・`rules/dev-server.md`・`rules/browser-infra-env-capture.md`・`rules/destructive-git-guard.md`・`output-styles/readable.md`）は #1098 の受け入れ条件が `oratta`・`marketplaces/` を 0 件にすると定めているので載せる
+- **公開版自身の名前**: `oratta/claude-harness`・`oratta-claude-harness`、その install 先のパス（`~/.claude/plugins/marketplaces/oratta-claude-harness/...`・`plugins/cache/oratta-claude-harness/...`）、`plugin.json` の author と README の著者の `Oratta`。公開版はこの名前のまま使い続けるので固有記述ではない。利用者がそのまま実行する設定値（書き込み許可先など）に書かれた名前は除外しない。また #1098 の 6 本（`rules/communication-style.md`・`rules/link-when-requesting-review.md`・`rules/dev-server.md`・`rules/browser-infra-env-capture.md`・`rules/destructive-git-guard.md`・`output-styles/readable.md`）は #1098 の受け入れ条件が `oratta`・`marketplaces/` を 0 件にすると定めているので載せる
 - **GitHub のラベル名 `human-only`**: 保管庫の名前ではなく、auto-merge と issueify が使うラベルの名前
 - **置き換える前提の例**: `/Users/example`・`/Users/x`・`<project>` のような書式の説明
 - **記録と検査**: `changes/`・`CHANGELOG.md`・`tests/`・`evals/`（変更の記録と検査は、それが記録・検査している部品と一緒に #1129・#1164 で動かす）
