@@ -230,7 +230,7 @@ Python 3 helper が [Codex App Server](https://learn.chatgpt.com/docs/app-server
 
 `accounts.json`（`CLAUDE_ACCOUNTS_FILE`、未設定なら `${CLAUDE_CONFIG_DIR:-~/.claude}/accounts.json`）のトップレベルに `"codex": {"enabled": false}` を書くと Codex がオフになり、Codex 行は使用率の代わりに `  Codex A  off` の 1 行になる。オフのあいだは Codex CLI を起動せず、キャッシュも読み書きしない（Codex にログインしていなくても `off` は出る）。オフになるのは値が JSON の `false` のときだけ。戻すときは `codex` のキーを消すか `enabled` を `true` にする。develop とレビューでの扱いは `plugins/dev-workflow/README.md`。
 
-起動直後に Claude のライブ値がまだ無い場合も、複数アカウントなら使用中のアカウントを `▸ A  取得待ち` のように示す。snapshot の値でライブ値を補完しない。
+起動直後に Claude のライブ値がまだ無い場合も、複数アカウントなら使用中のアカウントを `▸ Claude A  取得待ち` のように示す。snapshot の値でライブ値を補完しない。
 
 ### リセット権の有効期限
 

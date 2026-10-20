@@ -7,7 +7,7 @@
 # spec: statusline-multi-account-usage
 #       usage-account-registry（active スロットの判定規則）
 #
-# 既存の statusline.bats は 1 スロット時の退行ガードとして無改変で残す。
+# 既存の statusline.bats は 1 スロット時の退行ガードとして残す（Codex 行の名前の期待値だけ更新した）。
 
 setup() {
   export LC_ALL=C.UTF-8
@@ -325,10 +325,7 @@ PY
 JSON
   mk_input 3 25 14010 172830 | bash "$SL"  > "$WORK/new.txt"
   mk_input 3 25 14010 172830 | bash "$old" > "$WORK/old.txt"
-  # 名前が Claude A / Claude B になったことだけが違う（列の幅は最長の名前で揃うので、
-  # 前置された "Claude " を除けば元の出力と同じ）
-  sed 's/Claude //' "$WORK/new.txt" > "$WORK/new-unprefixed.txt"
-  diff "$WORK/old.txt" "$WORK/new-unprefixed.txt"
+  diff "$WORK/old.txt" "$WORK/new.txt"
 }
 
 @test "single: a schema 2 snapshot without a registry renders like the old one" {
@@ -349,10 +346,7 @@ JSON
   mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/new.txt"
   cp "$WORK/old-snap.json" "$SNAP"
   mk_input 3 25 14010 172830 | bash "$old" > "$WORK/old.txt"
-  # 名前が Claude A / Claude B になったことだけが違う（列の幅は最長の名前で揃うので、
-  # 前置された "Claude " を除けば元の出力と同じ）
-  sed 's/Claude //' "$WORK/new.txt" > "$WORK/new-unprefixed.txt"
-  diff "$WORK/old.txt" "$WORK/new-unprefixed.txt"
+  diff "$WORK/old.txt" "$WORK/new.txt"
 }
 
 @test "single: a one-slot registry renders no label column" {
@@ -776,10 +770,7 @@ with open(sys.argv[1], "w") as f:
 SNAPSHOT
   mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/new.txt"
   mk_input 3 25 14010 172830 | bash "$old" > "$WORK/old.txt"
-  # 名前が Claude A / Claude B になったことだけが違う（列の幅は最長の名前で揃うので、
-  # 前置された "Claude " を除けば元の出力と同じ）
-  sed 's/Claude //' "$WORK/new.txt" > "$WORK/new-unprefixed.txt"
-  diff "$WORK/old.txt" "$WORK/new-unprefixed.txt"
+  diff "$WORK/old.txt" "$WORK/new.txt"
 }
 
 @test "single registry: schema 1 output is byte-identical to previous version" {
