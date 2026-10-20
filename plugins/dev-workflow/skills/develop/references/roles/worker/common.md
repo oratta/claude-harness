@@ -12,7 +12,7 @@ W は**このファイルと、`段:` が指す段のファイル**（`worker/sp
 
 ## 一時ファイルを消すときの書き方（W・G・レビュアー共通の正本）
 
-一時ファイルは削除先を絶対パスで書いて消す（例: `rm -f /abs/path/to/tbl/*.tmp`）。`cd <dir>; rm -f tbl/*` のように `cd` とワイルドカードを組み合わせると、削除先が `cd` 後の場所になり、Claude Code 本体が静的に読めず確認画面（Dangerous rm operation on statically-unresolvable target）で止まる（flatmate #701）。
+一時ファイルは削除先を絶対パスで書いて消す（例: `rm -f /abs/path/to/tbl/*.tmp`）。`cd <dir>; rm -f tbl/*` のように `cd` とワイルドカードを組み合わせると、削除先が `cd` 後の場所になり、Claude Code 本体が静的に読めず確認画面（Dangerous rm operation on statically-unresolvable target）で止まる（flatmate #701）。ただし絶対パスでも、作業ディレクトリ・その親・ホーム・`/` 直下を指す glob は critical path として確認が出る。絶対パスで確認を避けられるのは、作業ディレクトリの外の一時領域（scratchpad など）を消すときに限る。default モードでは rm はもともと普通の確認対象で、bypass では確認なしで通る（#1132 の実機確認）。
 
 ## 実装に入る前の確認（どの段で起こされても実装の前に効く）
 
