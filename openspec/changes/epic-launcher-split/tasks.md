@@ -17,7 +17,7 @@
 ## 3. テスト
 
 - [ ] 3.1 既存の `tests/epic-dispatch.bats` を書き換えずに通す。例外は「orca を呼ぶスクリプトは 1 本だけ」の照合 1 件で、design.md Decision 5 の検索で `epic-launch-orca.sh` の 1 行だけになることを確かめる形に変え、`epic-dispatch.sh` の写しに `orca terminal list --json` の行を足すと拾うことも確かめる。ほかに書き換えが要るのは、テストの書き方だけを直して期待する挙動（stdout・exit code・stderr の文・呼び出しの順と回数・記録）を変えない場合に限り、その理由を PR 本文に書く。期待する挙動を変える書き換えが要ると分かったら、実装を止めて artifact（spec・design）を直し、仕様レビューを受け直す 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:3092-3099
-- [ ] 3.2 部品を直接呼ぶテストを足す: 知らないサブコマンドは exit 2、`create` は stdout が JSON の 1 行だけで `repo_id` が空なら `--repo` を付けない、`list` は Orca の印を記録の語に読み替えて片付け済みを除く、`deliver` は端末の一覧を 1 回だけ読む、`mirror` は `orca` が無ければ何もしない、`close` は 1 回目の閉じが失敗すると stderr に `terminal close was incomplete for #<子の呼び方>; …` を出して 1 回だけ閉じ直す、`here` は `jq` が無くても `orca worktree current --json` が通れば exit 0、`deliver` はシェルの端末だけのとき `failed ambiguous-terminal` で送りも起動し直しもしない（spec のシナリオ） 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats（末尾に追記）
+- [ ] 3.2 部品を直接呼ぶテストを足す: 知らないサブコマンドは exit 2、`create` は stdout が JSON の 1 行だけで `repo_id` が空なら `--repo` を付けない、`list` は Orca の印を記録の語に読み替えて片付け済みを除く、`deliver` は端末の一覧を 1 回だけ読む、`mirror` は `orca` が無ければ何もしない、`close` は 1 回目の閉じが失敗すると stderr に `terminal close was incomplete for #<子の呼び方>; …` を出して 1 回だけ閉じ直す、`here` は `jq` が無くても `orca worktree current --json` が通れば exit 0、`deliver` はシェルの端末だけのとき、`relaunch` 0 なら `failed ambiguous-terminal` で送りも起動し直しもせず、同じ一覧で `relaunch` 1 なら `close` → `create` → `wait` → `send` と呼んで `relaunched <session>`・exit 0 になる（spec のシナリオ） 触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats（末尾に追記）
 - [ ] 3.3 `bats plugins/dev-workflow/tests/` を全部通し、`shellcheck plugins/dev-workflow/scripts/epic-launch-orca.sh plugins/dev-workflow/scripts/epic-dispatch.sh` を通す 触る範囲: なし（実行だけ）
 
 ## 4. 記録
