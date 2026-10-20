@@ -3,7 +3,7 @@
 # statusline-copy-update:
 #   ステータスラインのコピーを、手を入れていなければ SessionStart フックで本体に揃え、
 #   手を入れていれば上書きせず「更新あり」を出す仕組み（issue #1113）。
-#   仕様: openspec/changes/statusline-copy-auto-update/specs/statusline-copy-update/spec.md
+#   仕様: openspec/specs/statusline-copy-update/spec.md
 #
 # 隔離: CLAUDE_CONFIG_DIR と HOME を一時ディレクトリに向ける。プラグインの本体は
 # <config>/plugins/cache/x/statusline/1/ に複製し、「本体を別の内容にする」ときはこの複製を
