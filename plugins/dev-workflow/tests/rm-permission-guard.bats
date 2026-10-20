@@ -124,6 +124,13 @@ assert r["agent_id"] == "a1" and r["cwd"] == sys.argv[2] and r["kinds"] == ["rm"
 PY
 }
 
+@test "hook: a child's deny message names a way to get the parent's permit" {
+  call "rm -rf $SP/tbl/x/*" '"a1"' "$SP"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  m="$(message)"
+  [[ "$m" == *'実パスで単独のコマンド'* && "$m" == *'変数'* ]] || { echo "$m"; return 1; }
+}
+
 @test "hook: the main session, a non-rm command and an empty agent_id get no output" {
   deny_then_permit "rm -rf $SP/tbl/x/*" "$SP"
   call "rm -rf $SP/tbl/x/*" '-' "$SP"
