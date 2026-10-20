@@ -3091,12 +3091,30 @@ orca_doc_violations() {
   [ -n "$(orca_doc_violations "$d")" ]
 }
 
-@test "skill: develop's docs run no orca subcommand and only epic-dispatch.sh calls orca" {
+# orca をコマンドとして書いた行（行頭・; & | ( ! $( と if/then/do/else/while/until のあとに orca <小文字>）を持つ
+# シェルスクリプトを列挙する（<ディレクトリ>）。文字列とコメントの中の orca は拾わない
+orca_cmd_scripts() {
+  grep -rlE '(^|[;&|(!]|(if|then|do|else|while|until) )[[:space:]]*orca [a-z]+' "$1" --include='*.sh'
+}
+
+@test "skill: develop's docs run no orca subcommand and only the Orca launcher calls orca" {
   [ -z "$(orca_doc_violations "$PLUGIN_DIR/skills/develop")" ]
   [ "$(grep -rhoF "$ORCA_DOC_ALLOWED" "$PLUGIN_DIR/skills/develop" | grep -c .)" -eq 1 ]
-  run grep -rlw orca "$PLUGIN_DIR" --include='*.sh'
+  run orca_cmd_scripts "$PLUGIN_DIR"
   [ "$status" -eq 0 ]
-  [ "$output" = "$PLUGIN_DIR/scripts/epic-dispatch.sh" ]
+  [ "$output" = "$PLUGIN_DIR/scripts/epic-launch-orca.sh" ]
+  # 記録を読み書きするスクリプトは orca の語を含まない
+  run grep -rlw orca "$PLUGIN_DIR" --include='*.sh'
+  case "$output" in *epic-state.sh*) false ;; esac
+}
+
+@test "skill: an orca command added to a copy of epic-dispatch.sh is found" {
+  local d="$BATS_TEST_TMPDIR/copy"
+  mkdir -p "$d"
+  cp "$SCRIPT" "$d/epic-dispatch.sh"
+  [ -z "$(orca_cmd_scripts "$d")" ]
+  printf '%s\n' 'orca terminal list --json' >> "$d/epic-dispatch.sh"
+  [ "$(orca_cmd_scripts "$d")" = "$d/epic-dispatch.sh" ]
 }
 
 # spec: dev-workflow-develop（エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する）

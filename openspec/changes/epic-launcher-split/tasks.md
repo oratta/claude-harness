@@ -22,4 +22,4 @@
 
 ## 4. 記録
 
-- [ ] 4.1 `plugins/dev-workflow/changes/1123.md` に、Orca の呼び出しを起動部品 `epic-launch-orca.sh` に切り出したこと（出力と `orca` の呼び出しは変えていない）を足す 触る範囲: plugins/dev-workflow/changes/1123.md
+- [x] 4.1 `plugins/dev-workflow/changes/1123.md` に、Orca の呼び出しを起動部品 `epic-launch-orca.sh` に切り出したこと（出力と `orca` の呼び出しは変えていない）を足す 触る範囲: plugins/dev-workflow/changes/1123.md
