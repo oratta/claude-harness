@@ -110,4 +110,3 @@ develop の手順書（`skills/develop` 配下）に `orca` のサブコマン�
 
 - **WHEN** 子 11 の記録の `stop` が `stopped-seen`、子 12 が `resumed`、子 13 が `stopped` の状態で `epic-dispatch.sh pending-owner 11 12 13` を実行する
 - **THEN** stdout は `pending 11` の 1 行で、`orca worktree list` も `orca worktree set` も呼ばれない
-

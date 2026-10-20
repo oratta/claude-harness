@@ -19,7 +19,7 @@
 # orca のコマンドを呼ぶのはこのスクリプトだけ。状態の記録は読み書きしない（記録・見張り・上限・片付けの前の
 # 確認は epic-dispatch.sh）。stdout にはサブコマンドごとに決めた行だけを出し、orca の出力のうち切り出す前の
 # epic-dispatch.sh が stderr に出していたもの（worktree set・worktree create・terminal create・send・wait・
-# close の出力、閉じ直しのときの terminal list、worktree rm の stderr）と、失敗の理由・手で続けるための案内の文
+# close の出力、閉じ直しのときの terminal list、worktree rm の stdout と stderr）と、失敗の理由・手で続けるための案内の文
 # だけを stderr に出す。中で解釈するだけの JSON（worktree current・worktree list・repo list・閉じ直し以外の
 # terminal list）はどこにも出さない。
 # 待ち時間（EPIC_DISPATCH_READY_TIMEOUT_MS・EPIC_DISPATCH_SUBMIT_WAIT・EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT）は
@@ -182,7 +182,9 @@ cmd_list() {
   argc 0 "$#"
   local list rows
   list="$(orca worktree list --json)" || { echo "orca worktree list failed" >&2; exit 1; }
-  rows="$(printf '%s' "$list" | jq -c '.result.worktrees | if type == "array" then . else error("x") end
+  printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
+    || { echo "orca worktree list --json is not readable" >&2; exit 1; }
+  rows="$(printf '%s' "$list" | jq -c '.result.worktrees
     | .[] | objects | select(.isArchived != true)
     | {repo_id: (.repoId // "" | tostring), issue: (.linkedIssue // "" | tostring),
        path: (.path // "" | tostring), branch: (.branch // "" | tostring | sub("^refs/heads/"; "")),
@@ -199,7 +201,8 @@ cmd_repos() {
   argc 0 "$#"
   local out rows
   out="$(orca repo list --json 2>/dev/null)" || exit 1
-  rows="$(printf '%s' "$out" | jq -c '.result.repos | if type == "array" then . else error("x") end
+  printf '%s' "$out" | jq -e '.result.repos | type == "array"' >/dev/null 2>&1 || exit 1
+  rows="$(printf '%s' "$out" | jq -c '.result.repos
     | .[] | objects | {id: (.id // "" | tostring),
        path: (.path // "" | tostring | if . == "/" then . else rtrimstr("/") end)}' 2>/dev/null)" || exit 1
   [ -z "$rows" ] || printf '%s\n' "$rows"
@@ -347,7 +350,7 @@ cmd_remove() {
   argc 1 "$#"
   local rmerr
   rmerr="$(mktemp)" || { echo rm-failed; exit 1; }
-  if ! orca worktree rm --worktree "path:$1" 2>"$rmerr"; then
+  if ! orca worktree rm --worktree "path:$1" >&2 2>"$rmerr"; then
     cat "$rmerr" >&2
     if grep -qF -- 'terminal sweep failed' "$rmerr"; then
       echo rm-failed-terminal-sweep

@@ -124,6 +124,7 @@ case "$1 $2" in
     fi
     exit "$rc" ;;
   "worktree rm")
+    cat "$STUB_CFG/rm_out" 2>/dev/null
     cat "$STUB_CFG/rm_err" >&2 2>/dev/null
     exit "$(cat "$STUB_CFG/rm_exit" 2>/dev/null || echo 0)" ;;
   "terminal close")
@@ -5050,4 +5051,73 @@ part() { PATH="$STUB_BIN:/usr/bin:/bin" bash "$PLUGIN_DIR/scripts/epic-launch-or
   run part remove /work/issue-5
   [ "$output" = rm-failed ]
   [ "$(calls '--force')" -eq 0 ]
+}
+
+# orca が exit 0 で空・空白だけの stdout を返したら、空の一覧にせず読めないものとして exit 1 にする
+@test "launcher orca: list and repos treat an empty or blank stdout as unreadable, and a real empty array as an empty list" {
+  make_stub orca
+  : > "$STUB_CFG/list_json"
+  run part list
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'orca worktree list --json is not readable' "$BATS_TEST_TMPDIR/stderr"
+  printf ' \n\n' > "$STUB_CFG/list_json"
+  run part list
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  echo '{"result":{"worktrees":[]}}' > "$STUB_CFG/list_json"
+  run part list
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  : > "$STUB_CFG/repo_list_json"
+  run part repos
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  printf ' \n' > "$STUB_CFG/repo_list_json"
+  run part repos
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  echo '{"result":{"repos":[]}}' > "$STUB_CFG/repo_list_json"
+  run part repos
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "launcher orca: launch and adopt after an empty worktree list make no record and no worktree" {
+  make_stub orca
+  : > "$STUB_CFG/list_json"
+  run dispatch launch 1122 11
+  [ "$status" -eq 1 ]
+  grep -qF 'orca worktree list --json is not readable' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  [ ! -e "$(rec_of 1122 11)" ]
+  set_current 1122
+  run dispatch adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'orca worktree list --json is not readable' "$BATS_TEST_TMPDIR/stderr"
+  [ ! -e "$(rec_of 1122 11)" ]
+}
+
+# rm が stdout に出した文は、部品の stdout にも dispatch の stdout にも混ぜない（stderr へ回す）
+@test "launcher orca: remove keeps the rm stdout out of its stdout on success and on failure" {
+  make_stub orca
+  echo 'Removed worktree /work/issue-5' > "$STUB_CFG/rm_out"
+  run part remove /work/issue-5
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  grep -qF 'Removed worktree /work/issue-5' "$BATS_TEST_TMPDIR/stderr"
+  echo 1 > "$STUB_CFG/rm_exit"
+  run part remove /work/issue-5
+  [ "$status" -eq 1 ]
+  [ "$output" = rm-failed ]
+}
+
+@test "reap: the stdout of orca worktree rm does not enter the stdout of reap" {
+  reap_ready
+  echo 'Removed worktree' > "$STUB_CFG/rm_out"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11" ]
+  grep -qF 'Removed worktree' "$BATS_TEST_TMPDIR/stderr"
 }
