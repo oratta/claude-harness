@@ -41,7 +41,7 @@
 - `wait --watch-stopped`: 閉じていない位置引数の子の記録の `stop` が `stopped` なら、排他を取って `stopped-seen` に書き換え、書けたら止まった子とする。書けなければそのポーリングを失敗したポーリングに数える
 - `pending-owner`: 記録の `stop` が `stopped-seen` の子を `pending <N>` で出す
 - `notify-closed`: 記録が無ければ `skipped <N> no-worktree`、`status` が `done` なら `skipped <N> already-done`、`stop` が `stopped` / `stopped-seen` でなければ `skipped <N> not-stopped`
-- `reap`: 記録が無い子と、記録の `worktree` のディレクトリが無い（`[ -d <worktree> ]` が偽）子は `gone <N>`（後者は記録を消す）。`status` が `done` でなければ `kept <N> not-done`。それ以外の安全確認の中身は今と同じにする。`gh pr list`・`git ls-remote`・`git fetch` などの呼び出しの形は、記録の `repo` が記録の `epic` のリポジトリと同じ子は今と同じにし（MUST）、違う子は PR の照会に `-R <記録の repo>` を付け、base の照会（`git ls-remote origin refs/heads/<base>`・`git fetch origin <base>`）を子のワークツリーの origin（`git -C <記録の worktree> ...`）に向ける（MUST）。`kept <N> not-child` は出さない
+- `reap`: 記録が無い子と、記録の `worktree` のディレクトリが無い（`[ -d <worktree> ]` が偽）子は `gone <N>`（後者は記録を消す）。`status` が `done` でなければ `kept <N> not-done`。それ以外の安全確認の中身は今と同じにする。`gh pr list`・`git ls-remote`・`git fetch` などの呼び出しの形は、記録の `repo` が記録の `epic` のリポジトリと同じ子は今と同じにし（MUST）、違う子は次のとおりにする（MUST）。PR の照会に `-R <記録の repo>` を付ける。base の名前は記録の `base` を使う（同じリポジトリの子は今のまま `${EPIC_DISPATCH_BASE:-main}`）。base の照会（`git ls-remote origin refs/heads/<base>`・`git fetch origin <base>`）を子のワークツリーの origin（`git -C <記録の worktree> ...`）に向け、base の先端はリポジトリごとに 1 回読む（同じリポジトリの子の照会は今のまま 1 回で、別のリポジトリの子の先端を使い回さない。混ぜて渡した `reap` で同じリポジトリの子が `kept <N> base-lookup-failed` に落ちない）。`git cat-file -e` は `git -C <記録の worktree>` で行う。ブランチの片付け（`git rev-parse refs/heads/<branch>`・`git worktree list --porcelain`・`git branch -D`）は子の clone に向け、`orca worktree rm` の前に `git -C <記録の worktree> rev-parse --path-format=absolute --git-common-dir` で clone を控えておき、rm のあとはそれを `git -C` に使う（rm のあとはワークツリーのディレクトリが無い）。`kept <N> not-child` は出さない
 - 出力の行・exit code・失敗したポーリングの数え方・`--resolve` の判断と送り方は、上の読み替えのほかは今の要件のまま
 
 #### Scenario: 記録の done で wait が起きる
@@ -72,6 +72,14 @@
 - **WHEN** 子 `genetta-inc/flatmate#1615` の記録（`repo` が `genetta-inc/flatmate`、`epic` が `oratta/claude-harness#1122`、`status` が `done`、`worktree` が存在するディレクトリ）があり、子のワークツリーがきれいで HEAD が子のリポジトリのマージ済み PR の `headRefOid` と同じ状態で `epic-dispatch.sh reap genetta-inc/flatmate#1615` を実行する
 - **THEN** `gh pr list` は `-R genetta-inc/flatmate` 付きで呼ばれ、`git` は子のワークツリーを `-C` で指し、stdout は `reaped genetta-inc/flatmate#1615` である
 
+#### Scenario: 別のリポジトリの子の base は記録の base を使う
+- **WHEN** 子 `genetta-inc/flatmate#1615` の記録の `base` が `develop` で、ほかは直前の Scenario と同じ状態で `epic-dispatch.sh reap genetta-inc/flatmate#1615` を実行する
+- **THEN** `git -C <子のワークツリー> ls-remote origin refs/heads/develop` が呼ばれ、`refs/heads/main` は読まれない
+
+#### Scenario: 同じリポジトリの子と混ぜても照会は混ざらない
+- **WHEN** 別のリポジトリの子 `genetta-inc/flatmate#1615` と同じリポジトリの子 12（どちらも `done`）を `epic-dispatch.sh reap genetta-inc/flatmate#1615 12` で渡す
+- **THEN** 子 12 の base の照会は今と同じ `git ls-remote origin refs/heads/main` で、子 12 が `kept 12 base-lookup-failed` にならず、`git branch -D` は子 `genetta-inc/flatmate#1615` については子の clone（rm の前に控えた git-common-dir）に対して呼ばれる
+
 #### Scenario: 別の親の記録は見ない
 - **WHEN** 子 12 の記録の `parent_worktree` が今のワークツリーと違い、`status` が `done` の状態で `epic-dispatch.sh reap 12` を実行する
 - **THEN** stdout は `gone 12` で、そのワークツリーは消されない
@@ -88,11 +96,11 @@
 
 同じ段に一致する候補が 2 つ以上あれば `failed <child> ambiguous-clone`（stderr に候補のパス）、どの段にも無ければ `failed <child> no-clone` を stdout に出す（MUST）。どちらも exit 1 で、記録を作らず、枠を使わず、`orca worktree create` を呼ばない（MUST）。`no-clone` のときは stderr に `EPIC_DISPATCH_CLONES` の書き方と `git clone` のコマンドを出す（MUST）。自動で clone してはならない（MUST NOT。clone の置き場はオーナーのディスクの構成で決まる）。段をまたいで一致する候補があるときは先の段を取る（`EPIC_DISPATCH_CLONES` の指定が Orca の登録より優先）。
 
-見つけた clone が Orca に登録されていないために `orca worktree create` が失敗したら、`failed <child>` とし、記録を消し、stderr に `orca repo add` の案内を出す（MUST。`launch` が Orca にリポジトリを追加してはならない）。
+Orca の部品は、見つけた clone のパスに当たるリポジトリを `orca repo list --json` から引いて `repoId` と `--repo` に渡す selector を決める（MUST。項目名と selector の書式は tasks 1.1 の実機確認の結果を、この要件に書き戻す）。当たらなければ、記録を書く前に `failed <child> not-in-orca` を stdout に出し（exit 1。記録も枠も使わない）、stderr に `orca repo add` の案内を出す（MUST。`launch` が Orca にリポジトリを追加してはならない）。`orca worktree create` の失敗は、原因を問わず `failed <child>` とし、記録を消す。
 
 `launch` は、別のリポジトリの子の記録を `repo` に子のリポジトリ、`child` に `<owner>/<repo>#<N>`、`number` に子の番号、`base` に起点（要件「別のリポジトリの子の起点は --base か子のリポジトリの既定ブランチ」）、`parent_worktree` に今のワークツリー、`launcher` に `orca` で作り、`worktree` に子のワークツリーのパスを書く。記録の置き場は要件「エピックの状態は子ごと 1 ファイルのローカルの記録に置く」のとおり、エピックのディレクトリの下の `<子の owner>.<子の repo>-<子の番号>.json`（MUST）。`orca worktree create` は `--repo <子の clone を指す selector>` を付け、`--parent-worktree path:<今のワークツリー>`・`--issue <N>`・`--base-branch origin/<base>` を付ける。
 
-別のリポジトリの子の判定の順序は、記録の読み取り（記録があって `worktree` が空でなければ `skipped`、読めなければ `failed <child> state-unreadable`。ここまでは clone を探さない）→ clone の探索 → 書き込み権（要件「別のリポジトリの子の書き込み権は作る前に読む」）→ 子のリポジトリの Orca の一覧に同じ issue のワークツリーがあれば `skipped` → 空き枠の判定（`deferred <child>`）→ 記録を書く → `git -C <clone> fetch origin <base>` → `orca worktree create`、とする（MUST）。別のリポジトリの子も枠を 1 つ使い、同じ上限（`EPIC_DISPATCH_MAX_PARALLEL`・`deferred`）の中で数える（MUST。要件「同時に枠を使う子は記録から数える」の数え方は変えない）。1 回の `launch` の中で、同じリポジトリの clone の探索・書き込み権・既定ブランチの照会は 1 回にまとめる。親のワークツリーへのエピックの紐づけ（`orca worktree set --worktree path:<親> --issue <エピック>`）と親の clone の `git fetch origin <base>` は、子が全部別のリポジトリでも `launch` の最初に 1 回行う（今のまま）。
+別のリポジトリの子の判定の順序は、記録の読み取り（記録があって `worktree` が空でなければ `skipped`、読めなければ `failed <child> state-unreadable`。ここまでは clone を探さない）→ clone の探索 → Orca のリポジトリの引き当て（`not-in-orca`）→ 書き込み権と既定ブランチ（要件「別のリポジトリの子の書き込み権は作る前に読む」。1 回の `gh api repos/<o>/<r>` の応答から読む）→ 子のリポジトリの `repoId` の Orca の一覧に同じ issue のワークツリーがあれば `skipped` → 空き枠の判定（`deferred <child>`）→ 記録を書く → `git -C <clone> fetch origin <base>` → `orca worktree create`、とする（MUST）。`git -C <clone> fetch origin <base>` が失敗したら、記録を消して `failed <child>` とし、`orca worktree create` を呼ばない。`worktree` が空のまま残った自分の記録は、clone の探索と書き込み権を通したあと、既存の要件どおりに子のリポジトリの `repoId` の Orca の一覧で埋めるか上書きして作成に進み、その記録の 1 枠を使う（枠を増やさない）。別のリポジトリの子も枠を 1 つ使い、同じ上限（`EPIC_DISPATCH_MAX_PARALLEL`・`deferred`）の中で数える（MUST。要件「同時に枠を使う子は記録から数える」の数え方は変えない）。1 回の `launch` の中で、同じリポジトリの clone の探索・書き込み権・既定ブランチの照会は 1 回にまとめる。親のワークツリーへのエピックの紐づけ（`orca worktree set --worktree path:<親> --issue <エピック>`）は、子が全部別のリポジトリでも `launch` の最初に 1 回行う（今のまま）。親の clone の `git fetch origin <base>` は、同じリポジトリの子が 1 件以上あるときだけ行う（MUST。別のリポジトリの子だけに `--base develop` を付けて呼んだとき、親のリポジトリに `develop` が無くても `launch` 全体が失敗しないため）。
 
 この要件の守備範囲で入力として扱うのは、`EPIC_DISPATCH_CLONES` の値、各候補の clone の origin の URL、`orca repo list --json` の出力である。拾いたい誤りは、`EPIC_DISPATCH_CLONES` の誤ったパスや Orca に登録された別のリポジトリの clone に、子のワークツリーを作ってしまうことである。次は通してよく、この要件では止めない: origin が子のリポジトリの fork を指す clone（origin が `<owner>/<repo>` と一致しなければ無かったことになる。fork から PR を出す経路は作らない）／`EPIC_DISPATCH_CLONES` の書式の揺れ（空白を足す・末尾に `;`）の許容／clone が最新でないこと（`fetch` で起点を取るため）。受け付ける書式の揺れを見つけるたびに塞ぎ切ることは、この要件の完了条件としない。
 
@@ -124,15 +132,27 @@
 - **WHEN** `EPIC_DISPATCH_MAX_PARALLEL=1` で、枠を使っている子の記録が 1 件あり、clone と書き込み権のある別のリポジトリの子 `genetta-inc/flatmate#1615` を `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` で渡す
 - **THEN** stdout は `deferred genetta-inc/flatmate#1615` で、記録は作られず、`orca worktree create` は呼ばれない
 
-#### Scenario: 登録されていない clone は create の失敗として扱う
-- **WHEN** `EPIC_DISPATCH_CLONES` の clone が Orca に登録されておらず `orca worktree create` が非 0 で終わる状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
-- **THEN** stdout は `failed genetta-inc/flatmate#1615`、記録は残らず、stderr に `orca repo add` の案内が出る
+#### Scenario: Orca に登録されていない clone は作る前に止まる
+- **WHEN** `EPIC_DISPATCH_CLONES` の clone のパスが `orca repo list --json` のどのリポジトリにも当たらない状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
+- **THEN** stdout は `failed genetta-inc/flatmate#1615 not-in-orca`、exit 1 で、`orca worktree create` は呼ばれず、記録は作られず、枠は使われず、stderr に `orca repo add` の案内が出る
+
+#### Scenario: 起点の fetch が失敗したら記録を消す
+- **WHEN** `git -C <clone> fetch origin <base>` が非 0 で終わる状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
+- **THEN** stdout は `failed genetta-inc/flatmate#1615`、記録は残らず、`orca worktree create` は呼ばれない
+
+#### Scenario: 別のリポジトリの子だけなら親の clone を fetch しない
+- **WHEN** 子が `genetta-inc/flatmate#1615` だけで `--base develop` を付け、親のリポジトリに `develop` が無い状態で `epic-dispatch.sh launch --base develop 1122 genetta-inc/flatmate#1615` を実行する
+- **THEN** 親の clone の `git fetch origin develop` は呼ばれず、`orca worktree set --worktree path:<親> --issue 1122` は呼ばれる
+
+#### Scenario: worktree が空の記録は上書きして作成に進み、枠を増やさない
+- **WHEN** `genetta-inc/flatmate#1615` の記録の `worktree` が空で、子のリポジトリの Orca の一覧に同じ issue のワークツリーが無い状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
+- **THEN** 記録は上書きされて `orca worktree create` が呼ばれ、枠を使っている子の数はその記録の分の 1 のまま増えない
 
 ### Requirement: 別のリポジトリの子の書き込み権は作る前に読む
 
-`launch` は、別のリポジトリの子について、ワークツリーを作る前（clone の探索のあと、記録を書く前）に `gh api repos/<o>/<r> --jq .permissions.push` を読まなければならない（MUST）。結果が `true` でなければ `failed <child> no-push`、読めなければ（`gh` の失敗・応答に `permissions` が無い）`failed <child> permission-lookup-failed` を stdout に出す（MUST）。どちらも exit 1 で、記録を作らず、枠を使わず、`orca worktree create` を呼ばず、stderr に `gh` の認証アカウントと子のリポジトリを出す。fork から PR を出す経路を作ってはならない（MUST NOT）。エピックと同じリポジトリの子にはこの読み出しをしない（呼び出しの形を変えない）。
+`launch` は、別のリポジトリの子について、ワークツリーを作る前（clone の探索と Orca のリポジトリの引き当てのあと、空き枠の判定と記録を書くより前）に `gh api repos/<o>/<r>` の応答から `.permissions.push` と `.default_branch` を 1 回で読まなければならない（MUST。要件「別のリポジトリの子の起点は --base か子のリポジトリの既定ブランチ」）。`.default_branch` を読めなければ（`--base` / `EPIC_DISPATCH_BASE` があっても応答が読めないときは書き込み権が分からないので同じ）`failed <child> base-lookup-failed` を stdout に出し、exit 1 で、記録も枠も使わない。`.permissions.push` の結果が `true` でなければ `failed <child> no-push`、読めなければ（`gh` の失敗・応答に `permissions` が無い）`failed <child> permission-lookup-failed` を stdout に出す（MUST）。どちらも exit 1 で、記録を作らず、枠を使わず、`orca worktree create` を呼ばず、stderr に `gh` の認証アカウントと子のリポジトリを出す。fork から PR を出す経路を作ってはならない（MUST NOT）。エピックと同じリポジトリの子にはこの読み出しをしない（呼び出しの形を変えない）。
 
-この要件の守備範囲で入力として扱うのは、`gh api repos/<o>/<r>` の応答の `permissions.push` である。拾いたい誤りは、書き込み権の無いリポジトリにワークツリーと記録を作り、子が PR を出せずに止まることである。次は通してよく、この要件では止めない: `permissions.push` が `true` でもブランチ保護で push が拒まれること（子の側で表に出る）／リポジトリのチーム設定の細かい差。
+この要件の守備範囲で入力として扱うのは、`gh api repos/<o>/<r>` の応答の `permissions.push` である。拾いたい誤りは、書き込み権の無いリポジトリにワークツリーと記録を作り、子が PR を出せずに止まることである。次は通してよく、この要件では止めない: `permissions.push` が `true` でもブランチ保護で push が拒まれること（子の側で表に出る）／リポジトリのチーム設定の細かい差。ほかの通り方を見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: push 権が無ければ作らない
 - **WHEN** `gh api repos/genetta-inc/flatmate --jq .permissions.push` が `false` を返す状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
@@ -148,29 +168,42 @@
 
 ### Requirement: 別のリポジトリの子の起点は --base か子のリポジトリの既定ブランチ
 
-`launch` は、別のリポジトリの子のワークツリーの起点を、`--base` か環境変数 `EPIC_DISPATCH_BASE` があればそれ、無ければ子のリポジトリの既定ブランチ（`gh api repos/<o>/<r> --jq .default_branch`）にしなければならない（MUST）。既定ブランチを読めなければ `failed <child>` とし、記録を作らない（MUST）。エピックと同じリポジトリの子は今までどおり、無ければ `main` とする（MUST。呼び出しの形を変えない）。`--base` と `EPIC_DISPATCH_BASE` は 1 回の `launch` の全部の子に掛かる。起点は記録の `base` に書く。
+`launch` は、別のリポジトリの子のワークツリーの起点を、`--base` か環境変数 `EPIC_DISPATCH_BASE` があればそれ、無ければ子のリポジトリの既定ブランチ（書き込み権と同じ `gh api repos/<o>/<r>` の応答の `.default_branch`。空き枠の判定より前に読む）にしなければならない（MUST）。既定ブランチを読めなければ `failed <child> base-lookup-failed` とし、記録も枠も使わない（MUST）。エピックと同じリポジトリの子は今までどおり、無ければ `main` とする（MUST。呼び出しの形を変えない）。`--base` と `EPIC_DISPATCH_BASE` は 1 回の `launch` の全部の子に掛かる。起点は記録の `base` に書く。
 
 #### Scenario: 起点の指定が無ければ子のリポジトリの既定ブランチ
 - **WHEN** `--base` も `EPIC_DISPATCH_BASE` も無く、`gh api repos/genetta-inc/flatmate --jq .default_branch` が `develop` を返す状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
 - **THEN** `git -C <clone> fetch origin develop` が呼ばれ、`orca worktree create` の `--base-branch` は `origin/develop` で、記録の `base` は `develop` である
 
+#### Scenario: 既定ブランチを読めなければ枠を使わず止まる
+- **WHEN** `gh api repos/genetta-inc/flatmate` の応答に `default_branch` が無い状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
+- **THEN** stdout は `failed genetta-inc/flatmate#1615 base-lookup-failed`、exit 1 で、記録は作られず、枠は使われない
+
 #### Scenario: --base があればそれを使う
 - **WHEN** `--base staging` を付けて同じ `launch` を実行する
-- **THEN** 既定ブランチは読まれず、`--base-branch` は `origin/staging` である
+- **THEN** `--base-branch` は `origin/staging` である（書き込み権の応答は読むが、既定ブランチは使われない）
 
 ### Requirement: 別のリポジトリの子の起動の指示・環境変数・注意書き・返事の頭にはエピックのリポジトリを足す
 
 `launch` は、記録の `repo` が記録の `epic` のリポジトリと違う子について、次の形にしなければならない（MUST）。エピックと同じリポジトリの子は今のまま変えない（MUST）。
 
-- 子の最初の入力: `/develop #<N> （エピック #<E>（<エピックの owner>/<repo>）の子。親ワークツリー <親> から Orca で起動）`。`<N>` は子のリポジトリの番号
-- 子の起動コマンドの前置き: `EPIC_DISPATCH_PARENT_EPIC=<エピックの owner>/<repo>#<E>`（同じリポジトリの子は `<E>` だけ）
+- 子の最初の入力: `/develop #<N> （エピック #<E> の子。エピックのリポジトリ <エピックの owner>/<repo>。親ワークツリー <親> から Orca で起動）`。`<N>` は子のリポジトリの番号で、先頭の `#<N> （エピック #<E> の子。` は同じリポジトリの子と同じ形のままにする（MUST。`owner-reply-check.sh` の `DISPATCH_ARGS` が、親の打ち込みを主の発言から外す判定にこの先頭の形を使うため。リポジトリは後ろに置く）
+- 子の起動コマンドの前置き: `EPIC_DISPATCH_PARENT_EPIC=<エピックの owner>/<repo>#<E>`（同じリポジトリの子は `<E>` だけ）。この前置きは `launch` だけでなく、子の端末を作るすべての経路（`reply`・`notify-closed`・`wait --resolve` の起動し直し）に付ける（MUST）。値は子の記録の `epic` と `repo` から決める（記録の `repo` がエピックのリポジトリと違えば `<owner>/<repo>#<E>`、同じなら `<E>`）。付けないと起動し直した子の `route` が `parent epic: #<E>` を出し、子が無関係の issue にコメントしてしまう
+- 起動し直しの指示（`reply` の `--relaunch` と端末が 0 個のときの起動し直し、`notify-closed --relaunch`、`wait --resolve` の起動し直し）: 最初の入力と同じく先頭を `/develop #<N> （エピック #<E> の子。` にし、別のリポジトリの子では `エピックのリポジトリ <owner>/<repo>。` を続ける。`<N>` は子の番号だけで書く（`child_label` の `<o>/<r>#<N>` は使わない。`DISPATCH_ARGS` の `#\d+` に当たらないため）
 - `--note` の注意書き: 子 issue（子のリポジトリ）に `gh issue comment <N> -R <子のリポジトリ> --body '親エピックからの注意書き: <エピックの owner>/<repo>#<E>\n\n<注意書き>'` で残す。失敗時の投稿し直しのコマンドも `-R` を含む。先頭の `親エピックからの注意書き:` は同じ
 
 `reply`（`--as parent` / `--as owner`）と `notify-closed` と `wait --resolve` が子に送る返事の頭は、別のリポジトリの子では `親エピック #<E>（<エピックの owner>/<repo>）の判断（主の承認ではない）: ` と `主の返事（親エピック #<E>（<エピックの owner>/<repo>）経由）: ` にする（MUST。先頭の `親エピック #` / `主の返事（親エピック #` は変えない）。エピックへのコメント（`親の判断: 子 <o>/<r>#N 通した — ...` など）の子の呼び方は、要件「子を owner/repo#番号 で識別し、同じリポジトリの子は番号だけで書く」のとおり。
 
 #### Scenario: 別のリポジトリの子の起動コマンドと指示
 - **WHEN** origin が `oratta/claude-harness` の親のワークツリーで `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` が成功する
-- **THEN** 子の端末のコマンドは `EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 ` で始まり、最初の入力は `/develop #1615 （エピック #1122（oratta/claude-harness）の子。` で始まる
+- **THEN** 子の端末のコマンドは `EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 ` で始まり、最初の入力は `/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。` で始まる
+
+#### Scenario: 起動し直した別のリポジトリの子にもエピックのリポジトリを渡す
+- **WHEN** 子 `genetta-inc/flatmate#1615` の記録（`epic` が `oratta/claude-harness#1122`、`repo` が `genetta-inc/flatmate`）がある状態で `epic-dispatch.sh reply --relaunch --as parent 1122 genetta-inc/flatmate#1615 続けてよい` を実行する
+- **THEN** `orca terminal create --command` は `EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 ` で始まり、送る指示は `/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。` で始まる
+
+#### Scenario: 別のリポジトリの子の起動の指示は主の発言として数えられない
+- **WHEN** 別のリポジトリの子の `launch` の指示と起動し直しの指示が `<command-args>` に入ったセッションの記録を `owner-reply-check.sh` に渡す
+- **THEN** どちらも主の発言として数えられない（`owner-reply-check.bats` で確かめる）
 
 #### Scenario: 別のリポジトリの子の注意書きは子のリポジトリに投稿する
 - **WHEN** `--note 範囲を守る` を付けて同じ `launch` が成功する
