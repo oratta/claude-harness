@@ -35,7 +35,7 @@
 
 ### 1. 起動部品は別のプロセスとして呼ぶスクリプトにし、状態を持たせない
 
-`epic-dispatch.sh` は起動部品を `bash "<epic-dispatch.sh と同じディレクトリ>/epic-launch-<名前>.sh" <サブコマンド> <引数...>` で呼ぶ。起動部品は記録を読み書きせず、記録・見張り・上限・`reap` の安全確認は `epic-dispatch.sh` に残す（Decision 12 のとおり）。起動部品の stdout は契約の行（決まった語か 1 行 1 件の JSON）だけにし、`orca` 自身の出力・失敗の理由・手で続けるための案内は stderr に出す。
+`epic-dispatch.sh` は起動部品を `bash "<epic-dispatch.sh と同じディレクトリ>/epic-launch-<名前>.sh" <サブコマンド> <引数...>` で呼ぶ。起動部品は記録を読み書きせず、記録・見張り・上限・`reap` の安全確認は `epic-dispatch.sh` に残す（Decision 12 のとおり）。起動部品の stdout は契約の行（決まった語か 1 行 1 件の JSON）だけにし、stderr には、切り出す前の `epic-dispatch.sh` が stderr に出していたもの（`worktree set`・`worktree create`・`terminal create`・`send`・`wait`・`close` の出力、閉じ直しのときの `terminal list`、`worktree rm` の stderr、理由と案内の文）だけを同じ順と文で出し、中で解釈するだけの JSON（`worktree current`・`worktree list`・`repo list`・閉じ直し以外の `terminal list`）はどこにも出さない（今もどこにも出していないため。出すと stderr の文言が変わる）。
 
 - 案: `epic-state.sh` と同じく `source` で読み込む関数にする。呼び出しは速いが、`ready`・`submit`・`agent_cmd` のような大域変数を部品の中から読めてしまい、境目が守られているかをテストで確かめられない。tmux の部品を足すときに、どの値が境目を越えているかが分からなくなる。別のプロセスなら、渡したものだけが部品に届く
 - `bash <パス>` で呼ぶのは、実行権の有無に左右されないため（`epic-state.sh` と同じ置き場で、install 先でも同じ相対位置にある）
@@ -46,15 +46,15 @@
 | サブコマンド | 引数 | stdout と exit | Orca の部品が呼ぶもの |
 |---|---|---|---|
 | `available` | なし | 何も出さない。使えれば exit 0、使えなければ stderr に理由（Orca は `orca is not on PATH`）を出して exit 1 | `command -v orca` |
-| `here` | なし | 今のワークツリーが部品の管理下なら `{"repo_id":…,"worktree_id":…}` の 1 行（値が無ければ空の文字列）で exit 0。管理外・部品が使えなければ exit 1（stderr に `not in an Orca-managed worktree`） | `orca worktree current --json` |
+| `here` | なし | 今のワークツリーが部品の管理下なら `{"repo_id":…,"worktree_id":…}` の 1 行で exit 0。管理下の判定は `orca worktree current --json` の exit だけで決め、`jq` が無い・JSON を読めない・値が無いときは値を空の文字列にする（今の `route` は `jq` を使わずに判定しているため。bats 565 行がこれを固定している）。管理外・部品が使えなければ exit 1（stderr に `not in an Orca-managed worktree`） | `orca worktree current --json` |
 | `prepare` | `<親のワークツリー> <エピックの番号>` | 何も出さない。親をエピックに紐づけたら exit 0、失敗は exit 1 | `orca worktree set --worktree path:<親> --issue <E>` |
 | `list` | なし | 部品が知っている子のワークツリーを 1 行 1 件の JSON `{"repo_id","issue","path","branch","parent_id","status","stop"}` で出す（片付け済みのものは出さない。`branch` は `refs/heads/` を外す。`status` は `done`・`waiting`・`running`、`stop` は `stopped`・`stopped-seen`・`resumed`・空に読み替える）。読めなければ exit 1 | `orca worktree list --json` |
 | `repos` | なし | 部品に登録された clone を 1 行 1 件の JSON `{"id","path"}`（`path` の末尾の `/` は外す）で出す。読めなければ exit 1 | `orca repo list --json` |
 | `unregistered` | `<clone>` | stdout に理由の語（Orca は `not-in-orca`）を出し、stderr に登録の仕方を出して exit 0 | 呼ばない（案内の文だけ） |
 | `create` | `<clone> <repo_id> <子の番号> <起点> <親のワークツリー>` | 作れたら `{"path","branch"}` の 1 行で exit 0。作れなかったら exit 1。作ったと言うがパスを読めなければ exit 2 | `orca worktree create [--repo id:<repo_id>] --name issue-<N> --issue <N> --base-branch origin/<起点> --parent-worktree path:<親> --json`（`repo_id` が空なら `--repo` を付けない。`clone` は使わない） |
 | `start` | `<ワークツリー> <起動コマンド> <最初の指示> <子の呼び方>` | 指示が届いたら `started <session>` で exit 0。届かなかったら `failed <段> <session か空>` で exit 1（段は `terminal`・`ready`・`send`） | 今の `shell_start` → `terminal create` → `terminal wait` → `terminal send` |
-| `deliver` | `<ワークツリー> <relaunch 0か1> <送る文> <起動コマンド> <起動し直しの指示>` | `sent`・`relaunched <session>`・`failed <理由>`（理由は `terminal-list`・`ambiguous-terminal`・`send`・`close`・`create`・`ready`）のどれか 1 行。`failed` は exit 1 | 今の `deliver_reply` の `terminal list` 以降 |
-| `close` | `<ワークツリー>` | 何も出さない。閉じたら exit 0、1 回閉じ直しても駄目なら exit 1 | `orca terminal close --worktree path:<wt> --all`（失敗したら `terminal list` を出し、待って 1 回だけ閉じ直す） |
+| `deliver` | `<ワークツリー> <relaunch 0か1> <送る文> <起動コマンド> <起動し直しの指示>` | `sent`・`relaunched <session>`（どちらも exit 0）・`failed <理由>`（理由は `terminal-list`・`ambiguous-terminal`・`send`・`close`・`create`・`ready`、exit 1）のどれか 1 行。「端末一覧が空」なら起動し直し、「端末はあるが子のセッションに決められない」（シェルの端末だけを含む）なら `relaunch` 0 のとき `ambiguous-terminal` で送りも起動し直しもしない（今の動き。bats 3396 行） | 今の `deliver_reply` の `terminal list` 以降 |
+| `close` | `<ワークツリー> <子の呼び方>` | 何も出さない。閉じたら exit 0、1 回閉じ直しても駄目なら exit 1。子の呼び方は閉じ直しの stderr の文（`terminal close was incomplete for #<N>; …`）にだけ使う | `orca terminal close --worktree path:<wt> --all`（失敗したら `terminal list` を出し、待って 1 回だけ閉じ直す） |
 | `remove` | `<ワークツリー>` | 消したら何も出さず exit 0。消せなければ `rm-failed` か `rm-failed-terminal-sweep` を出して exit 1 | `orca worktree rm --worktree path:<wt>`（`--force` なし） |
 | `mirror` | `<current かワークツリー> <done・waiting・stopped・resumed・stopped-seen のどれか> <記録のパス>` | 何も出さず常に exit 0。写せなければ stderr に出す。部品が使えなければ何もしない | `orca worktree set --worktree <current か path:…> --workspace-status completed／in-review` か `--comment epic-stopped／epic-resumed／epic-stopped-seen` |
 
@@ -63,7 +63,7 @@
 - **`send` と `restart` を `deliver` 1 つにまとめた。** Decision 12 は `send`（動いている子に送る）と `restart`（閉じて起動し直す）を分けていた。分けると、端末の一覧を `send` が読み、端末が無かったときに `restart` がもう一度読むので、`orca terminal list` の回数が今の 1 回から 2 回に増え、既存の bats の回数の照合が落ちる。加えて、2 回の読みのあいだに別の端末ができると、二重に起動する窓ができる。一覧を 1 回読んで「送る」か「閉じて起動し直す」かをその場で決める今の `deliver_reply` の形のまま部品へ移す。tmux の部品も、ウィンドウの一覧を 1 回読んで決める同じ形で書ける
 - **`available`・`here`・`prepare`・`list`・`repos`・`unregistered` を足した。** Decision 12 の 7 個は子 1 件の起動と片付けだけを見ていて、親の側の Orca の呼び出し（管理かの判定、親をエピックに紐づける、記録の無い既存の子を探す、別リポジトリの clone の発見）が境目に入っていなかった。これらを `epic-dispatch.sh` に残すと `orca` を呼ぶスクリプトが 2 本になる。tmux の部品では、`prepare` は何もせず exit 0、`list`・`repos` は何も出さず exit 0、`here` は tmux の中にいるかで決める、のように「何もしない」実装で埋まる（3b で決める）
 - **`adopt` 専用のサブコマンドは作らない。** `adopt` は `here`（`repo_id` と `worktree_id`）と `list`（`parent_id`・`status`・`stop`）を組み合わせれば今の判定のまま `epic-dispatch.sh` に書ける。Orca の印から記録へ写す読み替えの表（`completed` → `done` など）は Orca の語なので `list` の中に置き、`epic-dispatch.sh` は記録の語だけを見る
-- **`close` と `remove` の失敗の理由は部品が出す。** 閉じ直しの待ちと `terminal sweep failed` の見分けは Orca に固有なので部品に置き、`epic-dispatch.sh` は `kept <N> close-failed` と、部品が出した理由をそのまま付けた `kept <N> <理由>` を出す。主の操作の案内（`owner action for #<N>: open the workspace … in Orca, … then run: epic-dispatch.sh reap <N>`）は子の番号と `epic-dispatch.sh` のコマンドを含むので、`close` が exit 1 を返したあとに `epic-dispatch.sh` が出す。`start` は子の番号を含む stderr の文（`no terminal handle for #<N> …`）を出すので、子の呼び方を引数で受ける
+- **`close` と `remove` の失敗の理由は部品が出す。** 閉じ直しの待ちと `terminal sweep failed` の見分けは Orca に固有なので部品に置き、`epic-dispatch.sh` は `kept <N> close-failed` と、部品が出した理由をそのまま付けた `kept <N> <理由>` を出す。主の操作の案内（`owner action for #<N>: open the workspace … in Orca, … then run: epic-dispatch.sh reap <N>`）は子の番号と `epic-dispatch.sh` のコマンドを含むので、`close` が exit 1 を返したあとに `epic-dispatch.sh` が出す。`start` と `close` は子の番号を含む stderr の文（`no terminal handle for #<N> …`・`terminal close was incomplete for #<N>; …`）を出すので、子の呼び方を引数で受ける（`epic-dispatch.sh` が今その文に入れている値をそのまま渡す）
 - **`remove` のあとの、ワークツリーが git の一覧から外れるのを待つ処理と、ブランチの片付けは `epic-dispatch.sh` に残す。** どちらも `git` だけで行い、Orca を呼ばない
 
 ### 3. 呼び出しの順と回数は、サブコマンドを今の `orca` の呼び出しの位置に 1 対 1 で置いて守る
@@ -92,7 +92,7 @@ grep -rlE '(^|[;&|(!]|(if|then|do|else|while|until) )[[:space:]]*orca [a-z]+' pl
 
 ## Risks / Trade-offs
 
-- [部品の stdout に `orca` の出力が混ざり、`epic-dispatch.sh` が契約の行を読み違える] → 部品は `orca` の出力をすべて stderr に回す。bats の既存の stdout の照合と、部品を直接呼んで stdout が契約の行だけであることを確かめるテスト（tasks 3.2）で拾う
+- [部品の stdout に `orca` の出力が混ざり、`epic-dispatch.sh` が契約の行を読み違える] → 部品は、今 stderr に出している `orca` の出力だけを stderr に転送し、中で解釈する JSON はどこにも出さない（Decision 1）。bats の既存の stdout の照合と、部品を直接呼んで stdout が契約の行だけであることを確かめるテスト（tasks 3.2）で拾う
 - [切り出しの途中で `orca`・`git`・`gh` の呼び出しの順や回数がずれる] → 既存の 370 件の bats を書き換えずに通すことを完了条件にする（例外は Decision 5 の照合 1 件だけ）。書き換えが要ると分かったら、その理由を tasks と PR 本文に書く
 - [呼び出しごとに bash を 1 つ起こすぶん遅くなる] → 1 回の `launch` で子 1 件あたり数回で、`orca` の呼び出しそのもの（数百ミリ秒〜秒）に比べて小さい
 - [3b で tmux の部品を書いたときに、この境目では足りないと分かる] → 境目を決める段で tmux の部品が各サブコマンドをどう埋めるかを Decision 2 で確かめた（`prepare`・`list`・`repos` は何もしない、`deliver` は一覧を 1 回読む）。足りなければ 3b の design.md でこの Decision を指して決め直す
@@ -103,5 +103,8 @@ grep -rlE '(^|[;&|(!]|(if|then|do|else|while|until) )[[:space:]]*orca [a-z]+' pl
 2. 戻し方: この change の PR を revert する。記録はそのまま読める
 
 ## Open Questions
+
+3b への申し送り: tmux の部品の `repos` を空にするだけでは、`xrepo_resolve` の「clone の登録 ID が無ければ `unregistered`」の判定を通れない。3b で、登録の仕組みを持たない部品の `create` の `clone` と空の `repo_id` の意味を決め直す。
+
 
 なし（tmux の部品のワークツリーの置き場とブランチ名、起動待ちと送信の確かめ方、`route` の判定順、サブエージェント方式の記録は 3b で決める）。
