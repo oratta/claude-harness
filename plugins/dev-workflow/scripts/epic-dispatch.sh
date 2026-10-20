@@ -452,20 +452,21 @@ cmd_launch() {
   command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
 
-  local current repo parent list
+  local current repo parent list erepo
   current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
   repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty')"
   [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+  parent="$(git rev-parse --show-toplevel)" && [ -n "$parent" ] || { echo "git rev-parse failed" >&2; exit 1; }
   # 起動し直した子のセッション（環境変数が無い）でも、子ワークツリーを作らず、今のワークツリーの issue も書き換えない。
-  # 親があるのに一覧を読めないときは子かどうかを決められないので、fetch と set より前のここで止まる
-  # （先へ進むと、子のワークツリーの issue をエピック番号で書き換えてから止まることになる）
-  local parent_epic
-  parent_epic="$(parent_from_worktree "$current")" || exit 1
-  if [ -n "$parent_epic" ]; then
-    echo "this session is a child of epic #$parent_epic (parent worktree); child epics are not expanded here" >&2
+  # 今のワークツリーを worktree に持つ記録があれば子（fetch と set より前のここで止まる）
+  local own
+  own="$(es_find_by_worktree "$parent" | head -n 1)"
+  if [ -n "$own" ]; then
+    echo "this session is a child of epic $(es_get "$own" epic) (state record $own); child epics are not expanded here" >&2
     exit 1
   fi
-  parent="$(git rev-parse --show-toplevel)" || { echo "git rev-parse failed" >&2; exit 1; }
+  # 記録を書く先のエピックのリポジトリ（origin が読めなければ何も作らない。set より前に読む）
+  erepo="$(es_epic_repo)" || exit 1
   git fetch origin "$base" >&2 || { echo "git fetch origin $base failed" >&2; exit 1; }
   orca worktree set --worktree "path:$parent" --issue "$epic" >&2 \
     || { echo "orca worktree set failed" >&2; exit 1; }
@@ -473,33 +474,51 @@ cmd_launch() {
   printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
     || { echo "orca worktree list --json is not readable" >&2; exit 1; }
 
-  # 枠を使っている子を数える（完了の印・止まった印・閉じた子は数えない。state を読めない子は数える）
-  local self cn cst in_use=0 in_use_list="" free
-  self="$(printf '%s' "$current" | jq -r '.result.worktree.id // empty' 2>/dev/null)"
-  if [ -z "$self" ]; then
-    echo "orca worktree current --json has no id; counting no children in use" >&2
-  else
-    for cn in $(printf '%s' "$list" | jq -r --arg r "$repo" --arg p "$self" \
-      '.result.worktrees[] | select(.repoId == $r and .parentWorktreeId == $p and .isArchived != true
-        and .linkedIssue != null and .workspaceStatus != "completed"
-        and ((.comment // "") | . != "epic-stopped" and . != "epic-stopped-seen"))
-        | .linkedIssue | tostring' 2>/dev/null); do
-      cst="$(gh api "repos/{owner}/{repo}/issues/$cn" --jq .state)" || cst=""
-      [ "$cst" = closed ] && continue
-      [ "$cst" = open ] || echo "could not read the state of #$cn; counting it as in use" >&2
-      in_use=$(( in_use + 1 )); in_use_list="$in_use_list #$cn"
-    done
-  fi
+  # 枠を使っている子を状態の記録から数える。全エピックのディレクトリを横断し、parent_worktree が今のワークツリーの
+  # 記録のうち、done・止まった印・閉じた子は数えない。state を読めない子と、ほかの読めない記録は 1 枠に数える
+  local rf rec cst clabel in_use=0 in_use_list="" free
+  for rf in "$ES_ROOT"/*/*.json; do
+    [ -f "$rf" ] || continue
+    if ! rec="$(es_read "$rf")"; then
+      echo "unreadable state record (counted as in use): $rf" >&2
+      in_use=$(( in_use + 1 )); in_use_list="$in_use_list $rf"; continue
+    fi
+    printf '%s' "$rec" | jq -e --arg p "$parent" '.parent_worktree == $p and .status != "done"
+      and .stop != "stopped" and .stop != "stopped-seen"' >/dev/null 2>&1 || continue
+    clabel="$(printf '%s' "$rec" | jq -r 'if .repo == (.epic | split("#")[0]) then "#\(.number)" else .child end')"
+    cst="$(gh api "$(issue_api "${clabel#\#}" "$rf")" --jq .state)" || cst=""
+    [ "$cst" = closed ] && continue
+    [ "$cst" = open ] || echo "could not read the state of $clabel; counting it as in use" >&2
+    in_use=$(( in_use + 1 )); in_use_list="$in_use_list $clabel"
+  done
   echo "max parallel $max_par ($max_par_src); in use $in_use:$in_use_list" >&2
   free=$(( max_par - in_use )); [ "$free" -ge 0 ] || free=0
 
-  local n prompt body out rc child handle sent retry failed=0 seen=" "
+  local n num f cur prompt body out rc child cbranch handle sent retry failed=0 seen=" " stage shell_rc
   for n in "$@"; do
     case "$seen" in
       *" $n "*) echo "skipped $n"; continue ;;
     esac
     seen="$seen$n "
-    if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$n" \
+    es_parse_arg "$n"; num="$ES_ARG_NUM"
+    # この change ではエピックと別のリポジトリの子を作らない（枠も使わない）
+    if [ -n "$ES_ARG_REPO" ] && [ "$ES_ARG_REPO" != "$erepo" ]; then
+      echo "children in another repository are not launched yet: $n" >&2
+      echo "failed $n other-repo"; failed=1; continue
+    fi
+    f="$(es_path "$erepo" "$epic" "$erepo" "$num")"
+    if [ -e "$f" ]; then
+      if ! cur="$(es_read "$f")"; then
+        echo "unreadable state record: $f" >&2
+        echo "failed $n state-unreadable"; failed=1; continue
+      fi
+      # 作ったワークツリーがある記録は起動済み。worktree が空の記録（書いたあとで殺された）は上書きして作る
+      if [ -n "$(printf '%s' "$cur" | jq -r '.worktree')" ]; then
+        echo "skipped $n"; continue
+      fi
+    fi
+    # 記録の無い Orca のワークツリー（この変更の前に起動した子）も起動済み。取り込みは adopt
+    if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$num" \
       'any(.result.worktrees[]; .repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)' \
       >/dev/null 2>&1; then
       echo "skipped $n"
@@ -510,62 +529,79 @@ cmd_launch() {
       echo "deferred $n"; continue
     fi
     free=$(( free - 1 ))
-    prompt="/develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
+    # 子のワークツリーを作る前に記録を書く（作成に失敗したら消す）
+    if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$erepo" "$num" orca "$parent" "" "" "$base" running "")"; then
+      echo "could not write the state record: $f" >&2
+      echo "failed $n"; failed=1; continue
+    fi
+    prompt="/develop #$num （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
     [ -n "$note" ] && prompt="$prompt $note"
-    out="$(orca worktree create --name "issue-$n" --issue "$n" --base-branch "origin/$base" \
+    out="$(orca worktree create --name "issue-$num" --issue "$num" --base-branch "origin/$base" \
       --parent-worktree "path:$parent" --json)"
     rc=$?
     printf '%s\n' "$out" >&2
     if [ "$rc" -ne 0 ]; then
+      rm -f "$f"
       echo "failed $n"; failed=1; continue
     fi
     # 注意書きを子 issue に残す（起動し直したセッションにも届く）。このあとの失敗でワークツリーが
     # 残れば次の launch では skipped になるので、端末より前に投稿する。失敗しても起動は続ける
     if [ -n "$note" ]; then
       body="$(printf '親エピックからの注意書き: #%s\n\n%s' "$epic" "$note")"
-      if ! gh issue comment "$n" --body "$body" >&2; then
-        echo "note not posted to #$n. post it with the command below:" >&2
-        echo "gh issue comment $n --body $(shq "$body")" >&2
+      if ! gh issue comment "$num" --body "$body" >&2; then
+        echo "note not posted to #$num. post it with the command below:" >&2
+        echo "gh issue comment $num --body $(shq "$body")" >&2
       fi
     fi
     child="$(printf '%s' "$out" | jq -r '.result.worktree.path // empty' 2>/dev/null)"
     if [ -z "$child" ]; then
-      echo "no worktree path for #$n in orca worktree create --json" >&2
+      echo "no worktree path for #$num in orca worktree create --json" >&2
+      es_modify "$f" '.launch_failed = "create"' >/dev/null || true
       echo "failed $n"; failed=1; continue
     fi
+    cbranch="$(printf '%s' "$out" | jq -r '.result.worktree.branch // empty' 2>/dev/null)"
+    es_modify "$f" '.worktree = $w | .branch = $b' --arg w "$child" --arg b "${cbranch#refs/heads/}" >/dev/null \
+      || echo "could not write the worktree to the state record: $f" >&2
     # worktree create が空のシェルの端末を 1 つ作っていれば、新しい端末は作らずそこで起動する
     # （端末が 2 つになると reply が ambiguous-terminal で止まる）。0 個なら従来どおり作る
-    handle=""; shell_rc=0
+    handle=""; shell_rc=0; stage=""
     shell_start "$child" "$agent_cmd" || shell_rc=$?
     if [ "$shell_rc" -eq 0 ]; then
       handle="$SHELL_HANDLE"
     elif [ "$shell_rc" -eq 3 ]; then
-      echo "failed $n"; failed=1; continue
+      stage=terminal
     else
       out="$(orca terminal create --worktree "path:$child" --command "$agent_cmd" --json)"
       rc=$?
       printf '%s\n' "$out" >&2
       [ "$rc" -eq 0 ] && handle="$(printf '%s' "$out" | jq -r '.result.terminal.handle // empty' 2>/dev/null)"
+      if [ -z "$handle" ]; then
+        echo "no terminal handle for #$num from orca terminal create --json" >&2
+        recreate_hint "$child" "$agent_cmd" "$prompt" "$submit"
+        stage=terminal
+      fi
     fi
-    if [ -z "$handle" ]; then
-      echo "no terminal handle for #$n from orca terminal create --json" >&2
-      recreate_hint "$child" "$agent_cmd" "$prompt" "$submit"
-      echo "failed $n"; failed=1; continue
-    fi
-    if ! orca terminal wait --terminal "$handle" --for tui-idle --timeout-ms "$ready" --json >&2; then
+    if [ -z "$stage" ] && ! orca terminal wait --terminal "$handle" --for tui-idle --timeout-ms "$ready" --json >&2; then
       resend_hint "$handle" "$prompt" "$submit"
-      echo "failed $n"; failed=1; continue
+      stage=ready
     fi
-    sent="$(orca terminal send --terminal "$handle" --text "$prompt" --enter --wait-submit "$submit" --json)"
-    rc=$?
-    printf '%s\n' "$sent" >&2
-    if [ "$rc" -eq 0 ] && turn_started "$sent"; then
-      echo "launched $n"
-    else
+    if [ -z "$stage" ]; then
+      sent="$(orca terminal send --terminal "$handle" --text "$prompt" --enter --wait-submit "$submit" --json)"
+      rc=$?
+      printf '%s\n' "$sent" >&2
+      if [ "$rc" -eq 0 ] && turn_started "$sent"; then
+        es_modify "$f" '.session = $s | .launch_failed = ""' --arg s "$handle" >/dev/null \
+          || echo "could not write the session to the state record: $f" >&2
+        echo "launched $n"; continue
+      fi
       retry="$(retry_id "$sent")"
       resend_hint "$handle" "$prompt" "$submit" "$retry"
-      echo "failed $n"; failed=1
+      stage=send
     fi
+    # ワークツリーを作ったあとの失敗は記録を残し、段を書く（次の launch では skipped）
+    es_modify "$f" '.launch_failed = $st | .session = $s' --arg st "$stage" --arg s "$handle" >/dev/null \
+      || echo "could not write launch_failed to the state record: $f" >&2
+    echo "failed $n"; failed=1
   done
   exit "$failed"
 }
