@@ -6,8 +6,8 @@
 ## 2. 索引とサービス別ファイル
 
 - [ ] 2.1 SKILL.md の description（3 行目）から「（fmtoken.sh）」を外す。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:3
-- [ ] 2.2 SKILL.md の「原則」の 2 番を、トークンの在処はオーナーの環境の索引があればそちらを見る・手元に無ければブラウザに行かず主に発行を依頼する、に書き換え、fmtoken の取得・登録・確認・`--name` の子項目を外す。「資格情報の階層」以降は触らない。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:10-21（「原則」の節）
-- [ ] 2.3 SKILL.md の索引（「トークン」列）の 5 行を、環境変数名またはログイン状態に書き換える（1Password 行の「`fmtoken.sh --register`」も外す）。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:52-60（「索引」の節）
+- [ ] 2.2 SKILL.md の「原則」の 2 番を、トークンの在処はオーナーの環境の索引があればそちらを見る・手元に無ければブラウザに行かず主に発行を依頼する、に書き換え、fmtoken の取得・登録・確認・`--name` の子項目を外す。「資格情報の階層」以降は触らない。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:13-22（「原則」の節）
+- [ ] 2.3 SKILL.md の索引（「トークン」列）の 5 行を、環境変数名またはログイン状態に書き換える（1Password 行の「`fmtoken.sh --register`」も外す）。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:52-64（「索引」の節）
 - [ ] 2.4 `github.md`・`stripe.md`・`supabase.md`・`vercel.md` の fmtoken 呼び出しを、環境変数またはログイン状態での書き方に直す。触る範囲: plugins/capability-registry/skills/capability-registry/github.md:4、stripe.md:3-4、supabase.md:3-4、vercel.md:3-4
 - [ ] 2.5 `tests/skill-registry.bats` の「fmtoken.sh token retrieval」の検査を、原則の節に在処の案内があり、description・原則・索引・サービス別ファイルに `fmtoken` が無いことの検査に置き換える（「資格情報の階層」の節は個人版なので検査の対象に入れない）。触る範囲: plugins/capability-registry/tests/skill-registry.bats:42-48
 
