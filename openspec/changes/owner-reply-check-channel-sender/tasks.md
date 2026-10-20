@@ -12,6 +12,8 @@
 - [x] 2.3 spec の ADDED 要件の Scenario を 1 件ずつ bats にする（許可された送信者で通す・MATCH の全文が中身だけ・isMeta が true のチャンネルの行を通す・origin の無い isMeta の行はチャンネルの形の本文でも通さない・`type:"queue-operation"` の行に写った本文を通さない・複数の項目・`plugin:discord:discord=531,,` の空の項目は exit 0・許可されていない送信者・別のチャンネルの同じ ID・未設定と空・送信者を読めない 9 つの形（`source` が無いを含む）・中身の偽の開きタグ・中身の ⑨・設定の形の誤り 3 つを 3 つの使い方で exit 2・対話の行と `<bash-input>` の行は設定があっても今までどおり）。`--locate` と `--relayed` は既存の `add_report`・`STOP_AT`・`STOP_URL` を使う 触る範囲: plugins/dev-workflow/tests/owner-reply-check.bats:526 の後ろ（末尾に新しい節として足す）
 - [x] 2.4 `bats plugins/dev-workflow/tests/owner-reply-check.bats plugins/dev-workflow/tests/owner-reply-relayed-scenario.bats` が全件通ることを確かめる 触る範囲: plugins/dev-workflow/tests/owner-reply-relayed-scenario.bats（読むだけ）
 
+- [x] 2.5 1 行にチャンネルの塊が 2 つ以上ある行と、`content` が 2 つ以上の text 要素の配列の行を数えない（spec の条件 8。中身に `</?channel[\s>]` があれば None、`content` の要素数が 1 でなければ None）。先に bats で Red を確かめてから直す（許可された送信者の塊＋別の送信者の塊・許可された送信者の塊 2 つ・中身のタグ・要素 2 つの配列 2 形は exit 1、塊 1 つの文字列と要素 1 つの配列は exit 0） 触る範囲: plugins/dev-workflow/scripts/owner-reply-check.sh（`channel_inside`・`owner_text`・冒頭の説明）、plugins/dev-workflow/tests/owner-reply-check.bats（末尾）
+
 ## 3. 記録
 
 - [x] 3.1 変更の記録を `plugins/dev-workflow/changes/1125.md` に書く（何を変えたか・住人の環境では `OWNER_REPLY_CHANNEL_SENDERS` の設定が要り、その決まりは #1126 で決めること） 触る範囲: plugins/dev-workflow/changes/1125.md（新規）

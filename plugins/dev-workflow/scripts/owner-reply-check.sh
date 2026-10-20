@@ -16,7 +16,8 @@
 #   4. origin のキーがあるなら（null を含む）origin.kind が "human"、または "channel" で次のすべてを満たす（issue #1125）:
 #      origin.server が空でない文字列／本文が先頭の空白なしに開きタグ <channel( 名前="値")*>＋改行で始まる／
 #      属性名に重複が無い／source 属性が origin.server と同じ／user_id 属性が空でない／
-#      末尾（後ろの空白を除く）が改行＋</channel>／(origin.server, user_id) が OWNER_REPLY_CHANNEL_SENDERS にある。
+#      末尾（後ろの空白を除く）が改行＋</channel>／(origin.server, user_id) が OWNER_REPLY_CHANNEL_SENDERS にある／
+#      中身に </channel> や <channel の形のタグが無く（1 行に塊がちょうど 1 つ）、content が文字列か text 部品 1 つの配列。
 #      OWNER_REPLY_CHANNEL_SENDERS は <server>=<ID> を空白かカンマで区切って並べる（例 plugin:discord:discord=<主の Discord ID>）。
 #      未設定か空ならチャンネルの行は数えない。チャンネルの行は開きタグと閉じタグを外した中身を本文とし、6・7・9 は中身に当てる。
 #      照合にユーザー名（user 属性）は使わない。
@@ -127,6 +128,8 @@ DISPATCH_ARGS = re.compile(r"<command-args>\s*#\d+\s*（エピック #\d+ の子
 CHANNEL_OPEN = re.compile(r'<channel((?: [A-Za-z_][A-Za-z0-9_]*="[^"\n]*")*)>\n')
 CHANNEL_ATTR = re.compile(r' ([A-Za-z_][A-Za-z0-9_]*)="([^"\n]*)"')
 CHANNEL_CLOSE = "\n</channel>"
+# 中身にチャンネルのタグがあれば数えない（1 行に塊が 2 つ以上あると、続きの塊の送信者を確かめられないため）
+CHANNEL_TAG = re.compile(r"</?channel[\s>]")
 SENDERS_ENV = "OWNER_REPLY_CHANNEL_SENDERS"
 SENDER_ITEM = re.compile(r"[^=\s,]+=[^=\s,]+")
 
@@ -149,8 +152,10 @@ def load_channel_senders():
 CHANNEL_SENDERS = load_channel_senders()
 
 
-def channel_inside(origin, text):
+def channel_inside(origin, text, part_count):
     """チャンネルの行の送信者が許可されていれば、開きタグと閉じタグを外した中身を返す。読めない・許可されていなければ None。"""
+    if part_count != 1:  # content が 2 つ以上の text 部品の配列なら数えない
+        return None
     server = origin.get("server")
     if not isinstance(server, str) or not server:
         return None
@@ -171,7 +176,10 @@ def channel_inside(origin, text):
         return None
     if (server, attr["user_id"]) not in CHANNEL_SENDERS:
         return None
-    return full[head.end():end]
+    inside = full[head.end():end]
+    if CHANNEL_TAG.search(inside):
+        return None
+    return inside
 
 
 def norm(text):
@@ -202,6 +210,7 @@ def owner_text(rec):
     content = message.get("content")
     if isinstance(content, str):
         text = content
+        part_count = 1
     elif isinstance(content, list) and content:
         parts = []
         for item in content:
@@ -209,10 +218,11 @@ def owner_text(rec):
                 return None
             parts.append(item["text"])
         text = "\n".join(parts)
+        part_count = len(parts)
     else:
         return None
     if channel is not None:
-        text = channel_inside(channel, text)
+        text = channel_inside(channel, text, part_count)
         if text is None:
             return None
     stripped = text.lstrip()
