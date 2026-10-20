@@ -7,4 +7,4 @@
 ## 2. 記録とテスト
 
 - [x] 2.1 `plugins/dev-workflow/changes/978.md` の差分範囲に `refuse_explicit_codex_when_off`（`codex-develop.py:507-519`）を足す。触る範囲: plugins/dev-workflow/changes/978.md:30
-- [x] 2.2 `statusline.bats` の `codex_off_env` に auth.json を置き、「codex off」の検査がオフ判定を消すと落ちることを確かめる（確かめ方: 一時的にオフ判定を外して落ちることを見て戻す）。触る範囲: plugins/statusline/tests/statusline.bats:185-202
+- [x] 2.2 `statusline.bats` の 「codex off」の検査に auth.json を置き（`codex_with_login`）、検査の前に `--refresh` を同期で走らせて、キャッシュ不在の検査がオフ判定を消すと落ちることを確かめる（確かめ方: 一時的にオフ判定を外して落ちることを見て戻す）。触る範囲: plugins/statusline/tests/statusline.bats:185-202

@@ -192,7 +192,8 @@ codex_off_env() {
 }
 
 # auth.json を identity() が None で止まらない形（tokens あり）で置く。オフ判定が無ければ
-# スタブが実際に起動されうる条件になり、スタブ未呼び出しの検査がオフ判定を検証する
+# 取得処理が実際に走りうる条件になる。ただし取得は main() が切り離した背景の子プロセスで走り、
+# 描画の終了後に完了するので、検査の前に --refresh を同期で走らせる（下のテスト）
 codex_with_login() {
   echo '{"tokens":{"account_id":"test"}}' > "$CODEX_HOME/auth.json"
 }
@@ -205,6 +206,9 @@ codex_with_login() {
   [ "$(strip_ansi < "$WORK/out.txt" | grep -c 'Codex')" -eq 1 ]
   line="$(strip_ansi < "$WORK/out.txt" | grep 'Codex')"
   [ "$line" = "  Codex A  off" ]
+  # 背景の取得との競合を避けるため、同期で取得を走らせてから見る。オフ判定が無ければここで
+  # キャッシュが作られて落ちる（スタブは echo の前に打ち切られるので codex-calls は当てにしない）
+  python3 "${PLUGIN_DIR}/scripts/statusline-codex.py" --refresh
   [ ! -e "$WORK/codex-calls" ]
   [ ! -e "$WORK/.statusline-codex" ]
 }
