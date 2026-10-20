@@ -55,14 +55,22 @@ Context 91%  │  Cache 82%  │  API ¥1,446,038/mo  │  Session ¥1,240
 - `/statusline:setup --dry-run` — 何が変わるかだけ表示する
 - `/statusline:setup --uninstall` — `settings.json` から `statusLine` を外す
 
-プラグイン本体を直接指さずコピーを配るのは、marketplace dir がプラグイン自動更新で再 clone されるため。そこを settings.json から指すと、更新のたびに色や幅の調整が消える。プラグインを更新したら `/statusline:setup` を再実行する。
+プラグイン本体を直接指さずコピーを配るのは、marketplace dir がプラグイン自動更新で再 clone されるため。そこを settings.json から指すと、更新のたびに色や幅の調整が消える。
+
+プラグインを更新したあとのコピーの扱いは、手を入れたかどうかで分かれる。`/statusline:setup` はコピーした内容のハッシュを `~/.claude/.statusline-installed` に記録し、セッション開始時（statusline プラグインの SessionStart フック）にコピーをこの記録とプラグインの本体と比べる。
+
+- 手を入れていない（記録どおり）コピーは、黙って新しい版に置き換わる
+- 手を入れたコピーは上書きしない。プラグインが新しい版になっていれば（配った版から本体が変わっていれば）、代わりにステータスラインの 1 行目の末尾に `更新あり /statusline:setup` が出る。手を入れただけでプラグインがまだ更新されていなければ何も出ない。`/statusline:setup` を打ち直すと新しい版になり（元のコピーは `.bak-<timestamp>` に残る）、表示もすぐ消える
+- この仕組みより前に入れたコピーは記録が無いので、手を入れたものとして扱う。印を読めない古いコピーではステータスラインに出せないので、セッション開始時に同じ案内が出る。一度 `/statusline:setup` を打ち直せば、以後は自動で揃う
+
+自動の置き換えは、いまインストールされている版のプラグインから起動したセッションでだけ行う。`claude --plugin-dir` で開発中の版を読み込んだセッションと、プラグイン更新より前から開いている古い版のセッションでは何もしない（古い版のセッションで新しいコピーを巻き戻さないため）。
 
 ### 本体のセッションコストの記録
 
 描画のたびに、Claude Code 本体が渡すセッションコスト（`cost.total_cost_usd`）を
 `${CLAUDE_CONFIG_DIR:-~/.claude}/.session-cost/<セッション ID>` に書き残す（1 セッション 1 ファイル・1 行で、最初の観測と最後に値が変わった観測の時刻と値を持つ）。値が前回と同じ描画では書かない。表示は変わらず、`STATUSLINE_SESSION_COST=0` で表示を消していても記録は書く。400 日より古い記録は、新しい記録ファイルを作る描画で消す。
 
-この記録は cost-ledger プラグインが読み、自前の単価表で計算した額と比べて、単価表のずれを `/cost` の出力で知らせるのに使う。記録はコピー先のスクリプトが書くので、プラグインを更新したあと `/statusline:setup` を再実行すると記録が始まる。
+この記録は cost-ledger プラグインが読み、自前の単価表で計算した額と比べて、単価表のずれを `/cost` の出力で知らせるのに使う。記録はコピー先のスクリプトが書くので、コピーが新しい版になってから記録が始まる（手を入れていないコピーはセッション開始時に自動で揃う。手を入れたコピーと記録の無い古いコピーは `/statusline:setup` の打ち直しが要る）。
 
 ### 前提
 
@@ -185,7 +193,7 @@ SCRIPTS=~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflo
 
 ## カスタマイズ
 
-`~/.claude/statusline.sh` を直接編集してよい（プラグイン更新では消えない。ただし `/statusline:setup` を再実行すると上書きされ、`.bak-<timestamp>` が残る）。環境変数でも変えられる:
+`~/.claude/statusline.sh` を直接編集してよい（手を入れたコピーはプラグイン更新で自動では上書きされず、プラグインが新しい版になると 1 行目の末尾に `更新あり /statusline:setup` が出る。`/statusline:setup` を再実行すると上書きされ、`.bak-<timestamp>` が残る）。環境変数でも変えられる:
 
 | 変数 | 既定 | 効果 |
 |---|---|---|
@@ -210,7 +218,7 @@ bats plugins/statusline/tests/
 python3 -m pytest plugins/statusline/tests/
 ```
 
-`statusline.bats` は 1 スロット時の退行ガード、`statusline-multi-account.bats` は複数スロットの描画と `origin/main` 版との出力バイト一致の検証。`statusline-rate-snapshot.bats` と `test_rate_snapshot_writer.py` は writer の保存契約を検証する。`statusline-session-cost-record.bats` は本体のセッションコストの記録（書く条件・書かない条件・表示を変えないこと）を検証する。
+`statusline.bats` は 1 スロット時の退行ガード、`statusline-multi-account.bats` は複数スロットの描画と `origin/main` 版との出力バイト一致の検証。`statusline-rate-snapshot.bats` と `test_rate_snapshot_writer.py` は writer の保存契約を検証する。`statusline-session-cost-record.bats` は本体のセッションコストの記録（書く条件・書かない条件・表示を変えないこと）を検証する。`statusline-copy-update.bats` はコピーの自動更新（`install.sh` の記録、SessionStart フックの置き換え・上書きしない条件・動く場所、1 行目の `更新あり`）を検証する。
 
 ## Codex の利用上限
 

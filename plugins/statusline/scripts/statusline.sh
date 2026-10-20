@@ -3,6 +3,8 @@
 # statusline.sh — Claude Code の使用量ステータスライン
 #
 #   1行目: カレントディレクトリ / モデル / git ブランチ
+#          （<config>/.statusline-update-available があれば末尾に「更新あり /statusline:setup」。
+#           印は statusline プラグインの SessionStart フックが置く）
 #   2行目: コンテキスト残量 / プロンプトキャッシュのヒット率（直近のミスの原因つき） /
 #          API 換算の月額ペース / このセッションの API 換算コスト
 #   3行目: 5h ウィンドウのレートリミット
@@ -1011,10 +1013,15 @@ fi
 # Line 1: directory, model, git
 # Line 2: context window, prompt cache, API cost, session cost
 # Line 3: 5h bar / Line 4: 7d All + Fable bars
-printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s\n" \
+update_info=""
+if [ -f "$CONFIG_DIR/.statusline-update-available" ]; then
+    update_info="  ${YELLOW}更新あり /statusline:setup${RESET}"
+fi
+printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s%s\n" \
     "$short_pwd" \
     "$model_name" \
-    "$git_info"
+    "$git_info" \
+    "$update_info"
 
 line2=""
 if [ -n "$context_info" ]; then
