@@ -9,21 +9,37 @@
 #   epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
 #   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
 #   epic-dispatch.sh reap <child>...
+#   epic-dispatch.sh pending-owner <child>...
+#   epic-dispatch.sh adopt <epic> <child>...
+#   epic-dispatch.sh clear <epic>
 #   epic-dispatch.sh max-parallel
 #
 # Orca のコマンドを呼ぶのはこのスクリプトだけ（develop の手順書には orca のコマンドを書かない）。
+# 子の状態の正本は状態の記録（${EPIC_STATE_ROOT:-~/.claude/epic-state}/<o>.<r>-<E>/<o>.<r>-<N>.json。
+#   読み書き・排他・照合の関数は同じディレクトリの epic-state.sh）。Orca の画面の印（ボードの列・コメント欄）は、
+#   記録を書いたあとに写すだけで、判定には使わない（写しの失敗は stderr に出して成功扱い）。
+#   <child> は番号だけか <owner>/<repo>#<N>（エピックと同じリポジトリなら番号と同じ扱い。出力は受けた形のまま）。
+#   エピックの <owner>/<repo> を origin から読むのは launch・adopt・clear だけ（GitHub の 3 つの形。読めなければ
+#   stderr に `cannot read the epic repository from origin: <URL か no origin>` で exit 1）。親の見張りと子の側は
+#   記録の epic・repo を使う。親の側は今のワークツリー（git rev-parse --show-toplevel）を parent_worktree に
+#   持つ記録だけを見る（番号だけは number と epic のリポジトリ、<owner>/<repo>#<N> は child で当てる）。
+#   子の側は今のワークツリーを worktree に持つ記録を自分の記録とする。
 # route: 子の番号の検査のあと、子の件数によらず最初に「エピックの子のセッションか」を見る。
 #   EPIC_DISPATCH_PARENT_EPIC が空でなければ（並列起動された子のセッション）orca を呼ばずに `nested`。
-#   空でも、`orca worktree current --json` の parentWorktreeId があり、`orca worktree list --json` の
-#   そのワークツリーに linkedIssue があれば（子のワークツリーで起動し直したセッション）`nested`。
-#   `nested` のときは stderr に `parent epic: #<N>`（環境変数の値か、親の linkedIssue）。
-#   jq が無い・一覧を読めないときは子ではないとして進み、stderr に `could not read the parent worktree`。
+#   空でも、今のワークツリーを worktree に持つ記録があれば（子のワークツリーで起動し直したセッション）`nested`。
+#   `nested` のときは stderr に `parent epic: <#E か o/r#E>`（環境変数の値か、記録の epic）。
+#   jq が無い・記録が読めないときは子ではないとして進む。Orca の parentWorktreeId は見ない。
 #   子でなければ、子が 1 件以上・`orca worktree current --json` が exit 0（今いるのが Orca 管理の
 #   ワークツリー）なら stdout に `orca`、それ以外（子 0 件を含む）は `subagent`。どれも exit 0。current は 1 回だけ呼ぶ
 # launch: `orca worktree current --json` → `git rev-parse --show-toplevel` → `git fetch origin <base>`
 #   → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` →
 #   子ごとに `orca worktree create`（同じ repoId・同じ linkedIssue・archive されていない
-#   ワークツリーがあれば作らない。--agent も --prompt も渡さない。create は空のシェルの端末を 1 つ作るので、
+#   ワークツリーがあれば作らない。--agent も --prompt も渡さない。作る前に記録（status running・worktree 空）を
+#   書き、作成に失敗したら消す。作れたら worktree・branch を書き足し、送信まで済めば session に端末のハンドルを書く。
+#   作ったあとで端末・起動待ち・送信に失敗したら記録を残して launch_failed に terminal / ready / send、
+#   create が path を返さなければ create を書く。記録があって worktree が空でなければ skipped、空なら上書きして作る。
+#   自分の記録が読めなければ `failed <N> state-unreadable`、エピックと別のリポジトリの子は作らず
+#   `failed <child> other-repo`（どちらも枠を使わない）。create は空のシェルの端末を 1 つ作るので、
 #   `orca terminal list` でそれがちょうど 1 つならそこへ下の <起動コマンド> を `terminal send --enter` で打ち込み、
 #   端末が Claude Code になるまで list で待つ。0 個のときだけ下の terminal create で作る。2 個以上・list 失敗は failed）→ --note があれば
 #   `gh issue comment <N> --body <親エピックからの注意書き: #<epic>・空行・注意書き>`（失敗しても起動は
@@ -40,21 +56,21 @@
 #   ハンドルが取れていれば送り直しのコマンドを stderr に出す。orca 自身の出力は stderr。
 #   <base> の既定は main（EPIC_DISPATCH_BASE、--base が優先）。起動完了待ちの上限（ミリ秒）と
 #   送信の観測時間（秒）の既定は 60000 / 30（EPIC_DISPATCH_READY_TIMEOUT_MS / EPIC_DISPATCH_SUBMIT_WAIT）
-#   exit 0 = failed なし / 1 = failed あり、または orca・jq が無い・current / fetch / set / list の
-#   失敗（このときは子を 1 件も作らない）
-#   上限（max-parallel と同じ値）: list のあと、同じ repoId・parentWorktreeId が今のワークツリーの id・
-#   archive されていない・linkedIssue がある子のうち、workspaceStatus が completed でなく、comment が
-#   epic-stopped / epic-stopped-seen でなく、`gh api repos/{owner}/{repo}/issues/<N> --jq .state` が closed で
-#   ないものを「枠を使っている子」と数える（gh の失敗・open / closed 以外は数え、stderr にその子を出す。
-#   今のワークツリーの id が無ければ 0 件で stderr）。stderr に `max parallel <上限> (<出どころ>); in use <数>: #<N>...`。
+#   exit 0 = failed なし / 1 = failed あり、または orca・jq が無い・current / origin / fetch / set / list の
+#   失敗（このときは子を 1 件も作らず、記録も書かない）。呼ぶ順は current → rev-parse → 子の判定 →
+#   remote get-url origin → fetch → set → list
+#   上限（max-parallel と同じ値）: list のあと、全エピックのディレクトリを横断して parent_worktree が今のワークツリーの
+#   記録のうち、status が done でなく、stop が stopped / stopped-seen でなく、
+#   `gh api <記録の repo の issues/<N>> --jq .state` が closed でないものを「枠を使っている子」と数える（gh の失敗・
+#   open / closed 以外は数え、stderr にその子を出す。ほかの読めない記録も 1 枠に数える。記録の無い Orca の子は
+#   数えない）。stderr に `max parallel <上限> (<出どころ>); in use <数>: #<N>...`（並びは置き場のディレクトリの順）。
 #   空き枠 = max(0, 上限 − 使用中)。子ごとに skipped の判定のあと、空き枠が 0 なら create も注意書きも
 #   行わずに `deferred <N>`（exit code に影響しない）。create に進んだ子は結果によらず空き枠を 1 減らす。
 #   上限の値が誤っていれば引数の検査のあと orca も git も呼ばずに使い方を出して exit 1
 #   EPIC_DISPATCH_PARENT_EPIC が空でなければ、引数の検査のあと orca も git も呼ばずに
-#   stderr に理由を出して exit 1（子ワークツリーを作らない）。空でも、current --json の直後に route と
-#   同じ親子関係の判定をし、子なら git も set も create も呼ばずに exit 1
-#   （どちらの理由も `child epics are not expanded here` を含む）。parentWorktreeId があるのに一覧を
-#   読めないときも、git も set も create も呼ばずに exit 1（stderr に `could not read the parent worktree`）
+#   stderr に理由を出して exit 1（子ワークツリーを作らない）。空でも、rev-parse の直後に route と
+#   同じ記録の判定をし、子なら origin も fetch も set も create も呼ばずに exit 1
+#   （どちらの理由も `child epics are not expanded here` を含む）
 # wait: 子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state` を見るポーリングを繰り返し、
 #   stdout にちょうど 1 行を出して終わる。
 #   `closed <N>...`（閉じていた子）exit 0 / `timeout <N>...`（閉じていない子）exit 2 /
@@ -64,17 +80,16 @@
 #   間隔・上限は秒。既定 300 / 21600（EPIC_DISPATCH_INTERVAL / EPIC_DISPATCH_TIMEOUT、フラグが優先）。
 #   ポーリングのあとで「経過 >= 上限」か「経過 + 間隔 > 上限」なら眠らずに timeout
 #   （--timeout 0 は間隔によらず 1 回だけ確かめる）
-#   --watch-done <N> を 1 つ以上付けたときだけ、ポーリングごとに `orca worktree list --json` を 1 回呼び、
-#   同じ repoId・linkedIssue が <N>・archive されていない・workspaceStatus が completed のワークツリーが
-#   あれば「印が付いた」とする。閉じた子・印が付いた子がいれば `closed <N>...` と `done <N>...` を
-#   この順に（1 行か 2 行）出して exit 0。一覧を読めないポーリングも失敗したポーリングに数え、
+#   子 issue の state は、記録の repo がエピックと同じ子と記録の無い子は repos/{owner}/{repo}、違う子は repos/<repo> で読む。
+#   --watch-done <N> を 1 つ以上付けたときだけ、ポーリングごとに渡された子の記録を 1 回ずつ読み、
+#   status が done なら「印が付いた」とする。閉じた子・印が付いた子がいれば `closed <N>...` と `done <N>...` を
+#   この順に（1 行か 2 行）出して exit 0。読めない記録はそのポーリングを失敗したポーリングに数え、
 #   3 回続いて gh の失敗が無ければ `error workspaces`。位置引数 0 件も可（timeout は `timeout` だけ）。
-#   --watch-stopped（値なし）を付け、位置引数の子が 1 件以上あるときは、同じ一覧で、閉じていない位置引数の
-#   子のうち同じ repoId・linkedIssue が <N>・archive されていない・comment が epic-stopped のワークツリー
-#   全部に `orca worktree set --worktree path:<パス> --comment epic-stopped-seen` を呼び、全部 exit 0 なら
-#   「止まった子」とする（1 つでも失敗すれば失敗したポーリングに数える）。出力は `closed <N>...`・
+#   --watch-stopped（値なし）を付け、位置引数の子が 1 件以上あるときは、閉じていない位置引数の子のうち
+#   記録の stop が stopped のものを排他つきで stopped-seen に書き換え（そのあと Orca の印へ写す）、書けたら
+#   「止まった子」とする（書けなければ失敗したポーリングに数える）。出力は `closed <N>...`・
 #   `done <N>...`・`stopped <N>...` を該当するものだけこの順に（1〜3 行）出して exit 0。
-#   --watch-done も --watch-stopped（子 1 件以上）も無ければ orca を呼ばず、コメント欄も見ない。
+#   --watch-done も --watch-stopped（子 1 件以上）も無ければ記録を読まない。
 #   --resolve <epic>（--watch-stopped と位置引数の子が 1 件以上あるときだけ働く）を付けると、止まった子ごとに
 #   判断のコマンド（EPIC_DISPATCH_JUDGE。既定は同じディレクトリの stop-judge.sh）を `<epic> <child>` で 1 回呼ぶ。
 #   `判断: 通す` で返事が空でなければ reply --as parent と同じ処理で送り、sent / relaunched ならエピックに
@@ -84,36 +99,37 @@
 #   `stopped` に残す（投稿に失敗したら stderr に投稿し直しのコマンド）。出力は closed / done / stopped /
 #   unrecorded の順の 1〜4 行。--resolve が無ければ判断を呼ばず、unrecorded も出さない。
 #   --resolve の値が無い・数字でない、または返事の送り方の環境変数が誤っていれば使い方を出して exit 1
-#   orca / jq が無い・`orca worktree current` が失敗したら stdout に何も出さず exit 1
-# reply: 今のワークツリーと同じ repoId・linkedIssue が <child>・archive されていない子のワークツリーが 1 件で、
+#   jq が無い・今のワークツリーを読めない（rev-parse の失敗）なら stdout に何も出さず exit 1
+# reply: 今のワークツリーを parent_worktree に持つ <child> の記録が 1 件で（その worktree が子のワークツリー）、
 #   端末があり（--relaunch なし）、子のセッションの端末（agentIdentity が claude の端末、無ければタイトルに
 #   Claude Code を含む端末がちょうど 1 つ）が決まれば、頭（--as parent は `親エピック #<epic> の判断（主の承認ではない）: `、
 #   owner は `主の返事（親エピック #<epic> 経由）: `）を付けた文を送り、ターンの開始まで確かめて `sent <child>`。
 #   端末が 0 か --relaunch なら（--relaunch は先に端末を全部閉じて）launch と同じ起動コマンドで端末を作り、
 #   `/develop #<child> （エピック #<epic> の子。返事を受けて起動し直し） <頭付きの文>` を送って `relaunched <child>`。
 #   端末はあるが子のセッションの端末を決められない（シェルの端末だけも含む）
-#   ときは `failed <child> ambiguous-terminal`。ワークツリーが 0 件か 2 件以上・送信 / 作成 / 閉じるの失敗は `failed <child> <段>` で exit 1
+#   ときは `failed <child> ambiguous-terminal`。記録が 0 件は `failed <child> no-worktree`、2 件以上は
+#   `failed <child> ambiguous-worktree`、読めない記録は `failed <child> state-unreadable`。送信 / 作成 / 閉じるの失敗は `failed <child> <段>` で exit 1
 #   （送り直しか作り直しのコマンドを stderr に出す）。引数の誤りは orca を呼ばずに使い方を出して exit 1
 # notify-closed: 子 issue の state が closed でなければ `skipped <child> not-closed`、state_reason が completed で
-#   なければ `skipped <child> not-completed`（gh の失敗は `failed <child> issue`）。今のワークツリーと同じ repoId・
-#   linkedIssue が <child>・archive されていない子のワークツリーが 0 件なら `skipped <child> no-worktree`、2 件以上は
-#   `failed <child> ambiguous-worktree`、一覧を読めなければ `failed <child> list`。workspaceStatus が completed なら
-#   `skipped <child> already-done`、comment が epic-stopped / epic-stopped-seen でなければ `skipped <child> not-stopped`。
+#   なければ `skipped <child> not-completed`（gh の失敗は `failed <child> issue`）。今のワークツリーを parent_worktree に
+#   持つ <child> の記録が 0 件なら `skipped <child> no-worktree`、2 件以上は `failed <child> ambiguous-worktree`、
+#   読めない記録は `failed <child> state-unreadable`。記録の status が done なら
+#   `skipped <child> already-done`、stop が stopped / stopped-seen でなければ `skipped <child> not-stopped`。
 #   条件を満たせば reply --as parent と同じ処理（--relaunch も同じ）で「記録先の issue #<child> は completed で
 #   閉じた。完了報告を書き、mark done で終える（停止の記録: <URL>）」を送り（URL は OWNER / MEMBER / COLLABORATOR の
 #   最新の `子の停止: 主の返事待ち` のコメント、無ければ子 issue の URL）、送れたらエピックに
 #   `親の判断: 子 #<child> 通した — 記録先が completed で閉じたので、完了報告と mark done を促した <URL>` を投稿して
 #   `notified <child>`（投稿に失敗したら `unrecorded <child>` と stderr に投稿し直しのコマンド）。skipped / notified /
 #   unrecorded は exit 0、送信の失敗は `failed <child> <段>` で exit 1。skipped のときはどこにも投稿しない
-# mark: 今のワークスペースの linkedIssue が <issue> のときだけ `orca worktree set --worktree current
-#   --workspace-status <completed|in-review>`（done / waiting）。stdout は `marked <issue> <kind>`（exit 0）
-#   / `failed <issue>`（exit 1）/ `skipped <issue> not-linked` / `skipped <issue> no-workspace`
-#   （orca が無いか Orca 管理外。exit 0）。EPIC_DISPATCH_PARENT_EPIC は見ない。
-#   stopped / resumed は列に触れず `orca worktree set --worktree current --comment <epic-stopped|epic-resumed>`
-#   を 1 回呼ぶ。resumed は今の comment が epic-stopped / epic-stopped-seen のときだけ付け、
-#   それ以外は set を呼ばずに `skipped <issue> not-stopped`（exit 0）
-# reap: 子ごとに、一覧の候補 1 件・親の launch が作った（parentWorktreeId が今のワークツリーの id）・
-#   completed・git status がきれい・LLM/ が無い・ブランチ上・マージ済み PR の headRefOid と HEAD が一致
+# mark: 今のワークツリーを worktree に持つ自分の記録の number（<owner>/<repo>#<N> なら repo も）が <issue> の
+#   ときだけ、排他つきで done / waiting は status を done / waiting に、stopped は stop を stopped に、resumed は
+#   stop が stopped / stopped-seen のときだけ resumed に書き換え（それ以外は `skipped <issue> not-stopped`）、
+#   書けたら Orca の印（--workspace-status completed / in-review、--comment epic-stopped / epic-resumed）へ写す。
+#   stdout は `marked <issue> <kind>`（exit 0）/ `failed <issue>`（書けない・自分の記録が 2 件以上。exit 1）/
+#   `skipped <issue> not-linked`（記録が別の子）/ `skipped <issue> no-workspace`（記録が無い・jq が無い。exit 0）。
+#   EPIC_DISPATCH_PARENT_EPIC は見ない
+# reap: 子ごとに、今のワークツリーを parent_worktree に持つ記録 1 件（無い・worktree のディレクトリが無いなら
+#   `gone <N>`。後者は記録を消す。読めない記録は `kept <N> state-unreadable`）・status が done・git status がきれい・LLM/ が無い・ブランチ上・マージ済み PR の headRefOid と HEAD が一致
 #   （`--head <ブランチ>` で一致しなければ、`--state merged --search <HEAD>` でブランチ名を問わず探す）、
 #   （一致しなくても、そのブランチに PR が状態を問わず無く・issue が閉じていて・HEAD が
 #   `git ls-remote origin refs/heads/${EPIC_DISPATCH_BASE:-main}` のリモートの今の先端に含まれる子は通す。
@@ -125,12 +141,23 @@
 #   stderr に `terminal sweep failed` を含む失敗は `kept <N> rm-failed-terminal-sweep`）→
 #   残ったローカルブランチは先端が HEAD と同じときだけ、ワークツリーが `git worktree list` から外れるのを
 #   上限つきで待って（EPIC_DISPATCH_REAP_DETACH_TIMEOUT 秒・既定 30、_INTERVAL 秒・既定 1）`git branch -D`。stdout は子ごとに
-#   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。
-#   current / list を読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
-# pending-owner: 読み取り専用。子ごとに、同じ repoId・linkedIssue が <N>・archive されていないワークツリーの
-#   comment が epic-stopped-seen（親が受けたまま、子が mark resumed を付けていない）のものがあれば
-#   `pending <N>` を 1 行ずつ出して exit 0（orca worktree set は呼ばない）。起動し直した親が、主の返事待ちの子を
-#   出し直す対象を集める。一覧を読めなければ stdout 空で exit 1
+#   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。reaped の子は記録を消す。
+#   orca・jq が無い・今のワークツリーを読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
+# pending-owner: 読み取り専用。子ごとに、今のワークツリーを parent_worktree に持つ記録の stop が stopped-seen
+#   （親が受けたまま、子が mark resumed を付けていない）なら `pending <N>` を 1 行ずつ出して exit 0（記録も Orca の印も
+#   書かない）。読めない記録の子は飛ばす。起動し直した親が、主の返事待ちの子を出し直す対象を集める。
+#   jq が無い・今のワークツリーを読めなければ stdout 空で exit 1
+# adopt: 記録の無い子ごとに、`orca worktree list --json` の、repoId が今のワークツリーと同じ・linkedIssue が子・
+#   archive されていない・parentWorktreeId が今のワークツリーの id のワークツリーを探す。ちょうど 1 つなら path・
+#   branch と、workspaceStatus（completed → done、in-review → waiting、ほか → running）と comment（epic-stopped →
+#   stopped、epic-stopped-seen → stopped-seen、epic-resumed → resumed、ほか → 空）を写し、base を
+#   EPIC_DISPATCH_BASE（空なら main）、launcher を orca、session と launch_failed を空にした記録を作って
+#   `adopted <N>`。記録があれば `skipped <N>`、該当が無ければ（別リポジトリの子を含む）`none <N>`、2 つ以上は
+#   `failed <N> ambiguous`。orca・jq が無い・Orca 管理外・一覧を読めない・origin を読めなければ stdout 空で exit 1。
+#   failed があれば exit 1
+# clear: <epic>（^[0-9]+$）の状態ディレクトリ（EPIC_STATE_ROOT 直下の <o>.<r>-<E>）を、残っている記録の子を stderr に
+#   出してから消して `cleared <epic>`、無ければ `none <epic>`（どちらも exit 0）。EPIC_STATE_ROOT が空・/ や $HOME
+#   そのもの・名前が / か .. を含む・シンボリックリンク・origin を読めないときは何も消さずに exit 1
 # max-parallel: 同時に枠を使う子の上限を stdout に数字 1 行で出して exit 0（orca / gh / git を呼ばない）。
 #   EPIC_DISPATCH_MAX_PARALLEL（1 以上の整数。空・0・数字以外は使い方を出して exit 1）があればその値、
 #   無ければ物理メモリの GiB（`sysctl -n hw.memsize` のバイト、読めなければ
@@ -157,7 +184,9 @@
 # 「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」
 # 「Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る」
 # 「epic-dispatch.sh は同時に枠を使う子の上限を環境変数か物理メモリから決める」
-# 「epic-dispatch.sh launch は空いた枠の分だけ子を起動し、残りを deferred で出す」が正本。
+# 「epic-dispatch.sh launch は空いた枠の分だけ子を起動し、残りを deferred で出す」と、
+# 状態の記録（置き場・項目・排他・adopt・clear・launch の書く順・枠の数え方）は openspec の
+# dev-workflow-epic-state spec が正本。
 set -uo pipefail
 
 # 状態の記録の読み書き（置き場・排他・照合）は epic-state.sh に置く
@@ -175,6 +204,8 @@ usage:
   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
   epic-dispatch.sh reap <child>...
   epic-dispatch.sh pending-owner <child>...
+  epic-dispatch.sh adopt <epic> <child>...
+  epic-dispatch.sh clear <epic>
   epic-dispatch.sh max-parallel
 EOF
   exit 1
@@ -1227,6 +1258,84 @@ cmd_reap() {
     fi
   done
   exit 0
+}
+
+# 記録の無い Orca の子（この変更の前に起動した子）を記録に取り込む。親を起動し直したときに使う
+cmd_adopt() {
+  [ "$#" -ge 2 ] || usage
+  local epic="$1"; shift
+  is_num "$epic" || { echo "not an issue number: $epic" >&2; usage; }
+  check_children "$@"
+  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
+  command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
+  local base="${EPIC_DISPATCH_BASE:-main}" current repo cid parent erepo list
+  current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
+  repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
+  cid="$(printf '%s' "$current" | jq -r '.result.worktree.id // empty' 2>/dev/null)"
+  [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+  parent="$(toplevel)" && [ -n "$parent" ] || { echo "git rev-parse failed" >&2; exit 1; }
+  erepo="$(es_epic_repo)" || exit 1
+  list="$(orca worktree list --json)" || { echo "orca worktree list failed" >&2; exit 1; }
+  printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
+    || { echo "orca worktree list --json is not readable" >&2; exit 1; }
+  [ -n "$cid" ] || echo "orca worktree current --json has no id; no child is found" >&2
+
+  local n num crepo f hits cnt w b st sp failed=0
+  for n in "$@"; do
+    es_parse_arg "$n"; num="$ES_ARG_NUM"; crepo="${ES_ARG_REPO:-$erepo}"
+    f="$(es_path "$erepo" "$epic" "$crepo" "$num")"
+    if [ -e "$f" ]; then echo "skipped $n"; continue; fi
+    # Orca の一覧は今のワークツリーと同じリポジトリのワークツリーだけを持つ
+    if [ "$crepo" != "$erepo" ] || [ -z "$cid" ]; then echo "none $n"; continue; fi
+    hits="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$num" --arg p "$cid" \
+      '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n
+        and .isArchived != true and .parentWorktreeId == $p)]')"
+    cnt="$(printf '%s' "$hits" | jq 'length')"
+    if [ "$cnt" -eq 0 ]; then echo "none $n"; continue; fi
+    if [ "$cnt" -gt 1 ]; then
+      echo "two or more Orca worktrees for $n under this parent" >&2
+      echo "failed $n ambiguous"; failed=1; continue
+    fi
+    w="$(printf '%s' "$hits" | jq -r '.[0].path // empty')"
+    b="$(printf '%s' "$hits" | jq -r '.[0].branch // empty')"; b="${b#refs/heads/}"
+    st="$(printf '%s' "$hits" | jq -r '.[0].workspaceStatus // "" |
+      if . == "completed" then "done" elif . == "in-review" then "waiting" else "running" end')"
+    sp="$(printf '%s' "$hits" | jq -r '.[0].comment // "" |
+      if . == "epic-stopped" then "stopped" elif . == "epic-stopped-seen" then "stopped-seen"
+      elif . == "epic-resumed" then "resumed" else "" end')"
+    if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$crepo" "$num" orca "$parent" "$w" "$b" "$base" "$st" "$sp")"; then
+      echo "could not write the state record: $f" >&2
+      echo "failed $n"; failed=1; continue
+    fi
+    echo "adopted $n"
+  done
+  exit "$failed"
+}
+
+# エピックの状態ディレクトリ（EPIC_STATE_ROOT 直下の 1 つ）を消す。エピックの完了時に使う
+cmd_clear() {
+  [ "$#" -eq 1 ] || usage
+  local epic="$1" home="${HOME%/}" erepo name d rf c
+  [[ "$epic" =~ ^[0-9]+$ ]] || { echo "not an issue number: $epic" >&2; usage; }
+  if [ "$ES_ROOT" = "/" ] || [ -z "$ES_ROOT" ] || { [ -n "$home" ] && [ "$ES_ROOT" = "$home" ]; }; then
+    echo "refusing to clear under EPIC_STATE_ROOT=$ES_ROOT (the root or the home directory itself)" >&2; exit 1
+  fi
+  erepo="$(es_epic_repo)" || exit 1
+  name="$(es_name "$erepo" "$epic")"
+  case "$name" in
+    */*|*..*) echo "refusing to clear an unexpected directory name: $name" >&2; exit 1 ;;
+  esac
+  d="$ES_ROOT/$name"
+  if [ -L "$d" ]; then echo "refusing to clear a symbolic link: $d" >&2; exit 1; fi
+  if [ ! -e "$d" ]; then echo "none $epic"; exit 0; fi
+  [ -d "$d" ] || { echo "not a directory: $d" >&2; exit 1; }
+  for rf in "$d"/*.json; do
+    [ -f "$rf" ] || continue
+    c="$(es_get "$rf" child)"
+    echo "remaining state record: ${c:-unreadable} ($rf)" >&2
+  done
+  rm -rf -- "$d" || { echo "could not remove $d" >&2; exit 1; }
+  echo "cleared $epic"
 }
 
 [ "$#" -ge 1 ] || usage

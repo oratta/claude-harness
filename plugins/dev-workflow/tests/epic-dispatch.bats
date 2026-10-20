@@ -4103,3 +4103,171 @@ resolve_pass() {
 @test "skill: the subagent route stops on a bad max-parallel setting" {
   printf '%s\n' "$(subagent_para)" | grep -qF '（exit 1 なら stderr を添えて設定の誤りとして報告して止まる。手順 6 と同じ）'
 }
+
+# --- adopt ---
+# spec: dev-workflow-epic-state（adopt は記録の無い Orca の子を記録に取り込む）
+
+@test "adopt: a stopped-seen Orca child of this parent becomes a record" {
+  make_stub orca
+  set_current 1122
+  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent' repo-a false epic-stopped-seen)"
+  run dispatch adopt 1122 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "adopted 11" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 status)" = running ]
+  [ "$(rec_get 11 worktree)" = "$BATS_TEST_TMPDIR/work/issue-11" ]
+  [ "$(rec_get 11 branch)" = oratta/issue-11 ]
+  [ "$(rec_get 11 parent_worktree)" = /work/parent ]
+  [ "$(rec_get 11 launcher)" = orca ]
+  [ "$(rec_get 11 base)" = main ]
+  [ "$(rec_get 11 session)" = "" ]
+  [ "$(rec_get 11 launch_failed)" = "" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "adopt: the board column and comment map to status and stop, EPIC_DISPATCH_BASE sets base" {
+  make_stub orca
+  set_current 1122
+  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 in-review 'repo-a::/work/parent' repo-a false epic-stopped)" \
+    "$(wt_entry 13 '' 'repo-a::/work/parent' repo-a false epic-resumed)"
+  EPIC_DISPATCH_BASE=develop run dispatch adopt 1122 11 12 13
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'adopted 11\nadopted 12\nadopted 13')" ]
+  [ "$(rec_get 11 status)/$(rec_get 11 stop)" = done/ ]
+  [ "$(rec_get 12 status)/$(rec_get 12 stop)" = waiting/stopped ]
+  [ "$(rec_get 13 status)/$(rec_get 13 stop)" = running/resumed ]
+  [ "$(rec_get 11 base)" = develop ]
+}
+
+@test "adopt: a child with a record is skipped and the record is unchanged" {
+  make_stub orca
+  set_current 1122
+  put_record 11 stop=stopped
+  set_list list_json "$(wt_entry 11 completed)"
+  before="$(cat "$(rec_of 1122 11)")"
+  run dispatch adopt 1122 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11" ]
+  [ "$(cat "$(rec_of 1122 11)")" = "$before" ]
+}
+
+@test "adopt: no match, another parent and archived worktrees are none, two matches are failed ambiguous" {
+  make_stub orca
+  set_current 1122
+  set_list list_json "$(wt_entry 12 '' 'repo-a::/work/other')" "$(wt_entry 13 '' 'repo-a::/work/parent' repo-a true)" \
+    "$(wt_entry 14)" "$(wt_entry 14)"
+  run dispatch adopt 1122 11 12 13 14
+  [ "$status" -eq 1 ]
+  [ "$output" = "$(printf 'none 11\nnone 12\nnone 13\nfailed 14 ambiguous')" ]
+  [ ! -e "$EPIC_STATE_ROOT/oratta.claude-harness-1122" ]
+}
+
+@test "adopt: without orca, outside Orca, an unreadable list or an unreadable origin prints nothing and exits 1" {
+  run dispatch adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  make_stub orca
+  set_list list_json "$(wt_entry 11)"
+  echo 1 > "$STUB_CFG/current_exit"
+  run dispatch adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  rm "$STUB_CFG/current_exit"
+  echo 1 > "$STUB_CFG/list_exit"
+  run dispatch adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  rm "$STUB_CFG/list_exit"
+  echo https://gitlab.com/oratta/claude-harness > "$STUB_CFG/origin_url"
+  run dispatch adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -q 'cannot read the epic repository from origin' "$BATS_TEST_TMPDIR/stderr"
+  [ ! -e "$EPIC_STATE_ROOT" ] || [ -z "$(find "$EPIC_STATE_ROOT" -type f)" ]
+}
+
+@test "adopt: a non-numeric epic or a bad child prints the usage" {
+  make_stub orca
+  run dispatch adopt x 11
+  [ "$status" -eq 1 ]
+  grep -q 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  run dispatch adopt 1122 '#11'
+  [ "$status" -eq 1 ]
+  grep -q 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca')" -eq 0 ]
+}
+
+# --- clear ---
+# spec: dev-workflow-epic-state（記録は片付けた子ごとに消し、エピックの完了時にディレクトリごと消す）
+
+@test "clear: the state directory is removed, remaining children go to stderr, other epics stay" {
+  put_record 11
+  put_record 12 epic=oratta/claude-harness#900
+  run dispatch clear 1122
+  [ "$status" -eq 0 ]
+  [ "$output" = "cleared 1122" ]
+  [ ! -e "$EPIC_STATE_ROOT/oratta.claude-harness-1122" ]
+  [ -f "$(rec_of 900 12)" ]
+  grep -q 'oratta/claude-harness#11' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "clear: a missing directory is none" {
+  run dispatch clear 1122
+  [ "$status" -eq 0 ]
+  [ "$output" = "none 1122" ]
+}
+
+@test "clear: a non-numeric epic and an empty EPIC_STATE_ROOT remove nothing" {
+  put_record 11
+  run dispatch clear ../1122
+  [ "$status" -eq 1 ]
+  [ -f "$(rec_of 1122 11)" ]
+  EPIC_STATE_ROOT= run dispatch clear 1122
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ -f "$(rec_of 1122 11)" ]
+}
+
+@test "clear: a relative EPIC_STATE_ROOT is resolved from the working directory" {
+  mkdir -p "$BATS_TEST_TMPDIR/cwd/state/oratta.claude-harness-1122"
+  touch "$BATS_TEST_TMPDIR/cwd/state/oratta.claude-harness-1122/oratta.claude-harness-11.json"
+  cd "$BATS_TEST_TMPDIR/cwd"
+  EPIC_STATE_ROOT=state run dispatch clear 1122
+  [ "$status" -eq 0 ]
+  [ "$output" = "cleared 1122" ]
+  [ ! -e "$BATS_TEST_TMPDIR/cwd/state/oratta.claude-harness-1122" ]
+  [ -d "$BATS_TEST_TMPDIR/cwd/state" ]
+}
+
+@test "clear: EPIC_STATE_ROOT of / or the home directory itself removes nothing" {
+  EPIC_STATE_ROOT=/ run dispatch clear 1122
+  [ "$status" -eq 1 ]
+  grep -q 'refusing to clear' "$BATS_TEST_TMPDIR/stderr"
+  [ -z "$output" ]
+  mkdir -p "$BATS_TEST_TMPDIR/home/oratta.claude-harness-1122"
+  HOME="$BATS_TEST_TMPDIR/home" EPIC_STATE_ROOT="$BATS_TEST_TMPDIR/home/" run dispatch clear 1122
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ -d "$BATS_TEST_TMPDIR/home/oratta.claude-harness-1122" ]
+}
+
+@test "clear: a symbolic link is not followed" {
+  mkdir -p "$BATS_TEST_TMPDIR/elsewhere" "$EPIC_STATE_ROOT"
+  touch "$BATS_TEST_TMPDIR/elsewhere/keep.json"
+  ln -s "$BATS_TEST_TMPDIR/elsewhere" "$EPIC_STATE_ROOT/oratta.claude-harness-1122"
+  run dispatch clear 1122
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ -L "$EPIC_STATE_ROOT/oratta.claude-harness-1122" ]
+  [ -f "$BATS_TEST_TMPDIR/elsewhere/keep.json" ]
+}
+
+@test "clear: an origin that is not GitHub removes nothing" {
+  put_record 11
+  echo git@gitlab.com:oratta/claude-harness.git > "$STUB_CFG/origin_url"
+  run dispatch clear 1122
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ -f "$(rec_of 1122 11)" ]
+}
