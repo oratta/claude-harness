@@ -74,8 +74,10 @@ pkg_runner() {
 resolve_rate_share_dir() {
     local dir conf tilde='~'
     if [ "${FLATMATE_RATE_SHARE_DIR+x}" ]; then
-        dir=$(printf '%s' "$FLATMATE_RATE_SHARE_DIR" \
-            | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        # Trim the whole string (sed works per line and would keep a leading LF); no python3 here.
+        dir="$FLATMATE_RATE_SHARE_DIR"
+        dir="${dir#"${dir%%[![:space:]]*}"}"
+        dir="${dir%"${dir##*[![:space:]]}"}"
     else
         conf="${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"
         dir=""

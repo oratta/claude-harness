@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import time
@@ -99,7 +100,7 @@ def check_writer_shared_body_and_atomic_replacement(writer):
 
 
 def check_writer_trims_share_dir_from_environment(writer):
-    tmp, _, _, snap, run = writer
+    tmp, home, _, snap, run = writer
     workdir = tmp / "cwd"
     workdir.mkdir()
     # 空白だけ: 空文字と同じく共有しない。cwd に空白名のディレクトリを作らない
@@ -109,6 +110,20 @@ def check_writer_trims_share_dir_from_environment(writer):
     share = tmp / "share"
     observed = run(share=f"  {share} \t", cwd=workdir)
     assert (share / f"{observed['host']}.json").read_bytes() == snap.read_bytes()
+    assert list(workdir.iterdir()) == []
+    # 先頭・末尾の LF / CR / タブも除く（reader の str.strip() と同じ解決値にする）
+    for padded in (f"\n  {share} \n", f"\r\n\t{share}\n\n", "\n \n"):
+        shutil.rmtree(share, ignore_errors=True)
+        observed = run(share=padded, cwd=workdir)
+        if padded.strip():
+            assert (share / f"{observed['host']}.json").read_bytes() == snap.read_bytes()
+        else:
+            assert not share.exists()
+        assert list(workdir.iterdir()) == []
+    # ~ の展開は空白除去のあとで効く
+    home_share = home / "share-home"
+    observed = run(share="\n  ~/share-home \n", cwd=workdir)
+    assert (home_share / f"{observed['host']}.json").read_bytes() == snap.read_bytes()
     assert list(workdir.iterdir()) == []
 
 
