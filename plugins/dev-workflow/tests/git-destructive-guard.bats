@@ -1324,6 +1324,61 @@ json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "com
   done
 }
 
+# git が受け入れない .git（中身の無いディレクトリ・CR 付きの commondir の先が git ディレクトリでないもの）は、
+# git が上の階層へ探しに行くので拒む
+@test "permit: the script refuses .git that git would not accept" {
+  setup_permit
+  local base rec r
+  base="$(GUARD_BASE)"
+  mkdir -p "$SP/empty/.git"
+  r="$(mk_repo "$SP/cr")"
+  printf '..\r\n' >|"$r/.git/commondir"
+  local -a cases=("$SP/empty" "$r")
+  for cwd in "${cases[@]}"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$cwd" "git checkout -- .")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -ne 0 ] || { echo "permitted: $cwd"; return 1; }
+    permits_empty
+  done
+}
+
+# git ディレクトリの中の symlink（refs・index・packed-refs・HEAD・objects・その下の refs/heads など）と、
+# サブモジュール（.git/modules・.gitmodules・config の submodule の節）は、git が scratchpad の外を触りうるので拒む
+@test "permit: the script refuses symlinks in the git directory and submodules" {
+  setup_permit
+  local base rec r n i=0
+  base="$(GUARD_BASE)"
+  git -C "$OUT" branch keepme
+  local -a cwds=()
+  for n in refs index packed-refs HEAD objects refs/heads logs; do
+    i=$((i + 1))
+    r="$(mk_repo "$SP/lnk$i")"
+    git -C "$r" pack-refs --all
+    rm -rf "${r:?}/.git/$n"
+    ln -s "$OUT/.git/$n" "$r/.git/$n"
+    cwds+=("$r|git branch -D keepme")
+  done
+  r="$(mk_repo "$SP/mod")"
+  mkdir -p "$r/.git/modules"
+  ln -s "$OUT/.git" "$r/.git/modules/sub"
+  cwds+=("$r|git reset --hard --recurse-submodules")
+  r="$(mk_repo "$SP/gm")"
+  printf '[submodule "sub"]\n\tpath = sub\n\turl = %s\n' "$OUT" >|"$r/.gitmodules"
+  cwds+=("$r|git reset --hard")
+  r="$(mk_repo "$SP/subcfg")"
+  printf '[Submodule "sub"]\n\tactive = true\n' >>"$r/.git/config"
+  cwds+=("$r|git reset --hard")
+  local c cwd cmd
+  for c in "${cwds[@]}"; do
+    cwd="${c%%|*}"; cmd="${c#*|}"
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$cwd" "$cmd")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -ne 0 ] || { echo "permitted: $cwd | $cmd"; return 1; }
+    permits_empty
+  done
+  git -C "$OUT" rev-parse --verify -q refs/heads/keepme >/dev/null
+}
+
 @test "permit: the script refuses a bare git directory under a scratchpad repo" {
   setup_permit
   local sp2 base rec

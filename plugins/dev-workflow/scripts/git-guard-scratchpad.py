@@ -154,6 +154,8 @@ def _config_ok(path):
         return "%s に worktree の設定がある（作業ツリーを外に向けられる）" % path
     if "[include" in text:
         return "%s に include の節がある" % path
+    if "submodule" in text:
+        return "%s に submodule の設定がある（サブモジュールの git ディレクトリを確かめない）" % path
     return None
 
 
@@ -178,7 +180,7 @@ def _resolve_repo(d, sp):
     elif os.path.isfile(dotgit):
         try:
             with open(dotgit, encoding="utf-8") as fh:
-                line = fh.readline().rstrip("\n")
+                line = fh.readline().rstrip("\r\n")  # git も行末の CR と LF を落として読む
         except (OSError, UnicodeDecodeError):
             return "%s を読めない" % dotgit, None
         if not line.startswith("gitdir: "):
@@ -194,18 +196,59 @@ def _resolve_repo(d, sp):
     if os.path.lexists(cd_file):
         try:
             with open(cd_file, encoding="utf-8") as fh:
-                rel = fh.readline().rstrip("\n")
+                rel = fh.readline().rstrip("\r\n")
         except (OSError, UnicodeDecodeError):
             return "%s を読めない" % cd_file, None
         common = os.path.realpath(os.path.join(gitdir, rel))
     for label, path in (("作業ツリー", top), ("git ディレクトリ", gitdir), ("共通の git ディレクトリ", common)):
         if not _inside(path, sp):
             return "%s %s が scratchpad %s の外にある" % (label, path, sp), None
+    if not _git_accepts(gitdir, common):
+        # git は受け入れない .git を飛ばして上の階層へ探しに行くので、判定が見た repo と別の repo を使う
+        return "%s は git が git ディレクトリとして受け入れない形（HEAD・objects・refs が揃わない）" % gitdir, None
+    for g in sorted({gitdir, common}):
+        err = _no_links(g, sp)
+        if err:
+            return err, None
+        if os.path.lexists(os.path.join(g, "modules")):
+            return "%s にサブモジュールの git ディレクトリ（modules）がある" % g, None
+    if os.path.lexists(os.path.join(top, ".gitmodules")):
+        return "%s にサブモジュールの定義（.gitmodules）がある" % top, None
     for cfg in (os.path.join(common, "config"), os.path.join(gitdir, "config.worktree")):
         err = _config_ok(cfg)
         if err:
             return err, None
     return None, top
+
+
+_HEAD_HASH = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
+def _git_accepts(gitdir, common):
+    """git が git ディレクトリとして受け入れる形か（git の is_git_directory と同じく、共通の git ディレクトリに
+    objects と refs のディレクトリがあり、git ディレクトリの HEAD が ref: refs/ で始まるかハッシュ）。"""
+    if not (os.path.isdir(common) and os.path.isdir(os.path.join(common, "objects"))
+            and os.path.isdir(os.path.join(common, "refs"))):
+        return False
+    try:
+        with open(os.path.join(gitdir, "HEAD"), encoding="utf-8") as fh:
+            head = fh.readline().rstrip("\r\n")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return head.startswith("ref: refs/") or bool(_HEAD_HASH.match(head))
+
+
+def _no_links(g, sp):
+    """git ディレクトリ g の中に symlink が無く、どれも scratchpad sp の中か。無ければ None、あれば理由。
+    refs・index・objects などが外を指すと、判定が中と見た repo の操作が外の repo を書き換える。"""
+    for dirpath, dirnames, filenames in os.walk(g, followlinks=False):
+        for name in dirnames + filenames:
+            p = os.path.join(dirpath, name)
+            if os.path.islink(p):
+                return "git ディレクトリの中に symlink %s がある" % p
+        if not _inside(os.path.realpath(dirpath), sp):
+            return "git ディレクトリの中の %s が scratchpad %s の外にある" % (dirpath, sp)
+    return None
 
 
 def _split_simple(command):
