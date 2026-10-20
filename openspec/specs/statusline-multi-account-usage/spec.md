@@ -8,11 +8,11 @@ statusline がレートリミットをアカウント（スロット）別に描
 
 各スロットの行の出し方は現行の入れ子条件をスロット単位に適用したものでなければならない（SHALL）:
 
-- 5h 消化率が得られない非 active スロットは行を出さない。複数スロットの active が欠測なら、同じ目印・label 列で `取得待ち` を1行出さなければならない（SHALL）。使用率や snapshot の値をライブ値として補ってはならない（MUST NOT）
+- 5h 消化率が得られない非 active スロットは行を出さない。表示対象の Claude スロットが複数あるときの active が欠測なら、同じ目印・label 列で `取得待ち` を1行出さなければならない（SHALL）。使用率や snapshot の値をライブ値として補ってはならない（MUST NOT）
 - 5h 消化率が得られたスロットは `5h` 行を出す
 - `5h` 行を出したスロットのうち、7d 消化率も得られたものだけ `7d All`（+ 条件を満たせば `Fable`）行を出す
 
-スロットが複数あるときは各行の左端を「active の目印（表示幅 2。要件「active スロットの行を視覚的に示す」）＋ 名前の列」の順で構成しなければならない（SHALL）。名前は「サービス名 + 半角スペース + アカウント名」とし、Claude のスロットは `Claude <label>`（`<label>` はレジストリのスロットの `label`）、Codex の行は `Codex <label>`（`<label>` は要件「Codex の表示名を codex.label で決める」で決まる値）とする。目印の列は active / 非 active を問わず全行が等しく表示幅 2 を占め、非 active 行では半角スペース 2 つで埋める。名前の列の幅は文字数ではなく**表示幅**（East Asian Width が W / F の文字を 2 桁と数える）で揃えなければならない（SHALL）。アカウント名（`<label>`）の表示幅が 8 を超える場合は 8 桁に切り詰めたものを使う（`usage-account-registry` capability の `label` の規定に従う。長い label で全行が押し出されるのを防ぐ）。切り詰めるのはアカウント名の部分だけで、サービス名（`Claude ` / `Codex `）は常に残さなければならない（SHALL。名前全体を 8 桁に切ると `Claude 仕事` が `Claude 仕` のように中途半端に切れ、どのアカウントか分からなくなるため）。したがって名前の最大幅は `Claude ` の 7 桁 + 8 桁 = 15 桁で、名前の列の幅は表示される名前の表示幅の最大値とする。目印の列と名前の列の幅がどちらも全行で等しいことにより、バーの左端は全角のラベル（`仕事` など）を含めて揃う。バーの描画・色分け・日程線・分母表示（例 `82%/74%`）は既存の描画関数（`bar_seg` / `bar2`）をそのまま使い、意味論を変えてはならない（MUST NOT）。要件「enabled が false のスロットは off の 1 行にする」の目標レイアウトとシナリオにある `A` / `B`（例 `  B  off`）は、`Claude A` / `Claude B`（例 `  Claude B  off`）に読み替える（この要件が優先する）。
+表示対象の Claude スロットが複数あるときは各行の左端を「active の目印（表示幅 2。要件「active スロットの行を視覚的に示す」）＋ 名前の列」の順で構成しなければならない（SHALL）。名前は「サービス名 + 半角スペース + アカウント名」とし、Claude のスロットは `Claude <label>`（`<label>` はレジストリのスロットの `label`）、Codex の行は `Codex <label>`（`<label>` は要件「Codex の表示名を codex.label で決める」で決まる値）とする。目印の列は active / 非 active を問わず全行が等しく表示幅 2 を占め、非 active 行では半角スペース 2 つで埋める。名前の列の幅は文字数ではなく**表示幅**（East Asian Width が W / F の文字を 2 桁と数える）で揃えなければならない（SHALL）。アカウント名（`<label>`）の表示幅が 8 を超える場合は 8 桁に切り詰めたものを使う（`usage-account-registry` capability の `label` の規定に従う。長い label で全行が押し出されるのを防ぐ）。切り詰めるのはアカウント名の部分だけで、サービス名（`Claude ` / `Codex `）は常に残さなければならない（SHALL。名前全体を 8 桁に切ると `Claude 仕事` が `Claude 仕` のように中途半端に切れ、どのアカウントか分からなくなるため）。したがって名前の最大幅は `Claude ` の 7 桁 + 8 桁 = 15 桁で、名前の列の幅は表示される名前の表示幅の最大値とする。目印の列と名前の列の幅がどちらも全行で等しいことにより、バーの左端は全角のラベル（`仕事` など）を含めて揃う。バーの描画・色分け・日程線・分母表示（例 `82%/74%`）は既存の描画関数（`bar_seg` / `bar2`）をそのまま使い、意味論を変えてはならない（MUST NOT）。非 active でオフのスロットは要件「オフのスロットは表示しない」に従って描画対象から外す。
 
 目標レイアウト:
 
@@ -49,7 +49,7 @@ statusline がレートリミットをアカウント（スロット）別に描
 
 #### Scenario: rate_limits が来ないときはレートリミット行が 1 行も出ない
 - **WHEN** stdin に `rate_limits` が含まれず、snapshot も存在しない状態で statusline を実行する
-- **THEN** 数値を含むレートリミット行は出ない。複数スロットの場合のみ active の目印・label と `取得待ち` の行を出す。
+- **THEN** 数値を含むレートリミット行は出ない。表示対象の Claude スロットが複数ある場合のみ active の目印・label と `取得待ち` の行を出す。
 
 #### Scenario: バー描画の意味論が変わらない
 - **WHEN** 複数スロットの statusline 出力を検査する
@@ -57,6 +57,8 @@ statusline がレートリミットをアカウント（スロット）別に描
 
 ### Requirement: スロットが 1 つのときは現行と同一の出力にする
 Codex 表示が無効でスロットが 1 つだけのとき（レジストリ不在を含む）、statusline のレートリミット表示はこの変更の前と**バイト単位で同一**でなければならない（SHALL）。`label` 列を出してはならない（MUST NOT）。active の目印も出してはならない（MUST NOT）— 目印は「複数あるうちのどれか」を示すためのもので、スロットが 1 つのときには示す対象が無い。
+
+登録簿には複数スロットがあっても、非 active のオフスロットを除いた表示対象の Claude スロットが 1 つだけなら同じ 1 スロット表示にしなければならない（SHALL）。active 判定そのものは非表示のスロットも含む登録簿全体で行う。
 
 #### Scenario: レジストリ不在で現行と同一
 - **WHEN** レジストリファイルが存在しない状態で、変更前と同じ stdin と snapshot を与えて statusline を実行する
@@ -69,6 +71,18 @@ Codex 表示が無効でスロットが 1 つだけのとき（レジストリ�
 #### Scenario: schema 1 の snapshot でも描画できる
 - **WHEN** `accounts` を持たない schema 1 の snapshot を与えて statusline を実行する
 - **THEN** トップレベルのキーから既定スロット 1 つとして現行どおり描画される
+
+#### Scenario: 登録簿は複数でも表示対象が 1 スロット
+- **WHEN** A が active で B だけが `enabled: false` の 2 スロットの登録簿を与える
+- **THEN** A は active 目印と名前列の無い 1 スロット表示で描かれ、B の行は無い
+
+#### Scenario: A と B が両方オフで A が active なら A だけの 1 スロット表示
+- **WHEN** A と B がどちらも `enabled: false` で A が active の 2 スロットの登録簿を与える
+- **THEN** A はライブ値で active 目印と名前列の無い 1 スロット表示で描かれ、B の行は無い
+
+#### Scenario: オフの B が active なら 2 スロット表示に戻る
+- **WHEN** A がオン、B が `enabled: false` で、B が active の登録簿を与える
+- **THEN** A と B の 2 スロットが名前列と active 目印付きで描かれ、B はライブ値で描かれる
 
 ### Requirement: active スロットはライブ値、非 active スロットは snapshot 値と経過時間で描く
 active スロットのレートリミットは stdin の `.rate_limits.*` のライブ値から描画しなければならない（SHALL）。非 active スロットは、そのスロットの鍵のセッション記録（`usage-session-records` capability）と snapshot の `accounts` の値から、`usage-session-records` の「記録と snapshot から実効値を求める」規則の 1 と 4（同じ窓なら取得時刻が新しい方、取得時刻が等しいまたは無ければ大きい方（リセット時刻と取得時刻も大きい方の情報源のもの）、窓が違えば新しい窓、全体の週次は差が 1 時間を超えたら記録側。ただし記録側のリセット時刻が過去なら、この例外を使わずリセット時刻の後の方を取る）で選んだ値を描画し、行末に採った値の取得時刻（セッション記録は `observed_at`、snapshot は `fetched_at`）からの経過時間（例 `2h前`）を併記しなければならない（SHALL）。statusline は規則の 2（リセット時刻を過ぎた値を 0% とみなし、リセット時刻を 7 日進める）の読み替えを表示には行わない。規則 4 の窓の突き合わせは、読み替える前のリセット時刻どうしで行う。選んだ値のリセット時刻が過去なら、既存の要件「非 active スロットの resets_at が過去のときは分母と残り時間を出さない」に従って描く。Fable バーは snapshot の値から描く。statusline は他プラグインのスクリプトを実行時に読まず、この規則を自分で実装しなければならない（SHALL）。
@@ -139,7 +153,7 @@ statusline サブプロセスへの環境変数の伝播が保証されていな
 - **THEN** 優先順位 1 が既定スロットに一致し、既定スロットが active として扱われる
 
 ### Requirement: active スロットの行を視覚的に示す
-スロットが複数あるとき、`plugins/statusline/scripts/statusline.sh` は active スロットの行を非 active スロットの行と視覚的に区別しなければならない（SHALL）。区別は**記号と明るさの二重符号化**で行わなければならない（SHALL）:
+表示対象の Claude スロットが複数あるとき、`plugins/statusline/scripts/statusline.sh` は active スロットの行を非 active スロットの行と視覚的に区別しなければならない（SHALL）。区別は**記号と明るさの二重符号化**で行わなければならない（SHALL）:
 
 - **active スロットの行**: 行頭に `▸ `（U+25B8 と半角スペース。表示幅 2）を置き、記号と `label` をどちらも `DIM` ではなく通常の明るさで描く
 - **非 active スロットの行**: 行頭に半角スペース 2 つを置き、`label` は `DIM` のまま描く
@@ -200,93 +214,10 @@ Codex CLI の ChatGPT 認証が利用可能なとき、Claude の全スロット
 - **WHEN** 残数は3回だが credits が null である
 - **THEN** リセット3回・期限不明と表示される
 
-### Requirement: オフのスロットは値の代わりに off を 1 行出す
-スロットが複数あるとき、`plugins/statusline/scripts/statusline.sh` は、オフのスロット（`usage-account-registry` capability の要件「スロットを enabled でオフにできる」。`enabled` が JSON の `false` のスロットだけ）のうち active でないものについて、レートリミットの行の代わりに `off` の行を 1 行だけ出さなければならない（SHALL）。行の位置はレジストリの宣言順のままとする。
-
-`off` の行は、非 active 行と同じ行頭（半角スペース 2 つ、`DIM` の `label`、label 列の幅までの詰め、半角スペース 2 つ）に `DIM` の `off` を続けたものでなければならない（SHALL）。この行には使用率・バー・リセットまでの残り時間・取得からの経過時間を出してはならない（MUST NOT）。セッション記録や snapshot にそのスロットの値が残っていても描かず、値が 1 つも無くても行は出す。要件「値が得られたスロットごとにレートリミット行を描画する」の「5h 消化率が得られない非 active スロットは行を出さない」は、オフのスロットには適用しない。行を消さないのは、登録してあるアカウントが表示から消えると「登録が壊れた」のか「オフにした」のかを見分けられないため。
-
-オフのスロットも label 列の幅の計算と、スロットが複数かどうかの判定に数えなければならない（SHALL）。オンのスロットが 1 つでオフのスロットが 1 つのレジストリは複数スロットとして扱い、active の目印と label 列を出す。
-
-active スロットがオフの場合（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を手で設定してオフのアカウントで起動したセッションのほか、オフにした既定アカウントへ自動選択が縮退して起動したセッション、起動したあとでそのアカウントをオフにしたセッション）は、`off` を出さず、要件「active スロットはライブ値、非 active スロットは snapshot 値と経過時間で描く」のとおりライブ値で描かなければならない（SHALL）。いま使っているアカウントの残量を隠さないため。スロットが 1 つだけのレジストリでは、そのスロットがオフでも要件「スロットが 1 つのときは現行と同一の出力にする」が優先する。
-
-`enabled` がどのスロットにも書かれていないレジストリでは、出力はこの変更の前とバイト単位で同一でなければならない（SHALL）。statusline は他プラグインのスクリプトを実行時に読まず、`enabled` の読み取りを自分で実装しなければならない（SHALL）。
-
-目標レイアウト（`B` がオフ）:
-
-```
-▸ A  5h      ▓▓▓▓▓▓▓▓░░░░░░░░  55%          ~4h 12m
-▸ A  7d All  ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░  82%/74%   Fable ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░  94%   ~2d 3h
-  B  off
-```
-
-#### Scenario: オフのスロットは off の 1 行になる
-- **WHEN** 2 スロットのレジストリで非 active の `B` が `enabled: false`、snapshot とセッション記録に `B` の値がある状態で statusline を実行する
-- **THEN** `B` の行は 1 行だけで、ANSI エスケープを取り除くと `  B  off` になり、`B` の使用率・バー・経過時間はどこにも出ない
-
-#### Scenario: 値が無いオフのスロットも行を出す
-- **WHEN** 非 active の `B` が `enabled: false` で、snapshot にもセッション記録にも `B` の値が無い状態で statusline を実行する
-- **THEN** `B` の `off` の行が 1 行出る
-
-#### Scenario: enabled を書いていないレジストリでは出力が変わらない
-- **WHEN** どのスロットにも `enabled` が無い 2 スロットのレジストリと、全スロットに `"enabled": true` を書いた同じ内容のレジストリを、同じ stdin・snapshot・セッション記録で順に与えて statusline を実行する
-- **THEN** 2 つのレジストリで出力がバイト単位で一致する
-- **AND** `enabled` を書いていないレジストリを使う既存のバイト同一のテストは、期待値を変えずに通る
-
-#### Scenario: enabled が true のスロットは従来どおり描く
-- **WHEN** 非 active の `B` に `"enabled": true` を書いたレジストリと、`B` の値を含む snapshot を与えて statusline を実行する
-- **THEN** `B` の行は `enabled` を書かない場合とバイト単位で同じになる
-
-#### Scenario: active のスロットがオフでもライブ値で描く
-- **WHEN** `CLAUDE_SECURESTORAGE_CONFIG_DIR` が `enabled: false` のスロット `B` の `securestorage` と一致し、stdin に `rate_limits` がある状態で statusline を実行する
-- **THEN** `B` の行は `▸ ` で始まり stdin のライブ値で描かれ、`off` は出ない
-
-#### Scenario: オフのスロットの label も列幅に数える
-- **WHEN** オンのスロットの `label` が `A`、オフのスロットの `label` が `仕事`（表示幅 4）であるレジストリで statusline を実行する
-- **THEN** `A` の行の `5h` の開始位置と、`仕事` の行の `off` の開始位置（表示幅）が一致する
-
-### Requirement: Codex がオフのとき Codex 行は off を出し、取得しない
-レジストリの `codex.enabled` が `false`（`usage-account-registry` capability の要件「Codex を codex.enabled でオフにできる」）のとき、`plugins/statusline/scripts/statusline-codex.py` は、使用量の代わりに `off` の 1 行だけを標準出力に出して終わらなければならない（SHALL）。`codex` の起動（`app-server`）、Codex の認証ファイルの読み出し、キャッシュ（`.statusline-codex`）の読み書き、`--refresh` の子プロセスの起動のいずれも行ってはならない（MUST NOT）。出力は 2 通りに分かれる（SHALL）。通常の描画（引数なし、または `--read`）は `off` と改行の 1 行、`--refresh` は何も出さず（標準出力は空）に終わる。`--refresh` は描画用の出力を持たない子プロセスなので、`off` を出さない。
-
-この要件は、要件「Codex のアカウント上限を最後に1行追加する」と要件「Codex リセット権の残数と期限を表示する」に優先する（SHALL）。この 2 つの要件が求める使用量・リセット権の描画とキャッシュの読み取りは、Codex がオフのときは適用しない。オフのとき、認証済みで取得済みのキャッシュが残っていても、使用量もリセット権も描かず、キャッシュも読まない（残ったキャッシュは消さず、オンに戻したとき従来どおり使われる）。
-
-オフの判定は、認証の有無やバイナリの有無の判定より先に行わなければならない（SHALL）。Codex にログインしていない環境でも、オフにした利用者が止めたことを `off` で確認できるようにするため。
-
-`plugins/statusline/scripts/statusline.sh` は、`off` を受け取ったとき、`取得待ち` の行と同じ組み立て（`Codex` のラベル、label 列の幅までの詰め、`DIM`）で、`Codex  off` の 1 行を出さなければならない（SHALL）。使用率・バー・リセット権・取得からの経過時間は出さない。`STATUSLINE_CODEX=0` のときは、従来どおり Codex 行そのものを出さず、オフの設定より優先する。
-
-`codex.enabled` が無い、または `false` 以外のとき、出力は変更前とバイト単位で同一でなければならない（SHALL）。`statusline-codex.py` は他プラグインのスクリプトを実行時に読まず、`codex.enabled` の読み取りを自分で実装しなければならない（SHALL）。
-
-#### Scenario: オフなら off を出して codex を起動しない
-- **WHEN** `codex.enabled` が `false` で、`STATUSLINE_CODEX_BIN` に起動を記録するスタブを指定して `statusline-codex.py` を実行する
-- **THEN** 標準出力は `off` の 1 行で、スタブは 1 回も起動されず、`.statusline-codex` は作られない
-
-#### Scenario: 認証済みで既存のキャッシュがあってもオフなら off だけ
-- **WHEN** `codex.enabled` が `false` で、`auth.json` が有効で、`.statusline-codex` に使用量とリセット権の取得済みの値がある状態で statusline を実行する
-- **THEN** Codex 行は `off` だけで、使用量・バー・`リセット` の表示は出ない。`.statusline-codex` は読まれも書き換えられもせず、内容は変わらない
-
-#### Scenario: オフなら認証が無くても off を出す
-- **WHEN** `codex.enabled` が `false` で、`CODEX_HOME` に `auth.json` が無い状態で `statusline-codex.py` を実行する
-- **THEN** 標準出力は `off` の 1 行になる
-
-#### Scenario: オフなら --refresh は何もしない
-- **WHEN** `codex.enabled` が `false` で `statusline-codex.py --refresh` を実行する
-- **THEN** 標準出力は空（`off` も出さない）で、`codex` は起動されず、キャッシュも作られない
-
-#### Scenario: statusline.sh は Codex 行を off にする
-- **WHEN** `codex.enabled` が `false` の状態で statusline を実行する
-- **THEN** ANSI エスケープを取り除いた Codex 行は `Codex` ラベルのあとに `off` だけが続く 1 行で、使用率・バー・経過時間は出ない
-
-#### Scenario: STATUSLINE_CODEX=0 はオフの設定より優先する
-- **WHEN** `codex.enabled` が `false` で `STATUSLINE_CODEX=0` の状態で statusline を実行する
-- **THEN** Codex 行は出ない
-
-#### Scenario: 設定が無い環境では出力が変わらない
-- **WHEN** `codex` を書いていないレジストリと `"codex": {"enabled": true}` のレジストリを、同じ入力と同じキャッシュで順に与える
-- **THEN** 2 つの出力は変更前とバイト単位で一致する
-
 ### Requirement: Codex の行の名前は Codex とアカウント名にする
-Codex の行の左端の名前は `Codex <label>` でなければならない（SHALL）。`<label>` は要件「Codex の表示名を codex.label で決める」（`usage-account-registry` capability）で決まる値で、`codex.label` が無ければ `A` である。Codex の行の有無・取得・オフの扱いはこの要件で変えない（MUST NOT）。既存の要件「Codex がオフのとき Codex 行は off を出し、取得しない」と、`取得待ち` の行にある固定のラベル `Codex`（例 `Codex  off`）は `Codex <label>` に読み替える（この要件が優先する。例 `Codex A  off`）。オフの行の有無と `off` の文言は変えない（MUST NOT。オフの行の扱いは別の change の範囲）。名前の列の幅は Claude のスロットの名前と共通の最大値で揃える。
+Codex の行が表示されるとき、その左端の名前は `Codex <label>` でなければならない（SHALL）。`<label>` は要件「Codex の表示名を codex.label で決める」（`usage-account-registry` capability）で決まる値で、`codex.label` が無ければ `A` である。`取得待ち` の行にもこの名前を用いる。表示される Codex 行の名前列は Claude の表示対象スロットと共通の最大値で揃える。Codex がオフのときは要件「Codex がオフのとき表示行を出さず、取得しない」に従い、Codex 行を出さず、名前列の幅にも数えない。Codex の取得方法はこの要件で変えない（MUST NOT）。
 
-スロットが 1 つ以下（レジストリ不在を含む）のとき、Claude 側の行には名前を出さない現行のままとし（バイト単位で同一）、Codex の行だけが `Codex <label>` を名前として持つ。
+表示する Claude スロットが 1 つ以下（レジストリ不在、または非 active のオフスロットを除いて 1 つになる場合を含む）のとき、Claude 側の行には名前を出さない現行のままとし（バイト単位で同一）、Codex の行だけが `Codex <label>` を名前として持つ。
 
 #### Scenario: codex.label が無ければ Codex A
 - **WHEN** Codex の値が得られる状態で、`codex.label` を持たないレジストリを与えて statusline を実行する
@@ -299,4 +230,68 @@ Codex の行の左端の名前は `Codex <label>` でなければならない（
 #### Scenario: Codex が無くスロットが 1 つなら出力は変わらない
 - **WHEN** Codex の行が出ない状態で、レジストリ不在またはスロット 1 つのレジストリを与えて statusline を実行する
 - **THEN** 出力は変更前とバイト単位で一致する
+
+### Requirement: オフのスロットは表示しない
+`plugins/statusline/scripts/statusline.sh` は、非 active で `enabled` が JSON の `false` の Claude スロットについて、値や `off` の行を一切出してはならない（MUST NOT）。snapshot やセッション記録に値が残っていても、値が無くても同じである。active スロットの判定はオフを含む登録簿の全スロットから行い、その結果 active になったオフのスロットは、要件「active スロットはライブ値、非 active スロットは snapshot 値と経過時間で描く」に従ってライブ値で描かなければならない（SHALL）。
+
+非表示のスロットは、表示対象の Claude スロット数と名前列の幅に数えてはならない（MUST NOT）。表示するオンの非 active スロットは登録簿の宣言順を保つ。`enabled` が省略または `true` のとき、出力は従来とバイト単位で同一でなければならない（SHALL）。`false` 以外の値は `usage-account-registry` の判定に従ってオンとして扱う。statusline は他プラグインのスクリプトを実行時に読まず、`enabled` の読み取りを自分で実装しなければならない（SHALL）。
+
+#### Scenario: 値が残る非 active のオフスロットは行が無い
+- **WHEN** A が active、B が `enabled: false` の 2 スロットの登録簿で、snapshot とセッション記録に B の値がある
+- **THEN** ステータスラインに `Claude B` の名前も `off` の行も現れず、B の値・バー・経過時間も出ない
+
+#### Scenario: 値が無い非 active のオフスロットも行が無い
+- **WHEN** B が非 active かつ `enabled: false` で、B の値が snapshot にもセッション記録にも無い
+- **THEN** B の行は出ない
+
+#### Scenario: active のオフスロットはライブ値で描く
+- **WHEN** `CLAUDE_SECURESTORAGE_CONFIG_DIR` が `enabled: false` の B の `securestorage` と一致し、stdin に `rate_limits` がある
+- **THEN** B は active の目印が付いたライブ値で描かれ、`off` は出ない
+
+#### Scenario: 非表示の全角ラベルは列幅に数えない
+- **WHEN** A が active、B がオン、`仕事` という長い名前の C が非 active かつオフである
+- **THEN** A と B の名前列は A と B の表示幅だけで揃い、C の行は無い
+
+#### Scenario: enabled の省略と true は同じ
+- **WHEN** 2 スロットの登録簿で両方の `enabled` を省略した場合と `true` にした場合を同じ入力で描く
+- **THEN** 2 つの出力はバイト単位で一致する
+
+### Requirement: Codex がオフのとき表示行を出さず、取得しない
+レジストリの `codex.enabled` が `false`（`usage-account-registry` capability の要件「Codex を codex.enabled でオフにできる」）のとき、`plugins/statusline/scripts/statusline-codex.py` は、使用量の代わりに `off` の 1 行だけを標準出力に出して終わらなければならない（SHALL）。`codex` の起動（`app-server`）、Codex の認証ファイルの読み出し、キャッシュ（`.statusline-codex`）の読み書き、`--refresh` の子プロセスの起動のいずれも行ってはならない（MUST NOT）。出力は 2 通りに分かれる（SHALL）。通常の描画（引数なし、または `--read`）は `off` と改行の 1 行、`--refresh` は何も出さず（標準出力は空）に終わる。`--refresh` は描画用の出力を持たない子プロセスなので、`off` を出さない。
+
+この要件は、要件「Codex のアカウント上限を最後に1行追加する」と要件「Codex リセット権の残数と期限を表示する」に優先する（SHALL）。この 2 つの要件が求める使用量・リセット権の描画とキャッシュの読み取りは、Codex がオフのときは適用しない。オフのとき、認証済みで取得済みのキャッシュが残っていても、使用量もリセット権も描かず、キャッシュも読まない（残ったキャッシュは消さず、オンに戻したとき従来どおり使われる）。
+
+オフの判定は、認証の有無やバイナリの有無の判定より先に行わなければならない（SHALL）。Codex にログインしていない環境でも、取得を始めずに終了するため。
+
+`plugins/statusline/scripts/statusline.sh` は helper の `off` を受け取ったとき Codex の行を一切出してはならず（MUST NOT）、Codex の名前を Claude 行の名前列の幅にも数えてはならない（MUST NOT）。`STATUSLINE_CODEX=0` のときは、従来どおり helper を呼ばず、Codex 行そのものを出さない。
+
+`codex.enabled` が無い、または `false` 以外のとき、出力は変更前とバイト単位で同一でなければならない（SHALL）。`statusline-codex.py` は他プラグインのスクリプトを実行時に読まず、`codex.enabled` の読み取りを自分で実装しなければならない（SHALL）。
+
+#### Scenario: オフなら off を出して codex を起動しない
+- **WHEN** `codex.enabled` が `false` で、`STATUSLINE_CODEX_BIN` に起動を記録するスタブを指定して `statusline-codex.py` を実行する
+- **THEN** 標準出力は `off` の 1 行で、スタブは 1 回も起動されず、`.statusline-codex` は作られない
+
+#### Scenario: 認証済みで既存のキャッシュがあってもオフなら行を出さない
+- **WHEN** `codex.enabled` が `false` で、`auth.json` が有効で、`.statusline-codex` に使用量とリセット権の取得済みの値がある状態で statusline を実行する
+- **THEN** Codex 行は出ず、使用量・バー・`リセット` の表示も出ない。`.statusline-codex` は読まれも書き換えられもせず、内容は変わらない
+
+#### Scenario: オフなら認証が無くても off を出す
+- **WHEN** `codex.enabled` が `false` で、`CODEX_HOME` に `auth.json` が無い状態で `statusline-codex.py` を実行する
+- **THEN** 標準出力は `off` の 1 行になる
+
+#### Scenario: オフなら --refresh は何もしない
+- **WHEN** `codex.enabled` が `false` で `statusline-codex.py --refresh` を実行する
+- **THEN** 標準出力は空（`off` も出さない）で、`codex` は起動されず、キャッシュも作られない
+
+#### Scenario: statusline.sh は Codex 行を出さない
+- **WHEN** `codex.enabled` が `false` の状態で statusline を実行する
+- **THEN** Codex の名前も `off` も行に現れず、Codex の名前は Claude 行の列幅にも反映されない
+
+#### Scenario: STATUSLINE_CODEX=0 はオフの設定より優先する
+- **WHEN** `codex.enabled` が `false` で `STATUSLINE_CODEX=0` の状態で statusline を実行する
+- **THEN** Codex 行は出ない
+
+#### Scenario: 設定が無い環境では出力が変わらない
+- **WHEN** `codex` を書いていないレジストリと `"codex": {"enabled": true}` のレジストリを、同じ入力と同じキャッシュで順に与える
+- **THEN** 2 つの出力は変更前とバイト単位で一致する
 
