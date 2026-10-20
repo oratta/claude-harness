@@ -5,7 +5,9 @@ develop の実行モードは 2 つある（`skills/develop/SKILL.md`「実行�
 - interactive（既定）: 人間が `/develop`・自然文で依頼する。主に聞くときは AskUserQuestion を使う。保留で止まるときは記録先に引き継ぎを残し、「返事は新しいセッションで `/develop <記録先>` と一緒に渡す」「リスク許容なら新しいセッションで `/develop <記録先> 許容する`」と案内する
 - unmanned（`--unmanned`）: loop-dev-agent の憲法 Step 3 からだけ呼ばれる。聞けない（1 サイクル 1 仕事）。G を起こさない
 
-AskUserQuestion を使う箇所は SKILL.md の 2 か所（レビューの周の「主に聞くとき」・エピックの子が質問ツールの中で待つとき）、実行モード表、`references/decision-criteria.md`（割り方が判断できないとき）、`references/roles/spec-reviewer.md`（選び直しが要るとき）、`references/roles/worker/common.md` と `worker/spec.md`（W は return し本体が聞く）、`templates/escalation-tripwires.md`（失敗ループの最後・仕様の発明）、`commands/develop.md`（引数の分岐 ②⑤ の候補の提示）、`skills/issueify/SKILL.md`（Step 3 のヒアリング）。
+AskUserQuestion に触れる箇所は（`plugins/dev-workflow/` 配下を grep。`tests/` を除く）SKILL.md の 2 か所（レビューの周の「主に聞くとき」・エピックの子が質問ツールの中で待つとき）、実行モード表、`references/decision-criteria.md`（割り方が判断できないとき）、`references/roles/spec-reviewer.md`（選び直しが要るとき）、`references/roles/worker/common.md` と `worker/spec.md`（W は return し本体が聞く）、`templates/escalation-tripwires.md`（失敗ループの最後・仕様の発明）、`commands/develop.md`（frontmatter と引数の分岐 ②⑤ の候補の提示）、`commands/work-issue.md`（frontmatter だけ。手順は develop.md に任せる）、`skills/issueify/SKILL.md`（Step 3 のヒアリング）。pr-review-gate と ci-watch には無い。
+
+保留で主に案内する文は 2 か所にある。develop の本体が書く「保留で止まるときの引き継ぎ」の主への案内と、G が `skills/pr-review-gate/stages/hold.md` 手順 6-3 で PR に書く依頼コメント（「返事は新しいセッションで `/develop <記録先>` と一緒に渡せる」「返事は会話で返せばよく、PR へのコメントは要らない」）である。本体は主への質問にこのコメントの URL を添えるので、主はリンク先で G の文面を読む。G の起動指示には今も実行モードが入っている（`references/roles/gate-runner.md`「本体が渡すもの」）。
 
 flatmate の住人は `boot.sh` が `--dangerously-skip-permissions --remote-control ...` で対話 TUI として起動し、tmux に常駐する。オーナーは Discord だけを見ていて、住人の画面は見ない。住人はオーナーの Discord のメッセージを `<channel source="plugin:discord:discord" ... user_id="..." ...>` で始まる発言として受け、Discord プラグインの返信ツールで返す。住人は AskUserQuestion を禁止されている（flatmate CLAUDE.md。2026-08-07 に gene が回答待ちで約 12 時間止まった）。
 
@@ -30,8 +32,9 @@ main に入っている関連の変更:
 - 住人が tmux などで別に起こすセッションへ印を渡す起動部品（#1123）
 - AskUserQuestion を印のあるセッションで機械的に拒否する hook。この change は develop の文面で経路を無くすまでとし、hook は別に起票する（hooks の変更は主の承認が要る範囲で、develop 以外のスキル（wt-clean など）にも効く別の判断になるため）
 - unmanned（loop-dev-agent の 1 サイクル 1 仕事）の振る舞い
-- W・R1・G の指示書の手順。W は主に聞かず本体に return し、主に聞くのは本体なので、モードの違いは本体の手順だけに出る
+- W・R1 の指示書の手順。W と R1 は主に聞かず本体に return し、主に聞くのは本体なので、モードの違いは本体の手順と、主が読む依頼文を書く G の `stages/hold.md` 手順 6-3 だけに出る
 - 住人が実機で一通り回した記録（受け入れ条件 3 つ目）。住人はインストールされた main のプラグインを読むので、この change がマージされるまで住人の環境に入らない。扱いは「Migration Plan」
+- 住人の CLAUDE.md に、チャンネルの返事を受けたら develop を起動して続ける案内を置くこと（flatmate 側の設定。変更の記録 `changes/1126.md` に書く）
 
 ## Decisions
 
@@ -42,6 +45,8 @@ main に入っている関連の変更:
 - 採らない: unmanned を住人に使う。unmanned は G を回さず 1 サイクルで終える形で、オーナーの依頼に PR の合格まで応える使い方と合わない。憲法の外枠も無い
 
 ### モードは印とチャンネルの依頼のどちらかで決める
+
+既存の要件「/develop コマンドと /work-issue エイリアス」は `commands/develop.md` が「interactive モードでインライン実行する」ことを MUST にしているので、MODIFIED にして「SKILL.md の実行モードの決め方でモードを決めてインライン実行する（印もチャンネルの依頼も無ければ interactive）」に直す。`tests/develop-command.bats` の `interactive` の確かめは、既定が interactive である文が残るので通り続ける。
 
 本体は開始時に 1 回、次の順で決める。
 
@@ -62,9 +67,10 @@ main に入っている関連の変更:
 - 依頼がチャンネルから届いていない（印だけで channel になった）ときは、そのセッションの運用が決める主への連絡先（flatmate の憲法・CLAUDE.md が書く既定のチャンネル）に送る。連絡先が分からないときは、記録先に質問をコメントして `needs-approval` を付け、止まる
 - 記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限）は、今までどおり先に PR か記録先のコメントに書き、チャンネルの質問にはそのコメントのフル URL を添える
 - 質問の文面は `rules/communication-style.md` の判断の求め方（背景 → 起きた事実 → 決めてほしいこと 1 つ → 推奨と受け入れるリスク）に従う。チャンネルのメッセージは長さの上限があるので、100 行を超える中身は記録先のコメントに置いて URL で渡す
-- 読み替えの規則: SKILL.md の実行モードの節に「develop と、develop から読む文書の『interactive は AskUserQuestion』は、channel モードではこの聞き方に読む」と 1 か所に書く。対象の文書（`references/decision-criteria.md`・`references/roles/spec-reviewer.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`skills/issueify/SKILL.md`）を名前で列挙する
+- 読み替えの規則: SKILL.md の実行モードの節に「develop と、develop から読む文書の『interactive は AskUserQuestion』は、channel モードではこの聞き方に読む」と 1 か所に書く。対象の文書を名前で列挙する（列挙は下）
   - 採る: 読み替えを 1 か所に書く。主に聞くのは常に本体で、本体は SKILL.md を先に読んでいる。同じ規則を各文書に書くと、直すときに片方が漏れる（`worker/common.md` が正本を 1 か所にしている理由と同じ）
   - 採らない: 各文書の該当行を `interactive は AskUserQuestion、channel はチャンネル` に書き換える。編集するファイルが 6 つ増え、モードを足すたびに同じ数を直すことになる
+  - 列挙は漏れなくする。読み替えを 1 か所に書く方式は、列挙から漏れた文書を読んだ本体が AskUserQuestion に流れるので、`plugins/dev-workflow/` 配下（`tests/` を除く）で `AskUserQuestion` を含むファイルが SKILL.md 以外すべて列挙に載っていることを bats で確かめる。列挙は `references/decision-criteria.md`・`references/roles/spec-reviewer.md`・`references/roles/worker/common.md`・`references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`skills/issueify/SKILL.md` の 8 つ
   - `commands/develop.md` は本体が最初に読むので、引数の分岐 ②⑤ と issueify フォールバックの「提示して選ばせる・承認を得る」がチャンネルでの質問になることを、その場にも 1 文書く（SKILL.md を読む前に分岐を処理するため）
 
 ### channel モードの保留と再開
@@ -72,7 +78,9 @@ main に入っている関連の変更:
 - 引き継ぎのコメントは今までどおり残す（書式は変えない。`実行モード: channel`）。住人のセッションは `boot.sh` の再起動やコンテキストの圧縮で入れ替わるので、返事を受けるセッションが前と同じとは限らない
 - 主への案内は「このチャンネルで記録先の番号を添えて返事をすれば続ける（例: `#1126 許容する`）」にする。新しいセッションを開く案内と `/develop <記録先> 許容する` の案内は出さない（オーナーは住人の新しいセッションを開けない）
 - 返事が同じセッションに届いたら、そのセッションで続ける。1 時間以上あいてから続けるとキャッシュを書き直す代金がかかる（#515）が、住人には別のセッションで返事を渡す経路が無いので受け入れる
-- セッションが入れ替わっていたら、チャンネルの返事を受けたセッションの本体が、返事に添えられた番号の記録先に `引き継ぎ: 主の返事待ち` があることを確かめ、「新しいセッションでの再開」の手順で続ける。手順 2 の「`/develop` の引数の残り」の代わりに、そのチャンネルの返事を会話で受けた回答として扱う（`owner-reply-check.sh` はこのセッションの会話ログでその返事を数える）
+- セッションが入れ替わっていたら、`#<番号>` を添えたチャンネルの返事を受けたセッションが develop を記録先 `<番号>` で起動して本体になり、その記録先に `引き継ぎ: 主の返事待ち` があることを確かめ、「新しいセッションでの再開」の手順で続ける。手順 2 の「`/develop` の引数の残り」の代わりに、そのチャンネルの返事を会話で受けた回答として扱う（`owner-reply-check.sh` はこのセッションの会話ログでその返事を数える）。既存の再開の要件の「返事の出どころは GitHub の記録先と PR だけ」に、channel の引き継ぎのときのチャンネルの返事を足す
+- 新しいセッションは develop を読み込んでいないので、返事を受けて develop を起動するきっかけは住人の運用（flatmate の CLAUDE.md）に置く。harness 側では develop の description を変えない（常時注入の予算を動かさないため）。flatmate 側で要る案内は `changes/1126.md` に書く
+- リスク許容の返事を G に渡すときは、セッション ID・原文・timestamp を、このセッションの会話ログでその返事の行（`<channel source=` で始まる、主の発言として数えられる行）から取る。本体が要約した文を渡すと `owner-reply-check.sh` の照合が一致しない
 - 番号の無い返事を受けたら、開いている引き継ぎ（`needs-approval` のある記録先のうち、このセッションが関わったもの）が 1 件ならそれへの返事として扱い、2 件以上ならどれへの返事かをチャンネルで聞き直す
 
 ### channel モードのリスク許容
@@ -81,16 +89,26 @@ main に入っている関連の変更:
 - `owner-reply-check.sh` がチャンネルの返事を数えるのは、セッションの環境に `OWNER_REPLY_CHANNEL_SENDERS` があるときだけ（#1125）。本体は channel モードに決めた時点でこの値の有無を確かめ（値は出さず、空かどうかだけを見る）、develop 開始コメントに `チャンネルの返事の確認: 可 / 不可（OWNER_REPLY_CHANNEL_SENDERS が無い）` を残す
 - 不可のセッションでは、リスク許容の依頼に限り「PR #N にコメントで `許容する` と書く」と案内し、PR の URL を添える（チャンネルで返されても確かめられず、受け直しを頼むことになるため）。リスク許容以外の返事（動作確認の結果・切り出しの確認・方針の選び直し）は真正性の確認を求めていないので、チャンネルの返事で進める
 - 確かめられなかったとき（終了コード 1・2）の扱いは pr-review-gate 手順 5 のまま。受け直しの案内はチャンネルに送り、「ゲートと同じ PC での `/develop <記録先> 許容する`」の代わりに PR のコメントを案内する
+- 既存の要件「保留の許容は会話の返事で受け、PR へのコメントを求めない」は、案内に `/develop <記録先> 許容する` を書くことと、会話で許容を受けたら PR へのコメントを求めないことを MUST にしている。不可のセッションで PR のコメントを求めるのと衝突するので、この要件を interactive の決まりに限り、channel はここの決まりに従うと書き直す（可のセッションではチャンネルの返事を会話で受けた回答として扱うので、PR のコメントを求めない点は同じ）
+
+### pr-review-gate の依頼文を実行モードで分ける
+
+- 採る: `stages/hold.md` 手順 6-3 の「develop の本体が止まる場合は、依頼に『返事は新しいセッションで `/develop <記録先>` と一緒に渡せる』ことを含める」を、G の起動指示の実行モードで分ける。interactive（実行モードが無いときを含む）は今のまま、channel は「このチャンネルで記録先の番号を添えて返事をすれば続ける」を案内し、新しいセッションと `/develop` の打ち方を書かない
+- リスク許容の依頼の「返事は会話で返せばよく、PR へのコメントは要らない」は、channel で `チャンネルの返事の確認:` が `可` でないとき（`不可` か行が無いとき）だけ「PR #<N> にコメントで `許容する` と書く」と PR の URL に替える。行が無いときを不可に倒すのは、PR のコメントならどの環境でも確かめられるため
+- 本体は channel の G の起動指示に、実行モードの行と並べて `チャンネルの返事の確認: 可 / 不可` の行を書く。`references/roles/gate-runner.md` の「本体が渡すもの」は直さない（実行モードは今も渡しており、この行の読み方は hold.md に書く。直すファイルを 5 つに収める）
+- 採らない: G の依頼文は変えず、本体がチャンネルの質問に URL を添えるときに「リンク先の再開の案内は読み飛ばしてよい」と書く。主がリンク先で読む文面が、してはいけない操作（新しいセッションを開く）を案内したままになる
+- 既存の要件「保留処理の依頼文は新しいセッションでの再開を案内する」（`dev-workflow-pr-review-gate`）を MODIFIED にする。既存のテスト（`develop-handover.bats` の `/develop <記録先>` の確かめ・`pr-review-gate-skill.bats` の PR へのコメントを求めない文の確かめ）は interactive の文が残るので通り続ける
 
 ### channel モードのエピックはサブエージェント方式で回す
 
-- 採る: channel モードの本体は `scripts/epic-dispatch.sh route` を呼ばず、サブエージェント方式で回す（unmanned と同じ）。エピックに `回し方: サブエージェント（channel モード）` を残す
+- 採る: channel モードの本体は `scripts/epic-dispatch.sh route` を呼ばず、サブエージェント方式で回す（unmanned と同じ）。エピックに `回し方: サブエージェント（channel モード）` を残す。既存の要件「エピックの条件・作り方・回し方・完了条件を規定する」の経路の決め方の unmanned の文の隣に 1 文足す形にし、正本を 1 か所にする（新しい要件を別に立てると、経路の決め方が 2 か所に分かれる）
 - 理由: Orca 経路の子は別の Claude Code セッションで、子の質問は子のタブに出る。住人のオーナーはそのタブを見ないので、子が質問で止まると誰も気づかない。加えて、別に起こしたセッションには印が届かない（#1124 の Risks）。サブエージェントは本体と同じプロセスで動き、主に聞くのは本体なので、聞く先はチャンネルのまま、git ガードも子の呼び出しとして拒否する
 - これで develop が住人の印の渡し漏れを生む経路は無くなる。develop の外で住人が別のセッションを起こすときの印の渡し方は #1123 で扱う
 
 ### channel モードの主への発言の 1 行目
 
-- channel モードで本体が主に送るすべての発言（質問・保留の依頼・完了報告・エピックの親の報告）は、1 行目を次のどれかにする
+- channel モードでは、本体が主に送るすべての発言を、質問と同じ宛先のチャンネルに送る。質問ではない報告（再開で HEAD が動いていた・前任 W の手渡し不可・スクリプトの失敗・レビューの周の打ち切り・完了報告・エピックの親の報告）も含む。端末に出すだけの報告は住人の画面を誰も見ていないので読まれず、主の指示を待ったまま止まる
+- それらの発言は、1 行目を次のどれかにする
   - `主がすること: なし`
   - `主がすること: このチャンネルで <何を返す>`（例: `主がすること: このチャンネルで「#1126 許容する」か「#1126 許容しない」と返す`）
   - `主がすること: PR #<N> に <何を書く>`（リスク許容でチャンネルの返事を確かめられないとき。2 行目に PR のフル URL）
@@ -109,9 +127,9 @@ main に入っている関連の変更:
 ## Migration Plan
 
 - interactive と unmanned の振る舞いは変えない。印もチャンネルの依頼も無いセッションは今までどおり interactive になる
-- 住人の環境に入るのは、この change が main にマージされ、住人のプラグインが更新されたあと。受け入れ条件 3 つ目（住人で、オーナーの依頼 → develop → 質問をチャンネルで受けて回答 → PR → ゲート合格まで 1 回通した記録）はマージのあとでしか取れないので、PR の動作確認ではマージ後に flatmate #1638 のリハーサルで確かめると宣言し、記録先 #1126 はその記録が付くまで閉じない（PR 本文に `Closes #1126` を書かず、完了報告で `mark waiting` を付ける）。ここは主の判断として本体に返す
+- 住人の環境に入るのは、この change が main にマージされ、住人のプラグインが更新されたあと。受け入れ条件 3 つ目（住人で、オーナーの依頼 → develop → 質問をチャンネルで受けて回答 → PR → ゲート合格まで 1 回通した記録）はマージのあとでしか取れないので、PR の動作確認ではマージ後に flatmate #1638 のリハーサルで確かめると宣言し、記録先 #1126 はその記録が付くまで閉じない。PR 本文には `Closes #1126` を書かず `Refs #1126` にし、マージ後に flatmate #1638 のリハーサルで記録を付けてから #1126 を閉じる（本体の決定）
 - 戻すときはこの change の差分を戻せばよい（状態を持たない文面の変更だけ）
 
 ## Open Questions
 
-- 受け入れ条件 3 つ目の扱い（上の Migration Plan の案で進めてよいか）は主の判断が要る
+なし（受け入れ条件 3 つ目の扱いは本体が決め、Migration Plan に書いた）
