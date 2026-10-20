@@ -7,7 +7,7 @@
 ## What Changes
 
 - `launch` が、エピックと別のリポジトリの子（`<owner>/<repo>#<N>` で渡された子）のワークツリーを、子のリポジトリのローカル clone に作る。clone は (1) 親のワークツリーの clone（子がエピックと同じリポジトリのとき）→ (2) 環境変数 `EPIC_DISPATCH_CLONES` → (3) Orca に登録されたリポジトリ、の順に探し、候補ごとに origin が子のリポジトリを指すことを確かめる。見つからなければ自動で clone せず `failed <child> no-clone`、同じ段に 2 つ以上あれば `failed <child> ambiguous-clone`（どちらも記録も枠も使わない）
-- ワークツリーを作る前に `gh api repos/<o>/<r> --jq .permissions.push` を読み、`true` でなければ `failed <child> no-push`、読めなければ `failed <child> permission-lookup-failed`（記録も枠も使わない）。fork から PR を出す経路は作らない
+- ワークツリーを作る前に `gh api repos/<o>/<r> --jq .permissions.push` を読み、`true` でなければ `failed <child> no-push`、読めなければ `failed <child> permission-lookup-failed`（記録も枠も使わない）。fork から PR を出す経路は作らない。clone が Orca に登録されていなければ `failed <child> not-in-orca`、既定ブランチを読めなければ `failed <child> base-lookup-failed`（どちらも記録も枠も使わない）
 - 別リポジトリの子のワークツリーの起点は、`--base` / `EPIC_DISPATCH_BASE` があればそれ、無ければ子のリポジトリの既定ブランチ。子の起動の指示・`EPIC_DISPATCH_PARENT_EPIC`・注意書きのコメント・親から子への返事の頭は、別リポジトリのエピックの形（エピックの番号のあとにリポジトリを足す）にする
 - `reap` の `gh pr list` と base の照会は、別リポジトリの子では子のリポジトリ（`-R <repo>`）と子のワークツリーの origin に向ける（同じリポジトリの子の呼び出しの形は変えない）。`stop-judge.sh` が別リポジトリの子を受けられるようにする
 - develop の SKILL.md「エピックの扱い」に複数リポジトリの挙動を書く: 依存と子エピックの判定を子のリポジトリに対して読む、エピックの子の一覧の組み立て、コメント・完了報告の書式、マージ待ちの子の PR を子のリポジトリで扱う手順、子の側が親エピックに残す記録の置き場、clone・書き込み権の `failed` を主に報告すること
@@ -28,7 +28,7 @@
 
 - `plugins/dev-workflow/scripts/epic-dispatch.sh`（`launch` の clone の探索・書き込み権・起点・指示とコメントの書式、`reap` の照会先、`reply` の頭）
 - `plugins/dev-workflow/scripts/stop-judge.sh`（子の引数に `<owner>/<repo>#<N>` を受ける）
-- `plugins/dev-workflow/tests/epic-dispatch.bats`、`plugins/dev-workflow/tests/develop-skill.bats`
+- `plugins/dev-workflow/tests/epic-dispatch.bats`、`plugins/dev-workflow/tests/develop-skill.bats`、`plugins/dev-workflow/tests/owner-reply-check.bats`、`plugins/dev-workflow/tests/stop-judge.bats`
 - `plugins/dev-workflow/skills/develop/SKILL.md`（エピックの扱い。経路の決め方・子エピックの判定・手順 1〜8・マージ待ちの子・nested を受けたセッション・完了条件）、`plugins/dev-workflow/references/ci-watch.md`（親から届く返事の頭の照合に、番号のあとにリポジトリが付く形を足す）
 - `plugins/dev-workflow/changes/1123.md`（変更の記録に追記）
 - 依存: change 1（`epic-state-files`）はマージ済み。change 3（起動部品の差し替え）はこの change のあとに回す

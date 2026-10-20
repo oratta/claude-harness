@@ -77,9 +77,9 @@ develop の SKILL.md「エピックの扱い」は、エピックの子がエピ
 
 サブエージェント方式（unmanned・channel・Orca 管理外で選ばれる）では、別のリポジトリの子を W に渡してはならない（MUST。W は親のリポジトリに worktree を作るので、別のリポジトリの issue を親のリポジトリの PR として実装してしまう）。本体はエピックに `子 <owner>/<repo>#N は別のリポジトリなので Orca 経路でだけ起動する` と 1 行コメントし、その子と、その子を前提にする子を起こさずに、主に報告する（1 行目は `主がすること:` の規定に従う）。
 
-SKILL.md の手順 1 には、`--base` と `EPIC_DISPATCH_BASE` が 1 回の `launch` の全部の子に掛かること、リポジトリごとに既定ブランチが違う子を混ぜるときは `--base` を付けないか `launch` をリポジトリごとに分けることを書かなければならない（MUST）。手順 6 の `failed` の報告には、`failed <child> no-clone`（`EPIC_DISPATCH_CLONES` の設定か clone を主に頼む）・`ambiguous-clone`（候補のパス）・`no-push`・`permission-lookup-failed`（stderr の `gh` の認証アカウントと子のリポジトリを添える）を足し、どれも主に報告して止まると書かなければならない（MUST。サブエージェント方式に自動で振り替えない）。
+SKILL.md の手順 1 には、`--base` と `EPIC_DISPATCH_BASE` が 1 回の `launch` の全部の子に掛かること、リポジトリごとに既定ブランチが違う子を混ぜるときは `--base` を付けないか `launch` をリポジトリごとに分けることを書かなければならない（MUST）。手順 6 の `failed` の報告には、`failed <child> no-clone`（`EPIC_DISPATCH_CLONES` の設定か clone を主に頼む）・`ambiguous-clone`（候補のパス）・`not-in-orca`（`orca repo add` を主に頼む）・`no-push`・`permission-lookup-failed`・`base-lookup-failed`（stderr の `gh` の認証アカウントと子のリポジトリを添える）を足し、どれも主に報告して止まると書かなければならない（MUST。サブエージェント方式に自動で振り替えない）。
 
-この要件の守備範囲で入力として扱うのは、SKILL.md の手順書の文面と `stop-judge.sh` の引数である。拾いたい誤りは、別のリポジトリの子の依存や子エピックの判定を親のリポジトリに対して読み、解けていない子を起動したり、子エピックを展開したりすることである。次は通してよく、この要件では止めない: 前提の issue を `gh` が読めないとき（読めない前提は解けていないとして待つ今の扱い）／エピック本文の子の表の書式の揺れ。表を手で直した結果の細かい食い違いを見つけるたびに検査を足すことは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、SKILL.md の手順書の文面と `stop-judge.sh` の引数である。拾いたい誤りは、別のリポジトリの子の依存や子エピックの判定を親のリポジトリに対して読み、解けていない子を起動したり、子エピックを展開したりすることである。次は通してよく、この要件では止めない: 前提の issue を `gh` が読めないとき（読めない前提は解けていないとして待つ。この change で決めた扱い）／エピック本文の子の表の書式の揺れ。表を手で直した結果の細かい食い違いを見つけるたびに検査を足すことは、この要件の完了条件としない。
 
 #### Scenario: 依存と子エピックの判定を子のリポジトリで読むと書いてある
 - **WHEN** SKILL.md の「回し方」の経路の決め方と「エピックである子を外す」を読む
@@ -119,7 +119,7 @@ SKILL.md の手順 1 には、`--base` と `EPIC_DISPATCH_BASE` が 1 回の `la
 
 #### Scenario: failed の新しい理由の報告が書いてある
 - **WHEN** SKILL.md の手順 6 を読む
-- **THEN** `no-clone`・`ambiguous-clone`・`no-push`・`permission-lookup-failed` を主に報告して止まると書いてある
+- **THEN** `no-clone`・`ambiguous-clone`・`not-in-orca`・`no-push`・`permission-lookup-failed`・`base-lookup-failed` を主に報告して止まると書いてある
 
 #### Scenario: stop-judge.sh は owner/repo#番号 の子を受ける
 - **WHEN** 子 `genetta-inc/flatmate#1615` を指定して `stop-judge.sh 1122 genetta-inc/flatmate#1615` を実行する（`gh` はスタブ）

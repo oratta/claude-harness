@@ -41,7 +41,7 @@
 - `wait --watch-stopped`: 閉じていない位置引数の子の記録の `stop` が `stopped` なら、排他を取って `stopped-seen` に書き換え、書けたら止まった子とする。書けなければそのポーリングを失敗したポーリングに数える
 - `pending-owner`: 記録の `stop` が `stopped-seen` の子を `pending <N>` で出す
 - `notify-closed`: 記録が無ければ `skipped <N> no-worktree`、`status` が `done` なら `skipped <N> already-done`、`stop` が `stopped` / `stopped-seen` でなければ `skipped <N> not-stopped`
-- `reap`: 記録が無い子と、記録の `worktree` のディレクトリが無い（`[ -d <worktree> ]` が偽）子は `gone <N>`（後者は記録を消す）。`status` が `done` でなければ `kept <N> not-done`。それ以外の安全確認の中身は今と同じにする。`gh pr list`・`git ls-remote`・`git fetch` などの呼び出しの形は、記録の `repo` が記録の `epic` のリポジトリと同じ子は今と同じにし（MUST）、違う子は次のとおりにする（MUST）。PR の照会に `-R <記録の repo>` を付ける。base の名前は記録の `base` を使う（同じリポジトリの子は今のまま `${EPIC_DISPATCH_BASE:-main}`）。base の照会（`git ls-remote origin refs/heads/<base>`・`git fetch origin <base>`）を子のワークツリーの origin（`git -C <記録の worktree> ...`）に向け、base の先端はリポジトリごとに 1 回読む（同じリポジトリの子の照会は今のまま 1 回で、別のリポジトリの子の先端を使い回さない。混ぜて渡した `reap` で同じリポジトリの子が `kept <N> base-lookup-failed` に落ちない）。`git cat-file -e` は `git -C <記録の worktree>` で行う。ブランチの片付け（`git rev-parse refs/heads/<branch>`・`git worktree list --porcelain`・`git branch -D`）は子の clone に向け、`orca worktree rm` の前に `git -C <記録の worktree> rev-parse --path-format=absolute --git-common-dir` で clone を控えておき、rm のあとはそれを `git -C` に使う（rm のあとはワークツリーのディレクトリが無い）。`kept <N> not-child` は出さない
+- `reap`: 記録が無い子と、記録の `worktree` のディレクトリが無い（`[ -d <worktree> ]` が偽）子は `gone <N>`（後者は記録を消す）。`status` が `done` でなければ `kept <N> not-done`。それ以外の安全確認の中身は今と同じにする。`gh pr list`・`git ls-remote`・`git fetch` などの呼び出しの形は、記録の `repo` が記録の `epic` のリポジトリと同じ子は今と同じにし（MUST）、違う子は次のとおりにする（MUST）。PR の照会に `-R <記録の repo>` を付ける。base の名前は記録の `base` を使う（同じリポジトリの子は今のまま `${EPIC_DISPATCH_BASE:-main}`）。base の照会（`git ls-remote origin refs/heads/<base>`・`git fetch origin <base>`）を子のワークツリーの origin（`git -C <記録の worktree> ...`）に向け、base の先端はリポジトリと base の組ごとに 1 回読む（同じリポジトリの子の照会は今のまま 1 回で、別のリポジトリの子の先端を使い回さない。混ぜて渡した `reap` で同じリポジトリの子が `kept <N> base-lookup-failed` に落ちない）。`git cat-file -e` は `git -C <記録の worktree>` で行う。ブランチの片付け（`git rev-parse refs/heads/<branch>`・`git worktree list --porcelain`・`git branch -D`）は子の clone に向け、`orca worktree rm` の前に `git -C <記録の worktree> rev-parse --path-format=absolute --git-common-dir` で clone を控えておき、rm のあとはそれを `git -C` に使う（rm のあとはワークツリーのディレクトリが無い）。`kept <N> not-child` は出さない
 - 出力の行・exit code・失敗したポーリングの数え方・`--resolve` の判断と送り方は、上の読み替えのほかは今の要件のまま
 
 #### Scenario: 記録の done で wait が起きる
@@ -150,32 +150,32 @@ Orca の部品は、見つけた clone のパスに当たるリポジトリを `
 
 ### Requirement: 別のリポジトリの子の書き込み権は作る前に読む
 
-`launch` は、別のリポジトリの子について、ワークツリーを作る前（clone の探索と Orca のリポジトリの引き当てのあと、空き枠の判定と記録を書くより前）に `gh api repos/<o>/<r>` の応答から `.permissions.push` と `.default_branch` を 1 回で読まなければならない（MUST。要件「別のリポジトリの子の起点は --base か子のリポジトリの既定ブランチ」）。`.default_branch` を読めなければ（`--base` / `EPIC_DISPATCH_BASE` があっても応答が読めないときは書き込み権が分からないので同じ）`failed <child> base-lookup-failed` を stdout に出し、exit 1 で、記録も枠も使わない。`.permissions.push` の結果が `true` でなければ `failed <child> no-push`、読めなければ（`gh` の失敗・応答に `permissions` が無い）`failed <child> permission-lookup-failed` を stdout に出す（MUST）。どちらも exit 1 で、記録を作らず、枠を使わず、`orca worktree create` を呼ばず、stderr に `gh` の認証アカウントと子のリポジトリを出す。fork から PR を出す経路を作ってはならない（MUST NOT）。エピックと同じリポジトリの子にはこの読み出しをしない（呼び出しの形を変えない）。
+`launch` は、別のリポジトリの子について、ワークツリーを作る前（clone の探索と Orca のリポジトリの引き当てのあと、空き枠の判定と記録を書くより前）に `gh api repos/<o>/<r>` の応答から `.permissions.push` と `.default_branch` を 1 回で読まなければならない（MUST。要件「別のリポジトリの子の起点は --base か子のリポジトリの既定ブランチ」）。1 回の応答の判定は次の順に 1 本だけ行い、最初に当たったものを stdout に出す（MUST）。(1) `gh` が失敗した、または応答に `permissions` が無い → `failed <child> permission-lookup-failed`。(2) `.permissions.push` が `true` でない → `failed <child> no-push`。(3) (1)(2) を通ったあとで `.default_branch` が空 → `failed <child> base-lookup-failed`（`--base` / `EPIC_DISPATCH_BASE` があっても止める）。どれも exit 1 で、記録を作らず、枠を使わず、`orca worktree create` を呼ばず、stderr に `gh` の認証アカウントと子のリポジトリを出す。fork から PR を出す経路を作ってはならない（MUST NOT）。エピックと同じリポジトリの子にはこの読み出しをしない（呼び出しの形を変えない）。
 
 この要件の守備範囲で入力として扱うのは、`gh api repos/<o>/<r>` の応答の `permissions.push` である。拾いたい誤りは、書き込み権の無いリポジトリにワークツリーと記録を作り、子が PR を出せずに止まることである。次は通してよく、この要件では止めない: `permissions.push` が `true` でもブランチ保護で push が拒まれること（子の側で表に出る）／リポジトリのチーム設定の細かい差。ほかの通り方を見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: push 権が無ければ作らない
-- **WHEN** `gh api repos/genetta-inc/flatmate --jq .permissions.push` が `false` を返す状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
+- **WHEN** `gh api repos/genetta-inc/flatmate` の応答の `permissions.push` が `false` の状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
 - **THEN** stdout は `failed genetta-inc/flatmate#1615 no-push`、exit 1 で、記録は作られず、`orca worktree create` は呼ばれず、枠は使われない
 
 #### Scenario: 権限を読めなければ作らない
-- **WHEN** `gh api repos/genetta-inc/flatmate --jq .permissions.push` が失敗する状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
+- **WHEN** `gh api repos/genetta-inc/flatmate` が失敗する状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
 - **THEN** stdout は `failed genetta-inc/flatmate#1615 permission-lookup-failed`、exit 1 で、記録は作られない
 
 #### Scenario: 同じリポジトリの子は書き込み権を読まない
 - **WHEN** `epic-dispatch.sh launch 1122 11`（子 11 がエピックと同じリポジトリ）を実行する
-- **THEN** `gh api repos/<o>/<r> --jq .permissions.push` の呼び出しは無い
+- **THEN** `gh api repos/<o>/<r>`（後ろに `/issues` などのパスが続かない形）の呼び出しは無い
 
 ### Requirement: 別のリポジトリの子の起点は --base か子のリポジトリの既定ブランチ
 
-`launch` は、別のリポジトリの子のワークツリーの起点を、`--base` か環境変数 `EPIC_DISPATCH_BASE` があればそれ、無ければ子のリポジトリの既定ブランチ（書き込み権と同じ `gh api repos/<o>/<r>` の応答の `.default_branch`。空き枠の判定より前に読む）にしなければならない（MUST）。既定ブランチを読めなければ `failed <child> base-lookup-failed` とし、記録も枠も使わない（MUST）。エピックと同じリポジトリの子は今までどおり、無ければ `main` とする（MUST。呼び出しの形を変えない）。`--base` と `EPIC_DISPATCH_BASE` は 1 回の `launch` の全部の子に掛かる。起点は記録の `base` に書く。
+`launch` は、別のリポジトリの子のワークツリーの起点を、`--base` か環境変数 `EPIC_DISPATCH_BASE` があればそれ、無ければ子のリポジトリの既定ブランチ（書き込み権と同じ `gh api repos/<o>/<r>` の応答の `.default_branch`。空き枠の判定より前に読む）にしなければならない（MUST）。既定ブランチを読めなければ `failed <child> base-lookup-failed` とし、記録も枠も使わない（MUST。応答の判定順は要件「別のリポジトリの子の書き込み権は作る前に読む」の (1)〜(3) に従い、`gh` の失敗は `permission-lookup-failed` が先に当たる）。エピックと同じリポジトリの子は今までどおり、無ければ `main` とする（MUST。呼び出しの形を変えない）。`--base` と `EPIC_DISPATCH_BASE` は 1 回の `launch` の全部の子に掛かる。起点は記録の `base` に書く。
 
 #### Scenario: 起点の指定が無ければ子のリポジトリの既定ブランチ
-- **WHEN** `--base` も `EPIC_DISPATCH_BASE` も無く、`gh api repos/genetta-inc/flatmate --jq .default_branch` が `develop` を返す状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
+- **WHEN** `--base` も `EPIC_DISPATCH_BASE` も無く、`gh api repos/genetta-inc/flatmate` の応答の `default_branch` が `develop` の状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
 - **THEN** `git -C <clone> fetch origin develop` が呼ばれ、`orca worktree create` の `--base-branch` は `origin/develop` で、記録の `base` は `develop` である
 
 #### Scenario: 既定ブランチを読めなければ枠を使わず止まる
-- **WHEN** `gh api repos/genetta-inc/flatmate` の応答に `default_branch` が無い状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
+- **WHEN** `gh api repos/genetta-inc/flatmate` の応答の `permissions.push` が `true` で `default_branch` が無い状態で `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` を実行する
 - **THEN** stdout は `failed genetta-inc/flatmate#1615 base-lookup-failed`、exit 1 で、記録は作られず、枠は使われない
 
 #### Scenario: --base があればそれを使う

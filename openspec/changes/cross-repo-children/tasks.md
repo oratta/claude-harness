@@ -18,7 +18,7 @@
 
 ## 4. テスト
 
-- [ ] 4.1 `epic-dispatch.bats` に、epic-state の spec の Scenario（`EPIC_DISPATCH_CLONES` / Orca の clone で作る・`no-clone`・origin 不一致・`ambiguous-clone`・起動済みは clone を探さず `skipped`・別リポジトリの子も `deferred`・未登録 clone の `create` 失敗・`no-push`・`permission-lookup-failed`・同じリポジトリの子は権限を読まない・既定ブランチと `--base`・書式の 4 箇所・返事の頭・`reap` の `-R` と `git -C`・`other-repo` を返さない）を足す。スタブの `gh` / `orca` / `git` は既存の仕組みを使う。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:591-1134（launch）、plugins/dev-workflow/tests/epic-dispatch.bats（reap・reply の節）
+- [ ] 4.1 `epic-dispatch.bats` に、epic-state の spec の Scenario（`EPIC_DISPATCH_CLONES` / Orca の clone で作る・`no-clone`・origin 不一致・`ambiguous-clone`・起動済みは clone を探さず `skipped`・別リポジトリの子も `deferred`・`not-in-orca`・`no-push`・`permission-lookup-failed`・`base-lookup-failed`・子の clone の fetch の失敗・親の clone を fetch しない場合・`worktree` が空の記録・同じリポジトリの子は権限を読まない・既定ブランチと `--base`・書式の 4 箇所・返事の頭・`reap` の `-R` と `git -C`・混ぜて渡した `reap`・起動し直しの `EPIC_DISPATCH_PARENT_EPIC` の前置き・`other-repo` を返さない）を足す。スタブの `gh` / `orca` / `git` は既存の仕組みを使う。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:591-1134（launch）、plugins/dev-workflow/tests/epic-dispatch.bats（reap・reply の節）
 - [ ] 4.2 `stop-judge.sh` のテストに、`<owner>/<repo>#<N>` の子と同じリポジトリの子の Scenario を足す。触る範囲: plugins/dev-workflow/tests/stop-judge.bats
 - [ ] 4.3 `owner-reply-check.bats` に、別のリポジトリの子の `launch` の指示と起動し直しの指示が `<command-args>` にあるときに主の発言として数えない Scenario を足す。触る範囲: plugins/dev-workflow/tests/owner-reply-check.bats
 

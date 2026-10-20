@@ -50,7 +50,7 @@ clone を次の順に探す。各段で、候補ごとに `git -C <候補> remot
 
 ### 3. 書き込み権（項目 3）
 
-- 別リポジトリの子について、ワークツリーを作る前に `gh api repos/<o>/<r> --jq .permissions.push` を読む。`true` でなければ記録を作らずに `failed <child> no-push`、読めなければ（`gh` の失敗・`permissions` が応答に無い）`failed <child> permission-lookup-failed`。どちらも枠を使わない。stderr に `gh` の認証アカウントと子のリポジトリを出す
+- 別リポジトリの子について、ワークツリーを作る前に `gh api repos/<o>/<r>` の 1 回の応答を次の順に判定する。(1) `gh` の失敗・`permissions` が応答に無い → `failed <child> permission-lookup-failed`、(2) `.permissions.push` が `true` でない → `failed <child> no-push`、(3) (1)(2) を通ったあとで `.default_branch` が空 → `failed <child> base-lookup-failed`（`--base` があっても止める）。どれも記録を作らず、枠を使わない。stderr に `gh` の認証アカウントと子のリポジトリを出す
 - 親は他の `failed` と同じく主に報告して止まる（SKILL.md の手順 6）。サブエージェント方式に自動で振り替えない（今の `failed` と同じ）。fork から PR を出す経路は作らない
 - 同じリポジトリの子には、この読み出しをしない（呼び出しの形を変えない）
 
@@ -88,7 +88,7 @@ change 1 の Decision 4 は、同じリポジトリの書式を変えず、別�
 1 件の子について、次の順で進める。`seen`（同じ呼び出しで重複した子）と、記録があって `worktree` が空でないときの `skipped` は今のまま先に判定し、clone の探索や `gh` の呼び出しをしない。
 
 1. 記録の読み取り（読めなければ `failed <child> state-unreadable`。今のまま）
-2. 別リポジトリの子なら、clone の探索（`no-clone` / `ambiguous-clone`）→ `orca repo list --json` での引き当て（`not-in-orca`。`repoId` と selector もここで決める）→ `gh api repos/<o>/<r>` の 1 回の応答から書き込み権(`no-push` / `permission-lookup-failed`)と既定ブランチ(`base-lookup-failed`)を読む。ここまでの失敗は記録を作らず、枠を使わない。`worktree` が空のまま残った自分の記録は、ここを通したあと子の `repoId` の一覧で埋めるか上書きし、枠は増やさない
+2. 別リポジトリの子なら、clone の探索（`no-clone` / `ambiguous-clone`）→ `orca repo list --json` での引き当て（`not-in-orca`。`repoId` と selector もここで決める）→ `gh api repos/<o>/<r>` の 1 回の応答から書き込み権と既定ブランチを、判定順 `permission-lookup-failed` → `no-push` → `base-lookup-failed` で読む(Decision 3)。ここまでの失敗は記録を作らず、枠を使わない。`worktree` が空のまま残った自分の記録は、ここを通したあと子の `repoId` の一覧で埋めるか上書きし、枠は増やさない
 3. 子のリポジトリの Orca の一覧（`orca worktree list --json` を子のリポジトリの `repoId` で絞る）に同じ issue のワークツリーがあれば `skipped`（今の「記録の無い Orca のワークツリーは起動済み」を子のリポジトリで見る形）
 4. 空き枠の判定（`deferred <child>`）。別リポジトリの子も 1 枠を使い、同じ上限の中で数える（記録の `parent_worktree` が今のワークツリーの記録を数える今の数え方のまま。別リポジトリの子の記録も数える）
 5. 記録を書く（`repo` に子のリポジトリ、`child` に `<o>/<r>#<N>`、`base` に決めた起点）→ `git -C <clone> fetch origin <base>` → `orca worktree create --repo <selector> --name issue-<N> --issue <N> --base-branch origin/<base> --parent-worktree path:<親> --json`。作成に失敗したら記録を消す（今のまま）
