@@ -114,7 +114,7 @@ writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合�
 
 登録先は `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json`（`CLAUDE_ACCOUNTS_FILE` で上書き可）。`dev-workflow` の `accounts.sh` で操作する:
 
-既定アカウントを使っているなら、先に `CLAUDE_SECURESTORAGE_CONFIG_DIR` を設定していないシェルで登録する。`add` を先に実行すると登録簿の順が `b`、`a` になり、既定アカウントの使用量は未登録のため `b` のものとして扱われる:
+既定アカウントを使っているなら、先に `CLAUDE_SECURESTORAGE_CONFIG_DIR` を設定していないシェルで登録する。`add` を先に実行すると登録簿の順が `b`、`a` になる。既定アカウントを登録しないままだと、その使用量は `b` のものとして扱われる:
 
 ```bash
 SCRIPTS=~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts
@@ -146,7 +146,7 @@ SCRIPTS=~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflo
   "schema": 1,
   "accounts": [
     { "id": "a", "label": "A", "securestorage": null },
-    { "id": "b", "label": "B", "securestorage": "/Users/example/.claude-b" }
+    { "id": "b", "label": "B", "securestorage": "/Users/example/.claude-accounts/b" }
   ]
 }
 ```
@@ -177,7 +177,7 @@ SCRIPTS=~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflo
 7d All  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   82%/74%   Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   94%   ~2d 3h
 ```
 
-戻すときは `accounts.sh on <id>` を実行する。認証情報と、それまでに記録された使用量は残っているので、登録をやり直す必要は無い（書き換える前の登録簿は `accounts.json.bak` に 1 世代だけ残る。`accounts-init.sh` で同じ id を登録し直しても `enabled` は消えない）。オフのアカウントがいま使っているアカウントになっているセッション（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を手で設定して起動した場合のほか、オフにした既定アカウントへ `cld` の自動選択が縮退して起動した場合、起動したあとでそのアカウントをオフにした場合）では、そのアカウントは消さずにライブ値で描く（他のアカウントがオンなら 2 アカウントの表示になる）。
+戻すときは `accounts.sh on <id>` を実行する。認証情報と、それまでに記録された使用量は残っているので、登録をやり直す必要は無い（書き換える前の登録簿は `accounts.json.bak` に 1 世代だけ残る。`accounts-init.sh` で同じ id を登録し直しても `enabled` は消えない）。オフのアカウントがいま使っているアカウントになっているセッション（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を手で設定して起動した場合のほか、オフにした既定アカウントへ `cld` の自動選択が縮退して起動した場合、起動したあとでそのアカウントをオフにした場合）では、そのアカウントは消さずにライブ値で描く（他のアカウントがオンなら複数アカウントの表示になる）。
 
 ### 表示の読み方（複数アカウント時）
 

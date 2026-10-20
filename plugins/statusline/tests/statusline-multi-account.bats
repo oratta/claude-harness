@@ -970,8 +970,8 @@ draw_b_with_null_reset_five_hour_record() {
   [[ "$(grep -E '^(▸ |  )Claude B +5h' "$WORK/out.txt")" =~ \ 0% ]] || return 1
 }
 
-# ---------- enabled が false のスロット（オフ）（#976） ----------
-# spec: statusline-multi-account-usage「オフのスロットは値の代わりに off を 1 行出す」
+# ---------- enabled が false のスロット（オフ）（#976, #1112） ----------
+# spec: statusline-multi-account-usage「オフのスロットは表示しない」
 #       usage-account-registry「スロットを enabled でオフにできる」
 
 # $1=a の enabled（JSON の値。空なら書かない）$2=b の enabled（同）
@@ -991,7 +991,7 @@ JSON
   write_b_record "$((NOW - 60))" 37 "$((NOW + 172800))" 41 "$((NOW + 9000))"
   mk_input 55 82 14000 172800 | bash "$SL" > "$WORK/raw.txt"
   strip_ansi < "$WORK/raw.txt" > "$WORK/out.txt"
-  ! grep -qE 'Claude B|off' "$WORK/out.txt" || return 1
+  ! drop_cwd_line "$WORK/out.txt" | grep -qE 'Claude B|off' || return 1
   # B の値（snapshot の 3% / 1%、記録の 41% / 37%）と経過時間はどこにも出ない
   ! grep -qE ' (3|1|41|37)%' "$WORK/out.txt" || return 1
   ! grep -qE '[0-9]+[mhd]前' "$WORK/out.txt" || return 1
@@ -1003,7 +1003,7 @@ JSON
 @test "enabled: a non-active off slot without any value renders no row" {
   write_two_slot_registry_enabled "" false
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  ! grep -qE 'Claude B|off' "$WORK/out.txt" || return 1
+  ! drop_cwd_line "$WORK/out.txt" | grep -qE 'Claude B|off' || return 1
   [ "$(grep -cE '^5h ' "$WORK/out.txt")" = "1" ]
 }
 
@@ -1013,7 +1013,7 @@ JSON
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   grep -qE '^5h ' "$WORK/out.txt"
   grep -E '^5h ' "$WORK/out.txt" | grep -q '55%'
-  ! grep -qE 'Claude|▸|off' "$WORK/out.txt" || return 1
+  ! drop_cwd_line "$WORK/out.txt" | grep -qE 'Claude|▸|off' || return 1
 }
 
 @test "enabled: an off B that is active brings back the two-slot layout" {

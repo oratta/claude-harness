@@ -203,7 +203,7 @@ codex_with_login() {
   codex_with_login
   echo '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"enabled":false}}' > "$WORK/accounts.json"
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
-  ! strip_ansi < "$WORK/out.txt" | grep -qE 'Codex|off' || return 1
+  ! strip_ansi < "$WORK/out.txt" | tail -n +2 | grep -qE 'Codex|off' || return 1
   # 背景の取得との競合を避けるため、同期で取得を走らせてから見る。オフ判定が無ければここで
   # キャッシュが作られて落ちる（スタブは echo の前に打ち切られるので codex-calls は当てにしない）
   python3 "${PLUGIN_DIR}/scripts/statusline-codex.py" --refresh

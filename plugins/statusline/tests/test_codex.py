@@ -270,7 +270,7 @@ class RenderTests(unittest.TestCase):
 
 
 class CodexOffTests(unittest.TestCase):
-    # statusline-multi-account-usage "Codex がオフのとき Codex 行は off を出し、取得しない".
+    # statusline-multi-account-usage "Codex がオフのとき表示行を出さず、取得しない".
     # The helper reads "codex"."enabled" itself (it never imports dev-workflow's usage_view).
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

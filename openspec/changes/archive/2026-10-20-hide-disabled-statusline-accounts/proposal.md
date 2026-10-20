@@ -23,5 +23,5 @@
 ## Impact
 
 - 実装・テスト: `plugins/statusline/scripts/statusline.sh`、`plugins/statusline/tests/statusline-multi-account.bats`、`plugins/statusline/tests/statusline.bats`、`plugins/statusline/tests/test_codex.py`。
-- 文書: `plugins/statusline/README.md`、`plugins/dev-workflow/README.md`、`plugins/statusline/changes/1112.md`。過去の変更記録 `plugins/dev-workflow/changes/976.md` / `978.md` は履歴として残し、現在の表示契約を新しい記録で上書きする。
+- 文書: `plugins/statusline/README.md`、`plugins/dev-workflow/README.md`、`plugins/statusline/changes/1112.md`。過去の変更記録 `plugins/statusline/changes/976.md` / `978.md` / `1111.md` は履歴として残し、現在の表示契約を新しい記録で上書きする。
 - `statusline-codex.py` はオフ時に内部の `off` センチネルを返すままとし、描画側で行を捨てる。#1115 のリセット権表示と #527〜#530 の使用率・経過率は変更しない。
