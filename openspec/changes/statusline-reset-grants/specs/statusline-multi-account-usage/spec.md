@@ -34,6 +34,8 @@ Codex 表示が無効でスロットが 1 つだけのとき（レジストリ�
 - **THEN** 前者の出力は後者の出力の最後の行の末尾に区画が付いただけで、label 列も active の目印も無く、他の部分は一致する
 
 
+## ADDED Requirements
+
 ### Requirement: Claude のアカウントの行にリセット権の残数と期限を表示する
 `plugins/statusline/scripts/statusline.sh` は、表示する Claude の各スロットについて、snapshot（`dev-workflow-escalation-tripwires` capability の「usage-probe と snapshot 契約」）の `accounts.<id>.reset_grants` が読めるとき、そのスロットの最後の行（7d の行があればそれ、無ければ 5h の行）の末尾に、行末の経過時間のあとに続けて ` │ ` を挟んで残数と最短期限を表示しなければならない（SHALL）。書式・色・欠測の扱いは要件「Codex リセット権の残数と期限を表示する」と同じにする: `リセットN回・最短あとXdYh`（24 時間未満は `あとXhYm`）、期限まで 3 日以内は黄、24 時間以内は赤、それより先は DIM、有効な束に期限のあるものが無ければ `期限不明`、最短期限を過ぎていれば `期限経過（更新待ち）`。
 
@@ -52,6 +54,11 @@ Codex 表示が無効でスロットが 1 つだけのとき（レジストリ�
 #### Scenario: paused と 0 回の束は数えない
 - **WHEN** `reset_grants` が `paused: true` の束と `resets_left: 0` の束と、`resets_left: 1` の有効な束 1 つである
 - **THEN** 残数は 1 回で、最短期限は有効な束の `ends_at` になる
+
+#### Scenario: paused は boolean の true だけを除外する
+- **WHEN** `resets_left: 1`・`ends_at: null` の束 1 つだけの `reset_grants` を、`paused` が欠落・`null`・文字列 `"true"`・`false` の各場合で描く
+- **THEN** どの場合も `リセット1回・期限不明` が出る
+- **AND** `paused: true` の場合は、その束は数えられず区画が出ない（数えられる束が無い）
 
 #### Scenario: 期限が無ければ期限不明
 - **WHEN** 有効な束が `ends_at: null` の 1 つだけである
@@ -75,6 +82,6 @@ Codex 表示が無効でスロットが 1 つだけのとき（レジストリ�
 
 **守備範囲**（この要件の `reset_grants` の集計に限る）
 - 入力の出どころ: dev-workflow の `usage-probe.sh` が書く自分の snapshot。probe が値を変えずに写すので、型の崩れや欠落は残りうる。外部の第三者が作る入力ではない
-- 拾う誤り: 欄が配列でない、束がオブジェクトでない、`resets_left` が 0 以上の整数でない、`paused` が真偽値でない（true だけを除外と読む）、`ends_at` が日時に直せない。これらの束は数えず（`ends_at` だけ読めないときは残数には数え、期限には含めない）、使える束が 1 つも無ければ区画を出さない
-- 意図的に通す入力: `ends_at` の欠落・null（残数付きで `期限不明`）、`paused` の欠落・null（paused でない扱い）、未知のキー、過去の `ends_at`（`期限経過（更新待ち）`）
+- 拾う誤り: 欄が配列でない、束がオブジェクトでない、`resets_left` が 0 より大きい整数でない。これらの束は数えず、数えられる束が 1 つも無ければ区画を出さない。`paused` は boolean の `true` だけを除外する。`ends_at` が日時に直せない束は、残数には数え、期限には含めない
+- 意図的に通す入力: `ends_at` の欠落・null（残数付きで `期限不明`）、`paused` の欠落・null・文字列 `"true"` などの boolean の `true` 以外（除外せず数える）、未知のキー、過去の `ends_at`（`期限経過（更新待ち）`）
 - 未知の穴を塞ぎ切ることを完了条件にしない。想定外の形は区画を出さないに倒し、行の他の部分は変えない

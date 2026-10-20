@@ -131,7 +131,7 @@ probe は `refresh_token` を用いたアクセストークンの更新を行っ
 - **THEN** そのスロットは前回値と前回の `fetched_at` を保ち、全 `null` で上書きされない
 
 #### Scenario: 全スロット失敗時は fail-open
-- **WHEN** 全スロットで認証取得または API 取得が失敗する
+- **WHEN** 全スロットで認証取得または API 取得が失敗し、既存 snapshot に削除対象の `reset_grants`（試みて失敗したスロットの欄）が無い
 - **THEN** exit code 0 で終了し、新しい snapshot を書かない（既存 snapshot があればそのまま残す）
 
 #### Scenario: スロットが 1 つのときは現行と同じ形に落ちる
