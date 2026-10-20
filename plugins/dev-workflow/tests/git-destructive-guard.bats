@@ -1557,7 +1557,14 @@ PY
   cp "$SCRIPT" "$d/git-destructive-guard.sh"
   local json
   json="$(payload 'git checkout -- a' default '"a1"' s1)"
+  # 一致する許可を置いても、key を出せないので探さない（許可は残り、期限で切れる）
+  local k
+  k="$(key_of s1 a1 "" 'git checkout -- a')"
+  mkdir -p "$(GUARD_BASE)/permits"
+  printf '{}' >|"$(GUARD_BASE)/permits/$k.json"
   run "$d/git-destructive-guard.sh" <<<"$json"
   [ "$(decision)" = "deny" ]
+  [[ "$(reason)" != *'許可はあるが行き先を確かめられない'* ]] || return 1
   [ ! -e "$(GUARD_BASE)/denied" ]
+  [ -f "$(GUARD_BASE)/permits/$k.json" ]
 }
