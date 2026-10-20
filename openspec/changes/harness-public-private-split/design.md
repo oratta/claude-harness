@@ -31,9 +31,9 @@
 
 - 行は `rules/*.md` の各ファイル・`output-styles/*.md` の各ファイル・`marketplace.json` の各プラグイン・直下の `scripts/` の各項目に 1 行ずつ。分割しないプラグインは、hooks を含めてそのプラグインの行 1 行で全体の行き先が決まる
 - 1 つのプラグインの中で行き先が割れるとき（capability-registry、エピック実行まわりを含む dev-workflow など）は、プラグインの行の分類を「分割」とし、その下の部品の行で**プラグインの全ファイルを重複なく覆う**。境界の規則（正本は spec「分割したプラグインは部品の行で全体を重複なく覆う」）:
-  - 部品の欄はファイルのパス・ディレクトリのパス（末尾 `/`）・Markdown の節（`<パス>#<## の見出し>`）のどれか
+  - 部品の欄はファイルのパス・ディレクトリのパス（末尾 `/`）・Markdown の節（`<パス>#<## の見出し>`）・Markdown の冒頭（`<パス>#冒頭`）のどれか
   - ファイルの行き先は、当てはまる行のうちいちばん深いパスの行で決める（例: `plugins/dev-workflow/scripts/` を公開版にし、`plugins/dev-workflow/scripts/epic-dispatch.sh` だけを保留にする）。同じパスの行は置かない
-  - 節で分けた Markdown は `## ` の見出しをすべて節の行で 1 回ずつ覆い、ファイルの行と併置しない
+  - 節で分けた Markdown は `## ` の見出しをすべて節の行で 1 回ずつ覆い、ファイルの行と併置しない。最初の `## ` より前（frontmatter と冒頭の文）は節に含めず、`<パス>#冒頭` の行で独立に行き先を決める（R1 3 周目の指摘: 最初の節に含める規則だと、SKILL.md の最初の節「表記規約」を個人版にしたとき frontmatter の description＝スキルの発火条件まで個人版に入り、`openspec/specs/capability-registry-skill/spec.md` の「外部サービス操作前にスキルが発火する」が公開版で満たせなくなる）
   - 付属のファイル（`.claude-plugin/plugin.json`・`changes/`・`tests/`・`README.md`・`CHANGELOG.md`・`hooks/hooks.json`）は行で覆わず、記録・検査・配線している部品に従う。ファイルの中で行き先が割れる付属（dev-workflow の `hooks/hooks.json` の中のエピック実行まわりの配線など）の書き分けは #1129 で行う
 - この規則なら、テストが `git ls-files` からファイルを列挙して各ファイルの行を 1 つに決められ、行を落とせば行の決まらないファイルとして名前つきで落ちる。#1129 は表から「どのファイルを移すか」を機械的に引ける
 - 選ばなかった案: 全ファイルを 1 行ずつ。dev-workflow だけで 40 を超えるスクリプトがあり、表が読めなくなる。ディレクトリの行といちばん深いパスの規則で、例外のファイルだけを個別に書けば足りる
@@ -46,7 +46,7 @@
 - 理由: browser-guard と CLI を先に調べる原則は誰の環境でも意味があり、住人のふるまい（ログインを頼む前に CLI を探す）に効き、公開版に残る `rules/browser-infra-env-capture.md` からも参照されている。fmtoken はオーナーの 1Password の保管庫と SA の構成を前提にした道具で、flatmate では `fmtoken` が出荷物に入れてはいけない語になっている
 - 選ばなかった案: 丸ごと個人版。公開版の `rules/browser-infra-env-capture.md` の参照先が消え、住人からブラウザ操作の前の注意喚起も消える
 - 選ばなかった案: 丸ごと公開版にして fmtoken を一般化する。保管庫の設計（read-only SA・human-only 保管庫）を一般化するのは設計変更で、#1127 の範囲（仕分けて移す）を越える
-- 部品の行（境界の規則に従う）: `scripts/browser-guard.sh` 公開版、`scripts/fmtoken.sh` 個人版、`skills/capability-registry/1password.md` 個人版、`skills/capability-registry/{github,supabase,stripe,vercel}.md` 公開版、`SKILL.md` は節で分け、「原則」「索引（1 サービス 1 行）」「CLI が無いサービス（ネガティブエントリ）」「新サービスの追加」の 4 つを公開版、「表記規約（生成文にも適用すること）」「資格情報の階層（どこに置くかはプロジェクトごとに決めない）」の 2 つを個人版にする（見出しの文字列は対象 HEAD f336d2ef の SKILL.md の `## ` の行どおり。実装時に読み直し、見出しが変わっていれば文書に理由を書いて直す）
+- 部品の行（境界の規則に従う）: `scripts/browser-guard.sh` 公開版、`scripts/fmtoken.sh` 個人版、`skills/capability-registry/1password.md` 個人版、`skills/capability-registry/{github,supabase,stripe,vercel}.md` 公開版、`SKILL.md` は節で分け、冒頭（`SKILL.md#冒頭`。frontmatter の name・description と最初の見出し `# capability-registry — ...`）を公開版、「原則」「索引（1 サービス 1 行）」「CLI が無いサービス（ネガティブエントリ）」「新サービスの追加」の 4 つを公開版、「表記規約（生成文にも適用すること）」「資格情報の階層（どこに置くかはプロジェクトごとに決めない）」の 2 つを個人版にする（見出しの文字列は対象 HEAD f336d2ef の SKILL.md の `## ` の行どおり。実装時に読み直し、見出しが変わっていれば文書に理由を書いて直す）
 - 「表記規約」を個人版にした理由: 仕様レビュー 2 周目で、「表記規約」の節に個人版へ移す保管庫名（agents・human-only）と `op item list --vault agents` が残り、公開版に割り当てると上の採用と矛盾すると指摘された。選び直しを主に聞き、主の決定は「移していい」（節を丸ごと個人版へ移す）だった https://github.com/oratta/claude-harness/issues/1128#issuecomment-6292306455 。節の中で Obsidian vault との区別の書き方だけを公開版に残す案は、節を割ると境界の規則（節の行は `## ` の見出し単位）を越えるので取らない
 
 #### 公開版に残る部品から個人版への参照を外す作業（この change では直さない）
@@ -70,7 +70,7 @@
 - 既存仕様の要件の更新（`capability-registry-browser-guard`・`capability-registry-skill` の上の 2 要件の MODIFIED と、`capability-registry-fmtoken` を個人版へ移すか REMOVED にするか）は、#1164 の openspec change で行う
 - 時期: #1129 が `fmtoken.sh` を公開版から消すより前か同じ PR で着地させる（後になると、公開版が存在しない道具を案内する期間ができる）。依存は「#1128 の後・#1129 の前」
 
-一覧（固有記述の一覧）には、上の行を「直す issue: #1164」として載せる
+一覧（固有記述の一覧）には、上の行のうち `fmtoken` の参照を「直す issue: #1164」として載せる。#1164 の受け入れ条件は fmtoken の参照の除去だけなので、`fmtoken.sh` を伴わず保管庫名だけが残る行（例: `skills/capability-registry/supabase.md:5`）は #1164 に割り当てず「担い手なし」とし、return で本体に渡す（R1 3 周目の指摘。#1164 の本文は書き換えない）
 
 ### 保留は「#1123 の後に何を決めるか」を書く
 
@@ -79,7 +79,7 @@
 
 ### 固有記述の一覧の書式
 
-- 一覧は公開版（分割の行で公開版になった部品を含む）に残る部品だけを対象にし、1 行 1 件で `<リポジトリ相対パス>:<行>` ・種別（固有名／環境依存）・何が書かれているか・直す issue（#1098・#1105・#1164 のどれか。#1098 は `rules/` と `output-styles/` の 6 本、#1105 は flatmate の住人での索引と案内の二重、それ以外の capability-registry の fmtoken・保管庫の参照は #1164）を書く。どの範囲にも当たらない行は「担い手なし」と書き、本体に知らせる
+- 一覧は公開版（分割の行で公開版になった部品を含む）に残る部品だけを対象にし、1 行 1 件で `<リポジトリ相対パス>:<行>` ・種別（固有名／環境依存）・何が書かれているか・直す issue（#1098・#1105・#1164 のどれか。#1098 は `rules/` と `output-styles/` の 6 本、#1105 は flatmate の住人での索引と案内の二重、capability-registry の公開版の `fmtoken.sh` の参照は #1164。`fmtoken.sh` を伴わず保管庫名（agents 保管庫など）だけが残る行（例: `plugins/capability-registry/skills/capability-registry/supabase.md:5`）は #1164 の受け入れ条件（fmtoken の参照の除去）に入らないので「担い手なし」）を書く。どの範囲にも当たらない行は「担い手なし」と書き、本体に知らせる
 - 種別の境界: 固有名はオーナーのプロジェクト名・アカウント名・保管庫名・人名・オーナーのリポジトリ名。環境依存はオーナーの PC のパス・オーナーだけが持つ環境変数やサービス（Obsidian vault・Fieldy・Orca など）を前提にした記述。誰でも置き換えられる例として書かれたもの（`<project>` のような書式の説明）は載せない
 - 探し方: 固有名の候補語（オーナーのリポジトリ名・プロジェクト名・`oratta`・`/Users/`・保管庫名など）で `grep` をかけ、当たった行を目で仕分ける。候補語は文書に残し、#1098 が同じ語で取りこぼしを確かめられるようにする
 
