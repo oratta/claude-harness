@@ -91,16 +91,19 @@ def _redirect_env():
                   if k in _REDIRECT_ENV or any(k.startswith(p) for p in _REDIRECT_ENV_PREFIX))
 
 
-def _temp_roots():
-    """一時フォルダの置き場所の候補（realpath）。親と hook で TMPDIR が違いうるので複数持つ。"""
+def _temp_roots(temp_dir=None):
+    """一時フォルダの置き場所の候補（realpath）。/tmp・/private/tmp（Claude Code の scratchpad の置き場所）と、
+    temp_dir を渡されたらそれ、渡されなければ自分の TMPDIR と tempfile.gettempdir()。許可を書くスクリプトは
+    記録の場所から hook の TMPDIR を渡す（自分の TMPDIR で数えると、hook が使えない許可を書いてしまう）。"""
     roots = set()
-    for c in ("/tmp", "/private/tmp", os.environ.get("TMPDIR"), tempfile.gettempdir()):
+    extra = (temp_dir,) if temp_dir is not None else (os.environ.get("TMPDIR"), tempfile.gettempdir())
+    for c in ("/tmp", "/private/tmp") + extra:
         if c:
             roots.add(os.path.realpath(c))
     return roots
 
 
-def _is_scratchpad(path, session_id):
+def _is_scratchpad(path, session_id, temp_dir=None):
     """`<一時フォルダ>/claude-<uid>/<slug>/<session_id>/scratchpad` か。形に加えて、claude-<uid> の親が一時フォルダの
     置き場所で、claude-<uid> が今の uid の持ち物でグループ・他者に書き込み権が無いことを見る（作業ツリーの中などに
     同じ形のフォルダを作っても通さない）。"""
@@ -112,7 +115,7 @@ def _is_scratchpad(path, session_id):
     owner = os.path.dirname(os.path.dirname(sess))
     if os.path.basename(owner) != "claude-%d" % os.getuid():
         return False
-    if os.path.dirname(owner) not in _temp_roots():
+    if os.path.dirname(owner) not in _temp_roots(temp_dir):
         return False
     try:
         st = os.lstat(owner)
@@ -122,11 +125,11 @@ def _is_scratchpad(path, session_id):
             and not st.st_mode & (stat.S_IWGRP | stat.S_IWOTH))
 
 
-def _find_scratchpad(path, session_id):
+def _find_scratchpad(path, session_id, temp_dir=None):
     """path（realpath 済み）そのものか祖先のうち、いちばん近い scratchpad。無ければ None。"""
     p = path
     while True:
-        if _is_scratchpad(p, session_id):
+        if _is_scratchpad(p, session_id, temp_dir):
             return p
         parent = os.path.dirname(p)
         if parent == p:
@@ -263,8 +266,9 @@ def _split_simple(command):
     return out
 
 
-def check(session_id, cwd, command):
-    """一時領域の判定。(理由, scratchpad, 確かめた作業ツリーの一覧) を返す。満たせば理由は None。"""
+def check(session_id, cwd, command, temp_dir=None):
+    """一時領域の判定。(理由, scratchpad, 確かめた作業ツリーの一覧) を返す。満たせば理由は None。
+    temp_dir は一時フォルダの置き場所の候補に足す hook の TMPDIR（_temp_roots）。hook は渡さない。"""
     if not isinstance(session_id, str) or not _SESSION_ID.match(session_id):
         return "session_id が英数字と - だけの空でない文字列でない", None, None
     env = _redirect_env()
@@ -319,7 +323,7 @@ def check(session_id, cwd, command):
             return "git %s は許していない（許すのは %s）" % (sub, "・".join(sorted(GIT_SUBCOMMANDS))), None, None
         if not os.path.isdir(d):
             return "git の作業ディレクトリ %s が無い" % d, None, None
-        sp = _find_scratchpad(d, session_id)
+        sp = _find_scratchpad(d, session_id, temp_dir)
         if sp is None:
             return "git の作業ディレクトリ %s がセッション %s の scratchpad の中にない" % (d, session_id), None, None
         if sp_found is not None and sp != sp_found:

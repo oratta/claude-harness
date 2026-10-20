@@ -9,6 +9,11 @@ setup() {
   SCRIPT="${PLUGIN_DIR}/scripts/git-destructive-guard.sh"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
   unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_UNATTENDED
+  # cd と git の行き先・設定を変える環境変数があると一時領域の判定を満たさないので、実行する人の環境から外す
+  unset CDPATH GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+    GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM
+  local v
+  for v in $(env | sed -n 's/^\(GIT_CONFIG[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
   # 子への拒否の回数は TMPDIR の下に数える。テストごとの空のディレクトリに向けて隔離する
   export TMPDIR="${BATS_TEST_TMPDIR}/tmp"
   mkdir -p "$TMPDIR"
@@ -1087,6 +1092,8 @@ PY
   [ "$(decision)" = "deny" ]
   call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$SP"
   [ "$(decision)" = "deny" ]
+  call_cwd 'git checkout -- .' '"a1"' 0a1b2c3d-sid9 "$REPO"
+  [ "$(decision)" = "deny" ]
   # continue の有無は見ない（同じ子への拒否が続くので 2 件目以降は打ち切りになる）
   call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
   [ "$(decision)" = "allow" ]
@@ -1188,16 +1195,43 @@ PY
 
 @test "permit: the script writes the permit next to the record, not under its own TMPDIR" {
   setup_permit
-  # 親の TMPDIR（b）の下にある scratchpad の repo を、hook の TMPDIR の下に書かれた記録で許可する
+  # 親の TMPDIR（b）が hook の TMPDIR と違っても、hook の TMPDIR の下に書かれた記録の隣に許可を書き、hook が使える
+  local rec b="${BATS_TEST_TMPDIR}/tmp-b"
+  mkdir -p "$b"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  rec="$(only_record)"
+  run env TMPDIR="$b" "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = "1" ]
+  [ ! -e "$b/dev-workflow-git-guard" ]
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "allow" ] || { echo "$output"; return 1; }
+}
+
+@test "permit: the script judges temp folders as the hook does, not by its own TMPDIR" {
+  setup_permit
+  # scratchpad が親の TMPDIR（b）の下にだけあると hook は scratchpad に数えないので、スクリプトも許可を書かない
   local rec b="${BATS_TEST_TMPDIR}/tmp-b" repo_b
   mkdir -p "$b"
   repo_b="$(mk_repo "$(scratch_dir "$PERMIT_SID" "$b")/repo")"
   call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$repo_b"
   rec="$(only_record)"
   run env TMPDIR="$b" "$PERMIT" "$rec" "戻すだけ"
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = "1" ]
-  [ ! -e "$b/dev-workflow-git-guard" ]
+  [ "$status" -ne 0 ] || { echo "permitted: $output"; return 1; }
+  permits_empty
+}
+
+@test "permit: the real scratchpad places /tmp and /private/tmp are temp folder candidates" {
+  python3 -I - "$PLUGIN_DIR/scripts/git-guard-scratchpad.py" <<'PY'
+import os, sys
+ns = {}
+exec(compile(open(sys.argv[1]).read(), sys.argv[1], "exec"), ns)
+for kw in ({}, {"temp_dir": os.environ["TMPDIR"]}):
+    r = ns["_temp_roots"](**kw)
+    for c in ("/tmp", "/private/tmp"):
+        assert os.path.realpath(c) in r, (kw, c, r)
+    assert os.path.realpath(os.environ["TMPDIR"]) in r, (kw, r)
+PY
 }
 
 # write_permit <cwd> <command> — スクリプトを使わずに、子 a1 の一致する許可を permits/ に直接書く
@@ -1549,6 +1583,8 @@ json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "com
 PY
   call_cwd "$cmd" '"a1"' "$PERMIT_SID" "$REPO"
   [ "$(decision)" = "deny" ]
+  # 許可は使われずに残る（使ったうえで使う時点の判定で拒否された、ではない）
+  [ -f "$(GUARD_BASE)/permits/$k.json" ]
 }
 
 @test "permit: without the shared file the hook still denies and writes no record" {

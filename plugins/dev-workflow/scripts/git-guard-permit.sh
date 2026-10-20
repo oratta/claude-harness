@@ -70,7 +70,9 @@ if vals["agent_id"] == "":
 if C["key_of"](vals["session_id"], vals["agent_id"], vals["cwd"], vals["command"]) != key:
     fail("記録の中身から計算した key がファイル名と一致しない（書き換えられたか、別の場所の記録）")
 
-err, sp, repos = C["check"](vals["session_id"], vals["cwd"], vals["command"])
+# hook は <base> を自分の TMPDIR（未設定か空なら /tmp）の下に置き、同じ TMPDIR で一時フォルダの候補を数える。
+# 自分の TMPDIR で数えると hook が使えない許可を書くので、記録の場所から hook の TMPDIR を求めて渡す
+err, sp, repos = C["check"](vals["session_id"], vals["cwd"], vals["command"], temp_dir=os.path.dirname(base))
 if err:
     fail("一時領域の判定を満たさない: " + err)
 
