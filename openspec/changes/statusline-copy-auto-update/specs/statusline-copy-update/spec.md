@@ -5,7 +5,9 @@
 
 記録は 1 ファイル 1 行で、各行は `<64 桁の小文字 16 進数><半角空白 2 つ><ファイル名>` とする（SHALL）。ファイル名は `statusline.sh` と `statusline-codex.py` のどちらか。記録は同じディレクトリの一時ファイルに書いてから置き換える（SHALL）。
 
-`--dry-run` の実行では記録を書いてはならない（MUST NOT）。`shasum` と `sha256sum` のどちらも使えない環境では、記録を書かず、警告を 1 行出して導入自体は続ける（SHALL）。
+記録を書いたあと、`<config>/.statusline-update-available` があれば消さなければならない（SHALL）。打ち直した直後に、同じセッションの中で「更新あり」が残らないようにするため。
+
+`--dry-run` の実行では記録を書いてはならず、印も消してはならない（MUST NOT）。`shasum` と `sha256sum` のどちらも使えない環境では、記録を書かず、警告を 1 行出して導入自体は続ける（SHALL）。
 
 #### Scenario: 導入すると記録ができる
 - **WHEN** 空の設定ディレクトリで `install.sh` を実行する
@@ -17,7 +19,11 @@
 
 #### Scenario: dry-run は記録を書かない
 - **WHEN** `install.sh --dry-run` を実行する
-- **THEN** `<config>/.statusline-installed` は作られず、既にあれば内容は変わらない
+- **THEN** `<config>/.statusline-installed` は作られず、既にあれば内容は変わらない。`<config>/.statusline-update-available` があればそのまま残る
+
+#### Scenario: 打ち直した直後に印が消える
+- **WHEN** `<config>/.statusline-update-available` がある状態で `install.sh` を実行する
+- **THEN** `install.sh` を実行した直後に `<config>/.statusline-update-available` は無い
 
 ### Requirement: SessionStart フックが手を入れていないコピーを本体に揃える
 statusline プラグインは SessionStart フック（`plugins/statusline/hooks/hooks.json`。matcher `startup|resume|clear`）で `plugins/statusline/scripts/statusline-update-hook.sh` を走らせなければならない（SHALL）。フックは `<config>/statusline.sh` と `<config>/statusline-codex.py` のそれぞれについて、`$CLAUDE_PLUGIN_ROOT/scripts/` の同名ファイル（以下「本体」）と記録を比べ、次のとおり動かなければならない（SHALL）。
@@ -27,6 +33,14 @@ statusline プラグインは SessionStart フック（`plugins/statusline/hooks
 - コピーが本体と違い、コピーのハッシュが記録のそのファイルの行と一致する: コピーを本体の内容で置き換え（一時ファイルからの置き換え。権限は `statusline.sh` が 755、`statusline-codex.py` が 644）、記録のその行を本体のハッシュに書き直す
 
 フックは python3 を起動してはならない（MUST NOT）。
+
+守備範囲（この要件と「手を入れたコピーと記録の無いコピーは上書きせず印を置く」「フックはインストール済みのプラグインから起動されたときだけ動き、失敗しても止めない」の 3 要件に共通）: フックが読む入力は、install.sh が置いたコピーと記録、利用者がエディタで直したコピー、Claude Code が渡す `$CLAUDE_PLUGIN_ROOT` である。拾いたい誤りは、利用者が直したコピーをプラグインの更新で消すことと、`--plugin-dir` で読み込んだ未マージの版で本物のコピーを置き換えることの 2 つに限る。次の入力はこの 3 要件の判定を通ってしまう、または意図と違う結果になるが、塞ぐことは完了条件にしない。
+
+- `<config>/.statusline-installed` を手で書き換えたもの（書き換えた記録と一致するコピーは、手を入れていないものとして本体で置き換わる）
+- 内容は変えず、権限や更新日時だけ変えたコピー（内容のハッシュは同じなので、手を入れていないものとして置き換わる）
+- 別の版の本体の内容に手で差し替えたコピー（記録と違うので上書きせず、印を出すだけ）
+- `<config>/plugins/` の下に置いた開発版を `--plugin-dir` で読んだとき（インストール済みと見分けられず、開発版でコピーを置き換える）
+- marketplace dir から `install.sh` を直接走らせた直後で、cache の版と内容に差があるとき（記録どおりのコピーなので、次のセッション開始で cache の版に置き換わる）
 
 #### Scenario: 記録どおりの古いコピーは本体と同じになる
 - **WHEN** `<config>/statusline.sh` が古い内容で、記録のハッシュがその古い内容と一致する状態でフックを走らせる
@@ -53,9 +67,9 @@ statusline プラグインは SessionStart フック（`plugins/statusline/hooks
 - **WHEN** `<config>/.statusline-installed` が無く、`<config>/statusline.sh` が本体と違う状態でフックを走らせる
 - **THEN** `<config>/statusline.sh` の内容は変わらず、`<config>/.statusline-update-available` がある
 
-#### Scenario: 揃ったら印が消える
-- **WHEN** `<config>/.statusline-update-available` がある状態で、利用者が `/statusline:setup` を打ち直してからフックを走らせる
-- **THEN** `<config>/.statusline-update-available` は無い
+#### Scenario: 本体と同じになったらフックが印を消す
+- **WHEN** `<config>/.statusline-update-available` がある状態で、利用者がコピーを手で本体と同じ内容に戻してからフックを走らせる
+- **THEN** `<config>/.statusline-update-available` は無く、記録のそのファイルの行が本体のハッシュになる
 
 ### Requirement: ステータスラインは印があるとき 1 行目の末尾に「更新あり」を出す
 `plugins/statusline/scripts/statusline.sh` は、`<config>/.statusline-update-available` が存在するとき、1 行目の末尾に `更新あり /statusline:setup` を足さなければならない（SHALL）。判定はファイルの有無だけで行い、描画のたびにハッシュを取ってはならない（MUST NOT）。
