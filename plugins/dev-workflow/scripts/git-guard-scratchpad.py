@@ -378,3 +378,112 @@ def check(session_id, cwd, command, temp_dir=None):
     if total_git >= 2 and any(w[0] == "git" and "-C" in w[1:2] for w in simple):
         return "git が 2 つ以上あるコマンドでは -C を使わない（前の git が -C の辿る道筋を書き換えうる）", None, None
     return None, sp_found, repos
+
+
+# --- rm 用の一時領域の判定（spec rm-permission-hook の要件「rm の一時領域の判定」）---
+_RM_ALLOWED_CHARS = re.compile(r"^[A-Za-z0-9 \t\n/._,:=@+%;&*?-]*$")
+_RM_FLAG = re.compile(r"^-[rRf]+$")
+_GLOB_CHARS = ("*", "?")
+
+
+def is_rm_command(command):
+    """単純コマンド（; & | && || 改行で区切ったもの）のどれかの先頭の語が rm か。hook が答える入口の形。"""
+    if not isinstance(command, str):
+        return False
+    for seg in re.split(r"&&|\|\||[;&|\n]", command):
+        words = seg.split()
+        if words and words[0] == "rm":
+            return True
+    return False
+
+
+def _rm_target_err(target, base, session_id, temp_dir):
+    """削除先 1 つを base（物理パス）基準で解決し、(理由, scratchpad)。満たせば理由は None。"""
+    if target.endswith("/"):
+        return "削除先 %s が / で終わる" % target, None
+    last = os.path.basename(target)
+    if last in ("", ".", ".."):
+        return "削除先 %s の末尾が . か .. か空" % target, None
+    dirpart = os.path.dirname(target) or "."
+    if any(c in dirpart for c in _GLOB_CHARS):
+        return "削除先 %s のグロブが末尾の要素以外にある" % target, None
+    glob = any(c in last for c in _GLOB_CHARS)
+    if glob and last.startswith("."):
+        return "削除先 %s のグロブが . で始まる（. や .. に当たりうる）" % target, None
+    parent = os.path.realpath(os.path.join(base, dirpart))
+    sp = _find_scratchpad(parent, session_id, temp_dir)
+    if sp is None:
+        return "削除先 %s（親 %s）がセッション %s の scratchpad の中にない" % (target, parent, session_id), None
+    if glob and parent == sp:
+        return "削除先 %s は scratchpad 直下の全消しになる" % target, None
+    return None, sp
+
+
+def check_rm(session_id, cwd, command, temp_dir=None):
+    """rm 用の一時領域の判定。(理由, scratchpad, 確かめた削除先の親の一覧) を返す。満たせば理由は None。
+    rm も git も実行しない。"""
+    if not isinstance(session_id, str) or not _SESSION_ID.match(session_id):
+        return "session_id が英数字と - だけの空でない文字列でない", None, None
+    if not isinstance(cwd, str) or not os.path.isabs(cwd):
+        return "cwd が絶対パスでない", None, None
+    if not isinstance(command, str) or not _RM_ALLOWED_CHARS.match(command):
+        return "コマンドに許していない文字がある（変数・置換・引用符・リダイレクト・パイプ・~・{} ・コメント・行継続・CR など）", None, None
+    simple = _split_simple(command)
+    if simple is None:
+        return "区切りの && 以外の & がある", None, None
+    if not os.path.isdir(cwd):
+        return "cwd %s がディレクトリでない" % cwd, None, None
+    physical = os.path.realpath(cwd)
+    logical = os.path.normpath(cwd)
+    bases = [physical]
+    rms = []
+    n_cd = 0
+    for words in simple:
+        head, args = words[0], words[1:]
+        if head == "cd":
+            if rms or n_cd:
+                return "cd は 1 つまでで、最初の rm より前にだけ書く", None, None
+            n_cd += 1
+            if len(args) != 1:
+                return "cd は移り先を 1 つだけ書く", None, None
+            if not (args[0] in (".", "..") or args[0].startswith(("/", "./", "../"))):
+                return "cd の移り先は / ・ ./ ・ ../ で始めるか . ・ .. だけを書く（%s）" % args[0], None, None
+            nl = os.path.normpath(os.path.join(logical, args[0]))
+            np_ = os.path.realpath(os.path.join(physical, args[0]))
+            if not os.path.isdir(np_) or os.path.realpath(nl) != np_:
+                return "cd の移り先 %s を確定できない" % args[0], None, None
+            bases.append(np_)  # cd が成功した基準。失敗した場合の基準は physical（cwd）
+            continue
+        if head != "rm":
+            return "cd と rm 以外のコマンド（%s）がある" % head, None, None
+        targets = []
+        for a in args:
+            if _RM_FLAG.match(a):
+                continue
+            if a.startswith("-"):
+                return "rm のフラグは -r -R -f の組み合わせだけを許す（%s）" % a, None, None
+            targets.append(a)
+        if not targets:
+            return "rm の削除先が無い", None, None
+        rms.append(targets)
+    if not rms:
+        return "rm のコマンドが無い", None, None
+    sp_found, parents = None, []
+    for targets in rms:
+        for t in targets:
+            for base in bases:
+                err, sp = _rm_target_err(t, base, session_id, temp_dir)
+                if err:
+                    return err, None, None
+                if sp_found is not None and sp != sp_found:
+                    return "削除先が 2 つの scratchpad にまたがる", None, None
+                sp_found = sp
+                parents.append(t if os.path.isabs(t) else os.path.join(base, t))
+    return None, sp_found, sorted(set(parents))
+
+
+def check_command(session_id, cwd, command, temp_dir=None):
+    """記録の command だけで rm 用か git 用かを決めて判定する（記録の kinds は見ない）。"""
+    if is_rm_command(command):
+        return check_rm(session_id, cwd, command, temp_dir)
+    return check(session_id, cwd, command, temp_dir)

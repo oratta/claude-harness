@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- `PermissionRequest` hook `rm-permission-guard.sh` を追加する。子の呼び出しで先頭の語が `rm` のコマンドにだけ答え、#1133 と同じ key の許可が一致し、使う時点の rm 用の一時領域の判定も満たせば allow、そうでなければ deny と「何を・なぜ消したかったかを報告に書いて親に返す」理由（と拒否の記録のパス）を返す。主の呼び出しと `rm` でない確認には何も返さない
+- `PermissionRequest` hook `rm-permission-guard.sh` を追加する。子の呼び出しで先頭の語が `rm` のコマンドにだけ答え、#1133 と同じ key の許可が一致し、使う時点の rm 用の一時領域の判定も満たせば allow、そうでなければ deny と「何を・なぜ消したかったかを報告に書いて親に返す」理由を返す（拒否の記録のパスは、記録を作れたときだけ添える）。主の呼び出しと `rm` でない確認には何も返さない
 - `git-guard-scratchpad.py` に rm 用の一時領域の判定を足す（削除先を絶対パスに解決し、scratchpad の中かを見る。`cd` が失敗した場合の基準でも見る）
 - `git-guard-permit.sh` が、記録のコマンドに `rm` を含むとき rm 用の判定で許可を書く（git のコマンドの扱いは変えない）
 - `hooks.json` に `PermissionRequest` を登録する
