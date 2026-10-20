@@ -1642,19 +1642,32 @@ PY
     call "$c" default '"a1"' s1
     [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
   done
-  # -c の後ろはコマンド文字列として読む（スクリプトとして実行しない）
-  call 'bash -c "echo /x/scripts/git-guard-permit.sh"' default '"a1"' s1
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  # 書き方を読み分けない: コマンド文字列のどこかに名前があれば、-c の文字列の中・配列や += の代入・
+  # declare / typeset / printf -v / read 経由の設定・読むだけの cat も止める
+  for c in "bash -c '/x/scripts/git-guard-permit.sh /y/denied/k.json ok'" \
+           'bash -c "echo /x/scripts/git-guard-permit.sh"' \
+           'BASH_ENV[0]=/x/scripts/git-guard-permit.sh bash /x/y.sh' \
+           'BASH_ENV+=/x/scripts/git-guard-permit.sh bash /x/y.sh' \
+           'declare -x BASH_ENV=/x/scripts/git-guard-permit.sh; bash /x/y.sh' \
+           'typeset -x ENV=/x/scripts/git-guard-permit.sh; sh -i' \
+           'printf -v BASH_ENV %s /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh' \
+           'read BASH_ENV <<< /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh' \
+           'cat /x/scripts/git-guard-permit.sh'; do
+    call "$c" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  done
 }
 
-@test "permit: the main session and reading the script are not stopped" {
-  call '/x/scripts/git-guard-permit.sh /y/denied/k.json ok' default
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-  call 'cat /x/scripts/git-guard-permit.sh' default '"a1"' s1
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
+@test "permit: the main session is not stopped for any mention of the permit script" {
+  local c
+  for c in '/x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'bash /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'BASH_ENV=/x/scripts/git-guard-permit.sh bash -c true' \
+           'cat /x/scripts/git-guard-permit.sh'; do
+    call "$c" default
+    [ "$status" -eq 0 ] || { echo "status: $c"; return 1; }
+    [ -z "$output" ] || { echo "output for $c: $output"; return 1; }
+  done
 }
 
 @test "permit: a self-permit call does not use a permit" {

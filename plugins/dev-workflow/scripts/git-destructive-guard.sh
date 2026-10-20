@@ -103,9 +103,9 @@ WRAPPERS = {"command", "env", "sudo", "nohup", "time", "exec", "builtin"}
 ENV_SHORT_ARG = set("uCPa")
 ENV_LONG_ARG = {"--unset", "--chdir", "--argv0"}
 SHELLS = {"bash", "sh", "zsh"}
-# 許可を書くスクリプト。子が直接、またはシェル経由で呼んだら permit-self として拾う（主の呼び出しでは捨てる）
-PERMIT_SCRIPT = "git-guard-permit.sh"
-SCRIPT_RUNNERS = {"bash", "sh", "zsh", "dash", "ksh"}
+# 許可を書くスクリプトの名前。子の呼び出しのコマンド文字列のどこかにあれば、書き方を読み分けずに permit-self とする
+# （シェルの書き方を 1 つずつ読み分けると、塞ぐたびに別の書き方が出る。子がこのスクリプトを読む用事も無い）
+PERMIT_NAME = "git-guard-permit"
 GIT_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
                      "--super-prefix", "--config-env", "--exec-path"}
 MAIN_REFS = {"main", "master", "refs/heads/main", "refs/heads/master"}
@@ -589,57 +589,7 @@ def env_opt_takes_next(opt):
     return False
 
 
-# シェルの起動オプションのうち、次の字句を値に取るもの（-o / +o / -O / +O は同じ字句にまとめた形も含む）
-SHELL_LONG_ARG_OPTS = {"--rcfile", "--init-file"}
-# シェルが起動時に読むファイルを指す変数。値の basename が許可を書くスクリプトなら permit-self として拾う
-SHELL_STARTUP_ENV = re.compile(r"^(?:BASH_ENV|ENV)=(.*)$", re.S)
-
-
-def shell_operand(rest):
-    """シェル（bash など）の引数から (-c があるか, 最初のオプションでない引数の位置) を返す。オプションはスクリプトより
-    前だけを読む（スクリプトより後ろの -c はスクリプトの引数）。-o・+o・-O・+O の値と --rcfile の値は飛ばし、
-    + で始まる語もオプションとして読む。- と -- はオプションの終わり。値の取り方はシェルごとに違う（zsh の -O は
-    値を取らず、-o は値をつなげて書ける）ので、許可を書くスクリプトの判定はこの読み方に頼らない（is_permit_shell）。"""
-    has_c = False
-    k = 0
-    while k < len(rest):
-        a = rest[k]
-        if a in ("-", "--"):
-            k += 1
-            break
-        if a.startswith("--"):
-            k += 2 if a in SHELL_LONG_ARG_OPTS else 1
-            continue
-        if len(a) > 1 and a[0] in "-+":
-            if a[0] == "-" and "c" in a[1:]:
-                has_c = True
-            k += 2 if ("o" in a[1:] or "O" in a[1:]) else 1
-            continue
-        break
-    return has_c, min(k, len(rest))
-
-
-def is_permit(word):
-    return os.path.basename(word) == PERMIT_SCRIPT
-
-
-def is_permit_shell(base, rest):
-    """シェル経由で許可を書くスクリプトを呼ぶ形か。迷ったら止める側に倒す: -c が無ければ、引数のどれか（起動
-    オプションの値を含む）の basename がスクリプトなら拾う。bash / sh / zsh の -c があれば、コマンド文字列より前の
-    語（起動オプションとその値。--rcfile は -i と組むと -c でも読まれる）だけを見て、コマンド文字列はその中身を
-    判定に回す（`bash -c "echo …/git-guard-permit.sh"` は止めない）。"""
-    has_c, idx = shell_operand(rest)
-    if has_c and base in SHELLS:
-        return any(is_permit(a) for a in rest[:idx])
-    return any(is_permit(a) for a in rest)
-
-
 def judge_simple(cmd, depth):
-    for t in cmd:
-        # BASH_ENV= / ENV= の代入（前置き・env・export などの引数）でシェルに許可を書くスクリプトを読ませる形
-        m = SHELL_STARTUP_ENV.match(t)
-        if m and is_permit(m.group(1)):
-            return {"permit-self"}
     i = 0
     while i < len(cmd):
         t = cmd[i]
@@ -658,10 +608,6 @@ def judge_simple(cmd, depth):
         return set()
     head, rest = cmd[i], cmd[i + 1:]
     base = os.path.basename(head)
-    if base == PERMIT_SCRIPT:
-        return {"permit-self"}
-    if (base in SCRIPT_RUNNERS or head in ("source", ".")) and is_permit_shell(base, rest):
-        return {"permit-self"}
     if base in SHELLS:
         for k, a in enumerate(rest):
             if a.startswith("-") and not a.startswith("--") and "c" in a[1:]:
@@ -801,8 +747,11 @@ except TooMuch:
 # FORCE より先に見る: FORCE=ask が残ったセッションで子が起きても確認画面で止めないため。
 agent_id = payload.get("agent_id")
 is_child = isinstance(agent_id, str) and agent_id != ""
-if kinds is not None and not is_child:
-    kinds.discard("permit-self")  # 主が許可を書くスクリプトを呼ぶのは止めない
+# 子のコマンド文字列に許可を書くスクリプトの名前があれば、書き方（シェル経由・-c の中・BASH_ENV の設定・cat など）を
+# 問わず permit-self として止め、許可も使わない。主の呼び出しは止めない
+self_permit = is_child and PERMIT_NAME in command
+if self_permit and kinds is not None:
+    kinds.add("permit-self")
 if kinds is not None and not kinds:
     sys.exit(0)
 
@@ -934,7 +883,7 @@ if is_child:
     common = load_common()
     key = common["key_of"](session_id, agent_id, cwd, command) if common else None
     used = None
-    if key and not (kinds is not None and "permit-self" in kinds):
+    if key and not self_permit:
         used = use_permit(common, guard_base, key)
     if used and used[0] == "allow":
         print(json.dumps({"hookSpecificOutput": {
