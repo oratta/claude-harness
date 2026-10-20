@@ -1,6 +1,6 @@
 ## Why
 
-エピック #1137 の仕組み（子の拒否の記録 → 親が許可を書く → 子を再開）が、通常の Claude Code の親セッションで動かない。Claude Code が全セッションの Bash に入れる `GIT_CONFIG_COUNT=2`（キーは `credential.interactive` と `credential.guiPrompt`）を、許可を書くスクリプトが「行き先・設定を変える環境変数」として毎回拒むため。また、拒否された子に、許可を受けられる打ち方の例（変数を使わない実パスの単独コマンド）が伝わらず、許可が書けない形で打ち続ける。issue #1165。
+エピック #1137 の仕組み（子の拒否の記録 → 親が許可を書く → 子を再開）が、通常の Claude Code の親セッションで動かない。一部の起動環境で Claude Code のセッションの Bash に渡される `GIT_CONFIG_COUNT=2`（キーは `credential.interactive` と `credential.guiPrompt`）を、許可を書くスクリプトが「行き先・設定を変える環境変数」として毎回拒むため。また、拒否された子に、許可を受けられる打ち方の例（変数を使わない実パスの単独コマンド）が伝わらず、許可が書けない形で打ち続ける。issue #1165。
 
 ## What Changes
 
