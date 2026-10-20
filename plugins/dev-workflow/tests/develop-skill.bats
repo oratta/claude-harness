@@ -768,3 +768,88 @@ refute() {
   printf '%s\n' "$p" | grep -qF '再開しない役'
   printf '%s\n' "$p" | grep -qF '範囲外'
 }
+
+# --- 別のリポジトリの子（cross-repo-children） ---
+# spec: dev-workflow-develop「別のリポジトリの子を含むエピックの回し方を SKILL.md に書く」
+
+xrepo_block() { section 'エピックの扱い' | awk '/^\*\*別のリポジトリの子（複数リポジトリのエピック）\*\*/{f=1; print; next} /^子セッションは `launch` が/{f=0} f'; }
+
+@test "skill (cross-repo): dependencies and sub-issue checks are read in the child's repository, the prerequisite's from repository_url" {
+  b="$(xrepo_block)"
+  [ -n "$b" ]
+  printf '%s\n' "$b" | grep -qF 'repos/<子の owner>/<子の repo>/issues/<N>/dependencies/blocked_by'
+  printf '%s\n' "$b" | grep -qF 'repository_url'
+  printf '%s\n' "$b" | grep -qF 'sub_issues_summary.total'
+  printf '%s\n' "$b" | grep -qF '解けていないものとして待つ'
+}
+
+@test "skill (cross-repo): the child list is built from sub-issues and the epic's table, counting a child once" {
+  b="$(xrepo_block)"
+  printf '%s\n' "$b" | grep -qF 'sub_issues'
+  printf '%s\n' "$b" | grep -qF 'エピック本文の子の表'
+  printf '%s\n' "$b" | grep -qF '1 件に数える'
+}
+
+@test "skill (cross-repo): read targets are the child's repository (step 3 b, 4, 8, merge-waiting child, deferral match)" {
+  b="$(xrepo_block)"
+  printf '%s\n' "$b" | grep -qF '手順 3 (b) の起点ブランチ'
+  printf '%s\n' "$b" | grep -qF '記録の `base`'
+  printf '%s\n' "$b" | grep -qF 'repos/<子の owner>/<子の repo>/issues/<N> --jq .state_reason'
+  printf '%s\n' "$b" | grep -qF 'repos/<子の owner>/<子の repo>/issues/<N>/comments'
+  printf '%s\n' "$b" | grep -qF '照合も `<owner>/<repo>#N` の形の行'
+}
+
+@test "skill (cross-repo): children are passed to every subcommand as <owner>/<repo>#N" {
+  b="$(xrepo_block)"
+  printf '%s\n' "$b" | grep -qF '`route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`'
+  printf '%s\n' "$b" | grep -qF '`<owner>/<repo>#N` の形で渡す'
+}
+
+@test "skill (cross-repo): the subagent route does not hand a child in another repository to W" {
+  s="$(section 'エピックの扱い' | grep -F '**サブエージェント方式**')"
+  printf '%s\n' "$s" | grep -qF '別のリポジトリの子は W に渡さない'
+  printf '%s\n' "$s" | grep -qF '子 <owner>/<repo>#N は別のリポジトリなので Orca 経路でだけ起動する'
+  printf '%s\n' "$s" | grep -qF '起こさずに、主に報告する'
+}
+
+@test "skill (cross-repo): comment formats for a child in another repository are written, the same-repository ones stay" {
+  b="$(xrepo_block)"
+  printf '%s\n' "$b" | grep -qF '後で別に起動するエピック: <owner>/<repo>#N'
+  printf '%s\n' "$b" | grep -qF '親の判断: 子 <owner>/<repo>#N 通した'
+  e="$(section 'エピックの扱い')"
+  printf '%s\n' "$e" | grep -qF '`後で別に起動するエピック: #N`'
+  printf '%s\n' "$e" | grep -qF '`子 #N マージ → 残り k 件`'
+}
+
+@test "skill (cross-repo): the merge-waiting child works on the child's repository and escalates without permission there" {
+  b="$(xrepo_block)"
+  printf '%s\n' "$b" | grep -qF 'gh pr comment <PR> -R <子の repo>'
+  printf '%s\n' "$b" | grep -qF 'gh api repos/<子の repo>/issues/<PR番号>/labels'
+  printf '%s\n' "$b" | grep -qF '決める役を起こさず手順 8 の形で主に上げる'
+}
+
+@test "skill (cross-repo): a nested session comments on the epic's repository with -R" {
+  n="$(section 'エピックの扱い' | grep -F '**`nested` を受けたセッション**')"
+  printf '%s\n' "$n" | grep -qF "gh issue comment <E> -R <エピックのリポジトリ>"
+  printf '%s\n' "$n" | grep -qF '後で別に起動するエピック: <自分の owner>/<自分の repo>#<自分>'
+  printf '%s\n' "$n" | grep -qF 'parent epic: <owner>/<repo>#<E>'
+}
+
+@test "skill (cross-repo): the child side and ci-watch accept the reply heads with (<owner>/<repo>)" {
+  c="$(section 'エピックの子が主の返事を待って止まるとき')"
+  printf '%s\n' "$c" | grep -qF '親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）: '
+  printf '%s\n' "$c" | grep -qF '主の返事（親エピック #<E>（<owner>/<repo>）経由）: '
+  w="$(grep -F '親エピック #<E> の判断（主の承認ではない）:' "$PLUGIN_DIR/references/ci-watch.md")"
+  printf '%s\n' "$w" | grep -qF '親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）:'
+}
+
+@test "skill (cross-repo): step 6 reports the new failed reasons and stops, step 1 warns about --base across repositories" {
+  s6="$(section 'エピックの扱い' | grep -F '6. `wait` の')"
+  for r in no-clone ambiguous-clone not-in-orca no-push permission-lookup-failed base-lookup-failed; do
+    printf '%s\n' "$s6" | grep -qF "$r" || { echo "missing: $r"; false; }
+  done
+  printf '%s\n' "$s6" | grep -qF 'サブエージェント方式に自動で振り替えない'
+  s1="$(section 'エピックの扱い' | grep -F '1. `scripts/epic-dispatch.sh launch')"
+  printf '%s\n' "$s1" | grep -qF '1 回の `launch` の全部の子に掛かる'
+  printf '%s\n' "$s1" | grep -qF '`launch` をリポジトリごとに分ける'
+}
