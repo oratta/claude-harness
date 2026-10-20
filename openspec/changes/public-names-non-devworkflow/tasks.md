@@ -1,0 +1,36 @@
+## 1. テストを先に書く（落ちることを確かめる）
+
+- [ ] 1.1 `tests/public-private-split.bats` の末尾に、spec「dev-workflow 以外の公開版の部品は決めた固有名とオーナーの PC のパスを持たない」の検索のテストを足す（固定の語と対象ファイルは spec のとおり。`changes/`・`CHANGELOG.md`・`tests/`・`evals/` は除く）。触る範囲: tests/public-private-split.bats:422-440（末尾の `@test` のあと）
+- [ ] 1.2 statusline の bats に、新名 `CLAUDE_RATE_SHARE_DIR`・`CLAUDE_RATE_SHARE_CONF`、旧名の互換、新名が旧名に優先、空文字・空白だけで共有を無効にする（新名・旧名の両方）の Scenario を足す。触る範囲: plugins/statusline/tests/statusline-rate-snapshot.bats:50-90
+- [ ] 1.3 `bats tests/public-private-split.bats plugins/statusline/tests/` で、足したテストが落ち、既存のテストが通ることを確かめる
+
+## 2. statusline の振る舞い
+
+- [ ] 2.1 `resolve_rate_share_dir` を spec の優先順（新名 DIR → 旧名 DIR → 新名 CONF → 旧名 CONF）に直す。旧名を読む箇所に「互換。主は新名」とコメントする。触る範囲: plugins/statusline/scripts/statusline.sh:71-95
+- [ ] 2.2 README の共有先の説明を新名を主に書き、旧名は互換と書く。触る範囲: plugins/statusline/README.md:94-96、plugins/statusline/README.md:6（表示例の workspace のパスとアカウント名を example に）
+- [ ] 2.3 既存の `openspec/specs/rate-snapshot/spec.md` の該当要件は archive で更新される（この change の差分のとおり）。ほかのテスト（`statusline-copy-update.bats`・`statusline-multi-account.bats`）が旧名で通ることを確かめる（書き換えない）
+
+## 3. 固有名の置き換え
+
+各行は design D1 の選び方に従う。行番号は仕様づくりの時点の値で、ずれていたら候補語の `git grep` で探し直す。
+
+- [ ] 3.1 rules と scripts: `rules/README.md` の 5・20〜22・37・43、`scripts/sync.sh` の 12・13、`scripts/test-auto-merge-workflow.sh` の 97・174。触る範囲: rules/README.md:5-43、scripts/sync.sh:12-13、scripts/test-auto-merge-workflow.sh:97、scripts/test-auto-merge-workflow.sh:174
+- [ ] 3.2 capability-registry: `SKILL.md:65`（個人版の有無に依らない書き方）、`stripe.md:5`、`supabase.md` の 5・10。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:65、plugins/capability-registry/skills/capability-registry/stripe.md:5、plugins/capability-registry/skills/capability-registry/supabase.md:5-10
+- [ ] 3.3 worktree: `wt-clean/SKILL.md` の 50・336・337・368〜370・1199・1201・1251〜1268 の出力例と cron の例、`wt-clean-orphan-detection.md:18`。触る範囲: plugins/worktree/skills/wt-clean/SKILL.md:50、plugins/worktree/skills/wt-clean/SKILL.md:336-370、plugins/worktree/skills/wt-clean/SKILL.md:1199-1268、plugins/worktree/references/wt-clean-orphan-detection.md:18
+- [ ] 3.4 product-handover: `plugin.json:3`、README の 28・57・58・60。触る範囲: plugins/product-handover/.claude-plugin/plugin.json:3、plugins/product-handover/README.md:28-60
+- [ ] 3.5 casting: `catalog/injection.md` の 42・79・80、`catalog/delegation.md:24`。触る範囲: plugins/casting/catalog/injection.md:42-80、plugins/casting/catalog/delegation.md:24
+- [ ] 3.6 cost-ledger: `README.md` の 107・238、`commands/cost.md:58`。触る範囲: plugins/cost-ledger/README.md:107、plugins/cost-ledger/README.md:238、plugins/cost-ledger/commands/cost.md:58
+- [ ] 3.7 infra: 2 つのテンプレートの手本の参照。触る範囲: plugins/infra/templates/workflows/deploy-production.yml.template:77、plugins/infra/templates/workflows/weekly-full.yml.template:53
+- [ ] 3.8 `bash scripts/test.sh` のうち触ったプラグインの bats と `bats tests/public-private-split.bats` が通る
+
+## 4. 候補語の判定と一覧
+
+- [ ] 4.1 `docs/public-private-split.md` の候補語で、dev-workflow を除く公開版の部品を `git grep -n` し直す（`changes/`・`CHANGELOG.md`・`tests/`・`evals/` を除く）。一覧に無い当たり（約 137 件のうち dev-workflow 以外）を、載せない行の基準のどれに当たるか 1 件ずつ判定し、実施欄に「ファイル:行 — 当たる基準／直した」の表で残す。当たらないものは 3 と同じ要領で直す。触る範囲: docs/public-private-split.md:254-266
+- [ ] 4.2 「載せない行の基準」に「互換のために残す旧名の読み取り」を足す（spec のとおり）。触る範囲: docs/public-private-split.md:258-266
+- [ ] 4.3 一覧から、3・4.1 で直した行と、基準に当たると判定して外した行（理由は 4.1 の表）を消す。dev-workflow 以外の「担い手なし」が 0 件になる。触る範囲: docs/public-private-split.md:131-248
+- [ ] 4.4 `bats tests/public-private-split.bats` が通る
+
+## 5. 記録
+
+- [ ] 5.1 変更の記録を書く: `plugins/statusline/changes/1168.md`（新名の追加と旧名の互換）、触ったほかのプラグインの `changes/1168.md`（capability-registry・worktree・product-handover・casting・cost-ledger・infra）。外した固有名ごとに 1 行（元の場所・直し方）。触る範囲: plugins/statusline/changes/1168.md（新規）ほか各 plugins/<name>/changes/1168.md（新規）
+- [ ] 5.2 `bash scripts/test.sh` と `scripts/lint.sh` が通る
