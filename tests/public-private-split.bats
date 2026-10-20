@@ -425,3 +425,31 @@ PY
   echo "$output"
   [ "$status" -eq 0 ]
 }
+
+# --- 配る候補の 6 ファイルに環境固有の記述が無い（#1098）---
+# 守備範囲: 固定の検索語に当たる行と、条件つきの書き方の欠落だけを拾う。別の固有名や文の良し悪しは人のレビューが見る。
+
+DELIVERED_SIX=(rules/communication-style.md rules/link-when-requesting-review.md rules/dev-server.md
+  rules/browser-infra-env-capture.md rules/destructive-git-guard.md output-styles/readable.md)
+
+@test "the six delivered files carry no owner-specific words" {
+  local f
+  for f in "${DELIVERED_SIX[@]}"; do
+    ! grep -n -i -E 'oratta|genetta|suimei|flatmate|fmtoken|Dropbox|marketplaces/' "${REPO_ROOT}/$f" || return 1
+  done
+}
+
+@test "communication-style names the output style by a cwd-independent path" {
+  grep -qF '~/.claude/output-styles/readable.md' "${REPO_ROOT}/rules/communication-style.md"
+}
+
+@test "browser-infra-env-capture names capability-registry only conditionally" {
+  local line
+  line="$(grep -F 'capability-registry' "${REPO_ROOT}/rules/browser-infra-env-capture.md")"
+  [[ "$line" == *"入っていれば"* ]] || return 1
+}
+
+@test "destructive-git-guard has no rules-archive path and the hook section is conditional" {
+  ! grep -qF 'rules-archive' "${REPO_ROOT}/rules/destructive-git-guard.md" || return 1
+  awk '/^## hook との分担/{f=1; next} /^## /{f=0} f' "${REPO_ROOT}/rules/destructive-git-guard.md" | grep -qF '入っていれば'
+}
