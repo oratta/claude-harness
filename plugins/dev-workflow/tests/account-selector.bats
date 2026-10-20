@@ -487,3 +487,21 @@ JSON
   [ -z "$(cat "${WORK}/stdout")" ]
   [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-missing-usage margins=a:missing,b:off" ]
 }
+
+@test "enabled: an off default slot with the on slot's usage missing falls back to the default" {
+  write_registry "" "" false
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-missing-usage margins=a:off,b:missing" ]
+}
+
+@test "enabled: explicit selection of a slot turned off with accounts.sh points to accounts.sh on" {
+  write_registry
+  CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "${PLUGIN_DIR}/scripts/accounts.sh" off b
+  run invoke b
+  [ "$status" -eq 2 ]
+  [ ! -s "${WORK}/stdout" ]
+  [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
+  grep -qF 'accounts.sh on b' "${WORK}/stderr"
+}
