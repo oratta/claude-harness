@@ -24,4 +24,3 @@ hook の応答はツール実行を拒否（deny）せず、「CLI で不可能�
 #### Scenario: 個人版の道具を名指ししない
 - **WHEN** hook の出力を検査する
 - **THEN** `fmtoken` の文字列は含まれない
-

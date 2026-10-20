@@ -10,7 +10,7 @@
 
 ### 2. 索引の「トークン」列は環境変数名とログイン状態
 
-各行は、CLI が読む環境変数名（GitHub は `GITHUB_TOKEN`、Supabase は `SUPABASE_ACCESS_TOKEN`、Vercel は `--token` または `VERCEL_TOKEN`、Stripe は `STRIPE_API_KEY`。残る 4 サービスだけを対象にし、1Password の行は決定 3 のとおり外す）と、ログイン済みならそれで動く旨を書く。値の取得元は列に書かず、SKILL.md の「原則」の 1 か所で「在処はオーナーの環境の索引があればそちらを見る」と案内する。選ばなかった案は「列ごとに『個人版を参照』と繰り返す」（1 画面以内の制約に反して冗長）。
+各行は、CLI が読む環境変数名（GitHub は `GITHUB_TOKEN`、Supabase は `SUPABASE_ACCESS_TOKEN`、Vercel は `vercel --token "$VERCEL_TOKEN"` のように `--token` へ明示的に渡す（Vercel CLI 48.12.0 の配布コードは `VERCEL_TOKEN` を参照しないことを読み取りで確かめた）、Stripe は `STRIPE_API_KEY`。残る 4 サービスだけを対象にし、1Password の行は決定 3 のとおり外す）と、ログイン済みならそれで動く旨を書く。値の取得元は列に書かず、SKILL.md の「原則」の 1 か所で「在処はオーナーの環境の索引があればそちらを見る」と案内する。選ばなかった案は「列ごとに『個人版を参照』と繰り返す」（1 画面以内の制約に反して冗長）。
 
 ### 3. 公開版の索引から 1Password の行と `1password.md` への案内を外す
 

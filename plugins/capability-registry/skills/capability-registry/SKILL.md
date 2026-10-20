@@ -51,7 +51,7 @@ version: 1.7.0
 |---|---|---|---|---|
 | GitHub | gh | `gh auth status` | ログイン済みの `gh`（別アカウントは `GITHUB_TOKEN`） | OAuth アプリ承認・組織設定の一部 |
 | Supabase | supabase | `supabase projects list` | `SUPABASE_ACCESS_TOKEN`（env） | ダッシュボード限定の設定変更 |
-| Vercel | vercel | `vercel whoami` | `vercel --token` または `VERCEL_TOKEN`（env） | ドメイン購入・課金設定 |
+| Vercel | vercel | `vercel whoami` | `vercel --token "$VERCEL_TOKEN"`（env を `--token` へ明示的に渡す。CLI は自動では読まない） | ドメイン購入・課金設定 |
 | Stripe | stripe | `stripe products list --limit 1` | `STRIPE_API_KEY`（env） | 本番モード切替・アカウント審査 |
 
 セットアップ手順・運用知見・例外の具体例は同ディレクトリのサービス別ファイルに遅延ロード:
