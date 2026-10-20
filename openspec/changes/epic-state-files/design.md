@@ -43,6 +43,8 @@ issue #1123 はこれを 3 層（状態の記録・親の見張り・起動部�
 
 `${EPIC_STATE_ROOT:-$HOME/.claude/epic-state}/<エピックの owner>.<エピックの repo>-<エピック番号>/<子の owner>.<子の repo>-<子の番号>.json`。
 
+- エピックの `<owner>/<repo>` は、記録を作るか消すサブコマンド（`launch`・`adopt`・`clear`）だけが親のワークツリーの origin から読む。受け付けるのはホストが `github.com` の `git@github.com:o/r`・`ssh://git@github.com/o/r`・`https://github.com/o/r`（末尾の `.git`・`/` は任意）で、owner と repo は小文字にそろえる。ほかの形と GitHub 以外のホストは exit 1（`gh` の呼び出しが GitHub 前提のため）。親の見張りと子の側は origin を読まず、記録の `epic`・`repo` を使う
+- `EPIC_STATE_ROOT` が相対パスなら、サブコマンドの開始時の作業ディレクトリを基準に絶対パスにする
 - GitHub の owner 名には `.` が入らないので、最初の `.` で owner と repo を分けられる。番号は最後の `-` のあと。ファイル名から子を組み立て直せるが、読み手は記録の中の `child` を正とする
 - `~/.claude/projects/` の配下には置かない（会話ログを読む hook が `projects/` の下を走査するため。issue #1123）
 - 代案: (a) 今のまま Orca のメタデータ → Orca の無い環境で使えない。(b) GitHub のラベル・コメント → 子の `mark resumed` のたびに API を呼び、ポーリングごとに全子のコメントを読むことになる。止まった記録の本文は GitHub に置いたまま、状態の値だけをローカルに置く。(c) エピックごとに 1 ファイル → 親と複数の子が同じファイルを書き換えるので排他の待ちが増え、壊れたときに全子の状態を失う。子ごと 1 ファイルにする
@@ -68,6 +70,8 @@ JSON のオブジェクト 1 つ。項目は次の表のとおりで、知らな
 | `status` | 文字列 | `running`（起動済み）／`waiting`（`mark waiting`。今のボードの列 `in-review`）／`done`（`mark done`。用が済んだ） | `launch` / `mark` |
 | `stop` | 文字列 | 空（止まっていない）／`stopped`（止まった。親はまだ受けていない）／`stopped-seen`（親の `wait` が受けた）／`resumed`（返事を受けて動いている） | `mark`（子）・`wait`（親） |
 | `created_at` / `updated_at` | 文字列 | UTC の ISO 8601（`YYYY-MM-DDTHH:MM:SSZ`） | 書くたび |
+
+読めない記録（JSON として読めない・`schema` が 1 でない・`status` / `stop` が表に無い値・必須の項目が無い）は書き換えも削除もせず、今の「Orca の一覧を読めない」に揃えて扱う: `wait` は失敗したポーリングに数える（3 回で `error workspaces`）、`reap` は `kept <N> state-unreadable`、`pending-owner` は飛ばす、`notify-closed`・`reply`・`adopt` と `launch` の自分の記録は `failed <N> state-unreadable`、`launch` の枠の数ではほかの子の読めない記録を 1 枠に数える、`mark`・`route` は候補から外す。記録は `launch`・`adopt`・`mark`・`wait` 自身が一時ファイルから置き換えて書くので、人が手で壊さない限り起きない。
 
 `status` と `stop` を 2 つに分けるのは、今のボードの列とコメント欄を取り違えない規則（`mark stopped` が列に触れない）を保つため。値の遷移は今の印と同じで、`mark resumed` は `stop` が `stopped` か `stopped-seen` のときだけ `resumed` に書き換える。
 
@@ -95,15 +99,15 @@ JSON のオブジェクト 1 つ。項目は次の表のとおりで、知らな
 ### 6. 親の見張り（別リポジトリの挙動・項目 6）
 
 - `wait`・`pending-owner`・`reap`・`notify-closed` は、子の状態（完了の印・止まった印・受けた印）を記録の `status` と `stop` から読み、Orca の一覧を状態の判定に使わない。`wait` は 1 ポーリングにつき、渡された子の記録を 1 回ずつ読む（Orca の一覧の取得は無くなる）
-- 子 issue の state・`state_reason`・コメントは、記録の `repo` のリポジトリに対して `gh api repos/<repo>/issues/<N>` で読む（`{owner}/{repo}` の置き換えに頼らない）。記録が無い子は、エピックと同じリポジトリの子として読む（今と同じ）
-- 親の側のサブコマンド（`wait`・`pending-owner`・`reap`・`notify-closed`・`reply`）の引数は今のまま変えない（`reap` などはエピックの番号を受け取らない）。子の記録は、`EPIC_STATE_ROOT` の下の全エピックのディレクトリから、`parent_worktree` が今いるワークツリーの最上位のパスと一致し、`child` が引数の子（番号だけの引数はエピックと同じリポジトリの子）と一致するものを探す。ちょうど 1 件ならそれを使い、2 件以上（同じ親のワークツリーから 2 つのエピックで同じ子を起動した）なら、今の「同じ linkedIssue のワークツリーが 2 つ以上」と同じ扱い（`reap` は `kept <N> ambiguous`、`reply` / `notify-closed` は `failed <N> ambiguous-worktree`、`wait` は印を見ない）にする。今の「同じ `repoId`・`parentWorktreeId` が今のワークツリー」の絞り込みが、この「`parent_worktree` が今のワークツリー」の絞り込みに置き換わる
-- `reap` は、記録の `worktree` の子のワークツリーで今と同じ安全確認（完了の印・`git status` がきれい・`LLM/` が無い・マージ済み PR の `headRefOid` か base の先端に含まれる）を行う。PR の照会は `gh pr list -R <repo>`、base の照会は子のワークツリーの `origin` に対して行う。記録が無い子と、記録の `worktree` がもう無い子は `gone <N>`（後者は記録を消す）。今の `kept <N> not-child`（親の launch が作っていないワークツリー）は、親の側が自分の `parent_worktree` の記録しか見ないので起きなくなり、出さない
+- 子 issue の state・`state_reason`・コメントは、記録の `repo` が記録の `epic` のリポジトリと同じ子と記録の無い子は今のまま `gh api repos/{owner}/{repo}/issues/<N>`（`gh` が今のワークツリーのリポジトリに置き換える）で読み、違う子だけ `gh api repos/<repo>/issues/<N>` で読む。この change では同じリポジトリの子の呼び出しの形を変えない（既存の bats の照合をそのまま通す）
+- 親の側のサブコマンド（`wait`・`pending-owner`・`reap`・`notify-closed`・`reply`）の引数は今のまま変えない（`reap` などはエピックの番号を受け取らない）。子の記録は、`EPIC_STATE_ROOT` の下の全エピックのディレクトリから、`parent_worktree` が今いるワークツリーの最上位のパスと一致し、引数の子と一致するものを探す。番号だけの引数 `<N>` は `number` が `<N>` で `repo` が記録の `epic` のリポジトリの部分と一致する記録、`<owner>/<repo>#<N>` の引数は `child` が一致する記録に当てる（親の側は origin を読まない）。ちょうど 1 件ならそれを使い、2 件以上（同じ親のワークツリーから 2 つのエピックで同じ子を起動した）なら、今の「同じ linkedIssue のワークツリーが 2 つ以上」と同じ扱い（`reap` は `kept <N> ambiguous`、`reply` / `notify-closed` は `failed <N> ambiguous-worktree`、`wait` は印を見ない）にする。今の「同じ `repoId`・`parentWorktreeId` が今のワークツリー」の絞り込みが、この「`parent_worktree` が今のワークツリー」の絞り込みに置き換わる
+- `reap` は、記録の `worktree` の子のワークツリーで今と同じ安全確認（完了の印・`git status` がきれい・`LLM/` が無い・マージ済み PR の `headRefOid` か base の先端に含まれる）を行う。`gh pr list`・`git ls-remote` などの呼び出しの形はこの change では変えない（別のリポジトリの子に `-R <repo>` を付ける・子のワークツリーの `origin` に向けるのは change 2）。記録が無い子と、記録の `worktree` のディレクトリが無い（`[ -d ]` が偽）子は `gone <N>`（後者は記録を消す）。今の `kept <N> not-child`（親の launch が作っていないワークツリー）は、親の側が自分の `parent_worktree` の記録しか見ないので起きなくなり、出さない
 - `--watch-stopped` の受けた印への書き換えは、記録の `stop` を `stopped` → `stopped-seen` に書き換える（排他つき）。書き換えに失敗したらそのポーリングを失敗したポーリングに数える（今と同じ）
 
 ### 7. Orca の画面への写しと、記録の無い子の取り込み
 
-- 記録が正本。Orca の部品（この change では `launch` と `mark` の中の Orca の処理）は、記録を書いたあとに Orca のワークツリーの印へ写す（`mark done` / `waiting` は `--workspace-status`、`stopped` / `resumed` は `--comment`、`wait` の受けた印は `--comment epic-stopped-seen`）。写しに失敗しても記録の書き込みは成功として扱い、stderr に写せなかったことを出す（オーナーが Orca のボードで子の状態を見ているので、写しは残す。判定には使わない）
-- `adopt <epic> <child>...`（新規）: 記録の無い子について、`orca worktree list --json` に同じ `repoId`・`linkedIssue` が子・`isArchived` が true でない・`parentWorktreeId` が今のワークツリーの id のワークツリーがちょうど 1 つあれば、その `path`・`branch` と、`workspaceStatus` / `comment` を `status` / `stop` に写した記録を作る（`adopted <N>`）。記録が既にあれば `skipped <N>`、該当が無ければ `none <N>`、2 つ以上なら `failed <N> ambiguous`。親の再開の手順で、`reap`・`pending-owner`・`launch` より前に 1 回呼ぶ。この変更の前に起動した子を持つエピックのための移行の手段で、記録を作るのは `adopt` と `launch` だけ
+- 記録が正本。Orca の部品（この change では `launch` と `mark` の中の Orca の処理）は、記録の `launcher` が `orca` で `orca` が PATH にあるとき、記録を書いたあとに Orca のワークツリーの印へ写す（`mark done` / `waiting` は `--workspace-status`、`stopped` / `resumed` は `--comment`、`wait` の受けた印は `--comment epic-stopped-seen`）。写しに失敗しても記録の書き込みは成功として扱い、stderr に写せなかったことを出す（オーナーが Orca のボードで子の状態を見ているので、写しは残す。判定には使わない）
+- `adopt <epic> <child>...`（新規）: 記録の無い子について、`orca worktree list --json` に同じ `repoId`・`linkedIssue` が子・`isArchived` が true でない・`parentWorktreeId` が今のワークツリーの id のワークツリーがちょうど 1 つあれば、その `path`・`branch` と、`workspaceStatus` / `comment` を `status` / `stop` に写し、`base` を `EPIC_DISPATCH_BASE`（空なら `main`）にした記録を作る（`adopted <N>`）。記録が既にあれば `skipped <N>`、該当が無ければ `none <N>`、2 つ以上なら `failed <N> ambiguous`。親の再開の手順で、`reap`・`pending-owner`・`launch` より前に 1 回呼ぶ。この変更の前に起動した子を持つエピックのための移行の手段で、記録を作るのは `adopt` と `launch` だけ
 - 代案: すべてのサブコマンドで記録が無ければ Orca から取り込む → `wait` のポーリングごとに Orca の一覧を読むことになり、記録を正本にした意味が薄れる
 
 ### 8. 消し方
@@ -126,7 +130,7 @@ JSON のオブジェクト 1 つ。項目は次の表のとおりで、知らな
 
 | 層 | 上限についての役目 |
 |---|---|
-| 状態の記録 | 枠を使っている子の数の正本。このエピックの状態ディレクトリの記録のうち、`status` が `done` でなく、`stop` が `stopped` / `stopped-seen` でなく、記録の `repo` に対する issue の state が `closed` でないものを数える（#1120 の Orca の一覧の条件を記録の項目に置き換えたもの） |
+| 状態の記録 | 枠を使っている子の数の正本。`EPIC_STATE_ROOT` の下の全エピックのディレクトリを横断して、`parent_worktree` が今のワークツリーの記録のうち（#1120 が `parentWorktreeId` が今のワークツリーの子をエピックを問わず数えるのと同じ母集合）、`status` が `done` でなく、`stop` が `stopped` / `stopped-seen` でなく、記録の `repo` に対する issue の state が `closed` でないものを数える（#1120 の Orca の一覧の条件を記録の項目に置き換えたもの） |
 | 親の見張り | 上限の値を決め（`max-parallel` は変えない）、空き枠を計算し、`deferred` を出す。起動部品より手前で決めるので、change 3 の tmux・サブエージェントでも同じ上限が掛かる |
 | 起動部品 | 枠を知らない。渡された子を起動するだけ |
 
@@ -141,6 +145,7 @@ JSON のオブジェクト 1 つ。項目は次の表のとおりで、知らな
 | ワークツリーの作り先 | 子のリポジトリのローカル clone を次の順に探し、候補ごとに `git -C <候補> remote get-url origin` が `<owner>/<repo>` を指すことを確かめる。(1) 子のリポジトリがエピックと同じなら親のワークツリーの clone。(2) 環境変数 `EPIC_DISPATCH_CLONES`（`<owner>/<repo>=<絶対パス>` を改行か `;` で区切る）。(3) 起動部品が知っているリポジトリ（Orca は `orca repo list --json` に登録されたリポジトリ）。見つからなければ自動で clone せず、記録も作らず枠も使わずに `failed <child> no-clone` を返し、stderr に `EPIC_DISPATCH_CLONES` の書き方と clone のコマンドを出す（clone の置き場はオーナーのディスクの構成で決まり、ハーネスがパスを決めない。一度設定すれば以後は見つかる）。同じ段に候補が 2 つ以上あれば `failed <child> ambiguous-clone`。ワークツリーの起点は `--base` / `EPIC_DISPATCH_BASE` があればそれ、無ければ子のリポジトリの既定ブランチ（`gh api repos/<o>/<r> --jq .default_branch`） |
 | 書き込み権 | ワークツリーを作る前に `gh api repos/<o>/<r> --jq .permissions.push` を読み、`true` でなければ記録を作らずに `failed <child> no-push`、読めなければ `failed <child> permission-lookup-failed` を返す。親はほかの `failed` と同じく主に報告して止まる（手順 6）。fork から PR を出す経路は作らない |
 | PR・ゲート・マージ | 子のセッションは子のリポジトリのワークツリーで動くので、`gh` の既定のリポジトリは子のリポジトリになり、PR は子のリポジトリに立つ（本文の `Closes #N` は子のリポジトリの issue）。pr-review-gate・auto-merge の有無・`human-merge` の扱いは子のリポジトリの設定に従う。親の「マージ待ちの子」の手順は `auto-merge.yml` を子のリポジトリから読み、`親のマージ判断:` のコメントと `parent-merge-approved` のラベルを子のリポジトリの PR に付ける（`gh -R <repo>`）。印が数えられるのは、`gh` の認証アカウントが子のリポジトリの OWNER・MEMBER・COLLABORATOR のときだけ（今の規則の対象リポを子のリポジトリと読む） |
+| 親の見張りの残り | `reap` の PR の照会を `gh pr list -R <子のリポジトリ>` に、base の照会を子のワークツリーの `origin` に向ける（change 1 では呼び出しの形を変えない。Decision 6） |
 | 子の側 | 子の起動コマンドの `EPIC_DISPATCH_PARENT_EPIC` は、同じリポジトリのエピックでは番号のまま、別リポジトリのエピックでは `<owner>/<repo>#<E>`。子の記録（`子の停止: 主の返事待ち`）と印（`mark`）は今のまま自分の issue と自分の記録に残す。親エピックへのコメント（`後で別に起動するエピック: #<自分>` など）は `gh issue comment <E> -R <エピックのリポジトリ>` で残し、自分の issue の番号は `<owner>/<repo>#<N>` で書く。親エピックからの注意書きは子の issue（子のリポジトリ）に残す（今と同じ置き場） |
 
 ### 12. change 3（起動部品の差し替え）に渡す決定
@@ -157,6 +162,8 @@ JSON のオブジェクト 1 つ。項目は次の表のとおりで、知らな
 - [記録と Orca の画面の印がずれる（写しの失敗・オーナーが Orca の画面で印を手で変える）] → 判定は記録だけで行い、画面の手での変更は見張りに効かない。写しの失敗は stderr に出す。オーナーが画面で印を変えて子の状態を直す使い方は無くなる（SKILL.md に書く）
 - [残ったロックで `mark` / `wait` が失敗し続ける（書き込みの途中でプロセスが殺された）] → 起きるのは書き込みの数ミリ秒の間に殺されたときだけ。失敗は `failed` / 失敗したポーリング（3 回続けば `error`）として表に出るので、黙って止まりはしない。stderr にロックのパスと消し方を出す
 - [実行中のエピックで、`adopt` を呼ぶ前の古い親や、この変更の前の版の子が Orca の印だけを付ける] → 子が古い版のまま `mark done` すると記録が `done` にならず、親の `wait` が気づかない。plugin の更新は全セッション同じ版を読む（`~/.claude/plugins/cache/` の同じ SHA）ので、混在は更新の瞬間に動いていたセッションだけ。親の再開の手順で `adopt` が Orca の印を記録に写すので、親を起動し直せば拾える。SKILL.md の再開手順に書く
+- [`adopt` を呼ぶ前の親が、この変更の前に起動された子のセッションを起動し直すと、その子は記録が無いので `route` が `nested` にならない] → `route` は記録と環境変数だけを見るので、移行の間だけ子が親を知らずに動く窓がある。親の再開の手順 7 で `adopt` を最初に呼ぶので、窓は「この変更のマージから親が再開するまで」に限られる
+- [`clear` は状態ディレクトリを丸ごと消すので、`後で別に起動するエピック` に回した子や `子 #N のワークツリーを残した` 子の記録も消え、そのあとにその子のワークツリーで起動し直したセッションは `nested` にならない] → 親が待ちを終えたあとはその子を見張る親がいないので、`nested` にならない（親への印を付けない）ほうが今の動きに合う
 - [`clear` が別のエピックのディレクトリを消す] → ディレクトリ名はエピックの `<owner>/<repo>#<E>` からだけ組み立て、`EPIC_STATE_ROOT` 直下の 1 段だけを消す。名前の検査に通らなければ消さない
 - [`EPIC_STATE_ROOT` の既定が `~/.claude/` の下で、bats が実在のホームを汚す] → bats はすべて `EPIC_STATE_ROOT` を一時ディレクトリに向ける。テストの共通の setup で設定する
 
