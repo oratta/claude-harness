@@ -80,8 +80,8 @@ es_split_name() {
 }
 
 ES_VALID='type == "object" and .schema == 1
-  and ((.status | type) == "string") and ([.status] | inside(["running","waiting","done"]))
-  and ((.stop | type) == "string") and ([.stop] | inside(["","stopped","stopped-seen","resumed"]))
+  and ((.status | type) == "string") and (.status == "running" or .status == "waiting" or .status == "done")
+  and ((.stop | type) == "string") and (.stop == "" or .stop == "stopped" or .stop == "stopped-seen" or .stop == "resumed")
   and ((.epic | type) == "string") and ((.child | type) == "string") and ((.repo | type) == "string")
   and ((.number | type) == "number") and ((.parent_worktree | type) == "string") and ((.worktree | type) == "string")'
 
@@ -111,7 +111,7 @@ es_write() {
 es_lock() {
   local lock="$1.lock" limit tries i
   limit="${EPIC_STATE_LOCK_TIMEOUT-10}"
-  tries=$(( limit * 5 + 1 ))
+  tries=$(( 10#$limit * 5 + 1 ))
   for (( i = 0; i < tries; i++ )); do
     mkdir "$lock" 2>/dev/null && return 0
     [ $(( i + 1 )) -lt "$tries" ] && sleep 0.2
@@ -168,7 +168,9 @@ es_find_by_worktree() {
 
 # 親の側の照合: 今のワークツリー（<パス>）を parent_worktree に持ち、子の引数（<arg>）に当たる記録を
 # `ok <パス>` で 1 行ずつ出す。番号だけは number と epic のリポジトリ、<owner>/<repo>#<N> は child で当てる。
-# 読めない記録は中を読めないので、ディレクトリ名とファイル名で子に当たれば `bad <パス>` で出す。origin は読まない
+# 読めない記録は中を読めないので、ディレクトリ名とファイル名で子に当たれば `bad <パス>` で出す。origin は読まない。
+# 読めない記録は parent_worktree を読めないので、別の親のエピックのディレクトリにある同じ番号・同じリポジトリの
+# 壊れた記録にも当たる（stderr のパスで見分ける）
 es_find_for_parent() {
   local parent="$1" f rec dname fname erepo crepo cnum
   es_parse_arg "$2"

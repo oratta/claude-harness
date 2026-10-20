@@ -152,8 +152,8 @@
 #   branch と、workspaceStatus（completed → done、in-review → waiting、ほか → running）と comment（epic-stopped →
 #   stopped、epic-stopped-seen → stopped-seen、epic-resumed → resumed、ほか → 空）を写し、base を
 #   EPIC_DISPATCH_BASE（空なら main）、launcher を orca、session と launch_failed を空にした記録を作って
-#   `adopted <N>`。記録があれば `skipped <N>`、該当が無ければ（別リポジトリの子を含む）`none <N>`、2 つ以上は
-#   `failed <N> ambiguous`。orca・jq が無い・Orca 管理外・一覧を読めない・origin を読めなければ stdout 空で exit 1。
+#   `adopted <N>`。読める記録があれば `skipped <N>`、読めない記録なら `failed <N> state-unreadable`、該当が無ければ（別リポジトリの子を含む）`none <N>`、2 つ以上は
+#   `failed <N> ambiguous`、記録を書けなければ `failed <N>`。orca・jq が無い・Orca 管理外・一覧を読めない・origin を読めなければ stdout 空で exit 1。
 #   failed があれば exit 1
 # clear: <epic>（^[0-9]+$）の状態ディレクトリ（EPIC_STATE_ROOT 直下の <o>.<r>-<E>）を、残っている記録の子を stderr に
 #   出してから消して `cleared <epic>`、無ければ `none <epic>`（どちらも exit 0）。EPIC_STATE_ROOT が空・/ や $HOME
@@ -507,12 +507,12 @@ cmd_launch() {
 
   # 枠を使っている子を状態の記録から数える。全エピックのディレクトリを横断し、parent_worktree が今のワークツリーの
   # 記録のうち、done・止まった印・閉じた子は数えない。state を読めない子と、ほかの読めない記録は 1 枠に数える
-  local rf rec cst clabel in_use=0 in_use_list="" free
+  local rf rec cst clabel in_use=0 in_use_list="" in_use_files=" " free
   for rf in "$ES_ROOT"/*/*.json; do
     [ -f "$rf" ] || continue
     if ! rec="$(es_read "$rf")"; then
       echo "unreadable state record (counted as in use): $rf" >&2
-      in_use=$(( in_use + 1 )); in_use_list="$in_use_list $rf"; continue
+      in_use=$(( in_use + 1 )); in_use_list="$in_use_list $rf"; in_use_files="$in_use_files$rf "; continue
     fi
     printf '%s' "$rec" | jq -e --arg p "$parent" '.parent_worktree == $p and .status != "done"
       and .stop != "stopped" and .stop != "stopped-seen"' >/dev/null 2>&1 || continue
@@ -520,24 +520,25 @@ cmd_launch() {
     cst="$(gh api "$(issue_api "${clabel#\#}" "$rf")" --jq .state)" || cst=""
     [ "$cst" = closed ] && continue
     [ "$cst" = open ] || echo "could not read the state of $clabel; counting it as in use" >&2
-    in_use=$(( in_use + 1 )); in_use_list="$in_use_list $clabel"
+    in_use=$(( in_use + 1 )); in_use_list="$in_use_list $clabel"; in_use_files="$in_use_files$rf "
   done
   echo "max parallel $max_par ($max_par_src); in use $in_use:$in_use_list" >&2
   free=$(( max_par - in_use )); [ "$free" -ge 0 ] || free=0
 
-  local n num f cur prompt body out rc child cbranch handle sent retry failed=0 seen=" " stage shell_rc
+  local n num f cur prompt body out rc child cbranch handle sent retry failed=0 seen=" " stage shell_rc hit own
   for n in "$@"; do
-    case "$seen" in
-      *" $n "*) echo "skipped $n"; continue ;;
-    esac
-    seen="$seen$n "
     es_parse_arg "$n"; num="$ES_ARG_NUM"
+    case "$seen" in
+      *" ${ES_ARG_REPO:-$erepo}#$num "*) echo "skipped $n"; continue ;;
+    esac
+    seen="$seen${ES_ARG_REPO:-$erepo}#$num "
     # この change ではエピックと別のリポジトリの子を作らない（枠も使わない）
     if [ -n "$ES_ARG_REPO" ] && [ "$ES_ARG_REPO" != "$erepo" ]; then
       echo "children in another repository are not launched yet: $n" >&2
       echo "failed $n other-repo"; failed=1; continue
     fi
     f="$(es_path "$erepo" "$epic" "$erepo" "$num")"
+    own=0
     if [ -e "$f" ]; then
       if ! cur="$(es_read "$f")"; then
         echo "unreadable state record: $f" >&2
@@ -547,19 +548,34 @@ cmd_launch() {
       if [ -n "$(printf '%s' "$cur" | jq -r '.worktree')" ]; then
         echo "skipped $n"; continue
       fi
+      # この記録は上の枠の数えで使用中に入っていることがある。その子自身は空き枠をもう 1 つ減らさない
+      case "$in_use_files" in *" $f "*) own=1 ;; esac
     fi
-    # 記録の無い Orca のワークツリー（この変更の前に起動した子）も起動済み。取り込みは adopt
+    # 記録の無い Orca のワークツリー（この変更の前に起動した子）も起動済み。取り込みは adopt。
+    # worktree が空の自分の記録があれば、一覧がちょうど 1 つのときに path と branch を書き足してから skipped にする
     if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$num" \
       'any(.result.worktrees[]; .repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)' \
       >/dev/null 2>&1; then
+      if [ -e "$f" ]; then
+        hit="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$num" \
+          '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)] | if length == 1 then .[0] else empty end' 2>/dev/null)"
+        if [ -n "$hit" ]; then
+          es_modify "$f" '.worktree = $w | .branch = $b' --arg w "$(printf '%s' "$hit" | jq -r '.path // empty')" \
+            --arg b "$(printf '%s' "$hit" | jq -r '.branch // empty' | sed 's#^refs/heads/##')" >/dev/null \
+            || echo "could not write the worktree to the state record: $f" >&2
+        fi
+      fi
       echo "skipped $n"
       continue
     fi
     # 空き枠が無ければ作らず注意書きも投稿しない。create に進む子は結果によらず 1 枠を使う
-    if [ "$free" -le 0 ]; then
-      echo "deferred $n"; continue
+    # （worktree が空の自分の記録が既に枠に入っているときは、その 1 枠を使う）
+    if [ "$own" -eq 0 ]; then
+      if [ "$free" -le 0 ]; then
+        echo "deferred $n"; continue
+      fi
+      free=$(( free - 1 ))
     fi
-    free=$(( free - 1 ))
     # 子のワークツリーを作る前に記録を書く（作成に失敗したら消す）
     if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$erepo" "$num" orca "$parent" "" "" "$base" running "")"; then
       echo "could not write the state record: $f" >&2
@@ -1284,7 +1300,11 @@ cmd_adopt() {
   for n in "$@"; do
     es_parse_arg "$n"; num="$ES_ARG_NUM"; crepo="${ES_ARG_REPO:-$erepo}"
     f="$(es_path "$erepo" "$epic" "$crepo" "$num")"
-    if [ -e "$f" ]; then echo "skipped $n"; continue; fi
+    if [ -e "$f" ]; then
+      if es_read "$f" >/dev/null; then echo "skipped $n"
+      else echo "unreadable state record: $f" >&2; echo "failed $n state-unreadable"; failed=1; fi
+      continue
+    fi
     # Orca の一覧は今のワークツリーと同じリポジトリのワークツリーだけを持つ
     if [ "$crepo" != "$erepo" ] || [ -z "$cid" ]; then echo "none $n"; continue; fi
     hits="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$num" --arg p "$cid" \
@@ -1341,7 +1361,7 @@ cmd_clear() {
 [ "$#" -ge 1 ] || usage
 sub="$1"; shift
 es_check_env || usage
-es_root_init || { [ "$sub" = route ] || exit 1; }
+es_root_init || { case "$sub" in route|mark|max-parallel) ;; *) exit 1 ;; esac; }
 case "$sub" in
   route) cmd_route "$@" ;;
   launch) cmd_launch "$@" ;;
