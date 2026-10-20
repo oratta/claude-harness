@@ -25,6 +25,14 @@
 #   ${TMPDIR:-/tmp}/dev-workflow-git-guard/<sha256(session_id + NUL + agent_id)> に数え、2 回目以降は
 #   直ちに親に返すよう理由文を強め、continue: false で子を打ち切る（数えられなければ 1 回目として扱い、
 #   deny は必ず返す）。
+#   子を拒否するたびに、拒否の記録を <base>/denied/<key>.json に書き（<base> は回数のファイルと同じ
+#   ディレクトリ、<key> は sha256(session_id NUL agent_id NUL cwd NUL command)）、そのパスを子への理由に載せる。
+#   親がその記録を git-guard-permit.sh に渡すと <base>/permits/<key>.json に 15 分・1 回限りの許可が置かれ、
+#   子が同じ session_id・agent_id・cwd・コマンドで打ち直したときだけ allow を返す（回数は数えない）。allow の前に
+#   使う時点の一時領域の判定（行き先がそのセッションの scratchpad の中か）をかけ直し、満たさなければ deny。
+#   許可を書いた・使った・捨てたは <base>/permit-log.jsonl に残る。子が git-guard-permit.sh を自分で呼んだら deny。
+#   key の計算・一時領域の判定・記録の追記は共通ファイル git-guard-scratchpad.py にあり、子の破壊的操作を
+#   見つけたときだけ読む。読めなければ許可を探さず、記録も書かずに deny だけを返す。
 #   それ以外（主の呼び出し）は、permission_mode が default / acceptEdits / plan / bypassPermissions なら ask
 #   （対話セッションでは確認画面が出て主が承認できる。claude -p では確認できず実行されない。どちらも実機で
 #   確認済み）、それ以外（dontAsk・auto・未知・欠落）は deny。DEV_WORKFLOW_GIT_GUARD_FORCE=ask|deny は
@@ -54,7 +62,7 @@ esac
 # -I（隔離モード）で起動し、PYTHON* の環境変数・ユーザー site・カレントディレクトリを検索パスに使わない。
 PY_SRC=""
 IFS= read -r -d '' PY_SRC <<'PY' || true
-import hashlib, json, os, re, sys
+import hashlib, json, os, re, sys, time
 
 try:
     payload = json.load(sys.stdin)
@@ -77,6 +85,8 @@ LABELS = {
     "branch": "`git branch -D`",
     "no-verify": "`--no-verify`（hook の迂回）",
     "no-gpg": "`--no-gpg-sign`",
+    # 子が許可を書くスクリプトを自分で呼ぶもの（決定 5）。子への理由に出るので、スクリプトの名前は書かない
+    "permit-self": "許可を書くスクリプトの子からの呼び出し（許可を書くのは親の役目）",
 }
 ORDER = list(LABELS)
 
@@ -88,6 +98,9 @@ WRAPPERS = {"command", "env", "sudo", "nohup", "time", "exec", "builtin"}
 ENV_SHORT_ARG = set("uCPa")
 ENV_LONG_ARG = {"--unset", "--chdir", "--argv0"}
 SHELLS = {"bash", "sh", "zsh"}
+# 許可を書くスクリプト。子が直接、またはシェル経由で呼んだら permit-self として拾う（主の呼び出しでは捨てる）
+PERMIT_SCRIPT = "git-guard-permit.sh"
+SCRIPT_RUNNERS = {"bash", "sh", "zsh", "dash", "ksh"}
 GIT_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
                      "--super-prefix", "--config-env", "--exec-path"}
 MAIN_REFS = {"main", "master", "refs/heads/main", "refs/heads/master"}
@@ -590,6 +603,15 @@ def judge_simple(cmd, depth):
         return set()
     head, rest = cmd[i], cmd[i + 1:]
     base = os.path.basename(head)
+    if base == PERMIT_SCRIPT:
+        return {"permit-self"}
+    if base in SCRIPT_RUNNERS or head in ("source", "."):
+        has_c = base in SHELLS and any(a.startswith("-") and not a.startswith("--") and "c" in a[1:]
+                                       for a in rest)
+        if not has_c:
+            first = next((a for a in rest if not a.startswith("-")), None)
+            if first is not None and os.path.basename(first) == PERMIT_SCRIPT:
+                return {"permit-self"}
     if base in SHELLS:
         for k, a in enumerate(rest):
             if a.startswith("-") and not a.startswith("--") and "c" in a[1:]:
@@ -724,14 +746,15 @@ try:
     kinds = judge(command)
 except TooMuch:
     kinds = None  # 判定しきれなかった。破壊的操作を含むものとして止める
-if kinds is not None and not kinds:
-    sys.exit(0)
-
 # 子（サブエージェント）の呼び出しは agent_id が空でない文字列（context-tripwire.sh と同じ判定）。
 # 親は子の確認画面に応答できず、子が止まっていることも分からないので、子には ask を返さない。
 # FORCE より先に見る: FORCE=ask が残ったセッションで子が起きても確認画面で止めないため。
 agent_id = payload.get("agent_id")
 is_child = isinstance(agent_id, str) and agent_id != ""
+if kinds is not None and not is_child:
+    kinds.discard("permit-self")  # 主が許可を書くスクリプトを呼ぶのは止めない
+if kinds is not None and not kinds:
+    sys.exit(0)
 
 
 def count_child_deny(agent_id):
@@ -762,10 +785,111 @@ def count_child_deny(agent_id):
     return n
 
 
+def str_field(name):
+    v = payload.get(name)
+    return v if isinstance(v, str) else ""
+
+
+def load_common():
+    """共通ファイル（git-guard-scratchpad.py）を取り込む。読めない・取り込めないときは None（判定を満たさない側）。"""
+    path = sys.argv[1] if len(sys.argv) > 1 else ""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            src = fh.read()
+        ns = {"__name__": "git_guard_scratchpad"}
+        exec(compile(src, path, "exec"), ns)
+        for name in ("key_of", "check", "append_log", "write_json_atomic"):
+            if not callable(ns.get(name)):
+                return None
+        return ns
+    except Exception:
+        return None
+
+
+def log_event(common, base, entry):
+    try:
+        common["append_log"](base, entry)
+    except Exception:
+        pass  # 記録の失敗で判定を変えない
+
+
+def use_permit(common, base, key):
+    """一致する許可があり、使う時点の一時領域の判定も満たせば "allow"。行き先を確かめられずに捨てたら
+    "unverified"。許可が無い・一致しない・期限切れなら None。取った許可は必ず消す。"""
+    path = os.path.join(base, "permits", key + ".json")
+    taken = "%s.taken.%d" % (path, os.getpid())
+    try:
+        os.rename(path, taken)  # rename に成功した 1 つの呼び出しだけが使える（並列で 2 回使われない）
+    except OSError:
+        return None
+    try:
+        with open(taken, encoding="utf-8") as fh:
+            p = json.load(fh)
+    except Exception:
+        p = None
+    finally:
+        try:
+            os.unlink(taken)
+        except OSError:
+            pass
+    if not isinstance(p, dict):
+        return None
+    vals = {"session_id": session_id, "agent_id": agent_id, "cwd": cwd, "command": command}
+    if any(p.get(k) != v for k, v in vals.items()):
+        return None
+    exp = p.get("expires_at")
+    entry = dict(vals, key=key)
+    if not isinstance(exp, (int, float)) or isinstance(exp, bool) or exp <= time.time():
+        log_event(common, base, dict(entry, event="expired", expires_at=exp))
+        return None
+    try:
+        err, sp, repos = common["check"](session_id, cwd, command)
+    except Exception as e:
+        err, sp, repos = "一時領域の判定が失敗した: %s" % e, None, None
+    if err:
+        log_event(common, base, dict(entry, event="rejected", error=err))
+        return ("unverified", err)
+    log_event(common, base, dict(entry, event="use", scratchpad=sp, repos=repos, reason=p.get("reason")))
+    return ("allow", None)
+
+
+def write_record(common, base, key):
+    """拒否の記録を <base>/denied/<key>.json に書き、パスを返す。書けなければ None。"""
+    path = os.path.join(base, "denied", key + ".json")
+    rec = {"session_id": session_id, "agent_id": agent_id, "cwd": cwd, "command": command,
+           "kinds": sorted(kinds) if kinds is not None else ["undecidable"], "time": int(time.time())}
+    try:
+        common["write_json_atomic"](path, rec)
+    except Exception:
+        return None
+    return path
+
+
+session_id, cwd = str_field("session_id"), str_field("cwd")
+guard_base = os.path.join(os.environ.get("TMPDIR") or "/tmp", "dev-workflow-git-guard")
 deny_count = 0
+record_path = None
+unverified = None
 if is_child:
     decision = "deny"
+    # 共通ファイルは子の破壊的操作を見つけたときだけ読む（主の呼び出しと、破壊的操作の無い呼び出しでは読まない）。
+    # 読めなければ key を出せないので、許可を探さず、拒否の記録も書かずに deny だけを返す
+    common = load_common()
+    key = common["key_of"](session_id, agent_id, cwd, command) if common else None
+    used = None
+    if key and not (kinds is not None and "permit-self" in kinds):
+        used = use_permit(common, guard_base, key)
+    if used and used[0] == "allow":
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "allow",
+            "permissionDecisionReason": ("[dev-workflow git-destructive-guard] 親が書いた許可に一致したので、"
+                                         "このコマンドをこの 1 回だけ通す。")}}, ensure_ascii=False))
+        sys.exit(0)
+    if used:
+        unverified = used[1]
     deny_count = count_child_deny(agent_id)
+    if key:
+        record_path = write_record(common, guard_base, key)
 else:
     forced = (os.environ.get("DEV_WORKFLOW_GIT_GUARD_FORCE") or "").strip()
     if forced in ("ask", "deny"):
@@ -786,6 +910,11 @@ if is_child:
     body = ("このコマンドは実行されない。打ち直さず、別の書き方も試さないこと。scratchpad の検証用 repo を"
             "戻したいだけなら、git で戻さず作り直す。それ以外は作業を止め、何を・なぜ実行したかったかを"
             "報告に書いて親に返す。")
+    if unverified:
+        body = ("親が書いた許可はあるが行き先を確かめられないので、許可を使わずに捨てた（" + unverified + "）。"
+                + body)
+    if record_path:
+        body += "拒否の記録: " + record_path + " 。親に返す報告にこのパスを書く。"
     if deny_count >= 2:
         body += "この子への拒否は 2 回目以降なので、直ちに作業を終えて親に返す。"
 elif decision == "deny":
@@ -815,5 +944,6 @@ if [ -z "$PY_SRC" ]; then
   echo "git-destructive-guard: 判定の本体を読めなかったため、判定していない" >&2
   exit 1
 fi
-printf '%s' "$payload" | python3 -I -c "$PY_SRC"
+# 共通の判定ファイル（git-guard-scratchpad.py）のパスを引数で渡す。-I なので本体からは自分の場所が分からない
+printf '%s' "$payload" | python3 -I -c "$PY_SRC" "$(dirname "$0")/git-guard-scratchpad.py"
 exit 0

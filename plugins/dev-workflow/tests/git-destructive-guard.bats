@@ -63,6 +63,12 @@ import json, sys
 print(json.loads(sys.stdin.read())["hookSpecificOutput"]["permissionDecisionReason"])' <<<"$output"
 }
 
+# count_files — 回数のファイル（dev-workflow-git-guard/ の直下のファイル）の名前を出す。
+# 同じ場所に denied/ と permits/ のディレクトリもできるので、ファイルだけを数える
+count_files() {
+  find "$TMPDIR/dev-workflow-git-guard" -mindepth 1 -maxdepth 1 -type f ! -name '*.jsonl' -exec basename {} \;
+}
+
 # expect_stopped <command> — ask か deny が返ること
 expect_stopped() {
   call "$1"
@@ -627,6 +633,11 @@ ${shallow}
   [[ "$r" != *確認画面* ]] || return 1
   [[ "$r" != *'! を付けて'* ]] || return 1
   [[ "$r" != *DEV_WORKFLOW_GIT_GUARD* ]] || return 1
+  # 許可を書くのは親の役目なので、子への理由にスクリプトの名前を書かない。拒否の記録のパスは載せる
+  [[ "$r" != *git-guard-permit.sh* ]] || return 1
+  local rec
+  rec="$(ls "$TMPDIR"/dev-workflow-git-guard/denied/*.json)"
+  [[ "$r" == *"$rec"* ]] || { echo "record path not in reason: $rec"; return 1; }
 }
 
 @test "child reason: undecidable nesting keeps the head and uses the child tail" {
@@ -694,7 +705,7 @@ assert isinstance(o.get("stopReason"), str) and o["stopReason"], o' <<<"$output"
   call 'git checkout -- a' default '"../x"' s1
   [ "$(decision)" = "deny" ]
   local f
-  f="$(ls "$TMPDIR/dev-workflow-git-guard")"
+  f="$(count_files)"
   [[ "$f" =~ ^[0-9a-f]{64}$ ]] || { echo "name=$f"; return 1; }
   [ "$(cat "$TMPDIR/dev-workflow-git-guard/$f")" = "1" ]
 }
@@ -715,7 +726,7 @@ assert isinstance(o.get("stopReason"), str) and o["stopReason"], o' <<<"$output"
 @test "child count: a broken count file is treated as the first deny" {
   call 'git checkout -- a' default '"a1"' s1
   local f
-  f="$(ls "$TMPDIR/dev-workflow-git-guard")"
+  f="$(count_files)"
   printf 'x' >| "$TMPDIR/dev-workflow-git-guard/$f"
   call 'git checkout -- a' default '"a1"' s1
   [ "$(decision)" = "deny" ]
@@ -846,4 +857,417 @@ PY
 @test "rules: README row for destructive-git-guard.md mentions subagents" {
   grep -F '| `destructive-git-guard.md` |' "${PLUGIN_DIR}/../../rules/README.md" \
     | grep -F 'サブエージェント' | grep -F '確認画面を出さず' | grep -qF '親に返る'
+}
+
+# --- 親が書く許可（spec: 子への拒否を記録し、親が 1 回だけ通せるようにする／許可を書くスクリプトは
+#     一時領域の中に収まるコマンドだけを許可する／子は許可を書くスクリプトを呼べない／許可を書いたこと・
+#     使ったことを記録する） ---
+
+PERMIT_SID="0a1b2c3d-sid1"
+
+# scratch_dir <session_id> — Claude Code の scratchpad と同じ形のディレクトリを作り、realpath を出す
+scratch_dir() {
+  local d="${BATS_TEST_TMPDIR}/claude-$(id -u)/slug/$1/scratchpad"
+  mkdir -p "$d"
+  python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$d"
+}
+
+# mk_repo <dir> — <dir> に 1 コミットの git repo を作り、realpath を出す
+mk_repo() {
+  mkdir -p "$1"
+  git -C "$1" init -q
+  printf 'a\n' >|"$1/a"
+  git -C "$1" add a
+  git -C "$1" -c user.name=t -c user.email=t@t commit -qm init
+  python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1"
+}
+
+# call_cwd <command> <agent_id(JSON か "-")> <session_id> <cwd> [permission_mode]
+call_cwd() {
+  local json
+  json="$(printf '%s' "$1" | python3 -c '
+import json, sys
+p = {"tool_name": "Bash", "tool_input": {"command": sys.stdin.read()}, "hook_event_name": "PreToolUse",
+     "permission_mode": sys.argv[4], "session_id": sys.argv[2], "cwd": sys.argv[3]}
+if sys.argv[1] != "-":
+    p["agent_id"] = json.loads(sys.argv[1])
+print(json.dumps(p))' "$2" "$3" "$4" "${5:-default}")"
+  run "$SCRIPT" <<<"$json"
+}
+
+GUARD_BASE() { printf '%s' "$TMPDIR/dev-workflow-git-guard"; }
+
+# only_record — denied/ の記録が 1 つだけあることを確かめ、そのパスを出す
+only_record() {
+  local fs
+  fs=("$(GUARD_BASE)"/denied/*.json)
+  [ "${#fs[@]}" -eq 1 ] && [ -f "${fs[0]}" ] || { echo "records: ${fs[*]}" >&2; return 1; }
+  printf '%s' "${fs[0]}"
+}
+
+# key_of <session_id> <agent_id> <cwd> <command> — hook と同じ規則の key
+key_of() {
+  printf '%s' "$4" | python3 -c '
+import hashlib, sys
+print(hashlib.sha256("\0".join([sys.argv[1], sys.argv[2], sys.argv[3], sys.stdin.read()]).encode()).hexdigest())' "$1" "$2" "$3"
+}
+
+# mk_record <base> <session_id> <agent_id> <cwd> <command> — 拒否の記録を hook を通さずに書き、パスを出す
+# （hook が拒否しないコマンド、たとえば git init の記録を作るため）
+mk_record() {
+  local k
+  k="$(key_of "$2" "$3" "$4" "$5")"
+  mkdir -p "$1/denied"
+  printf '%s' "$5" | python3 -c '
+import json, sys
+json.dump({"session_id": sys.argv[1], "agent_id": sys.argv[2], "cwd": sys.argv[3], "command": sys.stdin.read(),
+           "kinds": ["test"], "time": 0}, open(sys.argv[4], "w"))' "$2" "$3" "$4" "$1/denied/$k.json"
+  printf '%s' "$1/denied/$k.json"
+}
+
+permits_empty() {
+  local d="${1:-$(GUARD_BASE)}/permits"
+  [ ! -d "$d" ] || [ -z "$(ls -A "$d")" ] || { ls -la "$d"; return 1; }
+}
+
+# deny_then_permit <command> <cwd> — 子 a1 の拒否を作り、その記録で許可を書く
+deny_then_permit() {
+  call_cwd "$1" '"a1"' "$PERMIT_SID" "$2"
+  [ "$(decision)" = "deny" ] || { echo "first call: $output"; return 1; }
+  local rec
+  rec="$(only_record)" || return 1
+  run "$PERMIT" "$rec" "検証用 repo を戻すだけ"
+  [ "$status" -eq 0 ] || { echo "permit failed: $output"; return 1; }
+}
+
+setup_permit() {
+  PERMIT="${PLUGIN_DIR}/scripts/git-guard-permit.sh"
+  SP="$(scratch_dir "$PERMIT_SID")"
+  REPO="$(mk_repo "$SP/repo")"
+  OUT="$(mk_repo "${BATS_TEST_TMPDIR}/outside/repo")"
+}
+
+@test "permit: a matching permit allows the call exactly once" {
+  setup_permit
+  deny_then_permit 'git checkout -- .' "$REPO"
+  [[ "$output" == *"$SP"* ]] || { echo "no scratchpad in stdout: $output"; return 1; }
+  [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = "1" ]
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "allow" ] || { echo "$output"; return 1; }
+  [[ "$(reason)" == *'この 1 回だけ'* ]] || return 1
+  ! has_continue || return 1
+  permits_empty
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ]
+}
+
+@test "permit: the log has permit then use" {
+  setup_permit
+  deny_then_permit 'git checkout -- .' "$REPO"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "allow" ]
+  python3 - "$(GUARD_BASE)/permit-log.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+ev = [r["event"] for r in rows]
+assert ev == ["permit", "use"], ev
+p = rows[0]
+assert p["reason"] == "検証用 repo を戻すだけ", p
+assert p["command"] == "git checkout -- .", p
+for k in ("session_id", "agent_id", "cwd", "scratchpad", "repos", "expires_at"):
+    assert k in p, (k, p)
+PY
+}
+
+@test "permit: calls that do not match do not use the permit" {
+  setup_permit
+  deny_then_permit 'git checkout -- .' "$REPO"
+  call_cwd 'git checkout -- . ' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ]
+  call_cwd 'git checkout -- .' '"a2"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ]
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$SP"
+  [ "$(decision)" = "deny" ]
+  # continue の有無は見ない（同じ子への拒否が続くので 2 件目以降は打ち切りになる）
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "allow" ]
+}
+
+@test "permit: an expired permit is not used and is removed" {
+  setup_permit
+  deny_then_permit 'git checkout -- .' "$REPO"
+  local f
+  f="$(ls "$(GUARD_BASE)"/permits/*.json)"
+  python3 - "$f" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["expires_at"] = 1
+json.dump(d, open(sys.argv[1], "w"))
+PY
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ]
+  permits_empty
+  grep -qF '"expired"' "$(GUARD_BASE)/permit-log.jsonl"
+}
+
+@test "permit: the main session does not look at permits" {
+  setup_permit
+  deny_then_permit 'git checkout -- .' "$REPO"
+  call_cwd 'git checkout -- .' - "$PERMIT_SID" "$REPO" default
+  [ "$(decision)" = "ask" ]
+  [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = "1" ]
+}
+
+@test "permit: if .git is swapped to point outside after the permit, the hook denies" {
+  setup_permit
+  deny_then_permit 'git checkout -- .' "$REPO"
+  rm -rf "$REPO/.git"
+  ln -s "$OUT/.git" "$REPO/.git"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" == *'許可はあるが行き先を確かめられない'* ]] || { reason; return 1; }
+  permits_empty
+  grep -qF '"rejected"' "$(GUARD_BASE)/permit-log.jsonl"
+}
+
+@test "permit: a permit written directly for an outside cwd is denied" {
+  setup_permit
+  local k now
+  k="$(key_of "$PERMIT_SID" a1 "$OUT" 'git checkout -- .')"
+  mkdir -p "$(GUARD_BASE)/permits"
+  python3 - "$(GUARD_BASE)/permits/$k.json" "$PERMIT_SID" "$OUT" <<'PY'
+import json, sys, time
+json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "command": "git checkout -- .",
+           "created_at": int(time.time()), "expires_at": int(time.time()) + 600}, open(sys.argv[1], "w"))
+PY
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$OUT"
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" == *'許可はあるが行き先を確かめられない'* ]] || { reason; return 1; }
+  permits_empty
+}
+
+@test "permit: after a permit the next deny counts from one" {
+  setup_permit
+  deny_then_permit 'git checkout -- .' "$REPO"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "allow" ]
+  call_cwd 'git reset --hard' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ]
+  ! has_continue || return 1
+  [[ "$(reason)" != *直ちに作業を終えて親に返す* ]] || return 1
+}
+
+@test "permit: the deny record has the ids, cwd and the full command" {
+  setup_permit
+  call_cwd 'git checkout -- a' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ]
+  local rec
+  rec="$(only_record)"
+  [[ "$(reason)" == *"$rec"* ]] || return 1
+  [ "$(basename "$rec" .json)" = "$(key_of "$PERMIT_SID" a1 "$REPO" 'git checkout -- a')" ]
+  python3 - "$rec" "$PERMIT_SID" "$REPO" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["session_id"] == sys.argv[2] and d["agent_id"] == "a1" and d["cwd"] == sys.argv[3], d
+assert d["command"] == "git checkout -- a", d
+assert d["kinds"] and "time" in d, d
+PY
+}
+
+@test "permit: the script writes the permit next to the record, not under its own TMPDIR" {
+  setup_permit
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  local rec b="${BATS_TEST_TMPDIR}/tmp-b"
+  rec="$(only_record)"
+  mkdir -p "$b"
+  run env TMPDIR="$b" "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = "1" ]
+  [ -z "$(ls -A "$b")" ]
+}
+
+@test "permit: other commands inside the scratchpad are permitted" {
+  setup_permit
+  local base rec cmd
+  base="$(GUARD_BASE)"
+  # cd で中に移る・-C を重ねる・scratchpad そのものが repo
+  for cmd in "cd repo && git reset --hard" "git -C repo -C . clean -fdx" "git -C $REPO checkout -- a"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$SP" "$cmd")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -eq 0 ] || { echo "refused: $cmd: $output"; return 1; }
+  done
+  local sp2
+  sp2="$(scratch_dir 0a1b2c3d-sid2)"
+  mk_repo "$sp2" >/dev/null
+  rec="$(mk_record "$base" 0a1b2c3d-sid2 a1 "$sp2" "git reset --hard")"
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -eq 0 ] || { echo "refused scratchpad root: $output"; return 1; }
+}
+
+@test "permit: the script refuses targets outside the scratchpad" {
+  setup_permit
+  local base rec cmd cwd
+  base="$(GUARD_BASE)"
+  # .git ファイルが外の git ディレクトリを指す repo
+  mkdir -p "$SP/linked"
+  printf 'gitdir: %s/.git\n' "$OUT" >|"$SP/linked/.git"
+  # 共通の git ディレクトリの config に大文字混じりの worktree
+  local cfg
+  cfg="$(mk_repo "$SP/cfg")"
+  printf '[Core]\n\tWorkTree = %s\n' "$OUT" >>"$cfg/.git/config"
+  local inc
+  inc="$(mk_repo "$SP/inc")"
+  printf '[IncludeIf "gitdir:x"]\n\tpath = /x\n' >>"$inc/.git/config"
+  # 別のセッションの scratchpad の repo
+  local other
+  other="$(mk_repo "$(scratch_dir 0a1b2c3d-other)/repo")"
+  local -a cases=(
+    "$OUT|git checkout -- ."
+    "$REPO|cd $OUT && git reset --hard"
+    "$REPO|git -C $OUT clean -fd"
+    "$SP/linked|git checkout -- ."
+    "$other|git reset --hard"
+    "$cfg|git checkout -- ."
+    "$inc|git checkout -- ."
+    "$SP|git status"
+    "$SP|cd repo"
+  )
+  for c in "${cases[@]}"; do
+    cwd="${c%%|*}"; cmd="${c#*|}"
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$cwd" "$cmd")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -ne 0 ] || { echo "permitted: $cwd | $cmd"; return 1; }
+    permits_empty
+  done
+}
+
+@test "permit: the script refuses a bare git directory under a scratchpad repo" {
+  setup_permit
+  local sp2 base rec
+  base="$(GUARD_BASE)"
+  sp2="$(scratch_dir 0a1b2c3d-bare)"
+  mk_repo "$sp2" >/dev/null
+  # scratchpad の直下が repo で、その中に作業ツリーを外に向けた bare の git ディレクトリを置く
+  git init -q --bare "$sp2/evil"
+  printf '[core]\n\tbare = false\n' >>"$sp2/evil/config"
+  rec="$(mk_record "$base" 0a1b2c3d-bare a1 "$sp2" "git -C evil checkout -- .")"
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -ne 0 ] || { echo "permitted bare"; return 1; }
+  permits_empty
+}
+
+@test "permit: the script refuses commands whose targets cannot be fixed" {
+  setup_permit
+  local base rec cmd
+  base="$(GUARD_BASE)"
+  local -a cmds=(
+    'cd "$D" && git checkout -- .'
+    'git reset --hard && rm -rf x'
+    'git push --force origin main'
+    'GIT_DIR=x git reset --hard'
+    'git checkout -- . > out'
+    'git init /x/outside'
+    "git checkout -- .$(printf '\r')"
+    'git -c core.worktree=/x checkout -- .'
+    'git --git-dir=/x checkout -- .'
+    'cd - && git reset --hard'
+    'git reset --hard & git status'
+    'git checkout -- *'
+    'cd ~ && git reset --hard'
+    'git reset --hard | cat'
+  )
+  for cmd in "${cmds[@]}"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$REPO" "$cmd")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -ne 0 ] || { echo "permitted: $cmd"; return 1; }
+    permits_empty
+  done
+}
+
+@test "permit: the script refuses records in the wrong place, rewritten, or without a reason" {
+  setup_permit
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  local rec k
+  rec="$(only_record)"
+  k="$(basename "$rec")"
+  # denied/ の外に写したもの
+  mkdir -p "${BATS_TEST_TMPDIR}/elsewhere/dev-workflow-git-guard/x"
+  cp "$rec" "${BATS_TEST_TMPDIR}/elsewhere/dev-workflow-git-guard/x/$k"
+  run "$PERMIT" "${BATS_TEST_TMPDIR}/elsewhere/dev-workflow-git-guard/x/$k" "戻すだけ"
+  [ "$status" -ne 0 ]
+  permits_empty "${BATS_TEST_TMPDIR}/elsewhere/dev-workflow-git-guard"
+  # dev-workflow-git-guard でない名前の下の denied/
+  mkdir -p "${BATS_TEST_TMPDIR}/other-name/denied"
+  cp "$rec" "${BATS_TEST_TMPDIR}/other-name/denied/$k"
+  run "$PERMIT" "${BATS_TEST_TMPDIR}/other-name/denied/$k" "戻すだけ"
+  [ "$status" -ne 0 ]
+  permits_empty "${BATS_TEST_TMPDIR}/other-name"
+  # 理由が空
+  run "$PERMIT" "$rec" ""
+  [ "$status" -ne 0 ]
+  permits_empty
+  # 引数の数が違う
+  run "$PERMIT" "$rec"
+  [ "$status" -eq 2 ]
+  # 中身のコマンドを書き換えたもの
+  python3 - "$rec" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["command"] = "git checkout -- a"
+json.dump(d, open(sys.argv[1], "w"))
+PY
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -ne 0 ]
+  permits_empty
+}
+
+@test "permit: a child calling the permit script is denied" {
+  call 'git-guard-permit.sh /y/denied/k.json ok' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  call '/x/scripts/git-guard-permit.sh /y/denied/k.json ok' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" != *git-guard-permit.sh* ]] || return 1
+  [[ "$(reason)" == *許可を書くスクリプト* ]] || return 1
+  local sh
+  for sh in bash sh zsh dash ksh source .; do
+    call "$sh /x/scripts/git-guard-permit.sh /y/denied/k.json ok" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "not denied: $sh"; return 1; }
+  done
+  call 'bash -x /x/scripts/git-guard-permit.sh /y/denied/k.json ok' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+}
+
+@test "permit: the main session and reading the script are not stopped" {
+  call '/x/scripts/git-guard-permit.sh /y/denied/k.json ok' default
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  call 'cat /x/scripts/git-guard-permit.sh' default '"a1"' s1
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "permit: a self-permit call does not use a permit" {
+  setup_permit
+  local cmd="$PERMIT /y/denied/k.json ok"
+  local k
+  k="$(key_of "$PERMIT_SID" a1 "$REPO" "$cmd")"
+  mkdir -p "$(GUARD_BASE)/permits"
+  python3 - "$(GUARD_BASE)/permits/$k.json" "$PERMIT_SID" "$REPO" "$cmd" <<'PY'
+import json, sys, time
+json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "command": sys.argv[4],
+           "expires_at": int(time.time()) + 600}, open(sys.argv[1], "w"))
+PY
+  call_cwd "$cmd" '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ]
+}
+
+@test "permit: without the shared file the hook still denies and writes no record" {
+  local d="${BATS_TEST_TMPDIR}/lonely"
+  mkdir -p "$d"
+  cp "$SCRIPT" "$d/git-destructive-guard.sh"
+  local json
+  json="$(payload 'git checkout -- a' default '"a1"' s1)"
+  run "$d/git-destructive-guard.sh" <<<"$json"
+  [ "$(decision)" = "deny" ]
+  [ ! -e "$(GUARD_BASE)/denied" ]
 }
