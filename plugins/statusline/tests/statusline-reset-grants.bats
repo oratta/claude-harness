@@ -120,11 +120,10 @@ render() { mk_input 55 82 14000 172800 | bash "$SL"; }
     render | strip_ansi | grep '7d All' | grep -q 'リセット1回・期限不明' || { echo "case: $p"; return 1; }
   done
   write_snap '[{"resets_left":1,"ends_at":null,"paused":true}]'
-  render | strip_ansi | grep '7d All' | grep -q 'リセット' && return 1
-  return 0
+  render | strip_ansi | grep '7d All' | grep -q 'リセット0回$' 
 }
 
-@test "reset grants: no expiry means 期限不明; a past expiry means 期限経過（更新待ち）" {
+@test "reset grants: no expiry and a past expiry are told apart" {
   write_snap '[{"resets_left":2,"ends_at":null,"paused":false}]'
   render | strip_ansi | grep '7d All' | grep -q 'リセット2回・期限不明'
   write_snap "[{\"resets_left\":2,\"ends_at\":\"$(iso_after -60)\",\"paused\":false}]"
@@ -192,13 +191,31 @@ JSON
   grep '5h' "$WORK/out.txt" | grep -q 'リセット1回・期限不明$'
 }
 
-@test "reset grants: the Codex row keeps its format (shared formatter)" {
-  export STATUSLINE_CODEX=1 CODEX_HOME="$WORK/codex-home"
+@test "reset grants: the Codex row output is the same as before the shared formatter" {
+  export STATUSLINE_CODEX=1 CODEX_HOME="$WORK/codex-home" STATUSLINE_CODEX_BIN="$WORK/codex-stub"
   mkdir -p "$CODEX_HOME"
+  printf '#!/bin/sh\nexit 0\n' > "$STATUSLINE_CODEX_BIN"; chmod 700 "$STATUSLINE_CODEX_BIN"
+  echo '{"tokens":{"account_id":"test"}}' > "$CODEX_HOME/auth.json"
   write_snap ''
-  future=$((NOW + 3*86400 + 21*3600 + 120))
-  printf '{"windows":[{"pct":10,"minutes":10080,"reset":%s}],"resets":{"count":3,"expiry":%s},"fetched_at":%s,"next_attempt":0}' \
-    "$((NOW + 172800))" "$future" "$NOW" > "$WORK/.statusline-codex"
-  run python3 "${PLUGIN_DIR}/scripts/statusline-codex.py" --read
-  echo "$output" | head -3 >&2
+  # 変更前の statusline.sh（HEAD の前の commit の内容でなく、この change の開始前 = 305a920b）を old に置く
+  mkdir -p "$WORK/old"
+  git -C "$REPO_ROOT" show 305a920b:plugins/statusline/scripts/statusline.sh > "$WORK/old/statusline.sh"
+  cp "${PLUGIN_DIR}/scripts/statusline-codex.py" "$WORK/old/"
+  local key delta cnt exp
+  key="$(python3 -c "
+import importlib.util,sys
+sp=importlib.util.spec_from_file_location('c','${PLUGIN_DIR}/scripts/statusline-codex.py');m=importlib.util.module_from_spec(sp);sp.loader.exec_module(m);print(m.identity())")"
+  for delta in 120 43200 172800 345600 -60 0; do
+    cnt=3; exp=$((NOW + delta)); [ "$delta" = 0 ] && { exp=0; cnt=2; }
+    cat > "$WORK/.statusline-codex" <<JSON
+{"identity":"$key","windows":[{"pct":10,"minutes":10080,"reset":$((NOW + 172800))}],"fetched_at":$NOW,
+ "next_attempt":$((NOW + 100)),
+ "resets":{"availableCount":$cnt,"credits":[{"status":"available","expiresAt":$exp}]}}
+JSON
+    [ "$delta" = 0 ] && sed -i.bak 's/"expiresAt":0/"expiresAt":-1/' "$WORK/.statusline-codex"
+    mk_input 55 82 14000 172800 | bash "$SL" > "$WORK/new.txt"
+    mk_input 55 82 14000 172800 | bash "$WORK/old/statusline.sh" > "$WORK/oldout.txt"
+    grep -q 'リセット' "$WORK/new.txt" || { echo "no codex reset row: $delta"; cat "$WORK/new.txt"; cat "$WORK/.statusline-codex"; return 1; }
+    cmp -s "$WORK/new.txt" "$WORK/oldout.txt" || { echo "differs: $delta"; return 1; }
+  done
 }

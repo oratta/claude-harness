@@ -387,6 +387,30 @@ fmt_ago() {
     fi
 }
 
+# $1=残数 $2=最短期限 epoch（無ければ 0）→ 色付きの "リセットN回・最短あとXdYh"（Codex と Claude の行で共用）
+# 期限まで 24 時間以内は赤、3 日以内は黄。残数 0 のときは期限を付けない。
+fmt_reset_credits() {
+    local count="$1" exp="$2" color="$DIM" text left
+    text="リセット${count}回"
+    if [ "$count" -gt 0 ]; then
+        if [ "$exp" -eq 0 ]; then
+            text+="・期限不明"
+        else
+            left=$(( exp - now ))
+            if [ "$left" -le 86400 ]; then color="$RED"
+            elif [ "$left" -le 259200 ]; then color="$YELLOW"; fi
+            if [ "$left" -le 0 ]; then
+                text+="・期限経過（更新待ち）"
+            elif [ "$left" -ge 86400 ]; then
+                text+="・最短あと$((left / 86400))日$((left % 86400 / 3600))h"
+            else
+                text+="・最短あと$((left / 3600))h$((left % 3600 / 60))m"
+            fi
+        fi
+    fi
+    printf '%s%s%s' "$color" "$text" "$RESET"
+}
+
 # Usage (rate limit) indicator — Pro/Max only; fields absent otherwise
 now=$(date +%s)
 usage_lines=()
@@ -588,18 +612,27 @@ fi
 # 旧形式）ではトップレベルへフォールバックする。
 snap_fetched=(); snap_five_pct=(); snap_five_res=()
 snap_seven_pct=(); snap_seven_res=(); snap_fable_pct=()
+snap_rg_count=(); snap_rg_exp=()
 snap_rows=""
 if [ -f "$usnap" ] && [ "$n_slots" -gt 0 ]; then
     # `--args` はそれ以降のすべてを positional 扱いにするので、必ずファイル名の**後**に置く。
     # 前に置くと snapshot のパスまで positional に食われ、jq が stdin を待って固まる。
     # stdin は既に消費済みなので明示的に /dev/null を与える。
+    # reset_grants: 束は dict で resets_left が 0 以上の整数のものだけ読む（読めない束は無いものとして扱う）。
+    # 欄が無い・配列でない・束がすべて読めないときは 2 列とも空、空配列は残数 0・期限空。
+    # paused が真偽値の true の束と resets_left が 0 の束は数えない。ends_at は小数秒を落として読む。
     snap_rows="$(jq -r --arg active "${slot_ids[$active_idx]}" '
+      def rg_ok: type == "array" and (length == 0 or any(.[]; type == "object" and (.resets_left | type) == "number" and .resets_left >= 0 and .resets_left == (.resets_left | floor)));
+      def rg_live: [ .[] | select(type == "object" and (.resets_left | type) == "number" and .resets_left >= 0 and .resets_left == (.resets_left | floor) and .paused != true and .resets_left > 0) ];
+      def rg_count(g): if (g | rg_ok) then ([ g | rg_live | .[] | .resets_left ] | add // 0) else "" end;
+      def rg_exp(g): if (g | rg_ok) then ([ g | rg_live | .[] | .ends_at | select(type == "string") | (sub("\\.[0-9]+"; "") | try fromdateiso8601 catch empty) ] | min // "") else "" end;
       . as $d
       | $ARGS.positional[] as $id
       | (($d.accounts // {})[$id]) as $a
       | (if $a == null and $id == $active then $d else ($a // {}) end) as $src
       | [ ($src.fetched_at // ""), ($src.five_hour_pct // ""), ($src.five_hour_resets_epoch // ""),
-          ($src.weekly_all_pct // ""), ($src.weekly_resets_epoch // ""), ($src.fable_weekly_pct // "") ]
+          ($src.weekly_all_pct // ""), ($src.weekly_resets_epoch // ""), ($src.fable_weekly_pct // ""),
+          rg_count($src.reset_grants), rg_exp($src.reset_grants) ]
       | @tsv
     ' "$usnap" --args "${slot_ids[@]}" < /dev/null 2>/dev/null)"
 fi
@@ -607,15 +640,17 @@ _row_i=0
 while IFS='' read -r _row; do
     [ "$_row_i" -lt "$n_slots" ] || break
     # タブ畳み込みで空フィールドが消えるのを避けるため US(0x1f) に置換してから読む
-    IFS=$'\x1f' read -r _f _fp _fr _sp _sr _fb <<< "${_row//$'\t'/$'\x1f'}"
+    IFS=$'\x1f' read -r _f _fp _fr _sp _sr _fb _rgc _rge <<< "${_row//$'\t'/$'\x1f'}"
     snap_fetched+=("$_f"); snap_five_pct+=("$_fp"); snap_five_res+=("$_fr")
     snap_seven_pct+=("$_sp"); snap_seven_res+=("$_sr"); snap_fable_pct+=("$_fb")
+    snap_rg_count+=("$_rgc"); snap_rg_exp+=("$_rge")
     _row_i=$(( _row_i + 1 ))
 done <<< "$snap_rows"
 # jq が失敗した / 行が足りない場合は空で埋める（欠測として扱う）
 while [ "${#snap_fetched[@]}" -lt "$n_slots" ]; do
     snap_fetched+=(""); snap_five_pct+=(""); snap_five_res+=("")
     snap_seven_pct+=(""); snap_seven_res+=(""); snap_fable_pct+=("")
+    snap_rg_count+=(""); snap_rg_exp+=("")
 done
 
 # ---- 非 active スロットはセッション記録と突き合わせる（正本: usage-session-records の
@@ -720,8 +755,11 @@ fi
 
 # $1=行頭 label 列 $2=5h消化率 $3=5hリセットepoch $4=7d消化率 $5=7dリセットepoch
 # $6=Fable週次消化率 $7=行末サフィックス（経過時間。空可）
+# $8=リセット権の残数（空なら区画なし） $9=リセット権の最短期限 epoch（空なら期限なし）
 render_slot() {
-    local prefix="$1" f_pct="$2" f_res="$3" s_pct="$4" s_res="$5" fb_pct="$6" ago="$7"
+    local prefix="$1" f_pct="$2" f_res="$3" s_pct="$4" s_res="$5" fb_pct="$6" ago="$7" rg_n="$8" rg_e="$9"
+    local rg_seg=""
+    [ -n "$rg_n" ] && rg_seg="  ${DIM}│${RESET}  $(fmt_reset_credits "$rg_n" "${rg_e:-0}")"
     [ -n "$f_pct" ] || return 0
 
     local five_h_int five_h_elapsed="" five_h_left="" secs_left_5h
@@ -740,6 +778,7 @@ render_slot() {
     if [ -z "$s_pct" ]; then
         # 7d が無いスロットは 5h 行だけ。経過時間はそのスロットの最後の行に付ける
         [ -n "$ago" ] && line_5h+="  ${DIM}${ago}${RESET}"
+        line_5h+="$rg_seg"
         usage_lines+=("$line_5h")
         return 0
     fi
@@ -764,6 +803,7 @@ render_slot() {
     fi
     [ -n "$seven_d_left" ] && line_7d+="  ${DIM}${seven_d_left}${RESET}"
     [ -n "$ago" ] && line_7d+="  ${DIM}${ago}${RESET}"
+    line_7d+="$rg_seg"
     usage_lines+=("$line_7d")
 }
 
@@ -800,7 +840,7 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
             usage_lines+=("${prefix}${DIM}取得待ち${RESET}")
         fi
         render_slot "$prefix" "$five_h_pct" "$five_h_resets" "$seven_d_pct" "$seven_d_resets" \
-                    "$fable_pct" ""
+                    "$fable_pct" "" "${snap_rg_count[$i]}" "${snap_rg_exp[$i]}"
     else
         # 非 active スロットは snapshot の値。鮮度ゲートは適用せず、経過時間を併記する
         ago=""
@@ -808,7 +848,7 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
         render_slot "$prefix" \
                     "${snap_five_pct[$i]}" "${snap_five_res[$i]}" \
                     "${snap_seven_pct[$i]}" "${snap_seven_res[$i]}" \
-                    "$fable_pct" "$ago"
+                    "$fable_pct" "$ago" "${snap_rg_count[$i]}" "${snap_rg_exp[$i]}"
     fi
 done
 
@@ -823,25 +863,7 @@ if [ -n "$codex_rows" ]; then
     while IFS=$'\t' read -r c_pct c_minutes c_reset c_fetched; do
         if [ "$c_pct" = "resets" ]; then
             codex_fetched="$c_fetched"
-            c_reset_color="$DIM"
-            codex_resets="リセット${c_minutes}回"
-            if [ "$c_minutes" -gt 0 ]; then
-                if [ "$c_reset" -eq 0 ]; then
-                    codex_resets+="・期限不明"
-                else
-                    c_expiry_left=$(( c_reset - now ))
-                    if [ "$c_expiry_left" -le 86400 ]; then c_reset_color="$RED"
-                    elif [ "$c_expiry_left" -le 259200 ]; then c_reset_color="$YELLOW"; fi
-                    if [ "$c_expiry_left" -le 0 ]; then
-                        codex_resets+="・期限経過（更新待ち）"
-                    elif [ "$c_expiry_left" -ge 86400 ]; then
-                        codex_resets+="・最短あと$((c_expiry_left / 86400))日$((c_expiry_left % 86400 / 3600))h"
-                    else
-                        codex_resets+="・最短あと$((c_expiry_left / 3600))h$((c_expiry_left % 3600 / 60))m"
-                    fi
-                fi
-            fi
-            codex_resets="  ${DIM}│${RESET}  ${c_reset_color}${codex_resets}${RESET}"
+            codex_resets="  ${DIM}│${RESET}  $(fmt_reset_credits "$c_minutes" "$c_reset")"
             continue
         fi
         if [ "$c_pct" = "pending" ]; then
