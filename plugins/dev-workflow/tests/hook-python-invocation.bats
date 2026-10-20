@@ -23,7 +23,7 @@ setup() {
   export USAGE_PROBE_STATE="${WORK}/.usage-probe-state"
   export USAGE_PROBE_LOCK="${WORK}/.usage-probe.lock"
   unset CLAUDE_SECURESTORAGE_CONFIG_DIR DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE \
-    DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_CONTEXT_TRIPWIRE || true
+    DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_CONTEXT_TRIPWIRE DEV_WORKFLOW_UNATTENDED || true
   GIT_PAYLOAD='{"tool_name":"Bash","tool_input":{"command":"git reset --hard"},"hook_event_name":"PreToolUse","permission_mode":"default"}'
   AGENT_PAYLOAD='{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}'
 }

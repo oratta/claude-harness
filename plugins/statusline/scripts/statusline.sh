@@ -398,6 +398,7 @@ usnap="$CONFIG_DIR/.usage-snapshot"
 # enabled が JSON の false のスロットは「オフ」（slot_enabled が 0）。オフのスロットも一覧に残し、
 # 上限・label 列の幅・active の判定に数える。false 以外（省略・true・"false"・0・null）はオン。
 accounts_file="${CLAUDE_ACCOUNTS_FILE:-$CONFIG_DIR/accounts.json}"
+codex_name="Codex A"; codex_name_w=7   # 登録簿に codex.label が無いときの既定
 slot_ids=(); slot_labels=(); slot_secures=(); slot_services=(); slot_widths=(); slot_enabled=()
 if [ -f "$accounts_file" ]; then
     # `IFS=$'\t' read` は使えない: タブは IFS 空白なので連続タブが 1 つの区切りに畳まれ、
@@ -407,6 +408,9 @@ if [ -f "$accounts_file" ]; then
         [ -n "$_line" ] || continue
         IFS=$'\x1f' read -r _sid _slabel _ssecure _sservice _swidth _senabled <<< "${_line//$'\t'/$'\x1f'}"
         [ -n "$_sid" ] || continue
+        # `@codex` の行はスロットではなく Codex の行の名前（id の形式に @ は一致しないので衝突しない）。
+        # 2 列目が名前、3 列目がその表示幅。
+        if [ "$_sid" = "@codex" ]; then codex_name="$_slabel"; codex_name_w="$_ssecure"; continue; fi
         slot_ids+=("$_sid"); slot_labels+=("$_slabel")
         slot_secures+=("$_ssecure"); slot_services+=("$_sservice")
         slot_widths+=("${_swidth:-0}")
@@ -458,16 +462,28 @@ try:
             # TSV の区切りを壊す制御文字を含むスロットは捨てる（usage-probe.sh と同じ規則）
             if CTRL_RE.search(lab) or CTRL_RE.search(sec):
                 continue
-            lab = clip_label(lab, MAX_LABEL_WIDTH)
+            lab = "Claude " + clip_label(lab, MAX_LABEL_WIDTH)
             slots.append((sid, lab, sec, service(sec), e.get("enabled") is not False))
 except Exception:
     slots = []
+# Codex の行の名前。codex.label が空でない文字列で制御文字を含まないときだけ読む（それ以外は bash 側の既定 A）。
+codex_row = None
+try:
+    codex_doc = doc.get("codex") if isinstance(doc, dict) else None
+    clab = codex_doc.get("label") if isinstance(codex_doc, dict) else None
+    if isinstance(clab, str) and clab and not CTRL_RE.search(clab):
+        cname = "Codex " + clip_label(clab, MAX_LABEL_WIDTH)
+        codex_row = "@codex\t" + cname + "\t" + str(disp_width(cname)) + "\n"
+except Exception:
+    codex_row = None
 for row in slots:
     # 5 列目は label の表示幅。bash の ${#var} は文字数なので、全角ラベルでは
     # printf の %-*s（バイト幅パディング）と食い違って列がずれる。
     # 6 列目はオンなら 1、オフ（enabled が JSON の false）なら 0。
     sys.stdout.write("\t".join(row[:4]) + "\t" + str(disp_width(row[1])) + "\t"
                      + ("1" if row[4] else "0") + "\n")
+if codex_row:
+    sys.stdout.write(codex_row)
 ' 2>/dev/null)
 fi
 if [ "${#slot_ids[@]}" -eq 0 ]; then
@@ -533,8 +549,8 @@ if [ "$multi" -eq 1 ]; then
 fi
 
 # Codex shares the label column, without changing output when its row is absent.
-if [ -n "$codex_rows" ] && [ "$label_w" -lt 5 ]; then
-    label_w=5
+if [ -n "$codex_rows" ] && [ "$label_w" -lt "$codex_name_w" ]; then
+    label_w="$codex_name_w"
 fi
 
 # ---- snapshot を jq 1 回で読む ----
@@ -779,8 +795,8 @@ done
 # Codex is a separate account; keep all returned windows on one additional row.
 # Only the helper talks to app-server, detached from rendering (180s cache).
 if [ -n "$codex_rows" ]; then
-    codex_pad="$(printf '%*s' "$(( label_w - 5 ))" '')"
-    codex_line="  ${DIM}Codex${codex_pad}${RESET}  "
+    codex_pad="$(printf '%*s' "$(( label_w - codex_name_w ))" '')"
+    codex_line="  ${DIM}${codex_name}${codex_pad}${RESET}  "
     codex_sep=""
     codex_fetched=""
     codex_resets=""

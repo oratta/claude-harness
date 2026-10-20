@@ -33,7 +33,12 @@
 #   許可を書いた・使った・捨てたは <base>/permit-log.jsonl に残る。子が git-guard-permit.sh を自分で呼んだら deny。
 #   key の計算・一時領域の判定・記録の追記は共通ファイル git-guard-scratchpad.py にあり、子の破壊的操作を
 #   見つけたときだけ読む。読めなければ許可を探さず、記録も書かずに deny だけを返す。
-#   それ以外（主の呼び出し）は、permission_mode が default / acceptEdits / plan / bypassPermissions なら ask
+#   主の呼び出しで、環境変数 DEV_WORKFLOW_UNATTENDED（画面を見ている人のいないセッションの印。起動する側が
+#   claude の環境に入れる。前後の空白を除いて空か 0 なら印なし、それ以外は印あり）があれば、permission_mode
+#   にも DEV_WORKFLOW_GIT_GUARD_FORCE にもよらず deny（確認画面は誰にも押されず、セッションが止まるため）。
+#   理由文はチャンネルでオーナーに承認を求めるよう案内する。拒否の回数は数えない。
+#   許可は子の呼び出しにだけ効き、印のある主の呼び出しには効かない。
+#   それ以外（印の無い主の呼び出し）は、permission_mode が default / acceptEdits / plan / bypassPermissions なら ask
 #   （対話セッションでは確認画面が出て主が承認できる。claude -p では確認できず実行されない。どちらも実機で
 #   確認済み）、それ以外（dontAsk・auto・未知・欠落）は deny。DEV_WORKFLOW_GIT_GUARD_FORCE=ask|deny は
 #   実機確認と bats のための上書き（恒久設定にしない。子には効かない）。
@@ -867,6 +872,13 @@ def write_record(common, base, key):
 
 session_id, cwd = str_field("session_id"), str_field("cwd")
 guard_base = os.path.join(os.environ.get("TMPDIR") or "/tmp", "dev-workflow-git-guard")
+
+# 画面を見ている人のいないセッションの印（spec「確認画面が出るモードでだけ ask を返す」）。子の判定のあと、
+# FORCE より先に見る: FORCE=ask が残った住人のセッションで確認画面を出して止まらないため。
+# 空か 0 以外はすべて印ありにする（付け損ねた値で確認画面に戻らず、止めすぎる向きにだけ外れる）。
+unattended_mark = (os.environ.get("DEV_WORKFLOW_UNATTENDED") or "").strip()
+is_unattended = not is_child and unattended_mark not in ("", "0")
+
 deny_count = 0
 record_path = None
 unverified = None
@@ -890,6 +902,8 @@ if is_child:
     deny_count = count_child_deny(agent_id)
     if key:
         record_path = write_record(common, guard_base, key)
+elif is_unattended:
+    decision = "deny"
 else:
     forced = (os.environ.get("DEV_WORKFLOW_GIT_GUARD_FORCE") or "").strip()
     if forced in ("ask", "deny"):
@@ -917,6 +931,11 @@ if is_child:
         body += "拒否の記録: " + record_path + " 。親に返す報告にこのパスを書く。"
     if deny_count >= 2:
         body += "この子への拒否は 2 回目以降なので、直ちに作業を終えて親に返す。"
+elif is_unattended:
+    # 画面を見ている人がいないので、画面の操作や入力欄の ! の話を書かない。オーナーに届く経路はチャンネルだけ
+    body = ("このコマンドは実行していない。このセッションの画面を見ている人はいないので、何を・なぜ・いつ実行するかを"
+            "チャンネル（Discord など）でオーナーに伝えて承認を求め、承認されたらオーナーが自分で実行する"
+            "（このセッションでは実行しない）。")
 elif decision == "deny":
     body = ("このコマンドは実行していない。何を・なぜ・いつ実行するかを示して主に承認を求め、承認されたら"
             "主が自分で実行する（Claude Code の入力欄で ! を付けて打つか、自分の端末で）。")
