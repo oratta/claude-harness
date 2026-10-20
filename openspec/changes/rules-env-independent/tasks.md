@@ -3,11 +3,12 @@
 - [ ] 1.1 6 ファイルの検索のテストを足す: Scenario「6 ファイルに固有名が無い」（`grep -n -i -E 'oratta|genetta|suimei|flatmate|fmtoken|Dropbox|marketplaces/'` が 6 ファイルで 0 件）。触る範囲: tests/public-private-split.bats:422-427（末尾の `@test` のあと）
 - [ ] 1.2 「hook との分担」の節のテストに、条件つきの書き方（「入っていれば」と、hook が無ければこのルールだけが止める旨）と `rules-archive` が無いことの検査を足す。触る範囲: plugins/dev-workflow/tests/git-destructive-guard.bats:957-964
 - [ ] 1.3 `browser-infra-env-capture.md` の昇格の文が `capability-registry` を「入っていれば」の条件つきで書くことのテストを足す（置き場: 1.1 と同じ `tests/public-private-split.bats`）。触る範囲: tests/public-private-split.bats:422-427
+- [ ] 1.3b `communication-style.md` が `~/.claude/output-styles/readable.md` を示し `marketplaces/` を含まないことのテストを足す（置き場: 1.1 と同じ）。触る範囲: tests/public-private-split.bats:422-427
 - [ ] 1.4 `bats tests/public-private-split.bats plugins/dev-workflow/tests/git-destructive-guard.bats` で、足したテストが落ち、既存のテストが通ることを確かめる
 
 ## 2. 規則の本文を直す
 
-- [ ] 2.1 `rules/communication-style.md` の最終段落を、clone の絶対パスなしで Output Style `readable` を全文の正本と書く（「原則を増減させたときは両方を直す」は残す）。触る範囲: rules/communication-style.md:15
+- [ ] 2.1 `rules/communication-style.md` の最終段落を、clone の絶対パスなしで `~/.claude/output-styles/readable.md`（Output Style `readable`）を全文の正本と書く（「原則を増減させたときは両方を直す」は残す）。触る範囲: rules/communication-style.md:15
 - [ ] 2.2 `rules/browser-infra-env-capture.md` の昇格の文を、製品名なし・`capability-registry` スキルは「入っていれば」・無い環境の手順つきに直す。触る範囲: rules/browser-infra-env-capture.md:10
 - [ ] 2.3 `rules/destructive-git-guard.md` の `rules-archive` のパスを外し、「hook との分担」の節に条件と「hook が入っていなければこのルールだけが止める」を足す。節の中の語は同じ行に残す。触る範囲: rules/destructive-git-guard.md:3、rules/destructive-git-guard.md:22-24
 - [ ] 2.4 6 ファイルの検索（受け入れ条件 1）が 0 件になり、1 で足したテストが通ることを確かめる

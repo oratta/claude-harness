@@ -6,7 +6,7 @@
 
 ### D1: 外した参照は「消す」でなく、オーナーの環境でだけ読む場所に移すか、条件つきに直す
 
-- 正本のパス（`communication-style.md:15`）: 規則の本文は「Output Style `readable` が全文の正本」と名前だけで書く。clone のパスは `rules/README.md` の行に既にある（移設先の表が正本）ので、そこへ残す。`rules/README.md` は symlink されず注入もされないので、オーナーの環境でだけ読まれる
+- 正本のパス（`communication-style.md:15`）: 規則の本文は「Output Style `readable`（`~/.claude/output-styles/readable.md`）が全文の正本」と書く。`scripts/sync.sh` が Output Style をこのパスに symlink するので、どの cwd からも解決でき、`marketplaces/` を含まない。既存 spec `always-on-injection-scope` の「移設先を任意の cwd から辿れる形にする」は解決できる形を 2 つ（スキル名・marketplace 絶対パス）に限っているので、Output Style 用に 3 つめの形（`~/.claude/output-styles/<name>.md`）を MODIFIED で足す（Output Style 名だけで示す案は、パスが無く辿れないので採らない）。clone の絶対パスは `rules/README.md` の行に既にある（移設先の表が正本）ので、そこへ残す。`rules/README.md` は symlink されず注入もされないので、オーナーの環境でだけ読まれる
 - `capability-registry:capability-registry`（`browser-infra-env-capture.md:10`）: スキルを条件つきにして残す（「入っていれば、保管庫への昇格の手順の正本」）。残す理由は、オーナーの環境での効き方を変えないため（受け入れ条件 3）。条件なしで名指しするのをやめるだけで、スキルの参照は消えない。無い環境の手順も本文に 1 文で足す
 - 1Password / GitHub Actions secrets: 本文からは製品名を外し「秘密情報の保管庫」と書く。製品名の対応（オーナーの環境ではどれか）は `rules/README.md` の行が持つ
 - `rules-archive`（`destructive-git-guard.md:3`）: 経緯を置く場所の話は規則の守らせる原則ではないので、パスを外し「経緯はこの repo に含めない」だけにする。パスは `rules/README.md:5` に既にある
