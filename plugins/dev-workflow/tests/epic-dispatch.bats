@@ -3005,7 +3005,7 @@ set_terms() {
 reply_ready() {
   make_stub orca
   set_current 400
-  set_list list_json "$(wt_entry 11 in-review)"
+  put_record 11 status=waiting
   set_terms 11 "$@"
 }
 
@@ -3114,18 +3114,35 @@ reply_ready() {
   [ "$(calls '^orca terminal close')" -eq 0 ]
 }
 
-@test "reply: no worktree or two worktrees send nothing; archived and other-repo worktrees do not count" {
+@test "reply: no record, another parent's record, two records or an unreadable record send nothing" {
   make_stub orca
   set_current 400
-  set_list list_json "$(wt_entry 11 in-review repo-b::/x repo-b)" "$(wt_entry 11 in-review repo-a::/work/parent repo-a true)"
   run dispatch reply --as owner 400 11 'A'
   [ "$status" -eq 1 ]
   [ "$output" = "failed 11 no-worktree" ]
-  set_list list_json "$(wt_entry 11 in-review)" "$(wt_entry 11 completed)"
+  put_record 11 parent_worktree=/work/other
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 no-worktree" ]
+  put_record 11
+  put_record 11 epic=oratta/claude-harness#900
   run dispatch reply --as owner 400 11 'A'
   [ "$status" -eq 1 ]
   [ "$output" = "failed 11 ambiguous-worktree" ]
+  rm -f "$(rec_of 900 11)"
+  printf '{\n' >| "$(rec_of 1122 11)"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 state-unreadable" ]
   [ "$(calls '^orca terminal')" -eq 0 ]
+}
+
+@test "reply: a relaunch writes the new terminal to the record's session" {
+  reply_ready
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "relaunched 11" ]
+  [ "$(rec_get 11 session)" = term-11 ]
 }
 
 @test "reply: a send that fails or starts no turn is failed with a resend hint" {
@@ -3235,7 +3252,7 @@ resolve_ready() {
   make_judge
   set_current 400
   gh_seq 11 open closed
-  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 status=waiting stop=stopped
   set_terms 11 term-a-11
 }
 
@@ -3377,9 +3394,9 @@ resolve_ready() {
   gh_seq 12 closed
   gh_seq 13 open
   gh_seq 14 open
-  set_list list_json "$(wt_entry 11 completed)" \
-    "$(wt_entry 13 in-review repo-a::/work/parent repo-a false epic-stopped)" \
-    "$(wt_entry 14 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 status=done
+  put_record 13 status=waiting stop=stopped
+  put_record 14 status=waiting stop=stopped
   set_terms 14 term-a-14
   judge_says judge_out_13 主に上げる 実機操作 ''
   judge_says judge_out_14 通す 範囲の内側 進めて
@@ -3435,14 +3452,14 @@ resolve_ready() {
 CLOSED_STOP_URL="https://github.com/o/r/issues/11#issuecomment-7"
 CLOSED_MSG_HEAD="親エピック #400 の判断（主の承認ではない）: 記録先の issue #11 は completed で閉じた。完了報告を書き、mark done で終える"
 
-# 子 11 が completed で閉じ、ワークツリーのコメント欄が <comment>（既定 epic-stopped-seen）・
-# workspaceStatus が <status>（既定 in-review）で、端末が 1 つある環境
+# 子 11 が completed で閉じ、記録の stop が <stop>（既定 stopped-seen）・
+# status が <status>（既定 waiting）で、端末が 1 つある環境
 closed_ready() {
   make_stub orca
   set_current 400
   gh_seq 11 "closed completed https://github.com/o/r/issues/11"
   gh_seq comments "$CLOSED_STOP_URL"
-  set_list list_json "$(wt_entry 11 "${2-in-review}" repo-a::/work/parent repo-a false "${1-epic-stopped-seen}")"
+  put_record 11 status="${2-waiting}" stop="${1-stopped-seen}"
   set_terms 11 term-a-11
 }
 
@@ -3454,7 +3471,7 @@ nothing_sent() {
 }
 
 @test "notify-closed: a child closed as completed with the stopped mark gets the reply and the epic gets the line" {
-  for mark in epic-stopped-seen epic-stopped; do
+  for mark in stopped-seen stopped; do
     : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
     closed_ready "$mark"
     run dispatch notify-closed 400 11
@@ -3508,7 +3525,7 @@ nothing_sent() {
 }
 
 @test "notify-closed: a child that is not stopped gets nothing" {
-  for mark in "" epic-resumed; do
+  for mark in "" resumed; do
     : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
     closed_ready "$mark"
     run dispatch notify-closed 400 11
@@ -3519,7 +3536,7 @@ nothing_sent() {
 }
 
 @test "notify-closed: a child that already marked done gets nothing" {
-  closed_ready epic-stopped-seen completed
+  closed_ready stopped-seen done
   run dispatch notify-closed 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "skipped 11 already-done" ]
@@ -3527,7 +3544,7 @@ nothing_sent() {
 }
 
 @test "notify-closed: a child closed as not planned or still open gets nothing and orca is not asked" {
-  closed_ready epic-stopped
+  closed_ready stopped
   gh_seq 11 "closed not_planned https://github.com/o/r/issues/11"
   run dispatch notify-closed 400 11
   [ "$status" -eq 0 ]
@@ -3545,19 +3562,18 @@ nothing_sent() {
 
 @test "notify-closed: a child without a worktree gets nothing" {
   closed_ready
-  set_list list_json "$(wt_entry 12 in-review repo-a::/work/parent repo-a false epic-stopped)" \
-    "$(wt_entry 11 in-review repo-a::/work/parent repo-a true epic-stopped)" \
-    "$(wt_entry 11 in-review repo-a::/work/parent repo-b false epic-stopped)"
+  rm -f "$(rec_of 1122 11)"
+  put_record 12 stop=stopped
+  put_record 11 stop=stopped parent_worktree=/work/other
   run dispatch notify-closed 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "skipped 11 no-worktree" ]
   nothing_sent
 }
 
-@test "notify-closed: two worktrees, an unreadable list or a failing gh is failed" {
+@test "notify-closed: two records, an unreadable record or a failing gh is failed" {
   closed_ready
-  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)" \
-    "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 stop=stopped epic=oratta/claude-harness#900
   run dispatch notify-closed 400 11
   [ "$status" -eq 1 ]
   [ "$output" = "failed 11 ambiguous-worktree" ]
@@ -3565,12 +3581,12 @@ nothing_sent() {
 
   : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
   closed_ready
-  echo 1 > "$STUB_CFG/list_exit"
+  rm -f "$(rec_of 900 11)"
+  printf '{\n' >| "$(rec_of 1122 11)"
   run dispatch notify-closed 400 11
   [ "$status" -eq 1 ]
-  [ "$output" = "failed 11 list" ]
+  [ "$output" = "failed 11 state-unreadable" ]
   nothing_sent
-  rm -f "$STUB_CFG/list_exit"
 
   : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
   closed_ready
@@ -3816,25 +3832,41 @@ resolve_pass() {
 # --- pending-owner ---
 # spec: dev-workflow-develop（起動し直した親は主の返事待ちの子を主に出し直す）
 
-@test "pending-owner: only a child still marked epic-stopped-seen is pending, and nothing is written" {
+@test "pending-owner: only a child whose record is still stopped-seen is pending, and nothing is written" {
   make_stub orca
   set_current 400
-  set_list list_json \
-    "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped-seen)" \
-    "$(wt_entry 12 in-review repo-a::/work/parent repo-a false epic-resumed)" \
-    "$(wt_entry 13 in-review repo-a::/work/parent repo-a false epic-stopped)" \
-    "$(wt_entry 14 in-review repo-a::/work/parent repo-a true epic-stopped-seen)"
-  run dispatch pending-owner 11 12 13 14
+  put_record 11 stop=stopped-seen
+  put_record 12 stop=resumed
+  put_record 13 stop=stopped
+  put_record 14 stop=stopped-seen parent_worktree=/work/other
+  put_record 15 stop=stopped-seen
+  printf '{\n' >| "$(rec_of 1122 15)"
+  put_record 16 stop=stopped-seen
+  put_record 16 stop=stopped-seen epic=oratta/claude-harness#900
+  before="$(cd "$EPIC_STATE_ROOT" && ls -lR | md5)"
+  run dispatch pending-owner 11 12 13 14 15 16 17
   [ "$status" -eq 0 ]
   [ "$output" = "pending 11" ]
-  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(calls '^orca ')" -eq 0 ]
+  [ "$(cd "$EPIC_STATE_ROOT" && ls -lR | md5)" = "$before" ]
 }
 
-@test "pending-owner: no children or an unreadable list is an error" {
+@test "pending-owner: an Orca stopped-seen mark alone is not pending" {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped-seen)"
+  put_record 11
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "pending-owner: no children or no worktree is an error" {
   make_stub orca
   run dispatch pending-owner
   [ "$status" -eq 1 ]
-  printf 'x\n' > "$STUB_CFG/list_json"
+  put_record 11 stop=stopped-seen
+  : >| "$STUB_CFG/toplevel"
   run dispatch pending-owner 11
   [ "$status" -eq 1 ]
   [ -z "$output" ]
