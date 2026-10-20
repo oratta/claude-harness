@@ -99,11 +99,20 @@ refute() {
   # 各行が interactive の文脈か、channel を明示して除いているか、Orca 経路の子の節の行であること
   local child; child="$(section 'エピックの子が主の返事を待って止まるとき')"
   while IFS= read -r line; do
-    if printf '%s\n' "$line" | grep -qE 'interactive|channel'; then continue; fi
+    if printf '%s\n' "$line" | grep -qE 'interactive は|\*\*interactive\*\*|AskUserQuestion (は使わない|を呼ばない|を呼ばず|を使わず)'; then continue; fi
     if printf '%s\n' "$child" | grep -qF -- "$line"; then continue; fi
     echo "interactive の文脈と読めない行: $line" >&2
     return 1
   done < <(grep -F 'AskUserQuestion' "$SKILL")
+}
+
+@test "AskUserQuestion lines in commands/develop.md (except allowed-tools) are interactive-only or say it is not called" {
+  local line
+  while IFS= read -r line; do
+    if printf '%s\n' "$line" | grep -qE 'interactive は|\*\*interactive\*\*|AskUserQuestion (は使わない|を呼ばない|を呼ばず|を使わず)'; then continue; fi
+    echo "interactive の文脈と読めない行: $line" >&2
+    return 1
+  done < <(grep -F 'AskUserQuestion' "$CMD" | grep -v '^allowed-tools:')
 }
 
 # --- リスク許容と主への発言 ---
@@ -127,8 +136,15 @@ refute() {
   printf '%s\n' "$s" | grep -qF '画面・タブ・入力欄'
 }
 
-@test "G start instruction: channel writes the channel reply check line" {
+@test "G start instruction: channel writes the mode line and the channel reply check line" {
   step4 | grep -qF '`チャンネルの返事の確認:`'
+  step4 | grep -qF '`実行モード: channel`'
+}
+
+@test "mode passed to W and R1: channel passes interactive, the branch stays interactive" {
+  local s; s="$(section '実行モード')"
+  printf '%s\n' "$s" | grep -qF 'W・R1 の起動指示の実行モードには interactive と書く'
+  grep -qF 'channel の本体は interactive と渡す' "${PLUGIN_DIR}/skills/develop/references/roles/worker/common.md"
 }
 
 # --- 保留・再開 ---
@@ -138,6 +154,7 @@ refute() {
   printf '%s\n' "$s" | grep -qF '| 実行モード | interactive / channel / unmanned |'
   printf '%s\n' "$s" | grep -qF 'このチャンネルで記録先の番号を添えて返事'
   printf '%s\n' "$s" | grep -qF '番号の無い返事'
+  printf '%s\n' "$s" | grep -qF '0 件か 2 件以上なら、記録先の番号を添えて返すようチャンネルで聞き直す'
   # interactive の案内は残る
   printf '%s\n' "$s" | grep -qF '返事は新しいセッションで `/develop <記録先>` と一緒に渡す'
 }
@@ -146,6 +163,7 @@ refute() {
   local s; s="$(subsection '新しいセッションでの再開')"
   printf '%s\n' "$s" | grep -qF 'develop を記録先 `<番号>` で起動'
   printf '%s\n' "$s" | grep -qF '`<channel source=` で始まる'
+  printf '%s\n' "$s" | grep -qF '開きタグと閉じタグを外した中身'
   printf '%s\n' "$s" | grep -qF 'チャンネルの返事'
 }
 
@@ -155,13 +173,29 @@ refute() {
   local s; s="$(subsection '回し方')"
   printf '%s\n' "$s" | grep -qF '`回し方: サブエージェント（channel モード）`'
   printf '%s\n' "$s" | grep -qF '別の Claude Code セッション'
+  printf '%s\n' "$s" | grep -qF 'channel も `route` を呼ばず'
+}
+
+@test "epic: channel resuming an epic whose latest route note is Orca reports in the channel and stops" {
+  local s; s="$(subsection '回し方')"
+  printf '%s\n' "$s" | grep -qF 'channel で再開したエピックの最新の `回し方:` が Orca なら'
+}
+
+@test "epic: excluding epic children names channel next to unmanned (route is not called)" {
+  local line; line="$(grep -F '**エピックである子を外す**' "$SKILL")"
+  [ -n "$line" ]
+  printf '%s\n' "$line" | grep -qF '`route` を呼ばない unmanned と channel と'
+  printf '%s\n' "$line" | grep -qF '（unmanned と channel を除く）'
 }
 
 # --- commands/develop.md ---
 
 @test "command: mode follows SKILL.md, channel asks branches 2 and 5 and issueify approval in the channel" {
   grep -qF 'SKILL.md「実行モード」の決め方' "$CMD"
-  [ "$(grep -c 'channel ではチャンネルに送ってターンを終え' "$CMD")" -ge 3 ]
+  local m
+  for m in '**② 数字のみだが issue が存在しない**' '**⑤ 引数なし**' '**承認ゲート（両経路共通）**'; do
+    grep -F -- "$m" "$CMD" | grep -qF 'channel ではチャンネルに送ってターンを終え'
+  done
 }
 
 # --- hold.md ---
