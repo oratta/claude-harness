@@ -961,6 +961,9 @@ PY
   printf '%s' "$sec" | grep -F 'サブエージェント' | grep -F '確認画面を出さず' | grep -F '打ち直さず' | grep -qF '親に返る'
   printf '%s' "$sec" | grep -F '画面を見ている人のいないセッション' | grep -F 'チャンネル' | grep -qF '主に承認を求める'
   ! grep -qF 'DEV_WORKFLOW_GIT_GUARD_FORCE' "$rule" || return 1
+  printf '%s' "$sec" | grep -qF '入っていれば'
+  printf '%s' "$sec" | grep -F 'hook' | grep -qF 'このルールだけが'
+  ! grep -qF 'rules-archive' "$rule" || return 1
 }
 
 @test "rules: README row for destructive-git-guard.md mentions subagents and unattended sessions" {

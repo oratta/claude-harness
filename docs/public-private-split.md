@@ -142,9 +142,6 @@ https://github.com/oratta/claude-harness/issues/1164
 
 | 場所 | 種別 | 内容 | 直す issue |
 |---|---|---|---|
-| `rules/communication-style.md:15` | 環境依存 | 正本のパスを `~/.claude/plugins/marketplaces/oratta-claude-harness/output-styles/readable.md` と書く | #1098 |
-| `rules/browser-infra-env-capture.md:10` | 環境依存 | 1Password・GitHub Actions secrets と `capability-registry:capability-registry` スキルを名指し | #1098 |
-| `rules/destructive-git-guard.md:3` | 環境依存 | 経緯の置き場をローカルの `~/.claude/rules-archive/` と書く | #1098 |
 | `rules/README.md:5` | 環境依存 | 経緯の置き場をローカルの `~/.claude/rules-archive/` と書く | 担い手なし |
 | `rules/README.md:20` | 固有名 | 定期実行の足を flatmate の住人の起動ルーティン（boot.sh）と書く | 担い手なし |
 | `rules/README.md:21` | 固有名 | 鮮度の可視化を flatmate の agent-status ハートビートと書く | 担い手なし |
