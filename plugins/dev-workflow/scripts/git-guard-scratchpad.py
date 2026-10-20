@@ -85,10 +85,38 @@ _REDIRECT_ENV = ("CDPATH", "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_IN
 _REDIRECT_ENV_PREFIX = ("GIT_CONFIG",)  # GIT_CONFIG・GIT_CONFIG_GLOBAL・GIT_CONFIG_COUNT・GIT_CONFIG_PARAMETERS など
 
 
+# Claude Code が全セッションの Bash に入れる GIT_CONFIG_COUNT / KEY_<n> / VALUE_<n> の組のうち、キーがすべてこの一覧にある
+# ものだけは、行き先も git の挙動も変えないので数えない。足すのは、無害と確かめたキーだけ（足すときは spec を直す）
+_HARMLESS_CONFIG_KEYS = ("credential.interactive", "credential.guiPrompt")
+_CONFIG_SET_VAR = re.compile(r"^GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)$")
+
+
+def _harmless_config_set():
+    """GIT_CONFIG_COUNT・KEY_<n>・VALUE_<n> の組が、無害なキーだけで揃っていれば、その変数名の集合を返す。
+    COUNT が 10 進の非負整数（符号・先頭の 0 の連続なし）で、0..COUNT-1 の KEY と VALUE がすべてあり、KEY がすべて
+    一覧にあり、範囲外の番号の KEY / VALUE が無いときだけ。崩れていれば空集合（全部を今までどおり数える）。"""
+    count = os.environ.get("GIT_CONFIG_COUNT")
+    if count is None or not re.fullmatch(r"0|[1-9][0-9]{0,2}", count):
+        return set()
+    n = int(count)
+    names = {"GIT_CONFIG_COUNT"}
+    for i in range(n):
+        key = os.environ.get("GIT_CONFIG_KEY_%d" % i)
+        if key not in _HARMLESS_CONFIG_KEYS or ("GIT_CONFIG_VALUE_%d" % i) not in os.environ:
+            return set()
+        names.update(("GIT_CONFIG_KEY_%d" % i, "GIT_CONFIG_VALUE_%d" % i))
+    for k in os.environ:
+        if _CONFIG_SET_VAR.match(k) and k not in names:
+            return set()  # 範囲外の番号
+    return names
+
+
 def _redirect_env():
     """行き先・設定を変える環境変数の名前の一覧（並べ替え済み）。"""
+    harmless = _harmless_config_set()
     return sorted(k for k in os.environ
-                  if k in _REDIRECT_ENV or any(k.startswith(p) for p in _REDIRECT_ENV_PREFIX))
+                  if k not in harmless
+                  and (k in _REDIRECT_ENV or any(k.startswith(p) for p in _REDIRECT_ENV_PREFIX)))
 
 
 def _temp_roots(temp_dir=None):
