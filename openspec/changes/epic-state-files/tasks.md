@@ -37,5 +37,5 @@
 
 ## 7. 確認
 
-- [ ] 7.1 `bats plugins/dev-workflow/tests/` が全部通り、`tests/injection-budget.bats` も通ることを確かめる。`openspec validate epic-state-files --type change --strict` が通ることを確かめる
+- [x] 7.1 `bats plugins/dev-workflow/tests/` が全部通り、`tests/injection-budget.bats` も通ることを確かめる。`openspec validate epic-state-files --type change --strict` が通ることを確かめる
 - [ ] 7.2 実機で 1 回、Orca 環境で小さなエピック（子 1 件）を `launch` → 子の `mark stopped` → 親の `wait` の `stopped` → 子の `mark done` → `reap` → `clear` まで回し、`~/.claude/epic-state/` の記録が作られて消えることを確かめる（受け入れ条件「Orca の部品で今までどおり動く」「完了時に状態ディレクトリが消える」）。親を起動し直して `adopt` → `pending-owner` で続きが組み立て直せることも確かめる

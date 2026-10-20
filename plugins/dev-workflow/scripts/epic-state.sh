@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # エピックの子の状態の記録を読み書きする関数（epic-dispatch.sh が source する。単体では実行しない）。
 #
 # 記録は ${EPIC_STATE_ROOT:-$HOME/.claude/epic-state}/<エピックの owner>.<repo>-<エピック番号>/<子の owner>.<repo>-<子の番号>.json
@@ -211,6 +212,7 @@ es_pick() {
   fi
   cnt="$(printf '%s\n' "$out" | grep -c '^ok ')"
   [ "$cnt" -eq 1 ] || return 2
+  # shellcheck disable=SC2034
   ES_HIT="$(printf '%s\n' "$out" | sed -n 's/^ok //p')"
   return 0
 }

@@ -776,7 +776,7 @@ cmd_notify_closed() {
     3) echo "failed $n state-unreadable"; exit 1 ;;
     *) echo "skipped $n no-worktree"; exit 0 ;;
   esac
-  [ "$(es_get "$rec" status)" = done ] && { echo "skipped $n already-done"; exit 0; }
+  [ "$(es_get "$rec" status)" = "done" ] && { echo "skipped $n already-done"; exit 0; }
   case "$(es_get "$rec" stop)" in
     stopped|stopped-seen) ;;
     *) echo "skipped $n not-stopped"; exit 0 ;;
@@ -1030,7 +1030,7 @@ cmd_wait() {
     for n in $watch; do
       child_record "$PARENT_TOP" "$n"
       case $? in
-        0) [ "$(es_get "$ES_HIT" status)" = done ] && marked="$marked $n" ;;
+        0) [ "$(es_get "$ES_HIT" status)" = "done" ] && marked="$marked $n" ;;
         3) wsfail=1 ;;
       esac
     done
@@ -1140,7 +1140,7 @@ cmd_reap() {
     if [ -z "$path" ] || [ ! -d "$path" ]; then
       rm -f "$f"; echo "gone $n"; continue
     fi
-    [ "$(es_get "$f" status)" = done ] || { echo "kept $n not-done"; continue; }
+    [ "$(es_get "$f" status)" = "done" ] || { echo "kept $n not-done"; continue; }
     st="$(git -C "$path" status --porcelain)" || { echo "kept $n git-failed"; continue; }
     [ -z "$st" ] || { echo "kept $n dirty"; continue; }
     [ ! -e "$path/LLM" ] || { echo "kept $n llm-logs"; continue; }
