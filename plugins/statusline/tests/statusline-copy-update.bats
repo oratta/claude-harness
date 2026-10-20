@@ -7,7 +7,8 @@
 #
 # 隔離: CLAUDE_CONFIG_DIR と HOME を一時ディレクトリに向ける。プラグインの本体は
 # <config>/plugins/cache/x/statusline/1/ に複製し、「本体を別の内容にする」ときはこの複製を
-# 書き換える（リポジトリのファイルは触らない）。
+# 書き換える（リポジトリのファイルは触らない）。複製の場所を <config>/plugins/installed_plugins.json に
+# statusline の installPath として載せ、いまインストールされている版として扱わせる。
 
 bats_require_minimum_version 1.5.0
 
@@ -26,6 +27,7 @@ setup() {
   mkdir -p "$ROOT"
   cp -R "$PLUGIN_DIR/scripts" "$ROOT/scripts"
   export CLAUDE_PLUGIN_ROOT="$ROOT"
+  register_install "$ROOT"
   RECORD="$WORK/.statusline-installed"
   MARK="$WORK/.statusline-update-available"
 }
@@ -40,6 +42,17 @@ sha() {
   else
     sha256sum "$1" | awk '{print $1}'
   fi
+}
+
+# installed_plugins.json に、statusline のインストール先として $1 だけを載せる
+register_install() {
+  jq -n --arg p "$1" '{version: 2, plugins: {"statusline@x": [{scope: "user", installPath: $p, version: "1"}]}}' \
+    >| "$WORK/plugins/installed_plugins.json"
+}
+
+# 権限の 8 進表記（macOS と GNU の stat の両方）
+mode_of() {
+  stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1"
 }
 
 # 記録のうち、ファイル名 $1 の行のハッシュ
@@ -116,7 +129,8 @@ install_from_root() {
 @test "hook: an untouched old copy becomes identical to the plugin" {  # 記録どおりの古いコピーは本体と同じになる
   install_from_root
   bump_plugin
-  run bash "$HOOK"
+  # hooks.json と同じく、スクリプトを直接実行する（実行権限が無ければ 126 で落ちる）
+  run "$ROOT/scripts/statusline-update-hook.sh"
   [ "$status" -eq 0 ]
   cmp "$WORK/statusline.sh" "$ROOT/scripts/statusline.sh"
   [ "$(recorded statusline.sh)" = "$(sha "$ROOT/scripts/statusline.sh")" ]
@@ -132,6 +146,7 @@ install_from_root() {
   [ "$status" -eq 0 ]
   cmp "$WORK/statusline-codex.py" "$ROOT/scripts/statusline-codex.py"
   [ "$(recorded statusline-codex.py)" = "$(sha "$ROOT/scripts/statusline-codex.py")" ]
+  [ "$(mode_of "$WORK/statusline-codex.py")" = 644 ]
 }
 
 @test "hook: does nothing when nothing is installed" {  # 導入していなければ何も作らない
@@ -195,6 +210,21 @@ install_from_root() {
   [ "$(recorded statusline.sh)" = "$(sha "$ROOT/scripts/statusline.sh")" ]
 }
 
+@test "hook: a tweaked copy gets no mark while the plugin still matches the record" {  # 本体が記録と同じなら、手を入れたコピーにも印を置かない
+  install_from_root
+  printf '# my tweak\n' >> "$WORK/statusline.sh"
+  cp "$WORK/statusline.sh" "$WORK/expected.sh"
+  cp "$RECORD" "$WORK/expected.record"
+  run bash "$HOOK"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  cmp "$WORK/statusline.sh" "$WORK/expected.sh"
+  cmp "$RECORD" "$WORK/expected.record"
+  [ ! -e "$MARK" ]
+  line1="$(render | head -1 | strip_ansi)"
+  [[ "$line1" != *"更新あり"* ]] || return 1
+}
+
 # ---- 表示 ----
 
 @test "render: without the mark the output has no update notice" {  # 印が無ければ出力は変わらない
@@ -217,11 +247,12 @@ install_from_root() {
 
 @test "hook: an old copy that cannot draw the mark gets a systemMessage" {  # 古いコピーには案内が出る
   printf '#!/usr/bin/env bash\necho old\n' > "$WORK/statusline.sh"
+  cp "$WORK/statusline.sh" "$WORK/expected.sh"
   run bash "$HOOK"
   [ "$status" -eq 0 ]
   [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 1 ]
   printf '%s' "$output" | jq -e '(keys == ["systemMessage"]) and (.systemMessage | contains("/statusline:setup"))' >/dev/null
-  [ "$(cat "$WORK/statusline.sh")" = "$(printf '#!/usr/bin/env bash\necho old')" ]
+  cmp "$WORK/statusline.sh" "$WORK/expected.sh"
 }
 
 # ---- フック: 動く場所と失敗 ----
@@ -264,6 +295,45 @@ install_from_root() {
   [ ! -e "$MARK" ]
 }
 
+@test "hook: a session of an older version does not roll the copy back" {  # 古い版のセッションから走っても巻き戻さない
+  OLD="$ROOT"
+  NEW="$WORK/plugins/cache/x/statusline/2"
+  mkdir -p "$NEW"
+  cp -R "$OLD/scripts" "$NEW/scripts"
+  printf '# new version\n' >> "$NEW/scripts/statusline.sh"
+  printf '# new version\n' >> "$NEW/scripts/statusline-codex.py"
+  register_install "$NEW"
+  # 新しい版のセッションで揃えた状態
+  bash "$NEW/scripts/install.sh" >/dev/null
+  cp "$WORK/statusline.sh" "$WORK/expected.sh"
+  cp "$RECORD" "$WORK/expected.record"
+  CLAUDE_PLUGIN_ROOT="$OLD" run bash "$HOOK"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  cmp "$WORK/statusline.sh" "$WORK/expected.sh"
+  cmp "$RECORD" "$WORK/expected.record"
+  [ ! -e "$MARK" ]
+  # 新しい版のセッションからは引き続き揃う
+  printf '# newer\n' >> "$NEW/scripts/statusline.sh"
+  CLAUDE_PLUGIN_ROOT="$NEW" run bash "$HOOK"
+  [ "$status" -eq 0 ]
+  cmp "$WORK/statusline.sh" "$NEW/scripts/statusline.sh"
+}
+
+@test "hook: does nothing when installed_plugins.json is missing" {  # インストールの記録が読めなければ何もしない
+  install_from_root
+  bump_plugin
+  rm -f "$WORK/plugins/installed_plugins.json"
+  cp "$WORK/statusline.sh" "$WORK/expected.sh"
+  cp "$RECORD" "$WORK/expected.record"
+  run bash "$HOOK"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  cmp "$WORK/statusline.sh" "$WORK/expected.sh"
+  cmp "$RECORD" "$WORK/expected.record"
+  [ ! -e "$MARK" ]
+}
+
 @test "hook: an unwritable config dir still exits 0 with no stderr" {  # 失敗しても exit 0 で標準エラーを出さない
   [ "$(id -u)" -ne 0 ] || skip "root ignores permissions"
   install_from_root
@@ -278,5 +348,6 @@ install_from_root() {
 @test "hooks.json registers the SessionStart hook" {  # SessionStart に登録されている
   hj="$PLUGIN_DIR/hooks/hooks.json"
   [ -f "$hj" ]
+  [ -x "$PLUGIN_DIR/scripts/statusline-update-hook.sh" ]
   jq -e '.hooks.SessionStart[] | select(.matcher == "startup|resume|clear") | .hooks[] | select(.command == "\"${CLAUDE_PLUGIN_ROOT}/scripts/statusline-update-hook.sh\"")' "$hj" >/dev/null
 }

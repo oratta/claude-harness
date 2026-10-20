@@ -37,13 +37,14 @@ statusline プラグインは SessionStart フック（`plugins/statusline/hooks
 
 フックは python3 を起動してはならない（MUST NOT）。
 
-守備範囲（この要件と「手を入れたコピーと記録の無いコピーは上書きせず印を置く」「フックはインストール済みのプラグインから起動されたときだけ動き、失敗しても止めない」の 3 要件に共通）: フックが読む入力は、install.sh が置いたコピーと記録、利用者がエディタで直したコピー、Claude Code が渡す `$CLAUDE_PLUGIN_ROOT` である。拾いたい誤りは、利用者が直したコピーをプラグインの更新で消すことと、`--plugin-dir` で読み込んだ未マージの版で本物のコピーを置き換えることの 2 つに限る。次の入力はこの 3 要件の判定を通ってしまう、または意図と違う結果になるが、塞ぐことは完了条件にしない。
+守備範囲（この要件と「手を入れたコピーと記録の無いコピーは上書きせず印を置く」「フックはインストール済みのプラグインから起動されたときだけ動き、失敗しても止めない」の 3 要件に共通）: フックが読む入力は、install.sh が置いたコピーと記録、利用者がエディタで直したコピー、Claude Code が渡す `$CLAUDE_PLUGIN_ROOT` である。拾いたい誤りは、利用者が直したコピーをプラグインの更新で消すこと、`--plugin-dir` で読み込んだ未マージの版で本物のコピーを置き換えること、プラグイン更新より前から開いているセッション（`$CLAUDE_PLUGIN_ROOT` が古い版のディレクトリを指したまま）から走ったフックで、新しい版に揃えたコピーを古い版に巻き戻すことの 3 つに限る。次の入力はこの 3 要件の判定を通ってしまう、または意図と違う結果になるが、塞ぐことは完了条件にしない。
 
 - `<config>/.statusline-installed` を手で書き換えたもの（書き換えた記録と一致するコピーは、手を入れていないものとして本体で置き換わる）
 - 内容は変えず、権限や更新日時だけ変えたコピー（内容のハッシュは同じなので、手を入れていないものとして置き換わる）
 - 別の版の本体の内容に手で差し替えたコピー（記録と違うので上書きせず、印を出すだけ）
 - `<config>/plugins/` の下に置いた開発版を `--plugin-dir` で読んだとき（インストール済みと見分けられず、開発版でコピーを置き換える）
 - marketplace dir から `install.sh` を直接走らせた直後で、cache の版と内容に差があるとき（記録どおりのコピーなので、次のセッション開始で cache の版に置き換わる）
+- `jq` が無い環境、または Claude Code が `<config>/plugins/installed_plugins.json` の形を変えたとき（いまの版かを判定できないのでフックは何もせず、コピーは自動では揃わない。`/statusline:setup` の打ち直しで揃う）
 
 #### Scenario: 記録どおりの古いコピーは本体と同じになる
 - **WHEN** `<config>/statusline.sh` が古い内容で、記録のハッシュがその古い内容と一致する状態でフックを走らせる
@@ -60,7 +61,11 @@ statusline プラグインは SessionStart フック（`plugins/statusline/hooks
 ### Requirement: 手を入れたコピーと記録の無いコピーは上書きせず印を置く
 コピーが本体と違い、コピーのハッシュが記録のそのファイルの行と一致しないとき、記録にそのファイルの行が無いとき、または記録ファイルが無いとき、フックはそのコピーを書き換えてはならない（MUST NOT）。
 
-判定のあと、上の条件に当たったファイルが 1 つ以上あれば、フックは `<config>/.statusline-update-available` にそのファイル名を 1 行 1 件で書かなければならない（SHALL）。1 つも無ければ `<config>/.statusline-update-available` を消さなければならない（SHALL）。
+判定のあと、上の条件に当たり、かつ本体のハッシュが記録のそのファイルの行と違うファイル（記録にそのファイルの行が無いとき・記録ファイルが無いときを含む）が 1 つ以上あれば、フックは `<config>/.statusline-update-available` にそのファイル名を 1 行 1 件で書かなければならない（SHALL）。1 つも無ければ `<config>/.statusline-update-available` を消さなければならない（SHALL）。本体のハッシュが記録の行と同じとき（手を入れたあと、プラグインはまだ更新されていない）は、配った版から本体が変わっておらず更新は無いので、印の対象にしない。
+
+#### Scenario: 本体が記録と同じなら手を入れたコピーにも印を置かない
+- **WHEN** 記録どおりに導入したあと `<config>/statusline.sh` に 1 行書き足し、プラグインの本体は変えずにフックを走らせる
+- **THEN** `<config>/statusline.sh` と記録の内容は変わらず、`<config>/.statusline-update-available` は無い
 
 #### Scenario: 1 行書き足したコピーは変わらない
 - **WHEN** 記録どおりに導入したあと `<config>/statusline.sh` に 1 行書き足し、プラグインの本体を別の内容にしてフックを走らせる
@@ -101,10 +106,20 @@ statusline プラグインは SessionStart フック（`plugins/statusline/hooks
 ### Requirement: フックはインストール済みのプラグインから起動されたときだけ動き、失敗しても止めない
 フックは、`$CLAUDE_PLUGIN_ROOT` が空のとき、または `$CLAUDE_PLUGIN_ROOT` の実体のパスが `<config>/plugins/` の実体のパスの下にないとき、コピー・記録・印のどれも書き換えてはならない（MUST NOT）。`claude --plugin-dir` で開発中の版を読み込んだセッションで、利用者のコピーを未マージの版に置き換えないため。
 
+また、`$CLAUDE_PLUGIN_ROOT` の実体のパスが、`<config>/plugins/installed_plugins.json` の `plugins` のうちキーが `statusline@` で始まる項目の `installPath`（実体のパスに解決したもの）のどれとも一致しないとき、フックはコピー・記録・印のどれも書き換えてはならない（MUST NOT）。`installed_plugins.json` が無い・読めないとき、`jq` が無いときも同じとする。プラグイン更新より前から開いているセッションの `$CLAUDE_PLUGIN_ROOT` は古い版のディレクトリを指したままなので、そこから走ったフックが新しい版に揃えたコピーを古い版に巻き戻さないため。
+
 フックはどの失敗でも exit 0 で終わり、標準エラーに何も出してはならない（MUST NOT）。
 
 #### Scenario: plugin-dir で読み込んだ版では何もしない
 - **WHEN** `CLAUDE_PLUGIN_ROOT` が `<config>/plugins/` の外を指し、記録どおりの古いコピーがある状態でフックを走らせる
+- **THEN** コピー・記録・印のどれも変わらず、exit 0
+
+#### Scenario: 古い版のセッションから走っても巻き戻さない
+- **WHEN** `installed_plugins.json` の `installPath` が新しい版を指し、コピーと記録が新しい版に揃った状態で、`CLAUDE_PLUGIN_ROOT` が古い版のディレクトリを指すフックを走らせる
+- **THEN** コピー・記録・印のどれも変わらず、exit 0
+
+#### Scenario: インストールの記録が読めなければ何もしない
+- **WHEN** `<config>/plugins/installed_plugins.json` が無い状態で、記録どおりの古いコピーがありフックを走らせる
 - **THEN** コピー・記録・印のどれも変わらず、exit 0
 
 #### Scenario: CLAUDE_PLUGIN_ROOT が空でも止まらない

@@ -8,7 +8,8 @@
 #   コピーが無い                               → 何もしない
 #   コピーが本体と同じ                         → 記録のその行を本体のハッシュにする
 #   コピーが本体と違い、記録のハッシュと同じ   → 手を入れていないので本体で置き換える
-#   コピーが本体と違い、記録と違う／記録が無い → 手を入れたので上書きせず、
+#   コピーが本体と違い、記録と違う／記録が無い → 手を入れたので上書きしない。さらに本体が記録から
+#                                                変わっている（記録が無いときを含む）なら
 #                                                <config>/.statusline-update-available に名前を書く
 #
 # 記録は install.sh が書く <config>/.statusline-installed（`<sha256>  <ファイル名>` を 1 行 1 件）。
@@ -17,6 +18,11 @@
 #
 # 動くのは、インストール済みのプラグイン（実体のパスが <config>/plugins/ の下）から起動されたとき
 # だけ。claude --plugin-dir で読み込んだ開発中の版で、利用者のコピーを置き換えないため。
+# さらに、その場所が <config>/plugins/installed_plugins.json に statusline の installPath として
+# 載っている（いまインストールされている版）ときだけ動く。プラグイン更新より前から開いている
+# セッションの CLAUDE_PLUGIN_ROOT は古い版のディレクトリを指したままなので、そこから走ったフックが
+# 新しい版に揃えたコピーを古い版に巻き戻さないため。installed_plugins.json が読めない・jq が無い
+# ときも何もしない。
 #
 # どの失敗でも exit 0 で終わり、標準エラーには何も出さない（SessionStart の 0 以外の終了は画面に出る）。
 # 標準出力は、案内を出すときの JSON 1 行だけ（JSON 以外はモデルの文脈に入る）。python3 は起動しない。
@@ -34,6 +40,21 @@ case "$root_real/" in
     "$plugins_real/"*) ;;
     *) exit 0 ;;
 esac
+
+# いまインストールされている版か（installPath の実体のパスと比べる）
+command -v jq >/dev/null 2>&1 || exit 0
+current=""
+while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    p_real="$(cd -P "$p" && pwd -P)" || continue
+    if [ "$p_real" = "$root_real" ]; then
+        current=1
+        break
+    fi
+done <<EOF2
+$(jq -r '.plugins // {} | to_entries[] | select(.key | startswith("statusline@")) | .value[]? | .installPath // empty' "$CONFIG_DIR/plugins/installed_plugins.json")
+EOF2
+[ -n "$current" ] || exit 0
 
 RECORD="$CONFIG_DIR/.statusline-installed"
 MARK="$CONFIG_DIR/.statusline-update-available"
@@ -86,7 +107,7 @@ for entry in "statusline.sh:755" "statusline-codex.py:644"; do
             if replace_copy "$src" "$copy" "$mode"; then
                 new="$src_hash"
             fi
-        else
+        elif [ -z "$rec" ] || [ "$src_hash" != "$rec" ]; then
             flagged="${flagged}${name}"$'\n'
         fi
     fi

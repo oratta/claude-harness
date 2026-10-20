@@ -14,7 +14,7 @@
 ## 4. テスト
 
 - [x] 4.1 新しい bats を作る。setup で `CLAUDE_CONFIG_DIR` と `HOME` を一時ディレクトリに向け、`<config>/plugins/cache/x/statusline/1/` にプラグインの `scripts/` を複製したものを `CLAUDE_PLUGIN_ROOT` にする（本体を「別の内容」にするときはこの複製を書き換える。リポジトリのファイルは触らない）。spec の全シナリオを 1 つずつテストにする: install.sh の記録（導入・内容が同じ・dry-run は記録を書かず印も残す・打ち直した直後に印が無い）、記録どおりの古いコピーが `cmp` で本体と一致（statusline.sh と helper）、1 行書き足したコピーは変わらず描画の 1 行目に `更新あり` が出る、記録ファイルが無いコピーは上書きしない、コピーを手で本体と同じ内容に戻すとフックが印を消す、印が無ければ `更新あり` が出ない、古いコピーには systemMessage が出て新しいコピーには出ない、`<config>/plugins/` の外の CLAUDE_PLUGIN_ROOT と空の CLAUDE_PLUGIN_ROOT では何も変わらず exit 0、未導入なら何も作らない。触る範囲: plugins/statusline/tests/statusline-copy-update.bats（新規）、plugins/statusline/tests/statusline.bats:1-40（setup の書き方を流用するために読むだけ）
-- [x] 4.2 `bats plugins/statusline/tests/` と、hooks.json を検査するリポジトリ側のテスト（`tests/lint-plugin-validate.bats`・`tests/hook-python-isolation.bats`）と `tests/injection-budget.bats` を走らせ、exit 0 を確かめる。触る範囲: なし（実行のみ）
+- [x] 4.2 `bats plugins/statusline/tests/` と、hooks.json を検査するリポジトリ側のテスト（`tests/lint-plugin-validate.bats`・`tests/hook-python-isolation.bats`）と `tests/injection-budget.bats` を走らせ、exit 0 を確かめる（既知の失敗 #1146 を除く）。触る範囲: なし（実行のみ）
 
 ## 5. 案内文と変更の記録
 
@@ -24,4 +24,4 @@
 
 ## 6. 実機確認（本体の担当）
 
-- [x] 6.1 主の Mac で新しいセッションを開き、ステータスラインが最新版になるか「更新あり」（古いコピーならセッション開始時の案内）が出ることを確かめ、エピック genetta-inc/flatmate#1656 にコメントする。W は担当しない。触る範囲: なし（実機確認のみ）（マージ後に本体が実施し、エピック genetta-inc/flatmate#1656 にコメントする）
+- [x] 6.1 主の Mac で新しいセッションを開き、ステータスラインが最新版になるか「更新あり」（古いコピーならセッション開始時の案内）が出ることを確かめ、エピック genetta-inc/flatmate#1656 にコメントする。W は担当しない。触る範囲: なし（実機確認のみ）（未実施。マージ後に本体が実施し、エピック genetta-inc/flatmate#1656 にコメントする）
