@@ -74,7 +74,8 @@ pkg_runner() {
 resolve_rate_share_dir() {
     local dir conf tilde='~'
     if [ "${FLATMATE_RATE_SHARE_DIR+x}" ]; then
-        dir="$FLATMATE_RATE_SHARE_DIR"
+        dir=$(printf '%s' "$FLATMATE_RATE_SHARE_DIR" \
+            | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
     else
         conf="${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"
         dir=""
@@ -93,7 +94,11 @@ resolve_rate_share_dir() {
 write_rate_snapshot_atomic() {
     local dest="$1" body="$2" tmp
     tmp=$(mktemp "$(dirname "$dest")/.rate-snapshot.XXXXXX" 2>/dev/null) || return 1
-    if ! printf '%s\n' "$body" > "$tmp" 2>/dev/null || ! mv -f "$tmp" "$dest" 2>/dev/null; then
+    # mktemp makes the file 0600; restore the 0644 a plain redirect gets under the usual umask.
+    # chmod runs before mv so a reader never sees the 0600 file at the destination.
+    if ! printf '%s\n' "$body" > "$tmp" 2>/dev/null \
+        || ! { chmod 0644 "$tmp" 2>/dev/null || true; } \
+        || ! mv -f "$tmp" "$dest" 2>/dev/null; then
         rm -f "$tmp" 2>/dev/null
         return 1
     fi
@@ -127,7 +132,7 @@ if [ -n "$five_h_pct" ] && [ -n "$session_id" ] && [ -z "${CLAUDE_SECURESTORAGE_
         account_id=$(jq -r '
             .oauthAccount.accountUuid | select(type == "string") |
             gsub("^[[:space:]]+|[[:space:]]+$"; "") |
-            select(length > 0 and length <= 256 and (contains("\n") | not))
+            select(length > 0 and length <= 256 and (test("[\r\n]") | not))
         ' "$HOME/.claude.json" 2>/dev/null)
     fi
     snap_body=$(jq -cn --arg account "$account_id" \
