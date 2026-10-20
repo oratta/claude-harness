@@ -591,8 +591,8 @@ PY
 }
 
 # ---------- 本番経路の User-Agent ----------
-# 使用量 API は User-Agent が claude-code/<版> でないリクエストを厳しい別枠で数え、
-# 429 を返し続ける。curl と claude を差し替え、実際に送られる見出しを記録して確かめる。
+# 使用量 API は Claude Code の User-Agent を名乗らないリクエストを厳しい別枠で数え、
+# 429 を返し続ける。リセット権は claude-cli/<版> (external, cli) の形でないと対象外になる。curl と claude を差し替え、実際に送られる見出しを記録して確かめる。
 
 # $1=claude --version の出力（空なら非 0 で終わる claude を置く）
 setup_production_stubs() {
@@ -620,21 +620,21 @@ SH
   chmod +x "${STUB}/curl" "${STUB}/claude"
 }
 
-@test "user-agent: production fetch names the installed claude-code version" {
+@test "user-agent: production fetch names the installed version in the claude-cli form" {
   setup_production_stubs "2.1.280 (Claude Code)"
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qxF 'User-Agent: claude-code/2.1.280' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-cli/2.1.280 (external, cli)' "${WORK}/curl-args"
   [ "$(jq -r '.accounts.x.five_hour_pct' "$SNAP")" = "10" ]
 }
 
-@test "user-agent: falls back to a fixed claude-code version when claude is unavailable" {
+@test "user-agent: falls back to a fixed version in the claude-cli form when claude is unavailable" {
   setup_production_stubs ""
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qxF 'User-Agent: claude-code/2.1.0' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
 }
 
 @test "user-agent: an unexpected claude --version output falls back to the fixed version" {
@@ -642,7 +642,7 @@ SH
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qxF 'User-Agent: claude-code/2.1.0' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
 }
 
 @test "user-agent: USAGE_PROBE_USER_AGENT overrides the header" {

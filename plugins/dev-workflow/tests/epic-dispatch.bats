@@ -17,7 +17,8 @@
 #         / wait_exit_<handle> / send_exit_<handle> / send_json_<handle>
 #         （既定は stages に turn_started を含む JSON）。
 #         create に --prompt が渡されたら prompt_<N> に、terminal send の --text は sent_<handle> に書き出す
-#   git : toplevel（rev-parse --show-toplevel の出力）/ fetch_exit / status_exit / status_out
+#   git : toplevel（rev-parse --show-toplevel の出力）/ origin_url・origin_exit（remote get-url origin。
+#         既定は git@github.com:oratta/claude-harness.git・0）/ fetch_exit / status_exit / status_out
 #         （-C <パス> status --porcelain）/ head（-C <パス> rev-parse HEAD。既定 aaa111）/ branch_tip
 #         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（branch -D）
 #         / wtlist_out・wtlist_out_<回数>・wtlist_exit（worktree list --porcelain。既定は空・0。回数は wtcount）
@@ -26,7 +27,7 @@
 #   sysctl: -n hw.memsize は memsize の内容を出して sysctl_exit（既定 0）で終わる。memsize が無ければ exit 1
 #   gh  : issue comment <N> --body <本文> は本文を comment_<N> に追記し（1 件ごとに "---" の行で区切る）、
 #         comment_exit_<N>（無ければ comment_exit）で終わる（既定 0）。成功（exit 0）のときは実物の gh と同じに投稿先の URL を stdout に出す。pr list は pr_out を出して pr_exit で終わる（--search 付きは pr_search_out と pr_search_exit。既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
-#         呼び出し回数は ghcount_<N>。FAIL は stderr に "gh: mock failure for issue <N> (poll <count>)" も出す
+#         呼び出し回数は ghcount_<N>。hook_<N>_<回数> があればその回の呼び出しで bash で走らせる（on_poll）。FAIL は stderr に "gh: mock failure for issue <N> (poll <count>)" も出す
 # スクリプトは PATH="<スタブ置き場>:/usr/bin:/bin" で走らせる（jq は実物）。
 # テストの途中に素の [[ ]] を置かない（bash 3.2 では偽でも素通りする）。
 #
@@ -49,11 +50,53 @@ setup() {
   make_stub sleep
   make_stub sysctl
   # 外の環境（並列起動された子のセッション）の値をテストに漏らさない
-  unset EPIC_DISPATCH_PARENT_EPIC
+  unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT
   # 既存の launch のテストが上限に当たらないよう大きくする（上限のテストだけで上書き・unset する）。
   # 物理メモリは sysctl のスタブ（memsize / sysctl_exit）だけから読ませ、実物の /proc/meminfo を読ませない
   export EPIC_DISPATCH_MAX_PARALLEL=99
   export EPIC_DISPATCH_MEMINFO_FILE="${BATS_TEST_TMPDIR}/no-meminfo"
+  # 状態の記録は実在のホームの下に書かない
+  export EPIC_STATE_ROOT="${BATS_TEST_TMPDIR}/state"
+}
+
+# 状態の記録を置く（<子の番号> [項目=値...]）。既定はエピック oratta/claude-harness#1122 の同じリポジトリの子で、
+# 親は /work/parent、worktree は実在の $BATS_TEST_TMPDIR/work/issue-<N>、status は running、stop は空。
+# epic= や child= を変えるとファイルの置き場もそれに合わせる。値が数のときは number=・schema= だけ数として書く
+put_record() {
+  local n="$1" j kv f
+  shift
+  mkdir -p "$BATS_TEST_TMPDIR/work/issue-$n"
+  j="$(jq -cn --argjson n "$n" --arg w "$BATS_TEST_TMPDIR/work/issue-$n" '{schema: 1, epic: "oratta/claude-harness#1122",
+    child: "oratta/claude-harness#\($n)", repo: "oratta/claude-harness", number: $n, launcher: "orca",
+    parent_worktree: "/work/parent", worktree: $w, branch: "oratta/issue-\($n)", base: "main", session: "",
+    launch_failed: "", status: "running", stop: "", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z"}')"
+  for kv in "$@"; do
+    j="$(printf '%s' "$j" | jq -c --arg k "${kv%%=*}" --arg v "${kv#*=}" \
+      '.[$k] = (if $k == "number" or $k == "schema" then ($v | tonumber) else $v end)')"
+  done
+  f="$(rec_of "$(printf '%s' "$j" | jq -r .epic)" "$(printf '%s' "$j" | jq -r .child)")"
+  mkdir -p "$(dirname "$f")"
+  printf '%s\n' "$j" > "$f"
+}
+
+# 記録のパス（<エピック o/r#E> <子 o/r#N>。既定はエピック oratta/claude-harness#1122 の子 <N> を番号だけで渡す形も可）
+rec_of() {
+  local e="$1" c="$2"
+  case "$c" in *"#"*) ;; *) c="oratta/claude-harness#$c" ;; esac
+  case "$e" in *"#"*) ;; *) e="oratta/claude-harness#$e" ;; esac
+  printf '%s/%s-%s/%s-%s.json' "$EPIC_STATE_ROOT" "$(printf '%s' "${e%%#*}" | sed 's#/#.#')" "${e##*#}" \
+    "$(printf '%s' "${c%%#*}" | sed 's#/#.#')" "${c##*#}"
+}
+
+# 子 <N>（エピック 1122）の記録の項目を読む
+rec_get() { jq -r ".$2" "$(rec_of 1122 "$1")"; }
+
+# 子 <N> の gh の <回数> 回目の呼び出しのときに、子 <N> の記録の項目を書き換える（<N> <回数> <項目>=<値>）。
+# ポーリングの途中で子が印を付けたことの表現
+on_poll() {
+  local f; f="$(rec_of 1122 "$1")"
+  printf 'jq -c --arg v %q %q %q > %q.tmp && mv %q.tmp %q\n' "${3#*=}" ".${3%%=*} = \$v" "$f" "$f" "$f" "$f" \
+    > "$STUB_CFG/hook_$1_$2"
 }
 
 # 共通の前半（ログへの追記）と、名前ごとの返り値の処理を持つスタブを置く
@@ -219,6 +262,11 @@ case "$1 ${2-}" in
     [ "$rc" -eq 0 ] && rm -f "$STUB_CFG/branch_tip"
     exit "$rc" ;;
 esac
+if [ "$1 ${2-} ${3-}" = "remote get-url origin" ]; then
+  [ -e "$STUB_CFG/origin_exit" ] && exit "$(cat "$STUB_CFG/origin_exit")"
+  if [ -e "$STUB_CFG/origin_url" ]; then cat "$STUB_CFG/origin_url"; else echo git@github.com:oratta/claude-harness.git; fi
+  exit 0
+fi
 case "$1" in
   rev-parse) cat "$STUB_CFG/toplevel"; exit 0 ;;
   fetch) exit "$(cat "$STUB_CFG/fetch_exit" 2>/dev/null || echo 0)" ;;
@@ -248,6 +296,7 @@ fi
 n="${2##*/}"
 count=$(( $(cat "$STUB_CFG/ghcount_$n" 2>/dev/null || echo 0) + 1 ))
 echo "$count" > "$STUB_CFG/ghcount_$n"
+[ -e "$STUB_CFG/hook_${n}_$count" ] && bash "$STUB_CFG/hook_${n}_$count"
 total=$(wc -l < "$STUB_CFG/gh_$n" | tr -d " ")
 idx="$count"
 [ "$idx" -gt "$total" ] && idx="$total"
@@ -327,8 +376,7 @@ first_line() { LC_ALL=C awk -v re="$1" '$0 ~ re { print NR; exit }' "$STUB_LOG";
 # reap の条件をすべて満たす子 11 の環境
 reap_ready() {
   make_stub orca
-  set_current 400
-  set_list list_json "$(wt_entry 11 completed)"
+  put_record 11 status=done
   echo aaa111 > "$STUB_CFG/pr_out"
 }
 
@@ -437,90 +485,71 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^orca ')" -eq 0 ]
 }
 
-@test "route: a parent worktree with a linked issue goes to nested without the variable" {
-  make_stub orca
-  set_child_of 420
-  run dispatch route 11 12
-  [ "$status" -eq 0 ]
-  [ "$output" = "nested" ]
-  grep -qxF 'parent epic: #420' "$BATS_TEST_TMPDIR/stderr"
-  [ "$(calls '^orca worktree current')" -eq 1 ]
-}
+# spec: dev-workflow-epic-state（子の側は今いるワークツリーのパスで自分の記録を探す）
 
-@test "route: one child or none is nested too when the parent worktree has a linked issue" {
+@test "route: a worktree with a state record goes to nested without the variable or the Orca list" {
   make_stub orca
-  set_child_of 420
-  run dispatch route 11
+  put_record 460
+  echo "$BATS_TEST_TMPDIR/work/issue-460" > "$STUB_CFG/toplevel"
+  run dispatch route 5
   [ "$status" -eq 0 ]
   [ "$output" = "nested" ]
+  grep -qxF 'parent epic: #1122' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca worktree list')" -eq 0 ]
   run dispatch route
   [ "$status" -eq 0 ]
   [ "$output" = "nested" ]
 }
 
-@test "route: a parent worktree without a linked issue routes as before" {
+@test "route: a record whose epic is in another repository prints the epic with its repository" {
   make_stub orca
-  set_child_of null
-  run dispatch route 11 12
-  [ "$status" -eq 0 ]
-  [ "$output" = "orca" ]
-  [ "$(grep -c 'parent epic' "$BATS_TEST_TMPDIR/stderr" || true)" -eq 0 ]
+  put_record 460 epic=genetta-inc/flatmate#1500
+  echo "$BATS_TEST_TMPDIR/work/issue-460" > "$STUB_CFG/toplevel"
+  run dispatch route 5
+  [ "$output" = "nested" ]
+  grep -qxF 'parent epic: genetta-inc/flatmate#1500' "$BATS_TEST_TMPDIR/stderr"
 }
 
-@test "route: a parent worktree missing from the list routes as before" {
+@test "route: Orca's parentWorktreeId alone does not make a child" {
   make_stub orca
   set_child_of 420
-  printf '%s\n' '{"result":{"worktrees":[]}}' > "$STUB_CFG/list_json"
   run dispatch route 11 12
   [ "$status" -eq 0 ]
-  [ "$output" = "orca" ]
-}
-
-@test "route: no parent worktree and no variable routes as before without reading the list" {
-  make_stub orca
-  run dispatch route 11 12
-  [ "$status" -eq 0 ]
-  [ "$output" = "orca" ]
-  [ "$(calls '^orca worktree current')" -eq 1 ]
-  run dispatch route 11
-  [ "$status" -eq 0 ]
-  [ "$output" = "orca" ]
-  [ "$(calls '^orca worktree current')" -eq 2 ]
-  printf '%s\n' '{"result":{"worktree":{"id":"repo-a::/work/parent","repoId":"repo-a","path":"/work/parent","parentWorktreeId":null}}}' > "$STUB_CFG/current_json"
-  run dispatch route 11 12
   [ "$output" = "orca" ]
   [ "$(calls '^orca worktree list')" -eq 0 ]
 }
 
-@test "route: an unreadable list means not a child, with a warning" {
+@test "route: an unreadable record is not a candidate and the route is as before" {
   make_stub orca
-  set_child_of 420
-  echo 1 > "$STUB_CFG/list_exit"
+  put_record 460
+  echo '{' > "$(rec_of 1122 460)"
+  echo "$BATS_TEST_TMPDIR/work/issue-460" > "$STUB_CFG/toplevel"
   run dispatch route 11 12
   [ "$status" -eq 0 ]
   [ "$output" = "orca" ]
-  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
-  rm "$STUB_CFG/list_exit"
-  printf '%s\n' '{"result":{}}' > "$STUB_CFG/list_json"
-  run dispatch route 11 12
-  [ "$status" -eq 0 ]
-  [ "$output" = "orca" ]
-  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
+  grep -qF "$(rec_of 1122 460)" "$BATS_TEST_TMPDIR/stderr"
 }
 
-@test "route: without jq the parent is not read and the route is as before, with a warning" {
+@test "route: without jq the record is not read and the route is as before" {
   make_stub orca
-  set_child_of 420
+  put_record 460
+  echo "$BATS_TEST_TMPDIR/work/issue-460" > "$STUB_CFG/toplevel"
   run dispatch_nojq route 11 12
   [ "$status" -eq 0 ]
   [ "$output" = "orca" ]
-  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
-  [ "$(calls '^orca worktree list')" -eq 0 ]
+}
+
+@test "route: a record of another worktree does not make this one a child" {
+  make_stub orca
+  put_record 460
+  run dispatch route 11 12
+  [ "$output" = "orca" ]
+  [ "$(calls '^orca worktree current')" -eq 1 ]
 }
 
 # --- launch ---
 
-@test "launch: call order is current, toplevel, fetch, set, list, then create, terminal create, wait and send per child" {
+@test "launch: call order is current, toplevel, origin, fetch, set, list, then create, terminal create, wait and send per child" {
   make_stub orca
   run dispatch launch 400 11 12
   [ "$status" -eq 0 ]
@@ -529,25 +558,26 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${#lines[@]}" -eq 2 ]
   log=()
   while IFS= read -r l; do log+=("$l"); done < "$STUB_LOG"
-  [ "${#log[@]}" -eq 15 ]
+  [ "${#log[@]}" -eq 16 ]
   [ "${log[0]}" = "orca worktree current --json" ]
   [ "${log[1]}" = "git rev-parse --show-toplevel" ]
-  [ "${log[2]}" = "git fetch origin main" ]
-  [ "${log[3]}" = "orca worktree set --worktree path:/work/parent --issue 400" ]
-  [ "${log[4]}" = "orca worktree list --json" ]
-  [ "${log[5]}" = "orca worktree create --name issue-11 --issue 11 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
-  [ "${log[6]}" = "orca terminal list --worktree path:/work/issue-11 --json" ]
-  starts_with "${log[7]}" "orca terminal create --worktree path:/work/issue-11 --command "
-  case "${log[7]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
+  [ "${log[2]}" = "git remote get-url origin" ]
+  [ "${log[3]}" = "git fetch origin main" ]
+  [ "${log[4]}" = "orca worktree set --worktree path:/work/parent --issue 400" ]
+  [ "${log[5]}" = "orca worktree list --json" ]
+  [ "${log[6]}" = "orca worktree create --name issue-11 --issue 11 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
+  [ "${log[7]}" = "orca terminal list --worktree path:/work/issue-11 --json" ]
+  starts_with "${log[8]}" "orca terminal create --worktree path:/work/issue-11 --command "
+  case "${log[8]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
   [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'" ]
-  [ "${log[8]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
-  starts_with "${log[9]}" "orca terminal send --terminal term-11 --text "
-  case "${log[9]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
-  [ "${log[10]}" = "orca worktree create --name issue-12 --issue 12 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
-  [ "${log[11]}" = "orca terminal list --worktree path:/work/issue-12 --json" ]
-  starts_with "${log[12]}" "orca terminal create --worktree path:/work/issue-12 --command "
-  [ "${log[13]}" = "orca terminal wait --terminal term-12 --for tui-idle --timeout-ms 60000 --json" ]
-  starts_with "${log[14]}" "orca terminal send --terminal term-12 --text "
+  [ "${log[9]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
+  starts_with "${log[10]}" "orca terminal send --terminal term-11 --text "
+  case "${log[10]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
+  [ "${log[11]}" = "orca worktree create --name issue-12 --issue 12 --base-branch origin/main --parent-worktree path:/work/parent --json" ]
+  [ "${log[12]}" = "orca terminal list --worktree path:/work/issue-12 --json" ]
+  starts_with "${log[13]}" "orca terminal create --worktree path:/work/issue-12 --command "
+  [ "${log[14]}" = "orca terminal wait --terminal term-12 --for tui-idle --timeout-ms 60000 --json" ]
+  starts_with "${log[15]}" "orca terminal send --terminal term-12 --text "
   [ "$(calls '--prompt')" -eq 0 ]
   [ "$(calls '--agent')" -eq 0 ]
 }
@@ -727,40 +757,26 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   grep -qF 'child epics are not expanded here' "$BATS_TEST_TMPDIR/stderr"
 }
 
-@test "launch: a parent worktree with a linked issue creates nothing, before git and set" {
+@test "launch: a session whose worktree has a state record creates nothing, before origin, fetch and set" {
   make_stub orca
-  set_child_of 420
+  put_record 460 epic=oratta/claude-harness#420 worktree=/work/parent parent_worktree=/work/root
   run dispatch launch 460 11 12
   [ "$status" -eq 1 ]
   [ -z "$output" ]
-  [ "$(calls '^git ')" -eq 0 ]
+  [ "$(calls '^git ')" -eq 1 ]
+  [ "$(calls '^git remote')" -eq 0 ]
   [ "$(calls '^orca worktree set')" -eq 0 ]
   [ "$(calls '^orca worktree create')" -eq 0 ]
   grep -F '420' "$BATS_TEST_TMPDIR/stderr" | grep -qF 'child epics are not expanded here'
+  [ ! -e "$(rec_of 460 11)" ]
 }
 
-@test "launch: an unreadable list under a parent worktree stops before git and set" {
+@test "launch: Orca's parent worktree alone does not make the session a child" {
   make_stub orca
   set_child_of 420
-  echo 1 > "$STUB_CFG/list_exit"
-  run dispatch launch 460 11 12
-  [ "$status" -eq 1 ]
-  [ -z "$output" ]
-  [ "$(calls '^git ')" -eq 0 ]
-  [ "$(calls '^orca worktree set')" -eq 0 ]
-  [ "$(calls '^orca worktree create')" -eq 0 ]
-  [ "$(calls '^orca worktree list')" -eq 1 ]
-  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
-  rm "$STUB_CFG/list_exit"
-  : > "$STUB_LOG"
-  printf '%s\n' '{"result":{}}' > "$STUB_CFG/list_json"
-  run dispatch launch 460 11 12
-  [ "$status" -eq 1 ]
-  [ -z "$output" ]
-  [ "$(calls '^git ')" -eq 0 ]
-  [ "$(calls '^orca worktree set')" -eq 0 ]
-  [ "$(calls '^orca worktree create')" -eq 0 ]
-  grep -qF 'could not read the parent worktree' "$BATS_TEST_TMPDIR/stderr"
+  run dispatch launch 460 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "launched 11" ]
 }
 
 @test "launch: without a parent worktree a failing list still comes after fetch and set" {
@@ -915,6 +931,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${lines[1]}" = "launched 12" ]
   [ "$(calls '^orca worktree create --name issue-11 ')" -eq 0 ]
   [ "$(calls '^orca worktree create --name issue-12 ')" -eq 1 ]
+  [ ! -e "$(rec_of 400 11)" ]
 }
 
 @test "launch: a duplicate child number in the same call is skipped after the first" {
@@ -1188,10 +1205,11 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 @test "launch: one running child closing frees one slot for a deferred child" {
   make_stub orca
   set_current 400
-  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent')" "$(wt_entry 12 '' 'repo-a::/work/parent')"
+  put_record 11
+  put_record 12
   gh_seq 11 closed
   gh_seq 12 open
-  EPIC_DISPATCH_MAX_PARALLEL=2 run dispatch launch 400 12 13 14 15
+  EPIC_DISPATCH_MAX_PARALLEL=2 run dispatch launch 1122 12 13 14 15
   [ "$status" -eq 0 ]
   [ "$output" = "$(printf 'skipped 12\nlaunched 13\ndeferred 14\ndeferred 15')" ]
   [ "$(calls '^orca worktree create')" -eq 1 ]
@@ -1202,8 +1220,9 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 @test "launch: children with the done mark or the stopped mark do not use a slot" {
   make_stub orca
   set_current 400
-  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 '' 'repo-a::/work/parent' repo-a false epic-stopped-seen)" \
-    "$(wt_entry 16 '' 'repo-a::/work/parent' repo-a false epic-stopped)"
+  put_record 11 status=done
+  put_record 12 stop=stopped-seen
+  put_record 16 stop=stopped
   gh_seq 11 open
   gh_seq 12 open
   gh_seq 16 open
@@ -1215,7 +1234,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 @test "launch: a resumed child uses a slot" {
   make_stub orca
   set_current 400
-  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent' repo-a false epic-resumed)"
+  put_record 11 stop=resumed
   gh_seq 11 open
   EPIC_DISPATCH_MAX_PARALLEL=2 run dispatch launch 400 13 14
   [ "$status" -eq 0 ]
@@ -1225,7 +1244,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 @test "launch: a child whose issue state cannot be read is counted as using a slot" {
   make_stub orca
   set_current 400
-  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent')"
+  put_record 11
   gh_seq 11 FAIL
   EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 400 13
   [ "$status" -eq 0 ]
@@ -1234,22 +1253,56 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   grep -q 'could not read the state of #11' "$BATS_TEST_TMPDIR/stderr"
 }
 
-@test "launch: children of another parent worktree and archived children are not counted" {
+@test "launch: records of another parent worktree are not counted, records of another epic under this parent are" {
   make_stub orca
   set_current 400
-  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/other')" "$(wt_entry 12 '' 'repo-a::/work/parent' repo-a true)"
+  put_record 11 parent_worktree=/work/other
   gh_seq 11 open
-  gh_seq 12 open
   EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 400 13
   [ "$status" -eq 0 ]
   [ "$output" = "launched 13" ]
+  # 1 回目で作った子 13 の記録（エピック 400）と、同じ親のエピック 900 の子 12 の記録を数える。
+  # 別の親の子 11 は数えない。並びは置き場のディレクトリの順（-400 → -900）
+  [ -f "$(rec_of 400 13)" ]
+  put_record 12 epic=oratta/claude-harness#900
+  gh_seq 12 open
+  gh_seq 13 open
+  EPIC_DISPATCH_MAX_PARALLEL=2 run dispatch launch 400 14 15
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'deferred 14\ndeferred 15')" ]
+  grep -q 'in use 2: #13 #12$' "$BATS_TEST_TMPDIR/stderr" || { cat "$BATS_TEST_TMPDIR/stderr"; false; }
+}
+
+@test "launch: an unreadable record of another child uses one slot" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  printf '{\n' >| "$(rec_of 1122 11)"
+  EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 400 13
+  [ "$status" -eq 0 ]
+  [ "$output" = "deferred 13" ]
+  grep -q 'in use 1: ' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: the in-use count follows the records (running counts, done and stopped-seen do not)" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_record 12 status=done
+  put_record 16 stop=stopped-seen
+  gh_seq 11 open
+  EPIC_DISPATCH_MAX_PARALLEL=2 run dispatch launch 1122 21 22
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'launched 21\ndeferred 22')" ]
+  grep -q 'in use 1: #11$' "$BATS_TEST_TMPDIR/stderr"
 }
 
 @test "launch: more children in use than the max defers everything without create" {
   make_stub orca
   set_current 400
-  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent')" "$(wt_entry 12 '' 'repo-a::/work/parent')" \
-    "$(wt_entry 13 '' 'repo-a::/work/parent')"
+  put_record 11
+  put_record 12
+  put_record 13
   gh_seq 11 open
   gh_seq 12 open
   gh_seq 13 open
@@ -1289,89 +1342,320 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   grep -q 'usage:' "$BATS_TEST_TMPDIR/stderr"
 }
 
-@test "launch: a current worktree without an id counts no children in use and says so" {
+@test "launch: an Orca worktree without a record does not use a slot" {
   make_stub orca
+  set_current 400
   set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent')"
   gh_seq 11 open
   EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 400 13
   [ "$status" -eq 0 ]
   [ "$output" = "launched 13" ]
-  grep -q 'no id' "$BATS_TEST_TMPDIR/stderr"
+  grep -q 'in use 0' "$BATS_TEST_TMPDIR/stderr"
+}
+
+# --- launch: 状態の記録 ---
+# spec: dev-workflow-epic-state（記録の置き場・項目・launch は子のワークツリーを作る前に記録を書く・別のリポジトリの子は作らない）
+
+@test "launch: the record is written under EPIC_STATE_ROOT with the fixed fields, nothing under ~/.claude/projects" {
+  make_stub orca
+  export HOME="$BATS_TEST_TMPDIR/home"
+  mkdir -p "$HOME"
+  printf '%s\n' '{"result":{"worktree":{"path":"/work/issue-1123","branch":"refs/heads/oratta/issue-1123"}}}' > "$STUB_CFG/create_json_1123"
+  run dispatch launch 1122 1123
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 1123" ]
+  f="$EPIC_STATE_ROOT/oratta.claude-harness-1122/oratta.claude-harness-1123.json"
+  [ -f "$f" ]
+  [ ! -e "$HOME/.claude/projects" ]
+  [ "$(jq -c '{schema, epic, child, repo, number, launcher, parent_worktree, worktree, branch, base, session, launch_failed, status, stop}' "$f")" = \
+    '{"schema":1,"epic":"oratta/claude-harness#1122","child":"oratta/claude-harness#1123","repo":"oratta/claude-harness","number":1123,"launcher":"orca","parent_worktree":"/work/parent","worktree":"/work/issue-1123","branch":"oratta/issue-1123","base":"main","session":"term-1123","launch_failed":"","status":"running","stop":""}' ]
+  jq -e '(.created_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and (.updated_at | test("Z$"))' "$f" >/dev/null
+  # 一時ファイルもロックも残らない
+  [ "$(find "$EPIC_STATE_ROOT" -mindepth 2 | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "launch: without EPIC_STATE_ROOT the record goes under HOME/.claude/epic-state, not projects" {
+  make_stub orca
+  export HOME="$BATS_TEST_TMPDIR/home"
+  mkdir -p "$HOME"
+  unset EPIC_STATE_ROOT
+  run dispatch launch 1122 1123
+  [ "$output" = "launched 1123" ]
+  [ -f "$HOME/.claude/epic-state/oratta.claude-harness-1122/oratta.claude-harness-1123.json" ]
+  [ ! -e "$HOME/.claude/projects" ]
+}
+
+@test "launch: the three origin forms and upper case owners give the same record path" {
+  make_stub orca
+  for url in ssh://git@github.com/Oratta/claude-harness git@github.com:oratta/claude-harness https://github.com/oratta/claude-harness.git/; do
+    rm -rf "$EPIC_STATE_ROOT"
+    printf '%s\n' "$url" > "$STUB_CFG/origin_url"
+    run dispatch launch 1122 1123
+    [ "$status" -eq 0 ] || { echo "$url" >&2; false; }
+    [ -f "$EPIC_STATE_ROOT/oratta.claude-harness-1122/oratta.claude-harness-1123.json" ] || { echo "$url" >&2; false; }
+    [ "$(jq -r .epic "$EPIC_STATE_ROOT/oratta.claude-harness-1122/oratta.claude-harness-1123.json")" = "oratta/claude-harness#1122" ]
+  done
+}
+
+@test "launch: without origin no record and no worktree are made, exit 1" {
+  make_stub orca
+  echo 2 > "$STUB_CFG/origin_exit"
+  run dispatch launch 1122 1123
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ ! -e "$EPIC_STATE_ROOT/oratta.claude-harness-1122" ]
+  grep -q 'cannot read the epic repository from origin: no origin' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: a gitlab origin makes nothing and names the URL on stderr" {
+  make_stub orca
+  echo git@gitlab.com:oratta/claude-harness.git > "$STUB_CFG/origin_url"
+  run dispatch launch 1122 1123
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  [ ! -e "$EPIC_STATE_ROOT" ] || [ -z "$(find "$EPIC_STATE_ROOT" -type f)" ]
+  grep -q 'cannot read the epic repository from origin: git@gitlab.com:oratta/claude-harness.git' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: a failing worktree create leaves no record" {
+  make_stub orca
+  touch "$STUB_CFG/create_fail_11"
+  run dispatch launch 1122 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+  [ ! -e "$(rec_of 1122 11)" ]
+}
+
+@test "launch: create without a path keeps the record with launch_failed create" {
+  make_stub orca
+  printf '%s\n' '{"result":{"worktree":{}}}' > "$STUB_CFG/create_json_11"
+  run dispatch launch 1122 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+  [ "$(rec_get 11 launch_failed)" = create ]
+  [ "$(rec_get 11 worktree)" = "" ]
+}
+
+@test "launch: a failing send keeps the record with launch_failed send and the next launch skips it" {
+  make_stub orca
+  printf '%s\n' '{"ok":true,"result":{"stages":["input_accepted"]}}' > "$STUB_CFG/send_json_term-11"
+  run dispatch launch 1122 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+  [ "$(rec_get 11 launch_failed)" = send ]
+  [ "$(rec_get 11 worktree)" = /work/issue-11 ]
+  [ "$(rec_get 11 session)" = term-11 ]
+  gh_seq 11 open
+  run dispatch launch 1122 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11" ]
+  [ "$(calls '^orca worktree create')" -eq 1 ]
+}
+
+@test "launch: terminal and ready failures are written to launch_failed" {
+  make_stub orca
+  touch "$STUB_CFG/tcreate_fail_11"
+  echo 1 > "$STUB_CFG/wait_exit_term-12"
+  run dispatch launch 1122 11 12
+  [ "$status" -eq 1 ]
+  [ "$output" = "$(printf 'failed 11\nfailed 12')" ]
+  [ "$(rec_get 11 launch_failed)" = terminal ]
+  [ "$(rec_get 12 launch_failed)" = ready ]
+}
+
+@test "launch: a child of another repository is failed other-repo without create or record" {
+  make_stub orca
+  EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 1122 other/repo#5 12
+  [ "$status" -eq 1 ]
+  [ "$output" = "$(printf 'failed other/repo#5 other-repo\nlaunched 12')" ]
+  [ "$(calls '^orca worktree create --name issue-5 ')" -eq 0 ]
+  [ -z "$(find "$EPIC_STATE_ROOT" -name '*other*')" ]
+}
+
+@test "launch: a record with an empty worktree is overwritten and the worktree is made" {
+  make_stub orca
+  put_record 11 worktree= created_at=2020-01-01T00:00:00Z
+  gh_seq 11 open
+  run dispatch launch 1122 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+  [ "$(calls '^orca worktree create --name issue-11 ')" -eq 1 ]
+  [ "$(rec_get 11 worktree)" = /work/issue-11 ]
+  [ "$(rec_get 11 created_at)" != 2020-01-01T00:00:00Z ]
+}
+
+@test "launch: an unreadable own record is failed state-unreadable and left as is" {
+  make_stub orca
+  mkdir -p "$(dirname "$(rec_of 1122 11)")"
+  printf '{\n' > "$(rec_of 1122 11)"
+  run dispatch launch 1122 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 state-unreadable" ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  [ "$(cat "$(rec_of 1122 11)")" = "{" ]
+  grep -q "$(rec_of 1122 11)" "$BATS_TEST_TMPDIR/stderr"
+  # schema の版違いと必須項目の欠けも読めない記録
+  put_record 11 schema=2
+  run dispatch launch 1122 11
+  [ "$output" = "failed 11 state-unreadable" ]
+  put_record 11
+  jq -c 'del(.worktree)' "$(rec_of 1122 11)" > "$(rec_of 1122 11).x" && mv "$(rec_of 1122 11).x" "$(rec_of 1122 11)"
+  run dispatch launch 1122 11
+  [ "$output" = "failed 11 state-unreadable" ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+}
+
+@test "launch: an empty-worktree record with an existing Orca worktree is filled and skipped" {
+  make_stub orca
+  put_record 11 worktree=
+  set_list list_json "$(wt_entry 11 '')"
+  run dispatch launch 1122 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11" ]
+  [ "$(rec_get 11 worktree)" = "$BATS_TEST_TMPDIR/work/issue-11" ]
+  [ "$(rec_get 11 branch)" = oratta/issue-11 ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+}
+
+@test "launch: the own empty-worktree record uses its own slot under a limit of 1" {
+  make_stub orca
+  put_record 11 worktree=
+  gh_seq 11 open
+  EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 1122 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+  [ "$(calls '^orca worktree create --name issue-11 ')" -eq 1 ]
+}
+
+@test "launch: the same child by number and by owner/repo#N is launched once" {
+  make_stub orca
+  run dispatch launch 1122 11 oratta/claude-harness#11
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'launched 11\nskipped oratta/claude-harness#11')" ]
+  [ "$(calls '^orca worktree create --name issue-11 ')" -eq 1 ]
 }
 
 # --- mark ---
+# spec: dev-workflow-epic-state（子の側は今いるワークツリーのパスで自分の記録を探す・Orca の部品は記録を書いたあとに Orca の印へ写す）
 
-@test "mark: done on the linked workspace sets completed" {
+# 今のワークツリーを子 <N> の記録の worktree にする
+in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
+
+@test "mark: done and waiting write status and mirror to the board column" {
   make_stub orca
-  set_current 11
+  put_record 11; in_child 11
   run dispatch mark done 11
   [ "$status" -eq 0 ]
   [ "$output" = "marked 11 done" ]
+  [ "$(rec_get 11 status)" = done ]
+  [ "$(rec_get 11 stop)" = "" ]
   [ "$(calls '^orca worktree set --worktree current --workspace-status completed$')" -eq 1 ]
-}
-
-@test "mark: waiting sets in-review" {
-  make_stub orca
-  set_current 11
   run dispatch mark waiting 11
-  [ "$status" -eq 0 ]
   [ "$output" = "marked 11 waiting" ]
+  [ "$(rec_get 11 status)" = waiting ]
   [ "$(calls '^orca worktree set --worktree current --workspace-status in-review$')" -eq 1 ]
 }
 
-@test "mark: another issue's workspace is not marked" {
+@test "mark: the record is written through a temporary file and nothing is left behind" {
   make_stub orca
-  set_current 400
+  put_record 11; in_child 11
   run dispatch mark done 11
   [ "$status" -eq 0 ]
-  [ "$output" = "skipped 11 not-linked" ]
-  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(ls -A "$(dirname "$(rec_of 1122 11)")")" = "oratta.claude-harness-11.json" ]
+  [ "$(rec_get 11 updated_at)" != "2026-01-01T00:00:00Z" ]
+  rec_get 11 updated_at | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
 }
 
-@test "mark: a workspace without a linked issue is not marked" {
+@test "mark: unknown fields in the record are kept" {
   make_stub orca
-  set_current null
-  run dispatch mark done 11
-  [ "$status" -eq 0 ]
-  [ "$output" = "skipped 11 not-linked" ]
-  [ "$(calls '^orca worktree set')" -eq 0 ]
+  put_record 1123 extra=1; in_child 1123
+  run dispatch mark done 1123
+  [ "$output" = "marked 1123 done" ]
+  [ "$(rec_get 1123 status)" = done ]
+  [ "$(rec_get 1123 extra)" = 1 ]
 }
 
-@test "mark: outside Orca and without orca it does nothing" {
+@test "mark: a worktree without a record does nothing and creates no record" {
   make_stub orca
-  echo 1 > "$STUB_CFG/current_exit"
+  put_record 12
+  in_child 11
   run dispatch mark done 11
   [ "$status" -eq 0 ]
   [ "$output" = "skipped 11 no-workspace" ]
+  [ "$(find "$EPIC_STATE_ROOT" -type f | wc -l | tr -d ' ')" -eq 1 ]
   [ "$(calls '^orca worktree set')" -eq 0 ]
-  rm -f "$STUB_BIN/orca"; : > "$STUB_LOG"
-  run dispatch mark done 11
-  [ "$status" -eq 0 ]
+  rm -f "$STUB_BIN/orca"
+  run dispatch mark stopped 11
   [ "$output" = "skipped 11 no-workspace" ]
-  [ ! -s "$STUB_LOG" ]
+}
+
+@test "mark: another issue's record is not marked" {
+  make_stub orca
+  put_record 461; in_child 461
+  run dispatch mark stopped 460
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 460 not-linked" ]
+  [ "$(rec_get 461 stop)" = "" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  run dispatch mark done other/repo#461
+  [ "$output" = "skipped other/repo#461 not-linked" ]
+  run dispatch mark done Oratta/Claude-Harness#461
+  [ "$output" = "marked Oratta/Claude-Harness#461 done" ]
+}
+
+@test "mark: two records with this worktree is failed without writing" {
+  make_stub orca
+  put_record 11; put_record 11 epic=oratta/claude-harness#1200
+  in_child 11
+  run dispatch mark done 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+  [ "$(rec_get 11 status)" = running ]
+  grep -qF "$(rec_of 1122 11)" "$BATS_TEST_TMPDIR/stderr"
+  grep -qF "$(rec_of 1200 11)" "$BATS_TEST_TMPDIR/stderr"
 }
 
 @test "mark: EPIC_DISPATCH_PARENT_EPIC does not change it" {
   make_stub orca
-  set_current 11
+  put_record 11; in_child 11
   EPIC_DISPATCH_PARENT_EPIC=400 run dispatch mark done 11
   [ "$status" -eq 0 ]
   [ "$output" = "marked 11 done" ]
-  [ "$(calls '^orca worktree set --worktree current --workspace-status completed$')" -eq 1 ]
 }
 
-@test "mark: a failing set ends with failed" {
+@test "mark: a failing mirror to Orca is still marked, with a warning" {
   make_stub orca
-  set_current 11
+  put_record 1123; in_child 1123
   echo 1 > "$STUB_CFG/set_exit"
+  run dispatch mark done 1123
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked 1123 done" ]
+  [ "$(rec_get 1123 status)" = done ]
+  grep -qF 'could not mirror' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "mark: without orca on PATH the record is still marked" {
+  put_record 1123; in_child 1123
+  run dispatch mark stopped 1123
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked 1123 stopped" ]
+  [ "$(rec_get 1123 stop)" = stopped ]
+}
+
+@test "mark: a record from another launcher is not mirrored to Orca" {
+  make_stub orca
+  put_record 11 launcher=tmux; in_child 11
   run dispatch mark done 11
-  [ "$status" -eq 1 ]
-  [ "$output" = "failed 11" ]
+  [ "$output" = "marked 11 done" ]
+  [ "$(calls '^orca ')" -eq 0 ]
 }
 
 @test "mark: orca's own output goes to stderr" {
   make_stub orca
-  set_current 11
+  put_record 11; in_child 11
   run dispatch mark done 11
   [ "${#lines[@]}" -eq 1 ]
   grep -qF '"ok":true' "$BATS_TEST_TMPDIR/stderr"
@@ -1379,7 +1663,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 
 @test "mark: bad arguments are rejected without calling orca" {
   make_stub orca
-  set_current 11
+  put_record 11; in_child 11
   run dispatch mark completed 11
   [ "$status" -eq 1 ]
   [ -z "$output" ]
@@ -1401,84 +1685,85 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   run dispatch mark stopped 11 12
   [ "$status" -eq 1 ]
   [ -z "$output" ]
+  EPIC_STATE_LOCK_TIMEOUT=x run dispatch mark done 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  EPIC_STATE_LOCK_TIMEOUT= run dispatch mark done 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
   [ "$(calls '^orca')" -eq 0 ]
+  [ "$(rec_get 11 status)" = running ]
   grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "mark: a leftover lock means failed without writing, and the lock is kept" {
+  make_stub orca
+  put_record 1123; in_child 1123
+  mkdir "$(rec_of 1122 1123).lock"
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch mark stopped 1123
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 1123" ]
+  [ "$(rec_get 1123 stop)" = "" ]
+  [ -d "$(rec_of 1122 1123).lock" ]
+  grep -qF "$(rec_of 1122 1123).lock" "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca worktree set')" -eq 0 ]
 }
 
 # spec: dev-workflow-develop（epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す）
 
-@test "mark: stopped on the linked workspace sets the comment, not the board column" {
+@test "mark: stopped sets stop, not status, and mirrors the comment" {
   make_stub orca
-  set_current 460
+  put_record 460 status=waiting; in_child 460
   run dispatch mark stopped 460
   [ "$status" -eq 0 ]
   [ "$output" = "marked 460 stopped" ]
+  [ "$(rec_get 460 stop)" = stopped ]
+  [ "$(rec_get 460 status)" = waiting ]
   [ "$(calls '^orca worktree set --worktree current --comment epic-stopped$')" -eq 1 ]
   [ "$(calls 'workspace-status')" -eq 0 ]
 }
 
-@test "mark: stopped on another issue's workspace is not marked" {
+@test "mark: done does not touch stop" {
   make_stub orca
-  set_current 461
-  run dispatch mark stopped 460
-  [ "$status" -eq 0 ]
-  [ "$output" = "skipped 460 not-linked" ]
-  [ "$(calls '^orca worktree set')" -eq 0 ]
+  put_record 460 stop=stopped-seen; in_child 460
+  run dispatch mark done 460
+  [ "$(rec_get 460 stop)" = stopped-seen ]
+  [ "$(rec_get 460 status)" = done ]
 }
 
-@test "mark: resumed rewrites only a stopped or seen comment" {
+@test "mark: resumed rewrites only a stopped or seen stop" {
   make_stub orca
-  set_current 460 epic-stopped
+  put_record 460 stop=stopped; in_child 460
   run dispatch mark resumed 460
   [ "$status" -eq 0 ]
   [ "$output" = "marked 460 resumed" ]
+  [ "$(rec_get 460 stop)" = resumed ]
   [ "$(calls '^orca worktree set --worktree current --comment epic-resumed$')" -eq 1 ]
   : > "$STUB_LOG"
-  set_current 460 epic-stopped-seen
+  put_record 460 stop=stopped-seen
   run dispatch mark resumed 460
-  [ "$status" -eq 0 ]
   [ "$output" = "marked 460 resumed" ]
-  [ "$(calls '^orca worktree set --worktree current --comment epic-resumed$')" -eq 1 ]
+  [ "$(rec_get 460 stop)" = resumed ]
   : > "$STUB_LOG"
-  set_current 460 メモ
+  put_record 460
   run dispatch mark resumed 460
   [ "$status" -eq 0 ]
   [ "$output" = "skipped 460 not-stopped" ]
+  [ "$(rec_get 460 stop)" = "" ]
   [ "$(calls '^orca worktree set')" -eq 0 ]
-  [ "$(calls '^orca worktree current --json$')" -eq 1 ]
-}
-
-@test "mark: resumed on another issue's workspace is not marked" {
-  make_stub orca
-  set_current 461 epic-stopped
+  put_record 460 stop=resumed
   run dispatch mark resumed 460
-  [ "$status" -eq 0 ]
-  [ "$output" = "skipped 460 not-linked" ]
-  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$output" = "skipped 460 not-stopped" ]
 }
 
-@test "mark: a failing stopped or resumed set ends with failed" {
+@test "mark: an unreadable record is not a candidate" {
   make_stub orca
-  set_current 460 epic-stopped
-  echo 1 > "$STUB_CFG/set_exit"
-  run dispatch mark stopped 460
-  [ "$status" -eq 1 ]
-  [ "$output" = "failed 460" ]
-  run dispatch mark resumed 460
-  [ "$status" -eq 1 ]
-  [ "$output" = "failed 460" ]
-}
-
-@test "mark: stopped and resumed outside Orca do nothing" {
-  make_stub orca
-  echo 1 > "$STUB_CFG/current_exit"
+  put_record 460; in_child 460
+  echo '{' > "$(rec_of 1122 460)"
   run dispatch mark stopped 460
   [ "$status" -eq 0 ]
   [ "$output" = "skipped 460 no-workspace" ]
-  run dispatch mark resumed 460
-  [ "$status" -eq 0 ]
-  [ "$output" = "skipped 460 no-workspace" ]
-  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(cat "$(rec_of 1122 460)")" = "{" ]
 }
 
 # --- wait ---
@@ -1622,24 +1907,23 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^gh ')" -eq 0 ]
 }
 
-@test "wait: --watch-done ends with done when the mark appears while the issue stays open" {
+@test "wait: --watch-done ends with done when the record's status becomes done while the issue stays open" {
   make_stub orca
-  set_current 400
   gh_seq 11 open
-  set_list list_json_1 "$(wt_entry 11 in-review)"
-  set_list list_json "$(wt_entry 11 completed)"
+  put_record 11 status=waiting
+  on_poll 11 2 status=done
   run dispatch wait --interval 0 --timeout 60 --watch-done 11 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
   [ "$output" = "done 11" ]
   [ "$(calls '^gh ')" -eq 2 ]
-  [ "$(calls '^orca worktree list --json$')" -eq 2 ]
+  [ "$(calls '^orca')" -eq 0 ]
 }
 
 @test "wait: closed and done in the same poll print two lines, closed first" {
   make_stub orca
-  set_current 400
   gh_seq 12 closed
-  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 in-review)"
+  put_record 11 status=done
+  put_record 12 status=waiting
   run dispatch wait --interval 0 --timeout 60 --watch-done 11 --watch-done 12 12
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
@@ -1649,66 +1933,117 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 
 @test "wait: --watch-done alone waits without gh and times out with a bare timeout" {
   make_stub orca
-  set_current 400
-  set_list list_json "$(wt_entry 11 in-review)"
+  put_record 11 status=waiting
   run dispatch wait --interval 0 --timeout 0 --watch-done 11
   [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
   [ "$output" = "timeout" ]
   [ "$(calls '^gh ')" -eq 0 ]
 }
 
-@test "wait: without --watch-done orca is never called" {
+@test "wait: orca is never called, with or without --watch-done" {
   make_stub orca
   gh_seq 11 closed
   run dispatch wait --interval 0 --timeout 60 11
   [ "$status" -eq 0 ]
   [ "$output" = "closed 11" ]
+  put_record 12 status=done
+  run dispatch wait --interval 0 --timeout 0 --watch-done 12
+  [ "$output" = "done 12" ]
   [ "$(calls '^orca')" -eq 0 ]
 }
 
-@test "wait: marks on another repo or on archived worktrees do not count" {
+@test "wait: the done mark only on Orca's board does not wake the parent" {
+  # spec: dev-workflow-epic-state（Orca の印だけでは wait は起きない）
   make_stub orca
   set_current 400
-  set_list list_json "$(wt_entry 11 completed repo-b::/x repo-b)" "$(wt_entry 11 completed repo-a::/work/parent repo-a true)"
+  set_list list_json "$(wt_entry 12 completed)"
+  put_record 12 status=running
+  run dispatch wait --interval 0 --timeout 0 --watch-done 12
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout" ]
+}
+
+@test "wait: records of another parent worktree or another epic repository do not count" {
+  make_stub orca
+  put_record 11 status=done parent_worktree=/work/other
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout" ]
+  rm -rf "$EPIC_STATE_ROOT"
+  put_record 11 status=done repo=genetta-inc/flatmate child=genetta-inc/flatmate#11
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout" ]
+  run dispatch wait --interval 0 --timeout 0 --watch-done genetta-inc/flatmate#11
+  [ "$status" -eq 0 ]
+  [ "$output" = "done genetta-inc/flatmate#11" ]
+}
+
+@test "wait: two records for the same child under the same parent are not looked at" {
+  make_stub orca
+  put_record 11 status=done
+  put_record 11 status=done epic=oratta/claude-harness#900
   run dispatch wait --interval 0 --timeout 0 --watch-done 11
   [ "$status" -eq 2 ]
   [ "$output" = "timeout" ]
 }
 
-@test "wait: three polls without a readable list end with error workspaces" {
+@test "wait: three polls with an unreadable record end with error workspaces and leave the record" {
+  # spec: dev-workflow-epic-state（読めない記録が続くと wait は error workspaces）
   make_stub orca
-  set_current 400
-  echo 1 > "$STUB_CFG/list_exit"
+  gh_seq 11 open
+  put_record 11 stop=paused
+  before="$(cat "$(rec_of 1122 11)")"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "error workspaces" ]
+  [ "$(cat "$(rec_of 1122 11)")" = "$before" ]
+  grep -qF "$(rec_of 1122 11)" "$BATS_TEST_TMPDIR/stderr"
+  mkdir -p "$EPIC_STATE_ROOT/oratta.claude-harness-1122"
+  printf '{\n' > "$(rec_of 1122 12)"
+  run dispatch wait --interval 0 --timeout 60 --watch-done 12
+  [ "$status" -eq 1 ]
+  [ "$output" = "error workspaces" ]
+}
+
+@test "wait: stop seen and an empty status are unreadable, not matched as substrings" {
+  make_stub orca
+  gh_seq 11 open
+  put_record 11 stop=seen
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "error workspaces" ]
+  put_record 11 status=
   run dispatch wait --interval 0 --timeout 60 --watch-done 11
   [ "$status" -eq 1 ]
   [ "$output" = "error workspaces" ]
-  [ "$(calls '^orca worktree list')" -eq 3 ]
 }
 
-@test "wait: an unreadable list with a failing gh child ends with error gh" {
+@test "wait: an unreadable record with a failing gh child ends with error gh" {
   make_stub orca
-  set_current 400
-  echo 1 > "$STUB_CFG/list_exit"
+  put_record 11 status=bogus
   gh_seq 12 FAIL
   run dispatch wait --interval 0 --timeout 60 --watch-done 11 12
   [ "$status" -eq 1 ]
   [ "$output" = "error gh 12" ]
 }
 
-@test "wait: --watch-done fails with no stdout when the current worktree cannot be read" {
+@test "wait: --watch-done fails with no stdout when the current worktree cannot be read, but not for lack of orca" {
   make_stub orca
-  echo 1 > "$STUB_CFG/current_exit"
+  printf '#!/bin/bash\nexit 1\n' > "$STUB_BIN/git"; chmod +x "$STUB_BIN/git"
   run dispatch wait --interval 0 --timeout 60 --watch-done 11 11
   [ "$status" -eq 1 ]
   [ -z "$output" ]
   [ "$(calls '^gh ')" -eq 0 ]
+  make_stub git
   rm -f "$STUB_BIN/orca"
-  run dispatch wait --interval 0 --timeout 60 --watch-done 11
-  [ "$status" -eq 1 ]
-  [ -z "$output" ]
+  put_record 11 status=done
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "done 11" ]
 }
 
-@test "wait: a non-numeric --watch-done is rejected" {
+@test "wait: a malformed --watch-done is rejected" {
   make_stub orca
   run dispatch wait --interval 0 --timeout 0 --watch-done '#11' 11
   [ "$status" -eq 1 ]
@@ -1720,30 +2055,80 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^gh ')" -eq 0 ]
 }
 
+@test "wait: a child given as owner/repo#N reads that repository's issue and keeps its form" {
+  # spec: dev-workflow-epic-state（owner/repo#番号 で渡した子はその形で返る）
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  gh_seq 1615 closed
+  run dispatch wait --interval 0 --timeout 0 genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed genetta-inc/flatmate#1615" ]
+  grep -q '^gh api repos/genetta-inc/flatmate/issues/1615 --jq .state$' "$STUB_LOG"
+}
+
+@test "wait: a same-repository child with a record calls gh as before and never reads origin" {
+  # spec: dev-workflow-epic-state（同じリポジトリの子は今と同じ形で gh を呼ぶ）
+  put_record 11
+  gh_seq 11 closed
+  run dispatch wait --interval 0 --timeout 60 11
+  [ "$status" -eq 0 ]
+  grep -q '^gh api repos/.*owner.*/.*repo.*/issues/11 --jq .state$' "$STUB_LOG"
+  [ "$(calls '^git remote get-url origin')" -eq 0 ]
+}
+
+@test "wait: malformed children print usage and call nothing" {
+  # spec: dev-workflow-epic-state（番号でも owner/repo#番号 でもない引数は使い方を出す）
+  for a in foo '#12' 'oratta/claude-harness#' 'claude-harness#12'; do
+    run dispatch wait --interval 0 --timeout 0 "$a"
+    [ "$status" -eq 1 ] || { echo "arg=$a status=$status"; false; }
+    grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  done
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
 # --- wait --watch-stopped ---
 # spec: dev-workflow-develop（epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す）
+# spec: dev-workflow-epic-state（親の見張りは記録だけで子の状態を判定する）
 
-@test "wait: --watch-stopped rewrites a stopped child to seen and ends with stopped" {
+@test "wait: --watch-stopped rewrites a stopped record to seen, mirrors it to Orca and ends with stopped" {
   make_stub orca
-  set_current 400
   gh_seq 11 open
-  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 status=waiting stop=stopped
   run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
   [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 status)" = waiting ]
   [ "$(calls "^orca worktree set --worktree path:$BATS_TEST_TMPDIR/work/issue-11 --comment epic-stopped-seen\$")" -eq 1 ]
   [ "$(calls '^orca worktree set')" -eq 1 ]
+  [ "$(calls '^orca worktree list')" -eq 0 ]
   [ "$(calls 'workspace-status')" -eq 0 ]
   [ "${#lines[@]}" -eq 1 ]
+  [ -z "$(ls -A "$EPIC_STATE_ROOT/oratta.claude-harness-1122" | grep -v '\.json$')" ]
 }
 
-@test "wait: --watch-stopped does not wake on seen or resumed comments" {
+@test "wait: --watch-stopped works without orca and the Orca comment alone does not wake it" {
+  gh_seq 11 open
+  put_record 11 stop=stopped
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
   make_stub orca
   set_current 400
+  set_list list_json "$(wt_entry 12 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  gh_seq 12 open
+  put_record 12
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 12
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 12" ]
+}
+
+@test "wait: --watch-stopped does not wake on seen or resumed records" {
+  make_stub orca
   gh_seq 11 open
   gh_seq 12 open
-  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped-seen)" \
-    "$(wt_entry 12 in-review repo-a::/work/parent repo-a false epic-resumed)"
+  put_record 11 stop=stopped-seen
+  put_record 12 stop=resumed
   run dispatch wait --interval 0 --timeout 0 --watch-stopped 11 12
   [ "$status" -eq 2 ]
   [ "$output" = "timeout 11 12" ]
@@ -1752,103 +2137,107 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 
 @test "wait: closed, done and stopped in the same poll print three lines in that order" {
   make_stub orca
-  set_current 400
   gh_seq 12 closed
   gh_seq 13 open
-  set_list list_json "$(wt_entry 11 completed)" \
-    "$(wt_entry 13 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 status=done
+  put_record 13 stop=stopped
   run dispatch wait --interval 0 --timeout 60 --watch-done 11 --watch-stopped 12 13
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
   [ "${#lines[@]}" -eq 3 ]
   [ "${lines[0]}" = "closed 12" ]
   [ "${lines[1]}" = "done 11" ]
   [ "${lines[2]}" = "stopped 13" ]
-  [ "$(calls '^orca worktree list --json$')" -eq 1 ]
   [ "$(calls '^gh ')" -eq 2 ]
 }
 
 @test "wait: a closed child is not counted as stopped" {
   make_stub orca
-  set_current 400
   gh_seq 11 closed
-  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 stop=stopped
   run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
   [ "$status" -eq 0 ]
   [ "$output" = "closed 11" ]
+  [ "$(rec_get 11 stop)" = stopped ]
   [ "$(calls '^orca worktree set')" -eq 0 ]
 }
 
-@test "wait: stopped comments on another repo or on archived worktrees do not count" {
+@test "wait: a stopped record of another parent does not count" {
   make_stub orca
-  set_current 400
   gh_seq 11 open
-  set_list list_json "$(wt_entry 11 in-review repo-b::/x repo-b false epic-stopped)" \
-    "$(wt_entry 11 in-review repo-a::/work/parent repo-a true epic-stopped)"
+  put_record 11 stop=stopped parent_worktree=/work/other
   run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
   [ "$status" -eq 2 ]
   [ "$output" = "timeout 11" ]
+  [ "$(rec_get 11 stop)" = stopped ]
+}
+
+@test "wait: three polls failing to take the lock end with error workspaces and the stop stays" {
+  make_stub orca
+  gh_seq 11 open
+  put_record 11 stop=stopped
+  mkdir "$(rec_of 1122 11).lock"
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 1 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "error workspaces" ]
+  [ "$(rec_get 11 stop)" = stopped ]
+  [ -d "$(rec_of 1122 11).lock" ]
   [ "$(calls '^orca worktree set')" -eq 0 ]
 }
 
-@test "wait: three polls failing to rewrite to seen end with error workspaces" {
+@test "wait: a failing mirror to Orca still ends with stopped" {
   make_stub orca
-  set_current 400
   gh_seq 11 open
   echo 1 > "$STUB_CFG/set_comment_exit"
-  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 stop=stopped
   run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
-  [ "$status" -eq 1 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
-  [ "$output" = "error workspaces" ]
-  [ "$(calls '^orca worktree set')" -eq 3 ]
-  [ "$(calls '^orca worktree list --json$')" -eq 3 ]
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  grep -qF 'could not mirror' "$BATS_TEST_TMPDIR/stderr"
 }
 
-@test "wait: without --watch-stopped the comment is never read" {
+@test "wait: without --watch-stopped the stop is never read" {
   make_stub orca
-  set_current 400
   gh_seq 11 open
-  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 stop=stopped
   run dispatch wait --interval 0 --timeout 0 11
   [ "$status" -eq 2 ]
   [ "$output" = "timeout 11" ]
-  [ "$(calls '^orca')" -eq 0 ]
   run dispatch wait --interval 0 --timeout 0 --watch-done 12 11
   [ "$status" -eq 2 ]
   [ "$output" = "timeout 11" ]
-  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(rec_get 11 stop)" = stopped ]
+  [ "$(calls '^orca')" -eq 0 ]
 }
 
-@test "wait: --watch-stopped with --watch-done and no positional child looks at no comment" {
+@test "wait: --watch-stopped with --watch-done and no positional child looks at no stop" {
   make_stub orca
-  set_current 400
-  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 stop=stopped
   run dispatch wait --interval 0 --timeout 0 --watch-done 11 --watch-stopped
   [ "$status" -eq 2 ]
   [ "$output" = "timeout" ]
-  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(rec_get 11 stop)" = stopped ]
 }
 
 @test "wait: a seen stop does not wake the parent again, a stop marked again does" {
   make_stub orca
-  printf '{"result":{"worktree":{"id":"repo-a::%s","repoId":"repo-a","path":"%s","linkedIssue":11,"comment":""}}}\n' \
-    "$BATS_TEST_TMPDIR/work/issue-11" "$BATS_TEST_TMPDIR/work/issue-11" > "$STUB_CFG/current_json"
   gh_seq 11 open
-  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 stop=stopped
   run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
   [ "$status" -eq 0 ] || { echo "1st: status=$status output=$output"; cat "$STUB_LOG"; false; }
   [ "$output" = "stopped 11" ]
-  [ "$(calls '^orca worktree set')" -eq 1 ]
   run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
-  [ "$status" -eq 2 ] || { echo "2nd: status=$status output=$output"; cat "$STUB_CFG/list_json"; false; }
+  [ "$status" -eq 2 ] || { echo "2nd: status=$status output=$output"; false; }
   [ "$output" = "timeout 11" ]
-  [ "$(calls '^orca worktree set')" -eq 1 ]
+  in_child 11
   run dispatch mark stopped 11
   [ "$status" -eq 0 ]
   [ "$output" = "marked 11 stopped" ]
+  echo /work/parent > "$STUB_CFG/toplevel"
   run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
-  [ "$status" -eq 0 ] || { echo "3rd: status=$status output=$output"; cat "$STUB_CFG/list_json"; false; }
+  [ "$status" -eq 0 ] || { echo "3rd: status=$status output=$output"; false; }
   [ "$output" = "stopped 11" ]
-  [ "$(calls '^orca worktree set')" -eq 3 ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
 }
 
 @test "wait: --watch-stopped alone without children prints usage and calls nothing" {
@@ -1881,16 +2270,15 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 
 @test "reap: a child off by one condition is kept with the reason" {
   p="$BATS_TEST_TMPDIR/work/issue-11"
-  for c in not-done head-mismatch dirty llm-logs not-child; do
+  for c in not-done head-mismatch dirty llm-logs; do
     rm -rf "$STUB_CFG" "$p"; mkdir -p "$STUB_CFG"; : > "$STUB_LOG"
     printf '%s\n' '/work/parent' > "$STUB_CFG/toplevel"
     reap_ready
     case "$c" in
-      not-done) set_list list_json "$(wt_entry 11 in-review)" ;;
+      not-done) put_record 11 status=running ;;
       head-mismatch) echo bbb222 > "$STUB_CFG/head" ;;
       dirty) echo ' M a.txt' > "$STUB_CFG/status_out" ;;
       llm-logs) mkdir -p "$p/LLM" ;;
-      not-child) set_list list_json "$(wt_entry 11 completed repo-a::/work/other)" ;;
     esac
     echo aaa111 > "$STUB_CFG/branch_tip"
     run dispatch reap 11
@@ -1902,21 +2290,17 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   done
 }
 
-@test "reap: a main worktree, a failing git status, and a detached HEAD are kept" {
+@test "reap: a failing git status and a record without a branch are kept" {
   reap_ready
-  p="$BATS_TEST_TMPDIR/work/issue-11"
-  set_list list_json "$(wt_entry 11 completed | sed 's/"isMainWorktree":false/"isMainWorktree":true/')"
-  run dispatch reap 11
-  [ "$output" = "kept 11 not-child" ]
-  set_list list_json "$(wt_entry 11 completed)"
   echo 128 > "$STUB_CFG/status_exit"
   run dispatch reap 11
   [ "$output" = "kept 11 git-failed" ]
   rm -f "$STUB_CFG/status_exit"
-  set_list list_json "$(wt_entry 11 completed | sed 's#"branch":"refs/heads/oratta/issue-11"#"branch":""#')"
+  put_record 11 status=done branch=
   run dispatch reap 11
   [ "$output" = "kept 11 no-branch" ]
   [ "$(calls '^orca worktree rm')" -eq 0 ]
+  [ -e "$(rec_of 1122 11)" ]
 }
 
 @test "reap: no merged PR or a failing PR lookup keeps the child" {
@@ -1939,17 +2323,68 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$output" = "reaped 11" ]
 }
 
-@test "reap: a child with no worktree is gone, two candidates are ambiguous" {
+@test "reap: a child without a record or without its worktree directory is gone, two records are ambiguous" {
   reap_ready
-  set_list list_json
+  rm -f "$(rec_of 1122 11)"
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "gone 11" ]
-  [ "$(calls '^git ')" -eq 0 ]
+  [ "$(calls '^git -C')" -eq 0 ]
   [ "$(calls '^gh ')" -eq 0 ]
-  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 11 completed)"
+  put_record 11 status=done
+  rm -rf "$BATS_TEST_TMPDIR/work/issue-11"
+  run dispatch reap 11
+  [ "$output" = "gone 11" ]
+  [ ! -e "$(rec_of 1122 11)" ]
+  put_record 11 status=done worktree=
+  run dispatch reap 11
+  [ "$output" = "gone 11" ]
+  [ ! -e "$(rec_of 1122 11)" ]
+  put_record 11 status=done
+  put_record 11 status=done epic=oratta/claude-harness#900
   run dispatch reap 11
   [ "$output" = "kept 11 ambiguous" ]
+  [ -e "$(rec_of 1122 11)" ]
+  [ -e "$(rec_of 900 11)" ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+}
+
+@test "reap: a broken record is kept as state-unreadable and stays as it is" {
+  reap_ready
+  printf '{\n' >| "$(rec_of 1122 11)"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "kept 11 state-unreadable" ]
+  [ "$(cat "$(rec_of 1122 11)")" = "{" ]
+  [ "$(calls '^orca ')" -eq 0 ]
+}
+
+@test "reap: a reaped child's record is removed, and a second reap of it is gone" {
+  reap_ready
+  run dispatch reap 11
+  [ "$output" = "reaped 11" ]
+  [ ! -e "$(rec_of 1122 11)" ]
+  run dispatch reap 11
+  [ "$output" = "gone 11" ]
+}
+
+@test "reap: another parent's record is not looked at and the child is gone" {
+  reap_ready
+  put_record 11 status=done parent_worktree=/work/other
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "gone 11" ]
+  [ -e "$(rec_of 1122 11)" ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+}
+
+@test "reap: an Orca completed mark alone does not reap a running child" {
+  reap_ready
+  put_record 11 status=running
+  set_list list_json "$(wt_entry 11 completed)"
+  run dispatch reap 11
+  [ "$output" = "kept 11 not-done" ]
+  [ "$(calls '^orca worktree list')" -eq 0 ]
 }
 
 @test "reap: a branch left behind is deleted only when its tip is the PR head" {
@@ -1961,10 +2396,12 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
   [ ! -e "$STUB_CFG/branch_tip" ]
   : > "$STUB_LOG"
+  put_record 11 status=done
   echo bbb222 > "$STUB_CFG/branch_tip"
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11 branch-kept" ]
+  [ ! -e "$(rec_of 1122 11)" ]
   [ "$(calls '^git branch -D')" -eq 0 ]
 }
 
@@ -2195,7 +2632,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 
 @test "reap: several children are judged one by one, duplicates once" {
   reap_ready
-  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 in-review)"
+  put_record 12 status=running
   run dispatch reap 11 12 11
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
@@ -2203,7 +2640,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "${lines[1]}" = "kept 12 not-done" ]
   [ "$(calls '^orca worktree rm')" -eq 1 ]
   [ "$(calls "^orca worktree rm --worktree path:$BATS_TEST_TMPDIR/work/issue-11$")" -eq 1 ]
-  [ "$(calls '^orca worktree list')" -eq 1 ]
+  [ "$(calls '^orca worktree list')" -eq 0 ]
 }
 
 @test "reap: EPIC_DISPATCH_PARENT_EPIC does not change it" {
@@ -2212,23 +2649,19 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$output" = "reaped 11" ]
 }
 
-@test "reap: an unreadable list or current worktree removes nothing and prints nothing" {
+@test "reap: no worktree to stand on or no jq removes nothing and prints nothing" {
   reap_ready
-  echo 1 > "$STUB_CFG/list_exit"
+  : >| "$STUB_CFG/toplevel"
   run dispatch reap 11
   [ "$status" -eq 1 ]
   [ -z "$output" ]
-  rm -f "$STUB_CFG/list_exit"
-  echo '{"result":{}}' > "$STUB_CFG/list_json"
-  run dispatch reap 11
-  [ "$status" -eq 1 ]
-  [ -z "$output" ]
-  echo 1 > "$STUB_CFG/current_exit"
-  run dispatch reap 11
+  printf '%s\n' '/work/parent' >| "$STUB_CFG/toplevel"
+  run dispatch_nojq reap 11
   [ "$status" -eq 1 ]
   [ -z "$output" ]
   [ "$(calls '^orca terminal close')" -eq 0 ]
   [ "$(calls '^orca worktree rm')" -eq 0 ]
+  [ -e "$(rec_of 1122 11)" ]
   rm -f "$STUB_BIN/orca"
   run dispatch reap 11
   [ "$status" -eq 1 ]
@@ -2353,7 +2786,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 
 @test "reap: a base tip missing locally is fetched once, ls-remote runs once for two children" {
   reap_prless_ready
-  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 completed)"
+  put_record 12 status=done
   gh_seq 12 closed
   echo 1 > "$STUB_CFG/catfile_exit_1"
   run dispatch reap 11 12
@@ -2365,7 +2798,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
 
 @test "reap: a second child does not fetch again when the base tip is still missing" {
   reap_prless_ready
-  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 completed)"
+  put_record 12 status=done
   gh_seq 12 closed
   echo 1 > "$STUB_CFG/catfile_exit"
   run dispatch reap 11 12
@@ -2487,7 +2920,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$e" | grep -F '起動し直したセッション' | grep -qF 'nested'
   printf '%s\n' "$e" | grep -qF 'parent epic: #'
   printf '%s\n' "$e" | grep -qF 'child epics are not expanded here'
-  printf '%s\n' "$e" | grep -F 'parent epic:' | grep -F 'EPIC_DISPATCH_PARENT_EPIC' | grep -qF '親を持たないワークツリー'
+  printf '%s\n' "$e" | grep -F 'parent epic:' | grep -F 'EPIC_DISPATCH_PARENT_EPIC' | grep -qF '状態の記録の無いワークツリー'
 }
 
 @test "skill: a child whose terminal was not created is checked, recreated and sent before resuming" {
@@ -2582,8 +3015,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   printf '%s\n' "$r" | grep -F '開いている子が無くなったら' | grep -qF '待ちをやめる'
   printf '%s\n' "$r" | grep -F '再開したら' | grep -qF '`launch` の前に'
   printf '%s\n' "$r" | grep -qF 'error workspaces'
-  printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF '親ワークツリーで開き直す'
-  printf '%s\n' "$r" | grep -F 'stdout に何も出さず exit 1' | grep -F -- '`--watch-done` か `--watch-stopped` を付けた `wait`' | grep -qF '親ワークツリーで開き直す'
+  printf '%s\n' "$r" | grep -F 'stdout に何も出さず exit 1' | grep -F '`adopt`' | grep -F 'not in an Orca-managed worktree' | grep -qF '親ワークツリーで開き直す'
   printf '%s\n' "$r" | grep -F 'stdout に何も出さず exit 1' | grep -F 'not in an Orca-managed worktree' | grep -qF 'stderr が `usage:` を含むときは、stderr を添えて設定の誤りとして報告して止まる'
 }
 
@@ -2844,7 +3276,7 @@ set_terms() {
 reply_ready() {
   make_stub orca
   set_current 400
-  set_list list_json "$(wt_entry 11 in-review)"
+  put_record 11 status=waiting
   set_terms 11 "$@"
 }
 
@@ -2953,18 +3385,35 @@ reply_ready() {
   [ "$(calls '^orca terminal close')" -eq 0 ]
 }
 
-@test "reply: no worktree or two worktrees send nothing; archived and other-repo worktrees do not count" {
+@test "reply: no record, another parent's record, two records or an unreadable record send nothing" {
   make_stub orca
   set_current 400
-  set_list list_json "$(wt_entry 11 in-review repo-b::/x repo-b)" "$(wt_entry 11 in-review repo-a::/work/parent repo-a true)"
   run dispatch reply --as owner 400 11 'A'
   [ "$status" -eq 1 ]
   [ "$output" = "failed 11 no-worktree" ]
-  set_list list_json "$(wt_entry 11 in-review)" "$(wt_entry 11 completed)"
+  put_record 11 parent_worktree=/work/other
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 no-worktree" ]
+  put_record 11
+  put_record 11 epic=oratta/claude-harness#900
   run dispatch reply --as owner 400 11 'A'
   [ "$status" -eq 1 ]
   [ "$output" = "failed 11 ambiguous-worktree" ]
+  rm -f "$(rec_of 900 11)"
+  printf '{\n' >| "$(rec_of 1122 11)"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 state-unreadable" ]
   [ "$(calls '^orca terminal')" -eq 0 ]
+}
+
+@test "reply: a relaunch writes the new terminal to the record's session" {
+  reply_ready
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "relaunched 11" ]
+  [ "$(rec_get 11 session)" = term-11 ]
 }
 
 @test "reply: a send that fails or starts no turn is failed with a resend hint" {
@@ -3074,7 +3523,7 @@ resolve_ready() {
   make_judge
   set_current 400
   gh_seq 11 open closed
-  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 status=waiting stop=stopped
   set_terms 11 term-a-11
 }
 
@@ -3216,9 +3665,9 @@ resolve_ready() {
   gh_seq 12 closed
   gh_seq 13 open
   gh_seq 14 open
-  set_list list_json "$(wt_entry 11 completed)" \
-    "$(wt_entry 13 in-review repo-a::/work/parent repo-a false epic-stopped)" \
-    "$(wt_entry 14 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 status=done
+  put_record 13 status=waiting stop=stopped
+  put_record 14 status=waiting stop=stopped
   set_terms 14 term-a-14
   judge_says judge_out_13 主に上げる 実機操作 ''
   judge_says judge_out_14 通す 範囲の内側 進めて
@@ -3274,14 +3723,14 @@ resolve_ready() {
 CLOSED_STOP_URL="https://github.com/o/r/issues/11#issuecomment-7"
 CLOSED_MSG_HEAD="親エピック #400 の判断（主の承認ではない）: 記録先の issue #11 は completed で閉じた。完了報告を書き、mark done で終える"
 
-# 子 11 が completed で閉じ、ワークツリーのコメント欄が <comment>（既定 epic-stopped-seen）・
-# workspaceStatus が <status>（既定 in-review）で、端末が 1 つある環境
+# 子 11 が completed で閉じ、記録の stop が <stop>（既定 stopped-seen）・
+# status が <status>（既定 waiting）で、端末が 1 つある環境
 closed_ready() {
   make_stub orca
   set_current 400
   gh_seq 11 "closed completed https://github.com/o/r/issues/11"
   gh_seq comments "$CLOSED_STOP_URL"
-  set_list list_json "$(wt_entry 11 "${2-in-review}" repo-a::/work/parent repo-a false "${1-epic-stopped-seen}")"
+  put_record 11 status="${2-waiting}" stop="${1-stopped-seen}"
   set_terms 11 term-a-11
 }
 
@@ -3293,7 +3742,7 @@ nothing_sent() {
 }
 
 @test "notify-closed: a child closed as completed with the stopped mark gets the reply and the epic gets the line" {
-  for mark in epic-stopped-seen epic-stopped; do
+  for mark in stopped-seen stopped; do
     : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
     closed_ready "$mark"
     run dispatch notify-closed 400 11
@@ -3347,7 +3796,7 @@ nothing_sent() {
 }
 
 @test "notify-closed: a child that is not stopped gets nothing" {
-  for mark in "" epic-resumed; do
+  for mark in "" resumed; do
     : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
     closed_ready "$mark"
     run dispatch notify-closed 400 11
@@ -3358,7 +3807,7 @@ nothing_sent() {
 }
 
 @test "notify-closed: a child that already marked done gets nothing" {
-  closed_ready epic-stopped-seen completed
+  closed_ready stopped-seen done
   run dispatch notify-closed 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "skipped 11 already-done" ]
@@ -3366,7 +3815,7 @@ nothing_sent() {
 }
 
 @test "notify-closed: a child closed as not planned or still open gets nothing and orca is not asked" {
-  closed_ready epic-stopped
+  closed_ready stopped
   gh_seq 11 "closed not_planned https://github.com/o/r/issues/11"
   run dispatch notify-closed 400 11
   [ "$status" -eq 0 ]
@@ -3384,19 +3833,18 @@ nothing_sent() {
 
 @test "notify-closed: a child without a worktree gets nothing" {
   closed_ready
-  set_list list_json "$(wt_entry 12 in-review repo-a::/work/parent repo-a false epic-stopped)" \
-    "$(wt_entry 11 in-review repo-a::/work/parent repo-a true epic-stopped)" \
-    "$(wt_entry 11 in-review repo-a::/work/parent repo-b false epic-stopped)"
+  rm -f "$(rec_of 1122 11)"
+  put_record 12 stop=stopped
+  put_record 11 stop=stopped parent_worktree=/work/other
   run dispatch notify-closed 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "skipped 11 no-worktree" ]
   nothing_sent
 }
 
-@test "notify-closed: two worktrees, an unreadable list or a failing gh is failed" {
+@test "notify-closed: two records, an unreadable record or a failing gh is failed" {
   closed_ready
-  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)" \
-    "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped)"
+  put_record 11 stop=stopped epic=oratta/claude-harness#900
   run dispatch notify-closed 400 11
   [ "$status" -eq 1 ]
   [ "$output" = "failed 11 ambiguous-worktree" ]
@@ -3404,12 +3852,12 @@ nothing_sent() {
 
   : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
   closed_ready
-  echo 1 > "$STUB_CFG/list_exit"
+  rm -f "$(rec_of 900 11)"
+  printf '{\n' >| "$(rec_of 1122 11)"
   run dispatch notify-closed 400 11
   [ "$status" -eq 1 ]
-  [ "$output" = "failed 11 list" ]
+  [ "$output" = "failed 11 state-unreadable" ]
   nothing_sent
-  rm -f "$STUB_CFG/list_exit"
 
   : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
   closed_ready
@@ -3655,25 +4103,41 @@ resolve_pass() {
 # --- pending-owner ---
 # spec: dev-workflow-develop（起動し直した親は主の返事待ちの子を主に出し直す）
 
-@test "pending-owner: only a child still marked epic-stopped-seen is pending, and nothing is written" {
+@test "pending-owner: only a child whose record is still stopped-seen is pending, and nothing is written" {
   make_stub orca
   set_current 400
-  set_list list_json \
-    "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped-seen)" \
-    "$(wt_entry 12 in-review repo-a::/work/parent repo-a false epic-resumed)" \
-    "$(wt_entry 13 in-review repo-a::/work/parent repo-a false epic-stopped)" \
-    "$(wt_entry 14 in-review repo-a::/work/parent repo-a true epic-stopped-seen)"
-  run dispatch pending-owner 11 12 13 14
+  put_record 11 stop=stopped-seen
+  put_record 12 stop=resumed
+  put_record 13 stop=stopped
+  put_record 14 stop=stopped-seen parent_worktree=/work/other
+  put_record 15 stop=stopped-seen
+  printf '{\n' >| "$(rec_of 1122 15)"
+  put_record 16 stop=stopped-seen
+  put_record 16 stop=stopped-seen epic=oratta/claude-harness#900
+  before="$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)"
+  run dispatch pending-owner 11 12 13 14 15 16 17
   [ "$status" -eq 0 ]
   [ "$output" = "pending 11" ]
-  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ "$(calls '^orca ')" -eq 0 ]
+  [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
 }
 
-@test "pending-owner: no children or an unreadable list is an error" {
+@test "pending-owner: an Orca stopped-seen mark alone is not pending" {
+  make_stub orca
+  set_current 400
+  set_list list_json "$(wt_entry 11 in-review repo-a::/work/parent repo-a false epic-stopped-seen)"
+  put_record 11
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "pending-owner: no children or no worktree is an error" {
   make_stub orca
   run dispatch pending-owner
   [ "$status" -eq 1 ]
-  printf 'x\n' > "$STUB_CFG/list_json"
+  put_record 11 stop=stopped-seen
+  : >| "$STUB_CFG/toplevel"
   run dispatch pending-owner 11
   [ "$status" -eq 1 ]
   [ -z "$output" ]
@@ -3706,4 +4170,252 @@ resolve_pass() {
 
 @test "skill: the subagent route stops on a bad max-parallel setting" {
   printf '%s\n' "$(subagent_para)" | grep -qF '（exit 1 なら stderr を添えて設定の誤りとして報告して止まる。手順 6 と同じ）'
+}
+
+# --- adopt ---
+# spec: dev-workflow-epic-state（adopt は記録の無い Orca の子を記録に取り込む）
+
+@test "adopt: a stopped-seen Orca child of this parent becomes a record" {
+  make_stub orca
+  set_current 1122
+  set_list list_json "$(wt_entry 11 '' 'repo-a::/work/parent' repo-a false epic-stopped-seen)"
+  run dispatch adopt 1122 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "adopted 11" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 status)" = running ]
+  [ "$(rec_get 11 worktree)" = "$BATS_TEST_TMPDIR/work/issue-11" ]
+  [ "$(rec_get 11 branch)" = oratta/issue-11 ]
+  [ "$(rec_get 11 parent_worktree)" = /work/parent ]
+  [ "$(rec_get 11 launcher)" = orca ]
+  [ "$(rec_get 11 base)" = main ]
+  [ "$(rec_get 11 session)" = "" ]
+  [ "$(rec_get 11 launch_failed)" = "" ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "adopt: the board column and comment map to status and stop, EPIC_DISPATCH_BASE sets base" {
+  make_stub orca
+  set_current 1122
+  set_list list_json "$(wt_entry 11 completed)" "$(wt_entry 12 in-review 'repo-a::/work/parent' repo-a false epic-stopped)" \
+    "$(wt_entry 13 '' 'repo-a::/work/parent' repo-a false epic-resumed)"
+  EPIC_DISPATCH_BASE=develop run dispatch adopt 1122 11 12 13
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'adopted 11\nadopted 12\nadopted 13')" ]
+  [ "$(rec_get 11 status)/$(rec_get 11 stop)" = done/ ]
+  [ "$(rec_get 12 status)/$(rec_get 12 stop)" = waiting/stopped ]
+  [ "$(rec_get 13 status)/$(rec_get 13 stop)" = running/resumed ]
+  [ "$(rec_get 11 base)" = develop ]
+}
+
+@test "adopt: a child with a record is skipped and the record is unchanged" {
+  make_stub orca
+  set_current 1122
+  put_record 11 stop=stopped
+  set_list list_json "$(wt_entry 11 completed)"
+  before="$(cat "$(rec_of 1122 11)")"
+  run dispatch adopt 1122 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11" ]
+  [ "$(cat "$(rec_of 1122 11)")" = "$before" ]
+}
+
+@test "max-parallel: an empty EPIC_STATE_ROOT does not stop it, which reads no record" {
+  make_stub orca
+  EPIC_STATE_ROOT= run dispatch max-parallel
+  [ "$status" -eq 0 ]
+  [ "$output" = 99 ]
+}
+
+@test "adopt: an unreadable record is failed state-unreadable and left as is" {
+  make_stub orca
+  set_current 1122
+  set_list list_json "$(wt_entry 11 completed)"
+  mkdir -p "$(dirname "$(rec_of 1122 11)")"
+  printf '{\n' > "$(rec_of 1122 11)"
+  run dispatch adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 state-unreadable" ]
+  [ "$(cat "$(rec_of 1122 11)")" = "{" ]
+  grep -qF "$(rec_of 1122 11)" "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "adopt: another repoId is none and without jq it prints nothing and exits 1" {
+  make_stub orca
+  set_current 1122
+  set_list list_json "$(wt_entry 15 '' 'repo-a::/work/parent' repo-b)"
+  run dispatch adopt 1122 15
+  [ "$status" -eq 0 ]
+  [ "$output" = "none 15" ]
+  run dispatch_nojq adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "adopt: no match, another parent and archived worktrees are none, two matches are failed ambiguous" {
+  make_stub orca
+  set_current 1122
+  set_list list_json "$(wt_entry 12 '' 'repo-a::/work/other')" "$(wt_entry 13 '' 'repo-a::/work/parent' repo-a true)" \
+    "$(wt_entry 14)" "$(wt_entry 14)"
+  run dispatch adopt 1122 11 12 13 14
+  [ "$status" -eq 1 ]
+  [ "$output" = "$(printf 'none 11\nnone 12\nnone 13\nfailed 14 ambiguous')" ]
+  [ ! -e "$EPIC_STATE_ROOT/oratta.claude-harness-1122" ]
+}
+
+@test "adopt: without orca, outside Orca, an unreadable list or an unreadable origin prints nothing and exits 1" {
+  run dispatch adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  make_stub orca
+  set_list list_json "$(wt_entry 11)"
+  echo 1 > "$STUB_CFG/current_exit"
+  run dispatch adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  rm "$STUB_CFG/current_exit"
+  echo 1 > "$STUB_CFG/list_exit"
+  run dispatch adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  rm "$STUB_CFG/list_exit"
+  echo https://gitlab.com/oratta/claude-harness > "$STUB_CFG/origin_url"
+  run dispatch adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -q 'cannot read the epic repository from origin' "$BATS_TEST_TMPDIR/stderr"
+  [ ! -e "$EPIC_STATE_ROOT" ] || [ -z "$(find "$EPIC_STATE_ROOT" -type f)" ]
+}
+
+@test "adopt: a non-numeric epic or a bad child prints the usage" {
+  make_stub orca
+  run dispatch adopt x 11
+  [ "$status" -eq 1 ]
+  grep -q 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  run dispatch adopt 1122 '#11'
+  [ "$status" -eq 1 ]
+  grep -q 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca')" -eq 0 ]
+}
+
+# --- clear ---
+# spec: dev-workflow-epic-state（記録は片付けた子ごとに消し、エピックの完了時にディレクトリごと消す）
+
+@test "clear: the state directory is removed, remaining children go to stderr, other epics stay" {
+  put_record 11
+  put_record 12 epic=oratta/claude-harness#900
+  run dispatch clear 1122
+  [ "$status" -eq 0 ]
+  [ "$output" = "cleared 1122" ]
+  [ ! -e "$EPIC_STATE_ROOT/oratta.claude-harness-1122" ]
+  [ -f "$(rec_of 900 12)" ]
+  grep -q 'oratta/claude-harness#11' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "clear: a missing directory is none" {
+  run dispatch clear 1122
+  [ "$status" -eq 0 ]
+  [ "$output" = "none 1122" ]
+}
+
+@test "clear: a non-numeric epic and an empty EPIC_STATE_ROOT remove nothing" {
+  put_record 11
+  run dispatch clear ../1122
+  [ "$status" -eq 1 ]
+  [ -f "$(rec_of 1122 11)" ]
+  EPIC_STATE_ROOT= run dispatch clear 1122
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ -f "$(rec_of 1122 11)" ]
+}
+
+@test "clear: a relative EPIC_STATE_ROOT is resolved from the working directory" {
+  mkdir -p "$BATS_TEST_TMPDIR/cwd/state/oratta.claude-harness-1122"
+  touch "$BATS_TEST_TMPDIR/cwd/state/oratta.claude-harness-1122/oratta.claude-harness-11.json"
+  cd "$BATS_TEST_TMPDIR/cwd"
+  EPIC_STATE_ROOT=state run dispatch clear 1122
+  [ "$status" -eq 0 ]
+  [ "$output" = "cleared 1122" ]
+  [ ! -e "$BATS_TEST_TMPDIR/cwd/state/oratta.claude-harness-1122" ]
+  [ -d "$BATS_TEST_TMPDIR/cwd/state" ]
+}
+
+@test "clear: EPIC_STATE_ROOT of / or the home directory itself removes nothing" {
+  EPIC_STATE_ROOT=/ run dispatch clear 1122
+  [ "$status" -eq 1 ]
+  grep -q 'refusing to clear' "$BATS_TEST_TMPDIR/stderr"
+  [ -z "$output" ]
+  mkdir -p "$BATS_TEST_TMPDIR/home/oratta.claude-harness-1122"
+  HOME="$BATS_TEST_TMPDIR/home" EPIC_STATE_ROOT="$BATS_TEST_TMPDIR/home/" run dispatch clear 1122
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ -d "$BATS_TEST_TMPDIR/home/oratta.claude-harness-1122" ]
+}
+
+@test "clear: a symbolic link is not followed" {
+  mkdir -p "$BATS_TEST_TMPDIR/elsewhere" "$EPIC_STATE_ROOT"
+  touch "$BATS_TEST_TMPDIR/elsewhere/keep.json"
+  ln -s "$BATS_TEST_TMPDIR/elsewhere" "$EPIC_STATE_ROOT/oratta.claude-harness-1122"
+  run dispatch clear 1122
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ -L "$EPIC_STATE_ROOT/oratta.claude-harness-1122" ]
+  [ -f "$BATS_TEST_TMPDIR/elsewhere/keep.json" ]
+}
+
+@test "clear: an origin that is not GitHub removes nothing" {
+  put_record 11
+  echo git@gitlab.com:oratta/claude-harness.git > "$STUB_CFG/origin_url"
+  run dispatch clear 1122
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ -f "$(rec_of 1122 11)" ]
+}
+
+# --- skill: 状態の記録（adopt・clear・Orca の印は写し） ---
+# spec: dev-workflow-develop（SKILL.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ）
+
+@test "skill: step 7 calls adopt before reap, pending-owner and launch, and separates ambiguous from an empty exit 1" {
+  p="$(run_section | grep -E '^7\. `回し方: Orca`')"
+  a="${p%%epic-dispatch.sh adopt*}"
+  [ "$a" != "$p" ]
+  case "$a" in *'`reap`'*|*pending-owner*|*'`launch` を'*) false ;; esac
+  printf '%s\n' "$p" | grep -qF '`failed <N> ambiguous` は主に聞かずにその子を残して進み'
+  printf '%s\n' "$p" | grep -qF '子 #N の記録を取り込めなかった（ambiguous）'
+  printf '%s\n' "$p" | grep -qF '`adopt` が stdout に何も出さず exit 1 で終わったら'
+  printf '%s\n' "$p" | grep -qF '`failed <N> ambiguous` の行を出して exit 1 で終わったときは止まらない'
+}
+
+@test "skill: every place of steps 3, 4 and 7 that ends the wait without wait calls clear first" {
+  n="$(run_section | grep -oF '`wait` を呼ばずに待ちを終える' | grep -c .)"
+  [ "$n" -ge 3 ]
+  m="$(run_section | grep -oF 'clear <エピック番号>` を 1 回呼んでから（エピックの状態ディレクトリを消す。`cleared`・`none` は何もせず、exit 1 は stderr を添えて主に報告する。エピックを閉じるのは待たない）`wait` を呼ばずに待ちを終える' | grep -c .)"
+  [ "$m" -eq "$n" ]
+  for s in 3 4 7; do
+    run_section | grep -E "^$s\. " | grep -qF 'epic-dispatch.sh clear <エピック番号>' || { echo "step $s" >&2; false; }
+  done
+}
+
+@test "skill: the Orca marks are a copy of the state records and hand edits do not reach the parent" {
+  p="$(run_section | grep -E '^\*\*子の状態の正本\*\*')"
+  printf '%s\n' "$p" | grep -qF 'Orca のボードの列とコメント欄は、記録を書いたあとに写したもの'
+  printf '%s\n' "$p" | grep -qF 'Orca の画面で印を手で変えても、親の見張り'
+  section 'エピックの子が主の返事を待って止まるとき' | grep -F -- '- **印**' | grep -qF 'Orca の画面には写しが出る'
+}
+
+@test "skill: step 3 no longer names not-child and keeps state-unreadable without checking" {
+  p="$(run_section | grep -E '^3\. ')"
+  [ -n "$p" ]
+  case "$p" in *not-child*) false ;; esac
+  printf '%s\n' "$p" | grep -qF '子 #N のワークツリーを残した（state-unreadable）'
+}
+
+@test "skill: step 6 reports an empty exit 1 of launch and adopt, not of wait" {
+  p="$(run_section | grep -E '^6\. ')"
+  printf '%s\n' "$p" | grep -qF '`adopt` が stdout に何も出さず exit 1 で終わったとき'
+  case "$p" in *'`--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず'*) false ;; esac
+}
+
+@test "skill: the completion check confirms the state directory is cleared" {
+  section 'エピックの扱い' | awk '/^### 完了条件/{f=1; next} /^### /{f=0} f' | grep -qF '`clear` で消えていることを確かめる'
 }
