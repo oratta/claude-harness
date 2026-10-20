@@ -1260,12 +1260,16 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 400 13
   [ "$status" -eq 0 ]
   [ "$output" = "launched 13" ]
+  # 1 回目で作った子 13 の記録（エピック 400）と、同じ親のエピック 900 の子 12 の記録を数える。
+  # 別の親の子 11 は数えない。並びは置き場のディレクトリの順（-400 → -900）
+  [ -f "$(rec_of 400 13)" ]
   put_record 12 epic=oratta/claude-harness#900
   gh_seq 12 open
+  gh_seq 13 open
   EPIC_DISPATCH_MAX_PARALLEL=2 run dispatch launch 400 14 15
   [ "$status" -eq 0 ]
-  [ "$output" = "deferred 14" ] || [ "$output" = "$(printf 'deferred 14\ndeferred 15')" ]
-  grep -q 'in use 2: #12 #13$' "$BATS_TEST_TMPDIR/stderr" || { cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "$(printf 'deferred 14\ndeferred 15')" ]
+  grep -q 'in use 2: #13 #12$' "$BATS_TEST_TMPDIR/stderr" || { cat "$BATS_TEST_TMPDIR/stderr"; false; }
 }
 
 @test "launch: an unreadable record of another child uses one slot" {
