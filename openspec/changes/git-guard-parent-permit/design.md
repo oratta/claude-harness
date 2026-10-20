@@ -1,0 +1,108 @@
+## Context
+
+`plugins/dev-workflow/scripts/git-destructive-guard.sh` は PreToolUse（Bash）で破壊的 git 操作 9 種を見つけ、主の呼び出しには `ask` / `deny`、子（payload の `agent_id` が空でない文字列）の呼び出しには必ず `deny` を返す（#1108、PR #1118）。子への拒否の回数は `${TMPDIR:-/tmp}/dev-workflow-git-guard/<sha256(session_id + NUL + agent_id)>` に数え、2 回目以降は `continue: false` で子を打ち切る。
+
+#1118 の実機確認で分かっていること（`openspec/changes/archive/2026-10-19-subagent-git-guard-deny/design.md`「実機確認の結果」）:
+
+- 子の payload には `agent_id` が入る。SendMessage で再開された子は同じ `agent_id` を持つ
+- 子の `session_id` は親のセッションの ID と同じ（子の scratchpad も親のセッション ID の下にある。例: `/private/tmp/claude-501/<プロジェクトの slug>/<session_id>/scratchpad`）
+- 子が `continue: false` で打ち切られると、親が受け取る結果は空になる
+
+いま親が子の代わりに打つと、親は主の呼び出しなので主の確認画面が出る。子が自分の scratchpad に作った検証用 repo を戻すだけの操作でも主が画面を押すまで止まる。現行 spec の要件「子の定義に検証用 repo の戻し方を書く」は「scratchpad 内の repo への破壊的操作を hook が許可する仕組みを足してはならない（コマンドの中で変数を作ってから使う形を hook は展開できず、行き先を判定できないため）」と禁じている。この禁止の理由（hook がコマンドから行き先を判定できない）はこの change でも変わらないので、hook が場所を見て通すのではなく、**親が許可を書く時点で、行き先を判定できる形のコマンドだけを受け付ける**形にする。
+
+守るもの（エピック #1137）: 一時領域の外への破壊的な操作は、親の判断にかかわらず人の許可が要る。守らないもの: 親が判断を誤って一時領域の中の別のファイルを消すこと。
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- 子が拒否されたコマンドを、親がその 1 回だけ通せるようにする（人を通さない）
+- 許可を書けるのは、触る repo がすべてそのセッションの scratchpad の中にあると機械的に確かめられたコマンドだけにする
+- 許可は session_id・agent_id・cwd・コマンドの全文に結び付け、1 回で消え、期限で切れる
+- 許可のあとの別の拒否を 1 回目として数える
+- 許可を書いたこと・使ったことを記録に残す
+
+**Non-Goals:**
+
+- Claude Code 本体の rm の確認画面への対応（#1134）
+- develop の SKILL.md に、拒否されて返った子を親が許可して再開する手順を書くこと（#1135）。この change は仕組みとスクリプトだけを用意し、親がいつスクリプトを呼ぶかは書かない
+- 2 回目の拒否で打ち切られた子の空の return の扱い（#1117）
+- 主の呼び出しの振る舞いを変えること（`ask` / `deny` の規則は今までどおり。主の呼び出しは許可を見ない）
+- セキュリティ境界にすること（今の hook と同じく、hook に当たらない書き方は通る）
+
+## Decisions
+
+### 1. 許可の単位は「拒否の記録」で、親は記録のパスを渡すだけにする
+
+子に `deny` を返すたびに、hook が拒否の記録を書く。中身は `session_id`・`agent_id`・`cwd`（payload の値）・`command`（`tool_input.command` の全文）・当たった種類・時刻。置き場所は `<base>/denied/<key>.json`、`<base>` は回数のファイルと同じ `${TMPDIR:-/tmp}/dev-workflow-git-guard/`（TMPDIR が空でなければその下、未設定か空なら `/tmp`。`tempfile` の候補探しは使わない）。`<key>` は `session_id`・`agent_id`・`cwd`・`command` を NUL でつないだ文字列の sha256 の 16 進。子への拒否理由に記録のパスを書き、「親に返す報告にこのパスを書く」と案内する。
+
+許可を書くスクリプトは `git-guard-permit.sh <拒否の記録のパス> <理由>` の 2 引数だけを取る。
+
+- 親が agent_id・session_id・コマンドの全文を自分で書き写さなくて済む。親は Bash の環境から `session_id` を取る手段を持たず（環境変数に入っていない）、子の `agent_id` も Agent ツールの結果から読み取って書き写すことになる。コマンドの全文を書き写すと、1 文字の違いで許可が一致しない（または引用符の付け方で別のコマンドになる）
+- hook と親の Bash で `TMPDIR` が違いうる（このセッションでも Bash の `TMPDIR` は `/var/folders/...` で、scratchpad は `/private/tmp/claude-501/...` にある。サンドボックスが Bash の環境を変えることがある）。記録のパスを受け取れば、スクリプトは hook が書いた場所 `<base>` を記録のパスから決められる（記録のパスの 2 つ上）。スクリプトは `TMPDIR` を見ない
+- スクリプトは記録の中身から `<key>` を計算し直し、ファイル名と一致しなければ許可を書かない（別の場所に置いた・書き換えた記録を拒む）
+
+採らなかった案: `--agent-id` `--session-id` `--command` を引数で渡す形（上の書き写しと TMPDIR の食い違いの問題がある）。親のセッションの transcript から子の最後の拒否を探す形（transcript の形式に依存する）。
+
+子が `continue: false` で打ち切られて報告が空のとき、親は記録のパスを受け取れない。この場合の扱いは #1135 / #1117 で決める（この change ではスクリプトに「agent_id で最新の記録を探す」機能を足さない）。
+
+### 2. 一時領域の判定: コマンドを「cd と git だけ」に限り、repo の置き場所を .git から辿る
+
+スクリプトは、記録の `command` が次をすべて満たすときだけ許可を書く。どれかを満たさなければ、理由を stderr に書いて exit 1 で終わり、許可を書かない。
+
+1. **文字の制限**: 英数字・空白・タブ・改行・`/ . _ , : = @ + % -` と、区切りの `;` と `&&` だけでできている。`$`・バッククォート・引用符・`~`・`*`・`?`・`[`・`|`・単独の `&`・`<`・`>`・`(`・`{`・`#`・`\` を 1 つでも含めば拒む。変数・置換・リダイレクト・グロブ・ホームの展開・コメント・行継続を持たないので、シェルが読む単位が空白と区切りだけで決まり、行き先をスクリプトで確定できる（hook の字句読みは使わない。字句読みは「通すかどうか」の判定には足りるが、展開後の行き先を確定することはできない）
+2. **単純コマンドの制限**: `&&`・`;`・改行で区切った各単純コマンドの先頭の語が `cd` か `git` である。代入（`GIT_DIR=x git ...`）・`env` などの前置きは先頭の語が `cd` / `git` でなくなるので拒まれる
+   - `cd` は引数をちょうど 1 つ取る（`cd` だけ・`cd -` は拒む）。引数は今の作業ディレクトリ（最初は記録の `cwd`）からの相対か絶対のパスで、実在するディレクトリでなければ拒む。以降の作業ディレクトリをそこに移す
+   - `git` は、サブコマンドの前に `-C <パス>` だけを置ける（ほかの大域オプション `-c`・`--git-dir`・`--work-tree`・`--exec-path` などは拒む）。サブコマンドは `checkout`・`restore`・`reset`・`clean`・`branch`・`switch`・`status`・`add`・`commit`・`init`・`rev-parse` のどれかに限る（`push` は行き先が remote で、`diff --output` や `archive -o` などはファイルを一時領域の外に書けるので、後始末に要るものだけを許す）
+3. **repo の置き場所**: 各 `git` について、作業ディレクトリに `-C` を順に適用したディレクトリを `realpath` で解決し、そこから親へ `.git` を探す。見つかった `.git` がディレクトリならそれを git ディレクトリとし、ファイルなら `gitdir: <パス>` を読んで（相対ならファイルのあるディレクトリから）解決する。共通の git ディレクトリは git ディレクトリの中の `commondir` ファイル（あれば。相対なら git ディレクトリから）、無ければ git ディレクトリ自身。作業ツリーの最上位（`.git` を持つディレクトリ）・git ディレクトリ・共通の git ディレクトリの `realpath` がすべて同じ scratchpad の中になければ拒む。scratchpad の中で `.git` が見つからないまま scratchpad を出たら拒む（git はさらに上の repo を探しに行くので）。共通の git ディレクトリの `config` と git ディレクトリの `config.worktree` に `worktree` のキーか `[include` / `[includeIf` の節があれば拒む（作業ツリーを外に向けられるため）
+4. **scratchpad の決め方**: ディレクトリ S が「記録の `session_id` のセッションの scratchpad」であるのは、`basename(S) == "scratchpad"`・`basename(dirname(S)) == session_id`・`basename(dirname(dirname(dirname(S)))) == "claude-<uid>"`（uid はスクリプトを動かすユーザーの ID）のとき。Claude Code が scratchpad を `<一時ディレクトリ>/claude-<uid>/<プロジェクトの slug>/<session_id>/scratchpad` に作る形に合わせる。一時ディレクトリの場所（`/private/tmp` か `/tmp` か `TMPDIR` か）は見ない（環境で違うため）。`session_id` は英数字と `-` だけの空でない文字列でなければ拒む
+5. `git` が 1 つも無ければ拒む
+
+これで、許可が通すのは「その子のセッションの scratchpad の中にある repo への git 操作と、cd」だけになる。親が判断を誤っても、消えるのは scratchpad の中だけに限られる。
+
+git を動かして確かめる案（`git rev-parse --show-toplevel --git-common-dir`）は採らない。子が作った repo の設定（`core.fsmonitor` など）でコマンドが動きうるので、許可を書く前に子の repo の設定を実行しない。
+
+### 3. 許可の中身・期限・1 回限り
+
+許可は `<base>/permits/<key>.json` に、一時ファイルに書いてから `rename` で置く。中身は `session_id`・`agent_id`・`cwd`・`command`・`scratchpad`（S の realpath）・`repos`（確かめた作業ツリーの最上位の一覧）・`reason`・`created_at`・`expires_at`（UNIX 秒）。
+
+- **期限は 15 分**。親が許可を書いてから SendMessage で子を再開し、子が同じコマンドを打ち直すまでの間に収まり、使われずに残った許可が長く効かないようにする長さ。環境変数での上書きは設けない（bats は許可のファイルの `expires_at` を過去に書き換えて期限切れを作る）
+- **1 回限り**: hook は、子の呼び出しで破壊的操作を見つけたら、同じ規則で `<key>` を計算し、`permits/<key>.json` を `permits/<key>.json.taken.<pid>` に `rename` してから読む（`rename` に成功した 1 つの呼び出しだけが使える。並列の呼び出しで 2 回使われない）。読んだ中身の 4 つの値が payload と一致し、期限内なら `allow` を返し、取ったファイルを消す。期限切れ・不一致・読めないときは取ったファイルを消して、今までどおり `deny`（回数も数える）。`rename` できない（許可が無い）ときも `deny`
+- `allow` のときは拒否の回数を数えない。拒否の記録も書かない
+- `allow` の理由文には、親が書いた許可に一致したのでこの 1 回だけ通すことを書く
+
+### 4. 拒否の回数の数え直し
+
+スクリプトは許可を書いたあと、その子の回数のファイル `<base>/<sha256(session_id + NUL + agent_id)>` を消す（無ければ何もしない）。#1118 と同じ名前の決め方なので、hook の側は変えなくてよい。これで「拒否 1 回 → 親が許可 → 許可した操作が allow → 別の操作が拒否」の最後の拒否は 1 回目になり、`continue: false` を含まない。
+
+数え直すのは許可を書いた時点で、許可が使われた時点ではない。許可を書いた親は子を再開するつもりなので、再開後の最初の拒否で子が打ち切られないようにするのが目的。回数のファイルを消せなかったときは許可を書いたまま exit 0 で終わり、stderr に消せなかったことを書く（許可そのものは有効で、打ち切りが早く来るだけなので）。
+
+### 5. 子の自己許可を止める
+
+子が許可を書くスクリプトを自分で呼ぶと、親の判断を経ずに通せてしまう（効くのは scratchpad の中だけだが、親が見るという約束が崩れる）。hook は、子の呼び出しの単純コマンドの先頭の語の basename が `git-guard-permit.sh` であるもの、または先頭の語が `bash` / `sh` / `zsh` / `dash` / `ksh` / `source` / `.` で最初のオプションでない引数の basename が `git-guard-permit.sh` であるものを、破壊的操作と同じく `deny` にする（当たった種類の表示は「許可を書くスクリプトの子からの呼び出し」）。名前に `git` を含むので、payload の前ふるい（`*git*`）を通って判定に来る。`cat` などでスクリプトを読むだけの呼び出しは止めない。主の呼び出しは止めない。
+
+### 6. 記録を残す
+
+スクリプトは許可を書く前に `<base>/permit-log.jsonl` に 1 行（`event: "permit"`、時刻・session_id・agent_id・cwd・command・scratchpad・repos・reason・expires_at）を追記する。追記できなければ許可を書かずに exit 1（記録の無い許可を作らない）。hook は許可を使ったとき `event: "use"`、期限切れで捨てたとき `event: "expired"` を追記する。hook の追記の失敗は判定を変えない（`allow` を `deny` に変えない）。スクリプトは成功時に、許可したコマンド・cwd・scratchpad・確かめた repo・期限を stdout に書く（親が報告に引用できるように）。
+
+一時ディレクトリに置くので、OS が一時ディレクトリを片付ければ記録も消える。記録先（issue / PR）へ親が書き残すかは #1135 で決める。
+
+### 7. スクリプトの置き場所と書き方
+
+`plugins/dev-workflow/scripts/git-guard-permit.sh` に置く。hook の本体と同じ `scripts/` にあり、develop の手順書から `scripts/...` で参照できる。中身は `git-destructive-guard.sh` と同じく、bash から `python3 -I -c` で Python の本体を動かす形（ヒアドキュメントで変数に読む。Python 3.9 で `/dev/fd/3` を使わない理由は #869）。hook の字句読みは使わないので、hook のスクリプトに許可を書くモードを足さない（hook の入口を 1 つに保つ）。
+
+## Risks / Trade-offs
+
+- [子の Bash の環境に `GIT_DIR` / `GIT_WORK_TREE` が入っていると、git が scratchpad の外を触る] → スクリプトは子の環境を見られない。子の環境変数を子が自分で設定するのは、hook に当たらない書き方と同じく守備範囲の外とし、spec の守備範囲に書く
+- [許可を書いてから使うまでの間に、子が scratchpad の中のディレクトリを外への symlink に差し替える] → 使う時点で hook は確かめ直さない（hook に一時領域の判定を持たせると判定が 2 か所に分かれる）。15 分の期限と 1 回限りで機会を狭め、守備範囲に書く
+- [拒否の記録が拒否のたびに増える] → 同じ子・同じ cwd・同じコマンドは同じファイルを上書きする。一時ディレクトリの下なので OS の片付けに任せる
+- [scratchpad のパスの形が Claude Code の版で変わる] → 形が変わると許可が書けなくなるだけで、外へ通る向きには壊れない（今の振る舞いに戻る）
+- [子が SendMessage で再開されずに新しい子として起こされると agent_id が変わり、許可が一致しない] → 一致しないのは止める向きなので許す
+
+## Migration Plan
+
+hooks.json は変えない。この PR をマージすると、次に起動したセッションから子への拒否理由に記録のパスが載り、親が許可を書ける。戻すときはこの PR の差分を戻す。一時ディレクトリの `denied/`・`permits/`・`permit-log.jsonl` は残っても使われない。
+
+## 実装段で確かめること
+
+- 実機（`claude -p --plugin-dir`）で、子の PreToolUse に hook が `allow` を返したとき、確認画面も拒否も出ずにコマンドが実行されること。子が scratchpad に作った repo で `git checkout -- .` を打って拒否され、親がスクリプトで許可を書き、子を SendMessage で再開して同じコマンドが通ることを確かめ、結果を PR 本文に書く
