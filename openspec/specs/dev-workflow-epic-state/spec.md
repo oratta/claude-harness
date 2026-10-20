@@ -1,5 +1,8 @@
-## ADDED Requirements
+# dev-workflow-epic-state Specification
 
+## Purpose
+TBD - created by archiving change epic-state-files. Update Purpose after archive.
+## Requirements
 ### Requirement: エピックの状態は子ごと 1 ファイルのローカルの記録に置く
 
 エピックの子の状態の正本は、`${EPIC_STATE_ROOT:-$HOME/.claude/epic-state}/<エピックの owner>.<エピックの repo>-<エピック番号>/<子の owner>.<子の repo>-<子の番号>.json` に子ごと 1 ファイルで置かなければならない（MUST）。`EPIC_STATE_ROOT` が相対パスなら、各サブコマンドの開始時の作業ディレクトリを基準に絶対パスにしてから使う。記録を `~/.claude/projects/` の配下に置いてはならない（MUST NOT）。記録は PC をまたいで共有しない。
@@ -251,7 +254,7 @@
 
 ### Requirement: 同時に枠を使う子は記録から数える
 
-#1106（PR #1120）が `launch` に入れる同時に枠を使う子の上限について、枠を使っている子は、`EPIC_STATE_ROOT` の下の全エピックのディレクトリを横断して、今のワークツリーを `parent_worktree` に持つ記録のうち（#1120 が `parentWorktreeId` で数えるのと同じく、エピックを問わない）、`status` が `done` でなく、`stop` が `stopped` / `stopped-seen` でなく、記録の `repo` に対する issue の state が `closed` でないものとして数えなければならない（MUST）。state を読めない子は数える。上限の値の決め方（`max-parallel`）・`deferred <N>` の出し方・「`create` に進んだ子は結果によらず 1 枠を使う」は #1120 の要件のまま変えない（MUST）。起動部品は上限を知らず、上限は記録と見張りの側で決める。
+issue #1106（PR #1120）が `launch` に入れる同時に枠を使う子の上限について、枠を使っている子は、`EPIC_STATE_ROOT` の下の全エピックのディレクトリを横断して、今のワークツリーを `parent_worktree` に持つ記録のうち（#1120 が `parentWorktreeId` で数えるのと同じく、エピックを問わない）、`status` が `done` でなく、`stop` が `stopped` / `stopped-seen` でなく、記録の `repo` に対する issue の state が `closed` でないものとして数えなければならない（MUST）。state を読めない子は数える。上限の値の決め方（`max-parallel`）・`deferred <N>` の出し方・「`create` に進んだ子は結果によらず 1 枠を使う」は #1120 の要件のまま変えない（MUST）。起動部品は上限を知らず、上限は記録と見張りの側で決める。
 
 #### Scenario: 記録で数えた使用中の数で後回しを決める
 - **WHEN** `EPIC_DISPATCH_MAX_PARALLEL=2` で、`status` が `running`・`stop` が空・issue が open の記録が 1 件、`status` が `done` の記録が 1 件、`stop` が `stopped-seen` の記録が 1 件ある状態で `epic-dispatch.sh launch 1122 21 22` を実行する
@@ -260,3 +263,4 @@
 #### Scenario: Orca の一覧の印は数え方に効かない
 - **WHEN** `EPIC_DISPATCH_MAX_PARALLEL=1` で、記録の無い Orca のワークツリー（親が今のワークツリー・印なし）が 1 つある状態で `epic-dispatch.sh launch 1122 21` を実行する
 - **THEN** 使用中は 0 件で、stdout は `launched 21` である
+
