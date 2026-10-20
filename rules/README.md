@@ -28,7 +28,7 @@ pull（ff-only）→ `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.
 
 ## ファイル一覧と移設先
 
-常時注入される `rules/*.md` は「発火条件と要点」までに留め、手順・経緯・理由の説明は移設先に置く。移設先は**任意の cwd から解決できる形**（スキル名、または `~/.claude/plugins/marketplaces/oratta-claude-harness/<path>`）で書く。`rules/*.md` は全プロジェクトのセッションに載るので、リポジトリ相対パスで書くと harness 以外の cwd では届かなくなる。この表が移設対応の正本。
+常時注入される `rules/*.md` は「発火条件と要点」までに留め、手順・経緯・理由の説明は移設先に置く。移設先は**任意の cwd から解決できる形**（スキル名、`~/.claude/plugins/marketplaces/oratta-claude-harness/<path>`、または Output Style が正本の場合の `~/.claude/output-styles/<name>.md`）で書く。`rules/*.md` は全プロジェクトのセッションに載るので、リポジトリ相対パスで書くと harness 以外の cwd では届かなくなる。この表が移設対応の正本。
 
 | ファイル | 常時注入に残した要点 | 詳細の移設先 |
 |---|---|---|

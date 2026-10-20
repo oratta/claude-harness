@@ -132,4 +132,3 @@ TBD - created by archiving change harness-public-private-split. Update Purpose a
 
 - **WHEN** 6 ファイルのどれかに、検索語に無い別の固有名がある
 - **THEN** 検索のテストは通り、その誤りは人のレビューと固有記述の一覧が見る
-
