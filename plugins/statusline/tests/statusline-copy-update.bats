@@ -155,7 +155,7 @@ install_from_root() {
   grep -qx 'statusline.sh' "$MARK"
   [ -z "$output" ]  # 印を読めるコピーなので案内は重ねない
   line1="$(render | head -1 | strip_ansi)"
-  [[ "$line1" == *"更新あり /statusline:setup" ]]
+  [[ "$line1" == *"更新あり /statusline:setup" ]] || return 1
 }
 
 @test "hook: a copy without the record file is not overwritten" {  # 記録ファイルが無いコピーは上書きしない
@@ -201,7 +201,7 @@ install_from_root() {
   install_from_root
   run render
   [ "$status" -eq 0 ]
-  [[ "$output" != *"更新あり"* ]]
+  [[ "$output" != *"更新あり"* ]] || return 1
 }
 
 @test "render: the mark only appends to line 1 and keeps the other lines" {  # 印は 1 行目の末尾に足すだけ
