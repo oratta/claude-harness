@@ -146,6 +146,7 @@ snapshot は **schema 2** であり、次の構造でなければならない（
 - 次のどちらかに当たる: そのスロットのセッション記録が無い、または記録の `observed_at` が `USAGE_PROBE_STALE` 秒（既定 10800）より古い／snapshot の同スロットの `fetched_at` が `USAGE_PROBE_STALE` 秒より古い（同スロットや `fetched_at` が無い場合を含む）。後者を含めるのは、Fable 週次がセッション記録に入らず probe からしか得られないため（会話中のアカウントでも Fable の値と statusline の 6 時間鮮度ゲートが止まらないようにする）
 - 試行状態ファイル（`USAGE_PROBE_STATE`、既定 `~/.claude/.usage-probe-state`）にあるそのスロットの前回の試行時刻から `USAGE_PROBE_INTERVAL` 秒（既定 10800）以上経っている
 - そのスロットが 429 による待ち時間の中にいない
+- そのスロットがオフ（`accounts.json` の `enabled: false`）でない。オフのスロットはセッション記録や snapshot がどれだけ古くてもフェッチせず、前回値を保つ（正本は `usage-account-registry` capability の要件「オフのスロットは使用量を取得しない」）
 
 probe はフェッチを試みたスロットごとに、結果（200・429・その他の失敗）にかかわらず試行時刻を試行状態ファイルに記録しなければならない（SHALL）。HTTP 429 を受けたスロットは連続 429 回数を 1 増やし、前回の試行から `USAGE_PROBE_INTERVAL × 2^(回数-1)` 秒（上限 86400 秒）経つまで次の試行をしてはならない（MUST NOT）。200 を受けたら連続 429 回数を 0 に戻す。試行状態ファイルは一時ファイルからの置き換えで書き、読めない・壊れているときは全スロットを未試行として扱う。
 
@@ -337,3 +338,4 @@ python3 が無い・入力が JSON でない・`agent_type` が無い・残量�
 #### Scenario: hooks.json の SubagentStart エントリ
 - **WHEN** `plugins/dev-workflow/hooks/hooks.json` をパースする
 - **THEN** SubagentStart エントリが存在し、matcher が `^dev-workflow:(worker|reviewer|gate-runner)$`、command が `${CLAUDE_PLUGIN_ROOT}` 経由で `scripts/subagent-start-context.sh` を指している
+

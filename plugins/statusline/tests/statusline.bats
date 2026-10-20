@@ -197,7 +197,7 @@ codex_off_env() {
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
   [ "$(strip_ansi < "$WORK/out.txt" | grep -c 'Codex')" -eq 1 ]
   line="$(strip_ansi < "$WORK/out.txt" | grep 'Codex')"
-  [ "$line" = "  Codex  off" ]
+  [ "$line" = "  Codex A  off" ]
   [ ! -e "$WORK/codex-calls" ]
   [ ! -e "$WORK/.statusline-codex" ]
 }
