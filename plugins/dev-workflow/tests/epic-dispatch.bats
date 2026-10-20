@@ -4712,6 +4712,28 @@ xnothing_made() {
   case "$(cat "$STUB_CFG/comment_11")" in "親エピックからの注意書き: #1122"*) ;; *) false ;; esac
 }
 
+@test "launch: two repositories whose names differ only in / and - each use their own clone and Orca repository" {
+  make_stub orca
+  c1="$(xclone abc1 git@github.com:a/b-c.git)"; c2="$(xclone abc2 git@github.com:a-b/c.git)"
+  set_repos "repo-1=$c1" "repo-2=$c2"
+  EPIC_DISPATCH_CLONES="a/b-c=$c1;a-b/c=$c2" run dispatch launch 1122 a/b-c#1615 a-b/c#1616
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "$(printf 'launched a/b-c#1615\nlaunched a-b/c#1616')" ]
+  grep -qF -- "orca worktree create --repo id:repo-1 --name issue-1615 " "$STUB_LOG"
+  grep -qF -- "orca worktree create --repo id:repo-2 --name issue-1616 " "$STUB_LOG"
+  grep -qF -- "git -C $c2 fetch origin main" "$STUB_LOG"
+  grep -qF -- "gh api repos/a-b/c" "$STUB_LOG"
+}
+
+@test "launch: a same-repository child after a child in another repository gets the epic number alone in the command" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  case "$(cat "$STUB_CFG/tcmd_1615")" in "EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 "*) ;; *) false ;; esac
+  case "$(cat "$STUB_CFG/tcmd_11")" in "EPIC_DISPATCH_PARENT_EPIC=1122 "*) ;; *) cat "$STUB_CFG/tcmd_11"; false ;; esac
+}
+
 @test "launch: a record for another repository never makes launch print other-repo" {
   make_stub orca
   c="$(xclone flat)"; set_repos "repo-b=$c"
@@ -4825,6 +4847,18 @@ xreap_ready() {
   [ "$status" -eq 0 ]
   [ "$(calls 'ls-remote origin refs/heads/develop')" -eq 1 ]
   [ "$(calls 'ls-remote origin refs/heads/staging')" -eq 1 ]
+}
+
+@test "reap: two repositories whose names differ only in / and - read the same base once each" {
+  make_stub orca
+  put_record 1615 repo=a/b-c child=a/b-c#1615 status=done base=main
+  put_record 1616 repo=a-b/c child=a-b/c#1616 status=done base=main
+  : > "$STUB_CFG/pr_out"
+  gh_seq 1615 closed; gh_seq 1616 closed
+  run dispatch reap a/b-c#1615 a-b/c#1616
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$(calls 'ls-remote origin refs/heads/main')" -eq 2 ]
+  grep -qF -- "git -C $BATS_TEST_TMPDIR/work/issue-1616 ls-remote origin refs/heads/main" "$STUB_LOG"
 }
 
 @test "reap: an unreadable git common directory keeps the child of another repository as git-failed" {

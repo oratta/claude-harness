@@ -512,9 +512,14 @@ orca_repos_load() {
 # base-lookup-failed）・XR_CLONE・XR_ID（Orca のリポジトリの id）・XR_BASE（既定ブランチ）に入れる。
 # 1 回の launch の中で同じリポジトリは 1 回だけ解決する（結果と stderr の案内は最初の 1 回）
 XR_CODE=""; XR_CLONE=""; XR_ID=""; XR_BASE=""
+
+# 文字列をシェル変数名に使える 16 進の列にする（バイトごとに 2 桁。a/b-c と a-b/c のような名前も別の値になる）。
+# 連想配列は bash 4 からなので使わない（macOS の /bin/bash 3.2 でも動かす）
+var_key() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n'; }
+
 xrepo_resolve() {
   local repo="$1" key var cached found cnt resp acct
-  key="$(printf '%s' "$repo" | tr -c 'a-z0-9' '_')"
+  key="$(var_key "$repo")"
   var="XRC_$key"
   cached="${!var-}"
   if [ -n "$cached" ]; then
@@ -727,6 +732,8 @@ cmd_launch() {
       rc=$?
     else
       prompt="/develop #$num （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
+      # 前の子が別のリポジトリの子でも、起動コマンドをエピックの番号だけに戻す
+      agent_cmd_for "$epic"
       out="$(orca worktree create --name "issue-$num" --issue "$num" --base-branch "origin/$cbase" \
         --parent-worktree "path:$parent" --json)"
       rc=$?
@@ -1376,7 +1383,7 @@ cmd_reap() {
           || { echo "kept $n issue-lookup-failed"; continue; }
         [ "$istate" = closed ] || { echo "kept $n $legacy"; continue; }
         # base の先端は、リポジトリと base の組ごとに 1 回だけ読む（別のリポジトリの子の先端を使い回さない）
-        bkey="$(printf '%s_%s' "${rr:-same}" "$cbase" | tr -c 'A-Za-z0-9' '_')"
+        bkey="$(var_key "${rr:-same}")_$(var_key "$cbase")"
         bvar="REAPT_$bkey"; fvar="REAPF_$bkey"
         if [ -z "${!bvar-}" ]; then
           btip=""
