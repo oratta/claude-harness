@@ -1,0 +1,204 @@
+#!/usr/bin/env bats
+#
+# statusline-reset-grants: Claude のアカウントの行にリセット権の残数と期限を出す
+#
+# spec: statusline-multi-account-usage（Claude のアカウントの行にリセット権の残数と期限を表示する）
+# 値の出どころは snapshot の accounts.<id>.reset_grants だけ。実ホームには触れない。
+
+setup() {
+  export LC_ALL=C.UTF-8
+  PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  REPO_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
+  SL="${PLUGIN_DIR}/scripts/statusline.sh"
+  WORK="$(mktemp -d)"
+  export HOME="$WORK/home" FLATMATE_RATE_SHARE_CONF="$WORK/no-share-conf"
+  unset FLATMATE_RATE_SHARE_DIR
+  mkdir -p "$HOME"
+  export CLAUDE_CONFIG_DIR="$WORK"
+  # #301 / #277: 呼び出し元の別アカウント設定をテストに持ち込まない。
+  unset CLAUDE_SECURESTORAGE_CONFIG_DIR
+  export STATUSLINE_API_PACE=0
+  export STATUSLINE_CODEX=0
+  unset CLAUDE_ACCOUNTS_FILE
+  ACCOUNTS="${WORK}/accounts.json"
+  SNAP="${WORK}/.usage-snapshot"
+  SECURE_B="${WORK}/claude-b"
+  NOW="$(date +%s)"
+  export NOW
+  # #332: byte-identical 系のテストは statusline.sh（new）と origin/main の frozen
+  # コピー（old）を「bash <script>」で 2 回呼び、出力を diff する。両方とも自前で
+  # `date +%s` を呼んで現在時刻を取るため、2 回の呼び出しの間に実時間が経つと
+  # 残り時間の表示（分単位に丸めた値）だけがずれる。old は origin/main の内容その
+  # ものなので env var を読ませる改修を入れられない。そのため new/old の内部実装
+  # に手を入れる方式（statusline.sh に now を渡す環境変数を足す）ではなく、
+  # `date` コマンド自体を bash 関数でシャドウし `export -f` で子プロセスの bash
+  # （old/new とも常に `bash <script>` で起動される）に伝播させ、`+%s` の結果を
+  # この setup() で 1 回だけ取った $NOW に固定する。`+%s` 以外の呼び出し
+  # （$SL の days_ago が ccusage の集計開始日を出す `date -v-30d` など）は実 date
+  # にそのまま委譲するので、このシャドウで時刻に依存しない部分の比較対象を
+  # 狭めてはいない（diff は全文比較のまま）。再現・検証: 意図的に old/new の
+  # 呼び出しの間に 35 秒の遅延を挟むと
+  # （14010 の mk_input が渡す resets_at は 14010 mod 60 = 30 秒の位置で分の桁が
+  # 繰り上がるため）、シャドウ無しでは "~3h 52m" と "~3h 53m" のように再現し、
+  # シャドウ適用後は同じ遅延でも差分が出ないことを確認済み。
+  date() {
+    if [ "$1" = "+%s" ]; then
+      printf '%s\n' "$NOW"
+    else
+      command date "$@"
+    fi
+  }
+  export -f date
+}
+
+teardown() {
+  # 記録ディレクトリを書き込み不可にしたテストの後始末（権限を戻さないと rm -rf が失敗する）
+  chmod -R u+w "$WORK" 2>/dev/null || true
+  rm -rf "$WORK"
+}
+
+# $1=5h消化率 $2=7d消化率 $3=5h残り秒 $4=7d残り秒 → stdin JSON
+mk_input() {
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"rate_limits":{"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}}' \
+    "$WORK" "$1" "$((NOW + $3))" "$2" "$((NOW + $4))"
+}
+
+strip_ansi() { sed $'s/\033\\[[0-9;]*m//g'; }
+
+# $1=reset_grants の JSON（空なら欄なし）。1 スロット（レジストリ不在）の snapshot を書く
+write_snap() {
+  local rg=""
+  [ -n "$1" ] && rg=", \"reset_grants\": $1"
+  cat > "$SNAP" <<JSON
+{ "schema": 2, "active": "default", "fetched_at": $NOW,
+  "accounts": { "default": { "label": "default", "securestorage": null, "fetched_at": $NOW,
+    "five_hour_pct": 55, "five_hour_resets_epoch": $((NOW + 14000)),
+    "weekly_all_pct": 82, "weekly_resets_epoch": $((NOW + 172800))${rg} } } }
+JSON
+}
+
+iso_after() {  # $1=秒 → 現在 NOW から $1 秒後の ISO 8601（小数秒付き）
+  python3 -c "import datetime,sys;print(datetime.datetime.fromtimestamp($NOW+$1,datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.123Z'))"
+}
+
+render() { mk_input 55 82 14000 172800 | bash "$SL"; }
+
+@test "reset grants: count and nearest expiry are shown at the end of the 7d line" {
+  g1="$(iso_after $((3*86400 + 21*3600 + 30)))"; g2="$(iso_after $((10*86400)))"
+  write_snap "[{\"resets_left\":1,\"ends_at\":\"$g1\",\"paused\":false},{\"resets_left\":1,\"ends_at\":\"$g2\",\"paused\":false}]"
+  render | strip_ansi > "$WORK/out.txt"
+  line="$(grep '7d All' "$WORK/out.txt")"
+  [[ "$line" == *"リセット2回・最短あと3日21h" ]] || { echo "$line"; return 1; }
+}
+
+@test "reset grants: yellow within 3 days, red within 24 hours" {
+  write_snap "[{\"resets_left\":1,\"ends_at\":\"$(iso_after $((2*86400)))\",\"paused\":false}]"
+  render > "$WORK/y.txt"
+  grep '7d All' "$WORK/y.txt" | grep -q $'\033\\[33mリセット1回'
+  write_snap "[{\"resets_left\":1,\"ends_at\":\"$(iso_after $((12*3600)))\",\"paused\":false}]"
+  render > "$WORK/r.txt"
+  grep '7d All' "$WORK/r.txt" | grep -q $'\033\\[31mリセット1回'
+  write_snap "[{\"resets_left\":1,\"ends_at\":\"$(iso_after $((5*86400)))\",\"paused\":false}]"
+  render > "$WORK/d.txt"
+  ! grep '7d All' "$WORK/d.txt" | grep -q $'\033\\[3[13]mリセット' || return 1
+}
+
+@test "reset grants: hours-and-minutes form under a day" {
+  write_snap "[{\"resets_left\":3,\"ends_at\":\"$(iso_after $((5*3600 + 600)))\",\"paused\":false}]"
+  render | strip_ansi | grep '7d All' | grep -q 'リセット3回・最短あと5h10m' 
+}
+
+@test "reset grants: paused true and zero-left grants are not counted" {
+  write_snap "[{\"resets_left\":5,\"ends_at\":\"$(iso_after 3600)\",\"paused\":true},{\"resets_left\":0,\"ends_at\":\"$(iso_after 7200)\",\"paused\":false},{\"resets_left\":1,\"ends_at\":\"$(iso_after $((4*86400)))\",\"paused\":false}]"
+  render | strip_ansi | grep '7d All' | grep -q 'リセット1回・最短あと4日'
+}
+
+@test "reset grants: paused is excluded only for boolean true" {
+  local p
+  for p in '' ',"paused":null' ',"paused":"true"' ',"paused":false'; do
+    write_snap "[{\"resets_left\":1,\"ends_at\":null${p}}]"
+    render | strip_ansi | grep '7d All' | grep -q 'リセット1回・期限不明' || { echo "case: $p"; return 1; }
+  done
+  write_snap '[{"resets_left":1,"ends_at":null,"paused":true}]'
+  render | strip_ansi | grep '7d All' | grep -q 'リセット' && return 1
+  return 0
+}
+
+@test "reset grants: no expiry means 期限不明; a past expiry means 期限経過（更新待ち）" {
+  write_snap '[{"resets_left":2,"ends_at":null,"paused":false}]'
+  render | strip_ansi | grep '7d All' | grep -q 'リセット2回・期限不明'
+  write_snap "[{\"resets_left\":2,\"ends_at\":\"$(iso_after -60)\",\"paused\":false}]"
+  render | strip_ansi | grep '7d All' | grep -q 'リセット2回・期限経過（更新待ち）'
+}
+
+@test "reset grants: an empty array shows 0 and no expiry" {
+  write_snap '[]'
+  line="$(render | strip_ansi | grep '7d All')"
+  [[ "$line" == *"リセット0回" ]] || { echo "$line"; return 1; }
+}
+
+@test "reset grants: no field, a non-array, or only unusable grants leave the output unchanged" {
+  write_snap ''
+  render > "$WORK/base.txt"
+  local rg
+  for rg in '"x"' '{"a":1}' 'null' '[{"resets_left":"1","ends_at":null}]' '[{"resets_left":-1}]' '[null,3]' '[{"resets_left":1.5}]'; do
+    write_snap "$rg"
+    render > "$WORK/o.txt"
+    cmp -s "$WORK/base.txt" "$WORK/o.txt" || { echo "case: $rg"; return 1; }
+  done
+  rm -f "$SNAP"
+  render > "$WORK/nosnap.txt"
+  ! grep -q 'リセット' "$WORK/nosnap.txt" || return 1
+}
+
+@test "reset grants: single slot differs from the no-field output only by the segment" {
+  write_snap ''
+  render | strip_ansi > "$WORK/base.txt"
+  write_snap '[{"resets_left":1,"ends_at":null,"paused":false}]'
+  render | strip_ansi > "$WORK/with.txt"
+  sed 's/  │  リセット1回・期限不明$//' "$WORK/with.txt" > "$WORK/stripped.txt"
+  cmp -s "$WORK/base.txt" "$WORK/stripped.txt"
+  ! grep -q 'Claude' "$WORK/with.txt" || return 1
+}
+
+@test "reset grants: a non-active slot shows its own segment after the age" {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "A", "securestorage": null },
+  { "id": "b", "label": "B", "securestorage": "${SECURE_B}" } ] }
+JSON
+  cat > "$SNAP" <<JSON
+{ "schema": 2, "active": "a", "fetched_at": $NOW,
+  "accounts": {
+    "a": { "label": "A", "securestorage": null, "fetched_at": $NOW, "five_hour_pct": 55,
+           "five_hour_resets_epoch": $((NOW + 14000)), "weekly_all_pct": 82, "weekly_resets_epoch": $((NOW + 172800)) },
+    "b": { "label": "B", "securestorage": "${SECURE_B}", "fetched_at": $((NOW - 7200)), "five_hour_pct": 3,
+           "five_hour_resets_epoch": $((NOW + 9000)), "weekly_all_pct": 1, "weekly_resets_epoch": $((NOW + 172800)),
+           "reset_grants": [{"resets_left":2,"ends_at":null,"paused":false}] } } }
+JSON
+  render | strip_ansi > "$WORK/out.txt"
+  grep -E '^(▸ |  )Claude B +7d All' "$WORK/out.txt" | grep -q '2h前  │  リセット2回・期限不明$'
+  ! grep -E '^(▸ |  )Claude A ' "$WORK/out.txt" | grep -q 'リセット' || return 1
+}
+
+@test "reset grants: a slot with only the 5h line gets the segment on that line" {
+  cat > "$SNAP" <<JSON
+{ "schema": 2, "active": "default", "fetched_at": $NOW,
+  "accounts": { "default": { "label": "default", "securestorage": null, "fetched_at": $NOW,
+    "five_hour_pct": 55, "five_hour_resets_epoch": $((NOW + 14000)),
+    "reset_grants": [{"resets_left":1,"ends_at":null,"paused":false}] } } }
+JSON
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91},"rate_limits":{"five_hour":{"used_percentage":55,"resets_at":%s}}}' "$WORK" "$((NOW + 14000))" | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep '5h' "$WORK/out.txt" | grep -q 'リセット1回・期限不明$'
+}
+
+@test "reset grants: the Codex row keeps its format (shared formatter)" {
+  export STATUSLINE_CODEX=1 CODEX_HOME="$WORK/codex-home"
+  mkdir -p "$CODEX_HOME"
+  write_snap ''
+  future=$((NOW + 3*86400 + 21*3600 + 120))
+  printf '{"windows":[{"pct":10,"minutes":10080,"reset":%s}],"resets":{"count":3,"expiry":%s},"fetched_at":%s,"next_attempt":0}' \
+    "$((NOW + 172800))" "$future" "$NOW" > "$WORK/.statusline-codex"
+  run python3 "${PLUGIN_DIR}/scripts/statusline-codex.py" --read
+  echo "$output" | head -3 >&2
+}

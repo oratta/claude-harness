@@ -19,6 +19,13 @@
 #     トップレベルの従来キーは active スロットの同名フィールドのミラー（既存の読み手用）
 #   - fail-open はスロット単位。あるスロットが失敗しても前回値（fetched_at 込み）を引き継ぐ。
 #     全スロットが失敗したとき、および組み立て・書き込みが失敗したときは snapshot を書かない
+#   - 取得先は usage API に ?cedar_ember=1&skip_spend=1 を付けた形（リセット権が cedar_ember ブロックに入る。
+#     社内の実験名の非公開の呼び方で、予告なく変わりうる）。accounts.<id>.reset_grants は任意の欄で、
+#     cedar_ember.grants の各束から resets_left / ends_at / paused だけを値を変えずに写した配列
+#     （cedar_ember が無い・eligible が true でない・grants が配列でない・全要素が不正なら欄なし。元から空なら []）。
+#     寿命: 取得に成功したスロットは応答から作り直す／取得を試みて失敗したスロットは欄を出さない
+#     （全スロット失敗で snapshot を書かない場合も、その欄だけは既存 snapshot から除く。他は変えない）／
+#     取得を試みなかったスロット（間隔内・オフ）は前回の値を保つ。読み手はダッシュボードと statusline
 #   - レジストリで enabled が false のスロット（オフ）は叩かない。認証情報も読まず、試行も記録しない。
 #     snapshot の同スロットの項目は、取得しなかったスロットと同じく前回値のまま引き継ぐ
 #
@@ -49,7 +56,7 @@ STATE="${USAGE_PROBE_STATE:-$HOME/.claude/.usage-probe-state}"
 LOCK="${USAGE_PROBE_LOCK:-$HOME/.claude/.usage-probe.lock}"
 LOCK_STALE=120
 NOW="${USAGE_PROBE_NOW:-$(date +%s 2>/dev/null || echo 0)}"
-ENDPOINT="${USAGE_PROBE_ENDPOINT:-https://api.anthropic.com/api/oauth/usage}"
+ENDPOINT="${USAGE_PROBE_ENDPOINT:-https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1}"
 ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json}"
 
 # ---- レジストリを解決してスロット一覧（TSV）を得る ----
@@ -400,7 +407,8 @@ os.replace(tmp, path)
 PY
 
 # どのスロットからも新しい生レスポンスが取れなかった → fail-open（snapshot を書かない）
-[ "$any_new" -eq 1 ] || exit 0
+# （ただし試みて失敗したスロットの reset_grants を既存 snapshot から除くため、試行があれば組み立てへ進む）
+[ "$any_new" -eq 1 ] || ls "$raw_dir"/*.status >/dev/null 2>&1 || exit 0
 
 # ---- パースして snapshot を組み立てる（fail-open） ----
 out="$(SLOTS_TSV="$slots_tsv" RAW_DIR="$raw_dir" PREV_SNAPSHOT="$SNAPSHOT" USAGE_NOW="$NOW" \
@@ -440,6 +448,22 @@ def window(d, key):
         pct = w.get("used_percentage")
     return pct, w.get("resets_at")
 
+def reset_grants(d):
+    """cedar_ember.grants の各束から resets_left / ends_at / paused だけを値を変えずに写す。
+    欄を出さないときは None。元から空の grants は []、空でないのに写せる束が無いときは None
+    （確定した 0 回と区別する）。値の意味の検証と数え方は読み手に委ねる。"""
+    ce = d.get("cedar_ember")
+    if not isinstance(ce, dict) or ce.get("eligible") is not True:
+        return None
+    grants = ce.get("grants")
+    if not isinstance(grants, list):
+        return None
+    out = [{k: g[k] for k in ("resets_left", "ends_at", "paused") if k in g}
+           for g in grants if isinstance(g, dict)]
+    if grants and not out:
+        return None
+    return out
+
 def parse(raw):
     """生 API JSON → 値フィールドの dict。パースできなければ None（= このスロットは失敗扱い）。"""
     try:
@@ -475,7 +499,7 @@ def parse(raw):
     if five_pct is None and seven_pct is None and fable_pct is None:
         return None
 
-    return {
+    out = {
         "fetched_at": now,
         "five_hour_pct": five_pct,
         "five_hour_resets_at": five_iso,
@@ -486,6 +510,10 @@ def parse(raw):
         "fable_weekly_pct": fable_pct,
         "fable_active": fable_active,
     }
+    grants = reset_grants(d)
+    if grants is not None:
+        out["reset_grants"] = grants
+    return out
 
 slots = []
 for line in os.environ["SLOTS_TSV"].splitlines():
@@ -515,9 +543,14 @@ for sid, label, sec, _svc in slots:
                 values = parse(fh.read())
         except Exception:
             values = None
+    attempted = os.path.exists(os.path.join(raw_dir, sid + ".status"))
+    carried_grants = None
     if values is not None:
         fresh.add(sid)
     else:
+        if not attempted:
+            cand = (prev_accounts.get(sid) or {}).get("reset_grants") if isinstance(prev_accounts.get(sid), dict) else None
+            carried_grants = cand if isinstance(cand, list) else None
         # スロット単位 fail-open: 前回値（fetched_at 込み）をそのまま引き継ぐ
         old = prev_accounts.get(sid)
         if isinstance(old, dict):
@@ -526,10 +559,26 @@ for sid, label, sec, _svc in slots:
             values = {k: None for k in FIELDS}
     entry = {"label": label, "securestorage": sec or None}
     entry.update(values)
+    if carried_grants is not None:
+        entry["reset_grants"] = carried_grants
     accounts[sid] = entry
 
 if not fresh:
-    raise SystemExit(1)  # 新しい値が 1 つも無い → fail-open（呼び出し側が空を検知）
+    # 新しい値が 1 つも無い → fail-open（呼び出し側が空を検知して snapshot を書かない）。
+    # 例外: 試みて失敗したスロットの前回の reset_grants だけは既存 snapshot から除いて書く
+    # （前回の値を写し直さない契約。使用率・fetched_at・ミラー・未試行スロットは変えない）。
+    pa = prev.get("accounts") if isinstance(prev.get("accounts"), dict) else {}
+    dropped = False
+    for sid, *_rest in slots:
+        entry = pa.get(sid)
+        if (isinstance(entry, dict) and "reset_grants" in entry
+                and os.path.exists(os.path.join(raw_dir, sid + ".status"))):
+            del entry["reset_grants"]
+            dropped = True
+    if dropped:
+        print(json.dumps(prev, ensure_ascii=False))
+        raise SystemExit(0)
+    raise SystemExit(1)
 
 # active スロットの判定（正本: usage-account-registry「active スロットの判定規則」）
 # 環境変数から導出したサービス名で突き合わせる。probe は Claude Code 本体と同じ
