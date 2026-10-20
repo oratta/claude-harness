@@ -6,8 +6,10 @@ issue #1123 の最後の change（3b）。3a（PR #1174、`epic-launcher-split`�
 
 - `plugins/dev-workflow/scripts/epic-launch-tmux.sh`（新規）: 12 個のサブコマンドを `tmux` と `git` だけで実装する。起動コマンドは `EPIC_DISPATCH_CLAUDE_CMD`（今と同じ）
 - `route` の結果に `tmux` を足す。判定順は 記録か `EPIC_DISPATCH_PARENT_EPIC` があれば `nested` → 環境変数 `EPIC_DISPATCH_LAUNCHER`（新規。`orca`／`tmux` で固定）→ Orca 管理なら `orca` → `TMUX` が空でなく `tmux` が PATH にあれば `tmux` → それ以外 `subagent`
-- `launch`・`adopt` は同じ順で部品を選んで記録の `launcher` に書き、`reply`・`notify-closed`・`wait --resolve`・`reap` は子の記録の `launcher` の部品を呼ぶ
-- 登録の仕組みを持たない部品の扱い: `unregistered` が `ok` を返したら登録は要らないとして、空の `repo_id` のまま `create` に進む。`create` の `clone` が空なら親のワークツリーのリポジトリに作る。`here` の `repo_id` が空でも tmux では止めない（Orca の部品のときだけ `has no repoId` で止める）
+- `launch`・`adopt` は同じ順で部品を選んで記録の `launcher` に書く。`reply`・`notify-closed`・`wait --resolve`・`reap` は入口で部品を探さず、対象の子の記録の `launcher` の部品を先に決めてその部品が使えるかを見る（使えない部品の子だけ `launcher-unavailable`）
+- 再開したエピックでは、本体が最新の `回し方:` の部品名を `EPIC_DISPATCH_LAUNCHER` で `launch`・`adopt` に渡す。使えなければ報告して止まる
+- 既存の「Orca 経路」の要件（片付け・停止解決・マージ待ち判断・完了促進）を別セッション方式の共通手順として読み替える要件を足し、部品で違う点（`kept` を消す操作は tmux では `epic-launch-tmux.sh remove`）を表で決める
+- 登録の仕組みを持たない部品の扱い: `unregistered` が `ok` を返したら登録は要らないとして、空の `repo_id` のまま `create` に進む。子を作るリポジトリは `clone` で決め（空なら親のワークツリーのリポジトリ）、`repo_id` を読むのは Orca の部品だけにする。`here` の `repo_id` が空でも tmux では止めない（Orca の部品のときだけ `has no repoId` で止める）
 - サブエージェント方式には状態の記録を書かせない（2026-10-20-epic-state-files の design.md Decision 12 の「サブエージェント方式も記録を書く」を取り消す）
 - SKILL.md「エピックの扱い」→「回し方」を、共通の手順 1 本と部品ごとの欄に書き直す。用語は「Orca 経路」をやめて「別セッション方式（Orca の部品か tmux の部品）」と「サブエージェント方式」にする
 - 実機で 1 回、tmux の部品の子の起動・止まった子の拾い上げ・終わった子の片付けを確かめる

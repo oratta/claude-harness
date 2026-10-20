@@ -10,7 +10,7 @@
 - 案 A（採用）: `unregistered` が `ok` を返したら `XR_CODE=ok`、`XR_ID` は空のまま通す。契約の変更は `unregistered` の戻り値に 1 語足すだけで、Orca の部品の動きは変わらない
 - 案 B: 新しいサブコマンド（`needs_registration` など）を足す。サブコマンドが 13 個になり、3a の「12 個」と bats の照合を変える
 - 案 C: tmux の `repos` に `EPIC_DISPATCH_CLONES` の clone を返させる。部品が `epic-dispatch.sh` の環境変数を読むことになり、境目（渡したものだけが部品に届く）を壊す
-`create` の `clone` は、別リポジトリの子は `xrepo_resolve` が見つけたパス、同じリポジトリの子は今のまま空（Orca の部品は使わない）。tmux の部品は空なら `<親のワークツリー>` で `git worktree add` を呼ぶ（worktree は同じリポジトリのどのワークツリーからでも作れる）。`here` の `repo_id` が空であることは、tmux では正常なので、`launch`・`adopt` の `has no repoId` の停止は Orca の部品を選んだときだけにする。`list` は空なので「記録の無い既存の子」は拾えず、記録が正本のまま `adopt` は全員 `none`。
+`create` が子を作るリポジトリは `clone` で決める。別リポジトリの子は `xrepo_resolve` が見つけたパスが `clone` に入り、同じリポジトリの子は今のまま空。空なら親のワークツリーのリポジトリ（worktree は同じリポジトリのどのワークツリーからでも作れる）。`repo_id` を読むのは Orca の部品だけ（空なら `--repo` を付けず親と同じリポジトリ）で、tmux の部品は読まない。つまり別リポジトリの子は tmux では「`clone` が空でなく `repo_id` が空」で届き、これが正常な組み合わせである（Orca の部品にはこの組み合わせは届かない。`repo_id` が空で `clone` が空でないのは `unregistered` が `ok` を返した部品だけ）。`here` の `repo_id` が空であることは、tmux では正常なので、`launch`・`adopt` の `has no repoId` の停止は Orca の部品を選んだときだけにする。`list` は空なので「記録の無い既存の子」は拾えず、記録が正本のまま `adopt` は全員 `none`。
 
 ### 2. tmux の部品のワークツリーの置き場とブランチ名は worktree プラグインに合わせる
 
@@ -21,9 +21,9 @@
 `new-window` にコマンドを直接渡すと対話でないシェルで走り、`cld`（シェル関数）が解決されない。シェルを開いてから打ち込めば、Orca の部品が空のシェルへ起動コマンドを送る今の形と揃う。`session` の値は `-P -F '#{pane_id}'` で受けたペイン ID（ウィンドウの番号は並べ替えで変わるため）。
 
 - 起動待ち: `capture-pane -p` の画面に Claude Code の入力待ちの文字列が出るまで（`EPIC_DISPATCH_READY_TIMEOUT_MS` を上限に）ポーリングする。入力待ちの文字列は実機で確かめて部品の定数にする（tasks 5.1）。文字列が将来変わったときは `failed ready` になり黙って誤送信しない
-- 送信の確かめ: `send-keys` が成功しても入力欄に入っただけで送信されたとは限らない。Orca の `--wait-submit` に当たるものとして、子のワークツリーの会話ログ（`CLAUDE_PROJECTS_DIR` の下）に、送る直前に控えた時刻より後の user の行が現れることを `EPIC_DISPATCH_SUBMIT_WAIT` 秒まで待つ
+- 送信の確かめ: `send-keys` が成功しても入力欄に入っただけで送信されたとは限らない。Orca の `--wait-submit` に当たるものとして、子のワークツリーの会話ログ（`CLAUDE_PROJECTS_DIR` の下）に、送る直前に控えた時刻より後の user の行が現れ、その本文が送った文の先頭 40 文字（短ければ全体）を含むことを `EPIC_DISPATCH_SUBMIT_WAIT` 秒まで待つ。時刻だけだと別のセッションが同じログに書いた入力を送信と取り違えるため、本文も照合する。検出できないのは、先頭 40 文字より後ろの欠けと、同じ先頭の別の入力が同時に入った場合。全文を照合しないのは、Claude Code がログに書く本文が入力と完全には一致しない（空白や貼り付けの扱い）ことがあり、全文一致だと正常な送信を `failed send` にしてしまうため
 - 送る前の確認: `#{pane_current_command}` が Claude Code（`node` か `claude` など、実機で確かめる）を示し、画面が入力待ちであること。シェルが前面なら送らない（指示がシェルコマンドとして実行される事故を避ける）
-- 閉じるのは `kill-pane`、消すのは子の clone の `git worktree remove`（`--force` なし）。`mirror` は何もしない
+- 閉じるのは `kill-pane`、消すのはワークツリーが属するリポジトリの本体のワークツリーで `git worktree remove`（`--force` なし。`git -C <ワークツリー> rev-parse --git-common-dir` の親を使うので、別リポジトリの子でも記録に clone を持たずに消せる）。`mirror` は何もしない
 
 ### 4. `route` の判定順と、素の tmux の人への影響
 
@@ -40,14 +40,22 @@ channel は `route` を呼ばず、別のセッションを起こさない（#11
 
 ### 7. 部品が選べないときの失敗
 
-`launch`・`adopt` で部品を選べなければ exit 1 とし、stderr に理由を出す（今 Orca が無いと `orca is not on PATH` で exit 1 になるのと同じ扱い）。入口で選べる部品が無いときは Orca の部品の `available` を呼び、今と同じ stderr になる。記録の `launcher` が入口で選んだ部品と違う子（Orca と tmux の子が混在するエピック）は、その子の部品の `available` を呼び、使えなければ `launcher-unavailable` でその子だけ止める。
+操作の種類で、部品を決める元が違う。新しい子を起こす `launch`・`adopt` は環境から選び、選んだ部品が使えなければ exit 1 で stderr に理由を出す（環境から選べる部品が無いときは Orca の部品の `available` を呼び、今と同じ `orca is not on PATH`）。記録に従う `reply`・`notify-closed`・`wait --resolve`・`reap` は、入口で 1 本の部品を探さず、対象の子の記録の `launcher` の部品を先に決めてその `available` を呼ぶ。理由: 入口で Orca を探すと、使えない Orca を `EPIC_DISPATCH_LAUNCHER=orca` で指した環境から、使える tmux の記録の子に届かなくなる。対象の子の部品がすべて同じで使えなければ今の挙動（stdout 空・stderr に理由・exit 1。Orca なら `orca is not on PATH`）、部品が混在して一部だけ使えなければその子だけ `launcher-unavailable`。旧 stderr の維持が掛かるのは、記録の `launcher` が `orca` の子だけの場合と記録が 1 件も無い場合である。
+
+### 8. 既存の「Orca 経路」の要件は共通手順として読み、部品固有の操作だけ表で分ける
+
+既存要件のうち片付け・停止解決・マージ待ち判断・完了促進の 5 本は、見出しが「Orca 経路」だが中身は記録（`status`・`stop`）から状態を読む共通手順で、Orca 固有なのは本体が `kept` を解消したあとの `orca worktree rm`、`wait` の失敗時の「Orca の親ワークツリーで開き直す」案内、端末への送信（`deliver`）だけである。5 本を MODIFIED で書き写すと数千字の複製が 5 つできて直しが漏れるので、develop の spec に読み替えの要件を 1 本足し、部品で違う点を表にした。tmux の片付けの操作は、本体が `epic-launch-tmux.sh remove <path>`（`git worktree remove`、`--force` なし）を呼ぶ形に決めた。Orca の `orca worktree rm` は変えない。
+
+### 9. 再開時の部品は `回し方:` のコメントから `EPIC_DISPATCH_LAUNCHER` で渡す
+
+`launch`・`adopt` は部品を毎回今の環境から選ぶので、`回し方: tmux` と記録したエピックを Orca 管理下で開き直すと、新しい子だけ Orca で起動して部品が混ざる。経路を引き継ぐ規則（`route` をやり直さない）に、本体が最新の `回し方:` の部品名を `EPIC_DISPATCH_LAUNCHER` で `launch`・`adopt` に渡す手順を足した。使えなければ別の部品にもサブエージェント方式にも振り替えず、報告して止まる（`launch` に失敗した子をサブエージェント方式へ自動で振り替えない既存の規則と同じ向き）。記録に従う操作（`reply`・`reap` など）は記録の `launcher` で決まるので渡さない。
 
 ## Risks / Trade-offs
 
 - [起動待ちの文字列が Claude Code の版で変わる] → `failed ready` になり、誤送信しない。文字列は部品の先頭の定数 1 か所。実機確認（tasks 5）で現行版を確かめる
-- [送信の確かめを会話ログに頼る] → 会話ログの場所の規則（パスの英数字以外を `-` にする）は `decide_relaunch` が既に使っている（epic-dispatch.sh の `CLAUDE_PROJECTS_DIR`）。ログが現れない場合は `failed send` で止まり、親は送り直しのコマンドを主に出す（Orca と同じ扱い）
+- [送信の確かめを会話ログに頼る] → 会話ログの場所の規則（パスの英数字以外を `-` にする）は `decide_relaunch` が既に使っている（epic-dispatch.sh の `CLAUDE_PROJECTS_DIR`）。送った文の先頭 40 文字を含む user 行が現れない場合は `failed send` で止まり、親は送り直しのコマンドを主に出す（Orca と同じ扱い）。別のセッションの入力との取り違えは本文の照合で防ぐが、先頭 40 文字より後ろの欠けは検出できない
 - [tmux の部品は `--lock` を付けないので、`git worktree prune` 相当の操作で消されうる] → 子のワークツリーは記録の `worktree` が指し、`reap` の安全確認を通らないと消さない。`git worktree prune` はディレクトリが無いものしか消さない
-- [`send-keys` が長い指示で欠ける] → `-l` で渡すリテラルは長さに上限が無いが、改行を含むとEnter と解釈される。指示は 1 行（今も 1 行）。会話ログでの確認で欠けを検知できる
+- [`send-keys` が長い指示で欠ける] → `-l` で渡すリテラルは長さに上限が無いが、改行を含むとEnter と解釈される。指示は 1 行（今も 1 行）。先頭 40 文字の照合では、末尾の欠けは検知できない（指示が 1 行で短いので許容）
 
 ## Migration Plan
 

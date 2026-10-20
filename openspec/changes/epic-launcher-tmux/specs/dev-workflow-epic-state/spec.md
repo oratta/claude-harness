@@ -14,7 +14,7 @@
 | `list` | なし | 部品が知っている子のワークツリーを、1 行 1 件の JSON `{"repo_id","issue","path","branch","parent_id","status","stop"}` で出して exit 0（片付け済みのものは出さない。`branch` は `refs/heads/` を付けない。`status` は `done`・`waiting`・`running` のどれか、`stop` は `stopped`・`stopped-seen`・`resumed`・空のどれか）。読めなければ exit 1 |
 | `repos` | なし | 部品に登録された clone を、1 行 1 件の JSON `{"id","path"}`（`path` は末尾の `/` を付けない）で出して exit 0。読めなければ exit 1 |
 | `unregistered` | `<clone>` | stdout に、clone が部品に登録されていないときの理由の語を 1 行出し、stderr に登録の仕方を出して exit 0。登録の仕組みを持たない部品（tmux）は `ok` を出して stderr に何も出さない。`epic-dispatch.sh` は `repos` に clone が無かったとき（`repo_id` が空のとき）だけ呼び、`ok` を「登録は要らない」と読んで `repo_id` を空のまま `create` に渡し、それ以外の語は今と同じく `failed <child> <語>` にする |
-| `create` | `<clone> <repo_id> <子の番号> <起点> <親のワークツリー>` | `clone` が空ならエピックと同じリポジトリの子で、親のワークツリーのリポジトリに作る（`clone` を使う部品は、空なら親のワークツリーを使う）。子のワークツリーを作れたら `{"path","branch"}` の 1 行を出して exit 0。作れなかったら exit 1。作ったがパスを読めなければ exit 2。`repo_id` が空なら親と同じリポジトリに作る |
+| `create` | `<clone> <repo_id> <子の番号> <起点> <親のワークツリー>` | 子を作るリポジトリは `clone` で決める: 空ならエピックと同じリポジトリ（親のワークツリーのリポジトリ）、空でなければ `clone` のリポジトリ。`repo_id` は Orca の部品だけが読む値で、空でなければ `--repo id:<repo_id>`、空なら `--repo` を付けず親と同じリポジトリに作る（tmux の部品は `repo_id` を読まず、`clone` と親のワークツリーだけで決める。別リポジトリの子は `clone` が空でなく `repo_id` が空で渡る）。子のワークツリーを作れたら `{"path","branch"}` の 1 行を出して exit 0。作れなかったら exit 1。作ったがパスを読めなければ exit 2 |
 | `start` | `<ワークツリー> <起動コマンド> <最初の指示> <子の呼び方>` | 指示が届いたら `started <session>` を出して exit 0。届かなかったら `failed <段> <session>`（段は `terminal`・`ready`・`send`、`session` は分からなければ空）を出して exit 1 |
 | `deliver` | `<ワークツリー> <relaunch 0か1> <送る文> <起動コマンド> <起動し直しの指示>` | セッション（端末）の一覧を 1 回だけ読む。`relaunch` が 0 で、一覧に端末があり、そのうち子のセッションがちょうど 1 つに決まればそこへ文を送って `sent` を出し exit 0。`relaunch` が 0 で、端末はあるが子のセッションに決められない（シェルの端末だけ、または候補が 2 つ以上）ときは、送りも起動し直しもせず `failed ambiguous-terminal` を出す。一覧が空か `relaunch` が 1 なら、ある端末をすべて閉じてから（空なら閉じずに）起動し直して指示を送り `relaunched <session>` を出し exit 0。失敗は `failed <理由>`（理由は `terminal-list`・`ambiguous-terminal`・`send`・`close`・`create`・`ready`）を出して exit 1 |
 | `close` | `<ワークツリー> <子の呼び方>` | 何も出さない。セッションを閉じたら exit 0、閉じ直しても閉じられなければ exit 1（主の操作の案内は `epic-dispatch.sh` が出す）。`子の呼び方`（例: `11`・`o/r#5`）は閉じ直すときの stderr の文 `terminal close was incomplete for #<子の呼び方>; …` にだけ使う |
@@ -27,7 +27,7 @@
 
 Orca の部品は、各サブコマンドで次の `orca` のコマンドだけを呼び、Orca の機能を自前で作り直してはならない（MUST NOT）: `available` は `orca` が PATH にあるか（無ければ stderr に `orca is not on PATH`）、`here` は `orca worktree current --json`、`prepare` は `orca worktree set --worktree path:<親> --issue <E>`、`list` は `orca worktree list --json`（`isArchived` が true のものを除き、`workspaceStatus` の `completed` → `done`・`in-review` → `waiting`・それ以外 → `running`、`comment` の `epic-stopped` → `stopped`・`epic-stopped-seen` → `stopped-seen`・`epic-resumed` → `resumed`・それ以外 → 空に読み替える）、`repos` は `orca repo list --json`、`unregistered` は stdout に `not-in-orca`、`create` は `orca worktree create`（`repo_id` が空でなければ `--repo id:<repo_id>`、続けて `--name issue-<N> --issue <N> --base-branch origin/<起点> --parent-worktree path:<親> --json`）、`start`・`deliver` は `orca terminal list`・`send`・`create`・`wait --for tui-idle`・`close --all`、`close` は `orca terminal close --worktree path:<wt> --all`（失敗したら端末の一覧を stderr に出し、`EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT` 秒待って 1 回だけ閉じ直す）、`remove` は `orca worktree rm --worktree path:<wt>`（`--force` を付けない。stderr に `terminal sweep failed` があれば `rm-failed-terminal-sweep`、それ以外の失敗は `rm-failed`）、`mirror` は `orca worktree set --worktree <current か path:<wt>>` に `done` → `--workspace-status completed`、`waiting` → `--workspace-status in-review`、`stopped` → `--comment epic-stopped`、`resumed` → `--comment epic-resumed`、`stopped-seen` → `--comment epic-stopped-seen` を付けたもの。
 
-`epic-dispatch.sh` の stdout・exit code・stderr の文言・記録の中身と、`orca`・`git`・`gh` の呼び出しの順と回数は、起動部品へ切り出す前と同じでなければならない（MUST）。`epic-dispatch.sh` は待ち時間の環境変数（`EPIC_DISPATCH_READY_TIMEOUT_MS`・`EPIC_DISPATCH_SUBMIT_WAIT`・`EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT`）を今と同じ位置で検査して既定を当て、その値を同じ名前の環境変数で起動部品に渡す（MUST）。`repos` は 1 回の `launch` で多くても 1 回だけ呼ぶ（MUST）。`launch` と `adopt` は、要件「記録の launcher ごとに起動部品を選ぶ」の順で部品を選び、`reply`・`notify-closed`・`wait --resolve`・`reap` は子の記録の `launcher` の部品を呼ぶ（MUST）。`launch`・`reply`・`notify-closed`・`reap`・`adopt` は入口で部品の `available` を呼び、使えなければ stdout に何も出さずに exit 1 で終わる（MUST）。入口で選べる部品が無い（Orca 管理外で tmux の中でもない）ときは Orca の部品の `available` を呼ぶ（今と同じ `orca is not on PATH`）。記録の `launcher` が入口で呼んだ部品と違う子は、その子の部品の `available` を呼び、使えなければその子だけを `failed <N> launcher-unavailable`（`reply`・`notify-closed`）、`kept <N> launcher-unavailable`（`reap`）にする（MUST）。
+Orca の部品を使うとき、`epic-dispatch.sh` の stdout・exit code・stderr の文言・記録の中身と、`orca`・`git`・`gh` の呼び出しの順と回数は、起動部品へ切り出す前と同じでなければならない（MUST）。`epic-dispatch.sh` は待ち時間の環境変数（`EPIC_DISPATCH_READY_TIMEOUT_MS`・`EPIC_DISPATCH_SUBMIT_WAIT`・`EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT`）を今と同じ位置で検査して既定を当て、その値を同じ名前の環境変数で起動部品に渡す（MUST）。`repos` は 1 回の `launch` で多くても 1 回だけ呼ぶ（MUST）。`launch` と `adopt` は、要件「記録の launcher ごとに起動部品を選ぶ」の順で部品を選び、`reply`・`notify-closed`・`wait --resolve`・`reap` は子の記録の `launcher` の部品を呼ぶ（MUST）。部品の `available` を呼ぶ相手は操作で分かれる（MUST。要件「記録の launcher ごとに起動部品を選ぶ」が正本）: `launch`・`adopt` は選んだ部品、`reply`・`notify-closed`・`wait --resolve`・`reap` は対象の子の記録の `launcher` の部品である。入口で別の部品（例: 使えない Orca）を先に探して全体を終えてはならない（MUST NOT）。Orca の部品の `available` が失敗したときの `orca is not on PATH` での exit 1 は、Orca の部品を呼ぶ操作（記録の `launcher` が `orca` の子、または部品を決める記録が無い場合）の挙動で、tmux の記録の子には掛からない。
 
 #### Scenario: 知らないサブコマンドは exit 2
 - **WHEN** `bash plugins/dev-workflow/scripts/epic-launch-orca.sh nosuch` を実行する
@@ -49,15 +49,26 @@ Orca の部品は、各サブコマンドで次の `orca` のコマンドだけ�
 - **WHEN** 同じリポジトリの子 1 件を `epic-dispatch.sh launch 1122 1123` で起動する
 - **THEN** `orca worktree current`・`orca worktree set`・`orca worktree list`・`orca worktree create` はそれぞれ 1 回ずつ呼ばれ、stdout は `launched 1123` で、記録の `launcher` は `orca` である
 
-#### Scenario: orca が無ければ reap は何も出さずに exit 1
-- **WHEN** `orca` が PATH に無い環境で、`epic-dispatch.sh reap 1123` を実行する
+#### Scenario: orca が無ければ、記録の launcher が orca の子の reap は何も出さずに exit 1
+- **WHEN** `orca` が PATH に無い環境で、記録の `launcher` が `orca` の子 1123 に `epic-dispatch.sh reap 1123` を実行する（記録の無い子だけを渡した場合も同じ）
 - **THEN** stdout は空で、stderr に `orca is not on PATH` が出て、exit 1 である
+
+#### Scenario: orca が無くても、記録の launcher が tmux の子の reap は進む
+- **WHEN** `orca` が PATH に無く、`tmux` の部品が使える環境で、記録の `launcher` が `tmux` の子 1123 に `epic-dispatch.sh reap 1123` を実行する
+- **THEN** `orca` は呼ばれず、`orca is not on PATH` は出ず、tmux の部品の `close`・`remove` の結果で `reaped 1123` か `kept 1123 <理由>` を出す
 
 ## ADDED Requirements
 
 ### Requirement: 記録の launcher ごとに起動部品を選ぶ
 
-`epic-dispatch.sh` は、起動部品を次のとおり選ばなければならない（MUST）。`launch` と `adopt` は、環境変数 `EPIC_DISPATCH_LAUNCHER` が `orca` か `tmux` ならその部品、空なら Orca の部品の `here` が exit 0 のとき `orca`、環境変数 `TMUX` が空でなく `tmux` が PATH にあるとき `tmux`、どれも当たらなければ `available` が失敗するのと同じく stderr に理由を出して exit 1 で終わる。`EPIC_DISPATCH_LAUNCHER` がそれ以外の値なら使い方を出して exit 1 で終わる。`launch` は選んだ部品の名前を記録の `launcher` に書く（MUST）。`reply`・`notify-closed`・`wait --resolve`・`reap`・`mark` の画面への写しは、子の記録の `launcher` の部品を呼ぶ（MUST）。`mirror` は記録の `launcher` が `orca` のときだけ呼ぶ（既存の要件のまま）。記録の `launcher` が `orca`・`tmux` のどちらでもない記録は、読めない記録と同じ扱いにする（MUST）。
+`epic-dispatch.sh` は、起動部品を操作の種類で次のとおり選ばなければならない（MUST）。
+
+- **新しい子を起こす操作（`launch`・`adopt`）**: 環境変数 `EPIC_DISPATCH_LAUNCHER` が `orca` か `tmux` ならその部品、空なら Orca の部品の `here` が exit 0 のとき `orca`、環境変数 `TMUX` が空でなく `tmux` が PATH にあるとき `tmux`。選んだ部品の `available` が失敗したら、stdout に何も出さず、その部品の理由を stderr に出して exit 1 で終わる。空でどれも当たらなければ Orca の部品の `available` を呼び、今と同じ `orca is not on PATH` で exit 1 で終わる。`EPIC_DISPATCH_LAUNCHER` がそれ以外の値なら使い方を出して exit 1 で終わる。選んだ部品の名前を記録の `launcher` に書く
+- **記録に従う操作（`reply`・`notify-closed`・`wait --resolve`・`reap`・`mark` の画面への写し）**: 対象の子の記録の `launcher` が指す部品を先に決め、その部品の `available` で使えるかを判定する。環境変数 `EPIC_DISPATCH_LAUNCHER` と `TMUX` は見ない（記録が正本）。入口で 1 本の部品の `available` を全体に掛けて終えてはならない（MUST NOT）。対象の子の部品がすべて同じで使えないときは、stdout に何も出さず、その部品の理由を stderr に出して exit 1（記録の `launcher` が `orca` の子だけ、または記録が 1 件も無いときは今と同じ `orca is not on PATH`）。一部の子の部品だけが使えないときは、その子だけを `failed <N> launcher-unavailable`（`reply`・`notify-closed`）、`kept <N> launcher-unavailable`（`reap`）にして、ほかの子は進める
+- `mirror` は記録の `launcher` が `orca` のときだけ呼ぶ（既存の要件のまま）
+- 記録の `launcher` が `orca`・`tmux` のどちらでもない記録は、読めない記録と同じ扱いにする
+
+この要件の検査（`EPIC_DISPATCH_LAUNCHER` と `TMUX` の分類、記録の `launcher` の分類、部品の `available` の判定）の守備範囲は次のとおりである。入力の出どころは、人が設定する環境変数 `EPIC_DISPATCH_LAUNCHER`・`TMUX`、`epic-state.sh` が書いた状態の記録の `launcher`、各部品の `available` の結果の 3 つである。拾いたい誤りは、`EPIC_DISPATCH_LAUNCHER` の打ち間違い（`zellij`・大文字の `TMUX` など。使い方を出して止める）、記録の `launcher` が知らない値であること（読めない記録にする）、使えない部品に子の操作を送ってしまうこと、別の部品で動く子まで巻き込んで全体を止めることである。次は通してよく、この要件では止めない: `TMUX` の中身（ソケットが生きているか）は確かめない／記録の `launcher` と今の環境が食い違う（Orca 管理下で `tmux` の記録の子を扱う、など）／Orca と tmux の子が混在するエピック。環境の崩れ方をすべて塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: tmux の中の launch は記録の launcher に tmux を書く
 - **WHEN** `orca` が PATH に無く、`TMUX` が空でない環境で、同じリポジトリの子 1 件を `epic-dispatch.sh launch 1122 1123` で起動する
@@ -71,6 +82,18 @@ Orca の部品は、各サブコマンドで次の `orca` のコマンドだけ�
 - **WHEN** Orca 管理のワークツリーかつ `TMUX` が空でない環境で、`EPIC_DISPATCH_LAUNCHER=tmux` を付けて `launch` する
 - **THEN** 記録の `launcher` は `tmux` である
 
+#### Scenario: 固定した部品が使えなければ launch は別の部品に振り替えず止まる
+- **WHEN** Orca 管理のワークツリーで `TMUX` が空の環境で、`EPIC_DISPATCH_LAUNCHER=tmux` を付けて `launch 1122 1123` を実行する
+- **THEN** stdout は空で、stderr に `tmux is not available` が出て、exit 1 である。`orca worktree create` は呼ばれない
+
+#### Scenario: 使えない部品を環境変数で指しても、利用可能な部品の記録の子は扱える
+- **WHEN** `EPIC_DISPATCH_LAUNCHER=orca` が置かれ、`orca` が PATH に無く、`TMUX` が空でない環境で、記録の `launcher` が `tmux` の子 1123 に `epic-dispatch.sh reap 1123` を実行する
+- **THEN** `orca is not on PATH` で終わらず、tmux の部品の `close`・`remove` が呼ばれる
+
+#### Scenario: 混在するエピックでは使えない部品の子だけが止まる
+- **WHEN** 記録の `launcher` が `orca` の子 11 と `tmux` の子 12 がいて、`orca` が PATH に無く、tmux の部品が使える環境で `epic-dispatch.sh reap 11 12` を実行する
+- **THEN** 子 12 は tmux の部品で片付けられ、子 11 は `kept 11 launcher-unavailable` になる。exit code は `reap` の既存の規則に従う
+
 ### Requirement: tmux の部品は子を独立した Claude Code のセッションとして tmux のウィンドウに起動する
 
 `plugins/dev-workflow/scripts/epic-launch-tmux.sh` は、要件「起動部品は epic-launch-<名前>.sh の 1 本ずつで、同じサブコマンドと出力の契約を持つ」の 12 個のサブコマンドを、`tmux` と `git` だけで実装しなければならない（MUST）。親が tmux で常駐していること（環境変数 `TMUX` が空でなく、`tmux` が PATH にある）を前提とし、`orca` を呼んではならない（MUST NOT）。開発に固有の語を入れてはならない（MUST NOT）。
@@ -82,12 +105,14 @@ Orca の部品は、各サブコマンドで次の `orca` のコマンドだけ�
 | `prepare` | 何もせず exit 0 |
 | `list`・`repos` | 何も出さず exit 0（記録が正本で、部品は子を知らない） |
 | `unregistered` | stdout に `ok` |
-| `create` | ワークツリーは `git -C <clone か親のワークツリー> worktree add -b worktree-issue-<N> <リポジトリの最上位>/.claude/worktrees/issue-<N> origin/<起点>`（worktree プラグインの置き場と名前の決まり `<repo>/.claude/worktrees/<name>`・`worktree-<name>` に合わせる）。同じ名前のブランチかワークツリーが既にあれば作らず exit 1。作れたら `{"path","branch"}` の 1 行 |
-| `start` | 同じ tmux サーバーに `tmux new-window -d -P -F '#{pane_id}' -c <ワークツリー>` でシェルを開き（起動コマンドを `new-window` に直接渡さない。対話でないシェルでは `cld` のシェル関数が解けないため）、起動コマンドを `send-keys -l` で打ち込んで Enter を送る。画面（`capture-pane`）に Claude Code の入力待ちが出るまで `EPIC_DISPATCH_READY_TIMEOUT_MS` を上限に待ち、最初の指示を `send-keys -l` で送って Enter を送る。送信が届いたかは、子のワークツリーの会話ログ（`${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/<パスの英数字以外を - にした名前>/*.jsonl`）に、送った時刻より後の user の行が現れることを `EPIC_DISPATCH_SUBMIT_WAIT` 秒を上限に確かめる。届けば `started <ペイン ID>`、段ごとの失敗は `failed terminal|ready|send <ペイン ID>`（exit 1） |
-| `deliver` | ウィンドウ（ペイン）の一覧を `tmux list-panes -a` で 1 回だけ読み、`#{pane_current_path}` が子のワークツリーのペインを探す。Claude Code が動いていること（`#{pane_current_command}` と画面の入力待ち）を確かめたペインがちょうど 1 つなら、同じ送り方で文を送り、会話ログで届いたことを確かめて `sent`。ペインが無い、または `relaunch` が 1 なら、あるペインを `kill-pane` してから `start` と同じ手順で起動し直し、`relaunched <ペイン ID>`。シェルだけのペインしか無い・候補が 2 つ以上のときは `relaunch` が 0 なら `failed ambiguous-terminal` |
+| `create` | `repo_id` は読まない。ワークツリーは `git -C <clone か親のワークツリー> worktree add -b worktree-issue-<N> <リポジトリの最上位>/.claude/worktrees/issue-<N> origin/<起点>`（worktree プラグインの置き場と名前の決まり `<repo>/.claude/worktrees/<name>`・`worktree-<name>` に合わせる）。同じ名前のブランチかワークツリーが既にあれば作らず exit 1。作れたら `{"path","branch"}` の 1 行 |
+| `start` | 同じ tmux サーバーに `tmux new-window -d -P -F '#{pane_id}' -c <ワークツリー>` でシェルを開き（起動コマンドを `new-window` に直接渡さない。対話でないシェルでは `cld` のシェル関数が解けないため）、起動コマンドを `send-keys -l` で打ち込んで Enter を送る。画面（`capture-pane`）に Claude Code の入力待ちが出るまで `EPIC_DISPATCH_READY_TIMEOUT_MS` を上限に待ち、最初の指示を `send-keys -l` で送って Enter を送る。送信が届いたかは、子のワークツリーの会話ログ（`${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/<パスの英数字以外を - にした名前>/*.jsonl`）に、送る直前に控えた時刻より後の user の行が現れ、その本文が送った文の先頭 40 文字（40 文字に満たなければ全体）を含むことを `EPIC_DISPATCH_SUBMIT_WAIT` 秒を上限に確かめる（時刻だけでなく本文と照合するので、別のセッションが同じログに書いた入力とは区別できる。検出できないのは、先頭 40 文字より後ろの欠けと、送った文と同じ先頭を持つ別の入力が同時に入ったときである）。届けば `started <ペイン ID>`、段ごとの失敗は `failed terminal|ready|send <ペイン ID>`（exit 1） |
+| `deliver` | ウィンドウ（ペイン）の一覧を `tmux list-panes -a` で 1 回だけ読み、`#{pane_current_path}` が子のワークツリーのペインを探す。Claude Code が動いていること（`#{pane_current_command}` と画面の入力待ち）を確かめたペインがちょうど 1 つなら、同じ送り方で文を送り、会話ログで（`start` と同じ本文の照合で）届いたことを確かめて `sent`。ペインが無い、または `relaunch` が 1 なら、あるペインを `kill-pane` してから `start` と同じ手順で起動し直し、`relaunched <ペイン ID>`。シェルだけのペインしか無い・候補が 2 つ以上のときは `relaunch` が 0 なら `failed ambiguous-terminal` |
 | `close` | 子のワークツリーのペインを `tmux kill-pane` で閉じる。ペインが無ければ成功。閉じられなければ 1 回だけ閉じ直して、駄目なら exit 1 |
-| `remove` | 子の clone で `git worktree remove <ワークツリー>`（`--force` を付けない）。消せなければ `rm-failed` を出して exit 1 |
+| `remove` | 子のワークツリーが属するリポジトリの本体のワークツリー（`git -C <ワークツリー> rev-parse --git-common-dir` の親）で `git worktree remove <ワークツリー>`（`--force` を付けない。ワークツリーの中から自分自身を消さない）。消せなければ理由の語 `rm-failed` を 1 行出して exit 1。`close` の成功後に `reap` が呼ぶ（`close` が失敗した子は `reap` が `kept close-failed` にして `remove` を呼ばない）。`epic-dispatch.sh` の `kept` の子を本体が確かめて消す操作（要件「別セッション方式の既存要件は…」）も同じ形で、本体が `bash epic-launch-tmux.sh remove <path>` を呼ぶ |
 | `mirror` | 何もせず exit 0 |
+
+この要件の検査（ペイン・画面・会話ログ・`git` の出力の分類）の守備範囲は次のとおりである。入力の出どころは、`epic-dispatch.sh` が検査済みで渡す引数と、`tmux`（`list-panes`・`capture-pane`・`new-window -P`）・`git`・子の会話ログの出力である。拾いたい誤りは、シェルのペインに指示を打ち込んで実行してしまうこと、Claude Code の入力待ちの表示が変わって黙って誤送信すること（`failed ready` にする）、送信が届いていないのに `started`・`sent` と言うこと、同じ名前のブランチ・ワークツリーを上書きすること、未コミットの変更があるワークツリーを消すことである。次は通してよく、この要件では止めない: 入力待ちの判定が画面の末尾の部分一致であること／`list-panes` の出力に改行を含むパスは無いと信じること／会話ログの user 行以外の形／送った文の先頭 40 文字より後ろの欠けと、同じ先頭を持つ別の入力が同時に入った場合（検出できない範囲として上の `start` の行に書いた）。tmux・画面・ログの崩れ方をすべて塞ぎ切ることは、この要件の完了条件としない。
 
 送信の前に、送り先のペインで Claude Code が動いていることを確かめなければならない（MUST。シェルに指示を打ち込んで実行してしまう事故を避けるため）。送った文字列は `send-keys -l`（リテラル）で渡し、キー名として解釈させてはならない（MUST NOT）。
 
@@ -106,6 +131,14 @@ Orca の部品は、各サブコマンドで次の `orca` のコマンドだけ�
 #### Scenario: remove は --force を付けない
 - **WHEN** `epic-launch-tmux.sh remove /work/issue-5` を実行する
 - **THEN** `git worktree remove /work/issue-5` が `--force` なしで 1 回呼ばれる
+
+#### Scenario: 送信確認は本文と照合する
+- **WHEN** 送った時刻より後に会話ログへ現れた user の行の本文が、送った指示の先頭 40 文字を含まない環境で `start` を実行する
+- **THEN** `EPIC_DISPATCH_SUBMIT_WAIT` 秒待ったあと stdout は `failed send <ペイン ID>`、exit 1 である
+
+#### Scenario: 別リポジトリの子は空の repo_id と clone で作られる
+- **WHEN** `epic-launch-tmux.sh create /other/clone '' 5 main /work/parent` を実行する
+- **THEN** `git -C /other/clone worktree add -b worktree-issue-5 /other/clone/.claude/worktrees/issue-5 origin/main` が呼ばれ（親のリポジトリには作らない）、stdout は `{"path","branch"}` の 1 行、exit 0 である。同じ引数で Orca の部品の `create` は呼ばれない
 
 #### Scenario: 登録の無い別リポジトリの clone でも別リポジトリの子を起動できる
 - **WHEN** `TMUX` が空でない環境で、`EPIC_DISPATCH_CLONES` に clone を書いた別リポジトリの子を `launch` に渡す
