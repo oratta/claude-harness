@@ -40,7 +40,7 @@ channel は `route` を呼ばず、別のセッションを起こさない（#11
 
 ### 7. 部品が選べないときの失敗
 
-操作の種類で、部品を決める元が違う。新しい子を起こす `launch`・`adopt` は環境から選び、選んだ部品が使えなければ exit 1 で stderr に理由を出す（環境から選べる部品が無いときは Orca の部品の `available` を呼び、今と同じ `orca is not on PATH`）。記録に従う `reply`・`notify-closed`・`wait --resolve`・`reap` は、入口で 1 本の部品を探さず、対象の子の記録の `launcher` の部品を先に決めてその `available` を呼ぶ。理由: 入口で Orca を探すと、使えない Orca を `EPIC_DISPATCH_LAUNCHER=orca` で指した環境から、使える tmux の記録の子に届かなくなる。対象の子の部品がすべて同じで使えなければ今の挙動（stdout 空・stderr に理由・exit 1。Orca なら `orca is not on PATH`）、部品が混在して一部だけ使えなければその子だけ `launcher-unavailable`。旧 stderr の維持が掛かるのは、記録の `launcher` が `orca` の子だけの場合と記録が 1 件も無い場合である。
+操作の種類で、部品を決める元が違う。新しい子を起こす `launch`・`adopt` は環境から選び、選んだ部品が使えなければ exit 1 で stderr に理由を出す（環境から選べる部品が無いときは Orca の部品の `available` を呼び、今と同じ `orca is not on PATH`）。記録に従う `reply`・`notify-closed`・`wait --resolve`・`reap` は、入口で 1 本の部品を探さず、対象の子の記録の `launcher` の部品を先に決めてその `available` を呼ぶ。理由: 入口で Orca を探すと、使えない Orca を `EPIC_DISPATCH_LAUNCHER=orca` で指した環境から、使える tmux の記録の子に届かなくなる。対象の子の部品がすべて同じで使えなければ今の挙動（stdout 空・stderr に理由・exit 1。Orca なら `orca is not on PATH`）、部品が混在して一部だけ使えなければその子だけ `launcher-unavailable`。旧 stderr（stdout 空・`orca is not on PATH`・exit 1）の維持が掛かるのは、記録の `launcher` が `orca` の子だけの場合と、記録の無い子だけを渡して Orca の部品の `available` が失敗した場合である。記録の無い子だけでも Orca が使えれば既存の結果（`reap` は `gone <N>`・exit 0 など）を変えない。`mark`・`wait --watch-stopped` の画面への写しはこの規則から外す: 記録の更新が成功すれば Orca 不在でも `marked …`・exit 0（既存 epic-state spec の「Orca 管理外では写さない」のまま）。
 
 ### 8. 既存の「Orca 経路」の要件は共通手順として読み、部品固有の操作だけ表で分ける
 

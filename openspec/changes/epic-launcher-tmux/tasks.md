@@ -5,8 +5,8 @@
 - [ ] 1.3 `cmd_route` に `tmux` を足す。`EPIC_DISPATCH_LAUNCHER` の検査（`orca`・`tmux`・空以外は使い方で exit 1）。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:298-322`
 - [ ] 1.4 `launch`・`adopt` は選んだ部品を記録の `launcher` に書く（`es_new_record` の引数）。`has no repoId` の停止は Orca の部品のときだけ。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:500-560`、`:640-650`（`es_new_record` の呼び出し）、`:1326-1345`（`cmd_adopt`）
 - [ ] 1.5 `xrepo_resolve` は `unregistered` が `ok` を返したら登録は要らないとして `XR_CODE=ok`・`XR_ID` 空で通す。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:438-499`（`:476-481`）
-- [ ] 1.6 `reply`・`notify-closed`・`wait --resolve`・`reap` は入口で 1 本の部品の `available` を呼ぶのをやめ、対象の子の記録の `launcher` の部品を先に決めてその部品の `available` を呼ぶ。その部品が使えない子だけ `launcher-unavailable`。対象の子の部品がすべて同じで使えないとき、および記録が 1 件も無いときは、今と同じ stdout 空・stderr に理由・exit 1。記録の `launcher` が `orca`・`tmux` でないものは読めない記録の扱い。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:714-760`（`deliver_reply`）、`:1171-1300`（`cmd_reap`）、`:782-850`（`cmd_notify_closed`）、`:951-1005`（`resolve_stopped`）
-- [ ] 1.7 `mark`・`wait --watch-stopped` の `mirror_state` は記録の `launcher` が `orca` のときだけ呼ぶ今の条件のまま確かめる。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:277-282`
+- [ ] 1.6 `reply`・`notify-closed`・`wait --resolve`・`reap` は入口で 1 本の部品の `available` を呼ぶのをやめ、対象の子の記録の `launcher` の部品を先に決めてその部品の `available` を呼ぶ。その部品が使えない子だけ `launcher-unavailable`。対象の子の部品がすべて同じで使えないとき、および記録の無い子だけを渡して Orca の部品の `available` が失敗したときは、今と同じ stdout 空・stderr に理由・exit 1。記録の無い子だけで Orca が使えるときは `gone <N>`・exit 0 などの既存の結果を維持する。テストは記録なし＋Orca 利用可（`gone`・exit 0）と記録なし＋Orca 不可（stdout 空・`orca is not on PATH`・exit 1）の両方を入れる。記録の `launcher` が `orca`・`tmux` でないものは読めない記録の扱い。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:714-760`（`deliver_reply`）、`:1171-1300`（`cmd_reap`）、`:782-850`（`cmd_notify_closed`）、`:951-1005`（`resolve_stopped`）
+- [ ] 1.7 `mark`・`wait --watch-stopped` の `mirror_state` は記録の `launcher` が `orca` のときだけ呼ぶ今の条件のまま確かめる。部品の `available` で全体を止めないこと、`orca` 不在・tmux の記録の子で `mark stopped` が記録の `stop` を更新し、stdout `marked <N> stopped`・exit 0 になることをテストで確かめる。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:277-282`
 
 ## 2. tmux の部品（epic-launch-tmux.sh）
 

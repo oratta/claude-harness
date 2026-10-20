@@ -64,8 +64,8 @@ Orca の部品を使うとき、`epic-dispatch.sh` の stdout・exit code・stde
 `epic-dispatch.sh` は、起動部品を操作の種類で次のとおり選ばなければならない（MUST）。
 
 - **新しい子を起こす操作（`launch`・`adopt`）**: 環境変数 `EPIC_DISPATCH_LAUNCHER` が `orca` か `tmux` ならその部品、空なら Orca の部品の `here` が exit 0 のとき `orca`、環境変数 `TMUX` が空でなく `tmux` が PATH にあるとき `tmux`。選んだ部品の `available` が失敗したら、stdout に何も出さず、その部品の理由を stderr に出して exit 1 で終わる。空でどれも当たらなければ Orca の部品の `available` を呼び、今と同じ `orca is not on PATH` で exit 1 で終わる。`EPIC_DISPATCH_LAUNCHER` がそれ以外の値なら使い方を出して exit 1 で終わる。選んだ部品の名前を記録の `launcher` に書く
-- **記録に従う操作（`reply`・`notify-closed`・`wait --resolve`・`reap`・`mark` の画面への写し）**: 対象の子の記録の `launcher` が指す部品を先に決め、その部品の `available` で使えるかを判定する。環境変数 `EPIC_DISPATCH_LAUNCHER` と `TMUX` は見ない（記録が正本）。入口で 1 本の部品の `available` を全体に掛けて終えてはならない（MUST NOT）。対象の子の部品がすべて同じで使えないときは、stdout に何も出さず、その部品の理由を stderr に出して exit 1（記録の `launcher` が `orca` の子だけ、または記録が 1 件も無いときは今と同じ `orca is not on PATH`）。一部の子の部品だけが使えないときは、その子だけを `failed <N> launcher-unavailable`（`reply`・`notify-closed`）、`kept <N> launcher-unavailable`（`reap`）にして、ほかの子は進める
-- `mirror` は記録の `launcher` が `orca` のときだけ呼ぶ（既存の要件のまま）
+- **記録に従う操作（`reply`・`notify-closed`・`wait --resolve`・`reap`）**: 対象の子の記録の `launcher` が指す部品を先に決め、その部品の `available` で使えるかを判定する。環境変数 `EPIC_DISPATCH_LAUNCHER` と `TMUX` は見ない（記録が正本）。入口で 1 本の部品の `available` を全体に掛けて終えてはならない（MUST NOT）。対象の子の部品がすべて同じで使えないときは、stdout に何も出さず、その部品の理由を stderr に出して exit 1（記録の `launcher` が `orca` の子だけのときは今と同じ `orca is not on PATH`）。対象に記録の無い子しかないときは、Orca の部品の `available` を呼び、それが失敗したときに限って、stdout 空・旧 stderr（`orca is not on PATH`）・exit 1 で終わる。成功したら既存の結果を変えない（記録の無い子の `reap` は `gone <N>`・exit 0、`launch` の `skipped` など）。一部の子の部品だけが使えないときは、その子だけを `failed <N> launcher-unavailable`（`reply`・`notify-closed`）、`kept <N> launcher-unavailable`（`reap`）にして、ほかの子は進める
+- `mark`・`wait --watch-stopped` の画面への写し（`mirror`）は、記録の `launcher` が `orca` のときだけ呼ぶ（既存の要件のまま）。部品の `available` で全体を止める規則は掛けない。記録の更新が成功すれば、部品が使えなくても（Orca 不在でも）`marked <N> <状態>`・exit 0 で終わり、写せなければ既存どおり stderr に出すだけである
 - 記録の `launcher` が `orca`・`tmux` のどちらでもない記録は、読めない記録と同じ扱いにする
 
 この要件の検査（`EPIC_DISPATCH_LAUNCHER` と `TMUX` の分類、記録の `launcher` の分類、部品の `available` の判定）の守備範囲は次のとおりである。入力の出どころは、人が設定する環境変数 `EPIC_DISPATCH_LAUNCHER`・`TMUX`、`epic-state.sh` が書いた状態の記録の `launcher`、各部品の `available` の結果の 3 つである。拾いたい誤りは、`EPIC_DISPATCH_LAUNCHER` の打ち間違い（`zellij`・大文字の `TMUX` など。使い方を出して止める）、記録の `launcher` が知らない値であること（読めない記録にする）、使えない部品に子の操作を送ってしまうこと、別の部品で動く子まで巻き込んで全体を止めることである。次は通してよく、この要件では止めない: `TMUX` の中身（ソケットが生きているか）は確かめない／記録の `launcher` と今の環境が食い違う（Orca 管理下で `tmux` の記録の子を扱う、など）／Orca と tmux の子が混在するエピック。環境の崩れ方をすべて塞ぎ切ることは、この要件の完了条件としない。
@@ -89,6 +89,14 @@ Orca の部品を使うとき、`epic-dispatch.sh` の stdout・exit code・stde
 #### Scenario: 使えない部品を環境変数で指しても、利用可能な部品の記録の子は扱える
 - **WHEN** `EPIC_DISPATCH_LAUNCHER=orca` が置かれ、`orca` が PATH に無く、`TMUX` が空でない環境で、記録の `launcher` が `tmux` の子 1123 に `epic-dispatch.sh reap 1123` を実行する
 - **THEN** `orca is not on PATH` で終わらず、tmux の部品の `close`・`remove` が呼ばれる
+
+#### Scenario: 記録の無い子の reap は Orca が使えれば gone
+- **WHEN** `orca` が PATH にあり、記録の無い（片付け済みの）子 1123 に `epic-dispatch.sh reap 1123` を実行する
+- **THEN** stdout は `gone 1123`、exit 0 である。`orca` が PATH に無ければ stdout 空・stderr に `orca is not on PATH`・exit 1 である
+
+#### Scenario: orca が無くても tmux の記録の子の mark は成功する
+- **WHEN** `orca` が PATH に無く、記録の `launcher` が `tmux` の子のワークツリーで `epic-dispatch.sh mark stopped 1123` を実行する
+- **THEN** 記録の `stop` は `stopped`、stdout は `marked 1123 stopped`、exit 0 である
 
 #### Scenario: 混在するエピックでは使えない部品の子だけが止まる
 - **WHEN** 記録の `launcher` が `orca` の子 11 と `tmux` の子 12 がいて、`orca` が PATH に無く、tmux の部品が使える環境で `epic-dispatch.sh reap 11 12` を実行する
