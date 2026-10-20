@@ -63,6 +63,7 @@ printf '%s' "\$#" >|"${WORK}/argc"
 printf '%s' "\${1-}" >|"${WORK}/arg1"
 printf '%s' "\${2-}" >|"${WORK}/arg2"
 printf '%s' "\${3-}" >|"${WORK}/arg3"
+printf '%s' "\${4-}" >|"${WORK}/arg4"
 exec "$1" "\$@"
 SH
   chmod +x "${WORK}/shim/python3"
@@ -81,10 +82,16 @@ SH
   real="$(command -v python3)"
   install_shim "$real"
   for h in $BODY_HOOKS; do
-    rm -f "${WORK}/argc" "${WORK}/arg1" "${WORK}/arg2" "${WORK}/arg3"
+    rm -f "${WORK}/argc" "${WORK}/arg1" "${WORK}/arg2" "${WORK}/arg3" "${WORK}/arg4"
     payload_for "$h" | PATH="${WORK}/shim:${PATH}" /bin/bash "${SCRIPTS}/${h}.sh" >/dev/null 2>&1 || true
     [ -f "${WORK}/argc" ] || { echo "$h: python3 was not started"; return 1; }
-    [ "$(cat "${WORK}/argc")" = 3 ] || { echo "$h: argc=$(cat "${WORK}/argc")"; return 1; }
+    if [ "$h" = git-destructive-guard ]; then
+      # 本体のうしろに共通の判定ファイル（git-guard-scratchpad.py）のパスを 1 つ渡す（#1133）
+      [ "$(cat "${WORK}/argc")" = 4 ] || { echo "$h: argc=$(cat "${WORK}/argc")"; return 1; }
+      [ "$(cat "${WORK}/arg4")" = "${SCRIPTS}/git-guard-scratchpad.py" ] || { echo "$h: arg4=$(cat "${WORK}/arg4")"; return 1; }
+    else
+      [ "$(cat "${WORK}/argc")" = 3 ] || { echo "$h: argc=$(cat "${WORK}/argc")"; return 1; }
+    fi
     [ "$(cat "${WORK}/arg1")" = "-I" ] || { echo "$h: arg1=$(cat "${WORK}/arg1")"; return 1; }
     [ "$(cat "${WORK}/arg2")" = "-c" ] || { echo "$h: arg2=$(cat "${WORK}/arg2")"; return 1; }
     # 本体は、スクリプトのヒアドキュメントの 1 行目（import 文）から始まる
