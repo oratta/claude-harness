@@ -321,6 +321,55 @@ EOF
   [ "$(calls '^claude ')" -eq 0 ]
 }
 
+# 別のリポジトリの子（<owner>/<repo>#<N>）
+xchild_setup() {
+  printf '%s\n' '別リポジトリの子の本文' > "$STUB_CFG/body_1615"
+  cat > "$STUB_CFG/comments_1615" <<'EOT'
+[
+ {"body":"親エピックからの注意書き: oratta/claude-harness#400\n\n別リポジトリの注意","author_association":"OWNER","html_url":"x1"},
+ {"body":"子の停止: 主の返事待ち\n止まった理由: 別リポジトリの停止","author_association":"OWNER","html_url":"https://github.com/genetta-inc/flatmate/issues/1615#issuecomment-9"}
+]
+EOT
+  cat > "$STUB_CFG/comments_400" <<'EOT'
+[
+ {"body":"親の判断: 子 genetta-inc/flatmate#1615 通した — 前回の別リポジトリの件 u","author_association":"OWNER","html_url":"u1"},
+ {"body":"親の判断: 子 #1615 通した — 同じ番号の同じリポジトリの子の件","author_association":"OWNER","html_url":"u2"},
+ {"body":"親の判断: 子 other/repo#1615 通した — 別の別リポジトリの件","author_association":"OWNER","html_url":"u3"}
+]
+EOT
+}
+
+@test "stop-judge: a child given as <owner>/<repo>#<N> is read from that repository and its past decisions use the same name" {
+  xchild_setup
+  run judge 400 genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "${lines[3]}" = "記録: https://github.com/genetta-inc/flatmate/issues/1615#issuecomment-9" ]
+  grep -qF 'repos/genetta-inc/flatmate/issues/1615' "$STUB_LOG"
+  grep -qF 'repos/genetta-inc/flatmate/issues/1615/comments' "$STUB_LOG"
+  grep -qF 'repos/\{owner\}/\{repo\}/issues/400' "$STUB_LOG"
+  in="$STUB_CFG/model_in"
+  grep -qF '別リポジトリの子の本文' "$in"
+  grep -qF '親の判断: 子 genetta-inc/flatmate#1615 通した — 前回の別リポジトリの件' "$in"
+  if grep -qF '同じ番号の同じリポジトリの子の件' "$in"; then false; fi
+  if grep -qF '別の別リポジトリの件' "$in"; then false; fi
+  grep -qF '## 子 genetta-inc/flatmate#1615 の本文' "$in"
+}
+
+@test "stop-judge: a same-repository child still reads {owner}/{repo} and matches past decisions by #<N>" {
+  run judge 400 11
+  [ "$status" -eq 0 ]
+  grep -qF 'repos/\{owner\}/\{repo\}/issues/11' "$STUB_LOG"
+  grep -qF '## 子 #11 の本文' "$STUB_CFG/model_in"
+}
+
+@test "stop-judge: a malformed <owner>/<repo>#<N> is rejected without calling gh" {
+  run judge 400 'genetta-inc/flatmate#'
+  [ "$status" -eq 1 ]
+  run judge 400 'flatmate#1615'
+  [ "$status" -eq 1 ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
 @test "stop-judge: the script does not contain the word orca" {
   run grep -iw orca "$SCRIPT"
   [ "$status" -eq 1 ]

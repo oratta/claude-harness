@@ -1301,6 +1301,75 @@ json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "com
   done
 }
 
+@test "permit: the harmless GIT_CONFIG set Claude Code injects does not block the permit or its use" {
+  setup_permit
+  local rec
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ]
+  rec="$(only_record)"
+  run env GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.interactive GIT_CONFIG_VALUE_0=false \
+    GIT_CONFIG_KEY_1=credential.guiPrompt GIT_CONFIG_VALUE_1=false "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.interactive GIT_CONFIG_VALUE_0=false \
+    GIT_CONFIG_KEY_1=credential.guiPrompt GIT_CONFIG_VALUE_1=false
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_1
+  [ "$(decision)" = "allow" ] || { echo "$output"; return 1; }
+}
+
+@test "permit: any other GIT_CONFIG key or a broken set still blocks the permit" {
+  setup_permit
+  local rec
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  rec="$(only_record)"
+  local sets=(
+    "GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.interactive GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=core.worktree GIT_CONFIG_VALUE_1=$OUT"
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=$OUT"
+    "GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.interactive GIT_CONFIG_VALUE_0=false"
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.interactive GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=credential.guiPrompt GIT_CONFIG_VALUE_1=false"
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.interactive GIT_CONFIG_VALUE_0=false GIT_CONFIG_GLOBAL=$OUT/cfg"
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.interactive GIT_CONFIG_VALUE_0=false GIT_CONFIG_PARAMETERS='core.worktree=x'"
+    "GIT_CONFIG_COUNT=abc GIT_CONFIG_KEY_0=credential.interactive GIT_CONFIG_VALUE_0=false"
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=Credential.Interactive GIT_CONFIG_VALUE_0=false"
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.interactive"
+  )
+  local s
+  for s in "${sets[@]}"; do
+    eval "run env $s \"\$PERMIT\" \"\$rec\" 戻すだけ"
+    [ "$status" -eq 1 ] || { echo "$s: status=$status $output"; return 1; }
+    [[ "$output" == *GIT_CONFIG* ]] || { echo "$s: $output"; return 1; }
+    permits_empty
+  done
+}
+
+@test "permit: a complete harmless GIT_CONFIG set of 1000 pairs is accepted, and a huge COUNT without the pairs is refused fast" {
+  setup_permit
+  local rec i vars=()
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  rec="$(only_record)"
+  vars=(GIT_CONFIG_COUNT=1000)
+  for ((i = 0; i < 1000; i++)); do
+    vars+=("GIT_CONFIG_KEY_$i=credential.interactive" "GIT_CONFIG_VALUE_$i=false")
+  done
+  run env "${vars[@]}" "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -eq 0 ] || { echo "$output" | cut -c1-300; return 1; }
+  rm -f "$TMPDIR"/dev-workflow-git-guard/permits/*.json
+  run env GIT_CONFIG_COUNT=999999999 GIT_CONFIG_KEY_0=credential.interactive GIT_CONFIG_VALUE_0=false "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  run env GIT_CONFIG_COUNT=99999999999999999999999 "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  permits_empty
+}
+
+@test "child reason: names a way to get the parent's permit (real path, single command, no variable)" {
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  local r
+  r="$(reason)"
+  [[ "$r" == *'実パスで単独のコマンド'* && "$r" == *'変数'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'打ち直さず'* ]] || return 1
+}
+
 @test "permit: the hook denies a permit when GIT_DIR points outside" {
   setup_permit
   deny_then_permit 'git checkout -- .' "$REPO"
