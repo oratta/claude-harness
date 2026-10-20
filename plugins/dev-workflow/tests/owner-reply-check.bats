@@ -269,6 +269,27 @@ run_check() { run bash "$SCRIPT" "$@"; }
   [ "$status" -eq 1 ]
 }
 
+@test "owner-reply cross-repo: the launch instruction for a child in another repository does not match" {
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111116","timestamp":"2026-10-15T06:00:00.000Z","message":{"role":"user","content":"<command-message>dev-workflow:develop</command-message>\n<command-name>/develop</command-name>\n<command-args>#1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。親ワークツリー /Users/someone/orca/workspaces/repo/epic から Orca で起動） 許容</command-args>"}}'
+  run_check "$SID" "許容"
+  [ "$status" -eq 1 ]
+}
+
+@test "owner-reply cross-repo: the relaunch instruction for a child in another repository does not match" {
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111117","timestamp":"2026-10-15T08:34:00.000Z","message":{"role":"user","content":"<command-message>dev-workflow:develop</command-message>\n<command-name>/develop</command-name>\n<command-args>#1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。返事を受けて起動し直し） 主の返事（親エピック #1122（oratta/claude-harness）経由）: 許容</command-args>"}}'
+  run_check "$SID" "許容"
+  [ "$status" -eq 1 ]
+}
+
+@test "owner-reply cross-repo: a reply typed with the cross-repo heads does not match" {
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111118","timestamp":"2026-10-15T08:33:00.000Z","message":{"role":"user","content":"主の返事（親エピック #1122（oratta/claude-harness）経由）: 許容"}}'
+  run_check "$SID" "許容"
+  [ "$status" -eq 1 ]
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111119","timestamp":"2026-10-15T08:35:00.000Z","message":{"role":"user","content":"親エピック #1122（oratta/claude-harness）の判断（主の承認ではない）: 許容"}}'
+  run_check "$SID" "許容"
+  [ "$status" -eq 1 ]
+}
+
 @test "owner-reply #1059: other /develop args such as 721 still match" {
   add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111115","timestamp":"2026-10-15T02:00:00.000Z","message":{"role":"user","content":"<command-name>/dev-workflow:develop</command-name>\n<command-args>721 許容する</command-args>"}}'
   run_check "$SID" "721 許容する"
