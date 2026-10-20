@@ -8,7 +8,7 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/git-destructive-guard.sh"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
-  unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE
+  unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_UNATTENDED
   # 子への拒否の回数は TMPDIR の下に数える。テストごとの空のディレクトリに向けて隔離する
   export TMPDIR="${BATS_TEST_TMPDIR}/tmp"
   mkdir -p "$TMPDIR"
@@ -85,28 +85,36 @@ expect_silent() {
 
 # --- 対象 9 種 ---
 
+# 対象 9 種の代表のコマンド（spec の Scenario「対象 9 種が止まる」。無人のセッションの判定でも同じ一覧を使う）
+NINE_KINDS=(
+  'git checkout -- a.txt'
+  'git checkout .'
+  'git restore a.txt'
+  'git restore --worktree --staged a.txt'
+  'git reset --hard'
+  'git reset --hard origin/main'
+  'git clean -fd'
+  'git clean --force'
+  'git push origin main'
+  'git push upstream master'
+  'git push --force origin feature-x'
+  'git push --force-with-lease origin feature-x'
+  'git push --force-with-lease=feature-x:abc origin feature-x'
+  'git push origin +feature-x'
+  'git push -uf origin feature-x'
+  'git branch -D feature-x'
+  'git branch -df feature-x'
+  'git branch --delete --force feature-x'
+  'git commit --no-verify -m x'
+  'git push --no-verify origin feature-x'
+  'git commit --no-gpg-sign -m x'
+)
+
 @test "nine kinds: each listed command is stopped" {
-  expect_stopped 'git checkout -- a.txt'
-  expect_stopped 'git checkout .'
-  expect_stopped 'git restore a.txt'
-  expect_stopped 'git restore --worktree --staged a.txt'
-  expect_stopped 'git reset --hard'
-  expect_stopped 'git reset --hard origin/main'
-  expect_stopped 'git clean -fd'
-  expect_stopped 'git clean --force'
-  expect_stopped 'git push origin main'
-  expect_stopped 'git push upstream master'
-  expect_stopped 'git push --force origin feature-x'
-  expect_stopped 'git push --force-with-lease origin feature-x'
-  expect_stopped 'git push --force-with-lease=feature-x:abc origin feature-x'
-  expect_stopped 'git push origin +feature-x'
-  expect_stopped 'git push -uf origin feature-x'
-  expect_stopped 'git branch -D feature-x'
-  expect_stopped 'git branch -df feature-x'
-  expect_stopped 'git branch --delete --force feature-x'
-  expect_stopped 'git commit --no-verify -m x'
-  expect_stopped 'git push --no-verify origin feature-x'
-  expect_stopped 'git commit --no-gpg-sign -m x'
+  local c
+  for c in "${NINE_KINDS[@]}"; do
+    expect_stopped "$c"
+  done
 }
 
 @test "push to main: refspec variants are stopped" {
@@ -543,6 +551,75 @@ ${shallow}
   [ "$(decision)" = "deny" ]
 }
 
+# --- 無人のセッション（DEV_WORKFLOW_UNATTENDED の印） ---
+
+# call_env <env assignments...> -- <command> [permission_mode] [agent_id] [session_id]
+call_env() {
+  local envs=()
+  while [ "$1" != "--" ]; do envs+=("$1"); shift; done
+  shift
+  local json
+  json="$(payload "$1" "${2:-default}" "${3:--}" "${4:--}")"
+  run env "${envs[@]}" "$SCRIPT" <<<"$json"
+}
+
+@test "unattended: every one of the nine kinds is denied in bypassPermissions" {
+  local c
+  for c in "${NINE_KINDS[@]}"; do
+    call_env DEV_WORKFLOW_UNATTENDED=1 -- "$c" bypassPermissions
+    [ "$status" -eq 0 ] || { echo "status=$status for: $c"; return 1; }
+    [ "$(decision)" = "deny" ] || { echo "not denied: $c -> [$output]"; return 1; }
+  done
+}
+
+@test "unattended: modes that show the screen and force env ask still deny" {
+  local m
+  for m in default acceptEdits plan; do
+    call_env DEV_WORKFLOW_UNATTENDED=1 -- 'git reset --hard' "$m"
+    [ "$(decision)" = "deny" ] || { echo "not denied in $m"; return 1; }
+  done
+  call_env DEV_WORKFLOW_UNATTENDED=1 DEV_WORKFLOW_GIT_GUARD_FORCE=ask -- 'git reset --hard' bypassPermissions
+  [ "$(decision)" = "deny" ]
+}
+
+@test "unattended: how the mark value is read" {
+  call 'git reset --hard' bypassPermissions
+  [ "$(decision)" = "ask" ]
+  local v
+  for v in '' 0 ' 0 '; do
+    call_env "DEV_WORKFLOW_UNATTENDED=$v" -- 'git reset --hard' bypassPermissions
+    [ "$(decision)" = "ask" ] || { echo "not ask for [$v]"; return 1; }
+  done
+  for v in true yes 1; do
+    call_env "DEV_WORKFLOW_UNATTENDED=$v" -- 'git reset --hard' bypassPermissions
+    [ "$(decision)" = "deny" ] || { echo "not deny for [$v]"; return 1; }
+  done
+}
+
+@test "unattended: without the mark the nine kinds stay ask in bypassPermissions" {
+  local c
+  for c in "${NINE_KINDS[@]}"; do
+    call "$c" bypassPermissions
+    [ "$(decision)" = "ask" ] || { echo "not ask: $c -> [$output]"; return 1; }
+  done
+}
+
+@test "unattended: a child in an unattended session follows the child rule" {
+  call_env DEV_WORKFLOW_UNATTENDED=1 -- 'git checkout -- a' bypassPermissions '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  local r
+  r="$(reason)"
+  echo "$r" | grep -qF '打ち直さず'
+  echo "$r" | grep -qF '親に返す'
+  [[ "$r" != *チャンネル* ]] || return 1
+}
+
+@test "unattended: off still lets everything pass" {
+  call_env DEV_WORKFLOW_GIT_GUARD=off DEV_WORKFLOW_UNATTENDED=1 -- 'git reset --hard' bypassPermissions
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 # --- 拒否理由 ---
 
 @test "reason: deny explains how to get approval" {
@@ -569,6 +646,22 @@ ${shallow}
   echo "$r" | grep -qF '主に承認を求め'
   echo "$r" | grep -qF '主が自分で実行'
   echo "$r" | grep -qF '言い換え'
+  [[ "$r" != *DEV_WORKFLOW_GIT_GUARD* ]] || return 1
+}
+
+@test "reason: unattended deny asks the owner through the channel" {
+  call_env DEV_WORKFLOW_UNATTENDED=1 -- 'git push origin main' bypassPermissions
+  [ "$(decision)" = "deny" ]
+  local r
+  r="$(reason)"
+  echo "$r" | grep -qF 'main / master'
+  echo "$r" | grep -qF 'rules/destructive-git-guard.md'
+  echo "$r" | grep -qF '実行していない'
+  echo "$r" | grep -qF 'チャンネル'
+  echo "$r" | grep -qF 'オーナー'
+  echo "$r" | grep -qF 'オーナーが自分で実行'
+  echo "$r" | grep -qF '言い換え'
+  [[ "$r" != *確認画面* ]] || return 1
   [[ "$r" != *DEV_WORKFLOW_GIT_GUARD* ]] || return 1
 }
 
@@ -835,15 +928,17 @@ PY
   done
 }
 
-@test "rules: destructive-git-guard.md says subagents are denied without a screen and return to the parent" {
+@test "rules: destructive-git-guard.md says subagents and unattended sessions are denied without a screen" {
   local rule="${PLUGIN_DIR}/../../rules/destructive-git-guard.md"
   local sec
   sec="$(awk '/^## hook との分担/{f=1; next} /^## /{f=0} f' "$rule")"
   printf '%s' "$sec" | grep -F 'サブエージェント' | grep -F '確認画面を出さず' | grep -F '打ち直さず' | grep -qF '親に返る'
+  printf '%s' "$sec" | grep -F '画面を見ている人のいないセッション' | grep -F 'チャンネル' | grep -qF '主に承認を求める'
   ! grep -qF 'DEV_WORKFLOW_GIT_GUARD_FORCE' "$rule" || return 1
 }
 
-@test "rules: README row for destructive-git-guard.md mentions subagents" {
+@test "rules: README row for destructive-git-guard.md mentions subagents and unattended sessions" {
   grep -F '| `destructive-git-guard.md` |' "${PLUGIN_DIR}/../../rules/README.md" \
-    | grep -F 'サブエージェント' | grep -F '確認画面を出さず' | grep -qF '親に返る'
+    | grep -F 'サブエージェント' | grep -F '確認画面を出さず' | grep -F '親に返る' \
+    | grep -F '画面を見ている人のいないセッション' | grep -F 'チャンネル' | grep -qF '主に承認を求める'
 }
