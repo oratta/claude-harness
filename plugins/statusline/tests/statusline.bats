@@ -182,7 +182,7 @@ mk_cost_input() {
 
 # --- Codex オフ（accounts.json の codex.enabled が false。#978） ---
 
-# Codex 行を出す設定にし、codex の起動を記録するスタブを置く（auth.json は置かない）
+# Codex 行を出す設定にし、codex の起動を記録するスタブを置く（auth.json は置かない。置く場合は codex_with_login）
 codex_off_env() {
   export STATUSLINE_CODEX=1 CODEX_HOME="$WORK/codex-home"
   export STATUSLINE_CODEX_BIN="$WORK/codex-stub"
@@ -191,8 +191,15 @@ codex_off_env() {
   chmod 700 "$STATUSLINE_CODEX_BIN"
 }
 
+# auth.json を identity() が None で止まらない形（tokens あり）で置く。オフ判定が無ければ
+# スタブが実際に起動されうる条件になり、スタブ未呼び出しの検査がオフ判定を検証する
+codex_with_login() {
+  echo '{"tokens":{"account_id":"test"}}' > "$CODEX_HOME/auth.json"
+}
+
 @test "codex off: the Codex row is the label followed by off only" {
   codex_off_env
+  codex_with_login
   echo '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"enabled":false}}' > "$WORK/accounts.json"
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
   [ "$(strip_ansi < "$WORK/out.txt" | grep -c 'Codex')" -eq 1 ]
