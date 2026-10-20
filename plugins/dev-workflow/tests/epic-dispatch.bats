@@ -117,6 +117,12 @@ case "$1 $2" in
       if [ -e "$STUB_CFG/list_json_$lc" ]; then cat "$STUB_CFG/list_json_$lc"; else cat "$STUB_CFG/list_json"; fi
     fi
     exit "$rc" ;;
+  "repo list")
+    rc=$(cat "$STUB_CFG/repo_list_exit" 2>/dev/null || echo 0)
+    if [ "$rc" -eq 0 ]; then
+      if [ -e "$STUB_CFG/repo_list_json" ]; then cat "$STUB_CFG/repo_list_json"; else echo "{\"result\":{\"repos\":[]}}"; fi
+    fi
+    exit "$rc" ;;
   "worktree rm")
     cat "$STUB_CFG/rm_err" >&2 2>/dev/null
     exit "$(cat "$STUB_CFG/rm_exit" 2>/dev/null || echo 0)" ;;
@@ -226,15 +232,25 @@ esac
 exit 0' ;;
     git) body='
 if [ "$1" = "-C" ]; then
+  cpath="$2"
   shift 2
   case "$1 ${2-}" in
+    "remote get-url")
+      of="$STUB_CFG/origin_for_$(printf "%s" "$cpath" | tr / _)"
+      [ -e "$of" ] || exit 1
+      cat "$of"; exit 0 ;;
+    "fetch origin") exit "$(cat "$STUB_CFG/cfetch_exit" 2>/dev/null || echo 0)" ;;
     "status --porcelain")
       cat "$STUB_CFG/status_out" 2>/dev/null
       exit "$(cat "$STUB_CFG/status_exit" 2>/dev/null || echo 0)" ;;
     "rev-parse HEAD") cat "$STUB_CFG/head" 2>/dev/null || echo aaa111; exit 0 ;;
     "merge-base --is-ancestor") exit "$(cat "$STUB_CFG/ancestor_exit" 2>/dev/null || echo 0)" ;;
+    "rev-parse --path-format=absolute")
+      if [ -e "$STUB_CFG/commondir_out" ]; then cat "$STUB_CFG/commondir_out"; else echo /stub/common/.git; fi
+      exit "$(cat "$STUB_CFG/commondir_exit" 2>/dev/null || echo 0)" ;;
+    "ls-remote origin"|"cat-file -e"|"worktree list"|"rev-parse --verify"|"branch -D") ;;
+    *) exit 0 ;;
   esac
-  exit 0
 fi
 case "$1 ${2-}" in
   "worktree list")
@@ -273,8 +289,24 @@ case "$1" in
 esac
 exit 0' ;;
     gh) body='
+if [ "$1 $2" = "api user" ]; then echo "stub-user"; exit 0; fi
+case "$1 $2" in
+  "api repos/"*/*)
+    case "${2#repos/}" in
+      */*/*) ;;
+      *)
+        rf="$STUB_CFG/repoinfo_$(printf "%s" "${2#repos/}" | tr / _)"
+        rc=$(cat "$STUB_CFG/repoinfo_exit" 2>/dev/null || echo 0)
+        if [ "$rc" -eq 0 ]; then
+          if [ -e "$rf" ]; then cat "$rf"; else echo "{\"permissions\":{\"push\":true},\"default_branch\":\"main\"}"; fi
+        fi
+        exit "$rc" ;;
+    esac ;;
+esac
 if [ "$1 $2" = "issue comment" ]; then
-  printf "%s\n---\n" "$5" >> "$STUB_CFG/comment_$3"
+  cbody=""; prev=""
+  for a in "$@"; do [ "$prev" = "--body" ] && cbody="$a"; prev="$a"; done
+  printf "%s\n---\n" "$cbody" >> "$STUB_CFG/comment_$3"
   rc="$(cat "$STUB_CFG/comment_exit_$3" 2>/dev/null || cat "$STUB_CFG/comment_exit" 2>/dev/null || echo 0)"
   [ "$rc" -eq 0 ] && echo "https://github.com/o/r/issues/$3#issuecomment-1"
   exit "$rc"
@@ -1464,15 +1496,6 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$output" = "$(printf 'failed 11\nfailed 12')" ]
   [ "$(rec_get 11 launch_failed)" = terminal ]
   [ "$(rec_get 12 launch_failed)" = ready ]
-}
-
-@test "launch: a child of another repository is failed other-repo without create or record" {
-  make_stub orca
-  EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 1122 other/repo#5 12
-  [ "$status" -eq 1 ]
-  [ "$output" = "$(printf 'failed other/repo#5 other-repo\nlaunched 12')" ]
-  [ "$(calls '^orca worktree create --name issue-5 ')" -eq 0 ]
-  [ -z "$(find "$EPIC_STATE_ROOT" -name '*other*')" ]
 }
 
 @test "launch: a record with an empty worktree is overwritten and the worktree is made" {
@@ -4418,4 +4441,430 @@ resolve_pass() {
 
 @test "skill: the completion check confirms the state directory is cleared" {
   section 'エピックの扱い' | awk '/^### 完了条件/{f=1; next} /^### /{f=0} f' | grep -qF '`clear` で消えていることを確かめる'
+}
+
+# ---- launch: エピックと別のリポジトリの子（cross-repo-children） ----
+
+# 別のリポジトリ genetta-inc/flatmate の clone を置く（<clone の名前> [origin の URL]）。clone の origin を返すようにする
+xclone() {
+  local d="$BATS_TEST_TMPDIR/$1" url="${2-git@github.com:genetta-inc/flatmate.git}"
+  mkdir -p "$d"
+  printf '%s\n' "$url" > "$STUB_CFG/origin_for_$(printf '%s' "$d" | tr / _)"
+  printf '%s' "$d"
+}
+
+# Orca のリポジトリ一覧を置く（引数は <id>=<path>）
+set_repos() {
+  local out="" kv
+  for kv in "$@"; do out="$out${out:+,}{\"id\":\"${kv%%=*}\",\"path\":\"${kv#*=}\"}"; done
+  printf '{"result":{"repos":[%s]}}\n' "$out" > "$STUB_CFG/repo_list_json"
+}
+
+# 子のリポジトリの gh api repos/<o>/<r> の応答（<push true|false> [default_branch]）
+set_repoinfo() {
+  if [ -n "${2-}" ]; then
+    printf '{"permissions":{"push":%s},"default_branch":"%s"}\n' "$1" "$2" > "$STUB_CFG/repoinfo_genetta-inc_flatmate"
+  else
+    printf '{"permissions":{"push":%s}}\n' "$1" > "$STUB_CFG/repoinfo_genetta-inc_flatmate"
+  fi
+}
+
+# 作られなかったことの確認（記録・create）
+xnothing_made() {
+  [ "$(calls '^orca worktree create ')" -eq 0 ]
+  [ ! -e "$(rec_of 1122 genetta-inc/flatmate#1615)" ]
+}
+
+@test "launch: a child in another repository is made in the clone from EPIC_DISPATCH_CLONES" {
+  make_stub orca
+  c="$(xclone flat)"
+  set_repos "repo-b=$c"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched genetta-inc/flatmate#1615" ]
+  grep -qF -- "orca worktree create --repo id:repo-b --name issue-1615 --issue 1615 --base-branch origin/main --parent-worktree path:/work/parent --json" "$STUB_LOG"
+  [ "$(rec_get genetta-inc/flatmate#1615 repo)" = genetta-inc/flatmate ]
+  [ "$(rec_get genetta-inc/flatmate#1615 child)" = genetta-inc/flatmate#1615 ]
+  [ "$(rec_get genetta-inc/flatmate#1615 number)" = 1615 ]
+  [ "$(rec_get genetta-inc/flatmate#1615 base)" = main ]
+  [ "$(rec_get genetta-inc/flatmate#1615 parent_worktree)" = /work/parent ]
+  [ "$(rec_get genetta-inc/flatmate#1615 worktree)" = /work/issue-1615 ]
+  grep -qF -- "git -C $c fetch origin main" "$STUB_LOG"
+}
+
+@test "launch: a clone registered in Orca is found when EPIC_DISPATCH_CLONES is empty" {
+  make_stub orca
+  c="$(xclone flat)"; o="$(xclone other git@github.com:someone/other.git)"
+  set_repos "repo-o=$o" "repo-b=$c"
+  run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched genetta-inc/flatmate#1615" ]
+  grep -qF -- "orca worktree create --repo id:repo-b " "$STUB_LOG"
+}
+
+@test "launch: EPIC_DISPATCH_CLONES wins over Orca, and an item whose path is not absolute is ignored with a message" {
+  make_stub orca
+  c="$(xclone flat)"; c2="$(xclone flat2)"
+  set_repos "repo-b=$c" "repo-c=$c2"
+  EPIC_DISPATCH_CLONES="Genetta-Inc/Flatmate=$c2;genetta-inc/flatmate=relative/path" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ]
+  grep -qF -- "orca worktree create --repo id:repo-c " "$STUB_LOG"
+  grep -qF 'not absolute' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: no clone found is failed no-clone with the way to tell where it is, and nothing is made" {
+  make_stub orca
+  run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed genetta-inc/flatmate#1615 no-clone" ]
+  grep -qF "EPIC_DISPATCH_CLONES='genetta-inc/flatmate=" "$BATS_TEST_TMPDIR/stderr"
+  grep -qF "git clone git@github.com:genetta-inc/flatmate.git" "$BATS_TEST_TMPDIR/stderr"
+  xnothing_made
+}
+
+@test "launch: a clone whose origin is another repository is not used" {
+  make_stub orca
+  c="$(xclone flat git@github.com:someone/fork.git)"
+  set_repos "repo-b=$c"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed genetta-inc/flatmate#1615 no-clone" ]
+  xnothing_made
+}
+
+@test "launch: two clones in the same stage are failed ambiguous-clone with the candidates" {
+  make_stub orca
+  c="$(xclone flat)"; c2="$(xclone flat2 https://github.com/genetta-inc/flatmate)"
+  set_repos "repo-b=$c" "repo-c=$c2"
+  run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed genetta-inc/flatmate#1615 ambiguous-clone" ]
+  grep -qF "$c" "$BATS_TEST_TMPDIR/stderr"
+  grep -qF "$c2" "$BATS_TEST_TMPDIR/stderr"
+  xnothing_made
+}
+
+@test "launch: an already launched child in another repository is skipped without looking for a clone" {
+  make_stub orca
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped genetta-inc/flatmate#1615" ]
+  [ "$(calls '^git -C ')" -eq 0 ]
+  [ "$(calls '^orca repo list')" -eq 0 ]
+  [ "$(calls '^gh api repos/genetta-inc/flatmate$')" -eq 0 ]
+}
+
+@test "launch: a clone Orca does not know is failed not-in-orca without a record or a slot" {
+  make_stub orca
+  c="$(xclone flat)"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed genetta-inc/flatmate#1615 not-in-orca" ]
+  grep -qF 'orca repo add' "$BATS_TEST_TMPDIR/stderr"
+  xnothing_made
+}
+
+@test "launch: no push permission is failed no-push before anything is made" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"; set_repoinfo false develop
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed genetta-inc/flatmate#1615 no-push" ]
+  grep -qF 'genetta-inc/flatmate' "$BATS_TEST_TMPDIR/stderr"
+  grep -qF 'stub-user' "$BATS_TEST_TMPDIR/stderr"
+  xnothing_made
+}
+
+@test "launch: an unreadable permission is failed permission-lookup-failed" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  echo 1 > "$STUB_CFG/repoinfo_exit"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed genetta-inc/flatmate#1615 permission-lookup-failed" ]
+  xnothing_made
+}
+
+@test "launch: a response without permissions is permission-lookup-failed, not base-lookup-failed" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  echo '{"default_branch":"develop"}' > "$STUB_CFG/repoinfo_genetta-inc_flatmate"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$output" = "failed genetta-inc/flatmate#1615 permission-lookup-failed" ]
+}
+
+@test "launch: no default_branch in the response is failed base-lookup-failed without a record or a slot" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"; set_repoinfo true
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed genetta-inc/flatmate#1615 base-lookup-failed" ]
+  xnothing_made
+}
+
+@test "launch: --base does not hide a missing default_branch (base-lookup-failed)" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"; set_repoinfo true
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch --base staging 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed genetta-inc/flatmate#1615 base-lookup-failed" ]
+  xnothing_made
+}
+
+@test "launch: the base is the default branch of the child's repository, or --base" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"; set_repoinfo true develop
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$output" = "launched genetta-inc/flatmate#1615" ]
+  grep -qF -- "git -C $c fetch origin develop" "$STUB_LOG"
+  grep -qF -- "--base-branch origin/develop " "$STUB_LOG"
+  [ "$(rec_get genetta-inc/flatmate#1615 base)" = develop ]
+  rm -f "$(rec_of 1122 genetta-inc/flatmate#1615)"
+  : > "$STUB_LOG"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch --base staging 1122 genetta-inc/flatmate#1615
+  [ "$output" = "launched genetta-inc/flatmate#1615" ]
+  grep -qF -- "--base-branch origin/staging " "$STUB_LOG"
+  [ "$(rec_get genetta-inc/flatmate#1615 base)" = staging ]
+}
+
+@test "launch: a failing fetch in the child's clone removes the record and does not create" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  echo 1 > "$STUB_CFG/cfetch_exit"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed genetta-inc/flatmate#1615" ]
+  xnothing_made
+}
+
+@test "launch: only children in another repository do not fetch the parent's clone but still bind the epic" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch --base develop 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ]
+  [ "$(calls '^git fetch origin')" -eq 0 ]
+  [ "$(calls '^orca worktree set --worktree path:/work/parent --issue 1122')" -eq 1 ]
+}
+
+@test "launch: a same-repository child reads no permission and still fetches the parent's clone" {
+  make_stub orca
+  run dispatch launch 1122 11
+  [ "$output" = "launched 11" ]
+  [ "$(calls '^gh api repos/[^/]*/[^/]*$')" -eq 0 ]
+  [ "$(calls '^git fetch origin main')" -eq 1 ]
+}
+
+@test "launch: a child in another repository takes a slot and is deferred when none is free" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 1122 genetta-inc/flatmate#1615 genetta-inc/flatmate#1616
+  [ "$output" = "$(printf 'launched genetta-inc/flatmate#1615\ndeferred genetta-inc/flatmate#1616')" ]
+  [ "$(calls '^orca worktree create ')" -eq 1 ]
+  [ "$(calls '^gh api repos/genetta-inc/flatmate$')" -eq 1 ]
+}
+
+@test "launch: a record with an empty worktree in another repository is overwritten without a second slot" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 worktree=
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" EPIC_DISPATCH_MAX_PARALLEL=1 run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$output" = "launched genetta-inc/flatmate#1615" ]
+  [ "$(rec_get genetta-inc/flatmate#1615 worktree)" = /work/issue-1615 ]
+}
+
+@test "launch: an Orca worktree of the child's repository for the same issue is skipped" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  set_list list_json "$(wt_entry 1615 in-progress 'repo-a::/work/parent' repo-b)"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$output" = "skipped genetta-inc/flatmate#1615" ]
+  [ "$(calls '^orca worktree create ')" -eq 0 ]
+}
+
+@test "launch: a child in another repository gets the epic repository in the command, the first input and the note" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch --note 範囲を守る 1122 genetta-inc/flatmate#1615
+  [ "$output" = "launched genetta-inc/flatmate#1615" ]
+  case "$(cat "$STUB_CFG/tcmd_1615")" in "EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 "*) ;; *) false ;; esac
+  case "$(cat "$STUB_CFG/sent_term-1615")" in "/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。"*) ;; *) false ;; esac
+  grep -qF -- "gh issue comment 1615 -R genetta-inc/flatmate --body" "$STUB_LOG"
+  case "$(cat "$STUB_CFG/comment_1615")" in "親エピックからの注意書き: oratta/claude-harness#1122"*) ;; *) false ;; esac
+}
+
+@test "launch: a failing note for a child in another repository prints a repost command with -R" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  echo 1 > "$STUB_CFG/comment_exit_1615"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch --note メモ 1122 genetta-inc/flatmate#1615
+  [ "$output" = "launched genetta-inc/flatmate#1615" ]
+  grep -qF "gh issue comment 1615 -R genetta-inc/flatmate --body" "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: a same-repository child keeps the old command, first input and note" {
+  make_stub orca
+  run dispatch launch --note 範囲を守る 1122 11
+  [ "$output" = "launched 11" ]
+  case "$(cat "$STUB_CFG/tcmd_11")" in "EPIC_DISPATCH_PARENT_EPIC=1122 "*) ;; *) false ;; esac
+  case "$(cat "$STUB_CFG/sent_term-11")" in "/develop #11 （エピック #1122 の子。親ワークツリー"*) ;; *) false ;; esac
+  grep -qF -- "gh issue comment 11 --body" "$STUB_LOG"
+  case "$(cat "$STUB_CFG/comment_11")" in "親エピックからの注意書き: #1122"*) ;; *) false ;; esac
+}
+
+@test "launch: two repositories whose names differ only in / and - each use their own clone and Orca repository" {
+  make_stub orca
+  c1="$(xclone abc1 git@github.com:a/b-c.git)"; c2="$(xclone abc2 git@github.com:a-b/c.git)"
+  set_repos "repo-1=$c1" "repo-2=$c2"
+  EPIC_DISPATCH_CLONES="a/b-c=$c1;a-b/c=$c2" run dispatch launch 1122 a/b-c#1615 a-b/c#1616
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "$(printf 'launched a/b-c#1615\nlaunched a-b/c#1616')" ]
+  grep -qF -- "orca worktree create --repo id:repo-1 --name issue-1615 " "$STUB_LOG"
+  grep -qF -- "orca worktree create --repo id:repo-2 --name issue-1616 " "$STUB_LOG"
+  grep -qF -- "git -C $c2 fetch origin main" "$STUB_LOG"
+  grep -qF -- "gh api repos/a-b/c" "$STUB_LOG"
+}
+
+@test "launch: a same-repository child after a child in another repository gets the epic number alone in the command" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  case "$(cat "$STUB_CFG/tcmd_1615")" in "EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 "*) ;; *) false ;; esac
+  case "$(cat "$STUB_CFG/tcmd_11")" in "EPIC_DISPATCH_PARENT_EPIC=1122 "*) ;; *) cat "$STUB_CFG/tcmd_11"; false ;; esac
+}
+
+@test "launch: a record for another repository never makes launch print other-repo" {
+  make_stub orca
+  c="$(xclone flat)"; set_repos "repo-b=$c"
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  case "$output" in *other-repo*) false ;; *) true ;; esac
+}
+
+@test "reply: a child in another repository gets the epic repository in the header" {
+  make_stub orca
+  set_current 1122
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  set_terms 1615 term-x-1615
+  run dispatch reply --as parent 1122 genetta-inc/flatmate#1615 続けてよい
+  [ "$output" = "sent genetta-inc/flatmate#1615" ]
+  [ "$(cat "$STUB_CFG/sent_term-x-1615")" = "親エピック #1122（oratta/claude-harness）の判断（主の承認ではない）: 続けてよい" ]
+  run dispatch reply --as owner 1122 genetta-inc/flatmate#1615 'A で'
+  [ "$(cat "$STUB_CFG/sent_term-x-1615")" = "主の返事（親エピック #1122（oratta/claude-harness）経由）: A で" ]
+}
+
+@test "reply --relaunch: a child in another repository is started with the epic repository" {
+  make_stub orca
+  set_current 1122
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  run dispatch reply --relaunch --as parent 1122 genetta-inc/flatmate#1615 続けてよい
+  [ "$output" = "relaunched genetta-inc/flatmate#1615" ]
+  case "$(cat "$STUB_CFG/tcmd_1615")" in "EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 "*) ;; *) false ;; esac
+  case "$(cat "$STUB_CFG/sent_term-1615")" in "/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。"*) ;; *) false ;; esac
+}
+
+@test "reply: a same-repository child keeps the old header" {
+  reply_ready term-a-11
+  run dispatch reply --as parent 400 11 続けてよい
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 続けてよい" ]
+}
+
+# ---- reap: エピックと別のリポジトリの子（cross-repo-children） ----
+
+# 別のリポジトリの子 1615 の完了済みの記録（base は develop）。PR の無い子にするときは $1 に prless
+xreap_ready() {
+  make_stub orca
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 status=done base=develop
+  if [ "${1-}" = prless ]; then
+    : > "$STUB_CFG/pr_out"
+    gh_seq 1615 closed
+  else
+    echo aaa111 > "$STUB_CFG/pr_out"
+  fi
+}
+
+@test "reap: a child in another repository asks gh -R for its merged PR and drops the branch in the child's clone" {
+  xreap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  echo /clone/flat/.git > "$STUB_CFG/commondir_out"
+  run dispatch reap genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "reaped genetta-inc/flatmate#1615" ]
+  grep -qF -- 'gh pr list -R genetta-inc/flatmate --head oratta/issue-1615 --state merged --json headRefOid' "$STUB_LOG"
+  p="$BATS_TEST_TMPDIR/work/issue-1615"
+  grep -qF -- "git -C $p rev-parse --path-format=absolute --git-common-dir" "$STUB_LOG"
+  grep -qF -- 'git -C /clone/flat/.git branch -D oratta/issue-1615' "$STUB_LOG"
+  [ "$(calls '^git branch -D')" -eq 0 ]
+  rm_line="$(first_line "^orca worktree rm --worktree path:$p\$")"
+  cd_line="$(first_line 'rev-parse --path-format=absolute --git-common-dir')"
+  [ -n "$rm_line" ] && [ -n "$cd_line" ] && [ "$cd_line" -lt "$rm_line" ]
+}
+
+@test "reap: a PR-less child in another repository reads the base of its own clone with git -C and the recorded base" {
+  xreap_ready prless
+  run dispatch reap genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "reaped genetta-inc/flatmate#1615" ]
+  p="$BATS_TEST_TMPDIR/work/issue-1615"
+  grep -qF -- 'gh pr list -R genetta-inc/flatmate --head oratta/issue-1615 --state all --json number' "$STUB_LOG"
+  grep -qF -- 'gh pr list -R genetta-inc/flatmate --state merged --search aaa111' "$STUB_LOG"
+  grep -qF -- "git -C $p ls-remote origin refs/heads/develop" "$STUB_LOG"
+  grep -qF -- "git -C $p cat-file -e" "$STUB_LOG"
+  [ "$(calls '^git ls-remote')" -eq 0 ]
+  [ "$(calls '^git cat-file')" -eq 0 ]
+}
+
+@test "reap: a missing base tip is fetched in the child's worktree, not in the parent's clone" {
+  xreap_ready prless
+  echo 1 > "$STUB_CFG/catfile_exit_1"
+  run dispatch reap genetta-inc/flatmate#1615
+  [ "$output" = "reaped genetta-inc/flatmate#1615" ]
+  p="$BATS_TEST_TMPDIR/work/issue-1615"
+  grep -qF -- "git -C $p fetch origin develop" "$STUB_LOG"
+  [ "$(calls '^git fetch')" -eq 0 ]
+}
+
+@test "reap: children of both repositories mixed keep their own base, -R and tip" {
+  reap_prless_ready
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 status=done base=develop
+  gh_seq 1615 closed
+  run dispatch reap 11 genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "$(printf 'reaped 11\nreaped genetta-inc/flatmate#1615')" ]
+  grep -qF -- 'git ls-remote origin refs/heads/main' "$STUB_LOG"
+  grep -qF -- 'ls-remote origin refs/heads/develop' "$STUB_LOG"
+  [ "$(calls 'ls-remote')" -eq 2 ]
+  grep -qF -- 'gh pr list --head oratta/issue-11 --state merged' "$STUB_LOG"
+  grep -qF -- 'gh pr list -R genetta-inc/flatmate --head oratta/issue-1615 --state merged' "$STUB_LOG"
+}
+
+@test "reap: two children of the other repository with different bases read each base once" {
+  xreap_ready prless
+  put_record 1616 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1616 status=done base=develop
+  put_record 1617 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1617 status=done base=staging
+  gh_seq 1616 closed; gh_seq 1617 closed
+  run dispatch reap genetta-inc/flatmate#1615 genetta-inc/flatmate#1616 genetta-inc/flatmate#1617
+  [ "$status" -eq 0 ]
+  [ "$(calls 'ls-remote origin refs/heads/develop')" -eq 1 ]
+  [ "$(calls 'ls-remote origin refs/heads/staging')" -eq 1 ]
+}
+
+@test "reap: two repositories whose names differ only in / and - read the same base once each" {
+  make_stub orca
+  put_record 1615 repo=a/b-c child=a/b-c#1615 status=done base=main
+  put_record 1616 repo=a-b/c child=a-b/c#1616 status=done base=main
+  : > "$STUB_CFG/pr_out"
+  gh_seq 1615 closed; gh_seq 1616 closed
+  run dispatch reap a/b-c#1615 a-b/c#1616
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$(calls 'ls-remote origin refs/heads/main')" -eq 2 ]
+  grep -qF -- "git -C $BATS_TEST_TMPDIR/work/issue-1616 ls-remote origin refs/heads/main" "$STUB_LOG"
+}
+
+@test "reap: an unreadable git common directory keeps the child of another repository as git-failed" {
+  xreap_ready
+  echo 1 > "$STUB_CFG/commondir_exit"
+  run dispatch reap genetta-inc/flatmate#1615
+  [ "$output" = "kept genetta-inc/flatmate#1615 git-failed" ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
 }

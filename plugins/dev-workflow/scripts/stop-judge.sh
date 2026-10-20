@@ -2,14 +2,14 @@
 # 主の返事を待って止まったエピックの子を、親の側で「通す」か「主に上げる」かをモデル 1 回で判断する。
 # epic-dispatch.sh wait --resolve が止まった子ごとに呼ぶ（EPIC_DISPATCH_JUDGE で差し替えられる）。
 #
-#   stop-judge.sh <epic> <child>
+#   stop-judge.sh <epic> <child>   （<child> は番号か、エピックと別のリポジトリの子の <owner>/<repo>#<N>）
 #
 # 入力として集めるのは次だけ（親や子の会話は渡さない）:
 #   エピックの本文、子 issue の本文（どちらも issue の author_association が OWNER / MEMBER / COLLABORATOR の
 #   ときだけ。それ以外は exit 1 でモデルを呼ばない）、子 issue の `親エピックからの注意書き:` で始まるコメントのうち
 #   author_association が OWNER / MEMBER / COLLABORATOR のもの、子 issue の 1 行目が
 #   `子の停止: 主の返事待ち` の最新のコメント（同じ 3 種の投稿者のもの）の本文と URL、エピックのコメント
-#   （同じ 3 種の投稿者のもの）のうち `親の判断: 子 #<child> ` で始まる行、skills/develop/references/parent-pass-criteria.md の本文、
+#   （同じ 3 種の投稿者のもの）のうち `親の判断: 子 #<child> `（別リポジトリの子は `親の判断: 子 <owner>/<repo>#<N> `）で始まる行、skills/develop/references/parent-pass-criteria.md の本文、
 #   リポジトリの .claude/casting/project.md・.claude/casting/local.md（あるものだけ）
 # モデルの呼び方: 既定は `claude -p --model <EPIC_DISPATCH_JUDGE_MODEL、既定 sonnet> --tools ""
 #   --no-session-persistence`（ツールを渡さない）。EPIC_DISPATCH_JUDGE_CMD を設定するとコマンド全体を
@@ -33,7 +33,14 @@ usage() {
 [ "$#" -eq 2 ] || usage
 epic="$1"; child="$2"
 [[ "$epic" =~ ^[0-9]+$ ]] || { echo "not an issue number: $epic" >&2; usage; }
-[[ "$child" =~ ^[0-9]+$ ]] || { echo "not an issue number: $child" >&2; usage; }
+# 子は番号か <owner>/<repo>#<N>（エピックと別のリポジトリの子）。後者は子の issue をそのリポジトリから読む
+if [[ "$child" =~ ^[0-9]+$ ]]; then
+  child_num="$child"; child_label="#$child"; child_repo="{owner}/{repo}"
+elif [[ "$child" =~ ^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)$ ]]; then
+  child_num="${BASH_REMATCH[2]}"; child_label="$child"; child_repo="${BASH_REMATCH[1]}"
+else
+  echo "not an issue number or <owner>/<repo>#<N>: $child" >&2; usage
+fi
 command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,9 +49,10 @@ criteria="$here/../skills/develop/references/parent-pass-criteria.md"
 
 # issue の本文は、投稿者が OWNER / MEMBER / COLLABORATOR のときだけ判断に渡す（それ以外の投稿者が
 # 立てた issue の本文で判断を誘導されないようにする）。それ以外・読めないときは exit 1 で主に上げる
-read_trusted_body() { # <issue number> <label>
-  local raw assoc
-  raw="$(gh api "repos/{owner}/{repo}/issues/$1")" \
+read_trusted_body() { # <issue number> <label> [<repo。無ければ {owner}/{repo}>]
+  local raw assoc repo="${3-}"
+  [ -n "$repo" ] || repo="{owner}/{repo}"
+  raw="$(gh api "repos/$repo/issues/$1")" \
     || { echo "could not read $2 #$1" >&2; return 1; }
   assoc="$(printf '%s' "$raw" | jq -r '.author_association // empty' 2>/dev/null)" \
     || { echo "$2 #$1 is not readable" >&2; return 1; }
@@ -56,12 +64,12 @@ read_trusted_body() { # <issue number> <label>
   printf '%s' "$raw" | jq -r '.body // ""'
 }
 epic_body="$(read_trusted_body "$epic" epic)" || exit 1
-child_body="$(read_trusted_body "$child" child)" || exit 1
+child_body="$(read_trusted_body "$child_num" child "$child_repo")" || exit 1
 # --paginate はページごとの配列を続けて出すので、jq -s で 1 つにまとめる
-child_comments="$(gh api --paginate "repos/{owner}/{repo}/issues/$child/comments")" \
-  || { echo "could not read the comments of child #$child" >&2; exit 1; }
+child_comments="$(gh api --paginate "repos/$child_repo/issues/$child_num/comments")" \
+  || { echo "could not read the comments of child $child_label" >&2; exit 1; }
 child_comments="$(printf '%s' "$child_comments" | jq -s 'add // []' 2>/dev/null)" \
-  || { echo "the comments of child #$child are not readable" >&2; exit 1; }
+  || { echo "the comments of child $child_label are not readable" >&2; exit 1; }
 epic_comments="$(gh api --paginate "repos/{owner}/{repo}/issues/$epic/comments")" \
   || { echo "could not read the comments of epic #$epic" >&2; exit 1; }
 epic_comments="$(printf '%s' "$epic_comments" | jq -s 'add // []' 2>/dev/null)" \
@@ -72,16 +80,16 @@ epic_comments="$(printf '%s' "$epic_comments" | jq -s 'add // []' 2>/dev/null)" 
 trusted='select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")'
 stop="$(printf '%s' "$child_comments" | jq -c \
   '[.[] | '"$trusted"' | select((.body // "") | split("\n")[0] | rtrimstr("\r") == "子の停止: 主の返事待ち")] | last // empty')"
-[ -n "$stop" ] || { echo "no stop record (子の停止: 主の返事待ち) on child #$child" >&2; exit 1; }
+[ -n "$stop" ] || { echo "no stop record (子の停止: 主の返事待ち) on child $child_label" >&2; exit 1; }
 stop_url="$(printf '%s' "$stop" | jq -r '.html_url // empty')"
 stop_body="$(printf '%s' "$stop" | jq -r '.body // empty')"
-[ -n "$stop_url" ] || { echo "the stop record on child #$child has no URL" >&2; exit 1; }
+[ -n "$stop_url" ] || { echo "the stop record on child $child_label has no URL" >&2; exit 1; }
 
 notes="$(printf '%s' "$child_comments" | jq -r \
   '.[] | select((.body // "") | startswith("親エピックからの注意書き:"))
        | '"$trusted"'
        | .body, "---"')"
-past="$(printf '%s' "$epic_comments" | jq -r --arg p "親の判断: 子 #$child " \
+past="$(printf '%s' "$epic_comments" | jq -r --arg p "親の判断: 子 $child_label " \
   '.[] | '"$trusted"' | (.body // "") | split("\n")[] | select(startswith($p))')"
 
 casting=""
@@ -93,7 +101,7 @@ if [ -n "$top" ]; then
 fi
 
 prompt="$(cat <<EOF
-エピック #$epic の子 #$child が、主の返事を待って止まった。下の「親が通してよい範囲の基準」に照らして、親の側で通すか主に上げるかを決め、基準の「出力の形」の 3 行だけを出す。前置き・説明・コードブロックを付けない。
+エピック #$epic の子 $child_label が、主の返事を待って止まった。下の「親が通してよい範囲の基準」に照らして、親の側で通すか主に上げるかを決め、基準の「出力の形」の 3 行だけを出す。前置き・説明・コードブロックを付けない。
 
 ## 親が通してよい範囲の基準
 
@@ -103,21 +111,21 @@ $(cat "$criteria")
 
 $epic_body
 
-## 子 #$child の本文
+## 子 $child_label の本文
 
 $child_body
 
-## 子 #$child への親エピックからの注意書き（投稿者が OWNER・MEMBER・COLLABORATOR のもの）
+## 子 $child_label への親エピックからの注意書き（投稿者が OWNER・MEMBER・COLLABORATOR のもの）
 
 ${notes:-（なし）}
 
-## 子 #$child の停止の記録（最新）
+## 子 $child_label の停止の記録（最新）
 
 URL: $stop_url
 
 $stop_body
 
-## このエピックで子 #$child について親が過去に出した判断
+## このエピックで子 $child_label について親が過去に出した判断
 
 ${past:-（なし）}
 
