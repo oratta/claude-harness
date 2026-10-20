@@ -1146,6 +1146,16 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   [ "$output" = "8" ]
 }
 
+@test "max-parallel: a sysctl that prints a number but exits non-zero falls back to MemTotal" {
+  unset EPIC_DISPATCH_MAX_PARALLEL
+  echo 17179869184 > "$STUB_CFG/memsize"
+  echo 1 > "$STUB_CFG/sysctl_exit"
+  printf 'MemTotal:       33554432 kB\n' > "$BATS_TEST_TMPDIR/meminfo"
+  EPIC_DISPATCH_MEMINFO_FILE="$BATS_TEST_TMPDIR/meminfo" run dispatch max-parallel
+  [ "$status" -eq 0 ]
+  [ "$output" = "8" ]
+}
+
 @test "max-parallel: EPIC_DISPATCH_MAX_PARALLEL wins over the memory" {
   echo 17179869184 > "$STUB_CFG/memsize"
   EPIC_DISPATCH_MAX_PARALLEL=3 run dispatch max-parallel
@@ -3509,7 +3519,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 @test "skill: Orca route steps 3, 4 and 8 launch the deferred children again" {
   r="$(run_section)"
   for k in 3 8; do
-    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -qF '後回しの子が残っていれば、2 に戻る前に依存の解けた開いた子を `launch` に渡し直す'
+    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -qF '後回しの子が残っていれば、2 に戻る前に依存の解けた開いた子'
   done
   printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子もここに含まれる'
 }
@@ -3667,4 +3677,33 @@ resolve_pass() {
   run dispatch pending-owner 11
   [ "$status" -eq 1 ]
   [ -z "$output" ]
+}
+
+@test "skill: Orca route steps 3 and 4 relaunch the deferred children with the same --note" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -E '^3\. ' | grep -qF '依存の解けた開いた子を、最初に渡したときと同じ `--note` を付けて `launch` に渡し直す'
+  printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子には最初に渡したときと同じ `--note` を付ける'
+}
+
+@test "skill: Orca route step 4 relaunches the deferred children after a close other than completed too" {
+  printf '%s\n' "$(run_section)" | grep -E '^4\. ' | grep -qF '見送りの子を前提にしていた子を除いて、依存の解けた開いた子を `launch` に渡し直す'
+}
+
+@test "skill: Orca route steps 3, 4 and 7 report when only deferred children are left" {
+  r="$(run_section)"
+  for k in 3 4 7; do
+    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -qF '後回しの子だけが残るときは 2 の報告'
+  done
+}
+
+@test "skill: Orca route step 2 leaves deferred children out of the done-watch set by definition" {
+  printf '%s\n' "$(run_section)" | grep -E '^2\. ' | grep -qF '片付け待ちの子は、`launch` に渡して `deferred` 以外を返したことのある子（閉じた子を含む）から'
+}
+
+@test "skill: the limit paragraph says Linux MemTotal can give one step lower" {
+  printf '%s\n' "$(limit_para)" | grep -qF 'Linux の `MemTotal` は物理メモリより少し小さく報告されるので、4 の倍数ちょうどの機では 1 段下がる（16 GiB 機で 3）'
+}
+
+@test "skill: the subagent route stops on a bad max-parallel setting" {
+  printf '%s\n' "$(subagent_para)" | grep -qF '（exit 1 なら stderr を添えて設定の誤りとして報告して止まる。手順 6 と同じ）'
 }
