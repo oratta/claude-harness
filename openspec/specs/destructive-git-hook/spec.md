@@ -427,7 +427,8 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 - コマンドが英数字・空白・タブ・改行（LF だけ。CR は拒む）・`/ . _ , : = @ + % -`・`;`・`&&` だけでできている（変数・置換・引用符・リダイレクト・パイプ・グロブ・`~`・コメント・行継続を含まない）
 - `&&`・`;`・改行で区切った単純コマンドがすべて、引数 1 つの `cd`（実在するディレクトリで、引数が `/`・`./`・`../` で始まるか `.`・`..` そのもの。シェルはそれ以外の引数を、オプション（`-P`・`--`）・ディレクトリスタックの番号（`+1`・`-1`）・zsh の `=` 展開・`CDPATH` や zsh の `cdpath` の探索として読みうるため）か、サブコマンドの前に `-C <パス>` だけを置いた `git`（`-C` は複数置けて、左から順に適用する）で、サブコマンドが `checkout`・`restore`・`reset`・`clean`・`branch`・`switch`・`status`・`add`・`commit`・`rev-parse` のどれかであり、`git` が 1 つ以上ある
 - 各 `git` の作業ディレクトリ（`cwd` から `cd` と `-C` を順に適用し `realpath` で解決したもの）から親へ辿って見つかる `.git` について、作業ツリーの最上位・git ディレクトリ（`.git` がファイルなら `gitdir:` の先）・共通の git ディレクトリ（`commondir` があればその先）の `realpath` が、すべて `session_id` のセッションの scratchpad の中（scratchpad そのものを含む。scratchpad の直下に `.git` があれば scratchpad 全体を作業ツリーとする repo として中に数える）にある。scratchpad とは、`basename` が `scratchpad`、その親の `basename` が `session_id`、さらに 2 つ上の `basename` が `claude-<判定を動かすユーザーの uid>` のディレクトリで、かつその `claude-<uid>` の親の `realpath` が一時フォルダの置き場所（`/tmp`・`/private/tmp` と、hook では自分の環境変数 `TMPDIR` と Python の `tempfile.gettempdir()`、許可を書くスクリプトでは `<base>` の親（hook が `<base>` を置いた `TMPDIR`）の、`realpath` のどれか。hook と親の Bash で `TMPDIR` が違いうるので、スクリプトは自分の `TMPDIR` を数えず、hook と同じ候補で判定する）で、`claude-<uid>` がディレクトリで、所有者が判定を動かすユーザーの uid で、グループと他者に書き込み権が無いものである（作業ツリーの中などに同じ形のフォルダを作っても scratchpad に数えない）。`session_id` は英数字と `-` だけの空でない文字列でなければならない。scratchpad の中で `.git` が見つからないものは拒む
-- 見つかった `.git` を git が git ディレクトリとして受け入れる形である（共通の git ディレクトリに `objects` と `refs` のディレクトリがあり、git ディレクトリの `HEAD` が `ref: refs/` で始まるか 40 桁か 64 桁の 16 進）。`.git` ファイルの `gitdir:` の行と `commondir` の行は、git と同じく行末の CR と LF を落として読む（git は受け入れない `.git` を飛ばして上の階層の repo を使うため）
+- 見つかった `.git` を git が git ディレクトリとして受け入れる形である（git ディレクトリと共通の git ディレクトリと、共通の git ディレクトリの `objects` と `refs` がディレクトリで、どれにも判定を動かすユーザーが入れる（実行権限がある）。git ディレクトリの `HEAD` が `ref: refs/` で始まるか 40 桁か 64 桁の 16 進）。`.git` ファイルと `commondir` は、git と同じくファイル全体を読んで末尾の CR と LF だけを落とし、そのあとに CR・LF・NUL が残るもの（2 行以上ある・行の途中に改行文字がある）は拒む（git は受け入れない `.git` を飛ばして上の階層の repo を使い、改行を含んだままのパスを使うため）
+- 作業ツリーの最上位より上のどの階層（scratchpad とその外を含め `/` まで）にも、`.git` も、git ディレクトリそのものの形（`HEAD` と、`objects` か `refs`）も無い（判定と git の受け入れ方がずれたときに、git が確かめていない repo や scratchpad の外に置かれた `.git` を使う余地を残さないため）
 - git ディレクトリと共通の git ディレクトリの中に symlink が 1 つも無く、サブモジュールの git ディレクトリ（`modules`）も無く、作業ツリーの最上位に `.gitmodules` も無い（`refs`・`index`・`objects` などが外を指すと、中の repo への操作が外の repo を書き換え、サブモジュールへの再帰は `.git/modules/<name>` の先の repo を触るため）
 - 共通の git ディレクトリの `config` と git ディレクトリの `config.worktree` に、`worktree` のキーも `[include` / `[includeIf` の節も `submodule` の文字列も無い（節名とキーは大文字小文字を区別せずに見る。git が区別しないため）
 
@@ -447,7 +448,7 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 
 #### Scenario: git が受け入れない .git・git ディレクトリの中の symlink・サブモジュールがある repo には許可を書かない
 
-- **WHEN** scratchpad の中の、`.git` が中身の無いディレクトリの repo・`commondir` が CR 付きの `..` の repo・`.git` の `refs`・`index`・`packed-refs`・`HEAD`・`objects`・`refs/heads`・`logs` のどれかを外の repo の同じものへの symlink にした repo・`.git/modules/sub` を外の repo の `.git` への symlink にした repo・作業ツリーの最上位に `.gitmodules` がある repo・`config` に `[Submodule "sub"]` の節がある repo への操作の拒否の記録をそれぞれ渡す
+- **WHEN** scratchpad の中の、`.git` が中身の無いディレクトリの repo・`commondir` が CR 付きの `..` の repo・`.git` ファイルが 2 行ある repo・`.git` ファイルの行の途中に CR がある repo・`commondir` が 2 行ある repo・`.git/objects` か `.git/refs` の実行権限を落とした repo・別の repo の作業ツリーの中に作った repo・scratchpad の親に `.git` ファイルを置いた scratchpad の中の repo・`.git` の `refs`・`index`・`packed-refs`・`HEAD`・`objects`・`refs/heads`・`logs` のどれかを外の repo の同じものへの symlink にした repo・`.git/modules/sub` を外の repo の `.git` への symlink にした repo・作業ツリーの最上位に `.gitmodules` がある repo・`config` に `[Submodule "sub"]` の節がある repo への操作の拒否の記録をそれぞれ渡す
 - **THEN** どれも 0 以外で終わり、`permits/` に許可が作られず、外の repo の branch は残る
 
 #### Scenario: 一時フォルダの外に作った同じ形のフォルダは scratchpad に数えない
@@ -487,9 +488,16 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 
 ### Requirement: 子は許可を書くスクリプトを呼べない
 
-子の呼び出しで、単純コマンドの先頭の語の basename が `git-guard-permit.sh` のもの、または先頭の語が `bash` / `sh` / `zsh` / `dash` / `ksh` / `source` / `.` で起動オプション（スクリプトより前にある、`-` か `+` で始まる語。`-o`・`+o`・`-O`・`+O` を含む語と `--rcfile`・`--init-file` は次の語を値として一緒に飛ばし、`-` と `--` でオプションが終わる）を飛ばした最初の引数の basename が `git-guard-permit.sh` で、その起動オプションに `-c` が無いものに、hook は `deny` を返さなければならない（MUST）。拒否理由・回数・拒否の記録は、破壊的 git 操作の拒否と同じに扱う（当たった種類は許可を書くスクリプトの子からの呼び出し）。この呼び出しには許可を使ってはならない（MUST NOT）。主の呼び出しと、スクリプトを引数として読むだけのもの（`cat` など、先頭の語が上のどれでもないもの）は止めてはならない（MUST NOT）。
+子の呼び出しで、次のどれかに当たるものに、hook は `deny` を返さなければならない（MUST）。起動オプションの値の取り方はシェルごとに違う（zsh の `-O` は値を取らず、`-o` は値をつなげて書ける）ので、オプションの読み方に頼らず止める側に倒す。
 
-守備範囲: 受け取る入力は、Claude Code が PreToolUse で渡す payload の `tool_input.command`（子が書く値）と `agent_id` である。拾いたい誤りは、拒否された子が親に返らずに、コマンド文字列にスクリプトのパスをそのまま書いて自分で許可を書くことである。変数で組み立てたパス・別名・`python3` などからスクリプトを動かす形・`permits/` に直接書く形は通ることを許す。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+- 単純コマンドの先頭の語の basename が `git-guard-permit.sh`
+- 単純コマンドのどれかの語が `BASH_ENV=` か `ENV=` の代入（前置き・`env` や `export` の引数を含む）で、その値の basename が `git-guard-permit.sh`
+- 先頭の語が `bash` / `sh` / `zsh` / `dash` / `ksh` / `source` / `.` で、起動オプション（スクリプトより前にある、`-` か `+` で始まる語。`-o`・`+o`・`-O`・`+O` を含む語と `--rcfile`・`--init-file` は次の語を値として一緒に読み、`-` と `--` でオプションが終わる）に `-c` が無く、引数のどれか（起動オプションの値を含む）の basename が `git-guard-permit.sh`
+- 先頭の語が `bash` / `sh` / `zsh` で起動オプションに `-c` があり、コマンド文字列より前の語（起動オプションとその値。`--rcfile` は `-i` と組むと `-c` でも読まれる）のどれかの basename が `git-guard-permit.sh`
+
+`-c` のコマンド文字列は中身を判定する（`bash -c "echo …/git-guard-permit.sh"` のように文字列の中に名前があるだけのものは止めない）。拒否理由・回数・拒否の記録は、破壊的 git 操作の拒否と同じに扱う（当たった種類は許可を書くスクリプトの子からの呼び出し）。この呼び出しには許可を使ってはならない（MUST NOT）。主の呼び出しと、スクリプトを引数として読むだけのもの（`cat` など、先頭の語が上のどれでもないもの）は止めてはならない（MUST NOT）。
+
+守備範囲: 受け取る入力は、Claude Code が PreToolUse で渡す payload の `tool_input.command`（子が書く値）と `agent_id` である。拾いたい誤りは、拒否された子が親に返らずに、コマンド文字列にスクリプトのパスをそのまま書いて自分で許可を書くことである。変数で組み立てたパス・別名・`python3` などからスクリプトを動かす形・`permits/` に直接書く形・`dash -c` / `ksh -c` のコマンド文字列の中で呼ぶ形（hook は `dash` と `ksh` の `-c` の中身を判定に回さない）は通ることを許す。止めすぎる向きでは、`-c` の無いシェルの引数にスクリプトのパスを書いただけのもの（`dash -c "echo …/git-guard-permit.sh"` を含む）も止めるが、これは許す。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: 子がスクリプトを呼ぶと拒否する
 
@@ -501,9 +509,14 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 - **WHEN** `agent_id` が `a1` の payload に `bash -o errexit /x/scripts/git-guard-permit.sh /y/denied/k.json ok`・`bash +x /x/scripts/git-guard-permit.sh /y/denied/k.json ok`・`sh /x/scripts/git-guard-permit.sh /y/denied/k.json -c` をそれぞれ渡す
 - **THEN** どれも `permissionDecision` が `deny` になる
 
+#### Scenario: 起動オプションの値・代入の前置き・シェルごとの値の取り方の違いを通さない
+
+- **WHEN** `agent_id` が `a1` の payload に `bash --rcfile /x/scripts/git-guard-permit.sh -i`・`bash --init-file /x/scripts/git-guard-permit.sh -i -c true`・`zsh -O /x/scripts/git-guard-permit.sh /y/denied/k.json ok`・`zsh -oerrexit /x/scripts/git-guard-permit.sh /y/denied/k.json ok`・`BASH_ENV=/x/scripts/git-guard-permit.sh bash -c true`・`ENV=/x/scripts/git-guard-permit.sh sh -i`・`env BASH_ENV=/x/scripts/git-guard-permit.sh bash /x/y.sh`・`export BASH_ENV=/x/scripts/git-guard-permit.sh; bash /x/y.sh` をそれぞれ渡す
+- **THEN** どれも `permissionDecision` が `deny` になる
+
 #### Scenario: 主の呼び出しと読むだけの呼び出しは止めない
 
-- **WHEN** `agent_id` の無い payload に `/x/scripts/git-guard-permit.sh /y/denied/k.json ok` を渡し、`agent_id` が `a1` の payload に `cat /x/scripts/git-guard-permit.sh` を渡す
+- **WHEN** `agent_id` の無い payload に `/x/scripts/git-guard-permit.sh /y/denied/k.json ok` を渡し、`agent_id` が `a1` の payload に `cat /x/scripts/git-guard-permit.sh` と `bash -c "echo /x/scripts/git-guard-permit.sh"` をそれぞれ渡す
 - **THEN** どちらも何も出力しない
 
 ### Requirement: 許可を書いたこと・使ったことを記録する
