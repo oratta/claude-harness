@@ -1,6 +1,7 @@
 ## 1. 実機の確認
 
-- [ ] 1.1 実機で `orca worktree create --parent-worktree path:<別リポジトリの親のワークツリー>` が通るかを確かめ、結果をこの行の実施欄に残す。あわせて実機で `orca repo list --json` の形（`repoId` と `path` の項目名）と `orca worktree create --repo` の selector の書式を確かめ、epic-state の spec の「Orca のリポジトリの引き当て」に書き戻す。通らなければ、別のリポジトリの子の `orca worktree create` から `--parent-worktree` を外す（親子の線は Orca の画面の写しで、正本は記録の `parent_worktree`。design の Risks）。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:462-654（cmd_launch の `orca worktree create` の呼び出し）
+- [x] 1.1 実機で `orca worktree create --parent-worktree path:<別リポジトリの親のワークツリー>` が通るかを確かめ、結果をこの行の実施欄に残す。あわせて実機で `orca repo list --json` の形（`repoId` と `path` の項目名）と `orca worktree create --repo` の selector の書式を確かめ、epic-state の spec の「Orca のリポジトリの引き当て」に書き戻す。通らなければ、別のリポジトリの子の `orca worktree create` から `--parent-worktree` を外す（親子の線は Orca の画面の写しで、正本は記録の `parent_worktree`。design の Risks）。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:462-654（cmd_launch の `orca worktree create` の呼び出し）
+  - 実施欄（2026-10-20、Orca 1.4.232）: `orca worktree create --repo id:<flatmate の id> --name probe-1123-crossrepo --base-branch origin/main --parent-worktree path:<このリポジトリの親のワークツリー> --setup skip --json` が別リポジトリの親で通り、応答の `parentWorktreeId` が親のワークツリーの id になった（親子の線が張られる）。確認後に `orca worktree rm` で消し、ブランチも残っていない。`orca repo list --json` は `.result.repos[]` の `id` と `path`（`repoId` という項目は無い。ワークツリー側の `repoId` がリポジトリの `id`）。selector は `id:<id>`。分かった形は epic-state の spec の「Orca のリポジトリの引き当て」に書き戻した。`--parent-worktree` は外さない。
 
 ## 2. launch（別のリポジトリの子）
 
