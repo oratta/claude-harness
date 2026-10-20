@@ -116,3 +116,12 @@ hooks.json は変えない。この PR をマージすると、次に起動し�
 - 同じ実機確認の中で、子が前の Bash 呼び出しで `cd` したあとの次の呼び出しの payload の `cwd` が、`cd` 先になるか起動時の作業ディレクトリのままかを 1 回見る（拒否の記録の `cwd` で読める）
 - scratchpad の外の repo を対象にした記録には許可が書けないことを確かめる
 - 結果を PR 本文に書く
+
+## 実機確認の結果
+
+2026-10-20、Claude Code 2.1.304 で確かめた。親は `claude -p --session-id <uuid> --setting-sources project,local --plugin-dir <worktree>/plugins/dev-workflow --permission-mode bypassPermissions --model sonnet`、子は `general-purpose`（`model: haiku`、`run_in_background: true`、名前付き）。`TMPDIR` は空のディレクトリに向けた。外側の Claude Code セッションから入れ子で起こすと子が外側の scratchpad を使って `session_id` が合わないので、`CLAUDECODE`・`CLAUDE_CODE_SESSION_ID` などの入れ子を示す環境変数を `env -u` で外して起動した。そうすると `claude -p` のシステムプロンプトに Scratchpad directory が出なかったので、`--session-id` で決めた値の scratchpad（`/private/tmp/claude-<uid>/<slug>/<その session_id>/scratchpad`）を先に作り、子にそのパスを渡した。
+
+- **中の repo を戻す操作**: 子の `git -C <scratchpad>/v1 checkout -- a.txt` は確認画面なしで `deny`、拒否理由に記録のパスが載った。親（`claude -p` のメイン）が `git-guard-permit.sh <記録> <理由>` を打つと exit 0 で許可が書かれ、SendMessage で再開した子の同じコマンドは確認画面も拒否も無く実行された（`a.txt` が commit 時の中身に戻った）。`permit-log.jsonl` は `permit` → `use` の順で、`permits/` は空になった
+- **外の repo を戻す操作**: 別の子が scratchpad の外の repo に同じ形のコマンドを打って拒否され、その記録で親がスクリプトを打つと exit 1（「git の作業ディレクトリ … がセッション … の scratchpad の中にない」）で許可は書かれなかった
+- **cd のあとの payload の cwd**: 子が `cd <scratchpad>/v1` だけを打ったあと、次の Bash の `pwd` は起動ディレクトリのままで、その次の `git -C ...` の拒否の記録の `cwd` も起動ディレクトリだった。子の Bash は呼び出しをまたいで作業ディレクトリを持ち越さず、payload の `cwd` はコマンドが実行されるディレクトリと一致した（前提どおり）
+- **再開の指示の書き方**: 再開の指示を「同じコマンドをもう一度 1 回だけ打つ」とだけ書くと、子は拒否理由の「打ち直さず」に従って打たなかった。「親が許可を書いた。『打ち直さない』は親が許可を書いて再実行を指示したこの 1 回には当てはまらない」と添えると打った。親がいつ・どう書いて再開するかは develop の手順書の範囲（#1135）なので、ここでは拒否理由の文面を変えない

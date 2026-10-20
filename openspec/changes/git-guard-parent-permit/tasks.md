@@ -30,6 +30,6 @@
 
 ## 5. 実機確認と記録
 
-- [ ] 5.1 `claude -p --plugin-dir` で、子に scratchpad の中に repo を作らせ、`git -C <その repo の絶対パス> checkout -- <ファイル>` を打たせて拒否され、親が `git-guard-permit.sh` で許可を書き、SendMessage で再開した子の同じコマンドが確認画面も拒否も無く実行されることを確かめる。scratchpad の外の repo を対象にした記録には許可が書けないことも確かめる。scratchpad の検証用 repo は git の破壊的操作で戻さず作り直す 触る範囲: なし（実機確認）
-- [ ] 5.2 同じ実機確認で、子が前の Bash 呼び出しで `cd` したあとの次の呼び出しの payload の `cwd` が何になるかを拒否の記録で 1 回見て、5.1 の結果と合わせて PR 本文に書く 触る範囲: なし（実機確認）
+- [x] 5.1 `claude -p --plugin-dir` で、子に scratchpad の中に repo を作らせ、`git -C <その repo の絶対パス> checkout -- <ファイル>` を打たせて拒否され、親が `git-guard-permit.sh` で許可を書き、SendMessage で再開した子の同じコマンドが確認画面も拒否も無く実行されることを確かめる。scratchpad の外の repo を対象にした記録には許可が書けないことも確かめる。scratchpad の検証用 repo は git の破壊的操作で戻さず作り直す 触る範囲: なし（実機確認）
+- [x] 5.2 同じ実機確認で、子が前の Bash 呼び出しで `cd` したあとの次の呼び出しの payload の `cwd` が何になるかを拒否の記録で 1 回見て、5.1 の結果と合わせて PR 本文に書く 触る範囲: なし（実機確認）
 - [x] 5.3 変更の記録 `plugins/dev-workflow/changes/1133.md` を書く（何が変わったか・範囲外（#1134・#1135・#1117）・受け入れること・戻し方） 触る範囲: plugins/dev-workflow/changes/1133.md（新規）
