@@ -1376,6 +1376,79 @@ json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "com
   done
 }
 
+# git は .git ファイルと commondir をファイル全体で読み、末尾の CR と LF だけを落とす。行の途中に改行が残ると、
+# 判定が 1 行目で見た場所と git の使う場所が割れるので拒む。1 行だけのもの（CRLF を含む）は今までどおり通す
+@test "permit: the script refuses .git files and commondir with more than one line" {
+  setup_permit
+  local base rec r
+  base="$(GUARD_BASE)"
+  local -a bad=() good=()
+  r="$(mk_repo "$SP/gf2")"
+  mv "$r/.git" "$r/realgit"
+  printf 'gitdir: realgit\nextra\n' >|"$r/.git"
+  bad+=("$r")
+  r="$(mk_repo "$SP/gfcr")"
+  mv "$r/.git" "$r/realgit"
+  printf 'gitdir: realgit\rx\n' >|"$r/.git"
+  bad+=("$r")
+  r="$(mk_repo "$SP/cd2")"
+  printf '.\nextra\n' >|"$r/.git/commondir"
+  bad+=("$r")
+  r="$(mk_repo "$SP/gf1")"
+  mv "$r/.git" "$r/realgit"
+  printf 'gitdir: realgit\r\n' >|"$r/.git"
+  good+=("$r")
+  r="$(mk_repo "$SP/cd1")"
+  printf '.\n' >|"$r/.git/commondir"
+  good+=("$r")
+  local cwd
+  for cwd in "${bad[@]}"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$cwd" "git checkout -- .")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -ne 0 ] || { echo "permitted: $cwd"; return 1; }
+    permits_empty
+  done
+  for cwd in "${good[@]}"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$cwd" "git checkout -- .")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -eq 0 ] || { echo "refused: $cwd: $output"; return 1; }
+  done
+}
+
+# git の is_git_directory は objects と refs に入れるか（実行権限）も見る。入れない git ディレクトリを git は飛ばし、
+# 上の階層の repo を使う。判定も同じに拒み、作業ツリーより上の階層に別の .git や git ディレクトリがある形も拒む
+@test "permit: the script refuses git directories git cannot enter and repos with another repo above" {
+  setup_permit
+  local base rec r n
+  base="$(GUARD_BASE)"
+  local -a bad=() locked=()
+  for n in objects refs; do
+    r="$(mk_repo "$SP/nox-$n")"
+    chmod a-x "$r/.git/$n"
+    locked+=("$r/.git/$n")
+    bad+=("$r")
+  done
+  r="$(mk_repo "$SP/outer")"
+  mk_repo "$r/inner" >/dev/null
+  bad+=("$r/inner")
+  local sp2
+  sp2="$(scratch_dir 0a1b2c3d-above)"
+  mk_repo "$sp2/repo" >/dev/null
+  printf 'gitdir: %s\n' "$OUT/.git" >|"$(dirname "$sp2")/.git"
+  local cwd
+  for cwd in "${bad[@]}"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$cwd" "git checkout -- .")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -ne 0 ] || { echo "permitted: $cwd"; chmod a+x "${locked[@]}"; return 1; }
+    permits_empty || { chmod a+x "${locked[@]}"; return 1; }
+  done
+  chmod a+x "${locked[@]}"
+  rec="$(mk_record "$base" 0a1b2c3d-above a1 "$sp2/repo" "git checkout -- .")"
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -ne 0 ] || { echo "permitted with .git above the scratchpad"; return 1; }
+  permits_empty
+}
+
 # git ディレクトリの中の symlink（refs・index・packed-refs・HEAD・objects・その下の refs/heads など）と、
 # サブモジュール（.git/modules・.gitmodules・config の submodule の節）は、git が scratchpad の外を触りうるので拒む
 @test "permit: the script refuses symlinks in the git directory and submodules" {
@@ -1552,6 +1625,20 @@ PY
            'bash -- /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
            'sh /x/scripts/git-guard-permit.sh /y/denied/k.json -c' \
            'bash /x/scripts/git-guard-permit.sh /y/denied/k.json -fcleanup'; do
+    call "$c" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  done
+  # オプションの読み方に頼らない: 起動オプションの値（--rcfile・--init-file）としてのスクリプト、zsh の値を取らない
+  # -O・値をつなげた -o の後ろのスクリプト、BASH_ENV= / ENV= の代入（前置き・env・export）も拾う
+  for c in 'bash --rcfile /x/scripts/git-guard-permit.sh -i' \
+           'bash --init-file /x/scripts/git-guard-permit.sh -i -c true' \
+           'zsh -O /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'zsh -oerrexit /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'zsh -ocshnullglob /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'BASH_ENV=/x/scripts/git-guard-permit.sh bash -c true' \
+           'ENV=/x/scripts/git-guard-permit.sh sh -i' \
+           'env BASH_ENV=/x/scripts/git-guard-permit.sh bash /x/y.sh' \
+           'export BASH_ENV=/x/scripts/git-guard-permit.sh; bash /x/y.sh'; do
     call "$c" default '"a1"' s1
     [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
   done

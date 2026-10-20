@@ -162,6 +162,21 @@ def _config_ok(path):
     return None
 
 
+def _read_one_line(path):
+    """.git ファイルと commondir を git と同じに読む: ファイル全体を読み、末尾の CR と LF だけを落とす。
+    (中身, 理由) を返す。落としたあとに CR・LF・NUL が残るもの（2 行以上ある・行の途中に改行文字がある）は、
+    git の使うパス（改行を含んだまま）と判定が見るパスが割れうるので拒む。"""
+    try:
+        with open(path, "rb") as fh:
+            text = fh.read().decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None, "%s を読めない" % path
+    text = text.rstrip("\r\n")
+    if any(c in text for c in "\r\n\0"):
+        return None, "%s が 1 行でない（行の途中に改行文字か NUL がある）" % path
+    return text, None
+
+
 def _resolve_repo(d, sp):
     """作業ディレクトリ d（realpath 済み、scratchpad sp の中）から git が見つける repo を辿り、
     (理由, 作業ツリーの最上位) を返す。満たせば理由は None。"""
@@ -181,11 +196,9 @@ def _resolve_repo(d, sp):
     if os.path.isdir(dotgit):
         gitdir = os.path.realpath(dotgit)
     elif os.path.isfile(dotgit):
-        try:
-            with open(dotgit, encoding="utf-8") as fh:
-                line = fh.readline().rstrip("\r\n")  # git も行末の CR と LF を落として読む
-        except (OSError, UnicodeDecodeError):
-            return "%s を読めない" % dotgit, None
+        line, err = _read_one_line(dotgit)
+        if err:
+            return err, None
         if not line.startswith("gitdir: "):
             return "%s が gitdir: の形でない" % dotgit, None
         target = line[len("gitdir: "):]
@@ -197,18 +210,27 @@ def _resolve_repo(d, sp):
     common = gitdir
     cd_file = os.path.join(gitdir, "commondir")
     if os.path.lexists(cd_file):
-        try:
-            with open(cd_file, encoding="utf-8") as fh:
-                rel = fh.readline().rstrip("\r\n")
-        except (OSError, UnicodeDecodeError):
-            return "%s を読めない" % cd_file, None
+        rel, err = _read_one_line(cd_file)
+        if err:
+            return err, None
         common = os.path.realpath(os.path.join(gitdir, rel))
     for label, path in (("作業ツリー", top), ("git ディレクトリ", gitdir), ("共通の git ディレクトリ", common)):
         if not _inside(path, sp):
             return "%s %s が scratchpad %s の外にある" % (label, path, sp), None
     if not _git_accepts(gitdir, common):
         # git は受け入れない .git を飛ばして上の階層へ探しに行くので、判定が見た repo と別の repo を使う
-        return "%s は git が git ディレクトリとして受け入れない形（HEAD・objects・refs が揃わない）" % gitdir, None
+        return ("%s は git が git ディレクトリとして受け入れない形（HEAD・objects・refs が揃わないか、中に入れない）"
+                % gitdir), None
+    # 判定と git の受け入れ方がまだどこかでずれていても、git が上の階層の別の repo（確かめていない repo や、
+    # scratchpad の外に置かれた .git）を使えないよう、作業ツリーより上のどの階層にも .git や git ディレクトリを許さない
+    p = os.path.dirname(top)
+    while True:
+        if os.path.lexists(os.path.join(p, ".git")) or _looks_like_git_dir(p):
+            return "作業ツリー %s より上の %s に別の repo がある（git がそちらを使う余地がある）" % (top, p), None
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
     for g in sorted({gitdir, common}):
         err = _no_links(g, sp)
         if err:
@@ -229,10 +251,11 @@ _HEAD_HASH = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 def _git_accepts(gitdir, common):
     """git が git ディレクトリとして受け入れる形か（git の is_git_directory と同じく、共通の git ディレクトリに
-    objects と refs のディレクトリがあり、git ディレクトリの HEAD が ref: refs/ で始まるかハッシュ）。"""
-    if not (os.path.isdir(common) and os.path.isdir(os.path.join(common, "objects"))
-            and os.path.isdir(os.path.join(common, "refs"))):
-        return False
+    objects と refs のディレクトリがあって中に入れ（実行権限）、git ディレクトリの HEAD が ref: refs/ で始まるか
+    ハッシュ）。git は objects と refs に access(X_OK) を求めるので、入れないものは git が受け入れない。"""
+    for p in (gitdir, common, os.path.join(common, "objects"), os.path.join(common, "refs")):
+        if not (os.path.isdir(p) and os.access(p, os.X_OK)):
+            return False
     try:
         with open(os.path.join(gitdir, "HEAD"), encoding="utf-8") as fh:
             head = fh.readline().rstrip("\r\n")
