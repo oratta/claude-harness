@@ -232,9 +232,11 @@ JSON
   printf '#!/bin/sh\nexit 0\n' > "$STATUSLINE_CODEX_BIN"; chmod 700 "$STATUSLINE_CODEX_BIN"
   echo '{"tokens":{"account_id":"test"}}' > "$CODEX_HOME/auth.json"
   write_snap ''
-  # 変更前の statusline.sh（HEAD の前の commit の内容でなく、この change の開始前 = 305a920b）を old に置く
+  # 比べる元は origin/main の statusline.sh（固定の SHA は CI の checkout に無いことがあるので書かない）。
+  # マージ後に origin/main がこの版になっても、Codex の行の出力は同じはずなので比較の意味は変わらない
   mkdir -p "$WORK/old"
-  git -C "$REPO_ROOT" show 305a920b:plugins/statusline/scripts/statusline.sh > "$WORK/old/statusline.sh"
+  git -C "$REPO_ROOT" show origin/main:plugins/statusline/scripts/statusline.sh > "$WORK/old/statusline.sh" 2>/dev/null \
+    || skip "origin/main is not available"
   cp "${PLUGIN_DIR}/scripts/statusline-codex.py" "$WORK/old/"
   local key delta cnt exp
   key="$(python3 -c "
