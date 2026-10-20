@@ -298,6 +298,22 @@ rm -R b"
   done
 }
 
+@test "check_rm: a zsh = expansion word is not satisfied (judge and shell would disagree)" {
+  local c
+  for c in "rm -f =python3" "rm -f ./=python3" "cd ./tbl; rm -f =python3" "rm -f $SP/tbl/x/=python3"; do
+    run chk_ "$SID" "$SP" "$c"
+    [ "$status" -ne 0 ] || { echo "satisfied: $c"; return 1; }
+  done
+}
+
+@test "hook: rm -f =python3 cannot get a permit and is denied, also with cwd inside the scratchpad" {
+  call "rm -f =python3" '"a1"' "$SP/tbl"
+  [ "$(behavior)" = "deny" ]
+  run "$PERMIT" "$(only_record)" "検証"
+  [ "$status" -ne 0 ]
+  permits_empty
+}
+
 @test "check_rm: a parent that is a symlink pointing outside is not satisfied" {
   ln -s "$OUT/dir" "$SP/linkdir"
   run chk_ "$SID" "$SP" "rm -rf $SP/linkdir/f"

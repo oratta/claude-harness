@@ -381,7 +381,7 @@ def check(session_id, cwd, command, temp_dir=None):
 
 
 # --- rm 用の一時領域の判定（spec rm-permission-hook の要件「rm の一時領域の判定」）---
-_RM_ALLOWED_CHARS = re.compile(r"^[A-Za-z0-9 \t\n/._,:=@+%;&*?-]*$")
+_RM_ALLOWED_CHARS = re.compile(r"^[A-Za-z0-9 \t\n/._,:@+%;&*?-]*$")
 _RM_FLAG = re.compile(r"^-[rRf]+$")
 _GLOB_CHARS = ("*", "?")
 
