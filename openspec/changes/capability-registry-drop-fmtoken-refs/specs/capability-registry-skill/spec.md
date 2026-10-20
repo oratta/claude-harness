@@ -9,7 +9,7 @@ SKILL.md の索引は公開版に残すサービス(GitHub・Supabase・Vercel�
 
 #### Scenario: 詳細はサービス別ファイルに遅延ロード
 - **WHEN** 索引のあるサービスの詳細（セットアップ手順、例外操作の具体例など）が必要になる
-- **THEN** `skills/capability-registry/<service>.md` が存在し、索引からファイル名で参照できる。索引が参照するサービス別ファイルは公開版に残る 4 つ(`github.md`・`supabase.md`・`vercel.md`・`stripe.md`)だけで、`1password.md` は参照しない
+- **THEN** `skills/capability-registry/<service>.md` が存在し、索引からファイル名で参照できる。索引が参照するサービス別ファイルは現時点では公開版に残る 4 つ(`github.md`・`supabase.md`・`vercel.md`・`stripe.md`)で、個人版に移る `1password.md` は参照しない(公開版のサービスを将来足すことは妨げない)
 
 #### Scenario: 公開版の索引とサービス別ファイルは個人版の道具を呼ばない
 - **WHEN** SKILL.md の description・原則の節・索引の節と `github.md`・`stripe.md`・`supabase.md`・`vercel.md` を検査する

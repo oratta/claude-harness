@@ -1,25 +1,25 @@
 ## 1. 注意喚起と検査（hook）
 
-- [ ] 1.1 `browser-guard.sh` の注意喚起 (2) を、fmtoken の名指しと exit 44 を外し「認証・トークンの在処はオーナーの環境の索引があればそちらを見る。無ければブラウザへ行かず主に尋ねる」に直す。(1)(3) と最終文は変えない。触る範囲: plugins/capability-registry/scripts/browser-guard.sh:28-35
-- [ ] 1.2 `tests/browser-guard.bats` の検査語から `fmtoken` を外し、出力に `fmtoken` が含まれないこと・在処の案内の語が含まれることを検査する。触る範囲: plugins/capability-registry/tests/browser-guard.bats:49-61
+- [x] 1.1 `browser-guard.sh` の注意喚起 (2) を、fmtoken の名指しと exit 44 を外し「認証・トークンの在処はオーナーの環境の索引があればそちらを見る。無ければブラウザへ行かず主に尋ねる」に直す。(1)(3) と最終文は変えない。触る範囲: plugins/capability-registry/scripts/browser-guard.sh:28-35
+- [x] 1.2 `tests/browser-guard.bats` の検査語から `fmtoken` を外し、出力に `fmtoken` が含まれないこと・在処の案内の語が含まれることを検査する。触る範囲: plugins/capability-registry/tests/browser-guard.bats:49-61
 
 ## 2. 索引とサービス別ファイル
 
-- [ ] 2.1 SKILL.md の description(3 行目)を、「トークンの在処(fmtoken.sh)を索引で返す」から「CLI の有無・認証確認コマンド・トークンを渡す環境変数名を索引で返す(値の在処はオーナーの環境の索引があればそちら)」に直し、例示から 1Password を外す。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:3
-- [ ] 2.2 SKILL.md の「原則」の 2 番を、トークンの在処はオーナーの環境の索引があればそちらを見る・手元に無ければブラウザに行かず主に発行を依頼する、に書き換え、fmtoken の取得・登録・確認・`--name` の子項目を外す。「資格情報の階層」以降は触らない。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:13-22（「原則」の節）
-- [ ] 2.3 SKILL.md の索引の 1Password の行を削除し、残る 4 行(GitHub・Supabase・Vercel・Stripe)の「トークン」列を環境変数名またはログイン状態に書き換える。遅延ロード一覧(63 行目)から `1password.md` を外す。`1password.md` 本体・「資格情報の階層」の節・ネガティブエントリの 1Password の項は消さない。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:52-64（「索引」の節）
-- [ ] 2.4 `github.md`・`stripe.md`・`supabase.md`・`vercel.md` の fmtoken 呼び出しを、環境変数またはログイン状態での書き方に直す。触る範囲: plugins/capability-registry/skills/capability-registry/github.md:4、stripe.md:3-4、supabase.md:3-4、vercel.md:3-4
-- [ ] 2.5 `tests/skill-registry.bats` を直す。(a) 「initial 5 proven services」の検査を 4 サービス(gh・supabase・vercel・stripe)にし、索引に 1Password の行が無いことを検査する。(b) サービス別ファイルの存在検査(55 行目付近)の対象から `1password.md` を外し、索引が `1password.md` を参照しないことを検査する。(c) 「fmtoken.sh token retrieval」の検査を、原則の節に在処の案内があり、description・原則・索引・サービス別ファイルに `fmtoken` が無いことの検査に置き換える（「資格情報の階層」の節は個人版なので検査の対象に入れない）。触る範囲: plugins/capability-registry/tests/skill-registry.bats:30-60
+- [x] 2.1 SKILL.md の description(3 行目)を、「トークンの在処(fmtoken.sh)を索引で返す」から「CLI の有無・認証確認コマンド・トークンを渡す環境変数名を索引で返す(値の在処はオーナーの環境の索引があればそちら)」に直し、例示から 1Password を外す。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:3
+- [x] 2.2 SKILL.md の「原則」の 2 番を、トークンの在処はオーナーの環境の索引があればそちらを見る・手元に無ければブラウザに行かず主に発行を依頼する、に書き換え、fmtoken の取得・登録・確認・`--name` の子項目を外す。「資格情報の階層」以降は触らない。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:13-22（「原則」の節）
+- [x] 2.3 SKILL.md の索引の 1Password の行を削除し、残る 4 行(GitHub・Supabase・Vercel・Stripe)の「トークン」列を環境変数名またはログイン状態に書き換える。遅延ロード一覧(63 行目)から `1password.md` を外す。`1password.md` 本体・「資格情報の階層」の節・ネガティブエントリの 1Password の項は消さない。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:52-64（「索引」の節）
+- [x] 2.4 `github.md`・`stripe.md`・`supabase.md`・`vercel.md` の fmtoken 呼び出しを、環境変数またはログイン状態での書き方に直す。触る範囲: plugins/capability-registry/skills/capability-registry/github.md:4、stripe.md:3-4、supabase.md:3-4、vercel.md:3-4
+- [x] 2.5 `tests/skill-registry.bats` を直す。(a) 「initial 5 proven services」の検査を 4 サービス(gh・supabase・vercel・stripe)にし、索引に 1Password の行が無いことを検査する。(b) サービス別ファイルの存在検査(55 行目付近)の対象から `1password.md` を外し、索引が `1password.md` を参照しないことを検査する。(c) 「fmtoken.sh token retrieval」の検査を、原則の節に在処の案内があり、description・原則・索引・サービス別ファイルに `fmtoken` が無いことの検査に置き換える（「資格情報の階層」の節は個人版なので検査の対象に入れない）。触る範囲: plugins/capability-registry/tests/skill-registry.bats:30-60
 
 ## 3. 説明文と他の参照
 
-- [ ] 3.1 `plugin.json` の description の fmtoken.sh の記述と keywords の `fmtoken` を外す。触る範囲: plugins/capability-registry/.claude-plugin/plugin.json:3,14
-- [ ] 3.2 `.claude-plugin/marketplace.json` の capability-registry の description と keywords から fmtoken を外す。触る範囲: .claude-plugin/marketplace.json:113,125
-- [ ] 3.3 `README.md` の capability-registry の行から「`fmtoken.sh` を同梱」を外す。触る範囲: README.md:66
-- [ ] 3.4 `self-verification.md` の表の capability-registry の行から `fmtoken.sh --register` の文を外す。触る範囲: plugins/dev-workflow/references/self-verification.md:53
+- [x] 3.1 `plugin.json` の description の fmtoken.sh の記述と keywords の `fmtoken` を外す。触る範囲: plugins/capability-registry/.claude-plugin/plugin.json:3,14
+- [x] 3.2 `.claude-plugin/marketplace.json` の capability-registry の description と keywords から fmtoken を外す。触る範囲: .claude-plugin/marketplace.json:113,125
+- [x] 3.3 `README.md` の capability-registry の行から「`fmtoken.sh` を同梱」を外す。触る範囲: README.md:66
+- [x] 3.4 `self-verification.md` の表の capability-registry の行から `fmtoken.sh --register` の文を外す。触る範囲: plugins/dev-workflow/references/self-verification.md:53
 
 ## 4. 確認
 
-- [ ] 4.1 `git grep -n fmtoken -- plugins/capability-registry plugins/dev-workflow/references` の当たりが、`fmtoken.sh`・`tests/fmtoken.bats`・`1password.md`・SKILL.md の「資格情報の階層」の節の中だけであることを確かめる
-- [ ] 4.2 `bats plugins/capability-registry/tests/ plugins/dev-workflow/tests/self-verification-sections.bats tests/public-private-split.bats tests/marketplace-sync.bats` が通る
-- [ ] 4.3 `openspec validate capability-registry-drop-fmtoken-refs --type change --strict` が通る
+- [x] 4.1 `git grep -n fmtoken -- plugins/capability-registry plugins/dev-workflow/references` の当たりが、`fmtoken.sh`・`tests/fmtoken.bats`・`1password.md`・SKILL.md の「資格情報の階層」の節の中だけであることを確かめる
+- [x] 4.2 `bats plugins/capability-registry/tests/ plugins/dev-workflow/tests/self-verification-sections.bats tests/public-private-split.bats tests/marketplace-sync.bats` が通る
+- [x] 4.3 `openspec validate capability-registry-drop-fmtoken-refs --type change --strict` が通る

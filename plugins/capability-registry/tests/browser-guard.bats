@@ -56,8 +56,9 @@ h = d["hookSpecificOutput"]
 assert h["hookEventName"] == "PreToolUse"
 assert h["permissionDecision"] == "allow"
 ctx = h["additionalContext"]
-for kw in ("CLI", "fmtoken", "capability-registry"):
+for kw in ("CLI", "オーナーの環境の索引", "capability-registry"):
     assert kw in ctx, kw
+assert "fmt" + "oken" not in ctx  # 個人版の道具の名前をここに書かない
 PY
 }
 

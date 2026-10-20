@@ -1,6 +1,6 @@
 ---
 name: capability-registry
-description: 外部サービスを操作する前に必ず参照するレジストリ（GitHub/Supabase/Vercel/Stripe/1Password 等）。CLI の有無・認証確認コマンド・トークンの在処（fmtoken.sh）を索引で返す。ブラウザを開こうとした時・ユーザーにログインを依頼したくなった時も、その前にここで CLI 代替を確認する。
+description: 外部サービスを操作する前に必ず参照するレジストリ（GitHub/Supabase/Vercel/Stripe 等）。CLI の有無・認証確認コマンド・トークンを渡す環境変数名を索引で返す（値の在処はオーナーの環境の索引があればそちら）。ブラウザを開こうとした時・ユーザーにログインを依頼したくなった時も、その前にここで CLI 代替を確認する。
 version: 1.7.0
 ---
 
@@ -13,11 +13,7 @@ version: 1.7.0
 ## 原則
 
 1. 索引の記述を信じず、verify（認証確認コマンド）を実行して確かめる
-2. トークンは `"${CLAUDE_PLUGIN_ROOT}/scripts/fmtoken.sh" <service>` で取得する。値を transcript に出さないため必ずコマンド置換で使う（例: `GITHUB_TOKEN="$(fmtoken.sh github)" gh api ...`）
-   - 未登録なら exit 44 → ブラウザに行かず、値が手元にあるなら `printf '%s' "$VALUE" | fmtoken.sh --register <project>--<service>` で自分で登録する（rw SA 経由・命名規約は機械検証される）。値が無ければ主に発行を依頼する（prod の書き込み可能キーは後述『資格情報の階層』の行に従う）
-   - SA トークン未配布なら exit 43 → 主に SA トークン（読み取りは ro / 登録は rw）の配布を依頼する
-   - 存在確認だけなら `fmtoken.sh --check <service>`、一覧は `fmtoken.sh --list`
-   - エージェント名接頭辞のアイテム（`<agent>--<SERVICE>`、例: `moko--TRELLO_TOKEN`）はプロジェクト導出で引けない → `fmtoken.sh --name <item>` で参照・`--register <item>` で登録する
+2. トークンの値の在処は、オーナーの環境の索引（個人版）があればそちらを見る。索引のトークン列は CLI が読む環境変数名（またはログイン状態）で、値は transcript に出さないためコマンド置換か env で渡す。在処が分からず手元に値も無ければ、ブラウザに行かず主に発行を依頼する
 3. ブラウザ操作が正当なのは、索引の「ブラウザ必須の例外」とネガティブエントリに該当する場合のみ
 
 ## 資格情報の階層（どこに置くかはプロジェクトごとに決めない）
@@ -53,14 +49,13 @@ version: 1.7.0
 
 | サービス | CLI | 認証確認（verify） | トークン | ブラウザ必須の例外 |
 |---|---|---|---|---|
-| 1Password | op | `op whoami` | SA トークン（env / 600 ファイル / Keychain）。読み取りは ro SA（`agents` 保管庫のみ）・登録は rw SA（`fmtoken.sh --register`） | SA 権限変更（人間が行う） |
-| GitHub | gh | `gh auth status` | `fmtoken.sh github` | OAuth アプリ承認・組織設定の一部 |
-| Supabase | supabase | `supabase projects list` | `SUPABASE_ACCESS_TOKEN="$(fmtoken.sh supabase)"` | ダッシュボード限定の設定変更 |
-| Vercel | vercel | `vercel whoami` | `vercel --token "$(fmtoken.sh vercel)"` | ドメイン購入・課金設定 |
-| Stripe | stripe | `stripe products list --limit 1` | `STRIPE_API_KEY="$(fmtoken.sh stripe)"` | 本番モード切替・アカウント審査 |
+| GitHub | gh | `gh auth status` | ログイン済みの `gh`（別アカウントは `GITHUB_TOKEN`） | OAuth アプリ承認・組織設定の一部 |
+| Supabase | supabase | `supabase projects list` | `SUPABASE_ACCESS_TOKEN`（env） | ダッシュボード限定の設定変更 |
+| Vercel | vercel | `vercel whoami` | `vercel --token` または `VERCEL_TOKEN`（env） | ドメイン購入・課金設定 |
+| Stripe | stripe | `stripe products list --limit 1` | `STRIPE_API_KEY`（env） | 本番モード切替・アカウント審査 |
 
 セットアップ手順・運用知見・例外の具体例は同ディレクトリのサービス別ファイルに遅延ロード:
-`1password.md` / `github.md` / `supabase.md` / `vercel.md` / `stripe.md`
+`github.md` / `supabase.md` / `vercel.md` / `stripe.md`
 
 ## CLI が無いサービス（ネガティブエントリ）
 
