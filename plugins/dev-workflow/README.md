@@ -79,6 +79,8 @@ cld-account() {
 
 関数定義前の `unalias` は、旧設定の `cld` / `cld-account` alias をこの関数へ置き換えるために必要。`cld` は probe を best-effort で実行してから自動選択し、`cld-account a --resume` のような明示選択では先頭の slot id を除いた引数をそのまま `claude` に渡す。selector の理由行は stderr に残る。空の選択値は既定アカウントを意味するため環境変数を空文字で設定せず `env -u` で解除する。未登録 id などで selector が非 0 なら function も同じ status で終了し、Claude は起動しない。
 
+`usage-probe.sh` の取得先は `https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1` になった（非公開の呼び方で、予告なく変わりうる）。応答に含まれるリセット権を snapshot の `accounts.<id>.reset_grants` に書き、ステータスラインが表示する。取得に失敗したアカウントの `reset_grants` は消え、試みなかったアカウントの値は保つ。
+
 アカウント登録簿（`accounts.json`）の一覧・追加・オン・オフは `scripts/accounts.sh` で行う。
 
 ```bash
