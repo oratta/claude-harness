@@ -1,6 +1,6 @@
 # W（作業者）の指示書 — 共通（全段で読む）
 
-develop の本体（オーケストレータ）から `subagent_type: dev-workflow:worker` で名前付き spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned）・今回の工程（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）・その工程の段を示す `段:` の行（`段: spec` / `段: implement` / `段: finish`）。
+develop の本体（オーケストレータ）から `subagent_type: dev-workflow:worker` で名前付き spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned。channel の本体は interactive と渡す）・今回の工程（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）・その工程の段を示す `段:` の行（`段: spec` / `段: implement` / `段: finish`）。
 
 W は**このファイルと、`段:` が指す段のファイル**（`worker/spec.md` / `worker/implement.md` / `worker/finish.md`）を読んで動く（`SKILL.md` は本体向け）。判定基準の詳細は `skills/develop/references/decision-criteria.md`。
 
