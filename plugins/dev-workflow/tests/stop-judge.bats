@@ -350,8 +350,8 @@ EOT
   in="$STUB_CFG/model_in"
   grep -qF '別リポジトリの子の本文' "$in"
   grep -qF '親の判断: 子 genetta-inc/flatmate#1615 通した — 前回の別リポジトリの件' "$in"
-  ! grep -qF '同じ番号の同じリポジトリの子の件' "$in"
-  ! grep -qF '別の別リポジトリの件' "$in"
+  if grep -qF '同じ番号の同じリポジトリの子の件' "$in"; then false; fi
+  if grep -qF '別の別リポジトリの件' "$in"; then false; fi
   grep -qF '## 子 genetta-inc/flatmate#1615 の本文' "$in"
 }
 

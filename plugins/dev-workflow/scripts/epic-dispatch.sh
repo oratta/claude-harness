@@ -563,7 +563,7 @@ EOF
       XR_CODE=no-push
     else
       XR_BASE="$(printf '%s' "$resp" | jq -r '.default_branch // empty')"
-      [ -n "$XR_BASE" ] || XR_CODE=base-lookup-failed
+      [ -n "$XR_BASE" ] || XR_CODE="base-lookup-failed"
     fi
     if [ "$XR_CODE" != ok ]; then
       acct="$(gh api user --jq .login 2>/dev/null)" || acct="(unknown)"
