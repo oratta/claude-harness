@@ -1506,8 +1506,25 @@ PY
     call "$sh /x/scripts/git-guard-permit.sh /y/denied/k.json ok" default '"a1"' s1
     [ "$(decision)" = "deny" ] || { echo "not denied: $sh"; return 1; }
   done
-  call 'bash -x /x/scripts/git-guard-permit.sh /y/denied/k.json ok' default '"a1"' s1
-  [ "$(decision)" = "deny" ]
+  # 値を取るオプション（-o・+o・-O・+O・--rcfile）・+ で始まるオプション・スクリプトより後ろの -c を取り違えない
+  local c
+  for c in 'bash -x /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'bash -o errexit /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'bash -eo pipefail /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'bash +x /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'bash +o posix /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'bash -O extglob /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'bash --rcfile /x/rc /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'bash -- /x/scripts/git-guard-permit.sh /y/denied/k.json ok' \
+           'sh /x/scripts/git-guard-permit.sh /y/denied/k.json -c' \
+           'bash /x/scripts/git-guard-permit.sh /y/denied/k.json -fcleanup'; do
+    call "$c" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  done
+  # -c の後ろはコマンド文字列として読む（スクリプトとして実行しない）
+  call 'bash -c "echo /x/scripts/git-guard-permit.sh"' default '"a1"' s1
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 @test "permit: the main session and reading the script are not stopped" {

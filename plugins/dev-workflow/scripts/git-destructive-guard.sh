@@ -589,6 +589,33 @@ def env_opt_takes_next(opt):
     return False
 
 
+# シェルの起動オプションのうち、次の字句を値に取るもの（-o / +o / -O / +O は同じ字句にまとめた形も含む）
+SHELL_LONG_ARG_OPTS = {"--rcfile", "--init-file"}
+
+
+def shell_operand(rest):
+    """シェル（bash など）の引数から (-c があるか, 最初のオプションでない引数) を返す。オプションはスクリプトより
+    前だけを読む（スクリプトより後ろの -c はスクリプトの引数）。-o・+o・-O・+O の値と --rcfile の値は飛ばし、
+    + で始まる語もオプションとして読む。- と -- はオプションの終わり。"""
+    has_c = False
+    k = 0
+    while k < len(rest):
+        a = rest[k]
+        if a in ("-", "--"):
+            k += 1
+            break
+        if a.startswith("--"):
+            k += 2 if a in SHELL_LONG_ARG_OPTS else 1
+            continue
+        if len(a) > 1 and a[0] in "-+":
+            if a[0] == "-" and "c" in a[1:]:
+                has_c = True
+            k += 2 if ("o" in a[1:] or "O" in a[1:]) else 1
+            continue
+        break
+    return has_c, (rest[k] if k < len(rest) else None)
+
+
 def judge_simple(cmd, depth):
     i = 0
     while i < len(cmd):
@@ -611,12 +638,9 @@ def judge_simple(cmd, depth):
     if base == PERMIT_SCRIPT:
         return {"permit-self"}
     if base in SCRIPT_RUNNERS or head in ("source", "."):
-        has_c = base in SHELLS and any(a.startswith("-") and not a.startswith("--") and "c" in a[1:]
-                                       for a in rest)
-        if not has_c:
-            first = next((a for a in rest if not a.startswith("-")), None)
-            if first is not None and os.path.basename(first) == PERMIT_SCRIPT:
-                return {"permit-self"}
+        has_c, first = shell_operand(rest)
+        if not (has_c and base in SHELLS) and first is not None and os.path.basename(first) == PERMIT_SCRIPT:
+            return {"permit-self"}
     if base in SHELLS:
         for k, a in enumerate(rest):
             if a.startswith("-") and not a.startswith("--") and "c" in a[1:]:

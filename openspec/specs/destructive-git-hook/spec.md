@@ -477,7 +477,7 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 
 ### Requirement: 子は許可を書くスクリプトを呼べない
 
-子の呼び出しで、単純コマンドの先頭の語の basename が `git-guard-permit.sh` のもの、または先頭の語が `bash` / `sh` / `zsh` / `dash` / `ksh` / `source` / `.` で最初のオプションでない引数の basename が `git-guard-permit.sh` のものに、hook は `deny` を返さなければならない（MUST）。拒否理由・回数・拒否の記録は、破壊的 git 操作の拒否と同じに扱う（当たった種類は許可を書くスクリプトの子からの呼び出し）。この呼び出しには許可を使ってはならない（MUST NOT）。主の呼び出しと、スクリプトを引数として読むだけのもの（`cat` など、先頭の語が上のどれでもないもの）は止めてはならない（MUST NOT）。
+子の呼び出しで、単純コマンドの先頭の語の basename が `git-guard-permit.sh` のもの、または先頭の語が `bash` / `sh` / `zsh` / `dash` / `ksh` / `source` / `.` で起動オプション（スクリプトより前にある、`-` か `+` で始まる語。`-o`・`+o`・`-O`・`+O` を含む語と `--rcfile`・`--init-file` は次の語を値として一緒に飛ばし、`-` と `--` でオプションが終わる）を飛ばした最初の引数の basename が `git-guard-permit.sh` で、その起動オプションに `-c` が無いものに、hook は `deny` を返さなければならない（MUST）。拒否理由・回数・拒否の記録は、破壊的 git 操作の拒否と同じに扱う（当たった種類は許可を書くスクリプトの子からの呼び出し）。この呼び出しには許可を使ってはならない（MUST NOT）。主の呼び出しと、スクリプトを引数として読むだけのもの（`cat` など、先頭の語が上のどれでもないもの）は止めてはならない（MUST NOT）。
 
 守備範囲: 受け取る入力は、Claude Code が PreToolUse で渡す payload の `tool_input.command`（子が書く値）と `agent_id` である。拾いたい誤りは、拒否された子が親に返らずに、コマンド文字列にスクリプトのパスをそのまま書いて自分で許可を書くことである。変数で組み立てたパス・別名・`python3` などからスクリプトを動かす形・`permits/` に直接書く形は通ることを許す。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
 
@@ -485,6 +485,11 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 
 - **WHEN** `agent_id` が `a1` の payload に `/x/scripts/git-guard-permit.sh /y/denied/k.json ok` と `bash /x/scripts/git-guard-permit.sh /y/denied/k.json ok` をそれぞれ渡す
 - **THEN** どちらも `permissionDecision` が `deny` になる
+
+#### Scenario: 起動オプションの値やスクリプトより後ろの -c を取り違えない
+
+- **WHEN** `agent_id` が `a1` の payload に `bash -o errexit /x/scripts/git-guard-permit.sh /y/denied/k.json ok`・`bash +x /x/scripts/git-guard-permit.sh /y/denied/k.json ok`・`sh /x/scripts/git-guard-permit.sh /y/denied/k.json -c` をそれぞれ渡す
+- **THEN** どれも `permissionDecision` が `deny` になる
 
 #### Scenario: 主の呼び出しと読むだけの呼び出しは止めない
 
