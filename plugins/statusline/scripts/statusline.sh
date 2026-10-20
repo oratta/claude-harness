@@ -618,14 +618,19 @@ if [ -f "$usnap" ] && [ "$n_slots" -gt 0 ]; then
     # `--args` はそれ以降のすべてを positional 扱いにするので、必ずファイル名の**後**に置く。
     # 前に置くと snapshot のパスまで positional に食われ、jq が stdin を待って固まる。
     # stdin は既に消費済みなので明示的に /dev/null を与える。
-    # reset_grants: 束は dict で resets_left が 0 以上の整数のものだけ読む（読めない束は無いものとして扱う）。
-    # 欄が無い・配列でない・束がすべて読めないときは 2 列とも空、空配列は残数 0・期限空。
-    # paused が真偽値の true の束と resets_left が 0 の束は数えない。ends_at は小数秒を落として読む。
+    # reset_grants: 数えられる束は dict で resets_left が 0 より大きい整数、paused が真偽値の true でないもの。
+    # 欄が無い・配列でない・数えられる束が 1 つも無い（読めない束・paused の束・残数 0 の束だけ）ときは
+    # 2 列とも空（区画を出さない）。元から空の配列だけは残数 0・期限空。
+    # ends_at は ISO 8601 の Z か ±HH:MM の時差付きを読み（小数秒は落とす）、読めなければ期限に含めない。
     snap_rows="$(jq -r --arg active "${slot_ids[$active_idx]}" '
-      def rg_ok: type == "array" and (length == 0 or any(.[]; type == "object" and (.resets_left | type) == "number" and .resets_left >= 0 and .resets_left == (.resets_left | floor)));
-      def rg_live: [ .[] | select(type == "object" and (.resets_left | type) == "number" and .resets_left >= 0 and .resets_left == (.resets_left | floor) and .paused != true and .resets_left > 0) ];
+      def rg_good: type == "object" and (.resets_left | type) == "number" and .resets_left > 0 and .resets_left == (.resets_left | floor) and .paused != true;
+      def rg_ok: type == "array" and (length == 0 or any(.[]; rg_good));
+      def rg_live: [ .[] | select(rg_good) ];
+      def iso_epoch: capture("^(?<b>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:[0-9]{2})$")
+        | ((.b + "Z") | fromdateiso8601)
+          - (if .z == "Z" then 0 else (if .z[0:1] == "+" then 1 else -1 end) * ((.z[1:3] | tonumber) * 3600 + (.z[4:6] | tonumber) * 60) end);
       def rg_count(g): if (g | rg_ok) then ([ g | rg_live | .[] | .resets_left ] | add // 0) else "" end;
-      def rg_exp(g): if (g | rg_ok) then ([ g | rg_live | .[] | .ends_at | select(type == "string") | (sub("\\.[0-9]+"; "") | try fromdateiso8601 catch empty) ] | min // "") else "" end;
+      def rg_exp(g): if (g | rg_ok) then ([ g | rg_live | .[] | .ends_at | select(type == "string") | (try iso_epoch catch empty) ] | min // "") else "" end;
       . as $d
       | $ARGS.positional[] as $id
       | (($d.accounts // {})[$id]) as $a

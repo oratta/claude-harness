@@ -120,7 +120,42 @@ render() { mk_input 55 82 14000 172800 | bash "$SL"; }
     render | strip_ansi | grep '7d All' | grep -q 'リセット1回・期限不明' || { echo "case: $p"; return 1; }
   done
   write_snap '[{"resets_left":1,"ends_at":null,"paused":true}]'
-  render | strip_ansi | grep '7d All' | grep -q 'リセット0回$' 
+  ! render | strip_ansi | grep -q 'リセット' || return 1
+}
+
+@test "reset grants: a non-empty array with no countable grant shows no segment" {
+  write_snap ''
+  render > "$WORK/base.txt"
+  local rg
+  for rg in '[{"resets_left":0,"ends_at":null,"paused":false}]' \
+            '[{"resets_left":2,"ends_at":null,"paused":true}]' \
+            '[{"resets_left":0,"ends_at":null},{"resets_left":3,"ends_at":null,"paused":true}]'; do
+    write_snap "$rg"
+    render > "$WORK/o.txt"
+    cmp -s "$WORK/base.txt" "$WORK/o.txt" || { echo "case: $rg"; cat "$WORK/o.txt"; return 1; }
+  done
+}
+
+@test "reset grants: an expiry with a UTC offset reads as the same instant as Z" {
+  local t z
+  t=$((NOW + 12*3600 + 600))
+  write_snap "[{\"resets_left\":1,\"ends_at\":\"$(iso_after $((12*3600 + 600)))\",\"paused\":false}]"
+  render > "$WORK/z.txt"
+  grep '7d All' "$WORK/z.txt" | grep -q $'\033\\[31mリセット1回・最短あと12h10m' || { cat "$WORK/z.txt"; return 1; }
+  for z in '+00:00' '+09:00' '-05:30'; do
+    e="$(python3 -c "import datetime as d;h,m=int('$z'[1:3]),int('$z'[4:6]);o=(1 if '$z'[0]=='+' else -1)*d.timedelta(hours=h,minutes=m);print(d.datetime.fromtimestamp($t,d.timezone(o)).strftime('%Y-%m-%dT%H:%M:%S.123')+'$z')")"
+    write_snap "[{\"resets_left\":1,\"ends_at\":\"$e\",\"paused\":false}]"
+    render > "$WORK/o.txt"
+    cmp -s "$WORK/z.txt" "$WORK/o.txt" || { echo "case: $e"; cat "$WORK/o.txt"; return 1; }
+  done
+}
+
+@test "reset grants: an unreadable expiry string stays unknown" {
+  local e
+  for e in 'soon' '2026-13-40T00:00:00Z' '2026-11-02T03:00:00' '2026-11-02T03:00:00+9'; do
+    write_snap "[{\"resets_left\":1,\"ends_at\":\"$e\",\"paused\":false}]"
+    render | strip_ansi | grep '7d All' | grep -q 'リセット1回・期限不明$' || { echo "case: $e"; return 1; }
+  done
 }
 
 @test "reset grants: no expiry and a past expiry are told apart" {
