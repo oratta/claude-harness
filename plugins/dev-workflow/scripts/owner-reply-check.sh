@@ -17,7 +17,8 @@
 #      origin.server が空でない文字列／本文が先頭の空白なしに開きタグ <channel( 名前="値")*>＋改行で始まる／
 #      属性名に重複が無い／source 属性が origin.server と同じ／user_id 属性が空でない／
 #      末尾（後ろの空白を除く）が改行＋</channel>／(origin.server, user_id) が OWNER_REPLY_CHANNEL_SENDERS にある／
-#      中身に </channel> や <channel の形のタグが無く（1 行に塊がちょうど 1 つ）、content が文字列か text 部品 1 つの配列。
+#      中身に </channel> や <channel の形のタグが無く（1 行に塊がちょうど 1 つ）、content が文字列か text 部品 1 つの配列／
+#      中身に user_id=" が無く、中身のどの行も "> で終わらない（meta の値の " と改行で開きタグを早く閉じる偽装を落とす）。
 #      OWNER_REPLY_CHANNEL_SENDERS は <server>=<ID> を空白かカンマで区切って並べる（例 plugin:discord:discord=<主の Discord ID>）。
 #      未設定か空ならチャンネルの行は数えない。チャンネルの行は開きタグと閉じタグを外した中身を本文とし、6・7・9 は中身に当てる。
 #      照合にユーザー名（user 属性）は使わない。
@@ -130,6 +131,9 @@ CHANNEL_ATTR = re.compile(r' ([A-Za-z_][A-Za-z0-9_]*)="([^"\n]*)"')
 CHANNEL_CLOSE = "\n</channel>"
 # 中身にチャンネルのタグがあれば数えない（1 行に塊が 2 つ以上あると、続きの塊の送信者を確かめられないため）
 CHANNEL_TAG = re.compile(r"</?channel[\s>]")
+# 中身に user_id=" があるか、中身のどこかの行が "> で終われば数えない。user_id より前の meta の値に " と改行を入れると
+# 開きタグが早く閉じ、偽の user_id を先頭に置いたまま本物の属性の残り（user_id=" と "> の行末）が中身へ押し出されるため
+CHANNEL_SPOOF = re.compile(r'user_id="|">(?:\n|$)')
 SENDERS_ENV = "OWNER_REPLY_CHANNEL_SENDERS"
 SENDER_ITEM = re.compile(r"[^=\s,]+=[^=\s,]+")
 
@@ -177,7 +181,7 @@ def channel_inside(origin, text, part_count):
     if (server, attr["user_id"]) not in CHANNEL_SENDERS:
         return None
     inside = full[head.end():end]
-    if CHANNEL_TAG.search(inside):
+    if CHANNEL_TAG.search(inside) or CHANNEL_SPOOF.search(inside):
         return None
     return inside
 
