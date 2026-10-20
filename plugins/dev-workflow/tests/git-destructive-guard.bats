@@ -1117,6 +1117,19 @@ PY
   [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = "1" ]
 }
 
+@test "permit: in an unattended session the main call stays deny and the child still uses its permit" {
+  setup_permit
+  export DEV_WORKFLOW_UNATTENDED=1
+  deny_then_permit 'git checkout -- .' "$REPO"
+  call_cwd 'git checkout -- .' - "$PERMIT_SID" "$REPO" bypassPermissions
+  [ "$(decision)" = "deny" ] || { echo "$output"; return 1; }
+  [[ "$(reason)" == *'チャンネル'* ]] || return 1
+  [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = "1" ]
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "allow" ] || { echo "$output"; return 1; }
+  permits_empty
+}
+
 @test "permit: if .git is swapped to point outside after the permit, the hook denies" {
   setup_permit
   deny_then_permit 'git checkout -- .' "$REPO"
