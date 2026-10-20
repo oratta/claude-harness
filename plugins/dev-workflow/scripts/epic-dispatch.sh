@@ -9,21 +9,37 @@
 #   epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
 #   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
 #   epic-dispatch.sh reap <child>...
+#   epic-dispatch.sh pending-owner <child>...
+#   epic-dispatch.sh adopt <epic> <child>...
+#   epic-dispatch.sh clear <epic>
 #   epic-dispatch.sh max-parallel
 #
 # Orca のコマンドを呼ぶのはこのスクリプトだけ（develop の手順書には orca のコマンドを書かない）。
+# 子の状態の正本は状態の記録（${EPIC_STATE_ROOT:-~/.claude/epic-state}/<o>.<r>-<E>/<o>.<r>-<N>.json。
+#   読み書き・排他・照合の関数は同じディレクトリの epic-state.sh）。Orca の画面の印（ボードの列・コメント欄）は、
+#   記録を書いたあとに写すだけで、判定には使わない（写しの失敗は stderr に出して成功扱い）。
+#   <child> は番号だけか <owner>/<repo>#<N>（エピックと同じリポジトリなら番号と同じ扱い。出力は受けた形のまま）。
+#   エピックの <owner>/<repo> を origin から読むのは launch・adopt・clear だけ（GitHub の 3 つの形。読めなければ
+#   stderr に `cannot read the epic repository from origin: <URL か no origin>` で exit 1）。親の見張りと子の側は
+#   記録の epic・repo を使う。親の側は今のワークツリー（git rev-parse --show-toplevel）を parent_worktree に
+#   持つ記録だけを見る（番号だけは number と epic のリポジトリ、<owner>/<repo>#<N> は child で当てる）。
+#   子の側は今のワークツリーを worktree に持つ記録を自分の記録とする。
 # route: 子の番号の検査のあと、子の件数によらず最初に「エピックの子のセッションか」を見る。
 #   EPIC_DISPATCH_PARENT_EPIC が空でなければ（並列起動された子のセッション）orca を呼ばずに `nested`。
-#   空でも、`orca worktree current --json` の parentWorktreeId があり、`orca worktree list --json` の
-#   そのワークツリーに linkedIssue があれば（子のワークツリーで起動し直したセッション）`nested`。
-#   `nested` のときは stderr に `parent epic: #<N>`（環境変数の値か、親の linkedIssue）。
-#   jq が無い・一覧を読めないときは子ではないとして進み、stderr に `could not read the parent worktree`。
+#   空でも、今のワークツリーを worktree に持つ記録があれば（子のワークツリーで起動し直したセッション）`nested`。
+#   `nested` のときは stderr に `parent epic: <#E か o/r#E>`（環境変数の値か、記録の epic）。
+#   jq が無い・記録が読めないときは子ではないとして進む。Orca の parentWorktreeId は見ない。
 #   子でなければ、子が 1 件以上・`orca worktree current --json` が exit 0（今いるのが Orca 管理の
 #   ワークツリー）なら stdout に `orca`、それ以外（子 0 件を含む）は `subagent`。どれも exit 0。current は 1 回だけ呼ぶ
 # launch: `orca worktree current --json` → `git rev-parse --show-toplevel` → `git fetch origin <base>`
 #   → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` →
 #   子ごとに `orca worktree create`（同じ repoId・同じ linkedIssue・archive されていない
-#   ワークツリーがあれば作らない。--agent も --prompt も渡さない。create は空のシェルの端末を 1 つ作るので、
+#   ワークツリーがあれば作らない。--agent も --prompt も渡さない。作る前に記録（status running・worktree 空）を
+#   書き、作成に失敗したら消す。作れたら worktree・branch を書き足し、送信まで済めば session に端末のハンドルを書く。
+#   作ったあとで端末・起動待ち・送信に失敗したら記録を残して launch_failed に terminal / ready / send、
+#   create が path を返さなければ create を書く。記録があって worktree が空でなければ skipped、空なら上書きして作る。
+#   自分の記録が読めなければ `failed <N> state-unreadable`、エピックと別のリポジトリの子は作らず
+#   `failed <child> other-repo`（どちらも枠を使わない）。create は空のシェルの端末を 1 つ作るので、
 #   `orca terminal list` でそれがちょうど 1 つならそこへ下の <起動コマンド> を `terminal send --enter` で打ち込み、
 #   端末が Claude Code になるまで list で待つ。0 個のときだけ下の terminal create で作る。2 個以上・list 失敗は failed）→ --note があれば
 #   `gh issue comment <N> --body <親エピックからの注意書き: #<epic>・空行・注意書き>`（失敗しても起動は
@@ -40,21 +56,21 @@
 #   ハンドルが取れていれば送り直しのコマンドを stderr に出す。orca 自身の出力は stderr。
 #   <base> の既定は main（EPIC_DISPATCH_BASE、--base が優先）。起動完了待ちの上限（ミリ秒）と
 #   送信の観測時間（秒）の既定は 60000 / 30（EPIC_DISPATCH_READY_TIMEOUT_MS / EPIC_DISPATCH_SUBMIT_WAIT）
-#   exit 0 = failed なし / 1 = failed あり、または orca・jq が無い・current / fetch / set / list の
-#   失敗（このときは子を 1 件も作らない）
-#   上限（max-parallel と同じ値）: list のあと、同じ repoId・parentWorktreeId が今のワークツリーの id・
-#   archive されていない・linkedIssue がある子のうち、workspaceStatus が completed でなく、comment が
-#   epic-stopped / epic-stopped-seen でなく、`gh api repos/{owner}/{repo}/issues/<N> --jq .state` が closed で
-#   ないものを「枠を使っている子」と数える（gh の失敗・open / closed 以外は数え、stderr にその子を出す。
-#   今のワークツリーの id が無ければ 0 件で stderr）。stderr に `max parallel <上限> (<出どころ>); in use <数>: #<N>...`。
+#   exit 0 = failed なし / 1 = failed あり、または orca・jq が無い・current / origin / fetch / set / list の
+#   失敗（このときは子を 1 件も作らず、記録も書かない）。呼ぶ順は current → rev-parse → 子の判定 →
+#   remote get-url origin → fetch → set → list
+#   上限（max-parallel と同じ値）: list のあと、全エピックのディレクトリを横断して parent_worktree が今のワークツリーの
+#   記録のうち、status が done でなく、stop が stopped / stopped-seen でなく、
+#   `gh api <記録の repo の issues/<N>> --jq .state` が closed でないものを「枠を使っている子」と数える（gh の失敗・
+#   open / closed 以外は数え、stderr にその子を出す。ほかの読めない記録も 1 枠に数える。記録の無い Orca の子は
+#   数えない）。stderr に `max parallel <上限> (<出どころ>); in use <数>: #<N>...`（並びは置き場のディレクトリの順）。
 #   空き枠 = max(0, 上限 − 使用中)。子ごとに skipped の判定のあと、空き枠が 0 なら create も注意書きも
 #   行わずに `deferred <N>`（exit code に影響しない）。create に進んだ子は結果によらず空き枠を 1 減らす。
 #   上限の値が誤っていれば引数の検査のあと orca も git も呼ばずに使い方を出して exit 1
 #   EPIC_DISPATCH_PARENT_EPIC が空でなければ、引数の検査のあと orca も git も呼ばずに
-#   stderr に理由を出して exit 1（子ワークツリーを作らない）。空でも、current --json の直後に route と
-#   同じ親子関係の判定をし、子なら git も set も create も呼ばずに exit 1
-#   （どちらの理由も `child epics are not expanded here` を含む）。parentWorktreeId があるのに一覧を
-#   読めないときも、git も set も create も呼ばずに exit 1（stderr に `could not read the parent worktree`）
+#   stderr に理由を出して exit 1（子ワークツリーを作らない）。空でも、rev-parse の直後に route と
+#   同じ記録の判定をし、子なら origin も fetch も set も create も呼ばずに exit 1
+#   （どちらの理由も `child epics are not expanded here` を含む）
 # wait: 子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state` を見るポーリングを繰り返し、
 #   stdout にちょうど 1 行を出して終わる。
 #   `closed <N>...`（閉じていた子）exit 0 / `timeout <N>...`（閉じていない子）exit 2 /
@@ -64,17 +80,16 @@
 #   間隔・上限は秒。既定 300 / 21600（EPIC_DISPATCH_INTERVAL / EPIC_DISPATCH_TIMEOUT、フラグが優先）。
 #   ポーリングのあとで「経過 >= 上限」か「経過 + 間隔 > 上限」なら眠らずに timeout
 #   （--timeout 0 は間隔によらず 1 回だけ確かめる）
-#   --watch-done <N> を 1 つ以上付けたときだけ、ポーリングごとに `orca worktree list --json` を 1 回呼び、
-#   同じ repoId・linkedIssue が <N>・archive されていない・workspaceStatus が completed のワークツリーが
-#   あれば「印が付いた」とする。閉じた子・印が付いた子がいれば `closed <N>...` と `done <N>...` を
-#   この順に（1 行か 2 行）出して exit 0。一覧を読めないポーリングも失敗したポーリングに数え、
+#   子 issue の state は、記録の repo がエピックと同じ子と記録の無い子は repos/{owner}/{repo}、違う子は repos/<repo> で読む。
+#   --watch-done <N> を 1 つ以上付けたときだけ、ポーリングごとに渡された子の記録を 1 回ずつ読み、
+#   status が done なら「印が付いた」とする。閉じた子・印が付いた子がいれば `closed <N>...` と `done <N>...` を
+#   この順に（1 行か 2 行）出して exit 0。読めない記録はそのポーリングを失敗したポーリングに数え、
 #   3 回続いて gh の失敗が無ければ `error workspaces`。位置引数 0 件も可（timeout は `timeout` だけ）。
-#   --watch-stopped（値なし）を付け、位置引数の子が 1 件以上あるときは、同じ一覧で、閉じていない位置引数の
-#   子のうち同じ repoId・linkedIssue が <N>・archive されていない・comment が epic-stopped のワークツリー
-#   全部に `orca worktree set --worktree path:<パス> --comment epic-stopped-seen` を呼び、全部 exit 0 なら
-#   「止まった子」とする（1 つでも失敗すれば失敗したポーリングに数える）。出力は `closed <N>...`・
+#   --watch-stopped（値なし）を付け、位置引数の子が 1 件以上あるときは、閉じていない位置引数の子のうち
+#   記録の stop が stopped のものを排他つきで stopped-seen に書き換え（そのあと Orca の印へ写す）、書けたら
+#   「止まった子」とする（書けなければ失敗したポーリングに数える）。出力は `closed <N>...`・
 #   `done <N>...`・`stopped <N>...` を該当するものだけこの順に（1〜3 行）出して exit 0。
-#   --watch-done も --watch-stopped（子 1 件以上）も無ければ orca を呼ばず、コメント欄も見ない。
+#   --watch-done も --watch-stopped（子 1 件以上）も無ければ記録を読まない。
 #   --resolve <epic>（--watch-stopped と位置引数の子が 1 件以上あるときだけ働く）を付けると、止まった子ごとに
 #   判断のコマンド（EPIC_DISPATCH_JUDGE。既定は同じディレクトリの stop-judge.sh）を `<epic> <child>` で 1 回呼ぶ。
 #   `判断: 通す` で返事が空でなければ reply --as parent と同じ処理で送り、sent / relaunched ならエピックに
@@ -84,36 +99,37 @@
 #   `stopped` に残す（投稿に失敗したら stderr に投稿し直しのコマンド）。出力は closed / done / stopped /
 #   unrecorded の順の 1〜4 行。--resolve が無ければ判断を呼ばず、unrecorded も出さない。
 #   --resolve の値が無い・数字でない、または返事の送り方の環境変数が誤っていれば使い方を出して exit 1
-#   orca / jq が無い・`orca worktree current` が失敗したら stdout に何も出さず exit 1
-# reply: 今のワークツリーと同じ repoId・linkedIssue が <child>・archive されていない子のワークツリーが 1 件で、
+#   jq が無い・今のワークツリーを読めない（rev-parse の失敗）なら stdout に何も出さず exit 1
+# reply: 今のワークツリーを parent_worktree に持つ <child> の記録が 1 件で（その worktree が子のワークツリー）、
 #   端末があり（--relaunch なし）、子のセッションの端末（agentIdentity が claude の端末、無ければタイトルに
 #   Claude Code を含む端末がちょうど 1 つ）が決まれば、頭（--as parent は `親エピック #<epic> の判断（主の承認ではない）: `、
 #   owner は `主の返事（親エピック #<epic> 経由）: `）を付けた文を送り、ターンの開始まで確かめて `sent <child>`。
 #   端末が 0 か --relaunch なら（--relaunch は先に端末を全部閉じて）launch と同じ起動コマンドで端末を作り、
 #   `/develop #<child> （エピック #<epic> の子。返事を受けて起動し直し） <頭付きの文>` を送って `relaunched <child>`。
 #   端末はあるが子のセッションの端末を決められない（シェルの端末だけも含む）
-#   ときは `failed <child> ambiguous-terminal`。ワークツリーが 0 件か 2 件以上・送信 / 作成 / 閉じるの失敗は `failed <child> <段>` で exit 1
+#   ときは `failed <child> ambiguous-terminal`。記録が 0 件は `failed <child> no-worktree`、2 件以上は
+#   `failed <child> ambiguous-worktree`、読めない記録は `failed <child> state-unreadable`。送信 / 作成 / 閉じるの失敗は `failed <child> <段>` で exit 1
 #   （送り直しか作り直しのコマンドを stderr に出す）。引数の誤りは orca を呼ばずに使い方を出して exit 1
 # notify-closed: 子 issue の state が closed でなければ `skipped <child> not-closed`、state_reason が completed で
-#   なければ `skipped <child> not-completed`（gh の失敗は `failed <child> issue`）。今のワークツリーと同じ repoId・
-#   linkedIssue が <child>・archive されていない子のワークツリーが 0 件なら `skipped <child> no-worktree`、2 件以上は
-#   `failed <child> ambiguous-worktree`、一覧を読めなければ `failed <child> list`。workspaceStatus が completed なら
-#   `skipped <child> already-done`、comment が epic-stopped / epic-stopped-seen でなければ `skipped <child> not-stopped`。
+#   なければ `skipped <child> not-completed`（gh の失敗は `failed <child> issue`）。今のワークツリーを parent_worktree に
+#   持つ <child> の記録が 0 件なら `skipped <child> no-worktree`、2 件以上は `failed <child> ambiguous-worktree`、
+#   読めない記録は `failed <child> state-unreadable`。記録の status が done なら
+#   `skipped <child> already-done`、stop が stopped / stopped-seen でなければ `skipped <child> not-stopped`。
 #   条件を満たせば reply --as parent と同じ処理（--relaunch も同じ）で「記録先の issue #<child> は completed で
 #   閉じた。完了報告を書き、mark done で終える（停止の記録: <URL>）」を送り（URL は OWNER / MEMBER / COLLABORATOR の
 #   最新の `子の停止: 主の返事待ち` のコメント、無ければ子 issue の URL）、送れたらエピックに
 #   `親の判断: 子 #<child> 通した — 記録先が completed で閉じたので、完了報告と mark done を促した <URL>` を投稿して
 #   `notified <child>`（投稿に失敗したら `unrecorded <child>` と stderr に投稿し直しのコマンド）。skipped / notified /
 #   unrecorded は exit 0、送信の失敗は `failed <child> <段>` で exit 1。skipped のときはどこにも投稿しない
-# mark: 今のワークスペースの linkedIssue が <issue> のときだけ `orca worktree set --worktree current
-#   --workspace-status <completed|in-review>`（done / waiting）。stdout は `marked <issue> <kind>`（exit 0）
-#   / `failed <issue>`（exit 1）/ `skipped <issue> not-linked` / `skipped <issue> no-workspace`
-#   （orca が無いか Orca 管理外。exit 0）。EPIC_DISPATCH_PARENT_EPIC は見ない。
-#   stopped / resumed は列に触れず `orca worktree set --worktree current --comment <epic-stopped|epic-resumed>`
-#   を 1 回呼ぶ。resumed は今の comment が epic-stopped / epic-stopped-seen のときだけ付け、
-#   それ以外は set を呼ばずに `skipped <issue> not-stopped`（exit 0）
-# reap: 子ごとに、一覧の候補 1 件・親の launch が作った（parentWorktreeId が今のワークツリーの id）・
-#   completed・git status がきれい・LLM/ が無い・ブランチ上・マージ済み PR の headRefOid と HEAD が一致
+# mark: 今のワークツリーを worktree に持つ自分の記録の number（<owner>/<repo>#<N> なら repo も）が <issue> の
+#   ときだけ、排他つきで done / waiting は status を done / waiting に、stopped は stop を stopped に、resumed は
+#   stop が stopped / stopped-seen のときだけ resumed に書き換え（それ以外は `skipped <issue> not-stopped`）、
+#   書けたら Orca の印（--workspace-status completed / in-review、--comment epic-stopped / epic-resumed）へ写す。
+#   stdout は `marked <issue> <kind>`（exit 0）/ `failed <issue>`（書けない・自分の記録が 2 件以上。exit 1）/
+#   `skipped <issue> not-linked`（記録が別の子）/ `skipped <issue> no-workspace`（記録が無い・jq が無い。exit 0）。
+#   EPIC_DISPATCH_PARENT_EPIC は見ない
+# reap: 子ごとに、今のワークツリーを parent_worktree に持つ記録 1 件（無い・worktree のディレクトリが無いなら
+#   `gone <N>`。後者は記録を消す。読めない記録は `kept <N> state-unreadable`）・status が done・git status がきれい・LLM/ が無い・ブランチ上・マージ済み PR の headRefOid と HEAD が一致
 #   （`--head <ブランチ>` で一致しなければ、`--state merged --search <HEAD>` でブランチ名を問わず探す）、
 #   （一致しなくても、そのブランチに PR が状態を問わず無く・issue が閉じていて・HEAD が
 #   `git ls-remote origin refs/heads/${EPIC_DISPATCH_BASE:-main}` のリモートの今の先端に含まれる子は通す。
@@ -125,12 +141,23 @@
 #   stderr に `terminal sweep failed` を含む失敗は `kept <N> rm-failed-terminal-sweep`）→
 #   残ったローカルブランチは先端が HEAD と同じときだけ、ワークツリーが `git worktree list` から外れるのを
 #   上限つきで待って（EPIC_DISPATCH_REAP_DETACH_TIMEOUT 秒・既定 30、_INTERVAL 秒・既定 1）`git branch -D`。stdout は子ごとに
-#   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。
-#   current / list を読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
-# pending-owner: 読み取り専用。子ごとに、同じ repoId・linkedIssue が <N>・archive されていないワークツリーの
-#   comment が epic-stopped-seen（親が受けたまま、子が mark resumed を付けていない）のものがあれば
-#   `pending <N>` を 1 行ずつ出して exit 0（orca worktree set は呼ばない）。起動し直した親が、主の返事待ちの子を
-#   出し直す対象を集める。一覧を読めなければ stdout 空で exit 1
+#   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。reaped の子は記録を消す。
+#   orca・jq が無い・今のワークツリーを読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
+# pending-owner: 読み取り専用。子ごとに、今のワークツリーを parent_worktree に持つ記録の stop が stopped-seen
+#   （親が受けたまま、子が mark resumed を付けていない）なら `pending <N>` を 1 行ずつ出して exit 0（記録も Orca の印も
+#   書かない）。読めない記録の子は飛ばす。起動し直した親が、主の返事待ちの子を出し直す対象を集める。
+#   jq が無い・今のワークツリーを読めなければ stdout 空で exit 1
+# adopt: 記録の無い子ごとに、`orca worktree list --json` の、repoId が今のワークツリーと同じ・linkedIssue が子・
+#   archive されていない・parentWorktreeId が今のワークツリーの id のワークツリーを探す。ちょうど 1 つなら path・
+#   branch と、workspaceStatus（completed → done、in-review → waiting、ほか → running）と comment（epic-stopped →
+#   stopped、epic-stopped-seen → stopped-seen、epic-resumed → resumed、ほか → 空）を写し、base を
+#   EPIC_DISPATCH_BASE（空なら main）、launcher を orca、session と launch_failed を空にした記録を作って
+#   `adopted <N>`。読める記録があれば `skipped <N>`、読めない記録なら `failed <N> state-unreadable`、該当が無ければ（別リポジトリの子を含む）`none <N>`、2 つ以上は
+#   `failed <N> ambiguous`、記録を書けなければ `failed <N>`。orca・jq が無い・Orca 管理外・一覧を読めない・origin を読めなければ stdout 空で exit 1。
+#   failed があれば exit 1
+# clear: <epic>（^[0-9]+$）の状態ディレクトリ（EPIC_STATE_ROOT 直下の <o>.<r>-<E>）を、残っている記録の子を stderr に
+#   出してから消して `cleared <epic>`、無ければ `none <epic>`（どちらも exit 0）。EPIC_STATE_ROOT が空・/ や $HOME
+#   そのもの・名前が / か .. を含む・シンボリックリンク・origin を読めないときは何も消さずに exit 1
 # max-parallel: 同時に枠を使う子の上限を stdout に数字 1 行で出して exit 0（orca / gh / git を呼ばない）。
 #   EPIC_DISPATCH_MAX_PARALLEL（1 以上の整数。空・0・数字以外は使い方を出して exit 1）があればその値、
 #   無ければ物理メモリの GiB（`sysctl -n hw.memsize` のバイト、読めなければ
@@ -157,8 +184,14 @@
 # 「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」
 # 「Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る」
 # 「epic-dispatch.sh は同時に枠を使う子の上限を環境変数か物理メモリから決める」
-# 「epic-dispatch.sh launch は空いた枠の分だけ子を起動し、残りを deferred で出す」が正本。
+# 「epic-dispatch.sh launch は空いた枠の分だけ子を起動し、残りを deferred で出す」と、
+# 状態の記録（置き場・項目・排他・adopt・clear・launch の書く順・枠の数え方）は openspec の
+# dev-workflow-epic-state spec が正本。
 set -uo pipefail
+
+# 状態の記録の読み書き（置き場・排他・照合）は epic-state.sh に置く
+# shellcheck source=epic-state.sh
+. "${BASH_SOURCE[0]%/*}/epic-state.sh"
 
 usage() {
   cat >&2 <<'EOF'
@@ -171,6 +204,8 @@ usage:
   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
   epic-dispatch.sh reap <child>...
   epic-dispatch.sh pending-owner <child>...
+  epic-dispatch.sh adopt <epic> <child>...
+  epic-dispatch.sh clear <epic>
   epic-dispatch.sh max-parallel
 EOF
   exit 1
@@ -178,47 +213,96 @@ EOF
 
 is_num() { [[ "$1" =~ ^[0-9]+$ ]]; }
 
-# 子の番号がすべて数字であることを確かめる（1 件でも違えば使い方を出して exit 1）
+# 子の引数がすべて番号だけか <owner>/<repo>#<N> であることを確かめる（1 件でも違えば使い方を出して exit 1）
 check_children() {
   local n
   for n in "$@"; do
-    is_num "$n" || { echo "not an issue number: $n" >&2; usage; }
+    es_valid_arg "$n" || { echo "not an issue number or <owner>/<repo>#<number>: $n" >&2; usage; }
   done
 }
 
-# 今のワークツリーが、issue の付いた親ワークツリーを持つ（親の launch が作った子）なら、
-# 親の linkedIssue を stdout に出す。そうでなければ何も出さない
-# （<orca worktree current --json の出力>）。親を読めないときは stderr に理由を出し、何も出さない。
-# 一覧は親があるときだけ読む。親があるのに一覧を読めなかったときだけ exit 1 を返す
-# （route は戻り値を見ずに子ではないとして進み、launch は止まる）
-parent_from_worktree() {
-  local pid list
-  command -v jq >/dev/null 2>&1 || { echo "could not read the parent worktree (jq is not on PATH)" >&2; return 0; }
-  pid="$(printf '%s' "$1" | jq -r '.result.worktree.parentWorktreeId // empty' 2>/dev/null)"
-  [ -n "$pid" ] || return 0
-  if ! list="$(orca worktree list --json)" \
-    || ! printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1; then
-    echo "could not read the parent worktree (orca worktree list --json)" >&2
-    return 1
+# エピックへのコメントに書く子の呼び方（番号だけは #N、<owner>/<repo>#<N> はそのまま）
+child_label() { case "$1" in *"#"*) printf '%s' "$1" ;; *) printf '#%s' "$1" ;; esac; }
+
+# gh issue comment に渡す子 issue の指し方（番号だけは番号、<owner>/<repo>#<N> は issue の URL）
+child_ref() { case "$1" in *"#"*) printf 'https://github.com/%s/issues/%s' "${1%%#*}" "${1##*#}" ;; *) printf '%s' "$1" ;; esac; }
+
+# 今のワークツリーの最上位のパス（読めなければ空で 1）
+toplevel() { git rev-parse --show-toplevel 2>/dev/null; }
+
+# 親の側: 子の引数に当たる記録を探す（<親のパス> <子の引数>）。ES_HIT にパス。戻り値は es_pick と同じ
+# （0 = 1 件 / 1 = 0 件 / 2 = 2 件以上 / 3 = 読めない記録）
+child_record() { es_pick "$(es_find_for_parent "$1" "$2")"; }
+
+# 親の側の前提: jq と今のワークツリーの最上位のパス（PARENT_TOP に入れる）。無ければ stderr に理由を出して exit 1
+PARENT_TOP=""
+need_parent() {
+  command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
+  PARENT_TOP="$(toplevel)" && [ -n "$PARENT_TOP" ] \
+    || { echo "not in a git worktree (git rev-parse --show-toplevel failed)" >&2; exit 1; }
+}
+
+# 子 issue を gh api で読むパス（<子の引数> <記録のパスか空>）。記録の repo がエピックと同じ子と、番号だけで渡した
+# 記録の無い子は今のまま repos/{owner}/{repo}（gh が今のワークツリーのリポジトリに置き換える）。記録の repo が
+# エピックと違う子は repos/<repo>、<owner>/<repo>#<N> で渡した記録の無い子は引数のリポジトリ
+issue_api() {
+  local n="$1" rec="${2-}" r="" e="" num
+  num="${n##*#}"
+  if [ -n "$rec" ]; then
+    r="$(es_get "$rec" repo)"; e="$(es_get "$rec" epic)"
   fi
-  printf '%s' "$list" | jq -r --arg p "$pid" \
-    '[.result.worktrees[] | select(.id == $p) | .linkedIssue | select(. != null)][0] // empty'
+  if [ -n "$r" ] && [ -n "$e" ]; then
+    if [ "$r" != "${e%%#*}" ]; then printf 'repos/%s/issues/%s' "$r" "$num"; return 0; fi
+  elif [ "$n" != "$num" ]; then
+    printf 'repos/%s/issues/%s' "$(es_lower "${n%%#*}")" "$num"; return 0
+  fi
+  printf 'repos/{owner}/{repo}/issues/%s' "$num"
+}
+
+# Orca の部品: 記録の launcher が orca で orca が PATH にあれば、記録を書いたあとに Orca の印へ写す
+# （<記録のパス> <set の --worktree の値> <set の引数...>）。写せなくても成功扱いで、stderr に出す
+mirror_orca() {
+  local rec="$1" wt="$2"
+  shift 2
+  [ "$(es_get "$rec" launcher)" = orca ] || return 0
+  command -v orca >/dev/null 2>&1 || return 0
+  orca worktree set --worktree "$wt" "$@" >&2 \
+    || echo "could not mirror the state to Orca (orca worktree set --worktree $wt $*); the state record is still written: $rec" >&2
+  return 0
+}
+
+# 今のワークツリーが記録の worktree に当たる（親の launch / adopt が作った子）なら、記録の epic を
+# 親エピックの呼び方（エピックが子と同じリポジトリなら #<E>、違えば <owner>/<repo>#<E>）で出す。
+# 当たらなければ何も出さない。jq が無い・記録が読めないときは子ではないとして何も出さない
+parent_from_state() {
+  local top f e r
+  command -v jq >/dev/null 2>&1 || return 0
+  [ -n "$ES_ROOT" ] || return 0
+  top="$(toplevel)" || return 0
+  f="$(es_find_by_worktree "$top" | head -n 1)"
+  [ -n "$f" ] || return 0
+  e="$(es_get "$f" epic)"; r="$(es_get "$f" repo)"
+  [ -n "$e" ] || return 0
+  if [ "${e%%#*}" = "$r" ]; then printf '#%s' "${e##*#}"; else printf '%s' "$e"; fi
 }
 
 cmd_route() {
   check_children "$@"
   # 並列起動された子のセッション（起動し直したものを含む）の中では、エピックをさらに展開しない。
-  # 端末に付けた環境変数か、ワークツリーの親子関係のどちらかで判定する
-  local epic="${EPIC_DISPATCH_PARENT_EPIC-}" current managed=0
-  if [ -z "$epic" ] && command -v orca >/dev/null 2>&1 \
-    && current="$(orca worktree current --json 2>/dev/null)"; then
-    managed=1
-    epic="$(parent_from_worktree "$current")"
+  # 端末に付けた環境変数か、今のワークツリーを worktree に持つ状態の記録のどちらかで判定する
+  local epic="" managed=0
+  if [ -n "${EPIC_DISPATCH_PARENT_EPIC-}" ]; then
+    case "$EPIC_DISPATCH_PARENT_EPIC" in *"#"*) epic="$EPIC_DISPATCH_PARENT_EPIC" ;; *) epic="#$EPIC_DISPATCH_PARENT_EPIC" ;; esac
+  else
+    epic="$(parent_from_state)"
   fi
   if [ -n "$epic" ]; then
-    echo "parent epic: #$epic" >&2
+    echo "parent epic: $epic" >&2
     echo nested
     return 0
+  fi
+  if command -v orca >/dev/null 2>&1 && orca worktree current --json >/dev/null 2>&1; then
+    managed=1
   fi
   if [ "$#" -ge 1 ] && [ "$managed" -eq 1 ]; then
     echo orca
@@ -399,20 +483,21 @@ cmd_launch() {
   command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
 
-  local current repo parent list
+  local current repo parent list erepo
   current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
   repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty')"
   [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+  parent="$(git rev-parse --show-toplevel)" && [ -n "$parent" ] || { echo "git rev-parse failed" >&2; exit 1; }
   # 起動し直した子のセッション（環境変数が無い）でも、子ワークツリーを作らず、今のワークツリーの issue も書き換えない。
-  # 親があるのに一覧を読めないときは子かどうかを決められないので、fetch と set より前のここで止まる
-  # （先へ進むと、子のワークツリーの issue をエピック番号で書き換えてから止まることになる）
-  local parent_epic
-  parent_epic="$(parent_from_worktree "$current")" || exit 1
-  if [ -n "$parent_epic" ]; then
-    echo "this session is a child of epic #$parent_epic (parent worktree); child epics are not expanded here" >&2
+  # 今のワークツリーを worktree に持つ記録があれば子（fetch と set より前のここで止まる）
+  local own
+  own="$(es_find_by_worktree "$parent" | head -n 1)"
+  if [ -n "$own" ]; then
+    echo "this session is a child of epic $(es_get "$own" epic) (state record $own); child epics are not expanded here" >&2
     exit 1
   fi
-  parent="$(git rev-parse --show-toplevel)" || { echo "git rev-parse failed" >&2; exit 1; }
+  # 記録を書く先のエピックのリポジトリ（origin が読めなければ何も作らない。set より前に読む）
+  erepo="$(es_epic_repo)" || exit 1
   git fetch origin "$base" >&2 || { echo "git fetch origin $base failed" >&2; exit 1; }
   orca worktree set --worktree "path:$parent" --issue "$epic" >&2 \
     || { echo "orca worktree set failed" >&2; exit 1; }
@@ -420,124 +505,174 @@ cmd_launch() {
   printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
     || { echo "orca worktree list --json is not readable" >&2; exit 1; }
 
-  # 枠を使っている子を数える（完了の印・止まった印・閉じた子は数えない。state を読めない子は数える）
-  local self cn cst in_use=0 in_use_list="" free
-  self="$(printf '%s' "$current" | jq -r '.result.worktree.id // empty' 2>/dev/null)"
-  if [ -z "$self" ]; then
-    echo "orca worktree current --json has no id; counting no children in use" >&2
-  else
-    for cn in $(printf '%s' "$list" | jq -r --arg r "$repo" --arg p "$self" \
-      '.result.worktrees[] | select(.repoId == $r and .parentWorktreeId == $p and .isArchived != true
-        and .linkedIssue != null and .workspaceStatus != "completed"
-        and ((.comment // "") | . != "epic-stopped" and . != "epic-stopped-seen"))
-        | .linkedIssue | tostring' 2>/dev/null); do
-      cst="$(gh api "repos/{owner}/{repo}/issues/$cn" --jq .state)" || cst=""
-      [ "$cst" = closed ] && continue
-      [ "$cst" = open ] || echo "could not read the state of #$cn; counting it as in use" >&2
-      in_use=$(( in_use + 1 )); in_use_list="$in_use_list #$cn"
-    done
-  fi
+  # 枠を使っている子を状態の記録から数える。全エピックのディレクトリを横断し、parent_worktree が今のワークツリーの
+  # 記録のうち、done・止まった印・閉じた子は数えない。state を読めない子と、ほかの読めない記録は 1 枠に数える
+  local rf rec cst clabel in_use=0 in_use_list="" in_use_files=" " free
+  for rf in "$ES_ROOT"/*/*.json; do
+    [ -f "$rf" ] || continue
+    if ! rec="$(es_read "$rf")"; then
+      echo "unreadable state record (counted as in use): $rf" >&2
+      in_use=$(( in_use + 1 )); in_use_list="$in_use_list $rf"; in_use_files="$in_use_files$rf "; continue
+    fi
+    printf '%s' "$rec" | jq -e --arg p "$parent" '.parent_worktree == $p and .status != "done"
+      and .stop != "stopped" and .stop != "stopped-seen"' >/dev/null 2>&1 || continue
+    clabel="$(printf '%s' "$rec" | jq -r 'if .repo == (.epic | split("#")[0]) then "#\(.number)" else .child end')"
+    cst="$(gh api "$(issue_api "${clabel#\#}" "$rf")" --jq .state)" || cst=""
+    [ "$cst" = closed ] && continue
+    [ "$cst" = open ] || echo "could not read the state of $clabel; counting it as in use" >&2
+    in_use=$(( in_use + 1 )); in_use_list="$in_use_list $clabel"; in_use_files="$in_use_files$rf "
+  done
   echo "max parallel $max_par ($max_par_src); in use $in_use:$in_use_list" >&2
   free=$(( max_par - in_use )); [ "$free" -ge 0 ] || free=0
 
-  local n prompt body out rc child handle sent retry failed=0 seen=" "
+  local n num f cur prompt body out rc child cbranch handle sent retry failed=0 seen=" " stage shell_rc hit own
   for n in "$@"; do
+    es_parse_arg "$n"; num="$ES_ARG_NUM"
     case "$seen" in
-      *" $n "*) echo "skipped $n"; continue ;;
+      *" ${ES_ARG_REPO:-$erepo}#$num "*) echo "skipped $n"; continue ;;
     esac
-    seen="$seen$n "
-    if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$n" \
+    seen="$seen${ES_ARG_REPO:-$erepo}#$num "
+    # この change ではエピックと別のリポジトリの子を作らない（枠も使わない）
+    if [ -n "$ES_ARG_REPO" ] && [ "$ES_ARG_REPO" != "$erepo" ]; then
+      echo "children in another repository are not launched yet: $n" >&2
+      echo "failed $n other-repo"; failed=1; continue
+    fi
+    f="$(es_path "$erepo" "$epic" "$erepo" "$num")"
+    own=0
+    if [ -e "$f" ]; then
+      if ! cur="$(es_read "$f")"; then
+        echo "unreadable state record: $f" >&2
+        echo "failed $n state-unreadable"; failed=1; continue
+      fi
+      # 作ったワークツリーがある記録は起動済み。worktree が空の記録（書いたあとで殺された）は上書きして作る
+      if [ -n "$(printf '%s' "$cur" | jq -r '.worktree')" ]; then
+        echo "skipped $n"; continue
+      fi
+      # この記録は上の枠の数えで使用中に入っていることがある。その子自身は空き枠をもう 1 つ減らさない
+      case "$in_use_files" in *" $f "*) own=1 ;; esac
+    fi
+    # 記録の無い Orca のワークツリー（この変更の前に起動した子）も起動済み。取り込みは adopt。
+    # worktree が空の自分の記録があれば、一覧がちょうど 1 つのときに path と branch を書き足してから skipped にする
+    if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$num" \
       'any(.result.worktrees[]; .repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)' \
       >/dev/null 2>&1; then
+      if [ -e "$f" ]; then
+        hit="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$num" \
+          '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)] | if length == 1 then .[0] else empty end' 2>/dev/null)"
+        if [ -n "$hit" ]; then
+          es_modify "$f" '.worktree = $w | .branch = $b' --arg w "$(printf '%s' "$hit" | jq -r '.path // empty')" \
+            --arg b "$(printf '%s' "$hit" | jq -r '.branch // empty' | sed 's#^refs/heads/##')" >/dev/null \
+            || echo "could not write the worktree to the state record: $f" >&2
+        fi
+      fi
       echo "skipped $n"
       continue
     fi
     # 空き枠が無ければ作らず注意書きも投稿しない。create に進む子は結果によらず 1 枠を使う
-    if [ "$free" -le 0 ]; then
-      echo "deferred $n"; continue
+    # （worktree が空の自分の記録が既に枠に入っているときは、その 1 枠を使う）
+    if [ "$own" -eq 0 ]; then
+      if [ "$free" -le 0 ]; then
+        echo "deferred $n"; continue
+      fi
+      free=$(( free - 1 ))
     fi
-    free=$(( free - 1 ))
-    prompt="/develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
+    # 子のワークツリーを作る前に記録を書く（作成に失敗したら消す）
+    if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$erepo" "$num" orca "$parent" "" "" "$base" running "")"; then
+      echo "could not write the state record: $f" >&2
+      echo "failed $n"; failed=1; continue
+    fi
+    prompt="/develop #$num （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
     [ -n "$note" ] && prompt="$prompt $note"
-    out="$(orca worktree create --name "issue-$n" --issue "$n" --base-branch "origin/$base" \
+    out="$(orca worktree create --name "issue-$num" --issue "$num" --base-branch "origin/$base" \
       --parent-worktree "path:$parent" --json)"
     rc=$?
     printf '%s\n' "$out" >&2
     if [ "$rc" -ne 0 ]; then
+      rm -f "$f"
       echo "failed $n"; failed=1; continue
     fi
     # 注意書きを子 issue に残す（起動し直したセッションにも届く）。このあとの失敗でワークツリーが
     # 残れば次の launch では skipped になるので、端末より前に投稿する。失敗しても起動は続ける
     if [ -n "$note" ]; then
       body="$(printf '親エピックからの注意書き: #%s\n\n%s' "$epic" "$note")"
-      if ! gh issue comment "$n" --body "$body" >&2; then
-        echo "note not posted to #$n. post it with the command below:" >&2
-        echo "gh issue comment $n --body $(shq "$body")" >&2
+      if ! gh issue comment "$num" --body "$body" >&2; then
+        echo "note not posted to #$num. post it with the command below:" >&2
+        echo "gh issue comment $num --body $(shq "$body")" >&2
       fi
     fi
     child="$(printf '%s' "$out" | jq -r '.result.worktree.path // empty' 2>/dev/null)"
     if [ -z "$child" ]; then
-      echo "no worktree path for #$n in orca worktree create --json" >&2
+      echo "no worktree path for #$num in orca worktree create --json" >&2
+      es_modify "$f" '.launch_failed = "create"' >/dev/null || true
       echo "failed $n"; failed=1; continue
     fi
+    cbranch="$(printf '%s' "$out" | jq -r '.result.worktree.branch // empty' 2>/dev/null)"
+    es_modify "$f" '.worktree = $w | .branch = $b' --arg w "$child" --arg b "${cbranch#refs/heads/}" >/dev/null \
+      || echo "could not write the worktree to the state record: $f" >&2
     # worktree create が空のシェルの端末を 1 つ作っていれば、新しい端末は作らずそこで起動する
     # （端末が 2 つになると reply が ambiguous-terminal で止まる）。0 個なら従来どおり作る
-    handle=""; shell_rc=0
+    handle=""; shell_rc=0; stage=""
     shell_start "$child" "$agent_cmd" || shell_rc=$?
     if [ "$shell_rc" -eq 0 ]; then
       handle="$SHELL_HANDLE"
     elif [ "$shell_rc" -eq 3 ]; then
-      echo "failed $n"; failed=1; continue
+      stage=terminal
     else
       out="$(orca terminal create --worktree "path:$child" --command "$agent_cmd" --json)"
       rc=$?
       printf '%s\n' "$out" >&2
       [ "$rc" -eq 0 ] && handle="$(printf '%s' "$out" | jq -r '.result.terminal.handle // empty' 2>/dev/null)"
+      if [ -z "$handle" ]; then
+        echo "no terminal handle for #$num from orca terminal create --json" >&2
+        recreate_hint "$child" "$agent_cmd" "$prompt" "$submit"
+        stage=terminal
+      fi
     fi
-    if [ -z "$handle" ]; then
-      echo "no terminal handle for #$n from orca terminal create --json" >&2
-      recreate_hint "$child" "$agent_cmd" "$prompt" "$submit"
-      echo "failed $n"; failed=1; continue
-    fi
-    if ! orca terminal wait --terminal "$handle" --for tui-idle --timeout-ms "$ready" --json >&2; then
+    if [ -z "$stage" ] && ! orca terminal wait --terminal "$handle" --for tui-idle --timeout-ms "$ready" --json >&2; then
       resend_hint "$handle" "$prompt" "$submit"
-      echo "failed $n"; failed=1; continue
+      stage=ready
     fi
-    sent="$(orca terminal send --terminal "$handle" --text "$prompt" --enter --wait-submit "$submit" --json)"
-    rc=$?
-    printf '%s\n' "$sent" >&2
-    if [ "$rc" -eq 0 ] && turn_started "$sent"; then
-      echo "launched $n"
-    else
+    if [ -z "$stage" ]; then
+      sent="$(orca terminal send --terminal "$handle" --text "$prompt" --enter --wait-submit "$submit" --json)"
+      rc=$?
+      printf '%s\n' "$sent" >&2
+      if [ "$rc" -eq 0 ] && turn_started "$sent"; then
+        es_modify "$f" '.session = $s | .launch_failed = ""' --arg s "$handle" >/dev/null \
+          || echo "could not write the session to the state record: $f" >&2
+        echo "launched $n"; continue
+      fi
       retry="$(retry_id "$sent")"
       resend_hint "$handle" "$prompt" "$submit" "$retry"
-      echo "failed $n"; failed=1
+      stage=send
     fi
+    # ワークツリーを作ったあとの失敗は記録を残し、段を書く（次の launch では skipped）
+    es_modify "$f" '.launch_failed = $st | .session = $s' --arg st "$stage" --arg s "$handle" >/dev/null \
+      || echo "could not write launch_failed to the state record: $f" >&2
+    echo "failed $n"; failed=1
   done
   exit "$failed"
 }
 
-# 子の端末に、送り手を付けた返事を届ける（<relaunch 0|1> <parent|owner> <epic> <child> <text> <repoId>）。
-# agent_setup を済ませてから呼ぶ。stdout に `sent <child>` / `relaunched <child>` / `failed <child> <理由>` の
-# 1 行を出し、failed なら 1 を返す。orca 自身の出力は stderr。reply と wait --resolve が共用する
+# 子の端末に、送り手を付けた返事を届ける（<relaunch 0|1> <parent|owner> <epic> <child> <text>）。
+# 子のワークツリーは、親のワークツリー（PARENT_TOP）の記録の worktree から読む。need_parent と agent_setup を
+# 済ませてから呼ぶ。stdout に `sent <child>` / `relaunched <child>` / `failed <child> <理由>` の
+# 1 行を出し、failed なら 1 を返す。orca 自身の出力は stderr。reply・notify-closed・wait --resolve が共用する
 deliver_reply() {
-  local relaunch="$1" as="$2" epic="$3" n="$4" text="$5" repo="$6"
-  local msg list cands count path terms tcount handle out rc sent prompt
+  local relaunch="$1" as="$2" epic="$3" n="$4" text="$5"
+  local msg rec path terms tcount handle out rc sent prompt
   case "$as" in
     parent) msg="親エピック #$epic の判断（主の承認ではない）: $text" ;;
     *) msg="主の返事（親エピック #$epic 経由）: $text" ;;
   esac
-  if ! list="$(orca worktree list --json)" \
-    || ! printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1; then
-    echo "orca worktree list --json is not readable" >&2
-    echo "failed $n list"; return 1
-  fi
-  cands="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$n" \
-    '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)]')"
-  count="$(printf '%s' "$cands" | jq 'length')"
-  [ "$count" -eq 0 ] && { echo "failed $n no-worktree"; return 1; }
-  [ "$count" -gt 1 ] && { echo "failed $n ambiguous-worktree"; return 1; }
-  path="$(printf '%s' "$cands" | jq -r '.[0].path // empty')"
+  child_record "$PARENT_TOP" "$n"
+  case $? in
+    0) ;;
+    2) echo "failed $n ambiguous-worktree"; return 1 ;;
+    3) echo "failed $n state-unreadable"; return 1 ;;
+    *) echo "failed $n no-worktree"; return 1 ;;
+  esac
+  rec="$ES_HIT"
+  path="$(es_get "$rec" worktree)"
   [ -n "$path" ] || { echo "failed $n no-worktree"; return 1; }
   if ! terms="$(orca terminal list --worktree "path:$path" --json)" \
     || ! tcount="$(printf '%s' "$terms" \
@@ -569,7 +704,7 @@ deliver_reply() {
   if [ "$tcount" -gt 0 ]; then
     orca terminal close --worktree "path:$path" --all --json >&2 || { echo "failed $n close"; return 1; }
   fi
-  prompt="/develop #$n （エピック #$epic の子。返事を受けて起動し直し） $msg"
+  prompt="/develop $(child_label "$n") （エピック #$epic の子。返事を受けて起動し直し） $msg"
   out="$(orca terminal create --worktree "path:$path" --command "$agent_cmd" --json)"
   rc=$?
   printf '%s\n' "$out" >&2
@@ -587,6 +722,8 @@ deliver_reply() {
   rc=$?
   printf '%s\n' "$sent" >&2
   if [ "$rc" -eq 0 ] && turn_started "$sent"; then
+    # 起動し直した子のセッションの端末を記録に残す（見張りの判定には使わない。書けなくても送信は成功）
+    es_modify "$rec" '.session = $s' --arg s "$handle" >/dev/null || echo "could not write the session to the state record: $rec" >&2
     echo "relaunched $n"; return 0
   fi
   resend_hint "$handle" "$prompt" "$submit" "$(retry_id "$sent")"
@@ -606,16 +743,12 @@ cmd_reply() {
   case "$as" in parent|owner) ;; *) echo "--as must be parent or owner" >&2; usage ;; esac
   [ "$#" -eq 3 ] || usage
   is_num "$1" || { echo "not an issue number: $1" >&2; usage; }
-  is_num "$2" || { echo "not an issue number: $2" >&2; usage; }
+  check_children "$2"
   [ -n "$3" ] || { echo "the reply text must not be empty" >&2; usage; }
   agent_setup "$1" || usage
   command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
-  command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
-  local current repo
-  current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
-  repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
-  [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
-  deliver_reply "$relaunch" "$as" "$1" "$2" "$3" "$repo" || exit 1
+  need_parent
+  deliver_reply "$relaunch" "$as" "$1" "$2" "$3" || exit 1
   exit 0
 }
 
@@ -632,12 +765,16 @@ cmd_notify_closed() {
   done
   [ "$#" -eq 2 ] || usage
   is_num "$1" || { echo "not an issue number: $1" >&2; usage; }
-  is_num "$2" || { echo "not an issue number: $2" >&2; usage; }
+  check_children "$2"
   local epic="$1" n="$2"
   agent_setup "$epic" || usage
-  local info state reason issue_url
-  if ! info="$(gh api "repos/{owner}/{repo}/issues/$n" --jq '[.state, (.state_reason // ""), .html_url] | join(" ")')"; then
-    echo "could not read issue #$n" >&2
+  need_parent
+  local info state reason issue_url rec="" rrc api
+  child_record "$PARENT_TOP" "$n"; rrc=$?
+  [ "$rrc" -eq 0 ] && rec="$ES_HIT"
+  api="$(issue_api "$n" "$rec")"
+  if ! info="$(gh api "$api" --jq '[.state, (.state_reason // ""), .html_url] | join(" ")')"; then
+    echo "could not read issue $(child_label "$n")" >&2
     echo "failed $n issue"; exit 1
   fi
   state="$(printf '%s' "$info" | awk '{print $1}')"
@@ -646,48 +783,37 @@ cmd_notify_closed() {
   case "$state" in
     closed) ;;
     open) echo "skipped $n not-closed"; exit 0 ;;
-    *) echo "issue #$n state is not readable: $info" >&2; echo "failed $n issue"; exit 1 ;;
+    *) echo "issue $(child_label "$n") state is not readable: $info" >&2; echo "failed $n issue"; exit 1 ;;
   esac
   [ "$reason" = completed ] || { echo "skipped $n not-completed"; exit 0; }
-  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
-  command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
-  local current repo list cands count st cm
-  current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
-  repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
-  [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
-  if ! list="$(orca worktree list --json)" \
-    || ! printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1; then
-    echo "orca worktree list --json is not readable" >&2
-    echo "failed $n list"; exit 1
-  fi
-  cands="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$n" \
-    '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)]')"
-  count="$(printf '%s' "$cands" | jq 'length')"
-  [ "$count" -eq 0 ] && { echo "skipped $n no-worktree"; exit 0; }
-  [ "$count" -gt 1 ] && { echo "failed $n ambiguous-worktree"; exit 1; }
-  st="$(printf '%s' "$cands" | jq -r '.[0].workspaceStatus // empty')"
-  cm="$(printf '%s' "$cands" | jq -r '.[0].comment // empty')"
-  [ "$st" = completed ] && { echo "skipped $n already-done"; exit 0; }
-  case "$cm" in
-    epic-stopped|epic-stopped-seen) ;;
+  case "$rrc" in
+    0) ;;
+    2) echo "failed $n ambiguous-worktree"; exit 1 ;;
+    3) echo "failed $n state-unreadable"; exit 1 ;;
+    *) echo "skipped $n no-worktree"; exit 0 ;;
+  esac
+  [ "$(es_get "$rec" status)" = "done" ] && { echo "skipped $n already-done"; exit 0; }
+  case "$(es_get "$rec" stop)" in
+    stopped|stopped-seen) ;;
     *) echo "skipped $n not-stopped"; exit 0 ;;
   esac
+  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
   # 停止の記録は、信頼できる投稿者の最新の `子の停止: 主の返事待ち` のコメント（無ければ子 issue の URL）
   local url
-  url="$(gh api "repos/{owner}/{repo}/issues/$n/comments" --paginate --jq \
+  url="$(gh api "$api/comments" --paginate --jq \
     '.[] | select((.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")
       and (((.body // "") | split("\n")[0] | rtrimstr("\r")) == "子の停止: 主の返事待ち")) | .html_url' 2>/dev/null \
     | awk 'NF { u = $0 } END { print u }')"
   [ -n "$url" ] || url="$issue_url"
   local text res line
-  text="記録先の issue #$n は completed で閉じた。完了報告を書き、mark done で終える（停止の記録: ${url}）"
-  res="$(deliver_reply "$relaunch" parent "$epic" "$n" "$text" "$repo")"
+  text="記録先の issue $(child_label "$n") は completed で閉じた。完了報告を書き、mark done で終える（停止の記録: ${url}）"
+  res="$(deliver_reply "$relaunch" parent "$epic" "$n" "$text")"
   case "$res" in
     "sent $n"|"relaunched $n") ;;
     *) echo "$res"; exit 1 ;;
   esac
   # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに送っていない判断が残る）
-  line="親の判断: 子 #$n 通した — 記録先が completed で閉じたので、完了報告と mark done を促した $url"
+  line="親の判断: 子 $(child_label "$n") 通した — 記録先が completed で閉じたので、完了報告と mark done を促した $url"
   if gh issue comment "$epic" --body "$line" >&2; then
     echo "notified $n"; exit 0
   fi
@@ -696,50 +822,55 @@ cmd_notify_closed() {
   exit 0
 }
 
-# 今いるワークスペースに印を付ける（done = completed / waiting = in-review は列、
-# stopped = epic-stopped / resumed = epic-resumed はコメント欄）。
-# 今のワークスペースの linkedIssue が <issue> と一致するときだけ付ける
+# 今いるワークツリーを worktree に持つ自分の記録に印を付ける（done / waiting は status、stopped / resumed は stop）。
+# 記録の number（<owner>/<repo>#<N> で渡したときは repo も）が引数と一致するときだけ書き、書けたら Orca の印へ写す
 cmd_mark() {
   [ "$#" -eq 2 ] || usage
-  local kind="$1" n="$2" status="" comment=""
+  local kind="$1" n="$2" filter set_args
   case "$kind" in
-    done) status=completed ;;
-    waiting) status=in-review ;;
-    stopped) comment="epic-stopped" ;;
-    resumed) comment="epic-resumed" ;;
+    done) filter='.status = "done"'; set_args="--workspace-status completed" ;;
+    waiting) filter='.status = "waiting"'; set_args="--workspace-status in-review" ;;
+    stopped) filter='.stop = "stopped"'; set_args="--comment epic-stopped" ;;
+    resumed) filter='if .stop == "stopped" or .stop == "stopped-seen" then .stop = "resumed" else empty end'
+      set_args="--comment epic-resumed" ;;
     *) usage ;;
   esac
-  is_num "$n" || { echo "not an issue number: $n" >&2; usage; }
-  local current linked
-  if ! command -v orca >/dev/null 2>&1 || ! current="$(orca worktree current --json)"; then
+  es_valid_arg "$n" || { echo "not an issue number or <owner>/<repo>#<number>: $n" >&2; usage; }
+  local top found cnt f num repo rc
+  if ! command -v jq >/dev/null 2>&1 || ! top="$(toplevel)" || [ -z "$top" ] || [ -z "$ES_ROOT" ]; then
     echo "skipped $n no-workspace"
     return 0
   fi
-  linked="$(printf '%s' "$current" | jq -r '.result.worktree.linkedIssue // empty | tostring' 2>/dev/null)"
-  if [ "$linked" != "$n" ]; then
-    echo "this workspace is linked to '${linked}', not #$n" >&2
+  found="$(es_find_by_worktree "$top")"
+  if [ -z "$found" ]; then
+    echo "skipped $n no-workspace"
+    return 0
+  fi
+  cnt="$(printf '%s\n' "$found" | grep -c .)"
+  if [ "$cnt" -gt 1 ]; then
+    echo "more than one state record has this worktree ($top):" >&2
+    printf '%s\n' "$found" >&2
+    echo "failed $n"
+    exit 1
+  fi
+  f="$found"
+  es_parse_arg "$n"
+  num="$(es_get "$f" number)"; repo="$(es_get "$f" repo)"
+  if [ "$num" != "$ES_ARG_NUM" ] || { [ -n "$ES_ARG_REPO" ] && [ "$repo" != "$ES_ARG_REPO" ]; }; then
+    echo "this worktree's state record is for ${repo}#${num}, not $n: $f" >&2
     echo "skipped $n not-linked"
     return 0
   fi
-  # 再開の印は、止まった印（受けた印を含む）があるときだけ付ける
-  if [ "$kind" = resumed ]; then
-    case "$(printf '%s' "$current" | jq -r '.result.worktree.comment // empty' 2>/dev/null)" in
-      epic-stopped|epic-stopped-seen) ;;
-      *) echo "skipped $n not-stopped"; return 0 ;;
-    esac
-  fi
-  local rc
-  if [ -n "$comment" ]; then
-    orca worktree set --worktree current --comment "$comment" >&2; rc=$?
-  else
-    orca worktree set --worktree current --workspace-status "$status" >&2; rc=$?
-  fi
-  if [ "$rc" -eq 0 ]; then
-    echo "marked $n $kind"
-    return 0
-  fi
-  echo "failed $n"
-  exit 1
+  es_modify "$f" "$filter" >/dev/null; rc=$?
+  case "$rc" in
+    0) ;;
+    4) echo "skipped $n not-stopped"; return 0 ;;
+    *) echo "failed $n"; exit 1 ;;
+  esac
+  # shellcheck disable=SC2086
+  mirror_orca "$f" current $set_args
+  echo "marked $n $kind"
+  return 0
 }
 
 # 投稿に失敗したコメントの、投稿し直しのコマンドを stderr に出す（<issue> <本文>）
@@ -791,11 +922,11 @@ PY
 }
 
 # wait --resolve: 止まった子 1 件を判断のコマンドに渡し、結果どおりに送るか子 issue に残す
-# （<epic> <child> <repoId>）。agent_setup を済ませてから呼ぶ。
+# （<epic> <child>）。need_parent と agent_setup を済ませてから呼ぶ。
 # 戻り値 0 = 通して返事を送り、エピックに 1 行残した（出力から外す）/ 2 = 通して送ったが
 # エピックに残せなかった（unrecorded）/ 1 = 主に上げる・判断できなかった（stopped に残す）
 resolve_stopped() {
-  local epic="$1" n="$2" repo="$3"
+  local epic="$1" n="$2"
   local judge="${EPIC_DISPATCH_JUDGE:-$(dirname "$0")/stop-judge.sh}"
   local out rc l1 l2 l3 l4 reason="" reply="" url="" why="" res line body rl wpath
   local head1="親の判断: 判断できなかった"
@@ -814,7 +945,7 @@ resolve_stopped() {
     why="判断の出力を 4 行の形で読めなかった"
   elif [ "$l1" = "判断: 主に上げる" ]; then
     body="$(printf '親の判断: 主に上げる\n停止の記録: %s\n%s' "$url" "$reason")"
-    gh issue comment "$n" --body "$body" >&2 || repost_hint "$n" "$body"
+    gh issue comment "$(child_ref "$n")" --body "$body" >&2 || repost_hint "$(child_ref "$n")" "$body"
     return 1
   elif [ "$l1" != "判断: 通す" ]; then
     why="判断の出力の 1 行目が「判断: 通す」でも「判断: 主に上げる」でもない"
@@ -822,14 +953,15 @@ resolve_stopped() {
     why="判断は通すだが、返事の行が空"
   else
     rl=0
-    wpath="$(orca worktree list --json 2>/dev/null | jq -r --arg r "$repo" --arg n "$n" \
-      '[.result.worktrees[]? | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true) | .path] | if length == 1 then .[0] else empty end' 2>/dev/null)"
+    # 子のワークツリーのパスは記録の worktree から読む（読めなければそのまま送る）
+    wpath=""
+    if child_record "$PARENT_TOP" "$n"; then wpath="$(es_get "$ES_HIT" worktree)"; fi
     [ -z "$wpath" ] || rl="$(decide_relaunch "$wpath")"
-    res="$(deliver_reply "$rl" parent "$epic" "$n" "$reply" "$repo")"
+    res="$(deliver_reply "$rl" parent "$epic" "$n" "$reply")"
     case "$res" in
       "sent $n"|"relaunched $n")
         # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに通していない判断が残る）
-        line="親の判断: 子 #$n 通した — $reason $url"
+        line="親の判断: 子 $(child_label "$n") 通した — $reason $url"
         if gh issue comment "$epic" --body "$line" >&2; then
           return 0
         fi
@@ -843,7 +975,7 @@ resolve_stopped() {
   # 出力に引用されうる）。見たいときのために stderr にだけ出す
   [ -n "$out" ] && printf 'judge output for #%s:\n%s\n' "$n" "$out" >&2
   body="$(printf '%s\n停止の記録: %s\n%s' "$head1" "${url:-不明}" "$why")"
-  gh issue comment "$n" --body "$body" >&2 || repost_hint "$n" "$body"
+  gh issue comment "$(child_ref "$n")" --body "$body" >&2 || repost_hint "$(child_ref "$n")" "$body"
   return 1
 }
 
@@ -857,7 +989,7 @@ cmd_wait() {
       --timeout) [ "$#" -ge 2 ] || usage; timeout="$2"; shift 2 ;;
       --watch-done)
         [ "$#" -ge 2 ] || usage
-        is_num "$2" || { echo "--watch-done needs an issue number: $2" >&2; usage; }
+        es_valid_arg "$2" || { echo "--watch-done needs an issue number or <owner>/<repo>#<number>: $2" >&2; usage; }
         case " $watch " in *" $2 "*) ;; *) watch="$watch $2" ;; esac
         shift 2 ;;
       --watch-stopped) watchstop=1; shift ;;
@@ -883,22 +1015,23 @@ cmd_wait() {
     is_num "${EPIC_DISPATCH_RELAUNCH_MIN_TOKENS-150000}" || { echo "EPIC_DISPATCH_RELAUNCH_MIN_TOKENS must be a non-negative integer" >&2; usage; }
   fi
 
-  local repo="" current list
+  # 子の記録は親のワークツリー（今のワークツリー）で探す。印を見るときは jq と今のワークツリーが要る。
+  # 印を見ないときも、jq と今のワークツリーが読めれば記録で gh の呼び先（別リポジトリの子）を決める
   if [ -n "$watch" ] || [ "$watchstop" -eq 1 ]; then
-    command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH (needed by --watch-done / --watch-stopped)" >&2; exit 1; }
-    command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH (needed by --watch-done / --watch-stopped)" >&2; exit 1; }
-    current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
-    repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
-    [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+    need_parent
+  elif command -v jq >/dev/null 2>&1; then
+    PARENT_TOP="$(toplevel)" || PARENT_TOP=""
   fi
 
-  local fails=0 n state closed failed marked stopped wsfail paths p ok unrecorded still
+  local fails=0 n state closed failed marked stopped wsfail unrecorded still rec f
   local errf; errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
   SECONDS=0
   while :; do
     closed=""; failed=""; marked=""; stopped=""; unrecorded=""; wsfail=0; : > "$errf"
     for n in "$@"; do
-      if state="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state 2>>"$errf")"; then
+      rec=""
+      if [ -n "$PARENT_TOP" ] && child_record "$PARENT_TOP" "$n" 2>/dev/null; then rec="$ES_HIT"; fi
+      if state="$(gh api "$(issue_api "$n" "$rec")" --jq .state 2>>"$errf")"; then
         case "$state" in
           closed) closed="$closed $n" ;;
           open) ;;
@@ -908,48 +1041,42 @@ cmd_wait() {
         failed="$failed $n"
       fi
     done
-    # 完了の印と止まった印は、ポーリングごとに 1 回の一覧で全部の子を見る
-    if [ -n "$watch" ] || [ "$watchstop" -eq 1 ]; then
-      if list="$(orca worktree list --json 2>>"$errf")" \
-        && printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1; then
-        for n in $watch; do
-          if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$n" \
-            'any(.result.worktrees[]; .repoId == $r and (.linkedIssue | tostring) == $n
-              and .isArchived != true and .workspaceStatus == "completed")' >/dev/null 2>&1; then
-            marked="$marked $n"
-          fi
-        done
-        # 止まった印（epic-stopped）は、閉じていない位置引数の子だけを、受けた印に書き換えてから数える
-        if [ "$watchstop" -eq 1 ]; then
-          for n in "$@"; do
-            case " $closed $stopped " in *" $n "*) continue ;; esac
-            paths="$(printf '%s' "$list" | jq -r --arg r "$repo" --arg n "$n" \
-              '.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n
-                and .isArchived != true and .comment == "epic-stopped") | .path' 2>/dev/null)"
-            [ -n "$paths" ] || continue
-            ok=1
-            while IFS= read -r p; do
-              [ -n "$p" ] || continue
-              orca worktree set --worktree "path:$p" --comment epic-stopped-seen >&2 || ok=0
-            done <<EOF_PATHS
-$paths
-EOF_PATHS
-            if [ "$ok" -eq 1 ]; then
-              stopped="$stopped $n"
-            else
-              wsfail=1
-            fi
-          done
-        fi
-      else
-        wsfail=1
-      fi
+    # 完了の印（status が done）と止まった印（stop が stopped）は、ポーリングごとに子の記録を読んで見る。
+    # 読めない記録は失敗したポーリングに数え、同じ子の記録が 2 件以上なら印を見ない
+    for n in $watch; do
+      child_record "$PARENT_TOP" "$n"
+      case $? in
+        0) [ "$(es_get "$ES_HIT" status)" = "done" ] && marked="$marked $n" ;;
+        3) wsfail=1 ;;
+      esac
+    done
+    # 止まった印は、閉じていない位置引数の子だけを、排他つきで受けた印（stopped-seen）に書き換えてから数える
+    if [ "$watchstop" -eq 1 ]; then
+      for n in "$@"; do
+        case " $closed $stopped " in *" $n "*) continue ;; esac
+        child_record "$PARENT_TOP" "$n"
+        case $? in
+          0) ;;
+          3) wsfail=1; continue ;;
+          *) continue ;;
+        esac
+        f="$ES_HIT"
+        [ "$(es_get "$f" stop)" = stopped ] || continue
+        es_modify "$f" 'if .stop == "stopped" then .stop = "stopped-seen" else empty end' >/dev/null 2>>"$errf"
+        case $? in
+          0)
+            mirror_orca "$f" "path:$(es_get "$f" worktree)" --comment epic-stopped-seen
+            stopped="$stopped $n" ;;
+          4) ;;
+          *) wsfail=1 ;;
+        esac
+      done
     fi
     # --resolve: 止まった子ごとに判断し、通して記録できた子は出力から外す
     if [ -n "$resolve" ] && [ -n "$stopped" ]; then
       still=""
       for n in $stopped; do
-        resolve_stopped "$resolve" "$n" "$repo"
+        resolve_stopped "$resolve" "$n"
         case $? in
           0) ;;
           2) unrecorded="$unrecorded $n" ;;
@@ -989,26 +1116,15 @@ EOF_PATHS
   done
 }
 
-# pending-owner: 受けた印（epic-stopped-seen）のままの子を出す。読み取り専用
+# pending-owner: 記録の stop が受けた印（stopped-seen）のままの子を出す。読み取り専用。読めない記録の子は飛ばす
 cmd_pending_owner() {
   [ "$#" -ge 1 ] || usage
   check_children "$@"
-  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
-  command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
-  local current repo list n
-  current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
-  repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
-  [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
-  if ! list="$(orca worktree list --json)" \
-    || ! printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1; then
-    echo "orca worktree list --json is not readable" >&2
-    exit 1
-  fi
+  need_parent
+  local n
   for n in "$@"; do
-    if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$n" \
-      '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true and .comment == "epic-stopped-seen")] | length > 0' >/dev/null 2>&1; then
-      echo "pending $n"
-    fi
+    child_record "$PARENT_TOP" "$n" || continue
+    [ "$(es_get "$ES_HIT" stop)" = stopped-seen ] && echo "pending $n"
   done
   exit 0
 }
@@ -1019,43 +1135,34 @@ cmd_reap() {
   [ "$#" -ge 1 ] || usage
   check_children "$@"
   command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
-  command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
-  local current repo self list
-  current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
-  repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
-  self="$(printf '%s' "$current" | jq -r '.result.worktree.id // empty' 2>/dev/null)"
-  [ -n "$repo" ] && [ -n "$self" ] || { echo "orca worktree current --json has no repoId or id" >&2; exit 1; }
-  list="$(orca worktree list --json)" || { echo "orca worktree list failed" >&2; exit 1; }
-  printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
-    || { echo "orca worktree list --json is not readable" >&2; exit 1; }
+  need_parent
 
-  local n cands count w path ref branch st head heads sheads rmerr tip seen=" "
+  local n f w path branch st head heads sheads rmerr tip seen=" "
   local legacy allprs istate lsout btip="" base_looked=0 base_fetched=0 base="${EPIC_DISPATCH_BASE:-main}"
   for n in "$@"; do
     case "$seen" in *" $n "*) continue ;; esac
     seen="$seen$n "
-    cands="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$n" \
-      '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)]')"
-    count="$(printf '%s' "$cands" | jq 'length')"
-    [ "$count" -eq 0 ] && { echo "gone $n"; continue; }
-    [ "$count" -gt 1 ] && { echo "kept $n ambiguous"; continue; }
-    w="$(printf '%s' "$cands" | jq -c '.[0]')"
-    if ! printf '%s' "$w" | jq -e --arg p "$self" '.isMainWorktree != true and .parentWorktreeId == $p' >/dev/null 2>&1; then
-      echo "kept $n not-child"; continue
+    # 子の記録は、親のワークツリー（今のワークツリー）の記録だけを見る。記録の無い子は片付け済み
+    child_record "$PARENT_TOP" "$n"
+    case $? in
+      0) ;;
+      2) echo "kept $n ambiguous"; continue ;;
+      3) echo "kept $n state-unreadable"; continue ;;
+      *) echo "gone $n"; continue ;;
+    esac
+    f="$ES_HIT"
+    path="$(es_get "$f" worktree)"
+    # 子のワークツリーがもう無ければ記録を消して gone
+    if [ -z "$path" ] || [ ! -d "$path" ]; then
+      rm -f "$f"; echo "gone $n"; continue
     fi
-    if ! printf '%s' "$w" | jq -e '.workspaceStatus == "completed"' >/dev/null 2>&1; then
-      echo "kept $n not-done"; continue
-    fi
-    path="$(printf '%s' "$w" | jq -r '.path // empty')"
-    [ -n "$path" ] || { echo "kept $n git-failed"; continue; }
+    [ "$(es_get "$f" status)" = "done" ] || { echo "kept $n not-done"; continue; }
     st="$(git -C "$path" status --porcelain)" || { echo "kept $n git-failed"; continue; }
     [ -z "$st" ] || { echo "kept $n dirty"; continue; }
     [ ! -e "$path/LLM" ] || { echo "kept $n llm-logs"; continue; }
-    ref="$(printf '%s' "$w" | jq -r '.branch // empty')"
-    case "$ref" in
-      refs/heads/?*) branch="${ref#refs/heads/}" ;;
-      *) echo "kept $n no-branch"; continue ;;
-    esac
+    branch="$(es_get "$f" branch)"
+    branch="${branch#refs/heads/}"
+    [ -n "$branch" ] || { echo "kept $n no-branch"; continue; }
     head="$(git -C "$path" rev-parse HEAD)" || head=""
     heads="$(gh pr list --head "$branch" --state merged --json headRefOid --jq '.[].headRefOid')" \
       || { echo "kept $n pr-lookup-failed"; continue; }
@@ -1076,7 +1183,7 @@ cmd_reap() {
         allprs="$(gh pr list --head "$branch" --state all --json number --jq '.[].number')" \
           || { echo "kept $n pr-lookup-failed"; continue; }
         [ -z "$allprs" ] || { echo "kept $n $legacy"; continue; }
-        istate="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state)" \
+        istate="$(gh api "$(issue_api "$n" "$f")" --jq .state)" \
           || { echo "kept $n issue-lookup-failed"; continue; }
         [ "$istate" = closed ] || { echo "kept $n $legacy"; continue; }
         if [ "$base_looked" -eq 0 ]; then
@@ -1158,19 +1265,103 @@ cmd_reap() {
       if [ "$tip" = "$head" ] && [ "$attached" -eq 0 ] \
         && tip2="$(git rev-parse --verify --quiet "refs/heads/$branch")" && [ "$tip2" = "$head" ] \
         && git branch -D "$branch" >&2; then
-        echo "reaped $n"
+        rm -f "$f"; echo "reaped $n"
       else
-        echo "reaped $n branch-kept"
+        rm -f "$f"; echo "reaped $n branch-kept"
       fi
     else
-      echo "reaped $n"
+      rm -f "$f"; echo "reaped $n"
     fi
   done
   exit 0
 }
 
+# 記録の無い Orca の子（この変更の前に起動した子）を記録に取り込む。親を起動し直したときに使う
+cmd_adopt() {
+  [ "$#" -ge 2 ] || usage
+  local epic="$1"; shift
+  is_num "$epic" || { echo "not an issue number: $epic" >&2; usage; }
+  check_children "$@"
+  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
+  command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
+  local base="${EPIC_DISPATCH_BASE:-main}" current repo cid parent erepo list
+  current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
+  repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
+  cid="$(printf '%s' "$current" | jq -r '.result.worktree.id // empty' 2>/dev/null)"
+  [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+  parent="$(toplevel)" && [ -n "$parent" ] || { echo "git rev-parse failed" >&2; exit 1; }
+  erepo="$(es_epic_repo)" || exit 1
+  list="$(orca worktree list --json)" || { echo "orca worktree list failed" >&2; exit 1; }
+  printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
+    || { echo "orca worktree list --json is not readable" >&2; exit 1; }
+  [ -n "$cid" ] || echo "orca worktree current --json has no id; no child is found" >&2
+
+  local n num crepo f hits cnt w b st sp failed=0
+  for n in "$@"; do
+    es_parse_arg "$n"; num="$ES_ARG_NUM"; crepo="${ES_ARG_REPO:-$erepo}"
+    f="$(es_path "$erepo" "$epic" "$crepo" "$num")"
+    if [ -e "$f" ]; then
+      if es_read "$f" >/dev/null; then echo "skipped $n"
+      else echo "unreadable state record: $f" >&2; echo "failed $n state-unreadable"; failed=1; fi
+      continue
+    fi
+    # Orca の一覧は今のワークツリーと同じリポジトリのワークツリーだけを持つ
+    if [ "$crepo" != "$erepo" ] || [ -z "$cid" ]; then echo "none $n"; continue; fi
+    hits="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$num" --arg p "$cid" \
+      '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n
+        and .isArchived != true and .parentWorktreeId == $p)]')"
+    cnt="$(printf '%s' "$hits" | jq 'length')"
+    if [ "$cnt" -eq 0 ]; then echo "none $n"; continue; fi
+    if [ "$cnt" -gt 1 ]; then
+      echo "two or more Orca worktrees for $n under this parent" >&2
+      echo "failed $n ambiguous"; failed=1; continue
+    fi
+    w="$(printf '%s' "$hits" | jq -r '.[0].path // empty')"
+    b="$(printf '%s' "$hits" | jq -r '.[0].branch // empty')"; b="${b#refs/heads/}"
+    st="$(printf '%s' "$hits" | jq -r '.[0].workspaceStatus // "" |
+      if . == "completed" then "done" elif . == "in-review" then "waiting" else "running" end')"
+    sp="$(printf '%s' "$hits" | jq -r '.[0].comment // "" |
+      if . == "epic-stopped" then "stopped" elif . == "epic-stopped-seen" then "stopped-seen"
+      elif . == "epic-resumed" then "resumed" else "" end')"
+    if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$crepo" "$num" orca "$parent" "$w" "$b" "$base" "$st" "$sp")"; then
+      echo "could not write the state record: $f" >&2
+      echo "failed $n"; failed=1; continue
+    fi
+    echo "adopted $n"
+  done
+  exit "$failed"
+}
+
+# エピックの状態ディレクトリ（EPIC_STATE_ROOT 直下の 1 つ）を消す。エピックの完了時に使う
+cmd_clear() {
+  [ "$#" -eq 1 ] || usage
+  local epic="$1" home="${HOME%/}" erepo name d rf c
+  [[ "$epic" =~ ^[0-9]+$ ]] || { echo "not an issue number: $epic" >&2; usage; }
+  if [ "$ES_ROOT" = "/" ] || [ -z "$ES_ROOT" ] || { [ -n "$home" ] && [ "$ES_ROOT" = "$home" ]; }; then
+    echo "refusing to clear under EPIC_STATE_ROOT=$ES_ROOT (the root or the home directory itself)" >&2; exit 1
+  fi
+  erepo="$(es_epic_repo)" || exit 1
+  name="$(es_name "$erepo" "$epic")"
+  case "$name" in
+    */*|*..*) echo "refusing to clear an unexpected directory name: $name" >&2; exit 1 ;;
+  esac
+  d="$ES_ROOT/$name"
+  if [ -L "$d" ]; then echo "refusing to clear a symbolic link: $d" >&2; exit 1; fi
+  if [ ! -e "$d" ]; then echo "none $epic"; exit 0; fi
+  [ -d "$d" ] || { echo "not a directory: $d" >&2; exit 1; }
+  for rf in "$d"/*.json; do
+    [ -f "$rf" ] || continue
+    c="$(es_get "$rf" child)"
+    echo "remaining state record: ${c:-unreadable} ($rf)" >&2
+  done
+  rm -rf -- "$d" || { echo "could not remove $d" >&2; exit 1; }
+  echo "cleared $epic"
+}
+
 [ "$#" -ge 1 ] || usage
 sub="$1"; shift
+es_check_env || usage
+es_root_init || { case "$sub" in route|mark|max-parallel) ;; *) exit 1 ;; esac; }
 case "$sub" in
   route) cmd_route "$@" ;;
   launch) cmd_launch "$@" ;;
@@ -1180,6 +1371,8 @@ case "$sub" in
   mark) cmd_mark "$@" ;;
   reap) cmd_reap "$@" ;;
   pending-owner) cmd_pending_owner "$@" ;;
+  adopt) cmd_adopt "$@" ;;
+  clear) cmd_clear "$@" ;;
   max-parallel) cmd_max_parallel "$@" ;;
   *) usage ;;
 esac

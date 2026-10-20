@@ -91,7 +91,7 @@ Fable の週次消化率は Claude Code がステータスラインに渡して�
 
 あわせて、5h の使用率と空でない `session_id` がある既定アカウントの描画では、`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.rate-limit-snapshot` に rate snapshot を書く。`CLAUDE_SECURESTORAGE_CONFIG_DIR` が非空のセッションでは書かない。JSON は `ts`、`observed_at`、`written_at`、`obs_sig`、`host`、`storage_binding`、`session_id`、`five_hour_pct`、`five_hour_resets_at`、`seven_day_pct`、`seven_day_resets_at` を持つ。`ts` と `observed_at` は同じ観測時刻で、枠値・`storage_binding`・`session_id` が変わらない再表示では進まない。`written_at` は書込時刻。`session_id` は入力値をそのまま保存し、`host` は `hostname -s` の英数字・`.`・`_`・`-` 以外を文字ごとに `_` に置き換える。`$HOME/.claude.json` の `oauthAccount.accountUuid` が有効な場合だけ `account_id` も含む。欠けた任意の枠値は `null` とする。書込は同じディレクトリの一時ファイルから原子的に置き換える。
 
-共有先を設定すると `<共有先>/<host>.json` にローカルと同じ JSON を書く。`FLATMATE_RATE_SHARE_DIR` が定義されていればその値を使い、空文字なら共有を無効にする。未定義なら `FLATMATE_RATE_SHARE_CONF`（既定 `$HOME/.claude/flatmate-rate-share`）の先頭の非コメント・非空行を使う。設定ファイルのパスは前後空白を除き、先頭の `~` を HOME に展開する。共有先に書けなくてもローカルの保存と表示は続く。
+共有先を設定すると `<共有先>/<host>.json` にローカルと同じ JSON を書く。`FLATMATE_RATE_SHARE_DIR` が定義されていればその値（前後の空白は除く）を使い、空文字や空白だけなら共有を無効にする。未定義なら `FLATMATE_RATE_SHARE_CONF`（既定 `$HOME/.claude/flatmate-rate-share`）の先頭の非コメント・非空行を使う。環境変数・設定ファイル由来のパスは前後空白を除き、先頭の `~` を HOME に展開する。共有先に書けなくてもローカルの保存と表示は続く。
 
 writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合、reader 側の `RATE_GUARD_SNAPSHOT` を同じファイルに合わせる必要がある。共有先の環境変数名と設定ファイル名は flatmate reader と共通。
 
