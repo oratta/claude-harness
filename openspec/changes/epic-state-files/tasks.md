@@ -30,10 +30,10 @@
 
 ## 6. 手順書と変更の記録
 
-- [ ] 6.1 SKILL.md の回し方の手順 7 に `adopt` を `reap` の前に足し、手順 3・4・7 の「`wait` を呼ばずに待ちを終える」箇所に `clear` を足す。完了条件の節に状態ディレクトリが消えていることの確認を足す。子の状態の正本が記録で Orca の画面の印は写しだと書く。「エピックの子が主の返事を待って止まるとき」の印の説明を記録に合わせる。手順 3 の「`ambiguous`・`not-child` は確かめず残す」から `not-child` を外し、`state-unreadable` を確かめず残す扱いを足す。手順 6 の「`--watch-done` / `--watch-stopped` を付けた `wait` が stdout 空で exit 1 なら親ワークツリーで開き直す」を消し、`launch` の exit 1 と `adopt` の stdout 空の exit 1 の報告として書き直す。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:341-368（エピックの子が主の返事を待って止まるとき）、plugins/dev-workflow/skills/develop/SKILL.md:417-459（回し方の手順 3・4・6・7・完了条件）
-- [ ] 6.2 reply-after-idle.md の主の返事待ちの子の見分け方を記録の `stop` に直す。触る範囲: plugins/dev-workflow/skills/develop/references/reply-after-idle.md:51
-- [ ] 6.3 SKILL.md の skill テスト（`skill:` で始まる bats）に、手順 7 の `adopt`・待ちを終える箇所の `clear`・Orca の印が写しであること・手順 3 に `not-child` が無いことの照合を足す。`grep -rlw orca` のテストが `epic-state.sh` を足したあとも `epic-dispatch.sh` の 1 行だけを返すことを確かめる。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:2228-2698（skill）
-- [ ] 6.4 変更の記録を書く。触る範囲: plugins/dev-workflow/changes/1123.md（新規）
+- [x] 6.1 SKILL.md の回し方の手順 7 に `adopt` を `reap` の前に足し、手順 3・4・7 の「`wait` を呼ばずに待ちを終える」箇所に `clear` を足す。完了条件の節に状態ディレクトリが消えていることの確認を足す。子の状態の正本が記録で Orca の画面の印は写しだと書く。「エピックの子が主の返事を待って止まるとき」の印の説明を記録に合わせる。手順 3 の「`ambiguous`・`not-child` は確かめず残す」から `not-child` を外し、`state-unreadable` を確かめず残す扱いを足す。手順 6 の「`--watch-done` / `--watch-stopped` を付けた `wait` が stdout 空で exit 1 なら親ワークツリーで開き直す」を消し、`launch` の exit 1 と `adopt` の stdout 空の exit 1 の報告として書き直す。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:341-368（エピックの子が主の返事を待って止まるとき）、plugins/dev-workflow/skills/develop/SKILL.md:417-459（回し方の手順 3・4・6・7・完了条件）
+- [x] 6.2 reply-after-idle.md の主の返事待ちの子の見分け方を記録の `stop` に直す。触る範囲: plugins/dev-workflow/skills/develop/references/reply-after-idle.md:51
+- [x] 6.3 SKILL.md の skill テスト（`skill:` で始まる bats）に、手順 7 の `adopt`・待ちを終える箇所の `clear`・Orca の印が写しであること・手順 3 に `not-child` が無いことの照合を足す。`grep -rlw orca` のテストが `epic-state.sh` を足したあとも `epic-dispatch.sh` の 1 行だけを返すことを確かめる。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:2228-2698（skill）
+- [x] 6.4 変更の記録を書く。触る範囲: plugins/dev-workflow/changes/1123.md（新規）
 
 ## 7. 確認
 

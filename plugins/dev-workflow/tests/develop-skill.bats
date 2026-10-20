@@ -725,7 +725,7 @@ refute() {
 @test "skill: step 7 of the Orca route re-presents children waiting for the owner before launch" {
   p="$(grep -E '^7\. `回し方: Orca`' "$SKILL")"
   printf '%s\n' "$p" | grep -qF 'pending-owner'
-  printf '%s\n' "$p" | grep -qF 'epic-stopped-seen'
+  printf '%s\n' "$p" | grep -qF '記録の `stop` が `stopped-seen`'
   printf '%s\n' "$p" | grep -qF '手順 8 と同じ報告'
   printf '%s\n' "$p" | grep -qF '子 issue のコメントの新旧では再開を判定しない'
 }
@@ -733,7 +733,7 @@ refute() {
 @test "reply-after-idle: the restore table has the child waiting for the owner" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   row="$(grep -E '^\| 主の返事待ちの子 \|' "$f")"
-  printf '%s\n' "$row" | grep -qF 'epic-stopped-seen'
+  printf '%s\n' "$row" | grep -qF '記録の `stop` が `stopped-seen`'
   printf '%s\n' "$row" | grep -qF '子の停止: 主の返事待ち'
   printf '%s\n' "$row" | grep -qF '親の判断:'
 }

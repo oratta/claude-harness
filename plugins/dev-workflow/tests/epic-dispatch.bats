@@ -2851,7 +2851,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   printf '%s\n' "$e" | grep -F '起動し直したセッション' | grep -qF 'nested'
   printf '%s\n' "$e" | grep -qF 'parent epic: #'
   printf '%s\n' "$e" | grep -qF 'child epics are not expanded here'
-  printf '%s\n' "$e" | grep -F 'parent epic:' | grep -F 'EPIC_DISPATCH_PARENT_EPIC' | grep -qF '親を持たないワークツリー'
+  printf '%s\n' "$e" | grep -F 'parent epic:' | grep -F 'EPIC_DISPATCH_PARENT_EPIC' | grep -qF '状態の記録の無いワークツリー'
 }
 
 @test "skill: a child whose terminal was not created is checked, recreated and sent before resuming" {
@@ -2946,8 +2946,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   printf '%s\n' "$r" | grep -F '開いている子が無くなったら' | grep -qF '待ちをやめる'
   printf '%s\n' "$r" | grep -F '再開したら' | grep -qF '`launch` の前に'
   printf '%s\n' "$r" | grep -qF 'error workspaces'
-  printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF '親ワークツリーで開き直す'
-  printf '%s\n' "$r" | grep -F 'stdout に何も出さず exit 1' | grep -F -- '`--watch-done` か `--watch-stopped` を付けた `wait`' | grep -qF '親ワークツリーで開き直す'
+  printf '%s\n' "$r" | grep -F 'stdout に何も出さず exit 1' | grep -F '`adopt`' | grep -F 'not in an Orca-managed worktree' | grep -qF '親ワークツリーで開き直す'
   printf '%s\n' "$r" | grep -F 'stdout に何も出さず exit 1' | grep -F 'not in an Orca-managed worktree' | grep -qF 'stderr が `usage:` を含むときは、stderr を添えて設定の誤りとして報告して止まる'
 }
 
@@ -4270,4 +4269,52 @@ resolve_pass() {
   [ "$status" -eq 1 ]
   [ -z "$output" ]
   [ -f "$(rec_of 1122 11)" ]
+}
+
+# --- skill: 状態の記録（adopt・clear・Orca の印は写し） ---
+# spec: dev-workflow-develop（SKILL.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ）
+
+@test "skill: step 7 calls adopt before reap, pending-owner and launch, and separates ambiguous from an empty exit 1" {
+  p="$(run_section | grep -E '^7\. `回し方: Orca`')"
+  a="${p%%epic-dispatch.sh adopt*}"
+  [ "$a" != "$p" ]
+  case "$a" in *'`reap`'*|*pending-owner*|*'`launch` を'*) false ;; esac
+  printf '%s\n' "$p" | grep -qF '`failed <N> ambiguous` は主に聞かずにその子を残して進み'
+  printf '%s\n' "$p" | grep -qF '子 #N の記録を取り込めなかった（ambiguous）'
+  printf '%s\n' "$p" | grep -qF '`adopt` が stdout に何も出さず exit 1 で終わったら'
+  printf '%s\n' "$p" | grep -qF '`failed <N> ambiguous` の行を出して exit 1 で終わったときは止まらない'
+}
+
+@test "skill: every place of steps 3, 4 and 7 that ends the wait without wait calls clear first" {
+  n="$(run_section | grep -oF '`wait` を呼ばずに待ちを終える' | grep -c .)"
+  [ "$n" -ge 3 ]
+  m="$(run_section | grep -oF 'clear <エピック番号>` を 1 回呼んでから（エピックの状態ディレクトリを消す。`cleared`・`none` は何もせず、exit 1 は stderr を添えて主に報告する。エピックを閉じるのは待たない）`wait` を呼ばずに待ちを終える' | grep -c .)"
+  [ "$m" -eq "$n" ]
+  for s in 3 4 7; do
+    run_section | grep -E "^$s\. " | grep -qF 'epic-dispatch.sh clear <エピック番号>' || { echo "step $s" >&2; false; }
+  done
+}
+
+@test "skill: the Orca marks are a copy of the state records and hand edits do not reach the parent" {
+  p="$(run_section | grep -E '^\*\*子の状態の正本\*\*')"
+  printf '%s\n' "$p" | grep -qF 'Orca のボードの列とコメント欄は、記録を書いたあとに写したもの'
+  printf '%s\n' "$p" | grep -qF 'Orca の画面で印を手で変えても、親の見張り'
+  section 'エピックの子が主の返事を待って止まるとき' | grep -F -- '- **印**' | grep -qF 'Orca の画面には写しが出る'
+}
+
+@test "skill: step 3 no longer names not-child and keeps state-unreadable without checking" {
+  p="$(run_section | grep -E '^3\. ')"
+  [ -n "$p" ]
+  case "$p" in *not-child*) false ;; esac
+  printf '%s\n' "$p" | grep -qF '子 #N のワークツリーを残した（state-unreadable）'
+}
+
+@test "skill: step 6 reports an empty exit 1 of launch and adopt, not of wait" {
+  p="$(run_section | grep -E '^6\. ')"
+  printf '%s\n' "$p" | grep -qF '`adopt` が stdout に何も出さず exit 1 で終わったとき'
+  case "$p" in *'`--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず'*) false ;; esac
+}
+
+@test "skill: the completion check confirms the state directory is cleared" {
+  section 'エピックの扱い' | awk '/^### 完了条件/{f=1; next} /^### /{f=0} f' | grep -qF '`clear` で消えていることを確かめる'
 }
