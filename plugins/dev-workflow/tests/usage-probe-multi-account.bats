@@ -680,6 +680,17 @@ setup_no_path_claude() {
   [ "$(printf '%s\n' "$stderr" | grep -c 'usage-probe')" -eq 1 ]
 }
 
+@test "user-agent: HOME unset and no claude on PATH still falls back to the fixed version with a warning" {
+  setup_no_path_claude
+  run --separate-stderr env -u HOME PATH="$NOCLAUDE_PATH" USAGE_SNAPSHOT="$SNAP" \
+      CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_STATE="$USAGE_PROBE_STATE" \
+      USAGE_PROBE_LOCK="$USAGE_PROBE_LOCK" USAGE_SESSIONS_DIR="$USAGE_SESSIONS_DIR" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
+  [[ "$stderr" == *"2.1.0"* ]] || return 1
+}
+
 @test "user-agent: no warning when the version is found" {
   setup_production_stubs "2.1.280 (Claude Code)"
   run --separate-stderr env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \

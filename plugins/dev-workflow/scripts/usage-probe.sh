@@ -316,7 +316,7 @@ user_agent="${USAGE_PROBE_USER_AGENT:-}"
 if [ -z "$user_agent" ]; then
   # cron・hook・launchd などでは PATH に claude が無いことがあるので、標準の置き場所も探す
   claude_bin="$(command -v claude 2>/dev/null || true)"
-  if [ -z "$claude_bin" ] && [ -x "$HOME/.local/bin/claude" ]; then
+  if [ -z "$claude_bin" ] && [ -n "${HOME:-}" ] && [ -x "$HOME/.local/bin/claude" ]; then
     claude_bin="$HOME/.local/bin/claude"
   fi
   cc_version=""
