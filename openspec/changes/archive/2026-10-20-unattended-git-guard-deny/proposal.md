@@ -10,7 +10,7 @@
 - 印のあるセッションでは、主の呼び出しにも `permission_mode` と `DEV_WORKFLOW_GIT_GUARD_FORCE` によらず `deny` を返す。子の呼び出し（`agent_id` が空でない文字列）は今までどおり子の規則が先に決める
 - 印のあるセッションの主の呼び出しへの拒否理由を、チャンネル（Discord など）でオーナーに承認を求める文面にする。確認画面を出している旨は書かない
 - 印の無いセッション（オーナーの対話セッション）の振る舞いは変えない（`bypassPermissions` などでは今までどおり `ask`）
-- `rules/destructive-git-guard.md` の「hook との分担」節と `rules/README.md` の該当行に、画面を見ている人のいないセッション（印の付いたセッション）でも確認画面を出さずに拒否されるので、チャンネルでオーナーに承認を求めることを足す
+- `rules/destructive-git-guard.md` の「hook との分担」節と `rules/README.md` の該当行に、画面を見ている人のいないセッション（印の付いたセッション）でも確認画面を出さずに拒否されるので、チャンネルで主に承認を求めることを足す（hook の無人向け理由文だけ「オーナー」）
 - flatmate の住人の起動で印を付ける作業を flatmate（genetta-inc/flatmate）の issue として起票し、#1124 からリンクする
 - 採らない案: payload の値（`permission_mode` や、チャンネル経由のセッションに付く値）で見分ける。住人とオーナーの対話セッションは payload の上で同じ形をしており、`bypassPermissions` を一律 `deny` にするとオーナーの対話セッションで確認画面から承認できなくなる（受け入れ条件 3 に反する）
 

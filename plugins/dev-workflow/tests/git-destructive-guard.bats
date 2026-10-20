@@ -112,6 +112,7 @@ NINE_KINDS=(
 
 @test "nine kinds: each listed command is stopped" {
   local c
+  [ "${#NINE_KINDS[@]}" -ge 9 ] || { echo "NINE_KINDS is empty"; return 1; }
   for c in "${NINE_KINDS[@]}"; do
     expect_stopped "$c"
   done
@@ -565,6 +566,7 @@ call_env() {
 
 @test "unattended: every one of the nine kinds is denied in bypassPermissions" {
   local c
+  [ "${#NINE_KINDS[@]}" -ge 9 ] || { echo "NINE_KINDS is empty"; return 1; }
   for c in "${NINE_KINDS[@]}"; do
     call_env DEV_WORKFLOW_UNATTENDED=1 -- "$c" bypassPermissions
     [ "$status" -eq 0 ] || { echo "status=$status for: $c"; return 1; }
@@ -598,6 +600,7 @@ call_env() {
 
 @test "unattended: without the mark the nine kinds stay ask in bypassPermissions" {
   local c
+  [ "${#NINE_KINDS[@]}" -ge 9 ] || { echo "NINE_KINDS is empty"; return 1; }
   for c in "${NINE_KINDS[@]}"; do
     call "$c" bypassPermissions
     [ "$(decision)" = "ask" ] || { echo "not ask: $c -> [$output]"; return 1; }
