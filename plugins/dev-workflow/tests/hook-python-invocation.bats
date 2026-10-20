@@ -63,6 +63,7 @@ printf '%s' "\$#" >|"${WORK}/argc"
 printf '%s' "\${1-}" >|"${WORK}/arg1"
 printf '%s' "\${2-}" >|"${WORK}/arg2"
 printf '%s' "\${3-}" >|"${WORK}/arg3"
+printf '%s' "\${4-}" >|"${WORK}/arg4"
 exec "$1" "\$@"
 SH
   chmod +x "${WORK}/shim/python3"
@@ -81,10 +82,16 @@ SH
   real="$(command -v python3)"
   install_shim "$real"
   for h in $BODY_HOOKS; do
-    rm -f "${WORK}/argc" "${WORK}/arg1" "${WORK}/arg2" "${WORK}/arg3"
+    rm -f "${WORK}/argc" "${WORK}/arg1" "${WORK}/arg2" "${WORK}/arg3" "${WORK}/arg4"
     payload_for "$h" | PATH="${WORK}/shim:${PATH}" /bin/bash "${SCRIPTS}/${h}.sh" >/dev/null 2>&1 || true
     [ -f "${WORK}/argc" ] || { echo "$h: python3 was not started"; return 1; }
-    [ "$(cat "${WORK}/argc")" = 3 ] || { echo "$h: argc=$(cat "${WORK}/argc")"; return 1; }
+    if [ "$h" = git-destructive-guard ]; then
+      # 本体のうしろに共通の判定ファイル（git-guard-scratchpad.py）のパスを 1 つ渡す（#1133）
+      [ "$(cat "${WORK}/argc")" = 4 ] || { echo "$h: argc=$(cat "${WORK}/argc")"; return 1; }
+      [ "$(cat "${WORK}/arg4")" = "${SCRIPTS}/git-guard-scratchpad.py" ] || { echo "$h: arg4=$(cat "${WORK}/arg4")"; return 1; }
+    else
+      [ "$(cat "${WORK}/argc")" = 3 ] || { echo "$h: argc=$(cat "${WORK}/argc")"; return 1; }
+    fi
     [ "$(cat "${WORK}/arg1")" = "-I" ] || { echo "$h: arg1=$(cat "${WORK}/arg1")"; return 1; }
     [ "$(cat "${WORK}/arg2")" = "-c" ] || { echo "$h: arg2=$(cat "${WORK}/arg2")"; return 1; }
     # 本体は、スクリプトのヒアドキュメントの 1 行目（import 文）から始まる
@@ -98,7 +105,7 @@ SH
   done
 }
 
-@test "#869: the bodies of the five hooks compile on Python 3.9" {
+@test "#869: the bodies of the five hooks, the shared git-guard file and the permit script compile on Python 3.9" {
   local py h
   py="$(python39)"
   [ -n "$py" ] || skip "Python 3.9 が無い（/usr/bin/python3・python3.9・python3 のどれも 3.9 でない）"
@@ -108,6 +115,19 @@ SH
     "$py" -I -c 'import sys; compile(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1], "exec")' \
       "${WORK}/body.py" || { echo "$h: does not compile on 3.9"; return 1; }
   done
+  # guard が子の呼び出しで読む共通の判定ファイルと、許可を書くスクリプトの本体も 3.9 で動く（#1133）。
+  # 共通の判定ファイルは読み込みが失敗すると guard が黙って許可を探さなくなるので、取り込んで判定を 1 回呼ぶ
+  # （実行時に評価される注釈なども拾う）
+  "$py" -I -c 'import sys
+ns = {}
+exec(compile(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1], "exec"), ns)
+err, sp, repos = ns["check"]("s1", "/", "git status")
+assert err and sp is None, (err, sp)' "${SCRIPTS}/git-guard-scratchpad.py" \
+    || { echo "git-guard-scratchpad.py: does not run on 3.9"; return 1; }
+  awk '/<<.PY. \|\| true$/{f=1;next} /^PY$/{f=0} f' "${SCRIPTS}/git-guard-permit.sh" >|"${WORK}/permit.py"
+  [ -s "${WORK}/permit.py" ] || { echo "git-guard-permit: empty body"; return 1; }
+  "$py" -I -c 'import sys; compile(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1], "exec")' \
+    "${WORK}/permit.py" || { echo "git-guard-permit: does not compile on 3.9"; return 1; }
 }
 
 @test "#869: git-destructive-guard asks for git reset --hard when python3 is Python 3.9" {
