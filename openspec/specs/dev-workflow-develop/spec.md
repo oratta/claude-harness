@@ -1796,9 +1796,9 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 ### Requirement: develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする
 `plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。例外は 1 つだけで、要件「Orca 経路の本体は印が付いた子のワークスペースを片付ける」で本体が確かめて消すときの `orca worktree rm --worktree path:<path>` を、SKILL.md の「エピックの扱い」の回し方の手順 3 に 1 回だけ書いてよい（MAY。`reap` が残したワークツリーを消す判断は本体がその場で行うもので、`epic-dispatch.sh` のサブコマンドにすると `reap` の処理を変えることになるため）。この 1 件と同じ行に別の `orca` のコマンドを書くことと、この書き方を 2 回以上書くことは、例外に含めない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
 
-`plugins/dev-workflow/` 配下のシェルスクリプト（`*.sh`）のうち、`orca` の語を含むのは `scripts/epic-dispatch.sh` だけでなければならない（MUST）。`epic-dispatch.sh` の中では `orca` のコマンドをそのまま呼び、Orca の機能を自前で作り直してはならない（MUST NOT）。Orca が無い環境のための代わりの実装を持ってはならない（MUST NOT。`route` の `subagent` と `mark` の `skipped` のように、何もしないで終わる分岐は代わりの実装に数えない）。
+`plugins/dev-workflow/` 配下のシェルスクリプト（`*.sh`）のうち、`orca` をコマンドとして書いた行（`orca` が行頭・`;`・`&`・`|`・`(`・`!`・`$(`・`if`/`then`/`do`/`else`/`while`/`until` のあとにあり、半角英小文字のサブコマンドが続く行。文字列とコメントの中の `orca` は数えない）を含むのは、Orca の起動部品 `scripts/epic-launch-orca.sh` だけでなければならない（MUST）。`epic-dispatch.sh` は `orca` のコマンドを直接呼ばず、Orca の起動部品のサブコマンドを呼ぶ（MUST。`launcher` の値・`route` の出力・stderr の文言としての `orca` の語は、コマンドとして書いた行ではないので含んでよい）。`epic-launch-orca.sh` の中では `orca` のコマンドをそのまま呼び、Orca の機能を自前で作り直してはならない（MUST NOT）。Orca が無い環境のための代わりの実装を持ってはならない（MUST NOT。`route` の `subagent` と `mark` の `skipped` のように、何もしないで終わる分岐は代わりの実装に数えない）。
 
-`plugins/dev-workflow/tests/epic-dispatch.bats` は、この 2 つの検索の結果を確かめなければならない（MUST）。手順書の検索では、許可した 1 件を出現ごとに取り除いてから残りを探し、行ごと除外してはならない（MUST NOT。同じ行に置いた別の `orca` のコマンドを見逃すため）。この 2 つの検索で拾いたい誤りは、手順書に `orca` のサブコマンドを書き足すことと、`epic-dispatch.sh` 以外のシェルスクリプトに `orca` の呼び出しを足すことである。変数やコマンド置換を介した呼び出し、`orca` の語を含まない別名など、検索をすり抜ける書き方が見つかるたびに塞ぐことは、この要件の完了条件としない。
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、この 2 つの検索の結果を確かめなければならない（MUST）。手順書の検索では、許可した 1 件を出現ごとに取り除いてから残りを探し、行ごと除外してはならない（MUST NOT。同じ行に置いた別の `orca` のコマンドを見逃すため）。この 2 つの検索で拾いたい誤りは、手順書に `orca` のサブコマンドを書き足すことと、`epic-launch-orca.sh` 以外のシェルスクリプトに `orca` の呼び出しを足すことである。変数やコマンド置換を介した呼び出し、`orca` の語を含まない別名など、検索をすり抜ける書き方が見つかるたびに塞ぐことは、この要件の完了条件としない。
 
 #### Scenario: 手順書に orca を実行する書き方は許可した 1 件しか無い
 - **WHEN** `grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` の各行から `orca worktree rm --worktree path:<path>` を 1 回取り除き、残りを `grep -E 'orca [a-z]+'` で探す
@@ -1808,9 +1808,13 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 - **WHEN** 手順書の 1 行に `orca worktree rm --worktree path:<path>` と `orca terminal close --all` を並べて書く
 - **THEN** 手順書の検索は `orca terminal close` を見つけ、`epic-dispatch.bats` のテストは失敗する
 
-#### Scenario: orca を呼ぶスクリプトは 1 本だけ
-- **WHEN** `grep -rlw orca plugins/dev-workflow --include='*.sh'` を実行する
-- **THEN** 出力は `plugins/dev-workflow/scripts/epic-dispatch.sh` の 1 行だけである
+#### Scenario: orca を呼ぶスクリプトは Orca の起動部品 1 本だけ
+- **WHEN** `grep -rlE '(^|[;&|(!]|(if|then|do|else|while|until) )[[:space:]]*orca [a-z]+' plugins/dev-workflow --include='*.sh'` を実行する
+- **THEN** 出力は `plugins/dev-workflow/scripts/epic-launch-orca.sh` の 1 行だけである
+
+#### Scenario: epic-dispatch.sh に orca のコマンドを足すと落ちる
+- **WHEN** `epic-dispatch.sh` を写した一時ファイルに `orca terminal list --json` の 1 行を足し、同じ検索をその写しのあるディレクトリに対して行う
+- **THEN** 検索はその写しを出し、照合は失敗する
 
 ### Requirement: エピックの子への注意書きと子であることを、起動し直したセッションにも引き継ぐ
 `plugins/dev-workflow/scripts/epic-dispatch.sh` は、子のセッションを閉じて同じワークツリーで `/develop #<N>` だけを打ち直しても、親が `launch --note` で渡した注意書きと「エピックの子である」ことが失われないようにしなければならない（MUST）。この要件は、要件「エピックの並列起動は 1 段で止める」のうち `route` が `nested` を返す条件と `launch` の拒否の条件、SKILL.md に書かせている親エピックの番号の出どころ（「親エピック（`EPIC_DISPATCH_PARENT_EPIC` の番号）」。この要件では `route` の stderr の `parent epic: #<N>`）、同要件の守備範囲のうち変数の無いセッションに関する 2 項（「この変更の前に起動された子セッションには変数が無く従来どおり展開しうる」は、Orca 経路で作られた子ワークツリーなら親子関係で `nested` になる。「サブエージェント方式で起こされた子（変数が無い）は止まらない」は、そのセッションのワークツリーが親ワークツリーを持てば `nested` になり、持たなければ今までどおり止まらない）、および要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち `route` の判定と `launch` の呼び出し順に優先する。並行する子の archive が終わったあとに元の要件へ畳み込む。
@@ -2143,7 +2147,7 @@ develop の SKILL.md は、エピックの子のセッションが主の返事�
 - 記録を残さずに子のタブで質問して止まった子は、`timeout` の確認でも検知できないので、ユーザーに子のタブも見るよう伝えることを残す（SHALL）
 - 端末の入力待ちが続いたことで子の止まりを推定する手順を書いてはならない（MUST NOT。誤検知が多いため。根拠は change `epic-child-stop-signal` の design.md）
 
-develop の手順書（`skills/develop` 配下）に `orca` のサブコマンドを書いてはならない（MUST NOT。既存の規定どおり、`orca` を呼ぶのは `epic-dispatch.sh` だけ）。
+develop の手順書（`skills/develop` 配下）に `orca` のサブコマンドを書いてはならない（MUST NOT。既存の規定どおり、`orca` を呼ぶのは Orca の起動部品 `epic-launch-orca.sh` だけ）。
 
 この要件の守備範囲で入力として扱うのは、子のセッションでは `epic-dispatch.sh route`（子の番号なし）の出力と `mark` の出力、主の返事を待つかどうかの子自身の判断（本文で質問するか、質問ツールを使うか、背景のタスクを待つだけか）、記録先の issue 番号で、親のセッションでは `wait` の出力と子 issue のコメント（1 行目が `子の停止: 主の返事待ち` の最新の 1 件）である。拾いたい誤りは、エピックの子が主の返事を待っているのに記録も印も残さずに止まること、印が記録より先に付いて親が記録の無い止まりを読むこと、質問ツールで待つ子が回答を受けたあとも止まった印を残すこと、エピックの子でないセッションが読む者のいない記録を残すこと、親が止まった子を動いている子から外して閉じたことを検知できなくなることの 5 つである。次は通ってよく、この要件では止めない: 記録の項目の値の長さと改行の違い（値が複数行に続くこと）／止まるたびに記録が増えること（最新の 1 件を正とする）／保留の場面で引き継ぎと記録の 2 件のコメントが並ぶこと／主が子のタブで先に答えて、親が既に再開した子の `stopped` を受けること（親は記録を読んで報告するだけで、返事の仕方は #1034 で決める）／子が記録を書かずに止まり、親が `timeout` まで気づかないこと（入力待ちからの推定は入れない）。記録の中身（理由・推奨・リスクの正しさ）を確かめることと、手順を守らない子を見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
 
@@ -2914,7 +2918,7 @@ develop の SKILL.md「エピックの扱い」→「回し方」は、次を書
 | `gh api repos/{owner}/{repo}/issues/<N>` | 記録の `repo` がエピックと同じリポジトリの子と、番号だけで渡した記録の無い子は今のまま。違うリポジトリの子は `gh api repos/<repo>/issues/<N>`、`<owner>/<repo>#<N>` で渡した記録の無い子は引数の `<owner>/<repo>`（小文字）で `gh api repos/<owner>/<repo>/issues/<N>`。`reap` の `gh pr list`・`git ls-remote` などの呼び出しの形は、capability `dev-workflow-epic-state` の要件「親の見張りは記録だけで子の状態を判定する」の `reap` のとおり（同じリポジトリの子は今のまま、別のリポジトリの子は子のリポジトリと子のワークツリーに向ける） |
 | `reap` の `kept <N> not-child` | 出さない（親は自分の `parent_worktree` の記録しか見ない。記録の無い子は `gone <N>`） |
 | `mark` の「`orca` が PATH に無いか `orca worktree current --json` が非 0 なら `skipped <issue> no-workspace`」と「印の代わりになるもの（ファイルなど）を作ってはならない」 | 今いるワークツリーのパスを `worktree` に持つ記録が無ければ `skipped <issue> no-workspace`。記録は印の代わりではなく正本で、`mark` は記録を作らない（作るのは `launch` と `adopt` だけ）。`orca` の有無は Orca の印へ写すかどうかだけを決める |
-| 「Orca が無い環境のための代わりの実装を持ってはならない」 | 状態の記録は Orca の機能の代わりの実装ではない（Orca の有無によらず正本として書く）。記録を読み書きする新しいスクリプト `scripts/epic-state.sh` は `orca` の語を含まず、`orca` を呼ぶスクリプトは今のまま `scripts/epic-dispatch.sh` 1 本だけ |
+| 「Orca が無い環境のための代わりの実装を持ってはならない」 | 状態の記録は Orca の機能の代わりの実装ではない（Orca の有無によらず正本として書く）。記録を読み書きする新しいスクリプト `scripts/epic-state.sh` は `orca` の語を含まず、`orca` をコマンドとして呼ぶスクリプトは Orca の起動部品 `scripts/epic-launch-orca.sh` 1 本だけ（`epic-dispatch.sh` は起動部品を呼ぶ） |
 | #1106（PR #1120）の、枠を使っている子を Orca の一覧から数える条件 | 同じ条件を記録の項目に置き換えて数える（capability `dev-workflow-epic-state` の要件「同時に枠を使う子は記録から数える」） |
 
 この読み替えは、少なくとも次の既存要件に掛かる: 「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」（`launch` の記録の書き込みと、`route` の判定）・「エピックの並列起動は 1 段で止める」（子のセッションの判定）・「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」（`mark done` / `waiting`・`wait --watch-done`・`reap`）・「Orca 経路の本体は印が付いた子のワークスペースを片付ける」（`kept <N> not-child` の扱いは起きなくなる。`--watch-done` / `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わったときの規定は、`wait` が Orca を読まなくなるので、`launch` が exit 1 で子を 1 件も作らなかったときと `adopt` が stdout に何も出さず exit 1 で終わったときの規定として読む）・「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」（記録は代わりの実装に数えない）・「エピックの子への注意書きと子であることを、起動し直したセッションにも引き継ぐ」（`route` の `parentWorktreeId` の判定）・「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」・「epic-dispatch.sh の wait は止まった子を判断し、通すものには返事を送って待ちを続ける」・「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」（子のワークツリーの見つけ方）・「epic-dispatch.sh reap は PR が無く issue を閉じた子を、main に入っていない commit が無いときに片付ける」・「Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る」・「起動し直した親は主の返事待ちの子を主に出し直す」（`pending-owner` は記録の `stop` が `stopped-seen` の子を出す）・「wait --resolve は通す返事を送る前に起動し直すかを表で決める」（子のワークツリーの `path` は記録の `worktree` から読む）、および #1120 がこの capability に足す上限の要件。
@@ -2931,10 +2935,10 @@ develop の SKILL.md「エピックの扱い」→「回し方」は、次を書
 - **WHEN** 既存要件「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」の、安全確認を 1 点だけ変えた Scenario を、記録の `status` を `done` にして実行する
 - **THEN** stdout は既存の Scenario と同じ `kept 11 <理由>` の行で、ワークツリーは消されず、記録も消されない
 
-#### Scenario: 記録を読み書きするスクリプトは orca の語を含まない
+#### Scenario: 記録を読み書きするスクリプトは orca の語を含まず、orca のコマンドは起動部品だけが呼ぶ
 
-- **WHEN** `epic-state.sh` を足したあとで `grep -rlw orca plugins/dev-workflow --include='*.sh'` を実行する
-- **THEN** 出力は `plugins/dev-workflow/scripts/epic-dispatch.sh` の 1 行だけである
+- **WHEN** `grep -rlw orca plugins/dev-workflow --include='*.sh'` と `grep -rlE '(^|[;&|(!]|(if|then|do|else|while|until) )[[:space:]]*orca [a-z]+' plugins/dev-workflow --include='*.sh'` を実行する
+- **THEN** 1 つ目の出力に `plugins/dev-workflow/scripts/epic-state.sh` は無く（`epic-dispatch.sh` と `epic-launch-orca.sh` は `launcher` の値として `orca` の語を含んでよい）、2 つ目の出力は `plugins/dev-workflow/scripts/epic-launch-orca.sh` の 1 行だけである
 
 #### Scenario: 記録の無いワークツリーの mark は記録を作らない
 

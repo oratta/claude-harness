@@ -14,7 +14,9 @@
 #   epic-dispatch.sh clear <epic>
 #   epic-dispatch.sh max-parallel
 #
-# Orca のコマンドを呼ぶのはこのスクリプトだけ（develop の手順書には orca のコマンドを書かない）。
+# Orca のコマンドはこのスクリプトから直接呼ばず、同じディレクトリの起動部品 epic-launch-orca.sh の
+#   サブコマンドを別のプロセスとして呼ぶ（develop の手順書には orca のコマンドを書かない）。下の各コマンドの説明に
+#   書いた orca の呼び出しは、起動部品が同じ順と回数で行う。
 # 子の状態の正本は状態の記録（${EPIC_STATE_ROOT:-~/.claude/epic-state}/<o>.<r>-<E>/<o>.<r>-<N>.json。
 #   読み書き・排他・照合の関数は同じディレクトリの epic-state.sh）。Orca の画面の印（ボードの列・コメント欄）は、
 #   記録を書いたあとに写すだけで、判定には使わない（写しの失敗は stderr に出して成功扱い）。
@@ -259,15 +261,22 @@ issue_api() {
   printf 'repos/{owner}/{repo}/issues/%s' "$num"
 }
 
-# Orca の部品: 記録の launcher が orca で orca が PATH にあれば、記録を書いたあとに Orca の印へ写す
-# （<記録のパス> <set の --worktree の値> <set の引数...>）。写せなくても成功扱いで、stderr に出す
-mirror_orca() {
-  local rec="$1" wt="$2"
-  shift 2
-  [ "$(es_get "$rec" launcher)" = orca ] || return 0
-  command -v orca >/dev/null 2>&1 || return 0
-  orca worktree set --worktree "$wt" "$@" >&2 \
-    || echo "could not mirror the state to Orca (orca worktree set --worktree $wt $*); the state record is still written: $rec" >&2
+# 起動部品（子のワークツリー・セッション・画面の印を扱う。この版は Orca の部品 epic-launch-orca.sh だけ）を
+# 別のプロセスとして呼ぶ（<サブコマンド> <引数...>）。待ち時間は、ここで検査して既定を当てた値を同じ名前の
+# 環境変数で渡す（ready / submit は agent_setup、close_wait は reap が入れる。空なら部品の既定）
+LAUNCHER="${BASH_SOURCE[0]%/*}/epic-launch-orca.sh"
+close_wait=""
+launcher() {
+  EPIC_DISPATCH_READY_TIMEOUT_MS="${ready-}" EPIC_DISPATCH_SUBMIT_WAIT="${submit-}" \
+    EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT="$close_wait" bash "$LAUNCHER" "$@"
+}
+
+# 記録の launcher が orca なら、記録を書いたあとに起動部品の mirror で画面の印へ写す
+# （<記録のパス> <current か子のワークツリー> <done|waiting|stopped|resumed|stopped-seen>）。
+# 写せなくても成功扱い（部品が stderr に出す）
+mirror_state() {
+  [ "$(es_get "$1" launcher)" = orca ] || return 0
+  launcher mirror "$2" "$3" "$1"
   return 0
 }
 
@@ -301,7 +310,7 @@ cmd_route() {
     echo nested
     return 0
   fi
-  if command -v orca >/dev/null 2>&1 && orca worktree current --json >/dev/null 2>&1; then
+  if launcher here >/dev/null 2>&1; then
     managed=1
   fi
   if [ "$#" -ge 1 ] && [ "$managed" -eq 1 ]; then
@@ -313,29 +322,6 @@ cmd_route() {
 
 # シェルに貼れる形の単一引用符で囲む
 shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
-
-# 指示が届かなかった子の送り直しのコマンドを stderr に出す（<handle> <prompt> <submit> [<retry id>]）
-resend_hint() {
-  local cmd
-  cmd="orca terminal send --terminal $(shq "$1") --text $(shq "$2") --enter --wait-submit $3 --json"
-  [ -n "${4-}" ] && cmd="$cmd --retry-request $4"
-  {
-    echo "the first prompt may not have reached terminal $1."
-    echo "check the input line and whether a turn started before resending: orca terminal read --terminal $(shq "$1")"
-    echo "resend: $cmd"
-  } >&2
-}
-
-# 端末を作れなかった子の、端末の作り直しと最初の指示の送信のコマンドを stderr に出す
-# （<子のパス> <起動コマンド> <prompt> <submit>）
-recreate_hint() {
-  {
-    echo "no agent terminal was started in $1 (relaunching launch skips this child)."
-    echo "check that no terminal is already running claude there before creating one: orca terminal list --worktree path:$1 --json"
-    echo "create: orca terminal create --worktree path:$1 --command $(shq "$2") --json"
-    echo "then send: orca terminal send --terminal <handle from create> --text $(shq "$3") --enter --wait-submit $4 --json"
-  } >&2
-}
 
 # 子のセッションの起動コマンドと、起動完了待ち・送信の観測時間を環境変数から組み立てる（launch と reply が共用）。
 # 結果は ready / submit / agent_cmd に入れる。値が誤っていれば stderr に理由を出して 1 を返す（orca は呼ばない）
@@ -396,74 +382,6 @@ cmd_max_parallel() {
   echo "$max_par"
 }
 
-# send の出力にターンの開始（stages の turn_started）があるか
-turn_started() {
-  printf '%s' "$1" | jq -e '[.. | objects | .stages? | arrays | .[]] | index("turn_started") != null' >/dev/null 2>&1
-}
-
-# send の出力から再試行の ID を取り出す（無ければ空）
-retry_id() {
-  printf '%s' "$1" | jq -r 'first(.. | objects | (.retryRequestId // .retryRequest) | strings) // empty' 2>/dev/null
-}
-
-# 端末の一覧の JSON から子のセッションの端末を 1 つ選ぶ。Orca は子のワークツリーにシェルの端末
-# （Terminal 1）も作るので、agentIdentity が claude の端末、それが無ければタイトルに Claude Code を
-# 含む端末（Claude Code はタイトルを書き換えるので agentIdentity を先に見る）がちょうど 1 つのときだけ
-# そのハンドルを stdout に出す。決められなければ何も出さない
-pick_session_term() {
-  printf '%s' "$1" | jq -r '[.result.terminals[] | select(.agentIdentity == "claude")] as $a
-    | (if ($a | length) > 0 then $a
-       else [.result.terminals[] | select((.title // "") | tostring | contains("Claude Code"))] end)
-    | [.[] | .handle // empty | strings | select(. != "")]
-    | if length == 1 then .[0] else empty end' 2>/dev/null
-  return 0
-}
-
-# launch 用: 子のワークツリーに worktree create が作った空のシェルの端末がちょうど 1 つあれば、そこへ起動
-# コマンドを打ち込み、端末が Claude Code になる（agentIdentity か タイトル）まで待つ（<子のパス> <起動コマンド>）。
-# 戻り値 0 = 起動した（SHELL_HANDLE にハンドル）/ 1 = 端末が 0 個（呼び出し側が terminal create で作る）/
-# 3 = 失敗（理由と手で続けるコマンドを stderr に出した。端末を増やすと二重になるので作らない）
-SHELL_HANDLE=""
-shell_start() {
-  local terms cnt h out tries i
-  SHELL_HANDLE=""
-  if ! terms="$(orca terminal list --worktree "path:$1" --json)" \
-    || ! cnt="$(printf '%s' "$terms" | jq -e '.result.terminals | if type == "array" then length else error("x") end' 2>/dev/null)"; then
-    echo "orca terminal list --worktree path:$1 --json is not readable" >&2
-    echo "check the terminals before creating one: orca terminal list --worktree path:$1 --json" >&2
-    return 3
-  fi
-  [ "$cnt" -eq 0 ] && return 1
-  h="$(printf '%s' "$terms" | jq -r '.result.terminals | select(length == 1) | .[0].handle // empty' 2>/dev/null)"
-  if [ -z "$h" ]; then
-    echo "terminals in $1: $cnt (expected the one empty shell from worktree create); not starting a second one" >&2
-    echo "check: orca terminal list --worktree path:$1 --json" >&2
-    return 3
-  fi
-  if ! out="$(orca terminal send --terminal "$h" --text "$2" --enter --json)"; then
-    printf '%s\n' "$out" >&2
-    echo "could not type the start command into terminal $h. type it by hand: $2" >&2
-    return 3
-  fi
-  tries=$(( ready / 1000 )); [ "$tries" -ge 1 ] || tries=1
-  for (( i = 0; i < tries; i++ )); do
-    if terms="$(orca terminal list --worktree "path:$1" --json)"; then
-      cnt="$(printf '%s' "$terms" | jq -r '.result.terminals | if type == "array" then length else empty end' 2>/dev/null)"
-      if [ -n "$cnt" ] && [ "$cnt" -ge 2 ]; then
-        echo "terminals in $1: $cnt after typing the start command (expected 1); not sending the prompt" >&2
-        echo "check: orca terminal list --worktree path:$1 --json" >&2
-        return 3
-      fi
-      if [ "$(pick_session_term "$terms")" = "$h" ]; then
-        SHELL_HANDLE="$h"; return 0
-      fi
-    fi
-    sleep 1
-  done
-  echo "terminal $h did not become Claude Code within ${tries}s. check: orca terminal read --terminal $(shq "$h")" >&2
-  return 3
-}
-
 # --- 別のリポジトリの子の clone・Orca のリポジトリ・書き込み権の解決（cmd_launch が使う） ---
 
 # EPIC_DISPATCH_CLONES（<owner>/<repo>=<絶対パス> を改行か ; で区切る）から <repo> の候補のパスを 1 行 1 件で出す。
@@ -498,17 +416,17 @@ clone_matches() {
   return 0
 }
 
-# orca repo list --json を 1 回だけ読む（ORCA_REPOS に入れる。読めなければ空）
-ORCA_REPOS=""; ORCA_REPOS_READ=0
-orca_repos_load() {
-  [ "$ORCA_REPOS_READ" -eq 0 ] || return 0
-  ORCA_REPOS_READ=1
-  ORCA_REPOS="$(orca repo list --json 2>/dev/null)" || ORCA_REPOS=""
-  printf '%s' "$ORCA_REPOS" | jq -e '.result.repos | type == "array"' >/dev/null 2>&1 || ORCA_REPOS=""
+# 起動部品に登録された clone の一覧（repos。1 行 1 件の {"id","path"}）を 1 回の launch で 1 回だけ読む
+# （LAUNCHER_REPOS に入れる。読めなければ空）
+LAUNCHER_REPOS=""; LAUNCHER_REPOS_READ=0
+launcher_repos_load() {
+  [ "$LAUNCHER_REPOS_READ" -eq 0 ] || return 0
+  LAUNCHER_REPOS_READ=1
+  LAUNCHER_REPOS="$(launcher repos)" || LAUNCHER_REPOS=""
 }
 
 # 別のリポジトリ <repo>（小文字の <owner>/<repo>）の clone・Orca のリポジトリ・書き込み権・既定ブランチを解決する。
-# 結果は XR_CODE（ok か失敗の理由: no-clone / ambiguous-clone / not-in-orca / permission-lookup-failed / no-push /
+# 結果は XR_CODE（ok か失敗の理由: no-clone / ambiguous-clone / 部品の unregistered の語（Orca は not-in-orca） / permission-lookup-failed / no-push /
 # base-lookup-failed）・XR_CLONE・XR_ID（Orca のリポジトリの id）・XR_BASE（既定ブランチ）に入れる。
 # 1 回の launch の中で同じリポジトリは 1 回だけ解決する（結果と stderr の案内は最初の 1 回）
 XR_CODE=""; XR_CLONE=""; XR_ID=""; XR_BASE=""
@@ -532,9 +450,9 @@ EOF
   found="$(clones_env_candidates "$repo" | clone_matches "$repo")"
   cnt="$(printf '%s' "$found" | grep -c .)"
   if [ "$cnt" -eq 0 ]; then
-    orca_repos_load
-    if [ -n "$ORCA_REPOS" ]; then
-      found="$(printf '%s' "$ORCA_REPOS" | jq -r '.result.repos[] | .path // empty' | clone_matches "$repo")"
+    launcher_repos_load
+    if [ -n "$LAUNCHER_REPOS" ]; then
+      found="$(printf '%s\n' "$LAUNCHER_REPOS" | jq -r '.path | select(. != "")' | clone_matches "$repo")"
       cnt="$(printf '%s' "$found" | grep -c .)"
     fi
   fi
@@ -552,12 +470,13 @@ EOF
     } >&2
   else
     XR_CLONE="$found"
-    orca_repos_load
-    XR_ID="$(printf '%s' "$ORCA_REPOS" | jq -r --arg p "$XR_CLONE" \
-      '[.result.repos[]? | select(((.path // "") | rtrimstr("/")) == $p)] | .[0].id // empty' 2>/dev/null)"
+    launcher_repos_load
+    XR_ID="$(printf '%s\n' "$LAUNCHER_REPOS" | jq -r -s --arg p "$XR_CLONE" \
+      '[.[] | select(.path == $p)] | .[0].id // empty' 2>/dev/null)"
+    # 登録が無ければ、理由の語（Orca は not-in-orca）と登録の仕方は部品が出す
     if [ -z "$XR_ID" ]; then
-      XR_CODE=not-in-orca
-      echo "$XR_CLONE is not registered in Orca. Add it (launch does not add repositories): orca repo add --path $XR_CLONE" >&2
+      XR_CODE="$(launcher unregistered "$XR_CLONE")"
+      [ -n "$XR_CODE" ] || XR_CODE=unregistered
     fi
   fi
   if [ "$XR_CODE" = ok ]; then
@@ -600,12 +519,12 @@ cmd_launch() {
     exit 1
   fi
 
-  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
+  launcher available || exit 1
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
 
   local current repo parent list erepo
-  current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
-  repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty')"
+  current="$(launcher here)" || exit 1
+  repo="$(printf '%s' "$current" | jq -r '.repo_id // empty')"
   [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
   parent="$(git rev-parse --show-toplevel)" && [ -n "$parent" ] || { echo "git rev-parse failed" >&2; exit 1; }
   # 起動し直した子のセッション（環境変数が無い）でも、子ワークツリーを作らず、今のワークツリーの issue も書き換えない。
@@ -628,11 +547,9 @@ cmd_launch() {
   if [ "$has_same" -eq 1 ]; then
     git fetch origin "$base" >&2 || { echo "git fetch origin $base failed" >&2; exit 1; }
   fi
-  orca worktree set --worktree "path:$parent" --issue "$epic" >&2 \
-    || { echo "orca worktree set failed" >&2; exit 1; }
-  list="$(orca worktree list --json)" || { echo "orca worktree list failed" >&2; exit 1; }
-  printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
-    || { echo "orca worktree list --json is not readable" >&2; exit 1; }
+  launcher prepare "$parent" "$epic" || exit 1
+  # 起動部品が知っている子のワークツリー（1 行 1 件の JSON。読めなければ部品が理由を出す）
+  list="$(launcher list)" || exit 1
 
   # 枠を使っている子を状態の記録から数える。全エピックのディレクトリを横断し、parent_worktree が今のワークツリーの
   # 記録のうち、done・止まった印・閉じた子は数えない。state を読めない子と、ほかの読めない記録は 1 枠に数える
@@ -654,7 +571,7 @@ cmd_launch() {
   echo "max parallel $max_par ($max_par_src); in use $in_use:$in_use_list" >&2
   free=$(( max_par - in_use )); [ "$free" -ge 0 ] || free=0
 
-  local n num f cur prompt body out rc child cbranch handle sent retry failed=0 seen=" " stage shell_rc hit own
+  local n num f cur prompt body out rc child cbranch handle sent failed=0 seen=" " stage hit own
   local crepo xrepo cbase crid cclone
   for n in "$@"; do
     es_parse_arg "$n"; num="$ES_ARG_NUM"
@@ -690,15 +607,14 @@ cmd_launch() {
     fi
     # 記録の無い Orca のワークツリー（この変更の前に起動した子）も起動済み。取り込みは adopt。
     # worktree が空の自分の記録があれば、一覧がちょうど 1 つのときに path と branch を書き足してから skipped にする
-    if printf '%s' "$list" | jq -e --arg r "$crid" --arg n "$num" \
-      'any(.result.worktrees[]; .repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)' \
-      >/dev/null 2>&1; then
+    if printf '%s' "$list" | jq -e -s --arg r "$crid" --arg n "$num" \
+      'any(.[]; .repo_id == $r and .issue == $n)' >/dev/null 2>&1; then
       if [ -e "$f" ]; then
-        hit="$(printf '%s' "$list" | jq -c --arg r "$crid" --arg n "$num" \
-          '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)] | if length == 1 then .[0] else empty end' 2>/dev/null)"
+        hit="$(printf '%s' "$list" | jq -c -s --arg r "$crid" --arg n "$num" \
+          '[.[] | select(.repo_id == $r and .issue == $n)] | if length == 1 then .[0] else empty end' 2>/dev/null)"
         if [ -n "$hit" ]; then
-          es_modify "$f" '.worktree = $w | .branch = $b' --arg w "$(printf '%s' "$hit" | jq -r '.path // empty')" \
-            --arg b "$(printf '%s' "$hit" | jq -r '.branch // empty' | sed 's#^refs/heads/##')" >/dev/null \
+          es_modify "$f" '.worktree = $w | .branch = $b' --arg w "$(printf '%s' "$hit" | jq -r '.path')" \
+            --arg b "$(printf '%s' "$hit" | jq -r '.branch')" >/dev/null \
             || echo "could not write the worktree to the state record: $f" >&2
         fi
       fi
@@ -727,20 +643,18 @@ cmd_launch() {
         rm -f "$f"
         echo "failed $n"; failed=1; continue
       fi
-      out="$(orca worktree create --repo "id:$crid" --name "issue-$num" --issue "$num" --base-branch "origin/$cbase" \
-        --parent-worktree "path:$parent" --json)"
-      rc=$?
     else
       prompt="/develop #$num （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
       # 前の子が別のリポジトリの子でも、起動コマンドをエピックの番号だけに戻す
       agent_cmd_for "$epic"
-      out="$(orca worktree create --name "issue-$num" --issue "$num" --base-branch "origin/$cbase" \
-        --parent-worktree "path:$parent" --json)"
-      rc=$?
+      # 同じリポジトリの子は親と同じリポジトリに作る（部品に repo_id を渡さない）
+      crid=""
     fi
     [ -n "$note" ] && prompt="$prompt $note"
-    printf '%s\n' "$out" >&2
-    if [ "$rc" -ne 0 ]; then
+    # 子のワークツリーを作る（部品の出力は {"path","branch"} の 1 行。1 = 作れなかった / 2 = パスを読めない）
+    out="$(launcher create "$cclone" "$crid" "$num" "$cbase" "$parent")"
+    rc=$?
+    if [ "$rc" -eq 1 ] || { [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; }; then
       rm -f "$f"
       echo "failed $n"; failed=1; continue
     fi
@@ -761,51 +675,30 @@ cmd_launch() {
         fi
       fi
     fi
-    child="$(printf '%s' "$out" | jq -r '.result.worktree.path // empty' 2>/dev/null)"
+    child=""
+    [ "$rc" -eq 0 ] && child="$(printf '%s' "$out" | jq -r '.path // empty' 2>/dev/null)"
     if [ -z "$child" ]; then
       echo "no worktree path for #$num in orca worktree create --json" >&2
       es_modify "$f" '.launch_failed = "create"' >/dev/null || true
       echo "failed $n"; failed=1; continue
     fi
-    cbranch="$(printf '%s' "$out" | jq -r '.result.worktree.branch // empty' 2>/dev/null)"
-    es_modify "$f" '.worktree = $w | .branch = $b' --arg w "$child" --arg b "${cbranch#refs/heads/}" >/dev/null \
+    cbranch="$(printf '%s' "$out" | jq -r '.branch // empty' 2>/dev/null)"
+    es_modify "$f" '.worktree = $w | .branch = $b' --arg w "$child" --arg b "$cbranch" >/dev/null \
       || echo "could not write the worktree to the state record: $f" >&2
-    # worktree create が空のシェルの端末を 1 つ作っていれば、新しい端末は作らずそこで起動する
-    # （端末が 2 つになると reply が ambiguous-terminal で止まる）。0 個なら従来どおり作る
-    handle=""; shell_rc=0; stage=""
-    shell_start "$child" "$agent_cmd" || shell_rc=$?
-    if [ "$shell_rc" -eq 0 ]; then
-      handle="$SHELL_HANDLE"
-    elif [ "$shell_rc" -eq 3 ]; then
-      stage=terminal
-    else
-      out="$(orca terminal create --worktree "path:$child" --command "$agent_cmd" --json)"
-      rc=$?
-      printf '%s\n' "$out" >&2
-      [ "$rc" -eq 0 ] && handle="$(printf '%s' "$out" | jq -r '.result.terminal.handle // empty' 2>/dev/null)"
-      if [ -z "$handle" ]; then
-        echo "no terminal handle for #$num from orca terminal create --json" >&2
-        recreate_hint "$child" "$agent_cmd" "$prompt" "$submit"
-        stage=terminal
-      fi
-    fi
-    if [ -z "$stage" ] && ! orca terminal wait --terminal "$handle" --for tui-idle --timeout-ms "$ready" --json >&2; then
-      resend_hint "$handle" "$prompt" "$submit"
-      stage=ready
-    fi
-    if [ -z "$stage" ]; then
-      sent="$(orca terminal send --terminal "$handle" --text "$prompt" --enter --wait-submit "$submit" --json)"
-      rc=$?
-      printf '%s\n' "$sent" >&2
-      if [ "$rc" -eq 0 ] && turn_started "$sent"; then
+    # セッションを起動して最初の指示を送る（部品の出力は `started <session>` か `failed <段> [<session>]`）
+    handle=""; stage=""
+    sent="$(launcher start "$child" "$agent_cmd" "$prompt" "$num")"
+    case "$sent" in
+      "started "*)
+        handle="${sent#started }"
         es_modify "$f" '.session = $s | .launch_failed = ""' --arg s "$handle" >/dev/null \
           || echo "could not write the session to the state record: $f" >&2
-        echo "launched $n"; continue
-      fi
-      retry="$(retry_id "$sent")"
-      resend_hint "$handle" "$prompt" "$submit" "$retry"
-      stage=send
-    fi
+        echo "launched $n"; continue ;;
+      "failed "*)
+        stage="${sent#failed }"
+        case "$stage" in *" "*) handle="${stage#* }"; stage="${stage%% *}" ;; esac ;;
+      *) stage=terminal ;;
+    esac
     # ワークツリーを作ったあとの失敗は記録を残し、段を書く（次の launch では skipped）
     es_modify "$f" '.launch_failed = $st | .session = $s' --arg st "$stage" --arg s "$handle" >/dev/null \
       || echo "could not write launch_failed to the state record: $f" >&2
@@ -820,7 +713,7 @@ cmd_launch() {
 # 1 行を出し、failed なら 1 を返す。orca 自身の出力は stderr。reply・notify-closed・wait --resolve が共用する
 deliver_reply() {
   local relaunch="$1" as="$2" epic="$3" n="$4" text="$5"
-  local msg rec path terms tcount handle out rc sent prompt erefs=" " xrepo_epic=""
+  local msg rec path res prompt erefs=" " xrepo_epic=""
   child_record "$PARENT_TOP" "$n"
   case $? in
     0) ;;
@@ -843,64 +736,23 @@ deliver_reply() {
     parent) msg="親エピック #$epic${erefs}の判断（主の承認ではない）: $text" ;;
     *) msg="主の返事（親エピック #$epic${erefs}経由）: $text" ;;
   esac
-  if ! terms="$(orca terminal list --worktree "path:$path" --json)" \
-    || ! tcount="$(printf '%s' "$terms" \
-      | jq -e '.result.terminals | if type == "array" then length else error("terminals is not an array") end' 2>/dev/null)"; then
-    # terminals が欠落・null・配列以外なら 0 個と数えない（0 個として作り直すと、動いている子が二重に起動する）
-    echo "orca terminal list --worktree path:$path --json is not readable" >&2
-    echo "failed $n terminal-list"; return 1
-  fi
-  # 端末があれば、子のセッションの端末（Claude Code の端末 1 つ）に送る
-  # （止まっている子の入力欄に打ち込み、ターンの開始まで確かめる）。Orca は子のワークツリーにシェルの
-  # 端末も作るので、端末の数では決めない。決められなければ送らない（シェルの端末だけのときも、
-  # それが子のセッションでないと一覧から言い切れないので起動し直さない。主の判断で --relaunch を使う）
-  if [ "$relaunch" -eq 0 ] && [ "$tcount" -gt 0 ]; then
-    handle="$(pick_session_term "$terms")"
-    if [ -z "$handle" ]; then
-      echo "terminals in $path: $tcount, but not exactly one is Claude Code (cannot tell which one runs the child session; use reply --relaunch to start it over)" >&2
-      echo "failed $n ambiguous-terminal"; return 1
-    fi
-    sent="$(orca terminal send --terminal "$handle" --text "$msg" --enter --wait-submit "$submit" --json)"
-    rc=$?
-    printf '%s\n' "$sent" >&2
-    if [ "$rc" -eq 0 ] && turn_started "$sent"; then
-      echo "sent $n"; return 0
-    fi
-    resend_hint "$handle" "$msg" "$submit" "$(retry_id "$sent")"
-    echo "failed $n send"; return 1
-  fi
-  # 端末が無いか --relaunch: 古いセッションを残したまま二重に起動しないよう、先に全部閉じてから作る
-  if [ "$tcount" -gt 0 ]; then
-    orca terminal close --worktree "path:$path" --all --json >&2 || { echo "failed $n close"; return 1; }
-  fi
   if [ -n "$xrepo_epic" ]; then
     prompt="/develop #$(es_get "$rec" number) （エピック #$epic の子。エピックのリポジトリ ${xrepo_epic%%#*}。返事を受けて起動し直し） $msg"
   else
     prompt="/develop $(child_label "$n") （エピック #$epic の子。返事を受けて起動し直し） $msg"
   fi
-  out="$(orca terminal create --worktree "path:$path" --command "$agent_cmd" --json)"
-  rc=$?
-  printf '%s\n' "$out" >&2
-  handle=""
-  [ "$rc" -eq 0 ] && handle="$(printf '%s' "$out" | jq -r '.result.terminal.handle // empty' 2>/dev/null)"
-  if [ -z "$handle" ]; then
-    recreate_hint "$path" "$agent_cmd" "$prompt" "$submit"
-    echo "failed $n create"; return 1
-  fi
-  if ! orca terminal wait --terminal "$handle" --for tui-idle --timeout-ms "$ready" --json >&2; then
-    resend_hint "$handle" "$prompt" "$submit"
-    echo "failed $n ready"; return 1
-  fi
-  sent="$(orca terminal send --terminal "$handle" --text "$prompt" --enter --wait-submit "$submit" --json)"
-  rc=$?
-  printf '%s\n' "$sent" >&2
-  if [ "$rc" -eq 0 ] && turn_started "$sent"; then
-    # 起動し直した子のセッションの端末を記録に残す（見張りの判定には使わない。書けなくても送信は成功）
-    es_modify "$rec" '.session = $s' --arg s "$handle" >/dev/null || echo "could not write the session to the state record: $rec" >&2
-    echo "relaunched $n"; return 0
-  fi
-  resend_hint "$handle" "$prompt" "$submit" "$(retry_id "$sent")"
-  echo "failed $n send"; return 1
+  # 部品がセッションの一覧を 1 回だけ読み、子のセッションへ送るか、閉じて起動し直すかを決める
+  # （出力は sent / relaunched <session> / failed <理由> の 1 行）
+  res="$(launcher deliver "$path" "$relaunch" "$msg" "$agent_cmd" "$prompt")"
+  case "$res" in
+    sent) echo "sent $n"; return 0 ;;
+    "relaunched "*)
+      # 起動し直した子のセッションの端末を記録に残す（見張りの判定には使わない。書けなくても送信は成功）
+      es_modify "$rec" '.session = $s' --arg s "${res#relaunched }" >/dev/null || echo "could not write the session to the state record: $rec" >&2
+      echo "relaunched $n"; return 0 ;;
+    "failed "*) echo "failed $n ${res#failed }"; return 1 ;;
+    *) echo "failed $n send"; return 1 ;;
+  esac
 }
 
 cmd_reply() {
@@ -919,7 +771,7 @@ cmd_reply() {
   check_children "$2"
   [ -n "$3" ] || { echo "the reply text must not be empty" >&2; usage; }
   agent_setup "$1" || usage
-  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
+  launcher available || exit 1
   need_parent
   deliver_reply "$relaunch" "$as" "$1" "$2" "$3" || exit 1
   exit 0
@@ -970,7 +822,7 @@ cmd_notify_closed() {
     stopped|stopped-seen) ;;
     *) echo "skipped $n not-stopped"; exit 0 ;;
   esac
-  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
+  launcher available || exit 1
   # 停止の記録は、信頼できる投稿者の最新の `子の停止: 主の返事待ち` のコメント（無ければ子 issue の URL）
   local url
   url="$(gh api "$api/comments" --paginate --jq \
@@ -999,13 +851,12 @@ cmd_notify_closed() {
 # 記録の number（<owner>/<repo>#<N> で渡したときは repo も）が引数と一致するときだけ書き、書けたら Orca の印へ写す
 cmd_mark() {
   [ "$#" -eq 2 ] || usage
-  local kind="$1" n="$2" filter set_args
+  local kind="$1" n="$2" filter
   case "$kind" in
-    done) filter='.status = "done"'; set_args="--workspace-status completed" ;;
-    waiting) filter='.status = "waiting"'; set_args="--workspace-status in-review" ;;
-    stopped) filter='.stop = "stopped"'; set_args="--comment epic-stopped" ;;
-    resumed) filter='if .stop == "stopped" or .stop == "stopped-seen" then .stop = "resumed" else empty end'
-      set_args="--comment epic-resumed" ;;
+    done) filter='.status = "done"' ;;
+    waiting) filter='.status = "waiting"' ;;
+    stopped) filter='.stop = "stopped"' ;;
+    resumed) filter='if .stop == "stopped" or .stop == "stopped-seen" then .stop = "resumed" else empty end' ;;
     *) usage ;;
   esac
   es_valid_arg "$n" || { echo "not an issue number or <owner>/<repo>#<number>: $n" >&2; usage; }
@@ -1040,8 +891,7 @@ cmd_mark() {
     4) echo "skipped $n not-stopped"; return 0 ;;
     *) echo "failed $n"; exit 1 ;;
   esac
-  # shellcheck disable=SC2086
-  mirror_orca "$f" current $set_args
+  mirror_state "$f" current "$kind"
   echo "marked $n $kind"
   return 0
 }
@@ -1238,7 +1088,7 @@ cmd_wait() {
         es_modify "$f" 'if .stop == "stopped" then .stop = "stopped-seen" else empty end' >/dev/null 2>>"$errf"
         case $? in
           0)
-            mirror_orca "$f" "path:$(es_get "$f" worktree)" --comment epic-stopped-seen
+            mirror_state "$f" "$(es_get "$f" worktree)" stopped-seen
             stopped="$stopped $n" ;;
           4) ;;
           *) wsfail=1 ;;
@@ -1321,10 +1171,10 @@ ghpr() {
 cmd_reap() {
   [ "$#" -ge 1 ] || usage
   check_children "$@"
-  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
+  launcher available || exit 1
   need_parent
 
-  local n f w path branch st head heads sheads rmerr tip seen=" "
+  local n f w path branch st head heads sheads rmres tip seen=" "
   local legacy allprs istate lsout btip="" base="${EPIC_DISPATCH_BASE:-main}"
   local rr wd gd cbase bkey bvar fvar erec
   for n in "$@"; do
@@ -1419,32 +1269,21 @@ cmd_reap() {
       gd="$(git -C "$path" rev-parse --path-format=absolute --git-common-dir)" && [ -n "$gd" ] \
         || { echo "kept $n git-failed"; continue; }
     fi
-    # 端末の閉じが失敗したら（子のターンが終わっておらず terminal_close_incomplete になることがある）、
-    # 原因の手がかりに端末の一覧を stderr に出し、待ってから 1 回だけ閉じ直す。それでも駄目なら主の操作に回す
-    if ! orca terminal close --worktree "path:$path" --all >&2; then
-      cw="${EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT:-10}"
-      case "$cw" in ''|*[!0-9]*) cw=10 ;; esac
-      echo "terminal close was incomplete for #$n; listing terminals, waiting ${cw}s and retrying once" >&2
-      orca terminal list --worktree "path:$path" --json >&2 || true
-      sleep "$cw"
-      if ! orca terminal close --worktree "path:$path" --all >&2; then
-        echo "owner action for #$n: open the workspace $path in Orca, wait for the child's running turn to end or close its terminals by hand, then run: epic-dispatch.sh reap $n" >&2
-        echo "kept $n close-failed"; continue
-      fi
+    # 端末を閉じる。閉じが失敗したら（子のターンが終わっておらず terminal_close_incomplete になることがある）、
+    # 部品が端末の一覧を stderr に出し、待ってから 1 回だけ閉じ直す。それでも駄目なら主の操作に回す
+    close_wait="${EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT:-10}"
+    case "$close_wait" in ''|*[!0-9]*) close_wait=10 ;; esac
+    if ! launcher close "$path" "$n"; then
+      echo "owner action for #$n: open the workspace $path in Orca, wait for the child's running turn to end or close its terminals by hand, then run: epic-dispatch.sh reap $n" >&2
+      echo "kept $n close-failed"; continue
     fi
-    # --force は付けない（確認のあとに増えた未コミットの変更があれば rm が止まる）
-    # 端末の片付けの失敗（stderr に terminal sweep failed）は別の理由で返す。再試行もしない
-    rmerr="$(mktemp)" || { echo "kept $n rm-failed"; continue; }
-    if ! orca worktree rm --worktree "path:$path" 2>"$rmerr"; then
-      cat "$rmerr" >&2
-      if grep -qF -- 'terminal sweep failed' "$rmerr"; then
-        echo "kept $n rm-failed-terminal-sweep"
-      else
-        echo "kept $n rm-failed"
-      fi
-      rm -f "$rmerr"; continue
+    # ワークツリーを消す（部品は --force を付けない。確認のあとに増えた未コミットの変更があれば rm が止まる）。
+    # 消せなければ部品が出した理由の語（rm-failed / rm-failed-terminal-sweep）を付けて残す。再試行もしない
+    # rm の通常の stdout は切り出す前と同じく reap の stdout に出す（部品の stdout は理由の語だけ）。
+    # コマンド置換の外側の stdout を FD 3 に保持して渡し、部品が中継する
+    if ! { rmres="$(EPIC_LAUNCH_STDOUT_FD=3 launcher remove "$path")"; } 3>&1; then
+      echo "kept $n ${rmres:-rm-failed}"; continue
     fi
-    cat "$rmerr" >&2; rm -f "$rmerr"
     if tip="$(gitx "$gd" rev-parse --verify --quiet "refs/heads/$branch")"; then
       # Orca は rm の exit 0 のあともワークツリーを非同期で消すことがあり、git の一覧から外れるまで
       # そのブランチは消せない。先端が HEAD と同じときだけ、外れるのを上限つきで待つ
@@ -1489,18 +1328,16 @@ cmd_adopt() {
   local epic="$1"; shift
   is_num "$epic" || { echo "not an issue number: $epic" >&2; usage; }
   check_children "$@"
-  command -v orca >/dev/null 2>&1 || { echo "orca is not on PATH" >&2; exit 1; }
+  launcher available || exit 1
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
   local base="${EPIC_DISPATCH_BASE:-main}" current repo cid parent erepo list
-  current="$(orca worktree current --json)" || { echo "not in an Orca-managed worktree" >&2; exit 1; }
-  repo="$(printf '%s' "$current" | jq -r '.result.worktree.repoId // empty' 2>/dev/null)"
-  cid="$(printf '%s' "$current" | jq -r '.result.worktree.id // empty' 2>/dev/null)"
+  current="$(launcher here)" || exit 1
+  repo="$(printf '%s' "$current" | jq -r '.repo_id // empty' 2>/dev/null)"
+  cid="$(printf '%s' "$current" | jq -r '.worktree_id // empty' 2>/dev/null)"
   [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
   parent="$(toplevel)" && [ -n "$parent" ] || { echo "git rev-parse failed" >&2; exit 1; }
   erepo="$(es_epic_repo)" || exit 1
-  list="$(orca worktree list --json)" || { echo "orca worktree list failed" >&2; exit 1; }
-  printf '%s' "$list" | jq -e '.result.worktrees | type == "array"' >/dev/null 2>&1 \
-    || { echo "orca worktree list --json is not readable" >&2; exit 1; }
+  list="$(launcher list)" || exit 1
   [ -n "$cid" ] || echo "orca worktree current --json has no id; no child is found" >&2
 
   local n num crepo f hits cnt w b st sp failed=0
@@ -1512,24 +1349,21 @@ cmd_adopt() {
       else echo "unreadable state record: $f" >&2; echo "failed $n state-unreadable"; failed=1; fi
       continue
     fi
-    # Orca の一覧は今のワークツリーと同じリポジトリのワークツリーだけを持つ
+    # 部品の一覧（list）は今のワークツリーと同じリポジトリのワークツリーだけを持つ
     if [ "$crepo" != "$erepo" ] || [ -z "$cid" ]; then echo "none $n"; continue; fi
-    hits="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$num" --arg p "$cid" \
-      '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n
-        and .isArchived != true and .parentWorktreeId == $p)]')"
+    hits="$(printf '%s' "$list" | jq -c -s --arg r "$repo" --arg n "$num" --arg p "$cid" \
+      '[.[] | select(.repo_id == $r and .issue == $n and .parent_id == $p)]')"
     cnt="$(printf '%s' "$hits" | jq 'length')"
     if [ "$cnt" -eq 0 ]; then echo "none $n"; continue; fi
     if [ "$cnt" -gt 1 ]; then
       echo "two or more Orca worktrees for $n under this parent" >&2
       echo "failed $n ambiguous"; failed=1; continue
     fi
-    w="$(printf '%s' "$hits" | jq -r '.[0].path // empty')"
-    b="$(printf '%s' "$hits" | jq -r '.[0].branch // empty')"; b="${b#refs/heads/}"
-    st="$(printf '%s' "$hits" | jq -r '.[0].workspaceStatus // "" |
-      if . == "completed" then "done" elif . == "in-review" then "waiting" else "running" end')"
-    sp="$(printf '%s' "$hits" | jq -r '.[0].comment // "" |
-      if . == "epic-stopped" then "stopped" elif . == "epic-stopped-seen" then "stopped-seen"
-      elif . == "epic-resumed" then "resumed" else "" end')"
+    # status と stop は部品が記録の語に読み替えた値
+    w="$(printf '%s' "$hits" | jq -r '.[0].path')"
+    b="$(printf '%s' "$hits" | jq -r '.[0].branch')"
+    st="$(printf '%s' "$hits" | jq -r '.[0].status')"
+    sp="$(printf '%s' "$hits" | jq -r '.[0].stop')"
     if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$crepo" "$num" orca "$parent" "$w" "$b" "$base" "$st" "$sp")"; then
       echo "could not write the state record: $f" >&2
       echo "failed $n"; failed=1; continue

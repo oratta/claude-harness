@@ -124,6 +124,7 @@ case "$1 $2" in
     fi
     exit "$rc" ;;
   "worktree rm")
+    cat "$STUB_CFG/rm_out" 2>/dev/null
     cat "$STUB_CFG/rm_err" >&2 2>/dev/null
     exit "$(cat "$STUB_CFG/rm_exit" 2>/dev/null || echo 0)" ;;
   "terminal close")
@@ -3091,12 +3092,30 @@ orca_doc_violations() {
   [ -n "$(orca_doc_violations "$d")" ]
 }
 
-@test "skill: develop's docs run no orca subcommand and only epic-dispatch.sh calls orca" {
+# orca をコマンドとして書いた行（行頭・; & | ( ! $( と if/then/do/else/while/until のあとに orca <小文字>）を持つ
+# シェルスクリプトを列挙する（<ディレクトリ>）。文字列とコメントの中の orca は拾わない
+orca_cmd_scripts() {
+  grep -rlE '(^|[;&|(!]|(if|then|do|else|while|until) )[[:space:]]*orca [a-z]+' "$1" --include='*.sh'
+}
+
+@test "skill: develop's docs run no orca subcommand and only the Orca launcher calls orca" {
   [ -z "$(orca_doc_violations "$PLUGIN_DIR/skills/develop")" ]
   [ "$(grep -rhoF "$ORCA_DOC_ALLOWED" "$PLUGIN_DIR/skills/develop" | grep -c .)" -eq 1 ]
-  run grep -rlw orca "$PLUGIN_DIR" --include='*.sh'
+  run orca_cmd_scripts "$PLUGIN_DIR"
   [ "$status" -eq 0 ]
-  [ "$output" = "$PLUGIN_DIR/scripts/epic-dispatch.sh" ]
+  [ "$output" = "$PLUGIN_DIR/scripts/epic-launch-orca.sh" ]
+  # 記録を読み書きするスクリプトは orca の語を含まない
+  run grep -rlw orca "$PLUGIN_DIR" --include='*.sh'
+  case "$output" in *epic-state.sh*) false ;; esac
+}
+
+@test "skill: an orca command added to a copy of epic-dispatch.sh is found" {
+  local d="$BATS_TEST_TMPDIR/copy"
+  mkdir -p "$d"
+  cp "$SCRIPT" "$d/epic-dispatch.sh"
+  [ -z "$(orca_cmd_scripts "$d")" ]
+  printf '%s\n' 'orca terminal list --json' >> "$d/epic-dispatch.sh"
+  [ "$(orca_cmd_scripts "$d")" = "$d/epic-dispatch.sh" ]
 }
 
 # spec: dev-workflow-develop（エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する）
@@ -4867,4 +4886,275 @@ xreap_ready() {
   run dispatch reap genetta-inc/flatmate#1615
   [ "$output" = "kept genetta-inc/flatmate#1615 git-failed" ]
   [ "$(calls '^orca worktree rm')" -eq 0 ]
+}
+
+# spec: dev-workflow-epic-state（起動部品は epic-launch-<名前>.sh の 1 本ずつで、同じサブコマンドと出力の契約を持つ）
+# Orca の起動部品を直接呼ぶ（stderr は $BATS_TEST_TMPDIR/stderr）
+part() { PATH="$STUB_BIN:/usr/bin:/bin" bash "$PLUGIN_DIR/scripts/epic-launch-orca.sh" "$@" 2>"$BATS_TEST_TMPDIR/stderr"; }
+
+@test "launcher orca: an unknown subcommand and a wrong number of arguments exit 2 with the usage" {
+  make_stub orca
+  run part nosuch
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  run part create /work/parent '' 5 main
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  run part available extra
+  [ "$status" -eq 2 ]
+  [ "$(calls '^orca')" -eq 0 ]
+}
+
+@test "launcher orca: create prints only the path and the branch, and omits --repo for an empty repo_id" {
+  make_stub orca
+  printf '%s\n' '{"result":{"worktree":{"path":"/work/issue-5","branch":"refs/heads/oratta/issue-5"}}}' > "$STUB_CFG/create_json_5"
+  run part create /work/parent '' 5 main /work/parent
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | grep -c .)" -eq 1 ]
+  [ "$(printf '%s' "$output" | jq -r '.path')" = /work/issue-5 ]
+  [ "$(printf '%s' "$output" | jq -r '.branch')" = oratta/issue-5 ]
+  grep -qF 'refs/heads/oratta/issue-5' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca worktree create')" -eq 1 ]
+  [ "$(calls '--repo')" -eq 0 ]
+  grep -qF -- '--base-branch origin/main --parent-worktree path:/work/parent --json' "$STUB_LOG"
+}
+
+@test "launcher orca: create with a repo_id passes --repo, and a missing path exits 2" {
+  make_stub orca
+  echo '{"ok":true}' > "$STUB_CFG/create_json_5"
+  run part create /src/other repo-b 5 develop /work/parent
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  grep -qF -- 'orca worktree create --repo id:repo-b --name issue-5' "$STUB_LOG"
+  touch "$STUB_CFG/create_fail_6"
+  run part create /src/other repo-b 6 develop /work/parent
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "launcher orca: list reads the Orca marks as the record's words and drops archived worktrees" {
+  make_stub orca
+  printf '%s\n' '{"result":{"worktrees":[
+    {"repoId":"repo-a","linkedIssue":5,"path":"/work/issue-5","branch":"refs/heads/oratta/issue-5","parentWorktreeId":"p1","workspaceStatus":"completed","comment":"epic-stopped"},
+    {"repoId":"repo-a","linkedIssue":6,"path":"/work/issue-6","isArchived":true}]}}' > "$STUB_CFG/list_json"
+  run part list
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | grep -c .)" -eq 1 ]
+  [ "$(printf '%s' "$output" | jq -r '.issue')" = 5 ]
+  [ "$(printf '%s' "$output" | jq -r '.status')" = done ]
+  [ "$(printf '%s' "$output" | jq -r '.stop')" = stopped ]
+  [ "$(printf '%s' "$output" | jq -r '.branch')" = oratta/issue-5 ]
+  [ "$(printf '%s' "$output" | jq -r '.parent_id')" = p1 ]
+  [ ! -s "$BATS_TEST_TMPDIR/stderr" ]
+  echo '{"result":{}}' > "$STUB_CFG/list_json"
+  run part list
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'orca worktree list --json is not readable' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launcher orca: repos prints each clone with no trailing slash" {
+  make_stub orca
+  echo '{"result":{"repos":[{"id":"r1","path":"/src/a/"},{"id":"r2","path":"/src/b"}]}}' > "$STUB_CFG/repo_list_json"
+  run part repos
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | jq -r '.path' | tr '\n' ' ')" = "/src/a /src/b " ]
+  echo 1 > "$STUB_CFG/repo_list_exit"
+  run part repos
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "launcher orca: deliver reads the terminal list once and relaunches when there is no terminal" {
+  make_stub orca
+  run part deliver /work/issue-5 0 返事 cld 指示
+  [ "$status" -eq 0 ]
+  [ "$output" = "relaunched term-5" ]
+  [ "$(calls '^orca terminal list')" -eq 1 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 1 ]
+  [ "$(calls '^orca terminal wait')" -eq 1 ]
+  [ "$(calls '^orca terminal send')" -eq 1 ]
+  [ "$(cat "$STUB_CFG/sent_term-5")" = 指示 ]
+}
+
+@test "launcher orca: deliver with only a shell terminal fails as ambiguous-terminal without relaunch, and relaunches with relaunch 1" {
+  make_stub orca
+  echo '{"ok":true,"result":{"terminals":[{"handle":"sh-5","title":"Terminal 1"}]}}' > "$STUB_CFG/tlist_json_5"
+  run part deliver /work/issue-5 0 返事 cld 指示
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed ambiguous-terminal" ]
+  [ "$(calls '^orca terminal list')" -eq 1 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  : > "$STUB_LOG"
+  run part deliver /work/issue-5 1 返事 cld 指示
+  [ "$status" -eq 0 ]
+  [ "$output" = "relaunched term-5" ]
+  [ "$(calls '^orca terminal list')" -eq 1 ]
+  [ "$(grep -oE '^orca terminal (close|create|wait|send)' "$STUB_LOG" | tr '\n' ' ')" \
+    = "orca terminal close orca terminal create orca terminal wait orca terminal send " ]
+}
+
+@test "launcher orca: mirror does nothing without orca" {
+  run part mirror current done /tmp/rec.json
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -s "$BATS_TEST_TMPDIR/stderr" ]
+  [ ! -s "$STUB_LOG" ]
+}
+
+@test "launcher orca: close retries once after an incomplete close and names the child in stderr" {
+  make_stub orca
+  echo 1 > "$STUB_CFG/close_exit_1"
+  run part close /work/issue-5 o/r#5
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  grep -qF 'terminal close was incomplete for #o/r#5; ' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca terminal close')" -eq 2 ]
+  [ "$(calls '^orca terminal list')" -eq 1 ]
+  echo 1 > "$STUB_CFG/close_exit"
+  rm -f "$STUB_CFG/closecount"
+  run part close /work/issue-5 5
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "launcher orca: here exits 0 without jq when orca worktree current --json succeeds" {
+  make_stub orca
+  local d="$BATS_TEST_TMPDIR/nojq"
+  mkdir -p "$d"
+  ln -sf "$(command -v bash)" "$d/bash"
+  ln -sf "$(command -v cat)" "$d/cat"
+  run env PATH="$STUB_BIN:$d" bash "$PLUGIN_DIR/scripts/epic-launch-orca.sh" here
+  [ "$status" -eq 0 ]
+  [ "$output" = '{"repo_id":"","worktree_id":""}' ]
+  echo 1 > "$STUB_CFG/current_exit"
+  run part here
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "launcher orca: remove tells a terminal sweep failure from other failures" {
+  make_stub orca
+  run part remove /work/issue-5
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  echo 1 > "$STUB_CFG/rm_exit"
+  echo 'error: terminal sweep failed' > "$STUB_CFG/rm_err"
+  run part remove /work/issue-5
+  [ "$status" -eq 1 ]
+  [ "$output" = rm-failed-terminal-sweep ]
+  echo 'error: dirty' > "$STUB_CFG/rm_err"
+  run part remove /work/issue-5
+  [ "$output" = rm-failed ]
+  [ "$(calls '--force')" -eq 0 ]
+}
+
+# orca が exit 0 で空・空白だけの stdout を返したら、空の一覧にせず読めないものとして exit 1 にする
+@test "launcher orca: list and repos treat an empty or blank stdout as unreadable, and a real empty array as an empty list" {
+  make_stub orca
+  : > "$STUB_CFG/list_json"
+  run part list
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'orca worktree list --json is not readable' "$BATS_TEST_TMPDIR/stderr"
+  printf ' \n\n' > "$STUB_CFG/list_json"
+  run part list
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  echo '{"result":{"worktrees":[]}}' > "$STUB_CFG/list_json"
+  run part list
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  : > "$STUB_CFG/repo_list_json"
+  run part repos
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  printf ' \n' > "$STUB_CFG/repo_list_json"
+  run part repos
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  echo '{"result":{"repos":[]}}' > "$STUB_CFG/repo_list_json"
+  run part repos
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "launcher orca: launch and adopt after an empty worktree list make no record and no worktree" {
+  make_stub orca
+  : > "$STUB_CFG/list_json"
+  run dispatch launch 1122 11
+  [ "$status" -eq 1 ]
+  grep -qF 'orca worktree list --json is not readable' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  [ ! -e "$(rec_of 1122 11)" ]
+  set_current 1122
+  run dispatch adopt 1122 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'orca worktree list --json is not readable' "$BATS_TEST_TMPDIR/stderr"
+  [ ! -e "$(rec_of 1122 11)" ]
+}
+
+# rm の通常の stdout は、部品の stdout に混ぜず、渡された FD（EPIC_LAUNCH_STDOUT_FD）へ中継する。
+# FD が渡されない呼び出しでは stderr へ回す
+# 部品に FD の番号（EPIC_LAUNCH_STDOUT_FD）を渡して呼ぶ（<FD の番号> <サブコマンド> <引数...>）
+partfd() { local fd="$1"; shift; EPIC_LAUNCH_STDOUT_FD="$fd" part "$@"; }
+
+@test "launcher orca: remove relays the rm stdout to the given FD and keeps its own stdout to the control line" {
+  make_stub orca
+  echo 'Removed worktree /work/issue-5' > "$STUB_CFG/rm_out"
+  partfd 7 remove /work/issue-5 7>"$BATS_TEST_TMPDIR/relay" >"$BATS_TEST_TMPDIR/ctl"
+  [ -z "$(cat "$BATS_TEST_TMPDIR/ctl")" ]
+  [ "$(cat "$BATS_TEST_TMPDIR/relay")" = 'Removed worktree /work/issue-5' ]
+  echo 1 > "$STUB_CFG/rm_exit"
+  echo 'error: dirty' > "$STUB_CFG/rm_err"
+  : > "$BATS_TEST_TMPDIR/relay"
+  run partfd 7 remove /work/issue-5 7>"$BATS_TEST_TMPDIR/relay"
+  [ "$status" -eq 1 ]
+  [ "$output" = rm-failed ]
+  [ "$(cat "$BATS_TEST_TMPDIR/relay")" = 'Removed worktree /work/issue-5' ]
+  grep -qF 'error: dirty' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launcher orca: remove without a usable FD sends the rm stdout to stderr, not stdout" {
+  make_stub orca
+  echo 'Removed worktree /work/issue-5' > "$STUB_CFG/rm_out"
+  run part remove /work/issue-5
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  grep -qF 'Removed worktree /work/issue-5' "$BATS_TEST_TMPDIR/stderr"
+  run partfd 9 remove /work/issue-5 9>&-
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ "$(calls '^orca worktree rm')" -eq 2 ]
+  grep -qF 'Removed worktree /work/issue-5' "$BATS_TEST_TMPDIR/stderr"
+}
+
+# 切り出す前（d07eda2f）の reap と同じ: rm の stdout は reap の stdout に出て、rm の stderr は stderr に出る
+@test "reap: the stdout of orca worktree rm stays in the stdout of reap, as before the split" {
+  reap_ready
+  echo 'Removed worktree' > "$STUB_CFG/rm_out"
+  echo 'rm note' > "$STUB_CFG/rm_err"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = 'Removed worktree' ]
+  [ "${lines[1]}" = 'reaped 11' ]
+  [ "${#lines[@]}" -eq 2 ]
+  grep -qF 'rm note' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "reap: a failing worktree rm keeps its stdout in the stdout of reap before the kept line" {
+  reap_ready
+  echo 'Removed worktree' > "$STUB_CFG/rm_out"
+  echo 'error: dirty' > "$STUB_CFG/rm_err"
+  echo 1 > "$STUB_CFG/rm_exit"
+  run dispatch reap 11
+  [ "${lines[0]}" = 'Removed worktree' ]
+  [ "${lines[1]}" = 'kept 11 rm-failed' ]
+  [ "${#lines[@]}" -eq 2 ]
+  grep -qF 'error: dirty' "$BATS_TEST_TMPDIR/stderr"
 }
