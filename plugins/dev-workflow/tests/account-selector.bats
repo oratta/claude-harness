@@ -505,3 +505,21 @@ JSON
   [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
   grep -qF 'accounts.sh on b' "${WORK}/stderr"
 }
+
+@test "enabled: the way back printed for an off slot runs as is without accounts.sh on PATH" {
+  write_registry
+  CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "${PLUGIN_DIR}/scripts/accounts.sh" off b
+  run invoke b
+  [ "$status" -eq 2 ]
+  local line cmd
+  line="$(cat "${WORK}/stderr")"
+  cmd="${line#*: run }"
+  [ "$cmd" != "$line" ]
+  case "$cmd" in /*|\'/*) ;; *) return 1 ;; esac
+  # PATH に scripts を入れずに、表示された案内をそのまま実行して戻せる
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" PATH="/usr/bin:/bin" sh -c "$cmd"
+  [ "$status" -eq 0 ]
+  run invoke b
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=explicit margins=-" ]
+}
