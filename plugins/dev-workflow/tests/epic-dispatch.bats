@@ -4746,3 +4746,91 @@ xnothing_made() {
   run dispatch reply --as parent 400 11 続けてよい
   [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 続けてよい" ]
 }
+
+# ---- reap: エピックと別のリポジトリの子（cross-repo-children） ----
+
+# 別のリポジトリの子 1615 の完了済みの記録（base は develop）。PR の無い子にするときは $1 に prless
+xreap_ready() {
+  make_stub orca
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 status=done base=develop
+  if [ "${1-}" = prless ]; then
+    : > "$STUB_CFG/pr_out"
+    gh_seq 1615 closed
+  else
+    echo aaa111 > "$STUB_CFG/pr_out"
+  fi
+}
+
+@test "reap: a child in another repository asks gh -R for its merged PR and drops the branch in the child's clone" {
+  xreap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  echo /clone/flat/.git > "$STUB_CFG/commondir_out"
+  run dispatch reap genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "reaped genetta-inc/flatmate#1615" ]
+  grep -qF -- 'gh pr list -R genetta-inc/flatmate --head oratta/issue-1615 --state merged --json headRefOid' "$STUB_LOG"
+  p="$BATS_TEST_TMPDIR/work/issue-1615"
+  grep -qF -- "git -C $p rev-parse --path-format=absolute --git-common-dir" "$STUB_LOG"
+  grep -qF -- 'git -C /clone/flat/.git branch -D oratta/issue-1615' "$STUB_LOG"
+  [ "$(calls '^git branch -D')" -eq 0 ]
+  rm_line="$(first_line "^orca worktree rm --worktree path:$p\$")"
+  cd_line="$(first_line 'rev-parse --path-format=absolute --git-common-dir')"
+  [ -n "$rm_line" ] && [ -n "$cd_line" ] && [ "$cd_line" -lt "$rm_line" ]
+}
+
+@test "reap: a PR-less child in another repository reads the base of its own clone with git -C and the recorded base" {
+  xreap_ready prless
+  run dispatch reap genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "reaped genetta-inc/flatmate#1615" ]
+  p="$BATS_TEST_TMPDIR/work/issue-1615"
+  grep -qF -- 'gh pr list -R genetta-inc/flatmate --head oratta/issue-1615 --state all --json number' "$STUB_LOG"
+  grep -qF -- 'gh pr list -R genetta-inc/flatmate --state merged --search aaa111' "$STUB_LOG"
+  grep -qF -- "git -C $p ls-remote origin refs/heads/develop" "$STUB_LOG"
+  grep -qF -- "git -C $p cat-file -e" "$STUB_LOG"
+  [ "$(calls '^git ls-remote')" -eq 0 ]
+  [ "$(calls '^git cat-file')" -eq 0 ]
+}
+
+@test "reap: a missing base tip is fetched in the child's worktree, not in the parent's clone" {
+  xreap_ready prless
+  echo 1 > "$STUB_CFG/catfile_exit_1"
+  run dispatch reap genetta-inc/flatmate#1615
+  [ "$output" = "reaped genetta-inc/flatmate#1615" ]
+  p="$BATS_TEST_TMPDIR/work/issue-1615"
+  grep -qF -- "git -C $p fetch origin develop" "$STUB_LOG"
+  [ "$(calls '^git fetch')" -eq 0 ]
+}
+
+@test "reap: children of both repositories mixed keep their own base, -R and tip" {
+  reap_prless_ready
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 status=done base=develop
+  gh_seq 1615 closed
+  run dispatch reap 11 genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "$(printf 'reaped 11\nreaped genetta-inc/flatmate#1615')" ]
+  grep -qF -- 'git ls-remote origin refs/heads/main' "$STUB_LOG"
+  grep -qF -- 'ls-remote origin refs/heads/develop' "$STUB_LOG"
+  [ "$(calls 'ls-remote')" -eq 2 ]
+  grep -qF -- 'gh pr list --head oratta/issue-11 --state merged' "$STUB_LOG"
+  grep -qF -- 'gh pr list -R genetta-inc/flatmate --head oratta/issue-1615 --state merged' "$STUB_LOG"
+}
+
+@test "reap: two children of the other repository with different bases read each base once" {
+  xreap_ready prless
+  put_record 1616 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1616 status=done base=develop
+  put_record 1617 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1617 status=done base=staging
+  gh_seq 1616 closed; gh_seq 1617 closed
+  run dispatch reap genetta-inc/flatmate#1615 genetta-inc/flatmate#1616 genetta-inc/flatmate#1617
+  [ "$status" -eq 0 ]
+  [ "$(calls 'ls-remote origin refs/heads/develop')" -eq 1 ]
+  [ "$(calls 'ls-remote origin refs/heads/staging')" -eq 1 ]
+}
+
+@test "reap: an unreadable git common directory keeps the child of another repository as git-failed" {
+  xreap_ready
+  echo 1 > "$STUB_CFG/commondir_exit"
+  run dispatch reap genetta-inc/flatmate#1615
+  [ "$output" = "kept genetta-inc/flatmate#1615 git-failed" ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+}
