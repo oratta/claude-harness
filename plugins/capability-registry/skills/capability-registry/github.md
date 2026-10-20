@@ -1,7 +1,7 @@
 # GitHub (gh)
 
 - **verify**: `gh auth status`
-- **トークン**: 通常は keyring 済みの gh をそのまま使う。別アカウント・別スコープが必要な時のみ `GITHUB_TOKEN="$("${CLAUDE_PLUGIN_ROOT}/scripts/fmtoken.sh" github)" gh api ...`
+- **トークン**: 通常は keyring 済みの gh をそのまま使う。別アカウント・別スコープが必要な時のみ `GITHUB_TOKEN`（env）に渡す。値の在処はオーナーの環境の索引があればそちら
 - **できること**: PR・issue・API（`gh api`）・Actions（`gh run`）・リリース・secrets 投入（`gh secret set`）
 
 ## ブラウザ必須の例外

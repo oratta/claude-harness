@@ -155,18 +155,7 @@ https://github.com/oratta/claude-harness/issues/1164
 | `plugins/capability-registry/.claude-plugin/plugin.json:3` | 環境依存 | description に「fmtoken.sh によるトークン取得」 | #1164 |
 | `plugins/capability-registry/.claude-plugin/plugin.json:14` | 環境依存 | keywords に `fmtoken` | #1164 |
 | `plugins/capability-registry/scripts/browser-guard.sh:31` | 環境依存 | 注意喚起の (2) で `fmtoken.sh <service>` を案内 | #1164 |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:3` | 環境依存 | description に「トークンの在処（fmtoken.sh）」 | #1164 |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:16` | 環境依存 | トークンの取得を `fmtoken.sh <service>` で案内 | #1164 |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:17` | 環境依存 | 未登録のときの `fmtoken.sh --register` | #1164 |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:19` | 環境依存 | `fmtoken.sh --check`・`--list` | #1164 |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:20` | 固有名 | `fmtoken.sh --name` と、例のアイテム名にオーナーのプロジェクト名 `moko--TRELLO_TOKEN` | #1164 |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:56` | 環境依存 | 1Password の行に `agents` 保管庫と `fmtoken.sh --register`（保管庫名は fmtoken の参照を外しても残りうる） | #1164 |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:57` | 環境依存 | GitHub の行の `fmtoken.sh github` | #1164 |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:58` | 環境依存 | Supabase の行の `fmtoken.sh supabase` | #1164 |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:59` | 環境依存 | Vercel の行の `fmtoken.sh vercel` | #1164 |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:60` | 環境依存 | Stripe の行の `fmtoken.sh stripe` | #1164 |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:63` | 環境依存 | サービス別ファイルの案内に個人版へ移す `1password.md` | 担い手なし |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md:70` | 環境依存 | オーナーの 1Password の契約（Individual プラン）を前提にした SA の権限変更の記述 | 担い手なし |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:65` | 環境依存 | オーナーの 1Password の契約（Individual プラン）を前提にした SA の権限変更の記述 | 担い手なし |
 | `plugins/capability-registry/skills/capability-registry/github.md:4` | 環境依存 | 別アカウントのトークンを `fmtoken.sh` で取る | #1164 |
 | `plugins/capability-registry/skills/capability-registry/stripe.md:3` | 環境依存 | verify のコマンドに `fmtoken.sh stripe` | #1164 |
 | `plugins/capability-registry/skills/capability-registry/stripe.md:4` | 環境依存 | トークンを `fmtoken.sh stripe` で取り、`agents` 保管庫の中身を書く | #1164 |
