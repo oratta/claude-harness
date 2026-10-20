@@ -339,7 +339,7 @@ recreate_hint() {
 
 # 子のセッションの起動コマンドと、起動完了待ち・送信の観測時間を環境変数から組み立てる（launch と reply が共用）。
 # 結果は ready / submit / agent_cmd に入れる。値が誤っていれば stderr に理由を出して 1 を返す（orca は呼ばない）
-ready=""; submit=""; agent_cmd=""
+ready=""; submit=""; agent_cmd=""; agent_rest=""
 agent_setup() {
   ready="${EPIC_DISPATCH_READY_TIMEOUT_MS:-60000}" submit="${EPIC_DISPATCH_SUBMIT_WAIT:-30}"
   is_num "$ready" || { echo "EPIC_DISPATCH_READY_TIMEOUT_MS must be a non-negative integer: $ready" >&2; return 1; }
@@ -350,8 +350,13 @@ agent_setup() {
   [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; return 1; }
   local idle_compact="${EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS-120000}"
   is_num "$idle_compact" || { echo "EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS must be a non-negative integer: $idle_compact" >&2; return 1; }
-  agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$1 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=$idle_compact $claude_cmd --model $(shq "$model")"
+  agent_rest="CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=$idle_compact $claude_cmd --model $(shq "$model")"
+  agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$1 $agent_rest"
 }
+
+# 起動コマンドの EPIC_DISPATCH_PARENT_EPIC の値を差し替える（別のリポジトリのエピックの子は <owner>/<repo>#<E>）。
+# agent_setup を済ませてから呼ぶ
+agent_cmd_for() { agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$1 $agent_rest"; }
 
 # 同時に枠を使う子の上限を決める（launch と max-parallel が共用）。結果は max_par（数）と max_par_src
 # （出どころ）に入れる。EPIC_DISPATCH_MAX_PARALLEL の値が誤っていれば stderr に理由を出して 1 を返す。
@@ -459,17 +464,127 @@ shell_start() {
   return 3
 }
 
+# --- 別のリポジトリの子の clone・Orca のリポジトリ・書き込み権の解決（cmd_launch が使う） ---
+
+# EPIC_DISPATCH_CLONES（<owner>/<repo>=<絶対パス> を改行か ; で区切る）から <repo> の候補のパスを 1 行 1 件で出す。
+# 絶対パスでない項目は無かったことにして stderr に出す
+clones_env_candidates() {
+  local repo="$1" item left right
+  printf '%s\n' "${EPIC_DISPATCH_CLONES-}" | tr ';' '\n' | while IFS= read -r item; do
+    item="${item#"${item%%[![:space:]]*}"}"; item="${item%"${item##*[![:space:]]}"}"
+    [ -n "$item" ] || continue
+    case "$item" in *=*) ;; *) echo "EPIC_DISPATCH_CLONES: ignoring an item without '=': $item" >&2; continue ;; esac
+    left="$(es_lower "${item%%=*}")"; right="${item#*=}"
+    case "$right" in
+      /*) ;;
+      *) echo "EPIC_DISPATCH_CLONES: ignoring $left: the path is not absolute: $right" >&2; continue ;;
+    esac
+    [ "$left" = "$repo" ] && printf '%s\n' "$right"
+  done
+}
+
+# 標準入力のパスのうち、origin が <repo> を指すものを重複なしで出す
+clone_matches() {
+  local want="$1" p url got seen="|"
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    [ "$p" = / ] || p="${p%/}"
+    case "$seen" in *"|$p|"*) continue ;; esac
+    seen="$seen$p|"
+    url="$(git -C "$p" remote get-url origin 2>/dev/null)" || continue
+    got="$(es_repo_from_url "$url")" || continue
+    [ "$got" = "$want" ] && printf '%s\n' "$p"
+  done
+  return 0
+}
+
+# orca repo list --json を 1 回だけ読む（ORCA_REPOS に入れる。読めなければ空）
+ORCA_REPOS=""; ORCA_REPOS_READ=0
+orca_repos_load() {
+  [ "$ORCA_REPOS_READ" -eq 0 ] || return 0
+  ORCA_REPOS_READ=1
+  ORCA_REPOS="$(orca repo list --json 2>/dev/null)" || ORCA_REPOS=""
+  printf '%s' "$ORCA_REPOS" | jq -e '.result.repos | type == "array"' >/dev/null 2>&1 || ORCA_REPOS=""
+}
+
+# 別のリポジトリ <repo>（小文字の <owner>/<repo>）の clone・Orca のリポジトリ・書き込み権・既定ブランチを解決する。
+# 結果は XR_CODE（ok か失敗の理由: no-clone / ambiguous-clone / not-in-orca / permission-lookup-failed / no-push /
+# base-lookup-failed）・XR_CLONE・XR_ID（Orca のリポジトリの id）・XR_BASE（既定ブランチ）に入れる。
+# 1 回の launch の中で同じリポジトリは 1 回だけ解決する（結果と stderr の案内は最初の 1 回）
+XR_CODE=""; XR_CLONE=""; XR_ID=""; XR_BASE=""
+xrepo_resolve() {
+  local repo="$1" key var cached found cnt resp acct
+  key="$(printf '%s' "$repo" | tr -c 'a-z0-9' '_')"
+  var="XRC_$key"
+  cached="${!var-}"
+  if [ -n "$cached" ]; then
+    IFS='|' read -r XR_CODE XR_CLONE XR_ID XR_BASE <<EOF
+$cached
+EOF
+    return 0
+  fi
+  XR_CODE=ok; XR_CLONE=""; XR_ID=""; XR_BASE=""
+  found="$(clones_env_candidates "$repo" | clone_matches "$repo")"
+  cnt="$(printf '%s' "$found" | grep -c .)"
+  if [ "$cnt" -eq 0 ]; then
+    orca_repos_load
+    if [ -n "$ORCA_REPOS" ]; then
+      found="$(printf '%s' "$ORCA_REPOS" | jq -r '.result.repos[] | .path // empty' | clone_matches "$repo")"
+      cnt="$(printf '%s' "$found" | grep -c .)"
+    fi
+  fi
+  if [ "$cnt" -ge 2 ]; then
+    XR_CODE=ambiguous-clone
+    echo "more than one clone of $repo matches (set EPIC_DISPATCH_CLONES to pick one):" >&2
+    printf '%s\n' "$found" | sed 's/^/  /' >&2
+  elif [ "$cnt" -eq 0 ]; then
+    XR_CODE=no-clone
+    {
+      echo "no local clone of $repo was found. Tell launch where it is, once:"
+      echo "  export EPIC_DISPATCH_CLONES='$repo=<absolute path of the clone>'"
+      echo "If you have no clone yet:"
+      echo "  git clone git@github.com:$repo.git <where you want it>"
+    } >&2
+  else
+    XR_CLONE="$found"
+    orca_repos_load
+    XR_ID="$(printf '%s' "$ORCA_REPOS" | jq -r --arg p "$XR_CLONE" \
+      '[.result.repos[]? | select(((.path // "") | rtrimstr("/")) == $p)] | .[0].id // empty' 2>/dev/null)"
+    if [ -z "$XR_ID" ]; then
+      XR_CODE=not-in-orca
+      echo "$XR_CLONE is not registered in Orca. Add it (launch does not add repositories): orca repo add --path $XR_CLONE" >&2
+    fi
+  fi
+  if [ "$XR_CODE" = ok ]; then
+    if ! resp="$(gh api "repos/$repo" 2>/dev/null)" \
+      || ! printf '%s' "$resp" | jq -e '.permissions | type == "object"' >/dev/null 2>&1; then
+      XR_CODE=permission-lookup-failed
+    elif [ "$(printf '%s' "$resp" | jq -r '.permissions.push // false')" != true ]; then
+      XR_CODE=no-push
+    else
+      XR_BASE="$(printf '%s' "$resp" | jq -r '.default_branch // empty')"
+      [ -n "$XR_BASE" ] || XR_CODE=base-lookup-failed
+    fi
+    if [ "$XR_CODE" != ok ]; then
+      acct="$(gh api user --jq .login 2>/dev/null)" || acct="(unknown)"
+      echo "$XR_CODE: gh api repos/$repo (authenticated as $acct)" >&2
+    fi
+  fi
+  printf -v "$var" '%s|%s|%s|%s' "$XR_CODE" "$XR_CLONE" "$XR_ID" "$XR_BASE"
+}
+
 cmd_launch() {
-  local note="" base="${EPIC_DISPATCH_BASE:-main}"
+  local note="" base_opt="${EPIC_DISPATCH_BASE:-}" base
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --note) [ "$#" -ge 2 ] || usage; note="$2"; shift 2 ;;
-      --base) [ -n "${2-}" ] || usage; base="$2"; shift 2 ;;
+      --base) [ -n "${2-}" ] || usage; base_opt="$2"; shift 2 ;;
       --*) usage ;;
       *) break ;;
     esac
   done
   [ "$#" -ge 2 ] || usage
+  base="${base_opt:-main}"
   local epic="$1"; shift
   is_num "$epic" || { echo "not an issue number: $epic" >&2; usage; }
   check_children "$@"
@@ -498,7 +613,16 @@ cmd_launch() {
   fi
   # 記録を書く先のエピックのリポジトリ（origin が読めなければ何も作らない。set より前に読む）
   erepo="$(es_epic_repo)" || exit 1
-  git fetch origin "$base" >&2 || { echo "git fetch origin $base failed" >&2; exit 1; }
+  # 親の clone の fetch は、エピックと同じリポジトリの子が 1 件以上あるときだけ（別のリポジトリの子だけなら、
+  # --base に親のリポジトリに無いブランチを指定しても launch 全体が失敗しない）
+  local has_same=0 a
+  for a in "$@"; do
+    es_parse_arg "$a"
+    if [ -z "$ES_ARG_REPO" ] || [ "$ES_ARG_REPO" = "$erepo" ]; then has_same=1; break; fi
+  done
+  if [ "$has_same" -eq 1 ]; then
+    git fetch origin "$base" >&2 || { echo "git fetch origin $base failed" >&2; exit 1; }
+  fi
   orca worktree set --worktree "path:$parent" --issue "$epic" >&2 \
     || { echo "orca worktree set failed" >&2; exit 1; }
   list="$(orca worktree list --json)" || { echo "orca worktree list failed" >&2; exit 1; }
@@ -526,18 +650,16 @@ cmd_launch() {
   free=$(( max_par - in_use )); [ "$free" -ge 0 ] || free=0
 
   local n num f cur prompt body out rc child cbranch handle sent retry failed=0 seen=" " stage shell_rc hit own
+  local crepo xrepo cbase crid cclone
   for n in "$@"; do
     es_parse_arg "$n"; num="$ES_ARG_NUM"
     case "$seen" in
       *" ${ES_ARG_REPO:-$erepo}#$num "*) echo "skipped $n"; continue ;;
     esac
     seen="$seen${ES_ARG_REPO:-$erepo}#$num "
-    # この change ではエピックと別のリポジトリの子を作らない（枠も使わない）
-    if [ -n "$ES_ARG_REPO" ] && [ "$ES_ARG_REPO" != "$erepo" ]; then
-      echo "children in another repository are not launched yet: $n" >&2
-      echo "failed $n other-repo"; failed=1; continue
-    fi
-    f="$(es_path "$erepo" "$epic" "$erepo" "$num")"
+    crepo="${ES_ARG_REPO:-$erepo}"; xrepo=0
+    [ "$crepo" = "$erepo" ] || xrepo=1
+    f="$(es_path "$erepo" "$epic" "$crepo" "$num")"
     own=0
     if [ -e "$f" ]; then
       if ! cur="$(es_read "$f")"; then
@@ -551,13 +673,23 @@ cmd_launch() {
       # この記録は上の枠の数えで使用中に入っていることがある。その子自身は空き枠をもう 1 つ減らさない
       case "$in_use_files" in *" $f "*) own=1 ;; esac
     fi
+    # 別のリポジトリの子は、clone・Orca のリポジトリ・書き込み権・既定ブランチを解決する（記録を書く前。
+    # 失敗は記録も枠も使わない）。同じリポジトリの子は今のまま（起点は base、Orca のリポジトリは親と同じ）
+    cbase="$base"; crid="$repo"; cclone=""
+    if [ "$xrepo" -eq 1 ]; then
+      xrepo_resolve "$crepo"
+      if [ "$XR_CODE" != ok ]; then
+        echo "failed $n $XR_CODE"; failed=1; continue
+      fi
+      cclone="$XR_CLONE"; crid="$XR_ID"; cbase="${base_opt:-$XR_BASE}"
+    fi
     # 記録の無い Orca のワークツリー（この変更の前に起動した子）も起動済み。取り込みは adopt。
     # worktree が空の自分の記録があれば、一覧がちょうど 1 つのときに path と branch を書き足してから skipped にする
-    if printf '%s' "$list" | jq -e --arg r "$repo" --arg n "$num" \
+    if printf '%s' "$list" | jq -e --arg r "$crid" --arg n "$num" \
       'any(.result.worktrees[]; .repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)' \
       >/dev/null 2>&1; then
       if [ -e "$f" ]; then
-        hit="$(printf '%s' "$list" | jq -c --arg r "$repo" --arg n "$num" \
+        hit="$(printf '%s' "$list" | jq -c --arg r "$crid" --arg n "$num" \
           '[.result.worktrees[] | select(.repoId == $r and (.linkedIssue | tostring) == $n and .isArchived != true)] | if length == 1 then .[0] else empty end' 2>/dev/null)"
         if [ -n "$hit" ]; then
           es_modify "$f" '.worktree = $w | .branch = $b' --arg w "$(printf '%s' "$hit" | jq -r '.path // empty')" \
@@ -577,15 +709,29 @@ cmd_launch() {
       free=$(( free - 1 ))
     fi
     # 子のワークツリーを作る前に記録を書く（作成に失敗したら消す）
-    if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$erepo" "$num" orca "$parent" "" "" "$base" running "")"; then
+    if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$crepo" "$num" orca "$parent" "" "" "$cbase" running "")"; then
       echo "could not write the state record: $f" >&2
       echo "failed $n"; failed=1; continue
     fi
-    prompt="/develop #$num （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
+    if [ "$xrepo" -eq 1 ]; then
+      prompt="/develop #$num （エピック #$epic の子。エピックのリポジトリ ${erepo}。親ワークツリー $parent から Orca で起動）"
+      agent_cmd_for "$erepo#$epic"
+      # 子の clone の origin から起点を取る（失敗したら記録を消して作らない）
+      if ! git -C "$cclone" fetch origin "$cbase" >&2; then
+        echo "git -C $cclone fetch origin $cbase failed" >&2
+        rm -f "$f"
+        echo "failed $n"; failed=1; continue
+      fi
+      out="$(orca worktree create --repo "id:$crid" --name "issue-$num" --issue "$num" --base-branch "origin/$cbase" \
+        --parent-worktree "path:$parent" --json)"
+      rc=$?
+    else
+      prompt="/develop #$num （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
+      out="$(orca worktree create --name "issue-$num" --issue "$num" --base-branch "origin/$cbase" \
+        --parent-worktree "path:$parent" --json)"
+      rc=$?
+    fi
     [ -n "$note" ] && prompt="$prompt $note"
-    out="$(orca worktree create --name "issue-$num" --issue "$num" --base-branch "origin/$base" \
-      --parent-worktree "path:$parent" --json)"
-    rc=$?
     printf '%s\n' "$out" >&2
     if [ "$rc" -ne 0 ]; then
       rm -f "$f"
@@ -594,10 +740,18 @@ cmd_launch() {
     # 注意書きを子 issue に残す（起動し直したセッションにも届く）。このあとの失敗でワークツリーが
     # 残れば次の launch では skipped になるので、端末より前に投稿する。失敗しても起動は続ける
     if [ -n "$note" ]; then
-      body="$(printf '親エピックからの注意書き: #%s\n\n%s' "$epic" "$note")"
-      if ! gh issue comment "$num" --body "$body" >&2; then
-        echo "note not posted to #$num. post it with the command below:" >&2
-        echo "gh issue comment $num --body $(shq "$body")" >&2
+      if [ "$xrepo" -eq 1 ]; then
+        body="$(printf '親エピックからの注意書き: %s#%s\n\n%s' "$erepo" "$epic" "$note")"
+        if ! gh issue comment "$num" -R "$crepo" --body "$body" >&2; then
+          echo "note not posted to $crepo#$num. post it with the command below:" >&2
+          echo "gh issue comment $num -R $crepo --body $(shq "$body")" >&2
+        fi
+      else
+        body="$(printf '親エピックからの注意書き: #%s\n\n%s' "$epic" "$note")"
+        if ! gh issue comment "$num" --body "$body" >&2; then
+          echo "note not posted to #$num. post it with the command below:" >&2
+          echo "gh issue comment $num --body $(shq "$body")" >&2
+        fi
       fi
     fi
     child="$(printf '%s' "$out" | jq -r '.result.worktree.path // empty' 2>/dev/null)"
@@ -659,11 +813,7 @@ cmd_launch() {
 # 1 行を出し、failed なら 1 を返す。orca 自身の出力は stderr。reply・notify-closed・wait --resolve が共用する
 deliver_reply() {
   local relaunch="$1" as="$2" epic="$3" n="$4" text="$5"
-  local msg rec path terms tcount handle out rc sent prompt
-  case "$as" in
-    parent) msg="親エピック #$epic の判断（主の承認ではない）: $text" ;;
-    *) msg="主の返事（親エピック #$epic 経由）: $text" ;;
-  esac
+  local msg rec path terms tcount handle out rc sent prompt erefs=" " xrepo_epic=""
   child_record "$PARENT_TOP" "$n"
   case $? in
     0) ;;
@@ -674,6 +824,18 @@ deliver_reply() {
   rec="$ES_HIT"
   path="$(es_get "$rec" worktree)"
   [ -n "$path" ] || { echo "failed $n no-worktree"; return 1; }
+  # 記録の repo がエピックのリポジトリと違う子は、返事の頭・起動コマンド・起動し直しの指示にエピックのリポジトリを足す
+  xrepo_epic="$(es_get "$rec" epic)"
+  if [ -n "$xrepo_epic" ] && [ "$(es_get "$rec" repo)" != "${xrepo_epic%%#*}" ]; then
+    erefs="（${xrepo_epic%%#*}）"
+    agent_cmd_for "$xrepo_epic"
+  else
+    xrepo_epic=""
+  fi
+  case "$as" in
+    parent) msg="親エピック #$epic${erefs}の判断（主の承認ではない）: $text" ;;
+    *) msg="主の返事（親エピック #$epic${erefs}経由）: $text" ;;
+  esac
   if ! terms="$(orca terminal list --worktree "path:$path" --json)" \
     || ! tcount="$(printf '%s' "$terms" \
       | jq -e '.result.terminals | if type == "array" then length else error("terminals is not an array") end' 2>/dev/null)"; then
@@ -704,7 +866,11 @@ deliver_reply() {
   if [ "$tcount" -gt 0 ]; then
     orca terminal close --worktree "path:$path" --all --json >&2 || { echo "failed $n close"; return 1; }
   fi
-  prompt="/develop $(child_label "$n") （エピック #$epic の子。返事を受けて起動し直し） $msg"
+  if [ -n "$xrepo_epic" ]; then
+    prompt="/develop #$(es_get "$rec" number) （エピック #$epic の子。エピックのリポジトリ ${xrepo_epic%%#*}。返事を受けて起動し直し） $msg"
+  else
+    prompt="/develop $(child_label "$n") （エピック #$epic の子。返事を受けて起動し直し） $msg"
+  fi
   out="$(orca terminal create --worktree "path:$path" --command "$agent_cmd" --json)"
   rc=$?
   printf '%s\n' "$out" >&2
@@ -1131,6 +1297,20 @@ cmd_pending_owner() {
 
 # 完了の印が付き、安全確認を全部通った子だけ、端末を閉じてワークツリーとローカルブランチを消す。
 # 子ごとに stdout へ 1 行（reaped / reaped branch-kept / gone / kept <理由>）
+# git を -C <dir> 付き（dir が空でなければ）か今のディレクトリで呼ぶ（<dir> <git の引数...>）
+gitx() {
+  local d="$1"
+  shift
+  if [ -n "$d" ]; then git -C "$d" "$@"; else git "$@"; fi
+}
+
+# gh pr list を -R <repo> 付き（repo が空でなければ）か今のリポジトリで呼ぶ（<repo> <gh pr list の引数...>）
+ghpr() {
+  local r="$1"
+  shift
+  if [ -n "$r" ]; then gh pr list -R "$r" "$@"; else gh pr list "$@"; fi
+}
+
 cmd_reap() {
   [ "$#" -ge 1 ] || usage
   check_children "$@"
@@ -1138,7 +1318,8 @@ cmd_reap() {
   need_parent
 
   local n f w path branch st head heads sheads rmerr tip seen=" "
-  local legacy allprs istate lsout btip="" base_looked=0 base_fetched=0 base="${EPIC_DISPATCH_BASE:-main}"
+  local legacy allprs istate lsout btip="" base="${EPIC_DISPATCH_BASE:-main}"
+  local rr wd gd cbase bkey bvar fvar erec
   for n in "$@"; do
     case "$seen" in *" $n "*) continue ;; esac
     seen="$seen$n "
@@ -1157,6 +1338,14 @@ cmd_reap() {
       rm -f "$f"; echo "gone $n"; continue
     fi
     [ "$(es_get "$f" status)" = "done" ] || { echo "kept $n not-done"; continue; }
+    # 記録の repo がエピックのリポジトリと違う子は、PR の照会を子のリポジトリ（-R）に、base の照会を子のワークツリーの
+    # origin に、base の名前を記録の base に向ける。同じリポジトリの子は今のまま
+    rr=""; wd=""; gd=""; cbase="$base"
+    erec="$(es_get "$f" epic)"
+    if [ -n "$erec" ] && [ "$(es_get "$f" repo)" != "${erec%%#*}" ]; then
+      rr="$(es_get "$f" repo)"; wd="$path"
+      cbase="$(es_get "$f" base)"; [ -n "$cbase" ] || cbase="main"
+    fi
     st="$(git -C "$path" status --porcelain)" || { echo "kept $n git-failed"; continue; }
     [ -z "$st" ] || { echo "kept $n dirty"; continue; }
     [ ! -e "$path/LLM" ] || { echo "kept $n llm-logs"; continue; }
@@ -1164,14 +1353,14 @@ cmd_reap() {
     branch="${branch#refs/heads/}"
     [ -n "$branch" ] || { echo "kept $n no-branch"; continue; }
     head="$(git -C "$path" rev-parse HEAD)" || head=""
-    heads="$(gh pr list --head "$branch" --state merged --json headRefOid --jq '.[].headRefOid')" \
+    heads="$(ghpr "$rr" --head "$branch" --state merged --json headRefOid --jq '.[].headRefOid')" \
       || { echo "kept $n pr-lookup-failed"; continue; }
     if [ -z "$head" ] || ! printf '%s\n' "$heads" | grep -qxF -- "$head"; then
       # squash マージでは別名のブランチの PR で入ることがある。HEAD を先端に持つマージ済み PR を
       # ブランチ名を問わず探す（最終判定は headRefOid と HEAD の完全一致のまま）
       sheads=""
       if [ -n "$head" ]; then
-        sheads="$(gh pr list --state merged --search "$head" --json headRefOid --jq '.[].headRefOid')" \
+        sheads="$(ghpr "$rr" --state merged --search "$head" --json headRefOid --jq '.[].headRefOid')" \
           || { echo "kept $n pr-lookup-failed"; continue; }
       fi
       if [ -z "$head" ] || ! printf '%s\n' "$sheads" | grep -qxF -- "$head"; then
@@ -1180,29 +1369,34 @@ cmd_reap() {
         # PR が 1 件も無く issue が閉じた子（PR を伴わない記録先）は、HEAD がリモートの今の base に
         # 含まれるときだけ片付ける。判定の相手は手元の追跡参照ではなく ls-remote で取った今の先端
         [ -n "$head" ] || { echo "kept $n $legacy"; continue; }
-        allprs="$(gh pr list --head "$branch" --state all --json number --jq '.[].number')" \
+        allprs="$(ghpr "$rr" --head "$branch" --state all --json number --jq '.[].number')" \
           || { echo "kept $n pr-lookup-failed"; continue; }
         [ -z "$allprs" ] || { echo "kept $n $legacy"; continue; }
         istate="$(gh api "$(issue_api "$n" "$f")" --jq .state)" \
           || { echo "kept $n issue-lookup-failed"; continue; }
         [ "$istate" = closed ] || { echo "kept $n $legacy"; continue; }
-        if [ "$base_looked" -eq 0 ]; then
-          base_looked=1
-          if lsout="$(git ls-remote origin "refs/heads/$base")"; then
+        # base の先端は、リポジトリと base の組ごとに 1 回だけ読む（別のリポジトリの子の先端を使い回さない）
+        bkey="$(printf '%s_%s' "${rr:-same}" "$cbase" | tr -c 'A-Za-z0-9' '_')"
+        bvar="REAPT_$bkey"; fvar="REAPF_$bkey"
+        if [ -z "${!bvar-}" ]; then
+          btip=""
+          if lsout="$(gitx "$wd" ls-remote origin "refs/heads/$cbase")"; then
             btip="$(printf '%s\n' "$lsout" | awk 'NR==1{print $1}')"
             case "$btip" in
               *[!0-9a-f]*) btip="" ;;
               *) [ "${#btip}" -eq 40 ] || btip="" ;;
             esac
           fi
+          printf -v "$bvar" '%s' "L$btip"
         fi
+        btip="${!bvar}"; btip="${btip#L}"
         [ -n "$btip" ] || { echo "kept $n base-lookup-failed"; continue; }
-        if ! git cat-file -e "$btip^{commit}" >&2; then
-          if [ "$base_fetched" -eq 0 ]; then
-            base_fetched=1
-            git fetch origin "$base" >&2 || true
+        if ! gitx "$wd" cat-file -e "$btip^{commit}" >&2; then
+          if [ -z "${!fvar-}" ]; then
+            printf -v "$fvar" '%s' 1
+            gitx "$wd" fetch origin "$cbase" >&2 || true
           fi
-          git cat-file -e "$btip^{commit}" >&2 || { echo "kept $n base-lookup-failed"; continue; }
+          gitx "$wd" cat-file -e "$btip^{commit}" >&2 || { echo "kept $n base-lookup-failed"; continue; }
         fi
         git -C "$path" merge-base --is-ancestor "$head" "$btip" >&2
         case "$?" in
@@ -1211,6 +1405,12 @@ cmd_reap() {
           *) echo "kept $n git-failed"; continue ;;
         esac
       fi
+    fi
+    # 別のリポジトリの子のブランチの片付けは子の clone に向ける。ワークツリーが消える前（orca worktree rm の前）に
+    # 共通の git ディレクトリを控える
+    if [ -n "$wd" ]; then
+      gd="$(git -C "$path" rev-parse --path-format=absolute --git-common-dir)" && [ -n "$gd" ] \
+        || { echo "kept $n git-failed"; continue; }
     fi
     # 端末の閉じが失敗したら（子のターンが終わっておらず terminal_close_incomplete になることがある）、
     # 原因の手がかりに端末の一覧を stderr に出し、待ってから 1 回だけ閉じ直す。それでも駄目なら主の操作に回す
@@ -1238,7 +1438,7 @@ cmd_reap() {
       rm -f "$rmerr"; continue
     fi
     cat "$rmerr" >&2; rm -f "$rmerr"
-    if tip="$(git rev-parse --verify --quiet "refs/heads/$branch")"; then
+    if tip="$(gitx "$gd" rev-parse --verify --quiet "refs/heads/$branch")"; then
       # Orca は rm の exit 0 のあともワークツリーを非同期で消すことがあり、git の一覧から外れるまで
       # そのブランチは消せない。先端が HEAD と同じときだけ、外れるのを上限つきで待つ
       # （git worktree list が失敗したら残っているものとして待つ。上限を超えたら branch-kept）
@@ -1250,7 +1450,7 @@ cmd_reap() {
         tries=$(( dt / di + 1 ))
         started=$SECONDS
         while :; do
-          if wtl="$(git worktree list --porcelain)" && ! printf '%s\n' "$wtl" | grep -qxF -- "worktree $path"; then
+          if wtl="$(gitx "$gd" worktree list --porcelain)" && ! printf '%s\n' "$wtl" | grep -qxF -- "worktree $path"; then
             attached=0; break
           fi
           attached=1
@@ -1263,8 +1463,8 @@ cmd_reap() {
       fi
       # 待っている間に先端が進んだかもしれないので、消す直前に読み直して HEAD と比べる
       if [ "$tip" = "$head" ] && [ "$attached" -eq 0 ] \
-        && tip2="$(git rev-parse --verify --quiet "refs/heads/$branch")" && [ "$tip2" = "$head" ] \
-        && git branch -D "$branch" >&2; then
+        && tip2="$(gitx "$gd" rev-parse --verify --quiet "refs/heads/$branch")" && [ "$tip2" = "$head" ] \
+        && gitx "$gd" branch -D "$branch" >&2; then
         rm -f "$f"; echo "reaped $n"
       else
         rm -f "$f"; echo "reaped $n branch-kept"
