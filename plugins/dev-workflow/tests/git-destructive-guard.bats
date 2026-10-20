@@ -729,7 +729,10 @@ call_env() {
   echo "$r" | grep -qF '打ち直さず'
   echo "$r" | grep -qF 'scratchpad'
   echo "$r" | grep -qF '作り直す'
-  echo "$r" | grep -qF '何を・なぜ'
+  echo "$r" | grep -qF 'コマンドの全文'
+  echo "$r" | grep -qF '対象のパス'
+  echo "$r" | grep -qF '自分で作った'
+  echo "$r" | grep -qF 'なぜ'
   echo "$r" | grep -qF '親に返す'
   [[ "$r" != *確認画面* ]] || return 1
   [[ "$r" != *'! を付けて'* ]] || return 1
@@ -944,6 +947,10 @@ PY
     body="$(awk 'BEGIN{n=0} /^---$/{n++; next} n>=2' "${PLUGIN_DIR}/agents/${f}.md")"
     printf '%s' "$body" | grep -F 'scratchpad' | grep -F '作り直す' | grep -qF 'git の破壊的操作' \
       || { echo "missing in ${f}.md"; return 1; }
+    # 拒否されたら報告に書く 4 項目（spec: 子の定義に検証用 repo の戻し方を書く）
+    for t in 'コマンドの全文' '対象のパス' '自分で作った'; do
+      printf '%s' "$body" | grep -qF "$t" || { echo "missing '$t' in ${f}.md"; return 1; }
+    done
   done
 }
 
