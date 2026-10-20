@@ -452,41 +452,52 @@ JSON
   grep -q '^  Claude B     5h' "$WORK/out.txt"
 }
 
-# Codex の行はオフにして出す（取得に codex の起動もキャッシュも要らない）。名前は off の行で見る。
+# Codex の行は「取得待ち」の行として出す（ログイン済みでキャッシュ無し。codex は何もしないスタブ）。名前は取得待ちの行で見る。
 codex_name_env() {
   export STATUSLINE_CODEX=1 CODEX_HOME="$WORK/codex-home" STATUSLINE_CODEX_BIN="$WORK/no-codex"
   mkdir -p "$CODEX_HOME"
+  printf '{"tokens":{"account_id":"test"}}' > "$CODEX_HOME/auth.json"
+  printf '#!/bin/sh\nexit 0\n' > "$WORK/no-codex"
+  chmod 700 "$WORK/no-codex"
+  # 取得を後ろに倒したキャッシュを置き、描画が裏で refresh を起こさないようにする（teardown との競合を避ける）
+  python3 - "$CODEX_HOME" "$WORK/.statusline-codex" <<'PY'
+import hashlib, json, pathlib, sys
+home = pathlib.Path(sys.argv[1])
+auth = (home / "auth.json").read_bytes()
+key = hashlib.sha256(str(home.resolve()).encode() + b"\0" + auth).hexdigest()
+pathlib.Path(sys.argv[2]).write_text(json.dumps({"identity": key, "next_attempt": 4102444800}))
+PY
 }
 
 codex_name_of() {
-  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi | grep 'Codex' | sed 's/ *off$//'
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi | grep 'Codex' | sed 's/ *取得待ち$//'
 }
 
 @test "name: the Codex row is Codex A without codex.label" {
   codex_name_env
-  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null},{"id":"b","label":"B","securestorage":"%s"}],"codex":{"enabled":false}}' "$SECURE_B" > "$ACCOUNTS"
+  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null},{"id":"b","label":"B","securestorage":"%s"}],"codex":{}}' "$SECURE_B" > "$ACCOUNTS"
   [ "$(codex_name_of)" = "  Codex A" ]
 }
 
 @test "name: the Codex row uses codex.label" {
   codex_name_env
-  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null},{"id":"b","label":"B","securestorage":"%s"}],"codex":{"enabled":false,"label":"X"}}' "$SECURE_B" > "$ACCOUNTS"
+  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null},{"id":"b","label":"B","securestorage":"%s"}],"codex":{"label":"X"}}' "$SECURE_B" > "$ACCOUNTS"
   [ "$(codex_name_of)" = "  Codex X" ]
 }
 
 @test "name: an invalid codex.label falls back to A and a long one is clipped" {
   codex_name_env
   for bad in '""' '3' '"a\tb"' 'null'; do
-    printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"enabled":false,"label":%s}}' "$bad" > "$ACCOUNTS"
+    printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"label":%s}}' "$bad" > "$ACCOUNTS"
     [ "$(codex_name_of)" = "  Codex A" ]
   done
-  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"enabled":false,"label":"abcdefghijkl"}}' > "$ACCOUNTS"
+  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"label":"abcdefghijkl"}}' > "$ACCOUNTS"
   [ "$(codex_name_of)" = "  Codex abcdefgh" ]
 }
 
 @test "name: the codex.label row never becomes a slot" {
   codex_name_env
-  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"enabled":false,"label":"X"}}' > "$ACCOUNTS"
+  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"label":"X"}}' > "$ACCOUNTS"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   # スロットは 1 つのまま: Claude の行に名前も目印も付かない
   ! grep -q 'Claude' "$WORK/out.txt" || return 1
@@ -494,7 +505,7 @@ codex_name_of() {
 
 @test "name: the Codex name widens the column of the Claude rows" {
   codex_name_env
-  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null},{"id":"b","label":"B","securestorage":"%s"}],"codex":{"enabled":false,"label":"abcdefgh"}}' "$SECURE_B" > "$ACCOUNTS"
+  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null},{"id":"b","label":"B","securestorage":"%s"}],"codex":{"label":"abcdefgh"}}' "$SECURE_B" > "$ACCOUNTS"
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
   grep -q '^▸ Claude A        5h' "$WORK/out.txt"
@@ -814,10 +825,9 @@ SNAPSHOT
   write_two_slot_snapshot "$((NOW - 30))" "$((NOW - 7230))" "$((NOW + 172830))"
   mk_input 3 25 14010 172830 | bash "$SL" > "$WORK/new.txt"
   mk_input 3 25 14010 172830 | bash "$old" > "$WORK/old.txt"
-  # 名前が Claude A / Claude B になったことだけが違う（列の幅は最長の名前で揃うので、
-  # 前置された "Claude " を除けば元の出力と同じ）
-  sed 's/Claude //' "$WORK/new.txt" > "$WORK/new-unprefixed.txt"
-  diff "$WORK/old.txt" "$WORK/new-unprefixed.txt"
+  # origin/main は名前を Claude A / Claude B に揃え済み（#1111）なので、オンの 2 スロットは
+  # 出力が一致する
+  diff "$WORK/old.txt" "$WORK/new.txt"
 }
 
 # ---------- 非 active スロットのセッション記録（#417） ----------
@@ -975,30 +985,44 @@ write_two_slot_registry_enabled() {
 JSON
 }
 
-@test "enabled: a non-active off slot renders a single off row instead of its values" {
+@test "enabled: a non-active off slot with remaining values renders no row at all" {
   write_two_slot_registry_enabled "" false
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   write_b_record "$((NOW - 60))" 37 "$((NOW + 172800))" 41 "$((NOW + 9000))"
   mk_input 55 82 14000 172800 | bash "$SL" > "$WORK/raw.txt"
   strip_ansi < "$WORK/raw.txt" > "$WORK/out.txt"
-  [ "$(grep -cE '^(▸ |  )Claude B' "$WORK/out.txt")" = "1" ]
-  [ "$(grep -cxF '  Claude B  off' "$WORK/out.txt")" = "1" ]
+  ! grep -qE 'Claude B|off' "$WORK/out.txt" || return 1
   # B の値（snapshot の 3% / 1%、記録の 41% / 37%）と経過時間はどこにも出ない
   ! grep -qE ' (3|1|41|37)%' "$WORK/out.txt" || return 1
   ! grep -qE '[0-9]+[mhd]前' "$WORK/out.txt" || return 1
-  # A（active）の 2 行は変わらず、B の行はその後ろ（宣言順）
-  [ "$(grep -cE '^▸ Claude A +(5h|7d All)' "$WORK/out.txt")" = "2" ]
-  [ "$(drop_cwd_line "$WORK/out.txt" | grep -nE '^▸ Claude A +7d All' | cut -d: -f1)" -lt \
-    "$(drop_cwd_line "$WORK/out.txt" | grep -nxF '  Claude B  off' | cut -d: -f1)" ]
-  # label も off も DIM で描く（取得待ちの行と同じ組み立て）
-  grep -qF $'  \033[2mClaude B\033[0m  \033[2moff\033[0m' "$WORK/raw.txt"
+  # 表示対象は A だけなので 1 スロット表示（名前列も active の目印も無い）
+  [ "$(grep -cE '^(5h|7d All) ' "$WORK/out.txt")" = "2" ]
+  ! grep -qE 'Claude A|▸' "$WORK/out.txt" || return 1
 }
 
-@test "enabled: an off slot without any value still renders its off row" {
+@test "enabled: a non-active off slot without any value renders no row" {
   write_two_slot_registry_enabled "" false
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  [ "$(grep -cxF '  Claude B  off' "$WORK/out.txt")" = "1" ]
-  [ "$(grep -cE '^▸ Claude A +5h' "$WORK/out.txt")" = "1" ]
+  ! grep -qE 'Claude B|off' "$WORK/out.txt" || return 1
+  [ "$(grep -cE '^5h ' "$WORK/out.txt")" = "1" ]
+}
+
+@test "enabled: A and B both off with A active shows A alone as a single slot" {
+  write_two_slot_registry_enabled false false
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep -qE '^5h ' "$WORK/out.txt"
+  grep -E '^5h ' "$WORK/out.txt" | grep -q '55%'
+  ! grep -qE 'Claude|▸|off' "$WORK/out.txt" || return 1
+}
+
+@test "enabled: an off B that is active brings back the two-slot layout" {
+  write_two_slot_registry_enabled "" false
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_input 66 77 14000 172800 | CLAUDE_SECURESTORAGE_CONFIG_DIR="$SECURE_B" bash "$SL" \
+    | strip_ansi > "$WORK/out.txt"
+  grep -E '^▸ Claude B +5h' "$WORK/out.txt" | grep -q '66%'
+  grep -qE '^  Claude A +5h' "$WORK/out.txt"
 }
 
 @test "enabled: a registry without enabled and one with enabled true render identical bytes" {
@@ -1037,37 +1061,27 @@ JSON
   [ "$(grep -cE '^  Claude A +(5h|7d All)' "$WORK/out.txt")" = "2" ]
 }
 
-@test "enabled: an off slot's full-width label still counts toward the label column" {
+@test "enabled: a hidden off slot's full-width label does not count toward the label column" {
   cat > "$ACCOUNTS" <<JSON
 { "schema": 1, "accounts": [
   { "id": "a", "label": "A", "securestorage": null },
-  { "id": "b", "label": "仕事", "securestorage": "${SECURE_B}", "enabled": false }
+  { "id": "b", "label": "B", "securestorage": "${SECURE_B}" },
+  { "id": "c", "label": "仕事", "securestorage": "${SECURE_B}-c", "enabled": false }
 ] }
 JSON
   write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  widths="$(python3 - "$WORK/out.txt" <<'PY'
-import re, sys, unicodedata
-def w(s):
-    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
-cols, kinds = set(), set()
-for line in open(sys.argv[1], encoding="utf-8").readlines()[1:]:
-    m = re.search(r"(5h|7d All|off$)", line)
-    if m and not line.startswith(("5h", "7d")):
-        cols.add(w(line[:m.start()]))
-        kinds.add(m.group(1))
-print(",".join(str(c) for c in sorted(cols)), ",".join(sorted(kinds)))
-PY
-)"
-  # A の行の 5h / 7d All と、仕事 の行の off が同じ表示幅の位置から始まる（2 + 7 + 4 + 2 = 15）
-  [ "$widths" = "15 5h,7d All,off" ]
-  grep -qxF '  Claude 仕事  off' "$WORK/out.txt"
+  ! grep -qE '仕事|off' "$WORK/out.txt" || return 1
+  # 名前列は Claude A / Claude B の表示幅 8 で揃う（2 + 8 + 2 = 12）
+  grep -qE '^▸ Claude A  5h' "$WORK/out.txt"
+  grep -qE '^  Claude B  5h' "$WORK/out.txt"
 }
 
-@test "enabled: one on slot plus one off slot is still a multi-slot layout" {
+@test "enabled: one on slot plus one off slot is a single-slot layout" {
   write_two_slot_registry_enabled "" false
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  grep -qE '^▸ Claude A +5h' "$WORK/out.txt"
+  grep -qE '^5h ' "$WORK/out.txt"
+  ! grep -qE 'Claude|▸' "$WORK/out.txt" || return 1
 }
 
 # origin/main を参照しない。下の旧実装との比較が skip される環境（origin/main の無い clone）でも、

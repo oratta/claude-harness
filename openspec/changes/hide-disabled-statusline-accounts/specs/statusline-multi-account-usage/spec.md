@@ -80,6 +80,14 @@ Codex 表示が無効でスロットが 1 つだけのとき（レジストリ�
 - **WHEN** A が active で B だけが `enabled: false` の 2 スロットの登録簿を与える
 - **THEN** A は active 目印と名前列の無い 1 スロット表示で描かれ、B の行は無い
 
+#### Scenario: A と B が両方オフで A が active なら A だけの 1 スロット表示
+- **WHEN** A と B がどちらも `enabled: false` で A が active の 2 スロットの登録簿を与える
+- **THEN** A はライブ値で active 目印と名前列の無い 1 スロット表示で描かれ、B の行は無い
+
+#### Scenario: オフの B が active なら 2 スロット表示に戻る
+- **WHEN** A がオン、B が `enabled: false` で、B が active の登録簿を与える
+- **THEN** A と B の 2 スロットが名前列と active 目印付きで描かれ、B はライブ値で描かれる
+
 ### Requirement: オフのスロットは表示しない
 `plugins/statusline/scripts/statusline.sh` は、非 active で `enabled` が JSON の `false` の Claude スロットについて、値や `off` の行を一切出してはならない（MUST NOT）。snapshot やセッション記録に値が残っていても、値が無くても同じである。active スロットの判定はオフを含む登録簿の全スロットから行い、その結果 active になったオフのスロットは、要件「active スロットはライブ値、非 active スロットは snapshot 値と経過時間で描く」に従ってライブ値で描かなければならない（SHALL）。
 
@@ -147,7 +155,7 @@ Codex 表示が無効でスロットが 1 つだけのとき（レジストリ�
 ### Requirement: Codex の行の名前は Codex とアカウント名にする
 Codex の行が表示されるとき、その左端の名前は `Codex <label>` でなければならない（SHALL）。`<label>` は要件「Codex の表示名を codex.label で決める」（`usage-account-registry` capability）で決まる値で、`codex.label` が無ければ `A` である。`取得待ち` の行にもこの名前を用いる。表示される Codex 行の名前列は Claude の表示対象スロットと共通の最大値で揃える。Codex がオフのときは要件「Codex がオフのとき表示行を出さず、取得しない」に従い、Codex 行を出さず、名前列の幅にも数えない。Codex の取得方法はこの要件で変えない（MUST NOT）。
 
-スロットが 1 つ以下（レジストリ不在を含む）のとき、Claude 側の行には名前を出さない現行のままとし（バイト単位で同一）、Codex の行だけが `Codex <label>` を名前として持つ。
+表示する Claude スロットが 1 つ以下（レジストリ不在、または非 active のオフスロットを除いて 1 つになる場合を含む）のとき、Claude 側の行には名前を出さない現行のままとし（バイト単位で同一）、Codex の行だけが `Codex <label>` を名前として持つ。
 
 #### Scenario: codex.label が無ければ Codex A
 - **WHEN** Codex の値が得られる状態で、`codex.label` を持たないレジストリを与えて statusline を実行する

@@ -241,7 +241,7 @@ class RenderTests(unittest.TestCase):
         document['codex'] = value
         path.write_text(json.dumps(document))
 
-    def test_off_row_is_label_and_off_only_even_with_a_fetched_cache(self):
+    def test_off_shows_no_row_even_with_a_fetched_cache(self):
         cache = self.folder / '.statusline-codex'
         doc = codex.read_json(cache)
         doc['resets'] = {'availableCount': 3, 'credits': [
@@ -249,9 +249,10 @@ class RenderTests(unittest.TestCase):
         codex.atomic(cache, doc)
         before = cache.read_bytes()
         self.set_codex({'enabled': False})
-        lines = [line for line in self.render().splitlines() if 'Codex' in line]
-        self.assertEqual([line.rstrip() for line in lines], ['  Codex A   off'])
-        self.assertIn('\x1b[2moff\x1b[0m', self.render(raw=True))
+        shown = self.render()
+        self.assertNotIn('Codex', shown)
+        self.assertNotIn('off', shown)
+        self.assertNotIn('リセット', shown)
         self.assertEqual(cache.read_bytes(), before)
 
     def test_statusline_codex_zero_wins_over_the_off_setting(self):

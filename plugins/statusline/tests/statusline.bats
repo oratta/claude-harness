@@ -191,13 +191,11 @@ codex_off_env() {
   chmod 700 "$STATUSLINE_CODEX_BIN"
 }
 
-@test "codex off: the Codex row is the label followed by off only" {
+@test "codex off: no Codex row and no off text are shown, and nothing is fetched" {
   codex_off_env
   echo '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"enabled":false}}' > "$WORK/accounts.json"
   mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
-  [ "$(strip_ansi < "$WORK/out.txt" | grep -c 'Codex')" -eq 1 ]
-  line="$(strip_ansi < "$WORK/out.txt" | grep 'Codex')"
-  [ "$line" = "  Codex A  off" ]
+  ! strip_ansi < "$WORK/out.txt" | grep -qE 'Codex|off' || return 1
   [ ! -e "$WORK/codex-calls" ]
   [ ! -e "$WORK/.statusline-codex" ]
 }
