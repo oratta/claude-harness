@@ -5,9 +5,9 @@
 
 ## 2. Codex の名前
 
-- [ ] 2.1 登録簿を読む Python 片に `codex.label` の読み取りを足す（空でない文字列・制御文字なし・表示幅 8 に切る。それ以外は `A`。登録簿が無ければ bash 側で `A`）。触る範囲: plugins/statusline/scripts/statusline.sh:417-470、476-478（既定スロットの分岐）
+- [ ] 2.1 登録簿を読む Python 片に `codex.label` の読み取りを足す（先頭の列が `@codex` の専用行で出し、bash 側はスロットに入れず別の変数で受ける。design D3。空でない文字列・制御文字なし・表示幅 8 に切る。それ以外は `A`。登録簿が無ければ bash 側で `A`）。触る範囲: plugins/statusline/scripts/statusline.sh:417-470、476-478（既定スロットの分岐）
 - [ ] 2.2 Codex の行の固定幅 5 と固定文字列 `Codex` を、`Codex <label>` とその表示幅に置き換える。Codex の行が無いときは列幅に影響させない。触る範囲: plugins/statusline/scripts/statusline.sh:526-538、779-784
-- [ ] 2.3 テスト: `codex.label` 未設定で `Codex A`、`{"label":"X"}` で `Codex X`、不正値で `Codex A`、長い label で 8 桁に切れる。既存の `  Codex  off` などの期待値を新しい名前に直す（オフの行そのものは変えない）。触る範囲: plugins/statusline/tests/statusline.bats:183-232、plugins/statusline/tests/statusline-multi-account.bats（新規テストの追加）、plugins/statusline/tests/test_codex.py:233-255
+- [ ] 2.3 テスト: `codex.label` 未設定で `Codex A`、`{"label":"X"}` で `Codex X`、不正値で `Codex A`、長い label で 8 桁に切れる。既存の `  Codex  off` などの期待値を新しい名前に直す（オフの行そのものは変えない）。触る範囲: plugins/statusline/tests/statusline.bats:183-232、plugins/statusline/tests/statusline-multi-account.bats（新規テストの追加）、plugins/statusline/tests/test_codex.py:181（`'  Codex  7d All'` で始まるかの検査）、plugins/statusline/tests/test_codex.py:233-255
 
 ## 3. 退行と文書
 

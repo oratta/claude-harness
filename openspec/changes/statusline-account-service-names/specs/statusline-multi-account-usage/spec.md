@@ -55,7 +55,7 @@
 ## ADDED Requirements
 
 ### Requirement: Codex の行の名前は Codex とアカウント名にする
-Codex の行の左端の名前は `Codex <label>` でなければならない（SHALL）。`<label>` は要件「Codex の表示名を codex.label で決める」（`usage-account-registry` capability）で決まる値で、`codex.label` が無ければ `A` である。Codex の行の有無・取得・オフの扱いはこの要件で変えない（MUST NOT）。名前の列の幅は Claude のスロットの名前と共通の最大値で揃える。
+Codex の行の左端の名前は `Codex <label>` でなければならない（SHALL）。`<label>` は要件「Codex の表示名を codex.label で決める」（`usage-account-registry` capability）で決まる値で、`codex.label` が無ければ `A` である。Codex の行の有無・取得・オフの扱いはこの要件で変えない（MUST NOT）。既存の要件「Codex がオフのとき Codex 行は off を出し、取得しない」と、`取得待ち` の行にある固定のラベル `Codex`（例 `Codex  off`）は `Codex <label>` に読み替える（この要件が優先する。例 `Codex A  off`）。オフの行の有無と `off` の文言は変えない（MUST NOT。オフの行の扱いは別の change の範囲）。名前の列の幅は Claude のスロットの名前と共通の最大値で揃える。
 
 スロットが 1 つ以下（レジストリ不在を含む）のとき、Claude 側の行には名前を出さない現行のままとし（バイト単位で同一）、Codex の行だけが `Codex <label>` を名前として持つ。
 
