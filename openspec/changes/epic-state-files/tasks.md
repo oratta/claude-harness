@@ -1,6 +1,7 @@
 ## 1. #1120 の取り込み
 
-- [ ] 1.1 PR #1120（#1106、同時に枠を使う子の上限）がマージされていれば `git fetch origin` のあと origin/main に rebase し、`bats plugins/dev-workflow/tests/epic-dispatch.bats` が通ることを確かめる。まだマージされていなければ design.md Decision 10 の最後の項に従い、#1120 の差分を取り込まずに進め、5.1 を #1120 のマージ後に回す。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:323-437（cmd_launch。#1120 の max_parallel_setup と使用中の数え方が入る場所）
+- [x] 1.1 PR #1120（#1106、同時に枠を使う子の上限）がマージされていれば `git fetch origin` のあと origin/main に rebase し、`bats plugins/dev-workflow/tests/epic-dispatch.bats` が通ることを確かめる。まだマージされていなければ design.md Decision 10 の最後の項に従い、#1120 の差分を取り込まずに進め、5.1 を #1120 のマージ後に回す。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:323-437（cmd_launch。#1120 の max_parallel_setup と使用中の数え方が入る場所）
+    - 実施: #1120 は 2026-10-20 に main へマージされた。push 済みのブランチを rebase すると force push が要るため、本体の判断（issue #1123 のコメント）で `git merge origin/main` で取り込んだ（cde8e396）
 
 ## 2. 状態の記録の読み書き
 
@@ -23,7 +24,7 @@
 
 ## 5. 起動（launch）と、adopt・clear
 
-- [ ] 5.1 `launch` を、`deferred` の判定のあとに記録を書いてから子のワークツリーを作る形にする。作成に失敗したら記録を消し、作れたら `worktree`・`branch`・`session` を書き足し、端末・起動待ち・送信の失敗は `launch_failed` に段を書く。別リポジトリの子は `failed <child> other-repo`。`worktree` が空の記録が残っていれば上書きして作成に進む。自分の記録が読めなければ `failed <N> state-unreadable`。#1120 の枠の数え方を、全エピックのディレクトリを横断した `parent_worktree` が今のワークツリーの記録に置き換え、ほかの子の読めない記録は 1 枠に数える（上限の値と `deferred` の出し方は変えない）。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:323-437（cmd_launch）、plugins/dev-workflow/scripts/epic-dispatch.sh:242-322（agent_setup・pick_session_term・shell_start の段の名前）
+- [x] 5.1 `launch` を、`deferred` の判定のあとに記録を書いてから子のワークツリーを作る形にする。作成に失敗したら記録を消し、作れたら `worktree`・`branch`・`session` を書き足し、端末・起動待ち・送信の失敗は `launch_failed` に段を書く。別リポジトリの子は `failed <child> other-repo`。`worktree` が空の記録が残っていれば上書きして作成に進む。自分の記録が読めなければ `failed <N> state-unreadable`。#1120 の枠の数え方を、全エピックのディレクトリを横断した `parent_worktree` が今のワークツリーの記録に置き換え、ほかの子の読めない記録は 1 枠に数える（上限の値と `deferred` の出し方は変えない）。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:323-437（cmd_launch）、plugins/dev-workflow/scripts/epic-dispatch.sh:242-322（agent_setup・pick_session_term・shell_start の段の名前）
 - [ ] 5.2 新しいサブコマンド `adopt <epic> <child>...`（`base` は `EPIC_DISPATCH_BASE`、空なら `main`。前提の失敗は stdout を空にして exit 1）と `clear <epic>`（番号の検査・`/`・`..`・空の置き場・`/` や `$HOME` そのもの・シンボリックリンクを消さない）を足し、usage と仕様コメントと末尾の振り分けに加える。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:1-160（仕様コメント・usage）、plugins/dev-workflow/scripts/epic-dispatch.sh:1090-1103（サブコマンドの振り分け）
 - [ ] 5.3 launch のテストを記録で確かめる形に直し、spec の Scenario（記録の置き場・項目・origin を読めない・作成失敗で記録が残らない・送信失敗で次は skipped・別リポジトリの子は other-repo・記録で数えた使用中で deferred）と、adopt・clear の Scenario を足す。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:591-1134（launch）、plugins/dev-workflow/tests/epic-dispatch.bats（末尾に adopt・clear を新規）
 

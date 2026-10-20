@@ -1352,6 +1352,141 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; pri
   grep -q 'in use 0' "$BATS_TEST_TMPDIR/stderr"
 }
 
+# --- launch: 状態の記録 ---
+# spec: dev-workflow-epic-state（記録の置き場・項目・launch は子のワークツリーを作る前に記録を書く・別のリポジトリの子は作らない）
+
+@test "launch: the record is written under EPIC_STATE_ROOT with the fixed fields, nothing under ~/.claude/projects" {
+  make_stub orca
+  export HOME="$BATS_TEST_TMPDIR/home"
+  mkdir -p "$HOME"
+  printf '%s\n' '{"result":{"worktree":{"path":"/work/issue-1123","branch":"refs/heads/oratta/issue-1123"}}}' > "$STUB_CFG/create_json_1123"
+  run dispatch launch 1122 1123
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 1123" ]
+  f="$EPIC_STATE_ROOT/oratta.claude-harness-1122/oratta.claude-harness-1123.json"
+  [ -f "$f" ]
+  [ ! -e "$HOME/.claude/projects" ]
+  [ "$(jq -c '{schema, epic, child, repo, number, launcher, parent_worktree, worktree, branch, base, session, launch_failed, status, stop}' "$f")" = \
+    '{"schema":1,"epic":"oratta/claude-harness#1122","child":"oratta/claude-harness#1123","repo":"oratta/claude-harness","number":1123,"launcher":"orca","parent_worktree":"/work/parent","worktree":"/work/issue-1123","branch":"oratta/issue-1123","base":"main","session":"term-1123","launch_failed":"","status":"running","stop":""}' ]
+  jq -e '(.created_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and (.updated_at | test("Z$"))' "$f" >/dev/null
+  # 一時ファイルもロックも残らない
+  [ "$(find "$EPIC_STATE_ROOT" -mindepth 2 | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "launch: the three origin forms and upper case owners give the same record path" {
+  make_stub orca
+  for url in ssh://git@github.com/Oratta/claude-harness git@github.com:oratta/claude-harness https://github.com/oratta/claude-harness.git/; do
+    rm -rf "$EPIC_STATE_ROOT"
+    printf '%s\n' "$url" > "$STUB_CFG/origin_url"
+    run dispatch launch 1122 1123
+    [ "$status" -eq 0 ] || { echo "$url" >&2; false; }
+    [ -f "$EPIC_STATE_ROOT/oratta.claude-harness-1122/oratta.claude-harness-1123.json" ] || { echo "$url" >&2; false; }
+    [ "$(jq -r .epic "$EPIC_STATE_ROOT/oratta.claude-harness-1122/oratta.claude-harness-1123.json")" = "oratta/claude-harness#1122" ]
+  done
+}
+
+@test "launch: without origin no record and no worktree are made, exit 1" {
+  make_stub orca
+  echo 2 > "$STUB_CFG/origin_exit"
+  run dispatch launch 1122 1123
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ ! -e "$EPIC_STATE_ROOT/oratta.claude-harness-1122" ]
+  grep -q 'cannot read the epic repository from origin: no origin' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: a gitlab origin makes nothing and names the URL on stderr" {
+  make_stub orca
+  echo git@gitlab.com:oratta/claude-harness.git > "$STUB_CFG/origin_url"
+  run dispatch launch 1122 1123
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  [ ! -e "$EPIC_STATE_ROOT" ] || [ -z "$(find "$EPIC_STATE_ROOT" -type f)" ]
+  grep -q 'cannot read the epic repository from origin: git@gitlab.com:oratta/claude-harness.git' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launch: a failing worktree create leaves no record" {
+  make_stub orca
+  touch "$STUB_CFG/create_fail_11"
+  run dispatch launch 1122 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+  [ ! -e "$(rec_of 1122 11)" ]
+}
+
+@test "launch: create without a path keeps the record with launch_failed create" {
+  make_stub orca
+  printf '%s\n' '{"result":{"worktree":{}}}' > "$STUB_CFG/create_json_11"
+  run dispatch launch 1122 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+  [ "$(rec_get 11 launch_failed)" = create ]
+  [ "$(rec_get 11 worktree)" = "" ]
+}
+
+@test "launch: a failing send keeps the record with launch_failed send and the next launch skips it" {
+  make_stub orca
+  printf '%s\n' '{"ok":true,"result":{"stages":["input_accepted"]}}' > "$STUB_CFG/send_json_term-11"
+  run dispatch launch 1122 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11" ]
+  [ "$(rec_get 11 launch_failed)" = send ]
+  [ "$(rec_get 11 worktree)" = /work/issue-11 ]
+  [ "$(rec_get 11 session)" = term-11 ]
+  gh_seq 11 open
+  run dispatch launch 1122 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11" ]
+  [ "$(calls '^orca worktree create')" -eq 1 ]
+}
+
+@test "launch: terminal and ready failures are written to launch_failed" {
+  make_stub orca
+  touch "$STUB_CFG/tcreate_fail_11"
+  echo 1 > "$STUB_CFG/wait_exit_term-12"
+  run dispatch launch 1122 11 12
+  [ "$status" -eq 1 ]
+  [ "$output" = "$(printf 'failed 11\nfailed 12')" ]
+  [ "$(rec_get 11 launch_failed)" = terminal ]
+  [ "$(rec_get 12 launch_failed)" = ready ]
+}
+
+@test "launch: a child of another repository is failed other-repo without create or record" {
+  make_stub orca
+  run dispatch launch 1122 other/repo#5 12
+  [ "$status" -eq 1 ]
+  [ "$output" = "$(printf 'failed other/repo#5 other-repo\nlaunched 12')" ]
+  [ "$(calls '^orca worktree create --name issue-5 ')" -eq 0 ]
+  [ -z "$(find "$EPIC_STATE_ROOT" -name '*other*')" ]
+}
+
+@test "launch: a record with an empty worktree is overwritten and the worktree is made" {
+  make_stub orca
+  put_record 11 worktree= created_at=2020-01-01T00:00:00Z
+  gh_seq 11 open
+  run dispatch launch 1122 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+  [ "$(calls '^orca worktree create --name issue-11 ')" -eq 1 ]
+  [ "$(rec_get 11 worktree)" = /work/issue-11 ]
+  [ "$(rec_get 11 created_at)" != 2020-01-01T00:00:00Z ]
+}
+
+@test "launch: an unreadable own record is failed state-unreadable and left as is" {
+  make_stub orca
+  mkdir -p "$(dirname "$(rec_of 1122 11)")"
+  printf '{\n' > "$(rec_of 1122 11)"
+  run dispatch launch 1122 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 state-unreadable" ]
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  [ "$(cat "$(rec_of 1122 11)")" = "{" ]
+  grep -q "$(rec_of 1122 11)" "$BATS_TEST_TMPDIR/stderr"
+}
+
 # --- mark ---
 # spec: dev-workflow-epic-state（子の側は今いるワークツリーのパスで自分の記録を探す・Orca の部品は記録を書いたあとに Orca の印へ写す）
 
