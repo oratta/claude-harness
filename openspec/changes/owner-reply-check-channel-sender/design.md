@@ -5,7 +5,7 @@
 2026-10-20 にこのマシンの `~/.claude/projects/*/*.jsonl` で `origin.kind: "channel"` の行を全件（250 行）調べた結果:
 
 - `origin` は全件 `{"kind":"channel","server":"plugin:discord:discord"}`。`type: "user"`、`isMeta: true`、`isSidechain: false`、`promptSource: "system"`、`turnOrigin: "peer"`、`userType: "external"`、`message.content` は文字列
-- 同じ本文（`<channel source=…>` で始まる文）は、`type: "queue-operation"` の行（キーは `type`・`operation`・`content`・`sessionId`・`timestamp` だけで `origin` も `message` も無い）にも写る（274 行）
+- 同じ本文（`<channel source=…>` で始まる文）は、`type: "queue-operation"` の行（キーは `type`・`operation`・`content`・`sessionId`・`timestamp` だけで `origin` も `message` も無い）にも写る（本文が `<channel source=` で始まる queue-operation の行は 298 行で、うち `operation: "enqueue"` が 274 行。キューに積まれた操作ごとに 1 行ずつ書かれるので、user の行の 250 行とは数が合わない）
 - 本文は全件、次の形だった（開きタグは 1 行目、中身はそのあと、最後の行が閉じタグ。開きタグは 1 行に 1 個で、本文の中に 2 個目の `<channel ` は無かった）
 
   ```

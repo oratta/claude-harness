@@ -99,7 +99,7 @@ owner-reply-check.sh は、`origin.kind` が `"channel"` の行を、`isMeta` �
 
 `OWNER_REPLY_CHANNEL_SENDERS` の値は、空白（改行を含む）かカンマで区切った項目の並びとする。区切ったあとの空の項目（連続した区切りや前後の区切りで生まれるもの）は数えず、残った各項目は `<空白・カンマ・= を含まない 1 文字以上>=<空白・カンマ・= を含まない 1 文字以上>` でなければならない（MUST）。未設定、または区切ったあとに項目が 1 つも無い値のときは、チャンネルの行を 1 件も数えてはならない（MUST NOT）。形に合わない項目が 1 つでもあれば、どの使い方でも会話ログの中身によらず stderr に理由を出して exit 2 で終わらなければならない（MUST）。各入力は `plugins/dev-workflow/tests/owner-reply-check.bats` で 1 件ずつ固定しなければならない（MUST）。
 
-守備範囲: ①入力の出どころは、Claude Code が書いた会話ログのチャンネルの行（2026-10-20 時点の実物。`origin` は `{"kind":"channel","server":"plugin:discord:discord"}`、本文は Discord プラグインの通知の `meta` から Claude Code が組み立てた開きタグ・送信者が書いた中身・閉じタグの 3 つからなる）と、ゲートを回すプロセスの環境変数 `OWNER_REPLY_CHANNEL_SENDERS` である。呼び出し側（G・develop の本体・エピックの親と子）は協力的だが、設定の書き間違いをする前提で扱う ②拾いたい誤りは、主以外の送信者がチャンネルに書いた文（gene の設定ではギルドのチャンネルの送信者を絞っておらず、bot に言及すれば誰の発言でも届く）を主の発言として数えること、送信者を読めない行を数えること、送信者が中身に書いた偽の開きタグの `user_id` で照合すること、別のチャンネルの同じ文字列の ID と取り違えること、設定の誤りを「一致なし」と区別せずに扱うこと `type: "queue-operation"` の行にも同じ本文が写るが、要件「主の発言として数える行と数えない行」の①で数えない。`isMeta: true` の行のうち③の例外で扱うのは `origin.kind` が `"channel"` の行だけで、hook などの差し込みの行（`origin` が無いか `origin.kind` が channel でない）は本文が `<channel …>` の形でも数えない ③通ることを許す入力は、許可された送信者が書いたリアクションの行（中身が `(reaction) +👍` のような文）と添付ファイルのある行、送信者が中身に書いた偽の開きタグや閉じタグ（中身の一部として比べる）、呼び出し側が `OWNER_REPLY_CHANNEL_SENDERS` を偽って渡すこと、許可された送信者のチャンネルのアカウントが乗っ取られて書かれた文。ローカルの会話ログ（`.jsonl`）とチャンネルプラグインの改変は検知しない。`meta` の値に `"` が入って開きタグの形が崩れた行は、主の発言でも数えない（確かめられない側に倒れ、主に聞き直す） ④チャンネルプラグインごとの形の違いを先回りして網羅することを、この要件の完了条件にしない（MUST NOT）。新しいチャンネルを許可された送信者に足す前に、その実物の行がこの形に合うかを確かめる。
+守備範囲: ①入力の出どころは、Claude Code が書いた会話ログのチャンネルの行（2026-10-20 時点の実物。`origin` は `{"kind":"channel","server":"plugin:discord:discord"}`、本文は Discord プラグインの通知の `meta` から Claude Code が組み立てた開きタグ・送信者が書いた中身・閉じタグの 3 つからなる）と、ゲートを回すプロセスの環境変数 `OWNER_REPLY_CHANNEL_SENDERS` である。呼び出し側（G・develop の本体・エピックの親と子）は協力的だが、設定の書き間違いをする前提で扱う ②拾いたい誤りは、主以外の送信者がチャンネルに書いた文（gene の設定ではギルドのチャンネルの送信者を絞っておらず、bot に言及すれば誰の発言でも届く）を主の発言として数えること、送信者を読めない行を数えること、送信者が中身に書いた偽の開きタグの `user_id` で照合すること、別のチャンネルの同じ文字列の ID と取り違えること、設定の誤りを「一致なし」と区別せずに扱うこと。`type: "queue-operation"` の行にも同じ本文が写るが、要件「主の発言として数える行と数えない行」の①で数えない。`isMeta: true` の行のうち③の例外で扱うのは `origin.kind` が `"channel"` の行だけで、hook などの差し込みの行（`origin` が無いか `origin.kind` が channel でない）は本文が `<channel …>` の形でも数えない ③通ることを許す入力は、許可された送信者が書いたリアクションの行（中身が `(reaction) +👍` のような文）と添付ファイルのある行、送信者が中身に書いた偽の開きタグや閉じタグ（中身の一部として比べる）、呼び出し側が `OWNER_REPLY_CHANNEL_SENDERS` を偽って渡すこと、許可された送信者のチャンネルのアカウントが乗っ取られて書かれた文。ローカルの会話ログ（`.jsonl`）とチャンネルプラグインの改変は検知しない。`meta` の値に `"` が入って開きタグの形が崩れた行は、主の発言でも数えない（確かめられない側に倒れ、主に聞き直す） ④チャンネルプラグインごとの形の違いを先回りして網羅することを、この要件の完了条件にしない（MUST NOT）。新しいチャンネルを許可された送信者に足す前に、その実物の行がこの形に合うかを確かめる。
 
 住人の環境でこの確かめ方を使うための設定の決まり（`OWNER_REPLY_CHANNEL_SENDERS` をどこに置き、主の ID をどこで確かめるか）は、後続の #1126 が `openspec/changes/owner-reply-check-channel-sender/design.md`（archive 後は `openspec/changes/archive/` の下の同じ change）の「#1126 への引き継ぎ」を読んで決める。
 
@@ -110,7 +110,7 @@ owner-reply-check.sh は、`origin.kind` が `"channel"` の行を、`isMeta` �
 
 #### Scenario: isMeta が true のチャンネルの行を通す
 
-- **WHEN** `OWNER_REPLY_CHANNEL_SENDERS` が `plugin:discord:discord=531` で、原文を含むのが、前の Scenario の行に実物と同じ `isMeta: true`・`promptSource: "system"`・`turnOrigin: "peer"`・`userType: "external"` を付けた行
+- **WHEN** `OWNER_REPLY_CHANNEL_SENDERS` が `plugin:discord:discord=531` で、原文を含むのが、Scenario「許可された送信者のチャンネルの発言を通す」の行に実物と同じ `isMeta: true`・`promptSource: "system"`・`turnOrigin: "peer"`・`userType: "external"` を付けた行
 - **THEN** exit 0 を返す
 
 #### Scenario: origin の無い isMeta の行はチャンネルの形の本文でも通さない
@@ -125,7 +125,7 @@ owner-reply-check.sh は、`origin.kind` が `"channel"` の行を、`isMeta` �
 
 #### Scenario: 3 つの使い方で同じに通す
 
-- **WHEN** 前の Scenario と同じ行と設定で、`--locate` で原文 `許容する` を引き、`--relayed` でその行の uuid を確かめる（停止の記録の URL を書いた親の発言が間にある）
+- **WHEN** Scenario「許可された送信者のチャンネルの発言を通す」と同じ行と設定で、`--locate` で原文 `許容する` を引き、`--relayed` でその行の uuid を確かめる（停止の記録の URL を書いた親の発言が間にある）
 - **THEN** `--locate` はその行の uuid を含む `MATCH:` を出して exit 0、`--relayed` は exit 0
 
 #### Scenario: 許可された送信者が複数並んでいても照合する
