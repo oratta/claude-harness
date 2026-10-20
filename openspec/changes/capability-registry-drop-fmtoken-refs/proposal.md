@@ -9,8 +9,9 @@
 - `plugin.json`・`.claude-plugin/marketplace.json` の capability-registry の description と keywords、`README.md` の行、`dev-workflow/references/self-verification.md` の表の 1 行から `fmtoken` を外す
 - `tests/browser-guard.bats`・`tests/skill-registry.bats` の `fmtoken` 検査を、新しい書き方の検査に置き換える
 - 公開版の索引から 1Password の行と、遅延ロード一覧の `1password.md` への案内を外す(個人版の部品を指さない形にする。個人版の索引が持つ)
+- 公開版の索引から 1Password の行と、遅延ロード一覧の `1password.md` への案内を外す（個人版の部品を指さない形にする。外したものは個人版の索引が持つ）
 - 仕様の要件 2 つ（browser-guard「hook は deny ではなく注意喚起から始める」・skill「索引は 1 サービス 1 行で 1 画面以内を維持する」）を MODIFIED にする
-- `capability-registry-fmtoken` の仕様はこの change では変えない（行き先は design.md の決定 3）
+- `capability-registry-fmtoken` の仕様はこの change では変えない（行き先は design.md の決定 4）
 
 触らないもの: `fmtoken.sh`・`tests/fmtoken.bats`・`1password.md`・SKILL.md の「資格情報の階層」の節（その中の「ブラウザで捕獲した資格情報を env から昇格させる」を含む）は個人版に決まった部品で、消すのは #1129、個人版側で重ねて読む設定は #1130。
 
