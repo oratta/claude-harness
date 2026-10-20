@@ -8,6 +8,7 @@
 - SKILL.md の冒頭 description・「原則」の節・索引の「トークン」列と、`github.md`・`stripe.md`・`supabase.md`・`vercel.md` の取得手順から `fmtoken.sh` の呼び出しを外す。トークンの列は、各 CLI が読む環境変数名またはログイン状態と、在処は個人版の索引を見る旨を書く
 - `plugin.json`・`.claude-plugin/marketplace.json` の capability-registry の description と keywords、`README.md` の行、`dev-workflow/references/self-verification.md` の表の 1 行から `fmtoken` を外す
 - `tests/browser-guard.bats`・`tests/skill-registry.bats` の `fmtoken` 検査を、新しい書き方の検査に置き換える
+- 公開版の索引から 1Password の行と、遅延ロード一覧の `1password.md` への案内を外す(個人版の部品を指さない形にする。個人版の索引が持つ)
 - 仕様の要件 2 つ（browser-guard「hook は deny ではなく注意喚起から始める」・skill「索引は 1 サービス 1 行で 1 画面以内を維持する」）を MODIFIED にする
 - `capability-registry-fmtoken` の仕様はこの change では変えない（行き先は design.md の決定 3）
 
