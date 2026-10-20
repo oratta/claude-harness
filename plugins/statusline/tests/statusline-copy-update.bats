@@ -50,9 +50,10 @@ register_install() {
     >| "$WORK/plugins/installed_plugins.json"
 }
 
-# 権限の 8 進表記（macOS と GNU の stat の両方）
+# 権限の 8 進表記（macOS と GNU の stat の両方）。GNU を先に試す（GNU の `stat -f` はファイル
+# システムの情報を出して成功してしまうため）。BSD の stat は `-c` を知らずに失敗する。
 mode_of() {
-  stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1"
+  stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
 }
 
 # 記録のうち、ファイル名 $1 の行のハッシュ
