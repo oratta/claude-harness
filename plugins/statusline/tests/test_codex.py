@@ -178,11 +178,22 @@ class RenderTests(unittest.TestCase):
     def test_weekly_only_appends_exactly_one_row_and_pending_claude(self):
         lines = self.render().splitlines()
         self.assertIn('取得待ち', lines[-2])
-        self.assertTrue(lines[-1].startswith('  Codex  7d All'))
+        self.assertTrue(lines[-1].startswith('  Codex A'))
         self.assertIn('46%', lines[-1])
         self.assertIn('~', lines[-1])
         self.assertIn('0m前', lines[-1])
         self.assertNotIn('Codex', self.render(False))
+
+    def test_row_name_is_codex_plus_the_registry_label(self):
+        path = self.folder / 'accounts.json'
+        document = json.loads(path.read_text())
+        row = lambda: [l for l in self.render().splitlines() if 'Codex' in l][0]
+        self.assertTrue(row().startswith('  Codex A '))
+        for label, name in [('X', 'Codex X'), ('', 'Codex A'), (3, 'Codex A'),
+                            ('a\tb', 'Codex A'), ('abcdefghijkl', 'Codex abcdefgh')]:
+            document['codex'] = {'label': label}
+            path.write_text(json.dumps(document))
+            self.assertTrue(row().startswith('  ' + name + ' '), (label, row()))
 
     def test_both_windows_on_one_line(self):
         self.write_cache([{'pct': 0, 'minutes': 300, 'reset': self.now + 18000},
@@ -239,7 +250,7 @@ class RenderTests(unittest.TestCase):
         before = cache.read_bytes()
         self.set_codex({'enabled': False})
         lines = [line for line in self.render().splitlines() if 'Codex' in line]
-        self.assertEqual(lines, ['  Codex  off'])
+        self.assertEqual([line.rstrip() for line in lines], ['  Codex A   off'])
         self.assertIn('\x1b[2moff\x1b[0m', self.render(raw=True))
         self.assertEqual(cache.read_bytes(), before)
 
@@ -252,7 +263,7 @@ class RenderTests(unittest.TestCase):
         self.set_codex({'enabled': True})
         enabled = [line for line in self.render().splitlines() if 'Codex' in line]
         self.assertEqual(len(absent), 1)
-        self.assertTrue(absent[0].startswith('  Codex  7d All'))
+        self.assertTrue(absent[0].startswith('  Codex A'))
         self.assertNotIn('off', absent[0])
         self.assertEqual(enabled[0].split('  ')[:4], absent[0].split('  ')[:4])
 

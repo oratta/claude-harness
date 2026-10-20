@@ -92,10 +92,10 @@ writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合�
 `CLAUDE_SECURESTORAGE_CONFIG_DIR` を設定すると、`CLAUDE_CONFIG_DIR`（設定・履歴・プラグイン）を共有したまま Keychain の認証情報だけを別枠にできる。この仕組みで複数の Claude アカウントを使い分けている場合、アカウントごとにレートリミットを 2 行ずつ並べられる。
 
 ```
-▸ A  5h      ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   55%          ~4h 12m
-▸ A  7d All  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   82%/74%   Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   94%   ~2d 3h
-  B  5h      ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    3%
-  B  7d All  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    1%/0%    Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    0%   2h前
+▸ Claude A  5h      ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   55%          ~4h 12m
+▸ Claude A  7d All  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   82%/74%   Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   94%   ~2d 3h
+  Claude B  5h      ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    3%
+  Claude B  7d All  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    1%/0%    Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    0%   2h前
 ```
 
 行頭の `▸` が**いま使っているアカウント**。その行の label は他の行より明るく描く。
@@ -143,7 +143,7 @@ $SCRIPTS/accounts-init.sh --id b --label B
 | フィールド | 規則 |
 |---|---|
 | `id` | 英数字とハイフン、1〜32 文字。全スロットで一意。snapshot のキーになる |
-| `label` | 左端に出す短いラベル。省略すると `id` を使う。表示幅 8 桁（全角 4 文字）を超えると切り詰める。全角でも列は揃う |
+| `label` | 左端に `Claude <label>` と出す短いラベル。省略すると `id` を使う。`<label>` の部分が表示幅 8 桁（全角 4 文字）を超えると切り詰める（`Claude ` は切らない）。全角でも列は揃う |
 | `securestorage` | そのアカウントの `CLAUDE_SECURESTORAGE_CONFIG_DIR` の値。`null` / 空文字は既定アカウント |
 | `enabled` | 省略可。`false` と書いたアカウントは「オフ」になる（下の「使っていないアカウントをオフにする」）。省略・`true` はオン。`"false"` や `0` のような `false` 以外の値もオンとして読む |
 
@@ -160,9 +160,9 @@ $SCRIPTS/accounts.sh off b
 オフのアカウントは、ステータスラインでは値の代わりに `off` の 1 行になり、`dev-workflow` の起動時の自動選択（`cld`）の候補から外れ、使用量の取得もされない。
 
 ```
-▸ A  5h      ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   55%          ~4h 12m
-▸ A  7d All  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   82%/74%   Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   94%   ~2d 3h
-  B  off
+▸ Claude A  5h      ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   55%          ~4h 12m
+▸ Claude A  7d All  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   82%/74%   Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   94%   ~2d 3h
+  Claude B  off
 ```
 
 戻すときは `accounts.sh on <id>` を実行する。認証情報と、それまでに記録された使用量は残っているので、登録をやり直す必要は無い（書き換える前の登録簿は `accounts.json.bak` に 1 世代だけ残る。`accounts-init.sh` で同じ id を登録し直しても `enabled` は消えない）。オフのアカウントがいま使っているアカウントになっているセッション（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を手で設定して起動した場合のほか、オフにした既定アカウントへ `cld` の自動選択が縮退して起動した場合、起動したあとでそのアカウントをオフにした場合）では、そのアカウントは `off` ではなくライブ値で描く。
@@ -210,14 +210,14 @@ python3 -m pytest plugins/statusline/tests/
 
 ## Codex の利用上限
 
-Codex CLI に ChatGPT アカウントでログイン済みなら、Claude アカウントの下に `Codex` を1行追加する。`CODEX_HOME`（既定 `~/.codex`）の `auth.json` を使う CLI アカウントが対象。別のアカウントでログインしているアプリや、Keychain のみの認証・API キーだけの認証は対象外。
+Codex CLI に ChatGPT アカウントでログイン済みなら、Claude アカウントの下に `Codex A` を1行追加する。名前の `A` は、`accounts.json` のトップレベルに `"codex": {"label": "X"}` と書くと `Codex X` に変わる（空でない文字列で、表示幅 8 桁まで。書かない・不正な値なら `A`）。`CODEX_HOME`（既定 `~/.codex`）の `auth.json` を使う CLI アカウントが対象。別のアカウントでログインしているアプリや、Keychain のみの認証・API キーだけの認証は対象外。
 
 ```text
-▸ A      5h       …
-▸ A      7d All   …
-  B      5h       …
-  B      7d All   …
-  Codex  7d All   ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂  45%/60%  ~2d 19h  0m前
+▸ Claude A  5h       …
+▸ Claude A  7d All   …
+  Claude B  5h       …
+  Claude B  7d All   …
+  Codex A   7d All   ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂  45%/60%  ~2d 19h  0m前
 ```
 
 表示例の値はダミー。バー・色・日程線は Claude と共通で、通常 Codex 枠の返却された期間だけを表示する。週間枠しか無ければ5時間枠は作らない。複数の期間があれば同じ行に並べる。Spark の別枠は含めない。
@@ -228,9 +228,9 @@ Python 3 helper が [Codex App Server](https://learn.chatgpt.com/docs/app-server
 - `STATUSLINE_CODEX_BIN`: Codex CLI の実行ファイルを指定（既定 `codex`）
 - `CODEX_HOME`: 表示する CLI の設定・認証ディレクトリ
 
-`accounts.json`（`CLAUDE_ACCOUNTS_FILE`、未設定なら `${CLAUDE_CONFIG_DIR:-~/.claude}/accounts.json`）のトップレベルに `"codex": {"enabled": false}` を書くと Codex がオフになり、Codex 行は使用率の代わりに `  Codex  off` の 1 行になる。オフのあいだは Codex CLI を起動せず、キャッシュも読み書きしない（Codex にログインしていなくても `off` は出る）。オフになるのは値が JSON の `false` のときだけ。戻すときは `codex` のキーを消すか `enabled` を `true` にする。develop とレビューでの扱いは `plugins/dev-workflow/README.md`。
+`accounts.json`（`CLAUDE_ACCOUNTS_FILE`、未設定なら `${CLAUDE_CONFIG_DIR:-~/.claude}/accounts.json`）のトップレベルに `"codex": {"enabled": false}` を書くと Codex がオフになり、Codex 行は使用率の代わりに `  Codex A  off` の 1 行になる。オフのあいだは Codex CLI を起動せず、キャッシュも読み書きしない（Codex にログインしていなくても `off` は出る）。オフになるのは値が JSON の `false` のときだけ。戻すときは `codex` のキーを消すか `enabled` を `true` にする。develop とレビューでの扱いは `plugins/dev-workflow/README.md`。
 
-起動直後に Claude のライブ値がまだ無い場合も、複数アカウントなら使用中のアカウントを `▸ A  取得待ち` のように示す。snapshot の値でライブ値を補完しない。
+起動直後に Claude のライブ値がまだ無い場合も、複数アカウントなら使用中のアカウントを `▸ Claude A  取得待ち` のように示す。snapshot の値でライブ値を補完しない。
 
 ### リセット権の有効期限
 
