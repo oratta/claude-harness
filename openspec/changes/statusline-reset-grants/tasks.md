@@ -21,4 +21,4 @@
 ## 4. 確認
 
 - [x] 4.1 `bats plugins/statusline/tests/ plugins/dev-workflow/tests/usage-probe.bats plugins/dev-workflow/tests/usage-probe-multi-account.bats` が exit 0。`openspec validate statusline-reset-grants --type change --strict` が通る
-- [ ] 4.2 実機（主）: `cedar_ember=1&skip_spend=1` の応答が、従来の URL の応答と同じ使用率（`five_hour` / `seven_day` / `limits`）を保つこと（保てなければ URL の切り替えを進めず、取得方式を作り直す）と、ステータスラインの値が claude.ai の Settings > Usage と一致することを確かめ、エピック genetta-inc/flatmate#1656 にコメントする
+- [ ] 4.2 実機（主）: `cedar_ember=1&skip_spend=1` の応答が、従来の URL の応答と同じ使用率（`five_hour` / `seven_day` / `limits`）を保つこと（保てなければ URL の切り替えを進めず、取得方式を作り直す）と、ステータスラインの値が claude.ai の Settings > Usage と一致することを確かめ、エピック genetta-inc/flatmate#1656 にコメントする（未完: 実機確認の結果 https://github.com/oratta/claude-harness/issues/1115#issuecomment-6286770411 。このアカウントは eligible: false で受け入れ条件 5 を確かめられない。PR のゲートの動作確認で扱う）
