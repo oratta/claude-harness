@@ -86,4 +86,3 @@ git 用の一時領域の判定は、`session_id`・`cwd`・`command` の 3 つ�
 
 - **WHEN** `cwd` が scratchpad の中で、コマンドが `cd ./tbl; rm -rf x/*` の拒否の記録（`kinds` は `rm`）を渡す
 - **THEN** exit 0 で終わり、`permits/` に許可が 1 つ作られる。同じ記録の `kinds` を `git` に書き換えても、判定は `command` だけで決まるので結果は変わらない
-

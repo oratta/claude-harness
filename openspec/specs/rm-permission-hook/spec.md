@@ -87,4 +87,3 @@ TBD - created by archiving change rm-permission-parent-permit. Update Purpose af
 
 - **WHEN** PR 本文と記録先のコメントを見る
 - **THEN** 上の 3 点それぞれに、試したコマンドと結果が書かれている
-
