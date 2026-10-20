@@ -1273,7 +1273,8 @@ json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "com
   local base rec cmd
   base="$(GUARD_BASE)"
   # cd で中に移る・-C を重ねる・scratchpad そのものが repo
-  for cmd in "cd repo && git reset --hard" "git -C repo -C . clean -fdx" "git -C $REPO checkout -- a"; do
+  for cmd in "cd ./repo && git reset --hard" "cd $REPO; cd .. && cd ./repo/. && git status" \
+             "git -C repo -C . clean -fdx" "git -C $REPO checkout -- a"; do
     rec="$(mk_record "$base" "$PERMIT_SID" a1 "$SP" "$cmd")"
     run "$PERMIT" "$rec" "戻すだけ"
     [ "$status" -eq 0 ] || { echo "refused: $cmd: $output"; return 1; }
@@ -1364,6 +1365,41 @@ json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "com
     [ "$status" -ne 0 ] || { echo "permitted: $cmd"; return 1; }
     permits_empty
   done
+}
+
+# cd の移り先は / ・ ./ ・ ../ で始まるか . ・ .. だけ。シェルはそれ以外を、オプション（-P・--）・ディレクトリ
+# スタック（+1・-1）・= 展開（zsh の =git）・CDPATH や zsh の cdpath の探索として読み、判定と別の所に移りうる
+@test "permit: the script refuses cd targets the shell may read as options, stack entries or search paths" {
+  setup_permit
+  local base rec cmd n
+  base="$(GUARD_BASE)"
+  # 作業ツリー側（scratchpad の外）の cwd に、scratchpad の repo を指す紛らわしい名前のリンクを置く
+  for n in -Z -P -L -- +1 -1 =git repo; do
+    ln -s "$REPO" "$OUT/$n"
+  done
+  local -a cmds=(
+    'cd -Z; git reset --hard'
+    'cd -P && git status'
+    'cd -L && git reset --hard'
+    'cd -- && git reset --hard'
+    'cd +1; git reset --hard'
+    'cd -1; git reset --hard'
+    'cd =git; git reset --hard'
+    'cd repo && git reset --hard'
+  )
+  for cmd in "${cmds[@]}"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$OUT" "$cmd")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -ne 0 ] || { echo "permitted: $cmd"; return 1; }
+    [[ "$output" == *'./'* ]] || { echo "reason: $output"; return 1; }
+    permits_empty
+  done
+  # 直書きの許可でも、使う時点の判定で通さない
+  write_permit "$OUT" 'cd -Z; git reset --hard'
+  call_cwd 'cd -Z; git reset --hard' '"a1"' "$PERMIT_SID" "$OUT"
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" == *'許可はあるが行き先を確かめられない'* ]] || { reason; return 1; }
+  permits_empty
 }
 
 @test "permit: the script refuses records in the wrong place, rewritten, or without a reason" {

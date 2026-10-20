@@ -243,8 +243,12 @@ def check(session_id, cwd, command):
     for words in simple:
         head, args = words[0], words[1:]
         if head == "cd":
-            if len(args) != 1 or args[0] == "-":
-                return "cd は移り先を 1 つだけ書く（cd だけ・cd - は扱わない）", None, None
+            if len(args) != 1:
+                return "cd は移り先を 1 つだけ書く（cd だけは扱わない）", None, None
+            # シェルは / ・ ./ ・ ../ で始まらない引数を、オプション（-P・--）・ディレクトリスタック（+1・-1）・
+            # zsh の = 展開・CDPATH や zsh の cdpath の探索として読みうる。判定はそれを辿れないので受け付けない
+            if not (args[0] in (".", "..") or args[0].startswith(("/", "./", "../"))):
+                return "cd の移り先は / ・ ./ ・ ../ で始めるか . ・ .. だけを書く（%s）" % args[0], None, None
             # bash の cd は .. を字句で畳み（論理的な道筋）、git の -C は chdir で実体を辿る。
             # 両者が同じ所に着くときだけ受け付け、symlink を挟んだ .. で行き先が割れる形を拒む
             nl = os.path.normpath(os.path.join(logical, args[0]))
