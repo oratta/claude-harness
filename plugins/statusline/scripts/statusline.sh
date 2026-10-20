@@ -72,19 +72,29 @@ pkg_runner() {
 # Rate snapshot writer contract: openspec/specs/rate-snapshot.
 # A separate file per host lets the shared copy coexist with other PCs.
 resolve_rate_share_dir() {
-    local dir conf tilde='~'
-    if [ "${FLATMATE_RATE_SHARE_DIR+x}" ]; then
+    local dir conf tilde='~' have_dir=""
+    # Order: CLAUDE_RATE_SHARE_DIR, FLATMATE_RATE_SHARE_DIR, CLAUDE_RATE_SHARE_CONF, FLATMATE_RATE_SHARE_CONF.
+    # The FLATMATE_* names are the old names, still read for compatibility; the CLAUDE_* names are primary.
+    if [ "${CLAUDE_RATE_SHARE_DIR+x}" ]; then
+        dir="$CLAUDE_RATE_SHARE_DIR"; have_dir=1
+    elif [ "${FLATMATE_RATE_SHARE_DIR+x}" ]; then
+        dir="$FLATMATE_RATE_SHARE_DIR"; have_dir=1  # old name, compatibility; the primary name is CLAUDE_RATE_SHARE_DIR
+    fi
+    if [ -n "$have_dir" ]; then
         # Trim the whole string (sed works per line and would keep a leading LF); no python3 here.
-        dir="$FLATMATE_RATE_SHARE_DIR"
         dir="${dir#"${dir%%[![:space:]]*}"}"
         dir="${dir%"${dir##*[![:space:]]}"}"
     else
-        conf="${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"
         dir=""
-        if [ -f "$conf" ]; then
-            dir=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$conf" 2>/dev/null \
-                | grep -v -e '^$' -e '^#' | head -1)
-        fi
+        # The old-name conf (compatibility) is read only when the primary one yields no line.
+        for conf in "${CLAUDE_RATE_SHARE_CONF:-$HOME/.claude/rate-share}" \
+                    "${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"; do
+            if [ -f "$conf" ]; then
+                dir=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$conf" 2>/dev/null \
+                    | grep -v -e '^$' -e '^#' | head -1)
+            fi
+            [ -n "$dir" ] && break
+        done
     fi
     case "$dir" in
         "$tilde") dir="$HOME" ;;
