@@ -28,12 +28,13 @@ setup() {
   AGENT_PAYLOAD='{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}'
 }
 
-# Python 本体を -c で渡す 5 本と、python3 の起動まで進む最小の payload
-BODY_HOOKS="git-destructive-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice"
+# Python 本体を -c で渡す 6 本と、python3 の起動まで進む最小の payload
+BODY_HOOKS="git-destructive-guard rm-permission-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice"
 
 payload_for() {
   case "$1" in
     git-destructive-guard) printf '%s' "$GIT_PAYLOAD" ;;
+    rm-permission-guard) printf '%s' '{"tool_name":"Bash","tool_input":{"command":"rm -rf x"},"hook_event_name":"PermissionRequest","agent_id":"a1","session_id":"s","cwd":"/tmp"}' ;;
     agent-model-guard) printf '%s' "$AGENT_PAYLOAD" ;;
     context-tripwire) printf '%s' '{"agent_id":"x","hook_event_name":"PostToolUse"}' ;;
     subagent-stop-guard) printf '%s' '{"agent_id":"x","hook_event_name":"SubagentStop"}' ;;
@@ -85,7 +86,7 @@ SH
     rm -f "${WORK}/argc" "${WORK}/arg1" "${WORK}/arg2" "${WORK}/arg3" "${WORK}/arg4"
     payload_for "$h" | PATH="${WORK}/shim:${PATH}" /bin/bash "${SCRIPTS}/${h}.sh" >/dev/null 2>&1 || true
     [ -f "${WORK}/argc" ] || { echo "$h: python3 was not started"; return 1; }
-    if [ "$h" = git-destructive-guard ]; then
+    if [ "$h" = git-destructive-guard ] || [ "$h" = rm-permission-guard ]; then
       # 本体のうしろに共通の判定ファイル（git-guard-scratchpad.py）のパスを 1 つ渡す（#1133）
       [ "$(cat "${WORK}/argc")" = 4 ] || { echo "$h: argc=$(cat "${WORK}/argc")"; return 1; }
       [ "$(cat "${WORK}/arg4")" = "${SCRIPTS}/git-guard-scratchpad.py" ] || { echo "$h: arg4=$(cat "${WORK}/arg4")"; return 1; }
