@@ -591,12 +591,15 @@ def env_opt_takes_next(opt):
 
 # シェルの起動オプションのうち、次の字句を値に取るもの（-o / +o / -O / +O は同じ字句にまとめた形も含む）
 SHELL_LONG_ARG_OPTS = {"--rcfile", "--init-file"}
+# シェルが起動時に読むファイルを指す変数。値の basename が許可を書くスクリプトなら permit-self として拾う
+SHELL_STARTUP_ENV = re.compile(r"^(?:BASH_ENV|ENV)=(.*)$", re.S)
 
 
 def shell_operand(rest):
-    """シェル（bash など）の引数から (-c があるか, 最初のオプションでない引数) を返す。オプションはスクリプトより
+    """シェル（bash など）の引数から (-c があるか, 最初のオプションでない引数の位置) を返す。オプションはスクリプトより
     前だけを読む（スクリプトより後ろの -c はスクリプトの引数）。-o・+o・-O・+O の値と --rcfile の値は飛ばし、
-    + で始まる語もオプションとして読む。- と -- はオプションの終わり。"""
+    + で始まる語もオプションとして読む。- と -- はオプションの終わり。値の取り方はシェルごとに違う（zsh の -O は
+    値を取らず、-o は値をつなげて書ける）ので、許可を書くスクリプトの判定はこの読み方に頼らない（is_permit_shell）。"""
     has_c = False
     k = 0
     while k < len(rest):
@@ -613,10 +616,30 @@ def shell_operand(rest):
             k += 2 if ("o" in a[1:] or "O" in a[1:]) else 1
             continue
         break
-    return has_c, (rest[k] if k < len(rest) else None)
+    return has_c, min(k, len(rest))
+
+
+def is_permit(word):
+    return os.path.basename(word) == PERMIT_SCRIPT
+
+
+def is_permit_shell(base, rest):
+    """シェル経由で許可を書くスクリプトを呼ぶ形か。迷ったら止める側に倒す: -c が無ければ、引数のどれか（起動
+    オプションの値を含む）の basename がスクリプトなら拾う。bash / sh / zsh の -c があれば、コマンド文字列より前の
+    語（起動オプションとその値。--rcfile は -i と組むと -c でも読まれる）だけを見て、コマンド文字列はその中身を
+    判定に回す（`bash -c "echo …/git-guard-permit.sh"` は止めない）。"""
+    has_c, idx = shell_operand(rest)
+    if has_c and base in SHELLS:
+        return any(is_permit(a) for a in rest[:idx])
+    return any(is_permit(a) for a in rest)
 
 
 def judge_simple(cmd, depth):
+    for t in cmd:
+        # BASH_ENV= / ENV= の代入（前置き・env・export などの引数）でシェルに許可を書くスクリプトを読ませる形
+        m = SHELL_STARTUP_ENV.match(t)
+        if m and is_permit(m.group(1)):
+            return {"permit-self"}
     i = 0
     while i < len(cmd):
         t = cmd[i]
@@ -637,10 +660,8 @@ def judge_simple(cmd, depth):
     base = os.path.basename(head)
     if base == PERMIT_SCRIPT:
         return {"permit-self"}
-    if base in SCRIPT_RUNNERS or head in ("source", "."):
-        has_c, first = shell_operand(rest)
-        if not (has_c and base in SHELLS) and first is not None and os.path.basename(first) == PERMIT_SCRIPT:
-            return {"permit-self"}
+    if (base in SCRIPT_RUNNERS or head in ("source", ".")) and is_permit_shell(base, rest):
+        return {"permit-self"}
     if base in SHELLS:
         for k, a in enumerate(rest):
             if a.startswith("-") and not a.startswith("--") and "c" in a[1:]:
