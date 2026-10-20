@@ -116,7 +116,7 @@ PY
   m="$(message)"
   [[ "$m" == *"何を"* && "$m" == *"なぜ"* && "$m" == *"報告"* ]] || { echo "$m"; return 1; }
   rec="$(only_record)"
-  [[ "$m" == *"$rec"* ]]
+  [[ "$m" == *"$rec"* ]] || return 1
   python3 - "$rec" "$SP" <<'PY'
 import json, sys
 r = json.load(open(sys.argv[1]))
@@ -208,7 +208,7 @@ json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "com
 PY
   call "rm -rf $OUT/dir/*" '"a1"' "$SP"
   [ "$(behavior)" = "deny" ]
-  [[ "$(message)" == *"許可はあるが行き先を確かめられない"* ]]
+  [[ "$(message)" == *"許可はあるが行き先を確かめられない"* ]] || return 1
   permits_empty
 }
 
@@ -257,7 +257,7 @@ PY
   run "$PERMIT" "$rec" "検証"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(ls "$(BASE)/permits" | wc -l | tr -d ' ')" = "1" ]
-  [[ "$output" == *"$SP"* ]]
+  [[ "$output" == *"$SP"* ]] || return 1
 }
 
 @test "permit: an rm record for an outside target gets no permit" {

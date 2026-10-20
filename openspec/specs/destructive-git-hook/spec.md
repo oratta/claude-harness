@@ -419,9 +419,9 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 `plugins/dev-workflow/scripts/git-guard-permit.sh` は、引数に拒否の記録のパスと理由（空でない文字列）を受け取り、次をすべて確かめたときだけ許可を書かなければならない（MUST）。どれかを確かめられなければ、許可を書かず、理由を stderr に書いて 0 以外で終わらなければならない（MUST）。
 
 - 記録が `<base>/denied/<key>.json` の形の場所にあり、`basename(<base>)` が `dev-workflow-git-guard` で、中身から計算し直した `<key>` がファイル名と一致する。`<base>` は記録のパスの 2 つ上とし、環境変数 `TMPDIR` を見てはならない（MUST NOT。hook と親の Bash で `TMPDIR` が違いうるため）
-- 記録の `session_id`・`cwd`・`command` が、次の一時領域の判定を満たす
+- 記録の `session_id`・`cwd`・`command` が、一時領域の判定を満たす。`command` の単純コマンド（`&&`・`;`・改行で区切ったもの）のどれかの先頭の語が `rm` なら、次の git 用の判定の代わりに要件「rm の一時領域の判定」（spec rm-permission-hook）を使い、それ以外は次の判定を使う（どちらを使うかは記録の `command` だけで決め、記録の他の項目は見ない）
 
-一時領域の判定は、`session_id`・`cwd`・`command` の 3 つを入力とし、次をすべて満たすときに満たすとする。判定は `plugins/dev-workflow/scripts/` の 1 つのファイルに置き、許可を書くスクリプトと hook（要件「子への拒否を記録し、親が 1 回だけ通せるようにする」）がそれを読んで使わなければならない（MUST）。
+git 用の一時領域の判定は、`session_id`・`cwd`・`command` の 3 つを入力とし、次をすべて満たすときに満たすとする。git 用の判定と rm の判定は `plugins/dev-workflow/scripts/` の 1 つのファイルに置き、許可を書くスクリプトと hook（要件「子への拒否を記録し、親が 1 回だけ通せるようにする」と spec rm-permission-hook）がそれを読んで使わなければならない（MUST）。
 
 - 判定する側（許可を書くスクリプト・hook）の環境変数に、`cd` や `git` の行き先・設定を変えるもの（`CDPATH`・`GIT_DIR`・`GIT_WORK_TREE`・`GIT_COMMON_DIR`・`GIT_INDEX_FILE`・`GIT_OBJECT_DIRECTORY`・`GIT_ALTERNATE_OBJECT_DIRECTORIES`・`GIT_NAMESPACE`・`GIT_CEILING_DIRECTORIES`・`GIT_DISCOVERY_ACROSS_FILESYSTEM`、および `GIT_CONFIG` で始まるもの）が 1 つも設定されていない（値が空でも設定されているものとして扱う。子の Bash は Claude Code の環境を受け継ぐので、hook の環境にあるものは子のコマンドにも効く）
 - コマンドが英数字・空白・タブ・改行（LF だけ。CR は拒む）・`/ . _ , : = @ + % -`・`;`・`&&` だけでできている（変数・置換・引用符・リダイレクト・パイプ・グロブ・`~`・コメント・行継続を含まない）
@@ -495,6 +495,11 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 
 - **WHEN** hook を `TMPDIR=A` で動かして、`B` の下にだけある scratchpad の repo への拒否の記録を作り、スクリプトを `TMPDIR=B` で動かす
 - **THEN** 0 以外で終わり、`permits/` に許可が作られない（hook はこの scratchpad を数えないので、書いても使えない）
+
+#### Scenario: rm のコマンドの記録には rm 用の判定で許可を書く
+
+- **WHEN** `cwd` が scratchpad の中で、コマンドが `cd ./tbl; rm -rf x/*` の拒否の記録（`kinds` は `rm`）を渡す
+- **THEN** exit 0 で終わり、`permits/` に許可が 1 つ作られる。同じ記録の `kinds` を `git` に書き換えても、判定は `command` だけで決まるので結果は変わらない
 
 ### Requirement: 子は許可を書くスクリプトを呼べない
 
