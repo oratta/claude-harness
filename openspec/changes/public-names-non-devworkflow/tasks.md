@@ -1,13 +1,14 @@
 ## 1. テストを先に書く（落ちることを確かめる）
 
-- [ ] 1.1 `tests/public-private-split.bats` の末尾に、spec「dev-workflow 以外の公開版の部品は決めた固有名とオーナーの PC のパスを持たない」の検索のテストを足す（固定の語と対象ファイルは spec のとおり。`changes/`・`CHANGELOG.md`・`tests/`・`evals/` は除く）。触る範囲: tests/public-private-split.bats:422-440（末尾の `@test` のあと）
-- [ ] 1.2 statusline の bats に、新名 `CLAUDE_RATE_SHARE_DIR`・`CLAUDE_RATE_SHARE_CONF`、旧名の互換、新名が旧名に優先、空文字・空白だけで共有を無効にする（新名・旧名の両方）の Scenario を足す。触る範囲: plugins/statusline/tests/statusline-rate-snapshot.bats:50-90
+- [ ] 1.1 `tests/public-private-split.bats` の末尾に、spec「dev-workflow 以外の公開版の部品は決めた固有名とオーナーの PC のパスを持たない」の検索のテストを足す（固定の語・対象の公開版のファイル・節・許可リストの作り方は spec のとおり。個人版に決まるファイルと節、`changes/`・`CHANGELOG.md`・`tests/`・`evals/` は除く）。許可リストの件は 4.1 の判定の表と同じ内容で足す。触る範囲: tests/public-private-split.bats:422-440（末尾の `@test` のあと）
+- [ ] 1.2 statusline の bats に、新名 `CLAUDE_RATE_SHARE_DIR`・`CLAUDE_RATE_SHARE_CONF`、旧名の互換、新名が旧名に優先、空文字・空白だけで共有を無効にする（新名・旧名の両方）の Scenario を足す。spec の Scenario のとおり、旧 DIR（新 DIR 未定義）・新 CONF（両 DIR 未定義で新旧 CONF が競合）・新 CONF の欠落や有効行なしのときの旧 CONF・旧 DIR と新 CONF の競合（旧 DIR が勝つ）を含める。触る範囲: plugins/statusline/tests/statusline-rate-snapshot.bats:50-90
 - [ ] 1.3 `bats tests/public-private-split.bats plugins/statusline/tests/` で、足したテストが落ち、既存のテストが通ることを確かめる
 
 ## 2. statusline の振る舞い
 
 - [ ] 2.1 `resolve_rate_share_dir` を spec の優先順（新名 DIR → 旧名 DIR → 新名 CONF → 旧名 CONF）に直す。旧名を読む箇所に「互換。主は新名」とコメントする。触る範囲: plugins/statusline/scripts/statusline.sh:71-95
 - [ ] 2.2 README の共有先の説明を新名を主に書き、旧名は互換と書く。触る範囲: plugins/statusline/README.md:94-96、plugins/statusline/README.md:6（表示例の workspace のパスとアカウント名を example に）
+- [ ] 2.2b README に移行の説明を足す: 連携先の reader が旧名だけを読む間は、新名（`CLAUDE_RATE_SHARE_DIR` か `CLAUDE_RATE_SHARE_CONF`）だけに移すと reader が追従できないので、新旧を同じ共有先に揃える（旧名を残すか、新旧に同じパスを書く）。連携先が新名に対応してから旧名を消せる。触る範囲: plugins/statusline/README.md:94-96
 - [ ] 2.3 既存の `openspec/specs/rate-snapshot/spec.md` の該当要件は archive で更新される（この change の差分のとおり）。ほかのテスト（`statusline-copy-update.bats`・`statusline-multi-account.bats`）が旧名で通ることを確かめる（書き換えない）
 
 ## 3. 固有名の置き換え

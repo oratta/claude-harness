@@ -20,13 +20,13 @@
 
 ## 4. 候補語の判定と一覧
 
-- [ ] 4.1 `docs/public-private-split.md` の候補語で、dev-workflow の公開版の部品を `git grep -n` し直す（`changes/`・`CHANGELOG.md`・`tests/`・`evals/` を除く）。一覧に無い当たり（約 137 件のうち dev-workflow 分）を、載せない行の基準のどれに当たるか 1 件ずつ判定し、実施欄に「ファイル:行 — 当たる基準／直した／Orca の語なので #1177」の表で残す。当たらないものは 2・3 と同じ要領で直す。触る範囲: docs/public-private-split.md:254-266
+- [ ] 4.1 `docs/public-private-split.md` の候補語で、dev-workflow の公開版の部品を `git grep -n` し直す（`changes/`・`CHANGELOG.md`・`tests/`・`evals/` を除く）。一覧に無い当たり（約 137 件のうち dev-workflow 分）を、載せない行の基準のどれに当たるか 1 件ずつ判定し、実施欄に「ファイル:行 — 当たる基準／直した／Orca の語なので #1177」の表で残す。出典に当たる行は、spec の許可リストに載せる行として表に同じ内容（パス・固定の文字列・基準）を書く。当たらないものは 2・3 と同じ要領で直す。触る範囲: docs/public-private-split.md:254-266
 - [ ] 4.2 一覧から、2・3・4.1 で直した行と、基準に当たると判定して外した行を消す
-- [ ] 4.3 Orca の語を含む行（一覧の Orca の行と、4.1 で見つけた一覧に無い dev-workflow の Orca の行）の「直す issue」を `#1177` にする。Orca の行の本文は触らない。触る範囲: docs/public-private-split.md:131-248
-- [ ] 4.4 一覧に残る `#1164` の行が、PR #1175 のマージ後も実ファイルに残っているかを確かめ、無ければ記録に事実を書く（この change では行を消さない。消すかは本体が決める）
+- [ ] 4.3 Orca 経路の行を #1177 に付け替える。手順: (1) 一覧の既存の dev-workflow の Orca 経路の行（README.md:15、develop SKILL.md の 46・207・350・353・375・481〜525、reply-after-idle.md、owner-reply-check.sh、declarations.md、stages/pass.md:95）を、行番号でなく内容で現在の行に照合し直す。(2) Orca の語だけでは拾えない関連段落（例: develop SKILL.md の `cld --model` で子セッションを起動する段落や、起動説明・上限の段落）も、一覧の行の内容と同じ話題なら #1177 の引き渡し対象に含める。(3) 結果を実施欄に「一覧の旧行 → 現在のファイル:行 — 内容 — 担い手 #1177」の対応表で残し、一覧の該当行の場所と「直す issue」を #1177 にする（Orca の語が無くて一覧に無い関連段落は行を足す）。Orca の行の本文は触らない。触る範囲: docs/public-private-split.md:131-248
+- [ ] 4.4 一覧に残る担い手 `#1164` の行を、PR #1175 のマージ後の実ファイルで 1 行ずつ確かめる（`fmtoken` で `git grep`）。実ファイルから既に消えていた行（例: `plugin.json:3,14`・`browser-guard.sh:31`）は、この PR で一覧から消し、実施欄の表に「消えていることを確かめたコマンドと結果」を残す。消えていない行があれば担い手を `#1164` のまま残し、残した行と理由を実施欄に記録する。触る範囲: docs/public-private-split.md:131-248
 - [ ] 4.5 `bats tests/public-private-split.bats` が通り、一覧に「担い手なし」の行が 0 件であることを `grep -c '担い手なし' docs/public-private-split.md` の行の表以外で確かめる（change A の分と合わせて）
 
 ## 5. 記録
 
-- [ ] 5.1 変更の記録 `plugins/dev-workflow/changes/1168.md` に、外した固有名ごとに 1 行（元の場所・直し方）と、Orca の行を #1177 に付け替えたことを書く。触る範囲: plugins/dev-workflow/changes/1168.md（新規）
+- [ ] 5.1 変更の記録 `plugins/dev-workflow/changes/1168.md` に、外した固有名ごとに 1 行（元の場所・直し方）、Orca の行を #1177 に付け替えたこと、#1164 の行を一覧から消したことを書く。触る範囲: plugins/dev-workflow/changes/1168.md（新規）
 - [ ] 5.2 `bash scripts/test.sh` と `scripts/lint.sh` が通る
