@@ -245,8 +245,12 @@ if [ "$1" = "-C" ]; then
       exit "$(cat "$STUB_CFG/status_exit" 2>/dev/null || echo 0)" ;;
     "rev-parse HEAD") cat "$STUB_CFG/head" 2>/dev/null || echo aaa111; exit 0 ;;
     "merge-base --is-ancestor") exit "$(cat "$STUB_CFG/ancestor_exit" 2>/dev/null || echo 0)" ;;
+    "rev-parse --path-format=absolute")
+      if [ -e "$STUB_CFG/commondir_out" ]; then cat "$STUB_CFG/commondir_out"; else echo /stub/common/.git; fi
+      exit "$(cat "$STUB_CFG/commondir_exit" 2>/dev/null || echo 0)" ;;
+    "ls-remote origin"|"cat-file -e"|"worktree list"|"rev-parse --verify"|"branch -D") ;;
+    *) exit 0 ;;
   esac
-  exit 0
 fi
 case "$1 ${2-}" in
   "worktree list")
