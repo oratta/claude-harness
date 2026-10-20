@@ -1279,7 +1279,9 @@ cmd_reap() {
     fi
     # ワークツリーを消す（部品は --force を付けない。確認のあとに増えた未コミットの変更があれば rm が止まる）。
     # 消せなければ部品が出した理由の語（rm-failed / rm-failed-terminal-sweep）を付けて残す。再試行もしない
-    if ! rmres="$(launcher remove "$path")"; then
+    # rm の通常の stdout は切り出す前と同じく reap の stdout に出す（部品の stdout は理由の語だけ）。
+    # コマンド置換の外側の stdout を FD 3 に保持して渡し、部品が中継する
+    if ! { rmres="$(EPIC_LAUNCH_STDOUT_FD=3 launcher remove "$path")"; } 3>&1; then
       echo "kept $n ${rmres:-rm-failed}"; continue
     fi
     if tip="$(gitx "$gd" rev-parse --verify --quiet "refs/heads/$branch")"; then

@@ -5099,25 +5099,62 @@ part() { PATH="$STUB_BIN:/usr/bin:/bin" bash "$PLUGIN_DIR/scripts/epic-launch-or
   [ ! -e "$(rec_of 1122 11)" ]
 }
 
-# rm が stdout に出した文は、部品の stdout にも dispatch の stdout にも混ぜない（stderr へ回す）
-@test "launcher orca: remove keeps the rm stdout out of its stdout on success and on failure" {
+# rm の通常の stdout は、部品の stdout に混ぜず、渡された FD（EPIC_LAUNCH_STDOUT_FD）へ中継する。
+# FD が渡されない呼び出しでは stderr へ回す
+# 部品に FD の番号（EPIC_LAUNCH_STDOUT_FD）を渡して呼ぶ（<FD の番号> <サブコマンド> <引数...>）
+partfd() { local fd="$1"; shift; EPIC_LAUNCH_STDOUT_FD="$fd" part "$@"; }
+
+@test "launcher orca: remove relays the rm stdout to the given FD and keeps its own stdout to the control line" {
+  make_stub orca
+  echo 'Removed worktree /work/issue-5' > "$STUB_CFG/rm_out"
+  partfd 7 remove /work/issue-5 7>"$BATS_TEST_TMPDIR/relay" >"$BATS_TEST_TMPDIR/ctl"
+  [ -z "$(cat "$BATS_TEST_TMPDIR/ctl")" ]
+  [ "$(cat "$BATS_TEST_TMPDIR/relay")" = 'Removed worktree /work/issue-5' ]
+  echo 1 > "$STUB_CFG/rm_exit"
+  echo 'error: dirty' > "$STUB_CFG/rm_err"
+  : > "$BATS_TEST_TMPDIR/relay"
+  run partfd 7 remove /work/issue-5 7>"$BATS_TEST_TMPDIR/relay"
+  [ "$status" -eq 1 ]
+  [ "$output" = rm-failed ]
+  [ "$(cat "$BATS_TEST_TMPDIR/relay")" = 'Removed worktree /work/issue-5' ]
+  grep -qF 'error: dirty' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "launcher orca: remove without a usable FD sends the rm stdout to stderr, not stdout" {
   make_stub orca
   echo 'Removed worktree /work/issue-5' > "$STUB_CFG/rm_out"
   run part remove /work/issue-5
   [ "$status" -eq 0 ]
   [ -z "$output" ]
   grep -qF 'Removed worktree /work/issue-5' "$BATS_TEST_TMPDIR/stderr"
-  echo 1 > "$STUB_CFG/rm_exit"
-  run part remove /work/issue-5
-  [ "$status" -eq 1 ]
-  [ "$output" = rm-failed ]
+  run partfd 9 remove /work/issue-5 9>&-
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ "$(calls '^orca worktree rm')" -eq 2 ]
+  grep -qF 'Removed worktree /work/issue-5' "$BATS_TEST_TMPDIR/stderr"
 }
 
-@test "reap: the stdout of orca worktree rm does not enter the stdout of reap" {
+# 切り出す前（d07eda2f）の reap と同じ: rm の stdout は reap の stdout に出て、rm の stderr は stderr に出る
+@test "reap: the stdout of orca worktree rm stays in the stdout of reap, as before the split" {
   reap_ready
   echo 'Removed worktree' > "$STUB_CFG/rm_out"
+  echo 'rm note' > "$STUB_CFG/rm_err"
   run dispatch reap 11
   [ "$status" -eq 0 ]
-  [ "$output" = "reaped 11" ]
-  grep -qF 'Removed worktree' "$BATS_TEST_TMPDIR/stderr"
+  [ "${lines[0]}" = 'Removed worktree' ]
+  [ "${lines[1]}" = 'reaped 11' ]
+  [ "${#lines[@]}" -eq 2 ]
+  grep -qF 'rm note' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "reap: a failing worktree rm keeps its stdout in the stdout of reap before the kept line" {
+  reap_ready
+  echo 'Removed worktree' > "$STUB_CFG/rm_out"
+  echo 'error: dirty' > "$STUB_CFG/rm_err"
+  echo 1 > "$STUB_CFG/rm_exit"
+  run dispatch reap 11
+  [ "${lines[0]}" = 'Removed worktree' ]
+  [ "${lines[1]}" = 'kept 11 rm-failed' ]
+  [ "${#lines[@]}" -eq 2 ]
+  grep -qF 'error: dirty' "$BATS_TEST_TMPDIR/stderr"
 }

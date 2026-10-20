@@ -14,12 +14,15 @@
 #   epic-launch-orca.sh deliver <ワークツリー> <relaunch 0|1> <送る文> <起動コマンド> <起動し直しの指示>
 #   epic-launch-orca.sh close <ワークツリー> <子の呼び方>
 #   epic-launch-orca.sh remove <ワークツリー>
+#     （環境変数 EPIC_LAUNCH_STDOUT_FD に開いている FD の番号があれば、orca worktree rm の通常の stdout をその FD へ
+#     中継する。epic-dispatch.sh の reap は自分の stdout を FD 3 に保持して渡す。渡されない・開いていない FD の
+#     ときは stderr へ回す。部品自身の stdout は成功時に空、失敗時に理由の語の 1 行）
 #   epic-launch-orca.sh mirror <current|ワークツリー> <done|waiting|stopped|resumed|stopped-seen> <記録のパス>
 #
 # orca のコマンドを呼ぶのはこのスクリプトだけ。状態の記録は読み書きしない（記録・見張り・上限・片付けの前の
 # 確認は epic-dispatch.sh）。stdout にはサブコマンドごとに決めた行だけを出し、orca の出力のうち切り出す前の
 # epic-dispatch.sh が stderr に出していたもの（worktree set・worktree create・terminal create・send・wait・
-# close の出力、閉じ直しのときの terminal list、worktree rm の stdout と stderr）と、失敗の理由・手で続けるための案内の文
+# close の出力、閉じ直しのときの terminal list、worktree rm の stderr）と、失敗の理由・手で続けるための案内の文
 # だけを stderr に出す。中で解釈するだけの JSON（worktree current・worktree list・repo list・閉じ直し以外の
 # terminal list）はどこにも出さない。
 # 待ち時間（EPIC_DISPATCH_READY_TIMEOUT_MS・EPIC_DISPATCH_SUBMIT_WAIT・EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT）は
@@ -348,9 +351,15 @@ cmd_close() {
 # 端末の片付けの失敗（stderr に terminal sweep failed）は別の理由で返す。再試行もしない
 cmd_remove() {
   argc 1 "$#"
-  local rmerr
+  local rmerr relay=2
+  # rm の通常の stdout は部品の stdout に混ぜず、epic-dispatch.sh が EPIC_LAUNCH_STDOUT_FD で渡した FD
+  # （reap の stdout を保持したもの）へ中継する。渡されない・開いていない FD なら stderr へ回す
+  case "${EPIC_LAUNCH_STDOUT_FD:-}" in
+    ''|*[!0-9]*) ;;
+    *) { : >&"$EPIC_LAUNCH_STDOUT_FD"; } 2>/dev/null && relay="$EPIC_LAUNCH_STDOUT_FD" ;;
+  esac
   rmerr="$(mktemp)" || { echo rm-failed; exit 1; }
-  if ! orca worktree rm --worktree "path:$1" >&2 2>"$rmerr"; then
+  if ! { orca worktree rm --worktree "path:$1" 2>"$rmerr"; } >&"$relay"; then
     cat "$rmerr" >&2
     if grep -qF -- 'terminal sweep failed' "$rmerr"; then
       echo rm-failed-terminal-sweep
