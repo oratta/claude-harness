@@ -105,7 +105,7 @@ SH
   done
 }
 
-@test "#869: the bodies of the five hooks compile on Python 3.9" {
+@test "#869: the bodies of the five hooks, the shared git-guard file and the permit script compile on Python 3.9" {
   local py h
   py="$(python39)"
   [ -n "$py" ] || skip "Python 3.9 が無い（/usr/bin/python3・python3.9・python3 のどれも 3.9 でない）"
@@ -115,6 +115,19 @@ SH
     "$py" -I -c 'import sys; compile(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1], "exec")' \
       "${WORK}/body.py" || { echo "$h: does not compile on 3.9"; return 1; }
   done
+  # guard が子の呼び出しで読む共通の判定ファイルと、許可を書くスクリプトの本体も 3.9 で動く（#1133）。
+  # 共通の判定ファイルは読み込みが失敗すると guard が黙って許可を探さなくなるので、取り込んで判定を 1 回呼ぶ
+  # （実行時に評価される注釈なども拾う）
+  "$py" -I -c 'import sys
+ns = {}
+exec(compile(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1], "exec"), ns)
+err, sp, repos = ns["check"]("s1", "/", "git status")
+assert err and sp is None, (err, sp)' "${SCRIPTS}/git-guard-scratchpad.py" \
+    || { echo "git-guard-scratchpad.py: does not run on 3.9"; return 1; }
+  awk '/<<.PY. \|\| true$/{f=1;next} /^PY$/{f=0} f' "${SCRIPTS}/git-guard-permit.sh" >|"${WORK}/permit.py"
+  [ -s "${WORK}/permit.py" ] || { echo "git-guard-permit: empty body"; return 1; }
+  "$py" -I -c 'import sys; compile(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1], "exec")' \
+    "${WORK}/permit.py" || { echo "git-guard-permit: does not compile on 3.9"; return 1; }
 }
 
 @test "#869: git-destructive-guard asks for git reset --hard when python3 is Python 3.9" {
