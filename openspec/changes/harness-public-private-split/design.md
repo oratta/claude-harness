@@ -10,7 +10,7 @@
 
 **Goals:**
 - どの部品も漏らさず、行き先（公開版／個人版／保留（#1123 の後））と理由が 1 か所の文書で読める
-- #1129 が表だけを見て移す物を決められ、#1098・#1105 と新しい子 issue（capability-registry の公開版から fmtoken の参照を外す。下の Decisions）が一覧だけを見て直す箇所を決められる
+- #1129 が表だけを見て移す物を決められ、#1098・#1105・#1164（capability-registry の公開版から fmtoken の参照を外す。下の Decisions）が一覧だけを見て直す箇所を決められる
 - capability-registry の置き場を決め、選ばなかった案を残す
 - flatmate #1615 の保留の子の扱いを、表に基づいて決めて伝える
 
@@ -42,11 +42,12 @@
 
 ### capability-registry は分割する（発見の仕組みは公開版、オーナーの資格情報の置き場は個人版）
 
-- 採用: 公開版に残すのは browser-guard の hook（`scripts/browser-guard.sh`）と、スキルのうち「外部サービスを操作する前に CLI と認証確認を調べる・ブラウザに行く前に CLI 代替を確かめる」という原則と、CLI の索引（github・supabase・vercel・stripe の CLI 名と認証確認コマンド）。個人版に移すのは `scripts/fmtoken.sh`・`skills/capability-registry/1password.md`・スキルの「資格情報の階層」の表（agents 保管庫・human-only 保管庫・SA 名 `claude-agents-ro` / `claude-agents-rw`・命名規約 `<project>--<service>`）と、オーナーのプロジェクト名の例（uranai・suimei・moko など）
+- 採用: 公開版に残すのは browser-guard の hook（`scripts/browser-guard.sh`）と、スキルのうち「外部サービスを操作する前に CLI と認証確認を調べる・ブラウザに行く前に CLI 代替を確かめる」という原則と、CLI の索引（github・supabase・vercel・stripe の CLI 名と認証確認コマンド）。個人版に移すのは `scripts/fmtoken.sh`・`skills/capability-registry/1password.md`・スキルの「表記規約」の節（agents 保管庫・human-only 保管庫の呼び方と `op item list --vault agents` の例）と「資格情報の階層」の表（agents 保管庫・human-only 保管庫・SA 名 `claude-agents-ro` / `claude-agents-rw`・命名規約 `<project>--<service>`）と、オーナーのプロジェクト名の例（uranai・suimei・moko など）
 - 理由: browser-guard と CLI を先に調べる原則は誰の環境でも意味があり、住人のふるまい（ログインを頼む前に CLI を探す）に効き、公開版に残る `rules/browser-infra-env-capture.md` からも参照されている。fmtoken はオーナーの 1Password の保管庫と SA の構成を前提にした道具で、flatmate では `fmtoken` が出荷物に入れてはいけない語になっている
 - 選ばなかった案: 丸ごと個人版。公開版の `rules/browser-infra-env-capture.md` の参照先が消え、住人からブラウザ操作の前の注意喚起も消える
 - 選ばなかった案: 丸ごと公開版にして fmtoken を一般化する。保管庫の設計（read-only SA・human-only 保管庫）を一般化するのは設計変更で、#1127 の範囲（仕分けて移す）を越える
-- 部品の行（境界の規則に従う）: `scripts/browser-guard.sh` 公開版、`scripts/fmtoken.sh` 個人版、`skills/capability-registry/1password.md` 個人版、`skills/capability-registry/{github,supabase,stripe,vercel}.md` 公開版、`SKILL.md` は節で分け、「表記規約」「原則」「索引（1 サービス 1 行）」「CLI が無いサービス（ネガティブエントリ）」「新サービスの追加」を公開版、「資格情報の階層」を個人版にする（実装時に見出しを読み直し、この割り当てと食い違えば文書に理由を書いて直す）
+- 部品の行（境界の規則に従う）: `scripts/browser-guard.sh` 公開版、`scripts/fmtoken.sh` 個人版、`skills/capability-registry/1password.md` 個人版、`skills/capability-registry/{github,supabase,stripe,vercel}.md` 公開版、`SKILL.md` は節で分け、「原則」「索引（1 サービス 1 行）」「CLI が無いサービス（ネガティブエントリ）」「新サービスの追加」の 4 つを公開版、「表記規約（生成文にも適用すること）」「資格情報の階層（どこに置くかはプロジェクトごとに決めない）」の 2 つを個人版にする（見出しの文字列は対象 HEAD f336d2ef の SKILL.md の `## ` の行どおり。実装時に読み直し、見出しが変わっていれば文書に理由を書いて直す）
+- 「表記規約」を個人版にした理由: 仕様レビュー 2 周目で、「表記規約」の節に個人版へ移す保管庫名（agents・human-only）と `op item list --vault agents` が残り、公開版に割り当てると上の採用と矛盾すると指摘された。選び直しを主に聞き、主の決定は「移していい」（節を丸ごと個人版へ移す）だった https://github.com/oratta/claude-harness/issues/1128#issuecomment-6292306455 。節の中で Obsidian vault との区別の書き方だけを公開版に残す案は、節を割ると境界の規則（節の行は `## ` の見出し単位）を越えるので取らない
 
 #### 公開版に残る部品から個人版への参照を外す作業（この change では直さない）
 
@@ -63,13 +64,13 @@
 | `openspec/specs/capability-registry-browser-guard/spec.md`「hook は deny ではなく注意喚起から始める」 | メッセージに `fmtoken.sh` の存在を含めることが SHALL |
 | `openspec/specs/capability-registry-skill/spec.md`「索引は 1 サービス 1 行で 1 画面以内を維持する」 | 各行のトークン取得方法を `fmtoken.sh <service>` と書くことが SHALL |
 
-担い手: 既存の issue の範囲に収まらない。#1098 の範囲は `rules/` の 5 本と `output-styles/readable.md` で、capability-registry の hook とサービス別索引を含まない。#1105 の範囲は flatmate の住人で索引と案内を二重にしないことで、`fmtoken.sh` の参照を外すことを含まない。#1129 は「個人版の部品と固有名が公開版から無くなる」ことを受け入れ条件に持つが、本文は「移す」作業で、公開版の hook の文言と既存仕様の要件を書き換えることは書いていない。そこで **新しい子 issue が要る**（エピック #1127 の子。この change では作らず、後続の issue の本文も書き換えない。本体に知らせる）。その子は次を受け持つ:
+担い手: 既存の issue の範囲に収まらない。#1098 の範囲は `rules/` の 5 本と `output-styles/readable.md` で、capability-registry の hook とサービス別索引を含まない。#1105 の範囲は flatmate の住人で索引と案内を二重にしないことで、`fmtoken.sh` の参照を外すことを含まない。#1129 は「個人版の部品と固有名が公開版から無くなる」ことを受け入れ条件に持つが、本文は「移す」作業で、公開版の hook の文言と既存仕様の要件を書き換えることは書いていない。そこで新しい子 issue が要ると判断し、本体が #1164 として起票した https://github.com/oratta/claude-harness/issues/1164 （エピック #1127 の子。この change では #1164 を含む後続の issue の本文を書き換えない）。#1164 は次を受け持つ:
 
 - 上の表の参照を、公開版では「トークンの在処はオーナーの環境の索引（個人版）があればそちらを見る」のような個人版の有無に依らない書き方に直し、`fmtoken.sh` の案内は個人版の側（#1130 で重ねて読む）に移す
-- 既存仕様の要件の更新（`capability-registry-browser-guard`・`capability-registry-skill` の上の 2 要件の MODIFIED と、`capability-registry-fmtoken` を個人版へ移すか REMOVED にするか）は、その子の openspec change で行う
+- 既存仕様の要件の更新（`capability-registry-browser-guard`・`capability-registry-skill` の上の 2 要件の MODIFIED と、`capability-registry-fmtoken` を個人版へ移すか REMOVED にするか）は、#1164 の openspec change で行う
 - 時期: #1129 が `fmtoken.sh` を公開版から消すより前か同じ PR で着地させる（後になると、公開版が存在しない道具を案内する期間ができる）。依存は「#1128 の後・#1129 の前」
 
-一覧（固有記述の一覧）には、上の行を「直す issue: 新しい子 issue（未作成）」として載せる
+一覧（固有記述の一覧）には、上の行を「直す issue: #1164」として載せる
 
 ### 保留は「#1123 の後に何を決めるか」を書く
 
@@ -78,7 +79,7 @@
 
 ### 固有記述の一覧の書式
 
-- 一覧は公開版（分割の行で公開版になった部品を含む）に残る部品だけを対象にし、1 行 1 件で `<リポジトリ相対パス>:<行>` ・種別（固有名／環境依存）・何が書かれているか・直す issue（#1098・#1105・新しい子 issue（未作成）のどれか。#1098 は `rules/` と `output-styles/` の 6 本、#1105 は flatmate の住人での索引と案内の二重、それ以外の capability-registry の fmtoken の参照は新しい子 issue）を書く。どの範囲にも当たらない行は「担い手なし」と書き、本体に知らせる
+- 一覧は公開版（分割の行で公開版になった部品を含む）に残る部品だけを対象にし、1 行 1 件で `<リポジトリ相対パス>:<行>` ・種別（固有名／環境依存）・何が書かれているか・直す issue（#1098・#1105・#1164 のどれか。#1098 は `rules/` と `output-styles/` の 6 本、#1105 は flatmate の住人での索引と案内の二重、それ以外の capability-registry の fmtoken・保管庫の参照は #1164）を書く。どの範囲にも当たらない行は「担い手なし」と書き、本体に知らせる
 - 種別の境界: 固有名はオーナーのプロジェクト名・アカウント名・保管庫名・人名・オーナーのリポジトリ名。環境依存はオーナーの PC のパス・オーナーだけが持つ環境変数やサービス（Obsidian vault・Fieldy・Orca など）を前提にした記述。誰でも置き換えられる例として書かれたもの（`<project>` のような書式の説明）は載せない
 - 探し方: 固有名の候補語（オーナーのリポジトリ名・プロジェクト名・`oratta`・`/Users/`・保管庫名など）で `grep` をかけ、当たった行を目で仕分ける。候補語は文書に残し、#1098 が同じ語で取りこぼしを確かめられるようにする
 
@@ -106,4 +107,4 @@
 - [保留の行が残る間、#1129 が全部を移しきれない] → 保留は #1123 に依存する部品に限り、それ以外は全部 3 つのどれかに決める
 - [表を固定のテストで守ると、部品を足すたびに表を直す手間が増える] → 足すのは 1 行で、漏れて個人版の部品が住人に届くよりは安い
 - [固有記述の一覧は grep の候補語に依存し、取りこぼしうる] → 候補語を文書に残して #1098 が再検索できるようにし、一覧は #1098 の作業範囲の初版と位置づける
-- [capability-registry の公開版から fmtoken の参照を外す担い手が既存の issue に無い] → design に新しい子 issue が要ることと受け持つ範囲・時期（#1129 より前か同じ PR）を書き、本体に知らせる。子 issue を作るかどうかと作る時期は本体とエピックの親が決める
+- [capability-registry の公開版から fmtoken の参照を外す担い手が既存の issue に無かった] → 本体が #1164 を起票した。design に #1164 の受け持つ範囲と時期（#1129 より前か同じ PR）を書き、#1129 がそれより先に `fmtoken.sh` を消さないようにする
