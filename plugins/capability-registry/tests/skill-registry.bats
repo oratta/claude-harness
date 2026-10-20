@@ -43,11 +43,11 @@ public_part() {
   for svc in "gh" "supabase" "vercel" "stripe"; do
     grep -q "^| .* | ${svc} |" "$SKILL"
   done
-  ! grep -q "^| 1Password |" "$SKILL"
+  ! grep -q "^| 1Password |" "$SKILL" || return 1
 }
 
 @test "SKILL.md: public part has no private token tool, points token location to the owner's index, keeps verify principle" {
-  ! public_part | grep -q "fmt[o]ken"
+  ! public_part | grep -q "fmt[o]ken" || return 1
   public_part | grep -q "オーナーの環境の索引"
   # 「記述を信じず verify を実行する」原則
   grep -Eq "(verify|認証確認)" "$SKILL"
@@ -60,10 +60,10 @@ public_part() {
 @test "per-service detail files exist (lazy-loaded)" {
   for f in github.md supabase.md vercel.md stripe.md; do
     [ -f "${PLUGIN_DIR}/skills/capability-registry/${f}" ]
-    ! grep -q "fmt[o]ken" "${PLUGIN_DIR}/skills/capability-registry/${f}"
+    ! grep -q "fmt[o]ken" "${PLUGIN_DIR}/skills/capability-registry/${f}" || return 1
   done
   # 1password.md は個人版に決まった部品。公開版の索引は参照しない
-  ! grep -q "1password.md" "$SKILL"
+  ! grep -q "1password.md" "$SKILL" || return 1
 }
 
 @test "plugin.json: exists, parses, registers the skill" {
