@@ -54,14 +54,15 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 
 一時領域の判定は、`session_id`・`cwd`・`command` の 3 つを入力とし、次をすべて満たすときに満たすとする。判定は `plugins/dev-workflow/scripts/` の 1 つのファイルに置き、許可を書くスクリプトと hook（要件「子への拒否を記録し、親が 1 回だけ通せるようにする」）がそれを読んで使わなければならない（MUST）。
 
+- 判定する側（許可を書くスクリプト・hook）の環境変数に、`cd` や `git` の行き先・設定を変えるもの（`CDPATH`・`GIT_DIR`・`GIT_WORK_TREE`・`GIT_COMMON_DIR`・`GIT_INDEX_FILE`・`GIT_OBJECT_DIRECTORY`・`GIT_ALTERNATE_OBJECT_DIRECTORIES`・`GIT_NAMESPACE`・`GIT_CEILING_DIRECTORIES`・`GIT_DISCOVERY_ACROSS_FILESYSTEM`、および `GIT_CONFIG` で始まるもの）が 1 つも設定されていない（値が空でも設定されているものとして扱う。子の Bash は Claude Code の環境を受け継ぐので、hook の環境にあるものは子のコマンドにも効く）
 - コマンドが英数字・空白・タブ・改行（LF だけ。CR は拒む）・`/ . _ , : = @ + % -`・`;`・`&&` だけでできている（変数・置換・引用符・リダイレクト・パイプ・グロブ・`~`・コメント・行継続を含まない）
 - `&&`・`;`・改行で区切った単純コマンドがすべて、引数 1 つの `cd`（実在するディレクトリ。`-` を除く）か、サブコマンドの前に `-C <パス>` だけを置いた `git`（`-C` は複数置けて、左から順に適用する）で、サブコマンドが `checkout`・`restore`・`reset`・`clean`・`branch`・`switch`・`status`・`add`・`commit`・`rev-parse` のどれかであり、`git` が 1 つ以上ある
-- 各 `git` の作業ディレクトリ（`cwd` から `cd` と `-C` を順に適用し `realpath` で解決したもの）から親へ辿って見つかる `.git` について、作業ツリーの最上位・git ディレクトリ（`.git` がファイルなら `gitdir:` の先）・共通の git ディレクトリ（`commondir` があればその先）の `realpath` が、すべて `session_id` のセッションの scratchpad の中（scratchpad そのものを含む。scratchpad の直下に `.git` があれば scratchpad 全体を作業ツリーとする repo として中に数える）にある。scratchpad とは、`basename` が `scratchpad`、その親の `basename` が `session_id`、さらに 2 つ上の `basename` が `claude-<判定を動かすユーザーの uid>` のディレクトリである。`session_id` は英数字と `-` だけの空でない文字列でなければならない。scratchpad の中で `.git` が見つからないものは拒む
+- 各 `git` の作業ディレクトリ（`cwd` から `cd` と `-C` を順に適用し `realpath` で解決したもの）から親へ辿って見つかる `.git` について、作業ツリーの最上位・git ディレクトリ（`.git` がファイルなら `gitdir:` の先）・共通の git ディレクトリ（`commondir` があればその先）の `realpath` が、すべて `session_id` のセッションの scratchpad の中（scratchpad そのものを含む。scratchpad の直下に `.git` があれば scratchpad 全体を作業ツリーとする repo として中に数える）にある。scratchpad とは、`basename` が `scratchpad`、その親の `basename` が `session_id`、さらに 2 つ上の `basename` が `claude-<判定を動かすユーザーの uid>` のディレクトリで、かつその `claude-<uid>` の親の `realpath` が一時フォルダの置き場所（`/tmp`・`/private/tmp`・判定する側の環境変数 `TMPDIR`・Python の `tempfile.gettempdir()` の `realpath` のどれか。hook と親の Bash で `TMPDIR` が違いうるので候補を複数持つ）で、`claude-<uid>` がディレクトリで、所有者が判定を動かすユーザーの uid で、グループと他者に書き込み権が無いものである（作業ツリーの中などに同じ形のフォルダを作っても scratchpad に数えない）。`session_id` は英数字と `-` だけの空でない文字列でなければならない。scratchpad の中で `.git` が見つからないものは拒む
 - 共通の git ディレクトリの `config` と git ディレクトリの `config.worktree` に、`worktree` のキーも `[include` / `[includeIf` の節も無い（節名とキーは大文字小文字を区別せずに見る。git が区別しないため）
 
 判定のために git を実行してはならない（MUST NOT。子が作った repo の設定でコマンドが動きうるため）。許可は `<base>/permits/<key>.json` に、`session_id`・`agent_id`・`cwd`・`command`・`scratchpad`・確かめた repo・理由・`created_at`・`expires_at`（書いた時刻の 15 分後の UNIX 秒）を入れて、一時ファイルからの `rename` で置かなければならない（MUST）。許可を書いたら、その子の回数のファイル（`<base>/<sha256(session_id + NUL + agent_id)>`）を消さなければならない（MUST。要件「同じ子への拒否の繰り返しを打ち切る」）。消せなかったときは stderr に書き、exit 0 で終わってよい。成功したときは、許可したコマンド・cwd・scratchpad・確かめた repo・期限を stdout に書かなければならない（MUST）。
 
-守備範囲: 受け取る入力は、引数・拒否の記録・ファイルシステム上の scratchpad と repo の置き場所である。拾いたい誤りは、親が「子が自分の一時領域を戻すだけ」と判断を誤って、一時領域の外のワークツリー・ホーム・他のリポジトリへの破壊的な操作を許可することである。次の入力は通す（許可を書く）ことを許す: 子の Bash の環境に `GIT_DIR` / `GIT_WORK_TREE` などが入っていて git が別の場所を触るもの（スクリプトは子の環境を見られない）／scratchpad の中の、親の判断と違うファイルや repo を触るもの（守らないもの）。止めすぎる向きでは、引用符やグロブを使ったコマンド・許した以外の git のサブコマンドは scratchpad の中でも許可できないが、これは許す。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+守備範囲: 受け取る入力は、引数・拒否の記録・ファイルシステム上の scratchpad と repo の置き場所である。拾いたい誤りは、親が「子が自分の一時領域を戻すだけ」と判断を誤って、一時領域の外のワークツリー・ホーム・他のリポジトリへの破壊的な操作を許可することである。次の入力は通す（許可を書く）ことを許す: 子が自分の Bash の中だけで `GIT_DIR` / `GIT_WORK_TREE` などを設定し、判定する側の環境には無いまま git が別の場所を触るもの（スクリプトと hook は子のシェルの中の環境を見られない。同じ呼び出しの中で代入する形は文字の制限と単純コマンドの制限で拒む）／scratchpad の中の、親の判断と違うファイルや repo を触るもの（守らないもの）。止めすぎる向きでは、引用符やグロブを使ったコマンド・許した以外の git のサブコマンドは scratchpad の中でも許可できないが、これは許す。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: 一時領域の中の repo への操作は許可を書く
 
@@ -72,6 +73,16 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 
 - **WHEN** 拒否の記録の `cwd` が scratchpad の外の repo のもの、`cd` で scratchpad の外の repo に移ってから `git reset --hard` するもの、`git -C <外の repo> clean -fd` のもの、`.git` が外の git ディレクトリを指す repo のもの、`session_id` が別のセッションの scratchpad の中の repo のもの、共通の git ディレクトリの `config` に `[Core]` の節と `WorkTree = <外のパス>` のキーを大文字混じりで書いた repo のもの、をそれぞれ渡す
 - **THEN** どれも 0 以外で終わり、`permits/` に許可が作られない
+
+#### Scenario: 一時フォルダの外に作った同じ形のフォルダは scratchpad に数えない
+
+- **WHEN** 一時フォルダの置き場所でないディレクトリ（作業ツリーの中など）の下に `claude-<uid>/<slug>/<session_id>/scratchpad/repo` を作り、`cwd` がそこで `git checkout -- .` の拒否の記録を渡す。また、同じ `cwd` とコマンドで 4 つの値が一致し期限内の許可を `permits/<key>.json` に直接書いてから、その payload を hook に渡す
+- **THEN** スクリプトは 0 以外で終わって `permits/` に許可が作られず、hook は `permissionDecision` が `deny` で `permissionDecisionReason` に「許可はあるが行き先を確かめられない」を含む
+
+#### Scenario: 行き先を変える環境変数があれば許可を書かず、使わない
+
+- **WHEN** 一時領域の中の repo への `git checkout -- .` の拒否の記録を、`GIT_DIR` を scratchpad の外の repo の git ディレクトリに向けた環境でスクリプトに渡す。また、その環境変数の無い環境で許可を書いたあと、`GIT_DIR` を外に向けた環境で hook に元の payload を渡す
+- **THEN** スクリプトは 0 以外で終わって `permits/` に許可が作られず、hook は `permissionDecision` が `deny` で `permissionDecisionReason` に「許可はあるが行き先を確かめられない」を含む
 
 #### Scenario: 行き先を確定できないコマンドは許可を書かない
 

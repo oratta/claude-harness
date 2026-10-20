@@ -865,9 +865,10 @@ PY
 
 PERMIT_SID="0a1b2c3d-sid1"
 
-# scratch_dir <session_id> — Claude Code の scratchpad と同じ形のディレクトリを作り、realpath を出す
+# scratch_dir <session_id> [一時フォルダ] — Claude Code の scratchpad と同じ形のディレクトリを作り、realpath を出す。
+# claude-<uid> は一時フォルダの置き場所（既定は TMPDIR）の直下に置く（判定は置き場所も見る）
 scratch_dir() {
-  local d="${BATS_TEST_TMPDIR}/claude-$(id -u)/slug/$1/scratchpad"
+  local d="${2:-$TMPDIR}/claude-$(id -u)/slug/$1/scratchpad"
   mkdir -p "$d"
   python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$d"
 }
@@ -1076,14 +1077,84 @@ PY
 
 @test "permit: the script writes the permit next to the record, not under its own TMPDIR" {
   setup_permit
-  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
-  local rec b="${BATS_TEST_TMPDIR}/tmp-b"
-  rec="$(only_record)"
+  # 親の TMPDIR（b）の下にある scratchpad の repo を、hook の TMPDIR の下に書かれた記録で許可する
+  local rec b="${BATS_TEST_TMPDIR}/tmp-b" repo_b
   mkdir -p "$b"
+  repo_b="$(mk_repo "$(scratch_dir "$PERMIT_SID" "$b")/repo")"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$repo_b"
+  rec="$(only_record)"
   run env TMPDIR="$b" "$PERMIT" "$rec" "戻すだけ"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = "1" ]
-  [ -z "$(ls -A "$b")" ]
+  [ ! -e "$b/dev-workflow-git-guard" ]
+}
+
+# write_permit <cwd> <command> — スクリプトを使わずに、子 a1 の一致する許可を permits/ に直接書く
+write_permit() {
+  local k
+  k="$(key_of "$PERMIT_SID" a1 "$1" "$2")"
+  mkdir -p "$(GUARD_BASE)/permits"
+  printf '%s' "$2" | python3 -c '
+import json, sys, time
+json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "command": sys.stdin.read(),
+           "created_at": int(time.time()), "expires_at": int(time.time()) + 600}, open(sys.argv[1], "w"))' \
+    "$(GUARD_BASE)/permits/$k.json" "$PERMIT_SID" "$1"
+}
+
+@test "permit: a scratchpad-shaped folder outside the temp folders is not a scratchpad" {
+  setup_permit
+  # 作業ツリーの中などに同じ形のフォルダを作っても、claude-<uid> の親が一時フォルダの置き場所でなければ外
+  local fake rec
+  fake="$(mk_repo "${BATS_TEST_TMPDIR}/work/claude-$(id -u)/slug/$PERMIT_SID/scratchpad/repo")"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$fake"
+  [ "$(decision)" = "deny" ]
+  rec="$(only_record)"
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -ne 0 ] || { echo "$output"; return 1; }
+  permits_empty
+  # 直接書いた許可も hook は使わない
+  write_permit "$fake" 'git checkout -- .'
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$fake"
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" == *'許可はあるが行き先を確かめられない'* ]] || { reason; return 1; }
+  permits_empty
+}
+
+@test "permit: a claude-<uid> folder that others can write to is not a scratchpad" {
+  setup_permit
+  local rec
+  chmod g+w "$TMPDIR/claude-$(id -u)"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  rec="$(only_record)"
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -ne 0 ] || { echo "$output"; return 1; }
+  permits_empty
+}
+
+@test "permit: the script writes no permit when git or cd is redirected by the environment" {
+  setup_permit
+  local rec v
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  rec="$(only_record)"
+  for v in "GIT_DIR=$OUT/.git" "GIT_WORK_TREE=$OUT" "GIT_COMMON_DIR=$OUT/.git" "GIT_INDEX_FILE=$OUT/.git/index" \
+           "GIT_OBJECT_DIRECTORY=$OUT/.git/objects" "GIT_CONFIG_GLOBAL=$OUT/cfg" "GIT_CONFIG_COUNT=1" \
+           "GIT_CEILING_DIRECTORIES=$SP" "GIT_DISCOVERY_ACROSS_FILESYSTEM=1" "CDPATH=$OUT"; do
+    run env "$v" "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -eq 1 ] || { echo "$v: status=$status $output"; return 1; }
+    [[ "$output" == *"${v%%=*}"* ]] || { echo "$v: $output"; return 1; }
+    permits_empty
+  done
+}
+
+@test "permit: the hook denies a permit when GIT_DIR points outside" {
+  setup_permit
+  deny_then_permit 'git checkout -- .' "$REPO"
+  export GIT_DIR="$OUT/.git"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  unset GIT_DIR
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" == *'許可はあるが行き先を確かめられない'* ]] || { reason; return 1; }
+  permits_empty
 }
 
 @test "permit: other commands inside the scratchpad are permitted" {

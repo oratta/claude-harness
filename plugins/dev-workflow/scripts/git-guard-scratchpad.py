@@ -10,10 +10,13 @@
 # 読めない・取り込めないときは、呼び出し側が「判定を満たさない」側に倒す（hook は deny、スクリプトは許可を書かない）。
 #
 # 一時領域の判定（check）は git を実行しない。子が作った repo の設定（core.fsmonitor など）でコマンドが動きうるため。
+# 判定する側の環境に cd や git の行き先・設定を変える環境変数（CDPATH・GIT_DIR など）があれば、判定を満たさない。
 import hashlib
 import json
 import os
 import re
+import stat
+import tempfile
 import time
 
 PERMIT_TTL = 15 * 60  # 許可の期限（秒）。環境変数での上書きは設けない
@@ -74,15 +77,49 @@ def _inside(path, root):
     return path == root or path.startswith(root.rstrip("/") + "/")
 
 
+# cd と git の行き先・設定を変える環境変数。判定する側（hook・スクリプト）の環境にあれば判定を満たさない。
+# 子の Bash は Claude Code の環境を受け継ぐので、hook の環境にあるものは子のコマンドにも効く。値が空でも止める
+_REDIRECT_ENV = ("CDPATH", "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+                 "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE",
+                 "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM")
+_REDIRECT_ENV_PREFIX = ("GIT_CONFIG",)  # GIT_CONFIG・GIT_CONFIG_GLOBAL・GIT_CONFIG_COUNT・GIT_CONFIG_PARAMETERS など
+
+
+def _redirect_env():
+    """行き先・設定を変える環境変数の名前の一覧（並べ替え済み）。"""
+    return sorted(k for k in os.environ
+                  if k in _REDIRECT_ENV or any(k.startswith(p) for p in _REDIRECT_ENV_PREFIX))
+
+
+def _temp_roots():
+    """一時フォルダの置き場所の候補（realpath）。親と hook で TMPDIR が違いうるので複数持つ。"""
+    roots = set()
+    for c in ("/tmp", "/private/tmp", os.environ.get("TMPDIR"), tempfile.gettempdir()):
+        if c:
+            roots.add(os.path.realpath(c))
+    return roots
+
+
 def _is_scratchpad(path, session_id):
-    """`<一時ディレクトリ>/claude-<uid>/<slug>/<session_id>/scratchpad` の形か。"""
+    """`<一時フォルダ>/claude-<uid>/<slug>/<session_id>/scratchpad` か。形に加えて、claude-<uid> の親が一時フォルダの
+    置き場所で、claude-<uid> が今の uid の持ち物でグループ・他者に書き込み権が無いことを見る（作業ツリーの中などに
+    同じ形のフォルダを作っても通さない）。"""
     if os.path.basename(path) != "scratchpad":
         return False
     sess = os.path.dirname(path)
     if os.path.basename(sess) != session_id:
         return False
     owner = os.path.dirname(os.path.dirname(sess))
-    return os.path.basename(owner) == "claude-%d" % os.getuid()
+    if os.path.basename(owner) != "claude-%d" % os.getuid():
+        return False
+    if os.path.dirname(owner) not in _temp_roots():
+        return False
+    try:
+        st = os.lstat(owner)
+    except OSError:
+        return False
+    return (stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid()
+            and not st.st_mode & (stat.S_IWGRP | stat.S_IWOTH))
 
 
 def _find_scratchpad(path, session_id):
@@ -187,6 +224,9 @@ def check(session_id, cwd, command):
     """一時領域の判定。(理由, scratchpad, 確かめた作業ツリーの一覧) を返す。満たせば理由は None。"""
     if not isinstance(session_id, str) or not _SESSION_ID.match(session_id):
         return "session_id が英数字と - だけの空でない文字列でない", None, None
+    env = _redirect_env()
+    if env:
+        return ("cd や git の行き先・設定を変える環境変数（%s）が設定されている" % "・".join(env)), None, None
     if not isinstance(cwd, str) or not os.path.isabs(cwd):
         return "cwd が絶対パスでない", None, None
     if not isinstance(command, str) or not _ALLOWED_CHARS.match(command):
