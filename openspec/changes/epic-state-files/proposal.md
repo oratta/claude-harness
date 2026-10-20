@@ -32,7 +32,7 @@
 - `plugins/dev-workflow/scripts/epic-dispatch.sh`（mark / wait / pending-owner / reap / notify-closed / route / launch の状態の読み書き、adopt・clear の追加）
 - `plugins/dev-workflow/scripts/epic-state.sh`（新規。状態の記録の読み書きの関数を置き、epic-dispatch.sh が source する）
 - `plugins/dev-workflow/tests/epic-dispatch.bats`（Orca の印を見ていたテストを記録を見る形に直す。記録の書式・排他・adopt・clear のテストを足す）
-- `plugins/dev-workflow/skills/develop/SKILL.md`（回し方の手順 3・7・完了条件、「エピックの子が主の返事を待って止まるとき」の印の置き場）
+- `plugins/dev-workflow/skills/develop/SKILL.md`（回し方の手順 3・4・7・完了条件、「エピックの子が主の返事を待って止まるとき」の印の置き場）
 - `plugins/dev-workflow/skills/develop/references/reply-after-idle.md`（主の返事待ちの子の見分け方が Orca の印を指している箇所）
 - `plugins/dev-workflow/changes/1123.md`（変更の記録）
 - 依存: #1120（同じ `epic-dispatch.sh` を変更中）が先にマージされたら origin/main に rebase してから実装する
