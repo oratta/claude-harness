@@ -82,13 +82,18 @@ cld-account() {
 アカウント登録簿（`accounts.json`）の一覧・追加・オン・オフは `scripts/accounts.sh` で行う。
 
 ```bash
-accounts.sh list           # id・label・on|off・securestorage をタブ区切りで 1 行ずつ
-accounts.sh add b --label B  # 認証情報の置き場所 ~/.claude-accounts/b を作って登録し、ログインするコマンドを 1 行出す
-accounts.sh off b          # b をオフにする
-accounts.sh on b           # b をオンに戻す
+export CLAUDE_HARNESS_SCRIPTS="${CLAUDE_HARNESS_SCRIPTS:-$HOME/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts}"
+
+# 既定アカウント（CLAUDE_SECURESTORAGE_CONFIG_DIR を設定していないシェル）を、b を足す前に登録する
+env -u CLAUDE_SECURESTORAGE_CONFIG_DIR "$CLAUDE_HARNESS_SCRIPTS/accounts-init.sh" --id a --label A
+
+"$CLAUDE_HARNESS_SCRIPTS/accounts.sh" list           # id・label・on|off・securestorage をタブ区切りで 1 行ずつ
+"$CLAUDE_HARNESS_SCRIPTS/accounts.sh" add b --label B  # 認証情報の置き場所 ~/.claude-accounts/b を作って登録し、ログインするコマンドを 1 行出す
+"$CLAUDE_HARNESS_SCRIPTS/accounts.sh" off b          # b をオフにする
+"$CLAUDE_HARNESS_SCRIPTS/accounts.sh" on b           # b をオンに戻す
 ```
 
-`add` が出したコマンドをそのまま実行して `claude` を起動し、`/login` でログインする。置き場所の基点は環境変数 `CLAUDE_ACCOUNTS_HOME`（絶対パス。既定 `$HOME/.claude-accounts`）で変えられる。同じ id の `add` は拒否される。`add` / `on` / `off` は書き換える前に登録簿を `accounts.json.bak` に控える（1 世代）。登録簿が壊れているときは何も書かずに止まる。最初の `add` では既定アカウントのスロットができないので、既定アカウントも並べたいときは、そのシェルで `accounts-init.sh --id <id>` を実行する。
+`add` が出したコマンドをそのまま実行して `claude` を起動し、`/login` でログインする。置き場所の基点は環境変数 `CLAUDE_ACCOUNTS_HOME`（絶対パス。既定 `$HOME/.claude-accounts`）で変えられる。同じ id の `add` は拒否される。`add` / `on` / `off` は書き換える前に登録簿を `accounts.json.bak` に控える（1 世代）。登録簿が壊れているときは何も書かずに止まる。`add` は既定アカウントのスロットを作らない。`CLAUDE_SECURESTORAGE_CONFIG_DIR` を設定していないシェルで、`add` の前に `accounts-init.sh --id a --label A` を実行して既定アカウントを登録する。登録しないと、既定アカウントのセッションの使用量が `b` のものとして扱われる（`select-account.sh` は `@unregistered-default` を返す）。`add` のあとに登録すると、登録簿の順が `b`、`a` になる。
 
 使っていないアカウントは `accounts.sh off <id>` でオフになる。オフのアカウントは `cld` の自動選択で選ばれず（理由行の `margins` に `<id>:off` と出る）、`usage-probe.sh` も使用量を取得しない。`cld-account <id>` でオフのアカウントを指定すると、戻し方を stderr に出して exit 2 で終わり、Claude は起動しない。全アカウントがオフのときは既定アカウントで起動する（理由は `default-due-to-all-off`）。既定アカウントへの縮退は `enabled` を見ないので、既定アカウント自体をオフにしていても、全アカウントがオフのとき、またはオンのアカウントがすべて欠測か 5 時間枠 90% 以上のときは、そのオフの既定アカウントで起動する。戻すときは `accounts.sh on <id>` を実行する。
 
@@ -98,7 +103,7 @@ Codex を使わない期間は、`accounts.json` のトップレベル（`accoun
 { "schema": 1, "accounts": [ ... ], "codex": { "enabled": false } }
 ```
 
-オフのあいだ、develop の自動選択は Codex の使用量を読まずに Claude 既定構成を選び（reason `codex-off`）、Codex に投げる明示指定（Codex の role を含む `--profile`、旧形式の `--account`/`--model`）は戻し方を出して exit 2 で終わる。pr-review-gate の従来経路は、full 判定でも Codex を探さず呼ばず、Task サブエージェントでレビューする（`レビュー実行者: Task サブエージェント（full・Codex オフ）`）。ステータスラインの Codex 行は `off` になる。オフになるのは値が JSON の `false` のときだけで、`"false"`・`0`・`null` や `codex` の省略はオンとして読む。いまの設定は `python3 scripts/usage_view.py --codex-enabled` が `on` / `off` で返す。戻すときは `codex` のキーを消すか `enabled` を `true` にする。
+オフのあいだ、develop の自動選択は Codex の使用量を読まずに Claude 既定構成を選び（reason `codex-off`）、Codex に投げる明示指定（Codex の role を含む `--profile`、旧形式の `--account`/`--model`）は戻し方を出して exit 2 で終わる。pr-review-gate の従来経路は、full 判定でも Codex を探さず呼ばず、Task サブエージェントでレビューする（`レビュー実行者: Task サブエージェント（full・Codex オフ）`）。ステータスラインは Codex 行を出さない。オフになるのは値が JSON の `false` のときだけで、`"false"`・`0`・`null` や `codex` の省略はオンとして読む。いまの設定は `python3 scripts/usage_view.py --codex-enabled` が `on` / `off` で返す。戻すときは `codex` のキーを消すか `enabled` を `true` にする。
 
 ## references/（他プラグインと共有する契約）
 
