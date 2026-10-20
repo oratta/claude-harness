@@ -222,6 +222,12 @@ def destination(path, line):
                 return c
             r = resolved.get(path)
             if r is None:
+                # 分割したプラグインの付属のファイル（plugin.json・README.md など）は行で覆わない。
+                # 公開版の部品の行が 1 つでもあれば、付属は公開版に残るとみなす（文書の冒頭に書く）。
+                rel = path[len(pdir) + 1:]
+                if rel in ATTACH_FILES or rel.startswith(ATTACH_DIRS):
+                    if any(c == "公開版" for _, _, c in rows_by_plugin.get(name, [])):
+                        return "公開版"
                 return None
             if "cls" in r:
                 return r["cls"]

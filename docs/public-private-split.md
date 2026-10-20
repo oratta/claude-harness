@@ -1,0 +1,278 @@
+# 公開版と個人版の仕分け
+
+エピック #1127 の方針（2026-10-20 オーナーの決定）で、公開版は今の `oratta/claude-harness`（public）を使い続け、オーナーに固有の部品を新しい private リポジトリの個人版へ移す。この文書は、どの部品をどちらに置くかの表と、公開版に残る部品の中の固有記述の一覧を持つ。表は #1129（部品を移す）が移す物を決める入力で、一覧は #1098・#1164 などが直す箇所を決める入力になる。
+
+決めた issue: https://github.com/oratta/claude-harness/issues/1128
+形と網羅の検査: `tests/public-private-split.bats`（部品を足したのに表を直し忘れると落ちる。分類の判断そのものの正しさは検査しない）
+
+## 判断の基準
+
+- **公開版**: 誰の環境でも意味がある道具・住人のふるまいに効くもの・営業で見せる動き
+- **個人版**: オーナーに固有の業務・アカウント・資格情報の置き場・固有名に依存するもの
+
+起点にしたのは flatmate #1618 本文「仕分けの下書き（2026-10-19 の調査）」の表で、そこでの「配る」「開発用」は公開版、「出さない」は個人版の候補として、上の基準で確かめ直した。下書きから変えた行は理由の欄に書いた。
+
+## 分類の値
+
+表の分類の欄は次の 4 つのどれかだけを使う。
+
+- **公開版**: 公開版のリポジトリに残す
+- **個人版**: private の個人版のリポジトリへ移す
+- **保留（#1123 の後）**: #1123（エピック実行の Orca 依存を外す）の結果を見てから公開版か個人版に決める
+- **分割**: プラグインの行にだけ使う。1 つのプラグインの中で行き先が割れるので、表のそのプラグインの部品の行（`plugins/<名前>/...` で始まる行）で全体を分ける。部品の行の分類は「分割」以外の 3 つのどれか
+
+## 分割したプラグインの部品の行の境界の規則
+
+- 部品の欄は、プラグインのディレクトリ配下のファイルのパス、ディレクトリのパス（末尾 `/`）、Markdown の節（`<パス>#<## の見出しの文字列>`）、Markdown の冒頭（`<パス>#冒頭`）のどれか
+- 1 つのファイルの行き先は、そのファイルに当てはまる行（パスが一致するファイルの行、またはそのファイルを含むディレクトリの行）のうち、いちばん深い（長い）パスの行で決める。同じパスの行は 2 行置かない
+- 節で分けた Markdown は、`## ` の見出しをすべて節の行で 1 回ずつ覆い、同じファイルにファイルの行を置かない。最初の `## ` より前（frontmatter と冒頭の文）は節に含めず、`<パス>#冒頭` の行で独立に行き先を決める。`#冒頭` は冒頭を表す予約の書き方で、`## 冒頭` という見出しを表さない
+- どのファイルにも当てはまらない部品の行は置かない
+
+### 付属のファイルの扱い
+
+プラグインのディレクトリの直下からのパスが `.claude-plugin/plugin.json`・`README.md`・`CHANGELOG.md`・`hooks/hooks.json` のファイルと、`changes/`・`tests/` の配下は付属のファイルとして部品の行で覆わない。付属のファイルは、それが記録・検査・配線している部品と同じ行き先に従う。
+
+- 分割したプラグインの付属のファイルは、そのプラグインに公開版の部品の行が 1 つでもあれば公開版にも残る（個人版の部品についての記述は #1129 で個人版の側へ書き分ける）。固有記述の一覧はこの扱いで付属のファイルの行を載せている
+- ファイルの中で行き先が割れる付属のファイル（例: `hooks/hooks.json` の中で配線先のスクリプトの行き先が割れる、`tests/` のテストが公開版と個人版の両方の部品を検査する）の書き分けは #1129 で行う。dev-workflow の `hooks/hooks.json` の配線先 10 本はどれも公開版の部品で、エピック実行まわりの配線は無い。capability-registry の `hooks/hooks.json` の配線先は公開版の `scripts/browser-guard.sh` だけで、`tests/fmtoken.bats` は個人版の `scripts/fmtoken.sh` に従う
+
+## 保留の行の確定
+
+保留（#1123 の後）の行は、#1129 の着手時に #1129 の担い手が #1123 の結果を見て公開版か個人版に確定し、#1129 の PR でこの表を直してから移す。#1129 は #1123 に依存するので、#1129 の着手時には #1123 が終わっている。何を見て決めるかは各行の理由の欄に書いた。
+
+## 表に載せないもの
+
+リポジトリ直下の `docs/`・`tests/`・`openspec/` は表に載せない。それぞれが説明・検査している部品の行き先に従い、#1129 で一緒に動かす。
+
+## 仕分けの表
+
+| 部品 | 分類 | 理由 |
+|---|---|---|
+| `rules/README.md` | 公開版 | rules の索引と配線の説明。公開版に残る規則の入口なので一緒に残す（固有記述は一覧に載せた） |
+| `rules/browser-infra-env-capture.md` | 公開版 | 認証情報を見た次の手で env に保存する規則で、誰の環境でも意味がある（下書きの「配る」） |
+| `rules/communication-style.md` | 公開版 | 住人の書き方に効く規則（下書きの「配る」） |
+| `rules/destructive-git-guard.md` | 公開版 | 住人の止まり方に効く規則（下書きの「配る」） |
+| `rules/dev-server.md` | 公開版 | 他のプロジェクトのプロセスを止めない規則で、誰の環境でも意味がある（下書きの「配る」） |
+| `rules/git-commit-policy.md` | 公開版 | commit と PR の運用の規則で、誰の環境でも意味がある（下書きの「開発用」） |
+| `rules/link-when-requesting-review.md` | 公開版 | 人に操作を頼むときに URL を添える規則で、住人のふるまいに効く（下書きの「配る」） |
+| `rules/one-off-no-script.md` | 公開版 | 一回限りの操作をスクリプトにしない規則で、誰の環境でも意味がある（下書きの「開発用」） |
+| `rules/perspective-casting.md` | 公開版 | 主に上げるかどうかの判断の規則で、住人のふるまいに効く。下書きの「出さない」から変えた（casting プラグインを公開版にしたのと同じ理由） |
+| `rules/plugin-editing.md` | 個人版 | Harness 自体を開発するときの手順で、`CLAUDE_HARNESS_DEV_DIR` と開発用 clone というオーナーの開発環境を前提にしている |
+| `rules/subagent-model-selection.md` | 公開版 | サブエージェントのモデルの選び方で、誰の環境でも意味がある（下書きの「開発用」） |
+| `output-styles/readable.md` | 公開版 | 住人の書き方に効く Output Style（下書きの「配る」） |
+| `scripts/lint.sh` | 公開版 | このリポジトリの lint で、公開版の CI が使う |
+| `scripts/sync.sh` | 公開版 | marketplace の clone を最新にして rules の symlink を張る道具で、誰の環境でも意味がある |
+| `scripts/test.sh` | 公開版 | このリポジトリのテストの入口で、公開版の CI が使う |
+| `scripts/test-auto-merge-workflow.sh` | 公開版 | auto-merge の workflow の攻撃再現テストで、公開版の CI が使う |
+| `scripts/poc/` | 公開版 | Codex の app-server の試作で、オーナーの環境に依存しない |
+| `worktree` | 公開版 | worktree の作成と片付けの道具で、誰の環境でも意味がある |
+| `weekly-report` | 個人版 | Obsidian の vault・Notion などオーナーの記録の置き場を前提にした、オーナーの業務の週報 |
+| `daily-report` | 個人版 | Obsidian の vault と Fieldy の記録を前提にした、オーナーの業務の日報 |
+| `infra` | 公開版 | 新しいプロジェクトの CI・デプロイの雛形とセットアップの手順で、誰の環境でも意味がある。下書きの「出さない」から変えた（オーナーのアカウントには依存せず、営業で見せる動きにも使える） |
+| `dev-workflow` | 分割 | 開発の進め方（develop・pr-review-gate・hook）は公開版。エピック実行の Orca 経路は #1123 の後に決め、オーナーのリポジトリへの展開の記録は個人版。下の部品の行で分ける |
+| `plugins/dev-workflow/` | 公開版 | 下の行に当たらない dev-workflow の全ファイル。開発の進め方・レビューのゲート・hook・アカウントの切り替え（`accounts.json` の中身は利用者ごとに書く仕組み）は誰の環境でも意味があり、住人のふるまいに効く |
+| `plugins/dev-workflow/docs/auto-merge-deployments.md` | 個人版 | オーナーのリポジトリごとの auto-merge の展開の一覧と PAT の失効日で、オーナーに固有の業務とアカウントの記録 |
+| `plugins/dev-workflow/scripts/epic-dispatch.sh` | 保留（#1123 の後） | Orca で子のセッションを起動する部品を含む。#1123 で Orca の起動部品が差し替えられる部品として切り出され、Orca が無い環境でもエピックを回せるなら公開版、Orca に固有の部品として残るなら個人版 |
+| `plugins/dev-workflow/scripts/stop-judge.sh` | 保留（#1123 の後） | `epic-dispatch.sh` の `wait --resolve` から呼ばれる、止まった子の判断の部品。#1123 の後に `epic-dispatch.sh` の行と同じ側に決める（`epic-dispatch.sh` 以外から呼ばれるようになっていれば公開版） |
+| `plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` | 保留（#1123 の後） | `stop-judge.sh` が読む、親が子の止まりを通す基準。#1123 の後に `stop-judge.sh` の行と同じ側に決める |
+| `plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` | 保留（#1123 の後） | Orca 経路の親が子の PR をマージしてよいかの基準。#1123 の後に、サブエージェント方式からも使われる基準になっていれば公開版、Orca 経路だけのものなら `epic-dispatch.sh` の行と同じ側に決める |
+| `capability-registry` | 分割 | 外部サービスの前に CLI を探す仕組みは公開版、オーナーの 1Password の保管庫とトークンの取り出しは個人版。下の部品の行と「capability-registry の扱い」で分ける |
+| `plugins/capability-registry/scripts/browser-guard.sh` | 公開版 | ブラウザを開く前に CLI の代替を確かめさせる hook で、住人のふるまいに効く（`fmtoken.sh` の案内は #1164 で外す） |
+| `plugins/capability-registry/scripts/fmtoken.sh` | 個人版 | オーナーの 1Password の保管庫と SA の構成を前提にしたトークンの取り出しで、資格情報の置き場そのもの |
+| `plugins/capability-registry/skills/capability-registry/1password.md` | 個人版 | オーナーの 1Password の保管庫・SA の設定手順で、資格情報の置き場 |
+| `plugins/capability-registry/skills/capability-registry/github.md` | 公開版 | GitHub の CLI の使い方で、誰の環境でも意味がある（`fmtoken.sh` の参照は #1164 で外す） |
+| `plugins/capability-registry/skills/capability-registry/supabase.md` | 公開版 | Supabase の CLI の使い方で、誰の環境でも意味がある（固有記述は一覧に載せた） |
+| `plugins/capability-registry/skills/capability-registry/stripe.md` | 公開版 | Stripe の CLI の使い方で、誰の環境でも意味がある（固有記述は一覧に載せた） |
+| `plugins/capability-registry/skills/capability-registry/vercel.md` | 公開版 | Vercel の CLI の使い方で、誰の環境でも意味がある（`fmtoken.sh` の参照は #1164 で外す） |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md#冒頭` | 公開版 | frontmatter の description はスキルの発火条件で、外部サービスの前にスキルが発火することが公開版に要る |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md#表記規約（生成文にも適用すること）` | 個人版 | agents 保管庫・human-only 保管庫というオーナーの保管庫名の書き方の規約。主の決定 https://github.com/oratta/claude-harness/issues/1128#issuecomment-6292306455 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md#原則` | 公開版 | ブラウザに行く前に CLI と認証確認を調べる原則で、住人のふるまいに効く |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md#資格情報の階層（どこに置くかはプロジェクトごとに決めない）` | 個人版 | オーナーの保管庫・SA 名・アイテムの命名規約の表で、資格情報の置き場そのもの |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md#索引（1 サービス 1 行）` | 公開版 | サービスごとの CLI 名と認証確認コマンドの索引で、誰の環境でも意味がある |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md#CLI が無いサービス（ネガティブエントリ）` | 公開版 | CLI の無い操作を探し回らないための記録で、誰の環境でも意味がある |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md#新サービスの追加` | 公開版 | 索引の育て方で、誰の環境でも意味がある |
+| `casting` | 公開版 | 観点の配役で、住人が主に上げるかどうかに効く。下書きの「出さない」から変えた（配役表と判断基準の中身は利用者ごとに作る仕組みで、オーナーに固有の値はプラグインに無い） |
+| `cost-ledger` | 公開版 | 会話ログからコストを集計して記録する道具で、誰の環境でも意味がある。下書きの「出さない」から変えた（書き込み先のリポジトリは利用者が設定する） |
+| `statusline` | 公開版 | ステータスラインと枠の残量の表示で、誰の環境でも意味がある（flatmate と共有する環境変数の記述は一覧に載せた） |
+| `product-handover` | 公開版 | プロダクトを引き渡すときの法務ドラフト・窓口・教訓ログの雛形で、営業で見せる動きに使う |
+
+## capability-registry の扱い
+
+capability-registry は分割した。外部サービスを操作する前に CLI と認証確認を調べる仕組み（browser-guard の hook・スキルの冒頭・原則・索引・CLI が無いサービス・新サービスの追加・サービス別ファイルの github・supabase・stripe・vercel）は公開版、オーナーの 1Password の保管庫とトークンの取り出し（`scripts/fmtoken.sh`・`1password.md`・スキルの「表記規約」と「資格情報の階層」の節）は個人版にする。部品ごとの行き先は上の表のとおり。
+
+browser-guard と「CLI を先に調べる」原則は誰の環境でも意味があり、住人のふるまい（ログインを頼む前に CLI を探す）に効き、公開版に残る `rules/browser-infra-env-capture.md` からも参照されている。`fmtoken.sh` はオーナーの 1Password の保管庫と SA の構成を前提にした道具で、flatmate では出荷物に入れてはいけない語になっている。
+
+選ばなかった案:
+
+- **丸ごと個人版**: 公開版の `rules/browser-infra-env-capture.md` の参照先が消え、住人からブラウザ操作の前の注意喚起も消える
+- **丸ごと公開版にして fmtoken を一般化する**: 保管庫の設計（read-only の SA・human-only 保管庫）を一般化するのは設計の変更で、#1127 の範囲（仕分けて移す）を越える
+
+「表記規約」の節を個人版にしたのは、節の中に個人版へ移す保管庫名（agents・human-only）と `op item list --vault agents` が残るからで、主の決定（https://github.com/oratta/claude-harness/issues/1128#issuecomment-6292306455 ）による。節の中で Obsidian の vault との区別の書き方だけを公開版に残す案は、節を割ると境界の規則（節の行は `## ` の見出しの単位）を越えるので取らない。
+
+### 公開版に残る部品から `fmtoken.sh` への参照を外す作業
+
+公開版に残す部品は、いまの仕様と実ファイルが個人版へ移す `fmtoken.sh` の案内を必須にしている。参照を外さないまま `fmtoken.sh` を移すと、公開版の hook と索引が存在しない道具を案内する。`grep -rn fmtoken plugins rules output-styles openspec/specs` で確かめた対象（個人版へ移す `fmtoken.sh`・`1password.md`・`tests/fmtoken.bats`・`openspec/specs/capability-registry-fmtoken/`・SKILL.md の「資格情報の階層」の節の 31・34・46 行目と、`changes/` を除く）:
+
+| 対象 | いま書かれていること |
+|---|---|
+| `plugins/capability-registry/scripts/browser-guard.sh:31` | 注意喚起の (2) が「トークンは fmtoken.sh で取れないか」 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:3` | 冒頭の description に「トークンの在処（fmtoken.sh）」 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:16,17,19,20` | 原則の節でトークンの取得・登録・確認を `fmtoken.sh` で案内 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:56,57,58,59,60` | 索引の各行のトークンの取得を `fmtoken.sh <service>` で案内 |
+| `plugins/capability-registry/skills/capability-registry/github.md:4`・`stripe.md:3,4`・`supabase.md:3,4`・`vercel.md:3,4` | `fmtoken.sh` での取得手順 |
+| `plugins/capability-registry/tests/browser-guard.bats:59`・`plugins/capability-registry/tests/skill-registry.bats:43,44` | 出力と SKILL.md に `fmtoken` があることを検査 |
+| `plugins/capability-registry/.claude-plugin/plugin.json:3,14` | description と keywords に fmtoken |
+| `plugins/dev-workflow/references/self-verification.md:53` | `fmtoken.sh --register` を名指し |
+| `openspec/specs/capability-registry-browser-guard/spec.md:19,23`（要件「hook は deny ではなく注意喚起から始める」） | メッセージに `fmtoken.sh` の存在を含めることが SHALL |
+| `openspec/specs/capability-registry-skill/spec.md:19`（要件「索引は 1 サービス 1 行で 1 画面以内を維持する」） | 各行のトークン取得方法を `fmtoken.sh <service>` と書くことが SHALL |
+
+担い手は #1164（既存の issue の範囲に収まらないため本体が起票した。エピック #1127 の子）。
+https://github.com/oratta/claude-harness/issues/1164
+
+#1164 が受け持つ範囲:
+
+- 上の表の参照を、公開版では個人版の有無に依らない書き方（例: トークンの在処はオーナーの環境の索引（個人版）があればそちらを見る）に直し、`fmtoken.sh` の案内は個人版の側（#1130 で重ねて読む）に移す
+- 既存の仕様の要件の更新（`openspec/specs/capability-registry-browser-guard/spec.md`・`openspec/specs/capability-registry-skill/spec.md` の上の 2 要件の MODIFIED と、`capability-registry-fmtoken` を個人版へ移すか REMOVED にするか）を #1164 の openspec の change で行う
+- 時期: #1129 が `fmtoken.sh` を公開版から消すより前か、同じ PR で着地させる（後になると、公開版が存在しない道具を案内する期間ができる）
+
+#1164 の受け入れ条件は fmtoken の参照の除去だけなので、`fmtoken.sh` を伴わず保管庫名などだけが残る行（`supabase.md:5`・`stripe.md:5`・`supabase.md:10`・`SKILL.md:63`・`SKILL.md:70`）は #1164 に割り当てず、一覧で「担い手なし」にした。
+
+## 固有記述の一覧
+
+公開版に残る部品（分割で公開版になった部品の行と、付属のファイルを含む）の中の固有名とオーナーの環境に依存する記述。行番号はこの文書を書いた時点（#1128 の PR）の値。直す issue は、`rules/` と `output-styles/` の 6 本（#1098 の範囲）の行を #1098、capability-registry の公開版の `fmtoken.sh` の参照を #1164 にし、どの issue の範囲にも当たらない行を「担い手なし」にした。flatmate の住人での索引と案内の二重（#1105 の範囲）は、まだ書かれていない参照を足す作業なので、当たる行は無い。
+
+| 場所 | 種別 | 内容 | 直す issue |
+|---|---|---|---|
+| `rules/communication-style.md:15` | 環境依存 | 正本のパスを `~/.claude/plugins/marketplaces/oratta-claude-harness/output-styles/readable.md` と書く | #1098 |
+| `rules/browser-infra-env-capture.md:10` | 環境依存 | 1Password・GitHub Actions secrets と `capability-registry:capability-registry` スキルを名指し | #1098 |
+| `rules/destructive-git-guard.md:3` | 環境依存 | 経緯の置き場をローカルの `~/.claude/rules-archive/` と書く | #1098 |
+| `rules/README.md:5` | 環境依存 | 経緯の置き場をローカルの `~/.claude/rules-archive/` と書く | 担い手なし |
+| `rules/README.md:20` | 固有名 | 定期実行の足を flatmate の住人の起動ルーティン（boot.sh）と書く | 担い手なし |
+| `rules/README.md:21` | 固有名 | 鮮度の可視化を flatmate の agent-status ハートビートと書く | 担い手なし |
+| `rules/README.md:22` | 固有名 | flatmate#362 の経緯と手作業の運用 | 担い手なし |
+| `rules/README.md:37` | 環境依存 | 1Password への昇格手順を capability-registry に置くと書く | 担い手なし |
+| `rules/README.md:43` | 環境依存 | 個人版へ移す `plugin-editing.md` の行（`CLAUDE_HARNESS_DEV_DIR` を含む） | 担い手なし |
+| `scripts/sync.sh:12` | 固有名 | 定期実行を flatmate の住人の起動ルーティン（boot.sh）が担うと書く | 担い手なし |
+| `scripts/sync.sh:13` | 固有名 | 鮮度の可視化を flatmate の agent-status ハートビートが担うと書く | 担い手なし |
+| `scripts/test-auto-merge-workflow.sh:97` | 固有名 | 検査の入力のパスにオーナーのプロジェクト名 `workspace/moko/CLAUDE.md` | 担い手なし |
+| `scripts/test-auto-merge-workflow.sh:174` | 固有名 | 検査の入力のパスにオーナーのプロジェクト名 `workspace/moko/CLAUDE.md` | 担い手なし |
+| `plugins/capability-registry/.claude-plugin/plugin.json:3` | 環境依存 | description に「fmtoken.sh によるトークン取得」 | #1164 |
+| `plugins/capability-registry/.claude-plugin/plugin.json:14` | 環境依存 | keywords に `fmtoken` | #1164 |
+| `plugins/capability-registry/scripts/browser-guard.sh:31` | 環境依存 | 注意喚起の (2) で `fmtoken.sh <service>` を案内 | #1164 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:3` | 環境依存 | description に「トークンの在処（fmtoken.sh）」 | #1164 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:16` | 環境依存 | トークンの取得を `fmtoken.sh <service>` で案内 | #1164 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:17` | 環境依存 | 未登録のときの `fmtoken.sh --register` | #1164 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:19` | 環境依存 | `fmtoken.sh --check`・`--list` | #1164 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:20` | 固有名 | `fmtoken.sh --name` と、例のアイテム名にオーナーのプロジェクト名 `moko--TRELLO_TOKEN` | #1164 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:56` | 環境依存 | 1Password の行に `agents` 保管庫と `fmtoken.sh --register`（保管庫名は fmtoken の参照を外しても残りうる） | #1164 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:57` | 環境依存 | GitHub の行の `fmtoken.sh github` | #1164 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:58` | 環境依存 | Supabase の行の `fmtoken.sh supabase` | #1164 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:59` | 環境依存 | Vercel の行の `fmtoken.sh vercel` | #1164 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:60` | 環境依存 | Stripe の行の `fmtoken.sh stripe` | #1164 |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:63` | 環境依存 | サービス別ファイルの案内に個人版へ移す `1password.md` | 担い手なし |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md:70` | 環境依存 | オーナーの 1Password の契約（Individual プラン）を前提にした SA の権限変更の記述 | 担い手なし |
+| `plugins/capability-registry/skills/capability-registry/github.md:4` | 環境依存 | 別アカウントのトークンを `fmtoken.sh` で取る | #1164 |
+| `plugins/capability-registry/skills/capability-registry/stripe.md:3` | 環境依存 | verify のコマンドに `fmtoken.sh stripe` | #1164 |
+| `plugins/capability-registry/skills/capability-registry/stripe.md:4` | 環境依存 | トークンを `fmtoken.sh stripe` で取り、`agents` 保管庫の中身を書く | #1164 |
+| `plugins/capability-registry/skills/capability-registry/stripe.md:5` | 固有名 | human-only 保管庫と、例のアイテム名にオーナーのプロジェクト名 `uranai--STRIPE_SECRET_KEY_PROD` | 担い手なし |
+| `plugins/capability-registry/skills/capability-registry/supabase.md:3` | 環境依存 | verify のコマンドに `fmtoken.sh supabase` | #1164 |
+| `plugins/capability-registry/skills/capability-registry/supabase.md:4` | 環境依存 | トークンを `fmtoken.sh supabase` で取る | #1164 |
+| `plugins/capability-registry/skills/capability-registry/supabase.md:5` | 固有名 | human-only 保管庫・`agents` 保管庫と、例のアイテム名にオーナーのプロジェクト名 `shukan--...` | 担い手なし |
+| `plugins/capability-registry/skills/capability-registry/supabase.md:10` | 固有名 | 実例としてオーナーのプロジェクト suimei の `marketing-daily-report.yml` を挙げる | 担い手なし |
+| `plugins/capability-registry/skills/capability-registry/vercel.md:3` | 環境依存 | verify のコマンドに `fmtoken.sh vercel` | #1164 |
+| `plugins/capability-registry/skills/capability-registry/vercel.md:4` | 環境依存 | トークンを `fmtoken.sh vercel` で取る | #1164 |
+| `plugins/dev-workflow/references/self-verification.md:53` | 環境依存 | `fmtoken.sh --register` を名指し | #1164 |
+| `plugins/dev-workflow/references/self-verification.md:41` | 環境依存 | 個人版へ移す daily-report と Obsidian の vault の行 | 担い手なし |
+| `plugins/dev-workflow/README.md:15` | 環境依存 | エピックの子を Orca の子ワークツリーで起動する経路 | 担い手なし |
+| `plugins/dev-workflow/README.md:137` | 固有名 | loop-dev-agent の憲法の正本を flatmate 側と書く | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:46` | 環境依存 | 判定 `orca`（Orca の子ワークツリーで子を起動する） | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:207` | 環境依存 | worktree の片付けを Orca 経路の親が行う | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:337` | 固有名 | develop を起動するきっかけを flatmate の CLAUDE.md に置く | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:350` | 環境依存 | Orca 経路の子が主の返事を待って止まる前の記録と印 | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:353` | 環境依存 | Orca 経路の子の状態の印 | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:375` | 環境依存 | 親の側の手順を Orca 経路の手順 8 に送る | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:400` | 固有名 | channel を flatmate の住人がオーナーから開発を頼まれたときの形と書く | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:481` | 環境依存 | エピックの経路の決め方（Orca 経路） | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:485` | 環境依存 | `nested` の扱いと、子をオーナーの起動コマンド `cld` で起動する | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:487` | 環境依存 | Orca 経路の子の独立セッション | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:489` | 環境依存 | Orca 経路の子の状態の正本 | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:491` | 環境依存 | Orca 経路で親がターンを終えるときの発言 | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:498` | 環境依存 | Orca 側の失敗の扱い | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:499` | 環境依存 | `回し方: Orca` の再開 | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:504` | 環境依存 | Orca 経路のマージ待ちの子 | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:506` | 環境依存 | 子セッションを `cld --model` で起動する | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:508` | 環境依存 | Orca 経路の同時に動く子の上限 | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:514` | 環境依存 | サブエージェント方式の上限を Orca 経路と同じにする | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:525` | 環境依存 | Orca 経路の状態ディレクトリの確認 | 担い手なし |
+| `plugins/dev-workflow/skills/develop/SKILL.md:541` | 固有名 | loop-dev-agent の憲法を flatmate が保守する正本と書く | 担い手なし |
+| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:3` | 環境依存 | Orca 経路の子セッションへの返事の規則 | 担い手なし |
+| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:5` | 環境依存 | Orca 経路の手順 8 への参照 | 担い手なし |
+| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:64` | 環境依存 | Orca 経路の子の端末を `reap` で閉じる | 担い手なし |
+| `plugins/dev-workflow/scripts/owner-reply-check.sh:33` | 環境依存 | Orca で子を起動するときの prompt の書式 | 担い手なし |
+| `plugins/dev-workflow/scripts/owner-reply-check.sh:52` | 環境依存 | Orca の親セッションが子のターミナルに打ち込んだ文の扱い | 担い手なし |
+| `plugins/dev-workflow/scripts/pr-state.sh:2` | 固有名 | 呼び出し元に flatmate の pr-watch を挙げる | 担い手なし |
+| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:83` | 環境依存 | Orca の子のセッションの扱い | 担い手なし |
+| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:91` | 環境依存 | Orca の親が子のターミナルに打ち込んだ `/develop` の扱い | 担い手なし |
+| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:103` | 環境依存 | 守備範囲の Orca の親の扱い | 担い手なし |
+| `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:95` | 環境依存 | Orca の親セッションが子のターミナルに打ち込んだ文の扱い | 担い手なし |
+| `plugins/dev-workflow/references/ci-watch.md:95` | 環境依存 | harness では `CLAUDE_HARNESS_DEV_DIR` の開発用 clone から worktree を切る | 担い手なし |
+| `plugins/dev-workflow/references/pr-body-format.md:110` | 固有名 | issue テンプレートを flatmate の `new-resident` が配ると書く | 担い手なし |
+| `plugins/dev-workflow/skills/issueify/SKILL.md:41` | 固有名 | issue テンプレートを flatmate の `new-resident` が配ると書く | 担い手なし |
+| `plugins/dev-workflow/skills/memory-refresh/SKILL.md:76` | 固有名 | 例の表に flatmate 側の正本 | 担い手なし |
+| `plugins/dev-workflow/skills/memory-refresh/SKILL.md:82` | 環境依存 | 例の表に `CLAUDE_HARNESS_DEV_DIR` | 担い手なし |
+| `plugins/dev-workflow/skills/memory-refresh/SKILL.md:94` | 固有名 | 例の説明に flatmate のセッション | 担い手なし |
+| `plugins/dev-workflow/skills/push-guard-setup/SKILL.md:23` | 固有名 | pre-push を flatmate の `new-resident` が設置すると書く | 担い手なし |
+| `plugins/dev-workflow/templates/escalation-tripwires.md:16` | 固有名 | loop-dev-agent の憲法を flatmate が保守する正本と書く | 担い手なし |
+| `plugins/dev-workflow/templates/auto-merge/docs/auto-merge.md:273` | 環境依存 | 鍵を agents 保管庫にだけ置くと書く | 担い手なし |
+| `plugins/dev-workflow/templates/auto-merge/scripts/test-auto-merge-workflow.sh:87` | 固有名 | 検査の入力のパスにオーナーのプロジェクト名 `workspace/moko/CLAUDE.md` | 担い手なし |
+| `plugins/dev-workflow/templates/auto-merge/scripts/test-auto-merge-workflow.sh:148` | 固有名 | 検査の入力のパスにオーナーのプロジェクト名 `workspace/moko/CLAUDE.md` | 担い手なし |
+| `plugins/infra/templates/workflows/deploy-production.yml.template:77` | 固有名 | 手本としてオーナーのプロジェクト suimei の `deploy-production.yml` を参照させる | 担い手なし |
+| `plugins/infra/templates/workflows/weekly-full.yml.template:53` | 固有名 | 手本としてオーナーのプロジェクト suimei の `weekly-full.yml` を参照させる | 担い手なし |
+| `plugins/casting/catalog/injection.md:79` | 固有名 | 注入の機構の一覧にオーナーの別プラグイン sns-autopilot | 担い手なし |
+| `plugins/casting/catalog/injection.md:80` | 固有名 | 注入の機構の一覧に genetta-inc/flatmate の `scripts/burn-select.sh` | 担い手なし |
+| `plugins/casting/catalog/delegation.md:24` | 固有名 | ロールの組み合わせの持ち主の例に flatmate の住人定義 | 担い手なし |
+| `plugins/cost-ledger/README.md:107` | 固有名 | 例のブランチ名にオーナーのアカウント名 `oratta/issue-cost` | 担い手なし |
+| `plugins/cost-ledger/commands/cost.md:58` | 固有名 | 出力例のブランチ名にオーナーのアカウント名 `oratta/token-optimize` | 担い手なし |
+| `plugins/statusline/README.md:6` | 固有名 | 表示例にオーナーの workspace のパス（flatmate）とアカウント名 oratta | 担い手なし |
+| `plugins/statusline/README.md:94` | 環境依存 | 枠の共有先を flatmate の環境変数 `FLATMATE_RATE_SHARE_DIR`・`FLATMATE_RATE_SHARE_CONF` で決める | 担い手なし |
+| `plugins/statusline/README.md:96` | 環境依存 | 共有先の環境変数名と設定ファイル名を flatmate の reader と揃える | 担い手なし |
+| `plugins/statusline/scripts/statusline.sh:76` | 環境依存 | `FLATMATE_RATE_SHARE_DIR` を読む | 担い手なし |
+| `plugins/statusline/scripts/statusline.sh:78` | 環境依存 | `FLATMATE_RATE_SHARE_DIR` を読む | 担い手なし |
+| `plugins/statusline/scripts/statusline.sh:82` | 環境依存 | `FLATMATE_RATE_SHARE_CONF` と `~/.claude/flatmate-rate-share` を読む | 担い手なし |
+| `plugins/product-handover/.claude-plugin/plugin.json:3` | 固有名 | description に flatmate の `new-resident` とオーナーの別プラグイン sns-autopilot | 担い手なし |
+| `plugins/product-handover/README.md:28` | 固有名 | 導入順にオーナーの別プラグイン `/sns-autopilot:sns-autopilot-setup` | 担い手なし |
+| `plugins/product-handover/README.md:57` | 固有名 | リポ側の担い手にオーナーの別プラグイン sns-autopilot | 担い手なし |
+| `plugins/product-handover/README.md:58` | 固有名 | 住人側の担い手を flatmate の `new-resident` と書く | 担い手なし |
+| `plugins/product-handover/README.md:60` | 固有名 | 住人側は flatmate 側で完結すると書く | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:50` | 環境依存 | cron の例にオーナーの PC のパス `~/repos/flatmate` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:336` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/wt/bar` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:337` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/wt/baz` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:368` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/wt/foo` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:369` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/wt/bar` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:370` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/wt/baz` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:1199` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/repo/.worktrees/feat-x` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:1201` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/repo/.worktrees/feat-x` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:1251` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/repos/flatmate` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:1259` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/wt/wip-z` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:1261` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/wt/fix-q` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:1263` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/wt/idea-x` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:1265` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/wt/det-h` | 担い手なし |
+| `plugins/worktree/skills/wt-clean/SKILL.md:1268` | 環境依存 | 出力例にオーナーの PC のパス `/Users/oratta/repos/flatmate` | 担い手なし |
+| `plugins/worktree/references/wt-clean-orphan-detection.md:18` | 固有名 | 実行例の表にオーナーのプロジェクト名の worktree `moko-status` | 担い手なし |
+
+### 候補語
+
+公開版に残る部品（上の表で公開版に決まるファイルと付属のファイル。`changes/`・`CHANGELOG.md`・`tests/`・`evals/` を除く）を、次の語で大文字と小文字を区別して `grep -n` した（`Oratta` は大文字始まりで別に引いた）。
+
+`genetta`・`flatmate`・`FLATMATE`・`oratta`・`Oratta`・`/Users/`・`Dropbox`・`uranai`・`suimei`・`shukan`・`moko`・`traore`・`human-only`・`保管庫`・`claude-agents-r`・`Obsidian`・`Fieldy`・`Orca`・`marketing-harness`・`Notion`・`1Password`・`CLAUDE_HARNESS_DEV_DIR`・`LLM_LOG_DIR`・`fmtoken`・`rules-archive`・`~/repos`・`sns-autopilot`
+
+### 載せない行の基準
+
+候補語に当たっても、次に当たる行は一覧に載せない。
+
+- **公開版自身の名前**: `oratta/claude-harness`・`oratta-claude-harness`、その install 先のパス（`~/.claude/plugins/marketplaces/oratta-claude-harness/...`・`plugins/cache/oratta-claude-harness/...`）、`plugin.json` の author と README の著者の `Oratta`。公開版はこの名前のまま使い続けるので固有記述ではない。ただし #1098 の 6 本（`rules/communication-style.md`・`rules/link-when-requesting-review.md`・`rules/dev-server.md`・`rules/browser-infra-env-capture.md`・`rules/destructive-git-guard.md`・`output-styles/readable.md`）は #1098 の受け入れ条件が `oratta`・`marketplaces/` を 0 件にすると定めているので載せる
+- **GitHub のラベル名 `human-only`**: 保管庫の名前ではなく、auto-merge と issueify が使うラベルの名前
+- **置き換える前提の例**: `/Users/example`・`/Users/x`・`<project>` のような書式の説明
+- **記録と検査**: `changes/`・`CHANGELOG.md`・`tests/`・`evals/`（変更の記録と検査は、それが記録・検査している部品と一緒に #1129・#1164 で動かす）
+- **出典や経緯としてだけ名前を挙げる行**: `flatmate#320`・`flatmate #701`・「suimei で実発生」・「genetta-inc の flatmate リポで実運用検証済み」・「出典: oratta/marketing-harness#36」・「2026-08-10 に flatmate で実走したとき」のように、決まりの由来を示すだけで、読み手の環境にその名前の物が無くても指示として実行できる行
+- **一般の製品を例の 1 つとして並べる行**: 「1Password / Bitwarden / Keychain 等」「Orca や端末から起動した Claude Code」のように、ほかの製品と並べた例
+- **個人版や保留の部品の中の行**: 表で個人版か保留（#1123 の後）に決まる部品（`plugins/dev-workflow/scripts/epic-dispatch.sh` など）は一覧の対象外
