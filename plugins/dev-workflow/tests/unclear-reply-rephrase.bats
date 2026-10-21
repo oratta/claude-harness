@@ -26,12 +26,14 @@ setup() {
 WORDS=(意味わから 意味分から 意味がわから 意味が分から 意味不明 わからん 分からん 解らん わかんない 分かんない 説明して 読みにくい 読み難い 伝わらない 伝わってない 何言って なに言って)
 
 # prompt_of <文字列> — その文字列を prompt に持つ入力を payload に書く（日本語はそのまま UTF-8）
+# 本文は標準入力で渡す（引数で渡すと Linux の 1 引数約 128KB の上限で大きい本文が落ちる）
 prompt_of() {
-  python3 -I -c '
+  printf '%s' "$1" | python3 -I -c '
 import json, sys
-json.dump({"session_id": "s1", "hook_event_name": "UserPromptSubmit", "prompt": sys.argv[1]},
-          open(sys.argv[2], "w", encoding="utf-8"), ensure_ascii=False)
-' "$1" "$PAYLOAD"
+prompt = sys.stdin.buffer.read().decode("utf-8")
+json.dump({"session_id": "s1", "hook_event_name": "UserPromptSubmit", "prompt": prompt},
+          open(sys.argv[1], "w", encoding="utf-8"), ensure_ascii=False)
+' "$PAYLOAD"
 }
 
 # raw <文字列> — payload をそのままの文字列にする（壊れた入力・逃がした入力用）
