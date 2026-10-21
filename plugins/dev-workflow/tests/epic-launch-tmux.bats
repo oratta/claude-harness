@@ -80,6 +80,9 @@ exit 0' ;;
 # stdout だけを $output に取る（stderr は別ファイル）
 tm() { PATH="$STUB_BIN:/usr/bin:/bin" bash "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/stderr"; }
 
+# tmux の無い PATH（スタブ置き場だけ）で、bash を絶対パスで呼ぶ。stderr は tm と同じく別ファイルに分ける
+tm_no_tmux() { PATH="$STUB_BIN" "$BASH" "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/stderr"; }
+
 calls() { LC_ALL=C grep -c -- "$1" "$STUB_LOG" || true; }
 
 # 子のワークツリーの会話ログに user の行を 1 つ置く（<timestamp> <本文>）
@@ -121,9 +124,10 @@ put_pane() { printf '%s\t%s\t%s\n' "$1" "${3-$WT}" "$2" >> "$STUB_CFG/panes"; }
 @test "available: exits 1 when tmux is not on PATH" {
   # tmux が /usr/bin にある機械（CI の Ubuntu）でも本物が見つからないよう、PATH はスタブ置き場だけにする（bash は絶対パスで呼ぶ）
   rm "$STUB_BIN/tmux"
-  PATH="$STUB_BIN" run "$BASH" "$SCRIPT" available   # run は stderr も $output に入れる
+  run tm_no_tmux available
   [ "$status" -eq 1 ]
-  [[ "$output" == *'tmux is not available'* ]]
+  [ -z "$output" ]
+  grep -q 'tmux is not available' "$BATS_TEST_TMPDIR/stderr"
 }
 
 @test "here: prints the empty-id line inside tmux and exits 1 outside" {
