@@ -835,20 +835,30 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
         if '"Bash"' not in line and '"stop_reason":"' not in line and '"stop_reason": "' not in line:
             continue
         key = "%s#%s" % (request_id, uuid)
-        if key in seen:
-            continue
+        recorded = key in seen
         try:
             message = record.get("message") or {}
-            issues, marker = scan_tool_calls(message)
+            if recorded:
+                # 変更前の版が出力 0 の補足の行を書いた確定行。issue と印は書き済みなので、
+                # 出力の差分だけを別の鍵の補足の事実にする。
+                issues, marker = [], None
+            else:
+                issues, marker = scan_tool_calls(message)
             final = final_output(message)
             delta = max(0, final - _counted_output(seen, request_id)) if final is not None else 0
             if not issues and marker is None and not delta:
                 continue
+            if recorded:
+                key += "#out"
+                if key in seen:
+                    continue
             fact = build_fact(record, resolver, path)
         except (AttributeError, TypeError, ValueError):
             SCAN_STATS["unreadable_lines"] += 1
             continue
         fact["request_id"] = key
+        if recorded:
+            fact["issues"], fact["post_marker"] = [], None
         for field in TOKEN_KEYS:
             fact[field] = 0
         fact["output_tokens"] = delta
@@ -1015,15 +1025,18 @@ class LedgerIndex:
         db = sqlite3.connect(self.path)
         db.execute("CREATE TABLE IF NOT EXISTS ids (id TEXT PRIMARY KEY)")
         db.execute("CREATE TABLE IF NOT EXISTS heads (id TEXT PRIMARY KEY, uuid TEXT)")
-        old_form = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='counted'").fetchone() is None
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='counted'").fetchone() is None:
+            # counted を今作る。読み終え位置が残っていても、中身は空なので無効にする。
+            db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER)")
+            db.execute("DELETE FROM meta WHERE key = 'counted_covered'")
         db.execute("CREATE TABLE IF NOT EXISTS counted (id TEXT PRIMARY KEY, out INTEGER)")
         db.execute("CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, offset INTEGER, ino INTEGER)")
         db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER)")
         db.execute("SELECT count(*) FROM meta").fetchone()
-        if old_form:
-            # 応答ごとの出力を持たない古い形の控え。台帳を先頭から読み直して作り直す。
+        if db.execute("SELECT 1 FROM meta WHERE key = 'counted_covered'").fetchone() is None:
+            # 出力の読み終え位置を持たない控え（古い形、または counted を作った直後で落ちたもの）。
+            # counted が中途半端かもしれないので捨て、台帳を先頭から読み直して作り直す。
             db.execute("DELETE FROM counted")
-            db.execute("DELETE FROM meta WHERE key = 'covered'")
             db.commit()
         return db
 
@@ -1034,6 +1047,18 @@ class LedgerIndex:
     def set_covered(self, size: int) -> None:
         self.db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('covered', ?)", (size,))
 
+    def counted_covered(self) -> int:
+        """``counted`` に反映済みの台帳のバイト位置（``covered`` とは別に持つ）。
+
+        変更前の版の hook が先頭の行を追記して ``covered`` だけを進めても、``counted`` に
+        入っていない分をここから読み直して足し込める。
+        """
+        row = self.db.execute("SELECT value FROM meta WHERE key = 'counted_covered'").fetchone()
+        return int(row[0]) if row else 0
+
+    def set_counted_covered(self, size: int) -> None:
+        self.db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('counted_covered', ?)", (size,))
+
     def catch_up(self, ledger: str) -> None:
         """台帳の伸びた分を索引に取り込む（台帳が縮んでいれば作り直す）。"""
         try:
@@ -1041,20 +1066,25 @@ class LedgerIndex:
         except OSError:
             size = 0
         start = self.covered()
+        counted_start = self.counted_covered()
         if start > size:
             self.db.execute("DELETE FROM ids")
             self.db.execute("DELETE FROM heads")
-            self.db.execute("DELETE FROM counted")
             self.db.execute("DELETE FROM files")
             start = 0
-        if start < size:
+            counted_start = size + 1  # 下で counted を捨てて 0 から読む
+        if counted_start > size:
+            self.db.execute("DELETE FROM counted")
+            counted_start = 0
+        low = min(start, counted_start)
+        if low < size:
             with open(ledger, "rb") as fh:
-                fh.seek(start)
-                data = fh.read(size - start)
+                fh.seek(low)
+                data = fh.read(size - low)
             ids = []
             heads = []
             counts: dict[str, int] = {}
-            for raw in data.split(b"\n"):
+            for raw in data[start - low:].split(b"\n") if start < size else []:
                 if not raw.strip():
                     continue
                 text = raw.decode("utf-8", errors="replace")
@@ -1063,6 +1093,12 @@ class LedgerIndex:
                     ids.append((request_id,))
                     if uuid is not None:
                         heads.append((request_id, uuid))
+            for raw in data[counted_start - low:].split(b"\n") if counted_start < size else []:
+                if not raw.strip():
+                    continue
+                text = raw.decode("utf-8", errors="replace")
+                request_id, _uuid = _ledger_id_uuid(text)
+                if request_id is not None:
                     base = request_id.split("#", 1)[0]
                     counts[base] = counts.get(base, 0) + _ledger_output(text, request_id)
             self.db.executemany(
@@ -1071,6 +1107,7 @@ class LedgerIndex:
             self.db.executemany("INSERT OR IGNORE INTO ids (id) VALUES (?)", ids)
             self.db.executemany("INSERT OR IGNORE INTO heads (id, uuid) VALUES (?, ?)", heads)
         self.set_covered(size)
+        self.set_counted_covered(size)
         self.db.commit()
 
     def __contains__(self, request_id) -> bool:
@@ -1816,7 +1853,7 @@ def price_drift(session_ids, pricing: Pricing, facts=None):
 def _origin_request_id(fact: dict) -> str:
     """補足の事実の ``<requestId>#<uuid>`` から元の requestId を返す（通常の事実はそのまま）。"""
     request_id = fact["request_id"]
-    return request_id.rsplit("#", 1)[0] if is_continuation(fact) else request_id
+    return request_id.split("#", 1)[0] if is_continuation(fact) else request_id
 
 
 def _ordered(rows: list) -> list:

@@ -437,3 +437,67 @@ rows = [json.loads(l) for l in open(sys.argv[1])]
 assert [r["output_tokens"] for r in rows] == [8, 243, 49], rows
 PY
 }
+
+@test "finaloutput: --rescan adds the final difference after an older version left a zero-output supplement (769)" {
+  # 変更前の版は、確定行が gh issue view を持つとき出力 0 の補足の行 r1#u2 を書いた
+  write_two a "gh issue view 42"
+  mkdir -p "$(dirname "$LEDGER")"
+  env -u COST_LEDGER_PATH python3 "$CL" facts | python3 -c '
+import json, sys
+for line in sys.stdin:
+    row = json.loads(line)
+    if row.get("continuation"):
+        row["output_tokens"] = 0
+    print(json.dumps(row))' > "$LEDGER"
+  [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "2" ]
+  export COST_LEDGER_PATH="$LEDGER"
+  run python3 "$CL" ledger-sync --rescan --quiet
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+assert len(rows) == 3, rows
+assert rows[2]["request_id"] == "r1#u2#out" and rows[2]["issues"] == [] and rows[2]["post_marker"] is None, rows[2]
+assert sum(r["output_tokens"] for r in rows) == 251, rows
+PY
+  # 2 回目は追記しない
+  python3 "$CL" ledger-sync --rescan --quiet
+  [ "$(wc -l < "$LEDGER" | tr -d ' ')" = "3" ]
+}
+
+@test "finaloutput: a head line an older version appended without updating counted is counted before the final line (769)" {
+  export COST_LEDGER_PATH="$LEDGER"
+  fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none | cl_write_log a
+  python3 "$CL" ledger-sync --quiet
+  # 変更前の版の hook 相当: r2 の先頭の行を台帳に足し、ids / heads / covered だけを進めて counted を更新しない
+  {
+    fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none
+    fo_row r2 v1 2026-09-01T00:00:05.000Z 20 none
+  } | cl_write_log a
+  env -u COST_LEDGER_PATH python3 "$CL" facts | tail -n 1 >> "$LEDGER"
+  python3 - "$LEDGER" <<'PY'
+import os, sqlite3, sys
+db = sqlite3.connect(sys.argv[1] + ".state.sqlite")
+db.execute("INSERT OR IGNORE INTO ids (id) VALUES ('r2')")
+db.execute("INSERT OR IGNORE INTO heads (id, uuid) VALUES ('r2', 'v1')")
+db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('covered', ?)", (os.path.getsize(sys.argv[1]),))
+db.commit()
+PY
+  {
+    fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none
+    fo_row r2 v1 2026-09-01T00:00:05.000Z 20 none
+    fo_row r2 v2 2026-09-01T00:00:06.000Z 100 end_turn
+  } | cl_write_log a
+  python3 "$CL" ledger-sync --quiet
+  python3 - "$LEDGER" <<'PY'
+import json, sqlite3, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+total = {}
+for r in rows:
+    base = r["request_id"].split("#", 1)[0]
+    total[base] = total.get(base, 0) + r["output_tokens"]
+assert total == {"r1": 8, "r2": 100}, (total, rows)
+db = sqlite3.connect(sys.argv[1] + ".state.sqlite")
+assert dict(db.execute("SELECT id, out FROM counted")) == total
+PY
+}
