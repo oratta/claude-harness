@@ -14,5 +14,5 @@
 
 ## 4. 確かめる
 
-- [ ] 4.1 `bats plugins/dev-workflow/tests/unclear-reply-rephrase.bats plugins/dev-workflow/tests/prompt-tripwires-refresh.bats plugins/dev-workflow/tests/subagent-stop-guard.bats plugins/dev-workflow/tests/context-tripwire.bats tests/hook-python-isolation.bats tests/injection-budget.bats tests/public-private-split.bats tests/owner-question-style.bats` が通り、続けて全テスト（`scripts/test.sh`）が通る。予算ファイル `tests/injection-budget.txt` は動かさない。触る範囲: なし（実行だけ）
-- [ ] 4.2 `openspec validate unclear-reply-rephrase-hook --type change --strict` が通る。触る範囲: なし（実行だけ）
+- [x] 4.1 `bats plugins/dev-workflow/tests/unclear-reply-rephrase.bats plugins/dev-workflow/tests/prompt-tripwires-refresh.bats plugins/dev-workflow/tests/subagent-stop-guard.bats plugins/dev-workflow/tests/context-tripwire.bats tests/hook-python-isolation.bats tests/injection-budget.bats tests/public-private-split.bats tests/owner-question-style.bats` が通り、続けて全テスト（`scripts/test.sh`）が通る。予算ファイル `tests/injection-budget.txt` は動かさない。触る範囲: なし（実行だけ）
+- [x] 4.2 `openspec validate unclear-reply-rephrase-hook --type change --strict` が通る。触る範囲: なし（実行だけ）
