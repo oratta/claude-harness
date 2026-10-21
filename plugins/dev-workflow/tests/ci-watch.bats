@@ -335,7 +335,7 @@ pr_view_calls() {
 @test "reference: names the words of the watch procedure" {  # spec の語が現れる
   [ -f "$REF" ]
   for w in run_in_background 'ci-watch.sh wait' 'ci-watch.sh next' '--unrelated' '--after-fix' 'gh run rerun' \
-           '--log-failed' 'agent-review:passed' 'gh pr ready --undo' '--until-merged' CLAUDE_HARNESS_DEV_DIR; do
+           '--log-failed' 'agent-review:passed' 'gh pr ready --undo' '--until-merged'; do
     grep -qF -- "$w" "$REF" || { echo "missing: $w"; return 1; }
   done
 }

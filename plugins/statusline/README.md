@@ -3,7 +3,7 @@
 使用量が一目で分かる Claude Code のステータスライン。
 
 ```
-.../workspaces/flatmate/clone-origin-main-repo-sync  Opus 5 (1M context)  oratta/clone-origin-main-repo-sync
+.../workspaces/example/clone-origin-main-repo-sync  Opus 5 (1M context)  example/clone-origin-main-repo-sync
 Context 91%  │  Cache 82%  │  API ¥1,446,038/mo  │  Session ¥1,240
 5h       ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    3%  ~4h 13m
 7d All   ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂   25%/29%   Fable ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂    7%/29%  ~4d 22h
@@ -91,9 +91,11 @@ Fable の週次消化率は Claude Code がステータスラインに渡して�
 
 あわせて、5h の使用率と空でない `session_id` がある既定アカウントの描画では、`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.rate-limit-snapshot` に rate snapshot を書く。`CLAUDE_SECURESTORAGE_CONFIG_DIR` が非空のセッションでは書かない。JSON は `ts`、`observed_at`、`written_at`、`obs_sig`、`host`、`storage_binding`、`session_id`、`five_hour_pct`、`five_hour_resets_at`、`seven_day_pct`、`seven_day_resets_at` を持つ。`ts` と `observed_at` は同じ観測時刻で、枠値・`storage_binding`・`session_id` が変わらない再表示では進まない。`written_at` は書込時刻。`session_id` は入力値をそのまま保存し、`host` は `hostname -s` の英数字・`.`・`_`・`-` 以外を文字ごとに `_` に置き換える。`$HOME/.claude.json` の `oauthAccount.accountUuid` が有効な場合だけ `account_id` も含む。欠けた任意の枠値は `null` とする。書込は同じディレクトリの一時ファイルから原子的に置き換える。
 
-共有先を設定すると `<共有先>/<host>.json` にローカルと同じ JSON を書く。`FLATMATE_RATE_SHARE_DIR` が定義されていればその値（前後の空白は除く）を使い、空文字や空白だけなら共有を無効にする。未定義なら `FLATMATE_RATE_SHARE_CONF`（既定 `$HOME/.claude/flatmate-rate-share`）の先頭の非コメント・非空行を使う。環境変数・設定ファイル由来のパスは前後空白を除き、先頭の `~` を HOME に展開する。共有先に書けなくてもローカルの保存と表示は続く。
+共有先を設定すると `<共有先>/<host>.json` にローカルと同じ JSON を書く。共有先は次の順で最初に定まったものを使う。(1) `CLAUDE_RATE_SHARE_DIR` が定義されていればその値（前後の空白は除く。空文字や空白だけなら共有を無効にする）、(2) 旧名の `FLATMATE_RATE_SHARE_DIR`（互換。主は `CLAUDE_RATE_SHARE_DIR`。同じく空文字や空白だけなら無効）、(3) `CLAUDE_RATE_SHARE_CONF`（既定 `$HOME/.claude/rate-share`）の先頭の非コメント・非空行、(4) 旧名の `FLATMATE_RATE_SHARE_CONF`（互換。主は `CLAUDE_RATE_SHARE_CONF`。既定 `$HOME/.claude/flatmate-rate-share`）の先頭の非コメント・非空行。(3) の設定ファイルが無いか有効な行が無いときだけ (4) を読む。環境変数・設定ファイル由来のパスは前後空白を除き、先頭の `~` を HOME に展開する。共有先に書けなくてもローカルの保存と表示は続く。
 
-writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合、reader 側の `RATE_GUARD_SNAPSHOT` を同じファイルに合わせる必要がある。共有先の環境変数名と設定ファイル名は flatmate reader と共通。
+writer の `CLAUDE_CONFIG_DIR` を非既定にして保存先を変える場合、reader 側の `RATE_GUARD_SNAPSHOT` を同じファイルに合わせる必要がある。
+
+共有先の名前を旧名から新名へ移すときの注意: 連携先の reader が旧名だけを読む間に新名（`CLAUDE_RATE_SHARE_DIR` か `CLAUDE_RATE_SHARE_CONF`）だけに移すと、reader が追従できない。新旧を同じ共有先に揃える（旧名を残すか、新旧に同じパスを書く）。連携先が新名に対応してから旧名を消す。
 
 ## 複数アカウントを並べて表示する
 

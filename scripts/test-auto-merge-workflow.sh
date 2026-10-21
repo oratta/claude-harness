@@ -94,7 +94,7 @@ else
     ".github/workflows/evil.yml" \
     ".github/workflows/nested/deploy.yml" \
     "CLAUDE.md" \
-    "workspace/moko/CLAUDE.md" \
+    "workspace/example/CLAUDE.md" \
     ".claude/skills/cron-triggers/SKILL.md" \
     ".claude/settings.json" \
     "docs/agent-loop.md" \
@@ -171,7 +171,7 @@ else
   for p in \
     "rules/example.md" \
     "CLAUDE.md" \
-    "workspace/moko/CLAUDE.md" \
+    "workspace/example/CLAUDE.md" \
     ".claude/settings.json" \
     "docs/agent-loop.md" \
     "plugins/dev-workflow/hooks/hooks.json" \

@@ -39,7 +39,7 @@ catalog_version: 1
 | 資産・回復可能性 | 常時＋PR 時レンズ | destructive-git-guard rule＋auto-merge の SACRED 判定＋レビューでの聖域接触確認（脅威モデルの明文化は #119） | 聖域リスト（正本は auto-merge workflow の SACRED 定義） |
 | 報告の正確性 | 常時 | 報告系 rules＋pr-review-gate の証拠必須（exit code・実測） | — |
 | 事業方向性・戦略整合 | 毎ターンの配役判定 | casting 5手順。フェーズ宣言文の整備後の注入先は設計時 | `policies/phase.md`（既存 PHASE.md がある repo は stub 参照） |
-| 優先順位・資源配分 | 起票・選定時 | burn-select の論点ゲート（flatmate#368）・issueify の受け入れ条件強制 | `policies/priority.md` |
+| 優先順位・資源配分 | 起票・選定時 | 導入先の起票・選定ゲート（burn-select など）・issueify の受け入れ条件強制 | `policies/priority.md` |
 | 開発スピード・機会損失 | 注入しない | —（担い手・移譲方針は catalog.md） | — |
 | 運用工数・維持 | PR 時レンズ | 維持コスト観点のレビューレンズ（#125） | `policies/maintenance.md` |
 | 技術設計・品質 | PR 時レンズ | pr-review-gate 本体 | テックスタック方針（repo の CLAUDE.md / docs） |
@@ -76,8 +76,8 @@ catalog_version: 1
 | 聖域（SACRED）判定 | 常時（マージ時に機械判定） | `.github/workflows/auto-merge.yml` の SACRED 定義（テンプレ正本: `plugins/dev-workflow/templates/auto-merge/`） |
 | 報告系規約 | 常時 | `rules/`＋pr-review-gate の証拠必須手順 |
 | レビューゲート | PR 時レンズ | `plugins/dev-workflow/skills/pr-review-gate/SKILL.md` |
-| SNS 投稿前ゲート | アクション直前ゲート | sns-autopilot プラグインの sns-safety-reviewer agent |
-| burn-select 論点ゲート | 起票・選定時 | genetta-inc/flatmate の `scripts/burn-select.sh`（flatmate#368） |
+| SNS 投稿前ゲート | アクション直前ゲート | SNS 運用のプラグインの投稿前レビュー agent（導入先にあれば） |
+| 起票・選定の論点ゲート | 起票・選定時 | 導入先の選定スクリプト（burn-select など。導入先にあれば） |
 | plan 時リサーチ | 設計時 | `/opsx:explore`・opsx proposal 作成時のリサーチ（develop の W） |
 
 ## 未実装の配線（実装 issue）

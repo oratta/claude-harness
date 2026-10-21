@@ -104,7 +104,7 @@ sonnet 95%・haiku 35% になる。残りは確定値の無い応答と、会話
 `usd_jpy_rate_env` にも書いてある）。出力には必ず用いたレートが添えられる。
 
 ```bash
-COST_LEDGER_USD_JPY=155 python3 scripts/cost_ledger.py branch oratta/issue-cost
+COST_LEDGER_USD_JPY=155 python3 scripts/cost_ledger.py branch example/issue-cost
 ```
 
 料金表のどの鍵にも前方一致しないモデルは**未知モデル**として、名前と行数が出力に出る。黙って 0 円に
@@ -235,7 +235,7 @@ endpoint の `{owner}/{repo}` は、前置きの `GH_REPO`、無ければコマ�
 
 ```sh
 mkdir -p "$HOME/.config/cost-ledger"
-printf '%s\n' 'oratta/claude-harness' >> "$HOME/.config/cost-ledger/write-repos"
+printf '%s\n' '<owner>/<repo>' >> "$HOME/.config/cost-ledger/write-repos"
 chmod 600 "$HOME/.config/cost-ledger/write-repos"
 ```
 
