@@ -925,7 +925,9 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1} /^#
 @test "launcher parts: the kept-removal operation is per part and neither uses force" {
   r="$(run_section)"
   printf '%s\n' "$r" | grep -qF 'epic-launch-tmux.sh remove <path>'
-  printf '%s\n' "$r" | grep -qF '`orca worktree rm --worktree path:<path>`（`--force` なし）'
+  # orca のコマンドの文字列は手順 3 の 1 か所だけに書く（orca のコマンドの書き方の要件）ので、部品の欄は参照で書く
+  printf '%s\n' "$r" | grep -qF 'Orca の worktree を消す（`--force` なし。コマンドは手順 3 に書いた）'
+  printf '%s\n' "$r" | grep -F '3. `done <N>...`' | grep -qF '`orca worktree rm --worktree path:<path>`'
   p="$(printf '%s\n' "$r" | grep -F '3. `done <N>...`')"
   printf '%s\n' "$p" | grep -qF '部品の欄の操作'
   printf '%s\n' "$p" | grep -qF 'どちらも `--force` なし'

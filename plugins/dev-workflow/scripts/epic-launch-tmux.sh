@@ -27,7 +27,8 @@ set -uo pipefail
 
 # Claude Code が入力待ちのとき、ペインの画面に出ている文字列（grep -E の式）。Claude Code の版で変わりうるので
 # ここ 1 か所に置く。変わると start は failed ready になり、黙って誤送信しない
-READY_PATTERN='\? for shortcuts'
+# 実機で確かめた画面（Claude Code 2.1.305）: 既定の画面は「? for shortcuts」、状態行を持つ環境では「<モード> on (shift+tab to cycle)」
+READY_PATTERN='\? for shortcuts|\(shift\+tab to cycle\)'
 # ペインの前面がこれらのコマンドなら、Claude Code ではなくシェル（指示を送るとシェルコマンドとして実行される）
 SHELL_COMMANDS=' sh bash zsh fish dash ksh tcsh csh '
 
@@ -78,25 +79,31 @@ is_claude_pane() {
 # ${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/<パスの英数字以外を - にした名前>/*.jsonl で、送る直前に控えた時刻より後の
 # user の行の本文が、送った文の先頭 40 文字（短ければ全体）を含むこと
 log_has_prompt() {
-  local wt="$1" since="$2" text="$3" root key d phys head
+  local wt="$1" since="$2" text="$3" root key d phys
   root="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
-  head="${text:0:40}"
   phys="$(cd "$wt" 2>/dev/null && pwd -P)" || phys=""
   for d in "$wt" "$phys"; do
     [ -n "$d" ] || continue
     key="$(printf '%s' "$d" | sed 's/[^A-Za-z0-9]/-/g')"
     [ -d "$root/$key" ] || continue
+    # 先頭 40 文字は jq で数える（文字単位。ロケールに左右されない）。送った文が /<コマンド> で始まるときは、会話ログの
+    # user 行が <command-name>/<名前空間付きコマンド></command-name><command-args>引数</command-args> に展開されて
+    # 先頭のコマンド名が文面に残らないので、コマンド名のうしろの引数の先頭 40 文字で照合する（実機 Claude Code 2.1.305）
     cat "$root/$key"/*.jsonl 2>/dev/null \
-      | jq -r --arg t "$since" 'select(.type == "user" and ((.timestamp // "") > $t))
-          | (.message.content | if type == "array" then map(.text? // "") | join("") elif type == "string" then . else "" end)' 2>/dev/null \
-      | grep -qF -- "$head" && return 0
+      | jq -r --arg t "$since" --arg x "$text" '
+          ($x | if startswith("/") then (sub("^/[^ ]*[ ]*"; "") | if . == "" then $x else . end) else . end | .[0:40]) as $h
+          | select(.type == "user" and ((.timestamp // "") > $t))
+          | (.message.content | if type == "array" then map(.text? // "") | join("") elif type == "string" then . else "" end)
+          | select(contains($h))' 2>/dev/null \
+      | grep -q . && return 0
   done
   return 1
 }
 
-# ペインへ文字列を打ち込んで Enter を送る（<ペイン ID> <文字列>）。-l でキー名に解釈させない
+# ペインへ文字列を打ち込んで Enter（C-m = 改行コード 1 つ）を送る（<ペイン ID> <文字列>）。-l でキー名に解釈させない。
+# キー名の Enter は、長い文を打ち込んだあとの入力欄に無視される（実機 Claude Code 2.1.305。C-m は届く）
 type_line() {
-  tmux send-keys -t "$1" -l -- "$2" && tmux send-keys -t "$1" Enter
+  tmux send-keys -t "$1" -l -- "$2" && tmux send-keys -t "$1" C-m
 }
 
 # 文を送って、会話ログに届いたことを確かめる（<ペイン ID> <ワークツリー> <文>）。戻り値 0 = 届いた / 1 = 届かない
@@ -108,6 +115,9 @@ send_and_confirm() {
   for (( i = 0; i < tries; i++ )); do
     log_has_prompt "$wt" "$since" "$text" && return 0
     sleep 1
+    # 起動して間もない Claude Code は最初の Enter を取りこぼすことがある（実機 2.1.305。指示は入力欄に残る）。
+    # 文は打ち直さず、届くまで 4 秒ごとに Enter だけを重ねる（空の入力欄への Enter は何もしない）
+    [ $(( i % 4 )) -eq 3 ] && tmux send-keys -t "$pane" C-m
   done
   return 1
 }

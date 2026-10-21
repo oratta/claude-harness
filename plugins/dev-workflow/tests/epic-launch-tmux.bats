@@ -192,8 +192,16 @@ put_pane() { printf '%s\t%s\t%s\n' "$1" "${3-$WT}" "$2" >> "$STUB_CFG/panes"; }
   [ "$(grep -F 'tmux new-window' "$STUB_LOG")" = "tmux new-window -d -P -F \\#\\{pane_id\\} -c $WT" ]
   [ "$(calls 'tmux send-keys -t %5 -l -- cld\\ --model\\ opus')" -eq 1 ]
   [ "$(calls 'tmux send-keys -t %5 -l -- .*develop')" -eq 1 ]
-  [ "$(calls 'tmux send-keys -t %5 Enter')" -eq 2 ]
+  [ "$(calls 'tmux send-keys -t %5 C-m')" -eq 2 ]
   [ "$(calls '^orca')" -eq 0 ]
+}
+
+@test "start: only Enter is resent every 4 seconds while the prompt is missing from the log" {
+  EPIC_DISPATCH_SUBMIT_WAIT=5 run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$status" -eq 1 ]
+  [ "$output" = 'failed send %5' ]
+  [ "$(calls 'tmux send-keys -t %5 C-m')" -eq 3 ]
+  [ "$(calls 'tmux send-keys -t %5 -l -- .*develop')" -eq 1 ]
 }
 
 @test "start: failed send when no user line follows" {
@@ -210,6 +218,13 @@ put_pane() { printf '%s\t%s\t%s\n' "$1" "${3-$WT}" "$2" >> "$STUB_CFG/panes"; }
   [ "$output" = 'failed send %5' ]
 }
 
+@test "start: a slash command expanded in the log is matched by the first 40 characters of its arguments" {
+  put_log 2999-01-01T00:00:00.000Z $'<command-message>dev-workflow:develop</command-message>\n<command-name>/dev-workflow:develop</command-name>\n<command-args>#5 （エピック #1 の子。親ワークツリー /tmp/p から tmux で起動）</command-args>'
+  run tm start "$WT" 'cld' '/develop #5 （エピック #1 の子。親ワークツリー /tmp/p から tmux で起動）' 5
+  [ "$status" -eq 0 ]
+  [ "$output" = 'started %5' ]
+}
+
 @test "start: only the first 40 characters are compared" {
   long='0123456789012345678901234567890123456789ABCDEFG'
   put_log 2999-01-01T00:00:00.000Z '0123456789012345678901234567890123456789'
@@ -224,6 +239,14 @@ put_pane() { printf '%s\t%s\t%s\n' "$1" "${3-$WT}" "$2" >> "$STUB_CFG/panes"; }
   [ "$status" -eq 1 ]
   [ "$output" = 'failed ready %5' ]
   [ "$(calls 'send-keys -t %5 -l -- /develop')" -eq 0 ]
+}
+
+@test "start: a status-line screen with the mode hint also counts as the input prompt" {
+  printf '%s\n' '  ⏸ plan mode on (shift+tab to cycle) · ← 2 agents' > "$STUB_CFG/screen"
+  put_log 2999-01-01T00:00:00.000Z '/develop #5'
+  run tm start "$WT" 'cld' '/develop #5' 5
+  [ "$status" -eq 0 ]
+  [ "$output" = 'started %5' ]
 }
 
 @test "start: failed ready without sending while the shell is still in front" {
