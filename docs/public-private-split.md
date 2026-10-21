@@ -152,7 +152,7 @@ https://github.com/oratta/claude-harness/issues/1164
 | `plugins/dev-workflow/skills/develop/SKILL.md:487` | 環境依存 | `nested` の扱いと、子をオーナーの起動コマンド `cld` で起動する | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:489` | 環境依存 | Orca 経路の子の独立セッション | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:491` | 環境依存 | Orca 経路の子の状態の正本 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:493` | 環境依存 | Orca 経路で親がターンを終えるときの発言 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:493` | 環境依存 | 起動部品ごとの違いの欄（Orca の部品の列） | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:511` | 環境依存 | Orca 側の失敗の扱い | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:512` | 環境依存 | `回し方: Orca` の再開 | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:517` | 環境依存 | 別セッション方式のマージ待ちの子（`epic-dispatch.sh reply` で返事を送る手順） | #1177 |

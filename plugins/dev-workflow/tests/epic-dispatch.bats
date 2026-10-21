@@ -3230,6 +3230,16 @@ orca_cmd_scripts() {
   run grep -n '同じ項目名のまま' "$SKILL"; [ "$status" -eq 1 ]
 }
 
+@test "skill: step 8 checks repeats and casting before overturning, and step 7 pending and the leftover note follow it" {
+  p="$(run_section | grep -E '^8\. ')"
+  printf '%s\n' "$p" | grep -F '照らす前に' | grep -F '親の判断: 子 #N 通した' | grep -F '.claude/casting/project.md' | grep -qF '既に一度通していれば覆さずに主に上げる'
+  printf '%s\n' "$p" | grep -qF '待ちに入る通知の本文に、まだ上げていない止まった子の番号を 1 行書く'
+  q="$(run_section | grep -E '^7\. ')"
+  printf '%s\n' "$q" | grep -qF '手順 8 と同じに扱い（照らして通すか、報告を本文で出し直す）、待ちに入る'
+  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  printf '%s\n' "$r" | grep -qF '破壊的操作や聖域を止めた hook は「決まりで主の承認が要る」に当たる'
+}
+
 @test "skill: Orca route waits with --watch-stopped and reports stopped children without dropping them" {
   r="$(run_section)"
   printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF -- '--watch-stopped <動いている子>...'
