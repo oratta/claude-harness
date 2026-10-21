@@ -3123,8 +3123,9 @@ orca_cmd_scripts() {
   [ "$status" -eq 0 ]
   [ "$output" = "$PLUGIN_DIR/scripts/epic-launch-orca.sh" ]
   # 記録を読み書きするスクリプトは orca の語を含まない
-  run grep -rlw orca "$PLUGIN_DIR" --include='*.sh'
-  case "$output" in *epic-state.sh*) false ;; esac
+  # epic-state.sh は記録の launcher の値の検査（launcher == "orca"）だけに orca の語を持つ（部品のコマンドは呼ばない）
+  run grep -w orca "$PLUGIN_DIR/scripts/epic-state.sh"
+  [ "$(printf '%s\n' "$output" | grep -vF 'launcher == "orca"' | grep -c .)" -eq 0 ]
 }
 
 @test "skill: an orca command added to a copy of epic-dispatch.sh is found" {
