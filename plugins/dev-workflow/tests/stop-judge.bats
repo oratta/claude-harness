@@ -145,7 +145,8 @@ EOF
               '推奨の根拠: 作業ツリーの中なので戻せる' '受け入れるリスク: なし' '再開に要る途中経過: なし'; do
     grep -qxF "$item" "$in" || { echo "missing: $item"; false; }
   done
-  run grep -F '主に聞く理由:' "$in"; [ "$status" -eq 1 ]
+  # 基準のファイルも入力に入るので、行頭の項目としてだけ見る
+  run grep -E '^主に聞く理由:' "$in"; [ "$status" -eq 1 ]
 }
 
 @test "stop-judge: notes from other authors, older stops, other children's decisions and other comments are not passed" {
