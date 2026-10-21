@@ -442,3 +442,56 @@ screen_with_input() {
   tm close "$WT" 5; tm remove "$WT"; tm mirror current done /r
   [ "$(calls '^orca')" -eq 0 ]
 }
+
+# 失敗時の stderr の案内（共通手順 6 が参照する作り直し・送り直しのコマンド）。
+# 確認のコマンドが先、やり直しのコマンドが後の順であること（二重起動・二重送信を避けるため）
+
+# stderr の中で固定文字列の最初に現れる行番号
+err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1; }
+
+@test "start: failed send prints check first (capture-pane) then the deliver command that resends" {
+  run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$status" -eq 1 ]
+  [ "$output" = 'failed send %5' ]
+  c="$(err_line 'tmux capture-pane -p -t %5')"
+  r="$(err_line 'resend:')"
+  [ -n "$c" ] && [ -n "$r" ] && [ "$c" -lt "$r" ]
+  grep -qF "deliver '$WT' 0" "$BATS_TEST_TMPDIR/stderr"
+  grep -qF "'/develop #5 の指示'" "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "start: failed ready prints the pane check, then the close of the stuck pane, then the start command that recreates" {
+  echo "  \$ " > "$STUB_CFG/screen"
+  echo zsh > "$STUB_CFG/pane_cmd"
+  run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$output" = 'failed ready %5' ]
+  c="$(err_line 'tmux list-panes -a')"
+  k="$(err_line 'tmux kill-pane -t %5')"
+  r="$(err_line 'create:')"
+  [ -n "$c" ] && [ -n "$k" ] && [ -n "$r" ]
+  [ "$c" -lt "$k" ] && [ "$k" -lt "$r" ]
+  grep -qF "start '$WT'" "$BATS_TEST_TMPDIR/stderr"
+  grep -q 'launch skips\|skipped' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "start: failed terminal (new-window fails) prints the check then the start command that recreates" {
+  echo 1 > "$STUB_CFG/new_window_exit"
+  run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$output" = 'failed terminal' ]
+  c="$(err_line 'tmux list-panes -a')"
+  r="$(err_line 'create:')"
+  [ -n "$c" ] && [ -n "$r" ] && [ "$c" -lt "$r" ]
+  grep -qF "start '$WT'" "$BATS_TEST_TMPDIR/stderr"
+  [ -z "$(err_line 'tmux kill-pane')" ]
+}
+
+@test "deliver: failed send prints check first then the deliver command" {
+  put_pane %8 node
+  run tm deliver "$WT" 0 'こんにちは' 'cld' '/develop #5'
+  [ "$output" = 'failed send' ]
+  c="$(err_line 'tmux capture-pane -p -t %8')"
+  r="$(err_line 'resend:')"
+  [ -n "$c" ] && [ -n "$r" ] && [ "$c" -lt "$r" ]
+  grep -qF "deliver '$WT' 0" "$BATS_TEST_TMPDIR/stderr"
+  grep -qF "こんにちは" "$BATS_TEST_TMPDIR/stderr"
+}

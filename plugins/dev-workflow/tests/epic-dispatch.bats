@@ -5242,6 +5242,22 @@ tmux_pane() {
   grep -q 'EPIC_DISPATCH_LAUNCHER must be orca or tmux' "$BATS_TEST_TMPDIR/stderr"
 }
 
+@test "tmux route: a pinned part must also pass here, a failing one is subagent with no switch to the other part" {
+  tmux_env
+  make_stub orca
+  echo 1 > "$STUB_CFG/current_exit"
+  EPIC_DISPATCH_LAUNCHER=orca run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = subagent ]
+  [ "$(calls '^orca worktree current')" -eq 1 ]
+  [ "$(calls '^tmux ')" -eq 0 ]
+  echo 0 > "$STUB_CFG/current_exit"
+  EPIC_DISPATCH_LAUNCHER=orca run dispatch route 11 12
+  [ "$output" = orca ]
+  TMUX="" EPIC_DISPATCH_LAUNCHER=tmux run dispatch route 11 12
+  [ "$output" = subagent ]
+}
+
 @test "tmux launch: records launcher tmux, never calls orca, and starts the session in a new window" {
   tmux_env
   tmux_log_for /stub/common/.claude/worktrees/issue-11
@@ -5296,6 +5312,47 @@ tmux_pane() {
   grep -q 'tmux is not available' "$BATS_TEST_TMPDIR/stderr"
   [ "$(calls '^orca worktree create')" -eq 0 ]
   [ ! -e "$(rec_of 400 11)" ]
+}
+
+@test "tmux wait --resolve: when every target child's part is unusable the stdout is empty, the reason is on stderr, the exit is 1 and nothing is polled or judged" {
+  tmux_env
+  make_judge
+  set_current 400
+  gh_seq 11 closed
+  put_record 11 status=waiting stop=stopped launcher=tmux
+  TMUX="" run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -q 'tmux is not available' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^gh api')" -eq 0 ]
+}
+
+@test "tmux wait --resolve: a mixed epic goes on for the child whose part is usable" {
+  tmux_env
+  make_stub orca
+  make_judge
+  set_current 400
+  gh_seq 11 open closed
+  gh_seq 12 open closed
+  put_record 11 status=waiting stop=stopped launcher=tmux
+  put_record 12 status=waiting stop=stopped launcher=orca
+  set_terms 12 term-a-12
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
+  TMUX="" run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11 12
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$(calls '^judge 400 12$')" -eq 1 ]
+  [ "$(cat "$STUB_CFG/sent_term-a-12")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
+}
+
+@test "tmux wait: without --resolve the unusable part does not gate the watch" {
+  tmux_env
+  set_current 400
+  gh_seq 11 closed
+  put_record 11 status=waiting stop=stopped launcher=tmux
+  TMUX="" run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
 }
 
 @test "tmux reply: a tmux record sends through tmux and never calls orca, even with an Orca-pinned environment" {

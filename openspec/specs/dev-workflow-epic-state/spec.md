@@ -537,6 +537,12 @@ Orca の部品を使うとき、`epic-dispatch.sh` の stdout・exit code・stde
 
 送信の前に、送り先のペインで Claude Code が動いていることを確かめなければならない（MUST。シェルに指示を打ち込んで実行してしまう事故を避けるため）。送った文字列は `send-keys -l`（リテラル）で渡し、キー名として解釈させてはならない（MUST NOT）。
 
+`start`・`deliver` が失敗したとき（`failed terminal`・`failed ready`・`failed send`）は、Orca の部品と同じく、共通手順が参照する作り直しか送り直しのコマンドを stderr に出さなければならない（MUST）。出す順は、先に確かめるコマンド、次にやり直すコマンドとする（確かめる前にやり直すと、動いている子を二重に起動する・届いている指示を二重に送る）。`failed send` は、ペインの入力欄を見る `tmux capture-pane -p -t <ペイン ID>` を先に出し、そのあとに `epic-launch-tmux.sh deliver <ワークツリー> 0 <送る文> <起動コマンド> <起動し直しの指示>` を `resend:` として出す。`failed terminal`・`failed ready` は、ワークツリーのペインを一覧する `tmux list-panes -a` を先に出し、残ったペインがあればそれを閉じる `tmux kill-pane -t <ペイン ID>`、次に `epic-launch-tmux.sh start <ワークツリー> <起動コマンド> <最初の指示> <子の呼び方>` を `create:` として出す。記録とワークツリーは残るので `launch` の再実行は `skipped` になることも添える。引数は単一引用符で囲む（MUST）。
+
+#### Scenario: tmux の部品の送信失敗は確認のコマンドを先に、送り直しのコマンドを後に出す
+- **WHEN** `epic-launch-tmux.sh start` が最初の指示を送ったが会話ログに現れず `failed send` で終わる
+- **THEN** stderr に `tmux capture-pane -p -t <ペイン ID>` の行があり、そのあとの行に `deliver <ワークツリー> 0 <送る文> ...` を含む `resend:` の行がある
+
 #### Scenario: tmux の部品は orca を呼ばない
 - **WHEN** `orca` のスタブが呼ばれたら失敗する環境で、tmux の部品の全サブコマンドを実行する
 - **THEN** `orca` は 1 回も呼ばれない

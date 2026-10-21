@@ -386,11 +386,13 @@ cmd_route() {
     echo nested
     return 0
   fi
-  # 判定の順: EPIC_DISPATCH_LAUNCHER が orca / tmux ならその部品（使えなければ理由を stderr に出して subagent）、
+  # 判定の順: EPIC_DISPATCH_LAUNCHER が orca / tmux ならその部品（使えない・here が失敗するなら subagent。使えない理由は stderr）、
   # Orca 管理下なら orca、tmux の中なら tmux、それ以外は subagent。子が 0 件なら subagent
   case "${EPIC_DISPATCH_LAUNCHER-}" in
     orca|tmux)
-      if [ "$#" -ge 1 ] && launcher_usable "$EPIC_DISPATCH_LAUNCHER"; then
+      # 指定した部品が使え、その部品の here も成功するときだけ（失敗しても別の部品には振り替えない）
+      if [ "$#" -ge 1 ] && launcher_usable "$EPIC_DISPATCH_LAUNCHER" \
+        && launcher_run "$EPIC_DISPATCH_LAUNCHER" here >/dev/null 2>&1; then
         echo "$EPIC_DISPATCH_LAUNCHER"
       else
         echo subagent
@@ -1141,6 +1143,8 @@ cmd_wait() {
   # 印を見ないときも、jq と今のワークツリーが読めれば記録で gh の呼び先（別リポジトリの子）を決める
   if [ -n "$watch" ] || [ "$watchstop" -eq 1 ]; then
     need_parent
+    # 有効な --resolve は記録に従う操作なので、対象の子の部品が 1 本も使えなければ待つ前に止める
+    [ -z "$resolve" ] || launchers_gate "$@"
   elif command -v jq >/dev/null 2>&1; then
     PARENT_TOP="$(toplevel)" || PARENT_TOP=""
   fi

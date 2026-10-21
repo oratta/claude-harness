@@ -152,10 +152,29 @@ send_and_confirm() {
   return 1
 }
 
+# シェルに貼れる形の単一引用符で囲む
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# 指示が届かなかった子の送り直しの案内を stderr に出す（<ペイン ID> <ワークツリー> <送る文> <起動コマンド> <起動し直しの指示>）。
+# 先にペインと入力欄の状態を確かめる（届いているのに送ると二重に送る）。送り直しは deliver（relaunch 0。Claude Code が
+# 動いているペインがちょうど 1 つのときだけ、入力待ちを確かめてから送る）
 resend_hint() {
   {
     echo "the prompt may not have reached pane $1 (worktree $2)."
     echo "check the input line and whether a turn started before resending: tmux capture-pane -p -t $1"
+    echo "resend: bash $(shq "$0") deliver $(shq "$2") 0 $(shq "$3") $(shq "$4") $(shq "$5")"
+  } >&2
+}
+
+# ペインを作れなかった・起動できなかった子の作り直しの案内を stderr に出す（<ワークツリー> <起動コマンド> <最初の指示> [<残ったペイン ID>]）。
+# 記録とワークツリーは残るので launch の再実行では skipped になる。先にワークツリーのペインを確かめる（Claude Code が
+# 既に動いていれば作らず、上の送り直しにする。作ると同じ子が二重に走る）。残ったペインがシェルだけなら閉じてから start で作り直す
+recreate_hint() {
+  {
+    echo "no agent session is running in $1 (relaunching launch skips this child: the record and worktree remain)."
+    echo "check that no pane is already running claude there before creating one: tmux list-panes -a -F '#{pane_id} #{pane_current_path} #{pane_current_command}'"
+    [ -z "${4-}" ] || echo "close the stuck pane if it is not running claude: tmux kill-pane -t $4"
+    echo "create: bash $(shq "$0") start $(shq "$1") $(shq "$2") $(shq "$3") $(shq "${1##*/}")"
   } >&2
 }
 
@@ -167,10 +186,12 @@ start_session() {
   START_RESULT=""
   if ! pane="$(tmux new-window -d -P -F '#{pane_id}' -c "$wt")" || [ -z "$pane" ]; then
     echo "tmux new-window failed in $wt" >&2
+    recreate_hint "$wt" "$cmd" "$prompt"
     START_RESULT="failed terminal"; return 1
   fi
   if ! type_line "$pane" "$cmd"; then
     echo "could not type the start command into pane $pane. type it by hand: $cmd" >&2
+    recreate_hint "$wt" "$cmd" "$prompt" "$pane"
     START_RESULT="failed terminal $pane"; return 1
   fi
   tries=$(( ready / 1000 )); [ "$tries" -ge 1 ] || tries=1
@@ -181,10 +202,11 @@ start_session() {
   done
   if [ "$i" -ge "$tries" ]; then
     echo "Claude Code did not reach an input prompt in pane $pane within ${ready}ms (looked for: $READY_PATTERN)" >&2
+    recreate_hint "$wt" "$cmd" "$prompt" "$pane"
     START_RESULT="failed ready $pane"; return 1
   fi
   if ! send_and_confirm "$pane" "$wt" "$prompt"; then
-    resend_hint "$pane" "$wt"
+    resend_hint "$pane" "$wt" "$prompt" "$cmd" "$prompt"
     START_RESULT="failed send $pane"; return 1
   fi
   START_RESULT="started $pane"
@@ -262,7 +284,7 @@ $panes
 EOF
       if [ "$ncand" -ne 1 ]; then echo "failed ambiguous-terminal"; exit 1; fi
       if send_and_confirm "$cand" "$wt" "$text"; then echo sent; exit 0; fi
-      resend_hint "$cand" "$wt"
+      resend_hint "$cand" "$wt" "$text" "$cmd" "$rprompt"
       echo "failed send"; exit 1
     fi
     if [ -n "$panes" ]; then
