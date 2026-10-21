@@ -1,7 +1,7 @@
 # dev-workflow-unclear-reply-rephrase Specification
 
 ## Purpose
-TBD - created by archiving change unclear-reply-rephrase-hook. Update Purpose after archive.
+主の発言に説明が伝わっていないことを示す語（「意味わからん」「説明して」など）があるときだけ、UserPromptSubmit の hook が、正本（`~/.claude/output-styles/readable.md` の節 3）の型で子の作業の言葉を使わずに言い直すよう促す文を差し込む規則を定める。
 ## Requirements
 ### Requirement: UserPromptSubmit の 2 件目のエントリで言い直しの hook を起動する
 
