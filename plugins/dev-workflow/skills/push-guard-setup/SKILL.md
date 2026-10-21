@@ -20,7 +20,7 @@ allowed-tools: Read, Write, Edit, Bash
 | 層 | 置き場所 | 内容 | 対象 |
 |---|---|---|---|
 | **グローバル**（このスキル） | `~/.githooks/pre-push` + `git config --global core.hooksPath` | マージ済み PR チェックのみ | 全リポジトリ |
-| **リポジトリローカル** | `<repo>/.githooks/pre-push`（loop-dev-agent 導入済み repo。flatmate の `new-resident` が設置） | main/master 直 push 拒否 + マージ済み PR チェック | 自律開発ループ導入 repo |
+| **リポジトリローカル** | `<repo>/.githooks/pre-push`（loop-dev-agent 導入済み repo。導入時に設置される） | main/master 直 push 拒否 + マージ済み PR チェック | 自律開発ループ導入 repo |
 
 **ローカルの `core.hooksPath` はグローバル設定より優先される**（git の設定優先順位）。したがって
 loop-dev-agent を導入済みのリポジトリでは、従来どおり厳しい方（main 拒否込み）のローカル層が
@@ -178,6 +178,8 @@ ls ~/path/to/repo/.git/hooks | grep -v '\.sample$'
 - 常駐プロセスや cron を作らない（このスキルが作るのはフック 1 ファイルと git 設定 1 行だけ）
 
 ## 自己検証
+
+完了宣言の前に、導入結果の evidence を確認する（原則: `plugins/dev-workflow/references/self-verification.md`）。
 
 導入後、以下がすべて成立することを確認して初めて「導入できた」と報告する:
 

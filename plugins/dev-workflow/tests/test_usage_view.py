@@ -87,16 +87,61 @@ class EffectiveValues(unittest.TestCase):
         self.assertEqual(a['weekly_all_pct'], 40)
         self.assertEqual(a['weekly_observed_at'], NOW - 2 * DAY)
 
-    def test_same_window_takes_the_larger_value(self):
+    def test_same_window_takes_the_newer_value(self):
         reset = NOW + 3 * DAY
         self.record(None, observed=NOW - 60, weekly=50, weekly_reset=reset)
         self.snap({'a': {'fetched_at': NOW - 5 * HOUR, 'weekly_all_pct': 55,
                          'weekly_resets_epoch': reset + 1800}})
         a = self.view()['accounts']['a']
-        self.assertEqual(a['weekly_all_pct'], 55)
-        # The reset time comes from the newer source, the observed time from the value taken.
+        # A manual reset lowers the value without moving the reset time, so the size does not decide.
+        self.assertEqual(a['weekly_all_pct'], 50)
         self.assertEqual(a['weekly_resets_epoch'], reset)
-        self.assertEqual(a['weekly_observed_at'], NOW - 5 * HOUR)
+        self.assertEqual(a['weekly_observed_at'], NOW - 60)
+
+    def test_newer_record_after_manual_reset_beats_old_full_snapshot(self):
+        reset = NOW + 3 * DAY
+        self.record(None, observed=NOW - 60, weekly=0, weekly_reset=reset)
+        self.snap({'a': {'fetched_at': NOW - 2 * HOUR, 'weekly_all_pct': 100,
+                         'weekly_resets_epoch': reset}})
+        a = self.view()['accounts']['a']
+        self.assertEqual(a['weekly_all_pct'], 0)
+        self.assertEqual(a['weekly_observed_at'], NOW - 60)
+
+    def test_newer_and_larger_value_is_taken(self):
+        reset = NOW + 3 * DAY
+        self.record(None, observed=NOW - 60, weekly=60, weekly_reset=reset)
+        self.snap({'a': {'fetched_at': NOW - 2 * HOUR, 'weekly_all_pct': 40,
+                         'weekly_resets_epoch': reset}})
+        self.assertEqual(self.view()['accounts']['a']['weekly_all_pct'], 60)
+
+    def test_newer_snapshot_beats_older_record_in_the_same_window(self):
+        reset = NOW + 3 * DAY
+        self.record(None, observed=NOW - 2 * HOUR, weekly=70, weekly_reset=reset)
+        self.snap({'a': {'fetched_at': NOW - 60, 'weekly_all_pct': 0,
+                         'weekly_resets_epoch': reset + 600}})
+        a = self.view()['accounts']['a']
+        self.assertEqual(a['weekly_all_pct'], 0)
+        self.assertEqual(a['weekly_resets_epoch'], reset + 600)
+        self.assertEqual(a['weekly_observed_at'], NOW - 60)
+
+    def test_equal_observed_times_take_the_larger_value(self):
+        reset = NOW + 3 * DAY
+        self.record(None, observed=NOW - 60, weekly=50, weekly_reset=reset)
+        self.snap({'a': {'fetched_at': NOW - 60, 'weekly_all_pct': 55,
+                         'weekly_resets_epoch': reset + 1800}})
+        a = self.view()['accounts']['a']
+        self.assertEqual(a['weekly_all_pct'], 55)
+        # The reset time also comes from the source of the larger value.
+        self.assertEqual(a['weekly_resets_epoch'], reset + 1800)
+
+    def test_missing_observed_time_takes_the_larger_value(self):
+        reset = NOW + 3 * DAY
+        self.record(None, observed=NOW - 60, weekly=50, weekly_reset=reset)
+        self.snap({'a': {'weekly_all_pct': 55, 'weekly_resets_epoch': reset + 1800}})
+        a = self.view()['accounts']['a']
+        self.assertEqual(a['weekly_all_pct'], 55)
+        self.assertEqual(a['weekly_resets_epoch'], reset + 1800)
+        self.assertIsNone(a['weekly_observed_at'])
 
     def test_weekly_all_reset_mismatch_prefers_the_record(self):
         self.record(None, observed=NOW - 60, weekly=10, weekly_reset=NOW + 6 * DAY)
@@ -266,6 +311,140 @@ class EffectiveValues(unittest.TestCase):
         result = subprocess.run([sys.executable, str(SCRIPT), '--json', '--now', str(NOW)],
                                 env=env, capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(result.stdout)['accounts']['a']['weekly_all_pct'], 2)
+
+
+class EnabledFlag(unittest.TestCase):
+    # usage-account-registry "スロットを enabled でオフにできる": only the JSON false turns a
+    # slot off, and an off slot stays a registry slot (order, the cap of 8, active).
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.sessions = self.root / 'sessions'
+        self.sessions.mkdir()
+        self.accounts = self.root / 'accounts.json'
+        self.snapshot = self.root / 'snapshot.json'
+
+    def register(self, entries):
+        self.accounts.write_text(json.dumps({'schema': 1, 'accounts': entries}))
+
+    def test_only_json_false_is_off_and_no_slot_is_dropped(self):
+        values = [('f', False), ('t', True), ('s', 'false'), ('z', 0), ('n', None)]
+        entries = [{'id': sid, 'securestorage': '/x/' + sid, 'enabled': value}
+                   for sid, value in values]
+        entries.insert(2, {'id': 'o', 'securestorage': '/x/o'})
+        self.register(entries)
+        slots = m.read_slots(str(self.accounts))
+        self.assertEqual([sid for sid, _, _ in slots], ['f', 't', 'o', 's', 'z', 'n'])
+        self.assertEqual([enabled for _, _, enabled in slots],
+                         [False, True, True, True, True, True])
+
+    def test_off_slot_counts_toward_the_cap_and_keeps_declared_order(self):
+        entries = [{'id': f's{i}', 'securestorage': f'/x/{i}'} for i in range(9)]
+        entries[0]['enabled'] = False
+        self.register(entries)
+        slots = m.read_slots(str(self.accounts))
+        self.assertEqual([sid for sid, _, _ in slots], [f's{i}' for i in range(8)])
+        self.assertEqual(slots[0], ('s0', '/x/0', False))
+
+    def test_read_registry_keeps_its_two_column_shape(self):
+        self.register([{'id': 'a', 'securestorage': None},
+                       {'id': 'b', 'securestorage': '/x/b', 'enabled': False}])
+        self.assertEqual(m.read_registry(str(self.accounts)), [('a', ''), ('b', '/x/b')])
+
+    def test_unreadable_registry_falls_back_to_an_enabled_default_slot(self):
+        self.assertEqual(m.read_slots(str(self.root / 'absent.json')), [('default', '', True)])
+        self.assertEqual(m.read_registry(str(self.root / 'absent.json')), [('default', '')])
+
+    def test_off_slot_stays_in_the_view_and_can_be_active(self):
+        self.register([{'id': 'a', 'securestorage': None},
+                       {'id': 'b', 'securestorage': '/x/b', 'enabled': False}])
+        self.snapshot.write_text(json.dumps({'schema': 2, 'active': None, 'accounts': {
+            'b': {'fetched_at': NOW - HOUR, 'five_hour_pct': 5,
+                  'five_hour_resets_epoch': NOW + HOUR, 'weekly_all_pct': 40,
+                  'weekly_resets_epoch': NOW + DAY}}}))
+        view = m.build_view(accounts_file=str(self.accounts), sessions_dir=str(self.sessions),
+                            snapshot_path=str(self.snapshot), now=NOW, active_secure='/x/b')
+        self.assertEqual(list(view['accounts']), ['a', 'b'])
+        self.assertEqual(view['accounts']['b']['weekly_all_pct'], 40)
+        self.assertEqual(view['active'], 'b')
+
+
+class CodexEnabled(unittest.TestCase):
+    # usage-account-registry "Codex を codex.enabled でオフにできる": Codex is off only when
+    # the top-level "codex"."enabled" is the JSON false; every other input reads as on.
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.accounts = self.root / 'accounts.json'
+
+    def write(self, document):
+        self.accounts.write_text(json.dumps(document))
+
+    def registry(self, **extra):
+        return {'schema': 1, 'accounts': [{'id': 'a', 'securestorage': None}], **extra}
+
+    def test_only_json_false_turns_codex_off(self):
+        cases = [({'enabled': False}, False), ({'enabled': True}, True), ({}, True),
+                 ({'enabled': 'false'}, True), ({'enabled': 0}, True),
+                 ({'enabled': None}, True), (False, True)]
+        for codex, expected in cases:
+            with self.subTest(codex=codex):
+                self.write(self.registry(codex=codex))
+                self.assertIs(m.read_codex_enabled(str(self.accounts)), expected)
+
+    def test_registry_without_the_key_is_on(self):
+        self.write(self.registry())
+        self.assertIs(m.read_codex_enabled(str(self.accounts)), True)
+
+    def test_missing_broken_and_array_registries_are_on(self):
+        self.assertIs(m.read_codex_enabled(str(self.root / 'absent.json')), True)
+        self.accounts.write_text('{"codex": {"enabled": false')
+        self.assertIs(m.read_codex_enabled(str(self.accounts)), True)
+        self.accounts.write_text('[{"codex": {"enabled": false}}]')
+        self.assertIs(m.read_codex_enabled(str(self.accounts)), True)
+
+    def test_codex_key_does_not_change_the_slots(self):
+        self.write(self.registry())
+        slots, registry = m.read_slots(str(self.accounts)), m.read_registry(str(self.accounts))
+        self.write(self.registry(codex={'enabled': False}))
+        self.assertEqual(m.read_slots(str(self.accounts)), slots)
+        self.assertEqual(m.read_registry(str(self.accounts)), registry)
+        self.assertEqual(registry, [('a', '')])
+
+    def run_cli(self, *argv):
+        # Keep the real ~/.claude out of the run: the status line rewrites its session records
+        # between two runs and would make the --json comparison flaky.
+        env = {k: v for k, v in os.environ.items()
+               if k not in ('CLAUDE_CONFIG_DIR', 'USAGE_SESSIONS_DIR',
+                            'CLAUDE_SECURESTORAGE_CONFIG_DIR')}
+        sessions = self.root / 'sessions'
+        sessions.mkdir(exist_ok=True)
+        env['CLAUDE_ACCOUNTS_FILE'] = str(self.accounts)
+        env['USAGE_SESSIONS_DIR'] = str(sessions)
+        env['USAGE_SNAPSHOT'] = str(self.root / 'snapshot.json')
+        return subprocess.run([sys.executable, str(SCRIPT), *argv], env=env,
+                              capture_output=True, text=True)
+
+    def test_cli_prints_one_line_and_always_exits_zero(self):
+        self.write(self.registry(codex={'enabled': False}))
+        result = self.run_cli('--codex-enabled')
+        self.assertEqual((result.returncode, result.stdout), (0, 'off\n'))
+        self.write(self.registry())
+        result = self.run_cli('--codex-enabled')
+        self.assertEqual((result.returncode, result.stdout), (0, 'on\n'))
+        self.accounts.unlink()
+        result = self.run_cli('--codex-enabled')
+        self.assertEqual((result.returncode, result.stdout), (0, 'on\n'))
+
+    def test_json_view_is_unchanged_by_the_codex_key(self):
+        self.write(self.registry())
+        before = self.run_cli('--json', '--now', str(NOW)).stdout
+        self.write(self.registry(codex={'enabled': False}))
+        after = self.run_cli('--json', '--now', str(NOW))
+        self.assertEqual(after.returncode, 0)
+        self.assertEqual(after.stdout, before)
 
 
 if __name__ == '__main__':

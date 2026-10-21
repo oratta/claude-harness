@@ -25,10 +25,10 @@ setup() {
   grep -q "mcp__claude_ai_Notion__notion-fetch" "$AGENT_FILE"
 }
 
-@test "voice-compactor: frontmatter declares model: opus and permissionMode: bypassPermissions" {
+@test "voice-compactor: frontmatter declares model: opus and no permissionMode (ignored for plugin agents)" {
   dr_require_file "$AGENT_FILE"
   grep -q "^model: opus" "$AGENT_FILE"
-  grep -q "^permissionMode: bypassPermissions" "$AGENT_FILE"
+  ! grep -q "^permissionMode:" "$AGENT_FILE" || return 1
 }
 
 @test "voice-compactor: all 8 fixed categories are documented in agent body" {

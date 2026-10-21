@@ -3,7 +3,6 @@ name: llm-log-compactor
 description: 対象日の `~/.claude/projects/*/` 配下 jsonl を集計・圧縮して dailyLLM.md に書き出す。最終 assistant message は STATUS line 1 行のみ。
 tools: Read, Write, Bash, Glob
 model: opus
-permissionMode: bypassPermissions
 ---
 
 # llm-log-compactor — Claude Code セッション jsonl を圧縮して dailyLLM.md を生成するサブエージェント

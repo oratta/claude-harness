@@ -23,12 +23,15 @@ teardown() {
   rm -rf "$WORK"
 }
 
+# $1=a の securestorage（JSON）$2=b の securestorage（JSON）
+# $3=a の enabled（JSON の値。空なら書かない）$4=b の enabled（同）
 write_registry() {
   local secure_a="${1:-null}" secure_b="${2:-\"${SECURE_B}\"}"
+  local enabled_a="${3:+, \"enabled\": $3}" enabled_b="${4:+, \"enabled\": $4}"
   cat > "$ACCOUNTS" <<JSON
 { "schema": 1, "accounts": [
-  { "id": "a", "label": "A", "securestorage": ${secure_a} },
-  { "id": "b", "label": "B", "securestorage": ${secure_b} }
+  { "id": "a", "label": "A", "securestorage": ${secure_a}${enabled_a} },
+  { "id": "b", "label": "B", "securestorage": ${secure_b}${enabled_b} }
 ] }
 JSON
 }
@@ -185,6 +188,16 @@ JSON
   [ "$status" -eq 0 ]
   [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
   [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:missing,b:50.00" ]
+}
+
+@test "records: a newer 0% record after a manual reset beats an older 100% snapshot" {
+  write_registry
+  write_snapshot "$NOW" "$((NOW - 7200))" 10 10 30 100
+  write_record "$SECURE_B" "$((NOW - 60))" 10 0
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:20.00,b:50.00" ]
 }
 
 @test "fallback: all missing slots select the registered default id" {
@@ -370,4 +383,143 @@ JSON
   [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
   [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
   ! grep -qF 'selected=' "${WORK}/stdout" || return 1
+}
+
+# ── enabled（usage-account-registry「スロットを enabled でオフにできる」）──
+
+@test "enabled: an off slot is not selected even with the greatest weekly margin" {
+  # b は週の 90% 経過・週次 0%（余裕 90）。a は余裕 10
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  write_record "$SECURE_B" "$NOW" 0 0 "$((NOW + 60480))"
+  write_registry
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:90.00" ]
+
+  write_registry "" "" "" false
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:10.00,b:off" ]
+  [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
+}
+
+@test "enabled: a slot turned off with accounts.sh is not selected" {
+  # b は週の 90% 経過・週次 0%（余裕 90）で最大。accounts.sh off b でオフにする
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  write_record "$SECURE_B" "$NOW" 0 0 "$((NOW + 60480))"
+  write_registry
+  CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "${PLUGIN_DIR}/scripts/accounts.sh" off b
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:10.00,b:off" ]
+}
+
+@test "enabled: a registry without enabled selects the same as one with enabled true" {
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  write_registry
+  run invoke
+  [ "$status" -eq 0 ]
+  cp "${WORK}/stdout" "${WORK}/stdout.omitted"
+  cp "${WORK}/stderr" "${WORK}/stderr.omitted"
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:30.00" ]
+
+  write_registry "" "" true true
+  run invoke
+  [ "$status" -eq 0 ]
+  cmp "${WORK}/stdout" "${WORK}/stdout.omitted"
+  cmp "${WORK}/stderr" "${WORK}/stderr.omitted"
+}
+
+@test "enabled: only the JSON false turns a slot off" {
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  local value
+  for value in '"false"' 0 null; do
+    write_registry "" "" "" "$value"
+    run invoke
+    [ "$status" -eq 0 ]
+    [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:30.00" ]
+  done
+}
+
+@test "enabled: explicit selection of an off slot returns 2 with the way back" {
+  write_registry "" "" "" false
+  run invoke b
+  [ "$status" -eq 2 ]
+  [ ! -s "${WORK}/stdout" ]
+  [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
+  grep -qF 'account b is off' "${WORK}/stderr"
+  grep -qF 'enabled' "${WORK}/stderr"
+  grep -qF "$ACCOUNTS" "${WORK}/stderr"
+  ! grep -qF 'unknown account id' "${WORK}/stderr" || return 1
+
+  # オンのスロットの明示選択は変わらない
+  run invoke a
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=explicit margins=-" ]
+}
+
+@test "enabled: all slots off fall back to the default account without an error" {
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  write_registry "" "" false false
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-all-off margins=a:off,b:off" ]
+}
+
+@test "enabled: all slots off without a registered default use the sentinel" {
+  write_registry "\"${SECURE_A}\"" "" false false
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=@unregistered-default reason=default-due-to-all-off margins=a:off,b:off" ]
+}
+
+@test "enabled: an on slot with missing usage is not replaced by an off slot with values" {
+  write_record "$SECURE_B" "$NOW" 0 0
+  write_registry "" "" "" false
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-missing-usage margins=a:missing,b:off" ]
+}
+
+@test "enabled: an off default slot with the on slot's usage missing falls back to the default" {
+  write_registry "" "" false
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-missing-usage margins=a:off,b:missing" ]
+}
+
+@test "enabled: explicit selection of a slot turned off with accounts.sh points to accounts.sh on" {
+  write_registry
+  CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "${PLUGIN_DIR}/scripts/accounts.sh" off b
+  run invoke b
+  [ "$status" -eq 2 ]
+  [ ! -s "${WORK}/stdout" ]
+  [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
+  grep -qF 'accounts.sh on b' "${WORK}/stderr"
+}
+
+@test "enabled: the way back printed for an off slot runs as is without accounts.sh on PATH" {
+  write_registry
+  CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "${PLUGIN_DIR}/scripts/accounts.sh" off b
+  run invoke b
+  [ "$status" -eq 2 ]
+  local line cmd
+  line="$(cat "${WORK}/stderr")"
+  cmd="${line#*: run }"
+  [ "$cmd" != "$line" ]
+  case "$cmd" in /*|\'/*) ;; *) return 1 ;; esac
+  # PATH に scripts を入れずに、表示された案内をそのまま実行して戻せる
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" PATH="/usr/bin:/bin" sh -c "$cmd"
+  [ "$status" -eq 0 ]
+  run invoke b
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=explicit margins=-" ]
 }

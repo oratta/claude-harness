@@ -3,21 +3,29 @@
 #
 # 使い方: risk-carryover-check.sh [--base <ref>] <前 HEAD> <新 HEAD> <根拠ファイル>...
 #   --base の既定は origin/main。ローカルの git リポジトリだけを読む（gh を呼ばない）。
-# 判定（すべて満たせば引き継げる）:
+# 判定:
 #   1. 前 HEAD が新 HEAD の祖先
 #   2. `git rev-list <新> ^<前> ^<base>` の全件が 2 親の merge commit で、第 2 親が base の祖先、
 #      第 1 親が前 HEAD かこの集合の別の commit
 #   3. 各 merge commit で `git merge-tree --write-tree <第1親> <第2親>` の tree と実 tree に差があるファイル
-#      （衝突解消したファイル）が許可リストに入り、中身の条件を満たす:
+#      （衝突解消したファイル。`git diff --no-renames` で列挙し、rename は削除と追加に分けて数える）が
+#      許可リストに入り、中身の条件を満たす:
 #        .claude-plugin/marketplace.json・plugins/<名前>/.claude-plugin/plugin.json
 #          → "version" を含む行を除いた本文が第 1 親か第 2 親の版と一致
 #        CHANGELOG.md（サブディレクトリを含む）
 #          → merge commit の版のすべての行が第 1 親か第 2 親の版に存在する
-#   4. 根拠ファイルそれぞれで `git diff <前> <新> -- <ファイル>` が空
-# 出力: CARRYOVER=yes|no / MAIN_MERGES=<件数> / RESOLVED_FILES=<カンマ区切り。無ければ none> / 不可の理由ごとに NG: <理由>
-# 終了コード: 0 = 引き継げる / 1 = 引き継げない / 2 = 引数不足・SHA が解決できない・根拠ファイルなし・git が古い（引き継げない側）
+#   4. 根拠ファイルそれぞれで `git diff <前> <新> -- <ファイル>` が空（パスはリポジトリのルート相対）
+# 1・2・4 のどれかが外れたら NG: 行を出す。3 だけが外れたファイル（許可リストの条件を満たさない衝突解消 =
+# 許可リストに無いファイル・許可リストのファイルで中身の条件を満たさないもの・衝突していないファイルへの手入れ）は
+# NG にせず RESOLVED_OUTSIDE_ALLOWLIST=<ファイル> の行で出す（#694）。
+# 出力: CARRYOVER=yes|if-rereviewed|no / MAIN_MERGES=<件数> / RESOLVED_FILES=<カンマ区切り。無ければ none>
+#       / RESOLVED_OUTSIDE_ALLOWLIST=<ファイル>（該当ファイルごとに 1 行）/ 不可の理由ごとに NG: <理由>
+# 終了コード: 0 = 無条件で引き継げる / 3 = 新しい HEAD で PR 全体を見たレビューを経ていれば引き継げる
+#   （NG は無く、許可リストの条件を満たさない衝突解消だけがある）/ 1 = 引き継げない（NG あり）
+#   / 2 = 引数不足・SHA が解決できない・根拠ファイルなし・根拠ファイルが前後どちらの HEAD にも無い・git が古い（引き継げない側）
 #
-# 許容の真正性とリスクの中身の同一性はここでは見ない（pr-review-gate 手順 3-c で G が確かめる）。
+# 許容の真正性・リスクの中身の同一性・終了コード 3 のときのレビューの確認はここでは見ない
+# （pr-review-gate 手順 3-c で G が確かめる）。
 # Bash 3.2（macOS 標準）で動くこと: 空配列の展開は ${arr[@]+"${arr[@]}"} 形を使う。
 set -euo pipefail
 
@@ -44,6 +52,10 @@ if [ -z "$ver" ] || [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt
   exit 2
 fi
 
+# pathspec をルート相対に固定する（git diff -- <pathspec> は cwd 相対、git show <rev>:<path> はルート相対のため）
+top="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "not a git repository" >&2; exit 2; }
+cd "$top"
+
 resolve() {
   git rev-parse -q --verify "$1^{commit}" 2>/dev/null || { echo "cannot resolve: $1" >&2; exit 2; }
 }
@@ -53,6 +65,7 @@ base="$(resolve "$base_ref")"
 
 ng=()
 resolved=()
+outside=()
 merges=0
 
 # 許可リストの判定。引数: merge commit 第1親 第2親 ファイル。許せば 0
@@ -122,13 +135,17 @@ else
       [ -z "$f" ] && continue
       resolved+=("$f")
       if ! allowed "$c" "$p1" "$p2" "$f"; then
-        ng+=("conflict resolution in $c not allowed: $f")
+        outside+=("$f")
       fi
-    done < <(git diff --name-only "$auto_tree" "$c")
+    done < <(git diff --no-renames --name-only "$auto_tree" "$c")
   done < <(printf '%s\n' "$set_list")
 fi
 
 for f in "${evidence[@]}"; do
+  if ! git cat-file -e "$prev:$f" 2>/dev/null && ! git cat-file -e "$new:$f" 2>/dev/null; then
+    echo "evidence file not found at either HEAD: $f" >&2
+    exit 2
+  fi
   rc=0
   git diff --quiet "$prev" "$new" -- "$f" || rc=$?
   if [ "$rc" -eq 1 ]; then
@@ -139,14 +156,20 @@ for f in "${evidence[@]}"; do
   fi
 done
 
-if [ "${#ng[@]}" -eq 0 ]; then echo "CARRYOVER=yes"; else echo "CARRYOVER=no"; fi
+if [ "${#ng[@]}" -ne 0 ]; then echo "CARRYOVER=no"
+elif [ "${#outside[@]}" -ne 0 ]; then echo "CARRYOVER=if-rereviewed"
+else echo "CARRYOVER=yes"; fi
 echo "MAIN_MERGES=$merges"
 if [ "${#resolved[@]}" -eq 0 ]; then
   echo "RESOLVED_FILES=none"
 else
   echo "RESOLVED_FILES=$(printf '%s\n' "${resolved[@]}" | sort -u | paste -sd, -)"
 fi
+if [ "${#outside[@]}" -ne 0 ]; then
+  printf '%s\n' "${outside[@]}" | sort -u | sed 's/^/RESOLVED_OUTSIDE_ALLOWLIST=/'
+fi
 for n in ${ng[@]+"${ng[@]}"}; do echo "NG: $n"; done
 
 [ "${#ng[@]}" -eq 0 ] || exit 1
+[ "${#outside[@]}" -eq 0 ] || exit 3
 exit 0

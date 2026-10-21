@@ -41,32 +41,35 @@ comments, push, PR creation and commit yourself here, and do not return needs-co
 them. The coordinator performs only operations already recorded as ones it could not align.'''
 READER_TRANSPORT = '''This worker is read-only: never write to GitHub, push, or commit. Return the review verdict and
 its evidence; the coordinator posts it on your behalf, then starts a fresh phase with it.'''
-FRESH_SECONDS = 300
 WEEK_SECONDS = 604800
 
 
-def usage_margin(snapshot, now, *, codex=False):
-    """Return the unrounded weekly margin, or None for missing/unsafe input."""
+def usage_margin(snapshot, now):
+    """Return the unrounded weekly margin of a Codex snapshot, or None for missing/unsafe input.
+
+    Same effective-value rule as the Claude side (usage-session-records): the age of the fetch is
+    not checked. Past the weekly reset the window reads as 0% with the reset moved forward by whole
+    weeks; before it the fetched value is a lower bound. A reset more than a week ahead is accepted
+    (the margin just goes negative).
+    """
     if not isinstance(snapshot, dict) or type(snapshot.get('fetched_at')) is not int:
         return None
-    age = now - snapshot['fetched_at']
-    if age < 0 or age > FRESH_SECONDS:
+    if snapshot['fetched_at'] > now:
         return None
-    if codex:
-        windows = snapshot.get('windows')
-        if not isinstance(windows, list):
-            return None
-        weekly = [item for item in windows if isinstance(item, dict) and
-                  item.get('minutes') == 10080]
-        if not weekly:
-            return None
-        value = weekly[0]
-        used, reset = value.get('used_percent'), value.get('reset_at')
-    else:
-        used, reset = snapshot.get('weekly_all_pct'), snapshot.get('weekly_resets_epoch')
+    windows = snapshot.get('windows')
+    if not isinstance(windows, list):
+        return None
+    weekly = [item for item in windows if isinstance(item, dict) and
+              item.get('minutes') == 10080]
+    if not weekly:
+        return None
+    used, reset = weekly[0].get('used_percent'), weekly[0].get('reset_at')
     if (type(used) not in (int, float) or not math.isfinite(used) or not 0 <= used <= 100 or
-            type(reset) is not int or not now < reset <= now + WEEK_SECONDS):
+            type(reset) is not int):
         return None
+    if now >= reset:
+        used = 0
+        reset += ((now - reset) // WEEK_SECONDS + 1) * WEEK_SECONDS
     elapsed = 100 * (1 - (reset - now) / WEEK_SECONDS)
     return elapsed - used
 
@@ -90,7 +93,11 @@ def claude_usage_evidence(snapshot_path, now):
     return {'account': active, 'margin': margin, 'fetched_at': slot.get('observed_at')}
 
 
-def select_configuration(claude_margin, codex_margin):
+def select_configuration(claude_margin, codex_margin, codex_enabled=True):
+    # Codex off (accounts.json "codex"."enabled": false) is the user's setting, not a
+    # headroom result, so it has its own reason whatever the margins are.
+    if not codex_enabled:
+        return 'claude-default', 'codex-off'
     claude_ok, codex_ok = (claude_margin is not None and claude_margin >= 0,
                            codex_margin is not None and codex_margin >= 0)
     if claude_ok and codex_ok:
@@ -271,22 +278,25 @@ def automatic_selection(mapping, now=None):
     _run_usage_probe(snapshot_path)
     now = int(time.time()) if now is None else now
     claude = claude_usage_evidence(snapshot_path, now)
-    usages = read_codex_usages(mapping, str(config_dir), now) if mapping else {}
+    codex_enabled = usage_view.read_codex_enabled(usage_view.default_paths()['accounts_file'])
+    # Off means no Codex usage read at all: no app-server start and no cache update.
+    usages = read_codex_usages(mapping, str(config_dir), now) if mapping and codex_enabled else {}
     candidates = []
     for order, (name, value) in enumerate(usages.items()):
-        margin = usage_margin(value, now, codex=True)
+        margin = usage_margin(value, now)
         if margin is not None:
             candidates.append((margin, -order, name, value))
     best = max(candidates) if candidates else None
     codex = {'account': best[2] if best else None, 'margin': best[0] if best else None,
              'fetched_at': best[3].get('fetched_at') if best else None}
-    selected, reason = select_configuration(claude['margin'], codex['margin'])
+    if not codex_enabled:
+        codex['enabled'] = False
+    selected, reason = select_configuration(claude['margin'], codex['margin'], codex_enabled)
     return selected, {'selection_mode': 'automatic', 'configuration': selected,
         'reason': reason,
         'claude': {'account': claude['account'], 'margin': claude['margin'],
                    'fetched_at': claude['fetched_at']},
-        'codex': {'account': codex['account'], 'margin': codex['margin'],
-                  'fetched_at': codex['fetched_at']}}
+        'codex': codex}
 
 
 def bind_codex_account(config, account, accounts):
@@ -494,6 +504,21 @@ REQUEST:
     return text
 
 
+def refuse_explicit_codex_when_off(args, legacy):
+    # An explicit Codex request is never silently replaced by Claude. This runs before the
+    # account-home table is read, so the refusal names the off setting and not a missing
+    # account. A profile is read without the table only to see whether any role uses Codex.
+    accounts_file = usage_view.default_paths()['accounts_file']
+    if usage_view.read_codex_enabled(accounts_file):
+        return
+    if not legacy:
+        roles = load_profile(args.profile, args.profile_file, None)['roles']
+        if all(entry['executor'] != 'codex' for entry in roles.values()):
+            return
+    raise RuntimeError('codex is off: set "codex"."enabled" to true or remove it in '
+                       + str(accounts_file))
+
+
 def build_request(args):
     # Role settings are resolved for each request, and CODEX_HOME comes from the caller's
     # explicit account table. The profile form and account/model form are mutually exclusive.
@@ -503,6 +528,8 @@ def build_request(args):
         raise RuntimeError('profile cannot be combined with account/model; profile-file requires profile')
     if legacy and not (args.account and args.model):
         raise RuntimeError('legacy request requires both account and model')
+    if legacy or profile:
+        refuse_explicit_codex_when_off(args, legacy)
     mapping = account_homes(args.account_home, args.account_home_file)
     if not legacy and not profile and not args.account_home and not args.account_home_file:
         mapping = default_automatic_account_home()

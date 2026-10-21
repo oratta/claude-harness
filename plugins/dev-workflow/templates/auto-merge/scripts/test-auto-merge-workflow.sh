@@ -84,7 +84,7 @@ else
     ".github/workflows/evil.yml" \
     ".github/workflows/nested/deploy.yml" \
     "CLAUDE.md" \
-    "workspace/moko/CLAUDE.md" \
+    "workspace/example/CLAUDE.md" \
     ".claude/skills/cron-triggers/SKILL.md" \
     ".claude/settings.json" \
     "docs/agent-loop.md" \
@@ -111,6 +111,50 @@ else
       ng "聖域と誤判定される（人間マージに落ちてしまう）: $p"
     else
       ok "聖域ではないと判定される: $p"
+    fi
+  done
+fi
+
+# ── (1-a) マージ条件そのもののパス: 親の判断の印があっても外せない範囲 ──
+# MERGE_CONDITION は SACRED の部分集合。ここに一致するパスに触れた PR は、親の判断の印
+# （parent-merge-approved）があっても human-merge が外れず、主が手でマージする。
+# 【展開時】auto-merge.yml の MERGE_CONDITION にリポ固有のパスを足したら、ここにも代表パスを足す。
+MERGE_CONDITION=$(extract_block "$WF" "merge-condition-paths" | grep "MERGE_CONDITION='" | sed "s/^ *MERGE_CONDITION='//; s/'\$//")
+if [ -z "$MERGE_CONDITION" ]; then
+  ng "マージ条件そのもののパスの正規表現を auto-merge.yml から抽出できない（# >>> merge-condition-paths マーカーを確認）"
+else
+  ok "マージ条件そのもののパスの正規表現を抽出できた"
+
+  # 一致しなければならないパス。SACRED にも一致すること（部分集合）を同時に確かめる
+  for p in \
+    ".github/workflows/ci.yml" \
+    ".github/workflows/auto-merge.yml" \
+    ".github/workflows/nested/deploy.yml"; do
+    if printf '%s\n' "$p" | grep -qE "$MERGE_CONDITION"; then
+      ok "マージ条件そのものと判定される: $p"
+    else
+      ng "マージ条件そのものと判定されない（親の判断でマージされてしまう）: $p"
+    fi
+    if [ -n "$SACRED" ] && printf '%s\n' "$p" | grep -qE "$SACRED"; then
+      ok "マージ条件のパスが聖域にも含まれる: $p"
+    else
+      ng "マージ条件のパスが聖域に含まれない（MERGE_CONDITION が SACRED の部分集合でない）: $p"
+    fi
+  done
+
+  # 一致してはならないパス（聖域でも、親の判断で human-merge を外してよいもの）
+  for p in \
+    "CLAUDE.md" \
+    "workspace/example/CLAUDE.md" \
+    ".claude/settings.json" \
+    "docs/agent-loop.md" \
+    "rules/example.md" \
+    "scripts/test-auto-merge-workflow.sh" \
+    "docs/auto-merge.md"; do
+    if printf '%s\n' "$p" | grep -qE "$MERGE_CONDITION"; then
+      ng "マージ条件そのものと誤判定される（親の判断でも外れなくなる）: $p"
+    else
+      ok "マージ条件そのものではないと判定される: $p"
     fi
   done
 fi
@@ -383,6 +427,56 @@ else
   fi
 fi
 
+# ── (1-g) 親の判断の印: human-merge を外す入口が条件どおりに狭いこと ───
+# 挙動（印の真偽）は plugins/dev-workflow/tests/automerge-templates.bats がスタブの gh で
+# 動かして確かめる。ここでは入口の形を静的に固定する。
+if grep -qE "^ *if: .*github\.event\.label\.name == 'agent-review:passed'" "$WF" \
+   && grep -qE "^ *if: .*github\.event\.label\.name == 'parent-merge-approved'" "$WF"; then
+  ok "ジョブの if: が agent-review:passed と parent-merge-approved の付与で走る"
+else
+  ng "ジョブの if: が parent-merge-approved の付与で走らない（親の判断の印に即応できない）"
+fi
+
+extract_block "$WF" "parent-merge-judgment" | grep -vE '^ *#' > "$TMPD/parent-judgment.txt"
+if [ ! -s "$TMPD/parent-judgment.txt" ]; then
+  ng "親の判断の判定ブロックを抽出できない（# >>> parent-merge-judgment マーカーを確認）"
+else
+  if grep -qF '親のマージ判断: 可' "$TMPD/parent-judgment.txt" && grep -qF '親が見た HEAD: ' "$TMPD/parent-judgment.txt"; then
+    ok "親の判断の印は 1 行目「親のマージ判断: 可」と「親が見た HEAD:」の行で判定する"
+  else
+    ng "親の判断の印の書式（親のマージ判断: 可 / 親が見た HEAD:）が判定ブロックに無い"
+  fi
+  # 親のコメントが合格の HEAD 束縛（grep -F "対象 HEAD: <SHA>"）を満たさないよう、キーに
+  # 「対象 HEAD:」を使わない
+  if grep -qF '対象 HEAD:' "$TMPD/parent-judgment.txt"; then
+    ng "親の判断の判定が「対象 HEAD:」を使っている（親のコメントが合格の HEAD 束縛として数えられてしまう）"
+  else
+    ok "親の判断の判定は「対象 HEAD:」を使わない（合格の HEAD 束縛と混ざらない）"
+  fi
+  if grep -qF 'OWNER' "$TMPD/parent-judgment.txt" && grep -qF 'MEMBER' "$TMPD/parent-judgment.txt" && grep -qF 'COLLABORATOR' "$TMPD/parent-judgment.txt"; then
+    ok "印のコメントの投稿者を OWNER・MEMBER・COLLABORATOR に絞っている"
+  else
+    ng "印のコメントの投稿者を author_association で絞っていない"
+  fi
+  if grep -qF 'MERGE_CONDITION' "$TMPD/parent-judgment.txt" && grep -qF 'SACRED' "$TMPD/parent-judgment.txt"; then
+    ok "親の判断の判定が聖域接触とマージ条件のパスの両方を見ている"
+  else
+    ng "親の判断の判定が SACRED / MERGE_CONDITION を見ていない"
+  fi
+fi
+
+if extract_block "$WF" "pre-merge-recheck" | grep -vE '^ *#' | grep -qF 'parent_merge_judgment'; then
+  ok "マージ直前の取り直しでも親の判断を判定し直している"
+else
+  ng "マージ直前の取り直しで親の判断を判定し直していない（印が外された直後にマージされうる）"
+fi
+
+if has "$WF" 'gh label create "parent-merge-approved"'; then
+  ok "parent-merge-approved ラベルを処理の側で作っている"
+else
+  ng "parent-merge-approved ラベルを作っていない"
+fi
+
 # ── (2) 必須チェック名 == ci.yml のジョブ名（完全一致）────────
 extract_block "$WF" "required-checks" \
   | grep -v '# >>>' | grep -v '# <<<' \
@@ -433,6 +527,25 @@ if extract_script "$WF" "automerge-script" | grep -q 'if \[ -z "\$MERGE_TOKEN" \
   ok "PAT 未設定時は何もマージしない（fail-closed）"
 else
   ng "PAT 未設定時の fail-closed が無い"
+fi
+
+# マージ失敗のログが「認証・認可の失敗」と「それ以外」に分かれているか。
+# 一本のメッセージに丸めると、PAT 失効（401）が 409 と同じ「次回イベントで再検証する」に
+# 見え、実際には差し替えるまで永久に通らないことに誰も気付けない（#157）。
+# 分岐の骨格（case の判定対象・分岐ラベル・gh の理由文の再表示）は、コメントを剥がした
+# am-code.txt で見る。文字列の有無だけを見ると、case の判定対象を定数に書き換えて
+# 401 を *) 側に落とす壊し方が素通りする。
+# 一方でメッセージ本文は am-code.txt では見られない（`PR #$N` の `#` 以降が sed で切られる）ため、
+# 剥がす前の本文に対して照合する。
+AM_SCRIPT="$(extract_script "$WF" "automerge-script")"
+if grep -qF 'case "$MERGE_HTTP" in' "$TMPD/am-code.txt" \
+  && grep -qF '401|403)' "$TMPD/am-code.txt" \
+  && grep -qF '"$MERGE_ERR" >&2' "$TMPD/am-code.txt" \
+  && printf '%s\n' "$AM_SCRIPT" | grep -qF 'AUTOMERGE_PAT が失効' \
+  && [ "$(printf '%s\n' "$AM_SCRIPT" | grep -cF '次回イベントで再検証する')" -eq 1 ]; then
+  ok "マージ失敗のログが認証失敗（401/403）とそれ以外（409 等）で分かれ、gh の理由文も残る"
+else
+  ng "マージ失敗のログが一本化されている／判定対象がズレている／gh の理由文が捨てられている"
 fi
 
 if has "$WF" 'secrets.AUTOMERGE_PAT' && grep -qF 'GH_TOKEN="$MERGE_TOKEN" gh api -X PUT' "$TMPD/am-code.txt"; then
@@ -564,7 +677,11 @@ for token in \
   '.claude/' \
   'docs/agent-loop*.md' \
   'REQUIRED_CHECKS' \
-  '対象 HEAD'; do
+  '対象 HEAD' \
+  'parent-merge-approved' \
+  '親が見た HEAD' \
+  'MERGE_CONDITION' \
+  'human-only'; do
   if has "$DOC" "$token"; then
     ok "docs/auto-merge.md が $token に言及している"
   else

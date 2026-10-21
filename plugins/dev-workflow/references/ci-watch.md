@@ -53,6 +53,8 @@
 1. 落ちたテスト・手順が、PR が変えたファイルと、それを直接読み込むテストに当たらない
 2. 失敗の内容が PR の差分と因果を持たない（タイムアウト・ネットワーク・外部サービス・実行マシンの資源不足など、同じコードで結果が変わりうるもの）
 
+`cause` が `job-timeout`（ジョブが上限時間で打ち切られた）のチェックはこの判断の対象でない。`real` でないので、`--unrelated` を渡さなくても同じ HEAD で 1 回やり直される（`runner-lost` と同じ）。
+
 守備範囲: この判断が受け取る入力は、`wait` の観測（`gh pr view` と `annotations` から作ったもの）、落ちた run のログの末尾（`gh run view --log-failed`）、PR の変更ファイルの一覧（`gh pr diff --name-only`）の 3 つに限る。拾いたい誤りは、PR に関わらない一時的な失敗（たまに落ちるテスト・外部サービスの一時的な不調）を直しに回して実装者を空振りさせることと、PR が原因の失敗をやり直して CI 1 周分を待つことの 2 つ。次の入力は誤った一手のまま通ることを許す: PR の変えたファイルを間接的に読み込むテストの失敗を「当たらない」と読み違えてやり直しに回す（同じ HEAD で 1 回だけなので損失は CI 1 周分で止まる）／ログの末尾に原因が出ない失敗は判断できずに直しに回る／1 つのチェックに PR に関わる失敗と関わらない失敗が混ざっていれば直しに回る。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
 
 ## 6. `next` の一手ごとの動き
@@ -61,9 +63,11 @@
 |---|---|
 | `rerun` | `obs.runs` の各 run に `gh run rerun <run> --repo <owner/repo> --failed` を実行してから `wait` を起動し直す。やり直しに失敗したら、その旨を PR にコメントして `wait` を起動し直す（次の観測で `decide` が直しに回す） |
 | `fix` | 下の 7 の直し方で直す。push したら、`agent-review:passed` を外したまま同じ状態ファイルで `wait` から始め直し（同じ見張りの続きなので、上の 2 の開始の判定・開始と終了のコメントはしない）、そのあとの `rerun`・`fix` もこの表どおりに処理する。ゲートの取り直しは `ready` になってから行う（下の「`ready` を受けたあと」） |
-| `escalate` | PR に `needs-approval` を付け、落ちたチェック名と PR の URL を添えてオーナーに 1 アクションで頼み、見張りを終える |
+| `escalate` | PR に `needs-approval` を付け、落ちたチェック名と PR の URL を添えてオーナーに 1 アクションで頼み、見張りを終える。`obs.checks` に `cause` が `job-timeout` のチェックがあるときは、そのチェック名と run に加えて「ジョブが上限時間で打ち切られた。ランナーの状態を確かめてほしい」と伝え、実装者に直しを頼まない（ランナーの状態は PR の差分では直せないため） |
 | `ready` | 扱いは呼び出し側が決める（下の「`ready` を受けたあと」） |
 | `none` | `obs.state` が `wait` のときだけ `wait` を起動し直す。それ以外の `none`（前回と同じ状態・同じ HEAD の決着、オーナーに上げ済み）は見張りを終え、PR の URL を添えてオーナーに状況（`obs.state` と、上げ済みならその旨）を伝える |
+
+`job-timeout` は CI のジョブが自分の上限時間で打ち切られたことで、4 の表の `timeout`（見張りの上限時間内に決着を見られなかった）とは別の出来事。`job-timeout` の失敗は 1 回目が `rerun` になり、その HEAD のやり直しを使い切ったあとにもう一度見ると、`fix` ではなく `escalate` になる（修正回数は増えない）。前回の原因は見ないので、`--unrelated` や `runner-lost` でやり直したあとの初めての `job-timeout` も `escalate` になる。
 
 ### `ready` を受けたあと
 
@@ -71,9 +75,16 @@
 
 直しで `agent-review:passed` を外した PR（`agent-review:pending` が付いている）は、先にゲートを取り直す。取り直したゲートに合格するまで、下の 1〜3 のマージ待ち・マージ依頼に進まない。取り直したゲートが failed なら、ゲートの通常の周回で指摘を直し、push したら 6 の表の `fix` の行と同じく `wait` から続けて、`ready` になってから再び取り直す。保留になるか 2 周で合格が確定しなければオーナーに上げる。合格したら、同じ見張りの続きとして下の 1 から進む（上の 2 の開始の判定・開始のコメントはしない）。
 
-1. まず PR のラベルを見る（`gh api repos/<owner/repo>/issues/<PR番号> --jq '.labels[].name'`）。`human-merge` / `needs-human-merge` / `human-only` / `needs-approval`（`.github/workflows/auto-merge.yml` の `BLOCKING_LABELS`。一覧が変わったらここも直す）のどれかが付いていれば、`--until-merged` で待たずに PR の URL を添えてオーナーにマージを頼み、見張りを終える
+1. まず PR のラベルを見る（`gh api repos/<owner/repo>/issues/<PR番号> --jq '.labels[].name'`）。`human-merge` / `needs-human-merge` / `human-only` / `needs-approval`（`.github/workflows/auto-merge.yml` の `BLOCKING_LABELS`。一覧が変わったらここも直す）のどれかが付いていれば、`--until-merged` で待たずに PR の URL を添えてオーナーにマージを頼み、見張りを終える（頼む文面は `~/.claude/output-styles/readable.md` の節 3 の型で書く。主に聞く理由は、人が押すと決まっているマージ）
+   - ただし、エピックの子のセッション（`scripts/epic-dispatch.sh route`（子の番号なし）が `nested` を返す）で、付いている見送りラベルが `human-merge` だけで、PR の base ブランチの `auto-merge.yml` に `parent-merge-approved` の語があるとき（`gh api "repos/<owner>/<repo>/contents/.github/workflows/auto-merge.yml?ref=<PR の base ブランチ>" --jq .content | base64 -d | grep -qF parent-merge-approved` が成功する）は、オーナーに直接頼まず、親の判断を待つ。develop の SKILL.md「エピックの子が主の返事を待って止まるとき」の記録を `止まった理由: PR のマージ待ち（human-merge）: <PR の URL>` で残し、その手順どおり `mark stopped` で止まる（見張りの終了のコメントは投稿して終える）。どれかを満たさなければ上のとおりオーナーに頼む。残りの 5 項目は、たとえば次のように書く（記録の形の正本は SKILL.md の側）:
+     - `前提:` 聖域のどのパスに触れて `human-merge` が付いたか（自動マージの処理の投稿の URL）、ゲートの合格の HEAD と CI の状態
+     - `推奨:` 親の判断で自動マージの処理に回す
+     - `推奨の根拠:` 見送りが聖域接触だけで、ゲートが今の HEAD で済んでいる
+     - `受け入れるリスク:` PR のリスク宣言の中身（「リスクなし」ならそう書く）
+     - `再開に要る途中経過:` PR の URL と今の HEAD の SHA、ゲートの合格のコメントの URL
+   - 親から `親エピック #<E> の判断（主の承認ではない）:` で始まる返事（エピックが別のリポジトリにあるときは、番号のあとに `（<owner>/<repo>）` が付く `親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）:` の形。先頭の `親エピック #` で照合する）が届いたら、新しい見張りとして上の 2 の重複の確認（1 行目が `CI 見張り開始:` のコメントのあとに `CI 見張り終了:` のコメントが無ければ始めない）と `CI 見張り開始:` のコメントの投稿をしてから、`ci-watch.sh wait <owner/repo> <PR番号> --until-merged` を `run_in_background` で起動して見届ける（結果の扱いは上の 4 のまま。止まるときに `CI 見張り終了:` を投稿しているので、開始の記録なしに始めると、別のセッションが同じ PR の見張りを重ねて始められてしまう）。`--until-merged` の `timeout` で改めて止まるときは、`止まった理由:` を `PR のマージ待ち（human-merge、親の返事のあともマージされない）: <PR の URL>` にする。子は `parent-merge-approved` ラベルも `親のマージ判断:` のコメントも付けない。親の返事は聖域の変更や破壊的な操作の承認ではなく、その返事で聖域のファイルを変えたりマージしたりしない
 2. どれも付いておらず、自動マージの workflow（`.github/workflows/auto-merge.yml`）が対象リポにあれば、`ci-watch.sh wait <owner/repo> <PR番号> --until-merged` を `run_in_background` で起動して見届ける（結果の扱いは上の 4）
-3. 自動マージの workflow が無ければ、PR の URL を添えてオーナーにマージを頼み、見張りを終える
+3. 自動マージの workflow が無ければ、PR の URL を添えてオーナーにマージを頼み、見張りを終える（頼む文面は `~/.claude/output-styles/readable.md` の節 3 の型で書く。主に聞く理由は、人が押すと決まっているマージ）
 
 どの呼び出し側でも、LLM が `gh pr merge` や merge API を叩いてはならない。
 
@@ -81,7 +92,7 @@
 
 genetta-inc/flatmate の `docs/project-modes.md`「止まった人間マージ待ち PR の見張り」の修正手順を移したもの（住人の依頼の列とあなた待ちの操作は持ち込んでいない）。担い手は PR の実装者で、ゲートを回した側ではない（実装とレビューを別のコンテキストに保つため）。develop では W が直す。develop を使わずメインセッションで pr-review-gate を回したときは、メインセッションが実装者のサブエージェント（model は sonnet）を起こして直させる。
 
-1. `git fetch origin` し、PR ブランチの worktree で作業する。残っていればそれを使い、無ければ対象リポの clone から切る。harness では `CLAUDE_HARNESS_DEV_DIR` の開発用 clone から切り、marketplace dir では作業しない
+1. `git fetch origin` し、PR ブランチの worktree で作業する。残っていればそれを使い、無ければ対象リポの clone から切る。harness では開発用の clone から切り、marketplace dir では作業しない
 2. `conflict` は `git merge origin/main` で解く。版番号だけの競合は、main の値に PR の上げ幅を積んだ値にする（main が 1.4.0・PR が 1.3.0 → 1.3.1 なら 1.4.1）。`ci-fail` は `gh run view <run> --log-failed` を読んで直す。実装者がログを読んで PR の差分と関係ない失敗だと判断したら、直さず push もせずに呼び出し側へ返し、呼び出し側は `next --unrelated <チェック名> --after-fix` を 1 回だけ実行してその一手に従う（`--after-fix` は、直前の `fix` の判定で書かれた同じ状態・同じ HEAD の記録を外してやり直しを効かせる。同じ HEAD でのやり直しは 1 回までなので、失うのは CI 1 周分で止まる）
 3. `agent-review:passed` が付いていた PR のとき、push の前に `gh api -X DELETE repos/<owner/repo>/issues/<PR番号>/labels/agent-review:passed` で外し、`gh pr view <PR番号> --repo <owner/repo> --json labels` で外れたことを確かめ、PR が Draft でなければ `gh pr ready --undo`（`gh pr ready <PR番号> --repo <owner/repo> --undo`）で Draft に戻し、`agent-review:pending` を付ける
 4. オーナーにマージを頼んだ未解決の依頼があれば、差分が変わったので取り下げると PR にコメントする

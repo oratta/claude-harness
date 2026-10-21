@@ -37,3 +37,6 @@ sessions/
 # Python bytecode cache (pytest/py_compile artifacts next to the scripts)
 __pycache__/
 *.pyc
+
+# claude plugin eval の結果（実行のたびに増える。要点は PR 本文に貼る）
+**/evals/results/

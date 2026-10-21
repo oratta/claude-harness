@@ -13,32 +13,36 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 
 前景実行のCodexオプションは、account名からCODEX_HOMEへの対応表である。`--account-home NAME=PATH`（繰り返し可）か、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを指す `--account-home-file PATH` のどちらか一方を渡し、併用は拒否する。本体はこれを依頼本文から分離し、`codex-develop.py request` へそのまま渡す。自動選択で対応表も無指定の場合だけ、既存の絶対ディレクトリである `CODEX_HOME`（未設定なら `~/.codex`）を `current` として評価する。明示 profile・旧形式、または明示した対応表では、対応に無いaccount名をこの既定値へ倒さず依頼ファイルを作る前に拒否する。
 
-`develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0・エピックの扱い）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。このコマンドはそれを Read tool で読み込み、その指示に従ってメインセッションで interactive モードのままインライン実行する。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
+`develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0・エピックの扱い）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。このコマンドはそれを Read tool で読み込み、その指示に従ってメインセッションでインライン実行する（実行モードは SKILL.md「実行モード」の決め方で決める）。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
 
 **Skill tool は使わないこと。** この command は既に「ユーザーが起動した slash command」であり、Read tool で SKILL.md 本文（および必要なら `references/decision-criteria.md`）を読み込み、この command の frontmatter（`allowed-tools`）配下でそのままインライン実行する。
 
 ## ファイル特定
 
 ```bash
+plugin_root="${CLAUDE_PLUGIN_ROOT}"
+DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/develop}" \
+  "${plugin_root:+$plugin_root/skills/develop}" \
   ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/develop \
   ~/.claude/plugins/installed/*/dev-workflow/skills/develop; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
 done
+if [ -n "$DW_NG" ]; then unsetopt nullglob; fi
+unset DW_NG
 ```
 
-特定した絶対パス（`skills/develop/SKILL.md`）を Read tool で読み込み、本体として 1 ループを回す。**interactive モード**（デフォルト）で実行する。`--unmanned` は loop-dev-agent の憲法ファイル（`docs/agent-loop.md`）の Step 3 でメインが develop の本体を務めるとき専用であり、このコマンドから human が起動した場合には使わない。
+特定した絶対パス（`skills/develop/SKILL.md`）を Read tool で読み込み、本体として 1 ループを回す。実行モードは SKILL.md「実行モード」の決め方（印 `DEV_WORKFLOW_UNATTENDED` か、チャンネルのメッセージでの依頼なら channel）で開始時に 1 回決め、印もチャンネルの依頼も無ければ **interactive モード**（デフォルト）で実行する。channel では主に聞くたびに AskUserQuestion を使わず、依頼の届いたチャンネルに送ってターンを終える（下の分岐とフォールバックも同じ。SKILL.md より先にこのファイルの分岐を処理するので、その場にも書く）。`--unmanned` は loop-dev-agent の憲法ファイル（`docs/agent-loop.md`）の Step 3 でメインが develop の本体を務めるとき専用であり、このコマンドから human が起動した場合には使わない。
 
 ## 引数の解釈（5分岐）
 
 `$ARGUMENTS` から記録先を確定する。既存 issue が特定できる分岐（①③）は従来どおり。issue を特定できない分岐（②④⑤）の既定は **develop の入口 0（issue を切らず Draft PR を記録先にする）** で、issueify フォールバックは「追跡・キュー・議論が要る」とユーザーが選んだときだけ:
 
 - **① 数字のみ（例: `42`）で issue が存在する** → カレントリポジトリの issue #42 を記録先にして develop パイプラインへ（従来どおり）
-- **② 数字のみだが issue が存在しない** → 新規作成に直行せず **typo 確認を先に行う**（番号を打った人の意図は高確率で既存 issue 参照）。`gh issue list` で近い番号・タイトルの候補を提示して意図を確認し、ユーザーが「新規に issue 化したい」と明示した場合のみ後述の issueify フォールバックへ。希望しなければ入口 0（Draft PR を記録先）へ
+- **② 数字のみだが issue が存在しない** → 新規作成に直行せず **typo 確認を先に行う**（番号を打った人の意図は高確率で既存 issue 参照）。`gh issue list` で近い番号・タイトルの候補を提示して意図を確認し（channel ではチャンネルに送ってターンを終え、AskUserQuestion を呼ばない）、ユーザーが「新規に issue 化したい」と明示した場合のみ後述の issueify フォールバックへ。希望しなければ入口 0（Draft PR を記録先）へ
 - **③ GitHub issue URL、または自然文（例: `issue#12 のログイン不具合を直して`）で既存 issue が特定できる** → URL から owner/repo/番号を抽出、自然文なら番号を推測し `gh issue view <番号>` で存在確認し、その issue を記録先にして develop パイプラインへ（従来どおり）
 - **④ 自然文がどの既存 issue にもマッチしない** → 既定は入口 0（issue を切らず Draft PR を記録先）へ。追跡・キュー・議論が要る（エピック／無人キューに載せたい／判断の経緯を issue に残したい）場合のみ、確認のうえ issueify フォールバックへ
-- **⑤ 引数なし** → `gh issue list --state open` で開いている issue を一覧し、選択肢に「**新しいタスクを説明して着手する（issue は切らない）**」と「**新しいタスクを説明して issue 化する**」を加えて提示する。前者はタスクの説明を聞いて入口 0 へ、後者は issueify フォールバックへ
+- **⑤ 引数なし** → `gh issue list --state open` で開いている issue を一覧し、選択肢に「**新しいタスクを説明して着手する（issue は切らない）**」と「**新しいタスクを説明して issue 化する**」を加えて提示する（channel ではチャンネルに送ってターンを終え、AskUserQuestion を呼ばない）。前者はタスクの説明を聞いて入口 0 へ、後者は issueify フォールバックへ
 
 **引き継ぎのある記録先（①③）**: 特定した記録先に 1 行目が `引き継ぎ: 主の返事待ち` のコメントがあれば、`needs-approval` のラベルの有無によらず、入口 0 に進まず `skills/develop/SKILL.md`「保留で止まるときの引き継ぎ」の「新しいセッションでの再開」に進む（ラベルの確認は再開手順が引き継ぎの「ラベルの付け先」で行い、ラベルが無ければ状態を組み立て直して報告する）。引数の記録先より後ろの文字列は主の返事として本体に渡す（例: `/develop 42 許容する`）。
 
@@ -51,17 +55,21 @@ done
 1. **同じプラグイン内の issueify スキルを解決する**（develop 本体の特定と同じパターン。他プラグインへは探索しない）:
 
    ```bash
+   plugin_root="${CLAUDE_PLUGIN_ROOT}"
+   DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
    for dir in \
-     "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/issueify}" \
+     "${plugin_root:+$plugin_root/skills/issueify}" \
      ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/issueify \
      ~/.claude/plugins/installed/*/dev-workflow/skills/issueify; do
      [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
    done
+   if [ -n "$DW_NG" ]; then unsetopt nullglob; fi
+   unset DW_NG
    ```
 
-2. **見つかった場合**: その `skills/issueify/SKILL.md` を Read tool で読み込み、手順（原子化 → 測定可能な受け入れ条件のドラフト → 不足だけヒアリング → 承認 → 起票）をインライン実行する。Skill tool は使わない（この command の方針と同じ）。
+2. **見つかった場合**: その `skills/issueify/SKILL.md` を Read tool で読み込み、手順（原子化 → 測定可能な受け入れ条件のドラフト → 不足だけヒアリング → 承認 → 起票）をインライン実行する。Skill tool は使わない（この command の方針と同じ）。不足のヒアリングは、channel ではチャンネルに送ってターンを終え、AskUserQuestion を呼ばない。
 3. **見つからない場合（fail-soft）**: エラーで停止せず、最小手順に縮退する — 依頼内容から「これで何が変わるか（最大 3 行・技術用語禁止）/ やらないとどうなるか・今のコスト（最大 3 行）/ 概要 / 触るファイル（Grep で実在確認）/ 測定可能な受け入れ条件（実行コマンド + 期待値）」のドラフトを作って提示し、承認後に `gh issue create` で起票する。
-4. **承認ゲート（両経路共通）**: ドラフトを提示してユーザーの**承認を得てから**起票する。承認なしに `gh issue create` を実行しない。
+4. **承認ゲート（両経路共通）**: ドラフトを提示してユーザーの**承認を得てから**起票する。承認なしに `gh issue create` を実行しない。channel ではチャンネルに送ってターンを終え、AskUserQuestion を呼ばずに、チャンネルの返事で承認を受ける。
 5. **複数 issue に割れた場合**: 原子化の結果が複数 issue になったら全件を起票した上で、**着手する1件**をユーザーに選択させ、その1件だけを SKILL.md の実行に渡す。残りは起票のみ（次回の `/develop` や loop-dev-agent が拾う）。複数 PR にまたがるなら SKILL.md「エピックの扱い」に従いエピックとして作る。
 6. 起票された issue 番号で通常フロー（`skills/develop/SKILL.md` の入口 0 → 1 ループ）に接続する。
 
