@@ -130,7 +130,7 @@ referrers() {
 @test "referrers: readable.md is named by the home path" {
   local f
   while IFS= read -r f; do
-    if grep -o '.\{0,9\}output-styles/readable\.md' "${REPO_ROOT}/$f" | grep -vqF '~/.claude/output-styles/readable.md'; then
+    if sed 's|~/\.claude/output-styles/readable\.md||g' "${REPO_ROOT}/$f" | grep -qF 'output-styles/readable.md'; then
       echo "repo-relative path: $f"; return 1
     fi
   done < <(referrers)
