@@ -610,7 +610,7 @@ devwf_unlisted() {
 }
 
 # --- Orca 経路の行の担い手（#1168 で #1177 に決めた）---
-# 守備範囲: 下の 29 件の行が一覧にちょうど 1 行ずつあり、担当欄が #1177 で、指す行に識別語があること。
+# 守備範囲: 下の 25 件の行が一覧にちょうど 1 行ずつあり、担当欄が #1177 で、指す行に識別語があること。
 # 行番号のずれや内容の欄の良し悪しは人のレビューが見る。#1177 がこの行を直したら、この一覧も一緒に直す。
 DEVWF_ORCA_ROWS=(
   'plugins/dev-workflow/README.md:15|Orca'
@@ -618,21 +618,17 @@ DEVWF_ORCA_ROWS=(
   'plugins/dev-workflow/skills/develop/SKILL.md:207|Orca'
   'plugins/dev-workflow/skills/develop/SKILL.md:350|Orca'
   'plugins/dev-workflow/skills/develop/SKILL.md:353|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:375|Orca'
   'plugins/dev-workflow/skills/develop/SKILL.md:480|Orca'
   'plugins/dev-workflow/skills/develop/SKILL.md:484|cld'
   'plugins/dev-workflow/skills/develop/SKILL.md:486|Orca'
   'plugins/dev-workflow/skills/develop/SKILL.md:488|Orca'
   'plugins/dev-workflow/skills/develop/SKILL.md:490|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:497|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:498|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:503|epic-dispatch.sh'
-  'plugins/dev-workflow/skills/develop/SKILL.md:523|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:525|cld'
-  'plugins/dev-workflow/skills/develop/SKILL.md:527|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:529|cld'
-  'plugins/dev-workflow/skills/develop/SKILL.md:533|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:544|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:508|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:509|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:514|epic-dispatch.sh'
+  'plugins/dev-workflow/skills/develop/SKILL.md:534|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:536|cld'
+  'plugins/dev-workflow/skills/develop/SKILL.md:540|cld'
   'plugins/dev-workflow/skills/develop/references/reply-after-idle.md:3|Orca'
   'plugins/dev-workflow/skills/develop/references/reply-after-idle.md:5|Orca'
   'plugins/dev-workflow/skills/develop/references/reply-after-idle.md:64|Orca'

@@ -50,7 +50,7 @@ setup() {
   make_stub sleep
   make_stub sysctl
   # 外の環境（並列起動された子のセッション）の値をテストに漏らさない
-  unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT
+  unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX
   # 既存の launch のテストが上限に当たらないよう大きくする（上限のテストだけで上書き・unset する）。
   # 物理メモリは sysctl のスタブ（memsize / sysctl_exit）だけから読ませ、実物の /proc/meminfo を読ませない
   export EPIC_DISPATCH_MAX_PARALLEL=99
@@ -249,6 +249,7 @@ if [ "$1" = "-C" ]; then
     "rev-parse --path-format=absolute")
       if [ -e "$STUB_CFG/commondir_out" ]; then cat "$STUB_CFG/commondir_out"; else echo /stub/common/.git; fi
       exit "$(cat "$STUB_CFG/commondir_exit" 2>/dev/null || echo 0)" ;;
+    "show-ref --verify") exit "$(cat "$STUB_CFG/show_ref_exit" 2>/dev/null || echo 1)" ;;
     "ls-remote origin"|"cat-file -e"|"worktree list"|"rev-parse --verify"|"branch -D") ;;
     *) exit 0 ;;
   esac
@@ -336,6 +337,23 @@ idx="$count"
 val=$(sed -n "${idx}p" "$STUB_CFG/gh_$n")
 [ "$val" = "FAIL" ] && { echo "gh: mock failure for issue $n (poll $count)" >&2; exit 1; }
 echo "$val"
+exit 0' ;;
+    tmux) body='
+case "$1" in
+  new-window)
+    cat "$STUB_CFG/new_window_out" 2>/dev/null || echo %5
+    exit "$(cat "$STUB_CFG/new_window_exit" 2>/dev/null || echo 0)" ;;
+  send-keys)
+    # -l で打った文を、子の会話ログ（tmux_log_file）に user の行として残す（送信の確かめ）
+    if [ "$4" = -l ] && [ -e "$STUB_CFG/tmux_log_file" ]; then
+      jq -cn --arg c "$6" "{type: \"user\", timestamp: \"2999-01-01T00:00:00\", message: {role: \"user\", content: \$c}}" >> "$(cat "$STUB_CFG/tmux_log_file")"
+    fi
+    exit 0 ;;
+  capture-pane) echo "  ? for shortcuts" ;;
+  display-message) echo node ;;
+  list-panes) cat "$STUB_CFG/panes" 2>/dev/null ;;
+  kill-pane) : > "$STUB_CFG/panes" ;;
+esac
 exit 0' ;;
     sleep) body='exit 0' ;;
     sysctl) body='
@@ -3106,8 +3124,9 @@ orca_cmd_scripts() {
   [ "$status" -eq 0 ]
   [ "$output" = "$PLUGIN_DIR/scripts/epic-launch-orca.sh" ]
   # 記録を読み書きするスクリプトは orca の語を含まない
-  run grep -rlw orca "$PLUGIN_DIR" --include='*.sh'
-  case "$output" in *epic-state.sh*) false ;; esac
+  # epic-state.sh は記録の launcher の値の検査（launcher == "orca"）だけに orca の語を持つ（部品のコマンドは呼ばない）
+  run grep -w orca "$PLUGIN_DIR/scripts/epic-state.sh"
+  [ "$(printf '%s\n' "$output" | grep -vF 'launcher == "orca"' | grep -c .)" -eq 0 ]
 }
 
 @test "skill: an orca command added to a copy of epic-dispatch.sh is found" {
@@ -5159,4 +5178,301 @@ partfd() { local fd="$1"; shift; EPIC_LAUNCH_STDOUT_FD="$fd" part "$@"; }
   [ "${lines[1]}" = 'kept 11 rm-failed' ]
   [ "${#lines[@]}" -eq 2 ]
   grep -qF 'error: dirty' "$BATS_TEST_TMPDIR/stderr"
+}
+
+# ---- tmux の部品（epic-launcher-tmux） ----
+# spec: dev-workflow-epic-state（起動部品は記録の launcher ごとに選ぶ）
+
+# tmux の中で、tmux のスタブがあり orca が無い環境にする。子のワークツリー <パス> の会話ログの置き場を決める
+# （スタブは -l で打った文をそのログに user の行として書く）。launch の子のワークツリーは /stub/common/.claude/worktrees/issue-<N>
+tmux_env() {
+  make_stub tmux
+  export TMUX=/tmp/tmux-stub,1,0
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+  mkdir -p "$CLAUDE_PROJECTS_DIR"
+  export EPIC_DISPATCH_SUBMIT_WAIT=1 EPIC_DISPATCH_READY_TIMEOUT_MS=2000
+}
+
+# 子のワークツリー <パス> の会話ログの置き場を tmux のスタブに教える
+tmux_log_for() {
+  local d="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$1" | sed 's/[^A-Za-z0-9]/-/g')"
+  mkdir -p "$d"
+  printf '%s' "$d/s.jsonl" > "$STUB_CFG/tmux_log_file"
+}
+
+# 子 <N> のワークツリーの tmux のペインを 1 つ置く（<N> <ペイン ID> <コマンド>）
+tmux_pane() {
+  printf '%s\t%s\t%s\n' "$2" "$BATS_TEST_TMPDIR/work/issue-$1" "$3" >> "$STUB_CFG/panes"
+}
+
+@test "tmux route: inside tmux without Orca the route is tmux, and Orca managed wins over tmux" {
+  tmux_env
+  run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = tmux ]
+  make_stub orca
+  run dispatch route 11 12
+  [ "$output" = orca ]
+  run dispatch route 11
+  [ "$output" = orca ]
+}
+
+@test "tmux route: outside tmux and Orca is subagent, and no children is subagent" {
+  tmux_env
+  TMUX="" run dispatch route 11 12
+  [ "$output" = subagent ]
+  run dispatch route
+  [ "$output" = subagent ]
+}
+
+@test "tmux route: EPIC_DISPATCH_LAUNCHER pins the part and an unusable one is subagent, a bad value exits 1" {
+  tmux_env
+  make_stub orca
+  EPIC_DISPATCH_LAUNCHER=tmux run dispatch route 11 12
+  [ "$output" = tmux ]
+  TMUX="" EPIC_DISPATCH_LAUNCHER=tmux run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = subagent ]
+  grep -q 'tmux is not available' "$BATS_TEST_TMPDIR/stderr"
+  rm -f "$STUB_BIN/orca"
+  EPIC_DISPATCH_LAUNCHER=orca run dispatch route 11 12
+  [ "$output" = subagent ]
+  grep -q 'orca is not on PATH' "$BATS_TEST_TMPDIR/stderr"
+  EPIC_DISPATCH_LAUNCHER=bogus run dispatch route 11 12
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -q 'EPIC_DISPATCH_LAUNCHER must be orca or tmux' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "tmux route: a pinned part must also pass here, a failing one is subagent with no switch to the other part" {
+  tmux_env
+  make_stub orca
+  echo 1 > "$STUB_CFG/current_exit"
+  EPIC_DISPATCH_LAUNCHER=orca run dispatch route 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = subagent ]
+  [ "$(calls '^orca worktree current')" -eq 1 ]
+  [ "$(calls '^tmux ')" -eq 0 ]
+  echo 0 > "$STUB_CFG/current_exit"
+  EPIC_DISPATCH_LAUNCHER=orca run dispatch route 11 12
+  [ "$output" = orca ]
+  TMUX="" EPIC_DISPATCH_LAUNCHER=tmux run dispatch route 11 12
+  [ "$output" = subagent ]
+}
+
+@test "tmux launch: records launcher tmux, never calls orca, and starts the session in a new window" {
+  tmux_env
+  tmux_log_for /stub/common/.claude/worktrees/issue-11
+  gh_seq 11 open
+  run dispatch launch 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$output" = "launched 11" ]
+  [ "$(jq -r .launcher "$(rec_of 400 11)")" = tmux ]
+  [ "$(jq -r .worktree "$(rec_of 400 11)")" = /stub/common/.claude/worktrees/issue-11 ]
+  [ "$(calls '^orca ')" -eq 0 ]
+  [ "$(calls '^tmux new-window ')" -eq 1 ]
+  [ "$(calls '^tmux send-keys .* -l ')" -eq 2 ]
+}
+
+@test "tmux launch: EPIC_DISPATCH_LAUNCHER=tmux works under Orca management too and Orca is not asked" {
+  tmux_env
+  make_stub orca
+  tmux_log_for /stub/common/.claude/worktrees/issue-11
+  EPIC_DISPATCH_LAUNCHER=tmux run dispatch launch 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$output" = "launched 11" ]
+  [ "$(jq -r .launcher "$(rec_of 400 11)")" = tmux ]
+  [ "$(calls '^orca ')" -eq 0 ]
+}
+
+@test "tmux launch: a child in another repository proceeds with a clone and an empty repo_id" {
+  tmux_env
+  c="$(xclone flat)"
+  tmux_log_for /stub/common/.claude/worktrees/issue-1615
+  EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch 1122 genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$output" = "launched genetta-inc/flatmate#1615" ]
+  [ "$(rec_get genetta-inc/flatmate#1615 launcher)" = tmux ]
+  grep -qF -- "git -C $c rev-parse --path-format=absolute --git-common-dir" "$STUB_LOG"
+  [ "$(calls '^orca ')" -eq 0 ]
+}
+
+@test "tmux launch: here with an empty repo_id does not stop a same-repo child" {
+  tmux_env
+  tmux_log_for /stub/common/.claude/worktrees/issue-11
+  run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  case "$(cat "$BATS_TEST_TMPDIR/stderr")" in *"has no repoId"*) false ;; *) true ;; esac
+}
+
+@test "tmux launch: a pinned part that is unusable fails with exit 1 and does not fall back to another part" {
+  tmux_env
+  make_stub orca
+  TMUX="" EPIC_DISPATCH_LAUNCHER=tmux run dispatch launch 400 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -q 'tmux is not available' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca worktree create')" -eq 0 ]
+  [ ! -e "$(rec_of 400 11)" ]
+}
+
+@test "tmux wait --resolve: when every target child's part is unusable the stdout is empty, the reason is on stderr, the exit is 1 and nothing is polled or judged" {
+  tmux_env
+  make_judge
+  set_current 400
+  gh_seq 11 closed
+  put_record 11 status=waiting stop=stopped launcher=tmux
+  TMUX="" run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -q 'tmux is not available' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^gh api')" -eq 0 ]
+}
+
+@test "tmux wait --resolve: a mixed epic goes on for the child whose part is usable" {
+  tmux_env
+  make_stub orca
+  make_judge
+  set_current 400
+  gh_seq 11 open closed
+  gh_seq 12 open closed
+  put_record 11 status=waiting stop=stopped launcher=tmux
+  put_record 12 status=waiting stop=stopped launcher=orca
+  set_terms 12 term-a-12
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
+  TMUX="" run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11 12
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$(calls '^judge 400 12$')" -eq 1 ]
+  [ "$(cat "$STUB_CFG/sent_term-a-12")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
+}
+
+@test "tmux wait: without --resolve the unusable part does not gate the watch" {
+  tmux_env
+  set_current 400
+  gh_seq 11 closed
+  put_record 11 status=waiting stop=stopped launcher=tmux
+  TMUX="" run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
+}
+
+@test "tmux reply: a tmux record sends through tmux and never calls orca, even with an Orca-pinned environment" {
+  tmux_env
+  put_record 11 status=waiting launcher=tmux
+  w="$BATS_TEST_TMPDIR/work/issue-11"
+  tmux_log_for "$w"
+  tmux_pane 11 %7 node
+  EPIC_DISPATCH_LAUNCHER=orca run dispatch reply --as owner 400 11 'A で進めて'
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$output" = "sent 11" ]
+  [ "$(calls '^orca ')" -eq 0 ]
+  [ "$(calls '^tmux send-keys -t %7 -l ')" -eq 1 ]
+}
+
+@test "tmux reply: an Orca record is sent through Orca even when inside tmux" {
+  tmux_env
+  reply_ready term-a-11
+  run dispatch reply --as owner 400 11 'A で進めて'
+  [ "$output" = "sent 11" ]
+  [ "$(calls '^tmux ')" -eq 0 ]
+  [ "$(calls '^orca terminal send --terminal term-a-11 ')" -eq 1 ]
+}
+
+@test "tmux reply: a tmux record works when the Orca part is unusable" {
+  tmux_env
+  put_record 11 status=waiting launcher=tmux
+  tmux_log_for "$BATS_TEST_TMPDIR/work/issue-11"
+  tmux_pane 11 %7 node
+  EPIC_DISPATCH_LAUNCHER=orca run dispatch reply --as owner 400 11 'B'
+  [ "$status" -eq 0 ]
+  [ "$output" = "sent 11" ]
+}
+
+@test "tmux reap: a done tmux child is closed and removed through tmux, the record is deleted, orca is not called" {
+  tmux_env
+  put_record 11 status=done launcher=tmux
+  echo aaa111 > "$STUB_CFG/pr_out"
+  tmux_pane 11 %7 node
+  EPIC_DISPATCH_LAUNCHER=orca run dispatch reap 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$output" = "reaped 11" ]
+  [ "$(calls '^orca ')" -eq 0 ]
+  [ "$(calls '^tmux kill-pane -t %7')" -eq 1 ]
+  [ "$(calls 'worktree remove ')" -eq 1 ]
+  [ "$(calls 'worktree remove .*--force')" -eq 0 ]
+  [ ! -e "$(rec_of 1122 11)" ]
+}
+
+@test "tmux reap: a mixed epic keeps the child whose part is unusable as launcher-unavailable and reaps the other" {
+  tmux_env
+  put_record 11 status=done launcher=tmux
+  put_record 12 status=done launcher=orca
+  echo aaa111 > "$STUB_CFG/pr_out"
+  gh_seq 12 closed
+  run dispatch reap 11 12
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "${lines[0]}" = "reaped 11" ]
+  [ "${lines[1]}" = "kept 12 launcher-unavailable" ]
+  [ "${#lines[@]}" -eq 2 ]
+  [ -e "$(rec_of 1122 12)" ]
+}
+
+@test "tmux reap: when every child's part is unusable the stdout is empty, the reason is on stderr and the exit is 1" {
+  tmux_env
+  put_record 11 status=done launcher=orca
+  run dispatch reap 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -q 'orca is not on PATH' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "tmux reap: a child without a record is gone when Orca is usable, and exit 1 with the reason when it is not" {
+  tmux_env
+  make_stub orca
+  run dispatch reap 77
+  [ "$status" -eq 0 ]
+  [ "$output" = "gone 77" ]
+  rm -f "$STUB_BIN/orca"
+  run dispatch reap 77
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -q 'orca is not on PATH' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "tmux reap: an Orca environment pinned to an unusable part still reaps a tmux record" {
+  tmux_env
+  put_record 11 status=done launcher=tmux
+  echo aaa111 > "$STUB_CFG/pr_out"
+  tmux_pane 11 %7 node
+  EPIC_DISPATCH_LAUNCHER=orca run dispatch reap 11
+  [ "$output" = "reaped 11" ]
+}
+
+@test "tmux mark: a tmux record is marked stopped without orca or tmux" {
+  put_record 11 launcher=tmux; in_child 11
+  run dispatch mark stopped 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked 11 stopped" ]
+  [ "$(rec_get 11 stop)" = stopped ]
+  [ "$(calls '^orca ')" -eq 0 ]
+}
+
+@test "tmux wait: --watch-stopped sees a stopped tmux record with Orca missing and ends with stopped" {
+  gh_seq 11 open
+  put_record 11 launcher=tmux stop=stopped status=waiting
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(calls '^orca ')" -eq 0 ]
+}
+
+@test "tmux record: a launcher that is neither orca nor tmux is an unreadable record" {
+  tmux_env
+  put_record 11 status=done launcher=zellij
+  run dispatch reap 11
+  [ "$output" != "reaped 11" ]
+  [ -e "$(rec_of 1122 11)" ]
+  [ "$(calls 'worktree remove ')" -eq 0 ]
 }
