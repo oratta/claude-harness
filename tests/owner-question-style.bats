@@ -120,9 +120,9 @@ referrers() {
 @test "referrers: no copy of the old form and each points at the canonical style" {
   local f
   while IFS= read -r f; do
-    ! grep -qF '目的 → いま取り組んでいる場所' "${REPO_ROOT}/$f" || { echo "old order: $f"; return 1; }
-    ! grep -qF '決めてほしいこと・推奨・受け入れるリスク' "${REPO_ROOT}/$f" || { echo "old items: $f"; return 1; }
-    ! grep -qF '「飲めるか」を 1 問だけ' "${REPO_ROOT}/$f" || { echo "old ask: $f"; return 1; }
+    if grep -qF '目的 → いま取り組んでいる場所' "${REPO_ROOT}/$f"; then echo "old order: $f"; return 1; fi
+    if grep -qF '決めてほしいこと・推奨・受け入れるリスク' "${REPO_ROOT}/$f"; then echo "old items: $f"; return 1; fi
+    if grep -qF '「飲めるか」を 1 問だけ' "${REPO_ROOT}/$f"; then echo "old ask: $f"; return 1; fi
     grep -qE 'readable\.md|communication-style' "${REPO_ROOT}/$f" || { echo "no reference: $f"; return 1; }
   done < <(referrers)
 }
@@ -143,5 +143,5 @@ referrers() {
     -e '主がすること: 子のタブで' -e '主がすること: <どの画面' \
     -- plugins rules ':!plugins/*/changes/*' ':!plugins/*/tests/*' || true)"
   [ -z "$hits" ] || { echo "$hits"; return 1; }
-  ! grep -qF '`主がすること:` の規定' "${REPO_ROOT}/plugins/dev-workflow/skills/develop/SKILL.md"
+  if grep -qF '`主がすること:` の規定' "${REPO_ROOT}/plugins/dev-workflow/skills/develop/SKILL.md"; then return 1; fi
 }
