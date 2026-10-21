@@ -87,7 +87,7 @@ setup() {
   grep -q "SNS" "$readme"
   grep -q "住人側" "$readme"
   # 公開版の README は固有名（flatmate・new-resident・sns-autopilot）を持たない（#1168）
-  ! grep -q -e "new-resident" -e "flatmate" -e "sns-autopilot" "$readme"
+  ! grep -q -e "new-resident" -e "flatmate" -e "sns-autopilot" "$readme" || return 1
 }
 
 # --- (c) marketplace.json ---
