@@ -115,22 +115,29 @@ has_paths() {
 
 # frontmatter_paths_globs <file> — frontmatter の paths: が持つ glob を 1 行 1 件で出力する。
 # ブロック表記（`paths:` の下に `  - "..."`）とフロー表記（`paths: ["...", "..."]`）の
-# 両方を読む。引用符と前後の空白は sed 側で落とす（awk の正規表現に単引用符を書かないため）。
+# 両方を読む。行末の YAML コメント（空白＋`#`）は落とす。`paths: null` `paths: ~` や
+# 文字列のような「リストでない」値は 1 件も出さない（＝ glob 0 件の違反として扱われる）。引用符と前後の空白は sed 側で落とす（awk の正規表現に単引用符を書かないため）。
 frontmatter_paths_globs() {
   awk 'NR == 1 { if ($0 != "---") exit; next }
        /^---[ \t]*$/ { exit }
        /^paths:/ {
          rest = $0
          sub(/^paths:[ \t]*/, "", rest)
-         if (rest != "") {
-           sub(/^\[/, "", rest); sub(/\][ \t]*$/, "", rest)
+         sub(/(^|[ \t]+)#.*$/, "", rest)
+         if (rest == "") { inp = 1 }
+         else if (rest ~ /^\[.*\]$/) {
+           sub(/^\[/, "", rest); sub(/\]$/, "", rest)
            n = split(rest, items, ",")
            for (i = 1; i <= n; i++) print items[i]
            inp = 0
-         } else { inp = 1 }
+         } else { inp = 0 }
          next
        }
-       inp && /^[ \t]*-[ \t]*/ { line = $0; sub(/^[ \t]*-[ \t]*/, "", line); print line; next }
+       inp && /^[ \t]*-[ \t]*/ {
+         line = $0; sub(/^[ \t]*-[ \t]*/, "", line)
+         sub(/[ \t]+#.*$/, "", line)
+         print line; next
+       }
        inp && /^[^ \t]/ { inp = 0 }' "$1" \
     | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
           -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/" \
@@ -184,11 +191,20 @@ check_all_paths_globs() {
   { list_synced_md "$REPO_ROOT/rules"; list_synced_md "$REPO_ROOT/output-styles"; } | check_paths_globs_z
 }
 
-# list_always_on_md <dir> — 配布対象から paths: 保持ファイルを除いた常時注入対象。
+# has_valid_paths <file> — paths: が非空の glob リストとして読めれば 0。`paths: null` や
+# 空のキーは Claude Code 側でスコープにならず常時注入のままなので、除外の根拠にしない。
+has_valid_paths() {
+  has_paths "$1" || return 1
+  [ -n "$(frontmatter_paths_globs "$1")" ]
+}
+
+# list_always_on_md <dir> — 配布対象から有効な paths: 保持ファイルを除いた常時注入対象。
+# **rules 専用**。output-styles には paths: フィールドが無く、選択中の本文は毎回載るので
+# 呼ばない（output-styles は list_synced_md で数える）。
 list_always_on_md() {
   local f
   while IFS= read -r -d '' f; do
-    if ! has_paths "$f"; then printf '%s\0' "$f"; fi
+    if ! has_valid_paths "$f"; then printf '%s\0' "$f"; fi
   done < <(list_synced_md "$1")
   return 0
 }
@@ -197,17 +213,17 @@ list_always_on_md() {
 list_path_scoped_md() {
   local f
   while IFS= read -r -d '' f; do
-    if has_paths "$f"; then printf '%s\0' "$f"; fi
+    if has_valid_paths "$f"; then printf '%s\0' "$f"; fi
   done < <(list_synced_md "$1")
   return 0
 }
 
-# path_scoped_notes [<dir>...] — 除外したファイルを示す注記行。引数なしなら rules と
-# output-styles を見る。**TAB 文字を含めてはならない** — 内訳の合計は sum_breakdown が
+# path_scoped_notes [<dir>...] — 除外したファイルを示す注記行。引数なしなら rules だけを見る
+# （output-styles に paths: は無い）。**TAB 文字を含めてはならない** — 内訳の合計は sum_breakdown が
 # TAB 区切りの 2 列目を足して求めるので、TAB 付きで出すと除外したバイト数が合計に戻る。
 path_scoped_notes() {
   local dirs dir f n
-  if [ "$#" -gt 0 ]; then dirs=("$@"); else dirs=("$REPO_ROOT/rules" "$REPO_ROOT/output-styles"); fi
+  if [ "$#" -gt 0 ]; then dirs=("$@"); else dirs=("$REPO_ROOT/rules"); fi
   for dir in "${dirs[@]}"; do
     [ -d "$dir" ] || continue
     while IFS= read -r -d '' f; do
@@ -292,7 +308,7 @@ breakdown() {
   printf '%s\t%s\n' "rules/*.md"        "$(list_always_on_md "$REPO_ROOT/rules" | sum_files_z)"
   printf '%s\t%s\n' "CLAUDE.md"         "$(emit_z "$REPO_ROOT/CLAUDE.md" | sum_files_z)"
   printf '%s\t%s\n' "output-styles/*.md（メインセッションのみ。サブエージェントには載らない）" \
-                                        "$(list_always_on_md "$REPO_ROOT/output-styles" | sum_files_z)"
+                                        "$(list_synced_md "$REPO_ROOT/output-styles" | sum_files_z)"
   printf '%s\t%s\n' "plugins SKILL.md description"   "$(list_plugin_skills | sum_descriptions_z)"
   printf '%s\t%s\n' "plugins agent description"      "$(list_plugin_agents | sum_descriptions_z)"
   printf '%s\t%s\n' "plugins command description"    "$(list_plugin_commands | sum_descriptions_z)"
@@ -1371,4 +1387,36 @@ read_first_byte_fixtures() {
   run grep -rn 'よく考え' "$REPO_ROOT/rules/"
   [ "$status" -ne 0 ]
   [ -z "$output" ]
+}
+
+@test "a trailing YAML comment on a paths glob is stripped and still checked" {
+  cat > "$TMPD/c.md" <<'EOF'
+---
+paths:
+  - "**" # scope/rules
+---
+EOF
+  run check_paths_globs "$TMPD/c.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"c.md"* ]] || return 1
+  [ "$(frontmatter_paths_globs "$TMPD/c.md")" = "**" ]
+}
+
+@test "paths: null is a violation and does not leave the always-on listing" {
+  printf -- '---\npaths: null\n---\nbody\n' > "$TMPD/n.md"
+  run check_paths_globs "$TMPD/n.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"n.md"* ]] || return 1
+  [ "$(list_always_on_md "$TMPD" | sum_files_z)" -eq "$(wc -c < "$TMPD/n.md")" ]
+  [ "$(list_path_scoped_md "$TMPD" | sum_files_z)" -eq 0 ]
+}
+
+@test "output-styles are counted in full even when a fixture carries paths" {
+  mkdir -p "$TMPD/os"
+  printf -- '---\npaths:\n  - "rules/**"\n---\nbody\n' > "$TMPD/os/s.md"
+  [ "$(list_synced_md "$TMPD/os" | sum_files_z)" -eq "$(wc -c < "$TMPD/os/s.md")" ]
+  # breakdown の output-styles 行は list_synced_md で数える（always_on 経由にしない）
+  breakdown_def=$(declare -f breakdown)
+  [[ "$breakdown_def" == *'list_synced_md "$REPO_ROOT/output-styles"'* ]]
+  [[ "$breakdown_def" != *'list_always_on_md "$REPO_ROOT/output-styles"'* ]]
 }

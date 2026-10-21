@@ -119,6 +119,8 @@
 
 rules frontmatter の `paths:`（glob のリスト）による条件付き注入は、**手元の Claude Code で実際に動くことを確認してからでなければ採用してはならない**（MUST NOT adopt without verification）。ユーザーレベル `~/.claude/rules/` で `paths:` が効かない不具合報告（anthropics/claude-code#22170、#17204）があるため、公式仕様だけを根拠に採用してはならない。
 
+常時注入の集計が `paths:` を理由に除外してよいのは、**rules の frontmatter にある非空の glob リスト**だけである（MUST）。コメント付きの glob（`- "**" # scope`）は行末コメントを除いて読み、`paths: null` や空のキーのようなリストでない値は、スコープにならず常時注入のままなので除外してはならない（MUST NOT）。output-styles には `paths:` フィールドが無く、選択中の本文は毎回載るので、`paths:` の有無にかかわらず全文を計上する（MUST）。
+
 確認は**配布形**で行わなければならない（MUST）。本番の `~/.claude/rules/<name>.md` は `scripts/sync.sh` が張る symlink であり、不具合報告は `~/.claude/rules/` の扱いに固有のものなので、実ファイルを置いて効いても symlink 形で効く証明にならない。確認用のファイルも `~/.claude/rules/<name>.md` から `paths:` を持つ実体への symlink として置かなければならない（MUST）。
 
 確認は**両方向**でなければならない（MUST）。対象パスに一致するファイルを読んだセッションでそのルールが載ること、および対象パスに一致するファイルを読まないセッションでそのルールが載らないこと、の両方を確かめる。片方向（載ること）だけの確認では、常に載っている状態を「効いた」と誤認するため不十分とする。
