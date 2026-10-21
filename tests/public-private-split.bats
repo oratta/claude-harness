@@ -453,3 +453,87 @@ DELIVERED_SIX=(rules/communication-style.md rules/link-when-requesting-review.md
   ! grep -qF 'rules-archive' "${REPO_ROOT}/rules/destructive-git-guard.md" || return 1
   awk '/^## hook との分担/{f=1; next} /^## /{f=0} f' "${REPO_ROOT}/rules/destructive-git-guard.md" | grep -qF '入っていれば'
 }
+
+# --- dev-workflow 以外の公開版の部品が決めた固有名とオーナーの PC のパスを持たない（#1168）---
+# 守備範囲: 固定の検索語の当たりが許可リストの行だけであること。別の固有名や文の良し悪しは人のレビューが見る。
+# 許可リストの各件（ファイル|行に含まれる固定の文字列|当たる基準）は、change の tasks の判定の表に同じ行を持つ。
+
+NONDEV_SCOPE=(rules/README.md scripts/sync.sh scripts/test-auto-merge-workflow.sh plugins/capability-registry
+  plugins/statusline plugins/worktree plugins/product-handover plugins/casting plugins/cost-ledger plugins/infra)
+
+# 出典や経緯としてだけ名前を挙げる行 = 出典、互換のために残す旧名の読み取り = 互換
+NONDEV_ALLOW=(
+  'rules/README.md|経緯（flatmate#599 / #608）|出典'
+  'scripts/sync.sh|なぜ存在するか（flatmate#362）|出典'
+  'plugins/infra/agents/infra-phase-1-hearing.md|2026-07 に suimei で|出典'
+  'plugins/infra/skills/infra-setup/SKILL.md|2026-07 に suimei で Actions free 枠|出典'
+  'plugins/infra/skills/infra-setup/SKILL.md|flatmate で 2026-10 に実発生|出典'
+  'plugins/infra/templates/workflows/ci.yml.template|2026-07 に suimei で free 枠|出典'
+  'plugins/infra/templates/workflows/weekly-full.yml.template|2026-07-25 に suimei で実発生|出典'
+  'plugins/statusline/README.md|旧名の `FLATMATE_RATE_SHARE_DIR`（互換。主は|互換'
+  'plugins/statusline/scripts/statusline.sh|# Order: CLAUDE_RATE_SHARE_DIR, FLATMATE_RATE_SHARE_DIR|互換'
+  'plugins/statusline/scripts/statusline.sh|# The FLATMATE_* names are the old names|互換'
+  'plugins/statusline/scripts/statusline.sh|elif [ "${FLATMATE_RATE_SHARE_DIR+x}" ]|互換'
+  'plugins/statusline/scripts/statusline.sh|dir="$FLATMATE_RATE_SHARE_DIR"; have_dir=1  # old name, compatibility|互換'
+  'plugins/statusline/scripts/statusline.sh|"${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"|互換'
+  'plugins/statusline/scripts/statusline.sh|flatmate#605 と同じ誤り|出典'
+  'plugins/worktree/.claude-plugin/plugin.json|flatmate#320: find -path|出典'
+  'plugins/worktree/references/wt-clean-orphan-detection.md|2026-08-10 に flatmate リポで全件実行したとき|出典'
+  'plugins/worktree/references/wt-clean-verification.md|2026-08-10 に flatmate で、PR が OPEN|出典'
+  'plugins/worktree/scripts/wt-setup.sh|flatmate#320|出典'
+  'plugins/worktree/scripts/wt-setup.sh|実例: suimei の .env.local.example|出典'
+  'plugins/worktree/skills/wt-clean/SKILL.md|2026-08-01 に flatmate リポで、壁打ち|出典'
+  'plugins/worktree/skills/wt-clean/SKILL.md|2026-08-10 に flatmate で実走したとき|出典'
+  'plugins/worktree/skills/wt-clean/SKILL.md|2026-08-07 に shukan-dev で実走したところ|出典'
+)
+
+# 検索の対象にする公開版のファイル（changes/・CHANGELOG.md・tests/・evals/ と、個人版に決まるファイルは除く）
+nondev_files() {
+  git -C "$REPO_ROOT" ls-files -- "${NONDEV_SCOPE[@]}" \
+    | grep -v -E '/(changes|tests|evals)/|(^|/)CHANGELOG\.md$|capability-registry/scripts/fmtoken\.sh$|capability-registry/skills/capability-registry/1password\.md$'
+}
+
+# 個人版に決まる節（capability-registry の SKILL.md の「表記規約」「資格情報の階層」）を除いて、行ごとに file:line:text で出す
+nondev_hits() {
+  local re="$1" f
+  for f in $(nondev_files); do
+    awk -v f="$f" '
+      /^## / { skip = (f ~ /capability-registry\/SKILL\.md$/ && ($0 ~ /表記規約/ || $0 ~ /資格情報の階層/)) }
+      !skip { print f ":" NR ":" $0 }' "${REPO_ROOT}/$f" | grep -E -e "^[^:]*:[0-9]+:.*(${re})" || true
+  done
+}
+
+nondev_unlisted() {
+  local re="$1" hit file text e afile astr allowed
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    file="${hit%%:*}"; text="${hit#*:*:}"; allowed=""
+    for e in "${NONDEV_ALLOW[@]}"; do
+      afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
+      [ "$file" = "$afile" ] && [[ "$text" == *"$astr"* ]] && { allowed=1; break; }
+    done
+    [ -n "$allowed" ] || printf '%s\n' "$hit"
+  done
+}
+
+@test "non-dev-workflow public parts carry no owner-specific names outside the allow list" {
+  local out
+  out="$(nondev_hits 'moko|suimei|uranai|shukan|sns-autopilot|flatmate|FLATMATE|/Users/oratta' | nondev_unlisted)"
+  echo "$out"
+  [ -z "$out" ]
+}
+
+@test "the worktree plugin carries no owner PC path" {
+  local out
+  out="$(nondev_hits '/Users/oratta')"
+  echo "$out"
+  [ -z "$out" ]
+}
+
+@test "every allow-list entry still matches a line (no stale entries)" {
+  local e afile astr
+  for e in "${NONDEV_ALLOW[@]}"; do
+    afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
+    grep -qF -e "$astr" "${REPO_ROOT}/$afile" || { echo "stale: $e"; return 1; }
+  done
+}
