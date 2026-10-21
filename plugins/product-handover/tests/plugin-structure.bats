@@ -84,9 +84,10 @@ setup() {
   grep -q "dev-workflow" "$readme"
   grep -q "auto-merge" "$readme"
   grep -q "product-handover" "$readme"
-  grep -q "sns" "$readme"
-  grep -q "new-resident" "$readme"
-  grep -q "flatmate" "$readme"
+  grep -q "SNS" "$readme"
+  grep -q "住人側" "$readme"
+  # 公開版の README は固有名（flatmate・new-resident・sns-autopilot）を持たない（#1168）
+  ! grep -q -e "new-resident" -e "flatmate" -e "sns-autopilot" "$readme"
 }
 
 # --- (c) marketplace.json ---
