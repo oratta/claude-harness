@@ -187,3 +187,46 @@ PY
   DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=abc run "$SCRIPT" --file "$f" --stop-since 1
   [ "$status" -eq 1 ]
 }
+
+# 末尾に利用上限エラーのレコード（usage 全部 0・isApiErrorMessage）を $2 行足す
+add_error_records() {
+  local f="$1" k="$2" i
+  for i in $(seq "$k"); do
+    printf '{"type":"assistant","isApiErrorMessage":true,"message":{"model":"<synthetic>","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}\n' >> "$f"
+  done
+}
+
+@test "api error: trailing zero-usage error record is skipped, over cap reported (exit 2)" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
+  add_error_records "$f" 1
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q '"context_tokens": 160000'
+  echo "$output" | grep -q '"over_cap": true'
+  echo "$output" | grep -q '"last_record": "api_error"'
+}
+
+@test "api error: under cap stays exit 0 with the previous usage" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,99990)"
+  add_error_records "$f" 1
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"context_tokens": 100000'
+  echo "$output" | grep -q '"over_cap": false'
+}
+
+@test "api error: three trailing error records still use the last normal usage" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
+  add_error_records "$f" 3
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q '"context_tokens": 160000'
+}
+
+@test "api error: only error records means no usage (exit 1)" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD")"
+  add_error_records "$f" 2
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q 'no assistant usage yet'
+}

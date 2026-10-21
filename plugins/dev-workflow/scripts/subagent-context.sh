@@ -106,6 +106,7 @@ chosen = files[0] if direct else next((p for p in files if first_cwd(p) == cwd),
 
 ctx = None
 calls = 0
+trailing_err = False
 try:
     with open(chosen, encoding="utf-8") as f:
         for line in f:
@@ -123,6 +124,13 @@ try:
             def n(k):
                 v = u.get(k)
                 return int(v) if isinstance(v, (int, float)) else 0
+            # 利用上限などで止まったときのエラーレコードは usage が全部 0。0 を採ると超過を見落とすので、手前の usage を採る
+            if (d.get("isApiErrorMessage") or d.get("error")
+                    or (n("input_tokens") + n("cache_creation_input_tokens")
+                        + n("cache_read_input_tokens") + n("output_tokens")) == 0):
+                trailing_err = True
+                continue
+            trailing_err = False
             calls += 1
             ctx = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
 except Exception as e:
@@ -136,6 +144,8 @@ if ctx is None:
 over = ctx > cap
 out = {"agent": name, "file": chosen, "context_tokens": ctx, "calls": calls,
        "cap": cap, "over_cap": over}
+if trailing_err:
+    out["last_record"] = "api_error"
 stop_since = os.environ.get("STOP_SINCE") or ""
 if stop_since:
     import time
