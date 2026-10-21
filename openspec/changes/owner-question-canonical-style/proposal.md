@@ -11,10 +11,11 @@
   - 主に聞く理由として成り立つのは 3 つだけ。どれにも当たらなければ聞かずに自分で決めて進め、事後報告する
   - リスクは 3 つの要素で書く（何が起きるか・どれくらい起きるか・分からないときは何を調べれば分かるか）
   - 1 通で聞くのは 1 件。issue・PR の番号を主語にしない。背景の詳しい説明は区切って下に置く。確認作業の細部は書かない
-  - 例を 1 つ置く
-- 同じ節で、主への発言の 1 行目の書き分けを 1 か所で決める。判断・確認・操作を求める発言は 1 行目を質問にし、最後を答え方にする。主の操作も判断も要らない報告は、1 行目を `主がすること: なし` にする。
-- `rules/communication-style.md` の 3 番目を、正本の要点に縮めて書き直す（6 段の順、理由が無ければ聞かない、リスクの被害と頻度、1 通 1 件）。Output Style が効かないサブエージェントに届くのはこちらだけなので、要点は残す。
-- 主に問いを返す各所から、問いの書く順とリスクの書き方を独自に決めた文を外し、正本への参照に置き換える。その場所に固有の事柄（記録の書式・投稿先・URL の添え方・返事の場所）だけを残す。
+  - 例を 1 つ置く（6 段がそれぞれ 1 文で見える短い形）
+  - 観点の配役（`casting:casting`）には「入っていれば」の条件つきで触れる。readable.md と communication-style.md は配る候補の 6 ファイルなので、例を含めて固有名とオーナーの環境のパスを書かない。「主」「聖域」には初出で言い換えを添える
+- 同じ節で、主への発言の 1 行目の書き分けを 1 か所で決める。判断・確認・操作を求める発言は 1 行目を質問にし、最後を答え方にする。主の操作も判断も要らない報告は、1 行目を `主がすること: なし` にする。主の質問への答えはこの書き分けの対象外で、1 行目に答えを書く。
+- `rules/communication-style.md` の 3 番目を、正本の要点に縮めて書き直す（6 段の順、主に聞く理由の 3 つと理由が無ければ聞かないこと、リスクの被害と頻度、1 通 1 件、1 行目の書き分け）。Output Style が効かないサブエージェントに届くのはこちらだけなので、要点は残す。
+- 主に問いを返す各所から、問いの書く順とリスクの書き方を独自に決めた文を外し、正本への参照に置き換える。その場所に固有の事柄（記録の書式・投稿先・URL の添え方・返事の場所）だけを残す。正本を指すパスは `~/.claude/output-styles/readable.md`（Output Style `readable`）の形にそろえる。
   - develop の `SKILL.md`: 保留の依頼の出し直し・主への案内・channel の主への発言・Orca 経路の親の発言の 1 行目・手順 8 の報告の順
   - pr-review-gate の `stages/hold.md`（手順 6・切り出しの確認・主に承認を求めてよい 4 分類）
   - pr-review-gate の `stages/pass.md`（動作確認の依頼）
@@ -33,16 +34,17 @@
 - `owner-question-style`: 主に判断・確認・操作を求める文章の書き方の正本の置き場所と中身（6 段の順・主に聞く理由の 3 つ・リスクの 3 要素・1 通 1 件・1 行目の書き分け）、短い版との対応、主に問いを返す各所が正本を参照する形
 
 ### Modified Capabilities
-- `dev-workflow-develop`: 次の 4 つの要件で、1 行目と問いの書く順を正本の型に合わせる
+- `dev-workflow-develop`: 次の 6 つの要件で、1 行目と問いの書く順を正本の型に合わせる
   - 「エピックの親が主に出す報告は、主がすることを 1 行目に書く」
   - 「channel モードの主への発言はすべてチャンネルに送り、チャンネルでする操作を 1 行目に書く」
   - 「channel モードのリスク許容はチャンネルの返事を確かめられるときだけチャンネルで受ける」（シナリオの 1 行目）
   - 「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」（主に上げる説明の順だけ。停止の記録の項目名の扱いは後続の change）
+  - 「Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る」と「別のリポジトリの子を含むエピックの回し方を SKILL.md に書く」（改名前の「`主がすること:` の規定」を指す 1 か所だけ）
 
 ## Impact
 
 - 文書: `output-styles/readable.md`、`rules/communication-style.md`、`rules/one-off-no-script.md`、`rules/perspective-casting.md`、`rules/README.md`（communication-style の行の説明）、`plugins/dev-workflow/skills/develop/SKILL.md`、`plugins/dev-workflow/skills/pr-review-gate/stages/hold.md`、`plugins/dev-workflow/skills/pr-review-gate/stages/pass.md`、`plugins/dev-workflow/references/ci-watch.md`、`plugins/dev-workflow/references/one-off-operations.md`、`plugins/casting/skills/casting/SKILL.md`
 - テスト: 文言を固定している bats を新しい文言に合わせる（`plugins/dev-workflow/tests/epic-dispatch.bats`、`plugins/dev-workflow/tests/develop-channel-mode.bats`、`plugins/dev-workflow/tests/develop-handover.bats`、`tests/always-on-injection-scope.bats`）。新しい正本の中身を検査する bats を足す
-- 常時注入の予算: `rules/` と `output-styles/` が増えるため、`tests/injection-budget.txt` を上げる見込み（理由は design.md）。予算ファイルは聖域なので、この PR は主がマージする
+- 常時注入の予算: `rules/` と `output-styles/` が増える。短い例で書いてから実測し、予算内なら `tests/injection-budget.txt` は動かさない。超えるときだけ上げる（理由は design.md）。上げた場合は予算ファイルが聖域なので、この PR は主がマージする
 - 変更の記録: `plugins/dev-workflow/changes/1176.md`、`plugins/casting/changes/1176.md`
 - スクリプトの振る舞いは変えない
