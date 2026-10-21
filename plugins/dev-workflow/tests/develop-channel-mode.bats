@@ -125,15 +125,18 @@ refute() {
   printf '%s\n' "$s" | grep -qF 'PR #<N> にコメントで `許容する`'
 }
 
-@test "channel statements: all go to the channel with one of three first lines, no screen or tab" {
+@test "channel statements: all go to the channel, follow the canonical first-line rule, no screen or tab" {
   local s; s="$(subsection 'channel の主への発言')"
   [ -n "$s" ]
   printf '%s\n' "$s" | grep -qF '主へのすべての発言'
   printf '%s\n' "$s" | grep -qF '端末に出すだけで済ませない'
   printf '%s\n' "$s" | grep -qF '`主がすること: なし`'
-  printf '%s\n' "$s" | grep -qF '`主がすること: このチャンネルで <何を返す>`'
-  printf '%s\n' "$s" | grep -qF '`主がすること: PR #<N> に <何を書く>`'
+  printf '%s\n' "$s" | grep -qF '`~/.claude/output-styles/readable.md` の節 3'
+  printf '%s\n' "$s" | grep -qF '答え方の行'
+  printf '%s\n' "$s" | grep -qF 'このチャンネルで何を返すか'
+  printf '%s\n' "$s" | grep -F 'PR #<N>' | grep -qF 'フル URL'
   printf '%s\n' "$s" | grep -qF '画面・タブ・入力欄'
+  ! printf '%s\n' "$s" | grep -qF '`主がすること: このチャンネルで' || return 1
 }
 
 @test "G start instruction: channel writes the mode line and the channel reply check line" {
