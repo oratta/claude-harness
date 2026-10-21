@@ -147,6 +147,23 @@ report() {
   printf '[%s] %s\n' "$1" "$2" >> "$FINDINGS"
 }
 
+# comment_tail_open <rest> — 直前で <!-- を開いた行の、その <!-- より後ろの文字列を受け取り、
+# 行末の時点でコメントがまだ開いていれば 1、閉じていれば 0 を出力する。
+# 同じ行の中で「閉じる → 開き直す → 閉じる」を繰り返せるようにループする
+comment_tail_open() {
+  local rest="$1"
+  while :; do
+    case "$rest" in
+      *'-->'*) rest="${rest#*-->}" ;;
+      *) printf '1\n'; return 0 ;;
+    esac
+    case "$rest" in
+      *'<!--'*) rest="${rest#*<!--}" ;;
+      *) printf '0\n'; return 0 ;;
+    esac
+  done
+}
+
 # strip_html_comments <file> <out> — HTML コメント（<!-- ... -->）とコードフェンスにかかる行を
 # 落とした結果を <out> に書き、閉じ忘れを戻り値で知らせる:
 #   0 = 正常 / 1 = <!-- が閉じられないまま EOF / 2 = コードフェンスが閉じられないまま EOF
@@ -194,8 +211,11 @@ strip_html_comments() {
         *'-->'*)
           in_comment=0
           rest="${line#*-->}"
-          # 閉じたあと同じ行で開き直す（<!-- a --> <!-- b）ケースを取りこぼさない
-          case "$rest" in *'<!--'*) in_comment=1 ;; esac
+          # 閉じたあと同じ行で開き直すケース（<!-- a --> <!-- b）は、コメント外の走査と同じく
+          # 開き直した先が同じ行で閉じているか（<!-- a --> <!-- b --> c）まで見る（#150）
+          case "$rest" in
+            *'<!--'*) rest="${rest#*<!--}"; in_comment="$(comment_tail_open "$rest")" ;;
+          esac
           ;;
       esac
       continue
@@ -217,16 +237,7 @@ strip_html_comments() {
       *) printf '%s\n' "$line" >> "$out"; continue ;;
     esac
     rest="${line#*<!--}"
-    while :; do
-      case "$rest" in
-        *'-->'*) rest="${rest#*-->}" ;;
-        *) in_comment=1; break ;;
-      esac
-      case "$rest" in
-        *'<!--'*) rest="${rest#*<!--}" ;;
-        *) break ;;
-      esac
-    done
+    in_comment="$(comment_tail_open "$rest")"
   done < "$file"
   [ "$in_comment" -eq 0 ] || return 1
   [ "$in_fence" -eq 0 ] || return 2
@@ -246,8 +257,16 @@ stripped_copy() {
 }
 
 # pipe_count <line> — 行に含まれる | の個数（5列表の有効行・区切り行はちょうど6）
+#
+# エスケープされたパイプ \| は Markdown ではセルの中身（列区切りではない）なので数えない（#150）。
+# 数えると正当な5列の行が「6列以上に割れる」と誤報され、書き手が原因を掴めない。
+# 列の切り出し（cut -d'|'）にも同じ扱いが要るので、両者は escape_pipes で先に \| を
+# 制御文字 US（0x1f）へ畳んでから処理し、出力時に unescape_pipes で \| へ戻す
+ESC_PIPE=$'\x1f'
+escape_pipes() { printf '%s' "${1//\\|/$ESC_PIPE}"; }
+unescape_pipes() { printf '%s' "${1//$ESC_PIPE/\\|}"; }
 pipe_count() {
-  printf '%s' "$1" | tr -cd '|' | wc -c | tr -d ' '
+  escape_pipes "$1" | tr -cd '|' | wc -c | tr -d ' '
 }
 
 # front_matter <file> — front matter 本体（--- と --- の間）を出力する。
@@ -320,6 +339,7 @@ table_rows() {
   src="$(stripped_copy "$file")"
   while IFS= read -r line; do
     printf '%s\n' "$line" | LC_ALL=C grep -qE '^\|' || continue
+    line="$(escape_pipes "$line")"   # \| はセルの中身。列の切り出しから外す（#150）
     c1="$(printf '%s\n' "$line" | cut -d'|' -f2 | sed -E 's/^ *//; s/ *$//')"
     [ -z "$c1" ] && continue
     LC_ALL=C grep -qxF -- '観点' <<<"$c1" && continue
@@ -332,7 +352,8 @@ table_rows() {
     c3="$(printf '%s\n' "$line" | cut -d'|' -f4 | sed -E 's/^ *//; s/ *$//')"
     c4="$(printf '%s\n' "$line" | cut -d'|' -f5 | sed -E 's/^ *//; s/ *$//')"
     c5="$(printf '%s\n' "$line" | cut -d'|' -f6 | sed -E 's/^ *//; s/ *$//')"
-    printf '%s\t%s\t%s\t%s\t%s\n' "$c1" "$c2" "$c3" "$c4" "$c5"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(unescape_pipes "$c1")" "$(unescape_pipes "$c2")" \
+      "$(unescape_pipes "$c3")" "$(unescape_pipes "$c4")" "$(unescape_pipes "$c5")"
   done < "$src"
 }
 
@@ -420,7 +441,7 @@ check_malformed_rows() {
   src="$(stripped_copy "$file")"
   while IFS= read -r line; do
     printf '%s\n' "$line" | LC_ALL=C grep -qE '^\|' || continue
-    c1="$(printf '%s\n' "$line" | cut -d'|' -f2 | sed -E 's/^ *//; s/ *$//')"
+    c1="$(printf '%s\n' "$(escape_pipes "$line")" | cut -d'|' -f2 | sed -E 's/^ *//; s/ *$//')"
     [ -z "$c1" ] && continue
     LC_ALL=C grep -qxF -- '観点' <<<"$c1" && continue
     printf '%s\n' "$c1" | LC_ALL=C grep -qE '^:?-+:?$' && continue
@@ -428,7 +449,7 @@ check_malformed_rows() {
     if [ "$pipes" -lt 6 ]; then
       report "malformed-row" "${file}: 5列未満の行（行を書く場合は5列すべて必要）: ${line}"
     elif [ "$pipes" -gt 6 ]; then
-      report "malformed-row" "${file}: 6列以上に割れる行（セル内の | が列をずらし、既定の担い手が別のセルに解決される）: ${line}"
+      report "malformed-row" "${file}: 6列以上に割れる行（セル内の | が列をずらし（セル内に | を書くなら \\| とエスケープする）、既定の担い手が別のセルに解決される）: ${line}"
     fi
   done < "$src"
 }

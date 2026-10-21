@@ -3,7 +3,10 @@
 # statusline.sh — Claude Code の使用量ステータスライン
 #
 #   1行目: カレントディレクトリ / モデル / git ブランチ
-#   2行目: コンテキスト残量 / API 換算の月額ペース / このセッションの API 換算コスト
+#          （<config>/.statusline-update-available があれば末尾に「更新あり /statusline:setup」。
+#           印は statusline プラグインの SessionStart フックが置く）
+#   2行目: コンテキスト残量 / プロンプトキャッシュのヒット率（直近のミスの原因つき） /
+#          API 換算の月額ペース / このセッションの API 換算コスト
 #   3行目: 5h ウィンドウのレートリミット
 #   4行目: 7d ウィンドウ（全体 + Fable）のレートリミット
 #
@@ -20,6 +23,7 @@
 #   STATUSLINE_CODEX_BIN   Codex CLI のパス（既定 codex）
 #   STATUSLINE_BAR_WIDTH   バーのセル数（既定 16）
 #   STATUSLINE_BAR_GLYPH   日程線の太さ。細い順に ▁ ▂ ▃ ▄（既定 ▂）
+#   STATUSLINE_PROMPT_CACHE 0 でプロンプトキャッシュのヒット率表示を無効化（既定 1）
 #   STATUSLINE_API_PACE    0 で API 換算コスト表示を無効化（既定 1）
 #   STATUSLINE_SESSION_COST 0 でセッションコスト表示を無効化（既定 1）
 #   STATUSLINE_CURRENCY    API 換算コストの通貨。USD なら為替変換なし（既定 JPY）
@@ -68,16 +72,29 @@ pkg_runner() {
 # Rate snapshot writer contract: openspec/specs/rate-snapshot.
 # A separate file per host lets the shared copy coexist with other PCs.
 resolve_rate_share_dir() {
-    local dir conf tilde='~'
-    if [ "${FLATMATE_RATE_SHARE_DIR+x}" ]; then
-        dir="$FLATMATE_RATE_SHARE_DIR"
+    local dir conf tilde='~' have_dir=""
+    # Order: CLAUDE_RATE_SHARE_DIR, FLATMATE_RATE_SHARE_DIR, CLAUDE_RATE_SHARE_CONF, FLATMATE_RATE_SHARE_CONF.
+    # The FLATMATE_* names are the old names, still read for compatibility; the CLAUDE_* names are primary.
+    if [ "${CLAUDE_RATE_SHARE_DIR+x}" ]; then
+        dir="$CLAUDE_RATE_SHARE_DIR"; have_dir=1
+    elif [ "${FLATMATE_RATE_SHARE_DIR+x}" ]; then
+        dir="$FLATMATE_RATE_SHARE_DIR"; have_dir=1  # old name, compatibility; the primary name is CLAUDE_RATE_SHARE_DIR
+    fi
+    if [ -n "$have_dir" ]; then
+        # Trim the whole string (sed works per line and would keep a leading LF); no python3 here.
+        dir="${dir#"${dir%%[![:space:]]*}"}"
+        dir="${dir%"${dir##*[![:space:]]}"}"
     else
-        conf="${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"
         dir=""
-        if [ -f "$conf" ]; then
-            dir=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$conf" 2>/dev/null \
-                | grep -v -e '^$' -e '^#' | head -1)
-        fi
+        # The old-name conf (compatibility) is read only when the primary one yields no line.
+        for conf in "${CLAUDE_RATE_SHARE_CONF:-$HOME/.claude/rate-share}" \
+                    "${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"; do
+            if [ -f "$conf" ]; then
+                dir=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$conf" 2>/dev/null \
+                    | grep -v -e '^$' -e '^#' | head -1)
+            fi
+            [ -n "$dir" ] && break
+        done
     fi
     case "$dir" in
         "$tilde") dir="$HOME" ;;
@@ -89,7 +106,11 @@ resolve_rate_share_dir() {
 write_rate_snapshot_atomic() {
     local dest="$1" body="$2" tmp
     tmp=$(mktemp "$(dirname "$dest")/.rate-snapshot.XXXXXX" 2>/dev/null) || return 1
-    if ! printf '%s\n' "$body" > "$tmp" 2>/dev/null || ! mv -f "$tmp" "$dest" 2>/dev/null; then
+    # mktemp makes the file 0600; restore the 0644 a plain redirect gets under the usual umask.
+    # chmod runs before mv so a reader never sees the 0600 file at the destination.
+    if ! printf '%s\n' "$body" > "$tmp" 2>/dev/null \
+        || ! { chmod 0644 "$tmp" 2>/dev/null || true; } \
+        || ! mv -f "$tmp" "$dest" 2>/dev/null; then
         rm -f "$tmp" 2>/dev/null
         return 1
     fi
@@ -123,7 +144,7 @@ if [ -n "$five_h_pct" ] && [ -n "$session_id" ] && [ -z "${CLAUDE_SECURESTORAGE_
         account_id=$(jq -r '
             .oauthAccount.accountUuid | select(type == "string") |
             gsub("^[[:space:]]+|[[:space:]]+$"; "") |
-            select(length > 0 and length <= 256 and (contains("\n") | not))
+            select(length > 0 and length <= 256 and (test("[\r\n]") | not))
         ' "$HOME/.claude.json" 2>/dev/null)
     fi
     snap_body=$(jq -cn --arg account "$account_id" \
@@ -161,17 +182,47 @@ print(hashlib.sha256(unicodedata.normalize("NFC", os.environ["SECURE"]).encode("
 ' 2>/dev/null)"
 fi
 sessions_dir="${USAGE_SESSIONS_DIR:-$CONFIG_DIR/.usage-sessions}"
-if [ -n "$five_h_pct" ] && [ -n "$session_key" ] && mkdir -p "$sessions_dir" 2>/dev/null; then
+# observed_at は「そのセッションが値を新しく受け取った時刻」（#643）。Claude Code は API 応答以外
+# （モード切り替え・キャッシュ期限切れ等）でも描き直し、そのときの rate_limits は前に受け取った値の
+# ままなので、セッションごとに前回書いた値の署名を .sessions/<session_id を JSON 文字列として引用符付きのまま sha256 した先頭 16 桁> に
+# 覚え、同じなら書かない。記録ファイルの中身とは比べない（他セッションが上書きした新しい値を、
+# 止まっていたセッションの古い値で潰さないため。.rate-limit-snapshot の obs_sig と同じ考え方）。
+# session_id が無い・ハッシュが取れないときは覚える先が無いので毎回書く。
+# rate_limits の無い描画は記録を書かないので、ハッシュも取らない（使わない shasum と cut を起動しない。#648）。
+_rec_sig="${five_h_pct}|${five_h_resets:-null}|${seven_d_pct:-null}|${seven_d_resets:-null}"
+_rec_memo=""
+if [ -n "$five_h_pct" ] && [ -n "$session_id" ]; then
+    # ハッシュ対象は jq -c の引用符付き JSON 文字列のまま。python3 を起動しない
+    _rec_sid_hash="$( { printf '%s' "$session_id" | shasum -a 256 2>/dev/null \
+        || printf '%s' "$session_id" | sha256sum 2>/dev/null; } | cut -c1-16)"
+    [[ "$_rec_sid_hash" =~ ^[0-9a-f]{16}$ ]] && _rec_memo="$sessions_dir/.sessions/$_rec_sid_hash"
+fi
+_rec_unchanged=""
+if [ -n "$_rec_memo" ] && [ -f "$_rec_memo" ] && [ "$(cat "$_rec_memo" 2>/dev/null)" = "$_rec_sig" ]; then
+    _rec_unchanged=1
+fi
+if [ -n "$five_h_pct" ] && [ -n "$session_key" ] && [ -z "$_rec_unchanged" ] && mkdir -p "$sessions_dir" 2>/dev/null; then
     # 一時ファイルに書いてから mv で置き換える（読み手に書きかけを見せない）。失敗は無視する
     _rec_tmp="$(mktemp "$sessions_dir/.${session_key}.XXXXXX" 2>/dev/null)"
+    _rec_written=""
     if [ -n "$_rec_tmp" ]; then
         if printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":%s,"five_hour_resets_epoch":%s,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
             "$session_key" "$(date +%s)" "$five_h_pct" "${five_h_resets:-null}" \
-            "${seven_d_pct:-null}" "${seven_d_resets:-null}" > "$_rec_tmp" 2>/dev/null; then
-            mv -f "$_rec_tmp" "$sessions_dir/${session_key}.json" 2>/dev/null || rm -f "$_rec_tmp" 2>/dev/null
+            "${seven_d_pct:-null}" "${seven_d_resets:-null}" > "$_rec_tmp" 2>/dev/null \
+            && mv -f "$_rec_tmp" "$sessions_dir/${session_key}.json" 2>/dev/null; then
+            _rec_written=1
         else
             rm -f "$_rec_tmp" 2>/dev/null
         fi
+    fi
+    # 書けたら署名を覚え直す。覚える側の失敗は無視する（出力を変えない）。7 日より古い覚えは消す
+    if [ -n "$_rec_written" ] && [ -n "$_rec_memo" ] && mkdir -p "${_rec_memo%/*}" 2>/dev/null; then
+        _memo_tmp="$(mktemp "${_rec_memo%/*}/.tmp.XXXXXX" 2>/dev/null)"
+        if [ -n "$_memo_tmp" ]; then
+            { printf '%s\n' "$_rec_sig" > "$_memo_tmp" && mv -f "$_memo_tmp" "$_rec_memo"; } 2>/dev/null \
+                || rm -f "$_memo_tmp" 2>/dev/null
+        fi
+        find "${_rec_memo%/*}" -type f -mtime +7 -delete 2>/dev/null
     fi
 fi
 
@@ -225,6 +276,36 @@ if [ -n "$remaining_pct" ]; then
         context_color="$GREEN"
     fi
     context_info="${context_color}Context ${remaining_int}%${RESET}"
+fi
+
+# プロンプトキャッシュのヒット率（stdin の prompt_cache だけを見る。ファイル・ネットワークには触らない）。
+# hit_ratio が 0〜1 の数値のときだけ出す。直近のミスの原因は causes の先頭を短くして添える。
+# 入力の型が想定外でも式全体は落とさず、jq 自体が失敗したら何も出さない。
+cache_info=""
+if [ "${STATUSLINE_PROMPT_CACHE:-1}" != "0" ]; then
+    cache_raw=$(printf '%s' "$input" | jq -r '
+        (.prompt_cache // null) as $p
+        | if ($p | type) == "object" and ($p.hit_ratio | type) == "number"
+             and $p.hit_ratio >= 0 and $p.hit_ratio <= 1
+          then
+            (($p.last_miss_cause // null) as $m
+             | if ($m | type) == "object" and ($m.causes | type) == "array"
+                  and ($m.causes | length) > 0 and ($m.causes[0] | type) == "string"
+                  and ($m.causes[0] | test("^[A-Za-z0-9_]+\\z"))
+               then
+                 ($m.causes[0]) as $c
+                 | ({"tools_changed": "tools", "system_prompt_changed": "system",
+                     "ttl_expired_5m": "ttl5m", "likely_server_side": "server"}[$c] // $c[0:16]) as $n
+                 | "miss:" + $n + (if ($m.causes | length) > 1 then "+" + (($m.causes | length) - 1 | tostring) else "" end)
+               else "" end) as $cause
+            | (($p.hit_ratio * 100 | round | tostring) + (if $cause != "" then " " + $cause else "" end))
+          else empty end' 2>/dev/null) || cache_raw=""
+    if [ -n "$cache_raw" ]; then
+        cache_info="${CYAN}Cache ${cache_raw%% *}%${RESET}"
+        case "$cache_raw" in
+            *" "*) cache_info="${cache_info} ${YELLOW}${cache_raw#* }${RESET}" ;;
+        esac
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -323,6 +404,30 @@ fmt_ago() {
     fi
 }
 
+# $1=残数 $2=最短期限 epoch（無ければ 0）→ 色付きの "リセットN回・最短あとXdYh"（Codex と Claude の行で共用）
+# 期限まで 24 時間以内は赤、3 日以内は黄。残数 0 のときは期限を付けない。
+fmt_reset_credits() {
+    local count="$1" exp="$2" color="$DIM" text left
+    text="リセット${count}回"
+    if [ "$count" -gt 0 ]; then
+        if [ "$exp" -eq 0 ]; then
+            text+="・期限不明"
+        else
+            left=$(( exp - now ))
+            if [ "$left" -le 86400 ]; then color="$RED"
+            elif [ "$left" -le 259200 ]; then color="$YELLOW"; fi
+            if [ "$left" -le 0 ]; then
+                text+="・期限経過（更新待ち）"
+            elif [ "$left" -ge 86400 ]; then
+                text+="・最短あと$((left / 86400))日$((left % 86400 / 3600))h"
+            else
+                text+="・最短あと$((left / 3600))h$((left % 3600 / 60))m"
+            fi
+        fi
+    fi
+    printf '%s%s%s' "$color" "$text" "$RESET"
+}
+
 # Usage (rate limit) indicator — Pro/Max only; fields absent otherwise
 now=$(date +%s)
 usage_lines=()
@@ -333,19 +438,26 @@ usnap="$CONFIG_DIR/.usage-snapshot"
 # id は英数字とハイフン 1〜32 文字で一意、先頭 8 スロットまで、不正なら既定スロットへ縮退。
 # dev-workflow の usage-probe.sh と同じ規則だが、プラグインを跨ぐ依存を作らないため
 # 実装は各スクリプトに置く（規則の正本は spec 側）。
+# enabled が JSON の false のスロットは「オフ」（slot_enabled が 0）。オフのスロットも一覧に残し、
+# 上限と active の判定に数える（表示と label 列の幅には、非 active のオフは数えない）。false 以外（省略・true・"false"・0・null）はオン。
 accounts_file="${CLAUDE_ACCOUNTS_FILE:-$CONFIG_DIR/accounts.json}"
-slot_ids=(); slot_labels=(); slot_secures=(); slot_services=(); slot_widths=()
+codex_name="Codex A"; codex_name_w=7   # 登録簿に codex.label が無いときの既定
+slot_ids=(); slot_labels=(); slot_secures=(); slot_services=(); slot_widths=(); slot_enabled=()
 if [ -f "$accounts_file" ]; then
     # `IFS=$'\t' read` は使えない: タブは IFS 空白なので連続タブが 1 つの区切りに畳まれ、
     # securestorage が空の既定スロットで service 列が消える。IFS 空白でない US(0x1f) に
     # 置換してから read する（usage-probe.sh と同じ理由・同じ対処）。
     while IFS='' read -r _line; do
         [ -n "$_line" ] || continue
-        IFS=$'\x1f' read -r _sid _slabel _ssecure _sservice _swidth <<< "${_line//$'\t'/$'\x1f'}"
+        IFS=$'\x1f' read -r _sid _slabel _ssecure _sservice _swidth _senabled <<< "${_line//$'\t'/$'\x1f'}"
         [ -n "$_sid" ] || continue
+        # `@codex` の行はスロットではなく Codex の行の名前（id の形式に @ は一致しないので衝突しない）。
+        # 2 列目が名前、3 列目がその表示幅。
+        if [ "$_sid" = "@codex" ]; then codex_name="$_slabel"; codex_name_w="$_ssecure"; continue; fi
         slot_ids+=("$_sid"); slot_labels+=("$_slabel")
         slot_secures+=("$_ssecure"); slot_services+=("$_sservice")
         slot_widths+=("${_swidth:-0}")
+        if [ "$_senabled" = "0" ]; then slot_enabled+=(0); else slot_enabled+=(1); fi
     done < <(ACCOUNTS_FILE="$accounts_file" python3 -c '
 import hashlib, json, os, re, sys, unicodedata
 MAX_SLOTS = 8
@@ -393,23 +505,39 @@ try:
             # TSV の区切りを壊す制御文字を含むスロットは捨てる（usage-probe.sh と同じ規則）
             if CTRL_RE.search(lab) or CTRL_RE.search(sec):
                 continue
-            lab = clip_label(lab, MAX_LABEL_WIDTH)
-            slots.append((sid, lab, sec, service(sec)))
+            lab = "Claude " + clip_label(lab, MAX_LABEL_WIDTH)
+            slots.append((sid, lab, sec, service(sec), e.get("enabled") is not False))
 except Exception:
     slots = []
+# Codex の行の名前。codex.label が空でない文字列で制御文字を含まないときだけ読む（それ以外は bash 側の既定 A）。
+codex_row = None
+try:
+    codex_doc = doc.get("codex") if isinstance(doc, dict) else None
+    clab = codex_doc.get("label") if isinstance(codex_doc, dict) else None
+    if isinstance(clab, str) and clab and not CTRL_RE.search(clab):
+        cname = "Codex " + clip_label(clab, MAX_LABEL_WIDTH)
+        codex_row = "@codex\t" + cname + "\t" + str(disp_width(cname)) + "\n"
+except Exception:
+    codex_row = None
 for row in slots:
     # 5 列目は label の表示幅。bash の ${#var} は文字数なので、全角ラベルでは
     # printf の %-*s（バイト幅パディング）と食い違って列がずれる。
-    sys.stdout.write("\t".join(row) + "\t" + str(disp_width(row[1])) + "\n")
+    # 6 列目はオンなら 1、オフ（enabled が JSON の false）なら 0。
+    sys.stdout.write("\t".join(row[:4]) + "\t" + str(disp_width(row[1])) + "\t"
+                     + ("1" if row[4] else "0") + "\n")
+if codex_row:
+    sys.stdout.write(codex_row)
 ' 2>/dev/null)
 fi
 if [ "${#slot_ids[@]}" -eq 0 ]; then
     # レジストリ不在・不正 → 既定スロット 1 つ。label は空にして列を出さない
     slot_ids=("default"); slot_labels=(""); slot_secures=(""); slot_services=("Claude Code-credentials")
-    slot_widths=(0)
+    slot_widths=(0); slot_enabled=(1)
 fi
 
 n_slots="${#slot_ids[@]}"
+# active の判定はオフを含む登録簿の全スロットで行う（下の active_idx）。
+# 表示するかどうかと複数スロット表示の判定は、active の確定後に決める（下の slot_show / multi）。
 multi=0
 [ "$n_slots" -gt 1 ] && multi=1
 
@@ -447,12 +575,30 @@ if [ "$multi" -eq 1 ]; then
     [ "$active_idx" -lt 0 ] && active_idx=0
 fi
 
+# ---- 表示対象のスロット（正本: statusline-multi-account-usage「オフのスロットは表示しない」） ----
+# active のスロットはオフでも表示する（ライブ値）。非 active のオフスロットは行を出さず、
+# 複数スロット表示の判定にも名前列の幅にも数えない。表示対象が 1 つなら 1 スロット表示に戻る
+# （1 つだけ残るのは必ず active なので、名前列と active の目印は出ない）。
+slot_show=()
+n_show=0
+for i in $(seq 0 $(( n_slots - 1 ))); do
+    if [ "$i" -eq "$active_idx" ] || [ "${slot_enabled[$i]}" = "1" ]; then
+        slot_show+=(1); n_show=$(( n_show + 1 ))
+    else
+        slot_show+=(0)
+    fi
+done
+multi=0
+[ "$n_show" -gt 1 ] && multi=1
+
 # Cache reads are local; refresh is detached by the helper.
 codex_rows=""
 if [ "${STATUSLINE_CODEX:-1}" != "0" ]; then
     codex_helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/statusline-codex.py"
     if [ -f "$codex_helper" ]; then
         codex_rows="$(python3 "$codex_helper" --read 2>/dev/null)"
+        # helper の内部センチネル off（Codex オフ）は行にも列幅にも出さない
+        [ "$codex_rows" = "off" ] && codex_rows=""
     fi
 fi
 
@@ -460,14 +606,16 @@ fi
 # 幅は文字数ではなく表示幅（python 側が 5 列目で渡す）。全角ラベルでも列が揃う。
 label_w=0
 if [ "$multi" -eq 1 ]; then
-    for w in "${slot_widths[@]}"; do
+    for i in $(seq 0 $(( n_slots - 1 ))); do
+        [ "${slot_show[$i]}" = "1" ] || continue
+        w="${slot_widths[$i]}"
         [ "$w" -gt "$label_w" ] && label_w="$w"
     done
 fi
 
 # Codex shares the label column, without changing output when its row is absent.
-if [ -n "$codex_rows" ] && [ "$label_w" -lt 5 ]; then
-    label_w=5
+if [ -n "$codex_rows" ] && [ "$label_w" -lt "$codex_name_w" ]; then
+    label_w="$codex_name_w"
 fi
 
 # ---- snapshot を jq 1 回で読む ----
@@ -481,18 +629,32 @@ fi
 # 旧形式）ではトップレベルへフォールバックする。
 snap_fetched=(); snap_five_pct=(); snap_five_res=()
 snap_seven_pct=(); snap_seven_res=(); snap_fable_pct=()
+snap_rg_count=(); snap_rg_exp=()
 snap_rows=""
 if [ -f "$usnap" ] && [ "$n_slots" -gt 0 ]; then
     # `--args` はそれ以降のすべてを positional 扱いにするので、必ずファイル名の**後**に置く。
     # 前に置くと snapshot のパスまで positional に食われ、jq が stdin を待って固まる。
     # stdin は既に消費済みなので明示的に /dev/null を与える。
+    # reset_grants: 数えられる束は dict で resets_left が 0 より大きい整数、paused が真偽値の true でないもの。
+    # 欄が無い・配列でない・数えられる束が 1 つも無い（読めない束・paused の束・残数 0 の束だけ）ときは
+    # 2 列とも空（区画を出さない）。元から空の配列だけは残数 0・期限空。
+    # ends_at は ISO 8601 の Z か ±HH:MM の時差付きを読み（小数秒は落とす）、読めなければ期限に含めない。
     snap_rows="$(jq -r --arg active "${slot_ids[$active_idx]}" '
+      def rg_good: type == "object" and (.resets_left | type) == "number" and .resets_left > 0 and .resets_left == (.resets_left | floor) and .paused != true;
+      def rg_ok: type == "array" and (length == 0 or any(.[]; rg_good));
+      def rg_live: [ .[] | select(rg_good) ];
+      def iso_epoch: capture("^(?<b>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:[0-9]{2})$")
+        | ((.b + "Z") | fromdateiso8601)
+          - (if .z == "Z" then 0 else (if .z[0:1] == "+" then 1 else -1 end) * ((.z[1:3] | tonumber) * 3600 + (.z[4:6] | tonumber) * 60) end);
+      def rg_count(g): if (g | rg_ok) then ([ g | rg_live | .[] | .resets_left ] | add // 0) else "" end;
+      def rg_exp(g): if (g | rg_ok) then ([ g | rg_live | .[] | .ends_at | select(type == "string") | (try iso_epoch catch empty) ] | min // "") else "" end;
       . as $d
       | $ARGS.positional[] as $id
       | (($d.accounts // {})[$id]) as $a
       | (if $a == null and $id == $active then $d else ($a // {}) end) as $src
       | [ ($src.fetched_at // ""), ($src.five_hour_pct // ""), ($src.five_hour_resets_epoch // ""),
-          ($src.weekly_all_pct // ""), ($src.weekly_resets_epoch // ""), ($src.fable_weekly_pct // "") ]
+          ($src.weekly_all_pct // ""), ($src.weekly_resets_epoch // ""), ($src.fable_weekly_pct // ""),
+          rg_count($src.reset_grants), rg_exp($src.reset_grants) ]
       | @tsv
     ' "$usnap" --args "${slot_ids[@]}" < /dev/null 2>/dev/null)"
 fi
@@ -500,15 +662,17 @@ _row_i=0
 while IFS='' read -r _row; do
     [ "$_row_i" -lt "$n_slots" ] || break
     # タブ畳み込みで空フィールドが消えるのを避けるため US(0x1f) に置換してから読む
-    IFS=$'\x1f' read -r _f _fp _fr _sp _sr _fb <<< "${_row//$'\t'/$'\x1f'}"
+    IFS=$'\x1f' read -r _f _fp _fr _sp _sr _fb _rgc _rge <<< "${_row//$'\t'/$'\x1f'}"
     snap_fetched+=("$_f"); snap_five_pct+=("$_fp"); snap_five_res+=("$_fr")
     snap_seven_pct+=("$_sp"); snap_seven_res+=("$_sr"); snap_fable_pct+=("$_fb")
+    snap_rg_count+=("$_rgc"); snap_rg_exp+=("$_rge")
     _row_i=$(( _row_i + 1 ))
 done <<< "$snap_rows"
 # jq が失敗した / 行が足りない場合は空で埋める（欠測として扱う）
 while [ "${#snap_fetched[@]}" -lt "$n_slots" ]; do
     snap_fetched+=(""); snap_five_pct+=(""); snap_five_res+=("")
     snap_seven_pct+=(""); snap_seven_res+=(""); snap_fable_pct+=("")
+    snap_rg_count+=(""); snap_rg_exp+=("")
 done
 
 # ---- 非 active スロットはセッション記録と突き合わせる（正本: usage-session-records の
@@ -523,9 +687,13 @@ if [ "$multi" -eq 1 ] && [ -d "$sessions_dir" ]; then
     _rec_args=()
     for i in $(seq 0 $(( n_slots - 1 ))); do
         [ "$i" -eq "$active_idx" ] && continue
+        # 非表示（非 active のオフ）のスロットは値を描かないので、記録との突き合わせにも載せない
+        [ "${slot_show[$i]}" = "1" ] || continue
         _rec_args+=("$i" "${slot_secures[$i]}" "${snap_fetched[$i]}" "${snap_five_pct[$i]}"
                     "${snap_five_res[$i]}" "${snap_seven_pct[$i]}" "${snap_seven_res[$i]}")
     done
+    # 突き合わせる相手が無ければ（非 active がすべてオフ）python3 を起動しない
+    [ "${#_rec_args[@]}" -gt 0 ] &&
     while IFS='' read -r _row; do
         IFS=$'\x1f' read -r _ri _f _fp _fr _sp _sr <<< "${_row//$'\t'/$'\x1f'}"
         [[ "$_ri" =~ ^[0-9]+$ ]] && [ "$_ri" -lt "$n_slots" ] || continue
@@ -572,7 +740,10 @@ def combine(rec, snap, weekly):
             return larger(rec, snap)
         return rec if rec["res"] is not None else snap
     if abs(rec["res"] - snap["res"]) <= SAME_WINDOW:
-        return dict(larger(rec, snap), res=newer(rec, snap)["res"])
+        # 同じ窓は取得時刻の新しい方（手動リセットで使用率は下がりうる）。等しい・片方無しなら大きい方
+        if rec["at"] is not None and snap["at"] is not None and rec["at"] != snap["at"]:
+            return newer(rec, snap)
+        return larger(rec, snap)
     if weekly and now < rec["res"]:
         return rec
     return rec if rec["res"] > snap["res"] else snap
@@ -606,8 +777,11 @@ fi
 
 # $1=行頭 label 列 $2=5h消化率 $3=5hリセットepoch $4=7d消化率 $5=7dリセットepoch
 # $6=Fable週次消化率 $7=行末サフィックス（経過時間。空可）
+# $8=リセット権の残数（空なら区画なし） $9=リセット権の最短期限 epoch（空なら期限なし）
 render_slot() {
-    local prefix="$1" f_pct="$2" f_res="$3" s_pct="$4" s_res="$5" fb_pct="$6" ago="$7"
+    local prefix="$1" f_pct="$2" f_res="$3" s_pct="$4" s_res="$5" fb_pct="$6" ago="$7" rg_n="$8" rg_e="$9"
+    local rg_seg=""
+    [ -n "$rg_n" ] && rg_seg="  ${DIM}│${RESET}  $(fmt_reset_credits "$rg_n" "${rg_e:-0}")"
     [ -n "$f_pct" ] || return 0
 
     local five_h_int five_h_elapsed="" five_h_left="" secs_left_5h
@@ -626,6 +800,7 @@ render_slot() {
     if [ -z "$s_pct" ]; then
         # 7d が無いスロットは 5h 行だけ。経過時間はそのスロットの最後の行に付ける
         [ -n "$ago" ] && line_5h+="  ${DIM}${ago}${RESET}"
+        line_5h+="$rg_seg"
         usage_lines+=("$line_5h")
         return 0
     fi
@@ -650,10 +825,14 @@ render_slot() {
     fi
     [ -n "$seven_d_left" ] && line_7d+="  ${DIM}${seven_d_left}${RESET}"
     [ -n "$ago" ] && line_7d+="  ${DIM}${ago}${RESET}"
+    line_7d+="$rg_seg"
     usage_lines+=("$line_7d")
 }
 
 for i in $(seq 0 $(( n_slots - 1 ))); do
+    # 非 active のオフのスロットは行を出さない（値が残っていても、無くても）。
+    # active のスロットはオフでも下のライブ値の経路で描く。
+    [ "${slot_show[$i]}" = "1" ] || continue
     prefix=""
     if [ "$multi" -eq 1 ]; then
         # printf の %-*s はバイト幅で詰めるので使えない。表示幅の差だけ手で空白を足す。
@@ -683,7 +862,7 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
             usage_lines+=("${prefix}${DIM}取得待ち${RESET}")
         fi
         render_slot "$prefix" "$five_h_pct" "$five_h_resets" "$seven_d_pct" "$seven_d_resets" \
-                    "$fable_pct" ""
+                    "$fable_pct" "" "${snap_rg_count[$i]}" "${snap_rg_exp[$i]}"
     else
         # 非 active スロットは snapshot の値。鮮度ゲートは適用せず、経過時間を併記する
         ago=""
@@ -691,40 +870,22 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
         render_slot "$prefix" \
                     "${snap_five_pct[$i]}" "${snap_five_res[$i]}" \
                     "${snap_seven_pct[$i]}" "${snap_seven_res[$i]}" \
-                    "$fable_pct" "$ago"
+                    "$fable_pct" "$ago" "${snap_rg_count[$i]}" "${snap_rg_exp[$i]}"
     fi
 done
 
 # Codex is a separate account; keep all returned windows on one additional row.
 # Only the helper talks to app-server, detached from rendering (180s cache).
 if [ -n "$codex_rows" ]; then
-    codex_pad="$(printf '%*s' "$(( label_w - 5 ))" '')"
-    codex_line="  ${DIM}Codex${codex_pad}${RESET}  "
+    codex_pad="$(printf '%*s' "$(( label_w - codex_name_w ))" '')"
+    codex_line="  ${DIM}${codex_name}${codex_pad}${RESET}  "
     codex_sep=""
     codex_fetched=""
     codex_resets=""
     while IFS=$'\t' read -r c_pct c_minutes c_reset c_fetched; do
         if [ "$c_pct" = "resets" ]; then
             codex_fetched="$c_fetched"
-            c_reset_color="$DIM"
-            codex_resets="リセット${c_minutes}回"
-            if [ "$c_minutes" -gt 0 ]; then
-                if [ "$c_reset" -eq 0 ]; then
-                    codex_resets+="・期限不明"
-                else
-                    c_expiry_left=$(( c_reset - now ))
-                    if [ "$c_expiry_left" -le 86400 ]; then c_reset_color="$RED"
-                    elif [ "$c_expiry_left" -le 259200 ]; then c_reset_color="$YELLOW"; fi
-                    if [ "$c_expiry_left" -le 0 ]; then
-                        codex_resets+="・期限経過（更新待ち）"
-                    elif [ "$c_expiry_left" -ge 86400 ]; then
-                        codex_resets+="・最短あと$((c_expiry_left / 86400))日$((c_expiry_left % 86400 / 3600))h"
-                    else
-                        codex_resets+="・最短あと$((c_expiry_left / 3600))h$((c_expiry_left % 3600 / 60))m"
-                    fi
-                fi
-            fi
-            codex_resets="  ${DIM}│${RESET}  ${c_reset_color}${codex_resets}${RESET}"
+            codex_resets="  ${DIM}│${RESET}  $(fmt_reset_credits "$c_minutes" "$c_reset")"
             continue
         fi
         if [ "$c_pct" = "pending" ]; then
@@ -826,6 +987,53 @@ if [ "${STATUSLINE_API_PACE:-1}" != "0" ]; then
     fi
 fi
 
+# 本体のセッションコストをセッションごとに書き残す（正本: openspec/specs/session-cost-record）。
+# 読み手は cost-ledger で、自前の単価表で計算した額と比べて単価表のずれを見つける。
+# 記録は <設定ディレクトリ>/.session-cost/<session_id> に 1 行 `1 <t0> <v0> <t1> <v1>`
+# （区間の最初の観測時刻と値、最後に値が変わった観測時刻と値）。値が下がったら区間を始め直す。
+# 値が前回と同じ描画は組み込みの read 1 回だけで終える（外部コマンドを起動しない）。
+# 表示の設定（STATUSLINE_SESSION_COST）には左右されない。どの失敗でも出力を変えない。
+_sc_sid="${session_id#\"}"
+_sc_sid="${_sc_sid%\"}"
+if [[ "$_sc_sid" =~ ^[A-Za-z0-9_-]{1,128}$ ]] \
+    && [[ "$session_cost_usd" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]]; then
+    _sc_dir="$CONFIG_DIR/.session-cost"
+    _sc_file="$_sc_dir/$_sc_sid"
+    _sc_ver="" _sc_t0="" _sc_v0="" _sc_t1="" _sc_v1="" _sc_rest=""
+    _sc_new=""
+    if [ -f "$_sc_file" ]; then
+        { read -r _sc_ver _sc_t0 _sc_v0 _sc_t1 _sc_v1 _sc_rest < "$_sc_file"; } 2>/dev/null
+    else
+        _sc_new=1
+    fi
+    _sc_line=""
+    if [ "$_sc_ver" = "1" ] && [ -z "$_sc_rest" ] \
+        && [[ "$_sc_t0" =~ ^[0-9]+$ ]] && [[ "$_sc_t1" =~ ^[0-9]+$ ]] \
+        && [[ "$_sc_v0" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]] \
+        && [[ "$_sc_v1" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]]; then
+        # 文字列の一致は速い経路。一致しないときだけ awk を 1 回起動して数として比べる
+        if [ "$_sc_v1" != "$session_cost_usd" ]; then
+            case "$(LC_ALL=C awk -v a="$session_cost_usd" -v b="$_sc_v1" \
+                'BEGIN { if (a + 0 == b + 0) print "eq"; else if (a + 0 < b + 0) print "lt"; else print "gt" }' 2>/dev/null)" in
+                gt) _sc_line="1 $_sc_t0 $_sc_v0 $now $session_cost_usd" ;;
+                lt) _sc_line="1 $now $session_cost_usd $now $session_cost_usd" ;;
+            esac
+        fi
+    else
+        _sc_line="1 $now $session_cost_usd $now $session_cost_usd"
+    fi
+    if [ -n "$_sc_line" ] && mkdir -p "$_sc_dir" 2>/dev/null; then
+        # 一時ファイルに書いてから mv で置き換える（読み手に書きかけを見せない）。失敗は無視する
+        _sc_tmp="$(mktemp "$_sc_dir/.tmp.XXXXXX" 2>/dev/null)"
+        if [ -n "$_sc_tmp" ]; then
+            { printf '%s\n' "$_sc_line" > "$_sc_tmp" && mv -f "$_sc_tmp" "$_sc_file"; } 2>/dev/null \
+                || rm -f "$_sc_tmp" 2>/dev/null
+        fi
+        # 400 日より古い記録は、新しい記録ファイルを作る描画でだけ消す（1 セッションに 1 回）
+        [ -n "$_sc_new" ] && find "$_sc_dir" -type f -mtime +400 -delete 2>/dev/null
+    fi
+fi
+
 # このセッションの API 換算コスト（メイン + このセッションが立ち上げたサブエージェントの合算）。
 # Claude Code が stdin に渡す cost.total_cost_usd をそのまま使う（ドキュメント上「セッション内の
 # すべての API 呼び出し」の推定値で、定価ベース。/clear で 0 に戻る）。30 日コストは ccusage が
@@ -847,18 +1055,23 @@ fi
 
 # Build status line
 # Line 1: directory, model, git
-# Line 2: context window, API cost, session cost
+# Line 2: context window, prompt cache, API cost, session cost
 # Line 3: 5h bar / Line 4: 7d All + Fable bars
-printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s\n" \
+update_info=""
+if [ -f "$CONFIG_DIR/.statusline-update-available" ]; then
+    update_info="  ${YELLOW}更新あり /statusline:setup${RESET}"
+fi
+printf "${BLUE}%s${RESET} ${CYAN}%s${RESET}%s%s\n" \
     "$short_pwd" \
     "$model_name" \
-    "$git_info"
+    "$git_info" \
+    "$update_info"
 
 line2=""
 if [ -n "$context_info" ]; then
     line2="$context_info"
 fi
-for seg in "$api_pace_info" "$session_cost_info"; do
+for seg in "$cache_info" "$api_pace_info" "$session_cost_info"; do
     [ -n "$seg" ] || continue
     if [ -n "$line2" ]; then
         line2="${line2}  ${DIM}│${RESET}  ${seg}"

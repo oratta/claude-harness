@@ -12,12 +12,15 @@ allowed-tools: Read, Bash, AskUserQuestion
 ### 1. プラグインルートを特定する
 
 ```bash
+SL_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; SL_NG=1; fi
 for dir in \
   "${CLAUDE_PLUGIN_ROOT:-}" \
   ~/.claude/plugins/marketplaces/*/plugins/statusline \
   ~/.claude/plugins/installed/*/statusline; do
   [ -n "$dir" ] && [ -f "$dir/scripts/install.sh" ] && echo "$dir" && break
 done
+if [ -n "$SL_NG" ]; then unsetopt nullglob; fi
+unset SL_NG
 ```
 
 見つからなければ「statusline プラグインが見つからない」と報告して終了する。
@@ -73,6 +76,7 @@ printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"con
 - 書き換えたファイルとバックアップの接尾辞
 - 反映タイミング（次のステータスライン再描画から）
 - Fable 行が出るのは `dev-workflow` プラグインが `.usage-snapshot` を書いている環境のみ、という注記
-- 色・バー幅を変えたい場合は `<config>/statusline.sh` を直接編集してよい（プラグイン更新で消えない）が、`/statusline:setup` を再実行すると上書きされる（バックアップは取られる）こと
+- 以後のプラグイン更新は、手を入れていないコピーならセッション開始時に自動で反映されること
+- 色・バー幅を変えたい場合は `<config>/statusline.sh` を直接編集してよい（手を入れたコピーはプラグイン更新で自動では上書きされず、プラグインが新しい版になるとステータスラインの 1 行目の末尾に `更新あり /statusline:setup` が出る）が、`/statusline:setup` を再実行すると上書きされる（バックアップは取られる）こと
 
 引数 (`$ARGUMENTS`) の内容: $ARGUMENTS

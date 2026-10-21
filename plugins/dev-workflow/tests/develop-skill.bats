@@ -9,6 +9,9 @@
 # spec: dev-workflow-develop, dev-workflow-execution-strategy (REMOVED), dev-workflow-escalation-tripwires
 
 setup() {
+  # 文面検査の正規表現（[^。]* など）は多バイトを 1 文字として数える UTF-8 ロケールが前提。
+  # LANG 未設定（C ロケール）だと [^。] が日本語の文字を構成するバイトを除外して空振りする（#662）
+  export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL_DIR="${PLUGIN_DIR}/skills/develop"
   SKILL="${SKILL_DIR}/SKILL.md"
@@ -536,4 +539,406 @@ refute() {
   grep -q 'thread_id を return に書く' "$r"
   grep -qF 'session id:' "$r"
   grep -qF 'threadId' "$r"
+}
+
+# --- レビューの周を主に聞かずに続ける（直し方の判定。#722） ---
+
+@test "fix-check (#722): the section sits between the token budget and the handover sections" {
+  heads="$(grep -nE '^## ' "$SKILL")"
+  b="$(echo "$heads" | grep -F '## PR トークン上限' | cut -d: -f1)"
+  f="$(echo "$heads" | grep -F '## レビューの周を主に聞かずに続ける（直し方の判定）' | cut -d: -f1)"
+  h="$(echo "$heads" | grep -F '## 保留で止まるときの引き継ぎ' | cut -d: -f1)"
+  [ -n "$b" ] && [ -n "$f" ] && [ -n "$h" ] || { echo "missing section: $b / $f / $h"; return 1; }
+  [ "$b" -lt "$f" ] && [ "$f" -lt "$h" ]
+}
+
+@test "fix-check (#722): the decider is asked with the verdict-and-reasons contract, not the 3 points" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  [ -n "$s" ] || { echo "no fix-check section"; return 1; }
+  echo "$s" | grep -qF 'subagent_type: dev-workflow:decider'
+  echo "$s" | grep -qF '可否と根拠'
+  echo "$s" | grep -qF '3 点ではなく'
+  echo "$s" | grep -qF 'agents/decider.md'
+  # 定義の 3 条件
+  echo "$s" | grep -qF '直し方が 1 つに決まる'
+  echo "$s" | grep -qF '記録先の範囲'
+  echo "$s" | grep -qF '前の周で「決まっている」と判定した直し方を当てたのに閉じなかった'
+}
+
+@test "fix-check (#722): the five inputs are fixed" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  for token in '記録先の本文と関連コメント' '残った指摘の原文' '前の周の指摘の原文' '対象ファイルのパス' 'W の直近の return'; do
+    echo "$s" | grep -qF "$token" || { echo "missing input: $token"; return 1; }
+  done
+}
+
+@test "fix-check (#722): first-line answers, one retry on shortage, then treated as re-choosing" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  for token in '`裁定: 可`' '`裁定: 否`' '`不足: <足りないもの>`' '1 回だけ依頼し直し' '3 回目の依頼はしない'; do
+    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  echo "$s" | grep -F '1 回だけ依頼し直し' | grep -qF '選び直しが要る'
+}
+
+@test "fix-check (#722): the record format is defined here with its first line and fields" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  echo "$s" | grep -qF '`^直し方の判定: (決まっている|選び直しが要る)$`'
+  for f in '対象' '周' '判定役' '指摘ごとの判定' '入力不足'; do
+    echo "$s" | grep -qE "^\| ${f} \|" || { echo "record lacks field: $f"; return 1; }
+  done
+}
+
+@test "fix-check (#722): the after-the-fact report format is defined here with its first line and fields" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  echo "$s" | grep -qF '`^主に聞かずに回した周: [0-9]+ 周目$`'
+  for f in '残っていた指摘' '判定の根拠' '使ったトークン' '周の結果'; do
+    echo "$s" | grep -qE "^\| ${f} \|" || { echo "report lacks field: $f"; return 1; }
+  done
+  # トークンの 2 つの値は既存の計測から取る
+  echo "$s" | grep -qF '新しい計測の仕組みは足さない'
+}
+
+@test "fix-check (#722): only two conditions ask the owner" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  echo "$s" | grep -qF '方針の選び直し'
+  echo "$s" | grep -qF '`pr-token-budget.sh` が exit 2'
+  echo "$s" | grep -qF '2 つだけ'
+  echo "$s" | grep -qF '回数に上限は置かない'
+  echo "$s" | grep -qF '`2 周キャップ超え`'
+}
+
+@test "fix-check (#722): step (4) handles needs-fix-check by posting the record and starting the triage G" {
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$SKILL")"
+  echo "$step4" | grep -qF 'needs-decider / needs-fix-check / review-incomplete'
+  nf="$(echo "$step4" | awk '/^      needs-fix-check →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  [ -n "$nf" ] || { echo "no needs-fix-check line in step (4)"; return 1; }
+  for token in 'PR トークン上限' 'dev-workflow:decider' '判定の記録' '照合と振り分けの G を新しく起こ' 'レビューの周を主に聞かずに続ける（直し方の判定）' 'W も再開しない' '事後報告'; do
+    echo "$nf" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  # needs-fix-check の段落は needs-decider の段落の前に置く
+  a="$(echo "$step4" | grep -n '^      needs-fix-check →' | cut -d: -f1)"
+  d="$(echo "$step4" | grep -n '^      needs-decider →' | cut -d: -f1)"
+  [ "$a" -lt "$d" ]
+}
+
+@test "fix-check (#722): the handover scene for the two-round cap points at the re-choosing verdict" {
+  s="$(section '保留で止まるときの引き継ぎ')"
+  echo "$s" | grep -F 'レビューの 2 周キャップ超え' | grep -qF '選び直しが要る'
+  echo "$s" | grep -qF '`2 周キャップ超え`'
+}
+
+# --- #1035: 主の側にしか無い情報が要るときだけ主に聞く ---
+
+@test "ask-owner (#1035): exactly one section names when to ask the owner and the four types" {
+  [ "$(grep -c '^## 主に聞かずに決めること$' "$SKILL")" -eq 1 ]
+  s="$(section '主に聞かずに決めること')"
+  for token in '主の側にしか無い情報' '主の手でしかできない操作' '規則が主の承認を求める操作' \
+               '自分側の誤りの後始末' '範囲外の問題の起票' '小さな実装の選択' '閉じる操作'; do
+    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "ask-owner (#1035): cleanup of own mistakes reverts with a backup and excludes git and the sanctuary" {
+  s="$(section '主に聞かずに決めること')"
+  for token in '控えを取って戻し' '事後報告' 'git の破壊的操作' 'destructive-git-guard' '聖域'; do
+    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "ask-owner (#1035): out-of-scope filing defines search, record, pending condition and epic note" {
+  s="$(section '主に聞かずに決めること')"
+  for token in 'triage.md' 'review-issue-candidates.sh' 'gh issue list' '`範囲外の問題の振り分け`' \
+               '`条件の確認待ち`' '`## 条件の答え`' '注意書き' 'needs-approval'; do
+    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
+@test "ask-owner (#1035): a failed candidate search is recorded in the out-of-scope comment, not a PR comment" {
+  s="$(section '主に聞かずに決めること')"
+  echo "$s" | grep -F '候補探し:' | grep -qF '再試行後の終了コードは記録先の `範囲外の問題の振り分け` コメントに書き、既存 issue への相乗りをせずに段 E へ進む'
+}
+
+@test "ask-owner (#1035): both cleanup and filing carry a scope paragraph" {
+  s="$(section '主に聞かずに決めること')"
+  echo "$s" | grep -qF '自分側の誤りの後始末の守備範囲は'
+  echo "$s" | grep -qF '範囲外の問題の起票の守備範囲は'
+}
+
+@test "ask-owner (#1035): fix-check definition 1 accepts choices that do not change visible behaviour" {
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  echo "$s" | grep -E '^1\. ' | grep -qF '利用者に見える振る舞い'
+}
+
+@test "ask-owner (#1035): loop end closes PR-less record issues without handing it to the owner" {
+  s="$(section 'ループの終わり')"
+  echo "$s" | grep -qF 'gh issue close <N> --reason completed'
+  echo "$s" | grep -qF '主に渡さない'
+  echo "$s" | grep -qF 'PR を伴わない記録先 issue を閉じたときを除く'
+}
+
+# --- Requirement: 親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る（#1059） ---
+# 照合の対象は SKILL.md の文だけで、openspec の spec の文言は照合しない。
+
+@test "relayed reply (#1059): Orca step 8 reports in the body, locates the uuid, and appends the location" {
+  line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$SKILL")"
+  echo "$line" | grep -qF '本文で報告する（質問ツールで聞かない）'
+  echo "$line" | grep -qF 'owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <主の答え>'
+  echo "$line" | grep -qF ' [主の発言: セッション <親のセッション ID> / uuid <uuid>]'
+  echo "$line" | grep -qF '書き換えず'
+  echo "$line" | grep -qF '子のタブ'
+}
+
+@test "relayed reply (#1059): the child's 'reply from the parent' item checks with --relayed before handing to G" {
+  item="$(grep -F -- '- **親から届いた返事**' "$SKILL")"
+  echo "$item" | grep -qF '[主の発言: セッション <ID> / uuid <uuid>]'
+  echo "$item" | grep -qF 'owner-reply-check.sh --relayed <ID> <uuid> <作成日時> <URL>'
+  echo "$item" | grep -qF '子のタブ'
+  echo "$item" | grep -qF 'REASON='
+  echo "$item" | grep -qF '「親経由で受領」'
+}
+
+@test "relayed reply (#1059): a relayed reply on a relaunch is handled before resume step 2 without the own session ID" {
+  item="$(grep -F -- '- **親から届いた返事**' "$SKILL")"
+  echo "$item" | grep -qF '手順 2 より先に当て'
+  echo "$item" | grep -qF '自分のセッション ID で `owner-reply-check.sh` に掛けない'
+}
+
+@test "relayed reply (#1059): the hold line refers to 'reply from the parent' for a child that got the acceptance via the parent" {
+  line="$(grep -F 'リスク許容を会話で受けたら主に PR へのコメントを求めず' "$SKILL")"
+  echo "$line" | grep -qF 'エピックの子が親経由で'
+  echo "$line" | grep -qF '「親から届いた返事」'
+}
+
+@test "relayed reply (#1059): Orca step 8 compares the full text with whitespace collapsed and re-reports when another owner message sits in between" {
+  line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$SKILL")"
+  echo "$line" | grep -qF '全文が主の答えと同じ（どちらも連続する空白を 1 個にまとめて比べる）'
+  echo "$line" | grep -qF 'not-direct'
+}
+
+@test "relayed reply (#1059): a confirmed relayed refusal is taken as the owner's refusal" {
+  item="$(grep -F -- '- **親から届いた返事**' "$SKILL")"
+  echo "$item" | grep -qF '全文から不許容の意思が読め'
+  echo "$item" | grep -qF '主本人の不許容として受け取り'
+  echo "$item" | grep -qF '許容とも不許容とも読めない'
+}
+
+@test "skill: step 7 of the Orca route re-presents children waiting for the owner before launch" {
+  p="$(grep -E '^7\. `回し方: Orca`' "$SKILL")"
+  printf '%s\n' "$p" | grep -qF 'pending-owner'
+  printf '%s\n' "$p" | grep -qF '記録の `stop` が `stopped-seen`'
+  printf '%s\n' "$p" | grep -qF '手順 8 と同じ報告'
+  printf '%s\n' "$p" | grep -qF '子 issue のコメントの新旧では再開を判定しない'
+}
+
+@test "reply-after-idle: the restore table has the child waiting for the owner" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  row="$(grep -E '^\| 主の返事待ちの子 \|' "$f")"
+  printf '%s\n' "$row" | grep -qF '記録の `stop` が `stopped-seen`'
+  printf '%s\n' "$row" | grep -qF '子の停止: 主の返事待ち'
+  printf '%s\n' "$row" | grep -qF '親の判断:'
+}
+
+@test "reply-after-idle: wait --resolve decides the relaunch itself with overridable thresholds" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  grep -qF 'EPIC_DISPATCH_RELAUNCH_IDLE_SEC' "$f"
+  grep -qF 'EPIC_DISPATCH_RELAUNCH_MIN_TOKENS' "$f"
+}
+
+@test "skill: step 7 drops a pending child whose pass on the epic matches the latest stop record" {
+  p="$(grep -E '^7\. `回し方: Orca`' "$SKILL")"
+  printf '%s\n' "$p" | grep -qF 'エピックのコメントの `親の判断: 子 #N 通した`'
+  printf '%s\n' "$p" | grep -qF '停止の記録の URL が子の最新の `子の停止: 主の返事待ち` の URL と一致'
+  printf '%s\n' "$p" | grep -qF '再報告から外す'
+  row="$(grep -E '^\| 主の返事待ちの子 \|' "$PLUGIN_DIR/skills/develop/references/reply-after-idle.md")"
+  printf '%s\n' "$row" | grep -qF '`親の判断: 子 #N 通した`'
+}
+
+@test "skill: an empty return from W asks for a report once and never relaunches with the same instruction (#1117)" {
+  # spec: dev-workflow-develop「空の return を受けたら報告を 1 回だけ求め、同じ指示で起こし直さない」
+  p="$(section '1 ループ' | grep -F 'returned no output')"
+  [ -n "$p" ]
+  [ "$(printf '%s\n' "$p" | wc -l | tr -d ' ')" = 1 ]
+  printf '%s\n' "$p" | grep -qF 'SendMessage で 1 回だけ報告を求める'
+  printf '%s\n' "$p" | grep -qF 'git -C <path> status --porcelain'
+  printf '%s\n' "$p" | grep -qF '同じ指示で起こし直さない'
+  printf '%s\n' "$p" | grep -qF '主に上げる'
+  # 再報告が空のときも起こし直さない
+  printf '%s\n' "$p" | grep -qF '1 回求めても報告が空'
+  # 対象は W だけ。再開しない役は範囲外で既存の手順に従う
+  printf '%s\n' "$p" | grep -qF '再開しない役'
+  printf '%s\n' "$p" | grep -qF '範囲外'
+}
+
+# --- 別のリポジトリの子（cross-repo-children） ---
+# spec: dev-workflow-develop「別のリポジトリの子を含むエピックの回し方を SKILL.md に書く」
+
+xrepo_block() { section 'エピックの扱い' | awk '/^\*\*別のリポジトリの子（複数リポジトリのエピック）\*\*/{f=1; print; next} /^子セッションは `launch` が/{f=0} f'; }
+
+@test "skill (cross-repo): dependencies and sub-issue checks are read in the child's repository, the prerequisite's from repository_url" {
+  b="$(xrepo_block)"
+  [ -n "$b" ]
+  printf '%s\n' "$b" | grep -qF 'repos/<子の owner>/<子の repo>/issues/<N>/dependencies/blocked_by'
+  printf '%s\n' "$b" | grep -qF 'repository_url'
+  printf '%s\n' "$b" | grep -qF 'sub_issues_summary.total'
+  printf '%s\n' "$b" | grep -qF '解けていないものとして待つ'
+}
+
+@test "skill (cross-repo): the child list is built from sub-issues and the epic's table, counting a child once" {
+  b="$(xrepo_block)"
+  printf '%s\n' "$b" | grep -qF 'sub_issues'
+  printf '%s\n' "$b" | grep -qF 'エピック本文の子の表'
+  printf '%s\n' "$b" | grep -qF '1 件に数える'
+}
+
+@test "skill (cross-repo): read targets are the child's repository (step 3 b, 4, 8, merge-waiting child, deferral match)" {
+  b="$(xrepo_block)"
+  printf '%s\n' "$b" | grep -qF '手順 3 (b) の起点ブランチ'
+  printf '%s\n' "$b" | grep -qF '記録の `base`'
+  printf '%s\n' "$b" | grep -qF 'repos/<子の owner>/<子の repo>/issues/<N> --jq .state_reason'
+  printf '%s\n' "$b" | grep -qF 'repos/<子の owner>/<子の repo>/issues/<N>/comments'
+  printf '%s\n' "$b" | grep -qF '照合も `<owner>/<repo>#N` の形の行'
+}
+
+@test "skill (cross-repo): children are passed to every subcommand as <owner>/<repo>#N" {
+  b="$(xrepo_block)"
+  printf '%s\n' "$b" | grep -qF '`route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`'
+  printf '%s\n' "$b" | grep -qF '`<owner>/<repo>#N` の形で渡す'
+}
+
+@test "skill (cross-repo): the subagent route does not hand a child in another repository to W" {
+  s="$(section 'エピックの扱い' | grep -F '**サブエージェント方式**')"
+  printf '%s\n' "$s" | grep -qF '別のリポジトリの子は W に渡さない'
+  printf '%s\n' "$s" | grep -qF '子 <owner>/<repo>#N は別のリポジトリなので別セッション方式でだけ起動する'
+  printf '%s\n' "$s" | grep -qF '起こさずに、主に報告する'
+}
+
+@test "skill (cross-repo): comment formats for a child in another repository are written, the same-repository ones stay" {
+  b="$(xrepo_block)"
+  printf '%s\n' "$b" | grep -qF '後で別に起動するエピック: <owner>/<repo>#N'
+  printf '%s\n' "$b" | grep -qF '親の判断: 子 <owner>/<repo>#N 通した'
+  e="$(section 'エピックの扱い')"
+  printf '%s\n' "$e" | grep -qF '`後で別に起動するエピック: #N`'
+  printf '%s\n' "$e" | grep -qF '`子 #N マージ → 残り k 件`'
+}
+
+@test "skill (cross-repo): the merge-waiting child works on the child's repository and escalates without permission there" {
+  b="$(xrepo_block)"
+  printf '%s\n' "$b" | grep -qF 'gh pr comment <PR> -R <子の repo>'
+  printf '%s\n' "$b" | grep -qF 'gh api repos/<子の repo>/issues/<PR番号>/labels'
+  printf '%s\n' "$b" | grep -qF '決める役を起こさず手順 8 の形で主に上げる'
+}
+
+@test "skill (cross-repo): a nested session comments on the epic's repository with -R" {
+  n="$(section 'エピックの扱い' | grep -F '**`nested` を受けたセッション**')"
+  printf '%s\n' "$n" | grep -qF "gh issue comment <E> -R <エピックのリポジトリ>"
+  printf '%s\n' "$n" | grep -qF '後で別に起動するエピック: <自分の owner>/<自分の repo>#<自分>'
+  printf '%s\n' "$n" | grep -qF 'parent epic: <owner>/<repo>#<E>'
+}
+
+@test "skill (cross-repo): the child side and ci-watch accept the reply heads with (<owner>/<repo>)" {
+  c="$(section 'エピックの子が主の返事を待って止まるとき')"
+  printf '%s\n' "$c" | grep -qF '親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）: '
+  printf '%s\n' "$c" | grep -qF '主の返事（親エピック #<E>（<owner>/<repo>）経由）: '
+  w="$(grep -F '親エピック #<E> の判断（主の承認ではない）:' "$PLUGIN_DIR/references/ci-watch.md")"
+  printf '%s\n' "$w" | grep -qF '親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）:'
+}
+
+@test "skill (cross-repo): step 6 reports the new failed reasons and stops, step 1 warns about --base across repositories" {
+  s6="$(section 'エピックの扱い' | grep -F '6. `wait` の')"
+  for r in no-clone ambiguous-clone not-in-orca no-push permission-lookup-failed base-lookup-failed; do
+    printf '%s\n' "$s6" | grep -qF "$r" || { echo "missing: $r"; false; }
+  done
+  printf '%s\n' "$s6" | grep -qF 'サブエージェント方式に自動で振り替えない'
+  s1="$(section 'エピックの扱い' | grep -F '1. `scripts/epic-dispatch.sh launch')"
+  printf '%s\n' "$s1" | grep -qF '1 回の `launch` の全部の子に掛かる'
+  printf '%s\n' "$s1" | grep -qF '`launch` をリポジトリごとに分ける'
+}
+
+@test "skill: a denial report from W is handled by writing a permit and resuming, or escalating to the owner (#1135)" {
+  # spec: dev-workflow-develop「破壊的 git 操作の拒否の報告を受けたら、条件を満たすときだけ許可を書いて再開し、それ以外はオーナーに上げる」
+  p="$(section '1 ループ' | grep -F 'returned no output')"
+  [ -n "$p" ]
+  [ "$(printf '%s\n' "$p" | wc -l | tr -d ' ')" = 1 ]
+  # 報告の 4 項目
+  for t in 'コマンドの全文' '対象のパス' '自分で作った' 'なぜ'; do
+    printf '%s\n' "$p" | grep -qF "$t" || { echo "missing $t"; return 1; }
+  done
+  # 許可を書く条件
+  printf '%s\n' "$p" | grep -qF 'git-guard-permit.sh'
+  printf '%s\n' "$p" | grep -qF 'scratchpad の中'
+  printf '%s\n' "$p" | grep -qF '戻す'
+  printf '%s\n' "$p" | grep -qF 'git を実行しない'
+  # cwd と操作対象を同一視せず、-C の例を扱う
+  printf '%s\n' "$p" | grep -qF 'cwd'
+  printf '%s\n' "$p" | grep -qF 'git -C'
+  # 再開
+  printf '%s\n' "$p" | grep -qF '同じ W を SendMessage で再開'
+  printf '%s\n' "$p" | grep -qF '1 文字も変えず'
+  printf '%s\n' "$p" | grep -qF '15 分'
+  printf '%s\n' "$p" | grep -qF 'hook が決める'
+  printf '%s\n' "$p" | grep -qF 'コンテキスト上限（サブエージェントの手渡し）'
+  printf '%s\n' "$p" | grep -qF '転用しない'
+  # オーナーに上げる条件
+  printf '%s\n' "$p" | grep -qF '0 以外で終わった'
+  printf '%s\n' "$p" | grep -qF '再び返った'
+  printf '%s\n' "$p" | grep -qF 'オーナーが自分で実行'
+}
+
+# --- 起動部品の差し替え（epic-launcher-tmux） ---
+# spec: dev-workflow-develop（回し方は起動部品の差し替えとして 1 本で書く）
+
+run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1} /^### 完了条件/{f=0} f'; }
+
+@test "launcher parts: the run section is one procedure with a per-part table and no Orca-route heading" {
+  r="$(run_section)"
+  [ "$(printf '%s\n' "$r" | grep -c '^\*\*部品ごとの欄\*\*')" -eq 1 ]
+  printf '%s\n' "$r" | grep -qF '| 点 | Orca の部品'
+  printf '%s\n' "$r" | grep -qF 'tmux の部品'
+  [ "$(printf '%s\n' "$r" | grep -c '^\*\*Orca 経路\*\*')" -eq 0 ]
+  [ "$(grep -c 'Orca 経路' "$SKILL")" -eq 0 ]
+  # 手順 1〜8 は 1 本だけ
+  [ "$(printf '%s\n' "$r" | grep -cE '^[1-8]\. ')" -eq 8 ]
+}
+
+@test "launcher parts: the subagent mode writes no state record" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -qF 'サブエージェント方式は部品ではなく別の方式なので状態の記録を書かない'
+}
+
+@test "launcher parts: EPIC_DISPATCH_LAUNCHER and tmux are written in the route rule" {
+  r="$(run_section | grep -F '**経路の決め方**')"
+  printf '%s\n' "$r" | grep -qF 'EPIC_DISPATCH_LAUNCHER=orca'
+  printf '%s\n' "$r" | grep -qF '`tmux`（Orca 管理外で'
+  printf '%s\n' "$r" | grep -qF '`回し方: tmux（並列可能な子 k 件）`'
+}
+
+@test "launcher parts: resuming passes the part named in the latest note and stops if it is unusable" {
+  r="$(run_section | grep -F '**経路の決め方**')"
+  printf '%s\n' "$r" | grep -qF '`launch` と `adopt` に環境変数 `EPIC_DISPATCH_LAUNCHER=<そのコメントの部品名'
+  printf '%s\n' "$r" | grep -qF '別の部品にもサブエージェント方式にも振り替えず'
+  printf '%s\n' "$r" | grep -qF '部品名を渡さない'
+  p="$(grep -E '^7\. `回し方: Orca`' "$SKILL")"
+  printf '%s\n' "$p" | grep -qF '`回し方: tmux`'
+  printf '%s\n' "$p" | grep -qF 'EPIC_DISPATCH_LAUNCHER=<部品名>'
+}
+
+@test "launcher parts: the kept-removal operation is per part and neither uses force" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -qF 'epic-launch-tmux.sh remove <path>'
+  # orca のコマンドの文字列は手順 3 の 1 か所だけに書く（orca のコマンドの書き方の要件）ので、部品の欄は参照で書く
+  printf '%s\n' "$r" | grep -qF 'Orca の worktree を消す（`--force` なし。コマンドは手順 3 に書いた）'
+  printf '%s\n' "$r" | grep -F '3. `done <N>...`' | grep -qF '`orca worktree rm --worktree path:<path>`'
+  p="$(printf '%s\n' "$r" | grep -F '3. `done <N>...`')"
+  printf '%s\n' "$p" | grep -qF '部品の欄の操作'
+  printf '%s\n' "$p" | grep -qF 'どちらも `--force` なし'
+}
+
+@test "launcher parts: a tmux epic is not told to reopen in the Orca parent worktree" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -qF 'tmux の部品では出ない'
+  printf '%s\n' "$r" | grep -qF '開き直しを案内しない'
+}
+
+@test "launcher parts: the prerequisite table names orca or tmux for starting child sessions" {
+  grep -qF '| **`orca`** または **`tmux`** |' "$SKILL"
 }

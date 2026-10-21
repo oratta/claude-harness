@@ -11,6 +11,9 @@
 bats_require_minimum_version 1.5.0
 
 LOST='The self-hosted runner lost communication with the server.'
+# ジョブが上限時間（timeout-minutes）で打ち切られたときに GitHub が付ける annotation
+TIMED_OUT='The job running on runner mac-1 has exceeded the maximum execution time of 40 minutes.'
+CANCELED='The operation was canceled.'
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -110,6 +113,16 @@ pr_view_calls() {
   run --separate-stderr "$SCRIPT" wait o/r 5
   [ "$status" -eq 0 ]
   [ "$(jq -r '.obs.checks[0].cause' <<<"$output")" = runner-lost ]
+  [ "$(jq -r .obs.retry <<<"$output")" = true ]
+}
+
+@test "wait: a time-limit annotation reaches the settled observation as job-timeout" {  # 打ち切りの annotation は観測に入る
+  put_view 1 OPEN MERGEABLE "[$(actions_check test CANCELLED 11 77)]" h1
+  jq -cn --arg m "$TIMED_OUT" --arg c "$CANCELED" '[{message: $m}, {message: $c}]' > "${WORK}/ann/77.json"
+  run --separate-stderr "$SCRIPT" wait o/r 5
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .result <<<"$output")" = settled ]
+  [ "$(jq -r '.obs.checks[0].cause' <<<"$output")" = job-timeout ]
   [ "$(jq -r .obs.retry <<<"$output")" = true ]
 }
 
@@ -229,6 +242,38 @@ pr_view_calls() {
   [ "$(jq -r .reran_head "$(state_file)")" = h1 ]
 }
 
+@test "next: the first job-timeout is rerun without counting a fix" {  # 1 回目の打ち切りはやり直す
+  put_view 1 OPEN MERGEABLE "[$(actions_check test CANCELLED 11 77)]" h1
+  jq -cn --arg m "$TIMED_OUT" '[{message: $m}]' > "${WORK}/ann/77.json"
+  run --separate-stderr "$SCRIPT" next o/r 5
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .act <<<"$output")" = rerun ]
+  [ "$(jq -r .reran_head "$(state_file)")" = h1 ]
+  [ "$(jq -r .fixes "$(state_file)")" = null ]
+}
+
+@test "next: a job-timeout on a HEAD whose rerun is used up escalates" {  # やり直しを使い切った HEAD の打ち切りはオーナーに上げる
+  mkdir -p "$STATE_DIR"
+  echo '{"state":"wait","head":"h1","reran_head":"h1"}' > "$(state_file)"
+  put_view 1 OPEN MERGEABLE "[$(actions_check test CANCELLED 11 77)]" h1
+  jq -cn --arg m "$TIMED_OUT" '[{message: $m}]' > "${WORK}/ann/77.json"
+  run --separate-stderr "$SCRIPT" next o/r 5
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .act <<<"$output")" = escalate ]
+  [ "$(jq -r '.obs.checks[0].cause' <<<"$output")" = job-timeout ]
+  [ "$(jq -r .raised "$(state_file)")" = true ]
+  [ "$(jq -r .fixes "$(state_file)")" = null ]
+}
+
+@test "next: a cancel without the time-limit annotation is fix as before" {  # 上限時間の annotation が無い取り消しは直しに回る
+  put_view 1 OPEN MERGEABLE "[$(actions_check test CANCELLED 11 77)]" h1
+  jq -cn --arg c "$CANCELED" '[{message: $c}]' > "${WORK}/ann/77.json"
+  run --separate-stderr "$SCRIPT" next o/r 5
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .act <<<"$output")" = fix ]
+  [ "$(jq -r '.obs.checks[0].cause' <<<"$output")" = real ]
+}
+
 @test "next: --after-fix reruns an unrelated failure on the same HEAD and keeps fixes" {  # 直しの担い手が関係ないと返したあと
   mkdir -p "$STATE_DIR"
   echo '{"state":"ci-fail","head":"h1","fixes":1}' > "$(state_file)"
@@ -290,7 +335,7 @@ pr_view_calls() {
 @test "reference: names the words of the watch procedure" {  # spec の語が現れる
   [ -f "$REF" ]
   for w in run_in_background 'ci-watch.sh wait' 'ci-watch.sh next' '--unrelated' '--after-fix' 'gh run rerun' \
-           '--log-failed' 'agent-review:passed' 'gh pr ready --undo' '--until-merged' CLAUDE_HARNESS_DEV_DIR; do
+           '--log-failed' 'agent-review:passed' 'gh pr ready --undo' '--until-merged'; do
     grep -qF -- "$w" "$REF" || { echo "missing: $w"; return 1; }
   done
 }
@@ -362,6 +407,21 @@ pr_view_calls() {
 
 @test "reference: an implementer's unrelated verdict leads to one next --unrelated --after-fix" {
   grep -qF '`next --unrelated <チェック名> --after-fix` を 1 回だけ実行' "$REF"
+}
+
+@test "reference: escalate with a job-timeout tells the owner to check the runner and asks no fix" {  # 打ち切りの伝え方
+  local row
+  row="$(grep -F '| `escalate` |' "$REF")"
+  [ -n "$row" ]
+  grep -qF 'job-timeout' <<<"$row"
+  grep -qF '上限時間で打ち切られた' <<<"$row"
+  grep -qF 'ランナーの状態を確かめてほしい' <<<"$row"
+  grep -qF '実装者に直しを頼まない' <<<"$row"
+}
+
+@test "reference: job-timeout is outside the --unrelated judgement and differs from the wait timeout" {  # --unrelated の対象外・見張りの timeout とは別
+  grep -qF '`job-timeout`（ジョブが上限時間で打ち切られた）のチェックはこの判断の対象でない' "$REF"
+  grep -qF '`job-timeout` は CI のジョブが自分の上限時間で打ち切られたことで、4 の表の `timeout`（見張りの上限時間内に決着を見られなかった）とは別の出来事' "$REF"
 }
 
 # ── pr-review-gate / develop / gate-runner ────────────────

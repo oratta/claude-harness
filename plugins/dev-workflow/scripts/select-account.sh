@@ -4,6 +4,9 @@
 # stdout は CLAUDE_SECURESTORAGE_CONFIG_DIR の実値 1 行だけ、stderr は選択理由 1 行だけ。
 # 引数なしはセッション記録と usage snapshot の実効値による自動選択、slot id 1 個は
 # それらに依存しない明示選択。
+# accounts.json で enabled が false のスロット（オフ）は自動選択の候補にせず（margins には
+# <id>:off と出す）、明示選択は exit 2 で拒否する。全スロットがオフなら既定アカウントへ縮退し、
+# 理由は default-due-to-all-off。
 set -uo pipefail
 
 ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json}"
@@ -23,6 +26,7 @@ ACCOUNTS_FILE="$ACCOUNTS_FILE" USAGE_SNAPSHOT="$SNAPSHOT" SELECT_ACCOUNT_NOW="$N
   USAGE_VIEW_DIR="$SCRIPT_DIR" python3 - "$@" <<'PY'
 import math
 import os
+import shlex
 import sys
 
 sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
@@ -36,12 +40,17 @@ def finite_number(value):
             and math.isfinite(float(value)))
 
 
-slots = usage_view.read_registry(os.environ["ACCOUNTS_FILE"])
+slots = usage_view.read_slots(os.environ["ACCOUNTS_FILE"])
 
 if len(sys.argv) == 2:
     requested = sys.argv[1]
-    for slot_id, secure in slots:
+    for slot_id, secure, enabled in slots:
         if slot_id == requested:
+            if not enabled:
+                sys.stderr.write(
+                    f"account {requested} is off (enabled is false in {os.environ['ACCOUNTS_FILE']}): "
+                    f"run {shlex.quote(os.path.join(os.environ['USAGE_VIEW_DIR'], 'accounts.sh'))} on {requested}\n")
+                raise SystemExit(2)
             print(secure)
             sys.stderr.write(f"selected={slot_id} reason=explicit margins=-\n")
             raise SystemExit(0)
@@ -59,8 +68,14 @@ view = usage_view.build_view(accounts_file=os.environ["ACCOUNTS_FILE"],
 margins = []
 best = None
 has_missing = False
+has_enabled = False
 
-for index, (slot_id, secure) in enumerate(slots):
+for index, (slot_id, secure, enabled) in enumerate(slots):
+    # オフのスロットは実効値を調べる前に外す（missing にも five-hour>=90 にも数えない）
+    if not enabled:
+        margins.append((slot_id, "off"))
+        continue
+    has_enabled = True
     observed = view["accounts"].get(slot_id) or {}
     five_hour = observed.get("five_hour_pct")
     weekly = observed.get("weekly_all_pct")
@@ -87,10 +102,14 @@ if best is not None:
     reason = "max-weekly-margin"
 else:
     secure = ""
-    selected = next((slot_id for slot_id, value in slots if value == ""),
+    # 縮退先は常に既定アカウントなので、selected は enabled を見ずに決める
+    selected = next((slot_id for slot_id, value, _ in slots if value == ""),
                     "@unregistered-default")
-    reason = ("default-due-to-missing-usage" if has_missing
-              else "default-due-to-five-hour-limit")
+    if not has_enabled:
+        reason = "default-due-to-all-off"
+    else:
+        reason = ("default-due-to-missing-usage" if has_missing
+                  else "default-due-to-five-hour-limit")
 
 print(secure)
 sys.stderr.write(f"selected={selected} reason={reason} margins={margin_text}\n")

@@ -17,6 +17,7 @@ import sys
 SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 HEADER = ("ファイル", "行（修正前 SHA）", "ヒットした行の本文", "扱い")
 REWRITTEN_HEADING = "### 書き換えた該当しない行"
+HIT_ROW_MESSAGE = "hit rows require path, numeric line, and body"
 REWRITTEN_HEADER = ("ファイル", "行（修正前 SHA）", "修正後の本文")
 FIXED = "直した"
 NOT_APPLICABLE_RE = re.compile(r"該当しない: \S.*")
@@ -90,7 +91,7 @@ def decode_cell(cell, *, preserve=False):
     return "".join(decoded)
 
 
-def table_rows(lines, header, start=0):
+def table_rows(lines, header, start=0, columns_message=None):
     """Return the raw cells of the rows under the first table whose header is `header`."""
     header_index = None
     for index in range(start, len(lines)):
@@ -112,32 +113,32 @@ def table_rows(lines, header, start=0):
             continue
         cells = split_markdown_row(line)
         if len(cells) != len(header):
-            raise ContractError(f"every row must have {len(header)} columns")
+            raise ContractError(columns_message or f"every row must have {len(header)} columns")
         if all(re.fullmatch(r":?-+:?", cell.strip()) for cell in cells):
             continue
         rows.append(cells)
     return rows
 
 
-def row_key(cells):
+def row_key(cells, message="rows require path and numeric line"):
     path = decode_cell(cells[0])
     line_number = decode_cell(cells[1])
     if not path or not line_number.isdigit():
-        raise ContractError("rows require path and numeric line")
+        raise ContractError(message)
     return path, int(line_number)
 
 
 def parse_table(lines):
     """Parse the main hit table into (path, line, body, handling) rows."""
-    raw = table_rows(lines, HEADER)
+    raw = table_rows(lines, HEADER, columns_message="every hit row must have four columns")
     if raw is None:
         raise ContractError("four-column hit table header is required")
     rows = []
     for cells in raw:
-        path, line_number = row_key(cells)
+        path, line_number = row_key(cells, HIT_ROW_MESSAGE)
         body = decode_cell(cells[2], preserve=True)
         if not body:
-            raise ContractError("hit rows require path, numeric line, and body")
+            raise ContractError(HIT_ROW_MESSAGE)
         rows.append((path, line_number, body, decode_cell(cells[3])))
     return rows
 
@@ -152,6 +153,10 @@ def parse_rewritten(lines, rows):
     start = next((index for index, line in enumerate(lines)
                   if line.strip() == REWRITTEN_HEADING), None)
     if start is None:
+        # A 3-column table without the exact heading would otherwise be ignored and look like
+        # a missing table; name the heading instead of spending a send-back on a typo (#407).
+        if table_rows(lines, REWRITTEN_HEADER) is not None:
+            raise ContractError(f"rewritten-rows table requires the heading {REWRITTEN_HEADING}")
         return {}, []
     raw = table_rows(lines, REWRITTEN_HEADER, start + 1)
     if raw is None:
@@ -307,7 +312,11 @@ def main():
     rewritten = {}
     violations = []
     if args.head is not None:
+        seen_rows = set()
         for path, number, _body, handling in rows:
+            if (path, number) in seen_rows:
+                violations.append(f"main table row is duplicated: {path}:{number}")
+            seen_rows.add((path, number))
             if handling != FIXED and not NOT_APPLICABLE_RE.fullmatch(handling):
                 violations.append(
                     f"row-3 handling must be 直した or 該当しない: <理由>: {path}:{number}")

@@ -150,3 +150,30 @@ role_sec() { section "$SKILL" '本体の役割'; }
   role_sec | grep -qE '1 人|同時に動く同一役割'
   role_sec | grep -qF '別々の worktree'
 }
+
+# ⑤停止確認が返らないときの終端（#266）。帰結は「手渡さず止めて人間に報告」で、第 3 の経路を作らない
+@test "criteria(5): terminal needs both elapsed-since-stop and transcript-idle, measured by subagent-context.sh" {
+  cap_sec | grep -qF '停止確認が返らないときの終端'
+  cap_sec | grep -qF '停止指示からの経過時間が `DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT` 以上、かつ前任のトランスクリプトの無更新時間が `DEV_WORKFLOW_STOP_CONFIRM_STALL` 以上'
+  cap_sec | grep -qF 'subagent-context.sh <agent-name> --stop-since'
+}
+
+@test "criteria(5): reaching the terminal stops work and reports to the human, never spawns the successor" {
+  cap_sec | grep -qF '手渡し先を spawn せず、その作業を止めて人間に報告する'
+  # 反転（前任を放置して spawn してよい）を落とす: 禁止の述語と、第 3 の経路でない旨を固定する
+  cap_sec | grep -qF '終端は第 3 の経路ではない'
+  cap_sec | grep -qF '前任を放置したまま手渡し先を spawn してはならない'
+  cap_sec | grep -qF '人間の返事も経過時間も、停止確認の代わりにならない'
+  if cap_sec | grep -qF '前任を放置して手渡し先を spawn してよい'; then return 1; fi
+}
+
+@test "criteria(5): thresholds are env-overridable and the numbers appear only in the env table, not in the terminal prose" {
+  cap_sec | grep -qE '^\| `DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT` \|'
+  cap_sec | grep -qE '^\| `DEV_WORKFLOW_STOP_CONFIRM_STALL` \|'
+  local prose
+  prose="$(cap_sec | grep -F '停止確認が返らないときの終端' | grep -vE '^\|')"
+  [ -n "$prose" ]
+  if echo "$prose" | grep -qE '[0-9]+ ?(秒|分|時間)'; then
+    echo "終端の本文に閾値の数値が直書きされている"; return 1
+  fi
+}

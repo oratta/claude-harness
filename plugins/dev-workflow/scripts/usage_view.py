@@ -6,6 +6,7 @@ The rules are specified in openspec/specs/usage-session-records ("記録と snap
 agent-model-guard.sh, codex-develop.py) uses this one implementation.
 
   usage_view.py --json [--now EPOCH]   print {"now", "active", "accounts"} as one JSON line
+  usage_view.py --codex-enabled        print "on" or "off" (registry "codex"."enabled"), exit 0
 
 Inputs: CLAUDE_ACCOUNTS_FILE (default ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json),
 USAGE_SESSIONS_DIR (default ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions),
@@ -54,8 +55,13 @@ def session_key(securestorage):
     return hashlib.sha256(value).hexdigest()[:8]
 
 
-def read_registry(path):
-    """Same resolution as select-account.sh: [(id, securestorage)], default slot on failure."""
+def read_slots(path):
+    """Registry slots as [(id, securestorage, enabled)], default slot on failure.
+
+    A slot is off only when its "enabled" is the JSON false (usage-account-registry
+    "スロットを enabled でオフにできる"). Off slots stay in the list: declared order, the cap
+    of 8, id uniqueness and the active slot are all counted over every slot.
+    """
     slots = []
     try:
         with open(path, encoding="utf-8") as handle:
@@ -80,10 +86,15 @@ def read_registry(path):
                 if not isinstance(secure, str) or CTRL_RE.search(label) or CTRL_RE.search(secure):
                     continue
                 seen.add(slot_id)
-                slots.append((slot_id, secure))
+                slots.append((slot_id, secure, entry.get("enabled") is not False))
     except Exception:
         pass
-    return slots or [("default", "")]
+    return slots or [("default", "", True)]
+
+
+def read_registry(path):
+    """Same slots as read_slots without the on/off mark: [(id, securestorage)]."""
+    return [(slot_id, secure) for slot_id, secure, _ in read_slots(path)]
 
 
 def _read_json(path):
@@ -93,6 +104,17 @@ def _read_json(path):
         return document if isinstance(document, dict) else None
     except Exception:
         return None
+
+
+def read_codex_enabled(path):
+    """False only when the registry's top-level "codex"."enabled" is the JSON false.
+
+    usage-account-registry "Codex を codex.enabled でオフにできる": a missing or broken
+    registry, a missing key and every other value read as on, so a slip of the pen never
+    stops Codex silently.
+    """
+    codex = (_read_json(path) or {}).get("codex")
+    return not (isinstance(codex, dict) and codex.get("enabled") is False)
 
 
 def read_snapshot(path):
@@ -144,22 +166,25 @@ def _combine(record, snapshot, *, weekly_all):
         return record or snapshot
     if record["resets"] is None or snapshot["resets"] is None:
         if record["resets"] is None and snapshot["resets"] is None:
-            return _larger(record, snapshot, resets=None)
+            return _larger(record, snapshot)
         return record if record["resets"] is not None else snapshot
     gap = abs(record["resets"] - snapshot["resets"])
     if gap <= SAME_WINDOW_SECONDS:
-        return _larger(record, snapshot, resets=_newer(record, snapshot)["resets"])
+        # A manual reset lowers the value within the same window, so the newer observation wins.
+        if (record["observed"] is not None and snapshot["observed"] is not None
+                and record["observed"] != snapshot["observed"]):
+            return _newer(record, snapshot)
+        return _larger(record, snapshot)
     if weekly_all and not record["rolled"]:
         return record
     return record if record["resets"] > snapshot["resets"] else snapshot
 
 
-def _larger(first, second, *, resets):
+def _larger(first, second):
+    """Tie-break: the larger value with its own reset and observed time (then newer, then first)."""
     if first["pct"] != second["pct"]:
-        taken = first if first["pct"] > second["pct"] else second
-    else:
-        taken = _newer(first, second)
-    return dict(taken, resets=resets)
+        return first if first["pct"] > second["pct"] else second
+    return _newer(first, second)
 
 
 def _window(record, snapshot, now, *, five_hour=False, weekly_all=False):
@@ -239,6 +264,9 @@ def build_view(accounts_file=None, sessions_dir=None, snapshot_path=None, now=No
 
 
 def main(argv):
+    if argv == ["--codex-enabled"]:
+        print("on" if read_codex_enabled(default_paths()["accounts_file"]) else "off")
+        return 0
     now = None
     if "--now" in argv:
         index = argv.index("--now")

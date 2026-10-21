@@ -25,7 +25,7 @@ Claude Code用スキル・プラグインのマーケットプレイス
 **機能:**
 - `/develop [issue番号|URL|自然文]`（`/work-issue` はエイリアス）— develop スキルを interactive モードで起動する。issue が無ければ issue を切らず Draft PR を記録先にする（issue を切るのは追跡・キュー・議論が要るときだけ）
 - 本体は Edit でコードを書かず、レビューを代行しない。別コンテキストを要する工程（仕様レビュー・PR レビュー）はすべて本体が起こす
-- エピック（独立してマージできる PR が 2 本以上・複数 capability・順序依存）は子 issue ごとに 1 ループを並列に回す（並列可能な子が 2 件以上で `orca` があり本体が Orca 管理のワークツリーにいれば Orca の子ワークツリーの独立セッション、それ以外は `isolation: "worktree"` のサブエージェント。`scripts/epic-dispatch.sh`）
+- エピック（独立してマージできる PR が 2 本以上・複数 capability・順序依存）は子 issue ごとに 1 ループを並列に回す（`orca` があり本体が Orca 管理のワークツリーにいれば Orca の子ワークツリーの独立セッション、それ以外と unmanned は `isolation: "worktree"` のサブエージェント。`plugins/dev-workflow/scripts/epic-dispatch.sh`）。Orca 経路では、子が「用が済んだ」の印を付けたワークツリーを親セッションが片付ける
 - loop-dev-agent の無人サイクル（憲法は各リポの `docs/agent-loop.md`。flatmate が保守）では、憲法のメインが develop の本体を務める（`--unmanned`）
 - 上流の壁打ち（`/opsx:explore`）は呼ばない（issue 化前の壁打ちとは切り分ける）
 - `references/`（プラグイン直下）に他プラグインと共有する契約を置く: 自己検証の共通原則・PR / issue 本文の型・Workflow 実行のロール別ティア・Workflow 実行の型。`issueify` スキルはタスクメモを受け入れ条件付き issue に変換する
@@ -59,14 +59,11 @@ Claude Code用スキル・プラグインのマーケットプレイス
 
 | プラグイン | 説明 |
 |-----------|------|
-| `telegram` | Telegram messaging bridge。公式プラグインの fork で、主のリアクション（👍👀等）をセッションに配送する |
 | `worktree` | Git worktree のセットアップ（`/wt-setup`。`--with-pr` で Draft PR まで作成）とクリーンアップ（`/wt-clean`） |
 | `weekly-report` | 週次プロジェクト実績レポートを自動生成し、Obsidian 週次ノートに挿入する。cron 非対話実行に対応 |
 | `daily-report` | 音声トランスクリプト・Obsidian ノート・LLM セッションログを横断集約し、日次日記を生成する |
 | `infra` | Vercel + Supabase + GitHub Actions で local/staging/prod の環境を一括セットアップする（`/infra-setup`） |
-| `experience-to-skill` | セッションの jsonl ログを素材に、自然言語の依頼で SKILL.md を蒸留する（`/e2s:distill`） |
-| `skill-pack` | プロジェクトごとに skillOverrides / enabledPlugins を対話的に編集し、必要なスキルだけを ON にする |
-| `capability-registry` | 外部サービスを操作する前に CLI とトークンの在処を教える発見層。`fmtoken.sh` を同梱 |
+| `capability-registry` | 外部サービスを操作する前に CLI とトークンの在処を教える発見層 |
 | `statusline` | 使用量ステータスライン。クォータ消化率と窓の日程消化率を1本のバーに重ね、`25%/29%` の形で「今のペースでリセットまで持つか」を示す（`/statusline:setup`） |
 
 ---
@@ -135,5 +132,19 @@ Oratta
 Discord 改造版（公式プラグインの fork で、主のリアクションをセッションへ push 配送するもの）は 2026-09 に flatmate へ移し、flatmate 自身が marketplace として配っている（[genetta-inc/flatmate#851](https://github.com/genetta-inc/flatmate/issues/851)）。harness からは外した（[#314](https://github.com/oratta/claude-harness/issues/314)）。`discord@oratta-claude-harness` を入れている環境は次のとおり切り替える。flatmate の marketplace の登録手順は flatmate#851 を正本とする。
 
 1. `claude plugin uninstall discord@oratta-claude-harness` を実行する
-2. `settings.json` の `enabledPlugins` にある `discord@oratta-claude-harness` を `discord@flatmate` に置き換える
+2. flatmate の marketplace を登録し（手順は flatmate#851）、`settings.json` の `enabledPlugins` に `discord@flatmate` を入れる。手順 1 の uninstall で消えずに `discord@oratta-claude-harness` が残っていれば、そのエントリを消す
 3. 住人の `CHANNEL_PLUGINS` を `plugin:discord@flatmate` にして、住人を再起動する
+
+`skill-pack`・`telegram`・`experience-to-skill` の 3 プラグインは 2026-10 に解散した（[PR #841](https://github.com/oratta/claude-harness/pull/841)）。`bundles` の `all` からも外した。理由と代替は次のとおり。
+
+| プラグイン | 解散の理由 | 代替 |
+|-----------|-----------|------|
+| `skill-pack` | Claude Code 本体でプロジェクト単位の ON/OFF ができるようになった | `/skills` 画面と `skillOverrides`（個人スキル）、`/plugin` または `claude plugin enable\|disable --scope`（プラグイン単位） |
+| `telegram` | 公式プラグインで代替できる。fork の目的だった「利用者のリアクションをセッションへ届ける」機能は不要と判断した | 公式 `telegram@claude-plugins-official` |
+| `experience-to-skill` | 公式のスキルで足り、使われていなかった | 公式の `skill-creator` スキル |
+
+install 済みの環境では、入れていたプラグインについて次を行う。
+
+1. `claude plugin uninstall skill-pack@oratta-claude-harness`・`claude plugin uninstall telegram@oratta-claude-harness`・`claude plugin uninstall experience-to-skill@oratta-claude-harness` のうち、入れていたものを実行する
+2. uninstall で消えずに `settings.json` / `settings.local.json` の `enabledPlugins` に `<name>@oratta-claude-harness` が残っていれば、そのエントリを消す
+3. telegram を使っていた環境は、公式の `telegram@claude-plugins-official` を入れる（設定は公式側の手順に従う）

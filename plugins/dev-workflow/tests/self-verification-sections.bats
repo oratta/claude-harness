@@ -5,7 +5,8 @@
 # spec: skill-verification-sections, dev-workflow-shared-references
 #
 # 旧 plugins/loops/tests/{self-verification-reference,skill-verification-sections}.bats
-# （S36〜S50）を loops の解散（issue #205）に伴い移したもの。対象は 6 スキル（longrun-plan は解散）。
+# （S36〜S50）を loops の解散（issue #205）に伴い移したもの。対象は 6 スキル（longrun-plan・experience-to-skill は解散、
+# push-guard-setup は #218 の再棚卸しで編入）。S51 は棚卸しリストの網羅性（#218）。
 # テスト名は ASCII のみ。
 
 setup() {
@@ -19,7 +20,7 @@ setup() {
     "plugins/daily-report/skills/daily-report/SKILL.md"
     "plugins/weekly-report/skills/weekly-report/SKILL.md"
     "plugins/infra/skills/infra-setup/SKILL.md"
-    "plugins/experience-to-skill/skills/experience-to-skill/SKILL.md"
+    "plugins/dev-workflow/skills/push-guard-setup/SKILL.md"
   )
 }
 
@@ -38,7 +39,7 @@ _artifact_kw() {
     *daily-report*) echo "diary" ;;
     *weekly-report*) echo "weekly" ;;
     *infra-setup*)  echo "infra" ;;
-    *experience-to-skill*) echo "SKILL.md" ;;
+    *push-guard-setup*) echo "pre-push" ;;
   esac
 }
 
@@ -77,15 +78,21 @@ _artifact_kw() {
   done
 }
 
-@test "S40b: no bogus path containing e2s-distill as a skill directory" {
-  run bash -c "grep -E 'skills/e2s-distill/' '${REF}' | wc -l | tr -d ' '"
-  [ "$output" = "0" ]
-}
-
 @test "S41: out-of-scope skills each carry a judgment reason" {
   run bash -c "grep -E '対象外' '${REF}' | grep -Ec '理由|既に|成果物|委譲|委ね|設定|分類'"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
+}
+
+# S51: 棚卸しリストの網羅性（issue #218）。実在する SKILL.md は全件が対象表か対象外表に実パスで現れる。
+# 発見は ls glob で動的に行い、スキルを新設して載せ忘れたらここで落ちる。
+@test "S51: every existing SKILL.md appears in the audit list by real path" {
+  missing=""
+  for f in "${REPO_ROOT}"/plugins/*/skills/*/SKILL.md; do
+    rel="${f#"${REPO_ROOT}"/}"
+    grep -qF "$rel" "$REF" || missing="${missing} ${rel}"
+  done
+  [ -z "$missing" ] || { echo "not in audit list:${missing}"; return 1; }
 }
 
 # ============================================================

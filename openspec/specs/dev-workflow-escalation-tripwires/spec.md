@@ -85,14 +85,14 @@ dev-workflow プラグインは、作業役（develop スキルの W、または
 - **THEN** ここまでの編集内容と判明した事実を引き継ぎ情報として渡し、作業をやり直さない
 
 ### Requirement: SessionStart hook がトリップワイヤーを常駐注入する
-dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart イベント（matcher: `startup|clear|compact`）で注入スクリプトを起動しなければならない（SHALL）。コマンドパスは `${CLAUDE_PLUGIN_ROOT}` を使用する。スクリプトは `templates/escalation-tripwires.md` の「## 昇格トリップワイヤー」節を抽出し、`{"additionalContext": "<節の本文>"}` の JSON を stdout に出力する（single source of truth: 本文の複製を hook 側に持たない）。テンプレートが見つからない・節が抽出できない場合は無出力・exit 0 で終了しなければならない（MUST NOT block session start）。
+dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart イベント（matcher: `startup|clear|compact`）で注入スクリプトを起動しなければならない（SHALL）。コマンドパスは `${CLAUDE_PLUGIN_ROOT}` を使用する。スクリプトは `templates/escalation-tripwires.md` の「## 昇格トリップワイヤー」節を抽出し、`{"additionalContext": "<節の本文>"}` の JSON を stdout に出力する（single source of truth: 本文の複製を hook 側に持たない）。`TRIPWIRES_SCOPE` が未設定のとき、テンプレートが見つからない・節が抽出できない場合は無出力・exit 0 で終了しなければならない（MUST NOT block session start）。`TRIPWIRES_SCOPE=subagent-budget` のときの出力は要件「SubagentStart hook が dev-workflow の役に運用情報を注入する」が定める。
 
 #### Scenario: 注入 JSON が節を含む
 - **WHEN** `CLAUDE_PLUGIN_ROOT` をプラグインルートに設定してスクリプトを実行する
 - **THEN** stdout は valid JSON で、`additionalContext` に「昇格トリップワイヤー」「規模超過」「失敗ループ」「仕様の発明」を含む
 
 #### Scenario: テンプレート欠損時は fail-soft
-- **WHEN** `CLAUDE_PLUGIN_ROOT` をテンプレートの無いディレクトリに設定してスクリプトを実行する
+- **WHEN** `TRIPWIRES_SCOPE` 未設定で、`CLAUDE_PLUGIN_ROOT` をテンプレートの無いディレクトリに設定してスクリプトを実行する
 - **THEN** exit code 0 で出力は空である
 
 #### Scenario: hooks.json の構造
@@ -100,7 +100,7 @@ dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart �
 - **THEN** SessionStart エントリが存在し、matcher が `startup|clear|compact`、command が `${CLAUDE_PLUGIN_ROOT}` 経由でスクリプトを指している
 
 ### Requirement: usage-probe と snapshot 契約
-dev-workflow プラグインは `plugins/dev-workflow/scripts/usage-probe.sh` を配布しなければならない（SHALL）。probe は使用量の補助の情報源であり（主な情報源は `usage-session-records` capability のセッション記録）、アカウントレジストリ（`usage-account-registry` capability）のスロットのうち下記の実行条件を満たすものだけについて、スロットごとに導出した Keychain サービス名で認証情報を取得して OAuth usage API（`/api/oauth/usage`）をフェッチし、`~/.claude/.usage-snapshot`（`USAGE_SNAPSHOT` で上書き可）に JSON を書く。
+dev-workflow プラグインは `plugins/dev-workflow/scripts/usage-probe.sh` を配布しなければならない（SHALL）。probe は使用量の補助の情報源であり（主な情報源は `usage-session-records` capability のセッション記録）、アカウントレジストリ（`usage-account-registry` capability）のスロットのうち下記の実行条件を満たすものだけについて、スロットごとに導出した Keychain サービス名で認証情報を取得して OAuth usage API（既定の取得先は `https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1`。`USAGE_PROBE_ENDPOINT` で上書き可）をフェッチし、`~/.claude/.usage-snapshot`（`USAGE_SNAPSHOT` で上書き可）に JSON を書く。
 
 snapshot は **schema 2** であり、次の構造でなければならない（SHALL）。snapshot は生産者（dev-workflow）と消費者（statusline）が別のタイミングで更新されうる層間契約であるため、**キー名を以下に固定する**:
 
@@ -129,7 +129,10 @@ snapshot は **schema 2** であり、次の構造でなければならない（
       "weekly_resets_at": "2026-09-06T00:00:00Z",
       "weekly_resets_epoch": 1757116800,
       "fable_weekly_pct": 94,
-      "fable_active": true
+      "fable_active": true,
+      "reset_grants": [
+        {"resets_left": 1, "ends_at": "2026-11-02T03:00:00.123Z", "paused": false}
+      ]
     }
   }
 }
@@ -137,7 +140,8 @@ snapshot は **schema 2** であり、次の構造でなければならない（
 
 - `schema`: `2`
 - `active`: 現在アクティブなスロットの id。判定規則は `usage-account-registry` capability の「active スロットの判定規則」に従う
-- `accounts`: スロット id をキーとするオブジェクト。各スロットの値フィールドのキー名は上記に固定する（`label` / `securestorage` / `fetched_at` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `fable_weekly_pct` / `fable_active`）。値が得られないフィールドは `null` とする
+- `accounts`: スロット id をキーとするオブジェクト。各スロットの値フィールドのキー名は上記に固定する（`label` / `securestorage` / `fetched_at` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `fable_weekly_pct` / `fable_active`）。値が得られないフィールドは `null` とする。ただし任意の欄 `reset_grants` はこの限りでなく、得られないときは `null` にせずキーごと出さない
+- `reset_grants`（任意）: そのスロットのリセット権。応答の `cedar_ember.grants` の各束から `resets_left`・`ends_at`・`paused` の 3 つだけを、値を変えずに写した配列でなければならない（SHALL）。`ends_at` は epoch に直さず、ISO 8601 の文字列か `null` のまま渡す。束は選り分けない（`paused` が true の束や `resets_left` が 0 の束も写す。数え方は読み手が持つ）。元の束に無い欄は省いても `null` にしてもよい。`cedar_ember` が無い・`null`、`eligible` が true でない、`grants` が配列でない、のいずれかのときは欄を出さない（SHALL）。`grants` が元から空の配列なら `[]` を出す。`grants` が空でないのに、すべての要素が束（オブジェクト）でなく写せる束が 1 つも無いときは、確定した 0 回と区別するため欄を出さない（一部だけ不正なときは、写せる束だけを出す）。層間契約であり、読み手はダッシュボード（genetta-inc/flatmate#1654）と statusline
 - スロットの `fetched_at`: **そのスロットの値を実際に取得できた時刻**（epoch 秒）。fail-open で前回値を引き継いだスロットは、前回の `fetched_at` をそのまま保たなければならない（SHALL）。probe の実行時刻を書いてはならない（MUST NOT）
 - トップレベルの `fetched_at` / `fable_weekly_pct` / `fable_active` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch`: **active スロットの同名フィールドをミラーしたもの**でなければならない（SHALL）。既存の読み手（statusline の Fable 表示と 6 時間鮮度ゲート、および外部の読み手）を無改修で動かすための後方互換であり、独立に計算してはならない（MUST NOT）。特にトップレベル `fetched_at` は probe の実行時刻ではなく active スロットの取得時刻である（statusline の鮮度ゲートがこの値を読むため、実行時刻を書くと古い数字が新鮮な顔で表示される）
 
@@ -146,6 +150,7 @@ snapshot は **schema 2** であり、次の構造でなければならない（
 - 次のどちらかに当たる: そのスロットのセッション記録が無い、または記録の `observed_at` が `USAGE_PROBE_STALE` 秒（既定 10800）より古い／snapshot の同スロットの `fetched_at` が `USAGE_PROBE_STALE` 秒より古い（同スロットや `fetched_at` が無い場合を含む）。後者を含めるのは、Fable 週次がセッション記録に入らず probe からしか得られないため（会話中のアカウントでも Fable の値と statusline の 6 時間鮮度ゲートが止まらないようにする）
 - 試行状態ファイル（`USAGE_PROBE_STATE`、既定 `~/.claude/.usage-probe-state`）にあるそのスロットの前回の試行時刻から `USAGE_PROBE_INTERVAL` 秒（既定 10800）以上経っている
 - そのスロットが 429 による待ち時間の中にいない
+- そのスロットがオフ（`accounts.json` の `enabled: false`）でない。オフのスロットはセッション記録や snapshot がどれだけ古くてもフェッチせず、前回値を保つ（正本は `usage-account-registry` capability の要件「オフのスロットは使用量を取得しない」）
 
 probe はフェッチを試みたスロットごとに、結果（200・429・その他の失敗）にかかわらず試行時刻を試行状態ファイルに記録しなければならない（SHALL）。HTTP 429 を受けたスロットは連続 429 回数を 1 増やし、前回の試行から `USAGE_PROBE_INTERVAL × 2^(回数-1)` 秒（上限 86400 秒）経つまで次の試行をしてはならない（MUST NOT）。200 を受けたら連続 429 回数を 0 に戻す。試行状態ファイルは一時ファイルからの置き換えで書き、読めない・壊れているときは全スロットを未試行として扱う。
 
@@ -155,7 +160,11 @@ probe はフェッチを試みたスロットごとに、結果（200・429・�
 
 **API のエラーレスポンスは失敗として扱わなければならない**（SHALL）。HTTP 401 / 429 / 5xx でも API は正しい JSON のオブジェクト（`{"type":"error", ...}`）を返すため、JSON として読めたことを成功の判定に使ってはならない（MUST NOT）。使用量の数字（`five_hour` / `seven_day` / モデル別 weekly）が 1 つも取れなかったレスポンスは失敗とし、そのスロットの前回値を全 `null` で上書きしてはならない（MUST NOT）。非 active アカウントは OAuth アクセストークンの期限切れでこの経路に入るのが常態であり、ここを塞がなければスロット単位 fail-open が機能しない。非 active アカウントは OAuth アクセストークンの期限切れでフェッチが落ちるのが常態であるため、1 スロットの失敗が snapshot 全体の更新を止めてはならない（MUST NOT）。今回も取れず前回値も無いスロットは、全フィールドが `null` の欠測スロットとして `accounts` に載せる。
 
-どのスロットからも新しい値が得られなかった場合、または snapshot の組み立て・書き込みが失敗した場合は、exit 0 で終了し snapshot を書いてはならない（MUST NOT）（既存 snapshot を破壊しない）。probe はいかなる失敗でも非 0 で終了してはならない（MUST NOT）。
+**`reset_grants` の寿命**は次のとおりでなければならない（SHALL）。取得に成功しパースできたスロットは、その応答から作り直す（条件を満たさなければ欄を出さない）。フェッチを試みて失敗したスロット（通信・認証・パースの失敗、API のエラーレスポンスを含む）は欄を出さず、前回の値を写し直さない（MUST NOT）。フェッチを試みなかったスロット（実行条件を満たさない・オフ）は、他の値フィールドと同じく前回の `reset_grants` を `fetched_at` と一緒に保つ。
+
+**全スロットの取得が失敗したときの例外**: 新しい値が 1 つも得られず snapshot を書かない既存の規則（下記）のままでは、試みて失敗したスロットの前回の `reset_grants` が残ってしまう。そこで、新しい値が 1 つも得られなかった場合でも、既存 snapshot が読めて、フェッチを試みて失敗したスロットに `reset_grants` があるときに限り、probe はその欄だけを除いた snapshot を書かなければならない（SHALL）。使用率・`fetched_at`・`label` などの他のフィールド、トップレベルのミラー、フェッチを試みなかったスロットの欄は 1 バイトも変えない（MUST NOT）。除く欄が 1 つも無い、または既存 snapshot が無い・読めないときは、従来どおり何も書かない。
+
+どのスロットからも新しい値が得られなかった場合は、上の `reset_grants` の例外に当たるときを除き、exit 0 で終了し snapshot を書いてはならない（MUST NOT）。snapshot の組み立て・書き込みが失敗した場合も、exit 0 で終了し snapshot を書いてはならない（MUST NOT）（既存 snapshot を破壊しない）。probe はいかなる失敗でも非 0 で終了してはならない（MUST NOT）。
 
 probe は `refresh_token` を用いたアクセストークンの更新を行ってはならない（MUST NOT）。Claude Code 本体のリフレッシュと競合してトークンを無効化する危険があるため意図的に非対応とし、その理由をコードコメントに残さなければならない（SHALL）。
 
@@ -221,12 +230,70 @@ probe は `refresh_token` を用いたアクセストークンの更新を行っ
 - **THEN** そのスロットは前回値と前回の `fetched_at` を保ち、全 `null` で上書きされない
 
 #### Scenario: 全スロット失敗時は fail-open
-- **WHEN** 全スロットで認証取得または API 取得が失敗する
+- **WHEN** 全スロットで認証取得または API 取得が失敗し、既存 snapshot に削除対象の `reset_grants`（試みて失敗したスロットの欄）が無い
 - **THEN** exit code 0 で終了し、新しい snapshot を書かない（既存 snapshot があればそのまま残す）
 
 #### Scenario: スロットが 1 つのときは現行と同じ形に落ちる
 - **WHEN** レジストリが存在しない状態で有効な usage API レスポンスを与えて probe を実行する
 - **THEN** `accounts` は既定スロット 1 つだけを持ち、トップレベルの従来キー（`fetched_at` を含む）は変更前と同じ値になる（既存の読み手が無改修で動く）
+
+#### Scenario: reset_grants を束の値を変えずに写す
+- **WHEN** 応答の `cedar_ember` が `eligible: true` で、`grants` に `paused` が true の束と `resets_left` が 0 の束と `ends_at` が null の束を含み、各束に他の欄（`id` / `type` など）もある状態で probe を実行する
+- **THEN** snapshot の該当スロットの `reset_grants` は同じ順序の配列で、各要素は `resets_left` / `ends_at` / `paused` だけを持ち、値は応答と同じ（`ends_at` は ISO 8601 の文字列か null のまま）
+
+#### Scenario: eligible でないときは reset_grants を出さない
+- **WHEN** 応答の `cedar_ember` が無い、`null`、`eligible: false`、`grants` が配列でない、のいずれかである
+- **THEN** そのスロットに `reset_grants` のキーは無く、他の値フィールドは通常どおり書かれる
+
+#### Scenario: 空の grants は空配列
+- **WHEN** 応答の `cedar_ember` が `eligible: true` で `grants` が `[]` である
+- **THEN** そのスロットの `reset_grants` は `[]` である
+
+#### Scenario: 取得に失敗したスロットは前回の reset_grants を写し直さない
+- **WHEN** 既存 snapshot のスロットに `reset_grants` があり、そのスロットのフェッチを試みて失敗する（429 またはエラーボディ）
+- **THEN** そのスロットの他の値フィールドは前回値を保つが、`reset_grants` のキーは無い
+
+#### Scenario: 全スロットが失敗しても失敗したスロットの reset_grants だけを除く
+- **WHEN** 既存 snapshot の 2 スロットがどちらも `reset_grants` と使用率を持ち、両方のフェッチが失敗する（429 またはエラーボディ）
+- **THEN** snapshot は書き直され、両スロットの `reset_grants` のキーが無く、使用率・`fetched_at`・トップレベルのミラーは前回のまま変わらない
+
+#### Scenario: 一部失敗と未試行が混ざる
+- **WHEN** 3 スロットのうち A が成功、B が失敗、C は間隔内で未試行で、既存 snapshot の B と C に `reset_grants` がある
+- **THEN** A は応答から作り直され、B の `reset_grants` は無く、C の `reset_grants` は前回のまま残る
+
+#### Scenario: 全件失敗で除く欄が無ければ何も書かない
+- **WHEN** 全スロットのフェッチが失敗し、既存 snapshot のどのスロットにも `reset_grants` が無い
+- **THEN** snapshot は書き換えられない（ファイルの内容が変わらない）
+
+#### Scenario: 全要素が不正な grants は欄を出さない
+- **WHEN** 応答の `cedar_ember` が `eligible: true` で `grants` が `[null, 3]` である
+- **THEN** そのスロットに `reset_grants` のキーは無い（元から空の `[]` とは区別される）
+
+#### Scenario: 一部だけ不正な grants は写せる束だけを出す
+- **WHEN** `grants` が `[null, {"resets_left": 1, "ends_at": null, "paused": false}]` である
+- **THEN** `reset_grants` は後者の 1 要素だけの配列である
+
+#### Scenario: cedar_ember だけで使用率が無い応答は失敗として扱う
+- **WHEN** 応答が `cedar_ember` だけを持ち `five_hour` / `seven_day` / モデル別 weekly のどれも無い
+- **THEN** そのスロットは失敗扱いで、使用率は前回値のまま、`reset_grants` のキーは無い
+
+#### Scenario: 使用率が一部だけ欠ける応答は従来どおり欠けた分が null になる
+- **WHEN** 応答に `seven_day` だけがあり `five_hour` が無く、`cedar_ember` が有効である
+- **THEN** 従来（`cedar_ember` なしの応答）と同じ規則で `five_hour_pct` は `null`、`weekly_all_pct` は値が入り、`reset_grants` も書かれる
+
+#### Scenario: 試みなかったスロットは前回の reset_grants を保つ
+- **WHEN** 2 スロットのうち片方だけが実行条件を満たしてフェッチされ、もう片方の既存 snapshot に `reset_grants` がある
+- **THEN** フェッチされなかったスロットの `reset_grants` は前回のまま残る
+
+#### Scenario: 既定の取得先にクエリが付く
+- **WHEN** `USAGE_PROBE_ENDPOINT` を設定せずに probe のスクリプトを調べる
+- **THEN** 既定の取得先は `https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1` である
+
+**`reset_grants` の守備範囲**（この要件の `reset_grants` の抽出と寿命に限る）
+- 入力の出どころ: 本物の Anthropic usage API の応答（認証済みの自分のアカウント）と、テスト用の応答ファイルだけ。外部の第三者が入力を作る経路は無い
+- 拾う誤り: 型の崩れ（`cedar_ember` が dict でない、`grants` が配列でない、要素がオブジェクトでない）と、欄の条件を満たさない形。これらは欄を出さない（要素の一部だけが不正なら写せる束だけを出す）
+- 意図的に通す入力: 未知のキー（捨てる）、`resets_left` / `ends_at` / `paused` の欠落や null や意味の合わない値（そのまま写す。値の意味の検証と数え方は読み手が持つ）、`paused` が true の束と `resets_left` が 0 の束（選り分けない）
+- 未知の穴を塞ぎ切ることをこの要件の完了条件にしない。非公開の呼び方で予告なく形が変わりうるので、想定外の形は「欄を出さない」に倒し、使用率の取得を止めない
 
 ### Requirement: SessionStart で残量モードを自動導出注入
 `scripts/session-tripwires.sh` は SessionStart 時に usage-probe を best-effort 実行し、active スロットの実効値（`usage-session-records` capability の「記録と snapshot から実効値を求める」。active スロットは `usage-account-registry` の active スロットの判定規則で起動環境から求める）から導出した残量モードと Fable 残量% を additionalContext に含めなければならない（SHALL）。snapshot のトップレベルのミラーを導出に使ってはならない（MUST NOT）。導出の式と優先順位（明示 env > データ無し > 90% 超 > 週経過との比較）は変えない。導出モードのブロックはトリップワイヤー節と併せて注入する。明示 env `FABLE_BUDGET_MODE` があるときはそれを優先し、導出値ではなく明示値を提示する。probe やパースが失敗しても、トリップワイヤー注入自体は従来どおり行われなければならない（SHALL）(probe 失敗が hook 全体を壊さない)。
@@ -280,4 +347,61 @@ probe は `refresh_token` を用いたアクセストークンの更新を行っ
 
 - **WHEN** 状態ファイルに旧方式の版番号（例: `2.13.38`）が記録されているセッションでプロンプトを送る
 - **THEN** 記録と一致しないので 1 回だけ再注入し、以後は `CLAUDE_PLUGIN_ROOT` の値で比較する
+
+### Requirement: SubagentStart hook が dev-workflow の役に運用情報を注入する
+
+dev-workflow プラグインは `hooks/hooks.json` に SubagentStart のエントリを持ち、matcher `^dev-workflow:(worker|reviewer|gate-runner)$` で `${CLAUDE_PLUGIN_ROOT}/scripts/subagent-start-context.sh` を起動しなければならない（SHALL）。
+
+スクリプトは stdin の hook 入力の `agent_type` を自分でも照合し、`dev-workflow:worker` / `dev-workflow:reviewer` / `dev-workflow:gate-runner` のどれでもなければ何も出力せず exit 0 で終わらなければならない（MUST）。対象のときは `{"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": "<本文>"}}` を stdout に出す（SHALL）。本文は役ごとに次の行を含む:
+
+- worker と gate-runner: Fable 残量モードと共有枠モード（現在値・出どころ・効果）、途中計測の閾値の現在値
+- reviewer: 途中計測の閾値の現在値だけ（Fable 残量モードと共有枠モードを含めてはならない（MUST NOT））
+
+残量モードの導出は `scripts/session-tripwires.sh` と同じ式・同じ優先順位で行い、式を別の場所に複製してはならない（MUST NOT）。`session-tripwires.sh` は環境変数 `TRIPWIRES_SCOPE=subagent-budget` のとき残量モードのブロックだけを本文のテキストで出し、その範囲では usage-probe を実行しない（SHALL）。`subagent-budget` のときの出力範囲は、`## Fable 残量モード（自動導出）` の見出しから共有枠モードの効果の行までで、親向けの「W を SendMessage で再開する前に `subagent-context.sh` で測る」行・メモリ索引の検知行・昇格トリップワイヤー節を含めてはならない（MUST NOT）。この範囲はテンプレートが無くても出す（SHALL）。`TRIPWIRES_SCOPE` が未設定、または `subagent-budget` 以外の値のときの `session-tripwires.sh` の出力は従来と変えない（SHALL）。
+
+途中計測の行は、hook 実行時の `DEV_WORKFLOW_CONTEXT_CAP` / `DEV_WORKFLOW_CONTEXT_HARD_CAP` の実効値（未設定なら `scripts/context-tripwire.sh` と同じ既定値）と、`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` で全解除されているかを示し、扱いの規則は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」を読むよう案内する（SHALL）。規則の言い換えを本文に書いてはならない（MUST NOT）。
+
+照合の守備範囲は、matcher が効かない・手で実行された・別の設定から流用された経路で対象外の役に返さないことまでとする。Agent Teams の teammate 化で `agent_type` が変わる経路、将来の命名変更、SubagentStart hook がそもそも発火しない経路は守らない。実機で `agent_type` が違う形で届くと判明したら照合と matcher をその形に合わせ、それ以外の穴を塞ぎ切ることは完了条件にしない。
+
+python3 が無い・入力が JSON でない・`agent_type` が無い・残量ブロックの生成が失敗した、のどの場合もサブエージェントの起動を止めてはならず、exit 0 で終わらなければならない（MUST）。残量ブロックが作れなくても途中計測の行は出す。
+
+#### Scenario: worker の入力に運用情報を返す
+- **WHEN** `{"hook_event_name":"SubagentStart","agent_type":"dev-workflow:worker"}` を stdin に渡してスクリプトを実行する
+- **THEN** stdout は valid JSON で、`hookSpecificOutput.hookEventName` が `SubagentStart`、`hookSpecificOutput.additionalContext` に `FABLE_BUDGET_MODE`・`SHARED_BUDGET_MODE`・途中計測の閾値の値・`decision-criteria.md` への案内が含まれる
+
+#### Scenario: Explore の入力には何も返さない
+- **WHEN** `{"hook_event_name":"SubagentStart","agent_type":"Explore"}` を stdin に渡してスクリプトを実行する
+- **THEN** exit code 0 で stdout は空である
+
+#### Scenario: decider と他プラグインのエージェントにも何も返さない
+- **WHEN** `agent_type` が `dev-workflow:decider` または `casting:casting-arbiter` の入力を渡してスクリプトを実行する
+- **THEN** exit code 0 で stdout は空である
+
+#### Scenario: reviewer には残量モードを渡さない
+- **WHEN** `agent_type` が `dev-workflow:reviewer` の入力を渡してスクリプトを実行する
+- **THEN** `additionalContext` に途中計測の閾値の値が含まれ、`FABLE_BUDGET_MODE` と `SHARED_BUDGET_MODE` は含まれない
+
+#### Scenario: 明示 env の残量モードがそのまま届く
+- **WHEN** `FABLE_BUDGET_MODE=reserve` と `SHARED_BUDGET_MODE=throttled` を設定し、`agent_type` が `dev-workflow:gate-runner` の入力を渡してスクリプトを実行する
+- **THEN** `additionalContext` は Fable 残量モード `reserve`（明示 env）と共有枠モード `throttled`（明示 env）を提示する
+
+#### Scenario: 閾値の env 上書きと既定値
+- **WHEN** `DEV_WORKFLOW_CONTEXT_CAP=90000` を設定して worker の入力を渡す／未設定で渡す
+- **THEN** 前者の本文は 90000 を、後者は `context-tripwire.sh` の既定値と同じ値を提示する
+
+#### Scenario: 壊れた入力でも起動を止めない
+- **WHEN** JSON でない文字列、または `agent_type` の無い JSON を stdin に渡してスクリプトを実行する
+- **THEN** exit code 0 で stdout は空である
+
+#### Scenario: subagent-budget はテンプレートが無くても残量ブロックだけを出す
+- **WHEN** テンプレートの無いディレクトリを `CLAUDE_PLUGIN_ROOT` にし（`scripts/` だけは実物を指す構成で）、`TRIPWIRES_SCOPE=subagent-budget` で `session-tripwires.sh` を実行する
+- **THEN** stdout は `## Fable 残量モード` で始まる本文テキストで、`subagent-context.sh` を含まず、usage-probe の実行痕（probe の状態ファイル・snapshot の書き込み）が残らない
+
+#### Scenario: SessionStart の出力は変わらない
+- **WHEN** `TRIPWIRES_SCOPE` を設定せずに `session-tripwires.sh` を実行する
+- **THEN** 出力は従来どおり `additionalContext` に昇格トリップワイヤー節と残量モードのブロックを含む JSON である
+
+#### Scenario: hooks.json の SubagentStart エントリ
+- **WHEN** `plugins/dev-workflow/hooks/hooks.json` をパースする
+- **THEN** SubagentStart エントリが存在し、matcher が `^dev-workflow:(worker|reviewer|gate-runner)$`、command が `${CLAUDE_PLUGIN_ROOT}` 経由で `scripts/subagent-start-context.sh` を指している
 

@@ -24,10 +24,10 @@ setup() {
     "plugins/infra/skills/infra-setup/SKILL.md"
     "plugins/weekly-report/skills/weekly-report/SKILL.md"
     "plugins/daily-report/skills/daily-report/SKILL.md"
-    "plugins/experience-to-skill/skills/experience-to-skill/SKILL.md"
     "plugins/worktree/skills/wt-setup/SKILL.md"
     "plugins/worktree/skills/wt-clean/SKILL.md"
     "plugins/worktree/references/wt-clean-verification.md"
+    "plugins/dev-workflow/skills/push-guard-setup/SKILL.md"
   )
 }
 
@@ -73,7 +73,7 @@ setup() {
     "plugins/daily-report/skills/daily-report/SKILL.md" \
     "plugins/weekly-report/skills/weekly-report/SKILL.md" \
     "plugins/infra/skills/infra-setup/SKILL.md" \
-    "plugins/experience-to-skill/skills/experience-to-skill/SKILL.md"; do
+    "plugins/dev-workflow/skills/push-guard-setup/SKILL.md"; do
     grep -qF "$p" "$SELFV" || { echo "missing ${p}"; return 1; }
   done
   ! grep -q 'longrun-plan\|loops-design\|loops-goalify\|longrun-feedback\|longrun-mvp' "$SELFV" || return 1
