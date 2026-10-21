@@ -50,7 +50,7 @@ setup() {
   make_stub sleep
   make_stub sysctl
   # 外の環境（並列起動された子のセッション）の値をテストに漏らさない
-  unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT
+  unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX
   # 既存の launch のテストが上限に当たらないよう大きくする（上限のテストだけで上書き・unset する）。
   # 物理メモリは sysctl のスタブ（memsize / sysctl_exit）だけから読ませ、実物の /proc/meminfo を読ませない
   export EPIC_DISPATCH_MAX_PARALLEL=99

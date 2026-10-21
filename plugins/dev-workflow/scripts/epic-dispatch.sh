@@ -261,22 +261,94 @@ issue_api() {
   printf 'repos/{owner}/{repo}/issues/%s' "$num"
 }
 
-# 起動部品（子のワークツリー・セッション・画面の印を扱う。この版は Orca の部品 epic-launch-orca.sh だけ）を
-# 別のプロセスとして呼ぶ（<サブコマンド> <引数...>）。待ち時間は、ここで検査して既定を当てた値を同じ名前の
-# 環境変数で渡す（ready / submit は agent_setup、close_wait は reap が入れる。空なら部品の既定）
-LAUNCHER="${BASH_SOURCE[0]%/*}/epic-launch-orca.sh"
+# 起動部品（子のワークツリー・セッション・画面の印を扱う。Orca の部品 epic-launch-orca.sh と tmux の部品
+# epic-launch-tmux.sh）を別のプロセスとして呼ぶ（<部品の名前> <サブコマンド> <引数...>）。待ち時間は、ここで検査して
+# 既定を当てた値を同じ名前の環境変数で渡す（ready / submit は agent_setup、close_wait は reap が入れる。空なら部品の既定）
+LAUNCHER_DIR="${BASH_SOURCE[0]%/*}"
 close_wait=""
-launcher() {
+launcher_run() {
+  local name="$1"
+  shift
   EPIC_DISPATCH_READY_TIMEOUT_MS="${ready-}" EPIC_DISPATCH_SUBMIT_WAIT="${submit-}" \
-    EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT="$close_wait" bash "$LAUNCHER" "$@"
+    EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT="$close_wait" bash "$LAUNCHER_DIR/epic-launch-$name.sh" "$@"
+}
+
+# 今の操作が使う部品の名前（launch / adopt は pick_launcher、記録に従う操作は子の記録の launcher で決める）。
+# 既定は orca
+LAUNCHER_NAME=orca
+launcher() { launcher_run "$LAUNCHER_NAME" "$@"; }
+
+# 環境変数 EPIC_DISPATCH_LAUNCHER は orca・tmux・空のどれか（違えば理由を stderr に出して 1）
+launcher_env_check() {
+  case "${EPIC_DISPATCH_LAUNCHER-}" in
+    ''|orca|tmux) return 0 ;;
+  esac
+  echo "EPIC_DISPATCH_LAUNCHER must be orca or tmux (got: ${EPIC_DISPATCH_LAUNCHER})" >&2
+  return 1
+}
+
+# 新しい子を起こす操作（launch / adopt）の部品を選ぶ。EPIC_DISPATCH_LAUNCHER が orca / tmux ならその部品、
+# 空なら Orca の部品の here が成功したとき orca、tmux の部品の here が成功したとき tmux、どれも当たらなければ orca
+# （使えるかは呼び出し側が available で確かめる）。選ぶために読んだ here の出力は PICKED_HERE に残し、
+# 呼び出し側が here を呼び直さずに使う（orca の呼び出しの回数を変えない）。launcher_env_check を済ませてから呼ぶ
+PICKED_HERE=""
+pick_launcher() {
+  local out
+  PICKED_HERE=""
+  case "${EPIC_DISPATCH_LAUNCHER-}" in
+    orca|tmux) LAUNCHER_NAME="$EPIC_DISPATCH_LAUNCHER"; return 0 ;;
+  esac
+  if out="$(launcher_run orca here 2>/dev/null)"; then
+    LAUNCHER_NAME=orca; PICKED_HERE="$out"
+  elif out="$(launcher_run tmux here 2>/dev/null)"; then
+    LAUNCHER_NAME=tmux; PICKED_HERE="$out"
+  else
+    LAUNCHER_NAME=orca
+  fi
+  return 0
+}
+
+# 部品が使えるか（<名前>）。使えなければ部品が理由を stderr に出す（同じ部品の 2 回目からは出さずに答える）
+# shellcheck disable=SC2034  # launcher_usable が間接参照で読み書きする
+LAUNCHER_OK_orca=""; LAUNCHER_OK_tmux=""
+launcher_usable() {
+  local var="LAUNCHER_OK_$1"
+  if [ -z "${!var}" ]; then
+    if launcher_run "$1" available; then printf -v "$var" 1; else printf -v "$var" 0; fi
+  fi
+  [ "${!var}" = 1 ]
+}
+
+# 子の引数の記録の launcher の部品の名前を CHILD_LAUNCHER に入れる。記録が無い・読めない・2 件以上のときは orca
+# （記録の無い子は Orca の部品を呼ぶ今の扱い）。need_parent を済ませてから呼ぶ
+CHILD_LAUNCHER=orca
+child_launcher_of() {
+  CHILD_LAUNCHER=orca
+  if child_record "$PARENT_TOP" "$1"; then CHILD_LAUNCHER="$(es_get "$ES_HIT" launcher)"; fi
+  return 0
+}
+
+# 記録に従う操作の入口（reply / notify-closed / wait --resolve / reap）。対象の子の部品を記録から決め、使える部品が
+# 1 本もなければ（stdout に何も出さず、部品の理由を stderr に出して）exit 1。一部の部品だけが使えないときは通し、
+# その子だけを呼び出し側が launcher-unavailable にする。need_parent を済ませてから呼ぶ（<子の引数...>）
+launchers_gate() {
+  local n any=0 names=" " nm
+  for n in "$@"; do
+    child_launcher_of "$n"
+    case "$names" in *" $CHILD_LAUNCHER "*) ;; *) names="$names$CHILD_LAUNCHER " ;; esac
+  done
+  for nm in $names; do
+    if launcher_usable "$nm"; then any=1; fi
+  done
+  [ "$any" -eq 1 ] || exit 1
 }
 
 # 記録の launcher が orca なら、記録を書いたあとに起動部品の mirror で画面の印へ写す
 # （<記録のパス> <current か子のワークツリー> <done|waiting|stopped|resumed|stopped-seen>）。
-# 写せなくても成功扱い（部品が stderr に出す）
+# 写せなくても成功扱い（部品が stderr に出す）。tmux の記録の子と使えない部品では何もしない
 mirror_state() {
   [ "$(es_get "$1" launcher)" = orca ] || return 0
-  launcher mirror "$2" "$3" "$1"
+  launcher_run orca mirror "$2" "$3" "$1"
   return 0
 }
 
@@ -297,6 +369,7 @@ parent_from_state() {
 
 cmd_route() {
   check_children "$@"
+  launcher_env_check || usage
   # 並列起動された子のセッション（起動し直したものを含む）の中では、エピックをさらに展開しない。
   # 端末に付けた環境変数か、今のワークツリーを worktree に持つ状態の記録のどちらかで判定する
   local epic="" managed=0
@@ -310,11 +383,24 @@ cmd_route() {
     echo nested
     return 0
   fi
-  if launcher here >/dev/null 2>&1; then
+  # 判定の順: EPIC_DISPATCH_LAUNCHER が orca / tmux ならその部品（使えなければ理由を stderr に出して subagent）、
+  # Orca 管理下なら orca、tmux の中なら tmux、それ以外は subagent。子が 0 件なら subagent
+  case "${EPIC_DISPATCH_LAUNCHER-}" in
+    orca|tmux)
+      if [ "$#" -ge 1 ] && launcher_usable "$EPIC_DISPATCH_LAUNCHER"; then
+        echo "$EPIC_DISPATCH_LAUNCHER"
+      else
+        echo subagent
+      fi
+      return 0 ;;
+  esac
+  if launcher_run orca here >/dev/null 2>&1; then
     managed=1
   fi
   if [ "$#" -ge 1 ] && [ "$managed" -eq 1 ]; then
     echo orca
+  elif [ "$#" -ge 1 ] && launcher_run tmux here >/dev/null 2>&1; then
+    echo tmux
   else
     echo subagent
   fi
@@ -474,6 +560,7 @@ EOF
     XR_ID="$(printf '%s\n' "$LAUNCHER_REPOS" | jq -r -s --arg p "$XR_CLONE" \
       '[.[] | select(.path == $p)] | .[0].id // empty' 2>/dev/null)"
     # 登録が無ければ、理由の語（Orca は not-in-orca）と登録の仕方は部品が出す
+    # 登録の仕組みを持たない部品（tmux）は ok を返す。登録は要らないとして XR_ID は空のまま通す
     if [ -z "$XR_ID" ]; then
       XR_CODE="$(launcher unregistered "$XR_CLONE")"
       [ -n "$XR_CODE" ] || XR_CODE=unregistered
@@ -519,13 +606,19 @@ cmd_launch() {
     exit 1
   fi
 
+  launcher_env_check || usage
+  pick_launcher
   launcher available || exit 1
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
 
-  local current repo parent list erepo
-  current="$(launcher here)" || exit 1
+  local current repo parent list erepo lname="$LAUNCHER_NAME" lname_label=Orca
+  [ "$lname" = tmux ] && lname_label=tmux
+  if [ -n "$PICKED_HERE" ]; then current="$PICKED_HERE"; else current="$(launcher here)" || exit 1; fi
   repo="$(printf '%s' "$current" | jq -r '.repo_id // empty')"
-  [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+  # Orca の部品の repo_id は子を作るリポジトリを指す値で、空では進めない。tmux の部品は repo_id を持たない（空が正常）
+  if [ "$lname" = orca ]; then
+    [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+  fi
   parent="$(git rev-parse --show-toplevel)" && [ -n "$parent" ] || { echo "git rev-parse failed" >&2; exit 1; }
   # 起動し直した子のセッション（環境変数が無い）でも、子ワークツリーを作らず、今のワークツリーの issue も書き換えない。
   # 今のワークツリーを worktree に持つ記録があれば子（fetch と set より前のここで止まる）
@@ -595,7 +688,7 @@ cmd_launch() {
       # この記録は上の枠の数えで使用中に入っていることがある。その子自身は空き枠をもう 1 つ減らさない
       case "$in_use_files" in *" $f "*) own=1 ;; esac
     fi
-    # 別のリポジトリの子は、clone・Orca のリポジトリ・書き込み権・既定ブランチを解決する（記録を書く前。
+    # 別のリポジトリの子は、clone・部品のリポジトリ・書き込み権・既定ブランチを解決する（記録を書く前。
     # 失敗は記録も枠も使わない）。同じリポジトリの子は今のまま（起点は base、Orca のリポジトリは親と同じ）
     cbase="$base"; crid="$repo"; cclone=""
     if [ "$xrepo" -eq 1 ]; then
@@ -630,12 +723,12 @@ cmd_launch() {
       free=$(( free - 1 ))
     fi
     # 子のワークツリーを作る前に記録を書く（作成に失敗したら消す）
-    if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$crepo" "$num" orca "$parent" "" "" "$cbase" running "")"; then
+    if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$crepo" "$num" "$lname" "$parent" "" "" "$cbase" running "")"; then
       echo "could not write the state record: $f" >&2
       echo "failed $n"; failed=1; continue
     fi
     if [ "$xrepo" -eq 1 ]; then
-      prompt="/develop #$num （エピック #$epic の子。エピックのリポジトリ ${erepo}。親ワークツリー $parent から Orca で起動）"
+      prompt="/develop #$num （エピック #$epic の子。エピックのリポジトリ ${erepo}。親ワークツリー $parent から ${lname_label} で起動）"
       agent_cmd_for "$erepo#$epic"
       # 子の clone の origin から起点を取る（失敗したら記録を消して作らない）
       if ! git -C "$cclone" fetch origin "$cbase" >&2; then
@@ -644,7 +737,7 @@ cmd_launch() {
         echo "failed $n"; failed=1; continue
       fi
     else
-      prompt="/develop #$num （エピック #$epic の子。親ワークツリー $parent から Orca で起動）"
+      prompt="/develop #$num （エピック #$epic の子。親ワークツリー $parent から ${lname_label} で起動）"
       # 前の子が別のリポジトリの子でも、起動コマンドをエピックの番号だけに戻す
       agent_cmd_for "$epic"
       # 同じリポジトリの子は親と同じリポジトリに作る（部品に repo_id を渡さない）
@@ -724,6 +817,9 @@ deliver_reply() {
   rec="$ES_HIT"
   path="$(es_get "$rec" worktree)"
   [ -n "$path" ] || { echo "failed $n no-worktree"; return 1; }
+  # 返事は記録の launcher の部品で届ける。その部品が使えない子だけ launcher-unavailable
+  LAUNCHER_NAME="$(es_get "$rec" launcher)"
+  launcher_usable "$LAUNCHER_NAME" || { echo "failed $n launcher-unavailable"; return 1; }
   # 記録の repo がエピックのリポジトリと違う子は、返事の頭・起動コマンド・起動し直しの指示にエピックのリポジトリを足す
   xrepo_epic="$(es_get "$rec" epic)"
   if [ -n "$xrepo_epic" ] && [ "$(es_get "$rec" repo)" != "${xrepo_epic%%#*}" ]; then
@@ -771,8 +867,8 @@ cmd_reply() {
   check_children "$2"
   [ -n "$3" ] || { echo "the reply text must not be empty" >&2; usage; }
   agent_setup "$1" || usage
-  launcher available || exit 1
   need_parent
+  launchers_gate "$2"
   deliver_reply "$relaunch" "$as" "$1" "$2" "$3" || exit 1
   exit 0
 }
@@ -822,7 +918,7 @@ cmd_notify_closed() {
     stopped|stopped-seen) ;;
     *) echo "skipped $n not-stopped"; exit 0 ;;
   esac
-  launcher available || exit 1
+  launcher_usable "$(es_get "$rec" launcher)" || exit 1
   # 停止の記録は、信頼できる投稿者の最新の `子の停止: 主の返事待ち` のコメント（無ければ子 issue の URL）
   local url
   url="$(gh api "$api/comments" --paginate --jq \
@@ -1171,8 +1267,8 @@ ghpr() {
 cmd_reap() {
   [ "$#" -ge 1 ] || usage
   check_children "$@"
-  launcher available || exit 1
   need_parent
+  launchers_gate "$@"
 
   local n f w path branch st head heads sheads rmres tip seen=" "
   local legacy allprs istate lsout btip="" base="${EPIC_DISPATCH_BASE:-main}"
@@ -1194,6 +1290,9 @@ cmd_reap() {
     if [ -z "$path" ] || [ ! -d "$path" ]; then
       rm -f "$f"; echo "gone $n"; continue
     fi
+    # 片付けは記録の launcher の部品で行う。その部品が使えない子だけ残す
+    LAUNCHER_NAME="$(es_get "$f" launcher)"
+    launcher_usable "$LAUNCHER_NAME" || { echo "kept $n launcher-unavailable"; continue; }
     [ "$(es_get "$f" status)" = "done" ] || { echo "kept $n not-done"; continue; }
     # 記録の repo がエピックのリポジトリと違う子は、PR の照会を子のリポジトリ（-R）に、base の照会を子のワークツリーの
     # origin に、base の名前を記録の base に向ける。同じリポジトリの子は今のまま
@@ -1274,7 +1373,11 @@ cmd_reap() {
     close_wait="${EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT:-10}"
     case "$close_wait" in ''|*[!0-9]*) close_wait=10 ;; esac
     if ! launcher close "$path" "$n"; then
-      echo "owner action for #$n: open the workspace $path in Orca, wait for the child's running turn to end or close its terminals by hand, then run: epic-dispatch.sh reap $n" >&2
+      if [ "$LAUNCHER_NAME" = tmux ]; then
+        echo "owner action for #$n: close the tmux window of $path by hand (wait for the child's running turn to end), then run: epic-dispatch.sh reap $n" >&2
+      else
+        echo "owner action for #$n: open the workspace $path in Orca, wait for the child's running turn to end or close its terminals by hand, then run: epic-dispatch.sh reap $n" >&2
+      fi
       echo "kept $n close-failed"; continue
     fi
     # ワークツリーを消す（部品は --force を付けない。確認のあとに増えた未コミットの変更があれば rm が止まる）。
@@ -1328,17 +1431,22 @@ cmd_adopt() {
   local epic="$1"; shift
   is_num "$epic" || { echo "not an issue number: $epic" >&2; usage; }
   check_children "$@"
+  launcher_env_check || usage
+  pick_launcher
   launcher available || exit 1
   command -v jq >/dev/null 2>&1 || { echo "jq is not on PATH" >&2; exit 1; }
-  local base="${EPIC_DISPATCH_BASE:-main}" current repo cid parent erepo list
-  current="$(launcher here)" || exit 1
+  local base="${EPIC_DISPATCH_BASE:-main}" current repo cid parent erepo list lname="$LAUNCHER_NAME"
+  if [ -n "$PICKED_HERE" ]; then current="$PICKED_HERE"; else current="$(launcher here)" || exit 1; fi
   repo="$(printf '%s' "$current" | jq -r '.repo_id // empty' 2>/dev/null)"
   cid="$(printf '%s' "$current" | jq -r '.worktree_id // empty' 2>/dev/null)"
-  [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+  if [ "$lname" = orca ]; then
+    [ -n "$repo" ] || { echo "orca worktree current --json has no repoId" >&2; exit 1; }
+  fi
   parent="$(toplevel)" && [ -n "$parent" ] || { echo "git rev-parse failed" >&2; exit 1; }
   erepo="$(es_epic_repo)" || exit 1
   list="$(launcher list)" || exit 1
-  [ -n "$cid" ] || echo "orca worktree current --json has no id; no child is found" >&2
+  # tmux の部品は子を知らない（list は空）ので、記録の無い既存の子は拾えず adopt は全員 none になる
+  if [ "$lname" = orca ] && [ -z "$cid" ]; then echo "orca worktree current --json has no id; no child is found" >&2; fi
 
   local n num crepo f hits cnt w b st sp failed=0
   for n in "$@"; do
@@ -1364,7 +1472,7 @@ cmd_adopt() {
     b="$(printf '%s' "$hits" | jq -r '.[0].branch')"
     st="$(printf '%s' "$hits" | jq -r '.[0].status')"
     sp="$(printf '%s' "$hits" | jq -r '.[0].stop')"
-    if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$crepo" "$num" orca "$parent" "$w" "$b" "$base" "$st" "$sp")"; then
+    if ! es_write "$f" "$(es_new_record "$erepo" "$epic" "$crepo" "$num" "$lname" "$parent" "$w" "$b" "$base" "$st" "$sp")"; then
       echo "could not write the state record: $f" >&2
       echo "failed $n"; failed=1; continue
     fi

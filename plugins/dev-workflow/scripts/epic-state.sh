@@ -83,6 +83,7 @@ ES_VALID='type == "object" and .schema == 1
   and ((.status | type) == "string") and (.status == "running" or .status == "waiting" or .status == "done")
   and ((.stop | type) == "string") and (.stop == "" or .stop == "stopped" or .stop == "stopped-seen" or .stop == "resumed")
   and ((.epic | type) == "string") and ((.child | type) == "string") and ((.repo | type) == "string")
+  and ((.launcher | type) == "string") and (.launcher == "orca" or .launcher == "tmux")
   and ((.number | type) == "number") and ((.parent_worktree | type) == "string") and ((.worktree | type) == "string")'
 
 # 記録を読んで 1 行の JSON で出す。読めない記録（JSON でない・schema が 1 でない・表に無い値・必須の項目が無い）は 1
