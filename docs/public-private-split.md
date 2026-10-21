@@ -139,7 +139,7 @@ https://github.com/oratta/claude-harness/issues/1164
 
 ## 固有記述の一覧
 
-公開版に残る部品（分割で公開版になった部品の行と、付属のファイルを含む）の中の固有名とオーナーの環境に依存する記述。行番号はこの文書を書いた時点（#1128 の PR）の値。直す issue は、`rules/` と `output-styles/` の 6 本（#1098 の範囲）の行を #1098、capability-registry の公開版の `fmtoken.sh` の参照を #1164 にし、どの issue の範囲にも当たらない行を「担い手なし」にした。その後 #1168 で、担い手なしだった行を直すか、載せない行の基準に当たるとして外し、Orca 経路の行の担い手は #1177 にした。#1164 の行は、PR #1175 のマージで実ファイルから `fmtoken` が消えていたので一覧から外した。flatmate の住人での索引と案内の二重（#1105 の範囲）は、まだ書かれていない参照を足す作業なので、当たる行は無い。
+公開版に残る部品（分割で公開版になった部品の行と、付属のファイルを含む）の中の固有名とオーナーの環境に依存する記述。行番号はこの文書を書いた時点（#1128 の PR）の値。直す issue は、`rules/` と `output-styles/` の 6 本（#1098 の範囲）の行を #1098、capability-registry の公開版の `fmtoken.sh` の参照を #1164 にし、どの issue の範囲にも当たらない行を「担い手なし」にした。その後 #1168 で、担い手なしだった行を直すか、載せない行の基準に当たるとして外し、Orca 経路の行の担い手は #1177 にした。#1164 の行は、PR #1175 のマージで実ファイルから `fmtoken` が消えていたので一覧から外した。その後 #1123 の PR（tmux の部品の追加）で develop の SKILL.md「エピックの扱い」を書き直したので、SKILL.md の行番号を今の本文に合わせ、Orca の語もエピックの経路への依存も無くなった 4 行（親の側の手順の送り先、同時に動く子の上限の説明、サブエージェント方式の別のリポジトリの子の扱い、完了時の状態ディレクトリの確認）を外した。flatmate の住人での索引と案内の二重（#1105 の範囲）は、まだ書かれていない参照を足す作業なので、当たる行は無い。
 
 | 場所 | 種別 | 内容 | 直す issue |
 |---|---|---|---|
@@ -148,21 +148,17 @@ https://github.com/oratta/claude-harness/issues/1164
 | `plugins/dev-workflow/skills/develop/SKILL.md:207` | 環境依存 | worktree の片付けを Orca 経路の親が行う | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:350` | 環境依存 | Orca 経路の子が主の返事を待って止まる前の記録と印 | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:353` | 環境依存 | Orca 経路の子の状態の印 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:375` | 環境依存 | 親の側の手順を Orca 経路の手順 8 に送る | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:481` | 環境依存 | エピックの経路の決め方（Orca 経路） | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:485` | 環境依存 | `nested` の扱いと、子をオーナーの起動コマンド `cld` で起動する | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:487` | 環境依存 | Orca 経路の子の独立セッション | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:489` | 環境依存 | Orca 経路の子の状態の正本 | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:491` | 環境依存 | Orca 経路で親がターンを終えるときの発言 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:498` | 環境依存 | Orca 側の失敗の扱い | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:499` | 環境依存 | `回し方: Orca` の再開 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:504` | 環境依存 | Orca 経路のマージ待ちの子 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:524` | 環境依存 | 別のリポジトリの子の clone を、無ければ Orca に登録済みのリポジトリから探す | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:526` | 環境依存 | 子セッションを `cld --model` で起動する | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:528` | 環境依存 | Orca 経路の同時に動く子の上限 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:530` | 環境依存 | 子セッションを `cld`（`EPIC_DISPATCH_CLAUDE_CMD` で差し替え）が付ける `--dangerously-skip-permissions` で動かす起動の説明（Orca の語なし） | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:534` | 環境依存 | サブエージェント方式の上限を Orca 経路と同じにし、別のリポジトリの子を Orca 経路でだけ起動すると書く | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:545` | 環境依存 | Orca 経路の状態ディレクトリの確認 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:509` | 環境依存 | Orca 側の失敗の扱い | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:510` | 環境依存 | `回し方: Orca` の再開 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:515` | 環境依存 | 別セッション方式のマージ待ちの子（`epic-dispatch.sh reply` で返事を送る手順） | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:535` | 環境依存 | 別のリポジトリの子の clone を、無ければ Orca に登録済みのリポジトリから探す | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:537` | 環境依存 | 子セッションを `cld --model` で起動する | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:541` | 環境依存 | 子セッションを `cld`（`EPIC_DISPATCH_CLAUDE_CMD` で差し替え）が付ける `--dangerously-skip-permissions` で動かす起動の説明（Orca の語なし） | #1177 |
 | `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:3` | 環境依存 | Orca 経路の子セッションへの返事の規則 | #1177 |
 | `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:5` | 環境依存 | Orca 経路の手順 8 への参照 | #1177 |
 | `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:64` | 環境依存 | Orca 経路の子の端末を `reap` で閉じる | #1177 |

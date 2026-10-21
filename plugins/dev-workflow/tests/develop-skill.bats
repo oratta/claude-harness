@@ -808,7 +808,7 @@ xrepo_block() { section 'エピックの扱い' | awk '/^\*\*別のリポジト�
 @test "skill (cross-repo): the subagent route does not hand a child in another repository to W" {
   s="$(section 'エピックの扱い' | grep -F '**サブエージェント方式**')"
   printf '%s\n' "$s" | grep -qF '別のリポジトリの子は W に渡さない'
-  printf '%s\n' "$s" | grep -qF '子 <owner>/<repo>#N は別のリポジトリなので Orca 経路でだけ起動する'
+  printf '%s\n' "$s" | grep -qF '子 <owner>/<repo>#N は別のリポジトリなので別セッション方式でだけ起動する'
   printf '%s\n' "$s" | grep -qF '起こさずに、主に報告する'
 }
 
@@ -882,4 +882,63 @@ xrepo_block() { section 'エピックの扱い' | awk '/^\*\*別のリポジト�
   printf '%s\n' "$p" | grep -qF '0 以外で終わった'
   printf '%s\n' "$p" | grep -qF '再び返った'
   printf '%s\n' "$p" | grep -qF 'オーナーが自分で実行'
+}
+
+# --- 起動部品の差し替え（epic-launcher-tmux） ---
+# spec: dev-workflow-develop（回し方は起動部品の差し替えとして 1 本で書く）
+
+run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1} /^### 完了条件/{f=0} f'; }
+
+@test "launcher parts: the run section is one procedure with a per-part table and no Orca-route heading" {
+  r="$(run_section)"
+  [ "$(printf '%s\n' "$r" | grep -c '^\*\*部品ごとの欄\*\*')" -eq 1 ]
+  printf '%s\n' "$r" | grep -qF '| 点 | Orca の部品'
+  printf '%s\n' "$r" | grep -qF 'tmux の部品'
+  [ "$(printf '%s\n' "$r" | grep -c '^\*\*Orca 経路\*\*')" -eq 0 ]
+  [ "$(grep -c 'Orca 経路' "$SKILL")" -eq 0 ]
+  # 手順 1〜8 は 1 本だけ
+  [ "$(printf '%s\n' "$r" | grep -cE '^[1-8]\. ')" -eq 8 ]
+}
+
+@test "launcher parts: the subagent mode writes no state record" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -qF 'サブエージェント方式は部品ではなく別の方式なので状態の記録を書かない'
+}
+
+@test "launcher parts: EPIC_DISPATCH_LAUNCHER and tmux are written in the route rule" {
+  r="$(run_section | grep -F '**経路の決め方**')"
+  printf '%s\n' "$r" | grep -qF 'EPIC_DISPATCH_LAUNCHER=orca'
+  printf '%s\n' "$r" | grep -qF '`tmux`（Orca 管理外で'
+  printf '%s\n' "$r" | grep -qF '`回し方: tmux（並列可能な子 k 件）`'
+}
+
+@test "launcher parts: resuming passes the part named in the latest note and stops if it is unusable" {
+  r="$(run_section | grep -F '**経路の決め方**')"
+  printf '%s\n' "$r" | grep -qF '`launch` と `adopt` に環境変数 `EPIC_DISPATCH_LAUNCHER=<そのコメントの部品名'
+  printf '%s\n' "$r" | grep -qF '別の部品にもサブエージェント方式にも振り替えず'
+  printf '%s\n' "$r" | grep -qF '部品名を渡さない'
+  p="$(grep -E '^7\. `回し方: Orca`' "$SKILL")"
+  printf '%s\n' "$p" | grep -qF '`回し方: tmux`'
+  printf '%s\n' "$p" | grep -qF 'EPIC_DISPATCH_LAUNCHER=<部品名>'
+}
+
+@test "launcher parts: the kept-removal operation is per part and neither uses force" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -qF 'epic-launch-tmux.sh remove <path>'
+  # orca のコマンドの文字列は手順 3 の 1 か所だけに書く（orca のコマンドの書き方の要件）ので、部品の欄は参照で書く
+  printf '%s\n' "$r" | grep -qF 'Orca の worktree を消す（`--force` なし。コマンドは手順 3 に書いた）'
+  printf '%s\n' "$r" | grep -F '3. `done <N>...`' | grep -qF '`orca worktree rm --worktree path:<path>`'
+  p="$(printf '%s\n' "$r" | grep -F '3. `done <N>...`')"
+  printf '%s\n' "$p" | grep -qF '部品の欄の操作'
+  printf '%s\n' "$p" | grep -qF 'どちらも `--force` なし'
+}
+
+@test "launcher parts: a tmux epic is not told to reopen in the Orca parent worktree" {
+  r="$(run_section)"
+  printf '%s\n' "$r" | grep -qF 'tmux の部品では出ない'
+  printf '%s\n' "$r" | grep -qF '開き直しを案内しない'
+}
+
+@test "launcher parts: the prerequisite table names orca or tmux for starting child sessions" {
+  grep -qF '| **`orca`** または **`tmux`** |' "$SKILL"
 }
