@@ -33,7 +33,7 @@
 プラグインのディレクトリの直下からのパスが `.claude-plugin/plugin.json`・`README.md`・`CHANGELOG.md`・`hooks/hooks.json` のファイルと、`changes/`・`tests/` の配下は付属のファイルとして部品の行で覆わない。付属のファイルは、それが記録・検査・配線している部品と同じ行き先に従う。
 
 - 分割したプラグインの付属のファイルは、そのプラグインに公開版の部品の行が 1 つでもあれば公開版にも残る（個人版の部品についての記述は #1129 で個人版の側へ書き分ける）。固有記述の一覧はこの扱いで付属のファイルの行を載せている
-- ファイルの中で行き先が割れる付属のファイル（例: `hooks/hooks.json` の中で配線先のスクリプトの行き先が割れる、`tests/` のテストが公開版と個人版の両方の部品を検査する）の書き分けは #1129 で行う。dev-workflow の `hooks/hooks.json` の配線先 10 本はどれも公開版の部品で、エピック実行まわりの配線は無い。capability-registry の `hooks/hooks.json` の配線先は公開版の `scripts/browser-guard.sh` だけで、`tests/fmtoken.bats` は個人版の `scripts/fmtoken.sh` に従う
+- ファイルの中で行き先が割れる付属のファイル（例: `hooks/hooks.json` の中で配線先のスクリプトの行き先が割れる、`tests/` のテストが公開版と個人版の両方の部品を検査する）の書き分けは #1129 で行う。dev-workflow の `hooks/hooks.json` の配線先 11 本はどれも公開版の部品で、エピック実行まわりの配線は無い。capability-registry の `hooks/hooks.json` の配線先は公開版の `scripts/browser-guard.sh` だけで、`tests/fmtoken.bats` は個人版の `scripts/fmtoken.sh` に従う
 
 ## 保留の行の確定
 
