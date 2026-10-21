@@ -72,6 +72,7 @@
 | `plugins/dev-workflow/` | 公開版 | 下の行に当たらない dev-workflow の全ファイル。開発の進め方・レビューのゲート・hook・アカウントの切り替え（`accounts.json` の中身は利用者ごとに書く仕組み）は誰の環境でも意味があり、住人のふるまいに効く |
 | `plugins/dev-workflow/docs/auto-merge-deployments.md` | 個人版 | オーナーのリポジトリごとの auto-merge の展開の一覧と PAT の失効日で、オーナーに固有の業務とアカウントの記録 |
 | `plugins/dev-workflow/scripts/epic-dispatch.sh` | 保留（#1123 の後） | Orca で子のセッションを起動する部品を含む。#1123 で Orca の起動部品が差し替えられる部品として切り出され、Orca が無い環境でもエピックを回せるなら公開版、Orca に固有の部品として残るなら個人版 |
+| `plugins/dev-workflow/scripts/epic-launch-orca.sh` | 保留（#1123 の後） | `epic-dispatch.sh` から切り出した、Orca で子のワークツリーとセッションを扱う起動部品。#1123 の結果で、Orca が無い環境でもエピックを回せる差し替えの部品の 1 つとして残るなら公開版、Orca に固有の部品として残るなら個人版に決める |
 | `plugins/dev-workflow/scripts/stop-judge.sh` | 保留（#1123 の後） | `epic-dispatch.sh` の `wait --resolve` から呼ばれる、止まった子の判断の部品。#1123 の後に `epic-dispatch.sh` の行と同じ側に決める（`epic-dispatch.sh` 以外から呼ばれるようになっていれば公開版） |
 | `plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` | 保留（#1123 の後） | `stop-judge.sh` が読む、親が子の止まりを通す基準。#1123 の後に `stop-judge.sh` の行と同じ側に決める |
 | `plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` | 保留（#1123 の後） | Orca 経路の親が子の PR をマージしてよいかの基準。#1123 の後に、サブエージェント方式からも使われる基準になっていれば公開版、Orca 経路だけのものなら `epic-dispatch.sh` の行と同じ側に決める |
