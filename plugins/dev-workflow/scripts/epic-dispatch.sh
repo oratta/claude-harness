@@ -309,8 +309,11 @@ pick_launcher() {
 }
 
 # 部品が使えるか（<名前>）。使えなければ部品が理由を stderr に出す（同じ部品の 2 回目からは出さずに答える）
-# shellcheck disable=SC2034  # launcher_usable が間接参照で読み書きする
-LAUNCHER_OK_orca=""; LAUNCHER_OK_tmux=""
+# launcher_usable が間接参照で読み書きする
+# shellcheck disable=SC2034
+LAUNCHER_OK_orca=""
+# shellcheck disable=SC2034
+LAUNCHER_OK_tmux=""
 launcher_usable() {
   local var="LAUNCHER_OK_$1"
   if [ -z "${!var}" ]; then
