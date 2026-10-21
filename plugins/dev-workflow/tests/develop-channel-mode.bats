@@ -179,6 +179,8 @@ refute() {
 @test "epic: channel resuming an epic whose latest route note is Orca reports in the channel and stops" {
   local s; s="$(subsection '回し方')"
   printf '%s\n' "$s" | grep -qF 'channel で再開したエピックの最新の `回し方:` が Orca なら'
+  printf '%s\n' "$s" | grep -qF 'または tmux なら'
+  printf '%s\n' "$s" | grep -qF 'channel は別セッション方式を引き継がない'
 }
 
 @test "epic: excluding epic children names channel next to unmanned (route is not called)" {
