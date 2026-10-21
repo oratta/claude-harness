@@ -537,3 +537,81 @@ nondev_unlisted() {
     grep -qF -e "$astr" "${REPO_ROOT}/$afile" || { echo "stale: $e"; return 1; }
   done
 }
+
+# --- dev-workflow の公開版の部品が決めた固有名を持たない（Orca 経路を除く。#1168）---
+# 守備範囲: 固定の検索語の当たりが許可リストの行だけであること。別の固有名や文の良し悪しは人のレビューが見る。
+# 許可リストの各件（ファイル|行に含まれる固定の文字列|当たる基準）は、change の tasks の判定の表に同じ行を持つ。
+
+DEVWF_FLATMATE_FILES=(plugins/dev-workflow/references/pr-body-format.md
+  plugins/dev-workflow/skills/issueify/SKILL.md
+  plugins/dev-workflow/skills/push-guard-setup/SKILL.md
+  plugins/dev-workflow/templates/escalation-tripwires.md
+  plugins/dev-workflow/scripts/pr-state.sh
+  plugins/dev-workflow/skills/memory-refresh/SKILL.md
+  plugins/dev-workflow/templates/auto-merge/docs/auto-merge.md)
+
+DEVWF_DEVDIR_FILES=(plugins/dev-workflow/references/ci-watch.md plugins/dev-workflow/skills/memory-refresh/SKILL.md)
+
+# 出典や経緯としてだけ名前を挙げる行 = 出典
+DEVWF_ALLOW=(
+)
+
+# moko の検索の対象: dev-workflow の公開版のファイル（個人版に決まる auto-merge-deployments.md、changes/・CHANGELOG.md・tests/・evals/ を除く）
+devwf_public_files() {
+  git -C "$REPO_ROOT" ls-files -- plugins/dev-workflow \
+    | grep -v -E '/(changes|tests|evals)/|(^|/)CHANGELOG\.md$|plugins/dev-workflow/docs/auto-merge-deployments\.md$'
+}
+
+# 引数: 正規表現 ファイル... → 許可リストに無い当たりを file:line:text で出す
+devwf_unlisted() {
+  local re="$1" f hit file text e afile astr allowed
+  shift
+  for f in "$@"; do
+    while IFS= read -r hit; do
+      [ -n "$hit" ] || continue
+      file="${hit%%:*}"; text="${hit#*:*:}"; allowed=""
+      for e in "${DEVWF_ALLOW[@]}"; do
+        afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
+        [ "$file" = "$afile" ] && [[ "$text" == *"$astr"* ]] && { allowed=1; break; }
+      done
+      [ -n "$allowed" ] || printf '%s\n' "$hit"
+    done < <(awk -v f="$f" '{ print f ":" NR ":" $0 }' "${REPO_ROOT}/$f" | grep -E -e "^[^:]*:[0-9]+:.*(${re})" || true)
+  done
+}
+
+@test "dev-workflow public parts carry no owner project name moko" {
+  local out
+  # shellcheck disable=SC2046
+  out="$(devwf_unlisted 'moko' $(devwf_public_files))"
+  echo "$out"
+  [ -z "$out" ]
+}
+
+@test "dev-workflow public parts carry no new-resident or flatmate outside the allow list" {
+  local out
+  out="$(devwf_unlisted 'new-resident|flatmate|FLATMATE' "${DEVWF_FLATMATE_FILES[@]}")"
+  echo "$out"
+  [ -z "$out" ]
+}
+
+@test "dev-workflow public parts carry no CLAUDE_HARNESS_DEV_DIR outside the allow list" {
+  local out
+  out="$(devwf_unlisted 'CLAUDE_HARNESS_DEV_DIR' "${DEVWF_DEVDIR_FILES[@]}")"
+  echo "$out"
+  [ -z "$out" ]
+}
+
+@test "every dev-workflow allow-list entry still matches a line (no stale entries)" {
+  local e afile astr
+  for e in "${DEVWF_ALLOW[@]}"; do
+    afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
+    grep -qF -e "$astr" "${REPO_ROOT}/$afile" || { echo "stale: $e"; return 1; }
+  done
+}
+
+@test "no dev-workflow row in the listing is left without an owner" {
+  local out
+  out="$(grep -F '| `plugins/dev-workflow/' "$DOC" | grep -F '担い手なし' || true)"
+  echo "$out"
+  [ -z "$out" ]
+}
