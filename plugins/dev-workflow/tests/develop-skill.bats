@@ -726,7 +726,7 @@ refute() {
   p="$(grep -E '^7\. `回し方: Orca`' "$SKILL")"
   printf '%s\n' "$p" | grep -qF 'pending-owner'
   printf '%s\n' "$p" | grep -qF '記録の `stop` が `stopped-seen`'
-  printf '%s\n' "$p" | grep -qF '手順 8 と同じ報告'
+  printf '%s\n' "$p" | grep -qF '手順 8 と同じに扱い（照らして通すか、報告を本文で出し直す）'
   printf '%s\n' "$p" | grep -qF '子 issue のコメントの新旧では再開を判定しない'
 }
 

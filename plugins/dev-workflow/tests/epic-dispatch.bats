@@ -3156,22 +3156,47 @@ orca_cmd_scripts() {
 
 # spec: dev-workflow-develop（エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く）
 
-@test "skill: an epic child's stop record lists the six items in order" {
+@test "skill: an epic child's stop record lists the seven items in order" {
   r="$(section 'エピックの子が主の返事を待って止まるとき')"
   [ -n "$r" ]
-  # 6 つの項目名が行頭の `<項目名>:` の形でこの順に出る（雛形の行で確かめる）
+  # 7 つの項目名が行頭の `<項目名>:` の形でこの順に出る（雛形の行で確かめる）
   prev=0
-  for k in '止まった理由:' '前提:' '推奨:' '推奨の根拠:' '受け入れるリスク:' '再開に要る途中経過:'; do
+  for k in '止まった理由:' '主に聞く理由:' '前提:' '推奨:' '推奨の根拠:' '受け入れるリスク:' '再開に要る途中経過:'; do
     n="$(printf '%s\n' "$r" | grep -n "^${k}" | head -1 | cut -d: -f1)"
     [ -n "$n" ]
     [ "$n" -gt "$prev" ]
     prev="$n"
   done
-  printf '%s\n' "$r" | grep -F '6 つの項目' | grep -qF 'どの項目も省かない'
+  printf '%s\n' "$r" | grep -F '7 つの項目' | grep -qF 'どの項目も省かない'
+  run grep -F '6 つの項目' <<<"$r"; [ "$status" -eq 1 ]
+  printf '%s\n' "$r" | grep -qF 'ほかの 6 項目も省かない'
+  run grep -F 'ほかの 5 項目' <<<"$r"; [ "$status" -eq 1 ]
   printf '%s\n' "$r" | grep -F '該当が無い項目' | grep -qF '`なし` と書く'
   printf '%s\n' "$r" | grep -qF '`推奨: なし（<足りない情報>）`'
   printf '%s\n' "$r" | grep -F '次の項目の行まで' | grep -qF '複数行'
   printf '%s\n' "$r" | grep -F '`再開に要る途中経過:`' | grep -qF '引き継ぎのコメントの URL'
+}
+
+@test "skill: an epic child's stop record says why the owner is asked and how likely the risk is" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  # 雛形の止まった理由は主にしてほしいことだけで、子の側でできない理由を混ぜない
+  printf '%s\n' "$r" | grep '^止まった理由:' | grep -qF '主にしてほしいこと'
+  run grep -F 'それを子の側でできない理由' <<<"$r"; [ "$status" -eq 1 ]
+  # 主に聞く理由は正本の 3 つの理由の語で始める
+  l="$(printf '%s\n' "$r" | grep -F '`主に聞く理由:`')"
+  [ -n "$l" ]
+  for w in '主の側にしか答えが無い' '決まりで主の承認が要る' '主の手でしかできない操作'; do
+    printf '%s\n' "$l" | grep -qF "$w" || { echo "missing reason: $w"; return 1; }
+  done
+  printf '%s\n' "$r" | grep -qF '`主に聞く理由: なし（<子の側で進められない理由>）`'
+  printf '%s\n' "$r" | grep -F 'どれにも当たらない' | grep -F '止まらず' | grep -qF '事後報告'
+  printf '%s\n' "$r" | grep -qF '~/.claude/output-styles/readable.md'
+  # 受け入れるリスクに被害・頻度・根拠を含める
+  k="$(printf '%s\n' "$r" | grep -F '`受け入れるリスク:`' | grep -F '頻度')"
+  [ -n "$k" ]
+  printf '%s\n' "$k" | grep -qF '確かめたのか見込みか'
+  printf '%s\n' "$k" | grep -qF '戻せるか'
+  printf '%s\n' "$k" | grep -qF '分からない'
 }
 
 @test "skill: an epic child's stop record is written for readers who have not read the child's conversation" {
@@ -3183,12 +3208,36 @@ orca_cmd_scripts() {
   printf '%s\n' "$r" | grep -qF 'rules/communication-style.md'
 }
 
-@test "skill: step 8 of the Orca route reads the same item names as the stop record" {
+@test "skill: step 8 of the Orca route restates the stop record in the readable steps" {
   p="$(run_section | grep -E '^8\. ')"
-  printf '%s\n' "$p" | grep -F '止まった理由' | grep -qF '推奨'
+  [ -n "$p" ]
+  run grep -F '同じ項目名のまま' <<<"$p"; [ "$status" -eq 1 ]
+  # 記録の項目と正本の段の対応
+  printf '%s\n' "$p" | grep -qF '`止まった理由:` を質問に'
+  printf '%s\n' "$p" | grep -qF '`主に聞く理由:` を主に聞く理由に'
+  printf '%s\n' "$p" | grep -qF '`前提:` をいま困っていることに'
+  printf '%s\n' "$p" | grep -qF '`推奨:` と `推奨の根拠:` を推奨と根拠に'
+  printf '%s\n' "$p" | grep -qF '`受け入れるリスク:` を受け入れるリスクに'
+  printf '%s\n' "$p" | grep -qF '項目名を見出しや語としてそのまま主に渡さず'
+  printf '%s\n' "$p" | grep -qF '主の言葉に直す'
+  printf '%s\n' "$p" | grep -F '複数' | grep -qF '1 通で上げるのは 1 件'
+  # 記録の節は項目名をそろえる文を持たず、置き直すことを書く
   r="$(section 'エピックの子が主の返事を待って止まるとき')"
-  printf '%s\n' "$r" | grep -q '^止まった理由:'
-  printf '%s\n' "$r" | grep -q '^推奨:'
+  run grep -F '報告する語と同じにしてある' <<<"$r"; [ "$status" -eq 1 ]
+  printf '%s\n' "$r" | grep -F '正本の段に置き直して' | grep -qF '手順 8'
+  printf '%s\n' "$r" | grep -F '`止まった理由`' | grep -F '`PR のマージ待ち（`' | grep -qF '名前を変えない'
+  # ファイル全体に「同じ項目名のまま」が残らない
+  run grep -n '同じ項目名のまま' "$SKILL"; [ "$status" -eq 1 ]
+}
+
+@test "skill: step 8 checks repeats and casting before overturning, and step 7 pending and the leftover note follow it" {
+  p="$(run_section | grep -E '^8\. ')"
+  printf '%s\n' "$p" | grep -F '照らす前に' | grep -F '親の判断: 子 #N 通した' | grep -F '.claude/casting/project.md' | grep -qF '既に一度通していれば覆さずに主に上げる'
+  printf '%s\n' "$p" | grep -qF '待ちに入る通知の本文に、まだ上げていない止まった子の番号を 1 行書く'
+  q="$(run_section | grep -E '^7\. ')"
+  printf '%s\n' "$q" | grep -qF '手順 8 と同じに扱い（照らして通すか、報告を本文で出し直す）、待ちに入る'
+  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  printf '%s\n' "$r" | grep -qF '破壊的操作や聖域を止めた hook は「決まりで主の承認が要る」に当たる'
 }
 
 @test "skill: Orca route waits with --watch-stopped and reports stopped children without dropping them" {
@@ -3217,7 +3266,17 @@ orca_cmd_scripts() {
   printf '%s\n' "$l2" | grep -qF 'references/parent-pass-criteria.md'
   p="$(printf '%s\n' "$r" | grep -E '^8\. ')"
   printf '%s\n' "$p" | grep -F '`停止の記録:`' | grep -qF 'URL と一致する最新の `親の判断:`'
-  printf '%s\n' "$p" | grep -qF '一致する `親の判断:` が無ければ、判断が無いものとして主に上げる'
+  printf '%s\n' "$p" | grep -qF '一致する `親の判断:` が無ければ、判断が無いものとして扱う'
+  run grep -F '判断が無いものとして主に上げる' <<<"$p"; [ "$status" -eq 1 ]
+  # 主に上げる前に親が自分で基準に照らし、主に聞く理由の無い止まりは通す
+  printf '%s\n' "$p" | grep -F '主に上げる前に' | grep -qF '`references/parent-pass-criteria.md` に照らす'
+  printf '%s\n' "$p" | grep -F '主の側にしか答えが無い・決まりで主の承認が要る・主の手でしかできない操作' | grep -qF 'どれにも当たらず'
+  printf '%s\n' "$p" | grep -qF '親の判断: 子 #N 通した — <理由> <停止の記録の URL>'
+  printf '%s\n' "$p" | grep -F '判断が「主に上げる」' | grep -qF '判断できなかった'
+  printf '%s\n' "$p" | grep -F '覆して通す' | grep -qF '3 つの理由のどれにも当たらない根拠を 1 文で'
+  printf '%s\n' "$p" | grep -F '主に聞く理由が成り立つか迷うときは' | grep -qF '主に上げる'
+  # マージ待ちの止まりは照らし直さず、マージ待ちの子の手順に進む
+  printf '%s\n' "$p" | grep -F '`PR のマージ待ち（` で始まる' | grep -F '照らし直さず' | grep -qF '**マージ待ちの子**'
   printf '%s\n' "$p" | grep -F '送信だけが失敗' | grep -qF 'reply --as parent'
   printf '%s\n' "$p" | grep -F '`親の判断: 通すが送れなかった` の件' | grep -qF 'reply --as parent'
   printf '%s\n' "$p" | grep -qF '報告は `~/.claude/output-styles/readable.md` の節 3 の型で書き'
@@ -3264,6 +3323,31 @@ orca_cmd_scripts() {
   grep -qF '返事: <1 行' "$f"
   grep -qF '#1030' "$f"
   grep -F '案' "$f" | grep -qF 'PR'
+  # 原則: 主に聞く理由の 3 つに当たらない止まりは親が通す
+  grep -F '主の側にしか答えが無い・決まりで主の承認が要る・主の手でしかできない操作' "$f" | grep -qF '当たらない止まりは親が通す'
+  grep -qF '~/.claude/output-styles/readable.md' "$f"
+  # 表の 9 行それぞれに確かめる理由の列がある
+  grep -qE '^\| 条件 \| 中身 \| 確かめる理由 \|$' "$f"
+  for c in '既存の規則が主に聞く止まりでない' '推奨がある' '範囲の内側' '聖域でない' '戻せる' \
+    '主の側の情報が要らない' '実機操作でない' '配役表で主の観点が無い' '繰り返していない'; do
+    row="$(grep -F "| $c |" "$f")"
+    [ "$(printf '%s\n' "$row" | awk -F' \\| ' '{print NF}')" -ge 3 ] || { echo "no reason column: $c"; return 1; }
+  done
+  grep -F '| 実機操作でない |' "$f" | grep -qF '主の手でしかできない操作'
+  grep -F '| 聖域でない |' "$f" | grep -qF '決まりで主の承認が要る'
+  grep -F '| 推奨がある |' "$f" | grep -qF '主の側にしか答えが無い'
+  grep -F '| 繰り返していない |' "$f" | grep -qF '歯止め'
+  # 試しの issue は外部への公開・送信に当たらない
+  grep -F '| 聖域でない |' "$f" | grep -F '試しの issue' | grep -qF '外部への公開・送信に当たらない'
+  # 通る例の 3 つ
+  grep -qF '実機テストのための試しの issue 作成' "$f"
+  grep -qF '止まった子の起動し直し' "$f"
+  grep -qF 'Mac が空いてからの CI の再実行' "$f"
+  # 子の主に聞く理由の読み方
+  grep -F '`主に聞く理由:`' "$f" | grep -qF '鵜呑みにしない'
+  grep -F '`主に聞く理由: なし（…）`' "$f" | grep -qF '通す側で読む'
+  grep -F '項目の無い記録' "$f" | grep -qF 'ほかの項目から'
+  grep -F '主に聞く理由が成り立つか迷うときは' "$f" | grep -qF '成り立つ側に倒す'
 }
 
 @test "reply-after-idle: the restore table has the parent's pass decisions and the terminal check is in reply" {

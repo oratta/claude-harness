@@ -109,9 +109,11 @@ ready_section() { awk '/^### `ready` を受けたあと/{f=1; print; next} /^#+ 
   printf '%s\n' "$r" | grep -qF '`nested`'
   printf '%s\n' "$r" | grep -qF '止まった理由: PR のマージ待ち（human-merge）: <PR の URL>'
   printf '%s\n' "$r" | grep -qF 'contents/.github/workflows/auto-merge.yml?ref=<PR の base ブランチ>'
-  for k in '前提:' '推奨:' '推奨の根拠:' '受け入れるリスク:' '再開に要る途中経過:'; do
+  for k in '主に聞く理由:' '前提:' '推奨:' '推奨の根拠:' '受け入れるリスク:' '再開に要る途中経過:'; do
     printf '%s\n' "$r" | grep -qF -- "$k" || { echo "missing example item: $k"; return 1; }
   done
+  printf '%s\n' "$r" | grep -qF '残りの 6 項目'
+  printf '%s\n' "$r" | grep -F '`主に聞く理由:`' | grep -F '決まりで主の承認が要る' | grep -qF '聖域のファイルに触れた PR'
   # 従来のオーナーへの依頼の文は残る（ci-watch.bats が見ている）
   printf '%s\n' "$r" | grep -qF '待たずに PR の URL を添えてオーナーにマージを頼み'
 }
