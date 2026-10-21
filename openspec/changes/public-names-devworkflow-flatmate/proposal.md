@@ -21,6 +21,7 @@
 ### Modified Capabilities
 
 - `harness-public-private-split`: dev-workflow の公開版の部品（Orca 経路を除く）が決めた固有名を持たないことを求める要件と、Orca 経路の行の担い手を #1177 とする要件を足す
+- `dev-workflow-ci-watch`: 要件「CI の見張りの手順は共有 reference に 1 本置く」から環境変数 `CLAUDE_HARNESS_DEV_DIR` の名指しを外す（reference の文面を一般の言い方に直したため。実装中に既存の仕様と bats がこの語を求めていると分かって足した）
 
 ## Impact
 

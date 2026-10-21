@@ -138,65 +138,39 @@ https://github.com/oratta/claude-harness/issues/1164
 
 ## 固有記述の一覧
 
-公開版に残る部品（分割で公開版になった部品の行と、付属のファイルを含む）の中の固有名とオーナーの環境に依存する記述。行番号はこの文書を書いた時点（#1128 の PR）の値。直す issue は、`rules/` と `output-styles/` の 6 本（#1098 の範囲）の行を #1098、capability-registry の公開版の `fmtoken.sh` の参照を #1164 にし、どの issue の範囲にも当たらない行を「担い手なし」にした。flatmate の住人での索引と案内の二重（#1105 の範囲）は、まだ書かれていない参照を足す作業なので、当たる行は無い。
+公開版に残る部品（分割で公開版になった部品の行と、付属のファイルを含む）の中の固有名とオーナーの環境に依存する記述。行番号はこの文書を書いた時点（#1128 の PR）の値。直す issue は、`rules/` と `output-styles/` の 6 本（#1098 の範囲）の行を #1098、capability-registry の公開版の `fmtoken.sh` の参照を #1164 にし、どの issue の範囲にも当たらない行を「担い手なし」にした。その後 #1168 で、担い手なしだった行を直すか、載せない行の基準に当たるとして外し、Orca 経路の行の担い手は #1177 にした。#1164 の行は、PR #1175 のマージで実ファイルから `fmtoken` が消えていたので一覧から外した。flatmate の住人での索引と案内の二重（#1105 の範囲）は、まだ書かれていない参照を足す作業なので、当たる行は無い。
 
 | 場所 | 種別 | 内容 | 直す issue |
 |---|---|---|---|
-| `plugins/capability-registry/.claude-plugin/plugin.json:3` | 環境依存 | description に「fmtoken.sh によるトークン取得」 | #1164 |
-| `plugins/capability-registry/.claude-plugin/plugin.json:14` | 環境依存 | keywords に `fmtoken` | #1164 |
-| `plugins/capability-registry/scripts/browser-guard.sh:31` | 環境依存 | 注意喚起の (2) で `fmtoken.sh <service>` を案内 | #1164 |
-| `plugins/capability-registry/skills/capability-registry/github.md:4` | 環境依存 | 別アカウントのトークンを `fmtoken.sh` で取る | #1164 |
-| `plugins/capability-registry/skills/capability-registry/stripe.md:3` | 環境依存 | verify のコマンドに `fmtoken.sh stripe` | #1164 |
-| `plugins/capability-registry/skills/capability-registry/stripe.md:4` | 環境依存 | トークンを `fmtoken.sh stripe` で取り、`agents` 保管庫の中身を書く | #1164 |
-| `plugins/capability-registry/skills/capability-registry/supabase.md:3` | 環境依存 | verify のコマンドに `fmtoken.sh supabase` | #1164 |
-| `plugins/capability-registry/skills/capability-registry/supabase.md:4` | 環境依存 | トークンを `fmtoken.sh supabase` で取る | #1164 |
-| `plugins/capability-registry/skills/capability-registry/vercel.md:3` | 環境依存 | verify のコマンドに `fmtoken.sh vercel` | #1164 |
-| `plugins/capability-registry/skills/capability-registry/vercel.md:4` | 環境依存 | トークンを `fmtoken.sh vercel` で取る | #1164 |
-| `plugins/dev-workflow/references/self-verification.md:53` | 環境依存 | `fmtoken.sh --register` を名指し | #1164 |
-| `plugins/dev-workflow/references/self-verification.md:41` | 環境依存 | 個人版へ移す daily-report と Obsidian の vault の行 | 担い手なし |
-| `plugins/dev-workflow/README.md:15` | 環境依存 | エピックの子を Orca の子ワークツリーで起動する経路 | 担い手なし |
-| `plugins/dev-workflow/README.md:137` | 固有名 | loop-dev-agent の憲法の正本を flatmate 側と書く | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:46` | 環境依存 | 判定 `orca`（Orca の子ワークツリーで子を起動する） | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:207` | 環境依存 | worktree の片付けを Orca 経路の親が行う | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:337` | 固有名 | develop を起動するきっかけを flatmate の CLAUDE.md に置く | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:350` | 環境依存 | Orca 経路の子が主の返事を待って止まる前の記録と印 | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:353` | 環境依存 | Orca 経路の子の状態の印 | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:375` | 環境依存 | 親の側の手順を Orca 経路の手順 8 に送る | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:400` | 固有名 | channel を flatmate の住人がオーナーから開発を頼まれたときの形と書く | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:481` | 環境依存 | エピックの経路の決め方（Orca 経路） | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:485` | 環境依存 | `nested` の扱いと、子をオーナーの起動コマンド `cld` で起動する | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:487` | 環境依存 | Orca 経路の子の独立セッション | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:489` | 環境依存 | Orca 経路の子の状態の正本 | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:491` | 環境依存 | Orca 経路で親がターンを終えるときの発言 | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:498` | 環境依存 | Orca 側の失敗の扱い | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:499` | 環境依存 | `回し方: Orca` の再開 | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:504` | 環境依存 | Orca 経路のマージ待ちの子 | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:506` | 環境依存 | 子セッションを `cld --model` で起動する | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:508` | 環境依存 | Orca 経路の同時に動く子の上限 | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:514` | 環境依存 | サブエージェント方式の上限を Orca 経路と同じにする | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:525` | 環境依存 | Orca 経路の状態ディレクトリの確認 | 担い手なし |
-| `plugins/dev-workflow/skills/develop/SKILL.md:541` | 固有名 | loop-dev-agent の憲法を flatmate が保守する正本と書く | 担い手なし |
-| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:3` | 環境依存 | Orca 経路の子セッションへの返事の規則 | 担い手なし |
-| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:5` | 環境依存 | Orca 経路の手順 8 への参照 | 担い手なし |
-| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:64` | 環境依存 | Orca 経路の子の端末を `reap` で閉じる | 担い手なし |
-| `plugins/dev-workflow/scripts/owner-reply-check.sh:33` | 環境依存 | Orca で子を起動するときの prompt の書式 | 担い手なし |
-| `plugins/dev-workflow/scripts/owner-reply-check.sh:52` | 環境依存 | Orca の親セッションが子のターミナルに打ち込んだ文の扱い | 担い手なし |
-| `plugins/dev-workflow/scripts/pr-state.sh:2` | 固有名 | 呼び出し元に flatmate の pr-watch を挙げる | 担い手なし |
-| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:83` | 環境依存 | Orca の子のセッションの扱い | 担い手なし |
-| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:91` | 環境依存 | Orca の親が子のターミナルに打ち込んだ `/develop` の扱い | 担い手なし |
-| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:103` | 環境依存 | 守備範囲の Orca の親の扱い | 担い手なし |
-| `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:95` | 環境依存 | Orca の親セッションが子のターミナルに打ち込んだ文の扱い | 担い手なし |
-| `plugins/dev-workflow/references/ci-watch.md:95` | 環境依存 | harness では `CLAUDE_HARNESS_DEV_DIR` の開発用 clone から worktree を切る | 担い手なし |
-| `plugins/dev-workflow/references/pr-body-format.md:110` | 固有名 | issue テンプレートを flatmate の `new-resident` が配ると書く | 担い手なし |
-| `plugins/dev-workflow/skills/issueify/SKILL.md:41` | 固有名 | issue テンプレートを flatmate の `new-resident` が配ると書く | 担い手なし |
-| `plugins/dev-workflow/skills/memory-refresh/SKILL.md:76` | 固有名 | 例の表に flatmate 側の正本 | 担い手なし |
-| `plugins/dev-workflow/skills/memory-refresh/SKILL.md:82` | 環境依存 | 例の表に `CLAUDE_HARNESS_DEV_DIR` | 担い手なし |
-| `plugins/dev-workflow/skills/memory-refresh/SKILL.md:94` | 固有名 | 例の説明に flatmate のセッション | 担い手なし |
-| `plugins/dev-workflow/skills/push-guard-setup/SKILL.md:23` | 固有名 | pre-push を flatmate の `new-resident` が設置すると書く | 担い手なし |
-| `plugins/dev-workflow/templates/escalation-tripwires.md:16` | 固有名 | loop-dev-agent の憲法を flatmate が保守する正本と書く | 担い手なし |
-| `plugins/dev-workflow/templates/auto-merge/docs/auto-merge.md:273` | 環境依存 | 鍵を agents 保管庫にだけ置くと書く | 担い手なし |
-| `plugins/dev-workflow/templates/auto-merge/scripts/test-auto-merge-workflow.sh:87` | 固有名 | 検査の入力のパスにオーナーのプロジェクト名 `workspace/moko/CLAUDE.md` | 担い手なし |
-| `plugins/dev-workflow/templates/auto-merge/scripts/test-auto-merge-workflow.sh:148` | 固有名 | 検査の入力のパスにオーナーのプロジェクト名 `workspace/moko/CLAUDE.md` | 担い手なし |
+| `plugins/dev-workflow/README.md:15` | 環境依存 | エピックの子を Orca の子ワークツリーで起動する経路 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:46` | 環境依存 | 判定 `orca`（Orca の子ワークツリーで子を起動する） | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:207` | 環境依存 | worktree の片付けを Orca 経路の親が行う | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:350` | 環境依存 | Orca 経路の子が主の返事を待って止まる前の記録と印 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:353` | 環境依存 | Orca 経路の子の状態の印 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:375` | 環境依存 | 親の側の手順を Orca 経路の手順 8 に送る | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:481` | 環境依存 | エピックの経路の決め方（Orca 経路） | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:485` | 環境依存 | `nested` の扱いと、子をオーナーの起動コマンド `cld` で起動する | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:487` | 環境依存 | Orca 経路の子の独立セッション | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:489` | 環境依存 | Orca 経路の子の状態の正本 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:491` | 環境依存 | Orca 経路で親がターンを終えるときの発言 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:498` | 環境依存 | Orca 側の失敗の扱い | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:499` | 環境依存 | `回し方: Orca` の再開 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:504` | 環境依存 | Orca 経路のマージ待ちの子 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:524` | 環境依存 | 別のリポジトリの子の clone を、無ければ Orca に登録済みのリポジトリから探す | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:526` | 環境依存 | 子セッションを `cld --model` で起動する | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:528` | 環境依存 | Orca 経路の同時に動く子の上限 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:530` | 環境依存 | 子セッションを `cld`（`EPIC_DISPATCH_CLAUDE_CMD` で差し替え）が付ける `--dangerously-skip-permissions` で動かす起動の説明（Orca の語なし） | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:534` | 環境依存 | サブエージェント方式の上限を Orca 経路と同じにし、別のリポジトリの子を Orca 経路でだけ起動すると書く | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:545` | 環境依存 | Orca 経路の状態ディレクトリの確認 | #1177 |
+| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:3` | 環境依存 | Orca 経路の子セッションへの返事の規則 | #1177 |
+| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:5` | 環境依存 | Orca 経路の手順 8 への参照 | #1177 |
+| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:64` | 環境依存 | Orca 経路の子の端末を `reap` で閉じる | #1177 |
+| `plugins/dev-workflow/scripts/owner-reply-check.sh:33` | 環境依存 | Orca で子を起動するときの prompt の書式 | #1177 |
+| `plugins/dev-workflow/scripts/owner-reply-check.sh:52` | 環境依存 | Orca の親セッションが子のターミナルに打ち込んだ文の扱い | #1177 |
+| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:83` | 環境依存 | Orca の子のセッションの扱い | #1177 |
+| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:91` | 環境依存 | Orca の親が子のターミナルに打ち込んだ `/develop` の扱い | #1177 |
+| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:103` | 環境依存 | 守備範囲の Orca の親の扱い | #1177 |
+| `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:95` | 環境依存 | Orca の親セッションが子のターミナルに打ち込んだ文の扱い | #1177 |
 
 ### 候補語
 
