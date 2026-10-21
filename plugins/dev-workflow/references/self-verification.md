@@ -38,8 +38,8 @@
 |--------|-----------|----------------|
 | `plugins/worktree/skills/wt-setup/SKILL.md` | worktree・Draft PR | `git worktree list`・`gh pr view` |
 | `plugins/worktree/skills/wt-clean/SKILL.md` | worktree の削除・LLM 退避物 | `git worktree list`・退避ファイル実在（詳細は references 分離） |
-| `plugins/daily-report/skills/daily-report/SKILL.md` | `diary.md`（Obsidian Vault） | 生成ファイル実在・見出し確認 |
-| `plugins/weekly-report/skills/weekly-report/SKILL.md` | 週次ノート `02 - PERIODIC/Weekly/{week}.md` | 週次ノート実在・frontmatter 確認 |
+| `plugins/daily-report/skills/daily-report/SKILL.md` | 日報ファイル（記録の置き場があればそこへ出力） | 生成ファイル実在・見出し確認 |
+| `plugins/weekly-report/skills/weekly-report/SKILL.md` | 週次ノート | 週次ノート実在・frontmatter 確認 |
 | `plugins/infra/skills/infra-setup/SKILL.md` | `vercel.json`・GitHub Actions ワークフロー・環境変数配線 | `jq` パース・deploy チェック |
 | `plugins/dev-workflow/skills/push-guard-setup/SKILL.md` | `~/.githooks/pre-push`・`git config --global core.hooksPath` | `core.hooksPath` の値・フックの `test -x`・`git push --dry-run` の exit code（#64 で節を先行導入。#218 で参照行を追加し対象に編入） |
 

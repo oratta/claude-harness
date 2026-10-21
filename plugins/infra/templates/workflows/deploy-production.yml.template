@@ -74,7 +74,7 @@ jobs:
       # =================================================================
       # ▼▼▼ PROJECT-SPECIFIC OVERRIDE ▼▼▼
       # DB 疎通の統合テストを持つプロジェクトは、ここでローカル Supabase を起動して
-      # .env.test を生成する（例: suimei の deploy-production.yml preflight を参照）
+      # .env.test を生成する（自分のリポジトリの同種のファイルの preflight を参照）
       # =================================================================
 
       - name: Run ESLint

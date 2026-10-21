@@ -453,3 +453,264 @@ DELIVERED_SIX=(rules/communication-style.md rules/link-when-requesting-review.md
   ! grep -qF 'rules-archive' "${REPO_ROOT}/rules/destructive-git-guard.md" || return 1
   awk '/^## hook との分担/{f=1; next} /^## /{f=0} f' "${REPO_ROOT}/rules/destructive-git-guard.md" | grep -qF '入っていれば'
 }
+
+# --- dev-workflow 以外の公開版の部品が決めた固有名とオーナーの PC のパスを持たない（#1168）---
+# 守備範囲: 固定の検索語の当たりが許可リストの行だけであること。別の固有名や文の良し悪しは人のレビューが見る。
+# 許可リストの各件（ファイル|行に含まれる固定の文字列|当たる基準）は、change の tasks の判定の表に同じ行を持つ。
+
+NONDEV_SCOPE=(rules/README.md scripts/sync.sh scripts/test-auto-merge-workflow.sh plugins/capability-registry
+  plugins/statusline plugins/worktree plugins/product-handover plugins/casting plugins/cost-ledger plugins/infra)
+
+# 出典や経緯としてだけ名前を挙げる行 = 出典、互換のために残す旧名の読み取り = 互換
+NONDEV_ALLOW=(
+  'rules/README.md|経緯（flatmate#599 / #608）|出典'
+  'scripts/sync.sh|なぜ存在するか（flatmate#362）|出典'
+  'plugins/infra/agents/infra-phase-1-hearing.md|2026-07 に suimei で|出典'
+  'plugins/infra/skills/infra-setup/SKILL.md|2026-07 に suimei で Actions free 枠|出典'
+  'plugins/infra/skills/infra-setup/SKILL.md|flatmate で 2026-10 に実発生|出典'
+  'plugins/infra/templates/workflows/ci.yml.template|2026-07 に suimei で free 枠|出典'
+  'plugins/infra/templates/workflows/weekly-full.yml.template|2026-07-25 に suimei で実発生|出典'
+  'plugins/statusline/README.md|旧名の `FLATMATE_RATE_SHARE_DIR`（互換。主は|互換'
+  'plugins/statusline/scripts/statusline.sh|# Order: CLAUDE_RATE_SHARE_DIR, FLATMATE_RATE_SHARE_DIR|互換'
+  'plugins/statusline/scripts/statusline.sh|# The FLATMATE_* names are the old names|互換'
+  'plugins/statusline/scripts/statusline.sh|elif [ "${FLATMATE_RATE_SHARE_DIR+x}" ]|互換'
+  'plugins/statusline/scripts/statusline.sh|dir="$FLATMATE_RATE_SHARE_DIR"; have_dir=1  # old name, compatibility|互換'
+  'plugins/statusline/scripts/statusline.sh|"${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"|互換'
+  'plugins/statusline/scripts/statusline.sh|flatmate#605 と同じ誤り|出典'
+  'plugins/worktree/.claude-plugin/plugin.json|flatmate#320: find -path|出典'
+  'plugins/worktree/references/wt-clean-orphan-detection.md|2026-08-10 に flatmate リポで全件実行したとき|出典'
+  'plugins/worktree/references/wt-clean-verification.md|2026-08-10 に flatmate で、PR が OPEN|出典'
+  'plugins/worktree/scripts/wt-setup.sh|flatmate#320|出典'
+  'plugins/worktree/scripts/wt-setup.sh|実例: suimei の .env.local.example|出典'
+  'plugins/worktree/skills/wt-clean/SKILL.md|2026-08-01 に flatmate リポで、壁打ち|出典'
+  'plugins/worktree/skills/wt-clean/SKILL.md|2026-08-10 に flatmate で実走したとき|出典'
+  'plugins/worktree/skills/wt-clean/SKILL.md|2026-08-07 に shukan-dev で実走したところ|出典'
+)
+
+# 検索の対象にする公開版のファイル（changes/・CHANGELOG.md・tests/・evals/ と、個人版に決まるファイルは除く）
+nondev_files() {
+  git -C "$REPO_ROOT" ls-files -- "${NONDEV_SCOPE[@]}" \
+    | grep -v -E '/(changes|tests|evals)/|(^|/)CHANGELOG\.md$|capability-registry/scripts/fmtoken\.sh$|capability-registry/skills/capability-registry/1password\.md$'
+}
+
+# 個人版に決まる節（capability-registry の SKILL.md の「表記規約」「資格情報の階層」）を除いて、行ごとに file:line:text で出す
+nondev_hits() {
+  local re="$1" f
+  for f in $(nondev_files); do
+    awk -v f="$f" '
+      /^## / { skip = (f ~ /capability-registry\/SKILL\.md$/ && ($0 ~ /表記規約/ || $0 ~ /資格情報の階層/)) }
+      !skip { print f ":" NR ":" $0 }' "${REPO_ROOT}/$f" | grep -E -e "^[^:]*:[0-9]+:.*(${re})" || true
+  done
+}
+
+nondev_unlisted() {
+  local re="$1" hit file text e afile astr allowed
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    file="${hit%%:*}"; text="${hit#*:*:}"; allowed=""
+    for e in "${NONDEV_ALLOW[@]}"; do
+      afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
+      [ "$file" = "$afile" ] && [[ "$text" == *"$astr"* ]] && { allowed=1; break; }
+    done
+    [ -n "$allowed" ] || printf '%s\n' "$hit"
+  done
+}
+
+@test "non-dev-workflow public parts carry no owner-specific names outside the allow list" {
+  local out
+  out="$(nondev_hits 'moko|suimei|uranai|shukan|sns-autopilot|flatmate|FLATMATE|/Users/oratta' | nondev_unlisted)"
+  echo "$out"
+  [ -z "$out" ]
+}
+
+@test "the worktree plugin carries no owner PC path" {
+  local out
+  out="$(nondev_hits '/Users/oratta')"
+  echo "$out"
+  [ -z "$out" ]
+}
+
+@test "every allow-list entry still matches a line (no stale entries)" {
+  local e afile astr
+  for e in "${NONDEV_ALLOW[@]}"; do
+    afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
+    grep -qF -e "$astr" "${REPO_ROOT}/$afile" || { echo "stale: $e"; return 1; }
+  done
+}
+
+# --- dev-workflow の公開版の部品が決めた固有名を持たない（Orca 経路を除く。#1168）---
+# 守備範囲: 固定の検索語の当たりが許可リストの行だけであること。別の固有名や文の良し悪しは人のレビューが見る。
+# 許可リストの各件（ファイル|行に含まれる固定の文字列|当たる基準）は、change の tasks の判定の表に同じ行を持つ。
+
+DEVWF_FLATMATE_FILES=(plugins/dev-workflow/references/pr-body-format.md
+  plugins/dev-workflow/skills/issueify/SKILL.md
+  plugins/dev-workflow/skills/push-guard-setup/SKILL.md
+  plugins/dev-workflow/templates/escalation-tripwires.md
+  plugins/dev-workflow/scripts/pr-state.sh
+  plugins/dev-workflow/skills/memory-refresh/SKILL.md
+  plugins/dev-workflow/templates/auto-merge/docs/auto-merge.md)
+
+DEVWF_DEVDIR_FILES=(plugins/dev-workflow/references/ci-watch.md plugins/dev-workflow/skills/memory-refresh/SKILL.md)
+
+# 出典や経緯としてだけ名前を挙げる行 = 出典
+DEVWF_ALLOW=(
+)
+
+# moko の検索の対象: dev-workflow の公開版のファイル（個人版に決まる auto-merge-deployments.md、changes/・CHANGELOG.md・tests/・evals/ を除く）
+devwf_public_files() {
+  git -C "$REPO_ROOT" ls-files -- plugins/dev-workflow \
+    | grep -v -E '/(changes|tests|evals)/|(^|/)CHANGELOG\.md$|plugins/dev-workflow/docs/auto-merge-deployments\.md$'
+}
+
+# 引数: 正規表現 ファイル... → 許可リストに無い当たりを file:line:text で出す
+devwf_unlisted() {
+  local re="$1" f hit file text e afile astr allowed
+  shift
+  for f in "$@"; do
+    while IFS= read -r hit; do
+      [ -n "$hit" ] || continue
+      file="${hit%%:*}"; text="${hit#*:*:}"; allowed=""
+      for e in "${DEVWF_ALLOW[@]}"; do
+        afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
+        [ "$file" = "$afile" ] && [[ "$text" == *"$astr"* ]] && { allowed=1; break; }
+      done
+      [ -n "$allowed" ] || printf '%s\n' "$hit"
+    done < <(awk -v f="$f" '{ print f ":" NR ":" $0 }' "${REPO_ROOT}/$f" | grep -E -e "^[^:]*:[0-9]+:.*(${re})" || true)
+  done
+}
+
+@test "dev-workflow public parts carry no owner project name moko" {
+  local out
+  # shellcheck disable=SC2046
+  out="$(devwf_unlisted 'moko' $(devwf_public_files))"
+  echo "$out"
+  [ -z "$out" ]
+}
+
+@test "dev-workflow public parts carry no new-resident or flatmate outside the allow list" {
+  local out
+  out="$(devwf_unlisted 'new-resident|flatmate|FLATMATE' "${DEVWF_FLATMATE_FILES[@]}")"
+  echo "$out"
+  [ -z "$out" ]
+}
+
+@test "dev-workflow public parts carry no CLAUDE_HARNESS_DEV_DIR outside the allow list" {
+  local out
+  out="$(devwf_unlisted 'CLAUDE_HARNESS_DEV_DIR' "${DEVWF_DEVDIR_FILES[@]}")"
+  echo "$out"
+  [ -z "$out" ]
+}
+
+@test "every dev-workflow allow-list entry still matches a line (no stale entries)" {
+  local e afile astr
+  for e in "${DEVWF_ALLOW[@]}"; do
+    afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
+    grep -qF -e "$astr" "${REPO_ROOT}/$afile" || { echo "stale: $e"; return 1; }
+  done
+}
+
+# --- Orca 経路の行の担い手（#1168 で #1177 に決めた）---
+# 守備範囲: 下の 29 件の行が一覧にちょうど 1 行ずつあり、担当欄が #1177 で、指す行に識別語があること。
+# 行番号のずれや内容の欄の良し悪しは人のレビューが見る。#1177 がこの行を直したら、この一覧も一緒に直す。
+DEVWF_ORCA_ROWS=(
+  'plugins/dev-workflow/README.md:15|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:46|orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:207|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:350|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:353|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:375|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:481|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:485|cld'
+  'plugins/dev-workflow/skills/develop/SKILL.md:487|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:489|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:491|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:498|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:499|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:504|epic-dispatch.sh'
+  'plugins/dev-workflow/skills/develop/SKILL.md:524|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:526|cld'
+  'plugins/dev-workflow/skills/develop/SKILL.md:528|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:530|cld'
+  'plugins/dev-workflow/skills/develop/SKILL.md:534|Orca'
+  'plugins/dev-workflow/skills/develop/SKILL.md:545|Orca'
+  'plugins/dev-workflow/skills/develop/references/reply-after-idle.md:3|Orca'
+  'plugins/dev-workflow/skills/develop/references/reply-after-idle.md:5|Orca'
+  'plugins/dev-workflow/skills/develop/references/reply-after-idle.md:64|Orca'
+  'plugins/dev-workflow/scripts/owner-reply-check.sh:33|Orca'
+  'plugins/dev-workflow/scripts/owner-reply-check.sh:52|Orca'
+  'plugins/dev-workflow/skills/pr-review-gate/declarations.md:83|Orca'
+  'plugins/dev-workflow/skills/pr-review-gate/declarations.md:91|Orca'
+  'plugins/dev-workflow/skills/pr-review-gate/declarations.md:103|Orca'
+  'plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:95|Orca'
+)
+
+# 引数: 文書のパス → 誤りを 1 行ずつ出して exit 1、無ければ exit 0
+check_orca_owner() {
+  local doc="$1" e place word file line rows n owner errs=0
+  for e in "${DEVWF_ORCA_ROWS[@]}"; do
+    place="${e%%|*}"; word="${e#*|}"; file="${place%:*}"; line="${place##*:}"
+    rows="$(grep -F -e "| \`${place}\` |" "$doc" || true)"
+    n="$(printf '%s' "$rows" | grep -c '^' || true)"
+    if [ "$n" -ne 1 ]; then
+      echo "一覧に ${place} の行が ${n} 行ある（1 行であるべき）"; errs=1; continue
+    fi
+    owner="$(printf '%s\n' "$rows" | awk -F'|' '{ gsub(/^ +| +$/, "", $5); print $5 }')"
+    if [ "$owner" != "#1177" ]; then
+      echo "${place} の担当が #1177 でない: ${owner}"; errs=1
+    fi
+    if ! sed -n "${line}p" "${REPO_ROOT}/${file}" | grep -qF -e "$word"; then
+      echo "${place} の行に識別語 ${word} が無い"; errs=1
+    fi
+  done
+  return "$errs"
+}
+
+@test "no dev-workflow row in the listing is left without an owner" {
+  local out
+  out="$(grep -F '| `plugins/dev-workflow/' "$DOC" | grep -F '担い手なし' || true)"
+  echo "$out"
+  [ -z "$out" ]
+}
+
+@test "every Orca-route row in the listing exists once and is owned by #1177" {
+  run check_orca_owner "$DOC"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "an Orca-route row moved to another issue fails" {
+  edit_doc '| `plugins/dev-workflow/skills/develop/SKILL.md:46` | 環境依存 | 判定 `orca`（Orca の子ワークツリーで子を起動する） | #1177 |' \
+    '| `plugins/dev-workflow/skills/develop/SKILL.md:46` | 環境依存 | 判定 `orca`（Orca の子ワークツリーで子を起動する） | #1123 |'
+  run check_orca_owner "$WORK_DOC"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"SKILL.md:46 の担当が #1177 でない: #1123"* ]] || return 1
+}
+
+@test "a dropped Orca-route row fails" {
+  drop_row '| `plugins/dev-workflow/scripts/owner-reply-check.sh:52` |'
+  run check_orca_owner "$WORK_DOC"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"owner-reply-check.sh:52 の行が 0 行"* ]] || return 1
+}
+
+@test "dropping every Orca-route row fails" {
+  grep -v -F -e '| #1177 |' "$DOC" >"$WORK_DOC"
+  run check_orca_owner "$WORK_DOC"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [ "$(printf '%s\n' "$output" | grep -c 'の行が 0 行')" -eq "${#DEVWF_ORCA_ROWS[@]}" ]
+}
+
+@test "epic-launch-orca.sh is a pending part, so a listing row pointing at it fails" {
+  local anchor='| 場所 | 種別 | 内容 | 直す issue |'
+  edit_doc "${anchor}
+|---|---|---|---|" "${anchor}
+|---|---|---|---|
+| \`plugins/dev-workflow/scripts/epic-launch-orca.sh:2\` | 環境依存 | Orca の起動部品 | #1177 |"
+  run check_split "$REPO_ROOT" "$WORK_DOC"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"公開版に決まる部品に属さない（保留（#1123 の後））: plugins/dev-workflow/scripts/epic-launch-orca.sh:2"* ]] || return 1
+}
