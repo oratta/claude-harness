@@ -119,10 +119,11 @@ put_pane() { printf '%s\t%s\t%s\n' "$1" "${3-$WT}" "$2" >> "$STUB_CFG/panes"; }
 }
 
 @test "available: exits 1 when tmux is not on PATH" {
+  # tmux が /usr/bin にある機械（CI の Ubuntu）でも本物が見つからないよう、PATH はスタブ置き場だけにする（bash は絶対パスで呼ぶ）
   rm "$STUB_BIN/tmux"
-  run tm available
+  PATH="$STUB_BIN" run "$BASH" "$SCRIPT" available   # run は stderr も $output に入れる
   [ "$status" -eq 1 ]
-  grep -q 'tmux is not available' "$BATS_TEST_TMPDIR/stderr"
+  [[ "$output" == *'tmux is not available'* ]]
 }
 
 @test "here: prints the empty-id line inside tmux and exits 1 outside" {
