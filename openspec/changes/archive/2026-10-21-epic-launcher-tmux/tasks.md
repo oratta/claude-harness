@@ -24,7 +24,7 @@
 ## 4. 記録と検証
 
 - [x] 4.1 変更の記録を書く。触る範囲: `plugins/dev-workflow/changes/1123.md`（`## 3/3: 起動部品を tmux にも広げる（change epic-launcher-tmux）` を追記）
-- [ ] 4.2 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/epic-launch-tmux.bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/develop-channel-mode.bats` と `shellcheck`（CI の workflow が読む検査コマンドを実装の段で確かめる）、`tests/injection-budget.bats`（SKILL.md の description を変えたとき）を通す。`openspec validate epic-launcher-tmux --type change --strict` を通す
+- [x] 4.2 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/epic-launch-tmux.bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/develop-channel-mode.bats` と `shellcheck`（CI の workflow が読む検査コマンドを実装の段で確かめる）、`tests/injection-budget.bats`（SKILL.md の description を変えたとき）を通す。`openspec validate epic-launcher-tmux --type change --strict` を通す
 
 ## 5. 実機 1 回
 
