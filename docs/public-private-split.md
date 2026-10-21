@@ -148,17 +148,17 @@ https://github.com/oratta/claude-harness/issues/1164
 | `plugins/dev-workflow/skills/develop/SKILL.md:207` | 環境依存 | worktree の片付けを Orca 経路の親が行う | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:350` | 環境依存 | Orca 経路の子が主の返事を待って止まる前の記録と印 | #1177 |
 | `plugins/dev-workflow/skills/develop/SKILL.md:353` | 環境依存 | Orca 経路の子の状態の印 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:481` | 環境依存 | エピックの経路の決め方（Orca 経路） | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:485` | 環境依存 | `nested` の扱いと、子をオーナーの起動コマンド `cld` で起動する | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:487` | 環境依存 | Orca 経路の子の独立セッション | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:489` | 環境依存 | Orca 経路の子の状態の正本 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:491` | 環境依存 | Orca 経路で親がターンを終えるときの発言 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:509` | 環境依存 | Orca 側の失敗の扱い | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:510` | 環境依存 | `回し方: Orca` の再開 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:515` | 環境依存 | 別セッション方式のマージ待ちの子（`epic-dispatch.sh reply` で返事を送る手順） | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:535` | 環境依存 | 別のリポジトリの子の clone を、無ければ Orca に登録済みのリポジトリから探す | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:537` | 環境依存 | 子セッションを `cld --model` で起動する | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:541` | 環境依存 | 子セッションを `cld`（`EPIC_DISPATCH_CLAUDE_CMD` で差し替え）が付ける `--dangerously-skip-permissions` で動かす起動の説明（Orca の語なし） | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:480` | 環境依存 | エピックの経路の決め方（Orca 経路） | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:484` | 環境依存 | `nested` の扱いと、子をオーナーの起動コマンド `cld` で起動する | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:486` | 環境依存 | Orca 経路の子の独立セッション | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:488` | 環境依存 | Orca 経路の子の状態の正本 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:490` | 環境依存 | Orca 経路で親がターンを終えるときの発言 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:508` | 環境依存 | Orca 側の失敗の扱い | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:509` | 環境依存 | `回し方: Orca` の再開 | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:514` | 環境依存 | 別セッション方式のマージ待ちの子（`epic-dispatch.sh reply` で返事を送る手順） | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:534` | 環境依存 | 別のリポジトリの子の clone を、無ければ Orca に登録済みのリポジトリから探す | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:536` | 環境依存 | 子セッションを `cld --model` で起動する | #1177 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:540` | 環境依存 | 子セッションを `cld`（`EPIC_DISPATCH_CLAUDE_CMD` で差し替え）が付ける `--dangerously-skip-permissions` で動かす起動の説明（Orca の語なし） | #1177 |
 | `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:3` | 環境依存 | Orca 経路の子セッションへの返事の規則 | #1177 |
 | `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:5` | 環境依存 | Orca 経路の手順 8 への参照 | #1177 |
 | `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:64` | 環境依存 | Orca 経路の子の端末を `reap` で閉じる | #1177 |
@@ -167,7 +167,7 @@ https://github.com/oratta/claude-harness/issues/1164
 | `plugins/dev-workflow/skills/pr-review-gate/declarations.md:83` | 環境依存 | Orca の子のセッションの扱い | #1177 |
 | `plugins/dev-workflow/skills/pr-review-gate/declarations.md:91` | 環境依存 | Orca の親が子のターミナルに打ち込んだ `/develop` の扱い | #1177 |
 | `plugins/dev-workflow/skills/pr-review-gate/declarations.md:103` | 環境依存 | 守備範囲の Orca の親の扱い | #1177 |
-| `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:95` | 環境依存 | Orca の親セッションが子のターミナルに打ち込んだ文の扱い | #1177 |
+| `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:97` | 環境依存 | Orca の親セッションが子のターミナルに打ち込んだ文の扱い | #1177 |
 
 ### 候補語
 

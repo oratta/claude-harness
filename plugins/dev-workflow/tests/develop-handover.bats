@@ -126,7 +126,7 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 
 @test "resend: with new information the full request is rewritten and the earlier message is not pointed at" {
   handover_section | grep -qF '依頼の全文'
-  handover_section | grep -qF '決めてほしいこと・推奨・受け入れるリスク・リンク'
+  handover_section | grep -qF '`~/.claude/output-styles/readable.md` の節 3 の型の全文とリンク'
   handover_section | grep -qF '前のメッセージを指さない'
 }
 

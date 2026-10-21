@@ -3010,26 +3010,27 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   printf '%s\n' "$l" | grep -qF 'エピックの子でないセッション'
 }
 
-# spec: dev-workflow-develop（エピックの親が主に出す報告は、主がすることを 1 行目に書く）
+# spec: dev-workflow-develop（エピックの親が主に出す発言は、正本の 1 行目の書き分けに従う）
 
-@test "skill: Orca route parent reports start with what the owner does" {
+@test "skill: Orca route parent statements follow the canonical first-line rule" {
   r="$(run_section)"
   l="$(printf '%s\n' "$r" | grep -F '主がすること: なし' | grep -v '^8\. ' | head -1)"
   [ -n "$l" ]
-  printf '%s\n' "$l" | grep -qF '<どの画面・入力欄で> <何を打つ・押す>'
   printf '%s\n' "$l" | grep -qF 'ターンを終えるとき'
+  printf '%s\n' "$l" | grep -qF '`~/.claude/output-styles/readable.md` の節 3'
+  printf '%s\n' "$l" | grep -qF '答え方の行'
   printf '%s\n' "$l" | grep -qF '主がこのセッションで次にすること:'
+  ! printf '%s\n' "$l" | grep -qF '<どの画面・入力欄で> <何を打つ・押す>' || return 1
   for n in 2 3 4 5 6; do
-    printf '%s\n' "$r" | grep "^$n\. " | grep -qF '主がすること:'
+    printf '%s\n' "$r" | grep "^$n\. " | grep -qF '上の書き分けの規定に従う'
   done
   s8="$(printf '%s\n' "$r" | grep '^8\. ')"
-  printf '%s\n' "$s8" | grep -qF '主がすること:'
-  printf '%s\n' "$s8" | grep -qF '親のタブ'
+  printf '%s\n' "$s8" | grep -F '答え方の行' | grep -qF '親のタブ'
   printf '%s\n' "$s8" | grep -qF '別の発言を挟まず'
-  printf '%s\n' "$s8" | grep -qF '1 行目は `主がすること: 子のタブで'
-  printf '%s\n' "$s8" | grep -qF '`failed <N> <段>` なら主に報告する（1 行目は `主がすること:`'
+  printf '%s\n' "$s8" | grep -qF '答え方の行には、子のタブでリスク許容を打つことを書く'
+  printf '%s\n' "$s8" | grep -qF '`failed <N> <段>` なら主に報告する（主の操作が要れば問いの形にし、要らなければ 1 行目を `主がすること: なし` にする）'
   printf '%s\n' "$r" | grep -qF '手順 7 と完了条件で待ちを終えるときの報告、**マージ待ちの子** の `reply` の `failed` の報告'
-  printf '%s\n' "$r" | grep '^2\. ' | grep -qF '同じターンで主の操作が要る報告（手順 4〜6・8）を出したときは、待ちに入る通知の 1 行目にもその報告の `主がすること:` を繰り返す'
+  printf '%s\n' "$r" | grep '^2\. ' | grep -qF '待ちに入る通知を `主がすること: なし` で始めず、1 行目に問いの質問を、最後の行に答え方を繰り返す'
 }
 
 @test "skill: Orca route watches for done marks and reaps marked children" {
@@ -3219,7 +3220,8 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -qF '一致する `親の判断:` が無ければ、判断が無いものとして主に上げる'
   printf '%s\n' "$p" | grep -F '送信だけが失敗' | grep -qF 'reply --as parent'
   printf '%s\n' "$p" | grep -F '`親の判断: 通すが送れなかった` の件' | grep -qF 'reply --as parent'
-  printf '%s\n' "$p" | grep -qF '目的 → いま取り組んでいる場所 → 起きた事実 → 決めてほしいこと 1 つ → 推奨と受け入れるリスク'
+  printf '%s\n' "$p" | grep -qF '報告は `~/.claude/output-styles/readable.md` の節 3 の型で書き'
+  ! printf '%s\n' "$p" | grep -qF '目的 → いま取り組んでいる場所' || return 1
   printf '%s\n' "$p" | grep -qF 'エピックの目的と他の子との関係'
   printf '%s\n' "$p" | grep -qF '子の停止の記録の URL'
   printf '%s\n' "$p" | grep -qF 'どの子の・どの画面で・何をするか'

@@ -34,7 +34,7 @@ communication-style.md	センターピン
 communication-style.md	見出しや表で番号を振るのは構わない
 communication-style.md	ひとつの説明に複数混ぜない
 communication-style.md	専門用語は初出で一言の言い換えを添える
-communication-style.md	これを飲めるならAで進める
+communication-style.md	理由が無ければ聞かずに
 communication-style.md	読み手の側にしかない情報
 communication-style.md	他の資料を見に行かないと判断できない書き方はしない
 communication-style.md	前置きと注意書きは短くする
