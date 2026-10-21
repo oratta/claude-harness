@@ -40,7 +40,9 @@ case "$1" in
     exit "$(cat "$STUB_CFG/new_window_exit" 2>/dev/null || echo 0)" ;;
   send-keys) exit "$(cat "$STUB_CFG/send_exit" 2>/dev/null || echo 0)" ;;
   capture-pane)
-    if [ -e "$STUB_CFG/screen" ]; then cat "$STUB_CFG/screen"; else echo "  ? for shortcuts"; fi ;;
+    n="$(cat "$STUB_CFG/captures" 2>/dev/null || echo 0)"; n=$((n + 1)); echo "$n" > "$STUB_CFG/captures"
+    if [ -e "$STUB_CFG/screen2" ] && [ "$n" -ge "$(cat "$STUB_CFG/switch_at")" ]; then cat "$STUB_CFG/screen2"
+    elif [ -e "$STUB_CFG/screen" ]; then cat "$STUB_CFG/screen"; else echo "  ? for shortcuts"; fi ;;
   display-message) cat "$STUB_CFG/pane_cmd" 2>/dev/null || echo node ;;
   list-panes)
     cat "$STUB_CFG/panes" 2>/dev/null
@@ -196,12 +198,54 @@ put_pane() { printf '%s\t%s\t%s\n' "$1" "${3-$WT}" "$2" >> "$STUB_CFG/panes"; }
   [ "$(calls '^orca')" -eq 0 ]
 }
 
-@test "start: only Enter is resent every 4 seconds while the prompt is missing from the log" {
+# 入力欄に送った文が残っている画面（<最後の行の前に足す行>）
+screen_with_input() {
+  printf '%s\n' '❯ /develop #5 の指示' '  ⏸ plan mode on (shift+tab to cycle)' > "$STUB_CFG/screen"
+  [ -z "${1-}" ] || printf '%s\n' "$1" >> "$STUB_CFG/screen"
+}
+
+@test "start: only Enter is resent every 4 seconds while the prompt stays in the input line" {
+  screen_with_input
   EPIC_DISPATCH_SUBMIT_WAIT=5 run tm start "$WT" 'cld' '/develop #5 の指示' 5
   [ "$status" -eq 1 ]
   [ "$output" = 'failed send %5' ]
   [ "$(calls 'tmux send-keys -t %5 C-m')" -eq 3 ]
   [ "$(calls 'tmux send-keys -t %5 -l -- .*develop')" -eq 1 ]
+}
+
+@test "start: no Enter is resent when the screen shows a permission or trust dialog" {
+  printf '%s\n' '❯ /develop #5 の指示' '  Do you want to proceed?' '  ❯ 1. Yes' '    2. No' '  Esc to cancel' '  ⏸ plan mode on (shift+tab to cycle)' > "$STUB_CFG/screen"
+  EPIC_DISPATCH_SUBMIT_WAIT=5 run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$status" -eq 1 ]
+  [ "$output" = 'failed ready %5' ]
+  [ "$(calls 'tmux send-keys -t %5 -l -- .*develop')" -eq 0 ]
+}
+
+@test "start: a dialog that appears after typing stops the resending" {
+  screen_with_input
+  # capture-pane の 5 回目（2 回目の重ね送りの判定）から確認画面になる。1 回目の重ね送りまでは入力欄に文が残る画面
+  { cat "$STUB_CFG/screen"; printf '%s\n' '  Do you want to proceed?' '  ❯ 1. Yes' '  Esc to cancel'; } > "$STUB_CFG/screen2"
+  echo 5 > "$STUB_CFG/switch_at"
+  EPIC_DISPATCH_SUBMIT_WAIT=9 run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$status" -eq 1 ]
+  [ "$output" = 'failed send %5' ]
+  [ "$(calls 'tmux send-keys -t %5 C-m')" -eq 3 ]
+}
+
+@test "start: no Enter is resent once the prompt is gone from the input line" {
+  printf '%s\n' '  ⏸ plan mode on (shift+tab to cycle)' > "$STUB_CFG/screen"
+  EPIC_DISPATCH_SUBMIT_WAIT=5 run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$status" -eq 1 ]
+  [ "$output" = 'failed send %5' ]
+  [ "$(calls 'tmux send-keys -t %5 C-m')" -eq 2 ]
+}
+
+@test "start: a ready mark only in the upper part of the screen does not count as the input prompt" {
+  { echo '  ? for shortcuts'; for i in $(seq 1 20); do echo "output line $i"; done; } > "$STUB_CFG/screen"
+  run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$status" -eq 1 ]
+  [ "$output" = 'failed ready %5' ]
+  [ "$(calls 'tmux send-keys -t %5 -l -- .*develop')" -eq 0 ]
 }
 
 @test "start: failed send when no user line follows" {

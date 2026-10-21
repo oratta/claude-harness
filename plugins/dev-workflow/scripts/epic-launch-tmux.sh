@@ -25,10 +25,16 @@
 # 「起動部品は epic-launch-<名前>.sh の 1 本ずつで…」と「tmux の部品は…」。
 set -uo pipefail
 
-# Claude Code が入力待ちのとき、ペインの画面に出ている文字列（grep -E の式）。Claude Code の版で変わりうるので
+# Claude Code が入力待ちのとき、ペインの画面の最下部に出ている文字列（grep -E の式）。Claude Code の版で変わりうるので
 # ここ 1 か所に置く。変わると start は failed ready になり、黙って誤送信しない
 # 実機で確かめた画面（Claude Code 2.1.305）: 既定の画面は「? for shortcuts」、状態行を持つ環境では「<モード> on (shift+tab to cycle)」
 READY_PATTERN='\? for shortcuts|\(shift\+tab to cycle\)'
+# 許可・選択・信頼の確認画面が出ているときの文字列（grep -E の式）。最下部にこれが出ている間は何も送らない。
+# 実機で確かめた画面（2.1.305）: フォルダの信頼の確認は「Enter to confirm · Esc to cancel」と選択肢の行、許可の確認は
+# 「Do you want to ...?」と番号付きの選択肢の行。版で文言が変わると見逃すので、変わったら送らずに止まる側（READY_PATTERN が当たらない）に倒れる
+DIALOG_PATTERN='Enter to confirm|Esc to cancel|Do you want to |^[[:space:]]*(❯ )?[0-9]+\. (Yes|No)\b'
+# 画面の最下部として読む行数（空行を除いた末尾の行数。入力欄と状態行が入る長さ）
+SCREEN_TAIL_LINES=12
 # ペインの前面がこれらのコマンドなら、Claude Code ではなくシェル（指示を送るとシェルコマンドとして実行される）
 SHELL_COMMANDS=' sh bash zsh fish dash ksh tcsh csh '
 
@@ -69,10 +75,23 @@ panes_of() {
   printf '%s\n' "$all" | awk -F '\t' -v wt="$wt" 'NF >= 3 && ($2 == wt || index($2, wt "/") == 1) { print $1 "\t" $3 }'
 }
 
+# ペインの画面の最下部（空行を除いた末尾 SCREEN_TAIL_LINES 行）を出す（<ペイン ID>）
+screen_tail() {
+  tmux capture-pane -p -t "$1" 2>/dev/null | awk 'NF' | tail -n "$SCREEN_TAIL_LINES"
+}
+
+# 最下部が入力待ちで、確認画面が出ていないか（<ペイン ID>）。画面の上のほうにだけ入力待ちの印があっても入力待ちとは見ない
+pane_ready() {
+  local tail
+  tail="$(screen_tail "$1")"
+  printf '%s\n' "$tail" | grep -Eq -- "$READY_PATTERN" || return 1
+  ! printf '%s\n' "$tail" | grep -Eq -- "$DIALOG_PATTERN"
+}
+
 # ペインで Claude Code が動き、入力待ちの画面か（<ペイン ID> <前面のコマンド>）
 is_claude_pane() {
   case "$SHELL_COMMANDS" in *" $2 "*) return 1 ;; esac
-  tmux capture-pane -p -t "$1" 2>/dev/null | grep -Eq -- "$READY_PATTERN"
+  pane_ready "$1"
 }
 
 # 送った文が会話ログに現れたか（<ワークツリー> <この時刻より後> <送った文>）。ログは
@@ -107,8 +126,11 @@ type_line() {
 }
 
 # 文を送って、会話ログに届いたことを確かめる（<ペイン ID> <ワークツリー> <文>）。戻り値 0 = 届いた / 1 = 届かない
+# 打ち込む前に最下部が入力待ちで確認画面が出ていないことを確かめ、そうでなければ何も打たずに 1 を返す
 send_and_confirm() {
-  local pane="$1" wt="$2" text="$3" since i tries
+  local pane="$1" wt="$2" text="$3" since i tries head20 resend=1
+  pane_ready "$pane" || return 1
+  head20="$(printf '%s' "$text" | jq -Rr '.[0:20]')"
   since="$(date -u +%Y-%m-%dT%H:%M:%S)"
   type_line "$pane" "$text" || return 1
   tries="$submit"; [ "$tries" -ge 1 ] 2>/dev/null || tries=1
@@ -116,8 +138,16 @@ send_and_confirm() {
     log_has_prompt "$wt" "$since" "$text" && return 0
     sleep 1
     # 起動して間もない Claude Code は最初の Enter を取りこぼすことがある（実機 2.1.305。指示は入力欄に残る）。
-    # 文は打ち直さず、届くまで 4 秒ごとに Enter だけを重ねる（空の入力欄への Enter は何もしない）
-    [ $(( i % 4 )) -eq 3 ] && tmux send-keys -t "$pane" C-m
+    # 文は打ち直さず、届くまで 4 秒ごとに Enter だけを重ねる（空の入力欄への Enter は何もしない）。重ねる前に毎回画面の
+    # 最下部を読み、入力待ちで・確認画面が出ておらず・送った文の先頭がまだ入力欄に残っているときだけ重ねる。
+    # 一度でも満たさなければ重ね送りをやめる（会話ログの確認は続ける。確認画面に Enter が選択として届くのを避けるため）
+    if [ "$resend" -eq 1 ] && [ $(( i % 4 )) -eq 3 ]; then
+      if pane_ready "$pane" && screen_tail "$pane" | grep -qF -- "$head20"; then
+        tmux send-keys -t "$pane" C-m
+      else
+        resend=0
+      fi
+    fi
   done
   return 1
 }
