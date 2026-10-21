@@ -1,6 +1,6 @@
 ## 1. テストを先に書く
 
-- [ ] 1.1 `plugins/dev-workflow/tests/unclear-reply-rephrase.bats` を新しく作り、spec `dev-workflow-unclear-reply-rephrase` の Scenario をテストにする（hooks.json の 2 件目のエントリと 1 件目が変わらないこと・実行権限・語の一覧の全語で差し込みが出ること・語の無い発言と逆引用符のブロックや引用の行の中だけの語で出ないこと・引用の外の語で出ること・`\uXXXX` の逃がしで当たること・差し込む文が正本のパスと「節 3」と当たった語と「新しい依頼」を含み型の中身の語を含まないこと・正本に `## 3. 判断を求めるときは` の見出しがあること・壊れた入力で出力も標準エラーも空で exit 0）。テスト名は ASCII のみ。HOME は一時ディレクトリに向ける。触る範囲: plugins/dev-workflow/tests/unclear-reply-rephrase.bats（新規）。書き方の手本: plugins/dev-workflow/tests/prompt-tripwires-refresh.bats:1-70
+- [ ] 1.1 `plugins/dev-workflow/tests/unclear-reply-rephrase.bats` を新しく作り、spec `dev-workflow-unclear-reply-rephrase` の Scenario をテストにする（hooks.json の 2 件目のエントリと 1 件目が変わらないこと・実行権限・語の一覧の全語で差し込みが出ること・語の無い発言と逆引用符のブロックや引用の行の中だけの語で出ないこと・引用の外の語で出ること・言語名つきの開き（```bash）のブロックと閉じられないブロックの中の語で出ず、閉じのあとの語で出ること・「意味わからん」で示す語が `意味わから` であること・`\uXXXX` の逃がしで当たること・差し込む文が正本のパスと「節 3」と当たった語と「新しい依頼」を含み型の中身の語を含まないこと・正本に `## 3. 判断を求めるときは` の見出しがあること・壊れた入力で出力も標準エラーも空で exit 0）。テスト名は ASCII のみ。HOME は一時ディレクトリに向ける。触る範囲: plugins/dev-workflow/tests/unclear-reply-rephrase.bats（新規）。書き方の手本: plugins/dev-workflow/tests/prompt-tripwires-refresh.bats:1-70
 
 ## 2. hook を足す
 
