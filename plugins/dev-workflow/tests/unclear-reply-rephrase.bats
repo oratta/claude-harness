@@ -106,8 +106,12 @@ PY
 @test "script: python3 is started with -I" {
   run grep -nE '(^|[^[:alnum:]_./-])python3([[:space:]]|$)' "$SCRIPT"
   [ "$status" -eq 0 ]
-  local line
+  local line body
   while IFS= read -r line; do
+    # コメントの行は見ない（grep -n の「行番号:」を外してから判定する）
+    body="${line#*:}"
+    body="${body#"${body%%[![:space:]]*}"}"
+    case "$body" in '#'*) continue ;; esac
     case "$line" in
       *"command -v python3"*) ;;
       *"python3 -I"*) ;;
