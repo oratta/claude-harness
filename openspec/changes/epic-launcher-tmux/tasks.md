@@ -10,9 +10,9 @@
 
 ## 2. tmux の部品（epic-launch-tmux.sh）
 
-- [ ] 2.1 テストを先に書く: 各サブコマンドの stdout・exit code、`orca` を呼ばないこと、`start` が `new-window` にコマンドを渡さず `send-keys -l` で打つこと、送信の確かめ（会話ログ）、シェルだけのペインへ送らないこと、`remove` が `--force` を付けないこと、知らないサブコマンドは exit 2。`tmux`・`git` を PATH 上のスタブにする。触る範囲: `plugins/dev-workflow/tests/epic-launch-tmux.bats`（新規。`tests/epic-dispatch.bats` の `calls()` の書き方を参考にする）
-- [ ] 2.2 `epic-launch-tmux.sh` を書く。サブコマンド 12 個、使い方、待ち時間の環境変数は `epic-dispatch.sh` が渡した値を使う。ワークツリーは `<repo>/.claude/worktrees/issue-<N>`・ブランチ `worktree-issue-<N>`。入力待ちの画面の文字列は先頭の定数にする。触る範囲: `plugins/dev-workflow/scripts/epic-launch-tmux.sh`（新規。`epic-launch-orca.sh:1-60` の使い方とサブコマンドの並びに揃える）
-- [ ] 2.2b `create` は `repo_id` を読まず、`clone` が空でなければその clone のリポジトリに作る（別リポジトリ＋空 `repo_id` のテストを 2.1 に含める）。`remove` はワークツリーが属するリポジトリの本体のワークツリーで `git worktree remove` を呼ぶ。送信の確かめは送った文の先頭 40 文字を含む user 行を数える。触る範囲: `plugins/dev-workflow/scripts/epic-launch-tmux.sh`（新規）
+- [x] 2.1 テストを先に書く: 各サブコマンドの stdout・exit code、`orca` を呼ばないこと、`start` が `new-window` にコマンドを渡さず `send-keys -l` で打つこと、送信の確かめ（会話ログ）、シェルだけのペインへ送らないこと、`remove` が `--force` を付けないこと、知らないサブコマンドは exit 2。`tmux`・`git` を PATH 上のスタブにする。触る範囲: `plugins/dev-workflow/tests/epic-launch-tmux.bats`（新規。`tests/epic-dispatch.bats` の `calls()` の書き方を参考にする）
+- [x] 2.2 `epic-launch-tmux.sh` を書く。サブコマンド 12 個、使い方、待ち時間の環境変数は `epic-dispatch.sh` が渡した値を使う。ワークツリーは `<repo>/.claude/worktrees/issue-<N>`・ブランチ `worktree-issue-<N>`。入力待ちの画面の文字列は先頭の定数にする。触る範囲: `plugins/dev-workflow/scripts/epic-launch-tmux.sh`（新規。`epic-launch-orca.sh:1-60` の使い方とサブコマンドの並びに揃える）
+- [x] 2.2b `create` は `repo_id` を読まず、`clone` が空でなければその clone のリポジトリに作る（別リポジトリ＋空 `repo_id` のテストを 2.1 に含める）。`remove` はワークツリーが属するリポジトリの本体のワークツリーで `git worktree remove` を呼ぶ。送信の確かめは送った文の先頭 40 文字を含む user 行を数える。触る範囲: `plugins/dev-workflow/scripts/epic-launch-tmux.sh`（新規）
 - [ ] 2.3 `orca` の語を含む呼び出しの照合（`grep -rlE` の検査）が `epic-launch-orca.sh` の 1 本のままであることを確かめる。触る範囲: `plugins/dev-workflow/tests/epic-dispatch.bats`（`grep -rlE` の照合 1 件）
 
 ## 3. SKILL.md の書き直し
