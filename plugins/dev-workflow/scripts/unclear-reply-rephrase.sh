@@ -44,7 +44,8 @@ INPUT="$(cat 2>/dev/null || true)"
 
 # --- 速い道: 生の入力に語も \u の逃がしも無ければ終わる ---
 WORDS_RE="$(printf '%s' "$WORDS" | tr '\n' '|')"
-printf '%s' "$INPUT" | LC_ALL=C grep -qE -e "$WORDS_RE" -e '\\u[0-9a-fA-F]{4}' 2>/dev/null || exit 0
+# パイプで渡さない: GNU grep -q は一致で先に終わり、書き手が SIGPIPE で落ちると pipefail で失敗扱いになる
+LC_ALL=C grep -qE -e "$WORDS_RE" -e '\\u[0-9a-fA-F]{4}' 2>/dev/null <<<"$INPUT" || exit 0
 
 command -v python3 >/dev/null 2>&1 || exit 0
 

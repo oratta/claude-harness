@@ -159,6 +159,27 @@ PY
   silent
 }
 
+@test "detect: an indented fence is ignored" {
+  prompt_of "$(printf '見て\n  ```\n説明して\n  ```')"
+  run_hook
+  silent
+}
+
+# GNU grep -q は一致した時点で入力を読み切らずに終わる（macOS の grep は読み切るので起きない）。
+# その動きを、先頭だけ読んで本物の grep に渡す代役で真似て、64KB を超える prompt の先頭に語を置く。
+# 入力をパイプで grep に渡していると、書き手が SIGPIPE で落ち、pipefail で差し込みが消える。
+@test "detect: a word at the head of a prompt over 64KB triggers even with an early-exit grep" {
+  local bin="${BATS_TEST_TMPDIR}/earlygrep"
+  mkdir -p "$bin"
+  printf '#!/bin/bash\nhead -c 4096 | %q "$@"\n' "$(command -v grep)" > "$bin/grep"
+  chmod +x "$bin/grep"
+  prompt_of "説明して $(head -c 200000 /dev/zero | tr '\0' 'a')"
+  run --separate-stderr bash -c "PATH='$bin':\"\$PATH\" '$SCRIPT' < '$PAYLOAD'"
+  local c
+  c="$(ctx_of)"
+  has "$c" "「説明して」"
+}
+
 @test "detect: an unclosed block runs to the end of the prompt" {
   prompt_of "$(printf '見て\n```\n意味不明')"
   run_hook
