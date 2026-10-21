@@ -8,9 +8,8 @@
 #   手で symlink」の手作業2点セットで、実行されなかった PC には正本が一切届かず、
 #   古びても誰も気づかなかった（2026-08-17 実測: Air は rules/ ディレクトリ誕生前の
 #   clone のまま約30 PR 遅れ、~/.claude/rules 自体が存在しなかった）。
-#   本スクリプトはその2点セットを冪等な1コマンドにする。定期実行の足は
-#   flatmate 住人の起動ルーティン（boot.sh）が担い、鮮度のPC横断可視化は
-#   flatmate の agent-status ハートビートが担う。
+#   本スクリプトはその2点セットを冪等な1コマンドにする。定期実行は
+#   利用者の環境が担い（cron など）、鮮度のPC横断可視化も利用者の環境の見張りに任せる。
 #
 # 使い方:
 #   scripts/sync.sh            # git pull（ff-only）→ symlink 張り直し
@@ -18,7 +17,7 @@
 #
 # 挙動:
 #   - pull は ff-only。tracked ファイルが dirty ならスキップする（作業を壊さない。
-#     flatmate の repo-sync.sh と同じ思想）。pull 失敗・dirty スキップでも symlink 配線は続行
+#     定期実行の repo-sync と同じ思想）。pull 失敗・dirty スキップでも symlink 配線は続行
 #   - rules/*.md → ~/.claude/rules/、output-styles/*.md → ~/.claude/output-styles/ に symlink
 #   - 同名の「実ファイル」が既にある場合: 内容が同一なら symlink に置き換え（正本の一本化）、
 #     異なるなら触らず警告して非0（ローカル版を勝手に潰さない）

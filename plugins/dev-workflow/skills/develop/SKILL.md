@@ -334,7 +334,7 @@ W の名前は書かない（新しいセッションでは SendMessage でき�
 
 記録先に `引き継ぎ: 主の返事待ち` のコメントがあれば、`needs-approval` の有無によらずこの手順で始める（`commands/develop.md` の入口も同じ条件）。
 
-channel で、`#<番号>` を添えたチャンネルの返事を受けたセッションが develop を読み込んでいない（再起動などでセッションが入れ替わった）ときは、develop を記録先 `<番号>` で起動して本体になり、その記録先に `引き継ぎ: 主の返事待ち` があることを確かめてからこの手順で続ける（返事を受けて develop を起動するきっかけは住人の運用（flatmate の CLAUDE.md）に置く）。モードは決め直さず、引き継ぎの `実行モード` の値を使う。
+channel で、`#<番号>` を添えたチャンネルの返事を受けたセッションが develop を読み込んでいない（再起動などでセッションが入れ替わった）ときは、develop を記録先 `<番号>` で起動して本体になり、その記録先に `引き継ぎ: 主の返事待ち` があることを確かめてからこの手順で続ける（返事を受けて develop を起動するきっかけは、チャンネルを運用するリポジトリの CLAUDE.md などに置く）。モードは決め直さず、引き継ぎの `実行モード` の値を使う。
 
 1. 記録先の最新の引き継ぎのコメントを読む。
 2. そのコメントより後の主の回答（記録先または対象 PR のコメント、または `/develop` の引数の残り）を探して使う。`/develop` の引数の残り（`許容する` など）は会話で受けた回答として扱い、このセッションのセッション ID（`$CLAUDE_CODE_SESSION_ID`）・その発言の日時（会話ログの timestamp）（owner-reply-check.sh を本体が先に回し、MATCH: 行の timestamp をそのまま使う。MATCH: が複数出たら、いま受けた返事の行（全文が返事と同じで timestamp がいちばん新しい行。出力は時刻順とは限らない）の timestamp を使う。どの行もいま受けた返事でなければ、MATCH: が出ないときと同じに扱う。MATCH: が出なければ時刻を作らない。終了コード 1 なら原文を主の発言どおりに写し直して回し直し、それでも出ないとき、および終了コード 2（確かめられない。写し直しても直らない）のときは、pr-review-gate 手順 5 の終了コード 1・2 の扱いどおり主に受け直しを頼む（1 は手順6に戻して主に再確認、2 は PR のコメントか、ゲートと同じ PC での `/develop <記録先> 許容する`）。呼び方は pr-review-gate 手順 5 を参照）・原文を保留の解除の G に渡す（主に PR へのコメントを求めない）。引き継ぎの `実行モード` が `channel` のときは、このセッションが受けた `#<記録先>` を添えたチャンネルの返事（番号の無い返事は「channel の主への案内」の扱い）を `/develop` の引数の残りの代わりの回答として扱う。リスク許容の返事を G に渡すときは、セッション ID と、このセッションの会話ログでその返事の行（`<channel source=` で始まる、主の発言として数えられる行）の、開きタグと閉じタグを外した中身（`owner-reply-check.sh` の `MATCH:` 行に出る本文と同じもの。タグごと渡すと照合が一致せず、PR の宣言に user_id 入りのタグが写る）を原文とし、その行の timestamp とあわせて渡し、本体が要約・書き直した文やチャンネルのメッセージの別の表示から取らない（確かめ方と `チャンネルの返事の確認: 不可` のときの扱いは「実行モード」の節の「channel のリスク許容」）。無ければ、引き継ぎの「主への依頼」を主に見せ直して返事を聞き、返事が来るまで役割を起こさない。
@@ -397,7 +397,7 @@ W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 �
 | モード | 起動 | 本体 | 対話 | 回す工程 |
 |---|---|---|---|---|
 | **interactive**（既定） | 人間が `/develop`・`/work-issue`・自然文で依頼 | そのセッション | AskUserQuestion で聞ける | (0)〜(4) 全部。複数 change はその場で change ごとに回す |
-| **channel** | 印 `DEV_WORKFLOW_UNATTENDED` のあるセッション、またはチャンネル（Discord など）のメッセージで依頼（flatmate の住人がオーナーから開発を頼まれたときの形） | そのセッション | チャンネルで聞く（AskUserQuestion は使わない） | (0)〜(4) 全部（G を起こし、PR の合格まで進む）。複数 change は interactive と同じ |
+| **channel** | 印 `DEV_WORKFLOW_UNATTENDED` のあるセッション、またはチャンネル（Discord など）のメッセージで依頼（常駐の開発エージェントが、オーナーからチャンネルで開発を頼まれたときの形） | そのセッション | チャンネルで聞く（AskUserQuestion は使わない） | (0)〜(4) 全部（G を起こし、PR の合格まで進む）。複数 change は interactive と同じ |
 | **unmanned**（`--unmanned`） | loop-dev-agent の憲法 Step 3 から | **憲法のメイン自身**が develop の本体を務め、W / R1 をメインが spawn する | 聞けない（1 サイクル 1 仕事） | (0)〜(3)。worktree は憲法側が用意したものを使う。(3) で W が Draft PR の作成と `agent-review:pending` の付与（憲法 Step 3 の 5〜6 に相当）まで行う。**(4) の G は起こさず**、憲法 Step 1（レビューモード）が次サイクル以降で担う |
 
 unmanned で複数 change に割れた場合は、W が change 単位で子 issue を作って `blocked_by` で順序付けし、元 issue に分割結果をコメントしてそのサイクルを終える（`references/roles/worker/spec.md`「分割判定」）。判断がつかないほど曖昧なら Discord で質問し、`needs-approval` を付けてサイクルを終える。
@@ -569,5 +569,5 @@ channel の本体は、主へのすべての発言を「channel の聞き方」�
 - G の手順書: pr-review-gate の段のファイル（`skills/pr-review-gate/stages/` と `declarations.md`。索引は `skills/pr-review-gate/SKILL.md`、G が時点ごとに読むファイルは `references/roles/gate-runner.md` の表。記録先の探索順・仕様宣言の照合は据え置き）
 - 入口の 5 分岐と issueify フォールバック: `commands/develop.md`（`/work-issue` はエイリアス）
 - worktree セットアップの自動化: worktree プラグインの `hooks/hooks.json`（`WorktreeCreate` / `SessionStart`）
-- 棲み分け相手: 各リポに配備された loop-dev-agent の憲法（`docs/agent-loop.md`。flatmate が保守する正本で、harness にテンプレートは無い）。unmanned の外形（ラベル・Draft PR・キュー）は憲法側
+- 棲み分け相手: 各リポに配備された loop-dev-agent の憲法（`docs/agent-loop.md`。それを配るリポジトリが保守する正本で、harness にテンプレートは無い）。unmanned の外形（ラベル・Draft PR・キュー）は憲法側
 - 1 ループに収まらない規模を Workflow で回す型: `plugins/dev-workflow/references/workflow-execution.md`（スクリプトの書き方は `workflow-authoring` スキル）
