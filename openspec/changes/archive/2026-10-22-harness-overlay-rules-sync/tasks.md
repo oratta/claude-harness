@@ -26,10 +26,10 @@
 
 ## 5. 個人版リポジトリ側（別 PR。このリポジトリの worktree の外）
 
-- [ ] 5.1 個人版の根に `.harness-overlay`（中身 `oratta` の 1 行）を置き、オーナーの PC の `~/.claude/harness-overlays` に個人版の marketplace のディレクトリ名を 1 行書く手順（例: `printf '%s\n' <個人版の marketplace のディレクトリ名> >> ~/.claude/harness-overlays`。住人にも届く）を README に足し、README の `ln -sfn ... ~/.claude/rules/harness-dev.md` の手順を、sync.sh が張る説明に直す。記録先はこの issue
+- [x] 5.1 個人版の根に `.harness-overlay`（中身 `oratta` の 1 行）を置き、オーナーの PC の `~/.claude/harness-overlays` に個人版の marketplace のディレクトリ名を 1 行書く手順（例: `printf '%s\n' <個人版の marketplace のディレクトリ名> >> ~/.claude/harness-overlays`。住人にも届く）を README に足し、README の `ln -sfn ... ~/.claude/rules/harness-dev.md` の手順を、sync.sh が張る説明に直す。記録先はこの issue。個人版の PR: https://github.com/oratta/claude-harness-oratta/pull/2
 
 ## 6. 確かめ方（マージ後の確認として PR 本文に移す。6.1 の前にオーナーの PC で許可ファイルに 1 行書く）
 
-- [ ] 6.1 マージ後、marketplace の clone で `scripts/sync.sh` を 1 回走らせる（開発用 clone や worktree の sync.sh は走らせない）。`ls -l ~/.claude/rules/claude-harness ~/.claude/rules/claude-harness/oratta` で出どころが見え、`~/.claude/rules` 直下に公開版の symlink が残っていないこと
-- [ ] 6.2 別の cwd で `claude -p --model haiku` に、公開版のルール 1 本と個人版のルール 1 本（`harness-dev.md`）の冒頭の文を答えさせる。スキルは `claude -p "/weekly-report が使えるか"` のような 1 問、hook は `/hooks` の一覧で確認する
+- 6.1 マージ後、marketplace の clone で `scripts/sync.sh` を 1 回走らせ、`ls -l` で出どころが見え、`~/.claude/rules` 直下に公開版の symlink が残っていないことを確かめる（マージ後の確認のため、PR 本文の動作確認ポイントに移した。未実施）
+- 6.2 別の cwd で `claude -p --model haiku` に公開版と個人版のルールを答えさせ、スキルと hook も確かめる（マージ後の確認のため、PR 本文の動作確認ポイントに移した。未実施）
 - [x] 6.3 客の Mac の模擬: 使い捨ての `CLAUDE_CONFIG_DIR` で overlay 無しの `scripts/sync.sh --no-pull` が標準エラー空・終了コード 0（テストが同じことを見る）
