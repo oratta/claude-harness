@@ -200,7 +200,7 @@ teardown() {
   allow bad-repo
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
-  [[ "$output" == *"bad-repo"* ]]
+  [[ "$output" == *"bad-repo"* ]] || return 1
   [ ! -e "$FAKE_CLAUDE/rules/x" ]
   [ ! -e "$PUB/x.md" ]
   [ -L "$PUB/communication-style.md" ]
@@ -211,7 +211,7 @@ teardown() {
   allow empty-repo
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
-  [[ "$output" == *"empty-repo"* ]]
+  [[ "$output" == *"empty-repo"* ]] || return 1
   [ -L "$PUB/communication-style.md" ]
 }
 
@@ -235,7 +235,7 @@ teardown() {
   [ "$status" -ne 0 ]
   [ -L "$PUB/ov/a.md" ]
   [ ! -e "$PUB/ov/b.md" ]
-  [[ "$output" == *"b-repo"* ]]
+  [[ "$output" == *"b-repo"* ]] || return 1
 }
 
 @test "duplicate overlay names: lexical order wins even when allowed in reverse" {
@@ -247,7 +247,7 @@ teardown() {
   [ "$status" -ne 0 ]
   [ -L "$PUB/ov/a.md" ]
   [ ! -e "$PUB/ov/b.md" ]
-  [[ "$output" == *"b-repo"* ]]
+  [[ "$output" == *"b-repo"* ]] || return 1
 }
 
 @test "overlay content semantics are not checked (contradicting rule is linked, exit 0)" {
@@ -398,7 +398,7 @@ teardown() {
   allow nowhere
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
-  [[ "$output" == *"nowhere"* ]]
+  [[ "$output" == *"nowhere"* ]] || return 1
   [ -L "$PUB/communication-style.md" ]
 }
 
@@ -408,7 +408,7 @@ teardown() {
   allow nomark
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
-  [[ "$output" == *"nomark"* ]]
+  [[ "$output" == *"nomark"* ]] || return 1
   [ ! -e "$PUB/x.md" ]
   [ -L "$PUB/communication-style.md" ]
 }
@@ -418,7 +418,7 @@ teardown() {
   allow e-repo
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
-  [[ "$output" == *"e-repo"* ]]
+  [[ "$output" == *"e-repo"* ]] || return 1
   [ -L "$PUB/communication-style.md" ]
 }
 
@@ -435,7 +435,7 @@ teardown() {
   printf '../x\n.hidden\na/b\nok-repo\n' > "$FAKE_CLAUDE/harness-overlays"
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
-  [[ "$output" == *"../x"* ]]
+  [[ "$output" == *"../x"* ]] || return 1
   [ -L "$PUB/ok/x.md" ]
   [ ! -e "$FAKE_CLAUDE/rules/x" ]
 }
@@ -458,7 +458,7 @@ mk_fake_harness() {
   git -C "$MP/ov-repo" init -q
   git -C "$MP/ov-repo" remote add origin /nonexistent/remote.git
   run sh -c "sh '$FH/scripts/sync.sh' 2>&1"
-  [[ "$output" != *"ov-repo"* ]]
+  [[ "$output" != *"ov-repo"* ]] || return 1
   [ ! -e "$PUB/ov" ]
 }
 
@@ -469,7 +469,7 @@ mk_fake_harness() {
   git -C "$MP/ov-repo" init -q
   git -C "$MP/ov-repo" remote add origin /nonexistent/remote.git
   run sh -c "sh '$FH/scripts/sync.sh' 2>&1"
-  [[ "$output" == *"ov-repo"* ]]
+  [[ "$output" == *"ov-repo"* ]] || return 1
   [ -L "$PUB/ov/x.md" ]
 }
 
