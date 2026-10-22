@@ -53,6 +53,7 @@ human_merge_paragraph() {
   [[ "$section" == *'足した・変えたテスト'* ]] || return 1
   [[ "$section" == *'パスかファイル名'* && "$section" == *'git grep -l'* ]] || return 1
   [[ "$section" == *'テストランナー'* && "$section" == *'選ぶ機能'* ]] || return 1
+  [[ "$section" == *'log-failed'* ]] || return 1
 }
 
 @test "worker runs the full test locally only when no CI job runs it" {

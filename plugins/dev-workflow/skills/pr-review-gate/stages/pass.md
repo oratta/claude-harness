@@ -37,7 +37,7 @@
 | 結論がまだ無い（実行中、または Draft のため未実行） | 状態（と run があればその URL）と、合格後の CI の見張り（`plugins/dev-workflow/references/ci-watch.md`）で結論を確かめること。このまま手順 5 へ進んでよい |
 | 既に失敗 | 成功の印を付けず、失敗した run の URL と、合格後の CI の見張りで直しに回すこと。合格処理は止めない |
 
-結論の無い CI や失敗した CI を成功として書かない。関係するテストと lint の結果は、作業者が PR に載せた証拠（コマンドと exit code）を使ってよい。
+結論の無い CI や失敗した CI を成功として書かない。関係するテストと lint の結果は、作業者が PR に載せた証拠（コマンドと exit code）を使ってよい（その場合、結果の欄にはその証拠があるコメントの URL とコマンド・exit code を写し、自分で動かした形に書かない）。
 
 **自力検証が不能なときのみ**、3点セットを揃えて主に依頼し、手順6へ（マージ保留）:
 
@@ -233,6 +233,7 @@ gh api repos/$R/pulls/$N --jq .draft              # 実測確認（Draft）
 | Ready 化は済んだが passed を付ける前に止まった（`draft` が `false`、passed なし） | 手順5の断片をそのまま再実行する（Draft でないので Ready 化は飛ばされ、passed の labeled で判定される） |
 | passed は付いたが auto-merge が判定を取り逃がした（`draft` が `false`、passed あり、マージされない） | `docs/auto-merge.md` の手動実行（`workflow_dispatch` の `pr` 入力）で再判定する |
 | `draft` が `true` のまま passed が付いている（旧手順や手動操作の残骸） | passed を外し、`gh pr ready` で Ready にしてから passed を付け直す（付け直しで新しい labeled が起きる） |
+
 聖域パス（auto-merge workflow の SACRED 定義。例: `.github/workflows/` `CLAUDE.md` `.claude/` 憲法 doc）に
 触れる PR は passed でも auto-merge されず人間マージになる — 判定の正本は auto-merge workflow 側。
 触れている自覚があればコメントに1行書き添える。auto-merge 未配備のリポでは、合格処理の後に
