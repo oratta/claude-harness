@@ -18,7 +18,7 @@
 - [x] 2.8 公開版の作業ツリーに個人版の固有名が残っていないかを調べる `scripts/check-public-leak.sh <公開版の作業ツリー>` と辞書 `tests/private-names/dict/private-parts.txt`（`fmtoken`・`weekly-report`・`daily-report`・`auto-merge-deployments`・`1password.md`・`Fieldy`）を書く。検索の範囲は design の決定 4 のとおり（公開版の `git ls-files` のうち `rules/`・`output-styles/`・`scripts/`・`plugins/` とルート直下の `README.md`・`CLAUDE.md`・`AGENTS.md`・`CONTRIBUTING.md`。`openspec/`・`docs/public-private-split.md`・`_longruns/`・`changes/`・`CHANGELOG.md`・`tests/`・`evals/` を除く）。辞書は絶対パスで `forbidden-words-check.sh --dict` に渡し、`FORBIDDEN_WORDS_NO_GH=1` で呼ぶ。今の公開版（消す前）に対して実行すると当たりが出て終了コード 1 になることを確かめる。触る範囲: 個人版: scripts/check-public-leak.sh（新規）、個人版: tests/private-names/dict/private-parts.txt（新規）、plugins/dev-workflow/scripts/forbidden-words-check.sh:1-30（読むだけ）
 - [x] 2.9 `README.md` を書く: 位置づけ（公開版 `oratta/claude-harness` の上に載せる追加分）、入れ方（`/plugin marketplace add oratta/claude-harness-oratta` と各プラグインの install、`~/.claude/rules/plugin-editing.md` の symlink の張り方）、確かめ方（`bats plugins/*/tests`、`scripts/check-public-leak.sh`）、写し元の SHA。CI は置かない。触る範囲: 個人版: README.md（新規）
 - [x] 2.10 `bats plugins/*/tests` が個人版の作業ディレクトリで通る。触る範囲: なし（実行だけ）
-- [ ] 2.11 最初の commit を作る（メッセージに写し元の公開版の commit SHA と https://github.com/oratta/claude-harness/issues/1129 を書く）。`gh repo create oratta/claude-harness-oratta --private` と `git push -u origin main` は本体に頼む（サブエージェントからの main への push は hook に拒否されるので打たない）。触る範囲: 個人版: リポジトリ全体
+- [x] 2.11 最初の commit を作る（メッセージに写し元の公開版の commit SHA と https://github.com/oratta/claude-harness/issues/1129 を書く）。`gh repo create oratta/claude-harness-oratta --private` と `git push -u origin main` は本体に頼む（サブエージェントからの main への push は hook に拒否されるので打たない）。触る範囲: 個人版: リポジトリ全体
 
 ## 3. 公開版の検査を先に直す（TDD）
 
