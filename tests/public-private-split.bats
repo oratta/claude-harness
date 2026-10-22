@@ -789,7 +789,7 @@ pn_names() { echo "nondev nondev-pc-path devwf-moko devwf-flatmate devwf-dev-dir
   [[ "$output" == *"何も打ち消していない"* ]] || return 1
 }
 
-@test "pn: a dictionary word added to the 原則 section of capability-registry SKILL.md fails" {
+@test "pn: a dictionary word added to the principles section of capability-registry SKILL.md fails" {
   local word f
   word="$(pn_first_word moko)"
   f="plugins/capability-registry/skills/capability-registry/SKILL.md"

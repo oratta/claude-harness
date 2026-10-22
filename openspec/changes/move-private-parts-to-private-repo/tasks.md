@@ -29,16 +29,16 @@
 
 ## 4. 公開版から部品を消し、参照を直す
 
-- [ ] 4.1 `git rm -r` で消す: `plugins/weekly-report/`・`plugins/daily-report/`・`rules/plugin-editing.md`・`plugins/dev-workflow/docs/auto-merge-deployments.md`・`plugins/capability-registry/scripts/fmtoken.sh`・`plugins/capability-registry/skills/capability-registry/1password.md`・`plugins/capability-registry/tests/fmtoken.bats`。触る範囲: 左のパス
-- [ ] 4.2 capability-registry の SKILL.md から「表記規約」「資格情報の階層」の 2 節を消し、残る節から 2 節への参照があれば「個人版が入っていれば」の書き方に直す。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:9-47
-- [ ] 4.3 `marketplace.json` から `weekly-report`・`daily-report` の項目と bundle `all` の 2 行を消す。触る範囲: .claude-plugin/marketplace.json:26-55、.claude-plugin/marketplace.json:181-190
-- [ ] 4.4 自己検証の対象スキル一覧から 2 行を消し、dev-workflow の README の説明から daily-report・weekly-report を外す。触る範囲: plugins/dev-workflow/references/self-verification.md:30-60、plugins/dev-workflow/README.md:116
-- [ ] 4.5 auto-merge テンプレの README の展開の記録への参照を「展開の記録は個人版を使うときはそちら」の書き方に直す。触る範囲: plugins/dev-workflow/templates/auto-merge/README.md:125-132
-- [ ] 4.6 ルート直下の文書を直す: README のプラグイン一覧から 2 行を消す、CONTRIBUTING の Skill の例から `weekly-report` を別の公開版のスキルに替える、CLAUDE.md・AGENTS.md の LLM ログの節の skill の例を公開版に残るものか一般的な書き方に直し、関連の行の plugin-editing を「個人版が入っていれば」の書き方にする、`docs/worktree-recovery.md` の冒頭の plugin-editing への言及を同じ書き方にする。CLAUDE.md・AGENTS.md は聖域なので PR 本文に理由を書く。触る範囲: README.md:60-66、CONTRIBUTING.md:60、CLAUDE.md:29・41、AGENTS.md:31・43、docs/worktree-recovery.md:1-5
-- [ ] 4.7 仕分けの文書を直す: 仕分けの表から移した行を外し、新しい節「個人版に移した部品」（列は 部品・移した先・写し元の commit）を足す。付属のファイルの扱いの「#1129 で書き分ける」を書き分けた結果に、capability-registry の扱いの節を移した後の状態に、載せない行の基準の「個人版の部品の中の行」の例を移した部品の記録への参照に直す。触る範囲: docs/public-private-split.md:30-36、docs/public-private-split.md:51-103、docs/public-private-split.md:104-144、docs/public-private-split.md:165-172
-- [ ] 4.8 `rules/README.md` の plugin-editing の行が「個人版が入っていれば」のままで、個人版のリポジトリ名を書いていないことを確かめる（必要なら直す）。触る範囲: rules/README.md:42
-- [ ] 4.9 常時注入の実測を取り、`tests/injection-budget.txt` を実測に合わせて下げる（聖域。PR 本文に何を消して値をいくつにしたかを書く）。触る範囲: tests/injection-budget.txt:1
-- [ ] 4.10 変更の記録を書く（移した部品と移した先・写し元の SHA・公開版で消したもの・オーナーの切り替えの手順）。触る範囲: plugins/dev-workflow/changes/1129.md、plugins/capability-registry/changes/1129.md（新規）
+- [x] 4.1 `git rm -r` で消す: `plugins/weekly-report/`・`plugins/daily-report/`・`rules/plugin-editing.md`・`plugins/dev-workflow/docs/auto-merge-deployments.md`・`plugins/capability-registry/scripts/fmtoken.sh`・`plugins/capability-registry/skills/capability-registry/1password.md`・`plugins/capability-registry/tests/fmtoken.bats`。触る範囲: 左のパス
+- [x] 4.2 capability-registry の SKILL.md から「表記規約」「資格情報の階層」の 2 節を消し、残る節から 2 節への参照があれば「個人版が入っていれば」の書き方に直す。触る範囲: plugins/capability-registry/skills/capability-registry/SKILL.md:9-47
+- [x] 4.3 `marketplace.json` から `weekly-report`・`daily-report` の項目と bundle `all` の 2 行を消す。触る範囲: .claude-plugin/marketplace.json:26-55、.claude-plugin/marketplace.json:181-190
+- [x] 4.4 自己検証の対象スキル一覧から 2 行を消し、dev-workflow の README の説明から daily-report・weekly-report を外す。触る範囲: plugins/dev-workflow/references/self-verification.md:30-60、plugins/dev-workflow/README.md:116
+- [x] 4.5 auto-merge テンプレの README の展開の記録への参照を「展開の記録は個人版を使うときはそちら」の書き方に直す。触る範囲: plugins/dev-workflow/templates/auto-merge/README.md:125-132
+- [x] 4.6 ルート直下の文書を直す: README のプラグイン一覧から 2 行を消す、CONTRIBUTING の Skill の例から `weekly-report` を別の公開版のスキルに替える、CLAUDE.md・AGENTS.md の LLM ログの節の skill の例を公開版に残るものか一般的な書き方に直し、関連の行の plugin-editing を「個人版が入っていれば」の書き方にする、`docs/worktree-recovery.md` の冒頭の plugin-editing への言及を同じ書き方にする。CLAUDE.md・AGENTS.md は聖域なので PR 本文に理由を書く。触る範囲: README.md:60-66、CONTRIBUTING.md:60、CLAUDE.md:29・41、AGENTS.md:31・43、docs/worktree-recovery.md:1-5
+- [x] 4.7 仕分けの文書を直す: 仕分けの表から移した行を外し、新しい節「個人版に移した部品」（列は 部品・移した先・写し元の commit）を足す。付属のファイルの扱いの「#1129 で書き分ける」を書き分けた結果に、capability-registry の扱いの節を移した後の状態に、載せない行の基準の「個人版の部品の中の行」の例を移した部品の記録への参照に直す。触る範囲: docs/public-private-split.md:30-36、docs/public-private-split.md:51-103、docs/public-private-split.md:104-144、docs/public-private-split.md:165-172
+- [x] 4.8 `rules/README.md` の plugin-editing の行が「個人版が入っていれば」のままで、個人版のリポジトリ名を書いていないことを確かめる（必要なら直す）。触る範囲: rules/README.md:42
+- [x] 4.9 常時注入の実測を取り、`tests/injection-budget.txt` を実測に合わせて下げる（聖域。PR 本文に何を消して値をいくつにしたかを書く）。触る範囲: tests/injection-budget.txt:1
+- [x] 4.10 変更の記録を書く（移した部品と移した先・写し元の SHA・公開版で消したもの・オーナーの切り替えの手順）。触る範囲: plugins/dev-workflow/changes/1218.md（dev-workflow の 1129.md は前半の PR で main に入っているので PR 番号で書く）、plugins/capability-registry/changes/1129.md（新規）
 
 ## 5. 検証
 
