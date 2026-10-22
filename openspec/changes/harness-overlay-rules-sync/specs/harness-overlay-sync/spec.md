@@ -78,6 +78,7 @@
 
 - 想定する入力の出どころ: 利用者が自分の手で書く許可ファイル `<CLAUDE_DIR>/harness-overlays` と、そこに載せた marketplace の `.harness-overlay`・`rules/`・`output-styles/`。許可ファイルに載せていない marketplace は信頼しない（印のファイルがあっても読まず、張らず、pull もしない）。載せた marketplace の中身は信頼する（載せることが「この marketplace の指示を常時読ませてよい」という利用者の判断である）。許可ファイル自体を書き換えられる攻撃者は想定しない
 - 拾う誤り: 許可ファイルの行が不正・載せたディレクトリが無い・載せたのに印のファイルが無い・印のファイルの名前が空・`[a-z0-9][a-z0-9-]*` に合わない・`claude-harness` の下に同名の実ファイルがある（ディレクトリを作れない）・別の overlay と名前が重なる、のいずれか。拾った行か overlay は飛ばして警告し、終了コードを 0 でなくする
+- 許可の取り消し: 許可ファイルから外した marketplace（以前に張った overlay）は、張った symlink のリンク先が残っていても、次の実行で消える。許可を取り消した利用者の意図が、リンク先の有無に左右されない
 - 通ることを許す入力: 許可した marketplace のうち形式が正しいものの中の、ルールの意味的な矛盾（公開版のルールと食い違う内容）、印のファイルの 2 行目以降の内容、overlay の中身が空であること。これらは検査しない
 - 穴をすべて塞ぐことは完了条件にしない。上の誤りを拾えることと、許可ファイルが無い環境（overlay が 0 件）で警告なく動くことが完了条件である
 
@@ -87,7 +88,7 @@
 
 ### Requirement: overlay が無い環境では警告なく公開版だけで動く
 
-許可ファイルが無い、または許可ファイルが空行とコメントだけのとき、`scripts/sync.sh` は overlay に関する出力をしてはならず（MUST NOT）、公開版だけを張って終了コード 0 で終わらなければならない（MUST）。許可ファイルに有効な行が 1 つでもある場合の検査エラー（許可の行の不正・載せたディレクトリが無い・印のファイルが無い・印の名前が空か不正・名前の重複・同名の実ファイル）は、ほかに有効な overlay が何件あるか（0 件でも）によらず、必ず警告して終了コードを 0 にしない（MUST）。
+許可ファイルが無い、または許可ファイルが空行とコメントだけのとき、`scripts/sync.sh` は overlay に関する出力をしてはならず（MUST NOT）、公開版だけを張って終了コード 0 で終わらなければならない（MUST）。許可ファイルに有効な行が 1 つでもある場合の検査エラー（許可の行の不正・載せたディレクトリが無い・印のファイルが無い・印の名前が空か不正・名前の重複・同名の実ファイル）は、ほかに有効な overlay が何件あるか（0 件でも）によらず、必ず警告して終了コードを 0 にしない（MUST）。許可の取り消しの掃除（次の要件）は、許可ファイルが無い環境でも同じように行うが、overlay を一度も入れていない環境では消す対象が無く、出力も終了コードも変わらない。
 
 #### Scenario: 許可ファイルが空行とコメントだけ
 - **WHEN** 許可ファイルが空行と `#` 行だけの状態で実行する
@@ -131,7 +132,7 @@
 
 ### Requirement: 壊れた symlink の掃除は行き先が marketplace の下のものだけを対象にする
 
-`scripts/sync.sh` は、`<CLAUDE_DIR>/rules/`・`<CLAUDE_DIR>/rules/claude-harness/`・`<CLAUDE_DIR>/rules/claude-harness/*/`・`<CLAUDE_DIR>/output-styles/` の `*.md` のうち、symlink で、リンク先が存在せず、行き先の文字列が `<CLAUDE_DIR>/plugins/marketplaces/` で始まるものを消さなければならない（MUST）。overlay を外すと印のファイルも消えるので、所有元は印のファイルでなく行き先の文字列で決める。行き先がそれ以外の壊れた symlink と実ファイルには触れてはならない（MUST NOT）。`claude-harness/<名前>/` が掃除のあとで空になったら、そのディレクトリを消す。
+`scripts/sync.sh` は、`<CLAUDE_DIR>/rules/`・`<CLAUDE_DIR>/rules/claude-harness/`・`<CLAUDE_DIR>/rules/claude-harness/*/`・`<CLAUDE_DIR>/output-styles/` の `*.md` のうち、symlink で、リンク先が存在せず、行き先の文字列が `<CLAUDE_DIR>/plugins/marketplaces/` で始まるものを消さなければならない（MUST）。overlay を外すと印のファイルも消えるので、所有元は印のファイルでなく行き先の文字列で決める。行き先がそれ以外の壊れた symlink と実ファイルには触れてはならない（MUST NOT）。`claude-harness/<名前>/` が掃除のあとで空になったら、そのディレクトリを消す。リンク先が存在する symlink の掃除は、次の要件「許可から外した overlay の symlink は、リンク先が残っていても消す」が定める。
 
 #### Scenario: overlay を外したあとの掃除
 - **WHEN** overlay を張った実行のあと、overlay のディレクトリを消して再実行する
@@ -140,3 +141,27 @@
 #### Scenario: 無関係な壊れたリンクは残る
 - **WHEN** `rules/claude-harness/ov/` の下に、行き先が `/nonexistent/other.md` の壊れた symlink と実ファイルがある状態で再実行する
 - **THEN** どちらも残り、そのディレクトリも残る
+
+### Requirement: 許可から外した overlay の symlink は、リンク先が残っていても消す
+
+`scripts/sync.sh` は、許可ファイルと overlay の処理を終えたあとで、`<CLAUDE_DIR>/rules/claude-harness/*/` の下の `*.md` と `<CLAUDE_DIR>/output-styles/` 直下の `*.md` のうち、symlink で、行き先の文字列が `<CLAUDE_DIR>/plugins/marketplaces/<名前>/` の下にあり、`<名前>` が次のどちらでもないものを、リンク先が存在していても消さなければならない（MUST）。(a) 今回の実行で許可されていて overlay として張られた marketplace のディレクトリ名、(b) 公開版自身のディレクトリ名。この掃除は許可ファイルが無い環境でも行う（以前許可していた overlay の跡を消すため）。`claude-harness/<名前>/` がこの掃除のあとで空になったら、そのディレクトリを消す。行き先が `<CLAUDE_DIR>/plugins/marketplaces/` の外にある symlink と、実ファイルには触れてはならない（MUST NOT）。消したことは標準出力にも標準エラーにも出さず、終了コードにも影響しない（overlay を外すのは利用者が意図した操作であり、警告に当たらない）。
+
+#### Scenario: 許可から外した overlay はリンク先が残っていても消える
+- **WHEN** 許可した overlay を張った実行のあと、許可ファイルからその marketplace を外し（ディレクトリは残す）、再実行する
+- **THEN** `claude-harness/<名前>/` の下の symlink と、`output-styles/` 直下の overlay を指す symlink が無くなり、空になった `claude-harness/<名前>/` も無くなる。標準エラーは空で、終了コードは 0
+
+#### Scenario: 公開版の symlink は消えない
+- **WHEN** 上の状態で再実行する
+- **THEN** `rules/claude-harness/` 直下と `output-styles/` の公開版を指す symlink は残る
+
+#### Scenario: 許可中の overlay は消えない
+- **WHEN** 2 つの overlay を許可して張ったあと、片方だけを許可ファイルから外して再実行する
+- **THEN** 外した側の symlink だけが無くなり、許可中の側の symlink は残る
+
+#### Scenario: marketplace の外を指す symlink と実ファイルは残る
+- **WHEN** `rules/claude-harness/ov/` の下と `output-styles/` に、行き先が `/etc/hosts` の symlink と実ファイルがある状態で、`ov` を許可していないまま実行する
+- **THEN** どちらも残る（行き先が marketplace の外なので、リンク先が存在していても掃除の対象ではない）
+
+#### Scenario: 許可ファイルを消した場合も跡が消える
+- **WHEN** 許可した overlay を張った実行のあと、許可ファイル自体を消して再実行する
+- **THEN** overlay の symlink と空になったディレクトリが無くなり、公開版の分は残り、標準エラーは空で、終了コードは 0
