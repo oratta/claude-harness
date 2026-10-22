@@ -14,12 +14,11 @@
 
 ## 分類の値
 
-表の分類の欄は次の 4 つのどれかだけを使う。
+表の分類の欄は次の 3 つのどれかだけを使う。
 
 - **公開版**: 公開版のリポジトリに残す
 - **個人版**: private の個人版のリポジトリへ移す
-- **保留（#1123 の後）**: #1123（エピック実行の Orca 依存を外す）の結果を見てから公開版か個人版に決める
-- **分割**: プラグインの行にだけ使う。1 つのプラグインの中で行き先が割れるので、表のそのプラグインの部品の行（`plugins/<名前>/...` で始まる行）で全体を分ける。部品の行の分類は「分割」以外の 3 つのどれか
+- **分割**: プラグインの行にだけ使う。1 つのプラグインの中で行き先が割れるので、表のそのプラグインの部品の行（`plugins/<名前>/...` で始まる行）で全体を分ける。部品の行の分類は「公開版」か「個人版」
 
 ## 分割したプラグインの部品の行の境界の規則
 
@@ -37,7 +36,13 @@
 
 ## 保留の行の確定
 
-保留（#1123 の後）の行は、#1129 の着手時に #1129 の担い手が #1123 の結果を見て公開版か個人版に確定し、#1129 の PR でこの表を直してから移す。#1129 は #1123 に依存するので、#1129 の着手時には #1123 が終わっている。何を見て決めるかは各行の理由の欄に書いた。
+#1128 では、エピック実行の Orca 経路にかかわる 5 行（`epic-dispatch.sh`・`epic-launch-orca.sh`・`stop-judge.sh`・`parent-pass-criteria.md`・`parent-merge-criteria.md`）を分類の値「保留（#1123 の後）」にし、#1123（エピック実行の Orca 依存を外す）の結果を見て決めることにした。#1129 で #1123 の結果を見て、5 行とも公開版に確定し、分類の値「保留（#1123 の後）」は使わなくなったので消した。
+
+- 見たもの: #1123 の後、`epic-dispatch.sh` は起動部品を別のプロセスとして呼ぶ形になり、部品は `epic-launch-orca.sh`（Orca）と `epic-launch-tmux.sh`（tmux）から選ぶ。Orca 管理下でも tmux の中でもなければサブエージェント方式で回すので、Orca が無い環境でもエピックを回せる
+- `epic-launch-orca.sh` は `epic-launch-<名前>.sh` の差し替えの部品の 1 つとして残った。Orca は誰でも入れられる製品で、判断の基準の「個人版」に当たらない。`epic-dispatch.sh` は部品の既定を orca にしているので、Orca の部品だけを個人版へ移すと公開版の既定の経路が壊れる
+- `stop-judge.sh`・`parent-pass-criteria.md`・`parent-merge-criteria.md` は `epic-dispatch.sh` と同じ側に決めると書いていたので公開版にした。`parent-merge-criteria.md` は別セッション方式（起動部品は Orca か tmux）の親が使う
+
+決めた issue: https://github.com/oratta/claude-harness/issues/1129
 
 ## 表に載せないもの
 
@@ -68,14 +73,14 @@
 | `weekly-report` | 個人版 | Obsidian の vault・Notion などオーナーの記録の置き場を前提にした、オーナーの業務の週報 |
 | `daily-report` | 個人版 | Obsidian の vault と Fieldy の記録を前提にした、オーナーの業務の日報 |
 | `infra` | 公開版 | 新しいプロジェクトの CI・デプロイの雛形とセットアップの手順で、誰の環境でも意味がある。下書きの「出さない」から変えた（オーナーのアカウントには依存せず、営業で見せる動きにも使える） |
-| `dev-workflow` | 分割 | 開発の進め方（develop・pr-review-gate・hook）は公開版。エピック実行の Orca 経路は #1123 の後に決め、オーナーのリポジトリへの展開の記録は個人版。下の部品の行で分ける |
+| `dev-workflow` | 分割 | 開発の進め方（develop・pr-review-gate・hook）は公開版。エピック実行（起動部品は Orca か tmux、無ければサブエージェント方式）も #1129 で公開版に確定した。オーナーのリポジトリへの展開の記録は個人版。下の部品の行で分ける |
 | `plugins/dev-workflow/` | 公開版 | 下の行に当たらない dev-workflow の全ファイル。開発の進め方・レビューのゲート・hook・アカウントの切り替え（`accounts.json` の中身は利用者ごとに書く仕組み）は誰の環境でも意味があり、住人のふるまいに効く |
 | `plugins/dev-workflow/docs/auto-merge-deployments.md` | 個人版 | オーナーのリポジトリごとの auto-merge の展開の一覧と PAT の失効日で、オーナーに固有の業務とアカウントの記録 |
-| `plugins/dev-workflow/scripts/epic-dispatch.sh` | 保留（#1123 の後） | Orca で子のセッションを起動する部品を含む。#1123 で Orca の起動部品が差し替えられる部品として切り出され、Orca が無い環境でもエピックを回せるなら公開版、Orca に固有の部品として残るなら個人版 |
-| `plugins/dev-workflow/scripts/epic-launch-orca.sh` | 保留（#1123 の後） | `epic-dispatch.sh` から切り出した、Orca で子のワークツリーとセッションを扱う起動部品。#1123 の結果で、Orca が無い環境でもエピックを回せる差し替えの部品の 1 つとして残るなら公開版、Orca に固有の部品として残るなら個人版に決める |
-| `plugins/dev-workflow/scripts/stop-judge.sh` | 保留（#1123 の後） | `epic-dispatch.sh` の `wait --resolve` から呼ばれる、止まった子の判断の部品。#1123 の後に `epic-dispatch.sh` の行と同じ側に決める（`epic-dispatch.sh` 以外から呼ばれるようになっていれば公開版） |
-| `plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` | 保留（#1123 の後） | `stop-judge.sh` が読む、親が子の止まりを通す基準。#1123 の後に `stop-judge.sh` の行と同じ側に決める |
-| `plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` | 保留（#1123 の後） | Orca 経路の親が子の PR をマージしてよいかの基準。#1123 の後に、サブエージェント方式からも使われる基準になっていれば公開版、Orca 経路だけのものなら `epic-dispatch.sh` の行と同じ側に決める |
+| `plugins/dev-workflow/scripts/epic-dispatch.sh` | 公開版 | エピックの子を起動して見張る部品。#1123 の後は起動部品を Orca と tmux から選び、どちらも無ければサブエージェント方式で回すので、Orca が無い環境でもエピックを回せる。#1129 で公開版に確定 |
+| `plugins/dev-workflow/scripts/epic-launch-orca.sh` | 公開版 | `epic-dispatch.sh` から切り出した、Orca で子のワークツリーとセッションを扱う起動部品。#1123 の後は `epic-launch-<名前>.sh` の差し替えの部品の 1 つとして残り、Orca は誰でも入れられる製品なので個人版に当たらない。`epic-dispatch.sh` の部品の既定でもある。#1129 で公開版に確定 |
+| `plugins/dev-workflow/scripts/stop-judge.sh` | 公開版 | `epic-dispatch.sh` の `wait --resolve` から呼ばれる、止まった子の判断の部品。`epic-dispatch.sh` の行と同じ側と決めていたので、#1129 で公開版に確定 |
+| `plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` | 公開版 | `stop-judge.sh` が読む、親が子の止まりを通す基準。`stop-judge.sh` の行と同じ側と決めていたので、#1129 で公開版に確定 |
+| `plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` | 公開版 | 別セッション方式（起動部品は Orca か tmux）の親が子の PR をマージしてよいかの基準。#1123 の後は Orca 経路だけのものではなく、`epic-dispatch.sh` の行と同じ側になるので、#1129 で公開版に確定 |
 | `capability-registry` | 分割 | 外部サービスの前に CLI を探す仕組みは公開版、オーナーの 1Password の保管庫とトークンの取り出しは個人版。下の部品の行と「capability-registry の扱い」で分ける |
 | `plugins/capability-registry/scripts/browser-guard.sh` | 公開版 | ブラウザを開く前に CLI の代替を確かめさせる hook で、住人のふるまいに効く（`fmtoken.sh` の案内は #1164 で外す） |
 | `plugins/capability-registry/scripts/fmtoken.sh` | 個人版 | オーナーの 1Password の保管庫と SA の構成を前提にしたトークンの取り出しで、資格情報の置き場そのもの |
@@ -160,13 +165,14 @@ https://github.com/oratta/claude-harness/issues/1164
 - **記録と検査**: `changes/`・`CHANGELOG.md`・`tests/`・`evals/`（変更の記録と検査は、それが記録・検査している部品と一緒に #1129・#1164 で動かす）
 - **出典や経緯としてだけ名前を挙げる行**: `flatmate#320`・`flatmate #701`・「suimei で実発生」・「genetta-inc の flatmate リポで実運用検証済み」・「出典: oratta/marketing-harness#36」・「2026-08-10 に flatmate で実走したとき」のように、決まりの由来を示すだけで、読み手の環境にその名前の物が無くても指示として実行できる行
 - **互換のために残す旧名の読み取り**: 新しい名前が主であること、旧名を互換として読むことが同じ箇所に書かれた行（例: statusline の `FLATMATE_RATE_SHARE_DIR`・`FLATMATE_RATE_SHARE_CONF`。主は `CLAUDE_RATE_SHARE_DIR`・`CLAUDE_RATE_SHARE_CONF`）。旧名は固有名として読み手に見えるが、指示としては新名で足りる。`tests/public-names/allow/nondev.txt` に 1 行ずつ載せる（書式 `<path>:<語>:=<行に含まれる固定の文字列>`、基準は直前の `#` のコメントに書く）
-- **差し替え可能な起動部品の 1 つとして Orca を並べた行**: 「Orca・tmux」「起動部品は Orca か tmux」「Orca の部品の列」のように、`epic-launch-<名前>.sh` の差し替えの部品の 1 つとして Orca を他の部品や方式と並べた行（develop の SKILL.md の「部品ごとの欄」の見出しと表を含む）。Orca だけを前提にした行（Orca 経路と名乗る・Orca に登録済みのリポジトリを探す・Orca の親が子のターミナルに打ち込む）は当たらず、「Orca を使う場合」の書き方に直す。下の「一般の製品を例の 1 つとして並べる行」は一般の製品を並べた例で、この項目は `epic-launch-<名前>.sh` の差し替えの部品として並べた行である。**この項目は `epic-launch-orca.sh` が公開版に決まる前提で当てる。#1129 で `epic-launch-orca.sh` が個人版に決まったら、下の節「起動部品の 1 つとして一覧から外した行」の行を一覧に戻し、担い手を #1129 にする**
+- **差し替え可能な起動部品の 1 つとして Orca を並べた行**: 「Orca・tmux」「起動部品は Orca か tmux」「Orca の部品の列」のように、`epic-launch-<名前>.sh` の差し替えの部品の 1 つとして Orca を他の部品や方式と並べた行（develop の SKILL.md の「部品ごとの欄」の見出しと表を含む）。Orca だけを前提にした行（Orca 経路と名乗る・Orca に登録済みのリポジトリを探す・Orca の親が子のターミナルに打ち込む）は当たらず、「Orca を使う場合」の書き方に直す。下の「一般の製品を例の 1 つとして並べる行」は一般の製品を並べた例で、この項目は `epic-launch-<名前>.sh` の差し替えの部品として並べた行である。この項目は `epic-launch-orca.sh` が公開版に決まる前提で当てるもので、#1129 で `epic-launch-orca.sh` は公開版に確定し、前提は満たされた。下の節「起動部品の 1 つとして一覧から外した行」の行は一覧に戻さない
+- **Orca の起動部品の中の行と、起動部品を呼ぶ側で Orca の部品を選んだときの振る舞いを書いた行**: `plugins/dev-workflow/scripts/epic-launch-orca.sh` の行と、`plugins/dev-workflow/scripts/epic-dispatch.sh` の中で Orca の部品を選んだときの動き（orca のコマンド・Orca の画面の印・Orca 管理のワークツリーの判定・Orca に登録されたリポジトリ）を書いた行。Orca を入れていない環境では Orca の部品は選ばれない（経路の判定が tmux かサブエージェント方式になる）ので、読み手の環境に Orca が無くても誤った指示にならない。起動部品の外で Orca だけを前提にした手順を書く行（develop の SKILL.md や `references/` の文書の「Orca 経路の…」）は当たらず、「Orca を使う場合」の書き方か別セッション方式の書き方に直すか、一覧に載せて担い手を付ける
 - **一般の製品を例の 1 つとして並べる行**: 「1Password / Bitwarden / Keychain 等」「Orca や端末から起動した Claude Code」のように、ほかの製品と並べた例
-- **個人版や保留の部品の中の行**: 表で個人版か保留（#1123 の後）に決まる部品（`plugins/dev-workflow/scripts/epic-dispatch.sh` など）は一覧の対象外
+- **個人版の部品の中の行**: 表で個人版に決まる部品（`plugins/dev-workflow/docs/auto-merge-deployments.md`・`plugins/capability-registry/scripts/fmtoken.sh` など）は一覧の対象外
 
 ## 起動部品の 1 つとして一覧から外した行
 
-上の基準「差し替え可能な起動部品の 1 つとして Orca を並べた行」に当たるとして、#1177 で一覧から外した行。`epic-launch-orca.sh` は仕分けの表でまだ「保留（#1123 の後）」なので、#1129 が個人版に決めたら、この行を一覧に戻して担い手を #1129 にする。行番号は #1177 の時点の値で、行の先頭の語で探し直せる。
+上の基準「差し替え可能な起動部品の 1 つとして Orca を並べた行」に当たるとして、#1177 で一覧から外した行。#1129 で `epic-launch-orca.sh` が公開版に確定したので、この行は一覧に戻さない。表は外した行の場所の記録として残す。行番号は #1177 の時点の値で、行の先頭の語で探し直せる。
 
 | 場所 | 行の先頭の語 |
 |---|---|

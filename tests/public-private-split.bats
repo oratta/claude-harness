@@ -12,8 +12,9 @@
 # 守備範囲（正本は spec「表と一覧の検査の守備範囲」）:
 #   拾う: 表に無い部品・同じ部品の 2 行・どのファイルにも当たらない行・分割のプラグインで行の
 #         決まらないファイル・節の行の覆い漏れと重複・決めた値以外の分類・空の理由・実在しない
-#         パスや行数を超える行番号の一覧の行・公開版に決まらない部品を指す一覧の行
-#   通す: 分類の判断の誤り・中身の薄い理由・候補語に当たらない固有記述の取りこぼし・行数以内に
+#         パスや行数を超える行番号の一覧の行・公開版に決まらない部品を指す一覧の行・
+#         #1129 で公開版に確定した 5 行（CONFIRMED_PUBLIC）が表に無いか公開版から外れること
+#   通す: 確定した 5 行以外の部品の分類の判断の誤り・中身の薄い理由・候補語に当たらない固有記述の取りこぼし・行数以内に
 #         収まる行番号のずれ（人のレビューと #1098 の再検索が見る）
 
 setup() {
@@ -32,7 +33,15 @@ errors = []
 def err(msg):
     errors.append(msg)
 
-ALLOWED = {"公開版", "個人版", "保留（#1123 の後）", "分割"}
+ALLOWED = {"公開版", "個人版", "分割"}
+# #1129 で公開版に確定した 5 行。確定を覆すときはここも一緒に直す（spec「表と一覧の検査の守備範囲」）
+CONFIRMED_PUBLIC = [
+    "plugins/dev-workflow/scripts/epic-dispatch.sh",
+    "plugins/dev-workflow/scripts/epic-launch-orca.sh",
+    "plugins/dev-workflow/scripts/stop-judge.sh",
+    "plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md",
+    "plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md",
+]
 KINDS = {"固有名", "環境依存"}
 TABLE_HEADER = ["部品", "分類", "理由"]
 LIST_HEADER = ["場所", "種別", "内容", "直す issue"]
@@ -112,6 +121,15 @@ for ln, (part, cls, reason) in table:
     else:
         if cls == "分割" and key not in plugins:
             err(f"{ln} 行目: 「分割」はプラグインの行だけに使える: {key}")
+
+# --- #1129 で公開版に確定した 5 行 ---
+for path in CONFIRMED_PUBLIC:
+    hits = [(ln, cls) for ln, (part, cls, _) in table if unquote(part) == path]
+    if len(hits) != 1:
+        err(f"確定した行が表に {len(hits)} 行ある（1 行であるべき）: {path}")
+    for ln, cls in hits:
+        if cls != "公開版":
+            err(f"{ln} 行目: 確定した行の分類が公開版でない: {path} → {cls}")
 
 top_rows = {k for k in seen if not k.startswith("plugins/")}
 for k in sorted(expected - top_rows):
@@ -589,6 +607,18 @@ pn_names() { echo "nondev nondev-pc-path devwf-moko devwf-flatmate devwf-dev-dir
   done
 }
 
+@test "pn: the moko search covers stop-judge.sh, a part confirmed public in #1129" {
+  local f=plugins/dev-workflow/scripts/stop-judge.sh word
+  pn_list devwf-moko | grep -qxF "$f" || { echo "not in the devwf-moko list: $f"; return 1; }
+  pn_ready devwf-moko
+  word="$(pn_first_word moko)"
+  pn_append "${PN_ROOT}/${f}" "# ${word}"
+  run pn_check devwf-moko "$PN_ROOT"
+  echo "$output"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"${f}:${PN_LINE}:${word}"* ]] || return 1
+}
+
 @test "pn: a dictionary word added to a public part fails with path, line and word" {
   local name word f
   for name in $(pn_names); do
@@ -805,14 +835,43 @@ empty_listing() {
   [ "$status" -eq 0 ]
 }
 
-@test "epic-launch-orca.sh is a pending part, so a listing row pointing at it fails" {
+@test "epic-launch-orca.sh is a confirmed public part, so a listing row pointing at it is not rejected as non-public" {
   local anchor='| 場所 | 種別 | 内容 | 直す issue |'
   edit_doc "${anchor}
 |---|---|---|---|" "${anchor}
 |---|---|---|---|
-| \`plugins/dev-workflow/scripts/epic-launch-orca.sh:2\` | 環境依存 | Orca の起動部品 | #1123 |"
+| \`plugins/dev-workflow/scripts/epic-launch-orca.sh:2\` | 環境依存 | Orca の起動部品 | #1129 |"
+  run check_split "$REPO_ROOT" "$WORK_DOC"
+  echo "$output"
+  # 終了コードは担い手の検査など他の理由で落ちうるので、属さないの文言が無いことだけを見る
+  [[ "$output" != *"公開版に決まる部品に属さない"*"epic-launch-orca.sh"* ]] || return 1
+}
+
+@test "a row put back to the pending value fails as a classification outside the decided values" {
+  edit_doc '| `plugins/dev-workflow/scripts/stop-judge.sh` | 公開版 |' '| `plugins/dev-workflow/scripts/stop-judge.sh` | 保留（#1123 の後） |'
   run check_split "$REPO_ROOT" "$WORK_DOC"
   echo "$output"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"公開版に決まる部品に属さない（保留（#1123 の後））: plugins/dev-workflow/scripts/epic-launch-orca.sh:2"* ]] || return 1
+  [[ "$output" == *"分類が決めた値でない: plugins/dev-workflow/scripts/stop-judge.sh"* ]] || return 1
+}
+
+@test "the five rows confirmed in #1129 each appear once and are public" {
+  run check_split "$REPO_ROOT" "$DOC"
+  echo "$output"
+  [[ "$output" != *"確定した行"* ]] || return 1
+  local p
+  for p in plugins/dev-workflow/scripts/epic-dispatch.sh plugins/dev-workflow/scripts/epic-launch-orca.sh \
+    plugins/dev-workflow/scripts/stop-judge.sh plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md \
+    plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md; do
+    [ "$(grep -c -F "| \`${p}\` | 公開版 |" "$DOC")" -eq 1 ] || { echo "not one public row: $p"; return 1; }
+  done
+}
+
+@test "turning a confirmed row to private fails and names the part" {
+  edit_doc '| `plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` | 公開版 |' \
+    '| `plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` | 個人版 |'
+  run check_split "$REPO_ROOT" "$WORK_DOC"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"確定した行の分類が公開版でない: plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md"* ]] || return 1
 }
