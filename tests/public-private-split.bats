@@ -243,8 +243,6 @@ def destination(path, line):
         return cls_of.get(parts[0] + "/" + parts[1] + "/")
     return None
 
-if not listing:
-    err("固有記述の一覧に行が無い")
 for ln, (place, kind, content, issue) in listing:
     m = re.fullmatch(r"(.+):(\d+)", unquote(place))
     if not m:
@@ -609,94 +607,70 @@ devwf_unlisted() {
   done
 }
 
-# --- Orca 経路の行の担い手（#1168 で #1177 に決めた）---
-# 守備範囲: 下の 25 件の行が一覧にちょうど 1 行ずつあり、担当欄が #1177 で、指す行に識別語があること。
-# 行番号のずれや内容の欄の良し悪しは人のレビューが見る。#1177 がこの行を直したら、この一覧も一緒に直す。
-DEVWF_ORCA_ROWS=(
-  'plugins/dev-workflow/README.md:15|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:46|orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:207|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:350|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:353|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:483|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:487|cld'
-  'plugins/dev-workflow/skills/develop/SKILL.md:489|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:491|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:493|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:511|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:512|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:517|epic-dispatch.sh'
-  'plugins/dev-workflow/skills/develop/SKILL.md:537|Orca'
-  'plugins/dev-workflow/skills/develop/SKILL.md:539|cld'
-  'plugins/dev-workflow/skills/develop/SKILL.md:543|cld'
-  'plugins/dev-workflow/skills/develop/references/reply-after-idle.md:3|Orca'
-  'plugins/dev-workflow/skills/develop/references/reply-after-idle.md:5|Orca'
-  'plugins/dev-workflow/skills/develop/references/reply-after-idle.md:64|Orca'
-  'plugins/dev-workflow/scripts/owner-reply-check.sh:33|Orca'
-  'plugins/dev-workflow/scripts/owner-reply-check.sh:52|Orca'
-  'plugins/dev-workflow/skills/pr-review-gate/declarations.md:83|Orca'
-  'plugins/dev-workflow/skills/pr-review-gate/declarations.md:91|Orca'
-  'plugins/dev-workflow/skills/pr-review-gate/declarations.md:103|Orca'
-  'plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:97|Orca'
-)
-
-# 引数: 文書のパス → 誤りを 1 行ずつ出して exit 1、無ければ exit 0
-check_orca_owner() {
-  local doc="$1" e place word file line rows n owner errs=0
-  for e in "${DEVWF_ORCA_ROWS[@]}"; do
-    place="${e%%|*}"; word="${e#*|}"; file="${place%:*}"; line="${place##*:}"
-    rows="$(grep -F -e "| \`${place}\` |" "$doc" || true)"
-    n="$(printf '%s' "$rows" | grep -c '^' || true)"
-    if [ "$n" -ne 1 ]; then
-      echo "一覧に ${place} の行が ${n} 行ある（1 行であるべき）"; errs=1; continue
-    fi
-    owner="$(printf '%s\n' "$rows" | awk -F'|' '{ gsub(/^ +| +$/, "", $5); print $5 }')"
-    if [ "$owner" != "#1177" ]; then
-      echo "${place} の担当が #1177 でない: ${owner}"; errs=1
-    fi
-    if ! sed -n "${line}p" "${REPO_ROOT}/${file}" | grep -qF -e "$word"; then
-      echo "${place} の行に識別語 ${word} が無い"; errs=1
-    fi
-  done
-  return "$errs"
-}
-
-@test "no dev-workflow row in the listing is left without an owner" {
+# --- 固有記述の一覧に担い手なしの行も #1177 の行も残さない（#1177）---
+# 守備範囲: 一覧の表の行の「直す issue」の欄が「担い手なし」「#1177」でないこと、一覧が空でも形の検査が通ること。
+# 基準に当たるとした判定の正しさ・直した文の良し悪しは人のレビューが見る。
+# 引数: 文書のパス → 一覧の行（`| ` で始まり「直す issue」が担い手なし／#1177）を出し、あれば exit 1
+listing_unowned() {
   local out
-  out="$(grep -F '| `plugins/dev-workflow/' "$DOC" | grep -F '担い手なし' || true)"
-  echo "$out"
-  [ -z "$out" ]
+  out="$(grep -E '^[[:space:]]*\|.*\|[[:space:]]*(担い手なし|#1177)[[:space:]]*\|[[:space:]]*$' "$1" || true)"
+  [ -z "$out" ] || { printf '%s\n' "$out"; return 1; }
 }
 
-@test "every Orca-route row in the listing exists once and is owned by #1177" {
-  run check_orca_owner "$DOC"
+@test "no row in the listing is left without an owner or owned by #1177" {
+  run listing_unowned "$DOC"
   echo "$output"
   [ "$status" -eq 0 ]
 }
 
-@test "an Orca-route row moved to another issue fails" {
-  edit_doc '| `plugins/dev-workflow/skills/develop/SKILL.md:46` | 環境依存 | 判定 `orca`（Orca の子ワークツリーで子を起動する） | #1177 |' \
-    '| `plugins/dev-workflow/skills/develop/SKILL.md:46` | 環境依存 | 判定 `orca`（Orca の子ワークツリーで子を起動する） | #1123 |'
-  run check_orca_owner "$WORK_DOC"
+@test "a listing row without an owner fails the owner check" {
+  local anchor='| 場所 | 種別 | 内容 | 直す issue |'
+  edit_doc "${anchor}
+|---|---|---|---|" "${anchor}
+|---|---|---|---|
+| \`rules/dev-server.md:1\` | 固有名 | 例 | 担い手なし |"
+  run listing_unowned "$WORK_DOC"
   echo "$output"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"SKILL.md:46 の担当が #1177 でない: #1123"* ]] || return 1
+  [[ "$output" == *"rules/dev-server.md:1"* ]] || return 1
 }
 
-@test "a dropped Orca-route row fails" {
-  drop_row '| `plugins/dev-workflow/scripts/owner-reply-check.sh:52` |'
-  run check_orca_owner "$WORK_DOC"
-  echo "$output"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"owner-reply-check.sh:52 の行が 0 行"* ]] || return 1
+@test "a listing row without an owner is caught however it is written" {
+  local anchor='| 場所 | 種別 | 内容 | 直す issue |' row
+  for row in '| `rules/dev-server.md:1` | 固有名 | 例 |  担い手なし  |' \
+             '| rules/dev-server.md:1 | 固有名 | 例 | 担い手なし |' \
+             '| `rules/dev-server.md:1` | 固有名 | 例 | 担い手なし | ' \
+             '|`rules/dev-server.md:1`|固有名|例|#1177|'; do
+    edit_doc "${anchor}
+|---|---|---|---|" "${anchor}
+|---|---|---|---|
+${row}"
+    run listing_unowned "$WORK_DOC"
+    echo "$row => $output"
+    [ "$status" -eq 1 ]
+  done
 }
 
-@test "dropping every Orca-route row fails" {
-  grep -v -F -e '| #1177 |' "$DOC" >"$WORK_DOC"
-  run check_orca_owner "$WORK_DOC"
+# 引数: 元の文書 書き出す先 → 一覧の表の行だけを消す（後ろの表は残す）
+empty_listing() {
+  awk '
+    f==0 && /^\| 場所 \| 種別 \| 内容 \| 直す issue \|$/ { f=1; print; next }
+    f==1 && /^\|---/ { print; f=2; next }
+    f==2 && /^\|/ { next }
+    f==2 { f=3 }
+    { print }' "$1" >"$2"
+}
+
+@test "an empty listing keeps the tables after it" {
+  empty_listing "$DOC" "$WORK_DOC"
+  [ "$(grep -c 'SKILL.md:' "$WORK_DOC")" -eq "$(grep -c 'SKILL.md:' "$DOC")" ] || { echo "後ろの表が消えた"; return 1; }
+}
+
+@test "an empty listing passes the shape checks" {
+  empty_listing "$DOC" "$WORK_DOC"
+  run check_split "$REPO_ROOT" "$WORK_DOC"
   echo "$output"
-  [ "$status" -eq 1 ]
-  [ "$(printf '%s\n' "$output" | grep -c 'の行が 0 行')" -eq "${#DEVWF_ORCA_ROWS[@]}" ]
+  [ "$status" -eq 0 ]
 }
 
 @test "epic-launch-orca.sh is a pending part, so a listing row pointing at it fails" {
@@ -704,7 +678,7 @@ check_orca_owner() {
   edit_doc "${anchor}
 |---|---|---|---|" "${anchor}
 |---|---|---|---|
-| \`plugins/dev-workflow/scripts/epic-launch-orca.sh:2\` | 環境依存 | Orca の起動部品 | #1177 |"
+| \`plugins/dev-workflow/scripts/epic-launch-orca.sh:2\` | 環境依存 | Orca の起動部品 | #1123 |"
   run check_split "$REPO_ROOT" "$WORK_DOC"
   echo "$output"
   [ "$status" -eq 1 ]
