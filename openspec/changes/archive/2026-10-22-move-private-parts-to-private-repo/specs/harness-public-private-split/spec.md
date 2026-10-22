@@ -2,7 +2,7 @@
 
 ### Requirement: 個人版に移した部品は移した記録に載せ、公開版に残さない
 
-#1129 で個人版のリポジトリ `oratta/claude-harness-oratta` に移した部品（`rules/plugin-editing.md`・プラグイン `weekly-report`・プラグイン `daily-report`・`plugins/dev-workflow/docs/auto-merge-deployments.md`・`plugins/capability-registry/scripts/fmtoken.sh`・`plugins/capability-registry/skills/capability-registry/1password.md`・`plugins/capability-registry/skills/capability-registry/SKILL.md` の「表記規約（生成文にも適用すること）」と「資格情報の階層（どこに置くかはプロジェクトごとに決めない）」の 2 節）は、`docs/public-private-split.md` の節「個人版に移した部品」の表に 1 行ずつ載せなければならない（MUST）。各行は部品・移した先（個人版のリポジトリの中のパス）・写し元の公開版の commit SHA を持つ。移した部品の行は仕分けの表に置いてはならない（MUST NOT）。
+issue #1129 で個人版のリポジトリ `oratta/claude-harness-oratta` に移した部品（`rules/plugin-editing.md`・プラグイン `weekly-report`・プラグイン `daily-report`・`plugins/dev-workflow/docs/auto-merge-deployments.md`・`plugins/capability-registry/scripts/fmtoken.sh`・`plugins/capability-registry/skills/capability-registry/1password.md`・`plugins/capability-registry/skills/capability-registry/SKILL.md` の「表記規約（生成文にも適用すること）」と「資格情報の階層（どこに置くかはプロジェクトごとに決めない）」の 2 節）は、`docs/public-private-split.md` の節「個人版に移した部品」の表に 1 行ずつ載せなければならない（MUST）。各行は部品・移した先（個人版のリポジトリの中のパス）・写し元の公開版の commit SHA を持つ。移した部品の行は仕分けの表に置いてはならない（MUST NOT）。
 
 公開版は移した部品を持ってはならない（MUST NOT）。具体的には、移したファイルとディレクトリのパスの `git ls-files` が 0 件で、`.claude-plugin/marketplace.json` の `plugins[]` と bundle に `weekly-report`・`daily-report` が無く、capability-registry の SKILL.md に移した 2 節の見出しが無い。`tests/public-private-split.bats` が、移した部品のパスと見出しを節「個人版に移した部品」の表から読んで確かめる。プラグイン `weekly-report`・`daily-report` を移したことで付属のファイル（`changes/`・`tests/` など）もプラグインごと公開版から無くなる。capability-registry の `tests/fmtoken.bats` は付属のファイルの扱いに従い `fmtoken.sh` と一緒に移す。
 
