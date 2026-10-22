@@ -49,7 +49,7 @@
 
 ## 6. 切り替えとマージ（オーナーと本体）
 
-- [ ] 6.1 公開版の PR を Draft のまま本文にオーナーの切り替えの手順（design の決定 6 の 3）を書き、本体に渡す。触る範囲: なし（PR 本文）
+- [x] 6.1 公開版の PR を Draft のまま本文にオーナーの切り替えの手順（design の決定 6 の 3）を書き、本体に渡す。触る範囲: なし（PR 本文）
 - [ ] 6.2 オーナーが全 PC で切り替えを終えたことを記録先で確かめる。触る範囲: なし（確認だけ）
 - [ ] 6.3 `git log <写し元SHA>..origin/main -- <移した部品のパス>` が空であることを確かめる（空でなければ個人版に写してから進む）。触る範囲: なし（確認だけ）
-- [ ] 6.4 archive の直前に `git rm -r openspec/specs/capability-registry-fmtoken openspec/specs/weekly-report-jsonl-direct openspec/specs/report-command-hygiene openspec/specs/report-noninteractive-mode` を行う。触る範囲: 左のパス
+- [x] 6.4 archive の直前に `git rm -r openspec/specs/capability-registry-fmtoken openspec/specs/weekly-report-jsonl-direct openspec/specs/report-command-hygiene openspec/specs/report-noninteractive-mode` を行う。触る範囲: 左のパス
