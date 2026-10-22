@@ -24,24 +24,48 @@
 - **WHEN** 直下に実ファイルと、行き先が marketplace の下でない（存在する、または存在しない）symlink がある状態で実行する
 - **THEN** どれも残り、終了コードは 0（行き先が marketplace の下の壊れた symlink は掃除の要件で消える）
 
-### Requirement: overlay は印のファイルで見つけて重ねる
+### Requirement: overlay は利用者が許可した marketplace だけを重ねる
 
-`scripts/sync.sh` は、`<CLAUDE_DIR>/plugins/marketplaces/*/` のうち直下に `.harness-overlay` を持つディレクトリを overlay として扱わなければならない（MUST）。`.harness-overlay` の 1 行目をサブディレクトリ名とし、overlay の `rules/*.md`（`README.md` を除く）を `<CLAUDE_DIR>/rules/claude-harness/<名前>/` の下に symlink で張る。サブディレクトリ名が `[a-z0-9][a-z0-9-]*` に合わない、または空のときは、その overlay を飛ばして警告し、非 0 で終わる（MUST）。`scripts/sync.sh` は個人版の名前を書いてはならない（MUST NOT）。
+`scripts/sync.sh` は、利用者が許可ファイル `<CLAUDE_DIR>/harness-overlays` に書いた marketplace だけを overlay として扱わなければならない（MUST）。許可ファイルは 1 行に 1 つ、`<CLAUDE_DIR>/plugins/marketplaces/` 直下のディレクトリ名を書く。空行と `#` で始まる行は無視する。ディレクトリ名が空・`/` を含む・`.` で始まるときは、その行を飛ばして警告する。許可の置き場を環境変数だけにしてはならない（MUST NOT。端末・住人の起動処理・Claude のセッションのどれから sync.sh が呼ばれても、同じ `CLAUDE_DIR` の下の同じファイルを読むため）。
 
-#### Scenario: overlay の rules が重なる
-- **WHEN** 印のファイル（中身 `ov`）と `rules/x.md` を持つ overlay を置いて実行する
+許可ファイルに載っていない marketplace は、直下に `.harness-overlay` があっても、rules も output style も張ってはならず、pull もしてはならない（MUST NOT）。許可ファイルが無いときは overlay は 0 件で、何も出さない。
+
+許可ファイルに載っている marketplace は、直下の `.harness-overlay` の 1 行目をサブディレクトリ名とし（許可は「どの marketplace を重ねるか」、印のファイルは「どの名前で重ねるか」を決める）、その `rules/*.md`（`README.md` を除く）を `<CLAUDE_DIR>/rules/claude-harness/<名前>/` の下に symlink で張る（MUST）。次のときは、その overlay を飛ばして警告し、終了コードを 0 でなくする（MUST）: 載せたディレクトリが無い／直下に `.harness-overlay` が無い／サブディレクトリ名が `[a-z0-9][a-z0-9-]*` に合わない、または空。`scripts/sync.sh` は個人版の名前を書いてはならない（MUST NOT）。
+
+#### Scenario: 許可した overlay が重なる
+- **WHEN** 許可ファイルに `ov-repo` と書き、`ov-repo` が印のファイル（中身 `ov`）と `rules/x.md` を持つ状態で実行する
 - **THEN** `rules/claude-harness/ov/x.md` が overlay の `rules/x.md` を指し、公開版の分も `rules/claude-harness/` に残る
 
+#### Scenario: 許可していない marketplace は印があっても張らない
+- **WHEN** 許可ファイルが無い、または別の名前だけを書いた状態で、印のファイルと `rules/x.md` を持つ marketplace を置いて実行する
+- **THEN** その marketplace の分は張られず、標準エラーは空で、終了コードは 0（pull もされない）
+
+#### Scenario: 許可ファイルの空行とコメントは無視する
+- **WHEN** 許可ファイルが `# コメント`・空行・`ov-repo` の 3 行の状態で実行する
+- **THEN** `ov-repo` だけが overlay として張られ、警告は出ない
+
+#### Scenario: 許可したのにディレクトリが無い
+- **WHEN** 許可ファイルに、`plugins/marketplaces/` 直下に無いディレクトリ名を書いて実行する
+- **THEN** 警告が出て、終了コードは 0 でなく、公開版の分は張られる
+
+#### Scenario: 許可したのに印のファイルが無い
+- **WHEN** 許可ファイルに書いたディレクトリが直下に `.harness-overlay` を持たない状態で実行する
+- **THEN** その overlay の分は張られず、警告が出て、終了コードは 0 でなく、公開版の分は張られる
+
+#### Scenario: 許可ファイルの行が不正
+- **WHEN** 許可ファイルに `../x` や `.hidden` や `a/b` の行がある状態で実行する
+- **THEN** その行は飛ばされて警告が出て、終了コードは 0 でなく、公開版の分は張られる
+
 #### Scenario: 不正な名前の overlay は飛ばす
-- **WHEN** 印のファイルの中身が `../x` の overlay を置いて実行する
+- **WHEN** 許可した overlay の印のファイルの中身が `../x` の状態で実行する
 - **THEN** その overlay の分は張られず、警告が出て、終了コードは 0 でなく、公開版の分は張られる
 
 #### Scenario: 同じ名前の overlay が 2 つある
-- **WHEN** 印のファイルの中身が同じ名前の overlay を 2 つ置いて実行する
+- **WHEN** 許可した 2 つの overlay の印のファイルの中身が同じ名前の状態で実行する
 - **THEN** marketplace のディレクトリ名が辞書順で先のものだけが張られ、後のものは警告して飛ばされ、終了コードは 0 でない
 
 #### Scenario: overlay 名と同じ名前の実ファイルがある
-- **WHEN** `rules/claude-harness/ov` が実ファイル（ディレクトリでない）の状態で、名前 `ov` の overlay を置いて実行する
+- **WHEN** `rules/claude-harness/ov` が実ファイル（ディレクトリでない）の状態で、名前 `ov` の許可した overlay がある状態で実行する
 - **THEN** 実ファイルは残り、その overlay の分は張られず、警告が出て、終了コードは 0 でなく、公開版の分は張られる
 
 #### Scenario: 張り先に内容の違う実ファイルがある
@@ -52,21 +76,21 @@
 
 `scripts/sync.sh` が印のファイルに対して行う検査は、次の範囲に限らなければならない（MUST）。
 
-- 想定する入力の出どころ: オーナーなどの管理者が自分の環境の marketplace に置く `.harness-overlay` と、その overlay の `rules/`・`output-styles/`。敵対的な入力（悪意のある第三者が marketplace を差し込む）は想定しない
-- 拾う誤り: 名前が空・`[a-z0-9][a-z0-9-]*` に合わない・`claude-harness` の下に同名の実ファイルがある（ディレクトリを作れない）・別の overlay と名前が重なる、のいずれか。拾った overlay は飛ばして警告し、終了コードを 0 でなくする
-- 通ることを許す入力: 形式が正しい overlay の中の、ルールの意味的な矛盾（公開版のルールと食い違う内容）、印のファイルの 2 行目以降の内容、overlay の中身が空であること。これらは検査しない
-- 穴をすべて塞ぐことは完了条件にしない。上の誤りを拾えることと、overlay が無い環境で警告なく動くことが完了条件である
+- 想定する入力の出どころ: 利用者が自分の手で書く許可ファイル `<CLAUDE_DIR>/harness-overlays` と、そこに載せた marketplace の `.harness-overlay`・`rules/`・`output-styles/`。許可ファイルに載せていない marketplace は信頼しない（印のファイルがあっても読まず、張らず、pull もしない）。載せた marketplace の中身は信頼する（載せることが「この marketplace の指示を常時読ませてよい」という利用者の判断である）。許可ファイル自体を書き換えられる攻撃者は想定しない
+- 拾う誤り: 許可ファイルの行が不正・載せたディレクトリが無い・載せたのに印のファイルが無い・印のファイルの名前が空・`[a-z0-9][a-z0-9-]*` に合わない・`claude-harness` の下に同名の実ファイルがある（ディレクトリを作れない）・別の overlay と名前が重なる、のいずれか。拾った行か overlay は飛ばして警告し、終了コードを 0 でなくする
+- 通ることを許す入力: 許可した marketplace のうち形式が正しいものの中の、ルールの意味的な矛盾（公開版のルールと食い違う内容）、印のファイルの 2 行目以降の内容、overlay の中身が空であること。これらは検査しない
+- 穴をすべて塞ぐことは完了条件にしない。上の誤りを拾えることと、許可ファイルが無い環境（overlay が 0 件）で警告なく動くことが完了条件である
 
 #### Scenario: 意味的な矛盾は検査しない
-- **WHEN** 形式が正しい overlay が、公開版と内容の食い違うルールを持つ状態で実行する
+- **WHEN** 許可した overlay が、公開版と内容の食い違うルールを持つ状態で実行する
 - **THEN** 食い違いは検査されず、両方が張られ、終了コードは 0
 
 ### Requirement: overlay が無い環境では警告なく公開版だけで動く
 
-overlay が 1 つも見つからないとき、`scripts/sync.sh` は overlay に関する出力をしてはならず（MUST NOT）、公開版だけを張って終了コード 0 で終わらなければならない（MUST）。
+許可ファイルが無い、または有効な overlay が 1 つも無いとき（許可ファイルの不正な行の警告を除く）、`scripts/sync.sh` は overlay に関する出力をしてはならず（MUST NOT）、公開版だけを張って終了コード 0 で終わらなければならない（MUST）。
 
 #### Scenario: 客の Mac を模した環境
-- **WHEN** `<CLAUDE_DIR>/plugins/marketplaces/` が無い状態で実行する
+- **WHEN** `<CLAUDE_DIR>/plugins/marketplaces/` も許可ファイルも無い状態で実行する
 - **THEN** 標準エラーは空で、終了コードは 0
 
 ### Requirement: 同名のルールは別のディレクトリに張られ、両方読まれる
@@ -74,7 +98,7 @@ overlay が 1 つも見つからないとき、`scripts/sync.sh` は overlay に
 公開版と overlay が同じファイル名のルールを持つとき、`scripts/sync.sh` は両方を、それぞれのサブディレクトリに張らなければならない（MUST）。どちらかを飛ばしたり、上書きしたりしてはならない（MUST NOT）。
 
 #### Scenario: 同名のルール
-- **WHEN** 公開版の `communication-style.md` と同名の `rules/communication-style.md` を持つ overlay で実行する
+- **WHEN** 公開版の `communication-style.md` と同名の `rules/communication-style.md` を持つ許可した overlay で実行する
 - **THEN** `rules/claude-harness/communication-style.md` と `rules/claude-harness/<名前>/communication-style.md` が、それぞれの出どころを指す
 
 ### Requirement: output style は 1 階層のままで、同名なら公開版を優先する
@@ -82,7 +106,7 @@ overlay が 1 つも見つからないとき、`scripts/sync.sh` は overlay に
 `scripts/sync.sh` は公開版と overlay の `output-styles/*.md` を `<CLAUDE_DIR>/output-styles/` 直下に張る。公開版の分は overlay より先に張る。overlay の分が、公開版を指す symlink と同名のとき、その 1 本を張らず、警告して非 0 で終わらなければならない（MUST）。公開版の分を張るとき、同名の既存の symlink の行き先が `<CLAUDE_DIR>/plugins/marketplaces/` の下（別の Harness）なら、警告せず公開版を指すように張り替えなければならない（MUST）。張り先に公開版や overlay の同名ファイルと内容が同じ実ファイルがあるときは、rules と同じく symlink に置き換え（コピー運用からの移行）、内容が違う実ファイルと、それ以外の場所を指す symlink には触れない（MUST NOT）。
 
 #### Scenario: 同名の output style
-- **WHEN** 公開版の `readable.md` と同名の `output-styles/readable.md` を持つ overlay で実行する
+- **WHEN** 公開版の `readable.md` と同名の `output-styles/readable.md` を持つ許可した overlay で実行する
 - **THEN** `output-styles/readable.md` は公開版を指したままで、警告が出て、終了コードは 0 でない
 
 #### Scenario: overlay の style を張ったあとで公開版に同名が足された

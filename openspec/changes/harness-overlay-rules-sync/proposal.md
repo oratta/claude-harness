@@ -7,7 +7,7 @@
 ## What Changes
 
 - `scripts/sync.sh` が rules の symlink を出どころごとのサブディレクトリに張る。公開版は `~/.claude/rules/claude-harness/`、個人版は `~/.claude/rules/claude-harness/<個人版が自分で名乗る名前>/`
-- `scripts/sync.sh` が「重ねる Harness（overlay）」を自動で見つける。見つけ方は、`~/.claude/plugins/marketplaces/` 直下のディレクトリのうち、直下に印のファイル `.harness-overlay` を持つもの。印のファイルの中身がサブディレクトリ名になる。公開版は個人版の名前を知らなくてよい
+- `scripts/sync.sh` が「重ねる Harness（overlay）」を、利用者が許可したものだけ重ねる。許可は `~/.claude/harness-overlays`（1 行に 1 つ、`~/.claude/plugins/marketplaces/` 直下のディレクトリ名）。許可した marketplace の直下の印のファイル `.harness-overlay` の 1 行目がサブディレクトリ名になる。許可に無い marketplace は印があっても張らず pull もしない（入れただけの第三者の marketplace に常時読まれる指示を張らせないため）。公開版は個人版の名前を知らなくてよい
 - 旧位置（`~/.claude/rules/*.md` に直接張った、公開版を指す symlink）を、新位置に張ったあとで片付ける
 - output style は 1 階層のまま（`~/.claude/output-styles/`）。overlay の output style が公開版と同名なら公開版を優先し、警告して非 0 で終わる
 - 規則の名前がぶつかったときの扱い、テスト、README の更新
