@@ -470,93 +470,19 @@ DELIVERED_SIX=(rules/communication-style.md rules/link-when-requesting-review.md
   awk '/^## hook との分担/{f=1; next} /^## /{f=0} f' "${REPO_ROOT}/rules/destructive-git-guard.md" | grep -qF '入っていれば'
 }
 
-# --- dev-workflow 以外の公開版の部品が決めた固有名とオーナーの PC のパスを持たない（#1168）---
-# 守備範囲: 固定の検索語の当たりが許可リストの行だけであること。別の固有名や文の良し悪しは人のレビューが見る。
-# 許可リストの各件（ファイル|行に含まれる固定の文字列|当たる基準）は、change の tasks の判定の表に同じ行を持つ。
+# --- 公開版の部品が決めた固有名とオーナーの PC のパスを持たない: 検索の範囲（#1168）---
+# 守備範囲: 検索の範囲の決定はここ、語（tests/public-names/dict/）と許可（tests/public-names/allow/）はファイルに置く。
+# 共有スクリプトの呼び出しは下の pn_* にまとめ、語の検索はその呼び出しの結果だけを見る。
+# 別の固有名や文の良し悪しは人のレビューが見る。
 
 NONDEV_SCOPE=(rules/README.md scripts/sync.sh scripts/test-auto-merge-workflow.sh plugins/capability-registry
   plugins/statusline plugins/worktree plugins/product-handover plugins/casting plugins/cost-ledger plugins/infra)
-
-# 出典や経緯としてだけ名前を挙げる行 = 出典、互換のために残す旧名の読み取り = 互換
-NONDEV_ALLOW=(
-  'rules/README.md|経緯（flatmate#599 / #608）|出典'
-  'scripts/sync.sh|なぜ存在するか（flatmate#362）|出典'
-  'plugins/infra/agents/infra-phase-1-hearing.md|2026-07 に suimei で|出典'
-  'plugins/infra/skills/infra-setup/SKILL.md|2026-07 に suimei で Actions free 枠|出典'
-  'plugins/infra/skills/infra-setup/SKILL.md|flatmate で 2026-10 に実発生|出典'
-  'plugins/infra/templates/workflows/ci.yml.template|2026-07 に suimei で free 枠|出典'
-  'plugins/infra/templates/workflows/weekly-full.yml.template|2026-07-25 に suimei で実発生|出典'
-  'plugins/statusline/README.md|旧名の `FLATMATE_RATE_SHARE_DIR`（互換。主は|互換'
-  'plugins/statusline/scripts/statusline.sh|# Order: CLAUDE_RATE_SHARE_DIR, FLATMATE_RATE_SHARE_DIR|互換'
-  'plugins/statusline/scripts/statusline.sh|# The FLATMATE_* names are the old names|互換'
-  'plugins/statusline/scripts/statusline.sh|elif [ "${FLATMATE_RATE_SHARE_DIR+x}" ]|互換'
-  'plugins/statusline/scripts/statusline.sh|dir="$FLATMATE_RATE_SHARE_DIR"; have_dir=1  # old name, compatibility|互換'
-  'plugins/statusline/scripts/statusline.sh|"${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"|互換'
-  'plugins/statusline/scripts/statusline.sh|flatmate#605 と同じ誤り|出典'
-  'plugins/worktree/.claude-plugin/plugin.json|flatmate#320: find -path|出典'
-  'plugins/worktree/references/wt-clean-orphan-detection.md|2026-08-10 に flatmate リポで全件実行したとき|出典'
-  'plugins/worktree/references/wt-clean-verification.md|2026-08-10 に flatmate で、PR が OPEN|出典'
-  'plugins/worktree/scripts/wt-setup.sh|flatmate#320|出典'
-  'plugins/worktree/scripts/wt-setup.sh|実例: suimei の .env.local.example|出典'
-  'plugins/worktree/skills/wt-clean/SKILL.md|2026-08-01 に flatmate リポで、壁打ち|出典'
-  'plugins/worktree/skills/wt-clean/SKILL.md|2026-08-10 に flatmate で実走したとき|出典'
-  'plugins/worktree/skills/wt-clean/SKILL.md|2026-08-07 に shukan-dev で実走したところ|出典'
-)
 
 # 検索の対象にする公開版のファイル（changes/・CHANGELOG.md・tests/・evals/ と、個人版に決まるファイルは除く）
 nondev_files() {
   git -C "$REPO_ROOT" ls-files -- "${NONDEV_SCOPE[@]}" \
     | grep -v -E '/(changes|tests|evals)/|(^|/)CHANGELOG\.md$|capability-registry/scripts/fmtoken\.sh$|capability-registry/skills/capability-registry/1password\.md$'
 }
-
-# 個人版に決まる節（capability-registry の SKILL.md の「表記規約」「資格情報の階層」）を除いて、行ごとに file:line:text で出す
-nondev_hits() {
-  local re="$1" f
-  for f in $(nondev_files); do
-    awk -v f="$f" '
-      /^## / { skip = (f ~ /capability-registry\/SKILL\.md$/ && ($0 ~ /表記規約/ || $0 ~ /資格情報の階層/)) }
-      !skip { print f ":" NR ":" $0 }' "${REPO_ROOT}/$f" | grep -E -e "^[^:]*:[0-9]+:.*(${re})" || true
-  done
-}
-
-nondev_unlisted() {
-  local re="$1" hit file text e afile astr allowed
-  while IFS= read -r hit; do
-    [ -n "$hit" ] || continue
-    file="${hit%%:*}"; text="${hit#*:*:}"; allowed=""
-    for e in "${NONDEV_ALLOW[@]}"; do
-      afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
-      [ "$file" = "$afile" ] && [[ "$text" == *"$astr"* ]] && { allowed=1; break; }
-    done
-    [ -n "$allowed" ] || printf '%s\n' "$hit"
-  done
-}
-
-@test "non-dev-workflow public parts carry no owner-specific names outside the allow list" {
-  local out
-  out="$(nondev_hits 'moko|suimei|uranai|shukan|sns-autopilot|flatmate|FLATMATE|/Users/oratta' | nondev_unlisted)"
-  echo "$out"
-  [ -z "$out" ]
-}
-
-@test "the worktree plugin carries no owner PC path" {
-  local out
-  out="$(nondev_hits '/Users/oratta')"
-  echo "$out"
-  [ -z "$out" ]
-}
-
-@test "every allow-list entry still matches a line (no stale entries)" {
-  local e afile astr
-  for e in "${NONDEV_ALLOW[@]}"; do
-    afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
-    grep -qF -e "$astr" "${REPO_ROOT}/$afile" || { echo "stale: $e"; return 1; }
-  done
-}
-
-# --- dev-workflow の公開版の部品が決めた固有名を持たない（Orca 経路を除く。#1168）---
-# 守備範囲: 固定の検索語の当たりが許可リストの行だけであること。別の固有名や文の良し悪しは人のレビューが見る。
-# 許可リストの各件（ファイル|行に含まれる固定の文字列|当たる基準）は、change の tasks の判定の表に同じ行を持つ。
 
 DEVWF_FLATMATE_FILES=(plugins/dev-workflow/references/pr-body-format.md
   plugins/dev-workflow/skills/issueify/SKILL.md
@@ -568,72 +494,279 @@ DEVWF_FLATMATE_FILES=(plugins/dev-workflow/references/pr-body-format.md
 
 DEVWF_DEVDIR_FILES=(plugins/dev-workflow/references/ci-watch.md plugins/dev-workflow/skills/memory-refresh/SKILL.md)
 
-# 出典や経緯としてだけ名前を挙げる行 = 出典
-DEVWF_ALLOW=(
-)
-
-# moko の検索の対象: dev-workflow の公開版のファイル（個人版に決まる auto-merge-deployments.md、changes/・CHANGELOG.md・tests/・evals/ を除く）
+# dev-workflow の公開版のファイル（個人版に決まる auto-merge-deployments.md、changes/・CHANGELOG.md・tests/・evals/ を除く）
 devwf_public_files() {
   git -C "$REPO_ROOT" ls-files -- plugins/dev-workflow \
     | grep -v -E '/(changes|tests|evals)/|(^|/)CHANGELOG\.md$|plugins/dev-workflow/docs/auto-merge-deployments\.md$'
 }
 
-# 引数: 正規表現 ファイル... → 許可リストに無い当たりを file:line:text で出す
-devwf_unlisted() {
-  local re="$1" f hit file text e afile astr allowed
-  shift
-  for f in "$@"; do
-    while IFS= read -r hit; do
-      [ -n "$hit" ] || continue
-      file="${hit%%:*}"; text="${hit#*:*:}"; allowed=""
-      for e in "${DEVWF_ALLOW[@]}"; do
-        afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
-        [ "$file" = "$afile" ] && [[ "$text" == *"$astr"* ]] && { allowed=1; break; }
-      done
-      [ -n "$allowed" ] || printf '%s\n' "$hit"
-    done < <(awk -v f="$f" '{ print f ":" NR ":" $0 }' "${REPO_ROOT}/$f" | grep -E -e "^[^:]*:[0-9]+:.*(${re})" || true)
+# --- 公開版の部品の禁止語検査: 共有スクリプトの呼び出しと、その検査（#1207）---
+# 守備範囲: 辞書の語を含む行が公開版の部品に足されると落ちること、許可（tests/public-names/allow/）が行の中身で絞られること、
+# 辞書が公開済みの語だけであること。辞書の網羅（辞書に無い固有名）と許可の基準の良し悪しは人のレビューが見る。
+# 呼び出しは 5 つ（nondev・nondev-pc-path・devwf-moko・devwf-flatmate・devwf-dev-dir）。名前ごとに一覧・辞書・allow が決まる。
+
+# 呼び出しの名前 → 検査するファイルの一覧（1 行 1 パス）
+pn_list() {
+  case "$1" in
+    nondev | nondev-pc-path) nondev_files ;;
+    devwf-moko) devwf_public_files ;;
+    devwf-flatmate) printf '%s\n' "${DEVWF_FLATMATE_FILES[@]}" ;;
+    devwf-dev-dir) printf '%s\n' "${DEVWF_DEVDIR_FILES[@]}" ;;
+  esac
+}
+
+# 呼び出しの名前 → 辞書のファイル名（拡張子なし。空白区切り）
+pn_dicts() {
+  case "$1" in
+    nondev) echo "moko other-projects flatmate owner-pc-path" ;;
+    nondev-pc-path) echo "owner-pc-path" ;;
+    devwf-moko) echo "moko" ;;
+    devwf-flatmate) echo "new-resident flatmate" ;;
+    devwf-dev-dir) echo "dev-dir-env" ;;
+  esac
+}
+
+# 呼び出しの名前 → allow のファイル名（拡張子なし。allow が無ければ空）
+pn_allow() {
+  case "$1" in
+    nondev) echo "nondev" ;;
+  esac
+}
+
+# 辞書の先頭の語（コメント行と空行を除く）
+pn_first_word() {
+  grep -v -e '^#' -e '^$' "${REPO_ROOT}/tests/public-names/dict/$1.txt" | head -n 1
+}
+
+# 一覧のファイルを一時ディレクトリへ同じ相対パスでコピーする → PN_ROOT
+pn_stage() {
+  PN_ROOT="${BATS_TEST_TMPDIR}/stage-$1"
+  mkdir -p "$PN_ROOT"
+  pn_list "$1" > "${BATS_TEST_TMPDIR}/list-$1.txt"
+  tar -C "$REPO_ROOT" -cf - -T "${BATS_TEST_TMPDIR}/list-$1.txt" | tar -C "$PN_ROOT" -xf -
+}
+
+# 個人版に決まる節（capability-registry の SKILL.md の「表記規約」「資格情報の階層」）を空行にする（行番号は保つ）
+pn_blank_personal() {
+  local f="$1/plugins/capability-registry/skills/capability-registry/SKILL.md"
+  [ -f "$f" ] || return 0
+  awk '/^## /{ skip = ($0 ~ /表記規約/ || $0 ~ /資格情報の階層/) } { print (skip ? "" : $0) }' "$f" > "${f}.new"
+  mv "${f}.new" "$f"
+}
+
+# 共有スクリプトを呼ぶ。引数: 呼び出しの名前 検査 root。標準入力: ファイルの一覧。
+# 辞書と allow は元のリポジトリの絶対パスで渡す（root が一時ディレクトリでも解けるように）。
+# PN_ALLOW が空でなければ、その呼び出しの allow の代わりにそのパスを渡す。
+pn_run() {
+  local name="$1" root="$2" args=() d a
+  for d in $(pn_dicts "$name"); do
+    args+=(--dict "${REPO_ROOT}/tests/public-names/dict/${d}.txt")
+  done
+  a="$(pn_allow "$name")"
+  if [ -n "${PN_ALLOW:-}" ]; then
+    args+=(--allow "$PN_ALLOW")
+  elif [ -n "$a" ]; then
+    args+=(--allow "${REPO_ROOT}/tests/public-names/allow/${a}.txt")
+  fi
+  FORBIDDEN_WORDS_NO_GH=1 bash "${REPO_ROOT}/plugins/dev-workflow/scripts/forbidden-words-check.sh" \
+    --root "$root" --name "$name" "${args[@]}"
+}
+
+# 引数: 呼び出しの名前 検査 root [一覧に足すパス]
+pn_check() {
+  { pn_list "$1"; [ -z "${3:-}" ] || printf '%s\n' "$3"; } | pn_run "$1" "$2"
+}
+
+# 引数: ファイル 文字列。末尾に 1 行足し、足した行の行番号を PN_LINE に入れる
+pn_append() {
+  [ -z "$(tail -c 1 "$1")" ] || echo >> "$1"
+  printf '%s\n' "$2" >> "$1"
+  PN_LINE="$(wc -l < "$1" | tr -d ' ')"
+}
+
+# 引数: 呼び出しの名前 → 段階化して（nondev 系は個人版の節を空行にして）PN_ROOT に入れる
+pn_ready() {
+  pn_stage "$1"
+  case "$1" in
+    nondev*) pn_blank_personal "$PN_ROOT" ;;
+  esac
+}
+
+pn_names() { echo "nondev nondev-pc-path devwf-moko devwf-flatmate devwf-dev-dir"; }
+
+@test "pn: the five calls pass on the current tree" {
+  local name root
+  for name in $(pn_names); do
+    case "$name" in
+      nondev*) pn_ready "$name"; root="$PN_ROOT" ;;
+      *) root="$REPO_ROOT" ;;
+    esac
+    run pn_check "$name" "$root"
+    echo "$name: $output"
+    [ "$status" -eq 0 ] || return 1
   done
 }
 
-@test "dev-workflow public parts carry no owner project name moko" {
-  local out
-  # shellcheck disable=SC2046
-  out="$(devwf_unlisted 'moko' $(devwf_public_files))"
-  echo "$out"
-  [ -z "$out" ]
+@test "pn: the moko search covers stop-judge.sh, a part confirmed public in #1129" {
+  local f=plugins/dev-workflow/scripts/stop-judge.sh word
+  pn_list devwf-moko | grep -qxF "$f" || { echo "not in the devwf-moko list: $f"; return 1; }
+  pn_ready devwf-moko
+  word="$(pn_first_word moko)"
+  pn_append "${PN_ROOT}/${f}" "# ${word}"
+  run pn_check devwf-moko "$PN_ROOT"
+  echo "$output"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"${f}:${PN_LINE}:${word}"* ]] || return 1
 }
 
-@test "the moko search covers stop-judge.sh, a part confirmed public in #1129 (work copy)" {
-  local f=plugins/dev-workflow/scripts/stop-judge.sh out
-  devwf_public_files | grep -qxF "$f" || { echo "not in devwf_public_files: $f"; return 1; }
-  mkdir -p "${BATS_TEST_TMPDIR}/wc/$(dirname "$f")"
-  cp "${REPO_ROOT}/$f" "${BATS_TEST_TMPDIR}/wc/$f"
-  printf '# moko\n' >>"${BATS_TEST_TMPDIR}/wc/$f"
-  out="$(REPO_ROOT="${BATS_TEST_TMPDIR}/wc" devwf_unlisted 'moko' "$f")"
-  echo "$out"
-  [[ "$out" == *"$f:"*"moko"* ]] || return 1
-}
-
-@test "dev-workflow public parts carry no new-resident or flatmate outside the allow list" {
-  local out
-  out="$(devwf_unlisted 'new-resident|flatmate|FLATMATE' "${DEVWF_FLATMATE_FILES[@]}")"
-  echo "$out"
-  [ -z "$out" ]
-}
-
-@test "dev-workflow public parts carry no CLAUDE_HARNESS_DEV_DIR outside the allow list" {
-  local out
-  out="$(devwf_unlisted 'CLAUDE_HARNESS_DEV_DIR' "${DEVWF_DEVDIR_FILES[@]}")"
-  echo "$out"
-  [ -z "$out" ]
-}
-
-@test "every dev-workflow allow-list entry still matches a line (no stale entries)" {
-  local e afile astr
-  for e in "${DEVWF_ALLOW[@]}"; do
-    afile="${e%%|*}"; astr="${e#*|}"; astr="${astr%|*}"
-    grep -qF -e "$astr" "${REPO_ROOT}/$afile" || { echo "stale: $e"; return 1; }
+@test "pn: a dictionary word added to a public part fails with path, line and word" {
+  local name word f
+  for name in $(pn_names); do
+    pn_ready "$name"
+    word="$(pn_first_word "$(pn_dicts "$name" | awk '{ print $1 }')")"
+    f="$(pn_list "$name" | head -n 1)"
+    pn_append "${PN_ROOT}/${f}" "$word"
+    run pn_check "$name" "$PN_ROOT"
+    echo "$name: $output"
+    [ "$status" -eq 1 ] || return 1
+    [[ "$output" == *"${f}:${PN_LINE}:${word}"* ]] || return 1
   done
+}
+
+@test "pn: an allowed line passes and the same word on another line of the same file fails" {
+  local entry path rest word str
+  entry="$(grep -v -e '^#' -e '^$' "${REPO_ROOT}/tests/public-names/allow/nondev.txt" | head -n 1)"
+  path="${entry%%:*}"; rest="${entry#*:}"; word="${rest%%:*}"; str="${rest#*:=}"
+  pn_ready nondev
+  pn_append "${PN_ROOT}/${path}" "$str"
+  run pn_check nondev "$PN_ROOT"
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+  pn_append "${PN_ROOT}/${path}" "別の行 ${word}"
+  run pn_check nondev "$PN_ROOT"
+  echo "$output"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"${path}:${PN_LINE}:${word}"* ]] || return 1
+}
+
+@test "pn: a capitalized spelling of a dictionary word also fails" {
+  local name word cap f
+  for name in nondev devwf-moko; do
+    pn_ready "$name"
+    word="$(pn_first_word moko)"
+    cap="$(printf '%s' "$word" | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')"
+    f="$(pn_list "$name" | head -n 1)"
+    pn_append "${PN_ROOT}/${f}" "$cap"
+    run pn_check "$name" "$PN_ROOT"
+    echo "$name: $output"
+    [ "$status" -eq 1 ] || return 1
+    [[ "$output" == *"${f}:${PN_LINE}:${word}"* ]] || return 1
+  done
+}
+
+@test "pn: a file whose name contains a dictionary word fails with path match" {
+  local name word newpath
+  for name in nondev devwf-moko; do
+    pn_ready "$name"
+    word="$(pn_first_word moko)"
+    case "$name" in
+      nondev) newpath="plugins/casting/notes-${word}.md" ;;
+      *) newpath="plugins/dev-workflow/notes-${word}.md" ;;
+    esac
+    mkdir -p "${PN_ROOT}/$(dirname "$newpath")"
+    echo "clean text" > "${PN_ROOT}/${newpath}"
+    run pn_check "$name" "$PN_ROOT" "$newpath"
+    echo "$name: $output"
+    [ "$status" -eq 1 ] || return 1
+    [[ "$output" == *"${newpath}:path:${word}"* ]] || return 1
+  done
+}
+
+@test "pn: an allow line that cancels nothing fails as unused" {
+  local word
+  word="$(pn_first_word moko)"
+  cp "${REPO_ROOT}/tests/public-names/allow/nondev.txt" "${BATS_TEST_TMPDIR}/allow-copy.txt"
+  echo "rules/README.md:${word}:=no-such-line-anywhere" >> "${BATS_TEST_TMPDIR}/allow-copy.txt"
+  pn_ready nondev
+  PN_ALLOW="${BATS_TEST_TMPDIR}/allow-copy.txt" run pn_check nondev "$PN_ROOT"
+  echo "$output"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"何も打ち消していない"* ]] || return 1
+}
+
+@test "pn: a dictionary word inside the personal sections of capability-registry does not fail" {
+  local word f
+  word="$(pn_first_word moko)"
+  f="plugins/capability-registry/skills/capability-registry/SKILL.md"
+  # 節の見出しの直後に語の行を足してから個人版の節を空行にする
+  pn_stage nondev
+  awk -v w="$word" '{ print } /^## (表記規約|資格情報の階層)/ { print w }' "${PN_ROOT}/${f}" > "${PN_ROOT}/${f}.new"
+  mv "${PN_ROOT}/${f}.new" "${PN_ROOT}/${f}"
+  run pn_check nondev "$PN_ROOT"
+  echo "unblanked: $output"
+  [ "$status" -eq 1 ] || return 1
+  pn_blank_personal "$PN_ROOT"
+  run pn_check nondev "$PN_ROOT"
+  echo "blanked: $output"
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "pn: the dictionary has six files and nine distinct words" {
+  local d n=0 words dups
+  for d in moko other-projects flatmate owner-pc-path new-resident dev-dir-env; do
+    [ -f "${REPO_ROOT}/tests/public-names/dict/${d}.txt" ] || { echo "missing: $d"; return 1; }
+  done
+  [ "$(find "${REPO_ROOT}/tests/public-names/dict" -type f | wc -l | tr -d ' ')" -eq 6 ] || return 1
+  words="$(cat "${REPO_ROOT}"/tests/public-names/dict/*.txt | grep -v -e '^#' -e '^$')"
+  n="$(printf '%s\n' "$words" | wc -l | tr -d ' ')"
+  dups="$(printf '%s\n' "$words" | sort | uniq -d)"
+  echo "words=$n dups=[$dups]"
+  [ "$n" -eq 9 ] || return 1
+  [ -z "$dups" ] || return 1
+}
+
+@test "pn: this file keeps no search regex and no allow array of its own" {
+  local alt
+  [ -d "${REPO_ROOT}/tests/public-names/dict" ] || return 1
+  # 配列の名前を 2 つに割って書くので、このテスト自身は当たらない
+  ! grep -q -e "NONDEV_""ALLOW" -e "DEVWF_""ALLOW" "$BATS_TEST_FILENAME" || return 1
+  alt="$(cat "${REPO_ROOT}"/tests/public-names/dict/*.txt | grep -v -e '^#' -e '^$' | paste -s -d '|' -)"
+  # 辞書の語を | でつないだ正規表現が残っていない（配る候補の語を並べた別の検査の行は、別の目的なので数えない）
+  ! grep -E -e "(${alt})\|(${alt})" "$BATS_TEST_FILENAME" | grep -v 'Dropbox' | grep -q . || return 1
+}
+
+# --- 語の検索（共有スクリプトを呼ぶ）---
+
+@test "non-dev-workflow public parts carry no owner-specific names outside the allow list" {
+  pn_ready nondev
+  run pn_check nondev "$PN_ROOT"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "the worktree plugin carries no owner PC path" {
+  pn_ready nondev-pc-path
+  run pn_check nondev-pc-path "$PN_ROOT"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "dev-workflow public parts carry no owner project name" {
+  run pn_check devwf-moko "$REPO_ROOT"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "dev-workflow public parts carry no new resident or second project name outside the allow list" {
+  run pn_check devwf-flatmate "$REPO_ROOT"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "dev-workflow public parts carry no dev directory variable outside the allow list" {
+  run pn_check devwf-dev-dir "$REPO_ROOT"
+  echo "$output"
+  [ "$status" -eq 0 ]
 }
 
 # --- 固有記述の一覧に担い手なしの行も #1177 の行も残さない（#1177）---
