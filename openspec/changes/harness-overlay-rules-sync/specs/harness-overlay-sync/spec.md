@@ -26,7 +26,7 @@
 
 ### Requirement: overlay は利用者が許可した marketplace だけを重ねる
 
-`scripts/sync.sh` は、利用者が許可ファイル `<CLAUDE_DIR>/harness-overlays` に書いた marketplace だけを overlay として扱わなければならない（MUST）。許可ファイルは 1 行に 1 つ、`<CLAUDE_DIR>/plugins/marketplaces/` 直下のディレクトリ名を書く。空行と `#` で始まる行は無視する。ディレクトリ名が空・`/` を含む・`.` で始まるときは、その行を飛ばして警告する。許可の置き場を環境変数だけにしてはならない（MUST NOT。端末・住人の起動処理・Claude のセッションのどれから sync.sh が呼ばれても、同じ `CLAUDE_DIR` の下の同じファイルを読むため）。
+`scripts/sync.sh` は、利用者が許可ファイル `<CLAUDE_DIR>/harness-overlays` に書いた marketplace だけを overlay として扱わなければならない（MUST）。許可ファイルは 1 行に 1 つ、`<CLAUDE_DIR>/plugins/marketplaces/` 直下のディレクトリ名を書く。空行と `#` で始まる行は無視する。ディレクトリ名が `/` を含む・`.` で始まるときは、その行を飛ばして警告する。許可の置き場を環境変数だけにしてはならない（MUST NOT。端末・住人の起動処理・Claude のセッションのどれから sync.sh が呼ばれても、同じ `CLAUDE_DIR` の下の同じファイルを読むため）。
 
 許可ファイルに載っていない marketplace は、直下に `.harness-overlay` があっても、rules も output style も張ってはならず、pull もしてはならない（MUST NOT）。許可ファイルが無いときは overlay は 0 件で、何も出さない。
 
@@ -87,7 +87,15 @@
 
 ### Requirement: overlay が無い環境では警告なく公開版だけで動く
 
-許可ファイルが無い、または有効な overlay が 1 つも無いとき（許可ファイルの不正な行の警告を除く）、`scripts/sync.sh` は overlay に関する出力をしてはならず（MUST NOT）、公開版だけを張って終了コード 0 で終わらなければならない（MUST）。
+許可ファイルが無い、または許可ファイルが空行とコメントだけのとき、`scripts/sync.sh` は overlay に関する出力をしてはならず（MUST NOT）、公開版だけを張って終了コード 0 で終わらなければならない（MUST）。許可ファイルに有効な行が 1 つでもある場合の検査エラー（許可の行の不正・載せたディレクトリが無い・印のファイルが無い・印の名前が空か不正・名前の重複・同名の実ファイル）は、ほかに有効な overlay が何件あるか（0 件でも）によらず、必ず警告して終了コードを 0 にしない（MUST）。
+
+#### Scenario: 許可ファイルが空行とコメントだけ
+- **WHEN** 許可ファイルが空行と `#` 行だけの状態で実行する
+- **THEN** 標準エラーは空で、終了コードは 0
+
+#### Scenario: 検査エラーが単独で起きる
+- **WHEN** 許可ファイルの有効な行がエラーになる 1 行だけ（ディレクトリが無い、印が無い、印の名前が空、のそれぞれ）で、ほかに有効な overlay が無い状態で実行する
+- **THEN** 警告が出て、終了コードは 0 でなく、公開版の分は張られる
 
 #### Scenario: 客の Mac を模した環境
 - **WHEN** `<CLAUDE_DIR>/plugins/marketplaces/` も許可ファイルも無い状態で実行する
