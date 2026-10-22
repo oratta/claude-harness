@@ -613,7 +613,7 @@ devwf_unlisted() {
 # 引数: 文書のパス → 一覧の行（`| ` で始まり「直す issue」が担い手なし／#1177）を出し、あれば exit 1
 listing_unowned() {
   local out
-  out="$(grep -E '^\| `[^`]+:[0-9]+` \|.*\| (担い手なし|#1177) \|$' "$1" || true)"
+  out="$(grep -E '^[[:space:]]*\|.*\|[[:space:]]*(担い手なし|#1177)[[:space:]]*\|[[:space:]]*$' "$1" || true)"
   [ -z "$out" ] || { printf '%s\n' "$out"; return 1; }
 }
 
@@ -635,12 +635,39 @@ listing_unowned() {
   [[ "$output" == *"rules/dev-server.md:1"* ]] || return 1
 }
 
-@test "an empty listing passes the shape checks" {
+@test "a listing row without an owner is caught however it is written" {
+  local anchor='| 場所 | 種別 | 内容 | 直す issue |' row
+  for row in '| `rules/dev-server.md:1` | 固有名 | 例 |  担い手なし  |' \
+             '| rules/dev-server.md:1 | 固有名 | 例 | 担い手なし |' \
+             '| `rules/dev-server.md:1` | 固有名 | 例 | 担い手なし | ' \
+             '|`rules/dev-server.md:1`|固有名|例|#1177|'; do
+    edit_doc "${anchor}
+|---|---|---|---|" "${anchor}
+|---|---|---|---|
+${row}"
+    run listing_unowned "$WORK_DOC"
+    echo "$row => $output"
+    [ "$status" -eq 1 ]
+  done
+}
+
+# 引数: 元の文書 書き出す先 → 一覧の表の行だけを消す（後ろの表は残す）
+empty_listing() {
   awk '
     f==0 && /^\| 場所 \| 種別 \| 内容 \| 直す issue \|$/ { f=1; print; next }
     f==1 && /^\|---/ { print; f=2; next }
     f==2 && /^\|/ { next }
-    { print }' "$DOC" >"$WORK_DOC"
+    f==2 { f=3 }
+    { print }' "$1" >"$2"
+}
+
+@test "an empty listing keeps the tables after it" {
+  empty_listing "$DOC" "$WORK_DOC"
+  [ "$(grep -c 'SKILL.md:' "$WORK_DOC")" -eq "$(grep -c 'SKILL.md:' "$DOC")" ] || { echo "後ろの表が消えた"; return 1; }
+}
+
+@test "an empty listing passes the shape checks" {
+  empty_listing "$DOC" "$WORK_DOC"
   run check_split "$REPO_ROOT" "$WORK_DOC"
   echo "$output"
   [ "$status" -eq 0 ]
