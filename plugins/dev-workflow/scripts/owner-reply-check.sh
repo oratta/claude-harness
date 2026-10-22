@@ -30,7 +30,7 @@
 #      （先頭の空白を除く）が "#<数字> （エピック #<数字> の子。" で始まらない（エピックの親が子の端末に打ち込んだ返事と、
 #      子を起動する指示）。<command-args> の頭の出どころは scripts/epic-dispatch.sh の次の 2 つの文字列で、
 #      ここはそれに結び付いている（epic-dispatch.sh の文を変えたらこの条件と bats の入力も直す）:
-#        launch（epic-dispatch.sh の cmd_launch の prompt=）:            /develop #$n （エピック #$epic の子。親ワークツリー $parent から Orca で起動）
+#        launch（epic-dispatch.sh の cmd_launch の prompt=）:            /develop #$n （エピック #$epic の子。親ワークツリー $parent から起動部品で起動）
 #        reply --relaunch（epic-dispatch.sh の deliver_reply の prompt=）: /develop #$n （エピック #$epic の子。返事を受けて起動し直し） $msg
 #   <command-args>（スラッシュコマンドの引数）と <bash-input>（主が ! で打った入力）は、9 に当たらなければタグごと本文として比べる。
 # 出力:
@@ -49,7 +49,7 @@
 #   （2 は「確かめられない」。呼び出し側は 1 と同じく通さない側に倒す）
 #
 # 許容の意思は見ない（部分一致なので「許容しない」の一部の「許容」も一致する）。呼び出し側（pr-review-gate 手順 5）が
-# MATCH 行の全文で読む。会話ログの改変と、Orca の親セッションが決まった頭を付けずに子のターミナルに打ち込んだ文
+# MATCH 行の全文で読む。会話ログの改変と、別セッション方式の親セッションが決まった頭を付けずに子のターミナルに打ち込んだ文
 # （origin.kind が human で残る）は区別できない（spec の守備範囲を参照）。
 set -euo pipefail
 
