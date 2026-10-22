@@ -36,6 +36,27 @@
 - **WHEN** 印のファイルの中身が `../x` の overlay を置いて実行する
 - **THEN** その overlay の分は張られず、警告が出て、終了コードは 0 でなく、公開版の分は張られる
 
+#### Scenario: 同じ名前の overlay が 2 つある
+- **WHEN** 印のファイルの中身が同じ名前の overlay を 2 つ置いて実行する
+- **THEN** marketplace のディレクトリ名が辞書順で先のものだけが張られ、後のものは警告して飛ばされ、終了コードは 0 でない
+
+#### Scenario: overlay 名と同じ名前の実ファイルがある
+- **WHEN** `rules/claude-harness/ov` が実ファイル（ディレクトリでない）の状態で、名前 `ov` の overlay を置いて実行する
+- **THEN** 実ファイルは残り、その overlay の分は張られず、警告が出て、終了コードは 0 でなく、公開版の分は張られる
+
+#### Scenario: 張り先に内容の違う実ファイルがある
+- **WHEN** `rules/claude-harness/communication-style.md` が公開版と内容の違う実ファイルの状態で実行する
+- **THEN** 実ファイルは残り、警告が出て、終了コードは 0 でない（内容が同じ実ファイルなら symlink に置き換わる）
+
+### Requirement: overlay の印のファイルの検査の守備範囲
+
+`scripts/sync.sh` が印のファイルに対して行う検査は、次の範囲に限る。
+
+- 想定する入力の出どころ: オーナーなどの管理者が自分の環境の marketplace に置く `.harness-overlay` と、その overlay の `rules/`・`output-styles/`。敵対的な入力（悪意のある第三者が marketplace を差し込む）は想定しない
+- 拾う誤り: 名前が空・`[a-z0-9][a-z0-9-]*` に合わない・`claude-harness` の下に同名の実ファイルがある（ディレクトリを作れない）・別の overlay と名前が重なる、のいずれか。拾った overlay は飛ばして警告し、終了コードを 0 でなくする
+- 通ることを許す入力: 形式が正しい overlay の中の、ルールの意味的な矛盾（公開版のルールと食い違う内容）、印のファイルの 2 行目以降の内容、overlay の中身が空であること。これらは検査しない
+- 穴をすべて塞ぐことは完了条件にしない。上の誤りを拾えることと、overlay が無い環境で警告なく動くことが完了条件である
+
 ### Requirement: overlay が無い環境では警告なく公開版だけで動く
 
 overlay が 1 つも見つからないとき、`scripts/sync.sh` は overlay に関する出力をしてはならず（MUST NOT）、公開版だけを張って終了コード 0 で終わらなければならない（MUST）。
@@ -54,16 +75,28 @@ overlay が 1 つも見つからないとき、`scripts/sync.sh` は overlay に
 
 ### Requirement: output style は 1 階層のままで、同名なら公開版を優先する
 
-`scripts/sync.sh` は公開版と overlay の `output-styles/*.md` を `<CLAUDE_DIR>/output-styles/` 直下に張る。overlay の分が既存の他所を指す symlink（公開版の分を含む）と同名のとき、その 1 本を張らず、警告して非 0 で終わらなければならない（MUST）。
+`scripts/sync.sh` は公開版と overlay の `output-styles/*.md` を `<CLAUDE_DIR>/output-styles/` 直下に張る。公開版の分は overlay より先に張る。overlay の分が、公開版を指す symlink と同名のとき、その 1 本を張らず、警告して非 0 で終わらなければならない（MUST）。公開版の分を張るとき、同名の既存の symlink の行き先が `<CLAUDE_DIR>/plugins/marketplaces/` の下（別の Harness）なら、警告せず公開版を指すように張り替えなければならない（MUST）。それ以外の場所を指す symlink と実ファイルには触れない（MUST NOT）。
 
 #### Scenario: 同名の output style
 - **WHEN** 公開版の `readable.md` と同名の `output-styles/readable.md` を持つ overlay で実行する
 - **THEN** `output-styles/readable.md` は公開版を指したままで、警告が出て、終了コードは 0 でない
 
-### Requirement: 古い overlay の symlink と壊れた symlink を掃除する
+#### Scenario: overlay の style を張ったあとで公開版に同名が足された
+- **WHEN** overlay の `output-styles/x.md` を張った実行のあと、公開版に同名の `output-styles/x.md` が足された状態で再実行する
+- **THEN** `output-styles/x.md` は公開版を指すように張り替わり、続く overlay の分で同名の衝突として警告が出て、終了コードは 0 でない
 
-`scripts/sync.sh` は、張り先のディレクトリにある、公開版または overlay を指す壊れた symlink を消さなければならない（MUST）。overlay のディレクトリが無くなっても、`claude-harness/<名前>/` の下の壊れた symlink は次の実行で消えなければならない（MUST）。実ファイルと他所を指す symlink には触れない。
+#### Scenario: 無関係な symlink の同名は触らない
+- **WHEN** `output-styles/readable.md` が `/etc/hosts` を指す symlink の状態で実行する
+- **THEN** symlink は残り、警告が出て、終了コードは 0 でない
+
+### Requirement: 壊れた symlink の掃除は行き先が marketplace の下のものだけを対象にする
+
+`scripts/sync.sh` は、`<CLAUDE_DIR>/rules/`・`<CLAUDE_DIR>/rules/claude-harness/`・`<CLAUDE_DIR>/rules/claude-harness/*/`・`<CLAUDE_DIR>/output-styles/` の `*.md` のうち、symlink で、リンク先が存在せず、行き先の文字列が `<CLAUDE_DIR>/plugins/marketplaces/` で始まるものを消さなければならない（MUST）。overlay を外すと印のファイルも消えるので、所有元は印のファイルでなく行き先の文字列で決める。行き先がそれ以外の壊れた symlink と実ファイルには触れてはならない（MUST NOT）。`claude-harness/<名前>/` が掃除のあとで空になったら、そのディレクトリを消す。
 
 #### Scenario: overlay を外したあとの掃除
 - **WHEN** overlay を張った実行のあと、overlay のディレクトリを消して再実行する
-- **THEN** `claude-harness/<名前>/` の下の壊れた symlink が無くなる
+- **THEN** `claude-harness/<名前>/` の下の壊れた symlink が無くなり、空になったそのディレクトリも無くなる
+
+#### Scenario: 無関係な壊れたリンクは残る
+- **WHEN** `rules/claude-harness/ov/` の下に、行き先が `/nonexistent/other.md` の壊れた symlink と実ファイルがある状態で再実行する
+- **THEN** どちらも残り、そのディレクトリも残る

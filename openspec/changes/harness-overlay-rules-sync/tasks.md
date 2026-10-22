@@ -6,11 +6,12 @@
 
 - [ ] 2.1 `link_dir` に「この harness の根」「旧位置の掃除先」を渡せるようにし、公開版の張り先を `$CLAUDE_DIR/rules/claude-harness` にする。新位置に張ったあとで旧位置の公開版を指す symlink を消す 触れる範囲: scripts/sync.sh:61-117、scripts/sync.sh:119-120
 - [ ] 2.2 dirty 判定つき ff-only pull を関数にし、overlay の clone にも使う 触れる範囲: scripts/sync.sh:37-58
+- [ ] 2.4 壊れた symlink の掃除を「行き先が `<CLAUDE_DIR>/plugins/marketplaces/` の下」で決める形にし、`claude-harness/*/` と output-styles を対象に含め、空になった `claude-harness/<名前>/` を消す。公開版の output style を張るとき、同名の既存 symlink の行き先が marketplace の下なら張り替える 触れる範囲: scripts/sync.sh:61-117
 - [ ] 2.3 overlay の探索（`.harness-overlay`、名前の検証、重複名の扱い）と、overlay の rules を `claude-harness/<名前>/`、output-styles を直下に張る。冒頭のコメント（挙動の節）を直す。個人版の名前を書かない（`tests/public-names` が見る） 触れる範囲: scripts/sync.sh:1-33、scripts/sync.sh:119-123
 
 ## 3. テスト
 
-- [ ] 3.1 `tests/rules-sync.bats` の既存テストを新しい張り先に直す。仕様の各シナリオ（新位置・旧位置の移行・overlay・不正名・overlay 無しで標準エラー空・同名ルール・output style の同名・掃除）に対応するテストを足す。テスト名は ASCII のみ 触れる範囲: tests/rules-sync.bats:1-80（新規テストは末尾に追加）
+- [ ] 3.1 `tests/rules-sync.bats` の既存テストを新しい張り先に直す。仕様の各シナリオ（新位置・旧位置の移行・overlay・不正名・overlay 名の重複・overlay 名と同名の実ファイル・張り先の内容の違う実ファイル・overlay 無しで標準エラー空・同名ルール・output style の同名・output style の順序の食い違い・他所を指す symlink の保持・overlay 撤去後の掃除・無関係な壊れたリンクと実ファイルが残ること。終了コードも各テストで確かめる）に対応するテストを足す。テスト名は ASCII のみ 触れる範囲: tests/rules-sync.bats:1-80（新規テストは末尾に追加）
 
 ## 4. 文書
 
