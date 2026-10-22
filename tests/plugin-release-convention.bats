@@ -20,7 +20,8 @@ FROZEN_PRODUCT_HANDOVER_HEAD='## v0.1.0 —'
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  CONVENTION_DOCS=(rules/plugin-editing.md CLAUDE.md AGENTS.md docs/worktree-recovery.md)
+  # rules/plugin-editing.md は #1129 で個人版のリポジトリに移したので対象に含めない
+  CONVENTION_DOCS=(CLAUDE.md AGENTS.md docs/worktree-recovery.md)
 }
 
 # タイトル行（1 行目）の次の非空行

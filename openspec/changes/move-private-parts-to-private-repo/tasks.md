@@ -22,10 +22,10 @@
 
 ## 3. 公開版の検査を先に直す（TDD）
 
-- [ ] 3.1 移した部品が公開版に無いことの検査を足す: 節「個人版に移した部品」の表からパスと SKILL.md の見出しを読み、`git ls-files` が 0 件・`marketplace.json` の `plugins[]` と bundle に `weekly-report`・`daily-report` が無い・SKILL.md に 2 節の見出しが無い、を確かめる。節の表の行が移した先と写し元の SHA を持つことも確かめる。`rules/plugin-editing.md` を作業コピーに置き直すとそのパスを挙げて落ちる検査と、仕分けの表に `fmtoken.sh` の行を残すと落ちる検査を足す。触る範囲: tests/public-private-split.bats（新規の @test。`check_split` の近く 26-140）
-- [ ] 3.2 仕分けの表の移した行を前提にした既存の検査を、移した後の形に直す（`fmtoken.sh` の行を落とす検査・分類を書き換える検査・個人版のファイルと節を検索の範囲から除く処理）。除く処理は外し、capability-registry の SKILL.md の「原則」の節に `moko` を書き足すと落ちる検査を足す。触る範囲: tests/public-private-split.bats:340-350、tests/public-private-split.bats:410-416、tests/public-private-split.bats:500-515、tests/public-private-split.bats:570-580（1.1 の後の位置で読み直す）
-- [ ] 3.3 移した部品を前提にした他の検査を直す: 自己検証の対象と参照元から daily-report・weekly-report を外す、常時注入の目印と対象から plugin-editing.md を外す、版上げの規約文書の対象から plugin-editing.md を外す、capability-registry の SKILL.md の公開版の部分の切り出し（`public_part`）を外して全体を見る。触る範囲: plugins/dev-workflow/tests/shared-references.bats:20-30・70-76、plugins/dev-workflow/tests/self-verification-sections.bats:15-42、tests/always-on-injection-scope.bats:51-55・121-126、tests/plugin-release-convention.bats:23、plugins/capability-registry/tests/skill-registry.bats:37-40・65-66
-- [ ] 3.4 `bash scripts/test.sh` を回し、3.1 の検査が公開版から消す前の状態で期待どおり落ちることを確かめる。触る範囲: なし（確認だけ）
+- [x] 3.1 移した部品が公開版に無いことの検査を足す: 節「個人版に移した部品」の表からパスと SKILL.md の見出しを読み、`git ls-files` が 0 件・`marketplace.json` の `plugins[]` と bundle に `weekly-report`・`daily-report` が無い・SKILL.md に 2 節の見出しが無い、を確かめる。節の表の行が移した先と写し元の SHA を持つことも確かめる。`rules/plugin-editing.md` を作業コピーに置き直すとそのパスを挙げて落ちる検査と、仕分けの表に `fmtoken.sh` の行を残すと落ちる検査を足す。触る範囲: tests/public-private-split.bats（新規の @test。`check_split` の近く 26-140）
+- [x] 3.2 仕分けの表の移した行を前提にした既存の検査を、移した後の形に直す（`fmtoken.sh` の行を落とす検査・分類を書き換える検査・個人版のファイルと節を検索の範囲から除く処理）。除く処理は外し、capability-registry の SKILL.md の「原則」の節に `moko` を書き足すと落ちる検査を足す。触る範囲: tests/public-private-split.bats:340-350、tests/public-private-split.bats:410-416、tests/public-private-split.bats:500-515、tests/public-private-split.bats:570-580（1.1 の後の位置で読み直す）
+- [x] 3.3 移した部品を前提にした他の検査を直す: 自己検証の対象と参照元から daily-report・weekly-report を外す、常時注入の目印と対象から plugin-editing.md を外す、版上げの規約文書の対象から plugin-editing.md を外す、capability-registry の SKILL.md の公開版の部分の切り出し（`public_part`）を外して全体を見る。触る範囲: plugins/dev-workflow/tests/shared-references.bats:20-30・70-76、plugins/dev-workflow/tests/self-verification-sections.bats:15-42、tests/always-on-injection-scope.bats:51-55・121-126、tests/plugin-release-convention.bats:23、plugins/capability-registry/tests/skill-registry.bats:37-40・65-66
+- [x] 3.4 `bash scripts/test.sh` を回し、3.1 の検査が公開版から消す前の状態で期待どおり落ちることを確かめる。触る範囲: なし（確認だけ）
 
 ## 4. 公開版から部品を消し、参照を直す
 

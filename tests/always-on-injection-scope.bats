@@ -48,11 +48,6 @@ git-commit-policy.md	作業完了＋archive（`/opsx:archive` / `/wt-clean` 完�
 git-commit-policy.md	feature → main のマージと `git push origin main` は明示承認
 git-commit-policy.md	などの直接マージは、どちらの運用でも明示承認なしに実行しない
 git-commit-policy.md	ゲート通過後に commit を積んだら取り直す
-plugin-editing.md	パスを文書やスクリプトに固定で書かない
-plugin-editing.md	`git fetch origin` してから
-plugin-editing.md	そちらのリポジトリに Draft PR が作られる
-plugin-editing.md	Draft PR まで作る
-plugin-editing.md	手動で削除しない
 one-off-no-script.md	汎用ツールを作ろうとしているサイン
 subagent-model-selection.md	FABLE_BUDGET_MODE
 destructive-git-guard.md	例外なく事前承認
@@ -120,7 +115,7 @@ count_occurrences() {
 @test "every rule the spec names for kept instructions carries a marker" {
   local f
   for f in perspective-casting.md communication-style.md git-commit-policy.md \
-           plugin-editing.md one-off-no-script.md subagent-model-selection.md \
+           one-off-no-script.md subagent-model-selection.md \
            destructive-git-guard.md dev-server.md browser-infra-env-capture.md; do
     markers | cut -f1 | grep -qx -- "$f" || { echo "目印が 1 件も無い: $f" >&2; false; }
   done
