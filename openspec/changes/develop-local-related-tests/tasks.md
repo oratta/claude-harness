@@ -1,0 +1,23 @@
+## 1. テストを先に書く（落ちることを確かめる）
+
+- [ ] 1.1 `tests/develop-worker-ci-checks.bats` の「all (3a) paths read PR and push workflow checks」を、spec dev-workflow-develop の要件「W の (3) は 2 回の return に分かれる」の新しい文面に合わせて書き換える。`収集してすべて実行` の検査を外し、全経路共通の大原則の節に次があることを確かめる: 静的検査（lint・型検査）は手元で実行する、テストの全体実行とビルドは手元で実行せず CI に任せる、関係するテストの選び方（足した・変えたテスト、変えたファイルのパスかファイル名を含むテストを `git grep -l` で探す、テストランナーの選ぶ機能）、PR・push で全体のテストを回すジョブが無いときは手元で全体を実行する、`フォールバック`・`未導入`・`sudo apt-get install`・`環境セットアップ` が残っている、`scripts/test.sh` を手元で回すコマンドとして名指ししていない（コマンド名を固定しない規則。フォールバックの例示としての出現は許す）。触る範囲: tests/develop-worker-ci-checks.bats:17-25
+- [ ] 1.2 同じファイルの「worker states the scope and its known limits」に、守備範囲の段落が変えたファイルの一覧を入力に含め、間接的に読むテストは CI と CI の見張りが拾う旨を書いていることの検査を足す。「return lists collected checks…」に、関係するテストを探したコマンドと CI に任せた検査（CI のジョブ名）を return に書く義務の検査を足す。触る範囲: tests/develop-worker-ci-checks.bats:27-40
+- [ ] 1.3 同じファイルに、spec dev-workflow-pr-review-gate の要件「レビュアーとゲートの担当は全体のテストを手元で回さない」のテストを足す。(a) `stages/reviewer-brief.md` の手順 2-1 の姿勢の文に、報告を信用せず自分で再実行すること・再実行は関係するテストと lint・全体のテストを手元で回さない・全体の結果は作業者か CI の結果を証拠にする、があること。(b) `stages/pass.md` の手順 4 に、全体のテストを手元で回さない・対象 HEAD の CI の結果を証拠にする・結論が無いときの扱い（状態と合格後の CI の見張り）・既に失敗しているときの扱い（失敗した run の URL と見張りで直しに回す）・成功と書かない、があること。節の切り出しは既存の `common_principles` と同じく awk で見出しから次の見出しまでにする。触る範囲: tests/develop-worker-ci-checks.bats（末尾に追記）
+- [ ] 1.4 `bats tests/develop-worker-ci-checks.bats` で、1.1〜1.3 で足した・変えた検査が落ちることを確かめる（既存の検査のうち文面を変えないものは通る）
+
+## 2. 作業者の指示書を直す
+
+- [ ] 2.1 `worker/implement.md` の「全経路共通の大原則」の検査の箇条（CI の定義から検査コマンドを拾う箇条）を、design D1・D2 のとおりに書き直す。CI の定義から拾う規則・環境セットアップと判別する規則・運用系ワークフローを外す規則・コマンド名をリポジトリ固有の値に固定しない規則・未導入の扱いは残す。種類ごとの扱い（静的検査は手元で変えたファイルに当てる、テストの全体実行とビルドは CI に任せる）、関係するテストの選び方、PR・push で全体のテストを回すジョブが無いときは手元で全体を実行し慣例コマンドへのフォールバックを許すこと、Draft で CI を走らせないリポジトリは CI に任せられる側に数えることを書く。触る範囲: plugins/dev-workflow/skills/develop/references/roles/worker/implement.md:23
+- [ ] 2.2 同じ節の守備範囲の箇条を、入力に変えたファイルの一覧を足し、拾いたい誤りを静的検査の取りこぼし（PR #489 の shellcheck）と名前で参照するテストの失敗の持ち越しにし、間接的に読むテストを拾えないことは CI と CI の見張りが拾う旨を足す形に直す。長時間処理の箇条の「フルテスト」の語は、手元で全体を回すフォールバックの場合に当たるので残してよい。触る範囲: plugins/dev-workflow/skills/develop/references/roles/worker/implement.md:24-25
+- [ ] 2.3 「(3a) の return に書くこと」の検査コマンドの箇条を、収集した検査コマンドの一覧・手元で実行した検査（関係するテスト・静的検査）と各 exit code・関係するテストを探したコマンド・CI に任せた検査とその CI のジョブ名を書く形に直す。末尾の理由の段落の「フルテストを回し直すか」を、関係するテストを選び直して回し直すか、に直す。触る範囲: plugins/dev-workflow/skills/develop/references/roles/worker/implement.md:34、plugins/dev-workflow/skills/develop/references/roles/worker/implement.md:40
+
+## 3. レビュアーとゲートの担当の指示を直す
+
+- [ ] 3.1 `stages/reviewer-brief.md` の手順 2-1 の姿勢の文を、テスト・lint を報告を信用せず自分で再実行することを保ったまま、再実行は関係するテスト（PR で足した・変えたテストと、変えたファイルのパスかファイル名を含むテスト）と lint に限り、全体のテストは手元で回さず、全体の結果は作業者の結果か CI の結果を証拠にする形に直す。区画 1 だけが再実行する規則（同じファイルの区画の段落）は変えない。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md:19
+- [ ] 3.2 `stages/pass.md` の手順 4 に、ゲートの担当がテストの全体実行を手元で行わないこと、全体のテストの合格を求める受け入れ条件は対象 HEAD の CI の結果（`gh pr checks` と run の URL）を証拠にすること、成功・結論が無い・既に失敗の 3 つの場合の結果の欄の書き方（design D4）、結論の無い CI や失敗した CI を成功と書かないこと、関係するテストと lint の結果は作業者が PR に載せた証拠を使ってよいことを足す。「テストが通った」だけは証拠にならない、の文は残す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:17-30（手順 4）
+
+## 4. 記録と検証
+
+- [ ] 4.1 変更の記録 `plugins/dev-workflow/changes/1211.md` を書く（何を変えたか・なぜか・`scripts/test.sh` の並列化を範囲に入れなかった理由）。触る範囲: plugins/dev-workflow/changes/1211.md（新規）
+- [ ] 4.2 関係するテストを、この change で決めた選び方で選んで回す。`git grep -l` で、変えたファイル（`worker/implement.md`・`stages/reviewer-brief.md`・`stages/pass.md`）のパスかファイル名を含むテストのファイルを探し（例: `git grep -l -e 'worker/implement.md' -e 'reviewer-brief.md' -e 'stages/pass.md' -- '*.bats' 'tests/*.py' 'plugins/*/tests/*.py'`）、当たったファイルを 1 つずつ `bats <file>`（Python なら `python3 -m pytest <file>` か同等）で回す。全体の `bash scripts/test.sh` は手元で回さない（受け入れ条件の「`bash scripts/test.sh` が通る」は CI の結果で確かめる）。触る範囲: なし（実行のみ）
+- [ ] 4.3 lint を変えたファイルに当てて回す（この change で `.sh` を変えないなら shellcheck の対象は無い。`claude plugin validate plugins/dev-workflow` を回す）。`openspec validate develop-local-related-tests --strict` を回す。触る範囲: なし（実行のみ）
