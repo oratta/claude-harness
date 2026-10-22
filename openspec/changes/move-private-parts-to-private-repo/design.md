@@ -91,12 +91,13 @@ install 先は `~/.claude/plugins/marketplaces/claude-harness-oratta/`、install
 
 1. 個人版のリポジトリに部品を写す。最初の commit のメッセージに写し元の公開版の commit SHA を書く。`gh repo create` と main への push は本体が行う
 2. 公開版の消す PR を Draft で作る（この時点でマージしない）
-3. オーナーが各 PC で: `/plugin marketplace add oratta/claude-harness-oratta` → 個人版の `weekly-report`・`daily-report`・`capability-registry-oratta` を install → 公開版の `weekly-report@oratta-claude-harness`・`daily-report@oratta-claude-harness` を uninstall → `~/.claude/rules/plugin-editing.md` を `~/.claude/plugins/marketplaces/claude-harness-oratta/rules/plugin-editing.md` への symlink に張り替える → `/reload-plugins`
-4. 全 PC が済んだら、公開版の消す PR を Ready にしてマージする（主の承認）
+3. 個人版のプラグインは各 PC で必要になったときに入れる（主の決定 https://github.com/oratta/claude-harness/issues/1129#issuecomment-6334944835 ）。使う PC で使うときに `/plugin marketplace add oratta/claude-harness-oratta` と、使うプラグインの install をする。公開版の `weekly-report`・`daily-report` は外さなくてよい（マージ後の自動更新で公開版の marketplace から消える）
+4. 週報の定期実行を動かす PC は、マージの前に個人版の `weekly-report` を入れるか、定期実行を止める（記録先のコメントの時点で定期実行が登録されていた PC は止めた）
+5. プラグイン編集のルール（`rules/plugin-editing.md`）は、harness を開発する PC で主が `~/.claude/rules/plugin-editing.md` を `~/.claude/plugins/marketplaces/claude-harness-oratta/rules/plugin-editing.md` への symlink に張り替える。張り替えない PC では、マージ後に `scripts/sync.sh` が「この harness を指す壊れた symlink」としてリンクを消す（`scripts/sync.sh` の `link_dir`）
+6. 定期実行の PC の扱いが済んだら、公開版の消す PR を Ready にしてマージする（主の承認）
 
 - 写した後は公開版の移す部品を凍結する。マージの前に `git log <写し元SHA>..origin/main -- <移す部品のパス>` が空であることを確かめ、空でなければその commit を個人版に写してから進む
-- 順番の理由: 先に公開版から消すと、`/weekly-report` の定期実行が止まり、`scripts/sync.sh` が「この harness を指す壊れた symlink」として `~/.claude/rules/plugin-editing.md` を消す（`scripts/sync.sh` の `link_dir`）
-- 入れてから外す順にするのは、外してから入れる順だと間に定期実行が来たときに呼べるコマンドが無くなるため
+- 全 PC で先に切り替える順をやめた理由: 個人版のプラグインを使わない PC にまで入れる必要は無く、マージの前に止まって困るのは週報の定期実行だけなので、その PC だけをマージの前に扱えば足りる
 
 ## Risks / Trade-offs
 

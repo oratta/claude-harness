@@ -49,7 +49,7 @@
 
 ## 6. 切り替えとマージ（オーナーと本体）
 
-- [x] 6.1 公開版の PR を Draft のまま本文にオーナーの切り替えの手順（design の決定 6 の 3）を書き、本体に渡す。触る範囲: なし（PR 本文）
-- [ ] 6.2 オーナーが全 PC で切り替えを終えたことを記録先で確かめる。触る範囲: なし（確認だけ）
-- [ ] 6.3 `git log <写し元SHA>..origin/main -- <移した部品のパス>` が空であることを確かめる（空でなければ個人版に写してから進む）。触る範囲: なし（確認だけ）
+- [x] 6.1 公開版の PR を Draft のまま本文にオーナーの切り替えの手順（design の決定 6 の 3〜5。個人版のプラグインは必要になったときに入れる）を書き、本体に渡す。触る範囲: なし（PR 本文）
+- [x] 6.2 週報の定期実行を動かす PC の扱い（個人版の `weekly-report` を入れるか定期実行を止める）が済んだことを記録先で確かめる（https://github.com/oratta/claude-harness/issues/1129#issuecomment-6334944835 で、登録されていた PC の定期実行を止めた）。触る範囲: なし（確認だけ）
+- [x] 6.3 `git log <写し元SHA>..origin/main -- <移した部品のパス>` が空であることを確かめる（空でなければ個人版に写してから進む）。触る範囲: なし（確認だけ）
 - [x] 6.4 archive の直前に `git rm -r openspec/specs/capability-registry-fmtoken openspec/specs/weekly-report-jsonl-direct openspec/specs/report-command-hygiene openspec/specs/report-noninteractive-mode` を行う。触る範囲: 左のパス
