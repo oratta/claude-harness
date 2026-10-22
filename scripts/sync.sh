@@ -34,6 +34,9 @@
 #   - 壊れた symlink のうち、行き先がこの harness か ~/.claude/plugins/marketplaces/ の下のものは
 #     削除する（rename/削除されたファイルや外した overlay の掃除。ローカル実ファイルと
 #     他所を指す symlink には触らない）
+#   - 許可ファイルから外した overlay の symlink（行き先が、今回張られた overlay でもこの harness
+#     でもない marketplace の下のもの）は、リンク先が残っていても消す。許可ファイルが無くても同じ。
+#     何も出さず終了コードにも影響しない
 #   - Output Style の有効化（settings の outputStyle）は書き換えない。ファイルを届けるまでが
 #     本スクリプトの仕事で、どのスタイルを使うかは PC ごとの主の設定に残す
 #   - テスト用に CLAUDE_CONFIG_DIR で ~/.claude を差し替え可能
@@ -81,6 +84,27 @@ prune_dangling() {
     case "$(readlink "$l")" in
       "$HARNESS_DIR"/*|"$MP_DIR"/*) rm -f "$l" && PRUNED=1 || rc=1 ;;
     esac
+  done
+}
+
+# 許可から外した overlay の symlink を、リンク先が存在していても消す。$1=ディレクトリ
+# 行き先が marketplace の下で、その marketplace が今回張られた overlay（KEEP）でも
+# この harness 自身でもないものが対象。marketplace の外を指す symlink と実ファイルには触らない。
+# 消したら PRUNED=1。何も出力せず、終了コードにも影響させない（意図した取り消しのため）
+prune_revoked() {
+  PRUNED=0
+  for l in "$1"/*.md; do
+    [ -L "$l" ] || continue
+    cur="$(readlink "$l")"
+    case "$cur" in
+      "$MP_DIR"/*/*) ;;
+      *) continue ;;
+    esac
+    rest="${cur#"$MP_DIR"/}"
+    mpname="${rest%%/*}"
+    case "$KEEP" in *" $mpname "*) continue ;; esac
+    [ "$mpname" = "$(basename "$HARNESS_DIR")" ] && continue
+    rm -f "$l" && PRUNED=1 || rc=1
   done
 }
 
@@ -148,6 +172,7 @@ done
 # 許可ファイルは CLAUDE_DIR の下に置く（端末・住人・Claude のセッションのどこから呼ばれても同じに読める）
 ALLOW_FILE="$CLAUDE_DIR/harness-overlays"
 seen=" "
+KEEP=" "
 if [ -f "$ALLOW_FILE" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
     line="$(printf '%s' "$line" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
@@ -190,6 +215,7 @@ if [ -f "$ALLOW_FILE" ]; then
     if [ "${1:-}" != "--no-pull" ]; then
       pull_repo "$d"
     fi
+    KEEP="$KEEP$line "
     link_dir "$d/rules" "$PUB_DST/$oname" "$d" 0
     link_dir "$d/output-styles" "$CLAUDE_DIR/output-styles" "$d" 0
   done < "$ALLOW_FILE"
@@ -205,5 +231,14 @@ for sub in "$PUB_DST"/*/; do
   [ "$PRUNED" = 1 ] && rmdir "$sub" 2>/dev/null
 done
 prune_dangling "$CLAUDE_DIR/output-styles"
+
+# 許可の取り消しの掃除（許可ファイルが無くても行う。以前許可した overlay の跡を消す）
+for sub in "$PUB_DST"/*/; do
+  sub="${sub%/}"
+  [ -d "$sub" ] && [ ! -L "$sub" ] || continue
+  prune_revoked "$sub"
+  [ "$PRUNED" = 1 ] && rmdir "$sub" 2>/dev/null
+done
+prune_revoked "$CLAUDE_DIR/output-styles"
 
 exit "$rc"

@@ -437,3 +437,86 @@ mk_fake_harness() {
   [[ "$output" == *"ov-repo"* ]]
   [ -L "$PUB/ov/x.md" ]
 }
+
+# ── 許可の取り消し（許可から外した overlay の symlink は、リンク先が残っていても消える）──
+
+mk_styled_overlay() {
+  # <dir名> <名前> [style名] — rules x.md と output-styles ovstyle.md を持つ overlay
+  mk_overlay "$1" "$2" x.md
+  echo "overlay style" > "$MP/$1/output-styles/${3:-ovstyle}.md"
+}
+
+@test "revoked overlay: links removed even though link targets still exist" {
+  mk_styled_overlay ov-repo ov
+  allow ov-repo
+  sh "$SYNC" --no-pull
+  [ -L "$PUB/ov/x.md" ]
+  [ -L "$FAKE_CLAUDE/output-styles/ovstyle.md" ]
+  : > "$FAKE_CLAUDE/harness-overlays"
+  run sh -c "sh '$SYNC' --no-pull 2>&1 >/dev/null"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -d "$MP/ov-repo/rules" ]
+  [ ! -e "$PUB/ov/x.md" ] && [ ! -L "$PUB/ov/x.md" ]
+  [ ! -L "$FAKE_CLAUDE/output-styles/ovstyle.md" ]
+  [ ! -d "$PUB/ov" ]
+}
+
+@test "revoked overlay: public links stay" {
+  mk_styled_overlay ov-repo ov
+  allow ov-repo
+  sh "$SYNC" --no-pull
+  : > "$FAKE_CLAUDE/harness-overlays"
+  run sh "$SYNC" --no-pull
+  [ "$status" -eq 0 ]
+  [ -L "$PUB/communication-style.md" ]
+  [ -L "$FAKE_CLAUDE/output-styles/readable.md" ]
+}
+
+@test "revoking one of two overlays keeps the other" {
+  mk_styled_overlay ov-a oa sa
+  mk_styled_overlay ov-b ob sb
+  allow ov-a
+  allow ov-b
+  sh "$SYNC" --no-pull
+  [ -L "$PUB/oa/x.md" ] && [ -L "$PUB/ob/x.md" ]
+  printf '%s\n' ov-a > "$FAKE_CLAUDE/harness-overlays"
+  run sh "$SYNC" --no-pull
+  [ "$status" -eq 0 ]
+  [ -L "$PUB/oa/x.md" ]
+  [ ! -L "$PUB/ob/x.md" ]
+  [ ! -d "$PUB/ob" ]
+  [ -L "$FAKE_CLAUDE/output-styles/sa.md" ]
+  [ ! -L "$FAKE_CLAUDE/output-styles/sb.md" ]
+}
+
+@test "revocation leaves symlinks outside marketplaces and real files alone" {
+  mkdir -p "$PUB/ov" "$FAKE_CLAUDE/output-styles"
+  ln -s /etc/hosts "$PUB/ov/h.md"
+  echo real > "$PUB/ov/real.md"
+  ln -s /etc/hosts "$FAKE_CLAUDE/output-styles/h.md"
+  echo real > "$FAKE_CLAUDE/output-styles/real.md"
+  run sh "$SYNC" --no-pull
+  [ "$status" -eq 0 ]
+  [ -L "$PUB/ov/h.md" ] && [ -f "$PUB/ov/real.md" ]
+  [ -L "$FAKE_CLAUDE/output-styles/h.md" ] && [ -f "$FAKE_CLAUDE/output-styles/real.md" ]
+}
+
+@test "deleting the allow file removes the traces of a former overlay" {
+  mk_styled_overlay ov-repo ov
+  allow ov-repo
+  sh "$SYNC" --no-pull
+  rm -f "$FAKE_CLAUDE/harness-overlays"
+  run sh -c "sh '$SYNC' --no-pull 2>&1 >/dev/null"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -L "$PUB/ov/x.md" ] && [ ! -d "$PUB/ov" ]
+  [ ! -L "$FAKE_CLAUDE/output-styles/ovstyle.md" ]
+  [ -L "$PUB/communication-style.md" ]
+}
+
+@test "never-overlaid environment: empty stderr and exit 0 after revocation cleanup" {
+  run sh -c "sh '$SYNC' --no-pull 2>&1 >/dev/null"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
