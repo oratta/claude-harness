@@ -6,6 +6,13 @@
 
 #1128 で「保留（#1123 の後）」にした 5 行（`epic-dispatch.sh`・`epic-launch-orca.sh`・`stop-judge.sh`・`parent-pass-criteria.md`・`parent-merge-criteria.md`）は、#1129 で #1123 の結果を見て公開版に確定した。分類の値「保留（#1123 の後）」は使わない（MUST NOT）。文書の節「保留の行の確定」は、どの行を何を見て確定したかの記録として残す。
 
+この要件を確かめる検査（`tests/public-private-split.bats`）の守備範囲は、既存の要件「表と一覧の検査の守備範囲」に従う。この要件に固有の部分は次のとおりで、範囲の外の誤りを見つけることは完了条件にしない（MUST NOT）。
+
+- 入力の出どころ: テストが自分で読む `docs/public-private-split.md` の仕分けの表と固有記述の一覧。確定した 5 行の部品のパスはテストの中に固定の文字列で持つ
+- 拾う誤り: 分類の欄に「公開版」「個人版」「分割」以外の値（「保留（#1123 の後）」を含む）があること／確定した 5 行のどれかの分類が「公開版」でないこと／確定した 5 行の部品を指す一覧の行が「公開版に決まる部品に属さない」として落ちること
+- 通してよい具体例: 理由の欄の中身の良し悪し（#1123 の結果の読み方が正しいか）・節「保留の行の確定」の記録の書き方・5 行以外の部品の分類の判断の誤り。これらは人のレビュー（仕様レビューと pr-review-gate）が見る
+- 見つかる穴をすべて塞ぐことは完了条件にしない。この検査は、保留の値が戻ることと、確定した 5 行が公開版から外れることを落とすためのもので、確定の判断の正しさを保証しない
+
 #### Scenario: 分類の値が決めた値だけである
 - **WHEN** 表の分類の欄を読む
 - **THEN** すべての値が「公開版」「個人版」「分割」のどれかで、部品の行の分類は「公開版」か「個人版」である
@@ -17,6 +24,14 @@
 #### Scenario: 保留の値の行は落ちる
 - **WHEN** 表のある行の分類を「保留（#1123 の後）」に書き換える
 - **THEN** `tests/public-private-split.bats` が決めた値以外の分類として落ちる
+
+#### Scenario: 確定した 5 行はすべて公開版である
+- **WHEN** 表の `plugins/dev-workflow/scripts/epic-dispatch.sh`・`plugins/dev-workflow/scripts/epic-launch-orca.sh`・`plugins/dev-workflow/scripts/stop-judge.sh`・`plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md`・`plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` の行の分類を読む
+- **THEN** 5 行とも表にちょうど 1 行ずつあり、分類がすべて「公開版」である
+
+#### Scenario: 確定した行の 1 つを公開版以外にすると落ちる
+- **WHEN** 確定した 5 行のどれか 1 行の分類を「個人版」に書き換える
+- **THEN** `tests/public-private-split.bats` が、その部品の名前を挙げて落ちる
 
 #### Scenario: 確定したエピック実行の部品は公開版の部品として扱われる
 - **WHEN** 固有記述の一覧に `plugins/dev-workflow/scripts/epic-launch-orca.sh` の実在する行を指す行を足す

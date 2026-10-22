@@ -4,7 +4,8 @@
 - [ ] 1.2 「epic-launch-orca.sh is a pending part, so a listing row pointing at it fails」を、一覧に `plugins/dev-workflow/scripts/epic-launch-orca.sh:2` を指す行（担い手 #1129）を足しても「公開版に決まる部品に属さない」の文言が出ないことを確かめる検査に置き換える（終了コードは担い手の検査など他の理由で落ちうるので、出力に属さないの文言が無いことだけを見る）。触る範囲: tests/public-private-split.bats:676-686
 - [ ] 1.3 表の `plugins/dev-workflow/scripts/stop-judge.sh` の行の分類を「保留（#1123 の後）」に書き換えると、決めた値以外の分類として落ちる検査を足す（`edit_doc` を使う）。触る範囲: tests/public-private-split.bats:369-376 の近く（新規の @test）
 - [ ] 1.4 `stop-judge.sh` に `moko` を足した作業コピーで `devwf_unlisted` が当たりを返す検査を足す（`devwf_public_files` が確定した部品を含むことの固定）。作業コピーは既存の検査と同じく一時の場所に作り、実ファイルを書き換えない。触る範囲: tests/public-private-split.bats:558-600 の近く（新規の @test）
-- [ ] 1.5 `bats tests/public-private-split.bats` を回し、1.2・1.3 が文書の修正前の状態で期待どおり落ちることを確かめる（1.4 は修正前から通ってよい）
+- [ ] 1.5 確定した 5 行（`epic-dispatch.sh`・`epic-launch-orca.sh`・`stop-judge.sh`・`parent-pass-criteria.md`・`parent-merge-criteria.md`）のパスを固定の文字列で持ち、表にちょうど 1 行ずつあって分類が「公開版」であることを確かめる検査を足す。あわせて、そのうち 1 行（例: `parent-merge-criteria.md`）の分類を `edit_doc` で「個人版」に書き換えると、その部品のパスを挙げて落ちる検査を足す。触る範囲: tests/public-private-split.bats:26-290（`check_split` の中に確定した行の照合を足すか、別の関数として足す）、tests/public-private-split.bats:676 の近く（新規の @test）
+- [ ] 1.6 `bats tests/public-private-split.bats` を回し、1.2・1.3・1.5 が文書の修正前の状態で期待どおり落ちることを確かめる（1.4 は修正前から通ってよい）
 
 ## 2. 仕分けの文書を確定する
 
