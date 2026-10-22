@@ -39,7 +39,7 @@ flatmate の `scripts/ship-check.sh` は、出荷ファイルの集合を manife
 
 ### 5. 違反の文面と順序は flatmate の現行のまま
 
-flatmate が呼び出し側を置き換えたあとの「同じ入力で同じ違反一覧」を満たすため、文面と出す順序（辞書の読み込みの違反 → allow の書式 → ファイルごとの当たり → 未使用の allow → issue の状態）を変えない。flatmate の ship-check は集合の展開の違反を先に出してから共有スクリプトを呼ぶので、全体の順序も同じになる。「出荷集合に無い」など flatmate 向けの語を含む文面もそのまま共有する（文面を呼び出し側で変えられるようにはしない。変えると同じ一覧の保証が崩れる）。ゲート通過後の `gh` の失敗時の通知だけは先頭の名前を `--name`（既定 `forbidden-words-check`）で差し替えられる（flatmate は `ship-check`）。
+flatmate が呼び出し側を置き換えたあとの「同じ入力で同じ違反一覧」を満たすため、文面と出す順序（辞書の読み込みの違反 → allow の書式 → ファイルごとの当たり → 未使用の allow → issue の状態）を変えない。flatmate の ship-check は集合の展開の違反を先に出してから共有スクリプトを呼ぶので、全体の順序も同じになる。「出荷集合に無い」など flatmate 向けの語を含む文面もそのまま共有する（文面を呼び出し側で変えられるようにはしない。変えると同じ一覧の保証が崩れる）。`gh` が引けないときの通知だけは先頭の名前を `--name`（既定 `forbidden-words-check`）で差し替えられる（flatmate は `ship-check`）。
 
 ### 6. flatmate の呼び出しの契約（genetta-inc/flatmate#1732）
 
