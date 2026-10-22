@@ -20,10 +20,10 @@
 #   git : toplevel（rev-parse --show-toplevel の出力）/ origin_url・origin_exit（remote get-url origin。
 #         既定は git@github.com:oratta/claude-harness.git・0）/ fetch_exit / status_exit / status_out
 #         （-C <パス> status --porcelain）/ head（-C <パス> rev-parse HEAD。既定 aaa111）/ branch_tip
-#         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（branch -D）
+#         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（update-ref -d）
 #         / wtlist_out・wtlist_out_<回数>・wtlist_exit（worktree list --porcelain。既定は空・0。回数は wtcount）
 #           wtlist_sleep（1 回の worktree list にかかる実時間の秒数）/ wttip_<回数>（その回の呼び出しで branch_tip をこの内容にする）
-#           branch -D が成功すると branch_tip を消す（ブランチが消えたことの表現）
+#           update-ref -d は期待 OID（第 4 引数）が branch_tip と違えば exit 1、同じで成功すると branch_tip を消す。updref_advance があれば比べる前に branch_tip をその内容にする（直前に別プロセスが ref を進めた表現）（ブランチが消えたことの表現）
 #   sysctl: -n hw.memsize は memsize の内容を出して sysctl_exit（既定 0）で終わる。memsize が無ければ exit 1
 #   gh  : issue comment <N> --body <本文> は本文を comment_<N> に追記し（1 件ごとに "---" の行で区切る）、
 #         comment_exit_<N>（無ければ comment_exit）で終わる（既定 0）。成功（exit 0）のときは実物の gh と同じに投稿先の URL を stdout に出す。pr list は pr_out を出して pr_exit で終わる（--search 付きは pr_search_out と pr_search_exit。既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
@@ -250,7 +250,7 @@ if [ "$1" = "-C" ]; then
       if [ -e "$STUB_CFG/commondir_out" ]; then cat "$STUB_CFG/commondir_out"; else echo /stub/common/.git; fi
       exit "$(cat "$STUB_CFG/commondir_exit" 2>/dev/null || echo 0)" ;;
     "show-ref --verify") exit "$(cat "$STUB_CFG/show_ref_exit" 2>/dev/null || echo 1)" ;;
-    "ls-remote origin"|"cat-file -e"|"worktree list"|"rev-parse --verify"|"branch -D") ;;
+    "ls-remote origin"|"cat-file -e"|"worktree list"|"rev-parse --verify"|"update-ref -d") ;;
     *) exit 0 ;;
   esac
 fi
@@ -275,7 +275,9 @@ case "$1 ${2-}" in
     cc=$(( $(cat "$STUB_CFG/catfile_count" 2>/dev/null || echo 0) + 1 ))
     echo "$cc" > "$STUB_CFG/catfile_count"
     exit "$(cat "$STUB_CFG/catfile_exit_$cc" 2>/dev/null || cat "$STUB_CFG/catfile_exit" 2>/dev/null || echo 0)" ;;
-  "branch -D")
+  "update-ref -d")
+    [ -e "$STUB_CFG/updref_advance" ] && cp "$STUB_CFG/updref_advance" "$STUB_CFG/branch_tip"
+    [ "$(cat "$STUB_CFG/branch_tip" 2>/dev/null)" = "${4-}" ] || exit 1
     rc="$(cat "$STUB_CFG/branchd_exit" 2>/dev/null || echo 0)"
     [ "$rc" -eq 0 ] && rm -f "$STUB_CFG/branch_tip"
     exit "$rc" ;;
@@ -2328,7 +2330,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
     [ "$output" = "kept 11 $c" ] || { echo "$c: output=$output"; false; }
     [ "$(calls '^orca terminal close')" -eq 0 ]
     [ "$(calls '^orca worktree rm')" -eq 0 ]
-    [ "$(calls '^git branch -D')" -eq 0 ]
+    [ "$(calls '^git update-ref -d')" -eq 0 ]
   done
 }
 
@@ -2435,7 +2437,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11" ]
-  [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
+  [ "$(calls '^git update-ref -d refs/heads/oratta/issue-11 aaa111$')" -eq 1 ]
   [ ! -e "$STUB_CFG/branch_tip" ]
   : > "$STUB_LOG"
   put_record 11 status=done
@@ -2444,7 +2446,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11 branch-kept" ]
   [ ! -e "$(rec_of 1122 11)" ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: waits until the worktree leaves git worktree list, then deletes the branch" {
@@ -2457,9 +2459,9 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11" ]
   [ "$(calls '^git worktree list --porcelain')" -eq 3 ]
-  [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
+  [ "$(calls '^git update-ref -d refs/heads/oratta/issue-11 aaa111$')" -eq 1 ]
   [ "$(first_line '^orca worktree rm')" -lt "$(first_line '^git worktree list')" ]
-  [ "$(first_line '^git worktree list')" -lt "$(first_line '^git branch -D')" ]
+  [ "$(first_line '^git worktree list')" -lt "$(first_line '^git update-ref -d')" ]
   [ ! -e "$STUB_CFG/branch_tip" ]
 }
 
@@ -2472,7 +2474,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11 branch-kept" ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
   [ "$(cat "$STUB_CFG/branch_tip")" = "bbb222" ]
 }
 
@@ -2485,7 +2487,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   run dispatch reap 11
   [ "$output" = "reaped 11 branch-kept" ]
   [ "$(calls '^git worktree list --porcelain')" -eq 1 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: a worktree that never leaves git worktree list gives branch-kept after the limit" {
@@ -2497,7 +2499,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11 branch-kept" ]
   [ "$(calls '^git worktree list --porcelain')" -ge 2 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: a failing git worktree list counts as still attached" {
@@ -2507,7 +2509,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   export EPIC_DISPATCH_REAP_DETACH_TIMEOUT=2 EPIC_DISPATCH_REAP_DETACH_INTERVAL=1
   run dispatch reap 11
   [ "$output" = "reaped 11 branch-kept" ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: a tip that differs from HEAD is not waited for and not deleted" {
@@ -2517,7 +2519,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   run dispatch reap 11
   [ "$output" = "reaped 11 branch-kept" ]
   [ "$(calls '^git worktree list')" -eq 0 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: only other paths in git worktree list (even a prefix match) do not make it wait" {
@@ -2527,10 +2529,10 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   run dispatch reap 11
   [ "$output" = "reaped 11" ]
   [ "$(calls '^git worktree list --porcelain')" -eq 1 ]
-  [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
+  [ "$(calls '^git update-ref -d refs/heads/oratta/issue-11 aaa111$')" -eq 1 ]
 }
 
-@test "reap: a failing branch -D is reported as branch-kept" {
+@test "reap: a failing update-ref -d is reported as branch-kept" {
   reap_ready
   echo aaa111 > "$STUB_CFG/branch_tip"
   echo 1 > "$STUB_CFG/branchd_exit"
@@ -2539,12 +2541,24 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$output" = "reaped 11 branch-kept" ]
 }
 
-@test "reap: no branch left means no git branch -D" {
+@test "reap: a ref advanced between the last check and the delete is kept (expected-OID delete)" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  echo bbb222 > "$STUB_CFG/updref_advance"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11 branch-kept" ]
+  [ "$(calls '^git update-ref -d refs/heads/oratta/issue-11 aaa111$')" -eq 1 ]
+  [ "$(cat "$STUB_CFG/branch_tip")" = "bbb222" ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
+}
+
+@test "reap: no branch left means no git update-ref -d" {
   reap_ready
   run dispatch reap 11
   [ "$output" = "reaped 11" ]
   [ "$(calls '^git rev-parse --verify --quiet refs/heads/oratta/issue-11$')" -eq 1 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: a merged PR under another branch name matches by HEAD through --search" {
@@ -2607,7 +2621,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   grep -qF "terminal sweep failed" "$BATS_TEST_TMPDIR/stderr"
   [ "$(calls '^orca worktree rm')" -eq 1 ]
   [ "$(calls '^orca .*--force')" -eq 0 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: another rm failure stays rm-failed" {
@@ -2631,7 +2645,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$(calls '^orca terminal close')" -eq 2 ]
   [ "$(calls '^orca terminal list --worktree path:.*issue-11 --json')" -eq 1 ]
   [ "$(calls '^orca worktree rm')" -eq 0 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
   grep -qF 'issue-11' "$BATS_TEST_TMPDIR/stderr"
   grep -qF 'epic-dispatch.sh reap 11' "$BATS_TEST_TMPDIR/stderr"
 }
@@ -2669,7 +2683,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "kept 11 rm-failed" ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: several children are judged one by one, duplicates once" {
@@ -2791,7 +2805,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$output" = "kept 11 git-failed" ]
   [ "$(calls '^orca terminal close')" -eq 0 ]
   [ "$(calls '^orca worktree rm')" -eq 0 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: a rewound base keeps a child whose HEAD equals the stale tracking ref" {
@@ -2803,7 +2817,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$output" = "kept 11 unmerged-commits" ]
   grep -qF -- 'merge-base --is-ancestor aaa111 ddd4440000000000000000000000000000000000' "$STUB_LOG"
   [ "$(calls '^orca worktree rm')" -eq 0 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: an unreadable remote base keeps a PR-less child as base-lookup-failed" {
@@ -4917,8 +4931,8 @@ xreap_ready() {
   grep -qF -- 'gh pr list -R genetta-inc/flatmate --head oratta/issue-1615 --state merged --json headRefOid' "$STUB_LOG"
   p="$BATS_TEST_TMPDIR/work/issue-1615"
   grep -qF -- "git -C $p rev-parse --path-format=absolute --git-common-dir" "$STUB_LOG"
-  grep -qF -- 'git -C /clone/flat/.git branch -D oratta/issue-1615' "$STUB_LOG"
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  grep -qF -- 'git -C /clone/flat/.git update-ref -d refs/heads/oratta/issue-1615 aaa111' "$STUB_LOG"
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
   rm_line="$(first_line "^orca worktree rm --worktree path:$p\$")"
   cd_line="$(first_line 'rev-parse --path-format=absolute --git-common-dir')"
   [ -n "$rm_line" ] && [ -n "$cd_line" ] && [ "$cd_line" -lt "$rm_line" ]
