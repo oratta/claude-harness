@@ -20,8 +20,8 @@ FROZEN_PRODUCT_HANDOVER_HEAD='## v0.1.0 —'
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  # rules/plugin-editing.md は #1129 で個人版のリポジトリに移したので対象に含めない
-  CONVENTION_DOCS=(CLAUDE.md AGENTS.md docs/worktree-recovery.md)
+  # rules/plugin-editing.md は #1129 で全員に要る部分だけを公開版に残した（changes/ の記録の指示は個人版の harness-dev.md）
+  CONVENTION_DOCS=(rules/plugin-editing.md CLAUDE.md AGENTS.md docs/worktree-recovery.md)
 }
 
 # タイトル行（1 行目）の次の非空行
@@ -96,7 +96,7 @@ first_entry_after_migration() {
       echo "${d}: still asks to bump the plugin version"
       return 1
     fi
-    grep -q 'changes/' "$f" || { echo "${d}: no instruction to record changes in plugins/<name>/changes/"; return 1; }
+    [ "$d" = rules/plugin-editing.md ] || grep -q 'changes/' "$f" || { echo "${d}: no instruction to record changes in plugins/<name>/changes/"; return 1; }
   done
 }
 

@@ -169,6 +169,22 @@ for ln, (part, dest, sha) in read_table(MOVED_HEADER):
         if m.group(1) in bundled:
             err(f"移したプラグインが marketplace.json の bundle に残っている: {m.group(1)}")
 
+# --- 公開版のプラグイン編集ルール（#1129）: 全員に要る部分だけを持つ ---
+PE = "rules/plugin-editing.md"
+if PE not in tracked or not os.path.isfile(os.path.join(root, PE)):
+    err(f"公開版のプラグイン編集ルールが無い: {PE}")
+else:
+    with open(os.path.join(root, PE), encoding="utf-8") as f:
+        pe_text = f.read()
+    for w in ["CLAUDE_HARNESS_DEV_DIR", "/wt-setup", "sync.sh", "claude-harness-oratta", "Draft PR"]:
+        if w in pe_text:
+            err(f"公開版のプラグイン編集ルールに Harness 開発者向けの語がある: {w}")
+    for w in ["/plugin uninstall", "/plugin install", "/reload-plugins"]:
+        if w not in pe_text:
+            err(f"公開版のプラグイン編集ルールに復旧の手順の語が無い: {w}")
+    if cls_of.get(PE) != "公開版":
+        err(f"仕分けの表の {PE} の分類が公開版でない: {cls_of.get(PE)}")
+
 # --- 分割したプラグインを部品の行で覆う ---
 def headings(path):
     with open(os.path.join(root, path), encoding="utf-8") as f:
@@ -384,18 +400,18 @@ PY
 # 守備範囲: 移した部品が公開版に戻ること・仕分けの表に残ること・移した記録の行が移した先か SHA を欠くこと。
 # 個人版の中身が写し元と一致するかと、公開版の文に残る個人版の固有名は個人版の check-public-leak.sh と人のレビューが見る。
 
-@test "moved parts: putting rules/plugin-editing.md back fails and names the path (fixture repo)" {
+@test "moved parts: putting fmtoken.sh back fails and names the path (fixture repo)" {
   local fx="${BATS_TEST_TMPDIR}/repo"
   mkdir -p "$fx"
   (cd "$REPO_ROOT" && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$fx"
   cp "$DOC" "${fx}/docs/public-private-split.md"
   git -C "$fx" init -q
-  printf '# plugin editing\n' >"${fx}/rules/plugin-editing.md"
+  printf '# fmtoken\n' >"${fx}/plugins/capability-registry/scripts/fmtoken.sh"
   git -C "$fx" add -A
   run check_split "$fx" "${fx}/docs/public-private-split.md"
   echo "$output"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"移した部品が公開版に残っている: rules/plugin-editing.md"* ]] || return 1
+  [[ "$output" == *"移した部品が公開版に残っている: plugins/capability-registry/scripts/fmtoken.sh"* ]] || return 1
 }
 
 @test "moved parts: a row for fmtoken.sh left in the split table fails" {
@@ -420,7 +436,7 @@ for l in lines[start[0] + 2:]:
         break
     rows.append([c.strip() for c in l.strip()[1:-1].split("|")])
 parts = {r[0].strip("`") for r in rows}
-want = {"rules/plugin-editing.md", "plugins/weekly-report/", "plugins/daily-report/",
+want = {"plugins/weekly-report/", "plugins/daily-report/",
         "plugins/dev-workflow/docs/auto-merge-deployments.md",
         "plugins/capability-registry/scripts/fmtoken.sh",
         "plugins/capability-registry/skills/capability-registry/1password.md",
@@ -440,16 +456,52 @@ PY
 import re, sys
 src, dst = sys.argv[1:]
 text = open(src, encoding="utf-8").read()
-new, n = re.subn(r"^(\| `rules/plugin-editing\.md` \|)[^|]*\|[^|]*\|$", r"\1  | xyz |", text, count=1, flags=re.M)
-assert n == 1, "移した記録に rules/plugin-editing.md の行が無い"
+new, n = re.subn(r"^(\| `plugins/weekly-report/` \|)[^|]*\|[^|]*\|$", r"\1  | xyz |", text, count=1, flags=re.M)
+assert n == 1, "移した記録に plugins/weekly-report/ の行が無い"
 open(dst, "w", encoding="utf-8").write(new)
 PY
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   run check_split "$REPO_ROOT" "$WORK_DOC"
   echo "$output"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"移した先が空: rules/plugin-editing.md"* ]] || return 1
-  [[ "$output" == *"写し元の commit が 40 桁の SHA でない: rules/plugin-editing.md"* ]] || return 1
+  [[ "$output" == *"移した先が空: plugins/weekly-report/"* ]] || return 1
+  [[ "$output" == *"写し元の commit が 40 桁の SHA でない: plugins/weekly-report/"* ]] || return 1
+}
+
+@test "public plugin-editing rule: a developer-only word in it fails and names the word (fixture repo)" {
+  local fx="${BATS_TEST_TMPDIR}/repo2"
+  mkdir -p "$fx"
+  (cd "$REPO_ROOT" && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$fx"
+  cp "$DOC" "${fx}/docs/public-private-split.md"
+  git -C "$fx" init -q
+  printf '\n開発用 clone の場所は CLAUDE_HARNESS_DEV_DIR で決める\n' >>"${fx}/rules/plugin-editing.md"
+  git -C "$fx" add -A
+  run check_split "$fx" "${fx}/docs/public-private-split.md"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Harness 開発者向けの語がある: CLAUDE_HARNESS_DEV_DIR"* ]] || return 1
+}
+
+@test "public plugin-editing rule: removing it fails and names the path (fixture repo)" {
+  local fx="${BATS_TEST_TMPDIR}/repo3"
+  mkdir -p "$fx"
+  (cd "$REPO_ROOT" && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$fx"
+  cp "$DOC" "${fx}/docs/public-private-split.md"
+  rm -f "${fx}/rules/plugin-editing.md"
+  git -C "$fx" init -q
+  git -C "$fx" add -A
+  run check_split "$fx" "${fx}/docs/public-private-split.md"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"公開版のプラグイン編集ルールが無い: rules/plugin-editing.md"* ]] || return 1
+}
+
+@test "public plugin-editing rule: a non-public class in the split table fails" {
+  edit_doc '| `rules/plugin-editing.md` | 公開版 |' '| `rules/plugin-editing.md` | 個人版 |'
+  run check_split "$REPO_ROOT" "$WORK_DOC"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"分類が公開版でない"* ]] || return 1
 }
 
 @test "dropping a section row fails" {

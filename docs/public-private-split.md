@@ -61,6 +61,7 @@
 | `rules/link-when-requesting-review.md` | 公開版 | 人に操作を頼むときに URL を添える規則で、住人のふるまいに効く（下書きの「配る」） |
 | `rules/one-off-no-script.md` | 公開版 | 一回限りの操作をスクリプトにしない規則で、誰の環境でも意味がある（下書きの「開発用」） |
 | `rules/perspective-casting.md` | 公開版 | 主に上げるかどうかの判断の規則で、住人のふるまいに効く。下書きの「出さない」から変えた（casting プラグインを公開版にしたのと同じ理由） |
+| `rules/plugin-editing.md` | 公開版 | 全員に要る部分（インストール先とローカルコピーを直接編集しない・ルールの symlink も持つリポジトリ側で直す・部品は開発用 clone で直す・手動で削除しない）は誰の環境でも意味があるので公開版に残した。当初は丸ごと個人版だったが、主の指摘で分けた。Harness 開発者向けの部分は個人版の `rules/harness-dev.md` に移した（公開版と同名だと `~/.claude/rules/` で衝突するため名前を変えた） |
 | `rules/subagent-model-selection.md` | 公開版 | サブエージェントのモデルの選び方で、誰の環境でも意味がある（下書きの「開発用」） |
 | `output-styles/readable.md` | 公開版 | 住人の書き方に効く Output Style（下書きの「配る」） |
 | `scripts/lint.sh` | 公開版 | このリポジトリの lint で、公開版の CI が使う |
@@ -99,7 +100,6 @@
 
 | 部品 | 移した先 | 写し元の commit |
 |---|---|---|
-| `rules/plugin-editing.md` | `oratta/claude-harness-oratta` の `rules/plugin-editing.md` | `647caaf088409abc68cc8c45587b1310e31e34f7` |
 | `plugins/weekly-report/` | `oratta/claude-harness-oratta` の `plugins/weekly-report/`（同じ名前のプラグイン） | `647caaf088409abc68cc8c45587b1310e31e34f7` |
 | `plugins/daily-report/` | `oratta/claude-harness-oratta` の `plugins/daily-report/`（同じ名前のプラグイン） | `647caaf088409abc68cc8c45587b1310e31e34f7` |
 | `plugins/dev-workflow/docs/auto-merge-deployments.md` | `oratta/claude-harness-oratta` の `docs/auto-merge-deployments.md` | `647caaf088409abc68cc8c45587b1310e31e34f7` |
@@ -107,6 +107,8 @@
 | `plugins/capability-registry/skills/capability-registry/1password.md` | `oratta/claude-harness-oratta` の `plugins/capability-registry-oratta/skills/capability-registry-oratta/1password.md` | `647caaf088409abc68cc8c45587b1310e31e34f7` |
 | `plugins/capability-registry/skills/capability-registry/SKILL.md#表記規約（生成文にも適用すること）` | `oratta/claude-harness-oratta` の `plugins/capability-registry-oratta/skills/capability-registry-oratta/SKILL.md` の同じ見出しの節 | `647caaf088409abc68cc8c45587b1310e31e34f7` |
 | `plugins/capability-registry/skills/capability-registry/SKILL.md#資格情報の階層（どこに置くかはプロジェクトごとに決めない）` | `oratta/claude-harness-oratta` の `plugins/capability-registry-oratta/skills/capability-registry-oratta/SKILL.md` の同じ見出しの節 | `647caaf088409abc68cc8c45587b1310e31e34f7` |
+
+`rules/plugin-editing.md` は表に載せない。ファイル 1 本をまるごと移したのではなく、全員に要る部分を公開版に残し、Harness 開発者向けの部分（`CLAUDE_HARNESS_DEV_DIR` による開発用 clone の解決、別プロジェクト作業中に Harness を直す手順、`/wt-setup` の注意、`sync.sh` の扱い、版を上げないことと `changes/` の記録と Draft PR）だけを `oratta/claude-harness-oratta` の `rules/harness-dev.md` に移した。写し元の commit は `647caaf088409abc68cc8c45587b1310e31e34f7`。
 
 部品と一緒に移した付属のファイルと仕様: `plugins/capability-registry/tests/fmtoken.bats`（個人版の `plugins/capability-registry-oratta/tests/fmtoken.bats`）、`openspec/specs/` の `capability-registry-fmtoken`・`weekly-report-jsonl-direct`・`report-command-hygiene`・`report-noninteractive-mode`（個人版の `openspec/specs/` の同名）。公開版に個人版の固有名が残っていないことは、個人版の `scripts/check-public-leak.sh <公開版の作業ツリー>` で確かめる。
 

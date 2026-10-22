@@ -38,4 +38,4 @@ CI を将来追加する場合の設計指針（Draft PR では skip するパ�
 
 この開発場所と PR 運用のルールは **「Claude Code プラグインの配布元リポジトリ（install 先が自動更新される）」** だから必要なもので、一般の作業 repo には適用しない。
 
-関連: `~/.claude/rules/git-commit-policy.md`（細かい commit 推奨、main 直 push 禁止）、`~/.claude/rules/plugin-editing.md`（個人版が入っていれば。プラグインをどこで編集するか・変更の記録）。
+関連: `~/.claude/rules/git-commit-policy.md`（細かい commit 推奨、main 直 push 禁止）、`~/.claude/rules/plugin-editing.md`（プラグインをどこで編集するか）。
