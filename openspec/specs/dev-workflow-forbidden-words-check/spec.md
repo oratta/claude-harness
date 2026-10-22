@@ -19,7 +19,7 @@ TBD - created by archiving change forbidden-words-check. Update Purpose after ar
 
 スクリプトは検査するファイルの一覧を標準入力から 1 行 1 パス（`--root` からの相対）で読み、引数は次のとおりでなければならない（MUST）。`--root <dir>`（必須。検査の cwd）、`--dict <file>`（1 回以上。複数回指定できる）、`--allow <file>`（0 回以上。複数回指定できる）、`--name <名前>`（任意。既定 `forbidden-words-check`。`gh` が引けないときの通知の先頭に使う）、`--count-file <file>`（任意。違反の件数を 10 進数 1 行で書き込む）。空行は無視する。パスの相対の基準は `--root` で、`--dict`・`--allow`・`--count-file` の相対パスも `--root` から解く。
 
-終了コードは、違反が 0 件なら 0、1 件以上なら 1、引数の誤り（必須の引数が無い・知らない引数・`--root` に移れない）なら 2 でなければならない（MUST）。違反は 1 件 1 行で標準エラーに出し、標準出力には何も出してはならない（MUST NOT）。`--count-file` を指定したときは、違反が 0 件でも `0` を書く。
+終了コードは、違反が 0 件なら 0、1 件以上なら 1、引数の誤り（必須の引数が無い・知らない引数・`--root` に移れない）または `--count-file` に書けないとき（違反の件数の有無によらない）なら 2 でなければならない（MUST）。書けないときは `<--name の値>: 件数を書けない: <パス>` を標準エラーに出す。違反は 1 件 1 行で標準エラーに出し、標準出力には何も出してはならない（MUST NOT）。`--count-file` を指定したときは、違反が 0 件でも `0` を書く。
 
 環境変数 `FORBIDDEN_WORDS_NO_GH` が空でなければ `gh` を呼んではならない（MUST NOT）。`gh` は呼び出し元の PATH から探し、`--root` を cwd にして呼ばなければならない（MUST）。
 
@@ -34,6 +34,10 @@ TBD - created by archiving change forbidden-words-check. Update Purpose after ar
 #### Scenario: 引数の誤りは exit 2
 - **WHEN** `--root` を付けずに呼ぶ、または知らない引数を付けて呼ぶ
 - **THEN** 終了コード 2 で、標準エラーに使い方が出る
+
+#### Scenario: 件数の出力先に書けなければ exit 2
+- **WHEN** `--count-file` にディレクトリなど書き込めないパスを渡して呼ぶ（違反の有無によらない）
+- **THEN** 終了コード 2 で、標準エラーに `<--name の値>: 件数を書けない: <パス>` が出る
 
 ### Requirement: 辞書の書式と照合の規則
 
@@ -160,4 +164,3 @@ flatmate の `scripts/ship-check.sh` が次の形で呼んで、置き換え前�
 #### Scenario: 一覧にないファイルは検査されない
 - **WHEN** 辞書の語を含むファイルが標準入力の一覧に含まれていない
 - **THEN** 違反は出ない。集合の選定は呼び出し側の責務である
-

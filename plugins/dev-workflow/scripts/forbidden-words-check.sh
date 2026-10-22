@@ -15,7 +15,7 @@
 #   --count-file <file> 任意。違反の件数を 10 進数 1 行で書く（違反 0 件でも 0 を書く）
 # 環境変数:
 #   FORBIDDEN_WORDS_NO_GH  非空なら gh を呼ばない（書式と未使用の検査だけ）。gh は呼び出し元の PATH から探し、--root を cwd にして呼ぶ
-# 終了コード: 0 = 違反なし / 1 = 違反あり / 2 = 引数の誤り。違反は 1 件 1 行で stderr に出す。stdout には何も出さない。
+# 終了コード: 0 = 違反なし / 1 = 違反あり / 2 = 引数の誤り・--count-file に書けない。違反は 1 件 1 行で stderr に出す。stdout には何も出さない。
 #
 # 辞書: 1 行 1 語の固定文字列。空行と # 始まりは無視。大文字小文字を区別しない部分一致で、本文（バイナリは見ない）とパス名に当てる。
 # allow: 1 行 1 件 <path>:<語>:<第 3 欄>。空行と # 始まりは無視。第 3 欄は 2 つ目の : から行末まで。
@@ -215,7 +215,7 @@ fi
 
 # ── 結果 ─────────────────────────────────────────────────────
 if [ -n "$COUNT_FILE" ]; then
-  printf '%s\n' "$VIOLATIONS" > "$COUNT_FILE"
+  printf '%s\n' "$VIOLATIONS" > "$COUNT_FILE" 2>/dev/null || { echo "$NAME: 件数を書けない: $COUNT_FILE" >&2; exit 2; }
 fi
 [ "$VIOLATIONS" -gt 0 ] && exit 1
 exit 0

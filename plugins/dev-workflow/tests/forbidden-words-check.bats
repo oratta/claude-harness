@@ -376,3 +376,20 @@ EOF
   n="$(printf '%s\n' "$stderr" | grep -c .)"
   [ "$(cat "$COUNT")" = "$n" ] || { echo "count=$(cat "$COUNT") lines=$n" >&2; return 1; }
 }
+
+@test "unwritable --count-file exits 2 with a message" {
+  put a.txt 'clean'
+  mkdir -p "$D/countdir"
+  run --separate-stderr bash -c \
+    'printf "a.txt\n" | bash "$1" --root "$2" --dict dict.txt --count-file countdir' _ "$SCRIPT" "$D"
+  [ "$status" -eq 2 ] || { echo "status=$status stderr=$stderr" >&2; return 1; }
+  has "$stderr" "forbidden-words-check: 件数を書けない: countdir" || return 1
+}
+
+@test "unwritable --count-file exits 2 even when there are violations" {
+  put a.txt 'zorbix'
+  mkdir -p "$D/countdir"
+  run --separate-stderr bash -c \
+    'printf "a.txt\n" | bash "$1" --root "$2" --dict dict.txt --count-file countdir' _ "$SCRIPT" "$D"
+  [ "$status" -eq 2 ] || { echo "status=$status" >&2; return 1; }
+}
