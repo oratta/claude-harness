@@ -39,7 +39,7 @@ pull（ff-only）→ `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.
 | `link-when-requesting-review.md` | 人間に確認を求めるときは必ずクリック可能なフル URL を添える・リンクを壊さない書式と、括弧で囲むと 404 になる理由 | なし（見出しを外しただけで全文を残す） |
 | `perspective-casting.md` | 「観点の配役」返信前チェック5手順と各手順の判定（回復不能側に倒す・主へ上げる条件・全観点移譲時の相談・裁定の実行と事後報告）・フィードバックを受けたターンでの配役表更新 | 各手順の中身・配役表の作り方・判例の書き方・相談と仲裁の手順は `casting:casting` スキル |
 | `one-off-no-script.md` | 一回限りの操作は操作一覧を作って手で実行・スクリプトは繰り返すか件数が多いときだけ・前提で起きない指摘は反証して閉じ、レビューは 2 周で打ち切る・汎用ツール化のサインで手を止める | 経緯（flatmate#599 / #608）と汎用ツール化の見分け方は `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/one-off-operations.md` |
-| `plugin-editing.md`（個人版が入っていれば） | プラグイン編集は marketplace dir の外の開発用 clone で・ローカルコピー禁止・`CLAUDE_HARNESS_DEV_DIR` で場所を解決・worktree の前に fetch・`/wt-setup` で worktree を作らない・Draft PR まで作る・手動削除しない | `~/.claude/plugins/marketplaces/oratta-claude-harness/docs/worktree-recovery.md` |
+| `plugin-editing.md` | プラグインは自動更新されるインストール先やローカルコピーを直接編集せず、持つリポジトリの開発用 clone で直す・ルールの symlink も同じ・手動削除しない | `~/.claude/plugins/marketplaces/oratta-claude-harness/docs/worktree-recovery.md` |
 | `subagent-model-selection.md` | サブエージェントの `model` 明示必須・役割ベースのティア対応表・最上位ティアの前に `FABLE_BUDGET_MODE` を確認 | 経緯・枠残量モード・強制層・適用範囲・対応表の保守は `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/model-tiers.md` |
 
 `README.md` はこのディレクトリで唯一 symlink されず、常時注入の集計にも入らない。だから表が長くなっても固定分は増えない。

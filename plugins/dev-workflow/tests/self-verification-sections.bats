@@ -17,8 +17,6 @@ setup() {
   TARGETS=(
     "plugins/worktree/skills/wt-setup/SKILL.md"
     "plugins/worktree/skills/wt-clean/SKILL.md"
-    "plugins/daily-report/skills/daily-report/SKILL.md"
-    "plugins/weekly-report/skills/weekly-report/SKILL.md"
     "plugins/infra/skills/infra-setup/SKILL.md"
     "plugins/dev-workflow/skills/push-guard-setup/SKILL.md"
   )
@@ -36,8 +34,6 @@ _artifact_kw() {
   case "$1" in
     *wt-setup*)     echo "worktree" ;;
     *wt-clean*)     echo "worktree" ;;
-    *daily-report*) echo "diary" ;;
-    *weekly-report*) echo "weekly" ;;
     *infra-setup*)  echo "infra" ;;
     *push-guard-setup*) echo "pre-push" ;;
   esac

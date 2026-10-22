@@ -45,6 +45,7 @@ CONFIRMED_PUBLIC = [
 KINDS = {"固有名", "環境依存"}
 TABLE_HEADER = ["部品", "分類", "理由"]
 LIST_HEADER = ["場所", "種別", "内容", "直す issue"]
+MOVED_HEADER = ["部品", "移した先", "写し元の commit"]
 ATTACH_FILES = {".claude-plugin/plugin.json", "README.md", "CHANGELOG.md", "hooks/hooks.json"}
 ATTACH_DIRS = ("changes/", "tests/")
 
@@ -136,6 +137,53 @@ for k in sorted(expected - top_rows):
     err(f"表に行が無い部品: {k}")
 for k in sorted(top_rows - expected):
     err(f"表の行が部品に当たらない: {k}")
+
+# --- 個人版に移した部品（#1129）: 節「個人版に移した部品」の表から読み、公開版に無いことを確かめる ---
+with open(os.path.join(root, ".claude-plugin/marketplace.json"), encoding="utf-8") as f:
+    bundled = {n for b in json.load(f).get("bundles", []) for n in b.get("plugins", [])}
+def has_heading(path, sec):
+    full = os.path.join(root, path)
+    if path not in tracked or not os.path.isfile(full):
+        return False
+    with open(full, encoding="utf-8") as f:
+        return any(l.startswith("## ") and l[3:].strip() == sec for l in f.read().splitlines())
+for ln, (part, dest, sha) in read_table(MOVED_HEADER):
+    key = unquote(part)
+    if not unquote(dest):
+        err(f"{ln} 行目: 移した先が空: {key}")
+    if not re.fullmatch(r"[0-9a-f]{40}", unquote(sha)):
+        err(f"{ln} 行目: 写し元の commit が 40 桁の SHA でない: {key} → {sha}")
+    if key in seen:
+        err(f"{seen[key]} 行目: 移した部品の行が仕分けの表に残っている: {key}")
+    if "#" in key:
+        path, sec = key.split("#", 1)
+        if has_heading(path, sec):
+            err(f"移した節の見出しが公開版に残っている: {key}")
+        continue
+    if git_files(key):
+        err(f"移した部品が公開版に残っている: {key}")
+    m = re.fullmatch(r"plugins/([^/]+)/", key)
+    if m:
+        if m.group(1) in plugins:
+            err(f"移したプラグインが marketplace.json の plugins[] に残っている: {m.group(1)}")
+        if m.group(1) in bundled:
+            err(f"移したプラグインが marketplace.json の bundle に残っている: {m.group(1)}")
+
+# --- 公開版のプラグイン編集ルール（#1129）: 全員に要る部分だけを持つ ---
+PE = "rules/plugin-editing.md"
+if PE not in tracked or not os.path.isfile(os.path.join(root, PE)):
+    err(f"公開版のプラグイン編集ルールが無い: {PE}")
+else:
+    with open(os.path.join(root, PE), encoding="utf-8") as f:
+        pe_text = f.read()
+    for w in ["CLAUDE_HARNESS_DEV_DIR", "/wt-setup", "sync.sh", "claude-harness-oratta", "Draft PR"]:
+        if w in pe_text:
+            err(f"公開版のプラグイン編集ルールに Harness 開発者向けの語がある: {w}")
+    for w in ["/plugin uninstall", "/plugin install", "/reload-plugins"]:
+        if w not in pe_text:
+            err(f"公開版のプラグイン編集ルールに復旧の手順の語が無い: {w}")
+    if cls_of.get(PE) != "公開版":
+        err(f"仕分けの表の {PE} の分類が公開版でない: {cls_of.get(PE)}")
 
 # --- 分割したプラグインを部品の行で覆う ---
 def headings(path):
@@ -341,11 +389,119 @@ PY
 }
 
 @test "dropping a component row of a split plugin fails and names the file" {
-  drop_row '| `plugins/capability-registry/scripts/fmtoken.sh` |'
+  drop_row '| `plugins/capability-registry/scripts/browser-guard.sh` |'
   run check_split "$REPO_ROOT" "$WORK_DOC"
   echo "$output"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"行の決まらないファイル: plugins/capability-registry/scripts/fmtoken.sh"* ]] || return 1
+  [[ "$output" == *"行の決まらないファイル: plugins/capability-registry/scripts/browser-guard.sh"* ]] || return 1
+}
+
+# --- 個人版に移した部品（#1129）---
+# 守備範囲: 移した部品が公開版に戻ること・仕分けの表に残ること・移した記録の行が移した先か SHA を欠くこと。
+# 個人版の中身が写し元と一致するかと、公開版の文に残る個人版の固有名は個人版の check-public-leak.sh と人のレビューが見る。
+
+@test "moved parts: putting fmtoken.sh back fails and names the path (fixture repo)" {
+  local fx="${BATS_TEST_TMPDIR}/repo"
+  mkdir -p "$fx"
+  (cd "$REPO_ROOT" && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$fx"
+  cp "$DOC" "${fx}/docs/public-private-split.md"
+  git -C "$fx" init -q
+  printf '# fmtoken\n' >"${fx}/plugins/capability-registry/scripts/fmtoken.sh"
+  git -C "$fx" add -A
+  run check_split "$fx" "${fx}/docs/public-private-split.md"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"移した部品が公開版に残っている: plugins/capability-registry/scripts/fmtoken.sh"* ]] || return 1
+}
+
+@test "moved parts: a row for fmtoken.sh left in the split table fails" {
+  edit_doc '| `plugins/capability-registry/scripts/browser-guard.sh` |' \
+    '| `plugins/capability-registry/scripts/fmtoken.sh` | 個人版 | 残した行 |
+| `plugins/capability-registry/scripts/browser-guard.sh` |'
+  run check_split "$REPO_ROOT" "$WORK_DOC"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"移した部品の行が仕分けの表に残っている: plugins/capability-registry/scripts/fmtoken.sh"* ]] || return 1
+}
+
+@test "moved parts: each row of the moved table has a destination and a 40-digit source commit" {
+  run python3 -I - "$DOC" <<'PY'
+import re, sys
+lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+start = [i for i, l in enumerate(lines) if re.fullmatch(r"\|\s*部品\s*\|\s*移した先\s*\|\s*写し元の commit\s*\|", l.strip())]
+assert len(start) == 1, f"表が {len(start)} 個"
+rows = []
+for l in lines[start[0] + 2:]:
+    if not l.strip().startswith("|"):
+        break
+    rows.append([c.strip() for c in l.strip()[1:-1].split("|")])
+parts = {r[0].strip("`") for r in rows}
+want = {"plugins/weekly-report/", "plugins/daily-report/",
+        "plugins/dev-workflow/docs/auto-merge-deployments.md",
+        "plugins/capability-registry/scripts/fmtoken.sh",
+        "plugins/capability-registry/skills/capability-registry/1password.md",
+        "plugins/capability-registry/skills/capability-registry/SKILL.md#表記規約（生成文にも適用すること）",
+        "plugins/capability-registry/skills/capability-registry/SKILL.md#資格情報の階層（どこに置くかはプロジェクトごとに決めない）"}
+assert want <= parts, f"足りない行: {sorted(want - parts)}"
+for r in rows:
+    assert r[1].strip("`"), f"移した先が空: {r[0]}"
+    assert re.fullmatch(r"`?[0-9a-f]{40}`?", r[2]), f"SHA でない: {r}"
+PY
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "moved parts: dropping the destination or the source commit of a moved row fails" {
+  run python3 -I - "$DOC" "$WORK_DOC" <<'PY'
+import re, sys
+src, dst = sys.argv[1:]
+text = open(src, encoding="utf-8").read()
+new, n = re.subn(r"^(\| `plugins/weekly-report/` \|)[^|]*\|[^|]*\|$", r"\1  | xyz |", text, count=1, flags=re.M)
+assert n == 1, "移した記録に plugins/weekly-report/ の行が無い"
+open(dst, "w", encoding="utf-8").write(new)
+PY
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run check_split "$REPO_ROOT" "$WORK_DOC"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"移した先が空: plugins/weekly-report/"* ]] || return 1
+  [[ "$output" == *"写し元の commit が 40 桁の SHA でない: plugins/weekly-report/"* ]] || return 1
+}
+
+@test "public plugin-editing rule: a developer-only word in it fails and names the word (fixture repo)" {
+  local fx="${BATS_TEST_TMPDIR}/repo2"
+  mkdir -p "$fx"
+  (cd "$REPO_ROOT" && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$fx"
+  cp "$DOC" "${fx}/docs/public-private-split.md"
+  git -C "$fx" init -q
+  printf '\n開発用 clone の場所は CLAUDE_HARNESS_DEV_DIR で決める\n' >>"${fx}/rules/plugin-editing.md"
+  git -C "$fx" add -A
+  run check_split "$fx" "${fx}/docs/public-private-split.md"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Harness 開発者向けの語がある: CLAUDE_HARNESS_DEV_DIR"* ]] || return 1
+}
+
+@test "public plugin-editing rule: removing it fails and names the path (fixture repo)" {
+  local fx="${BATS_TEST_TMPDIR}/repo3"
+  mkdir -p "$fx"
+  (cd "$REPO_ROOT" && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$fx"
+  cp "$DOC" "${fx}/docs/public-private-split.md"
+  rm -f "${fx}/rules/plugin-editing.md"
+  git -C "$fx" init -q
+  git -C "$fx" add -A
+  run check_split "$fx" "${fx}/docs/public-private-split.md"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"公開版のプラグイン編集ルールが無い: rules/plugin-editing.md"* ]] || return 1
+}
+
+@test "public plugin-editing rule: a non-public class in the split table fails" {
+  edit_doc '| `rules/plugin-editing.md` | 公開版 |' '| `rules/plugin-editing.md` | 個人版 |'
+  run check_split "$REPO_ROOT" "$WORK_DOC"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"分類が公開版でない"* ]] || return 1
 }
 
 @test "dropping a section row fails" {
@@ -410,9 +566,9 @@ PY
 }
 
 @test "a component row that matches no file fails" {
-  edit_doc '| `plugins/capability-registry/scripts/fmtoken.sh` |' \
+  edit_doc '| `plugins/capability-registry/scripts/browser-guard.sh` |' \
     '| `plugins/capability-registry/scripts/no-such.sh` | 公開版 | 無いファイル |
-| `plugins/capability-registry/scripts/fmtoken.sh` |'
+| `plugins/capability-registry/scripts/browser-guard.sh` |'
   run check_split "$REPO_ROOT" "$WORK_DOC"
   echo "$output"
   [ "$status" -eq 1 ]
@@ -424,13 +580,15 @@ PY
   edit_doc "${anchor}
 |---|---|---|---|" "${anchor}
 |---|---|---|---|
-| \`plugins/capability-registry/scripts/fmtoken.sh:1\` | 固有名 | 個人版の部品 | 担い手なし |
+| \`scripts/lint.sh:1\` | 固有名 | 個人版の部品 | 担い手なし |
 | \`rules/no-such.md:1\` | 固有名 | 無いファイル | 担い手なし |
 | \`rules/dev-server.md:9999\` | 固有名 | 行数超え | 担い手なし |"
+  # 個人版の部品は #1129 で公開版から無くなったので、行を 1 つ個人版に変えて指す
+  python3 -I -c 'import sys; p = sys.argv[1]; t = open(p, encoding="utf-8").read(); o = "| `scripts/lint.sh` | 公開版 |"; assert o in t; open(p, "w", encoding="utf-8").write(t.replace(o, "| `scripts/lint.sh` | 個人版 |", 1))' "$WORK_DOC"
   run check_split "$REPO_ROOT" "$WORK_DOC"
   echo "$output"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"公開版に決まる部品に属さない（個人版）: plugins/capability-registry/scripts/fmtoken.sh:1"* ]] || return 1
+  [[ "$output" == *"公開版に決まる部品に属さない（個人版）: scripts/lint.sh:1"* ]] || return 1
   [[ "$output" == *"git 管理下に無い: rules/no-such.md"* ]] || return 1
   [[ "$output" == *"行数"*"rules/dev-server.md:9999"* ]] || return 1
 }
@@ -478,10 +636,10 @@ DELIVERED_SIX=(rules/communication-style.md rules/link-when-requesting-review.md
 NONDEV_SCOPE=(rules/README.md scripts/sync.sh scripts/test-auto-merge-workflow.sh plugins/capability-registry
   plugins/statusline plugins/worktree plugins/product-handover plugins/casting plugins/cost-ledger plugins/infra)
 
-# 検索の対象にする公開版のファイル（changes/・CHANGELOG.md・tests/・evals/ と、個人版に決まるファイルは除く）
+# 検索の対象にする公開版のファイル（changes/・CHANGELOG.md・tests/・evals/ を除く。個人版の部品は #1129 で公開版から無くなったので除く処理は無い）
 nondev_files() {
   git -C "$REPO_ROOT" ls-files -- "${NONDEV_SCOPE[@]}" \
-    | grep -v -E '/(changes|tests|evals)/|(^|/)CHANGELOG\.md$|capability-registry/scripts/fmtoken\.sh$|capability-registry/skills/capability-registry/1password\.md$'
+    | grep -v -E '/(changes|tests|evals)/|(^|/)CHANGELOG\.md$'
 }
 
 DEVWF_FLATMATE_FILES=(plugins/dev-workflow/references/pr-body-format.md
@@ -494,10 +652,10 @@ DEVWF_FLATMATE_FILES=(plugins/dev-workflow/references/pr-body-format.md
 
 DEVWF_DEVDIR_FILES=(plugins/dev-workflow/references/ci-watch.md plugins/dev-workflow/skills/memory-refresh/SKILL.md)
 
-# dev-workflow の公開版のファイル（個人版に決まる auto-merge-deployments.md、changes/・CHANGELOG.md・tests/・evals/ を除く）
+# dev-workflow の公開版のファイル（changes/・CHANGELOG.md・tests/・evals/ を除く）
 devwf_public_files() {
   git -C "$REPO_ROOT" ls-files -- plugins/dev-workflow \
-    | grep -v -E '/(changes|tests|evals)/|(^|/)CHANGELOG\.md$|plugins/dev-workflow/docs/auto-merge-deployments\.md$'
+    | grep -v -E '/(changes|tests|evals)/|(^|/)CHANGELOG\.md$'
 }
 
 # --- 公開版の部品の禁止語検査: 共有スクリプトの呼び出しと、その検査（#1207）---
@@ -546,14 +704,6 @@ pn_stage() {
   tar -C "$REPO_ROOT" -cf - -T "${BATS_TEST_TMPDIR}/list-$1.txt" | tar -C "$PN_ROOT" -xf -
 }
 
-# 個人版に決まる節（capability-registry の SKILL.md の「表記規約」「資格情報の階層」）を空行にする（行番号は保つ）
-pn_blank_personal() {
-  local f="$1/plugins/capability-registry/skills/capability-registry/SKILL.md"
-  [ -f "$f" ] || return 0
-  awk '/^## /{ skip = ($0 ~ /表記規約/ || $0 ~ /資格情報の階層/) } { print (skip ? "" : $0) }' "$f" > "${f}.new"
-  mv "${f}.new" "$f"
-}
-
 # 共有スクリプトを呼ぶ。引数: 呼び出しの名前 検査 root。標準入力: ファイルの一覧。
 # 辞書と allow は元のリポジトリの絶対パスで渡す（root が一時ディレクトリでも解けるように）。
 # PN_ALLOW が空でなければ、その呼び出しの allow の代わりにそのパスを渡す。
@@ -584,12 +734,9 @@ pn_append() {
   PN_LINE="$(wc -l < "$1" | tr -d ' ')"
 }
 
-# 引数: 呼び出しの名前 → 段階化して（nondev 系は個人版の節を空行にして）PN_ROOT に入れる
+# 引数: 呼び出しの名前 → 段階化して PN_ROOT に入れる（個人版の節を空行にする処理は #1129 で外した）
 pn_ready() {
   pn_stage "$1"
-  case "$1" in
-    nondev*) pn_blank_personal "$PN_ROOT" ;;
-  esac
 }
 
 pn_names() { echo "nondev nondev-pc-path devwf-moko devwf-flatmate devwf-dev-dir"; }
@@ -694,21 +841,18 @@ pn_names() { echo "nondev nondev-pc-path devwf-moko devwf-flatmate devwf-dev-dir
   [[ "$output" == *"何も打ち消していない"* ]] || return 1
 }
 
-@test "pn: a dictionary word inside the personal sections of capability-registry does not fail" {
+@test "pn: a dictionary word added to the principles section of capability-registry SKILL.md fails" {
   local word f
   word="$(pn_first_word moko)"
   f="plugins/capability-registry/skills/capability-registry/SKILL.md"
-  # 節の見出しの直後に語の行を足してから個人版の節を空行にする
-  pn_stage nondev
-  awk -v w="$word" '{ print } /^## (表記規約|資格情報の階層)/ { print w }' "${PN_ROOT}/${f}" > "${PN_ROOT}/${f}.new"
+  # 個人版の節を除く手当ては無いので、SKILL.md のどの節に書いても当たる
+  pn_ready nondev
+  awk -v w="$word" '{ print } /^## 原則/ { print w }' "${PN_ROOT}/${f}" > "${PN_ROOT}/${f}.new"
   mv "${PN_ROOT}/${f}.new" "${PN_ROOT}/${f}"
   run pn_check nondev "$PN_ROOT"
-  echo "unblanked: $output"
+  echo "$output"
   [ "$status" -eq 1 ] || return 1
-  pn_blank_personal "$PN_ROOT"
-  run pn_check nondev "$PN_ROOT"
-  echo "blanked: $output"
-  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"${f}:"*":${word}"* ]] || return 1
 }
 
 @test "pn: the dictionary has six files and nine distinct words" {
