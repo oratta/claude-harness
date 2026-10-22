@@ -1,11 +1,11 @@
 ## 1. テストを先に書く（落ちることを確かめる）
 
-- [ ] 1.1 `tests/public-private-split.bats` に、spec「固有記述の一覧に担い手なしの行を残さない」のテストを足す。(a) 実際の文書の一覧で「直す issue」が「担い手なし」の行が 0 件（既存の「no dev-workflow row in the listing is left without an owner」を、`plugins/dev-workflow/` の行に限らず一覧の全体に広げる）、(b) 一時の文書に「担い手なし」の行を足すと落ちる、(c) 一覧の行が 0 件でも形の検査（埋め込み Python の `if not listing` の「固有記述の一覧に行が無い」）が落ちない。(c) のために `if not listing` の検査を外し、見出しの行 `LIST_HEADER` があることだけを確かめる形にする。触る範囲: tests/public-private-split.bats:246-247、tests/public-private-split.bats:664-669、tests/public-private-split.bats:612-710（Orca 経路の節）
-- [ ] 1.2 `bats tests/public-private-split.bats` で、足したテストのうち (c)（一覧が空でも通る）は一覧にまだ行があるうちは検査できないので、一時の文書で行を消して確かめる。(a)(b) は通る見込みで、(b) は担い手なしの行を足すと落ちることを確かめる。既存のテストが通ることを確かめる
+- [x] 1.1 `tests/public-private-split.bats` に、spec「固有記述の一覧に担い手なしの行を残さない」のテストを足す。(a) 実際の文書の一覧で「直す issue」が「担い手なし」の行が 0 件（既存の「no dev-workflow row in the listing is left without an owner」を、`plugins/dev-workflow/` の行に限らず一覧の全体に広げる）、(b) 一時の文書に「担い手なし」の行を足すと落ちる、(c) 一覧の行が 0 件でも形の検査（埋め込み Python の `if not listing` の「固有記述の一覧に行が無い」）が落ちない。(c) のために `if not listing` の検査を外し、見出しの行 `LIST_HEADER` があることだけを確かめる形にする。触る範囲: tests/public-private-split.bats:246-247、tests/public-private-split.bats:664-669、tests/public-private-split.bats:612-710（Orca 経路の節）
+- [x] 1.2 `bats tests/public-private-split.bats` で、足したテストのうち (c)（一覧が空でも通る）は一覧にまだ行があるうちは検査できないので、一時の文書で行を消して確かめる。(a)(b) は通る見込みで、(b) は担い手なしの行を足すと落ちることを確かめる。既存のテストが通ることを確かめる
 
 ## 2. 行ごとの判定（design D1）
 
-- [ ] 2.1 一覧の担い手が #1177 の 25 件を、行番号でなく候補語 `git grep -n -i orca` と `git grep -n -w cld`（`changes/`・`CHANGELOG.md`・`tests/`・`evals/`・保留の部品を除く）で現在の本文に照合し直し、各行を読んで下の仮の判定を確かめる。違っていたら判定を変え、実施欄の表に最終の判定（直す／基準で外す）と理由を 1 行ずつ残す。あわせて、一覧に無い Orca の語の当たり（「部品ごとの欄」の表の 495〜502 行のほか、例として develop `SKILL.md:508`〔`reap` の説明〕・`scripts/epic-launch-tmux.sh:19`〔「orca は呼ばない」〕・`scripts/epic-state.sh:86`〔`launcher == "orca"` の検証〕）が基準に当たるか直すかも同じ表に残す
+- [x] 2.1 一覧の担い手が #1177 の 25 件を、行番号でなく候補語 `git grep -n -i orca` と `git grep -n -w cld`（`changes/`・`CHANGELOG.md`・`tests/`・`evals/`・保留の部品を除く）で現在の本文に照合し直し、各行を読んで下の仮の判定を確かめる。違っていたら判定を変え、実施欄の表に最終の判定（直す／基準で外す）と理由を 1 行ずつ残す。あわせて、一覧に無い Orca の語の当たり（「部品ごとの欄」の表の 495〜502 行のほか、例として develop `SKILL.md:508`〔`reap` の説明〕・`scripts/epic-launch-tmux.sh:19`〔「orca は呼ばない」〕・`scripts/epic-state.sh:86`〔`launcher == "orca"` の検証〕）が基準に当たるか直すかも同じ表に残す
 
 仮の判定:
 
@@ -43,24 +43,40 @@
 
 各行は design D1 に従う。行番号は仕様づくりの時点の値で、ずれていたら候補語の `git grep` で探し直す。
 
-- [ ] 3.1 `README.md` のエピックの説明を、起動部品（Orca・tmux）と、サブエージェント方式の並びで書き直す。触る範囲: plugins/dev-workflow/README.md:15
-- [ ] 3.2 develop `SKILL.md` の 487・511・537・539・543（および判定で「直す」になった行）を書き直す。「部品ごとの欄」の表（493〜502 行）は変えない。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:487、plugins/dev-workflow/skills/develop/SKILL.md:511、plugins/dev-workflow/skills/develop/SKILL.md:537-543
-- [ ] 3.3 `reply-after-idle.md` の 3・5・64 を書き直す。触る範囲: plugins/dev-workflow/skills/develop/references/reply-after-idle.md:3、plugins/dev-workflow/skills/develop/references/reply-after-idle.md:5、plugins/dev-workflow/skills/develop/references/reply-after-idle.md:64
-- [ ] 3.4 `owner-reply-check.sh` の 33・52（コメントだけ。判定のコードと正規表現は触らない）、`declarations.md` の 83・91・103、`stages/pass.md` の 97 を書き直す。触る範囲: plugins/dev-workflow/scripts/owner-reply-check.sh:33、plugins/dev-workflow/scripts/owner-reply-check.sh:52、plugins/dev-workflow/skills/pr-review-gate/declarations.md:83-103、plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:97
-- [ ] 3.5 文面を固定している dev-workflow の bats（例: `plugins/dev-workflow/tests/epic-dispatch.bats` の develop `SKILL.md` を読むテスト、`owner-reply-check.sh` の bats）が直した文を求めて落ちるなら、新しい文に合わせる（期待する挙動は変えない）。`bats plugins/dev-workflow/tests/` が通る
+- [x] 3.1 `README.md` のエピックの説明を、起動部品（Orca・tmux）と、サブエージェント方式の並びで書き直す。触る範囲: plugins/dev-workflow/README.md:15
+- [x] 3.2 develop `SKILL.md` の 487・511・537・539・543（および判定で「直す」になった行）を書き直す。「部品ごとの欄」の表（493〜502 行）は変えない。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:487、plugins/dev-workflow/skills/develop/SKILL.md:511、plugins/dev-workflow/skills/develop/SKILL.md:537-543
+- [x] 3.3 `reply-after-idle.md` の 3・5・64 を書き直す。触る範囲: plugins/dev-workflow/skills/develop/references/reply-after-idle.md:3、plugins/dev-workflow/skills/develop/references/reply-after-idle.md:5、plugins/dev-workflow/skills/develop/references/reply-after-idle.md:64
+- [x] 3.4 `owner-reply-check.sh` の 33・52（コメントだけ。判定のコードと正規表現は触らない）、`declarations.md` の 83・91・103、`stages/pass.md` の 97 を書き直す。触る範囲: plugins/dev-workflow/scripts/owner-reply-check.sh:33、plugins/dev-workflow/scripts/owner-reply-check.sh:52、plugins/dev-workflow/skills/pr-review-gate/declarations.md:83-103、plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:97
+- [x] 3.5 文面を固定している dev-workflow の bats（例: `plugins/dev-workflow/tests/epic-dispatch.bats` の develop `SKILL.md` を読むテスト、`owner-reply-check.sh` の bats）が直した文を求めて落ちるなら、新しい文に合わせる（期待する挙動は変えない）。`bats plugins/dev-workflow/tests/` が通る
 
 ## 4. 一覧と基準
 
-- [ ] 4.1 `docs/public-private-split.md` の一覧から、2・3 で直した行と、基準で外すと判定した行をすべて消す（担い手が #1177 の行が 0 件になる）。一覧の説明文（「Orca 経路の行の担い手は #1177 にした」の段落）を、片付けた経緯に直し、一覧が空のとき見出しの行だけを残す。触る範囲: docs/public-private-split.md:142-175
-- [ ] 4.2 同じ文書の「載せない行の基準」に「差し替え可能な起動部品の 1 つとして Orca を並べた行」の項目を足す（「Orca・tmux」「部品ごとの欄の表」の例を添え、Orca だけを前提にした行は当たらないと書く。既存の例「Orca や端末から起動した Claude Code」は一般の製品を並べた例で、こちらは `epic-launch-<名前>.sh` の差し替えの部品として並べた行である違いを 1 文書く）。項目に「この基準は `epic-launch-orca.sh` が公開版に決まる前提で当てる。#1129 で個人版に決まったら、外した行を一覧に戻し担い手を #1129 にする」と書く。さらに文書に節「起動部品の 1 つとして一覧から外した行」を足し、外した行の場所（ファイル:行と、外した日の行の先頭の語）を 1 行ずつ載せる（置き場は docs。#1129 が読む文書なので、changes/ ではなくここに置く）。触る範囲: docs/public-private-split.md（節「載せない行の基準」とその後ろ）
-- [ ] 4.3 `tests/public-private-split.bats` から `DEVWF_ORCA_ROWS`・`check_orca_owner` と、それを使う 4 つのテストを外す。`epic-launch-orca.sh is a pending part…` のテストは、担い手の欄を `#1177` から `#1123` に変えて残す。触る範囲: tests/public-private-split.bats:612-710
-- [ ] 4.4 `bats tests/public-private-split.bats` が通り、`grep -c '#1177 |$' docs/public-private-split.md` が 0 で、一覧の担い手なしが 0 件である
+- [x] 4.1 `docs/public-private-split.md` の一覧から、2・3 で直した行と、基準で外すと判定した行をすべて消す（担い手が #1177 の行が 0 件になる）。一覧の説明文（「Orca 経路の行の担い手は #1177 にした」の段落）を、片付けた経緯に直し、一覧が空のとき見出しの行だけを残す。触る範囲: docs/public-private-split.md:142-175
+- [x] 4.2 同じ文書の「載せない行の基準」に「差し替え可能な起動部品の 1 つとして Orca を並べた行」の項目を足す（「Orca・tmux」「部品ごとの欄の表」の例を添え、Orca だけを前提にした行は当たらないと書く。既存の例「Orca や端末から起動した Claude Code」は一般の製品を並べた例で、こちらは `epic-launch-<名前>.sh` の差し替えの部品として並べた行である違いを 1 文書く）。項目に「この基準は `epic-launch-orca.sh` が公開版に決まる前提で当てる。#1129 で個人版に決まったら、外した行を一覧に戻し担い手を #1129 にする」と書く。さらに文書に節「起動部品の 1 つとして一覧から外した行」を足し、外した行の場所（ファイル:行と、外した日の行の先頭の語）を 1 行ずつ載せる（置き場は docs。#1129 が読む文書なので、changes/ ではなくここに置く）。触る範囲: docs/public-private-split.md（節「載せない行の基準」とその後ろ）
+- [x] 4.3 `tests/public-private-split.bats` から `DEVWF_ORCA_ROWS`・`check_orca_owner` と、それを使う 4 つのテストを外す。`epic-launch-orca.sh is a pending part…` のテストは、担い手の欄を `#1177` から `#1123` に変えて残す。触る範囲: tests/public-private-split.bats:612-710
+- [x] 4.4 `bats tests/public-private-split.bats` が通り、`grep -c '#1177 |$' docs/public-private-split.md` が 0 で、一覧の担い手なしが 0 件である
 
 ## 5. 記録
 
-- [ ] 5.1 変更の記録 `plugins/dev-workflow/changes/1177.md` に、直した行ごとに 1 行（元の場所・直し方）と、基準で外した行（部品ごとの欄の表を含む）の理由を書く。外した行の場所の一覧の正本は docs の節（4.2）で、ここには置かない。触る範囲: plugins/dev-workflow/changes/1177.md（新規）
-- [ ] 5.2 `bash scripts/test.sh` と `scripts/lint.sh` が通る
+- [x] 5.1 変更の記録 `plugins/dev-workflow/changes/1177.md` に、直した行ごとに 1 行（元の場所・直し方）と、基準で外した行（部品ごとの欄の表を含む）の理由を書く。外した行の場所の一覧の正本は docs の節（4.2）で、ここには置かない。触る範囲: plugins/dev-workflow/changes/1177.md（新規）
+- [x] 5.2 `bash scripts/test.sh` と `scripts/lint.sh` が通る
 
 ## 実施欄
 
-（実装の担い手が、2.1 の最終の判定の表と、実行したコマンドと結果をここに書く）
+最終の判定（仮の判定からの変更のみ。他は仮の判定のとおり）:
+
+| 場所 | 最終 | 理由 |
+|---|---|---|
+| `SKILL.md:491` | 基準で外す＋一部直した | Orca の部品の子と条件つきで書かれた並びの行。「オーナーが Orca の画面で」を「Orca の部品の子で」に直した |
+| `SKILL.md:511` | 基準で外す | 読み直すと `not in an Orca-managed worktree`・`not-in-orca` は「Orca の部品のとき」「tmux の部品では出ない」と条件つきで、tmux の部品と並ぶ |
+| `SKILL.md:512` | 直す | 「起動部品の印〔Orca の部品なら Orca の印〕から」に直した |
+| `SKILL.md:517` | 一覧から外す（Orca の語なし） | 候補語に当たらず載せない行 |
+| `SKILL.md:508`・`epic-launch-tmux.sh:19`・`epic-state.sh:86` | 基準で外す | Orca を tmux と並べた記述（508）、tmux の部品が orca を呼ばない説明（19）、`launcher == "orca" or "tmux"` の検証（86）。場所は docs の節に残した |
+
+実行したコマンドと結果:
+
+- `bats tests/public-private-split.bats` exit 0（最初に追加したテスト 2 件が落ちるのを確かめてから実装した）
+- `bats plugins/dev-workflow/tests` exit 0
+- `bash scripts/test.sh` exit 0（全スイート pass）
+- `bash scripts/lint.sh` exit 0
+- `openspec validate orca-route-lines-rewrite --type change --strict` exit 0
