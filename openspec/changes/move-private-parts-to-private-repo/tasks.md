@@ -42,10 +42,10 @@
 
 ## 5. 検証
 
-- [ ] 5.1 `bash scripts/test.sh` と `bash scripts/lint.sh` が通る。触る範囲: なし（実行だけ）
-- [ ] 5.2 個人版の作業ディレクトリで `scripts/check-public-leak.sh <公開版の作業ツリー>` を実行し、終了コード 0 を確かめる。当たりが出たら、公開版の文を直すか、経緯としてだけ名前を挙げる行なら個人版の allow に載せる。結果を PR 本文に載せる。触る範囲: なし（実行と PR 本文）
-- [ ] 5.3 個人版の作業ディレクトリと各プラグインで `claude plugin validate` が通る。触る範囲: なし（実行だけ）
-- [ ] 5.4 `openspec validate move-private-parts-to-private-repo --type change --strict` が通る。触る範囲: なし（確認だけ）
+- [x] 5.1 `bash scripts/test.sh` と `bash scripts/lint.sh` が通る。触る範囲: なし（実行だけ）
+- [x] 5.2 個人版の作業ディレクトリで `scripts/check-public-leak.sh <公開版の作業ツリー>` を実行し、終了コード 0 を確かめる。当たりが出たら、公開版の文を直すか、経緯としてだけ名前を挙げる行なら個人版の allow に載せる。結果を PR 本文に載せる。触る範囲: なし（実行と PR 本文）
+- [x] 5.3 個人版の作業ディレクトリと各プラグインで `claude plugin validate` が通る。触る範囲: なし（実行だけ）
+- [x] 5.4 `openspec validate move-private-parts-to-private-repo --type change --strict` が通る。触る範囲: なし（確認だけ）
 
 ## 6. 切り替えとマージ（オーナーと本体）
 
