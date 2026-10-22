@@ -22,11 +22,16 @@ pull（ff-only）→ `rules/*.md` を `~/.claude/rules/claude-harness/` へ、`o
 - **定期実行の足**: 定期実行は利用者の環境が担う（cron など）。鮮度の PC 横断可視化も利用者の環境の見張りに任せる
   （かつては手作業2点セット＝pull＋手動 symlink で、未実行の PC にはルールが
   一切届かないままドリフトしていた）
-- **別の Harness を重ねる（overlay）**: `~/.claude/plugins/marketplaces/<名前>/` の直下に `.harness-overlay`
-  （1 行目がサブディレクトリ名。`[a-z0-9][a-z0-9-]*`）を置いた marketplace があれば、同じ sync.sh が見つけて、
-  その `rules/*.md` を `~/.claude/rules/claude-harness/<サブディレクトリ名>/` に、`output-styles/*.md` を
-  `~/.claude/output-styles/` に張る。overlay が無い環境では何も出さず、この harness だけを張る。
-  名前が不正・重複・同名の実ファイルとぶつかる overlay は警告して飛ばし、終了コードを 0 にしない
+- **別の Harness を重ねる（overlay）**: 重ねてよいのは、利用者が許可ファイル `~/.claude/harness-overlays` に書いた marketplace だけ。
+  1 行に 1 つ、`~/.claude/plugins/marketplaces/` 直下のディレクトリ名を書く（空行と `#` で始まる行は無視）。
+  例: `printf '%s\n' <marketplace のディレクトリ名> >> ~/.claude/harness-overlays`。
+  許可は `CLAUDE_DIR` の下のファイルなので、端末・住人の起動処理・Claude のセッションのどこから sync.sh を呼んでも同じに読める。
+  許可した marketplace の直下に `.harness-overlay`（1 行目がサブディレクトリ名。`[a-z0-9][a-z0-9-]*`）があれば、
+  同じ sync.sh がその `rules/*.md` を `~/.claude/rules/claude-harness/<サブディレクトリ名>/` に、`output-styles/*.md` を
+  `~/.claude/output-styles/` に張り、pull もする。**許可に無い marketplace は `.harness-overlay` があっても張らず、pull もしない**
+  （入れただけの第三者の marketplace に、常時読まれる指示を張らせないため。許可に書くのは、その marketplace の指示を常時読ませてよいと
+  判断したものだけ）。許可ファイルが無い（または空行とコメントだけ）なら何も出さず、この harness だけを張る。
+  許可したのにディレクトリや印が無い、名前が不正・重複、同名の実ファイルとぶつかる overlay は、警告して飛ばし、終了コードを 0 にしない
 - **同名のルール**: この harness と overlay が同じファイル名のルールを持っても、張り先のディレクトリが別なので
   ぶつからず、両方が読まれる（上書きも優先順位もない）。内容が食い違うルールを作らないのは overlay を書く側の責任
 - **同名の output style**: `outputStyle` は名前で選ぶので、直下に 1 階層のまま張り、同名ならこの harness を優先して

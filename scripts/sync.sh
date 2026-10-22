@@ -21,11 +21,14 @@
 #   - rules/*.md → ~/.claude/rules/claude-harness/（出どころごとのサブディレクトリ。#1130）、
 #     output-styles/*.md → ~/.claude/output-styles/ に symlink。旧位置（~/.claude/rules/ 直下）の
 #     この harness を指す symlink は、新位置に張ったあとで消す
-#   - overlay（この harness に重ねる別の harness）: ~/.claude/plugins/marketplaces/*/ の直下に
-#     .harness-overlay（1 行目がサブディレクトリ名。[a-z0-9][a-z0-9-]*）を持つディレクトリ。
+#   - overlay（この harness に重ねる別の harness）: 利用者が許可ファイル ~/.claude/harness-overlays
+#     （1 行に 1 つ、~/.claude/plugins/marketplaces/ 直下のディレクトリ名。空行と # 行は無視）に
+#     書いた marketplace だけ。許可に無いものは .harness-overlay があっても張らず pull もしない。
+#     許可した marketplace の直下の .harness-overlay の 1 行目がサブディレクトリ名（[a-z0-9][a-z0-9-]*）。
 #     その rules/*.md は ~/.claude/rules/claude-harness/<名前>/ に、output-styles/*.md は
 #     ~/.claude/output-styles/ 直下（同名は公開側優先で、重なる側を警告）に symlink する。
-#     名前が不正・重複・同名の実ファイルとぶつかる overlay は警告して飛ばす。無ければ何も出さない
+#     許可したのにディレクトリ・印が無い、名前が不正・重複、同名の実ファイルとぶつかる overlay は警告して飛ばす。
+#     許可ファイルが無い（または空行とコメントだけ）なら何も出さない
 #   - 同名の「実ファイル」が既にある場合: 内容が同一なら symlink に置き換え（正本の一本化）、
 #     異なるなら触らず警告して非0（ローカル版を勝手に潰さない）
 #   - 壊れた symlink のうち、行き先がこの harness か ~/.claude/plugins/marketplaces/ の下のものは
@@ -140,36 +143,57 @@ for f in "$HARNESS_DIR"/rules/*.md; do
   fi
 done
 
-# overlay を重ねる
+# overlay を重ねる。重ねてよいのは利用者が許可ファイルに書いた marketplace だけ
+# （入れただけの第三者の marketplace が .harness-overlay を置くだけで常時効く指示を張れないようにする）。
+# 許可ファイルは CLAUDE_DIR の下に置く（端末・住人・Claude のセッションのどこから呼ばれても同じに読める）
+ALLOW_FILE="$CLAUDE_DIR/harness-overlays"
 seen=" "
-for d in "$MP_DIR"/*/; do
-  d="${d%/}"
-  [ -f "$d/.harness-overlay" ] || continue
-  [ "$d" = "$HARNESS_DIR" ] && continue
-  oname="$(head -n 1 "$d/.harness-overlay" 2>/dev/null | tr -d '\r')"
-  if ! printf '%s\n' "$oname" | grep -Eq '^[a-z0-9][a-z0-9-]*$'; then
-    echo "[harness-sync] overlay の名前が空か不正のため飛ばします（$d/.harness-overlay の 1 行目は [a-z0-9][a-z0-9-]*）" >&2
-    rc=1
-    continue
-  fi
-  case "$seen" in
-    *" $oname "*)
-      echo "[harness-sync] overlay の名前 $oname が重複しているため飛ばします: $d" >&2
+if [ -f "$ALLOW_FILE" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="$(printf '%s' "$line" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    case "$line" in ""|"#"*) continue ;; esac
+    case "$line" in
+      */*|.*)
+        echo "[harness-sync] 許可ファイルの行が不正のため飛ばします（ディレクトリ名に / を含まず . で始まらないこと）: $line" >&2
+        rc=1
+        continue ;;
+    esac
+    d="$MP_DIR/$line"
+    if [ ! -d "$d" ]; then
+      echo "[harness-sync] 許可した overlay のディレクトリがありません。飛ばします: $line" >&2
       rc=1
-      continue ;;
-  esac
-  seen="$seen$oname "
-  if [ -e "$PUB_DST/$oname" ] && { [ -L "$PUB_DST/$oname" ] || [ ! -d "$PUB_DST/$oname" ]; }; then
-    echo "[harness-sync] $PUB_DST/$oname が実ファイルか symlink のため overlay を飛ばします: $d" >&2
-    rc=1
-    continue
-  fi
-  if [ "${1:-}" != "--no-pull" ]; then
-    pull_repo "$d"
-  fi
-  link_dir "$d/rules" "$PUB_DST/$oname" "$d" 0
-  link_dir "$d/output-styles" "$CLAUDE_DIR/output-styles" "$d" 0
-done
+      continue
+    fi
+    if [ ! -f "$d/.harness-overlay" ]; then
+      echo "[harness-sync] 許可した $line の直下に .harness-overlay がありません。飛ばします" >&2
+      rc=1
+      continue
+    fi
+    oname="$(head -n 1 "$d/.harness-overlay" 2>/dev/null | tr -d '\r')"
+    if ! printf '%s\n' "$oname" | grep -Eq '^[a-z0-9][a-z0-9-]*$'; then
+      echo "[harness-sync] overlay の名前が空か不正のため飛ばします（$d/.harness-overlay の 1 行目は [a-z0-9][a-z0-9-]*）" >&2
+      rc=1
+      continue
+    fi
+    case "$seen" in
+      *" $oname "*)
+        echo "[harness-sync] overlay の名前 $oname が重複しているため飛ばします: $d" >&2
+        rc=1
+        continue ;;
+    esac
+    seen="$seen$oname "
+    if [ -e "$PUB_DST/$oname" ] && { [ -L "$PUB_DST/$oname" ] || [ ! -d "$PUB_DST/$oname" ]; }; then
+      echo "[harness-sync] $PUB_DST/$oname が実ファイルか symlink のため overlay を飛ばします: $d" >&2
+      rc=1
+      continue
+    fi
+    if [ "${1:-}" != "--no-pull" ]; then
+      pull_repo "$d"
+    fi
+    link_dir "$d/rules" "$PUB_DST/$oname" "$d" 0
+    link_dir "$d/output-styles" "$CLAUDE_DIR/output-styles" "$d" 0
+  done < "$ALLOW_FILE"
+fi
 
 # 掃除（外した overlay の壊れた symlink と、空になったサブディレクトリ）
 prune_dangling "$CLAUDE_DIR/rules"

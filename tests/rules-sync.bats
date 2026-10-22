@@ -23,6 +23,12 @@ mk_overlay() {
   for f in "$@"; do echo "overlay $f" > "$d/rules/$f"; done
 }
 
+# allow <dir名> — 許可ファイルに 1 行足す
+allow() {
+  mkdir -p "$FAKE_CLAUDE"
+  printf '%s\n' "$1" >> "$FAKE_CLAUDE/harness-overlays"
+}
+
 teardown() {
   rm -rf "$FAKE_CLAUDE"
 }
@@ -142,6 +148,7 @@ teardown() {
 
 @test "overlay rules are linked under claude-harness/<name>" {
   mk_overlay ov-repo ov x.md
+  allow ov-repo
   run sh "$SYNC" --no-pull
   [ "$status" -eq 0 ]
   [ "$(readlink "$PUB/ov/x.md")" = "$MP/ov-repo/rules/x.md" ]
@@ -150,6 +157,7 @@ teardown() {
 
 @test "overlay README.md is not linked" {
   mk_overlay ov-repo ov x.md README.md
+  allow ov-repo
   run sh "$SYNC" --no-pull
   [ "$status" -eq 0 ]
   [ ! -e "$PUB/ov/README.md" ]
@@ -157,6 +165,7 @@ teardown() {
 
 @test "same-name rule in public and overlay are both linked" {
   mk_overlay ov-repo ov communication-style.md
+  allow ov-repo
   run sh "$SYNC" --no-pull
   [ "$status" -eq 0 ]
   [ "$(readlink "$PUB/communication-style.md")" = "$REPO_ROOT/rules/communication-style.md" ]
@@ -165,6 +174,7 @@ teardown() {
 
 @test "overlay with invalid name is skipped with a warning and non-zero exit" {
   mk_overlay bad-repo '../x' x.md
+  allow bad-repo
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
   [[ "$output" == *"bad-repo"* ]]
@@ -175,6 +185,7 @@ teardown() {
 
 @test "overlay with empty name is skipped with a warning and non-zero exit" {
   mk_overlay empty-repo '' x.md
+  allow empty-repo
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
   [[ "$output" == *"empty-repo"* ]]
@@ -185,6 +196,7 @@ teardown() {
   mkdir -p "$PUB"
   echo "file" > "$PUB/ov"
   mk_overlay ov-repo ov x.md
+  allow ov-repo
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
   [ -f "$PUB/ov" ]
@@ -193,7 +205,9 @@ teardown() {
 
 @test "duplicate overlay names: first in directory order wins, second warned" {
   mk_overlay a-repo ov a.md
+  allow a-repo
   mk_overlay b-repo ov b.md
+  allow b-repo
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
   [ -L "$PUB/ov/a.md" ]
@@ -203,6 +217,7 @@ teardown() {
 
 @test "overlay content semantics are not checked (contradicting rule is linked, exit 0)" {
   mk_overlay ov-repo ov communication-style.md
+  allow ov-repo
   echo "contradicts public" > "$MP/ov-repo/rules/communication-style.md"
   run sh "$SYNC" --no-pull
   [ "$status" -eq 0 ]
@@ -213,6 +228,7 @@ teardown() {
 
 @test "overlay output style with the same name as a public one is not linked" {
   mk_overlay ov-repo ov
+  allow ov-repo
   echo "ov style" > "$MP/ov-repo/output-styles/readable.md"
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
@@ -221,6 +237,7 @@ teardown() {
 
 @test "overlay output style with a new name is linked flat" {
   mk_overlay ov-repo ov
+  allow ov-repo
   echo "ov style" > "$MP/ov-repo/output-styles/mine.md"
   run sh "$SYNC" --no-pull
   [ "$status" -eq 0 ]
@@ -239,6 +256,7 @@ teardown() {
 
 @test "style order flip: overlay linked first, then public gains the name: public wins and overlay warned" {
   mk_overlay ov-repo ov
+  allow ov-repo
   echo "ov style" > "$MP/ov-repo/output-styles/readable.md"
   mkdir -p "$FAKE_CLAUDE/output-styles"
   ln -s "$MP/ov-repo/output-styles/readable.md" "$FAKE_CLAUDE/output-styles/readable.md"
@@ -267,8 +285,10 @@ teardown() {
 
 @test "removing an overlay prunes its dangling links and the empty directory" {
   mk_overlay ov-repo ov x.md
+  allow ov-repo
   sh "$SYNC" --no-pull
-  rm -f "$MP/ov-repo/.harness-overlay" "$MP/ov-repo/rules/x.md"
+  rm -rf "$MP/ov-repo"
+  rm -f "$FAKE_CLAUDE/harness-overlays"
   run sh "$SYNC" --no-pull
   [ "$status" -eq 0 ]
   [ ! -e "$PUB/ov" ]
@@ -299,4 +319,121 @@ teardown() {
   run sh "$SYNC" --no-pull
   [ "$status" -eq 0 ]
   [ ! -L "$FAKE_CLAUDE/rules/old.md" ]
+}
+
+# ---- 許可ファイル（#1130 セキュリティ指摘） ----
+
+@test "marketplace with a marker but not allowed is not linked" {
+  mk_overlay ov-repo ov x.md
+  run sh "$SYNC" --no-pull
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -e "$PUB/ov" ]
+}
+
+@test "marketplace not listed in a non-empty allow file is not linked" {
+  mk_overlay ov-repo ov x.md
+  mk_overlay other-repo other y.md
+  allow other-repo
+  run sh "$SYNC" --no-pull
+  [ "$status" -eq 0 ]
+  [ -L "$PUB/other/y.md" ]
+  [ ! -e "$PUB/ov" ]
+}
+
+@test "allow file with only comments and blank lines: silent and exit 0" {
+  mk_overlay ov-repo ov x.md
+  printf '# comment\n\n   \n# another\n' > "$FAKE_CLAUDE/harness-overlays"
+  run sh "$SYNC" --no-pull
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -e "$PUB/ov" ]
+}
+
+@test "allow file comments and blank lines are ignored next to a real entry" {
+  mk_overlay ov-repo ov x.md
+  printf '# c\n\nov-repo\n' > "$FAKE_CLAUDE/harness-overlays"
+  run sh "$SYNC" --no-pull
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -L "$PUB/ov/x.md" ]
+}
+
+@test "allowed directory that does not exist: warning and non-zero, alone" {
+  allow nowhere
+  run sh "$SYNC" --no-pull
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"nowhere"* ]]
+  [ -L "$PUB/communication-style.md" ]
+}
+
+@test "allowed directory without a marker: warning and non-zero, alone" {
+  mkdir -p "$MP/nomark/rules"
+  echo r > "$MP/nomark/rules/x.md"
+  allow nomark
+  run sh "$SYNC" --no-pull
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"nomark"* ]]
+  [ ! -e "$PUB/x.md" ]
+  [ -L "$PUB/communication-style.md" ]
+}
+
+@test "allowed overlay with an empty marker name: warning and non-zero, alone" {
+  mk_overlay e-repo '' x.md
+  allow e-repo
+  run sh "$SYNC" --no-pull
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"e-repo"* ]]
+  [ -L "$PUB/communication-style.md" ]
+}
+
+@test "allowed overlay with an invalid marker name: warning and non-zero, alone" {
+  mk_overlay b-repo 'Bad Name' x.md
+  allow b-repo
+  run sh "$SYNC" --no-pull
+  [ "$status" -ne 0 ]
+  [ -L "$PUB/communication-style.md" ]
+}
+
+@test "invalid allow lines are skipped with a warning and non-zero exit" {
+  mk_overlay ok-repo ok x.md
+  printf '../x\n.hidden\na/b\nok-repo\n' > "$FAKE_CLAUDE/harness-overlays"
+  run sh "$SYNC" --no-pull
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"../x"* ]]
+  [ -L "$PUB/ok/x.md" ]
+  [ ! -e "$FAKE_CLAUDE/rules/x" ]
+}
+
+# 使い捨ての偽の harness（git リポジトリ・origin 無し）に sync.sh を写し、--no-pull なしで走らせる。
+# 本物の作業ツリーには pull を走らせない
+mk_fake_harness() {
+  FH="$FAKE_CLAUDE/fake-harness"
+  mkdir -p "$FH/scripts" "$FH/rules"
+  cp "$SYNC" "$FH/scripts/sync.sh"
+  echo r > "$FH/rules/r.md"
+  git -C "$FH" init -q
+  git -C "$FH" add -A
+  git -C "$FH" -c user.email=t@example.com -c user.name=t commit -q -m init
+}
+
+@test "pull does not touch a marketplace that is not allowed" {
+  mk_fake_harness
+  mk_overlay ov-repo ov x.md
+  git -C "$MP/ov-repo" init -q
+  git -C "$MP/ov-repo" remote add origin /nonexistent/remote.git
+  run sh -c "sh '$FH/scripts/sync.sh' 2>&1"
+  [[ "$output" != *"ov-repo"* ]]
+  [ ! -e "$PUB/ov" ]
+}
+
+@test "pull is attempted for an allowed marketplace" {
+  mk_fake_harness
+  mk_overlay ov-repo ov x.md
+  allow ov-repo
+  git -C "$MP/ov-repo" init -q
+  git -C "$MP/ov-repo" remote add origin /nonexistent/remote.git
+  run sh -c "sh '$FH/scripts/sync.sh' 2>&1"
+  [[ "$output" == *"ov-repo"* ]]
+  [ -L "$PUB/ov/x.md" ]
 }
