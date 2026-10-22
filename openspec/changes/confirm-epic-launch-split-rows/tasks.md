@@ -28,5 +28,5 @@
 
 - [x] 4.1 変更の記録を書く（確定した 5 行と理由・消した分類の値・足した載せない行の基準・直した 2 行・検査の変更）。触る範囲: plugins/dev-workflow/changes/1129.md（新規）
 - [x] 4.2 `bats tests/public-private-split.bats` が全件通る
-- [ ] 4.3 `bash scripts/test.sh` が通る（他の検査に `保留（#1123 の後）` や `parent-pass-criteria.md:3` の文言を固定したものが無いことの確認を兼ねる。落ちたら該当の検査を読んで直す）
-- [ ] 4.4 `openspec validate confirm-epic-launch-split-rows --strict` が通る
+- [x] 4.3 `bash scripts/test.sh` が通る（他の検査に `保留（#1123 の後）` や `parent-pass-criteria.md:3` の文言を固定したものが無いことの確認を兼ねる。落ちたら該当の検査を読んで直す）
+- [x] 4.4 `openspec validate confirm-epic-launch-split-rows --strict` が通る
