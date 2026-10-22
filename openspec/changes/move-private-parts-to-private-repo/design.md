@@ -56,7 +56,7 @@ install 先は `~/.claude/plugins/marketplaces/claude-harness-oratta/`、install
 - capability-registry の個人版の部品は、公開版と同じ名前のプラグインにせず別名 `capability-registry-oratta` にまとめる。同じ名前にすると公開版の capability-registry と同時に入れられず、公開版に残る仕組み（browser-guard・索引）を失う。スキルの description だけは新しく書く（公開版の capability-registry が発火した後に、保管庫とトークンの取り出しを調べるときに読まれる、という発火条件）
 - `auto-merge-deployments.md` はプラグインの部品ではなく記録なので、個人版のルート直下の `docs/` に置く
 - 写すときに中身を直してよいのは 2 点だけにする: install ID の `@oratta-claude-harness` を `@claude-harness-oratta` にすること、`plugins/dev-workflow/references/self-verification.md` への参照を「公開版の dev-workflow の `references/self-verification.md`」と書くこと。それ以外を直すと、写し元の SHA との突き合わせで差分の理由が説明できなくなる
-- 個人版に CI は最初は置かず、README に `bats plugins/*/tests` での確かめ方を書く。private のリポジトリの Actions は無料枠の分数を使うため。CI を置くかは R1 の判断に委ねる
+- 個人版に CI は最初は置かず、README に `bats plugins/*/tests` での確かめ方を書く。private のリポジトリの Actions は無料枠の分数を使うため。R1 もこの案でよいと判断した（https://github.com/oratta/claude-harness/issues/1129#issuecomment-6333651952 ）
 
 ### 3. 移した部品の記録は、仕分けの表から外して新しい節に置く
 
@@ -104,7 +104,7 @@ install 先は `~/.claude/plugins/marketplaces/claude-harness-oratta/`、install
 - [切り替えの途中で同じ名前の `weekly-report` が 2 つの marketplace から入っている時間がある] → install と uninstall を続けて行い、間に `/weekly-report` を呼ばない。定期実行は週 1 回で、手順は数分で終わる
 - [写した後に公開版の部品が直され、個人版に届かない] → 凍結と、マージ前の `git log <写し元SHA>..origin/main` の確認で拾う
 - [公開版を使う第三者の `weekly-report`・`daily-report` が消える] → オーナーの業務専用の部品で、他の利用者を想定していない。README の一覧から外し、変更の記録に書く
-- [個人版に CI が無いので、個人版の部品の検査が走らない] → README に手で回す `bats` の手順を書く。CI を置くかは R1 の判断で変えられる
+- [個人版に CI が無いので、個人版の部品の検査が走らない] → README に手で回す `bats` の手順を書く（R1 の判断で確定）
 - [`harness-public-private-split` の MODIFIED の本文が #1213 の衝突の解き方と食い違う] → #1213 のマージ後、archive の前に main の正本と突き合わせる（tasks に入れる）
 
 ## Migration Plan
@@ -113,4 +113,4 @@ install 先は `~/.claude/plugins/marketplaces/claude-harness-oratta/`、install
 
 ## Open Questions
 
-- 個人版に CI を置くか（既定は置かない。R1 の判断）
+なし（個人版に CI を置くかは、置かずに README に手で回す `bats` の手順を書く案で R1 の判断により閉じた）

@@ -15,6 +15,13 @@
 - 通してよい具体例: 個人版に移した中身が写し元と一致しているか、写し元の SHA が実在するか、公開版に残った文に個人版の固有名があるか。個人版の `scripts/check-public-leak.sh` と人のレビューが見る
 - 見つかる穴をすべて塞ぐことは完了条件にしない
 
+個人版の検査（`scripts/check-public-leak.sh <公開版の作業ツリー>`）は、個人版の辞書を公開版の `plugins/dev-workflow/scripts/forbidden-words-check.sh` に `--dict` で渡し、当たりが許可に載った行を除いて 1 件でもあれば終了コード 1 で終わり、当たりを `<パス>:<行番号>:<語>` の形で出さなければならない（MUST）。当たりが無ければ終了コード 0 で終わる。公開版の消す PR は、終了コード 0 の結果を本文に載せるまでマージしない。この検査の守備範囲は次のとおりで、範囲の外の誤りを見つけることは完了条件にしない（MUST NOT）。
+
+- 想定する入力の出どころ: 引数に渡した公開版の作業ツリーの `git ls-files` のうち、`rules/`・`output-styles/`・`scripts/`・`plugins/` の配下とルート直下の `README.md`・`CLAUDE.md`・`AGENTS.md`・`CONTRIBUTING.md`（`openspec/`・`docs/public-private-split.md`・`_longruns/`・`changes/`・`CHANGELOG.md`・`tests/`・`evals/` を除く）と、オーナーが書く個人版の辞書と許可。敵対的な入力は想定しない
+- 拾う誤り: 辞書の語（`fmtoken`・`weekly-report`・`daily-report`・`auto-merge-deployments`・`1password.md`・`Fieldy`）が、検索の範囲のファイルの本文かパス名に、許可に無い形で残ること
+- 通してよい具体例: 辞書に無い個人版の固有名、除いた範囲（経緯の記録や公開版の検査）に残る語、公開版の過去の履歴に残る語。人のレビューと辞書の整備が見る
+- 見つかる穴をすべて塞ぐことは完了条件にしない
+
 #### Scenario: 移した部品が公開版に無い
 - **WHEN** 公開版で、節「個人版に移した部品」の表の各パスを `git ls-files` で調べ、`marketplace.json` と capability-registry の SKILL.md の見出しを読む
 - **THEN** どのパスも 0 件で、`weekly-report`・`daily-report` は `plugins[]` にも bundle にも無く、移した 2 節の見出しは SKILL.md に無い
@@ -34,6 +41,14 @@
 #### Scenario: 公開版に個人版の固有名が残っていない
 - **WHEN** 個人版のリポジトリで `scripts/check-public-leak.sh <公開版の作業ツリー>` を実行する
 - **THEN** 終了コードが 0 で、結果が公開版の消す PR の本文に載っている
+
+#### Scenario: 公開版に個人版の固有名が残っていると落ちる
+- **WHEN** 公開版の作業ツリーの `README.md` に `weekly-report` を含む行が残ったまま、個人版のリポジトリで `scripts/check-public-leak.sh <公開版の作業ツリー>` を実行する
+- **THEN** 終了コードが 1 で、`README.md:<行番号>:weekly-report` が出る。公開版の消す PR はこの状態ではマージしない
+
+#### Scenario: 除いた範囲の語は個人版の検査を通る
+- **WHEN** 公開版の `docs/public-private-split.md` の節「個人版に移した部品」に `fmtoken.sh` がある
+- **THEN** 個人版の検査は終了コード 0 で終わる
 
 ## MODIFIED Requirements
 
