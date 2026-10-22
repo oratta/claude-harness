@@ -2341,6 +2341,11 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
     """
     where = os.path.abspath(args.repo) if args.repo else os.getcwd()
 
+    # 台帳を使ったかどうかは、モデルがプラグイン設定を見られないのでスクリプトが言う。
+    # cost.md の案内はこの行の有無で判定する。標準出力と終了コードは変えない。
+    if ledger_path() is None:
+        sys.stderr.write("台帳: 未設定（会話ログを直接読みました）\n")
+
     if args.number is None:
         branch = current_branch(where)
         if not branch:
