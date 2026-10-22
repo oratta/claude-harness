@@ -14,15 +14,15 @@
 
 ### Requirement: 旧位置の symlink は新位置に張ったあとで片付ける
 
-`<CLAUDE_DIR>/rules/` 直下の `*.md` のうち、symlink で行き先が公開版の `rules/` 直下のファイルであるものは、新位置への symlink を張ったあとで消さなければならない（MUST）。実ファイルと、公開版の `rules/` 以外を指す symlink には触れてはならない（MUST NOT）。
+`<CLAUDE_DIR>/rules/` 直下の `*.md` のうち、symlink で行き先が公開版の `rules/` 直下のファイルであるものは、新位置への symlink を張ったあとで消さなければならない（MUST）。実ファイルと、公開版の `rules/` 以外を指す symlink には触れてはならない（MUST NOT）。ただし、行き先が `<CLAUDE_DIR>/plugins/marketplaces/` の下の壊れた symlink は、要件「壊れた symlink の掃除は行き先が marketplace の下のものだけを対象にする」に従って消す（この保持の対象から除く）。
 
 #### Scenario: 旧位置の symlink が移る
 - **WHEN** 直下に公開版を指す symlink がある状態で実行する
 - **THEN** 新位置に symlink ができ、直下の symlink は無くなる
 
 #### Scenario: 無関係なファイルは残る
-- **WHEN** 直下に実ファイルと他所を指す symlink がある状態で実行する
-- **THEN** どちらも残り、終了コードは 0
+- **WHEN** 直下に実ファイルと、行き先が marketplace の下でない（存在する、または存在しない）symlink がある状態で実行する
+- **THEN** どれも残り、終了コードは 0（行き先が marketplace の下の壊れた symlink は掃除の要件で消える）
 
 ### Requirement: overlay は印のファイルで見つけて重ねる
 
@@ -79,7 +79,7 @@ overlay が 1 つも見つからないとき、`scripts/sync.sh` は overlay に
 
 ### Requirement: output style は 1 階層のままで、同名なら公開版を優先する
 
-`scripts/sync.sh` は公開版と overlay の `output-styles/*.md` を `<CLAUDE_DIR>/output-styles/` 直下に張る。公開版の分は overlay より先に張る。overlay の分が、公開版を指す symlink と同名のとき、その 1 本を張らず、警告して非 0 で終わらなければならない（MUST）。公開版の分を張るとき、同名の既存の symlink の行き先が `<CLAUDE_DIR>/plugins/marketplaces/` の下（別の Harness）なら、警告せず公開版を指すように張り替えなければならない（MUST）。それ以外の場所を指す symlink と実ファイルには触れない（MUST NOT）。
+`scripts/sync.sh` は公開版と overlay の `output-styles/*.md` を `<CLAUDE_DIR>/output-styles/` 直下に張る。公開版の分は overlay より先に張る。overlay の分が、公開版を指す symlink と同名のとき、その 1 本を張らず、警告して非 0 で終わらなければならない（MUST）。公開版の分を張るとき、同名の既存の symlink の行き先が `<CLAUDE_DIR>/plugins/marketplaces/` の下（別の Harness）なら、警告せず公開版を指すように張り替えなければならない（MUST）。張り先に公開版や overlay の同名ファイルと内容が同じ実ファイルがあるときは、rules と同じく symlink に置き換え（コピー運用からの移行）、内容が違う実ファイルと、それ以外の場所を指す symlink には触れない（MUST NOT）。
 
 #### Scenario: 同名の output style
 - **WHEN** 公開版の `readable.md` と同名の `output-styles/readable.md` を持つ overlay で実行する
@@ -88,6 +88,10 @@ overlay が 1 つも見つからないとき、`scripts/sync.sh` は overlay に
 #### Scenario: overlay の style を張ったあとで公開版に同名が足された
 - **WHEN** overlay の `output-styles/x.md` を張った実行のあと、公開版に同名の `output-styles/x.md` が足された状態で再実行する
 - **THEN** `output-styles/x.md` は公開版を指すように張り替わり、続く overlay の分で同名の衝突として警告が出て、終了コードは 0 でない
+
+#### Scenario: 内容が同じ実ファイルは symlink になる
+- **WHEN** `output-styles/readable.md` が公開版と内容の同じ実ファイルの状態で実行する
+- **THEN** symlink に置き換わり、終了コードは 0
 
 #### Scenario: 無関係な symlink の同名は触らない
 - **WHEN** `output-styles/readable.md` が `/etc/hosts` を指す symlink の状態で実行する
