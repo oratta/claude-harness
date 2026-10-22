@@ -158,11 +158,16 @@ link_dir() {
 link_dir "$HARNESS_DIR/rules" "$PUB_DST" "$HARNESS_DIR" 1
 link_dir "$HARNESS_DIR/output-styles" "$CLAUDE_DIR/output-styles" "$HARNESS_DIR" 1
 
-# 旧位置（rules 直下）の、この harness の rules を指す symlink を、新位置に張ったあとで消す
+# 旧位置（rules 直下）の、この harness の rules を指す symlink を、新位置に張ったあとで消す。
+# 新位置の同名 symlink が同じ行き先を指すと確かめられたものだけ消す（移行先を作れなかった・
+# 実ファイルとぶつかったときは旧リンクを残し、それまで読めていたルールを読めなくしない）
 for f in "$HARNESS_DIR"/rules/*.md; do
   [ -f "$f" ] || continue
-  t="$CLAUDE_DIR/rules/$(basename "$f")"
-  if [ -L "$t" ] && [ "$(readlink "$t")" = "$f" ]; then
+  base="$(basename "$f")"
+  t="$CLAUDE_DIR/rules/$base"
+  n="$PUB_DST/$base"
+  if [ -L "$t" ] && [ "$(readlink "$t")" = "$f" ] \
+    && [ -L "$n" ] && [ "$(readlink "$n")" = "$f" ]; then
     rm -f "$t" || rc=1
   fi
 done
@@ -174,6 +179,8 @@ ALLOW_FILE="$CLAUDE_DIR/harness-overlays"
 seen=" "
 KEEP=" "
 if [ -f "$ALLOW_FILE" ]; then
+  # 1 周目: 行を正規化・検証して、通った marketplace 名を集める
+  allowed=""
   while IFS= read -r line || [ -n "$line" ]; do
     line="$(printf '%s' "$line" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
     case "$line" in ""|"#"*) continue ;; esac
@@ -183,6 +190,14 @@ if [ -f "$ALLOW_FILE" ]; then
         rc=1
         continue ;;
     esac
+    allowed="$allowed$line
+"
+  done < "$ALLOW_FILE"
+  # 2 周目: marketplace 名の辞書順で重ねる（同名 overlay は辞書順で先のものを採り、許可ファイルの
+  # 行順には依らない）。here-document で読み、rc・seen・KEEP をサブシェルに閉じ込めない
+  allowed="$(printf '%s' "$allowed" | LC_ALL=C sort)"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
     d="$MP_DIR/$line"
     if [ ! -d "$d" ]; then
       echo "[harness-sync] 許可した overlay のディレクトリがありません。飛ばします: $line" >&2
@@ -218,7 +233,9 @@ if [ -f "$ALLOW_FILE" ]; then
     KEEP="$KEEP$line "
     link_dir "$d/rules" "$PUB_DST/$oname" "$d" 0
     link_dir "$d/output-styles" "$CLAUDE_DIR/output-styles" "$d" 0
-  done < "$ALLOW_FILE"
+  done <<ALLOWED
+$allowed
+ALLOWED
 fi
 
 # 掃除（外した overlay の壊れた symlink と、空になったサブディレクトリ）

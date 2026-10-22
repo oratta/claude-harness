@@ -126,6 +126,29 @@ teardown() {
   [ ! -L "$FAKE_CLAUDE/rules/communication-style.md" ]
 }
 
+@test "old top-level link stays when the subdirectory cannot be created" {
+  mkdir -p "$FAKE_CLAUDE/rules"
+  echo "blocker" > "$PUB"
+  ln -s "$REPO_ROOT/rules/communication-style.md" "$FAKE_CLAUDE/rules/communication-style.md"
+  run sh "$SYNC" --no-pull
+  [ "$status" -ne 0 ]
+  [ -L "$FAKE_CLAUDE/rules/communication-style.md" ]
+  [ "$(readlink "$FAKE_CLAUDE/rules/communication-style.md")" = "$REPO_ROOT/rules/communication-style.md" ]
+}
+
+@test "old top-level link stays when the new position holds a diverged real file" {
+  mkdir -p "$PUB"
+  echo "local-only content" > "$PUB/communication-style.md"
+  ln -s "$REPO_ROOT/rules/communication-style.md" "$FAKE_CLAUDE/rules/communication-style.md"
+  ln -s "$REPO_ROOT/rules/git-commit-policy.md" "$FAKE_CLAUDE/rules/git-commit-policy.md"
+  run sh "$SYNC" --no-pull
+  [ "$status" -ne 0 ]
+  [ -L "$FAKE_CLAUDE/rules/communication-style.md" ]
+  grep -q "local-only content" "$PUB/communication-style.md"
+  [ -L "$PUB/git-commit-policy.md" ]
+  [ ! -L "$FAKE_CLAUDE/rules/git-commit-policy.md" ]
+}
+
 @test "old-position cleanup keeps real files and unrelated live or dead links outside marketplaces" {
   mkdir -p "$FAKE_CLAUDE/rules"
   echo "mine" > "$FAKE_CLAUDE/rules/mine.md"
@@ -208,6 +231,18 @@ teardown() {
   allow a-repo
   mk_overlay b-repo ov b.md
   allow b-repo
+  run sh "$SYNC" --no-pull
+  [ "$status" -ne 0 ]
+  [ -L "$PUB/ov/a.md" ]
+  [ ! -e "$PUB/ov/b.md" ]
+  [[ "$output" == *"b-repo"* ]]
+}
+
+@test "duplicate overlay names: lexical order wins even when allowed in reverse" {
+  mk_overlay a-repo ov a.md
+  mk_overlay b-repo ov b.md
+  allow b-repo
+  allow a-repo
   run sh "$SYNC" --no-pull
   [ "$status" -ne 0 ]
   [ -L "$PUB/ov/a.md" ]
