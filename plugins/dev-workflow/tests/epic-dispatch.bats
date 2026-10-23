@@ -3725,10 +3725,16 @@ orca_cmd_scripts() {
   [ -n "$pr" ]
   printf '%s\n' "$pr" | grep -F '`job-timeout` に限らず' | grep -F '通る例の「CI の再実行」' | grep -F 'ランナーの状態の確認を含む推奨の読み方' | grep -qF '先に効く'
   printf '%s\n' "$pr" | grep -F '原因の切り分けを通す条件にしない' | grep -qF '対象の止まりに当てない'
+  printf '%s\n' "$pr" | grep -F '`gh api` の確認をそのまま通す読み' | grep -qF '対象の止まりに当てない'
+  printf '%s\n' "$pr" | grep -qF '推奨が「Mac が空いてから CI を再実行」のときも'
   printf '%s\n' "$pr" | grep -F '原因は断定できない' | grep -F '再実行だけ' | grep -qF '主に上げる'
   printf '%s\n' "$pr" | grep -F '確認が先' | grep -F '`gh api` だけで済む場合も' | grep -qF '主に上げる'
   # 守備範囲に、節の外の読み方についての 1 文があり、節の外の止まりを通さないと読み広げない
   printf '%s\n' "$sec" | grep -F '節の外のランナーの確認を含む推奨の読み方について' | grep -qF '読み広げない'
+  printf '%s\n' "$sec" | grep -F '「ランナーの確認を含む止まりを通すこと」はこの節の対象の止まりに限り' | grep -qF '表の下の「ランナーの状態の確認を含む推奨の読み方」で決める'
+  printf '%s\n' "$sec" | grep -F '優先順位について拾いたい誤りは' | grep -qF '上限で止まった子の再実行を通る例で通すこと'
+  printf '%s\n' "$sec" | grep -F '再び止まれば次は主に上がる）と、通してよい止まりを判断のモデルが主に上げることは許す' >/dev/null
+  printf '%s\n' "$pr" | grep -F 'job-timeout' | grep -F '手順 7 の止まりも' | grep -qF '主に上げる'
   # 通る例の「CI の再実行」の行の行末に、節が先に効くと添えてある（括弧の中は変えない）
   grep -F -e '- CI の再実行（' "$f" | grep -qE '上限で止まった子は.*先に効く$'
 }
@@ -3750,8 +3756,9 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -F '独立した再実行' | grep -F '再実行だけを切り出して通し' | grep -qF '機械での確認を求めない'
   printf '%s\n' "$p" | grep -F '結果に依るとき' | grep -qF '主に上げる'
   # 節の対象の止まりには当てない
-  printf '%s\n' "$p" | grep -qF 'CI の見張りのやり直しの上限で止まった子'
-  printf '%s\n' "$p" | grep -qF '先に効く'
+  printf '%s\n' "$p" | grep -F '「CI の見張りのやり直しの上限で止まった子」の対象の止まりには当てない' | grep -qF 'その節が先に効く'
+  # 「確認してからやり直す（確認が先）」は結果に依る側に入れる（F2）
+  printf '%s\n' "$p" | grep -F '結果に依るとき' | grep -qF '確認してからやり直す（確認が先）'
 }
 
 # issue #1246: エピックの目的・原則が推奨を一意に決めるときは「主の側の情報が要らない」を満たすと読む
