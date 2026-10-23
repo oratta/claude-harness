@@ -69,15 +69,15 @@
 
 ## 4. 変更の記録と公開版の検査
 
-- [ ] 4.1 `plugins/dev-workflow/changes/1238.md` を書く（版は上げない）。中身は次の 4 つ
+- [x] 4.1 `plugins/dev-workflow/changes/1238.md` を書く（版は上げない）。中身は次の 4 つ
   - 何を直したか: 判定 2・判定 4・終了コード 4・3-c
   - BREAKING: 終了コード 1 だったものが 0・3・4 になる
   - 本文の前提との食い違い（判定 2）
   - 後続の change `risk-carryover-decider-judge` が終了コード 4 を判定役に渡すこと
 
   確かめ方: ファイルがあり、既存の changes の書き方（見出し 1 行と箇条書き）に揃っている。触る範囲: plugins/dev-workflow/changes/1238.md（新規）
-- [ ] 4.2 公開版に書いてはいけない語を検査する。対象は触ったファイル（オーナーの固有名・アカウント名・PC の絶対パス）。`bash plugins/dev-workflow/scripts/forbidden-words-check.sh` を手元で回すか、CI に任せる。部品を足していないので `docs/public-private-split.md` は変えない。確かめ方: 検査が通る。触る範囲: 触ったファイル全体（確認のみ）
-- [ ] 4.3 `openspec validate risk-carryover-pr-own-diff --type change --strict` を通す。確かめ方: `is valid`。触る範囲: openspec/changes/risk-carryover-pr-own-diff/（確認のみ）
+- [x] 4.2 公開版に書いてはいけない語を検査する。対象は触ったファイル（オーナーの固有名・アカウント名・PC の絶対パス）。`bash plugins/dev-workflow/scripts/forbidden-words-check.sh` を手元で回すか、CI に任せる。部品を足していないので `docs/public-private-split.md` は変えない。確かめ方: 検査が通る。触る範囲: 触ったファイル全体（確認のみ）
+- [x] 4.3 `openspec validate risk-carryover-pr-own-diff --type change --strict` を通す。確かめ方: `is valid`。触る範囲: openspec/changes/risk-carryover-pr-own-diff/（確認のみ）
 
 ## Workflow follow-up
 
