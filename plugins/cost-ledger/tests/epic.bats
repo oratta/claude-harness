@@ -13,6 +13,8 @@
 #   SB （issue を触っていないセッション）: r7 feat/b
 # gh は、#10 の子 issue が #11（child a・closed）と #12（child b・open）だと答える。
 
+bats_require_minimum_version 1.5.0
+
 load helper
 
 setup() {
@@ -218,7 +220,7 @@ PY
 @test "epic: acceptance: each child's amount and the total are shown" {  # 1 行目は $7.00・子 issue 込み。#10・#11・#12 の行がこの順
   logs
   tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "${lines[0]}" = 'コスト: $7.00 / ¥1,050 @150 — issue #10 (acme/ra) 帰属: 子 issue 込み' ] || { echo "$output"; return 1; }
   a="$(printf '%s\n' "$output" | grep -nxF '  #10 open $7.00（自身 $1.00） — epic' | cut -d: -f1)"
@@ -232,7 +234,7 @@ PY
   logs no-r4
   tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
   cost_json 10 | check 'near(d["total_usd"], 6.0) and near(i[11]["usd"], 4.0) and near(i[12]["usd"], 2.0) and near(d["total_usd"], i[11]["usd"] + i[12]["usd"]) and near(d["children_usd"], 6.0) and d["self_usd"] == 0.0'
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "${lines[0]}" == 'コスト: $6.00 / '* ]] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qxF '  子 issue の合計: $6.00'
@@ -243,7 +245,7 @@ PY
   logs
   tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
   cost_json 10 | check 'near(d["children_usd"], 6.0) and near(d["children_usd"], i[11]["usd"] + i[12]["usd"]) and near(d["self_usd"], 1.0) and near(d["total_usd"], 7.0) and near(d["total_usd"], d["children_usd"] + d["self_usd"]) and near(d["total_usd"], sum(r["own_usd"] for r in d["issues"])) and near(d["self_usd"], i[10]["own_usd"]) and near(i[10]["usd"], d["total_usd"])'
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "${lines[0]}" == 'コスト: $7.00 / '* ]] || { echo "$output"; return 1; }
   a="$(printf '%s\n' "$output" | grep -nxF '  子 issue の合計: $6.00' | cut -d: -f1)"
@@ -255,7 +257,7 @@ PY
   logs
   tree "$(pr 300 feat/a)" "$(pr 300 feat/a)"
   cost_json 10 | check 'near(d["total_usd"], 6.0) and i[12]["closing_prs"] == [{"number": 300, "branch": "feat/a", "usd": 2.0, "counted_in": 11}]'
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qxF '    #12 open $1.00 — child b（単独 $3.00、PR #300 は #11 に計上）' || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qxF '    #11 closed $4.00 — child a'
@@ -263,7 +265,7 @@ PY
 
 @test "epic: grandchildren are followed" {  # #12 の行に（自身 $1.00）、その直後に #13。1 行目は $5.00
   grandchild
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "${lines[0]}" == 'コスト: $5.00 / '* ]] || { echo "$output"; return 1; }
   a="$(printf '%s\n' "$output" | grep -nxF '    #12 open $2.00（自身 $1.00） — child b' | cut -d: -f1)"
@@ -291,7 +293,7 @@ PY
   [ "$status" -eq 0 ] || { echo "$OUT$ERR"; return 1; }
   printf '%s' "$OUT" | check '[r["number"] for r in d["issues"]] == [10, 11] and d["skipped"] == [{"repo": "acme/other", "number": 5, "parent": 10}]'
   [ "$(gql_calls)" -eq 1 ]
-  run cost 10
+  run --separate-stderr cost 10
   printf '%s\n' "$output" | grep -qxF '  数えていない子 issue: acme/other#5（別のリポジトリ）' || { echo "$output"; return 1; }
 }
 
@@ -364,7 +366,7 @@ PY
   logs
   local title="12345678901234567890123456789012345678901234567890"
   gql 10 epic OPEN "$(prs)" "$(child 11 "$title" CLOSED 0)"
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qxF '    #11 closed $2.00 — 123456789012345678901234567890123456789…' || { echo "$output"; return 1; }
   cost_json 10 | check 'i[11]["title"] == "12345678901234567890123456789012345678901234567890"'
@@ -374,7 +376,7 @@ PY
   logs
   # 題名の中身（JSON の書き方）: x ESC [2Ky 改行 空白 4 つ #99 closed $9.00 — fake U+202E z
   gql 10 epic OPEN "$(prs)" "$(child 11 'x\u001b[2Ky\n    #99 closed $9.00 — fake\u202ez' CLOSED 0)"
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" != *$'\x1b'* ]] || { echo "ESC が残っている"; return 1; }
   [[ "$output" != *$'\xe2\x80\xae'* ]] || { echo "U+202E が残っている"; return 1; }
@@ -386,7 +388,7 @@ PY
 @test "epic: a title is cut after control characters are removed" {  # 先頭のタブ 3 つと 40 文字 → 取り除いたあとは 40 文字なので切らない
   logs
   gql 10 epic OPEN "$(prs)" "$(child 11 '\t\t\t1234567890123456789012345678901234567890' CLOSED 0)"
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qxF '    #11 closed $2.00 — 1234567890123456789012345678901234567890' || { echo "$output"; return 1; }
 }
@@ -396,7 +398,7 @@ PY
   gql 10 epic OPEN "$(prs)" \
     "$(child 11 'child a' CLOSED 0)" \
     "$(child 5 elsewhere OPEN 0 "$(prs)" 'acme/o\u001b[2Kt\nher')"
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" != *$'\x1b'* ]] || { echo "ESC が残っている"; return 1; }
   printf '%s\n' "$output" | grep -qxF '  数えていない子 issue: acme/o [2Kt her#5（別のリポジトリ）' || { echo "$output"; return 1; }
@@ -413,7 +415,7 @@ PY
   } | cl_write_log su
   cost_json 10 | check 'd["unknown_repo_messages"] == 2 and near(d["unknown_repo_usd"], 2.0) and near(d["total_usd"], 4.0)'
   python3 "$CL" issue 11 --repo "$RA" --json | check 'd["unknown_repo_messages"] == 2 and near(d["unknown_repo_usd"], 2.0)'
-  run cost 10
+  run --separate-stderr cost 10
   [[ "$output" == *'  リポジトリ不明: 2 件 $2.00'* ]] || { echo "$output"; return 1; }
 }
 
@@ -428,7 +430,7 @@ PY
 @test "epic: an issue with sub-issues gets the breakdown" {  # 子の数が 2 → 帰属の種別は 子 issue 込み、2 行目以降に子の行
   logs
   tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "${lines[0]}" == *'帰属: 子 issue 込み' ]] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | tail -n +2 | grep -q '^    #11 '
@@ -439,7 +441,7 @@ PY
   logs
   no_closing_prs 12
   export EPIC_BARE=1
-  run cost 12
+  run --separate-stderr cost 12
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$output" = "$(python3 "$CL" issue 12 --repo "$RA")" ] || { echo "$output"; return 1; }
   [ "$(gql_calls)" -eq 1 ]
@@ -450,7 +452,7 @@ PY
 @test "epic: two children without grandchildren take 3 gh calls" {  # gh は 3 回（うち GraphQL 1 回）
   logs
   tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(gh_calls)" -eq 3 ] || { cat "$EPIC_GH_LOG"; return 1; }
   [ "$(gql_calls)" -eq 1 ]
@@ -458,7 +460,7 @@ PY
 
 @test "epic: a child with a grandchild takes 4 gh calls" {  # gh は 4 回（うち GraphQL 2 回）
   grandchild
-  run cost 10
+  run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(gh_calls)" -eq 4 ] || { cat "$EPIC_GH_LOG"; return 1; }
   [ "$(gql_calls)" -eq 2 ]
@@ -467,13 +469,13 @@ PY
 @test "epic: gh call counts for an issue without sub-issues and a PR" {  # issue は gh 3 回（うち GraphQL は閉じた PR の 1 回）、PR は 1 回、GraphQL は 0 回。issue の出力は issue 12 と同じ
   logs
   no_closing_prs 12
-  run cost 12
+  run --separate-stderr cost 12
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$output" = "$(python3 "$CL" issue 12 --repo "$RA")" ] || { echo "$output"; return 1; }
   [ "$(gh_calls)" -eq 3 ] || { cat "$EPIC_GH_LOG"; return 1; }
   : > "$EPIC_GH_LOG"
   export EPIC_PR=300 EPIC_PR_HEAD=feat/a
-  run cost 300
+  run --separate-stderr cost 300
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "${lines[0]}" = 'コスト: $2.00 / ¥300 @150 — PR #300 (feat/a) 帰属: ブランチ' ] || { echo "$output"; return 1; }
   [ "$(gh_calls)" -eq 1 ] || { cat "$EPIC_GH_LOG"; return 1; }
