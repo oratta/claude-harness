@@ -189,7 +189,7 @@ pr-review-gate SKILL.md は、手順 3 で「主のリスク許容が必要」�
 
 ### Requirement: 判定役を起こすのは決める役を起こせるセッションに限る
 
-判定役は、ゲートを回すセッションのうち Agent ツールで決める役を起こせるものが起こさなければならない（MUST）。develop の外のメインセッションではゲート自身が起こし、記録を投稿して 3-c を続ける。develop の合格処理の G は、判定役に回す条件を満たし一致する記録が無ければ、宣言を投稿せず `needs-approval` も付けずに Status `needs-carryover-judge`・`次の段: 合格処理` で返さなければならない（MUST）。従来経路の一括の G は判定役を起こさず手順 6 で主に聞く（MUST）。`SHARED_BUDGET_MODE=depleted` のときは判定役を起こさず、判定役を起こす側（develop の外のメインセッションではゲート自身、develop では本体）が `引き継ぎ判定: 判断できない`・理由「判定役を起こさなかった（共有枠 depleted）」の記録を投稿し、手順 6 で主に聞く側に倒す（MUST）。develop の合格処理の G は depleted でも判定役に回す条件を満たせば `needs-carryover-judge` で返し、自分で「判断できない」の記録を投稿しない（MUST NOT。記録を投稿するのは本体で、記録を受けて起こされた次の合格処理の G が手順 6 で主に聞く）。
+判定役は、ゲートを回すセッションのうち Agent ツールで決める役を起こせるものが起こさなければならない（MUST）。develop の外のメインセッションではゲート自身が起こし、記録を投稿して 3-c を続ける。develop の合格処理の G は、判定役に回す条件を満たし一致する記録が無ければ、宣言を投稿せず `needs-approval` も付けずに Status `needs-carryover-judge`・`次の段: 合格処理` で返さなければならない（MUST）。従来経路の一括の G は判定役を起こさず手順 6 で主に聞く（MUST）。`SHARED_BUDGET_MODE=depleted` のときは「共有枠が depleted のときは判定役を起こさず主に聞く」Requirement に従う。
 
 #### Scenario: develop の合格処理の G が判定を頼む
 
@@ -200,6 +200,15 @@ pr-review-gate SKILL.md は、手順 3 で「主のリスク許容が必要」�
 
 - **WHEN** `段: 一括（従来経路）` の G が 3-c で終了コード 4 を受け取る
 - **THEN** 判定役を起こさず、手順 6 で主に聞く
+
+### Requirement: 共有枠が depleted のときは判定役を起こさず主に聞く
+
+`SHARED_BUDGET_MODE=depleted` のときは判定役を起こしてはならない（MUST NOT）。判定役を起こす側（develop の外のメインセッションではゲート自身、develop では本体）が `引き継ぎ判定: 判断できない`・理由「判定役を起こさなかった（共有枠 depleted）」の記録を投稿し、手順 6 で主に聞く側に倒さなければならない（MUST）。develop の合格処理の G は depleted でも判定役に回す条件を満たせば `needs-carryover-judge` で返し、記録を自分で投稿してはならない（MUST NOT）。判定の守備範囲は「前の HEAD の許容を新しい HEAD に引き継いでよい条件」Requirement の守備範囲の段落に従う。
+
+#### Scenario: develop で共有枠が depleted
+
+- **WHEN** develop の合格処理の G が 3-c で判定役に回す条件を満たし、`SHARED_BUDGET_MODE=depleted` である
+- **THEN** G は「判断できない」の記録を自分で投稿せず `needs-carryover-judge` で返し、本体が記録を投稿して合格処理の G を起こし直し、その G が手順 6 で主に聞く
 
 #### Scenario: 共有枠が depleted
 
