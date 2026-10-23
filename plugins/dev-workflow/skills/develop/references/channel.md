@@ -10,10 +10,11 @@ channel の本体は AskUserQuestion を呼ばない。主に聞くときは、�
 - 記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限）は、先に PR か記録先のコメントに書き、チャンネルの質問にはそのコメントのフル URL を添える
 - 質問の文面は `~/.claude/output-styles/readable.md` の節 3（サブエージェントには `rules/communication-style.md` の 3 番目）の型に従う。100 行を超える中身は記録先のコメントに置いて URL で渡す（チャンネルのメッセージには長さの上限がある）
 
-**読み替えの規則**: develop と、develop から読む次の文書に書かれた「interactive は AskUserQuestion で聞く」（候補を提示して選ばせる・承認を得る・判断を仰ぐを含む）は、channel ではこの聞き方に読む。各文書には書き足さない（同じ規則を複数の文書に書くと、直すときに片方が漏れる）。対象は `plugins/dev-workflow/` からの相対パスで次の 9 つで、`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で AskUserQuestion に触れるファイルの全部（develop の SKILL.md とこのファイルを除く。漏れは `tests/develop-channel-mode.bats` が見つける）。
+**読み替えの規則**: develop と、develop から読む次の文書に書かれた「interactive は AskUserQuestion で聞く」（候補を提示して選ばせる・承認を得る・判断を仰ぐを含む）は、channel ではこの聞き方に読む。各文書には書き足さない（同じ規則を複数の文書に書くと、直すときに片方が漏れる）。対象は `plugins/dev-workflow/` からの相対パスで次の 10 個で、`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で AskUserQuestion に触れるファイルの全部（develop の SKILL.md とこのファイルを除く。漏れは `tests/develop-channel-mode.bats` が見つける）。
 
 - `skills/develop/references/decision-criteria.md`
 - `skills/develop/references/epic-child-stop.md`
+- `skills/develop/references/fix-check.md`
 - `skills/develop/references/roles/spec-reviewer.md`
 - `skills/develop/references/roles/worker/common.md`
 - `skills/develop/references/roles/worker/spec.md`

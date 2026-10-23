@@ -3689,6 +3689,44 @@ orca_cmd_scripts() {
   grep -F '主に聞く理由が成り立つか迷うときは' "$f" | grep -qF '成り立つ側に倒す'
 }
 
+# spec: dev-workflow-develop（親が通してよい範囲の基準は、CI の見張りのやり直しの上限で止まった子の扱いを決める）
+
+@test "criteria: the CI watch rerun cap section decides pass or escalate to the owner" {
+  f="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
+  sec="$(awk '/^## CI の見張りのやり直しの上限で止まった子/{p=1;next} /^## /{p=0} p' "$f")"
+  [ -n "$sec" ]
+  # 条件表は増えていない（表の行は見出し＋9 行のまま。節は表を使わない）
+  [ "$(grep -cE '^\| [^-|][^|]* \| .* \|$' "$f")" -eq 10 ]
+  [ "$(printf '%s\n' "$sec" | grep -cE '^\|')" -eq 0 ]
+  # Scenario 1: 対象の止まり（2 経路、修正回数の上限は対象外）
+  printf '%s\n' "$sec" | grep -F '止まった理由:' | grep -qF '同じ HEAD のやり直しを使い切った'
+  printf '%s\n' "$sec" | grep -qF '`job-timeout`'
+  printf '%s\n' "$sec" | grep -qF '手順 7'
+  printf '%s\n' "$sec" | grep -F '修正回数の上限' | grep -qF '対象外'
+  # Scenario 2: 通す場合と主に上げる場合
+  printf '%s\n' "$sec" | grep -F '差分と因果を持たない' | grep -qF '通す'
+  printf '%s\n' "$sec" | grep -qF '再実行だけ'
+  printf '%s\n' "$sec" | grep -F '主に上げる' | grep -qF 'ランナーの状態確認'
+  printf '%s\n' "$sec" | grep -F '主に上げる' | grep -qF '確認してからやり直す'
+  # Scenario 3: 返事（1 回だけ、見張りに戻る）。ci-watch.md は変えない
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF '1 回だけ'
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF 'ci-watch.md` 2'
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF '見張りに戻'
+  printf '%s\n' "$sec" | grep -F '再び止まったら' | grep -qF '主に上げる'
+  # issue #1271: 通すときの親の判断の理由に、同じ件を見分ける 3 つを書く
+  printf '%s\n' "$sec" | grep -F '理由' | grep -F 'PR 番号' | grep -F '落ちたチェック名' | grep -qF 'HEAD の短い SHA'
+  printf '%s\n' "$sec" | grep -F '理由' | grep -qF '同じ件かを見分ける'
+  # 出力の形の `理由:` 行との対応、値の出どころ、`不明` の扱い
+  printf '%s\n' "$sec" | grep -F '通すときの `理由:`' | grep -qF '`<理由>` になる'
+  printf '%s\n' "$sec" | grep -F '子の停止の記録から取って書く' | grep -F '記録に無い値は作らず `不明` と書く' | grep -qF 'HEAD が `不明` の過去の判断とは同じ件かを見分けられないものとして扱う'
+  # Scenario 4: 「繰り返していない」との関係と同じ件の定義
+  printf '%s\n' "$sec" | grep -F '繰り返していない' | grep -qF '別の歯止め'
+  printf '%s\n' "$sec" | grep -F '同じ件' | grep -qF '同じ PR の同じチェック'
+  printf '%s\n' "$sec" | grep -F 'HEAD が変われば' | grep -qF '別の件'
+  # 通る例に 1 件足してある
+  grep -qF '上限で止まった子への追加のやり直し 1 回' "$f"
+}
+
 # issue #1246: エピックの目的・原則が推奨を一意に決めるときは「主の側の情報が要らない」を満たすと読む
 @test "criteria: an epic's purpose or principle that decides the recommendation satisfies the no-owner-information condition" {
   f="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
