@@ -539,12 +539,12 @@ gh api -X POST \"repos/\${R}/issues/\${N}/labels\" -f 'labels[]=agent-review:pas
 }
 
 @test "gate-report: a for loop over literal numbers targets each PR" {  # for N in 96 97 の中の付与で #96 と #97 の両方が対象になる
-  run_hook "R=oratta/kg-recruit
+  run_hook "R=acme/repo-k
 for N in 96 97; do
   gh api -X POST repos/\$R/issues/\$N/labels -f 'labels[]=agent-review:passed' >/dev/null
 done"
-  queried oratta/kg-recruit 96
-  queried oratta/kg-recruit 97
+  queried acme/repo-k 96
+  queried acme/repo-k 97
 }
 
 @test "gate-report: gh pr edit --add-label targets the cwd repository without gh repo view" {  # -R 無しの gh pr edit は gh repo view を呼ばず、repos/{owner}/{repo}/pulls/313 を cwd で問い合わせた応答のリポジトリに書く
@@ -556,12 +556,12 @@ done"
 }
 
 @test "gate-report: gh pr edit with -R / --repo targets that repository" {  # -R / --repo があればそのリポジトリが対象になり（timeline の --target-repo に渡る）、gh repo view は呼ばない
-  run_hook "gh pr edit 313 -R oratta/other --add-label agent-review:passed"
-  queried oratta/other 313
-  asked_timeline oratta/other pr 313
-  run_hook "gh issue edit 314 --add-label agent-review:passed,foo --repo oratta/other"
-  queried oratta/other 314
-  asked_timeline oratta/other pr 314
+  run_hook "gh pr edit 313 -R acme/other --add-label agent-review:passed"
+  queried acme/other 313
+  asked_timeline acme/other pr 313
+  run_hook "gh issue edit 314 --add-label agent-review:passed,foo --repo acme/other"
+  queried acme/other 314
+  asked_timeline acme/other pr 314
   ! grep -q '^repo ' "$GH_LOG" || return 1
 }
 
@@ -630,17 +630,17 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
 }
 
 @test "gate-report: a GH_REPO prefix on gh pr edit targets that repository" {  # 前置きの GH_REPO があればそのリポジトリが対象で gh repo view を呼ばない。-R が優先し、解決できない値なら飛ばす
-  run_hook "GH_REPO=oratta/other gh pr edit 300 --add-label agent-review:passed"
-  queried oratta/other 300
-  asked_timeline oratta/other pr 300
+  run_hook "GH_REPO=acme/other gh pr edit 300 --add-label agent-review:passed"
+  queried acme/other 300
+  asked_timeline acme/other pr 300
   ! grep -q '^repo ' "$GH_LOG" || return 1
   : > "$GH_LOG"
-  run_hook "R=oratta/other; GH_REPO=\$R gh issue edit 301 --add-label agent-review:passed"
-  queried oratta/other 301
+  run_hook "R=acme/other; GH_REPO=\$R gh issue edit 301 --add-label agent-review:passed"
+  queried acme/other 301
   : > "$GH_LOG"
-  run_hook "GH_REPO=oratta/other gh pr edit 302 -R oratta/third --add-label agent-review:passed"
-  queried oratta/third 302
-  ! queried oratta/other 302 || return 1
+  run_hook "GH_REPO=acme/other gh pr edit 302 -R acme/third --add-label agent-review:passed"
+  queried acme/third 302
+  ! queried acme/other 302 || return 1
   : > "$GH_LOG"
   run_hook "GH_REPO=\$(cat r) gh pr edit 300 --add-label agent-review:passed"
   [ "$status" -eq 0 ]
@@ -902,9 +902,9 @@ gh pr edit \"\$N\" -R acme/project --add-label agent-review:passed"
   posted_to acme/cwd-repo 300
   [ "$(body_trigger 1)" = "ゲート通過" ]
   : > "$GH_LOG"
-  run_hook "GH_REPO=oratta/other gh api repos/{owner}/{repo}/issues/300/labels -f 'labels[]=agent-review:passed'"
-  queried oratta/other 300
-  asked_timeline oratta/other pr 300
+  run_hook "GH_REPO=acme/other gh api repos/{owner}/{repo}/issues/300/labels -f 'labels[]=agent-review:passed'"
+  queried acme/other 300
+  asked_timeline acme/other pr 300
   : > "$GH_LOG"
   run_hook "GH_REPO=\$(cat r) gh api repos/{owner}/{repo}/issues/300/labels -f 'labels[]=agent-review:passed'"
   [ "$status" -eq 0 ]
@@ -1039,10 +1039,10 @@ PY
 }
 
 @test "gate-report: a for loop grant posts to each PR" {  # for で 2 件付与したら #96 と #97 のそれぞれに積む
-  run_hook "R=oratta/kg-recruit; for N in 96 97; do gh api -X POST repos/\$R/issues/\$N/labels -f 'labels[]=agent-review:passed'; done"
+  run_hook "R=acme/repo-k; for N in 96 97; do gh api -X POST repos/\$R/issues/\$N/labels -f 'labels[]=agent-review:passed'; done"
   [ "$status" -eq 0 ]
-  posted_to oratta/kg-recruit 96
-  posted_to oratta/kg-recruit 97
+  posted_to acme/repo-k 96
+  posted_to acme/repo-k 97
 }
 
 # --- 失敗時の抜け方 ---
@@ -1484,9 +1484,9 @@ use_real_repo_a() {
   run_hook "N=300; gh pr comment \$N --body x"
   posted_to acme/cwd-repo 300
   : > "$GH_LOG"
-  run_hook "for N in 96 97; do gh pr comment \$N -R oratta/kg-recruit --body x; done"
-  asked_timeline oratta/kg-recruit pr 96
-  asked_timeline oratta/kg-recruit pr 97
+  run_hook "for N in 96 97; do gh pr comment \$N -R acme/repo-k --body x; done"
+  asked_timeline acme/repo-k pr 96
+  asked_timeline acme/repo-k pr 97
 }
 
 @test "timeline-hook: an issue command given a PR number is treated as a PR" {  # gh issue comment 300 の番号が PR なら PR として扱う（きっかけは PR コメント、gh は 4 回）
@@ -2228,4 +2228,20 @@ PY2
   [ "$(body_trigger 1)" = "issue クローズ" ]
   [ "$(body_trigger 2)" = '合計（#704 $1.00 + PR 外 $0.00）' ]
   head -n 1 "$GH_LOG.body" | grep -qF '帰属: 区間+閉じた PR'
+}
+
+@test "gate-report: does not read scripts from the current directory when dirname is not on PATH" {  # dirname が PATH に無くても、カレントディレクトリの gate_report.py と write_allow.py は読まれない（#854）
+  hook_json "$GRANT_LITERAL" > "$WORK/payload.json"
+  mkdir -p "$WORK/onlybin854" "$WORK/cwd854"
+  ln -s "$(command -v cat)" "$WORK/onlybin854/cat"
+  ln -s "$REAL_PYTHON" "$WORK/onlybin854/python3"
+  ln -s "$WORK/bin/gh" "$WORK/onlybin854/gh"
+  for f in gate_report.py write_allow.py; do
+    printf 'import pathlib\npathlib.Path(%s).write_text("x")\n' "'$WORK/marker854'" > "$WORK/cwd854/$f"
+  done
+  local bash_bin; bash_bin="$(command -v bash)"
+  cd "$WORK/cwd854"
+  run env PATH="$WORK/onlybin854" "$bash_bin" "$SCRIPT" < "$WORK/payload.json"
+  [ "$status" -eq 0 ]
+  [ ! -e "$WORK/marker854" ]
 }
