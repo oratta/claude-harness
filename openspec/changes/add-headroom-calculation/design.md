@@ -45,7 +45,7 @@
 
 ### 2. `codex-develop.py` の読み込みは遅延させる
 
-headroom は Codex のキャッシュの場所（`_cache_path`）と取り直し（`read_codex_usages`）を `codex-develop.py` から借りる。#1301 で `codex-develop.py` が headroom を読み込む予定なので、headroom はモジュールの読み込み時に `codex-develop.py` を読まず、Codex の行を数えるときに `importlib` でファイルから読み込む（循環の読み込みを作らない）。Codex の週次窓の読み方（`minutes == 10080` の窓、リセットを過ぎたら 0% でリセットを週単位で先へ送る、`fetched_at` が未来なら使わない）は `usage_margin` と同じ規則を headroom 側に置き、#1301 で `usage_margin` を消して headroom に寄せる。
+headroom は Codex のキャッシュの場所（`_cache_path`）と取り直し（`read_codex_usages`）を `codex-develop.py` から借りる。#1301 で `codex-develop.py` が headroom を読み込む予定なので、headroom はモジュールの読み込み時に `codex-develop.py` を読まず、Codex の行を数えるときに `importlib` でファイルから読み込む（循環の読み込みを作らない）。Codex の週次窓の読み方（`minutes == 10080` の窓、リセットを過ぎたら 0% でリセットを週単位で先へ送る、取得の古さでは外さない）は `usage_margin` と同じ規則を headroom 側に置き（未来の取得時刻の扱いだけは決定 5 の 60 秒の規則にする）、#1301 で `usage_margin` を消して headroom に寄せる。
 
 - 代わりの案: Codex の取得を新しいモジュール `codex_usage.py` に切り出す → `test_codex_develop.py` が `m.read_codex_usages` などを差し替えている箇所が多く、この change の範囲が広がるので採らない
 
@@ -94,6 +94,8 @@ headroom は Codex のキャッシュの場所（`_cache_path`）と取り直し
 | `missing` | 週次の値が読めない（記録も snapshot も無い・形が壊れている・Codex のキャッシュが無い・認証の主体が食い違う） | 出さない（null） |
 | `off` | レジストリでオフ（Claude はスロットの `enabled: false`、Codex は `codex.enabled: false`） | 出さない（null） |
 
+`stale` の線を 60 秒にするのは、取得した機械と数える機械の時計の小さなずれを許すため（60 秒以内の未来は `ok` として数える）。`codex-develop.py` の `usage_margin`（`codex-develop.py:57-58`、`fetched_at` が 1 秒でも未来なら None）の厳密な判定は headroom に写さず、#1301 で `usage_margin` を headroom に寄せるときにこの規則に揃える。
+
 古い値を `ok` に入れるのは、今の実効値の規則（usage-session-records と codex-role-profiles の「前回値の古さでは除外しない」）に合わせるため。非 active の Claude スロットはトークン切れで取り直せないのが普通で、古さで外すと `cld` がそのスロットへ切り替えなくなる（#1301 で `best` を使うときに今の選び方から外れる）。
 
 `best` は、`status` が `ok` で `surplus_pct` が数で、5 時間の使用率が 90% 未満（分からないときは候補に残す）のアカウントのうち、`surplus_pct` が最大のもの。同点は Claude を先、同じ provider の中は宣言順（Claude はレジストリの順）で先のもの。`{provider, account}` か null。`cld` は Claude しか選べないので、provider ごとの最大も `best_by_provider: {claude, codex}` に出す（#1301 が数え直さずに読めるようにする）。
@@ -107,11 +109,11 @@ headroom が見る Codex は、`codex-develop.py` の自動選択の既定（`de
 
 ### 7. Codex のリセット権をキャッシュに足す
 
-`probe_codex_account` が `account/rateLimits/read` の応答から `rateLimitResetCredits` を読み、`{availableCount, credits: [{id, status, expiresAt, …}]}` の形が合えば `resets: {"available_count": <int>, "expires_at": [<status が available の各 credit の expiresAt（int か null）>]}` をキャッシュに足す。形が合わない・欄が無いときは `resets` を書かない（分からない）。キャッシュの `version` を 2 に上げる。生の応答・credit の id は保存しない。取得に失敗したときは今と同じく前回値（`resets` を含む）を保つ。`usage_margin` は `version` を見ないので、version 1 のキャッシュも 2 のキャッシュも今までどおり読める。
+`probe_codex_account` が `account/rateLimits/read` の応答から `rateLimitResetCredits` を読み、`{availableCount, credits: [{id, status, expiresAt, …}]}` の形が合えば `resets: {"available_count": <int>, "expires_at": [<status が available の各 credit の expiresAt。整数でないもの（null・文字列など）は null として持つ>]}` をキャッシュに足す。形が合わない・欄が無いときは `resets` を書かない（分からない）。キャッシュの `version` を 2 に上げる。生の応答・credit の id は保存しない。取得に失敗したときは今と同じく前回値（`resets` を含む）を保つ。`usage_margin` は `version` を見ないので、version 1 のキャッシュも 2 のキャッシュも今までどおり読める。
 
 ### 8. 書く時機: `usage-probe.sh` の末尾
 
-`usage-probe.sh` が `.usage-snapshot` の rename に成功した直後に、同じディレクトリの `headroom.py write --refresh-codex` を `python3 -I` で呼ぶ。標準出力・標準エラーは捨て、終了コードを probe の終了コードに伝えない（probe は今までどおり 0 で終わる）。snapshot を書かなかった実行（全スロット失敗・取得の間隔内）では呼ばない。`--refresh-codex` は Codex がオフのときと既定の Codex home が無いときは何もしない。
+`usage-probe.sh` が `.usage-snapshot` の rename に成功した直後に、同じディレクトリの `headroom.py write --refresh-codex` を `python3 -I` で呼ぶ。標準出力・標準エラーは捨て、終了コードを probe の終了コードに伝えない（probe は今までどおり 0 で終わる）。呼ぶかどうかは snapshot を書いたかどうかだけで決める。全スロットが失敗しても、試みて失敗したスロットの `reset_grants` を除いて snapshot を書き直したとき（`usage-probe.sh:580-595`、dev-workflow-escalation-tripwires の「全スロットの取得が失敗したときの例外」）は呼ぶ。snapshot を書かなかった実行（全スロットの失敗で除く欄も無かったとき・取得の間隔内・ロックを取れない）では呼ばない。`--refresh-codex` は Codex がオフのときと既定の Codex home が無いときは何もしない。
 
 ## `.headroom.json`（schema 1）
 
