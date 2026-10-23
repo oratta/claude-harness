@@ -2171,7 +2171,7 @@ develop の手順書（`skills/develop` 配下）に `orca` のサブコマン�
 - **分ける条件**: 子に返事を送る前に、子の端末が無ければ起動し直す。子の最後のリクエストから 60 分未満ならそのまま送る。60 分以上で、その間に待っている間の自動コンパクトが走っていればそのまま送る。60 分以上でコンパクトが走っていなければ、会話量 N が 150,000 トークン以上なら起動し直し、150,000 未満ならそのまま送る
 - **判定に使う事実**: 子の端末の有無（子のワークスペースに端末が残っているか。`orca` のコマンドは書かず、要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」に従う。端末の有無は `epic-dispatch.sh reply` が確かめ、端末が無ければ起動し直す。要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」）、子のセッションのトランスクリプト（`~/.claude/projects/` 配下の jsonl）の最後のリクエストの時刻と、そのあとの `compact_boundary` の有無、会話量 N（`plugins/dev-workflow/scripts/subagent-context.sh --file <トランスクリプト>`）
 - **親への適用**: 親自身が長く待ったあとも同じ条件で、そのまま続けるか起動し直すかを決める。親の状態のうち、回し方（`回し方:`）・終わった子（`子 #N マージ → 残り k 件` / `子 #N 見送り`）・外した子エピック（`後で別に起動するエピック:`）・残したワークツリー（`子 #N のワークツリーを残した`）・親が通した判断（`親の判断: 子 #N 通した`）はエピックのコメントから、残りの子は依存グラフと子 issue の状態から復元できる
-- **根拠と限り**: 値と条件の根拠として #1039 の集計コメントの URL と要点（返事の直前の会話の中央値、起動し直しの費用、閾値ごとの費用の増減）、実績の少なさと PC が寝ているとコンパクトが走らないこと
+- **根拠と限り**: 値と条件の根拠として #1039 の集計コメントの URL と要点（返事の直前の会話の中央値、起動し直しの費用、閾値ごとの費用の増減）、実績の少なさと PC が寝ているとコンパクトが走らないこと。加えて、コンパクトのあと develop を呼んでいた会話には SessionStart の hook（`scripts/develop-compact-reread.sh`）が `SKILL.md` の読み直しを差し込むことと、その費用（1 回約 39k トークンで、集計の控えめの想定で足した 40k とは別にかかること）、両方を足した想定は計算し直しておらず #1264 で計算すること、控えめの想定でも 120,000 は最良と差が小さく既定の 200,000 より子で安いので値を変えていないこと（#1217 の計算コメントの URL）
 - **再集計**: 1〜2 週間回したあとに同じ集計をやり直して #1039 にコメントし、値を見直す。件数・金額は合否に使わず記録する
 
 送り方と起動し直し方の手順本体はこのファイルに書かない（SHALL NOT。止まった子を親が解決する手順（develop の SKILL.md の Orca 経路と `epic-dispatch.sh reply`）が書き、このファイルを参照する）。
@@ -2206,7 +2206,7 @@ develop の SKILL.md「エピックの扱い」の「回し方」は、子セッ
 
 #### Scenario: 規則のファイルに値と分ける条件が書かれている
 - **WHEN** `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` を読む
-- **THEN** 子・親とも 120,000 の値、親の値を主の起動コマンドが未設定のときだけ入れる形で付けて `settings.json` の `env` に置かないこと、端末が無い・60 分未満・コンパクトが走った・N が 150,000 以上か未満で「そのまま送る」か「起動し直す」かを分ける条件、判定に使う事実（端末の有無は `epic-dispatch.sh reply` が確かめること）、親の状態の復元（親が通した判断を含む）、1〜2 週間後の再集計が書かれている
+- **THEN** 子・親とも 120,000 の値、親の値を主の起動コマンドが未設定のときだけ入れる形で付けて `settings.json` の `env` に置かないこと、端末が無い・60 分未満・コンパクトが走った・N が 150,000 以上か未満で「そのまま送る」か「起動し直す」かを分ける条件、判定に使う事実（端末の有無は `epic-dispatch.sh reply` が確かめること）、親の状態の復元（親が通した判断を含む）、1〜2 週間後の再集計が書かれている。さらに、コンパクトのあと hook が `SKILL.md` の読み直しを差し込むこと、その費用が 1 回約 39k であること、#1264 で計算し直すことが書かれている
 
 #### Scenario: SKILL.md の回し方が規則のファイルを指す
 - **WHEN** SKILL.md の「エピックの扱い」を読む
@@ -2330,10 +2330,10 @@ develop の手順書には `orca` のコマンドを書かず、端末の有無�
 `plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` は、止まった子を親の側で通してよい範囲の基準と、判断の出力の形を書かなければならない（MUST）。判断（`stop-judge.sh` が呼ぶモデル）と、Orca 経路の手順 8 で主に上げる前の親のセッションは、このファイルを読んで決める。
 
 - **原則**: 主に聞く理由の 3 つ（主の側にしか答えが無い・決まりで主の承認が要る・主の手でしかできない操作。正本は `~/.claude/output-styles/readable.md` の節 3）のどれにも当たらない止まりは、親が通す（MUST）。下の通す条件は、その止まりが 3 つのどれにも当たらないことを確かめる手順として書き、条件ごとにどの理由に当たらないことを確かめるものかを示す（MUST。「繰り返していない」は理由ではなく、親の判断が同じ止まりを回し続けないための歯止めと書く）
-- **通す条件**: 次をすべて満たすときだけ通す。既存の規則が主に聞くと定めている止まり（PR トークン上限の計測が exit 2 のときの続けるか止めるか、レビューの周の終わりの直し方の判定が「選び直しが要る」とき、PR のマージ）でない／推奨がある／推奨がエピックの目的と子 issue の受け入れ条件の範囲を広げず逆向きにしない／聖域（`CLAUDE.md`・hooks・権限設定・`rules/`・常時注入の予算ファイル、`rules/destructive-git-guard.md` の破壊的な git 操作、秘密情報の値、外部への公開・送信・課金、PR のマージ）に触れない／そのブランチの中の取り消しや設定の戻しで戻せる／主の側の情報（好み・事業判断・主しか知らない事実・リスクの許容）が要らない／実機操作（MFA・OAuth・ログイン・ダッシュボードの操作）でない／配役表が渡されたとき、要る観点の担い手が主でない／同じ子の同じ件を既に一度通していない。作業中のリポジトリの中に試しの issue を作って閉じることは「外部への公開・送信」に当たらないと添える（MUST）
+- **通す条件**: 次をすべて満たすときだけ通す。既存の規則が主に聞くと定めている止まり（PR トークン上限の計測が exit 2 のときの続けるか止めるか、レビューの周の終わりの直し方の判定が「選び直しが要る」とき、PR のマージ）でない／推奨がある／推奨がエピックの目的と子 issue の受け入れ条件の範囲を広げず逆向きにしない／聖域（`CLAUDE.md`・hooks・権限設定・`rules/`・常時注入の予算ファイル、`rules/destructive-git-guard.md` の破壊的な git 操作、秘密情報の値、外部への公開・送信・課金、PR のマージ）に触れない／そのブランチの中の取り消しや設定の戻しで戻せる（同じ操作をやり直しても何も残らない操作、CI の再実行・ジョブの打ち直しも戻せるに含める）／主の側の情報（好み・事業判断・主しか知らない事実・リスクの許容）が要らない／実機操作（MFA・OAuth・ログイン・ダッシュボードの操作）でない／配役表が渡されたとき、要る観点の担い手が主でない／同じ子の同じ件を既に一度通していない。作業中のリポジトリの中に試しの issue を作って閉じることは「外部への公開・送信」に当たらないと添える（MUST）
 - **子の `主に聞く理由:` の読み方**: 子の停止の記録の `主に聞く理由:` は、書かれた理由が 3 つのどれかに当たるかを確かめて読み、書かれたことをそのまま通さない理由・主に上げる理由にしない（MUST）。`主に聞く理由: なし（…）` や、3 つのどれにも当たらない理由は、通す側で読む。項目の無い記録（以前の形）は、ほかの項目から判断する
 - **迷ったとき**: 1 つでも満たすか判断できなければ主に上げる。主に聞く理由が成り立つか迷うときは、成り立つ側に倒す
-- **例**: 通る例（リポジトリの中のソースでファイル名が理由で hook が止めたファイルの読み取り、手順外の判断を推奨どおり受け入れること、自分の実行の配下で暴走したプロセスの停止、実機テストのための試しの issue 作成、止まった子の起動し直し、Mac が空いてからの CI の再実行、CI の見張りのやり直しの上限で止まった子への追加のやり直し 1 回）と、通らない例（PR トークン上限の引き上げ、レビューの周の終わりで選び直しが要るときの続行、マージの承認、聖域のファイルの変更、実機操作、主しか知らない設計意図）。PR トークン上限の引き上げを通さないのは、既存の規則が exit 2 で主に聞くことを求め、新しい上限の算出と `PR トークン上限:` の記録を主の「続ける」の返事を受けた本体が行う作りになっているため（親の返事だけでは記録が作られない）
+- **例**: 通る例（リポジトリの中のソースでファイル名が理由で hook が止めたファイルの読み取り、手順外の判断を推奨どおり受け入れること、自分の実行の配下で暴走したプロセスの停止、実機テストのための試しの issue 作成、止まった子の起動し直し、CI の再実行（無関係なテストの時間切れ・ランナーの混雑・待って打ち直すだけで済むもの。失敗が PR と無関係と言い切れなくても、原因の切り分けを通す条件にしない）、CI の見張りのやり直しの上限で止まった子への追加のやり直し 1 回）と、通らない例（PR トークン上限の引き上げ、レビューの周の終わりで選び直しが要るときの続行、マージの承認、聖域のファイルの変更、実機操作、主しか知らない設計意図）。PR トークン上限の引き上げを通さないのは、既存の規則が exit 2 で主に聞くことを求め、新しい上限の算出と `PR トークン上限:` の記録を主の「続ける」の返事を受けた本体が行う作りになっているため（親の返事だけでは記録が作られない）
 - **出力の形**: 1 行目 `判断: 通す` か `判断: 主に上げる`、2 行目 `理由: <1 行>`、3 行目 `返事: <1 行>`
 - **位置づけ**: この基準は案で主が PR で決めること、#1030 の「合理性があり危険が低い」はこの基準を参照すること
 
@@ -2347,7 +2347,7 @@ PR のマージの可否はこの基準で通してはならない（MUST NOT。
 
 #### Scenario: 基準のファイルが主に聞く理由の 3 つを原則に置いている
 - **WHEN** `parent-pass-criteria.md` を読む
-- **THEN** 「主に聞く理由の 3 つ（主の側にしか答えが無い・決まりで主の承認が要る・主の手でしかできない操作）に当たらない止まりは親が通す」が書かれ、9 つの条件の行ごとに確かめる理由（3 つのどれか、または「繰り返していない」の歯止め）が書かれ、通る例に実機テストのための試しの issue 作成・止まった子の起動し直し・Mac が空いてからの CI の再実行・CI の見張りのやり直しの上限で止まった子への追加のやり直し 1 回がある
+- **THEN** 「主に聞く理由の 3 つ（主の側にしか答えが無い・決まりで主の承認が要る・主の手でしかできない操作）に当たらない止まりは親が通す」が書かれ、9 つの条件の行ごとに確かめる理由（3 つのどれか、または「繰り返していない」の歯止め）が書かれ、通る例に実機テストのための試しの issue 作成・止まった子の起動し直し・CI の再実行（無関係なテストの時間切れ・ランナーの混雑・待って打ち直すだけで済むもの）があり、CI の再実行は原因の切り分けを通す条件にしないこと、CI の見張りのやり直しの上限で止まった子への追加のやり直し 1 回が書かれている。「戻せる」の行に、同じ操作をやり直しても何も残らない操作（CI の再実行・ジョブの打ち直し）を含めることが書かれている
 
 #### Scenario: 基準のファイルが子の主に聞く理由を鵜呑みにしない
 - **WHEN** `parent-pass-criteria.md` の `主に聞く理由:` の読み方を読む
@@ -3383,3 +3383,112 @@ develop の `SKILL.md`「ループの終わり」は、エピックの子（`scr
 #### Scenario: 基準のファイルが「繰り返していない」との関係を決めている
 - **WHEN** 同じ節を読む
 - **THEN** 見張りの上限と「繰り返していない」が別の歯止めであること、同じ件は同じ PR の同じチェックで HEAD が変われば別の件であること、同じ HEAD で許したあとにまた止まった同じ件は主に上げること、条件表が 9 条件のままであることが書かれている
+
+### Requirement: コンパクト直後に develop を呼んでいた会話へ SKILL.md の読み直しを差し込む hook を登録する
+`plugins/dev-workflow/hooks/hooks.json` は、SessionStart に matcher `compact` のエントリを置き、`${CLAUDE_PLUGIN_ROOT}/scripts/develop-compact-reread.sh` を呼ぶ command を登録しなければならない（MUST）。スクリプトは stdin の JSON の `source` が `compact` のときだけ働き、それ以外（`startup`・`clear`・`resume`・空・`source` が無い）では、会話で develop を呼んでいても何も出さずに exit 0 で終わらなければならない（MUST）。
+
+#### Scenario: hooks.json が compact の SessionStart に登録している
+- **WHEN** `plugins/dev-workflow/hooks/hooks.json` の `hooks.SessionStart` を読む
+- **THEN** matcher を `|` で区切った値に `compact` を含み、`develop-compact-reread.sh` を呼ぶ command を持つエントリがある
+
+#### Scenario: compact 以外の起動では何も出さない
+- **WHEN** 会話記録に `dev-workflow:develop` の Skill 呼び出しがあり、`source` が `startup`・`clear`・`resume`・空文字のいずれかの入力でスクリプトを実行する
+- **THEN** stdout は空で exit 0
+
+### Requirement: develop を呼んでいたかはコンパクト前の 3 種類の記録で判定する
+スクリプトは stdin の `transcript_path` が指す会話記録（jsonl）を 1 行ずつ読み、次のどれかが 1 つあれば「develop を呼んでいた」とみなさなければならない（MUST）。(a) `type` が `assistant` の行の `message.content` にある `type: tool_use`・`name: Skill` のブロックで、`input.skill` が `dev-workflow:develop`。(b) `type` が `user` の行の `message.content` が文字列か、一覧の `type: text` のブロックの `text` で、`<command-name>/dev-workflow:develop</command-name>` を含む。(c) `type` が `attachment` の行の `attachment.type` が `invoked_skills` で、`skills` の要素の `name` が `dev-workflow:develop`。
+
+#### Scenario: Skill 呼び出しで数える
+- **WHEN** 会話記録に `input.skill` が `dev-workflow:develop` の Skill の tool_use があり、`source: compact` で実行する
+- **THEN** 読み直しの文を差し込む
+
+#### Scenario: 文字列の user の発言のコマンドで数える
+- **WHEN** 会話記録の user の行の `message.content` が `<command-name>/dev-workflow:develop</command-name>` を含む文字列で、`source: compact` で実行する
+- **THEN** 読み直しの文を差し込む
+
+#### Scenario: 一覧の user の発言の text のブロックのコマンドで数える
+- **WHEN** user の行の `message.content` が一覧で、画像のブロックのあとの text のブロックが `<command-name>/dev-workflow:develop</command-name>` を含み、`source: compact` で実行する
+- **THEN** 読み直しの文を差し込む
+
+#### Scenario: 前のコンパクトのあとの invoked_skills で数える
+- **WHEN** 会話記録に `compact_boundary` の行と、`skills` に `name: dev-workflow:develop` を持つ `invoked_skills` の attachment の行があり、`source: compact` で実行する
+- **THEN** 読み直しの文を差し込む
+
+### Requirement: 名前空間の無い develop・別のスキル・文中の言及は数えない
+スクリプトは、上の 3 種類の記録の形と名前 `dev-workflow:develop` に完全に一致するものだけを数えなければならない（MUST）。次は数えてはならない（MUST NOT）: 名前空間の無い `develop`（Skill の `input.skill`・`<command-name>/develop</command-name>`・`invoked_skills` の `name`）、名前に develop を含む別のスキルやコマンド（`dev-workflow:codex-develop`・`/dev-workflow:develop-epic` など）、assistant の text のブロックや tool_result の中身で名前に触れただけのもの。develop を呼んでいない会話では何も出さない（MUST）。
+
+#### Scenario: 名前空間の無い develop は数えない
+- **WHEN** 会話記録に `input.skill` が `develop` の Skill 呼び出し、`<command-name>/develop</command-name>` の user の発言、`name: develop` の `invoked_skills` だけがあり、`source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: 名前に develop を含む別のスキルは数えない
+- **WHEN** 会話記録に `dev-workflow:codex-develop` の Skill 呼び出しと `<command-name>/dev-workflow:develop-epic</command-name>` の user の発言だけがあり、`source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: 文中や tool_result で触れただけなら数えない
+- **WHEN** 会話記録に、assistant の text のブロックと user の tool_result の中身に `dev-workflow:develop` や `<command-name>/dev-workflow:develop</command-name>` が書かれた行だけがあり、`source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: develop を呼んでいない会話では何も出さない
+- **WHEN** 会話記録に普通の user の発言と `probe:hello` の Skill 呼び出しだけがあり、`source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+### Requirement: develop を呼んでいたかの判定の守備範囲
+要件「develop を呼んでいたかはコンパクト前の 3 種類の記録で判定する」と「名前空間の無い develop・別のスキル・文中の言及は数えない」の判定は、次の範囲を超える保証をしてはならない（MUST NOT）。入力として扱うのは、Claude Code が SessionStart(compact) の hook に渡す stdin の JSON と、その `transcript_path` が指す会話記録（Claude Code が書く jsonl。この時点ではコンパクト前の記録だけ）である。拾いたい誤りは、develop を呼んでいた会話でコンパクトのあと SKILL.md を読み直さず要約の上で進むこと（差し込み漏れ）と、名前空間の無い `develop`・別のスキル・文中の言及で、呼んでいない会話に差し込むことである。通してよく、この判定では止めない入力は下の Scenario に挙げる。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
+
+#### Scenario: 呼び終えたあと別の作業をしていても毎回差し込む
+- **WHEN** develop を呼び終えたあと、同じ会話で develop と関係のない作業を続け、コンパクトが 2 回走る
+- **THEN** どちらのコンパクトのあとも読み直しの文を差し込む。この判定では止めない
+
+#### Scenario: 手で打ったコマンドの文字列は呼び出しとして数える
+- **WHEN** user が `<command-name>/dev-workflow:develop</command-name>` の文字列を手で打った発言だけがある会話で、`source: compact` で実行する
+- **THEN** 呼び出しとして数え、読み直しの文を差し込む。この判定では止めない
+
+#### Scenario: SKILL.md を Read で読んだだけの会話は数えない
+- **WHEN** Skill もコマンドも使わず、SKILL.md を Read ツールで読んだだけの会話で、`source: compact` で実行する
+- **THEN** 数えず、何も出さない。この判定では止めない
+
+#### Scenario: 会話記録の形が変わって判定が外れても止めない
+- **WHEN** Claude Code の更新で会話記録の形が変わり、3 種類の記録のどれにも当たらなくなった会話で、`source: compact` で実行する
+- **THEN** 何も出さずに exit 0 で終わる（fail-open）。この判定では止めない
+
+### Requirement: 差し込む文は SKILL.md の読み直しと親か子かの確かめ直しを求める
+develop を呼んでいたと判定したとき、スクリプトは stdout に `{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "<文>"}}` の形の JSON を 1 つ出さなければならない（MUST）。`<文>` は次の 2 つの要素を含まなければならない（MUST）。(1) `${CLAUDE_PLUGIN_ROOT}/skills/develop/SKILL.md` の絶対パスを示し、それを Read ツールで offset と limit を使って分けて読み直すこと。(2) 自分がエピックの親か子かを記録先の issue から確かめ直してから続けること。
+
+#### Scenario: 差し込む文が 2 つの要素を含む
+- **WHEN** develop を呼んでいた会話記録で `source: compact` で実行する
+- **THEN** exit 0 で、stdout の JSON の `hookSpecificOutput.hookEventName` が `SessionStart`、`additionalContext` が `<CLAUDE_PLUGIN_ROOT>/skills/develop/SKILL.md`・`offset`・`limit`・`親`・`子`・`記録先` を含む
+
+### Requirement: 判定できないときは何も出さず、セッションの開始を止めない
+スクリプトは常に exit 0 で終わらなければならない（MUST）。次のときは何も出してはならない（MUST NOT。fail-open）: stdin が空か JSON でない、`transcript_path` が無いかファイルが無い、`CLAUDE_PLUGIN_ROOT` が空、`python3` が PATH に無い。会話記録のうち JSON として読めない行と、JSON として読めるが値の型が想定と違う行は 1 行ずつ飛ばし、走査を続けなければならない（MUST。そのあとの行に呼び出しがあれば差し込む）。
+
+#### Scenario: stdin が JSON でなければ何も出さない
+- **WHEN** stdin に `not json` を渡すか、stdin を空にして実行する
+- **THEN** どちらも stdout は空で exit 0
+
+#### Scenario: 会話記録が無ければ何も出さない
+- **WHEN** `transcript_path` が存在しないファイルを指す `source: compact` の入力で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: CLAUDE_PLUGIN_ROOT が空なら何も出さない
+- **WHEN** develop を呼んでいた会話記録で、`CLAUDE_PLUGIN_ROOT` を空にして `source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: python3 が無ければ何も出さない
+- **WHEN** develop を呼んでいた会話記録で、`python3` の無い PATH で `source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: 壊れた行を飛ばして走査を続ける
+- **WHEN** 会話記録に JSON として読めない行だけがあるときに実行し、続けてそのあとに `dev-workflow:develop` の Skill 呼び出しを足して実行する
+- **THEN** 1 回目は stdout が空で exit 0、2 回目は読み直しの文を差し込む
+
+#### Scenario: 形の違う行を飛ばして走査を続ける
+- **WHEN** 会話記録に `skills` が数値の `invoked_skills`、`name` が一覧の要素、`input.skill` が一覧の Skill 呼び出し、`text` が一覧の text のブロック、最上位が一覧の行だけがあるときに実行し、続けてそのあとに `dev-workflow:develop` の Skill 呼び出しを足して実行する
+- **THEN** 1 回目は stdout が空で exit 0、2 回目は読み直しの文を差し込む
+
+### Requirement: hook の振る舞いを bats で確かめる
+`plugins/dev-workflow/tests/develop-compact-reread.bats` は、要件「コンパクト直後に develop を呼んでいた会話へ SKILL.md の読み直しを差し込む hook を登録する」「develop を呼んでいたかはコンパクト前の 3 種類の記録で判定する」「名前空間の無い develop・別のスキル・文中の言及は数えない」「差し込む文は SKILL.md の読み直しと親か子かの確かめ直しを求める」「判定できないときは何も出さず、セッションの開始を止めない」の各 Scenario を確かめなければならない（MUST）。会話記録を使う Scenario は、偽の会話記録（fixture は SessionStart(compact) の時点の実機の形。今回のコンパクトの `compact_boundary` と `invoked_skills` はまだ無い）で確かめる。
+
+#### Scenario: bats が通る
+- **WHEN** `bats plugins/dev-workflow/tests/develop-compact-reread.bats` を実行する
+- **THEN** 全件が通る
