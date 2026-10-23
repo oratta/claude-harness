@@ -180,7 +180,9 @@ refute() {
   echo "$loop" | grep -qF '実装品質起因のときだけ'
   echo "$loop" | grep -qF '一方だけ'
   echo "$loop" | grep -qF 'dev-workflow:decider'
-  echo "$loop" | grep -qF 'W を fable にはしない'
+  # #1239 C9・C10: どちらを上げるかと W の上限は「モデル」節の昇格トリップワイヤーの段落を指す
+  echo "$loop" | grep -E 'failed.*原因分類' | grep -qF '「モデル」節の昇格トリップワイヤーの段落'
+  ! grep -qF 'W を fable にはしない' "$SKILL" || return 1
   echo "$loop" | grep -qE 'W を再開'
   # #554: G は再開せず、failed の Gate Result の 次の段: どおりに新しく起こす
   echo "$loop" | grep -qF '`次の段:` どおりの G を新しく起こして再レビュー'
@@ -272,7 +274,9 @@ refute() {
   flat="$(section '1 ループ' | top_step 3 | tr '\n' ' ')"
   [ -n "$flat" ]
   echo "$flat" | grep -qE '自分が \(3a\) を指示したか \(3b\) を指示したかで決め[^。]*工程名の文字列照合では決めない'
-  echo "$flat" | grep -qE '\(3a\) の return に PR 番号と仕様宣言のコメント URL が既に揃っていれば[^。]*\(3b\) を指示せず'
+  # #1239 B1: 古い世代の W が (3) を通しで返す入力はもう来ないので、(3b) を飛ばす分岐は書かない
+  ! echo "$flat" | grep -qF '既に揃っていれば' || return 1
+  ! echo "$flat" | grep -qF '(3b) を指示せず' || return 1
 }
 
 # --- モデル ---
@@ -294,12 +298,23 @@ refute() {
   echo "$m" | grep -qF 'agent-model-guard.sh'
 }
 
-@test "model: reserve only for automatic runs, exhausted caps every path at opus" {
+@test "model: budget modes are named and point to decision-criteria.md without restating the effects (#1239 C8)" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE 'reserve.*自動実行'
-  echo "$m" | grep -qE 'exhausted.*全経路'
   echo "$m" | grep -q 'FABLE_BUDGET_MODE'
+  echo "$m" | grep -q 'SHARED_BUDGET_MODE'
   echo "$m" | grep -q 'references/decision-criteria.md'
+  echo "$m" | grep -qF 'ここに再掲しない'
+  # 5 値のどれについても効果の文を書かない（正本は decision-criteria.md の表）
+  for v in abundant reserve exhausted throttled depleted; do
+    ! echo "$m" | grep -qF "\`$v\`" || return 1
+  done
+  # 効果の文は正本にある
+  dc="${SKILL_DIR}/references/decision-criteria.md"
+  grep -qE '`abundant`.*どの役割の既定も上げない' "$dc"
+  grep -qE 'reserve.*自動実行' "$dc"
+  grep -qE 'exhausted.*全経路' "$dc"
+  grep -qE '`throttled`.*Sonnet' "$dc"
+  grep -qE '`depleted`.*Sonnet' "$dc"
 }
 
 @test "model: the escalation tripwire survives as a one-side-only ladder" {
@@ -308,14 +323,20 @@ refute() {
   echo "$m" | grep -qF 'どちらか一方だけ'
   echo "$m" | grep -qF '両方同時に上げない'
   echo "$m" | grep -qF 'dev-workflow:decider'
+  # #1239 C9・C10: 段落はラダーの正本を指し、W の上限は表の W の行を指す 1 句で残す
+  t="$(echo "$m" | grep '^昇格トリップワイヤー')"
+  echo "$t" | grep -qF 'templates/escalation-tripwires.md'
+  echo "$t" | grep -qF 'W を `opus`'
+  echo "$t" | grep -qF 'W の上限は「モデル」節の表の W の行（`opus`）'
+  ! echo "$t" | grep -qF '`opus` → `fable`' || return 1
 }
 
-@test "model: shared budget mode sets the floor and abundant no longer lifts W" {
-  m="$(section 'モデル')"
-  echo "$m" | grep -q 'SHARED_BUDGET_MODE'
-  echo "$m" | grep -qE 'throttled.*`sonnet`'
-  echo "$m" | grep -qE 'depleted.*`sonnet`'
-  echo "$m" | grep -q 'どの役割の既定も上げない'
+@test "loop: step 1 points the W model to the W row of the model table (#1239 C10)" {
+  s1="$(grep -E '^\(1\) W を' "$SKILL")"
+  echo "$s1" | grep -qF 'references/pre-classification.md'
+  echo "$s1" | grep -qF '「1 周目」列'
+  echo "$s1" | grep -qF '「モデル」節の表の W の行'
+  ! echo "$s1" | grep -qF 'W の上限は opus' || return 1
 }
 
 @test "model: G defaults to sonnet and every pre-classification lifts W only to opus" {
