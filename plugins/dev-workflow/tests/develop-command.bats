@@ -154,12 +154,13 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
   a="${PLUGIN_DIR}/references/codex-develop.md"
   x="${PLUGIN_DIR}/references/codex-develop-explicit.md"
   grep -qF 'references/codex-develop-explicit.md' "$a"
-  for s in '組み込み profile は' 'Version 1 profile' '併用、旧形式の片方欠落' 'Codex オフのあいだ' 'profile 全体を先に検証する' '導入方法は `docs/codex-develop.md`'; do
+  for s in '組み込み profile は' 'Version 1 profile' '併用、旧形式の片方欠落' 'Codex オフのあいだ' 'profile 全体を先に検証する' '明示 profile・旧形式の account も既定値や別 account へ倒さない' '導入方法は `docs/codex-develop.md`'; do
     if grep -qF "$s" "$a"; then echo "still in codex-develop.md: $s"; return 1; fi
     grep -qF "$s" "$x" || { echo "missing in explicit: $s"; return 1; }
   done
+  if grep -qF '監査値として保持する' "$x"; then echo "effort rule must stay in codex-develop.md"; return 1; fi
   # 自動選択に要る記述は残す側にある
-  for s in '無指定では各 canonical phase' 'codex-off' 'current` の対応として評価' 'Codex role は次の3手順'; do
+  for s in '無指定では各 canonical phase' '監査値として保持する' '明示対応表に無い名前を既定値や別 account へ倒さない' 'codex-off' 'current` の対応として評価' 'Codex role は次の3手順'; do
     grep -qF "$s" "$a" || { echo "missing in codex-develop.md: $s"; return 1; }
   done
 }

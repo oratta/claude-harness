@@ -10,11 +10,11 @@ Codex オフのあいだ、Codex の role を含む明示 profile と旧形式�
 
 ## profile の種類と外部設定
 
-組み込み profile は `codex-standard`、`codex-economy`、`hybrid-standard`、`claude-write-codex-review`。外部設定は全 canonical role を含み、Codex role の account は呼び出し側の対応表に存在し、Claude role は account=current、model は `haiku|sonnet|opus|fable`、`fable` は decider だけに指定できる必要がある。Codex role の model は系統名（英小文字だけの値。組み込み profile は `sol` / `luna` / `astra`）か完全なモデル ID（`gpt-6-sol` 等。版を固定したいとき）で書き、adapter は変換せずに request へ写す。系統名は worker が呼ぶ直前にその account の model/list から最新版へ解決する。新しいモデルが一覧に出るには Codex CLI の更新が要る（CLI が古いと旧世代に解決される）。effort は両 provider で監査値として保持するが、Claude Agent の option には変換しない。歴史的な `references/codex-role-profiles.json` というファイル名は互換性のため維持するが、中身は provider-neutral な role table である。
+組み込み profile は `codex-standard`、`codex-economy`、`hybrid-standard`、`claude-write-codex-review`。外部設定は全 canonical role を含み、Codex role の account は呼び出し側の対応表に存在し、Claude role は account=current、model は `haiku|sonnet|opus|fable`、`fable` は decider だけに指定できる必要がある。Codex role の model は系統名（英小文字だけの値。組み込み profile は `sol` / `luna` / `astra`）か完全なモデル ID（`gpt-6-sol` 等。版を固定したいとき）で書き、adapter は変換せずに request へ写す。系統名は worker が呼ぶ直前にその account の model/list から最新版へ解決する。新しいモデルが一覧に出るには Codex CLI の更新が要る（CLI が古いと旧世代に解決される）。歴史的な `references/codex-role-profiles.json` というファイル名は互換性のため維持するが、中身は provider-neutral な role table である。
 
 ## account-home（明示指定）
 
-profile 全体を先に検証するため、選択 role が Claude でも明示 profile 内の Codex account はすべて明示対応表に必要である。明示 profile・旧形式、または明示対応表に無い名前を既定値や別 account へ倒さない。
+profile 全体を先に検証するため、選択 role が Claude でも明示 profile 内の Codex account はすべて明示対応表に必要である。明示 profile・旧形式の account も既定値や別 account へ倒さない。
 
 ## 導入方法
 

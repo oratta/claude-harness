@@ -6,12 +6,11 @@
 
 `/dev-workflow:develop --profile hybrid-standard <issue URL または依頼>`
 
-`request` は無指定の自動選択のほか、明示 profile（`--profile NAME [--profile-file PATH]`）と旧形式（`--account NAME --model MODEL`）を取る。明示指定のときは検証規則と外部 profile の書式を `references/codex-develop-explicit.md` で読む。各 role は `executor` を解決した直後に一度だけ分岐する。`claude` は要求 tuple を保持して既存の残量上限を適用した model で Agent ツールを使い、`codex` は request を作って前景コマンドを使う。事前分類に当たる R1 または G が要求したレビュアーは、対象 role の設定ではなく profile の `decider` entry（投げ先/account/model）で `subagent_type: dev-workflow:decider` として起動する。
-
+`request` は無指定の自動選択のほか、明示 profile（`--profile NAME [--profile-file PATH]`）と旧形式（`--account NAME --model MODEL`）を取る。明示指定のときは検証規則と外部 profile の書式を `references/codex-develop-explicit.md` で読む。各 role は設定を解決した直後に `executor` で一度だけ分岐する。`claude` は要求 tuple を保持して既存の残量上限を適用した model で Agent ツールを使い、`codex` は request を作って前景コマンドを使う。effort は両 provider で監査値として保持するが、Claude Agent の option には変換しない。事前分類に当たる R1 または G が要求したレビュアーは、対象 role の設定ではなく profile の `decider` entry（投げ先/account/model）で `subagent_type: dev-workflow:decider` として起動する。
 
 無指定では各 canonical phase の開始時に Claude 起動 account と登録済み Codex accounts を再評価する。Codex 側も Claude 側も取得からの経過時間では捨てず、Codex は週次 snapshot を、Claude は `usage_view` の実効値（セッション記録と snapshot）を、リセット時刻で読み替えた値（リセット前は下限、リセットを過ぎた窓は 0%）で、`margin = 週経過率 - 週次使用率`。両 provider が margin 0 以上なら `claude-write-codex-review`、Codex だけなら代表 account に束縛した `codex-standard`、それ以外は Claude 既定構成を選ぶ。開始済み role は途中で切り替えない。返された selection evidence（構成、reason、両 margin / fetched_at、代表 account）を最初の開始コメントと各 dispatch 記録に残し、欠測値は `missing` と書く。登録簿（`CLAUDE_ACCOUNTS_FILE`、未設定なら `${CLAUDE_CONFIG_DIR:-~/.claude}/accounts.json`）のトップレベルの `codex.enabled` が JSON の `false` のとき（Codex オフ）は、Codex の使用量を読まずに `claude-default` を reason `codex-off` で選び、selection evidence の `codex` に `enabled: false` を載せる。
 
-account 名から CODEX_HOME への対応は `--account-home NAME=PATH` の繰り返しか、平らな JSON を `--account-home-file PATH` で与える。2方式は併用せず、値は既存の絶対ディレクトリでなければならない。profile も旧形式も対応表も無い自動選択だけは、`CODEX_HOME`（未設定なら `~/.codex`）が既存の絶対ディレクトリなら `current` の対応として評価し、存在しなければ Codex を欠測のままにする。
+account 名から CODEX_HOME への対応は `--account-home NAME=PATH` の繰り返しか、平らな JSON を `--account-home-file PATH` で与える。2方式は併用せず、値は既存の絶対ディレクトリでなければならない。profile も旧形式も対応表も無い自動選択だけは、`CODEX_HOME`（未設定なら `~/.codex`）が既存の絶対ディレクトリなら `current` の対応として評価し、存在しなければ Codex を欠測のままにする。明示対応表に無い名前を既定値や別 account へ倒さない。
 
 この入口は人間が手動で使うためのもので、burn 窓や cron/tick を要求しない。Codex worker の認証失敗、利用上限による拒否、権限拒否は、そのまま停止理由とする。role の投げ先を暗黙に別 provider で代行してはならない。`codex` に解決した role で Codex が失敗しても Claude へ切り替えず、`claude` に解決した role で Claude が失敗しても Codex へ切り替えない。role をどこへ投げるかを決める場所は profile だけである。
 
