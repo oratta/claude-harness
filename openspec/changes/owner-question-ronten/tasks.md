@@ -15,6 +15,7 @@
 
 - [x] 4.1 pr-review-gate `declarations.md` の手順 3 の「主のリスク許容が必要」の雛形の 4 行目を論点なし／論点ありの 2 つの形にし、「この形式以外で主にリスク承認を求めない」と「これを許容するか」を外し、依頼文は正本の型で書くとする。行頭の 2 文言・`対象 HEAD:` 行・`主の回答: 許容` は変えない。`bats tests/owner-question-style.bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/pr-review-gate-index.bats plugins/dev-workflow/tests/pr-review-gate-spec-declaration.bats` で確かめる。触る範囲: plugins/dev-workflow/skills/pr-review-gate/declarations.md:18-69（手順 3「リスク宣言」）
 - [x] 4.2 `stages/hold.md` に、宣言が論点なしのときは依頼も論点なしの 3〜4 行で書き、宣言を写さないことを書く。同じ bats で確かめる。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:61
+- [x] 4.3 `stages/hold.md` の論点なしの依頼の文に、返事の渡し方の案内は答え方の行に畳み、満たさなかった条件は区切りの下に置くことを足す（仕様の pr-review-gate の ADDED の文と揃える）。`bats tests/owner-question-style.bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` で確かめる。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:61
 
 ## 5. develop の子の停止の記録と親の手順
 
@@ -24,7 +25,7 @@
 
 ## 6. 変更の記録
 
-- [x] 6.1 変更の記録 `plugins/dev-workflow/changes/1209.md` と `plugins/casting/changes/1209.md` を書く（何を変えたか・触らないもの・戻し方）。ファイルがあり内容が差分と食い違わないことで確かめる。触る範囲: plugins/dev-workflow/changes/1209.md（新規）、plugins/casting/changes/1209.md（新規）
+- [x] 6.1 変更の記録 `plugins/dev-workflow/changes/1209.md` と `plugins/casting/changes/1209.md` を書く（何を変えたか・仕様化への切り替えと仕様レビューで直したこと・触らないもの・戻し方）。ファイルがあり内容が差分と食い違わないことで確かめる。触る範囲: plugins/dev-workflow/changes/1209.md（新規）、plugins/casting/changes/1209.md（新規）
 
 ## Workflow follow-up
 
