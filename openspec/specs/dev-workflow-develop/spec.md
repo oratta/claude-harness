@@ -2206,7 +2206,7 @@ develop の SKILL.md「エピックの扱い」の「回し方」は、子セッ
 
 #### Scenario: 規則のファイルに値と分ける条件が書かれている
 - **WHEN** `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` を読む
-- **THEN** 子・親とも 120,000 の値、親の値を主の起動コマンドが未設定のときだけ入れる形で付けて `settings.json` の `env` に置かないこと、端末が無い・60 分未満・コンパクトが走った・N が 150,000 以上か未満で「そのまま送る」か「起動し直す」かを分ける条件、判定に使う事実（端末の有無は `epic-dispatch.sh reply` が確かめること）、親の状態の復元（親が通した判断を含む）、1〜2 週間後の再集計が書かれている
+- **THEN** 子・親とも 120,000 の値、親の値を主の起動コマンドが未設定のときだけ入れる形で付けて `settings.json` の `env` に置かないこと、端末が無い・60 分未満・コンパクトが走った・N が 150,000 以上か未満で「そのまま送る」か「起動し直す」かを分ける条件、判定に使う事実（端末の有無は `epic-dispatch.sh reply` が確かめること）、親の状態の復元（親が通した判断を含む）、1〜2 週間後の再集計が書かれている。さらに、コンパクトのあと hook が `SKILL.md` の読み直しを差し込むこと、その費用が 1 回約 39k であること、#1264 で計算し直すことが書かれている
 
 #### Scenario: SKILL.md の回し方が規則のファイルを指す
 - **WHEN** SKILL.md の「エピックの扱い」を読む
@@ -3466,7 +3466,7 @@ develop を呼んでいたと判定したとき、スクリプトは stdout に 
 - **THEN** 1 回目は stdout が空で exit 0、2 回目は読み直しの文を差し込む
 
 ### Requirement: hook の振る舞いを bats で確かめる
-`plugins/dev-workflow/tests/develop-compact-reread.bats` は、要件「コンパクト直後に develop を呼んでいた会話へ SKILL.md の読み直しを差し込む hook を登録する」「develop を呼んでいたかはコンパクト前の 3 種類の記録で判定する」「名前空間の無い develop・別のスキル・文中の言及は数えない」「差し込む文は SKILL.md の読み直しと親か子かの確かめ直しを求める」「判定できないときは何も出さず、セッションの開始を止めない」の各 Scenario を、偽の会話記録（fixture は SessionStart(compact) の時点の実機の形。今回のコンパクトの `compact_boundary` と `invoked_skills` はまだ無い）で確かめなければならない（MUST）。
+`plugins/dev-workflow/tests/develop-compact-reread.bats` は、要件「コンパクト直後に develop を呼んでいた会話へ SKILL.md の読み直しを差し込む hook を登録する」「develop を呼んでいたかはコンパクト前の 3 種類の記録で判定する」「名前空間の無い develop・別のスキル・文中の言及は数えない」「差し込む文は SKILL.md の読み直しと親か子かの確かめ直しを求める」「判定できないときは何も出さず、セッションの開始を止めない」の各 Scenario を確かめなければならない（MUST）。会話記録を使う Scenario は、偽の会話記録（fixture は SessionStart(compact) の時点の実機の形。今回のコンパクトの `compact_boundary` と `invoked_skills` はまだ無い）で確かめる。
 
 #### Scenario: bats が通る
 - **WHEN** `bats plugins/dev-workflow/tests/develop-compact-reread.bats` を実行する

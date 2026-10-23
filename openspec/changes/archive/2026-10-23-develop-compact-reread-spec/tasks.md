@@ -14,7 +14,7 @@
 ## 2. 下限の根拠の要件と手順書の対応を確かめる
 
 - [x] 2.1 MODIFIED の要件「時間がたった子・親への返事は待っている間の自動コンパクトの閾値と分ける条件で決める」の「根拠と限り」に足した文（hook の読み直しの差し込み・約 39k の費用と 40k とは別にかかること・#1264 での計算し直し・120,000 を変えない理由と #1217 の計算コメントの URL）が、reply-after-idle.md の記述と一致することを読んで確かめる。足した文以外が既存の要件と同じであることを `diff` で確かめる。触る範囲: openspec/changes/develop-compact-reread-spec/specs/dev-workflow-develop/spec.md:114-162、openspec/specs/dev-workflow-develop/spec.md:2165-2213、plugins/dev-workflow/skills/develop/references/reply-after-idle.md:55-66
-- [x] 2.2 `bats plugins/dev-workflow/tests/epic-dispatch.bats -f reply-after-idle` を実行し、規則のファイルの記述を確かめるテストが通ることを確かめる（実装とテストは変えない）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:3688-3730
+- [x] 2.2 `bats plugins/dev-workflow/tests/epic-dispatch.bats -f reply-after-idle` を実行し、規則のファイルの記述を確かめるテストが通ることを確かめる（実装とテストは変えない）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:3710-3756
 
 ## 3. 検証
 
@@ -49,6 +49,7 @@
 | 判定できないとき | 壊れた行を飛ばして走査を続ける | broken lines in the transcript are skipped | develop-compact-reread.sh:79-82 |
 | 判定できないとき | 形の違う行を飛ばして走査を続ける | valid JSON lines of an unexpected shape do not stop the scan | develop-compact-reread.sh:83-86 |
 | bats で確かめる | bats が通る | （ファイル全体） | — |
+| 下限の根拠（MODIFIED） | 規則のファイルに値と分ける条件が書かれている（hook の読み直し・約 39k・#1264 の足した分） | （なし。テストは変えない） | plugins/dev-workflow/skills/develop/references/reply-after-idle.md:66 |
 
 ## Workflow follow-up
 
