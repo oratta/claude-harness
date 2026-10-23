@@ -54,6 +54,7 @@ develop の G はサブエージェント（`dev-workflow:gate-runner`）で、A
 - 作業の文脈を渡さない理由: 主の承認を省いてよいかを、作業した側の説明に引きずられずに決めるため（issue #1238 本文）
 - 100 行の根拠: レビュー指摘や CI の直しは数行〜数十行で収まる。100 行を超える手直しはリスクの中身が変わっている見込みが高く、判定役の読み違いと費用の上振れも大きくなる。実測ではない（過去の引き継ぎの宣言で根拠ファイルの差分の大きさを数えれば確かめられる）
 - 判定役はリポジトリのファイルを Read できるが、依頼文が 2 つの入力だけから判定するよう求める。読み足しを道具で禁じることはしない（`agents/decider.md` は変えない）
+- `agents/decider.md` の入力契約（記録先の本文・失敗の出力・対象ファイルのパス・実行役の return の 4 点を受け取り、足りなければ判断せず不足を返す）は、この依頼には当てはまらないことを依頼文に書く。不足を理由に `不足:` で返さず 1 行目を 3 形のどれかにするよう求める。書かないと、記録先の本文を渡さない依頼で判定役が入力契約に従って不足を返し、毎回「判断できない」に倒れてこの経路が一度も効かない（PR レビューの指摘）。`agents/decider.md` は変えず、依頼文の側で外す
 
 ### 決定 4: 判定役は `dev-workflow:decider`・`model: opus` で起こし、返答の 1 行目を 3 形に固定する
 
@@ -69,12 +70,13 @@ develop の G はサブエージェント（`dev-workflow:gate-runner`）で、A
 本体（メインセッションではゲート自身）が判定役の返答を受け取ったら、PR に次のコメントを投稿する（判定役は投稿できないので代理投稿する）。1 行目は正規表現 `^引き継ぎ判定: (同じ|変わった|判断できない)$` に完全一致させる。2 行目以降は `項目名: 値` で、`前 HEAD:`（40 桁）・`新しい HEAD:`（40 桁）・`前の宣言:`（コメントのリンク）・`根拠ファイル:`（`EVIDENCE_PR_CHANGED=` のファイル）・`差分の行数:`（`EVIDENCE_DIFF_LINES=` の値）・`判定役:`（`dev-workflow:decider`・モデル・代理投稿した者）・`理由:`（判定役の 2 行目以降）を書く。`対象 HEAD:` の文字列は使わない（auto-merge の workflow が宣言の照合に使うため）。
 
 - PR に置く理由: 段と段の間の受け渡しは PR コメントを正とする決まりで、新しい合格処理の G は PR コメントから読む。引き継ぎの根拠の行が指すリンク先も同じ PR に揃う
-- 新しい合格処理の G は、`前 HEAD:` と `新しい HEAD:` が自分の 3-c の前 HEAD・新しい HEAD と一致し、`根拠ファイル:` がスクリプトの `EVIDENCE_PR_CHANGED=` と一致する最新の記録だけを使う。一致しなければ記録を使わず、もう一度 `needs-carryover-judge` で返す（HEAD が動いたあとの古い判定を使わない）。一致する記録があれば、同じ前後の組で `needs-carryover-judge` を返し直さない（判定の繰り返しを防ぐ）
+- 新しい合格処理の G は、`前 HEAD:` と `新しい HEAD:` が自分の 3-c の前 HEAD・新しい HEAD と一致し、`根拠ファイル:` がスクリプトの `EVIDENCE_PR_CHANGED=` と一致する最新の記録だけを使う。一致しなければ記録を使わない（HEAD が動いたあとの古い判定を使わない）。一致する記録があれば、同じ前後の組で `needs-carryover-judge` を返し直さない（判定の繰り返しを防ぐ）。`根拠ファイル:` は、カンマで区切った各要素の前後の空白を除いたうえで、順序を問わず同じ集合かで比べる
+- 判定を受けて起こされた合格処理の G（前の Gate Result が `段: 合格処理`・Status `needs-carryover-judge`）が一致する記録を見つけられないとき（本体が SHA を短縮して書いた・投稿に失敗した、など）は、`needs-carryover-judge` を返し直さず「判断できない」と同じに扱って主に聞く。本体も、同じ組で再び `needs-carryover-judge` が返ったら判定役を起こし直さず、投稿した記録の URL を添えて主に聞く。止めが無いと、opus の判定役が同じ組で何度も起き、止まるのは PR トークン上限に当たったときだけになる（PR レビューの指摘）
 - 「同じ」で引き継ぐときの引き継ぎの根拠の行は、今の行頭 `引き継ぎの根拠: risk-carryover-check.sh 終了コード ` のまま終了コード 4 を書き、`EVIDENCE_PR_CHANGED=` のファイル・差分の行数・判定の結果・判定の記録のリンクを足す。4 行の構造は変えない（`pass.md` の合格条件の表は 4 行が揃っているかだけを見る）
 
 ### 決定 6: Codex の G は変えない
 
-Codex の phase `gate` は `gate-runner.md` と pr-review-gate の段のファイル（`hold.md`・`pass.md` を含む）を正本として受け取り、Gate Result を返す。Status を読んで次を決めるのは Claude の本体で、(4) に `needs-carryover-judge` の分岐を足せば Codex の G が返したものも同じに扱える。`codex-develop.py` の prompt の「独立した役が要るなら needs-reviewer/needs-decider を返す」は一般の言い方で、`needs-fix-check` も同じ扱いで動いている。今の main の `codex-develop.py` は、phase `gate` の正本一覧に `skills/develop/references/roles/gate-runner.md`（29 行目の対応表）と `stages/pass.md`・`stages/hold.md`（474〜476 行目）を入れていることを仕様づくりの時点で確かめた。実装時にもう一度確かめ、外れていたらこの change で足す。
+Codex の phase `gate` は `gate-runner.md` と pr-review-gate の段のファイル（`hold.md`・`pass.md` を含む）を正本として受け取り、Gate Result を返す。Status を読んで次を決めるのは Claude の本体で、(4) に `needs-carryover-judge` の分岐を足せば Codex の G が返したものも同じに扱える。`codex-develop.py` の prompt の「独立した役が要るなら needs-reviewer/needs-decider を返す」は一般の言い方で、`needs-fix-check` も同じ扱いで動いている。今の main の `codex-develop.py` は、phase `gate` の正本一覧に `skills/develop/references/roles/gate-runner.md`（29 行目の対応表）と `stages/pass.md`・`stages/hold.md`（474〜476 行目）を入れていることを仕様づくりの時点で確かめた。実装時にもう一度確かめ、外れていたらこの change で足す。prompt の文 "return needs-reviewer/needs-decider with the exact request" は 2 つの Status を名指ししているが、Codex の G が読む `gate-runner.md` の共通欄の Status の一覧が `needs-carryover-judge` を含み、`次の段:` の表が `needs-carryover-judge` を `合格処理` に結ぶので、Codex の G が返す Status は名指しの 2 つに限られない（PR レビューの指摘を受け、prompt は変えずにこの担保を書いた）
 
 ### issue に無い本体側の補い（2 つ）
 

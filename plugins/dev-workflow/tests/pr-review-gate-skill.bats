@@ -1289,6 +1289,7 @@ judge_body() {
   echo "$line" | grep -qF '`引き継ぎ判定: 同じ`' || { echo "$line"; return 1; }
   echo "$line" | grep -qF 'RESOLVED_OUTSIDE_ALLOWLIST='
   echo "$line" | grep -qF '終了コード 3 と同じ'
+  echo "$line" | grep -qF '判定役に比べさせなかったときは条件 1 を満たさない'
 }
 
 @test "carryover judge (#1238): 3-c has the judge subsection with the decider type and opus" {
@@ -1320,6 +1321,10 @@ judge_body() {
   req="$(echo "$body" | grep -F '依頼文')"
   echo "$req" | grep -qF '2 つだけから判定' || { echo "$req"; return 1; }
   echo "$req" | grep -qF '足りなければ「判断できない」'
+  echo "$req" | grep -qF 'リポジトリを読み足さず'
+  # agents/decider.md の入力契約（4 点）はこの依頼に当てはめない（#1238 ゲート 1 周目）
+  echo "$req" | grep -qF '入力契約' || { echo "$req"; return 1; }
+  echo "$req" | grep -qF '`不足:` で返さず'
 }
 
 @test "carryover judge (#1238): the reply's first line is one of three forms; anything else is 'cannot judge' with no retry" {
@@ -1346,6 +1351,7 @@ judge_body() {
     echo "$block" | grep -q "^$k" || { echo "missing: $k"; return 1; }
   done
   ! echo "$block" | grep -qF '対象 HEAD:' || return 1
+  echo "$block" | grep '^判定役: ' | grep -qF '起こさなかったときは「起こさず」' || { echo "$block"; return 1; }
   judge_body | grep -F '`対象 HEAD:`' | grep -qF '使わない'
   judge_body | grep -qF '`^引き継ぎ判定: (同じ|変わった|判断できない)$`'
 }
@@ -1353,10 +1359,19 @@ judge_body() {
 @test "carryover judge (#1238): only the latest record matching both HEADs and the evidence files (as a set) is used" {
   line="$(judge_body | grep -F '記録の選び方')"
   [ -n "$line" ] || { echo "no record-selection line"; return 1; }
-  for w in '`前 HEAD:`' '`新しい HEAD:`' '`根拠ファイル:`' 'EVIDENCE_PR_CHANGED=' '順序を問わず同じ集合' '最新 1 件' '起こし直さない'; do
+  for w in '`前 HEAD:`' '`新しい HEAD:`' '`根拠ファイル:`' 'EVIDENCE_PR_CHANGED=' '前後の空白を除い' '順序を問わず同じ集合' '最新 1 件' '起こし直さない' '一致しない記録は使わない' '一致しない記録は「判断できない」と同じに扱う'; do
     echo "$line" | grep -qF -- "$w" || { echo "missing: $w"; return 1; }
   done
   judge_body | grep -F '`根拠ファイル:`' | grep -qF 'カンマ区切り'
+}
+
+@test "carryover judge (#1238): the G started after the judgment does not return needs-carryover-judge again for an unmatched record" {
+  line="$(judge_body | grep -F '記録の選び方')"
+  echo "$line" | grep -qF '判定を受けて起こされた合格処理の G' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '`needs-carryover-judge` を返し直さず「判断できない」と同じに扱い'
+  echo "$line" | grep -qF '手順6で主に聞く'
+  pline="$(grep -F '引き継ぎの判定のあと' "$PASS_STAGE")"
+  echo "$pline" | grep -qF '一致する記録が無ければ `needs-carryover-judge` を返し直さず' || { echo "$pline"; return 1; }
 }
 
 @test "carryover judge (#1238): who starts the judge: the gate itself, develop's G returns needs-carryover-judge, the bundled G does not" {
@@ -1368,6 +1383,7 @@ judge_body() {
   echo "$line" | grep -qF '宣言を投稿せず'
   echo "$line" | grep -qF '`needs-approval` も付けず'
   echo "$line" | grep -qF '`段: 一括（従来経路）`'
+  echo "$line" | grep -qF '従来経路の一括の G（`段: 一括（従来経路）`）は判定役を起こさず手順6で主に聞く'
 }
 
 @test "carryover judge (#1238): when depleted, the side that starts the judge posts the 'cannot judge' record; develop's G does not post it" {
@@ -1382,9 +1398,10 @@ judge_body() {
 
 @test "carryover judge (#1238): the evidence line can record exit 4 with the PR-changed files, line count, verdict and record link (still 4 lines)" {
   block="$(step3c_body | awk '/^```[a-z]+$/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
+  # 4 行のままであること（#441 の 4 行のテストと同じ検査。終了コード 4 の欄を足しても行が増えないことをこの位置でも示す）
   [ "$(echo "$block" | wc -l | tr -d ' ')" -eq 4 ] || { echo "$block"; return 1; }
   line="$(echo "$block" | grep '^引き継ぎの根拠: risk-carryover-check.sh 終了コード ')"
-  for w in '終了コード <0・3・4 のどれか>' 'EVIDENCE_PR_CHANGED' 'EVIDENCE_DIFF_LINES' '判定 同じ' '判定の記録のリンク'; do
+  for w in '終了コード <0・3・4 のどれか>' 'EVIDENCE_MAIN_ONLY' 'EVIDENCE_PR_CHANGED' 'EVIDENCE_DIFF_LINES' '判定 同じ' '判定の記録のリンク' '該当するものを並べて書く'; do
     echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
   done
 }

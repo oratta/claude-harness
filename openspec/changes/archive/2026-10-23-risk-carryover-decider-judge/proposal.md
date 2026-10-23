@@ -29,7 +29,7 @@ pr-review-gate 手順 3-c（前の HEAD の許容の引き継ぎ）は、1 本�
 - `plugins/dev-workflow/skills/pr-review-gate/declarations.md`（根拠ファイルの説明の 1 文）
 - `plugins/dev-workflow/skills/develop/SKILL.md`（(4) の Status の一覧と分岐、モデルの表）
 - `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md`（Status の一覧・`次の段:` の表・段ごとの表・Status ごとの欄の書式の参照先）
-- `plugins/dev-workflow/tests/pr-review-gate-skill.bats`・`develop-roles.bats`・`develop-skill.bats`（文面検査）
+- `plugins/dev-workflow/tests/pr-review-gate-skill.bats`・`develop-roles.bats`・`develop-skill.bats`（文面検査）、`risk-carryover-check.bats`（9 行目のコメントが指す Requirement 名の直しだけ）
 - `plugins/dev-workflow/changes/1238.md`（変更の記録に追記。版は上げない）
 - Codex の G（`scripts/codex-develop.py`・`references/codex-develop.md`）は変えない見込み。Codex の G は `gate-runner.md` と段のファイルを正本として受け取り、Status を受けて次を決めるのは Claude の本体なので、新しい Status は本体の (4) の分岐で扱える（実装時に確かめる）
 - 新しい部品（ファイル）は足さないので `docs/public-private-split.md` の表は変えない

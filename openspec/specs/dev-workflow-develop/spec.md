@@ -3511,7 +3511,7 @@ develop を呼んでいたと判定したとき、スクリプトは stdout に 
 
 ### Requirement: G の needs-carryover-judge を受けた本体の動き
 
-`skills/develop/SKILL.md` の 1 ループの (4) は、G の Status `needs-carryover-judge` を受けた本体の動きを書かなければならない（MUST）: 本体は PR トークン上限を測ってから、pr-review-gate の `stages/hold.md` 手順 3-c の依頼の書き方で `subagent_type: dev-workflow:decider`・`model: opus` の判定役を起こし、判定の記録を PR に代理投稿し、判定と記録の URL を渡して合格処理の G を新しく起こさなければならない（MUST）。`SHARED_BUDGET_MODE=depleted` のときは判定役を起こさず、3-c の書式の `引き継ぎ判定: 判断できない` の記録を投稿して同じく合格処理の G を起こす（MUST）。本体は判定を受けて自分で宣言を投稿したり、ラベルを付けたり、主に聞いたりしてはならない（MUST NOT。引き継ぐか主に聞くかは合格処理の G が決める）。
+`skills/develop/SKILL.md` の 1 ループの (4) は、G の Status `needs-carryover-judge` を受けた本体の動きを書かなければならない（MUST）: 本体は PR トークン上限を測ってから、pr-review-gate の `stages/hold.md` 手順 3-c の依頼の書き方で `subagent_type: dev-workflow:decider`・`model: opus` の判定役を起こし、判定の記録を PR に代理投稿し、判定と記録の URL を渡して合格処理の G を新しく起こさなければならない（MUST）。`SHARED_BUDGET_MODE=depleted` のときは判定役を起こさず、3-c の書式の `引き継ぎ判定: 判断できない` の記録を投稿して同じく合格処理の G を起こす（MUST）。本体は判定を受けて自分で宣言を投稿したり、ラベルを付けたり、主に聞いたりしてはならない（MUST NOT。引き継ぐか主に聞くかは合格処理の G が決める）。ただし、判定を受けて起こした合格処理の G が同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び `needs-carryover-judge` を返したときは、判定役を起こし直してはならず（MUST NOT）、投稿した記録の URL を添えて主に聞かなければならない（MUST）。
 
 #### Scenario: needs-carryover-judge で返った
 
@@ -3522,6 +3522,11 @@ develop を呼んでいたと判定したとき、スクリプトは stdout に 
 
 - **WHEN** G が `needs-carryover-judge` で返し、`SHARED_BUDGET_MODE=depleted` である
 - **THEN** 本体は判定役を起こさず `引き継ぎ判定: 判断できない` の記録を投稿して合格処理の G を新しく起こし、G が手順 6 で主に聞く
+
+#### Scenario: 判定のあとの G が同じ組で再び返した
+
+- **WHEN** 本体が判定の記録を投稿して起こした合格処理の G が、同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び `needs-carryover-judge` を返す
+- **THEN** 本体は判定役を起こし直さず、投稿した記録の URL を添えて主に聞く
 
 ### Requirement: モデルの表に引き継ぎの判定役の行がある
 

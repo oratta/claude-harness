@@ -751,7 +751,7 @@ refute() {
   echo "$step4" | grep -E '^      4 つの段で' | grep -qF 'needs-carryover-judge'
   nc="$(echo "$step4" | awk '/^      needs-carryover-judge →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
   [ -n "$nc" ] || { echo "no needs-carryover-judge line in step (4)"; return 1; }
-  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '判定の記録を PR に' '合格処理の G を新しく起こす' '`stages/hold.md`' '3-c' 'SHARED_BUDGET_MODE=depleted' '`引き継ぎ判定: 判断できない`' '宣言を投稿せず' 'ラベルを付けず' '主に聞かない'; do
+  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '判定の記録を PR に' '合格処理の G を新しく起こす' '`stages/hold.md`' '3-c' 'SHARED_BUDGET_MODE=depleted' '`引き継ぎ判定: 判断できない`' '宣言を投稿せず' 'ラベルを付けず' '主に聞かない' '同じ前 HEAD・新しい HEAD・根拠ファイルの組' '判定役を起こし直さず'; do
     echo "$nc" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
   done
   # 依頼の書き方と記録の書式は hold.md を正本にし、SKILL.md に再掲しない
