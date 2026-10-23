@@ -3700,6 +3700,10 @@ orca_cmd_scripts() {
   [ "$(printf '%s\n' "$sec" | grep -cE '^\|')" -eq 0 ]
   # Scenario 1: 対象の止まり（2 経路、修正回数の上限は対象外）
   printf '%s\n' "$sec" | grep -F '止まった理由:' | grep -qF '同じ HEAD のやり直しを使い切った'
+  printf '%s\n' "$sec" | grep -F '対象' | grep -F '止まった理由:' | grep -qF '前提:'
+  ! printf '%s\n' "$sec" | grep -qF 'どの項目に書かれていても対象外' || return 1
+  printf '%s\n' "$sec" | grep -F '対象' | grep -qF 'どの項目に書かれていても'
+  printf '%s\n' "$sec" | grep -F '`job-timeout` の `escalate`' | grep -F '常に対象とする' | grep -qF 'pr-state.sh'
   printf '%s\n' "$sec" | grep -qF '`job-timeout`'
   printf '%s\n' "$sec" | grep -qF '手順 7'
   printf '%s\n' "$sec" | grep -F '修正回数の上限' | grep -qF '対象外'
