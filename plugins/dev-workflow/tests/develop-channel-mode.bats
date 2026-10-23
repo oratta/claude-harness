@@ -18,6 +18,8 @@ setup() {
   # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
   EPIC="${PLUGIN_DIR}/skills/develop/references/epic.md"
   EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
+  # 「保留で止まるときの引き継ぎ」節は SKILL.md から references/ へ移した（#1220）
+  HANDOVER="${PLUGIN_DIR}/skills/develop/references/handover.md"
   CMD="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
 }
@@ -157,7 +159,7 @@ refute() {
 # --- 保留・再開 ---
 
 @test "handover: mode values include channel and the channel guidance has no new session" {
-  local s; s="$(section '保留で止まるときの引き継ぎ')"
+  local s; s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
   printf '%s\n' "$s" | grep -qF '| 実行モード | interactive / channel / unmanned |'
   printf '%s\n' "$s" | grep -qF 'このチャンネルで記録先の番号を添えて返事'
   printf '%s\n' "$s" | grep -qF '番号の無い返事'
@@ -167,7 +169,7 @@ refute() {
 }
 
 @test "resume: channel reply launches develop and passes the log line's text and timestamp" {
-  local s; s="$(subsection '新しいセッションでの再開')"
+  local s; s="$(subsection '新しいセッションでの再開' "$HANDOVER")"
   printf '%s\n' "$s" | grep -qF 'develop を記録先 `<番号>` で起動'
   printf '%s\n' "$s" | grep -qF '`<channel source=` で始まる'
   printf '%s\n' "$s" | grep -qF '開きタグと閉じタグを外した中身'

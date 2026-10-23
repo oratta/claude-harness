@@ -38,7 +38,10 @@ write_repos="${COST_LEDGER_WRITE_REPOS_FILE:-${HOME:+$HOME/.config/cost-ledger/w
 command -v python3 >/dev/null 2>&1 || exit 0
 command -v gh >/dev/null 2>&1 || exit 0
 # backfill.py・gate_report.py・cost_ledger.py・write_allow.py は CLAUDE_PLUGIN_ROOT ではなくこのスクリプトの隣から引く。
-scripts_dir="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || exit 0
+# dirname は使わない（PATH に無いと cd "" が成功してカレントディレクトリを引く。#854）。
+scripts_dir="${0%/*}"
+[ "$scripts_dir" != "$0" ] || exit 0
+scripts_dir="$(cd "$scripts_dir" 2>/dev/null && pwd)" || exit 0
 [ -f "$scripts_dir/backfill.py" ] || exit 0
 [ -f "$scripts_dir/write_allow.py" ] || exit 0
 
