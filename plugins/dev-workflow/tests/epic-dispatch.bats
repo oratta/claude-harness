@@ -3716,6 +3716,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF '`needs-approval` を外'
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF '重複の確認'
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF '`CI 見張り開始:` の投稿'
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF '外さず'
   printf '%s\n' "$sec" | grep -F '再び止まったら' | grep -qF '主に上げる'
   # Scenario 4: 「繰り返していない」との関係と同じ件の定義
   printf '%s\n' "$sec" | grep -F '繰り返していない' | grep -qF '別の歯止め'
