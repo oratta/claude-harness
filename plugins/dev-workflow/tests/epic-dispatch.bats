@@ -3713,6 +3713,9 @@ orca_cmd_scripts() {
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF 'ci-watch.md` 2'
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF '見張りに戻'
   printf '%s\n' "$sec" | grep -F '再び止まったら' | grep -qF '主に上げる'
+  # issue #1271: 通すときの親の判断の理由に、同じ件を見分ける 3 つを書く
+  printf '%s\n' "$sec" | grep -F '理由' | grep -F 'PR 番号' | grep -F '落ちたチェック名' | grep -qF 'HEAD の短い SHA'
+  printf '%s\n' "$sec" | grep -F '理由' | grep -qF '同じ件かを見分ける'
   # Scenario 4: 「繰り返していない」との関係と同じ件の定義
   printf '%s\n' "$sec" | grep -F '繰り返していない' | grep -qF '別の歯止め'
   printf '%s\n' "$sec" | grep -F '同じ件' | grep -qF '同じ PR の同じチェック'
