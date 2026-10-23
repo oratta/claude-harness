@@ -1,6 +1,6 @@
 ## 1. スクリプトのテストを先に直す（bats）
 
-- [ ] 1.1 期待が変わる既存の 4 件を直す。テスト名と期待の両方を変える。確かめ方: 2.7 のあとで全件 ok
+- [x] 1.1 期待が変わる既存の 4 件を直す。テスト名と期待の両方を変える。確かめ方: 2.7 のあとで全件 ok
   - 「evidence file changed by main -> exit 1」: 終了コード 0・`CARRYOVER=yes`・`EVIDENCE_MAIN_ONLY=evidence.txt`・`NG:` 行なし。PR が evidence.txt に触れていない形のまま
   - 「non-merge commit on top of prev HEAD -> exit 1」: 終了コード 0・`PR_COMMITS=1`・`NG:` 行なし
   - 「#694: outside-allowlist resolution plus a non-merge commit -> exit 1」: 終了コード 3・`CARRYOVER=if-rereviewed`
@@ -8,7 +8,7 @@
   - 「#478: running from a subdirectory」: PR 自身の commit で evidence.txt を書き換える形に変え（前の HEAD では PR はこのファイルに触れていない）、終了コード 4・`EVIDENCE_PR_CHANGED=evidence.txt`
 
   触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:100-117（2 件）、:226-248（#694 の 2 件）、:287-294（サブディレクトリ）
-- [ ] 1.2 PR 自身の差分の比較のケースを足す。足すケースは次の 6 つ
+- [x] 1.2 PR 自身の差分の比較のケースを足す。足すケースは次の 6 つ
   - PR が evidence.txt の 1 行を変え、main が同じファイルの離れた行を変えて衝突なしで取り込む: 終了コード 0・`EVIDENCE_MAIN_ONLY=`
   - main が PR の変えた行から 2 行離れた行を変える（文脈の 3 行に入る）: 終了コード 0
   - PR 自身の commit が PR の足した行を書き換える: 終了コード 4・`CARRYOVER=if-judged`・`EVIDENCE_PR_CHANGED=evidence.txt`・`EVIDENCE_DIFF_LINES=2`（1 行削除と 1 行追加）・`NG:` 行なし
@@ -17,19 +17,19 @@
   - 4 と許可リスト外の衝突解消が重なる: 終了コード 4、両方の行が出る
 
   共通の準備として、PR 側で evidence.txt を複数行にして 1 行変える関数を足す。確かめ方: 2.7 で全件 ok。触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:32-56（関数の並び）、:181-198 の後ろ（「other JSON files」テストの直後に新しいケースを並べる）
-- [ ] 1.3 `NG:` に残るものを足す: バイナリの根拠ファイルが前後で変わった（終了コード 1・`NG:` がそのファイルを示す）。新しい HEAD と base の merge-base が 1 つに決まらない（main と pr を互いにマージした criss-cross merge で、main が根拠ファイルを変えている。終了コード 1・`NG:` が merge-base を示す）。根拠ファイルに触れないときの出力に `PR_COMMITS=0`・`EVIDENCE_DIFF_LINES=0` があることを、今の「main merged without conflict」テストに足す。確かめ方: 2.7 で全件 ok。触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:62-71、:119-128（「merge of a non-main branch」の近くにバイナリのケース）
-- [ ] 1.4 先頭コメントに #1238 と、PR 自身の差分で判定することを書く。確かめ方: 目視。触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:1-7
+- [x] 1.3 `NG:` に残るものを足す: バイナリの根拠ファイルが前後で変わった（終了コード 1・`NG:` がそのファイルを示す）。新しい HEAD と base の merge-base が 1 つに決まらない（main と pr を互いにマージした criss-cross merge で、main が根拠ファイルを変えている。終了コード 1・`NG:` が merge-base を示す）。根拠ファイルに触れないときの出力に `PR_COMMITS=0`・`EVIDENCE_DIFF_LINES=0` があることを、今の「main merged without conflict」テストに足す。確かめ方: 2.7 で全件 ok。触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:62-71、:119-128（「merge of a non-main branch」の近くにバイナリのケース）
+- [x] 1.4 先頭コメントに #1238 と、PR 自身の差分で判定することを書く。確かめ方: 目視。触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:1-7
 
 ## 2. スクリプトを直す
 
-- [ ] 2.1 判定 2 の merge commit でない commit を `NG:` から外し、件数を数える。merge commit の条件は残す。確かめ方: 1.1 の non-merge のケース。触る範囲: plugins/dev-workflow/scripts/risk-carryover-check.sh:66-69（変数の宣言）、:106-127（`set_list` のループ。111-113 が今の NG）
-- [ ] 2.2 PR 自身の差分を取り出す関数を足す。比べ方は design.md の決定 2 のとおり
+- [x] 2.1 判定 2 の merge commit でない commit を `NG:` から外し、件数を数える。merge commit の条件は残す。確かめ方: 1.1 の non-merge のケース。触る範囲: plugins/dev-workflow/scripts/risk-carryover-check.sh:66-69（変数の宣言）、:106-127（`set_list` のループ。111-113 が今の NG）
+- [x] 2.2 PR 自身の差分を取り出す関数を足す。比べ方は design.md の決定 2 のとおり
   - 引数は HEAD とファイル
   - `git merge-base --all <HEAD> <base>` が 1 件でなければ失敗を返す
   - `git diff -U0 --no-color --no-ext-diff --no-textconv <mb> <HEAD> -- <f>` を awk に通し、最初の `@@` より後ろの `-`・`+`・`\` で始まる行だけを出す
 
   確かめ方: 1.2 のケース。触る範囲: plugins/dev-workflow/scripts/risk-carryover-check.sh:71-101（関数の並び。`allowed` の後ろ）
-- [ ] 2.3 判定 4 を直す: 根拠ファイルごとに次の順で判定する
+- [x] 2.3 判定 4 を直す: 根拠ファイルごとに次の順で判定する
   1. 前後の diff が空なら次のファイルへ進む
   2. `git diff --numstat` がバイナリを示せば `NG:`
   3. 前後の PR 自身の差分が一致すれば `EVIDENCE_MAIN_ONLY` に積む
@@ -37,15 +37,15 @@
   5. merge-base が決まらなければ `NG:`
 
   前後どちらにも無いときの終了コード 2 は残す。確かめ方: 1.1〜1.3。触る範囲: plugins/dev-workflow/scripts/risk-carryover-check.sh:144-157
-- [ ] 2.4 出力と終了コードを直す
+- [x] 2.4 出力と終了コードを直す
   - 出力: `CARRYOVER=yes|if-rereviewed|if-judged|no`、`MAIN_MERGES=`、`PR_COMMITS=`、`RESOLVED_FILES=`、`RESOLVED_OUTSIDE_ALLOWLIST=`、`EVIDENCE_MAIN_ONLY=`、`EVIDENCE_PR_CHANGED=`、`EVIDENCE_DIFF_LINES=`、`NG:`
   - 優先順は 1 → 4 → 3 → 0
   - 空配列の展開は Bash 3.2 向けに `${arr[@]+"${arr[@]}"}` 形を使う
 
   確かめ方: 「runs under /bin/bash」テストを含め全件 ok。触る範囲: plugins/dev-workflow/scripts/risk-carryover-check.sh:159-175
-- [ ] 2.5 冒頭コメントを直す。対象は、判定 2・判定 4・PR 自身の差分の定義と比べ方・出力・終了コード 4 の意味（スクリプトは引き継げるかを決めない）。確かめ方: 目視でスクリプトの動きと一致すること。触る範囲: plugins/dev-workflow/scripts/risk-carryover-check.sh:1-29
-- [ ] 2.6 `bash -n` と `shellcheck`（あれば）を通す。確かめ方: どちらも終了コード 0。触る範囲: plugins/dev-workflow/scripts/risk-carryover-check.sh 全体（確認のみ）
-- [ ] 2.7 `bats plugins/dev-workflow/tests/risk-carryover-check.bats` を手元で回す（触ったファイルに対応する bats だけ。全体は CI に任せる）。確かめ方: 全件 ok。触る範囲: なし（実行のみ）
+- [x] 2.5 冒頭コメントを直す。対象は、判定 2・判定 4・PR 自身の差分の定義と比べ方・出力・終了コード 4 の意味（スクリプトは引き継げるかを決めない）。確かめ方: 目視でスクリプトの動きと一致すること。触る範囲: plugins/dev-workflow/scripts/risk-carryover-check.sh:1-29
+- [x] 2.6 `bash -n` と `shellcheck`（あれば）を通す。確かめ方: どちらも終了コード 0。触る範囲: plugins/dev-workflow/scripts/risk-carryover-check.sh 全体（確認のみ）
+- [x] 2.7 `bats plugins/dev-workflow/tests/risk-carryover-check.bats` を手元で回す（触ったファイルに対応する bats だけ。全体は CI に任せる）。確かめ方: 全件 ok。触る範囲: なし（実行のみ）
 
 ## 3. 3-c の文面と書式を直す（hold.md は 3-c だけ）
 
