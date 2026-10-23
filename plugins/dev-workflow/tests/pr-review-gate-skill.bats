@@ -1302,8 +1302,11 @@ step3c_body() {
   echo "$line" | grep -qF '直し方の判定・主の回答・決める役の裁定のどれか'
 }
 
-@test "fix-check (#722): triage.md points at the develop SKILL.md section and does not define the formats" {
+@test "fix-check (#722, #1222): triage.md points at the develop references/fix-check.md section and does not define the formats" {
   grep -qF 'レビューの周を主に聞かずに続ける（直し方の判定）' "$TRIAGE"
+  # 節は #1222 で develop の SKILL.md から references/fix-check.md へ移した。参照する行はすべて移設先を名指しする
+  run bash -c "grep -F 'レビューの周を主に聞かずに続ける（直し方の判定）' '$TRIAGE' | grep -vF 'references/fix-check.md'"
+  [ "$status" -ne 0 ]
   run grep -qF '^直し方の判定:' "$TRIAGE"
   [ "$status" -ne 0 ]
   run grep -qF '^主に聞かずに回した周:' "$TRIAGE"
