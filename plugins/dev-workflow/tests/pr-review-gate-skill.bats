@@ -1257,6 +1257,31 @@ step3c_body() {
   echo "$row" | grep -qF 'HEAD が動いた'
 }
 
+@test "carryover (#1238): 3-c opens with the risk-content purpose covering the PR's own fixes" {
+  first="$(step3c_body | grep -F '手順 3 で「主のリスク許容が必要」と判定し')"
+  echo "$first" | grep -qF 'リスクの中身' || { echo "$first"; return 1; }
+  echo "$first" | grep -qF 'PR 自身の修正'
+}
+
+@test "carryover (#1238): the script call block documents exit 4 and the PR's-own-diff lines" {
+  call="$(step3c_body | awk '/^```bash/{f=1; next} f&&/^```$/{f=0} f')"
+  for w in 'if-judged' 'EVIDENCE_PR_CHANGED=' 'EVIDENCE_MAIN_ONLY=' 'PR_COMMITS=' 'EVIDENCE_DIFF_LINES=' '4 = '; do
+    echo "$call" | grep -qF -- "$w" || { echo "missing: $w"; return 1; }
+  done
+}
+
+@test "carryover (#1238): exit 4 goes to step 6 with the EVIDENCE_PR_CHANGED lines" {
+  step3c_body | grep -F '終了コード 4' | grep -F '手順6' | grep -qF 'EVIDENCE_PR_CHANGED='
+}
+
+@test "carryover (#1238): the evidence line records the PR's own commits and main-only evidence changes" {
+  block="$(step3c_body | awk '/^```bash/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
+  line="$(echo "$block" | grep '^引き継ぎの根拠: ')"
+  for w in 'PR 自身の commit' 'EVIDENCE_MAIN_ONLY'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
+  done
+}
+
 # ===== 周の終わりに残った指摘を直し方の判定に回す（issue #722）=====
 
 @test "fix-check (#722): the end-of-round paragraph sends rows 2-4-only leftovers to the fix-check" {
@@ -1311,8 +1336,11 @@ step3c_body() {
   echo "$line" | grep -qF '直し方の判定・主の回答・決める役の裁定のどれか'
 }
 
-@test "fix-check (#722): triage.md points at the develop SKILL.md section and does not define the formats" {
+@test "fix-check (#722, #1222): triage.md points at the develop references/fix-check.md section and does not define the formats" {
   grep -qF 'レビューの周を主に聞かずに続ける（直し方の判定）' "$TRIAGE"
+  # 節は #1222 で develop の SKILL.md から references/fix-check.md へ移した。参照する行はすべて移設先を名指しする
+  run bash -c "grep -F 'レビューの周を主に聞かずに続ける（直し方の判定）' '$TRIAGE' | grep -vF 'references/fix-check.md'"
+  [ "$status" -ne 0 ]
   run grep -qF '^直し方の判定:' "$TRIAGE"
   [ "$status" -ne 0 ]
   run grep -qF '^主に聞かずに回した周:' "$TRIAGE"
