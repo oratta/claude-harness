@@ -90,7 +90,7 @@ headroom は Codex のキャッシュの場所（`_cache_path`）と取り直し
 | status | 意味 | 数を出すか |
 |---|---|---|
 | `ok` | 週次の実効値（使用率とリセット時刻）が読める。取得の古さと、リセットを過ぎて 0% に読み替えたことは問わない | 出す |
-| `stale` | 週次の値はあるが、取得時刻が今より 60 秒を超えて未来（時計のずれ） | `used_pct` だけ出し、余りの項目は null |
+| `stale` | 週次の値はあるが、取得時刻が今より 60 秒を超えて未来（時計のずれ） | `observed_at`・`five_hour_pct`・`used_pct`・`elapsed_pct`・`weekly_reset_at` は出し、余りの項目（`rocket` から `margin` まで）は null |
 | `missing` | 週次の値が読めない（記録も snapshot も無い・形が壊れている・Codex のキャッシュが無い・認証の主体が食い違う） | 出さない（null） |
 | `off` | レジストリでオフ（Claude はスロットの `enabled: false`、Codex は `codex.enabled: false`） | 出さない（null） |
 
