@@ -419,6 +419,28 @@ pr_view_calls() {
   grep -qF '実装者に直しを頼まない' <<<"$row"
 }
 
+@test "reference: escalate points an epic child to the stop record without copying the HEAD rule" {  # エピックの子は停止の記録の正本を指すだけ
+  local row
+  row="$(grep -F '| `escalate` |' "$REF")"
+  [ -n "$row" ]
+  grep -qF 'エピックの子' <<<"$row"
+  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり記録を残して `mark stopped` で止まる' <<<"$row"
+  ! grep -qF '先頭 7 文字' <<<"$row" || return 1
+  ! grep -qF 'obs.head' <<<"$row" || return 1
+  ! grep -qF 'headRefOid' <<<"$row" || return 1
+}
+
+@test "reference: a non-wait none points an epic child to the stop record without copying the HEAD rule" {  # 同じ HEAD で再び落ちた none でも停止の記録を残す
+  local row
+  row="$(grep -F '| `none` |' "$REF")"
+  [ -n "$row" ]
+  grep -qF 'エピックの子' <<<"$row"
+  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり記録を残して `mark stopped` で止まる' <<<"$row"
+  ! grep -qF '先頭 7 文字' <<<"$row" || return 1
+  ! grep -qF 'obs.head' <<<"$row" || return 1
+  ! grep -qF 'headRefOid' <<<"$row" || return 1
+}
+
 @test "reference: job-timeout is outside the --unrelated judgement and differs from the wait timeout" {  # --unrelated の対象外・見張りの timeout とは別
   grep -qF '`job-timeout`（ジョブが上限時間で打ち切られた）のチェックはこの判断の対象でない' "$REF"
   grep -qF '`job-timeout` は CI のジョブが自分の上限時間で打ち切られたことで、4 の表の `timeout`（見張りの上限時間内に決着を見られなかった）とは別の出来事' "$REF"
