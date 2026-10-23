@@ -141,7 +141,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            起こした回数）、description は `G: <段> for PR #N (#issue)`（先頭の `G:` を残す。役割別集計がこの接頭辞で G と判定する）
       G の起動指示には常に `レビュー経路: adapter` の 1 行と `段: <段の名前>` の 1 行を書き（Codex の G では request の instructions にも。
            `レビュー経路: 従来` は書かない。理由は「Role profile の選択」節）、2 つ目以降の段では前の段の `## Gate Result` ブロックを要約し直さずそのまま貼る。
-           channel のときは `実行モード: channel` の行と、develop 開始コメントと同じ値の `チャンネルの返事の確認:` の行（`可` / `不可`）も書く（G が hold.md 手順 6-3 の依頼文を書き分ける入力。「実行モード」の節の「channel のリスク許容」）
+           channel のときは `実行モード: channel` の行と、develop 開始コメントと同じ値の `チャンネルの返事の確認:` の行（`可` / `不可`）も書く（G が hold.md 手順 6-3 の依頼文を書き分ける入力。`references/channel.md` の「channel のリスク許容」）
       次に起こす段は Gate Result の Status と `次の段:` だけで決める（止める指摘が残っているか・戻した指摘の仕分け・復帰手順の行き先を本体は判断しない）。
            G が `工程中断:` で返したら同じ段の新しい G を起こし、前任の return 全文と前任の起動指示に書いた入力を渡す
            （起こしてよい条件は references/decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」の「手渡しの許可」）
@@ -292,7 +292,7 @@ fi
 
 `使ったトークン` の 2 つの値は、本体が spawn・再開の前に毎回とる PR トークン上限の計測の値を使う（周の前は直し方の判定の決める役を起こす前の計測、周のあとは周の結果を受け取ったあと最初の計測）。新しい計測の仕組みは足さない。
 
-**主に聞くとき**: 判定が「選び直しが要る」なら、仕様レビューでは記録先に `needs-approval` を付けて経緯をコメントし、interactive は AskUserQuestion で判断を仰ぎ、channel はそのコメントのフル URL を添えてチャンネルで聞き（「実行モード」の節の「channel の聞き方」）、unmanned はそのサイクルを終える。そのときの引き継ぎは `references/handover.md` の場面「レビューの 2 周キャップ超え」として書き、待ち理由は `2 周キャップ超え` とする。PR のレビューでは判定と判定の記録の URL を渡して照合と振り分けの G を新しく起こし、G がその指摘を順 5 に当てて主に聞く。PR トークン上限が exit 2 なら「PR トークン上限」の節の exit 2 の手順に従う。
+**主に聞くとき**: 判定が「選び直しが要る」なら、仕様レビューでは記録先に `needs-approval` を付けて経緯をコメントし、interactive は AskUserQuestion で判断を仰ぎ、channel はそのコメントのフル URL を添えてチャンネルで聞き（`references/channel.md` の「channel の聞き方」）、unmanned はそのサイクルを終える。そのときの引き継ぎは `references/handover.md` の場面「レビューの 2 周キャップ超え」として書き、待ち理由は `2 周キャップ超え` とする。PR のレビューでは判定と判定の記録の URL を渡して照合と振り分けの G を新しく起こし、G がその指摘を順 5 に当てて主に聞く。PR トークン上限が exit 2 なら「PR トークン上限」の節の exit 2 の手順に従う。
 
 この判定の守備範囲は、2 周目以降の周の終わりに残った指摘について、主の判断が要る指摘を主に聞かずに進めてしまうことを防ぐことである。拾いたいのは、選ぶのに主の側にしか無い情報が要る、または選択肢によって受け入れ条件や利用者に見える振る舞いが変わる設計の選択肢から選ぶ必要がある指摘・記録先の範囲を変える指摘・前の周で決まっているとした直し方で閉じなかった指摘で、これらは主に上げる。直し方が 1 つに決まる指摘（例: 受け入れ条件の文と artifact の 1 文が食い違い、artifact 側を受け入れ条件に合わせれば閉じる BLOCKER。同じ文言が別の場所に残っている指摘）と、選択肢の違いが受け入れ条件と利用者に見える振る舞いを変えない指摘（例: BLOCKER を閉じるテストを、外から親を一時停止して書くか、本体にテスト用の待ちを入れて書くか。どちらでも実装の振る舞いは同じ）は主に聞かずに通す。判定が「決まっている」とした直し方が外れることは防がない（次の周の終わりの判定の 3 つ目の条件で拾う）ので、判定の誤りが 1 件も無いことをこの手順の完了条件にしない。
 
@@ -337,7 +337,7 @@ unmanned で複数 change に割れた場合は、W が change 単位で子 issu
 
 **仕様化判断の記録と仕様レビューは unmanned でも免除しない**（同じ書式で記録先に記録し、R1 の APPROVE まで W を apply に進めない）。文言合わせの通し方（1 ループの (1)。判定基準は `references/decision-criteria.md` Step B）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる。
 
-channel が interactive と違うのは次の点だけで、それ以外の工程と記録は interactive と同じ。W・R1 の起動指示の実行モードには interactive と書く（W・R1 の手順の分岐は channel でも interactive 側をとり、主に聞くのは W・R1 の return を受けた本体がチャンネルで行う）。違う点: 主に聞く先と主への発言の宛先がチャンネルになる（下の「channel の聞き方」「channel の主への発言」）・保留からの再開の案内がチャンネルの返事になる（`references/handover.md` と G の依頼文）・リスク許容をチャンネルで受けるのは返事を確かめられるときだけ（下の「channel のリスク許容」）・エピックは `route` を呼ばずサブエージェント方式で回す（`references/epic.md` の「回し方」）。
+channel が interactive と違うのは次の点だけで、それ以外の工程と記録は interactive と同じ。W・R1 の起動指示の実行モードには interactive と書く（W・R1 の手順の分岐は channel でも interactive 側をとり、主に聞くのは W・R1 の return を受けた本体がチャンネルで行う）。違う点: 主に聞く先と主への発言の宛先がチャンネルになる（`references/channel.md` の「channel の聞き方」「channel の主への発言」）・保留からの再開の案内がチャンネルの返事になる（`references/handover.md` と G の依頼文）・リスク許容をチャンネルで受けるのは返事を確かめられるときだけ（`references/channel.md` の「channel のリスク許容」）・エピックは `route` を呼ばずサブエージェント方式で回す（`references/epic.md` の「回し方」）。
 
 ### モードの決め方
 
@@ -351,45 +351,7 @@ channel が interactive と違うのは次の点だけで、それ以外の工�
 
 印が付かず、依頼もチャンネル以外から届いた住人が interactive になることはこの決め方では塞がない（印を付けるのは起動する側）。オーナーが自分の画面の前にいて Discord から頼んだセッションが channel になるのは許す（質問の届く先がチャンネルに変わるだけで止まらない）。
 
-### channel の聞き方
-
-channel の本体は AskUserQuestion を呼ばない。主に聞くときは、依頼の届いたチャンネル（依頼の発言の開きタグの `chat_id`）に、チャンネルの返信ツールで質問を送り、そのターンを終える。返事は次のチャンネルのメッセージとして同じセッションに届く。
-
-- 依頼がチャンネルから届いていない（印だけで channel になった）ときは、そのセッションの運用（憲法・CLAUDE.md）が決める主への連絡先に送る。連絡先が分からなければ、記録先に質問をコメントして `needs-approval` を付け、止まる
-- 記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限）は、先に PR か記録先のコメントに書き、チャンネルの質問にはそのコメントのフル URL を添える
-- 質問の文面は `~/.claude/output-styles/readable.md` の節 3（サブエージェントには `rules/communication-style.md` の 3 番目）の型に従う。100 行を超える中身は記録先のコメントに置いて URL で渡す（チャンネルのメッセージには長さの上限がある）
-
-**読み替えの規則**: develop と、develop から読む次の文書に書かれた「interactive は AskUserQuestion で聞く」（候補を提示して選ばせる・承認を得る・判断を仰ぐを含む）は、channel ではこの聞き方に読む。各文書には書き足さない（同じ規則を複数の文書に書くと、直すときに片方が漏れる）。対象は `plugins/dev-workflow/` からの相対パスで次の 9 つで、`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で AskUserQuestion に触れるファイルの全部（この SKILL.md を除く。漏れは `tests/develop-channel-mode.bats` が見つける）。
-
-- `skills/develop/references/decision-criteria.md`
-- `skills/develop/references/epic-child-stop.md`
-- `skills/develop/references/roles/spec-reviewer.md`
-- `skills/develop/references/roles/worker/common.md`
-- `skills/develop/references/roles/worker/spec.md`
-- `templates/escalation-tripwires.md`
-- `commands/develop.md`
-- `commands/work-issue.md`
-- `skills/issueify/SKILL.md`
-
-### channel のリスク許容
-
-`owner-reply-check.sh` がチャンネルの返事を主の発言として数えるのは、セッションの環境に `OWNER_REPLY_CHANNEL_SENDERS` があるときだけ。channel の本体はモードを決めた時点で、この値が空でないかだけを値を出さずに確かめ（例: `[ -n "${OWNER_REPLY_CHANNEL_SENDERS-}" ] && echo 可 || echo 不可`）、develop 開始コメントに `チャンネルの返事の確認: 可` か `チャンネルの返事の確認: 不可（OWNER_REPLY_CHANNEL_SENDERS が無い）` の 1 行を残す。G の起動指示には、実行モードの行と並べて同じ値の `チャンネルの返事の確認: 可` / `チャンネルの返事の確認: 不可` の行を書く（1 ループの (4)）。
-
-- 可のセッションでは、リスク許容のチャンネルの返事を pr-review-gate 手順 5 の「会話で受領」として扱い、`owner-reply-check.sh` で確かめてから保留の解除の G に渡す（書式と確かめ方は pr-review-gate 手順 5 が正本。PR へのコメントは求めない）
-- 不可のセッションでは、リスク許容の依頼に限り「PR #<N> にコメントで `許容する` と書く」と案内し、PR のフル URL を添える（チャンネルで返されても確かめられず、受け直しを頼むことになるため）
-- 確かめられなかったとき（終了コード 1・2）の受け直しの案内はチャンネルに送り、「ゲートと同じ PC での `/develop <記録先> 許容する`」の代わりに PR のコメントを案内する
-- リスク許容以外の返事（動作確認の結果・切り出しの確認・方針の選び直し）は、可・不可によらずチャンネルの返事で進めてよい
-
-### channel の主への発言
-
-channel の本体は、主へのすべての発言を「channel の聞き方」と同じ宛先のチャンネルに送る。質問ではない報告（再開で HEAD が動いていた・前任 W の手渡し不可・`epic-dispatch.sh` などのスクリプトの失敗・レビューの周の打ち切り・完了報告・エピックの親の報告）も含め、端末に出すだけで済ませない（住人の画面は誰も見ていないので、端末に出しただけの報告は読まれず、主の指示を待ったまま止まる）。
-
-1 行目と最後の行は `~/.claude/output-styles/readable.md` の節 3 の書き分けに従う（主の操作も判断も要らない報告は 1 行目を `主がすること: なし` にする（主の質問への答えは正本のとおり 1 行目に答えを書く））。判断・確認・操作を求める発言の最後の答え方の行には、channel に固有の次のことを書く。
-
-- このチャンネルで何を返すか（例: 「#1126 許容する」か「#1126 許容しない」と返す）
-- リスク許容でチャンネルの返事を確かめられないときは、PR #<N> に何を書くか。PR のフル URL を添える
-
-答え方の行に画面・タブ・入力欄（`子のタブで`・`入力欄で ! を付けて` など）を書かない。オーナーが見ているのはチャンネルだけである。
+モードが channel に決まったら、develop 開始コメントを書く前に `references/channel.md` を Read してから進める（channel の聞き方と読み替えの規則・リスク許容・主への発言の 3 つ。開始コメントの `チャンネルの返事の確認:` の行もそこで決める）。引き継ぎから `実行モード: channel` で再開するときも同じ。interactive と unmanned では読まない。
 
 ## エピックの扱い
 
