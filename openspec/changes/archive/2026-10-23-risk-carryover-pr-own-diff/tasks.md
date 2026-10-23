@@ -1,6 +1,6 @@
 ## 1. スクリプトのテストを先に直す（bats）
 
-- [x] 1.1 期待が変わる既存の 4 件を直す。テスト名と期待の両方を変える。確かめ方: 2.7 のあとで全件 ok
+- [x] 1.1 期待が変わる既存の 5 件を直す。テスト名と期待の両方を変える。確かめ方: 2.7 のあとで全件 ok
   - 「evidence file changed by main -> exit 1」: 終了コード 0・`CARRYOVER=yes`・`EVIDENCE_MAIN_ONLY=evidence.txt`・`NG:` 行なし。PR が evidence.txt に触れていない形のまま
   - 「non-merge commit on top of prev HEAD -> exit 1」: 終了コード 0・`PR_COMMITS=1`・`NG:` 行なし
   - 「#694: outside-allowlist resolution plus a non-merge commit -> exit 1」: 終了コード 3・`CARRYOVER=if-rereviewed`

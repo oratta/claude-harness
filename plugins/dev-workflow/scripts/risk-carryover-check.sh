@@ -19,10 +19,12 @@
 #      空でなくても「PR 自身の差分」が前後で同じ（#1238）。
 #      PR 自身の差分 = その HEAD と base の merge-base からその HEAD までのそのファイルの差分
 #        （前は <merge-base(前, base)>..<前>、新は <merge-base(新, base)>..<新>）。
-#      比べ方 = `git diff -U0` の最初の `@@` より後ろにある `-`・`+`・`\` で始まる行だけを、出てくる順のまま
-#        文字列で比べる（ハンクの見出しの行番号・頭の行・文脈の行は比べない。main が別の場所を変えても同じになる）。
+#      比べ方 = `git diff -U0` の mode の行（old mode・new mode・new file mode・deleted file mode）と、最初の `@@` より
+#        後ろにある `-`・`+`・`\` で始まる行だけを、出てくる順のまま文字列で比べる（ハンクの見出しの行番号・
+#        ほかの頭の行・文脈の行は比べない。main が別の場所を変えても同じになる）。
 #      同じなら EVIDENCE_MAIN_ONLY=<ファイル>、違えば EVIDENCE_PR_CHANGED=<ファイル>。
-#      前後の diff が空でないバイナリのファイル（numstat が `-`）と、merge-base が 1 つに決まらないときは NG。
+#      前後の diff が空でない根拠ファイルについて、前後の HEAD の diff か各 HEAD の PR 自身の差分のどちらかで
+#      バイナリとして扱われるとき（numstat が `-`）と、merge-base が 1 つに決まらないときは NG。
 # 1・2 のどれかが外れたとき、4 でバイナリか merge-base の NG が出たときは NG: 行を出す。3 だけが外れたファイル
 # （許可リストの条件を満たさない衝突解消 = 許可リストに無いファイル・許可リストのファイルで中身の条件を満たさないもの・
 # 衝突していないファイルへの手入れ）は NG にせず RESOLVED_OUTSIDE_ALLOWLIST=<ファイル> の行で出す（#694）。
@@ -120,14 +122,19 @@ allowed() {
 }
 
 # 根拠ファイルの PR 自身の差分（-U0 の削除・追加・改行なしの印の行を順序のまま）を出す。引数: HEAD ファイル
-# HEAD と base の merge-base が 1 つに決まらなければ 1 を返す
+# mode の行（old mode・new mode・new file mode・deleted file mode）も比べる対象に含める（mode だけの変更を拾うため）。
+# HEAD と base の merge-base が 1 つに決まらないか git diff が失敗すれば 1、merge-base から HEAD までの差分で
+# バイナリとして扱われれば（numstat が `-`）3 を返す
 pr_own_diff() {
-  local h="$1" f="$2" mbs n
+  local h="$1" f="$2" mbs n ns
   mbs="$(git merge-base --all "$h" "$base")" || return 1
   n="$(printf '%s\n' "$mbs" | grep -c . || true)"
   [ "$n" -eq 1 ] || return 1
+  ns="$(git diff --numstat --no-renames "$mbs" "$h" -- "$f")" || return 1
+  if printf '%s\n' "$ns" | grep -q '^-'; then return 3; fi
   git diff -U0 --no-color --no-ext-diff --no-textconv "$mbs" "$h" -- "$f" \
-    | awk 'started && /^[-+\\]/ { print; next } /^@@/ { started = 1 }'
+    | awk '!started && /^(old|new) mode |^(new|deleted) file mode / { print; next } started && /^[-+\\]/ { print; next } /^@@/ { started = 1 }' \
+    || return 1
 }
 
 if ! git merge-base --is-ancestor "$prev" "$new"; then
@@ -185,13 +192,18 @@ for f in "${evidence[@]}"; do
     exit 2
   fi
   numstat="$(git diff --numstat --no-renames "$prev" "$new" -- "$f")"
-  case "$numstat" in
-    -*)
-      ng+=("binary evidence file changed between prev and new HEAD: $f")
-      continue ;;
-  esac
-  if ! prev_diff="$(pr_own_diff "$prev" "$f")" || ! new_diff="$(pr_own_diff "$new" "$f")"; then
-    ng+=("merge-base with $base_ref is not unique for prev or new HEAD; cannot compare the PR's own diff of $f")
+  if printf '%s\n' "$numstat" | grep -q '^-'; then
+    ng+=("binary evidence file changed between prev and new HEAD: $f")
+    continue
+  fi
+  rc=0
+  prev_diff="$(pr_own_diff "$prev" "$f")" || rc=$?
+  [ "$rc" -ne 0 ] || { new_diff="$(pr_own_diff "$new" "$f")" || rc=$?; }
+  if [ "$rc" -eq 3 ]; then
+    ng+=("binary evidence file at merge-base or HEAD: $f (the PR's own diff cannot be compared)")
+    continue
+  elif [ "$rc" -ne 0 ]; then
+    ng+=("cannot determine a unique merge-base with $base_ref for prev or new HEAD (or git diff failed); cannot compare the PR's own diff of $f")
     continue
   fi
   if [ "$prev_diff" = "$new_diff" ]; then

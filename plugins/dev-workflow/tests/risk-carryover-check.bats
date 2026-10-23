@@ -5,7 +5,7 @@
 # 許可リストの条件を満たさない衝突解消は NG ではなく RESOLVED_OUTSIDE_ALLOWLIST= で出し、終了コード 3（#694）。
 # merge commit でない commit は NG にせず PR_COMMITS= で数える。根拠ファイルが前後で変わっても、PR 自身の差分が同じなら
 # EVIDENCE_MAIN_ONLY= で出して引き継げる側、違えば EVIDENCE_PR_CHANGED= で出して終了コード 4（#1238）。
-# exit 3 のケースはどれも、変わっていない evidence.txt だけを根拠ファイルに渡す（根拠ファイルの変更は別ケースで exit 0・4）。
+# exit 3 のケースは、根拠ファイルが前後で変わらないか main からの変更だけ（EVIDENCE_MAIN_ONLY=）の形で渡す（PR 自身の差分が変わる形は別ケースで exit 4）。
 # spec: dev-workflow-pr-review-gate「risk-carryover-check.sh が差分の範囲と根拠ファイルの無変更を判定する」
 
 setup() {
@@ -166,6 +166,40 @@ make_version_changelog_conflict() {
   printf '%s\n' "$output" | grep -q '^NG: .*bin.dat'
 }
 
+@test "#1238: evidence file that is binary at the merge-base, replaced by text in the PR -> exit 1 with NG naming the file" {
+  git checkout -q main
+  printf '\000\001bin v1' > bin.dat
+  git add -A && git commit -q -m "main: bin"
+  git checkout -q pr
+  merge_main
+  printf 'text v1\n' > bin.dat
+  git add -A && git commit -q -m "pr: bin as text"
+  PREV="$(git rev-parse HEAD)"
+  printf 'text v2\n' > bin.dat
+  git add -A && git commit -q -m "pr: bin as text v2"
+  run "$SCRIPT" --base main "$PREV" HEAD bin.dat
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'CARRYOVER=no'
+  printf '%s\n' "$output" | grep -q '^NG: binary evidence file at merge-base or HEAD: bin.dat'
+  ! printf '%s\n' "$output" | grep -q '^EVIDENCE_MAIN_ONLY=' || return 1
+}
+
+@test "#1238: non-main merge plus PR's own evidence change -> exit 1 (1 wins over 4) with both lines" {
+  make_multiline_evidence
+  git checkout -q -b side main
+  printf 'side\n' > side.txt
+  git add -A && git commit -q -m side
+  git checkout -q pr
+  git merge -q --no-edit side >/dev/null
+  sed -i.bak 's/^L5 pr$/L5 pr2/' evidence.txt && rm -f evidence.txt.bak
+  git add -A && git commit -q -m "pr: evidence line 5 again"
+  run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'CARRYOVER=no'
+  printf '%s\n' "$output" | grep -q '^NG: non-main merge'
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=evidence.txt'
+}
+
 @test "#1238: merge-base of new HEAD and base is not unique (criss-cross) -> exit 1 with NG naming merge-base" {
   main_commit evidence.txt 'evidence v2'
   merge_main
@@ -176,7 +210,7 @@ make_version_changelog_conflict() {
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'CARRYOVER=no'
-  printf '%s\n' "$output" | grep -q '^NG: .*merge-base'
+  printf '%s\n' "$output" | grep -q '^NG: cannot determine a unique merge-base'
 }
 
 @test "conflict resolution outside the allow list -> exit 3 with RESOLVED_OUTSIDE_ALLOWLIST naming the file" {
@@ -267,6 +301,42 @@ make_version_changelog_conflict() {
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'EVIDENCE_MAIN_ONLY=evidence.txt'
+}
+
+@test "#1238: main inserted a line above the PR's line (hunk header shifts) -> exit 0, EVIDENCE_MAIN_ONLY" {
+  make_multiline_evidence
+  git checkout -q main
+  { printf 'L0\n'; cat evidence.txt; } > evidence.txt.new && mv evidence.txt.new evidence.txt
+  git add -A && git commit -q -m "main: evidence L0"
+  git checkout -q pr
+  merge_main
+  run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_MAIN_ONLY=evidence.txt'
+  ! printf '%s\n' "$output" | grep -q '^EVIDENCE_PR_CHANGED=' || return 1
+}
+
+@test "#1238: two evidence files, one main-only and one PR-changed -> exit 4, both lines, DIFF_LINES counts only the PR-changed file" {
+  make_multiline_evidence
+  main_edit_evidence L10 'L10 main'
+  merge_main
+  printf 'other pr\n' > other.txt
+  git add -A && git commit -q -m "pr: other"
+  run "$SCRIPT" --base main "$PREV" HEAD evidence.txt other.txt
+  [ "$status" -eq 4 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_MAIN_ONLY=evidence.txt'
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=other.txt'
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_DIFF_LINES=2'
+}
+
+@test "#1238: PR's own commit changed only the mode of the evidence file -> exit 4" {
+  make_multiline_evidence
+  chmod +x evidence.txt
+  git add -A && git commit -q -m "pr: chmod evidence"
+  [ -n "$(git diff --summary "$PREV" HEAD -- evidence.txt)" ]
+  run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
+  [ "$status" -eq 4 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=evidence.txt'
 }
 
 @test "#1238: PR's own commit rewrote the PR's evidence line -> exit 4, if-judged, EVIDENCE_PR_CHANGED, EVIDENCE_DIFF_LINES=2" {

@@ -1081,7 +1081,7 @@ pr-review-gate SKILL.md は、手順 3 で「主のリスク許容が必要」�
 
 `plugins/dev-workflow/scripts/risk-carryover-check.sh [--base <ref>] <前 HEAD> <新 HEAD> <根拠ファイル>...` は、ローカルの git リポジトリだけを読み、pathspec をリポジトリのルート相対で解釈し（実行時の cwd によらない）、次の 4 つの条件を判定しなければならない（SHALL）: ①前の HEAD が新しい HEAD の祖先である ②`git rev-list <新> ^<前> ^<base>` のうち merge commit であるものがすべて 2 親で、第 2 親が base の祖先、第 1 親が前の HEAD かこの集合の別の commit である（merge commit でない commit は PR 自身の commit として数え、②を外れたとはしない） ③各 merge commit の衝突解消したファイル（`git merge-tree --write-tree <第1親> <第2親>` の tree と merge commit の tree で差のあるファイル。rename 検出をせず `git diff --no-renames --name-only` で列挙し、消したファイルと作ったファイルを別々に数える）が許可リストに入り中身の条件を満たす ④根拠ファイルそれぞれについて、`git diff <前> <新> -- <ファイル>` が空であるか、空でなくても**根拠ファイルの PR 自身の差分**が前後で同じである。許可リストは、`.claude-plugin/marketplace.json` と `plugins/*/.claude-plugin/plugin.json`（`"version"` を含む行を除いた本文が第 1 親か第 2 親の版と一致する）、および `CHANGELOG.md` とサブディレクトリの `CHANGELOG.md`（merge commit の版のすべての行が第 1 親か第 2 親の版に存在する）に限る（MUST）。`--base` の既定は `origin/main` とする。
 
-根拠ファイルの PR 自身の差分は、その HEAD と base の merge-base からその HEAD までの、そのファイルの差分とする（前は `<merge-base(前, base)>..<前>`、新は `<merge-base(新, base)>..<新>`）。前後の比較は、文脈を付けない差分（`-U0`）の、最初のハンクの見出しより後ろにある削除の行・追加の行・改行なしの印の行だけを、出てくる順のまま比べ、ハンクの見出し（行番号）と差分の頭の行は比べない（MUST）。前の HEAD か新しい HEAD のどちらかで base との merge-base が 1 つに決まらないときは `NG:` 行を出さなければならない（SHALL）。前後の diff が空でない根拠ファイルのうち、前後どちらかの HEAD でバイナリとして扱われるもの（`git diff --numstat` の行数が `-` になるもの）は、PR 自身の差分を比べずに `NG:` 行を出さなければならない（SHALL）。前後の diff が空でなく PR 自身の差分が同じ根拠ファイルは `EVIDENCE_MAIN_ONLY=<ファイル>` の行で、PR 自身の差分が違う根拠ファイルは `EVIDENCE_PR_CHANGED=<ファイル>` の行で、それぞれファイルごとに 1 行出さなければならない（SHALL）。
+根拠ファイルの PR 自身の差分は、その HEAD と base の merge-base からその HEAD までの、そのファイルの差分とする（前は `<merge-base(前, base)>..<前>`、新は `<merge-base(新, base)>..<新>`）。前後の比較は、文脈を付けない差分（`-U0`）の、`old mode`・`new mode`・`new file mode`・`deleted file mode` の行と、最初のハンクの見出しより後ろにある削除の行・追加の行・改行なしの印の行だけを、出てくる順のまま比べ、ハンクの見出し（行番号）と差分の頭の行は比べない（MUST）。前後の diff が空でなくバイナリでもない根拠ファイルについて、前の HEAD か新しい HEAD のどちらかで base との merge-base が 1 つに決まらないときは `NG:` 行を出さなければならない（SHALL）。前後の diff が空でない根拠ファイルのうち、前後の HEAD の diff、または各 HEAD の PR 自身の差分（merge-base からその HEAD まで）のどちらかでバイナリとして扱われるもの（`git diff --numstat` の行数が `-` になるもの）は、PR 自身の差分を比べずに `NG:` 行を出さなければならない（SHALL）。前後の diff が空でなく PR 自身の差分が同じ根拠ファイルは `EVIDENCE_MAIN_ONLY=<ファイル>` の行で、PR 自身の差分が違う根拠ファイルは `EVIDENCE_PR_CHANGED=<ファイル>` の行で、それぞれファイルごとに 1 行出さなければならない（SHALL）。
 
 ①②のどれかが外れたとき、または④でバイナリか merge-base で `NG:` が出たときは、外れた理由ごとに `NG: <理由>` 行を出し、`CARRYOVER=no` で終了コード 1 を返さなければならない（SHALL）。`NG:` 行が無く `EVIDENCE_PR_CHANGED=` の行が 1 つでもあるときは、`CARRYOVER=if-judged` で終了コード 4 を返さなければならない（SHALL）。終了コード 4 は「根拠ファイルの PR 自身の差分が前後で違うので、リスクの中身が同じかを git の履歴だけでは決められない」を意味し、スクリプトは引き継げるかを決めない。`NG:` 行も `EVIDENCE_PR_CHANGED=` の行も無く③だけが外れたとき（許可リストの条件を満たさない衝突解消があるとき）は、`NG:` 行にせず、許可リストの条件を満たさないファイルごとに `RESOLVED_OUTSIDE_ALLOWLIST=<ファイル>` の行（重複は除く）を出し、`CARRYOVER=if-rereviewed` で終了コード 3 を返さなければならない（SHALL）。ここで「許可リストの条件を満たさない」は、許可リストに無いファイル・許可リストのファイルで中身の条件を満たさないもの・衝突していないファイルへの手入れのすべてを指す。終了コード 1 と 4 のときも、③を満たさないファイルは `RESOLVED_OUTSIDE_ALLOWLIST=` の行に出す。4 つすべてを満たすときは `CARRYOVER=yes` で終了コード 0 を返さなければならない（SHALL）。終了コードの優先順は 1・4・3・0 とする（MUST）。終了コード 3 は「新しい HEAD で PR 全体を見たレビューを経ていれば引き継げる」を意味し、その確認は G が手順 3-c で行う（スクリプトはレビューの有無を見ない）。
 
@@ -1136,6 +1136,16 @@ pr-review-gate SKILL.md は、手順 3 で「主のリスク許容が必要」�
 
 - **WHEN** 根拠ファイルがバイナリで、前後の HEAD で中身が違う
 - **THEN** 終了コード 1、`CARRYOVER=no` と、そのファイルを示す `NG:` 行を出す
+
+#### Scenario: merge-base の版ではバイナリの根拠ファイル
+
+- **WHEN** 根拠ファイルが merge-base の版ではバイナリで、PR がそのパスをテキストに置き換えており、前の HEAD のあとに PR 自身の commit でそのテキストを書き換えた
+- **THEN** PR 自身の差分を比べずに、終了コード 1、`CARRYOVER=no` と、そのファイルを示す `NG:` 行を出す
+
+#### Scenario: PR 自身の commit が根拠ファイルの mode だけを変えた
+
+- **WHEN** 前の HEAD のあとに積んだ merge commit でない commit が、根拠ファイルの中身を変えずに mode だけを変えた（例: 実行権を付けた）
+- **THEN** 終了コード 4 と、そのファイルを示す `EVIDENCE_PR_CHANGED=<ファイル>` の行を出す
 
 #### Scenario: merge-base が 1 つに決まらない
 
