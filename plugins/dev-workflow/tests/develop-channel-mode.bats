@@ -145,7 +145,8 @@ refute() {
   printf '%s\n' "$s" | grep -qF '`~/.claude/output-styles/readable.md` の節 3'
   printf '%s\n' "$s" | grep -qF '答え方の行'
   printf '%s\n' "$s" | grep -qF 'このチャンネルで何を返すか'
-  printf '%s\n' "$s" | grep -F 'PR #<N>' | grep -qF 'フル URL'
+  printf '%s\n' "$s" | grep -F '末尾の PR に何を書くか' | grep -qF 'フル URL'
+  ! printf '%s\n' "$s" | grep -qF 'PR #<N>' || return 1
   printf '%s\n' "$s" | grep -qF '画面・タブ・入力欄'
   ! printf '%s\n' "$s" | grep -qF '`主がすること: このチャンネルで' || return 1
 }
