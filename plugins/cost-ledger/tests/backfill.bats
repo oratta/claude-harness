@@ -141,6 +141,14 @@ if not m:
 repo, rest = m.groups()
 
 def emit(text):
+    if rest == "issues":  # 一覧の要素に repository_url が無ければ、問い合わせたリポジトリを入れる
+        try:
+            arr = json.loads(text)
+            for it in arr:
+                it.setdefault("repository_url", "https://api.github.com/repos/" + repo)
+            text = json.dumps(arr)
+        except ValueError:
+            pass
     if jqf is None:
         sys.stdout.write(text + "\n")
     else:
@@ -759,6 +767,16 @@ PY
   run_backfill
   [ "$(gh_calls)" -eq 1 ]
   no_write
+  cmp "$STATE" "$WORK/state.before"
+}
+
+@test "backfill: an item whose repository_url names another repository fails the whole list" {  # 一覧の要素の repository_url が origin と別名（転送先）なら、候補があっても一覧の 1 回以外の gh を呼ばず、何も積まず控えも変えない
+  one_pr_candidate
+  cp "$STATE" "$WORK/state.before"
+  export FAKE_LIST='[{"number":300,"state":"closed","updated_at":"2026-09-02T00:00:00Z","closed_at":"2026-09-02T00:00:00Z","repository_url":"https://api.github.com/repos/acme/renamed","pull_request":{"merged_at":"2026-09-02T00:00:00Z"}},{"number":12,"state":"closed","updated_at":"2026-09-02T00:00:00Z","closed_at":"2026-09-02T00:00:00Z","repository_url":"https://api.github.com/repos/acme/renamed"}]'
+  rm -f "$FIX"/list.*.json
+  run_backfill
+  [ "$(gh_calls)" -eq 1 ]
   cmp "$STATE" "$WORK/state.before"
 }
 
