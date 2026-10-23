@@ -1,10 +1,10 @@
 ## 1. 検査を先に足す
 
-- [x] 1.1 `tests/owner-question-style.bats` に受け入れ条件の検査（論点の定義と書き分けが 2 つの文書にある・実例の書き直しが 2 つで各 4 行以内・宣言の雛形の 2 つの形と外した文が無いこと・子の停止の記録の `主に聞く理由:` に論点の有無）を足し、「番号を主語にせず」と例が 1 つの検査を新しい決まりに合わせる。`bats tests/owner-question-style.bats` が文書の変更前に落ち、変更後に通ることで確かめる。触る範囲: tests/owner-question-style.bats:74-84、tests/owner-question-style.bats:148-224
+- [x] 1.1 `tests/owner-question-style.bats` に受け入れ条件の検査（論点の定義と書き分けが 2 つの文書にある・実例の書き直しが 2 つで各 4 行以内・宣言の雛形の 2 つの形と外した文が無いこと・子の停止の記録の `主に聞く理由:` に論点の有無）を足し、「番号を主語にせず」と例が 1 つの検査を新しい決まりに合わせる。否定の検査は行末に `|| return 1` を付け、`tests/bats-assertion-guard.bats` の検査を通す。`bats tests/owner-question-style.bats` が文書の変更前に落ち、変更後に通ることで確かめる。触る範囲: tests/owner-question-style.bats:74-84、tests/owner-question-style.bats:148-224
 
 ## 2. 正本の型
 
-- [x] 2.1 正本 `output-styles/readable.md` の節 3 に論点の定義と書き分け、1 行目の質問・番号は末尾の URL にだけ・困りごとが無ければ書かない・新たに生じるリスクだけ・論点なしは 3〜4 行を足し、例を論点ありの 1 つと実例 2 つの論点なしの書き直しにする。`bats tests/owner-question-style.bats` で確かめる。触る範囲: output-styles/readable.md:39-89（節 3「判断を求めるときは、質問から書いて、推奨まで出す」）
+- [x] 2.1 正本 `output-styles/readable.md` の節 3 に論点の定義と書き分け、1 行目の質問・番号は末尾の URL にだけ・困りごとが無ければ書かない・新たに生じるリスクだけ・論点なしは 3〜4 行を足し、例を論点ありの 1 つと実例 2 つの論点なしの書き直しにする。3〜4 行は区切りより上の行数と書き、例の語は特定の repo の用語を使わない（予算の中で直す）。`bats tests/owner-question-style.bats` で確かめる。触る範囲: output-styles/readable.md:39-89（節 3「判断を求めるときは、質問から書いて、推奨まで出す」）
 - [x] 2.2 短い版 `rules/communication-style.md` の 3 番目に同じ要点を詰めて足す。`bats tests/owner-question-style.bats` と `bats tests/injection-budget.bats`（予算は動かさない）で確かめる。触る範囲: rules/communication-style.md:10
 
 ## 3. 返信前チェックの言い換え

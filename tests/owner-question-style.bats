@@ -192,7 +192,7 @@ issue1209_terms() {
 
 @test "issue1209: perspective-casting step 2 says the view needed for the decision" {
   grep -qE '^2\. \*\*判断に必要な観点を特定する\*\*' "${REPO_ROOT}/rules/perspective-casting.md"
-  ! grep -qF '論点に必要な観点' "${REPO_ROOT}/rules/perspective-casting.md"
+  ! grep -qF '論点に必要な観点' "${REPO_ROOT}/rules/perspective-casting.md" || return 1
 }
 
 @test "issue1209: the risk declaration does not demand a made-up risk" {
