@@ -2148,6 +2148,13 @@ infer_ready() {
   [ "$status" -eq 2 ] || { echo "status=$status output=$output"; false; }
   [ "$output" = "timeout" ]
   [ "$(rec_get 11 status)" = running ]
+  # 4 回続けて失敗しても error で終わらず、次に読めたポーリングで推定する
+  gh_seq 11 FAIL FAIL FAIL FAIL "closed completed"
+  rm -f "$STUB_CFG/ghcount_11"
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "done 11" ]
+  [ "$(cat "$STUB_CFG/ghcount_11")" -eq 5 ]
 }
 
 @test "wait infer: EPIC_DISPATCH_DONE_IDLE_SEC changes the threshold" {
