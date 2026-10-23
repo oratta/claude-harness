@@ -142,7 +142,7 @@ grandchild() {
 
 cost() { python3 "$CL" cost "$@" --repo "$RA" --no-drift-check; }
 # 単価表のずれの突き合わせを止めない呼び出し（--no-drift-check を付けない）
-cost_drift() { python3 "$CL" cost "$@" --repo "$RA"; }
+cost_drift() { python3 "$CL" cost "$@" --repo "$RA"; }  # --no-drift-check を付けない
 cost_json() { cost "$@" --json; }
 
 # 標準入力の JSON に python の式を当て、偽なら落とす。d が JSON、i は番号から issues の 1 件を引く辞書。
