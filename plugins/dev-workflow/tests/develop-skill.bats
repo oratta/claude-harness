@@ -648,6 +648,45 @@ refute() {
   if grep -qF '保留で止まるときの引き継ぎ' "${PLUGIN_DIR}/commands/develop.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md" "$EPIC_CHILD_STOP" "$EPIC"; then return 1; fi
 }
 
+# --- channel だけで使う 3 小節の移設（#1221） ---
+
+@test "channel move (#1221): the mode decision ends with the guidance to Read references/channel.md when channel" {
+  CHANNEL="${SKILL_DIR}/references/channel.md"
+  [ -f "$CHANNEL" ]
+  # 「### モードの決め方」から次の見出しまで。案内は決め方の直後（この小節の最後の段落）に置く
+  local s; s="$(awk 'index($0, "### モードの決め方")==1{f=1; next} /^##+ /{f=0} f' "$SKILL")"
+  [ -n "$s" ]
+  local last; last="$(printf '%s\n' "$s" | grep -v '^[[:space:]]*$' | tail -n 1)"
+  printf '%s\n' "$last" | grep -qF 'channel'
+  printf '%s\n' "$last" | grep -qF '`references/channel.md`'
+  printf '%s\n' "$last" | grep -qF 'Read'
+  # 決め方の直後は次の「## 」の節で、channel の小節は SKILL.md に残っていない
+  local next; next="$(awk 'index($0, "### モードの決め方")==1{f=1; next} f && /^##+ /{print; exit}' "$SKILL")"
+  [ "$next" = "## エピックの扱い" ]
+}
+
+@test "channel move (#1221): the moved subsections' own phrases are in references/channel.md and not in SKILL.md" {
+  CHANNEL="${SKILL_DIR}/references/channel.md"
+  local p
+  # 見出しは SKILL.md では「### 」、移設先では「## 」。'## channel の…' は両方に一致する
+  for p in '## channel の聞き方' '## channel のリスク許容' '## channel の主への発言' 'chat_id' '返信ツール' '**読み替えの規則**' 'OWNER_REPLY_CHANNEL_SENDERS' 'リスク許容以外の返事' '端末に出すだけで済ませない' 'このチャンネルで何を返すか' '画面・タブ・入力欄'; do
+    if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
+    grep -qF -- "$p" "$CHANNEL" || { echo "移設先に無い: $p" >&2; return 1; }
+  done
+}
+
+@test "channel move (#1221): references to the moved subsections point at references/channel.md" {
+  local p
+  for p in '「channel の聞き方」' '「channel のリスク許容」' '「channel の主への発言」'; do
+    # SKILL.md と handover.md に残る参照は、どれも移設先を名指しした行にある
+    while IFS= read -r line; do
+      printf '%s\n' "$line" | grep -qF 'references/channel.md' || { echo "移設先を指していない: $line" >&2; return 1; }
+    done < <(grep -hF -- "$p" "$SKILL" "$HANDOVER")
+  done
+  if grep -qF '「実行モード」の節の「channel' "$SKILL" "$HANDOVER"; then return 1; fi
+  grep -qF 'references/channel.md' "$HANDOVER"
+}
+
 # --- レビューの周を主に聞かずに続ける（直し方の判定。#722） ---
 
 @test "fix-check (#722): the section sits between the token budget and the handover sections" {
