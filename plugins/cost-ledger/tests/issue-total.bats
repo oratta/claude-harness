@@ -11,6 +11,8 @@
 #   S2（issue を触っていないセッション。区間の外）:          r4 feat/a 00:00:40 / r5 feat/a 00:00:50
 # 区間の合計は $3.00、ブランチ feat/a の合計は $3.00、重なるのは r3 の $1.00。
 
+bats_require_minimum_version 1.5.0
+
 load helper
 
 setup() {
@@ -89,7 +91,7 @@ EOF
   check 'd["combined_total_usd"] == d["total_usd"] and d["outside_pr_usd"] == d["total_usd"]' < "$OUT"
   check 'near(d["combined_total_usd"], 3.0)' < "$OUT"
   fake_gh_issue_12
-  run python3 "$CL" cost 12 --repo "$RA" --no-drift-check
+  run --separate-stderr python3 "$CL" cost 12 --repo "$RA" --no-drift-check
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = 'コスト: $3.00 / ¥450 @150 — issue #12 (acme/ra) 帰属: 区間' ]
   # cost の JSON にも同じ鍵が出て、同じ値になる
@@ -199,7 +201,7 @@ EOF
   tl "${CLOSE[@]}" --at "$FAR" < "$IN" > "$OUT"
   [ "$(nrows "$OUT")" -eq 1 ]
   fake_gh_issue_12
-  run python3 "$CL" cost 12 --repo "$RA" --no-drift-check
+  run --separate-stderr python3 "$CL" cost 12 --repo "$RA" --no-drift-check
   [ "$status" -eq 0 ]
   [ "$(sed -n 1p "$OUT")" = "${lines[0]}" ]
   [ "$(sed -n 1p "$OUT")" = 'コスト: $3.00 / ¥450 @150 — issue #12 (acme/ra) 帰属: 区間' ]
@@ -242,7 +244,7 @@ EOF
   total_row="$(row "$OUT" 2)"
   tl --issue 12 --repo "$RA" --trigger "issue 再オープン" --at $((B+120)) < "$OUT" > "$OUT.2"
   fake_gh_issue_12
-  run python3 "$CL" cost 12 --repo "$RA" --no-drift-check
+  run --separate-stderr python3 "$CL" cost 12 --repo "$RA" --no-drift-check
   [ "$(sed -n 1p "$OUT.2")" = "${lines[0]}" ]
   [ "$(nrows "$OUT.2")" -eq 3 ]
   [ "$(row "$OUT.2" 1)" = "$(row "$OUT" 1)" ]
