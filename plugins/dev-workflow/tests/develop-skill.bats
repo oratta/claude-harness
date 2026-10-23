@@ -596,7 +596,7 @@ refute() {
   echo "$s" | grep -F '新上限は' | grep -qF '権限の値'
   echo "$s" | grep -qF -- '--cap <権限>'
   echo "$s" | grep -qF 'PR トークン上限: <権限>'
-  echo "$s" | grep -qF '決めた人: 親エピック #<E> の判断（親の権限の内。主の承認ではない）'
+  echo "$s" | grep -qF '決めた人: <親エピック #<E> の判断（親の権限の内。主の承認ではない）か、'
   echo "$s" | grep -qF 'エピック #<E> の本体（親の権限の内）'
   echo "$s" | grep -qF '権限: <権限のコメントの URL>'
   echo "$s" | grep -qF '停止の記録: <停止の記録の URL か なし>'
