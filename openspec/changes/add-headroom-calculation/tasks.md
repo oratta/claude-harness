@@ -19,5 +19,5 @@
 
 ## 4. 仕上げ
 
-- [ ] 4.1 `plugins/dev-workflow/changes/1300.md` に変更の記録を書く（`.headroom.json` の schema 1・`HEADROOM_*`・Codex の cache の version 2・読む側の切り替えは #1301・#1302・flatmate#1772 で行うこと）。触る範囲: plugins/dev-workflow/changes/1300.md（新規）
-- [ ] 4.2 `python3 -m unittest`（`test_headroom.py`・`test_codex_develop.py`）と bats（`usage-probe*.bats`・`account-selector.bats`）、`openspec validate add-headroom-calculation --type change --strict` を通す。触る範囲: plugins/dev-workflow/tests/（実行のみ）
+- [x] 4.1 `plugins/dev-workflow/changes/1300.md` に変更の記録を書く（`.headroom.json` の schema 1・`HEADROOM_*`・Codex の cache の version 2・読む側の切り替えは #1301・#1302・flatmate#1772 で行うこと）。触る範囲: plugins/dev-workflow/changes/1300.md（新規）
+- [x] 4.2 `python3 -m unittest`（`test_headroom.py`・`test_codex_develop.py`）と bats（`usage-probe*.bats`・`account-selector.bats`）、`openspec validate add-headroom-calculation --type change --strict` を通す。触る範囲: plugins/dev-workflow/tests/（実行のみ）
