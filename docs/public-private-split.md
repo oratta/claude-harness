@@ -14,12 +14,11 @@
 
 ## 分類の値
 
-表の分類の欄は次の 4 つのどれかだけを使う。
+表の分類の欄は次の 3 つのどれかだけを使う。
 
 - **公開版**: 公開版のリポジトリに残す
 - **個人版**: private の個人版のリポジトリへ移す
-- **保留（#1123 の後）**: #1123（エピック実行の Orca 依存を外す）の結果を見てから公開版か個人版に決める
-- **分割**: プラグインの行にだけ使う。1 つのプラグインの中で行き先が割れるので、表のそのプラグインの部品の行（`plugins/<名前>/...` で始まる行）で全体を分ける。部品の行の分類は「分割」以外の 3 つのどれか
+- **分割**: プラグインの行にだけ使う。1 つのプラグインの中で行き先が割れるので、表のそのプラグインの部品の行（`plugins/<名前>/...` で始まる行）で全体を分ける。部品の行の分類は「公開版」か「個人版」
 
 ## 分割したプラグインの部品の行の境界の規則
 
@@ -32,12 +31,18 @@
 
 プラグインのディレクトリの直下からのパスが `.claude-plugin/plugin.json`・`README.md`・`CHANGELOG.md`・`hooks/hooks.json` のファイルと、`changes/`・`tests/` の配下は付属のファイルとして部品の行で覆わない。付属のファイルは、それが記録・検査・配線している部品と同じ行き先に従う。
 
-- 分割したプラグインの付属のファイルは、そのプラグインに公開版の部品の行が 1 つでもあれば公開版にも残る（個人版の部品についての記述は #1129 で個人版の側へ書き分ける）。固有記述の一覧はこの扱いで付属のファイルの行を載せている
-- ファイルの中で行き先が割れる付属のファイル（例: `hooks/hooks.json` の中で配線先のスクリプトの行き先が割れる、`tests/` のテストが公開版と個人版の両方の部品を検査する）の書き分けは #1129 で行う。dev-workflow の `hooks/hooks.json` の配線先 10 本はどれも公開版の部品で、エピック実行まわりの配線は無い。capability-registry の `hooks/hooks.json` の配線先は公開版の `scripts/browser-guard.sh` だけで、`tests/fmtoken.bats` は個人版の `scripts/fmtoken.sh` に従う
+- 分割したプラグインの付属のファイルは、そのプラグインに公開版の部品の行が 1 つでもあれば公開版にも残る。個人版の部品についての記述は #1129 で書き分け、個人版の部品の検査と変更の記録は部品と一緒に個人版のリポジトリへ移し、公開版の付属のファイルには公開版の部品の記述だけを残した。固有記述の一覧はこの扱いで付属のファイルの行を載せている
+- ファイルの中で行き先が割れる付属のファイル（例: `hooks/hooks.json` の中で配線先のスクリプトの行き先が割れる、`tests/` のテストが公開版と個人版の両方の部品を検査する）は #1129 で書き分けた。dev-workflow の `hooks/hooks.json` の配線先 11 本はどれも公開版の部品で、エピック実行まわりの配線は無い。capability-registry の `hooks/hooks.json` の配線先は公開版の `scripts/browser-guard.sh` だけで、`tests/fmtoken.bats` は個人版の `scripts/fmtoken.sh` に従って一緒に個人版のリポジトリへ移した。`tests/skill-registry.bats` は公開版に残り、SKILL.md の全体を見る
 
 ## 保留の行の確定
 
-保留（#1123 の後）の行は、#1129 の着手時に #1129 の担い手が #1123 の結果を見て公開版か個人版に確定し、#1129 の PR でこの表を直してから移す。#1129 は #1123 に依存するので、#1129 の着手時には #1123 が終わっている。何を見て決めるかは各行の理由の欄に書いた。
+#1128 では、エピック実行の Orca 経路にかかわる 5 行（`epic-dispatch.sh`・`epic-launch-orca.sh`・`stop-judge.sh`・`parent-pass-criteria.md`・`parent-merge-criteria.md`）を分類の値「保留（#1123 の後）」にし、#1123（エピック実行の Orca 依存を外す）の結果を見て決めることにした。#1129 で #1123 の結果を見て、5 行とも公開版に確定し、分類の値「保留（#1123 の後）」は使わなくなったので消した。
+
+- 見たもの: #1123 の後、`epic-dispatch.sh` は起動部品を別のプロセスとして呼ぶ形になり、部品は `epic-launch-orca.sh`（Orca）と `epic-launch-tmux.sh`（tmux）から選ぶ。Orca 管理下でも tmux の中でもなければサブエージェント方式で回すので、Orca が無い環境でもエピックを回せる
+- `epic-launch-orca.sh` は `epic-launch-<名前>.sh` の差し替えの部品の 1 つとして残った。Orca は誰でも入れられる製品で、判断の基準の「個人版」に当たらない。`epic-dispatch.sh` は部品の既定を orca にしているので、Orca の部品だけを個人版へ移すと公開版の既定の経路が壊れる
+- `stop-judge.sh`・`parent-pass-criteria.md`・`parent-merge-criteria.md` は `epic-dispatch.sh` と同じ側に決めると書いていたので公開版にした。`parent-merge-criteria.md` は別セッション方式（起動部品は Orca か tmux）の親が使う
+
+決めた issue: https://github.com/oratta/claude-harness/issues/1129
 
 ## 表に載せないもの
 
@@ -56,7 +61,7 @@
 | `rules/link-when-requesting-review.md` | 公開版 | 人に操作を頼むときに URL を添える規則で、住人のふるまいに効く（下書きの「配る」） |
 | `rules/one-off-no-script.md` | 公開版 | 一回限りの操作をスクリプトにしない規則で、誰の環境でも意味がある（下書きの「開発用」） |
 | `rules/perspective-casting.md` | 公開版 | 主に上げるかどうかの判断の規則で、住人のふるまいに効く。下書きの「出さない」から変えた（casting プラグインを公開版にしたのと同じ理由） |
-| `rules/plugin-editing.md` | 個人版 | Harness 自体を開発するときの手順で、`CLAUDE_HARNESS_DEV_DIR` と開発用 clone というオーナーの開発環境を前提にしている |
+| `rules/plugin-editing.md` | 公開版 | 全員に要る部分（インストール先とローカルコピーを直接編集しない・ルールの symlink も持つリポジトリ側で直す・部品は開発用 clone で直す・手動で削除しない）は誰の環境でも意味があるので公開版に残した。当初は丸ごと個人版だったが、主の指摘で分けた。Harness 開発者向けの部分は個人版の `rules/harness-dev.md` に移した（公開版と同名だと `~/.claude/rules/` で衝突するため名前を変えた） |
 | `rules/subagent-model-selection.md` | 公開版 | サブエージェントのモデルの選び方で、誰の環境でも意味がある（下書きの「開発用」） |
 | `output-styles/readable.md` | 公開版 | 住人の書き方に効く Output Style（下書きの「配る」） |
 | `scripts/lint.sh` | 公開版 | このリポジトリの lint で、公開版の CI が使う |
@@ -65,29 +70,22 @@
 | `scripts/test-auto-merge-workflow.sh` | 公開版 | auto-merge の workflow の攻撃再現テストで、公開版の CI が使う |
 | `scripts/poc/` | 公開版 | Codex の app-server の試作で、オーナーの環境に依存しない |
 | `worktree` | 公開版 | worktree の作成と片付けの道具で、誰の環境でも意味がある |
-| `weekly-report` | 個人版 | Obsidian の vault・Notion などオーナーの記録の置き場を前提にした、オーナーの業務の週報 |
-| `daily-report` | 個人版 | Obsidian の vault と Fieldy の記録を前提にした、オーナーの業務の日報 |
 | `infra` | 公開版 | 新しいプロジェクトの CI・デプロイの雛形とセットアップの手順で、誰の環境でも意味がある。下書きの「出さない」から変えた（オーナーのアカウントには依存せず、営業で見せる動きにも使える） |
-| `dev-workflow` | 分割 | 開発の進め方（develop・pr-review-gate・hook）は公開版。エピック実行の Orca 経路は #1123 の後に決め、オーナーのリポジトリへの展開の記録は個人版。下の部品の行で分ける |
+| `dev-workflow` | 分割 | 開発の進め方（develop・pr-review-gate・hook）は公開版。エピック実行（起動部品は Orca か tmux、無ければサブエージェント方式）も #1129 で公開版に確定した。オーナーのリポジトリへの展開の記録は個人版で、#1129 で個人版のリポジトリへ移した（下の「個人版に移した部品」）。下の部品の行で分ける |
 | `plugins/dev-workflow/` | 公開版 | 下の行に当たらない dev-workflow の全ファイル。開発の進め方・レビューのゲート・hook・アカウントの切り替え（`accounts.json` の中身は利用者ごとに書く仕組み）は誰の環境でも意味があり、住人のふるまいに効く |
-| `plugins/dev-workflow/docs/auto-merge-deployments.md` | 個人版 | オーナーのリポジトリごとの auto-merge の展開の一覧と PAT の失効日で、オーナーに固有の業務とアカウントの記録 |
-| `plugins/dev-workflow/scripts/epic-dispatch.sh` | 保留（#1123 の後） | Orca で子のセッションを起動する部品を含む。#1123 で Orca の起動部品が差し替えられる部品として切り出され、Orca が無い環境でもエピックを回せるなら公開版、Orca に固有の部品として残るなら個人版 |
-| `plugins/dev-workflow/scripts/epic-launch-orca.sh` | 保留（#1123 の後） | `epic-dispatch.sh` から切り出した、Orca で子のワークツリーとセッションを扱う起動部品。#1123 の結果で、Orca が無い環境でもエピックを回せる差し替えの部品の 1 つとして残るなら公開版、Orca に固有の部品として残るなら個人版に決める |
-| `plugins/dev-workflow/scripts/stop-judge.sh` | 保留（#1123 の後） | `epic-dispatch.sh` の `wait --resolve` から呼ばれる、止まった子の判断の部品。#1123 の後に `epic-dispatch.sh` の行と同じ側に決める（`epic-dispatch.sh` 以外から呼ばれるようになっていれば公開版） |
-| `plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` | 保留（#1123 の後） | `stop-judge.sh` が読む、親が子の止まりを通す基準。#1123 の後に `stop-judge.sh` の行と同じ側に決める |
-| `plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` | 保留（#1123 の後） | Orca 経路の親が子の PR をマージしてよいかの基準。#1123 の後に、サブエージェント方式からも使われる基準になっていれば公開版、Orca 経路だけのものなら `epic-dispatch.sh` の行と同じ側に決める |
-| `capability-registry` | 分割 | 外部サービスの前に CLI を探す仕組みは公開版、オーナーの 1Password の保管庫とトークンの取り出しは個人版。下の部品の行と「capability-registry の扱い」で分ける |
+| `plugins/dev-workflow/scripts/epic-dispatch.sh` | 公開版 | エピックの子を起動して見張る部品。#1123 の後は起動部品を Orca と tmux から選び、どちらも無ければサブエージェント方式で回すので、Orca が無い環境でもエピックを回せる。#1129 で公開版に確定 |
+| `plugins/dev-workflow/scripts/epic-launch-orca.sh` | 公開版 | `epic-dispatch.sh` から切り出した、Orca で子のワークツリーとセッションを扱う起動部品。#1123 の後は `epic-launch-<名前>.sh` の差し替えの部品の 1 つとして残り、Orca は誰でも入れられる製品なので個人版に当たらない。`epic-dispatch.sh` の部品の既定でもある。#1129 で公開版に確定 |
+| `plugins/dev-workflow/scripts/stop-judge.sh` | 公開版 | `epic-dispatch.sh` の `wait --resolve` から呼ばれる、止まった子の判断の部品。`epic-dispatch.sh` の行と同じ側と決めていたので、#1129 で公開版に確定 |
+| `plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` | 公開版 | `stop-judge.sh` が読む、親が子の止まりを通す基準。`stop-judge.sh` の行と同じ側と決めていたので、#1129 で公開版に確定 |
+| `plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` | 公開版 | 別セッション方式（起動部品は Orca か tmux）の親が子の PR をマージしてよいかの基準。#1123 の後は Orca 経路だけのものではなく、`epic-dispatch.sh` の行と同じ側になるので、#1129 で公開版に確定 |
+| `capability-registry` | 分割 | 外部サービスの前に CLI を探す仕組みは公開版、オーナーの 1Password の保管庫とトークンの取り出しは個人版で、#1129 で個人版のリポジトリへ移した（下の「個人版に移した部品」）。下の部品の行と「capability-registry の扱い」で分ける |
 | `plugins/capability-registry/scripts/browser-guard.sh` | 公開版 | ブラウザを開く前に CLI の代替を確かめさせる hook で、住人のふるまいに効く（`fmtoken.sh` の案内は #1164 で外す） |
-| `plugins/capability-registry/scripts/fmtoken.sh` | 個人版 | オーナーの 1Password の保管庫と SA の構成を前提にしたトークンの取り出しで、資格情報の置き場そのもの |
-| `plugins/capability-registry/skills/capability-registry/1password.md` | 個人版 | オーナーの 1Password の保管庫・SA の設定手順で、資格情報の置き場 |
 | `plugins/capability-registry/skills/capability-registry/github.md` | 公開版 | GitHub の CLI の使い方で、誰の環境でも意味がある（`fmtoken.sh` の参照は #1164 で外す） |
 | `plugins/capability-registry/skills/capability-registry/supabase.md` | 公開版 | Supabase の CLI の使い方で、誰の環境でも意味がある |
 | `plugins/capability-registry/skills/capability-registry/stripe.md` | 公開版 | Stripe の CLI の使い方で、誰の環境でも意味がある |
 | `plugins/capability-registry/skills/capability-registry/vercel.md` | 公開版 | Vercel の CLI の使い方で、誰の環境でも意味がある（`fmtoken.sh` の参照は #1164 で外す） |
 | `plugins/capability-registry/skills/capability-registry/SKILL.md#冒頭` | 公開版 | frontmatter の description はスキルの発火条件で、外部サービスの前にスキルが発火することが公開版に要る |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md#表記規約（生成文にも適用すること）` | 個人版 | agents 保管庫・human-only 保管庫というオーナーの保管庫名の書き方の規約。主の決定 https://github.com/oratta/claude-harness/issues/1128#issuecomment-6292306455 |
 | `plugins/capability-registry/skills/capability-registry/SKILL.md#原則` | 公開版 | ブラウザに行く前に CLI と認証確認を調べる原則で、住人のふるまいに効く |
-| `plugins/capability-registry/skills/capability-registry/SKILL.md#資格情報の階層（どこに置くかはプロジェクトごとに決めない）` | 個人版 | オーナーの保管庫・SA 名・アイテムの命名規約の表で、資格情報の置き場そのもの |
 | `plugins/capability-registry/skills/capability-registry/SKILL.md#索引（1 サービス 1 行）` | 公開版 | サービスごとの CLI 名と認証確認コマンドの索引で、誰の環境でも意味がある |
 | `plugins/capability-registry/skills/capability-registry/SKILL.md#CLI が無いサービス（ネガティブエントリ）` | 公開版 | CLI の無い操作を探し回らないための記録で、誰の環境でも意味がある |
 | `plugins/capability-registry/skills/capability-registry/SKILL.md#新サービスの追加` | 公開版 | 索引の育て方で、誰の環境でも意味がある |
@@ -96,9 +94,27 @@
 | `statusline` | 公開版 | ステータスラインと枠の残量の表示で、誰の環境でも意味がある（共有先の環境変数は中立の名前を主にし、flatmate と共有する旧名は互換として読む） |
 | `product-handover` | 公開版 | プロダクトを引き渡すときの法務ドラフト・窓口・教訓ログの雛形で、営業で見せる動きに使う |
 
+## 個人版に移した部品
+
+#1129 で個人版のリポジトリ `oratta/claude-harness-oratta`（marketplace の名前は `claude-harness-oratta`）へ移し、公開版から消した部品。仕分けの表の分類は「個人版」だったが、公開版に部品が無くなったので仕分けの表から外し、ここに移した先と写し元の commit を残す。過去の中身は写し元の commit で辿れる。部品の書き方は仕分けの表と同じ（プラグインは末尾に `/`、節は `#` の後に見出しの文字）。
+
+| 部品 | 移した先 | 写し元の commit |
+|---|---|---|
+| `plugins/weekly-report/` | `oratta/claude-harness-oratta` の `plugins/weekly-report/`（同じ名前のプラグイン） | `647caaf088409abc68cc8c45587b1310e31e34f7` |
+| `plugins/daily-report/` | `oratta/claude-harness-oratta` の `plugins/daily-report/`（同じ名前のプラグイン） | `647caaf088409abc68cc8c45587b1310e31e34f7` |
+| `plugins/dev-workflow/docs/auto-merge-deployments.md` | `oratta/claude-harness-oratta` の `docs/auto-merge-deployments.md` | `647caaf088409abc68cc8c45587b1310e31e34f7` |
+| `plugins/capability-registry/scripts/fmtoken.sh` | `oratta/claude-harness-oratta` の `plugins/capability-registry-oratta/scripts/fmtoken.sh` | `647caaf088409abc68cc8c45587b1310e31e34f7` |
+| `plugins/capability-registry/skills/capability-registry/1password.md` | `oratta/claude-harness-oratta` の `plugins/capability-registry-oratta/skills/capability-registry-oratta/1password.md` | `647caaf088409abc68cc8c45587b1310e31e34f7` |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md#表記規約（生成文にも適用すること）` | `oratta/claude-harness-oratta` の `plugins/capability-registry-oratta/skills/capability-registry-oratta/SKILL.md` の同じ見出しの節 | `647caaf088409abc68cc8c45587b1310e31e34f7` |
+| `plugins/capability-registry/skills/capability-registry/SKILL.md#資格情報の階層（どこに置くかはプロジェクトごとに決めない）` | `oratta/claude-harness-oratta` の `plugins/capability-registry-oratta/skills/capability-registry-oratta/SKILL.md` の同じ見出しの節 | `647caaf088409abc68cc8c45587b1310e31e34f7` |
+
+`rules/plugin-editing.md` は表に載せない。ファイル 1 本をまるごと移したのではなく、全員に要る部分を公開版に残し、Harness 開発者向けの部分（`CLAUDE_HARNESS_DEV_DIR` による開発用 clone の解決、別プロジェクト作業中に Harness を直す手順、`/wt-setup` の注意、`sync.sh` の扱い、版を上げないことと `changes/` の記録と Draft PR）だけを `oratta/claude-harness-oratta` の `rules/harness-dev.md` に移した。写し元の commit は `647caaf088409abc68cc8c45587b1310e31e34f7`。
+
+部品と一緒に移した付属のファイルと仕様: `plugins/capability-registry/tests/fmtoken.bats`（個人版の `plugins/capability-registry-oratta/tests/fmtoken.bats`）、`openspec/specs/` の `capability-registry-fmtoken`・`weekly-report-jsonl-direct`・`report-command-hygiene`・`report-noninteractive-mode`（個人版の `openspec/specs/` の同名）。公開版に個人版の固有名が残っていないことは、個人版の `scripts/check-public-leak.sh <公開版の作業ツリー>` で確かめる。
+
 ## capability-registry の扱い
 
-capability-registry は分割した。外部サービスを操作する前に CLI と認証確認を調べる仕組み（browser-guard の hook・スキルの冒頭・原則・索引・CLI が無いサービス・新サービスの追加・サービス別ファイルの github・supabase・stripe・vercel）は公開版、オーナーの 1Password の保管庫とトークンの取り出し（`scripts/fmtoken.sh`・`1password.md`・スキルの「表記規約」と「資格情報の階層」の節）は個人版にする。部品ごとの行き先は上の表のとおり。
+capability-registry は分割した。外部サービスを操作する前に CLI と認証確認を調べる仕組み（browser-guard の hook・スキルの冒頭・原則・索引・CLI が無いサービス・新サービスの追加・サービス別ファイルの github・supabase・stripe・vercel）は公開版、オーナーの 1Password の保管庫とトークンの取り出し（`scripts/fmtoken.sh`・`1password.md`・スキルの「表記規約」と「資格情報の階層」の節）は個人版にし、#1129 で個人版のリポジトリのプラグイン `capability-registry-oratta` へ移した。公開版に残る部品の行き先は仕分けの表、移した部品は「個人版に移した部品」の表のとおり。公開版の SKILL.md の原則には、移した手順（env から恒久の置き場へ移す手順と prod の書き込みキーの置き場）を個人版が入っていればそちらで見る、という案内を残した。
 
 browser-guard と「CLI を先に調べる」原則は誰の環境でも意味があり、住人のふるまい（ログインを頼む前に CLI を探す）に効き、公開版に残る `rules/browser-infra-env-capture.md` からも参照されている。`fmtoken.sh` はオーナーの 1Password の保管庫と SA の構成を前提にした道具で、flatmate では出荷物に入れてはいけない語になっている。
 
@@ -139,35 +155,10 @@ https://github.com/oratta/claude-harness/issues/1164
 
 ## 固有記述の一覧
 
-公開版に残る部品（分割で公開版になった部品の行と、付属のファイルを含む）の中の固有名とオーナーの環境に依存する記述。行番号はこの文書を書いた時点（#1128 の PR）の値。直す issue は、`rules/` と `output-styles/` の 6 本（#1098 の範囲）の行を #1098、capability-registry の公開版の `fmtoken.sh` の参照を #1164 にし、どの issue の範囲にも当たらない行を「担い手なし」にした。その後 #1168 で、担い手なしだった行を直すか、載せない行の基準に当たるとして外し、Orca 経路の行の担い手は #1177 にした。#1164 の行は、PR #1175 のマージで実ファイルから `fmtoken` が消えていたので一覧から外した。その後 #1123 の PR（tmux の部品の追加）で develop の SKILL.md「エピックの扱い」を書き直したので、SKILL.md の行番号を今の本文に合わせ、Orca の語もエピックの経路への依存も無くなった 4 行（親の側の手順の送り先、同時に動く子の上限の説明、サブエージェント方式の別のリポジトリの子の扱い、完了時の状態ディレクトリの確認）を外した。flatmate の住人での索引と案内の二重（#1105 の範囲）は、まだ書かれていない参照を足す作業なので、当たる行は無い。
+公開版に残る部品（分割で公開版になった部品の行と、付属のファイルを含む）の中の固有名とオーナーの環境に依存する記述。行番号はこの文書を書いた時点（#1128 の PR）の値。直す issue は、`rules/` と `output-styles/` の 6 本（#1098 の範囲）の行を #1098、capability-registry の公開版の `fmtoken.sh` の参照を #1164 にし、どの issue の範囲にも当たらない行を「担い手なし」にした。その後 #1168 で、担い手なしだった行を直すか、載せない行の基準に当たるとして外し、Orca 経路の行の担い手は #1177 にした。その後 #1177 で、Orca 経路の行を「Orca を使う場合」の書き方に直すか、載せない行の基準（差し替え可能な起動部品の 1 つとして Orca を並べた行）に当たるとして外し、候補語に当たらない 1 行（`SKILL.md:517`）も外し、担い手が #1177 の行はなくなった。一覧に「担い手なし」の行は残さない。#1164 の行は、PR #1175 のマージで実ファイルから `fmtoken` が消えていたので一覧から外した。その後 #1123 の PR（tmux の部品の追加）で develop の SKILL.md「エピックの扱い」を書き直したので、SKILL.md の行番号を今の本文に合わせ、Orca の語もエピックの経路への依存も無くなった 4 行（親の側の手順の送り先、同時に動く子の上限の説明、サブエージェント方式の別のリポジトリの子の扱い、完了時の状態ディレクトリの確認）を外した。flatmate の住人での索引と案内の二重（#1105 の範囲）は、まだ書かれていない参照を足す作業なので、当たる行は無い。
 
 | 場所 | 種別 | 内容 | 直す issue |
 |---|---|---|---|
-| `plugins/dev-workflow/README.md:15` | 環境依存 | エピックの子を Orca の子ワークツリーで起動する経路 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:46` | 環境依存 | 判定 `orca`（Orca の子ワークツリーで子を起動する） | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:207` | 環境依存 | worktree の片付けを Orca 経路の親が行う | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:350` | 環境依存 | Orca 経路の子が主の返事を待って止まる前の記録と印 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:353` | 環境依存 | Orca 経路の子の状態の印 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:480` | 環境依存 | エピックの経路の決め方（Orca 経路） | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:484` | 環境依存 | `nested` の扱いと、子をオーナーの起動コマンド `cld` で起動する | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:486` | 環境依存 | Orca 経路の子の独立セッション | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:488` | 環境依存 | Orca 経路の子の状態の正本 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:490` | 環境依存 | Orca 経路で親がターンを終えるときの発言 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:508` | 環境依存 | Orca 側の失敗の扱い | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:509` | 環境依存 | `回し方: Orca` の再開 | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:514` | 環境依存 | 別セッション方式のマージ待ちの子（`epic-dispatch.sh reply` で返事を送る手順） | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:534` | 環境依存 | 別のリポジトリの子の clone を、無ければ Orca に登録済みのリポジトリから探す | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:536` | 環境依存 | 子セッションを `cld --model` で起動する | #1177 |
-| `plugins/dev-workflow/skills/develop/SKILL.md:540` | 環境依存 | 子セッションを `cld`（`EPIC_DISPATCH_CLAUDE_CMD` で差し替え）が付ける `--dangerously-skip-permissions` で動かす起動の説明（Orca の語なし） | #1177 |
-| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:3` | 環境依存 | Orca 経路の子セッションへの返事の規則 | #1177 |
-| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:5` | 環境依存 | Orca 経路の手順 8 への参照 | #1177 |
-| `plugins/dev-workflow/skills/develop/references/reply-after-idle.md:64` | 環境依存 | Orca 経路の子の端末を `reap` で閉じる | #1177 |
-| `plugins/dev-workflow/scripts/owner-reply-check.sh:33` | 環境依存 | Orca で子を起動するときの prompt の書式 | #1177 |
-| `plugins/dev-workflow/scripts/owner-reply-check.sh:52` | 環境依存 | Orca の親セッションが子のターミナルに打ち込んだ文の扱い | #1177 |
-| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:83` | 環境依存 | Orca の子のセッションの扱い | #1177 |
-| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:91` | 環境依存 | Orca の親が子のターミナルに打ち込んだ `/develop` の扱い | #1177 |
-| `plugins/dev-workflow/skills/pr-review-gate/declarations.md:103` | 環境依存 | 守備範囲の Orca の親の扱い | #1177 |
-| `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:97` | 環境依存 | Orca の親セッションが子のターミナルに打ち込んだ文の扱い | #1177 |
 
 ### 候補語
 
@@ -184,6 +175,34 @@ https://github.com/oratta/claude-harness/issues/1164
 - **置き換える前提の例**: `/Users/example`・`/Users/x`・`<project>` のような書式の説明
 - **記録と検査**: `changes/`・`CHANGELOG.md`・`tests/`・`evals/`（変更の記録と検査は、それが記録・検査している部品と一緒に #1129・#1164 で動かす）
 - **出典や経緯としてだけ名前を挙げる行**: `flatmate#320`・`flatmate #701`・「suimei で実発生」・「genetta-inc の flatmate リポで実運用検証済み」・「出典: oratta/marketing-harness#36」・「2026-08-10 に flatmate で実走したとき」のように、決まりの由来を示すだけで、読み手の環境にその名前の物が無くても指示として実行できる行
-- **互換のために残す旧名の読み取り**: 新しい名前が主であること、旧名を互換として読むことが同じ箇所に書かれた行（例: statusline の `FLATMATE_RATE_SHARE_DIR`・`FLATMATE_RATE_SHARE_CONF`。主は `CLAUDE_RATE_SHARE_DIR`・`CLAUDE_RATE_SHARE_CONF`）。旧名は固有名として読み手に見えるが、指示としては新名で足りる。`tests/public-private-split.bats` の許可リストに 1 件ずつ載せる
+- **互換のために残す旧名の読み取り**: 新しい名前が主であること、旧名を互換として読むことが同じ箇所に書かれた行（例: statusline の `FLATMATE_RATE_SHARE_DIR`・`FLATMATE_RATE_SHARE_CONF`。主は `CLAUDE_RATE_SHARE_DIR`・`CLAUDE_RATE_SHARE_CONF`）。旧名は固有名として読み手に見えるが、指示としては新名で足りる。`tests/public-names/allow/nondev.txt` に 1 行ずつ載せる（書式 `<path>:<語>:=<行に含まれる固定の文字列>`、基準は直前の `#` のコメントに書く）
+- **差し替え可能な起動部品の 1 つとして Orca を並べた行**: 「Orca・tmux」「起動部品は Orca か tmux」「Orca の部品の列」のように、`epic-launch-<名前>.sh` の差し替えの部品の 1 つとして Orca を他の部品や方式と並べた行（develop の SKILL.md の「部品ごとの欄」の見出しと表を含む）。Orca だけを前提にした行（Orca 経路と名乗る・Orca に登録済みのリポジトリを探す・Orca の親が子のターミナルに打ち込む）は当たらず、「Orca を使う場合」の書き方に直す。下の「一般の製品を例の 1 つとして並べる行」は一般の製品を並べた例で、この項目は `epic-launch-<名前>.sh` の差し替えの部品として並べた行である。この項目は `epic-launch-orca.sh` が公開版に決まる前提で当てるもので、#1129 で `epic-launch-orca.sh` は公開版に確定し、前提は満たされた。下の節「起動部品の 1 つとして一覧から外した行」の行は一覧に戻さない
+- **Orca の起動部品の中の行と、起動部品を呼ぶ側で Orca の部品を選んだときの振る舞いを書いた行**: `plugins/dev-workflow/scripts/epic-launch-orca.sh` の行と、`plugins/dev-workflow/scripts/epic-dispatch.sh` の中で Orca の部品を選んだときの動き（orca のコマンド・Orca の画面の印・Orca 管理のワークツリーの判定・Orca に登録されたリポジトリ）を書いた行。Orca を入れていない環境では Orca の部品は選ばれない（経路の判定が tmux かサブエージェント方式になる）ので、読み手の環境に Orca が無くても誤った指示にならない。起動部品の外で Orca だけを前提にした手順を書く行（develop の SKILL.md や `references/` の文書の「Orca 経路の…」）は当たらず、「Orca を使う場合」の書き方か別セッション方式の書き方に直すか、一覧に載せて担い手を付ける
 - **一般の製品を例の 1 つとして並べる行**: 「1Password / Bitwarden / Keychain 等」「Orca や端末から起動した Claude Code」のように、ほかの製品と並べた例
-- **個人版や保留の部品の中の行**: 表で個人版か保留（#1123 の後）に決まる部品（`plugins/dev-workflow/scripts/epic-dispatch.sh` など）は一覧の対象外
+- **個人版の部品の中の行**: 個人版の部品は #1129 で公開版から消したので、公開版に当たる行は無い。移した部品と移した先は上の節「個人版に移した部品」に記録した
+
+## 起動部品の 1 つとして一覧から外した行
+
+上の基準「差し替え可能な起動部品の 1 つとして Orca を並べた行」に当たるとして、#1177 で一覧から外した行。#1129 で `epic-launch-orca.sh` が公開版に確定したので、この行は一覧に戻さない。表は外した行の場所の記録として残す。行番号は #1177 の時点の値で、行の先頭の語で探し直せる。
+
+| 場所 | 行の先頭の語 |
+|---|---|
+| `plugins/dev-workflow/skills/develop/SKILL.md:46` | \| **`orca`** または **`tmux`** |
+| `plugins/dev-workflow/skills/develop/SKILL.md:207` | - **worktree の片付けを提案も質問もしない** |
+| `plugins/dev-workflow/skills/develop/SKILL.md:350` | 別セッション方式（Orca・tmux）で起動された |
+| `plugins/dev-workflow/skills/develop/SKILL.md:353` | - **印**: 記録を投稿してから付ける |
+| `plugins/dev-workflow/skills/develop/SKILL.md:483` | **経路の決め方** |
+| `plugins/dev-workflow/skills/develop/SKILL.md:489` | **別セッション方式**（起動部品は Orca か tmux |
+| `plugins/dev-workflow/skills/develop/SKILL.md:491` | **子の状態の正本** |
+| `plugins/dev-workflow/skills/develop/SKILL.md:493` | **部品ごとの欄** |
+| `plugins/dev-workflow/skills/develop/SKILL.md:495` | \| 点 \| Orca の部品（`epic-launch-orca.sh`） |
+| `plugins/dev-workflow/skills/develop/SKILL.md:497` | \| 子の起こし方 \| Orca の子ワークツリーを作り |
+| `plugins/dev-workflow/skills/develop/SKILL.md:498` | \| 使える条件 \| `orca` が PATH |
+| `plugins/dev-workflow/skills/develop/SKILL.md:499` | \| `kept <N> <理由>` を確かめたあとで消す操作 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:500` | \| 止まった子への `reply`・完了を促す返事 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:501` | \| 画面への写し |
+| `plugins/dev-workflow/skills/develop/SKILL.md:502` | \| 設定の誤りの報告 |
+| `plugins/dev-workflow/skills/develop/SKILL.md:508` | 3. `done <N>...` で起こされたら |
+| `plugins/dev-workflow/skills/develop/SKILL.md:511` | 6. `wait` の `error gh ...` |
+| `plugins/dev-workflow/scripts/epic-launch-tmux.sh:19` | `# orca は呼ばない。` |
+| `plugins/dev-workflow/scripts/epic-state.sh:86` | `and ((.launcher \| type) == "string")` |

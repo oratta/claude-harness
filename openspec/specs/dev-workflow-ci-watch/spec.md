@@ -240,7 +240,7 @@ dev-workflow は `/ci-watch <PR> [--merge]` の入口を持ち、対象 PR の U
 ### Requirement: エピックの子は聖域接触だけの human-merge で親の判断を待つ
 `plugins/dev-workflow/references/ci-watch.md` の「`ready` を受けたあと」の見送りラベルの分岐は、エピックの子のセッション（`epic-dispatch.sh route`（子の番号なし）が `nested` を返すセッション）について次を書かなければならない（MUST）。この要件は、要件「CI の見張りの手順は共有 reference に 1 本置く」の、見送りラベルのどれかが付いていれば `--until-merged` で待たずにオーナーへマージを頼む規定に、次の 3 つをすべて満たすときに限って優先する: エピックの子のセッションである／付いている見送りラベルが `human-merge` だけ／対象リポの PR の base ブランチの `.github/workflows/auto-merge.yml`（`gh api "repos/<owner>/<repo>/contents/.github/workflows/auto-merge.yml?ref=<PR の base ブランチ>" --jq .content | base64 -d`） に `parent-merge-approved` の語がある。どれかを満たさなければ従来どおりオーナーにマージを頼む。
 
-- オーナーに直接頼む代わりに、develop の SKILL.md「エピックの子が主の返事を待って止まるとき」の記録を `止まった理由: PR のマージ待ち（human-merge）: <PR の URL>` で残し、その手順どおり印（`mark stopped`）を付けて止まる（MUST）。記録の形と印の手順は SKILL.md の側の規定のまま。残りの 5 項目（前提・推奨・推奨の根拠・受け入れるリスク・再開に要る途中経過）に何を書くかの例を添える（MUST）
+- オーナーに直接頼む代わりに、develop の SKILL.md「エピックの子が主の返事を待って止まるとき」の記録を `止まった理由: PR のマージ待ち（human-merge）: <PR の URL>` で残し、その手順どおり印（`mark stopped`）を付けて止まる（MUST）。記録の形と印の手順は SKILL.md の側の規定のまま。残りの 6 項目（主に聞く理由・前提・推奨・推奨の根拠・受け入れるリスク・再開に要る途中経過）に何を書くかの例を添える（MUST）。`主に聞く理由:` の例は「決まりで主の承認が要る」で始め、その決まりが何を守るためか（聖域のファイルに触れた PR は人の判断を通してからマージする）まで書く
 - 親から返事（`親エピック #<E> の判断（主の承認ではない）:` で始まる入力）が届いたら、新しい見張りとして `ci-watch.md` の 2 の重複の確認と `CI 見張り開始:` のコメントの投稿をしてから、`ci-watch.sh wait <owner/repo> <PR番号> --until-merged` を `run_in_background` で起動して見届ける（MUST。止まるときに `CI 見張り終了:` を投稿しているので、開始の記録なしに始めると、別のセッションが同じ PR の見張りを重ねて始められてしまう）。結果の扱いは既存の 4 の表のまま。`--until-merged` の `timeout` で改めて止まるときは、`止まった理由:` を `PR のマージ待ち（human-merge、親の返事のあともマージされない）: <PR の URL>` とする（MUST）
 - 子は `parent-merge-approved` ラベルも `親のマージ判断:` のコメントも付けてはならない（MUST NOT）。親の返事を聖域の変更や破壊的な操作の承認として扱わず、その返事で聖域のファイルを変えたりマージしたりしない（MUST NOT）。`gh pr merge` や merge API を叩かない規定は変えない
 
@@ -248,5 +248,18 @@ dev-workflow は `/ci-watch <PR> [--merge]` の入口を持ち、対象 PR の U
 
 #### Scenario: 見送りラベルの分岐にエピックの子の扱いが書かれている
 - **WHEN** `ci-watch.md` の「`ready` を受けたあと」の 1 を読む
-- **THEN** エピックの子のセッションで見送りラベルが `human-merge` だけ、かつ PR の base ブランチの `auto-merge.yml` に `parent-merge-approved` があるとき（確かめるコマンドを添える）、子の停止の記録を `PR のマージ待ち（human-merge）` で残し、残りの 5 項目の例に沿って書いて止まること、親の返事が届いたら 2 の重複の確認と `CI 見張り開始:` の投稿をしてから `--until-merged` で見届けること、子は印を付けず親の返事を承認として扱わないことが書かれ、それ以外は従来どおりオーナーにマージを頼むことが書かれている
+- **THEN** エピックの子のセッションで見送りラベルが `human-merge` だけ、かつ PR の base ブランチの `auto-merge.yml` に `parent-merge-approved` があるとき（確かめるコマンドを添える）、子の停止の記録を `PR のマージ待ち（human-merge）` で残し、残りの 6 項目（`主に聞く理由:` を含む）の例に沿って書いて止まること、親の返事が届いたら 2 の重複の確認と `CI 見張り開始:` の投稿をしてから `--until-merged` で見届けること、子は印を付けず親の返事を承認として扱わないことが書かれ、それ以外は従来どおりオーナーにマージを頼むことが書かれている
+
+### Requirement: エピックの子はオーナーにマージを頼むとき、マージ後の連絡を頼まない
+
+`plugins/dev-workflow/references/ci-watch.md` は、エピックの子のセッション（`epic-dispatch.sh route`（子の番号なし）が `nested` を返すセッション）がオーナーにマージを頼んで見張りを終えるすべての箇所（「`ready` を受けたあと」の 1 の見送りラベルの分岐で親の判断を待たずにオーナーに頼むとき・3 の自動マージの workflow が無いとき・4 の表の `--until-merged` で起動した `wait` の `timeout`）について、次を 1 か所にまとめて書かなければならない（MUST）。
+
+- 頼む文面に「マージしたら教えてください」のような、マージ後にオーナーが子のタブへ戻って知らせる依頼を書いてはならない（MUST NOT）
+- 代わりに「マージしたらこのタブは放っておいてよい。記録先が閉じれば親が完了にしてワークツリーを片付ける」と書く（MUST）。理由として、親の `epic-dispatch.sh wait --watch-done` が、記録先が completed で閉じて子のセッションが止まった子を完了と推定することを添える（SHALL）
+
+エピックの子でないセッションがオーナーにマージを頼む文面は変えない。
+
+#### Scenario: ci-watch.md にエピックの子のマージ依頼の文面の規定がある
+- **WHEN** `plugins/dev-workflow/references/ci-watch.md` の「`ready` を受けたあと」を読む
+- **THEN** エピックの子のセッションがオーナーにマージを頼んで見張りを終えるとき（1・3・`--until-merged` の `timeout`）に、マージ後の連絡を頼まず「マージしたらこのタブは放っておいてよい。記録先が閉じれば親が完了にしてワークツリーを片付ける」と書くことと、親の `wait --watch-done` が完了を推定するという理由が書かれている
 
