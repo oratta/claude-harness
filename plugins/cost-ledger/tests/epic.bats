@@ -498,3 +498,35 @@ PY
   [ "$(gh_calls)" -eq 0 ]
   [ "$(head -n 1 "$BATS_TEST_TMPDIR/out.md")" = "$(python3 "$CL" issue 10 --repo "$RA" | head -n 1)" ]
 }
+
+# ---- GitHub から取った文字列の制御文字（#753）-----------------------------
+
+@test "control chars: a PR head branch with U+202E is not printed by cost <PR>" {  # 標準出力に U+202E が無い。制御文字の無いブランチ名の出力は変わらない
+  logs
+  export EPIC_PR=300 EPIC_PR_HEAD=$'feat/a‮'
+  run cost 300
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" != *$'‮'* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *'PR #300 (feat/a)'* ]] || { echo "$output"; return 1; }
+  export EPIC_PR_HEAD=feat/a
+  run cost 300
+  [ "${lines[0]}" = 'コスト: $2.00 / ¥300 @150 — PR #300 (feat/a) 帰属: ブランチ' ] || { echo "$output"; return 1; }
+}
+
+@test "control chars: --json escapes U+009B and U+2028 and loads back to the same title" {  # 生の文字は出ず、json.loads は元の題名に戻る。日本語はそのまま
+  logs
+  gql 10 epic OPEN "$(prs)" \
+    "$(child 11 '日本語\u009b ‮X' CLOSED 0)" \
+    "$(child 12 'child b' OPEN 0)"
+  run_split cost_json 10
+  [ "$status" -eq 0 ] || { echo "$ERR"; return 1; }
+  python3 - "$BATS_TEST_TMPDIR/stdout" <<'PY'
+import json, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+for ch in ("\u009b", " ", "‮"):
+    assert ch not in raw, repr(ch)
+assert "日本語" in raw
+titles = {row["number"]: row["title"] for row in json.loads(raw)["issues"]}
+assert titles[11] == "日本語\u009b ‮X", titles
+PY
+}
