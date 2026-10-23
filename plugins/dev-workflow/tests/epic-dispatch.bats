@@ -3247,6 +3247,8 @@ infer_ready() {
   e="$(section 'エピックの扱い' "$EPIC")"
   printf '%s\n' "$e" | grep -F '親エピックからの注意書き:' | grep -F '起動し直したセッション' | grep -qF 'W・R1・G'
   printf '%s\n' "$e" | grep -F 'note not posted to' | grep -qF '投稿'
+  # 規則は epic.md にだけあるので、起動し直した子にも SKILL.md の案内が epic.md を読ませる（#1243 の F1）
+  section 'エピックの扱い' | grep -F '`親エピックからの注意書き:` で始まるコメントがあるとき' | grep -qF '起動し直した'
 }
 
 @test "skill: the parent's note is followed only when its author is an owner, member or collaborator" {

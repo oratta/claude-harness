@@ -430,7 +430,10 @@ refute() {
   echo "$g" | grep -qF 'Read'
   echo "$g" | grep -qF '`/develop <エピック番号>` で起動したとき'
   echo "$g" | grep -qF '`nested` を返すエピックの子として動き'
-  echo "$g" | grep -qF '単発の issue・会話依頼・Draft PR を記録先にする依頼の 1 ループでは読まない'
+  echo "$g" | grep -qF '単発の issue・会話依頼・Draft PR を記録先にする依頼の 1 ループでは、下のどれかの場面に当たらない限り読まない'
+  # 起動し直した子も親の注意書きの規則を読む（#1243 の F1）・範囲外の問題を新しい子 issue にする規則を読む（F2）
+  echo "$g" | grep -F '`親エピックからの注意書き:` で始まるコメントがあるとき' | grep -F '起動し直した' | grep -qF '`author_association`'
+  echo "$g" | grep -F '範囲外の新しい問題' | grep -qF '新しい子 issue'
   [ "$(echo "$g" | grep -c '^### ')" -eq 0 ]
   c="$(section 'エピックの子が主の返事を待って止まるとき')"
   [ -n "$c" ]
@@ -465,6 +468,12 @@ refute() {
   # SKILL.md の他の節は移設先を指す（旧い節名の参照が残っていない）
   if grep -qF '「エピックの扱い」→「回し方」' "$SKILL"; then return 1; fi
   if grep -qF '「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」' "$SKILL"; then return 1; fi
+  # 移設先から SKILL.md の節を指すときは SKILL.md と書く・他の文書は移設先を指す（#1243 の F3・F4・F11）
+  grep -qF '**SKILL.md の「1 ループ」を子ごとに並列**' "$EPIC"
+  if grep -qF '上の 1 ループ' "$EPIC"; then return 1; fi
+  grep -qF '（記録の形の正本は `skills/develop/references/epic-child-stop.md` の側）' "${PLUGIN_DIR}/references/ci-watch.md"
+  if grep -qF '記録の形の正本は SKILL.md の側' "${PLUGIN_DIR}/references/ci-watch.md"; then return 1; fi
+  section '上流の壁打ち（`/opsx:explore`）を呼ばない理由' | grep -qF '（`references/epic.md` のエピックの作り方）'
 }
 
 # --- 上流の壁打ち（旧 longrun:plan。#205 で /opsx:explore に） ---
@@ -727,7 +736,7 @@ refute() {
 }
 
 # --- Requirement: 親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る（#1059） ---
-# 照合の対象は SKILL.md の文だけで、openspec の spec の文言は照合しない。
+# 照合の対象は develop の SKILL.md・references/epic.md・references/epic-child-stop.md の文だけで、openspec の spec の文言は照合しない。
 
 @test "relayed reply (#1059): Orca step 8 reports in the body, locates the uuid, and appends the location" {
   line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
