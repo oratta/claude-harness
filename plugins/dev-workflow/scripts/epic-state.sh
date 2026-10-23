@@ -4,7 +4,8 @@
 # 記録は ${EPIC_STATE_ROOT:-$HOME/.claude/epic-state}/<エピックの owner>.<repo>-<エピック番号>/<子の owner>.<repo>-<子の番号>.json
 # に子ごと 1 ファイル。項目は schema(1)・epic・child・repo・number・launcher・parent_worktree・worktree・branch・
 # base・session・launch_failed・status(running|waiting|done)・stop(""|stopped|stopped-seen|resumed)・
-# created_at・updated_at。知らない項目は残す。書き込みは同じディレクトリの一時ファイルから mv で置き換え、
+# created_at・updated_at。親の wait --watch-done が完了を推定したときだけ done_inferred_at・
+# done_inferred_last_activity を足す（schema は 1 のまま）。知らない項目は残す。書き込みは同じディレクトリの一時ファイルから mv で置き換え、
 # 読んで書き換えるときは <記録>.lock を mkdir して排他する。残ったロックは消さない。
 # このファイルは起動部品の名前を書かない（起動部品のコマンドを呼ぶのは epic-dispatch.sh だけ）。
 #
