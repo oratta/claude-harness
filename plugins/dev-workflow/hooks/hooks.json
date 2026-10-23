@@ -28,6 +28,14 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/prompt-tripwires-refresh.sh\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/unclear-reply-rephrase.sh\""
+          }
+        ]
       }
     ],
     "PreToolUse": [
