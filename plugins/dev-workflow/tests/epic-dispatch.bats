@@ -3643,7 +3643,13 @@ orca_cmd_scripts() {
   # 通る例の 3 つ
   grep -qF '実機テストのための試しの issue 作成' "$f"
   grep -qF '止まった子の起動し直し' "$f"
-  grep -qF 'Mac が空いてからの CI の再実行' "$f"
+  grep -qF 'CI の再実行（無関係なテストの時間切れ・ランナーの混雑・待って打ち直すだけで済むもの）' "$f"
+  run grep -F 'Mac が空いてからの CI の再実行' "$f"; [ "$status" -eq 1 ]
+  # 「戻せる」の行に、同じ操作をやり直しても何も残らない操作（CI の再実行・ジョブの打ち直し）が書かれている
+  row="$(grep -F '| 戻せる |' "$f")"
+  printf '%s\n' "$row" | grep -qF '同じ操作をやり直しても何も残らない操作'
+  printf '%s\n' "$row" | grep -qF 'CI の再実行'
+  printf '%s\n' "$row" | grep -qF 'ジョブの打ち直し'
   # 子の主に聞く理由の読み方
   grep -F '`主に聞く理由:`' "$f" | grep -qF '鵜呑みにしない'
   grep -F '`主に聞く理由: なし（…）`' "$f" | grep -qF '通す側で読む'
