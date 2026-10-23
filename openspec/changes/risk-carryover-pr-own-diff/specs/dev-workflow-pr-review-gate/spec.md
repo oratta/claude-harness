@@ -131,6 +131,11 @@ pr-review-gate SKILL.md は、手順 3 で「主のリスク許容が必要」�
 - **WHEN** 根拠ファイルがバイナリで、前後の HEAD で中身が違う
 - **THEN** 終了コード 1、`CARRYOVER=no` と、そのファイルを示す `NG:` 行を出す
 
+#### Scenario: merge-base が 1 つに決まらない
+
+- **WHEN** PR に main をマージし、main にも PR の commit をマージして（criss-cross merge）、新しい HEAD と base の merge-base が 2 つになり、main 側の変更で根拠ファイルが前後で変わった
+- **THEN** 終了コード 1、`CARRYOVER=no` と、merge-base が 1 つに決まらないことを示す `NG:` 行を出す
+
 #### Scenario: 根拠ファイルの PR 自身の差分の変更と許可リスト外の衝突解消が重なった
 
 - **WHEN** `EVIDENCE_PR_CHANGED=` に当たる根拠ファイルがあり、同じ取り込みで許可リストに無いファイルでも衝突を解いた

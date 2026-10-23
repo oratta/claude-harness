@@ -5,7 +5,7 @@
   - 「non-merge commit on top of prev HEAD -> exit 1」: 終了コード 0・`PR_COMMITS=1`・`NG:` 行なし
   - 「#694: outside-allowlist resolution plus a non-merge commit -> exit 1」: 終了コード 3・`CARRYOVER=if-rereviewed`
   - 「#694: outside-allowlist resolution plus evidence changed by main -> exit 1」: 終了コード 3・`RESOLVED_OUTSIDE_ALLOWLIST=` と `EVIDENCE_MAIN_ONLY=` の両方
-  - 「#478: running from a subdirectory」: PR 自身の commit で evidence.txt の PR の行を書き換える形に変え、終了コード 4・`EVIDENCE_PR_CHANGED=evidence.txt`
+  - 「#478: running from a subdirectory」: PR 自身の commit で evidence.txt を書き換える形に変え（前の HEAD では PR はこのファイルに触れていない）、終了コード 4・`EVIDENCE_PR_CHANGED=evidence.txt`
 
   触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:100-117（2 件）、:226-248（#694 の 2 件）、:287-294（サブディレクトリ）
 - [ ] 1.2 PR 自身の差分の比較のケースを足す。足すケースは次の 6 つ
@@ -17,7 +17,7 @@
   - 4 と許可リスト外の衝突解消が重なる: 終了コード 4、両方の行が出る
 
   共通の準備として、PR 側で evidence.txt を複数行にして 1 行変える関数を足す。確かめ方: 2.7 で全件 ok。触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:32-56（関数の並び）、:181-198 の後ろ（「other JSON files」テストの直後に新しいケースを並べる）
-- [ ] 1.3 `NG:` に残るものを足す: バイナリの根拠ファイルが前後で変わった（終了コード 1・`NG:` がそのファイルを示す）。根拠ファイルに触れないときの出力に `PR_COMMITS=0`・`EVIDENCE_DIFF_LINES=0` があることを、今の「main merged without conflict」テストに足す。確かめ方: 2.7 で全件 ok。触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:62-71、:119-128（「merge of a non-main branch」の近くにバイナリのケース）
+- [ ] 1.3 `NG:` に残るものを足す: バイナリの根拠ファイルが前後で変わった（終了コード 1・`NG:` がそのファイルを示す）。新しい HEAD と base の merge-base が 1 つに決まらない（main と pr を互いにマージした criss-cross merge で、main が根拠ファイルを変えている。終了コード 1・`NG:` が merge-base を示す）。根拠ファイルに触れないときの出力に `PR_COMMITS=0`・`EVIDENCE_DIFF_LINES=0` があることを、今の「main merged without conflict」テストに足す。確かめ方: 2.7 で全件 ok。触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:62-71、:119-128（「merge of a non-main branch」の近くにバイナリのケース）
 - [ ] 1.4 先頭コメントに #1238 と、PR 自身の差分で判定することを書く。確かめ方: 目視。触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:1-7
 
 ## 2. スクリプトを直す
