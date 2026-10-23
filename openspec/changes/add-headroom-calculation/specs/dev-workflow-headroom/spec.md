@@ -1,9 +1,9 @@
 ## ADDED Requirements
 
 ### Requirement: 余りの計算を headroom.py の 1 か所に置く
-dev-workflow プラグインは `plugins/dev-workflow/scripts/headroom.py` を配布し、Claude の各スロットと Codex の各 account について「いつまでに、どれだけ余るか」を数える計算をこのファイルだけに置かなければならない（SHALL）。関数 `compute(now)` は引数 `now`（epoch 秒）だけを取り、`schema`・`computed_at`・`settings`・`best`・`best_by_provider`・`accounts` を持つ辞書を返さなければならない（SHALL）。`compute` はファイルを書かず、Codex の使用量を取得してはならない（MUST NOT）。
+dev-workflow プラグインは `plugins/dev-workflow/scripts/headroom.py` を配布し、Claude の各スロットと Codex の `current` account について「いつまでに、どれだけ余るか」を数える計算をこのファイルだけに置かなければならない（SHALL）。関数 `compute(now)` は引数 `now`（epoch 秒）だけを取り、`schema`・`computed_at`・`settings`・`best`・`best_by_provider`・`accounts` を持つ辞書を返さなければならない（SHALL）。`compute` はファイルを書かず、Codex の使用量を取得してはならない（MUST NOT）。
 
-入力は次の 3 つに限る（SHALL）: Claude の各スロットの実効値（`usage_view.build_view` と、オン・オフを `usage_view.read_slots`）、Claude のリセット権（`.usage-snapshot` の `accounts.<id>.reset_grants`）、Codex の各 account の使用量とリセット権（`codex-develop.py` が書く `codex-usage/<hash>.json`）。`.statusline-codex` を入力にしてはならない（MUST NOT）。
+入力は次の 3 つに限る（SHALL）: Claude の各スロットの実効値（`usage_view.build_view` と、オン・オフを `usage_view.read_slots`）、Claude のリセット権（`.usage-snapshot` の `accounts.<id>.reset_grants`）、Codex の `current` account の使用量とリセット権（`codex-develop.py` が書く `codex-usage/<hash>.json`）。Codex のオン・オフ（`codex.enabled`）は `usage_view.read_codex_enabled` 経由で読まなければならない（SHALL。レジストリの読み手を増やさない）。`.statusline-codex` を入力にしてはならない（MUST NOT）。
 
 headroom が見る Codex の account は、`codex-develop.py` の自動選択の既定の対応（`CODEX_HOME`、未設定なら `~/.codex` が既存の絶対ディレクトリのときの `current`）だけでなければならない（SHALL）。
 
@@ -20,6 +20,8 @@ headroom は Claude の各スロットについて、次の週次リセットよ
 
 `surplus_pct` は flatmate の `account_allocation.py` の `evaluate_accounts` と同じ数え方でなければならない（SHALL）: 最初に切れる数えるリセット権の失効（無ければ週次リセット）までの区間の余り `max(0, to_cap − rate × 区間の時間)` に、数えるリセット権 1 枚ごとに天井の値を足す。`to_cap = (100 − used_pct) − (100 − 天井)`、`rate` は通常の消費ペースの上書きがあればそれ、無ければ `used_pct ÷ max(週の経過時間, 24 時間)`。
 
+枚数は束ごとの `resets_left` の和で数えなければならない（SHALL。`resets_left: 2` の束は 2 枚）。`ends_at` が null の束は `tickets.count` に入れ、失効が分からないので `rocket` には入れない（SHALL）。
+
 `reset_grants` の欄が無い・形が読めないときは、リセット権 0 枚と同じ数を出し、`tickets` を null にしなければならない（SHALL）。
 
 #### Scenario: リセット権の枚数で使える量が変わる
@@ -31,9 +33,9 @@ headroom は Claude の各スロットについて、次の週次リセットよ
 - **THEN** `surplus_pct` が同じ値になる（例: 使用率 40%・残り 24 時間・リセット権なしで 43.3、12 時間後に切れる 1 枚で 136.7、6 時間後と 12 時間後で 228.3）
 
 ### Requirement: Codex はリセット権の失効を期限にする
-headroom は Codex の各 account について、リセット権で使える量を足してはならない（MUST NOT。`capacity_pct` は 100、`left_pct` は `100 − used_pct`）。次の週次リセットより前に切れるリセット権があれば、`deadline_at` をその最短の失効、`deadline_reason` を `ticket_expiry` にし、`elapsed_pct` を週の始まり（週次リセットの 7 日前）から期限までに対する経過率にしなければならない（SHALL）。無ければ `deadline_at` は週次リセット、`deadline_reason` は `weekly_reset` でなければならない（SHALL）。`surplus_pct` は `max(0, to_cap − rate × (deadline_at − now) / 3600)` でなければならない（SHALL）。キャッシュに `resets` が無いときは、リセット権 0 枚と同じ数を出し、`tickets` を null にしなければならない（SHALL）。
+headroom は Codex の各 account について、リセット権で使える量を足してはならない（MUST NOT。`capacity_pct` は 100、`left_pct` は `100 − used_pct`）。次の週次リセットより前に切れるリセット権があれば、`deadline_at` をその最短の失効、`deadline_reason` を `ticket_expiry` にし、`elapsed_pct` を週の始まり（週次リセットの 7 日前）から期限までに対する経過率にしなければならない（SHALL）。無ければ `deadline_at` は週次リセット、`deadline_reason` は `weekly_reset` でなければならない（SHALL）。`surplus_pct` は `max(0, to_cap − rate × (deadline_at − now) / 3600)` でなければならない（SHALL）。キャッシュに `resets` が無いときは、リセット権 0 枚と同じ数を出し、`tickets` を null にしなければならない（SHALL）。Codex の `tickets.count` は `resets.available_count`、`tickets.earliest_expiry` と `rocket` は `resets.expires_at` のうち整数で `now` より後のものから数えなければならない（SHALL。null の失効は `rocket` に入れない）。
 
-Codex の週次の使用率は `codex-develop.py` の `usage_margin` と同じ規則で読まなければならない（SHALL）: 7 日窓（`minutes` が 10080）を使い、リセットを過ぎた値は 0% として読んでリセットを週単位で先へ送り、取得時刻の古さでは外さない。
+Codex の週次の使用率は `codex-develop.py` の `usage_margin` と同じ規則で読まなければならない（SHALL）: 7 日窓（`minutes` が 10080）を使い、リセットを過ぎた値は 0% として読んでリセットを週単位で先へ送り、取得時刻の古さでは外さない。ただし未来の取得時刻の扱いは要件「アカウントごとの項目と status」の 60 秒の規則を正とし、`usage_margin` の「1 秒でも未来なら使わない」判定は写さない（#1301 で `usage_margin` を headroom に寄せるときに揃う）。
 
 #### Scenario: リセット権が週次リセットより前に切れる
 - **WHEN** 週次の使用率 40%・週次リセットまで 24 時間の Codex の account のキャッシュに、6 時間後に切れるリセット権 1 枚がある
@@ -63,11 +65,15 @@ headroom は天井 `HEADROOM_7D_CAP_PCT`（既定 90、0 以上 100 以下）と
 
 `status` は次の 4 つのどれかでなければならない（SHALL）:
 - `ok`: 週次の実効値（使用率とリセット時刻）が読める。取得の古さと、リセットを過ぎて 0% に読み替えたことでは `ok` から外さない
-- `stale`: 週次の値はあるが、取得時刻が今より 60 秒を超えて未来。`used_pct` だけを出し、余りの項目（`rocket` から `margin` まで）は null
+- `stale`: 週次の値はあるが、取得時刻が今より 60 秒を超えて未来。`observed_at`・`five_hour_pct`・`used_pct`・`elapsed_pct`・`weekly_reset_at` は出し、余りの項目（`rocket` から `margin` まで）は null
 - `missing`: 週次の値が読めない。数の項目は null
 - `off`: レジストリでオフ（Claude はスロットの `enabled: false`、Codex はレジストリの `codex.enabled: false`）。数の項目は null で、Codex の取得もしない
 
 `tickets` は持っているリセット権（停止中・残り 0・失効済みを除く）の `{count, earliest_expiry}`、`margin` は `週次の経過率 − used_pct`（期限ではなく週次で測る）、`forecast` は期限までに通常のペースで使った見込み `left_pct − rate × 期限までの時間` が 0 以上なら `{kind: "spare", pct}`、負なら `{kind: "exhaust", at}`（尽きる見込みの epoch 秒）でなければならない（SHALL）。
+
+`observed_at` は、Claude では `usage_view.build_view` の `observed_at`、Codex ではキャッシュの `fetched_at` でなければならない（SHALL）。`five_hour_pct` は、Claude では `build_view` の `five_hour_pct`（実効値。リセット後は 0、無ければ null）、Codex ではキャッシュの `minutes` が 300 の窓の `used_percent`（`reset_at` を過ぎていれば 0、窓が無ければ null）でなければならない（SHALL）。`used_pct`・`elapsed_pct`・`weekly_reset_at`・`capacity_pct`・`left_pct`・`deadline_at`・`deadline_reason` の定義は、この要件と上の Claude・Codex の要件に書いたもののほか、design.md の決定 3 の表を正本とする。
+
+**守備範囲**: 入力は、レジストリ `accounts.json`、`.usage-snapshot`（`reset_grants` を含む）、ステータスラインのセッション記録（`build_view` 経由）、Codex のキャッシュ `codex-usage/<hash>.json`、環境変数 `HEADROOM_7D_CAP_PCT`・`HEADROOM_NORMAL_RATE_PCT_PER_DAY` だけである。拾いたい誤りは、数でない・0〜100 の外の設定値（例外。CLI は終了コード 2）、形が読めない `reset_grants`・`resets`（リセット権 0 枚として数え `tickets` を null）、週次の値が読めない行（`missing`）、今より 60 秒を超えて未来の取得時刻（`stale`）である。通してよい入力は、取得から何日もたった値、週次リセットを過ぎて 0% に読み替えた値、`ends_at` が null の束、入力の中の未知のキー、今より 60 秒以内の未来の取得時刻（時計の小さなずれ）である。この検査は入力の穴が見つかるたびに塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 古い取得値も ok で数える
 - **WHEN** 非 active の Claude のスロットの snapshot の値が 2 日前の取得で、週次リセットはまだ先
@@ -96,7 +102,7 @@ headroom は天井 `HEADROOM_7D_CAP_PCT`（既定 90、0 以上 100 以下）と
 - **THEN** `.headroom.json` は前の内容か新しい内容のどちらかで、途中まで書かれた状態にならない
 
 ### Requirement: usage-probe が snapshot を書いた直後に headroom を書く
-`usage-probe.sh` は `.usage-snapshot` の置き換えに成功した直後に、同じディレクトリの `headroom.py write --refresh-codex` を呼ばなければならない（SHALL）。headroom の出力と終了コードを probe の結果に伝えてはならない（MUST NOT。probe は今までどおり終了コード 0 で終わる）。snapshot を書かなかった実行（全スロットの失敗・取得の間隔内・ロックを取れない）では headroom を呼んではならない（MUST NOT）。
+`usage-probe.sh` は `.usage-snapshot` の置き換えに成功した直後に、同じディレクトリの `headroom.py write --refresh-codex` を呼ばなければならない（SHALL）。headroom の出力と終了コードを probe の結果に伝えてはならない（MUST NOT。probe は今までどおり終了コード 0 で終わる）。呼ぶかどうかは snapshot を書いたかどうかだけで決め（SHALL。全スロットが失敗しても `reset_grants` を除くために snapshot を書き直す既存の経路では呼ぶ）、snapshot を書かなかった実行（全スロットの失敗で書き直す欄も無かったとき・取得の間隔内・ロックを取れない）では headroom を呼んではならない（MUST NOT）。
 
 #### Scenario: probe のあとに .headroom.json ができる
 - **WHEN** テスト用の応答ファイルで `usage-probe.sh` を走らせ、snapshot が書かれる（Codex はオフか既定の home が無い）
