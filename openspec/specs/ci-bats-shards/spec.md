@@ -5,7 +5,7 @@ TBD - created by archiving change ci-bats-shards. Update Purpose after archive.
 ## Requirements
 ### Requirement: scripts/test.sh は TEST_SHARD で全体を分けた 1 組だけを実行できる
 
-`scripts/test.sh` は、環境変数 `TEST_SHARD=k/N`（k と N は 1 以上の整数で k ≦ N）が与えられたとき、`git ls-files -- '*.bats' ':(exclude)_longruns/'` の一覧の i 番目（1 始まり）のうち `(i − 1) mod N + 1` が k に等しいものだけを対象にしなければならない（MUST）。組の割り当ては、位置引数のフィルタと `TEST_EXCLUDE` を当てる前の一覧に対して決めなければならない（MUST）。割り当てのあとの対象には、既存のフィルタと `TEST_EXCLUDE` をそのまま当てる。
+`scripts/test.sh` は、環境変数 `TEST_SHARD=k/N`（k と N は 1 以上の整数で k ≦ N）が与えられたとき、`git ls-files -- '*.bats' ':(exclude)_longruns/'` の一覧のスイートを次の規則で N 個の組に分け、k 番目の組のスイートだけを対象にしなければならない（MUST）。規則は、スイートごとの `@test` の件数（行頭が `@test` の行の数）を重みとし、重い順（重みが同じものは一覧の順）に並べて、その時点で重みの合計がいちばん小さい組（同点なら番号の小さい組）へ順に配ることである。割り当ては一覧のパスとファイルの中身だけで決まり、どの組のジョブでも同じになる。組の割り当ては、位置引数のフィルタと `TEST_EXCLUDE` を当てる前の一覧に対して決めなければならない（MUST）。割り当てのあとの対象には、既存のフィルタと `TEST_EXCLUDE` をそのまま当てる。
 
 `TEST_SHARD` が未設定か空文字のとき、`scripts/test.sh` は分割せず、この変更の前と同じ対象を実行しなければならない（MUST）。
 
@@ -16,10 +16,15 @@ TBD - created by archiving change ci-bats-shards. Update Purpose after archive.
 - **WHEN** 追跡下の `.bats` が 7 本ある使い捨てリポジトリで、`TEST_SHARD=1/3`・`2/3`・`3/3` のそれぞれで `scripts/test.sh` を実行し、表示された対象スイートを集める
 - **THEN** 集めた一覧に重複が無く、`git ls-files -- '*.bats' ':(exclude)_longruns/'` の 7 本と一致する
 
-#### Scenario: 割り当ては一覧の順番で決まる
+#### Scenario: 重さが同じスイートは一覧の順に配られる
 
-- **WHEN** 追跡下の `.bats` が `s1.bats` 〜 `s7.bats` の 7 本ある使い捨てリポジトリで `TEST_SHARD=2/3 scripts/test.sh` を実行する
-- **THEN** 対象として表示されるのは `git ls-files` の 2 番目と 5 番目（`s2.bats` と `s5.bats`）だけで、`  (skipped by TEST_EXCLUDE: 0)` の行のすぐ次に `  (shard 2/3)` の行が出る
+- **WHEN** 追跡下の `.bats` が `s1.bats` 〜 `s7.bats` の 7 本（どれも `@test` が 1 件）ある使い捨てリポジトリで `TEST_SHARD=2/3 scripts/test.sh` を実行する
+- **THEN** 対象として表示されるのは `s2.bats` と `s5.bats` だけで、`  (skipped by TEST_EXCLUDE: 0)` の行のすぐ次に `  (shard 2/3)` の行が出る
+
+#### Scenario: 件数の多いスイートは組を 1 つ占める
+
+- **WHEN** 同じ使い捨てリポジトリで `s1.bats` だけ `@test` を 6 件にして、`TEST_SHARD=1/3`・`2/3`・`3/3` のそれぞれで `scripts/test.sh` を実行する
+- **THEN** 対象は順に、`s1.bats` だけ、`s2.bats`・`s4.bats`・`s6.bats`、`s3.bats`・`s5.bats`・`s7.bats` になる
 
 #### Scenario: 未指定なら全件を実行する
 
