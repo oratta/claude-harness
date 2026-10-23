@@ -31,7 +31,7 @@
 
 ## 6. unmanned の分割の段落を参照にする（C11）
 
-- [ ] 6.1 C11: 「実行モード」節の unmanned の分割の段落を、正本 `references/roles/worker/spec.md`「分割判定」への参照 1 文にする。子 issue・`blocked_by`・サイクルを終える、の語は残し、「Discord で質問し」の文は外す。確認: develop-skill.bats が通る。触る範囲: skills/develop/SKILL.md:284（実行モード節の unmanned の分割の段落）
+- [x] 6.1 C11: 「実行モード」節の unmanned の分割の段落を、正本 `references/roles/worker/spec.md`「分割判定」への参照 1 文にする。子 issue・`blocked_by`・サイクルを終える、の語は残し、「Discord で質問し」の文は外す。確認: develop-skill.bats が通る。触る範囲: skills/develop/SKILL.md:284（実行モード節の unmanned の分割の段落）
 
 ## 7. 変更の記録
 

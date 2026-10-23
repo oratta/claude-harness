@@ -395,6 +395,16 @@ refute() {
   echo "$t" | grep -q 'blocked_by'
 }
 
+@test "mode: the unmanned split paragraph is one sentence pointing to worker/spec.md (#1239 C11)" {
+  para="$(section '実行モード' | grep '^unmanned で複数 change')"
+  [ -n "$para" ]
+  for k in '子 issue' 'blocked_by' 'サイクルを終える' '`references/roles/worker/spec.md`「分割判定」'; do
+    echo "$para" | grep -qF "$k" || return 1
+  done
+  ! echo "$para" | grep -qF 'Discord' || return 1
+  grep -qF 'Discord でユーザーに質問し' "${SKILL_DIR}/references/roles/worker/spec.md"
+}
+
 # --- 前提 ---
 
 @test "prerequisites: Agent / SendMessage / gh / opsx-or-openspec / Codex with their degraded paths" {
