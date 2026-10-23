@@ -71,17 +71,17 @@ referrers() {
 @test "canonical: one question per message, no number as subject, details below" {
   local s; s="$(section3)"
   printf '%s\n' "$s" | grep -qF '1 通で聞くのは 1 件'
-  printf '%s\n' "$s" | grep -qF '番号を主語にせず'
+  printf '%s\n' "$s" | grep -qF '番号で物を指さず'
   printf '%s\n' "$s" | grep -qF '区切って下に置く'
   printf '%s\n' "$s" | grep -qF '確かめ済み'
 }
 
-@test "canonical: first line rule, answers excluded, one example" {
+@test "canonical: first line rule, answers excluded, examples are fenced" {
   local s; s="$(section3)"
   printf '%s\n' "$s" | grep -qF '1 行目を質問にし'
   printf '%s\n' "$s" | grep -qF '`主がすること: なし`'
   printf '%s\n' "$s" | grep -qF '主の質問に答える発言'
-  [ "$(printf '%s\n' "$s" | grep -c '^```')" -eq 2 ]
+  [ $(( $(printf '%s\n' "$s" | grep -c '^```') % 2 )) -eq 0 ]
 }
 
 @test "canonical: casting is named only conditionally and owner terms are paraphrased" {
@@ -144,4 +144,81 @@ referrers() {
     -- plugins rules ':!plugins/*/changes/*' ':!plugins/*/tests/*' || true)"
   [ -z "$hits" ] || { echo "$hits"; return 1; }
   if grep -qF '`主がすること:` の規定' "${REPO_ROOT}/plugins/dev-workflow/skills/develop/SKILL.md"; then return 1; fi
+}
+
+# --- issue #1209: 論点の有無で書き分ける ---------------------------------------
+
+# 正本の節 3 と短い版の 3 番目の両方が持つ語（定義・書き分け・4 つの決まり）
+issue1209_terms() {
+  printf '%s\n' \
+    '持っていない観点を足すと結論がよくなる点' \
+    '論点あり' \
+    '論点なし（決まりで聞いている）' \
+    'OK すると何が起きるかを中身で書いた質問' \
+    '番号で物を指さず' \
+    '末尾の URL にだけ置く' \
+    '困りごとが無いときは書かない' \
+    '推奨を選ぶことで新たに生じるもの'
+}
+
+@test "issue1209: canonical and short both define the point to discuss and its two forms" {
+  local t
+  while IFS= read -r t; do
+    section3 | grep -qF -- "$t" || { echo "canonical lacks: $t"; return 1; }
+    short3 | grep -qF -- "$t" || { echo "short lacks: $t"; return 1; }
+  done < <(issue1209_terms)
+}
+
+@test "issue1209: canonical has the two rewritten real cases, each within four lines" {
+  local s n=0 in=0 lines=0 marked=0 l
+  s="$(section3)"
+  while IFS= read -r l; do
+    if [[ "$l" == '```'* ]]; then
+      if [ "$in" -eq 0 ]; then in=1; lines=0; else
+        in=0
+        if [ "$marked" -eq 1 ]; then
+          [ "$lines" -le 4 ] || { echo "too long: $lines lines"; return 1; }
+          n=$((n + 1))
+        fi
+        marked=0
+      fi
+      continue
+    fi
+    if [ "$in" -eq 1 ]; then lines=$((lines + 1)); continue; fi
+    if [[ "$l" == *'論点なし'* && "$l" == *'実例'* ]]; then marked=1; fi
+  done <<<"$s"
+  [ "$n" -eq 2 ] || { echo "rewritten examples: $n"; return 1; }
+}
+
+@test "issue1209: perspective-casting step 2 says the view needed for the decision" {
+  grep -qE '^2\. \*\*判断に必要な観点を特定する\*\*' "${REPO_ROOT}/rules/perspective-casting.md"
+  ! grep -qF '論点に必要な観点' "${REPO_ROOT}/rules/perspective-casting.md"
+}
+
+@test "issue1209: the risk declaration does not demand a made-up risk" {
+  local f="${REPO_ROOT}/plugins/dev-workflow/skills/pr-review-gate/declarations.md"
+  ! grep -qF 'この形式以外で主にリスク承認を求めない' "$f" || return 1
+  ! grep -qF 'というリスクが生まれる' "$f" || return 1
+  grep -qF '論点なし' "$f"
+  grep -qF '~/.claude/output-styles/readable.md' "$f"
+  # 照合される行頭と行は変えない
+  grep -qF 'リスクなし — この変更で' "$f"
+  grep -qxF '主のリスク許容が必要。' "$f"
+  grep -qF '対象 HEAD: <$HEAD_SHA 40桁フル>' "$f"
+}
+
+@test "issue1209: an epic child's stop record says whether there is a point to discuss" {
+  local f="${REPO_ROOT}/plugins/dev-workflow/skills/develop/references/epic-child-stop.md"
+  grep -E '^主に聞く理由:' "$f" | grep -qF '論点'
+  grep -F '`主に聞く理由:`' "$f" | grep -qF '論点なし（決まりで聞いている）'
+  grep -E '^受け入れるリスク:' "$f" | grep -qF '新たに生じる'
+}
+
+@test "issue1209: the parent's step 8 and the merge-wait example follow the canonical form" {
+  local e="${REPO_ROOT}/plugins/dev-workflow/skills/develop/references/epic.md"
+  local c="${REPO_ROOT}/plugins/dev-workflow/references/ci-watch.md"
+  ! grep -qF '親経由のリスク許容の依頼' "$e" || return 1
+  grep -E '^8\. ' "$e" | grep -qF '論点'
+  grep -F '`主に聞く理由:`' "$c" | grep -qF '論点なし'
+  grep -F '`受け入れるリスク:`' "$c" | grep -qF '新たに生じる'
 }
