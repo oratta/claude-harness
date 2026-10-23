@@ -3548,10 +3548,12 @@ orca_cmd_scripts() {
   printf '%s\n' "$l" | grep -qF '`escalate`'
   printf '%s\n' "$l" | grep -qF '手順 7'
   printf '%s\n' "$l" | grep -qF 'references/ci-watch.md'
+  # 親が追加のやり直しを許したあと同じ HEAD で落ちたときの止まり（`none`）も対象に入る
+  printf '%s\n' "$l" | grep -F '`obs.state` が `wait` でない `none`' | grep -qF '前回と同じ状態・同じ HEAD の決着'
   # 桁数と取り方、取れないときの書き方
   printf '%s\n' "$l" | grep -qF '先頭 7 文字'
   printf '%s\n' "$l" | grep -qF '`obs.head`'
-  printf '%s\n' "$l" | grep -qF 'headRefOid'
+  printf '%s\n' "$l" | grep -qF "gh pr view <PR番号> --repo <owner/repo> --json headRefOid --jq '.headRefOid[0:7]'"
   printf '%s\n' "$l" | grep -qF '`HEAD 不明`'
   # 目的（親が理由に写して同じ件かを見分ける）と、項目は 7 つのまま
   printf '%s\n' "$l" | grep -qF 'parent-pass-criteria.md'

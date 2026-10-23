@@ -30,12 +30,12 @@
 
 ### 規定の正本は `epic-child-stop.md`、`ci-watch.md` は指すだけ
 
-記録の形の正本は `epic-child-stop.md`（`ci-watch.md` の `ready` のあとのマージ待ちの段落も「記録の形の正本は `epic-child-stop.md` の側」と書いている）。同じ規定を 2 か所に書くと片方だけ直す事故が起きるので、`ci-watch.md` の `escalate` の行には「エピックの子のセッションは止まる前に `epic-child-stop.md` の記録を残す（CI の見張りで止まったときの `再開に要る途中経過:` の書き方もそこ）」とだけ書く。手順 7 は「`escalate` と同じ手順でオーナーに上げる」なので、行を足さずに同じ規定が及ぶ。仕様の側も同じ分け方にする。記録の書き方は dev-workflow-develop の要件「エピックの子の停止の記録は…」が持ち、`escalate` の行がその記録を指すことは dev-workflow-ci-watch の要件「CI の見張りの手順は共有 reference に 1 本置く」の 6 が持つ（`escalate` の行の中身はもともとその要件が規定しているため。仕様レビューの 1 周目の指摘）。
+記録の形の正本は `epic-child-stop.md`（`ci-watch.md` の `ready` のあとのマージ待ちの段落も「記録の形の正本は `epic-child-stop.md` の側」と書いている）。同じ規定を 2 か所に書くと片方だけ直す事故が起きるので、`ci-watch.md` の `escalate` の行には「エピックの子のセッションは止まる前に `epic-child-stop.md` の記録を残す（CI の見張りで止まったときの `再開に要る途中経過:` の書き方もそこ）」とだけ書き、止まり方として `mark stopped` で止まることまで書く（記録だけ残して印を付けないと親が気づかないため）。手順 7 は「`escalate` と同じ手順でオーナーに上げる」なので、行を足さずに同じ規定が及ぶ。`obs.state` が `wait` でない `none`（前回と同じ状態・同じ HEAD の決着）にも同じ 1 文を足す。親が追加のやり直しを許して子が `raised` を消して見張りに戻ったあと、同じ HEAD でまた落ちると、`pr-state.sh decide` は前回と同じ状態・同じ HEAD として `escalate` ではなく `none` を返し、子はそこで止まる。これがちょうど親が過去の `親の判断:` と見比べたい止まりなので、対象から外せない（PR ゲートの 1 周目の指摘）。仕様の側も同じ分け方にする。記録の書き方は dev-workflow-develop の要件「エピックの子の停止の記録は…」が持ち、`escalate` の行がその記録を指すことは dev-workflow-ci-watch の要件「CI の見張りの手順は共有 reference に 1 本置く」の 6 が持つ（`escalate` の行の中身はもともとその要件が規定しているため。仕様レビューの 1 周目の指摘）。
 
 ### 短い SHA は PR の HEAD のコミット SHA の先頭 7 文字
 
 - 子の手元の `git rev-parse --short HEAD` は、作業ツリーが PR の HEAD とずれていることがあり、桁数も repo の大きさで変わる。親が過去の `親の判断:` と見比べるには、どの HEAD か・何桁かが毎回同じである必要がある
-- 取り方: `ci-watch.sh next` の出力の `obs.head` の先頭 7 文字（手元に無ければ `gh pr view <PR番号> --json headRefOid --jq '.headRefOid[0:7]'`）。GitHub の画面の短い SHA と同じ 7 文字
+- 取り方: `ci-watch.sh next` の出力の `obs.head` の先頭 7 文字（手元に無ければ `gh pr view <PR番号> --repo <owner/repo> --json headRefOid --jq '.headRefOid[0:7]'`）。GitHub の画面の短い SHA と同じ 7 文字
 - 取れなかったときは作らずに `HEAD 不明` と書く。親は `parent-pass-criteria.md` のとおり `不明` として扱う
 
 ## Risks / Trade-offs
