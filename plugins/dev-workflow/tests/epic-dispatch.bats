@@ -37,6 +37,9 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/epic-dispatch.sh"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
+  EPIC="${PLUGIN_DIR}/skills/develop/references/epic.md"
+  EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
   STUB_BIN="${BATS_TEST_TMPDIR}/bin"
   export STUB_CFG="${BATS_TEST_TMPDIR}/cfg"
   export STUB_LOG="${BATS_TEST_TMPDIR}/calls.log"
@@ -439,9 +442,10 @@ reap_prless_ready() {
 }
 
 # SKILL.md の「## <見出し>」から次の「## 」まで
-section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$SKILL"; }
+# 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
+section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
 # 「エピックの扱い」の「### 回し方」から次の「### 」まで
-run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; print; next} /^### /{f=0} f'; }
+run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{f=1; print; next} /^### /{f=0} f'; }
 
 # --- route ---
 
@@ -3231,7 +3235,7 @@ infer_ready() {
 }
 
 @test "skill: child epics are held back, nested sessions stop, and the parent reports them" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   printf '%s\n' "$e" | grep -qF 'sub_issues_summary'
   printf '%s\n' "$e" | grep -qF 'nested'
   printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -qF '完了報告'
@@ -3240,20 +3244,22 @@ infer_ready() {
 }
 
 @test "skill: the parent's note is a comment every restarted child session follows and hands on" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   printf '%s\n' "$e" | grep -F '親エピックからの注意書き:' | grep -F '起動し直したセッション' | grep -qF 'W・R1・G'
   printf '%s\n' "$e" | grep -F 'note not posted to' | grep -qF '投稿'
+  # 規則は epic.md にだけあるので、起動し直した子にも SKILL.md の案内が epic.md を読ませる（#1243 の F1）
+  section 'エピックの扱い' | grep -F '`親エピックからの注意書き:` で始まるコメントがあるとき' | grep -qF '起動し直した'
 }
 
 @test "skill: the parent's note is followed only when its author is an owner, member or collaborator" {
-  l="$(section 'エピックの扱い' | grep -F '親エピックからの注意書き:' | grep -F 'author_association')"
+  l="$(section 'エピックの扱い' "$EPIC" | grep -F '親エピックからの注意書き:' | grep -F 'author_association')"
   [ -n "$l" ]
   printf '%s\n' "$l" | grep -F 'OWNER' | grep -F 'MEMBER' | grep -qF 'COLLABORATOR'
   printf '%s\n' "$l" | grep -F 'それ以外' | grep -F '従わず' | grep -F '渡さず' | grep -qF 'ユーザーに報告'
 }
 
 @test "skill: a restarted child session is nested and reads the parent epic from stderr" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   printf '%s\n' "$e" | grep -F '起動し直したセッション' | grep -qF 'nested'
   printf '%s\n' "$e" | grep -qF 'parent epic: #'
   printf '%s\n' "$e" | grep -qF 'child epics are not expanded here'
@@ -3261,12 +3267,12 @@ infer_ready() {
 }
 
 @test "skill: a child whose terminal was not created is checked, recreated and sent before resuming" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   printf '%s\n' "$e" | grep -F '端末を作れなかった' | grep -F '既存の端末が無いこと' | grep -F '作り直し' | grep -qF '動き出したのを確かめてから再開'
 }
 
 @test "skill: held-back child epics are recorded also when route is skipped (unmanned, resumed)" {
-  e="$(section 'エピックの扱い' | grep -F 'sub_issues_summary')"
+  e="$(section 'エピックの扱い' "$EPIC" | grep -F 'sub_issues_summary')"
   printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -F 'でないと確定' | grep -F 'unmanned' | grep -qF '回し方:'
 }
 
@@ -3436,7 +3442,7 @@ orca_cmd_scripts() {
 # spec: dev-workflow-develop（エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する）
 
 @test "skill: an epic child records its stop before marking it, in both waiting orders" {
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   [ -n "$r" ]
   printf '%s\n' "$r" | grep -F 'route' | grep -qF '`nested`'
   printf '%s\n' "$r" | grep -qF '`子の停止: 主の返事待ち`'
@@ -3452,7 +3458,7 @@ orca_cmd_scripts() {
 # spec: dev-workflow-develop（エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く）
 
 @test "skill: an epic child's stop record lists the seven items in order" {
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   [ -n "$r" ]
   # 7 つの項目名が行頭の `<項目名>:` の形でこの順に出る（雛形の行で確かめる）
   prev=0
@@ -3473,7 +3479,7 @@ orca_cmd_scripts() {
 }
 
 @test "skill: an epic child's stop record says why the owner is asked and how likely the risk is" {
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   # 雛形の止まった理由は主にしてほしいことだけで、子の側でできない理由を混ぜない
   printf '%s\n' "$r" | grep '^止まった理由:' | grep -qF '主にしてほしいこと'
   run grep -F 'それを子の側でできない理由' <<<"$r"; [ "$status" -eq 1 ]
@@ -3495,7 +3501,7 @@ orca_cmd_scripts() {
 }
 
 @test "skill: an epic child's stop record is written for readers who have not read the child's conversation" {
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   printf '%s\n' "$r" | grep -qF '子の会話を読んでいない'
   printf '%s\n' "$r" | grep -F '「上記」' | grep -qF '「前回」'
   printf '%s\n' "$r" | grep -qF 'フル URL'
@@ -3517,7 +3523,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -qF '主の言葉に直す'
   printf '%s\n' "$p" | grep -F '複数' | grep -qF '1 通で上げるのは 1 件'
   # 記録の節は項目名をそろえる文を持たず、置き直すことを書く
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   run grep -F '報告する語と同じにしてある' <<<"$r"; [ "$status" -eq 1 ]
   printf '%s\n' "$r" | grep -F '正本の段に置き直して' | grep -qF '手順 8'
   printf '%s\n' "$r" | grep -F '`止まった理由`' | grep -F '`PR のマージ待ち（`' | grep -qF '名前を変えない'
@@ -3531,7 +3537,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -qF '待ちに入る通知の本文に、まだ上げていない止まった子の番号を 1 行書く'
   q="$(run_section | grep -E '^7\. ')"
   printf '%s\n' "$q" | grep -qF '手順 8 と同じに扱い（照らして通すか、報告を本文で出し直す）、待ちに入る'
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   printf '%s\n' "$r" | grep -qF '破壊的操作や聖域を止めた hook は「決まりで主の承認が要る」に当たる'
 }
 
@@ -3586,7 +3592,7 @@ orca_cmd_scripts() {
 # spec: dev-workflow-develop（エピックの子は親から届いた返事を止まった件への返事として受け取る）
 
 @test "skill: an epic child takes a reply from the parent as the answer to its stop" {
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   l="$(printf '%s\n' "$r" | grep -F '親から届いた返事')"
   printf '%s\n' "$l" | grep -qF '`親エピック #<E> の判断（主の承認ではない）:`'
   printf '%s\n' "$l" | grep -qF '`主の返事（親エピック #<E> 経由）:`'
@@ -4480,7 +4486,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 
 @test "skill: each W per change inside one child uses its own slot" {
   printf '%s\n' "$(subagent_para)" | grep -qF 'change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う'
-  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは「エピックの扱い」→「回し方」のサブエージェント方式の枠に従う）' "$SKILL"
+  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは `references/epic.md` の「回し方」のサブエージェント方式の枠に従う）' "$SKILL"
 }
 
 # --- wait --resolve: 通す返事を起動し直すかを表で決める ---
@@ -4879,7 +4885,7 @@ resolve_pass() {
   p="$(run_section | grep -E '^\*\*子の状態の正本\*\*')"
   printf '%s\n' "$p" | grep -qF 'Orca のボードの列とコメント欄は、記録を書いたあとに写したもの'
   printf '%s\n' "$p" | grep -qF 'Orca の画面で印を手で変えても、親の見張り'
-  section 'エピックの子が主の返事を待って止まるとき' | grep -F -- '- **印**' | grep -qF 'Orca の画面には写しが出る'
+  section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP" | grep -F -- '- **印**' | grep -qF 'Orca の画面には写しが出る'
 }
 
 @test "skill: step 3 no longer names not-child and keeps state-unreadable without checking" {
@@ -4896,7 +4902,7 @@ resolve_pass() {
 }
 
 @test "skill: the completion check confirms the state directory is cleared" {
-  section 'エピックの扱い' | awk '/^### 完了条件/{f=1; next} /^### /{f=0} f' | grep -qF '`clear` で消えていることを確かめる'
+  section 'エピックの扱い' "$EPIC" | awk '/^### 完了条件/{f=1; next} /^### /{f=0} f' | grep -qF '`clear` で消えていることを確かめる'
 }
 
 # ---- launch: エピックと別のリポジトリの子（cross-repo-children） ----
