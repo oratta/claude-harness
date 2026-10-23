@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change dev-workflow-develop-orchestrator. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: develop スキルは入口を問わず発火する
 `plugins/dev-workflow/skills/develop/SKILL.md` は、ソースコード・スキル・コマンド・規範文書（openspec / docs / CLAUDE.md 等）を変える作業を、依頼の入口（GitHub issue・会話・cron・エピックの子）を問わずこのスキルを通すことを「いつ使うか」として規定しなければならない（MUST）。例外は「読むだけ・回答だけ・生成物を出すだけ」の作業に限る（SHALL）。frontmatter の `description` は、旧 `github-issue` の発火語（issue 番号・issue URL・「この issue 対応して」等の自然文）を含まなければならない（MUST）。`skills/github-issue/` は存在してはならない（MUST NOT）。
 
@@ -333,9 +335,9 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 
 **(3) をこれより細かく（`tasks.md` の項目単位・「実装／verify／archive／PR／仕様宣言」の 5 段など）分割してはならない（MUST NOT）。** 手渡しが 1 回起きるたびに、後任は指示書と正本の節を読み直し、記録先を取り直し、`git status` / `git diff` でファイルの現状を確認する固定分を払う。この固定分は工程の大きさに依存しないため、区切りを増やすほど 1 区切りあたりの実質作業比が下がる。また区切りが実装の途中に落ちると、後任は Red のまま止まったテストから再出発することになり、前任の設計意図を再発明する危険が最も高い地点で交代する。
 
-`references/roles/worker.md` は (3a) と (3b) それぞれの return に何を書くかを列挙しなければならない（MUST）。(3a) は openspec CLI 経路（`tasks.md` を TDD で実装＋`openspec validate --strict`）・コード直行（TDD）のどちらの入口でも実装後に検査を実行するため、**worker.md は「全経路共通の大原則」に、対象リポジトリの PR・push で起動する `.github/workflows/*.yml` / `*.yaml` のジョブの `run:` ステップを読み、検査コマンド（lint・test・ビルド等）と環境セットアップ（依存インストール等）を判別し、検査コマンドをすべて実行しなければならない（MUST）という指示を置かなければならない（MUST。経路それぞれに重複して書かない）**。例: `auto-merge.yml` や `revert-pr.yml` のように `pull_request` / `push` 以外のイベントで起動する運用系ワークフローは対象に含めない（MUST NOT）。コマンド名をこのリポジトリ固有の値（`scripts/test.sh` など）に固定してはならない（MUST NOT。develop は複数リポジトリで使われ、CI の構成はリポジトリごとに異なるため）。workflow ファイルが存在しない、または `run:` から検査コマンドを判別できないときは、慣例コマンド（`scripts/test.sh` 等）へのフォールバックを許容する（MAY）。手元にツールが無く実行できない検査（apt でプリインストールされた `shellcheck` 等）は「未導入」として実行結果と区別しなければならず、未導入を合格として扱ってはならない（MUST NOT）。**(3a) の return には、収集した検査コマンドの一覧・実行したテストコマンドと exit code（未導入の検査があれば未導入と明記）、および `openspec validate --strict` の exit code（仕様化した場合。直行した場合は「仕様化しないため verify なし」）と、画面確認の要否の行（「W の (3a) の return は画面確認の要否を 1 行で書く」Requirement）を含めなければならない（MUST）**。(3b) の担い手は pr-review-gate 手順 5 が照合する動作確認の証拠を書く必要があり、手渡しが起きた場合その証拠は前任の return からしか得られない（後任は前任の履歴を読めない）ためである。`openspec validate --strict` の exit code が無いと、(3b) の担い手は verify を通ったことを確認できないまま archive に進むことになる。CI 由来の検査コマンドをすべて return に含めることで、G がゲートを合格にしたあとに CI の一部（このリポジトリでは shellcheck）が落ち、W・レビュー・G をもう 1 周回す再発を防ぐ。
+`references/roles/worker.md` は (3a) と (3b) それぞれの return に何を書くかを列挙しなければならない（MUST）。(3a) は openspec CLI 経路（`tasks.md` を TDD で実装＋`openspec validate --strict`）・コード直行（TDD）のどちらの入口でも実装後に検査を実行するため、**worker.md は「全経路共通の大原則」に、対象リポジトリの PR・push で起動する `.github/workflows/*.yml` / `*.yaml` のジョブの `run:` ステップを読み、検査コマンド（lint・test・ビルド等）と環境セットアップ（依存インストール等）を判別し、拾った検査コマンドを種類ごとに次のとおり扱わなければならない（MUST）という指示を置かなければならない（MUST。経路それぞれに重複して書かない）**: lint・型検査などの静的検査は手元で実行する（ツールがファイルを引数に取れるなら変えたファイルに当て、取れないなら CI と同じ形で実行する）。テストの全体実行（テストランナーをファイルで絞らずに起動するもの）は手元で実行してはならず（MUST NOT）、変えたファイルに関係するテストだけを実行し、全体は CI に任せる。ビルドは手元で実行せず CI に任せる。関係するテストは、この変更で足した・変えたテストのファイル、テストのファイルのうち変えたファイルのパスかファイル名を含むもの（`git grep -l` 等で探す）、テストランナーが変えたファイルから関係するテストを選ぶ機能を持つならその結果、CI の見張りの `fix`（`references/ci-watch.md` 7）で直すときは落ちた run のログ（`gh run view <run> --log-failed`）に出たテストのファイル、の和集合とし、テストランナーにファイルを渡して実行する。例: `auto-merge.yml` や `revert-pr.yml` のように `pull_request` / `push` 以外のイベントで起動する運用系ワークフローは対象に含めない（MUST NOT）。コマンド名をこのリポジトリ固有の値（`scripts/test.sh` など）に固定してはならない（MUST NOT。develop は複数リポジトリで使われ、CI の構成はリポジトリごとに異なるため）。PR・push で起動してテストの全体実行をするジョブが無い（workflow ファイルが存在しない、テストのジョブが無い、または `run:` から検査コマンドを判別できない）ときは、全体のテストを CI に任せられないので、手元で全体を実行しなければならず（MUST）、慣例コマンド（`scripts/test.sh` 等）へのフォールバックを許容する（MAY）。Draft では CI を走らせないリポジトリは、Ready にした時点で CI が走るので CI に任せられる側に数える。手元にツールが無く実行できない検査（apt でプリインストールされた `shellcheck` 等）は「未導入」として実行結果と区別しなければならず、未導入を合格として扱ってはならない（MUST NOT）。**(3a) の return には、収集した検査コマンドの一覧・手元で実行した検査コマンド（関係するテスト・静的検査）と exit code（未導入の検査があれば未導入と明記）・関係するテストを探したコマンド・手元で実行せず CI に任せた検査とその CI のジョブ名、および `openspec validate --strict` の exit code（仕様化した場合。直行した場合は「仕様化しないため verify なし」）と、画面確認の要否の行（「W の (3a) の return は画面確認の要否を 1 行で書く」Requirement）を含めなければならない（MUST）**。(3b) の担い手は pr-review-gate 手順 5 が照合する動作確認の証拠を書く必要があり、手渡しが起きた場合その証拠は前任の return からしか得られない（後任は前任の履歴を読めない）ためである。`openspec validate --strict` の exit code が無いと、(3b) の担い手は verify を通ったことを確認できないまま archive に進むことになる。CI 由来の検査コマンドをすべて return に含め、静的検査を手元で実行することで、G がゲートを合格にしたあとに CI の一部（このリポジトリでは shellcheck）が落ち、W・レビュー・G をもう 1 周回す再発を防ぐ。テストの全体実行を手元で行わないのは、CI が同じ中身を分けて短時間で回し、ゲート合格後の CI の見張り（`references/ci-watch.md`）が落ちた CI を直しに回すためで、手元で全体を回すと実装・仕上げ・指摘の修正のたびに全体の所要（claude-harness では約 40 分）を待つことになる（#1211）。
 
-この要件の守備範囲で入力として扱うのは、対象リポジトリの PR・push で起動する `.github/workflows/*.yml` / `*.yaml` のジョブの `run:` ステップである。拾いたい誤りは、CI が流す検査ジョブを W が取りこぼすこと（PR #489 の shellcheck）である。次は通ってよく、この要件では止めない: `matrix` / `services` / `env` / `if:` 条件により CI の実行環境と手元の実行結果が食い違うこと、CI ランナー固有の環境に依存する検査、環境セットアップの `run:` ステップを検査コマンドと誤って実行すること。取りこぼしが見つかるたびに塞ぎ切ることは、この要件の完了条件としない。CI が実際に落ちるかどうかの最終確認は G が pr-review-gate の手順で CI の結論を見る（別の防波堤。メモリ「G は passed の前に CI を確認」）。
+この要件の守備範囲で入力として扱うのは、対象リポジトリの PR・push で起動する `.github/workflows/*.yml` / `*.yaml` のジョブの `run:` ステップと、変えたファイルの一覧である。拾いたい誤りは、CI が流す静的検査を W が取りこぼすこと（PR #489 の shellcheck）と、変えたファイルを名前で参照するテストの失敗をゲートより後まで持ち越すことである。変えたファイルを別のスクリプト経由で間接的に読むテストを関係するテストとして拾えないことは、この要件では止めない（CI とゲート合格後の CI の見張りが拾う）。次は通ってよく、この要件では止めない: `matrix` / `services` / `env` / `if:` 条件により CI の実行環境と手元の実行結果が食い違うこと、CI ランナー固有の環境に依存する検査、環境セットアップの `run:` ステップを検査コマンドと誤って実行すること。取りこぼしが見つかるたびに塞ぎ切ることは、この要件の完了条件としない。CI が実際に落ちるかどうかは、G が pr-review-gate 手順 4 で対象 HEAD の CI の結果を証拠として見ることに加え、ゲート合格後の CI の見張り（`references/ci-watch.md`）が拾う。auto-merge を配備したリポジトリでは必須チェックが緑になるまでマージされない。
 
 `skills/develop/SKILL.md` は、(3a) の return を受けてから (3b) を指示する SendMessage を送るまでのあいだに、本体が `scripts/subagent-context.sh <W の名前>` を実行してコンテキスト量を測ることを書かなければならない（MUST）。上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言）は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本である（再掲の禁止は既存の Requirement「コンテキスト上限の規則の本文は decision-criteria.md 1 箇所に置く」が規定しており、ここでは重ねて規定しない）。
 
@@ -343,15 +345,23 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 
 #### Scenario: worker.md が (3a) / (3b) の return 内容を列挙している
 - **WHEN** `references/roles/worker.md` の実装以降の節を読む
-- **THEN** (3a) と (3b) がそれぞれ別の見出し（または別の箇条）として立っており、(3a) に `openspec validate` があり `/opsx:` が無く、(3a) が CI workflow 定義から検査コマンドを収集してすべて実行する義務と、return に収集した検査コマンド一覧・実行したテストコマンドと exit code（未導入の検査は未導入と明記）・`openspec validate --strict` の exit code・`画面確認:` の行を含める義務が書かれ、(3b) に `openspec archive` があり `/opsx:` が無く、(3b) の return に PR 番号と仕様宣言のコメント URL を含める義務が書かれている
+- **THEN** (3a) と (3b) がそれぞれ別の見出し（または別の箇条）として立っており、(3a) に `openspec validate` があり `/opsx:` が無く、(3a) が CI workflow 定義から検査コマンドを収集して種類ごとに扱う義務と、return に収集した検査コマンド一覧・手元で実行した検査コマンドと exit code（未導入の検査は未導入と明記）・関係するテストを探したコマンド・CI に任せた検査とその CI のジョブ名・`openspec validate --strict` の exit code・`画面確認:` の行を含める義務が書かれ、(3b) に `openspec archive` があり `/opsx:` が無く、(3b) の return に PR 番号と仕様宣言のコメント URL を含める義務が書かれている
 
 #### Scenario: CI の定義から検査コマンドを収集する指示が全経路共通の節にある
 - **WHEN** `references/roles/worker.md` の「全経路共通の大原則」の節を読む
-- **THEN** PR・push で起動する `.github/workflows/*.yml` / `*.yaml` の `run:` から検査コマンドを拾うこと（`auto-merge.yml` 等の運用系ワークフローは対象外）、コマンド名をリポジトリ固有の値に固定しないこと、拾った検査コマンドをすべて実行すること、workflow が無い場合の慣例コマンドへのフォールバックが許容されること、ツール未導入は「未導入」として合格と区別することが書かれており、この指示が (3a)「コード直行する場合」手順 5 だけでなく openspec CLI 経路にも及ぶ 1 箇所にまとまっている
+- **THEN** PR・push で起動する `.github/workflows/*.yml` / `*.yaml` の `run:` から検査コマンドを拾うこと（`auto-merge.yml` 等の運用系ワークフローは対象外）、コマンド名をリポジトリ固有の値に固定しないこと、静的検査は手元で実行しテストの全体実行とビルドは手元で実行せず CI に任せること、関係するテストの選び方（足した・変えたテスト、変えたファイルのパスかファイル名を含むテスト、テストランナーの選ぶ機能）、PR・push で全体のテストを回すジョブが無いときは手元で全体を実行し慣例コマンドへのフォールバックが許容されること、ツール未導入は「未導入」として合格と区別することが書かれており、この指示が (3a)「コード直行する場合」手順 5 だけでなく openspec CLI 経路にも及ぶ 1 箇所にまとまっている
+
+#### Scenario: CI が全体のテストを回すリポジトリでは手元で全体を回さない
+- **WHEN** PR・push で起動する workflow にテストの全体実行をするジョブがあるリポジトリで、W が (3a) の検査を行う
+- **THEN** W はテストランナーをファイルで絞らずに起動せず、関係するテストのファイルをテストランナーに渡して実行し、return にテストの全体実行を CI に任せたこととその CI のジョブ名を書く
+
+#### Scenario: CI が全体のテストを回さないリポジトリでは手元で全体を回す
+- **WHEN** PR・push で起動する workflow が無い、またはテストのジョブが無いリポジトリで、W が (3a) の検査を行う
+- **THEN** W は手元でテストの全体を実行し（慣例コマンドへのフォールバックを含む）、その exit code を return に書く
 
 #### Scenario: 守備範囲が明記されている
 - **WHEN** `references/roles/worker.md` の全経路共通の大原則の節、CI 検査コマンドの収集を指示する段落を読む
-- **THEN** 入力の出どころ（PR・push で起動する workflow の `run:` ステップ）、拾いたい誤り（CI の検査ジョブの取りこぼし。PR #489 の shellcheck）、通ってよい入力（`matrix` / `services` / `env` / `if:` 条件による CI と手元の再現差、ランナー依存の検査、環境セットアップの `run:` ステップの誤実行）、取りこぼしを塞ぎ切ることを完了条件にしない旨（最後の防波堤は G の CI 結果確認）が書かれている
+- **THEN** 入力の出どころ（PR・push で起動する workflow の `run:` ステップと変えたファイルの一覧）、拾いたい誤り（CI の静的検査の取りこぼし。PR #489 の shellcheck）、間接的に読むテストを拾えないことは CI と CI の見張りが拾う旨、通ってよい入力（`matrix` / `services` / `env` / `if:` 条件による CI と手元の再現差、ランナー依存の検査、環境セットアップの `run:` ステップの誤実行）、取りこぼしを塞ぎ切ることを完了条件にしない旨（最後の防波堤は合格後の CI の見張り）が書かれている
 
 #### Scenario: 旧世代の W が (3) を通しで返してきても (3b) を再指示しない
 - **WHEN** `skills/develop/SKILL.md` の 1 ループの (3) を読む
@@ -2122,7 +2132,7 @@ develop の SKILL.md は、エピックの子のセッションが主の返事�
 - 背景のタスクの終わりを待ってターンを終えるときは記録も印も付けない（MUST NOT）
 - 記録は、1 行目を識別用の `^子の停止: 主の返事待ち$` に完全一致させ、2 行目以降は要件「エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く」の項目名と並びで書く（MUST）。止まるたびに新しいコメントを投稿し、最新の 1 件を正とする（SHALL）
 - 「保留で止まるときの引き継ぎ」を書く場面では、引き継ぎを先に投稿し、そのあとに記録を投稿して、再開に要る途中経過として引き継ぎのコメントの URL を書く（MUST）。引き継ぎの書式（1 行目 `引き継ぎ: 主の返事待ち`）は変えない
-- `mark stopped` の出力が `marked` / `skipped` なら何もせず、`failed` なら主への質問に「親に止まったことが伝わっていない」と 1 行添える（SHALL）。`mark resumed` は出力によらず止まらない（SHALL）
+- `mark stopped` の出力が `marked` なら何もせず、`skipped` で始まる（`skipped <N> no-workspace`・`skipped <N> not-linked`）か `failed` なら、親が見張る記録に印が付いていないので主への質問に「親に止まったことが伝わっていない」と 1 行添える（SHALL）。`skipped` を何もしない側に置いてはならない（MUST NOT。子の状態の記録が無い・別の子の記録のときも親の `wait --watch-stopped` は止まりを読めず、主が子のタブを見るまで気づかないため）。`mark resumed` は出力によらず止まらない（SHALL）
 
 **親の側（Orca 経路）**:
 
@@ -2134,11 +2144,15 @@ develop の SKILL.md は、エピックの子のセッションが主の返事�
 
 develop の手順書（`skills/develop` 配下）に `orca` のサブコマンドを書いてはならない（MUST NOT。既存の規定どおり、`orca` を呼ぶのは Orca の起動部品 `epic-launch-orca.sh` だけ）。
 
-この要件の守備範囲で入力として扱うのは、子のセッションでは `epic-dispatch.sh route`（子の番号なし）の出力と `mark` の出力、主の返事を待つかどうかの子自身の判断（本文で質問するか、質問ツールを使うか、背景のタスクを待つだけか）、記録先の issue 番号で、親のセッションでは `wait` の出力と子 issue のコメント（1 行目が `子の停止: 主の返事待ち` の最新の 1 件）である。拾いたい誤りは、エピックの子が主の返事を待っているのに記録も印も残さずに止まること、印が記録より先に付いて親が記録の無い止まりを読むこと、質問ツールで待つ子が回答を受けたあとも止まった印を残すこと、エピックの子でないセッションが読む者のいない記録を残すこと、親が止まった子を動いている子から外して閉じたことを検知できなくなることの 5 つである。次は通ってよく、この要件では止めない: 記録の項目の値の長さと改行の違い（値が複数行に続くこと）／止まるたびに記録が増えること（最新の 1 件を正とする）／保留の場面で引き継ぎと記録の 2 件のコメントが並ぶこと／主が子のタブで先に答えて、親が既に再開した子の `stopped` を受けること（親は記録を読んで報告するだけで、返事の仕方は #1034 で決める）／子が記録を書かずに止まり、親が `timeout` まで気づかないこと（入力待ちからの推定は入れない）。記録の中身（理由・推奨・リスクの正しさ）を確かめることと、手順を守らない子を見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、子のセッションでは `epic-dispatch.sh route`（子の番号なし）の出力と `mark` の出力、主の返事を待つかどうかの子自身の判断（本文で質問するか、質問ツールを使うか、背景のタスクを待つだけか）、記録先の issue 番号で、親のセッションでは `wait` の出力と子 issue のコメント（1 行目が `子の停止: 主の返事待ち` の最新の 1 件）である。拾いたい誤りは、エピックの子が主の返事を待っているのに記録も印も残さずに止まること、印が記録より先に付いて親が記録の無い止まりを読むこと、質問ツールで待つ子が回答を受けたあとも止まった印を残すこと、エピックの子でないセッションが読む者のいない記録を残すこと、親が止まった子を動いている子から外して閉じたことを検知できなくなること、`mark stopped` が印を付けられなかった（`skipped` か `failed`）のに子が主に伝えずに止まることの 6 つである。次は通ってよく、この要件では止めない: 記録の項目の値の長さと改行の違い（値が複数行に続くこと）／止まるたびに記録が増えること（最新の 1 件を正とする）／保留の場面で引き継ぎと記録の 2 件のコメントが並ぶこと／主が子のタブで先に答えて、親が既に再開した子の `stopped` を受けること（親は記録を読んで報告するだけで、返事の仕方は #1034 で決める）／子が記録を書かずに止まり、親が `timeout` まで気づかないこと（入力待ちからの推定は入れない）。記録の中身（理由・推奨・リスクの正しさ）を確かめることと、手順を守らない子を見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 子が止まるときの記録と印の手順が書かれている
 - **WHEN** SKILL.md のエピックの子が止まるときの手順を読む
 - **THEN** `route` が `nested` を返すセッションに限ること、1 行目 `子の停止: 主の返事待ち` の記録を投稿してから `mark stopped` を呼ぶこと、本文で質問してターンを終えるときは `mark stopped` をそのターンの最後のツール呼び出しにすること、質問ツールで待つときは記録・`mark stopped`・質問ツールの順に呼んで回答のあとに `mark resumed` を呼ぶこと、本文で質問したときは返事を受けたターンの最初に `mark resumed` を呼ぶこと、引き継ぎを書く場面では引き継ぎを先に投稿することが書かれている。記録の 2 行目以降の項目名と並びは要件「エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く」のシナリオで確かめる
+
+#### Scenario: 印が付かなかった出力では主に 1 行添えることが書かれている
+- **WHEN** SKILL.md が指すエピックの子の停止の手順（`references/epic-child-stop.md`）で `mark stopped` の出力の扱いを読む
+- **THEN** `marked` なら何もしないこと、`skipped` で始まる出力（`skipped <N> no-workspace`・`skipped <N> not-linked`）と `failed` では主への質問に「親に止まったことが伝わっていない」と 1 行添えることが書かれ、`skipped` を何もしない側に置く文が無い
 
 #### Scenario: 親が stopped を受けたときの手順が書かれている
 - **WHEN** SKILL.md の Orca 経路の手順を読む
@@ -3264,3 +3278,87 @@ develop の既存要件のうち見出しや本文が「Orca 経路」「`回し
 - **WHEN** `回し方: tmux` のエピックで `wait --watch-stopped` が stdout に何も出さず exit 1 で終わる（stderr に `usage:` は無い）
 - **THEN** 本体は Orca の親ワークツリーで開き直すよう案内せず、stderr を添えて主に報告して止まる
 
+### Requirement: epic-dispatch.sh wait は完了の印の無いまま記録先が閉じて動きの止まった子を完了と推定する
+
+`plugins/dev-workflow/scripts/epic-dispatch.sh` の `wait` は、`--watch-done <N>` で渡された子ごとに、ポーリングごとに次の 6 つをこの順に確かめ、すべて満たした子の完了を推定しなければならない（MUST）。LLM を呼んではならない（MUST NOT）。
+
+1. 親の見張りの照合で子の記録がちょうど 1 件読め、`status` が `running` である（`waiting`・`done` は推定しない）
+2. 記録の `stop` が `stopped` でも `stopped-seen` でもない
+3. 記録の `worktree` が空でなく、子のトランスクリプト（`${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<worktree の英数字以外を - にした名前>/*.jsonl`。置き場のディレクトリは `wait --resolve` の起動し直しの判定と同じ求め方で、置き場を求める処理は 1 つの関数を共有する（既定の置き場の変更は起動し直しの判定にも掛かる）。起動し直しの判定の「ちょうど 1 本」はその判定の側に残す）が 1 本以上ある
+4. 置き場の全部の `.jsonl` と、そのセッションのサブエージェントのトランスクリプト（`<置き場>/<セッション>/subagents/*.jsonl`）を通して、`timestamp` を持つ行（種類を問わない）の最大値を最後の活動とし、今の時刻との差が `EPIC_DISPATCH_DONE_IDLE_SEC`（秒・既定 1800）以上である。`timestamp` を持つ行が 1 つも無い・読めない・`python3` が無いときは満たさない
+5. 子 issue を、位置引数の子と同じ `gh` の呼び出しの形（記録の `repo` で決まる `issue_api`）で 1 回読み、`state` が `closed` で `state_reason` が `completed` である
+6. 5 と同じ 1 回の `gh` で読んだ `closed_at` と今の時刻との差が `EPIC_DISPATCH_DONE_IDLE_SEC` 以上である。`closed_at` が無いときは満たさない（記録先が閉じた直後に、閉じる前から長く動いている背景のコマンドだけを走らせている子を完了としないため）
+
+1〜4 のどれかを満たさない子について `gh` を呼んではならない（MUST NOT）。5・6 の `gh`（1 回）が失敗したときは、そのポーリングではその子を推定せず、失敗したポーリングにも数えない（MUST）。すべて満たした子は、要件「wait --watch-done は推定した完了を記録に書き、Orca の印へ写す」（dev-workflow-epic-state）のとおり記録に書き、書けたら stderr に `inferred done <N>: issue closed as completed, no transcript activity since <最後の活動>` を出し、印が付いた子として `done <N>...` の行に入れなければならない（MUST）。stdout の行の形・順・exit code は今の `--watch-done` の規定のまま変えてはならない（MUST NOT。推定の `done` を別の行にしない）。
+
+`--watch-done` が 1 つ以上ある `wait` は、ポーリングを始める前に `EPIC_DISPATCH_DONE_IDLE_SEC` を確かめ、空か数字でなければ stderr に理由と使い方を出して exit 1 で終わり、`gh` を呼んではならない（MUST）。
+
+この要件は、要件「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」と要件「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」の「ポーリング 1 回あたりの `gh` の呼び出しは位置引数の子の数と同じ」の規定に優先し、推定の候補（1〜4 を満たした `--watch-done` の子）1 件ごとに `gh` の呼び出しが 1 回増えることを許す。
+
+`plugins/dev-workflow/scripts/epic-dispatch.sh` の冒頭のコメントの `wait` の説明に、推定の 6 つの条件・`EPIC_DISPATCH_DONE_IDLE_SEC` とその既定・推定の `done` が同じ `done <N>` の行に出ることを書かなければならない（MUST）。
+
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、偽の `gh` とテスト用の `CLAUDE_PROJECTS_DIR` で、次を確かめなければならない（MUST）: 6 つを満たすと stdout が `done <N>` で記録の `status` が `done` になり推定の項目が付くこと／最後の活動が閾値より新しい・トランスクリプトが 0 本・2 本のうち片方だけ新しい・`status` が `waiting`・`stop` が `stopped` / `stopped-seen` のときは `gh` を呼ばずに推定しないこと／2 本とも古ければ推定すること／issue が `open`・`state_reason` が `completed` でない・閉じてから閾値より短い・`closed_at` が無いときは推定しないこと／サブエージェントのトランスクリプトにだけ閾値より新しい行があるときは推定しないこと／排他の中の確かめ直しで外れたとき（推定の `gh` の間に子が `waiting` を付けた）は推定せず Orca の印へ写さないこと／`EPIC_DISPATCH_DONE_IDLE_SEC` で閾値を変えられ、数字でない値は exit 1 で `gh` を呼ばないこと／同じ子を位置引数と `--watch-done` の両方に渡したとき、閉じたポーリングで `closed <N>` と `done <N>` の 2 行がこの順に出ること。
+
+この要件の守備範囲で入力として扱うのは、記録の `status`・`stop`・`worktree`、子のトランスクリプト（サブエージェントのものを含む）の `timestamp`、子 issue の `state` と `state_reason` と `closed_at` である。拾いたい誤りは、主がマージして記録先が閉じたのに子が印を付けず親が待ち続けることと、まだ動いている子・主の確認待ちの印（`waiting`）を付けた子・止まった印の経路にいる子を完了とすることである。次は通ってよく、この要件では止めない: 主が閾値より長く子のタブを離れてから同じタブで追加の作業を頼もうとしたときにワークツリーが片付いていること（`reap` の確認が未コミットの変更とマージに入っていない commit を残す）／時計のずれで最後の活動が未来になり推定されないこと／記録先が閉じたあと、子が 1 回のツール呼び出しを閾値より長く動かしている（その間トランスクリプトに行が増えない）ときに推定されること（`reap` の確認は変えないので、失うのは後片付けの途中だけ）／マージ後の依頼（動作確認など）を完了報告に書いてマージを主に頼んだ子も、PR が未マージのうちは `waiting` を付けられないので推定され、主の返事の前にタブが閉じること（依頼は完了報告と記録先に残る）。この要件は、ここに挙げていない穴が見つかるたびに塞ぎ切ることを完了条件にしない。
+
+#### Scenario: 閉じて動きの止まった子は完了と推定される
+- **WHEN** 子 11 の記録が `status` `running`・`stop` 空、トランスクリプトが 1 本で最後の活動が 40 分前、子 issue が `closed`・`completed` の状態で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-done 11` を実行する
+- **THEN** stdout は `done 11`、exit 0 で、記録の `status` は `done`、`done_inferred_at` と `done_inferred_last_activity` があり、stderr に `inferred done 11` で始まる行が出る
+
+#### Scenario: 最後の活動が新しい子は推定しない
+- **WHEN** 最後の活動が 10 分前で、ほかは直前の Scenario と同じ状態で `epic-dispatch.sh wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、exit 2 で、記録の `status` は `running` のまま、`gh` は呼ばれない
+
+#### Scenario: トランスクリプトが 0 本なら推定しない
+- **WHEN** 子 11 のトランスクリプトの置き場に `.jsonl` が無い状態で、ほかは推定される条件のまま `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、記録の `status` は `running` のまま、`gh` は呼ばれない
+
+#### Scenario: トランスクリプトが 2 本なら全部を通した最後の活動で決める
+- **WHEN** 子 11 のトランスクリプトの置き場に `.jsonl` が 2 本あり、片方の最後の活動が 40 分前でもう片方が 10 分前の状態で `wait --interval 0 --timeout 0 --watch-done 11` を実行し、別に 2 本とも最後の活動が 40 分前より古い状態で `wait --interval 0 --timeout 60 --watch-done 11` を実行する
+- **THEN** 前者は stdout が `timeout`、記録の `status` は `running` のまま、`gh` は呼ばれない。後者は stdout が `done 11` で、`done_inferred_last_activity` は 2 本を通した最大の `timestamp` である
+
+#### Scenario: 閉じてから閾値より短い子は推定しない
+- **WHEN** 子 11 の issue が `completed` で閉じてから 60 秒、または `closed_at` が無い状態で、ほかは推定される条件のまま `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、記録の `status` は `running` のまま
+
+#### Scenario: サブエージェントのトランスクリプトの新しい行も活動に数える
+- **WHEN** 子 11 の本体のトランスクリプトの最後の活動は 40 分前で、`<置き場>/<セッション>/subagents/` の `.jsonl` に 10 分前の行がある状態で `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、記録の `status` は `running` のまま、`gh` は呼ばれない
+
+#### Scenario: 同じ子が位置引数と --watch-done の両方にあれば closed と done の 2 行を出す
+- **WHEN** 子 11 を位置引数と `--watch-done` の両方に渡し、推定される条件のまま `wait --interval 0 --timeout 60 --watch-done 11 11` を実行する
+- **THEN** stdout は `closed 11` と `done 11` の 2 行をこの順に出して exit 0 で、記録の `status` は `done` である
+
+#### Scenario: waiting の子と止まった印の子は推定しない
+- **WHEN** 子 11 の記録の `status` が `waiting`、または `stop` が `stopped` か `stopped-seen` で、ほかは推定される条件のまま `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、記録は変わらず、`gh` は呼ばれない
+
+#### Scenario: 開いている子・completed 以外で閉じた子は推定しない
+- **WHEN** 子 11 の issue が `open`、または `closed` で `state_reason` が `not_planned` で、ほかは推定される条件のまま `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、記録の `status` は `running` のまま
+
+#### Scenario: 閾値を変えられ、誤った値は使い方を出す
+- **WHEN** 最後の活動が 10 分前の子 11 で `EPIC_DISPATCH_DONE_IDLE_SEC=300` を付けて `wait --interval 0 --timeout 60 --watch-done 11` を実行し、別に `EPIC_DISPATCH_DONE_IDLE_SEC=abc` を付けて同じコマンドを実行する
+- **THEN** 前者は stdout が `done 11` で、後者は exit 1 で stdout は空、stderr に使い方が出て `gh` は呼ばれない
+
+### Requirement: 回し方の手順は推定した done も子の付けた done と同じに片付ける
+
+develop の `SKILL.md`「エピックの扱い」→「回し方」の別セッション方式の手順は、次を書かなければならない（MUST）。
+
+- 手順 2 の `--watch-done` の説明に、`wait` は片付け待ちの子のうち、完了の印の無いまま記録先が `completed` で閉じてから `EPIC_DISPATCH_DONE_IDLE_SEC`（既定 1800 秒）以上たち、子のトランスクリプト（サブエージェントのものを含む）の最後の活動もそれ以上前の子を、LLM なしで完了と推定して `done <N>` を返すこと（`status` が `waiting` の子・止まった印の子・トランスクリプトが無い子は推定しない）
+- 手順 3 に、推定の `done` も子が付けた `done` と同じに `reap` を 1 回呼んで扱い、区別しないこと（片付けの安全確認は `reap` が行う）。同じ子が `closed` と `done` の両方の行に出たら、手順 4 を処理してから手順 3 の `reap` を呼ぶこと
+- 手順 4 に、`notify-closed` が `skipped <N> not-stopped` を返した子（止まった印を付けずに見張りを終えた子。主に直接マージを頼んだ子など）は、片付け待ちとして `--watch-done` に渡しておけば、子のセッションが止まって閾値を過ぎたあとの `wait` が完了と推定すること。主に子のステータスを変えるよう頼まない（MUST NOT）
+
+`plugins/dev-workflow/tests/epic-dispatch.bats`（または `tests/develop-skill.bats`）は、手順 2〜4 の文面に `EPIC_DISPATCH_DONE_IDLE_SEC` と推定の扱いがあることを確かめなければならない（MUST）。
+
+#### Scenario: 回し方に推定の扱いが書かれている
+- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 2〜4 を読む
+- **THEN** 手順 2 に `wait` が完了を推定する条件と `EPIC_DISPATCH_DONE_IDLE_SEC` が、手順 3 に推定の `done` も同じに `reap` することと、同じ子が `closed` と `done` の両方に出たら手順 4 を処理してから `reap` を呼ぶことが、手順 4 に `skipped <N> not-stopped` の子は `--watch-done` の推定で片付くことが書かれている
+
+### Requirement: エピックの子は主にマージを頼むとき、マージ後の連絡を頼まない
+
+develop の `SKILL.md`「ループの終わり」は、エピックの子（`scripts/epic-dispatch.sh route`（子の番号なし）が `nested`）が PR のマージを主に頼んで（PR がマージされていないので `mark` を呼ばずに）ループを終えるとき、完了報告で「マージしたら教えてください」「ステータスを変えます」のような、マージ後に子のタブへ戻る連絡を主に頼んではならない（MUST NOT）と書き、代わりに「マージしたらこのタブは放っておいてよい。記録先が閉じれば親が完了にしてワークツリーを片付ける」と書くことを規定しなければならない（MUST）。親の `wait --watch-done` が完了を推定することを理由として添える（SHALL）。エピックの子でないセッションの完了報告には、この規定を当てない。
+
+#### Scenario: ループの終わりにマージ後の連絡を頼まない規定がある
+- **WHEN** SKILL.md の「ループの終わり」を読む
+- **THEN** エピックの子が主にマージを頼んで終えるとき、マージ後の連絡を頼まず「マージしたらこのタブは放っておいてよい。記録先が閉じれば親が完了にしてワークツリーを片付ける」と書くことと、その理由（親の `wait` が完了を推定する）が書かれている

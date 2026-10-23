@@ -43,7 +43,7 @@
 | `settled` | 下の 5 で `--unrelated` を渡すチェックを決めてから `ci-watch.sh next` を実行し、6 に進む。`--until-merged` の `wait` も `ci-fail`・`conflict` では `settled` を返す（`ready` だけを待ち続ける）ので、同じく `next` に進む |
 | `merged` | 見張りを終えてマージを報告する |
 | `closed` | 見張りを終える |
-| `timeout` | `--until-merged` を付けずに起動した `wait` なら、PR の URL を添えて、CI が上限時間内に決着しなかったことをオーナーに 1 アクションで伝える。`--until-merged` を付けて起動した `wait` なら、マージされなかったとして、PR の URL を添えてオーナーにマージを頼む |
+| `timeout` | `--until-merged` を付けずに起動した `wait` なら、PR の URL を添えて、CI が上限時間内に決着しなかったことをオーナーに 1 アクションで伝える。`--until-merged` を付けて起動した `wait` なら、マージされなかったとして、PR の URL を添えてオーナーにマージを頼む（エピックの子のセッションの頼む文面は、下の「`ready` を受けたあと」のエピックの子のマージ依頼の段落に従う） |
 | `error` | `gh` の認証・ネットワークを確かめて 1 回だけ起動し直す。もう一度 `error` ならオーナーに伝える |
 
 ## 5. `--unrelated` を渡す基準
@@ -75,8 +75,8 @@
 
 直しで `agent-review:passed` を外した PR（`agent-review:pending` が付いている）は、先にゲートを取り直す。取り直したゲートに合格するまで、下の 1〜3 のマージ待ち・マージ依頼に進まない。取り直したゲートが failed なら、ゲートの通常の周回で指摘を直し、push したら 6 の表の `fix` の行と同じく `wait` から続けて、`ready` になってから再び取り直す。保留になるか 2 周で合格が確定しなければオーナーに上げる。合格したら、同じ見張りの続きとして下の 1 から進む（上の 2 の開始の判定・開始のコメントはしない）。
 
-1. まず PR のラベルを見る（`gh api repos/<owner/repo>/issues/<PR番号> --jq '.labels[].name'`）。`human-merge` / `needs-human-merge` / `human-only` / `needs-approval`（`.github/workflows/auto-merge.yml` の `BLOCKING_LABELS`。一覧が変わったらここも直す）のどれかが付いていれば、`--until-merged` で待たずに PR の URL を添えてオーナーにマージを頼み、見張りを終える（頼む文面は `~/.claude/output-styles/readable.md` の節 3 の型で書く。主に聞く理由は、人が押すと決まっているマージ）
-   - ただし、エピックの子のセッション（`scripts/epic-dispatch.sh route`（子の番号なし）が `nested` を返す）で、付いている見送りラベルが `human-merge` だけで、PR の base ブランチの `auto-merge.yml` に `parent-merge-approved` の語があるとき（`gh api "repos/<owner>/<repo>/contents/.github/workflows/auto-merge.yml?ref=<PR の base ブランチ>" --jq .content | base64 -d | grep -qF parent-merge-approved` が成功する）は、オーナーに直接頼まず、親の判断を待つ。develop の SKILL.md「エピックの子が主の返事を待って止まるとき」の記録を `止まった理由: PR のマージ待ち（human-merge）: <PR の URL>` で残し、その手順どおり `mark stopped` で止まる（見張りの終了のコメントは投稿して終える）。どれかを満たさなければ上のとおりオーナーに頼む。残りの 6 項目は、たとえば次のように書く（記録の形の正本は SKILL.md の側）:
+1. まず PR のラベルを見る（`gh api repos/<owner/repo>/issues/<PR番号> --jq '.labels[].name'`）。`human-merge` / `needs-human-merge` / `human-only` / `needs-approval`（`.github/workflows/auto-merge.yml` の `BLOCKING_LABELS`。一覧が変わったらここも直す）のどれかが付いていれば、`--until-merged` で待たずに PR の URL を添えてオーナーにマージを頼み、見張りを終える（頼む文面は `~/.claude/output-styles/readable.md` の節 3 の型で書く。主に聞く理由は、人が押すと決まっているマージ。エピックの子のセッションの頼む文面は、1〜3 のあとの段落に従う）
+   - ただし、エピックの子のセッション（`scripts/epic-dispatch.sh route`（子の番号なし）が `nested` を返す）で、付いている見送りラベルが `human-merge` だけで、PR の base ブランチの `auto-merge.yml` に `parent-merge-approved` の語があるとき（`gh api "repos/<owner>/<repo>/contents/.github/workflows/auto-merge.yml?ref=<PR の base ブランチ>" --jq .content | base64 -d | grep -qF parent-merge-approved` が成功する）は、オーナーに直接頼まず、親の判断を待つ。develop の `skills/develop/references/epic-child-stop.md`（エピックの子が主の返事を待って止まるとき）の記録を `止まった理由: PR のマージ待ち（human-merge）: <PR の URL>` で残し、その手順どおり `mark stopped` で止まる（見張りの終了のコメントは投稿して終える）。どれかを満たさなければ上のとおりオーナーに頼む。残りの 6 項目は、たとえば次のように書く（記録の形の正本は `skills/develop/references/epic-child-stop.md` の側）:
      - `主に聞く理由:` 決まりで主の承認が要る（聖域のファイルに触れた PR は、人の判断を通してからマージすると決まっている。聖域の変更が人の目を通らずに入るのを防ぐため）。親の判断で回せる仕組みがあるので、まず親に判断を求める
      - `前提:` 聖域のどのパスに触れて `human-merge` が付いたか（自動マージの処理の投稿の URL）、ゲートの合格の HEAD と CI の状態
      - `推奨:` 親の判断で自動マージの処理に回す
@@ -85,7 +85,9 @@
      - `再開に要る途中経過:` PR の URL と今の HEAD の SHA、ゲートの合格のコメントの URL
    - 親から `親エピック #<E> の判断（主の承認ではない）:` で始まる返事（エピックが別のリポジトリにあるときは、番号のあとに `（<owner>/<repo>）` が付く `親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）:` の形。先頭の `親エピック #` で照合する）が届いたら、新しい見張りとして上の 2 の重複の確認（1 行目が `CI 見張り開始:` のコメントのあとに `CI 見張り終了:` のコメントが無ければ始めない）と `CI 見張り開始:` のコメントの投稿をしてから、`ci-watch.sh wait <owner/repo> <PR番号> --until-merged` を `run_in_background` で起動して見届ける（結果の扱いは上の 4 のまま。止まるときに `CI 見張り終了:` を投稿しているので、開始の記録なしに始めると、別のセッションが同じ PR の見張りを重ねて始められてしまう）。`--until-merged` の `timeout` で改めて止まるときは、`止まった理由:` を `PR のマージ待ち（human-merge、親の返事のあともマージされない）: <PR の URL>` にする。子は `parent-merge-approved` ラベルも `親のマージ判断:` のコメントも付けない。親の返事は聖域の変更や破壊的な操作の承認ではなく、その返事で聖域のファイルを変えたりマージしたりしない
 2. どれも付いておらず、自動マージの workflow（`.github/workflows/auto-merge.yml`）が対象リポにあれば、`ci-watch.sh wait <owner/repo> <PR番号> --until-merged` を `run_in_background` で起動して見届ける（結果の扱いは上の 4）
-3. 自動マージの workflow が無ければ、PR の URL を添えてオーナーにマージを頼み、見張りを終える（頼む文面は `~/.claude/output-styles/readable.md` の節 3 の型で書く。主に聞く理由は、人が押すと決まっているマージ）
+3. 自動マージの workflow が無ければ、PR の URL を添えてオーナーにマージを頼み、見張りを終える（頼む文面は `~/.claude/output-styles/readable.md` の節 3 の型で書く。主に聞く理由は、人が押すと決まっているマージ。エピックの子のセッションの頼む文面は、1〜3 のあとの段落に従う）
+
+エピックの子のセッション（`scripts/epic-dispatch.sh route`（子の番号なし）が `nested` を返す）がオーナーにマージを頼んで見張りを終えるとき（1 の見送りラベルで親の判断を待たずに頼むとき・3・4 の表の `--until-merged` で起動した `wait` の `timeout`）は、頼む文面に「マージしたら教えてください」のような、マージ後にオーナーがこのタブへ戻って知らせる依頼を書かず、「マージしたらこのタブは放っておいてよい。記録先が閉じれば親が完了にしてワークツリーを片付ける」と書く。親の `epic-dispatch.sh wait --watch-done` が、記録先が completed で閉じて子のセッションが止まった子を完了と推定するため。エピックの子でないセッションの文面は変えない。
 
 どの呼び出し側でも、LLM が `gh pr merge` や merge API を叩いてはならない。
 
