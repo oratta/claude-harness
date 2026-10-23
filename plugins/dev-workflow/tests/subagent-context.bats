@@ -230,3 +230,22 @@ add_error_records() {
   [ "$status" -eq 1 ]
   echo "$output" | grep -q 'no assistant usage yet'
 }
+
+@test "api error: error key with a falsy value and non-zero usage is still skipped" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
+  printf '{"type":"assistant","error":{},"message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":99990,"output_tokens":5}}}\n' >> "$f"
+  printf '{"type":"assistant","error":"","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":99990,"output_tokens":5}}}\n' >> "$f"
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q '"context_tokens": 160000'
+  echo "$output" | grep -q '"last_record": "api_error"'
+}
+
+@test "api error: error record without usage still sets last_record" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
+  printf '{"type":"assistant","isApiErrorMessage":true,"message":{"model":"<synthetic>"}}\n' >> "$f"
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q '"context_tokens": 160000'
+  echo "$output" | grep -q '"last_record": "api_error"'
+}
