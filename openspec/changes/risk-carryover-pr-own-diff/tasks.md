@@ -49,17 +49,17 @@
 
 ## 3. 3-c の文面と書式を直す（hold.md は 3-c だけ）
 
-- [ ] 3.1 3-c の冒頭の目的の文を直す。直す先は「main の取り込みや PR 自身の修正で HEAD が動いても、リスク宣言の中身（リスク内容・発生条件・影響範囲と戻し方）が前と同じなら、一度許容したリスクを主に聞き直さない。判定の基準はファイルが変わったかではなくリスクの中身が同じか」の趣旨。確かめ方: 3.6 の bats。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:19
-- [ ] 3.2 スクリプトの呼び方のブロックの説明を直す
+- [x] 3.1 3-c の冒頭の目的の文を直す。直す先は「main の取り込みや PR 自身の修正で HEAD が動いても、リスク宣言の中身（リスク内容・発生条件・影響範囲と戻し方）が前と同じなら、一度許容したリスクを主に聞き直さない。判定の基準はファイルが変わったかではなくリスクの中身が同じか」の趣旨。確かめ方: 3.6 の bats。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:19
+- [x] 3.2 スクリプトの呼び方のブロックの説明を直す
   - 出力: `CARRYOVER=if-judged`・`PR_COMMITS=`・`EVIDENCE_MAIN_ONLY=`・`EVIDENCE_PR_CHANGED=`・`EVIDENCE_DIFF_LINES=` を足す
   - 終了コード: `4 = 根拠ファイルの PR 自身の差分が前後で違う（いまは主に聞く）` を足す
   - 判定の要約: 「根拠ファイルが前後の HEAD で同一」を「根拠ファイルの PR 自身の差分が前後で同じ」に直す
 
   確かめ方: 3.6 の bats。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:25-31（bash ブロック）、:35（条件 1 の括弧の説明）
-- [ ] 3.3 条件 1 の後ろか、引き継げないときの段落に、終了コード 4 の扱いを書く。中身は「終了コード 4 は条件 1 を満たさない。引き継がず手順 6 で主に聞き、`EVIDENCE_PR_CHANGED=` の行を引き継げなかった理由として質問に添える」。確かめ方: 3.6 の bats。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:35、:53
-- [ ] 3.4 追記 4 行のうち `引き継ぎの根拠:` の行に、PR 自身の commit `<PR_COMMITS の値>` 件の欄を足す。「根拠ファイルの diff は空」は「根拠ファイル <diff は空 または main からの変更だけ: EVIDENCE_MAIN_ONLY のファイル>」に直す。行頭と 4 行の構造、終了コード `<0 または 3>` の書き方は変えない。確かめ方: 3.6 の bats と、既存の「4 appended lines」テストが通る。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:44-49
-- [ ] 3.5 次の 2 つを `git diff` で確かめる。3-c 以外の節（手順 6・復帰の表）を変えていないこと。`pass.md` の合格条件の表と `gate-runner.md` が 3-c を参照するだけで、条件や書式を写していないこと（写していなければ変えない）。確かめ方: `git diff --stat` に hold.md 以外の skills の文面が出ない。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:65、plugins/dev-workflow/skills/develop/references/roles/gate-runner.md（読むだけ）
-- [ ] 3.6 文面検査の bats を足す・直す
+- [x] 3.3 条件 1 の後ろか、引き継げないときの段落に、終了コード 4 の扱いを書く。中身は「終了コード 4 は条件 1 を満たさない。引き継がず手順 6 で主に聞き、`EVIDENCE_PR_CHANGED=` の行を引き継げなかった理由として質問に添える」。確かめ方: 3.6 の bats。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:35、:53
+- [x] 3.4 追記 4 行のうち `引き継ぎの根拠:` の行に、PR 自身の commit `<PR_COMMITS の値>` 件の欄を足す。「根拠ファイルの diff は空」は「根拠ファイル <diff は空 または main からの変更だけ: EVIDENCE_MAIN_ONLY のファイル>」に直す。行頭と 4 行の構造、終了コード `<0 または 3>` の書き方は変えない。確かめ方: 3.6 の bats と、既存の「4 appended lines」テストが通る。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:44-49
+- [x] 3.5 次の 2 つを `git diff` で確かめる。3-c 以外の節（手順 6・復帰の表）を変えていないこと。`pass.md` の合格条件の表と `gate-runner.md` が 3-c を参照するだけで、条件や書式を写していないこと（写していなければ変えない）。確かめ方: `git diff --stat` に hold.md 以外の skills の文面が出ない。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:65、plugins/dev-workflow/skills/develop/references/roles/gate-runner.md（読むだけ）
+- [x] 3.6 文面検査の bats を足す・直す
   - 3-c の冒頭に「リスクの中身」と「PR 自身の修正」がある
   - 呼び方のブロックに `if-judged`・`EVIDENCE_PR_CHANGED=`・`EVIDENCE_MAIN_ONLY=`・`PR_COMMITS=`・`4 = ` がある
   - 手順 6 へ進む文に `EVIDENCE_PR_CHANGED=` がある
