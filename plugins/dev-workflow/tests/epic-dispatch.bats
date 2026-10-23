@@ -3457,7 +3457,8 @@ orca_cmd_scripts() {
   # failed と同じ行で 1 行添える。skipped を「何もしない」側に書かない（#1247）
   printf '%s\n' "$r" | grep -F '`mark stopped` の出力が' | grep -F '`skipped`' | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
   printf '%s\n' "$r" | grep -F '`skipped <N> no-workspace`' | grep -qF '`skipped <N> not-linked`'
-  ! printf '%s\n' "$r" | grep -F '`mark stopped` の出力が' | grep -qF '`marked` か `skipped` なら何もしない'
+  printf '%s\n' "$r" | grep -qF '`mark stopped` の出力が `marked` なら何もしない。`skipped` で始まる'
+  ! printf '%s\n' "$r" | grep -F '`mark stopped` の出力が' | grep -qF '`marked` か `skipped` なら何もしない' || return 1
 }
 
 # spec: dev-workflow-develop（エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く）
