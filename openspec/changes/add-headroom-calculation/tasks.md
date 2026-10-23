@@ -1,8 +1,8 @@
 ## 1. Codex のリセット権をキャッシュに足す（codex-role-profiles の変更）
 
-- [ ] 1.1 `test_codex_develop.py` に、`rateLimitResetCredits` を持つ応答で cache が `version: 2` になり `resets`（`available_count` と available の `expires_at` だけ。id なし）を持つテストと、欄が無い・`availableCount` が整数でない応答で `resets` を書かないテストを足し、落ちることを確かめる。触る範囲: plugins/dev-workflow/tests/test_codex_develop.py:528-556（複数 account の cache のテストの近く）
-- [ ] 1.2 `probe_codex_account` で `rateLimitResetCredits` を正規化して返し、`_update_codex_cache` が `version: 2` と `resets` を書くようにする（取得失敗時は前回値を保つ今の振る舞いのまま）。`usage_margin` は変えない。触る範囲: plugins/dev-workflow/scripts/codex-develop.py:174-249（`_quota_windows`・`probe_codex_account`・`_update_codex_cache`）
-- [ ] 1.3 `test_codex_develop.py` 全体（構成選択と `.statusline-codex` を参照しない検査を含む）が通ることを確かめる。触る範囲: plugins/dev-workflow/tests/test_codex_develop.py:991-1046（`DocumentationContracts`）
+- [x] 1.1 `test_codex_develop.py` に、`rateLimitResetCredits` を持つ応答で cache が `version: 2` になり `resets`（`available_count` と available の `expires_at` だけ。id なし）を持つテストと、欄が無い・`availableCount` が整数でない応答で `resets` を書かないテストを足し、落ちることを確かめる。触る範囲: plugins/dev-workflow/tests/test_codex_develop.py:528-556（複数 account の cache のテストの近く）
+- [x] 1.2 `probe_codex_account` で `rateLimitResetCredits` を正規化して返し、`_update_codex_cache` が `version: 2` と `resets` を書くようにする（取得失敗時は前回値を保つ今の振る舞いのまま）。`usage_margin` は変えない。触る範囲: plugins/dev-workflow/scripts/codex-develop.py:174-249（`_quota_windows`・`probe_codex_account`・`_update_codex_cache`）
+- [x] 1.3 `test_codex_develop.py` 全体（構成選択と `.statusline-codex` を参照しない検査を含む）が通ることを確かめる。触る範囲: plugins/dev-workflow/tests/test_codex_develop.py:991-1046（`DocumentationContracts`）
 
 ## 2. headroom.py の計算（dev-workflow-headroom）
 
