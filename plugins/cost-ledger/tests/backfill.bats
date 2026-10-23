@@ -424,7 +424,7 @@ PY
   no_gh_call
 }
 
-@test "backfill: prints nothing when dirname is not on PATH" {  # PATH に gh と python3 しか無く dirname が見つからなくても、stdout と stderr は空で終了コード 0
+@test "backfill: prints nothing when dirname is not on PATH" {  # PATH に gh と python3 しか無く dirname が見つからなくても（スクリプトの場所は ${0%/*} から求めるので先へ進み、python3 が失敗しても）、stdout と stderr は空で終了コード 0
   one_pr_candidate
   real_bash="$(command -v bash)"
   mkdir -p "$WORK/onlybin"
@@ -435,8 +435,6 @@ PY
   run env PATH="$WORK/onlybin" "$real_bash" "$SCRIPT" < "$WORK/payload.json"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
-  no_gh_call
-  no_python
 }
 
 @test "backfill: with COST_LEDGER_HOOK_FOREGROUND=1 the comment is written before the hook ends" {  # その場で実行すると、hook が終わった時点でコメントの作成が済んでいる
@@ -1299,4 +1297,20 @@ MERGE=(--pr 300 --branch feat/a --trigger マージ)
   tl --issue 12 --repo "$CWD" --trigger "issue クローズ" --at "$T" --backfill < "$IN" > "$OUT"
   [ "$(nrows "$OUT")" -eq 2 ]
   rows "$OUT" | grep -qF '| issue クローズ |'
+}
+
+@test "backfill: does not read scripts from the current directory when dirname is not on PATH" {  # dirname が PATH に無くても、カレントディレクトリの backfill.py と write_allow.py は読まれない（#854）
+  one_pr_candidate
+  real_bash="$(command -v bash)"
+  mkdir -p "$WORK/onlybin" "$WORK/cwd854"
+  cp "$WORK/bin/gh" "$WORK/onlybin/gh"
+  ln -s "$REAL_PYTHON" "$WORK/onlybin/python3"
+  for f in backfill.py write_allow.py; do
+    printf 'import pathlib\npathlib.Path(%s).write_text("x")\n' "'$WORK/marker854'" > "$WORK/cwd854/$f"
+  done
+  session_json startup > "$WORK/payload.json"
+  cd "$WORK/cwd854"
+  run env PATH="$WORK/onlybin" "$real_bash" "$SCRIPT" < "$WORK/payload.json"
+  [ "$status" -eq 0 ]
+  [ ! -e "$WORK/marker854" ]
 }
