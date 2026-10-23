@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # エピックの子の経路判定・起動・待ち受けを LLM なしで行う。develop の本体（エピックの解決
-# セッション）が SKILL.md「エピックの扱い」→「回し方」の手順どおりに呼ぶ。
+# セッション）が skills/develop/references/epic.md「回し方」の手順どおりに呼ぶ。
 #
 #   epic-dispatch.sh route <child>...
 #   epic-dispatch.sh launch [--note <text>] [--base <branch>] <epic> <child>...

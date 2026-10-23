@@ -15,11 +15,15 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL_DIR="${PLUGIN_DIR}/skills/develop"
   SKILL="${SKILL_DIR}/SKILL.md"
+  # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
+  EPIC="${SKILL_DIR}/references/epic.md"
+  EPIC_CHILD_STOP="${SKILL_DIR}/references/epic-child-stop.md"
   TRIPWIRES="${PLUGIN_DIR}/templates/escalation-tripwires.md"
 }
 
 # 「## <見出し>」から次の「## 」までを切り出す
-section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$SKILL"; }
+# 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
+section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
 frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL"; }
 
 # 「1 ループ」のコードブロックから工程の指示を切り出す。境界は**行頭の工程ラベル**だけで、
@@ -382,7 +386,7 @@ refute() {
 # --- エピック ---
 
 @test "epic: four subsections exist (conditions / how to create / how to run / completion)" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   echo "$e" | grep -q '^### 条件'
   echo "$e" | grep -q '^### 作り方'
   echo "$e" | grep -q '^### 回し方'
@@ -390,21 +394,21 @@ refute() {
 }
 
 @test "epic: conditions name 2+ PRs, multiple capabilities, or ordered children" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   echo "$e" | grep -qE '2 本以上'
   echo "$e" | grep -q 'capability'
   echo "$e" | grep -q '順序依存'
 }
 
 @test "epic: creation binds Closes to children and wires dependencies via blocked_by" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   echo "$e" | grep -q 'Closes'
   echo "$e" | grep -q 'dependencies/blocked_by'
   echo "$e" | grep -q '/develop <エピック番号>'
 }
 
 @test "epic: children run in parallel in isolated worktrees, new problems become new child issues" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   echo "$e" | grep -q '並列'
   echo "$e" | grep -qF 'isolation: "worktree"'
   echo "$e" | grep -q '新しい子 issue'
@@ -412,9 +416,55 @@ refute() {
 }
 
 @test "epic: completion needs the epic's own verification, not just all children merged" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   echo "$e" | grep -q '閉じない'
   echo "$e" | grep -qE '証拠.*エピック'
+}
+
+# --- エピックの 2 節の移設（#1219） ---
+
+@test "epic move (#1219): SKILL.md keeps only a short guide that says when to Read the moved files" {
+  g="$(section 'エピックの扱い')"
+  [ -n "$g" ]
+  echo "$g" | grep -qF '`references/epic.md`'
+  echo "$g" | grep -qF 'Read'
+  echo "$g" | grep -qF '`/develop <エピック番号>` で起動したとき'
+  echo "$g" | grep -qF '`nested` を返すエピックの子として動き'
+  echo "$g" | grep -qF '単発の issue・会話依頼・Draft PR を記録先にする依頼の 1 ループでは読まない'
+  [ "$(echo "$g" | grep -c '^### ')" -eq 0 ]
+  c="$(section 'エピックの子が主の返事を待って止まるとき')"
+  [ -n "$c" ]
+  echo "$c" | grep -qF '`references/epic-child-stop.md` を Read'
+  echo "$c" | grep -qF '主の返事を待って止まる前'
+  echo "$c" | grep -qF '`主の返事（親エピック #`'
+  echo "$c" | grep -qF '`nested` でないセッションは読まない'
+  # 参照の節からも辿れる
+  section '参照' | grep -qF '`references/epic.md`'
+  section '参照' | grep -qF '`references/epic-child-stop.md`'
+}
+
+@test "epic move (#1219): phrases unique to the moved sections live in the moved files, not in SKILL.md" {
+  [ -f "$EPIC" ]
+  [ -f "$EPIC_CHILD_STOP" ]
+  local p
+  for p in '### 条件' '### 作り方' '### 回し方' '### 完了条件' '**経路の決め方**' '**エピックである子を外す**' \
+           '**部品ごとの欄**' 'sub_issues_summary' 'dependencies/blocked_by -F issue_id' 'epic-dispatch.sh route <子>'; do
+    grep -qF -- "$p" "$EPIC" || { echo "移設先に無い: $p" >&2; return 1; }
+    if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
+  done
+  for p in '子の停止: 主の返事待ち' '**記録の形**' '**親から届いた返事**' 'mark stopped' 'mark resumed' 'owner-reply-check.sh --relayed'; do
+    grep -qF -- "$p" "$EPIC_CHILD_STOP" || { echo "移設先に無い: $p" >&2; return 1; }
+    if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
+  done
+}
+
+@test "epic move (#1219): references inside the moved files point back to SKILL.md or to each other" {
+  grep -qF 'SKILL.md の「保留で止まるときの引き継ぎ」→「新しいセッションでの再開」の手順 2' "$EPIC_CHILD_STOP"
+  grep -qF '`references/epic.md` の「回し方」の別セッション方式の手順 8' "$EPIC_CHILD_STOP"
+  grep -qF '子の側の手順は `references/epic-child-stop.md`' "$EPIC"
+  # SKILL.md の他の節は移設先を指す（旧い節名の参照が残っていない）
+  if grep -qF '「エピックの扱い」→「回し方」' "$SKILL"; then return 1; fi
+  if grep -qF '「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」' "$SKILL"; then return 1; fi
 }
 
 # --- 上流の壁打ち（旧 longrun:plan。#205 で /opsx:explore に） ---
@@ -680,7 +730,7 @@ refute() {
 # 照合の対象は SKILL.md の文だけで、openspec の spec の文言は照合しない。
 
 @test "relayed reply (#1059): Orca step 8 reports in the body, locates the uuid, and appends the location" {
-  line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$SKILL")"
+  line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
   echo "$line" | grep -qF '本文で報告する（質問ツールで聞かない）'
   echo "$line" | grep -qF 'owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <主の答え>'
   echo "$line" | grep -qF ' [主の発言: セッション <親のセッション ID> / uuid <uuid>]'
@@ -689,7 +739,7 @@ refute() {
 }
 
 @test "relayed reply (#1059): the child's 'reply from the parent' item checks with --relayed before handing to G" {
-  item="$(grep -F -- '- **親から届いた返事**' "$SKILL")"
+  item="$(grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_STOP")"
   echo "$item" | grep -qF '[主の発言: セッション <ID> / uuid <uuid>]'
   echo "$item" | grep -qF 'owner-reply-check.sh --relayed <ID> <uuid> <作成日時> <URL>'
   echo "$item" | grep -qF '子のタブ'
@@ -698,7 +748,7 @@ refute() {
 }
 
 @test "relayed reply (#1059): a relayed reply on a relaunch is handled before resume step 2 without the own session ID" {
-  item="$(grep -F -- '- **親から届いた返事**' "$SKILL")"
+  item="$(grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_STOP")"
   echo "$item" | grep -qF '手順 2 より先に当て'
   echo "$item" | grep -qF '自分のセッション ID で `owner-reply-check.sh` に掛けない'
 }
@@ -710,20 +760,20 @@ refute() {
 }
 
 @test "relayed reply (#1059): Orca step 8 compares the full text with whitespace collapsed and re-reports when another owner message sits in between" {
-  line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$SKILL")"
+  line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
   echo "$line" | grep -qF '全文が主の答えと同じ（どちらも連続する空白を 1 個にまとめて比べる）'
   echo "$line" | grep -qF 'not-direct'
 }
 
 @test "relayed reply (#1059): a confirmed relayed refusal is taken as the owner's refusal" {
-  item="$(grep -F -- '- **親から届いた返事**' "$SKILL")"
+  item="$(grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_STOP")"
   echo "$item" | grep -qF '全文から不許容の意思が読め'
   echo "$item" | grep -qF '主本人の不許容として受け取り'
   echo "$item" | grep -qF '許容とも不許容とも読めない'
 }
 
 @test "skill: step 7 of the Orca route re-presents children waiting for the owner before launch" {
-  p="$(grep -E '^7\. `回し方: Orca`' "$SKILL")"
+  p="$(grep -E '^7\. `回し方: Orca`' "$EPIC")"
   printf '%s\n' "$p" | grep -qF 'pending-owner'
   printf '%s\n' "$p" | grep -qF '記録の `stop` が `stopped-seen`'
   printf '%s\n' "$p" | grep -qF '手順 8 と同じに扱い（照らして通すか、報告を本文で出し直す）'
@@ -745,7 +795,7 @@ refute() {
 }
 
 @test "skill: step 7 drops a pending child whose pass on the epic matches the latest stop record" {
-  p="$(grep -E '^7\. `回し方: Orca`' "$SKILL")"
+  p="$(grep -E '^7\. `回し方: Orca`' "$EPIC")"
   printf '%s\n' "$p" | grep -qF 'エピックのコメントの `親の判断: 子 #N 通した`'
   printf '%s\n' "$p" | grep -qF '停止の記録の URL が子の最新の `子の停止: 主の返事待ち` の URL と一致'
   printf '%s\n' "$p" | grep -qF '再報告から外す'
@@ -772,7 +822,7 @@ refute() {
 # --- 別のリポジトリの子（cross-repo-children） ---
 # spec: dev-workflow-develop「別のリポジトリの子を含むエピックの回し方を SKILL.md に書く」
 
-xrepo_block() { section 'エピックの扱い' | awk '/^\*\*別のリポジトリの子（複数リポジトリのエピック）\*\*/{f=1; print; next} /^子セッションは `launch` が/{f=0} f'; }
+xrepo_block() { section 'エピックの扱い' "$EPIC" | awk '/^\*\*別のリポジトリの子（複数リポジトリのエピック）\*\*/{f=1; print; next} /^子セッションは `launch` が/{f=0} f'; }
 
 @test "skill (cross-repo): dependencies and sub-issue checks are read in the child's repository, the prerequisite's from repository_url" {
   b="$(xrepo_block)"
@@ -806,7 +856,7 @@ xrepo_block() { section 'エピックの扱い' | awk '/^\*\*別のリポジト�
 }
 
 @test "skill (cross-repo): the subagent route does not hand a child in another repository to W" {
-  s="$(section 'エピックの扱い' | grep -F '**サブエージェント方式**')"
+  s="$(section 'エピックの扱い' "$EPIC" | grep -F '**サブエージェント方式**')"
   printf '%s\n' "$s" | grep -qF '別のリポジトリの子は W に渡さない'
   printf '%s\n' "$s" | grep -qF '子 <owner>/<repo>#N は別のリポジトリなので別セッション方式でだけ起動する'
   printf '%s\n' "$s" | grep -qF '起こさずに、主に報告する'
@@ -816,7 +866,7 @@ xrepo_block() { section 'エピックの扱い' | awk '/^\*\*別のリポジト�
   b="$(xrepo_block)"
   printf '%s\n' "$b" | grep -qF '後で別に起動するエピック: <owner>/<repo>#N'
   printf '%s\n' "$b" | grep -qF '親の判断: 子 <owner>/<repo>#N 通した'
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   printf '%s\n' "$e" | grep -qF '`後で別に起動するエピック: #N`'
   printf '%s\n' "$e" | grep -qF '`子 #N マージ → 残り k 件`'
 }
@@ -829,14 +879,14 @@ xrepo_block() { section 'エピックの扱い' | awk '/^\*\*別のリポジト�
 }
 
 @test "skill (cross-repo): a nested session comments on the epic's repository with -R" {
-  n="$(section 'エピックの扱い' | grep -F '**`nested` を受けたセッション**')"
+  n="$(section 'エピックの扱い' "$EPIC" | grep -F '**`nested` を受けたセッション**')"
   printf '%s\n' "$n" | grep -qF "gh issue comment <E> -R <エピックのリポジトリ>"
   printf '%s\n' "$n" | grep -qF '後で別に起動するエピック: <自分の owner>/<自分の repo>#<自分>'
   printf '%s\n' "$n" | grep -qF 'parent epic: <owner>/<repo>#<E>'
 }
 
 @test "skill (cross-repo): the child side and ci-watch accept the reply heads with (<owner>/<repo>)" {
-  c="$(section 'エピックの子が主の返事を待って止まるとき')"
+  c="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   printf '%s\n' "$c" | grep -qF '親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）: '
   printf '%s\n' "$c" | grep -qF '主の返事（親エピック #<E>（<owner>/<repo>）経由）: '
   w="$(grep -F '親エピック #<E> の判断（主の承認ではない）:' "$PLUGIN_DIR/references/ci-watch.md")"
@@ -844,12 +894,12 @@ xrepo_block() { section 'エピックの扱い' | awk '/^\*\*別のリポジト�
 }
 
 @test "skill (cross-repo): step 6 reports the new failed reasons and stops, step 1 warns about --base across repositories" {
-  s6="$(section 'エピックの扱い' | grep -F '6. `wait` の')"
+  s6="$(section 'エピックの扱い' "$EPIC" | grep -F '6. `wait` の')"
   for r in no-clone ambiguous-clone not-in-orca no-push permission-lookup-failed base-lookup-failed; do
     printf '%s\n' "$s6" | grep -qF "$r" || { echo "missing: $r"; false; }
   done
   printf '%s\n' "$s6" | grep -qF 'サブエージェント方式に自動で振り替えない'
-  s1="$(section 'エピックの扱い' | grep -F '1. `scripts/epic-dispatch.sh launch')"
+  s1="$(section 'エピックの扱い' "$EPIC" | grep -F '1. `scripts/epic-dispatch.sh launch')"
   printf '%s\n' "$s1" | grep -qF '1 回の `launch` の全部の子に掛かる'
   printf '%s\n' "$s1" | grep -qF '`launch` をリポジトリごとに分ける'
 }
@@ -887,7 +937,7 @@ xrepo_block() { section 'エピックの扱い' | awk '/^\*\*別のリポジト�
 # --- 起動部品の差し替え（epic-launcher-tmux） ---
 # spec: dev-workflow-develop（回し方は起動部品の差し替えとして 1 本で書く）
 
-run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1} /^### 完了条件/{f=0} f'; }
+run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{f=1} /^### 完了条件/{f=0} f'; }
 
 @test "launcher parts: the run section is one procedure with a per-part table and no Orca-route heading" {
   r="$(run_section)"
@@ -917,7 +967,7 @@ run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1} /^#
   printf '%s\n' "$r" | grep -qF '`launch` と `adopt` に環境変数 `EPIC_DISPATCH_LAUNCHER=<そのコメントの部品名'
   printf '%s\n' "$r" | grep -qF '別の部品にもサブエージェント方式にも振り替えず'
   printf '%s\n' "$r" | grep -qF '部品名を渡さない'
-  p="$(grep -E '^7\. `回し方: Orca`' "$SKILL")"
+  p="$(grep -E '^7\. `回し方: Orca`' "$EPIC")"
   printf '%s\n' "$p" | grep -qF '`回し方: tmux`'
   printf '%s\n' "$p" | grep -qF 'EPIC_DISPATCH_LAUNCHER=<部品名>'
 }
