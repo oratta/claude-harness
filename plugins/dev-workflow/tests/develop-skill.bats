@@ -18,6 +18,8 @@ setup() {
   # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
   EPIC="${SKILL_DIR}/references/epic.md"
   EPIC_CHILD_STOP="${SKILL_DIR}/references/epic-child-stop.md"
+  # 「保留で止まるときの引き継ぎ」節は SKILL.md から references/ へ移した（#1220）
+  HANDOVER="${SKILL_DIR}/references/handover.md"
   TRIPWIRES="${PLUGIN_DIR}/templates/escalation-tripwires.md"
 }
 
@@ -462,7 +464,7 @@ refute() {
 }
 
 @test "epic move (#1219): references inside the moved files point back to SKILL.md or to each other" {
-  grep -qF 'SKILL.md の「保留で止まるときの引き継ぎ」→「新しいセッションでの再開」の手順 2' "$EPIC_CHILD_STOP"
+  grep -qF '`references/handover.md` の「新しいセッションでの再開」の手順 2' "$EPIC_CHILD_STOP"
   grep -qF '`references/epic.md` の「回し方」の別セッション方式の手順 8' "$EPIC_CHILD_STOP"
   grep -qF '子の側の手順は `references/epic-child-stop.md`' "$EPIC"
   # SKILL.md の他の節は移設先を指す（旧い節名の参照が残っていない）
@@ -600,6 +602,29 @@ refute() {
   grep -qF 'threadId' "$r"
 }
 
+# --- 保留で止まるときの引き継ぎの移設（#1220） ---
+
+@test "handover move (#1220): SKILL.md keeps only the guidance lines and Reads the destination before stopping and when resuming" {
+  s="$(section '保留で止まるときの引き継ぎ')"
+  echo "$s" | grep -qF '`references/handover.md`'
+  echo "$s" | grep -qF '主の返事を待って止まる前'
+  echo "$s" | grep -qF '保留中の記録先を再開するとき'
+  echo "$s" | grep -qF 'Read してから進める'
+  # 移した節の固有語句は移設先にあり、SKILL.md の本文には残っていない
+  for p in '**投稿の順序**' '**依頼の出し直し**' '**書式**' '| 待ち理由 |' '**前任 W の手渡し可否**' '**channel の主への案内**' '### 新しいセッションでの再開' 'SendMessage しない'; do
+    if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
+  done
+  for p in '**投稿の順序**' '**依頼の出し直し**' '**書式**' '| 待ち理由 |' '**前任 W の手渡し可否**' '**channel の主への案内**' '### 新しいセッションでの再開' 'SendMessage しない'; do
+    grep -qF -- "$p" "$HANDOVER" || { echo "移設先に無い: $p" >&2; return 1; }
+  done
+}
+
+@test "handover move (#1220): references to the moved section point at handover.md" {
+  grep -qF 'references/handover.md' "${PLUGIN_DIR}/commands/develop.md"
+  grep -qF 'references/handover.md' "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  if grep -qF '保留で止まるときの引き継ぎ' "${PLUGIN_DIR}/commands/develop.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md" "$EPIC_CHILD_STOP" "$EPIC"; then return 1; fi
+}
+
 # --- レビューの周を主に聞かずに続ける（直し方の判定。#722） ---
 
 @test "fix-check (#722): the section sits between the token budget and the handover sections" {
@@ -681,7 +706,7 @@ refute() {
 }
 
 @test "fix-check (#722): the handover scene for the two-round cap points at the re-choosing verdict" {
-  s="$(section '保留で止まるときの引き継ぎ')"
+  s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
   echo "$s" | grep -F 'レビューの 2 周キャップ超え' | grep -qF '選び直しが要る'
   echo "$s" | grep -qF '`2 周キャップ超え`'
 }
@@ -1000,4 +1025,70 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
 
 @test "launcher parts: the prerequisite table names orca or tmux for starting child sessions" {
   grep -qF '| **`orca`** または **`tmux`** |' "$SKILL"
+}
+
+# --- 親が待ちをやめてよい条件（#1248） ---
+# 親が見張りを自分から止めるとき、動いている子に主の返事待ちで止まった子が無いことを確かめてから止める
+
+stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; print; next} /^\*\*マージ待ちの子\*\*/{f=0} f'; }
+
+@test "watch end: the conditions for ending the watch are written in one paragraph of the run section" {
+  [ "$(run_section | grep -c '^\*\*待ちをやめてよい条件\*\*')" -eq 1 ]
+  c="$(stop_cond)"
+  # やめてよい場合: 完了（clear まで）・後回しだけ残る報告・error/failed の報告・片付け待ちだけの timeout・主の指示
+  printf '%s\n' "$c" | grep -qF '`clear`'
+  printf '%s\n' "$c" | grep -qF '後回しの子だけが残る'
+  printf '%s\n' "$c" | grep -qF '`error`'
+  printf '%s\n' "$c" | grep -qF '(d) 手順 4 の、片付け待ちの子だけを待つ'
+  printf '%s\n' "$c" | grep -qF '主がやめるよう言った'
+  # それ以外ではやめない（理由にならないものを列挙する）
+  printf '%s\n' "$c" | grep -qF 'それ以外ではやめない'
+  printf '%s\n' "$c" | grep -qF '`timeout` が何度続いても'
+  printf '%s\n' "$c" | grep -qF '変化が無い'
+  printf '%s\n' "$c" | grep -qF '主に上げた'
+}
+
+@test "watch end: before ending, the open children are checked with a one-shot wait and pending-owner" {
+  c="$(stop_cond)"
+  printf '%s\n' "$c" | grep -qF 'scripts/epic-dispatch.sh wait --interval 0 --timeout 0 --watch-stopped <'
+  printf '%s\n' "$c" | grep -qF '`--resolve` は付けない'
+  # --watch-done を付けないので done の行は出ない。timeout の行が止まった子なしの意味
+  printf '%s\n' "$c" | grep -qF '`stopped`・`closed` の行'
+  refute "$c" -F '`done` の行を返した'
+  printf '%s\n' "$c" | grep -qF 'scripts/epic-dispatch.sh pending-owner <'
+  printf '%s\n' "$c" | grep -qF '`pending <N>`'
+  printf '%s\n' "$c" | grep -qF '`needs-approval`'
+  # 止まった子があればやめずに手順 8 で処理して 2 に戻る
+  printf '%s\n' "$c" | grep -qF 'やめずに'
+  printf '%s\n' "$c" | grep -qF '手順 8'
+  printf '%s\n' "$c" | grep -qF '手順 7 の照合で外さなかった `pending <N>`'
+}
+
+@test "watch end: with no open child the check is skipped, and (a) checks before clear" {
+  c="$(stop_cond)"
+  # 開いた子が 0 件で位置引数なしの wait / pending-owner を呼ぶと usage で exit 1 になるので呼ばない
+  printf '%s\n' "$c" | grep -qF '開いた子が 0 件なら (1)(2) を呼ばない'
+  printf '%s\n' "$c" | grep -qF '確かめる子が無かった'
+  refute "$c" -F '`kept <N> not-done` の子を含む'
+  printf '%s\n' "$c" | grep -qF '`clear` の前に'
+}
+
+@test "watch end: only a timeout with an empty stderr counts as no stopped child; (c) does not go back to 2" {
+  c="$(stop_cond)"
+  printf '%s\n' "$c" | grep -qF '`timeout <子>...`（exit 2）'
+  printf '%s\n' "$c" | grep -qF '(1)(2) の stderr が空'
+  printf '%s\n' "$c" | grep -qF '確かめられなかった'
+  printf '%s\n' "$c" | grep -qF '(c) では確かめるだけで手順 2 に戻らず'
+  printf '%s\n' "$c" | grep -qF '2 に戻るのは (a)(b)(d) だけ'
+}
+
+@test "watch end: step 4 timeout, step 5 and step 8 point to the conditions" {
+  p4="$(grep -E '^4\. `closed <N>...`' "$EPIC")"
+  printf '%s\n' "$p4" | grep -qF '待ちをやめてよい条件'
+  printf '%s\n' "$p4" | grep -qF '確認を通'
+  p5="$(grep -E '^5\. `timeout <N>...`' "$EPIC")"
+  printf '%s\n' "$p5" | grep -qF '待ちをやめてよい条件'
+  p8="$(grep -E '^8\. `stopped <N>...`' "$EPIC")"
+  printf '%s\n' "$p8" | grep -qF '待ちをやめてよい条件'
+  printf '%s\n' "$p8" | grep -qF '主の返事待ちの子が残るあいだ'
 }
