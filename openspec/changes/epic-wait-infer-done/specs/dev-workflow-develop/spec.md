@@ -6,8 +6,8 @@
 
 1. 親の見張りの照合で子の記録がちょうど 1 件読め、`status` が `running` である（`waiting`・`done` は推定しない）
 2. 記録の `stop` が `stopped` でも `stopped-seen` でもない
-3. 記録の `worktree` が空でなく、子のトランスクリプト（`${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/<worktree の英数字以外を - にした名前>/*.jsonl`。`wait --resolve` の起動し直しの判定と同じ求め方で、置き場を求める処理は 1 つの関数を共有する）がちょうど 1 本ある
-4. そのトランスクリプトのうち `timestamp` を持つ行（種類を問わない）の最大値を最後の活動とし、今の時刻との差が `EPIC_DISPATCH_DONE_IDLE_SEC`（秒・既定 1800）以上である。`timestamp` を持つ行が無い・読めない・`python3` が無いときは満たさない
+3. 記録の `worktree` が空でなく、子のトランスクリプト（`${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/<worktree の英数字以外を - にした名前>/*.jsonl`。置き場のディレクトリは `wait --resolve` の起動し直しの判定と同じ求め方で、置き場を求める処理は 1 つの関数を共有する。起動し直しの判定の「ちょうど 1 本」はその判定の側に残す）が 1 本以上ある
+4. 置き場の全部の `.jsonl` を通して、`timestamp` を持つ行（種類を問わない）の最大値を最後の活動とし、今の時刻との差が `EPIC_DISPATCH_DONE_IDLE_SEC`（秒・既定 1800）以上である。`timestamp` を持つ行が 1 つも無い・読めない・`python3` が無いときは満たさない
 5. 子 issue を、位置引数の子と同じ `gh` の呼び出しの形（記録の `repo` で決まる `issue_api`）で 1 回読み、`state` が `closed` で `state_reason` が `completed` である
 
 1〜4 のどれかを満たさない子について `gh` を呼んではならない（MUST NOT）。5 の `gh` が失敗したときは、そのポーリングではその子を推定せず、失敗したポーリングにも数えない（MUST）。すべて満たした子は、要件「wait --watch-done は推定した完了を記録に書き、Orca の印へ写す」（dev-workflow-epic-state）のとおり記録に書き、書けたら stderr に `inferred done <N>: issue closed as completed, no transcript activity since <最後の活動>` を出し、印が付いた子として `done <N>...` の行に入れなければならない（MUST）。stdout の行の形・順・exit code は今の `--watch-done` の規定のまま変えてはならない（MUST NOT。推定の `done` を別の行にしない）。
@@ -18,9 +18,9 @@
 
 `plugins/dev-workflow/scripts/epic-dispatch.sh` の冒頭のコメントの `wait` の説明に、推定の 5 つの条件・`EPIC_DISPATCH_DONE_IDLE_SEC` とその既定・推定の `done` が同じ `done <N>` の行に出ることを書かなければならない（MUST）。
 
-`plugins/dev-workflow/tests/epic-dispatch.bats` は、偽の `gh` とテスト用の `CLAUDE_PROJECTS_DIR` で、次を確かめなければならない（MUST）: 5 つを満たすと stdout が `done <N>` で記録の `status` が `done` になり推定の項目が付くこと／最後の活動が閾値より新しい・トランスクリプトが 0 本・2 本以上・`status` が `waiting`・`stop` が `stopped` / `stopped-seen` のときは `gh` を呼ばずに推定しないこと／issue が `open`・`state_reason` が `completed` でないときは推定しないこと／`EPIC_DISPATCH_DONE_IDLE_SEC` で閾値を変えられ、数字でない値は exit 1 で `gh` を呼ばないこと。
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、偽の `gh` とテスト用の `CLAUDE_PROJECTS_DIR` で、次を確かめなければならない（MUST）: 5 つを満たすと stdout が `done <N>` で記録の `status` が `done` になり推定の項目が付くこと／最後の活動が閾値より新しい・トランスクリプトが 0 本・2 本のうち片方だけ新しい・`status` が `waiting`・`stop` が `stopped` / `stopped-seen` のときは `gh` を呼ばずに推定しないこと／2 本とも古ければ推定すること／issue が `open`・`state_reason` が `completed` でないときは推定しないこと／`EPIC_DISPATCH_DONE_IDLE_SEC` で閾値を変えられ、数字でない値は exit 1 で `gh` を呼ばないこと／同じ子を位置引数と `--watch-done` の両方に渡したとき、閉じたポーリングで `closed <N>` と `done <N>` の 2 行がこの順に出ること。
 
-この要件の守備範囲で入力として扱うのは、記録の `status`・`stop`・`worktree`、子のトランスクリプトの `timestamp`、子 issue の `state` と `state_reason` である。拾いたい誤りは、主がマージして記録先が閉じたのに子が印を付けず親が待ち続けることと、まだ動いている子・主の確認待ちの印（`waiting`）を付けた子・止まった印の経路にいる子を完了とすることである。次は通ってよく、この要件では止めない: 主が閾値より長く子のタブを離れてから同じタブで追加の作業を頼もうとしたときにワークツリーが片付いていること（`reap` の確認が未コミットの変更とマージに入っていない commit を残す）／時計のずれで最後の活動が未来になり推定されないこと／トランスクリプトが 2 本以上の子が今までどおり待たれること。
+この要件の守備範囲で入力として扱うのは、記録の `status`・`stop`・`worktree`、子のトランスクリプトの `timestamp`、子 issue の `state` と `state_reason` である。拾いたい誤りは、主がマージして記録先が閉じたのに子が印を付けず親が待ち続けることと、まだ動いている子・主の確認待ちの印（`waiting`）を付けた子・止まった印の経路にいる子を完了とすることである。次は通ってよく、この要件では止めない: 主が閾値より長く子のタブを離れてから同じタブで追加の作業を頼もうとしたときにワークツリーが片付いていること（`reap` の確認が未コミットの変更とマージに入っていない commit を残す）／時計のずれで最後の活動が未来になり推定されないこと／記録先が閉じたあと、子が 1 回のツール呼び出しを閾値より長く動かしている（その間トランスクリプトに行が増えない）ときに推定されること（`reap` の確認は変えないので、失うのは後片付けの途中だけ）。この要件は、ここに挙げていない穴が見つかるたびに塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 閉じて動きの止まった子は完了と推定される
 - **WHEN** 子 11 の記録が `status` `running`・`stop` 空、トランスクリプトが 1 本で最後の活動が 40 分前、子 issue が `closed`・`completed` の状態で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-done 11` を実行する
@@ -30,9 +30,17 @@
 - **WHEN** 最後の活動が 10 分前で、ほかは直前の Scenario と同じ状態で `epic-dispatch.sh wait --interval 0 --timeout 0 --watch-done 11` を実行する
 - **THEN** stdout は `timeout`、exit 2 で、記録の `status` は `running` のまま、`gh` は呼ばれない
 
-#### Scenario: トランスクリプトが 0 本か 2 本以上なら推定しない
-- **WHEN** 子 11 のトランスクリプトの置き場に `.jsonl` が無い、または 2 本ある状態で、ほかは推定される条件のまま `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+#### Scenario: トランスクリプトが 0 本なら推定しない
+- **WHEN** 子 11 のトランスクリプトの置き場に `.jsonl` が無い状態で、ほかは推定される条件のまま `wait --interval 0 --timeout 0 --watch-done 11` を実行する
 - **THEN** stdout は `timeout`、記録の `status` は `running` のまま、`gh` は呼ばれない
+
+#### Scenario: トランスクリプトが 2 本なら全部を通した最後の活動で決める
+- **WHEN** 子 11 のトランスクリプトの置き場に `.jsonl` が 2 本あり、片方の最後の活動が 40 分前でもう片方が 10 分前の状態で `wait --interval 0 --timeout 0 --watch-done 11` を実行し、別に 2 本とも最後の活動が 40 分前より古い状態で `wait --interval 0 --timeout 60 --watch-done 11` を実行する
+- **THEN** 前者は stdout が `timeout`、記録の `status` は `running` のまま、`gh` は呼ばれない。後者は stdout が `done 11` で、`done_inferred_last_activity` は 2 本を通した最大の `timestamp` である
+
+#### Scenario: 同じ子が位置引数と --watch-done の両方にあれば closed と done の 2 行を出す
+- **WHEN** 子 11 を位置引数と `--watch-done` の両方に渡し、推定される条件のまま `wait --interval 0 --timeout 60 --watch-done 11 11` を実行する
+- **THEN** stdout は `closed 11` と `done 11` の 2 行をこの順に出して exit 0 で、記録の `status` は `done` である
 
 #### Scenario: waiting の子と止まった印の子は推定しない
 - **WHEN** 子 11 の記録の `status` が `waiting`、または `stop` が `stopped` か `stopped-seen` で、ほかは推定される条件のまま `wait --interval 0 --timeout 0 --watch-done 11` を実行する
@@ -50,15 +58,15 @@
 
 develop の `SKILL.md`「エピックの扱い」→「回し方」の別セッション方式の手順は、次を書かなければならない（MUST）。
 
-- 手順 2 の `--watch-done` の説明に、`wait` は片付け待ちの子のうち、完了の印の無いまま記録先が `completed` で閉じ、子のトランスクリプトの最後の活動が `EPIC_DISPATCH_DONE_IDLE_SEC`（既定 1800 秒）以上前の子を、LLM なしで完了と推定して `done <N>` を返すこと（`status` が `waiting` の子・止まった印の子・トランスクリプトが 1 本でない子は推定しない）
-- 手順 3 に、推定の `done` も子が付けた `done` と同じに `reap` を 1 回呼んで扱い、区別しないこと（片付けの安全確認は `reap` が行う）
+- 手順 2 の `--watch-done` の説明に、`wait` は片付け待ちの子のうち、完了の印の無いまま記録先が `completed` で閉じ、子のトランスクリプトの最後の活動が `EPIC_DISPATCH_DONE_IDLE_SEC`（既定 1800 秒）以上前の子を、LLM なしで完了と推定して `done <N>` を返すこと（`status` が `waiting` の子・止まった印の子・トランスクリプトが無い子は推定しない）
+- 手順 3 に、推定の `done` も子が付けた `done` と同じに `reap` を 1 回呼んで扱い、区別しないこと（片付けの安全確認は `reap` が行う）。同じ子が `closed` と `done` の両方の行に出たら、手順 4 を処理してから手順 3 の `reap` を呼ぶこと
 - 手順 4 に、`notify-closed` が `skipped <N> not-stopped` を返した子（止まった印を付けずに見張りを終えた子。主に直接マージを頼んだ子など）は、片付け待ちとして `--watch-done` に渡しておけば、子のセッションが止まって閾値を過ぎたあとの `wait` が完了と推定すること。主に子のステータスを変えるよう頼まない（MUST NOT）
 
 `plugins/dev-workflow/tests/epic-dispatch.bats`（または `tests/develop-skill.bats`）は、手順 2〜4 の文面に `EPIC_DISPATCH_DONE_IDLE_SEC` と推定の扱いがあることを確かめなければならない（MUST）。
 
 #### Scenario: 回し方に推定の扱いが書かれている
 - **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 2〜4 を読む
-- **THEN** 手順 2 に `wait` が完了を推定する条件と `EPIC_DISPATCH_DONE_IDLE_SEC` が、手順 3 に推定の `done` も同じに `reap` することが、手順 4 に `skipped <N> not-stopped` の子は `--watch-done` の推定で片付くことが書かれている
+- **THEN** 手順 2 に `wait` が完了を推定する条件と `EPIC_DISPATCH_DONE_IDLE_SEC` が、手順 3 に推定の `done` も同じに `reap` することと、同じ子が `closed` と `done` の両方に出たら手順 4 を処理してから `reap` を呼ぶことが、手順 4 に `skipped <N> not-stopped` の子は `--watch-done` の推定で片付くことが書かれている
 
 ### Requirement: エピックの子は主にマージを頼むとき、マージ後の連絡を頼まない
 

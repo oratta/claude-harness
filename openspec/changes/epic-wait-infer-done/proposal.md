@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- `epic-dispatch.sh wait --watch-done <N>` が、完了の印の無いまま記録先が閉じた子の完了を推定する。条件は、記録の `status` が `running`・`stop` が `stopped` / `stopped-seen` でない・子のトランスクリプトがちょうど 1 本で最後の活動が新しい環境変数 `EPIC_DISPATCH_DONE_IDLE_SEC`（既定 1800 秒）以上前・子 issue が `closed` で `state_reason` が `completed`、のすべて。満たせば排他つきで `status` を `done` にし、推定の項目（`done_inferred_at`・`done_inferred_last_activity`）を記録に足し、Orca の印へ写して `done <N>` を返す（LLM なし）
+- `epic-dispatch.sh wait --watch-done <N>` が、完了の印の無いまま記録先が閉じた子の完了を推定する。条件は、記録の `status` が `running`・`stop` が `stopped` / `stopped-seen` でない・子のトランスクリプトが 1 本以上あり全ファイルを通した最後の活動が新しい環境変数 `EPIC_DISPATCH_DONE_IDLE_SEC`（既定 1800 秒）以上前・子 issue が `closed` で `state_reason` が `completed`、のすべて。満たせば排他つきで `status` を `done` にし、推定の項目（`done_inferred_at`・`done_inferred_last_activity`）を記録に足し、Orca の印へ写して `done <N>` を返す（LLM なし）
 - 片付けの安全確認（git がきれい・`LLM/` が無い・マージ済み PR の HEAD と一致など）は今の `reap` がそのまま行う。`reap` は変えない
 - エピックの子（`route` が `nested`）が主にマージを頼むとき、「マージしたら教えてください」と頼まず、「マージしたらこのタブは放っておいてよい。記録先が閉じれば親が完了にしてワークツリーを片付ける」と書く（`references/ci-watch.md`「`ready` を受けたあと」と develop SKILL.md「ループの終わり」）
 - develop SKILL.md「回し方」の手順 2〜4 に、`--watch-done` の推定と、推定の `done` も子の付けた `done` と同じに `reap` することを書く
@@ -25,6 +25,7 @@
 ## Impact
 
 - `plugins/dev-workflow/scripts/epic-dispatch.sh`（`cmd_wait`・トランスクリプトの解決を `decide_relaunch` と共有する関数・冒頭のコメント）
+- `plugins/dev-workflow/scripts/epic-state.sh`（冒頭のコメントの項目の列に `done_inferred_at`・`done_inferred_last_activity`）
 - `plugins/dev-workflow/skills/develop/SKILL.md`（「ループの終わり」・「回し方」の手順 2〜4）
 - `plugins/dev-workflow/references/ci-watch.md`（「`ready` を受けたあと」）
 - `plugins/dev-workflow/tests/epic-dispatch.bats`
