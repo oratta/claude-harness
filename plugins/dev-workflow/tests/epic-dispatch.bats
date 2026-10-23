@@ -3644,7 +3644,7 @@ orca_cmd_scripts() {
 
 @test "skill: an epic child writes the estimate when stopped at the PR token cap and takes the parent's raise without re-asking" {
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
-  printf '%s\n' "$r" | grep -qF '`PR トークン上限（合計 <合計> / 上限 <上限>）`'
+  printf '%s\n' "$r" | grep -qF '`PR トークン上限（合計 <合計> / 上限 <上限>）: 続けるか、範囲外として閉じるか`'
   printf '%s\n' "$r" | grep -qF '`終わるまでの見込み: あと約 <残り>（合計の見込み <見込み>）`'
   printf '%s\n' "$r" | grep -qF '`続けるべきか:'
   printf '%s\n' "$r" | grep -qF '`次に絞る範囲:'
