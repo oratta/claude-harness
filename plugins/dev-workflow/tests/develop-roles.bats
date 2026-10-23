@@ -1104,9 +1104,9 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -qF '`openspec/changes/archive/` へ移り、元の `openspec/changes/<change-name>/` が無いことを確かめ' "$F" || return 1
 }
 
-# W の指示書に旧規則の「2 周キャップ」を残さない。周回は develop SKILL.md の節が正本（#752）。
-@test "worker/spec.md points to the SKILL.md round rule, not a 2-round cap (#752)" {
+# W の指示書に旧規則の「2 周キャップ」を残さない。周回は develop の references/fix-check.md の節が正本（#752。#1222 で SKILL.md から移した）。
+@test "worker/spec.md points to the fix-check round rule, not a 2-round cap (#752, #1222)" {
   if grep -qF '2 周キャップ' "$W_SPEC"; then return 1; fi
-  grep -qF 'レビューの周を主に聞かずに続ける（直し方の判定）' "$W_SPEC" || return 1
-  grep -qxF '## レビューの周を主に聞かずに続ける（直し方の判定）' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -F 'レビューの周を主に聞かずに続ける（直し方の判定）' "$W_SPEC" | grep -qF 'references/fix-check.md' || return 1
+  grep -qxF '## レビューの周を主に聞かずに続ける（直し方の判定）' "${PLUGIN_DIR}/skills/develop/references/fix-check.md"
 }
