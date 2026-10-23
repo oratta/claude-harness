@@ -91,7 +91,9 @@
 #   status が running・stop が stopped / stopped-seen でない・記録の worktree のトランスクリプト（下の
 #   wait --resolve と同じ置き場の *.jsonl）が 1 本以上あり、全ファイルを通して timestamp を持つ行（種類を問わない）の
 #   最大値が EPIC_DISPATCH_DONE_IDLE_SEC（秒・既定 1800）以上前・子 issue（位置引数の子と同じ呼び先）が closed で
-#   state_reason が completed、のすべて。gh はほかの 4 つを満たした子にだけ 1 回呼び、その失敗は推定せず
+#   state_reason が completed・その closed_at から EPIC_DISPATCH_DONE_IDLE_SEC 以上たった、の 6 つすべて。
+#   サブエージェントのトランスクリプト（<置き場>/<セッション>/subagents/*.jsonl）の行も最後の活動に数える。
+#   gh（state・state_reason・closed_at を 1 回で読む）はほかの 4 つを満たした子にだけ 1 回呼び、その失敗は推定せず
 #   失敗したポーリングにも数えない。満たせば排他の中で running と止まった印でないことを確かめ直して status を
 #   done にし、done_inferred_at（UTC の時刻）と done_inferred_last_activity（最後の活動の timestamp）を足して
 #   Orca の印へ写し、stderr に `inferred done <N>: ...` を出して、子が付けた done と同じ `done <N>...` の行に入れる。
@@ -175,8 +177,8 @@
 #   EPIC_DISPATCH_MEMINFO_FILE（テスト用。既定 /proc/meminfo）の MemTotal の kB）を 4 で割って切り捨て、最小 1。
 #   どちらも読めなければ 2 で、stderr に `physical memory not readable`。launch も同じ値を使う
 # wait --resolve が通す返事は、送る前に references/reply-after-idle.md の表で起動し直すかを決める:
-#   子のトランスクリプト（${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl、
-#   ちょうど 1 本）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前で、
+#   子のトランスクリプト（${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl、
+#   ちょうど 1 本。置き場の求め方は wait --watch-done の完了の推定と共有する）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前で、
 #   その assistant より後に compact_boundary が無く、subagent-context.sh --file の context_tokens が
 #   EPIC_DISPATCH_RELAUNCH_MIN_TOKENS（既定 150000）以上のときだけ --relaunch 相当。読めなければそのまま送る。
 #   2 つの変数が空か数字でなければ wait は使い方を出して exit 1。
@@ -1016,7 +1018,7 @@ repost_hint() {
 # 子のワークツリー（<パス>）のトランスクリプトの置き場のディレクトリを出す。
 # wait --resolve の起動し直しの判定と、wait --watch-done の完了の推定が使う
 transcript_dir() {
-  printf '%s/%s' "${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}" "$(printf '%s' "$1" | sed 's/[^A-Za-z0-9]/-/g')"
+  printf '%s/%s' "${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}" "$(printf '%s' "$1" | sed 's/[^A-Za-z0-9]/-/g')"
 }
 
 # 通す返事を起動し直して送るかを決める（<子のワークツリーのパス>）。起動し直すなら 1、そのまま送るなら 0 を出す。
@@ -1062,15 +1064,17 @@ PY
   [ "$ctx" -ge "$min" ] && echo 1 || echo 0
 }
 
-# トランスクリプトの置き場（<ディレクトリ>）の全部の .jsonl を通して、timestamp を持つ行（種類を問わない）の
-# 最大値を「<epoch 秒> <元の文字列>」で出す。.jsonl が無い・読めない・timestamp が 1 つも無い・python3 が無ければ 1
+# トランスクリプトの置き場（<ディレクトリ>）の全部の .jsonl と、そのセッションのサブエージェントの
+# トランスクリプト（<ディレクトリ>/<セッション>/subagents/*.jsonl）を通して、timestamp を持つ行（種類を問わない）の
+# 最大値を「<epoch 秒> <元の文字列>」で出す。置き場の直下に .jsonl が無い・読めない・timestamp が 1 つも無い・
+# python3 が無ければ 1
 last_activity() {
   ls "$1"/*.jsonl >/dev/null 2>&1 || return 1
   command -v python3 >/dev/null 2>&1 || return 1
   DIR="$1" python3 - <<'PY' 2>/dev/null
 import datetime, glob, json, os
 best = None
-for p in glob.glob(os.path.join(os.environ["DIR"], "*.jsonl")):
+for p in glob.glob(os.path.join(os.environ["DIR"], "*.jsonl")) + glob.glob(os.path.join(os.environ["DIR"], "*", "subagents", "*.jsonl")):
     with open(p, encoding="utf-8") as f:
         for line in f:
             try:
@@ -1095,12 +1099,13 @@ PY
 
 # wait --watch-done: 完了の印の無い子 1 件の完了を推定する（<子の引数> <記録のパス>）。
 # 記録が running・止まった印でない・トランスクリプトの最後の活動が EPIC_DISPATCH_DONE_IDLE_SEC 秒以上前・
-# 子 issue が completed で閉じた、のすべてなら、排他の中で確かめ直して done と推定の項目を書く。
+# 子 issue が completed で閉じた・閉じてから EPIC_DISPATCH_DONE_IDLE_SEC 秒以上たった、のすべてなら、
+# 排他の中で確かめ直して done と推定の項目を書く。
 # gh はローカルの条件を満たした子にだけ呼ぶ。gh の失敗と確かめ直しの外れは推定しない（失敗に数えない）。
 # 戻り値 0 = 推定して書いた / 1 = 推定しない / 3 = 書けなかった（失敗したポーリングに数える）。
 # gh と es_modify の stderr は呼び出し側（cmd_wait）の $errf に足す
 infer_done() {
-  local n="$1" f="$2" w facts last ts st
+  local n="$1" f="$2" w facts last ts st state reason age
   [ "$(es_get "$f" status)" = running ] || return 1
   case "$(es_get "$f" stop)" in stopped|stopped-seen) return 1 ;; esac
   w="$(es_get "$f" worktree)"
@@ -1109,8 +1114,16 @@ infer_done() {
   last="${facts%% *}"; ts="${facts#* }"
   is_num "$last" || return 1
   [ $(( $(date +%s) - last )) -ge "${EPIC_DISPATCH_DONE_IDLE_SEC-1800}" ] || return 1
-  st="$(gh api "$(issue_api "$n" "$f")" --jq '.state + " " + (.state_reason // "")' 2>>"$errf")" || return 1
-  [ "$st" = "closed completed" ] || return 1
+  # 3 つ目は閉じてからの秒数（closed_at が無ければ空）
+  st="$(gh api "$(issue_api "$n" "$f")" \
+    --jq '[.state, (.state_reason // ""), (if .closed_at then (now - (.closed_at | fromdateiso8601) | floor | tostring) else "" end)] | join(" ")' \
+    2>>"$errf")" || return 1
+  read -r state reason age <<EOF_ST
+$st
+EOF_ST
+  [ "$state $reason" = "closed completed" ] || return 1
+  is_num "$age" || return 1
+  [ "$age" -ge "${EPIC_DISPATCH_DONE_IDLE_SEC-1800}" ] || return 1
   es_modify "$f" 'if .status == "running" and .stop != "stopped" and .stop != "stopped-seen"
     then .status = "done" | .done_inferred_at = $now | .done_inferred_last_activity = $ts else empty end' \
     --arg ts "$ts" >/dev/null 2>>"$errf"

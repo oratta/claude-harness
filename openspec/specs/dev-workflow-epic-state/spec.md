@@ -598,6 +598,10 @@ Orca の部品を使うとき、`epic-dispatch.sh` の stdout・exit code・stde
 - **WHEN** 子 11 の記録が `status` `running`・`stop` 空・`extra: 1` を持ち、推定の条件を満たした状態で `wait --interval 0 --timeout 60 --watch-done 11` を実行する
 - **THEN** 記録の `status` は `done`、`done_inferred_at` は UTC の形、`done_inferred_last_activity` はトランスクリプトの最後の `timestamp` で、`extra` と `schema` 1 は残り、`.lock` も一時ファイルも残っていない
 
+#### Scenario: 確かめ直しで外れたら書かない
+- **WHEN** 推定の条件を満たした子 11 で、推定の `gh` の呼び出しの間に記録の `status` が `waiting` に書き換わる状態で `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、記録の `status` は `waiting` のまま `done_inferred_at` は無く、`orca worktree set` は呼ばれない
+
 #### Scenario: 残ったロックがあると推定は書かずに失敗したポーリングに数える
 - **WHEN** 子 11 の記録の `.lock` ディレクトリを先に作り、`EPIC_STATE_LOCK_TIMEOUT=0` で、推定の条件を満たした状態で `wait --interval 0 --timeout 60 --watch-done 11` を実行する
 - **THEN** 記録の `status` は `running` のまま、3 回のポーリングのあと stdout は `error workspaces` で exit 1 である

@@ -2017,7 +2017,7 @@ infer_ready() {
   put_record 11 extra=1
   put_activity 50
   put_activity 40
-  gh_seq 11 "closed completed"
+  gh_seq 11 "closed completed 2400"
 }
 
 @test "wait infer: a closed, idle child without the done mark is inferred done" {
@@ -2074,7 +2074,7 @@ infer_ready() {
   make_stub orca
   put_record 11
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
-  gh_seq 11 "closed completed"
+  gh_seq 11 "closed completed 2400"
   run dispatch wait --interval 0 --timeout 0 --watch-done 11
   [ "$status" -eq 2 ]
   [ "$output" = "timeout" ]
@@ -2130,7 +2130,7 @@ infer_ready() {
 
 @test "wait infer: an open issue or one closed as not_planned is not inferred" {
   local v
-  for v in "open " "closed not_planned"; do
+  for v in "open " "closed not_planned 2400"; do
     infer_ready
     gh_seq 11 "$v"
     rm -f "$STUB_CFG/ghcount_11"
@@ -2141,6 +2141,68 @@ infer_ready() {
   done
 }
 
+@test "wait infer: an issue closed less than the threshold ago or without closed_at is not inferred" {
+  local v
+  for v in "closed completed 60" "closed completed "; do
+    infer_ready
+    gh_seq 11 "$v"
+    rm -f "$STUB_CFG/ghcount_11"
+    run dispatch wait --interval 0 --timeout 0 --watch-done 11
+    [ "$status" -eq 2 ] || { echo "[$v]: status=$status output=$output"; false; }
+    [ "$output" = "timeout" ]
+    [ "$(rec_get 11 status)" = running ]
+  done
+  # 閾値を閉じてからの秒数より短くすれば推定する
+  gh_seq 11 "closed completed 60"
+  rm -f "$STUB_CFG/ghcount_11"
+  EPIC_DISPATCH_DONE_IDLE_SEC=30 run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$output" = "done 11" ]
+}
+
+@test "wait infer: the inference reads closed_at with state and state_reason in one gh call" {
+  infer_ready
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$output" = "done 11" ]
+  [ "$(calls '^gh ')" -eq 1 ]
+  grep -F 'gh api' "$STUB_LOG" | grep -F 'state_reason' | grep -qF 'closed_at'
+}
+
+@test "wait infer: a newer line only in a subagent transcript is not inferred" {
+  infer_ready
+  local dir="$BATS_TEST_TMPDIR/projects/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  mkdir -p "$dir/s1/subagents"
+  ts="$(python3 -c "import datetime;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
+  printf '{"type":"assistant","timestamp":"%s"}\n' "$ts" > "$dir/s1/subagents/agent-a1.jsonl"
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "timeout" ]
+  [ "$(rec_get 11 status)" = running ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "wait infer: a child whose record changes before the write is not inferred" {
+  infer_ready
+  # 推定の gh の呼び出し（子 11 の 1 回目）の間に子が waiting の印を付けた
+  on_poll 11 1 status=waiting
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout" ]
+  [ "$(rec_get 11 status)" = waiting ]
+  [ "$(rec_get 11 done_inferred_at)" = null ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ ! -e "$(rec_of 1122 11).lock" ]
+}
+
+@test "wait infer: without CLAUDE_PROJECTS_DIR the transcripts are read under CLAUDE_CONFIG_DIR" {
+  infer_ready
+  mkdir -p "$BATS_TEST_TMPDIR/cfg"
+  mv "$BATS_TEST_TMPDIR/projects" "$BATS_TEST_TMPDIR/cfg/projects"
+  unset CLAUDE_PROJECTS_DIR
+  CLAUDE_CONFIG_DIR="$BATS_TEST_TMPDIR/cfg" run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "done 11" ]
+}
+
 @test "wait infer: a failing gh for the inference is neither inferred nor counted as a failed poll" {
   infer_ready
   gh_seq 11 FAIL
@@ -2149,7 +2211,7 @@ infer_ready() {
   [ "$output" = "timeout" ]
   [ "$(rec_get 11 status)" = running ]
   # 4 回続けて失敗しても error で終わらず、次に読めたポーリングで推定する
-  gh_seq 11 FAIL FAIL FAIL FAIL "closed completed"
+  gh_seq 11 FAIL FAIL FAIL FAIL "closed completed 2400"
   rm -f "$STUB_CFG/ghcount_11"
   run dispatch wait --interval 0 --timeout 60 --watch-done 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
@@ -2201,7 +2263,7 @@ infer_ready() {
 
 @test "wait infer: the same child as a positional argument and --watch-done prints closed then done" {
   infer_ready
-  gh_seq 11 closed "closed completed"
+  gh_seq 11 closed "closed completed 2400"
   run dispatch wait --interval 0 --timeout 60 --watch-done 11 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
   [ "${#lines[@]}" -eq 2 ]
@@ -4300,6 +4362,7 @@ nothing_sent() {
   l4="$(printf '%s\n' "$r" | grep -E '^4\. ')"
   printf '%s\n' "$l2" | grep -F 'EPIC_DISPATCH_DONE_IDLE_SEC' | grep -F '1800' | grep -qF '推定'
   printf '%s\n' "$l2" | grep -F '`waiting`' | grep -qF '止まった印'
+  printf '%s\n' "$l2" | grep -F '閉じてから' | grep -qF 'サブエージェント'
   printf '%s\n' "$l3" | grep -F '推定の `done`' | grep -qF '`reap`'
   printf '%s\n' "$l3" | grep -F '`closed` と `done` の両方' | grep -qF '4 を処理してから'
   printf '%s\n' "$l4" | grep -F '`skipped <N> not-stopped`' | grep -qF '推定'
@@ -4324,6 +4387,8 @@ nothing_sent() {
   printf '%s\n' "$l" | grep -F -- '--until-merged' | grep -qF '`timeout`'
   printf '%s\n' "$l" | grep -qF 'wait --watch-done'
   grep -F '| `timeout` |' "$PLUGIN_DIR/references/ci-watch.md" | grep -qF 'エピックの子'
+  # 1 と 3 の本文からもその段落を指す
+  [ "$(printf '%s\n' "$c" | grep -E '^(1|3)\. ' | grep -cF 'エピックの子のセッションの頼む文面は、1〜3 のあとの段落に従う')" -eq 2 ]
 }
 
 @test "skill: Orca route step 4 calls notify-closed before launching the unblocked children" {
