@@ -3663,11 +3663,16 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -qF 'ほかの 8 条件'
   printf '%s\n' "$p" | grep -F '聖域' | grep -F '破壊的' | grep -F 'リスクの許容' | grep -qF '目的・原則が推奨を決めていても通さない'
   printf '%s\n' "$p" | grep -F '1 つに決まらない' | grep -qF '迷ったとき'
+  # リスクは表の「その子のブランチの中に閉じるもの」と揃え、解釈の揺れは推奨が変わるときに限る（#1254 のゲートの指摘）
+  printf '%s\n' "$p" | grep -qF '許容と書かれておらず、その子のブランチの中にも閉じないリスク'
+  printf '%s\n' "$p" | grep -qF '原則の語が 2 通り以上に読め、読み方で推奨が変わる'
+  run grep -F '解釈が要る' "$f"; [ "$status" -eq 1 ]
+  run grep -F '許容と書かれていないリスク' "$f"; [ "$status" -eq 1 ]
   printf '%s\n' "$p" | grep -F '推し量った意図' | grep -qF '根拠にしない'
   # 通る例: エピック本文の原則が推奨をそのまま決めていた型（固有名を出さない）
   grep -F 'オーナーと客の環境で仕組みを分けない' "$f" | grep -qF '推奨をそのまま決めていた'
   # 通らない例: 同じ型でもリスクの許容や聖域に触れるもの
-  grep -F '同じ型でも' "$f" | grep -F 'リスク' | grep -qF '聖域'
+  grep -F '同じ型でも' "$f" | grep -F '許容と書かれておらず、その子のブランチの中にも閉じないリスク' | grep -qF '聖域'
   # 公開版に作業先のリポジトリ名を書かない（語は公開版の辞書から読む）
   words="$(grep -v -e '^#' -e '^$' "$PLUGIN_DIR/../../tests/public-names/dict/flatmate.txt")"
   [ -n "$words" ]
