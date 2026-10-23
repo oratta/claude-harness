@@ -8,7 +8,7 @@
 #   orca: current_exit / current_json / list_exit / list_json（list_json_<回数> があればその回だけ
 #         それを返す。回数は listcount）/ set_exit / set_comment_exit（--comment 付きの set だけの終了コード。既定は set_exit。
 #         --comment が成功したら current_json と list_json* の同じ path の comment をその値に書き換える）
-#         / close_exit / rm_exit / rm_err（rm の stderr）/ create_fail_<N>
+#         / close_mkdir（terminal close が作るディレクトリのパス）/ close_exit / rm_exit / rm_err（rm の stderr）/ create_fail_<N>
 #         / tlist_exit / tlist_json_<N>（terminal list。<N> は --worktree の path の issue-<N>。既定は端末 0 個）
 #           / tlist_after_<N>（term-<N> に terminal send が届いたあとの terminal list。無ければ tlist_json_<N> のまま）
 #         / create_json_<N>（既定は result.worktree.path が /work/issue-<N> の JSON）
@@ -133,6 +133,7 @@ case "$1 $2" in
   "terminal close")
     cc=$(( $(cat "$STUB_CFG/closecount" 2>/dev/null || echo 0) + 1 ))
     echo "$cc" > "$STUB_CFG/closecount"
+    if [ -e "$STUB_CFG/close_mkdir" ]; then mkdir -p "$(cat "$STUB_CFG/close_mkdir")"; fi
     if [ -e "$STUB_CFG/close_exit_$cc" ]; then exit "$(cat "$STUB_CFG/close_exit_$cc")"; fi
     exit "$(cat "$STUB_CFG/close_exit" 2>/dev/null || echo 0)" ;;
   "terminal list")
@@ -2651,6 +2652,19 @@ infer_ready() {
     [ "$(calls '^orca worktree rm')" -eq 0 ]
     [ "$(calls '^git branch -D')" -eq 0 ]
   done
+}
+
+@test "reap: LLM/ created while the terminals close keeps the worktree (no rm, no branch delete)" {
+  reap_ready
+  p="$BATS_TEST_TMPDIR/work/issue-11"
+  echo "$p/LLM" > "$STUB_CFG/close_mkdir"
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  run dispatch reap 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "kept 11 llm-logs" ]
+  [ "$(calls '^orca terminal close')" -eq 1 ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
 }
 
 @test "reap: a failing git status and a record without a branch are kept" {
