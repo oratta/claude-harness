@@ -170,15 +170,29 @@ wait_for_log() { # <pattern> <seconds>
   [ "$status" -ne 0 ]
 }
 
-@test "readable: defined as having at least one NAME= word" {
-  run reaper_fn srp_env_readable "/bin/sh -c esbuild --service"
-  [ "$status" -ne 0 ]
-  run reaper_fn srp_env_readable "node server.js PATH=/bin"
+@test "readable: defined as having at least one NAME= word (decided inside srp_select_targets)" {
+  mkdir -p "$FIX"
+  cat >"$FIX/ps-env.txt" <<EOF
+  400     1 node root.js CLAUDE_SESSION_PROC_MARK=${M} PATH=/bin
+  401   400 /bin/sh -c esbuild --service
+  402   400 node server.js PATH=/bin
+  403   400 /bin/sh -c FOO=1 cmd
+  404   400 tool 1=2 a.b=c
+EOF
+  cat >"$FIX/ps-comm.txt" <<'EOF'
+  400 node
+  401 /bin/sh
+  402 node
+  403 /bin/sh
+  404 tool
+EOF
+  export SESSION_REAPER_PS_FIXTURE_DIR="$FIX"
+  run reaper_fn srp_select_targets "$M" ""
   [ "$status" -eq 0 ]
-  run reaper_fn srp_env_readable "/bin/sh -c FOO=1 cmd"
-  [ "$status" -eq 0 ]
-  run reaper_fn srp_env_readable "tool 1=2 a.b=c"
-  [ "$status" -ne 0 ]
+  # 401: NAME= の語なし -> 読めない -> 対象 / 402: PATH=/bin -> 読める -> 外れる
+  # 403: FOO=1 -> 読める -> 外れる / 404: 1=2 と a.b=c は NAME= の形ではない -> 読めない -> 対象
+  pids=$(printf '%s\n' "$output" | awk '{print $1}' | sort -n | tr '\n' ' ')
+  [ "$pids" = "400 401 404 " ]
 }
 
 @test "ps: live listing is limited to the current user's processes (-U uid) with -E" {
