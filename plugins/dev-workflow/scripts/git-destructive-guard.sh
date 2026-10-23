@@ -163,9 +163,10 @@ HEREDOCS = [0]  # 読んだヒアドキュメントの数（置換の中にヒ�
 
 
 def charge(count):
+    # 加算の直後に上限を見る（入れ子の複写のように 1 回の加算が大きい形で、次の加算まで気づかずに進まない）
+    WORK[0] += count
     if WORK[0] > WORK_LIMIT:
         raise TooMuch()
-    WORK[0] += count
 
 
 # 字句読み（spec destructive-git-hook「コマンド文字列をシェルと同じ単位で読む」）。
@@ -262,6 +263,7 @@ def double_quoted(s, i, subs, cmds, term='"', memo=None):
             end, plain = yield subst(s, i, subs, cmds, memo)
             if plain:
                 spans.append((pos, pos + end - i))
+            charge(end - i)  # 二重引用符の中の置換を文字列に複写する分
             out.append(s[i:end])
             pos += end - i
             i = end
@@ -343,6 +345,7 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
         if not st["has"]:
             return
         w = "".join(word)
+        charge(len(w))  # 語を 1 つの文字列につなぐ分の複写
         word.clear()
         if spans:
             w = Word(w)
@@ -397,6 +400,7 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
             end, plain = yield subst(s, i, subs, cmds, memo)
             if plain:
                 spans.append((st["len"], st["len"] + end - i))
+            charge(end - i)  # 置換の文字列を語に複写する分（入れ子の段ごとに外側の長さ分の複写が起きる）
             add(s[i:end])
             i = end
             continue

@@ -309,6 +309,19 @@ NINE_KINDS=(
   done
 }
 
+@test "work limit: a 100000-deep substitution that copies its text per level is stopped with ask within 10 seconds (#872)" {
+  # 入れ子の段ごとに外側の長さ分の文字列を複写する形。複写の分が仕事量に数えられないと、10 秒かかって上限に届かない
+  local n=100000 open close start end
+  open="$(printf '$(%.0s' $(seq "$n"))"
+  close="$(printf ')%.0s' $(seq "$n"))"
+  start=$SECONDS
+  call "echo ${open}git reset --hard${close}"
+  end=$SECONDS
+  [ "$status" -eq 0 ]
+  [ "$(decision)" = "ask" ] || { echo "not ask: [${output:0:300}]"; return 1; }
+  [ $((end - start)) -le 10 ] || { echo "took $((end - start)) seconds"; return 1; }
+}
+
 @test "shell syntax: quoted -c / eval arguments are kept at any nesting depth" {
   # 字句読みに置き換える前から止めていた形（PR #852 ゲート一周目 R-1）。入れ子が深くても、
   # bash -c / eval に渡した引用つきのコマンド文字列を空白で割って失わない
