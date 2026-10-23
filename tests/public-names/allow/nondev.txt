@@ -1,0 +1,50 @@
+# dev-workflow 以外の公開版の部品（nondev の呼び出し）の恒久の許可。書式は <path>:<語>:=<行に含まれる固定の文字列>
+# 基準は各行の直前の # のコメントに書く: 出典 = 出典や経緯としてだけ名前を挙げる行、互換 = 互換のために残す旧名の読み取り
+# 出典
+rules/README.md:flatmate:=経緯（flatmate#599 / #608）
+# 出典
+scripts/sync.sh:flatmate:=なぜ存在するか（flatmate#362）
+# 出典
+plugins/infra/agents/infra-phase-1-hearing.md:suimei:=2026-07 に suimei で
+# 出典
+plugins/infra/skills/infra-setup/SKILL.md:suimei:=2026-07 に suimei で Actions free 枠
+# 出典
+plugins/infra/skills/infra-setup/SKILL.md:flatmate:=flatmate で 2026-10 に実発生
+# 出典
+plugins/infra/templates/workflows/ci.yml.template:suimei:=2026-07 に suimei で free 枠
+# 出典
+plugins/infra/templates/workflows/weekly-full.yml.template:suimei:=2026-07-25 に suimei で実発生
+# 互換
+plugins/statusline/README.md:flatmate:=旧名の `FLATMATE_RATE_SHARE_DIR`（互換。主は
+# 互換
+plugins/statusline/scripts/statusline.sh:flatmate:=# Order: CLAUDE_RATE_SHARE_DIR, FLATMATE_RATE_SHARE_DIR
+# 互換
+plugins/statusline/scripts/statusline.sh:flatmate:=# The FLATMATE_* names are the old names
+# 互換
+plugins/statusline/scripts/statusline.sh:flatmate:=elif [ "${FLATMATE_RATE_SHARE_DIR+x}" ]
+# 互換
+plugins/statusline/scripts/statusline.sh:flatmate:=dir="$FLATMATE_RATE_SHARE_DIR"; have_dir=1  # old name, compatibility
+# 互換
+plugins/statusline/scripts/statusline.sh:flatmate:="${FLATMATE_RATE_SHARE_CONF:-$HOME/.claude/flatmate-rate-share}"
+# 出典
+plugins/statusline/scripts/statusline.sh:flatmate:=flatmate#605 と同じ誤り
+# 出典
+plugins/worktree/.claude-plugin/plugin.json:flatmate:=flatmate#320: find -path
+# 出典
+plugins/worktree/references/wt-clean-orphan-detection.md:flatmate:=2026-08-10 に flatmate リポで全件実行したとき
+# 出典
+plugins/worktree/references/wt-clean-verification.md:flatmate:=2026-08-10 に flatmate で、PR が OPEN
+# 出典
+plugins/worktree/scripts/wt-setup.sh:flatmate:=flatmate#320
+# 出典
+plugins/worktree/scripts/wt-setup.sh:suimei:=実例: suimei の .env.local.example
+# 出典（大文字小文字を区別しない照合で新しく当たった行）
+plugins/worktree/scripts/wt-setup.sh:uranai:=Uranai で実証
+# 出典（大文字小文字を区別しない照合で新しく当たった行）
+plugins/worktree/skills/wt-setup/SKILL.md:uranai:=Uranai で実証
+# 出典
+plugins/worktree/skills/wt-clean/SKILL.md:flatmate:=2026-08-01 に flatmate リポで、壁打ち
+# 出典
+plugins/worktree/skills/wt-clean/SKILL.md:flatmate:=2026-08-10 に flatmate で実走したとき
+# 出典
+plugins/worktree/skills/wt-clean/SKILL.md:shukan:=2026-08-07 に shukan-dev で実走したところ
