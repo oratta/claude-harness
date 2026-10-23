@@ -15,7 +15,7 @@
 6. `tickets` が null か、`count` が 0 以上の整数のオブジェクトで、その `earliest_expiry` が null・欠落、または読めて現在より後
 7. Claude で `rocket` が null でないとき、`capacity_pct` が 100 より大きい数値
 
-1 つでも外れたアカウントは、この要件を足す前の描き方で描かなければならない（SHALL）。使える項目だけを拾って一部を描いてはならない（MUST NOT）。どのアカウントの値も使えないとき、レートリミット表示はこの要件を足す前とバイト単位で同一でなければならない（SHALL）。
+1 つでも外れたアカウントは、この要件を足す前の描き方で描かなければならない（SHALL。ただし要件「ロケットモードのための列を空ける」の空白は除く）。使える項目だけを拾って一部を描いてはならない（MUST NOT）。どのアカウントの値も使えないとき、レートリミット表示はこの要件を足す前とバイト単位で同一でなければならない（SHALL。ただし 1 スロットで Codex の行が出るときの Claude の行の名前の列（要件「Codex の行の名前は Codex とアカウント名にする」）は除く）。
 
 statusline が読む項目は `schema`・`computed_at`・各要素の `provider`・`account`・`status`・`weekly_reset_at`・`rocket`・`tickets`・`capacity_pct` だけとする。バーの使った量は今と同じ出どころ（active は stdin のライブ値、非 active は snapshot とセッション記録から選んだ値、Codex は `.statusline-codex`）から取り、要素の `used_pct` で置き換えてはならない（MUST NOT）。
 
@@ -28,7 +28,7 @@ statusline が読む項目は `schema`・`computed_at`・各要素の `provider`
 - 未知の穴を塞ぎ切ることを完了条件にしない。想定外の形はそのアカウントを使えないに倒し、行の他の部分は変えない
 
 #### Scenario: ファイルが無ければ今と同じ
-- **WHEN** `.headroom.json` が無い状態で、この要件を足す前と同じ stdin・snapshot・登録簿で statusline を実行する
+- **WHEN** `.headroom.json` が無く、Codex の行が出ない状態で、この要件を足す前と同じ stdin・snapshot・登録簿で statusline を実行する
 - **THEN** 出力は足す前とバイト単位で一致する
 
 #### Scenario: status が ok でなければ今と同じ
@@ -71,7 +71,7 @@ statusline が読む項目は `schema`・`computed_at`・各要素の `provider`
 
 #### Scenario: リセット権が無くても列は空く
 - **WHEN** 2 スロットの登録簿で、スロット `a` の要素が使える条件を満たし `rocket` と `tickets` が null、スロット `b` には要素が無い `.headroom.json` を置いて statusline を実行する
-- **THEN** 両スロットの `5h` と `7d All` の行は、ラベルの欄 7 桁のうしろに半角スペース 4 つがあってからバーが始まり、`7d All` の行はバーの直後に半角スペース 9 つがあってから割合の数字が続く。🚀 も「使った / 使える」も出ない
+- **THEN** 両スロットの `5h` と `7d All` の行は、ラベルの欄 7 桁のうしろに半角スペース 4 つがあってからバーが始まり、`7d All` の行はバーの直後に使える量の列の半角スペース 9 つ、続けて `%5d` の幅に右寄せした割合の数字（20% なら `   20%`）が続く。🚀 も「使った / 使える」も出ない
 
 #### Scenario: 空けた列でもバーの左端は揃う
 - **WHEN** Claude のスロット `a` がロケットモードで、Codex の行がロケットモードでない状態で statusline を実行する

@@ -7,7 +7,8 @@
 #   「`.headroom.json` の値を使えるアカウントを決める」「ロケットモードのための列を空ける」
 #   「Claude のロケットモードを描く」「Codex のロケットモードを描く」「リセット権の区画を 🚀 と数で描く」
 #   「Codex の行の名前は Codex とアカウント名にする」
-# 実ホームには触れない。今の描き方に戻るケースは origin/main の statusline.sh と比べる。
+# 実ホームには触れない。今の描き方に戻るケースは、`.headroom.json` を消して同じスクリプトで描いた出力と比べる。
+# origin/main の statusline.sh と比べるのは、変更前と同じことを言うケース（ファイルが無いとき・1 スロットで Codex なし）だけ。
 
 setup() {
   export LC_ALL=C.UTF-8
@@ -127,7 +128,7 @@ sp=importlib.util.spec_from_file_location('c','${PLUGIN_DIR}/scripts/statusline-
 JSON
 }
 
-# origin/main の statusline.sh を $WORK/old/ に取り出す（取り出せなければ skip）
+# origin/main の statusline.sh を $WORK/old/ に取り出す（取り出せなければ skip。CI の shallow checkout では skip になる）
 old_sl() {
   mkdir -p "$WORK/old"
   git -C "$REPO_ROOT" show origin/main:plugins/statusline/scripts/statusline.sh > "$WORK/old/statusline.sh" 2>/dev/null \
@@ -139,6 +140,8 @@ old_sl() {
 # $1=7d消化率 $2=7d残り秒 → 新しい statusline の出力
 render() { mk_input 55 "${1:-20}" 14000 "${2:-$W59}" | bash "$SL"; }
 render_old() { mk_input 55 "${1:-20}" 14000 "${2:-$W59}" | bash "$OLD"; }
+# .headroom.json を消してから、新しい statusline で描く（今の描き方の基準）
+render_no_hr() { rm -f "$HR"; render "$@"; }
 
 # ANSI 付きの行から、最初のバーの 16 セルの背景色の番号を空白区切りで出す
 bgs() { python3 -c 'import re,sys;print(" ".join(re.findall(r"\x1b\[48;5;(\d+)m▂", sys.stdin.read())[:16]))'; }
@@ -168,22 +171,32 @@ squeeze() { tr -s ' '; }
   cmp -s "$WORK/n.txt" "$WORK/o.txt"
 }
 
-# 1 スロット・Codex なしと 2 スロットのそれぞれで、置いた .headroom.json が origin/main と同じ出力になる
+# 1 スロット・Codex なしと 2 スロットのそれぞれで、置いた .headroom.json が、ファイルを消したときと同じ出力になる
 assert_fallback_both() {
   local body="$1" ca="${2:-$NOW}"
   rm -f "$ACCOUNTS"
   write_one_slot_snapshot '[{"resets_left":1,"ends_at":null,"paused":false}]'
   write_hr "${body//@ID@/default}" "$ca"
-  render > "$WORK/n.txt"; render_old > "$WORK/o.txt"
+  render > "$WORK/n.txt"; render_no_hr > "$WORK/o.txt"
   cmp -s "$WORK/n.txt" "$WORK/o.txt" || { echo "one slot differs: $body"; diff "$WORK/n.txt" "$WORK/o.txt"; return 1; }
   write_two_slot_registry; write_two_slot_snapshot '[{"resets_left":1,"ends_at":null,"paused":false}]'
   write_hr "${body//@ID@/a}" "$ca"
-  render > "$WORK/n.txt"; render_old > "$WORK/o.txt"
+  render > "$WORK/n.txt"; render_no_hr > "$WORK/o.txt"
   cmp -s "$WORK/n.txt" "$WORK/o.txt" || { echo "two slots differ: $body"; diff "$WORK/n.txt" "$WORK/o.txt"; return 1; }
 }
 
+# assert_fallback_both の逆。置いた .headroom.json の値が使われ、ファイルを消したときと出力が変わる（1 スロット・Codex なし）
+assert_used_one_slot() {
+  local body="$1" ca="${2:-$NOW}"
+  rm -f "$ACCOUNTS"
+  write_one_slot_snapshot ''
+  write_hr "${body//@ID@/default}" "$ca"
+  render > "$WORK/n.txt"; render_no_hr > "$WORK/o.txt"
+  ! cmp -s "$WORK/n.txt" "$WORK/o.txt" || { echo "not used: $body"; return 1; }
+  strip_ansi < "$WORK/n.txt" | grep '7d All' | grep -q '🚀' || { cat "$WORK/n.txt"; return 1; }
+}
+
 @test "fallback: status stale, missing and off are not used" {
-  old_sl
   local s
   for s in stale missing off; do
     assert_fallback_both "$(el claude @ID@ "$s" $((NOW + W59)) "$(rk 1 $((NOW + 86400)))" "$(rk 3 $((NOW + 86400)))" 200)"
@@ -191,16 +204,14 @@ assert_fallback_both() {
 }
 
 @test "fallback: a file computed 21600 seconds ago is not used" {
-  old_sl
   assert_fallback_both "$(el claude @ID@ ok $((NOW + W59)) "$(rk 1 $((NOW + 86400)))" "$(rk 3 $((NOW + 86400)))" 200)" $((NOW - 21600))
 }
 
 @test "fallback: unreadable shapes are not used" {
-  old_sl
   local e
   e="$(el claude default ok $((NOW + W59)) "$(rk 1 $((NOW + 86400)))" "$(rk 3 $((NOW + 86400)))" 200)"
   write_one_slot_snapshot ''
-  render_old > "$WORK/o.txt"
+  render_no_hr > "$WORK/o.txt"
   printf 'not json {' > "$HR"
   render > "$WORK/n.txt"; cmp -s "$WORK/n.txt" "$WORK/o.txt" || { echo broken; return 1; }
   printf '{"schema":2,"computed_at":%s,"accounts":[%s]}' "$NOW" "$e" > "$HR"
@@ -210,19 +221,52 @@ assert_fallback_both() {
 }
 
 @test "fallback: a rocket expiry in the past is not used" {
-  old_sl
   assert_fallback_both "$(el claude @ID@ ok $((NOW + W59)) "$(rk 1 $((NOW - 60)))" "$(rk 3 $((NOW + 86400)))" 200)"
 }
 
 @test "fallback: a Codex weekly reset two hours apart is not used (Codex row unchanged)" {
-  old_sl
   codex_env 42 540000
   write_one_slot_snapshot ''
   write_hr "$(el codex current ok $((CODEX_WEEK + 7200)) "$(rk 1 $((NOW + 158400)))" "$(rk 3 $((NOW + 158400)))" 100)"
   render | grep 'Codex' > "$WORK/n.txt"
-  render_old | grep 'Codex' > "$WORK/o.txt"
+  render_no_hr | grep 'Codex' > "$WORK/o.txt"
   [ -s "$WORK/n.txt" ]
   cmp -s "$WORK/n.txt" "$WORK/o.txt" || { diff "$WORK/n.txt" "$WORK/o.txt"; return 1; }
+}
+
+@test "fallback: a Claude weekly reset two hours apart is not used" {
+  assert_fallback_both "$(el claude @ID@ ok $((NOW + W59 + 7200)) "$(rk 1 $((NOW + 86400)))" "$(rk 3 $((NOW + 86400)))" 200)"
+}
+
+@test "fallback: two elements for the same account are not used" {
+  local e
+  e="$(el claude @ID@ ok $((NOW + W59)) "$(rk 1 $((NOW + 86400)))" "$(rk 3 $((NOW + 86400)))" 200)"
+  assert_fallback_both "$e,$e"
+}
+
+@test "fallback: a rocket count of 0 is not used" {
+  assert_fallback_both "$(el claude @ID@ ok $((NOW + W59)) "$(rk 0 $((NOW + 86400)))" "$(rk 3 $((NOW + 86400)))" 200)"
+}
+
+@test "fallback: a tickets expiry in the past is not used" {
+  assert_fallback_both "$(el claude @ID@ ok $((NOW + W59)) "$(rk 1 $((NOW + 86400)))" "$(rk 1 $((NOW - 60)))" 200)"
+}
+
+@test "fallback: a rocket-mode Claude with capacity_pct 100 or 0 is not used" {
+  local c
+  for c in 100 0; do
+    assert_fallback_both "$(el claude @ID@ ok $((NOW + W59)) "$(rk 1 $((NOW + 86400)))" "$(rk 3 $((NOW + 86400)))" "$c")"
+  done
+}
+
+# ---------- 境界（3600 秒・21600 秒） ----------
+
+@test "boundary: a weekly reset exactly 3600 seconds apart is used" {
+  assert_used_one_slot "$(el claude @ID@ ok $((NOW + W59 + 3600)) "$(rk 1 $((NOW + 172800)))" null 200)"
+}
+
+@test "boundary: a file computed 21599 seconds ago is used" {
+  assert_used_one_slot "$(el claude @ID@ ok $((NOW + W59)) "$(rk 1 $((NOW + 172800)))" null 200)" $((NOW - 21599))
 }
 
 @test "fallback: only the usable slot changes; the stale slot keeps its content apart from the column spaces" {
@@ -293,6 +337,36 @@ SH
   grep -q $'\033\\[38;5;203m   40%' <<< "$line"
 }
 
+@test "claude rocket: an inactive slot in rocket mode gets the orange ground, 🚀 and the usable amount" {
+  write_two_slot_registry; write_two_slot_snapshot ''
+  write_hr "$(el claude b ok $((NOW + 172800)) "$(rk 1 $((NOW + 259200)))" null 200)"
+  render > "$WORK/raw.txt"
+  grep '7d All' "$WORK/raw.txt" | grep 'Claude B' | grep -q $'48;5;214mClaude B\033\\[0m' || { cat "$WORK/raw.txt"; return 1; }
+  line="$(strip_ansi < "$WORK/raw.txt" | grep -E 'Claude B +7d All')"
+  [[ "$line" == *"🚀"* ]] || { echo "$line"; return 1; }
+  [[ "$line" == *" 1/200%"* ]] || { echo "$line"; return 1; }
+  ! grep '7d All' "$WORK/raw.txt" | grep -q $'48;5;214mClaude A' || return 1
+}
+
+@test "claude rocket: ISO 8601 times and a fractional capacity_pct are read" {
+  local wr ex
+  wr="$(command date -u -r $((NOW + W59)) +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || command date -u -d "@$((NOW + W59))" +%Y-%m-%dT%H:%M:%SZ)"
+  ex="$(command date -u -r $((NOW + 172800)) +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || command date -u -d "@$((NOW + 172800))" +%Y-%m-%dT%H:%M:%SZ)"
+  write_one_slot_snapshot ''
+  write_hr "$(el claude default ok "\"$wr\"" "$(rk 1 "\"$ex\"")" null 199.6)"
+  render > "$WORK/raw.txt"
+  line="$(strip_ansi < "$WORK/raw.txt" | grep '7d All')"
+  [[ "$line" == "7d All 🚀  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂  20/200%   10%/59%"* ]] || { echo "$line"; return 1; }
+}
+
+@test "claude rocket: a share that rounds to 0 shows 1%" {
+  write_one_slot_snapshot ''
+  write_hr "$(el claude default ok $((NOW + W59)) "$(rk 2 $((NOW + 172800)))" null 300)"
+  render 1 > "$WORK/raw.txt"
+  line="$(strip_ansi < "$WORK/raw.txt" | grep '7d All')"
+  [[ "$line" == *" 1/300%    1%/59%"* ]] || { echo "$line"; return 1; }
+}
+
 # ---------- Codex のロケットモード（受け入れ条件 1） ----------
 
 @test "codex rocket: elapsed and time left are measured against the expiry" {
@@ -304,6 +378,7 @@ SH
   [[ "$line" == *"7d All 🚀  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂            42%/29%  ~1d 20h (~6d 6h)"* ]] || { echo "$line"; return 1; }
   [[ "$line" != *"🚀3"* ]] || return 1
   grep 'Codex' "$WORK/raw.txt" | grep -q $'\033\\[1;38;5;16;48;5;214mCodex A\033\\[0m'
+  grep 'Codex' "$WORK/raw.txt" | grep -q $'\033\\[38;5;214m~1d 20h\033\\[0m \033\\[2m(~6d 6h)' || { grep 'Codex' "$WORK/raw.txt" | cat -v; return 1; }
 }
 
 @test "codex rocket: within 24 hours the time left is red and the weekly reset is dim" {
@@ -327,9 +402,8 @@ SH
 }
 
 @test "tickets: grants that outlive the weekly reset show a dim 🚀×N and no rocket" {
-  old_sl
   write_one_slot_snapshot ''
-  render_old > "$WORK/old.txt"
+  render_no_hr > "$WORK/old.txt"
   write_one_slot_snapshot '[{"resets_left":1,"ends_at":null,"paused":false}]'
   write_hr "$(el claude default ok $((NOW + W59)) null "$(rk 1 $((NOW + 874800)))" 100)"
   render > "$WORK/raw.txt"
@@ -352,6 +426,20 @@ SH
   [[ "$line" == *"  │  🚀×3" ]] || { echo "$line"; return 1; }
   grep 'Codex' "$WORK/raw.txt" | grep -q $'\033\\[38;5;214m🚀×3\033\\[0m$'
   ! grep -q 'リセット' "$WORK/raw.txt" || return 1
+}
+
+@test "tickets: a rocket-mode Claude whose grant expires in exactly 24 hours is red" {
+  write_one_slot_snapshot ''
+  write_hr "$(el claude default ok $((NOW + W59)) "$(rk 1 $((NOW + 86400)))" "$(rk 3 $((NOW + 86400)))" 200)"
+  render | grep '7d All' | grep -q $'\033\\[38;5;203m🚀×3 ~1d 0h\033\\[0m$'
+}
+
+@test "tickets: a Codex not in rocket mode shows a dim 🚀×N with the time" {
+  codex_env 42 540000
+  write_one_slot_snapshot ''
+  write_hr "$(el codex current ok "$CODEX_WEEK" null "$(rk 1 $((NOW + 874800)))" 100)"
+  render > "$WORK/raw.txt"
+  grep 'Codex' "$WORK/raw.txt" | grep -q $'\033\\[2m🚀×1 ~10d 3h\033\\[0m$' || { grep 'Codex' "$WORK/raw.txt" | cat -v; return 1; }
 }
 
 @test "tickets: null or zero tickets show no segment" {
@@ -412,6 +500,15 @@ SH
   grep -q '^  Claude   5h' "$WORK/out.txt" || { cat "$WORK/out.txt"; return 1; }
   grep -q '^  Claude   7d All' "$WORK/out.txt"
   [ "$(bar_cols < "$WORK/out.txt" | sort -u | wc -l | tr -d ' ')" -eq 1 ] || { cat "$WORK/out.txt"; return 1; }
+}
+
+@test "one slot with Codex: a rocket-mode Claude keeps the name column and the bar column" {
+  codex_env 42 540000
+  write_one_slot_snapshot ''
+  write_hr "$(el claude default ok $((NOW + W59)) "$(rk 1 $((NOW + 172800)))" null 200),$(el codex current ok "$CODEX_WEEK" null null 100)"
+  render | strip_ansi > "$WORK/out.txt"
+  grep -q '^  Claude   7d All 🚀' "$WORK/out.txt" || { cat "$WORK/out.txt"; return 1; }
+  [ "$(bar_cols < "$WORK/out.txt" | sort -u | wc -l | tr -d ' ')" -eq 1 ] || { bar_cols < "$WORK/out.txt"; cat "$WORK/out.txt"; return 1; }
 }
 
 @test "one slot without Codex: the output is byte-identical to origin/main" {
