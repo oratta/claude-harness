@@ -352,7 +352,8 @@ def resolve_number(where: str, number: str):
         return "pr", head, 0
     found = _gh(where, "api", "repos/{owner}/{repo}/issues/%s" % number, "--jq", ISSUE_JQ)
     parts = (found or "").split()
-    if parts:
+    # 応答の番号が数字でなければ issue として返さない（呼ぶ側は「見つからない」として扱う）
+    if parts and re.fullmatch(r"[0-9]+", parts[0]):
         children = 0
         if len(parts) == 2 and re.fullmatch(r"[0-9]+", parts[1]):
             children = int(parts[1])
@@ -2410,6 +2411,11 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
     PR 経路が独自の書式を持つと、ゲート連携が貼る 1 行が経路ごとに割れる。
     """
     where = os.path.abspath(args.repo) if args.repo else os.getcwd()
+
+    # 台帳を使ったかどうかは、モデルがプラグイン設定を見られないのでスクリプトが言う。
+    # cost.md の案内はこの行の有無で判定する。標準出力と終了コードは変えない。
+    if ledger_path() is None:
+        sys.stderr.write("台帳: 未設定（会話ログを直接読みました）\n")
 
     if args.number is None:
         branch = current_branch(where)
