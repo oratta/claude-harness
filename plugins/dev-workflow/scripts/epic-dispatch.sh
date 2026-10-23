@@ -835,6 +835,12 @@ deliver_reply() {
   rec="$ES_HIT"
   path="$(es_get "$rec" worktree)"
   [ -n "$path" ] || { echo "failed $n no-worktree"; return 1; }
+  # 送る直前に、子がまだ止まっているかを確かめる（主が子のタブで答えて再開済みなら、重ねて送らない）。
+  # 止まっていなければ送らず `skipped <child> not-stopped` を出して 2 を返す
+  case "$(es_get "$rec" stop)" in
+    stopped|stopped-seen) ;;
+    *) echo "skipped $n not-stopped"; return 2 ;;
+  esac
   # 返事は記録の launcher の部品で届ける。その部品が使えない子だけ launcher-unavailable
   LAUNCHER_NAME="$(es_get "$rec" launcher)"
   launcher_usable "$LAUNCHER_NAME" || { echo "failed $n launcher-unavailable"; return 1; }
@@ -887,8 +893,8 @@ cmd_reply() {
   agent_setup "$1" || usage
   need_parent
   launchers_gate "$2"
-  deliver_reply "$relaunch" "$as" "$1" "$2" "$3" || exit 1
-  exit 0
+  deliver_reply "$relaunch" "$as" "$1" "$2" "$3"
+  case $? in 0|2) exit 0 ;; *) exit 1 ;; esac
 }
 
 # 止まった印のまま completed で閉じた子に、完了報告と mark done を促す返事を送り、エピックに 1 行残す。
@@ -949,6 +955,7 @@ cmd_notify_closed() {
   res="$(deliver_reply "$relaunch" parent "$epic" "$n" "$text")"
   case "$res" in
     "sent $n"|"relaunched $n") ;;
+    "skipped $n not-stopped") echo "$res"; exit 0 ;;
     *) echo "$res"; exit 1 ;;
   esac
   # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに送っていない判断が残る）
@@ -1175,6 +1182,8 @@ resolve_stopped() {
     [ -z "$wpath" ] || rl="$(decide_relaunch "$wpath")"
     res="$(deliver_reply "$rl" parent "$epic" "$n" "$reply")"
     case "$res" in
+      # 送る直前に子が再開済みだった（主が子のタブで答えた）。送らず、エピックにも残さない
+      "skipped $n not-stopped") return 0 ;;
       "sent $n"|"relaunched $n")
         # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに通していない判断が残る）
         line="親の判断: 子 $(child_label "$n") 通した — $reason $url"
