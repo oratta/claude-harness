@@ -3537,6 +3537,31 @@ orca_cmd_scripts() {
   printf '%s\n' "$r" | grep -qF 'rules/communication-style.md'
 }
 
+@test "skill: an epic child stopped by the CI watch writes the PR's short HEAD SHA in the resume progress" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
+  [ -n "$r" ]
+  # CI の見張りで止まったときの書き方の行（escalate と直し方の手順 7 の両方に触れる）
+  l="$(printf '%s\n' "$r" | grep -F '`再開に要る途中経過:`' | grep -F 'HEAD の短い SHA')"
+  [ -n "$l" ]
+  printf '%s\n' "$l" | grep -qF '落ちたチェック名'
+  printf '%s\n' "$l" | grep -qF 'PR の URL'
+  printf '%s\n' "$l" | grep -qF '`escalate`'
+  printf '%s\n' "$l" | grep -qF '手順 7'
+  printf '%s\n' "$l" | grep -qF 'references/ci-watch.md'
+  # 親が追加のやり直しを許したあと同じ HEAD で落ちたときの止まり（`none`）も対象に入る
+  printf '%s\n' "$l" | grep -F '`obs.state` が `wait` でない `none`' | grep -qF '前回と同じ状態・同じ HEAD の決着'
+  # 桁数と取り方、取れないときの書き方
+  printf '%s\n' "$l" | grep -qF '先頭 7 文字'
+  printf '%s\n' "$l" | grep -qF '`obs.head`'
+  printf '%s\n' "$l" | grep -qF "gh pr view <PR番号> --repo <owner/repo> --json headRefOid --jq '.headRefOid[0:7]'"
+  printf '%s\n' "$l" | grep -qF '`HEAD 不明`'
+  # 目的（親が理由に写して同じ件かを見分ける）と、項目は 7 つのまま
+  printf '%s\n' "$l" | grep -qF 'parent-pass-criteria.md'
+  printf '%s\n' "$l" | grep -qF '`親の判断:`'
+  printf '%s\n' "$r" | grep -F '7 つの項目' | grep -qF 'どの項目も省かない'
+  run grep -E '^止まった時点の HEAD:' <<<"$r"; [ "$status" -eq 1 ]
+}
+
 @test "skill: step 8 of the Orca route restates the stop record in the readable steps" {
   p="$(run_section | grep -E '^8\. ')"
   [ -n "$p" ]
