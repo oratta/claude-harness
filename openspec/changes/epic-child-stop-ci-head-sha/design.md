@@ -30,7 +30,7 @@
 
 ### 規定の正本は `epic-child-stop.md`、`ci-watch.md` は指すだけ
 
-記録の形の正本は `epic-child-stop.md`（`ci-watch.md` の `ready` のあとのマージ待ちの段落も「記録の形の正本は `epic-child-stop.md` の側」と書いている）。同じ規定を 2 か所に書くと片方だけ直す事故が起きるので、`ci-watch.md` の `escalate` の行には「エピックの子のセッションは止まる前に `epic-child-stop.md` の記録を残す（CI の見張りで止まったときの `再開に要る途中経過:` の書き方もそこ）」とだけ書く。手順 7 は「`escalate` と同じ手順でオーナーに上げる」なので、行を足さずに同じ規定が及ぶ。
+記録の形の正本は `epic-child-stop.md`（`ci-watch.md` の `ready` のあとのマージ待ちの段落も「記録の形の正本は `epic-child-stop.md` の側」と書いている）。同じ規定を 2 か所に書くと片方だけ直す事故が起きるので、`ci-watch.md` の `escalate` の行には「エピックの子のセッションは止まる前に `epic-child-stop.md` の記録を残す（CI の見張りで止まったときの `再開に要る途中経過:` の書き方もそこ）」とだけ書く。手順 7 は「`escalate` と同じ手順でオーナーに上げる」なので、行を足さずに同じ規定が及ぶ。仕様の側も同じ分け方にする。記録の書き方は dev-workflow-develop の要件「エピックの子の停止の記録は…」が持ち、`escalate` の行がその記録を指すことは dev-workflow-ci-watch の要件「CI の見張りの手順は共有 reference に 1 本置く」の 6 が持つ（`escalate` の行の中身はもともとその要件が規定しているため。仕様レビューの 1 周目の指摘）。
 
 ### 短い SHA は PR の HEAD のコミット SHA の先頭 7 文字
 

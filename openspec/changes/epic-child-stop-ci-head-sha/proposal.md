@@ -19,7 +19,8 @@
 
 ### Modified Capabilities
 
-- `dev-workflow-develop`: 要件「エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く」に、CI の見張りで止まったときに `再開に要る途中経過:` へ PR の URL・落ちたチェック名・HEAD の短い SHA を書く規定と、`ci-watch.md` の `escalate` がその規定を指す場面を足す
+- `dev-workflow-develop`: 要件「エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く」に、CI の見張りで止まったときに `再開に要る途中経過:` へ PR の URL・落ちたチェック名・HEAD の短い SHA を書く規定を足す
+- `dev-workflow-ci-watch`: 要件「CI の見張りの手順は共有 reference に 1 本置く」の 6 の `escalate` に、エピックの子のセッションは止まる前に `skills/develop/references/epic-child-stop.md` の記録を残すことを足す（`escalate` の行の中身はこの要件が持つので、規定が 2 つの capability に分かれて育たないよう、こちらに置く）
 
 ## Impact
 
