@@ -272,7 +272,8 @@ G は CI の見張りを始めずに `passed` を return する（背景タス�
 
 - **照合と振り分けのあと**（前の Gate Result が `段: 照合と振り分け`）: `declarations.md` の手順 3 から入る。宣言の前に前の HEAD の許容があれば、`stages/hold.md` を読んで手順 3-c の引き継ぎを試す
 - **保留の解除のあと**（前の Gate Result が `段: 保留の解除`）: 今の HEAD の `対象 HEAD:` を持つ `## リスク宣言` コメントがあれば、宣言を出し直さず手順 5 の真正性確認から入る。無ければ（切り出しの確認を解除した場合）`declarations.md` の手順 3 から入る。HEAD が動いていて前の HEAD の許容があるときは、宣言の前に `stages/hold.md` の 3-c を試す
-- 保留を返すときは `stages/hold.md` の「G として動くとき（develop）」節の書式で返す（`次の段: 保留の解除`）
+- **引き継ぎの判定のあと**（前の Gate Result が `段: 合格処理`・Status `needs-carryover-judge`）: `declarations.md` の手順 3 から入り直し、`stages/hold.md` の手順 3-c で PR の判定の記録（1 行目 `引き継ぎ判定:`）を読んで、引き継ぐか手順 6 で主に聞くかを決める
+- 保留を返すときは `stages/hold.md` の「G として動くとき（develop）」節の書式で返す（`次の段: 保留の解除`）。`needs-carryover-judge` を返すときも同じ節の書式で返す（`次の段: 合格処理`）
 ## 出口
 
 - 手順 4 で主に動作確認を依頼したとき、手順 5 の照合で主の許容待ちが残ったときは `stages/hold.md`（手順 6）へ進む。
