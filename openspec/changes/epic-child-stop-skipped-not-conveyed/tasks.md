@@ -6,7 +6,7 @@
 ## 2. 変更の記録
 
 - [x] 2.1 変更の記録を書く。確認: `bats tests/plugin-release-convention.bats` が exit 0　触る範囲: plugins/dev-workflow/changes/1247.md（新規）
-- [ ] 2.2 変更の記録の「openspec の CLI が無い環境で作業したため、change を通さず spec を直接直した」の項を、change `epic-child-stop-skipped-not-conveyed` を通して spec を直した形に書き直す。確認: `grep -n '直接直した' plugins/dev-workflow/changes/1247.md` が 0 件、`bats tests/plugin-release-convention.bats` が exit 0　触る範囲: plugins/dev-workflow/changes/1247.md:6-6
+- [x] 2.2 変更の記録の「openspec の CLI が無い環境で作業したため、change を通さず spec を直接直した」の項を、change `epic-child-stop-skipped-not-conveyed` を通して spec を直した形に書き直す。確認: `grep -n '直接直した' plugins/dev-workflow/changes/1247.md` が 0 件、`bats tests/plugin-release-convention.bats` が exit 0　触る範囲: plugins/dev-workflow/changes/1247.md:6-6
 
 ## Workflow follow-up
 
