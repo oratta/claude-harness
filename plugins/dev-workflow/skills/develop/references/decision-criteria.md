@@ -83,7 +83,7 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 - 受け入れ条件が多く、明確な順序依存を持つサブタスクに割れる（例: 「スキーマ変更 → API 実装 → UI 実装」のように前工程が終わらないと後工程が着手できない）
 - 1 実装サイクルで完結しない規模（loop-dev-agent の `size:large` 相当の分量）
 
-**境界の一言定義**: 「opsx change が2つ以上必要になりそうなら複数 change」。複数 change が独立してマージできる PR に割れるなら、`SKILL.md`「エピックの扱い」の条件にも当たる。
+**境界の一言定義**: 「opsx change が2つ以上必要になりそうなら複数 change」。複数 change が独立してマージできる PR に割れるなら、`references/epic.md`「エピックの扱い」の条件にも当たる。
 
 ### 複数 change に割れた場合の分割方法
 

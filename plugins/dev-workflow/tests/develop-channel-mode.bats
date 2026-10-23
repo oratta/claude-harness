@@ -15,14 +15,18 @@ setup() {
   export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
+  EPIC="${PLUGIN_DIR}/skills/develop/references/epic.md"
+  EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
   CMD="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
 }
 
 # 「## <見出し>」から次の「## 」までを切り出す
-section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$SKILL"; }
+# 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
+section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
 # 「### <見出し>」から次の「## 」か「### 」までを切り出す
-subsection() { awk -v h="### $1" 'index($0, h)==1{f=1; print; next} /^##+ /{f=0} f' "$SKILL"; }
+subsection() { awk -v h="### $1" 'index($0, h)==1{f=1; print; next} /^##+ /{f=0} f' "${2:-$SKILL}"; }
 # 1 ループの (4) を切り出す（列 0 の "(4) " から次の列 0 の工程ラベルか ``` まで）
 step4() { awk '/^\(4\)[[:space:]]/{f=1; print; next} f && (/^\([0-9]+\)[[:space:]]/ || /^```/){f=0} f' "$SKILL"; }
 # hold.md 手順 6 の 3 番目の項目
@@ -97,7 +101,7 @@ refute() {
   # 実行モードの節の読み替えの規則があること
   section '実行モード' | grep -qF 'channel ではこの聞き方に読む'
   # 各行が interactive の文脈か、channel を明示して除いているか、Orca 経路の子の節の行であること
-  local child; child="$(section 'エピックの子が主の返事を待って止まるとき')"
+  local child; child="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   while IFS= read -r line; do
     if printf '%s\n' "$line" | grep -qE 'interactive は|\*\*interactive\*\*|AskUserQuestion (は使わない|を呼ばない|を呼ばず|を使わず)'; then continue; fi
     if printf '%s\n' "$child" | grep -qF -- "$line"; then continue; fi
@@ -173,21 +177,21 @@ refute() {
 # --- エピック ---
 
 @test "epic: channel does not call route and does not start another session" {
-  local s; s="$(subsection '回し方')"
+  local s; s="$(subsection '回し方' "$EPIC")"
   printf '%s\n' "$s" | grep -qF '`回し方: サブエージェント（channel モード）`'
   printf '%s\n' "$s" | grep -qF '別の Claude Code セッション'
   printf '%s\n' "$s" | grep -qF 'channel も `route` を呼ばず'
 }
 
 @test "epic: channel resuming an epic whose latest route note is Orca reports in the channel and stops" {
-  local s; s="$(subsection '回し方')"
+  local s; s="$(subsection '回し方' "$EPIC")"
   printf '%s\n' "$s" | grep -qF 'channel で再開したエピックの最新の `回し方:` が Orca なら'
   printf '%s\n' "$s" | grep -qF 'または tmux なら'
   printf '%s\n' "$s" | grep -qF 'channel は別セッション方式を引き継がない'
 }
 
 @test "epic: excluding epic children names channel next to unmanned (route is not called)" {
-  local line; line="$(grep -F '**エピックである子を外す**' "$SKILL")"
+  local line; line="$(grep -F '**エピックである子を外す**' "$EPIC")"
   [ -n "$line" ]
   printf '%s\n' "$line" | grep -qF '`route` を呼ばない unmanned と channel と'
   printf '%s\n' "$line" | grep -qF '（unmanned と channel を除く）'

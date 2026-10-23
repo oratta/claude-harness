@@ -17,19 +17,35 @@ TBD - created by archiving change harness-public-private-split. Update Purpose a
 
 ### Requirement: 各行は決めた分類と理由を持つ
 
-表の各行の分類は「公開版」「個人版」「保留（#1123 の後）」のどれかでなければならない（MUST）。ただし 1 つのプラグインの中で行き先が割れるプラグインの行は「分割」とし、そのプラグインを次の要件「分割したプラグインは部品の行で全体を重複なく覆う」に従って部品の行で覆わなければならない（MUST）。どの行も理由の欄が空であってはならない（MUST NOT）。理由は #1128 の判断の基準（公開版: 誰の環境でも意味がある道具・住人のふるまいに効くもの・営業で見せる動き。個人版: オーナーに固有の業務・アカウント・資格情報の置き場・固有名に依存するもの）のどれに当たるかが読めるように書く。
+表の各行の分類は「公開版」「個人版」のどちらかでなければならない（MUST）。ただし 1 つのプラグインの中で行き先が割れるプラグインの行は「分割」とし、そのプラグインを次の要件「分割したプラグインは部品の行で全体を重複なく覆う」に従って部品の行で覆わなければならない（MUST）。どの行も理由の欄が空であってはならない（MUST NOT）。理由は #1128 の判断の基準（公開版: 誰の環境でも意味がある道具・住人のふるまいに効くもの・営業で見せる動き。個人版: オーナーに固有の業務・アカウント・資格情報の置き場・固有名に依存するもの）のどれに当たるかが読めるように書く。
+
+#1128 で「保留（#1123 の後）」にした 5 行（`epic-dispatch.sh`・`epic-launch-orca.sh`・`stop-judge.sh`・`parent-pass-criteria.md`・`parent-merge-criteria.md`）は、#1129 で #1123 の結果を見て公開版に確定した。分類の値「保留（#1123 の後）」は使わない（MUST NOT）。文書の節「保留の行の確定」は、どの行を何を見て確定したかの記録として残す。
+
+この要件を確かめる検査（`tests/public-private-split.bats`）の守備範囲は、要件「表と一覧の検査の守備範囲」に従う。分類の欄に「保留（#1123 の後）」が戻った行は、決めた値以外の分類として検査が落とす（MUST）。
 
 #### Scenario: 分類の値が決めた値だけである
 - **WHEN** 表の分類の欄を読む
-- **THEN** すべての値が「公開版」「個人版」「保留（#1123 の後）」「分割」のどれかで、部品の行の分類は「分割」以外の 3 つのどれかである
+- **THEN** すべての値が「公開版」「個人版」「分割」のどれかで、部品の行の分類は「公開版」か「個人版」である
 
 #### Scenario: 理由が空の行がない
 - **WHEN** 表の理由の欄を読む
 - **THEN** 空の行がない
 
-#### Scenario: 保留の行は何を見て、誰がいつ決めるかを書く
-- **WHEN** 分類が「保留（#1123 の後）」の行を読む
-- **THEN** 理由の欄に、#1123 の結果のどこを見て公開版か個人版かを決めるかが書かれ、文書の冒頭に、保留の行は #1129 の着手時に #1129 の担い手が #1123 の結果を見て確定し、同じ PR でこの表を直すことが書かれている
+#### Scenario: 保留の値の行は落ちる
+- **WHEN** 表のある行の分類を「保留（#1123 の後）」に書き換える
+- **THEN** `tests/public-private-split.bats` が決めた値以外の分類として落ちる
+
+#### Scenario: 確定した 5 行はすべて公開版である
+- **WHEN** 表の `plugins/dev-workflow/scripts/epic-dispatch.sh`・`plugins/dev-workflow/scripts/epic-launch-orca.sh`・`plugins/dev-workflow/scripts/stop-judge.sh`・`plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md`・`plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` の行の分類を読む
+- **THEN** 5 行とも表にちょうど 1 行ずつあり、分類がすべて「公開版」である
+
+#### Scenario: 確定したエピック実行の部品は公開版の部品として扱われる
+- **WHEN** 固有記述の一覧に `plugins/dev-workflow/scripts/epic-launch-orca.sh` の実在する行を指す行を足す
+- **THEN** 一覧の行が公開版に決まる部品に属さないという理由では落ちない
+
+#### Scenario: 確定した理由が表と文書に残る
+- **WHEN** 確定した 5 行の理由の欄と節「保留の行の確定」を読む
+- **THEN** #1123 の結果のどこを見て公開版に決めたか（起動部品が Orca と tmux から選ぶ形になり、Orca が無い環境でもエピックを回せる）が書かれている
 
 ### Requirement: 分割したプラグインは部品の行で全体を重複なく覆う
 
@@ -89,14 +105,18 @@ TBD - created by archiving change harness-public-private-split. Update Purpose a
 
 `tests/public-private-split.bats` は、`docs/public-private-split.md` の表と一覧を入力として、形と網羅を機械で確かめる検査である。守備範囲を次のとおりとし、範囲の外の誤りを見つけることは完了条件にしない（MUST NOT）。
 
-- 入力の出どころ: 文書の表と一覧は実装の担い手が部品を読んで書く。突き合わせる相手は、テストの実行時点の `git ls-files`・`rules/*.md`・`output-styles/*.md`・`.claude-plugin/marketplace.json` の `plugins[].name`・直下の `scripts/` の項目・Markdown の `## ` の見出しで、どれもテストが自分で列挙する
-- 拾う誤り: 表に無い部品・同じ部品の 2 行・どのファイルにも当たらない行・分割のプラグインで行の決まらないファイル・節の行の覆い漏れと重複・決めた値以外の分類・空の理由・実在しないパスや行数を超える行番号を持つ一覧の行・公開版に決まらない部品を指す一覧の行
-- 通してよい具体例: 分類の判断そのものの誤り（個人版にすべき部品を公開版と書いた）、中身の薄い理由（「汎用」の一語）、候補語に当たらない固有記述の取りこぼし、あとの編集で行番号がずれても行数以内に収まっている一覧の行。これらは人のレビュー（仕様レビューと pr-review-gate）と #1098 の再検索が見る
-- 見つかる穴をすべて塞ぐことは完了条件にしない。この検査は、部品を足したのに表を直し忘れた PR と、#1129 が移す範囲を決められない表を落とすためのもので、仕分けの正しさを保証しない
+- 入力の出どころ: 文書の表と一覧は実装の担い手が部品を読んで書く。突き合わせる相手は、テストの実行時点の `git ls-files`・`rules/*.md`・`output-styles/*.md`・`.claude-plugin/marketplace.json` の `plugins[].name`・直下の `scripts/` の項目・Markdown の `## ` の見出しで、どれもテストが自分で列挙する。#1129 で公開版に確定した 5 行（`plugins/dev-workflow/scripts/epic-dispatch.sh`・`plugins/dev-workflow/scripts/epic-launch-orca.sh`・`plugins/dev-workflow/scripts/stop-judge.sh`・`plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md`・`plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md`）の部品のパスは、テストの中に固定の文字列で持つ
+- 拾う誤り: 表に無い部品・同じ部品の 2 行・どのファイルにも当たらない行・分割のプラグインで行の決まらないファイル・節の行の覆い漏れと重複・決めた値以外の分類・空の理由・実在しないパスや行数を超える行番号を持つ一覧の行・公開版に決まらない部品を指す一覧の行・確定した 5 行のどれかが表に無いか、分類が「公開版」から外れること
+- 通してよい具体例: 確定した 5 行以外の部品の分類の判断の誤り（個人版にすべき部品を公開版と書いた）、中身の薄い理由（「汎用」の一語）、候補語に当たらない固有記述の取りこぼし、あとの編集で行番号がずれても行数以内に収まっている一覧の行。これらは人のレビュー（仕様レビューと pr-review-gate）と #1098 の再検索が見る
+- 見つかる穴をすべて塞ぐことは完了条件にしない。この検査は、部品を足したのに表を直し忘れた PR と、#1129 が移す範囲を決められない表と、確定した 5 行の分類が後の編集で黙って変わることを落とすためのもので、仕分けの正しさを保証しない。確定した 5 行の分類を覆すときは、この検査の固定の文字列も一緒に直す
 
 #### Scenario: 判断の誤りは検査を通る
-- **WHEN** 表の形と網羅は正しく、ある部品の分類だけが判断の基準に照らして誤っている
+- **WHEN** 表の形と網羅は正しく、確定した 5 行以外の部品の分類だけが判断の基準に照らして誤っている
 - **THEN** `tests/public-private-split.bats` は通り、その誤りは人のレビューが見る
+
+#### Scenario: 確定した 5 行の分類が公開版から外れると落ちる
+- **WHEN** 表の形と網羅は正しく、確定した 5 行のどれか 1 行の分類を「個人版」に書き換える
+- **THEN** `tests/public-private-split.bats` が、その部品のパスを挙げて落ちる
 
 #### Scenario: 形の誤りは検査で落ちる
 - **WHEN** 表の分類の欄に「配る」のような決めた値以外の文字列がある
@@ -135,16 +155,17 @@ TBD - created by archiving change harness-public-private-split. Update Purpose a
 
 ### Requirement: dev-workflow 以外の公開版の部品は決めた固有名とオーナーの PC のパスを持たない
 
-公開版に残る部品のうち dev-workflow 以外（`rules/README.md`・`scripts/sync.sh`・`scripts/test-auto-merge-workflow.sh`・capability-registry・statusline・worktree・product-handover・casting・cost-ledger・infra）は、固有記述の一覧で担い手なしだった行の語を、許可リストに載った行を除いて持たない。次の検索の当たりは、許可リストの行を除いて 0 件でなければならない（MUST）。検索は大文字と小文字を区別する。
+公開版に残る部品のうち dev-workflow 以外（`rules/README.md`・`scripts/sync.sh`・`scripts/test-auto-merge-workflow.sh`・capability-registry・statusline・worktree・product-handover・casting・cost-ledger・infra）は、固有記述の一覧で担い手なしだった行の語を、許可に載った行を除いて持たない。次の検索の当たりは、許可の行を除いて 0 件でなければならない（MUST）。検索は共有スクリプト `plugins/dev-workflow/scripts/forbidden-words-check.sh` に、検索範囲のファイル一覧と辞書と allow を渡して行い、大文字と小文字を区別しない固定文字列の部分一致で、ファイルの本文とパス名の両方に当てる。
 
-- 検索語と対象: `moko|suimei|uranai|shukan|sns-autopilot` は上の部品の公開版のファイル・節、`/Users/oratta` は `plugins/worktree/` の公開版のファイル、`flatmate|FLATMATE` は `rules/README.md`・`scripts/sync.sh`・capability-registry・worktree・product-handover・casting・cost-ledger・infra・statusline の公開版のファイル・節
-- 公開版のファイル・節: 仕分けの表（`docs/public-private-split.md`）で個人版に決まるファイルと節（capability-registry の `scripts/fmtoken.sh`・`1password.md`・`SKILL.md` の「表記規約」と「資格情報の階層」の節など）は対象に含めない。付属の `changes/`・`CHANGELOG.md`・`tests/`・`evals/` も含めない
-- 許可リスト: 載せない行の基準のうち「出典や経緯としてだけ名前を挙げる行」と「互換のために残す旧名の読み取り」に当たる行は、`tests/public-private-split.bats` の中の許可リストに「ファイルのパス・行に含まれる固定の文字列・当たる基準」の 3 つ組で 1 件ずつ載せたものだけを通す。許可リストに無い当たりは落ちる。許可リストの各件は、判定の表（tasks の実施欄）に同じ行がなければならない
+- 検索語: `moko`・`suimei`・`uranai`・`shukan`・`sns-autopilot`・`flatmate`・`/Users/oratta`。語は辞書のファイル（`tests/public-names/dict/` の `moko.txt`・`other-projects.txt`・`flatmate.txt`・`owner-pc-path.txt`）にだけ書き、`tests/public-private-split.bats` に正規表現で書かない。さらに `/Users/oratta` は許可なしでも別に検索し、当たりは 0 件でなければならない
+- 対象: 上の部品の公開版のファイル・節
+- 公開版のファイル・節: 上の部品の git 管理下のファイル。#1129 で個人版のリポジトリへ移したファイルと節（capability-registry の `scripts/fmtoken.sh`・`1password.md`・`SKILL.md` の「表記規約」と「資格情報の階層」の節）は公開版に無いので、ファイルや節を除く手当てはしない（MUST NOT。capability-registry の `SKILL.md` は全体を検索の対象にする）。付属の `changes/`・`CHANGELOG.md`・`tests/`・`evals/` は含めない
+- 許可: 載せない行の基準のうち「出典や経緯としてだけ名前を挙げる行」と「互換のために残す旧名の読み取り」に当たる行は、`tests/public-names/allow/nondev.txt` に共有スクリプトの恒久の書式 `<path>:<語>:=<行に含まれる固定の文字列>` で 1 件ずつ載せたものだけを通す。各行の直前の `#` のコメント行に当たる基準を書く。許可に無い当たりは落ちる。どの当たりも打ち消さない許可の行は、共有スクリプトの「何も打ち消していない」の違反で落ちる
 
 この検索の守備範囲は次のとおりで、範囲の外の誤りを見つけることは完了条件にしない（MUST NOT）。
 
-- 拾う誤り: 直した語が上の部品の公開版のファイル・節に戻ってくること／許可リストに無い当たりが現れること
-- 通してよい具体例: 検索語に無い別の固有名・許可リストの載せ方の良し悪し・書き換えた例の文の良し悪し・載せない行の基準の判定の正しさ。人のレビューと固有記述の一覧が見る
+- 拾う誤り: 直した語が上の部品の公開版のファイル・節に戻ってくること／許可に無い当たりが現れること／許可の行が何も打ち消さなくなること
+- 通してよい具体例: 辞書に無い別の固有名・許可の載せ方と基準の良し悪し・書き換えた例の文の良し悪し・載せない行の基準の判定の正しさ。人のレビューと固有記述の一覧が見る
 - 見つかる穴をすべて塞ぐことは完了条件にしない
 
 #### Scenario: 直した語が戻ると落ちる
@@ -152,19 +173,39 @@ TBD - created by archiving change harness-public-private-split. Update Purpose a
 - **WHEN** `plugins/worktree/skills/wt-clean/SKILL.md` に `/Users/oratta/wt/bar` を書く
 - **THEN** `tests/public-private-split.bats` が落ちる
 
-#### Scenario: 許可リストの出典の行は通る
+#### Scenario: 辞書の語を含む行を足すと落ちる
 
-- **WHEN** `scripts/sync.sh` の出典として flatmate の名を挙げる行が許可リストに載っている
-- **THEN** 検索のテストは通る。同じファイルの別の行に flatmate を書き足すと、許可リストに無いので落ちる
+- **WHEN** 検索範囲のファイルに、辞書のいずれかの語を含む行を 1 行書き足す
+- **THEN** 検索のテストが落ち、`<パス>:<行番号>:<語>` が出る
 
-#### Scenario: 個人版のファイルと節は検索の対象に入らない
+#### Scenario: 許可の出典の行は通る
 
-- **WHEN** 個人版に決まる `plugins/capability-registry/scripts/fmtoken.sh` に検索語がある
-- **THEN** 検索のテストは落ちない
+- **WHEN** `scripts/sync.sh` の出典として flatmate の名を挙げる行が `tests/public-names/allow/nondev.txt` に載っている
+- **THEN** 検索のテストは通る。同じファイルの別の行に flatmate を書き足すと、許可に無いので落ちる
 
-#### Scenario: 検索語に無い固有名は検査を通る
+#### Scenario: 大文字小文字の違いも拾う
 
-- **WHEN** 対象のファイルに検索語に無い別の固有名がある
+- **WHEN** 検索範囲のファイルに、辞書の語の大文字始まりの綴り（`Uranai` など）の行があり、許可に載っていない
+- **THEN** 検索のテストが落ちる
+
+#### Scenario: 何も打ち消さない許可は落ちる
+
+- **WHEN** `tests/public-names/allow/nondev.txt` の写しに、ファイルのどの行にも当たらない固定の文字列を持つ行を足す
+- **THEN** 検索のテストが「何も打ち消していない」の違反で落ちる
+
+#### Scenario: パス名の当たりも拾う
+
+- **WHEN** 検索範囲に、辞書の語を名前に含むファイルがある
+- **THEN** 検索のテストが `<パス>:path:<語>` で落ちる
+
+#### Scenario: capability-registry の SKILL.md は全体が検索の対象になる
+
+- **WHEN** `plugins/capability-registry/skills/capability-registry/SKILL.md` の「原則」の節に `moko` を書き足す
+- **THEN** 検索のテストが落ちる（個人版の節を除く手当てが無いので、SKILL.md のどの節に書いても当たる）
+
+#### Scenario: 辞書に無い固有名は検査を通る
+
+- **WHEN** 対象のファイルに辞書に無い別の固有名がある
 - **THEN** 検索のテストは通り、その誤りは人のレビューが見る
 
 ### Requirement: 載せない行の基準に互換のために残す旧名の読み取りを含める
@@ -178,19 +219,18 @@ TBD - created by archiving change harness-public-private-split. Update Purpose a
 
 ### Requirement: dev-workflow の公開版の部品は Orca 経路を除いて決めた固有名を持たない
 
-公開版に残る dev-workflow の部品は、固有記述の一覧で担い手なしだった Orca 経路以外の行の語を、許可リストに載った行を除いて持たない。次の検索の当たりは、許可リストの行を除いて 0 件でなければならない（MUST）。検索は大文字と小文字を区別する。
+公開版に残る dev-workflow の部品は、固有記述の一覧で担い手なしだった Orca 経路以外の行の語を、許可に載った行を除いて持たない。次の検索の当たりは、許可の行を除いて 0 件でなければならない（MUST）。検索は共有スクリプト `plugins/dev-workflow/scripts/forbidden-words-check.sh` に、検索範囲のファイル一覧と辞書を渡して行い、大文字と小文字を区別しない固定文字列の部分一致で、ファイルの本文とパス名の両方に当てる。語は辞書のファイル（`tests/public-names/dict/`）にだけ書き、`tests/public-private-split.bats` に正規表現で書かない。
 
-- `moko`: `plugins/dev-workflow/` の公開版のファイル
-- `new-resident`: `plugins/dev-workflow/references/pr-body-format.md`・`plugins/dev-workflow/skills/issueify/SKILL.md`・`plugins/dev-workflow/skills/push-guard-setup/SKILL.md`
-- `flatmate`: 上の 3 ファイルに加えて `plugins/dev-workflow/templates/escalation-tripwires.md`・`plugins/dev-workflow/scripts/pr-state.sh`・`plugins/dev-workflow/skills/memory-refresh/SKILL.md`・`plugins/dev-workflow/templates/auto-merge/docs/auto-merge.md`
-- `CLAUDE_HARNESS_DEV_DIR`: `plugins/dev-workflow/references/ci-watch.md`・`plugins/dev-workflow/skills/memory-refresh/SKILL.md`
-- 公開版のファイル: 仕分けの表で個人版に決まるファイル（`plugins/dev-workflow/docs/auto-merge-deployments.md`）と保留の行のファイルは対象に含めない。付属の `changes/`・`CHANGELOG.md`・`tests/`・`evals/` も含めない
-- 許可リスト: 載せない行の基準のうち「出典や経緯としてだけ名前を挙げる行」に当たる行は、`tests/public-private-split.bats` の中の許可リストに「ファイルのパス・行に含まれる固定の文字列・当たる基準」の 3 つ組で 1 件ずつ載せたものだけを通す。許可リストに無い当たりは落ちる。許可リストの各件は、判定の表（tasks の実施欄）に同じ行がなければならない
+- `moko`（`moko.txt`）: `plugins/dev-workflow/` の公開版のファイル
+- `new-resident`（`new-resident.txt`）と `flatmate`（`flatmate.txt`）: `plugins/dev-workflow/references/pr-body-format.md`・`plugins/dev-workflow/skills/issueify/SKILL.md`・`plugins/dev-workflow/skills/push-guard-setup/SKILL.md`・`plugins/dev-workflow/templates/escalation-tripwires.md`・`plugins/dev-workflow/scripts/pr-state.sh`・`plugins/dev-workflow/skills/memory-refresh/SKILL.md`・`plugins/dev-workflow/templates/auto-merge/docs/auto-merge.md`（`new-resident` は同じ 7 ファイルに当てる）
+- `CLAUDE_HARNESS_DEV_DIR`（`dev-dir-env.txt`）: `plugins/dev-workflow/references/ci-watch.md`・`plugins/dev-workflow/skills/memory-refresh/SKILL.md`
+- 公開版のファイル: `plugins/dev-workflow/` の git 管理下のファイル。#1129 で個人版のリポジトリへ移した `plugins/dev-workflow/docs/auto-merge-deployments.md` は公開版に無いので、ファイルを除く手当てはしない（MUST NOT）。#1129 で公開版に確定したエピック実行の部品（`epic-dispatch.sh`・`epic-launch-orca.sh`・`stop-judge.sh`・`parent-pass-criteria.md`・`parent-merge-criteria.md`）は対象に含める。付属の `changes/`・`CHANGELOG.md`・`tests/`・`evals/` は含めない
+- 許可: 載せない行の基準のうち「出典や経緯としてだけ名前を挙げる行」に当たる行は、`tests/public-names/allow/<呼び出しの名前>.txt` に共有スクリプトの恒久の書式 `<path>:<語>:=<行に含まれる固定の文字列>` で 1 件ずつ載せたものだけを通す（各行の直前の `#` のコメント行に当たる基準を書く）。許可に無い当たりは落ちる。どの当たりも打ち消さない許可の行は「何も打ち消していない」の違反で落ちる。現在、この検索に許可の行は 0 件で、allow のファイルは置かない
 
 この検索の守備範囲は次のとおりで、範囲の外の誤りを見つけることは完了条件にしない（MUST NOT）。
 
-- 拾う誤り: 直した語が上のファイルに戻ってくること／許可リストに無い当たりが現れること
-- 通してよい具体例: 検索語に無い別の固有名・許可リストの載せ方の良し悪し・書き換えた文の良し悪し。人のレビューと固有記述の一覧が見る
+- 拾う誤り: 直した語が上のファイルに戻ってくること／許可に無い当たりが現れること／許可の行が何も打ち消さなくなること
+- 通してよい具体例: 辞書に無い別の固有名・許可の載せ方と基準の良し悪し・書き換えた文の良し悪し。人のレビューと固有記述の一覧が見る
 - 見つかる穴をすべて塞ぐことは完了条件にしない
 
 #### Scenario: 直した語が戻ると落ちる
@@ -198,22 +238,187 @@ TBD - created by archiving change harness-public-private-split. Update Purpose a
 - **WHEN** `plugins/dev-workflow/references/pr-body-format.md` に flatmate の `new-resident` が issue テンプレートを配ると書く
 - **THEN** `tests/public-private-split.bats` が落ちる
 
-#### Scenario: 許可リストの出典の行は通る
+#### Scenario: 辞書の語を含む行を足すと落ちる
 
-- **WHEN** 検索対象のファイルに、出典としてだけ flatmate の名を挙げる行があり、許可リストに載っている
-- **THEN** 検索のテストは通る。同じファイルの別の行に flatmate を書き足すと、許可リストに無いので落ちる
+- **WHEN** 検索範囲のファイルに、その範囲の辞書の語を含む行を 1 行書き足す
+- **THEN** 検索のテストが落ち、`<パス>:<行番号>:<語>` が出る
 
-#### Scenario: 検索語に無い固有名は検査を通る
+#### Scenario: 許可の出典の行は通る
 
-- **WHEN** 対象のファイルに検索語に無い別の固有名がある
+- **WHEN** 検索対象のファイルに、出典としてだけ flatmate の名を挙げる行があり、その行を指す許可の行が allow のファイルにある
+- **THEN** 検索のテストは通る。同じファイルの別の行に flatmate を書き足すと、許可に無いので落ちる
+
+#### Scenario: 辞書に無い固有名は検査を通る
+
+- **WHEN** 対象のファイルに辞書に無い別の固有名がある
 - **THEN** 検索のテストは通り、その誤りは人のレビューが見る
 
-### Requirement: Orca 経路の行の担い手は #1177 とする
+#### Scenario: 確定したエピック実行の部品も moko の検索の対象になる
 
-固有記述の一覧は、dev-workflow の公開版の部品のうち Orca 経路を書く行（Orca の語を含み、`epic-launch-orca.sh` 以外の公開版の部品にある行）の「直す issue」を、書き直しが済むまで「担い手なし」でなく `#1177` としなければならない（MUST）。#1177 は #1123 の change 3b の後に、これらの行を差し替え可能な起動部品の 1 つとしての「Orca を使う場合」の書き方に直す。
+- **WHEN** `plugins/dev-workflow/scripts/stop-judge.sh` に `moko` を書き足す
+- **THEN** `tests/public-private-split.bats` が落ちる
 
-#### Scenario: Orca 経路の行に担い手が付く
+### Requirement: 固有記述の一覧に担い手なしの行を残さない
 
-- **WHEN** 一覧の Orca 経路の行を読む
-- **THEN** 「直す issue」の欄が `#1177` で、「担い手なし」の行が dev-workflow に無い
+`docs/public-private-split.md` の固有記述の一覧は、「直す issue」の欄が「担い手なし」の行を 1 件も持ってはならない（MUST NOT）。担い手のない行は、直して一覧から消すか、載せない行の基準に当たる理由を書いて一覧から外す。`tests/public-private-split.bats` は、一覧の全体（dev-workflow の行に限らない）で「担い手なし」の行が 0 件であることを確かめなければならない（MUST）。一覧の行が 0 件になってもこの検査と他の形の検査は通らなければならない（MUST）。
+
+この検査の守備範囲は、既存の要件「表と一覧の検査の守備範囲」に従う。入力の出どころは、テストが自分で読む文書の一覧の表で、拾う誤りと通してよい具体例は次のとおり。範囲の外の誤りを見つけることは完了条件にしない（MUST NOT）。
+
+- 拾う誤り: 一覧の「直す issue」の欄が「担い手なし」の行が 1 件でも残ること
+- 通してよい具体例: 載せない行の基準に当たると判定した理由の正しさ・直した文の良し悪し・一覧に載せ忘れた行。人のレビューと、候補語による取りこぼしの確認が見る
+
+#### Scenario: 一覧に担い手なしの行が無い
+
+- **WHEN** 一覧の「直す issue」の欄を読む
+- **THEN** 「担い手なし」の行が 0 件である
+
+#### Scenario: 担い手なしの行が戻ると落ちる
+
+- **WHEN** 一覧に「直す issue」が「担い手なし」の行を 1 行足す
+- **THEN** `tests/public-private-split.bats` が落ちる
+
+#### Scenario: 一覧が空でも検査が通る
+
+- **WHEN** 一覧の行が 0 件で、見出しの行だけがある
+- **THEN** 一覧の形の検査は通る
+
+### Requirement: 載せない行の基準に起動部品の 1 つとして並べた行を含める
+
+`docs/public-private-split.md` の「載せない行の基準」は、「差し替え可能な起動部品の 1 つとして Orca を並べた行」を載せない行に含めなければならない（MUST）。当たる行は、Orca を tmux など他の起動部品や方式と並べた 1 つとして書いていなければならず（MUST）、Orca だけを前提にした行（Orca 経路と名乗る・Orca に登録済みのリポジトリを探す・Orca の親が子のターミナルに打ち込む）は当たらない（MUST NOT）。develop `SKILL.md` の「部品ごとの欄」の見出しと表は、この基準に当たる行として一覧に載せない。既存の基準の例「Orca や端末から起動した Claude Code」は一般の製品を並べた例で、この基準は `epic-launch-<名前>.sh` の差し替えの部品として並べた行である。
+
+この基準は `epic-launch-orca.sh` が公開版に決まる前提で当てるもので、#1129 で `epic-launch-orca.sh` は公開版に確定した。文書はこの前提が満たされたことを書かなければならず（MUST）、#1177 で外した行（節「起動部品の 1 つとして一覧から外した行」）は一覧に戻さない。節は外した行の場所の記録として残す。
+
+「載せない行の基準」は、さらに「Orca の起動部品の中の行と、起動部品を呼ぶ側で Orca の部品を選んだときの振る舞いを書いた行」を載せない行に含めなければならない（MUST）。当たるのは `plugins/dev-workflow/scripts/epic-launch-orca.sh` の行と、`plugins/dev-workflow/scripts/epic-dispatch.sh` の中で Orca の部品を選んだときの動き（orca のコマンド・Orca の画面の印・Orca 管理のワークツリーの判定・Orca に登録されたリポジトリ）を書いた行だけで、起動部品の外で Orca だけを前提にした手順を書く行（develop の SKILL.md や `references/` の文書の「Orca 経路の…」）は当たらない（MUST NOT）。当たらない行は「Orca を使う場合」の書き方か別セッション方式の書き方に直すか、一覧に載せて担い手を付ける。
+
+#### Scenario: 起動部品を並べた行は一覧に載せなくてよい
+
+- **WHEN** 「部品ごとの欄」の表の Orca の部品の列の行を候補語 `Orca` で検索する
+- **THEN** 当たった行は基準で説明でき、一覧に載せなくてよい
+
+#### Scenario: 公開版に確定したので外した行は戻さない
+
+- **WHEN** 節「起動部品の 1 つとして一覧から外した行」を読む
+- **THEN** `epic-launch-orca.sh` が #1129 で公開版に確定したので、その行を一覧に戻さないことが書かれている
+
+#### Scenario: Orca の起動部品の中の行は一覧に載せなくてよい
+
+- **WHEN** `epic-launch-orca.sh` と、`epic-dispatch.sh` の Orca の部品を選んだときの動きを書いたコメントを候補語 `Orca` で検索する
+- **THEN** 当たった行は基準「Orca の起動部品の中の行と、起動部品を呼ぶ側で Orca の部品を選んだときの振る舞いを書いた行」で説明でき、一覧に載せなくてよい
+
+#### Scenario: Orca だけを前提にした手順の行は基準に当たらない
+
+- **WHEN** `parent-pass-criteria.md` の冒頭のように、起動部品の外で「Orca 経路のエピックで…」と Orca だけを前提にした行を候補語で検索する
+- **THEN** その行はどちらの基準にも当たらず、別セッション方式の書き方に直すか、一覧に載せて担い手を付ける
+
+### Requirement: 公開版の辞書は公開済みの語だけを持ち、語は辞書にだけ書く
+
+公開版の部品に対する辞書は `tests/public-names/dict/` に置き、語は `tests/public-private-split.bats` に書かれていた語（`moko`・`suimei`・`uranai`・`shukan`・`sns-autopilot`・`flatmate`・`new-resident`・`/Users/oratta`・`CLAUDE_HARNESS_DEV_DIR`）だけでなければならない（MUST）。新しい固有名を公開側の辞書に足してはならない（MUST NOT。新しい固有名は個人版の辞書に書き、共有スクリプトの `--dict` の引数で足す）。同じ語を複数の辞書に書いてはならない（MUST NOT）。`tests/public-private-split.bats` には、検索語の正規表現も許可の配列も残してはならない（MUST NOT。範囲の決定と共有スクリプトの呼び出しだけを持つ）。この検索は `scripts/test.sh` の bats の全スイートの一部として CI で走る。
+
+この要件の守備範囲は次のとおりで、範囲の外の誤りを見つけることは完了条件にしない（MUST NOT）。
+
+- 想定する入力の出どころ: このリポジトリの管理者が書く辞書・allow・bats。敵対的な入力（辞書を悪意で作る者）は想定しない
+- 拾う誤り: 辞書に公開済みの語以外が足されること／同じ語が複数の辞書に書かれること／bats に検索語の正規表現や許可の配列が戻ること
+- 通してよい具体例: 辞書の網羅（辞書に無い固有名）・語を公開済みと判定することの正しさ・辞書のファイルの分け方の良し悪し。辞書の整備と人のレビューが見る
+- 見つかる穴をすべて塞ぐことは完了条件にしない
+
+#### Scenario: 辞書が公開済みの語だけである
+- **WHEN** `tests/public-names/dict/` のファイルの語を読む
+- **THEN** 上の 9 語だけがあり、どの語も 1 つの辞書にだけ書かれている
+
+#### Scenario: bats に語が残らない
+- **WHEN** `tests/public-private-split.bats` の語の検索の部分を読む
+- **THEN** 辞書の語の正規表現も `NONDEV_ALLOW`・`DEVWF_ALLOW` の配列も無く、共有スクリプトの呼び出しがある
+
+#### Scenario: CI で固有名を足すと落ちる
+- **WHEN** 公開版の部品に辞書の語を含む行を足して `scripts/test.sh public-private-split` を実行する
+- **THEN** 終了コードが 0 以外になる
+
+#### Scenario: 辞書に無い固有名は検査を通る
+- **WHEN** 公開版の部品に辞書に無い固有名を書く
+- **THEN** 検索のテストは通る。辞書の網羅は検査の保証の外で、辞書の整備と人のレビューが見る
+
+### Requirement: 個人版に移した部品は移した記録に載せ、公開版に残さない
+
+issue #1129 で個人版のリポジトリ `oratta/claude-harness-oratta` に移した部品（プラグイン `weekly-report`・プラグイン `daily-report`・`plugins/dev-workflow/docs/auto-merge-deployments.md`・`plugins/capability-registry/scripts/fmtoken.sh`・`plugins/capability-registry/skills/capability-registry/1password.md`・`plugins/capability-registry/skills/capability-registry/SKILL.md` の「表記規約（生成文にも適用すること）」と「資格情報の階層（どこに置くかはプロジェクトごとに決めない）」の 2 節）は、`docs/public-private-split.md` の節「個人版に移した部品」の表に 1 行ずつ載せなければならない（MUST）。各行は部品・移した先（個人版のリポジトリの中のパス）・写し元の公開版の commit SHA を持つ。移した部品の行は仕分けの表に置いてはならない（MUST NOT）。`rules/plugin-editing.md` はこの表に載せない。ファイル 1 本をまるごと移したのではなく、全員に要る部分を公開版に残し、Harness 開発者向けの部分だけを個人版の `rules/harness-dev.md` に移したので、公開版に部品が残る。移した部分は、表のあとの段落に移した先と写し元の commit SHA を書く（MUST）。
+
+公開版は移した部品を持ってはならない（MUST NOT）。具体的には、移したファイルとディレクトリのパスの `git ls-files` が 0 件で、`.claude-plugin/marketplace.json` の `plugins[]` と bundle に `weekly-report`・`daily-report` が無く、capability-registry の SKILL.md に移した 2 節の見出しが無い。`tests/public-private-split.bats` が、移した部品のパスと見出しを節「個人版に移した部品」の表から読んで確かめる。プラグイン `weekly-report`・`daily-report` を移したことで付属のファイル（`changes/`・`tests/` など）もプラグインごと公開版から無くなる。capability-registry の `tests/fmtoken.bats` は付属のファイルの扱いに従い `fmtoken.sh` と一緒に移す。
+
+個人版の固有名（`fmtoken`・`weekly-report`・`daily-report`・`auto-merge-deployments`・`1password.md`・`Fieldy` など）が公開版の作業ツリーに残っていないかは、個人版のリポジトリに置いた辞書と検査（`scripts/check-public-leak.sh`）で確かめ、公開版の辞書には足さない（要件「公開版の辞書は公開済みの語だけを持ち、語は辞書にだけ書く」）。
+
+この要件を確かめる公開版の検査の守備範囲は次のとおりで、範囲の外の誤りを見つけることは完了条件にしない（MUST NOT）。
+
+- 想定する入力の出どころ: このリポジトリの管理者が書く節「個人版に移した部品」の表と、テストの実行時点の `git ls-files`・`marketplace.json`・SKILL.md の `## ` の見出し
+- 拾う誤り: 移した部品が公開版に戻ること（ファイルの復活・marketplace への再登録・節の見出しの復活）／移した部品の行が仕分けの表に残ること／節の表の行が移した先か写し元の SHA を欠くこと
+- 通してよい具体例: 個人版に移した中身が写し元と一致しているか、写し元の SHA が実在するか、公開版に残った文に個人版の固有名があるか。個人版の `scripts/check-public-leak.sh` と人のレビューが見る
+- 見つかる穴をすべて塞ぐことは完了条件にしない
+
+個人版の検査（`scripts/check-public-leak.sh <公開版の作業ツリー>`）は、個人版の辞書を公開版の `plugins/dev-workflow/scripts/forbidden-words-check.sh` に `--dict` で渡し、当たりが許可に載った行を除いて 1 件でもあれば終了コード 1 で終わり、当たりを `<パス>:<行番号>:<語>` の形で出さなければならない（MUST）。当たりが無ければ終了コード 0 で終わる。公開版の消す PR は、終了コード 0 の結果を本文に載せるまでマージしない。この検査の守備範囲は次のとおりで、範囲の外の誤りを見つけることは完了条件にしない（MUST NOT）。
+
+- 想定する入力の出どころ: 引数に渡した公開版の作業ツリーの `git ls-files` のうち、`rules/`・`output-styles/`・`scripts/`・`plugins/` の配下とルート直下の `README.md`・`CLAUDE.md`・`AGENTS.md`・`CONTRIBUTING.md`（`openspec/`・`docs/public-private-split.md`・`_longruns/`・`changes/`・`CHANGELOG.md`・`tests/`・`evals/` を除く）と、オーナーが書く個人版の辞書と許可。敵対的な入力は想定しない
+- 拾う誤り: 辞書の語（`fmtoken`・`weekly-report`・`daily-report`・`auto-merge-deployments`・`1password.md`・`Fieldy`）が、検索の範囲のファイルの本文かパス名に、許可に無い形で残ること
+- 通してよい具体例: 辞書に無い個人版の固有名、除いた範囲（経緯の記録や公開版の検査）に残る語、公開版の過去の履歴に残る語。人のレビューと辞書の整備が見る
+- 見つかる穴をすべて塞ぐことは完了条件にしない
+
+#### Scenario: 移した部品が公開版に無い
+- **WHEN** 公開版で、節「個人版に移した部品」の表の各パスを `git ls-files` で調べ、`marketplace.json` と capability-registry の SKILL.md の見出しを読む
+- **THEN** どのパスも 0 件で、`weekly-report`・`daily-report` は `plugins[]` にも bundle にも無く、移した 2 節の見出しは SKILL.md に無い
+
+#### Scenario: 移した部品を戻すと落ちる
+- **WHEN** 公開版に `plugins/capability-registry/scripts/fmtoken.sh` を置き直す
+- **THEN** `tests/public-private-split.bats` が、そのパスを挙げて落ちる
+
+#### Scenario: 移した部品の行を仕分けの表に残すと落ちる
+- **WHEN** 仕分けの表に `plugins/capability-registry/scripts/fmtoken.sh` の行を残す
+- **THEN** `tests/public-private-split.bats` が落ちる
+
+#### Scenario: 移した記録が読める
+- **WHEN** `docs/public-private-split.md` の節「個人版に移した部品」を読む
+- **THEN** 移した部品ごとに移した先のパスと写し元の commit SHA が書かれ、`rules/plugin-editing.md` については表のあとの段落に、個人版の `rules/harness-dev.md` へ移した部分と写し元の commit SHA が書かれている
+
+#### Scenario: 公開版に個人版の固有名が残っていない
+- **WHEN** 個人版のリポジトリで `scripts/check-public-leak.sh <公開版の作業ツリー>` を実行する
+- **THEN** 終了コードが 0 で、結果が公開版の消す PR の本文に載っている
+
+#### Scenario: 公開版に個人版の固有名が残っていると落ちる
+- **WHEN** 公開版の作業ツリーの `README.md` に `weekly-report` を含む行が残ったまま、個人版のリポジトリで `scripts/check-public-leak.sh <公開版の作業ツリー>` を実行する
+- **THEN** 終了コードが 1 で、`README.md:<行番号>:weekly-report` が出る。公開版の消す PR はこの状態ではマージしない
+
+#### Scenario: 除いた範囲の語は個人版の検査を通る
+- **WHEN** 公開版の `docs/public-private-split.md` の節「個人版に移した部品」に `fmtoken.sh` がある
+- **THEN** 個人版の検査は終了コード 0 で終わる
+
+### Requirement: 公開版のプラグイン編集ルールは全員に要る部分だけを持ち、個人版の側のファイル名を変える
+
+公開版の `rules/plugin-editing.md` は、プラグインを入れた誰の環境でも当てはまる次の 5 点だけを書かなければならない（MUST）。(1) インストールされたフォルダ（`~/.claude/plugins/marketplaces/...`）は自動更新されるので直接編集しない、(2) `~/.claude/commands/` と `~/.claude/skills/` へのローカルコピーを編集しない、(3) `~/.claude/rules/*.md` は marketplace のフォルダを指す symlink なので、ルールもその部品を持つリポジトリ側で直す、(4) 部品は、その部品を持つリポジトリの開発用 clone（marketplace のフォルダの外）で直す。公開版の部品にも個人版の部品にも当てはまる書き方にし、個人版の名前とパスは書かない、(5) 状態がおかしくなっても手動で削除せず、`/plugin uninstall` → `/reload-plugins` → `/plugin install` → `/reload-plugins` の順で直す。
+
+次のものは公開版の `rules/plugin-editing.md` に書いてはならない（MUST NOT）: Harness 開発者向けの手順（開発用 clone の場所を決める環境変数 `CLAUDE_HARNESS_DEV_DIR`、別プロジェクト作業中に Harness を直すときの手順、`/wt-setup`、`sync.sh`、版を上げないことと `changes/` の記録と Draft PR）と、個人版の名前（`claude-harness-oratta`）。これらは個人版のリポジトリ `oratta/claude-harness-oratta` の `rules/harness-dev.md` に置く。
+
+個人版のルールのファイル名は、公開版と同じ `plugin-editing.md` にせず `harness-dev.md` とする。どちらも `~/.claude/rules/` に symlink で並べるため、同じ名前だと片方がもう片方を上書きし、全員に要る部分か Harness 開発者向けの部分のどちらかが読まれなくなるからである。`docs/public-private-split.md` の仕分けの表は `rules/plugin-editing.md` を「公開版」の 1 行で載せ、その理由に、全員に要る部分を残して Harness 開発者向けの部分を個人版に移したことを書く。
+
+この要件を確かめる検査（`tests/public-private-split.bats`）の守備範囲は次のとおりで、範囲の外の誤りを見つけることは完了条件にしない（MUST NOT）。
+
+- 想定する入力の出どころ: このリポジトリの管理者が書く `rules/plugin-editing.md` の本文と仕分けの表。敵対的な入力は想定しない
+- 拾う誤り: `rules/plugin-editing.md` が公開版に無いこと／本文に上の「書いてはならない」語（`CLAUDE_HARNESS_DEV_DIR`・`/wt-setup`・`sync.sh`・`claude-harness-oratta`・`Draft PR`）のどれかがあること／本文に (5) の復旧の手順の語（`/plugin uninstall`・`/plugin install`・`/reload-plugins`）が無いこと／仕分けの表の `rules/plugin-editing.md` の分類が「公開版」でないこと
+- 通してよい具体例: (1)〜(4) の書き方の良し悪し、検索語に無い Harness 開発者向けの語が混ざること、個人版の `rules/harness-dev.md` の中身。人のレビューが見る
+- 見つかる穴をすべて塞ぐことは完了条件にしない
+
+#### Scenario: 公開版のルールが全員に要る部分だけを持つ
+- **WHEN** 公開版の `rules/plugin-editing.md` を読む
+- **THEN** 上の (1)〜(5) が書かれ、`CLAUDE_HARNESS_DEV_DIR`・`/wt-setup`・`sync.sh`・`claude-harness-oratta`・`Draft PR` のどれも書かれていない
+
+#### Scenario: Harness 開発者向けの語が戻ると落ちる
+- **WHEN** 公開版の `rules/plugin-editing.md` に `CLAUDE_HARNESS_DEV_DIR` を含む行を足す
+- **THEN** `tests/public-private-split.bats` が、その語を挙げて落ちる
+
+#### Scenario: ルールが公開版から消えると落ちる
+- **WHEN** 公開版から `rules/plugin-editing.md` を消す
+- **THEN** `tests/public-private-split.bats` が、そのパスを挙げて落ちる
+
+#### Scenario: 仕分けの表で公開版と決まっている
+- **WHEN** 仕分けの表の `rules/plugin-editing.md` の行を読む
+- **THEN** 分類が「公開版」で、理由に、全員に要る部分を残し Harness 開発者向けの部分を個人版の `rules/harness-dev.md` に移したことが書かれている
+
+#### Scenario: 個人版のファイル名が公開版と重ならない
+- **WHEN** 個人版のリポジトリの `rules/` を列挙する
+- **THEN** `plugin-editing.md` が無く、`harness-dev.md` がある
 
