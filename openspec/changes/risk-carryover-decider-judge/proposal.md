@@ -19,8 +19,8 @@ pr-review-gate 手順 3-c（前の HEAD の許容の引き継ぎ）は、1 本�
 
 ### Modified Capabilities
 
-- `dev-workflow-pr-review-gate`: Requirement「前の HEAD の許容を新しい HEAD に引き継いでよい条件」（終了コード 4 の扱い・守備範囲・シナリオ）、「引き継いだ宣言の書式と合格条件」（引き継ぎの根拠の行に終了コード 4 の形を足す）を変え、「risk-carryover-check.sh が差分の範囲と根拠ファイルの無変更を判定する」の名前を変え、判定役に比べさせる Requirement を足す
-- `dev-workflow-develop`: Requirement「G は段ごとに新しく起こし、SendMessage で再開しない」（段の表の合格処理の行）、「Gate Result は段と次の段を持つ」（Status と `次の段:` の表）を変え、本体が `needs-carryover-judge` を受けたときの動きの Requirement を足す
+- `dev-workflow-pr-review-gate`: Requirement「前の HEAD の許容を新しい HEAD に引き継いでよい条件」（終了コード 4 の扱い・守備範囲・シナリオ）、「引き継いだ宣言の書式と合格条件」（引き継ぎの根拠の行に終了コード 4 の形を足す）を変え、「risk-carryover-check.sh が差分の範囲と根拠ファイルの無変更を判定する」の名前を変え、判定役に比べさせる Requirement（回す条件・渡すものと行数の上限・返答と記録の形・記録の選び方・起こすセッション・`needs-carryover-judge` の return の欄）を足す
+- `dev-workflow-develop`: Requirement「G は段ごとに新しく起こし、SendMessage で再開しない」（段の表の合格処理の行）、「Gate Result は段と次の段を持つ」（Status と `次の段:` の表）を変え、本体が `needs-carryover-judge` を受けたときの動きと、モデルの表の判定役の行の Requirement を足す
 
 ## Impact
 

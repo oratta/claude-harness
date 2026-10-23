@@ -75,6 +75,13 @@ develop の G はサブエージェント（`dev-workflow:gate-runner`）で、A
 
 Codex の phase `gate` は `gate-runner.md` と pr-review-gate の段のファイル（`hold.md`・`pass.md` を含む）を正本として受け取り、Gate Result を返す。Status を読んで次を決めるのは Claude の本体で、(4) に `needs-carryover-judge` の分岐を足せば Codex の G が返したものも同じに扱える。`codex-develop.py` の prompt の「独立した役が要るなら needs-reviewer/needs-decider を返す」は一般の言い方で、`needs-fix-check` も同じ扱いで動いている。今の main の `codex-develop.py` は、phase `gate` の正本一覧に `skills/develop/references/roles/gate-runner.md`（29 行目の対応表）と `stages/pass.md`・`stages/hold.md`（474〜476 行目）を入れていることを仕様づくりの時点で確かめた。実装時にもう一度確かめ、外れていたらこの change で足す。
 
+### issue に無い本体側の補い（2 つ）
+
+次の 2 つは issue #1238 の本文にも主の決定（issue #1238 のコメント、2026-10-23）にも書かれていない。仕様を書く側が、判定役を起こせない場面の扱いとして補ったもので、どちらも「判定役が判定しなかったときは今どおり主に聞く」という issue の受け入れ条件の側に倒している。仕様レビューで、主に聞くべき仕様の発明に当たるかを確かめてもらう。
+
+- **`SHARED_BUDGET_MODE=depleted` のときは判定役を起こさず、「判断できない」の記録を投稿して主に聞く（決定 4）**: issue は判定役のモデルを `opus` と指定している。depleted は全役割を `sonnet` に固定する決まり（`develop/SKILL.md` のモデル節）なので、そのまま起こすと主が指定したより弱いモデルで主の承認を省く判定をすることになり、`opus` で起こすと共有枠の決まりを破る。どちらも避けるため、起こさずに主に聞く側に倒した。主の手間は今と同じ 1 回の質問に留まる
+- **従来経路の一括の G（`段: 一括（従来経路）`）は判定役を起こさず主に聞く（決定 1）**: develop の外から `レビュー経路: 従来` で起こされた G はサブエージェントで、Agent ツールで決める役を起こせない。呼び出し元が Status を受けて決める役を起こす約束も無いので、Status で返しても判定役は起こされない。新しい約束を作らず、今どおり主に聞く側に倒した
+
 ## Risks / Trade-offs
 
 - [判定役が差分を読み違え、変わったリスクを主に聞かずに通す] → issue #1238 で受け入れたリスク。起きるのは根拠ファイルへの PR 自身の修正がリスクの中身に触れた場合に限られ、条件 4（新しい HEAD のレビューから組み立てた宣言の本文の一致）は残る。頻度は確かめていない
