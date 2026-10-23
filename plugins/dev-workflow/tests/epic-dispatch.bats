@@ -3453,6 +3453,12 @@ orca_cmd_scripts() {
   printf '%s\n' "$r" | grep -F '回答を受けたら' | grep -qF '`mark resumed`'
   printf '%s\n' "$r" | grep -F '引き継ぎを先に投稿' | grep -qF '引き継ぎのコメントの URL'
   printf '%s\n' "$r" | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
+  # 記録が無い・別の子の記録（skipped <N> no-workspace / not-linked）も親に伝わらないので、
+  # failed と同じ行で 1 行添える。skipped を「何もしない」側に書かない（#1247）
+  printf '%s\n' "$r" | grep -F '`mark stopped` の出力が' | grep -F '`skipped`' | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
+  printf '%s\n' "$r" | grep -F '`skipped <N> no-workspace`' | grep -qF '`skipped <N> not-linked`'
+  printf '%s\n' "$r" | grep -qF '`mark stopped` の出力が `marked` なら何もしない。`skipped` で始まる'
+  ! printf '%s\n' "$r" | grep -F '`mark stopped` の出力が' | grep -qF '`marked` か `skipped` なら何もしない' || return 1
 }
 
 # spec: dev-workflow-develop（エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く）
@@ -3649,6 +3655,34 @@ orca_cmd_scripts() {
   grep -F '`主に聞く理由: なし（…）`' "$f" | grep -qF '通す側で読む'
   grep -F '項目の無い記録' "$f" | grep -qF 'ほかの項目から'
   grep -F '主に聞く理由が成り立つか迷うときは' "$f" | grep -qF '成り立つ側に倒す'
+}
+
+# issue #1246: エピックの目的・原則が推奨を一意に決めるときは「主の側の情報が要らない」を満たすと読む
+@test "criteria: an epic's purpose or principle that decides the recommendation satisfies the no-owner-information condition" {
+  f="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
+  # 表の行から読み方の段落を指す
+  grep -F '| 主の側の情報が要らない |' "$f" | grep -qF 'エピックの目的・原則から推奨が決まるとき'
+  # 読み方の段落
+  p="$(grep -F '**エピックの目的・原則から推奨が決まるとき**' "$f")"
+  [ -n "$p" ]
+  printf '%s\n' "$p" | grep -F 'エピック本文の目的・原則・決まった方針' | grep -F '一意に決める' | grep -qF '「主の側の情報が要らない」を満たすと読む'
+  printf '%s\n' "$p" | grep -qF 'ほかの 8 条件'
+  printf '%s\n' "$p" | grep -F '聖域' | grep -F '破壊的' | grep -F 'リスクの許容' | grep -qF '目的・原則が推奨を決めていても通さない'
+  printf '%s\n' "$p" | grep -F '1 つに決まらない' | grep -qF '迷ったとき'
+  # リスクは表の「その子のブランチの中に閉じるもの」と揃え、解釈の揺れは推奨が変わるときに限る（#1254 のゲートの指摘）
+  printf '%s\n' "$p" | grep -qF '許容と書かれておらず、その子のブランチの中にも閉じないリスク'
+  printf '%s\n' "$p" | grep -qF '原則の語が 2 通り以上に読め、読み方で推奨が変わる'
+  run grep -F '解釈が要る' "$f"; [ "$status" -eq 1 ]
+  run grep -F '許容と書かれていないリスク' "$f"; [ "$status" -eq 1 ]
+  printf '%s\n' "$p" | grep -F '推し量った意図' | grep -qF '根拠にしない'
+  # 通る例: エピック本文の原則が推奨をそのまま決めていた型（固有名を出さない）
+  grep -F 'オーナーと客の環境で仕組みを分けない' "$f" | grep -qF '推奨をそのまま決めていた'
+  # 通らない例: 同じ型でもリスクの許容や聖域に触れるもの
+  grep -F '同じ型でも' "$f" | grep -F '許容と書かれておらず、その子のブランチの中にも閉じないリスク' | grep -qF '聖域'
+  # 公開版に作業先のリポジトリ名を書かない（語は公開版の辞書から読む）
+  words="$(grep -v -e '^#' -e '^$' "$PLUGIN_DIR/../../tests/public-names/dict/flatmate.txt")"
+  [ -n "$words" ]
+  run grep -iF -e "$words" "$f"; [ "$status" -eq 1 ]
 }
 
 @test "reply-after-idle: the restore table has the parent's pass decisions and the terminal check is in reply" {
