@@ -761,6 +761,10 @@ refute() {
   [ -n "$line" ] || { echo "step (2) lacks the section name" >&2; return 1; }
   echo "$line" | grep -qF '`references/fix-check.md`'
   echo "$line" | grep -qF 'Read'
+  # 主に聞かずに回した周の事後報告を (4) と同じく (2) でも押さえる（コンパクト後は SKILL.md しか手元に無い）
+  report="$(echo "$step2" | grep -F '主に聞かず次の周を回す')"
+  [ -n "$report" ] || { echo "step (2) lacks the continue line" >&2; return 1; }
+  echo "$report" | grep -qF '`references/fix-check.md` の「続行と事後報告」の書式で事後報告を記録先に投稿する'
 }
 
 @test "fix-check move (#1222): the moved section's own phrases are in references/fix-check.md and not in SKILL.md" {

@@ -112,7 +112,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       （記録先の本文と関連コメントは本体が入力文に貼って渡す）
       REQUEST_CHANGES → W を SendMessage で再開（再開指示に `段: spec`）して artifact を修正 → R1 を再開して差分再レビュー
       （既定 2 周＝初回＋差分 1 回。2 周目以降の周の終わりに BLOCKER が残れば、`references/fix-check.md` を Read し、その節「レビューの周を主に聞かずに続ける（直し方の判定）」の判定を通す。
-       残った BLOCKER がすべて直し方が決まっているもので PR トークン上限の内側（`pr-token-budget.sh` が exit 2 でない）なら、主に聞かず次の周を回す（W を `段: spec` で再開 → R1 に差分再レビュー）。
+       残った BLOCKER がすべて直し方が決まっているもので PR トークン上限の内側（`pr-token-budget.sh` が exit 2 でない）なら、主に聞かず次の周を回す（W を `段: spec` で再開 → R1 に差分再レビュー。その周の R1 の結果を受け取ったら、`references/fix-check.md` の「続行と事後報告」の書式で事後報告を記録先に投稿する）。
        方針の選び直しが要るなら needs-approval を付けて本体がオーナーに 1 アクションで依頼し、`references/handover.md` どおり引き継ぎを残す）
       R1 の APPROVE が記録先に記録されるまで W を apply に進めない（再開しない。例外は (1) の文言合わせの通し方だけ）
 (3) W を SendMessage で再開（再開前に `scripts/subagent-context.sh <W の名前>` で測る。上限超を検知した
