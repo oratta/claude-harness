@@ -49,6 +49,25 @@
 - **WHEN** 会話記録に普通の user の発言と `probe:hello` の Skill 呼び出しだけがあり、`source: compact` で実行する
 - **THEN** stdout は空で exit 0
 
+### Requirement: develop を呼んでいたかの判定の守備範囲
+要件「develop を呼んでいたかはコンパクト前の 3 種類の記録で判定する」と「名前空間の無い develop・別のスキル・文中の言及は数えない」の判定は、次の範囲を超える保証をしてはならない（MUST NOT）。入力として扱うのは、Claude Code が SessionStart(compact) の hook に渡す stdin の JSON と、その `transcript_path` が指す会話記録（Claude Code が書く jsonl。この時点ではコンパクト前の記録だけ）である。拾いたい誤りは、develop を呼んでいた会話でコンパクトのあと SKILL.md を読み直さず要約の上で進むこと（差し込み漏れ）と、名前空間の無い `develop`・別のスキル・文中の言及で、呼んでいない会話に差し込むことである。通してよく、この判定では止めない入力は下の Scenario に挙げる。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
+
+#### Scenario: 呼び終えたあと別の作業をしていても毎回差し込む
+- **WHEN** develop を呼び終えたあと、同じ会話で develop と関係のない作業を続け、コンパクトが 2 回走る
+- **THEN** どちらのコンパクトのあとも読み直しの文を差し込む。この判定では止めない
+
+#### Scenario: 手で打ったコマンドの文字列は呼び出しとして数える
+- **WHEN** user が `<command-name>/dev-workflow:develop</command-name>` の文字列を手で打った発言だけがある会話で、`source: compact` で実行する
+- **THEN** 呼び出しとして数え、読み直しの文を差し込む。この判定では止めない
+
+#### Scenario: SKILL.md を Read で読んだだけの会話は数えない
+- **WHEN** Skill もコマンドも使わず、SKILL.md を Read ツールで読んだだけの会話で、`source: compact` で実行する
+- **THEN** 数えず、何も出さない。この判定では止めない
+
+#### Scenario: 会話記録の形が変わって判定が外れても止めない
+- **WHEN** Claude Code の更新で会話記録の形が変わり、3 種類の記録のどれにも当たらなくなった会話で、`source: compact` で実行する
+- **THEN** 何も出さずに exit 0 で終わる（fail-open）。この判定では止めない
+
 ### Requirement: 差し込む文は SKILL.md の読み直しと親か子かの確かめ直しを求める
 develop を呼んでいたと判定したとき、スクリプトは stdout に `{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "<文>"}}` の形の JSON を 1 つ出さなければならない（MUST）。`<文>` は次の 2 つの要素を含まなければならない（MUST）。(1) `${CLAUDE_PLUGIN_ROOT}/skills/develop/SKILL.md` の絶対パスを示し、それを Read ツールで offset と limit を使って分けて読み直すこと。(2) 自分がエピックの親か子かを記録先の issue から確かめ直してから続けること。
 
