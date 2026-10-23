@@ -849,7 +849,7 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
             if not issues and marker is None and not delta:
                 continue
             if recorded:
-                key += "#out"
+                key += OUT_SUFFIX
                 if key in seen:
                     continue
             fact = build_fact(record, resolver, path)
@@ -873,6 +873,26 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
 def is_continuation(fact: dict) -> bool:
     """同じ応答の後続行から出した補足の事実か（入力・キャッシュは 0、出力は確定値との差分。メッセージ数に数えない）。"""
     return bool(fact.get("continuation"))
+
+
+OUT_SUFFIX = "#out"
+
+
+def continuation_origin(request_id: str, uuid=None) -> str:
+    """補足の事実の ``request_id`` から元の requestId を返す。
+
+    補足の事実の鍵は ``<requestId>#<uuid>``、変更前の版が出力 0 で書いた補足の行に足す出力の
+    差分の行は ``<requestId>#<uuid>#out``。末尾のその部分だけを除く（requestId 自体が ``#`` を
+    含んでも元に戻せるように、最初の ``#`` では切らない）。``uuid`` は補足の事実の ``uuid`` の欄
+    （その後続行の uuid）。欄が無い古い行は、末尾の ``#out`` と最後の ``#`` 以降を除く。
+    """
+    if uuid:
+        for suffix in ("#%s%s" % (uuid, OUT_SUFFIX), "#%s" % uuid):
+            if len(request_id) > len(suffix) and request_id.endswith(suffix):
+                return request_id[:-len(suffix)]
+    if request_id.endswith(OUT_SUFFIX):
+        request_id = request_id[:-len(OUT_SUFFIX)]
+    return request_id.rsplit("#", 1)[0]
 
 
 def iter_facts(root: str, resolver: RepoResolver, branch: str | None = None):
@@ -933,6 +953,8 @@ def _ledger_id_uuid(line: str):
 
 
 OUTPUT_KEY = '"output_tokens": '
+# 補足の事実の行の印。文字列の値の中の引用符はエスケープされるので、この並びは欄そのものにしか当たらない
+LEDGER_CONTINUATION = '"continuation": true'
 
 
 def _ledger_output(line: str) -> int:
@@ -1073,7 +1095,10 @@ class LedgerIndex:
             self.db.execute("DELETE FROM files")
             start = 0
             counted_start = size + 1  # 下で counted を捨てて 0 から読む
-        if counted_start > size:
+        if counted_start != start or counted_start > size:
+            # 2 つの読み終え位置が食い違うのは、counted_covered を知らない版が covered を進めたとき。
+            # その版が counted も足したか（直前の配布版）足していないか（それより前の版）は控えから
+            # 分からないので、counted を捨てて台帳の先頭から数え直す（足し直しで二重に数えない）。
             self.db.execute("DELETE FROM counted")
             counted_start = 0
         low = min(start, counted_start)
@@ -1097,9 +1122,12 @@ class LedgerIndex:
                 if not raw.strip():
                     continue
                 text = raw.decode("utf-8", errors="replace")
-                request_id, _uuid = _ledger_id_uuid(text)
+                request_id, uuid = _ledger_id_uuid(text)
                 if request_id is not None:
-                    base = request_id.split("#", 1)[0]
+                    if LEDGER_CONTINUATION in text:
+                        base = continuation_origin(request_id, uuid)
+                    else:
+                        base = request_id
                     counts[base] = counts.get(base, 0) + _ledger_output(text)
             self.db.executemany(
                 "INSERT INTO counted (id, out) VALUES (?, ?) "
@@ -1851,15 +1879,17 @@ def price_drift(session_ids, pricing: Pricing, facts=None):
 # --------------------------------------------------------------------------
 
 def _origin_request_id(fact: dict) -> str:
-    """補足の事実の ``<requestId>#<uuid>`` から元の requestId を返す（通常の事実はそのまま）。"""
+    """補足の事実の ``<requestId>#<uuid>``（``#out`` 付きも）から元の requestId を返す（通常の事実はそのまま）。"""
     request_id = fact["request_id"]
-    return request_id.split("#", 1)[0] if is_continuation(fact) else request_id
+    return continuation_origin(request_id, fact.get("uuid")) if is_continuation(fact) else request_id
 
 
 def _ordered(rows: list) -> list:
     """同じセッションの事実を、timestamp → 元の requestId → 通常の事実が先 → 補足は元ログの位置順に並べる。
 
     補足の事実は ``source_offset``（元ログの行頭バイト位置）の数値順、同値なら ``request_id`` 順。
+    ただし ``<鍵>#out`` の行（変更前の版が出力 0 で書いた補足の行に足す出力の差分）は、``<鍵>`` の
+    行の直前に置く。``<鍵>`` の行が投稿の印を持つとき、差分がその投稿で閉じる区間に入るように。
     ``source_offset`` を持たない補足（位置を保存する前の版が書いたもの）が混ざる同時刻・同一
     requestId のグループは、順序を復元できないので従来の ``request_id`` 順に戻す。
     """
@@ -1871,7 +1901,10 @@ def _ordered(rows: list) -> list:
         if not is_continuation(fact):
             return group + (0, 0, fact["request_id"])
         offset = 0 if group in legacy else fact["source_offset"]
-        return group + (1, offset, fact["request_id"])
+        request_id = fact["request_id"]
+        amends = request_id.endswith(OUT_SUFFIX)
+        base = request_id[:-len(OUT_SUFFIX)] if amends else request_id
+        return group + (1, offset, base, 0 if amends else 1)
 
     return sorted(rows, key=key)
 

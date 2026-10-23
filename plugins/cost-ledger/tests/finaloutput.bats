@@ -501,3 +501,104 @@ db = sqlite3.connect(sys.argv[1] + ".state.sqlite")
 assert dict(db.execute("SELECT id, out FROM counted")) == total
 PY
 }
+
+@test "finaloutput: a head line the previous release appended while updating counted is not counted twice (769 F1)" {
+  # 直前の配布版は counted と covered を両方進めるが counted_covered を持たない。
+  # counted_covered から読み直すと、その版が counted に足した先頭の行（出力 8）をもう一度足し、差分が 235 になる
+  export COST_LEDGER_PATH="$LEDGER"
+  fo_row r0 z1 2026-09-01T00:00:00.000Z 5 end_turn | cl_write_log a
+  python3 "$CL" ledger-sync --quiet
+  {
+    fo_row r0 z1 2026-09-01T00:00:00.000Z 5 end_turn
+    fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none
+  } | cl_write_log a
+  env -u COST_LEDGER_PATH python3 "$CL" facts | tail -n 1 >> "$LEDGER"
+  python3 - "$LEDGER" <<'PY'
+import os, sqlite3, sys
+db = sqlite3.connect(sys.argv[1] + ".state.sqlite")
+assert db.execute("SELECT value FROM meta WHERE key = 'counted_covered'").fetchone() is not None
+db.execute("INSERT OR IGNORE INTO ids (id) VALUES ('r1')")
+db.execute("INSERT OR IGNORE INTO heads (id, uuid) VALUES ('r1', 'u1')")
+db.execute("INSERT INTO counted (id, out) VALUES ('r1', 8)")
+db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('covered', ?)", (os.path.getsize(sys.argv[1]),))
+db.commit()
+PY
+  {
+    fo_row r0 z1 2026-09-01T00:00:00.000Z 5 end_turn
+    fo_row r1 u1 2026-09-01T00:00:01.000Z 8 none
+    fo_row r1 u2 2026-09-01T00:00:02.000Z 251 tool_use
+  } | cl_write_log a
+  run python3 "$CL" ledger-sync --quiet
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  python3 - "$LEDGER" <<'PY'
+import json, sqlite3, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+assert [r["output_tokens"] for r in rows] == [5, 8, 243], rows
+db = sqlite3.connect(sys.argv[1] + ".state.sqlite")
+assert dict(db.execute("SELECT id, out FROM counted")) == {"r0": 5, "r1": 251}
+PY
+}
+
+# 区間を事実の列から切って、(issue, 閉じた印, 出力の合計) の列を出す
+intervals_of_ledger() {
+  python3 - "$PLUGIN_DIR/scripts" "$LEDGER" <<'PY'
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import cost_ledger
+facts = [json.loads(l) for l in open(sys.argv[2])]
+print(json.dumps([[i["issue"], i["closed_by"], sum(f["output_tokens"] for f in i["facts"])]
+                  for i in cost_ledger.split_intervals(facts)]))
+PY
+}
+
+@test "finaloutput: the #out row of a posting final line lands in the interval the post closes (769 F2)" {
+  # 変更前の版は、確定行が gh issue comment 42 を持つとき出力 0・投稿の印付きの補足の行 r1#u2 を書いた。
+  # --rescan で足す r1#u2#out（出力 243）が r1#u2 の後に並ぶと、投稿で閉じた区間の外に出る
+  write_two a "gh issue comment 42 --body x"
+  mkdir -p "$(dirname "$LEDGER")"
+  env -u COST_LEDGER_PATH python3 "$CL" facts | python3 -c '
+import json, sys
+for line in sys.stdin:
+    row = json.loads(line)
+    if row.get("continuation"):
+        row["output_tokens"] = 0
+    print(json.dumps(row, ensure_ascii=False))' > "$LEDGER"
+  export COST_LEDGER_PATH="$LEDGER"
+  run python3 "$CL" ledger-sync --rescan --quiet
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -q '"request_id": "r1#u2#out"' "$LEDGER" || return 1
+  run intervals_of_ledger
+  [ "$output" = '[["42", "gh issue comment", 251]]' ] || { echo "$output"; return 1; }
+}
+
+@test "finaloutput: a requestId containing # keeps its origin for counted output and ordering (769 F3)" {
+  # 元の requestId は末尾の #<uuid>（#out の行は #<uuid>#out）だけを除いて求める。最初の # で切ると、
+  # 控えの counted が別の鍵 req に入って差分が 251 になり、同時刻の補足の事実が先頭の行より前に並ぶ
+  {
+    fo_row 'req#a' u1 2026-09-01T00:00:01.000Z 8 none
+  } | cl_write_log a
+  export COST_LEDGER_PATH="$LEDGER"
+  python3 "$CL" ledger-sync --quiet
+  {
+    fo_row 'req#a' u1 2026-09-01T00:00:01.000Z 8 none
+    fo_row 'req#a' u2 2026-09-01T00:00:01.000Z 251 tool_use "gh issue comment 42 --body x"
+  } | cl_write_log a
+  run python3 "$CL" ledger-sync --quiet
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  python3 - "$LEDGER" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+assert [(r["request_id"], r["output_tokens"]) for r in rows] == [("req#a", 8), ("req#a#u2", 243)], rows
+PY
+  run intervals_of_ledger
+  [ "$output" = '[["42", "gh issue comment", 251]]' ] || { echo "$output"; return 1; }
+  run python3 - "$PLUGIN_DIR/scripts" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+import cost_ledger
+for rid in ("req#a#u2", "req#a#u2#out"):
+    got = cost_ledger._origin_request_id({"request_id": rid, "uuid": "u2", "continuation": True})
+    assert got == "req#a", (rid, got)
+PY
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
