@@ -39,7 +39,7 @@
 
 ## 8. 全体の確認と PR 本文への記録
 
-- [ ] 8.1 変更後の字数（SKILL.md と handover.md、python の len）と、`npx --yes bats@1.10.0 tests/`（リポジトリ直下）と `npx --yes bats@1.10.0 plugins/dev-workflow/tests/develop-*.bats` の変更後の結果を測り、1.1 の変更前の値（328 件全通過・331 件全通過）と並べて PR 本文に記録する。C5・C7 で残した重複と残す理由、範囲外として本体に返す件（固定しているテストの書き換え）も PR 本文に書く。確認: 両方の bats が変更前と同じく全通過し、`npx --yes bats@1.10.0 plugins/dev-workflow/tests/spec-decision-and-review.bats` と test_codex_develop.py も通り、PR 本文に変更前後の字数と件数がある。触る範囲: PR 本文（(3b) で作る PR）
+- [x] 8.1 変更後の字数（SKILL.md と handover.md、python の len）と、`npx --yes bats@1.10.0 tests/`（リポジトリ直下）と `npx --yes bats@1.10.0 plugins/dev-workflow/tests/develop-*.bats` の変更後の結果を測り、1.1 の変更前の値（328 件全通過・331 件全通過）と並べて PR 本文に記録する。C5・C7 で残した重複と残す理由、範囲外として本体に返す件（固定しているテストの書き換え）も PR 本文に書く。確認: 両方の bats が変更前と同じく全通過し、`npx --yes bats@1.10.0 plugins/dev-workflow/tests/spec-decision-and-review.bats` と test_codex_develop.py も通り、PR 本文に変更前後の字数と件数がある。触る範囲: PR 本文（(3b) で作る PR）
 
 ## Workflow follow-up
 
