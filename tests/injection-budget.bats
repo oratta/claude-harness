@@ -115,33 +115,61 @@ has_paths() {
 
 # frontmatter_paths_globs <file> — frontmatter の paths: が持つ glob を 1 行 1 件で出力する。
 # ブロック表記（`paths:` の下に `  - "..."`）とフロー表記（`paths: ["...", "..."]`）の
-# 両方を読む。行末の YAML コメント（空白＋`#`）は落とす。`paths: null` `paths: ~` や
-# 文字列のような「リストでない」値は 1 件も出さない（＝ glob 0 件の違反として扱われる）。引用符と前後の空白は sed 側で落とす（awk の正規表現に単引用符を書かないため）。
+# 両方を読む。行末の YAML コメント（空白＋`#`、要素の先頭の `#` を含む）と末尾の空白は落とす。
+# 出力するのは「非空の文字列の配列」として読めたときだけで、次のどれかに当たれば
+# 1 件も出さない（＝ glob 0 件の違反として扱われ、常時注入の除外にも使われない。部分抽出はしない）:
+#   - `paths: null` `paths: ~` や文字列のような「リストでない」値
+#   - 引用符の無い要素が YAML で文字列にならない値（null・~・真偽値・数値・空の要素）
+#   - 入れ子の配列・マップの要素、空文字列の要素
+# 単引用符は awk の正規表現に書かず、-v sq で渡す。
 frontmatter_paths_globs() {
-  awk 'NR == 1 { if ($0 != "---") exit; next }
+  awk -v sq="'" '
+       function item(s,   low) {
+         gsub(/^[ \t]+|[ \t]+$/, "", s)
+         if (length(s) >= 2 && substr(s, 1, 1) == "\"" && substr(s, length(s), 1) == "\"") {
+           s = substr(s, 2, length(s) - 2)
+         } else if (length(s) >= 2 && substr(s, 1, 1) == sq && substr(s, length(s), 1) == sq) {
+           s = substr(s, 2, length(s) - 2)
+         } else {
+           low = tolower(s)
+           if (s == "" || low ~ /^(null|~|true|false|yes|no|on|off|y|n)$/ ||
+               s ~ /^[-+]?[0-9][0-9_]*(\.[0-9_]*)?([eE][-+]?[0-9]+)?$/ ||
+               s ~ /^[-+]?\.[0-9]+([eE][-+]?[0-9]+)?$/ ||
+               s ~ /^0[xX][0-9a-fA-F_]+$/ || s ~ /^0o[0-7_]+$/ ||
+               low ~ /^[-+]?\.(inf|nan)$/ || s ~ /^[\[{]/) { bad = 1; return }
+         }
+         if (s == "") { bad = 1; return }
+         out[++cnt] = s
+       }
+       NR == 1 { if ($0 != "---") exit; next }
        /^---[ \t]*$/ { exit }
        /^paths:/ {
+         seen = 1
          rest = $0
          sub(/^paths:[ \t]*/, "", rest)
          sub(/(^|[ \t]+)#.*$/, "", rest)
+         sub(/[ \t]+$/, "", rest)
          if (rest == "") { inp = 1 }
          else if (rest ~ /^\[.*\]$/) {
            sub(/^\[/, "", rest); sub(/\]$/, "", rest)
            n = split(rest, items, ",")
-           for (i = 1; i <= n; i++) print items[i]
+           for (i = 1; i <= n; i++) {
+             # フロー表記の末尾のカンマ（`["a",]`）が作る空の最後の要素だけは読み飛ばす
+             if (i == n && items[i] ~ /^[ \t]*$/ && n > 1) continue
+             item(items[i])
+           }
            inp = 0
-         } else { inp = 0 }
+         } else { bad = 1; inp = 0 }
          next
        }
-       inp && /^[ \t]*-[ \t]*/ {
-         line = $0; sub(/^[ \t]*-[ \t]*/, "", line)
-         sub(/[ \t]+#.*$/, "", line)
-         print line; next
+       inp && /^[ \t]*-([ \t]|$)/ {
+         line = $0; sub(/^[ \t]*-/, "", line)
+         sub(/(^|[ \t]+)#.*$/, "", line)
+         item(line); next
        }
-       inp && /^[^ \t]/ { inp = 0 }' "$1" \
-    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
-          -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/" \
-    | grep -v '^$' || true
+       inp && /^[ \t]*(#.*)?$/ { next }
+       inp && /^[^ \t]/ { inp = 0 }
+       END { if (!bad) for (i = 1; i <= cnt; i++) print out[i] }' "$1" || true
 }
 
 # glob_has_literal_segment <glob> — `/` で区切った要素のうち、ワイルドカード文字
@@ -1409,6 +1437,32 @@ EOF
   [[ "$output" == *"n.md"* ]] || return 1
   [ "$(list_always_on_md "$TMPD" | sum_files_z)" -eq "$(wc -c < "$TMPD/n.md")" ]
   [ "$(list_path_scoped_md "$TMPD" | sum_files_z)" -eq 0 ]
+}
+
+@test "paths: elements that are not non-empty strings reject the whole list" {
+  # 数値・null・真偽値・空の要素・コメントだけの要素・入れ子・混在配列は、文字列の glob
+  # として読まず、リスト全体を違反にして常時注入の除外にも使わない（部分抽出しない）
+  local i=0 body
+  for body in 'paths: [123]' 'paths: [null]' 'paths: [false]' 'paths: ["rules/x", 1]' \
+              'paths: [["rules/x"]]' 'paths: [""]' \
+              $'paths:\n  - null' $'paths:\n  - # scope/rules' $'paths:\n  -' \
+              $'paths:\n  - "rules/x"\n  - ~'; do
+    i=$((i + 1))
+    printf -- '---\n%s\n---\nbody\n' "$body" > "$TMPD/t$i.md"
+    [ -z "$(frontmatter_paths_globs "$TMPD/t$i.md")" ] || { echo "extracted: $body"; return 1; }
+    run check_paths_globs "$TMPD/t$i.md"
+    [ "$status" -ne 0 ] || { echo "not a violation: $body"; return 1; }
+    ! has_valid_paths "$TMPD/t$i.md" || { echo "treated as scoped: $body"; return 1; }
+  done
+  [ "$(list_path_scoped_md "$TMPD" | sum_files_z)" -eq 0 ]
+}
+
+@test "paths: flow lists with trailing spaces and quoted scalars are read as strings" {
+  printf -- '---\npaths: ["rules/**"]   \n---\nbody\n' > "$TMPD/f.md"
+  [ "$(frontmatter_paths_globs "$TMPD/f.md")" = "rules/**" ]
+  printf -- "---\npaths:\n  - '123'\n  - \"rules/a\"  # c\n---\nbody\n" > "$TMPD/q.md"
+  [ "$(frontmatter_paths_globs "$TMPD/q.md")" = $'123\nrules/a' ]
+  has_valid_paths "$TMPD/q.md"
 }
 
 @test "output-styles are counted in full even when a fixture carries paths" {
