@@ -169,6 +169,14 @@ def charge(count):
         raise TooMuch()
 
 
+# 文字列の複写の分の仕事量。複写は字句読みの 1 文字あたりの仕事より 2 桁以上軽い（字句読みは 1 秒に約 300 万
+# 文字、複写は 1 秒に数 GB）ので、1/1024 で数える。入れ子の段ごとに外側の置換の全体を語へ複写する形（$( を
+# 10 万重）は、複写の合計が長さの 2 乗に比例する。数えないと 10 秒かかっても上限に届かない（#872）。
+# 数えても、数千重までの入れ子の判定は上限に届かない。
+def charge_copy(count):
+    charge(count >> 10)
+
+
 # 字句読み（spec destructive-git-hook「コマンド文字列をシェルと同じ単位で読む」）。
 # 引用状態と「演算子か語か」を保ったまま 1 回で読み、単純コマンド（語の並び）の並び（$(...) の中の
 # ものを含む）と、読み直して判定するバッククォートの中身の並びを返す。扱うのは演算子・行継続・
@@ -263,7 +271,7 @@ def double_quoted(s, i, subs, cmds, term='"', memo=None):
             end, plain = yield subst(s, i, subs, cmds, memo)
             if plain:
                 spans.append((pos, pos + end - i))
-            charge(end - i)  # 二重引用符の中の置換を文字列に複写する分
+            charge_copy(end - i)  # 二重引用符の中の置換を文字列に複写する分
             out.append(s[i:end])
             pos += end - i
             i = end
@@ -345,7 +353,7 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
         if not st["has"]:
             return
         w = "".join(word)
-        charge(len(w))  # 語を 1 つの文字列につなぐ分の複写
+        charge_copy(len(w))  # 語を 1 つの文字列につなぐ分の複写
         word.clear()
         if spans:
             w = Word(w)
@@ -400,7 +408,7 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
             end, plain = yield subst(s, i, subs, cmds, memo)
             if plain:
                 spans.append((st["len"], st["len"] + end - i))
-            charge(end - i)  # 置換の文字列を語に複写する分（入れ子の段ごとに外側の長さ分の複写が起きる）
+            charge_copy(end - i)  # 置換の文字列を語に複写する分（入れ子の段ごとに外側の長さ分の複写が起きる）
             add(s[i:end])
             i = end
             continue

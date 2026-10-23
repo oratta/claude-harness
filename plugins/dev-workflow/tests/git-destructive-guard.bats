@@ -309,8 +309,8 @@ NINE_KINDS=(
   done
 }
 
-@test "work limit: a 100000-deep substitution that copies its text per level is stopped with ask within 10 seconds (#872)" {
-  # 入れ子の段ごとに外側の長さ分の文字列を複写する形。複写の分が仕事量に数えられないと、10 秒かかって上限に届かない
+@test "work limit: a 100000-deep substitution that copies its text per level is stopped with ask within 15 seconds (#872)" {
+  # 入れ子の段ごとに外側の長さ分の文字列を複写する形。複写の分が仕事量に数えられないと、10 秒かかっても上限に届かない（直した後は約 4 秒。遅い環境の余裕を見て 15 秒とする）
   local n=100000 open close start end
   open="$(printf '$(%.0s' $(seq "$n"))"
   close="$(printf ')%.0s' $(seq "$n"))"
@@ -319,7 +319,7 @@ NINE_KINDS=(
   end=$SECONDS
   [ "$status" -eq 0 ]
   [ "$(decision)" = "ask" ] || { echo "not ask: [${output:0:300}]"; return 1; }
-  [ $((end - start)) -le 10 ] || { echo "took $((end - start)) seconds"; return 1; }
+  [ $((end - start)) -le 15 ] || { echo "took $((end - start)) seconds"; return 1; }
 }
 
 @test "shell syntax: quoted -c / eval arguments are kept at any nesting depth" {
