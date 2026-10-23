@@ -20,6 +20,8 @@ setup() {
   EPIC_CHILD_STOP="${SKILL_DIR}/references/epic-child-stop.md"
   # 「保留で止まるときの引き継ぎ」節は SKILL.md から references/ へ移した（#1220）
   HANDOVER="${SKILL_DIR}/references/handover.md"
+  # 「レビューの周を主に聞かずに続ける（直し方の判定）」節は SKILL.md から references/ へ移した（#1222）
+  FIX_CHECK="${SKILL_DIR}/references/fix-check.md"
   TRIPWIRES="${PLUGIN_DIR}/templates/escalation-tripwires.md"
 }
 
@@ -666,17 +668,17 @@ refute() {
 
 # --- レビューの周を主に聞かずに続ける（直し方の判定。#722） ---
 
-@test "fix-check (#722): the section sits between the token budget and the handover sections" {
-  heads="$(grep -nE '^## ' "$SKILL")"
-  b="$(echo "$heads" | grep -F '## PR トークン上限' | cut -d: -f1)"
-  f="$(echo "$heads" | grep -F '## レビューの周を主に聞かずに続ける（直し方の判定）' | cut -d: -f1)"
-  h="$(echo "$heads" | grep -F '## 保留で止まるときの引き継ぎ' | cut -d: -f1)"
-  [ -n "$b" ] && [ -n "$f" ] && [ -n "$h" ] || { echo "missing section: $b / $f / $h"; return 1; }
-  [ "$b" -lt "$f" ] && [ "$f" -lt "$h" ]
+@test "fix-check (#722, #1222): the section lives in references/fix-check.md, not in SKILL.md" {
+  [ -f "$FIX_CHECK" ]
+  [ "$(grep -cxF '## レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")" -eq 1 ]
+  if grep -qxF '## レビューの周を主に聞かずに続ける（直し方の判定）' "$SKILL"; then echo "SKILL.md に節が残っている" >&2; return 1; fi
+  # 移す前の並び（PR トークン上限 → 保留で止まるときの引き継ぎ）は SKILL.md で隣り合う
+  heads="$(grep -E '^## ' "$SKILL")"
+  echo "$heads" | grep -A1 -F '## PR トークン上限' | tail -n 1 | grep -qF '## 保留で止まるときの引き継ぎ'
 }
 
 @test "fix-check (#722): the decider is asked with the verdict-and-reasons contract, not the 3 points" {
-  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
   [ -n "$s" ] || { echo "no fix-check section"; return 1; }
   echo "$s" | grep -qF 'subagent_type: dev-workflow:decider'
   echo "$s" | grep -qF '可否と根拠'
@@ -689,14 +691,14 @@ refute() {
 }
 
 @test "fix-check (#722): the five inputs are fixed" {
-  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
   for token in '記録先の本文と関連コメント' '残った指摘の原文' '前の周の指摘の原文' '対象ファイルのパス' 'W の直近の return'; do
     echo "$s" | grep -qF "$token" || { echo "missing input: $token"; return 1; }
   done
 }
 
 @test "fix-check (#722): first-line answers, one retry on shortage, then treated as re-choosing" {
-  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
   for token in '`裁定: 可`' '`裁定: 否`' '`不足: <足りないもの>`' '1 回だけ依頼し直し' '3 回目の依頼はしない'; do
     echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
@@ -704,7 +706,7 @@ refute() {
 }
 
 @test "fix-check (#722): the record format is defined here with its first line and fields" {
-  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
   echo "$s" | grep -qF '`^直し方の判定: (決まっている|選び直しが要る)$`'
   for f in '対象' '周' '判定役' '指摘ごとの判定' '入力不足'; do
     echo "$s" | grep -qE "^\| ${f} \|" || { echo "record lacks field: $f"; return 1; }
@@ -712,7 +714,7 @@ refute() {
 }
 
 @test "fix-check (#722): the after-the-fact report format is defined here with its first line and fields" {
-  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
   echo "$s" | grep -qF '`^主に聞かずに回した周: [0-9]+ 周目$`'
   for f in '残っていた指摘' '判定の根拠' '使ったトークン' '周の結果'; do
     echo "$s" | grep -qE "^\| ${f} \|" || { echo "report lacks field: $f"; return 1; }
@@ -722,7 +724,7 @@ refute() {
 }
 
 @test "fix-check (#722): only two conditions ask the owner" {
-  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
   echo "$s" | grep -qF '方針の選び直し'
   echo "$s" | grep -qF '`pr-token-budget.sh` が exit 2'
   echo "$s" | grep -qF '2 つだけ'
@@ -735,7 +737,7 @@ refute() {
   echo "$step4" | grep -qF 'needs-decider / needs-fix-check / review-incomplete'
   nf="$(echo "$step4" | awk '/^      needs-fix-check →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
   [ -n "$nf" ] || { echo "no needs-fix-check line in step (4)"; return 1; }
-  for token in 'PR トークン上限' 'dev-workflow:decider' '判定の記録' '照合と振り分けの G を新しく起こ' 'レビューの周を主に聞かずに続ける（直し方の判定）' 'W も再開しない' '事後報告'; do
+  for token in 'PR トークン上限' 'dev-workflow:decider' '判定の記録' '照合と振り分けの G を新しく起こ' 'レビューの周を主に聞かずに続ける（直し方の判定）' '`references/fix-check.md`' 'Read' 'W も再開しない' '事後報告'; do
     echo "$nf" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
   # needs-fix-check の段落は needs-decider の段落の前に置く
@@ -748,6 +750,38 @@ refute() {
   s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
   echo "$s" | grep -F 'レビューの 2 周キャップ超え' | grep -qF '選び直しが要る'
   echo "$s" | grep -qF '`2 周キャップ超え`'
+}
+
+# --- 「レビューの周を主に聞かずに続ける（直し方の判定）」節の移設（#1222） ---
+
+@test "fix-check move (#1222): step (2) REQUEST_CHANGES branch tells to Read references/fix-check.md" {
+  step2="$(awk '/^\(2\) R1 を/{f=1} /^\(3\) W を/{exit} f' "$SKILL")"
+  [ -n "$step2" ] || { echo "no step (2)"; return 1; }
+  line="$(echo "$step2" | grep -F 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  [ -n "$line" ] || { echo "step (2) lacks the section name" >&2; return 1; }
+  echo "$line" | grep -qF '`references/fix-check.md`'
+  echo "$line" | grep -qF 'Read'
+}
+
+@test "fix-check move (#1222): the moved section's own phrases are in references/fix-check.md and not in SKILL.md" {
+  local p
+  for p in '直し方の判定: (決まっている|選び直しが要る)' '3 点ではなく' '主に聞かずに回した周:' '新しい計測の仕組みは足さない' 'この判定の守備範囲は' '回数に上限は置かない' '「直し方が決まっている」の定義' '**依頼の契約**' '**続行と事後報告**'; do
+    if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
+    grep -qF -- "$p" "$FIX_CHECK" || { echo "移設先に無い: $p" >&2; return 1; }
+  done
+}
+
+@test "fix-check move (#1222): every reference to the section names references/fix-check.md" {
+  local f line
+  for f in "$SKILL" "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md" \
+           "${SKILL_DIR}/references/roles/spec-reviewer.md" "${SKILL_DIR}/references/roles/worker/spec.md"; do
+    grep -qF '「レビューの周を主に聞かずに続ける（直し方の判定）」' "$f" || { echo "参照が無い: $f" >&2; return 1; }
+    while IFS= read -r line; do
+      printf '%s\n' "$line" | grep -qF 'references/fix-check.md' || { echo "移設先を指していない: $f: $line" >&2; return 1; }
+    done < <(grep -F '「レビューの周を主に聞かずに続ける（直し方の判定）」' "$f")
+  done
+  if grep -rqF 'SKILL.md の節「レビューの周を主に聞かずに続ける' "${PLUGIN_DIR}/skills"; then return 1; fi
+  if grep -rqF 'SKILL.md「レビューの周を主に聞かずに続ける' "${PLUGIN_DIR}/skills"; then return 1; fi
 }
 
 # --- #1035: 主の側にしか無い情報が要るときだけ主に聞く ---
@@ -788,7 +822,7 @@ refute() {
 }
 
 @test "ask-owner (#1035): fix-check definition 1 accepts choices that do not change visible behaviour" {
-  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）')"
+  s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
   echo "$s" | grep -E '^1\. ' | grep -qF '利用者に見える振る舞い'
 }
 
