@@ -5,6 +5,8 @@
 # 会話ログが消えてもコストが残る台帳（COST_LEDGER_PATH）と、Stop hook による差分追記を固定する。
 # 台帳・控え・会話ログはすべて $BATS_TEST_TMPDIR に置き、利用者の台帳と会話ログには触れない。
 
+bats_require_minimum_version 1.5.0
+
 load helper
 
 setup() {
@@ -257,7 +259,7 @@ case "$*" in
   *) exit 1 ;;
 esac
 SH
-  run python3 "$CL" cost 42 --repo "$REPO_A"
+  run --separate-stderr python3 "$CL" cost 42 --repo "$REPO_A"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   local before="${lines[0]}"
   [[ "$before" != *'$0.00'* ]] || { echo "$output"; return 1; }
@@ -265,7 +267,7 @@ SH
   python3 "$CL" ledger-sync --quiet
   mv "$CONFIG_DIR/projects" "$BATS_TEST_TMPDIR/projects-moved"
   mkdir -p "$CONFIG_DIR/projects"
-  run python3 "$CL" cost 42 --repo "$REPO_A"
+  run --separate-stderr python3 "$CL" cost 42 --repo "$REPO_A"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "${lines[0]}" = "$before" ] || { echo "before=$before"; echo "$output"; return 1; }
 }
