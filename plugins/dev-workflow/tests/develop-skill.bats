@@ -18,6 +18,8 @@ setup() {
   # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
   EPIC="${SKILL_DIR}/references/epic.md"
   EPIC_CHILD_STOP="${SKILL_DIR}/references/epic-child-stop.md"
+  # 「保留で止まるときの引き継ぎ」節は SKILL.md から references/ へ移した（#1220）
+  HANDOVER="${SKILL_DIR}/references/handover.md"
   TRIPWIRES="${PLUGIN_DIR}/templates/escalation-tripwires.md"
 }
 
@@ -462,7 +464,7 @@ refute() {
 }
 
 @test "epic move (#1219): references inside the moved files point back to SKILL.md or to each other" {
-  grep -qF 'SKILL.md の「保留で止まるときの引き継ぎ」→「新しいセッションでの再開」の手順 2' "$EPIC_CHILD_STOP"
+  grep -qF '`references/handover.md` の「新しいセッションでの再開」の手順 2' "$EPIC_CHILD_STOP"
   grep -qF '`references/epic.md` の「回し方」の別セッション方式の手順 8' "$EPIC_CHILD_STOP"
   grep -qF '子の側の手順は `references/epic-child-stop.md`' "$EPIC"
   # SKILL.md の他の節は移設先を指す（旧い節名の参照が残っていない）
@@ -623,6 +625,29 @@ refute() {
   grep -qF 'threadId' "$r"
 }
 
+# --- 保留で止まるときの引き継ぎの移設（#1220） ---
+
+@test "handover move (#1220): SKILL.md keeps only the guidance lines and Reads the destination before stopping and when resuming" {
+  s="$(section '保留で止まるときの引き継ぎ')"
+  echo "$s" | grep -qF '`references/handover.md`'
+  echo "$s" | grep -qF '主の返事を待って止まる前'
+  echo "$s" | grep -qF '保留中の記録先を再開するとき'
+  echo "$s" | grep -qF 'Read してから進める'
+  # 移した節の固有語句は移設先にあり、SKILL.md の本文には残っていない
+  for p in '**投稿の順序**' '**依頼の出し直し**' '**書式**' '| 待ち理由 |' '**前任 W の手渡し可否**' '**channel の主への案内**' '### 新しいセッションでの再開' 'SendMessage しない'; do
+    if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
+  done
+  for p in '**投稿の順序**' '**依頼の出し直し**' '**書式**' '| 待ち理由 |' '**前任 W の手渡し可否**' '**channel の主への案内**' '### 新しいセッションでの再開' 'SendMessage しない'; do
+    grep -qF -- "$p" "$HANDOVER" || { echo "移設先に無い: $p" >&2; return 1; }
+  done
+}
+
+@test "handover move (#1220): references to the moved section point at handover.md" {
+  grep -qF 'references/handover.md' "${PLUGIN_DIR}/commands/develop.md"
+  grep -qF 'references/handover.md' "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  if grep -qF '保留で止まるときの引き継ぎ' "${PLUGIN_DIR}/commands/develop.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md" "$EPIC_CHILD_STOP" "$EPIC"; then return 1; fi
+}
+
 # --- レビューの周を主に聞かずに続ける（直し方の判定。#722） ---
 
 @test "fix-check (#722): the section sits between the token budget and the handover sections" {
@@ -704,7 +729,7 @@ refute() {
 }
 
 @test "fix-check (#722): the handover scene for the two-round cap points at the re-choosing verdict" {
-  s="$(section '保留で止まるときの引き継ぎ')"
+  s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
   echo "$s" | grep -F 'レビューの 2 周キャップ超え' | grep -qF '選び直しが要る'
   echo "$s" | grep -qF '`2 周キャップ超え`'
 }

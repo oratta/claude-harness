@@ -2,7 +2,8 @@
 #
 # 保留で止まるときの引き継ぎと、新しいセッションでの再開（issue #515）
 #
-#   skills/develop/SKILL.md                     引き継ぎの書式・投稿順・手渡し可否・再開手順・守備範囲
+#   skills/develop/references/handover.md      引き継ぎの書式・投稿順・手渡し可否・再開手順・守備範囲（#1220 で SKILL.md から移した）
+#   skills/develop/SKILL.md                     移設先を Read する案内と、他の節から移設先への参照
 #   commands/develop.md                         引き継ぎのある記録先の入口
 #   skills/pr-review-gate/stages/hold.md        手順 6 の依頼文の案内（項目一覧は持たない）
 #
@@ -11,14 +12,15 @@
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  HANDOVER="${PLUGIN_DIR}/skills/develop/references/handover.md"
   COMMAND="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
 }
 
 # 引き継ぎの節（見出し「## 保留で止まるときの引き継ぎ」から次の ## まで）
-handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")==1{f=1; print; next} /^## /{f=0} f' "$SKILL"; }
+handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")==1{f=1; print; next} /^## /{f=0} f' "$HANDOVER"; }
 
-@test "handover: SKILL.md has the handover section with the one-line header regex" {
+@test "handover: handover.md has the handover section with the one-line header regex" {
   [ -n "$(handover_section)" ]
   handover_section | grep -qF '^引き継ぎ: 主の返事待ち$'
   [ "$(grep -c '引き継ぎ' "$SKILL")" -ge 1 ]
@@ -82,8 +84,8 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 }
 
 @test "loop: the hold row and the token-cap exit 2 point to the handover section" {
-  grep -n '保留 → needs-approval' "$SKILL" | grep -qF '保留で止まるときの引き継ぎ'
-  awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF '保留で止まるときの引き継ぎ'
+  grep -n '保留 → needs-approval' "$SKILL" | grep -qF 'references/handover.md'
+  awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF 'references/handover.md'
 }
 
 @test "command: an existing handover comment routes to the resume steps regardless of the label" {
