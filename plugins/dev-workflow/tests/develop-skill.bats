@@ -1048,10 +1048,10 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   printf '%s\n' "$c" | grep -qF '`clear` の前に'
 }
 
-@test "watch end: only a timeout without unreadable records counts as no stopped child; (c) does not go back to 2" {
+@test "watch end: only a timeout with an empty stderr counts as no stopped child; (c) does not go back to 2" {
   c="$(stop_cond)"
   printf '%s\n' "$c" | grep -qF '`timeout <子>...`（exit 2）'
-  printf '%s\n' "$c" | grep -qF '`unreadable state record`'
+  printf '%s\n' "$c" | grep -qF '(1)(2) の stderr が空'
   printf '%s\n' "$c" | grep -qF '確かめられなかった'
   printf '%s\n' "$c" | grep -qF '(c) では確かめるだけで手順 2 に戻らず'
   printf '%s\n' "$c" | grep -qF '2 に戻るのは (a)(b)(d) だけ'
