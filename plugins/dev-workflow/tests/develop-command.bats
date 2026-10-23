@@ -142,3 +142,24 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
   run grep -n 'CLAUDE_PLUGIN_ROOT:-' "$PLUGIN_DIR"/commands/*.md
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
 }
+
+# ===== #1223: 明示指定専用の記述を codex-develop-explicit.md に分ける =====
+
+@test "command (#1223): explicit executor options also read references/codex-develop-explicit.md" {
+  grep -q 'references/codex-develop-explicit.md' "$CMD"
+  [ -f "${PLUGIN_DIR}/references/codex-develop-explicit.md" ]
+}
+
+@test "adapter (#1223): codex-develop.md carries no explicit-only rules and points to the explicit file once" {
+  a="${PLUGIN_DIR}/references/codex-develop.md"
+  x="${PLUGIN_DIR}/references/codex-develop-explicit.md"
+  grep -qF 'references/codex-develop-explicit.md' "$a"
+  for s in '組み込み profile は' 'Version 1 profile' '併用、旧形式の片方欠落' 'Codex オフのあいだ' 'profile 全体を先に検証する' '導入方法は `docs/codex-develop.md`'; do
+    if grep -qF "$s" "$a"; then echo "still in codex-develop.md: $s"; return 1; fi
+    grep -qF "$s" "$x" || { echo "missing in explicit: $s"; return 1; }
+  done
+  # 自動選択に要る記述は残す側にある
+  for s in '無指定では各 canonical phase' 'codex-off' 'current` の対応として評価' 'Codex role は次の3手順'; do
+    grep -qF "$s" "$a" || { echo "missing in codex-develop.md: $s"; return 1; }
+  done
+}
