@@ -2525,6 +2525,28 @@ infer_ready() {
   [ "$(calls '^orca worktree set')" -eq 0 ]
 }
 
+@test "wait: a one-shot check that cannot take the lock ends with timeout and prints the reason to stderr" {
+  make_stub orca
+  gh_seq 11 open
+  put_record 11 stop=stopped
+  mkdir "$(rec_of 1122 11).lock"
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout 11" ]
+  grep -qF 'the state record is locked:' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(rec_get 11 stop)" = stopped ]
+}
+
+@test "wait: a one-shot check with nothing failing ends with timeout and an empty stderr" {
+  make_stub orca
+  gh_seq 11 open
+  put_record 11 stop=resumed
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ ! -s "$BATS_TEST_TMPDIR/stderr" ] || { cat "$BATS_TEST_TMPDIR/stderr"; false; }
+}
+
 @test "wait: a failing mirror to Orca still ends with stopped" {
   make_stub orca
   gh_seq 11 open
