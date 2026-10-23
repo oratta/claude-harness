@@ -37,6 +37,9 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/epic-dispatch.sh"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
+  EPIC="${PLUGIN_DIR}/skills/develop/references/epic.md"
+  EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
   STUB_BIN="${BATS_TEST_TMPDIR}/bin"
   export STUB_CFG="${BATS_TEST_TMPDIR}/cfg"
   export STUB_LOG="${BATS_TEST_TMPDIR}/calls.log"
@@ -441,9 +444,10 @@ reap_prless_ready() {
 }
 
 # SKILL.md の「## <見出し>」から次の「## 」まで
-section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$SKILL"; }
+# 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
+section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
 # 「エピックの扱い」の「### 回し方」から次の「### 」まで
-run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; print; next} /^### /{f=0} f'; }
+run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{f=1; print; next} /^### /{f=0} f'; }
 
 # --- route ---
 
@@ -1996,6 +2000,301 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$(calls '^orca')" -eq 0 ]
 }
 
+# --- wait --watch-done: 完了の推定 ---
+# spec: dev-workflow-develop（epic-dispatch.sh wait は完了の印の無いまま記録先が閉じて動きの止まった子を完了と推定する）
+# spec: dev-workflow-epic-state（wait --watch-done は推定した完了を記録に書き、Orca の印へ写す）
+
+# 子 11 のトランスクリプトに、<分> 前の timestamp を持つ行を 1 行足す（<分> [ファイル名] [type]）。
+# 足した timestamp を $BATS_TEST_TMPDIR/ts_<ファイル名> に書く
+put_activity() {
+  local ago="$1" name="${2-s1}" type="${3-assistant}"
+  local p="$BATS_TEST_TMPDIR/work/issue-11" dir ts
+  dir="$BATS_TEST_TMPDIR/projects/$(printf '%s' "$p" | sed 's/[^A-Za-z0-9]/-/g')"
+  mkdir -p "$dir"
+  ts="$(python3 -c "import datetime;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=$ago)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
+  printf '{"type":"%s","timestamp":"%s"}\n' "$type" "$ts" >> "$dir/$name.jsonl"
+  printf '%s\n' "$ts" > "$BATS_TEST_TMPDIR/ts_$name"
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+}
+
+# 推定される条件: 記録は running・stop 空・extra 付き、トランスクリプトの最後の活動が 40 分前、issue は completed で閉じた
+infer_ready() {
+  make_stub orca
+  put_record 11 extra=1
+  put_activity 50
+  put_activity 40
+  gh_seq 11 "closed completed 2400"
+}
+
+@test "wait infer: a closed, idle child without the done mark is inferred done" {
+  infer_ready
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG" "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "done 11" ]
+  [ "$(rec_get 11 status)" = done ]
+  rec_get 11 done_inferred_at | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+  [ "$(rec_get 11 done_inferred_last_activity)" = "$(cat "$BATS_TEST_TMPDIR/ts_s1")" ]
+  [ "$(rec_get 11 extra)" = 1 ]
+  [ "$(rec_get 11 schema)" = 1 ]
+  [ ! -e "$(rec_of 1122 11).lock" ]
+  [ -z "$(ls -A "$(dirname "$(rec_of 1122 11)")" | grep -F .tmp)" ]
+  grep -q '^inferred done 11: issue closed as completed, no transcript activity since ' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^gh ')" -eq 1 ]
+  grep -F 'gh api' "$STUB_LOG" | grep -qF 'repos/\{owner\}/\{repo\}/issues/11'
+}
+
+@test "wait infer: an Orca child inferred done is mirrored to the completed mark once" {
+  infer_ready
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$output" = "done 11" ]
+  [ "$(calls "^orca worktree set --worktree path:$BATS_TEST_TMPDIR/work/issue-11 --workspace-status completed\$")" -eq 1 ]
+}
+
+@test "wait infer: a tmux child inferred done calls no orca" {
+  infer_ready
+  put_record 11 launcher=tmux
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$output" = "done 11" ]
+  [ "$(calls '^orca')" -eq 0 ]
+}
+
+@test "wait infer: activity newer than the threshold is not inferred and gh is not called" {
+  infer_ready
+  put_activity 10
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout" ]
+  [ "$(rec_get 11 status)" = running ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "wait infer: a newer line of any type counts as activity" {
+  infer_ready
+  put_activity 5 s1 user
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$output" = "timeout" ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "wait infer: no transcript is not inferred and gh is not called" {
+  make_stub orca
+  put_record 11
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+  gh_seq 11 "closed completed 2400"
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout" ]
+  [ "$(rec_get 11 status)" = running ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "wait infer: a transcript without any timestamp is not inferred" {
+  infer_ready
+  rm -rf "$BATS_TEST_TMPDIR/projects"
+  put_activity 40
+  sed -i.bak 's/"timestamp":"[^"]*"/"x":1/' "$BATS_TEST_TMPDIR"/projects/*/s1.jsonl
+  rm -f "$BATS_TEST_TMPDIR"/projects/*/s1.jsonl.bak
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$output" = "timeout" ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "wait infer: two transcripts with one newer than the threshold are not inferred" {
+  infer_ready
+  put_activity 10 s2
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout" ]
+  [ "$(rec_get 11 status)" = running ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "wait infer: two transcripts both older than the threshold are inferred with the newest timestamp" {
+  infer_ready
+  put_activity 45 s2
+  put_activity 35 s2
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "done 11" ]
+  [ "$(rec_get 11 done_inferred_last_activity)" = "$(cat "$BATS_TEST_TMPDIR/ts_s2")" ]
+}
+
+@test "wait infer: waiting, stopped and stopped-seen children are not inferred and gh is not called" {
+  local kv
+  for kv in status=waiting stop=stopped stop=stopped-seen; do
+    infer_ready
+    put_record 11 extra=1 "$kv"
+    : > "$STUB_LOG"
+    before="$(cat "$(rec_of 1122 11)")"
+    run dispatch wait --interval 0 --timeout 0 --watch-done 11
+    [ "$status" -eq 2 ] || { echo "$kv: status=$status output=$output"; false; }
+    [ "$output" = "timeout" ]
+    [ "$(cat "$(rec_of 1122 11)")" = "$before" ]
+    [ "$(calls '^gh ')" -eq 0 ] || { echo "$kv"; cat "$STUB_LOG"; false; }
+  done
+}
+
+@test "wait infer: an open issue or one closed as not_planned is not inferred" {
+  local v
+  for v in "open " "closed not_planned 2400"; do
+    infer_ready
+    gh_seq 11 "$v"
+    rm -f "$STUB_CFG/ghcount_11"
+    run dispatch wait --interval 0 --timeout 0 --watch-done 11
+    [ "$status" -eq 2 ] || { echo "$v: status=$status output=$output"; false; }
+    [ "$output" = "timeout" ]
+    [ "$(rec_get 11 status)" = running ]
+  done
+}
+
+@test "wait infer: an issue closed less than the threshold ago or without closed_at is not inferred" {
+  local v
+  for v in "closed completed 60" "closed completed "; do
+    infer_ready
+    gh_seq 11 "$v"
+    rm -f "$STUB_CFG/ghcount_11"
+    run dispatch wait --interval 0 --timeout 0 --watch-done 11
+    [ "$status" -eq 2 ] || { echo "[$v]: status=$status output=$output"; false; }
+    [ "$output" = "timeout" ]
+    [ "$(rec_get 11 status)" = running ]
+  done
+  # 閾値を閉じてからの秒数より短くすれば推定する
+  gh_seq 11 "closed completed 60"
+  rm -f "$STUB_CFG/ghcount_11"
+  EPIC_DISPATCH_DONE_IDLE_SEC=30 run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$output" = "done 11" ]
+}
+
+@test "wait infer: the inference reads closed_at with state and state_reason in one gh call" {
+  infer_ready
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$output" = "done 11" ]
+  [ "$(calls '^gh ')" -eq 1 ]
+  grep -F 'gh api' "$STUB_LOG" | grep -F 'state_reason' | grep -qF 'closed_at'
+}
+
+@test "wait infer: a newer line only in a subagent transcript is not inferred" {
+  infer_ready
+  local dir="$BATS_TEST_TMPDIR/projects/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  mkdir -p "$dir/s1/subagents"
+  ts="$(python3 -c "import datetime;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
+  printf '{"type":"assistant","timestamp":"%s"}\n' "$ts" > "$dir/s1/subagents/agent-a1.jsonl"
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "timeout" ]
+  [ "$(rec_get 11 status)" = running ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "wait infer: a child whose record changes before the write is not inferred" {
+  infer_ready
+  # 推定の gh の呼び出し（子 11 の 1 回目）の間に子が waiting の印を付けた
+  on_poll 11 1 status=waiting
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout" ]
+  [ "$(rec_get 11 status)" = waiting ]
+  [ "$(rec_get 11 done_inferred_at)" = null ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+  [ ! -e "$(rec_of 1122 11).lock" ]
+}
+
+@test "wait infer: without CLAUDE_PROJECTS_DIR the transcripts are read under CLAUDE_CONFIG_DIR" {
+  infer_ready
+  mkdir -p "$BATS_TEST_TMPDIR/cfg"
+  mv "$BATS_TEST_TMPDIR/projects" "$BATS_TEST_TMPDIR/cfg/projects"
+  unset CLAUDE_PROJECTS_DIR
+  CLAUDE_CONFIG_DIR="$BATS_TEST_TMPDIR/cfg" run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "done 11" ]
+}
+
+@test "wait infer: a failing gh for the inference is neither inferred nor counted as a failed poll" {
+  infer_ready
+  gh_seq 11 FAIL
+  run dispatch wait --interval 0 --timeout 0 --watch-done 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "timeout" ]
+  [ "$(rec_get 11 status)" = running ]
+  # 4 回続けて失敗しても error で終わらず、次に読めたポーリングで推定する
+  gh_seq 11 FAIL FAIL FAIL FAIL "closed completed 2400"
+  rm -f "$STUB_CFG/ghcount_11"
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "done 11" ]
+  [ "$(cat "$STUB_CFG/ghcount_11")" -eq 5 ]
+}
+
+@test "wait infer: EPIC_DISPATCH_DONE_IDLE_SEC changes the threshold" {
+  infer_ready
+  rm -rf "$BATS_TEST_TMPDIR/projects"
+  put_activity 10
+  EPIC_DISPATCH_DONE_IDLE_SEC=300 run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "done 11" ]
+}
+
+@test "wait infer: a wrong EPIC_DISPATCH_DONE_IDLE_SEC prints usage and calls no gh" {
+  local v
+  for v in abc "" 1.5; do
+    infer_ready
+    : > "$STUB_LOG"
+    EPIC_DISPATCH_DONE_IDLE_SEC="$v" run dispatch wait --interval 0 --timeout 60 --watch-done 11
+    [ "$status" -eq 1 ] || { echo "[$v]: status=$status output=$output"; false; }
+    [ -z "$output" ]
+    grep -qF 'EPIC_DISPATCH_DONE_IDLE_SEC' "$BATS_TEST_TMPDIR/stderr"
+    grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+    [ "$(calls '^gh ')" -eq 0 ]
+    [ "$(rec_get 11 status)" = running ]
+  done
+}
+
+@test "wait infer: a wrong EPIC_DISPATCH_DONE_IDLE_SEC is ignored without --watch-done" {
+  make_stub orca
+  gh_seq 11 closed
+  EPIC_DISPATCH_DONE_IDLE_SEC=abc run dispatch wait --interval 0 --timeout 60 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
+}
+
+@test "wait infer: a left lock fails three polls with error workspaces and the record stays running" {
+  infer_ready
+  mkdir "$(rec_of 1122 11).lock"
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 1 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "$output" = "error workspaces" ]
+  [ "$(rec_get 11 status)" = running ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "wait infer: the same child as a positional argument and --watch-done prints closed then done" {
+  infer_ready
+  gh_seq 11 closed "closed completed 2400"
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG"; false; }
+  [ "${#lines[@]}" -eq 2 ]
+  [ "${lines[0]}" = "closed 11" ]
+  [ "${lines[1]}" = "done 11" ]
+  [ "$(rec_get 11 status)" = done ]
+}
+
+@test "wait infer: a child that already marked done is reported without inference" {
+  infer_ready
+  put_record 11 status=done
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$output" = "done 11" ]
+  [ "$(calls '^gh ')" -eq 0 ]
+  [ "$(rec_get 11 done_inferred_at)" = null ]
+}
+
+@test "script: the head comment of wait describes the inference" {
+  h="$(sed -n '1,/^set -uo pipefail/p' "$SCRIPT")"
+  printf '%s\n' "$h" | grep -qF 'EPIC_DISPATCH_DONE_IDLE_SEC'
+  printf '%s\n' "$h" | grep -qF 'done_inferred_at'
+  printf '%s\n' "$h" | grep -qF 'wait は完了の印の無いまま記録先が閉じて動きの止まった子を完了と推定する'
+  grep -qF 'done_inferred_last_activity' "$PLUGIN_DIR/scripts/epic-state.sh"
+}
+
 @test "wait: the done mark only on Orca's board does not wake the parent" {
   # spec: dev-workflow-epic-state（Orca の印だけでは wait は起きない）
   make_stub orca
@@ -2950,7 +3249,7 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
 }
 
 @test "skill: child epics are held back, nested sessions stop, and the parent reports them" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   printf '%s\n' "$e" | grep -qF 'sub_issues_summary'
   printf '%s\n' "$e" | grep -qF 'nested'
   printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -qF '完了報告'
@@ -2959,20 +3258,22 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
 }
 
 @test "skill: the parent's note is a comment every restarted child session follows and hands on" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   printf '%s\n' "$e" | grep -F '親エピックからの注意書き:' | grep -F '起動し直したセッション' | grep -qF 'W・R1・G'
   printf '%s\n' "$e" | grep -F 'note not posted to' | grep -qF '投稿'
+  # 規則は epic.md にだけあるので、起動し直した子にも SKILL.md の案内が epic.md を読ませる（#1243 の F1）
+  section 'エピックの扱い' | grep -F '`親エピックからの注意書き:` で始まるコメントがあるとき' | grep -qF '起動し直した'
 }
 
 @test "skill: the parent's note is followed only when its author is an owner, member or collaborator" {
-  l="$(section 'エピックの扱い' | grep -F '親エピックからの注意書き:' | grep -F 'author_association')"
+  l="$(section 'エピックの扱い' "$EPIC" | grep -F '親エピックからの注意書き:' | grep -F 'author_association')"
   [ -n "$l" ]
   printf '%s\n' "$l" | grep -F 'OWNER' | grep -F 'MEMBER' | grep -qF 'COLLABORATOR'
   printf '%s\n' "$l" | grep -F 'それ以外' | grep -F '従わず' | grep -F '渡さず' | grep -qF 'ユーザーに報告'
 }
 
 @test "skill: a restarted child session is nested and reads the parent epic from stderr" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   printf '%s\n' "$e" | grep -F '起動し直したセッション' | grep -qF 'nested'
   printf '%s\n' "$e" | grep -qF 'parent epic: #'
   printf '%s\n' "$e" | grep -qF 'child epics are not expanded here'
@@ -2980,12 +3281,12 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
 }
 
 @test "skill: a child whose terminal was not created is checked, recreated and sent before resuming" {
-  e="$(section 'エピックの扱い')"
+  e="$(section 'エピックの扱い' "$EPIC")"
   printf '%s\n' "$e" | grep -F '端末を作れなかった' | grep -F '既存の端末が無いこと' | grep -F '作り直し' | grep -qF '動き出したのを確かめてから再開'
 }
 
 @test "skill: held-back child epics are recorded also when route is skipped (unmanned, resumed)" {
-  e="$(section 'エピックの扱い' | grep -F 'sub_issues_summary')"
+  e="$(section 'エピックの扱い' "$EPIC" | grep -F 'sub_issues_summary')"
   printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -F 'でないと確定' | grep -F 'unmanned' | grep -qF '回し方:'
 }
 
@@ -3155,7 +3456,7 @@ orca_cmd_scripts() {
 # spec: dev-workflow-develop（エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する）
 
 @test "skill: an epic child records its stop before marking it, in both waiting orders" {
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   [ -n "$r" ]
   printf '%s\n' "$r" | grep -F 'route' | grep -qF '`nested`'
   printf '%s\n' "$r" | grep -qF '`子の停止: 主の返事待ち`'
@@ -3166,12 +3467,18 @@ orca_cmd_scripts() {
   printf '%s\n' "$r" | grep -F '回答を受けたら' | grep -qF '`mark resumed`'
   printf '%s\n' "$r" | grep -F '引き継ぎを先に投稿' | grep -qF '引き継ぎのコメントの URL'
   printf '%s\n' "$r" | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
+  # 記録が無い・別の子の記録（skipped <N> no-workspace / not-linked）も親に伝わらないので、
+  # failed と同じ行で 1 行添える。skipped を「何もしない」側に書かない（#1247）
+  printf '%s\n' "$r" | grep -F '`mark stopped` の出力が' | grep -F '`skipped`' | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
+  printf '%s\n' "$r" | grep -F '`skipped <N> no-workspace`' | grep -qF '`skipped <N> not-linked`'
+  printf '%s\n' "$r" | grep -qF '`mark stopped` の出力が `marked` なら何もしない。`skipped` で始まる'
+  ! printf '%s\n' "$r" | grep -F '`mark stopped` の出力が' | grep -qF '`marked` か `skipped` なら何もしない' || return 1
 }
 
 # spec: dev-workflow-develop（エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く）
 
 @test "skill: an epic child's stop record lists the seven items in order" {
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   [ -n "$r" ]
   # 7 つの項目名が行頭の `<項目名>:` の形でこの順に出る（雛形の行で確かめる）
   prev=0
@@ -3192,7 +3499,7 @@ orca_cmd_scripts() {
 }
 
 @test "skill: an epic child's stop record says why the owner is asked and how likely the risk is" {
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   # 雛形の止まった理由は主にしてほしいことだけで、子の側でできない理由を混ぜない
   printf '%s\n' "$r" | grep '^止まった理由:' | grep -qF '主にしてほしいこと'
   run grep -F 'それを子の側でできない理由' <<<"$r"; [ "$status" -eq 1 ]
@@ -3214,7 +3521,7 @@ orca_cmd_scripts() {
 }
 
 @test "skill: an epic child's stop record is written for readers who have not read the child's conversation" {
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   printf '%s\n' "$r" | grep -qF '子の会話を読んでいない'
   printf '%s\n' "$r" | grep -F '「上記」' | grep -qF '「前回」'
   printf '%s\n' "$r" | grep -qF 'フル URL'
@@ -3236,7 +3543,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -qF '主の言葉に直す'
   printf '%s\n' "$p" | grep -F '複数' | grep -qF '1 通で上げるのは 1 件'
   # 記録の節は項目名をそろえる文を持たず、置き直すことを書く
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   run grep -F '報告する語と同じにしてある' <<<"$r"; [ "$status" -eq 1 ]
   printf '%s\n' "$r" | grep -F '正本の段に置き直して' | grep -qF '手順 8'
   printf '%s\n' "$r" | grep -F '`止まった理由`' | grep -F '`PR のマージ待ち（`' | grep -qF '名前を変えない'
@@ -3250,7 +3557,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -qF '待ちに入る通知の本文に、まだ上げていない止まった子の番号を 1 行書く'
   q="$(run_section | grep -E '^7\. ')"
   printf '%s\n' "$q" | grep -qF '手順 8 と同じに扱い（照らして通すか、報告を本文で出し直す）、待ちに入る'
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   printf '%s\n' "$r" | grep -qF '破壊的操作や聖域を止めた hook は「決まりで主の承認が要る」に当たる'
 }
 
@@ -3305,7 +3612,7 @@ orca_cmd_scripts() {
 # spec: dev-workflow-develop（エピックの子は親から届いた返事を止まった件への返事として受け取る）
 
 @test "skill: an epic child takes a reply from the parent as the answer to its stop" {
-  r="$(section 'エピックの子が主の返事を待って止まるとき')"
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   l="$(printf '%s\n' "$r" | grep -F '親から届いた返事')"
   printf '%s\n' "$l" | grep -qF '`親エピック #<E> の判断（主の承認ではない）:`'
   printf '%s\n' "$l" | grep -qF '`主の返事（親エピック #<E> 経由）:`'
@@ -4073,6 +4380,43 @@ nothing_sent() {
   printf '%s\n' "$r" | grep -F '主がすること: なし' | grep -qF '`notify-closed` の `failed` の報告'
 }
 
+# spec: dev-workflow-develop（回し方の手順は推定した done も子の付けた done と同じに片付ける）
+@test "skill: Orca route steps 2-4 describe the inferred done and reap it like the child's done" {
+  r="$(run_section)"
+  l2="$(printf '%s\n' "$r" | grep -E '^2\. ')"
+  l3="$(printf '%s\n' "$r" | grep -E '^3\. ')"
+  l4="$(printf '%s\n' "$r" | grep -E '^4\. ')"
+  printf '%s\n' "$l2" | grep -F 'EPIC_DISPATCH_DONE_IDLE_SEC' | grep -F '1800' | grep -qF '推定'
+  printf '%s\n' "$l2" | grep -F '`waiting`' | grep -qF '止まった印'
+  printf '%s\n' "$l2" | grep -F '閉じてから' | grep -qF 'サブエージェント'
+  printf '%s\n' "$l3" | grep -F '推定の `done`' | grep -qF '`reap`'
+  printf '%s\n' "$l3" | grep -F '`closed` と `done` の両方' | grep -qF '4 を処理してから'
+  printf '%s\n' "$l4" | grep -F '`skipped <N> not-stopped`' | grep -qF '推定'
+  printf '%s\n' "$l4" | grep -qF 'ステータスを変えるよう頼まない'
+}
+
+# spec: dev-workflow-develop（エピックの子は主にマージを頼むとき、マージ後の連絡を頼まない）
+@test "skill: the end of a loop tells an epic child not to ask the owner to report the merge back" {
+  e="$(section 'ループの終わり')"
+  l="$(printf '%s\n' "$e" | grep -F 'マージしたらこのタブは放っておいてよい。記録先が閉じれば親が完了にしてワークツリーを片付ける')"
+  [ -n "$l" ]
+  printf '%s\n' "$l" | grep -F '`nested`' | grep -qF 'マージしたら教えてください'
+  printf '%s\n' "$l" | grep -qF '推定'
+}
+
+# spec: dev-workflow-ci-watch（エピックの子はオーナーにマージを頼むとき、マージ後の連絡を頼まない）
+@test "ci-watch: after ready, an epic child asking the owner to merge does not ask for a report back" {
+  c="$(awk '/^### `ready` を受けたあと/{f=1; next} /^##/{f=0} f' "$PLUGIN_DIR/references/ci-watch.md")"
+  l="$(printf '%s\n' "$c" | grep -F 'マージしたらこのタブは放っておいてよい。記録先が閉じれば親が完了にしてワークツリーを片付ける')"
+  [ -n "$l" ]
+  printf '%s\n' "$l" | grep -F '`nested`' | grep -qF 'マージしたら教えてください'
+  printf '%s\n' "$l" | grep -F -- '--until-merged' | grep -qF '`timeout`'
+  printf '%s\n' "$l" | grep -qF 'wait --watch-done'
+  grep -F '| `timeout` |' "$PLUGIN_DIR/references/ci-watch.md" | grep -qF 'エピックの子'
+  # 1 と 3 の本文からもその段落を指す
+  [ "$(printf '%s\n' "$c" | grep -E '^(1|3)\. ' | grep -cF 'エピックの子のセッションの頼む文面は、1〜3 のあとの段落に従う')" -eq 2 ]
+}
+
 @test "skill: Orca route step 4 calls notify-closed before launching the unblocked children" {
   # 後続の子の launch が failed を返すと親は手順 6 で止まり、再開の手順 7 も notify-closed を呼ばない。
   # launch より後ろに書くと閉じた子に送られないまま残るので、手順 4 の中で launch より先に現れること
@@ -4162,7 +4506,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 
 @test "skill: each W per change inside one child uses its own slot" {
   printf '%s\n' "$(subagent_para)" | grep -qF 'change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う'
-  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは「エピックの扱い」→「回し方」のサブエージェント方式の枠に従う）' "$SKILL"
+  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは `references/epic.md` の「回し方」のサブエージェント方式の枠に従う）' "$SKILL"
 }
 
 # --- wait --resolve: 通す返事を起動し直すかを表で決める ---
@@ -4561,7 +4905,7 @@ resolve_pass() {
   p="$(run_section | grep -E '^\*\*子の状態の正本\*\*')"
   printf '%s\n' "$p" | grep -qF 'Orca のボードの列とコメント欄は、記録を書いたあとに写したもの'
   printf '%s\n' "$p" | grep -qF 'Orca の画面で印を手で変えても、親の見張り'
-  section 'エピックの子が主の返事を待って止まるとき' | grep -F -- '- **印**' | grep -qF 'Orca の画面には写しが出る'
+  section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP" | grep -F -- '- **印**' | grep -qF 'Orca の画面には写しが出る'
 }
 
 @test "skill: step 3 no longer names not-child and keeps state-unreadable without checking" {
@@ -4578,7 +4922,7 @@ resolve_pass() {
 }
 
 @test "skill: the completion check confirms the state directory is cleared" {
-  section 'エピックの扱い' | awk '/^### 完了条件/{f=1; next} /^### /{f=0} f' | grep -qF '`clear` で消えていることを確かめる'
+  section 'エピックの扱い' "$EPIC" | awk '/^### 完了条件/{f=1; next} /^### /{f=0} f' | grep -qF '`clear` で消えていることを確かめる'
 }
 
 # ---- launch: エピックと別のリポジトリの子（cross-repo-children） ----
