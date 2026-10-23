@@ -5,5 +5,5 @@
 ## Decisions
 
 - 返事の段落に直接書く。`ci-watch.md` 側は変えない（食い違いを作らず、親の基準の側で子への指示を完結させる）。
-- `needs-approval` を外すのは、手順 7 の経路で止まった子に限る。`job-timeout` の `escalate` は主に上げるので返事の対象外であり、この段落に来ない。外す操作は `gh pr edit --remove-label` で、外せなかったら再び止まって主に上げる。
+- `needs-approval` を外すのは、手順 7 の経路で止まった子に限る。`job-timeout` の `escalate` は主に上げるので返事の対象外であり、この段落に来ない。外す操作は `gh pr edit --remove-label`。
 - 重複の確認と開始コメントの書き方は `ci-watch.md` 2 を参照させ、手順は複製しない（正本を 1 つに保つ）。
