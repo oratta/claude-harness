@@ -1014,7 +1014,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   printf '%s\n' "$c" | grep -qF '`clear`'
   printf '%s\n' "$c" | grep -qF '後回しの子だけが残る'
   printf '%s\n' "$c" | grep -qF '`error`'
-  printf '%s\n' "$c" | grep -qF '手順 4'
+  printf '%s\n' "$c" | grep -qF '(d) 手順 4 の、片付け待ちの子だけを待つ'
   printf '%s\n' "$c" | grep -qF '主がやめるよう言った'
   # それ以外ではやめない（理由にならないものを列挙する）
   printf '%s\n' "$c" | grep -qF 'それ以外ではやめない'
@@ -1026,12 +1026,35 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 @test "watch end: before ending, the open children are checked with a one-shot wait and pending-owner" {
   c="$(stop_cond)"
   printf '%s\n' "$c" | grep -qF 'scripts/epic-dispatch.sh wait --interval 0 --timeout 0 --watch-stopped <'
+  printf '%s\n' "$c" | grep -qF '`--resolve` は付けない'
+  # --watch-done を付けないので done の行は出ない。timeout の行が止まった子なしの意味
+  printf '%s\n' "$c" | grep -qF '`stopped`・`closed` の行'
+  refute "$c" -F '`done` の行を返した'
   printf '%s\n' "$c" | grep -qF 'scripts/epic-dispatch.sh pending-owner <'
   printf '%s\n' "$c" | grep -qF '`pending <N>`'
   printf '%s\n' "$c" | grep -qF '`needs-approval`'
   # 止まった子があればやめずに手順 8 で処理して 2 に戻る
   printf '%s\n' "$c" | grep -qF 'やめずに'
   printf '%s\n' "$c" | grep -qF '手順 8'
+  printf '%s\n' "$c" | grep -qF '手順 7 の照合で外さなかった `pending <N>`'
+}
+
+@test "watch end: with no open child the check is skipped, and (a) checks before clear" {
+  c="$(stop_cond)"
+  # 開いた子が 0 件で位置引数なしの wait / pending-owner を呼ぶと usage で exit 1 になるので呼ばない
+  printf '%s\n' "$c" | grep -qF '開いた子が 0 件なら (1)(2) を呼ばない'
+  printf '%s\n' "$c" | grep -qF '確かめる子が無かった'
+  refute "$c" -F '`kept <N> not-done` の子を含む'
+  printf '%s\n' "$c" | grep -qF '`clear` の前に'
+}
+
+@test "watch end: only a timeout without unreadable records counts as no stopped child; (c) does not go back to 2" {
+  c="$(stop_cond)"
+  printf '%s\n' "$c" | grep -qF '`timeout <子>...`（exit 2）'
+  printf '%s\n' "$c" | grep -qF '`unreadable state record`'
+  printf '%s\n' "$c" | grep -qF '確かめられなかった'
+  printf '%s\n' "$c" | grep -qF '(c) では確かめるだけで手順 2 に戻らず'
+  printf '%s\n' "$c" | grep -qF '2 に戻るのは (a)(b)(d) だけ'
 }
 
 @test "watch end: step 4 timeout, step 5 and step 8 point to the conditions" {
