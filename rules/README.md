@@ -12,14 +12,31 @@ marketplace として install 済みなら、`scripts/sync.sh` を1回実行す�
 ~/.claude/plugins/marketplaces/oratta-claude-harness/scripts/sync.sh
 ```
 
-pull（ff-only）→ `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.md` を
-`~/.claude/output-styles/` へ symlink、まで冪等に行う。ファイルが増えても・rename されても
+pull（ff-only）→ `rules/*.md` を `~/.claude/rules/claude-harness/` へ、`output-styles/*.md` を
+`~/.claude/output-styles/` へ symlink、まで冪等に行う。rules は出どころごとのサブディレクトリに張るので、
+`~/.claude` を見れば、どの Harness が置いたファイルか分かる。以前 `~/.claude/rules/` 直下に張っていた
+この harness の symlink は、新しい位置に張ったあとで消える。ファイルが増えても・rename されても
 再実行するだけでよい（この harness を指す壊れた symlink は掃除される）。
 
 - symlink 先は marketplace dir（plugin 更新で再 clone されても tracked ファイルなので復元される）
 - **定期実行の足**: 定期実行は利用者の環境が担う（cron など）。鮮度の PC 横断可視化も利用者の環境の見張りに任せる
   （かつては手作業2点セット＝pull＋手動 symlink で、未実行の PC にはルールが
   一切届かないままドリフトしていた）
+- **別の Harness を重ねる（overlay）**: 重ねてよいのは、利用者が許可ファイル `~/.claude/harness-overlays` に書いた marketplace だけ。
+  1 行に 1 つ、`~/.claude/plugins/marketplaces/` 直下のディレクトリ名を書く（空行と `#` で始まる行は無視）。
+  例: `printf '%s\n' <marketplace のディレクトリ名> >> ~/.claude/harness-overlays`。
+  許可は `CLAUDE_DIR` の下のファイルなので、端末・住人の起動処理・Claude のセッションのどこから sync.sh を呼んでも同じに読める。
+  許可した marketplace の直下に `.harness-overlay`（1 行目がサブディレクトリ名。`[a-z0-9][a-z0-9-]*`）があれば、
+  同じ sync.sh がその `rules/*.md` を `~/.claude/rules/claude-harness/<サブディレクトリ名>/` に、`output-styles/*.md` を
+  `~/.claude/output-styles/` に張り、pull もする。**許可に無い marketplace は `.harness-overlay` があっても張らず、pull もしない**
+  （入れただけの第三者の marketplace に、常時読まれる指示を張らせないため。許可に書くのは、その marketplace の指示を常時読ませてよいと
+  判断したものだけ）。許可ファイルが無い（または空行とコメントだけ）なら何も出さず、この harness だけを張る。
+  許可したのにディレクトリや印が無い、名前が不正・重複、同名の実ファイルとぶつかる overlay は、警告して飛ばし、終了コードを 0 にしない。
+  許可ファイルから外すと、次の sync.sh の実行で張った symlink が（overlay のディレクトリが残っていても）消える。許可ファイルを消した場合も同じ。
+- **同名のルール**: この harness と overlay が同じファイル名のルールを持っても、張り先のディレクトリが別なので
+  ぶつからず、両方が読まれる（上書きも優先順位もない）。内容が食い違うルールを作らないのは overlay を書く側の責任
+- **同名の output style**: `outputStyle` は名前で選ぶので、直下に 1 階層のまま張り、同名ならこの harness を優先して
+  overlay 側を警告する
 - ローカル限定のルールを追加したい場合は、symlink せず `~/.claude/rules/` に実ファイルとして置けばよい
   （共存可能。sync.sh は harness と無関係な実ファイル・symlink に触らない）
 - Output Style の有効化（settings の `outputStyle`）は sync.sh では書き換えない。新しい PC では
@@ -39,7 +56,7 @@ pull（ff-only）→ `rules/*.md` を `~/.claude/rules/` へ、`output-styles/*.
 | `link-when-requesting-review.md` | 人間に確認を求めるときは必ずクリック可能なフル URL を添える・リンクを壊さない書式と、括弧で囲むと 404 になる理由 | なし（見出しを外しただけで全文を残す） |
 | `perspective-casting.md` | 「観点の配役」返信前チェック5手順と各手順の判定（回復不能側に倒す・主へ上げる条件・全観点移譲時の相談・裁定の実行と事後報告）・フィードバックを受けたターンでの配役表更新 | 各手順の中身・配役表の作り方・判例の書き方・相談と仲裁の手順は `casting:casting` スキル |
 | `one-off-no-script.md` | 一回限りの操作は操作一覧を作って手で実行・スクリプトは繰り返すか件数が多いときだけ・前提で起きない指摘は反証して閉じ、レビューは 2 周で打ち切る・汎用ツール化のサインで手を止める | 経緯（flatmate#599 / #608）と汎用ツール化の見分け方は `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/one-off-operations.md` |
-| `plugin-editing.md`（個人版が入っていれば） | プラグイン編集は marketplace dir の外の開発用 clone で・ローカルコピー禁止・`CLAUDE_HARNESS_DEV_DIR` で場所を解決・worktree の前に fetch・`/wt-setup` で worktree を作らない・Draft PR まで作る・手動削除しない | `~/.claude/plugins/marketplaces/oratta-claude-harness/docs/worktree-recovery.md` |
+| `plugin-editing.md` | プラグインは自動更新されるインストール先やローカルコピーを直接編集せず、持つリポジトリの開発用 clone で直す・ルールの symlink も同じ・手動削除しない | `~/.claude/plugins/marketplaces/oratta-claude-harness/docs/worktree-recovery.md` |
 | `subagent-model-selection.md` | サブエージェントの `model` 明示必須・役割ベースのティア対応表・最上位ティアの前に `FABLE_BUDGET_MODE` を確認 | 経緯・枠残量モード・強制層・適用範囲・対応表の保守は `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/model-tiers.md` |
 
 `README.md` はこのディレクトリで唯一 symlink されず、常時注入の集計にも入らない。だから表が長くなっても固定分は増えない。
