@@ -20,6 +20,11 @@ setup() {
   export USAGE_SESSIONS_DIR="${WORK}/sessions"
   export USAGE_PROBE_STATE="${WORK}/probe-state.json"
   export USAGE_PROBE_LOCK="${WORK}/probe.lock"
+  # 本番経路のテスト（curl・security の差し替え）は snapshot を書いたあと headroom.py を呼ぶ。
+  # その書き先（.headroom.json と codex-usage）と Codex の home を作業用ディレクトリに向け、
+  # 本物の ~/.claude と ~/.codex に触れない（CODEX_HOME は存在しないディレクトリにして Codex を取りに行かせない）
+  export CLAUDE_CONFIG_DIR="${WORK}/claude-config"
+  export CODEX_HOME="${WORK}/no-codex-home"
 }
 
 teardown() {
@@ -627,6 +632,8 @@ SH
   [ "$status" -eq 0 ]
   grep -qxF 'User-Agent: claude-cli/2.1.280 (external, cli)' "${WORK}/curl-args"
   [ "$(jq -r '.accounts.x.five_hour_pct' "$SNAP")" = "10" ]
+  # 本番経路でも headroom の書き先は setup の CLAUDE_CONFIG_DIR（作業用ディレクトリ）
+  [ "$(jq -r '.schema' "${WORK}/claude-config/.headroom.json")" = "1" ]
 }
 
 @test "user-agent: falls back to a fixed version in the claude-cli form when claude is unavailable" {
