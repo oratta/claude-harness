@@ -2,18 +2,18 @@
 
 ## Context
 
-一覧（issue #1239 のコメント https://github.com/oratta/claude-harness/issues/1239#issuecomment-6367437989 ）は HEAD 333b8419 の時点で、項目ごとに正本の置き場所を決めている。本体の分割の決定（ https://github.com/oratta/claude-harness/issues/1239#issuecomment-6367478782 ）で、この change が触るファイルは `skills/develop/SKILL.md`・`skills/develop/references/handover.md`・この change の spec の差分・`tests/develop-skill.bats`・`changes/1239.md` の 5 つに限られた。
+一覧（issue #1239 のコメント https://github.com/oratta/claude-harness/issues/1239#issuecomment-6367437989 ）は HEAD 333b8419 の時点で、項目ごとに正本の置き場所を決めている。本体の分割の決定（ https://github.com/oratta/claude-harness/issues/1239#issuecomment-6367478782 ）で、この change が触るファイルは `skills/develop/SKILL.md`・`skills/develop/references/handover.md`・この change の spec の差分・`plugins/dev-workflow/tests/develop-skill.bats`・`changes/1239.md` の 5 つに限られた。
 
 SKILL.md の文面は、develop-skill.bats のほかに次のテストも grep で固定している。この change ではこれらのテストを書き換えない（触るファイルの範囲の外で、書き換えると編集対象が 5 ファイルを超える）。
 
 | テスト | SKILL.md で固定している文 |
 |---|---|
-| `tests/develop-adapter-review-routing.bats` | 「Role profile の選択」節の `レビュー経路` の規則の全文（起動形を問わず常に・request の instructions・従来は書かない・段ごとに新しく起こす G と後任 G のすべて・行が無い G は従来経路・どの段でも省略しない）と、(4) の「常に `レビュー経路: adapter`」「`レビュー経路: 従来` は書かない」 |
-| `tests/test_codex_develop.py` | SKILL.md のどこかに `claude-write-codex-review`・`margin`・`SendMessage`・`上限`・`fresh thread`・`requested tuple`・`工程完了`・`停止確認`・`FABLE_BUDGET_MODE`・`SHARED_BUDGET_MODE`・`references/codex-develop.md`・`分岐を再掲せず` |
-| `tests/spec-decision-and-review.bats` | (2) に「直し方が決まっている」「主に聞かず次の周を回す」「方針の選び直し」「`pr-token-budget.sh` が exit 2」 |
-| `tests/develop-roles.bats` | SKILL.md のどこかに `isolation: "remote"` と「remote … 使わない」 |
-| `tests/develop-channel-mode.bats` | 「Role profile の選択」節に `実行モード:` と `チャンネルの返事の確認:` |
-| `tests/develop-handover.bats` | `handover.md` の再開の手順 2 に `CLAUDE_CODE_SESSION_ID` |
+| `plugins/dev-workflow/tests/develop-adapter-review-routing.bats` | 「Role profile の選択」節の `レビュー経路` の規則の全文（起動形を問わず常に・request の instructions・従来は書かない・段ごとに新しく起こす G と後任 G のすべて・行が無い G は従来経路・どの段でも省略しない）と、(4) の「常に `レビュー経路: adapter`」「`レビュー経路: 従来` は書かない」 |
+| `plugins/dev-workflow/tests/test_codex_develop.py` | SKILL.md のどこかに `claude-write-codex-review`・`margin`・`SendMessage`・`上限`・`fresh thread`・`requested tuple`・`工程完了`・`停止確認`・`FABLE_BUDGET_MODE`・`SHARED_BUDGET_MODE`・`references/codex-develop.md`・`分岐を再掲せず` |
+| `plugins/dev-workflow/tests/spec-decision-and-review.bats` | (2) に「直し方が決まっている」「主に聞かず次の周を回す」「方針の選び直し」「`pr-token-budget.sh` が exit 2」 |
+| `plugins/dev-workflow/tests/develop-roles.bats` | SKILL.md のどこかに `isolation: "remote"` と「remote … 使わない」 |
+| `plugins/dev-workflow/tests/develop-channel-mode.bats` | 「Role profile の選択」節に `実行モード:` と `チャンネルの返事の確認:` |
+| `plugins/dev-workflow/tests/develop-handover.bats` | `handover.md` の再開の手順 2 に `CLAUDE_CODE_SESSION_ID` |
 
 ## Goals / Non-Goals
 
@@ -66,6 +66,7 @@ SKILL.md の文面は、develop-skill.bats のほかに次のテストも grep �
 
 - [C5・C7 は一覧の判定どおりにまとめきれず、重複が一部残る] → 残す理由（固定しているテストと、C7 は #1222 の意図）を PR 本文と `changes/1239.md` に書く。固定しているテストを直す作業は、この change の範囲外として本体に返す
 - [参照に置き換えた箇所で、本体がコンパクト後に正本を読まずに進む] → 参照の文には何の規則かを中身の名前で書き（communication-style の 1 番目）、読む契機を失わないようにする。手順の判断に要る語（C7 の (2) のような）は消さない
+- [openspec は MODIFIED でシナリオを減らせないため、本 spec のシナリオ「旧世代の W が (3) を通しで返してきても (3b) を再指示しない」は名前を残したまま、WHEN/THEN だけを B1 のあとの振る舞い（自分が指示した工程で決め、(3a) の return の中身で (3b) を飛ばす分岐は書かれていない）に書き直す。名前と中身が食い違う] → 名前の直しは #1312 で行う（要件を分け直して ADDED し直す案は、要件の説明文が 500 字の上限を大きく超えるので、この change では取らない）
 - [B1 を消したあと、手順入りの古い `worker.md` を持つキャッシュが残る環境で W が (3) を通しで返す] → `worker.md` が索引になったのは #556（PR #610）で、それより前のキャッシュから W が起こされることはプラグインの更新で無くなっている。仮に起きても、本体は自分が (3b) を指示していないので (3b) を指示し、W は既にある PR と仕様宣言を見つけることになる（PR の二重作成は `gh pr create` が同じブランチの PR があると失敗するので起きない）
 
 ## Migration Plan
