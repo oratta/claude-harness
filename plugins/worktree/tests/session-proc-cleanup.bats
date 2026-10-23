@@ -211,12 +211,12 @@ EOF
   printf '%s\n' "$output" | grep -Fxq '601 desc 600 /Applications/My App/helper'
 }
 
-@test "session-end (fixture): zombie pid never appears in the log" {
+@test "sweep (fixture): zombie pid never appears in the log" {
   mkdir -p "$FIX"
-  printf '  500     1 node root.js CLAUDE_SESSION_PROC_MARK=%s PATH=/bin\n  501   500 /bin/sh -c a\n  502   500 /bin/sh -c a\n' "$M" >"$FIX/ps-env.txt"
+  printf '  500     1 node root.js CLAUDE_SESSION_PROC_MARK=%s PATH=/bin\n  501   500 /bin/sh -c a\n  502   500 /bin/sh -c a\n' "$OTHER" >"$FIX/ps-env.txt"
   printf '  500 S node\n  501 S /bin/sh\n  502 Z /bin/sh\n' >"$FIX/ps-comm.txt"
   printf '  100 Fri Sep 25 10:11:18 2026\n' >"$FIX/lstart.txt"
-  run env SESSION_REAPER_PS_FIXTURE_DIR="$FIX" SESSION_REAPER_OWNER_WAIT_SECS=0 "$REAPER" --session-end "$M"
+  run env SESSION_REAPER_PS_FIXTURE_DIR="$FIX" "$REAPER" --sweep
   [ "$status" -eq 0 ]
   grep -Eq "DRY pid=501 " "$LOG"
   run grep -E "pid=502( |$)" "$LOG"
