@@ -25,6 +25,6 @@
 ## Impact
 
 - コード: `plugins/statusline/scripts/statusline.sh`（`.headroom.json` の読み取り、`bar2` / `bar_seg` の拡張、Claude と Codex の行の組み立て、1 アカウント時の名前の列）
-- テスト: 新しい `plugins/statusline/tests/statusline-headroom.bats`。`plugins/statusline/tests/statusline-multi-account.bats` の「the codex.label row never becomes a slot」は期待が変わる
+- テスト: 新しい `plugins/statusline/tests/statusline-headroom.bats`。`plugins/statusline/tests/statusline-multi-account.bats` の「the codex.label row never becomes a slot」と、`plugins/statusline/tests/statusline-reset-grants.bats` の「reset grants: the Codex row output is the same as before the shared formatter」（origin/main との比較を Codex の行だけに絞る）は期待が変わる
 - 依存: oratta/claude-harness#1300 が書く `.headroom.json` の schema 1。この change の時点では #1300 の書式が確定していないので、仕様は design.md の「仮に置いた JSON の形」を前提にし、実装の前に #1300 の確定版と突き合わせて合わせる
 - 描画 1 回あたりの外部プロセス: `.headroom.json` があるときだけ jq を 1 回増やす。無いときは増やさない
