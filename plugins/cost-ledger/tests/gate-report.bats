@@ -2229,3 +2229,19 @@ PY2
   [ "$(body_trigger 2)" = '合計（#704 $1.00 + PR 外 $0.00）' ]
   head -n 1 "$GH_LOG.body" | grep -qF '帰属: 区間+閉じた PR'
 }
+
+@test "gate-report: does not read scripts from the current directory when dirname is not on PATH" {  # dirname が PATH に無くても、カレントディレクトリの gate_report.py と write_allow.py は読まれない（#854）
+  hook_json "$GRANT_LITERAL" > "$WORK/payload.json"
+  mkdir -p "$WORK/onlybin854" "$WORK/cwd854"
+  ln -s "$(command -v cat)" "$WORK/onlybin854/cat"
+  ln -s "$REAL_PYTHON" "$WORK/onlybin854/python3"
+  ln -s "$WORK/bin/gh" "$WORK/onlybin854/gh"
+  for f in gate_report.py write_allow.py; do
+    printf 'import pathlib\npathlib.Path(%s).write_text("x")\n' "'$WORK/marker854'" > "$WORK/cwd854/$f"
+  done
+  local bash_bin; bash_bin="$(command -v bash)"
+  cd "$WORK/cwd854"
+  run env PATH="$WORK/onlybin854" "$bash_bin" "$SCRIPT" < "$WORK/payload.json"
+  [ "$status" -eq 0 ]
+  [ ! -e "$WORK/marker854" ]
+}

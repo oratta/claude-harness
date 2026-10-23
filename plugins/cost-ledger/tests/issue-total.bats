@@ -95,8 +95,16 @@ EOF
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = 'コスト: $3.00 / ¥450 @150 — issue #12 (acme/ra) 帰属: 区間' ]
   # cost の JSON にも同じ鍵が出て、同じ値になる
+  # 閉じた PR を 0 件と読めた gh（読めなかったときは combined_total_usd が null になるので、読める gh で確かめる）
+  cl_fake_gh <<'EOF'
+if [ "$1" = api ] && [ "$2" = graphql ]; then
+  echo '{"data":{"repository":{"nameWithOwner":"acme/ra","issue":{"closedByPullRequestsReferences":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}'; exit 0
+fi
+for arg in "$@"; do case "$arg" in */issues/12) echo 12; exit 0 ;; esac; done
+exit 1
+EOF
   python3 "$CL" cost 12 --repo "$RA" --no-drift-check --json > "$OUT"
-  check 'd["closing_prs"] == [] and d["combined_total_usd"] == d["total_usd"] == d["outside_pr_usd"]' < "$OUT"
+  check 'd["closing_prs_error"] is False and d["closing_prs"] == [] and d["combined_total_usd"] == d["total_usd"] == d["outside_pr_usd"]' < "$OUT"
 }
 
 @test "issue-total: two closing PRs are listed in ascending number order" {  # 301:feat/b と 300:feat/a → 300・301 の順で 3.0・2.0、PR 外 2.0、合計 7.0
