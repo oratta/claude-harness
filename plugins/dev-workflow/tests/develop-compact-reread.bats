@@ -35,6 +35,7 @@ assert h["hookEventName"]=="SessionStart"
 c=h["additionalContext"]
 assert sys.argv[1]+"/skills/develop/SKILL.md" in c, c
 assert "親" in c and "子" in c and "記録先" in c, c
+assert "offset" in c and "limit" in c, c
 ' "$CLAUDE_PLUGIN_ROOT"
 }
 
@@ -58,8 +59,32 @@ assert "親" in c and "子" in c and "記録先" in c, c
   assert_reread
 }
 
-@test "the bare skill name develop also counts" {
+@test "a develop without the dev-workflow namespace does not count" {
+  # プラグインのコマンドは /develop と打っても /dev-workflow:develop と記録される。名前空間の無い名前は別のスキルやコマンド
   skill_call "develop"
+  add '{"type":"user","message":{"role":"user","content":"<command-name>/develop</command-name>"}}'
+  add '{"type":"attachment","attachment":{"type":"invoked_skills","skills":[{"name":"develop","path":"userSettings:develop","content":"x"}]}}'
+  run "$SCRIPT" < <(hook_input compact)
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "the command in a text block of a list-form user message counts" {
+  add '{"type":"user","message":{"role":"user","content":[{"type":"image","source":{}},{"type":"text","text":"<command-name>/dev-workflow:develop</command-name>\n<command-args>#12</command-args>"}]}}'
+  run "$SCRIPT" < <(hook_input compact)
+  assert_reread
+}
+
+@test "valid JSON lines of an unexpected shape do not stop the scan" {
+  add '{"type":"attachment","attachment":{"type":"invoked_skills","skills":5,"note":"develop"}}'
+  add '{"type":"attachment","attachment":{"type":"invoked_skills","skills":[{"name":["develop"]}]}}'
+  add '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":["dev-workflow:develop"]}}]}}'
+  add '{"type":"user","message":{"role":"user","content":[{"type":"text","text":["develop"]}]}}'
+  add '["develop"]'
+  run "$SCRIPT" < <(hook_input compact)
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  skill_call "dev-workflow:develop"
   run "$SCRIPT" < <(hook_input compact)
   assert_reread
 }
