@@ -122,7 +122,7 @@ sp=importlib.util.spec_from_file_location('c','${PLUGIN_DIR}/scripts/statusline-
   CODEX_WEEK=$((NOW + $2))
   cat > "$WORK/.statusline-codex" <<JSON
 {"identity":"$key","windows":[{"pct":10,"minutes":300,"reset":$((NOW + 3600))},{"pct":$1,"minutes":10080,"reset":$CODEX_WEEK}],
- "fetched_at":$NOW,"next_attempt":4102444800,
+ "fetched_at":$NOW,"next_attempt":$((NOW + 100)),
  "resets":{"availableCount":2,"credits":[{"status":"available","expiresAt":$((NOW + 86400))}]}}
 JSON
 }
