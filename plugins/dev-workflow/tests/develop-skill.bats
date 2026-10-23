@@ -622,8 +622,7 @@ refute() {
 @test "handover move (#1220): references to the moved section point at handover.md" {
   grep -qF 'references/handover.md' "${PLUGIN_DIR}/commands/develop.md"
   grep -qF 'references/handover.md' "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
-  if grep -qF 'SKILL.md「保留で止まるときの引き継ぎ」' "${PLUGIN_DIR}/commands/develop.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"; then return 1; fi
-  if grep -qF 'SKILL.md の「保留で止まるときの引き継ぎ」' "$EPIC_CHILD_STOP" "$EPIC"; then return 1; fi
+  if grep -qF '保留で止まるときの引き継ぎ' "${PLUGIN_DIR}/commands/develop.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md" "$EPIC_CHILD_STOP" "$EPIC"; then return 1; fi
 }
 
 # --- レビューの周を主に聞かずに続ける（直し方の判定。#722） ---
