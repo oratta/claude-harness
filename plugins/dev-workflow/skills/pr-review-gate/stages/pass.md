@@ -172,16 +172,19 @@ DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[
 WAY=$(printf '%s\n' "$DEC" | grep -cx '通し方: 文言合わせ')   # 1 以上なら文言合わせの通し方。0 件のとき grep の終了コードは 1 になるので、終了コードではなく出力の値で判定する
 FIXES=$(printf '%s\n' "$DEC" | grep '^直す文: ')             # 直す要件ごとに 1 行
 echo "$WAY"; printf '%s\n' "$FIXES"
-# ここから下の 3 本は WAY が 1 以上のときだけ実行する。場所は PR の HEAD の作業ツリー（git rev-parse HEAD の出力が $HEAD_SHA と一致すること）。CHANGE には仕様宣言が指す change 名を入れる
-ls openspec/changes/archive/*-"$CHANGE"/specs/*/spec.md | wc -l          # ちょうど 1（archive 済みで、差分が 1 ファイル）
-grep -cE '^## (ADDED|REMOVED|RENAMED) Requirements' openspec/changes/archive/*-"$CHANGE"/specs/*/spec.md   # 0（ここも終了コードではなく出力の値で判定する）
-grep -h '^### Requirement: ' openspec/changes/archive/*-"$CHANGE"/specs/*/spec.md | sed 's/^### Requirement: //' | while IFS= read -r REQ; do printf '%s\n' "$FIXES" | grep -qF "「${REQ}」" || echo "直す文に無い要件: ${REQ}"; done   # 何も出力されなければ、要件名はすべて直す文の行にある
+# ここから下の照合は WAY が 1 以上のときだけ実行する。場所は PR の HEAD の作業ツリー（git rev-parse HEAD の出力が $HEAD_SHA と一致すること）。CHANGE には仕様宣言が指す change 名を入れる
+G=openspec/changes/archive/????-??-??-"$CHANGE"/specs/*/spec.md   # 日付の形を付けて当てる（後ろが同じ名前の別の change には当たらない）
+ls $G 2>/dev/null | wc -l          # ちょうど 1（archive 済みで、差分が 1 ファイル）
+grep -cE '^## (ADDED|REMOVED|RENAMED) Requirements' $G   # 0（ここも終了コードではなく出力の値で判定する）
+grep -c '^## MODIFIED Requirements' $G   # 1 以上（差分が 1 ファイルのとき、ファイル名の無い件数だけが出る）
+grep -c '^### Requirement: ' $G          # 1 以上
+grep -h '^### Requirement: ' $G | sed 's/^### Requirement: //' | while IFS= read -r REQ; do printf '%s\n' "$FIXES" | grep -qF "「${REQ}」" || echo "直す文に無い要件: ${REQ}"; done   # 何も出力されなければ、要件名はすべて直す文の行にある
 ```
 
 | 記録先（issue、無ければ PR 自身）の記録 | 合格に必要な状態 |
 |---|---|
-| `仕様化判断: する`（`通し方: 文言合わせ` の行なし） | PR の変更ファイルに `openspec/` が含まれる、**または**宣言が指す change が base で archive 済み（`openspec/changes/archive/*-<change-name>/` の実在を実測。スタック PR で仕様が先行 PR に入っている場合）。**かつ** 記録先の最新の `仕様レビュー:` コメントが `APPROVE`（古い APPROVE の後に REQUEST_CHANGES があれば不可）。仕様宣言は「更新した」形 |
-| `仕様化判断: する`＋`通し方: 文言合わせ` の行あり | `仕様レビュー:` のコメントは照合しない（この通し方では R1 を起こさないので、コメントが無いことを不合格の理由にしない）。代わりに次の 4 点をすべて実測する: ①仕様宣言が `仕様レビュー: 省いた（文言合わせ。` を含む「更新した」形 ②PR の HEAD で `openspec/changes/archive/*-<change-name>/specs/*/spec.md` に当たるファイルがちょうど 1 つ（archive 済みで、差分が 1 ファイル） ③そのファイルに ADDED / REMOVED / RENAMED の見出しが無い ④そのファイルの `### Requirement:` の要件名がすべて、`直す文:` で始まるどれかの行に `「<要件名>」` の形で現れる。1 つでも満たさなければ合格しない。直し方は、差分か仕様化判断のコメントを直して 4 点を満たすか、`通し方:` の行の無い仕様化判断を投稿し直して artifact 一式と仕様レビューからやり直すかのどちらか |
+| `仕様化判断: する`（`通し方: 文言合わせ` の行なし） | PR の変更ファイルに `openspec/` が含まれる、**または**宣言が指す change が base で archive 済み（`openspec/changes/archive/????-??-??-<change-name>/` の実在を実測。スタック PR で仕様が先行 PR に入っている場合）。**かつ** 記録先の最新の `仕様レビュー:` コメントが `APPROVE`（古い APPROVE の後に REQUEST_CHANGES があれば不可）。仕様宣言は `仕様レビュー: APPROVE（` で始まる「更新した」形（`仕様レビュー: 省いた` の形は不合格） |
+| `仕様化判断: する`＋`通し方: 文言合わせ` の行あり | `仕様レビュー:` のコメントは照合しない（この通し方では R1 を起こさないので、コメントが無いことを不合格の理由にしない）。代わりに次の 4 点をすべて実測する: ①仕様宣言が `仕様レビュー: 省いた（文言合わせ。` を含む「更新した」形 ②PR の HEAD で `openspec/changes/archive/????-??-??-<change-name>/specs/*/spec.md` に当たるファイルがちょうど 1 つ（archive 済みで、差分が 1 ファイル。日付の形を付けるので、後ろが同じ名前の別の change には当たらない） ③そのファイルに ADDED / REMOVED / RENAMED の見出しが無く、`## MODIFIED Requirements` の見出しと `### Requirement:` の行がそれぞれ 1 件以上ある ④そのファイルの `### Requirement:` の要件名がすべて、`直す文:` で始まるどれかの行に `「<要件名>」` の形で現れる。1 つでも満たさなければ合格しない。直し方は、差分か仕様化判断のコメントを直して 4 点を満たすか、`通し方:` の行の無い仕様化判断を投稿し直して artifact 一式と仕様レビューからやり直すかのどちらか |
 | `仕様化判断: しない` | 仕様宣言は「変更なし＋理由」形。PR に `openspec/` 差分が**無い**こと（差分があれば「しない」と矛盾＝合格しない。判断を「する」に取り直すか差分を外す）。`spec-touch-check.sh` が終了コード 2 なら、理由に規範パス接触への言及があること |
 | 記録なし | **合格しない**。今から判断して記録先に `仕様化判断:` を投稿する（「する」なら仕様化・仕様レビューからやり直す）。issue が無い PR に限り PR 自身のコメントに同書式で記録してよい（`gh api -X POST repos/$R/issues/$REC/comments`） |
 
