@@ -1660,3 +1660,98 @@ filing_approval_block() { issue_approved_section | awk '/^- \*\*起票の承認\
   echo "$scope" | grep -qF '頭を付けずに打ち込まれた文'
   echo "$scope" | grep -qF '塞ぎ切る'
 }
+
+# --- Requirement: 合格条件は主の委任で親経由に受けた許容を、委任の確認と記録で確かめて受け付ける（#1293） ---
+# 4 条件・6 条件・推奨の判定の文字列は develop-skill.bats の DELEG_STOP4・DELEG_VALID6・DELEG_RECOMMEND と同じ文字列にする
+# （epic.md・epic-child-stop.md・pass.md の 3 か所が同じ文で確かめるため）。
+
+PRG_DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1〜4 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
+PRG_DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
+PRG_DELEG_RECOMMEND='`推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
+
+deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許容（親経由で受領（委任））の真正性確認/{f=1} /^\*\*issue で承認済みの確かめ直し/{f=0} f'; }
+
+@test "delegated reply (#1293): step 5 has the delegated record format" {
+  step5_body | grep -qF '主の回答: 許容 — 親経由で受領（委任）（親セッション <セッション ID> / 委任の確認 <uuid> / <日時>）委任の記録: <URL> 停止の記録: <URL> 原文: <原文>'
+}
+
+@test "delegated reply (#1293): step 5 table has a delegated row that is accepted" {
+  row="$(step5_body | grep '^| ' | grep -F '親経由で受領（委任）')"
+  [ -n "$row" ]
+  echo "$row" | grep -qF '| 可 |'
+}
+
+@test "delegated reply (#1293): the delegated check section sits after the relayed check and before the issue approval recheck" {
+  body="$(deleg_check_body)"
+  [ -n "$body" ]
+  relayed_line="$(step5_body | grep -nF '親経由で受けた許容（親経由で受領）の真正性確認' | head -1 | cut -d: -f1)"
+  deleg_line="$(step5_body | grep -nF '主の委任で親経由に受けた許容（親経由で受領（委任））の真正性確認' | head -1 | cut -d: -f1)"
+  [ "$relayed_line" -lt "$deleg_line" ]
+}
+
+@test "delegated reply (#1293): pass.md has the six validity conditions, four stop conditions and recommendation judgement as the same strings" {
+  body="$(deleg_check_body)"
+  echo "$body" | grep -qF "$PRG_DELEG_VALID6"
+  echo "$body" | grep -qF "$PRG_DELEG_STOP4"
+  echo "$body" | grep -qF "$PRG_DELEG_RECOMMEND"
+}
+
+@test "delegated reply (#1293): the strings in pass.md are the same as epic.md and epic-child-stop.md" {
+  epic="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  child="$BATS_TEST_DIRNAME/../skills/develop/references/epic-child-stop.md"
+  for f in "$epic" "$child"; do
+    grep -qF "$PRG_DELEG_VALID6" "$f" || { echo "valid6 missing in $f"; return 1; }
+    grep -qF "$PRG_DELEG_STOP4" "$f" || { echo "stop4 missing in $f"; return 1; }
+  done
+}
+
+@test "delegated reply (#1293): step 5 checks the stop record is the latest one and runs --delegated" {
+  body="$(deleg_check_body)"
+  echo "$body" | grep -qF '子の停止: 主の返事待ち'
+  echo "$body" | grep -qF 'last | .html_url'
+  echo "$body" | grep -qF 'owner-reply-check.sh --delegated <セッション ID> <uuid> <委任の記録の作成日時> <委任の記録の URL> <停止の記録の作成日時>'
+  for r in not-found not-owner not-after not-asked not-direct not-before; do
+    echo "$body" | grep -qF "$r" || { echo "missing $r"; return 1; }
+  done
+  echo "$body" | grep -F '任せる意思' | grep -qF 'MATCH:'
+}
+
+@test "delegated reply (#1293): step 5 records the --delegated exit 0 and never uses --relayed for the delegated form" {
+  body="$(deleg_check_body)"
+  echo "$body" | grep -qF '真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh --delegated 終了コード 0）'
+  echo "$body" | grep -F -- '--relayed' | grep -qF 'not-after'
+}
+
+@test "delegated reply (#1293): step 5 sends back to step 6 and the child's tab when any check fails" {
+  body="$(deleg_check_body)"
+  echo "$body" | grep -F '合格させず' | grep -F '手順6' | grep -qF '子のタブ'
+}
+
+@test "delegated reply (#1293): the delegated check has its own scope paragraph" {
+  scope="$(deleg_check_body | grep '^守備範囲（委任の形）: ')"
+  [ -n "$scope" ]
+  echo "$scope" | grep -qF '起動し直した'
+  echo "$scope" | grep -qF '塞ぎ切る'
+}
+
+@test "delegated reply (#1293): step 6 resume row for risk acceptance handles a delegated record" {
+  row="$(awk '/^### 6\. /{f=1} f' "${HOLD}" | grep -F '| **リスク許容待ち**' | head -1)"
+  echo "$row" | grep -qF '主の回答: 許容 — 親経由で受領（委任）（親セッション <セッション ID> / 委任の確認 <uuid> / <日時>）委任の記録: <URL> 停止の記録: <URL> 原文: <原文>'
+  echo "$row" | grep -F '親経由で受領（委任）' | grep -qF '追記してから手順5'
+}
+
+@test "delegated reply (#1293): 3-c condition 3 rechecks the delegated form with --delegated, not --relayed" {
+  cond3="$(step3c_body | grep '^3\. ')"
+  echo "$cond3" | grep -qF '親経由で受領（委任）'
+  echo "$cond3" | grep -qF 'owner-reply-check.sh --delegated'
+  echo "$cond3" | grep -qF -- '`--relayed` で確かめ直さない'
+  echo "$cond3" | grep -qF '取り消し'
+  echo "$cond3" | grep -qF '`親経由で受領（委任）（親セッション ` で始まる行は委任の形、`親経由で受領（親セッション ` で始まる行は従来の形'
+}
+
+@test "delegated reply (#1293): 3-c allows four forms on line 1 and keeps four lines" {
+  body="$(step3c_body)"
+  echo "$body" | grep -F '1 行目' | grep -qF '親経由で受領（委任）（親セッション'
+  echo "$body" | grep -qF '主の回答: 許容（引き継ぎ） — 親経由で受領（委任）（親セッション … / 委任の確認 … / …）委任の記録: … 停止の記録: … 原文: …'
+  echo "$body" | grep -qF '4 つ'
+}
