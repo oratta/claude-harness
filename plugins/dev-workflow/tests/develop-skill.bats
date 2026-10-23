@@ -1221,3 +1221,32 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   printf '%s\n' "$p8" | grep -qF '待ちをやめてよい条件'
   printf '%s\n' "$p8" | grep -qF '主の返事待ちの子が残るあいだ'
 }
+
+# --- 会話で受けた返事の日時の取り方を handover.md の 1 か所にする（#1239 C6） ---
+
+@test "handover: the owner-reply-check timestamp procedure lives in one paragraph of handover.md (#1239 C6)" {
+  s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
+  echo "$s" | grep -qF '**会話で受けた返事の日時の取り方**'
+  [ "$(grep -cF 'MATCH: が複数出たら' "$HANDOVER")" -eq 1 ]
+  # 段落は日時の取り方の要素を全部持つ
+  para="$(grep -F '**会話で受けた返事の日時の取り方**' "$HANDOVER")"
+  for k in 'owner-reply-check.sh' 'MATCH: 行の timestamp' 'MATCH: が複数出たら' 'MATCH: が出なければ時刻を作らない' '終了コード 1' '終了コード 2'; do
+    echo "$para" | grep -qF "$k" || return 1
+  done
+  # 再開の手順 2 は段落を名前で指し、CLAUDE_CODE_SESSION_ID は残す
+  step2="$(grep '^2\. ' "$HANDOVER" | head -n 1)"
+  echo "$step2" | grep -qF '「会話で受けた返事の日時の取り方」'
+  echo "$step2" | grep -qF 'CLAUDE_CODE_SESSION_ID'
+  ! echo "$step2" | grep -qF 'MATCH: が複数出たら' || return 1
+}
+
+@test "loop: the hold line tells main to Read the timestamp paragraph before running owner-reply-check.sh (#1239 C6)" {
+  hold="$(grep -F '保留 → needs-approval のまま' "$SKILL")"
+  [ -n "$hold" ]
+  echo "$hold" | grep -qE '`owner-reply-check.sh` を回す前に `references/handover.md` の「会話で受けた返事の日時の取り方」を Read'
+  ! echo "$hold" | grep -qF 'MATCH: が複数出たら' || return 1
+  ! grep -qF 'MATCH: が複数出たら' "$SKILL" || return 1
+  echo "$hold" | grep -qF 'リスク許容を会話で受けたら主に PR へのコメントを求めず'
+  echo "$hold" | grep -qF 'エピックの子が親経由で'
+  echo "$hold" | grep -qF '「親から届いた返事」'
+}
