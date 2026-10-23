@@ -114,6 +114,10 @@ refute() {
   section '入口 0' | grep -qE '受け入れ条件.*PR 本文'
   section '入口 0' | grep -q 'Closes'
   section '入口 0' | grep -qE '(Closes|Refs).*(書かない|書いてはならない)'
+  # #1239 C2: 2 つの規則の正本は worker/spec.md「記録先の用意」
+  section '入口 0' | grep -qF 'references/roles/worker/spec.md'
+  section '入口 0' | grep -qF '「記録先の用意」'
+  grep -qF '## 記録先の用意' "${SKILL_DIR}/references/roles/worker/spec.md"
 }
 
 @test "entry-0: issues are opened only for epics, unmanned queues, or recorded discussions" {
@@ -406,6 +410,33 @@ refute() {
   echo "$p" | grep -q 'openspec'
   echo "$p" | grep -q 'Codex'
   echo "$p" | grep -q 'needs-reviewer'
+}
+
+@test "prerequisites: the Agent row points to the worktree section for isolation instead of restating it (#1239 C1)" {
+  row="$(section '前提' | grep -E '^\| \*\*Agent')"
+  echo "$row" | grep -qF '「worktree の用意」'
+  ! echo "$row" | grep -qF 'isolation: "remote"' || return 1
+  section 'worktree の用意' | grep -qF '`isolation: "remote"` は使わない'
+}
+
+@test "role profile: selection and operations point to codex-develop.md and keep only the record duties (#1239 C3 C4 C5)" {
+  r="$(section 'Role profile の選択')"
+  # C3: margin の式と構成の選び方は codex-develop.md「起動と role 解決」
+  ! echo "$r" | grep -qF 'margin = ' || return 1
+  echo "$r" | grep -qF '「起動と role 解決」'
+  echo "$r" | grep -qF 'missing'
+  echo "$r" | grep -qF 'fetched_at'
+  echo "$r" | grep -qF 'codex-standard'
+  grep -qF 'margin' "${PLUGIN_DIR}/references/codex-develop.md"
+  # C4: 本体が行う操作の正本は codex-develop.md「本体が行う操作」
+  echo "$r" | grep -qF '「本体が行う操作」'
+  echo "$r" | grep -qF '以下の spawn / SendMessage 表記は'
+  # C5: レビュー経路の正本はこの節。(4) の起動指示は細目をこの節に任せる
+  echo "$r" | grep -qF 'request の instructions'
+  g="$(grep -A1 -F 'G の起動指示には常に `レビュー経路: adapter` の 1 行' "$SKILL")"
+  [ -n "$g" ]
+  ! echo "$g" | grep -qF 'request の instructions' || return 1
+  echo "$g" | grep -qF '「Role profile の選択」節'
 }
 
 # --- エピック ---

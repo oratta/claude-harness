@@ -19,13 +19,13 @@ version: 2.1.0
 
 ## Role profile の選択
 
-profile と旧 account/model のどちらも明示しない場合、各 canonical phase の開始時に adapter で再評価する。登録 Codex accounts の週次 snapshot の実効値（取得からの経過時間で捨てず、リセット時刻で読み替えた値）と Claude 起動 account の実効値（セッション記録と snapshot をリセット時刻で読み替えた値）から `margin = 週経過率 - 使用率` を求め、両方が 0 以上なら `claude-write-codex-review`、Codex だけが 0 以上なら `codex-standard`、それ以外は Claude 既定構成を選ぶ。開始済み role は工程途中で切り替えない。adapter が返す構成、reason、両 provider の margin / fetched_at、代表 Codex account を、最初の develop 開始コメントと後続 phase の dispatch 記録へ残す。値が無ければ `missing` と記録する。develop 開始コメントには、あわせて「実行モード」の節の `実行モード:` の行と、channel のときは `references/channel.md` の「channel のリスク許容」で決める `チャンネルの返事の確認:` の行を残す。
+profile と旧 account/model のどちらも明示しない場合、各 canonical phase の開始時に adapter で再評価する。登録 Codex accounts の週次 snapshot の実効値（取得からの経過時間で捨てず、リセット時刻で読み替えた値）と Claude 起動 account の実効値（セッション記録と snapshot をリセット時刻で読み替えた値）から構成を選ぶ（margin の求め方と構成の選び方は `references/codex-develop.md`「起動と role 解決」が正本）。開始済み role は工程途中で切り替えない。adapter が返す構成（`claude-write-codex-review`・`codex-standard`・Claude 既定構成のどれか）、reason、両 provider の margin / fetched_at、代表 Codex account を、最初の develop 開始コメントと後続 phase の dispatch 記録へ残す。値が無ければ `missing` と記録する。develop 開始コメントには、あわせて「実行モード」の節の `実行モード:` の行と、channel のときは `references/channel.md` の「channel のリスク許容」で決める `チャンネルの返事の確認:` の行を残す。
 
 `--profile NAME [--profile-file PATH]` または旧形式の Codex account/model を明示したときは、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこの SKILL.md から `../../references/codex-develop.md`）を絶対パスに解決して Read する。各委譲の直前に adapter から canonical role の per-role execution result を取得し、provider 操作は同 reference の「role 解決直後の一度だけの分岐」に従う。事前分類に当たる R1 または G が要求したレビュアーは、対象 role の entry ではなく profile の `decider` entry（executor/account/model）を使い、`subagent_type: dev-workflow:decider` として起動する。この SKILL.md はその分岐を再掲せず、工程順、role、review 条件、return 契約、次工程の判断だけを正本として維持する。
 
 G の起動指示（段ごとに新しく起こす G と、手渡しで起こす後任 G のすべて）には、起動形を問わず常に `レビュー経路: adapter` の 1 行を書く（自動選択・明示 profile・旧形式のどれも adapter で解決するので、今が adapter 経路かを評価しない）。Codex の G では request の instructions（`--input` の指示ファイル）にも書く。develop の本体は `レビュー経路: 従来` を書かない（develop の本体以外の呼び出し元のための値）。G は再開せず段ごとに新しく起こすので、起動指示に行が無い G は従来経路（full は G が Codex を直接呼ぶ）として動く。どの段の起動指示でも行を省略しない（`references/roles/gate-runner.md`「レビュー経路の判別」）。
 
-名前付き profile では profile role ごとに thread と requested tuple / applied model / reason を記録する。同じ Claude profile role を再開する直前に毎回現在の `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` 上限を再確認し、既存 applied model が上限内のときだけ SendMessage する。上限を超える場合は SendMessage せず、既存の工程完了または停止確認条件を満たしてから requested tuple を変えずに capped model の fresh thread へ成果物と必要な要約を手渡す。profile role の境界、独立 review、Codex 委譲も fresh thread とする。以下の spawn / SendMessage 表記は、profile 利用時にはこの規則を適用した provider 操作を意味する。
+名前付き profile での thread と requested tuple / applied model / reason の記録、同じ Claude profile role を再開する直前の `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` 上限の再確認（上限を超えるなら SendMessage せず、工程完了か停止確認の条件を満たしてから requested tuple を変えずに capped model の fresh thread へ手渡す）、fresh thread にする境界は、`references/codex-develop.md`「本体が行う操作」が正本。以下の spawn / SendMessage 表記は、profile 利用時にはこの規則を適用した provider 操作を意味する。
 
 ## いつ使うか
 
@@ -39,7 +39,7 @@ G の起動指示（段ごとに新しく起こす G と、手渡しで起こす
 
 | 前提 | 使い方 | 無いとき |
 |---|---|---|
-| **Agent ツール** | W (`dev-workflow:worker`) / R1 (`general-purpose` または `dev-workflow:decider`) / G (`dev-workflow:gate-runner`) / G が要求するレビュアー (`dev-workflow:reviewer` または `dev-workflow:decider`) / V (`general-purpose`) の spawn。`model` を必ず明示し、W と G は**名前付き**で spawn する（W は SendMessage で再開するため。G は再開せず段ごとに新しく起こし、名前は (4) の形にする）。W は本体が対象専用の worktree にいなければ `isolation: "worktree"` で起こす。**`isolation: "remote"` で W / G を起こしてはならない**（強制停止に当たった作業を本体が引き取れなくなるため。理由は「worktree の用意」を参照） | 本体になれない。親セッションに return する |
+| **Agent ツール** | W (`dev-workflow:worker`) / R1 (`general-purpose` または `dev-workflow:decider`) / G (`dev-workflow:gate-runner`) / G が要求するレビュアー (`dev-workflow:reviewer` または `dev-workflow:decider`) / V (`general-purpose`) の spawn。`model` を必ず明示し、W と G は**名前付き**で spawn する（W は SendMessage で再開するため。G は再開せず段ごとに新しく起こし、名前は (4) の形にする）。W は本体が対象専用の worktree にいなければ `isolation: "worktree"` で起こす。使ってはならない隔離とその理由は「worktree の用意」 | 本体になれない。親セッションに return する |
 | **SendMessage** | 名前付きで起こした W の再開（コンテキストを引き継いだまま次の工程を指示する）。G は再開しない（段ごとに新しく起こし、レビュー要約は起動指示で渡す） | 再開できないので、前任を手渡してよい状態のときだけ新しい W を spawn し、前回の return 全文をプロンプトに渡す。条件は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本で、満たさないなら spawn せず親に返す（前任が動いたまま後任を起こさない） |
 | **`gh`** | 記録先（issue / PR）へのコメントとラベル操作、Draft PR の作成、エピックの子の依存（`gh api repos/<owner>/<repo>/issues/<N>/dependencies/blocked_by`、issue dependencies API） | 記録先を作れないので開始しない（記録なしで実装に進まない） |
 | **openspec CLI** | W は `openspec --version` で経路の有無を決め、`openspec new change` → R1 → TDD → `openspec validate --strict` → `openspec archive` と進める。opsx コマンドは本体や主の対話用 | 仕様化経路が発生しない（W は `仕様化判断: しない` の理由に「openspec 不在」と書き、コード直行する） |
@@ -81,8 +81,7 @@ G の起動指示（段ごとに新しく起こす G と、手渡しで起こす
 
 - **issue があればそれを記録先にする**（番号・URL・自然文マッチ。`/develop` の 5 分岐は `commands/develop.md`）。エピックの子は子 issue が記録先
 - **無ければ issue を切らない。** 本体が worktree を用意し、W が worktree 直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする（GitHub の "open a draft PR early" の慣行）。この Draft PR は**仕様化判断を記録する前**に存在していなければならない — 記録先が無い状態で判定を先に進めない（手順は `references/roles/worker/spec.md`「記録先の用意」）
-- Draft PR を記録先にする場合、**受け入れ条件は PR 本文**（位置づけ・動作確認ポイント）に書く。issue に書かない分の省略であって、受け入れ条件自体を省くことはできない
-- 記録先を PR にした場合、PR 本文に `Closes #N` / `Fixes #N` / `Refs #N` の issue 参照を**書かない**。書くと pr-review-gate の照合先がその issue に移る（探索順は issue → 無ければ PR 自身のコメント）。エピックの子は子 issue が記録先なので `Closes #子` を書く
+- Draft PR を記録先にするときの PR 本文の決まり（受け入れ条件は PR 本文に書く・PR 本文に `Closes #N` / `Fixes #N` / `Refs #N` の issue 参照を書かない。エピックの子は `Closes #子` を書く）は、`references/roles/worker/spec.md`「記録先の用意」が正本
 - 仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）
 - **仕様宣言は記録先ではなく常に PR コメントに置く**（記録先が issue でも issue には書かない）。pr-review-gate 手順 5 が PR のコメントでリスク宣言・仕様宣言・動作確認の 3 見出しを照合し、`対象 HEAD:` 規約が PR の HEAD に紐づくため。書式の正本は pr-review-gate スキル手順 3-b
 
@@ -137,8 +136,8 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       段ごとに新しい G を起こす（段は 前提確認と重さ判定・照合と振り分け・合格処理・保留の解除 の 4 つ。1 体は 1 段だけを担当する。
            起こす時点と渡すものの表は gate-runner.md「段ごとの起動と入力」）。名前は `G-<PR>-<prepare|triage|pass|hold>-<n>`（n はその PR・その段で
            起こした回数）、description は `G: <段> for PR #N (#issue)`（先頭の `G:` を残す。役割別集計がこの接頭辞で G と判定する）
-      G の起動指示には常に `レビュー経路: adapter` の 1 行と `段: <段の名前>` の 1 行を書き（Codex の G では request の instructions にも。
-           `レビュー経路: 従来` は書かない。理由は「Role profile の選択」節）、2 つ目以降の段では前の段の `## Gate Result` ブロックを要約し直さずそのまま貼る。
+      G の起動指示には常に `レビュー経路: adapter` の 1 行と `段: <段の名前>` の 1 行を書き（`レビュー経路: 従来` は書かない。
+           理由と書き方の細目は「Role profile の選択」節）、2 つ目以降の段では前の段の `## Gate Result` ブロックを要約し直さずそのまま貼る。
            channel のときは `実行モード: channel` の行と、develop 開始コメントと同じ値の `チャンネルの返事の確認:` の行（`可` / `不可`）も書く（G が hold.md 手順 6-3 の依頼文を書き分ける入力。`references/channel.md` の「channel のリスク許容」）
       次に起こす段は Gate Result の Status と `次の段:` だけで決める（止める指摘が残っているか・戻した指摘の仕分け・復帰手順の行き先を本体は判断しない）。
            G が `工程中断:` で返したら同じ段の新しい G を起こし、前任の return 全文と前任の起動指示に書いた入力を渡す
