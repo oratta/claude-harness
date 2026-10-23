@@ -303,6 +303,47 @@ assert "claude[31m-opus-5" in m, m
   [ "$output" = "$expected" ]
 }
 
+@test "fail-open: the script does not read the payload through environ, getenv or sys.argv" {
+  run bash -c "grep -v '^[[:space:]]*#' '$SCRIPT' | grep -nE 'environ|getenv|sys\\.argv'"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "fail-open: the payload never reaches python3 through its arguments or environment" {
+  mk
+  real_py="$(command -v python3)"
+  rec="${BATS_TEST_TMPDIR}/rec"
+  shim="${BATS_TEST_TMPDIR}/pyshim"
+  mkdir -p "$shim"
+  printf '#!/bin/bash\nprintf "%%s\\n" "$@" > "%s.args"\nenv > "%s.env"\nexec "%s" "$@"\n' "$rec" "$rec" "$real_py" > "${shim}/python3"
+  chmod +x "${shim}/python3"
+  run --separate-stderr env PATH="${shim}:${PATH}" bash -c "'$SCRIPT' < '$PAYLOAD'"
+  M="$(msg_of)"
+  [ -s "${rec}.args" ]
+  # 基準の入力の目印（session_id の値・estimated_cache_write_usd の値）が引数にも環境変数にも無い
+  run grep -c -e 'abc123' -e '1.1396' "${rec}.args" "${rec}.env"
+  [ "$status" -eq 1 ]
+}
+
+@test "fail-open: macOS system python3 (3.9) still prints the notice with PATH=/usr/bin:/bin" {
+  mk
+  if [ -x /usr/bin/python3 ]; then
+    echo "using /usr/bin/python3: $(/usr/bin/python3 -V 2>&1)" >&3
+    run --separate-stderr env PATH=/usr/bin:/bin /bin/bash -c "'$SCRIPT' < '$PAYLOAD'"
+  else
+    echo "reason: /usr/bin/python3 is absent here, so the default python3 is used instead" >&3
+    run_hook
+  fi
+  M="$(msg_of)"
+  has "$M" "モデル切替"
+}
+
+@test "fail-open: a failing body read (ulimit -f 0) is silent with exit 0 and empty stderr" {
+  mk
+  run --separate-stderr bash -c "ulimit -f 0; bash '$SCRIPT' < '$PAYLOAD'"
+  assert_silent
+}
+
 # ---------- 5. hooks.json と権限 ----------
 
 @test "script: is executable" {
