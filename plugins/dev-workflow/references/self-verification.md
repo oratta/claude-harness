@@ -30,7 +30,7 @@
 
 ## 対象スキル一覧
 
-`plugins/*/skills/*/SKILL.md` を「成果物を出すか」「完了前の検証が本文に明示されているか」で監査した結果（2026-08 の 3 プラグイン解散後は 6 スキル、2026-09 の再棚卸し（#218）で `push-guard-setup` を加えて 7 スキル、2026-10 の 3 プラグイン解散（#841）で experience-to-skill を外して 6 スキルが対象）。パスはすべてスキル実体の実パスで記載する（コマンド名からパスを組み立てない）。実在する `plugins/*/skills/*/SKILL.md` は全件が下の対象表か対象外表のどちらかに載っている（網羅性は `plugins/dev-workflow/tests/self-verification-sections.bats` が機械検査する。スキルを新設したら必ずどちらかに追記する）。
+`plugins/*/skills/*/SKILL.md` を「成果物を出すか」「完了前の検証が本文に明示されているか」で監査した結果（2026-08 の 3 プラグイン解散後は 6 スキル、2026-09 の再棚卸し（#218）で `push-guard-setup` を加えて 7 スキル、2026-10 の 3 プラグイン解散（#841）で experience-to-skill を外して 6 スキル、2026-10 に日報と週報の 2 スキルを個人版のリポジトリへ移して（#1129）4 スキルが対象）。パスはすべてスキル実体の実パスで記載する（コマンド名からパスを組み立てない）。実在する `plugins/*/skills/*/SKILL.md` は全件が下の対象表か対象外表のどちらかに載っている（網羅性は `plugins/dev-workflow/tests/self-verification-sections.bats` が機械検査する。スキルを新設したら必ずどちらかに追記する）。
 
 ### 対象（`## 自己検証` 節を追加する）
 
@@ -38,8 +38,6 @@
 |--------|-----------|----------------|
 | `plugins/worktree/skills/wt-setup/SKILL.md` | worktree・Draft PR | `git worktree list`・`gh pr view` |
 | `plugins/worktree/skills/wt-clean/SKILL.md` | worktree の削除・LLM 退避物 | `git worktree list`・退避ファイル実在（詳細は references 分離） |
-| `plugins/daily-report/skills/daily-report/SKILL.md` | 日報ファイル（記録の置き場があればそこへ出力） | 生成ファイル実在・見出し確認 |
-| `plugins/weekly-report/skills/weekly-report/SKILL.md` | 週次ノート | 週次ノート実在・frontmatter 確認 |
 | `plugins/infra/skills/infra-setup/SKILL.md` | `vercel.json`・GitHub Actions ワークフロー・環境変数配線 | `jq` パース・deploy チェック |
 | `plugins/dev-workflow/skills/push-guard-setup/SKILL.md` | `~/.githooks/pre-push`・`git config --global core.hooksPath` | `core.hooksPath` の値・フックの `test -x`・`git push --dry-run` の exit code（#64 で節を先行導入。#218 で参照行を追加し対象に編入） |
 
