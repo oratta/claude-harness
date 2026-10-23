@@ -1518,7 +1518,14 @@ cmd_reap() {
         started=$SECONDS
         while :; do
           if wtl="$(gitx "$gd" worktree list --porcelain)" && ! printf '%s\n' "$wtl" | grep -qxF -- "worktree $path"; then
-            attached=0; break
+            attached=0
+            # 別のワークツリーが同じブランチを checkout していたら消さない（update-ref -d は
+            # branch -D と違い、使用中のブランチでも消せてしまうので、ここで同じ保護を入れる）
+            if printf '%s\n' "$wtl" | grep -qxF -- "branch refs/heads/$branch"; then
+              attached=1
+              echo "branch $branch is checked out by another worktree; not deleting it" >&2
+            fi
+            break
           fi
           attached=1
           tries=$(( tries - 1 ))

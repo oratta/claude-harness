@@ -2853,6 +2853,27 @@ infer_ready() {
   [ "$(calls '^git update-ref -d refs/heads/oratta/issue-11 aaa111$')" -eq 1 ]
 }
 
+@test "reap: a branch checked out by another worktree is kept even when this worktree has left the list" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'worktree /work/other\nHEAD aaa111\nbranch refs/heads/oratta/issue-11\n\n' > "$STUB_CFG/wtlist_out"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11 branch-kept" ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
+  [ "$(cat "$STUB_CFG/branch_tip")" = "aaa111" ]
+  grep -qF 'oratta/issue-11 is checked out by another worktree' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "reap: another worktree on a different branch (even a prefix match) does not keep the branch" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'worktree /work/other\nHEAD aaa111\nbranch refs/heads/oratta/issue-110\n\n' > "$STUB_CFG/wtlist_out"
+  run dispatch reap 11
+  [ "$output" = "reaped 11" ]
+  [ "$(calls '^git update-ref -d refs/heads/oratta/issue-11 aaa111$')" -eq 1 ]
+}
+
 @test "reap: a failing update-ref -d is reported as branch-kept" {
   reap_ready
   echo aaa111 > "$STUB_CFG/branch_tip"
