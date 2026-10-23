@@ -1417,6 +1417,6 @@ EOF
   [ "$(list_synced_md "$TMPD/os" | sum_files_z)" -eq "$(wc -c < "$TMPD/os/s.md")" ]
   # breakdown の output-styles 行は list_synced_md で数える（always_on 経由にしない）
   breakdown_def=$(declare -f breakdown)
-  [[ "$breakdown_def" == *'list_synced_md "$REPO_ROOT/output-styles"'* ]]
-  [[ "$breakdown_def" != *'list_always_on_md "$REPO_ROOT/output-styles"'* ]]
+  [[ "$breakdown_def" == *'list_synced_md "$REPO_ROOT/output-styles"'* ]] || return 1
+  [[ "$breakdown_def" != *'list_always_on_md "$REPO_ROOT/output-styles"'* ]] || return 1
 }
