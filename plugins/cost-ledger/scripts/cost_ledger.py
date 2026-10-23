@@ -925,7 +925,7 @@ def _ledger_id_uuid(line: str):
 OUTPUT_KEY = '"output_tokens": '
 
 
-def _ledger_output(line: str, request_id: str) -> int:
+def _ledger_output(line: str) -> int:
     """台帳の 1 行の出力トークン。値の前の欄は文字列のエスケープ済みの値だけなので、最初の一致が欄そのもの。"""
     at = line.find(OUTPUT_KEY)
     if at >= 0:
@@ -1064,7 +1064,7 @@ class LedgerIndex:
                     if uuid is not None:
                         heads.append((request_id, uuid))
                     base = request_id.split("#", 1)[0]
-                    counts[base] = counts.get(base, 0) + _ledger_output(text, request_id)
+                    counts[base] = counts.get(base, 0) + _ledger_output(text)
             self.db.executemany(
                 "INSERT INTO counted (id, out) VALUES (?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET out = out + excluded.out", list(counts.items()))
