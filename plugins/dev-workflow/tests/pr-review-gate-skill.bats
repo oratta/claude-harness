@@ -1163,10 +1163,19 @@ step3c_body() {
 
 @test "carryover (#441): 3-c picks the latest declaration that has both an acceptance and an authenticity line" {
   line="$(step3c_body | grep -F '前の宣言の選び方')"
-  echo "$line" | grep -qF '`主の回答: 許容`'
+  echo "$line" | grep -qF '`主の回答: 許容 — `'
+  echo "$line" | grep -qF '`主の回答: 許容（引き継ぎ） — `'
   echo "$line" | grep -qF '`真正性確認: 済`'
   echo "$line" | grep -qF '最新 1 件'
   echo "$line" | grep -qF '`対象 HEAD:`'
+}
+
+@test "carryover (#479): 3-c does not carry over when a later declaration has any owner answer line" {
+  line="$(step3c_body | grep -F '前の宣言の選び方')"
+  echo "$line" | grep -qF '選んだ宣言より後の `## リスク宣言` コメントに `主の回答:` で始まる行が 1 つでもあれば'
+  echo "$line" | grep -qF '`主の回答: 許容しない — `'
+  echo "$line" | grep -qF '回答の中身を問わない'
+  echo "$line" | grep -qF '引き継がず手順 6 で主に聞く'
 }
 
 @test "carryover (#441): 3-c states it is the only exception to 'do not reuse previous passes'" {
