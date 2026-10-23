@@ -106,6 +106,7 @@ chosen = files[0] if direct else next((p for p in files if first_cwd(p) == cwd),
 
 ctx = None
 calls = 0
+trailing_err = False
 try:
     with open(chosen, encoding="utf-8") as f:
         for line in f:
@@ -116,6 +117,12 @@ try:
             # 壊れた行・辞書でないレコード（null 等）は読み飛ばす。最後の usage を取り逃がさないため
             if not isinstance(d, dict) or d.get("type") != "assistant":
                 continue
+            # 利用上限などで止まったときのエラーレコードは usage が全部 0。0 を採ると超過を見落とすので、手前の usage を採る。
+            # エラーの印は usage の有無より先に見る（usage の無いエラーレコードでも last_record の印を出すため）。
+            # error は値の真偽ではなく値があるかで見る（error: {} や "" も印として扱う。正常なレコードは error キーを持たない）
+            if d.get("isApiErrorMessage") or d.get("error") is not None:
+                trailing_err = True
+                continue
             msg = d.get("message")
             u = msg.get("usage") if isinstance(msg, dict) else None
             if not isinstance(u, dict):
@@ -123,6 +130,11 @@ try:
             def n(k):
                 v = u.get(k)
                 return int(v) if isinstance(v, (int, float)) else 0
+            if (n("input_tokens") + n("cache_creation_input_tokens")
+                    + n("cache_read_input_tokens") + n("output_tokens")) == 0:
+                trailing_err = True
+                continue
+            trailing_err = False
             calls += 1
             ctx = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
 except Exception as e:
@@ -136,6 +148,8 @@ if ctx is None:
 over = ctx > cap
 out = {"agent": name, "file": chosen, "context_tokens": ctx, "calls": calls,
        "cap": cap, "over_cap": over}
+if trailing_err:
+    out["last_record"] = "api_error"
 stop_since = os.environ.get("STOP_SINCE") or ""
 if stop_since:
     import time

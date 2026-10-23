@@ -2527,6 +2527,28 @@ infer_ready() {
   [ "$(calls '^orca worktree set')" -eq 0 ]
 }
 
+@test "wait: a one-shot check that cannot take the lock ends with timeout and prints the reason to stderr" {
+  make_stub orca
+  gh_seq 11 open
+  put_record 11 stop=stopped
+  mkdir "$(rec_of 1122 11).lock"
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout 11" ]
+  grep -qF 'the state record is locked:' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(rec_get 11 stop)" = stopped ]
+}
+
+@test "wait: a one-shot check with nothing failing ends with timeout and an empty stderr" {
+  make_stub orca
+  gh_seq 11 open
+  put_record 11 stop=resumed
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ ! -s "$BATS_TEST_TMPDIR/stderr" ] || { cat "$BATS_TEST_TMPDIR/stderr"; false; }
+}
+
 @test "wait: a failing mirror to Orca still ends with stopped" {
   make_stub orca
   gh_seq 11 open
@@ -3669,6 +3691,34 @@ orca_cmd_scripts() {
   grep -F '`主に聞く理由: なし（…）`' "$f" | grep -qF '通す側で読む'
   grep -F '項目の無い記録' "$f" | grep -qF 'ほかの項目から'
   grep -F '主に聞く理由が成り立つか迷うときは' "$f" | grep -qF '成り立つ側に倒す'
+}
+
+# issue #1246: エピックの目的・原則が推奨を一意に決めるときは「主の側の情報が要らない」を満たすと読む
+@test "criteria: an epic's purpose or principle that decides the recommendation satisfies the no-owner-information condition" {
+  f="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
+  # 表の行から読み方の段落を指す
+  grep -F '| 主の側の情報が要らない |' "$f" | grep -qF 'エピックの目的・原則から推奨が決まるとき'
+  # 読み方の段落
+  p="$(grep -F '**エピックの目的・原則から推奨が決まるとき**' "$f")"
+  [ -n "$p" ]
+  printf '%s\n' "$p" | grep -F 'エピック本文の目的・原則・決まった方針' | grep -F '一意に決める' | grep -qF '「主の側の情報が要らない」を満たすと読む'
+  printf '%s\n' "$p" | grep -qF 'ほかの 8 条件'
+  printf '%s\n' "$p" | grep -F '聖域' | grep -F '破壊的' | grep -F 'リスクの許容' | grep -qF '目的・原則が推奨を決めていても通さない'
+  printf '%s\n' "$p" | grep -F '1 つに決まらない' | grep -qF '迷ったとき'
+  # リスクは表の「その子のブランチの中に閉じるもの」と揃え、解釈の揺れは推奨が変わるときに限る（#1254 のゲートの指摘）
+  printf '%s\n' "$p" | grep -qF '許容と書かれておらず、その子のブランチの中にも閉じないリスク'
+  printf '%s\n' "$p" | grep -qF '原則の語が 2 通り以上に読め、読み方で推奨が変わる'
+  run grep -F '解釈が要る' "$f"; [ "$status" -eq 1 ]
+  run grep -F '許容と書かれていないリスク' "$f"; [ "$status" -eq 1 ]
+  printf '%s\n' "$p" | grep -F '推し量った意図' | grep -qF '根拠にしない'
+  # 通る例: エピック本文の原則が推奨をそのまま決めていた型（固有名を出さない）
+  grep -F 'オーナーと客の環境で仕組みを分けない' "$f" | grep -qF '推奨をそのまま決めていた'
+  # 通らない例: 同じ型でもリスクの許容や聖域に触れるもの
+  grep -F '同じ型でも' "$f" | grep -F '許容と書かれておらず、その子のブランチの中にも閉じないリスク' | grep -qF '聖域'
+  # 公開版に作業先のリポジトリ名を書かない（語は公開版の辞書から読む）
+  words="$(grep -v -e '^#' -e '^$' "$PLUGIN_DIR/../../tests/public-names/dict/flatmate.txt")"
+  [ -n "$words" ]
+  run grep -iF -e "$words" "$f"; [ "$status" -eq 1 ]
 }
 
 @test "reply-after-idle: the restore table has the parent's pass decisions and the terminal check is in reply" {

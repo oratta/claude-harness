@@ -141,6 +141,14 @@ if not m:
 repo, rest = m.groups()
 
 def emit(text):
+    if rest == "issues":  # 一覧の要素に repository_url が無ければ、問い合わせたリポジトリを入れる
+        try:
+            arr = json.loads(text)
+            for it in arr:
+                it.setdefault("repository_url", "https://api.github.com/repos/" + repo)
+            text = json.dumps(arr)
+        except ValueError:
+            pass
     if jqf is None:
         sys.stdout.write(text + "\n")
     else:
@@ -424,7 +432,7 @@ PY
   no_gh_call
 }
 
-@test "backfill: prints nothing when dirname is not on PATH" {  # PATH に gh と python3 しか無く dirname が見つからなくても、stdout と stderr は空で終了コード 0
+@test "backfill: prints nothing when dirname is not on PATH" {  # PATH に gh と python3 しか無く dirname が見つからなくても（スクリプトの場所は ${0%/*} から求めるので先へ進み、python3 が失敗しても）、stdout と stderr は空で終了コード 0
   one_pr_candidate
   real_bash="$(command -v bash)"
   mkdir -p "$WORK/onlybin"
@@ -435,8 +443,6 @@ PY
   run env PATH="$WORK/onlybin" "$real_bash" "$SCRIPT" < "$WORK/payload.json"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
-  no_gh_call
-  no_python
 }
 
 @test "backfill: with COST_LEDGER_HOOK_FOREGROUND=1 the comment is written before the hook ends" {  # その場で実行すると、hook が終わった時点でコメントの作成が済んでいる
@@ -761,6 +767,16 @@ PY
   run_backfill
   [ "$(gh_calls)" -eq 1 ]
   no_write
+  cmp "$STATE" "$WORK/state.before"
+}
+
+@test "backfill: an item whose repository_url names another repository fails the whole list" {  # 一覧の要素の repository_url が origin と別名（転送先）なら、候補があっても一覧の 1 回以外の gh を呼ばず、何も積まず控えも変えない
+  one_pr_candidate
+  cp "$STATE" "$WORK/state.before"
+  export FAKE_LIST='[{"number":300,"state":"closed","updated_at":"2026-09-02T00:00:00Z","closed_at":"2026-09-02T00:00:00Z","repository_url":"https://api.github.com/repos/acme/renamed","pull_request":{"merged_at":"2026-09-02T00:00:00Z"}},{"number":12,"state":"closed","updated_at":"2026-09-02T00:00:00Z","closed_at":"2026-09-02T00:00:00Z","repository_url":"https://api.github.com/repos/acme/renamed"}]'
+  rm -f "$FIX"/list.*.json
+  run_backfill
+  [ "$(gh_calls)" -eq 1 ]
   cmp "$STATE" "$WORK/state.before"
 }
 
@@ -1299,4 +1315,20 @@ MERGE=(--pr 300 --branch feat/a --trigger マージ)
   tl --issue 12 --repo "$CWD" --trigger "issue クローズ" --at "$T" --backfill < "$IN" > "$OUT"
   [ "$(nrows "$OUT")" -eq 2 ]
   rows "$OUT" | grep -qF '| issue クローズ |'
+}
+
+@test "backfill: does not read scripts from the current directory when dirname is not on PATH" {  # dirname が PATH に無くても、カレントディレクトリの backfill.py と write_allow.py は読まれない（#854）
+  one_pr_candidate
+  real_bash="$(command -v bash)"
+  mkdir -p "$WORK/onlybin" "$WORK/cwd854"
+  cp "$WORK/bin/gh" "$WORK/onlybin/gh"
+  ln -s "$REAL_PYTHON" "$WORK/onlybin/python3"
+  for f in backfill.py write_allow.py; do
+    printf 'import pathlib\npathlib.Path(%s).write_text("x")\n' "'$WORK/marker854'" > "$WORK/cwd854/$f"
+  done
+  session_json startup > "$WORK/payload.json"
+  cd "$WORK/cwd854"
+  run env PATH="$WORK/onlybin" "$real_bash" "$SCRIPT" < "$WORK/payload.json"
+  [ "$status" -eq 0 ]
+  [ ! -e "$WORK/marker854" ]
 }

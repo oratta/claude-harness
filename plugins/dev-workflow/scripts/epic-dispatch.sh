@@ -81,7 +81,7 @@
 #   閉じた子が 1 件も無いポーリング。失敗の無いポーリングで数え直す。
 #   間隔・上限は秒。既定 300 / 21600（EPIC_DISPATCH_INTERVAL / EPIC_DISPATCH_TIMEOUT、フラグが優先）。
 #   ポーリングのあとで「経過 >= 上限」か「経過 + 間隔 > 上限」なら眠らずに timeout
-#   （--timeout 0 は間隔によらず 1 回だけ確かめる）
+#   （--timeout 0 は間隔によらず 1 回だけ確かめる）。timeout のとき、最後のポーリングに失敗があれば溜めた stderr を出す
 #   子 issue の state は、記録の repo がエピックと同じ子と記録の無い子は repos/{owner}/{repo}、違う子は repos/<repo> で読む。
 #   --watch-done <N> を 1 つ以上付けたときだけ、ポーリングごとに渡された子の記録を 1 回ずつ読み、
 #   status が done なら「印が付いた」とする。閉じた子・印が付いた子がいれば `closed <N>...` と `done <N>...` を
@@ -1344,6 +1344,8 @@ cmd_wait() {
     # 閉じた子がいないので、開いている子とこのポーリングで失敗した子は引数の全部。
     # 経過が上限に達していれば間隔 0 でも終わる（--timeout 0 を 1 回の確認で終わらせるため）
     if [ "$SECONDS" -ge "$timeout" ] || [ $((SECONDS + interval)) -gt "$timeout" ]; then
+      # 最後のポーリングに失敗があれば、溜めた理由を出す（--timeout 0 の 1 回の確認で、失敗を止まった子なしと読ませないため）
+      if [ -n "$failed" ] || [ "$wsfail" -eq 1 ]; then cat "$errf" >&2; fi
       if [ "$#" -gt 0 ]; then echo "timeout $*"; else echo "timeout"; fi
       exit 2
     fi
