@@ -957,19 +957,19 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   p="$(deleg_para | grep -F -- '- **委任で送る**')"
   echo "$p" | grep -qF 'reply --as owner'
   echo "$p" | grep -qF '`許容する（主の委任による。停止の記録: <URL>） [主の委任: セッション <親のセッション ID> / uuid <確認の uuid> / 記録 <委任の記録の URL>]`'
-  echo "$p" | grep -qF '`主の委任で送った: 子 #<N> <停止の記録の URL>`'
+  echo "$p" | grep -qF '`委任で送った: 子 #<N> <停止の記録の URL>`'
   echo "$p" | grep -qF '`親の判断:` で始めない'
   echo "$p" | grep -qF '手順 8 の形で主に上げる'
 }
 
 @test "delegated reply (#1293): the parent does not send twice for the same stop record" {
   p="$(deleg_para | grep -F -- '- **二重送信の防止**')"
-  echo "$p" | grep -qF '手順 7・8 で同じ子が再び挙がったとき、その子の `主の委任で送った:` の行の URL が最新の停止の記録の URL と同じなら送り直さず子の再開を待つ'
+  echo "$p" | grep -qF '手順 7・8 で同じ子が再び挙がったとき、その子の `委任で送った:` の行の URL が最新の停止の記録の URL と同じなら送り直さず子の再開を待つ'
 }
 
 @test "delegated reply (#1293): the parent route has a scope paragraph" {
   p="$(deleg_para | grep -F -- '- **守備範囲**')"
-  for w in '①入力の出どころ' '②拾いたい誤り' '③' '④穴を塞ぎ切ることは完了条件にしない'; do
+  for w in '①入力の出どころ' '②拾いたい誤り' '③確認に `任せる` 以外の語で任せる意思が読める答えは通してよい' '④穴を塞ぎ切ることは完了条件にしない'; do
     echo "$p" | grep -qF "$w" || return 1
   done
 }
@@ -987,6 +987,9 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 @test "delegated reply (#1293): the child asks for the child's tab with the reason when the delegated reply cannot be confirmed, and has a scope" {
   item="$(child_reply_item)"
   echo "$item" | grep -qF '止まりに委任が効かないときは G を起こさず'
+  # 委任の返事はリスク許容待ちの止まりにだけ受ける（P3-F1）
+  echo "$item" | grep -qF '止まった件がリスク許容への返事待ち（pr-review-gate 手順 3 の宣言で止まった件）のときだけ受け、上の `--relayed` に掛けず'
+  echo "$item" | grep -qF '止まった件がリスク許容への返事待ちでない（聖域の変更・破壊的な操作・マージ・実機操作などで止まった）、または止まりに委任が効かないときは G を起こさず'
   echo "$item" | grep -qF '確かめられなかった理由（`REASON=` の値か満たさなかった条件）'
   echo "$item" | grep -qF '③親と子が同じ PC で動き、委任の確認のあとに親が起動し直したものは通してよい'
   # [主の発言: …] の経路の文は変えない

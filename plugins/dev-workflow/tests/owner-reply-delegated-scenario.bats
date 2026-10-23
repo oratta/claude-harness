@@ -132,8 +132,10 @@ expect_pass() {  # $1 = MATCH の行に出る本文
   build_log
   run bash "$SCRIPT" --delegated "$SID" "$CONFIRM_UUID" "$DELEG_AT" "$DELEG_URL"
   [ "$status" -eq 2 ]
+  [[ "$output" == *"usage: "*"--delegated"* ]] || return 1
   run bash "$SCRIPT" --delegated "$SID" "$CONFIRM_UUID" "$DELEG_AT" "$DELEG_URL" "$STOP_AT" extra
   [ "$status" -eq 2 ]
+  [[ "$output" == *"usage: "*"--delegated"* ]] || return 1
 }
 
 @test "delegated: a session id or uuid that is not a UUID gives exit 2" {
@@ -172,7 +174,6 @@ expect_pass() {  # $1 = MATCH の行に出る本文
 
 @test "delegated: a tool result, isMeta, isSidechain, compact summary and head-typed reply are not-owner" {
   local u="dddddddd-0000-4000-8000-000000000001"
-  build_log
   for line in \
     '{"type":"user","isSidechain":false,"uuid":"'"$u"'","timestamp":"2026-10-23T11:06:10.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"任せる"}]}}' \
     '{"type":"user","isSidechain":false,"isMeta":true,"uuid":"'"$u"'","timestamp":"2026-10-23T11:06:10.000Z","message":{"role":"user","content":"任せる"}}' \

@@ -1719,7 +1719,8 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
 @test "delegated reply (#1293): step 5 records the --delegated exit 0 and never uses --relayed for the delegated form" {
   body="$(deleg_check_body)"
   echo "$body" | grep -qF '真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh --delegated 終了コード 0）'
-  echo "$body" | grep -F -- '--relayed' | grep -qF 'not-after'
+  echo "$body" | grep -F -- '--relayed' | grep -F 'で確かめない' | grep -qF 'not-after'
+  ! echo "$body" | grep -qF -- 'owner-reply-check.sh --relayed <' || return 1
 }
 
 @test "delegated reply (#1293): step 5 sends back to step 6 and the child's tab when any check fails" {
