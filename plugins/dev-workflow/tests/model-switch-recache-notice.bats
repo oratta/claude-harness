@@ -341,7 +341,13 @@ assert "claude[31m-opus-5" in m, m
 @test "fail-open: a failing body read (ulimit -f 0) is silent with exit 0 and empty stderr" {
   mk
   run --separate-stderr bash -c "ulimit -f 0; bash '$SCRIPT' < '$PAYLOAD'"
-  assert_silent
+  # 受け入れ条件は exit 0・標準エラー空。標準出力は OS の bash で変わる: ヒアドキュメントを一時ファイルで渡す bash
+  # （macOS の 3.2）は書き込みに失敗して無出力、パイプで渡す bash（Linux の 5.x）は失敗せず通知を出す。どちらも許す。
+  [ "$status" -eq 0 ] || { echo "status=$status" >&2; return 1; }
+  [ -z "$stderr" ] || { echo "stderr=$stderr" >&2; return 1; }
+  if [ -n "$output" ]; then
+    has "$output" "モデル切替"
+  fi
 }
 
 # ---------- 5. hooks.json と権限 ----------
