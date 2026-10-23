@@ -3,6 +3,7 @@
 # develop の 3 つ目の実行モード channel（issue #1126）
 #
 #   skills/develop/SKILL.md                     実行モードの節・引き継ぎ・再開・エピックの回し方・G の起動指示
+#   skills/develop/references/channel.md        channel の聞き方・読み替えの規則・リスク許容・主への発言（#1221 で移設）
 #   commands/develop.md                         モードの決め方・引数の分岐 ②⑤ と issueify フォールバックの聞き方
 #   skills/pr-review-gate/stages/hold.md        手順 6-3 の依頼文を実行モードで分ける
 #
@@ -20,6 +21,8 @@ setup() {
   EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
   # 「保留で止まるときの引き継ぎ」節は SKILL.md から references/ へ移した（#1220）
   HANDOVER="${PLUGIN_DIR}/skills/develop/references/handover.md"
+  # channel だけで使う 3 小節（聞き方・リスク許容・主への発言）は SKILL.md から references/ へ移した（#1221）
+  CHANNEL="${PLUGIN_DIR}/skills/develop/references/channel.md"
   CMD="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
 }
@@ -73,7 +76,7 @@ refute() {
 # --- 聞き方と読み替え ---
 
 @test "channel asking: reply tool to the chat_id, end the turn, URL of the recorded question" {
-  local s; s="$(subsection 'channel の聞き方')"
+  local s; s="$(section 'channel の聞き方' "$CHANNEL")"
   [ -n "$s" ]
   printf '%s\n' "$s" | grep -qF 'chat_id'
   printf '%s\n' "$s" | grep -qF 'ターンを終える'
@@ -83,12 +86,13 @@ refute() {
 }
 
 @test "reading rule: every file mentioning AskUserQuestion is listed by its plugin-relative path" {
-  local s; s="$(subsection 'channel の聞き方')"
+  local s; s="$(section 'channel の聞き方' "$CHANNEL")"
   local files f rel n=0
   files="$(cd "$PLUGIN_DIR" && grep -rl --exclude-dir=tests --exclude-dir=changes 'AskUserQuestion' . | sed 's|^\./||' | sort)"
   [ -n "$files" ]
   while IFS= read -r rel; do
     [ "$rel" = "skills/develop/SKILL.md" ] && continue
+    [ "$rel" = "skills/develop/references/channel.md" ] && continue
     n=$((n + 1))
     if ! printf '%s\n' "$s" | grep -qF "\`$rel\`"; then
       echo "読み替えの列挙に無い: $rel" >&2
@@ -100,8 +104,8 @@ refute() {
 
 @test "AskUserQuestion lines in SKILL.md are interactive-only or in the Orca child section" {
   local line
-  # 実行モードの節の読み替えの規則があること
-  section '実行モード' | grep -qF 'channel ではこの聞き方に読む'
+  # 読み替えの規則があること（#1221 で references/channel.md へ移した）
+  grep -qF 'channel ではこの聞き方に読む' "$CHANNEL"
   # 各行が interactive の文脈か、channel を明示して除いているか、Orca 経路の子の節の行であること
   local child; child="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   while IFS= read -r line; do
@@ -124,7 +128,8 @@ refute() {
 # --- リスク許容と主への発言 ---
 
 @test "channel risk acceptance: check OWNER_REPLY_CHANNEL_SENDERS without printing, PR comment when not possible" {
-  local s; s="$(section '実行モード')"
+  local s; s="$(section 'channel のリスク許容' "$CHANNEL")"
+  [ -n "$s" ]
   printf '%s\n' "$s" | grep -qF 'チャンネルの返事の確認: 可'
   printf '%s\n' "$s" | grep -qF 'チャンネルの返事の確認: 不可（OWNER_REPLY_CHANNEL_SENDERS が無い）'
   printf '%s\n' "$s" | grep -qF '値を出さず'
@@ -132,7 +137,7 @@ refute() {
 }
 
 @test "channel statements: all go to the channel, follow the canonical first-line rule, no screen or tab" {
-  local s; s="$(subsection 'channel の主への発言')"
+  local s; s="$(section 'channel の主への発言' "$CHANNEL")"
   [ -n "$s" ]
   printf '%s\n' "$s" | grep -qF '主へのすべての発言'
   printf '%s\n' "$s" | grep -qF '端末に出すだけで済ませない'
