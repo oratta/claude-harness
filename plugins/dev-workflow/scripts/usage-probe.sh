@@ -26,6 +26,9 @@
 #     寿命: 取得に成功したスロットは応答から作り直す／取得を試みて失敗したスロットは欄を出さない
 #     （全スロット失敗で snapshot を書かない場合も、その欄だけは既存 snapshot から除く。他は変えない）／
 #     取得を試みなかったスロット（間隔内・オフ）は前回の値を保つ。読み手はダッシュボードと statusline
+#   - snapshot の置き換えに成功した直後に headroom.py write --refresh-codex を呼び、
+#     ${CLAUDE_CONFIG_DIR:-~/.claude}/.headroom.json を書き直す（正本: dev-workflow-headroom。
+#     reset_grants を除くための書き直しでも呼ぶ。出力と終了コードは probe に伝えない）
 #   - レジストリで enabled が false のスロット（オフ）は叩かない。認証情報も読まず、試行も記録しない。
 #     snapshot の同スロットの項目は、取得しなかったスロットと同じく前回値のまま引き継ぐ
 #
@@ -40,6 +43,7 @@
 #   - USAGE_PROBE_STATUS[_<ID>]:      テスト経路の HTTP ステータス（既定は応答ファイルがあれば 200）
 #   - USAGE_PROBE_NOW:                現在 epoch を固定する（実行条件と試行時刻もこの時刻で測る）
 #   いずれかが設定されていれば全スロットがテスト経路になり、Keychain / curl は使わない。
+#   テスト経路では CLAUDE_CONFIG_DIR と CODEX_HOME が両方設定されたときだけ headroom を呼ぶ。
 #   - USAGE_PROBE_USER_AGENT:         本番経路で送る User-Agent を固定する（テスト経路には切り替えない。
 #                                     既定は claude-cli/<claude --version の版> (external, cli)）
 #
@@ -630,7 +634,17 @@ mkdir -p "$dir" 2>/dev/null || exit 0
 tmp="$(mktemp "${dir}/.usage-snapshot.XXXXXX" 2>/dev/null || true)"
 [ -n "$tmp" ] || exit 0
 if printf '%s\n' "$out" > "$tmp" 2>/dev/null; then
-  mv -f "$tmp" "$SNAPSHOT" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+  if mv -f "$tmp" "$SNAPSHOT" 2>/dev/null; then
+    # snapshot を書いた実行だけ余りを書き直す（正本: dev-workflow-headroom）。
+    # headroom の出力と終了コードは probe の結果に伝えない。テスト経路では、書き先と Codex の
+    # home が両方明示されたときだけ呼ぶ（本番の .headroom.json と ~/.codex の cache に触れないため）
+    if [ "$test_mode" -eq 0 ] || { [ -n "${CLAUDE_CONFIG_DIR:-}" ] && [ -n "${CODEX_HOME:-}" ]; }; then
+      USAGE_SNAPSHOT="$SNAPSHOT" python3 -I "$(dirname "$0")/headroom.py" write --refresh-codex \
+        >/dev/null 2>&1 || true
+    fi
+  else
+    rm -f "$tmp" 2>/dev/null
+  fi
 else
   rm -f "$tmp" 2>/dev/null
 fi
