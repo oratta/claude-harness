@@ -1001,3 +1001,46 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
 @test "launcher parts: the prerequisite table names orca or tmux for starting child sessions" {
   grep -qF '| **`orca`** または **`tmux`** |' "$SKILL"
 }
+
+# --- 親が待ちをやめてよい条件（#1248） ---
+# 親が見張りを自分から止めるとき、動いている子に主の返事待ちで止まった子が無いことを確かめてから止める
+
+stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; print; next} /^\*\*マージ待ちの子\*\*/{f=0} f'; }
+
+@test "watch end: the conditions for ending the watch are written in one paragraph of the run section" {
+  [ "$(run_section | grep -c '^\*\*待ちをやめてよい条件\*\*')" -eq 1 ]
+  c="$(stop_cond)"
+  # やめてよい場合: 完了（clear まで）・後回しだけ残る報告・error/failed の報告・片付け待ちだけの timeout・主の指示
+  printf '%s\n' "$c" | grep -qF '`clear`'
+  printf '%s\n' "$c" | grep -qF '後回しの子だけが残る'
+  printf '%s\n' "$c" | grep -qF '`error`'
+  printf '%s\n' "$c" | grep -qF '手順 4'
+  printf '%s\n' "$c" | grep -qF '主がやめるよう言った'
+  # それ以外ではやめない（理由にならないものを列挙する）
+  printf '%s\n' "$c" | grep -qF 'それ以外ではやめない'
+  printf '%s\n' "$c" | grep -qF '`timeout` が何度続いても'
+  printf '%s\n' "$c" | grep -qF '変化が無い'
+  printf '%s\n' "$c" | grep -qF '主に上げた'
+}
+
+@test "watch end: before ending, the open children are checked with a one-shot wait and pending-owner" {
+  c="$(stop_cond)"
+  printf '%s\n' "$c" | grep -qF 'scripts/epic-dispatch.sh wait --interval 0 --timeout 0 --watch-stopped <'
+  printf '%s\n' "$c" | grep -qF 'scripts/epic-dispatch.sh pending-owner <'
+  printf '%s\n' "$c" | grep -qF '`pending <N>`'
+  printf '%s\n' "$c" | grep -qF '`needs-approval`'
+  # 止まった子があればやめずに手順 8 で処理して 2 に戻る
+  printf '%s\n' "$c" | grep -qF 'やめずに'
+  printf '%s\n' "$c" | grep -qF '手順 8'
+}
+
+@test "watch end: step 4 timeout, step 5 and step 8 point to the conditions" {
+  p4="$(grep -E '^4\. `closed <N>...`' "$EPIC")"
+  printf '%s\n' "$p4" | grep -qF '待ちをやめてよい条件'
+  printf '%s\n' "$p4" | grep -qF '確認を通'
+  p5="$(grep -E '^5\. `timeout <N>...`' "$EPIC")"
+  printf '%s\n' "$p5" | grep -qF '待ちをやめてよい条件'
+  p8="$(grep -E '^8\. `stopped <N>...`' "$EPIC")"
+  printf '%s\n' "$p8" | grep -qF '待ちをやめてよい条件'
+  printf '%s\n' "$p8" | grep -qF '主の返事待ちの子が残るあいだ'
+}
