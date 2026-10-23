@@ -2827,7 +2827,9 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         "usd_jpy_rate": pricing.jpy_rate,
         "closing_prs": combined["prs"],
         "outside_pr_usd": combined["outside_usd"],
-        "combined_total_usd": combined["total_usd"],
+        # 閉じた PR を読めなかったときの合計は「PR の分を欠いた額」なので、区間の額と見分けがつく null にする
+        "combined_total_usd": (None if getattr(args, "closing_prs_error", False)
+                               else combined["total_usd"]),
         "closing_prs_error": bool(getattr(args, "closing_prs_error", False)),
     }
     drift = None

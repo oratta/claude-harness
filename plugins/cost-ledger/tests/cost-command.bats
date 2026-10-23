@@ -355,10 +355,10 @@ gql_count() { grep -c '^api graphql' "$GH_LOG" || true; }
   rm -f "$GQL_BODY"
   run python3 "$CL" cost 148 --repo "$REPO_A" --json
   [ "$status" -eq 0 ]
-  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["closing_prs_error"] is True and d["closing_prs"]==[]'
+  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["closing_prs_error"] is True and d["closing_prs"]==[] and d["combined_total_usd"] is None and d["total_usd"] > 0'
   closing_body "[]"
   run python3 "$CL" cost 148 --repo "$REPO_A" --json
-  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["closing_prs_error"] is False and d["closing_prs"]==[]'
+  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["closing_prs_error"] is False and d["closing_prs"]==[] and d["combined_total_usd"]==d["total_usd"]'
   closing_body "[$PR300]"
   run python3 "$CL" cost 148 --repo "$REPO_A" --json
   echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["closing_prs_error"] is False and d["closing_prs"][0]["number"]==300'
