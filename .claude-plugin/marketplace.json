@@ -24,37 +24,6 @@
       ]
     },
     {
-      "name": "weekly-report",
-      "description": "週次プロジェクト実績レポートを自動生成する。Gitコミット・LLMセッションログ（native jsonl直読）・フェーズ状態を集約し、Obsidian週次ノートに挿入する。cron非対話実行に対応。",
-      "source": "./plugins/weekly-report",
-      "category": "productivity",
-      "author": {
-        "name": "Oratta"
-      },
-      "keywords": [
-        "weekly",
-        "report",
-        "obsidian"
-      ]
-    },
-    {
-      "name": "daily-report",
-      "description": "Fieldyの音声トランスクリプト（Notion DB_FIELDY）と、Obsidian Vaultの編集ノート・LLMログ・Claude Codeセッションjsonlを横断集約し、自然言語ナラティブで日次日記を生成する。--with-album フラグで marketing-harness の vlog-album を連鎖呼び出しできる（デフォルトは女子 3 人版、--gene male で男性 Gene 版）。",
-      "source": "./plugins/daily-report",
-      "category": "productivity",
-      "author": {
-        "name": "Oratta"
-      },
-      "keywords": [
-        "daily",
-        "diary",
-        "fieldy",
-        "notion",
-        "obsidian",
-        "narrative"
-      ]
-    },
-    {
       "name": "infra",
       "description": "Webアプリのインフラを対話的に一括セットアップするプラグイン。Vercel + Supabase + GitHub Actions構成で、local/staging/prod の4環境を構築する（`/infra-setup`）。既存 supabase-project-setup スキルを統合。",
       "source": "./plugins/infra",
@@ -184,8 +153,6 @@
       "description": "全プラグインをインストール",
       "plugins": [
         "worktree",
-        "weekly-report",
-        "daily-report",
         "infra",
         "dev-workflow",
         "product-handover",
