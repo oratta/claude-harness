@@ -311,7 +311,7 @@ extract_fn() {
   mkdir -p "${dir}/.claude/casting"
   sed 's|^  strip_html_comments "\$file" "\$out" \|\| true$|&; printf "%s" "$(cat "$out")" > "$out"|' "$SCRIPT" > "$mutant"
   # 差し替えが実際に当たったことを確かめる（当たらないとこのテストは何も固定しない）
-  ! cmp -s "$SCRIPT" "$mutant"
+  ! cmp -s "$SCRIPT" "$mutant" || return 1
   printf -- '---\ncatalog_version: 1\n---\n\n# 判例台帳\n\n### 2026-08-27 末尾改行なしで経路が最終行\n\n- 観点: 技術設計・品質\n- 帰結: 自走した\n- 還元: なし\n- 経路: 相談の上自走した' \
     > "${dir}/.claude/casting/precedents.md"
   run bash "$mutant" --catalog "$CATALOG" "$dir"
