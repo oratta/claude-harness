@@ -55,7 +55,9 @@ check() {  # $1=式
 import json, sys
 d = json.load(sys.stdin)
 near = lambda a, b: abs(a - b) < 1e-9
-assert eval(sys.argv[1]), d
+if not eval(sys.argv[1]):
+    sys.stderr.write("check failed: %s\n%s\n" % (sys.argv[1], d))
+    sys.exit(1)
 ' "$1"
 }
 

@@ -352,7 +352,8 @@ def resolve_number(where: str, number: str):
         return "pr", head, 0
     found = _gh(where, "api", "repos/{owner}/{repo}/issues/%s" % number, "--jq", ISSUE_JQ)
     parts = (found or "").split()
-    if parts:
+    # 応答の番号が数字でなければ issue として返さない（呼ぶ側は「見つからない」として扱う）
+    if parts and re.fullmatch(r"[0-9]+", parts[0]):
         children = 0
         if len(parts) == 2 and re.fullmatch(r"[0-9]+", parts[1]):
             children = int(parts[1])

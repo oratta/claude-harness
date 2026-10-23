@@ -29,6 +29,7 @@ setup() {
   export EPIC_BARE=""               # 空でなければ、issue の問い合わせは番号だけを返す
   export EPIC_GQL_FAIL=""           # 空でなければ、GraphQL の呼び出しだけが失敗する
   export EPIC_PR="" EPIC_PR_HEAD="" # PR として答える番号と、そのヘッドブランチ
+  export EPIC_NONNUM=""             # 空でなければ、issue の問い合わせは数字でない番号を返す
   mkdir -p "$EPIC_GQL_DIR"
   : > "$EPIC_GH_LOG"
   fake_gh
@@ -57,6 +58,7 @@ for arg in "$@"; do
     */issues/*)
       n="${arg##*/}"; total=0
       for kv in $EPIC_SUBS; do [ "${kv%%=*}" = "$n" ] && total="${kv#*=}"; done
+      if [ -n "$EPIC_NONNUM" ]; then echo "abc 2"; exit 0; fi
       if [ -n "$EPIC_BARE" ]; then echo "$n"; else echo "$n $total"; fi
       exit 0 ;;
   esac
@@ -141,6 +143,8 @@ grandchild() {
 }
 
 cost() { python3 "$CL" cost "$@" --repo "$RA" --no-drift-check; }
+# 単価表のずれの突き合わせを止めない呼び出し（--no-drift-check を付けない）
+cost_drift() { python3 "$CL" cost "$@" --repo "$RA"; }  # --no-drift-check を付けない
 cost_json() { cost "$@" --json; }
 
 # 標準入力の JSON に python の式を当て、偽なら落とす。d が JSON、i は番号から issues の 1 件を引く辞書。
@@ -151,7 +155,9 @@ import json, sys
 d = json.load(sys.stdin)
 near = lambda a, b: abs(a - b) < 1e-9
 i = {row["number"]: row for row in d.get("issues", [])}
-assert eval(sys.argv[1]), d
+if not eval(sys.argv[1]):
+    sys.stderr.write("check failed: %s\n%s\n" % (sys.argv[1], d))
+    sys.exit(1)
 ' "$1"
 }
 
@@ -203,7 +209,9 @@ run_split() {
 import json, sys
 a, b = (json.load(open(p)) for p in sys.argv[1:3])
 pick = lambda d: (d["total_usd"], [(r["number"], r["own_usd"], r["standalone_usd"]) for r in d["issues"]])
-assert pick(a) == pick(b), (pick(a), pick(b))
+if pick(a) != pick(b):
+    sys.stderr.write("%s != %s\n" % (pick(a), pick(b)))
+    sys.exit(1)
 PY
 }
 
@@ -219,7 +227,7 @@ PY
   b="$(printf '%s\n' "$output" | grep -nxF '    #11 closed $4.00 — child a' | cut -d: -f1)"
   c="$(printf '%s\n' "$output" | grep -nxF '    #12 open $2.00 — child b' | cut -d: -f1)"
   [ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] && [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] || { echo "$output"; return 1; }
-  [[ "$output" == *'  対象: issue #10（acme/ra）と子孫の issue 2 件'* ]]
+  [[ "$output" == *'  対象: issue #10（acme/ra）と子孫の issue 2 件'* ]] || { echo "$output"; return 1; }
 }
 
 @test "epic: acceptance: the total equals the sum of the children's amounts" {  # r4 を除くと total_usd・children_usd・子の usd の和が 6.0、self_usd は 0.0
@@ -295,7 +303,7 @@ PY
   run_split cost 10
   [ "$status" -eq 2 ] || { echo "$status $OUT$ERR"; return 1; }
   [ -z "$OUT" ]
-  [[ "$ERR" == *'#10'* ]]
+  [[ "$ERR" == *'#10'* ]] || { echo "$ERR"; return 1; }
 }
 
 @test "epic: more than 100 children gives no total" {  # subIssues の hasNextPage が真 → 終了コード 2、標準出力は空
@@ -304,7 +312,7 @@ PY
   run_split cost 10
   [ "$status" -eq 2 ] || { echo "$status $OUT$ERR"; return 1; }
   [ -z "$OUT" ]
-  [[ "$ERR" == *'#10'* ]]
+  [[ "$ERR" == *'#10'* ]] || { echo "$ERR"; return 1; }
 }
 
 @test "epic: more than 100 closing PRs on a child gives no total" {  # 子の closedByPullRequestsReferences の hasNextPage が真 → 終了コード 2
@@ -313,7 +321,7 @@ PY
   run_split cost 10
   [ "$status" -eq 2 ] || { echo "$status $OUT$ERR"; return 1; }
   [ -z "$OUT" ]
-  [[ "$ERR" == *'#11'* ]]
+  [[ "$ERR" == *'#11'* ]] || { echo "$ERR"; return 1; }
 }
 
 @test "epic: a malformed response gives no total" {  # 子 #11 を閉じた PR の headRefName が空 → 終了コード 2、標準出力は空
@@ -322,7 +330,7 @@ PY
   run_split cost 10
   [ "$status" -eq 2 ] || { echo "$status $OUT$ERR"; return 1; }
   [ -z "$OUT" ]
-  [[ "$ERR" == *'#11'* ]]
+  [[ "$ERR" == *'#11'* ]] || { echo "$ERR"; return 1; }
 }
 
 @test "epic: deeper than 8 levels gives no total" {  # #10→#11→…→#18 の鎖で #18 がさらに子を持つ → 終了コード 2、GraphQL は 8 回
@@ -336,7 +344,7 @@ PY
   run_split cost 10
   [ "$status" -eq 2 ] || { echo "$status $OUT$ERR"; return 1; }
   [ -z "$OUT" ]
-  [[ "$ERR" == *'#18'* ]]
+  [[ "$ERR" == *'#18'* ]] || { echo "$ERR"; return 1; }
   [ "$(gql_calls)" -eq 8 ]
 }
 
@@ -367,14 +375,14 @@ PY
 @test "epic: control characters in a title are shown as spaces" {  # ESC・改行・U+202E は空白 1 つになり、内訳の行は増えない。--json の title は取った値のまま
   logs
   # 題名の中身（JSON の書き方）: x ESC [2Ky 改行 空白 4 つ #99 closed $9.00 — fake U+202E z
-  gql 10 epic OPEN "$(prs)" "$(child 11 'x\u001b[2Ky\n    #99 closed $9.00 — fake‮z' CLOSED 0)"
+  gql 10 epic OPEN "$(prs)" "$(child 11 'x\u001b[2Ky\n    #99 closed $9.00 — fake\u202ez' CLOSED 0)"
   run --separate-stderr cost 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" != *$'\x1b'* ]] || { echo "ESC が残っている"; return 1; }
   [[ "$output" != *$'\xe2\x80\xae'* ]] || { echo "U+202E が残っている"; return 1; }
   printf '%s\n' "$output" | grep -qxF '    #11 closed $2.00 — x [2Ky #99 closed $9.00 — fake z' || { echo "$output"; return 1; }
   [ "$(printf '%s\n' "$output" | grep -cE '^ +#[0-9]+ (open|closed) ')" -eq 2 ] || { echo "$output"; return 1; }
-  cost_json 10 | check 'i[11]["title"] == "x\x1b[2Ky\n    #99 closed $9.00 — fake‮z"'
+  cost_json 10 | check 'i[11]["title"] == "x\x1b[2Ky\n    #99 closed $9.00 — fake\u202ez"'
 }
 
 @test "epic: a title is cut after control characters are removed" {  # 先頭のタブ 3 つと 40 文字 → 取り除いたあとは 40 文字なので切らない
@@ -499,4 +507,160 @@ PY
   [[ "$row" == *'| $1.00 (+1.00) |'* ]] || { cat "$BATS_TEST_TMPDIR/out.md"; return 1; }
   [ "$(gh_calls)" -eq 0 ]
   [ "$(head -n 1 "$BATS_TEST_TMPDIR/out.md")" = "$(python3 "$CL" issue 10 --repo "$RA" | head -n 1)" ]
+}
+
+# ---- 取りこぼしの補い（#767。#759 のレビュー指摘） --------------------------
+
+@test "epic: without --no-drift-check the price drift check runs and warns" {  # --no-drift-check を付けないと突き合わせが走る。S11 の本体の値 $20 と自前の $2 の差で警告が 1 行、--json の price_drift にも入る
+  logs
+  tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
+  mkdir -p "$CONFIG_DIR/.session-cost"
+  printf '1 1788220800 0 1788220830 20\n' > "$CONFIG_DIR/.session-cost/S11"
+  run cost_drift 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | grep -c '単価表のずれ:')" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *'S11'* ]] || { echo "$output"; return 1; }
+  cost_drift 10 --json | check 'd["price_drift"]["drifted"] == 1 and d["price_drift"]["worst"]["session_id"] == "S11"'
+  # フラグを付けると同じ状態でも警告は出ない
+  run cost 10
+  [ "$(printf '%s\n' "$output" | grep -c '単価表のずれ:')" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "epic: without --no-drift-check and without records nothing is added" {  # 本体の値の記録が無ければ、フラグの有無で出力は同じ
+  logs
+  tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
+  run cost 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  with_flag="$output"
+  run cost_drift 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "$with_flag" ] || { echo "$output"; return 1; }
+  cost_drift 10 --json | check 'd["price_drift"] is None'
+}
+
+@test "epic: the GraphQL query is passed with variables" {  # owner・name・number は -F で渡し、問い合わせの文字列には変数名だけを書く
+  logs
+  tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
+  run cost 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  line="$(grep '^api graphql' "$EPIC_GH_LOG")"
+  [ "$(printf '%s\n' "$line" | wc -l | tr -d ' ')" -eq 1 ] || { cat "$EPIC_GH_LOG"; return 1; }
+  [[ "$line" == *'-F owner={owner} -F name={repo} -F number=10'* ]] || { echo "$line"; return 1; }
+  [[ "$line" == *'query($owner: String!, $name: String!, $number: Int!)'* ]] || { echo "$line"; return 1; }
+  [[ "$line" == *'repository(owner: $owner, name: $name) { nameWithOwner issue(number: $number)'* ]] || { echo "$line"; return 1; }
+  # 実際の値は問い合わせの文字列に入っていない
+  [[ "$line" != *'acme'* && "$line" != *'issue(number: 10)'* ]] || { echo "$line"; return 1; }
+}
+
+@test "epic: a PR whose base is another repository is not counted" {  # ベースが別リポジトリの PR は数えない → #11 は PR 分が入らず own_usd 2.0、closing_prs は空
+  logs
+  tree "$(pr 300 feat/a false other/repo)" ""
+  cost_json 10 | check 'i[11]["closing_prs"] == [] and near(i[11]["own_usd"], 2.0) and near(d["total_usd"], 4.0)'
+}
+
+@test "epic: the base repository name is compared ignoring case" {  # ベースが ACME/RA でも acme/ra の PR として数える → #11 は PR 分 3.0 を足して 4.0
+  logs
+  tree "$(pr 300 feat/a false ACME/RA)" ""
+  cost_json 10 | check 'len(i[11]["closing_prs"]) == 1 and near(i[11]["own_usd"], 4.0)'
+}
+
+# 台帳を設定して cost 10 を同じプロセスの中で走らせ、台帳まわりの関数の呼び出し回数を数える。
+# 出力は "追記 区間の読み 全行の読み ブランチの読み"
+count_ledger_calls() {
+  export COST_LEDGER_PATH="$BATS_TEST_TMPDIR/ledger-home/cost-ledger.jsonl"
+  python3 - "$CL" "$RA" <<'PY'
+import importlib.util, io, sys, contextlib
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("cl", sys.argv[1])
+cl = importlib.util.module_from_spec(spec)
+sys.modules["cl"] = cl
+spec.loader.exec_module(cl)
+count = {"sync": 0, "issue": 0, "all": 0, "branches": 0}
+def wrap(name, key):
+    original = getattr(cl, name)
+    def counted(*args, **kwargs):
+        count[key] += 1
+        return original(*args, **kwargs)
+    setattr(cl, name, counted)
+wrap("ledger_sync", "sync")
+wrap("iter_ledger_issue_facts", "issue")
+wrap("iter_ledger_facts", "all")
+wrap("load_branches_facts", "branches")
+with contextlib.redirect_stdout(io.StringIO()):
+    status = cl.main(["cost", "10", "--repo", sys.argv[2], "--no-drift-check"])
+if status != 0:
+    sys.exit(status)
+print(count["sync"], count["issue"], count["all"], count["branches"])
+PY
+}
+
+@test "epic: ledger reads do not grow with the number of children and PRs" {  # 子 2 件・PR 2 件でも、子 4 件・PR 4 件でも、追記 1 回・区間の読み 1 回・ブランチの読み 1 回
+  logs
+  tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
+  run count_ledger_calls
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "1 1 0 1" ] || { echo "$output"; return 1; }
+  export EPIC_SUBS="10=4"
+  gql 10 epic OPEN "$(prs)" \
+    "$(child 11 'child a' CLOSED 0 "$(prs "$(pr 300 feat/a)")")" \
+    "$(child 12 'child b' OPEN 0 "$(prs "$(pr 301 feat/b)")")" \
+    "$(child 13 'child c' OPEN 0 "$(prs "$(pr 302 feat/c)")")" \
+    "$(child 14 'child d' OPEN 0 "$(prs "$(pr 303 feat/d)")")"
+  run count_ledger_calls
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "1 1 0 1" ] || { echo "$output"; return 1; }
+}
+
+@test "epic: a failing sub-issue query says why on stderr" {  # GraphQL の失敗の理由の文が標準エラーに出る
+  logs
+  export EPIC_GQL_FAIL=1
+  run_split cost 10
+  [ "$status" -eq 2 ] || { echo "$status $OUT$ERR"; return 1; }
+  [[ "$ERR" == *'issue #10 の子 issue の問い合わせ（gh api graphql）が失敗しました'* ]] || { echo "$ERR"; return 1; }
+}
+
+@test "epic: more than 100 children says why on stderr" {  # 子 100 件超の理由の文が標準エラーに出る
+  logs
+  SUB_MORE=true tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
+  run_split cost 10
+  [ "$status" -eq 2 ] || { echo "$status $OUT$ERR"; return 1; }
+  [[ "$ERR" == *'issue #10 の子 issue が 100 件を超えています'* ]] || { echo "$ERR"; return 1; }
+}
+
+@test "epic: a response that is not JSON gives no total" {  # JSON でない応答 → 終了コード 2、標準出力は空、標準エラーに形が違うという理由
+  logs
+  printf 'this is not json' > "$EPIC_GQL_DIR/10.json"
+  run_split cost 10
+  [ "$status" -eq 2 ] || { echo "$status $OUT$ERR"; return 1; }
+  [ -z "$OUT" ]
+  [[ "$ERR" == *'issue #10 の子 issue の応答が期待する形ではありません'* ]] || { echo "$ERR"; return 1; }
+}
+
+@test "epic: more than 100 closed PRs on the epic itself gives no total" {  # エピック自身の閉じた PR が 100 件超（hasNextPage が真）→ 終了コード 2、標準出力は空
+  logs
+  gql 10 epic OPEN "$(PR_MORE=true prs "$(pr 300 feat/a)")" "$(child 11 'child a' CLOSED 0)"
+  run_split cost 10
+  [ "$status" -eq 2 ] || { echo "$status $OUT$ERR"; return 1; }
+  [ -z "$OUT" ]
+  [[ "$ERR" == *'issue #10 を閉じた PR が 100 件を超えています'* ]] || { echo "$ERR"; return 1; }
+}
+
+@test "epic: a non-numeric number in the issue response is not an issue" {  # 応答の番号が数字でない → issue として扱わず「見つかりません」で終了コード 2、GraphQL は呼ばない
+  logs
+  export EPIC_NONNUM=1
+  run_split cost 10
+  [ "$status" -eq 2 ] || { echo "$status $OUT$ERR"; return 1; }
+  [ -z "$OUT" ]
+  [[ "$ERR" == *'#10 は PR としても issue としても見つかりません'* ]] || { echo "$ERR"; return 1; }
+  [ "$(gql_calls)" -eq 0 ]
+  python3 - "$CL" "$RA" <<'PY'
+import importlib.util, sys
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("cl", sys.argv[1])
+cl = importlib.util.module_from_spec(spec)
+sys.modules["cl"] = cl
+spec.loader.exec_module(cl)
+if cl.resolve_number(sys.argv[2], "10") != (None, None, 0):
+    sys.exit(1)
+PY
 }
