@@ -63,7 +63,7 @@
 |---|---|
 | `rerun` | `obs.runs` の各 run に `gh run rerun <run> --repo <owner/repo> --failed` を実行してから `wait` を起動し直す。やり直しに失敗したら、その旨を PR にコメントして `wait` を起動し直す（次の観測で `decide` が直しに回す） |
 | `fix` | 下の 7 の直し方で直す。push したら、`agent-review:passed` を外したまま同じ状態ファイルで `wait` から始め直し（同じ見張りの続きなので、上の 2 の開始の判定・開始と終了のコメントはしない）、そのあとの `rerun`・`fix` もこの表どおりに処理する。ゲートの取り直しは `ready` になってから行う（下の「`ready` を受けたあと」） |
-| `escalate` | PR に `needs-approval` を付け、落ちたチェック名と PR の URL を添えてオーナーに 1 アクションで頼み、見張りを終える。`obs.checks` に `cause` が `job-timeout` のチェックがあるときは、そのチェック名と run に加えて「ジョブが上限時間で打ち切られた。ランナーの状態を確かめてほしい」と伝え、実装者に直しを頼まない（ランナーの状態は PR の差分では直せないため） |
+| `escalate` | PR に `needs-approval` を付け、落ちたチェック名と PR の URL を添えてオーナーに 1 アクションで頼み、見張りを終える。`obs.checks` に `cause` が `job-timeout` のチェックがあるときは、そのチェック名と run に加えて「ジョブが上限時間で打ち切られた。ランナーの状態を確かめてほしい」と伝え、実装者に直しを頼まない（ランナーの状態は PR の差分では直せないため）。エピックの子のセッション（`scripts/epic-dispatch.sh route`（子の番号なし）が `nested` を返す）は、止まる前に `skills/develop/references/epic-child-stop.md` の記録を残す（CI の見張りで止まったときの `再開に要る途中経過:` の書き方もそこが正本） |
 | `ready` | 扱いは呼び出し側が決める（下の「`ready` を受けたあと」） |
 | `none` | `obs.state` が `wait` のときだけ `wait` を起動し直す。それ以外の `none`（前回と同じ状態・同じ HEAD の決着、オーナーに上げ済み）は見張りを終え、PR の URL を添えてオーナーに状況（`obs.state` と、上げ済みならその旨）を伝える |
 
