@@ -23,7 +23,7 @@ while [ $# -gt 0 ]; do
       if [ -z "${2-}" ]; then bad="--repo needs <owner>/<repo>"; shift; else repo="$2"; shift 2; fi ;;
     --out)
       if [ -z "${2-}" ]; then bad="--out needs a file"; shift; else out="$2"; shift 2; fi ;;
-    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *)
       if [[ "$1" =~ ^[0-9]+$ ]]; then nums+=("$1"); else bad="unknown arg: $1"; fi
       shift ;;
@@ -31,6 +31,10 @@ while [ $# -gt 0 ]; do
 done
 
 tmp=""
+# 中断（Ctrl-C・SIGTERM）でも一時ディレクトリを残さない
+trap '[ -n "$tmp" ] && rm -rf "$tmp"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 fail() {
   echo "codex-records: $1" >&2
   [ -n "$tmp" ] && rm -rf "$tmp"
