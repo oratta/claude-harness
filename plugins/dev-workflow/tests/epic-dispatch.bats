@@ -2398,7 +2398,7 @@ infer_ready() {
 
 @test "wait: a child given as owner/repo#N reads that repository's issue and keeps its form" {
   # spec: dev-workflow-epic-state（owner/repo#番号 で渡した子はその形で返る）
-  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 stop=stopped
   gh_seq 1615 closed
   run dispatch wait --interval 0 --timeout 0 genetta-inc/flatmate#1615
   [ "$status" -eq 0 ]
@@ -3897,7 +3897,7 @@ set_terms() {
 reply_ready() {
   make_stub orca
   set_current 400
-  put_record 11 status=waiting
+  put_record 11 status=waiting stop=stopped
   set_terms 11 "$@"
 }
 
@@ -3912,6 +3912,24 @@ reply_ready() {
   [ "$(calls '^orca terminal send .*--enter --wait-submit 30 --json')" -eq 1 ]
   [ "$(calls '^orca terminal create')" -eq 0 ]
   [ "$(calls '^orca terminal close')" -eq 0 ]
+}
+
+@test "reply: a stopped-seen child still gets the answer" {
+  reply_ready term-a-11
+  put_record 11 status=waiting stop=stopped-seen
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "sent 11" ]
+}
+
+@test "reply: a resumed child gets nothing and reports not-stopped" {
+  reply_ready term-a-11
+  put_record 11 status=waiting stop=resumed
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 not-stopped" ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
 }
 
 @test "reply: the parent's decision is headed as not the owner's approval" {
@@ -4159,6 +4177,22 @@ resolve_ready() {
   [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
   [ "$(first_line '^orca terminal send')" -lt "$(first_line '^gh issue comment 400')" ]
   [ ! -e "$STUB_CFG/comment_11" ]
+}
+
+@test "wait --resolve: a child resumed just before the send gets nothing and no decision is recorded" {
+  resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
+  # 判断の最中に主が子のタブで答えた状況: 判断のスタブが子の記録を resumed に書き換えてから出力する
+  local f; f="$(rec_of 1122 11)"
+  cat > "$STUB_BIN/judge" <<EOF
+#!/bin/bash
+jq -c '.stop = "resumed"' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+cat "$STUB_CFG/judge_out"
+EOF
+  chmod +x "$STUB_BIN/judge"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ ! -e "$STUB_CFG/sent_term-a-11" ]
+  [ ! -e "$STUB_CFG/comment_400" ]
 }
 
 @test "wait --resolve: a pass through a relaunch is recorded too" {
@@ -5181,7 +5215,7 @@ xnothing_made() {
 
 @test "launch: an already launched child in another repository is skipped without looking for a clone" {
   make_stub orca
-  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 stop=stopped
   run dispatch launch 1122 genetta-inc/flatmate#1615
   [ "$status" -eq 0 ]
   [ "$output" = "skipped genetta-inc/flatmate#1615" ]
@@ -5379,7 +5413,7 @@ xnothing_made() {
 @test "reply: a child in another repository gets the epic repository in the header" {
   make_stub orca
   set_current 1122
-  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 stop=stopped
   set_terms 1615 term-x-1615
   run dispatch reply --as parent 1122 genetta-inc/flatmate#1615 続けてよい
   [ "$output" = "sent genetta-inc/flatmate#1615" ]
@@ -5391,7 +5425,7 @@ xnothing_made() {
 @test "reply --relaunch: a child in another repository is started with the epic repository" {
   make_stub orca
   set_current 1122
-  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 stop=stopped
   run dispatch reply --relaunch --as parent 1122 genetta-inc/flatmate#1615 続けてよい
   [ "$output" = "relaunched genetta-inc/flatmate#1615" ]
   case "$(cat "$STUB_CFG/tcmd_1615")" in "EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 "*) ;; *) false ;; esac
@@ -5954,7 +5988,7 @@ tmux_pane() {
 
 @test "tmux reply: a tmux record sends through tmux and never calls orca, even with an Orca-pinned environment" {
   tmux_env
-  put_record 11 status=waiting launcher=tmux
+  put_record 11 status=waiting launcher=tmux stop=stopped
   w="$BATS_TEST_TMPDIR/work/issue-11"
   tmux_log_for "$w"
   tmux_pane 11 %7 node
@@ -5976,7 +6010,7 @@ tmux_pane() {
 
 @test "tmux reply: a tmux record works when the Orca part is unusable" {
   tmux_env
-  put_record 11 status=waiting launcher=tmux
+  put_record 11 status=waiting launcher=tmux stop=stopped
   tmux_log_for "$BATS_TEST_TMPDIR/work/issue-11"
   tmux_pane 11 %7 node
   EPIC_DISPATCH_LAUNCHER=orca run dispatch reply --as owner 400 11 'B'
