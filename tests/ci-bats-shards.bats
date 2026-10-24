@@ -254,7 +254,7 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   diff "${BATS_TEST_TMPDIR}/all.txt" <(LC_ALL=C sort "${BATS_TEST_TMPDIR}/passed.txt")
 }
 
-@test "shard: assignment follows the position in git ls-files, and the shard line follows the skipped line" {
+@test "shard: equal-weight suites are assigned in git ls-files order, and the shard line follows the skipped line" {
   make_repo 7
   run shard_run "$REPO" "2/3" ""
   [ "$status" -eq 0 ] || { echo "$output"; cat "$ERR"; return 1; }
@@ -264,6 +264,30 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   printf '%s\n' "$output" | grep -A2 -xF '  (skipped by TEST_EXCLUDE: 0)' >"${BATS_TEST_TMPDIR}/after.txt"
   [ "$(sed -n 2p "${BATS_TEST_TMPDIR}/after.txt")" = "  (shard 2/3)" ]
   [ "$(sed -n 3p "${BATS_TEST_TMPDIR}/after.txt")" = "----------------------------------------" ]
+}
+
+@test "shard: a suite with many tests gets a shard to itself instead of sharing by position" {
+  make_repo 7
+  # s1 だけ @test が 6 件（行頭に書かないのは make_repo と同じ理由）
+  local i
+  : >"$REPO/t/s1.bats"
+  for i in 1 2 3 4 5 6; do
+    printf '%s "s1 case %s" {\n  true\n}\n' '@test' "$i" >>"$REPO/t/s1.bats"
+  done
+  git -C "$REPO" add -A
+  local k want
+  for k in 1 2 3; do
+    case "$k" in
+      1) want="t/s1.bats " ;;
+      2) want="t/s2.bats t/s4.bats t/s6.bats " ;;
+      3) want="t/s3.bats t/s5.bats t/s7.bats " ;;
+    esac
+    run shard_run "$REPO" "$k/3" ""
+    [ "$status" -eq 0 ] || { echo "$output"; cat "$ERR"; return 1; }
+    [ "$(printf '%s\n' "$output" | listed_suites | tr '\n' ' ')" = "$want" ] || {
+      echo "shard $k/3: expected '$want'"; echo "$output"; return 1
+    }
+  done
 }
 
 @test "shard: without TEST_SHARD every suite runs and no shard line is printed" {
