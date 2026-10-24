@@ -18,7 +18,7 @@ develop の本体は、記録先の消費の記録に、1 行の印 `[消費記�
 - **THEN** 本体は 1 行目が `Codex 消費: t1 1200000` で、2 行目が `[消費記録 工程=implement 試行=2 アカウント=codex:current]` のコメントを投稿する
 
 #### Scenario: 1 つの工程・試行にしか使わないサブエージェントの description に印を入れる
-- **GIVEN** Claude の登録名が `a` と取れていて、本体が記録先 #288 の implement 工程のレビュアーを、再開しない 1 体として起こす
+- **GIVEN** Claude の登録名が `a` と取れていて、記録先 #288 の implement 工程のレビュアー（`impl-review`）の初回（試行 1・手渡しなし）を、再開しない 1 体として起こす
 - **WHEN** 本体が spawn する
 - **THEN** `description` は `#288` と `[消費記録 工程=impl-review 試行=1 アカウント=claude:a]` を同じ文字列の中に含む
 
@@ -28,19 +28,29 @@ develop の本体は、記録先の消費の記録に、1 行の印 `[消費記�
 - **THEN** `description` の印は `工程=implement 試行=2 アカウント=claude:a 引継ぎ=1` を含む
 
 #### Scenario: 再開される W は spec から implement へ
-- **GIVEN** 同じ W が spec 工程のあと implement 工程へ SendMessage で再開される
+- **GIVEN** 登録名 `a` が取得済みで、同じ W が spec 工程のあと、implement の初回（試行 1・手渡しなし）として SendMessage で再開される
 - **WHEN** 本体が W を spawn し、のちに再開する
 - **THEN** spawn 時の `description` の印は `工程=` と `試行=` を含まず（`アカウント=` だけ）、implement への再開の指示文の先頭に `[消費記録 工程=implement 試行=1 アカウント=claude:a]` の行がある
 
 #### Scenario: 差戻しの修正で implement を試行 1 から 2 へ再開する
-- **GIVEN** 同じ W が implement 試行 1 のあと、差戻しの修正のために SendMessage で再開される
+- **GIVEN** 登録名 `a` が取得済みで、同じ W が implement 試行 1 のあと、差戻しの修正（試行 2・手渡しなし）のために SendMessage で再開される
 - **WHEN** 本体が再開する
-- **THEN** 再開の指示文の先頭に `工程=implement 試行=2` の印の行があり、spawn 時の `description` の印は `工程=` と `試行=` を含まない
+- **THEN** 再開の指示文の先頭に `[消費記録 工程=implement 試行=2 アカウント=claude:a]` の行があり、spawn 時の `description` の印は `工程=` と `試行=` を含まない
 
 #### Scenario: G と G が要求したレビュアーの工程
-- **GIVEN** 名前が `G-1700-triage-1` の G が、full レビューで Codex を呼んだ（Gate Result の `段:` は日本語名）
+- **GIVEN** 登録名 `a` が取得済みで、名前が `G-1700-triage-1` の G（triage 段の初回・手渡しなし）が、full レビューで Codex を呼んだ（Gate Result の `段:` は日本語名）
 - **WHEN** 本体が G とその Codex 消費を記録する
-- **THEN** G の description の印は `工程=gate-triage 試行=1`、Codex の `Codex 消費:` コメントの印は `工程=impl-review` である
+- **THEN** G の description の印は `工程=gate-triage 試行=1 アカウント=claude:a`、Codex の `Codex 消費:` コメントの印は `工程=impl-review`（試行は impl-review の回数）である
+
+#### Scenario: G を手渡しで起こし直しても試行は増えない
+- **GIVEN** 登録名 `a` が取得済みで、`G-1700-triage-1` が `工程中断:` で止まり、triage 段の初回の試行のまま手渡しで新しい G を起こす
+- **WHEN** 本体が `G-1700-triage-2` を spawn する
+- **THEN** description の印は `工程=gate-triage 試行=1 アカウント=claude:a 引継ぎ=1` である（名前の `<n>` は起動回数で、試行ではない）
+
+#### Scenario: 差戻しのあとの G の試行は増える
+- **GIVEN** 登録名 `a` が取得済みで、triage 段の 1 回目の試行が差戻しで終わり、手渡しは無い
+- **WHEN** 本体が `G-1700-triage-2` を spawn する
+- **THEN** description の印は `工程=gate-triage 試行=2 アカウント=claude:a` で、`引継ぎ=` を含まない
 
 #### Scenario: develop 開始コメントに起動アカウントを書く
 - **GIVEN** Claude の起動アカウントの登録名 `a` が取れている
