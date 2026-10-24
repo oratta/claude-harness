@@ -587,6 +587,29 @@ refute() {
   echo "$s" | grep -q '1 サイクルに 1 回まで'
 }
 
+# spec: dev-workflow-pr-token-budget（エピックの子は主に聞く前に親の権限に照らす。#1245）
+
+@test "token budget: an epic child is checked against the parent's authority before asking the owner" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF '`子の PR トークン権限: <値>`'
+  echo "$s" | grep -qF '既定 60000000'
+  echo "$s" | grep -F 'references/epic.md' | grep -qF '**PR トークン上限の子**'
+  echo "$s" | grep -F '別セッション方式の子' | grep -qF 'references/epic-child-stop.md'
+  echo "$s" | grep -F 'サブエージェント方式' | grep -F '見込みを子の記録先にコメント' | grep -qF '照らす'
+  echo "$s" | grep -F '照らす前に' | grep -qF '既定値で投稿'
+  echo "$s" | grep -F '新上限は' | grep -qF '権限の値'
+  echo "$s" | grep -qF -- '--cap <権限>'
+  echo "$s" | grep -qF 'PR トークン上限: <権限>'
+  echo "$s" | grep -qF '決めた人: <親エピック #<E> の判断（親の権限の内。主の承認ではない）か、'
+  echo "$s" | grep -qF 'エピック #<E> の本体（親の権限の内）'
+  echo "$s" | grep -qF '権限: <権限のコメントの URL>'
+  echo "$s" | grep -qF '停止の記録: <停止の記録の URL か なし>'
+  echo "$s" | grep -F '親の返事' | grep -qF '主に聞き直さない'
+  echo "$s" | grep -F '既定の上限' | grep -qF '変えない'
+  # エピックの子でない記録先の「続ける」の式は残る
+  echo "$s" | grep -qF 'その時点の合計 ＋ 直前の計測で上限に使った値'
+}
+
 @test "token budget: measurement is not placed in the Codex adapter reference" {
   body="$(cat "${PLUGIN_DIR}/references/codex-develop.md")"
   refute "$body" -F 'pr-token-budget'
