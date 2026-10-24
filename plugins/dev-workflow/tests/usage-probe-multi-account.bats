@@ -1173,6 +1173,8 @@ run_two_slot_probe() {
   [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
   [ "$(state_of a .last_attempt)" = "$NOW" ]
   [ "$(state_of a .consecutive_429)" = "0" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
 }
 
 @test "refresh: an off slot is not fetched and no attempt is recorded for it" {
