@@ -429,6 +429,12 @@ check_frontmatter_shape_z() { # stdin: NUL 区切りの一覧
                 ok = 0
               }
 
+              # 字下げした description:（frontmatter 全体を字下げした形を含む）は YAML では
+              # トップレベルの description と読まれるが、集計は ^description: だけを数えるので
+              # 0 バイトになる（issue #282）。入れ子の description はこのゲートの注入対象外
+              # なので許可しておく理由がなく、一律で違反にする。
+              if (line ~ /^  description:/) ok = 0
+
               if (is_top && line ~ /^description:/) {
                 desc_count++
                 val = line
@@ -1071,6 +1077,28 @@ EOF
   run check_frontmatter_shape "$TMPD/tab-indent.md"
   [ "$status" -ne 0 ]
   [[ "$output" == *"tab-indent.md"* ]] || return 1
+}
+
+@test "a fully indented frontmatter with description is detected" {
+  # frontmatter 全体を 2 スペース字下げすると YAML としてはトップレベルの description になるが、
+  # 集計（sum_descriptions）は ^description: だけを数えて 0 バイトになる（issue #282）。
+  printf -- '---\n  description: %s\n---\nbody\n' "$(head -c 3000 /dev/zero | tr '\0' x)" > "$TMPD/indented.md"
+  run check_frontmatter_shape "$TMPD/indented.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"indented.md"* ]] || return 1
+}
+
+@test "a fully indented frontmatter with name and description is detected" {
+  printf -- '---\n  name: x\n  description: hi\n---\nbody\n' > "$TMPD/indented-both.md"
+  run check_frontmatter_shape "$TMPD/indented-both.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"indented-both.md"* ]] || return 1
+}
+
+@test "a genuine nested key other than description is still accepted" {
+  printf -- '---\nmetadata:\n  version: 1\ndescription: hi\n---\n' > "$TMPD/nested-ok.md"
+  run check_frontmatter_shape "$TMPD/nested-ok.md"
+  [ "$status" -eq 0 ]
 }
 
 @test "an anchor inside a flow sequence is detected" {
