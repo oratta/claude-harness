@@ -499,8 +499,11 @@ codex_name_of() {
   codex_name_env
   printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"label":"X"}}' > "$ACCOUNTS"
   mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
-  # スロットは 1 つのまま: Claude の行に名前も目印も付かない
-  ! grep -q 'Claude' "$WORK/out.txt" || return 1
+  # スロットは 1 つのまま: Claude の行は 5h と 7d All の 2 行で、名前の列に Claude A が出て目印は付かない
+  # （1 スロットで Codex の行が出るときの名前の列。正本: 「Codex の行の名前は Codex とアカウント名にする」）
+  [ "$(grep -c 'Claude' "$WORK/out.txt")" -eq 2 ] || { cat "$WORK/out.txt"; return 1; }
+  grep -q '^  Claude A  5h' "$WORK/out.txt"
+  ! grep -q '▸' "$WORK/out.txt" || return 1
 }
 
 @test "name: the Codex name widens the column of the Claude rows" {

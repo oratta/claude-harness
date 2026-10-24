@@ -3537,6 +3537,31 @@ orca_cmd_scripts() {
   printf '%s\n' "$r" | grep -qF 'rules/communication-style.md'
 }
 
+@test "skill: an epic child stopped by the CI watch writes the PR's short HEAD SHA in the resume progress" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
+  [ -n "$r" ]
+  # CI の見張りで止まったときの書き方の行（escalate と直し方の手順 7 の両方に触れる）
+  l="$(printf '%s\n' "$r" | grep -F '`再開に要る途中経過:`' | grep -F 'HEAD の短い SHA')"
+  [ -n "$l" ]
+  printf '%s\n' "$l" | grep -qF '落ちたチェック名'
+  printf '%s\n' "$l" | grep -qF 'PR の URL'
+  printf '%s\n' "$l" | grep -qF '`escalate`'
+  printf '%s\n' "$l" | grep -qF '手順 7'
+  printf '%s\n' "$l" | grep -qF 'references/ci-watch.md'
+  # 親が追加のやり直しを許したあと同じ HEAD で落ちたときの止まり（`none`）も対象に入る
+  printf '%s\n' "$l" | grep -F '`obs.state` が `wait` でない `none`' | grep -qF '前回と同じ状態・同じ HEAD の決着'
+  # 桁数と取り方、取れないときの書き方
+  printf '%s\n' "$l" | grep -qF '先頭 7 文字'
+  printf '%s\n' "$l" | grep -qF '`obs.head`'
+  printf '%s\n' "$l" | grep -qF "gh pr view <PR番号> --repo <owner/repo> --json headRefOid --jq '.headRefOid[0:7]'"
+  printf '%s\n' "$l" | grep -qF '`HEAD 不明`'
+  # 目的（親が理由に写して同じ件かを見分ける）と、項目は 7 つのまま
+  printf '%s\n' "$l" | grep -qF 'parent-pass-criteria.md'
+  printf '%s\n' "$l" | grep -qF '`親の判断:`'
+  printf '%s\n' "$r" | grep -F '7 つの項目' | grep -qF 'どの項目も省かない'
+  run grep -E '^止まった時点の HEAD:' <<<"$r"; [ "$status" -eq 1 ]
+}
+
 @test "skill: step 8 of the Orca route restates the stop record in the readable steps" {
   p="$(run_section | grep -E '^8\. ')"
   [ -n "$p" ]
@@ -3757,25 +3782,75 @@ orca_cmd_scripts() {
   [ "$(printf '%s\n' "$sec" | grep -cE '^\|')" -eq 0 ]
   # Scenario 1: 対象の止まり（2 経路、修正回数の上限は対象外）
   printf '%s\n' "$sec" | grep -F '止まった理由:' | grep -qF '同じ HEAD のやり直しを使い切った'
+  printf '%s\n' "$sec" | grep -F '対象' | grep -F '止まった理由:' | grep -qF '前提:'
+  ! printf '%s\n' "$sec" | grep -qF 'どの項目に書かれていても対象外' || return 1
+  printf '%s\n' "$sec" | grep -F '対象' | grep -qF 'どの項目に書かれていても'
+  printf '%s\n' "$sec" | grep -F '`job-timeout` の `escalate`' | grep -F '常に対象とする' | grep -qF 'pr-state.sh'
   printf '%s\n' "$sec" | grep -qF '`job-timeout`'
   printf '%s\n' "$sec" | grep -qF '手順 7'
   printf '%s\n' "$sec" | grep -F '修正回数の上限' | grep -qF '対象外'
   # Scenario 2: 通す場合と主に上げる場合
   printf '%s\n' "$sec" | grep -F '差分と因果を持たない' | grep -qF '通す'
   printf '%s\n' "$sec" | grep -qF '再実行だけ'
-  printf '%s\n' "$sec" | grep -F '主に上げる' | grep -qF 'ランナーの状態確認'
+  printf '%s\n' "$sec" | grep -F '主に上げる' | grep -qF 'ランナーの側に原因があり、PR の差分でもやり直しでも直らないため'
+  run grep -F 'ランナーの状態確認を求めるので実機操作に当たる' "$f"; [ "$status" -eq 1 ]
   printf '%s\n' "$sec" | grep -F '主に上げる' | grep -qF '確認してからやり直す'
   # Scenario 3: 返事（1 回だけ、見張りに戻る）。ci-watch.md は変えない
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF '1 回だけ'
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF 'ci-watch.md` 2'
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF '見張りに戻'
   printf '%s\n' "$sec" | grep -F '再び止まったら' | grep -qF '主に上げる'
+  # issue #1271: 通すときの親の判断の理由に、同じ件を見分ける 3 つを書く
+  printf '%s\n' "$sec" | grep -F '理由' | grep -F 'PR 番号' | grep -F '落ちたチェック名' | grep -qF 'HEAD の短い SHA'
+  printf '%s\n' "$sec" | grep -F '理由' | grep -qF '同じ件かを見分ける'
+  # 出力の形の `理由:` 行との対応、値の出どころ、`不明` の扱い
+  printf '%s\n' "$sec" | grep -F '通すときの `理由:`' | grep -qF '`<理由>` になる'
+  printf '%s\n' "$sec" | grep -F '子の停止の記録から取って書く' | grep -F '記録に無い値は作らず `不明` と書く' | grep -qF 'HEAD が `不明` の過去の判断とは同じ件かを見分けられないものとして扱う'
   # Scenario 4: 「繰り返していない」との関係と同じ件の定義
   printf '%s\n' "$sec" | grep -F '繰り返していない' | grep -qF '別の歯止め'
   printf '%s\n' "$sec" | grep -F '同じ件' | grep -qF '同じ PR の同じチェック'
   printf '%s\n' "$sec" | grep -F 'HEAD が変われば' | grep -qF '別の件'
   # 通る例に 1 件足してある
   grep -qF '上限で止まった子への追加のやり直し 1 回' "$f"
+  # 優先順位（#1253）: 節が対象全体で、通る例の CI の再実行とランナーの確認の段落より先に効く
+  pr="$(printf '%s\n' "$sec" | grep -F '**優先順位**')"
+  [ -n "$pr" ]
+  printf '%s\n' "$pr" | grep -F '`job-timeout` に限らず' | grep -F '通る例の「CI の再実行」' | grep -F 'ランナーの状態の確認を含む推奨の読み方' | grep -qF '先に効く'
+  printf '%s\n' "$pr" | grep -F '原因の切り分けを通す条件にしない' | grep -qF '対象の止まりに当てない'
+  printf '%s\n' "$pr" | grep -F '`gh api` の確認をそのまま通す読み' | grep -qF '対象の止まりに当てない'
+  printf '%s\n' "$pr" | grep -qF '推奨が「Mac が空いてから CI を再実行」のときも'
+  printf '%s\n' "$pr" | grep -F '原因は断定できない' | grep -F '再実行だけ' | grep -qF '主に上げる'
+  printf '%s\n' "$pr" | grep -F '確認が先' | grep -F '`gh api` だけで済む場合も' | grep -qF '主に上げる'
+  # 守備範囲に、節の外の読み方についての 1 文があり、節の外の止まりを通さないと読み広げない
+  printf '%s\n' "$sec" | grep -F '節の外のランナーの確認を含む推奨の読み方について' | grep -qF '読み広げない'
+  printf '%s\n' "$sec" | grep -F '「ランナーの確認を含む止まりを通すこと」はこの節の対象の止まりに限り' | grep -qF '表の下の「ランナーの状態の確認を含む推奨の読み方」で決める'
+  printf '%s\n' "$sec" | grep -F '優先順位について拾いたい誤りは' | grep -qF '上限で止まった子の再実行を通る例で通すこと'
+  printf '%s\n' "$sec" | grep -F '再び止まれば次は主に上がる）と、通してよい止まりを判断のモデルが主に上げることは許す' >/dev/null
+  printf '%s\n' "$pr" | grep -F 'job-timeout' | grep -F '手順 7 の止まりも' | grep -qF '主に上げる'
+  # 通る例の「CI の再実行」の行の行末に、節が先に効くと添えてある（括弧の中は変えない）
+  grep -F -e '- CI の再実行（' "$f" | grep -qE '上限で止まった子は.*先に効く$'
+}
+
+# spec: dev-workflow-develop（親が通してよい範囲の基準は、ランナーの状態の確認を含む推奨の読み方を決める）
+
+@test "criteria: a recommendation that includes a runner status check is read by the kind of check" {
+  f="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
+  [ "$(grep -cE '^\| [^-|][^|]* \| .* \|$' "$f")" -eq 10 ]
+  p="$(grep -F '**ランナーの状態の確認を含む推奨の読み方**' "$f")"
+  [ -n "$p" ]
+  # 確認の種類で実機操作かを分ける（向きは「当たらない」「当たる」で統一）
+  printf '%s\n' "$p" | grep -F '`gh api`' | grep -F '実機操作に当たらない' | grep -qF '「実機操作でない」を満たす'
+  printf '%s\n' "$p" | grep -F 'ランナーの機械での操作' | grep -F '実機操作に当たる' | grep -qF '満たさない'
+  printf '%s\n' "$p" | grep -F '判断できなければ' | grep -qF '実機操作に当たる側に倒す'
+  # gh api だけで済む確認はそのまま通し、返事に確認を書いてよい
+  printf '%s\n' "$p" | grep -F '確認を含めて通し' | grep -qF '返事にその確認を書いてよい'
+  # 機械での確認が要る推奨: 独立した再実行だけを切り出す／結果に依るときは主に上げる
+  printf '%s\n' "$p" | grep -F '独立した再実行' | grep -F '再実行だけを切り出して通し' | grep -qF '機械での確認を求めない'
+  printf '%s\n' "$p" | grep -F '結果に依るとき' | grep -qF '主に上げる'
+  # 節の対象の止まりには当てない
+  printf '%s\n' "$p" | grep -F '「CI の見張りのやり直しの上限で止まった子」の対象の止まりには当てない' | grep -qF 'その節が先に効く'
+  # 「確認してからやり直す（確認が先）」は結果に依る側に入れる（F2）
+  printf '%s\n' "$p" | grep -F '結果に依るとき' | grep -qF '確認してからやり直す（確認が先）'
 }
 
 # issue #1246: エピックの目的・原則が推奨を一意に決めるときは「主の側の情報が要らない」を満たすと読む
