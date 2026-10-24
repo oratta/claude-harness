@@ -190,6 +190,10 @@ issue 番号は各行の `Bash` ツールの `command` から、`gh issue view`�
 - **WHEN** feature ブランチ上のセッションで `gh issue view 273` が実行されている
 - **THEN** その行のコストはブランチの合計にも issue 273 の合計にも含まれる
 
+#### Scenario: 単純な和は issue の合計と一致しない
+- **WHEN** issue #12 に帰属する区間の行が 3 行（各 $1.00）あり、そのうち 1 行がブランチ `feat/a` の行で、ブランチ `feat/a` の行が全部で 3 行（各 $1.00）ある会話ログで、`cost_ledger.py issue 12 --closing-pr 300:feat/a --json` を実行する
+- **THEN** `combined_total_usd` は 5.0 で、`total_usd`（3.0）と PR の分（3.0）の和 6.0 より、重なった 1 行の $1.00 だけ小さい
+
 ### Requirement: 同じ応答の 2 行目以降の issue と投稿の印
 Claude Code は 1 回の API 応答を、中身のブロックごとに別の行として会話ログに書き、どの行も同じ `requestId` を持つ。システムは、各会話ログのファイルの中で同じ `requestId` が最初に現れる行を**先頭の行**とし、先頭の行から通常の事実を 1 つ出 MUST す（今までどおり。事実は先頭の行の `uuid` を `uuid` の欄に持つ）。同じファイルでそれより後に現れる行を**後続行**と呼ぶ。
 
@@ -272,10 +276,6 @@ Claude Code は 1 回の API 応答を、中身のブロックごとに別の行
 #### Scenario: 同期が分かれても先頭の行は後続行にならない
 - **WHEN** 1 回目の取り込みで応答の 1 行目だけを読み、2 回目の取り込みでその 2 行目を読む
 - **THEN** 2 行目だけが補足の事実になり、1 行目は 2 回目では事実を出さない
-
-#### Scenario: 単純な和は issue の合計と一致しない
-- **WHEN** issue #12 に帰属する区間の行が 3 行（各 $1.00）あり、そのうち 1 行がブランチ `feat/a` の行で、ブランチ `feat/a` の行が全部で 3 行（各 $1.00）ある会話ログで、`cost_ledger.py issue 12 --closing-pr 300:feat/a --json` を実行する
-- **THEN** `combined_total_usd` は 5.0 で、`total_usd`（3.0）と PR の分（3.0）の和 6.0 より、重なった 1 行の $1.00 だけ小さい
 
 #### Scenario: 確定行の出力トークンが差分として足される
 - **WHEN** 同じ `requestId` の 1 行目（考えた内容）の出力が 8、2 行目（`stop_reason` が `tool_use`、`gh issue` も投稿も無い）の出力が 251 で、入力・キャッシュは同じ
