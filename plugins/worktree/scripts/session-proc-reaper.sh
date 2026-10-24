@@ -147,10 +147,7 @@ srp_owner_alive() { # <mark>
 
 # --- 止める対象の決定 ---
 
-# 「環境変数が読めない」= `[A-Za-z_][A-Za-z0-9_]*=` の形の語が 1 つも無い。読めるなら真。
-srp_env_readable() { # <command+env>
-  printf '%s\n' "$1" | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { f = 1; exit } } END { exit(f ? 0 : 1) }'
-}
+# 「環境変数が読めない」= `[A-Za-z_][A-Za-z0-9_]*=` の形の語が 1 つも無い（srp_select_targets の awk が判定する）。
 
 # 目印 $1 の対象を「pid kind ppid comm」で 1 行ずつ出す（kind は mark か desc）。子を親より先の順に出す。
 # $2 は除く PID の空白区切り（自分自身とその祖先）。除いた PID の配下にも降りない。
