@@ -43,7 +43,9 @@
 #   - USAGE_PROBE_STATUS[_<ID>]:      テスト経路の HTTP ステータス（既定は応答ファイルがあれば 200）
 #   - USAGE_PROBE_NOW:                現在 epoch を固定する（実行条件と試行時刻もこの時刻で測る）
 #   いずれかが設定されていれば全スロットがテスト経路になり、Keychain / curl は使わない。
-#   テスト経路では CLAUDE_CONFIG_DIR と CODEX_HOME が両方設定されたときだけ headroom を呼ぶ。
+#   テスト経路では USAGE_PROBE_HEADROOM が空でないときだけ headroom を呼ぶ（既存のテストが本物の
+#   ~/.claude/.headroom.json と ~/.codex の cache に触れないため。書き先と Codex の home はテストが
+#   CLAUDE_CONFIG_DIR と CODEX_HOME で作業用ディレクトリに向ける）。
 #   - USAGE_PROBE_USER_AGENT:         本番経路で送る User-Agent を固定する（テスト経路には切り替えない。
 #                                     既定は claude-cli/<claude --version の版> (external, cli)）
 #
@@ -636,11 +638,11 @@ tmp="$(mktemp "${dir}/.usage-snapshot.XXXXXX" 2>/dev/null || true)"
 if printf '%s\n' "$out" > "$tmp" 2>/dev/null; then
   if mv -f "$tmp" "$SNAPSHOT" 2>/dev/null; then
     # snapshot を書いた実行だけ余りを書き直す（正本: dev-workflow-headroom）。
-    # headroom の出力と終了コードは probe の結果に伝えない。テスト経路では、書き先と Codex の
-    # home が両方明示されたときだけ呼ぶ（本番の .headroom.json と ~/.codex の cache に触れないため）
-    if [ "$test_mode" -eq 0 ] || { [ -n "${CLAUDE_CONFIG_DIR:-}" ] && [ -n "${CODEX_HOME:-}" ]; }; then
+    # headroom の出力と終了コードは probe の結果に伝えない。テスト経路では、テストが
+    # USAGE_PROBE_HEADROOM で明示したときだけ呼ぶ（本番の .headroom.json と ~/.codex の cache に触れないため）
+    if [ "$test_mode" -eq 0 ] || [ -n "${USAGE_PROBE_HEADROOM:-}" ]; then
       USAGE_SNAPSHOT="$SNAPSHOT" python3 -I "$(dirname "$0")/headroom.py" write --refresh-codex \
-        >/dev/null 2>&1 || true
+        --now "$NOW" >/dev/null 2>&1 || true
     fi
   else
     rm -f "$tmp" 2>/dev/null

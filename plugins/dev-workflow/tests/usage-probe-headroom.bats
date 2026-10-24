@@ -22,6 +22,8 @@ setup() {
   export USAGE_PROBE_LOCK="${WORK}/probe.lock"
   export USAGE_PROBE_NOW="$NOW"
   export CODEX_HOME="${WORK}/no-codex-home"
+  # テスト経路で headroom を呼ばせる専用の変数（未設定の既存テストは headroom を呼ばない）
+  export USAGE_PROBE_HEADROOM=1
   unset USAGE_PROBE_RESPONSE_FILE USAGE_PROBE_STATUS CLAUDE_SECURESTORAGE_CONFIG_DIR \
     HEADROOM_7D_CAP_PCT HEADROOM_NORMAL_RATE_PCT_PER_DAY
   printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":"%s/sec-a"},{"id":"b","label":"B","securestorage":"%s/sec-b"}]}' \
@@ -41,6 +43,8 @@ teardown() {
   [ "$status" -eq 0 ]
   [ -f "$SNAP" ]
   [ "$(jq '.schema' "$HEADROOM")" = "1" ]
+  [ "$(jq -c 'keys_unsorted' "$HEADROOM")" = '["schema","computed_at","settings","best","best_by_provider","accounts"]' ]
+  [ "$(jq '.computed_at' "$HEADROOM")" = "$NOW" ]
   [ "$(jq -c '[.accounts[] | [.provider, .account, .status]]' "$HEADROOM")" = '[["claude","a","ok"],["claude","b","ok"]]' ]
   [ "$(jq -c '.settings' "$HEADROOM")" = '{"cap_7d_pct":90,"normal_rate_pct_per_day":null}' ]
 }
@@ -69,14 +73,19 @@ teardown() {
   [ "$(jq '.schema' "$HEADROOM")" = "1" ]
 }
 
-@test "test overrides without CLAUDE_CONFIG_DIR and CODEX_HOME do not write the real .headroom.json" {
+@test "test overrides without USAGE_PROBE_HEADROOM do not call headroom" {
+  # 書き先を明示していても、専用の変数が無ければ headroom を呼ばない（本来の書き先にも書かない）
+  USAGE_PROBE_HEADROOM= USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" run "$PROBE"
+  [ "$status" -eq 0 ]
+  [ -f "$SNAP" ]
+  [ ! -e "$HEADROOM" ]
+  # 書き先も Codex の home も未設定なら、HOME の下の既定の書き先にも書かない
   mkdir -p "${WORK}/home/.claude"
-  HOME="${WORK}/home" CLAUDE_CONFIG_DIR= USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" run "$PROBE"
+  rm -f "$SNAP" "$USAGE_PROBE_STATE"
+  HOME="${WORK}/home" CLAUDE_CONFIG_DIR= CODEX_HOME= USAGE_PROBE_HEADROOM= \
+    USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" run "$PROBE"
   [ "$status" -eq 0 ]
   [ -f "$SNAP" ]
   [ ! -e "${WORK}/home/.claude/.headroom.json" ]
-  unset CODEX_HOME
-  HOME="${WORK}/home" USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" run "$PROBE"
-  [ "$status" -eq 0 ]
-  [ ! -e "${WORK}/home/.claude/.headroom.json" ]
+  [ ! -e "$HEADROOM" ]
 }

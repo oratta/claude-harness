@@ -113,7 +113,7 @@ headroom が見る Codex は、`codex-develop.py` の自動選択の既定（`de
 
 ### 8. 書く時機: `usage-probe.sh` の末尾
 
-`usage-probe.sh` が `.usage-snapshot` の rename に成功した直後に、同じディレクトリの `headroom.py write --refresh-codex` を `python3 -I` で呼ぶ。標準出力・標準エラーは捨て、終了コードを probe の終了コードに伝えない（probe は今までどおり 0 で終わる）。呼ぶかどうかは snapshot を書いたかどうかだけで決める。全スロットが失敗しても、試みて失敗したスロットの `reset_grants` を除いて snapshot を書き直したとき（`usage-probe.sh:580-595`、dev-workflow-escalation-tripwires の「全スロットの取得が失敗したときの例外」）は呼ぶ。snapshot を書かなかった実行（全スロットの失敗で除く欄も無かったとき・取得の間隔内・ロックを取れない）では呼ばない。`--refresh-codex` は Codex がオフのときと既定の Codex home が無いときは何もしない。
+`usage-probe.sh` が `.usage-snapshot` の rename に成功した直後に、同じディレクトリの `headroom.py write --refresh-codex` を `python3 -I` で呼ぶ。標準出力・標準エラーは捨て、終了コードを probe の終了コードに伝えない（probe は今までどおり 0 で終わる）。呼ぶかどうかは snapshot を書いたかどうかだけで決める。テスト経路（`USAGE_PROBE_RESPONSE_FILE` か `USAGE_PROBE_RESPONSE_FILE_<ID>` を設定した実行）では、それに加えて `USAGE_PROBE_HEADROOM` が空でないときだけ呼ぶ（それを設定しないテストが本物の `~/.claude/.headroom.json` と `~/.codex` の cache に触れないため）。全スロットが失敗しても、試みて失敗したスロットの `reset_grants` を除いて snapshot を書き直したとき（`usage-probe.sh:580-595`、dev-workflow-escalation-tripwires の「全スロットの取得が失敗したときの例外」）は呼ぶ。snapshot を書かなかった実行（全スロットの失敗で除く欄も無かったとき・取得の間隔内・ロックを取れない）では呼ばない。`--refresh-codex` は Codex がオフのときと既定の Codex home が無いときは何もしない。
 
 ## `.headroom.json`（schema 1）
 

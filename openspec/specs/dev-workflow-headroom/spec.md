@@ -36,7 +36,7 @@ headroom は Claude の各スロットについて、次の週次リセットよ
 - **THEN** `surplus_pct` が同じ値になる（例: 使用率 40%・残り 24 時間・リセット権なしで 43.3、12 時間後に切れる 1 枚で 136.7、6 時間後と 12 時間後で 228.3）
 
 ### Requirement: Codex はリセット権の失効を期限にする
-headroom は Codex の `current` account について、リセット権で使える量を足してはならない（MUST NOT。`capacity_pct` は 100、`left_pct` は `100 − used_pct`）。次の週次リセットより前に切れるリセット権があれば、`deadline_at` をその最短の失効、`deadline_reason` を `ticket_expiry` にし、`elapsed_pct` を週の始まり（週次リセットの 7 日前）から期限までに対する経過率にしなければならない（SHALL）。無ければ `deadline_at` は週次リセット、`deadline_reason` は `weekly_reset` でなければならない（SHALL）。`surplus_pct` は `max(0, to_cap − rate × (deadline_at − now) / 3600)` でなければならない（SHALL）。キャッシュに `resets` が無いときは、リセット権 0 枚と同じ数を出し、`tickets` を null にしなければならない（SHALL）。Codex の `tickets.count` は `resets.available_count`、`tickets.earliest_expiry` と `rocket` は `resets.expires_at` のうち整数で `now` より後のものから数えなければならない（SHALL。null の失効は `rocket` に入れない）。
+headroom は Codex の `current` account について、リセット権で使える量を足してはならない（MUST NOT。`capacity_pct` は 100、`left_pct` は `100 − used_pct`）。次の週次リセットより前に切れるリセット権があれば、`deadline_at` をその最短の失効、`deadline_reason` を `ticket_expiry` にし、`elapsed_pct` を週の始まり（週次リセットの 7 日前）から期限までに対する経過率にしなければならない（SHALL）。無ければ `deadline_at` は週次リセット、`deadline_reason` は `weekly_reset` でなければならない（SHALL）。`surplus_pct` は `max(0, to_cap − rate × (deadline_at − now) / 3600)` でなければならない（SHALL）。キャッシュに `resets` が無いときは、リセット権 0 枚と同じ数を出し、`tickets` を null にしなければならない（SHALL）。Codex の `tickets.count` は `resets.available_count` から、`resets.expires_at` のうち整数で `now` 以前のもの（取得後に失効したリセット権）の数を引いた値（0 未満にしない）、`tickets.earliest_expiry` と `rocket` は `resets.expires_at` のうち整数で `now` より後のものから数えなければならない（SHALL。null の失効は `rocket` に入れない）。
 
 Codex の週次の使用率は `codex-develop.py` の `usage_margin` と同じ規則で読まなければならない（SHALL）: 7 日窓（`minutes` が 10080）を使い、リセットを過ぎた値は 0% として読んでリセットを週単位で先へ送り、取得時刻の古さでは外さない。ただし未来の取得時刻の扱いは要件「アカウントごとの項目と status」の 60 秒の規則を正とし、`usage_margin` の「1 秒でも未来なら使わない」判定は写さない（#1301 で `usage_margin` を headroom に寄せるときに揃う）。
 
@@ -49,7 +49,7 @@ Codex の週次の使用率は `codex-develop.py` の `usage_margin` と同じ�
 - **THEN** `deadline_reason` が `weekly_reset`、`rocket` が null、`surplus_pct` がリセット権の無いときと同じになる
 
 ### Requirement: 設定は headroom の中で 1 か所から解決する
-headroom は天井 `HEADROOM_7D_CAP_PCT`（既定 90、0 以上 100 以下）と通常の消費ペースの上書き `HEADROOM_NORMAL_RATE_PCT_PER_DAY`（既定なし、0 以上 100 以下。%/日）を `compute` の中で環境変数から読み、解決した値を出力の `settings`（`cap_7d_pct`・`normal_rate_pct_per_day`）に載せなければならない（SHALL）。呼び手が天井やペースを渡す引数・CLI オプションを持ってはならない（MUST NOT）。値が数でない・範囲外のときは既定値に倒さず、`compute` は例外を出し、CLI は終了コード 2 で何も書かず何も出さない（SHALL）。
+headroom は天井 `HEADROOM_7D_CAP_PCT`（既定 90、0 以上 100 以下）と通常の消費ペースの上書き `HEADROOM_NORMAL_RATE_PCT_PER_DAY`（既定なし、0 以上 100 以下。%/日）を `compute` の中で環境変数から読み、解決した値を出力の `settings`（`cap_7d_pct`・`normal_rate_pct_per_day`）に載せなければならない（SHALL）。呼び手が天井やペースを渡す引数・CLI オプションを持ってはならない（MUST NOT）。値が数でない・範囲外のときは既定値に倒さず、`compute` は例外を出し、CLI は終了コード 2 で何も書かず、標準出力に何も出さない（SHALL。理由は標準エラーに出す）。
 
 #### Scenario: 天井を変えると余りと best が変わる
 - **WHEN** 2 つの Claude のスロットのうち、`HEADROOM_7D_CAP_PCT` が既定のときは一方が、下げたときは他方が `surplus_pct` 最大になる snapshot を入れて、天井を変えて 2 回数える
@@ -57,7 +57,7 @@ headroom は天井 `HEADROOM_7D_CAP_PCT`（既定 90、0 以上 100 以下）と
 
 #### Scenario: 天井を呼び手から渡せない
 - **WHEN** `headroom.py --json --cap 80` のように天井を引数で渡す
-- **THEN** 終了コード 2 で拒否し、何も出さない
+- **THEN** 終了コード 2 で拒否し、標準出力に何も出さない（理由は標準エラーに出す）
 
 #### Scenario: 不正な設定値
 - **WHEN** `HEADROOM_7D_CAP_PCT` が `abc` か `120`
@@ -105,7 +105,7 @@ headroom は天井 `HEADROOM_7D_CAP_PCT`（既定 90、0 以上 100 以下）と
 - **THEN** `.headroom.json` は前の内容か新しい内容のどちらかで、途中まで書かれた状態にならない
 
 ### Requirement: usage-probe が snapshot を書いた直後に headroom を書く
-`usage-probe.sh` は `.usage-snapshot` の置き換えに成功した直後に、同じディレクトリの `headroom.py write --refresh-codex` を呼ばなければならない（SHALL）。headroom の出力と終了コードを probe の結果に伝えてはならない（MUST NOT。probe は今までどおり終了コード 0 で終わる）。呼ぶかどうかは snapshot を書いたかどうかだけで決め（SHALL。全スロットが失敗しても `reset_grants` を除くために snapshot を書き直す既存の経路では呼ぶ）、snapshot を書かなかった実行（全スロットの失敗で書き直す欄も無かったとき・取得の間隔内・ロックを取れない）では headroom を呼んではならない（MUST NOT）。
+`usage-probe.sh` は `.usage-snapshot` の置き換えに成功した直後に、同じディレクトリの `headroom.py write --refresh-codex` を呼ばなければならない（SHALL）。headroom の出力と終了コードを probe の結果に伝えてはならない（MUST NOT。probe は今までどおり終了コード 0 で終わる）。呼ぶかどうかは snapshot を書いたかどうかだけで決め（SHALL。全スロットが失敗しても `reset_grants` を除くために snapshot を書き直す既存の経路では呼ぶ）、テスト経路（`USAGE_PROBE_RESPONSE_FILE` か `USAGE_PROBE_RESPONSE_FILE_<ID>` を設定した実行）ではそれに加えて `USAGE_PROBE_HEADROOM` が空でないときだけ呼び（SHALL。それを設定しないテストが本物の `~/.claude/.headroom.json` と `~/.codex` の cache に触れないため）、snapshot を書かなかった実行（全スロットの失敗で書き直す欄も無かったとき・取得の間隔内・ロックを取れない）では headroom を呼んではならない（MUST NOT）。
 
 #### Scenario: probe のあとに .headroom.json ができる
 - **WHEN** テスト用の応答ファイルで `usage-probe.sh` を走らせ、snapshot が書かれる（Codex はオフか既定の home が無い）
