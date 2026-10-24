@@ -24,6 +24,9 @@ setup() {
   export CODEX_HOME="${WORK}/no-codex-home"
   # テスト経路で headroom を呼ばせる専用の変数（未設定の既存テストは headroom を呼ばない）
   export USAGE_PROBE_HEADROOM=1
+  # User-Agent を固定し、claude の版を探させない（PATH に claude が無い CI では、版を取れなかった
+  # 警告が標準エラーに出て、headroom の出力が漏れないことを確かめるテストの $output に混ざる）
+  export USAGE_PROBE_USER_AGENT='claude-cli/2.1.0 (external, cli)'
   unset USAGE_PROBE_RESPONSE_FILE USAGE_PROBE_STATUS CLAUDE_SECURESTORAGE_CONFIG_DIR \
     HEADROOM_7D_CAP_PCT HEADROOM_NORMAL_RATE_PCT_PER_DAY
   printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":"%s/sec-a"},{"id":"b","label":"B","securestorage":"%s/sec-b"}]}' \
