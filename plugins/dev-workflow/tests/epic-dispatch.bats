@@ -3742,6 +3742,11 @@ orca_cmd_scripts() {
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF '1 回だけ'
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF 'ci-watch.md` 2'
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF '見張りに戻'
+  # 見張りに戻る前に、needs-approval を外すことと、重複の確認・開始コメントの投稿をすることが書かれている（#1270）
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF '`needs-approval` を外'
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF '重複の確認'
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF '`CI 見張り開始:` の投稿'
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF '外さず'
   printf '%s\n' "$sec" | grep -F '再び止まったら' | grep -qF '主に上げる'
   # issue #1271: 通すときの親の判断の理由に、同じ件を見分ける 3 つを書く
   printf '%s\n' "$sec" | grep -F '理由' | grep -F 'PR 番号' | grep -F '落ちたチェック名' | grep -qF 'HEAD の短い SHA'
