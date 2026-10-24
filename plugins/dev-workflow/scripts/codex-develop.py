@@ -123,7 +123,8 @@ def _auth_identity(home):
             'account_id_hash': hashlib.sha256(tokens['account_id'].encode()).hexdigest()}
 
 
-def _rpc_requests(home, requests, timeout=15):
+def _rpc_requests(home, requests, timeout=None):
+    timeout = RPC_TIMEOUT if timeout is None else timeout
     env = clean_env() | {'CODEX_HOME': home}
     proc = subprocess.Popen(['codex', 'app-server', '-c', 'model_provider="openai"'],
         env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -289,12 +290,20 @@ def read_codex_usages(mapping, config_dir, now):
     return {name: values.get(name) for name in mapping}
 
 
+# usage-probe.sh runs headroom.py write --refresh-codex after the snapshot, which starts the Codex
+# app-server and sends 3 requests, each allowed RPC_TIMEOUT seconds (plus 2 to stop it): up to about
+# 47 seconds on a slow Codex, on top of the Claude fetches (curl --max-time 10 per slot). A kill on
+# timeout skips the probe's exit trap and leaves its lock for 120 seconds, so wait well past that.
+RPC_TIMEOUT = 15
+USAGE_PROBE_TIMEOUT = 90
+
+
 def _run_usage_probe(snapshot_path):
     env = clean_env() | {'USAGE_SNAPSHOT': str(snapshot_path)}
     try:
         subprocess.run([str(ROOT / 'scripts/usage-probe.sh')], env=env,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       timeout=20, check=False)
+                       timeout=USAGE_PROBE_TIMEOUT, check=False)
     except (OSError, subprocess.TimeoutExpired):
         pass
 

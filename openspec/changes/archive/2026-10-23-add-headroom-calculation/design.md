@@ -146,7 +146,7 @@ headroom が見る Codex は、`codex-develop.py` の自動選択の既定（`de
 
 - [`.headroom.json` は probe が snapshot を書いたときだけ新しくなる（取得の間隔の既定は 3 時間）。ステータスラインのセッション記録で Claude の使用率が先に進んでも、ファイルの数は次の probe まで古い] → `computed_at` を出して読む側が古さを判断できるようにする。新しい数が要る読む側（#1301 の `cld`・develop）は `compute(now)` を呼ぶ
 - [Claude の `reset_grants` は取得を試みなかったスロットでは前回の値が残るので、その間に使ったリセット権を数え続けうる] → 取得を試みて失敗したスロットは probe が欄を消す（既存の契約）。失効済みのものは時刻で外れる
-- [`usage-probe.sh` の実行が Codex の app-server の起動ぶん（最大 15 秒前後）長くなる] → snapshot を書いた後に呼ぶので、snapshot の更新は遅れない。probe はロックを持ったまま待つが、ロックの取り直しの閾値（120 秒）より短い
+- [`usage-probe.sh` の実行が Codex の取得ぶん長くなる。app-server への要求 3 つにそれぞれ 15 秒の待ちがあり、終了に 2 秒かかるので、Codex の応答が遅い回は最大 47 秒前後（Claude の取得 1 スロット 10 秒に足して）] → snapshot を書いた後に呼ぶので、snapshot の更新は遅れない。probe はロックを持ったまま待つが、ロックの取り直しの閾値（120 秒）より短い。`codex-develop.py` が probe を待つ上限は 20 秒から 90 秒に上げた（20 秒のままだと、応答が遅い回に probe が途中で止められ、終了時の後始末が走らずロックが 120 秒残る）
 - [`usage-probe.sh` は #1256 も触る] → 末尾の書き込みの直後だけを触り、#1256 の取得の判定とは重ならない。先にマージされた方に合わせて rebase する
 
 ## Migration Plan

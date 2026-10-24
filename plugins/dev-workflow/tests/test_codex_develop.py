@@ -675,6 +675,15 @@ class ForegroundRequest(unittest.TestCase):
         self.assertEqual(selected, 'claude-default')
         self.assertEqual(evidence['reason'], 'only-claude-has-headroom')
 
+    def test_usage_probe_timeout_covers_a_slow_codex_fetch(self):
+        # headroom's --refresh-codex inside the probe: 3 requests of RPC_TIMEOUT each, 2 to stop
+        # the app-server, and at least one Claude fetch (curl --max-time 10).
+        with patch.object(m.subprocess, 'run') as run:
+            m._run_usage_probe(self.root / 'snapshot.json')
+        timeout = run.call_args.kwargs['timeout']
+        self.assertEqual(timeout, m.USAGE_PROBE_TIMEOUT)
+        self.assertGreaterEqual(timeout, 3 * m.RPC_TIMEOUT + 2 + 10)
+
     def test_quota_parser_uses_only_the_standard_codex_bucket(self):
         now = 2_000_000
         other = {'secondary': {'windowDurationMins': 10080, 'usedPercent': 0,
