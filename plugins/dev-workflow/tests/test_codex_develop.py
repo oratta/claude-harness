@@ -582,6 +582,18 @@ class ForegroundRequest(unittest.TestCase):
                                            'expires_at': [1800000000, 1800003600]})
         self.assertNotIn('secret', json.dumps(value))
 
+    def test_cache_holds_only_the_known_top_level_fields(self):
+        credits = {'availableCount': 1, 'credits': [
+            {'id': 'secret-1', 'status': 'available', 'expiresAt': 1800000000, 'extra': 'x'}]}
+        value, _now = self._reset_credit_cache({'rateLimitResetCredits': credits, 'other': 1})
+        self.assertEqual(set(value), {'version', 'identity', 'fetched_at', 'windows', 'resets'})
+        self.assertEqual(set(value['resets']), {'available_count', 'expires_at'})
+
+    def test_zero_available_credits_are_written_as_known_zero(self):
+        value, _now = self._reset_credit_cache(
+            {'rateLimitResetCredits': {'availableCount': 0, 'credits': []}})
+        self.assertEqual(value['resets'], {'available_count': 0, 'expires_at': []})
+
     def test_reset_credit_without_integer_expiry_is_kept_as_null(self):
         credits = {'availableCount': 2, 'credits': [
             {'id': 'x', 'status': 'available', 'expiresAt': None},
@@ -619,6 +631,14 @@ class ForegroundRequest(unittest.TestCase):
             kept = m.read_codex_usages({'current': str(home)}, str(config), now + 200)
         self.assertEqual(kept['current']['resets'], {'available_count': 1, 'expires_at': [now + 3600]})
         self.assertEqual(kept['current']['fetched_at'], now)
+        # a later successful fetch without the field drops the previous resets (unknown, not kept)
+        result_without = {'identity': result['identity'], 'windows': result['windows']}
+        with patch.object(m, 'probe_codex_account', return_value=result_without):
+            fresh = m.read_codex_usages({'current': str(home)}, str(config), now + 400)
+        self.assertEqual(fresh['current']['fetched_at'], now + 400)
+        self.assertNotIn('resets', fresh['current'])
+        stored = json.loads(m._cache_path(str(config), str(home)).read_text())
+        self.assertNotIn('resets', stored)
 
     def test_automatic_codex_account_is_bound_to_every_codex_role(self):
         config = m.load_profile('claude-write-codex-review', None, {'a', 'b', 'current'})

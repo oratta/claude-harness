@@ -1,7 +1,9 @@
 """headroom.py: one place that counts how much each account has left (dev-workflow-headroom).
 
-The surplus cases mirror flatmate's scripts/test_account_allocation.py (Surplus / TicketSurplus):
-weekly use 40%, 24 hours to the weekly reset, cap 90 -> 43.3 without reset tickets.
+The surplus cases mirror the Claude cases of flatmate's scripts/test_account_allocation.py
+(Surplus / TicketSurplus): weekly use 40%, 24 hours to the weekly reset, cap 90 -> 43.3 without
+reset tickets (ClaudeTickets, Codex), and the rest in FlatmateClaudeCases. Cases about flatmate's
+own eligibility threshold, ranking and ticket-file statuses have no counterpart here.
 """
 import base64
 from datetime import datetime, timezone
@@ -130,7 +132,10 @@ class ClaudeTickets(unittest.TestCase):
                 row = env.row(h.compute(NOW), 'claude', 'a')
                 self.assertEqual(row['status'], 'ok')
                 self.assertEqual(row['capacity_pct'], capacity)
-                self.assertEqual(row['rocket']['count'] if row['rocket'] else None, rocket)
+                if rocket is None:
+                    self.assertIsNone(row['rocket'])
+                else:
+                    self.assertEqual(row['rocket']['count'], rocket)
                 self.assertAlmostEqual(row['surplus_pct'], surplus, places=2)
                 self.assertEqual(row['deadline_reason'], 'weekly_reset')
                 self.assertEqual(row['deadline_at'], NOW + 24 * HOUR)
@@ -207,6 +212,66 @@ class Items(unittest.TestCase):
         self.assertEqual(result['settings'], {'cap_7d_pct': 90, 'normal_rate_pct_per_day': 24})
 
 
+class FlatmateClaudeCases(unittest.TestCase):
+    """The rest of flatmate's Surplus / TicketSurplus Claude cases (same inputs, same surplus)."""
+
+    def surplus(self, rate=None, cap=None, **claude):
+        env = Env(self)
+        env.claude('a', **claude)
+        extra = {}
+        if rate is not None:
+            extra['HEADROOM_NORMAL_RATE_PCT_PER_DAY'] = rate
+        if cap is not None:
+            extra['HEADROOM_7D_CAP_PCT'] = cap
+        with patch.dict(os.environ, extra):
+            return env.row(h.compute(NOW), 'claude', 'a')
+
+    def test_normal_work_need_removes_surplus(self):
+        self.assertEqual(self.surplus(rate='30', used=60, hours_left=100)['surplus_pct'], 0)
+
+    def test_surplus_at_zero_rate_is_to_cap(self):
+        self.assertAlmostEqual(self.surplus(rate='0', used=70, hours_left=10)['surplus_pct'], 20)
+
+    def test_used_zero_and_far_reset_are_accepted(self):
+        row = self.surplus(used=0, hours_left=200)
+        self.assertEqual(row['status'], 'ok')
+        self.assertEqual(row['left_pct'], 100)
+        self.assertEqual(row['surplus_pct'], 90)
+
+    def test_cap_setting(self):
+        self.assertAlmostEqual(self.surplus(rate='0', cap='80', used=50, hours_left=10)['surplus_pct'], 30)
+
+    def test_same_expiry_two_tickets_differ_by_one_ticket_amount(self):
+        one = self.surplus(grants=grants((12, 1)))['surplus_pct']
+        two = self.surplus(grants=grants((12, 2)))
+        split = self.surplus(grants=grants((12, 1), (12, 1)))
+        self.assertAlmostEqual(one, 136.667, places=2)
+        self.assertAlmostEqual(two['surplus_pct'], 226.667, places=2)
+        self.assertAlmostEqual(two['surplus_pct'] - one, 90, places=6)
+        self.assertEqual(two['rocket']['count'], 2)
+        self.assertAlmostEqual(split['surplus_pct'], 226.667, places=2)
+        self.assertEqual(split['rocket']['count'], 2)
+
+    def test_ticket_can_give_surplus_where_there_was_none(self):
+        self.assertEqual(self.surplus(used=80)['surplus_pct'], 0)
+        self.assertAlmostEqual(self.surplus(used=80, grants=grants((12, 1)))['surplus_pct'], 93.333,
+                               places=2)
+
+    def test_five_hour_limit_is_not_changed_by_tickets(self):
+        env = Env(self)
+        env.claude('a', used=80, five=97, grants=grants((12, 1)))
+        result = h.compute(NOW)
+        self.assertGreater(env.row(result, 'claude', 'a')['surplus_pct'], 10)
+        self.assertIsNone(result['best'])
+
+    def test_zero_and_no_expiry_tickets_keep_the_surplus_without_tickets(self):
+        for value in ([], grants((None, 2))):
+            with self.subTest(grants=value):
+                row = self.surplus(grants=value)
+                self.assertAlmostEqual(row['surplus_pct'], 43.333, places=2)
+                self.assertIsNone(row['rocket'])
+
+
 class Status(unittest.TestCase):
     def test_old_value_is_ok_and_rolled_value_is_ok(self):
         env = Env(self)
@@ -280,6 +345,34 @@ class Codex(unittest.TestCase):
         self.assertEqual(row['deadline_reason'], 'weekly_reset')
         self.assertIsNone(row['rocket'])
         self.assertAlmostEqual(row['surplus_pct'], 43.333, places=2)
+
+    def test_credits_expired_since_the_fetch_are_not_held(self):
+        env = Env(self)
+        env.claude('a')
+        env.codex(resets={'available_count': 3,
+                          'expires_at': [NOW - HOUR, NOW, NOW + 6 * HOUR]})
+        row = env.row(h.compute(NOW), 'codex', 'current')
+        self.assertEqual(row['tickets'], {'count': 1, 'earliest_expiry': NOW + 6 * HOUR})
+        self.assertEqual(row['rocket'], {'count': 1, 'earliest_expiry': NOW + 6 * HOUR})
+
+    def test_held_count_never_goes_below_zero(self):
+        env = Env(self)
+        env.claude('a')
+        env.codex(resets={'available_count': 1, 'expires_at': [NOW - 2 * HOUR, NOW - HOUR]})
+        row = env.row(h.compute(NOW), 'codex', 'current')
+        self.assertEqual(row['tickets'], {'count': 0, 'earliest_expiry': None})
+
+    def test_deadline_at_or_before_the_week_start_does_not_divide_by_zero(self):
+        # the reset is 200 hours away, so the week starts 32 hours from now
+        for hours, expected in ((32, 0.0), (12, 0.0)):
+            with self.subTest(expiry_hours=hours):
+                env = Env(self)
+                env.claude('a')
+                env.codex(hours_left=200, resets={'available_count': 1,
+                                                  'expires_at': [NOW + hours * HOUR]})
+                row = env.row(h.compute(NOW), 'codex', 'current')
+                self.assertEqual(row['deadline_reason'], 'ticket_expiry')
+                self.assertEqual(row['elapsed_pct'], expected)
 
     def test_missing_resets_give_null_tickets(self):
         env = Env(self)

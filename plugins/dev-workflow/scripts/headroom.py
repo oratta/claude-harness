@@ -118,14 +118,20 @@ def _claude_tickets(grants):
     return items
 
 
-def _codex_tickets(resets):
-    """Cache resets -> (available_count, [(expires_at or None, 1)]) or None when unreadable."""
+def _codex_tickets(resets, now):
+    """Cache resets -> (held count, [(expires_at or None, 1)]) or None when unreadable.
+
+    available_count was true at the fetch; the credits that expired since then (an integer
+    expires_at at or before now) are taken off it, never below zero.
+    """
     if not isinstance(resets, dict):
         return None
     count, expires = resets.get('available_count'), resets.get('expires_at')
     if type(count) is not int or count < 0 or not isinstance(expires, list):
         return None
-    return count, [(value if type(value) is int else None, 1) for value in expires]
+    items = [(value if type(value) is int else None, 1) for value in expires]
+    expired = sum(1 for expiry, _ in items if expiry is not None and expiry <= now)
+    return max(0, count - expired), items
 
 
 def _held(count, items, now):
@@ -170,7 +176,10 @@ def _row(provider, account, label, *, observed, five, used, reset, now, cfg, tic
         capacity, left = 100, 100 - used
         if reason == 'ticket_expiry':
             start = reset - WEEK_SECONDS
-            row['elapsed_pct'] = min(100.0, max(0.0, 100 * (now - start) / (deadline - start)))
+            # A deadline at or before the start of the week (reset more than a week away) has
+            # not begun: 0, and no division by a zero or negative span.
+            row['elapsed_pct'] = (0.0 if deadline <= start else
+                                  min(100.0, max(0.0, 100 * (now - start) / (deadline - start))))
     spare = left - rate * (deadline - now) / 3600
     forecast = ({'kind': 'spare', 'pct': spare} if spare >= 0 else
                 {'kind': 'exhaust', 'at': now + left / rate * 3600})
@@ -267,7 +276,7 @@ def _codex_rows(now, cfg):
     if window and usage_view.finite_number(window.get('used_percent')):
         five_reset = window.get('reset_at')
         five = 0 if usage_view.finite_number(five_reset) and now >= five_reset else window['used_percent']
-    tickets = _codex_tickets(cache.get('resets'))
+    tickets = _codex_tickets(cache.get('resets'), now)
     count, items = tickets if tickets is not None else (None, None)
     return [_row('codex', 'current', 'current', observed=fetched, five=five, used=used,
                  reset=reset, now=now, cfg=cfg, ticket_count=count, items=items)]
