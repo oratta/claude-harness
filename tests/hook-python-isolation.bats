@@ -207,7 +207,7 @@ cost_ledger_fake_env() {
   [ ! -e "$FAKE_MARKER" ] || { cat "$FAKE_MARKER"; return 1; }
 }
 
-# body_hook_payload <hook> — Python 本体を -c で渡す 5 本が python3 の起動まで進む最小の payload
+# body_hook_payload <hook> — Python 本体を -c で渡す hook が python3 の起動まで進む最小の payload
 body_hook_payload() {
   case "$1" in
     git-destructive-guard) printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git reset --hard"},"hook_event_name":"PreToolUse","permission_mode":"default"}' ;;
@@ -215,13 +215,14 @@ body_hook_payload() {
     context-tripwire) printf '%s' '{"agent_id":"x","hook_event_name":"PostToolUse"}' ;;
     subagent-stop-guard) printf '%s' '{"agent_id":"x","hook_event_name":"SubagentStop"}' ;;
     model-switch-recache-notice) printf '%s' '{"hook_event_name":"PreModelSwitch"}' ;;
+    owner-message-number-check) printf '%s' '{"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"PR #1712 を許容しますか？"}' ;;
   esac
 }
 
-@test "#847: the five hooks that pass their body with -c do not load json.py from the cwd or PYTHONPATH" {
+@test "#847: the hooks that pass their body with -c do not load json.py from the cwd or PYTHONPATH" {
   unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_UNATTENDED
   local h copy
-  for h in git-destructive-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice; do
+  for h in git-destructive-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice owner-message-number-check; do
     body_hook_payload "$h" > "${WORK}/payload.json"
     # 対照: -I を外した複製は偽の json.py を読む（＝この payload で python3 まで進んでいる）
     copy="$(unisolated_copy "${DW}/scripts/${h}.sh")"
@@ -241,6 +242,11 @@ body_hook_payload() {
       agent-model-guard)
         [ "$status" -eq 0 ] || { echo "$h: status=$status"; return 1; }
         [[ "$output" == *'"permissionDecision": "deny"'* ]] || { echo "$h: $output"; return 1; }
+        ;;
+      owner-message-number-check)
+        [ "$status" -eq 0 ] || { echo "$h: status=$status"; return 1; }
+        [[ "$output" == *'"decision"'* ]] || { echo "$h: $output"; return 1; }
+        [[ "$output" == *'"block"'* ]] || { echo "$h: $output"; return 1; }
         ;;
     esac
   done

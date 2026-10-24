@@ -28,8 +28,8 @@ setup() {
   AGENT_PAYLOAD='{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}'
 }
 
-# Python 本体を -c で渡す 6 本と、python3 の起動まで進む最小の payload
-BODY_HOOKS="git-destructive-guard rm-permission-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice"
+# Python 本体を -c で渡す hook と、python3 の起動まで進む最小の payload
+BODY_HOOKS="git-destructive-guard rm-permission-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice owner-message-number-check"
 
 payload_for() {
   case "$1" in
@@ -39,6 +39,7 @@ payload_for() {
     context-tripwire) printf '%s' '{"agent_id":"x","hook_event_name":"PostToolUse"}' ;;
     subagent-stop-guard) printf '%s' '{"agent_id":"x","hook_event_name":"SubagentStop"}' ;;
     model-switch-recache-notice) printf '%s' '{"hook_event_name":"PreModelSwitch"}' ;;
+    owner-message-number-check) printf '%s' '{"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"PR #1712 を許容しますか？"}' ;;
   esac
 }
 
@@ -78,7 +79,7 @@ SH
   [ -z "$output" ]
 }
 
-@test "#869: the five hooks hand python3 a non-empty body as -I -c <body>" {
+@test "#869: the body hooks hand python3 a non-empty body as -I -c <body>" {
   local real h first
   real="$(command -v python3)"
   install_shim "$real"
@@ -106,7 +107,7 @@ SH
   done
 }
 
-@test "#869: the bodies of the five hooks, the shared git-guard file and the permit script compile on Python 3.9" {
+@test "#869: the bodies of the body hooks, the shared git-guard file and the permit script compile on Python 3.9" {
   local py h
   py="$(python39)"
   [ -n "$py" ] || skip "Python 3.9 が無い（/usr/bin/python3・python3.9・python3 のどれも 3.9 でない）"
