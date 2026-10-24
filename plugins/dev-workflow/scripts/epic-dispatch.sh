@@ -153,7 +153,8 @@
 #   `kept <N> close-failed` と stderr に主がする操作）→ `orca worktree rm`（--force なし・再試行なし。
 #   stderr に `terminal sweep failed` を含む失敗は `kept <N> rm-failed-terminal-sweep`）→
 #   残ったローカルブランチは先端が HEAD と同じときだけ、ワークツリーが `git worktree list` から外れるのを
-#   上限つきで待って（EPIC_DISPATCH_REAP_DETACH_TIMEOUT 秒・既定 30、_INTERVAL 秒・既定 1）`git branch -D`。stdout は子ごとに
+#   上限つきで待って（EPIC_DISPATCH_REAP_DETACH_TIMEOUT 秒・既定 30、_INTERVAL 秒・既定 1）
+#   期待 OID つきの `git update-ref -d refs/heads/<ブランチ> <HEAD>`。stdout は子ごとに
 #   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。reaped の子は記録を消す。
 #   orca・jq が無い・今のワークツリーを読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
 # pending-owner: 読み取り専用。子ごとに、今のワークツリーを parent_worktree に持つ記録の stop が stopped-seen
@@ -1517,7 +1518,14 @@ cmd_reap() {
         started=$SECONDS
         while :; do
           if wtl="$(gitx "$gd" worktree list --porcelain)" && ! printf '%s\n' "$wtl" | grep -qxF -- "worktree $path"; then
-            attached=0; break
+            attached=0
+            # 別のワークツリーが同じブランチを checkout していたら消さない（update-ref -d は
+            # branch -D と違い、使用中のブランチでも消せてしまうので、ここで同じ保護を入れる）
+            if printf '%s\n' "$wtl" | grep -qxF -- "branch refs/heads/$branch"; then
+              attached=1
+              echo "branch $branch is checked out by another worktree; not deleting it" >&2
+            fi
+            break
           fi
           attached=1
           tries=$(( tries - 1 ))
@@ -1527,10 +1535,12 @@ cmd_reap() {
           sleep "$di"
         done
       fi
-      # 待っている間に先端が進んだかもしれないので、消す直前に読み直して HEAD と比べる
+      # 待っている間に先端が進んだかもしれないので、消す直前に読み直して HEAD と比べる。
+      # 削除は期待 OID つきの update-ref -d にして、読み直しから削除までの間に別プロセスが
+      # ref を進めたときも Git 側で不一致として失敗させる（非 0 は branch-kept）
       if [ "$tip" = "$head" ] && [ "$attached" -eq 0 ] \
         && tip2="$(gitx "$gd" rev-parse --verify --quiet "refs/heads/$branch")" && [ "$tip2" = "$head" ] \
-        && gitx "$gd" branch -D "$branch" >&2; then
+        && gitx "$gd" update-ref -d "refs/heads/$branch" "$head" >&2; then
         rm -f "$f"; echo "reaped $n"
       else
         rm -f "$f"; echo "reaped $n branch-kept"
