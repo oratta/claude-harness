@@ -8,6 +8,7 @@ develop が使った Claude と Codex の消費を、工程・試行・アカウ
 - 置き場は 3 か所: `Codex 消費:` コメントの 2 行目以降／サブエージェントの `description`（`#N` と同じ文字列の中）／`develop 開始` コメント
 - `plugins/dev-workflow/skills/develop/SKILL.md` の「PR トークン上限」節（紐付けの規約・Codex の消費の記録）と「Role profile の選択」節の develop 開始コメントの記述に、印の形・置き場・工程名の語彙・試行と引継ぎの数え方を書く
 - 印を検査する bats を足す
+- 同じ W を SendMessage で再開する既存の 1 ループと整合させるため、再開される W の description には工程・試行を書かない（design の決定 4）
 - 範囲外: 印への時刻（`開始=` `終了=`）の追加。理由と扱いは design の決定 3
 
 ## Capabilities
