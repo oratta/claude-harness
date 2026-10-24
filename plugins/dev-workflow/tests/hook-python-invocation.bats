@@ -23,13 +23,13 @@ setup() {
   export USAGE_PROBE_STATE="${WORK}/.usage-probe-state"
   export USAGE_PROBE_LOCK="${WORK}/.usage-probe.lock"
   unset CLAUDE_SECURESTORAGE_CONFIG_DIR DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE \
-    DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_CONTEXT_TRIPWIRE DEV_WORKFLOW_UNATTENDED || true
+    DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_CONTEXT_TRIPWIRE DEV_WORKFLOW_UNATTENDED DEV_WORKFLOW_OWNER_NUMBER_CHECK || true
   GIT_PAYLOAD='{"tool_name":"Bash","tool_input":{"command":"git reset --hard"},"hook_event_name":"PreToolUse","permission_mode":"default"}'
   AGENT_PAYLOAD='{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}'
 }
 
-# Python 本体を -c で渡す 6 本と、python3 の起動まで進む最小の payload
-BODY_HOOKS="git-destructive-guard rm-permission-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice"
+# Python 本体を -c で渡す hook と、python3 の起動まで進む最小の payload
+BODY_HOOKS="git-destructive-guard rm-permission-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice owner-message-number-check"
 
 payload_for() {
   case "$1" in
@@ -39,6 +39,7 @@ payload_for() {
     context-tripwire) printf '%s' '{"agent_id":"x","hook_event_name":"PostToolUse"}' ;;
     subagent-stop-guard) printf '%s' '{"agent_id":"x","hook_event_name":"SubagentStop"}' ;;
     model-switch-recache-notice) printf '%s' '{"hook_event_name":"PreModelSwitch"}' ;;
+    owner-message-number-check) printf '%s' '{"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"PR #1712 を許容しますか？"}' ;;
   esac
 }
 
@@ -78,7 +79,7 @@ SH
   [ -z "$output" ]
 }
 
-@test "#869: the five hooks hand python3 a non-empty body as -I -c <body>" {
+@test "#869: the body hooks hand python3 a non-empty body as -I -c <body>" {
   local real h first
   real="$(command -v python3)"
   install_shim "$real"
@@ -106,7 +107,7 @@ SH
   done
 }
 
-@test "#869: the bodies of the five hooks, the shared git-guard file and the permit script compile on Python 3.9" {
+@test "#869: the bodies of the body hooks, the shared git-guard file and the permit script compile on Python 3.9" {
   local py h
   py="$(python39)"
   [ -n "$py" ] || skip "Python 3.9 が無い（/usr/bin/python3・python3.9・python3 のどれも 3.9 でない）"
@@ -184,13 +185,17 @@ body_less_copy() {
   printf '%s' "$dst"
 }
 
-@test "#869: model-switch-recache-notice stays silent with exit 0 when its body is empty or unreadable" {
-  local mode copy
-  for mode in empty unreadable; do
-    copy="$(body_less_copy model-switch-recache-notice "$mode")"
-    run /bin/bash "$copy" <<<"$(payload_for model-switch-recache-notice)"
-    [ "$status" -eq 0 ] || { echo "$mode: status=$status"; return 1; }
-    [ -z "$output" ] || { echo "$mode: output=$output"; return 1; }
+@test "#869: model-switch-recache-notice and owner-message-number-check stay silent with exit 0 when their body is empty or unreadable" {
+  local h mode copy rc
+  for h in model-switch-recache-notice owner-message-number-check; do
+    for mode in empty unreadable; do
+      copy="$(body_less_copy "$h" "$mode")"
+      rc=0
+      payload_for "$h" | /bin/bash "$copy" >|"${WORK}/stdout" 2>|"${WORK}/stderr" || rc=$?
+      [ "$rc" -eq 0 ] || { echo "$h $mode: exit=$rc"; return 1; }
+      [ ! -s "${WORK}/stdout" ] || { echo "$h $mode: stdout=$(cat "${WORK}/stdout")"; return 1; }
+      [ ! -s "${WORK}/stderr" ] || { echo "$h $mode: stderr=$(cat "${WORK}/stderr")"; return 1; }
+    done
   done
 }
 
