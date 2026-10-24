@@ -230,8 +230,8 @@ PY
 
 @test "target: an answer line above the separator makes it a target" {
   local w
-  for w in 'と打って' 'を押して' 'と返して' 'と答えて'; do
-    msg_of "$(nl '次の変更を入れる。' '#1712 の続き。' "よければ『OK』${w}ください。")"
+  for w in 'と打って' 'と打つ' 'を押して' 'と返して' 'と答えて'; do
+    msg_of "$(nl '次の変更を入れる。' '#1712 の続き。' "よければ『OK』${w}。")"
     run_hook
     reason_of >/dev/null || { echo "word=$w" >&2; return 1; }
   done
@@ -260,6 +260,23 @@ PY
   lacks "$r" "$NO_URL"
 }
 
+@test "condition 1: a bare number on the same line as its URL is sent back" {
+  msg_of "$(nl 'この変更を入れてよいですか？' '#1712 https://github.com/oratta/claude-harness/pull/1712')"
+  run_hook
+  local r
+  r="$(reason_of)"
+  has "$r" '行 2: #1712'
+  lacks "$r" "$NO_URL"
+}
+
+@test "reason: the line order note says fenced blocks and empty lines are skipped" {
+  msg_of 'PR #1712 のリスクを許容しますか？'
+  run_hook
+  local r
+  r="$(reason_of)"
+  has "$r" '（逆引用符のブロックと空の行を除いて上から数えた順）'
+}
+
 @test "condition 1: every numbered line above the separator is listed" {
   msg_of "$(nl '#1 と #2 を入れてよいですか？' '#3 は後で。' 'https://github.com/o/r/pull/9' '---' '#4')"
   run_hook
@@ -277,6 +294,12 @@ PY
   r="$(reason_of)"
   has "$r" "$NO_URL"
   lacks "$r" '行 '
+}
+
+@test "condition 2: an issue URL on a host other than GitHub counts as a link" {
+  msg_of "$(nl 'この変更を入れてよいですか？' '---' '経緯: #1209' 'https://gitlab.example.com/o/r/-/issues/1209')"
+  run_hook
+  silent
 }
 
 @test "condition 2: a non issue or PR URL does not count as a link" {
@@ -364,7 +387,9 @@ PY
 
 @test "fail-soft: broken or unexpected input is silent with exit 0" {
   local p
-  for p in '' '{' '[]' '{"session_id":"s1"}' '{"last_assistant_message":123}' '{"last_assistant_message":null}' '{"last_assistant_message":"PR #1712 を許容しますか？"' '{"last_assistant_message":"PR #1712 を許容しますか？","stop_hook_active":true}'; do
+  for p in '' '{' '[]' '{"session_id":"s1"}' '{"last_assistant_message":123}' '{"last_assistant_message":null}' '{"last_assistant_message":"PR #1712 を許容しますか？"' '{"last_assistant_message":"PR #1712 を許容しますか？","stop_hook_active":true}' \
+    '"#1"' '["#1"]' '{"session_id":"#1"}' '{"last_assistant_message":1,"n":"#1"}' '{"last_assistant_message":null,"n":"#1"}' \
+    '{"last_assistant_message":"","n":"#1"}' '{"last_assistant_message":["#1"]}' '{"last_assistant_message":"\n\n","n":"#1"}' '{"x":"#1"'; do
     raw "$p"
     run_hook
     silent || { echo "payload=$p" >&2; return 1; }

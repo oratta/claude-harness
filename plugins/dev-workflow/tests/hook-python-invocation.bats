@@ -23,7 +23,7 @@ setup() {
   export USAGE_PROBE_STATE="${WORK}/.usage-probe-state"
   export USAGE_PROBE_LOCK="${WORK}/.usage-probe.lock"
   unset CLAUDE_SECURESTORAGE_CONFIG_DIR DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE \
-    DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_CONTEXT_TRIPWIRE DEV_WORKFLOW_UNATTENDED || true
+    DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_CONTEXT_TRIPWIRE DEV_WORKFLOW_UNATTENDED DEV_WORKFLOW_OWNER_NUMBER_CHECK || true
   GIT_PAYLOAD='{"tool_name":"Bash","tool_input":{"command":"git reset --hard"},"hook_event_name":"PreToolUse","permission_mode":"default"}'
   AGENT_PAYLOAD='{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}'
 }
@@ -185,13 +185,17 @@ body_less_copy() {
   printf '%s' "$dst"
 }
 
-@test "#869: model-switch-recache-notice stays silent with exit 0 when its body is empty or unreadable" {
-  local mode copy
-  for mode in empty unreadable; do
-    copy="$(body_less_copy model-switch-recache-notice "$mode")"
-    run /bin/bash "$copy" <<<"$(payload_for model-switch-recache-notice)"
-    [ "$status" -eq 0 ] || { echo "$mode: status=$status"; return 1; }
-    [ -z "$output" ] || { echo "$mode: output=$output"; return 1; }
+@test "#869: model-switch-recache-notice and owner-message-number-check stay silent with exit 0 when their body is empty or unreadable" {
+  local h mode copy rc
+  for h in model-switch-recache-notice owner-message-number-check; do
+    for mode in empty unreadable; do
+      copy="$(body_less_copy "$h" "$mode")"
+      rc=0
+      payload_for "$h" | /bin/bash "$copy" >|"${WORK}/stdout" 2>|"${WORK}/stderr" || rc=$?
+      [ "$rc" -eq 0 ] || { echo "$h $mode: exit=$rc"; return 1; }
+      [ ! -s "${WORK}/stdout" ] || { echo "$h $mode: stdout=$(cat "${WORK}/stdout")"; return 1; }
+      [ ! -s "${WORK}/stderr" ] || { echo "$h $mode: stderr=$(cat "${WORK}/stderr")"; return 1; }
+    done
   done
 }
 

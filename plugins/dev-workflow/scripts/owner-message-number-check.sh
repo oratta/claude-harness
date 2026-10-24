@@ -53,7 +53,7 @@ msg = d.get("last_assistant_message")
 if not isinstance(msg, str) or not msg:
     raise SystemExit(0)
 
-ANSWER_WORDS = ("と打って", "を押して", "と返して", "と答えて")
+ANSWER_WORDS = ("と打って", "と打つ", "を押して", "と返して", "と答えて")
 URL_RE = re.compile(r"https?://\S+")
 ISSUE_URL_RE = re.compile(r"https?://\S*/(?:issues|pull)/[0-9]")
 NUM_RE = re.compile(r"#[0-9]+")
@@ -99,7 +99,7 @@ if not hits and not no_url:
 parts = ["[dev-workflow 主への発言の差し戻し] 主に判断・確認・操作を求める発言に、次の点がある。"]
 if hits:
     parts.append("区切りより上に issue・PR の番号がある: " + " / ".join(
-        "行 %d: %s" % (n, " ".join(nums)) for n, nums in hits) + "（空の行を除いて上から数えた順）。")
+        "行 %d: %s" % (n, " ".join(nums)) for n, nums in hits) + "（逆引用符のブロックと空の行を除いて上から数えた順）。")
 if no_url:
     parts.append("issue・PR の URL が 1 本も無い。")
 parts.append(

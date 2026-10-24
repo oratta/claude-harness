@@ -220,7 +220,7 @@ body_hook_payload() {
 }
 
 @test "#847: the hooks that pass their body with -c do not load json.py from the cwd or PYTHONPATH" {
-  unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_UNATTENDED
+  unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_UNATTENDED DEV_WORKFLOW_OWNER_NUMBER_CHECK
   local h copy
   for h in git-destructive-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice owner-message-number-check; do
     body_hook_payload "$h" > "${WORK}/payload.json"
