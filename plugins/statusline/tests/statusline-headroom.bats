@@ -192,7 +192,7 @@ assert_used_one_slot() {
   write_one_slot_snapshot ''
   write_hr "${body//@ID@/default}" "$ca"
   render > "$WORK/n.txt"; render_no_hr > "$WORK/o.txt"
-  ! cmp -s "$WORK/n.txt" "$WORK/o.txt" || { echo "not used: $body"; return 1; }
+  if cmp -s "$WORK/n.txt" "$WORK/o.txt"; then echo "not used: $body"; return 1; fi
   strip_ansi < "$WORK/n.txt" | grep '7d All' | grep -q '🚀' || { cat "$WORK/n.txt"; return 1; }
 }
 
@@ -448,7 +448,7 @@ SH
     write_one_slot_snapshot '[{"resets_left":1,"ends_at":null,"paused":false}]'
     write_hr "$(el claude default ok $((NOW + W59)) "$(rk 1 $((NOW + 140400)))" "$t" 200)"
     render | strip_ansi > "$WORK/out.txt"
-    ! grep -q '│' "$WORK/out.txt" || { echo "case $t"; cat "$WORK/out.txt"; return 1; }
+    if grep -q '│' "$WORK/out.txt"; then echo "case $t"; cat "$WORK/out.txt"; return 1; fi
     grep '7d All' "$WORK/out.txt" | grep -q '🚀'
   done
 }
