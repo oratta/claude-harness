@@ -25,9 +25,14 @@
 #     （cedar_ember が無い・eligible が true でない・grants が配列でない・全要素が不正なら欄なし。元から空なら []）。
 #     寿命: 取得に成功したスロットは応答から作り直す／取得を試みて失敗したスロットは欄を出さない
 #     （全スロット失敗で snapshot を書かない場合も、その欄だけは既存 snapshot から除く。他は変えない）／
-#     取得を試みなかったスロット（間隔内・オフ）は前回の値を保つ。読み手はダッシュボードと statusline
+#     取得を試みなかったスロット（間隔内・429 の待ち中・オフ）は前回の値を保つ。読み手はダッシュボードと statusline
 #   - レジストリで enabled が false のスロット（オフ）は叩かない。認証情報も読まず、試行も記録しない。
 #     snapshot の同スロットの項目は、取得しなかったスロットと同じく前回値のまま引き継ぐ
+#   - 引数 --refresh（手で取り直す呼び出し元用）: 実行条件のうち鮮度（${USAGE_PROBE_STALE}）と前回の試行からの
+#     間隔（${USAGE_PROBE_INTERVAL}）を外し、429 の待ち（長さは引数なしと同じ式）とオフは残す。待ち中のスロットは
+#     叩かず、試行状態も変えない。その 1 回の実行にだけ効く（環境変数にしないのは、子プロセスへ漏れて hook など
+#     別の probe 呼び出しまで毎回取り直すのを避けるため）。ロック・試行の記録・fail-open は引数なしと同じ。
+#     USAGE_PROBE_INTERVAL=0 で間隔を外すと 429 の待ちも 0 になり、待ち中のアカウントを叩いてしまう
 #
 # refresh_token を使ったアクセストークンの更新は意図的に実装しない。
 # リフレッシュはトークンをローテートするため、Claude Code 本体が同じ refresh_token で
@@ -45,6 +50,8 @@
 #
 # サブコマンド:
 #   --print-slots  レジストリを解決して `id<TAB>label<TAB>securestorage<TAB>service` を出力する
+#   --refresh      鮮度と間隔の条件を外して取り直す（429 の待ちとオフは残す。上の契約を参照）
+#   それ以外の引数は無視する（引数なしと同じ）
 #
 # fail-open のため set -e は使わない（フェッチ失敗で誤って落とさない）。
 set -uo pipefail
@@ -167,6 +174,10 @@ if [ "${1:-}" = "--print-slots" ]; then
   exit 0
 fi
 
+# 手で取り直す指定（環境変数としては受け取らない。判定の python へだけ渡す）
+refresh=0
+[ "${1:-}" = "--refresh" ] && refresh=1
+
 # ---- マシン全体で 1 本: ロックを取れなければ何もしない ----
 # ロックの古さは実時刻と mtime で測る（USAGE_PROBE_NOW は導出の決定論化用で、mtime は実時刻のため混ぜない）。
 # GNU の stat（-c）を先に試す。逆順にすると Linux で `stat -f` がファイルシステム情報の表示として
@@ -211,7 +222,7 @@ for i in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
   [ "${slot_enabled[$i]}" = "1" ] || continue
   slot_pairs+="${slot_ids[$i]}"$'\t'"${slot_secures[$i]}"$'\n'
 done
-due="$(SLOT_PAIRS="$slot_pairs" USAGE_NOW="$NOW" STALE="$STALE" INTERVAL="$INTERVAL" \
+due="$(SLOT_PAIRS="$slot_pairs" USAGE_NOW="$NOW" STALE="$STALE" INTERVAL="$INTERVAL" REFRESH="$refresh" \
   STATE="$STATE" SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(dirname "$0")" python3 -I - <<'PY' 2>/dev/null
 import json, os, sys
 sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
@@ -219,6 +230,7 @@ import usage_view  # 記録の鍵と置き場所は読み手と同じ規則で�
 
 now = int(os.environ["USAGE_NOW"])
 stale, interval = int(os.environ["STALE"]), int(os.environ["INTERVAL"])
+refresh = os.environ.get("REFRESH") == "1"  # 鮮度と間隔を外す。429 の待ちは残す
 
 def load(path):
     try:
@@ -243,11 +255,14 @@ for line in os.environ["SLOT_PAIRS"].splitlines():
     slot_id, _, secure = line.partition("\t")
     record = load(os.path.join(sessions, usage_view.session_key(secure) + ".json"))
     entry = entries.get(slot_id) if isinstance(entries.get(slot_id), dict) else {}
-    if not (old(record.get("observed_at")) or old(entry.get("fetched_at"))):
+    if not refresh and not (old(record.get("observed_at")) or old(entry.get("fetched_at"))):
         continue
     tried = state.get(slot_id) if isinstance(state.get(slot_id), dict) else {}
     last, streak = tried.get("last_attempt"), min(count(tried.get("consecutive_429")), 32)
-    wait = interval if streak == 0 else min(interval * 2 ** (streak - 1), 86400)
+    if streak == 0:
+        wait = 0 if refresh else interval
+    else:
+        wait = min(interval * 2 ** (streak - 1), 86400)
     if usage_view.finite_number(last) and now - last < wait:
         continue
     print(slot_id)
