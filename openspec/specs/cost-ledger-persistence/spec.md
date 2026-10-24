@@ -157,6 +157,8 @@ Stop の hook（`scripts/ledger-hook.sh`）は、解決した値を `COST_LEDGER
 
 台帳の索引を作り直すとき（控えが無い・壊れている・古い形）も、台帳の行の `uuid`（先頭の行の `uuid`）と、応答ごとに数えた出力トークン（先頭の事実の出力と、補足の事実の出力の合計）を台帳から読んで、補足の事実の判定に使 MUST う。控えを消しても、同じ台帳に同じ補足の事実が重複して追記されてはなら MUST NOT ない。
 
+控えは、台帳の何バイト目までを索引（`requestId`・先頭の行の `uuid`）に反映したか（`covered`）とは別に、何バイト目までを応答ごとの出力トークン（`counted`）に反映したか（`counted_covered`）を持 MUST つ。次のどれかのとき、システムは `counted` を捨てて台帳の先頭から数え直 MUST す: `counted_covered` が無い（古い形の控え、または `counted` を作った直後で止まった控え）／`counted_covered` が `covered` と違う（`counted_covered` を知らない版が `covered` を進めた。その版が `counted` も足したかどうかは控えから分からない）／`counted_covered` が台帳の大きさを超える（台帳が差し替えられた）。それ以外のときは `counted_covered` から台帳の伸びた分だけを読んで `counted` に足す。応答ごとに数える出力の鍵は元の `requestId`（spec `cost-ledger-attribution` の「同じ応答の 2 行目以降の issue と投稿の印」の求め方。補足の事実の行では末尾の `#<uuid>` か `#<uuid>#out` を除いたもの）と SHALL する。
+
 **補正行の追記。** `ledger-sync --rescan` は、台帳で識別子が「不明」の行（補正行を除く）を持つ（`session_id`, `branch`）の組ごとに、読み直した会話ログの応答の行（`type` が `assistant` の行）のうち、その組（`sessionId`。無ければ事実と同じくファイルのパス, `gitBranch`）に当たる行の `cwd` を集め MUST る。集めた `cwd` が 1 つ以上あり、そのすべてが spec `cost-ledger-attribution` の「リポジトリ識別子と worktree の畳み込み」の求め方（`git rev-parse`、または削除済みの `cwd` からの推定）で同じ 1 つのリポジトリ識別子に決まるときだけ、その組の補正行（「台帳は事実の append-only JSONL」の形）を 1 行追記 SHALL する。`cwd` が 1 つも集まらない組、1 つでも「不明」の `cwd` がある組、2 つ以上のリポジトリに分かれる組には、補正行を書いてはなら MUST NOT ない。その組に当たる応答の行のうち、`cwd` の欄が無いか空の行が 1 つでもあれば、「不明」の `cwd` が 1 つある組として扱い、補正行を書いてはなら MUST NOT ない（`cwd` を持たない行の事実は「不明」になり、補正は組ごとに効くので、書けばその行まで補正されたリポジトリの行として読まれるため）。同じ `request_id` の補正行が既に台帳にあれば追記してはなら MUST NOT ない（控えを消したあとも同じ）。補正行のために会話ログのファイルを開く回数を増やしてはなら MUST NOT ない。
 
 補正行の追記は、主が手で実行する `ledger-sync --rescan` だけが行う操作で MUST ある。通常の `ledger-sync` と Stop hook は補正行を書いてはなら MUST NOT ない。
@@ -200,6 +202,18 @@ Stop の hook（`scripts/ledger-hook.sh`）は、解決した値を `COST_LEDGER
 #### Scenario: 古い形の控えは台帳から作り直される
 - **WHEN** 応答ごとの出力トークンの索引を持たない古い形の控えがある状態で、確定行を持つ応答を `ledger-sync` で取り込む
 - **THEN** 控えは台帳から作り直され、既に台帳にある応答に対して差分が二重に足されない
+
+#### Scenario: 変更前の版が出力 0 の補足の行を書いた確定行も差分が追記される
+- **WHEN** 先頭の行（出力 8）と、`gh issue view 42` を持つ確定行（出力 251）の補足の行 `r1#u2`（出力 0）が書かれた台帳に対して `ledger-sync --rescan` を実行する
+- **THEN** 鍵 `r1#u2#out`・`issues` 空・`post_marker` なしの補足の事実（出力 243）が 1 行追記され、応答の出力合計が 251 になる。2 回目の `--rescan` は 0 行を追記する
+
+#### Scenario: `counted` を足さない版が足した先頭の行は確定行の前に数えられる
+- **WHEN** 応答 `r2` の先頭の行（出力 20）を、`counted` を足さない版の hook が台帳に追記して `covered` だけを進めたあとで、`r2` の確定行（出力 100）を `ledger-sync` で取り込む
+- **THEN** 追記される補足の事実の出力は 80 で、台帳の `r2` の出力合計は 100
+
+#### Scenario: `counted` を足す直前の配布版が足した先頭の行は二重に数えない
+- **WHEN** 応答 `r1` の先頭の行（出力 8）を、`counted` と `covered` を進めるが `counted_covered` を持たない版の hook が台帳に追記したあとで、`r1` の確定行（出力 251）を `ledger-sync` で取り込む
+- **THEN** 追記される補足の事実の出力は 243 で、台帳の `r1` の出力合計は 251
 
 #### Scenario: 追記の前に cwd が消えていた行に補正行が書かれる
 - **WHEN** リポジトリ A（ディレクトリ名 `repo-a`）のメインの作業ツリーは別の場所にあり、git リポジトリでないディレクトリ `<親>/repo-a`（これが置き場）の直下に A の作業ツリー `<親>/repo-a/wt1` が残っていて、削除済みの `<親>/repo-a/wt2` を `cwd` に持つ会話ログから「不明」の行が書かれた台帳に対して `ledger-sync --rescan` を実行する
