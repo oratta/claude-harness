@@ -28,6 +28,7 @@
 
 - 追加: `plugins/dev-workflow/scripts/owner-message-number-check.sh`、`plugins/dev-workflow/tests/owner-message-number-check.bats`、`plugins/dev-workflow/changes/1215.md`
 - 変更: `plugins/dev-workflow/hooks/hooks.json`（`Stop` のキーを足す。既存のエントリは変えない）
+- 変更（既存テスト）: `plugins/dev-workflow/tests/subagent-stop-guard.bats` の hooks.json のイベント名の集合を完全一致で固定するテストに `Stop` を足す（足さないと必ず落ちる）。`plugins/dev-workflow/tests/hook-python-invocation.bats` と `tests/hook-python-isolation.bats` の、Python 本体を `-c` で渡す hook の手書きの一覧に新しいスクリプトを足す
 - 常時注入の予算（`tests/injection-budget.txt`）は動かない（rules・output-styles・description を変えない）
 - 公開版と個人版の仕分け（`docs/public-private-split.md`）は行 `plugins/dev-workflow/` の公開版に入り、行を足さない
 - dev-workflow を入れた環境の全メインセッション（`claude -p` で起動した子のセッションを含む）のターンの終わりに走る
