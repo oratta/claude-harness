@@ -64,7 +64,7 @@ def observe($hints; $unrelated):
                           else [] end) as $msgs
                        | if any($msgs[]; contains($lost)) then "runner-lost"
                          elif any($msgs[]; contains($timedout)) then "job-timeout"
-                         elif any($unrelated[]; . == $n) then "unrelated"
+                         elif any($unrelated[]; tostring | gsub("[\t\n,]"; " ") == $n) then "unrelated"
                          else "real" end)})) as $fc
   | (if .mergeable == "CONFLICTING" then "conflict"
      elif ($f | length) > 0 then "ci-fail"
