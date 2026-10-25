@@ -1082,6 +1082,28 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -F '段ごとの入力のうち' "$GATE" | grep -qF '直し方の判定の受領'
 }
 
+# ===== 許容の引き継ぎの判定役（issue #1238）=====
+
+@test "gate-runner (#1238): Status list and next-stage table carry needs-carryover-judge routed to the pass stage" {
+  common="$(awk '/^## Gate Result/{f=1} f&&/^```$/{exit} f' "$GATE")"
+  echo "$common" | grep -E '^- Status: ' | grep -qF 'needs-carryover-judge'
+  grep -qxF '| needs-carryover-judge | `合格処理` |' "$GATE"
+  grep -F 'Status ごとの欄の書式は' "$GATE" | grep -qF '`needs-carryover-judge` は `stages/hold.md`'
+}
+
+@test "gate-runner (#1238): the pass row of the stage table takes the carryover judgment" {
+  row="$(grep -E '^\| 合格処理 \|' "$GATE")"
+  [ -n "$row" ] || { echo "no pass row in the stage table"; return 1; }
+  echo "$row" | grep -qF '引き継ぎの判定を受け取ったとき'
+  echo "$row" | grep -qF '引き継ぎの判定と判定の記録の URL'
+  echo "$row" | grep -qF '`needs-carryover-judge`'
+  # 時点ごとに読むファイルの合格処理の行
+  rf="$(grep -E '^\| 合格処理（手順 3' "$GATE")"
+  [ -n "$rf" ] || { echo "no pass row in the read-files table"; return 1; }
+  echo "$rf" | grep -qF '`needs-carryover-judge` を返すとき'
+  echo "$rf" | grep -qF '`stages/hold.md`'
+}
+
 # TTY の無い Bash ツールでは `openspec archive <change>` が確認プロンプトで exit 1 になる（#596）。
 # develop 配下で change 名を伴う archive の実行指示は、すべて --yes を付ける。
 @test "develop: every openspec archive <change> instruction carries --yes (#596)" {

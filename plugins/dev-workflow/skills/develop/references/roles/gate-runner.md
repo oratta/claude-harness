@@ -18,7 +18,7 @@ develop の本体から `subagent_type: dev-workflow:gate-runner` で**名前付
 |---|---|
 | 前提確認と重さ判定（手順 1・2・2-0） | `stages/prepare.md`（adapter 経路はここで `needs-reviewer` を return する。W の修正後の再レビューのときは加えて `stages/triage.md` の収束ルールの節と「W の修正後の再レビュー」の入力） |
 | 照合と振り分け（レビュー要約・補足レビューの結果・決める役の裁定の受領、順 3 だけの修正のあと） | `stages/triage.md`（戻した指摘が順 3 だけの修正のあとは、加えて `stages/prepare.md` の手順 1） |
-| 合格処理（手順 3・3-b・4・5） | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるとき・保留を返すときは加えて `stages/hold.md`） |
+| 合格処理（手順 3・3-b・4・5。引き継ぎの判定の受領を含む） | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるとき・保留を返すとき・`needs-carryover-judge` を返すときは加えて `stages/hold.md`） |
 | 保留の解除（主のリスク許容・動作確認・切り出しの確認への回答が届いたとき） | `stages/hold.md` |
 | 一括（従来経路）でレビューを自分で起こすとき | 上の表の全部と、`stages/review-run.md` とレビュアーに渡す `stages/reviewer-brief.md` |
 
@@ -61,7 +61,7 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 ## Gate Result
 - PR: #<N>（HEAD <SHA>）
 - 段: 前提確認と重さ判定 | 照合と振り分け | 合格処理 | 保留の解除 | 一括（従来経路）
-- Status: passed | failed | 保留 | needs-reviewer | needs-decider | needs-fix-check | review-incomplete | 次の段へ
+- Status: passed | failed | 保留 | needs-reviewer | needs-decider | needs-fix-check | review-incomplete | needs-carryover-judge | 次の段へ
 - 次の段: 前提確認と重さ判定 | 照合と振り分け | 合格処理 | 保留の解除 | なし
 - レビュー重量: light | full（実行者: Codex | Task サブエージェント <model> | <executor>/<model>（adapter 経路））
 - Codex thread: <thread_id>（full で Codex を呼んだ周だけ。呼ばなかった周は省く。取れなかったら「取得できず」）
@@ -77,10 +77,11 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 | `次の段へ` | 照合と振り分けの G は `合格処理`。保留の解除の G は `合格処理` か `前提確認と重さ判定` |
 | failed | 戻した指摘が順 3 だけなら `照合と振り分け`、それ以外は `前提確認と重さ判定` |
 | needs-reviewer / needs-decider / needs-fix-check | `照合と振り分け` |
+| needs-carryover-judge | `合格処理` |
 | 保留 | `保留の解除` |
 | passed / review-incomplete | `なし` |
 
-この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: `needs-reviewer` は `stages/prepare.md`、`failed`・`needs-decider`・`needs-fix-check`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・効果測定の欄は `stages/triage.md`、`passed` は `stages/pass.md`、`保留` は `stages/hold.md`。
+この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: `needs-reviewer` は `stages/prepare.md`、`failed`・`needs-decider`・`needs-fix-check`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・効果測定の欄は `stages/triage.md`、`passed` は `stages/pass.md`、`保留` は `stages/hold.md`、`needs-carryover-judge` は `stages/hold.md`。
 
 ## 段ごとの起動と入力
 
@@ -90,7 +91,7 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 |---|---|---|---|
 | 前提確認と重さ判定 | ゲートの開始、W の修正後の再レビュー（failed の `次の段: 前提確認と重さ判定`）、保留の解除が `次の段: 前提確認と重さ判定` を返したとき、CI の見張りで `ready` になったあとの取り直し | W の修正内容の要約（再レビューのとき） | `needs-reviewer` / 保留 |
 | 照合と振り分け | レビュー要約・補足レビューの結果・決める役の裁定を受け取ったとき、直し方の判定を受け取ったとき、戻した指摘が順 3 だけの修正のあと（failed の `次の段: 照合と振り分け`） | レビュアーの要約・補足レビューの結果・決める役の裁定・直し方の判定と判定の記録の URL・W の修正内容の要約のうち、その時点のもの | `次の段へ` / failed / 保留 / `needs-reviewer`（補足） / `needs-decider` / `needs-fix-check` / `review-incomplete` |
-| 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき | 前の段の Gate Result ブロックだけ | passed / 保留 |
+| 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき、引き継ぎの判定を受け取ったとき（合格処理の G が `needs-carryover-judge` を返したあと） | 前の段の Gate Result ブロック（引き継ぎの判定のあとは加えて引き継ぎの判定と判定の記録の URL） | passed / 保留 / `needs-carryover-judge` |
 | 保留の解除 | 主の回答が届いたとき | 主の回答 | `次の段へ` / failed / needs-decider / 保留 |
 
 G は前の段の会話を持たない。段と段の間で渡すものは次の PR コメントに置き、起動指示と PR コメントが食い違ったら **PR コメントを正とする**。

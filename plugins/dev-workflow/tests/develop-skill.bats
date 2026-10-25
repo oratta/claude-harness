@@ -587,6 +587,29 @@ refute() {
   echo "$s" | grep -q '1 サイクルに 1 回まで'
 }
 
+# spec: dev-workflow-pr-token-budget（エピックの子は主に聞く前に親の権限に照らす。#1245）
+
+@test "token budget: an epic child is checked against the parent's authority before asking the owner" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF '`子の PR トークン権限: <値>`'
+  echo "$s" | grep -qF '既定 60000000'
+  echo "$s" | grep -F 'references/epic.md' | grep -qF '**PR トークン上限の子**'
+  echo "$s" | grep -F '別セッション方式の子' | grep -qF 'references/epic-child-stop.md'
+  echo "$s" | grep -F 'サブエージェント方式' | grep -F '見込みを子の記録先にコメント' | grep -qF '照らす'
+  echo "$s" | grep -F '照らす前に' | grep -qF '既定値で投稿'
+  echo "$s" | grep -F '新上限は' | grep -qF '権限の値'
+  echo "$s" | grep -qF -- '--cap <権限>'
+  echo "$s" | grep -qF 'PR トークン上限: <権限>'
+  echo "$s" | grep -qF '決めた人: <親エピック #<E> の判断（親の権限の内。主の承認ではない）か、'
+  echo "$s" | grep -qF 'エピック #<E> の本体（親の権限の内）'
+  echo "$s" | grep -qF '権限: <権限のコメントの URL>'
+  echo "$s" | grep -qF '停止の記録: <停止の記録の URL か なし>'
+  echo "$s" | grep -F '親の返事' | grep -qF '主に聞き直さない'
+  echo "$s" | grep -F '既定の上限' | grep -qF '変えない'
+  # エピックの子でない記録先の「続ける」の式は残る
+  echo "$s" | grep -qF 'その時点の合計 ＋ 直前の計測で上限に使った値'
+}
+
 @test "token budget: measurement is not placed in the Codex adapter reference" {
   body="$(cat "${PLUGIN_DIR}/references/codex-develop.md")"
   refute "$body" -F 'pr-token-budget'
@@ -744,6 +767,27 @@ refute() {
   a="$(echo "$step4" | grep -n '^      needs-fix-check →' | cut -d: -f1)"
   d="$(echo "$step4" | grep -n '^      needs-decider →' | cut -d: -f1)"
   [ "$a" -lt "$d" ]
+}
+
+@test "carryover judge (#1238): step (4) handles needs-carryover-judge by starting the judge, posting the record and starting the pass G" {
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$SKILL")"
+  echo "$step4" | grep -E '^      4 つの段で' | grep -qF 'needs-carryover-judge'
+  nc="$(echo "$step4" | awk '/^      needs-carryover-judge →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  [ -n "$nc" ] || { echo "no needs-carryover-judge line in step (4)"; return 1; }
+  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '判定の記録を PR に' '合格処理の G を新しく起こす' '`stages/hold.md`' '3-c' 'SHARED_BUDGET_MODE=depleted' '`引き継ぎ判定: 判断できない`' '宣言を投稿せず' 'ラベルを付けず' '主に聞かない' '同じ前 HEAD・新しい HEAD・根拠ファイルの組' '判定役を起こし直さず'; do
+    echo "$nc" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  # 依頼の書き方と記録の書式は hold.md を正本にし、SKILL.md に再掲しない
+  ! echo "$nc" | grep -qF '前 HEAD: <40 桁' || return 1
+}
+
+@test "carryover judge (#1238): the model table has the carryover judge row (decider, opus, not started when depleted)" {
+  row="$(section 'モデル' | grep -E '^\| ' | grep -F '引き継ぎの判定役')"
+  [ -n "$row" ] || { echo "no carryover judge row"; return 1; }
+  echo "$row" | grep -qF '`dev-workflow:decider`'
+  echo "$row" | grep -qF '`opus`'
+  echo "$row" | grep -qF 'depleted'
+  echo "$row" | grep -qF '起こさない'
 }
 
 @test "fix-check (#722): the handover scene for the two-round cap points at the re-choosing verdict" {

@@ -6,7 +6,7 @@
 # merge commit でない commit は NG にせず PR_COMMITS= で数える。根拠ファイルが前後で変わっても、PR 自身の差分が同じなら
 # EVIDENCE_MAIN_ONLY= で出して引き継げる側、違えば EVIDENCE_PR_CHANGED= で出して終了コード 4（#1238）。
 # exit 3 のケースは、根拠ファイルが前後で変わらないか main からの変更だけ（EVIDENCE_MAIN_ONLY=）の形で渡す（PR 自身の差分が変わる形は別ケースで exit 4）。
-# spec: dev-workflow-pr-review-gate「risk-carryover-check.sh が差分の範囲と根拠ファイルの無変更を判定する」
+# spec: dev-workflow-pr-review-gate「risk-carryover-check.sh が差分の範囲と根拠ファイルの PR 自身の差分を判定する」
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
