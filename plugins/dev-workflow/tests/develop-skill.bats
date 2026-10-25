@@ -649,6 +649,29 @@ refute() {
   echo "$s" | grep -q '1 サイクルに 1 回まで'
 }
 
+# spec: dev-workflow-pr-token-budget（エピックの子は主に聞く前に親の権限に照らす。#1245）
+
+@test "token budget: an epic child is checked against the parent's authority before asking the owner" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF '`子の PR トークン権限: <値>`'
+  echo "$s" | grep -qF '既定 60000000'
+  echo "$s" | grep -F 'references/epic.md' | grep -qF '**PR トークン上限の子**'
+  echo "$s" | grep -F '別セッション方式の子' | grep -qF 'references/epic-child-stop.md'
+  echo "$s" | grep -F 'サブエージェント方式' | grep -F '見込みを子の記録先にコメント' | grep -qF '照らす'
+  echo "$s" | grep -F '照らす前に' | grep -qF '既定値で投稿'
+  echo "$s" | grep -F '新上限は' | grep -qF '権限の値'
+  echo "$s" | grep -qF -- '--cap <権限>'
+  echo "$s" | grep -qF 'PR トークン上限: <権限>'
+  echo "$s" | grep -qF '決めた人: <親エピック #<E> の判断（親の権限の内。主の承認ではない）か、'
+  echo "$s" | grep -qF 'エピック #<E> の本体（親の権限の内）'
+  echo "$s" | grep -qF '権限: <権限のコメントの URL>'
+  echo "$s" | grep -qF '停止の記録: <停止の記録の URL か なし>'
+  echo "$s" | grep -F '親の返事' | grep -qF '主に聞き直さない'
+  echo "$s" | grep -F '既定の上限' | grep -qF '変えない'
+  # エピックの子でない記録先の「続ける」の式は残る
+  echo "$s" | grep -qF 'その時点の合計 ＋ 直前の計測で上限に使った値'
+}
+
 @test "token budget: measurement is not placed in the Codex adapter reference" {
   body="$(cat "${PLUGIN_DIR}/references/codex-develop.md")"
   refute "$body" -F 'pr-token-budget'
@@ -808,6 +831,27 @@ refute() {
   [ "$a" -lt "$d" ]
 }
 
+@test "carryover judge (#1238): step (4) handles needs-carryover-judge by starting the judge, posting the record and starting the pass G" {
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$SKILL")"
+  echo "$step4" | grep -E '^      4 つの段で' | grep -qF 'needs-carryover-judge'
+  nc="$(echo "$step4" | awk '/^      needs-carryover-judge →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  [ -n "$nc" ] || { echo "no needs-carryover-judge line in step (4)"; return 1; }
+  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '判定の記録を PR に' '合格処理の G を新しく起こす' '`stages/hold.md`' '3-c' 'SHARED_BUDGET_MODE=depleted' '`引き継ぎ判定: 判断できない`' '宣言を投稿せず' 'ラベルを付けず' '主に聞かない' '同じ前 HEAD・新しい HEAD・根拠ファイルの組' '判定役を起こし直さず'; do
+    echo "$nc" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  # 依頼の書き方と記録の書式は hold.md を正本にし、SKILL.md に再掲しない
+  ! echo "$nc" | grep -qF '前 HEAD: <40 桁' || return 1
+}
+
+@test "carryover judge (#1238): the model table has the carryover judge row (decider, opus, not started when depleted)" {
+  row="$(section 'モデル' | grep -E '^\| ' | grep -F '引き継ぎの判定役')"
+  [ -n "$row" ] || { echo "no carryover judge row"; return 1; }
+  echo "$row" | grep -qF '`dev-workflow:decider`'
+  echo "$row" | grep -qF '`opus`'
+  echo "$row" | grep -qF 'depleted'
+  echo "$row" | grep -qF '起こさない'
+}
+
 @test "fix-check (#722): the handover scene for the two-round cap points at the re-choosing verdict" {
   s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
   echo "$s" | grep -F 'レビューの 2 周キャップ超え' | grep -qF '選び直しが要る'
@@ -943,6 +987,119 @@ refute() {
   echo "$item" | grep -qF '全文から不許容の意思が読め'
   echo "$item" | grep -qF '主本人の不許容として受け取り'
   echo "$item" | grep -qF '許容とも不許容とも読めない'
+}
+
+# --- Requirement: 親は主の委任を…受ける／委任が有効か／委任が効く止まり／委任で許容を送る／子は委任の返事を確かめてから G に渡す（#1293） ---
+# 照合の対象は references/epic.md・references/epic-child-stop.md の文だけで、openspec の spec の文言は照合しない。
+# 「委任が有効か」の 6 条件と「委任が効く止まり」の 4 条件は、epic.md・epic-child-stop.md・pr-review-gate の pass.md に
+# 同じ文字列で入れる（pass.md 側は pr-review-gate-skill.bats が同じ文字列で検査する）。
+
+DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1〜4 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
+DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
+DELEG_RECOMMEND='`推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
+
+deleg_para() { awk '/^\*\*主の委任\*\*（手順 8 の続き/{f=1; print; next} f && /^`timeout` と `closed` で起こされたときの確認では/{f=0} f' "$EPIC"; }
+child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_STOP"; }
+
+@test "delegated reply (#1293): epic.md has the delegation paragraph after step 8 and step 8 routes to it before the pass criteria" {
+  [ -n "$(deleg_para)" ]
+  line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
+  echo "$line" | grep -qF '**主の委任** の段落の「委任で送る」に当たるかを確かめ'
+  # 委任で送るかの確かめが、基準に照らす文より前にある
+  echo "$line" | grep -qF '親が自分で記録を `references/parent-pass-criteria.md` に照らす'
+  before="${line%%親が自分で記録を \`references/parent-pass-criteria.md\` に照らす*}"
+  echo "$before" | grep -qF '**主の委任**'
+}
+
+@test "delegated reply (#1293): the delegation record has the fixed lines 1-4" {
+  p="$(deleg_para)"
+  echo "$p" | grep -qxF '  主の委任: リスク許容'
+  echo "$p" | grep -qxF '  エピック: #<E>'
+  echo "$p" | grep -qxF '  範囲: このエピックの子が pr-review-gate で求めるリスク許容のうち、子の停止の記録の推奨が「許容する」のもの。聖域の変更・破壊的な操作・マージの承認・不許容は含まない'
+  echo "$p" | grep -qxF '  期間: この記録への主の確認の発言から、このエピックに `主の委任:` で始まる次のコメントが付くか、エピックが閉じるまで'
+  echo "$p" | grep -qxF '  きっかけ: <主が任せる旨を述べた発言の全文。無ければ なし>'
+}
+
+@test "delegated reply (#1293): the confirmation question asks to type 任せる right after it, and re-asks when unreadable or interrupted" {
+  p="$(deleg_para | grep -F -- '- **委任の受け方**')"
+  echo "$p" | grep -qF '親のタブで `任せる` を、この問いの直後に別の発言を挟まずに打つ'
+  echo "$p" | grep -qF '質問ツールで聞かない'
+  echo "$p" | grep -qF '任せる意思が読めないとき'
+  echo "$p" | grep -qF 'not-direct'
+  echo "$p" | grep -qF '問いを本文で出し直してから確認を受け直す'
+  echo "$p" | grep -qF 'その発言だけを委任として扱わない'
+}
+
+@test "delegated reply (#1293): the confirmation location line is posted and read back after a restart" {
+  p="$(deleg_para | grep -F -- '- **委任の確認の場所**')"
+  echo "$p" | grep -qF 'owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <確認の全文>'
+  echo "$p" | grep -qF '`委任の確認の場所: セッション <親のセッション ID> / uuid <uuid> / 記録 <委任の記録の URL>`'
+  echo "$p" | grep -qF '`主の委任:` で始めない'
+  echo "$p" | grep -qF '起動し直したあとは'
+  echo "$p" | grep -qF '引けなければ委任を使わない'
+}
+
+@test "delegated reply (#1293): revocation is posted at the first tool call of the next turn and counts only the three author associations" {
+  p="$(deleg_para | grep -F -- '- **取り消し**')"
+  echo "$p" | grep -qF '1 行目 `主の委任: 取り消し`'
+  echo "$p" | grep -qF '次のターンの最初のツール呼び出し'
+  echo "$p" | grep -qF '`OWNER`・`MEMBER`・`COLLABORATOR` のどれかなら効く'
+  echo "$p" | grep -qF 'それ以外の投稿者の `主の委任:` で始まるコメントは、取り消しとしても新しい記録としても数えない'
+}
+
+@test "delegated reply (#1293): the six validity conditions and four stop conditions are the same string in epic.md and epic-child-stop.md" {
+  deleg_para | grep -F -- '- **委任が有効か**' | grep -qF "$DELEG_VALID6"
+  deleg_para | grep -F -- '- **委任が効く止まり**' | grep -qF "$DELEG_STOP4"
+  child_reply_item | grep -qF "$DELEG_VALID6"
+  child_reply_item | grep -qF "$DELEG_STOP4"
+}
+
+@test "delegated reply (#1293): the recommendation is judged by 許容する (not 許容) in epic.md and epic-child-stop.md" {
+  deleg_para | grep -qF "$DELEG_RECOMMEND"
+  child_reply_item | grep -qF "$DELEG_RECOMMEND"
+}
+
+@test "delegated reply (#1293): the parent sends with the delegation tag and records it without 親の判断:" {
+  p="$(deleg_para | grep -F -- '- **委任で送る**')"
+  echo "$p" | grep -qF 'reply --as owner'
+  echo "$p" | grep -qF '`許容する（主の委任による。停止の記録: <URL>） [主の委任: セッション <親のセッション ID> / uuid <確認の uuid> / 記録 <委任の記録の URL>]`'
+  echo "$p" | grep -qF '`委任で送った: 子 #<N> <停止の記録の URL>`'
+  echo "$p" | grep -qF '`親の判断:` で始めない'
+  echo "$p" | grep -qF '手順 8 の形で主に上げる'
+}
+
+@test "delegated reply (#1293): the parent does not send twice for the same stop record" {
+  p="$(deleg_para | grep -F -- '- **二重送信の防止**')"
+  echo "$p" | grep -qF '手順 7・8 で同じ子が再び挙がったとき、その子の `委任で送った:` の行の URL が最新の停止の記録の URL と同じなら送り直さず子の再開を待つ'
+}
+
+@test "delegated reply (#1293): the parent route has a scope paragraph" {
+  p="$(deleg_para | grep -F -- '- **守備範囲**')"
+  for w in '①入力の出どころ' '②拾いたい誤り' '③確認に `任せる` 以外の語で任せる意思が読める答えは通してよい' '④穴を塞ぎ切ることは完了条件にしない'; do
+    echo "$p" | grep -qF "$w" || return 1
+  done
+}
+
+@test "delegated reply (#1293): the child checks a [主の委任: …] reply with --delegated and never with --relayed" {
+  item="$(child_reply_item)"
+  echo "$item" | grep -qF '末尾が `[主の委任: セッション <ID> / uuid <uuid> / 記録 <URL>]` の返事'
+  echo "$item" | grep -qF '上の `--relayed` に掛けず'
+  echo "$item" | grep -qF '添え書きの無い返事としても扱わず'
+  echo "$item" | grep -qF 'owner-reply-check.sh --delegated <ID> <uuid> <委任の記録の作成日時> <URL> <最新の停止の記録の作成日時>'
+  echo "$item" | grep -qF '「親経由で受領（委任）」が正本'
+  echo "$item" | grep -qF '添え書き（`[主の発言: …]` も `[主の委任: …]` も）が無い'
+}
+
+@test "delegated reply (#1293): the child asks for the child's tab with the reason when the delegated reply cannot be confirmed, and has a scope" {
+  item="$(child_reply_item)"
+  echo "$item" | grep -qF '止まりに委任が効かないときは G を起こさず'
+  # 委任の返事はリスク許容待ちの止まりにだけ受ける（P3-F1）
+  echo "$item" | grep -qF '止まった件がリスク許容への返事待ち（pr-review-gate 手順 3 の宣言で止まった件）のときだけ受け、上の `--relayed` に掛けず'
+  echo "$item" | grep -qF '止まった件がリスク許容への返事待ちでない（聖域の変更・破壊的な操作・マージ・実機操作などで止まった）、または止まりに委任が効かないときは G を起こさず'
+  echo "$item" | grep -qF '確かめられなかった理由（`REASON=` の値か満たさなかった条件）'
+  echo "$item" | grep -qF '③親と子が同じ PC で動き、委任の確認のあとに親が起動し直したものは通してよい'
+  # [主の発言: …] の経路の文は変えない
+  echo "$item" | grep -qF 'owner-reply-check.sh --relayed <ID> <uuid> <作成日時> <URL>'
 }
 
 @test "skill: step 7 of the Orca route re-presents children waiting for the owner before launch" {

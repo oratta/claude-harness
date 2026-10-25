@@ -3537,6 +3537,31 @@ orca_cmd_scripts() {
   printf '%s\n' "$r" | grep -qF 'rules/communication-style.md'
 }
 
+@test "skill: an epic child stopped by the CI watch writes the PR's short HEAD SHA in the resume progress" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
+  [ -n "$r" ]
+  # CI の見張りで止まったときの書き方の行（escalate と直し方の手順 7 の両方に触れる）
+  l="$(printf '%s\n' "$r" | grep -F '`再開に要る途中経過:`' | grep -F 'HEAD の短い SHA')"
+  [ -n "$l" ]
+  printf '%s\n' "$l" | grep -qF '落ちたチェック名'
+  printf '%s\n' "$l" | grep -qF 'PR の URL'
+  printf '%s\n' "$l" | grep -qF '`escalate`'
+  printf '%s\n' "$l" | grep -qF '手順 7'
+  printf '%s\n' "$l" | grep -qF 'references/ci-watch.md'
+  # 親が追加のやり直しを許したあと同じ HEAD で落ちたときの止まり（`none`）も対象に入る
+  printf '%s\n' "$l" | grep -F '`obs.state` が `wait` でない `none`' | grep -qF '前回と同じ状態・同じ HEAD の決着'
+  # 桁数と取り方、取れないときの書き方
+  printf '%s\n' "$l" | grep -qF '先頭 7 文字'
+  printf '%s\n' "$l" | grep -qF '`obs.head`'
+  printf '%s\n' "$l" | grep -qF "gh pr view <PR番号> --repo <owner/repo> --json headRefOid --jq '.headRefOid[0:7]'"
+  printf '%s\n' "$l" | grep -qF '`HEAD 不明`'
+  # 目的（親が理由に写して同じ件かを見分ける）と、項目は 7 つのまま
+  printf '%s\n' "$l" | grep -qF 'parent-pass-criteria.md'
+  printf '%s\n' "$l" | grep -qF '`親の判断:`'
+  printf '%s\n' "$r" | grep -F '7 つの項目' | grep -qF 'どの項目も省かない'
+  run grep -E '^止まった時点の HEAD:' <<<"$r"; [ "$status" -eq 1 ]
+}
+
 @test "skill: step 8 of the Orca route restates the stop record in the readable steps" {
   p="$(run_section | grep -E '^8\. ')"
   [ -n "$p" ]
@@ -3629,6 +3654,60 @@ orca_cmd_scripts() {
   printf '%s\n' "$l" | grep -F '聖域' | grep -F '破壊的な操作' | grep -qF '承認として扱わない'
 }
 
+# spec: dev-workflow-develop（エピックの親は子 1 件あたりの PR トークンの権限をエピックのコメントに置く ほか。#1245）
+
+@test "skill: the epic parent posts the per-child PR token authority and tells the owner" {
+  l="$(grep -E '^\*\*経路の決め方\*\*' "$EPIC")"
+  printf '%s\n' "$l" | grep -qF '`子の PR トークン権限: 60000000`'
+  printf '%s\n' "$l" | grep -qF '子 1 件 6,000 万トークンで回す。広げたければ声をかけて'
+  printf '%s\n' "$l" | grep -qF 'unmanned ではコメントだけ'
+  printf '%s\n' "$l" | grep -qF '主の発言: <要旨>'
+  printf '%s\n' "$l" | grep -qF '親の判断では広げない'
+  printf '%s\n' "$l" | grep -F 'OWNER・MEMBER・COLLABORATOR' | grep -qF '最新の 1 件'
+  q="$(run_section | grep -E '^7\. ')"
+  printf '%s\n' "$q" | grep -F '`子の PR トークン権限:`' | grep -qF '既定値で投稿'
+}
+
+@test "skill: step 8 routes a PR token cap stop to the authority before the merge-wait routing" {
+  p="$(run_section | grep -E '^8\. ')"
+  printf '%s\n' "$p" | grep -F '`PR トークン上限（` で始まる' | grep -F '照らし直さず' | grep -qF '**PR トークン上限の子**'
+  a="$(printf '%s\n' "$p" | awk '{print index($0, "`PR トークン上限（` で始まる")}')"
+  b="$(printf '%s\n' "$p" | awk '{print index($0, "`PR のマージ待ち（` で始まる")}')"
+  [ "$a" -gt 0 ] && [ "$b" -gt 0 ] && [ "$a" -lt "$b" ]
+  printf '%s\n' "$p" | grep -F '主の答えの扱いは **PR トークン上限の子**' | grep -qF '優先'
+}
+
+@test "skill: the PR token cap child paragraph checks (a)(b) and replies as parent with the authority" {
+  p="$(grep -E '^\*\*PR トークン上限の子\*\*' "$EPIC")"
+  [ -n "$p" ]
+  printf '%s\n' "$p" | grep -qF '`parent-pass-criteria.md` に照らし直さず'
+  printf '%s\n' "$p" | grep -F '照らす前に' | grep -qF '既定値で投稿'
+  printf '%s\n' "$p" | grep -F 'OWNER・MEMBER・COLLABORATOR' | grep -qF '最新の 1 件'
+  printf '%s\n' "$p" | grep -qF '(a) 合計の見込みが権限以下'
+  printf '%s\n' "$p" | grep -qF '(b) 記録の上限が権限より小さい'
+  printf '%s\n' "$p" | grep -F '数字として読めない' | grep -qF '主に上げる'
+  printf '%s\n' "$p" | grep -qF '続ける。新しい上限 <権限>（親の権限。<権限のコメントの URL>）'
+  printf '%s\n' "$p" | grep -qF 'reply --as parent'
+  printf '%s\n' "$p" | grep -qF '親の判断: 子 #N 通した — PR トークン上限を親の権限 <権限> まで上げた（合計の見込み <Y>） <停止の記録の URL>'
+  printf '%s\n' "$p" | grep -qF '権限の値と権限を広げる選び方'
+  printf '%s\n' "$p" | grep -F '広げて答えたら' | grep -qF '照らし直し'
+  printf '%s\n' "$p" | grep -F '「続ける」とだけ' | grep -qF 'reply --as owner'
+  printf '%s\n' "$p" | grep -F 'サブエージェント方式' | grep -qF 'SKILL.md'
+}
+
+@test "skill: an epic child writes the estimate when stopped at the PR token cap and takes the parent's raise without re-asking" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
+  printf '%s\n' "$r" | grep -qF '`PR トークン上限（合計 <合計> / 上限 <上限>）: 続けるか、範囲外として閉じるか`'
+  printf '%s\n' "$r" | grep -qF '`終わるまでの見込み: あと約 <残り>（合計の見込み <見込み>）`'
+  printf '%s\n' "$r" | grep -qF '`続けるべきか:'
+  printf '%s\n' "$r" | grep -qF '`次に絞る範囲:'
+  l="$(printf '%s\n' "$r" | grep -F '親から届いた返事')"
+  printf '%s\n' "$l" | grep -qF '`続ける。新しい上限 <権限>'
+  printf '%s\n' "$l" | grep -qF '主が権限のコメント（`子の PR トークン権限:`）で先に承認した範囲の執行'
+  printf '%s\n' "$l" | grep -qF '主に聞き直さず'
+  printf '%s\n' "$l" | grep -F '`PR トークン上限:`' | grep -qF 'SKILL.md「PR トークン上限」'
+}
+
 # spec: dev-workflow-develop（親が通してよい範囲の基準を 1 つのファイルに置く）
 
 @test "criteria: the file states the nine conditions, the examples and the output form" {
@@ -3643,7 +3722,10 @@ orca_cmd_scripts() {
   grep -F '判断できなければ' "$f" | grep -qF '主に上げる'
   grep -qF '通る例' "$f"
   grep -qF '通らない例' "$f"
-  grep -F 'トークン上限の引き上げ' "$f" | grep -F 'exit 2' | grep -qF '記録が作られない'
+  # PR トークン上限の引き上げは判断のモデルでは通さず、起こされた親が手順 8 で親の権限に照らす（#1245）
+  grep -F 'トークン上限の引き上げ' "$f" | grep -F '親の権限' | grep -qF '手順 8'
+  ! grep -qF '親の返事だけではこの記録が作られない' "$f" || return 1
+  grep -F '| 既存の規則が主に聞く止まりでない |' "$f" | grep -F '判断のモデルでは通さず' | grep -qF '手順 8'
   grep -F 'マージの可否' "$f" | grep -qF '通さない'
   grep -F '既存の規則が主に聞くと定めている止まりも' "$f" | grep -qF '通さない'
   grep -qx '判断: 通す' "$f"
@@ -3717,6 +3799,11 @@ orca_cmd_scripts() {
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF '1 回だけ'
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF 'ci-watch.md` 2'
   printf '%s\n' "$sec" | grep -F '返事' | grep -qF '見張りに戻'
+  # 見張りに戻る前に、needs-approval を外すことと、重複の確認・開始コメントの投稿をすることが書かれている（#1270）
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF '`needs-approval` を外'
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF '重複の確認'
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF '`CI 見張り開始:` の投稿'
+  printf '%s\n' "$sec" | grep -F '返事' | grep -qF '外さず'
   printf '%s\n' "$sec" | grep -F '再び止まったら' | grep -qF '主に上げる'
   # issue #1271: 通すときの親の判断の理由に、同じ件を見分ける 3 つを書く
   printf '%s\n' "$sec" | grep -F '理由' | grep -F 'PR 番号' | grep -F '落ちたチェック名' | grep -qF 'HEAD の短い SHA'

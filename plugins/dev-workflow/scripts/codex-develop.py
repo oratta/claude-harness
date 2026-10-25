@@ -123,7 +123,8 @@ def _auth_identity(home):
             'account_id_hash': hashlib.sha256(tokens['account_id'].encode()).hexdigest()}
 
 
-def _rpc_requests(home, requests, timeout=15):
+def _rpc_requests(home, requests, timeout=None):
+    timeout = RPC_TIMEOUT if timeout is None else timeout
     env = clean_env() | {'CODEX_HOME': home}
     proc = subprocess.Popen(['codex', 'app-server', '-c', 'model_provider="openai"'],
         env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -193,6 +194,27 @@ def _quota_windows(result):
     return windows
 
 
+def _reset_credits(result):
+    """rateLimitResetCredits -> {'available_count', 'expires_at'} or None when unreadable.
+
+    codex-role-profiles: only availableCount (an integer >= 0) and the expiresAt of credits whose
+    status is available are kept; an expiresAt that is not an integer is kept as null. No credit id
+    and no other field is stored. None (no resets in the cache) means "unknown", not zero.
+    """
+    credits = result.get('rateLimitResetCredits')
+    if not isinstance(credits, dict):
+        return None
+    count, items = credits.get('availableCount'), credits.get('credits')
+    if type(count) is not int or count < 0 or not isinstance(items, list):
+        return None
+    expires = []
+    for item in items:
+        if isinstance(item, dict) and item.get('status') == 'available':
+            value = item.get('expiresAt')
+            expires.append(value if type(value) is int else None)
+    return {'available_count': count, 'expires_at': expires}
+
+
 def probe_codex_account(home):
     identity = _auth_identity(home)
     initialized, observed, limits = _rpc_requests(home, [
@@ -209,7 +231,11 @@ def probe_codex_account(home):
     windows = _quota_windows(limits)
     if not windows:
         raise RuntimeError('Codex weekly quota is unavailable')
-    return {'identity': identity, 'windows': windows}
+    value = {'identity': identity, 'windows': windows}
+    resets = _reset_credits(limits)
+    if resets is not None:
+        value['resets'] = resets
+    return value
 
 
 def _cache_path(config_dir, home):
@@ -240,8 +266,10 @@ def _update_codex_cache(name, home, config_dir, now):
                 previous = None
         try:
             result = probe_codex_account(home)
-            value = {'version': 1, 'identity': result['identity'],
+            value = {'version': 2, 'identity': result['identity'],
                      'fetched_at': now, 'windows': result['windows']}
+            if result.get('resets') is not None:
+                value['resets'] = result['resets']
             write(path, value)
         except Exception:
             value = previous
@@ -262,12 +290,20 @@ def read_codex_usages(mapping, config_dir, now):
     return {name: values.get(name) for name in mapping}
 
 
+# usage-probe.sh runs headroom.py write --refresh-codex after the snapshot, which starts the Codex
+# app-server and sends 3 requests, each allowed RPC_TIMEOUT seconds (plus 2 to stop it): up to about
+# 47 seconds on a slow Codex, on top of the Claude fetches (curl --max-time 10 per slot). A kill on
+# timeout skips the probe's exit trap and leaves its lock for 120 seconds, so wait well past that.
+RPC_TIMEOUT = 15
+USAGE_PROBE_TIMEOUT = 90
+
+
 def _run_usage_probe(snapshot_path):
     env = clean_env() | {'USAGE_SNAPSHOT': str(snapshot_path)}
     try:
         subprocess.run([str(ROOT / 'scripts/usage-probe.sh')], env=env,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       timeout=20, check=False)
+                       timeout=USAGE_PROBE_TIMEOUT, check=False)
     except (OSError, subprocess.TimeoutExpired):
         pass
 

@@ -554,6 +554,92 @@ class ForegroundRequest(unittest.TestCase):
             self.assertEqual(preserved['a']['fetched_at'], now)
             self.assertEqual(preserved['b']['fetched_at'], now)
 
+    def _reset_credit_cache(self, limits_extra):
+        # One home whose app-server answers account/read and account/rateLimits/read; the
+        # rateLimitResetCredits part varies per test (codex-role-profiles: cache version 2).
+        td = tempfile.TemporaryDirectory(); self.addCleanup(td.cleanup)
+        root = Path(td.name).resolve(); config = root/'config'; config.mkdir()
+        home = root/'home'; home.mkdir()
+        claims = base64.urlsafe_b64encode(json.dumps({'email': 'test@example.invalid'}).encode()).decode().rstrip('=')
+        (home/'auth.json').write_text(json.dumps(
+            {'tokens': {'id_token': 'x.' + claims + '.x', 'account_id': 'account'}}))
+        now = int(time.time())
+        limits = {'rateLimits': {'primary': {'windowDurationMins': 10080, 'usedPercent': 10,
+                                             'resetsAt': now + 604000}}} | limits_extra
+        answers = [{}, {'account': {'type': 'chatgpt', 'email': 'test@example.invalid'}}, limits]
+        with patch.object(m, '_rpc_requests', return_value=answers):
+            values = m.read_codex_usages({'current': str(home)}, str(config), now)
+        return values['current'], now
+
+    def test_reset_credits_are_normalized_into_cache_version_2(self):
+        credits = {'availableCount': 2, 'credits': [
+            {'id': 'secret-1', 'status': 'available', 'expiresAt': 1800000000},
+            {'id': 'secret-2', 'status': 'available', 'expiresAt': 1800003600},
+            {'id': 'secret-3', 'status': 'used', 'expiresAt': 1700000000}]}
+        value, _now = self._reset_credit_cache({'rateLimitResetCredits': credits})
+        self.assertEqual(value['version'], 2)
+        self.assertEqual(value['resets'], {'available_count': 2,
+                                           'expires_at': [1800000000, 1800003600]})
+        self.assertNotIn('secret', json.dumps(value))
+
+    def test_cache_holds_only_the_known_top_level_fields(self):
+        credits = {'availableCount': 1, 'credits': [
+            {'id': 'secret-1', 'status': 'available', 'expiresAt': 1800000000, 'extra': 'x'}]}
+        value, _now = self._reset_credit_cache({'rateLimitResetCredits': credits, 'other': 1})
+        self.assertEqual(set(value), {'version', 'identity', 'fetched_at', 'windows', 'resets'})
+        self.assertEqual(set(value['resets']), {'available_count', 'expires_at'})
+
+    def test_zero_available_credits_are_written_as_known_zero(self):
+        value, _now = self._reset_credit_cache(
+            {'rateLimitResetCredits': {'availableCount': 0, 'credits': []}})
+        self.assertEqual(value['resets'], {'available_count': 0, 'expires_at': []})
+
+    def test_reset_credit_without_integer_expiry_is_kept_as_null(self):
+        credits = {'availableCount': 2, 'credits': [
+            {'id': 'x', 'status': 'available', 'expiresAt': None},
+            {'id': 'y', 'status': 'available', 'expiresAt': '2026-10-30'}]}
+        value, _now = self._reset_credit_cache({'rateLimitResetCredits': credits})
+        self.assertEqual(value['resets'], {'available_count': 2, 'expires_at': [None, None]})
+
+    def test_unreadable_reset_credits_leave_resets_out(self):
+        for extra in ({}, {'rateLimitResetCredits': None},
+                      {'rateLimitResetCredits': {'availableCount': '2', 'credits': []}},
+                      {'rateLimitResetCredits': {'availableCount': -1, 'credits': []}},
+                      {'rateLimitResetCredits': {'availableCount': True, 'credits': []}},
+                      {'rateLimitResetCredits': {'availableCount': 1, 'credits': {}}}):
+            with self.subTest(extra=extra):
+                value, now = self._reset_credit_cache(extra)
+                self.assertEqual(value['version'], 2)
+                self.assertNotIn('resets', value)
+                self.assertEqual(value['fetched_at'], now)
+                self.assertEqual(value['windows'][0]['minutes'], 10080)
+
+    def test_failed_fetch_keeps_previous_resets(self):
+        td = tempfile.TemporaryDirectory(); self.addCleanup(td.cleanup)
+        root = Path(td.name).resolve(); config = root/'config'; config.mkdir()
+        home = root/'home'; home.mkdir()
+        claims = base64.urlsafe_b64encode(json.dumps({'email': 'test@example.invalid'}).encode()).decode().rstrip('=')
+        (home/'auth.json').write_text(json.dumps(
+            {'tokens': {'id_token': 'x.' + claims + '.x', 'account_id': 'account'}}))
+        now = int(time.time())
+        result = {'identity': m._auth_identity(str(home)),
+                  'windows': [{'minutes': 10080, 'used_percent': 10, 'reset_at': now + 604000}],
+                  'resets': {'available_count': 1, 'expires_at': [now + 3600]}}
+        with patch.object(m, 'probe_codex_account', return_value=result):
+            m.read_codex_usages({'current': str(home)}, str(config), now)
+        with patch.object(m, 'probe_codex_account', side_effect=RuntimeError('offline')):
+            kept = m.read_codex_usages({'current': str(home)}, str(config), now + 200)
+        self.assertEqual(kept['current']['resets'], {'available_count': 1, 'expires_at': [now + 3600]})
+        self.assertEqual(kept['current']['fetched_at'], now)
+        # a later successful fetch without the field drops the previous resets (unknown, not kept)
+        result_without = {'identity': result['identity'], 'windows': result['windows']}
+        with patch.object(m, 'probe_codex_account', return_value=result_without):
+            fresh = m.read_codex_usages({'current': str(home)}, str(config), now + 400)
+        self.assertEqual(fresh['current']['fetched_at'], now + 400)
+        self.assertNotIn('resets', fresh['current'])
+        stored = json.loads(m._cache_path(str(config), str(home)).read_text())
+        self.assertNotIn('resets', stored)
+
     def test_automatic_codex_account_is_bound_to_every_codex_role(self):
         config = m.load_profile('claude-write-codex-review', None, {'a', 'b', 'current'})
         bound = m.bind_codex_account(config, 'b', {'a', 'b', 'current'})
@@ -588,6 +674,15 @@ class ForegroundRequest(unittest.TestCase):
         probe.assert_called_once_with(snapshot_path)
         self.assertEqual(selected, 'claude-default')
         self.assertEqual(evidence['reason'], 'only-claude-has-headroom')
+
+    def test_usage_probe_timeout_covers_a_slow_codex_fetch(self):
+        # headroom's --refresh-codex inside the probe: 3 requests of RPC_TIMEOUT each, 2 to stop
+        # the app-server, and at least one Claude fetch (curl --max-time 10).
+        with patch.object(m.subprocess, 'run') as run:
+            m._run_usage_probe(self.root / 'snapshot.json')
+        timeout = run.call_args.kwargs['timeout']
+        self.assertEqual(timeout, m.USAGE_PROBE_TIMEOUT)
+        self.assertGreaterEqual(timeout, 3 * m.RPC_TIMEOUT + 2 + 10)
 
     def test_quota_parser_uses_only_the_standard_codex_bucket(self):
         now = 2_000_000
