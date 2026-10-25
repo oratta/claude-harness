@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
 #
-# risk-carryover-check.sh（issue #441、#694・#478・#480・#1238）— 前の HEAD の許容を新しい HEAD に引き継げるかを、
+# risk-carryover-check.sh（issue #441、#694・#478・#480・#1238・#1303）— 前の HEAD の許容を新しい HEAD に引き継げるかを、
 # 積まれた merge commit の形・衝突解消の中身・根拠ファイルの PR 自身の差分（各 HEAD と base の merge-base からの差分）で判定する。
 # 許可リストの条件を満たさない衝突解消は NG ではなく RESOLVED_OUTSIDE_ALLOWLIST= で出し、終了コード 3（#694）。
 # merge commit でない commit は NG にせず PR_COMMITS= で数える。根拠ファイルが前後で変わっても、PR 自身の差分が同じなら
 # EVIDENCE_MAIN_ONLY= で出して引き継げる側、違えば EVIDENCE_PR_CHANGED= で出して終了コード 4（#1238）。
+# PR 自身の commit（merge commit でない commit）が根拠ファイルに触れたときは、PR 自身の差分が同じでも
+# EVIDENCE_PR_CHANGED= で終了コード 4（比べ方が行の位置を見ないため。#1303）。
 # exit 3 のケースは、根拠ファイルが前後で変わらないか main からの変更だけ（EVIDENCE_MAIN_ONLY=）の形で渡す（PR 自身の差分が変わる形は別ケースで exit 4）。
 # spec: dev-workflow-pr-review-gate「risk-carryover-check.sh が差分の範囲と根拠ファイルの PR 自身の差分を判定する」
 
@@ -361,6 +363,87 @@ make_version_changelog_conflict() {
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'PR_COMMITS=2'
+}
+
+# 後ろへ動かす向きに限る（PR の変更は -L5 / +L5 pr の順なので、後ろへ動かしたときだけ -U0 の並びが前後で一致する）
+@test "#1303: PR's own commit moved the PR's evidence line further down unchanged -> exit 4, no EVIDENCE_MAIN_ONLY" {
+  make_multiline_evidence
+  printf 'L%s\n' 1 2 3 4 6 7 '5 pr' 8 9 10 > evidence.txt
+  git add -A && git commit -q -m "pr: move evidence line 5 below L7"
+  [ "$(git diff -U0 main HEAD -- evidence.txt | grep '^[-+][^-+]')" = "$(git diff -U0 main "$PREV" -- evidence.txt | grep '^[-+][^-+]')" ]
+  run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
+  [ "$status" -eq 4 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'CARRYOVER=if-judged'
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=evidence.txt'
+  ! printf '%s\n' "$output" | grep -q '^EVIDENCE_MAIN_ONLY=' || return 1
+  ! printf '%s\n' "$output" | grep -q '^NG:' || return 1
+}
+
+@test "#1303: PR's own commits changed the evidence and changed it back, and main changed a far line -> exit 4" {
+  make_multiline_evidence
+  sed -i.bak 's/^L5 pr$/L5 pr2/' evidence.txt && rm -f evidence.txt.bak
+  git add -A && git commit -q -m "pr: change"
+  sed -i.bak 's/^L5 pr2$/L5 pr/' evidence.txt && rm -f evidence.txt.bak
+  git add -A && git commit -q -m "pr: change back"
+  main_edit_evidence L10 'L10 main'
+  merge_main
+  run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
+  [ "$status" -eq 4 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=evidence.txt'
+  ! printf '%s\n' "$output" | grep -q '^EVIDENCE_MAIN_ONLY=' || return 1
+}
+
+@test "#1303: PR's own commit not touching evidence plus main changing a far evidence line -> exit 0, EVIDENCE_MAIN_ONLY" {
+  make_multiline_evidence
+  printf 'other pr\n' > other.txt
+  git add -A && git commit -q -m "pr: other"
+  main_edit_evidence L10 'L10 main'
+  merge_main
+  run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'CARRYOVER=yes'
+  printf '%s\n' "$output" | grep -qx 'PR_COMMITS=1'
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_MAIN_ONLY=evidence.txt'
+  ! printf '%s\n' "$output" | grep -q '^EVIDENCE_PR_CHANGED=' || return 1
+}
+
+# 非 ASCII のパス（core.quotePath が既定の true だと `git diff --name-only` が "\346..." の形で出す）でも、触れたことを見落とさない。
+# スクリプトは --name-only の一覧を照合しないので、quotePath の設定によらず通る
+@test "#1303: PR's own commit moved the PR's line in a non-ASCII-named evidence file -> exit 4, no EVIDENCE_MAIN_ONLY" {
+  git checkout -q main
+  printf 'L%s\n' 1 2 3 4 5 6 7 8 9 10 > 根拠.txt
+  git add -A && git commit -q -m "main: multiline evidence (non-ASCII name)"
+  git checkout -q pr
+  merge_main
+  sed -i.bak 's/^L5$/L5 pr/' 根拠.txt && rm -f 根拠.txt.bak
+  git add -A && git commit -q -m "pr: evidence line 5"
+  PREV="$(git rev-parse HEAD)"
+  printf 'L%s\n' 1 2 3 4 6 7 '5 pr' 8 9 10 > 根拠.txt
+  git add -A && git commit -q -m "pr: move evidence line 5 below L7"
+  run "$SCRIPT" --base main "$PREV" HEAD 根拠.txt
+  [ "$status" -eq 4 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=根拠.txt'
+  ! printf '%s\n' "$output" | grep -q '^EVIDENCE_MAIN_ONLY=' || return 1
+  ! printf '%s\n' "$output" | grep -q '^NG:' || return 1
+}
+
+# glob の文字を含む根拠ファイルの名前は字句どおりに扱う（`ev[1].txt` を `ev1.txt` に当てない）
+@test "#1303: evidence name with glob characters is matched literally (PR touching ev1.txt is not ev[1].txt) -> exit 0" {
+  git checkout -q main
+  printf 'g1\ng2\n' > 'ev[1].txt'
+  printf 'x\n' > ev1.txt
+  git add -A && git commit -q -m "main: glob-named evidence"
+  git checkout -q pr
+  merge_main
+  PREV="$(git rev-parse HEAD)"
+  printf 'x pr\n' > ev1.txt
+  git add -A && git commit -q -m "pr: ev1"
+  main_commit 'ev[1].txt' 'g1 main'
+  merge_main
+  run "$SCRIPT" --base main "$PREV" HEAD 'ev[1].txt'
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_MAIN_ONLY=ev\[1\].txt'
+  ! printf '%s\n' "$output" | grep -q '^EVIDENCE_PR_CHANGED=' || return 1
 }
 
 @test "#1238: conflict resolution changed the PR's evidence line -> exit 4" {
