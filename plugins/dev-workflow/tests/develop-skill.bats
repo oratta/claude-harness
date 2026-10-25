@@ -187,6 +187,8 @@ refute() {
   # #1239 C9・C10: どちらを上げるかと W の上限は「モデル」節の昇格トリップワイヤーの段落を指す
   echo "$loop" | grep -E 'failed.*原因分類' | grep -qF '「モデル」節の昇格トリップワイヤーの段落'
   ! grep -qF 'W を fable にはしない' "$SKILL" || return 1
+  # review F2: failed の行に W の上限 opus を戻す
+  echo "$loop" | grep -E 'failed.*原因分類' | grep -qF 'W を `opus` まで（`fable` にしない'
   echo "$loop" | grep -qE 'W を再開'
   # #554: G は再開せず、failed の Gate Result の 次の段: どおりに新しく起こす
   echo "$loop" | grep -qF '`次の段:` どおりの G を新しく起こして再レビュー'
@@ -333,6 +335,10 @@ refute() {
   echo "$t" | grep -qF 'W を `opus`'
   echo "$t" | grep -qF 'W の上限は「モデル」節の表の W の行（`opus`）'
   ! echo "$t" | grep -qF '`opus` → `fable`' || return 1
+  # review F1: 判断側・実行側の定義と decider の model の段は escalation-tripwires.md を Read して従う
+  echo "$t" | grep -qF '指示を解釈できなかった'
+  echo "$t" | grep -qF '指示どおりやって結果が違う'
+  echo "$t" | grep -qF 'templates/escalation-tripwires.md` を Read'
 }
 
 @test "loop: step 1 points the W model to the W row of the model table (#1239 C10)" {
@@ -425,7 +431,7 @@ refute() {
 @test "prerequisites: the Agent row points to the worktree section for isolation instead of restating it (#1239 C1)" {
   row="$(section '前提' | grep -E '^\| \*\*Agent')"
   echo "$row" | grep -qF '「worktree の用意」'
-  ! echo "$row" | grep -qF 'isolation: "remote"' || return 1
+  echo "$row" | grep -qF '`isolation: "remote"` は使わない'
   section 'worktree の用意' | grep -qF '`isolation: "remote"` は使わない'
 }
 

@@ -25,7 +25,7 @@ profile と旧 account/model のどちらも明示しない場合、各 canonica
 
 G の起動指示（段ごとに新しく起こす G と、手渡しで起こす後任 G のすべて）には、起動形を問わず常に `レビュー経路: adapter` の 1 行を書く（自動選択・明示 profile・旧形式のどれも adapter で解決するので、今が adapter 経路かを評価しない）。Codex の G では request の instructions（`--input` の指示ファイル）にも書く。develop の本体は `レビュー経路: 従来` を書かない（develop の本体以外の呼び出し元のための値）。G は再開せず段ごとに新しく起こすので、起動指示に行が無い G は従来経路（full は G が Codex を直接呼ぶ）として動く。どの段の起動指示でも行を省略しない（`references/roles/gate-runner.md`「レビュー経路の判別」）。
 
-名前付き profile での thread と requested tuple / applied model / reason の記録、同じ Claude profile role を再開する直前の `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` 上限の再確認（上限を超えるなら SendMessage せず、工程完了か停止確認の条件を満たしてから requested tuple を変えずに capped model の fresh thread へ手渡す）、fresh thread にする境界は、`references/codex-develop.md`「本体が行う操作」が正本。以下の spawn / SendMessage 表記は、profile 利用時にはこの規則を適用した provider 操作を意味する。
+本体は、名前付き profile（自動選択が profile 構成を返した場合を含む）で起こすたびに thread と requested tuple / applied model / reason を記録し、同じ Claude profile role を再開する直前に毎回 `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` の上限を再確認して、上限内のときだけ SendMessage する（上限を超えるなら SendMessage せず、工程完了か停止確認の条件を満たしてから requested tuple を変えずに capped model の fresh thread へ手渡す）。fresh thread にする境界を含め、細目は `references/codex-develop.md`「本体が行う操作」が正本（その操作を行う前に Read する）。以下の spawn / SendMessage 表記は、profile 利用時にはこの規則を適用した provider 操作を意味する。
 
 ## いつ使うか
 
@@ -39,7 +39,7 @@ G の起動指示（段ごとに新しく起こす G と、手渡しで起こす
 
 | 前提 | 使い方 | 無いとき |
 |---|---|---|
-| **Agent ツール** | W (`dev-workflow:worker`) / R1 (`general-purpose` または `dev-workflow:decider`) / G (`dev-workflow:gate-runner`) / G が要求するレビュアー (`dev-workflow:reviewer` または `dev-workflow:decider`) / V (`general-purpose`) の spawn。`model` を必ず明示し、W と G は**名前付き**で spawn する（W は SendMessage で再開するため。G は再開せず段ごとに新しく起こし、名前は (4) の形にする）。W は本体が対象専用の worktree にいなければ `isolation: "worktree"` で起こす。使ってはならない隔離とその理由は「worktree の用意」 | 本体になれない。親セッションに return する |
+| **Agent ツール** | W (`dev-workflow:worker`) / R1 (`general-purpose` または `dev-workflow:decider`) / G (`dev-workflow:gate-runner`) / G が要求するレビュアー (`dev-workflow:reviewer` または `dev-workflow:decider`) / V (`general-purpose`) の spawn。`model` を必ず明示し、W と G は**名前付き**で spawn する（W は SendMessage で再開するため。G は再開せず段ごとに新しく起こし、名前は (4) の形にする）。W は本体が対象専用の worktree にいなければ `isolation: "worktree"` で起こす。**`isolation: "remote"` は使わない**（理由は「worktree の用意」） | 本体になれない。親セッションに return する |
 | **SendMessage** | 名前付きで起こした W の再開（コンテキストを引き継いだまま次の工程を指示する）。G は再開しない（段ごとに新しく起こし、レビュー要約は起動指示で渡す） | 再開できないので、前任を手渡してよい状態のときだけ新しい W を spawn し、前回の return 全文をプロンプトに渡す。条件は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本で、満たさないなら spawn せず親に返す（前任が動いたまま後任を起こさない） |
 | **`gh`** | 記録先（issue / PR）へのコメントとラベル操作、Draft PR の作成、エピックの子の依存（`gh api repos/<owner>/<repo>/issues/<N>/dependencies/blocked_by`、issue dependencies API） | 記録先を作れないので開始しない（記録なしで実装に進まない） |
 | **openspec CLI** | W は `openspec --version` で経路の有無を決め、`openspec new change` → R1 → TDD → `openspec validate --strict` → `openspec archive` と進める。opsx コマンドは本体や主の対話用 | 仕様化経路が発生しない（W は `仕様化判断: しない` の理由に「openspec 不在」と書き、コード直行する） |
@@ -99,7 +99,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
 
 ```
 (0) 記録先を確定する（入口 0）。worktree を用意する
-(1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（起動指示に `段: spec` の 1 行を書く。model: references/pre-classification.md の事前分類表の「1 周目」列に当たればその値、それ以外 sonnet。上限と残量の効き方は「モデル」節の表の W の行）:
+(1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（起動指示に `段: spec` の 1 行を書く。model: references/pre-classification.md の事前分類表の「1 周目」列に当たればその値、それ以外 sonnet。上限は「モデル」節の表の W の行、残量の効き方は同節の残量モードの段落）:
       記録先の用意（Draft PR 経路）→ 仕様化判断の記録 → 分割判定 → openspec new change → return「仕様できた」
       仕様化しない判定なら → (3) へ直行（TDD → PR）
       文言合わせの通し方（既存の仕様の文言を実装に合わせて直すだけの変更。判定基準は `references/decision-criteria.md` Step B）なら → W は仕様の差分 1 ファイルだけを書いて return する。
@@ -137,7 +137,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            起こす時点と渡すものの表は gate-runner.md「段ごとの起動と入力」）。名前は `G-<PR>-<prepare|triage|pass|hold>-<n>`（n はその PR・その段で
            起こした回数）、description は `G: <段> for PR #N (#issue)`（先頭の `G:` を残す。役割別集計がこの接頭辞で G と判定する）
       G の起動指示には常に `レビュー経路: adapter` の 1 行と `段: <段の名前>` の 1 行を書き（`レビュー経路: 従来` は書かない。
-           理由と書き方の細目は「Role profile の選択」節）、2 つ目以降の段では前の段の `## Gate Result` ブロックを要約し直さずそのまま貼る。
+           詳細は「Role profile の選択」節の、`レビュー経路` の行の書き方（`レビュー経路: 従来` を書かない規則と Codex の G への書き方）、2 つ目以降の段では前の段の `## Gate Result` ブロックを要約し直さずそのまま貼る。
            channel のときは `実行モード: channel` の行と、develop 開始コメントと同じ値の `チャンネルの返事の確認:` の行（`可` / `不可`）も書く（G が hold.md 手順 6-3 の依頼文を書き分ける入力。`references/channel.md` の「channel のリスク許容」）
       次に起こす段は Gate Result の Status と `次の段:` だけで決める（止める指摘が残っているか・戻した指摘の仕分け・復帰手順の行き先を本体は判断しない）。
            G が `工程中断:` で返したら同じ段の新しい G を起こし、前任の return 全文と前任の起動指示に書いた入力を渡す
@@ -173,7 +173,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            一周目に区画が無く executor が codex なら今までどおり 1 つの補足 request にする。補足済み回数は PR で 1 つだけ数える。
            develop の本体以外から G を起こす従来経路の手順（呼び出し元がレビュアーを起こす）は gate-runner.md のまま
       review-incomplete → reviewer を再起動しない。`agent-review:pending` のまま Gate Result の残差を報告して工程を止め、合格処理へ進まない
-      failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）で戻し方を決める。モデルを上げるのは実装品質起因のときだけで、上げるのは決める役と実行役の一方だけ（実行側が原因なら W、判断側が原因なら dev-workflow:decider。どちらをどこまで上げるかは「モデル」節の昇格トリップワイヤーの段落）。
+      failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）で戻し方を決める。モデルを上げるのは実装品質起因のときだけで、上げるのは決める役と実行役の一方だけ（実行側が原因なら W を `opus` まで（`fable` にしない。上限の正本は「モデル」節の表の W の行）、判断側が原因なら dev-workflow:decider。判断側・実行側の定義と decider の model の段は「モデル」節の昇格トリップワイヤーの段落）。
            仕様が曖昧なら仕様修正、誤検出なら反証で返す（どちらもモデルを上げない）
            → W を再開（再開指示に `段: implement`。再開前に測る。上限超のあとの扱いは (3) と同じく正本に従う）→ W の修正のあと、failed の Gate Result の `次の段:` どおりの G を新しく起こして再レビュー（順 3 だけなら照合と振り分け、それ以外は前提確認と重さ判定。
            2 周キャップ。範囲と 3 周目の扱いは pr-review-gate の収束ルールに従う）
@@ -290,7 +290,7 @@ W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 �
 
 残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）が、上の表の既定と昇格の上限を決める。値ごとの効果と両者が食い違ったときの扱いは `references/decision-criteria.md` の残量モードと共有枠モードの表が正本で、ここに再掲しない。
 
-昇格トリップワイヤーは失敗の原因側だけを上げるラダーとして残す（ラダーの正本は `templates/escalation-tripwires.md`）: 同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直したと W が return したら、本体は失敗の原因が判断側か実行側かで、**決める役と実行役のどちらか一方だけ**を上げる（両方同時に上げない）。判断側なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせ、実行側なら W を `opus` で再開する（W の上限は「モデル」節の表の W の行（`opus`））。残量モードと共有枠モードの上限が先に効く。コンテキスト上限（`subagent-context.sh` が exit 2）は昇格の理由にはならず、モデルは変えない（そのあとの扱いは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本）。規模超過（編集対象 5 ファイル超・作業項目が 2 回増えた）を W が return したら、本体が change / 子 issue（エピック化）に分割する。
+昇格トリップワイヤーは失敗の原因側だけを上げるラダーとして残す（ラダーの正本は `templates/escalation-tripwires.md`）: 同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直したと W が return したら、本体は失敗の原因が判断側（指示を解釈できなかった・指示自体が外れていた）か実行側（指示どおりやって結果が違う）かで、**決める役と実行役のどちらか一方だけ**を上げる（両方同時に上げない）。decider の `model` の段（1 回目の失敗は `opus`、2 回目で判断側の失敗なら `fable`）は `templates/escalation-tripwires.md` を Read して従う。判断側なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせ、実行側なら W を `opus` で再開する（W の上限は「モデル」節の表の W の行（`opus`））。残量モードと共有枠モードの上限が先に効く。コンテキスト上限（`subagent-context.sh` が exit 2）は昇格の理由にはならず、モデルは変えない（そのあとの扱いは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本）。規模超過（編集対象 5 ファイル超・作業項目が 2 回増えた）を W が return したら、本体が change / 子 issue（エピック化）に分割する。
 
 ## 実行モード
 
@@ -300,7 +300,7 @@ W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 �
 | **channel** | 印 `DEV_WORKFLOW_UNATTENDED` のあるセッション、またはチャンネル（Discord など）のメッセージで依頼（常駐の開発エージェントが、オーナーからチャンネルで開発を頼まれたときの形） | そのセッション | チャンネルで聞く（AskUserQuestion は使わない） | (0)〜(4) 全部（G を起こし、PR の合格まで進む）。複数 change は interactive と同じ |
 | **unmanned**（`--unmanned`） | loop-dev-agent の憲法 Step 3 から | **憲法のメイン自身**が develop の本体を務め、W / R1 をメインが spawn する | 聞けない（1 サイクル 1 仕事） | (0)〜(3)。worktree は憲法側が用意したものを使う。(3) で W が Draft PR の作成と `agent-review:pending` の付与（憲法 Step 3 の 5〜6 に相当）まで行う。**(4) の G は起こさず**、憲法 Step 1（レビューモード）が次サイクル以降で担う |
 
-unmanned で複数 change に割れた場合（W が change 単位で子 issue を作って `blocked_by` で順序付けし、そのサイクルを終える。割り方が判断できないほど曖昧なときを含む）の手順は、`references/roles/worker/spec.md`「分割判定」が正本。
+unmanned で複数 change に割れた場合（W が change 単位で子 issue を作って `blocked_by` で順序付けし、そのサイクルを終える。割り方が判断できないほど曖昧なときは子 issue を作らず、質問して `needs-approval` で終える）の手順は、`references/roles/worker/spec.md`「分割判定」が正本。
 
 **仕様化判断の記録と仕様レビューは unmanned でも免除しない**（同じ書式で記録先に記録し、R1 の APPROVE まで W を apply に進めない）。文言合わせの通し方（1 ループの (1)。判定基準は `references/decision-criteria.md` Step B）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる。
 
