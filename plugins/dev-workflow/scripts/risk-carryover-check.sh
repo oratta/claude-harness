@@ -16,13 +16,16 @@
 #        CHANGELOG.md（サブディレクトリを含む）
 #          → merge commit の版のすべての行が第 1 親か第 2 親の版に存在する
 #   4. 根拠ファイルそれぞれで（パスはリポジトリのルート相対）、`git diff <前> <新> -- <ファイル>` が空か、
-#      空でなくても「PR 自身の差分」が前後で同じ（#1238）。
+#      空でなくても「PR 自身の差分」が前後で同じで、PR 自身の commit がそのファイルに触れていない（#1238・#1303）。
 #      PR 自身の差分 = その HEAD と base の merge-base からその HEAD までのそのファイルの差分
 #        （前は <merge-base(前, base)>..<前>、新は <merge-base(新, base)>..<新>）。
 #      比べ方 = `git diff -U0` の mode の行（old mode・new mode・new file mode・deleted file mode）と、最初の `@@` より
 #        後ろにある `-`・`+`・`\` で始まる行だけを、出てくる順のまま文字列で比べる（ハンクの見出しの行番号・
 #        ほかの頭の行・文脈の行は比べない。main が別の場所を変えても同じになる）。
-#      同じなら EVIDENCE_MAIN_ONLY=<ファイル>、違えば EVIDENCE_PR_CHANGED=<ファイル>。
+#      同じで、2 の merge commit でない commit のどれもそのファイルに触れていなければ EVIDENCE_MAIN_ONLY=<ファイル>、
+#      違うか、merge commit でない commit のどれかが触れていれば（`git diff --no-renames --name-only <親> <commit>` に出る。
+#      mode だけの変更を含む）EVIDENCE_PR_CHANGED=<ファイル>。比べ方は行の位置を見ないので、PR 自身の commit が
+#      自分の行を別の位置へ動かしただけでも main 由来と取り違えないよう、触れたら同じでも EVIDENCE_PR_CHANGED にする（#1303）。
 #      前後の diff が空でない根拠ファイルについて、前後の HEAD の diff か各 HEAD の PR 自身の差分のどちらかで
 #      バイナリとして扱われるとき（numstat が `-`）と、merge-base が 1 つに決まらないときは NG。
 # 1・2 のどれかが外れたとき、4 でバイナリか merge-base の NG が出たときは NG: 行を出す。3 だけが外れたファイル
@@ -36,7 +39,7 @@
 # 終了コード（優先順 1 → 4 → 3 → 0）: 0 = 無条件で引き継げる
 #   / 3 = 新しい HEAD で PR 全体を見たレビューを経ていれば引き継げる（NG も EVIDENCE_PR_CHANGED も無く、
 #     許可リストの条件を満たさない衝突解消だけがある）
-#   / 4 = 根拠ファイルの PR 自身の差分が前後で違う（NG は無い）。リスクの中身が同じかを git の履歴だけでは
+#   / 4 = 根拠ファイルの PR 自身の差分が前後で違うか、PR 自身の commit が根拠ファイルに触れた（NG は無い）。リスクの中身が同じかを git の履歴だけでは
 #     決められないという意味で、スクリプトは引き継げるかを決めない（pr-review-gate 手順 3-c が扱う）
 #   / 1 = 引き継げない（NG あり）
 #   / 2 = 引数不足・SHA が解決できない・根拠ファイルなし・根拠ファイルが前後どちらの HEAD にも無い・git が古い（引き継げない側）
@@ -85,6 +88,7 @@ resolved=()
 outside=()
 main_only=()
 pr_changed=()
+pr_touched=()
 merges=0
 pr_commits=0
 diff_lines=0
@@ -147,6 +151,11 @@ else
     nparents="$(printf '%s\n' "$parents" | wc -w | tr -d ' ')"
     if [ "$nparents" -eq 1 ]; then
       pr_commits=$((pr_commits + 1))
+      # PR 自身の commit が触れたパスを集める（判定 4 で、PR 自身の差分が同じでも main 由来と扱わないため。#1303）
+      while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        pr_touched+=("$f")
+      done < <(git diff --no-renames --name-only "$parents" "$c")
       continue
     elif [ "$nparents" -ne 2 ]; then
       ng+=("merge commit $c has $nparents parents (only 2-parent merges are allowed)")
@@ -206,7 +215,11 @@ for f in "${evidence[@]}"; do
     ng+=("cannot determine a unique merge-base with $base_ref for prev or new HEAD (or git diff failed); cannot compare the PR's own diff of $f")
     continue
   fi
-  if [ "$prev_diff" = "$new_diff" ]; then
+  touched=0
+  if [ "${#pr_touched[@]}" -ne 0 ] && printf '%s\n' "${pr_touched[@]}" | grep -Fqx -- "$f"; then
+    touched=1
+  fi
+  if [ "$prev_diff" = "$new_diff" ] && [ "$touched" -eq 0 ]; then
     main_only+=("$f")
   else
     pr_changed+=("$f")
