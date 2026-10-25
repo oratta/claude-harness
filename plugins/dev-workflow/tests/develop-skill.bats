@@ -769,6 +769,27 @@ refute() {
   [ "$a" -lt "$d" ]
 }
 
+@test "carryover judge (#1238): step (4) handles needs-carryover-judge by starting the judge, posting the record and starting the pass G" {
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$SKILL")"
+  echo "$step4" | grep -E '^      4 つの段で' | grep -qF 'needs-carryover-judge'
+  nc="$(echo "$step4" | awk '/^      needs-carryover-judge →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  [ -n "$nc" ] || { echo "no needs-carryover-judge line in step (4)"; return 1; }
+  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '判定の記録を PR に' '合格処理の G を新しく起こす' '`stages/hold.md`' '3-c' 'SHARED_BUDGET_MODE=depleted' '`引き継ぎ判定: 判断できない`' '宣言を投稿せず' 'ラベルを付けず' '主に聞かない' '同じ前 HEAD・新しい HEAD・根拠ファイルの組' '判定役を起こし直さず'; do
+    echo "$nc" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  # 依頼の書き方と記録の書式は hold.md を正本にし、SKILL.md に再掲しない
+  ! echo "$nc" | grep -qF '前 HEAD: <40 桁' || return 1
+}
+
+@test "carryover judge (#1238): the model table has the carryover judge row (decider, opus, not started when depleted)" {
+  row="$(section 'モデル' | grep -E '^\| ' | grep -F '引き継ぎの判定役')"
+  [ -n "$row" ] || { echo "no carryover judge row"; return 1; }
+  echo "$row" | grep -qF '`dev-workflow:decider`'
+  echo "$row" | grep -qF '`opus`'
+  echo "$row" | grep -qF 'depleted'
+  echo "$row" | grep -qF '起こさない'
+}
+
 @test "fix-check (#722): the handover scene for the two-round cap points at the re-choosing verdict" {
   s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
   echo "$s" | grep -F 'レビューの 2 周キャップ超え' | grep -qF '選び直しが要る'
