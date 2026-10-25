@@ -407,6 +407,45 @@ make_version_changelog_conflict() {
   ! printf '%s\n' "$output" | grep -q '^EVIDENCE_PR_CHANGED=' || return 1
 }
 
+# 非 ASCII のパス（core.quotePath が既定の true だと `git diff --name-only` が "\346..." の形で出す）でも、触れたことを見落とさない
+@test "#1303: PR's own commit moved the PR's line in a non-ASCII-named evidence file -> exit 4, no EVIDENCE_MAIN_ONLY" {
+  git checkout -q main
+  printf 'L%s\n' 1 2 3 4 5 6 7 8 9 10 > 根拠.txt
+  git add -A && git commit -q -m "main: multiline evidence (non-ASCII name)"
+  git checkout -q pr
+  merge_main
+  sed -i.bak 's/^L5$/L5 pr/' 根拠.txt && rm -f 根拠.txt.bak
+  git add -A && git commit -q -m "pr: evidence line 5"
+  PREV="$(git rev-parse HEAD)"
+  printf 'L%s\n' 1 2 3 4 6 7 '5 pr' 8 9 10 > 根拠.txt
+  git add -A && git commit -q -m "pr: move evidence line 5 below L7"
+  [ "$(git config --get core.quotePath || echo unset)" = unset ]
+  run "$SCRIPT" --base main "$PREV" HEAD 根拠.txt
+  [ "$status" -eq 4 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=根拠.txt'
+  ! printf '%s\n' "$output" | grep -q '^EVIDENCE_MAIN_ONLY=' || return 1
+  ! printf '%s\n' "$output" | grep -q '^NG:' || return 1
+}
+
+# glob の文字を含む根拠ファイルの名前は字句どおりに扱う（`ev[1].txt` を `ev1.txt` に当てない）
+@test "#1303: evidence name with glob characters is matched literally (PR touching ev1.txt is not ev[1].txt) -> exit 0" {
+  git checkout -q main
+  printf 'g1\ng2\n' > 'ev[1].txt'
+  printf 'x\n' > ev1.txt
+  git add -A && git commit -q -m "main: glob-named evidence"
+  git checkout -q pr
+  merge_main
+  PREV="$(git rev-parse HEAD)"
+  printf 'x pr\n' > ev1.txt
+  git add -A && git commit -q -m "pr: ev1"
+  main_commit 'ev[1].txt' 'g1 main'
+  merge_main
+  run "$SCRIPT" --base main "$PREV" HEAD 'ev[1].txt'
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_MAIN_ONLY=ev\[1\].txt'
+  ! printf '%s\n' "$output" | grep -q '^EVIDENCE_PR_CHANGED=' || return 1
+}
+
 @test "#1238: conflict resolution changed the PR's evidence line -> exit 4" {
   make_multiline_evidence
   main_edit_evidence L5 'L5 main'
