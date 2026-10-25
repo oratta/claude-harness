@@ -407,7 +407,8 @@ make_version_changelog_conflict() {
   ! printf '%s\n' "$output" | grep -q '^EVIDENCE_PR_CHANGED=' || return 1
 }
 
-# 非 ASCII のパス（core.quotePath が既定の true だと `git diff --name-only` が "\346..." の形で出す）でも、触れたことを見落とさない
+# 非 ASCII のパス（core.quotePath が既定の true だと `git diff --name-only` が "\346..." の形で出す）でも、触れたことを見落とさない。
+# スクリプトは --name-only の一覧を照合しないので、quotePath の設定によらず通る
 @test "#1303: PR's own commit moved the PR's line in a non-ASCII-named evidence file -> exit 4, no EVIDENCE_MAIN_ONLY" {
   git checkout -q main
   printf 'L%s\n' 1 2 3 4 5 6 7 8 9 10 > 根拠.txt
@@ -419,7 +420,6 @@ make_version_changelog_conflict() {
   PREV="$(git rev-parse HEAD)"
   printf 'L%s\n' 1 2 3 4 6 7 '5 pr' 8 9 10 > 根拠.txt
   git add -A && git commit -q -m "pr: move evidence line 5 below L7"
-  [ "$(git config --get core.quotePath || echo unset)" = unset ]
   run "$SCRIPT" --base main "$PREV" HEAD 根拠.txt
   [ "$status" -eq 4 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=根拠.txt'

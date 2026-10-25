@@ -41,7 +41,7 @@ merge commit の第 1 親との差分には main から入った変更が含ま�
 
 ### 触れたファイルの集め方
 
-判定 2 のループで merge commit でない commit ごとに `git diff --no-renames --name-only <親> <commit>` を取り、触れたパスを集める。`git rev-list -- <path>` は履歴の単純化で main 側に TREESAME な merge の向こうの commit を落としうるので使わない。`--no-renames` で rename は消したパスと作ったパスの両方として数える（判定 3 の列挙と同じ扱い）。mode だけの変更も `--name-only` に出る。
+判定 2 のループで merge commit でない commit を親との組で控え、判定 4 で根拠ファイルごとに、その組それぞれで `git diff --quiet --no-renames <親> <commit> -- <ファイル>` を回す（終了コード 1 = 触れた、0 = 触れていない、それ以外は git の失敗として終了コード 2）。`--name-only` のパスの一覧を集めて文字列で照合する形は採らない。`core.quotePath` が既定の true だと非 ASCII のパスが `"\346..."` の形で quote されて照合が外れ、`git diff` の失敗も空の一覧として進み、どちらも引き継げる側に倒れるため（実装中に push 時の自動セキュリティレビューが指摘）。`git rev-list -- <path>` は履歴の単純化で main 側に TREESAME な merge の向こうの commit を落としうるので使わない。`--no-renames` で rename は消したパスと作ったパスの両方として数える（判定 3 の列挙と同じ扱い）。mode だけの変更も `git diff --quiet` の差に数える。根拠ファイルのパスは `GIT_LITERAL_PATHSPECS=1` で glob ではなく字句どおりに扱う。
 
 ## Risks / Trade-offs
 

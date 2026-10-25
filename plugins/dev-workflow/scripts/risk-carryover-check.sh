@@ -182,6 +182,7 @@ else
       if ! allowed "$c" "$p1" "$p2" "$f"; then
         outside+=("$f")
       fi
+    # 非 ASCII のパスは core.quotePath により quote された形で出る（許可リストは ASCII のみなので判定は outside のまま。出力の表記だけが quote 形）
     done < <(git diff --no-renames --name-only "$auto_tree" "$c")
   done < <(printf '%s\n' "$set_list")
 fi
@@ -216,18 +217,21 @@ for f in "${evidence[@]}"; do
   fi
   # PR 自身の commit がこのファイルに触れたか（パスの一覧を文字列で照合せず、pathspec の解釈を git に任せる。
   # 終了コード 1 = 触れた、0 = 触れていない、それ以外 = git の失敗で引き継げない側。#1303）
+  # PR 自身の差分が既に違うときは終了コード 4 が決まっているので回さない
   touched=0
-  for pc in ${pr_own_commits[@]+"${pr_own_commits[@]}"}; do
-    rc=0
-    git diff --quiet --no-renames "${pc%% *}" "${pc#* }" -- "$f" || rc=$?
-    if [ "$rc" -eq 1 ]; then
-      touched=1
-      break
-    elif [ "$rc" -ne 0 ]; then
-      echo "git diff failed for $f in ${pc#* }" >&2
-      exit 2
-    fi
-  done
+  if [ "$prev_diff" = "$new_diff" ]; then
+    for pc in ${pr_own_commits[@]+"${pr_own_commits[@]}"}; do
+      rc=0
+      git diff --quiet --no-renames "${pc%% *}" "${pc#* }" -- "$f" || rc=$?
+      if [ "$rc" -eq 1 ]; then
+        touched=1
+        break
+      elif [ "$rc" -ne 0 ]; then
+        echo "git diff failed for $f in ${pc#* }" >&2
+        exit 2
+      fi
+    done
+  fi
   if [ "$prev_diff" = "$new_diff" ] && [ "$touched" -eq 0 ]; then
     main_only+=("$f")
   else
