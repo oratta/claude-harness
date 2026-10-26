@@ -4788,6 +4788,12 @@ put_transcript() {
 }
 
 resolve_pass() {
+  # 1 テスト内でもケースごとに、ポーリング回数・送信内容・判断記録を分離する。
+  # gh_seq は返り値だけを置き、呼び出し回数を戻さない。
+  export STUB_CFG
+  STUB_CFG="$(mktemp -d "$BATS_TEST_TMPDIR/resolve.XXXXXX")"
+  printf '%s\n' '/work/parent' > "$STUB_CFG/toplevel"
+  : > "$STUB_LOG"
   resolve_ready
   judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
   # 子の判断の既定の subagent-context.sh は plugin のものを使う
