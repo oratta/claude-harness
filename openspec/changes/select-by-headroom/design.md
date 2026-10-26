@@ -26,7 +26,7 @@ headroom の行の `margin` は `週の経過率（clamp しない） − used_p
 
 - headroom の数え方・`best` の規則・`.headroom.json` の書式を変えること（flatmate のバーン genetta-inc/flatmate#1772 が同じ値を読むため）
 - 構成選択の規則（margin ≥ 0 の表）を余り（`surplus_pct`）に変えること。正本の設計が規則を残すと決めている
-- headroom の `compute` が複数の Codex account を数えること（`current` だけのまま）
+- headroom の `compute` が複数の Codex account を数えること（`compute` の列挙とファイルの読み込みは `current` だけのまま。決定 5 の公開関数 `codex_row` は呼び手が渡す任意の account の cache を数える）
 
 ## Decisions
 
@@ -71,7 +71,7 @@ headroom の行の `margin` は `週の経過率（clamp しない） − used_p
 そこで headroom に次の 2 つを足し、`compute` もこれを使う形にする（`compute` の出力は変えない）。
 
 - `claude_rows(now, snapshot_path=None)`: Claude の各スロットの行を宣言順に返す。`snapshot_path` を渡すと `build_view` とリセット権の読み出しにそのファイルを使い、渡さなければ今の `compute` と同じ既定を使う
-- `codex_row(account, cache, now)`: 読み込み済みの Codex のキャッシュ（`read_codex_usages` の戻り値の 1 件。`None` も受ける）から 1 行を返す。認証の主体の照合はしない（`read_codex_usages` が済ませている）。`compute` の Codex の行は、今どおりファイルを読んで主体を照合してから `codex_row('current', cache, now)` を呼ぶ
+- `codex_row(account, cache, now)`: 読み込み済みの Codex のキャッシュ（`read_codex_usages` の戻り値の 1 件。`None` も受ける）から 1 行を返す。`account` は `current` に限らず、`--account-home` の対応表の任意の名前を受ける。認証の主体の照合とオン・オフの判定はしない（`read_codex_usages` が主体の食い違う cache を `None` にし、`automatic_selection` はオフのとき読まない）。`compute` の Codex の行は、今どおりファイルを読んで主体を照合してから `codex_row('current', cache, now)` を呼ぶ
 
 天井とペースはどちらの関数も中で `settings()` から読み、引数で受けない（要件「設定は headroom の中で 1 か所から解決する」を保つ）。
 
@@ -87,7 +87,7 @@ headroom の行の `margin` は `週の経過率（clamp しない） − used_p
 
 ### 6. 未来の取得時刻は headroom の 60 秒の規則にする
 
-`usage_margin` は取得時刻が 1 秒でも未来なら欠測にしていた。headroom は 60 秒以内の未来を時計のずれとして `ok`、それを超えると `stale` にする。決定 5 で margin を headroom の行から取るので、Codex もこの規則になる。Claude の起動アカウントも、今は未来の取得時刻を見ていなかったが、60 秒を超えて未来なら欠測になる（`select-account.sh` と同じ）。`dev-workflow-headroom` の要件にあった「#1301 で揃う」の但し書きはここで果たすので外す。
+`usage_margin` は取得時刻が 1 秒でも未来なら欠測にしていた。headroom は 60 秒以内の未来を時計のずれとして `ok`、それを超えると `stale` にする。決定 5 で margin を headroom の行から取るので、Codex もこの規則になる。Claude の起動アカウントも、今は未来の取得時刻を見ていなかったが、週次の実効値の `observed_at`（`build_view` が選んだ値の時刻。snapshot の取得時刻とは限らず、セッション記録が採用されればその記録の時刻）が 60 秒を超えて未来なら欠測になる（`select-account.sh` と同じ）。境界はちょうど 60 秒先を `ok`、61 秒先を `stale` とする（headroom の `observed > now + 60`）。`dev-workflow-headroom` の要件にあった「#1301 で揃う」の但し書きはここで果たすので外す。
 
 ### 7. headroom の設定が不正なとき
 

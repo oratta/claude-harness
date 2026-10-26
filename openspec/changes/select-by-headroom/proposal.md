@@ -4,12 +4,12 @@
 
 ## What Changes
 
-- `select-account.sh` の自動選択は、`headroom.compute(now)` の `best_by_provider.claude`（Claude のスロットの中で余り `surplus_pct` が最大のもの）を選ぶ。経過率と使用率から margin を数える式を消す。候補から外す規則（オフ・欠測・取得時刻が 60 秒を超えて未来・5 時間の使用率 90% 以上）は headroom の `status` と best の除外規則に寄せる。理由は `max-surplus` に変わる。**BREAKING**（理由行の文言）: `reason=max-weekly-margin` は出なくなる
-- 理由行の `margins=` は headroom の行の `margin` を小数点以下 2 桁で残す（選択には使わない）。候補外の印に `stale`（取得時刻が 60 秒を超えて未来）が加わる
+- `select-account.sh` の自動選択は、`headroom.compute(now)` の `best_by_provider.claude`（Claude のスロットの中で余り `surplus_pct` が最大のもの）を選ぶ。経過率と使用率から margin を数える式を消す。候補から外す規則（オフ・欠測・週次の実効値の取得時刻が 60 秒を超えて未来・5 時間の使用率 90% 以上）は headroom の `status` と best の除外規則に寄せる。理由は `max-surplus` に変わる。**BREAKING**（理由行の文言）: `reason=max-weekly-margin` は出なくなる
+- 理由行の `margins=` は headroom の行の `margin` を小数点以下 2 桁で残す（選択には使わない）。候補外の印に `stale`（週次の実効値の取得時刻が 60 秒を超えて未来）が加わる
 - 5 時間の使用率が分からないスロットは、今は `missing` として外していたが、headroom の best と同じく候補に残す
 - `codex-develop.py` の構成の選択規則（両方 margin ≥ 0 なら `claude-write-codex-review`、Codex だけなら `codex-standard`、それ以外は Claude 既定）は残す。その margin は `usage_margin` / `claude_usage_evidence` で数え直さず、headroom が返す行の `margin` から取る（関数の名前と戻り値の形は残し、中身を headroom の呼び出しにする）
 - そのため headroom に、行を返す公開関数を 2 つ足す: Claude の各スロットの行を返す `claude_rows(now, snapshot_path=None)` と、読み込み済みの Codex のキャッシュ 1 件から行を返す `codex_row(account, cache, now)`。`compute` はこの 2 つを使う（出力は変えない）
-- Codex の取得時刻の未来の扱いを headroom の 60 秒の規則に揃える（今の `usage_margin` は 1 秒でも未来なら欠測）。Claude の起動アカウントも、取得時刻が 60 秒を超えて未来なら欠測になる
+- Codex の取得時刻の未来の扱いを headroom の 60 秒の規則に揃える（今の `usage_margin` は 1 秒でも未来なら欠測）。Claude の起動アカウントも、週次の実効値（`build_view` が選んだ値）の取得時刻が 60 秒を超えて未来なら欠測になる
 - headroom の設定（`HEADROOM_7D_CAP_PCT`・`HEADROOM_NORMAL_RATE_PCT_PER_DAY`）が不正なとき、`select-account.sh` は既定アカウントへ縮退して理由 `default-due-to-invalid-headroom-setting` を出し、`codex-develop.py` の自動選択は設定の名前を挙げてエラーで止まる
 
 ## Capabilities
