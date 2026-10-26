@@ -11,7 +11,8 @@ reset grants are read like flatmate's dashboard (_saved_reset_grants / _claude_c
 Inputs: the Claude effective values (usage_view.build_view, on/off from usage_view.read_slots),
 the reset grants in .usage-snapshot (accounts.<id>.reset_grants), and the Codex `current`
 account's cache codex-usage/<hash>.json written by codex-develop.py. claude_rows and codex_row
-give the same rows to codex-develop.py (its snapshot path, any Codex account it maps). Settings come only from
+give the same rows to codex-develop.py (its snapshot path, any Codex account it maps).
+Settings come only from
 HEADROOM_7D_CAP_PCT (default 90) and HEADROOM_NORMAL_RATE_PCT_PER_DAY (default none); a caller
 cannot pass them. An invalid setting is an error (exit 2, nothing written), never the default.
 """
@@ -298,12 +299,17 @@ def _codex_row(account, cache, now, cfg):
 
 def _codex_rows(now, cfg):
     """compute's Codex rows: only `current`, read from its cache file after the identity check."""
-    home = _codex_home()
+    missing = [_blank('codex', 'current', 'current', 'missing')]
+    try:
+        home = _codex_home()
+    except Exception:
+        # A Codex home that cannot be resolved (e.g. no permission on its parent) must not stop
+        # compute: `cld` reads it on every launch.
+        return missing
     if home is None:
         return []
     if not _codex_enabled():
         return [_blank('codex', 'current', 'current', 'off')]
-    missing = [_blank('codex', 'current', 'current', 'missing')]
     codex = _codex_module()
     try:
         cache = json.loads(codex._cache_path(usage_view.config_dir(), home).read_text())

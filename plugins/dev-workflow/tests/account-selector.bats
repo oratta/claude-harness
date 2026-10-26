@@ -670,6 +670,23 @@ JSON
 
 @test "headroom: select-account.sh does not count the week itself" {
   # 受け入れ条件 2。margin を数える式（週の秒数）が残っていない
-  ! grep -nE '604800|WEEK_SECONDS' "$SELECTOR" || return 1
+  ! grep -nE '604800|86400|WEEK_SECONDS' "$SELECTOR" || return 1
   grep -qF 'import headroom' "$SELECTOR"
+}
+
+@test "headroom: a reset beyond seven days keeps the unclamped negative margin" {
+  # a は週次 0%・リセット 8 日先。経過率 100 x (1 - 8/7) = -14.29 を 0 に切り詰めずに出す
+  write_registry
+  cat > "$SNAP" <<JSON
+{ "schema": 2, "accounts": {
+  "a": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
+           "weekly_all_pct": 0, "weekly_resets_epoch": $((NOW + 691200)) },
+  "b": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
+           "weekly_all_pct": 40, "weekly_resets_epoch": $((NOW + 302400)) }
+} }
+JSON
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-surplus margins=a:-14.29,b:10.00" ]
 }

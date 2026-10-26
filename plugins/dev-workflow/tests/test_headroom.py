@@ -413,6 +413,15 @@ class Codex(unittest.TestCase):
         self.assertEqual(row['status'], 'off')
         self.assertIsNone(row['used_pct'])
 
+    def test_home_resolution_error_is_missing(self):
+        # Codex の home を解決できない（親に実行権が無い等）ときも compute は止まらず missing
+        env = Env(self)
+        env.claude('a')
+        with patch.object(h, '_codex_home', side_effect=PermissionError('denied')):
+            result = h.compute(NOW)
+        self.assertEqual(env.row(result, 'codex', 'current')['status'], 'missing')
+        self.assertEqual(env.row(result, 'claude', 'a')['status'], 'ok')
+
     def test_no_default_home_means_no_codex_row(self):
         env = Env(self)
         env.claude('a')

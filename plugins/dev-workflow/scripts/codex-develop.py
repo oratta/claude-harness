@@ -47,15 +47,16 @@ def _setting_error(exc):
     return RuntimeError(f'automatic selection cannot count headroom: {exc}')
 
 
-def usage_margin(snapshot, now):
+def usage_margin(snapshot, now, account='codex'):
     """Return the unrounded weekly margin of a Codex snapshot, or None for missing/unsafe input.
 
-    The margin is the one of headroom's row for this cache (headroom.codex_row): the age of the
-    fetch is not checked, past the weekly reset the window reads as 0%, a fetch more than 60
-    seconds in the future is stale. Only an `ok` row gives a margin.
+    The margin is the one of headroom's row for this cache (headroom.codex_row, given the account
+    name of the mapping; the name does not change the margin): the age of the fetch is not
+    checked, past the weekly reset the window reads as 0%, a fetch more than 60 seconds in the
+    future is stale. Only an `ok` row gives a margin.
     """
     try:
-        row = headroom.codex_row('codex', snapshot, now)
+        row = headroom.codex_row(account, snapshot, now)
     except headroom.ConfigError as exc:
         raise _setting_error(exc) from None
     return row['margin'] if row['status'] == 'ok' else None
@@ -310,7 +311,7 @@ def automatic_selection(mapping, now=None):
     usages = read_codex_usages(mapping, str(config_dir), now) if mapping and codex_enabled else {}
     candidates = []
     for order, (name, value) in enumerate(usages.items()):
-        margin = usage_margin(value, now)
+        margin = usage_margin(value, now, name)
         if margin is not None:
             candidates.append((margin, -order, name, value))
     best = max(candidates) if candidates else None

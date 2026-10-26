@@ -161,6 +161,26 @@
 - **WHEN** 既定スロットを持たないレジストリで `CLAUDE_SECURESTORAGE_CONFIG_DIR` が未設定、かつ snapshot も存在しない状態で判定する
 - **THEN** レジストリの最初のスロットが active になる
 
+### Requirement: 起動アカウントを headroom の余りから自動選択する
+`plugins/dev-workflow/scripts/select-account.sh` は、引数が無いときに `dev-workflow-headroom` capability の `headroom.compute(now)` を呼び、その `best_by_provider.claude` が指すスロットを選ばなければならない（SHALL）。`now` は環境変数 `SELECT_ACCOUNT_NOW` があればその値、無ければ現在時刻とする。`best`（provider をまたいだ最大）を選択に使ってはならない（MUST NOT。Codex を指すことがあるため）。余り（`surplus_pct`）の数え方・候補の条件・同点の決め方は headroom の要件「一番余っているアカウント（best）を選ぶ」に従い、`select-account.sh` は経過率と使用率から余裕や余りを数え直してはならない（MUST NOT）。`.headroom.json` を読んで選んではならない（MUST NOT。probe が書かなかった実行で古い計算を使わないため）。選択は起動時の 1 回だけであり、起動済みセッションのアカウントを変更してはならない（MUST NOT）。どのスロットを候補に通し、どれを落とすかの守備範囲は、要件「古い・欠測・短期枠逼迫のスロットを候補から外す」の守備範囲の段落に従う。
+
+#### Scenario: リセット権を持つスロットを margin より余りで選ぶ
+- **WHEN** 2 スロットのうち `a` は週次 10%・リセット権なし、`b` は週次 40%・次の週次リセットより前に切れるリセット権 1 枚を持ち、margin（週の経過率 − 使用率）では `a` が大きく、`surplus_pct` では `b` が大きい
+- **THEN** selector は `b` の `securestorage` を出力し、理由行は `selected=b reason=max-surplus` と、`a` と `b` の margin を小数点以下 2 桁で含む
+
+#### Scenario: Codex が一番余っていても Claude のスロットを選ぶ
+- **WHEN** headroom の `best` が Codex の `current` を指し、`best_by_provider.claude` がスロット `a` を指す
+- **THEN** selector は `a` の `securestorage` を出力する
+
+#### Scenario: 同点は宣言順で決める
+- **WHEN** 利用可能な 2 スロットの `surplus_pct` が等しい（どちらも 0 の場合を含む）
+- **THEN** selector は `accounts.json` で先に宣言されたスロットを選ぶ
+
+#### Scenario: 使用量 API を叩かずにセッション記録だけで選ぶ
+- **WHEN** usage snapshot が無く、A と B それぞれの鍵のセッション記録だけがあり、`surplus_pct` が `a < b` である
+- **THEN** selector は `b` の `securestorage` を出力し、理由行に `a` と `b` の margin を含める
+
+
 ### Requirement: 古い・欠測・短期枠逼迫のスロットを候補から外す
 自動選択の候補の外し方は、headroom の行の `status` と best の除外規則（`dev-workflow-headroom` の要件「アカウントごとの項目と status」「一番余っているアカウント（best）を選ぶ」）に従わなければならず（SHALL）、`select-account.sh` で独自の検査を足してはならない（MUST NOT）。したがって、取得からの経過時間でスロットを外さず（古さは実効値の規則で扱う）、`status` が `off`・`missing`・`stale` のスロットと、`five_hour_pct` が 90 以上のスロットを外し、`five_hour_pct` が分からない（null）スロットは候補に残す。理由行では、オフを `off`、週次の値が読めないものを `missing`、週次の実効値の `observed_at`（`build_view` がそのスロットに選んだ値の取得時刻。snapshot の値が採用されれば snapshot の取得時刻、セッション記録が採用されればその記録の時刻）が今より 60 秒を超えて未来のものを `stale`、5 時間枠による除外を `five-hour>=90` と書く。候補が 1 つも無い場合は既定アカウントを表す空の `securestorage` を選ばなければならない（SHALL）。このとき、レジストリに既定スロット（`securestorage` が `null` または空文字）があれば宣言順で最初のスロットの id を `selected` に出し、無ければ登録 id では使用できない `@unregistered-default` を出さなければならない（SHALL）。このときの `selected` の決め方は `enabled` を見ない（縮退先は常に既定アカウントであり、`selected` はその起動先を指すスロットを報告するため）。理由は、オンのスロットが 1 つも無ければ `default-due-to-all-off`、オンのスロットに `missing` か `stale` による除外が 1 つでもあれば `default-due-to-missing-usage`、オンのスロットがすべて `five-hour>=90` だけで除外された場合は `default-due-to-five-hour-limit` としなければならない（SHALL）。headroom の設定（`HEADROOM_7D_CAP_PCT`・`HEADROOM_NORMAL_RATE_PCT_PER_DAY`）が不正で `compute` が例外を出したときも、同じ決め方で既定アカウントへ縮退し、理由を `default-due-to-invalid-headroom-setting`、`margins` を `-` として exit 0 で終わらなければならない（SHALL）。
 
@@ -383,7 +403,7 @@ snapshot を書くとき、オフのスロットの項目は前回の値（`fetc
 - **THEN** 評価された環境変数の値は登録簿の `b` の `securestorage` と一致する
 
 #### Scenario: このコマンドでオフにしたスロットは自動選択で選ばれない
-- **WHEN** 週次余裕が最大のスロット `b` を `accounts.sh off b` でオフにして `select-account.sh` を実行する
+- **WHEN** 余り（`surplus_pct`）が最大のスロット `b` を `accounts.sh off b` でオフにして `select-account.sh` を実行する
 - **THEN** `b` は選ばれず、理由行の `margins` に `b:off` が出る
 
 ### Requirement: Codex を codex.enabled でオフにできる
@@ -443,23 +463,3 @@ Codex のオフは、Codex の提供元全体に対する設定であり、Codex
 #### Scenario: 長い label は 8 桁に切る
 - **WHEN** 表示幅が 8 を超える `codex.label` を与えて Codex の表示名を求める
 - **THEN** 8 桁に切り詰めた値になる
-
-### Requirement: 起動アカウントを headroom の余りから自動選択する
-`plugins/dev-workflow/scripts/select-account.sh` は、引数が無いときに `dev-workflow-headroom` capability の `headroom.compute(now)` を呼び、その `best_by_provider.claude` が指すスロットを選ばなければならない（SHALL）。`now` は環境変数 `SELECT_ACCOUNT_NOW` があればその値、無ければ現在時刻とする。`best`（provider をまたいだ最大）を選択に使ってはならない（MUST NOT。Codex を指すことがあるため）。余り（`surplus_pct`）の数え方・候補の条件・同点の決め方は headroom の要件「一番余っているアカウント（best）を選ぶ」に従い、`select-account.sh` は経過率と使用率から余裕や余りを数え直してはならない（MUST NOT）。`.headroom.json` を読んで選んではならない（MUST NOT。probe が書かなかった実行で古い計算を使わないため）。選択は起動時の 1 回だけであり、起動済みセッションのアカウントを変更してはならない（MUST NOT）。どのスロットを候補に通し、どれを落とすかの守備範囲は、要件「古い・欠測・短期枠逼迫のスロットを候補から外す」の守備範囲の段落に従う。
-
-#### Scenario: リセット権を持つスロットを margin より余りで選ぶ
-- **WHEN** 2 スロットのうち `a` は週次 10%・リセット権なし、`b` は週次 40%・次の週次リセットより前に切れるリセット権 1 枚を持ち、margin（週の経過率 − 使用率）では `a` が大きく、`surplus_pct` では `b` が大きい
-- **THEN** selector は `b` の `securestorage` を出力し、理由行は `selected=b reason=max-surplus` と、`a` と `b` の margin を小数点以下 2 桁で含む
-
-#### Scenario: Codex が一番余っていても Claude のスロットを選ぶ
-- **WHEN** headroom の `best` が Codex の `current` を指し、`best_by_provider.claude` がスロット `a` を指す
-- **THEN** selector は `a` の `securestorage` を出力する
-
-#### Scenario: 同点は宣言順で決める
-- **WHEN** 利用可能な 2 スロットの `surplus_pct` が等しい（どちらも 0 の場合を含む）
-- **THEN** selector は `accounts.json` で先に宣言されたスロットを選ぶ
-
-#### Scenario: 使用量 API を叩かずにセッション記録だけで選ぶ
-- **WHEN** usage snapshot が無く、A と B それぞれの鍵のセッション記録だけがあり、`surplus_pct` が `a < b` である
-- **THEN** selector は `b` の `securestorage` を出力し、理由行に `a` と `b` の margin を含める
-

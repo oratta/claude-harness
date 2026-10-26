@@ -78,7 +78,7 @@ headroom の行の `margin` は `週の経過率（clamp しない） − used_p
 `codex-develop.py` の 2 つの関数は、名前と戻り値の形を残して中身を置き換える。
 
 - `claude_usage_evidence(snapshot_path, now)`: 起動アカウントの id は今どおり `usage_view.build_view(snapshot_path=…)` の `active` で決め、`headroom.claude_rows(now, snapshot_path)` のその id の行が `status: ok` なら `margin`、そうでなければ `None`。`fetched_at` は行の `observed_at`
-- `usage_margin(snapshot, now)`: `headroom.codex_row('codex', snapshot, now)` が `status: ok` なら `margin`、そうでなければ `None`
+- `usage_margin(snapshot, now, account='codex')`: `headroom.codex_row(account, snapshot, now)` が `status: ok` なら `margin`、そうでなければ `None`。`automatic_selection` は対応表の account 名を渡す（行の `account` が実際の名前になる。margin と `status` は名前に依存しない）
 
 `automatic_selection`・`select_configuration`・代表 Codex account の選び方（margin 最大・同点は宣言順）は変えない。名前を残すのは、テストと記録が使う語（Claude margin・Codex margin・`usage_margin`）を変えずに、構成選択のテストをそのまま通すため。
 

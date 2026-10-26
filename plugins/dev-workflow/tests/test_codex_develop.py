@@ -444,6 +444,23 @@ class ForegroundRequest(unittest.TestCase):
         self.assertEqual(evidence['account'], 'a')
         self.assertAlmostEqual(evidence['margin'], -5)
 
+    def test_off_launch_slot_gives_no_claude_margin(self):
+        # オフ（enabled: false）のスロットで起動したセッションでは、headroom の行が off なので欠測
+        now = 2_000_000
+        secure = '/tmp/claude-a'
+        (self.root / 'accounts.json').write_text(json.dumps({'accounts': [
+            {'id': 'a', 'securestorage': secure, 'enabled': False},
+            {'id': 'b', 'securestorage': None}]}))
+        path = self.root / 'mirror-snapshot.json'
+        path.write_text(json.dumps({
+            'schema': 2, 'active': 'b', 'fetched_at': now, 'weekly_all_pct': 0,
+            'weekly_resets_epoch': now + 302400,
+            'accounts': {'a': self.snapshot(-5, now=now), 'b': self.snapshot(30, now=now)}}))
+        with patch.dict(os.environ, {'CLAUDE_SECURESTORAGE_CONFIG_DIR': secure}, clear=False):
+            evidence = m.claude_usage_evidence(path, now)
+        self.assertEqual(evidence['account'], 'a')
+        self.assertIsNone(evidence['margin'])
+
     def test_claude_margin_comes_from_session_record_while_probe_keeps_failing(self):
         # 429 が続いて snapshot が無いままでも、起動 account の鍵のセッション記録で評価する
         now = 2_000_000
@@ -489,6 +506,7 @@ class ForegroundRequest(unittest.TestCase):
             return [{'account': 'default', 'status': 'ok', 'margin': 12.345, 'observed_at': now - 7}]
 
         def codex_row(account, cache, at):
+            self.assertEqual(account, 'a')
             return {'account': account, 'status': 'ok', 'margin': 6.789,
                     'observed_at': cache['fetched_at']}
 
@@ -530,6 +548,7 @@ class ForegroundRequest(unittest.TestCase):
         result = json.loads(done.stdout)
         self.assertEqual(result['status'], 'blocked')
         self.assertIn('HEADROOM_7D_CAP_PCT', result['error'])
+        self.assertFalse(self.out.exists())
 
     def test_claude_margin_is_missing_without_any_value(self):
         now = 2_000_000
@@ -1191,6 +1210,7 @@ class DocumentationContracts(unittest.TestCase):
         source = SCRIPT.read_text()
         self.assertNotIn('604800', source)
         self.assertNotIn('WEEK_SECONDS', source)
+        self.assertNotIn('86400', source)
         self.assertIn('import headroom', source)
 
     def test_executor_branch_is_documented_on_exactly_one_line(self):
