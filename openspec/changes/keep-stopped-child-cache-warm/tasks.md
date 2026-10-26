@@ -1,6 +1,6 @@
 # Tasks
 
-この工程は観測結果に合わせた仕様の修正まで。0.1 は実 CLI 観測で完了し、残りの実装タスクは未実行。実装は更新後の artifact のレビューを本体が扱った後に進める。行番号は固定 HEAD `1b203ef5` の案内で、編集前に読み直す。
+0.1 は実 CLI 観測で完了。固定 HEAD `908bdb7c` の仕様レビュー APPROVE を確認して実装を開始し、1.1 の共有定義・受信手順と照合の基盤を実装した。1.2 以降は未完了。変更記録とこの進捗更新を含め編集対象が 6 ファイルとなったため、規模トリップワイヤーで本体に return する。行番号は固定 HEAD `1b203ef5` の案内で、編集前に読み直す。
 
 規模の申し送り: 送受信と起動部品の契約を一体で導入する不可分な機能として一つの change にするが、実装の対象ファイルは 5 個を超える見込み。本体が実装工程を渡す前に規模トリップワイヤーとの整合を判断する。worker が独自に範囲を増やしたり、無断で別 change に分けたりしない。
 
@@ -10,7 +10,7 @@
 
 ## 1. 共有する文と質問を保持する受信・読み取り
 
-- [ ] 1.1 声かけ文・専用の返事の接頭辞・順序付きの `待ち:`/`次:` の欄の型を一つの機械可読定義に置き、生成と照合を同じ定義から行う。子の停止前の読み込みと、声かけの受信ではツール/mark/記録を呼ばない例外を epic-child-stop.md に加える。欄の中身の確定は #1374 に残す。定義を変えたとき生成・照合が共に追従するテストと受信手順の Bats を通す。触る範囲: `plugins/dev-workflow/references/child-cache-keepalive.json`（新規）、`plugins/dev-workflow/scripts/epic-dispatch.sh:1448-1530`（child_log_line と共有定義の読み込み）、`plugins/dev-workflow/skills/develop/references/epic-child-stop.md:1-17`、`plugins/dev-workflow/tests/epic-dispatch.bats:6457-6655`、`plugins/dev-workflow/tests/develop-skill.bats:975-1131`
+- [x] 1.1 声かけ文・専用の返事の接頭辞・順序付きの `待ち:`/`次:` の欄の型を一つの機械可読定義に置き、生成と照合を同じ定義から行う。子の停止前の読み込みと、声かけの受信ではツール/mark/記録を呼ばない例外を epic-child-stop.md に加える。欄の中身の確定は #1374 に残す。定義を変えたとき生成・照合が共に追従するテストと受信手順の Bats を通す。触る範囲: `plugins/dev-workflow/references/child-cache-keepalive.json`（新規）、`plugins/dev-workflow/scripts/epic-dispatch.sh:1448-1530`（child_log_line と共有定義の読み込み）、`plugins/dev-workflow/skills/develop/references/epic-child-stop.md:1-17`、`plugins/dev-workflow/tests/epic-dispatch.bats:6457-6655`、`plugins/dev-workflow/tests/develop-skill.bats:975-1131`。追加テストは `epic-dispatch.bats` の `keepalive definition:` 6 件（受信手順の検査も同ファイルに配置）。TDD: 未実装で exit 1、実装後 exit 0。
 - [ ] 1.2 child-log が完全一致の固定文と、その対応する型どおりの一行の返事だけを除き、元の質問・主の発言の本文と timestamp を保つようにする。連続往復、通常の「了解」、型が違う質問、途中の主/親の実際の返事、meta/tool_result の介在を Bats で確認する。epic.md の表を書く手順には、正常な一行の往復だけに質問保持を保証することを記す。予約文を主が直接入力した場合も固定文と型どおりの返事を除外し、識別を追加しない限界を記す。複数行・型違いの返事は全体を表示して最後の子の発言に選び、status/stop=stopped-seen・停止コメント・停止の基点を変えず、wait が継続して親を起こさないことを Bats で確認する。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:1453-1529`、`plugins/dev-workflow/skills/develop/references/epic.md:49-59`、`plugins/dev-workflow/tests/epic-dispatch.bats:6457-6655`
 
 ## 2. 既存セッションだけに送る起動部品
