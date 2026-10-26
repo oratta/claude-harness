@@ -8,7 +8,7 @@ develop スキルが、仕様化要否の判断を機械照合できる書式で
 ### Requirement: 仕様化要否の判定結果を固定書式で issue に記録する
 develop スキルの W の指示書（`references/roles/worker/spec.md`。記録する前に実装へ進まない規則は `references/roles/worker/common.md`「実装に入る前の確認」）は、仕様化要否を判定した直後に、その結果を記録先（元 issue。issue が無い場合は Draft PR）のコメントとして記録する手順を明記しなければならない（MUST）。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致し（装飾・全角コロン・末尾句点を含めない）（MUST）、2 行目以降に判定理由（`references/decision-criteria.md` のどの条件に当たったか）を書く（MUST）。同接頭辞のコメントが複数あるときは作成日時が最新の 1 件を正とし（SHALL）、この記録は interactive / unmanned の両モードで行い（MUST）、記録せずに分割判定・実装へ進んではならない（MUST NOT）。後続の照合で PR から元 issue を解決する規則（PR 本文中で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`、大文字小文字不問。見つからなければ PR 自身のコメントを見る）は `references/roles/spec-reviewer.md` の「判断記録の契約」に定義する（SHALL）。
 
-#### Scenario: worker.md に記録手順と正規表現がある
+#### Scenario: worker/spec.md に記録手順と正規表現がある
 - **WHEN** `references/roles/worker/spec.md` の仕様化判断の節を読む
 - **THEN** `^仕様化判断: (する|しない)$` の書式と、`gh` で記録先にコメントする手順、記録前に先へ進まない旨が書かれている
 
@@ -29,7 +29,7 @@ develop スキルは、仕様化経路で、W が openspec CLI（`openspec new c
 - **WHEN** SKILL.md の 1 ループを読む
 - **THEN** W の change の作成（`openspec new change`）と W の再開（実装）の間に R1 の仕様レビューがあり、`references/roles/spec-reviewer.md` を参照し、APPROVE の記録まで実装に進まない旨が書かれている
 
-#### Scenario: worker.md の仕様化の節にもレビューがある
+#### Scenario: worker/spec.md と worker/common.md の仕様化の節にもレビューがある
 - **WHEN** `references/roles/worker/spec.md` の仕様化する場合の節と、`references/roles/worker/common.md` の「実装に入る前の確認」の節を読む
 - **THEN** `openspec new change` と artifact の直書きの後に本体へ return して仕様レビューを受けることと、R1 の APPROVE が記録されるまで実装に進まないことが書かれている
 
