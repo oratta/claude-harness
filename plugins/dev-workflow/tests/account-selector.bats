@@ -17,6 +17,9 @@ setup() {
   NOW=1000000000
   SECURE_A="${WORK}/claude a"
   SECURE_B="${WORK}/claude b"
+  # 本物の ~/.codex と設定ディレクトリの Codex の cache を読まないよう、存在しない home を指す
+  CODEX_DIR="${WORK}/no-codex-home"
+  HEADROOM_CAP=""
 }
 
 teardown() {
@@ -64,10 +67,34 @@ write_record() {
     "$key" "$2" "$3" "$((NOW + 9000))" "$4" "${5:-$((NOW + 302400))}" > "${SESSIONS}/${key}.json"
 }
 
+# headroom の設定は空（既定値）に固定し、利用者の環境の HEADROOM_* を持ち込まない
+invoke_env() {
+  env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_CONFIG_DIR="$WORK" CODEX_HOME="$CODEX_DIR" \
+    CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_SNAPSHOT="$SNAP" USAGE_SESSIONS_DIR="$SESSIONS" \
+    HEADROOM_7D_CAP_PCT="$HEADROOM_CAP" HEADROOM_NORMAL_RATE_PCT_PER_DAY="" "$@"
+}
+
 invoke() {
-  env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_SNAPSHOT="$SNAP" \
-    USAGE_SESSIONS_DIR="$SESSIONS" \
-    SELECT_ACCOUNT_NOW="$NOW" "$SELECTOR" "$@" >"${WORK}/stdout" 2>"${WORK}/stderr"
+  invoke_env SELECT_ACCOUNT_NOW="$NOW" "$SELECTOR" "$@" >"${WORK}/stdout" 2>"${WORK}/stderr"
+}
+
+# Codex の current account（CODEX_HOME）に、主体の一致する auth.json と使用量の cache を置く。
+# $1=週次の使用率（書き方は test_headroom.py の Env.codex を手本にする）
+write_codex() {
+  CODEX_DIR="${WORK}/codex"
+  mkdir -p "$CODEX_DIR" "${WORK}/codex-usage"
+  python3 - "$CODEX_DIR" "${WORK}/codex-usage" "$NOW" "$1" <<'PY'
+import base64, hashlib, json, pathlib, sys
+home, cache_dir, now, used = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4])
+claims = base64.urlsafe_b64encode(json.dumps({'email': 'test@example.invalid'}).encode()).decode().rstrip('=')
+(home / 'auth.json').write_text(json.dumps({'tokens': {'id_token': 'x.' + claims + '.x', 'account_id': 'account'}}))
+cache = {'version': 2, 'fetched_at': now,
+         'windows': [{'minutes': 10080, 'used_percent': used, 'reset_at': now + 302400}],
+         'identity': {'email_hash': hashlib.sha256(b'test@example.invalid').hexdigest(),
+                      'account_id_hash': hashlib.sha256(b'account').hexdigest()}}
+digest = hashlib.sha256(str(home.resolve()).encode()).hexdigest()
+(cache_dir / (digest + '.json')).write_text(json.dumps(cache))
+PY
 }
 
 extract_readme_functions() {
@@ -101,17 +128,20 @@ SH
     "${WORK}/scripts/select-account.sh" "${WORK}/bin/claude"
 }
 
-@test "automatic: selects the greatest weekly margin and reports every margin" {
+@test "automatic: selects the greatest surplus and reports every margin" {
+  # 要件の変更（理由 max-weekly-margin → max-surplus）。リセットまで 84 時間で余り = 90 − 2 × 週次なので順位は margin と同じ
   write_registry
   write_snapshot "$NOW" "$NOW" 10 10 40 20
   run invoke
   [ "$status" -eq 0 ]
   [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
-  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:30.00" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-surplus margins=a:10.00,b:30.00" ]
   [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
 }
 
-@test "automatic: compares unrounded margins even when both display as zero" {
+@test "automatic: equal zero surplus keeps declaration order even when the margins differ" {
+  # 要件の変更（margin 最大 → headroom の余り最大・同点は宣言順）により、未丸めの margin では
+  # b が大きいが、余りはどちらも 0（天井に届く見込み）なので宣言順で先の a を選ぶ
   write_registry
   cat > "$SNAP" <<JSON
 { "schema": 2, "accounts": {
@@ -123,8 +153,8 @@ SH
 JSON
   run invoke
   [ "$status" -eq 0 ]
-  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
-  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:0.00,b:0.00" ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-surplus margins=a:0.00,b:0.00" ]
 }
 
 @test "age: an old value before its reset still takes part and can win" {
@@ -133,10 +163,12 @@ JSON
   run invoke
   [ "$status" -eq 0 ]
   [ -z "$(cat "${WORK}/stdout")" ]
-  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:50.00,b:10.00" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-surplus margins=a:50.00,b:10.00" ]
 }
 
 @test "age: a value past its weekly reset is compared as 0%" {
+  # 要件の変更（margin 最大 → headroom の余り最大）により、0% として数えた a（余り 90）が
+  # b（余り 30）より余るので a を選ぶ。a の margin は週が始まったばかりで 0.00
   write_registry
   cat > "$SNAP" <<JSON
 { "schema": 2, "accounts": {
@@ -148,8 +180,8 @@ JSON
 JSON
   run invoke
   [ "$status" -eq 0 ]
-  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
-  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:0.00,b:20.00" ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-surplus margins=a:0.00,b:20.00" ]
 }
 
 @test "records: session records alone select without a snapshot" {
@@ -159,7 +191,7 @@ JSON
   run invoke
   [ "$status" -eq 0 ]
   [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
-  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:30.00" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-surplus margins=a:10.00,b:30.00" ]
 }
 
 @test "records: repeated 429s leave the snapshot empty but records still select" {
@@ -178,7 +210,7 @@ JSON
   [ "$status" -eq 0 ]
   [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
   ! grep -qF 'missing' "${WORK}/stderr" || return 1
-  grep -qF 'selected=b reason=max-weekly-margin' "${WORK}/stderr"
+  grep -qF 'selected=b reason=max-surplus' "${WORK}/stderr"
 }
 
 @test "records: B's record is never read as A's" {
@@ -187,7 +219,7 @@ JSON
   run invoke
   [ "$status" -eq 0 ]
   [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
-  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:missing,b:50.00" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-surplus margins=a:missing,b:50.00" ]
 }
 
 @test "records: a newer 0% record after a manual reset beats an older 100% snapshot" {
@@ -197,7 +229,7 @@ JSON
   run invoke
   [ "$status" -eq 0 ]
   [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
-  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:20.00,b:50.00" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-surplus margins=a:20.00,b:50.00" ]
 }
 
 @test "fallback: all missing slots select the registered default id" {
@@ -225,7 +257,7 @@ JSON
   [ "$status" -eq 0 ]
   [ -z "$(cat "${WORK}/stdout")" ]
   [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
-  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:10.00,b:five-hour>=90" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-surplus margins=a:10.00,b:five-hour>=90" ]
 }
 
 @test "five-hour guard: all limited slots use a distinct fallback reason" {
@@ -334,14 +366,14 @@ JSON
   [ "$(cat "$CLAUDE_ARGS_LOG")" = '<--resume>' ]
 }
 
-@test "tie break: equal margins keep registry declaration order" {
+@test "tie break: equal surplus keeps registry declaration order" {
   write_registry
   write_snapshot "$NOW" "$NOW" 10 10 25 25
   run invoke
   [ "$status" -eq 0 ]
   [ -z "$(cat "${WORK}/stdout")" ]
   [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
-  grep -qF 'selected=a reason=max-weekly-margin margins=a:25.00,b:25.00' "${WORK}/stderr"
+  grep -qF 'selected=a reason=max-surplus margins=a:25.00,b:25.00' "${WORK}/stderr"
 }
 
 @test "a non-numeric fetched_at and a future observation are passed through" {
@@ -356,10 +388,12 @@ JSON
 JSON
   run invoke
   [ "$status" -eq 0 ]
-  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:49.00,b:49.00" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-surplus margins=a:49.00,b:49.00" ]
 }
 
-@test "missing and non-numeric required values are excluded" {
+@test "a non-numeric weekly value is excluded and an unknown five-hour value is kept" {
+  # 要件の変更（候補の外し方を headroom の best に揃える）により、five_hour_pct が null の a は
+  # 候補に残り、週次の使用率が数でない b だけが missing になる
   write_registry
   cat > "$SNAP" <<JSON
 { "schema": 2, "accounts": {
@@ -371,7 +405,7 @@ JSON
 JSON
   run invoke
   [ "$status" -eq 0 ]
-  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-missing-usage margins=a:missing,b:missing" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-surplus margins=a:49.00,b:missing" ]
 }
 
 @test "streams: a securestorage path with spaces is the only stdout value" {
@@ -387,21 +421,21 @@ JSON
 
 # ── enabled（usage-account-registry「スロットを enabled でオフにできる」）──
 
-@test "enabled: an off slot is not selected even with the greatest weekly margin" {
+@test "enabled: an off slot is not selected even with the greatest surplus" {
   # b は週の 90% 経過・週次 0%（余裕 90）。a は余裕 10
   write_snapshot "$NOW" "$NOW" 10 10 40 20
   write_record "$SECURE_B" "$NOW" 0 0 "$((NOW + 60480))"
   write_registry
   run invoke
   [ "$status" -eq 0 ]
-  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:90.00" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-surplus margins=a:10.00,b:90.00" ]
 
   write_registry "" "" "" false
   run invoke
   [ "$status" -eq 0 ]
   [ -z "$(cat "${WORK}/stdout")" ]
   [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
-  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:10.00,b:off" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-surplus margins=a:10.00,b:off" ]
   [ "$(wc -l < "${WORK}/stderr" | tr -d ' ')" = 1 ]
 }
 
@@ -414,7 +448,7 @@ JSON
   run invoke
   [ "$status" -eq 0 ]
   [ -z "$(cat "${WORK}/stdout")" ]
-  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-weekly-margin margins=a:10.00,b:off" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-surplus margins=a:10.00,b:off" ]
 }
 
 @test "enabled: a registry without enabled selects the same as one with enabled true" {
@@ -424,7 +458,7 @@ JSON
   [ "$status" -eq 0 ]
   cp "${WORK}/stdout" "${WORK}/stdout.omitted"
   cp "${WORK}/stderr" "${WORK}/stderr.omitted"
-  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:30.00" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-surplus margins=a:10.00,b:30.00" ]
 
   write_registry "" "" true true
   run invoke
@@ -440,7 +474,7 @@ JSON
     write_registry "" "" "" "$value"
     run invoke
     [ "$status" -eq 0 ]
-    [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-weekly-margin margins=a:10.00,b:30.00" ]
+    [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-surplus margins=a:10.00,b:30.00" ]
   done
 }
 
@@ -522,4 +556,120 @@ JSON
   run invoke b
   [ "$status" -eq 0 ]
   [ "$(cat "${WORK}/stderr")" = "selected=b reason=explicit margins=-" ]
+}
+
+# ── headroom の余りで選ぶ（usage-account-registry「起動アカウントを headroom の余りから自動選択する」）──
+
+@test "headroom: a slot holding a reset grant wins on surplus though its margin is smaller" {
+  # 受け入れ条件 1。週の 50% 経過。a は週次 10%（margin 40・余り 70）。
+  # b は週次 40%（margin 10）で、12 時間後に切れるリセット権 1 枚を持つ（余り 約 134）
+  write_registry
+  cat > "$SNAP" <<JSON
+{ "schema": 2, "accounts": {
+  "a": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
+           "weekly_all_pct": 10, "weekly_resets_epoch": $((NOW + 302400)) },
+  "b": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
+           "weekly_all_pct": 40, "weekly_resets_epoch": $((NOW + 302400)),
+           "reset_grants": [ { "resets_left": 1, "ends_at": "2001-09-09T13:46:40Z", "paused": false } ] }
+} }
+JSON
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-surplus margins=a:40.00,b:10.00" ]
+}
+
+@test "headroom: a slot whose five-hour use is unknown stays a candidate" {
+  write_registry
+  cat > "$SNAP" <<JSON
+{ "schema": 2, "accounts": {
+  "a": { "fetched_at": $NOW, "five_hour_pct": null,
+           "weekly_all_pct": 0, "weekly_resets_epoch": $((NOW + 302400)) },
+  "b": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
+           "weekly_all_pct": 40, "weekly_resets_epoch": $((NOW + 302400)) }
+} }
+JSON
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-surplus margins=a:50.00,b:10.00" ]
+}
+
+@test "headroom: a weekly value observed 61 seconds ahead is stale and 60 seconds ahead is kept" {
+  write_registry
+  write_snapshot "$NOW" "$((NOW + 61))" 10 10 40 0
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=max-surplus margins=a:10.00,b:stale" ]
+
+  write_snapshot "$NOW" "$((NOW + 60))" 10 10 40 0
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-surplus margins=a:10.00,b:50.00" ]
+}
+
+@test "headroom: only stale slots fall back with the missing-usage reason" {
+  write_registry
+  write_snapshot "$((NOW + 61))" "$((NOW + 61))" 10 10 40 0
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-missing-usage margins=a:stale,b:stale" ]
+}
+
+@test "headroom: a session record adopted for the weekly value decides the future check" {
+  # b の snapshot は 120 秒先の取得で週次リセットを過ぎている。記録は今の時刻で別の週の窓
+  # （同じ窓とみなす 3600 秒の外）を持つので、build_view は記録を週次の実効値に採用する
+  write_registry
+  cat > "$SNAP" <<JSON
+{ "schema": 2, "accounts": {
+  "a": { "fetched_at": $NOW, "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
+           "weekly_all_pct": 40, "weekly_resets_epoch": $((NOW + 302400)) },
+  "b": { "fetched_at": $((NOW + 120)), "five_hour_pct": 10, "five_hour_resets_epoch": $((NOW + 9000)),
+           "weekly_all_pct": 30, "weekly_resets_epoch": $((NOW - 10)) }
+} }
+JSON
+  write_record "$SECURE_B" "$NOW" 10 0 "$((NOW + 302400))"
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-surplus margins=a:10.00,b:50.00" ]
+}
+
+@test "headroom: Codex having the most left does not stop selecting a Claude slot" {
+  # Codex は週次 0%（余り 90）。Claude は a 40%（余り 10）・b 20%（余り 50）
+  write_registry
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  write_codex 0
+  run invoke_env "${PLUGIN_DIR}/scripts/headroom.py" --json --now "$NOW"
+  [ "$status" -eq 0 ]
+  python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["best"]=={"provider":"codex","account":"current"}, d["best"]; assert d["best_by_provider"]["claude"]=={"provider":"claude","account":"b"}' "$output"
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stdout")" = "$SECURE_B" ]
+  [ "$(cat "${WORK}/stderr")" = "selected=b reason=max-surplus margins=a:10.00,b:30.00" ]
+}
+
+@test "headroom: an invalid headroom setting falls back to the default account" {
+  write_registry
+  write_snapshot "$NOW" "$NOW" 10 10 40 20
+  HEADROOM_CAP=abc
+  run invoke
+  [ "$status" -eq 0 ]
+  [ -z "$(cat "${WORK}/stdout")" ]
+  [ "$(wc -l < "${WORK}/stdout" | tr -d ' ')" = 1 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=a reason=default-due-to-invalid-headroom-setting margins=-" ]
+
+  write_registry "\"${SECURE_A}\""
+  run invoke
+  [ "$status" -eq 0 ]
+  [ "$(cat "${WORK}/stderr")" = "selected=@unregistered-default reason=default-due-to-invalid-headroom-setting margins=-" ]
+}
+
+@test "headroom: select-account.sh does not count the week itself" {
+  # 受け入れ条件 2。margin を数える式（週の秒数）が残っていない
+  ! grep -nE '604800|WEEK_SECONDS' "$SELECTOR" || return 1
+  grep -qF 'import headroom' "$SELECTOR"
 }
