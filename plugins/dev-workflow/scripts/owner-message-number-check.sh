@@ -12,6 +12,9 @@
 #   - 本文は payload の last_assistant_message。逆引用符 3 つのブロック（閉じが無ければ最後まで）と空の行を除いて並べる。
 #     `>` の引用の行は除かない（全行を主が読むので、引用の中の番号も主が探す手間になる）
 #   - 1 行目（前後の空白と * を除く）が「主がすること: なし」なら対象外。1 行目が ？/? で終わるか、
+#     1 行目の最初の文（引用と URL を 1 回の走査で隠し、。！!？? の最初まで）が ？/? で終わるか、
+#     （URL の中で開いて閉じる引用の記号は URL の一部、外で開いた引用の閉じが URL の中に来たら URL はその手前で終わる、
+#     URL の中で閉じない開きは引用にしない）
 #     区切り（- が 3 つ以上だけの行）より上の最後の行が答え方の語を含むときだけ対象
 #   - URL を取り除いてから #数字 を探す。区切りより上に番号がある（条件 1）か、番号があるのに
 #     /issues/<数字> か /pull/<数字> を含む URL が無い（条件 2）と差し戻す
@@ -56,6 +59,9 @@ if not isinstance(msg, str) or not msg:
 ANSWER_WORDS = ("と打って", "と打つ", "を押して", "と返して", "と答えて")
 URL_RE = re.compile(r"https?://\S+")
 ISSUE_URL_RE = re.compile(r"https?://\S*/(?:issues|pull)/[0-9]")
+QUOTE_PAIRS = {"「": "」", "『": "』", "“": "”", "\"": "\""}
+QUOTE_CLOSERS = set(QUOTE_PAIRS.values())
+FIRST_END_RE = re.compile(r"[。！!？?]")
 NUM_RE = re.compile(r"#[0-9]+")
 SEP_RE = re.compile(r"-{3,}")
 NO_ACTION_RE = re.compile(r"主がすること[:：]\s*なし")
@@ -80,7 +86,56 @@ if NO_ACTION_RE.match(first):
 sep = next((i for i, l in enumerate(lines) if SEP_RE.fullmatch(l.strip())), None)
 above = lines if sep is None else lines[:sep]
 
-is_question = first.endswith(("？", "?"))
+def closes_outer(stack, ch):
+    # ch が積んだ開きのどれかに対応する閉じか
+    return ch in QUOTE_CLOSERS and any(QUOTE_PAIRS[o] == ch for o in stack)
+
+def mask_quotes_and_urls(text):
+    # 引用（「」『』“”""）と URL（http:// か https:// から空白の手前まで）を 1 回の走査で空白にする。
+    # 引用: 開きと閉じを記号ごと隠す。入れ子は外側の閉じまで、閉じが無い引用（次の行で閉じるもの）は
+    #   text の終わりまで隠す。対応する開きが無い閉じは引用として扱わない（そのまま残す）。
+    # URL: 引用の外でも中でも入る。URL の中で開いて閉じる引用の記号は URL の一部とし、外で開いた引用の
+    #   閉じが URL の中に来たら URL はその手前で終える。URL の中で閉じない開きは引用にしない。
+    # 引用と URL を別々に消すと、どちらを先にしても反対側の重なり方で壊れるので、1 回で追う
+    out = []
+    stack = []
+    i, n = 0, len(text)
+    while i < n:
+        if text.startswith(("http://", "https://"), i):
+            local = []
+            while i < n and not text[i].isspace():
+                ch = text[i]
+                if local and ch == QUOTE_PAIRS[local[-1]]:
+                    local.pop()
+                elif closes_outer(stack, ch):
+                    break
+                elif ch in QUOTE_PAIRS:
+                    local.append(ch)
+                out.append(" ")
+                i += 1
+            continue
+        ch = text[i]
+        if stack and ch == QUOTE_PAIRS[stack[-1]]:
+            stack.pop()
+            out.append(" ")
+        elif stack and closes_outer(stack, ch):
+            while QUOTE_PAIRS[stack.pop()] != ch:
+                pass
+            out.append(" ")
+        elif ch in QUOTE_PAIRS:
+            stack.append(ch)
+            out.append(" ")
+        else:
+            out.append(" " if stack else ch)
+        i += 1
+    return "".join(out)
+
+# 1 行目の最初の文が質問で終わる場合も質問として数える（従来の「1 行目の末尾が ？/?」は元の 1 行目で見て、狭めない）。
+# 引用と URL を 1 回の走査で隠してから、最初の。！!？? までを最初の文として見る。
+# 左から順に追うので、2 行目以降は 1 行目の隠し方を変えない
+first_plain = mask_quotes_and_urls(first)
+m_end = FIRST_END_RE.search(first_plain)
+is_question = first.endswith(("？", "?")) or bool(m_end and m_end.group(0) in ("？", "?"))
 has_answer_line = bool(above) and any(w in above[-1] for w in ANSWER_WORDS)
 if not (is_question or has_answer_line):
     raise SystemExit(0)

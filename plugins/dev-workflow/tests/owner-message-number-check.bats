@@ -202,6 +202,105 @@ PY
   has "$r" '行 1: #3'
 }
 
+@test "first line: a question followed by more sentences on the same line is a target" {
+  msg_of "$(nl 'PR #1330 を GitHub でマージしてもらえますか？ マージすると、子 #1303 の修正が main に入ります。' 'よければ下の PR のページでマージしてください。')"
+  run_hook
+  local r
+  r="$(reason_of)"
+  has "$r" '行 1: #1330 #1303'
+}
+
+@test "first line: a report sentence before a final question stays a target" {
+  msg_of '#1330 をマージした。続けて #1303 も見ますか？'
+  run_hook
+  reason_of >/dev/null
+}
+
+@test "first line: a question quoted inside an answer is not a target" {
+  msg_of '表示は「PR #1330 をマージしますか？」です。'
+  run_hook
+  silent
+}
+
+@test "first line: a question quoted inside a report is not a target" {
+  msg_of '#1330 に「マージしますか？」という確認を追加しました。'
+  run_hook
+  silent
+}
+
+@test "first line: a URL inside a quoted question does not break the quote" {
+  msg_of '表示は「PR #1330 をマージしますか？ https://example.com/x」です。'
+  run_hook
+  silent
+}
+
+@test "first line: a quote that closes on a later line hides its question mark" {
+  msg_of "$(nl '表示は「PR #1330 をマージしますか？ マージすると' '子 #1303 の修正が入ります。」です。')"
+  run_hook
+  silent
+}
+
+@test "first line: a question mark inside a nested quote is not a sentence end" {
+  msg_of '表示は「確認「PR #1330 をマージしますか？」の結果？」です。'
+  run_hook
+  silent
+}
+
+@test "first line: a question after a closed quote stays a target" {
+  msg_of '「確認「マージ」の結果」を PR #1330 に出しますか？ 出すと main に入ります。'
+  run_hook
+  reason_of >/dev/null
+}
+
+# URL の範囲と引用の範囲の重なり方（決める役の裁定の表のパターン番号）
+@test "first line: a quote opened and closed inside a URL is part of the URL (pattern 3)" {
+  msg_of '#1330 の参照先は https://example.com/「入門」?lang=ja です。'
+  run_hook
+  silent
+}
+
+@test "first line: a question after a quoted URL closed without a space stays a target (pattern 2')" {
+  msg_of '「https://example.com/x」をマージしますか？ PR #1330 が main に入ります。'
+  run_hook
+  reason_of >/dev/null
+}
+
+@test "first line: a quote opened inside a URL and not closed there is not a quote (pattern 4)" {
+  msg_of 'https://example.com/「入門?lang=ja を PR #1330 に出しますか？ 出すと main に入ります。'
+  run_hook
+  reason_of >/dev/null
+}
+
+@test "first line: an outer quote closing inside a URL ends the URL even with an open quote in the URL" {
+  msg_of '「https://example.com/『x」をマージしますか？ PR #1330 が main に入ります。'
+  run_hook
+  reason_of >/dev/null
+}
+
+@test "first line: an ASCII double quote closing around a URL ends the URL (pattern 6a)" {
+  msg_of '"https://example.com/x?y=1" を PR #1330 に出しますか？ 出すと main に入ります。'
+  run_hook
+  reason_of >/dev/null
+}
+
+@test "first line: an ASCII double quote inside a URL does not open a quote (pattern 6b)" {
+  msg_of '#1330 の参照先は https://example.com/x"y?z=1 です。'
+  run_hook
+  silent
+}
+
+@test "first line: a quoted URL with an inner quote then a question stays a target (pattern 7)" {
+  msg_of '「https://example.com/「入門」?lang=ja」を PR #1330 に出しますか？ 説明。'
+  run_hook
+  reason_of >/dev/null
+}
+
+@test "first line: a question mark inside a URL query is not a sentence end" {
+  msg_of '#1330 を見た。https://example.com/a?b=1 に出ている。'
+  run_hook
+  silent
+}
+
 # ---------- 対象の見分け方 ----------
 
 @test "target: a no-action report is skipped even with numbers" {
