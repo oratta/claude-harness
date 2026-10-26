@@ -19,7 +19,7 @@
   - develop 1230: 「worker/common.md の手渡しの節に欄と書式がある」
   - pr-review-gate 755・760・765: 先頭の「worker.md」を「worker/implement.md」にする
   - spec-review 11: 「worker/spec.md に記録手順と正規表現がある」
-  - spec-review 32: 「worker/spec.md と worker/common.md の仕様化の節にもレビューがある」
+  - spec-review 32: 「worker/spec.md の仕様化する場合の節と worker/common.md の実装に入る前の確認にレビューがある」
 - **索引の worker.md を指す題名は残す方針だったが、該当は 0 件。** 10 件とも移し先の内容を指す。
 
 ## Risks / Trade-offs

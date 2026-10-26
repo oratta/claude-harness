@@ -29,7 +29,7 @@ develop スキルは、仕様化経路で、W が openspec CLI（`openspec new c
 - **WHEN** SKILL.md の 1 ループを読む
 - **THEN** W の change の作成（`openspec new change`）と W の再開（実装）の間に R1 の仕様レビューがあり、`references/roles/spec-reviewer.md` を参照し、APPROVE の記録まで実装に進まない旨が書かれている
 
-#### Scenario: worker/spec.md と worker/common.md の仕様化の節にもレビューがある
+#### Scenario: worker/spec.md の仕様化する場合の節と worker/common.md の実装に入る前の確認にレビューがある
 - **WHEN** `references/roles/worker/spec.md` の仕様化する場合の節と、`references/roles/worker/common.md` の「実装に入る前の確認」の節を読む
 - **THEN** `openspec new change` と artifact の直書きの後に本体へ return して仕様レビューを受けることと、R1 の APPROVE が記録されるまで実装に進まないことが書かれている
 

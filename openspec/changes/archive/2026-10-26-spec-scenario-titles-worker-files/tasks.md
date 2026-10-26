@@ -9,4 +9,4 @@
 - [x] 2.1 `grep -nE "^#### Scenario: .*worker\.md" openspec/specs/*/spec.md` の残りが 0 件
 - [x] 2.2 `openspec validate --specs --strict` の failed 件数が変更前（86）より増えない
 - [x] 2.3 `openspec validate spec-scenario-titles-worker-files --type change --strict` が終了コード 0
-- [x] 2.4 `scripts/test.sh` が通る
+- [x] 2.4 `scripts/test.sh` が通る（手元は bats 未導入。CI の bats suites と shard 1〜4 の pass で確認）
