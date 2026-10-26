@@ -4766,17 +4766,22 @@ resolve_pass() {
   [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
 }
 
-@test "wait --resolve relaunch: compaction during the wait or N under 150000 sends as is" {
-  resolve_pass
-  put_transcript 90 160000 1
-  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
-  [ "$status" -eq 0 ]
-  [ "$(calls '^orca terminal create')" -eq 0 ]
+@test "wait --resolve relaunch: 60+ minutes with N under 150000 relaunches the child" {
   resolve_pass
   put_transcript 90 100000
   run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
-  [ "$status" -eq 0 ]
-  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(calls '^orca terminal create')" -eq 1 ]
+  starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
+}
+
+@test "wait --resolve relaunch: 60+ minutes with compaction during the wait relaunches the child" {
+  resolve_pass
+  put_transcript 90 160000 1
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(calls '^orca terminal create')" -eq 1 ]
+  starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
 }
 
 @test "wait --resolve relaunch: no transcript or two transcripts sends as is" {
@@ -4794,29 +4799,30 @@ resolve_pass() {
   [ "$(calls '^orca terminal create')" -eq 0 ]
 }
 
-@test "wait --resolve relaunch: thresholds can be overridden and bad values are refused" {
+@test "wait --resolve relaunch: the idle threshold can be overridden and a bad value is refused" {
   resolve_pass
   put_transcript 30 160000
   EPIC_DISPATCH_RELAUNCH_IDLE_SEC=60 run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
   [ "$status" -eq 0 ]
   [ "$(calls '^orca terminal create')" -eq 1 ]
-  resolve_pass
-  : > "$STUB_LOG"
-  put_transcript 90 160000
-  EPIC_DISPATCH_RELAUNCH_MIN_TOKENS=200000 run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
-  [ "$status" -eq 0 ]
-  [ "$(calls '^orca terminal create')" -eq 0 ]
-  for v in EPIC_DISPATCH_RELAUNCH_IDLE_SEC EPIC_DISPATCH_RELAUNCH_MIN_TOKENS; do
+  for val in 1h 150k ''; do
     resolve_pass
     : > "$STUB_LOG"
-    export "$v=150k"
-    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
-    unset "$v"
+    EPIC_DISPATCH_RELAUNCH_IDLE_SEC="$val" run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
     [ "$status" -eq 1 ]
-    grep -qF "$v" "$BATS_TEST_TMPDIR/stderr"
+    grep -qF EPIC_DISPATCH_RELAUNCH_IDLE_SEC "$BATS_TEST_TMPDIR/stderr"
     grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
     [ "$(calls '^orca terminal')" -eq 0 ]
   done
+}
+
+@test "wait --resolve relaunch: EPIC_DISPATCH_RELAUNCH_MIN_TOKENS is not read" {
+  resolve_pass
+  put_transcript 90 100000
+  EPIC_DISPATCH_RELAUNCH_MIN_TOKENS=150k run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(calls '^orca terminal create')" -eq 1 ]
+  starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
 }
 
 # --- pending-owner ---

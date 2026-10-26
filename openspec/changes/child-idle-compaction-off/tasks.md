@@ -7,8 +7,8 @@
 
 ## 2. wait --resolve の起動し直しの判定を子の表に合わせる
 
-- [ ] 2.1 `decide_relaunch` を「トランスクリプトがちょうど 1 本・最後の assistant の時刻が読める・そこから `EPIC_DISPATCH_RELAUNCH_IDLE_SEC` 秒以上なら 1」にし、`compact_boundary` と `subagent-context.sh` の会話量を見ないようにする。`wait` の引数の検査から `EPIC_DISPATCH_RELAUNCH_MIN_TOKENS` を消す。冒頭のコメントの `wait --resolve` の説明も直す。確認: 2.2 のテストが通る。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:179-184（冒頭のコメントの wait --resolve）、plugins/dev-workflow/scripts/epic-dispatch.sh:1024-1063（decide_relaunch）、plugins/dev-workflow/scripts/epic-dispatch.sh:1233-1237（wait の --resolve の検査）
-- [ ] 2.2 `wait --resolve relaunch` のテストを delta spec の Scenario に合わせる: 60 分以上・150,000 以上で `relaunched`（据え置き）、60 分以上・150,000 未満で `relaunched`、60 分以上・コンパクトありで `relaunched`、60 分未満で `sent`、トランスクリプト 0 本・2 本で `sent`、`EPIC_DISPATCH_RELAUNCH_IDLE_SEC` の誤りで exit 1、`EPIC_DISPATCH_RELAUNCH_MIN_TOKENS=150k` を付けても exit 1 にならず `relaunched`。確認: `bats plugins/dev-workflow/tests/epic-dispatch.bats -f 'wait --resolve relaunch'` が通る。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:4730-4825（トランスクリプトの用意と wait --resolve relaunch の 5 件）
+- [x] 2.1 `decide_relaunch` を「トランスクリプトがちょうど 1 本・最後の assistant の時刻が読める・そこから `EPIC_DISPATCH_RELAUNCH_IDLE_SEC` 秒以上なら 1」にし、`compact_boundary` と `subagent-context.sh` の会話量を見ないようにする。`wait` の引数の検査から `EPIC_DISPATCH_RELAUNCH_MIN_TOKENS` を消す。冒頭のコメントの `wait --resolve` の説明も直す。確認: 2.2 のテストが通る。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:179-184（冒頭のコメントの wait --resolve）、plugins/dev-workflow/scripts/epic-dispatch.sh:1024-1063（decide_relaunch）、plugins/dev-workflow/scripts/epic-dispatch.sh:1233-1237（wait の --resolve の検査）
+- [x] 2.2 `wait --resolve relaunch` のテストを delta spec の Scenario に合わせる: 60 分以上・150,000 以上で `relaunched`（据え置き）、60 分以上・150,000 未満で `relaunched`、60 分以上・コンパクトありで `relaunched`、60 分未満で `sent`、トランスクリプト 0 本・2 本で `sent`、`EPIC_DISPATCH_RELAUNCH_IDLE_SEC` の誤りで exit 1、`EPIC_DISPATCH_RELAUNCH_MIN_TOKENS=150k` を付けても exit 1 にならず `relaunched`。確認: `bats plugins/dev-workflow/tests/epic-dispatch.bats -f 'wait --resolve relaunch'` が通る。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:4730-4825（トランスクリプトの用意と wait --resolve relaunch の 5 件）
 
 ## 3. 規則のファイルと epic.md を直す
 
