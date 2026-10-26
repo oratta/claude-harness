@@ -3392,7 +3392,10 @@ infer_ready() {
   printf '%s\n' "$e" | grep -qF 'sub_issues_summary'
   printf '%s\n' "$e" | grep -qF 'nested'
   printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -qF '完了報告'
-  printf '%s\n' "$e" | grep -F 'timeout' | grep -F 'closed' | grep -qF '後で別に起動するエピック:'
+  # 子エピックの行で外す確認は closed で起こされたときだけ（#1324。timeout で起こされたときの確認とは書かない）
+  printf '%s\n' "$e" | grep -F '`closed` で起こされたときの確認' | grep -qF '後で別に起動するエピック:'
+  ! printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -qF '`timeout` で起こされたときの確認' || return 1
+  ! printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -qF '`timeout` と `closed`' || return 1
   printf '%s\n' "$e" | grep -F 'launch' | grep -F 'nested' | grep -qF '「親ワークツリーで開き直す」とは報告しない'
 }
 

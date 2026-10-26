@@ -1004,7 +1004,7 @@ DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメン�
 DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
 DELEG_RECOMMEND='`推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
 
-deleg_para() { awk '/^\*\*主の委任\*\*（手順 8 の続き/{f=1; print; next} f && /^`timeout` と `closed` で起こされたときの確認では/{f=0} f' "$EPIC"; }
+deleg_para() { awk '/^\*\*主の委任\*\*（手順 8 の続き/{f=1; print; next} f && /^`closed` で起こされたときの確認では/{f=0} f' "$EPIC"; }
 child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_STOP"; }
 
 @test "delegated reply (#1293): epic.md has the delegation paragraph after step 8 and step 8 routes to it before the pass criteria" {
@@ -1393,6 +1393,80 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   p8="$(grep -E '^8\. `stopped <N>...`' "$EPIC")"
   printf '%s\n' "$p8" | grep -qF '待ちをやめてよい条件'
   printf '%s\n' "$p8" | grep -qF '主の返事待ちの子が残るあいだ'
+}
+
+# --- 親の wait を短く待ち直す（#1324） ---
+# spec: dev-workflow-develop（親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す／
+#   手順 5 で気づけない子のことは最初に待ちに入る通知で一度だけ主に伝える／
+#   timeout から外した確認は closed のときと待ちをやめる前に残し、片付け待ちだけの待ちは長い上限を明示する／
+#   規則のファイルに親の待ちの費用と使用量の超過中の扱いを書く）
+
+@test "short rewait (#1324): step 5 only starts the same wait again without reading children or reporting" {
+  p5="$(grep -E '^5\. `timeout <N>...`' "$EPIC")"
+  [ -n "$p5" ]
+  printf '%s\n' "$p5" | grep -qF '子 issue もエピックも読まず'
+  printf '%s\n' "$p5" | grep -qF '主に報告もせず'
+  printf '%s\n' "$p5" | grep -qF '直前と同じ引数の `wait` を `run_in_background: true` で再び 1 回起動してターンを終える'
+  printf '%s\n' "$p5" | grep -qF '`--timeout` は足さない'
+  printf '%s\n' "$p5" | grep -qF '**待ちをやめてよい条件**'
+  printf '%s\n' "$p5" | grep -qF '`主がすること: なし`'
+  # 主への問いが未回答のあいだは「なし」の 1 行も書かない（問いを繰り返しもしない）
+  printf '%s\n' "$p5" | grep -qF '主への問いが未回答のあいだは'
+  ! printf '%s\n' "$p5" | grep -qF 'needs-approval' || return 1
+}
+
+@test "short rewait (#1324): step 5 notes the child stopped without a record cannot be detected" {
+  p5="$(grep -E '^5\. `timeout <N>...`' "$EPIC")"
+  printf '%s\n' "$p5" | grep -qF '記録（`子の停止: 主の返事待ち`）'
+  printf '%s\n' "$p5" | grep -qF '子のタブ'
+  printf '%s\n' "$p5" | grep -qF '検知できない'
+  # 子のタブを見るよう主に伝えるのは手順 5 ではない
+  ! printf '%s\n' "$p5" | grep -qF '子のタブも見るよう伝える' || return 1
+}
+
+@test "short rewait (#1324): step 2 tells the owner once, at the first wait of the session, to look at the child tabs" {
+  p2="$(grep -E '^2\. `launched` と `skipped` の子を動いている子とする' "$EPIC")"
+  [ -n "$p2" ]
+  printf '%s\n' "$p2" | grep -qF 'このセッションで最初に待ちに入る通知'
+  printf '%s\n' "$p2" | grep -qF '子のタブも見る'
+  printf '%s\n' "$p2" | grep -qF '掛け直しのたびには伝えない'
+}
+
+@test "short rewait (#1324): the child-epic check runs only when woken by closed" {
+  line="$(grep -F '後で別に起動するエピック: #N' "$EPIC" | grep -F 'で起こされたときの確認では')"
+  [ "$(printf '%s\n' "$line" | grep -c .)" -eq 1 ]
+  printf '%s\n' "$line" | grep -qE '^`closed` で起こされたときの確認では'
+  ! printf '%s\n' "$line" | grep -qF 'timeout' || return 1
+  row="$(grep -E '^\| エピックへのコメント `後で別に起動するエピック: #N`' "$EPIC")"
+  printf '%s\n' "$row" | grep -qF '（手順 2・`closed` の確認）'
+}
+
+@test "short rewait (#1324): the wait for children left to clean up only gives the long limit" {
+  p4="$(grep -E '^4\. `closed <N>...`' "$EPIC")"
+  printf '%s\n' "$p4" | grep -F '`kept <N> not-done` の子だけを `--watch-done` に渡して' | grep -qF -- '`--timeout 21600`'
+}
+
+@test "short rewait (#1324): the step 5 timeout report is gone from the list of messages and no step waits at most 6 hours" {
+  l="$(grep -E '^親が別セッション方式でターンを終えるときに主に出す発言すべて' "$EPIC")"
+  [ -n "$l" ]
+  ! printf '%s\n' "$l" | grep -qF '手順 5 の `timeout` の報告' || return 1
+  ! grep -qF '最長 6 時間' "$EPIC" || return 1
+}
+
+@test "short rewait (#1324): reply-after-idle has the section on the cost of the parent's wait" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  sec="$(awk '/^## 親の待ちの費用（#1324）/{f=1; print; next} /^## /{f=0} f' "$f")"
+  [ -n "$sec" ]
+  printf '%s\n' "$sec" | grep -qF '2700'
+  printf '%s\n' "$sec" | grep -qF '21600'
+  printf '%s\n' "$sec" | grep -qF '5 分に縮む'
+  printf '%s\n' "$sec" | grep -qF 'https://code.claude.com/docs/en/prompt-caching'
+  printf '%s\n' "$sec" | grep -qF 'CLAUDE_CODE_PROMPT_CACHE_TTL'
+  printf '%s\n' "$sec" | grep -qF 'PC が寝ている'
+  printf '%s\n' "$sec" | grep -qF '掛け直す'
+  # 節は「親への適用」と「根拠と、この数字の限り」の間に置く
+  awk '/^## /{print}' "$f" | grep -A1 -F '## 親への適用' | grep -qF '## 親の待ちの費用（#1324）'
+  awk '/^## /{print}' "$f" | grep -A1 -F '## 親の待ちの費用（#1324）' | grep -qF '## 根拠と、この数字の限り'
 }
 
 # --- 会話で受けた返事の日時の取り方を handover.md の 1 か所にする（#1239 C6） ---
