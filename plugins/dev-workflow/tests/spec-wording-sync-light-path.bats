@@ -369,7 +369,7 @@ DELTA_OK='## MODIFIED Requirements
 
 # --- Requirement: W の仕様化経路は openspec CLI だけで進める（design.md D4 の実測） ---
 
-@test "openspec CLI: a change with only a delta spec needs --type change to validate" {
+@test "openspec CLI: a change with only a delta spec validates with --type change on every openspec version" {
   command -v openspec >/dev/null 2>&1 || skip "openspec CLI が無い"
   root="$BATS_TEST_TMPDIR/osp"
   mkdir -p "$root/openspec/specs/demo" "$root/openspec/changes/wording-demo/specs/demo"
@@ -400,9 +400,9 @@ EOF
 - **THEN** 既定値 3 が使われる
 EOF
   cd "$root"
+  # --type change を付けない形の結果は openspec の版で変わる（古い版は Unknown item で終了 1、新しい版は change として検証して終了 0）
   run openspec validate wording-demo --strict
-  [ "$status" -eq 1 ]
-  echo "$output" | grep -q 'Unknown item'
+  [ "$status" -eq 0 ] || { [ "$status" -eq 1 ] && echo "$output" | grep -q "Unknown item"; }
   run openspec validate wording-demo --type change --strict
   [ "$status" -eq 0 ]
 }
