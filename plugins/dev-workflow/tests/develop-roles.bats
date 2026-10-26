@@ -909,8 +909,8 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -qF '常に `レビュー経路: adapter`' "$sk"
   # codex-develop.md には義務の本文を書き戻さず、正本への参照だけを残す（#1307）
   ! grep -qF '常に `レビュー経路: adapter`' "$cd_md" || return 1
-  grep -qF '「Role profile の選択」節' "$cd_md"
-  grep -qF '「レビュー経路の判別」' "$cd_md"
+  grep -qF 'SKILL.md` の「Role profile の選択」節が' "$cd_md"
+  grep -qF 'gate-runner.md`「レビュー経路の判別」が正本' "$cd_md"
 }
 
 @test "gate-runner (#554): the legacy route runs steps 1-5 in one G and says so in the stage lines" {  # 従来経路は `段: 一括（従来経路）` と `次の段: なし`
