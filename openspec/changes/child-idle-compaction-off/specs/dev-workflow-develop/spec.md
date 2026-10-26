@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: エピックの並列起動は 1 段で止める
-`plugins/dev-workflow/scripts/epic-dispatch.sh launch` は、子セッションを起動する端末のコマンドの先頭に `EPIC_DISPATCH_PARENT_EPIC=<epic>` を置かなければならない（MUST。`<epic>` は `launch` に渡したエピック番号）。そのうしろに `<cmd>` を置き、`<cmd>` と `--model` のあいだに `--settings '{"idleCompaction":false}'` を置く（MUST。子のセッションのアイドル時のコンパクトを切る。`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` を付けないことを含め、要件「子のセッションはアイドル時のコンパクトを切って起動する」が定める）。コマンド全体は `EPIC_DISPATCH_PARENT_EPIC=<epic> <cmd> --settings '{"idleCompaction":false}' --model <model>` の形になり、端末を作れなかった子について stderr に出す `orca terminal create --command ...` の作り直しのコマンドにも同じ前置きが入る（SHALL）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち `route` の出力の規定、`<cmd>` の形の規定、および Scenario「EPIC_DISPATCH_MODEL…」「EPIC_DISPATCH_CLAUDE_CMD…」の `--command` の値に優先する。並行する子の archive が終わったあとに元の要件へ畳み込む。
+`plugins/dev-workflow/scripts/epic-dispatch.sh launch` は、子セッションを起動する端末のコマンドの先頭に `EPIC_DISPATCH_PARENT_EPIC=<epic>` を置かなければならない（MUST。`<epic>` は `launch` に渡したエピック番号）。そのうしろに `<cmd>` を置き、`<cmd>` と `--model` のあいだに `--settings '{"idleCompaction":false}'` を置く（MUST。子のセッションのアイドル時のコンパクトを切る。`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` を付けないことを含め、要件「子のセッションはアイドル時のコンパクトを切って起動する」が定める）。コマンド全体は `EPIC_DISPATCH_PARENT_EPIC=<epic> <cmd> --settings '{"idleCompaction":false}' --model <model>` の形になり、端末を作れなかった子について stderr に出す `orca terminal create --command ...` の作り直しのコマンドにも同じ前置きが入る（SHALL）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち `route` の出力の規定、`<cmd>` の形の規定、および Scenario「EPIC_DISPATCH_MODEL…」「EPIC_DISPATCH_CLAUDE_CMD…」の `--command` の値と、Scenario「端末を作れなければ送らずに failed で端末の作り直しのコマンドを出す」の作り直しのコマンドが `cld --model` を含むという値（新しい形では `cld --settings '{"idleCompaction":false}' --model` を含む）に優先する。並行する子の archive が終わったあとに元の要件へ畳み込む。
 
 環境変数 `EPIC_DISPATCH_PARENT_EPIC` が空でない環境では:
 
@@ -119,7 +119,9 @@ develop の `references/epic.md`「エピックの扱い」は次を規定しな
 - **WHEN** 端末が無い子 11 に `epic-dispatch.sh reply --as owner 400 11 <返事>` を実行する
 - **THEN** `orca terminal create` の `--command` は `--settings '{"idleCompaction":false}'` を含み、`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` を含まない
 
-この要件の守備範囲で入力として扱うのは、`launch`・`reply` を実行したシェルの環境変数（`EPIC_DISPATCH_CLAUDE_CMD`・`EPIC_DISPATCH_MODEL`）だけである。拾いたい誤りは、子の起動コマンドにアイドル時のコンパクトを切る指定が入らず、子がコンパクトされて `SKILL.md` の中身を持たないまま進むことと、通常の自動コンパクトまで止めて子の会話が上限を越えることである。次は通してよく、この要件では止めない: 主の起動コマンド（`cld`）が子のプロセスの環境に入れる `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS`（アイドル時のコンパクトを切った子では効かない）／`EPIC_DISPATCH_CLAUDE_CMD` が `--settings` を `claude` に渡さない形で、指定が効かなかった子／Claude Code が v2.1.290 より古く、指定が効かなかった子／この変更より前に起動され、従来の閾値で動いている子。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
+この要件は、要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」の表の `relaunched` の行の起動コマンドの説明（待っている間の自動コンパクトの閾値を前置きしたもの）に優先する。
+
+この要件の守備範囲で入力として扱うのは、`launch`・`reply` を実行したシェルの環境変数（`EPIC_DISPATCH_CLAUDE_CMD`・`EPIC_DISPATCH_MODEL`）だけである。拾いたい誤りは、子の起動コマンドにアイドル時のコンパクトを切る指定が入らず、子がコンパクトされて `SKILL.md` の中身を持たないまま進むことと、通常の自動コンパクトまで止めて子の会話が上限を越えることである。次は通してよく、この要件では止めない: 主の起動コマンド（`cld`）が子のプロセスの環境に入れる `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS`（アイドル時のコンパクトを切った子では効かない）／`EPIC_DISPATCH_CLAUDE_CMD` が `--settings` を `claude` に渡さない形で、指定が効かなかった子／Claude Code が v2.1.290 より古く、指定が効かなかった子／この変更より前に起動され、従来の閾値で動いている子／`EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` が設定された環境（値を見ずに無視する）。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
 
 ### Requirement: 時間がたった子への返事は 60 分を境にそのまま送るか起動し直すかを決める
 時間がたった子・親への返事の規則は `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` に置き、子について次を書かなければならない（MUST）: 子は `launch` が `--settings '{"idleCompaction":false}'` を付けてアイドル時のコンパクトを切ること（そのプロセスだけに効き通常の自動コンパクトは止めない・v2.1.290 以降が要る・`~/.claude/settings.json` に置かない）。分ける条件は、端末が無ければ起動し直す、最後のリクエストから 60 分未満ならそのまま送る、60 分以上ならコンパクトの有無と会話量によらず起動し直す。根拠は、コンパクトされた子は `SKILL.md` の中身を持たずに進むことと、費用の差の小ささ。
@@ -149,6 +151,8 @@ develop の `references/epic.md`「エピックの扱い」の「回し方」は
 #### Scenario: epic.md の回し方が起動コマンドの指定と規則のファイルを指す
 - **WHEN** `references/epic.md` の「エピックの扱い」を読む
 - **THEN** 子の起動コマンドに `--settings '{"idleCompaction":false}'` が付くことと、時間がたった子・親に返事を送る前に `references/reply-after-idle.md` の規則で決めることが書かれていて、`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` と `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` は書かれていない
+
+この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の回し方の段落のうち、`references/epic.md` に `epic-dispatch.sh` が足すのは `--model` だけと書くと求める部分に優先する（足すのは `--settings '{"idleCompaction":false}'` と `--model`）。
 
 ## REMOVED Requirements
 
