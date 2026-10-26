@@ -212,6 +212,11 @@ case "$1 $2" in
     fi
     [ -e "$STUB_CFG/tcreate_fail_$issue" ] && exit 1
     exit 0 ;;
+  "terminal read")
+    n=$(cat "$STUB_CFG/readcount" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STUB_CFG/readcount"
+    [ ! -e "$STUB_CFG/read_exit" ] || exit "$(cat "$STUB_CFG/read_exit")"
+    if [ -e "$STUB_CFG/screen_$n" ]; then cat "$STUB_CFG/screen_$n"; else cat "$STUB_CFG/screen"; fi
+    exit 0 ;;
   "terminal wait"|"terminal send")
     sub="$2"; handle=""; text=""
     while [ $# -gt 0 ]; do
@@ -226,6 +231,7 @@ case "$1 $2" in
       exit "$(cat "$STUB_CFG/wait_exit_$handle" 2>/dev/null || echo 0)"
     fi
     printf "%s" "$text" > "$STUB_CFG/sent_$handle"
+    [ ! -e "$STUB_CFG/hook_send_$handle" ] || bash "$STUB_CFG/hook_send_$handle"
     if [ -e "$STUB_CFG/send_json_$handle" ]; then
       cat "$STUB_CFG/send_json_$handle"
     else
@@ -330,6 +336,17 @@ if [ "$1 $2" = "pr list" ]; then
   cat "$STUB_CFG/pr_out" 2>/dev/null
   exit "$(cat "$STUB_CFG/pr_exit" 2>/dev/null || echo 0)"
 fi
+case "${2-}" in
+  */comments)
+    # Raw paginated JSON is used by keepalive. Existing --jq fixtures below
+    # already contain the query result, and must retain their sequence behavior.
+    if [ "$#" -eq 3 ]; then
+      issue="${2%/comments}"; issue="${issue##*/}"
+      [ ! -e "$STUB_CFG/comments_exit" ] || exit "$(cat "$STUB_CFG/comments_exit")"
+      cat "$STUB_CFG/comments_$issue" 2>/dev/null || echo "[]"
+      exit 0
+    fi ;;
+esac
 n="${2##*/}"
 count=$(( $(cat "$STUB_CFG/ghcount_$n" 2>/dev/null || echo 0) + 1 ))
 echo "$count" > "$STUB_CFG/ghcount_$n"
@@ -624,7 +641,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "${log[7]}" = "orca terminal list --worktree path:/work/issue-11 --json" ]
   starts_with "${log[8]}" "orca terminal create --worktree path:/work/issue-11 --command "
   case "${log[8]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   [ "${log[9]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
   starts_with "${log[10]}" "orca terminal send --terminal term-11 --text "
   case "${log[10]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
@@ -633,7 +650,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   starts_with "${log[13]}" "orca terminal create --worktree path:/work/issue-12 --command "
   [ "${log[14]}" = "orca terminal wait --terminal term-12 --for tui-idle --timeout-ms 60000 --json" ]
   starts_with "${log[15]}" "orca terminal send --terminal term-12 --text "
-  [ "$(calls '--prompt')" -eq 0 ]
+  [ "$(calls ' --prompt ')" -eq 0 ]
   [ "$(calls '--agent')" -eq 0 ]
 }
 
@@ -709,15 +726,15 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   EPIC_DISPATCH_MODEL='opus[1m]' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus[1m]'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus[1m]' --prompt-suggestions false" ]
 }
 
-@test "launch: EPIC_DISPATCH_CLAUDE_CMD replaces the command as is" {
+@test "launch: EPIC_DISPATCH_CLAUDE_CMD preserves the command prefix" {
   make_stub orca
   EPIC_DISPATCH_CLAUDE_CMD='cld-account b' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
 }
 
 @test "launch: an empty EPIC_DISPATCH_CLAUDE_CMD creates nothing" {
@@ -740,7 +757,7 @@ launch_ignores_idle_compact() {
   EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS="$1" run dispatch launch 400 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
 }
 
 @test "launch: the child command turns off idle compaction and has no CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS" {
@@ -748,7 +765,7 @@ launch_ignores_idle_compact() {
   run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   run grep -F 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS' "$STUB_LOG"; [ "$status" -eq 1 ]
 }
 
@@ -4188,7 +4205,7 @@ reply_ready() {
   run dispatch reply --as parent 400 11 '推奨どおり'
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "relaunched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   s="$(cat "$STUB_CFG/sent_term-11")"
   starts_with "$s" "/develop #11 "
   case "$s" in *"親エピック #400 の判断（主の承認ではない）: 推奨どおり") ;; *) echo "sent: $s"; false ;; esac
@@ -4201,7 +4218,7 @@ reply_ready() {
   EPIC_DISPATCH_CLAUDE_CMD='cld-account b' EPIC_DISPATCH_MODEL=sonnet EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=120k \
     run dispatch reply --as owner 400 11 'B で'
   [ "$status" -eq 0 ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'sonnet'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'sonnet' --prompt-suggestions false" ]
 }
 
 @test "reply: --relaunch closes the terminals before creating one" {
@@ -6454,6 +6471,133 @@ JSON
   done
 }
 
+# --- child-cache-keepalive shared definition ---
+# Generate with the production helper without running dispatch's command entry point.
+render_keepalive() {
+  sed -n '/^keepalive_text() {$/,/^}$/p' "$SCRIPT" > "$BATS_TEST_TMPDIR/keepalive-helper.sh"
+  bash -c 'source "$1"; LAUNCHER_DIR="$2"; keepalive_text' _ "$BATS_TEST_TMPDIR/keepalive-helper.sh" "${SCRIPT%/*}"
+}
+
+keepalive_reply() {
+  jq -r '.separator as $s | [.reply_prefix] + [.fields[] | . + " value"] | join($s)' \
+    "${SCRIPT%/*}/../references/child-cache-keepalive.json"
+}
+
+@test "keepalive definition: generated request includes the ordered reply shape" {
+  run render_keepalive
+  [ "$status" -eq 0 ]
+  [ -n "$output" ]
+  shape="$(jq -r '.separator as $s | [.reply_prefix] + [.fields[] | . + " <値>"] | join($s)' "$PLUGIN_DIR/references/child-cache-keepalive.json")"
+  [[ "$output" == *"$shape"* ]] || return 1
+}
+
+@test "keepalive definition: changes to template, prefix, separator and fields drive generation and matching" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  local copy="$BATS_TEST_TMPDIR/plugin"
+  mkdir -p "$copy/scripts" "$copy/references"
+  cp "$PLUGIN_DIR/scripts/epic-dispatch.sh" "$PLUGIN_DIR/scripts/epic-state.sh" "$copy/scripts/"
+  jq '.request_template = "Test request: {reply_format}" | .reply_prefix = "[test.v2]" | .separator = " / " | .fields = ["次:", "待ち:", "追加:"]' \
+    "$PLUGIN_DIR/references/child-cache-keepalive.json" > "$copy/references/child-cache-keepalive.json"
+  SCRIPT="$copy/scripts/epic-dispatch.sh"
+  request="$(render_keepalive)"
+  [ "$request" = 'Test request: [test.v2] / 次: <値> / 待ち: <値> / 追加: <値>' ]
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00Z '主の発言')" \
+    "$(chat_line assistant 2026-10-26T06:01:00Z '元の質問？')" \
+    "$(chat_line user 2026-10-26T06:02:00Z "$request")" \
+    "$(chat_line assistant 2026-10-26T06:03:00Z "$(keepalive_reply)")"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '11\t2026-10-26 15:00\t主の発言\t2026-10-26 15:01\t元の質問？')" ]
+}
+
+@test "keepalive definition: repeated exchanges preserve original text and timestamps without changing logs or state" {
+  make_stub orca
+  set_current 400
+  put_record 11 stop=stopped-seen
+  request="$(render_keepalive)"
+  reply="$(keepalive_reply)"
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00Z '主の発言')" \
+    "$(chat_line assistant 2026-10-26T06:01:00Z '元の質問？')" \
+    "$(chat_line user 2026-10-26T06:02:00Z "$request")" \
+    "$(chat_line assistant 2026-10-26T06:03:00Z "$reply")" \
+    "$(chat_line user 2026-10-26T06:04:00Z "$request")" \
+    "$(chat_line assistant 2026-10-26T06:05:00Z "$reply")"
+  before="$(cat "$(rec_of 1122 11)" "$CLAUDE_PROJECTS_DIR"/*/*.jsonl)"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '11\t2026-10-26 15:00\t主の発言\t2026-10-26 15:01\t元の質問？')" ]
+  [ "$(cat "$(rec_of 1122 11)" "$CLAUDE_PROJECTS_DIR"/*/*.jsonl)" = "$before" ]
+  [ "$(calls '^orca ')" -eq 0 ]
+}
+
+@test "keepalive definition: only a matching single-line response in the corresponding exchange is hidden" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  request="$(render_keepalive)"
+  reply="$(keepalive_reply)"
+  # No request, ordinary acknowledgement, an extra line, reordered/missing fields,
+  # and a lookalike request must all remain visible.
+  for response in "$reply" '了解' "$(printf '%s\n新しい質問？' "$reply")" \
+    "$(jq -r '.separator as $s | [.reply_prefix] + [.fields | reverse[] | . + " value"] | join($s)' "$PLUGIN_DIR/references/child-cache-keepalive.json")" \
+    "$(jq -r '.reply_prefix' "$PLUGIN_DIR/references/child-cache-keepalive.json")"; do
+    for prompt in "$request" " $request" '通常の返事'; do
+      if [ "$response" = "$reply" ] && [ "$prompt" = "$request" ]; then continue; fi
+      put_chat 11 s1 \
+        "$(chat_line assistant 2026-10-26T06:01:00Z '元の質問？')" \
+        "$(chat_line user 2026-10-26T06:02:00Z "$prompt")" \
+        "$(chat_line assistant 2026-10-26T06:03:00Z "$response")"
+      run dispatch child-log 11
+      [ "$status" -eq 0 ]
+      [ "$(printf '%s\n' "$output" | cut -f4,5)" = "$(printf '2026-10-26 15:03\t%s' "$(printf '%s' "$response" | tr '\n' ' ')")" ]
+    done
+  done
+}
+
+@test "keepalive definition: real user messages break correspondence but meta, sidechain and tool results do not" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  request="$(render_keepalive)"
+  reply="$(keepalive_reply)"
+  for interrupt in \
+    "$(chat_line user 2026-10-26T06:03:00Z '主の本当の回答')" \
+    "$(chat_line user 2026-10-26T06:03:00Z '親エピック #1122 の判断（主の承認ではない）: 通す')" \
+    "$(chat_line user 2026-10-26T06:03:00Z '主の返事（親エピック #1122 経由）: 許容する')"; do
+    put_chat 11 s1 \
+      "$(chat_line assistant 2026-10-26T06:01:00Z '元の質問？')" \
+      "$(chat_line user 2026-10-26T06:02:00Z "$request")" \
+      "$interrupt" \
+      "$(chat_line assistant 2026-10-26T06:04:00Z "$reply")"
+    run dispatch child-log 11
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s\n' "$output" | cut -f5)" = "$reply" ]
+  done
+  put_chat 11 s1 \
+    "$(chat_line assistant 2026-10-26T06:01:00Z '元の質問？')" \
+    "$(chat_line user 2026-10-26T06:02:00Z "$request")" \
+    "$(chat_line user 2026-10-26T06:03:00Z 'meta' '{"isMeta":true}')" \
+    "$(chat_line assistant 2026-10-26T06:03:00Z 'side' '{"isSidechain":true}')" \
+    '{"type":"user","timestamp":"2026-10-26T06:03:00Z","message":{"content":[{"type":"tool_result","content":"ok"}]}}' \
+    "$(chat_line assistant 2026-10-26T06:04:00Z "$reply")"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | cut -f4,5)" = "$(printf '2026-10-26 15:01\t元の質問？')" ]
+}
+
+@test "keepalive definition: child reads the shared definition before stopping and handles reserved input before resuming" {
+  grep -qF 'references/child-cache-keepalive.json' "$EPIC_CHILD_STOP"
+  grep -qF '停止前に' "$EPIC_CHILD_STOP"
+  grep -qF '通常の主の返事や親の判断より先に' "$EPIC_CHILD_STOP"
+  grep -qF '受信ターンではツールを呼ばない' "$EPIC_CHILD_STOP"
+  grep -qF 'mark resumed/stopped' "$EPIC_CHILD_STOP"
+  grep -qF '#1374' "$EPIC_CHILD_STOP"
+}
+
 # --- child-log ---
 # spec: dev-workflow-develop（epic-dispatch.sh child-log は子の会話ログの最後のやり取りを読み取り専用で出す）
 
@@ -6652,4 +6796,459 @@ chat_line() {
   grep -qF '子の停止の記録の URL は、1 行目で聞く 1 件にだけ書き' "$e"
   grep -qF '`adopt`・`child-log` に渡す' "$e"
   ! grep -qF '答えが要る子の issue（または停止の記録）の URL' "$e" || return 1
+}
+
+# Existing-session keepalive must never use the launch/deliver fallback.
+orca_keepalive() { PATH="$STUB_BIN:/usr/bin:/bin" bash "$PLUGIN_DIR/scripts/epic-launch-orca.sh" "$@" 2>"$BATS_TEST_TMPDIR/stderr"; }
+keepalive_orca_setup() {
+  make_stub orca
+  echo '{"result":{"terminals":[{"handle":"term-11","agentIdentity":"claude"}]}}' > "$STUB_CFG/tlist_json_11"
+  orca_screen '────────────────
+❯
+────────────────
+? for shortcuts'
+}
+orca_screen() { jq -cn --arg s "$1" --arg d "${2-}" '{result:{source:"screen",tail:($s|split("\n")),draft:$d}}' > "$STUB_CFG/screen"; }
+
+@test "keepalive orca: sends once to idle empty screen and verifies unsupported provider by reobservation" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  jq -cn --arg s '✽ Working… (1s · thinking)' '{result:{source:"screen",tail:[$s,"❯"]}}' > "$STUB_CFG/screen_3"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = sent ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+  [ "$(calls '^orca terminal read .*--screen.*--json')" -eq 3 ]
+  [ "$(calls '^orca .*create\|^orca .*close\|^orca terminal wait')" -eq 0 ]
+}
+
+@test "keepalive orca: rejects busy dialog draft and unknown screens without sending" {
+  keepalive_orca_setup
+  for reason in busy dialog input-not-empty unknown-state; do
+    case "$reason" in
+      busy) orca_screen '✽ Working… (1s · thinking)
+────────────────
+❯
+────────────────
+? for shortcuts' ;;
+      dialog) orca_screen '────────────────
+❯
+Enter to select · ↑/↓ to navigate' ;;
+      input-not-empty) orca_screen '────────────────
+❯
+────────────────
+? for shortcuts' '進捗どう？' ;;
+      unknown-state) orca_screen 'shell $' ;;
+    esac
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ]; [ "$output" = "skipped $reason" ]
+  done
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: continuation input with empty draft never sends" {
+  keepalive_orca_setup
+  orca_screen '────────────────
+❯
+  許容する。次の確認を待ってください
+────────────────
+? for shortcuts'
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: shell below stale Claude footer never sends" {
+  keepalive_orca_setup
+  orca_screen '────────────────
+❯
+────────────────
+? for shortcuts
+user@host work %'
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped unknown-state' ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: rechecks input, handles missing ambiguous broken and failed observations" {
+  keepalive_orca_setup
+  orca_screen '────────────────
+❯
+────────────────
+? for shortcuts' human
+  cp "$STUB_CFG/screen" "$STUB_CFG/screen_2"
+  orca_screen '────────────────
+❯
+────────────────
+? for shortcuts'
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+  echo '{"result":{"terminals":[]}}' > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped no-terminal' ]
+  echo '{"result":{"terminals":[{"handle":"a"},{"handle":"b"}]}}' > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped ambiguous-terminal' ]
+  keepalive_orca_setup
+  echo 1 > "$STUB_CFG/read_exit"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed observe' ]
+  echo broken > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed terminal-list' ]
+  echo '{"result":{"terminals":[false]}}' > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed terminal-list' ]
+  run orca_keepalive keepalive only-one
+  [ "$status" -eq 2 ]; [ -z "$output" ]
+}
+
+@test "keepalive orca: unconfirmed send fails without retry; background shell does not block" {
+  keepalive_orca_setup
+  orca_screen '· 1 shell still running
+────────────────
+❯
+────────────────
+? for shortcuts'
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+}
+
+@test "keepalive launch: orca start and deliver relaunch disable prompt suggestions" {
+  make_stub orca
+  run orca_keepalive start /work/issue-11 'cld --model sonnet' prompt 11
+  [ "$status" -eq 0 ]
+  grep -qF -- '--prompt-suggestions false' "$STUB_CFG/tcmd_11"
+  run orca_keepalive deliver /work/issue-12 1 text 'claude' prompt
+  [ "$status" -eq 0 ]
+  grep -qF -- '--prompt-suggestions false' "$STUB_CFG/tcmd_12"
+}
+
+
+# Controlled wall clock: cache age includes sleeping time, independent of SECONDS.
+keepalive_wait_setup() {
+  keepalive_orca_setup
+  set_current 400
+  put_record 11 stop=stopped-seen session=term-11
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+  export KEEPALIVE_TEST_NOW=2000000000
+  cat > "$STUB_BIN/date" <<'DATE'
+#!/bin/bash
+if [ "$*" = '+%s' ]; then echo "$KEEPALIVE_TEST_NOW"; else /bin/date "$@"; fi
+DATE
+  chmod +x "$STUB_BIN/date"
+  stop_fixture 3600
+  echo '[]' > "$STUB_CFG/comments_1122"
+  gh_seq 11 open closed
+  keepalive_chat 3000
+}
+stop_fixture() {
+  python3 - "$STUB_CFG/comments_11" "$KEEPALIVE_TEST_NOW" "$1" <<'PYCODE'
+import datetime, json, sys
+stamp = datetime.datetime.fromtimestamp(int(sys.argv[2])-int(sys.argv[3]), datetime.timezone.utc).isoformat()
+with open(sys.argv[1], 'w') as f:
+    json.dump([dict(body='子の停止: 主の返事待ち\n質問', created_at=stamp, html_url='https://example/stop', author_association='OWNER')], f)
+PYCODE
+}
+keepalive_chat() {
+  local age="$1" tokens="${2-100}" ttl="${3-1h}"
+  local dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  mkdir -p "$dir"
+  python3 - "$dir/s.jsonl" "$KEEPALIVE_TEST_NOW" "$age" "$tokens" "$ttl" <<'PYCODE'
+import datetime, json, sys
+p, now, age, tokens, ttl = sys.argv[1:]
+now, age, tokens = int(now), int(age), int(tokens)
+def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
+rows = [dict(type='user', timestamp=stamp(now-100000), message=dict(content='依頼')),
+        dict(type='assistant', timestamp=stamp(now-99999), message=dict(content='元の質問？')),
+        dict(type='assistant', entrypoint='cli', timestamp=stamp(now-4000), message=dict(usage=dict(input_tokens=10,cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens':100}))),
+        dict(type='assistant', entrypoint='cli', timestamp=stamp(now-age), message=dict(usage=dict(input_tokens=0,cache_read_input_tokens=tokens)))]
+with open(p, 'w') as f:
+    for row in rows: f.write(json.dumps(row, ensure_ascii=False)+'\n')
+PYCODE
+}
+reset_keepalive_poll() {
+  echo 0 > "$STUB_CFG/ghcount_11"
+  echo 0 > "$STUB_CFG/readcount"
+  : > "$STUB_LOG"
+}
+
+@test "keepalive wait: request 2999/3000/3599/3600 and stop 86399/86400 boundaries" {
+  keepalive_wait_setup
+  for age in 2999 3000 3599 3600 7200 -1; do
+    reset_keepalive_poll
+    keepalive_chat "$age"
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    expected=0; if [ "$age" -eq 3000 ] || [ "$age" -eq 3599 ]; then expected=1; fi
+    [ "$(calls '^orca terminal send ')" -eq "$expected" ]
+  done
+  for age in 86399 86400 -1; do
+    reset_keepalive_poll
+    keepalive_chat 3000
+    stop_fixture "$age"
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    expected=0; [ "$age" -ne 86399 ] || expected=1
+    [ "$(calls '^orca terminal send ')" -eq "$expected" ]
+  done
+}
+
+@test "keepalive wait: cache hits extend request age independently of cache write TTL" {
+  keepalive_wait_setup
+  # The 1h write is older than an hour; the last request is a cache hit at 50m.
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+  for ttl in 5m unknown; do
+    reset_keepalive_poll
+    keepalive_chat 3000 100 "$ttl"
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+}
+
+@test "keepalive wait: real replies, pending requests, ambiguity and unmeasurable usage exclude sends" {
+  keepalive_wait_setup
+  for mode in real-reply parent-reply pending ambiguous large unmeasurable invalid-time; do
+    reset_keepalive_poll
+    keepalive_chat 3000
+    dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+    case "$mode" in
+      real-reply|parent-reply|pending)
+        text='本当の回答'; [ "$mode" != parent-reply ] || text='親エピック #1122 の判断: 通す'
+        [ "$mode" != pending ] || text="$(render_keepalive)"
+        chat_line user 2033-05-18T03:33:20Z "$text" >> "$dir/s.jsonl" ;;
+      ambiguous) cp "$dir/s.jsonl" "$dir/other.jsonl" ;;
+      large) keepalive_chat 3000 150000 ;;
+      unmeasurable) keepalive_chat 3000 0 ;;
+      invalid-time) sed 's/2033-[^"]*/not a time/g' "$dir/s.jsonl" > "$dir/new"; mv "$dir/new" "$dir/s.jsonl" ;;
+    esac
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+    rm -f "$dir/other.jsonl"
+  done
+}
+
+@test "keepalive wait: stopped-seen records alone are insufficient; trusted unanswered stop is required" {
+  keepalive_wait_setup
+  for mode in done unstarted launch-failed missing-stop untrusted passed expired missing-worktree; do
+    reset_keepalive_poll
+    put_record 11 stop=stopped-seen session=term-11
+    stop_fixture 3600
+    echo '[]' > "$STUB_CFG/comments_1122"
+    case "$mode" in
+      done) put_record 11 stop=stopped-seen session=term-11 status=done ;;
+      unstarted) put_record 11 stop=stopped-seen ;;
+      launch-failed) put_record 11 stop=stopped-seen session=term-11 launch_failed=send ;;
+      missing-stop) echo '[]' > "$STUB_CFG/comments_11" ;;
+      untrusted) jq '.[0].author_association="NONE"' "$STUB_CFG/comments_11" > "$STUB_CFG/new"; mv "$STUB_CFG/new" "$STUB_CFG/comments_11" ;;
+      passed) echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — https://example/stop"}]' > "$STUB_CFG/comments_1122" ;;
+      expired) stop_fixture 86400 ;;
+      missing-worktree) put_record 11 stop=stopped-seen session=term-11 worktree=/no-such-child ;;
+    esac
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+}
+
+@test "keepalive wait: one-shot, cleanup and event polls never send" {
+  keepalive_wait_setup
+  for args in '--watch-stopped --interval 0 --timeout 0 11' '--watch-stopped --interval 0 --timeout 100 11' '--interval 1 --timeout 100 11' '--watch-done 11 --interval 0 --timeout 0'; do
+    reset_keepalive_poll
+    run dispatch wait $args
+    [ "$status" -eq 0 ] || [ "$status" -eq 2 ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+  reset_keepalive_poll
+  put_record 11 stop=stopped session=term-11
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive wait: normal and malformed exchanges preserve stop and wait until timeout" {
+  keepalive_wait_setup
+  # A real second of sleep finishes a bounded wait without busy polling.
+  echo '#!/bin/bash' > "$STUB_BIN/sleep"
+  echo '/bin/sleep 1' >> "$STUB_BIN/sleep"
+  gh_seq 11 open
+  for response in "$(keepalive_reply)" '了解' "$(printf '%s\n追加の質問' "$(keepalive_reply)")"; do
+    reset_keepalive_poll
+    keepalive_chat 3000
+    dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+    {
+      printf 'printf "%%s\\n" %q %q >> %q\n' \
+        "$(chat_line user 2033-05-18T03:33:20Z "$(render_keepalive)")" \
+        "$(chat_line assistant 2033-05-18T03:33:20Z "$response" | jq -c '.entrypoint="cli" | .message.usage={input_tokens:1,cache_read_input_tokens:99}')" "$dir/s.jsonl"
+    } > "$STUB_CFG/hook_send_term-11"
+    before="$(cat "$(rec_of 1122 11)" "$STUB_CFG/comments_11")"
+    run dispatch wait --watch-stopped --interval 1 --timeout 4 11
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+    [ "$(calls '^orca terminal send ')" -eq 1 ]
+    [ "$(cat "$(rec_of 1122 11)" "$STUB_CFG/comments_11")" = "$before" ]
+    run dispatch child-log 11
+    [ "$status" -eq 0 ]
+    if [ "$response" = "$(keepalive_reply)" ]; then
+      [ "$(printf '%s' "$output" | cut -f5)" = '元の質問？' ]
+    else
+      [ "$(printf '%s' "$output" | cut -f5)" = "$(printf '%s' "$response" | tr '\n' ' ' | cut -c1-240)" ]
+    fi
+  done
+}
+
+@test "keepalive wait: send failure is diagnostic only and real done still returns" {
+  keepalive_wait_setup
+  echo 1 > "$STUB_CFG/send_exit_term-11"
+  on_poll 11 2 status=done
+  gh_seq 11 open
+  run dispatch wait --watch-stopped --watch-done 11 --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'done 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+  grep -qF 'keepalive 11: failed send' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "wait limit timestamp regression: offset and invalid time cannot override newest 5m; naive time is UTC" {
+  for naive in false true; do
+    put_parent_cache s1 20 0 100
+    put_parent_cache s2 3 100 0
+    dir="$CLAUDE_PROJECTS_DIR/-work-parent"
+    python3 - "$dir/s2.jsonl" "$naive" <<'PYCODE'
+import datetime, json, sys
+p=sys.argv[1]
+d=json.load(open(p)); t=datetime.datetime.fromisoformat(d['timestamp'].replace('Z','+00:00'))
+d['timestamp'] = t.replace(tzinfo=None).isoformat() if sys.argv[2]=='true' else t.astimezone(datetime.timezone(datetime.timedelta(hours=-5))).isoformat()
+open(p,'w').write(json.dumps(d)+'\n')
+PYCODE
+    echo '{"type":"assistant","entrypoint":"cli","timestamp":"not a time","message":{"usage":{"cache_creation":{"ephemeral_1h_input_tokens":100}}}}' > "$dir/s3.jsonl"
+    gh_seq 11 closed
+    run dispatch wait 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    stderr_has 'wait limit 21600 (parent cache 5m)'
+    # Overwrite rather than append for the second case.
+    rm -f "$dir/s1.jsonl" "$dir/s2.jsonl" "$dir/s3.jsonl"
+  done
+}
+
+# F2: closed classification from the decider; exercise observation and send together.
+keepalive_matrix_orca() {
+  python3 - orca "$1" > "$BATS_TEST_TMPDIR/matrix.jsonl" <<'PYCODE'
+import itertools, json, sys
+mode, group = sys.argv[1:]
+b = "────────────────"
+f = "? for shortcuts"
+def box(body="❯", footer=f): return b+"\n"+body+"\n"+b+"\n"+footer
+cases = []
+def add(g, name, screen, expected, **kw):
+    if g == group: cases.append(dict(name=name, screen=screen, expected=expected, **kw))
+ready = box()
+add("structure", "unique", ready, "sent")
+for footer in ("(shift+tab to cycle)", "manual mode on"):
+    add("structure", footer, box(footer=footer), "sent")
+add("structure", "blank-lines", box("❯\n\n   "), "sent")
+for name, screen in [("missing-upper", "❯\n"+b+"\n"+f), ("missing-lower", b+"\n❯\n"+f), ("missing-footer", b+"\n❯\n"+b), ("missing-prompt", box("")), ("reversed", f+"\n"+b+"\n❯"), ("multiple-regions", ready+"\n"+ready), ("multiple-openers", box("❯ human\n"+b+"\n❯")), ("stale-shell", ready+"\nuser@host %"), ("stale-output", ready+"\nother output")]:
+    add("structure", name, screen, "skipped unknown-state")
+for name, body in [("normal", "❯ human"), ("leading-newline-F1", "❯\n\n  human"), ("wrapped", "❯ human\n  continued"), ("multiline", "❯ one\n two\n three"), ("F2", "❯ この表示について確認したい\n  ❯")]:
+    add("content", name, box(body), "skipped input-not-empty")
+# Every nonempty subset, alone and repeated, is literal input. Borders and
+# footer-like lines in the body must never discard the earlier input.
+for size in range(1, 4):
+    for parts in itertools.combinations(["  ❯", b, f], size):
+        for count in (1, 2):
+            body = "❯\n" + "\n".join(parts * count)
+            # A body border immediately followed by another prompt creates a
+            # second possible opener. The decider requires unknown-state here.
+            ambiguous = any(a == b and c.strip() == "❯"
+                            for a, c in zip(body.splitlines(), body.splitlines()[1:]))
+            add("content", repr((parts, count)), box(body),
+                "skipped unknown-state" if ambiguous else "skipped input-not-empty")
+add("content", "embedded-full-frame", box("❯ human\n"+box()), "skipped unknown-state")
+add("observation", "short", ready, "sent")
+for n in (8, 9, 20):
+    # Four UI rows + n background rows: exactly 12, 13 and more nonblank rows.
+    add("observation", "background-"+str(n), "history\n"*n+ready, "sent")
+    add("observation", "hidden-input-"+str(n), box("❯ human\n"+"\n"*20+"  ❯\n"*n), "skipped input-not-empty")
+    for marker, result in [("✽ Working… (1s · thinking)", "busy"), ("Enter to select", "dialog")]:
+        add("observation", marker+str(n), marker+"\n"+"history\n"*n+ready, "skipped "+result)
+add("observation", "offscreen-opener", "  ❯\n"*13+b+"\n"+f, "skipped unknown-state")
+for name, body in [("dim-only", "❯ \x1b[2msuggestion\x1b[0m"), ("dim-wrapped", "❯ \x1b[2msuggestion\n continued\x1b[22m")]:
+    add("decoration", name, box(body), "sent" if mode == "tmux" else "skipped input-not-empty")
+for name, body in [("mixed", "❯ human \x1b[2msuggestion\x1b[0m"), ("reset-next-line", "❯ \x1b[2msuggestion\n\x1b[0mhuman"), ("reset-before-wrap", "❯ \x1b[2msuggestion\x1b[22m\n human")]:
+    add("decoration", name, box(body), "skipped input-not-empty")
+add("foreground", "idle", ready, "sent")
+add("foreground", "background-shell", "· 1 shell still running\n"+ready, "sent")
+for marker, result in [("✽ Working… (1s · thinking)", "busy"), ("esc to interrupt", "busy"), ("Enter to select", "dialog"), ("Esc to cancel", "dialog"), ("Do you want to proceed?", "dialog"), ("Do you want to trust this folder?", "dialog")]:
+    add("foreground", marker, marker+"\n"+ready, "skipped "+result)
+add("foreground", "unknown", "unrecognized UI", "skipped unknown-state")
+for name, after, result in [("input", box("❯ human"), "input-not-empty"), ("busy", "esc to interrupt\n"+ready, "busy"), ("dialog", "Enter to confirm\n"+ready, "dialog"), ("ambiguous", ready+"\n"+ready, "unknown-state")]:
+    add("connection", name, ready, "skipped "+result, after=after)
+if mode == "orca":
+    add("draft", "empty", ready, "sent", draft="")
+    add("draft", "absent", ready, "sent", omit_draft=True)
+    add("draft", "nonempty-vs-empty-tail", ready, "skipped input-not-empty", draft="human")
+    add("draft", "nonempty-suggestion", box("❯ \x1b[2msuggestion\x1b[0m"), "skipped input-not-empty", draft="suggestion")
+    add("draft", "empty-vs-input-tail", box("❯ human"), "skipped input-not-empty", draft="")
+    for d in (None, False, [], {}): add("draft", repr(d), ready, "failed observe", draft=d)
+    for malformed in ({}, {"result": []}, {"result": {"source":"screen", "tail":[False]}}, {"result": {"source":"screen"}}):
+        add("draft", repr(malformed), ready, "failed observe", observation=malformed)
+    add("draft", "not-screen", ready, "skipped unknown-state", observation={"result":{"source":"log", "tail":[]}})
+for c in cases: print(json.dumps(c, ensure_ascii=False))
+PYCODE
+  while IFS= read -r row; do
+    name="$(printf '%s' "$row" | jq -r '.name')"
+    expected="$(printf '%s' "$row" | jq -r '.expected')"
+    : > "$STUB_LOG"
+    echo 0 > "$STUB_CFG/readcount"
+    printf '%s' "$row" | jq -c 'if has("observation") then .observation else {result:({source:"screen",tail:(.screen|split("\n"))} + (if .omit_draft then {} else {draft:(if has("draft") then .draft else "" end)} end))} end' > "$STUB_CFG/screen"
+    printf '%s' "$row" | jq -c '{result:{source:"screen",tail:((.after // .screen)|split("\n")),draft:""}}' > "$STUB_CFG/screen_2"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$name: actual=$output expected=$expected" >&3
+    [ "$output" = "$expected" ]
+    if [[ "$expected" == failed* ]]; then [ "$status" -eq 1 ]; else [ "$status" -eq 0 ]; fi
+    if [ "$expected" = sent ]; then
+    [ "$(calls '^orca terminal send ')" -eq 1 ]
+    else
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+    fi
+  done < "$BATS_TEST_TMPDIR/matrix.jsonl"
+}
+
+@test "keepalive orca: F2 matrix structure" {
+  keepalive_orca_setup
+  keepalive_matrix_orca structure
+}
+
+@test "keepalive orca: F2 matrix content" {
+  keepalive_orca_setup
+  keepalive_matrix_orca content
+}
+
+@test "keepalive orca: F2 matrix observation" {
+  keepalive_orca_setup
+  keepalive_matrix_orca observation
+}
+
+@test "keepalive orca: F2 matrix decoration" {
+  keepalive_orca_setup
+  keepalive_matrix_orca decoration
+}
+
+@test "keepalive orca: F2 matrix foreground" {
+  keepalive_orca_setup
+  keepalive_matrix_orca foreground
+}
+
+@test "keepalive orca: F2 matrix connection" {
+  keepalive_orca_setup
+  keepalive_matrix_orca connection
+}
+
+@test "keepalive orca: F2 matrix draft" {
+  keepalive_orca_setup
+  keepalive_matrix_orca draft
 }
