@@ -1026,7 +1026,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   echo "$p" | grep -qxF '  きっかけ: <主が任せる旨を述べた発言の全文。無ければ なし>'
 }
 
-@test "delegated reply (#1293): the confirmation question asks to type 任せる right after it, and re-asks when unreadable or interrupted" {
+@test "delegated reply (#1293): the confirmation question asks to type the delegation word right after it, and re-asks when unreadable or interrupted" {
   p="$(deleg_para | grep -F -- '- **委任の受け方**')"
   echo "$p" | grep -qF '親のタブで `任せる` を、この問いの直後に別の発言を挟まずに打つ'
   echo "$p" | grep -qF '質問ツールで聞かない'
@@ -1060,12 +1060,12 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   child_reply_item | grep -qF "$DELEG_STOP4"
 }
 
-@test "delegated reply (#1293): the recommendation is judged by 許容する (not 許容) in epic.md and epic-child-stop.md" {
+@test "delegated reply (#1293): the recommendation is judged by the full allow phrase (not the bare stem) in epic.md and epic-child-stop.md" {
   deleg_para | grep -qF "$DELEG_RECOMMEND"
   child_reply_item | grep -qF "$DELEG_RECOMMEND"
 }
 
-@test "delegated reply (#1293): the parent sends with the delegation tag and records it without 親の判断:" {
+@test "delegated reply (#1293): the parent sends with the delegation tag and records it without the parent-judgment prefix" {
   p="$(deleg_para | grep -F -- '- **委任で送る**')"
   echo "$p" | grep -qF 'reply --as owner'
   echo "$p" | grep -qF '`許容する（主の委任による。停止の記録: <URL>） [主の委任: セッション <親のセッション ID> / uuid <確認の uuid> / 記録 <委任の記録の URL>]`'
@@ -1086,7 +1086,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   done
 }
 
-@test "delegated reply (#1293): the child checks a [主の委任: …] reply with --delegated and never with --relayed" {
+@test "delegated reply (#1293): the child checks a delegation-tagged reply with --delegated and never with --relayed" {
   item="$(child_reply_item)"
   echo "$item" | grep -qF '末尾が `[主の委任: セッション <ID> / uuid <uuid> / 記録 <URL>]` の返事'
   echo "$item" | grep -qF '上の `--relayed` に掛けず'
