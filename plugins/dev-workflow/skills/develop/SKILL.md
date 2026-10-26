@@ -146,11 +146,11 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       次の段へ → `次の段:` の G を新しく起こす（照合と振り分けが止める指摘なしで終われば合格処理。保留の解除は合格処理か前提確認と重さ判定で、
            代替案で手順 2 からやり直すときに W の修正が要るなら、W の修正のあとで前提確認と重さ判定の G を起こす）
       合格処理（手順 5）では PR が Draft なら Ready にしてから agent-review:passed を付ける（W は Ready にしない）
-      passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない。中身は reference が正本）。
-           見張りの背景タスクの `stopped` / `killed` の通知を受けたら `references/ci-watch.md` の 9 に従う。
-           ただし G の return に `issue で承認済み:` の行があれば、CI の見張りを始める前に主へその行（宣言 URL・分類・引用）を 1 回伝える（pr-review-gate 手順 5 の事後報告。書式は pr-review-gate の `stages/pass.md`）。
+      passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない）。
+           見張りの背景タスクの `stopped` / `killed` 通知は `references/ci-watch.md` の 9 に従う。
+           ただし G の return に `issue で承認済み:` があれば、見張りの前に主へその行（宣言 URL・分類・引用）を 1 回伝える（pr-review-gate 手順 5 の事後報告。書式は pr-review-gate の `stages/pass.md`）。
            見張りの一手が `fix` なら W に直させ（再開指示に `段: implement`。再開か手渡しかは (3) と同じく正本に従う）、
-           W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け（CI のやり直し・再度の直しもここで処理する）、
+           W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け、
            `ready` になってから前提確認と重さ判定の G を新しく起こしてゲートを取り直させ、
            G が再び passed を返したら見張りの続き（reference の「`ready` を受けたあと」）に進む。合格するまでマージ待ち・マージ依頼に進まない。unmanned は (4) を回さないので対象外
       needs-reviewer → adapter 経路では G は full でも light でもこれを返す。本体は次の順で進む:
