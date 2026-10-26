@@ -142,3 +142,26 @@ PY
     unlink "$SETTINGS"
   done
 }
+
+@test "startup docs: CLI false and local false proceed without recurring owner checks including unmanned (#1385 F1)" {
+  run python3 - "$BATS_TEST_DIRNAME/.." <<'PY'
+from pathlib import Path
+import sys
+plugin = Path(sys.argv[1])
+repo = plugin.parent.parent
+paths = [plugin / 'skills/develop/references/reply-after-idle.md',
+         plugin / 'changes/1385.md',
+         repo / 'openspec/specs/dev-workflow-develop/spec.md',
+         repo / 'openspec/changes/archive/2026-10-26-disable-develop-idle-compaction/specs/dev-workflow-develop/spec.md',
+         repo / 'openspec/changes/archive/2026-10-26-disable-develop-idle-compaction/design.md']
+for path in paths:
+    text = path.read_text()
+    for term in ['起動引数', 'disk', 'live', '初回の実機検証', '機械確認', 'unmanned', '主に聞かず進む']:
+        assert term in text, (path, term)
+text = paths[0].read_text().split('## 開始時の設定')[1].split('## アイドル時')[0]
+for term in ['新規 worktree', '既存 local false', '--settings', '起動前', '再起動', '矛盾', '追加確認を求めない', 'unmanned は停止']:
+    assert term in text, term
+assert '主が `/config` の Idle compaction が off であることを確認する。' not in text
+PY
+  [ "$status" -eq 0 ]
+}

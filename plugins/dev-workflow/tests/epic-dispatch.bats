@@ -6660,3 +6660,27 @@ chat_line() {
   printf '%s\n' "$p7" | grep -qF '復元→ログ確認→状態表'
   printf '%s\n' "$p7" | grep -qF '区切りより下'
 }
+
+@test "epic.md: inherited replies use original session and uuid through verification and sending (#1385 F2)" {
+  run python3 - "$BATS_TEST_DIRNAME/.." <<'PY'
+from pathlib import Path
+import sys
+plugin = Path(sys.argv[1])
+repo = plugin.parent.parent
+text = (plugin / 'skills/develop/references/epic.md').read_text()
+p7 = text.split('\n7. ')[1].split('\n8. ')[0]
+p8 = text.split('\n8. ')[1].split('\n\n')[0]
+for term in ['保存した元セッション ID・uuid', '最新の停止記録 URL', '真正性と対象']:
+    assert term in p7, term
+for term in ['--locate "<保存した元セッション ID>"', '保存した uuid', '全文', 'timestamp',
+             '[主の発言: セッション <保存した元セッション ID> / uuid <保存した uuid>]',
+             '現在の ID による再検索はしない', '再回答を要求しない', '照合に失敗']:
+    assert term in p8, term
+for path in [repo / 'openspec/specs/dev-workflow-develop/spec.md',
+             repo / 'openspec/changes/archive/2026-10-26-disable-develop-idle-compaction/specs/dev-workflow-develop/spec.md']:
+    scenario = path.read_text().split('#### Scenario: 長時間後の主の返事は新親で元発言を確かめる')[1].split('#### Scenario:')[0]
+    for term in ['新親と元セッションの ID が異なる', '保存した元セッション ID・uuid', '最新の停止記録 URL', '添え書き', '再回答を要求しない']:
+        assert term in scenario, (path, term)
+PY
+  [ "$status" -eq 0 ]
+}
