@@ -43,7 +43,9 @@ Claude Code で develop を開始する本体は、役割別工程や返事待�
 ### Requirement: idle compaction の設定を確かめられなければ成功にしない
 設定部品は、読めない・壊れた・object でない・重複キーのある JSON、不正な worktree、対象への symlink を検出したら書かず exit 1 にしなければならない（MUST）。check は disk 上で false なら exit 0、false への変更が必要なら exit 2 とする（MUST）。本体は disk 上の成功だけで live 反映を断定せず、反映しなければ記録から新セッションで再確認し、それでも off でなければ開始を止める（MUST）。
 
-起動引数の `--settings '{"idleCompaction":false}'` と矛盾する上書きが無いこと、起動前から disk が false の新セッションで矛盾する起動引数が無いこと、または実効値 off を機械確認できれば、interactive / unmanned とも主に聞かず進む。新規 worktree の子は check exit 2 と承認済み apply の後も起動引数の経路を使え、既存 local false は書き込まない。disk false だけや起動後の apply だけで live 反映を断定しない。主の `/config` 確認は初回の実機検証または機械確認で off を確かめられない場合に限る。後者は状態を記録して同じ worktree の新セッションで再起動し、入口から再確認する。なお不明なら interactive は主に確認を求め、unmanned は停止して理由を記録する。on の場合も未反映として再起動し、それでも off を確認できなければ開始を止める。機械で確認した範囲を超えて live で off と報告しない。（MUST）。
+#### Scenario: 機械確認の根拠と確認失敗時の扱い
+- **WHEN** check / apply 後に開始可否を判断する
+- **THEN** 起動引数の `--settings '{"idleCompaction":false}'` と矛盾する上書きが無いこと、起動前から disk が false の新セッションで矛盾する起動引数が無いこと、または実効値 off を機械確認できれば、interactive / unmanned とも主に聞かず進む。新規 worktree の子は check exit 2 と承認済み apply の後も起動引数の経路を使え、既存 local false は書き込まない。disk false だけや起動後の apply だけで live 反映を断定しない。主の `/config` 確認は初回の実機検証または機械確認で off を確かめられない場合に限る。後者は状態を記録して同じ worktree の新セッションで再起動し、入口から再確認する。なお不明なら interactive は主に確認を求め、unmanned は停止して理由を記録する。on の場合も未反映として再起動し、それでも off を確認できなければ開始を止める。機械で確認した範囲を超えて live で off と報告しない。
 
 #### Scenario: 既に off の起動は主の毎回確認を求めない
 - **WHEN** 新規 worktree の子が CLI false で起動した、既存 local false を起動前から読み矛盾する指定が無い、または実効値 off を機械確認できた

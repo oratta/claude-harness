@@ -6665,7 +6665,7 @@ chat_line() {
   run python3 - "$BATS_TEST_DIRNAME/.." <<'PY'
 from pathlib import Path
 import sys
-plugin = Path(sys.argv[1])
+plugin = Path(sys.argv[1]).resolve()
 repo = plugin.parent.parent
 text = (plugin / 'skills/develop/references/epic.md').read_text()
 p7 = text.split('\n7. ')[1].split('\n8. ')[0]
