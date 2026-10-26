@@ -18,8 +18,8 @@ W の仕様化経路があるかどうかは `openspec --version` が成功す�
 - **THEN** `implement.md` に文言合わせの通し方では `openspec validate <change-name> --type change --strict` を使うことが書かれ、`finish.md` に archive のあと `openspec/changes/archive/` に change のディレクトリがあることを確かめることが書かれている
 
 #### Scenario: proposal.md の無い change を名前だけで検証する
-- **WHEN** `specs/<capability>/spec.md` だけを持つ change に `openspec validate <change> --type change --strict` を実行する
-- **THEN** 差分が検査され、正しい差分なら版によらず終了コード 0 で終わる。`--type change` を付けない形は、終了コード 0 で終わるか、`Unknown item` と出て終了コード 1 で終わるかのどちらかで、どちらになるかは openspec の版で決まる
+- **WHEN** `specs/<capability>/spec.md` だけを持つ change（どの spec とも名前が違うもの）に `openspec validate <change> --type change --strict` を実行する
+- **THEN** 差分が検査され、正しい差分なら版によらず終了コード 0 で終わる。`--type change` を付けない形は、終了コード 0 で終わるか、`Unknown item` と出て終了コード 1 で終わるかのどちらかで、どちらになるかは openspec の版で決まる。change と同名の spec があると名前が曖昧になり、`Ambiguous item` と出て終了コード 1 で終わる版がある。`--type change` を付ければこの曖昧さは起きない
 
 #### Scenario: 経路の有無を CLI だけで決める
 - **WHEN** `worker.md` の仕様化判断の節と、`develop/SKILL.md` の前提の表の openspec の行を読む
