@@ -338,10 +338,14 @@ if [ "$1 $2" = "pr list" ]; then
 fi
 case "${2-}" in
   */comments)
-    issue="${2%/comments}"; issue="${issue##*/}"
-    [ ! -e "$STUB_CFG/comments_exit" ] || exit "$(cat "$STUB_CFG/comments_exit")"
-    cat "$STUB_CFG/comments_$issue" 2>/dev/null || echo "[]"
-    exit 0 ;;
+    # Raw paginated JSON is used by keepalive. Existing --jq fixtures below
+    # already contain the query result, and must retain their sequence behavior.
+    if [ "$#" -eq 3 ]; then
+      issue="${2%/comments}"; issue="${issue##*/}"
+      [ ! -e "$STUB_CFG/comments_exit" ] || exit "$(cat "$STUB_CFG/comments_exit")"
+      cat "$STUB_CFG/comments_$issue" 2>/dev/null || echo "[]"
+      exit 0
+    fi ;;
 esac
 n="${2##*/}"
 count=$(( $(cat "$STUB_CFG/ghcount_$n" 2>/dev/null || echo 0) + 1 ))
@@ -637,7 +641,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "${log[7]}" = "orca terminal list --worktree path:/work/issue-11 --json" ]
   starts_with "${log[8]}" "orca terminal create --worktree path:/work/issue-11 --command "
   case "${log[8]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   [ "${log[9]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
   starts_with "${log[10]}" "orca terminal send --terminal term-11 --text "
   case "${log[10]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
@@ -646,7 +650,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   starts_with "${log[13]}" "orca terminal create --worktree path:/work/issue-12 --command "
   [ "${log[14]}" = "orca terminal wait --terminal term-12 --for tui-idle --timeout-ms 60000 --json" ]
   starts_with "${log[15]}" "orca terminal send --terminal term-12 --text "
-  [ "$(calls '--prompt')" -eq 0 ]
+  [ "$(calls ' --prompt ')" -eq 0 ]
   [ "$(calls '--agent')" -eq 0 ]
 }
 
@@ -722,15 +726,15 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   EPIC_DISPATCH_MODEL='opus[1m]' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus[1m]'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus[1m]' --prompt-suggestions false" ]
 }
 
-@test "launch: EPIC_DISPATCH_CLAUDE_CMD replaces the command as is" {
+@test "launch: EPIC_DISPATCH_CLAUDE_CMD preserves the command prefix" {
   make_stub orca
   EPIC_DISPATCH_CLAUDE_CMD='cld-account b' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
 }
 
 @test "launch: an empty EPIC_DISPATCH_CLAUDE_CMD creates nothing" {
@@ -753,7 +757,7 @@ launch_ignores_idle_compact() {
   EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS="$1" run dispatch launch 400 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
 }
 
 @test "launch: the child command turns off idle compaction and has no CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS" {
@@ -761,7 +765,7 @@ launch_ignores_idle_compact() {
   run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   run grep -F 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS' "$STUB_LOG"; [ "$status" -eq 1 ]
 }
 
@@ -4201,7 +4205,7 @@ reply_ready() {
   run dispatch reply --as parent 400 11 '推奨どおり'
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "relaunched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   s="$(cat "$STUB_CFG/sent_term-11")"
   starts_with "$s" "/develop #11 "
   case "$s" in *"親エピック #400 の判断（主の承認ではない）: 推奨どおり") ;; *) echo "sent: $s"; false ;; esac
@@ -4214,7 +4218,7 @@ reply_ready() {
   EPIC_DISPATCH_CLAUDE_CMD='cld-account b' EPIC_DISPATCH_MODEL=sonnet EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=120k \
     run dispatch reply --as owner 400 11 'B で'
   [ "$status" -eq 0 ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'sonnet'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'sonnet' --prompt-suggestions false" ]
 }
 
 @test "reply: --relaunch closes the terminals before creating one" {
@@ -6933,7 +6937,7 @@ reset_keepalive_poll() {
 
 @test "keepalive wait: request 2999/3000/3599/3600 and stop 86399/86400 boundaries" {
   keepalive_wait_setup
-  for age in 2999 3000 3599 3600 -1; do
+  for age in 2999 3000 3599 3600 7200 -1; do
     reset_keepalive_poll
     keepalive_chat "$age"
     run dispatch wait --watch-stopped --interval 1 --timeout 100 11
@@ -7041,7 +7045,7 @@ reset_keepalive_poll() {
     {
       printf 'printf "%%s\\n" %q %q >> %q\n' \
         "$(chat_line user 2033-05-18T03:33:20Z "$(render_keepalive)")" \
-        "$(chat_line assistant 2033-05-18T03:33:21Z "$response" | jq -c '.entrypoint="cli" | .message.usage={input_tokens:1,cache_read_input_tokens:99}')" "$dir/s.jsonl"
+        "$(chat_line assistant 2033-05-18T03:33:20Z "$response" | jq -c '.entrypoint="cli" | .message.usage={input_tokens:1,cache_read_input_tokens:99}')" "$dir/s.jsonl"
     } > "$STUB_CFG/hook_send_term-11"
     before="$(cat "$(rec_of 1122 11)" "$STUB_CFG/comments_11")"
     run dispatch wait --watch-stopped --interval 1 --timeout 4 11
