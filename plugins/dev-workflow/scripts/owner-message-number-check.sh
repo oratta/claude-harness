@@ -107,7 +107,7 @@ def mask_quotes_and_urls(text):
                 ch = text[i]
                 if local and ch == QUOTE_PAIRS[local[-1]]:
                     local.pop()
-                elif not local and closes_outer(stack, ch):
+                elif closes_outer(stack, ch):
                     break
                 elif ch in QUOTE_PAIRS:
                     local.append(ch)

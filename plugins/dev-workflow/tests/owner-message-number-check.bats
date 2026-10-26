@@ -271,6 +271,12 @@ PY
   reason_of >/dev/null
 }
 
+@test "first line: an outer quote closing inside a URL ends the URL even with an open quote in the URL" {
+  msg_of '「https://example.com/『x」をマージしますか？ PR #1330 が main に入ります。'
+  run_hook
+  reason_of >/dev/null
+}
+
 @test "first line: an ASCII double quote closing around a URL ends the URL (pattern 6a)" {
   msg_of '"https://example.com/x?y=1" を PR #1330 に出しますか？ 出すと main に入ります。'
   run_hook
