@@ -59,11 +59,27 @@
 
 ### 4. 起動部品に既存セッション専用の送信を足す
 
-Orca/tmux の起動部品に `keepalive <worktree> <text>` を足す。dispatch は既存の launcher 選択から呼び、Orca/tmux を直接呼ばない。部品は既存セッションが一意に決まり、入力待ちである場合だけ送信する。端末無し・曖昧・実行中・質問や許可の選択画面・入力欄が空でないときは skipped とし、入力や主の回答を上書きしない。入力待ちを確かめるために子の処理を長く待たない。
+Orca/tmux の起動部品に `keepalive <worktree> <text>` を足す。dispatch は既存の launcher 選択から呼び、Orca/tmux を直接呼ばない。部品は既存セッションが一意に決まり、前景が空いた入力待ちで入力欄が空の場合だけ送信する。端末無し・曖昧・実行中・選択画面・入力欄が空でないときは skipped とし、入力や主の回答を上書きしない。入力待ちを確かめるために子の処理を長く待たない。
 
-端末作成・close・relaunch・文字列の消去は一切行わない。送信後は既存のターン開始確認を利用するが、turn_started は送信確認であり、正しい返事やキャッシュ維持の実証ではない。部品の stdout は `sent` / `skipped <reason>`（ともに exit 0）/ `failed <reason>`（exit 1）の一行だけとし、引数数違いは stdout を空にして使い方を stderr に出し exit 2。dispatch は診断を stderr に扱う。引数・理由の語・許可する操作の正本は、この change の `dev-workflow-epic-state` delta とする。Orca は terminal list/read による観測と既存端末への send、tmux は list-panes/capture-pane と既存ペインへのリテラル送信・ログでの到達確認に限定する。送信前には再観測し、待機状態や入力の消去を作る操作はしない。
+実 CLI 観測（[既存セッション](https://github.com/oratta/claude-harness/issues/1383#issuecomment-6417747824)、[不足状態の追加観測](https://github.com/oratta/claude-harness/issues/1383#issuecomment-6417870287)）で tasks 0.1 は完了した。Orca 1.4.240、tmux 3.8、追加観測の Claude Code 2.1.310 の出力に基づき、初回・送信直前の両方で次の判定を使う。
 
-両起動部品で同じ限定を満たす。実装の最初に、Orca と tmux の両経路で既存セッションの「入力待ち・空欄」を実際の CLI 出力から観測できるか確かめる。実行中・入力済み・選択画面との区別も確認し、コマンド・版・出力・終了コード・判定根拠を #1383 に記録する。スタブの成功だけでは前提確認としない。既存 CLI で区別できなければ推測でキーを送らず、証拠と不足する観測を本体へ返して依存する実装を止める。
+| 観測 | 判定 |
+|---|---|
+| 記号＋`…`＋`(Ns · …)` のスピナー行（例: `✽ Hullaballooing… (6s · ↓ 215 tokens)`） | 空の `❯` が同居しても実行中として `skipped busy` |
+| AskUserQuestion の `Enter to select · ↑/↓ to navigate` | `skipped dialog` |
+| 許可画面の `Do you want to proceed?` または `Esc to cancel · Tab to amend` | `skipped dialog` |
+| フォルダ信頼確認の `Enter to confirm · Esc to cancel` | `skipped dialog` |
+| Orca の `orca terminal read --terminal <handle> --screen --json` | stream の tail や `status: running` では判定しない。画面で前景の入力待ちを確認し、`draft` が無いか空のときだけ空欄。非空なら `skipped input-not-empty` |
+| tmux の `tmux capture-pane -p -e -t <pane>` | 画面で前景の入力待ちを確認し、`❯ ` の後が空なら空欄。薄字 `\e[2m` の提案文だけなら空欄とみなしてよい。それ以外の文字があれば `skipped input-not-empty` |
+| `· N shell still running` の表示 | バックグラウンドのシェルだけなら前景は空いているため、他の条件を満たせば送信可 |
+
+空のプロンプトだけを入力待ちの根拠にせず、前景の実行中・各選択画面を除外する。tmux の `pane_current_command` が `bash` 等でも Claude Code の画面がある実例があり、シェル名だけでセッションの有無を決めない。状態を確定できない画面は `skipped unknown-state` とする。
+
+Claude Code の提案文は Orca の `draft` では人の入力と区別できない。その対策として、親が両起動部品で子を起動するとき（`start` と `deliver` の起動し直しを含む）、`claude` に渡る起動引数へ `--prompt-suggestions false` を付ける。これより前に起動された子の非空の `draft` も人の入力とみなして送らない。設定ファイルや別の識別の仕組みは作らず、既存の入力を消して空欄にもしない。
+
+`keepalive` は端末作成・close・relaunch・文字列の消去を一切行わない。送信後は既存のターン開始確認を利用するが、turn_started は送信確認であり、正しい返事やキャッシュ維持の実証ではない。部品の stdout は `sent` / `skipped <reason>`（ともに exit 0）/ `failed <reason>`（exit 1）の一行だけとし、引数数違いは stdout を空にして使い方を stderr に出し exit 2。dispatch は診断を stderr に扱う。引数・理由の語・許可する操作の正本は、この change の `dev-workflow-epic-state` delta とする。Orca は terminal list/read による観測と既存端末への send、tmux は list-panes/capture-pane と既存ペインへのリテラル送信・ログでの到達確認に限定する。送信前には再観測し、待機状態や入力の消去を作る操作はしない。
+
+両起動部品で同じ限定を満たす。上記の実観測を Bats の画面・draft のケースへ反映する。スタブの成功だけでは実際の返事や費用削減の確認としない。Orca の追加観測では送信確認が `provider: unsupported` だったため、送信開始を確認できなければ既定の `failed send` とし、再送しない。
 
 ### 5. TTL 5 分・スリープ・上限後は通常の再開へ渡す
 
@@ -81,7 +97,7 @@ Orca/tmux の起動部品に `keepalive <worktree> <text>` を足す。dispatch 
 
 ## Validation and cost comparison
 
-先行する実 CLI 観測確認を終えてから、スタブ Bats は送信条件・時刻境界・除外の対応・停止状態不変・wait の出力を検証する。Orca/tmux の部品は端末無し/実行中/入力済みで新規起動もキー送信もしないことを確認する。時刻は実時間待ちをせず制御する。予約文を主が打つ場合の除外と、型違い・複数行の返事の表示、stop=stopped-seen 不変・wait 継続・24 時間の基点不変も確認する。
+完了した実 CLI 観測に基づき、スタブ Bats は送信条件・時刻境界・除外の対応・停止状態不変・wait の出力を検証する。Orca/tmux の部品は端末無し/実行中/入力済み/質問・許可・信頼確認で新規起動もキー送信もしないことを確認する。`status: running` の空欄待機、空の `❯` とスピナーの同居、Orca の非空 draft、tmux の薄字候補、バックグラウンドシェルだけの待機、両部品の起動引数 `--prompt-suggestions false` も確認する。時刻は実時間待ちをせず制御する。予約文を主が打つ場合の除外と、型違い・複数行の返事の表示、stop=stopped-seen 不変・wait 継続・24 時間の基点不変も確認する。
 
 #1379 の回帰として、20 分前の Z 付き cli/1h、3 分前の -05:00 付き cli/5m、`not a time` の cli/1h を置く。上限未指定の `dispatch wait 11` が stderr に `wait limit 21600 (parent cache 5m)` を出すことと、時差なしを UTC として比較することを確認する。
 
