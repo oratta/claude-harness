@@ -962,7 +962,7 @@ G が `工程中断:` で返したとき、本体は同じ段の新しい G を�
 
 ### Requirement: G の再開を前提にした既存要件の読み替え
 
-既存要件のうち G の「再開」「SendMessage で G に渡す」「G を再開して再レビュー」と書いた箇所は、上の要件「G は段ごとに新しく起こし、SendMessage で再開しない」の表で、その時点に当たる段の G を新しく起こし、その起動指示に渡すものとして読まなければならない（MUST）。`レビュー経路: adapter` で起動済みの同一 G が行の無い再開指示でも adapter 経路を保つ規則は、再開が無いので `gate-runner.md`・SKILL.md・`plugins/dev-workflow/references/codex-develop.md` から消さなければならない（MUST）。本体がすべての G の起動指示に `レビュー経路: adapter` の 1 行を書く規則は変えない。
+既存要件のうち G の「再開」「SendMessage で G に渡す」「G を再開して再レビュー」と書いた箇所は、上の要件「G は段ごとに新しく起こし、SendMessage で再開しない」の表で、その時点に当たる段の G を新しく起こし、その起動指示に渡すものとして読まなければならない（MUST）。`レビュー経路: adapter` で起動済みの同一 G が行の無い再開指示でも adapter 経路を保つ規則は、再開が無いので `gate-runner.md`・SKILL.md・`plugins/dev-workflow/references/codex-develop.md` から消さなければならない（MUST）。本体がすべての G の起動指示に `レビュー経路: adapter` の 1 行を書く規則は変えない（本文は SKILL.md の「Role profile の選択」節に置き、`references/codex-develop.md` はそこを指す）。
 
 `stages/prepare.md` に置くとした「レビュー実行者:」PR コメントの段落は、上の要件「『レビュー実行者:』コメントの段落は照合と振り分けの段に置く」どおり `stages/triage.md` を指すものとして読む（MUST）。
 
@@ -976,7 +976,7 @@ G が `工程中断:` で返したとき、本体は同じ段の新しい G を�
 #### Scenario: adapter 経路の保持規則が無い
 
 - **WHEN** `gate-runner.md`・SKILL.md・`references/codex-develop.md` を読む
-- **THEN** 行の無い再開指示で adapter 経路を保つ規則が無く、G の起動指示に常に `レビュー経路: adapter` を書く規則は残っている
+- **THEN** 行の無い再開指示で adapter 経路を保つ規則が無い。G の起動指示に常に `レビュー経路: adapter` を書く規則は、SKILL.md が本文を持ち、`references/codex-develop.md` はその本文を持たず SKILL.md の「Role profile の選択」節と `gate-runner.md`「レビュー経路の判別」を指している
 
 ### Requirement: 段ごとの G で上限を超えないことを PR 本文に記録する
 
