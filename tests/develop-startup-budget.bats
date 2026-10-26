@@ -117,7 +117,7 @@ mk_root() {
   printf 'a/one.md 100\na/two.md 100\n' > "$BATS_TEST_TMPDIR/b.txt"
   run check_budget "$BATS_TEST_TMPDIR/r" "$BATS_TEST_TMPDIR/b.txt"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"予算超過: a/one.md"* ]]
+  [[ "$output" == *"予算超過: a/one.md"* ]] || return 1
 }
 
 @test "regress: shrinking another file does not hide growth (per-file, not sum)" {
@@ -132,7 +132,7 @@ mk_root() {
   printf 'a/one.md 111\n' > "$BATS_TEST_TMPDIR/b.txt"
   run check_budget "$BATS_TEST_TMPDIR/r" "$BATS_TEST_TMPDIR/b.txt"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"予算が緩すぎる"* ]]
+  [[ "$output" == *"予算が緩すぎる"* ]] || return 1
 }
 
 @test "regress: budget exactly 1.1 times actual and exactly actual both pass" {
@@ -147,7 +147,7 @@ mk_root() {
   printf 'a/one.md 100\na/gone.md 100\n' > "$BATS_TEST_TMPDIR/b.txt"
   run check_budget "$BATS_TEST_TMPDIR/r" "$BATS_TEST_TMPDIR/b.txt"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"測定対象が無い: a/gone.md"* ]]
+  [[ "$output" == *"測定対象が無い: a/gone.md"* ]] || return 1
 }
 
 @test "regress: malformed budget lines are rejected" {
@@ -197,7 +197,7 @@ budget_of() { awk -v p="$2" '$1 == p { print $2 }' "$1"; }
       head -c $((budget - actual + 1)) /dev/zero | tr '\0' 'x' >> "$r/$p"
       run check_budget "$r" "$b2"
       [ "$status" -eq 1 ]
-      [[ "$output" == *"予算超過: $p"* ]]
+      [[ "$output" == *"予算超過: $p"* ]] || return 1
       cp "$PLUGIN_DIR/$p" "$r/$p"
     done
   done
