@@ -1156,7 +1156,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 }
 
 # --- 別のリポジトリの子（cross-repo-children） ---
-# spec: dev-workflow-develop「別のリポジトリの子を含むエピックの回し方を SKILL.md に書く」
+# spec: dev-workflow-develop「別のリポジトリの子を含むエピックの回し方を epic.md に書く」
 
 xrepo_block() { section 'エピックの扱い' "$EPIC" | awk '/^\*\*別のリポジトリの子（複数リポジトリのエピック）\*\*/{f=1; print; next} /^子セッションは `launch` が/{f=0} f'; }
 
