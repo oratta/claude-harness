@@ -212,6 +212,11 @@ case "$1 $2" in
     fi
     [ -e "$STUB_CFG/tcreate_fail_$issue" ] && exit 1
     exit 0 ;;
+  "terminal read")
+    n=$(cat "$STUB_CFG/readcount" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STUB_CFG/readcount"
+    [ ! -e "$STUB_CFG/read_exit" ] || exit "$(cat "$STUB_CFG/read_exit")"
+    if [ -e "$STUB_CFG/screen_$n" ]; then cat "$STUB_CFG/screen_$n"; else cat "$STUB_CFG/screen"; fi
+    exit 0 ;;
   "terminal wait"|"terminal send")
     sub="$2"; handle=""; text=""
     while [ $# -gt 0 ]; do
@@ -6779,4 +6784,92 @@ chat_line() {
   grep -qF '子の停止の記録の URL は、1 行目で聞く 1 件にだけ書き' "$e"
   grep -qF '`adopt`・`child-log` に渡す' "$e"
   ! grep -qF '答えが要る子の issue（または停止の記録）の URL' "$e" || return 1
+}
+
+# Existing-session keepalive must never use the launch/deliver fallback.
+orca_keepalive() { PATH="$STUB_BIN:/usr/bin:/bin" bash "$PLUGIN_DIR/scripts/epic-launch-orca.sh" "$@" 2>"$BATS_TEST_TMPDIR/stderr"; }
+keepalive_orca_setup() {
+  make_stub orca
+  echo '{"result":{"terminals":[{"handle":"term-11","agentIdentity":"claude"}]}}' > "$STUB_CFG/tlist_json_11"
+  orca_screen '❯
+? for shortcuts'
+}
+orca_screen() { jq -cn --arg s "$1" --arg d "${2-}" '{result:{source:"screen",tail:($s|split("\n")),draft:$d}}' > "$STUB_CFG/screen"; }
+
+@test "keepalive orca: sends once to idle empty screen and verifies unsupported provider by reobservation" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  jq -cn --arg s '✽ Working… (1s · thinking)' '{result:{source:"screen",tail:[$s,"❯"]}}' > "$STUB_CFG/screen_3"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = sent ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+  [ "$(calls '^orca terminal read .*--screen.*--json')" -eq 3 ]
+  [ "$(calls '^orca .*create\|^orca .*close\|^orca terminal wait')" -eq 0 ]
+}
+
+@test "keepalive orca: rejects busy dialog draft and unknown screens without sending" {
+  keepalive_orca_setup
+  for reason in busy dialog input-not-empty unknown-state; do
+    case "$reason" in
+      busy) orca_screen '✽ Working… (1s · thinking)
+❯
+? for shortcuts' ;;
+      dialog) orca_screen '❯
+Enter to select · ↑/↓ to navigate' ;;
+      input-not-empty) orca_screen '❯
+? for shortcuts' '進捗どう？' ;;
+      unknown-state) orca_screen 'shell $' ;;
+    esac
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ]; [ "$output" = "skipped $reason" ]
+  done
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: rechecks input, handles missing ambiguous broken and failed observations" {
+  keepalive_orca_setup
+  orca_screen '❯
+? for shortcuts' human
+  cp "$STUB_CFG/screen" "$STUB_CFG/screen_2"
+  orca_screen '❯
+? for shortcuts'
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+  echo '{"result":{"terminals":[]}}' > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped no-terminal' ]
+  echo '{"result":{"terminals":[{"handle":"a"},{"handle":"b"}]}}' > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped ambiguous-terminal' ]
+  keepalive_orca_setup
+  echo 1 > "$STUB_CFG/read_exit"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed observe' ]
+  echo broken > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed terminal-list' ]
+  run orca_keepalive keepalive only-one
+  [ "$status" -eq 2 ]; [ -z "$output" ]
+}
+
+@test "keepalive orca: unconfirmed send fails without retry; background shell does not block" {
+  keepalive_orca_setup
+  orca_screen '· 1 shell still running
+❯
+? for shortcuts'
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+}
+
+@test "keepalive launch: orca start and deliver relaunch disable prompt suggestions" {
+  make_stub orca
+  run orca_keepalive start /work/issue-11 'cld --model sonnet' prompt 11
+  [ "$status" -eq 0 ]
+  grep -qF -- '--prompt-suggestions false' "$STUB_CFG/tcmd_11"
+  run orca_keepalive deliver /work/issue-12 1 text 'claude' prompt
+  [ "$status" -eq 0 ]
+  grep -qF -- '--prompt-suggestions false' "$STUB_CFG/tcmd_12"
 }

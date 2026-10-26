@@ -50,6 +50,7 @@ usage:
   epic-launch-tmux.sh create <clone> <repo_id> <child number> <base> <parent worktree>
   epic-launch-tmux.sh start <worktree> <start command> <first prompt> <child label>
   epic-launch-tmux.sh deliver <worktree> <relaunch 0|1> <text> <start command> <relaunch prompt>
+  epic-launch-tmux.sh keepalive <worktree> <text>
   epic-launch-tmux.sh close <worktree> <child label>
   epic-launch-tmux.sh remove <worktree>
   epic-launch-tmux.sh mirror <current|worktree> <done|waiting|stopped|resumed|stopped-seen> <state record>
@@ -152,6 +153,89 @@ send_and_confirm() {
   return 1
 }
 
+
+# Classify observed foreground input. An unknown display never authorizes a send.
+# A background shell alone does not make the foreground busy.
+keepalive_screen_reason() {
+  SCREEN="$1" python3 - "$2" <<'PYCODE'
+import json, os, re, sys
+raw = os.environ["SCREEN"]
+mode = sys.argv[1]
+if mode == "orca":
+    try:
+        d = json.loads(raw)["result"]
+        if not isinstance(d, dict) or not isinstance(d.get("tail"), list) or not all(isinstance(x, str) for x in d["tail"]):
+            raise ValueError()
+        if d.get("source") != "screen":
+            print("skipped unknown-state"); sys.exit()
+        raw = "\n".join(d["tail"])
+        draft = d.get("draft", "")
+        if not isinstance(draft, str):
+            raise ValueError()
+    except (ValueError, KeyError, TypeError):
+        print("failed observe"); sys.exit()
+else:
+    draft = ""
+ansi = r"\x1b\[[0-?]*[ -/]*[@-~]"
+plain = re.sub(ansi, "", raw)
+lines = [s for s in plain.splitlines() if s.strip()][-12:]
+screen = "\n".join(lines)
+if re.search(r"Enter to (?:select|confirm)|Esc to cancel|Do you want to ", screen, re.I):
+    print("skipped dialog")
+elif re.search(r"[^\w\s].*(?:…|\.\.\.).*\([^\n]*\d+(?:s|m).*·", screen) or "esc to interrupt" in screen.lower():
+    print("skipped busy")
+elif draft:
+    print("skipped input-not-empty")
+elif not re.search(r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on", screen):
+    print("skipped unknown-state")
+else:
+    prompts = [s for s in lines if re.match(r"^\s*❯(?:\s|$)", s)]
+    if not prompts:
+        print("skipped unknown-state")
+    elif re.sub(r"^\s*❯\s*", "", prompts[-1]):
+        # Only a wholly dim suggestion is considered empty on tmux.
+        originals = [s for s in raw.splitlines() if re.match(r"^\s*❯", re.sub(ansi, "", s))]
+        candidate = re.sub(r"^.*?❯\s*", "", originals[-1]) if originals else ""
+        dim_only = mode == "tmux" and re.fullmatch(r"\x1b\[2m[^\x1b]*(?:\x1b\[(?:0|22)m)?\s*", candidate)
+        print("ready" if dim_only else "skipped input-not-empty")
+    else:
+        print("ready")
+PYCODE
+}
+
+# Existing sessions only. Observe twice, literal text + Enter once, then read
+# the log for arrival. Never create/kill, erase input, or repeat Enter.
+# stdout/exit: sent or skipped <reason>/0, failed <reason>/1; arity/2.
+cmd_keepalive() {
+  argc 2 "$#"
+  local panes pane cmd count screen reason i tries since
+  panes="$(panes_of "$1")" || { echo 'failed terminal-list'; return 1; }
+  [ -n "$panes" ] || { echo 'skipped no-terminal'; return 0; }
+  count="$(printf '%s\n' "$panes" | wc -l | tr -d ' ')"
+  [ "$count" -eq 1 ] || { echo 'skipped ambiguous-terminal'; return 0; }
+  IFS=$'\t' read -r pane cmd <<EOF_PANE
+$panes
+EOF_PANE
+  for i in 1 2; do
+    screen="$(tmux capture-pane -p -e -t "$pane")" || { echo 'failed observe'; return 1; }
+    reason="$(keepalive_screen_reason "$screen" tmux)" || { echo 'failed observe'; return 1; }
+    case "$reason" in
+      ready) ;;
+      failed*) echo "$reason"; return 1 ;;
+      skipped*) echo "$reason"; return 0 ;;
+      *) echo 'failed observe'; return 1 ;;
+    esac
+  done
+  since="$(date -u +%Y-%m-%dT%H:%M:%S)"
+  type_line "$pane" "$2" || { echo 'failed send'; return 1; }
+  tries="$submit"; [ "$tries" -ge 1 ] 2>/dev/null || tries=1
+  for (( i = 0; i < tries; i++ )); do
+    if log_has_prompt "$1" "$since" "$2"; then echo sent; return 0; fi
+    sleep 1
+  done
+  echo 'failed send'; return 1
+}
+
 # シェルに貼れる形の単一引用符で囲む
 shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
@@ -182,7 +266,7 @@ recreate_hint() {
 # 結果は START_RESULT に入れる: started <ペイン> / failed terminal|ready|send [<ペイン>]
 START_RESULT=""
 start_session() {
-  local wt="$1" cmd="$2" prompt="$3" pane tries i cmdname
+  local wt="$1" cmd="$2 --prompt-suggestions false" prompt="$3" pane tries i cmdname
   START_RESULT=""
   if ! pane="$(tmux new-window -d -P -F '#{pane_id}' -c "$wt")" || [ -z "$pane" ]; then
     echo "tmux new-window failed in $wt" >&2
@@ -297,6 +381,7 @@ EOF
     [ "$stage" = terminal ] && stage=create
     echo "failed $stage"; exit 1
     ;;
+  keepalive) cmd_keepalive "$@"; exit $? ;;
   close)
     argc 2 "$#"
     kill_panes "$1"; rc=$?

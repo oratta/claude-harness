@@ -40,6 +40,7 @@ case "$1" in
     exit "$(cat "$STUB_CFG/new_window_exit" 2>/dev/null || echo 0)" ;;
   send-keys) exit "$(cat "$STUB_CFG/send_exit" 2>/dev/null || echo 0)" ;;
   capture-pane)
+    [ ! -e "$STUB_CFG/capture_exit" ] || exit "$(cat "$STUB_CFG/capture_exit")"
     n="$(cat "$STUB_CFG/captures" 2>/dev/null || echo 0)"; n=$((n + 1)); echo "$n" > "$STUB_CFG/captures"
     if [ -e "$STUB_CFG/screen2" ] && [ "$n" -ge "$(cat "$STUB_CFG/switch_at")" ]; then cat "$STUB_CFG/screen2"
     elif [ -e "$STUB_CFG/screen" ]; then cat "$STUB_CFG/screen"; else echo "  ? for shortcuts"; fi ;;
@@ -499,4 +500,75 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
   [ -n "$c" ] && [ -n "$r" ] && [ "$c" -lt "$r" ]
   grep -qF "deliver '$WT' 0" "$BATS_TEST_TMPDIR/stderr"
   grep -qF "こんにちは" "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "keepalive tmux: idle Claude screen under bash sends literal text and Enter once" {
+  put_pane %5 bash
+  printf '· 1 shell still running\n❯ \n? for shortcuts\n' > "$STUB_CFG/screen"
+  put_log 2999-01-01T00:00:00Z reserved
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 0 ]; [ "$output" = sent ]
+  [ "$(calls '^tmux send-keys ')" -eq 2 ]
+  [ "$(calls '^tmux capture-pane -p -e ')" -eq 2 ]
+  [ "$(calls '^tmux new-window\|^tmux kill-pane\|^git ')" -eq 0 ]
+}
+
+@test "keepalive tmux: dim suggestion is empty but human input, spinner and dialogs block" {
+  put_pane %5 bash
+  put_log 2999-01-01T00:00:00Z reserved
+  printf '❯ \033[2msuggestion\033[0m\n? for shortcuts\n' > "$STUB_CFG/screen"
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 0 ]; [ "$output" = sent ]
+  for reason in input-not-empty busy dialog unknown-state; do
+    case "$reason" in
+      input-not-empty) printf '❯ human\n? for shortcuts\n' > "$STUB_CFG/screen" ;;
+      busy) printf '✢ Working… (1s · thinking)\n❯ \n? for shortcuts\n' > "$STUB_CFG/screen" ;;
+      dialog) printf 'Do you want to proceed?\n❯ \n? for shortcuts\n' > "$STUB_CFG/screen" ;;
+      unknown-state) echo 'shell $' > "$STUB_CFG/screen" ;;
+    esac
+    run tm keepalive "$WT" reserved
+    [ "$status" -eq 0 ]; [ "$output" = "skipped $reason" ]
+  done
+  [ "$(calls '^tmux send-keys ')" -eq 2 ]
+}
+
+@test "keepalive tmux: reobservation and failure contracts never launch or erase" {
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped no-terminal' ]
+  put_pane %5 bash; put_pane %6 node
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped ambiguous-terminal' ]
+  printf '%%5\t%s\tbash\n' "$WT" > "$STUB_CFG/panes"
+  printf '❯ \n? for shortcuts\n' > "$STUB_CFG/screen"
+  printf '❯ human\n? for shortcuts\n' > "$STUB_CFG/screen2"
+  echo 2 > "$STUB_CFG/switch_at"
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
+  echo 1 > "$STUB_CFG/capture_exit"
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed observe' ]
+  echo 1 > "$STUB_CFG/list_exit"
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed terminal-list' ]
+  run tm keepalive only-one
+  [ "$status" -eq 2 ]; [ -z "$output" ]
+  [ "$(calls '^tmux send-keys\|^tmux new-window\|^tmux kill-pane\|^git ')" -eq 0 ]
+}
+
+@test "keepalive tmux: missing arrival fails without Enter retry" {
+  put_pane %5 node
+  printf '❯ \n? for shortcuts\n' > "$STUB_CFG/screen"
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+  [ "$(calls '^tmux send-keys ')" -eq 2 ]
+}
+
+@test "keepalive launch: tmux start and relaunch disable prompt suggestions" {
+  put_log 2999-01-01T00:00:00Z prompt
+  run tm start "$WT" 'cld --model sonnet' prompt 5
+  [ "$status" -eq 0 ]
+  [ "$(calls '^tmux send-keys .*prompt-suggestions.*false')" -eq 1 ]
+  run tm deliver "$WT" 1 text claude prompt
+  [ "$status" -eq 0 ]
+  [ "$(calls '^tmux send-keys .*prompt-suggestions.*false')" -eq 2 ]
 }
