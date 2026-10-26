@@ -228,6 +228,30 @@ PY
   silent
 }
 
+@test "first line: a URL inside a quoted question does not break the quote" {
+  msg_of '表示は「PR #1330 をマージしますか？ https://example.com/x」です。'
+  run_hook
+  silent
+}
+
+@test "first line: a quote that closes on a later line hides its question mark" {
+  msg_of "$(nl '表示は「PR #1330 をマージしますか？ マージすると' '子 #1303 の修正が入ります。」です。')"
+  run_hook
+  silent
+}
+
+@test "first line: a question mark inside a nested quote is not a sentence end" {
+  msg_of '表示は「確認「PR #1330 をマージしますか？」の結果？」です。'
+  run_hook
+  silent
+}
+
+@test "first line: a question after a closed quote stays a target" {
+  msg_of '「確認「マージ」の結果」を PR #1330 に出しますか？ 出すと main に入ります。'
+  run_hook
+  reason_of >/dev/null
+}
+
 @test "first line: a question mark inside a URL query is not a sentence end" {
   msg_of '#1330 を見た。https://example.com/a?b=1 に出ている。'
   run_hook
