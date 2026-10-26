@@ -10,7 +10,8 @@ reset grants are read like flatmate's dashboard (_saved_reset_grants / _claude_c
 
 Inputs: the Claude effective values (usage_view.build_view, on/off from usage_view.read_slots),
 the reset grants in .usage-snapshot (accounts.<id>.reset_grants), and the Codex `current`
-account's cache codex-usage/<hash>.json written by codex-develop.py. Settings come only from
+account's cache codex-usage/<hash>.json written by codex-develop.py. claude_rows and codex_row
+give the same rows to codex-develop.py (its snapshot path, any Codex account it maps). Settings come only from
 HEADROOM_7D_CAP_PCT (default 90) and HEADROOM_NORMAL_RATE_PCT_PER_DAY (default none); a caller
 cannot pass them. An invalid setting is an error (exit 2, nothing written), never the default.
 """
@@ -190,10 +191,24 @@ def _row(provider, account, label, *, observed, five, used, reset, now, cfg, tic
     return row
 
 
-def _claude_rows(now, cfg):
+def claude_rows(now, snapshot_path=None):
+    """The Claude rows in declared order (the ones compute uses).
+
+    snapshot_path, when given, is read for both the effective values (build_view) and the reset
+    grants; otherwise the default of compute (usage_view.default_paths). The settings are read
+    here, never passed in.
+    """
+    return _claude_rows(now, snapshot_path, settings())
+
+
+def _claude_rows(now, snapshot_path, cfg):
     paths = usage_view.default_paths()
-    view = usage_view.build_view(now=now)
-    snapshot = usage_view.read_snapshot(paths['snapshot_path'])
+    if snapshot_path is None:
+        snapshot_path = paths['snapshot_path']
+        view = usage_view.build_view(now=now)
+    else:
+        view = usage_view.build_view(snapshot_path=snapshot_path, now=now)
+    snapshot = usage_view.read_snapshot(snapshot_path)
     entries = snapshot.get('accounts') if isinstance(snapshot.get('accounts'), dict) else {}
     rows = []
     for slot_id, _secure, enabled in usage_view.read_slots(paths['accounts_file']):
@@ -217,7 +232,7 @@ def _claude_rows(now, cfg):
 
 
 def _codex_module():
-    """codex-develop.py, loaded on first use (it will import headroom itself in #1301)."""
+    """codex-develop.py, loaded on first use (it imports headroom for its margins)."""
     global _codex
     if _codex is None:
         spec = importlib.util.spec_from_file_location('codex_develop_for_headroom',
@@ -244,7 +259,45 @@ def _codex_window(windows, minutes):
     return None
 
 
+def codex_row(account, cache, now):
+    """One Codex row named `account` from a loaded cache (None or any shape is accepted).
+
+    The caller has already matched the auth identity and checked that Codex is on; any account
+    name is accepted. A cache whose weekly window cannot be read gives a `missing` row.
+    """
+    return _codex_row(account, cache, now, settings())
+
+
+def _codex_row(account, cache, now, cfg):
+    missing = _blank('codex', account, account, 'missing')
+    if not isinstance(cache, dict):
+        return missing
+    fetched, windows = cache.get('fetched_at'), cache.get('windows')
+    if type(fetched) is not int or not isinstance(windows, list):
+        return missing
+    weekly = _codex_window(windows, CODEX_WEEK_MINUTES)
+    used = weekly.get('used_percent') if weekly else None
+    reset = weekly.get('reset_at') if weekly else None
+    if not (usage_view.finite_number(used) and 0 <= used <= 100 and type(reset) is int):
+        return missing
+    # Past the reset the window is 0% and the reset moves on by whole weeks; the age of the
+    # fetch is not checked.
+    if now >= reset:
+        used = 0
+        reset += ((now - reset) // WEEK_SECONDS + 1) * WEEK_SECONDS
+    five = None
+    window = _codex_window(windows, CODEX_FIVE_HOUR_MINUTES)
+    if window and usage_view.finite_number(window.get('used_percent')):
+        five_reset = window.get('reset_at')
+        five = 0 if usage_view.finite_number(five_reset) and now >= five_reset else window['used_percent']
+    tickets = _codex_tickets(cache.get('resets'), now)
+    count, items = tickets if tickets is not None else (None, None)
+    return _row('codex', account, account, observed=fetched, five=five, used=used,
+                reset=reset, now=now, cfg=cfg, ticket_count=count, items=items)
+
+
 def _codex_rows(now, cfg):
+    """compute's Codex rows: only `current`, read from its cache file after the identity check."""
     home = _codex_home()
     if home is None:
         return []
@@ -258,28 +311,7 @@ def _codex_rows(now, cfg):
             return missing
     except Exception:
         return missing
-    fetched, windows = cache.get('fetched_at'), cache.get('windows')
-    if type(fetched) is not int or not isinstance(windows, list):
-        return missing
-    weekly = _codex_window(windows, CODEX_WEEK_MINUTES)
-    used = weekly.get('used_percent') if weekly else None
-    reset = weekly.get('reset_at') if weekly else None
-    if not (usage_view.finite_number(used) and 0 <= used <= 100 and type(reset) is int):
-        return missing
-    # Same reading as usage_margin: past the reset the window is 0% and the reset moves on by
-    # whole weeks; the age of the fetch is not checked.
-    if now >= reset:
-        used = 0
-        reset += ((now - reset) // WEEK_SECONDS + 1) * WEEK_SECONDS
-    five = None
-    window = _codex_window(windows, CODEX_FIVE_HOUR_MINUTES)
-    if window and usage_view.finite_number(window.get('used_percent')):
-        five_reset = window.get('reset_at')
-        five = 0 if usage_view.finite_number(five_reset) and now >= five_reset else window['used_percent']
-    tickets = _codex_tickets(cache.get('resets'), now)
-    count, items = tickets if tickets is not None else (None, None)
-    return [_row('codex', 'current', 'current', observed=fetched, five=five, used=used,
-                 reset=reset, now=now, cfg=cfg, ticket_count=count, items=items)]
+    return [_codex_row('current', cache, now, cfg)]
 
 
 def _best(rows):
@@ -296,7 +328,7 @@ def _best(rows):
 
 def compute(now):
     cfg = settings()
-    rows = _claude_rows(now, cfg) + _codex_rows(now, cfg)
+    rows = _claude_rows(now, None, cfg) + _codex_rows(now, cfg)
     return {'schema': SCHEMA, 'computed_at': now, 'settings': cfg, 'best': _best(rows),
             'best_by_provider': {provider: _best([r for r in rows if r['provider'] == provider])
                                  for provider in ('claude', 'codex')},

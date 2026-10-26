@@ -480,6 +480,79 @@ class Settings(unittest.TestCase):
                     h.compute(NOW)
 
 
+class PublicRows(unittest.TestCase):
+    """claude_rows / codex_row: the rows compute uses, for codex-develop.py (#1301)."""
+
+    def cache(self, path):
+        return json.loads(Path(path).read_text())
+
+    def test_rows_match_compute_when_compute_uses_the_cache(self):
+        env = Env(self)
+        env.claude('a', grants=grants((12, 1)))
+        env.claude('b', used=70, five=None)
+        path = env.codex(used=20, resets={'available_count': 1, 'expires_at': [NOW + 6 * HOUR]})
+        result = h.compute(NOW)
+        rows = h.claude_rows(NOW)
+        self.assertEqual(rows, [r for r in result['accounts'] if r['provider'] == 'claude'])
+        self.assertEqual(h.codex_row('current', self.cache(path), NOW),
+                         env.row(result, 'codex', 'current'))
+
+    def test_claude_rows_reads_the_given_snapshot(self):
+        env = Env(self)
+        env.claude('a', used=40)
+        other = env.root / 'other-snapshot'
+        other.write_text(json.dumps({'schema': 2, 'active': 'a', 'accounts': {'a': {
+            'fetched_at': NOW - HOUR, 'weekly_all_pct': 10, 'weekly_resets_epoch': NOW + 24 * HOUR,
+            'reset_grants': grants((12, 1))}}}))
+        default = h.claude_rows(NOW)[0]
+        given = h.claude_rows(NOW, snapshot_path=str(other))[0]
+        self.assertEqual(default['used_pct'], 40)
+        self.assertIsNone(default['rocket'])
+        self.assertEqual(given['used_pct'], 10)
+        self.assertEqual(given['rocket']['count'], 1)
+
+    def test_codex_row_takes_any_account_name(self):
+        env = Env(self)
+        cache = self.cache(env.codex(used=30))
+        current = h.codex_row('current', cache, NOW)
+        work = h.codex_row('work', cache, NOW)
+        self.assertEqual((work['provider'], work['account'], work['status']), ('codex', 'work', 'ok'))
+        self.assertEqual(work['margin'], current['margin'])
+        self.assertEqual(work['surplus_pct'], current['surplus_pct'])
+
+    def test_codex_row_malformed_cache_is_missing(self):
+        env = Env(self)
+        no_week = self.cache(env.codex())
+        no_week['windows'] = [{'minutes': 300, 'used_percent': 5, 'reset_at': NOW + HOUR}]
+        for value in (None, [], 'x', {'fetched_at': 'soon', 'windows': []}, no_week):
+            with self.subTest(value=value):
+                row = h.codex_row('work', value, NOW)
+                self.assertEqual(row['status'], 'missing')
+                self.assertEqual(set(row), KEYS)
+
+    def test_codex_row_future_fetch_boundary(self):
+        env = Env(self)
+        cache = self.cache(env.codex())
+        for offset, status in ((60, 'ok'), (61, 'stale')):
+            with self.subTest(offset=offset):
+                self.assertEqual(h.codex_row('work', dict(cache, fetched_at=NOW + offset), NOW)['status'],
+                                 status)
+
+    def test_public_functions_take_no_cap_or_pace(self):
+        self.assertEqual(list(inspect.signature(h.claude_rows).parameters), ['now', 'snapshot_path'])
+        self.assertEqual(list(inspect.signature(h.codex_row).parameters), ['account', 'cache', 'now'])
+
+    def test_public_functions_raise_on_invalid_setting(self):
+        env = Env(self)
+        env.claude('a')
+        cache = self.cache(env.codex())
+        with patch.dict(os.environ, {'HEADROOM_7D_CAP_PCT': 'abc'}):
+            with self.assertRaises(h.ConfigError):
+                h.claude_rows(NOW)
+            with self.assertRaises(h.ConfigError):
+                h.codex_row('work', cache, NOW)
+
+
 class Cli(unittest.TestCase):
     def run_cli(self, *args, extra=None):
         env = dict(os.environ) | (extra or {})
