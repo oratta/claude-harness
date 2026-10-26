@@ -536,6 +536,7 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped no-terminal' ]
   put_pane %5 bash; put_pane %6 node
+  printf '❯ \n? for shortcuts\n' > "$STUB_CFG/screen"
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped ambiguous-terminal' ]
   printf '%%5\t%s\tbash\n' "$WT" > "$STUB_CFG/panes"
@@ -571,4 +572,24 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
   run tm deliver "$WT" 1 text claude prompt
   [ "$status" -eq 0 ]
   [ "$(calls '^tmux send-keys .*prompt-suggestions.*false')" -eq 2 ]
+}
+
+@test "keepalive tmux: picks one Claude screen among shell panes and rejects malformed lists" {
+  put_pane %5 bash; put_pane %6 bash
+  # The stub returns a shell screen for %6, and Claude for %5.
+  cat > "$STUB_BIN/tmux" <<'STUB'
+#!/bin/bash
+{ printf tmux; printf ' %q' "$@"; echo; } >> "$STUB_LOG"
+case "$1" in
+ list-panes) cat "$STUB_CFG/panes" ;;
+ capture-pane) if [ "$5" = %6 ]; then echo 'shell $'; else printf '❯ \n? for shortcuts\n'; fi ;;
+ send-keys) exit 0 ;;
+esac
+STUB
+  put_log 2999-01-01T00:00:00Z reserved
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 0 ]; [ "$output" = sent ]
+  echo broken > "$STUB_CFG/panes"
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed terminal-list' ]
 }

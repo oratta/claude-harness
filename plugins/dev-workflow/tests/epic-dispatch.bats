@@ -231,6 +231,7 @@ case "$1 $2" in
       exit "$(cat "$STUB_CFG/wait_exit_$handle" 2>/dev/null || echo 0)"
     fi
     printf "%s" "$text" > "$STUB_CFG/sent_$handle"
+    [ ! -e "$STUB_CFG/hook_send_$handle" ] || bash "$STUB_CFG/hook_send_$handle"
     if [ -e "$STUB_CFG/send_json_$handle" ]; then
       cat "$STUB_CFG/send_json_$handle"
     else
@@ -335,6 +336,13 @@ if [ "$1 $2" = "pr list" ]; then
   cat "$STUB_CFG/pr_out" 2>/dev/null
   exit "$(cat "$STUB_CFG/pr_exit" 2>/dev/null || echo 0)"
 fi
+case "${2-}" in
+  */comments)
+    issue="${2%/comments}"; issue="${issue##*/}"
+    [ ! -e "$STUB_CFG/comments_exit" ] || exit "$(cat "$STUB_CFG/comments_exit")"
+    cat "$STUB_CFG/comments_$issue" 2>/dev/null || echo "[]"
+    exit 0 ;;
+esac
 n="${2##*/}"
 count=$(( $(cat "$STUB_CFG/ghcount_$n" 2>/dev/null || echo 0) + 1 ))
 echo "$count" > "$STUB_CFG/ghcount_$n"
@@ -6872,4 +6880,213 @@ Enter to select · ↑/↓ to navigate' ;;
   run orca_keepalive deliver /work/issue-12 1 text 'claude' prompt
   [ "$status" -eq 0 ]
   grep -qF -- '--prompt-suggestions false' "$STUB_CFG/tcmd_12"
+}
+
+
+# Controlled wall clock: cache age includes sleeping time, independent of SECONDS.
+keepalive_wait_setup() {
+  keepalive_orca_setup
+  set_current 400
+  put_record 11 stop=stopped-seen session=term-11
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+  export KEEPALIVE_TEST_NOW=2000000000
+  cat > "$STUB_BIN/date" <<'DATE'
+#!/bin/bash
+if [ "$*" = '+%s' ]; then echo "$KEEPALIVE_TEST_NOW"; else /bin/date "$@"; fi
+DATE
+  chmod +x "$STUB_BIN/date"
+  stop_fixture 3600
+  echo '[]' > "$STUB_CFG/comments_1122"
+  gh_seq 11 open closed
+  keepalive_chat 3000
+}
+stop_fixture() {
+  python3 - "$STUB_CFG/comments_11" "$KEEPALIVE_TEST_NOW" "$1" <<'PYCODE'
+import datetime, json, sys
+stamp = datetime.datetime.fromtimestamp(int(sys.argv[2])-int(sys.argv[3]), datetime.timezone.utc).isoformat()
+with open(sys.argv[1], 'w') as f:
+    json.dump([dict(body='子の停止: 主の返事待ち\n質問', created_at=stamp, html_url='https://example/stop', author_association='OWNER')], f)
+PYCODE
+}
+keepalive_chat() {
+  local age="$1" tokens="${2-100}" ttl="${3-1h}"
+  local dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  mkdir -p "$dir"
+  python3 - "$dir/s.jsonl" "$KEEPALIVE_TEST_NOW" "$age" "$tokens" "$ttl" <<'PYCODE'
+import datetime, json, sys
+p, now, age, tokens, ttl = sys.argv[1:]
+now, age, tokens = int(now), int(age), int(tokens)
+def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
+rows = [dict(type='user', timestamp=stamp(now-100000), message=dict(content='依頼')),
+        dict(type='assistant', timestamp=stamp(now-99999), message=dict(content='元の質問？')),
+        dict(type='assistant', entrypoint='cli', timestamp=stamp(now-4000), message=dict(usage=dict(input_tokens=10,cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens':100}))),
+        dict(type='assistant', entrypoint='cli', timestamp=stamp(now-age), message=dict(usage=dict(input_tokens=0,cache_read_input_tokens=tokens)))]
+with open(p, 'w') as f:
+    for row in rows: f.write(json.dumps(row, ensure_ascii=False)+'\n')
+PYCODE
+}
+reset_keepalive_poll() {
+  echo 0 > "$STUB_CFG/ghcount_11"
+  echo 0 > "$STUB_CFG/readcount"
+  : > "$STUB_LOG"
+}
+
+@test "keepalive wait: request 2999/3000/3599/3600 and stop 86399/86400 boundaries" {
+  keepalive_wait_setup
+  for age in 2999 3000 3599 3600 -1; do
+    reset_keepalive_poll
+    keepalive_chat "$age"
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    expected=0; if [ "$age" -eq 3000 ] || [ "$age" -eq 3599 ]; then expected=1; fi
+    [ "$(calls '^orca terminal send ')" -eq "$expected" ]
+  done
+  for age in 86399 86400 -1; do
+    reset_keepalive_poll
+    keepalive_chat 3000
+    stop_fixture "$age"
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    expected=0; [ "$age" -ne 86399 ] || expected=1
+    [ "$(calls '^orca terminal send ')" -eq "$expected" ]
+  done
+}
+
+@test "keepalive wait: cache hits extend request age independently of cache write TTL" {
+  keepalive_wait_setup
+  # The 1h write is older than an hour; the last request is a cache hit at 50m.
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+  for ttl in 5m unknown; do
+    reset_keepalive_poll
+    keepalive_chat 3000 100 "$ttl"
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+}
+
+@test "keepalive wait: real replies, pending requests, ambiguity and unmeasurable usage exclude sends" {
+  keepalive_wait_setup
+  for mode in real-reply parent-reply pending ambiguous large unmeasurable invalid-time; do
+    reset_keepalive_poll
+    keepalive_chat 3000
+    dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+    case "$mode" in
+      real-reply|parent-reply|pending)
+        text='本当の回答'; [ "$mode" != parent-reply ] || text='親エピック #1122 の判断: 通す'
+        [ "$mode" != pending ] || text="$(render_keepalive)"
+        chat_line user 2033-05-18T03:33:20Z "$text" >> "$dir/s.jsonl" ;;
+      ambiguous) cp "$dir/s.jsonl" "$dir/other.jsonl" ;;
+      large) keepalive_chat 3000 150000 ;;
+      unmeasurable) keepalive_chat 3000 0 ;;
+      invalid-time) sed 's/2033-[^"]*/not a time/g' "$dir/s.jsonl" > "$dir/new"; mv "$dir/new" "$dir/s.jsonl" ;;
+    esac
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+    rm -f "$dir/other.jsonl"
+  done
+}
+
+@test "keepalive wait: stopped-seen records alone are insufficient; trusted unanswered stop is required" {
+  keepalive_wait_setup
+  for mode in done unstarted launch-failed missing-stop untrusted passed expired missing-worktree; do
+    reset_keepalive_poll
+    put_record 11 stop=stopped-seen session=term-11
+    stop_fixture 3600
+    echo '[]' > "$STUB_CFG/comments_1122"
+    case "$mode" in
+      done) put_record 11 stop=stopped-seen session=term-11 status=done ;;
+      unstarted) put_record 11 stop=stopped-seen ;;
+      launch-failed) put_record 11 stop=stopped-seen session=term-11 launch_failed=send ;;
+      missing-stop) echo '[]' > "$STUB_CFG/comments_11" ;;
+      untrusted) jq '.[0].author_association="NONE"' "$STUB_CFG/comments_11" > "$STUB_CFG/new"; mv "$STUB_CFG/new" "$STUB_CFG/comments_11" ;;
+      passed) echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — https://example/stop"}]' > "$STUB_CFG/comments_1122" ;;
+      expired) stop_fixture 86400 ;;
+      missing-worktree) put_record 11 stop=stopped-seen session=term-11 worktree=/no-such-child ;;
+    esac
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+}
+
+@test "keepalive wait: one-shot, cleanup and event polls never send" {
+  keepalive_wait_setup
+  for args in '--watch-stopped --interval 0 --timeout 0 11' '--watch-stopped --interval 0 --timeout 100 11' '--interval 1 --timeout 100 11' '--watch-done 11 --interval 0 --timeout 0'; do
+    reset_keepalive_poll
+    run dispatch wait $args
+    [ "$status" -eq 0 ] || [ "$status" -eq 2 ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+  reset_keepalive_poll
+  put_record 11 stop=stopped session=term-11
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive wait: normal and malformed exchanges preserve stop and wait until timeout" {
+  keepalive_wait_setup
+  # A real second of sleep finishes a bounded wait without busy polling.
+  echo '#!/bin/bash' > "$STUB_BIN/sleep"
+  echo '/bin/sleep 1' >> "$STUB_BIN/sleep"
+  gh_seq 11 open
+  for response in "$(keepalive_reply)" '了解' "$(printf '%s\n追加の質問' "$(keepalive_reply)")"; do
+    reset_keepalive_poll
+    keepalive_chat 3000
+    dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+    {
+      printf 'printf "%%s\\n" %q %q >> %q\n' \
+        "$(chat_line user 2033-05-18T03:33:20Z "$(render_keepalive)")" \
+        "$(chat_line assistant 2033-05-18T03:33:21Z "$response" | jq -c '.entrypoint="cli" | .message.usage={input_tokens:1,cache_read_input_tokens:99}')" "$dir/s.jsonl"
+    } > "$STUB_CFG/hook_send_term-11"
+    before="$(cat "$(rec_of 1122 11)" "$STUB_CFG/comments_11")"
+    run dispatch wait --watch-stopped --interval 1 --timeout 4 11
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+    [ "$(calls '^orca terminal send ')" -eq 1 ]
+    [ "$(cat "$(rec_of 1122 11)" "$STUB_CFG/comments_11")" = "$before" ]
+    run dispatch child-log 11
+    [ "$status" -eq 0 ]
+    if [ "$response" = "$(keepalive_reply)" ]; then
+      [ "$(printf '%s' "$output" | cut -f5)" = '元の質問？' ]
+    else
+      [ "$(printf '%s' "$output" | cut -f5)" = "$(printf '%s' "$response" | tr '\n' ' ' | cut -c1-240)" ]
+    fi
+  done
+}
+
+@test "keepalive wait: send failure is diagnostic only and real done still returns" {
+  keepalive_wait_setup
+  echo 1 > "$STUB_CFG/send_exit_term-11"
+  on_poll 11 2 status=done
+  gh_seq 11 open
+  run dispatch wait --watch-stopped --watch-done 11 --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'done 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+  grep -qF 'keepalive 11: failed send' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "wait limit timestamp regression: offset and invalid time cannot override newest 5m; naive time is UTC" {
+  for naive in false true; do
+    put_parent_cache s1 20 0 100
+    put_parent_cache s2 3 100 0
+    dir="$CLAUDE_PROJECTS_DIR/-work-parent"
+    python3 - "$dir/s2.jsonl" "$naive" <<'PYCODE'
+import datetime, json, sys
+p=sys.argv[1]
+d=json.load(open(p)); t=datetime.datetime.fromisoformat(d['timestamp'].replace('Z','+00:00'))
+d['timestamp'] = t.replace(tzinfo=None).isoformat() if sys.argv[2]=='true' else t.astimezone(datetime.timezone(datetime.timedelta(hours=-5))).isoformat()
+open(p,'w').write(json.dumps(d)+'\n')
+PYCODE
+    echo '{"type":"assistant","entrypoint":"cli","timestamp":"not a time","message":{"usage":{"cache_creation":{"ephemeral_1h_input_tokens":100}}}}' > "$dir/s3.jsonl"
+    gh_seq 11 closed
+    run dispatch wait 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    stderr_has 'wait limit 21600 (parent cache 5m)'
+    # Overwrite rather than append for the second case.
+    rm -f "$dir/s1.jsonl" "$dir/s2.jsonl" "$dir/s3.jsonl"
+  done
 }

@@ -162,7 +162,7 @@ PYCODE
 # stdout: sent/skipped <reason> (0), failed <reason> (1); arity error: usage (2).
 cmd_keepalive() {
   argc 2 "$#"
-  local terms count handle observed reason sent rc before after
+  local terms count handle observed reason sent rc i after
   if ! terms="$(orca terminal list --worktree "path:$1" --json)" \
     || ! count="$(printf '%s' "$terms" | jq -e '.result.terminals | if type == "array" then length else error("terminals") end' 2>/dev/null)"; then
     echo 'failed terminal-list'; return 1
@@ -170,7 +170,7 @@ cmd_keepalive() {
   [ "$count" -gt 0 ] || { echo 'skipped no-terminal'; return 0; }
   handle="$(pick_session_term "$terms")"
   [ -n "$handle" ] || { echo 'skipped ambiguous-terminal'; return 0; }
-  for before in 1 2; do
+  for (( i = 0; i < 2; i++ )); do
     observed="$(orca terminal read --terminal "$handle" --screen --json)" || { echo 'failed observe'; return 1; }
     reason="$(keepalive_screen_reason "$observed" orca)" || { echo 'failed observe'; return 1; }
     case "$reason" in

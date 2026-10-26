@@ -208,24 +208,40 @@ PYCODE
 # stdout/exit: sent or skipped <reason>/0, failed <reason>/1; arity/2.
 cmd_keepalive() {
   argc 2 "$#"
-  local panes pane cmd count screen reason i tries since
-  panes="$(panes_of "$1")" || { echo 'failed terminal-list'; return 1; }
+  local all panes pane cmd screen reason i tries since selected="" selected_reason="" count=0
+  all="$(tmux list-panes -a -F "#{pane_id}${TAB}#{pane_current_path}${TAB}#{pane_current_command}")" \
+    || { echo 'failed terminal-list'; return 1; }
+  # A nonempty malformed row is an observation failure, not an empty list.
+  if ! printf '%s\n' "$all" | awk -F '\t' 'NF && (NF != 3 || $1 !~ /^%[0-9]+$/ || $2 == "" || $3 == "") {exit 1}'; then
+    echo 'failed terminal-list'; return 1
+  fi
+  panes="$(printf '%s\n' "$all" | awk -F '\t' -v wt="$1" 'NF == 3 && ($2 == wt || index($2, wt "/") == 1) {print $1 "\t" $3}')"
   [ -n "$panes" ] || { echo 'skipped no-terminal'; return 0; }
-  count="$(printf '%s\n' "$panes" | wc -l | tr -d ' ')"
-  [ "$count" -eq 1 ] || { echo 'skipped ambiguous-terminal'; return 0; }
-  IFS=$'\t' read -r pane cmd <<EOF_PANE
-$panes
-EOF_PANE
-  for i in 1 2; do
+  # A plain shell alongside Claude is not an additional Claude session. Use the
+  # screen even when pane_current_command says bash (observed in Orca's tmux).
+  while IFS=$'\t' read -r pane cmd; do
     screen="$(tmux capture-pane -p -e -t "$pane")" || { echo 'failed observe'; return 1; }
     reason="$(keepalive_screen_reason "$screen" tmux)" || { echo 'failed observe'; return 1; }
     case "$reason" in
-      ready) ;;
-      failed*) echo "$reason"; return 1 ;;
-      skipped*) echo "$reason"; return 0 ;;
-      *) echo 'failed observe'; return 1 ;;
+      'failed observe') echo "$reason"; return 1 ;;
+      'skipped unknown-state') continue ;;
     esac
-  done
+    count=$((count + 1)); selected="$pane"; selected_reason="$reason"
+  done <<EOF_PANES
+$panes
+EOF_PANES
+  [ "$count" -gt 0 ] || { echo 'skipped unknown-state'; return 0; }
+  [ "$count" -eq 1 ] || { echo 'skipped ambiguous-terminal'; return 0; }
+  [ "$selected_reason" = ready ] || { echo "$selected_reason"; return 0; }
+  pane="$selected"
+  screen="$(tmux capture-pane -p -e -t "$pane")" || { echo 'failed observe'; return 1; }
+  reason="$(keepalive_screen_reason "$screen" tmux)" || { echo 'failed observe'; return 1; }
+  case "$reason" in
+    ready) ;;
+    failed*) echo "$reason"; return 1 ;;
+    skipped*) echo "$reason"; return 0 ;;
+    *) echo 'failed observe'; return 1 ;;
+  esac
   since="$(date -u +%Y-%m-%dT%H:%M:%S)"
   type_line "$pane" "$2" || { echo 'failed send'; return 1; }
   tries="$submit"; [ "$tries" -ge 1 ] 2>/dev/null || tries=1

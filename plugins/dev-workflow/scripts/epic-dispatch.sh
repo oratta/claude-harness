@@ -1258,6 +1258,146 @@ resolve_stopped() {
   return 1
 }
 
+# Read-only eligibility check. TTL is the last write; request time includes cache
+# hits. The stop comment (not updated_at or a keepalive) anchors the 24h limit.
+# Missing/ambiguous measurements fail closed without changing wait's exit reason.
+keepalive_candidate() {
+  local rec="$1" childcomments="$2" epiccomments="$3" now="$4" text="$5" wt ttl
+  wt="$(es_get "$rec" worktree)"
+  [ -d "$wt" ] || return 1
+  ttl="$(cache_ttl_of "$wt")" || return 1
+  [ "${ttl%% *}" = 1h ] || return 1
+  [ "${ttl#* }" -le "$now" ] 2>/dev/null || return 1
+  REC="$rec" CHILD_COMMENTS="$childcomments" EPIC_COMMENTS="$epiccomments" \
+    DIR="$(transcript_dir "$wt")" NOW="$now" KEEPALIVE_TEXT="$text" \
+    FORCE="${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}" IDLE="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}" \
+    python3 - <<'PY' 2>/dev/null
+import datetime, glob, json, math, os, sys
+
+def reject():
+    raise SystemExit(1)
+def stamp(value):
+    try:
+        t = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return (t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)).timestamp()
+    except (ValueError, TypeError, AttributeError):
+        return None
+def num(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0 else 0
+def text_of(c):
+    if isinstance(c, str): return c
+    if isinstance(c, list) and c and all(isinstance(b, dict) and b.get("type") == "text" for b in c):
+        return "\n".join(str(b.get("text", "")) for b in c)
+    return ""
+def trusted(c):
+    return isinstance(c, dict) and c.get("author_association") in ("OWNER", "MEMBER", "COLLABORATOR")
+def pages(raw):
+    result = []
+    decoder = json.JSONDecoder()
+    while raw.strip():
+        page, end = decoder.raw_decode(raw.lstrip())
+        if not isinstance(page, list): reject()
+        result.extend(page)
+        raw = raw.lstrip()[end:]
+    return result
+
+try:
+    now = int(os.environ["NOW"])
+    force, idle = os.environ["FORCE"], os.environ["IDLE"]
+    if not force.isdecimal() or not idle.isdecimal(): reject()
+    rec = json.load(open(os.environ["REC"]))
+    if rec.get("stop") != "stopped-seen" or rec.get("status") == "done" or rec.get("launch_failed") or not rec.get("session"): reject()
+    child = pages(os.environ["CHILD_COMMENTS"])
+    stops = [c for c in child if trusted(c) and c.get("body", "").splitlines()[:1] == ["子の停止: 主の返事待ち"]]
+    if not stops: reject()
+    stop = stops[-1]
+    stopped_at = stamp(stop.get("created_at"))
+    url = stop.get("html_url")
+    if stopped_at is None or not url or not 0 <= now-stopped_at < 86400: reject()
+    epic = pages(os.environ["EPIC_COMMENTS"])
+    label = "#" + str(rec["number"]) if rec["repo"] == rec["epic"].split("#")[0] else rec["child"]
+    for c in child + epic:
+        if not trusted(c) or url not in c.get("body", ""): continue
+        body = c["body"]
+        if (c in child and body.startswith("親の判断: 通した")) or any(line.startswith("親の判断: 子 " + label + " 通した") for line in body.splitlines()): reject()
+    files = glob.glob(os.path.join(os.environ["DIR"], "*.jsonl"))
+    # Same conservative selection as decide_relaunch: do not guess among sessions.
+    if len(files) != 1: reject()
+    last_request = None
+    owner = question = None
+    pending = False
+    for line in open(files[0], encoding="utf-8"):
+        try: d = json.loads(line)
+        except ValueError: continue
+        if not isinstance(d, dict) or d.get("isSidechain") or d.get("isMeta"): continue
+        msg = d.get("message")
+        if not isinstance(msg, dict): continue
+        t = stamp(d.get("timestamp"))
+        content = text_of(msg.get("content"))
+        if d.get("type") == "user" and content.strip():
+            if content == os.environ["KEEPALIVE_TEXT"]:
+                pending = True
+            else:
+                # Parent judgments count even though child-log's owner column
+                # does not display them. A real answer must stop keepalives.
+                if t is None: reject()
+                owner = t
+                pending = False
+        elif d.get("type") == "assistant":
+            if content.strip():
+                if pending:
+                    # A malformed response resolves transport too. Display and
+                    # stopped-seen remain governed by their existing contracts.
+                    pending = False
+                else:
+                    question = t
+            u = msg.get("usage")
+            if d.get("entrypoint") != "cli" or d.get("isApiErrorMessage") or d.get("error") is not None or not isinstance(u, dict): continue
+            tokens = sum(num(u.get(k)) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+            if tokens <= 0: continue
+            if t is None or t > now: reject()
+            if last_request is None or t >= last_request[0]: last_request = (t, tokens)
+    if pending or question is None or (owner is not None and (owner > question or owner > stopped_at)): reject()
+    if last_request is None: reject()
+    t, tokens = last_request
+    if not 3000 <= now-t < min(3600, int(idle)) or tokens >= int(force): reject()
+except (OSError, ValueError, KeyError, TypeError):
+    reject()
+PY
+}
+
+# Only a normal continuing poll calls this. Recheck local state and substantive
+# input after remote reads, then use the launcher's own screen reobservation.
+keepalive_child() {
+  local n="$1" f wt name childcomments epiccomments epic repo enum text now out
+  child_record "$PARENT_TOP" "$n" || return 0
+  f="$ES_HIT"
+  [ "$(es_get "$f" stop)" = stopped-seen ] || return 0
+  [ "$(es_get "$f" status)" != "done" ] || return 0
+  [ -z "$(es_get "$f" launch_failed)" ] || return 0
+  [ -n "$(es_get "$f" session)" ] || return 0
+  wt="$(es_get "$f" worktree)"; [ -d "$wt" ] || return 0
+  name="$(es_get "$f" launcher)"
+  case "$name" in orca|tmux) ;; *) return 0 ;; esac
+  childcomments="$(gh api "$(issue_api "$n" "$f")/comments" --paginate)" || return 0
+  epic="$(es_get "$f" epic)"; repo="${epic%#*}"; enum="${epic##*#}"
+  epiccomments="$(gh api "repos/$repo/issues/$enum/comments" --paginate)" || return 0
+  text="$(keepalive_text)" || return 0
+  now="$(date +%s)"
+  keepalive_candidate "$f" "$childcomments" "$epiccomments" "$now" "$text" || return 0
+  child_record "$PARENT_TOP" "$n" || return 0
+  [ "$ES_HIT" = "$f" ] || return 0
+  [ "$(es_get "$f" worktree)" = "$wt" ] || return 0
+  [ "$(es_get "$f" launcher)" = "$name" ] || return 0
+  keepalive_candidate "$f" "$childcomments" "$epiccomments" "$(date +%s)" "$text" || return 0
+  out="$(launcher_run "$name" keepalive "$wt" "$text")"
+  case "$out" in
+    sent|skipped\ *) ;;
+    *) echo "keepalive $n: ${out:-failed send}" >&2 ;;
+  esac
+  return 0
+}
+
 cmd_wait() {
   # 上限は --timeout か空でない EPIC_DISPATCH_TIMEOUT があればその値。どちらも無ければ（timeout が空のまま）、
   # 待つ前に親の会話キャッシュの有効期限で決める（下の SECONDS=0 の前）
@@ -1427,6 +1567,9 @@ cmd_wait() {
       if [ -n "$failed" ] || [ "$wsfail" -eq 1 ]; then cat "$errf" >&2; fi
       if [ "$#" -gt 0 ]; then echo "timeout $*"; else echo "timeout"; fi
       exit 2
+    fi
+    if [ "$watchstop" -eq 1 ] && [ "$interval" -gt 0 ] && [ "$timeout" -gt 0 ] && [ "$fails" -eq 0 ]; then
+      for n in "$@"; do keepalive_child "$n"; done
     fi
     sleep "$interval"
   done
