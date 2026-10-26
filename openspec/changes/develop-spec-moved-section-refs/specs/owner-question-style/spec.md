@@ -8,6 +8,7 @@
 - `plugins/dev-workflow/skills/develop/references/handover.md`（保留の依頼の出し直し・主への案内）
 - `plugins/dev-workflow/skills/develop/references/channel.md`（channel の聞き方と主への発言）
 - `plugins/dev-workflow/skills/develop/references/epic.md`（Orca 経路の親の発言の 1 行目・手順 8 の報告の順）
+- `plugins/dev-workflow/skills/develop/references/epic-child-stop.md`（子の停止の記録と主への問いの型）
 - `plugins/dev-workflow/skills/pr-review-gate/stages/hold.md`（手順 6 の主への確認依頼・切り出しの確認・主に承認を求めてよい 4 分類）
 - `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md`（動作確認の依頼）
 - `plugins/dev-workflow/references/ci-watch.md`（オーナーへのマージの依頼）
