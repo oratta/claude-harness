@@ -4102,7 +4102,7 @@ orca_cmd_scripts() {
   grep -E '^\| 親の最後のリクエストから 60 分以上 \|' "$f" | grep -F '起動し直す' | grep -qF '会話量によらず'
   parent="$(sed -n '/^## 親への適用/,$p' "$f")"
   run printf '%s\n' "$parent"
-  [[ "$output" != *'120,000'* ]]
+  [[ "$output" != *'120,000'* ]] || return 1
   run grep -E 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000|その間に待っている間の自動コンパクトが走った' "$f"
   [ "$status" -eq 1 ]
   grep -qF '起床の API リクエストを除いた待機前' "$f"

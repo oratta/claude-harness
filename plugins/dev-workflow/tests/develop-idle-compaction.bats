@@ -22,7 +22,7 @@ cli() { python3 "$SCRIPT" "$1" "$WORKTREE"; }
   run cli --apply
   [ "$status" -eq 0 ]
   python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == {"idleCompaction":False}' "$SETTINGS"
-  [[ "$output" == *"disk"* ]]
+  [[ "$output" == *"disk"* ]] || return 1
 }
 
 @test "single-key atomic update preserves permissions hooks unknown values and file mode" {
@@ -86,8 +86,8 @@ PY
     for mode in --check --apply; do
       run cli "$mode"
       [ "$status" -eq 1 ]
-      [[ "$output" == *"$SETTINGS"* ]]
-      [[ "$output" != *"secret-leak"* ]]
+      [[ "$output" == *"$SETTINGS"* ]] || return 1
+      [[ "$output" != *"secret-leak"* ]] || return 1
       cmp "$SETTINGS" "$FIXTURE/before"
     done
   done
@@ -99,7 +99,7 @@ PY
   for mode in --check --apply; do
     run cli "$mode"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"$SETTINGS"* ]]
+    [[ "$output" == *"$SETTINGS"* ]] || return 1
   done
   chmod 600 "$SETTINGS"
   [ "$(cat "$SETTINGS")" = '{"idleCompaction":true}' ]
