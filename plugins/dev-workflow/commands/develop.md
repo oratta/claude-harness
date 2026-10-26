@@ -32,7 +32,7 @@ if [ -n "$DW_NG" ]; then unsetopt nullglob; fi
 unset DW_NG
 ```
 
-特定した絶対パス（`skills/develop/SKILL.md`）を Read tool で読み込み、本体として 1 ループを回す。実行モードは SKILL.md「実行モード」の決め方（印 `DEV_WORKFLOW_UNATTENDED` か、チャンネルのメッセージでの依頼なら channel）で開始時に 1 回決め、印もチャンネルの依頼も無ければ **interactive モード**（デフォルト）で実行する。channel では主に聞くたびに AskUserQuestion を使わず、チャンネルに送ってターンを終える（下の分岐とフォールバックも同じ。SKILL.md より先にこのファイルの分岐を処理するので、その場にも書く）。`--unmanned` は loop-dev-agent の憲法ファイル（`docs/agent-loop.md`）の Step 3 でメインが develop の本体を務めるとき専用であり、このコマンドから human が起動した場合には使わない。
+特定した絶対パス（`skills/develop/SKILL.md`）を Read tool で読み込み、本体として 1 ループを回す。実行モードは SKILL.md「実行モード」の決め方（印 `DEV_WORKFLOW_UNATTENDED` か、チャンネルのメッセージでの依頼なら channel）で開始時に 1 回決め、印もチャンネルの依頼も無ければ **interactive モード**（デフォルト）で実行する。channel では主に聞くたびに AskUserQuestion を使わず、チャンネルに送ってターンを終える（下の分岐とフォールバックも同じ。入口の分岐で主に聞く場面なので、channel.md の読み替えの規則の例外としてその場にも書く）。`--unmanned` は loop-dev-agent の憲法ファイル（`docs/agent-loop.md`）の Step 3 でメインが develop の本体を務めるとき専用であり、このコマンドから human が起動した場合には使わない。
 
 ## 引数の解釈（5分岐）
 
