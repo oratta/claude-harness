@@ -12,6 +12,7 @@
 #   - 本文は payload の last_assistant_message。逆引用符 3 つのブロック（閉じが無ければ最後まで）と空の行を除いて並べる。
 #     `>` の引用の行は除かない（全行を主が読むので、引用の中の番号も主が探す手間になる）
 #   - 1 行目（前後の空白と * を除く）が「主がすること: なし」なら対象外。1 行目が ？/? で終わるか、
+#     1 行目の最初の文（URL と引用の中身を除き、。！!？? の最初まで）が ？/? で終わるか、
 #     区切り（- が 3 つ以上だけの行）より上の最後の行が答え方の語を含むときだけ対象
 #   - URL を取り除いてから #数字 を探す。区切りより上に番号がある（条件 1）か、番号があるのに
 #     /issues/<数字> か /pull/<数字> を含む URL が無い（条件 2）と差し戻す
@@ -56,6 +57,8 @@ if not isinstance(msg, str) or not msg:
 ANSWER_WORDS = ("と打って", "と打つ", "を押して", "と返して", "と答えて")
 URL_RE = re.compile(r"https?://\S+")
 ISSUE_URL_RE = re.compile(r"https?://\S*/(?:issues|pull)/[0-9]")
+QUOTE_RE = re.compile(r"「[^」]*」|『[^』]*』|“[^”]*”|\"[^\"]*\"")
+FIRST_END_RE = re.compile(r"[。！!？?]")
 NUM_RE = re.compile(r"#[0-9]+")
 SEP_RE = re.compile(r"-{3,}")
 NO_ACTION_RE = re.compile(r"主がすること[:：]\s*なし")
@@ -80,7 +83,11 @@ if NO_ACTION_RE.match(first):
 sep = next((i for i, l in enumerate(lines) if SEP_RE.fullmatch(l.strip())), None)
 above = lines if sep is None else lines[:sep]
 
-is_question = first.endswith(("？", "?"))
+# 1 行目の最初の文が質問で終わる場合も質問として数える（従来の「1 行目の末尾が ？/?」は狭めない）。
+# URL と引用（「」『』“”""）の中身を除いてから、最初の。！!？? までを最初の文として見る
+first_plain = QUOTE_RE.sub("", URL_RE.sub(" ", first))
+m_end = FIRST_END_RE.search(first_plain)
+is_question = first.endswith(("？", "?")) or bool(m_end and m_end.group(0) in ("？", "?"))
 has_answer_line = bool(above) and any(w in above[-1] for w in ANSWER_WORDS)
 if not (is_question or has_answer_line):
     raise SystemExit(0)

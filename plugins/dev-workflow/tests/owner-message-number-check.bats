@@ -202,6 +202,38 @@ PY
   has "$r" '行 1: #3'
 }
 
+@test "first line: a question followed by more sentences on the same line is a target" {
+  msg_of "$(nl 'PR #1330 を GitHub でマージしてもらえますか？ マージすると、子 #1303 の修正が main に入ります。' 'よければ下の PR のページでマージしてください。')"
+  run_hook
+  local r
+  r="$(reason_of)"
+  has "$r" '行 1: #1330 #1303'
+}
+
+@test "first line: a report sentence before a final question stays a target" {
+  msg_of '#1330 をマージした。続けて #1303 も見ますか？'
+  run_hook
+  reason_of >/dev/null
+}
+
+@test "first line: a question quoted inside an answer is not a target" {
+  msg_of '表示は「PR #1330 をマージしますか？」です。'
+  run_hook
+  silent
+}
+
+@test "first line: a question quoted inside a report is not a target" {
+  msg_of '#1330 に「マージしますか？」という確認を追加しました。'
+  run_hook
+  silent
+}
+
+@test "first line: a question mark inside a URL query is not a sentence end" {
+  msg_of '#1330 を見た。https://example.com/a?b=1 に出ている。'
+  run_hook
+  silent
+}
+
 # ---------- 対象の見分け方 ----------
 
 @test "target: a no-action report is skipped even with numbers" {
