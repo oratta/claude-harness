@@ -6454,6 +6454,133 @@ JSON
   done
 }
 
+# --- child-cache-keepalive shared definition ---
+# Generate with the production helper without running dispatch's command entry point.
+render_keepalive() {
+  sed -n '/^keepalive_text() {$/,/^}$/p' "$SCRIPT" > "$BATS_TEST_TMPDIR/keepalive-helper.sh"
+  bash -c 'source "$1"; LAUNCHER_DIR="$2"; keepalive_text' _ "$BATS_TEST_TMPDIR/keepalive-helper.sh" "${SCRIPT%/*}"
+}
+
+keepalive_reply() {
+  jq -r '.separator as $s | [.reply_prefix] + [.fields[] | . + " value"] | join($s)' \
+    "${SCRIPT%/*}/../references/child-cache-keepalive.json"
+}
+
+@test "keepalive definition: generated request includes the ordered reply shape" {
+  run render_keepalive
+  [ "$status" -eq 0 ]
+  [ -n "$output" ]
+  shape="$(jq -r '.separator as $s | [.reply_prefix] + [.fields[] | . + " <値>"] | join($s)' "$PLUGIN_DIR/references/child-cache-keepalive.json")"
+  [[ "$output" == *"$shape"* ]] || return 1
+}
+
+@test "keepalive definition: changes to template, prefix, separator and fields drive generation and matching" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  local copy="$BATS_TEST_TMPDIR/plugin"
+  mkdir -p "$copy/scripts" "$copy/references"
+  cp "$PLUGIN_DIR/scripts/epic-dispatch.sh" "$PLUGIN_DIR/scripts/epic-state.sh" "$copy/scripts/"
+  jq '.request_template = "Test request: {reply_format}" | .reply_prefix = "[test.v2]" | .separator = " / " | .fields = ["次:", "待ち:", "追加:"]' \
+    "$PLUGIN_DIR/references/child-cache-keepalive.json" > "$copy/references/child-cache-keepalive.json"
+  SCRIPT="$copy/scripts/epic-dispatch.sh"
+  request="$(render_keepalive)"
+  [ "$request" = 'Test request: [test.v2] / 次: <値> / 待ち: <値> / 追加: <値>' ]
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00Z '主の発言')" \
+    "$(chat_line assistant 2026-10-26T06:01:00Z '元の質問？')" \
+    "$(chat_line user 2026-10-26T06:02:00Z "$request")" \
+    "$(chat_line assistant 2026-10-26T06:03:00Z "$(keepalive_reply)")"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '11\t2026-10-26 15:00\t主の発言\t2026-10-26 15:01\t元の質問？')" ]
+}
+
+@test "keepalive definition: repeated exchanges preserve original text and timestamps without changing logs or state" {
+  make_stub orca
+  set_current 400
+  put_record 11 stop=stopped-seen
+  request="$(render_keepalive)"
+  reply="$(keepalive_reply)"
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00Z '主の発言')" \
+    "$(chat_line assistant 2026-10-26T06:01:00Z '元の質問？')" \
+    "$(chat_line user 2026-10-26T06:02:00Z "$request")" \
+    "$(chat_line assistant 2026-10-26T06:03:00Z "$reply")" \
+    "$(chat_line user 2026-10-26T06:04:00Z "$request")" \
+    "$(chat_line assistant 2026-10-26T06:05:00Z "$reply")"
+  before="$(cat "$(rec_of 1122 11)" "$CLAUDE_PROJECTS_DIR"/*/*.jsonl)"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '11\t2026-10-26 15:00\t主の発言\t2026-10-26 15:01\t元の質問？')" ]
+  [ "$(cat "$(rec_of 1122 11)" "$CLAUDE_PROJECTS_DIR"/*/*.jsonl)" = "$before" ]
+  [ "$(calls '^orca ')" -eq 0 ]
+}
+
+@test "keepalive definition: only a matching single-line response in the corresponding exchange is hidden" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  request="$(render_keepalive)"
+  reply="$(keepalive_reply)"
+  # No request, ordinary acknowledgement, an extra line, reordered/missing fields,
+  # and a lookalike request must all remain visible.
+  for response in "$reply" '了解' "$(printf '%s\n新しい質問？' "$reply")" \
+    "$(jq -r '.separator as $s | [.reply_prefix] + [.fields | reverse[] | . + " value"] | join($s)' "$PLUGIN_DIR/references/child-cache-keepalive.json")" \
+    "$(jq -r '.reply_prefix' "$PLUGIN_DIR/references/child-cache-keepalive.json")"; do
+    for prompt in "$request" " $request" '通常の返事'; do
+      if [ "$response" = "$reply" ] && [ "$prompt" = "$request" ]; then continue; fi
+      put_chat 11 s1 \
+        "$(chat_line assistant 2026-10-26T06:01:00Z '元の質問？')" \
+        "$(chat_line user 2026-10-26T06:02:00Z "$prompt")" \
+        "$(chat_line assistant 2026-10-26T06:03:00Z "$response")"
+      run dispatch child-log 11
+      [ "$status" -eq 0 ]
+      [ "$(printf '%s\n' "$output" | cut -f4,5)" = "$(printf '2026-10-26 15:03\t%s' "$(printf '%s' "$response" | tr '\n' ' ')")" ]
+    done
+  done
+}
+
+@test "keepalive definition: real user messages break correspondence but meta, sidechain and tool results do not" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  request="$(render_keepalive)"
+  reply="$(keepalive_reply)"
+  for interrupt in \
+    "$(chat_line user 2026-10-26T06:03:00Z '主の本当の回答')" \
+    "$(chat_line user 2026-10-26T06:03:00Z '親エピック #1122 の判断（主の承認ではない）: 通す')" \
+    "$(chat_line user 2026-10-26T06:03:00Z '主の返事（親エピック #1122 経由）: 許容する')"; do
+    put_chat 11 s1 \
+      "$(chat_line assistant 2026-10-26T06:01:00Z '元の質問？')" \
+      "$(chat_line user 2026-10-26T06:02:00Z "$request")" \
+      "$interrupt" \
+      "$(chat_line assistant 2026-10-26T06:04:00Z "$reply")"
+    run dispatch child-log 11
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s\n' "$output" | cut -f5)" = "$reply" ]
+  done
+  put_chat 11 s1 \
+    "$(chat_line assistant 2026-10-26T06:01:00Z '元の質問？')" \
+    "$(chat_line user 2026-10-26T06:02:00Z "$request")" \
+    "$(chat_line user 2026-10-26T06:03:00Z 'meta' '{"isMeta":true}')" \
+    "$(chat_line assistant 2026-10-26T06:03:00Z 'side' '{"isSidechain":true}')" \
+    '{"type":"user","timestamp":"2026-10-26T06:03:00Z","message":{"content":[{"type":"tool_result","content":"ok"}]}}' \
+    "$(chat_line assistant 2026-10-26T06:04:00Z "$reply")"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | cut -f4,5)" = "$(printf '2026-10-26 15:01\t元の質問？')" ]
+}
+
+@test "keepalive definition: child reads the shared definition before stopping and handles reserved input before resuming" {
+  grep -qF 'references/child-cache-keepalive.json' "$EPIC_CHILD_STOP"
+  grep -qF '停止前に' "$EPIC_CHILD_STOP"
+  grep -qF '通常の主の返事や親の判断より先に' "$EPIC_CHILD_STOP"
+  grep -qF '受信ターンではツールを呼ばない' "$EPIC_CHILD_STOP"
+  grep -qF 'mark resumed/stopped' "$EPIC_CHILD_STOP"
+  grep -qF '#1374' "$EPIC_CHILD_STOP"
+}
+
 # --- child-log ---
 # spec: dev-workflow-develop（epic-dispatch.sh child-log は子の会話ログの最後のやり取りを読み取り専用で出す）
 

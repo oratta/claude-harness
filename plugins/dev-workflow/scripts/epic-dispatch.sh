@@ -1445,16 +1445,50 @@ cmd_pending_owner() {
   exit 0
 }
 
+# 固定の声かけ文を共有定義から生成する。wait の送信と child-log の完全一致に同じ生成を使う。
+# 返事の欄の意味や真偽は検証しない（#1374）。受信手順も停止前にこの定義を読む。
+keepalive_text() {
+  python3 - "$LAUNCHER_DIR/../references/child-cache-keepalive.json" <<'PY'
+import json, sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    definition = json.load(f)
+shape = definition["separator"].join(
+    [definition["reply_prefix"]] + [field + " <値>" for field in definition["fields"]]
+)
+print(definition["request_template"].format(reply_format=shape))
+PY
+}
+
 # child-log: 読み取り専用。子ごとに、記録の worktree から会話ログの置き場を引き、最新の会話ログ（置き場の直下の *.jsonl のうち
 #   最後の timestamp が最も新しい 1 本）の最後の主の発言と最後の子の発言の時刻（JST）と冒頭 80 文字を
 #   `<child>\t<主の時刻>\t<冒頭>\t<子の時刻>\t<冒頭>` で出す（無い列は -）。読めない子（記録が無い・読めない・2 件以上、
 #   置き場が無い・読めない、python3 が無い）は `unreadable <child>`（記録が原因なら stderr にそのパス）を出して続ける。
 #   jq が無い・今のワークツリーを読めないときは stdout 空で exit 1。それ以外は exit 0
 child_log_line() {
-  DIR="$1" python3 - <<'PY' 2>/dev/null
-import datetime, glob, json, os
+  local keepalive
+  keepalive="$(keepalive_text)" || return 1
+  DIR="$1" KEEPALIVE_TEXT="$keepalive" python3 - "$LAUNCHER_DIR/../references/child-cache-keepalive.json" <<'PY' 2>/dev/null
+import datetime, glob, json, os, sys
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
+with open(sys.argv[1], encoding="utf-8") as f:
+    keepalive = json.load(f)
+
+def keepalive_reply(s):
+    if "\n" in s or "\r" in s:
+        return False
+    parts = s.split(keepalive["separator"])
+    if len(parts) != len(keepalive["fields"]) + 1 or parts[0] != keepalive["reply_prefix"]:
+        return False
+    for part, field in zip(parts[1:], keepalive["fields"]):
+        label = field + " "
+        if not part.startswith(label):
+            return False
+        value = part[len(label):]
+        if not value.strip() or keepalive["separator"].strip() in value:
+            return False
+    return True
 
 def parse(ts):
     try:
@@ -1500,6 +1534,7 @@ if best is None:
     raise SystemExit(1)
 
 owner = child = None
+awaiting_keepalive = False
 for t, d in best[1]:
     if t is None or d.get("isSidechain") or d.get("isMeta"):
         continue
@@ -1510,6 +1545,12 @@ for t, d in best[1]:
         s = text_of(msg.get("content"))
         if s is None or not s.strip():
             continue
+        # Exact, unabridged reserved input, including when the owner typed it.
+        if s == os.environ["KEEPALIVE_TEXT"]:
+            awaiting_keepalive = True
+            continue
+        # A real user turn (including a parent judgment) ends correspondence.
+        awaiting_keepalive = False
         st = s.lstrip()
         m = st.find("主の返事（親エピック #")
         if m > 0:
@@ -1520,6 +1561,10 @@ for t, d in best[1]:
     elif d.get("type") == "assistant":
         s = text_of(msg.get("content"))
         if s is None or not s.strip():
+            continue
+        matched = awaiting_keepalive and keepalive_reply(s)
+        awaiting_keepalive = False
+        if matched:
             continue
         child = (t, s)
 
