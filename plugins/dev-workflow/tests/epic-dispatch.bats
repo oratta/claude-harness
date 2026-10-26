@@ -53,7 +53,7 @@ setup() {
   make_stub sleep
   make_stub sysctl
   # 外の環境（並列起動された子のセッション）の値をテストに漏らさない
-  unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX
+  unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX EPIC_DISPATCH_TIMEOUT
   # 既存の launch のテストが上限に当たらないよう大きくする（上限のテストだけで上書き・unset する）。
   # 物理メモリは sysctl のスタブ（memsize / sysctl_exit）だけから読ませ、実物の /proc/meminfo を読ませない
   export EPIC_DISPATCH_MAX_PARALLEL=99
@@ -1862,6 +1862,156 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
   [ "$output" = "closed 11" ]
 }
 
+# --- wait: 上限の既定を親の会話キャッシュの有効期限で決める（#1324） ---
+# spec: dev-workflow-develop（上限を明示しない wait は親の会話キャッシュの有効期限で上限を決める／
+#   上限を明示した wait は有効期限を読まない／cache_ttl_of はワークツリーの会話で最後にキャッシュを書いた行を読む／
+#   cache_ttl_of は会話を持つ CLI のセッションの行だけを読む／
+#   cache_ttl_of は置き場の直下だけを読み、引数が空なら置き場を読まない／
+#   cache_ttl_of は有効期限と時刻を 1 行で返し、判定できなければ何も出さない）
+# sleep はスタブで経過時間が進まないので、上限は stderr の `wait limit` の行で確かめる。
+# stderr は完全一致で見ず、その行を含むことで見る
+
+# 親のワークツリー（/work/parent）のトランスクリプトに、<分> 前の assistant の行を 1 行足す
+# （<ファイル名> <分> <5m の書き込み> <1h の書き込み> [行に足す JSON の項目] [entrypoint]）。書き込みの値は JSON のまま書く。
+# ファイル名に / を含めれば置き場の下のサブディレクトリに置く。entrypoint は既定で cli（対話の CLI のセッション）で、
+# none を渡すと entrypoint の項目を書かない（entrypoint を書かない古い版の行）
+put_parent_cache() {
+  local name="$1" ago="$2" m5="$3" h1="$4" extra="${5-}" ep="${6-cli}" dir ts
+  [ "$ep" = none ] || extra="\"entrypoint\":\"$ep\"${extra:+,$extra}"
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+  dir="$CLAUDE_PROJECTS_DIR/-work-parent"
+  mkdir -p "$(dirname "$dir/$name.jsonl")"
+  ts="$(python3 -c "import datetime;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=$ago)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
+  printf '{"type":"assistant","timestamp":"%s",%s"message":{"usage":{"cache_creation":{"ephemeral_5m_input_tokens":%s,"ephemeral_1h_input_tokens":%s}}}}\n' \
+    "$ts" "${extra:+$extra,}" "$m5" "$h1" >> "$dir/$name.jsonl"
+}
+
+# stderr に <行> と同じ行があるか（無ければ stderr を出して失敗）
+stderr_has() {
+  grep -qxF -- "$1" "$BATS_TEST_TMPDIR/stderr" || { echo "stderr:"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+}
+
+@test "wait limit: a parent writing the 1h cache waits 3000 seconds" {
+  put_parent_cache s1 3 0 1200
+  gh_seq 11 closed
+  run dispatch wait 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
+  [ "${#lines[@]}" -eq 1 ]
+  stderr_has "wait limit 3000 (parent cache 1h)"
+}
+
+@test "wait limit: a parent writing only the 5m cache waits 21600 seconds" {
+  put_parent_cache s1 3 800 0
+  gh_seq 11 closed
+  run dispatch wait 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
+  stderr_has "wait limit 21600 (parent cache 5m)"
+}
+
+@test "wait limit: no transcript place for the parent waits 3000 seconds as unknown" {
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+  gh_seq 11 closed
+  run dispatch wait 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
+  stderr_has "wait limit 3000 (parent cache unknown)"
+}
+
+@test "wait limit: an explicit limit does not read the cache and prints no limit line" {
+  put_parent_cache s1 3 800 0
+  printf '#!/bin/sh\necho python3 >> "$STUB_LOG"\nexit 1\n' > "$STUB_BIN/python3"; chmod +x "$STUB_BIN/python3"
+  gh_seq 11 open
+  run dispatch wait --interval 0 --timeout 0 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ ! -s "$BATS_TEST_TMPDIR/stderr" ] || { cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  EPIC_DISPATCH_TIMEOUT=0 run dispatch wait --interval 0 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ ! -s "$BATS_TEST_TMPDIR/stderr" ] || { cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(calls python3)" -eq 0 ]
+}
+
+@test "wait limit: an empty EPIC_DISPATCH_TIMEOUT counts as not given" {
+  put_parent_cache s1 3 800 0
+  gh_seq 11 closed
+  EPIC_DISPATCH_TIMEOUT= run dispatch wait 11
+  [ "$status" -eq 0 ]
+  stderr_has "wait limit 21600 (parent cache 5m)"
+}
+
+@test "wait limit: lines without cache writes, older lines, sidechains and subagents do not decide" {
+  put_parent_cache s1 30 900 0
+  put_parent_cache s2 20 0 1500
+  put_parent_cache s1 10 0 0
+  put_parent_cache s1 9 '"x"' 0
+  put_parent_cache s2 8 700 0 '"isSidechain":true'
+  put_parent_cache s2/subagents/agent-a 5 600 0
+  printf '%s\n' 'not json' '[1,2]' '{"type":"assistant","timestamp":5}' '{"type":"assistant","entrypoint":"cli","timestamp":5,"message":{"usage":{"cache_creation":{"ephemeral_5m_input_tokens":900,"ephemeral_1h_input_tokens":0}}}}' >> "$CLAUDE_PROJECTS_DIR/-work-parent/s1.jsonl"
+  gh_seq 11 closed
+  run dispatch wait 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
+  stderr_has "wait limit 3000 (parent cache 1h)"
+}
+
+@test "wait limit: lines of sessions without a conversation do not decide" {
+  put_parent_cache s1 30 0 1200
+  put_parent_cache s2 10 900 0 '' sdk-py
+  put_parent_cache s2 8 900 0 '' sdk-cli
+  put_parent_cache s2 6 900 0 '' none
+  grep -q '"entrypoint":"cli"' "$CLAUDE_PROJECTS_DIR/-work-parent/s1.jsonl"
+  ! grep -q '"entrypoint"' <(tail -1 "$CLAUDE_PROJECTS_DIR/-work-parent/s2.jsonl") || return 1
+  gh_seq 11 closed
+  run dispatch wait 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
+  stderr_has "wait limit 3000 (parent cache 1h)"
+}
+
+@test "wait limit: an empty worktree path does not read the parent of the transcript places" {
+  : >| "$STUB_CFG/toplevel"
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+  mkdir -p "$CLAUDE_PROJECTS_DIR"
+  put_parent_cache s1 3 800 0
+  mv "$CLAUDE_PROJECTS_DIR/-work-parent/s1.jsonl" "$CLAUDE_PROJECTS_DIR/s1.jsonl"
+  gh_seq 11 closed
+  run dispatch wait 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
+  stderr_has "wait limit 3000 (parent cache unknown)"
+}
+
+@test "wait limit: a line writing both 5m and 1h counts as 1h" {
+  put_parent_cache s1 30 800 0
+  put_parent_cache s1 3 400 1200
+  gh_seq 11 closed
+  run dispatch wait 11
+  [ "$status" -eq 0 ]
+  stderr_has "wait limit 3000 (parent cache 1h)"
+}
+
+# 順番 2 の change が使う出力の形は wait からは見えないので、スクリプトから 2 つの関数だけを取り出して呼ぶ
+@test "cache_ttl_of: prints the ttl and the epoch seconds of the last writing line, or nothing" {
+  put_parent_cache s1 30 0 1200
+  put_parent_cache s1 3 800 0
+  local fns="$BATS_TEST_TMPDIR/fns.sh" want
+  sed -n '/^transcript_dir() {/,/^}/p;/^cache_ttl_of() {/,/^}/p' "$SCRIPT" > "$fns"
+  grep -q '^cache_ttl_of() {' "$fns"
+  want="$(python3 -c "import datetime;print(int(datetime.datetime.fromisoformat('$(tail -1 "$CLAUDE_PROJECTS_DIR/-work-parent/s1.jsonl" | jq -r .timestamp)'.replace('Z','+00:00')).timestamp()))")"
+  run bash -c '. "$1"; cache_ttl_of /work/parent' _ "$fns"
+  [ "$status" -eq 0 ]
+  [ "$output" = "5m $want" ]
+  run bash -c '. "$1"; cache_ttl_of ""' _ "$fns"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  run bash -c '. "$1"; cache_ttl_of /work/none' _ "$fns"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
 @test "wait: EPIC_DISPATCH_INTERVAL sets the default and --interval wins" {
   gh_seq 11 open closed
   EPIC_DISPATCH_INTERVAL=5 run dispatch wait --timeout 60 11
@@ -3260,7 +3410,10 @@ infer_ready() {
   printf '%s\n' "$e" | grep -qF 'sub_issues_summary'
   printf '%s\n' "$e" | grep -qF 'nested'
   printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -qF '完了報告'
-  printf '%s\n' "$e" | grep -F 'timeout' | grep -F 'closed' | grep -qF '後で別に起動するエピック:'
+  # 子エピックの行で外す確認は closed で起こされたときだけ（#1324。timeout で起こされたときの確認とは書かない）
+  printf '%s\n' "$e" | grep -F '`closed` で起こされたときの確認' | grep -qF '後で別に起動するエピック:'
+  ! printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -qF '`timeout` で起こされたときの確認' || return 1
+  ! printf '%s\n' "$e" | grep -F '後で別に起動するエピック:' | grep -qF '`timeout` と `closed`' || return 1
   printf '%s\n' "$e" | grep -F 'launch' | grep -F 'nested' | grep -qF '「親ワークツリーで開き直す」とは報告しない'
 }
 

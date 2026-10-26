@@ -80,7 +80,10 @@
 #   `error gh <N>...`（失敗したポーリングが 3 回続いた。3 回目で失敗した子）exit 1
 #   失敗したポーリング = 1 件以上の子が失敗（gh が非 0、または出力が open / closed 以外）し、
 #   閉じた子が 1 件も無いポーリング。失敗の無いポーリングで数え直す。
-#   間隔・上限は秒。既定 300 / 21600（EPIC_DISPATCH_INTERVAL / EPIC_DISPATCH_TIMEOUT、フラグが優先）。
+#   間隔・上限は秒。間隔の既定は 300（EPIC_DISPATCH_INTERVAL、フラグが優先）。上限は --timeout、なければ
+#   空でない EPIC_DISPATCH_TIMEOUT。どちらも無いときだけ、待つ前に親のワークツリーの会話キャッシュの有効期限
+#   （cache_ttl_of）で決める: 5m なら 21600、1h か判定できなければ 3000。このときだけ待つ前に stderr へ
+#   `wait limit <秒> (parent cache <5m|1h|unknown>)` を 1 行出す（上限を明示したときは出さない）。
 #   ポーリングのあとで「経過 >= 上限」か「経過 + 間隔 > 上限」なら眠らずに timeout
 #   （--timeout 0 は間隔によらず 1 回だけ確かめる）。timeout のとき、最後のポーリングに失敗があれば溜めた stderr を出す
 #   子 issue の state は、記録の repo がエピックと同じ子と記録の無い子は repos/{owner}/{repo}、違う子は repos/<repo> で読む。
@@ -1023,6 +1026,64 @@ transcript_dir() {
   printf '%s/%s' "${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}" "$(printf '%s' "$1" | sed 's/[^A-Za-z0-9]/-/g')"
 }
 
+# ワークツリー（<絶対パス>）の会話で最後にキャッシュを書いた行の有効期限を読む（#1324）。
+# 置き場（transcript_dir）の直下の *.jsonl だけを読む（<セッション>/subagents/ は読まない）。使う行は type が assistant・
+# entrypoint が cli ちょうど（対話の CLI のセッション。hook が SDK で起こしたセッションの sdk-py や claude -p の sdk-cli は、
+# 親の有効期限と関係なく 5 分で書くことがあるので読まない。entrypoint の無い行も読まない）・isSidechain が true でない・
+# timestamp が文字列・message.usage.cache_creation の ephemeral_5m_input_tokens と ephemeral_1h_input_tokens の和が正（数でない値は 0）の行のうち、timestamp が最も新しい 1 行。
+# 判定できたら stdout に「<1h|5m> <その行の timestamp の epoch 秒>」を出して 0（1h の書き込みが正なら 1h、0 なら 5m）。
+# epoch 秒は最後にキャッシュを書いた行の時刻で、最後のリクエストの時刻ではない（それが要るなら last_activity を使う）。
+# 引数が空（置き場を求めると projects の直下を指す）・*.jsonl が無い・python3 が無い・使う行が無いときは何も出さずに 1。
+# gh も LLM も呼ばず、stderr にも出さない。wait の上限の既定が使い、順番 2 の change が子のワークツリーに使う
+cache_ttl_of() {
+  [ -n "${1-}" ] || return 1
+  local dir; dir="$(transcript_dir "$1")"
+  ls "$dir"/*.jsonl >/dev/null 2>&1 || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  DIR="$dir" python3 - <<'PY' 2>/dev/null
+import datetime, glob, json, os
+def num(v):
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else 0
+best = None
+for p in glob.glob(os.path.join(os.environ["DIR"], "*.jsonl")):
+    try:
+        f = open(p, encoding="utf-8", errors="replace")
+    except OSError:
+        continue
+    with f:
+        for line in f:
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(d, dict) or d.get("type") != "assistant" or d.get("entrypoint") != "cli" or d.get("isSidechain") is True:
+                continue
+            ts = d.get("timestamp")
+            if not isinstance(ts, str):
+                continue
+            msg = d.get("message")
+            usage = msg.get("usage") if isinstance(msg, dict) else None
+            cc = usage.get("cache_creation") if isinstance(usage, dict) else None
+            if not isinstance(cc, dict):
+                continue
+            m5 = num(cc.get("ephemeral_5m_input_tokens"))
+            h1 = num(cc.get("ephemeral_1h_input_tokens"))
+            if m5 + h1 <= 0:
+                continue
+            try:
+                t = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=datetime.timezone.utc)
+            if best is None or t.timestamp() > best[0]:
+                best = (t.timestamp(), "1h" if h1 > 0 else "5m")
+if best is None:
+    raise SystemExit(1)
+print(best[1], int(best[0]))
+PY
+}
+
 # 通す返事を起動し直して送るかを決める（<子のワークツリーのパス>）。起動し直すなら 1、そのまま送るなら 0 を出す。
 # 子の表（references/reply-after-idle.md）のとおり、会話量 >= 閾値 OR 経過時間 >= 閾値で起動し直す。
 # compact_boundary の有無によらず、片方の計測失敗は他方を妨げない。両条件とも真と確認できなければ 0。
@@ -1198,13 +1259,16 @@ resolve_stopped() {
 }
 
 cmd_wait() {
-  local interval="${EPIC_DISPATCH_INTERVAL:-300}" timeout="${EPIC_DISPATCH_TIMEOUT:-21600}"
+  # 上限は --timeout か空でない EPIC_DISPATCH_TIMEOUT があればその値。どちらも無ければ（timeout が空のまま）、
+  # 待つ前に親の会話キャッシュの有効期限で決める（下の SECONDS=0 の前）
+  local interval="${EPIC_DISPATCH_INTERVAL:-300}" timeout="${EPIC_DISPATCH_TIMEOUT:-}" autolimit=0
+  [ -n "$timeout" ] || autolimit=1
   # --watch-done の子（空白区切り。bash 3.2 の set -u で空の配列を展開できないので文字列で持つ）
   local watch="" watchstop=0 resolve=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --interval) [ "$#" -ge 2 ] || usage; interval="$2"; shift 2 ;;
-      --timeout) [ "$#" -ge 2 ] || usage; timeout="$2"; shift 2 ;;
+      --timeout) [ "$#" -ge 2 ] || usage; timeout="$2"; autolimit=0; shift 2 ;;
       --watch-done)
         [ "$#" -ge 2 ] || usage
         es_valid_arg "$2" || { echo "--watch-done needs an issue number or <owner>/<repo>#<number>: $2" >&2; usage; }
@@ -1220,7 +1284,7 @@ cmd_wait() {
     esac
   done
   is_num "$interval" || { echo "--interval must be a non-negative integer: $interval" >&2; usage; }
-  is_num "$timeout" || { echo "--timeout must be a non-negative integer: $timeout" >&2; usage; }
+  [ "$autolimit" -eq 1 ] || is_num "$timeout" || { echo "--timeout must be a non-negative integer: $timeout" >&2; usage; }
   [ "$#" -ge 1 ] || [ -n "$watch" ] || usage
   check_children "$@"
   # 完了の推定の閾値は --watch-done があるときだけ使うので、そのときだけ待つ前に確かめる
@@ -1250,6 +1314,20 @@ cmd_wait() {
 
   local fails=0 n state closed failed marked stopped wsfail unrecorded still rec f
   local errf; errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
+  # 上限の既定: 親の会話キャッシュが 5 分で書かれていれば 21600（起きるたびに書き直すので、起きる回数を減らす）、
+  # 1 時間か判定できなければ 3000（キャッシュの 1 時間とアイドル時のコンパクトの約 54 分より前に起き、掛け直して延ばす）。
+  # 起動の時点で 1 回だけ決める（待つ間は親がリクエストを出さないので変わらない）。references/reply-after-idle.md
+  if [ "$autolimit" -eq 1 ]; then
+    local ttl
+    ttl="$(cache_ttl_of "$(toplevel)")" || ttl=""
+    case "${ttl%% *}" in
+      5m) timeout=21600; ttl=5m ;;
+      1h) timeout=3000; ttl=1h ;;
+      *) timeout=3000; ttl=unknown ;;
+    esac
+    is_num "$timeout" || { echo "--timeout must be a non-negative integer: $timeout" >&2; usage; }
+    echo "wait limit $timeout (parent cache $ttl)" >&2
+  fi
   SECONDS=0
   while :; do
     closed=""; failed=""; marked=""; stopped=""; unrecorded=""; wsfail=0; : > "$errf"
