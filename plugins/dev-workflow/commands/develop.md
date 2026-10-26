@@ -13,7 +13,7 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 
 前景実行のCodexオプションは、account名からCODEX_HOMEへの対応表である。本体はこれを依頼本文から分離し、`codex-develop.py request` へそのまま渡す。渡し方・併用の拒否・無指定のときの既定値・対応に無い account 名を拒否する時点は `references/codex-develop.md`「起動と role 解決」が正本である。
 
-`develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。エピックの扱いの正は `skills/develop/references/epic.md` にある。このコマンドはそれを Read tool で読み込み、その指示に従ってメインセッションでインライン実行する（実行モードは SKILL.md「実行モード」の決め方で決める）。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
+`develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。エピックの扱いの正は `skills/develop/references/epic.md` にある。このコマンドは `skills/develop/SKILL.md` を Read tool で読み込み、その指示に従ってメインセッションでインライン実行する（実行モードは SKILL.md「実行モード」の決め方で決める）。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
 
 **Skill tool は使わないこと。** この command は既に「ユーザーが起動した slash command」であり、Read tool で SKILL.md 本文（および必要なら `references/decision-criteria.md`）を読み込み、この command の frontmatter（`allowed-tools`）配下でそのままインライン実行する。
 
