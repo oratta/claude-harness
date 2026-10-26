@@ -19,7 +19,7 @@ version: 2.1.0
 
 ## 開始時の idle compaction 設定
 
-役割選択・返事待ちの前に `references/reply-after-idle.md`「開始時の設定」を Read する。本体は `develop-idle-compaction.py --check <worktree>` → 必要時だけ `--apply <worktree>` → `/config` の off 確認を行う。親・子・単発、新セッション・compact 後も同じ。
+工程前に `references/reply-after-idle.md`「開始時の設定」を Read して従う（親・子・単発、新セッション・compact 後も同じ）。
 
 ## Role profile の選択
 

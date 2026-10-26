@@ -1512,8 +1512,15 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   [ -n "$s" ]
   printf '%s\n' "$s" | grep -qF 'references/reply-after-idle.md'
   printf '%s\n' "$s" | grep -qF 'Read'
+  printf '%s\n' "$s" | grep -qF '従う'
+  for word in '親・子・単発' '新セッション' 'compact 後'; do
+    printf '%s\n' "$s" | grep -qF "$word" || return 1
+  done
   for word in '--check' '--apply' '/config'; do
-    printf '%s\n' "$s" | grep -qF -- "$word" || return 1
+    if printf '%s\n' "$s" | grep -qF -- "$word"; then
+      echo "startup details belong in reply-after-idle.md: $word"
+      return 1
+    fi
   done
   s="$(section '開始時の設定' "$SKILL_DIR/references/reply-after-idle.md")"
   for word in '--check'  '--apply' '<worktree>' 'exit 0' 'exit 1' 'exit 2' '親・子・単発' 'interactive / unmanned' '新セッション' 'compact 後' '一度の承認' '承認確認・追加質問はしない' '他キー・別ファイル・symlink 先' '従来の聖域承認' '自動復元しない' '/config' '再起動' '開始を止め' '通常の自動 compact' 'Codex worker'; do
