@@ -10,7 +10,7 @@ channel の本体は AskUserQuestion を呼ばない。主に聞くときは、�
 - 記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限）は、先に PR か記録先のコメントに書き、チャンネルの質問にはそのコメントのフル URL を添える
 - 質問の文面は `~/.claude/output-styles/readable.md` の節 3（サブエージェントには `rules/communication-style.md` の 3 番目）の型に従う。100 行を超える中身は記録先のコメントに置いて URL で渡す（チャンネルのメッセージには長さの上限がある）
 
-**読み替えの規則**: develop と、develop から読む次の文書に書かれた「interactive は AskUserQuestion で聞く」（候補を提示して選ばせる・承認を得る・判断を仰ぐを含む）は、channel ではこの聞き方に読む。各文書には書き足さない（同じ規則を複数の文書に書くと、直すときに片方が漏れる）。対象は `plugins/dev-workflow/` からの相対パスで次の 10 個で、`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で AskUserQuestion に触れるファイルの全部（develop の SKILL.md とこのファイルを除く。漏れは `tests/develop-channel-mode.bats` が見つける）。
+**読み替えの規則**: develop と、develop から読む次の文書に書かれた「interactive は AskUserQuestion で聞く」（候補を提示して選ばせる・承認を得る・判断を仰ぐを含む）は、channel ではこの聞き方に読む。各文書には書き足さない（同じ規則を複数の文書に書くと、直すときに片方が漏れる）。例外は `commands/develop.md` の 5 か所だけ（冒頭の実行モードの段落・引数の分岐 ②⑤・issueify のヒアリング・issueify の承認ゲート）。入口の分岐で主に聞く場面なので、その場に「channel ではチャンネルに送ってターンを終え、AskUserQuestion を呼ばない」と短く書いてよい。書くのは何をするかだけで、宛先・URL の添え方・文面は書かず、この節の聞き方に従う。対象は `plugins/dev-workflow/` からの相対パスで次の 10 個で、`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で AskUserQuestion に触れるファイルの全部（develop の SKILL.md とこのファイルを除く。漏れは `tests/develop-channel-mode.bats` が見つける）。
 
 - `skills/develop/references/decision-criteria.md`
 - `skills/develop/references/epic-child-stop.md`
