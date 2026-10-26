@@ -1187,7 +1187,7 @@ xrepo_block() { section 'エピックの扱い' "$EPIC" | awk '/^\*\*別のリ�
 
 @test "skill (cross-repo): children are passed to every subcommand as <owner>/<repo>#N" {
   b="$(xrepo_block)"
-  printf '%s\n' "$b" | grep -qF '`route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`'
+  printf '%s\n' "$b" | grep -qF '`route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`・`child-log`'
   printf '%s\n' "$b" | grep -qF '`<owner>/<repo>#N` の形で渡す'
 }
 
