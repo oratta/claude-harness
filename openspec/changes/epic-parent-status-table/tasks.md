@@ -5,7 +5,7 @@
 
 ## 2. 報告の規定
 
-- [ ] 2.1 `epic.md` の別セッション方式「親が別セッション方式でターンを終えるときに主に出す発言すべて」の段落に、表の規定（列・確かめた時刻・URL・片付いたもの・会話ログを先に読む・読めなければ確かめられなかった）を足す。触る範囲: plugins/dev-workflow/skills/develop/references/epic.md:46
+- [ ] 2.1 `epic.md` の別セッション方式「親が別セッション方式でターンを終えるときに主に出す発言すべて」の段落に、表の規定（列・確かめた時刻・区切りの下に置く・URL・片付いたもの・channel の答え方・`child-log` で会話ログを先に読む・読めなければ確かめられなかった）を足す。触る範囲: plugins/dev-workflow/skills/develop/references/epic.md:46
 - [ ] 2.2 サブエージェント方式の主への報告に同じ表の規定を当てる（本文は 2.1 を参照し複写しない）。触る範囲: plugins/dev-workflow/skills/develop/references/epic.md:115（「サブエージェント方式」の段落）
 
 ## 3. 記録

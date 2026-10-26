@@ -18,7 +18,7 @@
 
 ### Modified Capabilities
 
-- `dev-workflow-develop`: 親の報告の状態表と、子の会話ログ末尾を読む `child-log` の要件を足す（既存の要件の文は変えない）
+- `dev-workflow-develop`: 親の報告の状態表と、子の会話ログ末尾を読む `child-log`（読めない記録の扱いを含む。`dev-workflow-epic-state` の読めない記録の表には行を足さず、`child-log` の要件に同じ扱いを書く）の要件を足す（既存の要件の文は変えない）
 
 ## Impact
 
