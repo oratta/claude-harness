@@ -1404,6 +1404,8 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 @test "short rewait (#1324): step 5 only starts the same wait again without reading children or reporting" {
   p5="$(grep -E '^5\. `timeout <N>...`' "$EPIC")"
   [ -n "$p5" ]
+  printf '%s\n' "$p5" | grep -qF '60 分未満'
+  printf '%s\n' "$p5" | grep -qF '他の通知や主の返事が無い'
   printf '%s\n' "$p5" | grep -qF '子 issue もエピックも読まず'
   printf '%s\n' "$p5" | grep -qF '主に報告もせず'
   printf '%s\n' "$p5" | grep -qF '直前と同じ引数の `wait` を `run_in_background: true` で再び 1 回起動してターンを終える'
@@ -1468,6 +1470,9 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   printf '%s\n' "$sec" | grep -qF 'CLAUDE_CODE_PROMPT_CACHE_TTL'
   printf '%s\n' "$sec" | grep -qF 'PC が寝ている'
   printf '%s\n' "$sec" | grep -qF '掛け直す'
+  printf '%s\n' "$sec" | grep -qF '60 分以上'
+  printf '%s\n' "$sec" | grep -qF 'キャッシュを読み出しで延ばす'
+  refute "$sec" -F '約 54 分'
   # 節は「親への適用」と「根拠と、この数字の限り」の間に置く
   awk '/^## /{print}' "$f" | grep -A1 -F '## 親への適用' | grep -qF '## 親の待ちの費用（#1324）'
   awk '/^## /{print}' "$f" | grep -A1 -F '## 親の待ちの費用（#1324）' | grep -qF '## 根拠と、この数字の限り'
@@ -1500,4 +1505,36 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   echo "$hold" | grep -qF 'リスク許容を会話で受けたら主に PR へのコメントを求めず'
   echo "$hold" | grep -qF 'エピックの子が親経由で'
   echo "$hold" | grep -qF '「親から届いた返事」'
+}
+
+@test "idle compaction (#1385): common entrance checks applies and verifies without per-worktree approval" {
+  s="$(section '開始時の idle compaction 設定')"
+  [ -n "$s" ]
+  printf '%s\n' "$s" | grep -qF 'references/reply-after-idle.md'
+  printf '%s\n' "$s" | grep -qF 'Read'
+  for word in '--check' '--apply' '/config'; do
+    printf '%s\n' "$s" | grep -qF -- "$word" || return 1
+  done
+  s="$(section '開始時の設定' "$SKILL_DIR/references/reply-after-idle.md")"
+  for word in '--check'  '--apply' '<worktree>' 'exit 0' 'exit 1' 'exit 2' '親・子・単発' 'interactive / unmanned' '新セッション' 'compact 後' '一度の承認' '承認確認・追加質問はしない' '他キー・別ファイル・symlink 先' '従来の聖域承認' '自動復元しない' '/config' '再起動' '開始を止め' '通常の自動 compact' 'Codex worker'; do
+    printf '%s\n' "$s" | grep -qF -- "$word" || return 1
+  done
+  start="$(grep -n '^## 開始時の idle compaction 設定' "$SKILL" | cut -d: -f1)"
+  roles="$(grep -n '^## Role profile' "$SKILL" | cut -d: -f1)"
+  [ "$start" -lt "$roles" ]
+}
+
+@test "parent resume (#1385): time classification precedes events and preserves all pending input" {
+  p="$(awk '/^\*\*親の起床時の時間分類/{f=1} f; f && /^1\. /{exit}' "$EPIC")"
+  [ -n "$p" ]
+  for word in '手順 3〜8' '主の返事' '起床の API リクエストを除いた待機前' 'キャッシュを書いた行の時刻' '60 分以上' 'closed / done / stopped / unrecorded' '5m の 21600 秒' 'スリープ' '子を調べ直さず' 'wait を掛け直さず' 'worktree' 'stderr / exit code' '元セッション ID / 発言 uuid / 時刻' '/develop <エピック番号>' '記録に失敗' '未保存内容'; do
+    printf '%s\n' "$p" | grep -qF "$word" || return 1
+  done
+  p7="$(grep '^7\. ' "$EPIC")"
+  for word in '元発言の真正性と対象' '返事→通知→純粋な timeout' '引き継ぎコメントの写しだけ' 'pending-owner' '停止記録 URL' '再送しない' '条件 (d)' '終了直前の確認' '新たな 6 時間待ち'; do
+    printf '%s\n' "$p7" | grep -qF "$word" || return 1
+  done
+  l="$(grep '^親が別セッション方式でターンを終えるときに主に出す発言すべて' "$EPIC")"
+  printf '%s\n' "$l" | grep -qF '60 分未満の純粋な'
+  printf '%s\n' "$l" | grep -qF '長時間後の再開案内'
 }
