@@ -14,7 +14,7 @@
 
 ### 否定の形の要件は、掛かる範囲を要件ごとに直接書く
 
-旧対応表の要件は、否定の形の要件（特定の記述が無いこと）を索引・`worker/` の 4 本・`pre-classification.md` の全部に掛けると定めていた。要件を削除するので、否定の形の要件（`/opsx:` の出現・`/wt-setup` の記述・閾値の再掲・事前分類を指す参照）は、その要件自身が `worker/` の 4 本（事前分類は索引と `worker/` の指示書）と書く。
+旧対応表の要件は、否定の形の要件（特定の記述が無いこと）を索引・`worker/` の 4 本・`pre-classification.md` の全部に掛けると定めていた。要件を削除するので、否定の形の要件（`/opsx:` の出現・`/wt-setup` の記述・閾値の再掲・事前分類を指す参照）は、その要件自身が索引・`worker/` の 4 本・`pre-classification.md`（事前分類と理由の正本の否定は索引と `worker/` の指示書）と書く。差分では、事前分類と理由の正本の否定を `worker/` の指示書にも広げた。
 
 ### (3) をこれより細かく切らない箇条の Scenario
 
@@ -23,8 +23,12 @@
 ### 変えない名指し
 
 - `agents/worker.md`（エージェント定義）を指す名指しは別のファイルなので変えない
-- 索引 `references/roles/worker.md` そのものを指す名指し（索引の要件・回帰テストの守備範囲・Codex の phase の正本・事前分類を索引に指さないという否定）は変えない
+- 索引 `references/roles/worker.md` そのものを指す名指し（索引の要件・回帰テストの守備範囲・Codex の phase の正本）は変えない
 - 「分割前の worker.md 全体の字数」の履歴の記述は変えない
+
+### Scenario の題名は変えない
+
+openspec は MODIFIED の要件の Scenario を題名で突き合わせ、題名が変わると「元の Scenario を落とした」として検証が通らない。そのため「worker.md が …」の形の Scenario の題名 10 件（develop 5・pr-review-gate 3・spec-review 2）は題名をそのまま残し、本文（WHEN・THEN）だけを移し先のファイル名に直す。題名に残る「worker.md」は読み替えの前提ではなく、W の指示書を指す呼び名である。題名まで直すなら要件ごと REMOVED して新しい題名で ADDED する手があるが、履歴が切れるので採らない。
 
 ### loops-longrun-retirement の `roles/worker.md` の PR 本文の型
 
@@ -33,7 +37,3 @@
 ## Risks / Trade-offs
 
 - 書き直す要件が約 26 件と多い。機械的な書き換えだが、移し先の取り違えが起きうるので、レビューでは「旧対応表の移し先と一致しているか」と「移し先のファイルに、その要件が求める記述が実際にあるか」を見る
-
-### Scenario の題名は変えない
-
-openspec は MODIFIED の要件の Scenario を題名で突き合わせ、題名が変わると「元の Scenario を落とした」として検証が通らない。そのため「worker.md が …」の形の Scenario の題名 10 件（develop 5・pr-review-gate 3・spec-review 2）は題名をそのまま残し、本文（WHEN・THEN）だけを移し先のファイル名に直す。題名に残る「worker.md」は読み替えの前提ではなく、W の指示書を指す呼び名である。題名まで直すなら要件ごと REMOVED して新しい題名で ADDED する手があるが、履歴が切れるので採らない。

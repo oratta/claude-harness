@@ -19,6 +19,8 @@ G が順 2〜4 に当てた指摘を W に戻すときのラベルは、どれ�
 
 同じ周に順 5 の指摘と順 2〜4 の指摘が混ざったときは、G は全件の仕分けを PR コメントに記録して保留で return し、主の回答後に、切り出さない指摘をまとめて 1 回の `agent-review:failed` で W に戻す（MUST）。主の回答が来るまで、W は順 2〜4 の指摘の修正にも着手しない（MUST）。`needs-approval` と `agent-review:failed` を同時に付けてはならない（MUST NOT）。同じ周に順 5 の指摘と順 6 の指摘が混ざったときの処理順は「順 5 と順 6 が同じ周に混ざったときの処理順」Requirement に従い、混在の段落はその処理順を同じ段落に書かなければならない（MUST）。
 
+`stages/triage.md` は、1 周目のモデルを上げる事前分類の正本として `skills/develop/references/pre-classification.md` を指さなければならない（MUST）。
+
 #### Scenario: 仕分け表の 6 順が順番どおりにある
 
 - **WHEN** SKILL.md 手順 2-1 の「マージを止めるかの判定（全周共通）」の直後を読む

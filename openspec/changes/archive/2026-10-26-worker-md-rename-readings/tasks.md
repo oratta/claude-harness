@@ -13,5 +13,5 @@
 
 ## 3. 確かめる
 
-- [x] 3.1 `grep -rnE '(^|[^/a-z])worker\.md' openspec/specs/` の残りが、索引そのものを指す名指し・`agents/worker.md`・履歴の記述・題名に worker.md を含む Scenario 10 件（題名は archive が突き合わせに使うので変えない）だけであることを確かめる
+- [x] 3.1 `grep -rn 'worker\.md' openspec/specs/` の残りが、索引そのものを指す名指し・`agents/worker.md`・履歴の記述・題名に worker.md を含む Scenario 10 件（題名は archive が突き合わせに使うので変えない）だけであることを確かめる
 - [x] 3.2 `grep -n '旧節' plugins/dev-workflow/skills/develop/references/roles/worker.md` が 0 件であること、`scripts/test.sh` が通ることを確かめる
