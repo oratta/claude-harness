@@ -148,7 +148,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       合格処理（手順 5）では PR が Draft なら Ready にしてから agent-review:passed を付ける（W は Ready にしない）
       passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない）。
            見張りの背景タスクの `stopped` / `killed` 通知は `references/ci-watch.md` の 9 に従う。
-           ただし G の return に `issue で承認済み:` があれば、見張りの前に主へその行（宣言 URL・分類・引用）を 1 回伝える（pr-review-gate 手順 5 の事後報告。書式は pr-review-gate の `stages/pass.md`）。
+           ただし G の return に `issue で承認済み:` があれば、CI の見張りの前に主へその行（宣言 URL・分類・引用）を 1 回伝える（pr-review-gate 手順 5 の事後報告。書式は pr-review-gate `stages/pass.md`）。
            見張りの一手が `fix` なら W に直させ（再開指示に `段: implement`。再開か手渡しかは (3) と同じく正本に従う）、
            W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け、
            `ready` になってから前提確認と重さ判定の G を新しく起こしてゲートを取り直させ、
