@@ -5093,7 +5093,7 @@ resolve_pass() {
 }
 
 # --- skill: 状態の記録（adopt・clear・Orca の印は写し） ---
-# spec: dev-workflow-develop（SKILL.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ）
+# spec: dev-workflow-develop（epic.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ）
 
 @test "skill: step 7 calls adopt before reap, pending-owner and launch, and separates ambiguous from an empty exit 1" {
   p="$(run_section | grep -E '^7\. `回し方: Orca`')"

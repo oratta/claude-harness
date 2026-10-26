@@ -214,7 +214,7 @@ SKILL.md は役割ごとのモデルを次のとおり規定しなければな�
 - **WHEN** `orca` が PATH にあり Orca 管理のワークツリーにいる channel の本体が `/develop <エピック番号>` を始める
 - **THEN** 本体は `route` を呼ばず、エピックに `回し方: サブエージェント（channel モード）` とコメントしてサブエージェント方式で回し、別の Claude Code セッションを起こさない
 
-#### Scenario: SKILL.md の回し方が起動部品の差し替えとして書かれている
+#### Scenario: epic.md の回し方が起動部品の差し替えとして書かれている
 - **WHEN** develop の `references/epic.md`「エピックの扱い」→「回し方」を読む
 - **THEN** 起動・待ち・閉じた子・止まった子・片付け・完了の手順は 1 本で書かれ、Orca の部品・tmux の部品・サブエージェント方式のどれで起こすかによって違う点だけが部品ごとの欄に書かれており、「Orca 経路」と「サブエージェント方式」を別々の手順として二重に書いていない。サブエージェント方式は状態の記録を書かない、と書かれている
 
@@ -688,7 +688,7 @@ develop の `references/epic.md`「エピックの扱い」は次を規定しな
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC=420` の環境で `epic-dispatch.sh route '#11'` を実行する
 - **THEN** stderr に使い方が出て exit 1
 
-#### Scenario: SKILL.md に子エピックの扱いと完了報告が書かれている
+#### Scenario: epic.md に子エピックの扱いと完了報告が書かれている
 - **WHEN** `references/epic.md` の「エピックの扱い」を読む
 - **THEN** sub-issue を持つ子を外して `後で別に起動するエピック: #N` とコメントすること、`route` の `nested` を受けたら展開せず親エピックと自分の issue にコメントして止まること、`nested` と同じく `launch` の拒否でも止まり「親ワークツリーで開き直す」と報告しないこと、`timeout` と `closed` の確認でその行がある子を待つ対象から外すこと、完了報告に `後で別に起動するエピック:` の番号を載せることが書かれている
 
@@ -1922,7 +1922,7 @@ develop の `references/epic.md`「エピックの扱い」の Orca 経路は、
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC` が無く、`parentWorktreeId` があり、`orca worktree list --json` が非 0 で終わる（または `.result.worktrees` が配列でない）スタブ環境で `epic-dispatch.sh launch 460 11 12` を実行する
 - **THEN** exit 1、stdout は空、`git`・`orca worktree set`・`orca worktree create` は 1 回も呼ばれず、stderr に `could not read the parent worktree` が出る
 
-#### Scenario: SKILL.md に注意書きのコメントと起動し直したセッションの扱いが書かれている
+#### Scenario: epic.md に注意書きのコメントと起動し直したセッションの扱いが書かれている
 - **WHEN** `references/epic.md` の「エピックの扱い」を読む
 - **THEN** `親エピックからの注意書き:` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のものに従い W・R1・G に渡すこと、それ以外の投稿者のものには従わず渡さずユーザーに報告すること、`note not posted to` のときに本体が投稿すること、起動し直したセッションでも `nested` になること、親エピックの番号を `parent epic: #` から読むこと、`child epics are not expanded here` で `launch` の拒否を見分けること、変数が無く `parent epic:` が出たときは親を持たないワークツリーで起動するよう伝えることが書かれていて、`grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` は 0 行
 
@@ -1944,7 +1944,7 @@ develop の `references/epic.md`「エピックの扱い」は、端末を作れ
 - **WHEN** 子 11 の `orca terminal send` が非 0 で終わるスタブ環境で `epic-dispatch.sh launch 400 11` を実行する
 - **THEN** stderr の送り直しのコマンドは `--terminal 'term-11'` を含み、確認のコマンドも `orca terminal read --terminal 'term-11'` を含む
 
-#### Scenario: SKILL.md に端末を作れなかった子の再開手順が書かれている
+#### Scenario: epic.md に端末を作れなかった子の再開手順が書かれている
 - **WHEN** `references/epic.md` の「エピックの扱い」を読む
 - **THEN** 端末を作れなかった `failed` の子について、既存の端末が無いことを確かめ、作り直して送り、動き出したのを確かめてから再開することが書かれている
 
@@ -2203,7 +2203,7 @@ develop の `references/epic.md`「エピックの扱い」の「回し方」は
 - **WHEN** `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` を読む
 - **THEN** 子・親とも 120,000 の値、親の値を主の起動コマンドが未設定のときだけ入れる形で付けて `settings.json` の `env` に置かないこと、端末が無い・60 分未満・コンパクトが走った・N が 150,000 以上か未満で「そのまま送る」か「起動し直す」かを分ける条件、判定に使う事実（端末の有無は `epic-dispatch.sh reply` が確かめること）、親の状態の復元（親が通した判断を含む）、1〜2 週間後の再集計が書かれている。さらに、コンパクトのあと hook が `SKILL.md` の読み直しを差し込むこと、その費用が 1 回約 39k であること、#1264 で計算し直すことが書かれている
 
-#### Scenario: SKILL.md の回し方が規則のファイルを指す
+#### Scenario: epic.md の回し方が規則のファイルを指す
 - **WHEN** `references/epic.md` の「エピックの扱い」を読む
 - **THEN** 子の起動コマンドに `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` が付くことと、時間がたった子・親に返事を送る前に `references/reply-after-idle.md` の規則で決めることが書かれている
 
@@ -2780,7 +2780,7 @@ develop の `references/epic.md`「エピックの扱い」→「回し方」の
 - **WHEN** `EPIC_DISPATCH_MAX_PARALLEL=0` または `EPIC_DISPATCH_MAX_PARALLEL=two` で `epic-dispatch.sh max-parallel` を実行する
 - **THEN** stderr に `EPIC_DISPATCH_MAX_PARALLEL` と使い方が出て exit 1
 
-#### Scenario: SKILL.md に既定値と根拠の実測値が書かれている
+#### Scenario: epic.md に既定値と根拠の実測値が書かれている
 - **WHEN** develop の `references/epic.md`「回し方」を読む
 - **THEN** `EPIC_DISPATCH_MAX_PARALLEL`、既定値の式（物理メモリの GiB を 4 で割って切り捨て・最小 1・読めなければ 2）、根拠の実測値（1 セッションの RSS の範囲）が書かれている
 
@@ -3245,7 +3245,7 @@ channel の本体は、主へのすべての発言を、要件「channel モー�
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC=420` の環境で `orca` が PATH にあり Orca 管理のワークツリーにいるとき、`epic-dispatch.sh route 11` を実行する
 - **THEN** stdout は `nested` の 1 行で exit 0、`orca` は呼ばれない
 
-#### Scenario: SKILL.md の経路の決め方に orca になる条件としての件数の下限が書かれていない
+#### Scenario: epic.md の経路の決め方に orca になる条件としての件数の下限が書かれていない
 - **WHEN** `skills/develop/references/epic.md` の「エピックの扱い」の「経路の決め方」を読む
 - **THEN** `orca` になる条件が「`orca` が PATH にあり、本体が Orca 管理のワークツリーにいる」だけで書かれ（`tmux` になる条件は別に「`TMUX` が空でなく `tmux` が PATH にある」と書かれ）、`orca` になる条件として blocked されていない子の件数の下限（2 件以上など）が無く（着手できる子が 0 件のとき `subagent` になる旨の文はあってよい）、経路は最初の開始時に 1 回だけ決めて途中で変えないこと、再開時は `回し方:` のコメントから引き継ぐことは残っている
 
