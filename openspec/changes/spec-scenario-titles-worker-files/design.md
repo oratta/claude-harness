@@ -12,7 +12,7 @@
 - **題名は archive 後の spec を直接直す。** openspec の MODIFIED はシナリオを題名で突き合わせ、題名だけの変更を拒否する。RENAMED は要件名にしか使えない。別名 ADDED + 旧名 REMOVED は要件の全文を写す危険が、題名 10 行の直しに見合わない。#1335（PR #1365）と同じ型。
 - **delta spec を持たない change にする。** `.openspec.yaml` に `skip_specs: true` を足し、`openspec archive spec-scenario-titles-worker-files --yes --skip-specs` で archive する。題名の直しはこの change の実装として spec.md に直接入れる。
 - **直す 10 件と新しい題名**（行は変更前の値）:
-  - develop 125: 「worker/ の 4 本に記録書式と事前分類表がある」（WHEN が `worker/` の 4 本と pre-classification.md を読む）
+  - develop 125: 「worker/ の 4 本と pre-classification.md に記録書式と事前分類表がある」（WHEN が `worker/` の 4 本と `references/pre-classification.md` を読む。事前分類表は後者にある）
   - develop 354: 「worker/implement.md と worker/finish.md が (3a) / (3b) の return 内容を列挙している」
   - develop 379: 「worker/common.md の工程名が 3 つになっている」
   - develop 1029: 「worker/ の 4 本が CLI の経路で書かれている」（WHEN は索引 worker.md も読むが、検査対象の中身は 4 本）
