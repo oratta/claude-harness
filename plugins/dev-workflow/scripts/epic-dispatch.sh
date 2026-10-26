@@ -1026,8 +1026,9 @@ transcript_dir() {
 
 # ワークツリー（<絶対パス>）の会話で最後にキャッシュを書いた行の有効期限を読む（#1324）。
 # 置き場（transcript_dir）の直下の *.jsonl だけを読む（<セッション>/subagents/ は読まない）。使う行は type が assistant・
-# isSidechain が true でない・timestamp が文字列・message.usage.cache_creation の ephemeral_5m_input_tokens と
-# ephemeral_1h_input_tokens の和が正（数でない値は 0）の行のうち、timestamp が最も新しい 1 行。
+# entrypoint が cli ちょうど（対話の CLI のセッション。hook が SDK で起こしたセッションの sdk-py や claude -p の sdk-cli は、
+# 親の有効期限と関係なく 5 分で書くことがあるので読まない。entrypoint の無い行も読まない）・isSidechain が true でない・
+# timestamp が文字列・message.usage.cache_creation の ephemeral_5m_input_tokens と ephemeral_1h_input_tokens の和が正（数でない値は 0）の行のうち、timestamp が最も新しい 1 行。
 # 判定できたら stdout に「<1h|5m> <その行の timestamp の epoch 秒>」を出して 0（1h の書き込みが正なら 1h、0 なら 5m）。
 # epoch 秒は最後にキャッシュを書いた行の時刻で、最後のリクエストの時刻ではない（それが要るなら last_activity を使う）。
 # 引数が空（置き場を求めると projects の直下を指す）・*.jsonl が無い・python3 が無い・使う行が無いときは何も出さずに 1。
@@ -1053,7 +1054,7 @@ for p in glob.glob(os.path.join(os.environ["DIR"], "*.jsonl")):
                 d = json.loads(line)
             except Exception:
                 continue
-            if not isinstance(d, dict) or d.get("type") != "assistant" or d.get("isSidechain") is True:
+            if not isinstance(d, dict) or d.get("type") != "assistant" or d.get("entrypoint") != "cli" or d.get("isSidechain") is True:
                 continue
             ts = d.get("timestamp")
             if not isinstance(ts, str):

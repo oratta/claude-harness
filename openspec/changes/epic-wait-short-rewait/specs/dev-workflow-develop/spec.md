@@ -30,9 +30,9 @@
 
 ### Requirement: cache_ttl_of はワークツリーの会話で最後にキャッシュを書いた行を読む
 
-`epic-dispatch.sh` の関数 `cache_ttl_of <ワークツリーの絶対パス>` が使う行は、`type` が `assistant`・`entrypoint` が `cli`・`isSidechain` が true でない・`timestamp` が文字列・`message.usage.cache_creation` の 5m と 1h の書き込み（`ephemeral_5m_input_tokens`・`ephemeral_1h_input_tokens`）の和が正（数でない値は 0）の行のうち、`timestamp` が最も新しい 1 行とする（MUST）。
+`epic-dispatch.sh` の関数 `cache_ttl_of <ワークツリーの絶対パス>` が使う行は、`type` が `assistant`・`entrypoint` が `cli`・`isSidechain` が true でない・`timestamp` が文字列・`message.usage.cache_creation` の `ephemeral_5m_input_tokens` と `ephemeral_1h_input_tokens` の和が正（数でない値は 0）の行のうち、`timestamp` が最も新しい 1 行とする（MUST）。
 
-守備範囲: ①入力は同じ PC の Claude Code が書いた置き場の直下の jsonl（親か、順番 2 では子のもの）。②拾う誤りは、サブエージェント・`isSidechain`・書き込み 0・古い行を最新と読むことと、数でない値や壊れた行で落ちること。③`entrypoint` の扱いと通してよい入力は下の 2 つの要件に書く。④形の変化の検知とすり抜けを塞ぎ切ることは完了条件にしない。
+守備範囲: ①入力は置き場の直下の jsonl（親か、順番 2 では子のもの）。②拾う誤りは、サブエージェント・`isSidechain`・書き込み 0・古い行を最新と読むことと、数でない値や壊れた行で落ちること。③`entrypoint` の扱いと通してよい入力は要件「cache_ttl_of は会話を持つ CLI のセッションの行だけを読む」に書く。④形の変化の検知とすり抜けを塞ぎ切ることは完了条件にしない。
 
 #### Scenario: 書き込みの無い行と古い行とサブエージェントの行では決めない
 - **WHEN** 置き場の 2 つの jsonl に、古い `timestamp` の 5 分だけの行、新しい `timestamp` の 1 時間の行、それより新しい書き込みが 0 の行を置き、`<セッション>/subagents/` の下にさらに新しい 5 分だけの行を置いて `epic-dispatch.sh wait 11` を実行する
@@ -42,7 +42,7 @@
 
 `cache_ttl_of` は、`entrypoint` が `cli` ちょうどの行だけを使わなければならない（MUST）。`entrypoint` が無い行と、`sdk-py`・`sdk-cli` など `cli` 以外の行は使わない（MUST NOT）。
 
-守備範囲: ①入力は、置き場に混ざる対話のセッションの行と、会話を持たないセッション（hook が SDK で起こしたもの・`claude -p`）の行。②拾いたいのは、後者が 5 分で書いた行を最新と読み、1 時間で書く親を 6 時間眠らせること。③通してよいのは、同じワークツリーの別の `cli` のセッションの行が最新になること（同じアカウント・同じ設定なら有効期限も同じ）と、`cli` の行が無く判定できないこと（`entrypoint` の無い古い版を含む）。④`cli` 以外の値で対話するセッションは完了条件にしない。
+守備範囲: ①入力は、置き場に混ざる対話のセッションの行と、会話を持たないセッション（hook が SDK で起こしたもの・`claude -p`）の行。②拾いたいのは、後者が 5 分で書いた行を最新と読み、1 時間で書く親を 6 時間眠らせること。③通してよいのは、同じワークツリーの別の `cli` のセッションの行が最新になること（同じアカウント・同じ設定なら有効期限も同じ）と、`cli` の行が無く判定できないこと（`entrypoint` の無い古い版を含む）。両方の有効期限が正の行の扱いは要件「cache_ttl_of は有効期限と時刻を 1 行で返し、判定できなければ何も出さない」に書く。④`cli` 以外の値で対話するセッションは完了条件にしない。
 
 #### Scenario: 会話を持たないセッションの行では決めない
 - **WHEN** 置き場の jsonl に `entrypoint` が `cli` で 1 時間だけの行を置き、別の jsonl にそれより新しい 5 分だけの行を、`entrypoint` が `sdk-py`・`sdk-cli`・無しの 3 行置いて `epic-dispatch.sh wait 11` を実行する

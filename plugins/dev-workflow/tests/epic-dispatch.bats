@@ -1866,16 +1866,19 @@ in_child() { echo "$BATS_TEST_TMPDIR/work/issue-$1" > "$STUB_CFG/toplevel"; }
 # --- wait: 上限の既定を親の会話キャッシュの有効期限で決める（#1324） ---
 # spec: dev-workflow-develop（上限を明示しない wait は親の会話キャッシュの有効期限で上限を決める／
 #   上限を明示した wait は有効期限を読まない／cache_ttl_of はワークツリーの会話で最後にキャッシュを書いた行を読む／
+#   cache_ttl_of は会話を持つ CLI のセッションの行だけを読む／
 #   cache_ttl_of は置き場の直下だけを読み、引数が空なら置き場を読まない／
 #   cache_ttl_of は有効期限と時刻を 1 行で返し、判定できなければ何も出さない）
 # sleep はスタブで経過時間が進まないので、上限は stderr の `wait limit` の行で確かめる。
 # stderr は完全一致で見ず、その行を含むことで見る
 
 # 親のワークツリー（/work/parent）のトランスクリプトに、<分> 前の assistant の行を 1 行足す
-# （<ファイル名> <分> <5m の書き込み> <1h の書き込み> [行に足す JSON の項目]）。書き込みの値は JSON のまま書く。
-# ファイル名に / を含めれば置き場の下のサブディレクトリに置く
+# （<ファイル名> <分> <5m の書き込み> <1h の書き込み> [行に足す JSON の項目] [entrypoint]）。書き込みの値は JSON のまま書く。
+# ファイル名に / を含めれば置き場の下のサブディレクトリに置く。entrypoint は既定で cli（対話の CLI のセッション）で、
+# none を渡すと entrypoint の項目を書かない（entrypoint を書かない古い版の行）
 put_parent_cache() {
-  local name="$1" ago="$2" m5="$3" h1="$4" extra="${5-}" dir ts
+  local name="$1" ago="$2" m5="$3" h1="$4" extra="${5-}" ep="${6-cli}" dir ts
+  [ "$ep" = none ] || extra="\"entrypoint\":\"$ep\"${extra:+,$extra}"
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
   dir="$CLAUDE_PROJECTS_DIR/-work-parent"
   mkdir -p "$(dirname "$dir/$name.jsonl")"
@@ -1946,6 +1949,20 @@ stderr_has() {
   put_parent_cache s2 8 700 0 '"isSidechain":true'
   put_parent_cache s2/subagents/agent-a 5 600 0
   printf '%s\n' 'not json' '[1,2]' '{"type":"assistant","timestamp":5}' >> "$CLAUDE_PROJECTS_DIR/-work-parent/s1.jsonl"
+  gh_seq 11 closed
+  run dispatch wait 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "closed 11" ]
+  stderr_has "wait limit 2700 (parent cache 1h)"
+}
+
+@test "wait limit: lines of sessions without a conversation do not decide" {
+  put_parent_cache s1 30 0 1200
+  put_parent_cache s2 10 900 0 '' sdk-py
+  put_parent_cache s2 8 900 0 '' sdk-cli
+  put_parent_cache s2 6 900 0 '' none
+  grep -q '"entrypoint":"cli"' "$CLAUDE_PROJECTS_DIR/-work-parent/s1.jsonl"
+  ! grep -q '"entrypoint"' <(tail -1 "$CLAUDE_PROJECTS_DIR/-work-parent/s2.jsonl")
   gh_seq 11 closed
   run dispatch wait 11
   [ "$status" -eq 0 ]
