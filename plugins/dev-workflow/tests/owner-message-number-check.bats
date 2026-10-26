@@ -252,6 +252,43 @@ PY
   reason_of >/dev/null
 }
 
+# URL の範囲と引用の範囲の重なり方（決める役の裁定の表のパターン番号）
+@test "first line: a quote opened and closed inside a URL is part of the URL (pattern 3)" {
+  msg_of '#1330 の参照先は https://example.com/「入門」?lang=ja です。'
+  run_hook
+  silent
+}
+
+@test "first line: a question after a quoted URL closed without a space stays a target (pattern 2')" {
+  msg_of '「https://example.com/x」をマージしますか？ PR #1330 が main に入ります。'
+  run_hook
+  reason_of >/dev/null
+}
+
+@test "first line: a quote opened inside a URL and not closed there is not a quote (pattern 4)" {
+  msg_of 'https://example.com/「入門?lang=ja を PR #1330 に出しますか？ 出すと main に入ります。'
+  run_hook
+  reason_of >/dev/null
+}
+
+@test "first line: an ASCII double quote closing around a URL ends the URL (pattern 6a)" {
+  msg_of '"https://example.com/x?y=1" を PR #1330 に出しますか？ 出すと main に入ります。'
+  run_hook
+  reason_of >/dev/null
+}
+
+@test "first line: an ASCII double quote inside a URL does not open a quote (pattern 6b)" {
+  msg_of '#1330 の参照先は https://example.com/x"y?z=1 です。'
+  run_hook
+  silent
+}
+
+@test "first line: a quoted URL with an inner quote then a question stays a target (pattern 7)" {
+  msg_of '「https://example.com/「入門」?lang=ja」を PR #1330 に出しますか？ 説明。'
+  run_hook
+  reason_of >/dev/null
+}
+
 @test "first line: a question mark inside a URL query is not a sentence end" {
   msg_of '#1330 を見た。https://example.com/a?b=1 に出ている。'
   run_hook
