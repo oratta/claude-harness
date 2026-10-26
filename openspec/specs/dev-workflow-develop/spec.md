@@ -122,7 +122,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 
 `gate-runner.md` は Codex の**起動**の事実（(a) `codex exec -c approval_policy=never -c model_reasoning_effort=medium` を `run_in_background` で起動する経路と、(b) `codex-companion.mjs` に `task … --effort medium` を投げる経路。companion の path-discovery を含む）を持ち、**完了の確認方法は正本 `plugins/dev-workflow/references/subagent-waiting.md` に委ねなければならない（MUST）**。完了マーカーの雛形・具体の待ち値・総待ちの上限を `gate-runner.md` に再掲してはならない（MUST NOT。2026-09-09 のレビューで、再掲した companion の判定方法が事実と食い違ったまま残っていたため）。「出力ファイルを読め」だけで待ち方を書かない記述を残してはならない（MUST NOT）。`gate-runner.md` に残す待ち関連の記述は、完了通知に頼ってターンを終えない禁止・正本への参照・上限到達時の G 固有の分岐（待ちをやめて `needs-reviewer` を return し、根拠に「Codex タイムアウト」と実際に待った時間を書く）に限る（SHALL）。
 
-#### Scenario: worker.md に記録書式と事前分類表がある
+#### Scenario: worker/ の 4 本と pre-classification.md に記録書式と事前分類表がある
 - **WHEN** `references/roles/worker/` の 4 本と `references/pre-classification.md` を読む
 - **THEN** `^仕様化判断: (する|しない)$` の書式、`gh` で記録先にコメントする手順、4 分類の事前分類表（「1 周目」列がすべて `opus` で `fable` 行が無い）、レビュアーの fable は `dev-workflow:decider` 経由であること、return に「指示のどこまでやって、どこで何が起きたか」を書く義務が書かれている
 
@@ -351,7 +351,7 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 
 本体は次に指示する工程を、**自分が (3a) を指示したか (3b) を指示したかで決めなければならない**（MUST）。工程名の文字列照合で決めてはならない（MUST NOT）。
 
-#### Scenario: worker.md が (3a) / (3b) の return 内容を列挙している
+#### Scenario: worker/implement.md と worker/finish.md が (3a) / (3b) の return 内容を列挙している
 - **WHEN** `references/roles/worker/implement.md` と `references/roles/worker/finish.md` を読む
 - **THEN** (3a) と (3b) がそれぞれ別の見出し（または別の箇条）として立っており、(3a) に `openspec validate` があり `/opsx:` が無く、(3a) が CI workflow 定義から検査コマンドを収集して種類ごとに扱う義務と、return に収集した検査コマンド一覧・手元で実行した検査コマンドと exit code（未導入の検査は未導入と明記）・関係するテストを探したコマンド・CI に任せた検査とその CI のジョブ名・`openspec validate --strict` の exit code・`画面確認:` の行を含める義務が書かれ、(3b) に `openspec archive` があり `/opsx:` が無く、(3b) の return に PR 番号と仕様宣言のコメント URL を含める義務が書かれている
 
@@ -376,7 +376,7 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 - **THEN** 本体は次に指示する工程を自分が指示した工程で決めると書かれており、工程名の文字列照合では決めないことが書かれている
 - **AND** (3a) の return に PR 番号と仕様宣言のコメント URL が揃っているかどうかで (3b) を飛ばす分岐は書かれていない
 
-#### Scenario: worker.md の工程名が 3 つになっている
+#### Scenario: worker/common.md の工程名が 3 つになっている
 - **WHEN** `references/roles/worker/common.md` のコンテキスト上限と手渡しの節を読む
 - **THEN** W が return する工程の単位が「(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言」の 3 つとして列挙されている
 
@@ -1026,7 +1026,7 @@ W の仕様化経路があるかどうかは `openspec --version` が成功す�
 
 索引 `references/roles/worker.md`・`references/roles/worker/` の 4 本・`references/pre-classification.md` で `/opsx:` のスラッシュコマンドが出てよいのは、本体や主が対話で `/opsx:*` を使う場面（例: W が来る前に本体や主が `/opsx:ff` で change を作っていた場合）を述べる行だけで、その行は `本体` か `主` の語を含まなければならない（MUST）。W が `/opsx:*` を実行する指示を書いてはならない（MUST NOT）。
 
-#### Scenario: worker.md が CLI の経路で書かれている
+#### Scenario: worker/ の 4 本が CLI の経路で書かれている
 - **WHEN** `plugins/dev-workflow/skills/develop/references/roles/` の索引 `worker.md`・`worker/` の 4 本・`pre-classification.md` を読む
 - **THEN** `openspec new change`・`openspec validate`・`openspec archive` を使う手順があり、(3a) の節と (3b) の節に `/opsx:` の文字列が無く、`/opsx:` を含む行はどれも `本体` か `主` の語を含む
 
@@ -1227,7 +1227,7 @@ interactive の本体は主への依頼に「返事は新しいセッション�
 
 `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」の節が成果一覧を列挙する箇所（`工程完了:` の説明と、通知を受けたときの振る舞い）は W / G 共通の定義なので、「読んだコードの要点」を「W の場合のみ必須」という条件付きで含まなければならない（MUST）。G に必須と読める無条件の追記をしてはならない（MUST NOT。G は段ごとに新しく起こされ、`工程中断:` の return を同じ段の新しい G に渡す既存の経路はこの欄を前提にしないため）。書式（1 行の形・上限行数）は `worker/common.md` を正本とし、`decision-criteria.md` に再掲してはならない（MUST NOT。上限を変えたときに片方が取り残されるため）。
 
-#### Scenario: worker.md の手渡しの節に欄と書式がある
+#### Scenario: worker/common.md の手渡しの節に欄と書式がある
 - **WHEN** `references/roles/worker/common.md` の「コンテキスト上限と手渡し」の節を読む
 - **THEN** 成果一覧に「読んだコードの要点」があり、W の場合のみ必須であること、1 行 1 件の `ファイル:行の範囲 — 分かったこと` の形と上限 20 行が書かれている
 

@@ -752,17 +752,17 @@ G は裁定を受け取ったら、裁定の内容を 1 行目 `決める役の�
 
 `skills/develop/references/roles/worker/implement.md` は、順 3 で W が PR コメントに投稿する表に、修正前 SHA（修正に着手する直前の HEAD）・検索コマンド・全ヒットごとの「直した／該当しない理由」を書くことと、投稿してから push する順序を書かなければならない（MUST）。あわせて、「該当しない」とした行の本文を同じ周の修正で書き換えたときは、主表の本文を修正前のままにし、修正後の本文を補助表に載せることを書かなければならない（MUST）。あわせて、順 4 で直したときに (3a) の return と仕分け欄へ「受け入れ条件の外・その場で直した・直し方 N 行」を記録することを書かなければならない（MUST）。表の書式（見出し行と列、補助表を含む）の正本は SKILL.md の順 3 とし、worker/implement.md は参照して列を再掲しない（MUST）。
 
-#### Scenario: worker.md に検索コマンドの表がある
+#### Scenario: worker/implement.md に検索コマンドの表がある
 
 - **WHEN** `grep -c '検索コマンド' worker/implement.md` を実行する
 - **THEN** 1 以上
 
-#### Scenario: worker.md が修正前 SHA を書かせる
+#### Scenario: worker/implement.md が修正前 SHA を書かせる
 
 - **WHEN** worker/implement.md の順 3 の一覧の段落を読む
 - **THEN** 修正前 SHA を記録することと、書式の正本が SKILL.md の順 3 であることが書かれており、`| ファイル | 行（修正前 SHA） |` の列の並びは再掲されていない
 
-#### Scenario: worker.md が書き換えた該当しない行の扱いを書かせる
+#### Scenario: worker/implement.md が書き換えた該当しない行の扱いを書かせる
 
 - **WHEN** worker/implement.md の順 3 の一覧の段落を読む
 - **THEN** 「該当しない」とした行を同じ周に書き換えたら補助表 `### 書き換えた該当しない行` に修正後の本文を載せることが書かれており、補助表の列の並びは再掲されていない
