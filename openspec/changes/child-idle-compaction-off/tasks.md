@@ -18,7 +18,7 @@
 
 ## 4. 変更の記録と全体の確認
 
-- [ ] 4.1 変更の記録を書く（何を変えたか・#1039 を覆した理由・設定キーの確かめ方と issue のコメントの URL・2 つの環境変数を消したこと・`SKILL.md` ではなく `references/epic.md` を直した理由・要る Claude Code の版・マージ後の実機での確かめ方）。版は上げない。確認: ファイルがあり、`plugin.json` の `version` が変わっていない。触る範囲: plugins/dev-workflow/changes/1323.md（新規）
+- [x] 4.1 変更の記録を書く（何を変えたか・#1039 を覆した理由・設定キーの確かめ方と issue のコメントの URL・2 つの環境変数を消したこと・`SKILL.md` ではなく `references/epic.md` を直した理由・要る Claude Code の版・マージ後の実機での確かめ方）。版は上げない。確認: ファイルがあり、`plugin.json` の `version` が変わっていない。触る範囲: plugins/dev-workflow/changes/1323.md（新規）
 - [ ] 4.2 全体の確認: `grep -rn 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS\|EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS\|EPIC_DISPATCH_RELAUNCH_MIN_TOKENS' plugins/ --exclude-dir=changes` の残りが、`reply-after-idle.md` の親の閾値の説明と、変数を読まないことを確かめるテストだけであること。`bats plugins/dev-workflow/tests/` と `bats tests/` が通ること（`tests/injection-budget.bats` を含む）。`openspec validate child-idle-compaction-off --type change --strict` が通ること。触る範囲: なし（確認だけ）
 
 ## Workflow follow-up

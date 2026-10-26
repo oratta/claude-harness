@@ -51,7 +51,7 @@
 #   （<cmd> の既定は cld、EPIC_DISPATCH_CLAUDE_CMD で変える。<model> の既定は opus、
 #   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。--settings は子のアイドル時の
 #   コンパクトをそのプロセスだけ切る（通常の自動コンパクトは止めない。Claude Code v2.1.290 以降。
-#   根拠は skills/develop/references/reply-after-idle.md）。EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS は読まない。
+#   根拠は skills/develop/references/reply-after-idle.md）。
 #   作れなければ、既存の端末が無いことの確認・作り直し・送信のコマンドを stderr に出す）→ `orca terminal wait --for tui-idle` →
 #   `orca terminal send --text <指示> --enter --wait-submit <秒>`。stdout は子ごとに `launched <N>`
 #   （send の stages に turn_started がある）/ `skipped <N>` / `failed <N>` / `deferred <N>`（上限で後回し）の 1 行。failed で
@@ -180,7 +180,7 @@
 #   子のトランスクリプト（${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl、
 #   ちょうど 1 本。置き場の求め方は wait --watch-done の完了の推定と共有する）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前なら、
 #   compact_boundary の有無と会話量によらず --relaunch 相当。読めなければそのまま送る。
-#   EPIC_DISPATCH_RELAUNCH_IDLE_SEC が空か数字でなければ wait は使い方を出して exit 1（EPIC_DISPATCH_RELAUNCH_MIN_TOKENS は読まない）。
+#   EPIC_DISPATCH_RELAUNCH_IDLE_SEC が空か数字でなければ wait は使い方を出して exit 1。
 #   --watch-done があるとき、EPIC_DISPATCH_DONE_IDLE_SEC が空か数字でなければ gh を呼ばずに使い方を出して exit 1
 # 引数の誤り（launch は epic か子が無い、wait は子も --watch-done も 0 件（--watch-stopped だけも含む）、
 #   mark の種別（done / waiting / stopped / resumed 以外）・引数の数、
