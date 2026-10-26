@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- 移した節を SKILL.md の節として名指ししている要件・シナリオの文を、移設先のファイルを指す形に直す（要件の名前・シナリオの意図・守備範囲は変えない）。
+- 移した節を SKILL.md の節として名指ししている要件・シナリオの文を、移設先のファイルを指す形に直す（要件の名前は下の 2 件を除き変えない。シナリオの意図は変えない。守備範囲の段落は下のとおり足すだけで、新しい振る舞いは足さない）。
   - エピックの扱い（条件・作り方・回し方・Orca 経路の手順・完了条件）→ `skills/develop/references/epic.md`
   - エピックの子が主の返事を待って止まるとき → `skills/develop/references/epic-child-stop.md`
   - 保留で止まるときの引き継ぎ・新しいセッションでの再開 → `skills/develop/references/handover.md`
@@ -30,4 +30,4 @@
 
 ## Impact
 
-`openspec/specs/` の 5 つの spec の文言だけ。`plugins/` 配下のスキル・コマンド・スクリプト・テストは変えない（commands/develop.md の記述などは別の子が直す）。
+`openspec/specs/` の 5 つの spec の文言と、退行テスト 1 件（`tests/openspec-specs-format.bats`）。`plugins/` 配下のスキル・コマンド・スクリプト・テストは変えない（commands/develop.md の記述などは別の子が直す）。
