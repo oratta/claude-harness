@@ -164,7 +164,7 @@ cmd_keepalive() {
   argc 2 "$#"
   local terms count handle observed reason sent rc i after
   if ! terms="$(orca terminal list --worktree "path:$1" --json)" \
-    || ! count="$(printf '%s' "$terms" | jq -e '.result.terminals | if type == "array" then length else error("terminals") end' 2>/dev/null)"; then
+    || ! count="$(printf '%s' "$terms" | jq -e '.result.terminals | if type == "array" and all(.[]; type == "object" and (.handle | type) == "string" and .handle != "") then length else error("terminals") end' 2>/dev/null)"; then
     echo 'failed terminal-list'; return 1
   fi
   [ "$count" -gt 0 ] || { echo 'skipped no-terminal'; return 0; }

@@ -6861,6 +6861,9 @@ Enter to select · ↑/↓ to navigate' ;;
   echo broken > "$STUB_CFG/tlist_json_11"
   run orca_keepalive keepalive /work/issue-11 reserved
   [ "$status" -eq 1 ]; [ "$output" = 'failed terminal-list' ]
+  echo '{"result":{"terminals":[false]}}' > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed terminal-list' ]
   run orca_keepalive keepalive only-one
   [ "$status" -eq 2 ]; [ -z "$output" ]
 }
