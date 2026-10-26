@@ -3892,28 +3892,50 @@ orca_cmd_scripts() {
   run grep -F 'まだエピックに記録されない' "$f"; [ "$status" -eq 1 ]
 }
 
-@test "reply-after-idle: the rule file states the thresholds and where they are set" {
+@test "reply-after-idle: the child turns off idle compaction with --settings, not in settings.json" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   [ -f "$f" ]
-  grep -F '120,000' "$f" | grep -qF '子'
+  grep -E '^\| 子 \|' "$f" | grep -F -- "--settings '{\"idleCompaction\":false}'" | grep -qF 'launch'
+  grep -E '^\| 子 \|' "$f" | grep -qF 'そのプロセスだけ'
+  grep -E '^\| 子 \|' "$f" | grep -F '通常の自動コンパクト' | grep -qF '止めない'
+  grep -E '^\| 子 \|' "$f" | grep -qF 'v2.1.290'
+  run grep -E '^\| 子 \|.*CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS' "$f"; [ "$status" -eq 1 ]
+  run grep -F 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS' "$f"; [ "$status" -eq 1 ]
+  grep -F 'settings.json' "$f" | grep -qF '置かない'
+}
+
+@test "reply-after-idle: the child table relaunches at 60 minutes or more and the basis overturns #1039" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  grep -E '^\| 子の端末が無い \|' "$f" | grep -qF '起動し直す'
+  grep -E '^\| 子の最後のリクエストから 60 分未満 \|' "$f" | grep -qF 'そのまま送る'
+  grep -E '^\| 子の最後のリクエストから 60 分以上 \|' "$f" | grep -qF '起動し直す'
+  grep -E '^\| 子の最後のリクエストから 60 分以上 \|' "$f" | grep -qF 'コンパクトの有無と会話量によらず'
+  # 根拠: コンパクトされた子は SKILL.md の中身を持たない・費用の差・割合・#1039 を #1323 で覆した
+  grep -F '2026-10-23' "$f" | grep -qF 'SKILL.md'
+  grep -qF '約 $0.5' "$f"
+  grep -F '3.2%' "$f" | grep -qF '子'
+  grep -F '#1039' "$f" | grep -F '#1323' | grep -qF '覆'
+  # 判定に使う事実
+  grep -F '子の端末の有無' "$f" | grep -qF 'epic-dispatch.sh reply'
+  grep -F '最後のリクエストの時刻' "$f" | grep -qF 'トランスクリプト'
+  grep -qF '#1034' "$f"
+}
+
+@test "reply-after-idle: the parent keeps 120,000 and its own table" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   grep -E '^\| 親 \|' "$f" | grep -qF '120,000'
   grep -E '^\| 親 \|' "$f" | grep -qF '未設定のときだけ'
   grep -E '^\| 親 \|' "$f" | grep -qF 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000'
   run grep -F '=100000' "$f"; [ "$status" -eq 1 ]
   run grep -F '100,000' "$f"; [ "$status" -eq 1 ]
-  grep -qF 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS' "$f"
-  grep -F 'settings.json' "$f" | grep -qF '置かない'
-}
-
-@test "reply-after-idle: the rule file states when to send as is and when to relaunch" {
-  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
-  grep -F '端末が無' "$f" | grep -qF '起動し直す'
-  grep -F '60 分未満' "$f" | grep -qF 'そのまま送る'
-  grep -F 'コンパクトが走' "$f" | grep -qF 'そのまま送る'
-  grep -F '150,000' "$f" | grep -qF '起動し直す'
+  grep -E '^\| 親の最後のリクエストから 60 分未満 \|' "$f" | grep -qF 'そのまま続ける'
+  grep -E '^\| 60 分以上で、その間に待っている間の自動コンパクトが走った \|' "$f" | grep -qF 'そのまま続ける'
+  grep -E '^\| 60 分以上で、コンパクトが走っておらず、会話量 N が 150,000 以上 \|' "$f" | grep -qF '起動し直す'
+  grep -E '^\| 60 分以上で、コンパクトが走っておらず、会話量 N が 150,000 未満 \|' "$f" | grep -qF 'そのまま続ける'
   grep -qF 'compact_boundary' "$f"
   grep -qF 'subagent-context.sh --file' "$f"
-  grep -qF '#1034' "$f"
+  # 親を子と分ける理由: 親の監視の wait はコンパクトのあとも動き続け、起動し直すと途切れる
+  grep -F '監視' "$f" | grep -F 'wait' | grep -qF '途切れ'
 }
 
 @test "reply-after-idle: the rule file covers the parent, its restorable state, the basis and the recount" {
@@ -3923,14 +3945,18 @@ orca_cmd_scripts() {
   grep -qF '後で別に起動するエピック:' "$f"
   grep -qF '子 #N のワークツリーを残した' "$f"
   grep -qF 'https://github.com/oratta/claude-harness/issues/1039#issuecomment-6182988861' "$f"
+  grep -F 'develop-compact-reread.sh' "$f" | grep -F '39k' | grep -qF '#1264'
+  grep -qF 'https://github.com/oratta/claude-harness/issues/1217#issuecomment-6359110216' "$f"
   grep -F '1〜2 週間' "$f" | grep -qF '集計'
   grep -qF '合否に使わ' "$f"
 }
 
-@test "skill: the Orca route puts the idle compaction threshold on child sessions and points to reply-after-idle.md" {
+@test "skill: the Orca route turns off idle compaction on child sessions and points to reply-after-idle.md" {
   r="$(run_section)"
-  printf '%s\n' "$r" | grep -F 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS' | grep -qF 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS'
+  printf '%s\n' "$r" | grep -qF -- "--settings '{\"idleCompaction\":false}'"
+  printf '%s\n' "$r" | grep -F '足すのは' | grep -F -- '--settings' | grep -qF -- '--model'
   printf '%s\n' "$r" | grep -F 'references/reply-after-idle.md' | grep -qF '起動し直す'
+  run grep -F -e 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS' -e 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS' "$EPIC"; [ "$status" -eq 1 ]
 }
 
 # --- reply ---
