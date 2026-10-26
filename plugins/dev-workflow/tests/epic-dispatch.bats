@@ -6838,6 +6838,26 @@ Enter to select · ↑/↓ to navigate' ;;
   [ "$(calls '^orca terminal send ')" -eq 0 ]
 }
 
+@test "keepalive orca: continuation input with empty draft never sends" {
+  keepalive_orca_setup
+  orca_screen '❯
+  許容する。次の確認を待ってください
+? for shortcuts'
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: shell below stale Claude footer never sends" {
+  keepalive_orca_setup
+  orca_screen '❯
+? for shortcuts
+user@host work %'
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped unknown-state' ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
 @test "keepalive orca: rechecks input, handles missing ambiguous broken and failed observations" {
   keepalive_orca_setup
   orca_screen '❯

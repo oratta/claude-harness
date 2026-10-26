@@ -143,17 +143,38 @@ elif draft:
 elif not re.search(r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on", screen):
     print("skipped unknown-state")
 else:
-    prompts = [s for s in lines if re.match(r"^\s*❯(?:\s|$)", s)]
-    if not prompts:
+    # The current footer must be below the current prompt and at the bottom.
+    # Any later nonblank output (including a shell prompt) makes it ambiguous.
+    rows = [(s, re.sub(ansi, "", s)) for s in raw.splitlines()]
+    visible = [i for i, (_, p) in enumerate(rows) if p.strip()][-12:]
+    footer = r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on"
+    prompts = [i for i in visible if re.match(r"^\s*❯(?:\s|$)", rows[i][1])]
+    if not prompts or not re.search(footer, rows[visible[-1]][1]) or prompts[-1] >= visible[-1]:
         print("skipped unknown-state")
-    elif re.sub(r"^\s*❯\s*", "", prompts[-1]):
-        # Only a wholly dim suggestion is considered empty on tmux.
-        originals = [s for s in raw.splitlines() if re.match(r"^\s*❯", re.sub(ansi, "", s))]
-        candidate = re.sub(r"^.*?❯\s*", "", originals[-1]) if originals else ""
-        dim_only = mode == "tmux" and re.fullmatch(r"\x1b\[2m[^\x1b]*(?:\x1b\[(?:0|22)m)?\s*", candidate)
-        print("ready" if dim_only else "skipped input-not-empty")
     else:
-        print("ready")
+        # Inspect the whole input region, including wrapped continuation lines.
+        # Horizontal input borders are UI; every other visible character is input.
+        region = rows[prompts[-1]:visible[-1]]
+        candidate = "\n".join(
+            s.replace("❯", "", 1) if i == 0 else s
+            for i, (s, p) in enumerate(region)
+            if i != len(region) - 1 or not re.fullmatch(r"\s*[─━]+\s*", p)
+        )
+        # Track SGR dim across line wraps. A reset ends the suggestion; normal
+        # characters after it are human input even when the first line was dim.
+        dim = False
+        nonempty = False
+        for token in re.split("(" + ansi + ")", candidate):
+            if re.fullmatch(ansi, token):
+                if token.endswith("m"):
+                    for code in token[2:-1].split(";"):
+                        if code in ("", "0", "22"):
+                            dim = False
+                        elif code == "2" and token == "\x1b[2m":
+                            dim = True
+            elif token.strip() and not (mode == "tmux" and dim):
+                nonempty = True
+        print("skipped input-not-empty" if nonempty else "ready")
 PYCODE
 }
 

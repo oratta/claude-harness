@@ -532,6 +532,42 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
   [ "$(calls '^tmux send-keys ')" -eq 2 ]
 }
 
+@test "keepalive tmux: continuation input sends neither text nor Enter" {
+  put_pane %5 bash
+  printf '❯\n  許容する。次の確認を待ってください\n? for shortcuts\n' > "$STUB_CFG/screen"
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
+  [ "$(calls '^tmux send-keys ')" -eq 0 ]
+}
+
+@test "keepalive tmux: shell below stale Claude footer sends neither text nor Enter" {
+  put_pane %5 bash
+  printf '❯\n? for shortcuts\nuser@host work %%\n' > "$STUB_CFG/screen"
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped unknown-state' ]
+  [ "$(calls '^tmux send-keys ')" -eq 0 ]
+}
+
+@test "keepalive tmux: footer must follow the current input" {
+  put_pane %5 node
+  printf '? for shortcuts\n❯\n' > "$STUB_CFG/screen"
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped unknown-state' ]
+  [ "$(calls '^tmux send-keys ')" -eq 0 ]
+}
+
+@test "keepalive tmux: wrapped dim suggestion is empty but normal continuation blocks" {
+  put_pane %5 node
+  put_log 2999-01-01T00:00:00Z reserved
+  printf '❯ \033[2msuggestion\n  continued\033[22m\n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen"
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 0 ]; [ "$output" = sent ]
+  printf '❯ \033[2msuggestion\033[0m\n  human\n? for shortcuts\n' > "$STUB_CFG/screen"
+  run tm keepalive "$WT" reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
+  [ "$(calls '^tmux send-keys ')" -eq 2 ]
+}
+
 @test "keepalive tmux: reobservation and failure contracts never launch or erase" {
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped no-terminal' ]
