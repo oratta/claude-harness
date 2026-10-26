@@ -4074,6 +4074,27 @@ orca_cmd_scripts() {
   grep -qF '#1034' "$f"
 }
 
+@test "reply-after-idle: child size takes priority and measurements are independent" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  row="$(grep -nE '^\| 子の会話量 N ' "$f")"
+  [ -n "$row" ]
+  printf '%s\n' "$row" | grep -qF 'EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS'
+  printf '%s\n' "$row" | grep -qF '150000'
+  printf '%s\n' "$row" | grep -qF '起動し直す'
+  terminal="$(grep -nE '^\| 子の端末が無い ' "$f" | cut -d: -f1)"
+  size="${row%%:*}"
+  time="$(grep -nE '^\| 子の最後のリクエストから 60 分未満 ' "$f" | cut -d: -f1)"
+  [ "$terminal" -lt "$size" ]
+  [ "$size" -lt "$time" ]
+  child="$(sed '/^## 親への適用/,$d' "$f")"
+  printf '%s\n' "$child" | grep -qF 'subagent-context.sh --file'
+  printf '%s\n' "$child" | grep -qF 'context_tokens'
+  printf '%s\n' "$child" | grep -qF '会話量を読めなくても時間条件'
+  printf '%s\n' "$child" | grep -qF '時刻を読めなくても会話量条件'
+  printf '%s\n' "$child" | grep -qF '#1046'
+  printf '%s\n' "$child" | grep -qF '最適値を実証'
+}
+
 @test "reply-after-idle: the parent keeps 120,000 and its own table" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   grep -E '^\| 親 \|' "$f" | grep -qF '120,000'
@@ -4920,6 +4941,12 @@ put_transcript() {
 }
 
 resolve_pass() {
+  # 1 テスト内でもケースごとに、ポーリング回数・送信内容・判断記録を分離する。
+  # gh_seq は返り値だけを置き、呼び出し回数を戻さない。
+  export STUB_CFG
+  STUB_CFG="$(mktemp -d "$BATS_TEST_TMPDIR/resolve.XXXXXX")"
+  printf '%s\n' '/work/parent' > "$STUB_CFG/toplevel"
+  : > "$STUB_LOG"
   resolve_ready
   judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
   # 子の判断の既定の subagent-context.sh は plugin のものを使う
@@ -4938,7 +4965,7 @@ resolve_pass() {
 
 @test "wait --resolve relaunch: under 60 minutes sends as is" {
   resolve_pass
-  put_transcript 30 160000
+  put_transcript 30 149999
   run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
   [ "$status" -eq 0 ]
   [ "$(calls '^orca terminal create')" -eq 0 ]
@@ -4980,7 +5007,7 @@ resolve_pass() {
 
 @test "wait --resolve relaunch: the idle threshold can be overridden and a bad value is refused" {
   resolve_pass
-  put_transcript 30 160000
+  put_transcript 30 149999
   EPIC_DISPATCH_RELAUNCH_IDLE_SEC=60 run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
   [ "$status" -eq 0 ]
   [ "$(calls '^orca terminal create')" -eq 1 ]
@@ -6322,6 +6349,109 @@ tmux_pane() {
   [ "$output" != "reaped 11" ]
   [ -e "$(rec_of 1122 11)" ]
   [ "$(calls 'worktree remove ')" -eq 0 ]
+}
+
+# #1150: size and time independently select the existing delivery route.
+assert_resolve_delivery() {
+  local relaunch="$1"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "$output"; cat "$BATS_TEST_TMPDIR/stderr"; return 1; }
+  [ "$output" = "closed 11" ]
+  [ "$(calls '^orca terminal create')" -eq "$relaunch" ]
+  if [ "$relaunch" -eq 1 ]; then
+    starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
+    grep -qF '推奨どおり進めてよい' "$STUB_CFG/sent_term-11"
+  else
+    [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
+  fi
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+}
+
+@test "wait --resolve relaunch: short idle size boundary and context exit 0 or 2" {
+  for ctx in 149999 150000 150001; do
+    for cap in 1 999999; do
+      resolve_pass
+      : > "$STUB_LOG"
+      put_transcript 5 "$ctx"
+      expected=0
+      [ "$ctx" -lt 150000 ] || expected=1
+      DEV_WORKFLOW_CONTEXT_CAP="$cap" assert_resolve_delivery "$expected"
+    done
+  done
+}
+
+@test "wait --resolve relaunch: force threshold override and zero" {
+  resolve_pass
+  put_transcript 5 160000
+  EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=200000 assert_resolve_delivery 0
+  resolve_pass
+  : > "$STUB_LOG"
+  put_transcript 5 100000
+  EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=0 assert_resolve_delivery 1
+}
+
+@test "wait --resolve relaunch: invalid force thresholds fail before waiting" {
+  for val in '' 150k -1; do
+    resolve_pass
+    : > "$STUB_LOG"
+    EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS="$val" run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    [ "$status" -eq 1 ]
+    grep -qF EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS "$BATS_TEST_TMPDIR/stderr"
+    grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+    [ "$(calls '^orca terminal')" -eq 0 ]
+  done
+}
+
+@test "wait --resolve relaunch: compact uses latest valid usage rather than peak" {
+  resolve_pass
+  put_transcript 5 160000 1
+  file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
+  printf '%s\n' '{"type":"assistant","message":{"usage":{"input_tokens":100000}}}' >> "$file"
+  assert_resolve_delivery 0
+  resolve_pass
+  : > "$STUB_LOG"
+  printf '%s\n' '{"type":"assistant","message":{"usage":{"input_tokens":150000}}}' >> "$file"
+  assert_resolve_delivery 1
+}
+
+@test "wait --resolve relaunch: cached inputs count and trailing API errors or zero usage do not erase them" {
+  resolve_pass
+  put_transcript 5 1
+  file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
+  cat >> "$file" <<'JSON'
+{"type":"assistant","message":{"usage":{"input_tokens":10000,"cache_creation_input_tokens":40000,"cache_read_input_tokens":100000,"output_tokens":999999}}}
+{"type":"assistant","isApiErrorMessage":true,"message":{"usage":{"input_tokens":0}}}
+{"type":"assistant","message":{"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}
+JSON
+  assert_resolve_delivery 1
+}
+
+@test "wait --resolve relaunch: unknown usage or failed measurement preserves the time condition" {
+  for ago in 5 90; do
+    resolve_pass
+    : > "$STUB_LOG"
+    put_transcript "$ago" 0
+    expected=0
+    [ "$ago" -lt 60 ] || expected=1
+    assert_resolve_delivery "$expected"
+    resolve_pass
+    : > "$STUB_LOG"
+    put_transcript "$ago" 160000
+    DEV_WORKFLOW_CONTEXT_CAP=invalid assert_resolve_delivery "$expected"
+  done
+}
+
+@test "wait --resolve relaunch: unknown timestamp preserves size condition, both unknown sends" {
+  for ctx in 150000 0; do
+    resolve_pass
+    : > "$STUB_LOG"
+    put_transcript 5 "$ctx"
+    file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
+    printf '{"type":"assistant","timestamp":"invalid","message":{"usage":{"input_tokens":%s}}}\n' "$ctx" > "$file"
+    expected=0
+    [ "$ctx" -lt 150000 ] || expected=1
+    assert_resolve_delivery "$expected"
+  done
 }
 
 # --- child-log ---

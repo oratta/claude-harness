@@ -183,8 +183,9 @@
 # wait --resolve が通す返事は、送る前に references/reply-after-idle.md の子の表で起動し直すかを決める:
 #   子のトランスクリプト（${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl、
 #   ちょうど 1 本。置き場の求め方は wait --watch-done の完了の推定と共有する）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前なら、
-#   compact_boundary の有無と会話量によらず --relaunch 相当。読めなければそのまま送る。
-#   EPIC_DISPATCH_RELAUNCH_IDLE_SEC が空か数字でなければ wait は使い方を出して exit 1。
+#   compact_boundary の有無と会話量によらず --relaunch 相当。
+#   同じファイルの subagent-context.sh --file の context_tokens が EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS（既定 150000）以上でも起動し直す。
+#   両条件は独立し、どちらも真と確認できなければそのまま送る。両閾値は未設定時だけ既定を使い、空か数字でなければ使い方を出して exit 1。
 #   --watch-done があるとき、EPIC_DISPATCH_DONE_IDLE_SEC が空か数字でなければ gh を呼ばずに使い方を出して exit 1
 # 引数の誤り（launch は epic か子が無い、wait は子も --watch-done も 0 件（--watch-stopped だけも含む）、
 #   mark の種別（done / waiting / stopped / resumed 以外）・引数の数、
@@ -1084,17 +1085,26 @@ PY
 }
 
 # 通す返事を起動し直して送るかを決める（<子のワークツリーのパス>）。起動し直すなら 1、そのまま送るなら 0 を出す。
-# 子の表（references/reply-after-idle.md）のとおり、最後のリクエストから閾値以上なら compact_boundary の有無と
-# 会話量によらず起動し直す。事実を 1 つでも読めなければ 0（同じ表の「扱いが揺れる子」と同じ）
+# 子の表（references/reply-after-idle.md）のとおり、会話量 >= 閾値 OR 経過時間 >= 閾値で起動し直す。
+# compact_boundary の有無によらず、片方の計測失敗は他方を妨げない。両条件とも真と確認できなければ 0。
 decide_relaunch() {
-  local path="$1" dir files count file last now
-  local idle="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC:-3600}"
+  local path="$1" dir files count file last now measurement rc tokens
+  local idle="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}"
+  local force="${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}"
   dir="$(transcript_dir "$path")"
   files="$(ls -1 "$dir"/*.jsonl 2>/dev/null)"
   [ -n "$files" ] || { echo 0; return 0; }
   count="$(printf '%s\n' "$files" | wc -l | tr -d ' ')"
   [ "$count" -eq 1 ] || { echo 0; return 0; }
   file="$files"
+  measurement="$("${BASH_SOURCE[0]%/*}/subagent-context.sh" --file "$file" 2>/dev/null)"; rc=$?
+  # exit 2 はサブエージェント用の上限超過。>= の判定には JSON の実測値を使う。
+  if [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]; then
+    tokens="$(printf '%s' "$measurement" | jq -r '.context_tokens // empty' 2>/dev/null)"
+    if is_num "$tokens" && [ "$tokens" -ge "$force" ]; then
+      echo 1; return 0
+    fi
+  fi
   command -v python3 >/dev/null 2>&1 || { echo 0; return 0; }
   last="$(FILE="$file" python3 - <<'PY' 2>/dev/null
 import json, os, datetime
@@ -1288,6 +1298,7 @@ cmd_wait() {
   [ "$watchstop" -eq 1 ] || resolve=""
   if [ -n "$resolve" ]; then
     agent_setup "$resolve" || usage
+    is_num "${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}" || { echo "EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS must be a non-negative integer" >&2; usage; }
     is_num "${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}" || { echo "EPIC_DISPATCH_RELAUNCH_IDLE_SEC must be a non-negative integer" >&2; usage; }
   fi
 
