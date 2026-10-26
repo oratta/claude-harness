@@ -36,4 +36,4 @@
 
 ### Scenario の題名は変えない
 
-openspec は MODIFIED の要件の Scenario を題名で突き合わせ、題名が変わると「元の Scenario を落とした」として検証が通らない。そのため「worker.md が …」の形の Scenario の題名 9 件は題名をそのまま残し、本文（WHEN・THEN）だけを移し先のファイル名に直す。題名に残る「worker.md」は読み替えの前提ではなく、W の指示書を指す呼び名である。題名まで直すなら要件ごと REMOVED して新しい題名で ADDED する手があるが、履歴が切れるので採らない。
+openspec は MODIFIED の要件の Scenario を題名で突き合わせ、題名が変わると「元の Scenario を落とした」として検証が通らない。そのため「worker.md が …」の形の Scenario の題名 10 件（develop 5・pr-review-gate 3・spec-review 2）は題名をそのまま残し、本文（WHEN・THEN）だけを移し先のファイル名に直す。題名に残る「worker.md」は読み替えの前提ではなく、W の指示書を指す呼び名である。題名まで直すなら要件ごと REMOVED して新しい題名で ADDED する手があるが、履歴が切れるので採らない。

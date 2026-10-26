@@ -8,10 +8,10 @@
 
 ## 2. 索引の表を消す
 
-- [ ] 2.1 `plugins/dev-workflow/skills/develop/references/roles/worker.md` の節「旧節の移し先」（見出しと表）を消し、冒頭の「旧節の移し先を引くためのもの」の文言を合わせる。触る範囲: `plugins/dev-workflow/skills/develop/references/roles/worker.md:3`、`:13-29`
-- [ ] 2.2 `plugins/dev-workflow/changes/1331.md` に変更の記録を書く。触る範囲: `plugins/dev-workflow/changes/1331.md`（新規）
+- [x] 2.1 `plugins/dev-workflow/skills/develop/references/roles/worker.md` の節「旧節の移し先」（見出しと表）を消し、冒頭の「旧節の移し先を引くためのもの」の文言を合わせる。触る範囲: `plugins/dev-workflow/skills/develop/references/roles/worker.md:3`、`:13-29`
+- [x] 2.2 `plugins/dev-workflow/changes/1331.md` に変更の記録を書く。触る範囲: `plugins/dev-workflow/changes/1331.md`（新規）
 
 ## 3. 確かめる
 
-- [ ] 3.1 `grep -rnE '(^|[^/a-z])worker\.md' openspec/specs/` の残りが、索引そのものを指す名指し・`agents/worker.md`・履歴の記述だけであることを確かめる
-- [ ] 3.2 `grep -n '旧節' plugins/dev-workflow/skills/develop/references/roles/worker.md` が 0 件であること、`scripts/test.sh` が通ることを確かめる
+- [x] 3.1 `grep -rnE '(^|[^/a-z])worker\.md' openspec/specs/` の残りが、索引そのものを指す名指し・`agents/worker.md`・履歴の記述・題名に worker.md を含む Scenario 10 件（題名は archive が突き合わせに使うので変えない）だけであることを確かめる
+- [x] 3.2 `grep -n '旧節' plugins/dev-workflow/skills/develop/references/roles/worker.md` が 0 件であること、`scripts/test.sh` が通ることを確かめる

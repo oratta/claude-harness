@@ -84,7 +84,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 
 コンテキスト計測の規則の本文——2 経路（本体が再開前に測る／起動の途中で hook が測る）・閾値の環境変数（`DEV_WORKFLOW_CONTEXT_CAP`＝通知、`DEV_WORKFLOW_CONTEXT_HARD_CAP`＝強制停止、`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off`＝全解除）・通知を受けたときの振る舞い・強制停止中にできること・return の 1 行目の書き分け——は、`references/decision-criteria.md`「コンテキスト上限」の節に置かなければならない（MUST）。
 
-`skills/develop/SKILL.md`、`references/roles/worker/` の 4 本、`references/roles/gate-runner.md`、`templates/escalation-tripwires.md`、`plugins/dev-workflow/README.md` は、その節への**ポインタと、その役割固有の動作だけ**を書かなければならない（MUST）。閾値の数値・環境変数名・通知や強制停止の振る舞いを言い換えて再掲してはならない（MUST NOT）。同じ規則を複数のファイルに言い換えて置くと、次に閾値や振る舞いが変わったときにどれかが取り残されるためである（`README.md` を対象に含めるのは、プラグインの概観であっても閾値の数値を書けば取り残される対象になるため。実際に着手時点の `README.md` には `150K tokens` の再掲があった）。
+`skills/develop/SKILL.md`、索引 `references/roles/worker.md`・`references/roles/worker/` の 4 本・`references/pre-classification.md`、`references/roles/gate-runner.md`、`templates/escalation-tripwires.md`、`plugins/dev-workflow/README.md` は、その節への**ポインタと、その役割固有の動作だけ**を書かなければならない（MUST）。閾値の数値・環境変数名・通知や強制停止の振る舞いを言い換えて再掲してはならない（MUST NOT）。同じ規則を複数のファイルに言い換えて置くと、次に閾値や振る舞いが変わったときにどれかが取り残されるためである（`README.md` を対象に含めるのは、プラグインの概観であっても閾値の数値を書けば取り残される対象になるため。実際に着手時点の `README.md` には `150K tokens` の再掲があった）。
 
 #### Scenario: 規則の本文が decision-criteria.md にある
 
@@ -93,7 +93,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 
 #### Scenario: 他の面はポインタだけ
 
-- **WHEN** `SKILL.md` / `references/roles/worker/` の 4 本 / `references/roles/gate-runner.md` / `templates/escalation-tripwires.md` / `README.md` を読む
+- **WHEN** `SKILL.md` / 索引 `references/roles/worker.md`・`references/roles/worker/` の 4 本・`references/pre-classification.md` / `references/roles/gate-runner.md` / `templates/escalation-tripwires.md` / `README.md` を読む
 - **THEN** `references/decision-criteria.md`「コンテキスト上限」への参照があり、閾値の数値や環境変数名の再掲が無い
 
 ### Requirement: 手渡し先は未コミット差分を先に確認する
@@ -208,10 +208,10 @@ G が要求するレビュアー（決める役でないとき）は、本体が
 
 W の仕様化経路があるかどうかは `openspec --version` が成功するかだけで決めなければならない（MUST）。`.claude/commands/opsx/` の有無で決めてはならない（MUST NOT）。opsx コマンドがあっても openspec CLI が無ければ、W は `仕様化判断: しない` の理由に「openspec 不在」と書いてコード直行する（SHALL）。
 
-`references/roles/worker/` の 4 本で `/opsx:` のスラッシュコマンドが出てよいのは、本体や主が対話で `/opsx:*` を使う場面（例: W が来る前に本体や主が `/opsx:ff` で change を作っていた場合）を述べる行だけで、その行は `本体` か `主` の語を含まなければならない（MUST）。W が `/opsx:*` を実行する指示を書いてはならない（MUST NOT）。
+索引 `references/roles/worker.md`・`references/roles/worker/` の 4 本・`references/pre-classification.md`で `/opsx:` のスラッシュコマンドが出てよいのは、本体や主が対話で `/opsx:*` を使う場面（例: W が来る前に本体や主が `/opsx:ff` で change を作っていた場合）を述べる行だけで、その行は `本体` か `主` の語を含まなければならない（MUST）。W が `/opsx:*` を実行する指示を書いてはならない（MUST NOT）。
 
 #### Scenario: worker.md が CLI の経路で書かれている
-- **WHEN** `plugins/dev-workflow/skills/develop/references/roles/worker/` の 4 本を読む
+- **WHEN** `plugins/dev-workflow/skills/develop/references/roles/` の 索引 `worker.md`・`worker/` の 4 本・`pre-classification.md` を読む
 - **THEN** `openspec new change`・`openspec validate`・`openspec archive` を使う手順があり、(3a) の節と (3b) の節に `/opsx:` の文字列が無く、`/opsx:` を含む行はどれも `本体` か `主` の語を含む
 
 #### Scenario: 文言合わせの通し方の検証コマンドが書かれている
@@ -224,14 +224,14 @@ W の仕様化経路があるかどうかは `openspec --version` が成功す�
 
 #### Scenario: 経路の有無を CLI だけで決める
 - **WHEN** `worker/spec.md` の仕様化判断の節と、`develop/SKILL.md` の前提の表の openspec の行を読む
-- **THEN** W の経路の有無を `openspec --version` で決めることが書かれ、`worker/` の 4 本に `ls .claude/commands/opsx/` による検出が無い
+- **THEN** W の経路の有無を `openspec --version` で決めることが書かれ、索引 `worker.md`・`worker/` の 4 本・`pre-classification.md` に `ls .claude/commands/opsx/` による検出が無い
 
 ### Requirement: .worktreeinclude が無いときの /wt-setup は本体が行う
 worktree に `.worktreeinclude` が無いときに `/wt-setup` を呼ぶのは本体でなければならない（MUST）。W は `/wt-setup` を呼んではならない（MUST NOT。`dev-workflow:worker` は `Skill` を持たない）。`worker/common.md` の「W がしないこと」から W が `/wt-setup` を呼ぶ例外を消し、`develop/SKILL.md` の worktree を用意する節に本体の仕事として書かなければならない（MUST）。
 
 #### Scenario: 例外が本体の仕事に移っている
-- **WHEN** `worker/` の 4 本と `develop/SKILL.md` を読む
-- **THEN** `worker/` の 4 本に W が `/wt-setup` を呼ぶ記述が無く、`develop/SKILL.md` の worktree を用意する節に、`.worktreeinclude` が無いとき本体が `/wt-setup` を呼ぶことが書かれている
+- **WHEN** 索引 `worker.md`・`worker/` の 4 本・`pre-classification.md` と `develop/SKILL.md` を読む
+- **THEN** 索引 `worker.md`・`worker/` の 4 本・`pre-classification.md` に W が `/wt-setup` を呼ぶ記述が無く、`develop/SKILL.md` の worktree を用意する節に、`.worktreeinclude` が無いとき本体が `/wt-setup` を呼ぶことが書かれている
 
 ### Requirement: W の return は読んだコードの要点を持つ
 
@@ -284,9 +284,9 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 
 どの段でも要る規則（W がしないこと・実装に入る前の確認・昇格トリップワイヤー・コンテキスト上限と手渡し）は `common.md` に置き、それを使う全部の段から読める位置になければならない（MUST。1 つの段のファイルにだけ置いて、他の段で効かなくしてはならない）。1 回の起動で読む字数に上限は置かない。字数を減らすことを配置の理由にしてはならず（MUST NOT）、節の置き場所は、その節を使う段と読み手（W か本体か）で決める。`worker/` の 4 本・索引・`references/pre-classification.md` の `## ` 見出しは、このうち 1 ファイルにだけなければならない（MUST。同じ節を 2 か所に書かない）。移すときに手順の中身（規則・書式・コマンド・閾値）を変えてはならない（MUST NOT）。段をまたぐ参照はファイル名と節名で書き、中身を言い換えて再掲してはならない（MUST NOT）。
 
-「(3) をこれより細かく切らない」の箇条（手渡しの固定分と、実装の途中で交代させたときに後任が Red のテストから再出発する理由）は、develop の `SKILL.md` の (3) に置かなければならない（MUST）。SKILL.md はこれを理由の正本として持ち、worker.md を理由の正本として指してはならない（MUST NOT）。
+「(3) をこれより細かく切らない」の箇条（手渡しの固定分と、実装の途中で交代させたときに後任が Red のテストから再出発する理由）は、develop の `SKILL.md` の (3) に置かなければならない（MUST）。SKILL.md はこれを理由の正本として持ち、索引 `references/roles/worker.md` や `references/roles/worker/` の指示書を理由の正本として指してはならない（MUST NOT）。
 
-この要件の回帰テスト（`plugins/dev-workflow/tests/develop-worker-stages.bats`）の守備範囲は次のとおりとする。入力は索引 `references/roles/worker.md`・`worker/` の 4 本・`references/pre-classification.md` のファイルの中身で、拾うのは、索引の中のコードブロック・段の表が指すファイルの不在・昇格トリップワイヤーの節が `common.md` に無いこと・同じ `## ` 見出し行が 2 ファイル以上にあること、である。次はテストを通ってしまい、この要件の回帰テストでは止めない: 見出しを変えて同じ節を別のファイルに書いたもの、見出し以外の本文で規則を言い換えて再掲したもの、移すときに規則・書式・コマンド・閾値の文言を変えたもの、W が段のファイル以外（`decision-criteria.md` の節など）を読む分。これらは PR レビューで見る。この穴をテストで塞ぎ切ることは完了条件にしない。
+この要件の回帰テスト（`plugins/dev-workflow/tests/develop-worker-stages.bats`）の守備範囲は次のとおりとする。入力は索引 `references/roles/worker.md`・`worker/` の 4 本・`references/pre-classification.md` のファイルの中身で、拾うのは、索引の中のコードブロック・段の表が指すファイルの不在・昇格トリップワイヤーの節が `common.md` に無いこと・同じ `## ` 見出し行が 2 ファイル以上にあること、である。次はテストを通ってしまい、この要件の回帰テストでは止めない: 見出しを変えて同じ節を別のファイルに書いたもの、見出し以外の本文で規則を言い換えて再掲したもの、移すときに規則・書式・コマンド・閾値の文言を変えたもの、索引がコードブロックを使わずに旧 worker.md の節から移し先への対応表を持つもの、W が段のファイル以外（`decision-criteria.md` の節など）を読む分。これらは PR レビューで見る。この穴をテストで塞ぎ切ることは完了条件にしない。
 
 #### Scenario: 索引が中身を持たない
 
