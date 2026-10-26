@@ -1963,7 +1963,7 @@ stderr_has() {
   put_parent_cache s2 8 900 0 '' sdk-cli
   put_parent_cache s2 6 900 0 '' none
   grep -q '"entrypoint":"cli"' "$CLAUDE_PROJECTS_DIR/-work-parent/s1.jsonl"
-  ! grep -q '"entrypoint"' <(tail -1 "$CLAUDE_PROJECTS_DIR/-work-parent/s2.jsonl") || false
+  ! grep -q '"entrypoint"' <(tail -1 "$CLAUDE_PROJECTS_DIR/-work-parent/s2.jsonl") || return 1
   gh_seq 11 closed
   run dispatch wait 11
   [ "$status" -eq 0 ]
