@@ -140,6 +140,24 @@ referrers() {
   done < <(referrers)
 }
 
+@test "referrers: the list matches the bullets of the spec requirement as a set" {
+  local spec="${REPO_ROOT}/openspec/specs/owner-question-style/spec.md"
+  local listed expected
+  # 要件の見出しから次の見出し（### か ####）の手前までの `- ` 行から、`...md` のパスを取り出す
+  listed="$(awk '
+    /^### Requirement: 主に問いを返す各所は/ {f=1; next}
+    /^#{3,4} / {f=0}
+    f && /^- / {print}
+  ' "$spec" | grep -oE '`[^`]+\.md`' | tr -d '`' | sort)"
+  expected="$(referrers | sort)"
+  [ -n "$listed" ] || { echo "no paths found in the spec bullets"; return 1; }
+  [ "$listed" = "$expected" ] || {
+    echo "spec bullets and referrers() differ (< spec, > referrers):"
+    diff <(printf '%s\n' "$listed") <(printf '%s\n' "$expected") || true
+    return 1
+  }
+}
+
 @test "no document keeps its own first-line form for the owner" {
   local hits
   hits="$(cd "$REPO_ROOT" && git grep -n -F \
