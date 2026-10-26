@@ -4,8 +4,8 @@
 
 ## 1. 設定部品と入口
 
-- [ ] 1.1 `--check/--apply <worktree>` のテストを先に追加し、未実装による失敗を確認する。正常な JSON の単一キー更新、無い設定、false 済みの byte/mtime 不変、permissions/hooks/未知キー保存、ホーム・共有設定が不変、JSON 破損・非 object・重複キー・読めない設定・不正 worktree・symlink の無変更失敗、exit 0/1/2 を fixture で確かめる。触る範囲: plugins/dev-workflow/tests/develop-idle-compaction.bats（新規）
-- [ ] 1.2 専用部品を実装し、1.1 の Bats が全件通ることを確かめる。設定の atomic な置換、false 済み無書き込み、対象パスと原因だけのエラーを含め、CLI の出力を「live 反映済み」としない。触る範囲: plugins/dev-workflow/scripts/develop-idle-compaction.py（新規）、plugins/dev-workflow/tests/develop-idle-compaction.bats（新規）
+- [x] 1.1 `--check/--apply <worktree>` のテストを先に追加し、未実装による失敗を確認する。正常な JSON の単一キー更新、無い設定、false 済みの byte/mtime 不変、permissions/hooks/未知キー保存、ホーム・共有設定が不変、JSON 破損・非 object・重複キー・読めない設定・不正 worktree・symlink の無変更失敗、exit 0/1/2 を fixture で確かめる。触る範囲: plugins/dev-workflow/tests/develop-idle-compaction.bats（新規）
+- [x] 1.2 専用部品を実装し、1.1 の Bats が全件通ることを確かめる。設定の atomic な置換、false 済み無書き込み、対象パスと原因だけのエラーを含め、CLI の出力を「live 反映済み」としない。触る範囲: plugins/dev-workflow/scripts/develop-idle-compaction.py（新規）、plugins/dev-workflow/tests/develop-idle-compaction.bats（新規）
 - [ ] 1.3 SKILL.md の開始手順に共通の check・apply・反映確認の案内を追加する。この PR で主が継続適用を一度承認した範囲として、新しい worktree でも操作承認を確認・質問せず当該キーだけ適用する。他キー・別ファイル・symlink 先は範囲外として従来の聖域承認を要し、部品は symlink を追わない。親子・モードの判定で省略せず、新セッションの引き継ぎでも実施すること、worktree に設定が残ること、未反映なら記録から再起動すること、通常 compact を維持することを文書テストで確認し、`bats plugins/dev-workflow/tests/develop-skill.bats` を通す。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:20-28、plugins/dev-workflow/skills/develop/SKILL.md:78-115、plugins/dev-workflow/tests/develop-skill.bats:1-55（テスト追記）
 
 ## 2. 待機・再開の規則と変更記録
