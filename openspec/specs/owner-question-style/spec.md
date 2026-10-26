@@ -71,6 +71,8 @@ TBD - created by archiving change owner-question-canonical-style. Update Purpose
 次のファイルは、問いの書く順やリスクの書き方を自前で決めた文を持ってはならない（MUST NOT）。正本（`output-styles/readable.md` の節 3。サブエージェント向けには `rules/communication-style.md` の 3 番目）を参照し、その場所に固有の事柄（記録の書式・投稿先・URL の添え方・返事の場所）だけを残す（MUST）。正本を指すパスは、リポジトリの外からも辿れる形 `~/.claude/output-styles/readable.md`（Output Style `readable`）で書かなければならない（MUST）。リポジトリ相対パス（`output-styles/readable.md` だけ）で指してはならない（MUST NOT。プラグインは他のリポジトリから読まれるので、リポジトリ相対パスは辿れない）。
 
 - `plugins/dev-workflow/skills/develop/SKILL.md`（保留の依頼の出し直し・主への案内・channel の聞き方と主への発言・Orca 経路の親の発言の 1 行目・手順 8 の報告の順）
+- `plugins/dev-workflow/skills/develop/references/epic.md`（#1219 で SKILL.md から移した「エピックの扱い」。別セッション方式の親の発言の 1 行目・手順 8 の止まった子の報告の順）
+- `plugins/dev-workflow/skills/develop/references/epic-child-stop.md`（#1219 で SKILL.md から移した「エピックの子が主の返事を待って止まるとき」。子の停止の記録と主への問いの型）
 - `plugins/dev-workflow/skills/pr-review-gate/stages/hold.md`（手順 6 の主への確認依頼・切り出しの確認・主に承認を求めてよい 4 分類）
 - `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md`（動作確認の依頼）
 - `plugins/dev-workflow/references/ci-watch.md`（オーナーへのマージの依頼）

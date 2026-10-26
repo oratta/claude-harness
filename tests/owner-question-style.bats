@@ -30,6 +30,8 @@ short3() {
 referrers() {
   printf '%s\n' \
     plugins/dev-workflow/skills/develop/SKILL.md \
+    plugins/dev-workflow/skills/develop/references/epic.md \
+    plugins/dev-workflow/skills/develop/references/epic-child-stop.md \
     plugins/dev-workflow/skills/pr-review-gate/stages/hold.md \
     plugins/dev-workflow/skills/pr-review-gate/stages/pass.md \
     plugins/dev-workflow/references/ci-watch.md \
