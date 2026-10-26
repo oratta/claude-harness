@@ -624,7 +624,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "${log[7]}" = "orca terminal list --worktree path:/work/issue-11 --json" ]
   starts_with "${log[8]}" "orca terminal create --worktree path:/work/issue-11 --command "
   case "${log[8]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
   [ "${log[9]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
   starts_with "${log[10]}" "orca terminal send --terminal term-11 --text "
   case "${log[10]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
@@ -650,7 +650,8 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "$(calls '^orca terminal close')" -eq 0 ]
   # 起動コマンドを同じ端末に打ち込み、そのあと指示を送る。環境変数の意味は従来の terminal create と同じ
   first_send="$(grep -m1 '^orca terminal send --terminal term-11 ' "$STUB_LOG")"
-  case "$first_send" in *"EPIC_DISPATCH_PARENT_EPIC=400"*"CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000"*"cld"*"--model"*" --enter --json") ;; *) echo "$first_send" >&2; false ;; esac
+  case "$first_send" in *"EPIC_DISPATCH_PARENT_EPIC=400"*"cld"*"--settings"*"idleCompaction"*":false"*"--model"*" --enter --json") ;; *) echo "$first_send" >&2; false ;; esac
+  case "$first_send" in *CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS*) echo "$first_send" >&2; false ;; esac
   [ "$(calls '^orca terminal send --terminal term-11 ')" -eq 2 ]
   [ "$(calls '^orca terminal wait --terminal term-11 --for tui-idle')" -eq 1 ]
   case "$(cat "$STUB_CFG/sent_term-11")" in "/develop #11 "*) ;; *) false ;; esac
@@ -708,7 +709,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   EPIC_DISPATCH_MODEL='opus[1m]' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus[1m]'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus[1m]'" ]
 }
 
 @test "launch: EPIC_DISPATCH_CLAUDE_CMD replaces the command as is" {
@@ -716,7 +717,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   EPIC_DISPATCH_CLAUDE_CMD='cld-account b' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld-account b --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'opus'" ]
 }
 
 @test "launch: an empty EPIC_DISPATCH_CLAUDE_CMD creates nothing" {
@@ -733,36 +734,34 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "$(calls 'worktree create')" -eq 0 ]
 }
 
-@test "launch: EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS changes the idle compaction threshold" {
+# EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS は読まない（設定されていても値を検査せず、起動コマンドを変えない）
+launch_ignores_idle_compact() {
   make_stub orca
-  EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=150000 run dispatch launch 400 11
+  EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS="$1" run dispatch launch 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "launched 11" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+}
+
+@test "launch: the child command turns off idle compaction and has no CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS" {
+  make_stub orca
+  run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=150000 cld --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
+  run grep -F 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS' "$STUB_LOG"; [ "$status" -eq 1 ]
 }
 
-@test "launch: an empty EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS calls neither orca nor git" {
-  make_stub orca
-  make_stub git
-  EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS= run dispatch launch 400 11
-  [ "$status" -eq 1 ]
-  [ -z "$output" ]
-  grep -qF 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS' "$BATS_TEST_TMPDIR/stderr"
-  grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
-  [ ! -s "$STUB_LOG" ]
+@test "launch: EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=150000 does not change the command" {
+  launch_ignores_idle_compact 150000
 }
 
-@test "launch: a non-numeric EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS calls neither orca nor git" {
-  make_stub orca
-  make_stub git
-  for v in 120k 1.2e5 120,000 '120000 x'; do
-    EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS="$v" run dispatch launch 400 11
-    [ "$status" -eq 1 ]
-    [ -z "$output" ]
-    grep -qF 'EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS' "$BATS_TEST_TMPDIR/stderr"
-    grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
-  done
-  [ ! -s "$STUB_LOG" ]
+@test "launch: an empty EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS does not change the command" {
+  launch_ignores_idle_compact ''
+}
+
+@test "launch: a non-numeric EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS does not change the command" {
+  launch_ignores_idle_compact 120k
 }
 
 @test "launch: a failing terminal create is failed and prints the terminal create and send commands" {
@@ -775,7 +774,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "${#lines[@]}" -eq 2 ]
   [ "$(calls '^orca terminal wait ')" -eq 1 ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
-  grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF 'cld --model'
+  grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF 'cld --settings'
   grep -F 'orca terminal send' "$BATS_TEST_TMPDIR/stderr" | grep -qF '/develop #11'
   grep -qF -- '--terminal <handle from create>' "$BATS_TEST_TMPDIR/stderr"
 }
@@ -3989,7 +3988,7 @@ reply_ready() {
   run dispatch reply --as parent 400 11 '推奨どおり'
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "relaunched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus'" ]
   s="$(cat "$STUB_CFG/sent_term-11")"
   starts_with "$s" "/develop #11 "
   case "$s" in *"親エピック #400 の判断（主の承認ではない）: 推奨どおり") ;; *) echo "sent: $s"; false ;; esac
@@ -3997,12 +3996,12 @@ reply_ready() {
   [ "$(calls '^orca terminal close')" -eq 0 ]
 }
 
-@test "reply: the relaunch command follows EPIC_DISPATCH_CLAUDE_CMD, EPIC_DISPATCH_MODEL and the threshold" {
+@test "reply: the relaunch command follows EPIC_DISPATCH_CLAUDE_CMD and EPIC_DISPATCH_MODEL and ignores the old threshold variable" {
   reply_ready
-  EPIC_DISPATCH_CLAUDE_CMD='cld-account b' EPIC_DISPATCH_MODEL=sonnet EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=150000 \
+  EPIC_DISPATCH_CLAUDE_CMD='cld-account b' EPIC_DISPATCH_MODEL=sonnet EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=120k \
     run dispatch reply --as owner 400 11 'B で'
   [ "$status" -eq 0 ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=150000 cld-account b --model 'sonnet'" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'sonnet'" ]
 }
 
 @test "reply: --relaunch closes the terminals before creating one" {
@@ -4168,11 +4167,11 @@ reply_ready() {
   [ "$(calls '^orca')" -eq 0 ]
 }
 
-@test "reply: an empty EPIC_DISPATCH_MODEL or a bad threshold calls no orca" {
+@test "reply: an empty EPIC_DISPATCH_MODEL or EPIC_DISPATCH_CLAUDE_CMD calls no orca" {
   make_stub orca
   EPIC_DISPATCH_MODEL= run dispatch reply --as owner 400 11 'A'
   [ "$status" -eq 1 ]
-  EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=120k run dispatch reply --as owner 400 11 'A'
+  EPIC_DISPATCH_CLAUDE_CMD= run dispatch reply --as owner 400 11 'A'
   [ "$status" -eq 1 ]
   [ "$(calls '^orca')" -eq 0 ]
 }

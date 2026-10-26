@@ -47,11 +47,11 @@
 #   `gh issue comment <N> --body <親エピックからの注意書き: #<epic>・空行・注意書き>`（失敗しても起動は
 #   続け、stderr に `note not posted to #<N>` と手で投稿するコマンドを出す）→ `orca terminal create
 #   --worktree path:<子> --command "EPIC_DISPATCH_PARENT_EPIC=<epic>
-#   CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=<tokens> <cmd> --model <model>"`
+#   <cmd> --settings '{"idleCompaction":false}' --model <model>"`
 #   （<cmd> の既定は cld、EPIC_DISPATCH_CLAUDE_CMD で変える。<model> の既定は opus、
-#   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。<tokens> は子の
-#   待っている間の自動コンパクトの閾値で既定は 120000、EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS
-#   で変える。空か数字でなければ使い方を出して exit 1（根拠は skills/develop/references/reply-after-idle.md）。
+#   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。--settings は子のアイドル時の
+#   コンパクトをそのプロセスだけ切る（通常の自動コンパクトは止めない。Claude Code v2.1.290 以降。
+#   根拠は skills/develop/references/reply-after-idle.md）。EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS は読まない。
 #   作れなければ、既存の端末が無いことの確認・作り直し・送信のコマンドを stderr に出す）→ `orca terminal wait --for tui-idle` →
 #   `orca terminal send --text <指示> --enter --wait-submit <秒>`。stdout は子ごとに `launched <N>`
 #   （send の stages に turn_started がある）/ `skipped <N>` / `failed <N>` / `deferred <N>`（上限で後回し）の 1 行。failed で
@@ -438,9 +438,9 @@ agent_setup() {
   [ -n "$model" ] || { echo "EPIC_DISPATCH_MODEL must not be empty" >&2; return 1; }
   local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-cld}"
   [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; return 1; }
-  local idle_compact="${EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS-120000}"
-  is_num "$idle_compact" || { echo "EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS must be a non-negative integer: $idle_compact" >&2; return 1; }
-  agent_rest="CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=$idle_compact $claude_cmd --model $(shq "$model")"
+  # 子のアイドル時のコンパクト（待っている間の自動コンパクト）はそのプロセスだけ切る。通常の自動コンパクトは止めない
+  # （根拠は skills/develop/references/reply-after-idle.md）
+  agent_rest="$claude_cmd --settings '{\"idleCompaction\":false}' --model $(shq "$model")"
   agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$1 $agent_rest"
 }
 
