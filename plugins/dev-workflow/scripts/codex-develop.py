@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
 import select
@@ -17,8 +16,10 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 # Claude の実効値の規則は usage_view.py の 1 か所に置く（正本: usage-session-records）
+# margin（週の経過率 − 使用率）は headroom.py の行から取る（正本: dev-workflow-headroom）
 sys.path.insert(0, str(ROOT / 'scripts'))
 import usage_view  # noqa: E402
+import headroom  # noqa: E402
 CANONICAL_ROLES = ('spec-write', 'spec-review', 'implement', 'impl-review', 'review',
                    'decider', 'explore', 'summarize')
 PHASES = {
@@ -41,56 +42,47 @@ comments, push, PR creation and commit yourself here, and do not return needs-co
 them. The coordinator performs only operations already recorded as ones it could not align.'''
 READER_TRANSPORT = '''This worker is read-only: never write to GitHub, push, or commit. Return the review verdict and
 its evidence; the coordinator posts it on your behalf, then starts a fresh phase with it.'''
-WEEK_SECONDS = 604800
+def _setting_error(exc):
+    """An invalid HEADROOM_* setting stops the automatic selection (blocked, exit 2)."""
+    return RuntimeError(f'automatic selection cannot count headroom: {exc}')
 
 
-def usage_margin(snapshot, now):
+def usage_margin(snapshot, now, account='codex'):
     """Return the unrounded weekly margin of a Codex snapshot, or None for missing/unsafe input.
 
-    Same effective-value rule as the Claude side (usage-session-records): the age of the fetch is
-    not checked. Past the weekly reset the window reads as 0% with the reset moved forward by whole
-    weeks; before it the fetched value is a lower bound. A reset more than a week ahead is accepted
-    (the margin just goes negative).
+    The margin is the one of headroom's row for this cache (headroom.codex_row, given the account
+    name of the mapping; the name does not change the margin): the age of the fetch is not
+    checked, past the weekly reset the window reads as 0%, a fetch more than 60 seconds in the
+    future is stale. Only an `ok` row gives a margin.
     """
-    if not isinstance(snapshot, dict) or type(snapshot.get('fetched_at')) is not int:
-        return None
-    if snapshot['fetched_at'] > now:
-        return None
-    windows = snapshot.get('windows')
-    if not isinstance(windows, list):
-        return None
-    weekly = [item for item in windows if isinstance(item, dict) and
-              item.get('minutes') == 10080]
-    if not weekly:
-        return None
-    used, reset = weekly[0].get('used_percent'), weekly[0].get('reset_at')
-    if (type(used) not in (int, float) or not math.isfinite(used) or not 0 <= used <= 100 or
-            type(reset) is not int):
-        return None
-    if now >= reset:
-        used = 0
-        reset += ((now - reset) // WEEK_SECONDS + 1) * WEEK_SECONDS
-    elapsed = 100 * (1 - (reset - now) / WEEK_SECONDS)
-    return elapsed - used
+    try:
+        row = headroom.codex_row(account, snapshot, now)
+    except headroom.ConfigError as exc:
+        raise _setting_error(exc) from None
+    return row['margin'] if row['status'] == 'ok' else None
 
 
 def claude_usage_evidence(snapshot_path, now):
-    """Margin of the launch account from its effective values (usage-session-records).
+    """Margin of the launch account from headroom's row for it (usage-session-records values).
 
-    The age of the probe's fetch is not checked: past its reset a window reads as 0%, before it the
-    value is a lower bound, so an old value stays usable while the usage API keeps failing.
+    The launch account is the `active` of the effective values; its margin is the one of
+    headroom.claude_rows with the same snapshot, used only when that row is `ok`.
     """
     try:
         view = usage_view.build_view(snapshot_path=str(snapshot_path), now=now)
     except Exception:
         return {'account': None, 'margin': None, 'fetched_at': None}
     active = view['active']
-    slot = view['accounts'].get(active) or {}
-    used, reset = slot.get('weekly_all_pct'), slot.get('weekly_resets_epoch')
-    margin = None
-    if usage_view.finite_number(used) and 0 <= used <= 100 and usage_view.finite_number(reset):
-        margin = 100 * (1 - (reset - now) / WEEK_SECONDS) - used
-    return {'account': active, 'margin': margin, 'fetched_at': slot.get('observed_at')}
+    try:
+        rows = headroom.claude_rows(now, str(snapshot_path))
+    except headroom.ConfigError as exc:
+        raise _setting_error(exc) from None
+    row = next((r for r in rows if r['account'] == active), None)
+    if row is None:
+        slot = view['accounts'].get(active) or {}
+        return {'account': active, 'margin': None, 'fetched_at': slot.get('observed_at')}
+    return {'account': active, 'margin': row['margin'] if row['status'] == 'ok' else None,
+            'fetched_at': row['observed_at']}
 
 
 def select_configuration(claude_margin, codex_margin, codex_enabled=True):
@@ -319,7 +311,7 @@ def automatic_selection(mapping, now=None):
     usages = read_codex_usages(mapping, str(config_dir), now) if mapping and codex_enabled else {}
     candidates = []
     for order, (name, value) in enumerate(usages.items()):
-        margin = usage_margin(value, now)
+        margin = usage_margin(value, now, name)
         if margin is not None:
             candidates.append((margin, -order, name, value))
     best = max(candidates) if candidates else None
