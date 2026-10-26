@@ -410,7 +410,12 @@ class ForegroundRequest(unittest.TestCase):
         now = 2_000_000
         good = self.snapshot(10, now=now, minutes=10080)
         self.assertIsNone(m.usage_margin(self.snapshot(10, now=now, minutes=300), now))
-        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now, age=-1, minutes=10080), now))
+        # 未来の取得時刻は headroom の 60 秒の規則（60 秒先までは時計のずれとして使う）
+        self.assertIsNone(m.usage_margin(self.snapshot(10, now=now, age=-61, minutes=10080), now))
+        for age in (-60, -1):
+            with self.subTest(age=age):
+                self.assertAlmostEqual(
+                    m.usage_margin(self.snapshot(10, now=now, age=age, minutes=10080), now), 10)
         self.assertIsNone(m.usage_margin({**good, 'fetched_at': '1'}, now))
         self.assertIsNone(m.usage_margin({**good, 'windows': 'x'}, now))
         for used in (-1, 101, float('nan'), True, None):
@@ -460,6 +465,71 @@ class ForegroundRequest(unittest.TestCase):
                                            {'weekly_resets_epoch': now}})
         evidence = m.claude_usage_evidence(path, now)
         self.assertAlmostEqual(evidence['margin'], 0)
+
+    def test_claude_future_observation_follows_the_60_second_rule(self):
+        now = 2_000_000
+        for age, expected in ((-60, 10), (-61, None)):
+            with self.subTest(age=age):
+                path = self.write_claude_snapshot({'default': self.snapshot(10, now=now, age=age)})
+                evidence = m.claude_usage_evidence(path, now)
+                if expected is None:
+                    self.assertIsNone(evidence['margin'])
+                else:
+                    self.assertAlmostEqual(evidence['margin'], expected)
+
+    def test_margins_come_from_the_headroom_rows(self):
+        # 週の経過率と使用率からは出ない margin を返す行に差し替え、その値が証跡に出ることで
+        # codex-develop.py が自分で数えず headroom の行を使っていることを確かめる
+        now = 2_000_000
+        snapshot_path = self.write_claude_snapshot({'default': self.snapshot(-40, now=now)})
+        headroom = m.headroom
+
+        def claude_rows(at, path=None):
+            self.assertEqual((at, Path(path)), (now, snapshot_path))
+            return [{'account': 'default', 'status': 'ok', 'margin': 12.345, 'observed_at': now - 7}]
+
+        def codex_row(account, cache, at):
+            return {'account': account, 'status': 'ok', 'margin': 6.789,
+                    'observed_at': cache['fetched_at']}
+
+        with patch.dict(os.environ, {'USAGE_SNAPSHOT': str(snapshot_path)}, clear=False), \
+                patch.object(m, '_run_usage_probe'), \
+                patch.object(m, 'read_codex_usages',
+                             return_value={'a': self.snapshot(-40, now=now, minutes=10080)}), \
+                patch.object(headroom, 'claude_rows', side_effect=claude_rows), \
+                patch.object(headroom, 'codex_row', side_effect=codex_row):
+            selected, evidence = m.automatic_selection({'a': '/a'}, now)
+        self.assertEqual(selected, 'claude-write-codex-review')
+        self.assertEqual(evidence['claude']['margin'], 12.345)
+        self.assertEqual(evidence['claude']['fetched_at'], now - 7)
+        self.assertEqual(evidence['codex']['margin'], 6.789)
+
+    def test_invalid_headroom_setting_blocks_automatic_selection(self):
+        now = 2_000_000
+        snapshot_path = self.write_claude_snapshot({'default': self.snapshot(10, now=now)})
+        for name in ('HEADROOM_7D_CAP_PCT', 'HEADROOM_NORMAL_RATE_PCT_PER_DAY'):
+            with self.subTest(name=name), \
+                    patch.dict(os.environ, {name: 'abc', 'USAGE_SNAPSHOT': str(snapshot_path)},
+                               clear=False), \
+                    patch.object(m, '_run_usage_probe'), \
+                    patch.object(m, 'read_codex_usages', return_value={}):
+                with self.assertRaisesRegex(RuntimeError, name):
+                    self.call_automatic(accounts=('a',))
+                self.assertFalse(self.out.exists())
+
+    def test_invalid_headroom_setting_exits_2_with_blocked(self):
+        env = dict(os.environ) | {'HEADROOM_7D_CAP_PCT': 'abc',
+                                  'USAGE_SNAPSHOT': str(self.root / 'absent-snapshot.json')}
+        home = self.root / 'codex-a'
+        home.mkdir(exist_ok=True)
+        done = subprocess.run([sys.executable, str(SCRIPT), 'request', '--phase', 'implement',
+                               '--input', str(self.input), '--cwd', str(self.cwd),
+                               '--account-home', 'a=' + str(home), '--out', str(self.out)],
+                              env=env, capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 2, done.stderr)
+        result = json.loads(done.stdout)
+        self.assertEqual(result['status'], 'blocked')
+        self.assertIn('HEADROOM_7D_CAP_PCT', result['error'])
 
     def test_claude_margin_is_missing_without_any_value(self):
         now = 2_000_000
@@ -1115,6 +1185,13 @@ class DocumentationContracts(unittest.TestCase):
             self.assertNotIn('age 300', text)
             self.assertNotIn('<=300', text)
             self.assertIn('margin', text)
+
+    def test_margin_formula_is_not_counted_here(self):
+        # 週の秒数が残っていれば margin を自分で数えている（数えるのは headroom.py だけ）
+        source = SCRIPT.read_text()
+        self.assertNotIn('604800', source)
+        self.assertNotIn('WEEK_SECONDS', source)
+        self.assertIn('import headroom', source)
 
     def test_executor_branch_is_documented_on_exactly_one_line(self):
         executor_lines = [line for line in self.adapter.splitlines() if 'executor' in line]
