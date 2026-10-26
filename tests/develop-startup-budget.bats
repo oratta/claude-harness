@@ -173,22 +173,32 @@ mk_root() {
   [ "$status" -eq 1 ]
 }
 
-@test "regress: appending to a copy of the real SKILL.md fails against the real budget" {
-  local r="$BATS_TEST_TMPDIR/real" line path
+# budget_of <budget-file> <path> — 予算ファイルからそのパスの予算を返す。
+budget_of() { awk -v p="$2" '$1 == p { print $2 }' "$1"; }
+
+# 実ファイルの複製に「予算 - 実測 + 1」バイトを足すと、予算に余裕があっても必ず予算超過になる。
+# 固定バイト数の追記だと、予算が実測より大きい（1.0〜1.1 倍は許される）ときに誤って通る。
+@test "regress: appending budget-minus-actual-plus-1 bytes to a copy of a real file fails, with or without slack" {
+  local r="$BATS_TEST_TMPDIR/real" line path p slack budget actual b2
   while IFS= read -r line; do
     path=${line% *}
     mkdir -p "$r/$(dirname "$path")"
     cp "$PLUGIN_DIR/$path" "$r/$path"
   done < "$BUDGET_FILE"
-  run check_budget "$r" "$BUDGET_FILE"
-  [ "$status" -eq 0 ]
-  echo x >> "$r/skills/develop/SKILL.md"
-  run check_budget "$r" "$BUDGET_FILE"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"予算超過: skills/develop/SKILL.md"* ]]
-  cp "$PLUGIN_DIR/skills/develop/SKILL.md" "$r/skills/develop/SKILL.md"
-  echo x >> "$r/commands/develop.md"
-  run check_budget "$r" "$BUDGET_FILE"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"予算超過: commands/develop.md"* ]]
+  for p in skills/develop/SKILL.md commands/develop.md; do
+    for slack in 0 10; do
+      # 予算ファイルの複製で、対象の予算を実測より slack バイト大きくする
+      actual=$(wc -c < "$r/$p" | tr -d '[:space:]')
+      b2="$BATS_TEST_TMPDIR/b-$slack.txt"
+      awk -v p="$p" -v n=$((actual + slack)) '$1 == p { print $1, n; next } { print }' "$BUDGET_FILE" > "$b2"
+      budget=$(budget_of "$b2" "$p")
+      [ "$budget" -eq $((actual + slack)) ]
+      cp "$PLUGIN_DIR/$p" "$r/$p"
+      head -c $((budget - actual + 1)) /dev/zero | tr '\0' 'x' >> "$r/$p"
+      run check_budget "$r" "$b2"
+      [ "$status" -eq 1 ]
+      [[ "$output" == *"予算超過: $p"* ]]
+      cp "$PLUGIN_DIR/$p" "$r/$p"
+    done
+  done
 }
