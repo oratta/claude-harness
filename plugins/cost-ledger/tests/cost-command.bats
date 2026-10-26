@@ -223,7 +223,7 @@ sys.exit(0 if "/config" in line and line.index("/config") < line.index("settings
   [ "$status" -eq 0 ]
 }
 
-@test "cost: an unset ledger prints the 台帳: 未設定 line on stderr, a set one does not" {  # 未設定のときだけ stderr に案内判定の行が出る
+@test "cost: an unset ledger prints the unset-ledger notice line on stderr, a set one does not" {  # 未設定のときだけ stderr に案内判定の行が出る
   fake_gh_pr_271
   run --separate-stderr env -u COST_LEDGER_PATH -u CLAUDE_PLUGIN_OPTION_LEDGER_PATH python3 "$CL" cost 271 --repo "$REPO_A"
   [[ "$stderr" == *"台帳: 未設定"* ]] || { echo "$stderr"; return 1; }
