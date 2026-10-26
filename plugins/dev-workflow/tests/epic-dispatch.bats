@@ -6300,3 +6300,203 @@ JSON
     assert_resolve_delivery "$expected"
   done
 }
+
+# --- child-log ---
+# spec: dev-workflow-develop（epic-dispatch.sh child-log は子の会話ログの最後のやり取りを読み取り専用で出す）
+
+# 子 <N> の会話ログ <名前> を置く（<N> <名前> <行>...）。行は JSON の 1 行
+put_chat() {
+  local n="$1" name="$2" p dir
+  shift 2
+  p="$BATS_TEST_TMPDIR/work/issue-$n"
+  dir="$BATS_TEST_TMPDIR/projects/$(printf '%s' "$p" | sed 's/[^A-Za-z0-9]/-/g')"
+  mkdir -p "$dir"
+  printf '%s\n' "$@" > "$dir/$name.jsonl"
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+}
+
+# user / assistant の行（<type> <UTC の時刻> <本文> [追加の JSON 項目]）
+chat_line() {
+  local t="$1" ts="$2" text="$3" extra="${4-}"
+  [ -n "$extra" ] || extra='{}'
+  jq -cn --arg t "$t" --arg ts "$ts" --arg x "$text" --argjson e "$extra" \
+    'if $t == "user" then {type: "user", timestamp: $ts, message: {role: "user", content: $x}} + $e
+     else {type: "assistant", timestamp: $ts, message: {role: "assistant", content: [{type: "text", text: $x}]}} + $e end'
+}
+
+@test "child-log: prints the last owner and child messages with JST times, and a tool result is not an owner message" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z 'ログインはやめて聞き取りに移って')" \
+    "$(chat_line assistant 2026-10-26T06:01:00.000Z '了解しました。聞き取りに移ります')" \
+    '{"type":"user","timestamp":"2026-10-26T06:02:00.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"x","content":"ok"}]}}'
+  before="$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '11\t2026-10-26 15:00\tログインはやめて聞き取りに移って\t2026-10-26 15:01\t了解しました。聞き取りに移ります')" ]
+  [ "$(calls '^orca ')" -eq 0 ]
+  [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
+}
+
+@test "child-log: a parent judgment reply is not an owner message but a relayed owner reply is" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_record 12
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z 'OK')" \
+    "$(chat_line user 2026-10-26T06:05:00.000Z '親エピック #1122 の判断（主の承認ではない）: 通す')"
+  put_chat 12 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z 'OK')" \
+    "$(chat_line user 2026-10-26T06:05:00.000Z '主の返事（親エピック #1122 経由）: 許容する')"
+  run dispatch child-log 11 12
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | sed -n 1p | cut -f2,3)" = "$(printf '2026-10-26 15:00\tOK')" ]
+  [ "$(printf '%s\n' "$output" | sed -n 2p | cut -f2,3)" = "$(printf '2026-10-26 15:05\t主の返事（親エピック #1122 経由）: 許容する')" ]
+}
+
+@test "child-log: meta, sidechain and the first /develop instruction are not owner messages; no match prints dashes" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z '<command-name>/develop</command-name> #11')" \
+    "$(chat_line user 2026-10-26T06:01:00.000Z '/develop #11 始める')" \
+    "$(chat_line user 2026-10-26T06:02:00.000Z 'meta' '{"isMeta":true}')" \
+    "$(chat_line user 2026-10-26T06:03:00.000Z 'side' '{"isSidechain":true}')"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '11\t-\t-\t-\t-')" ]
+}
+
+@test "child-log: the newest transcript by last timestamp is used, and long text is cut to 80 characters on one line" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 old "$(chat_line user 2026-10-26T01:00:00.000Z '古い')"
+  long="$(printf 'あ%.0s' $(seq 1 100))"
+  put_chat 11 new "$(chat_line user 2026-10-26T06:00:00.000Z "$(printf '1行目\n%s' "$long")")"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  txt="$(printf '%s\n' "$output" | cut -f3)"
+  [ "$(printf '%s' "$txt" | wc -m | tr -d ' ')" -eq 80 ]
+  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 1 ]
+  case "$txt" in 1行目\ *) ;; *) false ;; esac
+}
+
+@test "child-log: an unreadable child is unreadable and the next child continues" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_record 12
+  put_chat 12 s1 "$(chat_line user 2026-10-26T06:00:00.000Z 'はい')"
+  run dispatch child-log 11 12 13
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | sed -n 1p)" = "unreadable 11" ]
+  [ "$(printf '%s\n' "$output" | sed -n 2p | cut -f1,3)" = "$(printf '12\tはい')" ]
+  [ "$(printf '%s\n' "$output" | sed -n 3p)" = "unreadable 13" ]
+}
+
+@test "child-log: an unreadable record prints unreadable on stdout and its path on stderr, and is not changed" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  printf '{\n' >| "$(rec_of 1122 11)"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "unreadable 11" ]
+  grep -qF "$(rec_of 1122 11)" "$BATS_TEST_TMPDIR/stderr"
+  [ "$(cat "$(rec_of 1122 11)")" = '{' ]
+}
+
+@test "child-log: a relayed owner reply inside a relaunch instruction counts as the owner message" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z '/develop #11 （エピック #1122 の子。返事を受けて起動し直し） 主の返事（親エピック #1122 経由）: 許容する')"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | cut -f2,3)" = "$(printf '2026-10-26 15:00\t主の返事（親エピック #1122 経由）: 許容する')" ]
+}
+
+@test "child-log: a plain first /develop instruction is still not an owner message" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z '/develop #11 （エピック #1122 の子）')"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | cut -f2,3)" = "$(printf -- '-\t-')" ]
+}
+
+@test "child-log: one non-UTF-8 transcript does not make the child unreadable" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 new "$(chat_line user 2026-10-26T06:00:00.000Z 'OK')"
+  d="$(dirname "$(ls "$BATS_TEST_TMPDIR"/projects/*/new.jsonl)")"
+  printf '\xff\xfe\n' > "$d/bad.jsonl"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | cut -f2,3)" = "$(printf '2026-10-26 15:00\tOK')" ]
+}
+
+@test "child-log: an unreadable record path is printed once on stderr" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  printf '{\n' >| "$(rec_of 1122 11)"
+  run dispatch child-log 11
+  [ "$(grep -cF "$(rec_of 1122 11)" "$BATS_TEST_TMPDIR/stderr")" -eq 1 ]
+}
+
+@test "child-log: two records for one child is unreadable" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_record 11 epic=oratta/claude-harness#900
+  put_chat 11 s1 "$(chat_line user 2026-10-26T06:00:00.000Z 'はい')"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "unreadable 11" ]
+}
+
+@test "child-log: no children or no jq is an error with empty stdout" {
+  make_stub orca
+  set_current 400
+  run dispatch child-log
+  [ "$status" -eq 1 ]
+  put_record 11
+  run dispatch_nojq child-log 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+# spec: dev-workflow-develop（エピックの親は主への報告の最後に、全部の子と親自身の状態表を付ける）
+
+@test "epic.md: the status table is specified with its columns, placement, channel rule and the conversation-log check" {
+  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  grep -qF 'issue 番号・内容・ステータス・確認内容・推奨・答え方' "$e"
+  grep -qF '報告の区切りより下に置く' "$e"
+  grep -qF '区切りより上の本文の最後の行は上の書き分けの規定のとおり答え方のまま' "$e"
+  grep -qF '前回の報告から片付いたもの' "$e"
+  grep -qF '会話ログの末尾を `scripts/epic-dispatch.sh child-log' "$e"
+  grep -qF '会話ログを優先する' "$e"
+  grep -qF '`確かめられなかった`' "$e"
+  grep -qF 'チャンネル以外の画面やタブは書かない' "$e"
+  grep -qF '上の**状態表**を付ける' "$e"
+  ! grep -qF 'MUST NOT 置き換え' "$e" || return 1
+}
+
+@test "epic.md: not-yet-launched children are not passed to child-log, URLs below the table are limited, and child-log takes owner/repo#N" {
+  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  grep -qF '`launch` に渡した子ごとに会話ログの末尾を' "$e"
+  grep -qF '`未起動（<理由>）`' "$e"
+  grep -qF '子の停止の記録の URL は、1 行目で聞く 1 件にだけ書き' "$e"
+  grep -qF '`adopt`・`child-log` に渡す' "$e"
+  ! grep -qF '答えが要る子の issue（または停止の記録）の URL' "$e" || return 1
+}

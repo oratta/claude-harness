@@ -10,6 +10,7 @@
 #   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
 #   epic-dispatch.sh reap <child>...
 #   epic-dispatch.sh pending-owner <child>...
+#   epic-dispatch.sh child-log <child>...
 #   epic-dispatch.sh adopt <epic> <child>...
 #   epic-dispatch.sh clear <epic>
 #   epic-dispatch.sh max-parallel
@@ -219,6 +220,7 @@ usage:
   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
   epic-dispatch.sh reap <child>...
   epic-dispatch.sh pending-owner <child>...
+  epic-dispatch.sh child-log <child>...
   epic-dispatch.sh adopt <epic> <child>...
   epic-dispatch.sh clear <epic>
   epic-dispatch.sh max-parallel
@@ -1365,6 +1367,116 @@ cmd_pending_owner() {
   exit 0
 }
 
+# child-log: 読み取り専用。子ごとに、記録の worktree から会話ログの置き場を引き、最新の会話ログ（置き場の直下の *.jsonl のうち
+#   最後の timestamp が最も新しい 1 本）の最後の主の発言と最後の子の発言の時刻（JST）と冒頭 80 文字を
+#   `<child>\t<主の時刻>\t<冒頭>\t<子の時刻>\t<冒頭>` で出す（無い列は -）。読めない子（記録が無い・読めない・2 件以上、
+#   置き場が無い・読めない、python3 が無い）は `unreadable <child>`（記録が原因なら stderr にそのパス）を出して続ける。
+#   jq が無い・今のワークツリーを読めないときは stdout 空で exit 1。それ以外は exit 0
+child_log_line() {
+  DIR="$1" python3 - <<'PY' 2>/dev/null
+import datetime, glob, json, os
+
+JST = datetime.timezone(datetime.timedelta(hours=9))
+
+def parse(ts):
+    try:
+        t = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=datetime.timezone.utc)
+    return t
+
+def text_of(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list) and content and all(isinstance(b, dict) and b.get("type") == "text" for b in content):
+        return "\n".join(str(b.get("text", "")) for b in content)
+    return None
+
+def head(s):
+    return " ".join(s.split())[:80]
+
+best = None
+for p in glob.glob(os.path.join(os.environ["DIR"], "*.jsonl")):
+    last = None
+    rows = []
+    try:
+        with open(p, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                if not isinstance(d, dict):
+                    continue
+                t = parse(d["timestamp"]) if isinstance(d.get("timestamp"), str) else None
+                if t is not None and (last is None or t > last):
+                    last = t
+                rows.append((t, d))
+    except OSError:
+        continue
+    if last is not None and (best is None or last > best[0]):
+        best = (last, rows)
+if best is None:
+    raise SystemExit(1)
+
+owner = child = None
+for t, d in best[1]:
+    if t is None or d.get("isSidechain") or d.get("isMeta"):
+        continue
+    msg = d.get("message")
+    if not isinstance(msg, dict):
+        continue
+    if d.get("type") == "user":
+        s = text_of(msg.get("content"))
+        if s is None or not s.strip():
+            continue
+        st = s.lstrip()
+        m = st.find("主の返事（親エピック #")
+        if m > 0:
+            st = st[m:].split("</command-args>")[0]
+        elif st.startswith("親エピック #") or "<command-name>" in st or st.startswith("/develop"):
+            continue
+        owner = (t, st)
+    elif d.get("type") == "assistant":
+        s = text_of(msg.get("content"))
+        if s is None or not s.strip():
+            continue
+        child = (t, s)
+
+def col(x):
+    return ("-", "-") if x is None else (x[0].astimezone(JST).strftime("%Y-%m-%d %H:%M"), head(x[1]))
+
+print("\t".join(col(owner) + col(child)))
+PY
+}
+
+cmd_child_log() {
+  [ "$#" -ge 1 ] || usage
+  check_children "$@"
+  need_parent
+  local n rc wt dir line
+  for n in "$@"; do
+    rc=0
+    child_record "$PARENT_TOP" "$n" || rc=$?
+    if [ "$rc" -eq 3 ]; then
+      echo "unreadable $n"
+      continue
+    fi
+    if [ "$rc" -ne 0 ]; then echo "unreadable $n"; continue; fi
+    wt="$(es_get "$ES_HIT" worktree)"
+    if [ -z "$wt" ] || ! command -v python3 >/dev/null 2>&1; then echo "unreadable $n"; continue; fi
+    dir="$(transcript_dir "$wt")"
+    if line="$(child_log_line "$dir")" && [ -n "$line" ]; then
+      printf '%s\t%s\n' "$n" "$line"
+    else
+      echo "unreadable $n"
+    fi
+  done
+  exit 0
+}
+
 # 完了の印が付き、安全確認を全部通った子だけ、端末を閉じてワークツリーとローカルブランチを消す。
 # 子ごとに stdout へ 1 行（reaped / reaped branch-kept / gone / kept <理由>）
 # git を -C <dir> 付き（dir が空でなければ）か今のディレクトリで呼ぶ（<dir> <git の引数...>）
@@ -1637,6 +1749,7 @@ case "$sub" in
   mark) cmd_mark "$@" ;;
   reap) cmd_reap "$@" ;;
   pending-owner) cmd_pending_owner "$@" ;;
+  child-log) cmd_child_log "$@" ;;
   adopt) cmd_adopt "$@" ;;
   clear) cmd_clear "$@" ;;
   max-parallel) cmd_max_parallel "$@" ;;
