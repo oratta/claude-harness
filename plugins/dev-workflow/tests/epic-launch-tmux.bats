@@ -504,7 +504,7 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
 
 @test "keepalive tmux: idle Claude screen under bash sends literal text and Enter once" {
   put_pane %5 bash
-  printf '· 1 shell still running\n❯ \n? for shortcuts\n' > "$STUB_CFG/screen"
+  printf '· 1 shell still running\n────────────────\n❯ \n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen"
   put_log 2999-01-01T00:00:00Z reserved
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = sent ]
@@ -516,14 +516,14 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
 @test "keepalive tmux: dim suggestion is empty but human input, spinner and dialogs block" {
   put_pane %5 bash
   put_log 2999-01-01T00:00:00Z reserved
-  printf '❯ \033[2msuggestion\033[0m\n? for shortcuts\n' > "$STUB_CFG/screen"
+  printf '────────────────\n❯ \033[2msuggestion\033[0m\n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen"
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = sent ]
   for reason in input-not-empty busy dialog unknown-state; do
     case "$reason" in
-      input-not-empty) printf '❯ human\n? for shortcuts\n' > "$STUB_CFG/screen" ;;
-      busy) printf '✢ Working… (1s · thinking)\n❯ \n? for shortcuts\n' > "$STUB_CFG/screen" ;;
-      dialog) printf 'Do you want to proceed?\n❯ \n? for shortcuts\n' > "$STUB_CFG/screen" ;;
+      input-not-empty) printf '────────────────\n❯ human\n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen" ;;
+      busy) printf '✢ Working… (1s · thinking)\n────────────────\n❯ \n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen" ;;
+      dialog) printf 'Do you want to proceed?\n────────────────\n❯ \n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen" ;;
       unknown-state) echo 'shell $' > "$STUB_CFG/screen" ;;
     esac
     run tm keepalive "$WT" reserved
@@ -534,7 +534,7 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
 
 @test "keepalive tmux: continuation input sends neither text nor Enter" {
   put_pane %5 bash
-  printf '❯\n  許容する。次の確認を待ってください\n? for shortcuts\n' > "$STUB_CFG/screen"
+  printf '────────────────\n❯\n  許容する。次の確認を待ってください\n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen"
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
   [ "$(calls '^tmux send-keys ')" -eq 0 ]
@@ -542,7 +542,7 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
 
 @test "keepalive tmux: shell below stale Claude footer sends neither text nor Enter" {
   put_pane %5 bash
-  printf '❯\n? for shortcuts\nuser@host work %%\n' > "$STUB_CFG/screen"
+  printf '────────────────\n❯\n────────────────\n? for shortcuts\nuser@host work %%\n' > "$STUB_CFG/screen"
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped unknown-state' ]
   [ "$(calls '^tmux send-keys ')" -eq 0 ]
@@ -550,7 +550,7 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
 
 @test "keepalive tmux: footer must follow the current input" {
   put_pane %5 node
-  printf '? for shortcuts\n❯\n' > "$STUB_CFG/screen"
+  printf '────────────────\n? for shortcuts\n────────────────\n❯\n' > "$STUB_CFG/screen"
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped unknown-state' ]
   [ "$(calls '^tmux send-keys ')" -eq 0 ]
@@ -559,10 +559,10 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
 @test "keepalive tmux: wrapped dim suggestion is empty but normal continuation blocks" {
   put_pane %5 node
   put_log 2999-01-01T00:00:00Z reserved
-  printf '❯ \033[2msuggestion\n  continued\033[22m\n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen"
+  printf '────────────────\n❯ \033[2msuggestion\n  continued\033[22m\n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen"
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = sent ]
-  printf '❯ \033[2msuggestion\033[0m\n  human\n? for shortcuts\n' > "$STUB_CFG/screen"
+  printf '────────────────\n❯ \033[2msuggestion\033[0m\n  human\n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen"
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
   [ "$(calls '^tmux send-keys ')" -eq 2 ]
@@ -572,12 +572,12 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped no-terminal' ]
   put_pane %5 bash; put_pane %6 node
-  printf '❯ \n? for shortcuts\n' > "$STUB_CFG/screen"
+  printf '────────────────\n❯ \n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen"
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped ambiguous-terminal' ]
   printf '%%5\t%s\tbash\n' "$WT" > "$STUB_CFG/panes"
-  printf '❯ \n? for shortcuts\n' > "$STUB_CFG/screen"
-  printf '❯ human\n? for shortcuts\n' > "$STUB_CFG/screen2"
+  printf '────────────────\n❯ \n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen"
+  printf '────────────────\n❯ human\n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen2"
   echo 2 > "$STUB_CFG/switch_at"
   run tm keepalive "$WT" reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
@@ -594,7 +594,7 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
 
 @test "keepalive tmux: missing arrival fails without Enter retry" {
   put_pane %5 node
-  printf '❯ \n? for shortcuts\n' > "$STUB_CFG/screen"
+  printf '────────────────\n❯ \n────────────────\n? for shortcuts\n' > "$STUB_CFG/screen"
   run tm keepalive "$WT" reserved
   [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
   [ "$(calls '^tmux send-keys ')" -eq 2 ]
@@ -618,7 +618,7 @@ err_line() { grep -nF -- "$1" "$BATS_TEST_TMPDIR/stderr" | head -1 | cut -d: -f1
 { printf tmux; printf ' %q' "$@"; echo; } >> "$STUB_LOG"
 case "$1" in
  list-panes) cat "$STUB_CFG/panes" ;;
- capture-pane) if [ "$5" = %6 ]; then echo 'shell $'; else printf '❯ \n? for shortcuts\n'; fi ;;
+ capture-pane) if [ "$5" = %6 ]; then echo 'shell $'; else printf '────────────────\n❯ \n────────────────\n? for shortcuts\n'; fi ;;
  send-keys) exit 0 ;;
 esac
 STUB
@@ -628,4 +628,124 @@ STUB
   echo broken > "$STUB_CFG/panes"
   run tm keepalive "$WT" reserved
   [ "$status" -eq 1 ]; [ "$output" = 'failed terminal-list' ]
+}
+
+# F2: closed classification from the decider; exercise observation and send together.
+keepalive_matrix_tmux() {
+  python3 - tmux "$1" > "$BATS_TEST_TMPDIR/matrix.jsonl" <<'PYCODE'
+import itertools, json, sys
+mode, group = sys.argv[1:]
+b = "────────────────"
+f = "? for shortcuts"
+def box(body="❯", footer=f): return b+"\n"+body+"\n"+b+"\n"+footer
+cases = []
+def add(g, name, screen, expected, **kw):
+    if g == group: cases.append(dict(name=name, screen=screen, expected=expected, **kw))
+ready = box()
+add("structure", "unique", ready, "sent")
+for footer in ("(shift+tab to cycle)", "manual mode on"):
+    add("structure", footer, box(footer=footer), "sent")
+add("structure", "blank-lines", box("❯\n\n   "), "sent")
+for name, screen in [("missing-upper", "❯\n"+b+"\n"+f), ("missing-lower", b+"\n❯\n"+f), ("missing-footer", b+"\n❯\n"+b), ("missing-prompt", box("")), ("reversed", f+"\n"+b+"\n❯"), ("multiple-regions", ready+"\n"+ready), ("multiple-openers", box("❯ human\n"+b+"\n❯")), ("stale-shell", ready+"\nuser@host %"), ("stale-output", ready+"\nother output")]:
+    add("structure", name, screen, "skipped unknown-state")
+for name, body in [("normal", "❯ human"), ("leading-newline-F1", "❯\n\n  human"), ("wrapped", "❯ human\n  continued"), ("multiline", "❯ one\n two\n three"), ("F2", "❯ この表示について確認したい\n  ❯")]:
+    add("content", name, box(body), "skipped input-not-empty")
+# Every nonempty subset, alone and repeated, is literal input. Borders and
+# footer-like lines in the body must never discard the earlier input.
+for size in range(1, 4):
+    for parts in itertools.combinations(["  ❯", b, f], size):
+        for count in (1, 2):
+            body = "❯\n" + "\n".join(parts * count)
+            # A body border immediately followed by another prompt creates a
+            # second possible opener. The decider requires unknown-state here.
+            ambiguous = any(a == b and c.strip() == "❯"
+                            for a, c in zip(body.splitlines(), body.splitlines()[1:]))
+            add("content", repr((parts, count)), box(body),
+                "skipped unknown-state" if ambiguous else "skipped input-not-empty")
+add("content", "embedded-full-frame", box("❯ human\n"+box()), "skipped unknown-state")
+add("observation", "short", ready, "sent")
+for n in (8, 9, 20):
+    # Four UI rows + n background rows: exactly 12, 13 and more nonblank rows.
+    add("observation", "background-"+str(n), "history\n"*n+ready, "sent")
+    add("observation", "hidden-input-"+str(n), box("❯ human\n"+"\n"*20+"  ❯\n"*n), "skipped input-not-empty")
+    for marker, result in [("✽ Working… (1s · thinking)", "busy"), ("Enter to select", "dialog")]:
+        add("observation", marker+str(n), marker+"\n"+"history\n"*n+ready, "skipped "+result)
+add("observation", "offscreen-opener", "  ❯\n"*13+b+"\n"+f, "skipped unknown-state")
+for name, body in [("dim-only", "❯ \x1b[2msuggestion\x1b[0m"), ("dim-wrapped", "❯ \x1b[2msuggestion\n continued\x1b[22m")]:
+    add("decoration", name, box(body), "sent" if mode == "tmux" else "skipped input-not-empty")
+for name, body in [("mixed", "❯ human \x1b[2msuggestion\x1b[0m"), ("reset-next-line", "❯ \x1b[2msuggestion\n\x1b[0mhuman"), ("reset-before-wrap", "❯ \x1b[2msuggestion\x1b[22m\n human")]:
+    add("decoration", name, box(body), "skipped input-not-empty")
+add("foreground", "idle", ready, "sent")
+add("foreground", "background-shell", "· 1 shell still running\n"+ready, "sent")
+for marker, result in [("✽ Working… (1s · thinking)", "busy"), ("esc to interrupt", "busy"), ("Enter to select", "dialog"), ("Esc to cancel", "dialog"), ("Do you want to proceed?", "dialog"), ("Do you want to trust this folder?", "dialog")]:
+    add("foreground", marker, marker+"\n"+ready, "skipped "+result)
+add("foreground", "unknown", "unrecognized UI", "skipped unknown-state")
+for name, after, result in [("input", box("❯ human"), "input-not-empty"), ("busy", "esc to interrupt\n"+ready, "busy"), ("dialog", "Enter to confirm\n"+ready, "dialog"), ("ambiguous", ready+"\n"+ready, "unknown-state")]:
+    add("connection", name, ready, "skipped "+result, after=after)
+if mode == "orca":
+    add("draft", "empty", ready, "sent", draft="")
+    add("draft", "absent", ready, "sent", omit_draft=True)
+    add("draft", "nonempty-vs-empty-tail", ready, "skipped input-not-empty", draft="human")
+    add("draft", "nonempty-suggestion", box("❯ \x1b[2msuggestion\x1b[0m"), "skipped input-not-empty", draft="suggestion")
+    add("draft", "empty-vs-input-tail", box("❯ human"), "skipped input-not-empty", draft="")
+    for d in (None, False, [], {}): add("draft", repr(d), ready, "failed observe", draft=d)
+    for malformed in ({}, {"result": []}, {"result": {"source":"screen", "tail":[False]}}, {"result": {"source":"screen"}}):
+        add("draft", repr(malformed), ready, "failed observe", observation=malformed)
+    add("draft", "not-screen", ready, "skipped unknown-state", observation={"result":{"source":"log", "tail":[]}})
+for c in cases: print(json.dumps(c, ensure_ascii=False))
+PYCODE
+  while IFS= read -r row; do
+    name="$(printf '%s' "$row" | jq -r '.name')"
+    expected="$(printf '%s' "$row" | jq -r '.expected')"
+    : > "$STUB_LOG"
+    echo 0 > "$STUB_CFG/captures"
+    printf '%s' "$row" | jq -r '.screen' > "$STUB_CFG/screen"
+    printf '%s' "$row" | jq -r '.after // .screen' > "$STUB_CFG/screen2"
+    echo 2 > "$STUB_CFG/switch_at"
+    run tm keepalive "$WT" reserved
+    echo "$name: actual=$output expected=$expected" >&3
+    [ "$output" = "$expected" ]
+    if [[ "$expected" == failed* ]]; then [ "$status" -eq 1 ]; else [ "$status" -eq 0 ]; fi
+    if [ "$expected" = sent ]; then
+    [ "$(calls '^tmux send-keys ')" -eq 2 ]
+    else
+    [ "$(calls '^tmux send-keys ')" -eq 0 ]
+    fi
+  done < "$BATS_TEST_TMPDIR/matrix.jsonl"
+}
+
+@test "keepalive tmux: F2 matrix structure" {
+  put_pane %5 bash
+  put_log 2999-01-01T00:00:00Z reserved
+  keepalive_matrix_tmux structure
+}
+
+@test "keepalive tmux: F2 matrix content" {
+  put_pane %5 bash
+  put_log 2999-01-01T00:00:00Z reserved
+  keepalive_matrix_tmux content
+}
+
+@test "keepalive tmux: F2 matrix observation" {
+  put_pane %5 bash
+  put_log 2999-01-01T00:00:00Z reserved
+  keepalive_matrix_tmux observation
+}
+
+@test "keepalive tmux: F2 matrix decoration" {
+  put_pane %5 bash
+  put_log 2999-01-01T00:00:00Z reserved
+  keepalive_matrix_tmux decoration
+}
+
+@test "keepalive tmux: F2 matrix foreground" {
+  put_pane %5 bash
+  put_log 2999-01-01T00:00:00Z reserved
+  keepalive_matrix_tmux foreground
+}
+
+@test "keepalive tmux: F2 matrix connection" {
+  put_pane %5 bash
+  put_log 2999-01-01T00:00:00Z reserved
+  keepalive_matrix_tmux connection
 }

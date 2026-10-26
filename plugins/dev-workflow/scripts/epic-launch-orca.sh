@@ -132,7 +132,7 @@ else:
     draft = ""
 ansi = r"\x1b\[[0-?]*[ -/]*[@-~]"
 plain = re.sub(ansi, "", raw)
-lines = [s for s in plain.splitlines() if s.strip()][-12:]
+lines = [s for s in plain.splitlines() if s.strip()]
 screen = "\n".join(lines)
 if re.search(r"Enter to (?:select|confirm)|Esc to cancel|Do you want to ", screen, re.I):
     print("skipped dialog")
@@ -143,23 +143,25 @@ elif draft:
 elif not re.search(r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on", screen):
     print("skipped unknown-state")
 else:
-    # The current footer must be below the current prompt and at the bottom.
-    # Any later nonblank output (including a shell prompt) makes it ambiguous.
+    # Resolve the frame before inspecting input. Never choose a later prompt,
+    # border or footer from the body: multiple possible openers are ambiguous.
+    # Keep the complete observation so long input/busy/dialog evidence survives.
     rows = [(s, re.sub(ansi, "", s)) for s in raw.splitlines()]
-    visible = [i for i, (_, p) in enumerate(rows) if p.strip()][-12:]
-    footer = r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on"
-    prompts = [i for i in visible if re.match(r"^\s*❯(?:\s|$)", rows[i][1])]
-    if not prompts or not re.search(footer, rows[visible[-1]][1]) or prompts[-1] >= visible[-1]:
+    visible = [i for i, (_, p) in enumerate(rows) if p.strip()]
+    footer = r"\s*(?:\? for shortcuts|.*\(shift\+tab to cycle\).*|.*manual mode on.*)\s*"
+    border = r"\s*[─━]+\s*"
+    openers = [i for i in range(len(rows) - 1)
+               if re.fullmatch(border, rows[i][1])
+               and re.match(r"^\s*❯(?:\s|$)", rows[i + 1][1])]
+    if (len(openers) != 1 or len(visible) < 4
+            or not re.fullmatch(footer, rows[visible[-1]][1])
+            or not re.fullmatch(border, rows[visible[-2]][1])
+            or openers[0] + 1 >= visible[-2]):
         print("skipped unknown-state")
     else:
-        # Inspect the whole input region, including wrapped continuation lines.
-        # Horizontal input borders are UI; every other visible character is input.
-        region = rows[prompts[-1]:visible[-1]]
-        candidate = "\n".join(
-            s.replace("❯", "", 1) if i == 0 else s
-            for i, (s, p) in enumerate(region)
-            if i != len(region) - 1 or not re.fullmatch(r"\s*[─━]+\s*", p)
-        )
+        region = rows[openers[0] + 1:visible[-2]]
+        candidate = "\n".join(s.replace("❯", "", 1) if i == 0 else s
+                              for i, (s, _) in enumerate(region))
         # Track SGR dim across line wraps. A reset ends the suggestion; normal
         # characters after it are human input even when the first line was dim.
         dim = False

@@ -6803,7 +6803,9 @@ orca_keepalive() { PATH="$STUB_BIN:/usr/bin:/bin" bash "$PLUGIN_DIR/scripts/epic
 keepalive_orca_setup() {
   make_stub orca
   echo '{"result":{"terminals":[{"handle":"term-11","agentIdentity":"claude"}]}}' > "$STUB_CFG/tlist_json_11"
-  orca_screen '❯
+  orca_screen '────────────────
+❯
+────────────────
 ? for shortcuts'
 }
 orca_screen() { jq -cn --arg s "$1" --arg d "${2-}" '{result:{source:"screen",tail:($s|split("\n")),draft:$d}}' > "$STUB_CFG/screen"; }
@@ -6824,11 +6826,16 @@ orca_screen() { jq -cn --arg s "$1" --arg d "${2-}" '{result:{source:"screen",ta
   for reason in busy dialog input-not-empty unknown-state; do
     case "$reason" in
       busy) orca_screen '✽ Working… (1s · thinking)
+────────────────
 ❯
+────────────────
 ? for shortcuts' ;;
-      dialog) orca_screen '❯
+      dialog) orca_screen '────────────────
+❯
 Enter to select · ↑/↓ to navigate' ;;
-      input-not-empty) orca_screen '❯
+      input-not-empty) orca_screen '────────────────
+❯
+────────────────
 ? for shortcuts' '進捗どう？' ;;
       unknown-state) orca_screen 'shell $' ;;
     esac
@@ -6840,8 +6847,10 @@ Enter to select · ↑/↓ to navigate' ;;
 
 @test "keepalive orca: continuation input with empty draft never sends" {
   keepalive_orca_setup
-  orca_screen '❯
+  orca_screen '────────────────
+❯
   許容する。次の確認を待ってください
+────────────────
 ? for shortcuts'
   run orca_keepalive keepalive /work/issue-11 reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
@@ -6850,7 +6859,9 @@ Enter to select · ↑/↓ to navigate' ;;
 
 @test "keepalive orca: shell below stale Claude footer never sends" {
   keepalive_orca_setup
-  orca_screen '❯
+  orca_screen '────────────────
+❯
+────────────────
 ? for shortcuts
 user@host work %'
   run orca_keepalive keepalive /work/issue-11 reserved
@@ -6860,10 +6871,14 @@ user@host work %'
 
 @test "keepalive orca: rechecks input, handles missing ambiguous broken and failed observations" {
   keepalive_orca_setup
-  orca_screen '❯
+  orca_screen '────────────────
+❯
+────────────────
 ? for shortcuts' human
   cp "$STUB_CFG/screen" "$STUB_CFG/screen_2"
-  orca_screen '❯
+  orca_screen '────────────────
+❯
+────────────────
 ? for shortcuts'
   run orca_keepalive keepalive /work/issue-11 reserved
   [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
@@ -6891,7 +6906,9 @@ user@host work %'
 @test "keepalive orca: unconfirmed send fails without retry; background shell does not block" {
   keepalive_orca_setup
   orca_screen '· 1 shell still running
+────────────────
 ❯
+────────────────
 ? for shortcuts'
   echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
   run orca_keepalive keepalive /work/issue-11 reserved
@@ -7116,4 +7133,122 @@ PYCODE
     # Overwrite rather than append for the second case.
     rm -f "$dir/s1.jsonl" "$dir/s2.jsonl" "$dir/s3.jsonl"
   done
+}
+
+# F2: closed classification from the decider; exercise observation and send together.
+keepalive_matrix_orca() {
+  python3 - orca "$1" > "$BATS_TEST_TMPDIR/matrix.jsonl" <<'PYCODE'
+import itertools, json, sys
+mode, group = sys.argv[1:]
+b = "────────────────"
+f = "? for shortcuts"
+def box(body="❯", footer=f): return b+"\n"+body+"\n"+b+"\n"+footer
+cases = []
+def add(g, name, screen, expected, **kw):
+    if g == group: cases.append(dict(name=name, screen=screen, expected=expected, **kw))
+ready = box()
+add("structure", "unique", ready, "sent")
+for footer in ("(shift+tab to cycle)", "manual mode on"):
+    add("structure", footer, box(footer=footer), "sent")
+add("structure", "blank-lines", box("❯\n\n   "), "sent")
+for name, screen in [("missing-upper", "❯\n"+b+"\n"+f), ("missing-lower", b+"\n❯\n"+f), ("missing-footer", b+"\n❯\n"+b), ("missing-prompt", box("")), ("reversed", f+"\n"+b+"\n❯"), ("multiple-regions", ready+"\n"+ready), ("multiple-openers", box("❯ human\n"+b+"\n❯")), ("stale-shell", ready+"\nuser@host %"), ("stale-output", ready+"\nother output")]:
+    add("structure", name, screen, "skipped unknown-state")
+for name, body in [("normal", "❯ human"), ("leading-newline-F1", "❯\n\n  human"), ("wrapped", "❯ human\n  continued"), ("multiline", "❯ one\n two\n three"), ("F2", "❯ この表示について確認したい\n  ❯")]:
+    add("content", name, box(body), "skipped input-not-empty")
+# Every nonempty subset, alone and repeated, is literal input. Borders and
+# footer-like lines in the body must never discard the earlier input.
+for size in range(1, 4):
+    for parts in itertools.combinations(["  ❯", b, f], size):
+        for count in (1, 2):
+            body = "❯\n" + "\n".join(parts * count)
+            # A body border immediately followed by another prompt creates a
+            # second possible opener. The decider requires unknown-state here.
+            ambiguous = any(a == b and c.strip() == "❯"
+                            for a, c in zip(body.splitlines(), body.splitlines()[1:]))
+            add("content", repr((parts, count)), box(body),
+                "skipped unknown-state" if ambiguous else "skipped input-not-empty")
+add("content", "embedded-full-frame", box("❯ human\n"+box()), "skipped unknown-state")
+add("observation", "short", ready, "sent")
+for n in (8, 9, 20):
+    # Four UI rows + n background rows: exactly 12, 13 and more nonblank rows.
+    add("observation", "background-"+str(n), "history\n"*n+ready, "sent")
+    add("observation", "hidden-input-"+str(n), box("❯ human\n"+"\n"*20+"  ❯\n"*n), "skipped input-not-empty")
+    for marker, result in [("✽ Working… (1s · thinking)", "busy"), ("Enter to select", "dialog")]:
+        add("observation", marker+str(n), marker+"\n"+"history\n"*n+ready, "skipped "+result)
+add("observation", "offscreen-opener", "  ❯\n"*13+b+"\n"+f, "skipped unknown-state")
+for name, body in [("dim-only", "❯ \x1b[2msuggestion\x1b[0m"), ("dim-wrapped", "❯ \x1b[2msuggestion\n continued\x1b[22m")]:
+    add("decoration", name, box(body), "sent" if mode == "tmux" else "skipped input-not-empty")
+for name, body in [("mixed", "❯ human \x1b[2msuggestion\x1b[0m"), ("reset-next-line", "❯ \x1b[2msuggestion\n\x1b[0mhuman"), ("reset-before-wrap", "❯ \x1b[2msuggestion\x1b[22m\n human")]:
+    add("decoration", name, box(body), "skipped input-not-empty")
+add("foreground", "idle", ready, "sent")
+add("foreground", "background-shell", "· 1 shell still running\n"+ready, "sent")
+for marker, result in [("✽ Working… (1s · thinking)", "busy"), ("esc to interrupt", "busy"), ("Enter to select", "dialog"), ("Esc to cancel", "dialog"), ("Do you want to proceed?", "dialog"), ("Do you want to trust this folder?", "dialog")]:
+    add("foreground", marker, marker+"\n"+ready, "skipped "+result)
+add("foreground", "unknown", "unrecognized UI", "skipped unknown-state")
+for name, after, result in [("input", box("❯ human"), "input-not-empty"), ("busy", "esc to interrupt\n"+ready, "busy"), ("dialog", "Enter to confirm\n"+ready, "dialog"), ("ambiguous", ready+"\n"+ready, "unknown-state")]:
+    add("connection", name, ready, "skipped "+result, after=after)
+if mode == "orca":
+    add("draft", "empty", ready, "sent", draft="")
+    add("draft", "absent", ready, "sent", omit_draft=True)
+    add("draft", "nonempty-vs-empty-tail", ready, "skipped input-not-empty", draft="human")
+    add("draft", "nonempty-suggestion", box("❯ \x1b[2msuggestion\x1b[0m"), "skipped input-not-empty", draft="suggestion")
+    add("draft", "empty-vs-input-tail", box("❯ human"), "skipped input-not-empty", draft="")
+    for d in (None, False, [], {}): add("draft", repr(d), ready, "failed observe", draft=d)
+    for malformed in ({}, {"result": []}, {"result": {"source":"screen", "tail":[False]}}, {"result": {"source":"screen"}}):
+        add("draft", repr(malformed), ready, "failed observe", observation=malformed)
+    add("draft", "not-screen", ready, "skipped unknown-state", observation={"result":{"source":"log", "tail":[]}})
+for c in cases: print(json.dumps(c, ensure_ascii=False))
+PYCODE
+  while IFS= read -r row; do
+    name="$(printf '%s' "$row" | jq -r '.name')"
+    expected="$(printf '%s' "$row" | jq -r '.expected')"
+    : > "$STUB_LOG"
+    echo 0 > "$STUB_CFG/readcount"
+    printf '%s' "$row" | jq -c 'if has("observation") then .observation else {result:({source:"screen",tail:(.screen|split("\n"))} + (if .omit_draft then {} else {draft:(if has("draft") then .draft else "" end)} end))} end' > "$STUB_CFG/screen"
+    printf '%s' "$row" | jq -c '{result:{source:"screen",tail:((.after // .screen)|split("\n")),draft:""}}' > "$STUB_CFG/screen_2"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$name: actual=$output expected=$expected" >&3
+    [ "$output" = "$expected" ]
+    if [[ "$expected" == failed* ]]; then [ "$status" -eq 1 ]; else [ "$status" -eq 0 ]; fi
+    if [ "$expected" = sent ]; then
+    [ "$(calls '^orca terminal send ')" -eq 1 ]
+    else
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+    fi
+  done < "$BATS_TEST_TMPDIR/matrix.jsonl"
+}
+
+@test "keepalive orca: F2 matrix structure" {
+  keepalive_orca_setup
+  keepalive_matrix_orca structure
+}
+
+@test "keepalive orca: F2 matrix content" {
+  keepalive_orca_setup
+  keepalive_matrix_orca content
+}
+
+@test "keepalive orca: F2 matrix observation" {
+  keepalive_orca_setup
+  keepalive_matrix_orca observation
+}
+
+@test "keepalive orca: F2 matrix decoration" {
+  keepalive_orca_setup
+  keepalive_matrix_orca decoration
+}
+
+@test "keepalive orca: F2 matrix foreground" {
+  keepalive_orca_setup
+  keepalive_matrix_orca foreground
+}
+
+@test "keepalive orca: F2 matrix connection" {
+  keepalive_orca_setup
+  keepalive_matrix_orca connection
+}
+
+@test "keepalive orca: F2 matrix draft" {
+  keepalive_orca_setup
+  keepalive_matrix_orca draft
 }
