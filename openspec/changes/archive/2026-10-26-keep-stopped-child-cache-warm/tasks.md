@@ -1,6 +1,6 @@
 # Tasks
 
-0.1 の実 CLI 観測と仕様レビュー APPROVE、規模トリップワイヤーの続行判断を #1383 で確認済み。1.1 の基盤を引き継ぎ、1.2〜3.3 と 4.3 を TDD で実装した。4.1 の自動検査は実装 worker が実行し、実セッション確認は画面確認役へ残す。4.2 の実エピック費用比較は依頼によりこの段では行わない。
+0.1 の実 CLI 観測と仕様レビュー APPROVE、規模トリップワイヤーの続行判断を #1383 で確認済み。1.1 の基盤を引き継ぎ、1.2〜3.3 と 4.3 を TDD で実装した。4.1 は自動検査と画面確認役の観測を本体の指定した範囲で完了とする（Orca の実機送受信は未確認）。4.2 は未完了のまま、マージ後に記録先 issue #1383 で行う。実装後の実エピック 1 本分が必要なため、この PR の archive を妨げる作業にはしない。
 
 規模の申し送り: 送受信と起動部品の契約を一体で導入する不可分な機能として一つの change にするが、実装の対象ファイルは 5 個を超える見込み。本体が実装工程を渡す前に規模トリップワイヤーとの整合を判断する。worker が独自に範囲を増やしたり、無断で別 change に分けたりしない。
 
@@ -26,11 +26,11 @@
 
 ## 4. 統合確認と実測
 
-- [ ] 4.1 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/epic-launch-tmux.bats` と `scripts/lint.sh` を exit 0 にする。lint 内部の `claude plugin validate` は本体の許可により実装 worker が実行する。自動検査の合格と実セッションでの受信・質問保持の確認を区別し、後者が済むまでこの項目は未完了にする。実セッションで質問→停止→固定文→正しい返事のあと、child-log が元の質問を保ち wait が継続することを確認し、端末の開始確認と区別して #1383 に証拠を残す。触る範囲: `plugins/dev-workflow/tests/epic-dispatch.bats:1-6655`、`plugins/dev-workflow/tests/develop-skill.bats:1-1503`、`plugins/dev-workflow/tests/epic-launch-tmux.bats:1-502`（統合確認。失敗を直す範囲は前のタスクによる）、`scripts/lint.sh:1-170`（実行・読み取りのみ）
-- [ ] 4.2 実装前の比較区間を特定し、実装後の実エピック一本の親・子双方のキャッシュ書き直し/読み出し/維持費用を既存 cost-ledger で比較する。design.md の計測項目と元データの識別子を #1383 にコメントし、削減したか・維持費込みではどうかを分けて結論を書く。実エピック未実行や比較不能なら不足をコメントして未完了にする。ログは repo に保存せず既存の配置から読む。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:637-659`（usage の抽出、読み取りのみ）、`plugins/cost-ledger/scripts/cost_ledger.py:3074-3096`（facts/intervals CLI、実行・読み取りのみ）、`plugins/cost-ledger/pricing.json:1-20`（読み取りのみ）、`https://github.com/oratta/claude-harness/issues/1383`（比較コメント）
+- [x] 4.1 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/epic-launch-tmux.bats` と `scripts/lint.sh` を exit 0 にする。lint 内部の `claude plugin validate` は本体の許可により実装 worker が実行する。自動検査と実セッションの観測を区別する。[画面確認: tasks 4.1](https://github.com/oratta/claude-harness/issues/1383#issuecomment-6418934518) で tmux の送信・型どおりの一行の返事・元の質問保持を確認した。Orca は見立ての作業ツリーが未登録で selector_not_found となり、実機では確認していないため Bats に任せた。wait 継続・停止状態の保持は Bats の統合確認による。本体の依頼に従い、この観測範囲と制約を記録して完了とする。触る範囲: `plugins/dev-workflow/tests/epic-dispatch.bats:1-6655`、`plugins/dev-workflow/tests/develop-skill.bats:1-1503`、`plugins/dev-workflow/tests/epic-launch-tmux.bats:1-502`（統合確認。失敗を直す範囲は前のタスクによる）、`scripts/lint.sh:1-170`（実行・読み取りのみ）
+- [ ] 4.2 【マージ後に記録先 issue #1383 で行う／この PR では未完】実装前の比較区間を特定し、実装後の実エピック一本の親・子双方のキャッシュ書き直し/読み出し/維持費用を既存 cost-ledger で比較する。design.md の計測項目と元データの識別子を #1383 にコメントし、削減したか・維持費込みではどうかを分けて結論を書く。実エピック未実行や比較不能なら不足をコメントして未完了にする。ログは repo に保存せず既存の配置から読む。触る範囲: `plugins/cost-ledger/scripts/cost_ledger.py:637-659`（usage の抽出、読み取りのみ）、`plugins/cost-ledger/scripts/cost_ledger.py:3074-3096`（facts/intervals CLI、実行・読み取りのみ）、`plugins/cost-ledger/pricing.json:1-20`（読み取りのみ）、`https://github.com/oratta/claude-harness/issues/1383`（比較コメント）
 - [x] 4.3 送信方式・期限・overage の限界・親の費用・正常な往復に限る質問保持・予約文の衝突と異常返事の表示/停止維持を変更記録に残し、#1374/#1385 の範囲を取り込んでいないことを差分で確認する。触る範囲: `plugins/dev-workflow/changes/1383.md`（新規）
 
 ## Workflow follow-up
 
 - R1 の仕様レビューは本体が別スレッドに委ねる。spec worker は実装・レビュー判定・archive をしない。
-- 実装と実測が終わったら、本体の canonical develop 手順で verify、レビュー、archive、PR と仕様宣言へ進む。今回の worker は merge/auto-merge を行わない。
+- 実装と 4.1 が終わったら（4.2 はマージ後に記録先 issue #1383 で行う未完作業として残す）、本体の canonical develop 手順で verify、レビュー、archive、PR と仕様宣言へ進む。今回の worker は merge/auto-merge を行わない。
