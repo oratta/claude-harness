@@ -5109,8 +5109,14 @@ resolve_pass() {
 @test "skill: every place of steps 3, 4 and 7 that ends the wait without wait calls clear first" {
   n="$(run_section | grep -oF '`wait` を呼ばずに待ちを終える' | grep -c .)"
   [ "$n" -ge 3 ]
-  m="$(run_section | grep -oF 'clear <エピック番号>` を 1 回呼んでから（エピックの状態ディレクトリを消す。`cleared`・`none` は何もせず、exit 1 は stderr を添えて主に報告する。エピックを閉じるのは待たない）`wait` を呼ばずに待ちを終える' | grep -c .)"
+  m="$(run_section | grep -oF 'clear <エピック番号>` を 1 回呼んでから（上の **clear の扱い**）`wait` を呼ばずに待ちを終える' | grep -c .)"
   [ "$m" -eq "$n" ]
+  # 括弧書きの全文は手順の前の「clear の扱い」の段落に 1 回だけ置く（#1308）
+  [ "$(grep -cF 'エピックを閉じるのは待たない' "$EPIC")" -eq 1 ]
+  p="$(run_section | grep -E '^\*\*clear の扱い\*\*')"
+  printf '%s\n' "$p" | grep -qF 'エピックの状態ディレクトリを消す'
+  printf '%s\n' "$p" | grep -qF '`cleared`・`none` は何もせず、exit 1 は stderr を添えて主に報告する'
+  printf '%s\n' "$p" | grep -qF 'エピックを閉じるのは待たない'
   for s in 3 4 7; do
     run_section | grep -E "^$s\. " | grep -qF 'epic-dispatch.sh clear <エピック番号>' || { echo "step $s" >&2; false; }
   done
