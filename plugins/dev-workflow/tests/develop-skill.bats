@@ -1341,7 +1341,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   printf '%s\n' "$c" | grep -qF '`clear`'
   printf '%s\n' "$c" | grep -qF '後回しの子だけが残る'
   printf '%s\n' "$c" | grep -qF '`error`'
-  printf '%s\n' "$c" | grep -qF '(d) 手順 4 の、片付け待ちの子だけを待つ'
+  printf '%s\n' "$c" | grep -qF '(d) 手順 2・4 の、片付け待ちの子だけを待つ'
   printf '%s\n' "$c" | grep -qF '主がやめるよう言った'
   # それ以外ではやめない（理由にならないものを列挙する）
   printf '%s\n' "$c" | grep -qF 'それ以外ではやめない'
@@ -1444,6 +1444,10 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 @test "short rewait (#1324): the wait for children left to clean up only gives the long limit" {
   p4="$(grep -E '^4\. `closed <N>...`' "$EPIC")"
   printf '%s\n' "$p4" | grep -F '`kept <N> not-done` の子だけを `--watch-done` に渡して' | grep -qF -- '`--timeout 21600`'
+  p2="$(grep -E '^2\. `launched` と `skipped`' "$EPIC")"
+  printf '%s\n' "$p2" | grep -F '動いている子が 0 件で片付け待ちの子だけを渡すとき' | grep -qF -- '`--timeout 21600`'
+  r="$(grep -F '片付け待ちの子だけを待つ' "$(dirname "$EPIC")/reply-after-idle.md")"
+  printf '%s\n' "$r" | grep -qF '（手順 2・4。'
 }
 
 @test "short rewait (#1324): the step 5 timeout report is gone from the list of messages and no step waits at most 6 hours" {
@@ -1457,7 +1461,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   sec="$(awk '/^## 親の待ちの費用（#1324）/{f=1; print; next} /^## /{f=0} f' "$f")"
   [ -n "$sec" ]
-  printf '%s\n' "$sec" | grep -qF '2700'
+  printf '%s\n' "$sec" | grep -qF '3000'
   printf '%s\n' "$sec" | grep -qF '21600'
   printf '%s\n' "$sec" | grep -qF '5 分に縮む'
   printf '%s\n' "$sec" | grep -qF 'https://code.claude.com/docs/en/prompt-caching'

@@ -6,10 +6,10 @@
 
 ## What Changes
 
-- `epic-dispatch.sh wait` の上限の既定を、親の会話キャッシュの有効期限で決める。`--timeout` も `EPIC_DISPATCH_TIMEOUT` も無いとき、親のワークツリーのトランスクリプトで、対話の CLI のセッション（`entrypoint` が `cli`）が最後にキャッシュを書き込んだ行が 5 分の有効期限だけ（`ephemeral_5m_input_tokens` が正で `ephemeral_1h_input_tokens` が 0）なら 21600 秒、それ以外（1 時間の書き込みがある・判定できない）なら 2700 秒にする。選んだ上限と判定を stderr に 1 行出す。`--timeout` と `EPIC_DISPATCH_TIMEOUT` は今までどおりその値をそのまま使う（判定しない）
+- `epic-dispatch.sh wait` の上限の既定を、親の会話キャッシュの有効期限で決める。`--timeout` も `EPIC_DISPATCH_TIMEOUT` も無いとき、親のワークツリーのトランスクリプトで、対話の CLI のセッション（`entrypoint` が `cli`）が最後にキャッシュを書き込んだ行が 5 分の有効期限だけ（`ephemeral_5m_input_tokens` が正で `ephemeral_1h_input_tokens` が 0）なら 21600 秒、それ以外（1 時間の書き込みがある・判定できない）なら 3000 秒にする。選んだ上限と判定を stderr に 1 行出す。`--timeout` と `EPIC_DISPATCH_TIMEOUT` は今までどおりその値をそのまま使う（判定しない）
 - 親のキャッシュの有効期限を読む関数を `epic-dispatch.sh` に置く。順番 2 の change（`epic-child-cache-keepalive`。子への声かけ）が子のワークツリーに同じ関数を使うので、入力と出力の契約を design に書く
 - develop の `references/epic.md` 手順 5 を書き換える。`timeout` で起こされたら、親は子の issue を見に行かず、主に報告もせず、同じ引数の `wait` を背景で 1 回掛け直してターンを終える。`needs-approval` を見て報告する確認と、子エピックの行で子を外す確認は `timeout` からは外す（`closed` などで起こされたときと、待ちをやめる直前の確認には残す）。記録を残さずに子のタブで質問して止まった子に気づけない旨は手順 5 に注記として残し、主へは `launch` のあと最初に手順 2 で待ちに入る通知で一度だけ伝える
-- 手順 4 の、片付け待ちの子だけを待つ `wait` には `--timeout 21600` を付ける（この待ちは `timeout` で終わったらやめる待ちなので、短い上限にすると子のマージを待つ時間が 45 分に縮むため）
+- 手順 2・4 の、片付け待ちの子だけを待つ `wait`（位置引数の子なし）には `--timeout 21600` を付ける（この待ちは `timeout` で終わったらやめる待ちなので、短い上限にすると子のマージを待つ時間が 45 分に縮むため）
 - `references/reply-after-idle.md` に、親の待ちの費用の扱い（短い上限で起きて掛け直す理由・使用量の超過中は長い上限に戻すこと・有効期限を固定した人の扱い・PC が寝ていたときに効かないこと）を別の節として足す。#1323 が触る閾値の表と、そのまま送るか起動し直すかの表には手を出さない
 
 ## Capabilities
@@ -31,7 +31,7 @@
 ## Impact
 
 - `plugins/dev-workflow/scripts/epic-dispatch.sh`（`cmd_wait` と、有効期限を読む関数の追加、冒頭の説明）
-- `plugins/dev-workflow/skills/develop/references/epic.md`（手順 4・5・6 と、子エピックの行で子を外す確認の段落）
+- `plugins/dev-workflow/skills/develop/references/epic.md`（手順 2・4・5・6、子エピックの行で子を外す確認の段落、別のリポジトリの読み替えの表）
 - `plugins/dev-workflow/skills/develop/references/reply-after-idle.md`（節の追加）
 - `plugins/dev-workflow/tests/epic-dispatch.bats`・`plugins/dev-workflow/tests/develop-skill.bats`（テストの追加）
 - `plugins/dev-workflow/changes/1324.md`（変更の記録）

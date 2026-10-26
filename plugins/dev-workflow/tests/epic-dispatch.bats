@@ -53,7 +53,7 @@ setup() {
   make_stub sleep
   make_stub sysctl
   # 外の環境（並列起動された子のセッション）の値をテストに漏らさない
-  unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX
+  unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX EPIC_DISPATCH_TIMEOUT
   # 既存の launch のテストが上限に当たらないよう大きくする（上限のテストだけで上書き・unset する）。
   # 物理メモリは sysctl のスタブ（memsize / sysctl_exit）だけから読ませ、実物の /proc/meminfo を読ませない
   export EPIC_DISPATCH_MAX_PARALLEL=99
@@ -1891,14 +1891,14 @@ stderr_has() {
   grep -qxF -- "$1" "$BATS_TEST_TMPDIR/stderr" || { echo "stderr:"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
 }
 
-@test "wait limit: a parent writing the 1h cache waits 2700 seconds" {
+@test "wait limit: a parent writing the 1h cache waits 3000 seconds" {
   put_parent_cache s1 3 0 1200
   gh_seq 11 closed
   run dispatch wait 11
   [ "$status" -eq 0 ]
   [ "$output" = "closed 11" ]
   [ "${#lines[@]}" -eq 1 ]
-  stderr_has "wait limit 2700 (parent cache 1h)"
+  stderr_has "wait limit 3000 (parent cache 1h)"
 }
 
 @test "wait limit: a parent writing only the 5m cache waits 21600 seconds" {
@@ -1910,17 +1910,18 @@ stderr_has() {
   stderr_has "wait limit 21600 (parent cache 5m)"
 }
 
-@test "wait limit: no transcript place for the parent waits 2700 seconds as unknown" {
+@test "wait limit: no transcript place for the parent waits 3000 seconds as unknown" {
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
   gh_seq 11 closed
   run dispatch wait 11
   [ "$status" -eq 0 ]
   [ "$output" = "closed 11" ]
-  stderr_has "wait limit 2700 (parent cache unknown)"
+  stderr_has "wait limit 3000 (parent cache unknown)"
 }
 
 @test "wait limit: an explicit limit does not read the cache and prints no limit line" {
   put_parent_cache s1 3 800 0
+  printf '#!/bin/sh\necho python3 >> "$STUB_LOG"\nexit 1\n' > "$STUB_BIN/python3"; chmod +x "$STUB_BIN/python3"
   gh_seq 11 open
   run dispatch wait --interval 0 --timeout 0 11
   [ "$status" -eq 2 ]
@@ -1930,6 +1931,7 @@ stderr_has() {
   [ "$status" -eq 2 ]
   [ "$output" = "timeout 11" ]
   [ ! -s "$BATS_TEST_TMPDIR/stderr" ] || { cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(calls python3)" -eq 0 ]
 }
 
 @test "wait limit: an empty EPIC_DISPATCH_TIMEOUT counts as not given" {
@@ -1947,12 +1949,12 @@ stderr_has() {
   put_parent_cache s1 9 '"x"' 0
   put_parent_cache s2 8 700 0 '"isSidechain":true'
   put_parent_cache s2/subagents/agent-a 5 600 0
-  printf '%s\n' 'not json' '[1,2]' '{"type":"assistant","timestamp":5}' >> "$CLAUDE_PROJECTS_DIR/-work-parent/s1.jsonl"
+  printf '%s\n' 'not json' '[1,2]' '{"type":"assistant","timestamp":5}' '{"type":"assistant","entrypoint":"cli","timestamp":5,"message":{"usage":{"cache_creation":{"ephemeral_5m_input_tokens":900,"ephemeral_1h_input_tokens":0}}}}' >> "$CLAUDE_PROJECTS_DIR/-work-parent/s1.jsonl"
   gh_seq 11 closed
   run dispatch wait 11
   [ "$status" -eq 0 ]
   [ "$output" = "closed 11" ]
-  stderr_has "wait limit 2700 (parent cache 1h)"
+  stderr_has "wait limit 3000 (parent cache 1h)"
 }
 
 @test "wait limit: lines of sessions without a conversation do not decide" {
@@ -1961,12 +1963,12 @@ stderr_has() {
   put_parent_cache s2 8 900 0 '' sdk-cli
   put_parent_cache s2 6 900 0 '' none
   grep -q '"entrypoint":"cli"' "$CLAUDE_PROJECTS_DIR/-work-parent/s1.jsonl"
-  ! grep -q '"entrypoint"' <(tail -1 "$CLAUDE_PROJECTS_DIR/-work-parent/s2.jsonl")
+  ! grep -q '"entrypoint"' <(tail -1 "$CLAUDE_PROJECTS_DIR/-work-parent/s2.jsonl") || false
   gh_seq 11 closed
   run dispatch wait 11
   [ "$status" -eq 0 ]
   [ "$output" = "closed 11" ]
-  stderr_has "wait limit 2700 (parent cache 1h)"
+  stderr_has "wait limit 3000 (parent cache 1h)"
 }
 
 @test "wait limit: an empty worktree path does not read the parent of the transcript places" {
@@ -1979,7 +1981,7 @@ stderr_has() {
   run dispatch wait 11
   [ "$status" -eq 0 ]
   [ "$output" = "closed 11" ]
-  stderr_has "wait limit 2700 (parent cache unknown)"
+  stderr_has "wait limit 3000 (parent cache unknown)"
 }
 
 @test "wait limit: a line writing both 5m and 1h counts as 1h" {
@@ -1988,7 +1990,7 @@ stderr_has() {
   gh_seq 11 closed
   run dispatch wait 11
   [ "$status" -eq 0 ]
-  stderr_has "wait limit 2700 (parent cache 1h)"
+  stderr_has "wait limit 3000 (parent cache 1h)"
 }
 
 # 順番 2 の change が使う出力の形は wait からは見えないので、スクリプトから 2 つの関数だけを取り出して呼ぶ

@@ -2,13 +2,13 @@
 
 ### Requirement: 上限を明示しない wait は親の会話キャッシュの有効期限で上限を決める
 
-`plugins/dev-workflow/scripts/epic-dispatch.sh wait` は、`--timeout` が無く `EPIC_DISPATCH_TIMEOUT` も無いか空のとき、最初のポーリングの前に `cache_ttl_of "$(git rev-parse --show-toplevel)"` を 1 回呼び、`5m` なら上限を 21600 秒、`1h` か exit 1 なら 2700 秒にしなければならない（MUST）。このとき最初のポーリングの前に stderr へ `wait limit <秒> (parent cache <5m|1h|unknown>)` の 1 行を出す（SHALL。`unknown` は exit 1 のとき）。
+`plugins/dev-workflow/scripts/epic-dispatch.sh wait` は、`--timeout` が無く `EPIC_DISPATCH_TIMEOUT` も無いか空のとき、最初のポーリングの前に `cache_ttl_of "$(git rev-parse --show-toplevel)"` を 1 回呼び、`5m` なら上限を 21600 秒、`1h` か exit 1 なら 3000 秒にしなければならない（MUST）。このとき最初のポーリングの前に stderr へ `wait limit <秒> (parent cache <5m|1h|unknown>)` の 1 行を出す（SHALL。`unknown` は exit 1 のとき）。
 
 守備範囲: ①入力は親のワークツリーのトランスクリプト。②拾いたいのは、1 時間で書いている親が 6 時間眠ってキャッシュを切らすことと、5 分で書いている親が 45 分ごとに起きて書き直しを払い続けること。③判定できないときに短い上限になることは通してよい。
 
 #### Scenario: 1 時間で書いている親は短い上限で待つ
 - **WHEN** 親のワークツリーの置き場に、最後にキャッシュを書いた assistant の行が `ephemeral_1h_input_tokens` 正・`ephemeral_5m_input_tokens` 0 のトランスクリプトを置き、子 11 が `closed` を返すスタブ環境で、`--timeout` も `EPIC_DISPATCH_TIMEOUT` も無しに `epic-dispatch.sh wait 11` を実行する
-- **THEN** stderr に `wait limit 2700 (parent cache 1h)` の 1 行が出て、stdout は `closed 11` の 1 行で exit 0
+- **THEN** stderr に `wait limit 3000 (parent cache 1h)` の 1 行が出て、stdout は `closed 11` の 1 行で exit 0
 
 #### Scenario: 5 分だけで書いている親は長い上限で待つ
 - **WHEN** 最後にキャッシュを書いた assistant の行が `ephemeral_5m_input_tokens` 正・`ephemeral_1h_input_tokens` 0 のトランスクリプトを置いて、同じく `epic-dispatch.sh wait 11` を実行する
@@ -16,7 +16,7 @@
 
 #### Scenario: 判定できなければ短い上限で待つ
 - **WHEN** 親のワークツリーの置き場が無い環境で `epic-dispatch.sh wait 11` を実行する
-- **THEN** stderr に `wait limit 2700 (parent cache unknown)` の 1 行が出る
+- **THEN** stderr に `wait limit 3000 (parent cache unknown)` の 1 行が出る
 
 ### Requirement: 上限を明示した wait は有効期限を読まない
 
@@ -30,13 +30,13 @@
 
 ### Requirement: cache_ttl_of はワークツリーの会話で最後にキャッシュを書いた行を読む
 
-`epic-dispatch.sh` の関数 `cache_ttl_of <ワークツリーの絶対パス>` が使う行は、`type` が `assistant`・`entrypoint` が `cli`・`isSidechain` が true でない・`timestamp` が文字列・`message.usage.cache_creation` の `ephemeral_5m_input_tokens` と `ephemeral_1h_input_tokens` の和が正（数でない値は 0）の行のうち、`timestamp` が最も新しい 1 行とする（MUST）。
+`epic-dispatch.sh` の関数 `cache_ttl_of <ワークツリーの絶対パス>` が使う行は、`type` が `assistant`・`entrypoint` が `cli`・`isSidechain` が true でない・`timestamp` が ISO 8601 として読める文字列（読めない文字列の行は使わない。新しさは時刻として比べ、タイムゾーンの無い値は UTC とみなす）・`message.usage.cache_creation` の `ephemeral_5m_input_tokens` と `ephemeral_1h_input_tokens` の和が正（数でない値は 0）の行のうち、`timestamp` が最も新しい 1 行とする（MUST）。
 
 守備範囲: ①入力は置き場の直下の jsonl（親か、順番 2 では子のもの）。②拾う誤りは、サブエージェント・`isSidechain`・書き込み 0・古い行を最新と読むことと、数でない値や壊れた行で落ちること。③`entrypoint` の扱いと通してよい入力は要件「cache_ttl_of は会話を持つ CLI のセッションの行だけを読む」に書く。④形の変化の検知とすり抜けを塞ぎ切ることは完了条件にしない。
 
 #### Scenario: 書き込みの無い行と古い行とサブエージェントの行では決めない
 - **WHEN** 置き場の 2 つの jsonl に、古い `timestamp` の 5 分だけの行、新しい `timestamp` の 1 時間の行、それより新しい書き込みが 0 の行を置き、`<セッション>/subagents/` の下にさらに新しい 5 分だけの行を置いて `epic-dispatch.sh wait 11` を実行する
-- **THEN** stderr に `wait limit 2700 (parent cache 1h)` が出る
+- **THEN** stderr に `wait limit 3000 (parent cache 1h)` が出る
 
 ### Requirement: cache_ttl_of は会話を持つ CLI のセッションの行だけを読む
 
@@ -46,7 +46,7 @@
 
 #### Scenario: 会話を持たないセッションの行では決めない
 - **WHEN** 置き場の jsonl に `entrypoint` が `cli` で 1 時間だけの行を置き、別の jsonl にそれより新しい 5 分だけの行を、`entrypoint` が `sdk-py`・`sdk-cli`・無しの 3 行置いて `epic-dispatch.sh wait 11` を実行する
-- **THEN** stderr に `wait limit 2700 (parent cache 1h)` が出る
+- **THEN** stderr に `wait limit 3000 (parent cache 1h)` が出る
 
 ### Requirement: cache_ttl_of は置き場の直下だけを読み、引数が空なら置き場を読まない
 
@@ -56,7 +56,7 @@
 
 #### Scenario: ワークツリーのパスが取れなければ置き場の親を読まない
 - **WHEN** `git rev-parse --show-toplevel` が空を返すスタブ環境で、`$CLAUDE_PROJECTS_DIR` の直下に 5 分だけで書いた行の jsonl を置き、`epic-dispatch.sh wait 11` を実行する
-- **THEN** stderr に `wait limit 2700 (parent cache unknown)` が出る
+- **THEN** stderr に `wait limit 3000 (parent cache unknown)` が出る
 
 ### Requirement: cache_ttl_of は有効期限と時刻を 1 行で返し、判定できなければ何も出さない
 
@@ -66,7 +66,7 @@
 
 #### Scenario: 両方の有効期限で書いた行は 1 時間とみなす
 - **WHEN** 最後にキャッシュを書いた行の `ephemeral_5m_input_tokens` と `ephemeral_1h_input_tokens` がどちらも正のトランスクリプトで `epic-dispatch.sh wait 11` を実行する
-- **THEN** stderr に `wait limit 2700 (parent cache 1h)` が出る
+- **THEN** stderr に `wait limit 3000 (parent cache 1h)` が出る
 
 ### Requirement: 親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す
 
@@ -94,7 +94,7 @@ develop の `references/epic.md` の別セッション方式の手順 5（`timeo
 
 ### Requirement: timeout から外した確認は closed のときと待ちをやめる前に残し、片付け待ちだけの待ちは長い上限を明示する
 
-`references/epic.md` は、`後で別に起動するエピック: #N` の行で子を外す確認を `closed` で起こされたときだけに書き、`needs-approval` の確認を待ちをやめる直前の確認に残さなければならない（MUST）。手順 4 の、片付け待ちの子だけを待つ `wait` には `--timeout 21600` を付けると書く（MUST）。手順 6 の、何もしない子を待つ説明は、最長の時間ではなく親が気づかずに待ち続けることとして書く（SHALL）。
+`references/epic.md` は、`後で別に起動するエピック: #N` の行で子を外す確認を `closed` で起こされたときだけに書き、`needs-approval` の確認を待ちをやめる直前の確認に残さなければならない（MUST）。位置引数の子が無い `wait`（手順 4 と、手順 3・7 から手順 2 に戻って動いている子が 0 件で片付け待ちの子だけを渡すとき）には `--timeout 21600` を付けると書く（MUST）。手順 6 の、何もしない子を待つ説明は、最長の時間ではなく親が気づかずに待ち続けることとして書く（SHALL）。
 
 守備範囲: 拾いたいのは、片付け待ちだけの待ちが 45 分でやめてしまうこと。
 
@@ -106,15 +106,19 @@ develop の `references/epic.md` の別セッション方式の手順 5（`timeo
 - **WHEN** `references/epic.md` の手順 4 の、`kept <N> not-done` の子だけを `--watch-done` に渡して待つ文を読む
 - **THEN** その `wait` に `--timeout 21600` を付けることが書かれている
 
+#### Scenario: 手順 2 に戻る片付け待ちだけの待ちも長い上限を明示する
+- **WHEN** `references/epic.md` の手順 2 の、動いている子が 0 件で片付け待ちの子だけを渡すときの文と、待ちをやめてよい条件 (d) を読む
+- **THEN** その `wait` に `--timeout 21600` を付けることが書かれ、(d) は手順 2・4 の片付け待ちの子だけを待つ `wait` の `timeout` を指している
+
 ### Requirement: 規則のファイルに親の待ちの費用と使用量の超過中の扱いを書く
 
-`references/reply-after-idle.md` は、閾値の表とそのまま送るか起動し直すかの表とは別の節に、`wait` の上限の既定 2700 秒とその理由（キャッシュの 1 時間と、アイドル時のコンパクトの約 54 分の前に起きる）、上限で起きた親は掛け直すだけであること、使用量の超過中は有効期限が 5 分に縮むので 21600 秒に戻すこと（根拠の URL を添える）、有効期限を固定した人の扱い、PC が寝ている間は効かないことを書かなければならない（MUST）。その節の外の表と文を変えてはならない（MUST NOT）。
+`references/reply-after-idle.md` は、閾値の表とそのまま送るか起動し直すかの表とは別の節に、`wait` の上限の既定 3000 秒とその理由（キャッシュの 1 時間と、アイドル時のコンパクトの約 54 分の前に起きる）、上限で起きた親は掛け直すだけであること、使用量の超過中は有効期限が 5 分に縮むので 21600 秒に戻すこと（根拠の URL を添える）、有効期限を固定した人の扱い、PC が寝ている間は効かないことを書かなければならない（MUST）。その節の外の表と文を変えてはならない（MUST NOT）。
 
 守備範囲: #1323 が同じファイルの表を変えるので、この change は節を足すだけにする。
 
 #### Scenario: 規則のファイルに親の待ちの費用と超過中の扱いがある
 - **WHEN** `references/reply-after-idle.md` を読む
-- **THEN** 親の待ちの費用の節があり、2700 と 21600、使用量の超過中に 5 分に縮むこと、https://code.claude.com/docs/en/prompt-caching 、`CLAUDE_CODE_PROMPT_CACHE_TTL`、PC が寝ている間は効かないことが書かれ、閾値の表とそのまま送るか起動し直すかの表はこの change の前と同じ
+- **THEN** 親の待ちの費用の節があり、3000 と 21600、使用量の超過中に 5 分に縮むこと、https://code.claude.com/docs/en/prompt-caching 、`CLAUDE_CODE_PROMPT_CACHE_TTL`、PC が寝ている間は効かないことが書かれ、閾値の表とそのまま送るか起動し直すかの表はこの change の前と同じ
 
 ## MODIFIED Requirements
 
@@ -178,7 +182,7 @@ develop の `references/epic.md` の別セッション方式の手順 5（`timeo
 
 `launch [--note <text>] [--base <branch>] <epic> <child>...` は、起動部品が Orca のとき、次の順で呼び出さなければならない（MUST。tmux の部品のときの呼び出しは capability `dev-workflow-epic-state` の要件「tmux の部品は…」が決める。部品の選び方は要件「記録の launcher ごとに起動部品を選ぶ」）: `orca worktree current --json`（今の repo の `repoId` を得る）→ `git rev-parse --show-toplevel` → `git fetch origin <base>` → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` → 子ごとに `orca worktree create --name issue-<N> --issue <N> --base-branch origin/<base> --parent-worktree path:<親> --json` → 子の端末を用意する（`orca terminal list --worktree path:<子> --json` で端末を数え、0 個のときだけ `orca terminal create --worktree path:<子> --command <cmd> --json` で作る。ちょうど 1 つのときは作らずにその端末を使う。詳細は要件「launch は worktree create が作った空のシェルの端末を子のセッションの端末に使い、子のワークツリーの端末を 1 つに保つ」）→ `orca terminal wait --terminal <handle> --for tui-idle --timeout-ms <ready> --json` → `orca terminal send --terminal <handle> --text <prompt> --enter --wait-submit <submit> --json`。worktree create に `--agent` と `--prompt` を渡してはならない（MUST NOT。`--agent` で起動すると子セッションのモデルを指定できず Claude Code の既定モデルで動くため。`--prompt` は Orca 1.4.209 では指示が子の入力欄に届かず、送信と併用すると指示が 2 回届くおそれがあるため）。`<子>` は worktree create の JSON 出力の `result.worktree.path` とする（MUST）。`<cmd>` は `<claude-cmd> --model <model>` で（`--dangerously-skip-permissions` などの許可に関わる引数は付けてはならない（MUST NOT）。付けるのは `<claude-cmd>` 側に任せる）、`<claude-cmd>` の既定は `cld` で環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で変えられ、クォートせずそのまま置く（MUST。`--command` の文字列は Orca が開いたログインシェルに打ち込まれるのでシェル関数も解決され、`cld-account b` のような引数付きも書けるため）。`<model>` はシェルに打ち込まれても 1 語のまま渡るよう単一引用符で囲む（MUST。`opus[1m]` のような値がグロブとして解釈されないため）。`<model>` の既定は `opus` で、環境変数 `EPIC_DISPATCH_MODEL` で変えられる（MUST）。`<handle>` は、端末を作ったときは terminal create の JSON 出力の `result.terminal.handle`、使い回したときはその端末のハンドルとする（MUST）。`<ready>` の既定は 60000（ミリ秒）で環境変数 `EPIC_DISPATCH_READY_TIMEOUT_MS` で、`<submit>` の既定は 30（秒）で環境変数 `EPIC_DISPATCH_SUBMIT_WAIT` で変えられる（SHALL）。`<親>` は `git rev-parse --show-toplevel` で求めた親ワークツリーの絶対パスで、親の指定は create と set の両方で `path:` を使わなければならない（MUST。`worktree:<id>` は set で `selector_not_found` になるため）。`<base>` の既定は `main` で、環境変数 `EPIC_DISPATCH_BASE` で既定を変えられ、`--base` が環境変数より優先する（MUST）。`<prompt>` は `/develop #<N>` で始まり、エピック番号を含み、`--note` があればその文を含む（SHALL）。子を `launched <N>` とするのは、worktree create が exit 0 で終わり、子のワークツリーのパスが取れ、端末を用意でき（terminal create が exit 0 で終わりハンドルが取れた、または使い回した端末が Claude Code になった）、`terminal wait` が exit 0 で終わり、`terminal send` が exit 0 で終わってその JSON 出力のどこかの `stages` 配列に `turn_started` が含まれるときだけでなければならない（MUST）。どれか 1 つでも満たさなければ `failed <N>` とし（MUST）、子のワークツリーのパスが取れていて、端末を作る経路でハンドルが取れていなければ（terminal create の失敗を含む）、端末を手で起動し直すための `orca terminal create --worktree path:<子> --command <cmd> --json` を stderr に出すに続けて、最初の指示を送るための `orca terminal send --terminal <作り直した端末のハンドル> --text <prompt> --enter --wait-submit <submit> --json` を stderr に出す（SHALL。ワークツリーは残るので、再実行ではその子は `skipped <N>` になり端末が作られないため）。端末を用意できたあと（`terminal wait` か `terminal send` の段）で失敗し、ハンドルが取れていれば、指示を手で送り直すための `orca terminal send --terminal <handle> --text <prompt> --enter --wait-submit <submit> --json` を stderr に出し、あわせて「送る前に `orca terminal read --terminal <handle>` で入力欄とターンの状態を確かめる」旨の案内を出す（SHALL。送信が非 0 やターン未観測で終わっても指示が届いていることがあり、確かめずに送ると 2 回届くため）。`terminal send` の JSON 出力に送り直し用の ID（キー `retryRequestId` または `retryRequest` の文字列値）があれば、送り直しのコマンドに `--retry-request <id>` を付ける（SHALL）。ワークツリーは残すので、再実行ではその子は `skipped <N>` になり、指示を送り直さない（SHALL）。一覧に、同じ `repoId` で `linkedIssue` が `<N>` の archive されていないワークツリーがある子には create を呼ばず `skipped <N>` を出さなければならない（MUST。再開時や取り違えで同じ子を二重に起動しないため）。`orca` が PATH に無いときは何も呼ばずに exit 1 で終わり、`orca worktree current`・`git fetch`・`orca worktree set`・`orca worktree list` のどれかが失敗したとき（`jq` が無くて一覧を読めないときを含む）は子を 1 件も作らずに exit 1 で終わらなければならない（MUST）。stdout には子ごとに `launched <N>`・`skipped <N>`・`failed <N>` のどれか 1 行だけを出し、`orca` 自身の出力は stderr に流す（SHALL）。1 件の失敗で残りの子の起動を止めず、`failed` が 0 件なら exit 0、1 件でもあれば exit 1 で終わる（MUST）。
 
-`wait [--interval <sec>] [--timeout <sec>] <child>...` は、子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state` で state を確かめるポーリングを繰り返し、stdout にちょうど 1 行を出して終わらなければならない（MUST）。子ごとの結果は、出力が `closed` なら閉じている、`open` なら開いている、`gh` が非 0 で終わったか出力がそれ以外（空文字を含む）なら失敗とする（MUST）。1 件以上の子が閉じていれば `closed <N>...`（閉じていた子の番号）で exit 0、上限時間に達したら `timeout <N>...`（閉じていない子の番号）で exit 2、失敗したポーリングが 3 回続いたら `error gh <N>...`（3 回目で失敗した子の番号）で exit 1 で終わる（MUST）。失敗したポーリングとは、1 件以上の子が失敗し、かつ閉じた子が 1 件も無いポーリングを言い、一部の子だけが失敗してほかの子が `open` の場合も含む（MUST）。失敗の無いポーリングがあれば数え直す（SHALL）。閉じた子がいるポーリングでは、ほかの子の失敗より `closed` を優先する（SHALL）。間隔と上限は秒で、間隔の既定は 300、上限の既定は要件「上限を明示しない wait は親の会話キャッシュの有効期限で上限を決める」が決める（2700 か 21600）。環境変数 `EPIC_DISPATCH_INTERVAL` / `EPIC_DISPATCH_TIMEOUT` で既定を変えられ、フラグが環境変数より優先する（MUST）。ポーリングのあとで経過時間が上限に達しているか、経過時間と間隔の和が上限を超えるなら、眠らずに `timeout` で終わる（MUST。`--timeout 0` は間隔によらず 1 回だけ確かめて終わる）。子が 0 件、番号が数字でない、間隔・上限が非負整数でないときは stderr に使い方を出して exit 1 で終わる（SHALL）。
+`wait [--interval <sec>] [--timeout <sec>] <child>...` は、子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state` で state を確かめるポーリングを繰り返し、stdout にちょうど 1 行を出して終わらなければならない（MUST）。子ごとの結果は、出力が `closed` なら閉じている、`open` なら開いている、`gh` が非 0 で終わったか出力がそれ以外（空文字を含む）なら失敗とする（MUST）。1 件以上の子が閉じていれば `closed <N>...`（閉じていた子の番号）で exit 0、上限時間に達したら `timeout <N>...`（閉じていない子の番号）で exit 2、失敗したポーリングが 3 回続いたら `error gh <N>...`（3 回目で失敗した子の番号）で exit 1 で終わる（MUST）。失敗したポーリングとは、1 件以上の子が失敗し、かつ閉じた子が 1 件も無いポーリングを言い、一部の子だけが失敗してほかの子が `open` の場合も含む（MUST）。失敗の無いポーリングがあれば数え直す（SHALL）。閉じた子がいるポーリングでは、ほかの子の失敗より `closed` を優先する（SHALL）。間隔と上限は秒で、間隔の既定は 300、上限の既定は要件「上限を明示しない wait は親の会話キャッシュの有効期限で上限を決める」が決める（3000 か 21600）。環境変数 `EPIC_DISPATCH_INTERVAL` / `EPIC_DISPATCH_TIMEOUT` で既定を変えられ、フラグが環境変数より優先する（MUST）。ポーリングのあとで経過時間が上限に達しているか、経過時間と間隔の和が上限を超えるなら、眠らずに `timeout` で終わる（MUST。`--timeout 0` は間隔によらず 1 回だけ確かめて終わる）。子が 0 件、番号が数字でない、間隔・上限が非負整数でないときは stderr に使い方を出して exit 1 で終わる（SHALL）。
 
 この要件の守備範囲で入力として扱うのは、本体（LLM）が依存グラフから求めた子の番号と、`references/epic.md` の手順どおりに付けるフラグである。人が手で打つことは想定しない。引数の検査で拾う誤りは、番号の取り違えで引数が空になること、`#12` のように番号に記号が付くこと、フラグ値の打ち間違いである。数字でさえあれば、存在しない issue 番号・重複した番号・blocked されている子の番号は通してよく（`route` は依存を検証しない。存在しない番号は `wait` の失敗したポーリングとして数えられ `error` で表に出る）、非常に大きい `--timeout` も通してよい。検査をすり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。`EPIC_DISPATCH_READY_TIMEOUT_MS` と `EPIC_DISPATCH_SUBMIT_WAIT` は非負の整数でなければ stderr に使い方を出し、子を 1 件も作らずに exit 1 で終わる（SHALL。`--interval` と同じ扱いで、上限は設けない）。`EPIC_DISPATCH_MODEL` か `EPIC_DISPATCH_CLAUDE_CMD` が設定されていて空文字のときも stderr に使い方を出し、子を 1 件も作らずに exit 1 で終わる（SHALL。空でない値はそのまま使い、モデル名やコマンドとしての正しさは検査しない）。worktree create の JSON 出力の `result.worktree.path` と terminal create の JSON 出力の `result.terminal.handle` は 2026-09-25 の実機での出力の形のとおりと信じ、`terminal send` の JSON 出力の `stages` 配列と `turn_started` の語は、2026-09-24 の実機での出力の形のとおりと信じ、読めないときは `failed` として表に出すだけで、形の変化そのものの検知は範囲外とする。`orca worktree list --json` の出力は確かめた形（`.result.worktrees[]` の `repoId`・`linkedIssue`・`isArchived`）のとおりと信じ、形が変わったときの検知は範囲外とする。
 

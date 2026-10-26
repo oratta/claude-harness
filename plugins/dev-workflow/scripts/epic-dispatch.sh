@@ -81,7 +81,7 @@
 #   閉じた子が 1 件も無いポーリング。失敗の無いポーリングで数え直す。
 #   間隔・上限は秒。間隔の既定は 300（EPIC_DISPATCH_INTERVAL、フラグが優先）。上限は --timeout、なければ
 #   空でない EPIC_DISPATCH_TIMEOUT。どちらも無いときだけ、待つ前に親のワークツリーの会話キャッシュの有効期限
-#   （cache_ttl_of）で決める: 5m なら 21600、1h か判定できなければ 2700。このときだけ待つ前に stderr へ
+#   （cache_ttl_of）で決める: 5m なら 21600、1h か判定できなければ 3000。このときだけ待つ前に stderr へ
 #   `wait limit <秒> (parent cache <5m|1h|unknown>)` を 1 行出す（上限を明示したときは出さない）。
 #   ポーリングのあとで「経過 >= 上限」か「経過 + 間隔 > 上限」なら眠らずに timeout
 #   （--timeout 0 は間隔によらず 1 回だけ確かめる）。timeout のとき、最後のポーリングに失敗があれば溜めた stderr を出す
@@ -1302,15 +1302,15 @@ cmd_wait() {
   local fails=0 n state closed failed marked stopped wsfail unrecorded still rec f
   local errf; errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
   # 上限の既定: 親の会話キャッシュが 5 分で書かれていれば 21600（起きるたびに書き直すので、起きる回数を減らす）、
-  # 1 時間か判定できなければ 2700（キャッシュの 1 時間とアイドル時のコンパクトの約 54 分より前に起き、掛け直して延ばす）。
+  # 1 時間か判定できなければ 3000（キャッシュの 1 時間とアイドル時のコンパクトの約 54 分より前に起き、掛け直して延ばす）。
   # 起動の時点で 1 回だけ決める（待つ間は親がリクエストを出さないので変わらない）。references/reply-after-idle.md
   if [ "$autolimit" -eq 1 ]; then
     local ttl
     ttl="$(cache_ttl_of "$(toplevel)")" || ttl=""
     case "${ttl%% *}" in
       5m) timeout=21600; ttl=5m ;;
-      1h) timeout=2700; ttl=1h ;;
-      *) timeout=2700; ttl=unknown ;;
+      1h) timeout=3000; ttl=1h ;;
+      *) timeout=3000; ttl=unknown ;;
     esac
     is_num "$timeout" || { echo "--timeout must be a non-negative integer: $timeout" >&2; usage; }
     echo "wait limit $timeout (parent cache $ttl)" >&2
