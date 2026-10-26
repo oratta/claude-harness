@@ -1,10 +1,10 @@
 ## 1. spec 本体の更新
 
-- [ ] 1.1 `openspec/specs/dev-workflow-develop/spec.md` に差分を反映する（MODIFIED の各要件と、REMOVED の「既存要件が worker.md に置いた内容は移し先のファイルを指す」）。反映は `openspec archive` に任せるか、同じ中身に手で直す。触る範囲: `openspec/specs/dev-workflow-develop/spec.md:97-1433`
-- [ ] 1.2 `openspec/specs/dev-workflow-spec-review/spec.md` に差分を反映する。触る範囲: `openspec/specs/dev-workflow-spec-review/spec.md:7-134`
-- [ ] 1.3 `openspec/specs/dev-workflow-pr-review-gate/spec.md` に差分を反映する。触る範囲: `openspec/specs/dev-workflow-pr-review-gate/spec.md:579-1456`
-- [ ] 1.4 `openspec/specs/dev-workflow-subagent-waiting/spec.md` に差分を反映する。触る範囲: `openspec/specs/dev-workflow-subagent-waiting/spec.md:199-225`
-- [ ] 1.5 `openspec/specs/loops-longrun-retirement/spec.md` の 1 行を直す。触る範囲: `openspec/specs/loops-longrun-retirement/spec.md:37`
+- [x] 1.1 `openspec/specs/dev-workflow-develop/spec.md` に差分を反映する（MODIFIED の各要件と、REMOVED の「既存要件が worker.md に置いた内容は移し先のファイルを指す」）。反映は `openspec archive` に任せるか、同じ中身に手で直す。触る範囲: `openspec/specs/dev-workflow-develop/spec.md:97-1433`
+- [x] 1.2 `openspec/specs/dev-workflow-spec-review/spec.md` に差分を反映する。触る範囲: `openspec/specs/dev-workflow-spec-review/spec.md:7-134`
+- [x] 1.3 `openspec/specs/dev-workflow-pr-review-gate/spec.md` に差分を反映する。触る範囲: `openspec/specs/dev-workflow-pr-review-gate/spec.md:579-1456`
+- [x] 1.4 `openspec/specs/dev-workflow-subagent-waiting/spec.md` に差分を反映する。触る範囲: `openspec/specs/dev-workflow-subagent-waiting/spec.md:199-225`
+- [x] 1.5 `openspec/specs/loops-longrun-retirement/spec.md` の 1 行を直す。触る範囲: `openspec/specs/loops-longrun-retirement/spec.md:37`
 
 ## 2. 索引の表を消す
 
