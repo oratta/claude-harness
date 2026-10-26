@@ -16,4 +16,4 @@
 
 ## 4. 変更の記録
 
-- [ ] 4.1 `plugins/dev-workflow/changes/1085.md` に、何を変えたか（ci-watch.md の 9 と 2 の書き分け・SKILL.md の参照）、hook を足さなかった理由、親の検知を #1084 に残した理由を書く。確かめ方: ファイルがあり、既存の `changes/*.md` と同じ形であること。触る範囲: plugins/dev-workflow/changes/1085.md（新規）
+- [x] 4.1 `plugins/dev-workflow/changes/1085.md` に、何を変えたか（ci-watch.md の 9 と 2 の書き分け・SKILL.md の参照）、hook を足さなかった理由、親の検知を #1084 に残した理由を書く。確かめ方: ファイルがあり、既存の `changes/*.md` と同じ形であること。触る範囲: plugins/dev-workflow/changes/1085.md（新規）
