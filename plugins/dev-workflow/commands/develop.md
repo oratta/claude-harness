@@ -11,9 +11,9 @@ allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 
 引数なしの追加依頼でも各 phase で profile なしの request を使って自動選択する。明示 profile・旧形式を引き継ぐ場合は初回の設定を再推測せず、実行先オプションと account-home の対応の両方を改めて明示する。
 
-前景実行のCodexオプションは、account名からCODEX_HOMEへの対応表である。`--account-home NAME=PATH`（繰り返し可）か、account名をキー・CODEX_HOMEの絶対パスを値とする平らなJSON 1つを指す `--account-home-file PATH` のどちらか一方を渡し、併用は拒否する。本体はこれを依頼本文から分離し、`codex-develop.py request` へそのまま渡す。自動選択で対応表も無指定の場合だけ、既存の絶対ディレクトリである `CODEX_HOME`（未設定なら `~/.codex`）を `current` として評価する。明示 profile・旧形式、または明示した対応表では、対応に無いaccount名をこの既定値へ倒さず依頼ファイルを作る前に拒否する。
+前景実行のCodexオプションは、account名からCODEX_HOMEへの対応表である。本体はこれを依頼本文から分離し、`codex-develop.py request` へそのまま渡す。渡し方・併用の拒否・無指定のときの既定値・対応に無い account 名を拒否する時点は `references/codex-develop.md`「起動と role 解決」が正本である。
 
-`develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0・エピックの扱い）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。このコマンドはそれを Read tool で読み込み、その指示に従ってメインセッションでインライン実行する（実行モードは SKILL.md「実行モード」の決め方で決める）。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
+`develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。エピックの扱いの正は `skills/develop/references/epic.md` にある。このコマンドはそれを Read tool で読み込み、その指示に従ってメインセッションでインライン実行する（実行モードは SKILL.md「実行モード」の決め方で決める）。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
 
 **Skill tool は使わないこと。** この command は既に「ユーザーが起動した slash command」であり、Read tool で SKILL.md 本文（および必要なら `references/decision-criteria.md`）を読み込み、この command の frontmatter（`allowed-tools`）配下でそのままインライン実行する。
 
