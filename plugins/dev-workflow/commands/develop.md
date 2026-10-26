@@ -32,7 +32,7 @@ if [ -n "$DW_NG" ]; then unsetopt nullglob; fi
 unset DW_NG
 ```
 
-特定した絶対パス（`skills/develop/SKILL.md`）を Read tool で読み込み、本体として 1 ループを回す。実行モードは SKILL.md「実行モード」の決め方（印 `DEV_WORKFLOW_UNATTENDED` か、チャンネルのメッセージでの依頼なら channel）で開始時に 1 回決め、印もチャンネルの依頼も無ければ **interactive モード**（デフォルト）で実行する。channel では主に聞くたびに AskUserQuestion を使わず、チャンネルに送ってターンを終える（下の分岐とフォールバックも同じ。SKILL.md より先にこのファイルの分岐を処理するので、その場にも書く）。`--unmanned` は loop-dev-agent の憲法ファイル（`docs/agent-loop.md`）の Step 3 でメインが develop の本体を務めるとき専用であり、このコマンドから human が起動した場合には使わない。
+特定した絶対パス（`skills/develop/SKILL.md`）を Read tool で読み込み、本体として 1 ループを回す。実行モードは SKILL.md「実行モード」の決め方（印 `DEV_WORKFLOW_UNATTENDED` か、チャンネルのメッセージでの依頼なら channel）で開始時に 1 回決め、印もチャンネルの依頼も無ければ **interactive モード**（デフォルト）で実行する。channel では主に聞くたびに AskUserQuestion を使わず、チャンネルに送ってターンを終える（下の分岐とフォールバックも同じ。入口の分岐で主に聞く場面なので、channel.md の読み替えの規則の例外としてその場にも書く）。`--unmanned` は loop-dev-agent の憲法ファイル（`docs/agent-loop.md`）の Step 3 でメインが develop の本体を務めるとき専用であり、このコマンドから human が起動した場合には使わない。
 
 ## 引数の解釈（5分岐）
 
@@ -70,7 +70,7 @@ unset DW_NG
 2. **見つかった場合**: その `skills/issueify/SKILL.md` を Read tool で読み込み、手順（原子化 → 測定可能な受け入れ条件のドラフト → 不足だけヒアリング → 承認 → 起票）をインライン実行する。Skill tool は使わない（この command の方針と同じ）。不足のヒアリングは、channel ではチャンネルに送ってターンを終え、AskUserQuestion を呼ばない。
 3. **見つからない場合（fail-soft）**: エラーで停止せず、最小手順に縮退する — 依頼内容から「これで何が変わるか（最大 3 行・技術用語禁止）/ やらないとどうなるか・今のコスト（最大 3 行）/ 概要 / 触るファイル（Grep で実在確認）/ 測定可能な受け入れ条件（実行コマンド + 期待値）」のドラフトを作って提示し、承認後に `gh issue create` で起票する。
 4. **承認ゲート（両経路共通）**: ドラフトを提示してユーザーの**承認を得てから**起票する。承認なしに `gh issue create` を実行しない。channel ではチャンネルに送ってターンを終え、AskUserQuestion を呼ばずに、チャンネルの返事で承認を受ける。
-5. **複数 issue に割れた場合**: 原子化の結果が複数 issue になったら全件を起票した上で、**着手する1件**をユーザーに選択させ、その1件だけを SKILL.md の実行に渡す。残りは起票のみ（次回の `/develop` や loop-dev-agent が拾う）。複数 PR にまたがるなら SKILL.md「エピックの扱い」に従いエピックとして作る。
+5. **複数 issue に割れた場合**: 原子化の結果が複数 issue になったら全件を起票した上で、**着手する1件**をユーザーに選択させ、その1件だけを SKILL.md の実行に渡す。残りは起票のみ（次回の `/develop` や loop-dev-agent が拾う）。複数 PR にまたがるなら epic.md「エピックの扱い」に従いエピックとして作る。
 6. 起票された issue 番号で通常フロー（`skills/develop/SKILL.md` の入口 0 → 1 ループ）に接続する。
 
 引数 (`$ARGUMENTS`) の内容: $ARGUMENTS
