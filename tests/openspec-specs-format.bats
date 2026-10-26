@@ -58,3 +58,15 @@ setup() {
     false
   }
 }
+
+# develop の SKILL.md から references/ へ移した節を、spec が「SKILL.md の節」として名指ししていないこと（#1241）。
+# 節名の一覧は移設先（epic.md・epic-child-stop.md・handover.md・fix-check.md・channel.md）の見出し。
+# SKILL.md に中身が残る節（ループの終わり等）はこの一覧に入れない。
+# grep の終了コードは 0=一致あり（落とす）/ 1=一致ゼロ（通す）/ 2=検索エラー（落とす）と分ける。
+@test "no spec names a moved develop section as a SKILL.md section" {
+  run grep -rnE 'SKILL\.md[^。]{0,8}[「『](エピックの扱い|エピックの子が主の返事を待って止まるとき|保留で止まるときの引き継ぎ|レビューの周を主に聞かずに続ける|channel の聞き方|channel のリスク許容|channel の主への発言|新しいセッションでの再開)' "$SPECS_DIR"
+  if [ "$status" -eq 1 ]; then return 0; fi
+  echo "grep status=$status (0=stale references found, 2=search error)" >&2
+  echo "$output" | cut -c1-200 >&2
+  false
+}
