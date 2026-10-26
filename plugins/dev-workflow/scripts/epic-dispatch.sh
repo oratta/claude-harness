@@ -1391,7 +1391,7 @@ for p in glob.glob(os.path.join(os.environ["DIR"], "*.jsonl")):
     last = None
     rows = []
     try:
-        with open(p, encoding="utf-8") as f:
+        with open(p, encoding="utf-8", errors="replace") as f:
             for line in f:
                 try:
                     d = json.loads(line)
@@ -1422,7 +1422,10 @@ for t, d in best[1]:
         if s is None or not s.strip():
             continue
         st = s.lstrip()
-        if st.startswith("親エピック #") or "<command-name>" in st or st.startswith("/develop"):
+        m = st.find("主の返事（親エピック #")
+        if m > 0:
+            st = st[m:].split("</command-args>")[0]
+        elif st.startswith("親エピック #") or "<command-name>" in st or st.startswith("/develop"):
             continue
         owner = (t, st)
     elif d.get("type") == "assistant":
@@ -1447,7 +1450,6 @@ cmd_child_log() {
     rc=0
     child_record "$PARENT_TOP" "$n" || rc=$?
     if [ "$rc" -eq 3 ]; then
-      echo "unreadable state record: $ES_HIT" >&2
       echo "unreadable $n"
       continue
     fi

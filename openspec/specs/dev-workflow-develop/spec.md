@@ -3074,7 +3074,7 @@ develop の `references/epic.md`「エピックの扱い」は、エピックの
 | 手順 8 とマージ待ちの子の、子 issue の `子の停止: 主の返事待ち` と `親の判断:` のコメントの読み先（`author_association` を含む） | 別のリポジトリの子は子のリポジトリ（`repos/<子の owner>/<子の repo>/issues/<N>/comments`）から読む |
 | 手順 3 (b) の起点ブランチ | その子の記録の `base`（別のリポジトリの子は子のリポジトリの既定ブランチか `--base` の値）。親のリポジトリの `main` ではない |
 | `後で別に起動するエピック:` の行で子を外す照合（手順 2・`timeout` と `closed` の確認） | 別のリポジトリの子は `<owner>/<repo>#N` の形の行で照合する（同じリポジトリの子は `#N`） |
-| 子を `route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt` に渡す | 別のリポジトリの子は `<owner>/<repo>#N` の形で渡す（同じリポジトリの子は番号だけ） |
+| 子を `route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`・`child-log` に渡す | 別のリポジトリの子は `<owner>/<repo>#N` の形で渡す（同じリポジトリの子は番号だけ） |
 | `references/epic.md` の注意書き `親エピックからの注意書き: #<エピック番号>`、手順 1 の「起点は `origin/main`」 | 別のリポジトリの子は注意書きが `親エピックからの注意書き: <エピックの owner>/<repo>#<E>`（子のリポジトリの issue に残る）。起点は `--base` / `EPIC_DISPATCH_BASE`、無ければ子のリポジトリの既定ブランチ |
 | `stop-judge.sh <epic> <child>` の `<child>` は番号 | 番号か `<owner>/<repo>#<N>`。後者は子の本文・コメントを `repos/<o>/<r>/issues/<N>` から読み、エピックのコメントの過去の判断を `親の判断: 子 <o>/<r>#<N> ` で始まる行から探す。同じリポジトリの子は今までどおり。入力文の見出しも同じ呼び方にする |
 
@@ -3098,7 +3098,7 @@ develop の `references/epic.md`「エピックの扱い」は、エピックの
 
 #### Scenario: 各サブコマンドへの渡し方が書いてある
 - **WHEN** `references/epic.md` の「エピックの扱い」を読む
-- **THEN** 別のリポジトリの子を `route`・`launch`・`wait`・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt` に `<owner>/<repo>#N` で渡すと書いてある
+- **THEN** 別のリポジトリの子を `route`・`launch`・`wait`・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`・`child-log` に `<owner>/<repo>#N` で渡すと書いてある
 
 #### Scenario: サブエージェント方式では別のリポジトリの子を起こさない
 - **WHEN** `references/epic.md` の「回し方」の「サブエージェント方式」を読む
@@ -3757,7 +3757,7 @@ develop を呼んでいたと判定したとき、スクリプトは stdout に 
 
 ### Requirement: 状態表の下に答えが要る子の URL と片付いたものを書く
 
-状態表の下に、答えが要る子の issue（または停止の記録）の URL を 1 行 1 本で置き、その下に「前回の報告から片付いたもの」を書かなければならない（MUST）。子のタブで答え済みの件も片付いたものに含める。
+状態表の下に、答えが要る子の issue の URL を 1 行 1 本で置き、子の停止の記録の URL は 1 行目で聞く 1 件にだけ書き（聞いていない子の分は並べない。MUST NOT）、その下に「前回の報告から片付いたもの」を書かなければならない（MUST）。子のタブで答え済みの件も片付いたものに含める。
 
 #### Scenario: 表の下の 2 つ
 - **WHEN** `references/epic.md` の状態表の規定を読む
@@ -3781,7 +3781,7 @@ channel モードでは、状態表の答え方の列を、チャンネルで返
 
 ### Requirement: 別セッション方式の親は表を書く前に子の会話ログの末尾を読む
 
-`references/epic.md` は、別セッション方式（Orca・tmux）の親が状態表を書く前に、閉じていない子ごとに `scripts/epic-dispatch.sh child-log` で会話ログの末尾を読み、子のタブで進んだ分を表に反映すると規定しなければならない（MUST）。子のタブで主が直接答えても子は issue の停止の記録を書き直さないので、記録だけを見て書くと表が子の実際の状態とずれる。会話ログの末尾と issue の記録が食い違うときは会話ログを優先する。
+`references/epic.md` は、別セッション方式（Orca・tmux）の親が状態表を書く前に、`launch` に渡した子ごとに `scripts/epic-dispatch.sh child-log` で会話ログの末尾を読み（別のリポジトリの子は `<owner>/<repo>#N` で渡す。まだ起動していない子は渡さず、ステータスを `未起動（<理由>）` と書く）、子のタブで進んだ分を表に反映すると規定しなければならない（MUST）。子のタブで主が直接答えても子は issue の停止の記録を書き直さないので、記録だけを見て書くと表が子の実際の状態とずれる。会話ログの末尾と issue の記録が食い違うときは会話ログを優先する。
 
 #### Scenario: epic.md が会話ログの確認を表より前に置く
 - **WHEN** `references/epic.md` の状態表の規定を読む

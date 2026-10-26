@@ -6281,6 +6281,49 @@ chat_line() {
   [ "$(cat "$(rec_of 1122 11)")" = '{' ]
 }
 
+@test "child-log: a relayed owner reply inside a relaunch instruction counts as the owner message" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z '/develop #11 （エピック #1122 の子。返事を受けて起動し直し） 主の返事（親エピック #1122 経由）: 許容する')"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | cut -f2,3)" = "$(printf '2026-10-26 15:00\t主の返事（親エピック #1122 経由）: 許容する')" ]
+}
+
+@test "child-log: a plain first /develop instruction is still not an owner message" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z '/develop #11 （エピック #1122 の子）')"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | cut -f2,3)" = "$(printf -- '-\t-')" ]
+}
+
+@test "child-log: one non-UTF-8 transcript does not make the child unreadable" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 new "$(chat_line user 2026-10-26T06:00:00.000Z 'OK')"
+  d="$(dirname "$(ls "$BATS_TEST_TMPDIR"/projects/*/new.jsonl)")"
+  printf '\xff\xfe\n' > "$d/bad.jsonl"
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | cut -f2,3)" = "$(printf '2026-10-26 15:00\tOK')" ]
+}
+
+@test "child-log: an unreadable record path is printed once on stderr" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  printf '{\n' >| "$(rec_of 1122 11)"
+  run dispatch child-log 11
+  [ "$(grep -cF "$(rec_of 1122 11)" "$BATS_TEST_TMPDIR/stderr")" -eq 1 ]
+}
+
 @test "child-log: two records for one child is unreadable" {
   make_stub orca
   set_current 400
@@ -6316,5 +6359,14 @@ chat_line() {
   grep -qF '`確かめられなかった`' "$e"
   grep -qF 'チャンネル以外の画面やタブは書かない' "$e"
   grep -qF '上の**状態表**を付ける' "$e"
-  ! grep -qF 'MUST NOT 置き換え' "$e"
+  ! grep -qF 'MUST NOT 置き換え' "$e" || return 1
+}
+
+@test "epic.md: not-yet-launched children are not passed to child-log, URLs below the table are limited, and child-log takes owner/repo#N" {
+  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  grep -qF '`launch` に渡した子ごとに会話ログの末尾を' "$e"
+  grep -qF '`未起動（<理由>）`' "$e"
+  grep -qF '子の停止の記録の URL は、1 行目で聞く 1 件にだけ書き' "$e"
+  grep -qF '`adopt`・`child-log` に渡す' "$e"
+  ! grep -qF '答えが要る子の issue（または停止の記録）の URL' "$e" || return 1
 }
