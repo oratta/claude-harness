@@ -20,6 +20,6 @@
 
 ## 4. 確かめる
 
-- [ ] 4.1 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/develop-skill.bats` と `scripts/test.sh` が通ることを確かめる。`tests/injection-budget.bats` も通ること（常時注入の部品は触らない）
+- [x] 4.1 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/develop-skill.bats` と `scripts/test.sh` が通ることを確かめる。`tests/injection-budget.bats` も通ること（常時注入の部品は触らない）
 - [x] 4.2 `openspec validate epic-wait-short-rewait --type change --strict` が通ることを確かめる
-- [ ] 4.3 実機で、この worktree から `plugins/dev-workflow/scripts/epic-dispatch.sh wait <閉じた issue の番号>`（フラグなし。閉じた子なので 1 回目のポーリングで `closed` で終わる）を 1 回実行し、stderr の `wait limit` の行が、この worktree のトランスクリプトで最後にキャッシュを書いた行の有効期限（`jq` で `message.usage.cache_creation` を見る）と合うことを確かめる。**やり直し**: 1 回目は `entrypoint` で絞る前の実装で、同じ置き場の `sdk-py` の行（security-guidance の hook）を読んで `wait limit 21600 (parent cache 5m)` になった。1.2 の後に、`jq` で `.entrypoint == "cli"` の assistant の行に絞って最後にキャッシュを書いた行を求め、stderr の行と合うことを確かめる。あわせて、置き場に `cli` 以外の行がより新しく書かれていることも確かめ、絞り込みが効いた状態での確認だったことを記録先に残す。触る範囲: なし（確認だけ）
+- [x] 4.3 実機で、この worktree から `plugins/dev-workflow/scripts/epic-dispatch.sh wait <閉じた issue の番号>`（フラグなし。閉じた子なので 1 回目のポーリングで `closed` で終わる）を 1 回実行し、stderr の `wait limit` の行が、この worktree のトランスクリプトで最後にキャッシュを書いた行の有効期限（`jq` で `message.usage.cache_creation` を見る）と合うことを確かめる。**やり直し**: 1 回目は `entrypoint` で絞る前の実装で、同じ置き場の `sdk-py` の行（security-guidance の hook）を読んで `wait limit 21600 (parent cache 5m)` になった。1.2 の後に、`jq` で `.entrypoint == "cli"` の assistant の行に絞って最後にキャッシュを書いた行を求め、stderr の行と合うことを確かめる。あわせて、置き場に `cli` 以外の行がより新しく書かれていることも確かめ、絞り込みが効いた状態での確認だったことを記録先に残す。触る範囲: なし（確認だけ）
