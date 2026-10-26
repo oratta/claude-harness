@@ -1124,10 +1124,10 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   printf '%s\n' "$row" | grep -qF '親の判断:'
 }
 
-@test "reply-after-idle: wait --resolve decides the relaunch itself with overridable thresholds" {
+@test "reply-after-idle: wait --resolve decides the relaunch itself with an overridable idle threshold" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   grep -qF 'EPIC_DISPATCH_RELAUNCH_IDLE_SEC' "$f"
-  grep -qF 'EPIC_DISPATCH_RELAUNCH_MIN_TOKENS' "$f"
+  run grep -F 'EPIC_DISPATCH_RELAUNCH_MIN_TOKENS' "$f"; [ "$status" -eq 1 ]
 }
 
 @test "skill: step 7 drops a pending child whose pass on the epic matches the latest stop record" {

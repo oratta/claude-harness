@@ -47,11 +47,11 @@
 #   `gh issue comment <N> --body <親エピックからの注意書き: #<epic>・空行・注意書き>`（失敗しても起動は
 #   続け、stderr に `note not posted to #<N>` と手で投稿するコマンドを出す）→ `orca terminal create
 #   --worktree path:<子> --command "EPIC_DISPATCH_PARENT_EPIC=<epic>
-#   CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=<tokens> <cmd> --model <model>"`
+#   <cmd> --settings '{"idleCompaction":false}' --model <model>"`
 #   （<cmd> の既定は cld、EPIC_DISPATCH_CLAUDE_CMD で変える。<model> の既定は opus、
-#   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。<tokens> は子の
-#   待っている間の自動コンパクトの閾値で既定は 120000、EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS
-#   で変える。空か数字でなければ使い方を出して exit 1（根拠は skills/develop/references/reply-after-idle.md）。
+#   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。--settings は子のアイドル時の
+#   コンパクトをそのプロセスだけ切る（通常の自動コンパクトは止めない。Claude Code v2.1.290 以降。
+#   根拠は skills/develop/references/reply-after-idle.md）。
 #   作れなければ、既存の端末が無いことの確認・作り直し・送信のコマンドを stderr に出す）→ `orca terminal wait --for tui-idle` →
 #   `orca terminal send --text <指示> --enter --wait-submit <秒>`。stdout は子ごとに `launched <N>`
 #   （send の stages に turn_started がある）/ `skipped <N>` / `failed <N>` / `deferred <N>`（上限で後回し）の 1 行。failed で
@@ -179,12 +179,11 @@
 #   無ければ物理メモリの GiB（`sysctl -n hw.memsize` のバイト、読めなければ
 #   EPIC_DISPATCH_MEMINFO_FILE（テスト用。既定 /proc/meminfo）の MemTotal の kB）を 4 で割って切り捨て、最小 1。
 #   どちらも読めなければ 2 で、stderr に `physical memory not readable`。launch も同じ値を使う
-# wait --resolve が通す返事は、送る前に references/reply-after-idle.md の表で起動し直すかを決める:
+# wait --resolve が通す返事は、送る前に references/reply-after-idle.md の子の表で起動し直すかを決める:
 #   子のトランスクリプト（${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl、
-#   ちょうど 1 本。置き場の求め方は wait --watch-done の完了の推定と共有する）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前で、
-#   その assistant より後に compact_boundary が無く、subagent-context.sh --file の context_tokens が
-#   EPIC_DISPATCH_RELAUNCH_MIN_TOKENS（既定 150000）以上のときだけ --relaunch 相当。読めなければそのまま送る。
-#   2 つの変数が空か数字でなければ wait は使い方を出して exit 1。
+#   ちょうど 1 本。置き場の求め方は wait --watch-done の完了の推定と共有する）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前なら、
+#   compact_boundary の有無と会話量によらず --relaunch 相当。読めなければそのまま送る。
+#   EPIC_DISPATCH_RELAUNCH_IDLE_SEC が空か数字でなければ wait は使い方を出して exit 1。
 #   --watch-done があるとき、EPIC_DISPATCH_DONE_IDLE_SEC が空か数字でなければ gh を呼ばずに使い方を出して exit 1
 # 引数の誤り（launch は epic か子が無い、wait は子も --watch-done も 0 件（--watch-stopped だけも含む）、
 #   mark の種別（done / waiting / stopped / resumed 以外）・引数の数、
@@ -441,9 +440,9 @@ agent_setup() {
   [ -n "$model" ] || { echo "EPIC_DISPATCH_MODEL must not be empty" >&2; return 1; }
   local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-cld}"
   [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; return 1; }
-  local idle_compact="${EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS-120000}"
-  is_num "$idle_compact" || { echo "EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS must be a non-negative integer: $idle_compact" >&2; return 1; }
-  agent_rest="CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=$idle_compact $claude_cmd --model $(shq "$model")"
+  # 子のアイドル時のコンパクト（待っている間の自動コンパクト）はそのプロセスだけ切る。通常の自動コンパクトは止めない
+  # （根拠は skills/develop/references/reply-after-idle.md）
+  agent_rest="$claude_cmd --settings '{\"idleCompaction\":false}' --model $(shq "$model")"
   agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$1 $agent_rest"
 }
 
@@ -1083,10 +1082,11 @@ PY
 }
 
 # 通す返事を起動し直して送るかを決める（<子のワークツリーのパス>）。起動し直すなら 1、そのまま送るなら 0 を出す。
-# 事実を 1 つでも読めなければ 0（references/reply-after-idle.md の表の「扱いが揺れる子」と同じ）
+# 子の表（references/reply-after-idle.md）のとおり、最後のリクエストから閾値以上なら compact_boundary の有無と
+# 会話量によらず起動し直す。事実を 1 つでも読めなければ 0（同じ表の「扱いが揺れる子」と同じ）
 decide_relaunch() {
-  local path="$1" dir files count file facts last compacted now ctx
-  local idle="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC:-3600}" min="${EPIC_DISPATCH_RELAUNCH_MIN_TOKENS:-150000}"
+  local path="$1" dir files count file last now
+  local idle="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC:-3600}"
   dir="$(transcript_dir "$path")"
   files="$(ls -1 "$dir"/*.jsonl 2>/dev/null)"
   [ -n "$files" ] || { echo 0; return 0; }
@@ -1094,35 +1094,25 @@ decide_relaunch() {
   [ "$count" -eq 1 ] || { echo 0; return 0; }
   file="$files"
   command -v python3 >/dev/null 2>&1 || { echo 0; return 0; }
-  facts="$(FILE="$file" python3 - <<'PY' 2>/dev/null
+  last="$(FILE="$file" python3 - <<'PY' 2>/dev/null
 import json, os, datetime
-last = None; idx_a = -1; idx_c = -1
+last = None
 with open(os.environ["FILE"], encoding="utf-8") as f:
-    for i, line in enumerate(f):
+    for line in f:
         try:
             d = json.loads(line)
         except Exception:
             continue
-        if not isinstance(d, dict):
-            continue
-        if d.get("type") == "assistant" and isinstance(d.get("timestamp"), str):
-            last = d["timestamp"]; idx_a = i
-        elif d.get("subtype") == "compact_boundary":
-            idx_c = i
+        if isinstance(d, dict) and d.get("type") == "assistant" and isinstance(d.get("timestamp"), str):
+            last = d["timestamp"]
 if last is None:
     raise SystemExit(1)
-t = datetime.datetime.fromisoformat(last.replace("Z", "+00:00")).timestamp()
-print(int(t), 1 if idx_c > idx_a else 0)
+print(int(datetime.datetime.fromisoformat(last.replace("Z", "+00:00")).timestamp()))
 PY
 )" || { echo 0; return 0; }
-  last="${facts%% *}"; compacted="${facts##* }"
   is_num "$last" || { echo 0; return 0; }
-  [ "$compacted" = 0 ] || { echo 0; return 0; }
   now="$(date +%s)"
-  [ $((now - last)) -ge "$idle" ] || { echo 0; return 0; }
-  ctx="$("$(dirname "$0")/subagent-context.sh" --file "$file" --cap 2147483647 2>/dev/null | jq -r '.context_tokens // empty' 2>/dev/null)"
-  is_num "$ctx" || { echo 0; return 0; }
-  [ "$ctx" -ge "$min" ] && echo 1 || echo 0
+  [ $((now - last)) -ge "$idle" ] && echo 1 || echo 0
 }
 
 # トランスクリプトの置き場（<ディレクトリ>）の全部の .jsonl と、そのセッションのサブエージェントの
@@ -1297,7 +1287,6 @@ cmd_wait() {
   if [ -n "$resolve" ]; then
     agent_setup "$resolve" || usage
     is_num "${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}" || { echo "EPIC_DISPATCH_RELAUNCH_IDLE_SEC must be a non-negative integer" >&2; usage; }
-    is_num "${EPIC_DISPATCH_RELAUNCH_MIN_TOKENS-150000}" || { echo "EPIC_DISPATCH_RELAUNCH_MIN_TOKENS must be a non-negative integer" >&2; usage; }
   fi
 
   # 子の記録は親のワークツリー（今のワークツリー）で探す。印を見るときは jq と今のワークツリーが要る。

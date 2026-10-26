@@ -289,7 +289,7 @@ develop の `references/epic.md` の別セッション方式の手順 5（`timeo
 - **THEN** 3 回のポーリングのあと stdout は `error gh 11` の 1 行で exit 1
 
 ### Requirement: エピックの並列起動は 1 段で止める
-`plugins/dev-workflow/scripts/epic-dispatch.sh launch` は、子セッションを起動する端末のコマンドの先頭に `EPIC_DISPATCH_PARENT_EPIC=<epic>` を置かなければならない（MUST。`<epic>` は `launch` に渡したエピック番号）。そのうしろ、`<cmd>` の前には `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=<値>` を置く（MUST。`<値>` の既定と上書きは要件「時間がたった子・親への返事は待っている間の自動コンパクトの閾値と分ける条件で決める」が定める）。コマンド全体は `EPIC_DISPATCH_PARENT_EPIC=<epic> CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=<値> <cmd> --model <model>` の形になり、端末を作れなかった子について stderr に出す `orca terminal create --command ...` の作り直しのコマンドにも同じ前置きが入る（SHALL）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち `route` の出力の規定、`<cmd>` の形の規定、および Scenario「EPIC_DISPATCH_MODEL…」「EPIC_DISPATCH_CLAUDE_CMD…」の `--command` の値に優先する。並行する子の archive が終わったあとに元の要件へ畳み込む。
+`plugins/dev-workflow/scripts/epic-dispatch.sh launch` は、子セッションを起動する端末のコマンドの先頭に `EPIC_DISPATCH_PARENT_EPIC=<epic>` を置かなければならない（MUST。`<epic>` は `launch` に渡したエピック番号）。そのうしろに `<cmd>` を置き、`<cmd>` と `--model` のあいだに `--settings '{"idleCompaction":false}'` を置く（MUST。子のセッションのアイドル時のコンパクトを切る。`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` を付けないことを含め、要件「子のセッションはアイドル時のコンパクトを切って起動する」が定める）。コマンド全体は `EPIC_DISPATCH_PARENT_EPIC=<epic> <cmd> --settings '{"idleCompaction":false}' --model <model>` の形になり、端末を作れなかった子について stderr に出す `orca terminal create --command ...` の作り直しのコマンドにも同じ前置きが入る（SHALL）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち `route` の出力の規定、`<cmd>` の形の規定、および Scenario「EPIC_DISPATCH_MODEL…」「EPIC_DISPATCH_CLAUDE_CMD…」の `--command` の値と、Scenario「端末を作れなければ送らずに failed で端末の作り直しのコマンドを出す」の作り直しのコマンドが `cld --model` を含むという値（新しい形では `cld --settings '{"idleCompaction":false}' --model` を含む）に優先する。並行する子の archive が終わったあとに元の要件へ畳み込む。
 
 環境変数 `EPIC_DISPATCH_PARENT_EPIC` が空でない環境では:
 
@@ -310,7 +310,7 @@ develop の `references/epic.md`「エピックの扱い」は次を規定しな
 
 #### Scenario: launch は子の端末のコマンドに親エピックの番号を前置きする
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC` の無い環境で `epic-dispatch.sh launch 420 11` を実行する
-- **THEN** `orca terminal create` の `--command` は `EPIC_DISPATCH_PARENT_EPIC=420 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'` である
+- **THEN** `orca terminal create` の `--command` は `EPIC_DISPATCH_PARENT_EPIC=420 cld --settings '{"idleCompaction":false}' --model 'opus'` である
 
 #### Scenario: 端末の作り直しのコマンドにも前置きが入る
 - **WHEN** `orca terminal create` が失敗する環境で `epic-dispatch.sh launch 420 11` を実行する
