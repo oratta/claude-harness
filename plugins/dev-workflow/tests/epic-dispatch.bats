@@ -4112,34 +4112,27 @@ orca_cmd_scripts() {
   printf '%s\n' "$child" | grep -qF '最適値を実証'
 }
 
-@test "reply-after-idle: the parent keeps 120,000 and its own table" {
+@test "reply-after-idle: all sessions disable idle and parents relaunch at 60 minutes (#1385)" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
-  grep -E '^\| 親 \|' "$f" | grep -qF '120,000'
-  grep -E '^\| 親 \|' "$f" | grep -qF '未設定のときだけ'
-  grep -E '^\| 親 \|' "$f" | grep -qF 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000'
-  run grep -F '=100000' "$f"; [ "$status" -eq 1 ]
-  run grep -F '100,000' "$f"; [ "$status" -eq 1 ]
+  grep -E '^\| 親 \|' "$f" | grep -qF 'false'
   grep -E '^\| 親の最後のリクエストから 60 分未満 \|' "$f" | grep -qF 'そのまま続ける'
-  grep -E '^\| 60 分以上で、その間に待っている間の自動コンパクトが走った \|' "$f" | grep -qF 'そのまま続ける'
-  grep -E '^\| 60 分以上で、コンパクトが走っておらず、会話量 N が 150,000 以上 \|' "$f" | grep -qF '起動し直す'
-  grep -E '^\| 60 分以上で、コンパクトが走っておらず、会話量 N が 150,000 未満 \|' "$f" | grep -qF 'そのまま続ける'
-  grep -qF 'compact_boundary' "$f"
-  grep -qF 'subagent-context.sh --file' "$f"
-  # 親を子と分ける理由: 親の監視の wait はコンパクトのあとも動き続け、起動し直すと途切れる
-  grep -F '監視' "$f" | grep -F 'wait' | grep -qF '途切れ'
+  grep -E '^\| 親の最後のリクエストから 60 分以上 \|' "$f" | grep -F '起動し直す' | grep -qF '会話量によらず'
+  parent="$(sed -n '/^## 親への適用/,$p' "$f")"
+  run printf '%s\n' "$parent"
+  [[ "$output" != *'120,000'* ]] || return 1
+  run grep -E 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000|その間に待っている間の自動コンパクトが走った' "$f"
+  [ "$status" -eq 1 ]
+  grep -qF '起床の API リクエストを除いた待機前' "$f"
+  grep -qF '時間分類を最優先' "$f"
 }
 
-@test "reply-after-idle: the rule file covers the parent, its restorable state, the basis and the recount" {
+@test "reply-after-idle: restore sources and revised basis replace the parent recount (#1385)" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
-  grep -qF '回し方:' "$f"
-  grep -qF '子 #N マージ → 残り k 件' "$f"
-  grep -qF '後で別に起動するエピック:' "$f"
-  grep -qF '子 #N のワークツリーを残した' "$f"
-  grep -qF 'https://github.com/oratta/claude-harness/issues/1039#issuecomment-6182988861' "$f"
-  grep -F 'develop-compact-reread.sh' "$f" | grep -F '39k' | grep -qF '#1264'
-  grep -qF 'https://github.com/oratta/claude-harness/issues/1217#issuecomment-6359110216' "$f"
-  grep -F '1〜2 週間' "$f" | grep -qF '集計'
-  grep -qF '合否に使わ' "$f"
+  for word in '回し方:' '子 #N マージ → 残り k 件' '後で別に起動するエピック:' '子 #N のワークツリーを残した' '親の判断: 子 #N 通した' 'pending-owner' '#1385' '手順書と引き継ぎ' '#1264'; do
+    grep -qF "$word" "$f" || return 1
+  done
+  run grep -F '1〜2 週間' "$f"
+  [ "$status" -eq 1 ]
 }
 
 @test "skill: the Orca route turns off idle compaction on child sessions and points to reply-after-idle.md" {
@@ -6798,6 +6791,45 @@ chat_line() {
   ! grep -qF '答えが要る子の issue（または停止の記録）の URL' "$e" || return 1
 }
 
+
+@test "epic.md: old-parent table and child-log exception is narrow and includes record failure (#1385)" {
+  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  table="$(grep -F '**状態表**（' "$e")"
+  logs="$(grep '^表を書く前に、' "$e")"
+  for body in "$table" "$logs"; do
+    for word in '60 分以上' '旧親' '記録失敗時の停止報告を含む' '状態表と `child-log` 確認を省略' '通常の報告' '60 分未満'; do
+      printf '%s\n' "$body" | grep -qF "$word" || return 1
+    done
+  done
+  p7="$(grep '^7\. ' "$e")"
+  printf '%s\n' "$p7" | grep -qF '復元→ログ確認→状態表'
+  printf '%s\n' "$p7" | grep -qF '区切りより下'
+}
+
+@test "epic.md: inherited replies use original session and uuid through verification and sending (#1385 F2)" {
+  run python3 - "$BATS_TEST_DIRNAME/.." <<'PY'
+from pathlib import Path
+import sys
+plugin = Path(sys.argv[1]).resolve()
+repo = plugin.parent.parent
+text = (plugin / 'skills/develop/references/epic.md').read_text()
+p7 = text.split('\n7. ')[1].split('\n8. ')[0]
+p8 = text.split('\n8. ')[1].split('\n\n')[0]
+for term in ['保存した元セッション ID・uuid', '最新の停止記録 URL', '真正性と対象']:
+    assert term in p7, term
+for term in ['--locate "<保存した元セッション ID>"', '保存した uuid', '全文', 'timestamp',
+             '[主の発言: セッション <保存した元セッション ID> / uuid <保存した uuid>]',
+             '現在の ID による再検索はしない', '再回答を要求しない', '照合に失敗']:
+    assert term in p8, term
+for path in [repo / 'openspec/specs/dev-workflow-develop/spec.md',
+             repo / 'openspec/changes/archive/2026-10-26-disable-develop-idle-compaction/specs/dev-workflow-develop/spec.md']:
+    scenario = path.read_text().split('#### Scenario: 長時間後の主の返事は新親で元発言を確かめる')[1].split('#### Scenario:')[0]
+    for term in ['新親と元セッションの ID が異なる', '保存した元セッション ID・uuid', '最新の停止記録 URL', '添え書き', '再回答を要求しない']:
+        assert term in scenario, (path, term)
+PY
+  [ "$status" -eq 0 ]
+}
+
 # Existing-session keepalive must never use the launch/deliver fallback.
 orca_keepalive() { PATH="$STUB_BIN:/usr/bin:/bin" bash "$PLUGIN_DIR/scripts/epic-launch-orca.sh" "$@" 2>"$BATS_TEST_TMPDIR/stderr"; }
 keepalive_orca_setup() {
@@ -7251,4 +7283,5 @@ PYCODE
 @test "keepalive orca: F2 matrix draft" {
   keepalive_orca_setup
   keepalive_matrix_orca draft
+
 }
