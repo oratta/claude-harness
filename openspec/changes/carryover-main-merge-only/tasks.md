@@ -14,8 +14,8 @@
 
 ## 3. 変更の記録と全体の確認
 
-- [ ] 3.1 `plugins/dev-workflow/changes/1329.md` を書く（何を・なぜ・主の判断の要旨・外した 3 つの条件・`PR_COMMITS` が 1 以上のときは変えないこと・主が受け入れたリスク・読み方の変更）。`printf '%s\n' plugins/dev-workflow/changes/1329.md | FORBIDDEN_WORDS_NO_GH=1 bash plugins/dev-workflow/scripts/forbidden-words-check.sh --root . $(for d in tests/public-names/dict/*.txt; do printf -- '--dict %s ' "$d"; done)` が違反 0 件で終わることを確かめる。版は上げない。触る範囲: plugins/dev-workflow/changes/1329.md（新規）
-- [ ] 3.2 `bats plugins/dev-workflow/tests/risk-carryover-check.bats plugins/dev-workflow/tests/pr-review-gate-skill.bats tests/injection-budget.bats` が全件通ることを確かめる（hold.md と pass.md は常時注入ではないが、予算のテストが落ちないことをここで見る）
+- [x] 3.1 `plugins/dev-workflow/changes/1329.md` を書く（何を・なぜ・主の判断の要旨・外した 3 つの条件・`PR_COMMITS` が 1 以上のときは変えないこと・主が受け入れたリスク・読み方の変更）。`printf '%s\n' plugins/dev-workflow/changes/1329.md | FORBIDDEN_WORDS_NO_GH=1 bash plugins/dev-workflow/scripts/forbidden-words-check.sh --root . $(for d in tests/public-names/dict/*.txt; do printf -- '--dict %s ' "$d"; done)` が違反 0 件で終わることを確かめる。版は上げない。触る範囲: plugins/dev-workflow/changes/1329.md（新規）
+- [x] 3.2 `bats plugins/dev-workflow/tests/risk-carryover-check.bats plugins/dev-workflow/tests/pr-review-gate-skill.bats tests/injection-budget.bats` が全件通ることを確かめる（hold.md と pass.md は常時注入ではないが、予算のテストが落ちないことをここで見る）
 
 ## Workflow follow-up
 
