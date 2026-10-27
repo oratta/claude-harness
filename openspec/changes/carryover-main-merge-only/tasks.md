@@ -1,0 +1,23 @@
+# Tasks
+
+## 1. スクリプト: main の取り込みだけなら終了コード 0
+
+- [ ] 1.1 bats に失敗するテストを先に足す。受け入れ条件の 2 つを含める: (a) 前 HEAD のあとに積まれたのが main の取り込みの merge commit 1 つだけで、その merge commit が根拠ファイル（許可リストに無い `evidence.txt`）の PR の変えた行の衝突を解き、PR の行の中身が変わった → 終了コード 0・`CARRYOVER=yes`・`PR_COMMITS=0`・`RESOLVED_OUTSIDE_ALLOWLIST=evidence.txt`・`EVIDENCE_PR_CHANGED=` なし・`EVIDENCE_MAIN_ONLY=` なし・`EVIDENCE_DIFF_LINES=0`・`NG:` なし (b) PR 自身の commit が根拠ファイルの PR の変えた行を書き換えた → 今どおり終了コード 4（既存の「PR's own commit rewrote the PR's evidence line」がこれに当たるなら、テスト名に `#1329` を添えて受け入れ条件との対応を示すだけでよい）。あわせて、main の取り込みだけで許可リスト外のファイル（`openspec/specs/x/spec.md` など）の衝突を解いた → 終了コード 0 と `RESOLVED_OUTSIDE_ALLOWLIST=` の行、main の取り込みだけでバイナリの根拠ファイルが変わった → 終了コード 0・`NG:` なし、merge commit だけでも第 2 親が base の祖先でない → 終了コード 1、を足す。(a) と許可リスト外・バイナリのテストが今のスクリプトで落ちることを `bats plugins/dev-workflow/tests/risk-carryover-check.bats` で確かめる。触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:449-487（「conflict resolution changed the PR's evidence line」と「PR's own evidence change plus outside-allowlist resolution」の近く。共通の用意は setup 13-31・make_multiline_evidence 46-57・main_edit_evidence 59-65）
+- [ ] 1.2 判定 2 のループのあと、`pr_commits` が 0 なら判定 4 の根拠ファイルの比較（前後の diff・numstat・`pr_own_diff`・触れたかの確認）を飛ばし、根拠ファイルの存在の確認（どちらの HEAD にも無ければ終了コード 2）だけを残す。最後の終了コードの決め方で、`pr_commits` が 0 なら `NG:` が無ければ `outside` が残っていても `CARRYOVER=yes` と終了コード 0 にする（`RESOLVED_OUTSIDE_ALLOWLIST=` の行は今どおり出す）。`pr_commits` が 1 以上の判定と優先順 1・4・3・0 は変えない。Bash 3.2 の空配列の書き方を守る。1.1 のテストが通ることを `bats plugins/dev-workflow/tests/risk-carryover-check.bats` で確かめる。触る範囲: plugins/dev-workflow/scripts/risk-carryover-check.sh:190-244（判定 4 のループ）、246-268（出力と終了コード）
+- [ ] 1.3 既存のテストのうち、1.2 で落ちるもの（前 HEAD のあとが main の取り込みだけで終了コード 3・4・1 や `EVIDENCE_MAIN_ONLY=` / `EVIDENCE_PR_CHANGED=` を期待しているもの。目安は 127・159・205・218-269・287-320・449-525・564 行あたりのテスト）を 1 件ずつ見て、確かめたい内容が「PR 自身の commit があるときの判定」なら、前 HEAD のあとに根拠ファイルに触れない PR 自身の commit（例 `pr2.txt` を足す commit）を積む形に直して期待を保ち（共通の手順にするなら小さな関数を足す）、「main の取り込みだけの判定」なら終了コード 0 の期待に直す。直した理由が分かるようテスト名か直前のコメントに `#1329` を添える。`bats plugins/dev-workflow/tests/risk-carryover-check.bats` が全件通ることを確かめる。触る範囲: plugins/dev-workflow/tests/risk-carryover-check.bats:86-588
+- [ ] 1.4 スクリプトの頭のコメント（判定・出力・終了コードの説明）と bats の頭のコメントに、`PR_COMMITS=0` なら根拠ファイルを比べず③によらず終了コード 0、を足し、`#1329` を添える。`grep -n '1329' plugins/dev-workflow/scripts/risk-carryover-check.sh plugins/dev-workflow/tests/risk-carryover-check.bats` で両方に出ることを確かめる。触る範囲: plugins/dev-workflow/scripts/risk-carryover-check.sh:1-49、plugins/dev-workflow/tests/risk-carryover-check.bats:1-11
+
+## 2. ゲート: 3-c に main の取り込みだけの引き継ぎを書く
+
+- [ ] 2.1 `stages/hold.md` 3-c を直す。冒頭の目的の文に「main の取り込みだけで HEAD が動いたら、衝突解消・根拠ファイルの差分・取り直しのレビューの範囲・判定役・新しい HEAD の宣言本文によらず引き継ぐ（主の判断、#1329）」を足す。呼び方のブロックの終了コード 0 の説明に `PR_COMMITS=0` の場合を足す。条件 1 に「終了コード 0 で `PR_COMMITS=0` なら、`RESOLVED_OUTSIDE_ALLOWLIST=` の行があっても PR 全体を見た取り直しのレビューを求めない」を、条件 4 に「終了コード 0 で `PR_COMMITS=0` なら求めない」を足す。「引き継げるなら、前の宣言と同じ本文を…」の段落に、このときも前の宣言の本文のまま投稿し新しく組み立てた本文に置き換えないことを足す。引き継ぎの根拠の行の取り直しのレビューの欄は終了コード 0 なら「不要」のままでよいことを確かめる（4 行の構造・行頭は変えない）。「終了コード 4 の判定役」の節は変えない。受け入れ条件「hold.md 手順 3-c に、main の取り込みだけなら取り直しのレビューの範囲・判定役によらず引き継ぐことが書かれている」を `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` のテストで確かめる（3-c の本文から `PR_COMMITS=0` を含む行を取り出し、その行に「取り直しのレビュー」と「判定役」と「引き継ぐ」があることを見るテストを足す）。既存の 3-c のテスト（条件 1 の終了コード 3、条件の 4 つ、4 行の書式）が通ることも確かめる。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:17-63、plugins/dev-workflow/tests/pr-review-gate-skill.bats:1153-1440（3-c まわりのテスト。新しいテストはこの近くに置く）
+- [ ] 2.2 `stages/pass.md` の合格条件の表の引き継ぎの行（66）と、develop で合格処理として動くときの入り方（298-301）を読み、`PR_COMMITS=0` の終了コード 0 の引き継ぎが今の 4 行の追記で合格可になり、`needs-carryover-judge` を返さないことを確かめる。文言が終了コード 3・4 の場合だけを前提にしていれば合わせ、前提にしていなければ変えない（変えなかったら、その旨を変更の記録に書く）。`bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` が通ることを確かめる。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:60-70、295-305
+
+## 3. 変更の記録と全体の確認
+
+- [ ] 3.1 `plugins/dev-workflow/changes/1329.md` を書く（何を・なぜ・主の判断の要旨・外した 3 つの条件・`PR_COMMITS` が 1 以上のときは変えないこと・主が受け入れたリスク・読み方の変更）。`printf '%s\n' plugins/dev-workflow/changes/1329.md | FORBIDDEN_WORDS_NO_GH=1 bash plugins/dev-workflow/scripts/forbidden-words-check.sh --root . $(for d in tests/public-names/dict/*.txt; do printf -- '--dict %s ' "$d"; done)` が違反 0 件で終わることを確かめる。版は上げない。触る範囲: plugins/dev-workflow/changes/1329.md（新規）
+- [ ] 3.2 `bats plugins/dev-workflow/tests/risk-carryover-check.bats plugins/dev-workflow/tests/pr-review-gate-skill.bats tests/injection-budget.bats` が全件通ることを確かめる（hold.md と pass.md は常時注入ではないが、予算のテストが落ちないことをここで見る）
+
+## Workflow follow-up
+
+- 仕様レビュー（R1）の APPROVE を記録先（issue #1329）で確かめてから実装に入る
+- 実装と verify のあと、change を archive して PR を作る（PR 本文に `Closes #1329`）
