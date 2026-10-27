@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# risk-carryover-check.sh（issue #441、#694・#478・#480・#1238・#1303）— 前の HEAD の許容を新しい HEAD に引き継げるかを、
+# risk-carryover-check.sh（issue #441、#694・#478・#480・#1238・#1303・#1329）— 前の HEAD の許容を新しい HEAD に引き継げるかを、
 # 積まれた merge commit の形・衝突解消の中身・根拠ファイルの PR 自身の差分（各 HEAD と base の merge-base からの差分）で判定する。
 # 許可リストの条件を満たさない衝突解消は NG ではなく RESOLVED_OUTSIDE_ALLOWLIST= で出し、終了コード 3（#694）。
 # merge commit でない commit は NG にせず PR_COMMITS= で数える。根拠ファイルが前後で変わっても、PR 自身の差分が同じなら
@@ -8,6 +8,8 @@
 # PR 自身の commit（merge commit でない commit）が根拠ファイルに触れたときは、PR 自身の差分が同じでも
 # EVIDENCE_PR_CHANGED= で終了コード 4（比べ方が行の位置を見ないため。#1303）。
 # exit 3 のケースは、根拠ファイルが前後で変わらないか main からの変更だけ（EVIDENCE_MAIN_ONLY=）の形で渡す（PR 自身の差分が変わる形は別ケースで exit 4）。
+# 前 HEAD のあとが main の取り込みの merge commit だけ（PR_COMMITS=0）なら、根拠ファイルを比べず、許可リスト外の衝突解消
+# （RESOLVED_OUTSIDE_ALLOWLIST=）があっても exit 0（#1329）。PR 自身の commit があるときの判定を見るテストは pr_own_commit を積む。
 # spec: dev-workflow-pr-review-gate「risk-carryover-check.sh が差分の範囲と根拠ファイルの PR 自身の差分を判定する」
 
 setup() {
@@ -63,6 +65,14 @@ main_edit_evidence() {
   sed -i.bak "s/^$1\$/$2/" evidence.txt && rm -f evidence.txt.bak
   git add -A && git commit -q -m "main: evidence $1"
   git checkout -q pr
+}
+
+# 根拠ファイルに触れない PR 自身の commit（merge commit でない commit）を 1 つ積む。前 HEAD のあとが main の取り込みだけ
+# （PR_COMMITS=0）だと根拠ファイルを比べず終了コード 0 になるので（#1329）、PR 自身の commit があるときの判定
+# （終了コード 3・4・1、EVIDENCE_MAIN_ONLY= / EVIDENCE_PR_CHANGED=）を確かめるテストはこれを積んでから呼ぶ
+pr_own_commit() {
+  printf 'pr2\n' > pr2.txt
+  git add -A && git commit -q -m "pr: pr2 (not touching evidence)"
 }
 
 # 版の行と CHANGELOG を両側で変えて衝突させる
@@ -124,9 +134,10 @@ make_version_changelog_conflict() {
   printf '%s\n' "$output" | grep -q '^RESOLVED_FILES=.*CHANGELOG.md'
 }
 
-@test "#1238: evidence file the PR never touched, changed by main -> exit 0, EVIDENCE_MAIN_ONLY" {
+@test "#1238 #1329: with a PR own commit, evidence file the PR never touched, changed by main -> exit 0, EVIDENCE_MAIN_ONLY" {
   main_commit evidence.txt 'evidence v2'
   merge_main
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'CARRYOVER=yes'
@@ -154,6 +165,20 @@ make_version_changelog_conflict() {
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 1 ]
   printf '%s\n' "$output" | grep -q '^NG:'
+}
+
+# merge commit だけ（PR_COMMITS=0）でも、main 以外のブランチの merge は通さない（#1329）。
+# side は main に PREV を --no-ff で取り込んだ merge commit だけのブランチで、merge commit でない commit を持たない
+@test "#1329: merge commits only (PR_COMMITS=0), but a non-main branch merge -> exit 1" {
+  git checkout -q -b side main
+  git merge -q --no-ff --no-edit "$PREV" >/dev/null
+  git checkout -q pr
+  git merge -q --no-ff --no-edit side >/dev/null
+  run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'CARRYOVER=no'
+  printf '%s\n' "$output" | grep -qx 'PR_COMMITS=0'
+  printf '%s\n' "$output" | grep -q '^NG: non-main merge'
 }
 
 @test "#1238: binary evidence file changed -> exit 1 with NG naming the file" {
@@ -202,9 +227,10 @@ make_version_changelog_conflict() {
   printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=evidence.txt'
 }
 
-@test "#1238: merge-base of new HEAD and base is not unique (criss-cross) -> exit 1 with NG naming merge-base" {
+@test "#1238 #1329: with a PR own commit, merge-base of new HEAD and base is not unique (criss-cross) -> exit 1 with NG naming merge-base" {
   main_commit evidence.txt 'evidence v2'
   merge_main
+  pr_own_commit
   git checkout -q main
   git merge -q --no-edit "$PREV" >/dev/null
   git checkout -q pr
@@ -215,7 +241,7 @@ make_version_changelog_conflict() {
   printf '%s\n' "$output" | grep -q '^NG: cannot determine a unique merge-base'
 }
 
-@test "conflict resolution outside the allow list -> exit 3 with RESOLVED_OUTSIDE_ALLOWLIST naming the file" {
+@test "#1329: with a PR own commit, conflict resolution outside the allow list -> exit 3 with RESOLVED_OUTSIDE_ALLOWLIST naming the file" {
   main_commit other.txt 'other main'
   printf 'other pr\n' > other.txt
   git add -A && git commit -q -m "pr: other"
@@ -223,6 +249,7 @@ make_version_changelog_conflict() {
   git merge -q --no-edit main >/dev/null 2>&1 || true
   printf 'other resolved\n' > other.txt
   git add -A && git commit -q --no-edit
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 3 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'CARRYOVER=if-rereviewed'
@@ -230,11 +257,12 @@ make_version_changelog_conflict() {
   printf '%s\n' "$output" | grep -qx 'RESOLVED_OUTSIDE_ALLOWLIST=other.txt'
 }
 
-@test "hand edit to a non-conflicting file inside the merge commit -> exit 3" {
+@test "#1329: with a PR own commit, hand edit to a non-conflicting file inside the merge commit -> exit 3" {
   main_commit other.txt 'other v2'
   git merge -q --no-commit main >/dev/null 2>&1 || true
   printf 'sneaked\n' > pr.txt
   git add -A && git commit -q --no-edit
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 3 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'CARRYOVER=if-rereviewed'
@@ -242,11 +270,12 @@ make_version_changelog_conflict() {
   printf '%s\n' "$output" | grep -qx 'RESOLVED_OUTSIDE_ALLOWLIST=pr.txt'
 }
 
-@test "plugin.json resolution changes a non-version line -> exit 3" {
+@test "#1329: with a PR own commit, plugin.json resolution changes a non-version line -> exit 3" {
   make_version_changelog_conflict
   printf '{\n  "name": "foo",\n  "version": "1.1.0",\n  "description": "changed"\n}\n' > plugins/foo/.claude-plugin/plugin.json
   printf '# Changelog\n\n## main entry\n\n## pr entry\n\n## base\n' > CHANGELOG.md
   git add -A && git commit -q --no-edit
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 3 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'CARRYOVER=if-rereviewed'
@@ -254,11 +283,12 @@ make_version_changelog_conflict() {
   printf '%s\n' "$output" | grep -qx 'RESOLVED_OUTSIDE_ALLOWLIST=plugins/foo/.claude-plugin/plugin.json'
 }
 
-@test "CHANGELOG resolution adds a new sentence -> exit 3" {
+@test "#1329: with a PR own commit, CHANGELOG resolution adds a new sentence -> exit 3" {
   make_version_changelog_conflict
   printf '{\n  "name": "foo",\n  "version": "1.1.0",\n  "description": "d"\n}\n' > plugins/foo/.claude-plugin/plugin.json
   printf '# Changelog\n\n## main entry\n\n## pr entry\n\nnew sentence\n\n## base\n' > CHANGELOG.md
   git add -A && git commit -q --no-edit
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 3 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'CARRYOVER=if-rereviewed'
@@ -266,7 +296,7 @@ make_version_changelog_conflict() {
   printf '%s\n' "$output" | grep -qx 'RESOLVED_OUTSIDE_ALLOWLIST=CHANGELOG.md'
 }
 
-@test "other JSON files are not in the allow list -> exit 3" {
+@test "#1329: with a PR own commit, other JSON files are not in the allow list -> exit 3" {
   printf '{\n  "version": "1"\n}\n' > package.json
   git add -A && git commit -q -m "pr: package.json"
   git checkout -q main
@@ -277,6 +307,7 @@ make_version_changelog_conflict() {
   git merge -q --no-edit main >/dev/null 2>&1 || true
   printf '{\n  "version": "1"\n}\n' > package.json
   git add -A && git commit -q --no-edit
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 3 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'CARRYOVER=if-rereviewed'
@@ -284,10 +315,11 @@ make_version_changelog_conflict() {
   printf '%s\n' "$output" | grep -qx 'RESOLVED_OUTSIDE_ALLOWLIST=package.json'
 }
 
-@test "#1238: PR changed one evidence line, main changed a far line -> exit 0, EVIDENCE_MAIN_ONLY" {
+@test "#1238 #1329: with a PR own commit, PR changed one evidence line, main changed a far line -> exit 0, EVIDENCE_MAIN_ONLY" {
   make_multiline_evidence
   main_edit_evidence L10 'L10 main'
   merge_main
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'CARRYOVER=yes'
@@ -296,22 +328,24 @@ make_version_changelog_conflict() {
   ! printf '%s\n' "$output" | grep -q '^NG:' || return 1
 }
 
-@test "#1238: main changed a line two lines away from the PR's line (inside the 3-line context) -> exit 0" {
+@test "#1238 #1329: with a PR own commit, main changed a line two lines away from the PR's line (inside the 3-line context) -> exit 0" {
   make_multiline_evidence
   main_edit_evidence L7 'L7 main'
   merge_main
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'EVIDENCE_MAIN_ONLY=evidence.txt'
 }
 
-@test "#1238: main inserted a line above the PR's line (hunk header shifts) -> exit 0, EVIDENCE_MAIN_ONLY" {
+@test "#1238 #1329: with a PR own commit, main inserted a line above the PR's line (hunk header shifts) -> exit 0, EVIDENCE_MAIN_ONLY" {
   make_multiline_evidence
   git checkout -q main
   { printf 'L0\n'; cat evidence.txt; } > evidence.txt.new && mv evidence.txt.new evidence.txt
   git add -A && git commit -q -m "main: evidence L0"
   git checkout -q pr
   merge_main
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'EVIDENCE_MAIN_ONLY=evidence.txt'
@@ -341,7 +375,8 @@ make_version_changelog_conflict() {
   printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=evidence.txt'
 }
 
-@test "#1238: PR's own commit rewrote the PR's evidence line -> exit 4, if-judged, EVIDENCE_PR_CHANGED, EVIDENCE_DIFF_LINES=2" {
+# 受け入れ条件 (b)（#1329）: PR 自身の commit が根拠ファイルの PR の変えた行を書き換えたら今どおり終了コード 4
+@test "#1238 #1329: PR's own commit rewrote the PR's evidence line -> exit 4, if-judged, EVIDENCE_PR_CHANGED, EVIDENCE_DIFF_LINES=2" {
   make_multiline_evidence
   sed -i.bak 's/^L5 pr$/L5 pr2/' evidence.txt && rm -f evidence.txt.bak
   git add -A && git commit -q -m "pr: evidence line 5 again"
@@ -446,16 +481,65 @@ make_version_changelog_conflict() {
   ! printf '%s\n' "$output" | grep -q '^EVIDENCE_PR_CHANGED=' || return 1
 }
 
-@test "#1238: conflict resolution changed the PR's evidence line -> exit 4" {
+@test "#1238 #1329: with a PR own commit, conflict resolution changed the PR's evidence line -> exit 4" {
+  make_multiline_evidence
+  main_edit_evidence L5 'L5 main'
+  git merge -q --no-edit main >/dev/null 2>&1 || true
+  printf 'L%s\n' 1 2 3 4 '5 resolved' 6 7 8 9 10 > evidence.txt
+  git add -A && git commit -q --no-edit
+  pr_own_commit
+  run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
+  [ "$status" -eq 4 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'CARRYOVER=if-judged'
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=evidence.txt'
+}
+
+# 受け入れ条件 (a)（#1329）: 前 HEAD のあとが main の取り込みの merge commit だけなら、衝突解消が根拠ファイルの PR の行を変えても終了コード 0
+@test "#1329: main merge only, resolution changed the PR's evidence line (outside the allow list) -> exit 0, PR_COMMITS=0, no EVIDENCE lines" {
   make_multiline_evidence
   main_edit_evidence L5 'L5 main'
   git merge -q --no-edit main >/dev/null 2>&1 || true
   printf 'L%s\n' 1 2 3 4 '5 resolved' 6 7 8 9 10 > evidence.txt
   git add -A && git commit -q --no-edit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
-  [ "$status" -eq 4 ] || { echo "$output"; return 1; }
-  printf '%s\n' "$output" | grep -qx 'CARRYOVER=if-judged'
-  printf '%s\n' "$output" | grep -qx 'EVIDENCE_PR_CHANGED=evidence.txt'
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'CARRYOVER=yes'
+  printf '%s\n' "$output" | grep -qx 'PR_COMMITS=0'
+  printf '%s\n' "$output" | grep -qx 'RESOLVED_OUTSIDE_ALLOWLIST=evidence.txt'
+  printf '%s\n' "$output" | grep -qx 'EVIDENCE_DIFF_LINES=0'
+  ! printf '%s\n' "$output" | grep -Eq '^EVIDENCE_(MAIN_ONLY|PR_CHANGED)=' || return 1
+  ! printf '%s\n' "$output" | grep -q '^NG:' || return 1
+}
+
+@test "#1329: main merge only, spec file conflict resolution outside the allow list -> exit 0 with RESOLVED_OUTSIDE_ALLOWLIST" {
+  make_spec_conflict_resolution
+  git add -A && git commit -q --no-edit
+  run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'CARRYOVER=yes'
+  printf '%s\n' "$output" | grep -qx 'PR_COMMITS=0'
+  printf '%s\n' "$output" | grep -qx 'MAIN_MERGES=1'
+  printf '%s\n' "$output" | grep -qx 'RESOLVED_OUTSIDE_ALLOWLIST=openspec/specs/x/spec.md'
+  ! printf '%s\n' "$output" | grep -q '^NG:' || return 1
+}
+
+@test "#1329: main merge only, binary evidence file changed by main -> exit 0, no NG" {
+  git checkout -q main
+  printf '\000\001bin v1' > bin.dat
+  git add -A && git commit -q -m "main: bin"
+  git checkout -q pr
+  merge_main
+  PREV="$(git rev-parse HEAD)"
+  git checkout -q main
+  printf '\000\002bin v2' > bin.dat
+  git add -A && git commit -q -m "main: bin v2"
+  git checkout -q pr
+  merge_main
+  run "$SCRIPT" --base main "$PREV" HEAD bin.dat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'CARRYOVER=yes'
+  printf '%s\n' "$output" | grep -qx 'PR_COMMITS=0'
+  ! printf '%s\n' "$output" | grep -q '^NG:' || return 1
 }
 
 @test "#1238: PR's own evidence change plus outside-allowlist resolution -> exit 4 with both lines" {
@@ -486,9 +570,10 @@ make_spec_conflict_resolution() {
   printf 'spec resolved\n' > openspec/specs/x/spec.md
 }
 
-@test "#694: spec file resolution with unchanged evidence -> exit 3, RESOLVED_OUTSIDE_ALLOWLIST line, no NG" {
+@test "#694 #1329: with a PR own commit, spec file resolution with unchanged evidence -> exit 3, RESOLVED_OUTSIDE_ALLOWLIST line, no NG" {
   make_spec_conflict_resolution
   git add -A && git commit -q --no-edit
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 3 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'CARRYOVER=if-rereviewed'
@@ -498,13 +583,14 @@ make_spec_conflict_resolution() {
   ! printf '%s\n' "$output" | grep -q '^NG:' || return 1
 }
 
-@test "#694 #1238: outside-allowlist resolution plus evidence changed by main -> exit 3 with both lines" {
+@test "#694 #1238 #1329: with a PR own commit, outside-allowlist resolution plus evidence changed by main -> exit 3 with both lines" {
   git checkout -q main
   printf 'evidence v2\n' > evidence.txt
   git add -A && git commit -q -m "main: evidence"
   git checkout -q pr
   make_spec_conflict_resolution
   git add -A && git commit -q --no-edit
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 3 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'CARRYOVER=if-rereviewed'
@@ -524,7 +610,7 @@ make_spec_conflict_resolution() {
   printf '%s\n' "$output" | grep -qx 'PR_COMMITS=1'
 }
 
-@test "#480: deleting an outside-allowlist file and adding a similar one in the merge lists the deleted file" {
+@test "#480 #1329: with a PR own commit, deleting an outside-allowlist file and adding a similar one in the merge lists the deleted file" {
   seq 1 40 > old-name.txt
   git add -A && git commit -q -m "pr: old-name"
   main_commit other.txt 'other v2'
@@ -533,6 +619,7 @@ make_spec_conflict_resolution() {
   git rm -q old-name.txt
   { seq 1 40; echo 41; } > new-name.txt
   git add -A && git commit -q --no-edit
+  pr_own_commit
   run "$SCRIPT" --base main "$PREV" HEAD evidence.txt
   [ "$status" -eq 3 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'RESOLVED_OUTSIDE_ALLOWLIST=old-name.txt'

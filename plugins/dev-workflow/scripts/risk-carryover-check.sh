@@ -28,6 +28,9 @@
 #      自分の行を別の位置へ動かしただけでも main 由来と取り違えないよう、触れたら同じでも EVIDENCE_PR_CHANGED にする（#1303）。
 #      前後の diff が空でない根拠ファイルについて、前後の HEAD の diff か各 HEAD の PR 自身の差分のどちらかで
 #      バイナリとして扱われるとき（numstat が `-`）と、merge-base が 1 つに決まらないときは NG。
+#   ただし PR_COMMITS=0（前 HEAD のあとが main を取り込む merge commit だけ）なら 4 の比較を行わない
+#   （EVIDENCE_MAIN_ONLY・EVIDENCE_PR_CHANGED の行も、4 のバイナリと merge-base の NG も出さず、EVIDENCE_DIFF_LINES=0。
+#   根拠ファイルがどちらの HEAD にも無いときの終了コード 2 は残す）。主の判断で、main の取り込みだけなら許容を引き継ぐ（#1329）。
 # 1・2 のどれかが外れたとき、4 でバイナリか merge-base の NG が出たときは NG: 行を出す。3 だけが外れたファイル
 # （許可リストの条件を満たさない衝突解消 = 許可リストに無いファイル・許可リストのファイルで中身の条件を満たさないもの・
 # 衝突していないファイルへの手入れ）は NG にせず RESOLVED_OUTSIDE_ALLOWLIST=<ファイル> の行で出す（#694）。
@@ -41,6 +44,8 @@
 #     許可リストの条件を満たさない衝突解消だけがある）
 #   / 4 = 根拠ファイルの PR 自身の差分が前後で違うか、PR 自身の commit が根拠ファイルに触れた（NG は無い）。リスクの中身が同じかを git の履歴だけでは
 #     決められないという意味で、スクリプトは引き継げるかを決めない（pr-review-gate 手順 3-c が扱う）
+#   / PR_COMMITS=0 なら、1・2 に NG が無ければ 3 の結果によらず 0（RESOLVED_OUTSIDE_ALLOWLIST の行は記録のため出し、
+#     終了コードには効かせない。#1329）
 #   / 1 = 引き継げない（NG あり）
 #   / 2 = 引数不足・SHA が解決できない・根拠ファイルなし・根拠ファイルが前後どちらの HEAD にも無い・git が古い・git diff が失敗した（引き継げない側）
 #
@@ -192,6 +197,8 @@ for f in "${evidence[@]}"; do
     echo "evidence file not found at either HEAD: $f" >&2
     exit 2
   fi
+  # main の取り込みだけ（PR_COMMITS=0）なら、根拠ファイルの PR 自身の差分を比べない（主の判断。#1329）
+  [ "$pr_commits" -eq 0 ] && continue
   rc=0
   git diff --quiet "$prev" "$new" -- "$f" || rc=$?
   if [ "$rc" -eq 0 ]; then
@@ -243,9 +250,12 @@ for f in "${evidence[@]}"; do
   fi
 done
 
+# main の取り込みだけ（PR_COMMITS=0）なら、許可リストの条件を満たさない衝突解消は記録の行だけにして終了コードに効かせない（#1329）
+outside_counts=0
+[ "$pr_commits" -eq 0 ] || outside_counts="${#outside[@]}"
 if [ "${#ng[@]}" -ne 0 ]; then echo "CARRYOVER=no"
 elif [ "${#pr_changed[@]}" -ne 0 ]; then echo "CARRYOVER=if-judged"
-elif [ "${#outside[@]}" -ne 0 ]; then echo "CARRYOVER=if-rereviewed"
+elif [ "$outside_counts" -ne 0 ]; then echo "CARRYOVER=if-rereviewed"
 else echo "CARRYOVER=yes"; fi
 echo "MAIN_MERGES=$merges"
 echo "PR_COMMITS=$pr_commits"
@@ -264,5 +274,5 @@ for n in ${ng[@]+"${ng[@]}"}; do echo "NG: $n"; done
 
 [ "${#ng[@]}" -eq 0 ] || exit 1
 [ "${#pr_changed[@]}" -eq 0 ] || exit 4
-[ "${#outside[@]}" -eq 0 ] || exit 3
+[ "$outside_counts" -eq 0 ] || exit 3
 exit 0
