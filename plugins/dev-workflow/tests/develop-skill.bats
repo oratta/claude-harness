@@ -1507,6 +1507,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   echo "$hold" | grep -qF '「親から届いた返事」'
 }
 
+
 @test "idle compaction (#1385): common entrance checks applies and verifies without per-worktree approval" {
   s="$(section '開始時の idle compaction 設定')"
   [ -n "$s" ]
@@ -1544,4 +1545,17 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   l="$(grep '^親が別セッション方式でターンを終えるときに主に出す発言すべて' "$EPIC")"
   printf '%s\n' "$l" | grep -qF '60 分未満の純粋な'
   printf '%s\n' "$l" | grep -qF '長時間後の再開案内'
+}
+
+@test "epic cache keepalive: documents normal-only question preservation and malformed stop invariance" {
+  local epic="$PLUGIN_DIR/skills/develop/references/epic.md"
+  grep -qF '正常な一行の往復だけ' "$epic"
+  grep -qF '予約文' "$epic"
+  grep -qF '24 時間の基点' "$epic"
+  grep -qF 'keepalive' "$epic"
+  local idle="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  grep -qF '3000 秒以上 3600 秒未満' "$idle"
+  grep -qF '86400 秒未満' "$idle"
+  grep -qF '切替を観測するまで' "$idle"
+
 }
