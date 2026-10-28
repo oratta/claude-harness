@@ -18,7 +18,7 @@ plugin.json の `description` は /plugin メニューに出るため 1 文に�
 - wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー、引数で後続作業指示を受け取り可能。
 - `--with-pr` で空 commit → push → Draft PR を自動作成し、作業を早い段階から remote 側に見える状態にする運用に切替可能（PR 経由のマージを必須にしている repo 向け）。
 - wt-setup の .worktreeinclude は既定パターンをスクリプトが出力し（`--print-default-worktreeinclude`）、バックアップ・エディタ残骸（*.bak / *.bak-* / *.old / *.orig / *~ 等）を常に除外、`.vercel` は既定に含めずオプトイン、コピー対象に本番値（sk_live_ / service_role / 本番 DB ホスト / AWS キー）を検出したら値を出さずに警告して続行する（issue #55）。
-- wt-setup の .worktreeinclude 探索は `/` を含まないパターンをリポジトリ直下限定（-maxdepth 1）にし、`/` を含むパターンでも `*/.claude/worktrees`（入れ子 worktree・作成中の worktree 自身）と .git / node_modules を prune する（flatmate#320: find -path のグロブが `/` にも一致して入れ子 worktree 残骸をリポ全体から再帰コピーし、自己増殖で WorktreeCreate hook がタイムアウトしていた事故の対策）。
+- wt-setup の .worktreeinclude 探索は `/` を含まないパターンをリポジトリ直下限定（-maxdepth 1）にし、`/` を含むパターンでも `*/.claude/worktrees`（入れ子 worktree・作成中の worktree 自身）と .git / node_modules を prune する（#320: find -path のグロブが `/` にも一致して入れ子 worktree 残骸をリポ全体から再帰コピーし、自己増殖で WorktreeCreate hook がタイムアウトしていた事故の対策）。
 - wt-clean: 対象を確定してからノンブロッキング自動処理する 2 パスフロー。
 - `wt-clean <path|branch>` で特定 worktree だけにスコープ（複数可）、引数なし（または対象を定めないオプションのみ）なら全 worktree を確認なしで対象にする（対象選択の質問はしない）。
 - Step 0でorigin/<main>を同期 → Pass 1 で各対象を i/N 進捗で診断（🟢🟡🔴）し 🟢→確認なしで削除/再利用・🟡(LLMのみ)→LLM退避検証→確認なしで削除を自動実行。
