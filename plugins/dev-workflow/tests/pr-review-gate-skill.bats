@@ -1254,6 +1254,46 @@ step3c_body() {
   echo "$first" | grep -qF 'PR 自身の修正'
 }
 
+# 受け入れ条件（#1329）: main の取り込みだけ（PR_COMMITS=0）なら、取り直しのレビューの範囲・判定役によらず引き継ぐ
+@test "carryover (#1329): 3-c purpose says a main-merge-only move carries over regardless of re-review scope and judge" {
+  line="$(step3c_body | grep -F 'PR_COMMITS=0' | grep -F '#1329')"
+  [ "$(printf '%s\n' "$line" | grep -c .)" -eq 1 ] || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '手順 3 で「主のリスク許容が必要」と判定し' || { echo "$line"; return 1; }
+  for w in '取り直しのレビュー' '判定役' '引き継ぐ'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
+  done
+}
+
+@test "carryover (#1329): the script call block documents exit 0 with PR_COMMITS=0" {
+  call="$(step3c_body | awk '/^```bash/{f=1; next} f&&/^```$/{f=0} f')"
+  echo "$call" | grep -F '0 = ' | grep -qF 'PR_COMMITS=0' || { echo "$call"; return 1; }
+}
+
+@test "carryover (#1329): conditions 1 and 4 are not required for exit 0 with PR_COMMITS=0" {
+  body="$(step3c_body)"
+  cond1="$(echo "$body" | awk '/^1\. スクリプトが終了コード 0/{f=1} /^2\. /{f=0} f')"
+  # 条件 1 の括弧書き（終了コード 0 の意味）が PR_COMMITS=0 の場合も書く
+  echo "$cond1" | head -1 | grep -qF '`PR_COMMITS=0` なら' || { echo "$cond1" | head -1; return 1; }
+  line="$(echo "$cond1" | grep -F 'PR_COMMITS=0' | grep -F 'RESOLVED_OUTSIDE_ALLOWLIST=')"
+  echo "$line" | grep -qF 'PR 全体を見た取り直しのレビューを求めない' || { echo "$cond1"; return 1; }
+  cond4="$(echo "$body" | grep -F '`対象 HEAD:` 行を除いて')"
+  echo "$cond4" | grep -F 'PR_COMMITS=0' | grep -qF '求めない' || { echo "$cond4"; return 1; }
+}
+
+@test "carryover (#1329): with PR_COMMITS=0 the posted body stays the previous declaration's body" {
+  line="$(step3c_body | grep -F '引き継げるなら、前の宣言と同じ本文を')"
+  echo "$line" | grep -qF 'PR_COMMITS=0' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '前の宣言の本文のまま'
+  echo "$line" | grep -qF '置き換えない'
+}
+
+@test "carryover (#1329): the evidence line has the not-compared choice for PR_COMMITS=0 and keeps 4 lines" {
+  block="$(step3c_body | awk '/^```[a-z]+$/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
+  line="$(echo "$block" | grep '^引き継ぎの根拠: ')"
+  echo "$line" | grep -qF 'PR_COMMITS=0 のとき: 比べず（PR 自身の commit 0 件）' || { echo "$line"; return 1; }
+  [ "$(echo "$block" | wc -l | tr -d ' ')" -eq 4 ] || { echo "$block"; return 1; }
+}
+
 @test "carryover (#1238): the script call block documents exit 4 and the PR's-own-diff lines" {
   call="$(step3c_body | awk '/^```bash/{f=1; next} f&&/^```$/{f=0} f')"
   for w in 'if-judged' 'EVIDENCE_PR_CHANGED=' 'EVIDENCE_MAIN_ONLY=' 'PR_COMMITS=' 'EVIDENCE_DIFF_LINES=' '4 = '; do
