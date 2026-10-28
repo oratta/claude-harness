@@ -375,10 +375,28 @@ SH
   write_hr "$(el codex current ok "$CODEX_WEEK" "$(rk 3 $((NOW + 158400)))" null 100)"
   render > "$WORK/raw.txt"
   line="$(strip_ansi < "$WORK/raw.txt" | grep 'Codex')"
-  [[ "$line" == *"7d All 🚀  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂            42%/29%  ~1d 20h (~6d 6h)"* ]] || { echo "$line"; return 1; }
+  [[ "$line" == *"7d All 🚀  ▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂            42%/73%  ~1d 20h (~6d 6h)"* ]] || { echo "$line"; return 1; }
   [[ "$line" != *"🚀3"* ]] || return 1
   grep 'Codex' "$WORK/raw.txt" | grep -q $'\033\\[1;38;5;16;48;5;214mCodex A\033\\[0m'
   grep 'Codex' "$WORK/raw.txt" | grep -q $'\033\\[38;5;214m~1d 20h\033\\[0m \033\\[2m(~6d 6h)' || { grep 'Codex' "$WORK/raw.txt" | cat -v; return 1; }
+}
+
+@test "codex rocket: elapsed is always over 7 days from 7 days before the expiry" {
+  codex_env 42 540000
+  write_one_slot_snapshot ''
+  write_hr "$(el codex current ok "$CODEX_WEEK" "$(rk 1 $((NOW + 147600)))" null 100)"
+  render > "$WORK/raw.txt"
+  line="$(strip_ansi < "$WORK/raw.txt" | grep 'Codex')"
+  [[ "$line" == *"42%/75%  ~1d 17h"* ]] || { echo "$line"; return 1; }
+}
+
+@test "codex rocket: before the 7-day start the elapsed is clamped to 0%" {
+  codex_env 42 540000
+  write_one_slot_snapshot ''
+  write_hr "$(el codex current ok "$CODEX_WEEK" "$(rk 1 $((NOW + 700000)))" null 100)"
+  render > "$WORK/raw.txt"
+  line="$(strip_ansi < "$WORK/raw.txt" | grep 'Codex')"
+  [[ "$line" == *"42%/0%"* ]] || { echo "$line"; return 1; }
 }
 
 @test "codex rocket: within 24 hours the time left is red and the weekly reset is dim" {

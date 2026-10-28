@@ -1123,12 +1123,12 @@ if [ -n "$codex_rows" ]; then
             c_label="${c_minutes}m"
         fi
         if [ -n "$cx_rocket" ] && [ "$c_minutes" = "10080" ]; then
-            # 経過は窓の始まり（リセット − 604800）から rocket.earliest_expiry までに対する今の位置。
+            # 経過は常に 7 日を分母にし、起点は rocket.earliest_expiry の 7 日前（#1393）。起点より前は 0% に切り詰める。
             # 残り時間は失効まで（24 時間以内は赤）＋かっこの週次のリセットまで
-            c_start=$(( c_reset - 604800 ))
-            c_elapsed=""
-            if [ "$now" -ge "$c_start" ] && [ "$cx_re" -gt "$c_start" ]; then
-                c_elapsed=$(( (now - c_start) * 100 / (cx_re - c_start) ))
+            c_start=$(( cx_re - 604800 ))
+            c_elapsed=0
+            if [ "$now" -ge "$c_start" ]; then
+                c_elapsed=$(( (now - c_start) * 100 / 604800 ))
                 [ "$c_elapsed" -gt 100 ] && c_elapsed=100
             fi
             codex_line+="${codex_sep}$(bar_seg "$c_label" 9 "$c_pct" "$c_elapsed" 1 1 "🚀  " "-")"
