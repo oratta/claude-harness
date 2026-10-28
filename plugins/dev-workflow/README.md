@@ -158,10 +158,10 @@ plugin.json の `description` は /plugin メニューに出るため 1 文に�
 - model: fable・tools は Read/Grep/Glob の読み取り専用で、読んで判断する役はこの種別で spawn する。
 - scripts/agent-model-guard.sh が PreToolUse で他種別への model: fable を deny する）と残量モード（FABLE_BUDGET_MODE。
 - reserve は自動実行のみ・exhausted は全経路で opus 上限）と共有枠モード（SHARED_BUDGET_MODE。
-- 全モデル共通の週次枠から導出し、throttled / depleted で全役割 sonnet 起点）で決め、W の SendMessage 再開は毎回 scripts/subagent-context.sh でコンテキスト量を測り（G は段ごとに新しく起こすので測らない）、DEV_WORKFLOW_CONTEXT_CAP（既定 150K tokens）超なら作業継続の SendMessage を送らない（無条件）。
+- 全モデル共通の週次枠から導出し、throttled / depleted で全役割 sonnet 起点）で決め、W の SendMessage 再開は毎回 scripts/subagent-context.sh でコンテキスト量を測り（G は段ごとに新しく起こすので測らない）、コンテキスト上限（既定値と閾値は decision-criteria.md「コンテキスト上限」）超なら作業継続の SendMessage を送らない（無条件）。
 - 前回 return を渡した同じ役割の新しいエージェント（新しい W / 新しい G）への手渡しは、前任の return の 1 行目が `工程完了: <工程名>` のときだけ行う（`工程中断:` なら再開も手渡しもしない）。
 - 昇格トリップワイヤー（templates/escalation-tripwires.md）は決める役 / 実行役の分離ラダーとして残す。
-- さらに hooks/hooks.json に配線した scripts/context-tripwire.sh が、サブエージェントの起動の途中でも PostToolUse（全ツール）/ PreToolUse（Edit|Write|NotebookEdit|Bash）で自分自身のコンテキストを測り、DEV_WORKFLOW_CONTEXT_CAP 超で締めを通知し DEV_WORKFLOW_CONTEXT_HARD_CAP 超で編集系を deny する（計測対象は agent_id から導出するので worktree 隔離のサブエージェントでも効く）。
+- さらに hooks/hooks.json に配線した scripts/context-tripwire.sh が、サブエージェントの起動の途中でも PostToolUse（全ツール）/ PreToolUse（Edit|Write|NotebookEdit|Bash）で自分自身のコンテキストを測り、通知の上限 超で締めを通知し 強制停止の上限 超で編集系を deny する（計測対象は agent_id から導出するので worktree 隔離のサブエージェントでも効く）。
 - /develop（/work-issue はエイリアス）: 5 分岐で記録先を確定し、issue を切ると決めたときだけ issueify スキル（skills/issueify）で起票する。
 - loop-dev-agent の無人サイクルでは憲法のメインが develop の本体を務める（--unmanned）。
 - pr-review-gate: PR 作成後に必ず通す品質ゲート（別コンテキストレビュー・リスク宣言と仕様宣言の positive affirmation・動作確認証拠・agent-review:passed 付与を fail-closed で行う。

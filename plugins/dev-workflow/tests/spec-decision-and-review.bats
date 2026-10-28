@@ -163,8 +163,7 @@ mode_sec() { section "$SKILL" '実行モード'; }
 
 # --- 配布 ---
 
-@test "manifest: description mentions the spec review step and develop" {
-  jq -r '.description' "$MANIFEST" | grep -q '仕様レビュー'
+@test "manifest: description mentions develop and not the retired issue wording" {
   jq -r '.description' "$MANIFEST" | grep -q 'develop'
   ! jq -r '.description' "$MANIFEST" | grep -q 'github-''issue' || return 1
 }

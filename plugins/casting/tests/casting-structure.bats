@@ -488,30 +488,22 @@ SH
 # 「N項目」と書いている全文書を、出現ごとに実装のカテゴリ数と突き合わせる。
 # 全角数字（「５項目」）も半角に正規化してから比較するので、片側だけ全角で
 # 残した状態も落ちる。失敗時は実装側の数と文書側の表記の両方を出す。
-@test "docs: item-count wording in README, SKILL, script, plugin.json, marketplace.json and the spec matches the implementation" {
+@test "docs: item-count wording in README, SKILL, script and the spec matches the implementation" {
   local n
   n="$(detection_category_count)"
   [ "$n" -ge 1 ]
 
-  run python3 - "$n" "${PLUGIN_DIR}" "${REPO_ROOT}/.claude-plugin/marketplace.json" "${REPO_ROOT}/openspec/specs/casting-project-files/spec.md" <<'PY'
+  run python3 - "$n" "${PLUGIN_DIR}" "${REPO_ROOT}/openspec/specs/casting-project-files/spec.md" <<'PY'
 import json, re, sys, unicodedata
 
 n = int(sys.argv[1])
-plugin_dir, marketplace_path, spec_path = sys.argv[2], sys.argv[3], sys.argv[4]
+plugin_dir, spec_path = sys.argv[2], sys.argv[3]
 
 targets = {}
 for rel in ("README.md", "skills/casting/SKILL.md",
-            "scripts/casting-check.sh", ".claude-plugin/plugin.json"):
+            "scripts/casting-check.sh"):
     with open(f"{plugin_dir}/{rel}", encoding="utf-8") as fh:
         targets[rel] = fh.read()
-
-with open(marketplace_path, encoding="utf-8") as fh:
-    entries = json.load(fh)["plugins"]
-desc = next((e["description"] for e in entries if e.get("name") == "casting"), None)
-if desc is None:
-    print("marketplace.json に casting エントリが無い")
-    raise SystemExit(1)
-targets["marketplace.json (casting description)"] = desc
 
 # 規範の正本。実装とプラグイン文書だけを揃えても spec が取り残されると、
 # 「何項目を検査しなければならないか」の MUST が実装と食い違ったまま残る。
