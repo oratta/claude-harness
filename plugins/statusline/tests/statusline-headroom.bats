@@ -390,14 +390,13 @@ SH
   [[ "$line" == *"42%/75%  ~1d 17h"* ]] || { echo "$line"; return 1; }
 }
 
-@test "codex rocket: before the 7-day start there is no elapsed" {
+@test "codex rocket: before the 7-day start the elapsed is clamped to 0%" {
   codex_env 42 540000
   write_one_slot_snapshot ''
   write_hr "$(el codex current ok "$CODEX_WEEK" "$(rk 1 $((NOW + 700000)))" null 100)"
   render > "$WORK/raw.txt"
   line="$(strip_ansi < "$WORK/raw.txt" | grep 'Codex')"
-  [[ "$line" == *"42%"* ]] || { echo "$line"; return 1; }
-  [[ "$line" != *"42%/"* ]] || { echo "$line"; return 1; }
+  [[ "$line" == *"42%/0%"* ]] || { echo "$line"; return 1; }
 }
 
 @test "codex rocket: within 24 hours the time left is red and the weekly reset is dim" {
