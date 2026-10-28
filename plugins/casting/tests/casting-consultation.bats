@@ -229,8 +229,9 @@ setup() {
   [ -n "$(tail -1 "$spec_file")" ]
 }
 
-@test "plugin.json: description states the claim list, not the retired two-party wording" {
-  # 旧仕様「双方の主張」（2者固定）が説明文に残らないこと（Blocking 5）
+@test "plugin.json: description does not carry the retired two-party wording; the claim list lives in injection.md" {
+  # 旧仕様「双方の主張」（2者固定）が説明文に残らないこと（Blocking 5）。
+  # description は /plugin メニュー用に 1 文へ短縮したので、「主張リスト」の記述は正本側で確かめる
   ! LC_ALL=C grep -qF -- "双方の主張" "$PLUGIN_JSON" || return 1
-  LC_ALL=C grep -qF -- "主張リスト" "$PLUGIN_JSON"
+  LC_ALL=C grep -qF -- "主張リスト" "${PLUGIN_DIR}/catalog/injection.md"
 }
