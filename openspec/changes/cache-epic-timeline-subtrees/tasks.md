@@ -15,7 +15,7 @@
 
 ## 3. 統合確認
 
-- [ ] 3.1 `bats plugins/cost-ledger/tests/epic-timeline-cache.bats plugins/cost-ledger/tests/epic-timeline.bats plugins/cost-ledger/tests/timeline.bats plugins/cost-ledger/tests/backfill.bats` を実行し exit 0 を確認する。通常 hook と後追いのロック解放、子無し issue と PR の回数と引数の不変を含む。偽 `gh` の初回・未変更・変更時の回数を実測値として控える。`git diff --check` が exit 0、禁止対象に変更が無いことも確認する。触る範囲: plugins/cost-ledger/tests/epic-timeline-cache.bats（新規）、plugins/cost-ledger/tests/epic-timeline.bats:224-519、plugins/cost-ledger/tests/timeline.bats:1-510、plugins/cost-ledger/tests/backfill.bats:1-1334
+- [x] 3.1 `bats plugins/cost-ledger/tests/epic-timeline-cache.bats plugins/cost-ledger/tests/epic-timeline.bats plugins/cost-ledger/tests/timeline.bats plugins/cost-ledger/tests/backfill.bats` を実行し exit 0 を確認する。通常 hook と後追いのロック解放、子無し issue と PR の回数と引数の不変を含む。偽 `gh` の初回・未変更・変更時の回数を実測値として控える。`git diff --check` が exit 0、禁止対象に変更が無いことも確認する。触る範囲: plugins/cost-ledger/tests/epic-timeline-cache.bats（新規）、plugins/cost-ledger/tests/epic-timeline.bats:224-519、plugins/cost-ledger/tests/timeline.bats:1-510、plugins/cost-ledger/tests/backfill.bats:1-1334
 
 ## Workflow follow-up
 
