@@ -2404,7 +2404,8 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
 
 
 def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
-    """``/cost`` の入口。番号の判別だけを行い、集計は branch / issue / epic の経路に委ねる。
+    """``/cost`` の入口。番号の判別と、子を持たない issue の閉じた PR の問い合わせを行い、
+    集計は branch / issue / epic の経路に委ねる。
     issue のうち子 issue を持つもの（判別の応答の子の数が 1 以上）は ``cmd_epic`` へ渡す。
 
     1 行目を作るのは ``headline()`` だけで、この関数は帰属先の表記を渡すにとどめる。
