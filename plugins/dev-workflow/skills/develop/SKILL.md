@@ -122,7 +122,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       あとの扱いは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本。正本を読むまで手渡さない）。
       (3) は 2 回の return に分かれる:
       (3a) 再開指示に `段: implement` を書く。apply（TDD。openspec CLI で tasks を実装）→ openspec validate --strict → return「工程完了: 実装＋verify」
-           （実行したテストコマンドと exit code、openspec validate --strict の exit code、画面確認: の行を載せる）
+           （収集した検査コマンドの一覧と各 exit code〔未導入は明記〕、openspec validate --strict の exit code、画面確認: の行を載せる）
            （文言合わせの通し方の (3a) では `tasks.md` が無いので、W が (1) の return に書いた作業項目を TDD で実装し、検証は `openspec validate <change-name> --type change --strict` で行う）
            → 本体はここで `scripts/subagent-context.sh <W の名前>` をもう一度実行して測ってから (3b) を指示する
       (3b) 再開指示に `段: finish` を書く。openspec archive → PR を Draft のまま用意（無ければ Draft で作成。Ready 化は (4) の G が pr-review-gate 手順 5 で行う）→ 仕様宣言を PR コメントに書く
