@@ -368,6 +368,24 @@ no_gh_called() {
 
 # ── decide: 足すケース ────────────────────────────────────────
 
+@test "decide: rerun takes priority over escalate when fixes is 2" {  # decide: 修正回数が 2 でも escalate よりやり直しを優先
+  PREV='{"fixes":2}'
+  step "$(obs ci-fail x1 true)"
+  [ "$ACT" = rerun ]
+  [ "$(jq -r .reran_head <<<"$PREV")" = x1 ]
+  [ "$(jq -r .fixes <<<"$PREV")" = 2 ]
+  [ "$(jq '.raised == null or .raised == false' <<<"$PREV")" = true ]
+}
+
+@test "decide: rerun, then wait on the same head, then ci-fail is fix" {  # decide: やり直し後に同じ HEAD で待ってから落ちたら fix
+  step "$(obs ci-fail e1 true)"
+  [ "$ACT" = rerun ]
+  step "$(obs wait e1)"
+  step "$(obs ci-fail e1 true)"
+  [ "$ACT" = fix ]
+  [ "$(jq -r .fixes <<<"$PREV")" = 1 ]
+}
+
 @test "decide: two failures on the same head rerun only once" {  # decide: 同じ HEAD で 2 回落ちてもやり直しは 1 回
   step "$(obs ci-fail e1 true)"
   [ "$ACT" = rerun ]
