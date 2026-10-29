@@ -508,7 +508,7 @@ check_thinking_phrases_z() {
 }
 check_thinking_phrases() { emit_z "$@" | check_thinking_phrases_z; }
 
-# 検査対象: 常時注入の文書（rules / CLAUDE.md / output-styles）と、プラグインと .claude/ の
+# 検査対象: 常時注入の文書（rules / CLAUDE.md / output-styles）と、プラグイン・.claude/・.agents/ の
 # スキル・コマンド（本文を含む）。plugins/ 配下は SKILL.md だけで、references/ 等は対象外。
 list_thinking_phrase_targets() {
   list_synced_md "$REPO_ROOT/rules"
@@ -517,6 +517,7 @@ list_thinking_phrase_targets() {
   list_plugin_skills
   list_dir_files "$REPO_ROOT/.claude/commands" '*'
   list_dir_files "$REPO_ROOT/.claude/skills" '*'
+  list_dir_files "$REPO_ROOT/.agents/skills" '*'
 }
 
 @test "sum_files adds up the byte counts of the given list" {
