@@ -24,7 +24,8 @@
 #   NG 側は文章で説明している（実際にそうなることは確認済み）。
 #
 # 対象:
-#   git 追跡下の *.sh / *.bash / *.bats（ファイル全体）と *.yml / *.yaml
+#   git 追跡下の *.sh / *.bash / *.bats（ファイル全体）と
+#   *.yml / *.yaml / *.yml.template / *.yaml.template
 #   （`run:` の値＝ workflow YAML に埋め込まれたシェルだけ）。#171 まで YAML が
 #   対象外で、auto-merge.yml の `run:` ブロックだけがガードを素通りしていた。
 #   `.github/workflows/` に限らず全 YAML を見るのは、配布用の workflow
@@ -43,7 +44,7 @@ setup() {
 
 @test "no bare variable expansion is directly followed by a non-ASCII character" {
   cd "$REPO_ROOT"
-  files="$(git ls-files -- '*.sh' '*.bash' '*.bats' '*.yml' '*.yaml' ':(exclude)_longruns/')"
+  files="$(git ls-files -- '*.sh' '*.bash' '*.bats' '*.yml' '*.yaml' '*.yml.template' '*.yaml.template' ':(exclude)_longruns/')"
   [ -n "$files" ]
 
   # shellcheck disable=SC2086  # 改行区切りのパス列を意図的に単語分割して渡す
