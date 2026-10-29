@@ -8,6 +8,7 @@ shell-multibyte-expansion.bats の下請け。検出ロジックを bats のヒ�
 
   *.sh / *.bash / *.bats          ファイル全体（コメント行も含む。コピペ元になるため）
   *.yml / *.yaml                  `run:` の値（＝ workflow YAML に埋め込まれたシェル）だけ
+  *.yml.template / *.yaml.template 同上（配布用 workflow テンプレート）
 
 YAML を全文走査しない理由は、GitHub Actions の式やジョブ名など**シェルではない**行まで
 巻き込んで偽陽性を出すため。逆に `run:` だけに絞れば、`# >>> … <<< …` マーカーで囲まれた
@@ -25,7 +26,7 @@ import sys
 PATTERN = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*(?=[^\x00-\x7f])")
 
 SHELL_SUFFIXES = (".sh", ".bash", ".bats")
-YAML_SUFFIXES = (".yml", ".yaml")
+YAML_SUFFIXES = (".yml", ".yaml", ".yml.template", ".yaml.template")
 
 # `run:` キーの行。`- run: |` のようにリスト要素を兼ねる形も拾う。
 RUN_KEY = re.compile(r"^(?P<lead>\s*(?:-\s+)*)run:(?P<rest>.*)$")
@@ -71,7 +72,7 @@ def scan(path):
     text = p.read_text(errors="replace")
     suffix = p.suffix
 
-    if suffix in YAML_SUFFIXES:
+    if p.name.endswith(YAML_SUFFIXES):
         numbered = embedded_shell_lines(text)
     elif suffix in SHELL_SUFFIXES:
         numbered = list(enumerate(text.splitlines(), 1))
