@@ -261,8 +261,8 @@ no_gh_called() {
   for f in h1 h2 h3; do
     run observe_of "$(view MERGEABLE '[]' h)" --hints "${WORK}/${f}.json"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"pr-state.sh: cannot read --hints file"* ]]
-    [[ "$output" != *"gh pr view JSON from stdin"* ]]
+    [[ "$output" == *"pr-state.sh: cannot read --hints file"* ]] || return 1
+    [[ "$output" != *"gh pr view JSON from stdin"* ]] || return 1
   done
 }
 
