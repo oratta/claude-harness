@@ -22,7 +22,7 @@ version: 1.7.0
 | 前提確認と重さ判定 | HEAD の固定・stale passed の除去・レビュー重量（light / full）の判定 | `stages/prepare.md` | ゲートの開始時。再レビューや保留からの再開で手順 1 からやり直すとき | 2-0 の判定を PR コメントに残したら、レビューの起動の段へ |
 | レビューの起動 | レビュー実行者（Codex / Task サブエージェント）を選び、起動して完了を確かめる | `stages/review-run.md` | 2-0 のあと、レビューを自分で起こす側（develop 以外の本体、従来経路の G） | レビュー結果を受け取ったら、指摘が残れば照合と指摘の振り分けの段、無ければ `declarations.md` |
 | レビュー担当向けの指示 | レビュアーに渡す指示ブロック・共通一覧契約・Codex の読み替え | `stages/reviewer-brief.md` | レビュアーを起こす側が指示を組み立てるとき | レビュアーが三表と指摘の一覧を返したら、起こした側はレビューの起動の段と同じ出口へ |
-| 照合と指摘の振り分け | マージを止めるかの判定・仕分け表・収束ルール・修正サイクルのモデル昇格 | `stages/triage.md` | レビュー結果に指摘が残っているとき。W の修正後の再レビュー、決める役の裁定を受け取ったとき | 止める指摘が無くなれば `declarations.md`。修正サイクルは前提確認の段から、切り出しの確認は保留の段へ |
+| 照合と指摘の振り分け | マージを止めるかの判定・仕分け表・収束ルール・修正サイクルのモデル昇格 | `stages/triage.md`（develop の G は加えて `../develop/references/roles/gate-runner-triage.md`） | レビュー結果に指摘が残っているとき。W の修正後の再レビュー、決める役の裁定を受け取ったとき | 止める指摘が無くなれば `declarations.md`。修正サイクルは前提確認の段から、切り出しの確認は保留の段へ |
 | 合格処理 | 動作確認と、必須 4 点の API 実測・`agent-review:passed` の付与 | `stages/pass.md` | `declarations.md` の手順 3・3-b を投稿したあと | passed を付けたら終わり。主への依頼や許容待ちが残れば保留の段へ |
 | 保留 | 前の HEAD の許容の引き継ぎ・主への保留依頼・復帰手順 | `stages/hold.md` | 主のリスク許容・動作確認・切り出しの確認が要るとき。保留中の PR を再開するとき | 復帰手順の表が指す段（合格処理・前提確認・宣言の書式・照合と指摘の振り分けのどれか） |
 
@@ -39,6 +39,7 @@ version: 1.7.0
 | 2-0 | 2-0. レビュー重量の判定（light / full） | `stages/prepare.md` |
 | 2-1 | 2-1. レビューの実行（レビュー実行者） | `stages/review-run.md` |
 | 2-1 | 2-1. レビューの実行（レビュアー向け指示） | `stages/reviewer-brief.md` |
+| 2-1 | 一周目の三表を機械照合する | `../develop/references/roles/gate-runner-triage.md` |
 | 2-1 | 2-1. レビューの実行（止める判定と仕分け） | `stages/triage.md` |
 | 2-2 | 2-2. 修正サイクルのモデル昇格（failed → 修正実装） | `stages/triage.md` |
 | 3 | 3. リスク宣言（positive affirmation・必須） | `declarations.md` |

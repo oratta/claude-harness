@@ -62,24 +62,28 @@ step_headings() {
   done <<< "$rows"
 }
 
-@test "index: step map covers 1, 2-0, 2-1 (3 rows), 2-2, 3, 3-b, 3-c, 4, 5, 6" {
+@test "index: step map covers 1, 2-0, 2-1 (4 rows), 2-2, 3, 3-b, 3-c, 4, 5, 6" {
   rows="$(map_rows)"
   for id in 1 2-0 2-2 3 3-b 3-c 4 5 6; do
     [ "$(printf '%s\n' "$rows" | grep -c "^| ${id} |")" -eq 1 ] || { echo "missing or duplicated: $id"; return 1; }
   done
-  [ "$(printf '%s\n' "$rows" | grep -c '^| 2-1 |')" -eq 3 ]
+  [ "$(printf '%s\n' "$rows" | grep -c '^| 2-1 |')" -eq 4 ]
   printf '%s\n' "$rows" | grep '^| 2-1 |' | grep -qF '2-1. レビューの実行（レビュー実行者）'
   printf '%s\n' "$rows" | grep '^| 2-1 |' | grep -qF '2-1. レビューの実行（レビュアー向け指示）'
   printf '%s\n' "$rows" | grep '^| 2-1 |' | grep -qF '2-1. レビューの実行（止める判定と仕分け）'
+  printf '%s\n' "$rows" | grep '^| 2-1 |' | grep -qF '一周目の三表を機械照合する'
 }
 
 @test "index: each step-map row's file has that heading" {
   while IFS= read -r row; do
     heading="$(printf '%s' "$row" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')"
-    f="$(printf '%s' "$row" | grep -oE '(stages/[a-z-]+|declarations)\.md' | head -1)"
+    f="$(printf '%s' "$row" | grep -oE '(stages/[a-z-]+|declarations|\.\./develop/references/roles/gate-runner-triage)\.md' | head -1)"
     [ -n "$f" ] && [ -f "${GATE_DIR}/${f}" ] || { echo "bad file in row: $row"; return 1; }
-    grep -qE "^#{3,4} " "${GATE_DIR}/${f}"
-    grep -E '^#{3,4} ' "${GATE_DIR}/${f}" | sed -E 's/^#{3,4} //' | grep -qxF "$heading" \
+    depth='{3,4}'
+    # role から分割した節は元の ## 見出しを保持する。他の段の見出し深さは据え置く。
+    [ "$f" != '../develop/references/roles/gate-runner-triage.md' ] || depth='{2}'
+    grep -qE "^#${depth} " "${GATE_DIR}/${f}"
+    grep -E "^#${depth} " "${GATE_DIR}/${f}" | sed -E "s/^#${depth} //" | grep -qxF "$heading" \
       || { echo "heading '$heading' not in $f"; return 1; }
   done <<< "$(map_rows)"
 }

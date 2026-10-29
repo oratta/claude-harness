@@ -67,4 +67,4 @@
 ## 出口
 
 - レビュアーは `変更点の一覧`・`照合表`・`ハンク被覆` と指摘の一覧を、起こした側に返す。
-- 起こした側は、結果を受け取ったら、指摘が残っていれば `stages/triage.md`、残っていなければ `declarations.md`（手順 3・3-b）へ進む。develop の G は先に `gate-runner.md` の「一周目の三表を機械照合する」を行う。
+- 起こした側は、結果を受け取ったら、指摘が残っていれば `stages/triage.md`、残っていなければ `declarations.md`（手順 3・3-b）へ進む。develop の G は先に `skills/develop/references/roles/gate-runner-triage.md` の「一周目の三表を機械照合する」を行う。

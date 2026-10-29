@@ -109,7 +109,7 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 
 本体は executor が claude のときだけ区画ごとに起こす（develop の SKILL.md の (4) の ③）。補足は `一周目の区画:` の構成を使い、区画を計算し直さない。
 
-レビュー要約は照合と振り分けの G が受け取る。レビュー実行者を記録する PR コメントの投稿と、そのあとの分岐は `stages/triage.md` の「G として動くとき（develop）」節と `gate-runner.md` の「段ごとの起動と入力」の「レビュアーの要約受領」に従う。
+レビュー要約は照合と振り分けの G が受け取る。レビュー実行者を記録する PR コメントの投稿と、そのあとの分岐は `stages/triage.md` の「G として動くとき（develop）」節と `skills/develop/references/roles/gate-runner-triage.md` の「レビュー要約の入力」の「レビュアーの要約受領」に従う。
 
 ### この段で起こされたときの入力
 
