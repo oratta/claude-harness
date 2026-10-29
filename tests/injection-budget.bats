@@ -484,7 +484,7 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
 # 「よく考えて」「Think deeply.」の類は、現行モデルでは効かないか余計な長考を招く
 # （/doctor prompt-audit の指摘）。一度消した句が戻るのを止めるための検査である。
 #
-# 守備範囲: 違反が入る経路は、openspec CLI が .claude/ 配下を再生成したときと、対象
+# 守備範囲: 違反が入る経路は、openspec CLI が .claude/・.agents/ 配下を再生成したときと、対象
 # ファイルを手で編集したときの 2 つ。拾うのは下の 5 つの句が 1 行にそのまま現れた場合だけ。
 # 言い換え（じっくり考えて・ultrathink 等）と改行またぎは通り、逆に think hard-coded の
 # ような無関係な英文にも当たりうる。句や例外を足して塞ぎ切ることは目指さない（言い換えを
@@ -1348,7 +1348,7 @@ read_first_byte_fixtures() {
   [ -z "$output" ]
 }
 
-@test "no depth-of-thinking phrase in rules, CLAUDE.md, output-styles, skills or .claude" {
+@test "no depth-of-thinking phrase in rules, CLAUDE.md, output-styles, skills, .claude or .agents" {
   local hits
   if ! hits=$(list_thinking_phrase_targets | check_thinking_phrases_z); then
     echo "思考の深さを文で指示する言い回しが見つかった（該当の文を削る）:"

@@ -34,7 +34,7 @@ claude plugin details <プラグイン名>
 
 - **提案差分をそのまま適用しない。** `~/.claude/rules/` と `~/.claude/output-styles/` は install 先への symlink なので、直すならこのリポジトリの `rules/` と `output-styles/`、プラグインなら `plugins/` 側を編集する
 - **思考の深さを文で指示する句（「よく考えて」「Think deeply.」の類）は削る。** `rules/`・`CLAUDE.md`・`output-styles/`・`plugins/*/skills/*/SKILL.md`・`.claude/commands/`・`.claude/skills/`・`.agents/skills/` にこの句があると `tests/injection-budget.bats` が落ちる。テストが見るのは決まった 5 つの句だけなので、言い換えはこの診断で見つける
-- **`.claude/commands/opsx/` と `.claude/skills/openspec-*/`・`.agents/skills/` は openspec CLI の生成物。** 再生成すると「Think deeply.」が `.claude/commands/opsx/explore.md` と `.claude/skills/openspec-explore/SKILL.md`・`.agents/skills/openspec-explore/SKILL.md`・`.agents/skills/source-command-opsx-explore/SKILL.md` に戻り、テストが落ちる。そのときは同じ 1 文を削り直す。これらのファイルの `IMPORTANT`・`MUST`・`NEVER` の強調は直さない（2026-10-08 の診断で 18 ファイル 34 箇所。再生成のたびに全部を直し直すことになるため）
+- **`.claude/commands/opsx/`・`.claude/skills/openspec-*/`・`.agents/skills/openspec-*/` は openspec CLI の生成物。** `.agents/skills/source-command-opsx-*` は migrated source command 表記のスキル。再生成で「Think deeply.」が `.claude/commands/opsx/explore.md`・`.claude/skills/openspec-explore/SKILL.md`・`.agents/skills/openspec-explore/SKILL.md` に戻るとテストが落ちるので、同じ 1 文を削り直す。`.agents/skills/source-command-opsx-explore/SKILL.md` に戻る場合も同様に削り直す。これらのファイルの `IMPORTANT`・`MUST`・`NEVER` の強調は直さない（2026-10-08 の診断で `.claude/` 分は 18 ファイル 34 箇所。再生成のたびに全部を直し直すことになるため）
 - **「必ず」「絶対」は一律には削らない。** 破壊的操作・データ消失・認証情報の扱いに理由つきで付いているものは残す
 - **`CLAUDE.md` を書き換えるときは `AGENTS.md` も同じに直す**（`tests/agents-md-sync.bats` が同期を見ている）
 - 個人の `~/.claude/skills/` への指摘はこのリポジトリの外なので、ここでは直さない
