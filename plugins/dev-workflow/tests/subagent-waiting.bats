@@ -200,6 +200,16 @@ PY
   fi
 }
 
+@test "companion identity relies on the full launch job id for waiting and results" {
+  # (a) の nonce の説明を拾わず、companion 経路の契約だけを検査する。
+  section="$(sed -n '/^### (b) /,/^## /p' "$CANON")"
+  for pat in '.jobId' '完全な job id' '切り詰めない' '省略した `result` は使わない' \
+    '完全一致を優先' '複数一致・未一致は例外' '追加の nonce は不要' \
+    'scripts/lib/job-control.mjs:191-211'; do
+    printf '%s\n' "$section" | grep -qF "$pat"
+  done
+}
+
 # --- nonce の作り方（衝突・正規表現の誤マッチ・無言の縮退をまとめて止めること） ---
 #
 # 2 周目のゲート指摘: `date +%s` は秒精度なので、G / W / R1 が並行して走ると同じ秒に衝突し、
