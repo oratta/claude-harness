@@ -200,6 +200,23 @@ PY
   fi
 }
 
+@test "companion identity relies on the full launch job id for waiting and results" {
+  # (a) の nonce の説明を拾わず、companion 経路の契約だけを検査する。
+  section="$(sed -n '/^### (b) /,/^## /p' "$CANON")"
+  for pat in '.jobId' '完全な job id' '切り詰めない' '省略した `result` は使わない' \
+    '完全一致を優先' '複数一致・未一致は例外' '追加の nonce は不要' \
+    'scripts/lib/job-control.mjs:191-211' \
+    'task … --effort medium --background --json' \
+    'job id が一意に保持される前提' '重複検査がなく、衝突すると上書きされうる' \
+    '36^6' '同じ prefix・同じミリ秒' 'scripts/lib/state.mjs:129-145'; do
+    printf '%s\n' "$section" | grep -qF "$pat" || return 1
+  done
+  # 説明とコード根拠の両方で、ID 省略時の範囲を明記する。
+  scope='CODEX_COMPANION_SESSION_ID` 設定時はそのセッション、未設定時はリポジトリ全体の最新の終了ジョブ'
+  [ "$(printf '%s\n' "$section" | grep -cF "$scope")" -eq 2 ]
+  if printf '%s\n' "$section" | grep -qF '現セッションの最新の終了ジョブ'; then return 1; fi
+}
+
 # --- nonce の作り方（衝突・正規表現の誤マッチ・無言の縮退をまとめて止めること） ---
 #
 # 2 周目のゲート指摘: `date +%s` は秒精度なので、G / W / R1 が並行して走ると同じ秒に衝突し、
