@@ -473,6 +473,21 @@ no_gh_called() {
   [ "$(jq -r .fixes <<<"$PREV")" = 1 ]
 }
 
+@test "decide: after rerunning two jobs, a failure left on only one of the old job ids is none" {  # decide: 2 件やり直した後に古いジョブ ID 1 件だけ残っても none
+  watch "$(view MERGEABLE "[$(actions_check test FAILURE 555 1),$(actions_check lint FAILURE 556 2)]" e1)" --unrelated test --unrelated lint
+  [ "$ACT" = rerun ]
+  local before="$PREV"
+  watch "$(view MERGEABLE "[$(actions_check lint FAILURE 556 2)]" e1)" --unrelated test --unrelated lint
+  [ "$ACT" = none ]
+  [ "$PREV" = "$before" ]
+}
+
+@test "decide: a non-array reran_jobs is ignored instead of failing" {  # decide: reran_jobs が配列でなくても落ちず従来の判定
+  PREV='{"state":"wait","head":"t1","reran_head":"t1","reran_jobs":"2"}'
+  step "$(obs ci-fail t1 true)"
+  [ "$ACT" = fix ]
+}
+
 @test "decide: a retryable observation without checks still ends in fix on the same head" {  # decide: checks の無い・空の観測は今までどおり fix
   PREV='{"state":"wait","head":"t1","reran_head":"t1"}'
   step "$(obs ci-fail t1 true)"

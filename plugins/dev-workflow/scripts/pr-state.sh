@@ -24,6 +24,8 @@
 #       前回の状態が省略・null・{} なら初見。やり直しは HEAD ごとに 1 回、fix は 2 回まで、
 #       3 回目は escalate。やり直しを使い切った HEAD で、real が混ざらず job-timeout を含む
 #       失敗を見たら、fix でなく escalate（fixes は増やさない。前回の原因は見ない）
+#       やり直した HEAD で、観測のジョブ ID がすべて reran_jobs に含まれる失敗を見たら none
+#       （next は前回の状態のまま。古い結果の読み飛ばし）
 #   annotations <owner/repo>
 #       gh pr view の JSON → {"annotations_by_job": {"<job>": [<message>, ...]}}
 #       落ちた Actions のジョブごとに gh api repos/<owner/repo>/check-runs/<job>/annotations を呼ぶ
@@ -87,8 +89,8 @@ def decide($prev; $obs):
     elif $p.state == $obs.state and $p.head == $obs.head then {act: "none", next: $seen}
     elif $p.raised == true then {act: "none", next: $seen}
     elif $obs.state == "ci-fail" and $p.reran_head == $obs.head
-         and ($p.reran_jobs // []) != [] and all($p.reran_jobs[]; . != null)
-         and job_ids($obs) == $p.reran_jobs
+         and ($p.reran_jobs | type) == "array" and $p.reran_jobs != [] and all($p.reran_jobs[]; . != null)
+         and job_ids($obs) != [] and all(job_ids($obs)[]; IN($p.reran_jobs[]))
       then {act: "none", next: $p}
     elif $obs.state == "ci-fail" and $obs.retry == true and $p.reran_head != $obs.head
       then {act: "rerun", next: ($seen + {state: "wait", reran_head: $obs.head, reran_jobs: job_ids($obs)})}
