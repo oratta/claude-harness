@@ -1357,13 +1357,14 @@ read_first_byte_fixtures() {
   fi
 }
 
-@test "the phrase check covers plugin skills and the generated .claude files" {
+@test "the phrase check covers plugin skills and the generated .claude and .agents files" {
   run bash -c "$(declare -f list_thinking_phrase_targets list_synced_md list_plugin_skills list_plugin_category list_dir_files); REPO_ROOT='$REPO_ROOT'; list_thinking_phrase_targets | tr '\\000' '\\n'"
   [ "$status" -eq 0 ]
   [[ "$output" == *"/rules/communication-style.md"* ]] || return 1
   [[ "$output" == *"/plugins/dev-workflow/skills/develop/SKILL.md"* ]] || return 1
   [[ "$output" == *"/.claude/commands/opsx/explore.md"* ]] || return 1
   [[ "$output" == *"/.claude/skills/openspec-explore/SKILL.md"* ]] || return 1
+  [[ "$output" == *"/.agents/skills/openspec-explore/SKILL.md"* ]] || return 1
   [[ "$output" != *"/references/"* ]] || return 1
 }
 
