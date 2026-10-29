@@ -36,7 +36,9 @@ def embedded_shell_lines(text):
     """workflow YAML から `run:` の値を (行番号, 行) で返す。
 
     ブロックスカラー（`run: |`）は、キーより深くインデントされた行と空行が本文。
-    1 行形式（`run: echo x`）は値そのものが本文。完全な YAML パーサではないが、
+    プレーン値・引用値は同じ行の値と、キーより深くインデントされた継続行・空行が本文。
+    `- run:` のキー位置は `run` の桁なので、同じステップの兄弟キーは含めない。
+    完全な YAML パーサではないが、
     用途が「埋め込みシェルの行を漏れなく拾う」ことなので、判断に迷う形は
     **対象に含める側**（偽陽性）に倒してある。
     """
@@ -63,6 +65,12 @@ def embedded_shell_lines(text):
             if rest:
                 out.append((i + 1, rest))
             i += 1
+            while i < len(lines):
+                line = lines[i]
+                if line.strip() and (len(line) - len(line.lstrip())) <= key_col:
+                    break
+                out.append((i + 1, line))
+                i += 1
     return out
 
 
