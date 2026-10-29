@@ -243,7 +243,7 @@ install_fixture() {
   GH_DRAFT=unknown run bash "$SNIP"
   [ "$status" -eq 1 ]
   [[ "$output" == *'draft を取得できない'* ]] || return 1
-  ! grep -q 'labels\[\]=agent-review:passed' "$CALLS"
+  ! grep -q 'labels\[\]=agent-review:passed' "$CALLS" || return 1
 }
 
 @test "pass label block stops when ready fails" {
@@ -251,5 +251,5 @@ install_fixture() {
   GH_FAIL_READY=1 run bash "$SNIP"
   [ "$status" -eq 1 ]
   [[ "$output" == *'gh pr ready に失敗'* ]] || return 1
-  ! grep -q 'labels\[\]=agent-review:passed' "$CALLS"
+  ! grep -q 'labels\[\]=agent-review:passed' "$CALLS" || return 1
 }
