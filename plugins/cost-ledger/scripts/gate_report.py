@@ -757,6 +757,85 @@ def resolve(target, cwd, at):
     return ("pr", repo, number, branch, names, 0) if names else None
 
 
+class TargetLock(int):
+    """ロック fd と、検査した置き場の fd を同じ区間だけ保持する。"""
+    def __new__(cls, fd, dir_fd):
+        value = int.__new__(cls, fd)
+        value.dir_fd = dir_fd
+        return value
+
+
+def unlock(fd):
+    try:
+        os.close(fd)
+    finally:
+        os.close(fd.dir_fd)
+
+
+def _cache_name(repo, number):
+    return "%s__%d.json" % (repo.lower().replace("/", "__"), number)
+
+
+def _private_file(fd):
+    st = os.fstat(fd)
+    return stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o077
+
+
+def cache_read(lock_fd, repo, number):
+    if lock_fd is None:
+        return None
+    try:
+        fd = os.open(_cache_name(repo, number), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                     dir_fd=lock_fd.dir_fd)
+        with os.fdopen(fd, encoding="utf-8") as f:
+            if not _private_file(f.fileno()):
+                return None
+            data = json.load(f)
+        if (isinstance(data, dict) and data.get("version") == 1
+                and data.get("repo") == repo.lower() and data.get("number") == number
+                and type(data.get("checked_at")) in (int, float)
+                and isinstance(data.get("tree"), dict)):
+            return data["tree"]
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
+def cache_write(lock_fd, repo, number, tree):
+    if lock_fd is None:
+        return
+    name = _cache_name(repo, number)
+    tmp = None
+    try:
+        # 既存の不安全なファイルは読みも上書きもしない。
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=lock_fd.dir_fd)
+        except FileNotFoundError:
+            pass
+        else:
+            try:
+                if not _private_file(fd):
+                    return
+            finally:
+                os.close(fd)
+        import secrets
+        tmp = name + "." + secrets.token_hex(12)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=lock_fd.dir_fd)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"version": 1, "repo": repo.lower(), "number": number,
+                       "checked_at": time.time(), "tree": tree}, f)
+        os.replace(tmp, name, src_dir_fd=lock_fd.dir_fd, dst_dir_fd=lock_fd.dir_fd)
+    except (OSError, ValueError, TypeError):
+        pass  # 保存だけの失敗で正常な取得結果を捨てない
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp, dir_fd=lock_fd.dir_fd)
+            except OSError:
+                pass
+
+
 def lock(repo, number):
     """対象ごとの排他ロックを取る。取れなければ None（読んでから書くまでを直列にできないので書かない）。"""
     try:
@@ -769,6 +848,7 @@ def lock(repo, number):
         try:
             st = os.fstat(dir_fd)
             if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
+                os.close(dir_fd)
                 return None
             name = "%s__%d.lock" % (repo.lower().replace("/", "__"), number)
             flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
@@ -787,10 +867,16 @@ def lock(repo, number):
                     if attempt == 4:
                         raise
                     time.sleep(0.02)
-        finally:
+        except BaseException:
             os.close(dir_fd)
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        return fd
+            raise
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        except OSError:
+            os.close(fd)
+            os.close(dir_fd)
+            raise
+        return TargetLock(fd, dir_fd)
     except OSError:
         return None
 
@@ -991,7 +1077,7 @@ def epic_tree(repo, number):
     return sorted(descendants), sorted((pr, head) for head, pr in branches.items())
 
 
-def stack(kind, repo, number, branch, names, at, cwd, scripts_dir, extra=(), children=0):
+def stack(kind, repo, number, branch, names, at, cwd, scripts_dir, extra=(), children=0, cache_lock=None):
     """1 行積む。ロックを持ったまま、読み取り・（issue のクローズなら閉じた PR の問い合わせ）・
     timeline・書き込みを行う。``extra`` は timeline のコマンドの末尾に足す引数（後追いの
     ``--backfill``。既定は空で、PostToolUse の hook からは渡さない）。"""
@@ -1081,11 +1167,11 @@ def work(job):
         if fd is None:
             continue
         try:
-            stack(kind, repo, number, branch, names, at, cwd, scripts_dir, children=children)
+            stack(kind, repo, number, branch, names, at, cwd, scripts_dir, children=children, cache_lock=fd)
         except Exception:
             pass
         finally:
-            os.close(fd)  # 閉じるとロックも外れる
+            unlock(fd)  # 置き場と対象のロックを一緒に解放
 
 
 if __name__ == "__main__":
