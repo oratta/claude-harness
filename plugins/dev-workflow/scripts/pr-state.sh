@@ -18,7 +18,8 @@
 #       落ちたチェックがすべて real でなく、すべてに run ID があるときだけ true
 #   decide [<前回の状態の JSON>]
 #       observe の出力 → {act, next, obs}。act: none / ready / rerun / fix / escalate
-#       状態のキー: state / head / reran_head（やり直した HEAD）/ fixes（PR ごとの修正回数の累計）/
+#       状態のキー: state / head / reran_head（やり直した HEAD）/
+#       reran_jobs（やり直し前のジョブ ID の並び）/ fixes（PR ごとの修正回数の累計）/
 #       raised（オーナーに上げ済み）。知らないキーは next にそのまま引き継ぐ。
 #       前回の状態が省略・null・{} なら初見。やり直しは HEAD ごとに 1 回、fix は 2 回まで、
 #       3 回目は escalate。やり直しを使い切った HEAD で、real が混ざらず job-timeout を含む

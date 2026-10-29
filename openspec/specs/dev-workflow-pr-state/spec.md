@@ -101,7 +101,7 @@
 4. 前回の `raised` が `true`: `act` は `none`、`next` は見た状態
 5. 観測が `ci-fail` で、前回の `reran_head` が観測の `head` と同じで、前回の `reran_jobs` が空でも `null` を含むものでもなく、観測の `checks` のジョブ ID の並びが `reran_jobs` と同じ: `act` は `none`、`next` は前回の状態そのまま（やり直した直後で、新しいジョブがまだ反映されず古い失敗を読んでいる）
 6. 観測が `ci-fail` で `retry` が `true` で、前回の `reran_head` が観測の `head` と違う: `act` は `rerun`、`next` は見た状態に `{state: "wait", reran_head: <観測の head>, reran_jobs: <観測の checks のジョブ ID の並び>}` を重ねたもの
-7. 観測が `ci-fail` で `retry` が `true` で、観測の `checks` に `cause` が `job-timeout` の要素が 1 件以上ある（5 に当たらなかったので、この HEAD のやり直しは使い切っている）: `act` は `escalate`、`next` は見た状態に `{raised: true}` を重ねたもの。`fixes` は変えない
+7. 観測が `ci-fail` で `retry` が `true` で、観測の `checks` に `cause` が `job-timeout` の要素が 1 件以上ある（6 に当たらなかったので、この HEAD のやり直しは使い切っている）: `act` は `escalate`、`next` は見た状態に `{raised: true}` を重ねたもの。`fixes` は変えない
 8. 前回の `fixes`（無ければ 0）が 2 以上: `act` は `escalate`、`next` は見た状態に `{raised: true}` を重ねたもの
 9. それ以外: `act` は `fix`、`next` は見た状態に `{fixes: <前回の fixes + 1>}` を重ねたもの
 
@@ -110,7 +110,7 @@
 前回の状態の引数や標準入力が JSON として読めないときは、非 0 で終わらなければならない（MUST）。
 
 #### Scenario: 同じ HEAD で 2 回落ちてもやり直しは 1 回
-- **WHEN** HEAD `e1` で `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして同じ観測をもう一度渡す
+- **WHEN** HEAD `e1` で、`checks` が空の `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして同じ観測をもう一度渡す
 - **THEN** 1 回目は `rerun`（`next.state` は `wait`、`next.reran_head` は `e1`）、2 回目は `fix`（`next.fixes` は 1）
 
 #### Scenario: やり直した直後に同じジョブ ID の古い失敗を読んでも何もしない
@@ -122,7 +122,7 @@
 - **THEN** `act` は `fix`、`next.fixes` は 1
 
 #### Scenario: 上限時間の打ち切りは 1 回やり直し、やり直しを使い切った HEAD で打ち切りを見たらオーナーに上げる
-- **WHEN** HEAD `t1` で、`cause` が `job-timeout` のチェック 1 件を持つ `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして同じ観測をもう一度渡す
+- **WHEN** HEAD `t1` で、ジョブ ID `1`・`cause` が `job-timeout` のチェック 1 件を持つ `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして、別のジョブ ID `2` の打ち切り（`cause` が `job-timeout` のチェック 1 件を持つ `retry: true` の `ci-fail`）を渡す
 - **THEN** 1 回目は `rerun`（`next.reran_head` は `t1`）、2 回目は `escalate`（`next.raised` は `true`）で、`next` に `fixes` は無い
 
 #### Scenario: 打ち切りでオーナーに上げても修正回数は増えない
