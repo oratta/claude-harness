@@ -32,8 +32,8 @@
 
 ## 4. main spec の整理と archive
 
-- [ ] 4.1 archive の直前に `git rm -r openspec/specs/experience-to-skill-jsonl-distillation` を行い、解散の PR #841 を commit メッセージに書いて commit する（全要件 REMOVED の delta は archive が中断するため delta では表現しない）
-- [ ] 4.2 `bats tests/openspec-specs-format.bats` が pass する。`bats tests/skill-pack-telegram-e2s-retirement.bats` は、spec ディレクトリの不在は pass し、参照掃除の検査だけが living spec 4 本の行（`openspec/specs/` 配下のみ）で落ちる状態であることを確認する
-- [ ] 4.3 `openspec archive retire-skill-pack-telegram-e2s -y` で archive し、`openspec/specs/skill-pack-telegram-e2s-retirement/spec.md` ができ、4 つの MODIFIED/REMOVED が正本に反映されたことを確認する
-- [ ] 4.4 生成された spec の `## Purpose` の `TBD - created by archiving change ...` を「harness から skill-pack・telegram・experience-to-skill の 3 プラグインを解散した状態を定める。代替は Claude Code 本体の機能と公式プラグイン・公式スキルなので、harness に同じ部品と仕様を残して正本が 2 つになることを防ぐ。」に書き換える
-- [ ] 4.5 archive 後に `scripts/test.sh` をフォアグラウンドで再実行して exit 0 を確認する（参照掃除の検査が生成された main spec を許容場所として扱うことを含む）。続けて PR 本文の受け入れ条件 3（参照 0 件）を実行して確認する。ここで初めて全件 pass と参照 0 件を確かめ、Draft PR の CI が緑に戻ることを見る
+- [x] 4.1 archive の直前に `git rm -r openspec/specs/experience-to-skill-jsonl-distillation` を行い、解散の PR #841 を commit メッセージに書いて commit する（全要件 REMOVED の delta は archive が中断するため delta では表現しない）
+- [x] 4.2 `bats tests/openspec-specs-format.bats` が pass する。`bats tests/skill-pack-telegram-e2s-retirement.bats` は、spec ディレクトリの不在は pass し、参照掃除の検査だけが living spec 4 本の行（`openspec/specs/` 配下のみ）で落ちる状態であることを確認する
+- [x] 4.3 `openspec archive retire-skill-pack-telegram-e2s -y` で archive し、`openspec/specs/skill-pack-telegram-e2s-retirement/spec.md` ができ、4 つの MODIFIED/REMOVED が正本に反映されたことを確認する
+- [x] 4.4 生成された spec の `## Purpose` の `TBD - created by archiving change ...` を「harness から skill-pack・telegram・experience-to-skill の 3 プラグインを解散した状態を定める。代替は Claude Code 本体の機能と公式プラグイン・公式スキルなので、harness に同じ部品と仕様を残して正本が 2 つになることを防ぐ。」に書き換える
+- [x] 4.5 archive 後に `scripts/test.sh` をフォアグラウンドで再実行して exit 0 を確認する（参照掃除の検査が生成された main spec を許容場所として扱うことを含む）。続けて PR 本文の受け入れ条件 3（参照 0 件）を実行して確認する。ここで初めて全件 pass と参照 0 件を確かめ、Draft PR の CI が緑に戻ることを見る
