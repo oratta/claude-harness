@@ -11,7 +11,7 @@ Claude Code が既に書いている会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.
 |---|---|
 | **python3**（3.8 以上） | 集計エンジン本体。JSONL の 1 パス処理と辞書集計に使う |
 | **git 2.31 以上** | `rev-parse --path-format=absolute --git-common-dir` で worktree を親リポジトリに畳む |
-| **gh**（認証済み） | 渡された番号が PR か issue かの判別。コスト計算そのものはオフラインで完結する |
+| **gh**（認証済み） | 渡された番号が PR か issue かの判別と、子を持たない issue の閉じた PR の問い合わせ。コスト計算そのものはオフラインで完結する |
 
 ## 帰属の考え方
 
