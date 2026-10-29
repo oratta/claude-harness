@@ -1366,7 +1366,8 @@ read_first_byte_fixtures() {
   [[ "$output" == *"/.claude/commands/opsx/explore.md"* ]] || return 1
   [[ "$output" == *"/.claude/skills/openspec-explore/SKILL.md"* ]] || return 1
   [[ "$output" == *"/.agents/skills/openspec-explore/SKILL.md"* ]] || return 1
-  [[ "$output" != *"/references/"* ]] || return 1
+  rel="${output//$REPO_ROOT/}"
+  ! grep -q '^/plugins/.*/references/' <<< "$rel"
 }
 
 @test "rules carry no yoku-kangae phrase (issue 712 acceptance)" {
