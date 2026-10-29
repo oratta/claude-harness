@@ -77,6 +77,7 @@ def observe($hints; $unrelated):
       checks: $fc,
       retry: ($state == "ci-fail" and ($fc | length) > 0
               and all($fc[]; .cause != "real" and .run != null)) };
+def job_ids($obs): [($obs.checks // [])[] | .job];
 def decide($prev; $obs):
   ($prev // {}) as $p
   | ($p + {state: $obs.state, head: $obs.head}) as $seen
@@ -84,8 +85,12 @@ def decide($prev; $obs):
     elif $obs.state == "ready" then {act: "ready", next: $seen}
     elif $p.state == $obs.state and $p.head == $obs.head then {act: "none", next: $seen}
     elif $p.raised == true then {act: "none", next: $seen}
+    elif $obs.state == "ci-fail" and $p.reran_head == $obs.head
+         and ($p.reran_jobs // []) != [] and all($p.reran_jobs[]; . != null)
+         and job_ids($obs) == $p.reran_jobs
+      then {act: "none", next: $p}
     elif $obs.state == "ci-fail" and $obs.retry == true and $p.reran_head != $obs.head
-      then {act: "rerun", next: ($seen + {state: "wait", reran_head: $obs.head})}
+      then {act: "rerun", next: ($seen + {state: "wait", reran_head: $obs.head, reran_jobs: job_ids($obs)})}
     elif $obs.state == "ci-fail" and $obs.retry == true
          and any(($obs.checks // [])[]; .cause == "job-timeout")
       then {act: "escalate", next: ($seen + {raised: true})}

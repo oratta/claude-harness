@@ -91,7 +91,7 @@
 - **THEN** `cause` は `unrelated` だが `retry` は `false`
 
 ### Requirement: decide は観測と前回の状態から次の一手と次の状態を決める
-`pr-state.sh decide [<前回の状態の JSON>]` は、標準入力の `observe` の出力と引数の前回の状態から、1 行の JSON `{act, next, obs}` を標準出力に出さなければならない（MUST）。`gh` を呼んではならない（MUST NOT）。前回の状態が省略・`null`・`{}` のときは初見として扱う（MUST）。状態は `{state, head, reran_head, fixes, raised}` を持ち、`next` は前回の状態の知らないキーを消さずに引き継がなければならない（MUST）。`obs` は標準入力の観測をそのまま返す。
+`pr-state.sh decide [<前回の状態の JSON>]` は、標準入力の `observe` の出力と引数の前回の状態から、1 行の JSON `{act, next, obs}` を標準出力に出さなければならない（MUST）。`gh` を呼んではならない（MUST NOT）。前回の状態が省略・`null`・`{}` のときは初見として扱う（MUST）。状態は `{state, head, reran_head, reran_jobs, fixes, raised}` を持ち、`next` は前回の状態の知らないキーを消さずに引き継がなければならない（MUST）。`obs` は標準入力の観測をそのまま返す。
 
 `act` と `next` は次の順で最初に当たったもので決める（MUST）。以下「見た状態」は前回の状態に `{state: <観測の state>, head: <観測の head>}` を重ねたもの。
 
@@ -99,18 +99,27 @@
 2. 観測が `ready`: `act` は `ready`、`next` は見た状態
 3. 前回の `state` と `head` が観測と同じ: `act` は `none`、`next` は見た状態
 4. 前回の `raised` が `true`: `act` は `none`、`next` は見た状態
-5. 観測が `ci-fail` で `retry` が `true` で、前回の `reran_head` が観測の `head` と違う: `act` は `rerun`、`next` は見た状態に `{state: "wait", reran_head: <観測の head>}` を重ねたもの
-6. 観測が `ci-fail` で `retry` が `true` で、観測の `checks` に `cause` が `job-timeout` の要素が 1 件以上ある（5 に当たらなかったので、この HEAD のやり直しは使い切っている）: `act` は `escalate`、`next` は見た状態に `{raised: true}` を重ねたもの。`fixes` は変えない
-7. 前回の `fixes`（無ければ 0）が 2 以上: `act` は `escalate`、`next` は見た状態に `{raised: true}` を重ねたもの
-8. それ以外: `act` は `fix`、`next` は見た状態に `{fixes: <前回の fixes + 1>}` を重ねたもの
+5. 観測が `ci-fail` で、前回の `reran_head` が観測の `head` と同じで、前回の `reran_jobs` が空でも `null` を含むものでもなく、観測の `checks` のジョブ ID の並びが `reran_jobs` と同じ: `act` は `none`、`next` は前回の状態そのまま（やり直した直後で、新しいジョブがまだ反映されず古い失敗を読んでいる）
+6. 観測が `ci-fail` で `retry` が `true` で、前回の `reran_head` が観測の `head` と違う: `act` は `rerun`、`next` は見た状態に `{state: "wait", reran_head: <観測の head>, reran_jobs: <観測の checks のジョブ ID の並び>}` を重ねたもの
+7. 観測が `ci-fail` で `retry` が `true` で、観測の `checks` に `cause` が `job-timeout` の要素が 1 件以上ある（5 に当たらなかったので、この HEAD のやり直しは使い切っている）: `act` は `escalate`、`next` は見た状態に `{raised: true}` を重ねたもの。`fixes` は変えない
+8. 前回の `fixes`（無ければ 0）が 2 以上: `act` は `escalate`、`next` は見た状態に `{raised: true}` を重ねたもの
+9. それ以外: `act` は `fix`、`next` は見た状態に `{fixes: <前回の fixes + 1>}` を重ねたもの
 
-6 は、その HEAD のやり直しを使い切ったあとに打ち切りを見たときに、実装者の直しに回さずオーナーに上げるための規則である。前回の原因が `job-timeout` だったかは見ない（状態に `cause` を持たないため）。1 回はやり直すのは、`real` でない原因は同じ HEAD で 1 回だけやり直すという既存の規則（5）に揃えたもので、失うのは CI 1 周分で止まる。観測が `checks` を持たないとき、6 は当たらない（MUST）。
+7 は、その HEAD のやり直しを使い切ったあとに打ち切りを見たときに、実装者の直しに回さずオーナーに上げるための規則である。前回の原因が `job-timeout` だったかは見ない（状態に `cause` を持たないため）。1 回はやり直すのは、`real` でない原因は同じ HEAD で 1 回だけやり直すという既存の規則（6）に揃えたもので、失うのは CI 1 周分で止まる。観測が `checks` を持たないとき、7 は当たらない（MUST）。
 
 前回の状態の引数や標準入力が JSON として読めないときは、非 0 で終わらなければならない（MUST）。
 
 #### Scenario: 同じ HEAD で 2 回落ちてもやり直しは 1 回
 - **WHEN** HEAD `e1` で `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして同じ観測をもう一度渡す
 - **THEN** 1 回目は `rerun`（`next.state` は `wait`、`next.reran_head` は `e1`）、2 回目は `fix`（`next.fixes` は 1）
+
+#### Scenario: やり直した直後に同じジョブ ID の古い失敗を読んでも何もしない
+- **WHEN** HEAD `e1` で、ジョブ ID `1` の失敗を持つ `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして同じ観測（同じジョブ ID）をもう一度渡す
+- **THEN** 1 回目は `rerun`（`next.reran_jobs` は `["1"]`）、2 回目は `none` で、`next` は前回の状態のまま（`fixes` は増えない）
+
+#### Scenario: やり直しのあとの別のジョブ ID の失敗は直しに回す
+- **WHEN** 上と同じ初見のあと、ジョブ ID `2` の失敗を持つ `ci-fail` を渡す
+- **THEN** `act` は `fix`、`next.fixes` は 1
 
 #### Scenario: 上限時間の打ち切りは 1 回やり直し、やり直しを使い切った HEAD で打ち切りを見たらオーナーに上げる
 - **WHEN** HEAD `t1` で、`cause` が `job-timeout` のチェック 1 件を持つ `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして同じ観測をもう一度渡す
