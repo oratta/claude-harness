@@ -1875,6 +1875,9 @@ cmd_reap() {
       fi
       echo "kept $n close-failed"; continue
     fi
+    # 端末を閉じている間に子が gitignore 対象の LLM/ を作ることがあり、--force なしの rm でも ignored のログは
+    # 守られない。rm の直前に LLM/ の有無を読み直す（端末は閉じ済みで、ワークツリーは残す）
+    [ ! -e "$path/LLM" ] || { echo "kept $n llm-logs"; continue; }
     # ワークツリーを消す（部品は --force を付けない。確認のあとに増えた未コミットの変更があれば rm が止まる）。
     # 消せなければ部品が出した理由の語（rm-failed / rm-failed-terminal-sweep）を付けて残す。再試行もしない
     # rm の通常の stdout は切り出す前と同じく reap の stdout に出す（部品の stdout は理由の語だけ）。
