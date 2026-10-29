@@ -35,6 +35,8 @@ channel（画面を見ている人がいないセッションで、主とチャ�
 ### Requirement: unmanned の W は質問を直接送らず本体へ返す
 unmanned で仕様の発明が 2 回に達した、または change の割り方が判断できないほど曖昧なとき、W は Discord（MCP・CLI とも）へ直接送信してはならない（MUST NOT）。W は質問文・理由を return に含め、記録先に `needs-approval` を付けて経緯をコメントし、作業を止めて本体へ return しなければならない（MUST）。`worker/` 配下と `agents/worker.md` の Discord の記述は、W は送らず本体が送る否定文脈に限る（MUST）。worker の tools に Discord の道具を追加してはならない（MUST NOT）。
 
+**守備範囲**: 静的検査の入力元は、対象指示書（`worker/` 配下・`references/decision-criteria.md`・`SKILL.md` の実行モードの説明）と agent 定義（`agents/worker.md`）である。拾う誤りは、W による Discord 直接送信指示の再混入と、質問文・理由・needs-approval・経緯コメント・return などの return 契約の欠落とする。Discord 記述の分類では、例えば「W は Discord に送信せず、質問文を本体に返す」は直接送信指示として検出せず、検査を通る入力として許す（return 契約の充足は別途確認する）。自然文のあらゆる言い換えによるすり抜けを塞ぎ切ることは完了条件にしない。指定の grep 結果の全行確認を併用し、実際の Discord の配送成功はこの静的検査の対象にしない。
+
 #### Scenario: 仕様の発明が 2 回に達した
 - **WHEN** unmanned の W が記録先に無い仕様上の決定を埋めた回数が 2 回に達する
 - **THEN** W は埋めた決定の一覧・質問文・理由を return に含め、記録先に `needs-approval` を付けて経緯をコメントし、作業を止めて本体へ返す。Discord へは直接送信しない
