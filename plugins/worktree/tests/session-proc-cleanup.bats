@@ -388,10 +388,9 @@ fresh_stamp() {
 }
 
 @test "sweep: empty ps comm list -> 'none' with reason=ps-comm-empty (not read env list as comm)" {
-  mkdir -p "$FIX"
-  printf '  100     1 /Users/x/.local/bin/claude HOME=/x\n' >"$FIX/ps-env.txt"
+  make_fixture
   : >"$FIX/ps-comm.txt"
-  printf '  100 Fri Sep 25 10:11:18 2026\n' >"$FIX/lstart.txt"
+  printf '  100 Sat Sep 26 08:00:00 2026\n' >"$FIX/lstart.txt"
   run env SESSION_REAPER_PS_FIXTURE_DIR="$FIX" "$REAPER" --sweep
   [ "$status" -eq 0 ]
   grep -Eq 'none .*reason=ps-comm-empty' "$LOG"
