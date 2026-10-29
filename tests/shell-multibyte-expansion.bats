@@ -72,6 +72,22 @@ setup() {
   [[ "$output" == *":5:"* ]] || return 1
 }
 
+@test "guard: detects a bare expansion inside a workflow template run: block" {
+  fixture="${BATS_TEST_TMPDIR}/bad.yml.template"
+  {
+    echo 'jobs:'
+    echo '  build:'
+    echo '    steps:'
+    echo '      - run: |'
+    printf '          echo "完了（sha=%sHEAD_SHA）"\n' '$'
+  } > "$fixture"
+
+  run python3 "$SCANNER" "$fixture"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HEAD_SHA"* ]] || return 1
+  [[ "$output" == *":5:"* ]] || return 1
+}
+
 @test "guard: detects a bare expansion in a single-line run: value" {
   fixture="${BATS_TEST_TMPDIR}/bad-inline.yml"
   {
