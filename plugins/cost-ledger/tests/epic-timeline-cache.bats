@@ -360,6 +360,58 @@ PY
   [[ "$(tl_args)" == *'--child-issue 12 --child-issue 15'* && "$(tl_args)" != *'--child-issue 13'* ]]
 }
 
+@test "cache: live direct child overrides stale deeper path after reparenting" {
+  gql 10 root OPEN "$(prs)" "$(child 11 a OPEN 1)"
+  gql 11 a OPEN "$(prs)" "$(child 12 b OPEN 1)"
+  gql 12 b OPEN "$(prs)" "$(child 13 moved OPEN 1)"
+  gql 13 moved OPEN "$(prs)" "$(child 14 old OPEN 0)"
+  python3 - "$PLUGIN_DIR/scripts" "$EPIC_GQL_DIR" <<'PY'
+import copy, json, os, subprocess, sys
+sys.path.insert(0, sys.argv[1]); import gate_report as g
+issues = {}
+for number in (10, 11, 12, 13):
+    with open(os.path.join(sys.argv[2], str(number) + '.json')) as source:
+        issues[number] = json.load(source)
+calls = []
+def answer(args):
+    number = int(next(a.split('=')[1] for a in args if a.startswith('number=')))
+    calls.append(number)
+    return subprocess.CompletedProcess(args, 0, json.dumps(issues[number]), '')
+def children(number):
+    return issues[number]['data']['repository']['issue']['subIssues']['nodes']
+g.gh_api = answer
+lock = g.lock('acme/ra', 10)
+assert lock is not None
+try:
+    assert g.epic_tree('acme/ra', 10, lock) == ([11, 12, 13, 14], [])
+    assert calls == [10, 11, 12, 13], calls
+    # #11 の信号は不変。旧キャッシュの #11→#12→#13 が先に辿られる順序。
+    moved = copy.deepcopy(children(12)[0])
+    moved['updatedAt'] = '2026-09-02T00:00:00Z'
+    moved['closedByPullRequestsReferences']['nodes'] = [{
+        'number': 313, 'headRefName': 'feat/new', 'isCrossRepository': False,
+        'baseRepository': {'nameWithOwner': 'acme/ra'}}]
+    children(10).append(moved)
+    children(11)[0]['subIssuesSummary']['total'] = 0
+    children(12).clear()
+    children(13)[0]['number'] = 15
+    expected = ([11, 12, 13, 15], [(313, 'feat/new')])
+    calls.clear()
+    assert g.epic_tree('acme/ra', 10) == expected
+    assert calls == [10, 11, 13], calls
+    calls.clear()
+    actual = g.epic_tree('acme/ra', 10, lock)
+    assert calls == [10, 13], calls
+    assert actual == expected, actual
+    # 保存し直したグラフでも #14 は復活せず、#15 と PR #313 が残る。
+    calls.clear()
+    assert g.epic_tree('acme/ra', 10, lock) == expected
+    assert calls == [10], calls
+finally:
+    g.unlock(lock)
+PY
+}
+
 @test "cache: failures never mask live errors or publish partial results" {
   hook_setup; logs; cache_tree
   EPIC_STATE=closed

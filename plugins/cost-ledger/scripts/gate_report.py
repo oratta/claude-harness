@@ -1109,6 +1109,8 @@ def epic_tree(repo, number, cache_lock=None):
         current[str(target)] = {"signal": signal, "issue": issue}
         if target == number:
             add_branches(_closing_refs(issue.get("closedByPullRequestsReferences"), repo))
+        subtrees = []
+        # 直接の子を先に確保し、旧部分木の孫以下による seen の先取りを防ぐ。
         for node in _tree_issue(issue, target, repo):
             child = node["number"]
             if node["repository"]["nameWithOwner"].lower() != repo.lower():
@@ -1121,7 +1123,9 @@ def epic_tree(repo, number, cache_lock=None):
             if node["subIssuesSummary"]["total"] > 0:
                 if depth + 1 >= EPIC_MAX_DEPTH:
                     raise TreeError("too deep")
-                walk(child, depth + 1, _child_signal(node, repo))
+                subtrees.append((child, _child_signal(node, repo)))
+        for child, child_signal in subtrees:
+            walk(child, depth + 1, child_signal)
 
     try:
         walk(number, 0)
