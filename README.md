@@ -133,7 +133,7 @@ Discord 改造版（公式プラグインの fork で、主のリアクション
 2. flatmate の marketplace を登録し（手順は flatmate#851）、`settings.json` の `enabledPlugins` に `discord@flatmate` を入れる。手順 1 の uninstall で消えずに `discord@oratta-claude-harness` が残っていれば、そのエントリを消す
 3. 住人の `CHANNEL_PLUGINS` を `plugin:discord@flatmate` にして、住人を再起動する
 
-`skill-pack`・`telegram`・`experience-to-skill` の 3 プラグインは 2026-10 に解散した（[PR #841](https://github.com/oratta/claude-harness/pull/841)）。`bundles` の `all` からも外した。理由と代替は次のとおり。
+`skill-pack`・`telegram`・`experience-to-skill` の 3 プラグインは 2026-10 に解散した（[PR #841](https://github.com/oratta/claude-harness/pull/841)）。`bundles` の `all` からも外した（telegram は元から `all` に入っていなかった）。理由と代替は次のとおり。
 
 | プラグイン | 解散の理由 | 代替 |
 |-----------|-----------|------|
@@ -146,3 +146,5 @@ install 済みの環境では、入れていたプラグインについて次を
 1. `claude plugin uninstall skill-pack@oratta-claude-harness`・`claude plugin uninstall telegram@oratta-claude-harness`・`claude plugin uninstall experience-to-skill@oratta-claude-harness` のうち、入れていたものを実行する
 2. uninstall で消えずに `settings.json` / `settings.local.json` の `enabledPlugins` に `<name>@oratta-claude-harness` が残っていれば、そのエントリを消す
 3. telegram を使っていた環境は、公式の `telegram@claude-plugins-official` を入れる（設定は公式側の手順に従う）
+
+`~/.claude/skills/distilled/e2s-*/SKILL.md` と `<repo>/.claude/skills/distilled/` にあるスキルは uninstall では消えない。

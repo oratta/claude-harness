@@ -13,7 +13,7 @@ harness の `skill-pack`・`telegram`・`experience-to-skill` の 3 プラグイ
 - **BREAKING** `plugins/skill-pack/`・`plugins/telegram/`・`plugins/experience-to-skill/` を git 追跡の削除として取り除く（計 24 ファイル）。3 つとも `@oratta-claude-harness` からインストールできなくなる
 - `.claude-plugin/marketplace.json` の `plugins[]` から 3 エントリを、`bundles[]` の `all` から `experience-to-skill`・`skill-pack` を外す（`telegram` は元から `all` に無い）。`bundles` の `all` に入っていないプラグインがある件（#708）はここでは扱わず、#708 自体は閉じない
 - ルート `README.md` のプラグイン一覧から 3 行を外し、「解散済みプラグイン」節に解散の旨・`claude plugin uninstall <name>@oratta-claude-harness` の手順・代替（公式機能）を足す
-- 解散対象だけを規定する living spec を整理する: `openspec/specs/experience-to-skill-jsonl-distillation/` を `git rm` し、`repo-root-cleanup` の 3 要件（skill-pack の cooking 言及掃除、skill-pack の注記、e2s の `$0` 解決）を外す。`dev-workflow-shared-references`・`skill-verification-sections` が数える「対象スキル 7 つ」を 6 つに直す。`marketplace-plugin-sync` の例示から `plugins/telegram/package.json` を外す
+- 解散対象だけを規定する living spec を整理する: `openspec/specs/experience-to-skill-jsonl-distillation/` を `git rm` し、`repo-root-cleanup` の 2 要件を外し、cooking 残骸掃除の要件から skill-pack の言及を外す。`dev-workflow-shared-references`・`skill-verification-sections` が数える「対象スキル 7 つ」を 6 つに直す。`marketplace-plugin-sync` の例示から `plugins/telegram/package.json` を外す
 - dev-workflow の `references/self-verification.md`（対象表から experience-to-skill の行と補足、対象外表から skill-pack・telegram 計 3 行を外す）、`references/commit-and-pr-operations.md`（`/e2s:distill` の 1 行）、`tests/self-verification-sections.bats`・`tests/shared-references.bats`（対象一覧から experience-to-skill を外す）、`README.md`（self-verification の説明から experience-to-skill を外す）を直す
 - `plugins/cost-ledger/tests/fixtures.bats` と `tests/injection-budget.bats` のコメントにある experience-to-skill への言及を、実在するものを指す表現に直す
 - 解散の状態を検査する `tests/skill-pack-telegram-e2s-retirement.bats` を足す
@@ -26,7 +26,7 @@ harness の `skill-pack`・`telegram`・`experience-to-skill` の 3 プラグイ
 
 ### Modified Capabilities
 
-- `repo-root-cleanup`: skill-pack・experience-to-skill を対象にした 3 要件を REMOVED（対象が無くなる）。残る要件（`templates/rules/` の削除、cooking 残骸掃除のうち skill-pack 以外）は維持する
+- `repo-root-cleanup`: 2 要件を外し、cooking 残骸掃除の要件から skill-pack の言及を外す。残る要件（`templates/rules/` の削除、cooking 残骸掃除のうち skill-pack 以外）は維持する
 - `dev-workflow-shared-references`: 自己検証リファレンスの対象スキルを 7 つから 6 つに、参照元を 8 か所から 7 か所にする
 - `skill-verification-sections`: 「## 自己検証」節を持つ対象スキルを 7 つから 6 つにする
 - `marketplace-plugin-sync`: 守備範囲の例示から、削除するプラグインのパスを外す
