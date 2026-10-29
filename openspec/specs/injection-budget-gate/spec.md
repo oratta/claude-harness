@@ -298,7 +298,7 @@
 
 ### Requirement: 思考の深さを文で指示する言い回しを置かない
 
-`rules/*.md`・`CLAUDE.md`・`output-styles/*.md`・`plugins/*/skills/*/SKILL.md`（本文を含む）・`.claude/commands/` 配下・`.claude/skills/` 配下・`.agents/skills/` 配下のファイルは、思考の深さを文で指示する言い回しを含んではならない（MUST NOT）。対象の句は `よく考え`・`think deeply`・`think hard`・`think carefully`・`think step by step` とし、英語の句は大文字小文字を区別しない。
+`rules/*.md`（README.md を除く）・`CLAUDE.md`・`output-styles/*.md`（README.md を除く）・`plugins/*/skills/*/SKILL.md`（本文を含む）・`.claude/commands/` 配下・`.claude/skills/` 配下・`.agents/skills/` 配下のファイルは、思考の深さを文で指示する言い回しを含んではならない（MUST NOT）。対象の句は `よく考え`・`think deeply`・`think hard`・`think carefully`・`think step by step` とし、英語の句は大文字小文字を区別しない。
 
 `scripts/test.sh` の全件実行に、この条件を確かめるテストが含まれなければならない（MUST）。テストが落ちたときの出力は、該当したファイルと行、および `docs/injection-budget-review.md` を示さなければならない（MUST）。
 
