@@ -234,10 +234,10 @@ wait_for_log() { # <pattern> <seconds>
   printf '%s' "$c" | grep -Eq '^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[A-Z][a-z]{2}[0-9]+$'
 }
 
-@test "start_token: identical under TZ=Asia/Tokyo and TZ=UTC for the same process (live ps)" {
+@test "start_token: identical under TZ=JST-9 and TZ=UTC for the same process (live ps)" {
   wt_require_process_listing
   local jst utc
-  jst=$(TZ=Asia/Tokyo bash -c '. "$REAPER"; srp_start_token '"$$")
+  jst=$(TZ=JST-9 bash -c '. "$REAPER"; srp_start_token '"$$")
   utc=$(TZ=UTC bash -c '. "$REAPER"; srp_start_token '"$$")
   echo "jst=$jst utc=$utc"
   [ -n "$utc" ]
