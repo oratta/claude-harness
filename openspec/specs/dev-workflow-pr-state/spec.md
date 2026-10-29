@@ -124,7 +124,7 @@
 - **THEN** 1 回目は `rerun`、2 回目は `none` で、`next` は前回の状態のまま（`fixes` は増えない）
 
 #### Scenario: やり直しのあとの別のジョブ ID の失敗は直しに回す
-- **WHEN** 上と同じ初見のあと、同じ HEAD `e1` で、ジョブ ID `2`・`cause: unrelated` のチェック 1 件を持つ `retry: true` の `ci-fail` を渡す
+- **WHEN** HEAD `e1` で、ジョブ ID `1` の失敗 1 件を持つ `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして、同じ HEAD `e1` で、ジョブ ID `2`・`cause: unrelated` のチェック 1 件を持つ `retry: true` の `ci-fail` を渡す
 - **THEN** `act` は `fix`、`next.fixes` は 1
 
 #### Scenario: 上限時間の打ち切りは 1 回やり直し、やり直しを使い切った HEAD で打ち切りを見たらオーナーに上げる
