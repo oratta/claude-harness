@@ -258,7 +258,8 @@ no_gh_called() {
   printf '{"annotations_by_job": []}' > "${WORK}/h1.json"
   printf '[1]' > "${WORK}/h2.json"
   printf '{}\n{}\n' > "${WORK}/h3.json"
-  for f in h1 h2 h3; do
+  printf '{"annotations_by_job":{"77":"x"}}' > "${WORK}/h4.json"
+  for f in h1 h2 h3 h4; do
     run observe_of "$(view MERGEABLE '[]' h)" --hints "${WORK}/${f}.json"
     [ "$status" -ne 0 ]
     [[ "$output" == *"pr-state.sh: cannot read --hints file"* ]] || return 1
