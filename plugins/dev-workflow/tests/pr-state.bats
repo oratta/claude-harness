@@ -254,6 +254,27 @@ no_gh_called() {
   [ "$status" -ne 0 ]
 }
 
+@test "observe: a malformed --hints file is rejected with a hints message, not the stdin one" {  # observe: 形の崩れた --hints は stdin のメッセージでなく hints のメッセージで弾く
+  printf '{"annotations_by_job": []}' > "${WORK}/h1.json"
+  printf '[1]' > "${WORK}/h2.json"
+  printf '{}\n{}\n' > "${WORK}/h3.json"
+  for f in h1 h2 h3; do
+    run observe_of "$(view MERGEABLE '[]' h)" --hints "${WORK}/${f}.json"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"pr-state.sh: cannot read --hints file"* ]]
+    [[ "$output" != *"gh pr view JSON from stdin"* ]]
+  done
+}
+
+@test "observe: empty-object hints are still accepted" {  # observe: 空のオブジェクトの hints は従来どおり通る
+  printf '{}' > "${WORK}/ok1.json"
+  printf '{"annotations_by_job":{}}' > "${WORK}/ok2.json"
+  run observe_of "$(view MERGEABLE '[]' h)" --hints "${WORK}/ok1.json"
+  [ "$status" -eq 0 ]
+  run observe_of "$(view MERGEABLE '[]' h)" --hints "${WORK}/ok2.json"
+  [ "$status" -eq 0 ]
+}
+
 # ── decide: flatmate (N) から移す ───────────────────────────────
 
 @test "Na1-Na3: conflict is fix and the same state again is none with fixes still 1" {  # Na1〜Na3: コンフリクトは fix、同じ状態の 2 回目は none で fixes は 1 のまま
