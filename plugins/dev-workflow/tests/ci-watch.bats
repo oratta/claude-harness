@@ -387,6 +387,13 @@ pr_view_calls() {
   grep -q 'これらの穴を塞ぎ切ることはこの要件の完了条件にしない' "$REF"
 }
 
+@test "reference: next none/rerun-failure judgement has a scope paragraph" {
+  grep -q '守備範囲: この判断（`next.state` が `wait` の `none`' "$REF"
+  grep -qF '`gh run rerun` の終了コードの 2 つ' "$REF"
+  grep -qF 'GitHub の反映遅れで実際は進行中なのに連続 3 回' "$REF"
+  grep -q 'これらの穴を塞ぎ切ることはこの手順の完了条件にしない' "$REF"
+}
+
 @test "reference: ready checks the four merge-blocking labels and until-merged timeout asks for the merge" {
   for l in human-merge needs-human-merge human-only needs-approval; do
     grep -qF -- "\`$l\`" "$REF" || { echo "missing label: $l"; return 1; }
