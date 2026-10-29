@@ -6671,7 +6671,7 @@ chat_line() {
   run dispatch child-log 11
   [ "$status" -eq 0 ]
   txt="$(printf '%s\n' "$output" | cut -f3)"
-  [ "$(printf '%s' "$txt" | wc -m | tr -d ' ')" -eq 80 ]
+  [ "$(printf '%s' "$txt" | python3 -c 'import sys; print(len(sys.stdin.buffer.read().decode("utf-8")))')" -eq 80 ]
   [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 1 ]
   case "$txt" in 1行目\ *) ;; *) false ;; esac
 }
