@@ -11,5 +11,5 @@
 
 ## 3. 検証
 
-- [x] 3.1 担当別監査の bats と関連テスト、lint を実行する。
+- [x] 3.1 担当別監査の bats と関連テスト、`./scripts/test.sh` と `./scripts/lint.sh` を実行し、ともに exit 0 になることを確かめる（main でも落ちる既知の失敗は除く）。
 - [x] 3.2 `openspec validate fix-564-by-role-precision --type change --strict` を実行する。
