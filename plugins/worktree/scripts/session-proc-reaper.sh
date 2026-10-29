@@ -21,7 +21,7 @@
 #   SESSION_REAPER_SWEEP_INTERVAL_SECS  掃除の最小間隔（既定 600。session-proc-mark.sh が読む）
 #   SESSION_REAPER_PS_FIXTURE_DIR       ps を実行せずこのディレクトリの固定出力を読む。このときは
 #                                       信号を送らず DRY 行をログに書くだけにする
-#                                       （ps-env.txt: pid ppid command+env / ps-comm.txt: pid comm /
+#                                       （ps-env.txt: pid ppid command+env / ps-comm.txt: pid stat comm /
 #                                        lstart.txt: pid lstart）
 #   SESSION_REAPER_LOG_DIR              ログとスタンプファイルの置き場所
 #   SESSION_REAPER_HOOK_PID             持ち主を探し始める PID（既定はフック自身の $$）
@@ -47,12 +47,12 @@ srp_ps_env_list() {
   fi
 }
 
-# pid comm
+# pid stat comm（comm は空白を含みうるので最後の列）
 srp_ps_comm_list() {
   if [ -n "${SESSION_REAPER_PS_FIXTURE_DIR:-}" ]; then
     cat "$SESSION_REAPER_PS_FIXTURE_DIR/ps-comm.txt" 2>/dev/null
   else
-    LC_ALL=C ps -U "$(id -u)" -o pid=,comm= 2>/dev/null
+    LC_ALL=C ps -U "$(id -u)" -o pid=,stat=,comm= 2>/dev/null
   fi
 }
 
@@ -72,7 +72,7 @@ srp_proc_ppid() { # <pid>
 
 srp_proc_comm() { # <pid>
   if [ -n "${SESSION_REAPER_PS_FIXTURE_DIR:-}" ]; then
-    srp_fixture_field ps-comm.txt "$1"
+    srp_fixture_field ps-comm.txt "$1" | sed -E 's/^[^[:space:]]+[[:space:]]+//'
   else
     ps -o comm= -p "$1" 2>/dev/null
   fi
@@ -162,11 +162,13 @@ srp_select_targets() { # <mark> <exclude_pids>
   srp_ps_env_list >"$envf"
   awk -v want="${SRP_MARK_VAR}=$1" -v excl=" $2 " '
     FNR == NR {
-      p = $1; sub(/^[ \t]*[0-9]+[ \t]+/, ""); comm[p] = $0; next
+      p = $1
+      if ($2 ~ /^Z/) { zombie[p] = 1; next }   # ゾンビは止める対象ではない（kill しても残る）
+      sub(/^[ \t]*[0-9]+[ \t]+[^ \t]+[ \t]+/, ""); comm[p] = $0; next
     }
     {
       p = $1; pp = $2
-      if (p !~ /^[0-9]+$/) next
+      if (p !~ /^[0-9]+$/ || (p in zombie)) next
       parent[p] = pp; seen[p] = 1; order[n++] = p
       kids[pp] = kids[pp] " " p
       readable[p] = 0; marked[p] = 0

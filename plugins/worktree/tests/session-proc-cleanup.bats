@@ -69,26 +69,26 @@ make_fixture() {
   900     1 bash lonely.sh PATH=/bin
 EOF
   cat >"$FIX/ps-comm.txt" <<'EOF'
-  100 /Users/x/.local/bin/claude
-  200 node
-  201 /bin/sh
-  202 esbuild
-  203 /bin/sleep
-  210 node
-  211 /bin/sh
-  220 node
-  221 /bin/sleep
-  230 /bin/sleep
-  240 /opt/homebrew/bin/python3
-  250 /bin/sh
-  251 /bin/sleep
-  300 bash
-  301 /bin/sh
-  690 /bin/sh
-  700 bash
-  810 node
-  820 /bin/sh
-  900 bash
+  100 S /Users/x/.local/bin/claude
+  200 S node
+  201 S /bin/sh
+  202 S esbuild
+  203 S /bin/sleep
+  210 S node
+  211 S /bin/sh
+  220 S node
+  221 S /bin/sleep
+  230 S /bin/sleep
+  240 S /opt/homebrew/bin/python3
+  250 S /bin/sh
+  251 S /bin/sleep
+  300 S bash
+  301 S /bin/sh
+  690 S /bin/sh
+  700 S bash
+  810 S node
+  820 S /bin/sh
+  900 S bash
 EOF
   cat >"$FIX/lstart.txt" <<'EOF'
   100 Fri Sep 25 10:11:18 2026
@@ -181,9 +181,51 @@ wait_for_log() { # <pattern> <seconds>
   [ "$status" -ne 0 ]
 }
 
+@test "select: zombie (stat=Z) descendants are not selected, same-shape stat=S rows are" {
+  mkdir -p "$FIX"
+  cat >"$FIX/ps-env.txt" <<EOF
+  500     1 node root.js CLAUDE_SESSION_PROC_MARK=${M} PATH=/bin
+  501   500 /bin/sh -c a
+  502   500 /bin/sh -c a
+  503   500 /bin/sh -c a
+EOF
+  cat >"$FIX/ps-comm.txt" <<'EOF'
+  500 S node
+  501 S /bin/sh
+  502 Z /bin/sh
+  503 Z+ (sh with space)
+EOF
+  export SESSION_REAPER_PS_FIXTURE_DIR="$FIX"
+  run reaper_fn srp_select_targets "$M" ""
+  [ "$status" -eq 0 ]
+  pids=$(printf '%s\n' "$output" | awk '{print $1}' | sort -n | tr '\n' ' ')
+  [ "$pids" = "500 501 " ]
+}
+
+@test "select: comm with spaces is kept whole after the stat column" {
+  mkdir -p "$FIX"
+  printf '  600     1 node root.js CLAUDE_SESSION_PROC_MARK=%s PATH=/bin\n  601   600 /bin/sh -c a\n' "$M" >"$FIX/ps-env.txt"
+  printf '  600 Ss node\n  601 S+ /Applications/My App/helper\n' >"$FIX/ps-comm.txt"
+  export SESSION_REAPER_PS_FIXTURE_DIR="$FIX"
+  run reaper_fn srp_select_targets "$M" ""
+  printf '%s\n' "$output" | grep -Fxq '601 desc 600 /Applications/My App/helper'
+}
+
+@test "sweep (fixture): zombie pid never appears in the log" {
+  mkdir -p "$FIX"
+  printf '  500     1 node root.js CLAUDE_SESSION_PROC_MARK=%s PATH=/bin\n  501   500 /bin/sh -c a\n  502   500 /bin/sh -c a\n' "$OTHER" >"$FIX/ps-env.txt"
+  printf '  500 S node\n  501 S /bin/sh\n  502 Z /bin/sh\n' >"$FIX/ps-comm.txt"
+  printf '  100 Fri Sep 25 10:11:18 2026\n' >"$FIX/lstart.txt"
+  run env SESSION_REAPER_PS_FIXTURE_DIR="$FIX" "$REAPER" --sweep
+  [ "$status" -eq 0 ]
+  grep -Eq "DRY pid=501 " "$LOG"
+  run grep -E "pid=502( |$)" "$LOG"
+  [ "$status" -ne 0 ]
+}
+
 @test "ps: live listing is limited to the current user's processes (-U uid) with -E" {
   grep -Eq 'ps -U "\$\(id -u\)" -ww -E -o pid=,ppid=,command=' "$REAPER"
-  grep -Eq 'ps -U "\$\(id -u\)" -o pid=,comm=' "$REAPER"
+  grep -Eq 'ps -U "\$\(id -u\)" -o pid=,stat=,comm=' "$REAPER"
 }
 
 # ---------------------------------------------------------------------------
@@ -380,7 +422,7 @@ fresh_stamp() {
 @test "sweep: nothing to stop still leaves one 'none' line" {
   mkdir -p "$FIX"
   printf '  100     1 /Users/x/.local/bin/claude HOME=/x\n' >"$FIX/ps-env.txt"
-  printf '  100 claude\n' >"$FIX/ps-comm.txt"
+  printf '  100 S claude\n' >"$FIX/ps-comm.txt"
   printf '  100 Fri Sep 25 10:11:18 2026\n' >"$FIX/lstart.txt"
   run env SESSION_REAPER_PS_FIXTURE_DIR="$FIX" "$REAPER" --sweep
   [ "$status" -eq 0 ]
