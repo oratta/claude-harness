@@ -157,7 +157,7 @@
 
 #### Scenario: どちらにも当たらない件は unknown に寄せられる
 
-- **WHEN** `meta.json` が無い、または `agentType` が `dev-workflow:decider` でも `dev-workflow:reviewer` でもなく、`description` の先頭トークンが `W` / `R1` / `G` / `Reviewer` のいずれとも一致しない
+- **WHEN** `meta.json` が無い、または `agentType` が `dev-workflow:decider` でも `dev-workflow:reviewer` でもなく、`description` の先頭トークンが担当名と任意の手渡し番号の正規表現に一致しない
 - **THEN** その件は `unknown` に分類され、全体の `count` には含まれたまま `by_role` の合計にも数えられる
 
 ### Requirement: `reread_pct`（作業担当 W の読み直し割合）
