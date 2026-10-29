@@ -79,7 +79,7 @@ gh issue comment <issue番号> --body "$(printf '仕様化判断: する\n理由
   gh api -X POST repos/<owner>/<repo>/issues/<後続>/dependencies/blocked_by -F issue_id=<前提の issue id>
   ```
   元 issue に「N 個の change に分割した（#a → #b → #c）」とコメントし、各子 issue に `agent-ready` を付け、「分割した」と return する（本体はこのサイクルを終える）
-- **割り方が判断できないほど曖昧**: interactive は return で本体に聞いてもらう。unmanned は Discord でユーザーに質問し、記録先に `needs-approval` を付けて経緯をコメントし、「needs-approval」と return する
+- **割り方が判断できないほど曖昧**: interactive は return で本体に聞いてもらう。unmanned は子 issue を作らず、質問文・理由と `needs-approval` を return に含め、記録先に `needs-approval` を付けて経緯をコメントし、作業を止めて本体へ return する。W は Discord（MCP・CLI とも）へ直接送信しない。本体の代理送信手順は SKILL.md「実行モード」を参照
 
 ## 仕様化する場合（(1) の終わり）
 

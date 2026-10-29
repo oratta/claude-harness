@@ -303,9 +303,11 @@ W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 �
 |---|---|---|---|---|
 | **interactive**（既定） | 人間が `/develop`・`/work-issue`・自然文で依頼 | そのセッション | AskUserQuestion で聞ける | (0)〜(4) 全部。複数 change はその場で change ごとに回す |
 | **channel** | 印 `DEV_WORKFLOW_UNATTENDED` のあるセッション、またはチャンネル（Discord など）のメッセージで依頼（常駐の開発エージェントが、オーナーからチャンネルで開発を頼まれたときの形） | そのセッション | チャンネルで聞く（AskUserQuestion は使わない） | (0)〜(4) 全部（G を起こし、PR の合格まで進む）。複数 change は interactive と同じ |
-| **unmanned**（`--unmanned`） | loop-dev-agent の憲法 Step 3 から | **憲法のメイン自身**が develop の本体を務め、W / R1 をメインが spawn する | 聞けない（1 サイクル 1 仕事） | (0)〜(3)。worktree は憲法側が用意したものを使う。(3) で W が Draft PR の作成と `agent-review:pending` の付与（憲法 Step 3 の 5〜6 に相当）まで行う。**(4) の G は起こさず**、憲法 Step 1（レビューモード）が次サイクル以降で担う |
+| **unmanned**（`--unmanned`） | loop-dev-agent の憲法 Step 3 から | **憲法のメイン自身**が develop の本体を務め、W / R1 をメインが spawn する | 質問は本体が代理送信し終了（1 サイクル 1 仕事） | (0)〜(3)。worktree は憲法側が用意したものを使う。(3) で W が Draft PR の作成と `agent-review:pending` の付与（憲法 Step 3 の 5〜6 に相当）まで行う。**(4) の G は起こさず**、憲法 Step 1（レビューモード）が次サイクル以降で担う |
 
-unmanned で複数 change に割れた場合（W が change 単位で子 issue を作って `blocked_by` で順序付けし、そのサイクルを終える。割り方が判断できないほど曖昧なときは子 issue を作らず、質問して `needs-approval` で終える）の手順は、`references/roles/worker/spec.md`「分割判定」が正本。
+unmanned で複数 change に割れた場合（W が change 単位で子 issue を作って `blocked_by` で順序付けし、そのサイクルを終える。割り方が判断できないほど曖昧なときは子 issue を作らず、W が質問文・理由を return し、本体が代理送信して `needs-approval` で終える）の手順は、`references/roles/worker/spec.md`「分割判定」が正本。
+
+unmanned で W の return に質問文・理由が含まれるとき、本体（憲法のメイン自身）が受け取り、質問を Discord へ代理送信する。記録先の `needs-approval` を維持してそのサイクルを終了する。
 
 **仕様化判断の記録と仕様レビューは unmanned でも免除しない**（同じ書式で記録先に記録し、R1 の APPROVE まで W を apply に進めない）。文言合わせの通し方（1 ループの (1)。判定基準は `references/decision-criteria.md` Step B）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる。
 
