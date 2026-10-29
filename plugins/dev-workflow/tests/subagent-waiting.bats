@@ -416,7 +416,7 @@ PY
 }
 
 @test "step 3 rejects body mentions and malformed markers until codex finishes" {
-  for decoy in prefix missing-rc suffix fixed; do
+  for decoy in prefix missing-rc suffix fixed longer-nonce; do
     mkdir "${BATS_TEST_TMPDIR}/${decoy}"
     python3 "${PLUGIN_DIR}/tests/subagent-waiting-runtime.py" "$CANON" "${BATS_TEST_TMPDIR}/${decoy}" "$decoy" 7
   done

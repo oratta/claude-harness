@@ -36,6 +36,7 @@ def main():
     payload = {
         "newline": "review output\n", "no-newline": "review output",
         "other-nonce": f"__CODEX_DONE_other{nonce}__ rc=0\n",
+        "longer-nonce": f"__CODEX_DONE_{nonce}X__ rc=0\n",
         "prefix": f"body mentions {marker} rc=0\n",
         "missing-rc": f"{marker}\n",
         "suffix": f"{marker} rc=0 trailing text\n",
@@ -51,7 +52,8 @@ root = pathlib.Path(os.environ["FAKE_ROOT"])
 (root / "codex.pid").write_text(str(os.getpid()))
 print(os.environ["FAKE_PAYLOAD"], end="", flush=True)
 (root / "ready").touch()
-while not (root / "release").exists():
+deadline = time.monotonic() + 30
+while not (root / "release").exists() and time.monotonic() < deadline:
     time.sleep(0.01)
 (root / "finished").touch()
 sys.exit(int(os.environ["FAKE_RC"]))
