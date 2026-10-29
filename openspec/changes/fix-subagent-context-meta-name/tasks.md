@@ -10,7 +10,7 @@ R1 の APPROVE が issue #590 に記録されてから着手する。行番号�
 
 ## 2. 統合検証
 
-- [ ] 2.1 `./scripts/test.sh` を実行し、exit 0 を確認する。失敗時は結果と原因を記録して共通の昇格トリップワイヤーに従う。version は変更しない（条件 4）。触る範囲: scripts/test.sh:363-374（実行確認のみ）
+- [x] 2.1 `./scripts/test.sh` を実行し、exit 0 を確認する。失敗時は結果と原因を記録して共通の昇格トリップワイヤーに従う。version は変更しない（条件 4）。触る範囲: scripts/test.sh:363-374（実行確認のみ）
 
 ## Workflow follow-up
 
