@@ -214,7 +214,7 @@ PY
   # 説明とコード根拠の両方で、ID 省略時の範囲を明記する。
   scope='CODEX_COMPANION_SESSION_ID` 設定時はそのセッション、未設定時はリポジトリ全体の最新の終了ジョブ'
   [ "$(printf '%s\n' "$section" | grep -cF "$scope")" -eq 2 ]
-  ! printf '%s\n' "$section" | grep -qF '現セッションの最新の終了ジョブ'
+  if printf '%s\n' "$section" | grep -qF '現セッションの最新の終了ジョブ'; then return 1; fi
 }
 
 # --- nonce の作り方（衝突・正規表現の誤マッチ・無言の縮退をまとめて止めること） ---
