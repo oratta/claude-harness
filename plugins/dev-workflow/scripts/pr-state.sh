@@ -102,7 +102,7 @@ cmd_observe() {
     case "$1" in
       --hints)
         [ -n "${2-}" ] || die "--hints needs a file"
-        hints="$(jq -ce 'if type == "object" then . else error("not an object") end' "$2" 2>/dev/null)" \
+        hints="$(jq -cse 'if length == 1 and (.[0] | type == "object") and ((.[0].annotations_by_job // {}) | type == "object" and all(.[]; type == "array" or type == "null")) then .[0] else error("bad hints") end' "$2" 2>/dev/null)" \
           || die "cannot read --hints file: $2"
         shift 2 ;;
       --unrelated)
