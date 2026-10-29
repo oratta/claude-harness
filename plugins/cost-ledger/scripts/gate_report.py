@@ -872,11 +872,15 @@ def lock(repo, number):
             raise
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
+            retained_dir_fd = os.dup(dir_fd)
         except OSError:
             os.close(fd)
             os.close(dir_fd)
             raise
-        return TargetLock(fd, dir_fd)
+        # 既存の lock() の契約どおり検査用 fd は閉じる。同じ開いたディレクトリを指す
+        # 複製を保存完了まで保持し、パスを解決し直さない。unlock() はこの複製も閉じる。
+        os.close(dir_fd)
+        return TargetLock(fd, retained_dir_fd)
     except OSError:
         return None
 
