@@ -240,8 +240,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 @test "gate-runner and pr-review-gate (#385): both carry the adapter form of the reviewer line" {
   form='（adapter 経路・<light|full>・dispatch 記録:'
   grep -qF "$form" "${TRIAGE}"
-  grep -qF "$form" "${TRIAGE}"
-  # pr-review-gate は書き分けの段落と PR コメント雛形の両方に持つ
+  # review-run は書き分けの段落と PR コメント雛形の両方に持つ
   [ "$(grep -cF "$form" "${REVIEW_RUN}")" -ge 2 ]
 }
 
