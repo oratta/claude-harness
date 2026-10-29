@@ -54,7 +54,7 @@ setup() {
     /^### 解散済みプラグイン/ { exit }
     /^[[:space:]]*\|/ {
       name = $2
-      gsub(/[[:space:]`]/, "", name)
+      gsub(/[[:space:]`*]/, "", name); sub(/^\[/, "", name); sub(/\]\(.*\)$/, "", name)
       if (name == "skill-pack" || name == "telegram" || name == "experience-to-skill") {
         print NR ":" $0
         found = 1

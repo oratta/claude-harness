@@ -147,4 +147,4 @@ install 済みの環境では、入れていたプラグインについて次を
 2. uninstall で消えずに `settings.json` / `settings.local.json` の `enabledPlugins` に `<name>@oratta-claude-harness` が残っていれば、そのエントリを消す
 3. telegram を使っていた環境は、公式の `telegram@claude-plugins-official` を入れる（設定は公式側の手順に従う）
 
-`~/.claude/skills/distilled/e2s-*/SKILL.md` と `<repo>/.claude/skills/distilled/` にあるスキルは uninstall では消えない。
+`~/.claude/skills/distilled/` と `<repo>/.claude/skills/distilled/` にある蒸留スキル（名前が `e2s-` か `distilled-` で始まるもの）は uninstall では消えない。
