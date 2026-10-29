@@ -265,6 +265,34 @@ pr_view_calls() {
   [ "$(jq -r .fixes "$(state_file)")" = null ]
 }
 
+@test "next: the same timed-out job after rerun is none and preserves the previous state" {
+  mkdir -p "$STATE_DIR"
+  local previous='{"state":"wait","head":"h1","reran_head":"h1","reran_jobs":["77"]}'
+  echo "$previous" > "$(state_file)"
+  put_view 1 OPEN MERGEABLE "[$(actions_check test CANCELLED 11 77)]" h1
+  jq -cn --arg m "$TIMED_OUT" '[{message: $m}]' > "${WORK}/ann/77.json"
+  run --separate-stderr "$SCRIPT" next o/r 5
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .act <<<"$output")" = none ]
+  [ "$(jq -r .obs.state <<<"$output")" = ci-fail ]
+  [ "$(jq -r .next.state <<<"$output")" = wait ]
+  [ "$(jq -c .next <<<"$output")" = "$previous" ]
+  [ "$(cat "$(state_file)")" = "$previous" ]
+}
+
+@test "next: a different timed-out job after rerun escalates without counting a fix" {
+  mkdir -p "$STATE_DIR"
+  echo '{"state":"wait","head":"h1","reran_head":"h1","reran_jobs":["76"]}' > "$(state_file)"
+  put_view 1 OPEN MERGEABLE "[$(actions_check test CANCELLED 11 77)]" h1
+  jq -cn --arg m "$TIMED_OUT" '[{message: $m}]' > "${WORK}/ann/77.json"
+  run --separate-stderr "$SCRIPT" next o/r 5
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .act <<<"$output")" = escalate ]
+  [ "$(jq -r .next.raised <<<"$output")" = true ]
+  [ "$(jq -r .raised "$(state_file)")" = true ]
+  jq -e 'has("fixes") | not' "$(state_file)"
+}
+
 @test "next: a cancel without the time-limit annotation is fix as before" {  # 上限時間の annotation が無い取り消しは直しに回る
   put_view 1 OPEN MERGEABLE "[$(actions_check test CANCELLED 11 77)]" h1
   jq -cn --arg c "$CANCELED" '[{message: $c}]' > "${WORK}/ann/77.json"
@@ -367,9 +395,24 @@ pr_view_calls() {
   grep -q '`--until-merged` を付けて起動した `wait` なら、マージされなかったとして' "$REF"
 }
 
-@test "reference: none restarts wait only when obs.state is wait" {  # none で起動し直すのは wait のときだけ
-  grep -q '`obs.state` が `wait` のときだけ `wait` を起動し直す' "$REF"
+@test "reference: none restarts wait for pending CI or a stale rerun failure with a caller limit" {
+  local row
+  row="$(grep -F '| `none` |' "$REF")"
+  grep -qF '`obs.state` が `wait` のときは `wait` を起動し直す' <<<"$row"
+  grep -qF '`obs.state` が `ci-fail` でも `next.state`（状態ファイルの `state`）が `wait`' <<<"$row"
+  grep -qF '続けて 3 回この `none` で `wait` を起動し直しても決着しなければ' <<<"$row"
+  grep -qF '呼び出し側' <<<"$row"
+  grep -qF '状態ファイルや `pr-state.sh` の判定は増やさない' <<<"$row"
   grep -q 'それ以外の `none`.*見張りを終え、PR の URL を添えてオーナーに' "$REF"
+}
+
+@test "reference: rerun errors comment and escalate including the epic child stop" {
+  local row
+  row="$(grep -F '| `rerun` |' "$REF")"
+  grep -qF 'やり直しに失敗したら、`wait` を起動し直さず' <<<"$row"
+  grep -qF 'PR にコメントして `needs-approval` を付け' <<<"$row"
+  grep -qF 'オーナーに上げて見張りを終える' <<<"$row"
+  grep -qF 'エピックの子の止まり方も `escalate` と同じ' <<<"$row"
 }
 
 @test "reference: one session per PR via start/end comments, clearing raised, and no re-check after a fix" {
